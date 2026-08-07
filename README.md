@@ -103,6 +103,14 @@ This is **not** derived from librtlsdr source.
 AGPL-3.0-only by default (see [LICENSE](LICENSE)). Commercial terms available
 under the same dual-license model as other Orc projects — contact the maintainer.
 
+## Peer research and roadmap
+
+| Doc | Purpose |
+|---|---|
+| [COMPETITIVE_ANALYSIS_ESP32_RTLSDR.md](docs/COMPETITIVE_ANALYSIS_ESP32_RTLSDR.md) | ADS-B Scope, esp32p4-wifi-rtlsdr, xtrsdr vs OrcSDR |
+| [IMPLEMENTATION_FROM_PEER_RESEARCH.md](docs/IMPLEMENTATION_FROM_PEER_RESEARCH.md) | Gap-closing implementation plan (P0–P3) |
+| [PORTING.md](docs/PORTING.md) | Driver extraction and board matrix |
+
 ## Links
 
 - GitHub: https://github.com/hardcoreerik/OrcSDR  
