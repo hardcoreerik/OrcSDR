@@ -8,8 +8,7 @@ idf_component_register(
     SRCS "src/rtl_sdr_v4_esp.cpp"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "private"
-    # `usb` is required once bulk host path is extracted (Gate 2).
-    REQUIRES log esp_timer freertos
+    REQUIRES log esp_timer freertos usb
 )
 
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_17)

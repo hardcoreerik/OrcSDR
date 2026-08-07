@@ -1,10 +1,25 @@
 /**
  * @file rtl_sdr_v4_esp.h
- * @brief RTL-SDRv4-ESP — production public C API
+ * @brief RTL-SDRv4-ESP — production public C API (best-in-class contract)
  *
  * Standalone ESP-IDF USB Host client for the official RTL-SDR Blog V4
  * (USB 0bda:2838). Transfer sequences are clean-room / measured — this is
  * not a librtlsdr port.
+ *
+ * ---------------------------------------------------------------------------
+ * Design principles (must work every time)
+ * ---------------------------------------------------------------------------
+ *
+ * 1. Fail closed: invalid args, wrong state, and missing hardware never leave
+ *    USB half-open. On start failure the handle is IDLE or FAULT, never
+ *    "streaming with no URB".
+ * 2. Discover before assume: check get_capabilities() and is_rate_supported().
+ * 3. Stable growth: config structs carry struct_size; new fields only at end.
+ * 4. Thread-safe per handle: all public entry points serialize on one mutex.
+ * 5. Callbacks never re-enter lifecycle APIs on the same handle (returns
+ *    ERR_REENTRANT). IQ pointers are borrowed until the callback returns
+ *    (or release_iq_block when acquire mode is enabled).
+ * 6. Idempotent teardown: stop() when idle and uninstall(NULL) always OK.
  *
  * ---------------------------------------------------------------------------
  * Lifecycle (per handle)
@@ -16,43 +31,39 @@
  *   IDLE  <---------------------------------------------+
  *    | start()                                          |
  *    v                                                  |
- *   STREAMING ---- retune_hz() (in-stream, queued)      |
+ *   STREAMING ---- retune_hz() (queued; no EP0 in bulk) |
  *    |                                                  |
  *    +---- stop()  -------------------------------------+
  *    |
  *    +---- disconnect / fatal error ----> FAULT
- *                                            | recover/stop/uninstall
+ *                                            | reset / stop / uninstall
  *                                            v
  *                                         IDLE / destroyed
  *
- *   uninstall() is always safe from IDLE, STREAMING, or FAULT (idempotent
- *   after first successful destroy). stop() is idempotent when not streaming.
- *
  * ---------------------------------------------------------------------------
- * Threading model (must work every time)
+ * Threading
  * ---------------------------------------------------------------------------
  *
- * - All public functions are **thread-safe** with respect to each other for a
- *   given handle (internal mutex), except where noted.
- * - IQ / event callbacks run on the **driver USB owner task** (or a dedicated
- *   delivery task). Callbacks must:
- *     - return quickly (no display paint, flash write, or long network block)
- *     - not call install/uninstall/start/stop recursively on the same handle
- *     - treat IQ block pointers as valid only until the callback returns
- *       unless acquire/release is used (when enabled)
- * - Never call retune_hz / start / stop from a USB completion ISR.
- * - Application may call get_state / get_metrics / get_device_info from any
- *   task at any time.
+ * - Safe: concurrent get_state / get_metrics / get_device_info / get_last_error
+ *   from any task with a live handle.
+ * - Safe: start / stop / retune / reset from app tasks (serialized).
+ * - Forbidden: install/uninstall/start/stop/retune/reset from inside the
+ *   event callback on the same handle (ERR_REENTRANT).
+ * - Forbidden: any public API from a USB completion ISR.
+ * - IQ / events: delivered from the driver USB owner task (or a dedicated
+ *   delivery task). Callbacks must return quickly (no display paint, flash,
+ *   or long network blocks).
  *
  * ---------------------------------------------------------------------------
  * Ownership
  * ---------------------------------------------------------------------------
  *
  * - One handle owns one logical V4 session (interface 0).
- * - USB Host Library: if host_library_already_installed is false, the driver
- *   installs/uninstalls the host stack; if true, the app owns install and must
+ * - If host_library_already_installed is false, the driver installs/uninstalls
+ *   the USB Host stack for that handle; if true, the app owns install and must
  *   keep the stack alive for the handle lifetime.
- * - Only one stream per handle.
+ * - Only one stream per handle. Uninstall from a single owner task; do not
+ *   call other APIs on a handle concurrent with uninstall.
  */
 
 #pragma once
@@ -73,24 +84,35 @@ extern "C" {
 
 /** Semantic version of this public header / binary API. */
 #define RTL_SDR_V4_ESP_VERSION_MAJOR 0
-#define RTL_SDR_V4_ESP_VERSION_MINOR 2
-#define RTL_SDR_V4_ESP_VERSION_PATCH 0
+#define RTL_SDR_V4_ESP_VERSION_MINOR 4
+#define RTL_SDR_V4_ESP_VERSION_PATCH 1
 
 #define RTL_SDR_V4_ESP_VERSION_NUMBER                                      \
     ((RTL_SDR_V4_ESP_VERSION_MAJOR * 10000) +                              \
      (RTL_SDR_V4_ESP_VERSION_MINOR * 100) + RTL_SDR_V4_ESP_VERSION_PATCH)
 
 /**
- * Pack/unpack helpers for rtl_sdr_v4_esp_get_version().
- * Example: 0x00020000 => 0.2.0 when using (maj<<16)|(min<<8)|patch layout below.
+ * Stringize helpers for version string (single source of truth with macros).
+ * Prefer rtl_sdr_v4_esp_get_version_string() at runtime.
+ */
+#define RTL_SDR_V4_ESP_VERSION_STRING_XSTR(s) #s
+#define RTL_SDR_V4_ESP_VERSION_STRING_STR(s) RTL_SDR_V4_ESP_VERSION_STRING_XSTR(s)
+#define RTL_SDR_V4_ESP_VERSION_STRING                                      \
+    RTL_SDR_V4_ESP_VERSION_STRING_STR(RTL_SDR_V4_ESP_VERSION_MAJOR) "."    \
+    RTL_SDR_V4_ESP_VERSION_STRING_STR(RTL_SDR_V4_ESP_VERSION_MINOR) "."    \
+    RTL_SDR_V4_ESP_VERSION_STRING_STR(RTL_SDR_V4_ESP_VERSION_PATCH)
+
+/**
+ * Packed version: (major << 16) | (minor << 8) | patch.
+ * Compare with RTL_SDR_V4_ESP_VERSION_* macros for compile-time checks.
  */
 uint32_t rtl_sdr_v4_esp_get_version(void);
 
-/** Human-readable version string, e.g. "0.2.0". Never NULL. */
+/** Human-readable version, e.g. "0.3.0". Never NULL; static storage. */
 const char *rtl_sdr_v4_esp_get_version_string(void);
 
 /* -------------------------------------------------------------------------- */
-/* Errors (component-specific; also use standard esp_err_t)                     */
+/* Errors (component-specific; also use standard esp_err_t)                   */
 /* -------------------------------------------------------------------------- */
 
 /** Base for component errors (avoid clash with IDF core). */
@@ -108,8 +130,12 @@ const char *rtl_sdr_v4_esp_get_version_string(void);
 #define RTL_SDR_V4_ESP_ERR_NOT_READY      (RTL_SDR_V4_ESP_ERR_BASE + 10)
 #define RTL_SDR_V4_ESP_ERR_UNSUPPORTED    (RTL_SDR_V4_ESP_ERR_BASE + 11)
 #define RTL_SDR_V4_ESP_ERR_STALE_HANDLE   (RTL_SDR_V4_ESP_ERR_BASE + 12)
+/** Public API re-entered from event callback on the same handle. */
+#define RTL_SDR_V4_ESP_ERR_REENTRANT      (RTL_SDR_V4_ESP_ERR_BASE + 13)
+/** Device attached but init/claim not complete. */
+#define RTL_SDR_V4_ESP_ERR_NOT_CLAIMED    (RTL_SDR_V4_ESP_ERR_BASE + 14)
 
-/** Convert esp_err_t (including component codes) to a stable string. */
+/** Convert esp_err_t (including component codes) to a stable string. Never NULL. */
 const char *rtl_sdr_v4_esp_err_to_name(esp_err_t err);
 
 /* -------------------------------------------------------------------------- */
@@ -126,19 +152,34 @@ const char *rtl_sdr_v4_esp_err_to_name(esp_err_t err);
 #define RTL_SDR_V4_ESP_RATE_1024K         1024000u
 #define RTL_SDR_V4_ESP_RATE_2048K         2048000u
 
+/** Named preset LO frequencies (Hz) — keep in sync with implementation. */
+#define RTL_SDR_V4_ESP_PRESET_KZEL_HZ     96100000u
+#define RTL_SDR_V4_ESP_PRESET_NOAA_HZ     162400000u
+
 /** Frequency policy (Hz) for CUSTOM_HZ until calibrated wider bands are proven. */
 #define RTL_SDR_V4_ESP_FREQ_MIN_HZ        24000000u
 #define RTL_SDR_V4_ESP_FREQ_MAX_HZ        1766000000u
 /** Quantization applied by retune_hz / start (Hz). */
 #define RTL_SDR_V4_ESP_FREQ_QUANT_HZ      1000u
 
-/** Bulk transfer defaults (bytes). Must be multiple of 512 for HS bulk. */
-#define RTL_SDR_V4_ESP_DEFAULT_XFER_BYTES 32768u
+/**
+ * Bulk transfer defaults (bytes). Must be multiple of 512 for HS bulk.
+ * Gate 2 default: 6 × 16 KiB (peer-stable multi-URB on ESP32-P4 HS).
+ * Apps may override to 3 × 32 KiB via config (legacy Tab5 continuous path).
+ */
+#define RTL_SDR_V4_ESP_DEFAULT_XFER_BYTES 16384u
 #define RTL_SDR_V4_ESP_MIN_XFER_BYTES     512u
 #define RTL_SDR_V4_ESP_MAX_XFER_BYTES     262144u
-#define RTL_SDR_V4_ESP_DEFAULT_XFER_COUNT 3u
+#define RTL_SDR_V4_ESP_DEFAULT_XFER_COUNT 6u
 #define RTL_SDR_V4_ESP_MIN_XFER_COUNT     2u
 #define RTL_SDR_V4_ESP_MAX_XFER_COUNT     8u
+/** Bulk IN endpoint (RTL2832U HS). */
+#define RTL_SDR_V4_ESP_BULK_EP_IN         0x81u
+
+/** Default stop wait when caller passes 0 (ms). */
+#define RTL_SDR_V4_ESP_DEFAULT_STOP_TIMEOUT_MS 3000u
+/** Max accepted control / stop timeout (ms). */
+#define RTL_SDR_V4_ESP_MAX_TIMEOUT_MS     30000u
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                      */
@@ -153,6 +194,9 @@ typedef enum {
     RTL_SDR_V4_ESP_STATE_STOPPING = 3,
     RTL_SDR_V4_ESP_STATE_FAULT = 4,
 } rtl_sdr_v4_esp_state_t;
+
+/** Convert state enum to a stable string. Never NULL. */
+const char *rtl_sdr_v4_esp_state_to_name(rtl_sdr_v4_esp_state_t state);
 
 /** Allowlisted presets with measured / derived PLL tables. */
 typedef enum {
@@ -184,6 +228,7 @@ typedef enum {
     RTL_SDR_V4_ESP_CAP_CUSTOM_HZ = 1u << 4,    /**< CUSTOM_HZ preset */
     RTL_SDR_V4_ESP_CAP_BIAS_TEE = 1u << 5,     /**< reserved; not yet measured */
     RTL_SDR_V4_ESP_CAP_DIRECT_SAMPLING = 1u << 6, /**< reserved; not claimed */
+    RTL_SDR_V4_ESP_CAP_IQ_ACQUIRE = 1u << 7,   /**< release_iq_block required */
 } rtl_sdr_v4_esp_cap_t;
 
 typedef struct {
@@ -214,7 +259,7 @@ typedef struct {
 
 /**
  * Borrowed IQ view. Valid only for the duration of EVT_IQ_BLOCK callback
- * unless documented acquire/release is used.
+ * unless iq_acquire_mode is enabled and release_iq_block() is used.
  *
  * Format: interleaved unsigned IQ (I0,Q0,I1,Q1,...) CU8.
  */
@@ -237,6 +282,9 @@ typedef struct {
  * @param event  Event kind.
  * @param payload  Event-specific pointer (may be NULL). See event enum.
  * @param user_ctx  Value from config.event_ctx.
+ *
+ * Must not call install/uninstall/start/stop/retune/reset on the same handle.
+ * May call get_state / get_metrics / get_device_info / get_last_error / release_iq_block.
  */
 typedef void (*rtl_sdr_v4_esp_event_cb_t)(rtl_sdr_v4_esp_event_t event,
                                           const void *payload,
@@ -247,6 +295,7 @@ typedef void (*rtl_sdr_v4_esp_event_cb_t)(rtl_sdr_v4_esp_event_t event,
  *
  * struct_size must be set to sizeof(rtl_sdr_v4_esp_config_t) so future fields
  * remain backward compatible when apps are recompiled against newer headers.
+ * Always call rtl_sdr_v4_esp_config_default() before setting fields.
  */
 typedef struct {
     size_t struct_size; /**< MUST be sizeof(rtl_sdr_v4_esp_config_t) */
@@ -261,8 +310,9 @@ typedef struct {
     rtl_sdr_v4_esp_event_cb_t event_cb;
     void *event_ctx;
     /**
-     * If true, EVT_IQ_BLOCK is still delivered but app must call
-     * release_iq_block() — reserved; currently ignored (always borrow mode).
+     * If true and CAP_IQ_ACQUIRE is set, EVT_IQ_BLOCK requires
+     * rtl_sdr_v4_esp_release_iq_block() before the buffer is reused.
+     * Currently ignored (borrow mode only); validate still accepts the flag.
      */
     bool iq_acquire_mode;
     /** Task priority for USB owner (0 = driver default). */
@@ -284,7 +334,7 @@ typedef struct {
      * rtl_sdr_v4_esp_is_rate_supported().
      */
     uint32_t sample_rate_sps;
-    /** 0 = continuous until stop. Else exact CU8 byte bound. */
+    /** 0 = continuous until stop. Else exact CU8 byte bound (even). */
     uint64_t max_bytes;
     /** Soft wall-clock limit for bounded capture; 0 = none. */
     uint32_t timeout_ms;
@@ -296,14 +346,14 @@ typedef struct {
 
 /**
  * Zero and fill defaults. Always call before setting fields.
- * Sets struct_size correctly.
+ * Sets struct_size correctly. NULL-safe (no-op).
  */
 void rtl_sdr_v4_esp_config_default(rtl_sdr_v4_esp_config_t *config);
 void rtl_sdr_v4_esp_stream_config_default(rtl_sdr_v4_esp_stream_config_t *stream);
 
 /**
  * Validate config without installing. Returns ESP_OK or ESP_ERR_INVALID_ARG /
- * component error. Does not require a handle.
+ * component error. Does not require a handle. NULL-safe (INVALID_ARG).
  */
 esp_err_t rtl_sdr_v4_esp_config_validate(const rtl_sdr_v4_esp_config_t *config);
 esp_err_t rtl_sdr_v4_esp_stream_config_validate(const rtl_sdr_v4_esp_stream_config_t *stream);
@@ -312,10 +362,30 @@ esp_err_t rtl_sdr_v4_esp_stream_config_validate(const rtl_sdr_v4_esp_stream_conf
 bool rtl_sdr_v4_esp_is_rate_supported(uint32_t sample_rate_sps);
 
 /**
+ * Copy the allowlisted sample rates into out_rates (up to max_count entries).
+ * @param out_rates  Destination; may be NULL if max_count == 0 (query size only).
+ * @param max_count  Capacity of out_rates.
+ * @param out_count  Required; set to number of rates written (or total if max_count==0).
+ * @return ESP_OK, or ESP_ERR_INVALID_ARG if out_count is NULL, or
+ *         ESP_ERR_INVALID_SIZE if max_count > 0 but too small for the full list
+ *         (still writes min(max_count, total) rates and sets *out_count = total).
+ */
+esp_err_t rtl_sdr_v4_esp_get_supported_rates(uint32_t *out_rates,
+                                             size_t max_count,
+                                             size_t *out_count);
+
+/**
  * Clamp and quantize frequency to driver policy.
- * Returns false if out of absolute range before clamp is impossible.
+ * Returns false if out of absolute range or out_hz is NULL.
  */
 bool rtl_sdr_v4_esp_normalize_frequency(uint32_t in_hz, uint32_t *out_hz);
+
+/**
+ * Resolve preset LO in Hz. For CUSTOM_HZ returns ESP_ERR_INVALID_ARG
+ * (caller must supply frequency_hz). Named presets always succeed.
+ */
+esp_err_t rtl_sdr_v4_esp_preset_frequency_hz(rtl_sdr_v4_esp_preset_t preset,
+                                             uint32_t *out_hz);
 
 /** Capability bitmask for this binary (see rtl_sdr_v4_esp_cap_t). */
 uint32_t rtl_sdr_v4_esp_get_capabilities(void);
@@ -326,7 +396,8 @@ uint32_t rtl_sdr_v4_esp_get_capabilities(void);
 
 /**
  * Create handle and prepare USB client registration path.
- * On success *out_handle is non-NULL. On failure *out_handle is NULL.
+ * On success *out_handle is non-NULL. On failure *out_handle is NULL
+ * (always cleared first when out_handle is non-NULL).
  *
  * Does not require a dongle present. Device attach is reported via events
  * when USB streaming is fully extracted.
@@ -337,7 +408,8 @@ esp_err_t rtl_sdr_v4_esp_install(const rtl_sdr_v4_esp_config_t *config,
 /**
  * Destroy handle. Safe to call with NULL (returns ESP_OK).
  * If streaming, performs stop first (best effort).
- * Always releases resources even if stop fails (returns last error if any).
+ * Always releases resources. Second call on the same pointer after destroy
+ * returns STALE_HANDLE (use-after-free is still undefined — do not retain).
  */
 esp_err_t rtl_sdr_v4_esp_uninstall(rtl_sdr_v4_esp_handle_t handle);
 
@@ -347,20 +419,24 @@ esp_err_t rtl_sdr_v4_esp_uninstall(rtl_sdr_v4_esp_handle_t handle);
 
 /**
  * Current state. Returns UNINSTALLED for NULL/stale handles without crashing.
+ * Never blocks indefinitely (short lock timeout → FAULT snapshot).
  */
 rtl_sdr_v4_esp_state_t rtl_sdr_v4_esp_get_state(rtl_sdr_v4_esp_handle_t handle);
 
-/** Last error stored on handle (0 if none). */
+/** Last error stored on handle. STALE_HANDLE for invalid handles. */
 esp_err_t rtl_sdr_v4_esp_get_last_error(rtl_sdr_v4_esp_handle_t handle);
 
 /**
  * Copy device info. present=false if no accepted V4 is attached.
- * Thread-safe snapshot.
+ * Thread-safe snapshot. out_info is not modified on failure.
  */
 esp_err_t rtl_sdr_v4_esp_get_device_info(rtl_sdr_v4_esp_handle_t handle,
                                          rtl_sdr_v4_esp_device_info_t *out_info);
 
-/** Thread-safe metrics snapshot. */
+/**
+ * Thread-safe metrics snapshot. out_metrics is not modified on failure.
+ * uptime_ms is computed at snapshot time while STREAMING.
+ */
 esp_err_t rtl_sdr_v4_esp_get_metrics(rtl_sdr_v4_esp_handle_t handle,
                                      rtl_sdr_v4_esp_metrics_t *out_metrics);
 
@@ -374,13 +450,14 @@ esp_err_t rtl_sdr_v4_esp_get_metrics(rtl_sdr_v4_esp_handle_t handle,
  * @return
  *  - ESP_OK on success
  *  - ESP_ERR_INVALID_ARG / BAD_RATE / BAD_FREQ
- *  - RTL_SDR_V4_ESP_ERR_BUSY if already streaming
+ *  - RTL_SDR_V4_ESP_ERR_BUSY if already streaming or stopping
  *  - RTL_SDR_V4_ESP_ERR_NO_DEVICE if no V4
- *  - RTL_SDR_V4_ESP_ERR_UNSUPPORTED / ESP_ERR_NOT_FINISHED while USB path
- *    extraction is incomplete (skeleton builds)
+ *  - RTL_SDR_V4_ESP_ERR_UNSUPPORTED while USB path extraction is incomplete
+ *  - RTL_SDR_V4_ESP_ERR_REENTRANT if called from event callback
  *  - RTL_SDR_V4_ESP_ERR_USB / TIMEOUT / FAULT on hardware failure
  *
- * On failure, handle remains IDLE (or FAULT if unrecoverable).
+ * On failure, handle remains IDLE (or FAULT if unrecoverable). Never leaves
+ * interface claimed without a matching stop path.
  */
 esp_err_t rtl_sdr_v4_esp_start(rtl_sdr_v4_esp_handle_t handle,
                                const rtl_sdr_v4_esp_stream_config_t *stream);
@@ -391,21 +468,30 @@ esp_err_t rtl_sdr_v4_esp_start(rtl_sdr_v4_esp_handle_t handle,
  * outstanding (safe for continuous operation).
  *
  * @return ESP_OK if accepted (applied or queued);
- *         ERR_NOT_STREAMING / BAD_FREQ / FAULT / UNSUPPORTED otherwise.
+ *         ERR_NOT_STREAMING / BAD_FREQ / FAULT / UNSUPPORTED / REENTRANT otherwise.
  */
 esp_err_t rtl_sdr_v4_esp_retune_hz(rtl_sdr_v4_esp_handle_t handle, uint32_t frequency_hz);
 
 /**
  * Stop stream and run cleanup. Idempotent if already idle.
- * Blocks up to timeout_ms for USB cleanup (0 = driver default).
+ * Blocks up to timeout_ms for USB cleanup (0 = DEFAULT_STOP_TIMEOUT_MS).
+ * Emits EVT_STOPPED once when leaving STREAMING/STOPPING/FAULT-with-stream.
  */
 esp_err_t rtl_sdr_v4_esp_stop(rtl_sdr_v4_esp_handle_t handle, uint32_t timeout_ms);
 
 /**
  * Clear FAULT back to IDLE if hardware allows (no open stream).
- * If still broken, returns ERR_FAULT.
+ * If still streaming, returns ERR_BUSY. Clears metrics counters on success.
  */
 esp_err_t rtl_sdr_v4_esp_reset(rtl_sdr_v4_esp_handle_t handle);
+
+/**
+ * Release an IQ block previously delivered with acquire mode.
+ * In borrow mode (default), this is a documented no-op returning ESP_OK
+ * when block is non-NULL, so apps can call it unconditionally.
+ */
+esp_err_t rtl_sdr_v4_esp_release_iq_block(rtl_sdr_v4_esp_handle_t handle,
+                                          const rtl_sdr_v4_esp_iq_block_t *block);
 
 #ifdef __cplusplus
 }

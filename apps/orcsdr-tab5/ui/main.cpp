@@ -19,7 +19,14 @@
 #include <cstdarg>
 #include <cstring>
 
+#if !defined(RTL_USE_LEGACY_USB)
+#define RTL_USE_LEGACY_USB 0
+#endif
+
 #include "rtl_sdr_v4_transfers.h"
+#if !RTL_USE_LEGACY_USB
+#include "rtl_sdr_v4_esp.h"
+#endif
 
 class OrcConsole {
  public:
@@ -98,15 +105,19 @@ constexpr size_t kRtlBulkBytes = 32768;
 constexpr size_t kRtlControlMps = 64;
 constexpr uint32_t kRtlControlTimeoutMs = 1000;
 constexpr uint32_t kRtlCaptureTimeoutMs = 30000;
-constexpr size_t kRtlAudioBufferSamples = 832;
+/* Demod staging (~one URB). playRaw is fed from a larger batch buffer. */
+constexpr size_t kRtlAudioBufferSamples = 2048;
+/* ~25 ms batches at 48 kHz — fewer playRaw calls, more stable codec feed. */
+constexpr size_t kRtlAudioPlayBatchSamples = 1200;
+constexpr size_t kRtlAudioPlayBufferSamples = 4096;
 constexpr size_t kRtlSpectrumBins = 128;
-// Dual-core: Core0 USB host refills bulk IQ into a ring; Core1 DSP/UI consumes.
-// Spectrum budget is no longer on the USB critical path.
-constexpr uint32_t kRtlSpectrumIntervalMs = 100;
-constexpr uint32_t kRtlSpectrumTraceIntervalMs = 250;
+// Prefer audio: graphics deliberately modest (chop returns if these go too low).
+constexpr uint32_t kRtlSpectrumIntervalMs = 200;
+constexpr uint32_t kRtlSpectrumTraceIntervalMs = 350;
 constexpr size_t kRtlRingDepth = 3;
-// Skip spectrum for the first N ms after tune so the speaker queue can prime.
-constexpr uint32_t kRtlAudioPrimeMs = 400;
+constexpr uint32_t kRtlAudioPrimeMs = 450;
+constexpr uint32_t kRtlSignalMeterIntervalMs = 200;
+constexpr UBaseType_t kRtlAppTaskPrio = 5;
 constexpr int kSpectrumX = 64;
 constexpr int kSpectrumY = 96;
 constexpr int kSpectrumWidth = 1152;
@@ -126,8 +137,14 @@ constexpr uint8_t kRtlVolumeDefault = 128;
 constexpr uint8_t kRtlVolumeStep = 16;
 constexpr uint32_t kRtlFmMinHz = 87500000;
 constexpr uint32_t kRtlFmMaxHz = 108000000;
+/* FREQ +/- coarse step. Header still shows 0.001 MHz; LO apply is 5 kHz. */
 constexpr uint32_t kRtlFmStepHz = 100000;
-constexpr uint32_t kRtlFmDefaultHz = 96100000;
+/** LO quantize for hot retune — finer than this thrashes USB/audio. */
+constexpr uint32_t kRtlHotRetuneQuantHz = 5000;
+/** Min time between LO applies (each apply drains bulk + EP0). */
+constexpr uint32_t kRtlHotRetuneMinIntervalMs = 280;
+// KZEL (Santa Rosa): best measured LO on Tab5+V4 was 96.113 MHz (not 96.100).
+constexpr uint32_t kRtlFmDefaultHz = 96113000;
 constexpr uint32_t kRtlAmMinHz = 520000;
 constexpr uint32_t kRtlAmMaxHz = 1710000;
 constexpr uint32_t kRtlAmStepHz = 10000;
@@ -193,6 +210,9 @@ struct RtlAudioState {
 
 RtlAudioState rtl_audio;
 int16_t rtl_audio_buffers[3][kRtlAudioBufferSamples];
+/* Batch small demod bursts into longer playRaw chunks (reduces chop). */
+static int16_t rtl_audio_play_batch[kRtlAudioPlayBufferSamples];
+static size_t rtl_audio_play_count = 0;
 // Dual-core IQ ring (prefer PSRAM). USB produces, DSP consumes.
 struct RtlIqBlock {
   uint8_t* data;
@@ -203,6 +223,12 @@ struct RtlIqBlock {
 static uint8_t* rtl_ring_slots[kRtlRingDepth]{};
 static QueueHandle_t rtl_free_q = nullptr;
 static QueueHandle_t rtl_filled_q = nullptr;
+/* Scratch IQ buffer for demod/spectrum (size >= max bulk transfer). */
+static uint8_t rtl_iq_processing[32768 + 512];
+/* Relative RF level from IQ power (dBFS-ish, 0 = full-scale CU8). */
+static std::atomic<float> rtl_signal_dbfs{-90.0f};
+static float rtl_signal_dbfs_smooth = -80.0f;
+static uint32_t rtl_signal_meter_last_ms = 0;
 static TaskHandle_t rtl_dsp_task_handle = nullptr;
 static std::atomic<uint32_t> rtl_usb_overruns{0};
 static std::atomic<uint32_t> rtl_dsp_blocks{0};
@@ -290,9 +316,20 @@ char rtl_sdr_speed[8] = "none";
 uint16_t rtl_sdr_vid = 0;
 uint16_t rtl_sdr_pid = 0;
 uint8_t pending_usb_address = 0;
+#if RTL_USE_LEGACY_USB
 usb_host_client_handle_t usb_client = nullptr;
 usb_device_handle_t rtl_sdr_device = nullptr;
 bool rtl_sdr_gone = false;
+static inline bool rtl_device_ready() { return rtl_sdr_device != nullptr; }
+#else
+rtl_sdr_v4_esp_handle_t g_rtl = nullptr;
+std::atomic<bool> g_rtl_device_ready{false};
+static float g_stream_audio_scale = 5500.0f;
+static RtlBand g_stream_band = RtlBand::fm;
+static inline bool rtl_device_ready() {
+  return g_rtl_device_ready.load(std::memory_order_acquire) && g_rtl != nullptr;
+}
+#endif
 std::atomic<RtlCaptureState> rtl_capture_state{RtlCaptureState::disconnected};
 std::atomic<bool> rtl_capture_requested{false};
 std::atomic<RtlBand> rtl_requested_band{RtlBand::fm};
@@ -302,6 +339,8 @@ std::atomic<uint32_t> rtl_hot_retune_hz{0};
 std::atomic<uint8_t> rtl_requested_volume{kRtlVolumeDefault};
 std::atomic<uint8_t> rtl_live_volume{kRtlVolumeDefault};
 std::atomic<bool> rtl_volume_changed{false};
+/** When false: no scope/waterfall updates (audio + SIG meter still run). A/B for chop diagnosis. */
+std::atomic<bool> rtl_graphics_enabled{true};
 // Displayed RF span under the scope (matches axis markers ±480 kHz).
 constexpr double kRtlScopeSpanHz = 960000.0;
 std::atomic<bool> rtl_continuous_requested{false};
@@ -313,6 +352,8 @@ std::atomic<uint32_t> rtl_ui_revision{0};
 uint32_t drawn_rtl_ui_revision = 0;
 RtlBand rtl_ui_band = RtlBand::fm;
 uint32_t rtl_ui_frequency_hz = kRtlFmDefaultHz;
+// Last good FM LO; seeded from NVS (or kRtlFmDefaultHz) and rewritten on retune.
+uint32_t rtl_saved_fm_hz = kRtlFmDefaultHz;
 uint8_t rtl_ui_volume = kRtlVolumeDefault;
 uint64_t rtl_capture_bytes = 0;
 uint8_t rtl_capture_min = 0;
@@ -381,16 +422,21 @@ const char* charging_state() {
 }
 
 void draw_power_state() {
+  /* Never paint over the SDR control rows (tune row sits ~648–700). */
+  if (rtl_ui_active.load(std::memory_order_acquire)) {
+    return;
+  }
   char message[96];
   const int32_t level = M5.Power.getBatteryLevel();
   const int16_t battery_mv = M5.Power.getBatteryVoltage();
   const int16_t vbus_mv = M5.Power.getVBUSVoltage();
   snprintf(message, sizeof(message), "Power: %ld%%  battery %dmV  USB %dmV",
            static_cast<long>(level), battery_mv, vbus_mv);
-  M5.Display.fillRect(200, 655, 880, 45, TFT_BLACK);
+  /* Home layout only — below the Open SDR button, above safe margin. */
+  M5.Display.fillRect(200, 500, 880, 40, TFT_BLACK);
   M5.Display.setTextColor(level >= 0 ? TFT_LIGHTGREY : TFT_ORANGE, TFT_BLACK);
   M5.Display.setTextDatum(middle_center);
-  M5.Display.drawString(message, 640, 677);
+  M5.Display.drawString(message, 640, 520);
 }
 
 void set_rtl_sdr_status(const char* status) {
@@ -429,6 +475,7 @@ void usb_string_to_ascii(const usb_str_desc_t* descriptor, char* output,
   output[count] = '\0';
 }
 
+#if RTL_USE_LEGACY_USB
 void usb_client_event(const usb_host_client_event_msg_t* event, void*) {
   if (event->event == USB_HOST_CLIENT_EVENT_NEW_DEV) {
     pending_usb_address = event->new_dev.address;
@@ -571,6 +618,7 @@ bool run_control_records(const RtlControlRecord (&records)[Count], bool best_eff
   }
   return ok;
 }
+#endif /* RTL_USE_LEGACY_USB — USB control helpers only */
 
 const char* rtl_band_name(RtlBand band) {
   switch (band) {
@@ -592,7 +640,7 @@ uint32_t rtl_band_default_frequency(RtlBand band) {
   switch (band) {
     case RtlBand::am: return kRtlAmDefaultHz;
     case RtlBand::wx: return kRtlWxHz;
-    default: return kRtlFmDefaultHz;
+    default: return rtl_saved_fm_hz;
   }
 }
 
@@ -611,6 +659,15 @@ uint32_t rtl_clamp_frequency(RtlBand band, uint32_t frequency_hz) {
   }
 }
 
+void persist_fm_frequency(uint32_t frequency_hz) {
+  frequency_hz = rtl_clamp_frequency(RtlBand::fm, frequency_hz);
+  if (frequency_hz == rtl_saved_fm_hz) return;
+  rtl_saved_fm_hz = frequency_hz;
+  // Preferences opened in load_state(); keep writes off the bulk-IQ path.
+  preferences.putUInt("sdr_fm_hz", frequency_hz);
+  Serial.printf("RTL_FM_SAVE frequency_hz=%u\n", frequency_hz);
+}
+
 uint32_t rtl_step_frequency(RtlBand band, uint32_t frequency_hz, int direction) {
   if (band == RtlBand::wx) return kRtlWxHz;
   const uint32_t step = band == RtlBand::am ? kRtlAmStepHz : kRtlFmStepHz;
@@ -623,10 +680,11 @@ uint32_t rtl_step_frequency(RtlBand band, uint32_t frequency_hz, int direction) 
 
 void format_frequency(char* output, size_t output_size, uint32_t frequency_hz) {
   if (frequency_hz >= 1000000) {
-    // One more digit so infinite-scroll tuning feels continuous.
-    snprintf(output, output_size, "%.2f MHz", frequency_hz / 1000000.0);
+    // 0.001 MHz (1 kHz) resolution for fine tuning / dipole peaking.
+    snprintf(output, output_size, "%.3f MHz", frequency_hz / 1000000.0);
   } else {
-    snprintf(output, output_size, "%.0f kHz", frequency_hz / 1000.0);
+    // 0.1 kHz display on MW so AM steps stay readable.
+    snprintf(output, output_size, "%.1f kHz", frequency_hz / 1000.0);
   }
 }
 
@@ -639,10 +697,10 @@ void apply_speaker_volume(uint8_t volume) {
 bool ensure_speaker_running(uint8_t volume) {
   static bool dma_configured = false;
   if (!dma_configured) {
-    // Extra DMA depth absorbs FFT/draw stalls without audible gaps.
+    // Deep DMA queue: absorbs retune gaps and spectrum draws without underruns.
     auto cfg = M5.Speaker.config();
-    cfg.dma_buf_count = 16;
-    cfg.dma_buf_len = 256;
+    cfg.dma_buf_count = 24;
+    cfg.dma_buf_len = 512;
     M5.Speaker.config(cfg);
     dma_configured = true;
   }
@@ -653,10 +711,35 @@ bool ensure_speaker_running(uint8_t volume) {
   return M5.Speaker.isRunning() || M5.Speaker.isEnabled();
 }
 
+void flush_audio_play_batch(bool force) {
+  if (rtl_audio_play_count == 0) return;
+  if (!force && rtl_audio_play_count < kRtlAudioPlayBatchSamples) return;
+  if (rtl_volume_changed.exchange(false, std::memory_order_acq_rel)) {
+    apply_speaker_volume(rtl_live_volume.load(std::memory_order_acquire));
+  }
+  if (!M5.Speaker.isRunning()) {
+    ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
+  }
+  if (M5.Speaker.playRaw(rtl_audio_play_batch, rtl_audio_play_count, 48000, false, 1, 0,
+                         false)) {
+    ++rtl_audio.queued_chunks;
+  } else {
+    ++rtl_audio.dropped_chunks;
+    if ((rtl_audio.dropped_chunks % 32) == 1) {
+      Serial.printf("RTL_AUDIO_DROP chunks_ok=%u dropped=%u peak=%d volume=%u running=%s\n",
+                    rtl_audio.queued_chunks, rtl_audio.dropped_chunks, rtl_audio.peak,
+                    rtl_live_volume.load(std::memory_order_acquire),
+                    M5.Speaker.isRunning() ? "true" : "false");
+    }
+  }
+  rtl_audio_play_count = 0;
+}
+
 void bump_rtl_ui() {
   rtl_ui_revision.fetch_add(1, std::memory_order_release);
 }
 
+#if RTL_USE_LEGACY_USB
 // Public R820T2-style Nint packing validated against clean-room KZEL/100 MHz/NOAA.
 bool encode_r820_pll(uint32_t frequency_hz, uint16_t* mix_div, uint8_t* r16_setup,
                      uint8_t* r16_active, uint8_t* r20, uint8_t* r21, uint8_t* r22) {
@@ -729,6 +812,7 @@ bool run_rtl_tune(uint32_t frequency_hz) {
   }
   return true;
 }
+#endif /* RTL_USE_LEGACY_USB — PLL / final tune */
 
 const char* rtl_capture_state_name(RtlCaptureState state) {
   switch (state) {
@@ -788,37 +872,149 @@ void draw_sdr_controls(RtlBand band, uint8_t volume, bool running) {
       {0, 220, running ? "STOP" : "START",
        static_cast<uint32_t>(running ? TFT_MAROON : TFT_DARKGREEN)},
   };
+  const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
   const SdrButton tune_row[] = {
       {0, 200, "FREQ -", TFT_DARKGREY},
       {0, 200, "FREQ +", TFT_DARKGREY},
       {0, 200, "VOL -", TFT_NAVY},
       {0, 200, "VOL +", TFT_NAVY},
-      {0, 240, band == RtlBand::am ? "10 kHz step" : "100 kHz step", TFT_DARKGREY},
+      {0, 240, gfx_on ? "GFX ON" : "GFX OFF",
+       static_cast<uint32_t>(gfx_on ? TFT_DARKGREEN : TFT_MAROON)},
   };
   draw_sdr_button_row(kSdrBandY, band_row, std::size(band_row));
   draw_sdr_button_row(kSdrTuneY, tune_row, std::size(tune_row));
+}
+
+/** Freeze scope/waterfall with a clear banner (audio keeps running). */
+void paint_graphics_paused_banner() {
+  M5.Display.fillRect(kSpectrumX, kSpectrumY, kSpectrumWidth,
+                      (kWaterfallY + kWaterfallHeight) - kSpectrumY, TFT_BLACK);
+  M5.Display.drawRect(kSpectrumX, kSpectrumY, kSpectrumWidth, kSpectrumHeight, TFT_DARKGREY);
+  M5.Display.drawRect(kSpectrumX, kWaterfallY, kSpectrumWidth, kWaterfallHeight, TFT_DARKGREY);
+  M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(TFT_ORANGE, TFT_BLACK);
+  M5.Display.drawString("GRAPHICS OFF", 640, kSpectrumY + kSpectrumHeight / 2);
+  M5.Display.setTextSize(1);
+  M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  M5.Display.drawString("scope + waterfall paused  |  audio + SIG still live  |  tap GFX OFF to resume",
+                        640, kWaterfallY + kWaterfallHeight / 2);
+}
+
+/**
+ * Update relative signal level from CU8 IQ (cheap, call from IQ path).
+ * 0 dBFS ≈ full-scale samples; noise floor often ~-40…-70 depending on gain.
+ */
+void update_signal_level_from_iq(const uint8_t* iq, size_t bytes) {
+  if (iq == nullptr || bytes < 4) return;
+  double sum = 0.0;
+  size_t pairs = 0;
+  /* Stride keeps this light on the audio path. */
+  for (size_t i = 0; i + 1 < bytes; i += 32) {
+    const float ii = static_cast<float>(iq[i]) - 127.5f;
+    const float qq = static_cast<float>(iq[i + 1]) - 127.5f;
+    sum += static_cast<double>(ii * ii + qq * qq);
+    ++pairs;
+  }
+  if (pairs == 0) return;
+  const float power = static_cast<float>(sum / static_cast<double>(pairs));
+  /* Full-scale CU8 complex: 2 * 127.5^2 */
+  constexpr float kFullScale = 2.0f * 127.5f * 127.5f;
+  const float dbfs = 10.0f * log10f((power / kFullScale) + 1.0e-12f);
+  rtl_signal_dbfs.store(dbfs, std::memory_order_relaxed);
+}
+
+/**
+ * Top-of-screen horizontal SIG meter (left → right).
+ * 6× old vertical travel (42 → 252 px). Redraws cheaply (fill only when width changes).
+ * Strip is y=0..28 only — never paints frequency/VOL/help.
+ */
+void draw_signal_meter(bool force_chrome = false) {
+  const float raw = rtl_signal_dbfs.load(std::memory_order_relaxed);
+  rtl_signal_dbfs_smooth = 0.88f * rtl_signal_dbfs_smooth + 0.12f * raw;
+
+  float t = (rtl_signal_dbfs_smooth + 70.0f) / 70.0f;
+  if (t < 0.0f) t = 0.0f;
+  if (t > 1.0f) t = 1.0f;
+
+  constexpr int kLabelX = 8;
+  constexpr int kBarX = 44;
+  constexpr int kBarY = 8;
+  constexpr int kBarH = 18;
+  constexpr int kBarW = 42 * 6; /* 252 px — 6× former vertical travel */
+  constexpr int kDbX = kBarX + kBarW + 10;
+
+  static int s_last_fill_w = -1;
+  static int s_last_db_i = 999;
+  static bool s_chrome_drawn = false;
+
+  const int fill_w = static_cast<int>(t * (kBarW - 2));
+  const int db_i = static_cast<int>(lroundf(rtl_signal_dbfs_smooth));
+
+  if (force_chrome || !s_chrome_drawn) {
+    M5.Display.fillRect(0, 0, kDbX + 90, 30, TFT_BLACK);
+    M5.Display.setTextDatum(middle_left);
+    M5.Display.setTextSize(1);
+    M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    M5.Display.drawString("SIG", kLabelX, kBarY + kBarH / 2);
+    M5.Display.drawRect(kBarX, kBarY, kBarW, kBarH, TFT_DARKGREY);
+    for (int tick = 1; tick <= 3; ++tick) {
+      const int tx = kBarX + (kBarW * tick) / 4;
+      M5.Display.drawFastVLine(tx, kBarY + kBarH, 3, TFT_DARKGREY);
+    }
+    s_chrome_drawn = true;
+    s_last_fill_w = -1;
+    s_last_db_i = 999;
+  }
+
+  if (fill_w != s_last_fill_w) {
+    /* Clear track interior then paint fill — avoids full-strip SPI every tick. */
+    M5.Display.fillRect(kBarX + 1, kBarY + 1, kBarW - 2, kBarH - 2, TFT_BLACK);
+    if (fill_w > 0) {
+      uint32_t color = TFT_GREEN;
+      if (t > 0.85f) color = TFT_RED;
+      else if (t > 0.65f) color = TFT_YELLOW;
+      M5.Display.fillRect(kBarX + 1, kBarY + 1, fill_w, kBarH - 2, color);
+    }
+    s_last_fill_w = fill_w;
+  }
+
+  if (db_i != s_last_db_i) {
+    M5.Display.fillRect(kDbX, 4, 88, 24, TFT_BLACK);
+    char db_label[20];
+    snprintf(db_label, sizeof(db_label), "%+.0f dB", static_cast<double>(db_i));
+    M5.Display.setTextDatum(middle_left);
+    M5.Display.setTextSize(2);
+    M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
+    M5.Display.drawString(db_label, kDbX, kBarY + kBarH / 2);
+    M5.Display.setTextSize(1);
+    s_last_db_i = db_i;
+  }
 }
 
 void draw_sdr_header(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   char label[96];
   char frequency_text[24];
   format_frequency(frequency_text, sizeof(frequency_text), frequency_hz);
+  /* Full header clear; layout: meter (0..28), title (34..58), help (68..84). */
   M5.Display.fillRect(0, 0, 1280, kSpectrumY - 4, TFT_BLACK);
+  draw_signal_meter(true);
+
   M5.Display.setTextDatum(middle_center);
   M5.Display.setTextSize(3);
   M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
   snprintf(label, sizeof(label), "%s  %s", rtl_band_name(band), frequency_text);
-  M5.Display.drawString(label, 520, 34);
+  M5.Display.drawString(label, 560, 48);
   M5.Display.setTextSize(2);
   M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
   snprintf(label, sizeof(label), "VOL %u", volume);
-  M5.Display.drawString(label, 1040, 34);
+  M5.Display.drawString(label, 1100, 48);
   M5.Display.setTextSize(1);
   M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   snprintf(label, sizeof(label),
-           "%s  |  960 kS/s  |  drag scope to scroll tune  |  tap band / VOL",
+           "%s  |  960 kS/s  |  drag scope  |  peak SIG with antenna",
            rtl_mode_name(band));
-  M5.Display.drawString(label, 640, 72);
+  M5.Display.drawString(label, 640, 78);
 }
 
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
@@ -848,9 +1044,9 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   for (int marker = 0; marker <= 4; ++marker) {
     const double mark = center - span + marker * (span / 2.0);
     if (frequency_hz >= 1000000) {
-      snprintf(label, sizeof(label), marker == 4 ? "%.2f MHz" : "%.2f", mark);
+      snprintf(label, sizeof(label), marker == 4 ? "%.3f MHz" : "%.3f", mark);
     } else {
-      snprintf(label, sizeof(label), marker == 4 ? "%.0f kHz" : "%.0f", mark * 1000.0);
+      snprintf(label, sizeof(label), marker == 4 ? "%.1f kHz" : "%.1f", mark * 1000.0);
     }
     M5.Display.setTextColor(marker == 2 ? TFT_GREEN : TFT_LIGHTGREY, TFT_BLACK);
     M5.Display.drawString(label, kSpectrumX + marker * kSpectrumWidth / 4,
@@ -973,15 +1169,15 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
         10.0f * log10f(rtl_spectrum_real[shifted] * rtl_spectrum_real[shifted] +
                        rtl_spectrum_imaginary[shifted] * rtl_spectrum_imaginary[shifted] +
                        1.0f);
-    // Light EMA so the trace is less sparkly at high refresh.
+    // Heavier EMA: quieter/less busy scope (waterfall still updates every tick).
     rtl_spectrum_smooth[bin] = rtl_spectrum_trace_valid
-                                   ? (0.65f * rtl_spectrum_smooth[bin] + 0.35f * level)
+                                   ? (0.72f * rtl_spectrum_smooth[bin] + 0.28f * level)
                                    : level;
     rtl_spectrum_levels[bin] = rtl_spectrum_smooth[bin];
     maximum = max(maximum, rtl_spectrum_levels[bin]);
   }
   const float floor = maximum - 48.0f;
-  // Waterfall every spectrum tick; full cyan trace less often (line erase is costly).
+  /* Trace every spectrum frame at high refresh (erase+redraw still OK on P4). */
   const bool redraw_trace =
       !rtl_spectrum_trace_valid ||
       (now - rtl_spectrum_trace_last_ms) >= kRtlSpectrumTraceIntervalMs;
@@ -1067,50 +1263,38 @@ float fast_phase(float cross, float dot) {
   return cross < 0 ? -angle : angle;
 }
 
-// Soft AGC + tanh limiter: serial showed peak hard-stuck at 16000 (harsh/choppy).
+// Soft AGC + tanh limiter (pre-blanker path — clearer; not muffled).
 int16_t shape_audio_sample(float demodulated, float base_scale) {
   float x = demodulated * base_scale * rtl_audio.agc_gain;
   const float ax = fabsf(x);
-  rtl_audio.agc_level = 0.992f * rtl_audio.agc_level + 0.008f * ax;
-  if (rtl_audio.agc_level > 400.0f) {
-    const float desired = 5200.0f / rtl_audio.agc_level;
-    rtl_audio.agc_gain = 0.97f * rtl_audio.agc_gain + 0.03f * desired;
-    if (rtl_audio.agc_gain < 0.18f) rtl_audio.agc_gain = 0.18f;
-    if (rtl_audio.agc_gain > 3.2f) rtl_audio.agc_gain = 3.2f;
+  rtl_audio.agc_level = 0.995f * rtl_audio.agc_level + 0.005f * ax;
+  if (rtl_audio.agc_level > 350.0f) {
+    const float desired = 4800.0f / rtl_audio.agc_level;
+    rtl_audio.agc_gain = 0.98f * rtl_audio.agc_gain + 0.02f * desired;
+    if (rtl_audio.agc_gain < 0.15f) rtl_audio.agc_gain = 0.15f;
+    if (rtl_audio.agc_gain > 2.8f) rtl_audio.agc_gain = 2.8f;
   }
-  // Soft knee instead of hard clip at ±16000.
-  x = 13000.0f * tanhf(x / 13000.0f);
-  if (rtl_audio.fade_in < 128) {
-    x *= static_cast<float>(rtl_audio.fade_in) / 128.0f;
+  x = 12000.0f * tanhf(x / 12000.0f);
+  if (rtl_audio.fade_in < 192) {
+    x *= static_cast<float>(rtl_audio.fade_in) / 192.0f;
     ++rtl_audio.fade_in;
   }
-  // Mild de-click blend.
-  x = 0.88f * x + 0.12f * rtl_audio.last_out;
+  x = 0.90f * x + 0.10f * rtl_audio.last_out;
   rtl_audio.last_out = x;
   const int32_t sample = lroundf(x);
-  return static_cast<int16_t>(constrain(sample, -16000, 16000));
+  return static_cast<int16_t>(constrain(sample, -15000, 15000));
 }
 
 void queue_audio_samples(int16_t* audio, size_t audio_count) {
   if (audio_count == 0) return;
-  if (rtl_volume_changed.exchange(false, std::memory_order_acq_rel)) {
-    apply_speaker_volume(rtl_live_volume.load(std::memory_order_acquire));
-  }
-  // If the codec was interrupted (e.g. by a contending M5.update), re-arm once.
-  if (!M5.Speaker.isRunning()) {
-    ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
-  }
-  if (M5.Speaker.playRaw(audio, audio_count, 48000, false, 1, 0, false)) {
-    ++rtl_audio.queued_chunks;
-  } else {
-    ++rtl_audio.dropped_chunks;
-    if ((rtl_audio.dropped_chunks % 32) == 1) {
-      Serial.printf("RTL_AUDIO_DROP chunks_ok=%u dropped=%u peak=%d volume=%u running=%s\n",
-                    rtl_audio.queued_chunks, rtl_audio.dropped_chunks, rtl_audio.peak,
-                    rtl_live_volume.load(std::memory_order_acquire),
-                    M5.Speaker.isRunning() ? "true" : "false");
+  /* Append into batch buffer; flush ~20 ms blocks for smoother codec feed. */
+  for (size_t i = 0; i < audio_count; ++i) {
+    if (rtl_audio_play_count >= kRtlAudioPlayBufferSamples) {
+      flush_audio_play_batch(true);
     }
+    rtl_audio_play_batch[rtl_audio_play_count++] = audio[i];
   }
+  flush_audio_play_batch(false);
   rtl_audio.buffer = (rtl_audio.buffer + 1) % std::size(rtl_audio_buffers);
 }
 
@@ -1128,18 +1312,16 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale) {
     rtl_audio.q_sum = 0;
     rtl_audio.rf_phase = 0;
     if (rtl_audio.have_previous) {
-      const float phase = fast_phase(rtl_audio.previous_i * q -
-                                         rtl_audio.previous_q * i,
-                                     rtl_audio.previous_i * i +
-                                         rtl_audio.previous_q * q);
-      rtl_audio.channel_filter += 0.28f * (phase - rtl_audio.channel_filter);
+      const float phase = fast_phase(rtl_audio.previous_i * q - rtl_audio.previous_q * i,
+                                     rtl_audio.previous_i * i + rtl_audio.previous_q * q);
+      rtl_audio.channel_filter += 0.22f * (phase - rtl_audio.channel_filter);
       rtl_audio.audio_sum += rtl_audio.channel_filter;
       if (++rtl_audio.audio_phase == 5) {
         const float demodulated = rtl_audio.audio_sum * 0.2f;
         rtl_audio.audio_sum = 0;
         rtl_audio.audio_phase = 0;
-        rtl_audio.deemphasis += 0.217f * (demodulated - rtl_audio.deemphasis);
-        rtl_audio.dc += 0.001f * (rtl_audio.deemphasis - rtl_audio.dc);
+        rtl_audio.deemphasis += 0.18f * (demodulated - rtl_audio.deemphasis);
+        rtl_audio.dc += 0.0008f * (rtl_audio.deemphasis - rtl_audio.dc);
         const int16_t sample =
             shape_audio_sample(rtl_audio.deemphasis - rtl_audio.dc, audio_scale);
         audio[audio_count++] = sample;
@@ -1189,6 +1371,7 @@ void demodulate_am(const uint8_t* iq, size_t bytes, float audio_scale) {
   queue_audio_samples(audio, audio_count);
 }
 
+#if RTL_USE_LEGACY_USB
 void run_rtl_capture() {
   const RtlBand band = rtl_requested_band.load(std::memory_order_acquire);
   const bool continuous = rtl_continuous_requested.load(std::memory_order_acquire);
@@ -1497,6 +1680,10 @@ void run_rtl_capture() {
     Serial.printf("RTL_CAPTURE_ERROR bytes=%llu reason=\"%s\"\n",
                   static_cast<unsigned long long>(rtl_capture_bytes), rtl_capture_error);
   }
+  // Persist drag-settled LO after stream teardown (NVS off the bulk path).
+  if (band == RtlBand::fm) {
+    persist_fm_frequency(frequency_hz);
+  }
 }
 
 void inspect_usb_device(uint8_t address) {
@@ -1616,6 +1803,259 @@ void initialize_rtl_sdr_host() {
     set_rtl_sdr_status("RTL-SDR: host task failed");
   }
 }
+#else  /* !RTL_USE_LEGACY_USB — Gate 2 component path */
+
+/*
+ * Core split (working path):
+ *   Core 0 — driver USB (host + client)
+ *   Core 1 — driver delivery posts EVT_IQ_BLOCK → demod+speaker here;
+ *            rtl_app does touch / retune / spectrum (lower rate)
+ * The extra audio-job queue broke both audio and graphics; keep demod inline.
+ */
+static void on_rtl_driver_event(rtl_sdr_v4_esp_event_t event, const void *payload, void *ctx) {
+  (void)ctx;
+  switch (event) {
+    case RTL_SDR_V4_ESP_EVT_READY:
+    case RTL_SDR_V4_ESP_EVT_ENUMERATED: {
+      g_rtl_device_ready.store(true, std::memory_order_release);
+      rtl_capture_state.store(RtlCaptureState::ready, std::memory_order_release);
+      const auto *info = static_cast<const rtl_sdr_v4_esp_device_info_t *>(payload);
+      if (info != nullptr) {
+        rtl_sdr_vid = info->vid;
+        rtl_sdr_pid = info->pid;
+        strlcpy(rtl_sdr_serial, info->serial, sizeof(rtl_sdr_serial));
+        strlcpy(rtl_sdr_speed, info->high_speed ? "high" : "full", sizeof(rtl_sdr_speed));
+      }
+      set_rtl_sdr_status("RTL-SDR V4 ready (driver)");
+      Serial.printf("RTL_SDR_PROBE_OK v4=true driver=rtl_sdr_v4_esp v%s\n",
+                    rtl_sdr_v4_esp_get_version_string());
+      break;
+    }
+    case RTL_SDR_V4_ESP_EVT_DISCONNECTED:
+      g_rtl_device_ready.store(false, std::memory_order_release);
+      rtl_capture_state.store(RtlCaptureState::disconnected, std::memory_order_release);
+      set_rtl_sdr_status("RTL-SDR: disconnected");
+      Serial.println("RTL_SDR_DISCONNECTED");
+      break;
+    case RTL_SDR_V4_ESP_EVT_IQ_BLOCK: {
+      const auto *iq = static_cast<const rtl_sdr_v4_esp_iq_block_t *>(payload);
+      if (iq == nullptr || iq->data == nullptr || iq->bytes == 0) break;
+      const size_t n =
+          iq->bytes <= sizeof(rtl_iq_processing) ? iq->bytes : sizeof(rtl_iq_processing);
+      memcpy(rtl_iq_processing, iq->data, n);
+      update_signal_level_from_iq(rtl_iq_processing, n);
+      if (g_stream_band == RtlBand::am) {
+        demodulate_am(rtl_iq_processing, n, g_stream_audio_scale);
+      } else {
+        demodulate_fm(rtl_iq_processing, n, g_stream_audio_scale);
+      }
+      rtl_capture_bytes += n;
+      (void)rtl_sdr_v4_esp_release_iq_block(g_rtl, iq);
+      break;
+    }
+    case RTL_SDR_V4_ESP_EVT_STOPPED:
+      break;
+    case RTL_SDR_V4_ESP_EVT_RETUNED: {
+      const auto *hz = static_cast<const uint32_t *>(payload);
+      if (hz != nullptr) {
+        rtl_ui_frequency_hz = *hz;
+        rtl_requested_frequency_hz.store(*hz, std::memory_order_release);
+      }
+      break;
+    }
+    case RTL_SDR_V4_ESP_EVT_ERROR: {
+      const auto *err = static_cast<const rtl_sdr_v4_esp_error_info_t *>(payload);
+      Serial.printf("RTL_DRIVER_ERROR %s\n",
+                    err ? rtl_sdr_v4_esp_err_to_name(err->code) : "?");
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+static void rtl_driver_app_task(void *) {
+  while (true) {
+    if (g_rtl != nullptr && g_rtl_device_ready.load(std::memory_order_acquire) &&
+        rtl_capture_requested.exchange(false, std::memory_order_acq_rel)) {
+      const RtlBand band = rtl_requested_band.load(std::memory_order_acquire);
+      const uint32_t frequency_hz = rtl_clamp_frequency(
+          band, rtl_requested_frequency_hz.load(std::memory_order_acquire));
+      const uint8_t volume = rtl_requested_volume.load(std::memory_order_acquire);
+      g_stream_band = band;
+      g_stream_audio_scale =
+          band == RtlBand::wx ? 12000.0f : band == RtlBand::am ? 9000.0f : 5500.0f;
+      rtl_live_volume.store(volume, std::memory_order_release);
+      rtl_ui_band = band;
+      rtl_ui_frequency_hz = frequency_hz;
+      rtl_ui_volume = volume;
+      rtl_session_started_ms = millis();
+      rtl_capture_bytes = 0;
+      rtl_audio = {};
+      rtl_audio_play_count = 0;
+      rtl_signal_dbfs.store(-90.0f, std::memory_order_relaxed);
+      rtl_signal_dbfs_smooth = -80.0f;
+      rtl_signal_meter_last_ms = 0;
+      rtl_capture_state.store(RtlCaptureState::running, std::memory_order_release);
+      rtl_ui_active.store(true, std::memory_order_release);
+      set_rtl_sdr_status("RTL-SDR V4: continuous listening (driver)");
+      draw_sdr_screen(band, frequency_hz, volume);
+      M5.Speaker.stop();
+      delay(20);
+      (void)ensure_speaker_running(volume);
+
+      rtl_sdr_v4_esp_stream_config_t st;
+      rtl_sdr_v4_esp_stream_config_default(&st);
+      st.preset = RTL_SDR_V4_ESP_PRESET_CUSTOM_HZ;
+      st.frequency_hz = frequency_hz;
+      st.sample_rate_sps = RTL_SDR_V4_ESP_RATE_960K;
+      esp_err_t err = rtl_sdr_v4_esp_start(g_rtl, &st);
+      Serial.printf("RTL_START %s\n", rtl_sdr_v4_esp_err_to_name(err));
+      if (err != ESP_OK) {
+        rtl_capture_state.store(RtlCaptureState::failed, std::memory_order_release);
+        set_rtl_sdr_status("RTL-SDR V4: start failed");
+        draw_sdr_controls(band, rtl_ui_volume, false);
+        /* Stay on radio UI so power/home chrome cannot paint over controls. */
+      } else {
+        uint32_t spectrum_last_ms = 0;
+        uint32_t last_lo_applied_hz = frequency_hz;
+        uint32_t last_lo_apply_ms = 0;
+        while (!rtl_stop_requested.load(std::memory_order_acquire) &&
+               g_rtl_device_ready.load(std::memory_order_acquire)) {
+          /* Touch + hot retune on this task (not in IQ callback): responsive STOP/FREQ. */
+          poll_sdr_touch_from_stream();
+
+          /*
+           * Coalesce LO applies: only retune when the 5 kHz target changed and
+           * at most every kRtlHotRetuneMinIntervalMs. Rapid 1 kHz UI updates
+           * must not each drain USB (that caused chop + reverb-like smear).
+           */
+          const uint32_t now_retune = millis();
+          uint32_t desired_lo = rtl_hot_retune_hz.load(std::memory_order_acquire);
+          if (desired_lo != 0 && g_rtl != nullptr &&
+              desired_lo != last_lo_applied_hz &&
+              (now_retune - last_lo_apply_ms) >= kRtlHotRetuneMinIntervalMs) {
+            const uint32_t next = rtl_clamp_frequency(g_stream_band, desired_lo);
+            (void)rtl_hot_retune_hz.compare_exchange_strong(
+                desired_lo, 0, std::memory_order_acq_rel);
+            esp_err_t te = rtl_sdr_v4_esp_retune_hz(g_rtl, next);
+            last_lo_apply_ms = now_retune;
+            if (te == ESP_OK) {
+              last_lo_applied_hz = next;
+              /* Light demod re-sync only — do not flush speaker DMA (reverb/gap). */
+              rtl_audio.have_previous = false;
+              rtl_audio.channel_filter = 0;
+              rtl_audio.audio_sum = 0;
+              rtl_audio.audio_phase = 0;
+              if (rtl_audio.fade_in > 48) rtl_audio.fade_in = 48;
+              Serial.printf("RTL_HOT_TUNE hz=%u ok\n", next);
+            } else {
+              Serial.printf("RTL_HOT_TUNE hz=%u -> %s\n", next,
+                            rtl_sdr_v4_esp_err_to_name(te));
+            }
+          }
+
+          const uint32_t ui_revision = rtl_ui_revision.load(std::memory_order_acquire);
+          if (ui_revision != drawn_rtl_ui_revision) {
+            drawn_rtl_ui_revision = ui_revision;
+            draw_sdr_header(g_stream_band, rtl_ui_frequency_hz,
+                            rtl_live_volume.load(std::memory_order_acquire));
+            char vol_label[16];
+            snprintf(vol_label, sizeof(vol_label), "VOL %u",
+                     rtl_live_volume.load(std::memory_order_acquire));
+            M5.Display.fillRoundRect(kSdrEdge + 180 * 3 + kSdrGap * 3, kSdrBandY, 280,
+                                     kSdrControlsHeight, 10, TFT_NAVY);
+            M5.Display.drawRoundRect(kSdrEdge + 180 * 3 + kSdrGap * 3, kSdrBandY, 280,
+                                     kSdrControlsHeight, 10, TFT_WHITE);
+            M5.Display.setTextColor(TFT_WHITE, TFT_NAVY);
+            M5.Display.setTextDatum(middle_center);
+            M5.Display.setTextSize(1);
+            M5.Display.drawString(vol_label, kSdrEdge + 180 * 3 + kSdrGap * 3 + 140,
+                                  kSdrBandY + kSdrControlsHeight / 2);
+          }
+
+          const uint32_t now = millis();
+          /* SIG meter stays on even with GFX off (antenna peaking). */
+          if (now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
+            rtl_signal_meter_last_ms = now;
+            draw_signal_meter(false);
+          }
+          const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
+          if (gfx_on) {
+            const bool audio_stressed =
+                rtl_audio.dropped_chunks > 0 &&
+                rtl_audio.dropped_chunks * 2u > rtl_audio.queued_chunks + 2u;
+            if (!audio_stressed && now - rtl_session_started_ms >= kRtlAudioPrimeMs &&
+                now - spectrum_last_ms >= kRtlSpectrumIntervalMs) {
+              spectrum_last_ms = now;
+              draw_spectrum(rtl_iq_processing,
+                            sizeof(rtl_iq_processing) >= 4096 ? 4096
+                                                             : sizeof(rtl_iq_processing));
+            }
+          }
+
+          vTaskDelay(pdMS_TO_TICKS(20));
+        }
+        Serial.println("RTL_STOP_REQUESTED");
+        flush_audio_play_batch(true);
+        (void)rtl_sdr_v4_esp_stop(g_rtl, 2000);
+        rtl_capture_state.store(RtlCaptureState::complete, std::memory_order_release);
+        set_rtl_sdr_status("RTL-SDR V4: stopped");
+        /* Keep rtl_ui_active true so home/power does not paint over SDR controls. */
+        draw_sdr_controls(g_stream_band, rtl_ui_volume, false);
+        Serial.printf("RTL_STOP bytes=%llu\n",
+                      static_cast<unsigned long long>(rtl_capture_bytes));
+      }
+      if (rtl_restart_requested.exchange(false, std::memory_order_acq_rel) &&
+          g_rtl_device_ready.load(std::memory_order_acquire)) {
+        rtl_stop_requested.store(false, std::memory_order_release);
+        rtl_capture_requested.store(true, std::memory_order_release);
+      }
+    } else if (rtl_ui_active.load(std::memory_order_acquire) &&
+               rtl_capture_state.load(std::memory_order_acquire) !=
+                   RtlCaptureState::running) {
+      /* Radio UI idle (stopped): still need touch for START / band / FREQ. */
+      poll_sdr_touch_from_stream();
+    }
+    vTaskDelay(pdMS_TO_TICKS(20));
+  }
+}
+
+void initialize_rtl_sdr_host() {
+  M5.Power.setExtOutput(true, m5::ext_USB);
+  set_rtl_sdr_status("RTL-SDR: USB-A power enabled");
+  delay(200);
+
+  rtl_sdr_v4_esp_config_t cfg;
+  rtl_sdr_v4_esp_config_default(&cfg);
+  cfg.event_cb = on_rtl_driver_event;
+  /*
+   * Fewer, larger URBs → fewer demod wakeups, longer continuous audio runs.
+   * 3 × 32 KiB is the measured continuous-listen profile from Tab5.
+   */
+  cfg.transfer_bytes = 32768;
+  cfg.transfer_count = 3;
+  esp_err_t err = rtl_sdr_v4_esp_config_validate(&cfg);
+  if (err != ESP_OK) {
+    set_rtl_sdr_status("RTL-SDR: config invalid");
+    return;
+  }
+  err = rtl_sdr_v4_esp_install(&cfg, &g_rtl);
+  if (err != ESP_OK) {
+    Serial.printf("RTL_INSTALL %s\n", rtl_sdr_v4_esp_err_to_name(err));
+    set_rtl_sdr_status("RTL-SDR: install failed");
+    return;
+  }
+  Serial.printf("RTL_INSTALL ok v%s caps=0x%08x\n", rtl_sdr_v4_esp_get_version_string(),
+                static_cast<unsigned>(rtl_sdr_v4_esp_get_capabilities()));
+  set_rtl_sdr_status("RTL-SDR: driver host active, waiting");
+  if (xTaskCreatePinnedToCore(rtl_driver_app_task, "rtl_app", 8192, nullptr, kRtlAppTaskPrio,
+                              nullptr, 1) != pdPASS) {
+    set_rtl_sdr_status("RTL-SDR: app task failed");
+  }
+  Serial.println("RTL_CORE_SPLIT usb=core0 iq_demod+ui=core1 (inline demod)");
+}
+#endif /* RTL_USE_LEGACY_USB */
 
 void initialize_wifi() {
   delay(1500);
@@ -1770,6 +2210,19 @@ void load_state() {
     stored_ssid.toCharArray(wifi_ssid, sizeof(wifi_ssid));
     stored_password.toCharArray(wifi_password, sizeof(wifi_password));
   }
+  // Reuse last good FM LO (KZEL 96.113 default when none stored yet).
+  if (preferences.isKey("sdr_fm_hz")) {
+    const uint32_t stored_fm = preferences.getUInt("sdr_fm_hz", kRtlFmDefaultHz);
+    if (stored_fm >= kRtlFmMinHz && stored_fm <= kRtlFmMaxHz) {
+      rtl_saved_fm_hz = stored_fm;
+    }
+  } else {
+    rtl_saved_fm_hz = kRtlFmDefaultHz;
+    preferences.putUInt("sdr_fm_hz", rtl_saved_fm_hz);
+  }
+  rtl_ui_frequency_hz = rtl_saved_fm_hz;
+  rtl_requested_frequency_hz.store(rtl_saved_fm_hz, std::memory_order_release);
+  Serial.printf("RTL_FM_LOAD frequency_hz=%u\n", rtl_saved_fm_hz);
 }
 
 uint32_t append_journal(const char* kind, int16_t x = -1, int16_t y = -1) {
@@ -1846,8 +2299,15 @@ bool point_in_button(int32_t x, int32_t y) {
 }
 
 void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz) {
+#if RTL_USE_LEGACY_USB
   if (rtl_sdr_device == nullptr) return;
+#else
+  if (!g_rtl_device_ready.load(std::memory_order_acquire) || g_rtl == nullptr) return;
+#endif
   frequency_hz = rtl_clamp_frequency(band, frequency_hz);
+  if (band == RtlBand::fm) {
+    persist_fm_frequency(frequency_hz);
+  }
   rtl_requested_band.store(band, std::memory_order_release);
   rtl_requested_frequency_hz.store(frequency_hz, std::memory_order_release);
   rtl_hot_retune_hz.store(0, std::memory_order_release);
@@ -1895,13 +2355,34 @@ bool point_in_scope(int32_t x, int32_t y) {
 void request_hot_retune(uint32_t frequency_hz) {
   if (rtl_ui_band == RtlBand::wx) return;
   frequency_hz = rtl_clamp_frequency(rtl_ui_band, frequency_hz);
-  // 5 kHz quantize while dragging keeps EP0 load reasonable; still continuous feel.
-  frequency_hz = (frequency_hz / 5000u) * 5000u;
   if (frequency_hz == 0) return;
-  rtl_ui_frequency_hz = frequency_hz;
-  // Only queue; stream task applies when no bulk URB is outstanding.
-  rtl_hot_retune_hz.store(frequency_hz, std::memory_order_release);
-  bump_rtl_ui();
+  /* UI: 1 kHz display quantize. */
+  const uint32_t ui_hz = (frequency_hz / 1000u) * 1000u;
+  /* LO: 5 kHz — avoids thrashing bulk/EP0. */
+  const uint32_t lo_hz =
+      (frequency_hz / kRtlHotRetuneQuantHz) * kRtlHotRetuneQuantHz;
+  const bool ui_changed = (ui_hz != rtl_ui_frequency_hz);
+  rtl_ui_frequency_hz = ui_hz;
+  rtl_requested_frequency_hz.store(ui_hz, std::memory_order_release);
+  if (lo_hz != 0) {
+    rtl_hot_retune_hz.store(lo_hz, std::memory_order_release);
+  }
+  /*
+   * Do not full-repaint header on every drag sample — that was starving audio
+   * on Core 1. Light frequency-only redraw instead.
+   */
+  if (ui_changed) {
+    char frequency_text[24];
+    format_frequency(frequency_text, sizeof(frequency_text), ui_hz);
+    char label[64];
+    snprintf(label, sizeof(label), "%s  %s", rtl_band_name(rtl_ui_band), frequency_text);
+    /* Frequency row only (below SIG strip) — do not touch the meter. */
+    M5.Display.fillRect(180, 34, 760, 36, TFT_BLACK);
+    M5.Display.setTextDatum(middle_center);
+    M5.Display.setTextSize(3);
+    M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
+    M5.Display.drawString(label, 560, 48);
+  }
 }
 
 // Capture runs on the high-priority USB task and previously starved Arduino
@@ -1946,7 +2427,8 @@ void poll_sdr_touch_from_stream() {
         rtl_clamp_frequency(rtl_ui_band, static_cast<uint32_t>(next));
     rtl_ui_frequency_hz = tuned;
     bump_rtl_ui();
-    if (tuned != last_queued_hz && now - last_queue_ms >= 120) {
+    /* UI can update often; LO apply is rate-limited in the stream loop. */
+    if (tuned != last_queued_hz && now - last_queue_ms >= 80) {
       request_hot_retune(tuned);
       last_queued_hz = tuned;
       last_queue_ms = now;
@@ -1984,7 +2466,7 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     if (band_index == 0) {
       queue_local_rtl_listen(RtlBand::fm, rtl_ui_band == RtlBand::fm
                                                ? rtl_ui_frequency_hz
-                                               : kRtlFmDefaultHz);
+                                               : rtl_saved_fm_hz);
     } else if (band_index == 1) {
       queue_local_rtl_listen(RtlBand::am, rtl_ui_band == RtlBand::am
                                                ? rtl_ui_frequency_hz
@@ -2000,7 +2482,8 @@ void handle_sdr_touch(int32_t x, int32_t y) {
       if (state == RtlCaptureState::running) {
         rtl_restart_requested.store(false, std::memory_order_release);
         rtl_stop_requested.store(true, std::memory_order_release);
-        append_journal("sdr_stop");
+        Serial.println("RTL_UI_STOP");
+        /* Do not append_journal here — NVS can stall the touch/USB path. */
       } else {
         queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz);
       }
@@ -2014,11 +2497,31 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     if (rtl_ui_band == RtlBand::wx) return;
     const uint32_t next = rtl_step_frequency(rtl_ui_band, rtl_ui_frequency_hz,
                                              tune_index == 0 ? -1 : 1);
-    queue_local_rtl_listen(rtl_ui_band, next);
+    const RtlCaptureState st = rtl_capture_state.load(std::memory_order_acquire);
+    if (st == RtlCaptureState::running) {
+      /* Hot retune in-stream — do not tear down USB for FREQ +/- */
+      request_hot_retune(next);
+    } else {
+      queue_local_rtl_listen(rtl_ui_band, next);
+    }
   } else if (tune_index == 2) {
     adjust_rtl_volume(-static_cast<int>(kRtlVolumeStep));
   } else if (tune_index == 3) {
     adjust_rtl_volume(static_cast<int>(kRtlVolumeStep));
+  } else if (tune_index == 4) {
+    const bool next =
+        !rtl_graphics_enabled.load(std::memory_order_acquire);
+    rtl_graphics_enabled.store(next, std::memory_order_release);
+    Serial.printf("RTL_GRAPHICS %s\n", next ? "on" : "off");
+    if (!next) {
+      paint_graphics_paused_banner();
+    } else {
+      reset_spectrum_renderer();
+      /* Next stream loop tick will resume waterfall/scope. */
+    }
+    const bool running =
+        rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
+    draw_sdr_controls(rtl_ui_band, rtl_ui_volume, running);
   }
 }
 
@@ -2127,7 +2630,7 @@ void process_command(char* command) {
     if (current == RtlCaptureState::complete || current == RtlCaptureState::failed) {
       expected = current;
     }
-    if (rtl_sdr_device == nullptr ||
+    if (!rtl_device_ready() ||
         !rtl_capture_state.compare_exchange_strong(expected, RtlCaptureState::queued,
                                                    std::memory_order_acq_rel)) {
       Serial.println("RTL_CAPTURE_BUSY_OR_UNAVAILABLE");
@@ -2163,8 +2666,8 @@ void process_command(char* command) {
   }
   if (strcmp(command, "RTL_STATUS") == 0) {
     Serial.printf("RTL_SDR_STATUS connected=%s vid=%04x pid=%04x speed=%s serial=\"%s\"\n",
-                  rtl_sdr_device != nullptr ? "true" : "false", rtl_sdr_vid,
-                  rtl_sdr_pid, rtl_sdr_speed, rtl_sdr_serial);
+                  rtl_device_ready() ? "true" : "false", rtl_sdr_vid, rtl_sdr_pid,
+                  rtl_sdr_speed, rtl_sdr_serial);
     return;
   }
   if (strncmp(command, "PAIR ", 5) == 0) {
@@ -2450,8 +2953,8 @@ void loop() {
     const bool pressed = touch.isPressed() || touch.wasPressed();
     if (pressed && !was_pressed) {
       if (point_in_button(touch.x, touch.y)) {
-        if (rtl_sdr_device != nullptr) {
-          queue_local_rtl_listen(RtlBand::fm, kRtlFmDefaultHz);
+        if (rtl_device_ready()) {
+          queue_local_rtl_listen(RtlBand::fm, rtl_saved_fm_hz);
         } else {
           emit_touch(touch.x, touch.y);
         }

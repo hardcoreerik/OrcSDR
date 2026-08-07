@@ -553,3 +553,46 @@ constexpr RtlControlRecord kRtlCleanupTransfers[] = {
 
 static_assert(sizeof(kRtlInitTransfers) / sizeof(kRtlInitTransfers[0]) == 515);
 static_assert(sizeof(kRtlCleanupTransfers) / sizeof(kRtlCleanupTransfers[0]) == 16);
+
+/** Measured sample-rate slice inside init (indices inclusive). */
+constexpr size_t kRtlSampleRateFirst = 462;
+constexpr size_t kRtlSampleRateLast = 477;
+/** Within the slice, this index is patched for 960 kS/s (measured). */
+constexpr size_t kRtlSampleRate960kPatchIndex = 464;
+
+/**
+ * Independently observed final-tune skeleton. PLL bytes are patched at runtime
+ * (clean-room R820-style pack, not a librtlsdr copy).
+ * Patch map (data[1]): indices 3 & 7 = r16_setup; 12 = r16_active;
+ * 13 = r20; 15 = r22; 16 = r21.
+ */
+constexpr RtlControlRecord kRtlFinalTuneTemplate[] = {
+    {0x0074, 0x0610, 0x40, 2, {0x17, 0x20, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x1a, 0x2a, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x1b, 0x34, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x10, 0xa4, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x08, 0xc0, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x09, 0x40, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x0c, 0x68, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x10, 0xa4, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x1a, 0x22, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x12, 0x06, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 1, {0x00, 0, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0600, 0xc0, 5, {0, 0, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x10, 0x84, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x14, 0xca, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x12, 0x06, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x16, 0x90, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x15, 0x5a, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 1, {0x00, 0, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0600, 0xc0, 3, {0, 0, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x1a, 0x2a, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x17, 0x20, 0, 0, 0, 0, 0, 0}},
+    {0x0074, 0x0610, 0x40, 2, {0x06, 0x30, 0, 0, 0, 0, 0, 0}},
+};
+
+/** Measured LO offset used by clean-room PLL pack (Hz). */
+constexpr double kRtlIfOffsetHz = 1814972.0;
+constexpr double kRtlXtalHz = 28800000.0;
+
+static_assert(sizeof(kRtlFinalTuneTemplate) / sizeof(kRtlFinalTuneTemplate[0]) == 22);

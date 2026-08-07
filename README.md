@@ -54,9 +54,12 @@ rtl_sdr_v4_esp_handle_t sdr;
 ESP_ERROR_CHECK(rtl_sdr_v4_esp_install(&cfg, &sdr));
 ```
 
-**Status:** install/uninstall and transfer tables are in-tree. Full bulk stream
-extraction from the Tab5 app is tracked in [`docs/PORTING.md`](docs/PORTING.md)
-(`start` currently returns `ESP_ERR_NOT_FINISHED`).
+**Status:** public API **v0.3.0** is hardened (validation, locking, reentrancy,
+idempotent teardown, capability discovery). Clean-room transfer tables are
+in-tree. Full bulk stream extraction from the Tab5 app is tracked in
+[`docs/PORTING.md`](docs/PORTING.md) — `start` currently returns
+`RTL_SDR_V4_ESP_ERR_UNSUPPORTED` until Gate 2. Contract:
+[`docs/API_RTL_SDR_V4_ESP.md`](docs/API_RTL_SDR_V4_ESP.md).
 
 ### Identity filter
 
