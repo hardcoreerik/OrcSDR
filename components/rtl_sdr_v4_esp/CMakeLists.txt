@@ -9,7 +9,7 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "private"
     # `usb` is required once bulk host path is extracted (Gate 2).
-    REQUIRES log esp_timer
+    REQUIRES log esp_timer freertos
 )
 
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_17)

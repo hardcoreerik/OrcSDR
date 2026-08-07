@@ -51,13 +51,25 @@ rtl_sdr_v4_esp_handle_t sdr;
 ESP_ERROR_CHECK(rtl_sdr_v4_esp_install(&cfg, &sdr));
 ```
 
+## Public API quality (v0.2)
+
+| Property | Behavior |
+|---|---|
+| Validation | `config_validate` / `stream_config_validate`; `struct_size` ABI guard |
+| Errors | Component codes + `err_to_name` + `get_last_error` |
+| State | `get_state`: IDLE / STREAMING / STOPPING / FAULT |
+| Threading | Per-handle mutex; callback rules documented in header |
+| Idempotence | `stop` / `uninstall(NULL)` safe |
+| Feature discovery | `get_capabilities`, rate allowlist, normalize frequency |
+| Contract | See [`docs/API_RTL_SDR_V4_ESP.md`](../../docs/API_RTL_SDR_V4_ESP.md) |
+
 ## Extraction status
 
 | API | Status |
 |---|---|
-| `install` / `uninstall` / defaults | **Implemented** (skeleton) |
+| Lifecycle, validation, metrics, errors | **Hardened (v0.2)** |
 | Clean-room transfer tables linked | **Present** |
-| `start` / bulk IQ / `retune_hz` | **Not finished** — logic still in `apps/orcsdr-tab5` |
+| `start` / bulk IQ / `retune_hz` | **Not finished** — returns `ERR_UNSUPPORTED` until extraction |
 | Dual-core IQ ring | Planned (see `docs/PORTING.md`) |
 
 Measured Tab5 radio behavior (960 kS/s, KZEL/NOAA, continuous listen) is the
