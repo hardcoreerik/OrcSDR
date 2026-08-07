@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <M5Unified.h>
 #include <Preferences.h>
+#include <SPI.h>
+#include <SD.h>
 #include <WiFi.h>
 #include <esp_mac.h>
 #include <esp_intr_alloc.h>
@@ -110,13 +112,47 @@ constexpr size_t kRtlAudioBufferSamples = 2048;
 /* ~25 ms batches at 48 kHz — fewer playRaw calls, more stable codec feed. */
 constexpr size_t kRtlAudioPlayBatchSamples = 1200;
 constexpr size_t kRtlAudioPlayBufferSamples = 4096;
-constexpr size_t kRtlSpectrumBins = 128;
+/*
+ * WBFM mono DSP targets (app-side; not RF hardware calibration).
+ * Pipeline: 960 kS/s IQ → complex channel LPF → ×4 → discr → audio LPF → ×5 → 48 kHz
+ * → 75 µs de-emphasis (US broadcast) → DC block → soft AGC/limiter.
+ * Aimed at rtl_fm -M wbfm-ish behavior without heavy FIR cost on P4.
+ */
+/** Pre-demod I/Q one-pole at 960 kS/s; ~90 kHz corner ≈ 180 kHz channel class. */
+constexpr float kWbfmIqLpfK = 0.45f;
+/** Post-discr one-pole at 240 kS/s; ~16 kHz mono audio before decimate. */
+constexpr float kWbfmAudioLpfK = 0.34f;
+/** 75 µs de-emphasis @ 48 kHz: k = 1 - exp(-1/(τ·fs)), τ=75e-6. */
+constexpr float kWbfmDeemphK = 0.2424f;
+/** NFM (WX): tighter post-discr LPF; little/no de-emphasis. */
+constexpr float kNfmAudioLpfK = 0.55f;
+constexpr float kNfmDeemphK = 0.08f;
+/** Boxcar decimation: 960k/4 = 240k discr rate; 240k/5 = 48 kHz audio. */
+constexpr uint8_t kFmRfDecim = 4;
+constexpr uint8_t kFmAudioDecim = 5;
+/*
+ * Scope FFT size. 256 bins @ 960 kS/s ≈ 3.75 kHz/bin (was 128 / 7.5 kHz).
+ * Welch multi-window average runs only when GFX is on and audio is not stressed.
+ */
+constexpr size_t kRtlSpectrumBins = 256;
+/** Average this many non-overlapping windows for a quieter, more precise trace. */
+constexpr size_t kRtlSpectrumWelchWindows = 4;
 // Prefer audio: graphics deliberately modest (chop returns if these go too low).
-constexpr uint32_t kRtlSpectrumIntervalMs = 200;
-constexpr uint32_t kRtlSpectrumTraceIntervalMs = 350;
+constexpr uint32_t kRtlSpectrumIntervalMs = 220;
+constexpr uint32_t kRtlSpectrumTraceIntervalMs = 220;
 constexpr size_t kRtlRingDepth = 3;
 constexpr uint32_t kRtlAudioPrimeMs = 450;
 constexpr uint32_t kRtlSignalMeterIntervalMs = 200;
+/* Tab5 microSD (M5 docs): SPI pins for optional WAV export. */
+constexpr int kTab5SdCsPin = 42;
+constexpr int kTab5SdSckPin = 43;
+constexpr int kTab5SdMosiPin = 44;
+constexpr int kTab5SdMisoPin = 39;
+/** Post-demod mono capture rate (matches playRaw). */
+constexpr uint32_t kAudioRecRateHz = 48000;
+/** ~12 s of int16 mono in PSRAM — enough for interference A/B without SD thrash mid-stream. */
+constexpr size_t kAudioRecMaxSeconds = 12;
+constexpr size_t kAudioRecMaxSamples = kAudioRecRateHz * kAudioRecMaxSeconds;
 constexpr UBaseType_t kRtlAppTaskPrio = 5;
 constexpr int kSpectrumX = 64;
 constexpr int kSpectrumY = 96;
@@ -130,6 +166,23 @@ constexpr int kSdrTuneY = 648;
 constexpr int kSdrControlsHeight = 52;
 constexpr int kSdrGap = 12;
 constexpr int kSdrEdge = 48;
+/*
+ * Portable RF tool shell (Tab5 + Blog V4).
+ * Radio is the first product surface; Scope/Capture are analysis tools.
+ * Future tools (band scan, IQ dump, gain lab, analyzer) plug in here — do not
+ * hard-wire every new feature only into the FM listen path.
+ */
+enum class OrcTool : uint8_t {
+  Radio = 0,
+  Scope = 1,
+  Capture = 2,
+  /* Reserved for growth: Analyzer, Scan, GainLab, IqDump */
+  Count = 3
+};
+constexpr int kToolTabY = 68;
+constexpr int kToolTabH = 28;
+constexpr int kToolTabW = 150;
+constexpr int kToolTabGap = 10;
 constexpr uint8_t kRtlVolumeMin = 0;
 constexpr uint8_t kRtlVolumeMax = 255;
 // ~50% of the M5 speaker scale (0-255). Operator found 220 too loud as a start.
@@ -184,12 +237,16 @@ constexpr RtlControlRecord kRtlFinalTuneTemplate[] = {
 };
 
 struct RtlAudioState {
-  int32_t i_sum = 0;
-  int32_t q_sum = 0;
+  float i_sum = 0;
+  float q_sum = 0;
   uint8_t rf_phase = 0;
   float previous_i = 0;
   float previous_q = 0;
   bool have_previous = false;
+  /** Complex one-pole state (pre-demod channel LPF on I/Q). */
+  float iq_i_lpf = 0;
+  float iq_q_lpf = 0;
+  /** Post-discriminator mono LPF (was generic channel_filter). */
   float channel_filter = 0;
   float audio_sum = 0;
   uint8_t audio_phase = 0;
@@ -209,6 +266,24 @@ struct RtlAudioState {
 };
 
 RtlAudioState rtl_audio;
+
+/** Soft reset of FM/NFM filter memory after LO change (keep AGC/fade partially). */
+void rtl_audio_reset_demod_filters() {
+  rtl_audio.i_sum = 0;
+  rtl_audio.q_sum = 0;
+  rtl_audio.rf_phase = 0;
+  rtl_audio.previous_i = 0;
+  rtl_audio.previous_q = 0;
+  rtl_audio.have_previous = false;
+  rtl_audio.iq_i_lpf = 0;
+  rtl_audio.iq_q_lpf = 0;
+  rtl_audio.channel_filter = 0;
+  rtl_audio.audio_sum = 0;
+  rtl_audio.audio_phase = 0;
+  rtl_audio.deemphasis = 0;
+  rtl_audio.dc = 0;
+  if (rtl_audio.fade_in > 48) rtl_audio.fade_in = 48;
+}
 int16_t rtl_audio_buffers[3][kRtlAudioBufferSamples];
 /* Batch small demod bursts into longer playRaw chunks (reduces chop). */
 static int16_t rtl_audio_play_batch[kRtlAudioPlayBufferSamples];
@@ -242,8 +317,10 @@ float rtl_spectrum_real[kRtlSpectrumBins];
 float rtl_spectrum_imaginary[kRtlSpectrumBins];
 float rtl_spectrum_levels[kRtlSpectrumBins];
 float rtl_spectrum_smooth[kRtlSpectrumBins];
+float rtl_spectrum_peak[kRtlSpectrumBins];
 float rtl_spectrum_window[kRtlSpectrumBins];
 int16_t rtl_spectrum_y[kRtlSpectrumBins];
+int16_t rtl_spectrum_peak_y[kRtlSpectrumBins];
 uint16_t rtl_waterfall_row[kSpectrumWidth];
 bool rtl_spectrum_window_ready = false;
 bool rtl_spectrum_trace_valid = false;
@@ -252,6 +329,25 @@ uint32_t rtl_spectrum_trace_last_ms = 0;
 uint32_t rtl_spectrum_frames = 0;
 uint32_t rtl_spectrum_fps_window_ms = 0;
 uint16_t rtl_spectrum_fps = 0;
+/** IQ snapshot for scope only (never taken from the live demod buffer mid-write). */
+static uint8_t rtl_spectrum_iq_snap[kRtlSpectrumBins * 2 * kRtlSpectrumWelchWindows];
+static size_t rtl_spectrum_iq_snap_bytes = 0;
+static portMUX_TYPE rtl_spectrum_snap_mux = portMUX_INITIALIZER_UNLOCKED;
+
+/* ---- Post-demod audio recorder (PSRAM ring → optional SD WAV) ---- */
+static int16_t* g_audio_rec_buf = nullptr;
+static size_t g_audio_rec_capacity = 0;
+static std::atomic<size_t> g_audio_rec_write{0};
+static std::atomic<bool> g_audio_rec_active{false};
+static std::atomic<bool> g_audio_rec_full{false};
+static uint32_t g_audio_rec_freq_hz = 0;
+static RtlBand g_audio_rec_band = RtlBand::fm;
+static uint32_t g_audio_rec_file_seq = 0;
+static bool g_sd_ready = false;
+static bool g_sd_tried = false;
+static char g_audio_rec_last_path[64] = "";
+static std::atomic<uint8_t> g_orc_tool{static_cast<uint8_t>(OrcTool::Radio)};
+static std::atomic<bool> g_audio_rec_export_pending{false};
 
 enum class RtlCaptureState : uint8_t {
   disconnected,
@@ -365,8 +461,22 @@ char rtl_capture_error[64] = "not run";
 void emit_identity();
 void reset_spectrum_renderer();
 void draw_spectrum_grid();
+void draw_sdr_controls(RtlBand band, uint8_t volume, bool running);
 void handle_sdr_touch(int32_t x, int32_t y);
 void poll_sdr_touch_from_stream();
+void spectrum_offer_iq_snapshot(const uint8_t* iq, size_t bytes);
+bool audio_rec_ensure_buffer();
+bool audio_rec_start();
+bool audio_rec_stop_and_export();
+void audio_rec_append(const int16_t* samples, size_t count);
+void audio_rec_status_print();
+bool ensure_tab5_sd();
+const char* orc_tool_name(OrcTool tool);
+OrcTool orc_tool_current();
+void set_orc_tool(OrcTool tool);
+void draw_tool_tabs();
+void draw_capture_tool_panel();
+bool handle_tool_tab_touch(int32_t x, int32_t y);
 
 void draw_touch_state(const char* message, uint32_t color) {
   M5.Display.fillRect(300, 480, 680, 70, TFT_BLACK);
@@ -720,6 +830,10 @@ void flush_audio_play_batch(bool force) {
   if (!M5.Speaker.isRunning()) {
     ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
   }
+  /* Capture the exact PCM going to the speaker (post AGC/limiter). */
+  if (g_audio_rec_active.load(std::memory_order_acquire)) {
+    audio_rec_append(rtl_audio_play_batch, rtl_audio_play_count);
+  }
   if (M5.Speaker.playRaw(rtl_audio_play_batch, rtl_audio_play_count, 48000, false, 1, 0,
                          false)) {
     ++rtl_audio.queued_chunks;
@@ -733,6 +847,308 @@ void flush_audio_play_batch(bool force) {
     }
   }
   rtl_audio_play_count = 0;
+}
+
+bool audio_rec_ensure_buffer() {
+  if (g_audio_rec_buf != nullptr && g_audio_rec_capacity >= kAudioRecMaxSamples) {
+    return true;
+  }
+  if (g_audio_rec_buf != nullptr) {
+    heap_caps_free(g_audio_rec_buf);
+    g_audio_rec_buf = nullptr;
+    g_audio_rec_capacity = 0;
+  }
+  g_audio_rec_buf = static_cast<int16_t*>(
+      heap_caps_malloc(kAudioRecMaxSamples * sizeof(int16_t),
+                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (g_audio_rec_buf == nullptr) {
+    g_audio_rec_buf = static_cast<int16_t*>(
+        heap_caps_malloc(kAudioRecMaxSamples * sizeof(int16_t), MALLOC_CAP_8BIT));
+  }
+  if (g_audio_rec_buf == nullptr) {
+    Serial.println("RTL_REC_ERR no_buffer");
+    return false;
+  }
+  g_audio_rec_capacity = kAudioRecMaxSamples;
+  Serial.printf("RTL_REC_BUF samples=%u bytes=%u psram=%s\n",
+                static_cast<unsigned>(g_audio_rec_capacity),
+                static_cast<unsigned>(g_audio_rec_capacity * sizeof(int16_t)),
+                heap_caps_get_free_size(MALLOC_CAP_SPIRAM) > 0 ? "yes" : "no");
+  return true;
+}
+
+void audio_rec_append(const int16_t* samples, size_t count) {
+  if (samples == nullptr || count == 0 || g_audio_rec_buf == nullptr) return;
+  if (!g_audio_rec_active.load(std::memory_order_relaxed)) return;
+  size_t w = g_audio_rec_write.load(std::memory_order_relaxed);
+  const size_t cap = g_audio_rec_capacity;
+  if (w >= cap) {
+    g_audio_rec_full.store(true, std::memory_order_release);
+    g_audio_rec_active.store(false, std::memory_order_release);
+    return;
+  }
+  const size_t n = (w + count > cap) ? (cap - w) : count;
+  memcpy(g_audio_rec_buf + w, samples, n * sizeof(int16_t));
+  w += n;
+  g_audio_rec_write.store(w, std::memory_order_release);
+  if (w >= cap) {
+    g_audio_rec_full.store(true, std::memory_order_release);
+    g_audio_rec_active.store(false, std::memory_order_release);
+    g_audio_rec_export_pending.store(true, std::memory_order_release);
+    Serial.printf("RTL_REC_FULL samples=%u sec=%.1f\n", static_cast<unsigned>(w),
+                  static_cast<double>(w) / static_cast<double>(kAudioRecRateHz));
+  }
+}
+
+bool ensure_tab5_sd() {
+  if (g_sd_ready) return true;
+  if (g_sd_tried && !g_sd_ready) return false;
+  g_sd_tried = true;
+  SPI.begin(kTab5SdSckPin, kTab5SdMisoPin, kTab5SdMosiPin, kTab5SdCsPin);
+  /* 10 MHz is safer on long-ish Tab5 SPI than 25 MHz during concurrent USB. */
+  if (!SD.begin(kTab5SdCsPin, SPI, 10000000)) {
+    Serial.println("RTL_REC_SD missing_or_fail");
+    g_sd_ready = false;
+    return false;
+  }
+  g_sd_ready = true;
+  Serial.println("RTL_REC_SD ready");
+  return true;
+}
+
+static void write_le16(File& f, uint16_t v) {
+  uint8_t b[2] = {static_cast<uint8_t>(v & 0xff), static_cast<uint8_t>((v >> 8) & 0xff)};
+  f.write(b, 2);
+}
+
+static void write_le32(File& f, uint32_t v) {
+  uint8_t b[4] = {static_cast<uint8_t>(v & 0xff), static_cast<uint8_t>((v >> 8) & 0xff),
+                  static_cast<uint8_t>((v >> 16) & 0xff),
+                  static_cast<uint8_t>((v >> 24) & 0xff)};
+  f.write(b, 4);
+}
+
+bool audio_rec_write_wav(const char* path, const int16_t* pcm, size_t samples) {
+  if (path == nullptr || pcm == nullptr || samples == 0) return false;
+  if (!ensure_tab5_sd()) return false;
+  SD.mkdir("/orcsdr");
+  File f = SD.open(path, FILE_WRITE, true);
+  if (!f) {
+    Serial.printf("RTL_REC_WAV_ERR open path=%s\n", path);
+    return false;
+  }
+  const uint32_t data_bytes = static_cast<uint32_t>(samples * sizeof(int16_t));
+  const uint32_t byte_rate = kAudioRecRateHz * 2u; /* mono int16 */
+  f.write(reinterpret_cast<const uint8_t*>("RIFF"), 4);
+  write_le32(f, 36u + data_bytes);
+  f.write(reinterpret_cast<const uint8_t*>("WAVE"), 4);
+  f.write(reinterpret_cast<const uint8_t*>("fmt "), 4);
+  write_le32(f, 16u);
+  write_le16(f, 1u); /* PCM */
+  write_le16(f, 1u); /* mono */
+  write_le32(f, kAudioRecRateHz);
+  write_le32(f, byte_rate);
+  write_le16(f, 2u); /* block align */
+  write_le16(f, 16u); /* bits */
+  f.write(reinterpret_cast<const uint8_t*>("data"), 4);
+  write_le32(f, data_bytes);
+  const size_t wrote =
+      f.write(reinterpret_cast<const uint8_t*>(pcm), data_bytes);
+  f.close();
+  if (wrote != data_bytes) {
+    Serial.printf("RTL_REC_WAV_ERR short_write got=%u want=%u\n",
+                  static_cast<unsigned>(wrote), static_cast<unsigned>(data_bytes));
+    return false;
+  }
+  return true;
+}
+
+bool audio_rec_start() {
+  if (g_audio_rec_active.load(std::memory_order_acquire)) {
+    Serial.println("RTL_REC_ALREADY");
+    return true;
+  }
+  if (!audio_rec_ensure_buffer()) return false;
+  g_audio_rec_write.store(0, std::memory_order_release);
+  g_audio_rec_full.store(false, std::memory_order_release);
+  g_audio_rec_band = rtl_ui_band;
+  g_audio_rec_freq_hz = rtl_ui_frequency_hz;
+  g_audio_rec_last_path[0] = '\0';
+  g_audio_rec_active.store(true, std::memory_order_release);
+  Serial.printf("RTL_REC_START band=%s frequency_hz=%u rate=%u max_sec=%u\n",
+                rtl_band_name(g_audio_rec_band), g_audio_rec_freq_hz, kAudioRecRateHz,
+                static_cast<unsigned>(kAudioRecMaxSeconds));
+  return true;
+}
+
+bool audio_rec_stop_and_export() {
+  const bool was = g_audio_rec_active.exchange(false, std::memory_order_acq_rel);
+  const size_t samples = g_audio_rec_write.load(std::memory_order_acquire);
+  const bool full = g_audio_rec_full.load(std::memory_order_acquire);
+  if (!was && samples == 0) {
+    Serial.println("RTL_REC_STOP empty");
+    return false;
+  }
+  Serial.printf("RTL_REC_STOP samples=%u sec=%.2f full=%s band=%s frequency_hz=%u\n",
+                static_cast<unsigned>(samples),
+                static_cast<double>(samples) / static_cast<double>(kAudioRecRateHz),
+                full ? "true" : "false", rtl_band_name(g_audio_rec_band),
+                g_audio_rec_freq_hz);
+  if (samples == 0 || g_audio_rec_buf == nullptr) return false;
+
+  ++g_audio_rec_file_seq;
+  char path[64];
+  snprintf(path, sizeof(path), "/orcsdr/rec_%03u_%s_%u.wav",
+           static_cast<unsigned>(g_audio_rec_file_seq), rtl_band_name(g_audio_rec_band),
+           static_cast<unsigned>(g_audio_rec_freq_hz));
+  if (audio_rec_write_wav(path, g_audio_rec_buf, samples)) {
+    strlcpy(g_audio_rec_last_path, path, sizeof(g_audio_rec_last_path));
+    Serial.printf("RTL_REC_WAV ok path=%s samples=%u rate=%u channels=1 bits=16 "
+                  "note=post_demod_pcm\n",
+                  path, static_cast<unsigned>(samples), kAudioRecRateHz);
+    return true;
+  }
+  /* No SD: keep PCM in PSRAM; operator can re-insert card and RTL_REC_SAVE. */
+  Serial.printf("RTL_REC_PSRAM_HOLD samples=%u rate=%u note=insert_sd_then_RTL_REC_SAVE\n",
+                static_cast<unsigned>(samples), kAudioRecRateHz);
+  return false;
+}
+
+void audio_rec_status_print() {
+  const size_t samples = g_audio_rec_write.load(std::memory_order_acquire);
+  Serial.printf(
+      "RTL_REC_STATUS active=%s full=%s samples=%u sec=%.2f max_sec=%u rate=%u "
+      "band=%s frequency_hz=%u last_path=\"%s\" sd=%s\n",
+      g_audio_rec_active.load(std::memory_order_acquire) ? "true" : "false",
+      g_audio_rec_full.load(std::memory_order_acquire) ? "true" : "false",
+      static_cast<unsigned>(samples),
+      static_cast<double>(samples) / static_cast<double>(kAudioRecRateHz),
+      static_cast<unsigned>(kAudioRecMaxSeconds), kAudioRecRateHz,
+      rtl_band_name(g_audio_rec_band), g_audio_rec_freq_hz,
+      g_audio_rec_last_path[0] ? g_audio_rec_last_path : "none",
+      g_sd_ready ? "ready" : (g_sd_tried ? "missing" : "untried"));
+}
+
+void spectrum_offer_iq_snapshot(const uint8_t* iq, size_t bytes) {
+  if (iq == nullptr || bytes < kRtlSpectrumBins * 2) return;
+  if (!rtl_graphics_enabled.load(std::memory_order_relaxed)) return;
+  const size_t need = sizeof(rtl_spectrum_iq_snap);
+  const size_t n = bytes < need ? bytes : need;
+  portENTER_CRITICAL(&rtl_spectrum_snap_mux);
+  memcpy(rtl_spectrum_iq_snap, iq, n);
+  rtl_spectrum_iq_snap_bytes = n;
+  portEXIT_CRITICAL(&rtl_spectrum_snap_mux);
+}
+
+const char* orc_tool_name(OrcTool tool) {
+  switch (tool) {
+    case OrcTool::Scope: return "SCOPE";
+    case OrcTool::Capture: return "CAPTURE";
+    case OrcTool::Radio:
+    default: return "RADIO";
+  }
+}
+
+OrcTool orc_tool_current() {
+  const uint8_t v = g_orc_tool.load(std::memory_order_acquire);
+  if (v >= static_cast<uint8_t>(OrcTool::Count)) return OrcTool::Radio;
+  return static_cast<OrcTool>(v);
+}
+
+void set_orc_tool(OrcTool tool) {
+  g_orc_tool.store(static_cast<uint8_t>(tool), std::memory_order_release);
+  Serial.printf("RTL_TOOL %s\n", orc_tool_name(tool));
+  /* Scope tool wants live graphics; Capture can keep audio-only GFX off. */
+  if (tool == OrcTool::Scope) {
+    rtl_graphics_enabled.store(true, std::memory_order_release);
+    reset_spectrum_renderer();
+  }
+  if (rtl_ui_active.load(std::memory_order_acquire)) {
+    draw_tool_tabs();
+    if (tool == OrcTool::Capture) draw_capture_tool_panel();
+    else if (tool == OrcTool::Scope &&
+             !rtl_graphics_enabled.load(std::memory_order_acquire)) {
+      /* should not happen */
+    }
+    const bool running =
+        rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
+    draw_sdr_controls(rtl_ui_band, rtl_ui_volume, running);
+  }
+}
+
+void draw_tool_tabs() {
+  static const char* kLabels[] = {"RADIO", "SCOPE", "CAPTURE"};
+  const OrcTool cur = orc_tool_current();
+  M5.Display.fillRect(0, kToolTabY - 2, 1280, kToolTabH + 4, TFT_BLACK);
+  int x = kSdrEdge;
+  for (uint8_t i = 0; i < static_cast<uint8_t>(OrcTool::Count); ++i) {
+    const bool on = static_cast<OrcTool>(i) == cur;
+    const uint32_t fill = on ? TFT_DARKGREEN : TFT_DARKGREY;
+    M5.Display.fillRoundRect(x, kToolTabY, kToolTabW, kToolTabH, 8, fill);
+    M5.Display.drawRoundRect(x, kToolTabY, kToolTabW, kToolTabH, 8, TFT_WHITE);
+    M5.Display.setTextDatum(middle_center);
+    M5.Display.setTextSize(1);
+    M5.Display.setTextColor(TFT_WHITE, fill);
+    M5.Display.drawString(kLabels[i], x + kToolTabW / 2, kToolTabY + kToolTabH / 2);
+    x += kToolTabW + kToolTabGap;
+  }
+  M5.Display.setTextDatum(middle_left);
+  M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  M5.Display.drawString("tools  |  portable RF shell", x + 8, kToolTabY + kToolTabH / 2);
+}
+
+bool handle_tool_tab_touch(int32_t x, int32_t y) {
+  if (y < kToolTabY || y >= kToolTabY + kToolTabH) return false;
+  int tab_x = kSdrEdge;
+  for (uint8_t i = 0; i < static_cast<uint8_t>(OrcTool::Count); ++i) {
+    if (x >= tab_x && x < tab_x + kToolTabW) {
+      set_orc_tool(static_cast<OrcTool>(i));
+      return true;
+    }
+    tab_x += kToolTabW + kToolTabGap;
+  }
+  return false;
+}
+
+void draw_capture_tool_panel() {
+  /* Overlay lower waterfall region with capture status — audio path untouched. */
+  const int panel_y = kWaterfallY + 40;
+  const int panel_h = kWaterfallHeight - 50;
+  M5.Display.fillRect(kSpectrumX + 4, panel_y, kSpectrumWidth - 8, panel_h, TFT_BLACK);
+  M5.Display.drawRect(kSpectrumX + 4, panel_y, kSpectrumWidth - 8, panel_h, TFT_ORANGE);
+  const size_t samples = g_audio_rec_write.load(std::memory_order_acquire);
+  const bool active = g_audio_rec_active.load(std::memory_order_acquire);
+  const bool full = g_audio_rec_full.load(std::memory_order_acquire);
+  const float sec = static_cast<float>(samples) / static_cast<float>(kAudioRecRateHz);
+  char line[128];
+  M5.Display.setTextDatum(top_left);
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(TFT_ORANGE, TFT_BLACK);
+  M5.Display.drawString("CAPTURE tool — post-demod audio (48 kHz mono PCM)",
+                        kSpectrumX + 16, panel_y + 12);
+  M5.Display.setTextSize(1);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  snprintf(line, sizeof(line), "state: %s%s", active ? "RECORDING" : "idle",
+           full ? " (buffer full)" : "");
+  M5.Display.drawString(line, kSpectrumX + 16, panel_y + 48);
+  snprintf(line, sizeof(line), "buffered: %.2f / %u s   samples=%u   rate=%u",
+           static_cast<double>(sec), static_cast<unsigned>(kAudioRecMaxSeconds),
+           static_cast<unsigned>(samples), kAudioRecRateHz);
+  M5.Display.drawString(line, kSpectrumX + 16, panel_y + 72);
+  snprintf(line, sizeof(line), "LO meta: %s  %u Hz", rtl_band_name(g_audio_rec_band),
+           g_audio_rec_freq_hz);
+  M5.Display.drawString(line, kSpectrumX + 16, panel_y + 96);
+  snprintf(line, sizeof(line), "last file: %s",
+           g_audio_rec_last_path[0] ? g_audio_rec_last_path : "(none yet)");
+  M5.Display.drawString(line, kSpectrumX + 16, panel_y + 120);
+  snprintf(line, sizeof(line),
+           "SD: %s   |  REC button or RTL_REC_START/STOP   |  WAV for Audacity/etc",
+           g_sd_ready ? "ready" : (g_sd_tried ? "missing — PCM held in PSRAM" : "will try on export"));
+  M5.Display.drawString(line, kSpectrumX + 16, panel_y + 144);
+  M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  M5.Display.drawString(
+      "Future: IQ dump, gain lab, band scan — same tool shell, separate tabs.",
+      kSpectrumX + 16, panel_y + 176);
 }
 
 void bump_rtl_ui() {
@@ -861,15 +1277,18 @@ void draw_sdr_controls(RtlBand band, uint8_t volume, bool running) {
   M5.Display.fillRect(0, kSdrBandY - 6, 1280, 720 - (kSdrBandY - 6), TFT_BLACK);
   char vol_label[16];
   snprintf(vol_label, sizeof(vol_label), "VOL %u", volume);
+  const bool rec_on = g_audio_rec_active.load(std::memory_order_acquire);
   const SdrButton band_row[] = {
-      {0, 180, "FM",
+      {0, 160, "FM",
        static_cast<uint32_t>(band == RtlBand::fm ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 180, "AM",
+      {0, 160, "AM",
        static_cast<uint32_t>(band == RtlBand::am ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 180, "WX",
+      {0, 160, "WX",
        static_cast<uint32_t>(band == RtlBand::wx ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 280, vol_label, static_cast<uint32_t>(TFT_NAVY)},
-      {0, 220, running ? "STOP" : "START",
+      {0, 200, vol_label, static_cast<uint32_t>(TFT_NAVY)},
+      {0, 160, rec_on ? "REC*" : "REC",
+       static_cast<uint32_t>(rec_on ? TFT_MAROON : TFT_DARKGREY)},
+      {0, 200, running ? "STOP" : "START",
        static_cast<uint32_t>(running ? TFT_MAROON : TFT_DARKGREEN)},
   };
   const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
@@ -897,8 +1316,9 @@ void paint_graphics_paused_banner() {
   M5.Display.drawString("GRAPHICS OFF", 640, kSpectrumY + kSpectrumHeight / 2);
   M5.Display.setTextSize(1);
   M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  M5.Display.drawString("scope + waterfall paused  |  audio + SIG still live  |  tap GFX OFF to resume",
-                        640, kWaterfallY + kWaterfallHeight / 2);
+  M5.Display.drawString(
+      "scope paused  |  audio + SIG + REC still live  |  tap GFX OFF to resume",
+      640, kWaterfallY + kWaterfallHeight / 2);
 }
 
 /**
@@ -1009,12 +1429,14 @@ void draw_sdr_header(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
   snprintf(label, sizeof(label), "VOL %u", volume);
   M5.Display.drawString(label, 1100, 48);
+  draw_tool_tabs();
+  M5.Display.setTextDatum(middle_center);
   M5.Display.setTextSize(1);
   M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   snprintf(label, sizeof(label),
-           "%s  |  960 kS/s  |  drag scope  |  peak SIG with antenna",
-           rtl_mode_name(band));
-  M5.Display.drawString(label, 640, 78);
+           "%s  |  960 kS/s  |  cyan=avg orange=peak  |  tool=%s",
+           rtl_mode_name(band), orc_tool_name(orc_tool_current()));
+  M5.Display.drawString(label, 640, 58);
 }
 
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
@@ -1097,7 +1519,9 @@ void reset_spectrum_renderer() {
   rtl_spectrum_fps = 0;
   for (size_t index = 0; index < kRtlSpectrumBins; ++index) {
     rtl_spectrum_smooth[index] = -80.0f;
+    rtl_spectrum_peak[index] = -120.0f;
     rtl_spectrum_y[index] = kSpectrumY + kSpectrumHeight - 2;
+    rtl_spectrum_peak_y[index] = kSpectrumY + kSpectrumHeight - 2;
   }
 }
 
@@ -1110,8 +1534,27 @@ void draw_spectrum_grid() {
                            kSpectrumHeight - 2, TFT_GREEN);
 }
 
+/**
+ * RF scope: 256-bin FFT, Welch multi-window average, peak-hold envelope.
+ * Prefer a frozen IQ snapshot so demod can keep writing the live buffer.
+ * SCOPE tool uses full Welch; RADIO uses fewer windows to protect audio.
+ * Never runs when GFX off or audio is stressed (caller gates).
+ */
 void draw_spectrum(const uint8_t* iq, size_t bytes) {
-  if (bytes < kRtlSpectrumBins * 2) return;
+  uint8_t local_iq[sizeof(rtl_spectrum_iq_snap)];
+  size_t local_bytes = 0;
+  portENTER_CRITICAL(&rtl_spectrum_snap_mux);
+  if (rtl_spectrum_iq_snap_bytes >= kRtlSpectrumBins * 2) {
+    local_bytes = rtl_spectrum_iq_snap_bytes;
+    memcpy(local_iq, rtl_spectrum_iq_snap, local_bytes);
+  }
+  portEXIT_CRITICAL(&rtl_spectrum_snap_mux);
+  if (local_bytes < kRtlSpectrumBins * 2) {
+    if (iq == nullptr || bytes < kRtlSpectrumBins * 2) return;
+    local_bytes = bytes < sizeof(local_iq) ? bytes : sizeof(local_iq);
+    memcpy(local_iq, iq, local_bytes);
+  }
+
   const uint32_t now = millis();
   if (rtl_spectrum_last_ms != 0 &&
       now - rtl_spectrum_last_ms < kRtlSpectrumIntervalMs) {
@@ -1119,101 +1562,147 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   }
   rtl_spectrum_last_ms = now;
 
+  const OrcTool tool = orc_tool_current();
+  const size_t welch_n =
+      (tool == OrcTool::Scope) ? kRtlSpectrumWelchWindows
+                               : (kRtlSpectrumWelchWindows > 1 ? 2 : 1);
+  const size_t window_bytes = kRtlSpectrumBins * 2;
+  const size_t max_windows = local_bytes / window_bytes;
+  const size_t windows =
+      welch_n < max_windows ? welch_n : (max_windows > 0 ? max_windows : 1);
+
+  float power_acc[kRtlSpectrumBins];
+  for (size_t b = 0; b < kRtlSpectrumBins; ++b) power_acc[b] = 0.0f;
+
   constexpr float kPi = 3.14159265358979323846f;
-  for (size_t index = 0; index < kRtlSpectrumBins; ++index) {
-    rtl_spectrum_real[index] =
-        (static_cast<int>(iq[index * 2]) - 128) * rtl_spectrum_window[index];
-    rtl_spectrum_imaginary[index] =
-        (static_cast<int>(iq[index * 2 + 1]) - 128) * rtl_spectrum_window[index];
-  }
-  for (size_t index = 1, reversed = 0; index < kRtlSpectrumBins; ++index) {
-    size_t bit = kRtlSpectrumBins >> 1;
-    for (; reversed & bit; bit >>= 1) reversed ^= bit;
-    reversed ^= bit;
-    if (index < reversed) {
-      std::swap(rtl_spectrum_real[index], rtl_spectrum_real[reversed]);
-      std::swap(rtl_spectrum_imaginary[index], rtl_spectrum_imaginary[reversed]);
+  for (size_t w = 0; w < windows; ++w) {
+    const uint8_t* base = local_iq + w * window_bytes;
+    for (size_t index = 0; index < kRtlSpectrumBins; ++index) {
+      rtl_spectrum_real[index] =
+          (static_cast<int>(base[index * 2]) - 128) * rtl_spectrum_window[index];
+      rtl_spectrum_imaginary[index] =
+          (static_cast<int>(base[index * 2 + 1]) - 128) * rtl_spectrum_window[index];
     }
-  }
-  for (size_t length = 2; length <= kRtlSpectrumBins; length <<= 1) {
-    const float angle = -2.0f * kPi / length;
-    const float step_real = cosf(angle);
-    const float step_imaginary = sinf(angle);
-    for (size_t base = 0; base < kRtlSpectrumBins; base += length) {
-      float twiddle_real = 1;
-      float twiddle_imaginary = 0;
-      for (size_t offset = 0; offset < length / 2; ++offset) {
-        const size_t upper = base + offset;
-        const size_t lower = upper + length / 2;
-        const float product_real = rtl_spectrum_real[lower] * twiddle_real -
-                                   rtl_spectrum_imaginary[lower] * twiddle_imaginary;
-        const float product_imaginary = rtl_spectrum_real[lower] * twiddle_imaginary +
-                                        rtl_spectrum_imaginary[lower] * twiddle_real;
-        rtl_spectrum_real[lower] = rtl_spectrum_real[upper] - product_real;
-        rtl_spectrum_imaginary[lower] = rtl_spectrum_imaginary[upper] - product_imaginary;
-        rtl_spectrum_real[upper] += product_real;
-        rtl_spectrum_imaginary[upper] += product_imaginary;
-        const float next_real = twiddle_real * step_real -
-                                twiddle_imaginary * step_imaginary;
-        twiddle_imaginary = twiddle_real * step_imaginary +
-                            twiddle_imaginary * step_real;
-        twiddle_real = next_real;
+    for (size_t index = 1, reversed = 0; index < kRtlSpectrumBins; ++index) {
+      size_t bit = kRtlSpectrumBins >> 1;
+      for (; reversed & bit; bit >>= 1) reversed ^= bit;
+      reversed ^= bit;
+      if (index < reversed) {
+        std::swap(rtl_spectrum_real[index], rtl_spectrum_real[reversed]);
+        std::swap(rtl_spectrum_imaginary[index], rtl_spectrum_imaginary[reversed]);
       }
+    }
+    for (size_t length = 2; length <= kRtlSpectrumBins; length <<= 1) {
+      const float angle = -2.0f * kPi / length;
+      const float step_real = cosf(angle);
+      const float step_imaginary = sinf(angle);
+      for (size_t base_i = 0; base_i < kRtlSpectrumBins; base_i += length) {
+        float twiddle_real = 1;
+        float twiddle_imaginary = 0;
+        for (size_t offset = 0; offset < length / 2; ++offset) {
+          const size_t upper = base_i + offset;
+          const size_t lower = upper + length / 2;
+          const float product_real = rtl_spectrum_real[lower] * twiddle_real -
+                                     rtl_spectrum_imaginary[lower] * twiddle_imaginary;
+          const float product_imaginary =
+              rtl_spectrum_real[lower] * twiddle_imaginary +
+              rtl_spectrum_imaginary[lower] * twiddle_real;
+          rtl_spectrum_real[lower] = rtl_spectrum_real[upper] - product_real;
+          rtl_spectrum_imaginary[lower] =
+              rtl_spectrum_imaginary[upper] - product_imaginary;
+          rtl_spectrum_real[upper] += product_real;
+          rtl_spectrum_imaginary[upper] += product_imaginary;
+          const float next_real = twiddle_real * step_real -
+                                  twiddle_imaginary * step_imaginary;
+          twiddle_imaginary = twiddle_real * step_imaginary +
+                              twiddle_imaginary * step_real;
+          twiddle_real = next_real;
+        }
+      }
+    }
+    for (size_t bin = 0; bin < kRtlSpectrumBins; ++bin) {
+      const size_t shifted = (bin + kRtlSpectrumBins / 2) % kRtlSpectrumBins;
+      const float p =
+          rtl_spectrum_real[shifted] * rtl_spectrum_real[shifted] +
+          rtl_spectrum_imaginary[shifted] * rtl_spectrum_imaginary[shifted];
+      power_acc[bin] += p;
     }
   }
 
   float maximum = -120.0f;
+  const float inv_w = 1.0f / static_cast<float>(windows);
   for (size_t bin = 0; bin < kRtlSpectrumBins; ++bin) {
-    const size_t shifted = (bin + kRtlSpectrumBins / 2) % kRtlSpectrumBins;
-    const float level =
-        10.0f * log10f(rtl_spectrum_real[shifted] * rtl_spectrum_real[shifted] +
-                       rtl_spectrum_imaginary[shifted] * rtl_spectrum_imaginary[shifted] +
-                       1.0f);
-    // Heavier EMA: quieter/less busy scope (waterfall still updates every tick).
+    const float level = 10.0f * log10f(power_acc[bin] * inv_w + 1.0f);
+    /* EMA average (cyan) + slow peak-hold (orange) for interference spotting. */
     rtl_spectrum_smooth[bin] = rtl_spectrum_trace_valid
-                                   ? (0.72f * rtl_spectrum_smooth[bin] + 0.28f * level)
+                                   ? (0.78f * rtl_spectrum_smooth[bin] + 0.22f * level)
                                    : level;
+    if (!rtl_spectrum_trace_valid || level > rtl_spectrum_peak[bin]) {
+      rtl_spectrum_peak[bin] = level;
+    } else {
+      rtl_spectrum_peak[bin] = 0.995f * rtl_spectrum_peak[bin] + 0.005f * level;
+    }
     rtl_spectrum_levels[bin] = rtl_spectrum_smooth[bin];
-    maximum = max(maximum, rtl_spectrum_levels[bin]);
+    maximum = max(maximum, max(rtl_spectrum_levels[bin], rtl_spectrum_peak[bin]));
   }
   const float floor = maximum - 48.0f;
-  /* Trace every spectrum frame at high refresh (erase+redraw still OK on P4). */
   const bool redraw_trace =
       !rtl_spectrum_trace_valid ||
       (now - rtl_spectrum_trace_last_ms) >= kRtlSpectrumTraceIntervalMs;
+  const bool show_peak = (tool == OrcTool::Scope || tool == OrcTool::Radio);
 
   M5.Display.startWrite();
   if (redraw_trace && rtl_spectrum_trace_valid) {
     int previous_x = kSpectrumX;
     int previous_y = rtl_spectrum_y[0];
+    int prev_peak_y = rtl_spectrum_peak_y[0];
     for (size_t bin = 0; bin < kRtlSpectrumBins; ++bin) {
       const int x = kSpectrumX + static_cast<int>(bin * kSpectrumWidth /
                                                   (kRtlSpectrumBins - 1));
-      const int y = rtl_spectrum_y[bin];
-      if (bin != 0) M5.Display.drawLine(previous_x, previous_y, x, y, TFT_BLACK);
+      if (bin != 0) {
+        M5.Display.drawLine(previous_x, previous_y, x, rtl_spectrum_y[bin], TFT_BLACK);
+        if (show_peak) {
+          M5.Display.drawLine(previous_x, prev_peak_y, x, rtl_spectrum_peak_y[bin],
+                              TFT_BLACK);
+        }
+      }
       previous_x = x;
-      previous_y = y;
+      previous_y = rtl_spectrum_y[bin];
+      prev_peak_y = rtl_spectrum_peak_y[bin];
     }
     draw_spectrum_grid();
   }
 
-  // One-pixel waterfall step; cheap pushImage vs many fillRects.
   M5.Display.scroll(0, -1);
   const int waterfall_width = kSpectrumWidth - 2;
   int previous_x = kSpectrumX;
   int previous_y = kSpectrumY + kSpectrumHeight - 2;
+  int prev_peak_x = kSpectrumX;
+  int prev_peak_y = kSpectrumY + kSpectrumHeight - 2;
   for (size_t bin = 0; bin < kRtlSpectrumBins; ++bin) {
     const float normalized =
         constrain((rtl_spectrum_levels[bin] - floor) / 48.0f, 0.0f, 1.0f);
+    const float peak_n =
+        constrain((rtl_spectrum_peak[bin] - floor) / 48.0f, 0.0f, 1.0f);
     const int x = kSpectrumX + static_cast<int>(bin * kSpectrumWidth /
                                                 (kRtlSpectrumBins - 1));
     const int y = kSpectrumY + kSpectrumHeight - 2 -
                   static_cast<int>(normalized * (kSpectrumHeight - 4));
+    const int py = kSpectrumY + kSpectrumHeight - 2 -
+                   static_cast<int>(peak_n * (kSpectrumHeight - 4));
     if (redraw_trace) {
       rtl_spectrum_y[bin] = static_cast<int16_t>(y);
-      if (bin != 0) M5.Display.drawLine(previous_x, previous_y, x, y, TFT_CYAN);
+      rtl_spectrum_peak_y[bin] = static_cast<int16_t>(py);
+      if (bin != 0) {
+        if (show_peak) {
+          M5.Display.drawLine(prev_peak_x, prev_peak_y, x, py, TFT_ORANGE);
+        }
+        M5.Display.drawLine(previous_x, previous_y, x, y, TFT_CYAN);
+      }
       previous_x = x;
       previous_y = y;
+      prev_peak_x = x;
+      prev_peak_y = py;
     }
     const int cell_x = static_cast<int>(bin * waterfall_width / kRtlSpectrumBins);
     const int next_x =
@@ -1223,8 +1712,11 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
       rtl_waterfall_row[pixel] = color;
     }
   }
-  M5.Display.pushImage(kSpectrumX + 1, kWaterfallY + kWaterfallHeight - 2,
-                       waterfall_width, 1, rtl_waterfall_row);
+  /* Capture tool owns waterfall panel — skip scrolling paint there. */
+  if (tool != OrcTool::Capture) {
+    M5.Display.pushImage(kSpectrumX + 1, kWaterfallY + kWaterfallHeight - 2,
+                         waterfall_width, 1, rtl_waterfall_row);
+  }
   if (redraw_trace) {
     M5.Display.drawFastVLine(kSpectrumX + kSpectrumWidth / 2, kSpectrumY + 1,
                              kSpectrumHeight - 2, TFT_GREEN);
@@ -1238,11 +1730,11 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
     rtl_spectrum_fps = static_cast<uint16_t>(rtl_spectrum_frames);
     rtl_spectrum_frames = 0;
     rtl_spectrum_fps_window_ms = now;
-    Serial.printf("RTL_SPECTRUM_FPS fps=%u audio_dropped=%u audio_chunks=%u "
-                  "audio_peak=%d volume=%u speaker_running=%s\n",
-                  rtl_spectrum_fps, rtl_audio.dropped_chunks, rtl_audio.queued_chunks,
-                  rtl_audio.peak, rtl_live_volume.load(std::memory_order_acquire),
-                  M5.Speaker.isRunning() ? "true" : "false");
+    Serial.printf("RTL_SPECTRUM_FPS fps=%u bins=%u welch=%u tool=%s audio_dropped=%u "
+                  "audio_chunks=%u audio_peak=%d\n",
+                  rtl_spectrum_fps, static_cast<unsigned>(kRtlSpectrumBins),
+                  static_cast<unsigned>(windows), orc_tool_name(tool),
+                  rtl_audio.dropped_chunks, rtl_audio.queued_chunks, rtl_audio.peak);
   }
 }
 
@@ -1298,13 +1790,30 @@ void queue_audio_samples(int16_t* audio, size_t audio_count) {
   rtl_audio.buffer = (rtl_audio.buffer + 1) % std::size(rtl_audio_buffers);
 }
 
-void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale) {
+/**
+ * FM / NFM polar demod at kRtlSampleRateSps.
+ * wbfm=true: broadcast mono path (channel LPF + 75 µs de-emphasis).
+ * wbfm=false: NFM/WX — tighter audio LPF, light de-emphasis only.
+ * No blanker / heavy post-LPF (those muffled on prior A/B).
+ */
+void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm) {
   int16_t* audio = rtl_audio_buffers[rtl_audio.buffer];
   size_t audio_count = 0;
+  const float iq_lpf_k = wbfm ? kWbfmIqLpfK : (kWbfmIqLpfK * 0.70f);
+  const float audio_lpf_k = wbfm ? kWbfmAudioLpfK : kNfmAudioLpfK;
+  const float deemph_k = wbfm ? kWbfmDeemphK : kNfmDeemphK;
+  const float inv_audio_decim = 1.0f / static_cast<float>(kFmAudioDecim);
+
   for (size_t offset = 0; offset + 1 < bytes; offset += 2) {
-    rtl_audio.i_sum += static_cast<int32_t>(iq[offset]) - 128;
-    rtl_audio.q_sum += static_cast<int32_t>(iq[offset + 1]) - 128;
-    if (++rtl_audio.rf_phase != 4) continue;
+    /* Center CU8 and complex channel LPF (pre-demod adjacent-channel relief). */
+    const float i_in = static_cast<float>(static_cast<int32_t>(iq[offset]) - 128);
+    const float q_in = static_cast<float>(static_cast<int32_t>(iq[offset + 1]) - 128);
+    rtl_audio.iq_i_lpf += iq_lpf_k * (i_in - rtl_audio.iq_i_lpf);
+    rtl_audio.iq_q_lpf += iq_lpf_k * (q_in - rtl_audio.iq_q_lpf);
+
+    rtl_audio.i_sum += rtl_audio.iq_i_lpf;
+    rtl_audio.q_sum += rtl_audio.iq_q_lpf;
+    if (++rtl_audio.rf_phase != kFmRfDecim) continue;
 
     const float i = rtl_audio.i_sum;
     const float q = rtl_audio.q_sum;
@@ -1314,13 +1823,14 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale) {
     if (rtl_audio.have_previous) {
       const float phase = fast_phase(rtl_audio.previous_i * q - rtl_audio.previous_q * i,
                                      rtl_audio.previous_i * i + rtl_audio.previous_q * q);
-      rtl_audio.channel_filter += 0.22f * (phase - rtl_audio.channel_filter);
+      /* Post-discriminator mono audio LPF, then boxcar to 48 kHz. */
+      rtl_audio.channel_filter += audio_lpf_k * (phase - rtl_audio.channel_filter);
       rtl_audio.audio_sum += rtl_audio.channel_filter;
-      if (++rtl_audio.audio_phase == 5) {
-        const float demodulated = rtl_audio.audio_sum * 0.2f;
+      if (++rtl_audio.audio_phase == kFmAudioDecim) {
+        const float demodulated = rtl_audio.audio_sum * inv_audio_decim;
         rtl_audio.audio_sum = 0;
         rtl_audio.audio_phase = 0;
-        rtl_audio.deemphasis += 0.18f * (demodulated - rtl_audio.deemphasis);
+        rtl_audio.deemphasis += deemph_k * (demodulated - rtl_audio.deemphasis);
         rtl_audio.dc += 0.0008f * (rtl_audio.deemphasis - rtl_audio.dc);
         const int16_t sample =
             shape_audio_sample(rtl_audio.deemphasis - rtl_audio.dc, audio_scale);
@@ -1342,8 +1852,8 @@ void demodulate_am(const uint8_t* iq, size_t bytes, float audio_scale) {
   int16_t* audio = rtl_audio_buffers[rtl_audio.buffer];
   size_t audio_count = 0;
   for (size_t offset = 0; offset + 1 < bytes; offset += 2) {
-    rtl_audio.i_sum += static_cast<int32_t>(iq[offset]) - 128;
-    rtl_audio.q_sum += static_cast<int32_t>(iq[offset + 1]) - 128;
+    rtl_audio.i_sum += static_cast<float>(static_cast<int32_t>(iq[offset]) - 128);
+    rtl_audio.q_sum += static_cast<float>(static_cast<int32_t>(iq[offset + 1]) - 128);
     if (++rtl_audio.rf_phase != 4) continue;
 
     const float i = rtl_audio.i_sum * 0.25f;
@@ -1518,7 +2028,8 @@ void run_rtl_capture() {
     if (band == RtlBand::am) {
       demodulate_am(rtl_iq_processing, completed_bytes, audio_scale);
     } else {
-      demodulate_fm(rtl_iq_processing, completed_bytes, audio_scale);
+      demodulate_fm(rtl_iq_processing, completed_bytes, audio_scale,
+                    band == RtlBand::fm);
     }
 
     // CRITICAL: never issue EP0 PLL writes while a bulk URB is outstanding.
@@ -1532,8 +2043,7 @@ void run_rtl_capture() {
           frequency_hz = next;
           rtl_ui_frequency_hz = next;
           rtl_requested_frequency_hz.store(next, std::memory_order_release);
-          rtl_audio.fade_in = 0;
-          rtl_audio.have_previous = false;
+          rtl_audio_reset_demod_filters();
           Serial.printf("RTL_HOT_TUNE frequency_hz=%u\n", frequency_hz);
           bump_rtl_ui();
         } else {
@@ -1844,10 +2354,13 @@ static void on_rtl_driver_event(rtl_sdr_v4_esp_event_t event, const void *payloa
           iq->bytes <= sizeof(rtl_iq_processing) ? iq->bytes : sizeof(rtl_iq_processing);
       memcpy(rtl_iq_processing, iq->data, n);
       update_signal_level_from_iq(rtl_iq_processing, n);
+      /* Snapshot for scope only — never steal CPU from demod beyond a memcpy. */
+      spectrum_offer_iq_snapshot(rtl_iq_processing, n);
       if (g_stream_band == RtlBand::am) {
         demodulate_am(rtl_iq_processing, n, g_stream_audio_scale);
       } else {
-        demodulate_fm(rtl_iq_processing, n, g_stream_audio_scale);
+        demodulate_fm(rtl_iq_processing, n, g_stream_audio_scale,
+                      g_stream_band == RtlBand::fm);
       }
       rtl_capture_bytes += n;
       (void)rtl_sdr_v4_esp_release_iq_block(g_rtl, iq);
@@ -1911,6 +2424,14 @@ static void rtl_driver_app_task(void *) {
       st.sample_rate_sps = RTL_SDR_V4_ESP_RATE_960K;
       esp_err_t err = rtl_sdr_v4_esp_start(g_rtl, &st);
       Serial.printf("RTL_START %s\n", rtl_sdr_v4_esp_err_to_name(err));
+      if (err == ESP_OK && band == RtlBand::fm) {
+        Serial.printf("RTL_WBFM_DSP rate=%u deemph_us=75 iq_lpf_k=%.2f audio_lpf_k=%.2f "
+                      "decim=%u/%u note=app_side_not_rf_gain\n",
+                      kRtlSampleRateSps, static_cast<double>(kWbfmIqLpfK),
+                      static_cast<double>(kWbfmAudioLpfK),
+                      static_cast<unsigned>(kFmRfDecim),
+                      static_cast<unsigned>(kFmAudioDecim));
+      }
       if (err != ESP_OK) {
         rtl_capture_state.store(RtlCaptureState::failed, std::memory_order_release);
         set_rtl_sdr_status("RTL-SDR V4: start failed");
@@ -1943,11 +2464,7 @@ static void rtl_driver_app_task(void *) {
             if (te == ESP_OK) {
               last_lo_applied_hz = next;
               /* Light demod re-sync only — do not flush speaker DMA (reverb/gap). */
-              rtl_audio.have_previous = false;
-              rtl_audio.channel_filter = 0;
-              rtl_audio.audio_sum = 0;
-              rtl_audio.audio_phase = 0;
-              if (rtl_audio.fade_in > 48) rtl_audio.fade_in = 48;
+              rtl_audio_reset_demod_filters();
               Serial.printf("RTL_HOT_TUNE hz=%u ok\n", next);
             } else {
               Serial.printf("RTL_HOT_TUNE hz=%u -> %s\n", next,
@@ -1980,18 +2497,26 @@ static void rtl_driver_app_task(void *) {
             rtl_signal_meter_last_ms = now;
             draw_signal_meter(false);
           }
+          /* Auto-export WAV after buffer fills (never write SD on the IQ callback). */
+          if (g_audio_rec_export_pending.exchange(false, std::memory_order_acq_rel)) {
+            (void)audio_rec_stop_and_export();
+            if (orc_tool_current() == OrcTool::Capture) draw_capture_tool_panel();
+            draw_sdr_controls(g_stream_band, rtl_ui_volume, true);
+          }
           const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
-          if (gfx_on) {
+          if (gfx_on && orc_tool_current() != OrcTool::Capture) {
             const bool audio_stressed =
                 rtl_audio.dropped_chunks > 0 &&
                 rtl_audio.dropped_chunks * 2u > rtl_audio.queued_chunks + 2u;
             if (!audio_stressed && now - rtl_session_started_ms >= kRtlAudioPrimeMs &&
                 now - spectrum_last_ms >= kRtlSpectrumIntervalMs) {
               spectrum_last_ms = now;
-              draw_spectrum(rtl_iq_processing,
-                            sizeof(rtl_iq_processing) >= 4096 ? 4096
-                                                             : sizeof(rtl_iq_processing));
+              draw_spectrum(nullptr, 0); /* uses frozen IQ snapshot */
             }
+          } else if (orc_tool_current() == OrcTool::Capture &&
+                     (now - spectrum_last_ms) >= 500) {
+            spectrum_last_ms = now;
+            draw_capture_tool_panel();
           }
 
           vTaskDelay(pdMS_TO_TICKS(20));
@@ -2459,7 +2984,9 @@ void poll_sdr_touch_from_stream() {
 }
 
 void handle_sdr_touch(int32_t x, int32_t y) {
-  static constexpr int kBandWidths[] = {180, 180, 180, 280, 220};
+  if (handle_tool_tab_touch(x, y)) return;
+
+  static constexpr int kBandWidths[] = {160, 160, 160, 200, 160, 200};
   static constexpr int kTuneWidths[] = {200, 200, 200, 200, 240};
   const int band_index = sdr_button_at(kSdrBandY, x, y, kBandWidths, std::size(kBandWidths));
   if (band_index >= 0) {
@@ -2478,6 +3005,18 @@ void handle_sdr_touch(int32_t x, int32_t y) {
       if (rtl_ui_volume == 0) adjust_rtl_volume(kRtlVolumeDefault);
       else adjust_rtl_volume(-static_cast<int>(rtl_ui_volume));
     } else if (band_index == 4) {
+      /* REC toggle — Capture tool records post-demod PCM for offline analysis. */
+      if (g_audio_rec_active.load(std::memory_order_acquire)) {
+        (void)audio_rec_stop_and_export();
+      } else {
+        if (orc_tool_current() != OrcTool::Capture) set_orc_tool(OrcTool::Capture);
+        (void)audio_rec_start();
+      }
+      const bool running =
+          rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
+      draw_sdr_controls(rtl_ui_band, rtl_ui_volume, running);
+      if (orc_tool_current() == OrcTool::Capture) draw_capture_tool_panel();
+    } else if (band_index == 5) {
       const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
       if (state == RtlCaptureState::running) {
         rtl_restart_requested.store(false, std::memory_order_release);
@@ -2603,6 +3142,43 @@ void process_command(char* command) {
         rtl_capture_max, rtl_capture_mean,
         rtl_capture_sha256[0] == '\0' ? "none" : rtl_capture_sha256,
         rtl_capture_error);
+    return;
+  }
+  if (strcmp(command, "RTL_REC_START") == 0) {
+    if (orc_tool_current() != OrcTool::Capture) set_orc_tool(OrcTool::Capture);
+    (void)audio_rec_start();
+    return;
+  }
+  if (strcmp(command, "RTL_REC_STOP") == 0) {
+    (void)audio_rec_stop_and_export();
+    return;
+  }
+  if (strcmp(command, "RTL_REC_STATUS") == 0) {
+    audio_rec_status_print();
+    return;
+  }
+  if (strcmp(command, "RTL_REC_SAVE") == 0) {
+    /* Re-export held PSRAM PCM after inserting an SD card. */
+    g_sd_tried = false;
+    g_sd_ready = false;
+    (void)audio_rec_stop_and_export();
+    return;
+  }
+  if (strncmp(command, "RTL_TOOL ", 9) == 0) {
+    const char* name = command + 9;
+    if (strcmp(name, "RADIO") == 0 || strcmp(name, "radio") == 0) {
+      set_orc_tool(OrcTool::Radio);
+    } else if (strcmp(name, "SCOPE") == 0 || strcmp(name, "scope") == 0) {
+      set_orc_tool(OrcTool::Scope);
+    } else if (strcmp(name, "CAPTURE") == 0 || strcmp(name, "capture") == 0) {
+      set_orc_tool(OrcTool::Capture);
+    } else {
+      Serial.println("RTL_TOOL_INVALID use RADIO|SCOPE|CAPTURE");
+    }
+    return;
+  }
+  if (strcmp(command, "RTL_TOOL") == 0) {
+    Serial.printf("RTL_TOOL_STATUS tool=%s\n", orc_tool_name(orc_tool_current()));
     return;
   }
   if (strcmp(command, "RTL_STOP") == 0 && authenticated) {

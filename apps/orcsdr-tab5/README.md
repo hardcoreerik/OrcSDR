@@ -1,11 +1,25 @@
-# OrcSDR Tab5 app (reference radio)
+# OrcSDR Tab5 app (portable RF shell + radio)
 
-Measured M5Stack **Tab5** (ESP32-P4) radio UI using an on-device RTL-SDR Blog V4.
+Measured M5Stack **Tab5** (ESP32-P4) + official RTL-SDR Blog V4 USB host path.
 
-This application still embeds the V4 USB path in `ui/main.cpp`. The long-term
-home for that logic is the standalone component:
+Direction: not only an FM radio — a **portable RF tool shell** where listen,
+scope, and capture are first tabs, and later tools (band scan, IQ dump, gain
+lab, analyzer) plug into the same shell without forking the USB/demod core.
+
+| Tool tab | Role (now) |
+|---|---|
+| **RADIO** | FM / AM / WX listen, tune, SIG, volume |
+| **SCOPE** | 256-bin Welch spectrum + peak-hold (GFX path; audio-first gating) |
+| **CAPTURE** | Post-demod 48 kHz mono PCM → PSRAM → optional SD WAV (`/orcsdr/…`) |
+
+Serial: `RTL_TOOL RADIO|SCOPE|CAPTURE`, `RTL_REC_START|STOP|STATUS|SAVE`.
+
+Driver component (portable USB/stream):
 
 **[`components/rtl_sdr_v4_esp`](../../components/rtl_sdr_v4_esp)** (RTL-SDRv4-ESP).
+
+Hard rules: clean-room V4 only; no librtlsdr; do not claim calibrated OTA RF
+from UI features alone.
 
 ## Build (PlatformIO)
 
