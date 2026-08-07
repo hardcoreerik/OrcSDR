@@ -1,0 +1,25 @@
+menu "RTL-SDRv4-ESP"
+
+    config RTL_SDR_V4_ESP_ENABLED
+        bool "Enable RTL-SDRv4-ESP driver"
+        default y
+        help
+            USB Host client for official RTL-SDR Blog V4.
+
+    config RTL_SDR_V4_ESP_DEFAULT_TRANSFER_BYTES
+        int "Default bulk transfer size (bytes)"
+        default 32768
+        range 512 262144
+        help
+            Measured Tab5 path uses 32768.
+
+    config RTL_SDR_V4_ESP_DEFAULT_TRANSFER_COUNT
+        int "Default number of bulk buffers"
+        default 3
+        range 2 8
+
+    config RTL_SDR_V4_ESP_LOG_VERBOSE
+        bool "Verbose driver logs"
+        default n
+
+endmenu

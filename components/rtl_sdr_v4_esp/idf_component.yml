@@ -1,0 +1,17 @@
+## RTL-SDRv4-ESP component metadata (ESP Component Registry format)
+version: "0.1.0"
+description: >
+  Clean-room ESP-IDF USB Host client for the official RTL-SDR Blog V4
+  (0bda:2838). ESP32-P4 High-Speed first; other targets only when measured.
+url: https://github.com/hardcoreerik/OrcSDR
+issues: https://github.com/hardcoreerik/OrcSDR/issues
+repository: https://github.com/hardcoreerik/OrcSDR.git
+license: "AGPL-3.0-only"
+tags:
+  - sdr
+  - rtl-sdr
+  - usb-host
+  - esp32-p4
+dependencies:
+  idf:
+    version: ">=5.3.0"

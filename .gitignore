@@ -1,0 +1,20 @@
+# ESP-IDF / PlatformIO
+build/
+.pio/
+sdkconfig
+sdkconfig.old
+dependencies.lock
+managed_components/
+
+# Tooling
+.vscode/
+.idea/
+*.user
+.DS_Store
+Thumbs.db
+
+# Local / secrets
+.orclink/
+*.key
+*.pem
+tmp/
