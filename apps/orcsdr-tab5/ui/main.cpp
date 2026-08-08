@@ -119,8 +119,6 @@ constexpr size_t kRtlAudioPlayBufferSamples = 4096;
  * → 75 µs de-emphasis (US broadcast) → DC block → soft AGC/limiter.
  * Aimed at rtl_fm -M wbfm-ish behavior without heavy FIR cost on P4.
  */
-/** Pre-demod I/Q one-pole at 960 kS/s; ~90 kHz corner ≈ 180 kHz channel class. */
-constexpr float kWbfmIqLpfK = 0.45f;
 /** Post-discr one-pole at 240 kS/s; ~16 kHz mono audio before decimate. */
 constexpr float kWbfmAudioLpfK = 0.34f;
 /** 75 µs de-emphasis @ 48 kHz: k = 1 - exp(-1/(τ·fs)), τ=75e-6. */
@@ -184,6 +182,10 @@ constexpr int kToolTabY = 68;
 constexpr int kToolTabH = 28;
 constexpr int kToolTabW = 150;
 constexpr int kToolTabGap = 10;
+constexpr int kPinchToggleX = 1040;
+constexpr int kPinchToggleY = 66;
+constexpr int kPinchToggleW = 192;
+constexpr int kPinchToggleH = 30;
 constexpr uint8_t kRtlVolumeMin = 0;
 constexpr uint8_t kRtlVolumeMax = 255;
 // ~50% of the M5 speaker scale (0-255). Operator found 220 too loud as a start.
@@ -197,6 +199,12 @@ constexpr uint32_t kRtlFmStepHz = 100000;
 constexpr uint32_t kRtlHotRetuneQuantHz = 5000;
 /** Min time between LO applies (each apply drains bulk + EP0). */
 constexpr uint32_t kRtlHotRetuneMinIntervalMs = 280;
+constexpr uint32_t kRtlScopeSpanMinHz = 120000;
+constexpr uint32_t kRtlScopeSpanMaxHz = 960000;
+constexpr uint32_t kRtlFmFilterDefaultHz = 180000;
+constexpr uint32_t kRtlAmFilterDefaultHz = 10000;
+constexpr uint32_t kRtlWxFilterDefaultHz = 25000;
+static_assert(kRtlScopeSpanMinHz < kRtlScopeSpanMaxHz);
 // KZEL (Santa Rosa): best measured LO on Tab5+V4 was 96.113 MHz (not 96.100).
 constexpr uint32_t kRtlFmDefaultHz = 96113000;
 constexpr uint32_t kRtlAmMinHz = 520000;
@@ -438,8 +446,10 @@ std::atomic<uint8_t> rtl_live_volume{kRtlVolumeDefault};
 std::atomic<bool> rtl_volume_changed{false};
 /** When false: no scope/waterfall updates (audio + SIG meter still run). A/B for chop diagnosis. */
 std::atomic<bool> rtl_graphics_enabled{true};
-// Displayed RF span under the scope (matches axis markers ±480 kHz).
-constexpr double kRtlScopeSpanHz = 960000.0;
+enum class SdrPinchMode : uint8_t { Span, Filter };
+std::atomic<uint32_t> rtl_scope_span_hz{kRtlScopeSpanMaxHz};
+std::atomic<uint32_t> rtl_filter_bandwidth_hz{kRtlFmFilterDefaultHz};
+SdrPinchMode rtl_pinch_mode = SdrPinchMode::Span;
 std::atomic<bool> rtl_continuous_requested{false};
 std::atomic<bool> rtl_stop_requested{false};
 std::atomic<bool> rtl_restart_requested{false};
@@ -462,6 +472,9 @@ char rtl_capture_error[64] = "not run";
 void emit_identity();
 void reset_spectrum_renderer();
 void draw_spectrum_grid();
+void draw_spectrum_axis();
+void draw_band_edges();
+void redraw_spectrum_panel();
 void draw_sdr_controls(RtlBand band, uint8_t volume, bool running);
 void handle_sdr_touch(int32_t x, int32_t y);
 void poll_sdr_touch_from_stream();
@@ -483,6 +496,7 @@ void draw_touch_state(const char* message, uint32_t color) {
   M5.Display.fillRect(300, 480, 680, 70, TFT_BLACK);
   M5.Display.setTextColor(color, TFT_BLACK);
   M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextSize(2);
   M5.Display.drawString(message, 640, 515);
 }
 
@@ -494,6 +508,7 @@ void draw_session_state(const char* message, uint32_t color) {
   M5.Display.fillRect(250, 210, 780, 55, TFT_BLACK);
   M5.Display.setTextColor(color, TFT_BLACK);
   M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextSize(2);
   M5.Display.drawString(message, 640, 237);
 }
 
@@ -522,6 +537,7 @@ void draw_wifi_state() {
   M5.Display.fillRect(250, 590, 780, 55, TFT_BLACK);
   M5.Display.setTextColor(color, TFT_BLACK);
   M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextSize(2);
   M5.Display.drawString(message, 640, 617);
 }
 
@@ -553,6 +569,7 @@ void draw_power_state() {
   M5.Display.fillRect(200, 500, 880, 40, TFT_BLACK);
   M5.Display.setTextColor(level >= 0 ? TFT_LIGHTGREY : TFT_ORANGE, TFT_BLACK);
   M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextSize(2);
   M5.Display.drawString(message, 640, 520);
 }
 
@@ -567,6 +584,7 @@ void draw_rtl_sdr_state() {
   M5.Display.fillRect(150, 545, 980, 40, TFT_BLACK);
   M5.Display.setTextColor(ready ? TFT_GREEN : TFT_ORANGE, TFT_BLACK);
   M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextSize(2);
   M5.Display.drawString(rtl_sdr_status, 640, 565);
   if (ready) {
     M5.Display.fillRoundRect(kButtonX, kButtonY, kButtonWidth, kButtonHeight, 18,
@@ -574,6 +592,7 @@ void draw_rtl_sdr_state() {
     M5.Display.drawRoundRect(kButtonX, kButtonY, kButtonWidth, kButtonHeight, 18,
                              TFT_GREEN);
     M5.Display.setTextColor(TFT_WHITE, TFT_DARKGREEN);
+    M5.Display.setTextSize(3);
     M5.Display.drawString("Open SDR radio", 640, 360);
   }
 }
@@ -760,6 +779,25 @@ uint32_t rtl_band_default_frequency(RtlBand band) {
     case RtlBand::wx: return kRtlWxHz;
     default: return rtl_saved_fm_hz;
   }
+}
+
+uint32_t rtl_filter_default_hz(RtlBand band) {
+  if (band == RtlBand::am) return kRtlAmFilterDefaultHz;
+  if (band == RtlBand::wx) return kRtlWxFilterDefaultHz;
+  return kRtlFmFilterDefaultHz;
+}
+
+uint32_t rtl_clamp_filter_hz(RtlBand band, uint32_t bandwidth_hz) {
+  const uint32_t low = band == RtlBand::am ? 4000 : band == RtlBand::wx ? 8000 : 50000;
+  const uint32_t high = band == RtlBand::am ? 30000 : band == RtlBand::wx ? 50000 : 300000;
+  return constrain((bandwidth_hz / 1000u) * 1000u, low, high);
+}
+
+float rtl_filter_alpha(RtlBand band) {
+  constexpr float kPi = 3.14159265358979323846f;
+  const float bandwidth = static_cast<float>(
+      rtl_clamp_filter_hz(band, rtl_filter_bandwidth_hz.load(std::memory_order_relaxed)));
+  return 1.0f - expf(-kPi * bandwidth / static_cast<float>(kRtlSampleRateSps));
 }
 
 uint32_t rtl_clamp_frequency(RtlBand band, uint32_t frequency_hz) {
@@ -1095,17 +1133,34 @@ void draw_tool_tabs() {
     M5.Display.fillRoundRect(x, kToolTabY, kToolTabW, kToolTabH, 8, fill);
     M5.Display.drawRoundRect(x, kToolTabY, kToolTabW, kToolTabH, 8, TFT_WHITE);
     M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(1);
+    M5.Display.setTextSize(3);
     M5.Display.setTextColor(TFT_WHITE, fill);
     M5.Display.drawString(kLabels[i], x + kToolTabW / 2, kToolTabY + kToolTabH / 2);
     x += kToolTabW + kToolTabGap;
   }
-  M5.Display.setTextDatum(middle_left);
-  M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  M5.Display.drawString("tools  |  portable RF shell", x + 8, kToolTabY + kToolTabH / 2);
+  const bool span_mode = rtl_pinch_mode == SdrPinchMode::Span;
+  const uint32_t toggle_color = span_mode ? TFT_NAVY : TFT_DARKCYAN;
+  M5.Display.fillRoundRect(kPinchToggleX, kPinchToggleY, kPinchToggleW,
+                           kPinchToggleH, 8, toggle_color);
+  M5.Display.drawRoundRect(kPinchToggleX, kPinchToggleY, kPinchToggleW,
+                           kPinchToggleH, 8, TFT_WHITE);
+  M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextSize(3);
+  M5.Display.setTextColor(TFT_WHITE, toggle_color);
+  M5.Display.drawString(span_mode ? "SPAN" : "FILTER",
+                        kPinchToggleX + kPinchToggleW / 2,
+                        kPinchToggleY + kPinchToggleH / 2);
 }
 
 bool handle_tool_tab_touch(int32_t x, int32_t y) {
+  if (x >= kPinchToggleX && x < kPinchToggleX + kPinchToggleW &&
+      y >= kPinchToggleY && y < kPinchToggleY + kPinchToggleH) {
+    rtl_pinch_mode = rtl_pinch_mode == SdrPinchMode::Span
+                         ? SdrPinchMode::Filter
+                         : SdrPinchMode::Span;
+    draw_tool_tabs();
+    return true;
+  }
   if (y < kToolTabY || y >= kToolTabY + kToolTabH) return false;
   int tab_x = kSdrEdge;
   for (uint8_t i = 0; i < static_cast<uint8_t>(OrcTool::Count); ++i) {
@@ -1130,11 +1185,11 @@ void draw_capture_tool_panel() {
   const float sec = static_cast<float>(samples) / static_cast<float>(kAudioRecRateHz);
   char line[128];
   M5.Display.setTextDatum(top_left);
-  M5.Display.setTextSize(2);
+  M5.Display.setTextSize(3);
   M5.Display.setTextColor(TFT_ORANGE, TFT_BLACK);
   M5.Display.drawString("CAPTURE tool — post-demod audio (48 kHz mono PCM)",
                         kSpectrumX + 16, panel_y + 12);
-  M5.Display.setTextSize(1);
+  M5.Display.setTextSize(2);
   M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
   snprintf(line, sizeof(line), "state: %s%s", active ? "RECORDING" : "idle",
            full ? " (buffer full)" : "");
@@ -1265,7 +1320,7 @@ void draw_sdr_button_row(int y, const SdrButton* buttons, size_t count) {
     M5.Display.drawRoundRect(x, y, width, kSdrControlsHeight, 10, TFT_WHITE);
     M5.Display.setTextColor(TFT_WHITE, button.color);
     M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(1);
+    M5.Display.setTextSize(3);
     M5.Display.drawString(button.text, x + width / 2, y + kSdrControlsHeight / 2);
     x += width + kSdrGap;
   }
@@ -1319,10 +1374,10 @@ void paint_graphics_paused_banner() {
   M5.Display.drawRect(kSpectrumX, kSpectrumY, kSpectrumWidth, kSpectrumHeight, TFT_DARKGREY);
   M5.Display.drawRect(kSpectrumX, kWaterfallY, kSpectrumWidth, kWaterfallHeight, TFT_DARKGREY);
   M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextSize(2);
+  M5.Display.setTextSize(4);
   M5.Display.setTextColor(TFT_ORANGE, TFT_BLACK);
   M5.Display.drawString("GRAPHICS OFF", 640, kSpectrumY + kSpectrumHeight / 2);
-  M5.Display.setTextSize(1);
+  M5.Display.setTextSize(2);
   M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   M5.Display.drawString(
       "scope paused  |  audio + SIG + REC still live  |  tap GFX OFF to resume",
@@ -1380,9 +1435,9 @@ void draw_signal_meter(bool force_chrome = false) {
   const int db_i = static_cast<int>(lroundf(rtl_signal_dbfs_smooth));
 
   if (force_chrome || !s_chrome_drawn) {
-    M5.Display.fillRect(0, 0, kDbX + 90, 30, TFT_BLACK);
+    M5.Display.fillRect(0, 0, kDbX + 130, 30, TFT_BLACK);
     M5.Display.setTextDatum(middle_left);
-    M5.Display.setTextSize(1);
+    M5.Display.setTextSize(2);
     M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     M5.Display.drawString("SIG", kLabelX, kBarY + kBarH / 2);
     M5.Display.drawRect(kBarX, kBarY, kBarW, kBarH, TFT_DARKGREY);
@@ -1408,14 +1463,14 @@ void draw_signal_meter(bool force_chrome = false) {
   }
 
   if (db_i != s_last_db_i) {
-    M5.Display.fillRect(kDbX, 4, 88, 24, TFT_BLACK);
+    M5.Display.fillRect(kDbX, 4, 120, 24, TFT_BLACK);
     char db_label[20];
     snprintf(db_label, sizeof(db_label), "%+.0f dB", static_cast<double>(db_i));
     M5.Display.setTextDatum(middle_left);
-    M5.Display.setTextSize(2);
+    M5.Display.setTextSize(3);
     M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
     M5.Display.drawString(db_label, kDbX, kBarY + kBarH / 2);
-    M5.Display.setTextSize(1);
+    M5.Display.setTextSize(2);
     s_last_db_i = db_i;
   }
 }
@@ -1429,26 +1484,18 @@ void draw_sdr_header(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   draw_signal_meter(true);
 
   M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextSize(3);
+  M5.Display.setTextSize(4);
   M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
   snprintf(label, sizeof(label), "%s  %s", rtl_band_name(band), frequency_text);
   M5.Display.drawString(label, 560, 48);
-  M5.Display.setTextSize(2);
+  M5.Display.setTextSize(3);
   M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
   snprintf(label, sizeof(label), "VOL %u", volume);
   M5.Display.drawString(label, 1100, 48);
   draw_tool_tabs();
-  M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextSize(1);
-  M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  snprintf(label, sizeof(label),
-           "%s  |  960 kS/s  |  cyan=avg orange=peak  |  tool=%s",
-           rtl_mode_name(band), orc_tool_name(orc_tool_current()));
-  M5.Display.drawString(label, 640, 58);
 }
 
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
-  char label[64];
   if (!rtl_spectrum_window_ready) {
     constexpr float kPi = 3.14159265358979323846f;
     for (size_t index = 0; index < kRtlSpectrumBins; ++index) {
@@ -1469,19 +1516,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
     const int x = kSpectrumX + line * kSpectrumWidth / 4;
     M5.Display.drawFastVLine(x, kSpectrumY, kSpectrumHeight, 0x2104);
   }
-  const double center = frequency_hz / 1000000.0;
-  const double span = 0.480;
-  for (int marker = 0; marker <= 4; ++marker) {
-    const double mark = center - span + marker * (span / 2.0);
-    if (frequency_hz >= 1000000) {
-      snprintf(label, sizeof(label), marker == 4 ? "%.3f MHz" : "%.3f", mark);
-    } else {
-      snprintf(label, sizeof(label), marker == 4 ? "%.1f kHz" : "%.1f", mark * 1000.0);
-    }
-    M5.Display.setTextColor(marker == 2 ? TFT_GREEN : TFT_LIGHTGREY, TFT_BLACK);
-    M5.Display.drawString(label, kSpectrumX + marker * kSpectrumWidth / 4,
-                          kSpectrumY + kSpectrumHeight + 14);
-  }
+  draw_spectrum_axis();
   M5.Display.fillRect(kSpectrumX, kWaterfallY, kSpectrumWidth, kWaterfallHeight,
                       TFT_BLACK);
   M5.Display.drawRect(kSpectrumX, kWaterfallY, kSpectrumWidth, kWaterfallHeight,
@@ -1490,6 +1525,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
                            kWaterfallHeight - 2, TFT_BLACK);
   reset_spectrum_renderer();
   draw_spectrum_grid();
+  draw_band_edges();
   draw_sdr_controls(band, volume, true);
 }
 
@@ -1540,6 +1576,52 @@ void draw_spectrum_grid() {
   }
   M5.Display.drawFastVLine(kSpectrumX + kSpectrumWidth / 2, kSpectrumY + 1,
                            kSpectrumHeight - 2, TFT_GREEN);
+}
+
+void redraw_spectrum_panel() {
+  M5.Display.fillRect(kSpectrumX + 1, kSpectrumY + 1, kSpectrumWidth - 2,
+                      kSpectrumHeight - 2, TFT_BLACK);
+  reset_spectrum_renderer();
+  draw_spectrum_grid();
+  draw_band_edges();
+}
+
+void draw_spectrum_axis() {
+  const uint32_t span_hz = rtl_scope_span_hz.load(std::memory_order_relaxed);
+  const double center = rtl_ui_frequency_hz / 1000000.0;
+  const double half_span = static_cast<double>(span_hz) / 2000000.0;
+  char label[32];
+  M5.Display.fillRect(kSpectrumX - 24, kSpectrumY + kSpectrumHeight + 1,
+                      kSpectrumWidth + 48, 19, TFT_BLACK);
+  M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextSize(2);
+  for (int marker = 0; marker <= 4; ++marker) {
+    const double mark = center - half_span + marker * (half_span / 2.0);
+    if (rtl_ui_frequency_hz >= 1000000) {
+      snprintf(label, sizeof(label), marker == 4 ? "%.3f MHz" : "%.3f", mark);
+    } else {
+      snprintf(label, sizeof(label), marker == 4 ? "%.1f kHz" : "%.1f", mark * 1000.0);
+    }
+    M5.Display.setTextColor(marker == 2 ? TFT_GREEN : TFT_LIGHTGREY, TFT_BLACK);
+    M5.Display.drawString(label, kSpectrumX + marker * kSpectrumWidth / 4,
+                          kSpectrumY + kSpectrumHeight + 11);
+  }
+}
+
+void draw_band_edges() {
+  const uint32_t span_hz = rtl_scope_span_hz.load(std::memory_order_relaxed);
+  const uint32_t bandwidth_hz = rtl_filter_bandwidth_hz.load(std::memory_order_relaxed);
+  const int half_width = constrain(
+      static_cast<int>((static_cast<uint64_t>(bandwidth_hz) * kSpectrumWidth) /
+                       (2u * span_hz)),
+      3, kSpectrumWidth / 2 - 2);
+  const int center = kSpectrumX + kSpectrumWidth / 2;
+  for (int offset = -1; offset <= 1; ++offset) {
+    M5.Display.drawFastVLine(center - half_width + offset, kSpectrumY + 1,
+                             kSpectrumHeight - 2, TFT_YELLOW);
+    M5.Display.drawFastVLine(center + half_width + offset, kSpectrumY + 1,
+                             kSpectrumHeight - 2, TFT_YELLOW);
+  }
 }
 
 /**
@@ -1637,6 +1719,13 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
     }
   }
 
+  size_t visible_bins = static_cast<size_t>(
+      (static_cast<uint64_t>(rtl_scope_span_hz.load(std::memory_order_relaxed)) *
+       kRtlSpectrumBins) /
+      kRtlScopeSpanMaxHz);
+  visible_bins = constrain(visible_bins, static_cast<size_t>(32), kRtlSpectrumBins);
+  const size_t first_bin = (kRtlSpectrumBins - visible_bins) / 2;
+  const size_t last_bin = first_bin + visible_bins;
   float maximum = -120.0f;
   const float inv_w = 1.0f / static_cast<float>(windows);
   for (size_t bin = 0; bin < kRtlSpectrumBins; ++bin) {
@@ -1651,7 +1740,9 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
       rtl_spectrum_peak[bin] = 0.995f * rtl_spectrum_peak[bin] + 0.005f * level;
     }
     rtl_spectrum_levels[bin] = rtl_spectrum_smooth[bin];
-    maximum = max(maximum, max(rtl_spectrum_levels[bin], rtl_spectrum_peak[bin]));
+    if (bin >= first_bin && bin < last_bin) {
+      maximum = max(maximum, max(rtl_spectrum_levels[bin], rtl_spectrum_peak[bin]));
+    }
   }
   const float floor = maximum - 48.0f;
   const bool redraw_trace =
@@ -1662,12 +1753,12 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   M5.Display.startWrite();
   if (redraw_trace && rtl_spectrum_trace_valid) {
     int previous_x = kSpectrumX;
-    int previous_y = rtl_spectrum_y[0];
-    int prev_peak_y = rtl_spectrum_peak_y[0];
-    for (size_t bin = 0; bin < kRtlSpectrumBins; ++bin) {
-      const int x = kSpectrumX + static_cast<int>(bin * kSpectrumWidth /
-                                                  (kRtlSpectrumBins - 1));
-      if (bin != 0) {
+    int previous_y = rtl_spectrum_y[first_bin];
+    int prev_peak_y = rtl_spectrum_peak_y[first_bin];
+    for (size_t bin = first_bin; bin < last_bin; ++bin) {
+      const int x = kSpectrumX + static_cast<int>((bin - first_bin) * kSpectrumWidth /
+                                                  (visible_bins - 1));
+      if (bin != first_bin) {
         M5.Display.drawLine(previous_x, previous_y, x, rtl_spectrum_y[bin], TFT_BLACK);
         if (show_peak) {
           M5.Display.drawLine(previous_x, prev_peak_y, x, rtl_spectrum_peak_y[bin],
@@ -1687,13 +1778,13 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   int previous_y = kSpectrumY + kSpectrumHeight - 2;
   int prev_peak_x = kSpectrumX;
   int prev_peak_y = kSpectrumY + kSpectrumHeight - 2;
-  for (size_t bin = 0; bin < kRtlSpectrumBins; ++bin) {
+  for (size_t bin = first_bin; bin < last_bin; ++bin) {
     const float normalized =
         constrain((rtl_spectrum_levels[bin] - floor) / 48.0f, 0.0f, 1.0f);
     const float peak_n =
         constrain((rtl_spectrum_peak[bin] - floor) / 48.0f, 0.0f, 1.0f);
-    const int x = kSpectrumX + static_cast<int>(bin * kSpectrumWidth /
-                                                (kRtlSpectrumBins - 1));
+    const int x = kSpectrumX + static_cast<int>((bin - first_bin) * kSpectrumWidth /
+                                                (visible_bins - 1));
     const int y = kSpectrumY + kSpectrumHeight - 2 -
                   static_cast<int>(normalized * (kSpectrumHeight - 4));
     const int py = kSpectrumY + kSpectrumHeight - 2 -
@@ -1701,7 +1792,7 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
     if (redraw_trace) {
       rtl_spectrum_y[bin] = static_cast<int16_t>(y);
       rtl_spectrum_peak_y[bin] = static_cast<int16_t>(py);
-      if (bin != 0) {
+      if (bin != first_bin) {
         if (show_peak) {
           M5.Display.drawLine(prev_peak_x, prev_peak_y, x, py, TFT_ORANGE);
         }
@@ -1712,9 +1803,9 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
       prev_peak_x = x;
       prev_peak_y = py;
     }
-    const int cell_x = static_cast<int>(bin * waterfall_width / kRtlSpectrumBins);
-    const int next_x =
-        static_cast<int>((bin + 1) * waterfall_width / kRtlSpectrumBins);
+    const int cell_x = static_cast<int>((bin - first_bin) * waterfall_width / visible_bins);
+    const int next_x = static_cast<int>((bin - first_bin + 1) * waterfall_width /
+                                        visible_bins);
     const uint16_t color = waterfall_color(normalized);
     for (int pixel = cell_x; pixel < next_x; ++pixel) {
       rtl_waterfall_row[pixel] = color;
@@ -1731,6 +1822,7 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
     rtl_spectrum_trace_last_ms = now;
     rtl_spectrum_trace_valid = true;
   }
+  draw_band_edges();
   M5.Display.endWrite();
 
   ++rtl_spectrum_frames;
@@ -1807,7 +1899,7 @@ void queue_audio_samples(int16_t* audio, size_t audio_count) {
 void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm) {
   int16_t* audio = rtl_audio_buffers[rtl_audio.buffer];
   size_t audio_count = 0;
-  const float iq_lpf_k = wbfm ? kWbfmIqLpfK : (kWbfmIqLpfK * 0.70f);
+  const float iq_lpf_k = rtl_filter_alpha(wbfm ? RtlBand::fm : RtlBand::wx);
   const float audio_lpf_k = wbfm ? kWbfmAudioLpfK : kNfmAudioLpfK;
   const float deemph_k = wbfm ? kWbfmDeemphK : kNfmDeemphK;
   const float inv_audio_decim = 1.0f / static_cast<float>(kFmAudioDecim);
@@ -1859,9 +1951,14 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
 void demodulate_am(const uint8_t* iq, size_t bytes, float audio_scale) {
   int16_t* audio = rtl_audio_buffers[rtl_audio.buffer];
   size_t audio_count = 0;
+  const float iq_lpf_k = rtl_filter_alpha(RtlBand::am);
   for (size_t offset = 0; offset + 1 < bytes; offset += 2) {
-    rtl_audio.i_sum += static_cast<float>(static_cast<int32_t>(iq[offset]) - 128);
-    rtl_audio.q_sum += static_cast<float>(static_cast<int32_t>(iq[offset + 1]) - 128);
+    const float i_in = static_cast<float>(static_cast<int32_t>(iq[offset]) - 128);
+    const float q_in = static_cast<float>(static_cast<int32_t>(iq[offset + 1]) - 128);
+    rtl_audio.iq_i_lpf += iq_lpf_k * (i_in - rtl_audio.iq_i_lpf);
+    rtl_audio.iq_q_lpf += iq_lpf_k * (q_in - rtl_audio.iq_q_lpf);
+    rtl_audio.i_sum += rtl_audio.iq_i_lpf;
+    rtl_audio.q_sum += rtl_audio.iq_q_lpf;
     if (++rtl_audio.rf_phase != 4) continue;
 
     const float i = rtl_audio.i_sum * 0.25f;
@@ -2094,7 +2191,7 @@ void run_rtl_capture() {
                                kSdrControlsHeight, 10, TFT_WHITE);
       M5.Display.setTextColor(TFT_WHITE, TFT_NAVY);
       M5.Display.setTextDatum(middle_center);
-      M5.Display.setTextSize(1);
+      M5.Display.setTextSize(3);
       M5.Display.drawString(vol_label, kSdrEdge + 180 * 3 + kSdrGap * 3 + 140,
                             kSdrBandY + kSdrControlsHeight / 2);
     }
@@ -2433,9 +2530,11 @@ static void rtl_driver_app_task(void *) {
       esp_err_t err = rtl_sdr_v4_esp_start(g_rtl, &st);
       Serial.printf("RTL_START %s\n", rtl_sdr_v4_esp_err_to_name(err));
       if (err == ESP_OK && band == RtlBand::fm) {
-        Serial.printf("RTL_WBFM_DSP rate=%u deemph_us=75 iq_lpf_k=%.2f audio_lpf_k=%.2f "
-                      "decim=%u/%u note=app_side_not_rf_gain\n",
-                      kRtlSampleRateSps, static_cast<double>(kWbfmIqLpfK),
+        Serial.printf("RTL_WBFM_DSP rate=%u filter_hz=%u iq_lpf_k=%.2f audio_lpf_k=%.2f "
+                      "decim=%u/%u note=app_side_filter\n",
+                      kRtlSampleRateSps,
+                      rtl_filter_bandwidth_hz.load(std::memory_order_relaxed),
+                      static_cast<double>(rtl_filter_alpha(RtlBand::fm)),
                       static_cast<double>(kWbfmAudioLpfK),
                       static_cast<unsigned>(kFmRfDecim),
                       static_cast<unsigned>(kFmAudioDecim));
@@ -2494,7 +2593,7 @@ static void rtl_driver_app_task(void *) {
                                      kSdrControlsHeight, 10, TFT_WHITE);
             M5.Display.setTextColor(TFT_WHITE, TFT_NAVY);
             M5.Display.setTextDatum(middle_center);
-            M5.Display.setTextSize(1);
+            M5.Display.setTextSize(3);
             M5.Display.drawString(vol_label, kSdrEdge + 180 * 3 + kSdrGap * 3 + 140,
                                   kSdrBandY + kSdrControlsHeight / 2);
           }
@@ -2642,19 +2741,20 @@ void draw_ui() {
   M5.Display.fillScreen(TFT_BLACK);
   M5.Display.setTextDatum(middle_center);
   M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-  M5.Display.setTextSize(3);
+  M5.Display.setTextSize(5);
   M5.Display.drawString("OrcLink", 640, 90);
 
   M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-  M5.Display.setTextSize(2);
+  M5.Display.setTextSize(3);
   M5.Display.drawString("M5Tab5 agent online", 640, 175);
 
   M5.Display.fillRoundRect(kButtonX, kButtonY, kButtonWidth, kButtonHeight, 18, TFT_DARKCYAN);
   M5.Display.drawRoundRect(kButtonX, kButtonY, kButtonWidth, kButtonHeight, 18, TFT_CYAN);
   M5.Display.setTextColor(TFT_WHITE, TFT_DARKCYAN);
+  M5.Display.setTextSize(3);
   M5.Display.drawString("Tap to verify touch", 640, 360);
 
-  M5.Display.setTextSize(2);
+  M5.Display.setTextSize(3);
   draw_touch_state("Waiting for touch", TFT_LIGHTGREY);
 }
 
@@ -2838,6 +2938,9 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz) {
   if (!g_rtl_device_ready.load(std::memory_order_acquire) || g_rtl == nullptr) return;
 #endif
   frequency_hz = rtl_clamp_frequency(band, frequency_hz);
+  if (band != rtl_ui_band) {
+    rtl_filter_bandwidth_hz.store(rtl_filter_default_hz(band), std::memory_order_relaxed);
+  }
   if (band == RtlBand::fm) {
     persist_fm_frequency(frequency_hz);
   }
@@ -2912,7 +3015,7 @@ void request_hot_retune(uint32_t frequency_hz) {
     /* Frequency row only (below SIG strip) — do not touch the meter. */
     M5.Display.fillRect(180, 34, 760, 36, TFT_BLACK);
     M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(3);
+    M5.Display.setTextSize(4);
     M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
     M5.Display.drawString(label, 560, 48);
   }
@@ -2926,6 +3029,9 @@ void poll_sdr_touch_from_stream() {
   static uint32_t last_touch_poll_ms = 0;
   static bool flick_thresh_set = false;
   static bool scope_dragging = false;
+  static bool pinch_active = false;
+  static float pinch_anchor_distance = 0;
+  static uint32_t pinch_anchor_value = 0;
   static int drag_anchor_x = 0;
   static uint32_t drag_anchor_hz = 0;
   static uint32_t last_queue_ms = 0;
@@ -2938,8 +3044,51 @@ void poll_sdr_touch_from_stream() {
     flick_thresh_set = true;
   }
   M5.update();
+  const uint8_t touch_count = M5.Touch.getCount();
   const auto touch = M5.Touch.getDetail(0);
   const bool pressed = touch.isPressed() || touch.wasPressed();
+
+  if (touch_count >= 2) {
+    const auto second = M5.Touch.getDetail(1);
+    if (point_in_scope(touch.x, touch.y) && point_in_scope(second.x, second.y)) {
+      const float dx = static_cast<float>(touch.x - second.x);
+      const float dy = static_cast<float>(touch.y - second.y);
+      const float distance = sqrtf(dx * dx + dy * dy);
+      if (!pinch_active) {
+        pinch_active = true;
+        pinch_anchor_distance = max(distance, 16.0f);
+        pinch_anchor_value = rtl_pinch_mode == SdrPinchMode::Span
+                                 ? rtl_scope_span_hz.load(std::memory_order_relaxed)
+                                 : rtl_filter_bandwidth_hz.load(std::memory_order_relaxed);
+      } else if (distance >= 16.0f) {
+        uint32_t next;
+        if (rtl_pinch_mode == SdrPinchMode::Span) {
+          next = static_cast<uint32_t>(pinch_anchor_value * pinch_anchor_distance / distance);
+          next = constrain((next / 5000u) * 5000u, kRtlScopeSpanMinHz,
+                           kRtlScopeSpanMaxHz);
+          if (next != rtl_scope_span_hz.exchange(next, std::memory_order_relaxed)) {
+            redraw_spectrum_panel();
+            draw_spectrum_axis();
+          }
+        } else {
+          next = static_cast<uint32_t>(pinch_anchor_value * distance / pinch_anchor_distance);
+          next = rtl_clamp_filter_hz(rtl_ui_band, next);
+          if (next != rtl_filter_bandwidth_hz.exchange(next, std::memory_order_relaxed)) {
+            redraw_spectrum_panel();
+          }
+        }
+      }
+      scope_dragging = false;
+      was_pressed = true;
+      return;
+    }
+  }
+  if (pinch_active) {
+    pinch_active = false;
+    scope_dragging = false;
+    was_pressed = pressed;
+    return;
+  }
 
   // Phone-style infinite scroll: header tracks finger; PLL only every ~120 ms.
   if (pressed && !was_pressed && point_in_scope(touch.x, touch.y) &&
@@ -2952,7 +3101,8 @@ void poll_sdr_touch_from_stream() {
 
   if (scope_dragging && pressed) {
     const int dx = touch.x - drag_anchor_x;
-    const double hz_per_px = kRtlScopeSpanHz / static_cast<double>(kSpectrumWidth);
+    const double hz_per_px = rtl_scope_span_hz.load(std::memory_order_relaxed) /
+                             static_cast<double>(kSpectrumWidth);
     int64_t next = static_cast<int64_t>(drag_anchor_hz) -
                    static_cast<int64_t>(llround(static_cast<double>(dx) * hz_per_px));
     if (next < 0) next = 0;
@@ -2975,7 +3125,8 @@ void poll_sdr_touch_from_stream() {
     if (touch.wasFlicked() || touch.wasDragged()) {
       if (abs(touch.distanceX()) > abs(dx)) dx = touch.distanceX();
     }
-    const double hz_per_px = kRtlScopeSpanHz / static_cast<double>(kSpectrumWidth);
+    const double hz_per_px = rtl_scope_span_hz.load(std::memory_order_relaxed) /
+                             static_cast<double>(kSpectrumWidth);
     int64_t next = static_cast<int64_t>(drag_anchor_hz) -
                    static_cast<int64_t>(llround(static_cast<double>(dx) * hz_per_px));
     if (next < 0) next = 0;

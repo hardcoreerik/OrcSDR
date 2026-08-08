@@ -163,7 +163,7 @@ void draw_status_strip(const char* msg) {
   M5.Display.fillRoundRect(x, y, kStatusBarW, kStatusBarH, 8, TFT_BLACK);
   M5.Display.drawRoundRect(x, y, kStatusBarW, kStatusBarH, 8, TFT_DARKGREY);
   M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextSize(1);
+  M5.Display.setTextSize(2);
   M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   M5.Display.drawString(msg && msg[0] ? msg : "Loading…", 640, y + kStatusBarH / 2);
 }
@@ -174,7 +174,7 @@ void draw_ready_button() {
   M5.Display.drawRoundRect(kReadyButtonX, kReadyButtonY, kReadyButtonW,
                            kReadyButtonH, 18, TFT_CYAN);
   M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextSize(2);
+  M5.Display.setTextSize(3);
   M5.Display.setTextColor(TFT_WHITE, TFT_DARKCYAN);
   M5.Display.drawString("OrcSDR", kReadyButtonX + kReadyButtonW / 2,
                         kReadyButtonY + kReadyButtonH / 2);
@@ -285,12 +285,12 @@ void draw_static_base() {
   if (!g_splash.has_poster) {
     M5.Display.setTextDatum(middle_center);
     M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-    M5.Display.setTextSize(4);
+    M5.Display.setTextSize(5);
     M5.Display.drawString("OrcSDR", 640, 240);
-    M5.Display.setTextSize(2);
+    M5.Display.setTextSize(3);
     M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     M5.Display.drawString("Tab5 + RTL-SDR Blog V4", 640, 320);
-    M5.Display.setTextSize(1);
+    M5.Display.setTextSize(2);
     M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
     M5.Display.drawString(
         "place OrcSDR_Splash_1280x720_60fps_10s.orsplash on microSD for full animation",
