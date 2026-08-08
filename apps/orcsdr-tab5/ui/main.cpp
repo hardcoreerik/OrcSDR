@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdarg>
+#include <cstdlib>
 #include <cstring>
 
 #if !defined(RTL_USE_LEGACY_USB)
@@ -186,6 +187,10 @@ constexpr int kPinchToggleX = 1040;
 constexpr int kPinchToggleY = 66;
 constexpr int kPinchToggleW = 192;
 constexpr int kPinchToggleH = 30;
+constexpr int kNavPanelX = 760;
+constexpr int kNavPanelY = 100;
+constexpr int kNavPanelW = 456;
+constexpr int kNavPanelH = 456;
 constexpr uint8_t kRtlVolumeMin = 0;
 constexpr uint8_t kRtlVolumeMax = 255;
 // ~50% of the M5 speaker scale (0-255). Operator found 220 too loud as a start.
@@ -453,9 +458,16 @@ std::atomic<bool> rtl_volume_changed{false};
 /** When false: no scope/waterfall updates (audio + SIG meter still run). A/B for chop diagnosis. */
 std::atomic<bool> rtl_graphics_enabled{true};
 enum class SdrPinchMode : uint8_t { Span, Filter };
+enum class SdrNavDropdown : uint8_t { None, Pinch, Step };
 std::atomic<uint32_t> rtl_scope_span_hz{kRtlScopeSpanMaxHz};
 std::atomic<uint32_t> rtl_filter_bandwidth_hz{kRtlFmFilterDefaultHz};
 SdrPinchMode rtl_pinch_mode = SdrPinchMode::Span;
+SdrNavDropdown rtl_nav_dropdown = SdrNavDropdown::None;
+bool rtl_nav_open = false;
+bool rtl_frequency_keypad_open = false;
+uint32_t rtl_fm_step_hz = kRtlFmStepHz;
+uint32_t rtl_am_step_hz = kRtlAmStepHz;
+char rtl_frequency_entry[16]{};
 std::atomic<bool> rtl_continuous_requested{false};
 std::atomic<bool> rtl_stop_requested{false};
 std::atomic<bool> rtl_restart_requested{false};
@@ -485,6 +497,10 @@ void draw_sdr_controls(RtlBand band, bool running);
 void handle_sdr_touch(int32_t x, int32_t y);
 void poll_sdr_touch_from_stream();
 void request_hot_retune(uint32_t frequency_hz);
+void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz);
+void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume);
+void draw_nav_panel();
+bool handle_nav_touch(int32_t x, int32_t y);
 void spectrum_offer_iq_snapshot(const uint8_t* iq, size_t bytes);
 bool audio_rec_ensure_buffer();
 bool audio_rec_start();
@@ -833,7 +849,7 @@ void persist_fm_frequency(uint32_t frequency_hz) {
 
 uint32_t rtl_step_frequency(RtlBand band, uint32_t frequency_hz, int direction) {
   if (band == RtlBand::wx) return kRtlWxHz;
-  const uint32_t step = band == RtlBand::am ? kRtlAmStepHz : kRtlFmStepHz;
+  const uint32_t step = band == RtlBand::am ? rtl_am_step_hz : rtl_fm_step_hz;
   if (direction < 0) {
     if (frequency_hz <= step) return rtl_clamp_frequency(band, 0);
     return rtl_clamp_frequency(band, frequency_hz - step);
@@ -1145,8 +1161,7 @@ void draw_tool_tabs() {
     M5.Display.drawString(kLabels[i], x + kToolTabW / 2, kToolTabY + kToolTabH / 2);
     x += kToolTabW + kToolTabGap;
   }
-  const bool span_mode = rtl_pinch_mode == SdrPinchMode::Span;
-  const uint32_t toggle_color = span_mode ? TFT_NAVY : TFT_DARKCYAN;
+  const uint32_t toggle_color = rtl_nav_open ? TFT_MAROON : TFT_DARKCYAN;
   M5.Display.fillRoundRect(kPinchToggleX, kPinchToggleY, kPinchToggleW,
                            kPinchToggleH, 8, toggle_color);
   M5.Display.drawRoundRect(kPinchToggleX, kPinchToggleY, kPinchToggleW,
@@ -1154,18 +1169,20 @@ void draw_tool_tabs() {
   M5.Display.setTextDatum(middle_center);
   M5.Display.setTextSize(3);
   M5.Display.setTextColor(TFT_WHITE, toggle_color);
-  M5.Display.drawString(span_mode ? "SPAN" : "FILTER",
+  M5.Display.drawString(rtl_nav_open ? "CLOSE" : "NAV",
                         kPinchToggleX + kPinchToggleW / 2,
                         kPinchToggleY + kPinchToggleH / 2);
+  if (rtl_nav_open) draw_nav_panel();
 }
 
 bool handle_tool_tab_touch(int32_t x, int32_t y) {
   if (x >= kPinchToggleX && x < kPinchToggleX + kPinchToggleW &&
       y >= kPinchToggleY && y < kPinchToggleY + kPinchToggleH) {
-    rtl_pinch_mode = rtl_pinch_mode == SdrPinchMode::Span
-                         ? SdrPinchMode::Filter
-                         : SdrPinchMode::Span;
-    draw_tool_tabs();
+    rtl_nav_open = !rtl_nav_open;
+    rtl_nav_dropdown = SdrNavDropdown::None;
+    rtl_frequency_keypad_open = false;
+    if (rtl_nav_open) draw_tool_tabs();
+    else draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz, rtl_ui_volume);
     return true;
   }
   if (y < kToolTabY || y >= kToolTabY + kToolTabH) return false;
@@ -1178,6 +1195,208 @@ bool handle_tool_tab_touch(int32_t x, int32_t y) {
     tab_x += kToolTabW + kToolTabGap;
   }
   return false;
+}
+
+void draw_nav_panel() {
+  auto button = [](int x, int y, int w, int h, const char* text, uint32_t color,
+                   uint8_t size = 2) {
+    M5.Display.fillRoundRect(x, y, w, h, 8, color);
+    M5.Display.drawRoundRect(x, y, w, h, 8, TFT_WHITE);
+    M5.Display.setTextDatum(middle_center);
+    M5.Display.setTextSize(size);
+    M5.Display.setTextColor(TFT_WHITE, color);
+    M5.Display.drawString(text, x + w / 2, y + h / 2);
+  };
+
+  M5.Display.fillRoundRect(kNavPanelX, kNavPanelY, kNavPanelW, kNavPanelH, 12,
+                           TFT_BLACK);
+  M5.Display.drawRoundRect(kNavPanelX, kNavPanelY, kNavPanelW, kNavPanelH, 12,
+                           TFT_CYAN);
+  M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextSize(3);
+  M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
+  M5.Display.drawString(rtl_frequency_keypad_open ? "DIRECT FREQUENCY" : "NAVIGATION",
+                        kNavPanelX + kNavPanelW / 2, kNavPanelY + 25);
+
+  if (rtl_frequency_keypad_open) {
+    char field[32];
+    snprintf(field, sizeof(field), "%s%s", rtl_frequency_entry,
+             rtl_ui_band == RtlBand::am ? " kHz" : " MHz");
+    button(780, 145, 416, 54, field, TFT_NAVY, 3);
+    static const char* keys[] = {"1", "2", "3", "4", "5", "6",
+                                 "7", "8", "9", ".", "0", "<"};
+    for (int index = 0; index < 12; ++index) {
+      const int col = index % 3;
+      const int row = index / 3;
+      button(780 + col * 138, 211 + row * 66, 128, 56, keys[index], TFT_DARKGREY, 3);
+    }
+    button(780, 481, 200, 56, "CANCEL", TFT_MAROON, 3);
+    button(996, 481, 200, 56, "TUNE", TFT_DARKGREEN, 3);
+    return;
+  }
+
+  char label[40];
+  button(780, 145, 416, 48, "DIRECT FREQUENCY", TFT_NAVY, 3);
+  snprintf(label, sizeof(label), "PINCH: %s  v",
+           rtl_pinch_mode == SdrPinchMode::Span ? "SPAN" : "FILTER");
+  button(780, 205, 416, 48, label, TFT_DARKCYAN, 3);
+  const uint32_t step = rtl_ui_band == RtlBand::am ? rtl_am_step_hz : rtl_fm_step_hz;
+  snprintf(label, sizeof(label), "STEP: %u kHz  v", step / 1000u);
+  button(780, 265, 416, 48, label, TFT_DARKCYAN, 3);
+
+  if (rtl_nav_dropdown == SdrNavDropdown::Pinch) {
+    button(780, 328, 200, 58, "SPAN", TFT_NAVY, 3);
+    button(996, 328, 200, 58, "FILTER", TFT_DARKCYAN, 3);
+    return;
+  }
+  if (rtl_nav_dropdown == SdrNavDropdown::Step) {
+    static const uint32_t steps[] = {1000, 5000, 10000, 50000, 100000, 200000};
+    for (int index = 0; index < 6; ++index) {
+      snprintf(label, sizeof(label), "%u kHz", steps[index] / 1000u);
+      button(780 + (index % 2) * 216, 328 + (index / 2) * 66, 200, 58, label,
+             TFT_DARKGREY, 3);
+    }
+    return;
+  }
+
+  button(780, 328, 128, 58, "ZOOM IN", TFT_DARKGREY, 2);
+  button(924, 328, 128, 58, "RESET", TFT_DARKGREY, 3);
+  button(1068, 328, 128, 58, "ZOOM OUT", TFT_DARKGREY, 2);
+  button(780, 402, 128, 58, "PEAK", TFT_DARKCYAN, 3);
+  button(924, 402, 128, 58, "AUTO FM", TFT_DARKCYAN, 2);
+  button(1068, 402, 128, 58, "CENTER", TFT_DARKCYAN, 2);
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  M5.Display.drawString("tap=tune  drag=pan  drag yellow edge=filter", 988, 510);
+}
+
+bool handle_nav_touch(int32_t x, int32_t y) {
+  auto hit = [x, y](int bx, int by, int bw, int bh) {
+    return x >= bx && x < bx + bw && y >= by && y < by + bh;
+  };
+  if (!rtl_nav_open || !hit(kNavPanelX, kNavPanelY, kNavPanelW, kNavPanelH)) return false;
+
+  if (rtl_frequency_keypad_open) {
+    if (hit(780, 481, 200, 56)) {
+      rtl_frequency_keypad_open = false;
+      rtl_frequency_entry[0] = '\0';
+      draw_nav_panel();
+      return true;
+    }
+    if (hit(996, 481, 200, 56)) {
+      char* end = nullptr;
+      const double entered = strtod(rtl_frequency_entry, &end);
+      if (end != rtl_frequency_entry && entered > 0.0) {
+        const double scale = rtl_ui_band == RtlBand::am ? 1000.0 : 1000000.0;
+        const double requested_hz = entered * scale;
+        const uint32_t band_max = rtl_ui_band == RtlBand::am
+                                      ? kRtlAmMaxHz
+                                      : rtl_ui_band == RtlBand::wx ? kRtlWxHz
+                                                                   : kRtlFmMaxHz;
+        const uint32_t frequency = rtl_clamp_frequency(
+            rtl_ui_band, requested_hz >= static_cast<double>(band_max)
+                             ? band_max
+                             : static_cast<uint32_t>(requested_hz));
+        rtl_nav_open = false;
+        rtl_frequency_keypad_open = false;
+        const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
+        draw_sdr_screen(rtl_ui_band, frequency, rtl_ui_volume);
+        if (state == RtlCaptureState::running) request_hot_retune(frequency);
+        else queue_local_rtl_listen(rtl_ui_band, frequency);
+      }
+      return true;
+    }
+    static const char keys[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '\b'};
+    for (int index = 0; index < 12; ++index) {
+      if (!hit(780 + (index % 3) * 138, 211 + (index / 3) * 66, 128, 56)) continue;
+      const size_t length = strlen(rtl_frequency_entry);
+      if (keys[index] == '\b') {
+        if (length > 0) rtl_frequency_entry[length - 1] = '\0';
+      } else if (length + 1 < sizeof(rtl_frequency_entry) &&
+                 (keys[index] != '.' || strchr(rtl_frequency_entry, '.') == nullptr)) {
+        rtl_frequency_entry[length] = keys[index];
+        rtl_frequency_entry[length + 1] = '\0';
+      }
+      draw_nav_panel();
+      return true;
+    }
+    return true;
+  }
+
+  if (rtl_nav_dropdown == SdrNavDropdown::Pinch) {
+    if (hit(780, 328, 200, 58)) rtl_pinch_mode = SdrPinchMode::Span;
+    else if (hit(996, 328, 200, 58)) rtl_pinch_mode = SdrPinchMode::Filter;
+    rtl_nav_dropdown = SdrNavDropdown::None;
+    draw_nav_panel();
+    return true;
+  }
+  if (rtl_nav_dropdown == SdrNavDropdown::Step) {
+    static const uint32_t steps[] = {1000, 5000, 10000, 50000, 100000, 200000};
+    for (int index = 0; index < 6; ++index) {
+      if (!hit(780 + (index % 2) * 216, 328 + (index / 2) * 66, 200, 58)) continue;
+      if (rtl_ui_band == RtlBand::am) rtl_am_step_hz = steps[index];
+      else rtl_fm_step_hz = steps[index];
+      break;
+    }
+    rtl_nav_dropdown = SdrNavDropdown::None;
+    draw_nav_panel();
+    return true;
+  }
+  if (hit(780, 145, 416, 48)) {
+    rtl_frequency_keypad_open = true;
+    rtl_frequency_entry[0] = '\0';
+    draw_nav_panel();
+  } else if (hit(780, 205, 416, 48)) {
+    rtl_nav_dropdown = SdrNavDropdown::Pinch;
+    draw_nav_panel();
+  } else if (hit(780, 265, 416, 48)) {
+    rtl_nav_dropdown = SdrNavDropdown::Step;
+    draw_nav_panel();
+  } else if (hit(780, 328, 128, 58) || hit(924, 328, 128, 58) ||
+             hit(1068, 328, 128, 58)) {
+    const uint32_t current = rtl_scope_span_hz.load(std::memory_order_relaxed);
+    uint32_t next = kRtlScopeSpanMaxHz;
+    if (hit(780, 328, 128, 58)) next = max(kRtlScopeSpanMinHz, current / 2);
+    else if (hit(1068, 328, 128, 58)) next = min(kRtlScopeSpanMaxHz, current * 2);
+    rtl_scope_span_hz.store(next, std::memory_order_relaxed);
+    redraw_spectrum_panel();
+    draw_spectrum_axis();
+    draw_nav_panel();
+  } else if (hit(780, 402, 128, 58)) {
+    if (rtl_ui_band == RtlBand::wx) return true;
+    const int64_t target = static_cast<int64_t>(rtl_ui_frequency_hz) +
+                           rtl_scope_peak_offset_hz.load(std::memory_order_relaxed);
+    const uint32_t frequency = rtl_clamp_frequency(
+        rtl_ui_band, target > 0 ? static_cast<uint32_t>(target) : 0u);
+    rtl_nav_open = false;
+    const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
+    if (state == RtlCaptureState::running) request_hot_retune(frequency);
+    else queue_local_rtl_listen(rtl_ui_band, frequency);
+    draw_sdr_screen(rtl_ui_band, frequency, rtl_ui_volume);
+  } else if (hit(924, 402, 128, 58)) {
+    rtl_nav_open = false;
+    rtl_graphics_enabled.store(true, std::memory_order_release);
+    rtl_auto_fm_requested.store(true, std::memory_order_release);
+    rtl_auto_fm_active.store(true, std::memory_order_release);
+    const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
+    if (rtl_ui_band != RtlBand::fm || state != RtlCaptureState::running) {
+      queue_local_rtl_listen(RtlBand::fm, kRtlFmMinHz + kRtlFmAutoStepHz / 2);
+    } else {
+      draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz, rtl_ui_volume);
+    }
+  } else if (hit(1068, 402, 128, 58)) {
+    if (rtl_ui_band != RtlBand::wx) {
+      const uint32_t step = rtl_ui_band == RtlBand::am ? rtl_am_step_hz : rtl_fm_step_hz;
+      const uint32_t frequency = rtl_clamp_frequency(
+          rtl_ui_band, ((rtl_ui_frequency_hz + step / 2) / step) * step);
+      const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
+      if (state == RtlCaptureState::running) request_hot_retune(frequency);
+      else queue_local_rtl_listen(rtl_ui_band, frequency);
+    }
+    rtl_nav_open = false;
+    draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz, rtl_ui_volume);
+  }
+  return true;
 }
 
 void draw_capture_tool_panel() {
@@ -1347,31 +1566,25 @@ void draw_sdr_controls(RtlBand band, bool running) {
   M5.Display.fillRect(0, kSdrBandY - 6, 1280, 720 - (kSdrBandY - 6), TFT_BLACK);
   const bool rec_on = g_audio_rec_active.load(std::memory_order_acquire);
   const SdrButton band_row[] = {
-      {0, 150, "FM",
+      {0, 180, "FM",
        static_cast<uint32_t>(band == RtlBand::fm ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 150, "AM",
+      {0, 180, "AM",
        static_cast<uint32_t>(band == RtlBand::am ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 150, "WX",
+      {0, 180, "WX",
        static_cast<uint32_t>(band == RtlBand::wx ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 170, rec_on ? "REC*" : "REC",
+      {0, 220, rec_on ? "REC*" : "REC",
        static_cast<uint32_t>(rec_on ? TFT_MAROON : TFT_DARKGREY)},
-      {0, 200, running ? "STOP" : "START",
+      {0, 300, running ? "STOP" : "START",
        static_cast<uint32_t>(running ? TFT_MAROON : TFT_DARKGREEN)},
-      {0, 260, rtl_auto_fm_active.load(std::memory_order_acquire) ? "AUTO FM*" : "AUTO FM",
-       static_cast<uint32_t>(rtl_auto_fm_active.load(std::memory_order_relaxed)
-                                 ? TFT_MAROON
-                                 : TFT_DARKCYAN)},
   };
   const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
   const SdrButton tune_row[] = {
-      {0, 140, "FREQ -", TFT_DARKGREY},
-      {0, 140, "FREQ +", TFT_DARKGREY},
-      {0, 140, "VOL -", TFT_NAVY},
-      {0, 140, "VOL +", TFT_NAVY},
-      {0, 180, gfx_on ? "GFX ON" : "GFX OFF",
+      {0, 200, "FREQ -", TFT_DARKGREY},
+      {0, 200, "FREQ +", TFT_DARKGREY},
+      {0, 200, "VOL -", TFT_NAVY},
+      {0, 200, "VOL +", TFT_NAVY},
+      {0, 240, gfx_on ? "GFX ON" : "GFX OFF",
        static_cast<uint32_t>(gfx_on ? TFT_DARKGREEN : TFT_MAROON)},
-      {0, 190, "FIND PEAK", TFT_DARKCYAN},
-      {0, 190, "ZOOM OUT", TFT_DARKCYAN},
   };
   draw_sdr_button_row(kSdrBandY, band_row, std::size(band_row));
   draw_sdr_button_row(kSdrTuneY, tune_row, std::size(tune_row));
@@ -1641,6 +1854,7 @@ void draw_band_edges() {
  * Never runs when GFX off or audio is stressed (caller gates).
  */
 void draw_spectrum(const uint8_t* iq, size_t bytes) {
+  if (rtl_nav_open) return;
   uint8_t local_iq[sizeof(rtl_spectrum_iq_snap)];
   size_t local_bytes = 0;
   portENTER_CRITICAL(&rtl_spectrum_snap_mux);
@@ -3075,6 +3289,7 @@ void poll_sdr_touch_from_stream() {
   static uint32_t last_touch_poll_ms = 0;
   static bool flick_thresh_set = false;
   static bool scope_dragging = false;
+  static bool filter_edge_dragging = false;
   static bool pinch_active = false;
   static float pinch_anchor_distance = 0;
   static uint32_t pinch_anchor_value = 0;
@@ -3093,6 +3308,14 @@ void poll_sdr_touch_from_stream() {
   const uint8_t touch_count = M5.Touch.getCount();
   const auto touch = M5.Touch.getDetail(0);
   const bool pressed = touch.isPressed() || touch.wasPressed();
+
+  if (rtl_nav_open) {
+    if (pressed && !was_pressed) {
+      if (!handle_nav_touch(touch.x, touch.y)) handle_tool_tab_touch(touch.x, touch.y);
+    }
+    was_pressed = pressed;
+    return;
+  }
 
   if (touch_count >= 2) {
     const auto second = M5.Touch.getDetail(1);
@@ -3136,6 +3359,37 @@ void poll_sdr_touch_from_stream() {
     return;
   }
 
+  if (pressed && !was_pressed && touch.y >= kSpectrumY &&
+      touch.y < kSpectrumY + kSpectrumHeight) {
+    const uint32_t span = rtl_scope_span_hz.load(std::memory_order_relaxed);
+    const uint32_t bandwidth = rtl_filter_bandwidth_hz.load(std::memory_order_relaxed);
+    const int half_width = constrain(
+        static_cast<int>((static_cast<uint64_t>(bandwidth) * kSpectrumWidth) /
+                         (2u * span)),
+        3, kSpectrumWidth / 2 - 2);
+    const int center = kSpectrumX + kSpectrumWidth / 2;
+    filter_edge_dragging = abs(touch.x - (center - half_width)) <= 18 ||
+                           abs(touch.x - (center + half_width)) <= 18;
+  }
+  if (filter_edge_dragging && pressed) {
+    const int center = kSpectrumX + kSpectrumWidth / 2;
+    const uint32_t span = rtl_scope_span_hz.load(std::memory_order_relaxed);
+    uint32_t bandwidth = static_cast<uint32_t>(
+        (2ull * abs(touch.x - center) * span) / kSpectrumWidth);
+    bandwidth = rtl_clamp_filter_hz(rtl_ui_band, bandwidth);
+    if (bandwidth != rtl_filter_bandwidth_hz.exchange(bandwidth,
+                                                       std::memory_order_relaxed)) {
+      redraw_spectrum_panel();
+    }
+    was_pressed = pressed;
+    return;
+  }
+  if (filter_edge_dragging && !pressed) {
+    filter_edge_dragging = false;
+    was_pressed = false;
+    return;
+  }
+
   // Phone-style infinite scroll: header tracks finger; PLL only every ~120 ms.
   if (pressed && !was_pressed && point_in_scope(touch.x, touch.y) &&
       rtl_ui_band != RtlBand::wx) {
@@ -3173,8 +3427,16 @@ void poll_sdr_touch_from_stream() {
     }
     const double hz_per_px = rtl_scope_span_hz.load(std::memory_order_relaxed) /
                              static_cast<double>(kSpectrumWidth);
-    int64_t next = static_cast<int64_t>(drag_anchor_hz) -
-                   static_cast<int64_t>(llround(static_cast<double>(dx) * hz_per_px));
+    int64_t next;
+    if (abs(dx) < 12) {
+      next = static_cast<int64_t>(drag_anchor_hz) +
+             static_cast<int64_t>(llround(
+                 static_cast<double>(drag_anchor_x - (kSpectrumX + kSpectrumWidth / 2)) *
+                 hz_per_px));
+    } else {
+      next = static_cast<int64_t>(drag_anchor_hz) -
+             static_cast<int64_t>(llround(static_cast<double>(dx) * hz_per_px));
+    }
     if (next < 0) next = 0;
     request_hot_retune(rtl_clamp_frequency(rtl_ui_band, static_cast<uint32_t>(next)));
     scope_dragging = false;
@@ -3191,8 +3453,8 @@ void poll_sdr_touch_from_stream() {
 void handle_sdr_touch(int32_t x, int32_t y) {
   if (handle_tool_tab_touch(x, y)) return;
 
-  static constexpr int kBandWidths[] = {150, 150, 150, 170, 200, 260};
-  static constexpr int kTuneWidths[] = {140, 140, 140, 140, 180, 190, 190};
+  static constexpr int kBandWidths[] = {180, 180, 180, 220, 300};
+  static constexpr int kTuneWidths[] = {200, 200, 200, 200, 240};
   const int band_index = sdr_button_at(kSdrBandY, x, y, kBandWidths, std::size(kBandWidths));
   if (band_index >= 0) {
     if (band_index == 0) {
@@ -3226,17 +3488,6 @@ void handle_sdr_touch(int32_t x, int32_t y) {
         /* Do not append_journal here — NVS can stall the touch/USB path. */
       } else {
         queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz);
-      }
-    } else if (band_index == 5) {
-      rtl_graphics_enabled.store(true, std::memory_order_release);
-      if (orc_tool_current() == OrcTool::Capture) set_orc_tool(OrcTool::Radio);
-      rtl_auto_fm_requested.store(true, std::memory_order_release);
-      rtl_auto_fm_active.store(true, std::memory_order_release);
-      const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
-      if (rtl_ui_band != RtlBand::fm || state != RtlCaptureState::running) {
-        queue_local_rtl_listen(RtlBand::fm, kRtlFmMinHz + kRtlFmAutoStepHz / 2);
-      } else {
-        draw_sdr_controls(rtl_ui_band, true);
       }
     }
     return;
@@ -3273,26 +3524,6 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     const bool running =
         rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
     draw_sdr_controls(rtl_ui_band, running);
-  } else if (tune_index == 5) {
-    if (rtl_ui_band == RtlBand::wx) return;
-    const int64_t target = static_cast<int64_t>(rtl_ui_frequency_hz) +
-                           rtl_scope_peak_offset_hz.load(std::memory_order_relaxed);
-    const uint32_t next = rtl_clamp_frequency(
-        rtl_ui_band, target > 0 ? static_cast<uint32_t>(target) : 0u);
-    const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
-    if (state == RtlCaptureState::running) request_hot_retune(next);
-    else queue_local_rtl_listen(rtl_ui_band, next);
-    Serial.printf("RTL_FIND_PEAK frequency_hz=%u offset_hz=%ld\n", next,
-                  static_cast<long>(rtl_scope_peak_offset_hz.load(std::memory_order_relaxed)));
-  } else if (tune_index == 6) {
-    const uint32_t current = rtl_scope_span_hz.load(std::memory_order_relaxed);
-    const uint32_t next = current >= kRtlScopeSpanMaxHz / 2
-                              ? kRtlScopeSpanMaxHz
-                              : current * 2;
-    if (next != rtl_scope_span_hz.exchange(next, std::memory_order_relaxed)) {
-      redraw_spectrum_panel();
-      draw_spectrum_axis();
-    }
   }
 }
 
