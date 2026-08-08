@@ -14,6 +14,20 @@ lab, analyzer) plug into the same shell without forking the USB/demod core.
 
 Serial: `RTL_TOOL RADIO|SCOPE|CAPTURE`, `RTL_REC_START|STOP|STATUS|SAVE`.
 
+### Boot / loading splash
+
+Splash is the **loading screen** while Wi-Fi, RTL-SDR host, and NVS come up:
+
+| Item | Detail |
+|---|---|
+| Animated | Variant 4 (`D_tviz`), packed as `OrcSDR_Splash_1280x720_60fps_10s.orsplash` on microSD (`/` or `/orcsdr/`) |
+| Decode | ESP32-P4 HW JPEG → RGB565, SD read-ahead + double RGB buffers |
+| Status line | “Loading… / Starting Wi-Fi… / Starting RTL-SDR…” during boot |
+| Start control | **OrcSDR** button appears only when boot reports **ready**; animation keeps looping until tapped |
+| Fallback | Poster JPEG or text if SD/asset/decode fails (same ready/button rules) |
+| Pack selected asset | `python tools/splash_pack.py --frames-dir docs/splash/variants/D_tviz/frames --out <asset> --fps 24 --frame-count 240 --quality 35 --tab5-native` |
+| Docs | [`docs/OrcSDR_Splash_README.md`](../../docs/OrcSDR_Splash_README.md) |
+
 Driver component (portable USB/stream):
 
 **[`components/rtl_sdr_v4_esp`](../../components/rtl_sdr_v4_esp)** (RTL-SDRv4-ESP).

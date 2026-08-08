@@ -11,6 +11,19 @@ managed_components/
 .idea/
 *.user
 .DS_Store
+
+# Splash generation outputs (device copies live on microSD).
+/docs/OrcSDR_LivingWave*
+/docs/OrcSDR_Splash_*_index.csv
+/docs/splash/*.csv
+/docs/splash/*.jpg
+/docs/splash/*.mjpeg
+/docs/splash/*.mp4
+/docs/splash/*.orsplash
+/docs/splash/variants/*/frames/
+/docs/splash/variants/*/*.jpg
+/docs/splash/variants/*/*.mp4
+/docs/splash/variants/*/*.orsplash
 Thumbs.db
 
 # Local / secrets

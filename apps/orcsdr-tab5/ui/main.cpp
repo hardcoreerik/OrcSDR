@@ -26,6 +26,7 @@
 #endif
 
 #include "rtl_sdr_v4_transfers.h"
+#include "orcsdr_splash.hpp"
 #if !RTL_USE_LEGACY_USB
 #include "rtl_sdr_v4_esp.h"
 #endif
@@ -485,7 +486,11 @@ void draw_touch_state(const char* message, uint32_t color) {
   M5.Display.drawString(message, 640, 515);
 }
 
+/** True while loading splash owns the display — home chrome must not paint. */
+static bool g_suppress_home_paint = false;
+
 void draw_session_state(const char* message, uint32_t color) {
+  if (g_suppress_home_paint) return;
   M5.Display.fillRect(250, 210, 780, 55, TFT_BLACK);
   M5.Display.setTextColor(color, TFT_BLACK);
   M5.Display.setTextDatum(middle_center);
@@ -493,6 +498,7 @@ void draw_session_state(const char* message, uint32_t color) {
 }
 
 void draw_wifi_state() {
+  if (g_suppress_home_paint) return;
   char message[80];
   uint32_t color = TFT_ORANGE;
   if (!wifi_station_ready) {
@@ -533,6 +539,7 @@ const char* charging_state() {
 
 void draw_power_state() {
   /* Never paint over the SDR control rows (tune row sits ~648–700). */
+  if (g_suppress_home_paint) return;
   if (rtl_ui_active.load(std::memory_order_acquire)) {
     return;
   }
@@ -555,6 +562,7 @@ void set_rtl_sdr_status(const char* status) {
 }
 
 void draw_rtl_sdr_state() {
+  if (g_suppress_home_paint) return;
   const bool ready = strstr(rtl_sdr_status, "ready") != nullptr;
   M5.Display.fillRect(150, 545, 980, 40, TFT_BLACK);
   M5.Display.setTextColor(ready ? TFT_GREEN : TFT_ORANGE, TFT_BLACK);
@@ -3483,21 +3491,44 @@ void setup() {
   M5.begin(config);
   M5.Display.setRotation(1);
   M5.Display.setBrightness(180);
-  draw_ui();
-  draw_rtl_sdr_state();
-  initialize_wifi();
-  initialize_rtl_sdr_host();
 
+  /*
+   * Loading splash owns the display while dependencies come up.
+   * Status pill updates each boot step; the ready button gates entry to home.
+   */
+  g_suppress_home_paint = true;
+  (void)orcsdr_splash_begin();
+
+  orcsdr_splash_set_status("Loading device identity…");
   uint8_t mac[6];
   esp_read_mac(mac, ESP_MAC_BASE);
   snprintf(node_id, sizeof(node_id), "m5tab5_%02x%02x%02x%02x%02x%02x",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+  orcsdr_splash_set_status("Loading saved settings…");
   load_state();
+
+  orcsdr_splash_set_status("Starting Wi-Fi stack…");
+  initialize_wifi();
   if (wifi_configured) {
+    orcsdr_splash_set_status("Connecting Wi-Fi…");
     start_wifi_connection();
   } else {
+    orcsdr_splash_set_status("Scanning Wi-Fi networks…");
     start_wifi_inventory();
   }
+
+  orcsdr_splash_set_status("Starting RTL-SDR USB host…");
+  initialize_rtl_sdr_host();
+
+  /* Dependencies are up: reveal the gate while the background keeps looping. */
+  orcsdr_splash_set_ready(true);
+  (void)orcsdr_splash_wait_start();
+  orcsdr_splash_end();
+  g_suppress_home_paint = false;
+
+  draw_ui();
+  draw_rtl_sdr_state();
   append_journal("boot");
   last_ping_ms = millis();
   offline_transition_handled = !paired;
