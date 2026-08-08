@@ -493,6 +493,7 @@ void reset_spectrum_renderer();
 void draw_spectrum_grid();
 void draw_spectrum_axis();
 void draw_band_edges();
+int spectrum_draw_width();
 void redraw_spectrum_panel();
 void draw_sdr_controls(RtlBand band, bool running);
 void handle_sdr_touch(int32_t x, int32_t y);
@@ -1187,7 +1188,13 @@ bool handle_tool_tab_touch(int32_t x, int32_t y) {
     rtl_nav_open = !rtl_nav_open;
     rtl_nav_dropdown = SdrNavDropdown::None;
     rtl_frequency_keypad_open = false;
-    if (rtl_nav_open) draw_tool_tabs();
+    if (rtl_nav_open) {
+      M5.Display.setScrollRect(kSpectrumX + 1, kWaterfallY + 1,
+                               spectrum_draw_width() - 2, kWaterfallHeight - 2,
+                               TFT_BLACK);
+      draw_spectrum_axis();
+      draw_tool_tabs();
+    }
     else draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz, rtl_ui_volume);
     return true;
   }
@@ -1805,17 +1812,22 @@ void reset_spectrum_renderer() {
   }
 }
 
+int spectrum_draw_width() {
+  return rtl_nav_open ? kNavPanelX - kSpectrumX - 1 : kSpectrumWidth;
+}
+
 void draw_spectrum_grid() {
+  const int width = spectrum_draw_width();
   for (int line = 1; line < 4; ++line) {
     const int y = kSpectrumY + line * kSpectrumHeight / 4;
-    M5.Display.drawFastHLine(kSpectrumX + 1, y, kSpectrumWidth - 2, 0x2104);
+    M5.Display.drawFastHLine(kSpectrumX + 1, y, width - 2, 0x2104);
   }
-  M5.Display.drawFastVLine(kSpectrumX + kSpectrumWidth / 2, kSpectrumY + 1,
+  M5.Display.drawFastVLine(kSpectrumX + width / 2, kSpectrumY + 1,
                            kSpectrumHeight - 2, TFT_GREEN);
 }
 
 void redraw_spectrum_panel() {
-  M5.Display.fillRect(kSpectrumX + 1, kSpectrumY + 1, kSpectrumWidth - 2,
+  M5.Display.fillRect(kSpectrumX + 1, kSpectrumY + 1, spectrum_draw_width() - 2,
                       kSpectrumHeight - 2, TFT_BLACK);
   reset_spectrum_renderer();
   draw_spectrum_grid();
@@ -1824,11 +1836,12 @@ void redraw_spectrum_panel() {
 
 void draw_spectrum_axis() {
   const uint32_t span_hz = rtl_scope_span_hz.load(std::memory_order_relaxed);
+  const int width = spectrum_draw_width();
   const double center = rtl_ui_frequency_hz / 1000000.0;
   const double half_span = static_cast<double>(span_hz) / 2000000.0;
   char label[32];
   M5.Display.fillRect(kSpectrumX - 24, kSpectrumY + kSpectrumHeight + 1,
-                      kSpectrumWidth + 48, 19, TFT_BLACK);
+                      width + 24, 19, TFT_BLACK);
   M5.Display.setTextDatum(middle_center);
   M5.Display.setTextSize(2);
   for (int marker = 0; marker <= 4; ++marker) {
@@ -1839,7 +1852,7 @@ void draw_spectrum_axis() {
       snprintf(label, sizeof(label), marker == 4 ? "%.1f kHz" : "%.1f", mark * 1000.0);
     }
     M5.Display.setTextColor(marker == 2 ? TFT_GREEN : TFT_LIGHTGREY, TFT_BLACK);
-    M5.Display.drawString(label, kSpectrumX + marker * kSpectrumWidth / 4,
+    M5.Display.drawString(label, kSpectrumX + marker * width / 4,
                           kSpectrumY + kSpectrumHeight + 11);
   }
 }
@@ -1847,11 +1860,12 @@ void draw_spectrum_axis() {
 void draw_band_edges() {
   const uint32_t span_hz = rtl_scope_span_hz.load(std::memory_order_relaxed);
   const uint32_t bandwidth_hz = rtl_filter_bandwidth_hz.load(std::memory_order_relaxed);
+  const int width = spectrum_draw_width();
   const int half_width = constrain(
-      static_cast<int>((static_cast<uint64_t>(bandwidth_hz) * kSpectrumWidth) /
+      static_cast<int>((static_cast<uint64_t>(bandwidth_hz) * width) /
                        (2u * span_hz)),
-      3, kSpectrumWidth / 2 - 2);
-  const int center = kSpectrumX + kSpectrumWidth / 2;
+      3, width / 2 - 2);
+  const int center = kSpectrumX + width / 2;
   for (int offset = -1; offset <= 1; ++offset) {
     M5.Display.drawFastVLine(center - half_width + offset, kSpectrumY + 1,
                              kSpectrumHeight - 2, TFT_YELLOW);
@@ -1866,7 +1880,6 @@ void draw_band_edges() {
  * Two-window Welch averaging keeps the single render core responsive.
  */
 void draw_spectrum(const uint8_t* iq, size_t bytes) {
-  if (rtl_nav_open) return;
   uint8_t local_iq[sizeof(rtl_spectrum_iq_snap)];
   size_t local_bytes = 0;
   portENTER_CRITICAL(&rtl_spectrum_snap_mux);
@@ -1963,6 +1976,7 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   visible_bins = constrain(visible_bins, static_cast<size_t>(32), kRtlSpectrumBins);
   const size_t first_bin = (kRtlSpectrumBins - visible_bins) / 2;
   const size_t last_bin = first_bin + visible_bins;
+  const int draw_width = spectrum_draw_width();
   float maximum = -120.0f;
   float strongest = -120.0f;
   size_t strongest_bin = kRtlSpectrumBins / 2;
@@ -2000,13 +2014,13 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
 
   M5.Display.startWrite();
   if (redraw_trace) {
-    M5.Display.fillRect(kSpectrumX + 1, kSpectrumY + 1, kSpectrumWidth - 2,
+    M5.Display.fillRect(kSpectrumX + 1, kSpectrumY + 1, draw_width - 2,
                         kSpectrumHeight - 2, TFT_BLACK);
     draw_spectrum_grid();
   }
 
   M5.Display.scroll(0, -1);
-  const int waterfall_width = kSpectrumWidth - 2;
+  const int waterfall_width = draw_width - 2;
   int previous_x = kSpectrumX;
   int previous_y = kSpectrumY + kSpectrumHeight - 2;
   int prev_peak_x = kSpectrumX;
@@ -2016,8 +2030,8 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
         constrain((rtl_spectrum_levels[bin] - floor) / 48.0f, 0.0f, 1.0f);
     const float peak_n =
         constrain((rtl_spectrum_peak[bin] - floor) / 48.0f, 0.0f, 1.0f);
-    const int x = kSpectrumX + static_cast<int>((bin - first_bin) * kSpectrumWidth /
-                                                (visible_bins - 1));
+    const int x = kSpectrumX + static_cast<int>((bin - first_bin) * draw_width /
+                                                 (visible_bins - 1));
     const int y = kSpectrumY + kSpectrumHeight - 2 -
                   static_cast<int>(normalized * (kSpectrumHeight - 4));
     const int py = kSpectrumY + kSpectrumHeight - 2 -
@@ -2050,7 +2064,7 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
                          waterfall_width, 1, rtl_waterfall_row);
   }
   if (redraw_trace) {
-    M5.Display.drawFastVLine(kSpectrumX + kSpectrumWidth / 2, kSpectrumY + 1,
+    M5.Display.drawFastVLine(kSpectrumX + draw_width / 2, kSpectrumY + 1,
                              kSpectrumHeight - 2, TFT_GREEN);
     rtl_spectrum_trace_last_ms = now;
     rtl_spectrum_trace_valid = true;
