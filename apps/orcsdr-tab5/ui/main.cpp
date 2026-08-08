@@ -136,10 +136,10 @@ constexpr uint8_t kFmAudioDecim = 5;
  */
 constexpr size_t kRtlSpectrumBins = 256;
 /** Average this many non-overlapping windows for a quieter, more precise trace. */
-constexpr size_t kRtlSpectrumWelchWindows = 4;
-// Prefer audio: graphics deliberately modest (chop returns if these go too low).
+constexpr size_t kRtlSpectrumWelchWindows = 2;
+// Prefer audio when enabled; muted mode can spend the reclaimed core time on visuals.
 constexpr uint32_t kRtlSpectrumIntervalMs = 220;
-constexpr uint32_t kRtlSpectrumTraceIntervalMs = 220;
+constexpr uint32_t kRtlSpectrumMutedIntervalMs = 100;
 constexpr size_t kRtlRingDepth = 3;
 constexpr uint32_t kRtlAudioPrimeMs = 450;
 constexpr uint32_t kRtlSignalMeterIntervalMs = 200;
@@ -454,6 +454,7 @@ std::atomic<uint32_t> rtl_requested_frequency_hz{kRtlFmDefaultHz};
 std::atomic<uint32_t> rtl_hot_retune_hz{0};
 std::atomic<uint8_t> rtl_requested_volume{kRtlVolumeDefault};
 std::atomic<uint8_t> rtl_live_volume{kRtlVolumeDefault};
+std::atomic<bool> rtl_audio_enabled{false};
 std::atomic<bool> rtl_volume_changed{false};
 /** When false: no scope/waterfall updates (audio + SIG meter still run). A/B for chop diagnosis. */
 std::atomic<bool> rtl_graphics_enabled{true};
@@ -874,6 +875,7 @@ void apply_speaker_volume(uint8_t volume) {
 }
 
 bool ensure_speaker_running(uint8_t volume) {
+  if (!rtl_audio_enabled.load(std::memory_order_acquire)) return false;
   static bool dma_configured = false;
   if (!dma_configured) {
     // Deep DMA queue: absorbs retune gaps and spectrum draws without underruns.
@@ -902,6 +904,10 @@ void flush_audio_play_batch(bool force) {
   /* Capture the exact PCM going to the speaker (post AGC/limiter). */
   if (g_audio_rec_active.load(std::memory_order_acquire)) {
     audio_rec_append(rtl_audio_play_batch, rtl_audio_play_count);
+  }
+  if (!rtl_audio_enabled.load(std::memory_order_acquire)) {
+    rtl_audio_play_count = 0;
+    return;
   }
   if (M5.Speaker.playRaw(rtl_audio_play_batch, rtl_audio_play_count, 48000, false, 1, 0,
                          false)) {
@@ -1578,12 +1584,15 @@ void draw_sdr_controls(RtlBand band, bool running) {
        static_cast<uint32_t>(running ? TFT_MAROON : TFT_DARKGREEN)},
   };
   const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
+  const bool sound_on = rtl_audio_enabled.load(std::memory_order_acquire);
   const SdrButton tune_row[] = {
-      {0, 200, "FREQ -", TFT_DARKGREY},
-      {0, 200, "FREQ +", TFT_DARKGREY},
-      {0, 200, "VOL -", TFT_NAVY},
-      {0, 200, "VOL +", TFT_NAVY},
-      {0, 240, gfx_on ? "GFX ON" : "GFX OFF",
+      {0, 170, "FREQ -", TFT_DARKGREY},
+      {0, 170, "FREQ +", TFT_DARKGREY},
+      {0, 220, sound_on ? "SOUND ON" : "SOUND OFF",
+       static_cast<uint32_t>(sound_on ? TFT_DARKGREEN : TFT_MAROON)},
+      {0, 150, "VOL -", TFT_NAVY},
+      {0, 150, "VOL +", TFT_NAVY},
+      {0, 220, gfx_on ? "GFX ON" : "GFX OFF",
        static_cast<uint32_t>(gfx_on ? TFT_DARKGREEN : TFT_MAROON)},
   };
   draw_sdr_button_row(kSdrBandY, band_row, std::size(band_row));
@@ -1713,7 +1722,11 @@ void draw_sdr_header(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   M5.Display.drawString(label, 560, 48);
   M5.Display.setTextSize(3);
   M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-  snprintf(label, sizeof(label), "VOL %u", volume);
+  if (rtl_audio_enabled.load(std::memory_order_relaxed)) {
+    snprintf(label, sizeof(label), "VOL %u", volume);
+  } else {
+    strlcpy(label, "SOUND OFF", sizeof(label));
+  }
   M5.Display.drawString(label, 1100, 48);
   draw_tool_tabs();
 }
@@ -1850,8 +1863,7 @@ void draw_band_edges() {
 /**
  * RF scope: 256-bin FFT, Welch multi-window average, peak-hold envelope.
  * Prefer a frozen IQ snapshot so demod can keep writing the live buffer.
- * SCOPE tool uses full Welch; RADIO uses fewer windows to protect audio.
- * Never runs when GFX off or audio is stressed (caller gates).
+ * Two-window Welch averaging keeps the single render core responsive.
  */
 void draw_spectrum(const uint8_t* iq, size_t bytes) {
   if (rtl_nav_open) return;
@@ -1870,16 +1882,17 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   }
 
   const uint32_t now = millis();
+  const uint32_t spectrum_interval = rtl_audio_enabled.load(std::memory_order_relaxed)
+                                         ? kRtlSpectrumIntervalMs
+                                         : kRtlSpectrumMutedIntervalMs;
   if (rtl_spectrum_last_ms != 0 &&
-      now - rtl_spectrum_last_ms < kRtlSpectrumIntervalMs) {
+      now - rtl_spectrum_last_ms < spectrum_interval) {
     return;
   }
   rtl_spectrum_last_ms = now;
 
   const OrcTool tool = orc_tool_current();
-  const size_t welch_n =
-      (tool == OrcTool::Scope) ? kRtlSpectrumWelchWindows
-                               : (kRtlSpectrumWelchWindows > 1 ? 2 : 1);
+  const size_t welch_n = kRtlSpectrumWelchWindows;
   const size_t window_bytes = kRtlSpectrumBins * 2;
   const size_t max_windows = local_bytes / window_bytes;
   const size_t windows =
@@ -1982,28 +1995,13 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   const float floor = maximum - 48.0f;
   const bool redraw_trace =
       !rtl_spectrum_trace_valid ||
-      (now - rtl_spectrum_trace_last_ms) >= kRtlSpectrumTraceIntervalMs;
+      (now - rtl_spectrum_trace_last_ms) >= spectrum_interval;
   const bool show_peak = (tool == OrcTool::Scope || tool == OrcTool::Radio);
 
   M5.Display.startWrite();
-  if (redraw_trace && rtl_spectrum_trace_valid) {
-    int previous_x = kSpectrumX;
-    int previous_y = rtl_spectrum_y[first_bin];
-    int prev_peak_y = rtl_spectrum_peak_y[first_bin];
-    for (size_t bin = first_bin; bin < last_bin; ++bin) {
-      const int x = kSpectrumX + static_cast<int>((bin - first_bin) * kSpectrumWidth /
-                                                  (visible_bins - 1));
-      if (bin != first_bin) {
-        M5.Display.drawLine(previous_x, previous_y, x, rtl_spectrum_y[bin], TFT_BLACK);
-        if (show_peak) {
-          M5.Display.drawLine(previous_x, prev_peak_y, x, rtl_spectrum_peak_y[bin],
-                              TFT_BLACK);
-        }
-      }
-      previous_x = x;
-      previous_y = rtl_spectrum_y[bin];
-      prev_peak_y = rtl_spectrum_peak_y[bin];
-    }
+  if (redraw_trace) {
+    M5.Display.fillRect(kSpectrumX + 1, kSpectrumY + 1, kSpectrumWidth - 2,
+                        kSpectrumHeight - 2, TFT_BLACK);
     draw_spectrum_grid();
   }
 
@@ -2272,8 +2270,9 @@ void run_rtl_capture() {
   const bool rate_set = initialized && set_rtl_sample_rate_960k();
   const bool tuned = rate_set && run_rtl_tune(frequency_hz);
   M5.Speaker.stop();
-  delay(20);
-  const bool speaker_ok = ensure_speaker_running(volume);
+  const bool sound_on = rtl_audio_enabled.load(std::memory_order_acquire);
+  if (sound_on) delay(20);
+  const bool speaker_ok = !sound_on || ensure_speaker_running(volume);
   Serial.printf("RTL_EP0_CONTROL_PROBE standard_in=%s captured_init=%s "
                 "sample_rate=%s band=%s frequency_hz=%u volume=%u tuned=%s "
                 "speaker=%s speaker_running=%s\n",
@@ -2685,11 +2684,14 @@ static void on_rtl_driver_event(rtl_sdr_v4_esp_event_t event, const void *payloa
       update_signal_level_from_iq(rtl_iq_processing, n);
       /* Snapshot for scope only — never steal CPU from demod beyond a memcpy. */
       spectrum_offer_iq_snapshot(rtl_iq_processing, n);
-      if (g_stream_band == RtlBand::am) {
-        demodulate_am(rtl_iq_processing, n, g_stream_audio_scale);
-      } else {
-        demodulate_fm(rtl_iq_processing, n, g_stream_audio_scale,
-                      g_stream_band == RtlBand::fm);
+      if (rtl_audio_enabled.load(std::memory_order_relaxed) ||
+          g_audio_rec_active.load(std::memory_order_relaxed)) {
+        if (g_stream_band == RtlBand::am) {
+          demodulate_am(rtl_iq_processing, n, g_stream_audio_scale);
+        } else {
+          demodulate_fm(rtl_iq_processing, n, g_stream_audio_scale,
+                        g_stream_band == RtlBand::fm);
+        }
       }
       rtl_capture_bytes += n;
       (void)rtl_sdr_v4_esp_release_iq_block(g_rtl, iq);
@@ -2743,8 +2745,10 @@ static void rtl_driver_app_task(void *) {
       set_rtl_sdr_status("RTL-SDR V4: continuous listening (driver)");
       draw_sdr_screen(band, frequency_hz, volume);
       M5.Speaker.stop();
-      delay(20);
-      (void)ensure_speaker_running(volume);
+      if (rtl_audio_enabled.load(std::memory_order_acquire)) {
+        delay(20);
+        (void)ensure_speaker_running(volume);
+      }
 
       rtl_sdr_v4_esp_stream_config_t st;
       rtl_sdr_v4_esp_stream_config_default(&st);
@@ -2871,11 +2875,14 @@ static void rtl_driver_app_task(void *) {
           }
           const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
           if (gfx_on && orc_tool_current() != OrcTool::Capture) {
+            const bool sound_on = rtl_audio_enabled.load(std::memory_order_relaxed);
+            const uint32_t visual_interval =
+                sound_on ? kRtlSpectrumIntervalMs : kRtlSpectrumMutedIntervalMs;
             const bool audio_stressed =
-                rtl_audio.dropped_chunks > 0 &&
+                sound_on && rtl_audio.dropped_chunks > 0 &&
                 rtl_audio.dropped_chunks * 2u > rtl_audio.queued_chunks + 2u;
             if (!audio_stressed && now - rtl_session_started_ms >= kRtlAudioPrimeMs &&
-                now - spectrum_last_ms >= kRtlSpectrumIntervalMs) {
+                now - spectrum_last_ms >= visual_interval) {
               spectrum_last_ms = now;
               draw_spectrum(nullptr, 0); /* uses frozen IQ snapshot */
             }
@@ -3454,7 +3461,7 @@ void handle_sdr_touch(int32_t x, int32_t y) {
   if (handle_tool_tab_touch(x, y)) return;
 
   static constexpr int kBandWidths[] = {180, 180, 180, 220, 300};
-  static constexpr int kTuneWidths[] = {200, 200, 200, 200, 240};
+  static constexpr int kTuneWidths[] = {170, 170, 220, 150, 150, 220};
   const int band_index = sdr_button_at(kSdrBandY, x, y, kBandWidths, std::size(kBandWidths));
   if (band_index >= 0) {
     if (band_index == 0) {
@@ -3507,10 +3514,24 @@ void handle_sdr_touch(int32_t x, int32_t y) {
       queue_local_rtl_listen(rtl_ui_band, next);
     }
   } else if (tune_index == 2) {
-    adjust_rtl_volume(-static_cast<int>(kRtlVolumeStep));
+    const bool next = !rtl_audio_enabled.load(std::memory_order_acquire);
+    rtl_audio_enabled.store(next, std::memory_order_release);
+    rtl_audio_play_count = 0;
+    if (next) {
+      (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
+    } else {
+      M5.Speaker.stop();
+    }
+    Serial.printf("RTL_SOUND %s\n", next ? "on" : "off");
+    bump_rtl_ui();
+    const bool running =
+        rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
+    draw_sdr_controls(rtl_ui_band, running);
   } else if (tune_index == 3) {
-    adjust_rtl_volume(static_cast<int>(kRtlVolumeStep));
+    adjust_rtl_volume(-static_cast<int>(kRtlVolumeStep));
   } else if (tune_index == 4) {
+    adjust_rtl_volume(static_cast<int>(kRtlVolumeStep));
+  } else if (tune_index == 5) {
     const bool next =
         !rtl_graphics_enabled.load(std::memory_order_acquire);
     rtl_graphics_enabled.store(next, std::memory_order_release);

@@ -67,7 +67,7 @@ constexpr size_t kRgbDouble = 2;
 constexpr uint32_t kPresentFpsCap = 30;
 constexpr uint16_t kNativeWidth = 720;
 constexpr uint16_t kNativeHeight = 1280;
-/** Status pill near the top so it does not fight the living-wave art. */
+/** Status text near the top so it does not fight the living-wave art. */
 constexpr int kStatusY = 18;
 constexpr int kStatusBarW = 720;
 constexpr int kStatusBarH = 28;
@@ -75,12 +75,8 @@ constexpr int kReadyButtonX = 440;
 constexpr int kReadyButtonY = 600;
 constexpr int kReadyButtonW = 400;
 constexpr int kReadyButtonH = 82;
-constexpr int kStatusNativeX = kNativeWidth - (kStatusY + kStatusBarH);
-constexpr int kStatusNativeY = (1280 - kStatusBarW) / 2;
 constexpr int kReadyNativeX = kNativeWidth - (kReadyButtonY + kReadyButtonH);
 constexpr int kReadyNativeY = kReadyButtonX;
-static_assert(kReadyNativeX + kReadyButtonH < kStatusNativeX,
-              "Native overlay regions must not overlap horizontally");
 
 struct JpegSlot {
   uint8_t* data = nullptr;
@@ -111,7 +107,7 @@ struct SplashState {
   std::atomic<bool> play_done{false};
   std::atomic<bool> active{false};
   std::atomic<bool> ready{false};
-  /** Redraw optional status pill when this is set. */
+  /** Redraw static splash controls when this is set. */
   std::atomic<bool> chrome_dirty{true};
   char status[96]{};
   portMUX_TYPE status_mux = portMUX_INITIALIZER_UNLOCKED;
@@ -157,14 +153,12 @@ void mark_chrome_dirty() {
 }
 
 void draw_status_strip(const char* msg) {
-  /* Compact top-centered pill — small footprint so art stays intact. */
-  const int x = (1280 - kStatusBarW) / 2;
   const int y = kStatusY;
-  M5.Display.fillRoundRect(x, y, kStatusBarW, kStatusBarH, 8, TFT_BLACK);
-  M5.Display.drawRoundRect(x, y, kStatusBarW, kStatusBarH, 8, TFT_DARKGREY);
   M5.Display.setTextDatum(middle_center);
   M5.Display.setTextSize(2);
-  M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  M5.Display.setTextColor(TFT_BLACK);
+  M5.Display.drawString(msg && msg[0] ? msg : "Loading…", 642, y + kStatusBarH / 2 + 2);
+  M5.Display.setTextColor(TFT_WHITE);
   M5.Display.drawString(msg && msg[0] ? msg : "Loading…", 640, y + kStatusBarH / 2);
 }
 
@@ -181,16 +175,12 @@ void draw_ready_button() {
 }
 
 void paint_chrome_overlay() {
-  if (!g_splash.chrome_dirty.load(std::memory_order_acquire)) return;
+  const bool dirty = g_splash.chrome_dirty.exchange(false, std::memory_order_acq_rel);
   if (g_splash.display_mutex) xSemaphoreTake(g_splash.display_mutex, portMAX_DELAY);
-  if (!g_splash.chrome_dirty.exchange(false, std::memory_order_acq_rel)) {
-    if (g_splash.display_mutex) xSemaphoreGive(g_splash.display_mutex);
-    return;
-  }
   char status[96];
   copy_status(status, sizeof(status));
   if (status[0] != '\0') draw_status_strip(status);
-  if (g_splash.ready.load(std::memory_order_acquire)) draw_ready_button();
+  if (dirty && g_splash.ready.load(std::memory_order_acquire)) draw_ready_button();
   if (g_splash.display_mutex) xSemaphoreGive(g_splash.display_mutex);
 }
 
@@ -202,10 +192,9 @@ void copy_native_frame(const uint8_t* rgb) {
   for (uint16_t y = 0; y < kNativeHeight; ++y) {
     const uint8_t* src = rgb + static_cast<size_t>(y) * stride;
     uint8_t* dst = g_splash.framebuffer + static_cast<size_t>(y) * stride;
-    const bool status_row = y >= kStatusNativeY && y < kStatusNativeY + kStatusBarW;
     const bool button_row =
         ready && y >= kReadyNativeY && y < kReadyNativeY + kReadyButtonW;
-    if (!status_row && !button_row) {
+    if (!button_row) {
       memcpy(dst, src, stride);
       continue;
     }
@@ -213,10 +202,6 @@ void copy_native_frame(const uint8_t* rgb) {
     if (button_row) {
       memcpy(dst, src, kReadyNativeX * 2);
       x = kReadyNativeX + kReadyButtonH;
-    }
-    if (status_row) {
-      memcpy(dst + x * 2, src + x * 2, (kStatusNativeX - x) * 2);
-      x = kStatusNativeX + kStatusBarH;
     }
     memcpy(dst + x * 2, src + x * 2, (kNativeWidth - x) * 2);
   }
