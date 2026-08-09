@@ -2118,9 +2118,13 @@ void sd_get_chunk() {
 }
 
 #if ORC_LORA_TEST_BUILD
-void iq_get_abort(const char* reason) {
+void iq_get_reset() {
   if (g_iq_get.active) mbedtls_sha256_free(&g_iq_get.sha);
   g_iq_get = {};
+}
+
+void iq_get_abort(const char* reason) {
+  iq_get_reset();
   Serial.printf("RTL_IQ_GET_ERROR %s\n", reason ? reason : "aborted");
 }
 
@@ -5136,6 +5140,26 @@ void process_command(char* command) {
     Serial.printf("RTL_LORA_AUTO %s\n", enabled ? "ON" : "OFF");
     return;
   }
+#if ORC_LORA_TEST_BUILD
+  if (strncmp(command, "RTL_LORA_TUNE ", 14) == 0) {
+    char* end = nullptr;
+    const unsigned long requested = strtoul(command + 14, &end, 10);
+    if (end == command + 14 || *end != '\0' || requested < kLoraMinHz ||
+        requested > kLoraMaxHz) {
+      Serial.printf("RTL_LORA_TUNE_ERROR range=%u-%u\n", kLoraMinHz, kLoraMaxHz);
+      return;
+    }
+    const uint32_t frequency_hz = static_cast<uint32_t>(requested);
+    if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
+        rtl_ui_band == RtlBand::lora) {
+      request_hot_retune(frequency_hz);
+    } else {
+      queue_local_rtl_listen(RtlBand::lora, frequency_hz);
+    }
+    Serial.printf("RTL_LORA_TUNE_OK frequency_hz=%u\n", frequency_hz);
+    return;
+  }
+#endif
   if (strncmp(command, "LORA_MESSAGE ", 13) == 0) {
     if (!lora_present_host_message(command + 13)) {
       Serial.println("LORA_MESSAGE_ERROR invalid_fields");
@@ -5171,6 +5195,17 @@ void process_command(char* command) {
       return;
     }
 #endif
+#if ORC_LORA_TEST_BUILD
+    // The completed PSRAM buffer is immutable while g_iq_rec_ready is true,
+    // so retrieval does not need to interrupt RTL acquisition or rendering.
+    g_iq_retrieve_resume.store(false, std::memory_order_release);
+    Serial.print("RTL_IQ_RETRIEVE_READY storage=psram");
+    Serial.printf(" bytes=%u rate=%u frequency_hz=%u sf=%u bw=%u\n",
+                  static_cast<unsigned>(g_iq_rec_write.load(std::memory_order_acquire)),
+                  kRtlSampleRateSps, g_iq_rec_frequency_hz,
+                  static_cast<unsigned>(g_iq_rec_sf),
+                  static_cast<unsigned>(g_iq_rec_bandwidth_hz));
+#else
     const bool running = rtl_capture_state.load(std::memory_order_acquire) ==
                          RtlCaptureState::running;
     g_iq_retrieve_resume.store(running, std::memory_order_release);
@@ -5178,15 +5213,6 @@ void process_command(char* command) {
       rtl_restart_requested.store(false, std::memory_order_release);
       rtl_stop_requested.store(true, std::memory_order_release);
     }
-#if ORC_LORA_TEST_BUILD
-    Serial.printf(running ? "RTL_IQ_RETRIEVE_STOPPING storage=psram"
-                          : "RTL_IQ_RETRIEVE_READY storage=psram");
-    Serial.printf(" bytes=%u rate=%u frequency_hz=%u sf=%u bw=%u\n",
-                  static_cast<unsigned>(g_iq_rec_write.load(std::memory_order_acquire)),
-                  kRtlSampleRateSps, g_iq_rec_frequency_hz,
-                  static_cast<unsigned>(g_iq_rec_sf),
-                  static_cast<unsigned>(g_iq_rec_bandwidth_hz));
-#else
     Serial.printf(running ? "RTL_IQ_RETRIEVE_STOPPING pathhex="
                           : "RTL_IQ_RETRIEVE_READY pathhex=");
     print_hex(reinterpret_cast<const uint8_t*>(g_iq_rec_last_path),
@@ -5202,6 +5228,13 @@ void process_command(char* command) {
   }
   if (strcmp(command, "RTL_IQ_GET_CHUNK") == 0) {
     iq_get_chunk();
+    return;
+  }
+  if (strcmp(command, "RTL_IQ_GET_ABORT") == 0) {
+    iq_get_reset();
+    Serial.printf("RTL_IQ_GET_ABORTED ready=%s bytes=%u\n",
+                  g_iq_rec_ready.load(std::memory_order_acquire) ? "true" : "false",
+                  static_cast<unsigned>(g_iq_rec_write.load(std::memory_order_acquire)));
     return;
   }
 #endif

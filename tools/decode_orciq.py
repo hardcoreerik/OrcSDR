@@ -86,9 +86,10 @@ def _varint(data: bytes, offset: int) -> tuple[int, int]:
     raise ValueError("protobuf varint is too long")
 
 
-def parse_data_protobuf(data: bytes) -> tuple[int, bytes]:
+def _parse_data_message(data: bytes) -> dict:
     port = None
     payload = None
+    request_id = 0
     offset = 0
     while offset < len(data):
         tag, offset = _varint(data, offset)
@@ -114,9 +115,16 @@ def parse_data_protobuf(data: bytes) -> tuple[int, bytes]:
             port = int(value)
         elif field == 2 and wire == 2:
             payload = bytes(value)
+        elif field == 6 and wire in (0, 5):
+            request_id = int(value) if wire == 0 else int.from_bytes(value, "little")
     if port is None or payload is None or not 0 <= port <= 511:
         raise ValueError("not a plausible Meshtastic Data protobuf")
-    return port, payload
+    return {"port": port, "payload": payload, "request_id": request_id}
+
+
+def parse_data_protobuf(data: bytes) -> tuple[int, bytes]:
+    message = _parse_data_message(data)
+    return message["port"], message["payload"]
 
 
 def _expand_psk(raw: bytes) -> bytes:
@@ -153,20 +161,58 @@ def _crypt(payload: bytes, key: bytes, sender: int, packet_id: int) -> bytes:
     return Cipher(algorithms.AES(key), modes.CTR(nonce)).decryptor().update(payload)
 
 
-def decode_mesh_packet(frame: bytes, keys: list[tuple[str, bytes]]) -> dict:
+def _decrypt_pki(
+    payload: bytes, private_key: bytes, remote_public_key: bytes,
+    sender: int, packet_id: int,
+) -> bytes:
+    if len(payload) <= 12 or len(private_key) != 32 or len(remote_public_key) != 32:
+        raise ValueError("invalid PKI payload or key length")
+    from cryptography.hazmat.primitives.asymmetric.x25519 import (
+        X25519PrivateKey, X25519PublicKey,
+    )
+    from cryptography.hazmat.primitives.ciphers.aead import AESCCM
+
+    shared = X25519PrivateKey.from_private_bytes(private_key).exchange(
+        X25519PublicKey.from_public_bytes(remote_public_key)
+    )
+    nonce = bytearray(struct.pack("<QI", packet_id, sender) + b"\0" * 4)
+    nonce[4:8] = payload[-4:]
+    return AESCCM(hashlib.sha256(shared).digest(), tag_length=8).decrypt(
+        bytes(nonce[:13]), payload[:-4], None
+    )
+
+
+def decode_mesh_packet(
+    frame: bytes,
+    keys: list[tuple[str, bytes]],
+    pki_keys: list[tuple[str, bytes, bytes]] | None = None,
+) -> dict:
     if len(frame) <= MESH_HEADER.size:
         raise ValueError("LoRa payload is shorter than the 16-byte Meshtastic header")
     to_node, from_node, packet_id, flags, channel, next_hop, relay = MESH_HEADER.unpack_from(frame)
     encrypted = frame[MESH_HEADER.size:]
     failures = []
-    for key_name, key in keys:
+    for key_name, private_key, remote_public_key in pki_keys or []:
         try:
-            port, payload = parse_data_protobuf(_crypt(encrypted, key, from_node, packet_id))
+            data = _parse_data_message(
+                _decrypt_pki(encrypted, private_key, remote_public_key, from_node, packet_id)
+            )
             return {
                 "to": to_node, "from": from_node, "id": packet_id,
                 "hop_limit": flags & 7, "want_ack": bool(flags & 8),
                 "channel_hash": channel, "next_hop": next_hop, "relay": relay,
-                "key": key_name, "port": port, "payload": payload,
+                "key": key_name, "encryption": "pki", **data,
+            }
+        except Exception as error:
+            failures.append(f"{key_name}: {type(error).__name__}")
+    for key_name, key in keys:
+        try:
+            data = _parse_data_message(_crypt(encrypted, key, from_node, packet_id))
+            return {
+                "to": to_node, "from": from_node, "id": packet_id,
+                "hop_limit": flags & 7, "want_ack": bool(flags & 8),
+                "channel_hash": channel, "next_hop": next_hop, "relay": relay,
+                "key": key_name, "encryption": "channel", **data,
             }
         except ValueError as error:
             failures.append(f"{key_name}: {error}")
@@ -186,42 +232,76 @@ def _data_message(port: int, payload: bytes) -> bytes:
     return b"\x08" + _encode_varint(port) + b"\x12" + _encode_varint(len(payload)) + payload
 
 
-def decode_capture(path: Path, psk_file: Path | None):
+def decode_capture(
+    path: Path,
+    psk_file: Path | None = None,
+    channel_psks: list[tuple[str, bytes]] | None = None,
+    pki_keys: list[tuple[str, bytes, bytes]] | None = None,
+):
     np, _, _, _, LoRaReceiver, _ = _dependencies()
     from lora_phy.errors import NoPreambleError
 
     rate, freq, sf, bw, raw = read_capture(path)
     iq = (np.frombuffer(raw, dtype=np.uint8).astype(np.float32).reshape(-1, 2) - 127.5)
     signal = (iq[:, 0] + 1j * iq[:, 1]) / 127.5
-    receiver = LoRaReceiver(freq, sf, bw, rate, has_header=True, preamble_len=16)
+    keys = [("clear", b""), ("public-default", DEFAULT_PSK)]
+    if channel_psks:
+        keys[0:0] = [(name, _expand_psk(psk)) for name, psk in channel_psks]
+    if psk_file:
+        keys.insert(0, ("key-file", read_psk(psk_file)))
+
+    def demodulate(candidate):
+        receiver = LoRaReceiver(freq, sf, bw, rate, has_header=True, preamble_len=16)
+        symbols, cfos, netids = receiver.demodulate(candidate)
+        results = []
+        valid_crc = 0
+        for index, packet_symbols in enumerate(symbols):
+            data, calculated_crc = receiver.decode(packet_symbols)
+            packet = bytes(data)
+            if calculated_crc is not None:
+                received_crc = packet[-2:]
+                if received_crc != bytes(calculated_crc):
+                    results.append({"error": "LoRa CRC mismatch", "index": index})
+                    continue
+                packet = packet[:-2]
+            valid_crc += 1
+            try:
+                result = decode_mesh_packet(packet, keys, pki_keys)
+                result.update(index=index, cfo_hz=cfos[index], netid=netids[index])
+                results.append(result)
+            except ValueError as error:
+                results.append({"error": str(error), "index": index, "raw": packet.hex()})
+        return results, valid_crc, cfos
+
     try:
-        symbols, cfos, netids = receiver.demodulate(signal)
+        results, _, cfos = demodulate(signal)
+        if not cfos or not any("error" in result for result in results):
+            return results
+        valid = {
+            (result.get("from"), result.get("id"), result.get("port")): result
+            for result in results if "error" not in result
+        }
+        corrections = sorted(
+            {float(np.median(cfos)), *(float(cfo) for cfo in cfos)}, key=abs
+        )
+        samples = np.arange(len(signal), dtype=np.float64)
+        for correction_hz in corrections[:8]:
+            if abs(correction_hz) < 0.5:
+                continue
+            phase = samples * (-2j * np.pi * correction_hz / rate)
+            corrected_results, _, _ = demodulate(signal * np.exp(phase))
+            for result in corrected_results:
+                if "error" not in result:
+                    result["cfo_hz"] += correction_hz
+                    valid.setdefault(
+                        (result.get("from"), result.get("id"), result.get("port")), result
+                    )
+        errors = [result for result in results if "error" in result]
+        return list(valid.values()) + errors
     except NoPreambleError as error:
         raise ValueError(
             f"no LoRa preamble/sync found (SF{sf}, BW {bw}, {rate} S/s)"
         ) from error
-    if not symbols:
-        raise ValueError(f"no LoRa preamble/sync found (SF{sf}, BW {bw}, {rate} S/s)")
-    keys = [("clear", b""), ("public-default", DEFAULT_PSK)]
-    if psk_file:
-        keys.insert(0, ("key-file", read_psk(psk_file)))
-    results = []
-    for index, packet_symbols in enumerate(symbols):
-        data, calculated_crc = receiver.decode(packet_symbols)
-        packet = bytes(data)
-        if calculated_crc is not None:
-            received_crc = packet[-2:]
-            if received_crc != bytes(calculated_crc):
-                results.append({"error": "LoRa CRC mismatch", "index": index})
-                continue
-            packet = packet[:-2]
-        try:
-            result = decode_mesh_packet(packet, keys)
-            result.update(index=index, cfo_hz=cfos[index], netid=netids[index])
-            results.append(result)
-        except ValueError as error:
-            results.append({"error": str(error), "index": index, "raw": packet.hex()})
-    return results
 
 
 def _message_command(result: dict) -> bytes:
@@ -298,7 +378,50 @@ def _read_exact(connection, count: int) -> bytes:
     return bytes(data)
 
 
-def _retrieve_latest_iq(connection) -> tuple[str, bytes]:
+def _download_psram_iq(connection, fields: dict[str, int], batch_size: int) -> bytes:
+    connection.write(b"RTL_IQ_GET_BEGIN\n")
+    ready = _wait_line(connection, ("RTL_IQ_GET_READY", "RTL_IQ_GET_ERROR"))
+    if ready.startswith("RTL_IQ_GET_ERROR"):
+        raise RuntimeError(ready)
+    chunk_match = re.search(r"chunk=(\d+)", ready)
+    if not chunk_match:
+        raise RuntimeError("invalid RTL_IQ_GET_READY response: " + ready)
+    chunk_bytes = int(chunk_match.group(1))
+    expected = fields["bytes"]
+    capture = bytearray()
+    while len(capture) < expected:
+        remaining_chunks = (expected - len(capture) + chunk_bytes - 1) // chunk_bytes
+        batch = min(batch_size, remaining_chunks)
+        connection.write(b"RTL_IQ_GET_CHUNK\n" * batch)
+        for _ in range(batch):
+            data_line = _wait_line(connection, ("RTL_IQ_GET_DATA", "RTL_IQ_GET_ERROR"))
+            if data_line.startswith("RTL_IQ_GET_ERROR"):
+                raise RuntimeError(data_line)
+            count_match = re.fullmatch(r"RTL_IQ_GET_DATA bytes=(\d+)", data_line)
+            if not count_match:
+                raise RuntimeError("invalid RTL_IQ_GET_DATA response: " + data_line)
+            capture.extend(_read_exact(connection, int(count_match.group(1))))
+    done = _wait_line(connection, ("RTL_IQ_GET_DONE", "RTL_IQ_GET_ERROR"), 30)
+    if done.startswith("RTL_IQ_GET_ERROR"):
+        raise RuntimeError(done)
+    digest = hashlib.sha256(capture).hexdigest()
+    sha_match = re.search(r"sha256=([0-9a-f]{64})", done)
+    if not sha_match or sha_match.group(1) != digest or len(capture) != expected:
+        raise RuntimeError("PSRAM IQ transfer integrity check failed")
+    return bytes(capture)
+
+
+def _abort_iq_transfer(connection) -> None:
+    connection.reset_input_buffer()
+    connection.write(b"RTL_IQ_GET_ABORT\n")
+    response = _wait_line(
+        connection, ("RTL_IQ_GET_ABORTED", "RTL_IQ_GET_ERROR"), timeout=10
+    )
+    if not response.startswith("RTL_IQ_GET_ABORTED") or "ready=true" not in response:
+        raise RuntimeError("capture was not retained after transfer abort: " + response)
+
+
+def _retrieve_latest_iq(connection, retry_callback=None) -> tuple[str, bytes]:
     connection.write(b"RTL_IQ_RETRIEVE_BEGIN\n")
     state = _wait_line(
         connection,
@@ -318,35 +441,21 @@ def _retrieve_latest_iq(connection) -> tuple[str, bytes]:
         }
         if set(fields) != {"bytes", "rate", "frequency_hz", "sf", "bw"}:
             raise RuntimeError("invalid PSRAM retrieve response: " + state)
-        connection.write(b"RTL_IQ_GET_BEGIN\n")
-        ready = _wait_line(connection, ("RTL_IQ_GET_READY", "RTL_IQ_GET_ERROR"))
-        if ready.startswith("RTL_IQ_GET_ERROR"):
-            raise RuntimeError(ready)
-        chunk_match = re.search(r"chunk=(\d+)", ready)
-        if not chunk_match:
-            raise RuntimeError("invalid RTL_IQ_GET_READY response: " + ready)
-        chunk_bytes = int(chunk_match.group(1))
+        failures = []
+        capture = None
+        for attempt, batch_size in enumerate((4, 1, 1), start=1):
+            try:
+                capture = _download_psram_iq(connection, fields, batch_size)
+                break
+            except (OSError, RuntimeError, TimeoutError) as error:
+                failures.append(f"attempt {attempt}: {error}")
+                if retry_callback is not None:
+                    retry_callback(attempt, str(error))
+                if attempt < 3:
+                    _abort_iq_transfer(connection)
+        if capture is None:
+            raise RuntimeError("PSRAM IQ transfer failed after retries (" + "; ".join(failures) + ")")
         expected = fields["bytes"]
-        capture = bytearray()
-        while len(capture) < expected:
-            remaining_chunks = (expected - len(capture) + chunk_bytes - 1) // chunk_bytes
-            batch = min(16, remaining_chunks)
-            connection.write(b"RTL_IQ_GET_CHUNK\n" * batch)
-            for _ in range(batch):
-                data_line = _wait_line(connection, ("RTL_IQ_GET_DATA", "RTL_IQ_GET_ERROR"))
-                if data_line.startswith("RTL_IQ_GET_ERROR"):
-                    raise RuntimeError(data_line)
-                count_match = re.fullmatch(r"RTL_IQ_GET_DATA bytes=(\d+)", data_line)
-                if not count_match:
-                    raise RuntimeError("invalid RTL_IQ_GET_DATA response: " + data_line)
-                capture.extend(_read_exact(connection, int(count_match.group(1))))
-        done = _wait_line(connection, ("RTL_IQ_GET_DONE", "RTL_IQ_GET_ERROR"), 30)
-        if done.startswith("RTL_IQ_GET_ERROR"):
-            raise RuntimeError(done)
-        digest = hashlib.sha256(capture).hexdigest()
-        sha_match = re.search(r"sha256=([0-9a-f]{64})", done)
-        if not sha_match or sha_match.group(1) != digest or len(capture) != expected:
-            raise RuntimeError("PSRAM IQ transfer integrity check failed")
         header = HEADER.pack(
             MAGIC, HEADER.size, fields["rate"], fields["frequency_hz"], expected,
             1, fields["sf"], 0, fields["bw"], 0,
@@ -355,7 +464,7 @@ def _retrieve_latest_iq(connection) -> tuple[str, bytes]:
             f"iq_serial_{int(time.time() * 1000)}_{fields['frequency_hz']}_"
             f"sf{fields['sf']}_bw{fields['bw']}.orciq"
         )
-        return name, header + bytes(capture)
+        return name, header + capture
 
     match = re.search(r"pathhex=([0-9a-fA-F]+)$", state)
     if not match:
@@ -413,6 +522,7 @@ def watch_tab5(port: str, psk_file: Path | None, capture_dir: Path | None) -> in
             if not IQ_DONE_RE.match(line):
                 continue
             temporary = None
+            verified = False
             try:
                 remote_path, capture_bytes = _retrieve_latest_iq(connection)
                 if capture_dir is None:
@@ -422,6 +532,7 @@ def watch_tab5(port: str, psk_file: Path | None, capture_dir: Path | None) -> in
                     temporary = None
                     local_path = capture_dir / Path(remote_path).name
                 local_path.write_bytes(capture_bytes)
+                verified = True
                 print(f"IQ_VERIFIED {local_path} bytes={len(capture_bytes)}")
                 results = decode_capture(local_path, psk_file)
                 _, messages = print_results(results)
@@ -436,12 +547,15 @@ def watch_tab5(port: str, psk_file: Path | None, capture_dir: Path | None) -> in
             finally:
                 if temporary is not None:
                     temporary.cleanup()
-                connection.write(b"RTL_IQ_RETRIEVE_END\n")
-                resumed = _wait_line(
-                    connection,
-                    ("RTL_IQ_RETRIEVE_RESUMING", "RTL_IQ_RETRIEVE_DONE"),
-                )
-                print(resumed)
+                if verified:
+                    connection.write(b"RTL_IQ_RETRIEVE_END\n")
+                    resumed = _wait_line(
+                        connection,
+                        ("RTL_IQ_RETRIEVE_RESUMING", "RTL_IQ_RETRIEVE_DONE"),
+                    )
+                    print(resumed)
+                else:
+                    print("RTL_IQ_RETAINED retry the pending capture", file=sys.stderr)
     except KeyboardInterrupt:
         print("WATCH_STOPPED")
         return 0
@@ -450,29 +564,36 @@ def watch_tab5(port: str, psk_file: Path | None, capture_dir: Path | None) -> in
 
 
 def self_test() -> None:
-    np, _, _, _, _, LoRaTransmitter = _dependencies()
+    np, _, _, _, LoRaReceiver, LoRaTransmitter = _dependencies()
     sender, packet_id = 0xA1B2C3D4, 0x10203040
     plaintext = _data_message(1, b"OrcSDR Meshtastic self-test")
     header = MESH_HEADER.pack(0xFFFFFFFF, sender, packet_id, 3, 8, 0, sender & 0xFF)
     frame = header + _crypt(plaintext, DEFAULT_PSK, sender, packet_id)
     tx = LoRaTransmitter(9, 125000, 250000, coding_rate=1, preamble_len=16)
-    signal = tx.modulate(tx.encode(np.frombuffer(frame, dtype=np.uint8)))
+    signal = tx.modulate(tx.encode(np.frombuffer(frame, dtype=np.uint8)), cfo=650)
     cu8 = np.column_stack((signal.real, signal.imag))
     cu8 = np.clip(np.rint(cu8 * 100 + 127.5), 0, 255).astype(np.uint8).tobytes()
+    probe_iq = np.frombuffer(cu8, dtype=np.uint8).astype(np.float32).reshape(-1, 2) - 127.5
+    probe_signal = (probe_iq[:, 0] + 1j * probe_iq[:, 1]) / 127.5
+    probe = LoRaReceiver(906875000, 9, 125000, 250000, has_header=True, preamble_len=16)
+    probe_symbols, _, _ = probe.demodulate(probe_signal)
+    probe_data, probe_crc = probe.decode(probe_symbols[0])
+    assert probe_crc is not None and bytes(probe_data[-2:]) != bytes(probe_crc)
     orciq = HEADER.pack(MAGIC, HEADER.size, 250000, 906875000, len(cu8), 1, 9, 0,
                         125000, 0) + cu8
     with tempfile.TemporaryDirectory() as directory:
         capture = Path(directory) / "self-test.orciq"
         capture.write_bytes(orciq)
         results = decode_capture(capture, None)
-    assert len(results) == 1 and "error" not in results[0]
-    result = results[0]
+    valid_results = [result for result in results if "error" not in result]
+    assert len(valid_results) == 1
+    result = valid_results[0]
     assert result["payload"] == b"OrcSDR Meshtastic self-test" and result["port"] == 1
     assert _message_command(result) == (
         b"LORA_MESSAGE a1b2c3d4 10203040 "
         b"4f7263534452204d6573687461737469632073656c662d74657374\n"
     )
-    print("SELF_TEST_OK ORCIQ/CU8 + LoRa PHY/CRC + Meshtastic AES-CTR/protobuf + UTF-8")
+    print("SELF_TEST_OK ORCIQ/CU8 + CFO retry + LoRa PHY/CRC + Meshtastic AES-CTR/protobuf + UTF-8")
 
 
 def main() -> int:
