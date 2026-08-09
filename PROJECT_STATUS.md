@@ -29,7 +29,7 @@ this file when their paths, versions, or completion claims differ.
 | Core split | **Implemented** | USB core 0; IQ delivery and app work on core 1 |
 | Tab5 radio shell | **Implemented** | FM/AM/WX/CB/LoRa, radio/scope/capture tabs, sound/GFX toggles |
 | CB channel dashboard | **Flashed; operator acceptance pending** | 40-channel AM/USB/LSB plan, 2/3 scope, touch channel dial, clarifier, squelch, live S/RF bar |
-| LoRa/Meshtastic receive path | **Flashed; RF acceptance pending** | LoRa dashboard and CU8 IQ capture; host self-test proves sync/FEC/CRC, channel AES-CTR, protobuf, and UTF-8 text |
+| LoRa/Meshtastic receive path | **Flashed; live RF acceptance pending** | 250 ms pre-roll, adaptive 9 dB energy trigger, verified SD bridge, and dashboard message return; synthetic full-chain and COM17 protocol checks pass |
 | SDR navigation | **Flashed; operator acceptance pending** | Full 24–1766 MHz browse, US band/use guide, direct entry, pinch, peak find, FM auto tune |
 | Browse demodulation | **Partial** | NFM spectrum/listen path; AM/SSB/digital mode selection and sub-24 MHz direct sampling remain open |
 | Variant-4 splash | **Implemented on this branch** | Looping SD asset playback and static ready/button overlay |
@@ -56,8 +56,10 @@ this file when their paths, versions, or completion claims differ.
 - [ ] Accept BROWSE panning/direct entry and US band-guide labels on the physical display.
 - [ ] Accept CB channel snapping, scope taps, dial, AM/USB/LSB voice,
       clarifier, squelch, S/RF display, and six dashboard controls.
-- [ ] Capture a live Meshtastic packet from the Tab5, retrieve its `.orciq`
-      file, and confirm the host decoder emits the transmitted text.
+- [x] Add adaptive energy-triggered LoRa IQ capture and a host watcher that
+      pauses, SHA-256 verifies, decodes, returns text, and resumes the SDR.
+- [ ] Transmit a live Meshtastic packet and record `RTL_LORA_ENERGY` through
+      `LORA_MESSAGE_OK`, then visually accept the readable Tab5 message.
 - [x] Install the final variant-4 SD pack and record stable loop FPS (15–16 FPS at 25 MHz SPI).
 - [x] Soak the splash past Ready for 28 seconds with no `task_wdt` reset or panic.
 - [x] Copy the 14,271,890-byte compact splash pack through COM17; device SHA-256 matched `AA490D5E…BCD1FA`.
@@ -112,8 +114,9 @@ no duplicate USB implementation.
 | 2026-08-08 | `0c76bf1` | SDR navigation drawer |
 | 2026-08-08 | `269b191` | Muted-mode scope performance prioritization |
 | 2026-08-08 | `20441dc` | Scope animation remains live with navigation open |
+| 2026-08-08 | `cc463bb` | LoRa dashboard/decoder and CB sideband, clarifier, squelch |
 
-The last six entries are branch work until merged into `main`; a commit is not
+The entries after `bda29fd` are branch work until merged into `main`; a commit is not
 hardware proof and a branch is not considered landed until its merge is verified.
 
 ## Verification commands

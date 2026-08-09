@@ -1,3 +1,4 @@
 lora-phy==0.2.0
 numpy>=1.23,<2
 cryptography>=45,<47
+pyserial==3.5
