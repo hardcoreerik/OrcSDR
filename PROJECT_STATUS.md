@@ -27,14 +27,15 @@ this file when their paths, versions, or completion claims differ.
 | Multi-URB stream, IQ ring, metrics | **Implemented** | Component source; five-minute acceptance still required |
 | In-stream hot retune | **Implemented** | Component v0.4.1; settle-time measurement pending |
 | Core split | **Implemented** | USB core 0; IQ delivery and app work on core 1 |
-| Tab5 radio shell | **Implemented** | FM/AM/WX, radio/scope/capture tabs, sound/GFX toggles |
+| Tab5 radio shell | **Implemented** | FM/AM/WX/CB, radio/scope/capture tabs, sound/GFX toggles |
+| CB channel dashboard | **Flashed; operator acceptance pending** | 40-channel AM plan, 2/3 scope, touch channel dial, live S/RF bar, stylized SD faceplate |
 | SDR navigation | **Flashed; operator acceptance pending** | Full 24–1766 MHz browse, US band/use guide, direct entry, pinch, peak find, FM auto tune |
 | Browse demodulation | **Partial** | NFM spectrum/listen path; AM/SSB/digital mode selection and sub-24 MHz direct sampling remain open |
 | Variant-4 splash | **Implemented on this branch** | Looping SD asset playback and static ready/button overlay |
 | Final splash smoothness | **Active performance gate** | Compact 24 FPS pack verified; 25 MHz SPI measured 15–16 FPS |
 | Current SD splash asset | **Hardware-verified** | 14,271,890 bytes, 240 frames at 24 FPS; device SHA-256 matches source |
 | Splash/USB core isolation | **Hardware-verified** | SD reader pinned to core 1 with a per-frame WDT yield; 28-second run had no WDT/panic |
-| In-device SD file transfer | **Hardware-verified** | COM17 binary chunks, staged write, device SHA-256, rollback |
+| In-device SD file transfer | **Hardware-verified** | COM17 list/get/put, staged writes, device SHA-256, rollback |
 | Graphics with audio enabled | **Open performance gate** | Establish before/after `RTL_SPECTRUM_FPS` and audio-drop evidence |
 | Audio/graphics optimization pass | **Implemented on this branch** | 10 FPS parity target, lighter DSP hot path, timing counters; hardware A/B pending |
 | AM/HF fidelity | **Experimental** | Do not claim calibrated HF/direct-sampling support |
@@ -52,6 +53,7 @@ this file when their paths, versions, or completion claims differ.
 - [ ] Verify the optimized path keeps audio drops near zero on hardware.
 - [ ] Confirm sound defaults off, NAV leaves animation live, and controls remain static.
 - [ ] Accept BROWSE panning/direct entry and US band-guide labels on the physical display.
+- [ ] Accept CB channel snapping, scope taps, dial, S/RF display, and six dashboard controls.
 - [x] Install the final variant-4 SD pack and record stable loop FPS (15–16 FPS at 25 MHz SPI).
 - [x] Soak the splash past Ready for 28 seconds with no `task_wdt` reset or panic.
 - [x] Copy the 14,271,890-byte compact splash pack through COM17; device SHA-256 matched `AA490D5E…BCD1FA`.

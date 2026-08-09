@@ -31,3 +31,4 @@ Thumbs.db
 *.key
 *.pem
 tmp/
+.local/
