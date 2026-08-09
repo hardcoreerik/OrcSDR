@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <SD.h>
+#include <SD_MMC.h>
 #include <M5Unified.h>
 #include <Preferences.h>
 #include <WiFi.h>
@@ -24,6 +25,10 @@
 
 #if !defined(RTL_USE_LEGACY_USB)
 #define RTL_USE_LEGACY_USB 0
+#endif
+
+#if !defined(ORC_LORA_TEST_BUILD)
+#define ORC_LORA_TEST_BUILD 0
 #endif
 
 #include "rtl_sdr_v4_transfers.h"
@@ -499,6 +504,7 @@ static uint32_t g_audio_rec_freq_hz = 0;
 static RtlBand g_audio_rec_band = RtlBand::fm;
 static uint32_t g_audio_rec_file_seq = 0;
 static bool g_sd_ready = false;
+static fs::FS* g_sd_fs = nullptr;
 static bool g_sd_tried = false;
 static char g_audio_rec_last_path[64] = "";
 static std::atomic<uint8_t> g_orc_tool{static_cast<uint8_t>(OrcTool::Radio)};
@@ -508,10 +514,13 @@ static std::atomic<bool> g_audio_rec_export_pending{false};
 constexpr size_t kIqRecSeconds = 3;
 constexpr size_t kIqRecMaxBytes = kRtlSampleRateSps * 2u * kIqRecSeconds;
 constexpr size_t kLoraPreRollBytes = kRtlSampleRateSps / 2u;  // 250 ms CU8 IQ
+constexpr float kLoraTriggerMarginDb = ORC_LORA_TEST_BUILD ? 3.0f : 9.0f;
+constexpr float kLoraTriggerHysteresisDb = ORC_LORA_TEST_BUILD ? 1.0f : 3.0f;
 static uint8_t* g_iq_rec_buf = nullptr;
 static uint8_t* g_lora_pre_roll_buf = nullptr;
 static std::atomic<size_t> g_iq_rec_write{0};
 static std::atomic<bool> g_iq_rec_active{false};
+static std::atomic<bool> g_iq_rec_ready{false};
 static std::atomic<bool> g_iq_rec_export_pending{false};
 static std::atomic<bool> g_iq_rec_export_busy{false};
 static std::atomic<bool> g_iq_rec_auto_triggered{false};
@@ -599,6 +608,12 @@ struct SdGetState {
   mbedtls_sha256_context sha;
 };
 SdGetState g_sd_get;
+struct IqGetState {
+  bool active = false;
+  size_t sent = 0;
+  mbedtls_sha256_context sha;
+};
+IqGetState g_iq_get;
 uint8_t g_sd_put_chunk[kSdPutChunkBytes];
 bool wifi_station_ready = false;
 bool wifi_scan_running = false;
@@ -1231,15 +1246,25 @@ bool ensure_tab5_sd() {
   if (g_sd_ready) return true;
   if (g_sd_tried && !g_sd_ready) return false;
   g_sd_tried = true;
+  SD_MMC.setPowerChannel(-1);  // Tab5 card power is external; LDO channel 4 is in use.
+  SD_MMC.setPins(43, 44, 39, 40, 41, 42);
+  if (SD_MMC.begin("/sd", false, false, SDMMC_FREQ_HIGHSPEED)) {
+    g_sd_fs = &SD_MMC;
+    g_sd_ready = true;
+    Serial.println("RTL_REC_SD ready bus=sdmmc");
+    return true;
+  }
   SPI.begin(kTab5SdSckPin, kTab5SdMisoPin, kTab5SdMosiPin, kTab5SdCsPin);
   /* 10 MHz is safer on long-ish Tab5 SPI than 25 MHz during concurrent USB. */
   if (!SD.begin(kTab5SdCsPin, SPI, 10000000)) {
     Serial.println("RTL_REC_SD missing_or_fail");
+    g_sd_fs = nullptr;
     g_sd_ready = false;
     return false;
   }
+  g_sd_fs = &SD;
   g_sd_ready = true;
-  Serial.println("RTL_REC_SD ready");
+  Serial.println("RTL_REC_SD ready bus=spi");
   return true;
 }
 
@@ -1313,6 +1338,7 @@ void iq_rec_begin(bool automatic, size_t initial_bytes) {
   g_iq_rec_sf = lora_sf.load(std::memory_order_relaxed);
   g_iq_rec_bandwidth_hz = lora_bandwidth_hz.load(std::memory_order_relaxed);
   g_iq_rec_last_path[0] = '\0';
+  g_iq_rec_ready.store(false, std::memory_order_release);
   g_iq_rec_auto_triggered.store(automatic, std::memory_order_release);
   g_iq_rec_write.store(initial_bytes, std::memory_order_release);
   g_iq_rec_active.store(true, std::memory_order_release);
@@ -1347,7 +1373,18 @@ void iq_rec_append(const uint8_t* iq, size_t bytes) {
   g_iq_rec_write.store(written, std::memory_order_release);
   if (written == kIqRecMaxBytes) {
     g_iq_rec_active.store(false, std::memory_order_release);
+#if ORC_LORA_TEST_BUILD
+    g_iq_rec_ready.store(true, std::memory_order_release);
+    Serial.printf("RTL_IQ_DONE storage=psram bytes=%u samples=%u rate=%u frequency_hz=%u sf=%u bw=%u mode=%s\n",
+                  static_cast<unsigned>(written), static_cast<unsigned>(written / 2),
+                  kRtlSampleRateSps, g_iq_rec_frequency_hz,
+                  static_cast<unsigned>(g_iq_rec_sf),
+                  static_cast<unsigned>(g_iq_rec_bandwidth_hz),
+                  g_iq_rec_auto_triggered.load(std::memory_order_relaxed) ? "energy"
+                                                                         : "manual");
+#else
     g_iq_rec_export_pending.store(true, std::memory_order_release);
+#endif
   }
 }
 
@@ -1359,6 +1396,7 @@ void lora_iq_offer(const uint8_t* iq, size_t bytes) {
     return;
   }
   if (!lora_detector_enabled.load(std::memory_order_relaxed) ||
+      g_iq_rec_ready.load(std::memory_order_relaxed) ||
       g_iq_rec_export_pending.load(std::memory_order_relaxed) ||
       g_iq_rec_export_busy.load(std::memory_order_relaxed) ||
       !iq_rec_ensure_buffers()) return;
@@ -1371,10 +1409,11 @@ void lora_iq_offer(const uint8_t* iq, size_t bytes) {
     lora_noise_dbfs.store(g_lora_noise_floor_dbfs, std::memory_order_relaxed);
     return;
   }
-  const float trigger = constrain(g_lora_noise_floor_dbfs + 9.0f, -78.0f, -25.0f);
+  const float trigger =
+      constrain(g_lora_noise_floor_dbfs + kLoraTriggerMarginDb, -78.0f, -25.0f);
   lora_noise_dbfs.store(g_lora_noise_floor_dbfs, std::memory_order_relaxed);
   lora_trigger_dbfs.store(trigger, std::memory_order_relaxed);
-  if (level < trigger - 3.0f) {
+  if (level < trigger - kLoraTriggerHysteresisDb) {
     g_lora_trigger_armed = true;
     g_lora_noise_floor_dbfs = 0.995f * g_lora_noise_floor_dbfs + 0.005f * level;
     return;
@@ -1402,15 +1441,16 @@ bool iq_rec_stop_and_export() {
     Serial.println("RTL_IQ_ERROR empty_or_sd");
     return finish(false);
   }
-  SD.mkdir("/orcsdr");
-  ++g_iq_rec_file_seq;
+  g_sd_fs->mkdir("/orcsdr");
   char path[96];
-  snprintf(path, sizeof(path), "/orcsdr/iq_%03u_%u_sf%u_bw%u.orciq",
-           static_cast<unsigned>(g_iq_rec_file_seq), g_iq_rec_frequency_hz,
-           static_cast<unsigned>(g_iq_rec_sf),
-           static_cast<unsigned>(g_iq_rec_bandwidth_hz));
-  if (SD.exists(path) && !SD.remove(path)) return finish(false);
-  File file = SD.open(path, FILE_WRITE, true);
+  do {
+    ++g_iq_rec_file_seq;
+    snprintf(path, sizeof(path), "/orcsdr/iq_%03u_%u_sf%u_bw%u.orciq",
+             static_cast<unsigned>(g_iq_rec_file_seq), g_iq_rec_frequency_hz,
+             static_cast<unsigned>(g_iq_rec_sf),
+             static_cast<unsigned>(g_iq_rec_bandwidth_hz));
+  } while (g_sd_fs->exists(path));
+  File file = g_sd_fs->open(path, FILE_WRITE, true);
   if (!file) return finish(false);
   file.write(reinterpret_cast<const uint8_t*>("ORCIQ01\0"), 8);
   write_le32(file, 36);
@@ -1444,13 +1484,13 @@ bool iq_rec_stop_and_export() {
 bool audio_rec_write_wav(const char* path, const int16_t* pcm, size_t samples) {
   if (path == nullptr || pcm == nullptr || samples == 0) return false;
   if (!ensure_tab5_sd()) return false;
-  SD.mkdir("/orcsdr");
+  g_sd_fs->mkdir("/orcsdr");
   // FILE_WRITE appends; sequence numbers restart after boot, so replace collisions.
-  if (SD.exists(path) && !SD.remove(path)) {
+  if (g_sd_fs->exists(path) && !g_sd_fs->remove(path)) {
     Serial.printf("RTL_REC_WAV_ERR replace path=%s\n", path);
     return false;
   }
-  File f = SD.open(path, FILE_WRITE, true);
+  File f = g_sd_fs->open(path, FILE_WRITE, true);
   if (!f) {
     Serial.printf("RTL_REC_WAV_ERR open path=%s\n", path);
     return false;
@@ -1962,7 +2002,7 @@ void sd_list() {
     Serial.println("SD_LIST_ERROR sd_unavailable");
     return;
   }
-  File directory = SD.open("/orcsdr");
+  File directory = g_sd_fs->open("/orcsdr");
   if (!directory || !directory.isDirectory()) {
     Serial.println("SD_LIST_ERROR open_failed");
     return;
@@ -2015,7 +2055,7 @@ void sd_get_begin(const char* path_hex) {
     Serial.println("SD_GET_ERROR sd_unavailable");
     return;
   }
-  g_sd_get.file = SD.open(path, FILE_READ);
+  g_sd_get.file = g_sd_fs->open(path, FILE_READ);
   if (!g_sd_get.file || g_sd_get.file.isDirectory()) {
     g_sd_get = {};
     Serial.println("SD_GET_ERROR open_failed");
@@ -2077,6 +2117,71 @@ void sd_get_chunk() {
   g_sd_get = {};
 }
 
+#if ORC_LORA_TEST_BUILD
+void iq_get_abort(const char* reason) {
+  if (g_iq_get.active) mbedtls_sha256_free(&g_iq_get.sha);
+  g_iq_get = {};
+  Serial.printf("RTL_IQ_GET_ERROR %s\n", reason ? reason : "aborted");
+}
+
+void iq_get_begin() {
+  if (g_iq_get.active) {
+    Serial.println("RTL_IQ_GET_ERROR already_active");
+    return;
+  }
+  const size_t bytes = g_iq_rec_write.load(std::memory_order_acquire);
+  if (!g_iq_rec_ready.load(std::memory_order_acquire) || g_iq_rec_buf == nullptr ||
+      bytes == 0) {
+    Serial.println("RTL_IQ_GET_ERROR capture_not_ready");
+    return;
+  }
+  mbedtls_sha256_init(&g_iq_get.sha);
+  if (mbedtls_sha256_starts(&g_iq_get.sha, 0) != 0) {
+    g_iq_get.active = true;
+    iq_get_abort("sha_start");
+    return;
+  }
+  g_iq_get.active = true;
+  g_iq_get.sent = 0;
+  Serial.printf("RTL_IQ_GET_READY chunk=%u bytes=%u\n",
+                static_cast<unsigned>(kSdGetChunkBytes), static_cast<unsigned>(bytes));
+}
+
+void iq_get_chunk() {
+  if (!g_iq_get.active) {
+    Serial.println("RTL_IQ_GET_ERROR not_active");
+    return;
+  }
+  const size_t total = g_iq_rec_write.load(std::memory_order_acquire);
+  const size_t remaining = total - g_iq_get.sent;
+  const size_t count = min(remaining, kSdGetChunkBytes);
+  const uint8_t* data = g_iq_rec_buf + g_iq_get.sent;
+  if (mbedtls_sha256_update(&g_iq_get.sha, data, count) != 0) {
+    iq_get_abort("sha_update");
+    return;
+  }
+  Serial.printf("RTL_IQ_GET_DATA bytes=%u\n", static_cast<unsigned>(count));
+  if (Serial.writeBytes(data, count) != count) {
+    iq_get_abort("serial_write");
+    return;
+  }
+  g_iq_get.sent += count;
+  if (g_iq_get.sent != total) return;
+
+  uint8_t digest[32];
+  if (mbedtls_sha256_finish(&g_iq_get.sha, digest) != 0) {
+    iq_get_abort("sha_finish");
+    return;
+  }
+  mbedtls_sha256_free(&g_iq_get.sha);
+  g_iq_get.active = false;
+  Serial.printf("RTL_IQ_GET_DONE bytes=%u sha256=", static_cast<unsigned>(total));
+  print_hex(digest, sizeof(digest));
+  Serial.println();
+  g_iq_get = {};
+}
+#endif
+
 void sd_remove(const char* path_hex) {
   if (sd_transfer_radio_busy()) {
     Serial.println("SD_REMOVE_ERROR radio_busy");
@@ -2092,18 +2197,18 @@ void sd_remove(const char* path_hex) {
     Serial.println("SD_REMOVE_ERROR sd_unavailable");
     return;
   }
-  if (!SD.exists(path)) {
+  if (!g_sd_fs->exists(path)) {
     Serial.printf("SD_REMOVE_MISSING path=\"%s\"\n", path);
     return;
   }
-  Serial.printf(SD.remove(path) ? "SD_REMOVE_DONE path=\"%s\"\n"
-                                : "SD_REMOVE_ERROR remove_failed path=\"%s\"\n",
+  Serial.printf(g_sd_fs->remove(path) ? "SD_REMOVE_DONE path=\"%s\"\n"
+                                     : "SD_REMOVE_ERROR remove_failed path=\"%s\"\n",
                 path);
 }
 
 void sd_put_abort(const char* reason) {
   if (g_sd_put.file) g_sd_put.file.close();
-  if (g_sd_put.temporary[0]) SD.remove(g_sd_put.temporary);
+  if (g_sd_put.temporary[0]) g_sd_fs->remove(g_sd_put.temporary);
   if (g_sd_put.active) mbedtls_sha256_free(&g_sd_put.sha);
   g_sd_put = {};
   Serial.printf("SD_PUT_ERROR %s\n", reason ? reason : "aborted");
@@ -2125,7 +2230,7 @@ bool sd_put_commit() {
     difference |= digest[i] ^ g_sd_put.expected_sha[i];
   }
   if (difference != 0) {
-    SD.remove(g_sd_put.temporary);
+    g_sd_fs->remove(g_sd_put.temporary);
     Serial.println("SD_PUT_ERROR sha_mismatch");
     g_sd_put = {};
     return false;
@@ -2133,22 +2238,22 @@ bool sd_put_commit() {
 
   char backup[136];
   snprintf(backup, sizeof(backup), "%s.bak", g_sd_put.target);
-  SD.remove(backup);
-  const bool had_target = SD.exists(g_sd_put.target);
-  if (had_target && !SD.rename(g_sd_put.target, backup)) {
-    SD.remove(g_sd_put.temporary);
+  g_sd_fs->remove(backup);
+  const bool had_target = g_sd_fs->exists(g_sd_put.target);
+  if (had_target && !g_sd_fs->rename(g_sd_put.target, backup)) {
+    g_sd_fs->remove(g_sd_put.temporary);
     Serial.println("SD_PUT_ERROR backup_failed");
     g_sd_put = {};
     return false;
   }
-  if (!SD.rename(g_sd_put.temporary, g_sd_put.target)) {
-    if (had_target) (void)SD.rename(backup, g_sd_put.target);
-    SD.remove(g_sd_put.temporary);
+  if (!g_sd_fs->rename(g_sd_put.temporary, g_sd_put.target)) {
+    if (had_target) (void)g_sd_fs->rename(backup, g_sd_put.target);
+    g_sd_fs->remove(g_sd_put.temporary);
     Serial.println("SD_PUT_ERROR rename_failed");
     g_sd_put = {};
     return false;
   }
-  if (had_target) SD.remove(backup);
+  if (had_target) g_sd_fs->remove(backup);
   Serial.printf("SD_PUT_DONE bytes=%llu sha256=",
                 static_cast<unsigned long long>(g_sd_put.received));
   print_hex(digest, sizeof(digest));
@@ -2188,15 +2293,16 @@ void sd_put_begin(char* arguments) {
   }
   /* Stop the SD-backed loading animation before taking exclusive card ownership. */
   if (orcsdr_splash_is_active()) orcsdr_splash_end();
-  if (!ensure_tab5_sd() || (!SD.exists("/orcsdr") && !SD.mkdir("/orcsdr"))) {
+  if (!ensure_tab5_sd() ||
+      (!g_sd_fs->exists("/orcsdr") && !g_sd_fs->mkdir("/orcsdr"))) {
     Serial.println("SD_PUT_ERROR sd_unavailable");
     return;
   }
 
   strlcpy(g_sd_put.target, target, sizeof(g_sd_put.target));
   snprintf(g_sd_put.temporary, sizeof(g_sd_put.temporary), "%s.part", target);
-  SD.remove(g_sd_put.temporary);
-  g_sd_put.file = SD.open(g_sd_put.temporary, FILE_WRITE);
+  g_sd_fs->remove(g_sd_put.temporary);
+  g_sd_put.file = g_sd_fs->open(g_sd_put.temporary, FILE_WRITE);
   if (!g_sd_put.file) {
     g_sd_put = {};
     Serial.println("SD_PUT_ERROR open_failed");
@@ -2578,8 +2684,8 @@ void draw_sdr_header(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
 void draw_cb_dashboard(bool static_panel) {
   if (rtl_ui_band != RtlBand::cb || rtl_nav_open) return;
   if (static_panel) {
-    const bool image_ok = ensure_tab5_sd() && SD.exists(kCbDashboardPath) &&
-                          M5.Display.drawJpgFile(SD, kCbDashboardPath,
+    const bool image_ok = ensure_tab5_sd() && g_sd_fs->exists(kCbDashboardPath) &&
+                          M5.Display.drawJpgFile(*g_sd_fs, kCbDashboardPath,
                                                  kCbPanelX, kCbPanelY);
     if (!image_ok) {
       M5.Display.fillRoundRect(kCbPanelX, kCbPanelY, kCbPanelWidth,
@@ -2636,8 +2742,8 @@ void draw_cb_dashboard(bool static_panel) {
 void draw_lora_dashboard(bool static_panel) {
   if (rtl_ui_band != RtlBand::lora || rtl_nav_open) return;
   if (static_panel) {
-    const bool image_ok = ensure_tab5_sd() && SD.exists(kLoraDashboardPath) &&
-                          M5.Display.drawJpgFile(SD, kLoraDashboardPath,
+    const bool image_ok = ensure_tab5_sd() && g_sd_fs->exists(kLoraDashboardPath) &&
+                          M5.Display.drawJpgFile(*g_sd_fs, kLoraDashboardPath,
                                                  kCbPanelX, kCbPanelY);
     if (!image_ok) {
       M5.Display.fillRoundRect(kCbPanelX, kCbPanelY, kCbPanelWidth,
@@ -4589,6 +4695,9 @@ void request_hot_retune(uint32_t frequency_hz) {
 // Only this path may call M5.update() while rtl_ui_active — concurrent update
 // from loop() was silencing the ES8388 speaker path after 0.8.26.
 void poll_sdr_touch_from_stream() {
+#if ORC_LORA_TEST_BUILD
+  return;
+#endif
   static uint32_t last_touch_poll_ms = 0;
   static bool flick_thresh_set = false;
   static bool scope_dragging = false;
@@ -5003,8 +5112,10 @@ void process_command(char* command) {
     return;
   }
   if (strcmp(command, "RTL_IQ_STATUS") == 0) {
-    Serial.printf("RTL_IQ_STATUS active=%s mode=%s bytes=%u max_bytes=%u frequency_hz=%u sf=%u bw=%u auto=%s events=%u messages=%u noise_dbfs=%.1f trigger_dbfs=%.1f last_path=\"%s\"\n",
+    Serial.printf("RTL_IQ_STATUS active=%s ready=%s storage=%s mode=%s bytes=%u max_bytes=%u frequency_hz=%u sf=%u bw=%u auto=%s events=%u messages=%u noise_dbfs=%.1f trigger_dbfs=%.1f last_path=\"%s\"\n",
                   g_iq_rec_active.load(std::memory_order_acquire) ? "true" : "false",
+                  g_iq_rec_ready.load(std::memory_order_acquire) ? "true" : "false",
+                  ORC_LORA_TEST_BUILD ? "psram" : "sd",
                   g_iq_rec_auto_triggered.load(std::memory_order_acquire) ? "energy" : "manual",
                   static_cast<unsigned>(g_iq_rec_write.load(std::memory_order_acquire)),
                   static_cast<unsigned>(kIqRecMaxBytes), g_iq_rec_frequency_hz,
@@ -5046,12 +5157,20 @@ void process_command(char* command) {
     return;
   }
   if (strcmp(command, "RTL_IQ_RETRIEVE_BEGIN") == 0) {
+#if ORC_LORA_TEST_BUILD
+    if (!g_iq_rec_ready.load(std::memory_order_acquire) ||
+        g_iq_rec_active.load(std::memory_order_acquire)) {
+      Serial.println("RTL_IQ_RETRIEVE_ERROR capture_not_ready");
+      return;
+    }
+#else
     if (g_iq_rec_last_path[0] == '\0' ||
         g_iq_rec_active.load(std::memory_order_acquire) ||
         g_iq_rec_export_pending.load(std::memory_order_acquire)) {
       Serial.println("RTL_IQ_RETRIEVE_ERROR capture_not_ready");
       return;
     }
+#endif
     const bool running = rtl_capture_state.load(std::memory_order_acquire) ==
                          RtlCaptureState::running;
     g_iq_retrieve_resume.store(running, std::memory_order_release);
@@ -5059,14 +5178,40 @@ void process_command(char* command) {
       rtl_restart_requested.store(false, std::memory_order_release);
       rtl_stop_requested.store(true, std::memory_order_release);
     }
+#if ORC_LORA_TEST_BUILD
+    Serial.printf(running ? "RTL_IQ_RETRIEVE_STOPPING storage=psram"
+                          : "RTL_IQ_RETRIEVE_READY storage=psram");
+    Serial.printf(" bytes=%u rate=%u frequency_hz=%u sf=%u bw=%u\n",
+                  static_cast<unsigned>(g_iq_rec_write.load(std::memory_order_acquire)),
+                  kRtlSampleRateSps, g_iq_rec_frequency_hz,
+                  static_cast<unsigned>(g_iq_rec_sf),
+                  static_cast<unsigned>(g_iq_rec_bandwidth_hz));
+#else
     Serial.printf(running ? "RTL_IQ_RETRIEVE_STOPPING pathhex="
                           : "RTL_IQ_RETRIEVE_READY pathhex=");
     print_hex(reinterpret_cast<const uint8_t*>(g_iq_rec_last_path),
               strlen(g_iq_rec_last_path));
     Serial.println();
+#endif
     return;
   }
+#if ORC_LORA_TEST_BUILD
+  if (strcmp(command, "RTL_IQ_GET_BEGIN") == 0) {
+    iq_get_begin();
+    return;
+  }
+  if (strcmp(command, "RTL_IQ_GET_CHUNK") == 0) {
+    iq_get_chunk();
+    return;
+  }
+#endif
   if (strcmp(command, "RTL_IQ_RETRIEVE_END") == 0) {
+#if ORC_LORA_TEST_BUILD
+    if (g_iq_get.active) iq_get_abort("host_end");
+    g_iq_rec_ready.store(false, std::memory_order_release);
+    g_iq_rec_write.store(0, std::memory_order_release);
+    g_iq_rec_auto_triggered.store(false, std::memory_order_release);
+#endif
     if (g_iq_retrieve_resume.exchange(false, std::memory_order_acq_rel) &&
         rtl_device_ready()) {
       queue_local_rtl_listen(RtlBand::lora, rtl_ui_frequency_hz);
@@ -5425,6 +5570,50 @@ void setup() {
   M5.Display.setRotation(1);
   M5.Display.setBrightness(180);
 
+#if ORC_LORA_TEST_BUILD
+  g_suppress_home_paint = true;
+  M5.Display.fillScreen(TFT_BLACK);
+  M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
+  M5.Display.setTextSize(3);
+  M5.Display.drawString("LORA TEST", M5.Display.width() / 2, 260);
+  M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  M5.Display.setTextSize(2);
+  M5.Display.drawString("Starting RTL-SDR...", M5.Display.width() / 2, 315);
+
+  uint8_t mac[6];
+  esp_read_mac(mac, ESP_MAC_BASE);
+  snprintf(node_id, sizeof(node_id), "m5tab5_%02x%02x%02x%02x%02x%02x",
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  load_state();
+  const bool test_sd_ready = ensure_tab5_sd();
+  initialize_rtl_sdr_host();
+
+  const uint32_t device_deadline = millis() + 15000;
+  while (!rtl_device_ready() && static_cast<int32_t>(device_deadline - millis()) > 0) {
+    M5.update();
+    poll_serial();
+    delay(10);
+  }
+  g_suppress_home_paint = false;
+  if (rtl_device_ready()) {
+    set_orc_tool(OrcTool::Radio);
+    queue_local_rtl_listen(RtlBand::lora, kLoraDefaultHz);
+    Serial.printf("LORA_TEST_READY frequency_hz=%u sf=11 bw=250000 trigger_margin_db=%.1f sd=%s\n",
+                  kLoraDefaultHz, static_cast<double>(kLoraTriggerMarginDb),
+                  test_sd_ready ? "ready" : "missing");
+  } else {
+    M5.Display.fillScreen(TFT_BLACK);
+    M5.Display.setTextColor(TFT_RED, TFT_BLACK);
+    M5.Display.drawString("RTL-SDR NOT FOUND", M5.Display.width() / 2, 315);
+    Serial.println("LORA_TEST_ERROR rtl_sdr_not_found");
+  }
+  append_journal("lora_test_boot");
+  last_ping_ms = millis();
+  offline_transition_handled = true;
+  return;
+#else
+
   /*
    * Loading splash owns the display while dependencies come up.
    * Status pill updates each boot step; the ready button gates entry to home.
@@ -5468,6 +5657,7 @@ void setup() {
   draw_session_state(paired ? "Waiting for authenticated host" : "Unpaired - USB provisioning",
                      paired ? TFT_YELLOW : TFT_ORANGE);
   draw_power_state();
+#endif
 }
 
 void loop() {

@@ -34,7 +34,7 @@ PORT_NAMES = {
     112: "GROUPALARM_APP", 256: "PRIVATE_APP", 257: "ATAK_FORWARDER",
 }
 TEXT_PORTS = {1, 10, 11, 13, 32, 66}
-IQ_DONE_RE = re.compile(r'^RTL_IQ_DONE path="([^"]+)"')
+IQ_DONE_RE = re.compile(r"^RTL_IQ_DONE\b")
 
 
 def _dependencies():
@@ -188,11 +188,18 @@ def _data_message(port: int, payload: bytes) -> bytes:
 
 def decode_capture(path: Path, psk_file: Path | None):
     np, _, _, _, LoRaReceiver, _ = _dependencies()
+    from lora_phy.errors import NoPreambleError
+
     rate, freq, sf, bw, raw = read_capture(path)
     iq = (np.frombuffer(raw, dtype=np.uint8).astype(np.float32).reshape(-1, 2) - 127.5)
     signal = (iq[:, 0] + 1j * iq[:, 1]) / 127.5
     receiver = LoRaReceiver(freq, sf, bw, rate, has_header=True, preamble_len=16)
-    symbols, cfos, netids = receiver.demodulate(signal)
+    try:
+        symbols, cfos, netids = receiver.demodulate(signal)
+    except NoPreambleError as error:
+        raise ValueError(
+            f"no LoRa preamble/sync found (SF{sf}, BW {bw}, {rate} S/s)"
+        ) from error
     if not symbols:
         raise ValueError(f"no LoRa preamble/sync found (SF{sf}, BW {bw}, {rate} S/s)")
     keys = [("clear", b""), ("public-default", DEFAULT_PSK)]
@@ -299,13 +306,62 @@ def _retrieve_latest_iq(connection) -> tuple[str, bytes]:
     )
     if state.startswith("RTL_IQ_RETRIEVE_ERROR"):
         raise RuntimeError(state)
+    if state.startswith("RTL_IQ_RETRIEVE_STOPPING"):
+        _wait_line(connection, ("RTL_STOP bytes=",), 20)
+
+    if "storage=psram" in state:
+        fields = {
+            key: int(value)
+            for key, value in re.findall(
+                r"(bytes|rate|frequency_hz|sf|bw)=(\d+)", state
+            )
+        }
+        if set(fields) != {"bytes", "rate", "frequency_hz", "sf", "bw"}:
+            raise RuntimeError("invalid PSRAM retrieve response: " + state)
+        connection.write(b"RTL_IQ_GET_BEGIN\n")
+        ready = _wait_line(connection, ("RTL_IQ_GET_READY", "RTL_IQ_GET_ERROR"))
+        if ready.startswith("RTL_IQ_GET_ERROR"):
+            raise RuntimeError(ready)
+        chunk_match = re.search(r"chunk=(\d+)", ready)
+        if not chunk_match:
+            raise RuntimeError("invalid RTL_IQ_GET_READY response: " + ready)
+        chunk_bytes = int(chunk_match.group(1))
+        expected = fields["bytes"]
+        capture = bytearray()
+        while len(capture) < expected:
+            remaining_chunks = (expected - len(capture) + chunk_bytes - 1) // chunk_bytes
+            batch = min(16, remaining_chunks)
+            connection.write(b"RTL_IQ_GET_CHUNK\n" * batch)
+            for _ in range(batch):
+                data_line = _wait_line(connection, ("RTL_IQ_GET_DATA", "RTL_IQ_GET_ERROR"))
+                if data_line.startswith("RTL_IQ_GET_ERROR"):
+                    raise RuntimeError(data_line)
+                count_match = re.fullmatch(r"RTL_IQ_GET_DATA bytes=(\d+)", data_line)
+                if not count_match:
+                    raise RuntimeError("invalid RTL_IQ_GET_DATA response: " + data_line)
+                capture.extend(_read_exact(connection, int(count_match.group(1))))
+        done = _wait_line(connection, ("RTL_IQ_GET_DONE", "RTL_IQ_GET_ERROR"), 30)
+        if done.startswith("RTL_IQ_GET_ERROR"):
+            raise RuntimeError(done)
+        digest = hashlib.sha256(capture).hexdigest()
+        sha_match = re.search(r"sha256=([0-9a-f]{64})", done)
+        if not sha_match or sha_match.group(1) != digest or len(capture) != expected:
+            raise RuntimeError("PSRAM IQ transfer integrity check failed")
+        header = HEADER.pack(
+            MAGIC, HEADER.size, fields["rate"], fields["frequency_hz"], expected,
+            1, fields["sf"], 0, fields["bw"], 0,
+        )
+        name = (
+            f"iq_serial_{int(time.time() * 1000)}_{fields['frequency_hz']}_"
+            f"sf{fields['sf']}_bw{fields['bw']}.orciq"
+        )
+        return name, header + bytes(capture)
+
     match = re.search(r"pathhex=([0-9a-fA-F]+)$", state)
     if not match:
         raise RuntimeError("invalid retrieve response: " + state)
     path_hex = match.group(1).lower()
     path = bytes.fromhex(path_hex).decode("ascii")
-    if state.startswith("RTL_IQ_RETRIEVE_STOPPING"):
-        _wait_line(connection, ("RTL_STOP bytes=",), 20)
 
     connection.write(f"SD_GET_BEGIN {path_hex}\n".encode("ascii"))
     ready = _wait_line(connection, ("SD_GET_READY", "SD_GET_ERROR"))
@@ -336,19 +392,25 @@ def _retrieve_latest_iq(connection) -> tuple[str, bytes]:
 
 
 def watch_tab5(port: str, psk_file: Path | None, capture_dir: Path | None) -> int:
-    if capture_dir is not None and not capture_dir.is_dir():
-        raise ValueError("--capture-dir must name an existing directory")
+    if capture_dir is not None:
+        capture_dir.mkdir(parents=True, exist_ok=True)
     connection = _open_serial(port)
     print(f"WATCHING {port}: waiting for adaptive RTL_LORA_ENERGY captures")
     try:
+        connection.write(b"RTL_IQ_STATUS\n")
+        status = _wait_line(connection, ("RTL_IQ_STATUS",))
+        pending = "ready=true" in status
         while True:
-            line = connection.readline().decode("utf-8", errors="replace").strip()
+            if pending:
+                line = "RTL_IQ_DONE pending=psram"
+                pending = False
+            else:
+                line = connection.readline().decode("utf-8", errors="replace").strip()
             if not line:
                 continue
             if line.startswith(("RTL_LORA_ENERGY", "RTL_IQ_START", "RTL_IQ_DONE")):
                 print(line)
-            match = IQ_DONE_RE.match(line)
-            if not match:
+            if not IQ_DONE_RE.match(line):
                 continue
             temporary = None
             try:

@@ -652,6 +652,25 @@ static esp_err_t run_tune(rtl_sdr_v4_esp_handle *h, uint32_t frequency_hz)
     return ESP_OK;
 }
 
+#if defined(ORC_LORA_TEST_BUILD) && ORC_LORA_TEST_BUILD
+static esp_err_t run_lora_uhf_frontend(rtl_sdr_v4_esp_handle *h)
+{
+    constexpr RtlControlRecord kUhf[] = {
+        {0x0074, 0x0610, 0x40, 2, {0x17, 0x28}},
+        {0x0074, 0x0610, 0x40, 2, {0x1a, 0x68}},
+        {0x0074, 0x0610, 0x40, 2, {0x1b, 0x00}},
+        {0x0074, 0x0610, 0x40, 2, {0x05, 0x83}},
+    };
+    for (const auto &record : kUhf) {
+        esp_err_t err = run_record(h, record, false);
+        if (err != ESP_OK) {
+            return err;
+        }
+    }
+    return ESP_OK;
+}
+#endif
+
 static void run_cleanup_best_effort(rtl_sdr_v4_esp_handle *h)
 {
     for (const auto &rec : kRtlCleanupTransfers) {
@@ -1460,6 +1479,12 @@ esp_err_t rtl_sdr_v4_esp_start(rtl_sdr_v4_esp_handle_t handle,
         if (ret != ESP_OK) {
             break;
         }
+#if defined(ORC_LORA_TEST_BUILD) && ORC_LORA_TEST_BUILD
+        ret = run_lora_uhf_frontend(handle);
+        if (ret != ESP_OK) {
+            break;
+        }
+#endif
 
         ret = ensure_ring(handle, handle->cfg.transfer_bytes);
         if (ret != ESP_OK) {
