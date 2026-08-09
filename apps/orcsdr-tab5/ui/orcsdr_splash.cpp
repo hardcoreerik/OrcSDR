@@ -30,6 +30,9 @@
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 
+/* Main app services COM17 while the loading screen owns setup(). */
+void orcsdr_splash_poll_serial(void);
+
 namespace {
 
 #pragma pack(push, 1)
@@ -58,8 +61,8 @@ constexpr int kTab5SdCsPin = 42;
 constexpr int kTab5SdSckPin = 43;
 constexpr int kTab5SdMosiPin = 44;
 constexpr int kTab5SdMisoPin = 39;
-/** SPI fallback (slow, reliable). Prefer SD_MMC. */
-constexpr uint32_t kSplashSdHz = 10000000;
+/** 25 MHz sustains the compact pack; fall back for marginal cards/wiring. */
+constexpr uint32_t kSplashSdHz = 25000000;
 constexpr int kTab5SdPowerPin = 45;
 constexpr size_t kJpegSlotCount = 3;
 constexpr size_t kJpegSlotBytes = 220 * 1024;
@@ -307,25 +310,31 @@ bool splash_sd_begin() {
   splash_log("SPLASH_SD sdmmc_fail → spi");
 
   SPI.begin(kTab5SdSckPin, kTab5SdMisoPin, kTab5SdMosiPin, kTab5SdCsPin);
+  uint32_t actual_hz = kSplashSdHz;
   if (!SD.begin(kTab5SdCsPin, SPI, kSplashSdHz)) {
     delay(50);
-    if (!SD.begin(kTab5SdCsPin, SPI, 4000000)) {
-      splash_log("SPLASH_SD fail spi");
-      return false;
+    actual_hz = 10000000;
+    if (!SD.begin(kTab5SdCsPin, SPI, actual_hz)) {
+      actual_hz = 4000000;
+      if (!SD.begin(kTab5SdCsPin, SPI, actual_hz)) {
+        splash_log("SPLASH_SD fail spi");
+        return false;
+      }
     }
   }
   g_splash.fs = &SD;
   g_splash.sd_ok = true;
-  splash_log("SPLASH_SD ready bus=spi hz=%u", static_cast<unsigned>(kSplashSdHz));
+  splash_log("SPLASH_SD ready bus=spi hz=%u", static_cast<unsigned>(actual_hz));
   return true;
 }
 
 bool open_splash_file() {
   if (g_splash.fs == nullptr) return false;
-  if (g_splash.fs->exists(kSplashPath)) {
-    g_splash.file = g_splash.fs->open(kSplashPath, FILE_READ);
-  } else if (g_splash.fs->exists(kSplashPathAlt)) {
+  /* Managed COM17 uploads live in /orcsdr and override legacy root assets. */
+  if (g_splash.fs->exists(kSplashPathAlt)) {
     g_splash.file = g_splash.fs->open(kSplashPathAlt, FILE_READ);
+  } else if (g_splash.fs->exists(kSplashPath)) {
+    g_splash.file = g_splash.fs->open(kSplashPath, FILE_READ);
   }
   if (!g_splash.file) {
     splash_log("SPLASH_FILE missing");
@@ -478,8 +487,8 @@ void splash_reader_task(void*) {
       continue;
     }
     frame = static_cast<uint16_t>((frame + 1) % n);
-    /* Yield without forcing a full tick sleep every frame (keeps SD pipeline full). */
-    vTaskDelay(0);
+    /* One tick is negligible beside SD latency and guarantees IDLE feeds the WDT. */
+    vTaskDelay(1);
   }
   g_splash.reader_done.store(true, std::memory_order_release);
   g_splash.reader_task = nullptr;
@@ -679,11 +688,11 @@ bool start_animated() {
   g_splash.reader_done.store(false, std::memory_order_release);
   g_splash.play_done.store(false, std::memory_order_release);
   /*
-   * Low priorities + yields: prio 5 on core0 starved IDLE0 → task_wdt reboot loop.
-   * Reader: any core, prio 1. Play: core 1 with Arduino, prio 2.
+   * Keep splash work off core 0: that core owns USB once the radio driver starts.
+   * Both splash tasks yield on core 1 until the user enters the app.
    */
-  if (xTaskCreate(splash_reader_task, "splash_sd", 6144, nullptr, 1,
-                  &g_splash.reader_task) != pdPASS) {
+  if (xTaskCreatePinnedToCore(splash_reader_task, "splash_sd", 6144, nullptr, 1,
+                              &g_splash.reader_task, 1) != pdPASS) {
     return false;
   }
   if (xTaskCreatePinnedToCore(splash_play_task, "splash_play", 8192, nullptr, 2,
@@ -788,6 +797,8 @@ bool orcsdr_splash_wait_start(void) {
   bool was_pressed = false;
   splash_log("SPLASH_WAIT start");
   while (g_splash.active.load(std::memory_order_acquire)) {
+    orcsdr_splash_poll_serial();
+    if (!g_splash.active.load(std::memory_order_acquire)) break;
     M5.update();
     const auto touch = M5.Touch.getDetail(0);
     const bool pressed = touch.isPressed() || touch.wasPressed();
@@ -803,6 +814,10 @@ bool orcsdr_splash_wait_start(void) {
     vTaskDelay(pdMS_TO_TICKS(10));
   }
   return false;
+}
+
+bool orcsdr_splash_is_active(void) {
+  return g_splash.active.load(std::memory_order_acquire);
 }
 
 void orcsdr_splash_end(void) {

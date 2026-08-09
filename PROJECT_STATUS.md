@@ -1,7 +1,7 @@
 # OrcSDR project status
 
 Snapshot date: **2026-08-08**
-Source branch: **`codex/sdr-bandwidth-navigation` at `20441dc`**
+Source branch: **`codex/sdr-bandwidth-navigation`**
 Mainline baseline: **`origin/main` at `bda29fd`**
 
 This is the authoritative current-status and roadmap index. Historical design,
@@ -30,8 +30,12 @@ this file when their paths, versions, or completion claims differ.
 | Tab5 radio shell | **Implemented** | FM/AM/WX, radio/scope/capture tabs, sound/GFX toggles |
 | SDR navigation | **Implemented on this branch** | Pinch span/filter, navigation drawer, peak find, FM auto tune |
 | Variant-4 splash | **Implemented on this branch** | Looping SD asset playback and static ready/button overlay |
-| Final splash smoothness | **Pending hardware acceptance** | Confirm the final 24 FPS SD asset with serial `SPLASH_FPS` evidence |
+| Final splash smoothness | **Active performance gate** | Compact 24 FPS pack verified; 25 MHz SPI measured 15–16 FPS |
+| Current SD splash asset | **Hardware-verified** | 14,271,890 bytes, 240 frames at 24 FPS; device SHA-256 matches source |
+| Splash/USB core isolation | **Hardware-verified** | SD reader pinned to core 1 with a per-frame WDT yield; 28-second run had no WDT/panic |
+| In-device SD file transfer | **Hardware-verified** | COM17 binary chunks, staged write, device SHA-256, rollback |
 | Graphics with audio enabled | **Open performance gate** | Establish before/after `RTL_SPECTRUM_FPS` and audio-drop evidence |
+| Audio/graphics optimization pass | **Implemented on this branch** | 10 FPS parity target, lighter DSP hot path, timing counters; hardware A/B pending |
 | AM/HF fidelity | **Experimental** | Do not claim calibrated HF/direct-sampling support |
 | Second ESP32-P4 board | **Planned** | No second-board hardware evidence yet |
 | rtl_tcp over Ethernet | **Planned** | App does not exist yet |
@@ -41,10 +45,14 @@ this file when their paths, versions, or completion claims differ.
 ### P0 — finish the Tab5 product loop
 
 - [ ] Measure graphics-on/audio-off and graphics-on/audio-on FPS for five minutes.
-- [ ] Remove the deliberate audio-on render throttle only after audio drops remain near zero.
-- [ ] Optimize measured DSP hot spots before considering handwritten assembly.
+- [x] Remove the deliberate audio-on render throttle; retain a reduced cadence only when drops rise.
+- [x] Remove the full-URB app copy, software `double` accumulation, and per-sample `tanhf`.
+- [x] Add `dsp_load_pct`, block count, and maximum block time to the FPS log.
+- [ ] Verify the optimized path keeps audio drops near zero on hardware.
 - [ ] Confirm sound defaults off, NAV leaves animation live, and controls remain static.
-- [ ] Install the final variant-4 SD pack and record stable loop FPS.
+- [x] Install the final variant-4 SD pack and record stable loop FPS (15–16 FPS at 25 MHz SPI).
+- [x] Soak the splash past Ready for 28 seconds with no `task_wdt` reset or panic.
+- [x] Copy the 14,271,890-byte compact splash pack through COM17; device SHA-256 matched `AA490D5E…BCD1FA`.
 - [ ] Run operator acceptance for FM, WX, AM experimental mode, volume, mute,
       start/stop, pinch navigation, peak find, and auto tune.
 
@@ -116,6 +124,7 @@ Required runtime lines for the next performance record:
 RTL_INSTALL ok v0.4.1 ...
 RTL_CORE_SPLIT usb=core0 iq_demod+ui=core1 ...
 RTL_SPECTRUM_FPS fps=... audio_dropped=... audio_chunks=...
+                    dsp_load_pct=... dsp_blocks=... dsp_block_us_max=...
 SPLASH_FPS ...
 ```
 

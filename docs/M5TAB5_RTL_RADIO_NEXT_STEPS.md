@@ -39,6 +39,11 @@ Pass criteria:
 - No visible control redraw, tearing, or frozen animation.
 - Audio-on scope cadence is materially comparable to muted cadence.
 
+The first performance pass is implemented on the active branch: both sound
+states target 10 FPS, stressed audio falls back to 4.5 FPS without freezing,
+the app no longer copies each full IQ block, and the audio loop avoids software
+`double` accumulation and `tanhf`. Hardware A/B acceptance remains open.
+
 ## Performance order
 
 1. Remove avoidable work in the existing C++ hot path (`double`, transcendental
@@ -56,6 +61,17 @@ Pass criteria:
 Install the final variant-4 `.orsplash` pack on microSD, then capture serial
 `SPLASH_FPS` output across multiple seamless loops. The last known firmware
 path is implemented; final asset smoothness remains a device/SD-card check.
+
+The 2026-08-08 bench read found the old 28,206,208-byte, 300-frame/30 FPS pack
+on the card. SPI reads took roughly 101–105 ms and playback measured 10 FPS.
+That asset could not meet the target cadence and has been removed.
+
+The compact 14,271,890-byte pack was subsequently copied through COM17 to
+`/orcsdr/OrcSDR_Splash_1280x720_60fps_10s.orsplash`. Device-side SHA-256 matched
+`AA490D5EBE2EF000C7C49FF4AAA7E50FDE9DB166C96C80301266C7B072BCD1FA`.
+The reader is isolated from USB core 0 and yields once per frame. At 25 MHz SPI,
+the compact pack looped at 15–16 FPS during a 28-second run with no watchdog or
+panic output. Smooth 24 FPS playback remains an open display/storage-path gate.
 
 ## Build and flash
 

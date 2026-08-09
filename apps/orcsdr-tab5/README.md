@@ -49,6 +49,34 @@ Pins: pioarduino `55.03.38-1`, Arduino `3.3.8`, M5Unified `0.2.15`, M5GFX `0.2.2
 Do not override the platform ESP-P4 toolchain. After flash, power-cycle if the
 device stays in download mode.
 
+## Copy files to the installed microSD over USB
+
+The PC-facing USB Serial/JTAG connection remains available for flashing and
+also supports verified file transfer into `/orcsdr/`. A transfer started during
+the splash cleanly stops the animation first. Stop radio/recording, then run:
+
+```powershell
+Set-Location F:\Ai\OrcSDR
+.\tools\copy_to_tab5_sd.ps1 -Path 'F:\path\asset.orsplash' -Port COM17
+```
+
+The optional second argument selects the card path:
+
+```powershell
+.\tools\copy_to_tab5_sd.ps1 '.\asset.orsplash' `
+  '/orcsdr/OrcSDR_Splash_1280x720_60fps_10s.orsplash' -Port COM17
+```
+
+Transfers use 16 KiB binary chunks, stage to `.part`, verify SHA-256 on the
+Tab5, then replace the destination with rollback protection. They are limited
+to 64 MiB and `/orcsdr/`; active radio or audio recording rejects a transfer.
+This is not a Windows drive letter—the fixed USB Serial/JTAG interface remains
+the flashing/console connection.
+
+The firmware also accepts `SD_REMOVE <ASCII-path-as-hex>` for files below
+`/orcsdr/` and the one legacy root splash filename. Removal is refused while
+radio or recording is active.
+
 ## ESP-IDF serial agent
 
 The `main/` tree is the lighter ESP-IDF serial/recovery agent (hello, snapshot,

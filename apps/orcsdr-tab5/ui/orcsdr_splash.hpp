@@ -24,6 +24,7 @@ void orcsdr_splash_set_status(const char *message);
 void orcsdr_splash_set_ready(bool ready);
 /** Block while the animation loops, returning after the ready button is tapped. */
 bool orcsdr_splash_wait_start(void);
+bool orcsdr_splash_is_active(void);
 void orcsdr_splash_end(void);
 
 /** Legacy one-shot (begin → end). Prefer staged API. */

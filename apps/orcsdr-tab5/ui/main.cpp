@@ -55,6 +55,22 @@ class OrcConsole {
     return pending_;
   }
 
+  size_t readBytes(uint8_t* output, size_t size, uint32_t timeout_ms) {
+    if (output == nullptr || size == 0) return 0;
+    size_t received = 0;
+    if (has_pending_) {
+      output[received++] = pending_;
+      has_pending_ = false;
+    }
+    while (received < size) {
+      const int count = usb_serial_jtag_read_bytes(
+          output + received, size - received, pdMS_TO_TICKS(timeout_ms));
+      if (count <= 0) break;
+      received += static_cast<size_t>(count);
+    }
+    return received;
+  }
+
   void print(char value) { write(&value, 1); }
   void print(const char* value) { write(value, strlen(value)); }
   void println() { print('\n'); }
@@ -137,9 +153,9 @@ constexpr uint8_t kFmAudioDecim = 5;
 constexpr size_t kRtlSpectrumBins = 256;
 /** Average this many non-overlapping windows for a quieter, more precise trace. */
 constexpr size_t kRtlSpectrumWelchWindows = 2;
-// Prefer audio when enabled; muted mode can spend the reclaimed core time on visuals.
-constexpr uint32_t kRtlSpectrumIntervalMs = 220;
-constexpr uint32_t kRtlSpectrumMutedIntervalMs = 100;
+// Keep scope cadence stable when sound is toggled; only back off if audio drops.
+constexpr uint32_t kRtlSpectrumIntervalMs = 100;
+constexpr uint32_t kRtlSpectrumStressedIntervalMs = 220;
 constexpr size_t kRtlRingDepth = 3;
 constexpr uint32_t kRtlAudioPrimeMs = 450;
 constexpr uint32_t kRtlSignalMeterIntervalMs = 200;
@@ -278,7 +294,7 @@ struct RtlAudioState {
   uint32_t queued_chunks = 0;
   uint32_t dropped_chunks = 0;
   int16_t peak = 0;
-  double square_sum = 0;
+  uint64_t square_sum = 0;
 };
 
 RtlAudioState rtl_audio;
@@ -327,6 +343,9 @@ static uint32_t rtl_signal_meter_last_ms = 0;
 static TaskHandle_t rtl_dsp_task_handle = nullptr;
 static std::atomic<uint32_t> rtl_usb_overruns{0};
 static std::atomic<uint32_t> rtl_dsp_blocks{0};
+static std::atomic<uint32_t> rtl_dsp_window_us{0};
+static std::atomic<uint32_t> rtl_dsp_window_blocks{0};
+static std::atomic<uint32_t> rtl_dsp_block_us_max{0};
 static std::atomic<bool> rtl_session_active{false};
 static RtlBand rtl_session_band = RtlBand::fm;
 static float rtl_session_audio_scale = 5500.0f;
@@ -417,6 +436,20 @@ WorkflowState workflow{};
 uint8_t pairing_key[32];
 char serial_input[320];
 size_t serial_input_length = 0;
+constexpr size_t kSdPutChunkBytes = 16 * 1024;
+constexpr uint64_t kSdPutMaxBytes = 64ULL * 1024ULL * 1024ULL;
+struct SdPutState {
+  File file;
+  bool active = false;
+  uint64_t expected = 0;
+  uint64_t received = 0;
+  char target[128]{};
+  char temporary[136]{};
+  uint8_t expected_sha[32]{};
+  mbedtls_sha256_context sha;
+};
+SdPutState g_sd_put;
+uint8_t g_sd_put_chunk[kSdPutChunkBytes];
 bool wifi_station_ready = false;
 bool wifi_scan_running = false;
 bool wifi_configured = false;
@@ -489,6 +522,9 @@ char rtl_capture_sha256[65]{};
 char rtl_capture_error[64] = "not run";
 
 void emit_identity();
+bool decode_hex(const char* value, uint8_t* output, size_t output_size);
+bool decode_hex_text(const char* value, char* output, size_t output_size);
+void print_hex(const uint8_t* value, size_t size);
 void reset_spectrum_renderer();
 void draw_spectrum_grid();
 void draw_spectrum_axis();
@@ -1412,6 +1448,188 @@ bool handle_nav_touch(int32_t x, int32_t y) {
   return true;
 }
 
+bool sd_put_path_allowed(const char* path) {
+  if (path == nullptr || strncmp(path, "/orcsdr/", 8) != 0 ||
+      strlen(path) >= sizeof(g_sd_put.target) || strstr(path, "..") != nullptr ||
+      strchr(path, '\\') != nullptr) {
+    return false;
+  }
+  for (const unsigned char* p = reinterpret_cast<const unsigned char*>(path); *p; ++p) {
+    if (*p < 0x20 || *p > 0x7e) return false;
+  }
+  return path[8] != '\0';
+}
+
+bool sd_remove_path_allowed(const char* path) {
+  return sd_put_path_allowed(path) ||
+         strcmp(path, "/OrcSDR_Splash_1280x720_60fps_10s.orsplash") == 0;
+}
+
+void sd_remove(const char* path_hex) {
+  if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running ||
+      g_audio_rec_active.load(std::memory_order_acquire)) {
+    Serial.println("SD_REMOVE_ERROR radio_busy");
+    return;
+  }
+  char path[sizeof(g_sd_put.target)];
+  if (!decode_hex_text(path_hex, path, sizeof(path)) || !sd_remove_path_allowed(path)) {
+    Serial.println("SD_REMOVE_ERROR invalid_path");
+    return;
+  }
+  if (orcsdr_splash_is_active()) orcsdr_splash_end();
+  if (!ensure_tab5_sd()) {
+    Serial.println("SD_REMOVE_ERROR sd_unavailable");
+    return;
+  }
+  if (!SD.exists(path)) {
+    Serial.printf("SD_REMOVE_MISSING path=\"%s\"\n", path);
+    return;
+  }
+  Serial.printf(SD.remove(path) ? "SD_REMOVE_DONE path=\"%s\"\n"
+                                : "SD_REMOVE_ERROR remove_failed path=\"%s\"\n",
+                path);
+}
+
+void sd_put_abort(const char* reason) {
+  if (g_sd_put.file) g_sd_put.file.close();
+  if (g_sd_put.temporary[0]) SD.remove(g_sd_put.temporary);
+  if (g_sd_put.active) mbedtls_sha256_free(&g_sd_put.sha);
+  g_sd_put = {};
+  Serial.printf("SD_PUT_ERROR %s\n", reason ? reason : "aborted");
+}
+
+bool sd_put_commit() {
+  uint8_t digest[32];
+  if (mbedtls_sha256_finish(&g_sd_put.sha, digest) != 0) {
+    sd_put_abort("sha_finish");
+    return false;
+  }
+  mbedtls_sha256_free(&g_sd_put.sha);
+  g_sd_put.active = false;
+  g_sd_put.file.flush();
+  g_sd_put.file.close();
+
+  uint8_t difference = 0;
+  for (size_t i = 0; i < sizeof(digest); ++i) {
+    difference |= digest[i] ^ g_sd_put.expected_sha[i];
+  }
+  if (difference != 0) {
+    SD.remove(g_sd_put.temporary);
+    Serial.println("SD_PUT_ERROR sha_mismatch");
+    g_sd_put = {};
+    return false;
+  }
+
+  char backup[136];
+  snprintf(backup, sizeof(backup), "%s.bak", g_sd_put.target);
+  SD.remove(backup);
+  const bool had_target = SD.exists(g_sd_put.target);
+  if (had_target && !SD.rename(g_sd_put.target, backup)) {
+    SD.remove(g_sd_put.temporary);
+    Serial.println("SD_PUT_ERROR backup_failed");
+    g_sd_put = {};
+    return false;
+  }
+  if (!SD.rename(g_sd_put.temporary, g_sd_put.target)) {
+    if (had_target) (void)SD.rename(backup, g_sd_put.target);
+    SD.remove(g_sd_put.temporary);
+    Serial.println("SD_PUT_ERROR rename_failed");
+    g_sd_put = {};
+    return false;
+  }
+  if (had_target) SD.remove(backup);
+  Serial.printf("SD_PUT_DONE bytes=%llu sha256=",
+                static_cast<unsigned long long>(g_sd_put.received));
+  print_hex(digest, sizeof(digest));
+  Serial.printf(" path=\"%s\"\n", g_sd_put.target);
+  g_sd_put = {};
+  return true;
+}
+
+void sd_put_begin(char* arguments) {
+  if (g_sd_put.active) {
+    Serial.println("SD_PUT_ERROR already_active");
+    return;
+  }
+  if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running ||
+      g_audio_rec_active.load(std::memory_order_acquire)) {
+    Serial.println("SD_PUT_ERROR radio_busy");
+    return;
+  }
+  char* sha_text = strchr(arguments, ' ');
+  if (sha_text == nullptr) {
+    Serial.println("SD_PUT_ERROR invalid_begin");
+    return;
+  }
+  *sha_text++ = '\0';
+  char* path_hex = strchr(sha_text, ' ');
+  if (path_hex == nullptr) {
+    Serial.println("SD_PUT_ERROR invalid_begin");
+    return;
+  }
+  *path_hex++ = '\0';
+  char target[sizeof(g_sd_put.target)];
+  const uint64_t size = strtoull(arguments, nullptr, 10);
+  uint8_t digest[32];
+  if (size == 0 || size > kSdPutMaxBytes || !decode_hex(sha_text, digest, sizeof(digest)) ||
+      !decode_hex_text(path_hex, target, sizeof(target)) || !sd_put_path_allowed(target)) {
+    Serial.println("SD_PUT_ERROR invalid_begin");
+    return;
+  }
+  /* Stop the SD-backed loading animation before taking exclusive card ownership. */
+  if (orcsdr_splash_is_active()) orcsdr_splash_end();
+  if (!ensure_tab5_sd() || (!SD.exists("/orcsdr") && !SD.mkdir("/orcsdr"))) {
+    Serial.println("SD_PUT_ERROR sd_unavailable");
+    return;
+  }
+
+  strlcpy(g_sd_put.target, target, sizeof(g_sd_put.target));
+  snprintf(g_sd_put.temporary, sizeof(g_sd_put.temporary), "%s.part", target);
+  SD.remove(g_sd_put.temporary);
+  g_sd_put.file = SD.open(g_sd_put.temporary, FILE_WRITE);
+  if (!g_sd_put.file) {
+    g_sd_put = {};
+    Serial.println("SD_PUT_ERROR open_failed");
+    return;
+  }
+  g_sd_put.expected = size;
+  memcpy(g_sd_put.expected_sha, digest, sizeof(digest));
+  mbedtls_sha256_init(&g_sd_put.sha);
+  if (mbedtls_sha256_starts(&g_sd_put.sha, 0) != 0) {
+    g_sd_put.active = true;
+    sd_put_abort("sha_start");
+    return;
+  }
+  g_sd_put.active = true;
+  Serial.printf("SD_PUT_READY chunk=%u bytes=%llu path=\"%s\"\n",
+                static_cast<unsigned>(kSdPutChunkBytes),
+                static_cast<unsigned long long>(size), target);
+}
+
+void sd_put_chunk(const char* length_text) {
+  if (!g_sd_put.active) {
+    Serial.println("SD_PUT_ERROR not_active");
+    return;
+  }
+  const size_t length = static_cast<size_t>(strtoul(length_text, nullptr, 10));
+  if (length == 0 || length > kSdPutChunkBytes ||
+      g_sd_put.received + length > g_sd_put.expected) {
+    sd_put_abort("invalid_chunk");
+    return;
+  }
+  Serial.printf("SD_PUT_DATA bytes=%u\n", static_cast<unsigned>(length));
+  const size_t got = Serial.readBytes(g_sd_put_chunk, length, 3000);
+  if (got != length || g_sd_put.file.write(g_sd_put_chunk, length) != length ||
+      mbedtls_sha256_update(&g_sd_put.sha, g_sd_put_chunk, length) != 0) {
+    sd_put_abort(got != length ? "chunk_timeout" : "write_failed");
+    return;
+  }
+  g_sd_put.received += length;
+  Serial.printf("SD_PUT_ACK bytes=%llu\n",
+                static_cast<unsigned long long>(g_sd_put.received));
+  if (g_sd_put.received == g_sd_put.expected) (void)sd_put_commit();
+}
+
 void draw_capture_tool_panel() {
   /* Overlay lower waterfall region with capture status — audio path untouched. */
   const int panel_y = kWaterfallY + 40;
@@ -1629,17 +1847,17 @@ void paint_graphics_paused_banner() {
  */
 void update_signal_level_from_iq(const uint8_t* iq, size_t bytes) {
   if (iq == nullptr || bytes < 4) return;
-  double sum = 0.0;
+  uint64_t sum = 0;
   size_t pairs = 0;
   /* Stride keeps this light on the audio path. */
   for (size_t i = 0; i + 1 < bytes; i += 32) {
-    const float ii = static_cast<float>(iq[i]) - 127.5f;
-    const float qq = static_cast<float>(iq[i + 1]) - 127.5f;
-    sum += static_cast<double>(ii * ii + qq * qq);
+    const int32_t ii = static_cast<int32_t>(iq[i]) - 128;
+    const int32_t qq = static_cast<int32_t>(iq[i + 1]) - 128;
+    sum += static_cast<uint32_t>(ii * ii + qq * qq);
     ++pairs;
   }
   if (pairs == 0) return;
-  const float power = static_cast<float>(sum / static_cast<double>(pairs));
+  const float power = static_cast<float>(sum) / static_cast<float>(pairs);
   /* Full-scale CU8 complex: 2 * 127.5^2 */
   constexpr float kFullScale = 2.0f * 127.5f * 127.5f;
   const float dbfs = 10.0f * log10f((power / kFullScale) + 1.0e-12f);
@@ -1895,9 +2113,7 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   }
 
   const uint32_t now = millis();
-  const uint32_t spectrum_interval = rtl_audio_enabled.load(std::memory_order_relaxed)
-                                         ? kRtlSpectrumIntervalMs
-                                         : kRtlSpectrumMutedIntervalMs;
+  constexpr uint32_t spectrum_interval = kRtlSpectrumIntervalMs;
   if (rtl_spectrum_last_ms != 0 &&
       now - rtl_spectrum_last_ms < spectrum_interval) {
     return;
@@ -2074,14 +2290,26 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
 
   ++rtl_spectrum_frames;
   if (now - rtl_spectrum_fps_window_ms >= 1000) {
+    const uint32_t window_ms = now - rtl_spectrum_fps_window_ms;
     rtl_spectrum_fps = static_cast<uint16_t>(rtl_spectrum_frames);
     rtl_spectrum_frames = 0;
     rtl_spectrum_fps_window_ms = now;
+    const uint32_t dsp_us = rtl_dsp_window_us.exchange(0, std::memory_order_acq_rel);
+    const uint32_t dsp_blocks =
+        rtl_dsp_window_blocks.exchange(0, std::memory_order_acq_rel);
+    const uint32_t dsp_max_us =
+        rtl_dsp_block_us_max.exchange(0, std::memory_order_acq_rel);
+    const uint32_t dsp_load_pct =
+        window_ms == 0 ? 0 : static_cast<uint32_t>(
+                                  (static_cast<uint64_t>(dsp_us) * 100u) /
+                                  (static_cast<uint64_t>(window_ms) * 1000u));
     Serial.printf("RTL_SPECTRUM_FPS fps=%u bins=%u welch=%u tool=%s audio_dropped=%u "
-                  "audio_chunks=%u audio_peak=%d\n",
+                  "audio_chunks=%u audio_peak=%d dsp_load_pct=%u dsp_blocks=%u "
+                  "dsp_block_us_max=%u\n",
                   rtl_spectrum_fps, static_cast<unsigned>(kRtlSpectrumBins),
                   static_cast<unsigned>(windows), orc_tool_name(tool),
-                  rtl_audio.dropped_chunks, rtl_audio.queued_chunks, rtl_audio.peak);
+                  rtl_audio.dropped_chunks, rtl_audio.queued_chunks, rtl_audio.peak,
+                  dsp_load_pct, dsp_blocks, dsp_max_us);
   }
 }
 
@@ -2102,7 +2330,7 @@ float fast_phase(float cross, float dot) {
   return cross < 0 ? -angle : angle;
 }
 
-// Soft AGC + tanh limiter (pre-blanker path — clearer; not muffled).
+// Soft AGC + rational tanh approximation (avoids a 48 kHz libm call).
 int16_t shape_audio_sample(float demodulated, float base_scale) {
   float x = demodulated * base_scale * rtl_audio.agc_gain;
   const float ax = fabsf(x);
@@ -2113,7 +2341,15 @@ int16_t shape_audio_sample(float demodulated, float base_scale) {
     if (rtl_audio.agc_gain < 0.15f) rtl_audio.agc_gain = 0.15f;
     if (rtl_audio.agc_gain > 2.8f) rtl_audio.agc_gain = 2.8f;
   }
-  x = 12000.0f * tanhf(x / 12000.0f);
+  constexpr float kLimit = 12000.0f;
+  const float normalized = x / kLimit;
+  const float normalized_sq = normalized * normalized;
+  if (normalized_sq < 9.0f) {
+    x = kLimit * normalized * (27.0f + normalized_sq) /
+        (27.0f + 9.0f * normalized_sq);
+  } else {
+    x = x < 0.0f ? -kLimit : kLimit;
+  }
   if (rtl_audio.fade_in < 192) {
     x *= static_cast<float>(rtl_audio.fade_in) / 192.0f;
     ++rtl_audio.fade_in;
@@ -2184,7 +2420,7 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
         audio[audio_count++] = sample;
         const int16_t magnitude = sample < 0 ? -sample : sample;
         if (magnitude > rtl_audio.peak) rtl_audio.peak = magnitude;
-        rtl_audio.square_sum += static_cast<double>(sample) * sample;
+        rtl_audio.square_sum += static_cast<uint32_t>(sample * sample);
         ++rtl_audio.samples;
       }
     }
@@ -2226,7 +2462,7 @@ void demodulate_am(const uint8_t* iq, size_t bytes, float audio_scale) {
       audio[audio_count++] = sample;
       const int16_t magnitude = sample < 0 ? -sample : sample;
       if (magnitude > rtl_audio.peak) rtl_audio.peak = magnitude;
-      rtl_audio.square_sum += static_cast<double>(sample) * sample;
+      rtl_audio.square_sum += static_cast<uint32_t>(sample * sample);
       ++rtl_audio.samples;
     }
   }
@@ -2690,25 +2926,33 @@ static void on_rtl_driver_event(rtl_sdr_v4_esp_event_t event, const void *payloa
       Serial.println("RTL_SDR_DISCONNECTED");
       break;
     case RTL_SDR_V4_ESP_EVT_IQ_BLOCK: {
+      const uint32_t dsp_started_us = micros();
       const auto *iq = static_cast<const rtl_sdr_v4_esp_iq_block_t *>(payload);
       if (iq == nullptr || iq->data == nullptr || iq->bytes == 0) break;
       const size_t n =
           iq->bytes <= sizeof(rtl_iq_processing) ? iq->bytes : sizeof(rtl_iq_processing);
-      memcpy(rtl_iq_processing, iq->data, n);
-      update_signal_level_from_iq(rtl_iq_processing, n);
-      /* Snapshot for scope only — never steal CPU from demod beyond a memcpy. */
-      spectrum_offer_iq_snapshot(rtl_iq_processing, n);
+      update_signal_level_from_iq(iq->data, n);
+      /* The callback owns this borrowed block until return; avoid a full-URB copy. */
+      spectrum_offer_iq_snapshot(iq->data, n);
       if (rtl_audio_enabled.load(std::memory_order_relaxed) ||
           g_audio_rec_active.load(std::memory_order_relaxed)) {
         if (g_stream_band == RtlBand::am) {
-          demodulate_am(rtl_iq_processing, n, g_stream_audio_scale);
+          demodulate_am(iq->data, n, g_stream_audio_scale);
         } else {
-          demodulate_fm(rtl_iq_processing, n, g_stream_audio_scale,
+          demodulate_fm(iq->data, n, g_stream_audio_scale,
                         g_stream_band == RtlBand::fm);
         }
       }
       rtl_capture_bytes += n;
       (void)rtl_sdr_v4_esp_release_iq_block(g_rtl, iq);
+      const uint32_t dsp_elapsed_us = micros() - dsp_started_us;
+      rtl_dsp_window_us.fetch_add(dsp_elapsed_us, std::memory_order_relaxed);
+      rtl_dsp_window_blocks.fetch_add(1, std::memory_order_relaxed);
+      uint32_t previous_max = rtl_dsp_block_us_max.load(std::memory_order_relaxed);
+      while (dsp_elapsed_us > previous_max &&
+             !rtl_dsp_block_us_max.compare_exchange_weak(
+                 previous_max, dsp_elapsed_us, std::memory_order_relaxed)) {
+      }
       break;
     }
     case RTL_SDR_V4_ESP_EVT_STOPPED:
@@ -2750,6 +2994,9 @@ static void rtl_driver_app_task(void *) {
       rtl_session_started_ms = millis();
       rtl_capture_bytes = 0;
       rtl_audio = {};
+      rtl_dsp_window_us.store(0, std::memory_order_relaxed);
+      rtl_dsp_window_blocks.store(0, std::memory_order_relaxed);
+      rtl_dsp_block_us_max.store(0, std::memory_order_relaxed);
       rtl_audio_play_count = 0;
       rtl_signal_dbfs.store(-90.0f, std::memory_order_relaxed);
       rtl_signal_dbfs_smooth = -80.0f;
@@ -2890,12 +3137,13 @@ static void rtl_driver_app_task(void *) {
           const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
           if (gfx_on && orc_tool_current() != OrcTool::Capture) {
             const bool sound_on = rtl_audio_enabled.load(std::memory_order_relaxed);
-            const uint32_t visual_interval =
-                sound_on ? kRtlSpectrumIntervalMs : kRtlSpectrumMutedIntervalMs;
             const bool audio_stressed =
                 sound_on && rtl_audio.dropped_chunks > 0 &&
                 rtl_audio.dropped_chunks * 2u > rtl_audio.queued_chunks + 2u;
-            if (!audio_stressed && now - rtl_session_started_ms >= kRtlAudioPrimeMs &&
+            const uint32_t visual_interval = audio_stressed
+                                                 ? kRtlSpectrumStressedIntervalMs
+                                                 : kRtlSpectrumIntervalMs;
+            if (now - rtl_session_started_ms >= kRtlAudioPrimeMs &&
                 now - spectrum_last_ms >= visual_interval) {
               spectrum_last_ms = now;
               draw_spectrum(nullptr, 0); /* uses frozen IQ snapshot */
@@ -3627,6 +3875,26 @@ void set_online() {
 }
 
 void process_command(char* command) {
+  if (strncmp(command, "SD_REMOVE ", 10) == 0) {
+    sd_remove(command + 10);
+    return;
+  }
+  if (strncmp(command, "SD_PUT_BEGIN ", 13) == 0) {
+    sd_put_begin(command + 13);
+    return;
+  }
+  if (strncmp(command, "SD_PUT_CHUNK ", 13) == 0) {
+    sd_put_chunk(command + 13);
+    return;
+  }
+  if (strcmp(command, "SD_PUT_ABORT") == 0) {
+    if (g_sd_put.active) {
+      sd_put_abort("host_abort");
+    } else {
+      Serial.println("SD_PUT_ABORTED");
+    }
+    return;
+  }
   if (strcmp(command, "RTL_CAPTURE_STATUS") == 0) {
     const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
     if (state != RtlCaptureState::complete && state != RtlCaptureState::failed) {
@@ -3973,6 +4241,10 @@ void poll_serial() {
   }
 }
 }  // namespace
+
+void orcsdr_splash_poll_serial(void) {
+  poll_serial();
+}
 
 void setup() {
   Serial.begin(115200);
