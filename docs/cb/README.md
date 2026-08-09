@@ -1,6 +1,6 @@
 # Tab5 CB dashboard
 
-The CB mode is a receive-only, 40-channel AM surface. It keeps the live
+The CB mode is a receive-only, 40-channel AM/USB/LSB surface. It keeps the live
 spectrum and waterfall on the left two thirds of the display and uses the
 right third for a stylized CB control panel.
 
@@ -8,8 +8,12 @@ right third for a stylized CB control panel.
 
 - Tap a visible peak in the CB scope to snap to the nearest legal channel.
 - Tap around the large dial to select channels 1 through 40.
-- Bottom controls are `CH-`, `CH+`, `BW-`, `BW+`, `SOUND`, and `REC`.
-- The black readout shows channel, frequency, and a live S/RF level bar. The
+- Bottom controls are `CH-`, `CH+`, `MODE`, `CLAR`, `SQL-`, and `SQL+`.
+- `MODE` cycles AM, USB, and LSB. `CLAR` cycles the sideband clarifier from
+  -1.5 to +1.5 kHz in 500 Hz steps. Squelch spans open (`-90 dBFS`) through
+  `-35 dBFS` with 3 dB hysteresis. Sound and recording remain global controls.
+- The black readout shows channel, frequency, mode, clarifier, squelch, and a
+  live S/RF level bar. The
   faceplate and control chrome remain static while the scope renders.
 
 The channel table follows the FCC 40-channel frequency plan. Channel 19

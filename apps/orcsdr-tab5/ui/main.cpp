@@ -190,6 +190,7 @@ constexpr int kCbPanelY = kSpectrumY;
 constexpr int kCbPanelWidth = 384;
 constexpr int kCbPanelHeight = 470;
 constexpr char kCbDashboardPath[] = "/orcsdr/cb_dashboard_384x470.jpg";
+constexpr char kLoraDashboardPath[] = "/orcsdr/lora_dashboard_384x470.jpg";
 constexpr int kSpectrumHeight = 200;
 constexpr int kWaterfallY = 316;
 constexpr int kWaterfallHeight = 250;
@@ -255,11 +256,15 @@ constexpr uint32_t kRtlWxHz = 162400000;
 constexpr uint32_t kRtlBrowseMinHz = RTL_SDR_V4_ESP_FREQ_MIN_HZ;
 constexpr uint32_t kRtlBrowseMaxHz = RTL_SDR_V4_ESP_FREQ_MAX_HZ;
 constexpr uint32_t kRtlBrowseDefaultHz = 146520000;
+constexpr uint32_t kLoraMinHz = 902000000;
+constexpr uint32_t kLoraMaxHz = 928000000;
+constexpr uint32_t kLoraDefaultHz = 915000000;
 // Clean-room LO offset: LO = RF + 1.814972 MHz (from 100 MHz observation).
 constexpr double kRtlIfOffsetHz = 1814972.0;
 constexpr double kRtlXtalHz = 28800000.0;
 
-enum class RtlBand : uint8_t { fm, am, wx, cb, browse };
+enum class RtlBand : uint8_t { fm, am, wx, cb, lora, browse };
+enum class CbMode : uint8_t { am, usb, lsb };
 
 constexpr uint32_t kCbChannelsHz[] = {
     26965000, 26975000, 26985000, 27005000, 27015000, 27025000, 27035000,
@@ -308,7 +313,7 @@ constexpr RfBandGuide kRfBandGuide[] = {
     {406000000, 406100000, 406050000, RtlBand::browse, "DISTRESS SAT", "UHF / emergency beacons", false},
     {420000000, 450000000, 446000000, RtlBand::browse, "HAM RADIO", "UHF / 70 cm amateur", true},
     {462550000, 467725000, 462562500, RtlBand::browse, "FRS / GMRS", "UHF / personal two-way", false},
-    {902000000, 928000000, 915000000, RtlBand::browse, "LORA / ISM", "UHF / LoRa, ISM, 33 cm ham", true},
+    {kLoraMinHz, kLoraMaxHz, kLoraDefaultHz, RtlBand::lora, "LORA / ISM", "UHF / LoRa CSS and mesh data", true},
     {977900000, 978100000, 978000000, RtlBand::browse, "ADS-B UAT", "UHF / aircraft position", false},
     {1089900000, 1090100000, 1090000000, RtlBand::browse, "ADS-B / MODE S", "L-band / aircraft tracking", true},
     {1525000000, 1559000000, 1545000000, RtlBand::browse, "SATCOM", "L-band / satellite downlinks", true},
@@ -379,6 +384,8 @@ struct RtlAudioState {
   float agc_gain = 1.0f;
   float agc_level = 2000.0f;
   float last_out = 0;
+  float ssb_cos = 1.0f;
+  float ssb_sin = 0.0f;
   uint16_t fade_in = 0;
   uint8_t buffer = 0;
   uint64_t samples = 0;
@@ -405,6 +412,8 @@ void rtl_audio_reset_demod_filters() {
   rtl_audio.audio_phase = 0;
   rtl_audio.deemphasis = 0;
   rtl_audio.dc = 0;
+  rtl_audio.ssb_cos = 1.0f;
+  rtl_audio.ssb_sin = 0.0f;
   if (rtl_audio.fade_in > 48) rtl_audio.fade_in = 48;
 }
 int16_t rtl_audio_buffers[3][kRtlAudioBufferSamples];
@@ -425,6 +434,14 @@ static QueueHandle_t rtl_filled_q = nullptr;
 static uint8_t rtl_iq_processing[32768 + 512];
 /* Relative RF level from IQ power (dBFS-ish, 0 = full-scale CU8). */
 static std::atomic<float> rtl_signal_dbfs{-90.0f};
+static std::atomic<CbMode> cb_mode{CbMode::am};
+static std::atomic<int32_t> cb_clarifier_hz{0};
+static std::atomic<int32_t> cb_squelch_dbfs{-75};
+static std::atomic<bool> cb_squelch_open{false};
+static std::atomic<uint8_t> lora_sf{11};
+static std::atomic<uint32_t> lora_bandwidth_hz{250000};
+static std::atomic<bool> lora_detector_enabled{true};
+static std::atomic<uint32_t> lora_rf_events{0};
 static std::atomic<int32_t> rtl_scope_peak_offset_hz{0};
 static std::atomic<float> rtl_scope_peak_level{-120.0f};
 static std::atomic<bool> rtl_auto_fm_requested{false};
@@ -478,6 +495,17 @@ static bool g_sd_tried = false;
 static char g_audio_rec_last_path[64] = "";
 static std::atomic<uint8_t> g_orc_tool{static_cast<uint8_t>(OrcTool::Radio)};
 static std::atomic<bool> g_audio_rec_export_pending{false};
+
+/* ---- Raw CU8 IQ capture for LoRa decoder development ---- */
+constexpr size_t kIqRecSeconds = 3;
+constexpr size_t kIqRecMaxBytes = kRtlSampleRateSps * 2u * kIqRecSeconds;
+static uint8_t* g_iq_rec_buf = nullptr;
+static std::atomic<size_t> g_iq_rec_write{0};
+static std::atomic<bool> g_iq_rec_active{false};
+static std::atomic<bool> g_iq_rec_export_pending{false};
+static uint32_t g_iq_rec_frequency_hz = 0;
+static uint32_t g_iq_rec_file_seq = 0;
+static char g_iq_rec_last_path[96] = "";
 
 enum class RtlCaptureState : uint8_t {
   disconnected,
@@ -633,6 +661,8 @@ void draw_spectrum_axis();
 void draw_band_edges();
 void draw_cb_dashboard(bool static_panel);
 bool handle_cb_touch(int32_t x, int32_t y);
+void draw_lora_dashboard(bool static_panel);
+bool handle_lora_touch(int32_t x, int32_t y);
 void draw_rf_band_guide(uint32_t frequency_hz);
 int spectrum_draw_width();
 void redraw_spectrum_panel();
@@ -928,6 +958,7 @@ const char* rtl_band_name(RtlBand band) {
     case RtlBand::am: return "AM";
     case RtlBand::wx: return "WX";
     case RtlBand::cb: return "CB";
+    case RtlBand::lora: return "LORA";
     case RtlBand::browse: return "BROWSE";
     default: return "FM";
   }
@@ -937,7 +968,11 @@ const char* rtl_mode_name(RtlBand band) {
   switch (band) {
     case RtlBand::am: return "AM";
     case RtlBand::wx: return "NFM";
-    case RtlBand::cb: return "AM";
+    case RtlBand::cb:
+      return cb_mode.load(std::memory_order_relaxed) == CbMode::usb ? "USB"
+             : cb_mode.load(std::memory_order_relaxed) == CbMode::lsb ? "LSB"
+                                                                      : "AM";
+    case RtlBand::lora: return "CSS";
     case RtlBand::browse: return "NFM";
     default: return "WBFM";
   }
@@ -948,21 +983,29 @@ uint32_t rtl_band_default_frequency(RtlBand band) {
     case RtlBand::am: return kRtlAmDefaultHz;
     case RtlBand::wx: return kRtlWxHz;
     case RtlBand::cb: return kCbDefaultHz;
+    case RtlBand::lora: return kLoraDefaultHz;
     case RtlBand::browse: return kRtlBrowseDefaultHz;
     default: return rtl_saved_fm_hz;
   }
 }
 
 uint32_t rtl_filter_default_hz(RtlBand band) {
+  if (band == RtlBand::lora) return lora_bandwidth_hz.load(std::memory_order_relaxed);
   if (band == RtlBand::am || band == RtlBand::cb) return kRtlAmFilterDefaultHz;
   if (band == RtlBand::wx || band == RtlBand::browse) return kRtlWxFilterDefaultHz;
   return kRtlFmFilterDefaultHz;
 }
 
 uint32_t rtl_clamp_filter_hz(RtlBand band, uint32_t bandwidth_hz) {
-  const bool am = band == RtlBand::am || band == RtlBand::cb;
-  const uint32_t low = am ? 4000 : band == RtlBand::fm ? 50000 : 8000;
-  const uint32_t high = am ? 30000 : band == RtlBand::fm ? 300000 : 100000;
+  if (band == RtlBand::lora) {
+    if (bandwidth_hz <= 93750) return 62500;
+    if (bandwidth_hz <= 187500) return 125000;
+    if (bandwidth_hz <= 375000) return 250000;
+    return 500000;
+  }
+  const bool am = band == RtlBand::am;
+  const uint32_t low = band == RtlBand::cb ? 2400 : am ? 4000 : band == RtlBand::fm ? 50000 : 8000;
+  const uint32_t high = band == RtlBand::cb ? 12000 : am ? 30000 : band == RtlBand::fm ? 300000 : 100000;
   return constrain((bandwidth_hz / 1000u) * 1000u, low, high);
 }
 
@@ -988,6 +1031,7 @@ uint32_t rtl_clamp_frequency(RtlBand band, uint32_t frequency_hz) {
     }
     return kCbChannelsHz[best];
   }
+  if (band == RtlBand::lora) return constrain(frequency_hz, kLoraMinHz, kLoraMaxHz);
   switch (band) {
     case RtlBand::am:
       if (frequency_hz < kRtlAmMinHz) return kRtlAmMinHz;
@@ -1023,6 +1067,12 @@ uint32_t rtl_step_frequency(RtlBand band, uint32_t frequency_hz, int direction) 
     }
     channel = direction < 0 ? (channel + 39) % 40 : (channel + 1) % 40;
     return kCbChannelsHz[channel];
+  }
+  if (band == RtlBand::lora) {
+    constexpr uint32_t step = 125000;
+    return direction < 0
+               ? (frequency_hz <= kLoraMinHz + step ? kLoraMinHz : frequency_hz - step)
+               : min(frequency_hz + step, kLoraMaxHz);
   }
   const uint32_t step = band == RtlBand::am ? rtl_am_step_hz : rtl_fm_step_hz;
   if (direction < 0) {
@@ -1185,6 +1235,91 @@ static void write_le32(File& f, uint32_t v) {
   f.write(b, 4);
 }
 
+bool iq_rec_start() {
+  if (rtl_ui_band != RtlBand::lora) {
+    Serial.println("RTL_IQ_ERROR lora_mode_required");
+    return false;
+  }
+  if (g_iq_rec_active.load(std::memory_order_acquire)) return true;
+  if (g_iq_rec_buf == nullptr) {
+    g_iq_rec_buf = static_cast<uint8_t*>(
+        heap_caps_malloc(kIqRecMaxBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  }
+  if (g_iq_rec_buf == nullptr) {
+    Serial.println("RTL_IQ_ERROR no_psram_buffer");
+    return false;
+  }
+  g_iq_rec_write.store(0, std::memory_order_release);
+  g_iq_rec_frequency_hz = rtl_ui_frequency_hz;
+  g_iq_rec_last_path[0] = '\0';
+  g_iq_rec_active.store(true, std::memory_order_release);
+  Serial.printf("RTL_IQ_START bytes=%u seconds=%u rate=%u frequency_hz=%u sf=%u bw=%u\n",
+                static_cast<unsigned>(kIqRecMaxBytes),
+                static_cast<unsigned>(kIqRecSeconds), kRtlSampleRateSps,
+                g_iq_rec_frequency_hz,
+                static_cast<unsigned>(lora_sf.load(std::memory_order_relaxed)),
+                static_cast<unsigned>(lora_bandwidth_hz.load(std::memory_order_relaxed)));
+  return true;
+}
+
+void iq_rec_append(const uint8_t* iq, size_t bytes) {
+  if (!g_iq_rec_active.load(std::memory_order_relaxed) || iq == nullptr || bytes == 0) return;
+  size_t written = g_iq_rec_write.load(std::memory_order_relaxed);
+  if (written >= kIqRecMaxBytes) return;
+  const size_t count = min(bytes, kIqRecMaxBytes - written);
+  memcpy(g_iq_rec_buf + written, iq, count);
+  written += count;
+  g_iq_rec_write.store(written, std::memory_order_release);
+  if (written == kIqRecMaxBytes) {
+    g_iq_rec_active.store(false, std::memory_order_release);
+    g_iq_rec_export_pending.store(true, std::memory_order_release);
+  }
+}
+
+bool iq_rec_stop_and_export() {
+  g_iq_rec_active.store(false, std::memory_order_release);
+  const size_t bytes = g_iq_rec_write.load(std::memory_order_acquire);
+  if (g_iq_rec_buf == nullptr || bytes == 0 || !ensure_tab5_sd()) {
+    Serial.println("RTL_IQ_ERROR empty_or_sd");
+    return false;
+  }
+  SD.mkdir("/orcsdr");
+  ++g_iq_rec_file_seq;
+  char path[96];
+  snprintf(path, sizeof(path), "/orcsdr/iq_%03u_%u_sf%u_bw%u.orciq",
+           static_cast<unsigned>(g_iq_rec_file_seq), g_iq_rec_frequency_hz,
+           static_cast<unsigned>(lora_sf.load(std::memory_order_relaxed)),
+           static_cast<unsigned>(lora_bandwidth_hz.load(std::memory_order_relaxed)));
+  if (SD.exists(path) && !SD.remove(path)) return false;
+  File file = SD.open(path, FILE_WRITE, true);
+  if (!file) return false;
+  file.write(reinterpret_cast<const uint8_t*>("ORCIQ01\0"), 8);
+  write_le32(file, 36);
+  write_le32(file, kRtlSampleRateSps);
+  write_le32(file, g_iq_rec_frequency_hz);
+  write_le32(file, static_cast<uint32_t>(bytes));
+  write_le16(file, 1);  // format 1: unsigned 8-bit interleaved I/Q
+  const uint8_t sf = lora_sf.load(std::memory_order_relaxed);
+  const uint8_t reserved = 0;
+  file.write(&sf, 1);
+  file.write(&reserved, 1);
+  write_le32(file, lora_bandwidth_hz.load(std::memory_order_relaxed));
+  write_le32(file, 0);
+  const size_t wrote = file.write(g_iq_rec_buf, bytes);
+  file.close();
+  if (wrote != bytes) {
+    Serial.printf("RTL_IQ_ERROR short_write got=%u want=%u\n",
+                  static_cast<unsigned>(wrote), static_cast<unsigned>(bytes));
+    return false;
+  }
+  strlcpy(g_iq_rec_last_path, path, sizeof(g_iq_rec_last_path));
+  Serial.printf("RTL_IQ_DONE path=\"%s\" bytes=%u samples=%u rate=%u frequency_hz=%u\n",
+                path, static_cast<unsigned>(bytes), static_cast<unsigned>(bytes / 2),
+                kRtlSampleRateSps, g_iq_rec_frequency_hz);
+  g_iq_rec_write.store(0, std::memory_order_release);
+  return true;
+}
+
 bool audio_rec_write_wav(const char* path, const int16_t* pcm, size_t samples) {
   if (path == nullptr || pcm == nullptr || samples == 0) return false;
   if (!ensure_tab5_sd()) return false;
@@ -1226,6 +1361,10 @@ bool audio_rec_write_wav(const char* path, const int16_t* pcm, size_t samples) {
 }
 
 bool audio_rec_start() {
+  if (rtl_ui_band == RtlBand::lora) {
+    Serial.println("RTL_REC_ERROR data_mode_use_RTL_IQ_START");
+    return false;
+  }
   if (g_audio_rec_active.load(std::memory_order_acquire)) {
     Serial.println("RTL_REC_ALREADY");
     return true;
@@ -2147,19 +2286,21 @@ void draw_sdr_controls(RtlBand band, bool running) {
   M5.Display.fillRect(0, kSdrBandY - 6, 1280, 720 - (kSdrBandY - 6), TFT_BLACK);
   const bool rec_on = g_audio_rec_active.load(std::memory_order_acquire);
   const SdrButton band_row[] = {
-      {0, 130, "FM",
+      {0, 110, "FM",
        static_cast<uint32_t>(band == RtlBand::fm ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 130, "AM",
+      {0, 110, "AM",
        static_cast<uint32_t>(band == RtlBand::am ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 130, "WX",
+      {0, 110, "WX",
        static_cast<uint32_t>(band == RtlBand::wx ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 150, "CB",
+      {0, 120, "CB",
        static_cast<uint32_t>(band == RtlBand::cb ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 170, "BROWSE",
+      {0, 140, "LORA",
+       static_cast<uint32_t>(band == RtlBand::lora ? TFT_DARKGREEN : TFT_DARKGREY)},
+      {0, 160, "BROWSE",
        static_cast<uint32_t>(band == RtlBand::browse ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 190, rec_on ? "REC*" : "REC",
+      {0, 170, rec_on ? "REC*" : "REC",
        static_cast<uint32_t>(rec_on ? TFT_MAROON : TFT_DARKGREY)},
-      {0, 220, running ? "STOP" : "START",
+      {0, 200, running ? "STOP" : "START",
        static_cast<uint32_t>(running ? TFT_MAROON : TFT_DARKGREEN)},
   };
   const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
@@ -2167,8 +2308,9 @@ void draw_sdr_controls(RtlBand band, bool running) {
   const SdrButton tune_row[] = {
       {0, 170, "FREQ -", TFT_DARKGREY},
       {0, 170, "FREQ +", TFT_DARKGREY},
-      {0, 220, sound_on ? "SOUND ON" : "SOUND OFF",
-       static_cast<uint32_t>(sound_on ? TFT_DARKGREEN : TFT_MAROON)},
+      {0, 220, band == RtlBand::lora ? "DATA MODE" : sound_on ? "SOUND ON" : "SOUND OFF",
+       static_cast<uint32_t>(band == RtlBand::lora ? TFT_DARKCYAN
+                                                   : sound_on ? TFT_DARKGREEN : TFT_MAROON)},
       {0, 150, "VOL -", TFT_NAVY},
       {0, 150, "VOL +", TFT_NAVY},
       {0, 220, gfx_on ? "GFX ON" : "GFX OFF",
@@ -2330,7 +2472,7 @@ void draw_cb_dashboard(bool static_panel) {
     M5.Display.setTextDatum(middle_center);
     M5.Display.setTextSize(1);
     M5.Display.setTextColor(TFT_WHITE);
-    constexpr const char* labels[] = {"CH-", "CH+", "BW-", "BW+", "SOUND", "REC"};
+    constexpr const char* labels[] = {"CH-", "CH+", "MODE", "CLAR", "SQL-", "SQL+"};
     for (size_t i = 0; i < std::size(labels); ++i) {
       M5.Display.drawString(labels[i], kCbPanelX + 51 + static_cast<int>(i) * 56,
                             kCbPanelY + 410);
@@ -2349,13 +2491,77 @@ void draw_cb_dashboard(bool static_panel) {
   M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
   snprintf(text, sizeof(text), "%.3f", rtl_ui_frequency_hz / 1000000.0);
   M5.Display.drawString(text, kCbPanelX + 229, kCbPanelY + 198);
+  const CbMode mode = cb_mode.load(std::memory_order_relaxed);
+  const int clarifier = cb_clarifier_hz.load(std::memory_order_relaxed);
+  const int squelch = cb_squelch_dbfs.load(std::memory_order_relaxed);
+  snprintf(text, sizeof(text), "%s %+.1fk SQL%d",
+           mode == CbMode::usb ? "USB" : mode == CbMode::lsb ? "LSB" : "AM",
+           clarifier / 1000.0, squelch);
+  M5.Display.setTextSize(1);
+  M5.Display.setTextColor(cb_squelch_open.load(std::memory_order_relaxed)
+                              ? TFT_GREEN
+                              : TFT_LIGHTGREY,
+                          TFT_BLACK);
+  M5.Display.drawString(text, kCbPanelX + 228, kCbPanelY + 216);
   float level = (rtl_signal_dbfs_smooth + 70.0f) / 70.0f;
   level = constrain(level, 0.0f, 1.0f);
-  M5.Display.drawRect(kCbPanelX + 172, kCbPanelY + 214, 112, 8, TFT_DARKGREY);
-  M5.Display.fillRect(kCbPanelX + 173, kCbPanelY + 215, 110, 6, TFT_BLACK);
-  M5.Display.fillRect(kCbPanelX + 173, kCbPanelY + 215,
-                      static_cast<int>(110.0f * level), 6,
+  M5.Display.drawRect(kCbPanelX + 172, kCbPanelY + 223, 112, 4, TFT_DARKGREY);
+  M5.Display.fillRect(kCbPanelX + 173, kCbPanelY + 224, 110, 2, TFT_BLACK);
+  M5.Display.fillRect(kCbPanelX + 173, kCbPanelY + 224,
+                      static_cast<int>(110.0f * level), 2,
                       level > 0.82f ? TFT_RED : level > 0.62f ? TFT_YELLOW : TFT_GREEN);
+}
+
+void draw_lora_dashboard(bool static_panel) {
+  if (rtl_ui_band != RtlBand::lora || rtl_nav_open) return;
+  if (static_panel) {
+    const bool image_ok = ensure_tab5_sd() && SD.exists(kLoraDashboardPath) &&
+                          M5.Display.drawJpgFile(SD, kLoraDashboardPath,
+                                                 kCbPanelX, kCbPanelY);
+    if (!image_ok) {
+      M5.Display.fillRoundRect(kCbPanelX, kCbPanelY, kCbPanelWidth,
+                               kCbPanelHeight, 10, 0x2104);
+      M5.Display.drawRoundRect(kCbPanelX, kCbPanelY, kCbPanelWidth,
+                               kCbPanelHeight, 10, TFT_CYAN);
+      M5.Display.fillRoundRect(kCbPanelX + 70, kCbPanelY + 183, 244, 58,
+                               8, TFT_BLACK);
+    }
+    M5.Display.setTextDatum(middle_center);
+    M5.Display.setTextSize(1);
+    M5.Display.setTextColor(TFT_WHITE);
+    constexpr const char* labels[] = {"F-", "F+", "BW", "SF", "IQ CAP", "NAV"};
+    for (size_t i = 0; i < std::size(labels); ++i) {
+      M5.Display.drawString(labels[i], kCbPanelX + 51 + static_cast<int>(i) * 56,
+                            kCbPanelY + 426);
+    }
+  }
+
+  static bool was_above = false;
+  const bool above = rtl_signal_dbfs_smooth > -45.0f;
+  if (lora_detector_enabled.load(std::memory_order_relaxed) && above && !was_above) {
+    lora_rf_events.fetch_add(1, std::memory_order_relaxed);
+  }
+  was_above = above;
+  M5.Display.fillRect(kCbPanelX + 75, kCbPanelY + 187, 234, 48, TFT_BLACK);
+  char text[48];
+  M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
+  snprintf(text, sizeof(text), "%.3f MHz", rtl_ui_frequency_hz / 1000000.0);
+  M5.Display.drawString(text, kCbPanelX + 192, kCbPanelY + 198);
+  M5.Display.setTextSize(1);
+  M5.Display.setTextColor(TFT_MAGENTA, TFT_BLACK);
+  snprintf(text, sizeof(text), "SF%u  BW%uk  CR4/5",
+           static_cast<unsigned>(lora_sf.load(std::memory_order_relaxed)),
+           static_cast<unsigned>(lora_bandwidth_hz.load(std::memory_order_relaxed) / 1000));
+  M5.Display.drawString(text, kCbPanelX + 192, kCbPanelY + 216);
+  M5.Display.setTextColor(above ? TFT_GREEN : TFT_LIGHTGREY, TFT_BLACK);
+  const size_t captured = g_iq_rec_write.load(std::memory_order_relaxed);
+  snprintf(text, sizeof(text), "RF EVT %lu  %s %u%%",
+           static_cast<unsigned long>(lora_rf_events.load(std::memory_order_relaxed)),
+           g_iq_rec_active.load(std::memory_order_relaxed) ? "CAP" : "SEARCH",
+           static_cast<unsigned>((captured * 100u) / kIqRecMaxBytes));
+  M5.Display.drawString(text, kCbPanelX + 192, kCbPanelY + 229);
 }
 
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
@@ -2391,6 +2597,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   draw_spectrum_grid();
   draw_band_edges();
   draw_cb_dashboard(true);
+  draw_lora_dashboard(true);
   draw_sdr_controls(band, true);
 }
 
@@ -2436,7 +2643,9 @@ void reset_spectrum_renderer() {
 
 int spectrum_draw_width() {
   if (rtl_nav_open) return kNavPanelX - kSpectrumX - 1;
-  return rtl_ui_band == RtlBand::cb ? kCbSpectrumWidth : kSpectrumWidth;
+  return (rtl_ui_band == RtlBand::cb || rtl_ui_band == RtlBand::lora)
+             ? kCbSpectrumWidth
+             : kSpectrumWidth;
 }
 
 void draw_spectrum_grid() {
@@ -2877,6 +3086,70 @@ void demodulate_am(const uint8_t* iq, size_t bytes, float audio_scale) {
   queue_audio_samples(audio, audio_count);
 }
 
+void demodulate_ssb(const uint8_t* iq, size_t bytes, float audio_scale, CbMode mode) {
+  int16_t* audio = rtl_audio_buffers[rtl_audio.buffer];
+  size_t audio_count = 0;
+  const float iq_lpf_k = rtl_filter_alpha(RtlBand::cb);
+  constexpr float kPi = 3.14159265358979323846f;
+  const float bfo_hz = 1500.0f + cb_clarifier_hz.load(std::memory_order_relaxed);
+  const float direction = mode == CbMode::usb ? -1.0f : 1.0f;
+  const float step = direction * 2.0f * kPi * bfo_hz / 240000.0f;
+  const float step_cos = cosf(step);
+  const float step_sin = sinf(step);
+
+  for (size_t offset = 0; offset + 1 < bytes; offset += 2) {
+    const float i_in = static_cast<float>(static_cast<int32_t>(iq[offset]) - 128);
+    const float q_in = static_cast<float>(static_cast<int32_t>(iq[offset + 1]) - 128);
+    rtl_audio.iq_i_lpf += iq_lpf_k * (i_in - rtl_audio.iq_i_lpf);
+    rtl_audio.iq_q_lpf += iq_lpf_k * (q_in - rtl_audio.iq_q_lpf);
+    rtl_audio.i_sum += rtl_audio.iq_i_lpf;
+    rtl_audio.q_sum += rtl_audio.iq_q_lpf;
+    if (++rtl_audio.rf_phase != 4) continue;
+
+    const float i = rtl_audio.i_sum * 0.25f;
+    const float q = rtl_audio.q_sum * 0.25f;
+    rtl_audio.i_sum = 0;
+    rtl_audio.q_sum = 0;
+    rtl_audio.rf_phase = 0;
+    rtl_audio.audio_sum += i * rtl_audio.ssb_cos - q * rtl_audio.ssb_sin;
+    const float next_cos = rtl_audio.ssb_cos * step_cos - rtl_audio.ssb_sin * step_sin;
+    rtl_audio.ssb_sin = rtl_audio.ssb_sin * step_cos + rtl_audio.ssb_cos * step_sin;
+    rtl_audio.ssb_cos = next_cos;
+    if (++rtl_audio.audio_phase != 5) continue;
+
+    const float demodulated = rtl_audio.audio_sum * 0.2f;
+    rtl_audio.audio_sum = 0;
+    rtl_audio.audio_phase = 0;
+    rtl_audio.dc += 0.002f * (demodulated - rtl_audio.dc);
+    const int16_t sample = shape_audio_sample(demodulated - rtl_audio.dc, audio_scale);
+    audio[audio_count++] = sample;
+    const int16_t magnitude = sample < 0 ? -sample : sample;
+    if (magnitude > rtl_audio.peak) rtl_audio.peak = magnitude;
+    rtl_audio.square_sum += static_cast<uint32_t>(sample * sample);
+    ++rtl_audio.samples;
+  }
+  const float norm = sqrtf(rtl_audio.ssb_cos * rtl_audio.ssb_cos +
+                           rtl_audio.ssb_sin * rtl_audio.ssb_sin);
+  if (norm > 0.5f) {
+    rtl_audio.ssb_cos /= norm;
+    rtl_audio.ssb_sin /= norm;
+  }
+  queue_audio_samples(audio, audio_count);
+}
+
+bool cb_audio_gate_open() {
+  const int threshold = cb_squelch_dbfs.load(std::memory_order_relaxed);
+  if (threshold <= -90) {
+    cb_squelch_open.store(true, std::memory_order_relaxed);
+    return true;
+  }
+  const float signal = rtl_signal_dbfs.load(std::memory_order_relaxed);
+  bool open = cb_squelch_open.load(std::memory_order_relaxed);
+  open = open ? signal >= threshold - 3 : signal >= threshold;
+  cb_squelch_open.store(open, std::memory_order_relaxed);
+  return open;
+}
+
 #if RTL_USE_LEGACY_USB
 void run_rtl_capture() {
   const RtlBand band = rtl_requested_band.load(std::memory_order_acquire);
@@ -3022,10 +3295,19 @@ void run_rtl_capture() {
         sum += value;
       }
     }
+    if (band == RtlBand::lora) iq_rec_append(rtl_iq_processing, completed_bytes);
     // Audio first.
-    if (band == RtlBand::am || band == RtlBand::cb) {
+    if (band == RtlBand::cb) {
+      if (cb_audio_gate_open()) {
+        const CbMode mode = cb_mode.load(std::memory_order_relaxed);
+        if (mode == CbMode::am) demodulate_am(rtl_iq_processing, completed_bytes, audio_scale);
+        else demodulate_ssb(rtl_iq_processing, completed_bytes, audio_scale, mode);
+      } else {
+        rtl_audio_play_count = 0;
+      }
+    } else if (band == RtlBand::am) {
       demodulate_am(rtl_iq_processing, completed_bytes, audio_scale);
-    } else {
+    } else if (band != RtlBand::lora) {
       demodulate_fm(rtl_iq_processing, completed_bytes, audio_scale,
                     band == RtlBand::fm);
     }
@@ -3343,9 +3625,19 @@ static void on_rtl_driver_event(rtl_sdr_v4_esp_event_t event, const void *payloa
       update_signal_level_from_iq(iq->data, n);
       /* The callback owns this borrowed block until return; avoid a full-URB copy. */
       spectrum_offer_iq_snapshot(iq->data, n);
-      if (rtl_audio_enabled.load(std::memory_order_relaxed) ||
-          g_audio_rec_active.load(std::memory_order_relaxed)) {
-        if (g_stream_band == RtlBand::am || g_stream_band == RtlBand::cb) {
+      if (g_stream_band == RtlBand::lora) iq_rec_append(iq->data, n);
+      if (g_stream_band != RtlBand::lora &&
+          (rtl_audio_enabled.load(std::memory_order_relaxed) ||
+           g_audio_rec_active.load(std::memory_order_relaxed))) {
+        if (g_stream_band == RtlBand::cb) {
+          if (cb_audio_gate_open()) {
+            const CbMode mode = cb_mode.load(std::memory_order_relaxed);
+            if (mode == CbMode::am) demodulate_am(iq->data, n, g_stream_audio_scale);
+            else demodulate_ssb(iq->data, n, g_stream_audio_scale, mode);
+          } else {
+            rtl_audio_play_count = 0;
+          }
+        } else if (g_stream_band == RtlBand::am) {
           demodulate_am(iq->data, n, g_stream_audio_scale);
         } else {
           demodulate_fm(iq->data, n, g_stream_audio_scale,
@@ -3538,12 +3830,17 @@ static void rtl_driver_app_task(void *) {
             rtl_signal_meter_last_ms = now;
             draw_signal_meter(false);
             draw_cb_dashboard(false);
+            draw_lora_dashboard(false);
           }
           /* Auto-export WAV after buffer fills (never write SD on the IQ callback). */
           if (g_audio_rec_export_pending.exchange(false, std::memory_order_acq_rel)) {
             (void)audio_rec_stop_and_export();
             if (orc_tool_current() == OrcTool::Capture) draw_capture_tool_panel();
             draw_sdr_controls(g_stream_band, true);
+          }
+          if (g_iq_rec_export_pending.exchange(false, std::memory_order_acq_rel)) {
+            (void)iq_rec_stop_and_export();
+            draw_lora_dashboard(false);
           }
           const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
           if (gfx_on && orc_tool_current() != OrcTool::Capture) {
@@ -3878,11 +4175,21 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz) {
   if (!g_rtl_device_ready.load(std::memory_order_acquire) || g_rtl == nullptr) return;
 #endif
   frequency_hz = rtl_clamp_frequency(band, frequency_hz);
+  if (rtl_ui_band == RtlBand::lora && band != RtlBand::lora &&
+      g_iq_rec_active.exchange(false, std::memory_order_acq_rel)) {
+    g_iq_rec_export_pending.store(true, std::memory_order_release);
+  }
   if (band != rtl_ui_band) {
     rtl_filter_bandwidth_hz.store(rtl_filter_default_hz(band), std::memory_order_relaxed);
   }
   if (band == RtlBand::cb) {
     rtl_scope_span_hz.store(480000, std::memory_order_relaxed);
+  }
+  if (band == RtlBand::lora) {
+    rtl_scope_span_hz.store(kRtlScopeSpanMaxHz, std::memory_order_relaxed);
+    rtl_audio_enabled.store(false, std::memory_order_relaxed);
+    rtl_audio_play_count = 0;
+    M5.Speaker.stop();
   }
   if (band == RtlBand::fm) {
     persist_fm_frequency(frequency_hz);
@@ -3906,6 +4213,7 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz) {
   append_journal(band == RtlBand::am       ? "sdr_am"
                  : band == RtlBand::wx     ? "sdr_wx"
                  : band == RtlBand::cb     ? "sdr_cb"
+                 : band == RtlBand::lora   ? "sdr_lora"
                  : band == RtlBand::browse ? "sdr_browse"
                                            : "sdr_fm");
 }
@@ -3966,18 +4274,82 @@ bool handle_cb_touch(int32_t x, int32_t y) {
     if (control == 0 || control == 1) {
       const size_t current = cb_channel_index(rtl_ui_frequency_hz);
       tune_cb_channel((current + (control == 0 ? 39 : 1)) % 40);
-    } else if (control == 2 || control == 3) {
-      const int delta = control == 2 ? -2000 : 2000;
-      const uint32_t current = rtl_filter_bandwidth_hz.load(std::memory_order_relaxed);
-      rtl_filter_bandwidth_hz.store(
-          rtl_clamp_filter_hz(RtlBand::cb, static_cast<uint32_t>(max(0, static_cast<int>(current) + delta))),
-          std::memory_order_relaxed);
-      redraw_spectrum_panel();
-    } else if (control == 4) {
-      handle_sdr_touch(522, kSdrTuneY + kSdrControlsHeight / 2);
+    } else if (control == 2) {
+      CbMode mode = cb_mode.load(std::memory_order_relaxed);
+      mode = mode == CbMode::am ? CbMode::usb : mode == CbMode::usb ? CbMode::lsb
+                                                                        : CbMode::am;
+      cb_mode.store(mode, std::memory_order_relaxed);
+      cb_clarifier_hz.store(0, std::memory_order_relaxed);
+      rtl_filter_bandwidth_hz.store(mode == CbMode::am ? 10000 : 3000,
+                                    std::memory_order_relaxed);
+      rtl_audio_reset_demod_filters();
+      Serial.printf("RTL_CB_MODE mode=%s\n", mode == CbMode::usb ? "USB"
+                                              : mode == CbMode::lsb ? "LSB" : "AM");
+    } else if (control == 3) {
+      int clarifier = cb_clarifier_hz.load(std::memory_order_relaxed) + 500;
+      if (clarifier > 1500) clarifier = -1500;
+      cb_clarifier_hz.store(clarifier, std::memory_order_relaxed);
+      rtl_audio.ssb_cos = 1.0f;
+      rtl_audio.ssb_sin = 0.0f;
+    } else if (control == 4 || control == 5) {
+      int threshold = cb_squelch_dbfs.load(std::memory_order_relaxed);
+      threshold = constrain(threshold + (control == 4 ? -5 : 5), -90, -35);
+      cb_squelch_dbfs.store(threshold, std::memory_order_relaxed);
+      Serial.printf("RTL_CB_SQUELCH dbfs=%d\n", threshold);
     } else {
-      handle_sdr_touch(913, kSdrBandY + kSdrControlsHeight / 2);
+      return true;
     }
+    draw_cb_dashboard(false);
+    return true;
+  }
+  return true;
+}
+
+bool handle_lora_touch(int32_t x, int32_t y) {
+  if (rtl_ui_band != RtlBand::lora || x < kCbPanelX ||
+      x >= kCbPanelX + kCbPanelWidth || y < kCbPanelY ||
+      y >= kCbPanelY + kCbPanelHeight) return false;
+  const int dx = x - (kCbPanelX + 192);
+  const int dy = y - (kCbPanelY + 317);
+  if (dx * dx + dy * dy <= 78 * 78) {
+    constexpr float kPi = 3.14159265358979323846f;
+    const float turn = (atan2f(static_cast<float>(dy), static_cast<float>(dx)) + kPi) /
+                       (2.0f * kPi);
+    lora_sf.store(static_cast<uint8_t>(7 + min(static_cast<int>(turn * 6.0f), 5)),
+                  std::memory_order_relaxed);
+    draw_lora_dashboard(false);
+    return true;
+  }
+  if (y >= kCbPanelY + 395 && y <= kCbPanelY + 458) {
+    const int control = constrain((x - (kCbPanelX + 23)) / 56, 0, 5);
+    if (control == 0 || control == 1) {
+      const uint32_t next = rtl_step_frequency(RtlBand::lora, rtl_ui_frequency_hz,
+                                               control == 0 ? -1 : 1);
+      if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running) {
+        request_hot_retune(next);
+      } else {
+        queue_local_rtl_listen(RtlBand::lora, next);
+      }
+    } else if (control == 2) {
+      uint32_t bandwidth = lora_bandwidth_hz.load(std::memory_order_relaxed);
+      bandwidth = bandwidth == 125000 ? 250000 : bandwidth == 250000 ? 500000 : 125000;
+      lora_bandwidth_hz.store(bandwidth, std::memory_order_relaxed);
+      rtl_filter_bandwidth_hz.store(bandwidth, std::memory_order_relaxed);
+      redraw_spectrum_panel();
+    } else if (control == 3) {
+      uint8_t sf = lora_sf.load(std::memory_order_relaxed);
+      lora_sf.store(sf >= 12 ? 7 : sf + 1, std::memory_order_relaxed);
+    } else if (control == 4) {
+      if (g_iq_rec_active.load(std::memory_order_acquire)) {
+        (void)iq_rec_stop_and_export();
+      } else {
+        (void)iq_rec_start();
+      }
+    } else {
+      rtl_nav_open = true;
+      draw_nav_panel();
+    }
+    draw_lora_dashboard(false);
     return true;
   }
   return true;
@@ -4203,8 +4575,9 @@ void poll_sdr_touch_from_stream() {
 void handle_sdr_touch(int32_t x, int32_t y) {
   if (handle_tool_tab_touch(x, y)) return;
   if (handle_cb_touch(x, y)) return;
+  if (handle_lora_touch(x, y)) return;
 
-  static constexpr int kBandWidths[] = {130, 130, 130, 150, 170, 190, 220};
+  static constexpr int kBandWidths[] = {110, 110, 110, 120, 140, 160, 170, 200};
   static constexpr int kTuneWidths[] = {170, 170, 220, 150, 150, 220};
   const int band_index = sdr_button_at(kSdrBandY, x, y, kBandWidths, std::size(kBandWidths));
   if (band_index >= 0) {
@@ -4223,12 +4596,16 @@ void handle_sdr_touch(int32_t x, int32_t y) {
                                               ? rtl_ui_frequency_hz
                                               : kCbDefaultHz);
     } else if (band_index == 4) {
+      queue_local_rtl_listen(RtlBand::lora, rtl_ui_band == RtlBand::lora
+                                                ? rtl_ui_frequency_hz
+                                                : kLoraDefaultHz);
+    } else if (band_index == 5) {
       queue_local_rtl_listen(RtlBand::browse,
                              rtl_ui_band == RtlBand::browse
                                  ? rtl_ui_frequency_hz
                                  : constrain(rtl_ui_frequency_hz,
                                              kRtlBrowseMinHz, kRtlBrowseMaxHz));
-    } else if (band_index == 5) {
+    } else if (band_index == 6) {
       /* REC toggle — Capture tool records post-demod PCM for offline analysis. */
       if (g_audio_rec_active.load(std::memory_order_acquire)) {
         (void)audio_rec_stop_and_export();
@@ -4240,7 +4617,7 @@ void handle_sdr_touch(int32_t x, int32_t y) {
           rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
       draw_sdr_controls(rtl_ui_band, running);
       if (orc_tool_current() == OrcTool::Capture) draw_capture_tool_panel();
-    } else if (band_index == 6) {
+    } else if (band_index == 7) {
       const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
       if (state == RtlCaptureState::running) {
         rtl_restart_requested.store(false, std::memory_order_release);
@@ -4268,6 +4645,7 @@ void handle_sdr_touch(int32_t x, int32_t y) {
       queue_local_rtl_listen(rtl_ui_band, next);
     }
   } else if (tune_index == 2) {
+    if (rtl_ui_band == RtlBand::lora) return;
     const bool next = !rtl_audio_enabled.load(std::memory_order_acquire);
     rtl_audio_enabled.store(next, std::memory_order_release);
     rtl_audio_play_count = 0;
@@ -4419,6 +4797,26 @@ void process_command(char* command) {
         rtl_capture_error);
     return;
   }
+  if (strcmp(command, "RTL_IQ_START") == 0) {
+    (void)iq_rec_start();
+    return;
+  }
+  if (strcmp(command, "RTL_IQ_STOP") == 0 || strcmp(command, "RTL_IQ_SAVE") == 0) {
+    g_sd_tried = false;
+    g_sd_ready = false;
+    (void)iq_rec_stop_and_export();
+    return;
+  }
+  if (strcmp(command, "RTL_IQ_STATUS") == 0) {
+    Serial.printf("RTL_IQ_STATUS active=%s bytes=%u max_bytes=%u frequency_hz=%u sf=%u bw=%u last_path=\"%s\"\n",
+                  g_iq_rec_active.load(std::memory_order_acquire) ? "true" : "false",
+                  static_cast<unsigned>(g_iq_rec_write.load(std::memory_order_acquire)),
+                  static_cast<unsigned>(kIqRecMaxBytes), g_iq_rec_frequency_hz,
+                  static_cast<unsigned>(lora_sf.load(std::memory_order_relaxed)),
+                  static_cast<unsigned>(lora_bandwidth_hz.load(std::memory_order_relaxed)),
+                  g_iq_rec_last_path[0] ? g_iq_rec_last_path : "none");
+    return;
+  }
   if (strcmp(command, "RTL_REC_START") == 0) {
     if (orc_tool_current() != OrcTool::Capture) set_orc_tool(OrcTool::Capture);
     (void)audio_rec_start();
@@ -4472,9 +4870,14 @@ void process_command(char* command) {
                             strcmp(command, "RTL_LISTEN WX") == 0;
   const bool am_capture = strcmp(command, "RTL_CAPTURE AM") == 0 ||
                           strcmp(command, "RTL_LISTEN AM") == 0;
-  if ((kzel_capture || noaa_capture || am_capture) && authenticated) {
+  const bool lora_capture = strcmp(command, "RTL_CAPTURE LORA") == 0 ||
+                            strcmp(command, "RTL_LISTEN LORA") == 0;
+  if ((kzel_capture || noaa_capture || am_capture || lora_capture) && authenticated) {
     const RtlBand band =
-        noaa_capture ? RtlBand::wx : am_capture ? RtlBand::am : RtlBand::fm;
+        noaa_capture ? RtlBand::wx
+        : am_capture ? RtlBand::am
+        : lora_capture ? RtlBand::lora
+                       : RtlBand::fm;
     const uint32_t frequency_hz = rtl_band_default_frequency(band);
     RtlCaptureState expected = RtlCaptureState::ready;
     const RtlCaptureState current = rtl_capture_state.load(std::memory_order_acquire);

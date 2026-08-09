@@ -27,8 +27,9 @@ this file when their paths, versions, or completion claims differ.
 | Multi-URB stream, IQ ring, metrics | **Implemented** | Component source; five-minute acceptance still required |
 | In-stream hot retune | **Implemented** | Component v0.4.1; settle-time measurement pending |
 | Core split | **Implemented** | USB core 0; IQ delivery and app work on core 1 |
-| Tab5 radio shell | **Implemented** | FM/AM/WX/CB, radio/scope/capture tabs, sound/GFX toggles |
-| CB channel dashboard | **Flashed; operator acceptance pending** | 40-channel AM plan, 2/3 scope, touch channel dial, live S/RF bar, stylized SD faceplate |
+| Tab5 radio shell | **Implemented** | FM/AM/WX/CB/LoRa, radio/scope/capture tabs, sound/GFX toggles |
+| CB channel dashboard | **Flashed; operator acceptance pending** | 40-channel AM/USB/LSB plan, 2/3 scope, touch channel dial, clarifier, squelch, live S/RF bar |
+| LoRa/Meshtastic receive path | **Flashed; RF acceptance pending** | LoRa dashboard and CU8 IQ capture; host self-test proves sync/FEC/CRC, channel AES-CTR, protobuf, and UTF-8 text |
 | SDR navigation | **Flashed; operator acceptance pending** | Full 24–1766 MHz browse, US band/use guide, direct entry, pinch, peak find, FM auto tune |
 | Browse demodulation | **Partial** | NFM spectrum/listen path; AM/SSB/digital mode selection and sub-24 MHz direct sampling remain open |
 | Variant-4 splash | **Implemented on this branch** | Looping SD asset playback and static ready/button overlay |
@@ -53,7 +54,10 @@ this file when their paths, versions, or completion claims differ.
 - [ ] Verify the optimized path keeps audio drops near zero on hardware.
 - [ ] Confirm sound defaults off, NAV leaves animation live, and controls remain static.
 - [ ] Accept BROWSE panning/direct entry and US band-guide labels on the physical display.
-- [ ] Accept CB channel snapping, scope taps, dial, S/RF display, and six dashboard controls.
+- [ ] Accept CB channel snapping, scope taps, dial, AM/USB/LSB voice,
+      clarifier, squelch, S/RF display, and six dashboard controls.
+- [ ] Capture a live Meshtastic packet from the Tab5, retrieve its `.orciq`
+      file, and confirm the host decoder emits the transmitted text.
 - [x] Install the final variant-4 SD pack and record stable loop FPS (15–16 FPS at 25 MHz SPI).
 - [x] Soak the splash past Ready for 28 seconds with no `task_wdt` reset or panic.
 - [x] Copy the 14,271,890-byte compact splash pack through COM17; device SHA-256 matched `AA490D5E…BCD1FA`.
@@ -143,3 +147,5 @@ SPLASH_FPS ...
 | `docs/M5TAB5_VALIDATION_REPORT.md` | Historical hardware evidence |
 | `docs/GATE2_IMPLEMENTATION_LOCK.md` | Historical Gate-2 handoff snapshot |
 | `docs/OrcSDR_Splash_README.md` | Splash asset and playback contract |
+| `docs/cb/README.md` | CB channel, sideband, clarifier, squelch, and asset controls |
+| `docs/lora/README.md` | LoRa IQ capture and Meshtastic host-decoder workflow |

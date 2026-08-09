@@ -9,6 +9,7 @@ managed_components/
 # Tooling
 .vscode/
 .idea/
+__pycache__/
 *.user
 .DS_Store
 
