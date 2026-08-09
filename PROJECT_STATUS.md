@@ -1,6 +1,6 @@
 # OrcSDR project status
 
-Snapshot date: **2026-08-08**
+Snapshot date: **2026-08-09**
 Source branch: **`codex/sdr-bandwidth-navigation`**
 Mainline baseline: **`origin/main` at `bda29fd`**
 
@@ -39,6 +39,9 @@ this file when their paths, versions, or completion claims differ.
 | In-device SD file transfer | **Hardware-verified** | COM17 list/get/put, staged writes, device SHA-256, rollback |
 | Graphics with audio enabled | **Open performance gate** | Establish before/after `RTL_SPECTRUM_FPS` and audio-drop evidence |
 | Audio/graphics optimization pass | **Implemented on this branch** | 10 FPS parity target, lighter DSP hot path, timing counters; hardware A/B pending |
+| FM post-DSP recording quality | **Hardware-verified** | Ten SD WAVs are valid 48 kHz mono PCM with no clipping or digital-zero gaps; a 12-second capture was clean enough for music fingerprinting |
+| Live speaker versus recorded PCM | **Open performance gate** | Recorder taps PCM immediately before `playRaw`; clean WAVs plus poor live sound isolate the remaining fault to speaker queue/DMA/output after the DSP tap |
+| Paired FM IQ/WAV DSP lab | **Planned** | Buffer synchronized raw CU8 IQ, post-DSP PCM, and metadata in PSRAM; write after capture and evaluate filter variants offline |
 | AM/HF fidelity | **Experimental** | Do not claim calibrated HF/direct-sampling support |
 | Second ESP32-P4 board | **Planned** | No second-board hardware evidence yet |
 | rtl_tcp over Ethernet | **Planned** | App does not exist yet |
@@ -52,6 +55,14 @@ this file when their paths, versions, or completion claims differ.
 - [x] Remove the full-URB app copy, software `double` accumulation, and per-sample `tanhf`.
 - [x] Add `dsp_load_pct`, block count, and maximum block time to the FPS log.
 - [ ] Verify the optimized path keeps audio drops near zero on hardware.
+- [ ] Add the paired FM DSP capture described in `docs/FM_DSP_CAPTURE_LAB.md`:
+      5–8 seconds of 960 kS/s CU8 IQ, synchronized 48 kHz PCM, and settings metadata.
+- [ ] Save paired captures after reception stops as SigMF data/metadata plus WAV;
+      do not write to SD in the real-time receive path.
+- [ ] Replay one IQ capture through at least three offline filter variants and
+      compare SNR, bandwidth, clipping, discontinuities, and CPU cost.
+- [ ] Instrument `playRaw` accepts/rejects and perform an external-microphone
+      loopback comparison to separate DMA/queue loss from amplifier/speaker coloration.
 - [ ] Confirm sound defaults off, NAV leaves animation live, and controls remain static.
 - [ ] Accept BROWSE panning/direct entry and US band-guide labels on the physical display.
 - [ ] Accept CB channel snapping, scope taps, dial, AM/USB/LSB voice,
@@ -67,7 +78,8 @@ this file when their paths, versions, or completion claims differ.
       start/stop, pinch navigation, peak find, and auto tune.
 
 Exit: smooth scope with audio enabled, no control corruption, approximately zero
-audio drops, and a serial log attached to the validation record.
+audio drops, a serial log attached to the validation record, and a repeatable
+paired IQ/WAV dataset that can drive FM filter decisions without tuning by ear.
 
 ### P1 — close driver reliability and portability
 
@@ -152,3 +164,4 @@ SPLASH_FPS ...
 | `docs/OrcSDR_Splash_README.md` | Splash asset and playback contract |
 | `docs/cb/README.md` | CB channel, sideband, clarifier, squelch, and asset controls |
 | `docs/lora/README.md` | LoRa IQ capture and Meshtastic host-decoder workflow |
+| `docs/FM_DSP_CAPTURE_LAB.md` | Measured FM WAV evidence and paired IQ/WAV DSP-lab implementation plan |
