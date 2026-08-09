@@ -8,9 +8,21 @@ lab, analyzer) plug into the same shell without forking the USB/demod core.
 
 | Tool tab | Role (now) |
 |---|---|
-| **RADIO** | FM / AM / WX listen, tune, SIG, volume |
+| **RADIO** | FM / AM / WX plus 24–1766 MHz BROWSE, tune, SIG, volume |
 | **SCOPE** | 256-bin Welch spectrum + peak-hold (GFX path; audio-first gating) |
 | **CAPTURE** | Post-demod 48 kHz mono PCM → PSRAM → optional SD WAV (`/orcsdr/…`) |
+
+`BROWSE` exposes the driver's full tuner range with direct entry, 1 MHz steps,
+pinch/pan, and a NAV → `US BAND GUIDE` quick-jump menu. The header identifies
+common CB, amateur, airband, NOAA satellite/weather, marine, FRS/GMRS,
+LoRa/ISM, ADS-B, GNSS, and L-band satcom ranges as tuning moves. It is a receive
+guide, not permission to transmit; allocations overlap and vary outside the US.
+Reference: [NTIA US allocation chart](https://www.ntia.gov/page/united-states-frequency-allocation-chart),
+[NOAA Weather Radio frequencies](https://www.weather.gov/marine/wxradio).
+
+`BROWSE` currently uses NFM for listening. Correct AM/SSB/digital demodulation
+is a separate mode/decoder gate. Coverage below 24 MHz also remains on the
+experimental direct-sampling path and is not claimed by the wide-range browser.
 
 Serial: `RTL_TOOL RADIO|SCOPE|CAPTURE`, `RTL_REC_START|STOP|STATUS|SAVE`.
 

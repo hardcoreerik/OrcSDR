@@ -235,11 +235,64 @@ constexpr uint32_t kRtlAmMaxHz = 1710000;
 constexpr uint32_t kRtlAmStepHz = 10000;
 constexpr uint32_t kRtlAmDefaultHz = 1000000;
 constexpr uint32_t kRtlWxHz = 162400000;
+constexpr uint32_t kRtlBrowseMinHz = RTL_SDR_V4_ESP_FREQ_MIN_HZ;
+constexpr uint32_t kRtlBrowseMaxHz = RTL_SDR_V4_ESP_FREQ_MAX_HZ;
+constexpr uint32_t kRtlBrowseDefaultHz = 146520000;
 // Clean-room LO offset: LO = RF + 1.814972 MHz (from 100 MHz observation).
 constexpr double kRtlIfOffsetHz = 1814972.0;
 constexpr double kRtlXtalHz = 28800000.0;
 
-enum class RtlBand : uint8_t { fm, am, wx };
+enum class RtlBand : uint8_t { fm, am, wx, browse };
+
+struct RfBandGuide {
+  uint32_t low_hz;
+  uint32_t high_hz;
+  uint32_t preset_hz;
+  RtlBand mode;
+  const char* label;
+  const char* description;
+  bool quick;
+};
+
+/* US receive guide. Allocations overlap; this is identification help, not authority to transmit. */
+constexpr RfBandGuide kRfBandGuide[] = {
+    {26965000, 27405000, 27185000, RtlBand::browse, "CB RADIO", "HF / 40-channel citizens band", true},
+    {28000000, 29700000, 28400000, RtlBand::browse, "HAM RADIO", "HF / 10 m amateur", true},
+    {50000000, 54000000, 52525000, RtlBand::browse, "HAM RADIO", "VHF / 6 m amateur", true},
+    {88000000, 108000000, kRtlFmDefaultHz, RtlBand::fm, "FM BROADCAST", "VHF / music and talk", true},
+    {108000000, 118000000, 113000000, RtlBand::browse, "AIR NAV", "VHF / aircraft navigation", false},
+    {118000000, 137000000, 121500000, RtlBand::browse, "AIRBAND", "VHF / aircraft voice/emergency", true},
+    {137000000, 138000000, 137500000, RtlBand::browse, "NOAA SATELLITE", "VHF / weather downlinks", true},
+    {144000000, 148000000, 146520000, RtlBand::browse, "HAM RADIO", "VHF / 2 m amateur", true},
+    {156000000, 162025000, 156800000, RtlBand::browse, "MARINE RADIO", "VHF / marine voice/safety", false},
+    {162400000, 162550000, kRtlWxHz, RtlBand::wx, "NOAA WEATHER", "VHF / forecasts and alerts", true},
+    {222000000, 225000000, 223500000, RtlBand::browse, "HAM RADIO", "VHF / 1.25 m amateur", false},
+    {406000000, 406100000, 406050000, RtlBand::browse, "DISTRESS SAT", "UHF / emergency beacons", false},
+    {420000000, 450000000, 446000000, RtlBand::browse, "HAM RADIO", "UHF / 70 cm amateur", true},
+    {462550000, 467725000, 462562500, RtlBand::browse, "FRS / GMRS", "UHF / personal two-way", false},
+    {902000000, 928000000, 915000000, RtlBand::browse, "LORA / ISM", "UHF / LoRa, ISM, 33 cm ham", true},
+    {977900000, 978100000, 978000000, RtlBand::browse, "ADS-B UAT", "UHF / aircraft position", false},
+    {1089900000, 1090100000, 1090000000, RtlBand::browse, "ADS-B / MODE S", "L-band / aircraft tracking", true},
+    {1525000000, 1559000000, 1545000000, RtlBand::browse, "SATCOM", "L-band / satellite downlinks", true},
+    {1575000000, 1576000000, 1575420000, RtlBand::browse, "GNSS / GPS", "L-band / navigation", false},
+    {1610600000, 1626500000, 1620000000, RtlBand::browse, "SATCOM", "L-band / mobile satellite", false},
+};
+static_assert(std::size(kRfBandGuide) == 20);
+constexpr const char* kRfQuickLabels[] = {
+    "CB 27", "HAM 10M", "HAM 6M", "FM RADIO", "AIRBAND", "NOAA SAT",
+    "HAM 2M", "NOAA WX", "HAM 70CM", "LORA 915", "ADS-B 1090", "SATCOM L"};
+static_assert(std::size(kRfQuickLabels) == 12);
+
+constexpr bool rf_band_guide_valid() {
+  size_t quick_count = 0;
+  for (const auto& entry : kRfBandGuide) {
+    if (entry.low_hz < kRtlBrowseMinHz || entry.high_hz > kRtlBrowseMaxHz ||
+        entry.low_hz > entry.preset_hz || entry.preset_hz > entry.high_hz) return false;
+    if (entry.quick) ++quick_count;
+  }
+  return quick_count == std::size(kRfQuickLabels);
+}
+static_assert(rf_band_guide_valid(), "RF band guide ranges or quick presets are invalid");
 
 // Independently observed 100 MHz final-tune sequence. Fixed presets patch only
 // the calculated divider and PLL bytes immediately before these records run.
@@ -492,7 +545,7 @@ std::atomic<bool> rtl_volume_changed{false};
 /** When false: no scope/waterfall updates (audio + SIG meter still run). A/B for chop diagnosis. */
 std::atomic<bool> rtl_graphics_enabled{true};
 enum class SdrPinchMode : uint8_t { Span, Filter };
-enum class SdrNavDropdown : uint8_t { None, Pinch, Step };
+enum class SdrNavDropdown : uint8_t { None, Band, Pinch, Step };
 std::atomic<uint32_t> rtl_scope_span_hz{kRtlScopeSpanMaxHz};
 std::atomic<uint32_t> rtl_filter_bandwidth_hz{kRtlFmFilterDefaultHz};
 SdrPinchMode rtl_pinch_mode = SdrPinchMode::Span;
@@ -529,6 +582,7 @@ void reset_spectrum_renderer();
 void draw_spectrum_grid();
 void draw_spectrum_axis();
 void draw_band_edges();
+void draw_rf_band_guide(uint32_t frequency_hz);
 int spectrum_draw_width();
 void redraw_spectrum_panel();
 void draw_sdr_controls(RtlBand band, bool running);
@@ -822,6 +876,7 @@ const char* rtl_band_name(RtlBand band) {
   switch (band) {
     case RtlBand::am: return "AM";
     case RtlBand::wx: return "WX";
+    case RtlBand::browse: return "BROWSE";
     default: return "FM";
   }
 }
@@ -830,6 +885,7 @@ const char* rtl_mode_name(RtlBand band) {
   switch (band) {
     case RtlBand::am: return "AM";
     case RtlBand::wx: return "NFM";
+    case RtlBand::browse: return "NFM";
     default: return "WBFM";
   }
 }
@@ -838,19 +894,20 @@ uint32_t rtl_band_default_frequency(RtlBand band) {
   switch (band) {
     case RtlBand::am: return kRtlAmDefaultHz;
     case RtlBand::wx: return kRtlWxHz;
+    case RtlBand::browse: return kRtlBrowseDefaultHz;
     default: return rtl_saved_fm_hz;
   }
 }
 
 uint32_t rtl_filter_default_hz(RtlBand band) {
   if (band == RtlBand::am) return kRtlAmFilterDefaultHz;
-  if (band == RtlBand::wx) return kRtlWxFilterDefaultHz;
+  if (band == RtlBand::wx || band == RtlBand::browse) return kRtlWxFilterDefaultHz;
   return kRtlFmFilterDefaultHz;
 }
 
 uint32_t rtl_clamp_filter_hz(RtlBand band, uint32_t bandwidth_hz) {
-  const uint32_t low = band == RtlBand::am ? 4000 : band == RtlBand::wx ? 8000 : 50000;
-  const uint32_t high = band == RtlBand::am ? 30000 : band == RtlBand::wx ? 50000 : 300000;
+  const uint32_t low = band == RtlBand::am ? 4000 : band == RtlBand::fm ? 50000 : 8000;
+  const uint32_t high = band == RtlBand::am ? 30000 : band == RtlBand::fm ? 300000 : 100000;
   return constrain((bandwidth_hz / 1000u) * 1000u, low, high);
 }
 
@@ -869,6 +926,8 @@ uint32_t rtl_clamp_frequency(RtlBand band, uint32_t frequency_hz) {
       return frequency_hz;
     case RtlBand::wx:
       return kRtlWxHz;
+    case RtlBand::browse:
+      return constrain(frequency_hz, kRtlBrowseMinHz, kRtlBrowseMaxHz);
     default:
       if (frequency_hz < kRtlFmMinHz) return kRtlFmMinHz;
       if (frequency_hz > kRtlFmMaxHz) return kRtlFmMaxHz;
@@ -1215,7 +1274,44 @@ void draw_tool_tabs() {
   M5.Display.drawString(rtl_nav_open ? "CLOSE" : "NAV",
                         kPinchToggleX + kPinchToggleW / 2,
                         kPinchToggleY + kPinchToggleH / 2);
+  draw_rf_band_guide(rtl_ui_frequency_hz);
   if (rtl_nav_open) draw_nav_panel();
+}
+
+const RfBandGuide* rf_band_guide_at(uint32_t frequency_hz) {
+  for (const auto& entry : kRfBandGuide) {
+    if (frequency_hz >= entry.low_hz && frequency_hz <= entry.high_hz) return &entry;
+  }
+  return nullptr;
+}
+
+const RfBandGuide* rf_quick_band_at(size_t wanted) {
+  size_t found = 0;
+  for (const auto& entry : kRfBandGuide) {
+    if (!entry.quick) continue;
+    if (found++ == wanted) return &entry;
+  }
+  return nullptr;
+}
+
+const char* rf_region_name(uint32_t frequency_hz) {
+  if (frequency_hz < 30000000) return "HF";
+  if (frequency_hz < 300000000) return "VHF";
+  if (frequency_hz < 1000000000) return "UHF";
+  return "L-BAND";
+}
+
+void draw_rf_band_guide(uint32_t frequency_hz) {
+  const RfBandGuide* entry = rf_band_guide_at(frequency_hz);
+  char text[96];
+  if (entry != nullptr) snprintf(text, sizeof(text), "%s | %s", entry->label, entry->description);
+  else snprintf(text, sizeof(text), "%s - mixed or unlisted services (US guide)",
+                rf_region_name(frequency_hz));
+  M5.Display.fillRect(520, kToolTabY - 2, 510, kToolTabH + 4, TFT_BLACK);
+  M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(entry != nullptr ? TFT_YELLOW : TFT_LIGHTGREY, TFT_BLACK);
+  M5.Display.drawString(text, 775, kToolTabY + kToolTabH / 2);
 }
 
 bool handle_tool_tab_touch(int32_t x, int32_t y) {
@@ -1286,37 +1382,45 @@ void draw_nav_panel() {
 
   char label[40];
   button(780, 145, 416, 48, "DIRECT FREQUENCY", TFT_NAVY, 3);
+  button(780, 205, 416, 48, "US BAND GUIDE  v", TFT_DARKGREEN, 3);
+  if (rtl_nav_dropdown == SdrNavDropdown::Band) {
+    for (size_t index = 0; index < std::size(kRfQuickLabels); ++index) {
+      button(780 + (index % 2) * 216, 265 + (index / 2) * 45, 200, 39,
+             kRfQuickLabels[index], TFT_DARKGREY, 2);
+    }
+    return;
+  }
   snprintf(label, sizeof(label), "PINCH: %s  v",
            rtl_pinch_mode == SdrPinchMode::Span ? "SPAN" : "FILTER");
-  button(780, 205, 416, 48, label, TFT_DARKCYAN, 3);
+  button(780, 265, 416, 48, label, TFT_DARKCYAN, 3);
   const uint32_t step = rtl_ui_band == RtlBand::am ? rtl_am_step_hz : rtl_fm_step_hz;
   snprintf(label, sizeof(label), "STEP: %u kHz  v", step / 1000u);
-  button(780, 265, 416, 48, label, TFT_DARKCYAN, 3);
+  button(780, 325, 416, 48, label, TFT_DARKCYAN, 3);
 
   if (rtl_nav_dropdown == SdrNavDropdown::Pinch) {
-    button(780, 328, 200, 58, "SPAN", TFT_NAVY, 3);
-    button(996, 328, 200, 58, "FILTER", TFT_DARKCYAN, 3);
+    button(780, 385, 200, 58, "SPAN", TFT_NAVY, 3);
+    button(996, 385, 200, 58, "FILTER", TFT_DARKCYAN, 3);
     return;
   }
   if (rtl_nav_dropdown == SdrNavDropdown::Step) {
-    static const uint32_t steps[] = {1000, 5000, 10000, 50000, 100000, 200000};
+    static const uint32_t steps[] = {1000, 5000, 10000, 50000, 100000, 1000000};
     for (int index = 0; index < 6; ++index) {
       snprintf(label, sizeof(label), "%u kHz", steps[index] / 1000u);
-      button(780 + (index % 2) * 216, 328 + (index / 2) * 66, 200, 58, label,
+      button(780 + (index % 2) * 216, 385 + (index / 2) * 54, 200, 48, label,
              TFT_DARKGREY, 3);
     }
     return;
   }
 
-  button(780, 328, 128, 58, "ZOOM IN", TFT_DARKGREY, 2);
-  button(924, 328, 128, 58, "RESET", TFT_DARKGREY, 3);
-  button(1068, 328, 128, 58, "ZOOM OUT", TFT_DARKGREY, 2);
-  button(780, 402, 128, 58, "PEAK", TFT_DARKCYAN, 3);
-  button(924, 402, 128, 58, "AUTO FM", TFT_DARKCYAN, 2);
-  button(1068, 402, 128, 58, "CENTER", TFT_DARKCYAN, 2);
+  button(780, 385, 128, 54, "ZOOM IN", TFT_DARKGREY, 2);
+  button(924, 385, 128, 54, "RESET", TFT_DARKGREY, 3);
+  button(1068, 385, 128, 54, "ZOOM OUT", TFT_DARKGREY, 2);
+  button(780, 451, 128, 54, "PEAK", TFT_DARKCYAN, 3);
+  button(924, 451, 128, 54, "AUTO FM", TFT_DARKCYAN, 2);
+  button(1068, 451, 128, 54, "CENTER", TFT_DARKCYAN, 2);
   M5.Display.setTextSize(2);
   M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  M5.Display.drawString("tap=tune  drag=pan  drag yellow edge=filter", 988, 510);
+  M5.Display.drawString("tap=tune  drag=pan  yellow edges=filter", 988, 530);
 }
 
 bool handle_nav_touch(int32_t x, int32_t y) {
@@ -1341,7 +1445,9 @@ bool handle_nav_touch(int32_t x, int32_t y) {
         const uint32_t band_max = rtl_ui_band == RtlBand::am
                                       ? kRtlAmMaxHz
                                       : rtl_ui_band == RtlBand::wx ? kRtlWxHz
-                                                                   : kRtlFmMaxHz;
+                                      : rtl_ui_band == RtlBand::browse
+                                          ? kRtlBrowseMaxHz
+                                          : kRtlFmMaxHz;
         const uint32_t frequency = rtl_clamp_frequency(
             rtl_ui_band, requested_hz >= static_cast<double>(band_max)
                              ? band_max
@@ -1372,17 +1478,35 @@ bool handle_nav_touch(int32_t x, int32_t y) {
     return true;
   }
 
+  if (rtl_nav_dropdown == SdrNavDropdown::Band) {
+    for (size_t index = 0; index < std::size(kRfQuickLabels); ++index) {
+      if (!hit(780 + (index % 2) * 216, 265 + (index / 2) * 45, 200, 39)) continue;
+      const RfBandGuide* entry = rf_quick_band_at(index);
+      if (entry == nullptr) break;
+      rtl_nav_open = false;
+      rtl_nav_dropdown = SdrNavDropdown::None;
+      const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
+      if (state == RtlCaptureState::running && rtl_ui_band == entry->mode) {
+        request_hot_retune(entry->preset_hz);
+      } else {
+        queue_local_rtl_listen(entry->mode, entry->preset_hz);
+      }
+      draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz, rtl_ui_volume);
+      return true;
+    }
+    return true;
+  }
   if (rtl_nav_dropdown == SdrNavDropdown::Pinch) {
-    if (hit(780, 328, 200, 58)) rtl_pinch_mode = SdrPinchMode::Span;
-    else if (hit(996, 328, 200, 58)) rtl_pinch_mode = SdrPinchMode::Filter;
+    if (hit(780, 385, 200, 58)) rtl_pinch_mode = SdrPinchMode::Span;
+    else if (hit(996, 385, 200, 58)) rtl_pinch_mode = SdrPinchMode::Filter;
     rtl_nav_dropdown = SdrNavDropdown::None;
     draw_nav_panel();
     return true;
   }
   if (rtl_nav_dropdown == SdrNavDropdown::Step) {
-    static const uint32_t steps[] = {1000, 5000, 10000, 50000, 100000, 200000};
+    static const uint32_t steps[] = {1000, 5000, 10000, 50000, 100000, 1000000};
     for (int index = 0; index < 6; ++index) {
-      if (!hit(780 + (index % 2) * 216, 328 + (index / 2) * 66, 200, 58)) continue;
+      if (!hit(780 + (index % 2) * 216, 385 + (index / 2) * 54, 200, 48)) continue;
       if (rtl_ui_band == RtlBand::am) rtl_am_step_hz = steps[index];
       else rtl_fm_step_hz = steps[index];
       break;
@@ -1396,22 +1520,25 @@ bool handle_nav_touch(int32_t x, int32_t y) {
     rtl_frequency_entry[0] = '\0';
     draw_nav_panel();
   } else if (hit(780, 205, 416, 48)) {
-    rtl_nav_dropdown = SdrNavDropdown::Pinch;
+    rtl_nav_dropdown = SdrNavDropdown::Band;
     draw_nav_panel();
   } else if (hit(780, 265, 416, 48)) {
+    rtl_nav_dropdown = SdrNavDropdown::Pinch;
+    draw_nav_panel();
+  } else if (hit(780, 325, 416, 48)) {
     rtl_nav_dropdown = SdrNavDropdown::Step;
     draw_nav_panel();
-  } else if (hit(780, 328, 128, 58) || hit(924, 328, 128, 58) ||
-             hit(1068, 328, 128, 58)) {
+  } else if (hit(780, 385, 128, 54) || hit(924, 385, 128, 54) ||
+             hit(1068, 385, 128, 54)) {
     const uint32_t current = rtl_scope_span_hz.load(std::memory_order_relaxed);
     uint32_t next = kRtlScopeSpanMaxHz;
-    if (hit(780, 328, 128, 58)) next = max(kRtlScopeSpanMinHz, current / 2);
-    else if (hit(1068, 328, 128, 58)) next = min(kRtlScopeSpanMaxHz, current * 2);
+    if (hit(780, 385, 128, 54)) next = max(kRtlScopeSpanMinHz, current / 2);
+    else if (hit(1068, 385, 128, 54)) next = min(kRtlScopeSpanMaxHz, current * 2);
     rtl_scope_span_hz.store(next, std::memory_order_relaxed);
     redraw_spectrum_panel();
     draw_spectrum_axis();
     draw_nav_panel();
-  } else if (hit(780, 402, 128, 58)) {
+  } else if (hit(780, 451, 128, 54)) {
     if (rtl_ui_band == RtlBand::wx) return true;
     const int64_t target = static_cast<int64_t>(rtl_ui_frequency_hz) +
                            rtl_scope_peak_offset_hz.load(std::memory_order_relaxed);
@@ -1422,7 +1549,7 @@ bool handle_nav_touch(int32_t x, int32_t y) {
     if (state == RtlCaptureState::running) request_hot_retune(frequency);
     else queue_local_rtl_listen(rtl_ui_band, frequency);
     draw_sdr_screen(rtl_ui_band, frequency, rtl_ui_volume);
-  } else if (hit(924, 402, 128, 58)) {
+  } else if (hit(924, 451, 128, 54)) {
     rtl_nav_open = false;
     rtl_graphics_enabled.store(true, std::memory_order_release);
     rtl_auto_fm_requested.store(true, std::memory_order_release);
@@ -1433,7 +1560,7 @@ bool handle_nav_touch(int32_t x, int32_t y) {
     } else {
       draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz, rtl_ui_volume);
     }
-  } else if (hit(1068, 402, 128, 58)) {
+  } else if (hit(1068, 451, 128, 54)) {
     if (rtl_ui_band != RtlBand::wx) {
       const uint32_t step = rtl_ui_band == RtlBand::am ? rtl_am_step_hz : rtl_fm_step_hz;
       const uint32_t frequency = rtl_clamp_frequency(
@@ -1797,15 +1924,17 @@ void draw_sdr_controls(RtlBand band, bool running) {
   M5.Display.fillRect(0, kSdrBandY - 6, 1280, 720 - (kSdrBandY - 6), TFT_BLACK);
   const bool rec_on = g_audio_rec_active.load(std::memory_order_acquire);
   const SdrButton band_row[] = {
-      {0, 180, "FM",
+      {0, 150, "FM",
        static_cast<uint32_t>(band == RtlBand::fm ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 180, "AM",
+      {0, 150, "AM",
        static_cast<uint32_t>(band == RtlBand::am ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 180, "WX",
+      {0, 150, "WX",
        static_cast<uint32_t>(band == RtlBand::wx ? TFT_DARKGREEN : TFT_DARKGREY)},
+      {0, 190, "BROWSE",
+       static_cast<uint32_t>(band == RtlBand::browse ? TFT_DARKGREEN : TFT_DARKGREY)},
       {0, 220, rec_on ? "REC*" : "REC",
        static_cast<uint32_t>(rec_on ? TFT_MAROON : TFT_DARKGREY)},
-      {0, 300, running ? "STOP" : "START",
+      {0, 250, running ? "STOP" : "START",
        static_cast<uint32_t>(running ? TFT_MAROON : TFT_DARKGREEN)},
   };
   const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
@@ -2481,8 +2610,9 @@ void run_rtl_capture() {
   rtl_ui_frequency_hz = frequency_hz;
   rtl_ui_volume = volume;
   // Base scale is modest; shape_audio_sample AGC + soft limiter set loudness.
-  const float audio_scale =
-      band == RtlBand::wx ? 12000.0f : band == RtlBand::am ? 9000.0f : 5500.0f;
+  const float audio_scale = (band == RtlBand::wx || band == RtlBand::browse)
+                                ? 12000.0f
+                                : band == RtlBand::am ? 9000.0f : 5500.0f;
   rtl_capture_state.store(RtlCaptureState::running, std::memory_order_release);
   rtl_ui_active.store(true, std::memory_order_release);
   set_rtl_sdr_status(continuous ? "RTL-SDR V4: continuous listening"
@@ -2985,8 +3115,9 @@ static void rtl_driver_app_task(void *) {
           band, rtl_requested_frequency_hz.load(std::memory_order_acquire));
       const uint8_t volume = rtl_requested_volume.load(std::memory_order_acquire);
       g_stream_band = band;
-      g_stream_audio_scale =
-          band == RtlBand::wx ? 12000.0f : band == RtlBand::am ? 9000.0f : 5500.0f;
+      g_stream_audio_scale = (band == RtlBand::wx || band == RtlBand::browse)
+                                 ? 12000.0f
+                                 : band == RtlBand::am ? 9000.0f : 5500.0f;
       rtl_live_volume.store(volume, std::memory_order_release);
       rtl_ui_band = band;
       rtl_ui_frequency_hz = frequency_hz;
@@ -3489,7 +3620,10 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz) {
     rtl_capture_requested.store(true, std::memory_order_release);
   }
   bump_rtl_ui();
-  append_journal(band == RtlBand::am ? "sdr_am" : band == RtlBand::wx ? "sdr_wx" : "sdr_fm");
+  append_journal(band == RtlBand::am       ? "sdr_am"
+                 : band == RtlBand::wx     ? "sdr_wx"
+                 : band == RtlBand::browse ? "sdr_browse"
+                                           : "sdr_fm");
 }
 
 void adjust_rtl_volume(int delta) {
@@ -3547,6 +3681,7 @@ void request_hot_retune(uint32_t frequency_hz) {
     M5.Display.setTextSize(4);
     M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
     M5.Display.drawString(label, 560, 48);
+    draw_rf_band_guide(ui_hz);
   }
 }
 
@@ -3722,7 +3857,7 @@ void poll_sdr_touch_from_stream() {
 void handle_sdr_touch(int32_t x, int32_t y) {
   if (handle_tool_tab_touch(x, y)) return;
 
-  static constexpr int kBandWidths[] = {180, 180, 180, 220, 300};
+  static constexpr int kBandWidths[] = {150, 150, 150, 190, 220, 250};
   static constexpr int kTuneWidths[] = {170, 170, 220, 150, 150, 220};
   const int band_index = sdr_button_at(kSdrBandY, x, y, kBandWidths, std::size(kBandWidths));
   if (band_index >= 0) {
@@ -3737,6 +3872,12 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     } else if (band_index == 2) {
       queue_local_rtl_listen(RtlBand::wx, kRtlWxHz);
     } else if (band_index == 3) {
+      queue_local_rtl_listen(RtlBand::browse,
+                             rtl_ui_band == RtlBand::browse
+                                 ? rtl_ui_frequency_hz
+                                 : constrain(rtl_ui_frequency_hz,
+                                             kRtlBrowseMinHz, kRtlBrowseMaxHz));
+    } else if (band_index == 4) {
       /* REC toggle — Capture tool records post-demod PCM for offline analysis. */
       if (g_audio_rec_active.load(std::memory_order_acquire)) {
         (void)audio_rec_stop_and_export();
@@ -3748,7 +3889,7 @@ void handle_sdr_touch(int32_t x, int32_t y) {
           rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
       draw_sdr_controls(rtl_ui_band, running);
       if (orc_tool_current() == OrcTool::Capture) draw_capture_tool_panel();
-    } else if (band_index == 4) {
+    } else if (band_index == 5) {
       const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
       if (state == RtlCaptureState::running) {
         rtl_restart_requested.store(false, std::memory_order_release);

@@ -28,7 +28,8 @@ this file when their paths, versions, or completion claims differ.
 | In-stream hot retune | **Implemented** | Component v0.4.1; settle-time measurement pending |
 | Core split | **Implemented** | USB core 0; IQ delivery and app work on core 1 |
 | Tab5 radio shell | **Implemented** | FM/AM/WX, radio/scope/capture tabs, sound/GFX toggles |
-| SDR navigation | **Implemented on this branch** | Pinch span/filter, navigation drawer, peak find, FM auto tune |
+| SDR navigation | **Flashed; operator acceptance pending** | Full 24–1766 MHz browse, US band/use guide, direct entry, pinch, peak find, FM auto tune |
+| Browse demodulation | **Partial** | NFM spectrum/listen path; AM/SSB/digital mode selection and sub-24 MHz direct sampling remain open |
 | Variant-4 splash | **Implemented on this branch** | Looping SD asset playback and static ready/button overlay |
 | Final splash smoothness | **Active performance gate** | Compact 24 FPS pack verified; 25 MHz SPI measured 15–16 FPS |
 | Current SD splash asset | **Hardware-verified** | 14,271,890 bytes, 240 frames at 24 FPS; device SHA-256 matches source |
@@ -50,6 +51,7 @@ this file when their paths, versions, or completion claims differ.
 - [x] Add `dsp_load_pct`, block count, and maximum block time to the FPS log.
 - [ ] Verify the optimized path keeps audio drops near zero on hardware.
 - [ ] Confirm sound defaults off, NAV leaves animation live, and controls remain static.
+- [ ] Accept BROWSE panning/direct entry and US band-guide labels on the physical display.
 - [x] Install the final variant-4 SD pack and record stable loop FPS (15–16 FPS at 25 MHz SPI).
 - [x] Soak the splash past Ready for 28 seconds with no `task_wdt` reset or panic.
 - [x] Copy the 14,271,890-byte compact splash pack through COM17; device SHA-256 matched `AA490D5E…BCD1FA`.
