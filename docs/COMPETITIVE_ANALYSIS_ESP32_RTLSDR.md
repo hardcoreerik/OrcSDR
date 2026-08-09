@@ -1,5 +1,8 @@
 # Peer project analysis for OrcSDR / RTL-SDRv4-ESP
 
+> Research snapshot from 2026-08-06. Its OrcSDR baseline is historical; use
+> [`../PROJECT_STATUS.md`](../PROJECT_STATUS.md) for current implementation state.
+
 Date: 2026-08-06  
 Audience: OrcSDR maintainers deciding architecture, not a green light to port librtlsdr.
 

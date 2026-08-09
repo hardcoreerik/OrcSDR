@@ -8,7 +8,7 @@ Standalone **ESP-IDF component**: USB Host client for the official
 | **Display name** | RTL-SDRv4-ESP |
 | **Component id** | `rtl_sdr_v4_esp` |
 | **Header** | `rtl_sdr_v4_esp.h` |
-| **API version** | **0.4.0** (Gate 2 multi-URB streaming) |
+| **API version** | **0.4.1** (multi-URB streaming + safe hot retune) |
 | **Primary silicon** | ESP32-P4 High-Speed USB host (measured) |
 | **Provenance** | Clean-room observed transfers — not a librtlsdr port |
 
@@ -70,7 +70,7 @@ if (err != ESP_OK) {
 | Streaming | Multi-URB bulk IN (default **6 × 16 KiB**), clean-room init + 960k + tune |
 | Reentrancy | Lifecycle from callback → `ERR_REENTRANT` |
 | Idempotence | `stop` / `uninstall(NULL)` safe |
-| Feature discovery | `CAP_STREAM` on; `CAP_RETUNE` off until hot EP0 apply |
+| Feature discovery | `CAP_STREAM`, `CAP_RETUNE`, `CAP_HOTPLUG`, `CAP_METRICS`, `CAP_CUSTOM_HZ` on |
 | Contract | See [`docs/API_RTL_SDR_V4_ESP.md`](../../docs/API_RTL_SDR_V4_ESP.md) |
 
 ## Extraction status
@@ -80,11 +80,12 @@ if (err != ESP_OK) {
 | Lifecycle, validation, metrics, errors, reentrancy | **Hardened** |
 | Clean-room transfer tables + PLL pack | **In driver** |
 | `start` / bulk IQ / ring / EVT_IQ_BLOCK | **Gate 2 implemented (v0.4)** |
-| `retune_hz` | **Queue-only** (metrics/UI update; EP0 apply later) |
+| `retune_hz` | **Implemented**; drains bulk before EP0 and resumes the stream |
 | Dual-core IQ ring | **Core0 USB / Core1 delivery** |
 
-Measured Tab5 radio behavior (960 kS/s, KZEL/NOAA, continuous listen) is the
-reference implementation under `apps/orcsdr-tab5` until extraction completes.
+Measured Tab5 radio behavior (960 kS/s, KZEL/NOAA, continuous listen) remains
+the regression reference. See [`PROJECT_STATUS.md`](../../PROJECT_STATUS.md)
+for the outstanding soak, hot-plug, and second-board gates.
 
 ## Identity filter
 

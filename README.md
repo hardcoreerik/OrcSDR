@@ -54,11 +54,10 @@ rtl_sdr_v4_esp_handle_t sdr;
 ESP_ERROR_CHECK(rtl_sdr_v4_esp_install(&cfg, &sdr));
 ```
 
-**Status:** public API **v0.3.0** is hardened (validation, locking, reentrancy,
-idempotent teardown, capability discovery). Clean-room transfer tables are
-in-tree. Full bulk stream extraction from the Tab5 app is tracked in
-[`docs/PORTING.md`](docs/PORTING.md) — `start` currently returns
-`RTL_SDR_V4_ESP_ERR_UNSUPPORTED` until Gate 2. Contract:
+**Status:** public API **v0.4.1** provides multi-URB streaming, metrics,
+hot-plug events, custom tuning, and in-stream retune. The Tab5 app consumes the
+component. Current evidence and remaining gates are tracked in
+[`PROJECT_STATUS.md`](PROJECT_STATUS.md); the API contract is
 [`docs/API_RTL_SDR_V4_ESP.md`](docs/API_RTL_SDR_V4_ESP.md).
 
 ### Identity filter
@@ -110,6 +109,7 @@ under the same dual-license model as other Orc projects — contact the maintain
 
 | Doc | Purpose |
 |---|---|
+| [PROJECT_STATUS.md](PROJECT_STATUS.md) | Authoritative current status, evidence, and priorities |
 | [COMPETITIVE_ANALYSIS_ESP32_RTLSDR.md](docs/COMPETITIVE_ANALYSIS_ESP32_RTLSDR.md) | ADS-B Scope, esp32p4-wifi-rtlsdr, xtrsdr vs OrcSDR |
 | [IMPLEMENTATION_FROM_PEER_RESEARCH.md](docs/IMPLEMENTATION_FROM_PEER_RESEARCH.md) | Gap-closing implementation plan (P0–P3) |
 | [PORTING.md](docs/PORTING.md) | Driver extraction and board matrix |

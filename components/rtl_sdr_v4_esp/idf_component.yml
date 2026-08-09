@@ -1,5 +1,5 @@
 ## RTL-SDRv4-ESP component metadata (ESP Component Registry format)
-version: "0.4.0"
+version: "0.4.1"
 description: >
   Clean-room ESP-IDF USB Host client for the official RTL-SDR Blog V4
   (0bda:2838). ESP32-P4 High-Speed first; other targets only when measured.

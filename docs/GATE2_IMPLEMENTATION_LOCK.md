@@ -1,5 +1,9 @@
 # Gate 2 implementation lock (2026-08-07)
 
+> **Historical snapshot.** This file records the v0.4.0 handoff and is not the
+> current roadmap. Hot retune subsequently landed in v0.4.1. See
+> [`../PROJECT_STATUS.md`](../PROJECT_STATUS.md).
+
 Decisions from operator Q&A:
 
 | Choice | Decision |
