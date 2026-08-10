@@ -14,14 +14,23 @@ frequency slot, modem preset, and channel key when they differ.
 ## Dashboard views
 
 LoRa mode keeps RF capture running while the operator switches among three
-render-only views:
+full-width command-center views. The generated artwork supplies only the visual
+plates; firmware draws every live value and decoded field on top:
 
-- **RF** keeps the spectrum/waterfall and a compact three-packet summary.
-- **PACKETS** uses the full content area for six large, readable verified packet
-  rows: age, source, destination, port, decoded content, SNR, and relative signal.
-- **MAP** uses the full content area for an offline local plot centered on the
-  newest valid Meshtastic Position packet. The square is approximately 10 square
-  miles (3.162 miles per side) and retains the last position received per node.
+- **LIVE** makes the newest decoded message the primary object, with roughly
+  five-times-larger body text plus source, destination, port, packet ID, signal,
+  SNR, channel frequency, slot, SF/BW, noise floor, trigger level, and GPS status.
+- **MESSAGES** shows only the newest three verified packets so their message text
+  can remain very large. Each card retains age, source, destination, port, SNR,
+  and relative signal without shrinking the message into a log-table font.
+- **MAP** uses most of the content area for an offline local plot centered on the
+  newest valid Meshtastic Position packet. Its wide viewport covers approximately
+  **5 by 2 miles (10 square miles)** and retains the last position received per
+  node. Large side cards show center node, coordinates, signal, age, and slot.
+
+The lower LoRa control row is decoder-specific: frequency down/up, bandwidth,
+spreading factor, manual IQ capture, and navigation. Audio volume and scope-only
+controls are intentionally omitted from LoRa mode.
 
 The map is deliberately not a street map. It plots only coordinates explicitly
 decoded from RF packets, requires no network or tile storage, and does not infer a
@@ -29,8 +38,12 @@ location from signal strength. `SIG` is capture-relative dBFS, not calibrated RS
 
 ## Capture and decode
 
-1. Copy `apps/orcsdr-tab5/assets/lora_dashboard_384x470.jpg` to
-   `/orcsdr/lora_dashboard_384x470.jpg` on the Tab5 SD card.
+1. Copy the three dashboard plates from `apps/orcsdr-tab5/assets/` to matching
+   paths under `/orcsdr/` on the Tab5 SD card:
+
+   - `lora_live_command_center_1152x470.jpg`
+   - `lora_messages_command_center_1152x470.jpg`
+   - `lora_map_command_center_1152x470.jpg`
 2. Install the decoder once:
 
    ```powershell

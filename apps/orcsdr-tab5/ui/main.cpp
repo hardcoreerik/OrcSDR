@@ -195,7 +195,9 @@ constexpr int kCbPanelY = kSpectrumY;
 constexpr int kCbPanelWidth = 384;
 constexpr int kCbPanelHeight = 470;
 constexpr char kCbDashboardPath[] = "/orcsdr/cb_dashboard_384x470.jpg";
-constexpr char kLoraDashboardPath[] = "/orcsdr/lora_dashboard_384x470.jpg";
+constexpr char kLoraLivePath[] = "/orcsdr/lora_live_command_center_1152x470.jpg";
+constexpr char kLoraMessagesPath[] = "/orcsdr/lora_messages_command_center_1152x470.jpg";
+constexpr char kLoraMapPath[] = "/orcsdr/lora_map_command_center_1152x470.jpg";
 constexpr int kSpectrumHeight = 200;
 constexpr int kWaterfallY = 316;
 constexpr int kWaterfallHeight = 250;
@@ -473,8 +475,8 @@ struct LoraNodePosition {
 };
 constexpr size_t kLoraNodePositionCount = 8;
 static LoraNodePosition lora_node_positions[kLoraNodePositionCount]{};
-enum class LoraView : uint8_t { Rf = 0, Packets = 1, Map = 2 };
-static LoraView lora_view = LoraView::Rf;
+enum class LoraView : uint8_t { Live = 0, Packets = 1, Map = 2 };
+static LoraView lora_view = LoraView::Live;
 static std::atomic<int32_t> rtl_scope_peak_offset_hz{0};
 static std::atomic<float> rtl_scope_peak_level{-120.0f};
 static std::atomic<bool> rtl_auto_fm_requested{false};
@@ -1661,7 +1663,7 @@ void set_orc_tool(OrcTool tool) {
 }
 
 void draw_lora_view_tabs() {
-  static constexpr const char* kLabels[] = {"RF", "PACKETS", "MAP"};
+  static constexpr const char* kLabels[] = {"LIVE", "MESSAGES", "MAP"};
   constexpr int x0 = 520;
   constexpr int width = 160;
   constexpr int gap = 10;
@@ -2587,16 +2589,27 @@ void draw_sdr_controls(RtlBand band, bool running) {
   };
   const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
   const bool sound_on = rtl_audio_enabled.load(std::memory_order_acquire);
+  const bool iq_on = g_iq_rec_active.load(std::memory_order_acquire);
+  char lora_bw[20];
+  char lora_sf_text[16];
+  snprintf(lora_bw, sizeof(lora_bw), "BW %uk",
+           static_cast<unsigned>(lora_bandwidth_hz.load(std::memory_order_relaxed) /
+                                 1000u));
+  snprintf(lora_sf_text, sizeof(lora_sf_text), "SF %u",
+           static_cast<unsigned>(lora_sf.load(std::memory_order_relaxed)));
   const SdrButton tune_row[] = {
       {0, 170, "FREQ -", TFT_DARKGREY},
       {0, 170, "FREQ +", TFT_DARKGREY},
-      {0, 220, band == RtlBand::lora ? "DATA MODE" : sound_on ? "SOUND ON" : "SOUND OFF",
+      {0, 220, band == RtlBand::lora ? lora_bw : sound_on ? "SOUND ON" : "SOUND OFF",
        static_cast<uint32_t>(band == RtlBand::lora ? TFT_DARKCYAN
                                                    : sound_on ? TFT_DARKGREEN : TFT_MAROON)},
-      {0, 150, "VOL -", TFT_NAVY},
-      {0, 150, "VOL +", TFT_NAVY},
-      {0, 220, gfx_on ? "GFX ON" : "GFX OFF",
-       static_cast<uint32_t>(gfx_on ? TFT_DARKGREEN : TFT_MAROON)},
+      {0, 150, band == RtlBand::lora ? lora_sf_text : "VOL -", TFT_NAVY},
+      {0, 150, band == RtlBand::lora ? (iq_on ? "IQ STOP" : "IQ CAP") : "VOL +",
+       static_cast<uint32_t>(band == RtlBand::lora && iq_on ? TFT_MAROON : TFT_NAVY)},
+      {0, 220, band == RtlBand::lora ? "NAV" : gfx_on ? "GFX ON" : "GFX OFF",
+       static_cast<uint32_t>(band == RtlBand::lora
+                                 ? TFT_DARKCYAN
+                                 : gfx_on ? TFT_DARKGREEN : TFT_MAROON)},
   };
   draw_sdr_button_row(kSdrBandY, band_row, std::size(band_row));
   draw_sdr_button_row(kSdrTuneY, tune_row, std::size(tune_row));
@@ -2806,6 +2819,141 @@ const char* lora_port_label(uint16_t port) {
   }
 }
 
+void draw_lora_asset(const char* path) {
+  const bool image_ok = ensure_tab5_sd() && g_sd_fs->exists(path) &&
+                        M5.Display.drawJpgFile(*g_sd_fs, path, kSpectrumX, kSpectrumY);
+  if (!image_ok) {
+    M5.Display.fillRect(kSpectrumX, kSpectrumY, kSpectrumWidth, kCbPanelHeight, TFT_BLACK);
+    M5.Display.drawRoundRect(kSpectrumX, kSpectrumY, kSpectrumWidth,
+                             kCbPanelHeight, 16, TFT_DARKCYAN);
+  }
+}
+
+int lora_frequency_slot(uint32_t frequency_hz) {
+  if (frequency_hz < 901875000u || frequency_hz > 928000000u) return -1;
+  return static_cast<int>((frequency_hz - 901875000u + 125000u) / 250000u);
+}
+
+void draw_lora_live_view(bool force) {
+  static uint32_t last_count = UINT32_MAX;
+  static int last_signal = INT32_MAX;
+  static uint32_t last_frequency = 0;
+  const uint32_t count = lora_messages.load(std::memory_order_relaxed);
+  const int live_signal = static_cast<int>(lroundf(rtl_signal_dbfs_smooth));
+  const bool packet_changed = force || count != last_count;
+  LoraDisplayPacket packets[kLoraDisplayPacketCount];
+  LoraNodePosition positions[kLoraNodePositionCount];
+  portENTER_CRITICAL(&lora_message_mux);
+  memcpy(packets, lora_display_packets, sizeof(packets));
+  memcpy(positions, lora_node_positions, sizeof(positions));
+  portEXIT_CRITICAL(&lora_message_mux);
+
+  if (packet_changed) {
+    draw_lora_asset(kLoraLivePath);
+    size_t message_index = 0;
+    while (message_index < kLoraDisplayPacketCount &&
+           packets[message_index].sender != 0 && packets[message_index].port != 1) {
+      ++message_index;
+    }
+    if (message_index >= kLoraDisplayPacketCount || packets[message_index].sender == 0) {
+      message_index = 0;
+    }
+    M5.Display.setTextDatum(middle_left);
+    M5.Display.setTextSize(3);
+    M5.Display.setTextColor(TFT_CYAN);
+    M5.Display.drawString("LATEST VERIFIED DECODE", kSpectrumX + 70, kSpectrumY + 58);
+    if (packets[message_index].sender == 0) {
+      M5.Display.setTextSize(5);
+      M5.Display.setTextColor(TFT_LIGHTGREY);
+      M5.Display.drawString("WAITING FOR PACKET", kSpectrumX + 95, kSpectrumY + 220);
+    } else {
+      char value[72];
+      snprintf(value, sizeof(value), "!%08lx  >  !%08lx   %s",
+               static_cast<unsigned long>(packets[message_index].sender),
+               static_cast<unsigned long>(packets[message_index].destination),
+               lora_port_label(packets[message_index].port));
+      M5.Display.setTextSize(4);
+      M5.Display.setTextColor(TFT_GREEN);
+      M5.Display.drawString(value, kSpectrumX + 70, kSpectrumY + 112);
+      const char* text = packets[message_index].text[0]
+                             ? packets[message_index].text
+                             : lora_port_label(packets[message_index].port);
+      char line[19]{};
+      M5.Display.setTextSize(5);
+      M5.Display.setTextColor(TFT_WHITE);
+      for (size_t row = 0; row < 3; ++row) {
+        const size_t start = row * 18;
+        if (start >= strlen(text)) break;
+        strlcpy(line, text + start, sizeof(line));
+        M5.Display.drawString(line, kSpectrumX + 70,
+                              kSpectrumY + 205 + static_cast<int>(row) * 62);
+      }
+    }
+    M5.Display.setTextSize(3);
+    M5.Display.setTextColor(TFT_CYAN);
+    if (positions[0].node != 0) {
+      char gps[96];
+      snprintf(gps, sizeof(gps), "GPS !%08lx   %.5f, %.5f",
+               static_cast<unsigned long>(positions[0].node),
+               positions[0].latitude_e7 / 10000000.0,
+               positions[0].longitude_e7 / 10000000.0);
+      M5.Display.drawString(gps, kSpectrumX + 65, kSpectrumY + 438);
+    } else {
+      M5.Display.drawString("GPS  WAITING FOR POSITION PACKET", kSpectrumX + 65,
+                            kSpectrumY + 438);
+    }
+    last_count = count;
+  }
+
+  if (packet_changed || live_signal != last_signal) {
+    M5.Display.fillRect(kSpectrumX + 700, kSpectrumY + 48, 390, 100, TFT_BLACK);
+    M5.Display.setTextDatum(middle_left);
+    M5.Display.setTextColor(TFT_MAGENTA);
+    M5.Display.setTextSize(3);
+    M5.Display.drawString("LIVE RF SIGNAL", kSpectrumX + 720, kSpectrumY + 68);
+    char value[48];
+    snprintf(value, sizeof(value), "%d dBFS", live_signal);
+    M5.Display.setTextColor(TFT_WHITE);
+    M5.Display.setTextSize(6);
+    M5.Display.drawString(value, kSpectrumX + 720, kSpectrumY + 118);
+    if (packets[0].snr_tenths != INT16_MAX) {
+      snprintf(value, sizeof(value), "LAST PKT SNR %+.1f dB", packets[0].snr_tenths / 10.0);
+      M5.Display.setTextSize(3);
+      M5.Display.setTextColor(TFT_GREEN);
+      M5.Display.drawString(value, kSpectrumX + 720, kSpectrumY + 148);
+    }
+    last_signal = live_signal;
+  }
+
+  if (packet_changed || rtl_ui_frequency_hz != last_frequency) {
+    M5.Display.fillRect(kSpectrumX + 700, kSpectrumY + 205, 390, 165, TFT_BLACK);
+    char value[64];
+    M5.Display.setTextDatum(middle_left);
+    M5.Display.setTextSize(3);
+    M5.Display.setTextColor(TFT_GREEN);
+    M5.Display.drawString("CHANNEL", kSpectrumX + 720, kSpectrumY + 220);
+    snprintf(value, sizeof(value), "%.3f MHz", rtl_ui_frequency_hz / 1000000.0);
+    M5.Display.setTextSize(5);
+    M5.Display.setTextColor(TFT_WHITE);
+    M5.Display.drawString(value, kSpectrumX + 720, kSpectrumY + 270);
+    const int slot = lora_frequency_slot(rtl_ui_frequency_hz);
+    snprintf(value, sizeof(value), "SLOT %d   SF%u   BW%uk", slot,
+             static_cast<unsigned>(lora_sf.load(std::memory_order_relaxed)),
+             static_cast<unsigned>(lora_bandwidth_hz.load(std::memory_order_relaxed) / 1000));
+    M5.Display.setTextSize(3);
+    M5.Display.setTextColor(TFT_CYAN);
+    M5.Display.drawString(value, kSpectrumX + 720, kSpectrumY + 320);
+    snprintf(value, sizeof(value), "NOISE %.0f   TRIGGER %.0f   MSG %lu",
+             static_cast<double>(lora_noise_dbfs.load(std::memory_order_relaxed)),
+             static_cast<double>(lora_trigger_dbfs.load(std::memory_order_relaxed)),
+             static_cast<unsigned long>(count));
+    M5.Display.setTextSize(2);
+    M5.Display.setTextColor(TFT_LIGHTGREY);
+    M5.Display.drawString(value, kSpectrumX + 720, kSpectrumY + 358);
+    last_frequency = rtl_ui_frequency_hz;
+  }
+}
+
 void draw_lora_packets_view(bool force) {
   static uint32_t last_count = UINT32_MAX;
   const uint32_t count = lora_messages.load(std::memory_order_relaxed);
@@ -2815,74 +2963,46 @@ void draw_lora_packets_view(bool force) {
   portENTER_CRITICAL(&lora_message_mux);
   memcpy(packets, lora_display_packets, sizeof(packets));
   portEXIT_CRITICAL(&lora_message_mux);
+  draw_lora_asset(kLoraMessagesPath);
 
-  M5.Display.fillRect(kSpectrumX, kSpectrumY, kSpectrumWidth, kCbPanelHeight, TFT_BLACK);
-  M5.Display.drawRoundRect(kSpectrumX, kSpectrumY, kSpectrumWidth,
-                           kCbPanelHeight, 12, TFT_DARKCYAN);
+  constexpr int kRowY[] = {28, 169, 310};
   M5.Display.setTextDatum(middle_left);
-  M5.Display.setTextSize(3);
-  M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-  M5.Display.drawString("VERIFIED MESHTASTIC PACKETS", kSpectrumX + 24, kSpectrumY + 25);
-  M5.Display.setTextSize(2);
-  M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  M5.Display.drawString("AGE", kSpectrumX + 24, kSpectrumY + 65);
-  M5.Display.drawString("FROM", kSpectrumX + 105, kSpectrumY + 65);
-  M5.Display.drawString("TO", kSpectrumX + 285, kSpectrumY + 65);
-  M5.Display.drawString("TYPE", kSpectrumX + 455, kSpectrumY + 65);
-  M5.Display.drawString("DECODED CONTENT", kSpectrumX + 610, kSpectrumY + 65);
-  M5.Display.drawString("SNR", kSpectrumX + 1000, kSpectrumY + 65);
-  M5.Display.drawString("SIG", kSpectrumX + 1080, kSpectrumY + 65);
-  M5.Display.drawFastHLine(kSpectrumX + 18, kSpectrumY + 84,
-                           kSpectrumWidth - 36, TFT_DARKGREY);
-
-  constexpr size_t kVisibleRows = 6;
-  for (size_t index = 0; index < kVisibleRows; ++index) {
-    const int y = kSpectrumY + 116 + static_cast<int>(index) * 58;
-    if (packets[index].sender == 0) {
-      if (index == 0) {
-        M5.Display.setTextSize(3);
-        M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        M5.Display.drawString("Waiting for a CRC-valid decoded packet...",
-                              kSpectrumX + 105, y);
-      }
-      continue;
-    }
-    char value[64];
-    const uint32_t age_seconds = (millis() - packets[index].received_ms) / 1000u;
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    snprintf(value, sizeof(value), "%lus", static_cast<unsigned long>(age_seconds));
-    M5.Display.drawString(value, kSpectrumX + 24, y);
-    M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-    snprintf(value, sizeof(value), "!%08lx", static_cast<unsigned long>(packets[index].sender));
-    M5.Display.drawString(value, kSpectrumX + 105, y);
-    M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    snprintf(value, sizeof(value), "!%08lx", static_cast<unsigned long>(packets[index].destination));
-    M5.Display.drawString(value, kSpectrumX + 285, y);
-    M5.Display.setTextColor(packets[index].port == 3 ? TFT_GREEN : TFT_MAGENTA, TFT_BLACK);
-    M5.Display.drawString(lora_port_label(packets[index].port), kSpectrumX + 455, y);
-    const bool has_position = packets[index].latitude_e7 != INT32_MAX &&
-                              packets[index].longitude_e7 != INT32_MAX;
-    M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-    if (has_position) {
-      snprintf(value, sizeof(value), "%.5f, %.5f",
-               packets[index].latitude_e7 / 10000000.0,
-               packets[index].longitude_e7 / 10000000.0);
-    } else {
-      snprintf(value, sizeof(value), "%.30s", packets[index].text);
-    }
-    M5.Display.drawString(value, kSpectrumX + 610, y);
-    M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-    if (packets[index].snr_tenths != INT16_MAX) {
-      snprintf(value, sizeof(value), "%+.1f", packets[index].snr_tenths / 10.0);
-      M5.Display.drawString(value, kSpectrumX + 1000, y);
-    }
-    if (packets[index].signal_tenths != INT16_MAX) {
-      snprintf(value, sizeof(value), "%.0f", packets[index].signal_tenths / 10.0);
-      M5.Display.drawString(value, kSpectrumX + 1080, y);
-    }
-    M5.Display.drawFastHLine(kSpectrumX + 18, y + 27,
-                             kSpectrumWidth - 36, 0x2104);
+  for (size_t index = 0; index < 3; ++index) {
+    if (packets[index].sender == 0) continue;
+    const int y = kSpectrumY + kRowY[index];
+    char value[96];
+    snprintf(value, sizeof(value), "!%08lx  >  !%08lx   %s   %lus",
+             static_cast<unsigned long>(packets[index].sender),
+             static_cast<unsigned long>(packets[index].destination),
+             lora_port_label(packets[index].port),
+             static_cast<unsigned long>((millis() - packets[index].received_ms) / 1000u));
+    M5.Display.setTextSize(3);
+    M5.Display.setTextColor(packets[index].port == 3 ? TFT_GREEN : TFT_CYAN);
+    M5.Display.drawString(value, kSpectrumX + 55, y + 28);
+    const char* text = packets[index].text[0] ? packets[index].text
+                                              : lora_port_label(packets[index].port);
+    snprintf(value, sizeof(value), "%.28s", text);
+    M5.Display.setTextSize(5);
+    M5.Display.setTextColor(TFT_WHITE);
+    M5.Display.drawString(value, kSpectrumX + 55, y + 86);
+    M5.Display.setTextDatum(middle_center);
+    M5.Display.setTextSize(4);
+    M5.Display.setTextColor(TFT_GREEN);
+    if (packets[index].snr_tenths == INT16_MAX) strlcpy(value, "SNR --", sizeof(value));
+    else snprintf(value, sizeof(value), "%+.1f dB", packets[index].snr_tenths / 10.0);
+    M5.Display.drawString(value, kSpectrumX + 1050, y + 48);
+    M5.Display.setTextSize(3);
+    if (packets[index].signal_tenths == INT16_MAX) strlcpy(value, "SIG --", sizeof(value));
+    else snprintf(value, sizeof(value), "SIG %.0f", packets[index].signal_tenths / 10.0);
+    M5.Display.drawString(value, kSpectrumX + 1050, y + 90);
+    M5.Display.setTextDatum(middle_left);
+  }
+  if (packets[0].sender == 0) {
+    M5.Display.setTextDatum(middle_center);
+    M5.Display.setTextSize(5);
+    M5.Display.setTextColor(TFT_LIGHTGREY);
+    M5.Display.drawString("WAITING FOR VERIFIED MESSAGES",
+                          kSpectrumX + kSpectrumWidth / 2, kSpectrumY + 235);
   }
 }
 
@@ -2892,155 +3012,97 @@ void draw_lora_map_view(bool force) {
   if (!force && count == last_count) return;
   last_count = count;
   LoraNodePosition positions[kLoraNodePositionCount];
+  LoraDisplayPacket packets[kLoraDisplayPacketCount];
   portENTER_CRITICAL(&lora_message_mux);
   memcpy(positions, lora_node_positions, sizeof(positions));
+  memcpy(packets, lora_display_packets, sizeof(packets));
   portEXIT_CRITICAL(&lora_message_mux);
+  draw_lora_asset(kLoraMapPath);
 
-  constexpr int map_x = kSpectrumX + 24;
-  constexpr int map_y = kSpectrumY + 72;
-  constexpr int map_w = kSpectrumWidth - 48;
-  constexpr int map_h = kCbPanelHeight - 96;
-  M5.Display.fillRect(kSpectrumX, kSpectrumY, kSpectrumWidth, kCbPanelHeight, TFT_BLACK);
-  M5.Display.drawRoundRect(kSpectrumX, kSpectrumY, kSpectrumWidth,
-                           kCbPanelHeight, 12, TFT_DARKCYAN);
-  M5.Display.setTextDatum(middle_left);
-  M5.Display.setTextSize(3);
-  M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-  M5.Display.drawString("LAST GPS - 10 SQ MI LOCAL PLOT", kSpectrumX + 24, kSpectrumY + 28);
-  M5.Display.setTextSize(2);
-  M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  M5.Display.drawString("Offline relative plot - newest valid position is centered",
-                        kSpectrumX + 560, kSpectrumY + 28);
-  M5.Display.fillRect(map_x, map_y, map_w, map_h, 0x0841);
-  M5.Display.drawRect(map_x, map_y, map_w, map_h, TFT_DARKCYAN);
-  for (int line = 1; line < 8; ++line) {
-    M5.Display.drawFastVLine(map_x + line * map_w / 8, map_y, map_h, 0x2104);
-  }
-  for (int line = 1; line < 6; ++line) {
-    M5.Display.drawFastHLine(map_x, map_y + line * map_h / 6, map_w, 0x2104);
-  }
-  M5.Display.setTextColor(TFT_MAGENTA, 0x0841);
-  M5.Display.setTextSize(3);
-  M5.Display.drawString("N", map_x + 20, map_y + 22);
-  M5.Display.drawFastVLine(map_x + map_w / 2, map_y, map_h, TFT_DARKGREY);
-  M5.Display.drawFastHLine(map_x, map_y + map_h / 2, map_w, TFT_DARKGREY);
+  constexpr int map_x = kSpectrumX + 30;
+  constexpr int map_y = kSpectrumY + 24;
+  constexpr int map_w = 830;
+  constexpr int map_h = 420;
   if (positions[0].node == 0) {
     M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextColor(TFT_LIGHTGREY, 0x0841);
-    M5.Display.drawString("NO VALID POSITION PACKETS YET",
-                          map_x + map_w / 2, map_y + map_h / 2);
+    M5.Display.setTextSize(5);
+    M5.Display.setTextColor(TFT_LIGHTGREY);
+    M5.Display.drawString("WAITING FOR GPS", map_x + map_w / 2, map_y + map_h / 2);
     return;
   }
-  constexpr float kMapSideMiles = 3.16227766f;
+  constexpr float kMapWidthMiles = 5.0f;
+  constexpr float kMapHeightMiles = 2.0f;
   const float center_lat = positions[0].latitude_e7 / 10000000.0f;
   const float center_lon = positions[0].longitude_e7 / 10000000.0f;
   const float lon_miles = 69.0f * cosf(center_lat * 0.01745329252f);
-  char value[64];
+  char value[72];
   M5.Display.setTextDatum(middle_left);
-  M5.Display.setTextSize(2);
+  M5.Display.setTextSize(3);
   for (size_t index = 0; index < kLoraNodePositionCount; ++index) {
     if (positions[index].node == 0) continue;
-    const float lat = positions[index].latitude_e7 / 10000000.0f;
-    const float lon = positions[index].longitude_e7 / 10000000.0f;
-    const float east = (lon - center_lon) * lon_miles;
-    const float north = (lat - center_lat) * 69.0f;
-    const int x = map_x + map_w / 2 + static_cast<int>(east * map_w / kMapSideMiles);
-    const int y = map_y + map_h / 2 - static_cast<int>(north * map_h / kMapSideMiles);
+    const float east = (positions[index].longitude_e7 / 10000000.0f - center_lon) * lon_miles;
+    const float north = (positions[index].latitude_e7 / 10000000.0f - center_lat) * 69.0f;
+    const int x = map_x + map_w / 2 + static_cast<int>(east * map_w / kMapWidthMiles);
+    const int y = map_y + map_h / 2 - static_cast<int>(north * map_h / kMapHeightMiles);
     if (x < map_x || x >= map_x + map_w || y < map_y || y >= map_y + map_h) continue;
     const uint32_t color = index == 0 ? TFT_GREEN : TFT_CYAN;
-    M5.Display.fillCircle(x, y, index == 0 ? 8 : 6, color);
+    M5.Display.fillCircle(x, y, index == 0 ? 11 : 8, color);
     snprintf(value, sizeof(value), "!%08lx", static_cast<unsigned long>(positions[index].node));
-    M5.Display.setTextColor(color, 0x0841);
-    M5.Display.drawString(value, x + 10, y);
+    M5.Display.setTextColor(color);
+    M5.Display.drawString(value, x + 14, y);
   }
-  M5.Display.setTextColor(TFT_WHITE, 0x0841);
-  snprintf(value, sizeof(value), "CENTER %.5f, %.5f", center_lat, center_lon);
-  M5.Display.drawString(value, map_x + 16, map_y + map_h - 18);
-  M5.Display.drawFastHLine(map_x + map_w - 185, map_y + map_h - 22, 160, TFT_CYAN);
-  M5.Display.drawString("0.5 MI", map_x + map_w - 180, map_y + map_h - 40);
+
+  constexpr int info_x = kSpectrumX + 910;
+  M5.Display.setTextDatum(middle_left);
+  M5.Display.setTextColor(TFT_CYAN);
+  M5.Display.setTextSize(2);
+  M5.Display.drawString("CENTER NODE", info_x, kSpectrumY + 50);
+  snprintf(value, sizeof(value), "!%08lx", static_cast<unsigned long>(positions[0].node));
+  M5.Display.setTextSize(4);
+  M5.Display.setTextColor(TFT_WHITE);
+  M5.Display.drawString(value, info_x, kSpectrumY + 82);
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(TFT_CYAN);
+  M5.Display.drawString("LATITUDE", info_x, kSpectrumY + 145);
+  snprintf(value, sizeof(value), "%.5f", center_lat);
+  M5.Display.setTextSize(3);
+  M5.Display.setTextColor(TFT_WHITE);
+  M5.Display.drawString(value, info_x, kSpectrumY + 174);
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(TFT_CYAN);
+  M5.Display.drawString("LONGITUDE", info_x, kSpectrumY + 205);
+  snprintf(value, sizeof(value), "%.5f", center_lon);
+  M5.Display.setTextSize(3);
+  M5.Display.setTextColor(TFT_WHITE);
+  M5.Display.drawString(value, info_x, kSpectrumY + 234);
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(TFT_MAGENTA);
+  M5.Display.drawString("LAST SIGNAL", info_x, kSpectrumY + 287);
+  if (packets[0].snr_tenths != INT16_MAX) {
+    snprintf(value, sizeof(value), "SNR %+.1f", packets[0].snr_tenths / 10.0);
+    M5.Display.setTextSize(3);
+    M5.Display.setTextColor(TFT_GREEN);
+    M5.Display.drawString(value, info_x, kSpectrumY + 316);
+  }
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(TFT_GREEN);
+  M5.Display.drawString("MAP AREA", info_x, kSpectrumY + 370);
+  M5.Display.setTextSize(3);
+  M5.Display.setTextColor(TFT_WHITE);
+  M5.Display.drawString("5 x 2 MI", info_x, kSpectrumY + 402);
+  snprintf(value, sizeof(value), "AGE %lus  SLOT %d",
+           static_cast<unsigned long>((millis() - positions[0].received_ms) / 1000u),
+           lora_frequency_slot(rtl_ui_frequency_hz));
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(TFT_LIGHTGREY);
+  M5.Display.drawString(value, info_x, kSpectrumY + 436);
 }
 
 void draw_lora_dashboard(bool static_panel) {
   if (rtl_ui_band != RtlBand::lora || rtl_nav_open) return;
-  if (lora_view == LoraView::Packets) {
-    draw_lora_packets_view(static_panel);
-    return;
-  }
-  if (lora_view == LoraView::Map) {
-    draw_lora_map_view(static_panel);
-    return;
-  }
-  if (static_panel) {
-    const bool image_ok = ensure_tab5_sd() && g_sd_fs->exists(kLoraDashboardPath) &&
-                          M5.Display.drawJpgFile(*g_sd_fs, kLoraDashboardPath,
-                                                 kCbPanelX, kCbPanelY);
-    if (!image_ok) {
-      M5.Display.fillRoundRect(kCbPanelX, kCbPanelY, kCbPanelWidth,
-                               kCbPanelHeight, 10, 0x2104);
-      M5.Display.drawRoundRect(kCbPanelX, kCbPanelY, kCbPanelWidth,
-                               kCbPanelHeight, 10, TFT_CYAN);
-      M5.Display.fillRoundRect(kCbPanelX + 70, kCbPanelY + 183, 244, 58,
-                               8, TFT_BLACK);
-    }
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_WHITE);
-    constexpr const char* labels[] = {"F-", "F+", "BW", "SF", "IQ CAP", "NAV"};
-    for (size_t i = 0; i < std::size(labels); ++i) {
-      M5.Display.drawString(labels[i], kCbPanelX + 51 + static_cast<int>(i) * 56,
-                            kCbPanelY + 426);
-    }
-  }
-
-  LoraDisplayPacket packets[kLoraDisplayPacketCount];
-  portENTER_CRITICAL(&lora_message_mux);
-  memcpy(packets, lora_display_packets, sizeof(packets));
-  portEXIT_CRITICAL(&lora_message_mux);
-  M5.Display.setTextDatum(middle_left);
-  M5.Display.setTextSize(1);
-  for (size_t index = 0; index < 3; ++index) {
-    const int y = kCbPanelY + 220 + static_cast<int>(index) * 24;
-    M5.Display.fillRect(kCbPanelX + 39, y - 7, 185, 14, TFT_BLACK);
-    M5.Display.fillRect(kCbPanelX + 229, y - 7, 43, 14, TFT_BLACK);
-    M5.Display.fillRect(kCbPanelX + 277, y - 7, 35, 14, TFT_BLACK);
-    M5.Display.fillRect(kCbPanelX + 317, y - 7, 29, 14, TFT_BLACK);
-    if (packets[index].sender == 0) continue;
-    char line[48];
-    const bool has_position = packets[index].latitude_e7 != INT32_MAX &&
-                              packets[index].longitude_e7 != INT32_MAX;
-    if (has_position) {
-      snprintf(line, sizeof(line), "!%08lx %.4f,%.4f",
-               static_cast<unsigned long>(packets[index].sender),
-               packets[index].latitude_e7 / 10000000.0,
-               packets[index].longitude_e7 / 10000000.0);
-    } else {
-      snprintf(line, sizeof(line), "!%08lx %.20s",
-               static_cast<unsigned long>(packets[index].sender), packets[index].text);
-    }
-    M5.Display.setTextColor(packets[index].port == 3 ? TFT_GREEN : TFT_WHITE, TFT_BLACK);
-    M5.Display.drawString(line, kCbPanelX + 41, y);
-    M5.Display.setTextDatum(middle_center);
-    if (packets[index].snr_tenths == INT16_MAX) {
-      M5.Display.drawString("--", kCbPanelX + 251, y);
-    } else {
-      snprintf(line, sizeof(line), "%+.1f", packets[index].snr_tenths / 10.0);
-      M5.Display.drawString(line, kCbPanelX + 251, y);
-    }
-    if (packets[index].signal_tenths == INT16_MAX) {
-      M5.Display.drawString("--", kCbPanelX + 295, y);
-    } else {
-      snprintf(line, sizeof(line), "%.0f", packets[index].signal_tenths / 10.0);
-      M5.Display.drawString(line, kCbPanelX + 295, y);
-    }
-    M5.Display.setTextColor(has_position ? TFT_GREEN : TFT_DARKGREY, TFT_BLACK);
-    M5.Display.drawString(has_position ? "GPS" : "--", kCbPanelX + 331, y);
-    M5.Display.setTextDatum(middle_left);
-  }
-  if (packets[0].sender == 0) {
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    M5.Display.drawString("WAITING FOR VERIFIED PACKETS", kCbPanelX + 192, kCbPanelY + 244);
-  }
+  if (lora_view == LoraView::Packets) draw_lora_packets_view(static_panel);
+  else if (lora_view == LoraView::Map) draw_lora_map_view(static_panel);
+  else draw_lora_live_view(static_panel);
 }
 
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
@@ -3054,7 +3116,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   }
   M5.Display.fillScreen(TFT_BLACK);
   draw_sdr_header(band, frequency_hz, volume);
-  if (band == RtlBand::lora && lora_view != LoraView::Rf) {
+  if (band == RtlBand::lora) {
     draw_lora_dashboard(true);
     draw_sdr_controls(band, true);
     return;
@@ -3199,7 +3261,7 @@ void draw_band_edges() {
  * Two-window Welch averaging keeps the single render core responsive.
  */
 void draw_spectrum(const uint8_t* iq, size_t bytes) {
-  if (rtl_ui_band == RtlBand::lora && lora_view != LoraView::Rf) return;
+  if (rtl_ui_band == RtlBand::lora) return;
   uint8_t local_iq[sizeof(rtl_spectrum_iq_snap)];
   size_t local_bytes = 0;
   portENTER_CRITICAL(&rtl_spectrum_snap_mux);
@@ -4906,43 +4968,9 @@ bool handle_cb_touch(int32_t x, int32_t y) {
 }
 
 bool handle_lora_touch(int32_t x, int32_t y) {
-  if (rtl_ui_band != RtlBand::lora || x < kCbPanelX ||
-      x >= kCbPanelX + kCbPanelWidth || y < kCbPanelY ||
-      y >= kCbPanelY + kCbPanelHeight) return false;
-  if (lora_view != LoraView::Rf) return false;
-  if (y >= kCbPanelY + 395 && y <= kCbPanelY + 458) {
-    const int control = constrain((x - (kCbPanelX + 23)) / 56, 0, 5);
-    if (control == 0 || control == 1) {
-      const uint32_t next = rtl_step_frequency(RtlBand::lora, rtl_ui_frequency_hz,
-                                               control == 0 ? -1 : 1);
-      if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running) {
-        request_hot_retune(next);
-      } else {
-        queue_local_rtl_listen(RtlBand::lora, next);
-      }
-    } else if (control == 2) {
-      uint32_t bandwidth = lora_bandwidth_hz.load(std::memory_order_relaxed);
-      bandwidth = bandwidth == 125000 ? 250000 : bandwidth == 250000 ? 500000 : 125000;
-      lora_bandwidth_hz.store(bandwidth, std::memory_order_relaxed);
-      rtl_filter_bandwidth_hz.store(bandwidth, std::memory_order_relaxed);
-      redraw_spectrum_panel();
-    } else if (control == 3) {
-      uint8_t sf = lora_sf.load(std::memory_order_relaxed);
-      lora_sf.store(sf >= 12 ? 7 : sf + 1, std::memory_order_relaxed);
-    } else if (control == 4) {
-      if (g_iq_rec_active.load(std::memory_order_acquire)) {
-        (void)iq_rec_stop_and_export();
-      } else {
-        (void)iq_rec_start();
-      }
-    } else {
-      rtl_nav_open = true;
-      draw_nav_panel();
-    }
-    draw_lora_dashboard(false);
-    return true;
-  }
-  return true;
+  (void)x;
+  (void)y;
+  return false;
 }
 
 void request_hot_retune(uint32_t frequency_hz) {
@@ -5238,7 +5266,15 @@ void handle_sdr_touch(int32_t x, int32_t y) {
       queue_local_rtl_listen(rtl_ui_band, next);
     }
   } else if (tune_index == 2) {
-    if (rtl_ui_band == RtlBand::lora) return;
+    if (rtl_ui_band == RtlBand::lora) {
+      uint32_t bandwidth = lora_bandwidth_hz.load(std::memory_order_relaxed);
+      bandwidth = bandwidth == 125000 ? 250000 : bandwidth == 250000 ? 500000 : 125000;
+      lora_bandwidth_hz.store(bandwidth, std::memory_order_relaxed);
+      rtl_filter_bandwidth_hz.store(bandwidth, std::memory_order_relaxed);
+      draw_lora_dashboard(false);
+      draw_sdr_controls(rtl_ui_band, true);
+      return;
+    }
     const bool next = !rtl_audio_enabled.load(std::memory_order_acquire);
     rtl_audio_enabled.store(next, std::memory_order_release);
     rtl_audio_play_count = 0;
@@ -5253,10 +5289,31 @@ void handle_sdr_touch(int32_t x, int32_t y) {
         rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
     draw_sdr_controls(rtl_ui_band, running);
   } else if (tune_index == 3) {
-    adjust_rtl_volume(-static_cast<int>(kRtlVolumeStep));
+    if (rtl_ui_band == RtlBand::lora) {
+      const uint8_t sf = lora_sf.load(std::memory_order_relaxed);
+      lora_sf.store(sf >= 12 ? 7 : sf + 1, std::memory_order_relaxed);
+      draw_lora_dashboard(false);
+      draw_sdr_controls(rtl_ui_band, true);
+    } else {
+      adjust_rtl_volume(-static_cast<int>(kRtlVolumeStep));
+    }
   } else if (tune_index == 4) {
-    adjust_rtl_volume(static_cast<int>(kRtlVolumeStep));
+    if (rtl_ui_band == RtlBand::lora) {
+      if (g_iq_rec_active.load(std::memory_order_acquire)) {
+        (void)iq_rec_stop_and_export();
+      } else {
+        (void)iq_rec_start();
+      }
+      draw_sdr_controls(rtl_ui_band, true);
+    } else {
+      adjust_rtl_volume(static_cast<int>(kRtlVolumeStep));
+    }
   } else if (tune_index == 5) {
+    if (rtl_ui_band == RtlBand::lora) {
+      rtl_nav_open = true;
+      draw_nav_panel();
+      return;
+    }
     const bool next =
         !rtl_graphics_enabled.load(std::memory_order_acquire);
     rtl_graphics_enabled.store(next, std::memory_order_release);
