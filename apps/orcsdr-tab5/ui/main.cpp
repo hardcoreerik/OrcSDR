@@ -454,7 +454,7 @@ static std::atomic<float> lora_trigger_dbfs{-75.0f};
 static std::atomic<uint32_t> lora_messages{0};
 static portMUX_TYPE lora_message_mux = portMUX_INITIALIZER_UNLOCKED;
 struct LoraDisplayPacket {
-  char text[48]{};
+  char text[112]{};
   uint32_t sender = 0;
   uint32_t destination = 0;
   uint32_t packet_id = 0;
@@ -604,7 +604,7 @@ Preferences preferences;
 JournalState journal{};
 WorkflowState workflow{};
 uint8_t pairing_key[32];
-char serial_input[320];
+char serial_input[384];
 size_t serial_input_length = 0;
 constexpr size_t kSdPutChunkBytes = 16 * 1024;
 // USB Serial/JTAG has a 4 KiB TX queue; smaller reads avoid producer deadlock.
@@ -2568,6 +2568,28 @@ int sdr_button_at(int y, int touch_x, int touch_y, const int* widths, size_t cou
 
 void draw_sdr_controls(RtlBand band, bool running) {
   M5.Display.fillRect(0, kSdrBandY - 6, 1280, 720 - (kSdrBandY - 6), TFT_BLACK);
+  if (band == RtlBand::lora) {
+    char bandwidth[20];
+    char spreading_factor[16];
+    snprintf(bandwidth, sizeof(bandwidth), "BW %uk",
+             static_cast<unsigned>(lora_bandwidth_hz.load(std::memory_order_relaxed) /
+                                   1000u));
+    snprintf(spreading_factor, sizeof(spreading_factor), "SF %u",
+             static_cast<unsigned>(lora_sf.load(std::memory_order_relaxed)));
+    const bool iq_on = g_iq_rec_active.load(std::memory_order_acquire);
+    const SdrButton lora_row[] = {
+        {0, 170, "FREQ -", TFT_DARKGREY},
+        {0, 170, "FREQ +", TFT_DARKGREY},
+        {0, 220, bandwidth, TFT_DARKCYAN},
+        {0, 150, spreading_factor, TFT_NAVY},
+        {0, 150, iq_on ? "IQ STOP" : "IQ CAP",
+         static_cast<uint32_t>(iq_on ? TFT_MAROON : TFT_NAVY)},
+        {0, 220, running ? "STOP" : "START",
+         static_cast<uint32_t>(running ? TFT_MAROON : TFT_DARKGREEN)},
+    };
+    draw_sdr_button_row(kSdrBandY, lora_row, std::size(lora_row));
+    return;
+  }
   const bool rec_on = g_audio_rec_active.load(std::memory_order_acquire);
   const SdrButton band_row[] = {
       {0, 110, "FM",
@@ -2589,27 +2611,15 @@ void draw_sdr_controls(RtlBand band, bool running) {
   };
   const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
   const bool sound_on = rtl_audio_enabled.load(std::memory_order_acquire);
-  const bool iq_on = g_iq_rec_active.load(std::memory_order_acquire);
-  char lora_bw[20];
-  char lora_sf_text[16];
-  snprintf(lora_bw, sizeof(lora_bw), "BW %uk",
-           static_cast<unsigned>(lora_bandwidth_hz.load(std::memory_order_relaxed) /
-                                 1000u));
-  snprintf(lora_sf_text, sizeof(lora_sf_text), "SF %u",
-           static_cast<unsigned>(lora_sf.load(std::memory_order_relaxed)));
   const SdrButton tune_row[] = {
       {0, 170, "FREQ -", TFT_DARKGREY},
       {0, 170, "FREQ +", TFT_DARKGREY},
-      {0, 220, band == RtlBand::lora ? lora_bw : sound_on ? "SOUND ON" : "SOUND OFF",
-       static_cast<uint32_t>(band == RtlBand::lora ? TFT_DARKCYAN
-                                                   : sound_on ? TFT_DARKGREEN : TFT_MAROON)},
-      {0, 150, band == RtlBand::lora ? lora_sf_text : "VOL -", TFT_NAVY},
-      {0, 150, band == RtlBand::lora ? (iq_on ? "IQ STOP" : "IQ CAP") : "VOL +",
-       static_cast<uint32_t>(band == RtlBand::lora && iq_on ? TFT_MAROON : TFT_NAVY)},
-      {0, 220, band == RtlBand::lora ? "NAV" : gfx_on ? "GFX ON" : "GFX OFF",
-       static_cast<uint32_t>(band == RtlBand::lora
-                                 ? TFT_DARKCYAN
-                                 : gfx_on ? TFT_DARKGREEN : TFT_MAROON)},
+      {0, 220, sound_on ? "SOUND ON" : "SOUND OFF",
+       static_cast<uint32_t>(sound_on ? TFT_DARKGREEN : TFT_MAROON)},
+      {0, 150, "VOL -", TFT_NAVY},
+      {0, 150, "VOL +", TFT_NAVY},
+      {0, 220, gfx_on ? "GFX ON" : "GFX OFF",
+       static_cast<uint32_t>(gfx_on ? TFT_DARKGREEN : TFT_MAROON)},
   };
   draw_sdr_button_row(kSdrBandY, band_row, std::size(band_row));
   draw_sdr_button_row(kSdrTuneY, tune_row, std::size(tune_row));
@@ -2836,11 +2846,11 @@ int lora_frequency_slot(uint32_t frequency_hz) {
 
 void draw_lora_live_view(bool force) {
   static uint32_t last_count = UINT32_MAX;
-  static int last_signal = INT32_MAX;
   static uint32_t last_frequency = 0;
   const uint32_t count = lora_messages.load(std::memory_order_relaxed);
-  const int live_signal = static_cast<int>(lroundf(rtl_signal_dbfs_smooth));
-  const bool packet_changed = force || count != last_count;
+  const bool packet_changed = force || count != last_count ||
+                              rtl_ui_frequency_hz != last_frequency;
+  if (!packet_changed) return;
   LoraDisplayPacket packets[kLoraDisplayPacketCount];
   LoraNodePosition positions[kLoraNodePositionCount];
   portENTER_CRITICAL(&lora_message_mux);
@@ -2848,110 +2858,114 @@ void draw_lora_live_view(bool force) {
   memcpy(positions, lora_node_positions, sizeof(positions));
   portEXIT_CRITICAL(&lora_message_mux);
 
-  if (packet_changed) {
-    draw_lora_asset(kLoraLivePath);
-    size_t message_index = 0;
-    while (message_index < kLoraDisplayPacketCount &&
-           packets[message_index].sender != 0 && packets[message_index].port != 1) {
-      ++message_index;
-    }
-    if (message_index >= kLoraDisplayPacketCount || packets[message_index].sender == 0) {
-      message_index = 0;
-    }
-    M5.Display.setTextDatum(middle_left);
-    M5.Display.setTextSize(3);
-    M5.Display.setTextColor(TFT_CYAN);
-    M5.Display.drawString("LATEST VERIFIED DECODE", kSpectrumX + 70, kSpectrumY + 58);
-    if (packets[message_index].sender == 0) {
-      M5.Display.setTextSize(5);
-      M5.Display.setTextColor(TFT_LIGHTGREY);
-      M5.Display.drawString("WAITING FOR PACKET", kSpectrumX + 95, kSpectrumY + 220);
-    } else {
-      char value[72];
-      snprintf(value, sizeof(value), "!%08lx  >  !%08lx   %s",
-               static_cast<unsigned long>(packets[message_index].sender),
-               static_cast<unsigned long>(packets[message_index].destination),
-               lora_port_label(packets[message_index].port));
-      M5.Display.setTextSize(4);
-      M5.Display.setTextColor(TFT_GREEN);
-      M5.Display.drawString(value, kSpectrumX + 70, kSpectrumY + 112);
-      const char* text = packets[message_index].text[0]
-                             ? packets[message_index].text
-                             : lora_port_label(packets[message_index].port);
-      char line[19]{};
-      M5.Display.setTextSize(5);
-      M5.Display.setTextColor(TFT_WHITE);
-      for (size_t row = 0; row < 3; ++row) {
-        const size_t start = row * 18;
-        if (start >= strlen(text)) break;
-        strlcpy(line, text + start, sizeof(line));
-        M5.Display.drawString(line, kSpectrumX + 70,
-                              kSpectrumY + 205 + static_cast<int>(row) * 62);
-      }
-    }
-    M5.Display.setTextSize(3);
-    M5.Display.setTextColor(TFT_CYAN);
-    if (positions[0].node != 0) {
-      char gps[96];
-      snprintf(gps, sizeof(gps), "GPS !%08lx   %.5f, %.5f",
-               static_cast<unsigned long>(positions[0].node),
-               positions[0].latitude_e7 / 10000000.0,
-               positions[0].longitude_e7 / 10000000.0);
-      M5.Display.drawString(gps, kSpectrumX + 65, kSpectrumY + 438);
-    } else {
-      M5.Display.drawString("GPS  WAITING FOR POSITION PACKET", kSpectrumX + 65,
-                            kSpectrumY + 438);
-    }
-    last_count = count;
-  }
+  draw_lora_asset(kLoraLivePath);
+  constexpr int left_x = kSpectrumX + 44;
+  constexpr int left_w = 620;
+  constexpr int scope_x = kSpectrumX + 700;
+  constexpr int scope_w = 390;
+  M5.Display.fillRect(left_x, kSpectrumY + 42, left_w, 205, TFT_BLACK);
+  M5.Display.fillRect(scope_x, kSpectrumY + 44, scope_w, 126, TFT_BLACK);
+  M5.Display.fillRect(scope_x, kSpectrumY + 202, scope_w, 172, TFT_BLACK);
+  M5.Display.fillRect(left_x, kSpectrumY + 268, left_w, 154, TFT_BLACK);
+  M5.Display.drawRect(left_x, kSpectrumY + 268, left_w, 154, TFT_CYAN);
+  M5.Display.drawRect(scope_x, kSpectrumY + 44, scope_w, 126, TFT_MAGENTA);
+  M5.Display.drawRect(scope_x, kSpectrumY + 202, scope_w, 172, TFT_GREEN);
 
-  if (packet_changed || live_signal != last_signal) {
-    M5.Display.fillRect(kSpectrumX + 700, kSpectrumY + 48, 390, 100, TFT_BLACK);
-    M5.Display.setTextDatum(middle_left);
-    M5.Display.setTextColor(TFT_MAGENTA);
-    M5.Display.setTextSize(3);
-    M5.Display.drawString("LIVE RF SIGNAL", kSpectrumX + 720, kSpectrumY + 68);
-    char value[48];
-    snprintf(value, sizeof(value), "%d dBFS", live_signal);
-    M5.Display.setTextColor(TFT_WHITE);
-    M5.Display.setTextSize(6);
-    M5.Display.drawString(value, kSpectrumX + 720, kSpectrumY + 118);
-    if (packets[0].snr_tenths != INT16_MAX) {
-      snprintf(value, sizeof(value), "LAST PKT SNR %+.1f dB", packets[0].snr_tenths / 10.0);
-      M5.Display.setTextSize(3);
-      M5.Display.setTextColor(TFT_GREEN);
-      M5.Display.drawString(value, kSpectrumX + 720, kSpectrumY + 148);
-    }
-    last_signal = live_signal;
-  }
-
-  if (packet_changed || rtl_ui_frequency_hz != last_frequency) {
-    M5.Display.fillRect(kSpectrumX + 700, kSpectrumY + 205, 390, 165, TFT_BLACK);
-    char value[64];
-    M5.Display.setTextDatum(middle_left);
-    M5.Display.setTextSize(3);
+  M5.Display.setTextDatum(middle_left);
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(TFT_CYAN);
+  M5.Display.drawString("LATEST VERIFIED DECODE", left_x + 12, kSpectrumY + 56);
+  if (packets[0].sender == 0) {
+    M5.Display.setTextSize(4);
+    M5.Display.setTextColor(TFT_LIGHTGREY);
+    M5.Display.drawString("WAITING FOR PACKET", left_x + 16, kSpectrumY + 142);
+  } else {
+    char value[144];
+    snprintf(value, sizeof(value), "FROM !%08lx  TO !%08lx  %s  ID %08lx",
+             static_cast<unsigned long>(packets[0].sender),
+             static_cast<unsigned long>(packets[0].destination),
+             lora_port_label(packets[0].port),
+             static_cast<unsigned long>(packets[0].packet_id));
+    M5.Display.setTextSize(2);
     M5.Display.setTextColor(TFT_GREEN);
-    M5.Display.drawString("CHANNEL", kSpectrumX + 720, kSpectrumY + 220);
-    snprintf(value, sizeof(value), "%.3f MHz", rtl_ui_frequency_hz / 1000000.0);
-    M5.Display.setTextSize(5);
-    M5.Display.setTextColor(TFT_WHITE);
-    M5.Display.drawString(value, kSpectrumX + 720, kSpectrumY + 270);
-    const int slot = lora_frequency_slot(rtl_ui_frequency_hz);
-    snprintf(value, sizeof(value), "SLOT %d   SF%u   BW%uk", slot,
-             static_cast<unsigned>(lora_sf.load(std::memory_order_relaxed)),
-             static_cast<unsigned>(lora_bandwidth_hz.load(std::memory_order_relaxed) / 1000));
+    M5.Display.drawString(value, left_x + 12, kSpectrumY + 88);
+    const char* text = packets[0].text[0] ? packets[0].text
+                                          : lora_port_label(packets[0].port);
+    char line[37]{};
     M5.Display.setTextSize(3);
-    M5.Display.setTextColor(TFT_CYAN);
-    M5.Display.drawString(value, kSpectrumX + 720, kSpectrumY + 320);
-    snprintf(value, sizeof(value), "NOISE %.0f   TRIGGER %.0f   MSG %lu",
-             static_cast<double>(lora_noise_dbfs.load(std::memory_order_relaxed)),
-             static_cast<double>(lora_trigger_dbfs.load(std::memory_order_relaxed)),
-             static_cast<unsigned long>(count));
+    M5.Display.setTextColor(TFT_WHITE);
+    for (size_t row = 0; row < 3; ++row) {
+      const size_t start = row * 36;
+      if (start >= strlen(text)) break;
+      strlcpy(line, text + start, sizeof(line));
+      M5.Display.drawString(line, left_x + 12,
+                            kSpectrumY + 125 + static_cast<int>(row) * 35);
+    }
+    snprintf(value, sizeof(value), "SNR %+.1f dB   SIG %.1f dBFS",
+             packets[0].snr_tenths == INT16_MAX ? 0.0 : packets[0].snr_tenths / 10.0,
+             packets[0].signal_tenths == INT16_MAX ? 0.0 : packets[0].signal_tenths / 10.0);
     M5.Display.setTextSize(2);
     M5.Display.setTextColor(TFT_LIGHTGREY);
-    M5.Display.drawString(value, kSpectrumX + 720, kSpectrumY + 358);
-    last_frequency = rtl_ui_frequency_hz;
+    M5.Display.drawString(value, left_x + 12, kSpectrumY + 236);
   }
+
+  M5.Display.setTextColor(TFT_MAGENTA);
+  M5.Display.setTextSize(2);
+  M5.Display.drawString("LIVE SCOPE", scope_x + 14, kSpectrumY + 58);
+  M5.Display.setTextColor(TFT_CYAN);
+  M5.Display.drawString("LIVE WATERFALL", left_x + 12, kSpectrumY + 258);
+
+  size_t text_index = 0;
+  while (text_index < kLoraDisplayPacketCount && packets[text_index].sender != 0 &&
+         packets[text_index].port != 1) ++text_index;
+  M5.Display.setTextColor(TFT_GREEN);
+  M5.Display.setTextSize(2);
+  M5.Display.drawString("LAST MESSAGE", scope_x + 14, kSpectrumY + 218);
+  if (text_index < kLoraDisplayPacketCount && packets[text_index].sender != 0) {
+    char value[96];
+    snprintf(value, sizeof(value), "LONGFAST / %s  TO !%08lx",
+             lora_port_label(packets[text_index].port),
+             static_cast<unsigned long>(packets[text_index].destination));
+    M5.Display.setTextColor(TFT_CYAN);
+    M5.Display.drawString(value, scope_x + 14, kSpectrumY + 246);
+    char line[21]{};
+    M5.Display.setTextSize(3);
+    M5.Display.setTextColor(TFT_WHITE);
+    for (size_t row = 0; row < 3; ++row) {
+      const size_t start = row * 20;
+      if (start >= strlen(packets[text_index].text)) break;
+      strlcpy(line, packets[text_index].text + start, sizeof(line));
+      M5.Display.drawString(line, scope_x + 14,
+                            kSpectrumY + 278 + static_cast<int>(row) * 34);
+    }
+  } else {
+    M5.Display.setTextSize(3);
+    M5.Display.setTextColor(TFT_LIGHTGREY);
+    M5.Display.drawString("WAITING FOR TEXT", scope_x + 14, kSpectrumY + 292);
+  }
+  char status[96];
+  snprintf(status, sizeof(status), "SLOT %d  NOISE %.0f  TRIG %.0f  MSG %lu",
+           lora_frequency_slot(rtl_ui_frequency_hz),
+           static_cast<double>(lora_noise_dbfs.load(std::memory_order_relaxed)),
+           static_cast<double>(lora_trigger_dbfs.load(std::memory_order_relaxed)),
+           static_cast<unsigned long>(count));
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(TFT_LIGHTGREY);
+  M5.Display.drawString(status, scope_x + 14, kSpectrumY + 362);
+
+  if (positions[0].node != 0) {
+    snprintf(status, sizeof(status), "GPS !%08lx   %.5f, %.5f",
+             static_cast<unsigned long>(positions[0].node),
+             positions[0].latitude_e7 / 10000000.0,
+             positions[0].longitude_e7 / 10000000.0);
+  } else {
+    strlcpy(status, "GPS  WAITING FOR POSITION PACKET", sizeof(status));
+  }
+  M5.Display.setTextSize(3);
+  M5.Display.setTextColor(TFT_CYAN);
+  M5.Display.drawString(status, kSpectrumX + 65, kSpectrumY + 444);
+  last_count = count;
+  last_frequency = rtl_ui_frequency_hz;
 }
 
 void draw_lora_packets_view(bool force) {
@@ -3172,6 +3186,55 @@ uint16_t waterfall_color(float level) {
   return M5.Display.color565(red, green, blue);
 }
 
+void draw_lora_live_graphs(size_t first_bin, size_t visible_bins, float floor) {
+  constexpr int scope_x = kSpectrumX + 712;
+  constexpr int scope_y = kSpectrumY + 78;
+  constexpr int scope_w = 366;
+  constexpr int scope_h = 80;
+  constexpr int waterfall_x = kSpectrumX + 46;
+  constexpr int waterfall_y = kSpectrumY + 270;
+  constexpr int waterfall_w = 616;
+  constexpr int waterfall_h = 150;
+
+  M5.Display.startWrite();
+  M5.Display.fillRect(scope_x, scope_y, scope_w, scope_h, TFT_BLACK);
+  for (int line = 1; line < 4; ++line) {
+    M5.Display.drawFastVLine(scope_x + line * scope_w / 4, scope_y, scope_h, 0x2104);
+  }
+  M5.Display.drawFastHLine(scope_x, scope_y + scope_h / 2, scope_w, 0x2104);
+  int previous_x = scope_x;
+  int previous_y = scope_y + scope_h - 1;
+  for (size_t bin = first_bin; bin < first_bin + visible_bins; ++bin) {
+    const float normalized =
+        constrain((rtl_spectrum_levels[bin] - floor) / 48.0f, 0.0f, 1.0f);
+    const int x = scope_x + static_cast<int>((bin - first_bin) * (scope_w - 1) /
+                                              (visible_bins - 1));
+    const int y = scope_y + scope_h - 1 - static_cast<int>(normalized * (scope_h - 2));
+    if (bin != first_bin) M5.Display.drawLine(previous_x, previous_y, x, y, TFT_CYAN);
+    previous_x = x;
+    previous_y = y;
+  }
+  M5.Display.drawFastVLine(scope_x + scope_w / 2, scope_y, scope_h, TFT_GREEN);
+
+  M5.Display.setScrollRect(waterfall_x, waterfall_y, waterfall_w, waterfall_h,
+                           TFT_BLACK);
+  M5.Display.scroll(0, -1);
+  for (size_t bin = first_bin; bin < first_bin + visible_bins; ++bin) {
+    const float normalized =
+        constrain((rtl_spectrum_levels[bin] - floor) / 48.0f, 0.0f, 1.0f);
+    const int cell_x = static_cast<int>((bin - first_bin) * waterfall_w / visible_bins);
+    const int next_x = static_cast<int>((bin - first_bin + 1) * waterfall_w /
+                                        visible_bins);
+    const uint16_t color = waterfall_color(normalized);
+    for (int pixel = cell_x; pixel < next_x; ++pixel) rtl_waterfall_row[pixel] = color;
+  }
+  M5.Display.pushImage(waterfall_x, waterfall_y + waterfall_h - 1,
+                       waterfall_w, 1, rtl_waterfall_row);
+  M5.Display.drawFastVLine(waterfall_x + waterfall_w / 2, waterfall_y,
+                           waterfall_h, TFT_GREEN);
+  M5.Display.endWrite();
+}
+
 void reset_spectrum_renderer() {
   rtl_spectrum_trace_valid = false;
   rtl_spectrum_last_ms = 0;
@@ -3261,7 +3324,7 @@ void draw_band_edges() {
  * Two-window Welch averaging keeps the single render core responsive.
  */
 void draw_spectrum(const uint8_t* iq, size_t bytes) {
-  if (rtl_ui_band == RtlBand::lora) return;
+  if (rtl_ui_band == RtlBand::lora && lora_view != LoraView::Live) return;
   uint8_t local_iq[sizeof(rtl_spectrum_iq_snap)];
   size_t local_bytes = 0;
   portENTER_CRITICAL(&rtl_spectrum_snap_mux);
@@ -3391,6 +3454,14 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
       !rtl_spectrum_trace_valid ||
       (now - rtl_spectrum_trace_last_ms) >= spectrum_interval;
   const bool show_peak = (tool == OrcTool::Scope || tool == OrcTool::Radio);
+
+  if (rtl_ui_band == RtlBand::lora) {
+    draw_lora_live_graphs(first_bin, visible_bins, floor);
+    rtl_spectrum_trace_last_ms = now;
+    rtl_spectrum_trace_valid = true;
+    ++rtl_spectrum_frames;
+    return;
+  }
 
   M5.Display.startWrite();
   if (redraw_trace) {
@@ -5200,6 +5271,45 @@ void handle_sdr_touch(int32_t x, int32_t y) {
 
   static constexpr int kBandWidths[] = {110, 110, 110, 120, 140, 160, 170, 200};
   static constexpr int kTuneWidths[] = {170, 170, 220, 150, 150, 220};
+  if (rtl_ui_band == RtlBand::lora) {
+    const int index = sdr_button_at(kSdrBandY, x, y, kTuneWidths,
+                                    std::size(kTuneWidths));
+    if (index < 0) return;
+    if (index == 0 || index == 1) {
+      const uint32_t next = rtl_step_frequency(RtlBand::lora, rtl_ui_frequency_hz,
+                                               index == 0 ? -1 : 1);
+      if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running) {
+        request_hot_retune(next);
+      } else {
+        queue_local_rtl_listen(RtlBand::lora, next);
+      }
+    } else if (index == 2) {
+      uint32_t bandwidth = lora_bandwidth_hz.load(std::memory_order_relaxed);
+      bandwidth = bandwidth == 125000 ? 250000 : bandwidth == 250000 ? 500000 : 125000;
+      lora_bandwidth_hz.store(bandwidth, std::memory_order_relaxed);
+      rtl_filter_bandwidth_hz.store(bandwidth, std::memory_order_relaxed);
+      reset_spectrum_renderer();
+    } else if (index == 3) {
+      const uint8_t sf = lora_sf.load(std::memory_order_relaxed);
+      lora_sf.store(sf >= 12 ? 7 : sf + 1, std::memory_order_relaxed);
+    } else if (index == 4) {
+      if (g_iq_rec_active.load(std::memory_order_acquire)) (void)iq_rec_stop_and_export();
+      else (void)iq_rec_start();
+    } else {
+      const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
+      if (state == RtlCaptureState::running) {
+        rtl_restart_requested.store(false, std::memory_order_release);
+        rtl_stop_requested.store(true, std::memory_order_release);
+        Serial.println("RTL_UI_STOP");
+      } else {
+        queue_local_rtl_listen(RtlBand::lora, rtl_ui_frequency_hz);
+      }
+    }
+    draw_sdr_controls(rtl_ui_band,
+                      rtl_capture_state.load(std::memory_order_acquire) ==
+                          RtlCaptureState::running);
+    return;
+  }
   const int band_index = sdr_button_at(kSdrBandY, x, y, kBandWidths, std::size(kBandWidths));
   if (band_index >= 0) {
     if (band_index == 0) {
@@ -5266,15 +5376,6 @@ void handle_sdr_touch(int32_t x, int32_t y) {
       queue_local_rtl_listen(rtl_ui_band, next);
     }
   } else if (tune_index == 2) {
-    if (rtl_ui_band == RtlBand::lora) {
-      uint32_t bandwidth = lora_bandwidth_hz.load(std::memory_order_relaxed);
-      bandwidth = bandwidth == 125000 ? 250000 : bandwidth == 250000 ? 500000 : 125000;
-      lora_bandwidth_hz.store(bandwidth, std::memory_order_relaxed);
-      rtl_filter_bandwidth_hz.store(bandwidth, std::memory_order_relaxed);
-      draw_lora_dashboard(false);
-      draw_sdr_controls(rtl_ui_band, true);
-      return;
-    }
     const bool next = !rtl_audio_enabled.load(std::memory_order_acquire);
     rtl_audio_enabled.store(next, std::memory_order_release);
     rtl_audio_play_count = 0;
@@ -5289,31 +5390,10 @@ void handle_sdr_touch(int32_t x, int32_t y) {
         rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
     draw_sdr_controls(rtl_ui_band, running);
   } else if (tune_index == 3) {
-    if (rtl_ui_band == RtlBand::lora) {
-      const uint8_t sf = lora_sf.load(std::memory_order_relaxed);
-      lora_sf.store(sf >= 12 ? 7 : sf + 1, std::memory_order_relaxed);
-      draw_lora_dashboard(false);
-      draw_sdr_controls(rtl_ui_band, true);
-    } else {
-      adjust_rtl_volume(-static_cast<int>(kRtlVolumeStep));
-    }
+    adjust_rtl_volume(-static_cast<int>(kRtlVolumeStep));
   } else if (tune_index == 4) {
-    if (rtl_ui_band == RtlBand::lora) {
-      if (g_iq_rec_active.load(std::memory_order_acquire)) {
-        (void)iq_rec_stop_and_export();
-      } else {
-        (void)iq_rec_start();
-      }
-      draw_sdr_controls(rtl_ui_band, true);
-    } else {
-      adjust_rtl_volume(static_cast<int>(kRtlVolumeStep));
-    }
+    adjust_rtl_volume(static_cast<int>(kRtlVolumeStep));
   } else if (tune_index == 5) {
-    if (rtl_ui_band == RtlBand::lora) {
-      rtl_nav_open = true;
-      draw_nav_panel();
-      return;
-    }
     const bool next =
         !rtl_graphics_enabled.load(std::memory_order_acquire);
     rtl_graphics_enabled.store(next, std::memory_order_release);

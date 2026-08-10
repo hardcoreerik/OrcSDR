@@ -314,19 +314,49 @@ def _position_coordinates(payload: bytes) -> tuple[int, int] | None:
     return position.latitude_i, position.longitude_i
 
 
+def _message_summary(port: int, payload: bytes) -> str:
+    if port in TEXT_PORTS:
+        return payload.decode("utf-8", errors="replace")
+    if port == 3:
+        try:
+            coordinates = _position_coordinates(payload)
+        except Exception:
+            coordinates = None
+        return ("GPS %.5f, %.5f" % (coordinates[0] / 1e7, coordinates[1] / 1e7)
+                if coordinates else "POSITION")
+    if port == 67:
+        from meshtastic.protobuf.telemetry_pb2 import Telemetry
+
+        telemetry = Telemetry()
+        try:
+            telemetry.ParseFromString(payload)
+        except Exception:
+            return "TELEMETRY"
+        values = []
+        for outer, group in telemetry.ListFields():
+            if outer.name == "time" or outer.message_type is None:
+                continue
+            for field, value in group.ListFields():
+                label = field.name.replace("_", " ")
+                values.append(f"{label} {value:.2f}" if isinstance(value, float)
+                              else f"{label} {value}")
+        return "  ".join(values) or "TELEMETRY"
+    return PORT_NAMES.get(port, f"PORT {port}").removesuffix("_APP")
+
+
 def _packet_command(
     result: dict, signal_dbfs: float | None = None, noise_dbfs: float | None = None,
 ) -> bytes:
     port = int(result["port"])
-    if port in TEXT_PORTS:
-        text = result["payload"].decode("utf-8", errors="replace")
-    else:
-        text = PORT_NAMES.get(port, f"PORT {port}").removesuffix("_APP")
-    while len(text.encode("utf-8")) > 47:
+    text = _message_summary(port, result["payload"])
+    while len(text.encode("utf-8")) > 108:
         text = text[:-1]
     latitude = longitude = 2147483647
     if port == 3:
-        coordinates = _position_coordinates(result["payload"])
+        try:
+            coordinates = _position_coordinates(result["payload"])
+        except Exception:
+            coordinates = None
         if coordinates is not None:
             latitude, longitude = coordinates
     signal_tenths = 32767 if signal_dbfs is None else round(signal_dbfs * 10)
@@ -669,6 +699,13 @@ def self_test() -> None:
     )
     position = struct.pack("<BI", 0x0d, 451234567) + struct.pack("<BI", 0x15, (-1221234567) & 0xffffffff)
     assert _position_coordinates(position) == (451234567, -1221234567)
+    assert _message_summary(3, position) == "GPS 45.12346, -122.12346"
+    from meshtastic.protobuf.telemetry_pb2 import Telemetry
+    telemetry = Telemetry()
+    telemetry.device_metrics.battery_level = 81
+    telemetry.device_metrics.voltage = 4.12
+    telemetry_summary = _message_summary(67, telemetry.SerializeToString())
+    assert "battery level 81" in telemetry_summary and "voltage 4.12" in telemetry_summary
     print("SELF_TEST_OK ORCIQ/CU8 + CFO retry + LoRa PHY/CRC + Meshtastic AES-CTR/PKI + position + UI packet")
 
 
