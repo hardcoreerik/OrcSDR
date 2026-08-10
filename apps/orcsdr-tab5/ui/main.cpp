@@ -2884,23 +2884,26 @@ void draw_lora_live_view(bool force) {
   M5.Display.setTextDatum(middle_left);
   M5.Display.setTextSize(2);
   M5.Display.setTextColor(TFT_CYAN);
-  M5.Display.drawString("LATEST VERIFIED DECODE", left_x + 12, kSpectrumY + 56);
+  M5.Display.drawString("LATEST VERIFIED DECODE", left_x + 14, kSpectrumY + 56);
   if (packets[0].sender == 0) {
     M5.Display.setTextSize(4);
     M5.Display.setTextColor(TFT_LIGHTGREY);
-    M5.Display.drawString("WAITING FOR PACKET", left_x + 16, kSpectrumY + 142);
+    M5.Display.drawString("WAITING FOR PACKET", left_x + 14, kSpectrumY + 142);
   } else {
     char value[144];
     char destination[16];
     format_lora_destination(destination, sizeof(destination), packets[0].destination);
-    snprintf(value, sizeof(value), "FROM !%08lx  TO %s  %s  ID %08lx",
+    snprintf(value, sizeof(value), "FROM !%08lx    TO %s",
              static_cast<unsigned long>(packets[0].sender),
-             destination,
-             lora_port_label(packets[0].port),
-             static_cast<unsigned long>(packets[0].packet_id));
+             destination);
     M5.Display.setTextSize(2);
     M5.Display.setTextColor(TFT_GREEN);
-    M5.Display.drawString(value, left_x + 12, kSpectrumY + 88);
+    M5.Display.drawString(value, left_x + 14, kSpectrumY + 84);
+    snprintf(value, sizeof(value), "%s    PACKET ID %08lx",
+             lora_port_label(packets[0].port),
+             static_cast<unsigned long>(packets[0].packet_id));
+    M5.Display.setTextColor(TFT_CYAN);
+    M5.Display.drawString(value, left_x + 14, kSpectrumY + 108);
     const char* text = packets[0].text[0] ? packets[0].text
                                           : lora_port_label(packets[0].port);
     char line[37]{};
@@ -2910,22 +2913,22 @@ void draw_lora_live_view(bool force) {
       const size_t start = row * 36;
       if (start >= strlen(text)) break;
       strlcpy(line, text + start, sizeof(line));
-      M5.Display.drawString(line, left_x + 12,
-                            kSpectrumY + 125 + static_cast<int>(row) * 35);
+      M5.Display.drawString(line, left_x + 14,
+                            kSpectrumY + 142 + static_cast<int>(row) * 31);
     }
     snprintf(value, sizeof(value), "SNR %+.1f dB   SIG %.1f dBFS",
              packets[0].snr_tenths == INT16_MAX ? 0.0 : packets[0].snr_tenths / 10.0,
              packets[0].signal_tenths == INT16_MAX ? 0.0 : packets[0].signal_tenths / 10.0);
     M5.Display.setTextSize(2);
     M5.Display.setTextColor(TFT_LIGHTGREY);
-    M5.Display.drawString(value, left_x + 12, kSpectrumY + 236);
+    M5.Display.drawString(value, left_x + 14, kSpectrumY + 236);
   }
 
   M5.Display.setTextColor(TFT_MAGENTA);
   M5.Display.setTextSize(2);
   M5.Display.drawString("LIVE SCOPE", scope_x + 14, kSpectrumY + 58);
   M5.Display.setTextColor(TFT_CYAN);
-  M5.Display.drawString("LIVE WATERFALL", left_x + 12, kSpectrumY + 258);
+  M5.Display.drawString("LIVE WATERFALL", left_x + 14, kSpectrumY + 258);
 
   size_t text_index = 0;
   while (text_index < kLoraDisplayPacketCount && packets[text_index].sender != 0 &&
@@ -2938,35 +2941,41 @@ void draw_lora_live_view(bool force) {
     char destination[16];
     format_lora_destination(destination, sizeof(destination),
                             packets[text_index].destination);
-    snprintf(value, sizeof(value), "LONGFAST / %s  TO %s",
-             lora_port_label(packets[text_index].port),
-             destination);
+    snprintf(value, sizeof(value), "LONGFAST / %s",
+             lora_port_label(packets[text_index].port));
     M5.Display.setTextColor(TFT_CYAN);
     M5.Display.drawString(value, scope_x + 14, kSpectrumY + 246);
+    snprintf(value, sizeof(value), "TO %s", destination);
+    M5.Display.setTextColor(TFT_LIGHTGREY);
+    M5.Display.drawString(value, scope_x + 14, kSpectrumY + 270);
     char line[21]{};
     M5.Display.setTextSize(3);
     M5.Display.setTextColor(TFT_WHITE);
-    for (size_t row = 0; row < 3; ++row) {
+    for (size_t row = 0; row < 2; ++row) {
       const size_t start = row * 20;
       if (start >= strlen(packets[text_index].text)) break;
       strlcpy(line, packets[text_index].text + start, sizeof(line));
       M5.Display.drawString(line, scope_x + 14,
-                            kSpectrumY + 278 + static_cast<int>(row) * 34);
+                            kSpectrumY + 302 + static_cast<int>(row) * 32);
     }
   } else {
     M5.Display.setTextSize(3);
     M5.Display.setTextColor(TFT_LIGHTGREY);
-    M5.Display.drawString("WAITING FOR TEXT", scope_x + 14, kSpectrumY + 292);
+    M5.Display.drawString("WAITING FOR TEXT", scope_x + 14, kSpectrumY + 302);
   }
   char status[96];
-  snprintf(status, sizeof(status), "SLOT %d  NOISE %.0f  TRIG %.0f  MSG %lu",
+  snprintf(status, sizeof(status), "SLOT %d   MSG %lu",
            lora_frequency_slot(rtl_ui_frequency_hz),
-           static_cast<double>(lora_noise_dbfs.load(std::memory_order_relaxed)),
-           static_cast<double>(lora_trigger_dbfs.load(std::memory_order_relaxed)),
            static_cast<unsigned long>(count));
-  M5.Display.setTextSize(2);
+  M5.Display.setTextSize(1);
   M5.Display.setTextColor(TFT_LIGHTGREY);
-  M5.Display.drawString(status, scope_x + 14, kSpectrumY + 362);
+  M5.Display.drawString(status, scope_x + 14, kSpectrumY + 360);
+  snprintf(status, sizeof(status), "NOISE %.0f   TRIG %.0f",
+           static_cast<double>(lora_noise_dbfs.load(std::memory_order_relaxed)),
+           static_cast<double>(lora_trigger_dbfs.load(std::memory_order_relaxed)));
+  M5.Display.setTextDatum(middle_right);
+  M5.Display.drawString(status, scope_x + scope_w - 14, kSpectrumY + 360);
+  M5.Display.setTextDatum(middle_left);
 
   if (positions[0].node != 0) {
     snprintf(status, sizeof(status), "GPS !%08lx   %.5f, %.5f",
@@ -2978,7 +2987,7 @@ void draw_lora_live_view(bool force) {
   }
   M5.Display.setTextSize(3);
   M5.Display.setTextColor(TFT_CYAN);
-  M5.Display.drawString(status, kSpectrumX + 65, kSpectrumY + 444);
+  M5.Display.drawString(status, left_x + 14, kSpectrumY + 442);
   last_count = count;
   last_frequency = rtl_ui_frequency_hz;
 }
