@@ -1539,7 +1539,6 @@ void iq_rec_append(const uint8_t* iq, size_t bytes) {
   g_iq_rec_write.store(written, std::memory_order_release);
   if (written == kIqRecMaxBytes) {
     g_iq_rec_active.store(false, std::memory_order_release);
-#if ORC_LORA_TEST_BUILD
     g_iq_rec_ready.store(true, std::memory_order_release);
     Serial.printf("RTL_IQ_DONE storage=psram bytes=%u samples=%u rate=%u frequency_hz=%u sf=%u bw=%u mode=%s\n",
                   static_cast<unsigned>(written), static_cast<unsigned>(written / 2),
@@ -1548,9 +1547,6 @@ void iq_rec_append(const uint8_t* iq, size_t bytes) {
                   static_cast<unsigned>(g_iq_rec_bandwidth_hz),
                   g_iq_rec_auto_triggered.load(std::memory_order_relaxed) ? "energy"
                                                                          : "manual");
-#else
-    g_iq_rec_export_pending.store(true, std::memory_order_release);
-#endif
   }
 }
 
@@ -2312,7 +2308,6 @@ void sd_get_chunk() {
   g_sd_get = {};
 }
 
-#if ORC_LORA_TEST_BUILD
 void iq_get_reset() {
   if (g_iq_get.active) mbedtls_sha256_free(&g_iq_get.sha);
   g_iq_get = {};
@@ -2379,7 +2374,6 @@ void iq_get_chunk() {
   Serial.println();
   g_iq_get = {};
 }
-#endif
 
 void sd_remove(const char* path_hex) {
   if (sd_transfer_radio_busy()) {
@@ -5793,7 +5787,7 @@ void process_command(char* command) {
     Serial.printf("RTL_IQ_STATUS active=%s ready=%s storage=%s mode=%s bytes=%u max_bytes=%u frequency_hz=%u sf=%u bw=%u auto=%s events=%u messages=%u noise_dbfs=%.1f trigger_dbfs=%.1f last_path=\"%s\"\n",
                   g_iq_rec_active.load(std::memory_order_acquire) ? "true" : "false",
                   g_iq_rec_ready.load(std::memory_order_acquire) ? "true" : "false",
-                  ORC_LORA_TEST_BUILD ? "psram" : "sd",
+                  "psram",
                   g_iq_rec_auto_triggered.load(std::memory_order_acquire) ? "energy" : "manual",
                   static_cast<unsigned>(g_iq_rec_write.load(std::memory_order_acquire)),
                   static_cast<unsigned>(kIqRecMaxBytes), g_iq_rec_frequency_hz,
@@ -5814,7 +5808,6 @@ void process_command(char* command) {
     Serial.printf("RTL_LORA_AUTO %s\n", enabled ? "ON" : "OFF");
     return;
   }
-#if ORC_LORA_TEST_BUILD
   if (strncmp(command, "RTL_LORA_TUNE ", 14) == 0) {
     char* end = nullptr;
     const unsigned long requested = strtoul(command + 14, &end, 10);
@@ -5833,7 +5826,6 @@ void process_command(char* command) {
     Serial.printf("RTL_LORA_TUNE_OK frequency_hz=%u\n", frequency_hz);
     return;
   }
-#endif
   if (strcmp(command, "LORA_SD_LOG ON") == 0) {
     set_lora_sd_logging(true);
     return;
@@ -5882,21 +5874,11 @@ void process_command(char* command) {
     return;
   }
   if (strcmp(command, "RTL_IQ_RETRIEVE_BEGIN") == 0) {
-#if ORC_LORA_TEST_BUILD
     if (!g_iq_rec_ready.load(std::memory_order_acquire) ||
         g_iq_rec_active.load(std::memory_order_acquire)) {
       Serial.println("RTL_IQ_RETRIEVE_ERROR capture_not_ready");
       return;
     }
-#else
-    if (g_iq_rec_last_path[0] == '\0' ||
-        g_iq_rec_active.load(std::memory_order_acquire) ||
-        g_iq_rec_export_pending.load(std::memory_order_acquire)) {
-      Serial.println("RTL_IQ_RETRIEVE_ERROR capture_not_ready");
-      return;
-    }
-#endif
-#if ORC_LORA_TEST_BUILD
     // The completed PSRAM buffer is immutable while g_iq_rec_ready is true,
     // so retrieval does not need to interrupt RTL acquisition or rendering.
     g_iq_retrieve_resume.store(false, std::memory_order_release);
@@ -5906,23 +5888,8 @@ void process_command(char* command) {
                   kRtlSampleRateSps, g_iq_rec_frequency_hz,
                   static_cast<unsigned>(g_iq_rec_sf),
                   static_cast<unsigned>(g_iq_rec_bandwidth_hz));
-#else
-    const bool running = rtl_capture_state.load(std::memory_order_acquire) ==
-                         RtlCaptureState::running;
-    g_iq_retrieve_resume.store(running, std::memory_order_release);
-    if (running) {
-      rtl_restart_requested.store(false, std::memory_order_release);
-      rtl_stop_requested.store(true, std::memory_order_release);
-    }
-    Serial.printf(running ? "RTL_IQ_RETRIEVE_STOPPING pathhex="
-                          : "RTL_IQ_RETRIEVE_READY pathhex=");
-    print_hex(reinterpret_cast<const uint8_t*>(g_iq_rec_last_path),
-              strlen(g_iq_rec_last_path));
-    Serial.println();
-#endif
     return;
   }
-#if ORC_LORA_TEST_BUILD
   if (strcmp(command, "RTL_IQ_GET_BEGIN") == 0) {
     iq_get_begin();
     return;
@@ -5938,14 +5905,11 @@ void process_command(char* command) {
                   static_cast<unsigned>(g_iq_rec_write.load(std::memory_order_acquire)));
     return;
   }
-#endif
   if (strcmp(command, "RTL_IQ_RETRIEVE_END") == 0) {
-#if ORC_LORA_TEST_BUILD
     if (g_iq_get.active) iq_get_abort("host_end");
     g_iq_rec_ready.store(false, std::memory_order_release);
     g_iq_rec_write.store(0, std::memory_order_release);
     g_iq_rec_auto_triggered.store(false, std::memory_order_release);
-#endif
     if (g_iq_retrieve_resume.exchange(false, std::memory_order_acq_rel) &&
         rtl_device_ready()) {
       queue_local_rtl_listen(RtlBand::lora, rtl_ui_frequency_hz);

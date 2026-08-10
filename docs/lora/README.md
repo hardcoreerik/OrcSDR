@@ -7,6 +7,12 @@ unsigned 8-bit IQ at 960 kS/s in the `ORCIQ01` format. LoRa chirp/FEC and
 Meshtastic decoding run on the connected PC so they do not reduce the Tab5
 scope frame rate.
 
+This receive path is part of the regular `m5tab5_ui` firmware. Completed IQ
+captures remain in PSRAM for verified PC retrieval, so decoding does not stop
+the RF stream or write automatic IQ captures to SD. Use the top **NAV** tab to
+enter LoRa from the normal radio UI. `m5tab5_lora_test` remains only as an
+optional splash-free, LoRa-auto-start bench environment.
+
 The US preset opens at **906.875 MHz, SF11, BW250**, matching the current
 Meshtastic US LongFast default slot. Match the transmitting nodes' region,
 frequency slot, modem preset, and channel key when they differ.

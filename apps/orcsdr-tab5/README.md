@@ -58,6 +58,11 @@ pio run -e m5tab5_ui -t upload --upload-port COMxx
 
 Pins: pioarduino `55.03.38-1`, Arduino `3.3.8`, M5Unified `0.2.15`, M5GFX `0.2.21`.
 
+`m5tab5_ui` is the complete firmware: regular splash/home flow, NAV band
+selection, and the LoRa dashboard/PSRAM decoder capture path. The optional
+`m5tab5_lora_test` environment uses the same radio features but skips directly
+to LoRa for bench testing.
+
 Do not override the platform ESP-P4 toolchain. After flash, power-cycle if the
 device stays in download mode.
 
