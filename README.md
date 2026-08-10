@@ -1,33 +1,99 @@
 # OrcSDR
 
-### Portable, standalone software-defined radio on the ESP32-P4
+<p align="center">
+  <strong>Portable, standalone software-defined radio on the ESP32-P4</strong>
+</p>
 
-**OrcSDR turns an ESP32-P4 into a self-contained software-defined radio using an RTL-SDR Blog V4 directly over USB — no PC required.**
+<p align="center">
+  <strong>RTL-SDR Blog V4 → USB High-Speed → ESP32-P4 → DSP + Touch UI + Audio</strong>
+</p>
+
+**OrcSDR turns an ESP32-P4 into a self-contained software-defined radio using an RTL-SDR Blog V4 directly over USB — no PC, Raspberry Pi, or desktop SDR application required.**
 
 <p align="center">
   <img src="docs/images/orcsdr-tab5.png"
-       alt="OrcSDR running on the M5Stack Tab5"
+       alt="OrcSDR standalone ESP32-P4 software-defined radio running on the M5Stack Tab5 with RTL-SDR Blog V4"
        width="100%">
 </p>
 
-OrcSDR combines a touchscreen radio interface, live spectrum and waterfall visualization, audio, tuning, signal monitoring, and radio tools with a clean-room ESP-IDF USB Host driver for the **RTL-SDR Blog V4**.
+OrcSDR combines a touchscreen radio interface, live spectrum and waterfall visualization, audio, tuning, signal monitoring, radio tools, and a clean-room **ESP-IDF USB Host driver for the RTL-SDR Blog V4**.
 
-The primary reference implementation runs on the **M5Stack Tab5**, powered by the ESP32-P4.
+The primary reference implementation runs on the **M5Stack Tab5**, powered by the **ESP32-P4**.
+
+**Core technologies:** ESP32-P4 · M5Stack Tab5 · RTL-SDR Blog V4 · ESP-IDF USB Host · Software-Defined Radio · DSP · Spectrum · Waterfall · LoRa
+
+<p align="center">
+  <a href="#-flash-orcsdr-to-the-m5stack-tab5"><strong>Flash OrcSDR</strong></a>
+  &nbsp;•&nbsp;
+  <a href="#orcsdr-interface"><strong>Interface</strong></a>
+  &nbsp;•&nbsp;
+  <a href="#lora-monitoring--messaging"><strong>LoRa</strong></a>
+  &nbsp;•&nbsp;
+  <a href="#rtl-sdrv4-esp"><strong>RTL-SDRv4-ESP Driver</strong></a>
+  &nbsp;•&nbsp;
+  <a href="#development-roadmap"><strong>Roadmap</strong></a>
+</p>
 
 > [!IMPORTANT]
 > **Have a M5Stack Tab5 and RTL-SDR Blog V4?**
 >
-> Jump directly to **[Flash OrcSDR to the M5Stack Tab5](#flash-orcsdr-to-the-m5stack-tab5)** to get started.
+> Jump directly to **[Flash OrcSDR to the M5Stack Tab5](#-flash-orcsdr-to-the-m5stack-tab5)** to get started.
 
+> [!NOTE]
 > **Project status:** OrcSDR is under active development. The Tab5 application is the reference implementation while the reusable `RTL-SDRv4-ESP` driver continues to be separated and hardened as a standalone ESP-IDF component.
+
+---
+
+## Why OrcSDR?
+
+Traditional RTL-SDR systems usually depend on a desktop computer, Raspberry Pi, or another general-purpose host running SDR software.
+
+OrcSDR takes a different approach:
+
+```text
+Traditional SDR
+
+RTL-SDR
+   │
+   ▼
+PC / Raspberry Pi
+   │
+   ▼
+Desktop SDR Application
+```
+
+```text
+OrcSDR
+
+RTL-SDR Blog V4
+   │
+   │ USB High-Speed
+   ▼
+ESP32-P4
+   │
+   ├── DSP
+   ├── Spectrum
+   ├── Waterfall
+   ├── Audio
+   ├── Touch UI
+   └── Radio Tools
+```
+
+The **ESP32-P4 communicates directly with the RTL-SDR Blog V4 through USB Host**, processes radio data locally, and provides the complete user interface directly on the Tab5 display.
+
+**The result is a portable, embedded SDR appliance instead of a peripheral that needs a computer attached to it.**
 
 ---
 
 ## What is OrcSDR?
 
-Traditional RTL-SDR setups usually depend on a desktop computer, Raspberry Pi, or another general-purpose host.
+OrcSDR explores how much of the traditional PC-based software-defined radio stack can be moved onto embedded hardware.
 
-OrcSDR takes a different approach:
+The goal is not to reproduce a desktop SDR workstation on an ESP32.
+
+The goal is to make **useful, portable, self-contained radio appliances** possible using inexpensive SDR hardware and embedded processors.
+
+The current reference system looks like this:
 
 ```text
 ┌─────────────────────┐        USB Host        ┌──────────────────┐
@@ -44,8 +110,6 @@ OrcSDR takes a different approach:
 └─────────────────────┘
 ```
 
-The ESP32-P4 communicates directly with the RTL-SDR Blog V4 through USB Host, processes radio data locally, and provides the user interface directly on the Tab5 display.
-
 **No desktop SDR application is required.**
 
 ---
@@ -56,7 +120,7 @@ OrcSDR is designed around a touchscreen-first radio experience.
 
 <p align="center">
   <img src="docs/images/orcsdr-tab5_2.png"
-       alt="OrcSDR spectrum browser, band navigation, and CB radio interfaces"
+       alt="OrcSDR spectrum browser, band navigation, waterfall, and CB radio interfaces on M5Stack Tab5"
        width="100%">
 </p>
 
@@ -69,7 +133,6 @@ Current interface work includes:
 - Weather Radio / WX
 - VHF and amateur-radio spectrum browsing
 - CB radio interface
-- LoRa monitoring
 - Frequency presets
 - Spectrum zoom and navigation
 - Touch tuning
@@ -78,9 +141,37 @@ Current interface work includes:
 - Speaker and volume control
 - IQ capture tools
 
+---
+
+## LoRa Monitoring & Messaging
+
+OrcSDR also includes dedicated **LoRa radio tooling** for monitoring digital radio activity directly on the ESP32-P4 / M5Stack Tab5 platform.
+
+The LoRa interface combines packet monitoring, signal telemetry, a live scope, waterfall visualization, message monitoring, and radio controls in one touchscreen view.
+
+<p align="center">
+  <img src="docs/images/orcsdr-tab5_3.png"
+       alt="OrcSDR LoRa packet monitoring, telemetry, live scope, waterfall, and messaging interface"
+       width="100%">
+</p>
+
+Current LoRa capabilities include:
+
+- Live packet and telemetry monitoring
+- Packet ID and node information
+- RSSI / SNR signal information
+- Live scope visualization
+- Waterfall display
+- Message monitoring
+- Frequency controls
+- Bandwidth controls
+- Spreading-factor controls
+- IQ capture support
+- LoRa-specific radio status and diagnostics
+
 <p align="center">
   <strong>Ready to try it on real hardware?</strong><br>
-  <a href="#flash-orcsdr-to-the-m5stack-tab5">Flash OrcSDR to your M5Stack Tab5 →</a>
+  <a href="#-flash-orcsdr-to-the-m5stack-tab5">Flash OrcSDR to your M5Stack Tab5 →</a>
 </p>
 
 ---
@@ -88,25 +179,21 @@ Current interface work includes:
 # 🚀 Flash OrcSDR to the M5Stack Tab5
 
 > [!IMPORTANT]
-> **This is the fastest path to getting OrcSDR running on real hardware.**
+> **Fastest path to running OrcSDR on real hardware**
 >
-> The reference application is built for the **M5Stack Tab5 + RTL-SDR Blog V4**.
+> Reference hardware: **M5Stack Tab5 + RTL-SDR Blog V4**
 
-### What you need
+### Requirements
 
 - **M5Stack Tab5**
 - **RTL-SDR Blog V4**
+- PlatformIO
+- Python 3.10–3.13
 - USB cable for flashing the Tab5
 - USB connection from the Tab5 USB Host port to the RTL-SDR
 - Antenna appropriate for what you want to receive
-- Python 3.10–3.13
-- PlatformIO
-
----
 
 ### 1. Clone OrcSDR
-
-Open a terminal and clone the repository:
 
 ```bash
 git clone https://github.com/hardcoreerik/OrcSDR.git
@@ -121,47 +208,27 @@ git pull
 cd apps/orcsdr-tab5
 ```
 
----
+### 2. Find the Tab5 port
 
-### 2. Connect the M5Stack Tab5
-
-Connect the Tab5 to your computer over USB.
-
-On Windows, determine which COM port was assigned to the device.
-
-It will normally look something like:
-
-```text
-COM5
-COM8
-COM12
-```
-
-PlatformIO can also list detected devices:
+Connect the Tab5 to your computer over USB and list detected devices:
 
 ```bash
 pio device list
 ```
 
----
+On Windows, note the assigned COM port. For example:
+
+```text
+COM8
+```
 
 ### 3. Build OrcSDR
 
-From:
-
-```text
-OrcSDR/apps/orcsdr-tab5
-```
-
-run:
+From `OrcSDR/apps/orcsdr-tab5`:
 
 ```bash
 pio run -e m5tab5_ui
 ```
-
-PlatformIO will configure the environment and build the Tab5 firmware.
-
----
 
 ### 4. Flash OrcSDR
 
@@ -171,54 +238,34 @@ Replace `COMxx` with the serial port assigned to your Tab5:
 pio run -e m5tab5_ui -t upload --upload-port COMxx
 ```
 
-For example:
+Example:
 
 ```bash
 pio run -e m5tab5_ui -t upload --upload-port COM8
 ```
 
-> [!TIP]
-> If you don't know the correct port, run:
->
-> ```bash
-> pio device list
-> ```
-
----
-
 ### 5. Connect the RTL-SDR Blog V4
 
-After flashing OrcSDR, connect the SDR to the Tab5's USB Host interface.
+Connect the SDR to the Tab5 USB Host interface:
 
 ```text
-              ┌───────────────────┐
-              │   M5Stack Tab5    │
-              │     ESP32-P4      │
-              └─────────┬─────────┘
-                        │
-                    USB Host
-                        │
-                        ▼
-              ┌───────────────────┐
-              │ RTL-SDR Blog V4   │
-              └─────────┬─────────┘
-                        │
-                     RF Input
-                        │
-                        ▼
-                     Antenna
+M5Stack Tab5
+     │
+ USB Host
+     │
+     ▼
+RTL-SDR Blog V4
+     │
+ RF Input
+     │
+     ▼
+  Antenna
 ```
 
----
-
-### 6. Start exploring
-
-Power or reset the Tab5 and OrcSDR should start into the radio interface.
-
-From there you can begin exploring the available radio modes, spectrum display, waterfall, tuning controls, presets, and other SDR tools.
+Power-cycle or reset the Tab5 after flashing if needed.
 
 > [!NOTE]
-> OrcSDR is under active development. Some modes and controls are experimental and may change between builds.
+> OrcSDR is under active development. Some radio modes, DSP paths, and controls are experimental and may change between releases.
 
 ---
 
@@ -254,7 +301,7 @@ From there you can begin exploring the available radio modes, spectrum display, 
 - VHF spectrum browsing
 - Amateur-radio band navigation
 - CB interface
-- LoRa monitoring
+- LoRa packet and message monitoring
 - IQ capture
 - Recording and analysis tooling
 - Frequency and bandwidth controls
@@ -325,17 +372,13 @@ It provides the user-facing SDR experience on the M5Stack Tab5, including the ra
 
 Current UI capabilities include:
 
-- Spectrum visualization
-- Waterfall visualization
-- FM / AM / WX modes
+- Spectrum and waterfall visualization
+- FM / AM / WX radio modes
 - CB interface
-- LoRa monitoring
-- Speaker control
-- Volume control
-- Touch tuning
-- Scope scroll-tuning
-- Frequency presets
-- Band navigation
+- LoRa monitoring and messaging
+- Touch tuning and scope navigation
+- Frequency presets and band navigation
+- Speaker and volume control
 - Signal and radio status
 - IQ capture tools
 
@@ -347,7 +390,9 @@ Application-specific documentation is available here:
 
 # RTL-SDRv4-ESP
 
-At the core of OrcSDR is **RTL-SDRv4-ESP**, a standalone ESP-IDF USB Host driver for the RTL-SDR Blog V4.
+At the core of OrcSDR is **RTL-SDRv4-ESP**, a standalone ESP-IDF USB Host driver for the **RTL-SDR Blog V4**.
+
+This driver is a major part of the OrcSDR project: it is intended to let ESP32-P4 applications communicate with an RTL-SDR V4 directly, without relying on a desktop host or the OrcSDR user interface.
 
 ```text
 components/rtl_sdr_v4_esp/
@@ -546,6 +591,18 @@ The goal is to make **useful, portable, self-contained radio appliances** possib
 
 ---
 
+## The Orc Ecosystem
+
+OrcSDR is part of the broader **Orc Ecosystem** — a collection of projects exploring local AI, embedded radio, mesh networking, distributed systems, and custom hardware/software integration.
+
+- **[TheOrc](https://github.com/hardcoreerik/TheOrc)** — local-first multi-agent AI orchestration and distributed compute.
+- **[OrcSDR](https://github.com/hardcoreerik/OrcSDR)** — embedded software-defined radio and RTL-SDR V4 tooling.
+- **[OrcMesh](https://github.com/hardcoreerik/OrcMesh)** — LoRa, Meshtastic, MeshCore, and distributed embedded mesh networking.
+
+Each project is useful on its own, but the larger direction is toward devices that can **communicate, observe their RF environment, process data locally, and cooperate as parts of a distributed system**.
+
+---
+
 ## Contributing
 
 OrcSDR is under active development.
@@ -596,9 +653,12 @@ https://github.com/hardcoreerik/OrcSDR
 **RTL-SDRv4-ESP Driver**  
 [`components/rtl_sdr_v4_esp/`](components/rtl_sdr_v4_esp/)
 
+**The Orc Ecosystem**  
+[TheOrc](https://github.com/hardcoreerik/TheOrc) · [OrcSDR](https://github.com/hardcoreerik/OrcSDR) · [OrcMesh](https://github.com/hardcoreerik/OrcMesh)
+
 ---
 
 <p align="center">
-  <strong>ESP32-P4 + RTL-SDR Blog V4 + USB Host</strong><br>
+  <strong>ESP32-P4 + RTL-SDR Blog V4 + USB High-Speed</strong><br>
   Portable, standalone software-defined radio.
 </p>
