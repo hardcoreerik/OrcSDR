@@ -5338,9 +5338,6 @@ void request_hot_retune(uint32_t frequency_hz) {
 // Only this path may call M5.update() while rtl_ui_active — concurrent update
 // from loop() was silencing the ES8388 speaker path after 0.8.26.
 void poll_sdr_touch_from_stream() {
-#if ORC_LORA_TEST_BUILD
-  return;
-#endif
   static uint32_t last_touch_poll_ms = 0;
   static bool flick_thresh_set = false;
   static bool scope_dragging = false;
