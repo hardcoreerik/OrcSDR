@@ -108,7 +108,7 @@ extern "C" {
  */
 uint32_t rtl_sdr_v4_esp_get_version(void);
 
-/** Human-readable version, e.g. "0.3.0". Never NULL; static storage. */
+/** Human-readable version, e.g. "0.4.1". Never NULL; static storage. */
 const char *rtl_sdr_v4_esp_get_version_string(void);
 
 /* -------------------------------------------------------------------------- */
@@ -400,7 +400,7 @@ uint32_t rtl_sdr_v4_esp_get_capabilities(void);
  * (always cleared first when out_handle is non-NULL).
  *
  * Does not require a dongle present. Device attach is reported via events
- * when USB streaming is fully extracted.
+ * as devices attach and detach.
  */
 esp_err_t rtl_sdr_v4_esp_install(const rtl_sdr_v4_esp_config_t *config,
                                  rtl_sdr_v4_esp_handle_t *out_handle);
@@ -452,7 +452,7 @@ esp_err_t rtl_sdr_v4_esp_get_metrics(rtl_sdr_v4_esp_handle_t handle,
  *  - ESP_ERR_INVALID_ARG / BAD_RATE / BAD_FREQ
  *  - RTL_SDR_V4_ESP_ERR_BUSY if already streaming or stopping
  *  - RTL_SDR_V4_ESP_ERR_NO_DEVICE if no V4
- *  - RTL_SDR_V4_ESP_ERR_UNSUPPORTED while USB path extraction is incomplete
+ *  - RTL_SDR_V4_ESP_ERR_UNSUPPORTED when the requested path is not built
  *  - RTL_SDR_V4_ESP_ERR_REENTRANT if called from event callback
  *  - RTL_SDR_V4_ESP_ERR_USB / TIMEOUT / FAULT on hardware failure
  *

@@ -19,34 +19,36 @@ Never claim a target without device identity, procedure, and observed result.
 
 ## Extraction gates
 
-### Gate 1 — Component skeleton (current)
+### Gate 1 — Component skeleton (**complete**)
 
 - [x] Public C API header
 - [x] IDF component CMake / Kconfig / idf_component.yml
 - [x] Private clean-room transfer tables
-- [x] install/uninstall lifecycle stubs
+- [x] install/uninstall lifecycle
 
-### Gate 2 — Behavior parity with Tab5 radio
+### Gate 2 — Behavior parity with Tab5 radio (**implemented; soak pending**)
 
 Move from `apps/orcsdr-tab5/ui/main.cpp` into the component **without** UI/audio:
 
-1. V4 identity filter and hot-plug
-2. Interface claim / release
-3. Expected-STALL init sequence
-4. 960 kS/s sample-rate records
-5. Final-tune template + PLL packing for custom Hz
-6. Bulk IN pipeline, stop, cleanup
-7. Metrics (bytes, min/max/mean, effective sps)
+1. [x] V4 identity filter and hot-plug events
+2. [x] Interface claim / release
+3. [x] Expected-STALL init sequence
+4. [x] 960 kS/s sample-rate records
+5. [x] Final-tune template + PLL packing for custom Hz
+6. [x] Bulk IN pipeline, stop, cleanup
+7. [x] Metrics (bytes, min/max/mean, effective sps)
 
-**Pass:** same serial evidence as Tab5 continuous KZEL/NOAA without M5Unified.
+**Remaining pass evidence:** five-minute serial smoke outside M5Unified at at
+least 95% effective sample rate, zero fatal USB errors, and bounded drop counts.
 
-### Gate 3 — Dual-core friendly IQ delivery
+### Gate 3 — Dual-core friendly IQ delivery (**implemented; recovery pending**)
 
-- USB owner task only talks to USB Host API
-- SPSC / FreeRTOS queue of IQ blocks to consumers
-- Retune only when no bulk URB is outstanding
+- [x] USB owner task only talks to USB Host API
+- [x] FreeRTOS queue of IQ blocks to consumers
+- [x] Retune drains bulk before EP0
+- [ ] Unplug/replug recovery without reboot on Tab5 and a second P4 board
 
-### Gate 4 — Second board
+### Gate 4 — Second board (**not started**)
 
 Repeat Gate 2 on Waveshare ESP32-P4 (or other measured P4) with board BSP for VBUS only.
 

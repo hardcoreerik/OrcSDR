@@ -1,10 +1,10 @@
 # RTL-SDRv4-ESP public API (best-in-class contract)
 
 **Header:** `components/rtl_sdr_v4_esp/include/rtl_sdr_v4_esp.h`  
-**Version:** 0.3.0
+**Version:** 0.4.1
 
 This document is the human contract for a **professional, deterministic** driver API.
-The implementation must not break these rules when USB streaming is fully extracted.
+The implementation must not break these rules as streaming and retune evolve.
 
 ---
 
@@ -19,7 +19,7 @@ The implementation must not break these rules when USB streaming is fully extrac
 | Stable ABI growth | `struct_size` on config structs; new fields only at end |
 | Clear failures | Component error codes + `err_to_name` + `get_last_error` |
 | Feature discovery | `get_capabilities`, rate allowlist, `get_supported_rates` |
-| No silent over-claim | CAP_STREAM/RETUNE off until extraction; start → UNSUPPORTED |
+| No silent over-claim | Capability bits are enabled only for implemented paths |
 | Idempotent teardown | `stop` when idle; `uninstall(NULL)`; skip events during destroy |
 
 ---
@@ -114,15 +114,15 @@ Prefer component codes over generic `INVALID_STATE` when the app can branch:
 
 ---
 
-## Capabilities (0.3.0 binary)
+## Capabilities (0.4.1 binary)
 
 | Flag | Status |
 |---|---|
 | `METRICS` | On |
-| `CUSTOM_HZ` | Policy on (stream path pending) |
-| `STREAM` | Off until Gate 2 |
-| `RETUNE` | Off until Gate 2 |
-| `HOTPLUG` | Off until implemented |
+| `CUSTOM_HZ` | On |
+| `STREAM` | On |
+| `RETUNE` | On; bulk drains before EP0 apply |
+| `HOTPLUG` | On; events implemented, unplug/replug recovery soak pending |
 | `IQ_ACQUIRE` | Off until acquire mode ships |
 | `BIAS_TEE` / `DIRECT_SAMPLING` | Reserved off |
 
@@ -132,7 +132,7 @@ Apps must:
 if (rtl_sdr_v4_esp_get_capabilities() & RTL_SDR_V4_ESP_CAP_STREAM) {
     /* start guaranteed to attempt USB */
 } else {
-    /* expect UNSUPPORTED; use Tab5 app path or wait for release */
+    /* feature is unavailable in this build */
 }
 ```
 
@@ -155,7 +155,7 @@ rtl_sdr_v4_esp_stream_config_default(&st);
 st.preset = RTL_SDR_V4_ESP_PRESET_CUSTOM_HZ;
 st.frequency_hz = 100100000;
 err = rtl_sdr_v4_esp_start(sdr, &st);
-/* handle UNSUPPORTED until extraction; check CAP_STREAM */
+/* handle hardware and validation errors; check CAP_STREAM first */
 
 /* teardown always */
 (void)rtl_sdr_v4_esp_stop(sdr, 0); /* 0 = default timeout */
@@ -189,18 +189,20 @@ static void on_evt(rtl_sdr_v4_esp_event_t ev, const void *payload, void *ctx)
 
 ---
 
-## Implementation checklist (streaming fill-in)
+## Streaming invariants
 
-When USB code lands, preserve:
+Preserve these implemented invariants:
 
-- [ ] No EP0 while bulk outstanding  
-- [ ] start failure never leaves interface claimed  
-- [ ] stop always releases interface (best effort)  
-- [ ] metrics updated under lock briefly or atomics  
-- [ ] EVT_IQ_BLOCK never holds mutex across app callback  
-- [ ] retune queued to USB owner task only  
-- [ ] CAP_STREAM | CAP_RETUNE set only when real path works  
-- [ ] reentrancy guard still rejects lifecycle from callbacks  
+- [x] No EP0 while bulk is outstanding
+- [x] Start failure has a cleanup path
+- [x] Stop releases the interface best effort
+- [x] Metrics use bounded synchronization
+- [x] `EVT_IQ_BLOCK` does not hold the API mutex across the app callback
+- [x] Retune drains bulk before the USB control sequence
+- [x] `CAP_STREAM | CAP_RETUNE` match working code paths
+- [x] Reentrancy guard rejects lifecycle calls from callbacks
+
+Hardware soak and recovery acceptance remain tracked in `PROJECT_STATUS.md`.
 
 ---
 

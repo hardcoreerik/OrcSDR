@@ -3,6 +3,10 @@
 Date: 2026-08-06  
 Depends on: `COMPETITIVE_ANALYSIS_ESP32_RTLSDR.md`, `PORTING.md`, clean-room spec.
 
+Status refreshed: **2026-08-08**. Current priorities and evidence live in
+[`../PROJECT_STATUS.md`](../PROJECT_STATUS.md). This document retains the
+detailed workstream design.
+
 This document turns peer lessons into **executable OrcSDR work** without
 violating the clean-room driver boundary.
 
@@ -22,19 +26,19 @@ violating the clean-room driver boundary.
 
 | Gap | Peer proof | OrcSDR today | Priority |
 |---|---|---|---|
-| USB owner ≠ UI/DSP core | wifi-rtlsdr Core0/1; ADS-B task work | Single-task / partial | **P0** |
-| PSRAM SPSC IQ ring | wifi-rtlsdr 2–8 MB | Not in driver | **P0** |
-| Full stream in component | both ports stream in-driver | Skeleton `start()` NOT_FINISHED | **P0** |
-| Hot-plug + STALL recovery | ADS-B Scope | Partial / app-level | **P1** |
+| USB owner ≠ UI/DSP core | wifi-rtlsdr Core0/1; ADS-B task work | Implemented: USB core 0, delivery/app core 1 | **Done** |
+| PSRAM IQ ring | wifi-rtlsdr 2–8 MB | Implemented fixed-slot queue; soak pending | **P1** |
+| Full stream in component | both ports stream in-driver | Implemented in v0.4.1 | **Done** |
+| Hot-plug + STALL recovery | ADS-B Scope | Events/init policy implemented; replug soak pending | **P1** |
 | rtl_tcp (public protocol) | xtrsdr + wifi-rtlsdr | None | **P1** |
 | Ethernet high-rate path | both claim multi-MS/s on eth | None | **P1** |
-| Safe retune (no bulk conflict) | implied by their stacks | Fixed once; must stay | **P0** |
+| Safe retune (no bulk conflict) | implied by their stacks | Implemented: drain, EP0 apply, resume | **Done** |
 | WiFi IQ streaming | wifi-rtlsdr 1 MS/s class | None | **P2** |
 | SpyServer / SoapyRemote | wifi-rtlsdr | None | **P2** |
 | WebSDR browser | wifi-rtlsdr | On-device UI only | **P2** |
 | ADS-B decode | ADS-B Scope | None | **P3** |
 | Bias-tee / Blog HF path | wifi-rtlsdr gaps doc | Unverified / not public API | **P2** (measure first) |
-| PIE SIMD FFT | wifi-rtlsdr | Soft FFT in app | **P2** |
+| PIE SIMD / ESP-DSP FFT | wifi-rtlsdr | Soft FFT; profile before replacing | **P1 performance** |
 | FS ESP32-S2/S3 matrix | xtrsdr S2 limits | P4 only measured | **P3** |
 
 ---
@@ -185,31 +189,27 @@ Document every board: USB connector, VBUS enable, HS vs FS, max sustained sps, t
 ## Suggested milestone order
 
 ```text
-M0  (done)   Component skeleton + OrcSDR monorepo + peer analysis docs
-M1  (2–4 w)  Gate A: full start/stop/IQ in rtl_sdr_v4_esp; Tab5 uses it
-M2  (2–3 w)  Gate C: hot-plug + STALL + dual-core ring default
-M3  (2–4 w)  Gate B: orcsdr-rtltcp on Ethernet P4 board
-M4  (ongoing) Gate D audio/UI polish; optional WebSDR / SpyServer
+M0  (done)        Component skeleton + OrcSDR monorepo + peer analysis docs
+M1  (implemented) Full start/stop/IQ in rtl_sdr_v4_esp; Tab5 uses it
+M2  (active)      Five-minute soak, hot-plug recovery, audio+graphics performance
+M3  (next)        Second P4 board, then orcsdr-rtltcp over Ethernet
+M4  (later)       Optional WebSDR / SpyServer only after rtl_tcp is stable
 ```
 
 ---
 
-## Concrete file checklist for M1
+## Implemented M1 layout and remaining evidence
 
 ```text
 components/rtl_sdr_v4_esp/
-  src/rtl_sdr_v4_esp_usb.c       # host client, bulk, control
-  src/rtl_sdr_v4_esp_tune.c      # presets + PLL pack (from our math)
-  src/rtl_sdr_v4_esp_session.c   # state machine + command queue
-  src/rtl_sdr_v4_esp_ring.c      # IQ ring
-  private/rtl_sdr_v4_transfers.hpp  # existing
-  test/host_build/               # pure logic tests where possible
+  src/rtl_sdr_v4_esp.cpp         # host, tune, state machine, bulk, IQ delivery
+  private/rtl_sdr_v4_transfers.hpp
 
 apps/orcsdr-tab5/ui/
   # thin consumer of rtl_sdr_v4_esp_* only
 
 examples/p4_serial_smoke/
-  # print metrics once/sec while streaming
+  # remaining: five-minute metrics and recovery acceptance
 ```
 
 ---
