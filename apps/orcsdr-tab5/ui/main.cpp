@@ -2829,6 +2829,16 @@ const char* lora_port_label(uint16_t port) {
   }
 }
 
+void format_lora_destination(char* output, size_t output_size,
+                             uint32_t destination) {
+  if (destination == UINT32_MAX) {
+    strlcpy(output, "ALL NODES", output_size);
+  } else {
+    snprintf(output, output_size, "!%08lx",
+             static_cast<unsigned long>(destination));
+  }
+}
+
 void draw_lora_asset(const char* path) {
   const bool image_ok = ensure_tab5_sd() && g_sd_fs->exists(path) &&
                         M5.Display.drawJpgFile(*g_sd_fs, path, kSpectrumX, kSpectrumY);
@@ -2881,9 +2891,11 @@ void draw_lora_live_view(bool force) {
     M5.Display.drawString("WAITING FOR PACKET", left_x + 16, kSpectrumY + 142);
   } else {
     char value[144];
-    snprintf(value, sizeof(value), "FROM !%08lx  TO !%08lx  %s  ID %08lx",
+    char destination[16];
+    format_lora_destination(destination, sizeof(destination), packets[0].destination);
+    snprintf(value, sizeof(value), "FROM !%08lx  TO %s  %s  ID %08lx",
              static_cast<unsigned long>(packets[0].sender),
-             static_cast<unsigned long>(packets[0].destination),
+             destination,
              lora_port_label(packets[0].port),
              static_cast<unsigned long>(packets[0].packet_id));
     M5.Display.setTextSize(2);
@@ -2923,9 +2935,12 @@ void draw_lora_live_view(bool force) {
   M5.Display.drawString("LAST MESSAGE", scope_x + 14, kSpectrumY + 218);
   if (text_index < kLoraDisplayPacketCount && packets[text_index].sender != 0) {
     char value[96];
-    snprintf(value, sizeof(value), "LONGFAST / %s  TO !%08lx",
+    char destination[16];
+    format_lora_destination(destination, sizeof(destination),
+                            packets[text_index].destination);
+    snprintf(value, sizeof(value), "LONGFAST / %s  TO %s",
              lora_port_label(packets[text_index].port),
-             static_cast<unsigned long>(packets[text_index].destination));
+             destination);
     M5.Display.setTextColor(TFT_CYAN);
     M5.Display.drawString(value, scope_x + 14, kSpectrumY + 246);
     char line[21]{};
@@ -2985,9 +3000,12 @@ void draw_lora_packets_view(bool force) {
     if (packets[index].sender == 0) continue;
     const int y = kSpectrumY + kRowY[index];
     char value[96];
-    snprintf(value, sizeof(value), "!%08lx  >  !%08lx   %s   %lus",
+    char destination[16];
+    format_lora_destination(destination, sizeof(destination),
+                            packets[index].destination);
+    snprintf(value, sizeof(value), "!%08lx  >  %s   %s   %lus",
              static_cast<unsigned long>(packets[index].sender),
-             static_cast<unsigned long>(packets[index].destination),
+             destination,
              lora_port_label(packets[index].port),
              static_cast<unsigned long>((millis() - packets[index].received_ms) / 1000u));
     M5.Display.setTextSize(3);
