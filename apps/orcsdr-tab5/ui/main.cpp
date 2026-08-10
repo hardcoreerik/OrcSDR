@@ -467,6 +467,19 @@ struct LoraDisplayPacket {
 };
 constexpr size_t kLoraDisplayPacketCount = 8;
 static LoraDisplayPacket lora_display_packets[kLoraDisplayPacketCount]{};
+struct LoraLogRecord {
+  LoraDisplayPacket packet{};
+  uint32_t frequency_hz = 0;
+};
+constexpr size_t kLoraLogQueueDepth = 32;
+constexpr char kLoraLogPath[] = "/orcsdr/lora_packets.csv";
+static QueueHandle_t lora_log_queue = nullptr;
+static TaskHandle_t lora_log_task_handle = nullptr;
+static std::atomic<bool> lora_log_requested{false};
+static std::atomic<bool> lora_log_ready{false};
+static std::atomic<bool> lora_log_error{false};
+static std::atomic<uint32_t> lora_log_dropped{0};
+static std::atomic<uint32_t> lora_log_last_packet_ms{0};
 struct LoraNodePosition {
   uint32_t node = 0;
   uint32_t received_ms = 0;
@@ -740,6 +753,7 @@ bool audio_rec_stop_and_export();
 void audio_rec_append(const int16_t* samples, size_t count);
 void audio_rec_status_print();
 bool ensure_tab5_sd();
+void bump_rtl_ui();
 const char* orc_tool_name(OrcTool tool);
 OrcTool orc_tool_current();
 void set_orc_tool(OrcTool tool);
@@ -1290,6 +1304,134 @@ bool ensure_tab5_sd() {
   g_sd_ready = true;
   Serial.println("RTL_REC_SD ready bus=spi");
   return true;
+}
+
+size_t format_lora_csv(char* output, size_t output_size,
+                       const LoraLogRecord& record) {
+  if (output == nullptr || output_size < 4) return 0;
+  const LoraDisplayPacket& packet = record.packet;
+  char destination[16];
+  if (packet.destination == UINT32_MAX) {
+    strlcpy(destination, "broadcast", sizeof(destination));
+  } else {
+    snprintf(destination, sizeof(destination), "!%08lx",
+             static_cast<unsigned long>(packet.destination));
+  }
+  int used = snprintf(
+      output, output_size,
+      "%lu,%u,!%08lx,%s,%08lx,%u,%d,%d,%ld,%ld,\"",
+      static_cast<unsigned long>(packet.received_ms), record.frequency_hz,
+      static_cast<unsigned long>(packet.sender),
+      destination,
+      static_cast<unsigned long>(packet.packet_id),
+      static_cast<unsigned>(packet.port), static_cast<int>(packet.snr_tenths),
+      static_cast<int>(packet.signal_tenths), static_cast<long>(packet.latitude_e7),
+      static_cast<long>(packet.longitude_e7));
+  if (used < 0 || static_cast<size_t>(used) >= output_size) return 0;
+  size_t position = static_cast<size_t>(used);
+  for (const char* text = packet.text; *text && position + 4 < output_size; ++text) {
+    if (*text == '"') output[position++] = '"';
+    output[position++] = *text;
+  }
+  output[position++] = '"';
+  output[position++] = '\n';
+  output[position] = '\0';
+  return position;
+}
+
+void lora_sd_log_task(void*) {
+  File file;
+  static char batch[4096];
+  static char line[512];
+  size_t batch_bytes = 0;
+  uint32_t last_flush_ms = millis();
+  for (;;) {
+    LoraLogRecord record;
+    if (xQueueReceive(lora_log_queue, &record, pdMS_TO_TICKS(200)) == pdTRUE) {
+      const size_t line_bytes = format_lora_csv(line, sizeof(line), record);
+      if (line_bytes > 0 && batch_bytes + line_bytes <= sizeof(batch)) {
+        memcpy(batch + batch_bytes, line, line_bytes);
+        batch_bytes += line_bytes;
+      } else {
+        lora_log_dropped.fetch_add(1, std::memory_order_relaxed);
+      }
+    }
+
+    const bool requested = lora_log_requested.load(std::memory_order_acquire);
+    if (requested && !file && !lora_log_error.load(std::memory_order_relaxed)) {
+      if (ensure_tab5_sd() &&
+          (g_sd_fs->exists("/orcsdr") || g_sd_fs->mkdir("/orcsdr"))) {
+        file = g_sd_fs->open(kLoraLogPath, FILE_APPEND, true);
+      }
+      if (file) {
+        if (file.size() == 0) {
+          file.print("uptime_ms,frequency_hz,from,to,packet_id,port,snr_tenths,"
+                     "signal_tenths,latitude_e7,longitude_e7,text\n");
+          file.flush();
+        }
+        lora_log_ready.store(true, std::memory_order_release);
+        Serial.printf("LORA_SD_LOG_READY path=\"%s\"\n", kLoraLogPath);
+      } else {
+        lora_log_error.store(true, std::memory_order_release);
+        Serial.println("LORA_SD_LOG_ERROR open_failed");
+      }
+    }
+
+    const uint32_t now = millis();
+    const bool idle_after_packet =
+        now - lora_log_last_packet_ms.load(std::memory_order_relaxed) >= 500u;
+    const bool flush_due = batch_bytes > 0 &&
+                           (!requested || batch_bytes >= 3072u ||
+                            now - last_flush_ms >= 5000u);
+    if (file && flush_due && (idle_after_packet || !requested)) {
+      if (file.write(reinterpret_cast<const uint8_t*>(batch), batch_bytes) !=
+          batch_bytes) {
+        lora_log_error.store(true, std::memory_order_release);
+        Serial.println("LORA_SD_LOG_ERROR write_failed");
+      }
+      file.flush();
+      batch_bytes = 0;
+      last_flush_ms = now;
+    }
+    if (!requested && file) {
+      file.close();
+      lora_log_ready.store(false, std::memory_order_release);
+      Serial.printf("LORA_SD_LOG_STOPPED dropped=%lu\n",
+                    static_cast<unsigned long>(
+                        lora_log_dropped.load(std::memory_order_relaxed)));
+    }
+  }
+}
+
+void set_lora_sd_logging(bool enabled) {
+  if (enabled) {
+    if (lora_log_queue == nullptr) {
+      lora_log_queue = xQueueCreate(kLoraLogQueueDepth, sizeof(LoraLogRecord));
+    }
+    if (lora_log_queue == nullptr ||
+        (lora_log_task_handle == nullptr &&
+         xTaskCreatePinnedToCore(lora_sd_log_task, "lora_sd_log", 6144, nullptr, 1,
+                                 &lora_log_task_handle, 0) != pdPASS)) {
+      lora_log_error.store(true, std::memory_order_release);
+      Serial.println("LORA_SD_LOG_ERROR task_failed");
+      return;
+    }
+    if (!g_sd_ready) g_sd_tried = false;
+    lora_log_error.store(false, std::memory_order_release);
+  }
+  lora_log_requested.store(enabled, std::memory_order_release);
+  bump_rtl_ui();
+  Serial.printf("LORA_SD_LOG %s\n", enabled ? "ON" : "OFF");
+}
+
+void enqueue_lora_sd_log(const LoraDisplayPacket& packet) {
+  if (!lora_log_requested.load(std::memory_order_relaxed) ||
+      lora_log_queue == nullptr) return;
+  LoraLogRecord record{packet, rtl_ui_frequency_hz};
+  lora_log_last_packet_ms.store(millis(), std::memory_order_relaxed);
+  if (xQueueSend(lora_log_queue, &record, 0) != pdTRUE) {
+    lora_log_dropped.fetch_add(1, std::memory_order_relaxed);
+  }
 }
 
 static void write_le16(File& f, uint16_t v) {
@@ -3143,13 +3285,21 @@ void draw_lora_dashboard(bool static_panel) {
   static uint32_t last_second = UINT32_MAX;
   static uint32_t last_count = UINT32_MAX;
   static uint32_t last_frequency = 0;
+  static uint8_t last_log_state = UINT8_MAX;
   const uint32_t now_second = millis() / 1000u;
   const uint32_t count = lora_messages.load(std::memory_order_relaxed);
+  const uint8_t log_state =
+      lora_log_error.load(std::memory_order_relaxed)
+          ? 3
+          : (lora_log_requested.load(std::memory_order_relaxed)
+                 ? (lora_log_ready.load(std::memory_order_relaxed) ? 2 : 1)
+                 : 0);
   if (!static_panel && now_second == last_second && count == last_count &&
-      rtl_ui_frequency_hz == last_frequency) return;
+      rtl_ui_frequency_hz == last_frequency && log_state == last_log_state) return;
   last_second = now_second;
   last_count = count;
   last_frequency = rtl_ui_frequency_hz;
+  last_log_state = log_state;
 
   LoraDisplayPacket packet{};
   LoraNodePosition position{};
@@ -3183,11 +3333,33 @@ void draw_lora_dashboard(bool static_panel) {
   M5.Display.setTextColor(TFT_GREEN);
   M5.Display.drawString(value, kSpectrumX + 628, rail_y + rail_h / 2);
   const uint32_t age = packet.sender == 0 ? 0 : (millis() - packet.received_ms) / 1000u;
-  snprintf(value, sizeof(value), "PACKETS %lu   AGE %lus",
-           static_cast<unsigned long>(count), static_cast<unsigned long>(age));
+  snprintf(value, sizeof(value), "PACKETS %lu  AGE %lus  DROP %lu",
+           static_cast<unsigned long>(count), static_cast<unsigned long>(age),
+           static_cast<unsigned long>(
+               lora_log_dropped.load(std::memory_order_relaxed)));
   M5.Display.setTextSize(1);
   M5.Display.setTextColor(TFT_LIGHTGREY);
-  M5.Display.drawString(value, kSpectrumX + 943, rail_y + rail_h / 2);
+  M5.Display.drawString(value, kSpectrumX + 943, rail_y + 16);
+  constexpr int log_box_x = kSpectrumX + 943;
+  constexpr int log_box_y = rail_y + 31;
+  constexpr int log_box_size = 18;
+  const uint16_t log_color = log_state == 3   ? TFT_RED
+                             : log_state == 2 ? TFT_GREEN
+                             : log_state == 1 ? TFT_YELLOW
+                                              : TFT_LIGHTGREY;
+  M5.Display.drawRect(log_box_x, log_box_y, log_box_size, log_box_size, log_color);
+  if (log_state == 2) {
+    M5.Display.drawLine(log_box_x + 4, log_box_y + 9, log_box_x + 8,
+                        log_box_y + 13, log_color);
+    M5.Display.drawLine(log_box_x + 8, log_box_y + 13, log_box_x + 15,
+                        log_box_y + 4, log_color);
+  }
+  const char* log_label = log_state == 3   ? "SD ERROR"
+                          : log_state == 2 ? "SD LOG ON"
+                          : log_state == 1 ? "SD STARTING"
+                                           : "SD LOG OFF";
+  M5.Display.setTextColor(log_color);
+  M5.Display.drawString(log_label, log_box_x + 27, log_box_y + 9);
 }
 
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
@@ -4751,6 +4923,7 @@ bool lora_present_host_message(char* fields) {
     const unsigned char value = static_cast<unsigned char>(*p);
     if (value < 0x20 || value == 0x7f) *p = ' ';
   }
+  LoraDisplayPacket logged_packet;
   portENTER_CRITICAL(&lora_message_mux);
   memmove(&lora_display_packets[1], &lora_display_packets[0],
           sizeof(lora_display_packets[0]) * (kLoraDisplayPacketCount - 1));
@@ -4760,7 +4933,9 @@ bool lora_present_host_message(char* fields) {
   lora_display_packets[0].packet_id = packet_id;
   lora_display_packets[0].received_ms = millis();
   lora_display_packets[0].port = 1;
+  logged_packet = lora_display_packets[0];
   portEXIT_CRITICAL(&lora_message_mux);
+  enqueue_lora_sd_log(logged_packet);
   lora_messages.fetch_add(1, std::memory_order_relaxed);
   bump_rtl_ui();
   return true;
@@ -4799,6 +4974,7 @@ bool lora_present_host_packet(char* fields) {
     const unsigned char value = static_cast<unsigned char>(*p);
     if (value < 0x20 || value == 0x7f) *p = ' ';
   }
+  LoraDisplayPacket logged_packet;
   portENTER_CRITICAL(&lora_message_mux);
   memmove(&lora_display_packets[1], &lora_display_packets[0],
           sizeof(lora_display_packets[0]) * (kLoraDisplayPacketCount - 1));
@@ -4829,7 +5005,9 @@ bool lora_present_host_packet(char* fields) {
     lora_node_positions[0] = {
         sender, millis(), static_cast<int32_t>(latitude), static_cast<int32_t>(longitude)};
   }
+  logged_packet = lora_display_packets[0];
   portEXIT_CRITICAL(&lora_message_mux);
+  enqueue_lora_sd_log(logged_packet);
   lora_messages.fetch_add(1, std::memory_order_relaxed);
   bump_rtl_ui();
   return true;
@@ -5110,8 +5288,14 @@ bool handle_cb_touch(int32_t x, int32_t y) {
 }
 
 bool handle_lora_touch(int32_t x, int32_t y) {
-  (void)x;
-  (void)y;
+  if (rtl_ui_band != RtlBand::lora) return false;
+  if (x >= kSpectrumX + 925 && x < kSpectrumX + kSpectrumWidth && y >= 578 &&
+      y < 636) {
+    set_lora_sd_logging(
+        !lora_log_requested.load(std::memory_order_relaxed));
+    draw_lora_dashboard(false);
+    return true;
+  }
   return false;
 }
 
@@ -5653,6 +5837,29 @@ void process_command(char* command) {
     return;
   }
 #endif
+  if (strcmp(command, "LORA_SD_LOG ON") == 0) {
+    set_lora_sd_logging(true);
+    return;
+  }
+  if (strcmp(command, "LORA_SD_LOG OFF") == 0) {
+    set_lora_sd_logging(false);
+    return;
+  }
+  if (strcmp(command, "LORA_SD_LOG STATUS") == 0) {
+    Serial.printf(
+        "LORA_SD_LOG_STATUS requested=%s ready=%s error=%s queued=%u "
+        "dropped=%lu path=\"%s\"\n",
+        lora_log_requested.load(std::memory_order_relaxed) ? "true" : "false",
+        lora_log_ready.load(std::memory_order_relaxed) ? "true" : "false",
+        lora_log_error.load(std::memory_order_relaxed) ? "true" : "false",
+        lora_log_queue == nullptr
+            ? 0u
+            : static_cast<unsigned>(uxQueueMessagesWaiting(lora_log_queue)),
+        static_cast<unsigned long>(
+            lora_log_dropped.load(std::memory_order_relaxed)),
+        kLoraLogPath);
+    return;
+  }
   if (strncmp(command, "LORA_MESSAGE ", 13) == 0) {
     if (!lora_present_host_message(command + 13)) {
       Serial.println("LORA_MESSAGE_ERROR invalid_fields");

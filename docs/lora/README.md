@@ -35,7 +35,23 @@ LoRa uses one lower control row: frequency down/up, bandwidth, spreading factor,
 manual IQ capture, and start/stop. Band switching and secondary controls live in
 the top NAV tab; audio volume and duplicate band buttons are omitted. The space
 above the bottom controls is a persistent status rail for GPS, slot/SF/BW,
-verified packet count, and packet age.
+verified packet count, packet age, and an **SD LOG** checkbox. Logging is off at
+boot. Tap the checkbox to append verified dashboard packets to
+`/orcsdr/lora_packets.csv`; tap it again to stop and close the file.
+
+SD logging is intentionally decoupled from the RF display. The decoder/serial
+path only copies each completed packet into a 32-record RAM queue. A low-priority
+task on core 0 formats CSV into a 4 KB batch and writes after five seconds or
+when the batch is nearly full, waiting at least 500 ms after the newest packet.
+No SD calls occur in the scope, waterfall, USB, or render path. The status rail
+shows `SD STARTING`, `SD LOG ON`, `SD ERROR`, and the dropped-record count so a
+slow or missing card cannot silently stall the graphs.
+
+The CSV columns are `uptime_ms`, `frequency_hz`, `from`, `to`, `packet_id`,
+`port`, `snr_tenths`, `signal_tenths`, `latitude_e7`, `longitude_e7`, and `text`.
+This is decoded packet evidence, not raw IQ. Use IQ CAP when RF samples are
+required for PHY/DSP work. The equivalent serial controls are `LORA_SD_LOG ON`,
+`LORA_SD_LOG OFF`, and `LORA_SD_LOG STATUS`.
 
 The map is deliberately not a street map. It plots only coordinates explicitly
 decoded from RF packets, requires no network or tile storage, and does not infer a
