@@ -4,6 +4,8 @@ setlocal
 for %%I in ("%~dp0..") do set "ORCSDR_ROOT=%%~fI"
 set "MONITOR_PORT=%~1"
 if not defined MONITOR_PORT set "MONITOR_PORT=COM17"
+set "MESH_PORT=%~2"
+if not defined MESH_PORT set "MESH_PORT=COM24"
 set "MONITOR_PYTHON=%ORCSDR_ROOT%\.local\lora-decoder-venv\Scripts\python.exe"
 set "CAPTURE_DIR=%ORCSDR_ROOT%\.local\lora-captures"
 
@@ -18,11 +20,12 @@ if not exist "%MONITOR_PYTHON%" (
 
 cd /d "%ORCSDR_ROOT%"
 echo OrcSDR LoRa monitor: %MONITOR_PORT%
+echo Meshtastic key source: %MESH_PORT% ^(keys remain in memory only^)
 echo PC captures: %CAPTURE_DIR%
 echo Press Ctrl+C to stop.
 echo.
 
-"%MONITOR_PYTHON%" tools\decode_orciq.py --watch-port "%MONITOR_PORT%" --capture-dir "%CAPTURE_DIR%"
+"%MONITOR_PYTHON%" tools\decode_orciq.py --watch-port "%MONITOR_PORT%" --mesh-port "%MESH_PORT%" --capture-dir "%CAPTURE_DIR%"
 set "MONITOR_EXIT=%ERRORLEVEL%"
 if not "%MONITOR_EXIT%"=="0" pause
 exit /b %MONITOR_EXIT%

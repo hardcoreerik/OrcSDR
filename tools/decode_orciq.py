@@ -304,19 +304,46 @@ def decode_capture(
         ) from error
 
 
-def _message_command(result: dict) -> bytes:
-    text = result["payload"].decode("utf-8", errors="replace")
-    while len(text.encode("utf-8")) > 95:
+def _position_coordinates(payload: bytes) -> tuple[int, int] | None:
+    from meshtastic.protobuf.mesh_pb2 import Position
+
+    position = Position()
+    position.ParseFromString(payload)
+    if position.latitude_i == 0 and position.longitude_i == 0:
+        return None
+    return position.latitude_i, position.longitude_i
+
+
+def _packet_command(
+    result: dict, signal_dbfs: float | None = None, noise_dbfs: float | None = None,
+) -> bytes:
+    port = int(result["port"])
+    if port in TEXT_PORTS:
+        text = result["payload"].decode("utf-8", errors="replace")
+    else:
+        text = PORT_NAMES.get(port, f"PORT {port}").removesuffix("_APP")
+    while len(text.encode("utf-8")) > 47:
         text = text[:-1]
+    latitude = longitude = 2147483647
+    if port == 3:
+        coordinates = _position_coordinates(result["payload"])
+        if coordinates is not None:
+            latitude, longitude = coordinates
+    signal_tenths = 32767 if signal_dbfs is None else round(signal_dbfs * 10)
+    snr_tenths = (
+        32767 if signal_dbfs is None or noise_dbfs is None
+        else round((signal_dbfs - noise_dbfs) * 10)
+    )
     return (
-        f"LORA_MESSAGE {result['from']:08x} {result['id']:08x} "
-        f"{text.encode('utf-8').hex()}\n"
+        f"LORA_PACKET {result['from']:08x} {result['to']:08x} {result['id']:08x} "
+        f"{port} {snr_tenths} {signal_tenths} {latitude} {longitude} "
+        f"{text.encode('utf-8').hex() or '-'}\n"
     ).encode("ascii")
 
 
 def print_results(results: list[dict]) -> tuple[bool, list[dict]]:
     found = False
-    messages = []
+    packets = []
     for result in results:
         if "error" in result:
             print(f"PACKET_{result['index']} REJECTED {result['error']}")
@@ -331,10 +358,10 @@ def print_results(results: list[dict]) -> tuple[bool, list[dict]]:
         )
         if port in TEXT_PORTS:
             print("MESSAGE " + payload.decode("utf-8", errors="replace"))
-            messages.append(result)
         else:
             print("PAYLOAD_HEX " + payload.hex())
-    return found, messages
+        packets.append(result)
+    return found, packets
 
 
 def _open_serial(port: str):
@@ -500,11 +527,50 @@ def _retrieve_latest_iq(connection, retry_callback=None) -> tuple[str, bytes]:
     return path, bytes(capture)
 
 
-def watch_tab5(port: str, psk_file: Path | None, capture_dir: Path | None) -> int:
+def _mesh_key_material(mesh_port: str):
+    from meshtastic.serial_interface import SerialInterface
+
+    interface = SerialInterface(devPath=mesh_port, timeout=60)
+    node = interface.localNode
+    channel_psks = [
+        (f"channel-{index}", bytes(channel.settings.psk))
+        for index, channel in enumerate(node.channels)
+        if bytes(channel.settings.psk)
+    ]
+    private_key = bytes(node.localConfig.security.private_key)
+    pki_keys = []
+    if len(private_key) == 32:
+        for node_id, peer in interface.nodes.items():
+            encoded = peer.get("user", {}).get("publicKey", "")
+            try:
+                public_key = base64.b64decode(encoded, validate=True)
+            except (TypeError, ValueError):
+                continue
+            if len(public_key) == 32:
+                pki_keys.append((node_id, private_key, public_key))
+    return interface, channel_psks, pki_keys
+
+
+def watch_tab5(
+    port: str, psk_file: Path | None, capture_dir: Path | None,
+    mesh_port: str | None = None,
+) -> int:
     if capture_dir is not None:
         capture_dir.mkdir(parents=True, exist_ok=True)
     connection = _open_serial(port)
+    mesh = None
+    channel_psks = None
+    pki_keys = None
+    try:
+        if mesh_port:
+            mesh, channel_psks, pki_keys = _mesh_key_material(mesh_port)
+            print(f"KEYS_READY {mesh_port}: channel and direct-message keys held in memory only")
+    except Exception:
+        connection.close()
+        raise
     print(f"WATCHING {port}: waiting for adaptive RTL_LORA_ENERGY captures")
+    last_signal = None
+    last_noise = None
     try:
         connection.write(b"RTL_IQ_STATUS\n")
         status = _wait_line(connection, ("RTL_IQ_STATUS",))
@@ -519,6 +585,11 @@ def watch_tab5(port: str, psk_file: Path | None, capture_dir: Path | None) -> in
                 continue
             if line.startswith(("RTL_LORA_ENERGY", "RTL_IQ_START", "RTL_IQ_DONE")):
                 print(line)
+            energy = re.search(
+                r"(?:signal|level)_dbfs=(-?[\d.]+).*noise_dbfs=(-?[\d.]+)", line
+            )
+            if energy:
+                last_signal, last_noise = map(float, energy.groups())
             if not IQ_DONE_RE.match(line):
                 continue
             temporary = None
@@ -534,12 +605,12 @@ def watch_tab5(port: str, psk_file: Path | None, capture_dir: Path | None) -> in
                 local_path.write_bytes(capture_bytes)
                 verified = True
                 print(f"IQ_VERIFIED {local_path} bytes={len(capture_bytes)}")
-                results = decode_capture(local_path, psk_file)
-                _, messages = print_results(results)
-                for result in messages:
-                    connection.write(_message_command(result))
-                    response = _wait_line(connection, ("LORA_MESSAGE_OK", "LORA_MESSAGE_ERROR"))
-                    if response.startswith("LORA_MESSAGE_ERROR"):
+                results = decode_capture(local_path, psk_file, channel_psks, pki_keys)
+                _, packets = print_results(results)
+                for result in packets:
+                    connection.write(_packet_command(result, last_signal, last_noise))
+                    response = _wait_line(connection, ("LORA_PACKET_OK", "LORA_PACKET_ERROR"))
+                    if response.startswith("LORA_PACKET_ERROR"):
                         raise RuntimeError(response)
                     print(response)
             except (OSError, RuntimeError, TimeoutError, ValueError) as error:
@@ -561,6 +632,8 @@ def watch_tab5(port: str, psk_file: Path | None, capture_dir: Path | None) -> in
         return 0
     finally:
         connection.close()
+        if mesh is not None:
+            mesh.close()
 
 
 def self_test() -> None:
@@ -589,11 +662,14 @@ def self_test() -> None:
     assert len(valid_results) == 1
     result = valid_results[0]
     assert result["payload"] == b"OrcSDR Meshtastic self-test" and result["port"] == 1
-    assert _message_command(result) == (
-        b"LORA_MESSAGE a1b2c3d4 10203040 "
+    assert _packet_command(result, -40.0, -55.0) == (
+        b"LORA_PACKET a1b2c3d4 ffffffff 10203040 1 150 -400 "
+        b"2147483647 2147483647 "
         b"4f7263534452204d6573687461737469632073656c662d74657374\n"
     )
-    print("SELF_TEST_OK ORCIQ/CU8 + CFO retry + LoRa PHY/CRC + Meshtastic AES-CTR/protobuf + UTF-8")
+    position = struct.pack("<BI", 0x0d, 451234567) + struct.pack("<BI", 0x15, (-1221234567) & 0xffffffff)
+    assert _position_coordinates(position) == (451234567, -1221234567)
+    print("SELF_TEST_OK ORCIQ/CU8 + CFO retry + LoRa PHY/CRC + Meshtastic AES-CTR/PKI + position + UI packet")
 
 
 def main() -> int:
@@ -601,6 +677,7 @@ def main() -> int:
     parser.add_argument("capture", nargs="?", type=Path, help="Tab5 .orciq capture")
     parser.add_argument("--psk-file", type=Path, help="ASCII hex/base64 channel PSK (never printed)")
     parser.add_argument("--watch-port", help="watch a Tab5 serial port and return decoded text to its display")
+    parser.add_argument("--mesh-port", help="Meshtastic serial port for in-memory channel/PKI keys")
     parser.add_argument("--capture-dir", type=Path, help="keep verified live captures in this existing directory")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
@@ -611,7 +688,7 @@ def main() -> int:
         if args.capture:
             parser.error("capture and --watch-port are mutually exclusive")
         try:
-            return watch_tab5(args.watch_port, args.psk_file, args.capture_dir)
+            return watch_tab5(args.watch_port, args.psk_file, args.capture_dir, args.mesh_port)
         except (OSError, RuntimeError, ValueError) as error:
             print(f"WATCH_FAILED {error}", file=sys.stderr)
             return 2
