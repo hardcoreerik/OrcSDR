@@ -600,7 +600,14 @@ def parse_args():
     parser.add_argument("--smoke", action="store_true", help="run only three public test cases")
     parser.add_argument("--ambient-seconds", type=int, default=60)
     parser.add_argument("--public-only", action="store_true")
-    return parser.parse_args()
+    parser.add_argument(
+        "--isolated-only", action="store_true",
+        help="skip public transmissions and run only LongFast slot 24",
+    )
+    args = parser.parse_args()
+    if args.isolated_only and (args.smoke or args.public_only):
+        parser.error("--isolated-only cannot be combined with --smoke or --public-only")
+    return args
 
 
 def main() -> int:
@@ -609,24 +616,26 @@ def main() -> int:
     run_dir = root / ".local" / "lora-test-runs" / datetime.now().strftime("%Y%m%d-%H%M%S")
     suite = RfSuite(args.rtl_port, args.mesh_port, run_dir)
     kushcore_needs_restore = False
+    run_isolated = args.isolated_only or (not args.smoke and not args.public_only)
     print(f"Evidence directory: {run_dir}")
     try:
         suite.connect()
         suite.ambient(max(0, args.ambient_seconds))
         suite.set_lora(slot=0, power=2, override=0.0, ignore_mqtt=True)
         suite.set_mqtt_disabled()
-        input(
-            "On Kushcore, select US/LongFast automatic slot 0 and disable MQTT (or ignore MQTT), "
-            "then press Enter... "
-        )
-        suite.tune_rtl(PUBLIC_HZ)
-        if not suite.run_text(
-            "preflight", "directed_ack", PUBLIC_HZ,
-            f"ORC-PREFLIGHT-{uuid.uuid4().hex[:6]}", REMOTE_ID, True,
-        ):
-            raise RuntimeError("public LongFast preflight directed ACK/decode failed")
-        suite.run_phase("public", PUBLIC_HZ, args.smoke)
-        if not args.smoke and not args.public_only:
+        if not args.isolated_only:
+            input(
+                "On Kushcore, select US/LongFast automatic slot 0 and disable MQTT (or ignore MQTT), "
+                "then press Enter... "
+            )
+            suite.tune_rtl(PUBLIC_HZ)
+            if not suite.run_text(
+                "preflight", "directed_ack", PUBLIC_HZ,
+                f"ORC-PREFLIGHT-{uuid.uuid4().hex[:6]}", REMOTE_ID, True,
+            ):
+                raise RuntimeError("public LongFast preflight directed ACK/decode failed")
+            suite.run_phase("public", PUBLIC_HZ, args.smoke)
+        if run_isolated:
             kushcore_needs_restore = True
             input(
                 "Set Kushcore LongFast frequency slot to 24 in Android (leave name/key unchanged), "
@@ -644,7 +653,7 @@ def main() -> int:
             raise RuntimeError("RTL stop/restart/reset evidence detected: " + "; ".join(suite.faults))
         print("RF cases complete; restoring Hardcore and OrcSDR now.")
         suite.restore()
-        if not args.smoke and not args.public_only:
+        if run_isolated:
             input(
                 "Restore Kushcore to automatic LongFast slot 0 and its original MQTT setting, "
                 "then press Enter for the final RF ACK... "
