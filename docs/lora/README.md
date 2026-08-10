@@ -20,8 +20,9 @@ plates; firmware draws every live value and decoded field on top:
 - **LIVE** combines the newest verified decode with a compact live FFT scope and
   a continuously scrolling waterfall. The decode area shows source, destination,
   port, packet ID, signal/SNR, complete GPS coordinates, and up to 108 bytes of
-  text or summarized telemetry metrics. A separate Last Message card retains the
-  newest text message, LongFast channel, message type, and destination node.
+  text or summarized telemetry metrics. NodeInfo packets expand into the node's
+  name, short name, ID, and hardware model. A separate Last Message card retains
+  the newest text message, LongFast channel, message type, and destination node.
 - **MESSAGES** shows only the newest three verified packets so their message text
   can remain very large. Each card retains age, source, destination, port, SNR,
   and relative signal without shrinking the message into a log-table font.
@@ -32,7 +33,9 @@ plates; firmware draws every live value and decoded field on top:
 
 LoRa uses one lower control row: frequency down/up, bandwidth, spreading factor,
 manual IQ capture, and start/stop. Band switching and secondary controls live in
-the top NAV tab; audio volume and duplicate band buttons are omitted.
+the top NAV tab; audio volume and duplicate band buttons are omitted. The space
+above the bottom controls is a persistent status rail for GPS, slot/SF/BW,
+verified packet count, and packet age.
 
 The map is deliberately not a street map. It plots only coordinates explicitly
 decoded from RF packets, requires no network or tile storage, and does not infer a

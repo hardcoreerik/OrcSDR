@@ -324,6 +324,21 @@ def _message_summary(port: int, payload: bytes) -> str:
             coordinates = None
         return ("GPS %.5f, %.5f" % (coordinates[0] / 1e7, coordinates[1] / 1e7)
                 if coordinates else "POSITION")
+    if port == 4:
+        from meshtastic.protobuf.mesh_pb2 import HardwareModel, User
+
+        user = User()
+        try:
+            user.ParseFromString(payload)
+        except Exception:
+            return "NODEINFO"
+        name = user.long_name or user.id or "UNKNOWN NODE"
+        short = f" ({user.short_name})" if user.short_name else ""
+        try:
+            model = HardwareModel.Name(user.hw_model).replace("_", " ")
+        except ValueError:
+            model = f"MODEL {user.hw_model}"
+        return f"{name}{short}  {user.id}  HW {model}"
     if port == 67:
         from meshtastic.protobuf.telemetry_pb2 import Telemetry
 
@@ -706,6 +721,9 @@ def self_test() -> None:
     telemetry.device_metrics.voltage = 4.12
     telemetry_summary = _message_summary(67, telemetry.SerializeToString())
     assert "battery level 81" in telemetry_summary and "voltage 4.12" in telemetry_summary
+    from meshtastic.protobuf.mesh_pb2 import User
+    user = User(id="!a053571e", long_name="Meshtastic 571e", short_name="571e")
+    assert "Meshtastic 571e (571e)" in _message_summary(4, user.SerializeToString())
     print("SELF_TEST_OK ORCIQ/CU8 + CFO retry + LoRa PHY/CRC + Meshtastic AES-CTR/PKI + position + UI packet")
 
 
