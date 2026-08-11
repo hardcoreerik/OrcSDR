@@ -267,6 +267,143 @@ entangled with `demodulate_fm`'s internals beyond the one tap point.
       core path is verified — matches `PROJECT_STATUS.md`'s own "do not
       claim ahead of evidence" discipline.
 
+### Aside: recurring audio pause investigation (2026-08-10)
+
+Unrelated to RDS, but found via the same autonomous serial-driven test loop
+this phase's work unblocked. Reported symptom: an audible pause roughly
+every 5 seconds. Confirmed independently via a physical recording, not just
+one observer.
+
+- **Ruled out**: RDS Stage 2 processing. Gated the entire Costas/Gardner/
+  block-sync block behind `constexpr bool kRdsStage2Enabled = false`
+  (compiler dead-code-eliminates it entirely at zero runtime cost) and
+  flashed — pause was still there, unchanged. Not the cause.
+- **Attempted and reverted**: moving `rtl_app` (the task started in
+  `initialize_rtl_sdr_host()`, nominally "touch/retune/spectrum/dashboard
+  UI") from core1 to core0, to relieve core1 for the RTL-SDR driver's
+  inline demod+speaker delivery task (`rtl_iq_del`, core1, prio 18) without
+  touching that delivery path itself — a prior attempt to split *that*
+  path into a cross-task queue is on record in `on_rtl_driver_event`'s own
+  comment as having broken both audio and graphics, so this was
+  deliberately a different, narrower experiment. **Broke capture
+  entirely** — signal stuck at floor, screen stuck on the home/"Host
+  offline" state, `rtl_app` never actually started the stream. Root cause:
+  `rtl_app` is not pure UI, it's on the critical path that consumes
+  `rtl_capture_requested` and issues the actual driver start/retune calls.
+  At its low priority (5), placed on core0 behind the USB host (prio 20)
+  and client (prio 19) tasks, it was starved outright rather than merely
+  slowed. Reverted to core1; confirmed reception resumed normally
+  (`RTL_SIGNAL` back to real dBFS values, stereo re-locked).
+- **Real cause still unknown — and behaves like a marginal/borderline
+  timing issue, not a clean deterministic bug.** No code has been found
+  with an actual ~5-second period despite searching (checked
+  `kSessionTimeoutMs`-adjacent logic, LoRa SD-log flush intervals, WiFi
+  scan/retry — none match and/or aren't on the active FM code path). The
+  pause was reported gone, then back, then gone, then back again within
+  moments, across builds that didn't always change anything relevant —
+  including one flip with *zero* firmware change in between. That pattern
+  (same build, presence inconsistent even second-to-second) rules out a
+  clean single-cause bug and points to something right on the edge of a
+  timing budget: occasionally missing it, occasionally not.
+- **Isolated to the FM dashboard specifically** — switching to BROWSE
+  band (generic shared spectrum/waterfall UI, no custom dashboard) removes
+  the pause entirely on the same hardware, same station, same session.
+  This is the strongest lead: whatever's marginal is in
+  `draw_fm_dashboard`'s redraw path, not the demod/audio pipeline itself.
+- **IQ delivery timing measured directly and came back clean.** Added a
+  diagnostic (`RTL_IQ_GAP`, in `on_rtl_driver_event`'s `EVT_IQ_BLOCK`
+  case) logging the gap between consecutive IQ block deliveries — over a
+  25s window on the FM dashboard, one 50ms gap at boot (startup
+  transient) and nothing recurring. This rules out "dashboard redraw
+  stalls the demod/IQ-delivery task" as the mechanism (that task's timing
+  is fine); the contention is more likely between display SPI traffic and
+  the speaker's own DMA/output path — two peripherals that may share
+  lower-level bus resources even though they're logically independent
+  tasks. Consistent with `PROJECT_STATUS.md`'s existing, pre-dating-this-
+  session "live speaker vs. recorded PCM" open performance gate (clean
+  recorded WAVs, live speaker issues, isolated to "speaker queue/DMA/
+  output after the DSP tap") — plausibly the same underlying gate, newly
+  visible because the FM dashboard draws meaningfully more per redraw
+  cycle than the UI that existed when that gate was last measured.
+- **Most promising untried fix**: `draw_fm_dashboard`'s periodic (~200ms)
+  redraw currently repaints almost everything unconditionally every call
+  — VU needles (two full sprite blits), frequency/SIG/VOL text, presets,
+  tuner — regardless of whether the underlying value actually changed.
+  `draw_signal_meter` elsewhere in this codebase already does dirty-
+  checking (skip the SPI write if the value hasn't moved since last
+  frame); the FM dashboard doesn't. Reducing SPI traffic there is a
+  concrete, bounded change that should ease whatever margin is being
+  exceeded, even without a definitive smoking-gun timestamp to point at
+  given how borderline/sporadic the symptom is. Not yet implemented.
+- Recorded 12s of post-demod PCM to SD (`RTL_REC_START`/`STOP`, taps
+  audio right before `playRaw`, same point this project's own prior
+  recorder validation used) for offline waveform inspection — pulling it
+  off-device needs the radio stopped first (`SD_GET_ERROR radio_busy`),
+  which needs the `authenticated` gate; the device was already paired to
+  a different, unknown key from an earlier session, so a fresh PAIR/AUTH
+  attempt returned `PAIR_LOCKED` and this wasn't completed.
+  `tools/get_from_tab5_sd.ps1` was added this session as the missing
+  GET-direction counterpart to the existing PUT script, for when this (or
+  a future) capture needs pulling — either with the existing pairing key
+  or after a manual STOP tap.
+- **Next step, not yet attempted**: if `rtl_app` really does need to stay
+  off core0 as a monolith, the natural follow-up is separating its two
+  responsibilities — pull the actual capture-state-machine/driver-command
+  logic into its own small, high-enough-priority piece that must stay
+  wherever the driver needs it, and move only the UI-drawing portion
+  (spectrum FFT, dashboard redraws, touch hit-testing) to core0. That's a
+  more invasive change than this pass attempted and should be scoped as
+  its own task, not bolted onto more trial-and-error core reassignment.
+- **Symptom escalated mid-investigation** to something more severe than
+  the original "every ~5s" report: sound going fully choppy/hanging after
+  roughly 10-15s of continuous playback, recoverable by toggling
+  `RTL_SOUND OFF` then `ON` (which resets `rtl_audio_play_count` and
+  restarts the speaker), and — per direct user confirmation — happening
+  **regardless of band/UI mode**, not just on the FM dashboard. That last
+  point rules out the dashboard as the root cause, since browse mode never
+  calls `draw_fm_dashboard`. Added `RTL_IQ_GAP` diagnostic (gap between
+  consecutive `EVT_IQ_BLOCK` deliveries, logged when >30ms) directly in
+  `on_rtl_driver_event` to get hard timing data instead of continuing to
+  reason from downstream symptoms.
+- **Attempted and reverted**: added dirty-checking to
+  `draw_fm_dashboard`'s periodic redraw (skip repainting chrome — freq/
+  SIG/VOL/RDS badge — when the underlying values hadn't changed; changed
+  the 94-segment INPUT LEVEL bars to only repaint the delta between old
+  and new lit-count instead of all 94 every cycle). This was reasoned
+  from real evidence (isolated-to-dashboard correlation, IQ-gap clean
+  baseline) but had **not yet been isolated from the "regardless of
+  mode" report** when it was written — that correction arrived only
+  after this change was already flashed. Immediately after flashing it,
+  `RTL_IQ_GAP` showed continuous 30-48ms gaps starting ~111s into the
+  session and persisting (very different from the earlier clean
+  baseline: one 50ms gap in 25s). Given the "regardless of mode" finding
+  means dashboard cost can't be the root cause, and given the strong
+  temporal correlation between this specific change and materially worse
+  measured gaps, **reverted rather than risk leaving unverified code on
+  a device that was actively misbehaving** — could not rule out the
+  change having introduced a real problem (vs. coincidentally being
+  flashed right as a separate, pre-existing degradation kicked in), and
+  didn't have time to isolate which before the user needed a working
+  device back. `main.cpp` is back to the pre-dirty-check state; `RTL_SOUND`
+  and `RTL_IQ_GAP` were kept (additive, no behavior change, needed for
+  further diagnosis).
+- **Leading theory now**: this matches `PROJECT_STATUS.md`'s own
+  pre-existing, undated "live speaker vs. recorded PCM" open performance
+  gate (clean recorded WAVs, live speaker issues, isolated to "speaker
+  queue/DMA/output after the DSP tap") almost exactly — same symptom
+  shape (fine initially, degrades with sustained playback), same
+  recovery mechanism implied (a fresh start clears it). Plausible that
+  this bug predates this session entirely and is only newly exposed
+  because this session's auto-start/auto-sound-on changes are the first
+  time the radio has run continuously and unattended long enough to hit
+  it reliably — previously, the tap-gated flow made long unattended
+  listening sessions unlikely to happen by accident. **Not confirmed.**
+  Next real step is the speaker/DMA layer itself (M5Unified's internal
+  queue behavior under `dma_buf_count=24, dma_buf_len=512`, ~256ms of
+  buffered headroom — consistent with a slow backlog taking 10-15s to
+  exhaust it), not more application-level redraw tuning, given the "any
+  mode" finding.
+
 Exit for the phase as a whole: FM dashboard shows real `PI` / `PS` /
 `PTY` / RadioText from an actual over-the-air broadcast, with BLER
 displayed, on the Tab5 hardware — not just a build that compiles.
