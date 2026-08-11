@@ -115,37 +115,42 @@ actually broadcasts RDS.
 
 ## RDS (FM band only)
 
-RDS decoding is staged and **not yet fully working** — see `phasing.md`'s
-RDS phase for the current status. As of this writing: Stage 1 (carrier
-detection) is hardware-verified; Stage 2 (bit/block sync, giving PI/PS/PTY/
-RadioText) is implemented but not yet achieving reliable lock on real air —
-symbol timing recovery is the current open problem.
+RDS decoding is staged — see `phasing.md` for the current status. Stage 1
+(carrier detection) and Stage 2 (bit/block sync) are hardware-verified against
+live 96.1 KZEL and a captured MPX replay. Stage 3 parsing/display of PS, PTY,
+and RadioText remains open.
 
 | Command | Auth | Reply |
 |---|---|---|
 | `RTL_RDS_STATUS` | no | see below |
+| `RTL_RDS_CAPTURE_START` | no | starts an 8-second, 240 kS/s MPX capture in PSRAM |
+| `RTL_RDS_CAPTURE_STOP` / `RTL_RDS_CAPTURE_SAVE` | no | stops and exports `.s16` plus `.json` metadata to SD |
+| `RTL_RDS_CAPTURE_STATUS` | no | capture progress, frequency, SD state, and last path |
+| `RTL_RDS_REPLAY <path.s16>` | no | resets and replays an MPX capture through the same RDS processor; live radio must be stopped |
 
 ```text
 RDS_STATUS carrier=0|1 carrier_signal=<dB> block_locked=0|1 bler=<%>
            good=<n> total=<n> hyp0_streak=<n> hyp1_streak=<n>
            timing_chip_rate=<Hz> timing_correction_ppm=<ppm>
+           nco_freq_off=<rad/sample> i_lpf=<n> q_lpf=<n> mu=<0..1>
            A=<hex16> B=<hex16> C=<hex16> D=<hex16>
+           driver_overruns=<n> driver_drops=<n> effective_sps=<n>
+           audio_chunks=<n> audio_drops=<n>
 ```
 
 - `carrier` — Stage 1, whether 57 kHz subcarrier energy is present.
 - `block_locked` / `bler` / `good` / `total` — Stage 2 block-sync status.
   `bler=100%` with `total=0` means block sync has never been achieved since
   tuning to this frequency, not that the signal is bad.
-- `hyp0_streak` / `hyp1_streak` — internal: two chip-alignment hypotheses
-  run in parallel (see `phasing.md`), each needs a streak of 4 consecutive
-  correctly-spaced offset-word matches to declare lock.
+- `hyp0_streak` / `hyp1_streak` — best streak for each chip-pair polarity
+  across four fractional timing phases. A streak of 4 correctly-spaced
+  offset-word matches declares lock.
 - `A`/`B`/`C`/`D` — last decoded block content (hex). **Not meaningful
   until `block_locked=1`** — treat as noise otherwise, per the current
   known-issue in `phasing.md`.
 
-There's also a periodic (every 2s, unthrottleable currently) diagnostic
-pair printed automatically whenever tuned to FM with RDS carrier energy
-present, useful for watching convergence live rather than polling:
+The legacy periodic diagnostic pair is compiled off by default. Use
+`RTL_RDS_STATUS` for on-demand diagnostics without a continuous serial load:
 
 ```text
 RDS_STAGE2 locked=... bler=... good=... total=... hyp0_locked=... hyp0_streak=...
@@ -154,11 +159,41 @@ RDS_STAGE2 locked=... bler=... good=... total=... hyp0_locked=... hyp0_streak=..
 RDS_TIMING chip_rate=... mu=... symbols_sec=... correction_ppm=... freq_off=...
 ```
 
-`i_lpf`/`q_lpf` — Costas-loop-tracked carrier baseband; a locked carrier
-shows `|i_lpf|` consistently larger than `|q_lpf|` (BPSK-like, data on the
-I axis). `symbols_sec` should read close to 2375 (the RDS biphase chip
-rate, not the final 1187.5 bit/s information rate) when timing recovery is
-working — see `phasing.md` for what "working" looks like precisely.
+`i_lpf`/`q_lpf` are the complex 57 kHz baseband before carrier-independent
+differential pairing. `timing_correction_ppm` reports the measured RTL sample
+clock calibration (`-10` on the accepted fixture); `nco_freq_off` is retained
+for protocol compatibility and currently reports zero. The driver/audio fields
+are explicit, on-demand stream-continuity counters. `symbols_sec` should read
+close to 2375 (the RDS biphase chip rate, not the final 1187.5 bit/s information
+rate).
+
+### MPX capture and replay
+
+Capture stores signed 16-bit little-endian FM multiplex samples at 240 kS/s
+under `/orcsdr/rds_debug/`, with a sibling JSON file containing the sample
+rate, tuned frequency, sample count, radians-per-LSB scale, and start uptime.
+The raw `.s16` file is directly consumable by Redsea:
+
+```text
+RTL_RDS_CAPTURE_START
+... wait up to 8 seconds ...
+RTL_RDS_CAPTURE_STOP
+RTL_RDS_CAPTURE_STATUS
+```
+
+After copying the reported `.s16` file to a PC:
+
+```bash
+redsea --input mpx -r 240k < capture.s16
+```
+
+For deterministic on-device replay, stop the live radio first and use the SD
+path reported by `RTL_RDS_CAPTURE_STOP`:
+
+```text
+RTL_RDS_REPLAY /orcsdr/rds_debug/001_96113000_mpx.s16
+RTL_RDS_STATUS
+```
 
 ## Recording (post-demod WAV capture)
 
@@ -232,15 +267,12 @@ general-purpose IQ dumping).
 > RTL_TUNE FM 96100000
 > RTL_RDS_STATUS
 < RDS_STATUS carrier=1 carrier_signal=-6.2 block_locked=0 bler=100.0% ...
-  (watch the free-running RDS_STAGE2/RDS_TIMING lines, or poll RTL_RDS_STATUS)
+  (poll RTL_RDS_STATUS; continuous stream diagnostics are disabled by default)
 ```
 
 ## What's not here yet
 
 - No JSON output mode — everything is `key=value` space-separated text.
   Fine for line-oriented parsing, more work for a strict JSON client.
-- No capture/replay harness for offline RDS DSP iteration (recording raw
-  MPX to SD and re-running the decode chain against a fixed file instead
-  of live RF) — flagged as a real gap in `phasing.md`, not yet built.
 - `RTL_HELP`'s command list is maintained by hand alongside this doc — if
   you add a command, update both.
