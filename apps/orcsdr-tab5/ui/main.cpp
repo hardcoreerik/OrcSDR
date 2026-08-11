@@ -163,6 +163,186 @@ constexpr float kNfmDeemphK = 0.08f;
 constexpr uint8_t kFmRfDecim = 4;
 constexpr uint8_t kFmAudioDecim = 5;
 /*
+ * FM stereo recovery, all at the 240 kS/s discriminator rate.
+ *
+ * The composite (MPX) that falls out of the discriminator carries
+ *   0-15 kHz  L+R      19 kHz  pilot      23-53 kHz  L-R (DSB-SC on 38 kHz)
+ * and 240 kS/s leaves Nyquist at 120 kHz, so all of it survives.
+ *
+ * The 38 kHz carrier is synthesised by SQUARING the recovered pilot
+ * (cos²x = ½(1+cos2x)), which is phase-locked to the pilot by construction.
+ * That avoids a per-sample trig PLL on the audio hot path — this loop already
+ * runs 240k times a second and shares a core with USB.
+ *
+ * Two-pole resonators, H(z) = (1 - z^-2) / (1 - 2r·cosθ·z^-1 + r²·z^-2):
+ *   r = 1 - pi*BW/fs,  θ = 2*pi*f0/fs
+ */
+/** 19 kHz pilot, ~3 kHz BW: r=0.960730, θ=0.497419. */
+constexpr float kPilotTwoRCos = 1.688612f;
+constexpr float kPilotR2 = 0.923002f;
+/** 38 kHz regenerated carrier, ~6 kHz BW: r=0.921460, θ=0.994838. */
+constexpr float kSubTwoRCos = 1.003726f;
+constexpr float kSubR2 = 0.849089f;
+/** Envelope trackers (~30 ms at 240 kS/s) for lock detect and carrier AGC. */
+constexpr float kStereoEnvK = 0.00014f;
+/** Pilot is nominally 8-10% of peak deviation; latch well below that. */
+constexpr float kStereoLockOn = 0.030f;
+constexpr float kStereoLockOff = 0.018f;
+/** 57 kHz RDS subcarrier, ~4 kHz BW (Stage 1 carrier detect only — wide
+ * enough to catch the ~4.8 kHz occupied signal with fast lock, not yet
+ * narrowed for symbol extraction): r=0.947639, θ=1.492257. */
+constexpr float kRdsBpTwoRCos = 0.148702f;
+constexpr float kRdsBpR2 = 0.898022f;
+constexpr float kRdsEnvK = 0.00014f;
+/** RDS is a much smaller fraction of deviation than the pilot; threshold is
+ * provisional until verified against a real broadcast. */
+constexpr float kRdsCarrierOn = 0.006f;
+constexpr float kRdsCarrierOff = 0.0035f;
+/*
+ * RDS Stage 2 — symbol/bit/block recovery. Carrier is tracked with a
+ * recursive complex-rotator NCO (4 mul + 2 add per sample) rather than
+ * per-sample sinf/cosf: at 240 kS/s, calling sinf+cosf every sample would
+ * cost ~480,000 transcendental calls/sec just for RDS, on top of everything
+ * else demodulate_fm already does. The rotation increment (which needs one
+ * sin+cos pair) is only recomputed every kRdsNcoRecalcSamples — the loop's
+ * frequency correction moves slowly enough that this is indistinguishable
+ * from recomputing every sample, at ~1/64th the trig cost.
+ */
+constexpr float kRdsNcoNominal = 1.492257f;      /* 2*pi*57000/240000 rad/sample */
+constexpr int kRdsNcoRecalcSamples = 64;
+/* 2nd-order Costas loop, Bn=20 Hz, zeta=0.707 — narrow on purpose: the
+ * carrier is derived from a very stable broadcast oscillator, this loop
+ * only needs to track slow RTL-SDR tuning-offset drift, not fast dynamics. */
+constexpr float kRdsCostasKp = 0.000111100f;
+constexpr float kRdsCostasKi = 0.0000000062f;
+constexpr float kRdsNcoFreqClamp = 0.007854f;    /* +-300 Hz equivalent */
+constexpr float kRdsSymLpfK = 0.060899f;         /* single-pole, ~2.4 kHz BW */
+constexpr float kRdsChipInc = 0.009896f;         /* 2375 chips/sec at 240 kS/s */
+/* RDS/RBDS generator polynomial x^10+x^8+x^7+x^5+x^4+x^3+1, and the five
+ * offset words (IEC 62106). Verified by direct polynomial-division check
+ * against all five before this was written into demodulate_fm. */
+constexpr uint32_t kRdsGenPoly = 0b10110111001;  /* 11 bits, degree 10 explicit */
+constexpr uint16_t kRdsOffsetA = 0x0FC;
+constexpr uint16_t kRdsOffsetB = 0x198;
+constexpr uint16_t kRdsOffsetC = 0x168;
+constexpr uint16_t kRdsOffsetCp = 0x350;         /* C', used in version-B groups */
+constexpr uint16_t kRdsOffsetD = 0x1B4;
+
+/** One candidate bit-alignment hypothesis for RDS block sync. Chip pairing
+ * has a 1-chip (half-bit) ambiguity that can't be resolved analytically —
+ * two of these run in parallel, offset by one chip, and whichever achieves
+ * sustained CRC lock first is the correct alignment. Standard technique for
+ * this exact ambiguity, not a workaround. */
+struct RdsHypothesis {
+  uint32_t shift_reg = 0;
+  int bit_fill = 0;               /* caps at 26: "do we have a full window yet" */
+  bool have_prev_raw_bit = false;
+  bool prev_raw_bit = false;      /* for differential decode */
+  bool have_prev_match = false;
+  int prev_match_type = 0;        /* 0=A,1=B,2=C/C',3=D */
+  uint32_t prev_match_bitpos = 0;
+  int streak = 0;
+  bool locked = false;
+  int next_expected_type = 0;
+  uint32_t next_expected_bitpos = 0;
+  int bad_block_streak = 0;
+  uint32_t bit_pos = 0;
+  uint16_t group_info[4] = {0, 0, 0, 0};
+  bool group_info_valid[4] = {false, false, false, false};
+  uint32_t good_blocks = 0;
+  uint32_t total_blocks = 0;
+};
+
+/** Binary polynomial division of a 26-bit RDS block by the generator poly.
+ * For an error-free received block, this equals the offset word used at
+ * the transmitter (A/B/C/C'/D) — verified against all five in Python
+ * before this was written (see phasing.md's RDS Stage 2 notes). */
+uint16_t rds_syndrome(uint32_t block26) {
+  uint32_t reg = block26 & 0x3FFFFFFu;
+  for (int deg = 25; deg >= 10; --deg) {
+    if (reg & (1u << deg)) reg ^= kRdsGenPoly << (deg - 10);
+  }
+  return static_cast<uint16_t>(reg & 0x3FFu);
+}
+
+/** Classify a syndrome as block type 0=A,1=B,2=C/C',3=D, or -1 for no match. */
+int rds_offset_match(uint16_t syn) {
+  if (syn == kRdsOffsetA) return 0;
+  if (syn == kRdsOffsetB) return 1;
+  if (syn == kRdsOffsetC || syn == kRdsOffsetCp) return 2;
+  if (syn == kRdsOffsetD) return 3;
+  return -1;
+}
+
+/**
+ * Feed one differentially-decoded data bit into a block-sync hypothesis.
+ *
+ * Search mode (not yet locked): checks the syndrome at every bit position.
+ * Four consecutive matches in A->B->C(C')->D order at exactly 26-bit
+ * spacing declares lock. Positional mode (locked): only checks the syndrome
+ * at the next expected 26-bit boundary — cheaper, and gives a clean BLER
+ * count (attempted vs. matched) since every expected position is counted
+ * whether or not the block checks out. Drops back to search mode after 8
+ * consecutive bad blocks.
+ */
+void rds_hypothesis_feed(RdsHypothesis& h, bool bit) {
+  h.shift_reg = ((h.shift_reg << 1) | (bit ? 1u : 0u)) & 0x3FFFFFFu;
+  if (h.bit_fill < 26) ++h.bit_fill;
+  ++h.bit_pos;
+  if (h.bit_fill < 26) return;
+
+  if (!h.locked) {
+    const int match_type = rds_offset_match(rds_syndrome(h.shift_reg));
+    if (match_type >= 0) {
+      if (h.have_prev_match && (h.bit_pos - h.prev_match_bitpos == 26) &&
+          match_type == (h.prev_match_type + 1) % 4) {
+        ++h.streak;
+      } else {
+        h.streak = 1;
+      }
+      h.prev_match_type = match_type;
+      h.prev_match_bitpos = h.bit_pos;
+      h.have_prev_match = true;
+      h.group_info[match_type] = static_cast<uint16_t>(h.shift_reg >> 10);
+      h.group_info_valid[match_type] = true;
+      if (h.streak >= 4) {
+        h.locked = true;
+        h.next_expected_type = (match_type + 1) % 4;
+        h.next_expected_bitpos = h.bit_pos + 26;
+        h.bad_block_streak = 0;
+        h.good_blocks = static_cast<uint32_t>(h.streak);
+        h.total_blocks = static_cast<uint32_t>(h.streak);
+      }
+    }
+  } else if (h.bit_pos == h.next_expected_bitpos) {
+    const uint16_t syn = rds_syndrome(h.shift_reg);
+    bool ok = false;
+    switch (h.next_expected_type) {
+      case 0: ok = (syn == kRdsOffsetA); break;
+      case 1: ok = (syn == kRdsOffsetB); break;
+      case 2: ok = (syn == kRdsOffsetC || syn == kRdsOffsetCp); break;
+      default: ok = (syn == kRdsOffsetD); break;
+    }
+    ++h.total_blocks;
+    if (ok) {
+      ++h.good_blocks;
+      h.bad_block_streak = 0;
+      h.group_info[h.next_expected_type] = static_cast<uint16_t>(h.shift_reg >> 10);
+      h.group_info_valid[h.next_expected_type] = true;
+    } else {
+      ++h.bad_block_streak;
+      h.group_info_valid[h.next_expected_type] = false;
+      if (h.bad_block_streak >= 8) {
+        h.locked = false;
+        h.streak = 0;
+        h.have_prev_match = false;
+      }
+    }
+    h.next_expected_type = (h.next_expected_type + 1) % 4;
+    h.next_expected_bitpos = h.bit_pos + 26;
+  }
+}
+/*
  * Scope FFT size. 256 bins @ 960 kS/s ≈ 3.75 kHz/bin (was 128 / 7.5 kHz).
  * Welch multi-window average runs only when GFX is on and audio is not stressed.
  */
@@ -195,6 +375,19 @@ constexpr int kCbPanelY = kSpectrumY;
 constexpr int kCbPanelWidth = 384;
 constexpr int kCbPanelHeight = 470;
 constexpr char kCbDashboardPath[] = "/orcsdr/cb_dashboard_384x470.jpg";
+// Full 1152x470 custom dashboard (same footprint as the LoRa command center),
+// laid out to match docs mockup: two-column card grid, origin at (kSpectrumX, kSpectrumY).
+constexpr char kFmDashboardPath[] = "/orcsdr/fm_dashboard_1152x470.jpg";
+constexpr int kFmFreqCardX = 0,   kFmFreqCardY = 0,   kFmFreqCardW = 706, kFmFreqCardH = 114;
+constexpr int kFmRdsCardX  = 0,   kFmRdsCardY  = 120, kFmRdsCardW  = 706, kFmRdsCardH  = 70;
+constexpr int kFmVuCardX   = 0,   kFmVuCardY   = 196, kFmVuCardW   = 706, kFmVuCardH   = 152;
+constexpr int kFmScopeCardX = 0,  kFmScopeCardY = 354, kFmScopeCardW = 706, kFmScopeCardH = 116;
+constexpr int kFmInpCardX  = 716, kFmInpCardY  = 0,   kFmInpCardW  = 436, kFmInpCardH  = 104;
+constexpr int kFmRecCardX  = 716, kFmRecCardY  = 110, kFmRecCardW  = 436, kFmRecCardH  = 72;
+constexpr int kFmPreCardX  = 716, kFmPreCardY  = 188, kFmPreCardW  = 436, kFmPreCardH  = 190;
+constexpr int kFmTunCardX  = 716, kFmTunCardY  = 384, kFmTunCardW  = 436, kFmTunCardH  = 86;
+constexpr int kFmScanBtnX = kFmPreCardX + 8, kFmScanBtnY = kFmPreCardY + 32;
+constexpr int kFmScanBtnW = kFmPreCardW - 16, kFmScanBtnH = 150;
 constexpr char kLoraLivePath[] = "/orcsdr/lora_live_command_center_1152x470.jpg";
 constexpr char kLoraMessagesPath[] = "/orcsdr/lora_messages_command_center_1152x470.jpg";
 constexpr char kLoraMapPath[] = "/orcsdr/lora_map_command_center_1152x470.jpg";
@@ -400,6 +593,43 @@ struct RtlAudioState {
   uint32_t dropped_chunks = 0;
   int16_t peak = 0;
   uint64_t square_sum = 0;
+
+  /* ---- FM stereo (WBFM only; decoder runs whenever wbfm=true) ---- */
+  /** 19 kHz pilot resonator, two delay lines (Direct Form I, poles only). */
+  float pilot_y1 = 0, pilot_y2 = 0;
+  /** 38 kHz sub-carrier resonator, driven by the squared pilot. */
+  float sub_y1 = 0, sub_y2 = 0;
+  float pilot_env = 0;     /* smoothed |pilot| for lock detect / AGC */
+  bool stereo_locked = false;
+  /** Separate L/R post-discriminator LPF + de-emphasis state. */
+  float channel_filter_diff = 0;
+  float audio_sum_diff = 0;  /* boxcar accumulator paired with audio_sum/audio_phase */
+  float deemphasis_l = 0, deemphasis_r = 0;
+  float dc_l = 0, dc_r = 0;
+
+  /* ---- RDS carrier detect (Stage 1 — no bit/block sync yet) ---- */
+  /** 57 kHz resonator on the same pre-mono-LPF composite tap the pilot/sub
+   * decoders use. Detects RDS subcarrier *presence*, not lock — full symbol
+   * recovery is a separate, larger follow-up once this stage is verified
+   * against a real broadcast. */
+  float rds_bp_y1 = 0, rds_bp_y2 = 0;
+  float rds_env = 0;
+  bool rds_carrier_present = false;
+
+  /* ---- RDS Stage 2 — coherent carrier + symbol/bit/block recovery ---- */
+  /** Recursive complex-rotator NCO (see kRdsNcoNominal comment for why this
+   * isn't per-sample sinf/cosf). Unit vector, rotated each RF sample. */
+  float rds_nco_i = 1.0f, rds_nco_q = 0.0f;
+  float rds_nco_inc_cos = 1.0f, rds_nco_inc_sin = 0.0f;
+  float rds_nco_freq_offset = 0;  /* Costas integral term, rad/sample */
+  int rds_nco_recalc_counter = 0;
+  float rds_i_lpf = 0, rds_q_lpf = 0;  /* Costas-mixed baseband, symbol-rate LPF */
+  float rds_chip_phase = 0;            /* fractional chip-boundary accumulator */
+  bool rds_chip_prev = false;
+  bool rds_chip_have_prev = false;
+  uint32_t rds_chip_prev_index = 0;
+  uint32_t rds_chip_index = 0;
+  RdsHypothesis rds_hyp[2];
 };
 
 RtlAudioState rtl_audio;
@@ -422,6 +652,37 @@ void rtl_audio_reset_demod_filters() {
   rtl_audio.ssb_cos = 1.0f;
   rtl_audio.ssb_sin = 0.0f;
   if (rtl_audio.fade_in > 48) rtl_audio.fade_in = 48;
+  rtl_audio.pilot_y1 = 0;
+  rtl_audio.pilot_y2 = 0;
+  rtl_audio.sub_y1 = 0;
+  rtl_audio.sub_y2 = 0;
+  rtl_audio.pilot_env = 0;
+  rtl_audio.stereo_locked = false;
+  rtl_audio.channel_filter_diff = 0;
+  rtl_audio.audio_sum_diff = 0;
+  rtl_audio.deemphasis_l = 0;
+  rtl_audio.deemphasis_r = 0;
+  rtl_audio.dc_l = 0;
+  rtl_audio.dc_r = 0;
+  rtl_audio.rds_bp_y1 = 0;
+  rtl_audio.rds_bp_y2 = 0;
+  rtl_audio.rds_env = 0;
+  rtl_audio.rds_carrier_present = false;
+  rtl_audio.rds_nco_i = 1.0f;
+  rtl_audio.rds_nco_q = 0.0f;
+  rtl_audio.rds_nco_inc_cos = 1.0f;
+  rtl_audio.rds_nco_inc_sin = 0.0f;
+  rtl_audio.rds_nco_freq_offset = 0;
+  rtl_audio.rds_nco_recalc_counter = 0;
+  rtl_audio.rds_i_lpf = 0;
+  rtl_audio.rds_q_lpf = 0;
+  rtl_audio.rds_chip_phase = 0;
+  rtl_audio.rds_chip_prev = false;
+  rtl_audio.rds_chip_have_prev = false;
+  rtl_audio.rds_chip_prev_index = 0;
+  rtl_audio.rds_chip_index = 0;
+  rtl_audio.rds_hyp[0] = RdsHypothesis();
+  rtl_audio.rds_hyp[1] = RdsHypothesis();
 }
 int16_t rtl_audio_buffers[3][kRtlAudioBufferSamples];
 /* Batch small demod bursts into longer playRaw chunks (reduces chop). */
@@ -441,6 +702,84 @@ static QueueHandle_t rtl_filled_q = nullptr;
 static uint8_t rtl_iq_processing[32768 + 512];
 /* Relative RF level from IQ power (dBFS-ish, 0 = full-scale CU8). */
 static std::atomic<float> rtl_signal_dbfs{-90.0f};
+/** WBFM stereo: fresh-per-callback dBFS (same granularity as rtl_signal_dbfs);
+ * UI applies its own EMA at redraw cadence, matching draw_signal_meter. */
+static std::atomic<float> rtl_audio_left_dbfs{-90.0f};
+static std::atomic<float> rtl_audio_right_dbfs{-90.0f};
+static std::atomic<bool> rtl_stereo_locked{false};
+// RDS Stage 1: carrier presence only (not bit/block sync — see main.cpp
+// comment at rds_bp_y1 and phasing.md's RDS phase for the staged plan).
+static std::atomic<float> rtl_rds_signal_dbfs{-90.0f};
+static std::atomic<bool> rtl_rds_carrier_present{false};
+// RDS Stage 2: block-sync status, whichever chip-alignment hypothesis is
+// currently locked (or -1 if neither is). BLER stored as good/total counts
+// rather than a pre-divided percentage so the UI can decide its own window.
+static std::atomic<bool> rtl_rds_block_locked{false};
+static std::atomic<uint32_t> rtl_rds_good_blocks{0};
+static std::atomic<uint32_t> rtl_rds_total_blocks{0};
+
+// FM presets: populated by an explicit band scan (not auto on entry). Top 10
+// by signal strength, deduped by proximity so one strong station does not
+// occupy multiple slots.
+constexpr int kFmPresetCapacity = 10;
+constexpr int kFmPresetVisibleRows = 5;
+struct FmPreset {
+  uint32_t freq_hz = 0;
+  float level_dbfs = -120.0f;
+};
+static FmPreset fm_presets[kFmPresetCapacity];
+static int fm_preset_count = 0;
+static int fm_preset_scroll_top = 0;
+static std::atomic<bool> rtl_fm_preset_scan_requested{false};
+static std::atomic<bool> rtl_fm_preset_scan_cancel{false};
+static std::atomic<bool> rtl_fm_preset_scan_active{false};
+static std::atomic<int> rtl_fm_preset_scan_step{0};
+static std::atomic<int> rtl_fm_preset_scan_total_steps{1};
+static std::atomic<int> rtl_fm_preset_scan_found{0};
+static std::atomic<uint32_t> rtl_fm_preset_scan_freq_hz{kRtlFmMinHz};
+
+// Runs on the streaming task only (single-threaded access to fm_presets).
+void fm_preset_offer(uint32_t freq_hz, float level_dbfs) {
+  // Merge into an existing nearby entry (same station found by adjacent steps)
+  // instead of adding a duplicate slot.
+  for (int i = 0; i < fm_preset_count; ++i) {
+    const uint32_t delta = freq_hz > fm_presets[i].freq_hz
+                                ? freq_hz - fm_presets[i].freq_hz
+                                : fm_presets[i].freq_hz - freq_hz;
+    if (delta <= 300000u) {
+      if (level_dbfs > fm_presets[i].level_dbfs) {
+        fm_presets[i].freq_hz = freq_hz;
+        fm_presets[i].level_dbfs = level_dbfs;
+      }
+      return;
+    }
+  }
+  if (fm_preset_count < kFmPresetCapacity) {
+    fm_presets[fm_preset_count].freq_hz = freq_hz;
+    fm_presets[fm_preset_count].level_dbfs = level_dbfs;
+    ++fm_preset_count;
+  } else {
+    // Replace the weakest slot if this station is stronger.
+    int weakest = 0;
+    for (int i = 1; i < kFmPresetCapacity; ++i) {
+      if (fm_presets[i].level_dbfs < fm_presets[weakest].level_dbfs) weakest = i;
+    }
+    if (level_dbfs > fm_presets[weakest].level_dbfs) {
+      fm_presets[weakest].freq_hz = freq_hz;
+      fm_presets[weakest].level_dbfs = level_dbfs;
+    }
+  }
+  // Keep sorted low-to-high frequency for a stable, scannable list.
+  for (int i = 1; i < fm_preset_count; ++i) {
+    FmPreset key = fm_presets[i];
+    int j = i - 1;
+    while (j >= 0 && fm_presets[j].freq_hz > key.freq_hz) {
+      fm_presets[j + 1] = fm_presets[j];
+      --j;
+    }
+    fm_presets[j + 1] = key;
+  }
+}
 static std::atomic<CbMode> cb_mode{CbMode::am};
 static std::atomic<int32_t> cb_clarifier_hz{0};
 static std::atomic<int32_t> cb_squelch_dbfs{-75};
@@ -732,9 +1071,11 @@ void draw_band_edges();
 void draw_cb_dashboard(bool static_panel);
 bool handle_cb_touch(int32_t x, int32_t y);
 void draw_lora_dashboard(bool static_panel);
+void draw_fm_dashboard(bool static_panel);
 void draw_lora_packets_view(bool force);
 void draw_lora_map_view(bool force);
 bool handle_lora_touch(int32_t x, int32_t y);
+bool handle_fm_touch(int32_t x, int32_t y);
 void draw_rf_band_guide(uint32_t frequency_hz);
 int spectrum_draw_width();
 void redraw_spectrum_panel();
@@ -3356,6 +3697,337 @@ void draw_lora_dashboard(bool static_panel) {
   M5.Display.drawString(log_label, log_box_x + 27, log_box_y + 9);
 }
 
+// VU gauge-face art cached in RAM (decoded from the JPEG once, at static-panel
+// time) so live needle updates never touch the SD card. Re-reading/decoding
+// JPEG from SD on every ~200ms redraw was stalling the touch-poll loop badly
+// enough to require multiple taps per button press.
+M5Canvas fm_vu_face_l(&M5.Display);
+M5Canvas fm_vu_face_r(&M5.Display);
+bool fm_vu_sprites_ready = false;
+
+void fm_load_vu_sprites() {
+  constexpr int w = 343, h = 118, bandH = 30, faceH = h - bandH;
+  if (!fm_vu_face_l.getBuffer()) fm_vu_face_l.createSprite(w, faceH);
+  if (!fm_vu_face_r.getBuffer()) fm_vu_face_r.createSprite(w, faceH);
+  fm_vu_sprites_ready = false;
+  if (!ensure_tab5_sd() || !g_sd_fs->exists(kFmDashboardPath)) return;
+  fm_vu_face_l.drawJpgFile(*g_sd_fs, kFmDashboardPath, 0, 0, w, faceH,
+                           kFmVuCardX + 7, kFmVuCardY + 30);
+  fm_vu_face_r.drawJpgFile(*g_sd_fs, kFmDashboardPath, 0, 0, w, faceH,
+                           kFmVuCardX + 356, kFmVuCardY + 30);
+  fm_vu_sprites_ready = true;
+}
+
+// Straight-needle VU indicator over the cached gauge-face art. Ports the
+// mockup's pivot geometry (docs mockup vuRect()) so the needle lands exactly
+// on the pre-rendered scale. Erases the prior needle by pushing the cached
+// RAM sprite (no SD access) before drawing the new needle position.
+void fm_draw_vu_needle(int card_x, int card_y, int w, int h, float val01,
+                       M5Canvas* face, float dbfs) {
+  const int bandH = 30, faceH = h - bandH;
+  const float hw = w / 2.0f - 26.0f, ey = 46.0f, topM = 16.0f;
+  const float P = (hw * hw + ey * ey - topM * topM) / (2.0f * (ey - topM));
+  const float r = P - topM;
+  const float pxc = w / 2.0f, pyc = P;
+  const float a0 = atan2f(ey - pyc, -hw), a1 = atan2f(ey - pyc, hw);
+  const float span = a1 - a0;
+  const float RED = 0.72f;
+
+  const int gx = kSpectrumX + kFmVuCardX + card_x;
+  const int gy = kSpectrumY + kFmVuCardY + card_y;
+
+  if (fm_vu_sprites_ready) {
+    face->pushSprite(&M5.Display, gx, gy);
+  } else {
+    M5.Display.fillRect(gx, gy, w, faceH, TFT_BLACK);
+  }
+
+  val01 = constrain(val01, 0.0f, 1.0f);
+  const float a = a0 + span * val01;
+  const float x0 = pxc + cosf(a) * (r - 70.0f), y0 = pyc + sinf(a) * (r - 70.0f);
+  const float x1 = pxc + cosf(a) * (r - 2.0f), y1 = pyc + sinf(a) * (r - 2.0f);
+  M5.Display.drawLine(gx + static_cast<int>(x0), gy + static_cast<int>(y0),
+                      gx + static_cast<int>(x1), gy + static_cast<int>(y1), TFT_WHITE);
+  M5.Display.drawLine(gx + static_cast<int>(x0) + 1, gy + static_cast<int>(y0),
+                      gx + static_cast<int>(x1) + 1, gy + static_cast<int>(y1), TFT_WHITE);
+
+  // Label strip readout (channel tag stays in the background art; only the
+  // dB value and clip lamp need a live redraw).
+  const int strip_y = gy + faceH;
+  M5.Display.fillRect(gx + w - 90, strip_y + 1, 88, bandH - 2, TFT_BLACK);
+  char db_text[12];
+  snprintf(db_text, sizeof(db_text), "%+.1f", dbfs);
+  M5.Display.setTextDatum(middle_right);
+  M5.Display.setTextSize(1);
+  M5.Display.setTextColor(val01 >= RED ? TFT_RED : 0x07E0, TFT_BLACK);
+  M5.Display.drawString(db_text, gx + w - 30, strip_y + bandH / 2);
+  M5.Display.fillCircle(gx + w - 15, strip_y + bandH / 2, 5,
+                        val01 >= RED ? TFT_RED : 0x2945);
+}
+
+// Full-screen FM/AM dashboard: same 1152x470 footprint as the LoRa command
+// center, JPEG background + live overlays following docs/fm mockup layout.
+void draw_fm_dashboard(bool static_panel) {
+  if (rtl_ui_band != RtlBand::fm || rtl_nav_open) return;
+  const int ox = kSpectrumX, oy = kSpectrumY;
+
+  if (static_panel) {
+    const bool image_ok = ensure_tab5_sd() && g_sd_fs->exists(kFmDashboardPath) &&
+                          M5.Display.drawJpgFile(*g_sd_fs, kFmDashboardPath, ox, oy);
+    if (!image_ok) {
+      M5.Display.fillRect(ox, oy, kSpectrumWidth, kCbPanelHeight, TFT_BLACK);
+      M5.Display.drawRoundRect(ox, oy, kSpectrumWidth, kCbPanelHeight, 16, TFT_DARKCYAN);
+    }
+    fm_load_vu_sprites();
+  }
+
+  const bool scanning = rtl_fm_preset_scan_active.load(std::memory_order_relaxed);
+
+  // --- FREQUENCY card ---
+  char freq_text[16];
+  const uint32_t shown_hz =
+      scanning ? rtl_fm_preset_scan_freq_hz.load(std::memory_order_relaxed)
+               : rtl_ui_frequency_hz;
+  snprintf(freq_text, sizeof(freq_text), "%.1f", shown_hz / 1000000.0);
+  M5.Display.fillRect(ox + kFmFreqCardX + 12, oy + kFmFreqCardY + 18, 260, 66, TFT_BLACK);
+  M5.Display.setTextDatum(middle_left);
+  M5.Display.setTextSize(5);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  M5.Display.drawString(freq_text, ox + kFmFreqCardX + 16, oy + kFmFreqCardY + 52);
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(0x8c5b, TFT_BLACK);
+  M5.Display.drawString("MHz", ox + kFmFreqCardX + 210, oy + kFmFreqCardY + 60);
+
+  char chan_text[48];
+  snprintf(chan_text, sizeof(chan_text), "STEP %u kHz  .  WFM  .  BW %u kHz",
+           rtl_fm_step_hz / 1000,
+           rtl_filter_bandwidth_hz.load(std::memory_order_relaxed) / 1000);
+  M5.Display.fillRect(ox + kFmFreqCardX + 16, oy + kFmFreqCardY + 82, 400, 22, TFT_BLACK);
+  M5.Display.setTextSize(1);
+  M5.Display.setTextColor(0x00c8f0, TFT_BLACK);
+  M5.Display.drawString(chan_text, ox + kFmFreqCardX + 16, oy + kFmFreqCardY + 92);
+
+  const float sig01 = constrain((rtl_signal_dbfs_smooth + 90.0f) / 90.0f, 0.0f, 1.0f);
+  char sig_text[24];
+  snprintf(sig_text, sizeof(sig_text), "SIG %.0f dBm", rtl_signal_dbfs_smooth);
+  M5.Display.fillRect(ox + kFmFreqCardX + 420, oy + kFmFreqCardY + 24, 270, 20, TFT_BLACK);
+  M5.Display.setTextDatum(middle_left);
+  M5.Display.setTextSize(1);
+  M5.Display.setTextColor(0x93a4, TFT_BLACK);
+  M5.Display.drawString(sig_text, ox + kFmFreqCardX + 420, oy + kFmFreqCardY + 34);
+  M5.Display.drawRect(ox + kFmFreqCardX + 590, oy + kFmFreqCardY + 27, 104, 13, 0x3d54);
+  M5.Display.fillRect(ox + kFmFreqCardX + 591, oy + kFmFreqCardY + 28, 102, 11, TFT_BLACK);
+  const int sig_fillw = static_cast<int>(102 * sig01);
+  if (sig_fillw > 0) {
+    M5.Display.fillRect(ox + kFmFreqCardX + 591, oy + kFmFreqCardY + 28, sig_fillw, 11,
+                        sig01 > 0.82f ? TFT_RED : sig01 > 0.62f ? TFT_YELLOW : TFT_GREEN);
+  }
+  char vol_text[16];
+  snprintf(vol_text, sizeof(vol_text), "VOL %u", rtl_ui_volume);
+  M5.Display.fillRect(ox + kFmFreqCardX + 420, oy + kFmFreqCardY + 53, 270, 20, TFT_BLACK);
+  M5.Display.setTextColor(0x93a4, TFT_BLACK);
+  M5.Display.drawString(vol_text, ox + kFmFreqCardX + 420, oy + kFmFreqCardY + 63);
+  M5.Display.drawRect(ox + kFmFreqCardX + 590, oy + kFmFreqCardY + 56, 104, 13, 0x3d54);
+  M5.Display.fillRect(ox + kFmFreqCardX + 591, oy + kFmFreqCardY + 57, 102, 11, TFT_BLACK);
+  const int vol_fillw = static_cast<int>(102 * (rtl_ui_volume / 32.0f));
+  if (vol_fillw > 0) {
+    M5.Display.fillRect(ox + kFmFreqCardX + 591, oy + kFmFreqCardY + 57,
+                        constrain(vol_fillw, 0, 102), 11, TFT_YELLOW);
+  }
+
+  // --- STATION / RDS card: Stage 1 carrier + Stage 2 block-sync status.
+  // No PS/PTY/RadioText yet — that's Stage 3, gated on this being confirmed
+  // against real air first (see phasing.md).
+  {
+    const bool rds_present = rtl_rds_carrier_present.load(std::memory_order_relaxed);
+    const bool block_locked = rtl_rds_block_locked.load(std::memory_order_relaxed);
+    const uint32_t good = rtl_rds_good_blocks.load(std::memory_order_relaxed);
+    const uint32_t total = rtl_rds_total_blocks.load(std::memory_order_relaxed);
+    const int badge_x = ox + kFmRdsCardX + kFmRdsCardW - 183;
+    const int badge_y = oy + kFmRdsCardY + 8;
+    M5.Display.fillRect(badge_x, badge_y, 170, 54, TFT_BLACK);
+    M5.Display.drawRoundRect(badge_x, badge_y, 170, 32, 4,
+                             rds_present ? TFT_GREEN : 0x7c4f);
+    M5.Display.setTextDatum(middle_center);
+    M5.Display.setTextSize(1);
+    M5.Display.setTextColor(rds_present ? TFT_GREEN : 0xc074, TFT_BLACK);
+    M5.Display.drawString(rds_present ? "RDS CARRIER" : "SEARCHING...",
+                          badge_x + 85, badge_y + 16);
+    char bler_text[32];
+    if (total > 0) {
+      const float bler = 100.0f * (1.0f - static_cast<float>(good) / static_cast<float>(total));
+      snprintf(bler_text, sizeof(bler_text), "%s  BLER %.0f%%",
+               block_locked ? "BLOCK SYNC" : "SEARCHING", static_cast<double>(bler));
+    } else {
+      strlcpy(bler_text, "NO BITSTREAM", sizeof(bler_text));
+    }
+    M5.Display.setTextColor(block_locked ? TFT_GREEN : 0x8fa3, TFT_BLACK);
+    M5.Display.drawString(bler_text, badge_x + 85, badge_y + 44);
+  }
+
+  // --- VU card (needles) ---
+  const float l_dbfs = rtl_audio_left_dbfs.load(std::memory_order_relaxed);
+  const float r_dbfs = rtl_audio_right_dbfs.load(std::memory_order_relaxed);
+  const bool stereo = rtl_stereo_locked.load(std::memory_order_relaxed);
+  // Matches the printed -20..+3 dBFS scale baked into the gauge-face art.
+  // The meter itself is now soft-limited to the same ~-8.7 dBFS ceiling as
+  // the actual audio output (fm_soft_limit), so peaks land near "0" on the
+  // scale instead of pinning past it.
+  auto vu_val = [](float dbfs) { return constrain((dbfs + 20.0f) / 23.0f, 0.0f, 1.0f); };
+  fm_draw_vu_needle(7, 30, 343, 118, vu_val(l_dbfs), &fm_vu_face_l, l_dbfs);
+  fm_draw_vu_needle(356, 30, 343, 118, vu_val(r_dbfs), &fm_vu_face_r, r_dbfs);
+  M5.Display.fillRect(ox + kFmVuCardX, oy + kFmVuCardY, kFmVuCardW, 22, TFT_BLACK);
+  M5.Display.setTextDatum(middle_left);
+  M5.Display.setTextSize(1);
+  M5.Display.setTextColor(stereo ? TFT_GREEN : 0x556, TFT_BLACK);
+  M5.Display.drawString(stereo ? "VU  .  STEREO LOCKED" : "VU  .  MONO (searching for 19 kHz pilot)",
+                        ox + kFmVuCardX + 11, oy + kFmVuCardY + 15);
+
+  // SCOPE card content (real FFT spectrum + waterfall) is drawn by
+  // draw_fm_scope(), invoked from draw_spectrum() on the main visual loop —
+  // same pipeline every other band uses, just redirected to this card.
+
+  // --- INPUT LEVEL card (real L/R post-demod peak, segmented bars) ---
+  auto draw_seg_bar = [&](int track_y, float dbfs) {
+    const int bx = ox + kFmInpCardX + 42, by = oy + kFmInpCardY + track_y;
+    const float v = constrain((dbfs + 40.0f) / 43.0f, 0.0f, 1.0f);
+    const int lit = static_cast<int>(47 * v);
+    for (int i = 0; i < 47; ++i) {
+      const uint16_t col = i >= lit ? static_cast<uint16_t>(0x1904)
+                           : i > 42  ? TFT_RED
+                           : i > 36  ? TFT_YELLOW
+                                     : static_cast<uint16_t>(0x1ea5);
+      M5.Display.fillRect(bx + 1 + i * 8, by + 1, 6, 16, col);
+    }
+  };
+  draw_seg_bar(34, l_dbfs);
+  draw_seg_bar(58, r_dbfs);
+
+  // --- RECORDING card ---
+  const bool rec_active = g_audio_rec_active.load(std::memory_order_acquire);
+  const size_t rec_samples = g_audio_rec_write.load(std::memory_order_acquire);
+  const float rec_sec = static_cast<float>(rec_samples) / static_cast<float>(kAudioRecRateHz);
+  M5.Display.fillRect(ox + kFmRecCardX + 4, oy + kFmRecCardY + 20, kFmRecCardW - 8, 42, TFT_BLACK);
+  M5.Display.fillCircle(ox + kFmRecCardX + 23, oy + kFmRecCardY + 41, 7,
+                        rec_active ? TFT_RED : 0x2945);
+  M5.Display.setTextDatum(middle_left);
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(rec_active ? 0xfaeb : 0x556, TFT_BLACK);
+  M5.Display.drawString(rec_active ? "REC" : "STANDBY", ox + kFmRecCardX + 45, oy + kFmRecCardY + 41);
+  char rec_bars_txt[8];
+  const int lit_bars = static_cast<int>(constrain(rec_sec / kAudioRecMaxSeconds, 0.0f, 1.0f) * 8);
+  for (int i = 0; i < 8; ++i) {
+    M5.Display.fillRect(ox + kFmRecCardX + 130 + i * 15, oy + kFmRecCardY + 33, 11, 16,
+                        i < lit_bars ? 0x1567 : 0x1d28);
+  }
+  char rec_time[12];
+  snprintf(rec_time, sizeof(rec_time), "%02u:%02u", static_cast<unsigned>(rec_sec) / 60,
+           static_cast<unsigned>(rec_sec) % 60);
+  M5.Display.setTextDatum(middle_right);
+  M5.Display.setTextColor(rec_active ? 0xfaeb : 0x556, TFT_BLACK);
+  M5.Display.drawString(rec_time, ox + kFmRecCardX + kFmRecCardW - 12, oy + kFmRecCardY + 33);
+
+  // --- PRESETS card ---
+  M5.Display.fillRect(ox + kFmPreCardX + 4, oy + kFmPreCardY + 24, kFmPreCardW - 8, 160, TFT_BLACK);
+  if (scanning) {
+    const int step = rtl_fm_preset_scan_step.load(std::memory_order_relaxed);
+    const int total = max(1, rtl_fm_preset_scan_total_steps.load(std::memory_order_relaxed));
+    const int found = rtl_fm_preset_scan_found.load(std::memory_order_relaxed);
+    M5.Display.setTextDatum(middle_left);
+    M5.Display.setTextSize(2);
+    M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
+    M5.Display.drawString("SCANNING BAND", ox + kFmPreCardX + 12, oy + kFmPreCardY + 40);
+    char scan_freq[16];
+    snprintf(scan_freq, sizeof(scan_freq), "%.1f MHz",
+             rtl_fm_preset_scan_freq_hz.load(std::memory_order_relaxed) / 1000000.0);
+    M5.Display.setTextDatum(middle_right);
+    M5.Display.drawString(scan_freq, ox + kFmPreCardX + kFmPreCardW - 12, oy + kFmPreCardY + 40);
+    const int bar_x = ox + kFmPreCardX + 12, bar_y = oy + kFmPreCardY + 80;
+    const int bar_w = kFmPreCardW - 24;
+    M5.Display.drawRect(bar_x, bar_y, bar_w, 20, 0x3347);
+    const int fillw = static_cast<int>(bar_w * constrain(step / float(total), 0.0f, 1.0f));
+    if (fillw > 0) M5.Display.fillRect(bar_x + 1, bar_y + 1, min(fillw, bar_w - 2), 18, 0x0e74);
+    char step_txt[24];
+    snprintf(step_txt, sizeof(step_txt), "STEP %d / %d", step, total);
+    M5.Display.setTextDatum(middle_left);
+    M5.Display.setTextSize(1);
+    M5.Display.setTextColor(0x8fa3, TFT_BLACK);
+    M5.Display.drawString(step_txt, bar_x, bar_y + 40);
+    char found_txt[16];
+    snprintf(found_txt, sizeof(found_txt), "%d FOUND", found);
+    M5.Display.setTextDatum(middle_right);
+    M5.Display.setTextColor(0x5cff9a, TFT_BLACK);
+    M5.Display.drawString(found_txt, bar_x + bar_w, bar_y + 40);
+    M5.Display.setTextDatum(middle_left);
+    M5.Display.setTextColor(0x5d74, TFT_BLACK);
+    M5.Display.drawString("TAP CANCEL TO ABORT", bar_x, bar_y + 74);
+  } else {
+    char count_txt[16];
+    snprintf(count_txt, sizeof(count_txt), "%d / %d", fm_preset_count, kFmPresetCapacity);
+    M5.Display.setTextDatum(middle_right);
+    M5.Display.setTextSize(1);
+    M5.Display.setTextColor(0x7d8f, TFT_BLACK);
+    M5.Display.drawString(count_txt, ox + kFmPreCardX + kFmPreCardW - 12, oy + kFmPreCardY + 34);
+    if (fm_preset_count == 0) {
+      M5.Display.setTextDatum(middle_center);
+      M5.Display.setTextSize(2);
+      M5.Display.setTextColor(0x556, TFT_BLACK);
+      M5.Display.drawString("TAP SCAN TO FIND STATIONS",
+                            ox + kFmPreCardX + kFmPreCardW / 2, oy + kFmPreCardY + 100);
+    } else {
+      M5.Display.setTextDatum(middle_left);
+      for (int row = 0; row < kFmPresetVisibleRows; ++row) {
+        const int idx = fm_preset_scroll_top + row;
+        if (idx >= fm_preset_count) break;
+        const int ry = oy + kFmPreCardY + 34 + row * 30;
+        const bool sel = fm_presets[idx].freq_hz == rtl_ui_frequency_hz;
+        M5.Display.fillRect(ox + kFmPreCardX + 8, ry, kFmPreCardW - 60, 28,
+                            sel ? 0x1567 : TFT_BLACK);
+        char pf[10];
+        snprintf(pf, sizeof(pf), "%.1f", fm_presets[idx].freq_hz / 1000000.0);
+        M5.Display.setTextSize(2);
+        M5.Display.setTextColor(sel ? TFT_WHITE : 0xc8d6, sel ? 0x1567 : TFT_BLACK);
+        M5.Display.drawString(pf, ox + kFmPreCardX + 44, ry + 14);
+        char pd[8];
+        snprintf(pd, sizeof(pd), "%d", static_cast<int>(fm_presets[idx].level_dbfs));
+        M5.Display.setTextDatum(middle_right);
+        M5.Display.setTextSize(1);
+        M5.Display.drawString(pd, ox + kFmPreCardX + kFmPreCardW - 64, ry + 14);
+        M5.Display.setTextDatum(middle_left);
+      }
+    }
+    // Scroll buttons
+    const int scroll_x = ox + kFmPreCardX + kFmPreCardW - 46;
+    const bool can_up = fm_preset_scroll_top > 0;
+    const bool can_down = fm_preset_scroll_top + kFmPresetVisibleRows < fm_preset_count;
+    M5.Display.fillRoundRect(scroll_x, oy + kFmPreCardY + 32, 42, 46, 6,
+                             can_up ? 0x1567 : 0x2230);
+    M5.Display.fillRoundRect(scroll_x, oy + kFmPreCardY + 136, 42, 46, 6,
+                             can_down ? 0x1567 : 0x2230);
+    M5.Display.setTextDatum(middle_center);
+    M5.Display.setTextSize(2);
+    M5.Display.setTextColor(TFT_WHITE, can_up ? 0x1567 : 0x2230);
+    M5.Display.drawString("^", scroll_x + 21, oy + kFmPreCardY + 55);
+    M5.Display.setTextColor(TFT_WHITE, can_down ? 0x1567 : 0x2230);
+    M5.Display.drawString("v", scroll_x + 21, oy + kFmPreCardY + 159);
+  }
+
+  // --- TUNER card ---
+  const int tn_x = ox + kFmTunCardX + 16, tn_w = kFmTunCardW - 32;
+  M5.Display.fillRect(ox + kFmTunCardX + 4, oy + kFmTunCardY + 20, kFmTunCardW - 8, 24, TFT_BLACK);
+  char tune_text[16];
+  snprintf(tune_text, sizeof(tune_text), "%.1f", shown_hz / 1000000.0);
+  M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(0x5cff9a, TFT_BLACK);
+  M5.Display.drawString(tune_text, ox + kFmTunCardX + kFmTunCardW / 2, oy + kFmTunCardY + 32);
+  M5.Display.fillRect(tn_x, oy + kFmTunCardY + 63, tn_w, 12, TFT_BLACK);
+  const float frac = constrain((shown_hz - kRtlFmMinHz) / float(kRtlFmMaxHz - kRtlFmMinHz), 0.0f, 1.0f);
+  const int needle_x = tn_x + static_cast<int>(tn_w * frac);
+  M5.Display.fillTriangle(needle_x - 5, oy + kFmTunCardY + 63, needle_x + 5,
+                          oy + kFmTunCardY + 63, needle_x, oy + kFmTunCardY + 75, 0x5cff9a);
+}
+
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   if (!rtl_spectrum_window_ready) {
     constexpr float kPi = 3.14159265358979323846f;
@@ -3369,6 +4041,12 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   draw_sdr_header(band, frequency_hz, volume);
   if (band == RtlBand::lora) {
     draw_lora_dashboard(true);
+    draw_sdr_controls(band, true);
+    return;
+  }
+  if (band == RtlBand::fm) {
+    reset_spectrum_renderer();
+    draw_fm_dashboard(true);
     draw_sdr_controls(band, true);
     return;
   }
@@ -3455,6 +4133,53 @@ void draw_lora_live_graphs(size_t first_bin, size_t visible_bins, float floor) {
 
   M5.Display.setScrollRect(waterfall_x, waterfall_y, waterfall_w, waterfall_h,
                            TFT_BLACK);
+  M5.Display.scroll(0, -1);
+  for (size_t bin = first_bin; bin < first_bin + visible_bins; ++bin) {
+    const float normalized =
+        constrain((rtl_spectrum_levels[bin] - floor) / 48.0f, 0.0f, 1.0f);
+    const int cell_x = static_cast<int>((bin - first_bin) * waterfall_w / visible_bins);
+    const int next_x = static_cast<int>((bin - first_bin + 1) * waterfall_w /
+                                        visible_bins);
+    const uint16_t color = waterfall_color(normalized);
+    for (int pixel = cell_x; pixel < next_x; ++pixel) rtl_waterfall_row[pixel] = color;
+  }
+  M5.Display.pushImage(waterfall_x, waterfall_y + waterfall_h - 1,
+                       waterfall_w, 1, rtl_waterfall_row);
+  M5.Display.drawFastVLine(waterfall_x + waterfall_w / 2, waterfall_y,
+                           waterfall_h, TFT_GREEN);
+  M5.Display.endWrite();
+}
+
+// FM dashboard's SCOPE card: real FFT-derived spectrum bar-graph + a small
+// live waterfall, sized to match the mockup's embedded 686-wide canvases.
+void draw_fm_scope(size_t first_bin, size_t visible_bins, float floor) {
+  constexpr int scope_x = kSpectrumX + kFmScopeCardX + 9;
+  constexpr int scope_y = kSpectrumY + kFmScopeCardY + 31;
+  constexpr int scope_w = kFmScopeCardW - 18;
+  constexpr int scope_h = 40;
+  constexpr int waterfall_x = scope_x;
+  constexpr int waterfall_y = scope_y + scope_h + 4;
+  constexpr int waterfall_w = scope_w;
+  constexpr int waterfall_h = 40;
+
+  M5.Display.startWrite();
+  M5.Display.fillRect(scope_x, scope_y, scope_w, scope_h, TFT_BLACK);
+  M5.Display.drawFastHLine(scope_x, scope_y + scope_h / 2, scope_w, 0x2104);
+  int previous_x = scope_x;
+  int previous_y = scope_y + scope_h - 1;
+  for (size_t bin = first_bin; bin < first_bin + visible_bins; ++bin) {
+    const float normalized =
+        constrain((rtl_spectrum_levels[bin] - floor) / 48.0f, 0.0f, 1.0f);
+    const int x = scope_x + static_cast<int>((bin - first_bin) * (scope_w - 1) /
+                                              (visible_bins - 1));
+    const int y = scope_y + scope_h - 1 - static_cast<int>(normalized * (scope_h - 2));
+    if (bin != first_bin) M5.Display.drawLine(previous_x, previous_y, x, y, TFT_CYAN);
+    previous_x = x;
+    previous_y = y;
+  }
+  M5.Display.drawFastVLine(scope_x + scope_w / 2, scope_y, scope_h, TFT_GREEN);
+
+  M5.Display.setScrollRect(waterfall_x, waterfall_y, waterfall_w, waterfall_h, TFT_BLACK);
   M5.Display.scroll(0, -1);
   for (size_t bin = first_bin; bin < first_bin + visible_bins; ++bin) {
     const float normalized =
@@ -3699,6 +4424,13 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
     ++rtl_spectrum_frames;
     return;
   }
+  if (rtl_ui_band == RtlBand::fm) {
+    draw_fm_scope(first_bin, visible_bins, floor);
+    rtl_spectrum_trace_last_ms = now;
+    rtl_spectrum_trace_valid = true;
+    ++rtl_spectrum_frames;
+    return;
+  }
 
   M5.Display.startWrite();
   if (redraw_trace) {
@@ -3802,6 +4534,22 @@ float fast_phase(float cross, float dot) {
   return cross < 0 ? -angle : angle;
 }
 
+// Rational tanh approximation of the output soft-knee limiter, factored out
+// of shape_audio_sample() so the L/R dashboard meter can clamp to the same
+// ceiling the actual speaker/WAV samples are limited to. Without this, the
+// meter read the pre-limit signal directly and could swing well past 0 dBFS
+// (unbounded), which pinned the VU needle at max regardless of real loudness.
+inline float fm_soft_limit(float x) {
+  constexpr float kLimit = 12000.0f;
+  const float normalized = x / kLimit;
+  const float normalized_sq = normalized * normalized;
+  if (normalized_sq < 9.0f) {
+    return kLimit * normalized * (27.0f + normalized_sq) /
+           (27.0f + 9.0f * normalized_sq);
+  }
+  return x < 0.0f ? -kLimit : kLimit;
+}
+
 // Soft AGC + rational tanh approximation (avoids a 48 kHz libm call).
 int16_t shape_audio_sample(float demodulated, float base_scale) {
   float x = demodulated * base_scale * rtl_audio.agc_gain;
@@ -3813,15 +4561,7 @@ int16_t shape_audio_sample(float demodulated, float base_scale) {
     if (rtl_audio.agc_gain < 0.15f) rtl_audio.agc_gain = 0.15f;
     if (rtl_audio.agc_gain > 2.8f) rtl_audio.agc_gain = 2.8f;
   }
-  constexpr float kLimit = 12000.0f;
-  const float normalized = x / kLimit;
-  const float normalized_sq = normalized * normalized;
-  if (normalized_sq < 9.0f) {
-    x = kLimit * normalized * (27.0f + normalized_sq) /
-        (27.0f + 9.0f * normalized_sq);
-  } else {
-    x = x < 0.0f ? -kLimit : kLimit;
-  }
+  x = fm_soft_limit(x);
   if (rtl_audio.fade_in < 192) {
     x *= static_cast<float>(rtl_audio.fade_in) / 192.0f;
     ++rtl_audio.fade_in;
@@ -3847,8 +4587,13 @@ void queue_audio_samples(int16_t* audio, size_t audio_count) {
 
 /**
  * FM / NFM polar demod at kRtlSampleRateSps.
- * wbfm=true: broadcast mono path (channel LPF + 75 µs de-emphasis).
- * wbfm=false: NFM/WX — tighter audio LPF, light de-emphasis only.
+ * wbfm=true: broadcast mono path (channel LPF + 75 µs de-emphasis), plus a
+ *   stereo pilot/L-R decoder that runs for METERING ONLY — the speaker still
+ *   gets the mono (L+R) sum. Wiring true stereo into playRaw is a separate
+ *   step gated on the open audio-drop performance gate (PROJECT_STATUS.md);
+ *   doubling the speaker's sample rate belongs behind that gate closing,
+ *   not bundled into the first stereo decode.
+ * wbfm=false: NFM/WX — tighter audio LPF, light de-emphasis only, no stereo.
  * No blanker / heavy post-LPF (those muffled on prior A/B).
  */
 void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm) {
@@ -3858,6 +4603,12 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
   const float audio_lpf_k = wbfm ? kWbfmAudioLpfK : kNfmAudioLpfK;
   const float deemph_k = wbfm ? kWbfmDeemphK : kNfmDeemphK;
   const float inv_audio_decim = 1.0f / static_cast<float>(kFmAudioDecim);
+
+  /* Stereo meter accumulators, local to this IQ chunk (same call granularity
+   * as update_signal_level_from_iq — no persistent window/reset bookkeeping). */
+  float meter_peak_l = 0.0f;
+  float meter_peak_r = 0.0f;
+  bool meter_any = false;
 
   for (size_t offset = 0; offset + 1 < bytes; offset += 2) {
     /* Center CU8 and complex channel LPF (pre-demod adjacent-channel relief). */
@@ -3878,14 +4629,159 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
     if (rtl_audio.have_previous) {
       const float phase = fast_phase(rtl_audio.previous_i * q - rtl_audio.previous_q * i,
                                      rtl_audio.previous_i * i + rtl_audio.previous_q * q);
+
+      /*
+       * Stereo pilot/L-R recovery, tapped from the full-bandwidth composite
+       * BEFORE the ~16 kHz mono LPF below discards everything past 15 kHz.
+       * See the kPilotTwoRCos / kSubTwoRCos comment block for the derivation.
+       */
+      float diff = 0.0f;
+      if (wbfm) {
+        /* All-pole resonator at 19 kHz: output is the newest y[n] itself. */
+        const float pilot_y0 =
+            phase + kPilotTwoRCos * rtl_audio.pilot_y1 - kPilotR2 * rtl_audio.pilot_y2;
+        rtl_audio.pilot_y2 = rtl_audio.pilot_y1;
+        rtl_audio.pilot_y1 = pilot_y0;
+
+        /* Slow rectified envelope for lock hysteresis (~30 ms time constant). */
+        rtl_audio.pilot_env += kStereoEnvK * (fabsf(pilot_y0) - rtl_audio.pilot_env);
+        if (rtl_audio.stereo_locked) {
+          if (rtl_audio.pilot_env < kStereoLockOff) rtl_audio.stereo_locked = false;
+        } else {
+          if (rtl_audio.pilot_env > kStereoLockOn) rtl_audio.stereo_locked = true;
+        }
+
+        /*
+         * Regenerate the 38 kHz demod carrier by squaring the pilot:
+         *   cos²θ = ½ + ½cos(2θ)
+         * The resonator at 38 kHz rejects the ½ DC term and passes the
+         * cos(2θ) term — a clean sinusoid at exactly 2× the pilot frequency,
+         * phase-locked to it with no separate PLL loop.
+         */
+        const float pilot_sq = pilot_y0 * pilot_y0;
+        const float sub_y0 =
+            pilot_sq + kSubTwoRCos * rtl_audio.sub_y1 - kSubR2 * rtl_audio.sub_y2;
+        rtl_audio.sub_y2 = rtl_audio.sub_y1;
+        rtl_audio.sub_y1 = sub_y0;
+
+        /*
+         * Normalize the regenerated carrier to ~unit amplitude before using it
+         * to demodulate: the squarer's AC term has amplitude ½·pilot_env², so
+         * dividing by that keeps L-R gain from drifting with signal strength
+         * relative to the L+R (mono) path, which is unit-scaled by definition
+         * of the discriminator itself.
+         */
+        const float carrier_amp = 0.5f * rtl_audio.pilot_env * rtl_audio.pilot_env + 1.0e-6f;
+        const float carrier = sub_y0 / carrier_amp;
+
+        /*
+         * Coherent (synchronous) demod of the 38 kHz DSB-SC L-R subcarrier:
+         * multiplying by the in-phase carrier folds it to baseband at half
+         * amplitude (cos·cos = ½cos(Δ) + ½cos(Σ)); the ×2 undoes that loss.
+         * The Σ image lands at 76 kHz and the mono/pilot/RDS content lands
+         * elsewhere in the spectrum — both are rejected by the same ~16 kHz
+         * LPF that already shapes the mono path below.
+         */
+        diff = rtl_audio.stereo_locked ? 2.0f * phase * carrier : 0.0f;
+
+        /*
+         * RDS Stage 1 — carrier presence. Same composite tap as the
+         * pilot/sub resonators above (pre mono-LPF: RDS lives at 57 kHz,
+         * the LPF below would discard it entirely). A resonator isolates
+         * energy in the ~57 kHz band; its rectified envelope gives a rough
+         * signal-strength reading. Hardware-verified 2026-08-10 on 96.1
+         * KZEK before Stage 2 below was written on top of it.
+         */
+        const float rds_bp0 = phase + kRdsBpTwoRCos * rtl_audio.rds_bp_y1 -
+                              kRdsBpR2 * rtl_audio.rds_bp_y2;
+        rtl_audio.rds_bp_y2 = rtl_audio.rds_bp_y1;
+        rtl_audio.rds_bp_y1 = rds_bp0;
+        rtl_audio.rds_env += kRdsEnvK * (fabsf(rds_bp0) - rtl_audio.rds_env);
+
+        /*
+         * RDS Stage 2 — coherent carrier tracking, symbol timing, and block
+         * sync. rds_bp0 above is the bandpassed composite signal; this
+         * Costas loop locks an NCO onto its actual 57 kHz carrier phase
+         * (the resonator chain gives the right frequency for free — 57 kHz
+         * is exactly 3x the already-locked pilot — but not the right
+         * phase, which the loop corrects adaptively).
+         */
+        {
+          const float new_i = rtl_audio.rds_nco_i * rtl_audio.rds_nco_inc_cos -
+                              rtl_audio.rds_nco_q * rtl_audio.rds_nco_inc_sin;
+          const float new_q = rtl_audio.rds_nco_i * rtl_audio.rds_nco_inc_sin +
+                              rtl_audio.rds_nco_q * rtl_audio.rds_nco_inc_cos;
+          rtl_audio.rds_nco_i = new_i;
+          rtl_audio.rds_nco_q = new_q;
+          if (++rtl_audio.rds_nco_recalc_counter >= kRdsNcoRecalcSamples) {
+            rtl_audio.rds_nco_recalc_counter = 0;
+            const float mag = sqrtf(rtl_audio.rds_nco_i * rtl_audio.rds_nco_i +
+                                    rtl_audio.rds_nco_q * rtl_audio.rds_nco_q) +
+                              1.0e-9f;
+            rtl_audio.rds_nco_i /= mag;
+            rtl_audio.rds_nco_q /= mag;
+            const float total_freq = kRdsNcoNominal + rtl_audio.rds_nco_freq_offset;
+            rtl_audio.rds_nco_inc_cos = cosf(total_freq);
+            rtl_audio.rds_nco_inc_sin = sinf(total_freq);
+          }
+
+          const float mix_i = rds_bp0 * rtl_audio.rds_nco_i;
+          const float mix_q = rds_bp0 * rtl_audio.rds_nco_q;
+          rtl_audio.rds_i_lpf += kRdsSymLpfK * (mix_i - rtl_audio.rds_i_lpf);
+          rtl_audio.rds_q_lpf += kRdsSymLpfK * (mix_q - rtl_audio.rds_q_lpf);
+
+          const float costas_error =
+              (rtl_audio.rds_i_lpf >= 0.0f ? 1.0f : -1.0f) * rtl_audio.rds_q_lpf;
+          rtl_audio.rds_nco_freq_offset += kRdsCostasKi * costas_error;
+          rtl_audio.rds_nco_freq_offset = constrain(
+              rtl_audio.rds_nco_freq_offset, -kRdsNcoFreqClamp, kRdsNcoFreqClamp);
+          /* Kp (phase) term folded in as a small-angle rotation — the error
+           * term is tiny enough in practice that this is exact, not an
+           * approximation worth worrying about. */
+          const float phase_nudge = kRdsCostasKp * costas_error;
+          const float nudged_i = rtl_audio.rds_nco_i - rtl_audio.rds_nco_q * phase_nudge;
+          const float nudged_q = rtl_audio.rds_nco_q + rtl_audio.rds_nco_i * phase_nudge;
+          rtl_audio.rds_nco_i = nudged_i;
+          rtl_audio.rds_nco_q = nudged_q;
+
+          rtl_audio.rds_chip_phase += kRdsChipInc;
+          if (rtl_audio.rds_chip_phase >= 1.0f) {
+            rtl_audio.rds_chip_phase -= 1.0f;
+            const bool chip = rtl_audio.rds_i_lpf >= 0.0f;
+            if (rtl_audio.rds_chip_have_prev) {
+              const bool pair_bit = rtl_audio.rds_chip_prev && !chip;
+              RdsHypothesis& h =
+                  rtl_audio.rds_hyp[rtl_audio.rds_chip_prev_index & 1u];
+              bool data_bit = pair_bit;
+              if (h.have_prev_raw_bit) data_bit = (pair_bit != h.prev_raw_bit);
+              h.prev_raw_bit = pair_bit;
+              h.have_prev_raw_bit = true;
+              rds_hypothesis_feed(h, data_bit);
+            }
+            rtl_audio.rds_chip_prev = chip;
+            rtl_audio.rds_chip_prev_index = rtl_audio.rds_chip_index;
+            rtl_audio.rds_chip_have_prev = true;
+            ++rtl_audio.rds_chip_index;
+          }
+        }
+      }
+
       /* Post-discriminator mono audio LPF, then boxcar to 48 kHz. */
       rtl_audio.channel_filter += audio_lpf_k * (phase - rtl_audio.channel_filter);
       rtl_audio.audio_sum += rtl_audio.channel_filter;
+      if (wbfm) {
+        rtl_audio.channel_filter_diff += audio_lpf_k * (diff - rtl_audio.channel_filter_diff);
+        rtl_audio.audio_sum_diff += rtl_audio.channel_filter_diff;
+      }
       if (++rtl_audio.audio_phase == kFmAudioDecim) {
-        const float demodulated = rtl_audio.audio_sum * inv_audio_decim;
+        const float demod_sum = rtl_audio.audio_sum * inv_audio_decim;
+        const float demod_diff = rtl_audio.audio_sum_diff * inv_audio_decim;
         rtl_audio.audio_sum = 0;
+        rtl_audio.audio_sum_diff = 0;
         rtl_audio.audio_phase = 0;
-        rtl_audio.deemphasis += deemph_k * (demodulated - rtl_audio.deemphasis);
+
+        /* Mono (L+R) path — this is what actually reaches the speaker. */
+        rtl_audio.deemphasis += deemph_k * (demod_sum - rtl_audio.deemphasis);
         rtl_audio.dc += 0.0008f * (rtl_audio.deemphasis - rtl_audio.dc);
         const int16_t sample =
             shape_audio_sample(rtl_audio.deemphasis - rtl_audio.dc, audio_scale);
@@ -3894,11 +4790,93 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
         if (magnitude > rtl_audio.peak) rtl_audio.peak = magnitude;
         rtl_audio.square_sum += static_cast<uint32_t>(sample * sample);
         ++rtl_audio.samples;
+
+        /*
+         * L/R for the dashboard meters only — never touches audio[]/playRaw.
+         * Reuses agc_gain read-only so the meter sits in the same numeric
+         * scale shape_audio_sample uses for the mono readout, without
+         * mutating the AGC state that call owns.
+         */
+        if (wbfm) {
+          const float scale = audio_scale * rtl_audio.agc_gain;
+          float l, r;
+          if (rtl_audio.stereo_locked) {
+            rtl_audio.deemphasis_l += deemph_k * ((demod_sum + demod_diff) - rtl_audio.deemphasis_l);
+            rtl_audio.deemphasis_r += deemph_k * ((demod_sum - demod_diff) - rtl_audio.deemphasis_r);
+            rtl_audio.dc_l += 0.0008f * (rtl_audio.deemphasis_l - rtl_audio.dc_l);
+            rtl_audio.dc_r += 0.0008f * (rtl_audio.deemphasis_r - rtl_audio.dc_r);
+            l = (rtl_audio.deemphasis_l - rtl_audio.dc_l) * scale;
+            r = (rtl_audio.deemphasis_r - rtl_audio.dc_r) * scale;
+          } else {
+            /* Not locked: mirror mono so L=R, matching the "MONO" UI state. */
+            l = r = (rtl_audio.deemphasis - rtl_audio.dc) * scale;
+          }
+          const float al = fabsf(fm_soft_limit(l)), ar = fabsf(fm_soft_limit(r));
+          if (al > meter_peak_l) meter_peak_l = al;
+          if (ar > meter_peak_r) meter_peak_r = ar;
+          meter_any = true;
+        }
       }
     }
     rtl_audio.previous_i = i;
     rtl_audio.previous_q = q;
     rtl_audio.have_previous = true;
+  }
+  if (wbfm) {
+    /* dBFS relative to int16 full scale; matches the mono peak's own units. */
+    constexpr float kFullScaleInv = 1.0f / 32768.0f;
+    rtl_stereo_locked.store(rtl_audio.stereo_locked, std::memory_order_relaxed);
+    if (meter_any) {
+      const float l_dbfs = 20.0f * log10f(meter_peak_l * kFullScaleInv + 1.0e-6f);
+      const float r_dbfs = 20.0f * log10f(meter_peak_r * kFullScaleInv + 1.0e-6f);
+      rtl_audio_left_dbfs.store(l_dbfs, std::memory_order_relaxed);
+      rtl_audio_right_dbfs.store(r_dbfs, std::memory_order_relaxed);
+    }
+    /* rds_env lives in the same unitless discriminator-phase domain as
+     * pilot_env, not true dBFS — this is a monotonic log-scale indicator
+     * for the UI meter, not a calibrated level. */
+    const bool rds_was_present = rtl_audio.rds_carrier_present;
+    if (rds_was_present) {
+      if (rtl_audio.rds_env < kRdsCarrierOff) rtl_audio.rds_carrier_present = false;
+    } else if (rtl_audio.rds_env > kRdsCarrierOn) {
+      rtl_audio.rds_carrier_present = true;
+    }
+    rtl_rds_signal_dbfs.store(20.0f * log10f(rtl_audio.rds_env + 1.0e-6f),
+                              std::memory_order_relaxed);
+    rtl_rds_carrier_present.store(rtl_audio.rds_carrier_present, std::memory_order_relaxed);
+
+    /* RDS Stage 2 publish + throttled serial diagnostics (verification
+     * checkpoint — see phasing.md). Pick whichever hypothesis is locked;
+     * if neither is, report the one with more total attempts so search
+     * progress is still visible on serial before lock happens. */
+    const RdsHypothesis& hyp0 = rtl_audio.rds_hyp[0];
+    const RdsHypothesis& hyp1 = rtl_audio.rds_hyp[1];
+    const RdsHypothesis& best =
+        hyp0.locked ? hyp0
+        : hyp1.locked ? hyp1
+        : (hyp0.total_blocks >= hyp1.total_blocks ? hyp0 : hyp1);
+    rtl_rds_block_locked.store(hyp0.locked || hyp1.locked, std::memory_order_relaxed);
+    rtl_rds_good_blocks.store(best.good_blocks, std::memory_order_relaxed);
+    rtl_rds_total_blocks.store(best.total_blocks, std::memory_order_relaxed);
+
+    static uint32_t rds_diag_last_ms = 0;
+    const uint32_t now_diag = millis();
+    if (now_diag - rds_diag_last_ms >= 2000) {
+      rds_diag_last_ms = now_diag;
+      const float bler = best.total_blocks > 0
+                             ? 100.0f * (1.0f - static_cast<float>(best.good_blocks) /
+                                                     static_cast<float>(best.total_blocks))
+                             : 100.0f;
+      Serial.printf(
+          "RDS_STAGE2 locked=%d bler=%.1f%% good=%lu total=%lu "
+          "hyp0_locked=%d hyp0_streak=%d hyp1_locked=%d hyp1_streak=%d "
+          "A=%04x B=%04x C=%04x D=%04x\n",
+          hyp0.locked || hyp1.locked, static_cast<double>(bler),
+          static_cast<unsigned long>(best.good_blocks),
+          static_cast<unsigned long>(best.total_blocks), hyp0.locked, hyp0.streak,
+          hyp1.locked, hyp1.streak, best.group_info[0], best.group_info[1],
+          best.group_info[2], best.group_info[3]);
+    }
   }
   queue_audio_samples(audio, audio_count);
 }
@@ -4558,6 +5536,14 @@ static void rtl_driver_app_task(void *) {
       rtl_signal_dbfs.store(-90.0f, std::memory_order_relaxed);
       rtl_signal_dbfs_smooth = -80.0f;
       rtl_signal_meter_last_ms = 0;
+      rtl_audio_left_dbfs.store(-90.0f, std::memory_order_relaxed);
+      rtl_audio_right_dbfs.store(-90.0f, std::memory_order_relaxed);
+      rtl_stereo_locked.store(false, std::memory_order_relaxed);
+      rtl_rds_signal_dbfs.store(-90.0f, std::memory_order_relaxed);
+      rtl_rds_carrier_present.store(false, std::memory_order_relaxed);
+      rtl_rds_block_locked.store(false, std::memory_order_relaxed);
+      rtl_rds_good_blocks.store(0, std::memory_order_relaxed);
+      rtl_rds_total_blocks.store(0, std::memory_order_relaxed);
       if (band == RtlBand::lora) lora_iq_reset_detector();
       rtl_capture_state.store(RtlCaptureState::running, std::memory_order_release);
       rtl_ui_active.store(true, std::memory_order_release);
@@ -4600,6 +5586,12 @@ static void rtl_driver_app_task(void *) {
         uint32_t auto_fm_sample_at_ms = 0;
         uint32_t auto_fm_best_hz = frequency_hz;
         float auto_fm_best_level = -120.0f;
+        bool preset_scanning = false;
+        uint32_t preset_scan_frequency_hz = kRtlFmMinHz + kRtlFmAutoStepHz / 2;
+        uint32_t preset_scan_sample_at_ms = 0;
+        uint32_t preset_scan_return_hz = frequency_hz;
+        int preset_scan_step_index = 0;
+        constexpr float kFmPresetMinDbfs = -70.0f;
         while (!rtl_stop_requested.load(std::memory_order_acquire) &&
                g_rtl_device_ready.load(std::memory_order_acquire)) {
           /* Touch + hot retune on this task (not in IQ callback): responsive STOP/FREQ. */
@@ -4653,6 +5645,60 @@ static void rtl_driver_app_task(void *) {
               auto_fm_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
             }
           }
+          if (g_stream_band == RtlBand::fm && !preset_scanning && !auto_fm_scanning &&
+              rtl_fm_preset_scan_requested.exchange(false, std::memory_order_acq_rel)) {
+            preset_scanning = true;
+            rtl_fm_preset_scan_active.store(true, std::memory_order_release);
+            rtl_fm_preset_scan_cancel.store(false, std::memory_order_relaxed);
+            preset_scan_frequency_hz = kRtlFmMinHz + kRtlFmAutoStepHz / 2;
+            preset_scan_return_hz = rtl_ui_frequency_hz;
+            preset_scan_step_index = 0;
+            fm_preset_count = 0;
+            fm_preset_scroll_top = 0;
+            const int total_steps = static_cast<int>(
+                (kRtlFmMaxHz - kRtlFmMinHz + kRtlFmAutoStepHz - 1) / kRtlFmAutoStepHz);
+            rtl_fm_preset_scan_total_steps.store(total_steps, std::memory_order_relaxed);
+            rtl_fm_preset_scan_step.store(0, std::memory_order_relaxed);
+            rtl_fm_preset_scan_found.store(0, std::memory_order_relaxed);
+            rtl_scope_span_hz.store(kRtlScopeSpanMaxHz, std::memory_order_relaxed);
+            redraw_spectrum_panel();
+            draw_spectrum_axis();
+            request_hot_retune(preset_scan_frequency_hz);
+            rtl_fm_preset_scan_freq_hz.store(preset_scan_frequency_hz, std::memory_order_relaxed);
+            preset_scan_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
+            draw_fm_dashboard(false);
+            Serial.println("RTL_PRESET_SCAN start");
+          }
+          if (preset_scanning && now_retune >= preset_scan_sample_at_ms) {
+            const float level = rtl_scope_peak_level.load(std::memory_order_relaxed);
+            const int32_t offset = rtl_scope_peak_offset_hz.load(std::memory_order_relaxed);
+            const int64_t found = static_cast<int64_t>(preset_scan_frequency_hz) + offset;
+            const uint32_t found_hz = rtl_clamp_frequency(
+                RtlBand::fm, found > 0 ? static_cast<uint32_t>(found) : 0u);
+            const uint32_t snapped_hz = ((found_hz + 50000u) / 100000u) * 100000u;
+            if (level >= kFmPresetMinDbfs) {
+              fm_preset_offer(snapped_hz, level);
+              rtl_fm_preset_scan_found.store(fm_preset_count, std::memory_order_relaxed);
+            }
+            Serial.printf("RTL_PRESET_SCAN sample center=%u peak=%u level=%.1f\n",
+                          preset_scan_frequency_hz, found_hz, static_cast<double>(level));
+            ++preset_scan_step_index;
+            rtl_fm_preset_scan_step.store(preset_scan_step_index, std::memory_order_relaxed);
+            if (preset_scan_frequency_hz + kRtlFmAutoStepHz / 2 >= kRtlFmMaxHz ||
+                rtl_fm_preset_scan_cancel.exchange(false, std::memory_order_acq_rel)) {
+              preset_scanning = false;
+              rtl_fm_preset_scan_active.store(false, std::memory_order_release);
+              request_hot_retune(preset_scan_return_hz);
+              draw_fm_dashboard(true);
+              Serial.printf("RTL_PRESET_SCAN done found=%d\n", fm_preset_count);
+            } else {
+              preset_scan_frequency_hz += kRtlFmAutoStepHz;
+              rtl_fm_preset_scan_freq_hz.store(preset_scan_frequency_hz, std::memory_order_relaxed);
+              reset_spectrum_renderer();
+              request_hot_retune(preset_scan_frequency_hz);
+              preset_scan_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
+            }
+          }
           uint32_t desired_lo = rtl_hot_retune_hz.load(std::memory_order_acquire);
           if (desired_lo != 0 && g_rtl != nullptr &&
               desired_lo != last_lo_applied_hz &&
@@ -4685,8 +5731,14 @@ static void rtl_driver_app_task(void *) {
           if (now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
             rtl_signal_meter_last_ms = now;
             draw_signal_meter(false);
-            draw_cb_dashboard(false);
-            draw_lora_dashboard(false);
+            /* Capture tool owns the screen below the header while active —
+             * dashboard repaints here would fight its debug panel for the
+             * same pixels (this was the "leftover screens" glitch). */
+            if (orc_tool_current() != OrcTool::Capture) {
+              draw_cb_dashboard(false);
+              draw_lora_dashboard(false);
+              draw_fm_dashboard(false);
+            }
           }
           /* Auto-export WAV after buffer fills (never write SD on the IQ callback). */
           if (g_audio_rec_export_pending.exchange(false, std::memory_order_acq_rel)) {
@@ -5069,6 +6121,17 @@ void load_state() {
   rtl_ui_frequency_hz = rtl_saved_fm_hz;
   rtl_requested_frequency_hz.store(rtl_saved_fm_hz, std::memory_order_release);
   Serial.printf("RTL_FM_LOAD frequency_hz=%u\n", rtl_saved_fm_hz);
+  if (preferences.isKey("last_band")) {
+    const auto stored_band = static_cast<RtlBand>(
+        preferences.getUInt("last_band", static_cast<uint32_t>(RtlBand::fm)));
+    if (stored_band == RtlBand::fm || stored_band == RtlBand::am ||
+        stored_band == RtlBand::wx || stored_band == RtlBand::cb ||
+        stored_band == RtlBand::lora || stored_band == RtlBand::browse) {
+      rtl_ui_band = stored_band;
+      rtl_requested_band.store(stored_band, std::memory_order_release);
+      Serial.printf("RTL_BAND_RESTORE band=%s\n", rtl_band_name(stored_band));
+    }
+  }
 }
 
 uint32_t append_journal(const char* kind, int16_t x = -1, int16_t y = -1) {
@@ -5170,6 +6233,7 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz) {
   if (band == RtlBand::fm) {
     persist_fm_frequency(frequency_hz);
   }
+  preferences.putUInt("last_band", static_cast<uint32_t>(band));
   rtl_requested_band.store(band, std::memory_order_release);
   rtl_requested_frequency_hz.store(frequency_hz, std::memory_order_release);
   rtl_hot_retune_hz.store(0, std::memory_order_release);
@@ -5214,6 +6278,9 @@ void adjust_rtl_volume(int delta) {
 }
 
 bool point_in_scope(int32_t x, int32_t y) {
+  // FM's dashboard is a full custom 1152x470 surface (presets, scan, tuner) —
+  // it has no pan/zoom gesture area, so every touch must reach handle_fm_touch.
+  if (rtl_ui_band == RtlBand::fm) return false;
   // Spectrum + waterfall hit target for pan/flick (not the control rows).
   return x >= kSpectrumX && x < kSpectrumX + spectrum_draw_width() && y >= kSpectrumY &&
          y < kWaterfallY + kWaterfallHeight;
@@ -5291,6 +6358,54 @@ bool handle_lora_touch(int32_t x, int32_t y) {
     return true;
   }
   return false;
+}
+
+bool handle_fm_touch(int32_t x, int32_t y) {
+  if (rtl_ui_band != RtlBand::fm) return false;
+  const int ox = kSpectrumX, oy = kSpectrumY;
+  const bool scanning = rtl_fm_preset_scan_active.load(std::memory_order_relaxed);
+  const int card_x = ox + kFmPreCardX, card_y = oy + kFmPreCardY;
+  if (x < card_x || x >= card_x + kFmPreCardW || y < card_y || y >= card_y + kFmPreCardH) {
+    return false;
+  }
+
+  if (scanning) {
+    // Any tap during a scan cancels it (mirrors the mockup's CANCEL state).
+    rtl_fm_preset_scan_cancel.store(true, std::memory_order_relaxed);
+    return true;
+  }
+
+  // Caption row (top 24px): tap to start a scan.
+  if (y < card_y + 24) {
+    rtl_fm_preset_scan_requested.store(true, std::memory_order_relaxed);
+    return true;
+  }
+
+  if (fm_preset_count == 0) {
+    // Empty state: whole body doubles as the scan trigger.
+    rtl_fm_preset_scan_requested.store(true, std::memory_order_relaxed);
+    return true;
+  }
+
+  const int scroll_x = card_x + kFmPreCardW - 46;
+  if (x >= scroll_x) {
+    if (y < card_y + 78) {
+      if (fm_preset_scroll_top > 0) --fm_preset_scroll_top;
+    } else if (fm_preset_scroll_top + kFmPresetVisibleRows < fm_preset_count) {
+      ++fm_preset_scroll_top;
+    }
+    draw_fm_dashboard(false);
+    return true;
+  }
+
+  const int row = (y - (card_y + 34)) / 30;
+  const int idx = fm_preset_scroll_top + row;
+  if (row >= 0 && row < kFmPresetVisibleRows && idx < fm_preset_count) {
+    queue_local_rtl_listen(RtlBand::fm, fm_presets[idx].freq_hz);
+    persist_fm_frequency(fm_presets[idx].freq_hz);
+    draw_fm_dashboard(false);
+  }
+  return true;
 }
 
 void request_hot_retune(uint32_t frequency_hz) {
@@ -5514,6 +6629,7 @@ void handle_sdr_touch(int32_t x, int32_t y) {
   if (handle_tool_tab_touch(x, y)) return;
   if (handle_cb_touch(x, y)) return;
   if (handle_lora_touch(x, y)) return;
+  if (handle_fm_touch(x, y)) return;
 
   static constexpr int kBandWidths[] = {110, 110, 110, 120, 140, 160, 170, 200};
   static constexpr int kTuneWidths[] = {170, 170, 220, 150, 150, 220};
