@@ -3784,10 +3784,14 @@ void draw_signal_meter(bool force_chrome = false) {
 
   static int s_last_fill_w = -1;
   static int s_last_db_i = 999;
+  static uint32_t s_last_fill_color = 0;
   static bool s_chrome_drawn = false;
 
   const int fill_w = static_cast<int>(t * (kBarW - 2));
   const int db_i = static_cast<int>(lroundf(rtl_signal_dbfs_smooth));
+  uint32_t fill_color = TFT_GREEN;
+  if (t > 0.85f) fill_color = TFT_RED;
+  else if (t > 0.65f) fill_color = TFT_YELLOW;
 
   if (force_chrome || !s_chrome_drawn) {
     M5.Display.fillRect(0, 0, kDbX + 130, 30, TFT_BLACK);
@@ -3803,18 +3807,23 @@ void draw_signal_meter(bool force_chrome = false) {
     s_chrome_drawn = true;
     s_last_fill_w = -1;
     s_last_db_i = 999;
+    s_last_fill_color = 0;
   }
 
-  if (fill_w != s_last_fill_w) {
-    /* Clear track interior then paint fill — avoids full-strip SPI every tick. */
+  if (s_last_fill_w < 0 || fill_color != s_last_fill_color) {
     M5.Display.fillRect(kBarX + 1, kBarY + 1, kBarW - 2, kBarH - 2, TFT_BLACK);
-    if (fill_w > 0) {
-      uint32_t color = TFT_GREEN;
-      if (t > 0.85f) color = TFT_RED;
-      else if (t > 0.65f) color = TFT_YELLOW;
-      M5.Display.fillRect(kBarX + 1, kBarY + 1, fill_w, kBarH - 2, color);
-    }
+    if (fill_w > 0)
+      M5.Display.fillRect(kBarX + 1, kBarY + 1, fill_w, kBarH - 2, fill_color);
+  } else if (fill_w > s_last_fill_w) {
+    M5.Display.fillRect(kBarX + 1 + s_last_fill_w, kBarY + 1,
+                        fill_w - s_last_fill_w, kBarH - 2, fill_color);
+  } else if (fill_w < s_last_fill_w) {
+    M5.Display.fillRect(kBarX + 1 + fill_w, kBarY + 1,
+                        s_last_fill_w - fill_w, kBarH - 2, TFT_BLACK);
+  }
+  if (fill_w != s_last_fill_w || fill_color != s_last_fill_color) {
     s_last_fill_w = fill_w;
+    s_last_fill_color = fill_color;
   }
 
   if (db_i != s_last_db_i) {
@@ -4441,51 +4450,75 @@ void draw_fm_dashboard(bool static_panel) {
   const uint32_t shown_hz =
       scanning ? rtl_fm_preset_scan_freq_hz.load(std::memory_order_relaxed)
                : rtl_ui_frequency_hz;
-  snprintf(freq_text, sizeof(freq_text), "%.1f", shown_hz / 1000000.0);
-  M5.Display.fillRect(ox + kFmFreqCardX + 12, oy + kFmFreqCardY + 18, 260, 66, TFT_BLACK);
-  M5.Display.setTextDatum(middle_left);
-  M5.Display.setTextSize(5);
-  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-  M5.Display.drawString(freq_text, ox + kFmFreqCardX + 16, oy + kFmFreqCardY + 52);
-  M5.Display.setTextSize(2);
-  M5.Display.setTextColor(0x8c5b, TFT_BLACK);
-  M5.Display.drawString("MHz", ox + kFmFreqCardX + 210, oy + kFmFreqCardY + 60);
+  static uint32_t last_shown_hz = 0;
+  static uint32_t last_step_hz = 0;
+  static uint32_t last_bandwidth_hz = 0;
+  const uint32_t bandwidth_hz = rtl_filter_bandwidth_hz.load(std::memory_order_relaxed);
+  if (static_panel || shown_hz != last_shown_hz) {
+    snprintf(freq_text, sizeof(freq_text), "%.1f", shown_hz / 1000000.0);
+    M5.Display.fillRect(ox + kFmFreqCardX + 12, oy + kFmFreqCardY + 18, 260, 66, TFT_BLACK);
+    M5.Display.setTextDatum(middle_left);
+    M5.Display.setTextSize(5);
+    M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+    M5.Display.drawString(freq_text, ox + kFmFreqCardX + 16, oy + kFmFreqCardY + 52);
+    M5.Display.setTextSize(2);
+    M5.Display.setTextColor(0x8c5b, TFT_BLACK);
+    M5.Display.drawString("MHz", ox + kFmFreqCardX + 210, oy + kFmFreqCardY + 60);
+  }
 
   char chan_text[48];
-  snprintf(chan_text, sizeof(chan_text), "STEP %u kHz  .  WFM  .  BW %u kHz",
-           rtl_fm_step_hz / 1000,
-           rtl_filter_bandwidth_hz.load(std::memory_order_relaxed) / 1000);
-  M5.Display.fillRect(ox + kFmFreqCardX + 16, oy + kFmFreqCardY + 82, 400, 22, TFT_BLACK);
-  M5.Display.setTextSize(1);
-  M5.Display.setTextColor(0x00c8f0, TFT_BLACK);
-  M5.Display.drawString(chan_text, ox + kFmFreqCardX + 16, oy + kFmFreqCardY + 92);
+  if (static_panel || rtl_fm_step_hz != last_step_hz || bandwidth_hz != last_bandwidth_hz) {
+    snprintf(chan_text, sizeof(chan_text), "STEP %u kHz  .  WFM  .  BW %u kHz",
+             rtl_fm_step_hz / 1000, bandwidth_hz / 1000);
+    M5.Display.fillRect(ox + kFmFreqCardX + 16, oy + kFmFreqCardY + 82, 400, 22, TFT_BLACK);
+    M5.Display.setTextSize(1);
+    M5.Display.setTextColor(0x00c8f0, TFT_BLACK);
+    M5.Display.drawString(chan_text, ox + kFmFreqCardX + 16, oy + kFmFreqCardY + 92);
+  }
 
   const float sig01 = constrain((rtl_signal_dbfs_smooth + 90.0f) / 90.0f, 0.0f, 1.0f);
-  char sig_text[24];
-  snprintf(sig_text, sizeof(sig_text), "SIG %.0f dBm", rtl_signal_dbfs_smooth);
-  M5.Display.fillRect(ox + kFmFreqCardX + 420, oy + kFmFreqCardY + 24, 270, 20, TFT_BLACK);
-  M5.Display.setTextDatum(middle_left);
-  M5.Display.setTextSize(1);
-  M5.Display.setTextColor(0x93a4, TFT_BLACK);
-  M5.Display.drawString(sig_text, ox + kFmFreqCardX + 420, oy + kFmFreqCardY + 34);
-  M5.Display.drawRect(ox + kFmFreqCardX + 590, oy + kFmFreqCardY + 27, 104, 13, 0x3d54);
-  M5.Display.fillRect(ox + kFmFreqCardX + 591, oy + kFmFreqCardY + 28, 102, 11, TFT_BLACK);
+  const int sig_db = static_cast<int>(lroundf(rtl_signal_dbfs_smooth));
   const int sig_fillw = static_cast<int>(102 * sig01);
-  if (sig_fillw > 0) {
-    M5.Display.fillRect(ox + kFmFreqCardX + 591, oy + kFmFreqCardY + 28, sig_fillw, 11,
-                        sig01 > 0.82f ? TFT_RED : sig01 > 0.62f ? TFT_YELLOW : TFT_GREEN);
+  const uint16_t sig_color = sig01 > 0.82f ? TFT_RED : sig01 > 0.62f ? TFT_YELLOW : TFT_GREEN;
+  static int last_sig_db = 1;
+  static int last_sig_fillw = -1;
+  static uint16_t last_sig_color = 0;
+  char sig_text[24];
+  if (static_panel || sig_db != last_sig_db) {
+    snprintf(sig_text, sizeof(sig_text), "SIG %d dBFS", sig_db);
+    M5.Display.fillRect(ox + kFmFreqCardX + 420, oy + kFmFreqCardY + 24, 160, 20, TFT_BLACK);
+    M5.Display.setTextDatum(middle_left);
+    M5.Display.setTextSize(1);
+    M5.Display.setTextColor(0x93a4, TFT_BLACK);
+    M5.Display.drawString(sig_text, ox + kFmFreqCardX + 420, oy + kFmFreqCardY + 34);
   }
+  const int sig_bar_x = ox + kFmFreqCardX + 591;
+  const int sig_bar_y = oy + kFmFreqCardY + 28;
+  if (static_panel || sig_color != last_sig_color) {
+    M5.Display.drawRect(sig_bar_x - 1, sig_bar_y - 1, 104, 13, 0x3d54);
+    M5.Display.fillRect(sig_bar_x, sig_bar_y, 102, 11, TFT_BLACK);
+    if (sig_fillw > 0) M5.Display.fillRect(sig_bar_x, sig_bar_y, sig_fillw, 11, sig_color);
+  } else if (sig_fillw > last_sig_fillw) {
+    M5.Display.fillRect(sig_bar_x + last_sig_fillw, sig_bar_y, sig_fillw - last_sig_fillw, 11,
+                        sig_color);
+  } else if (sig_fillw < last_sig_fillw) {
+    M5.Display.fillRect(sig_bar_x + sig_fillw, sig_bar_y, last_sig_fillw - sig_fillw, 11,
+                        TFT_BLACK);
+  }
+  static uint8_t last_volume = 0xff;
   char vol_text[16];
-  snprintf(vol_text, sizeof(vol_text), "VOL %u", rtl_ui_volume);
-  M5.Display.fillRect(ox + kFmFreqCardX + 420, oy + kFmFreqCardY + 53, 270, 20, TFT_BLACK);
-  M5.Display.setTextColor(0x93a4, TFT_BLACK);
-  M5.Display.drawString(vol_text, ox + kFmFreqCardX + 420, oy + kFmFreqCardY + 63);
-  M5.Display.drawRect(ox + kFmFreqCardX + 590, oy + kFmFreqCardY + 56, 104, 13, 0x3d54);
-  M5.Display.fillRect(ox + kFmFreqCardX + 591, oy + kFmFreqCardY + 57, 102, 11, TFT_BLACK);
-  const int vol_fillw = static_cast<int>(102 * (rtl_ui_volume / 32.0f));
-  if (vol_fillw > 0) {
-    M5.Display.fillRect(ox + kFmFreqCardX + 591, oy + kFmFreqCardY + 57,
-                        constrain(vol_fillw, 0, 102), 11, TFT_YELLOW);
+  if (static_panel || rtl_ui_volume != last_volume) {
+    snprintf(vol_text, sizeof(vol_text), "VOL %u", rtl_ui_volume);
+    M5.Display.fillRect(ox + kFmFreqCardX + 420, oy + kFmFreqCardY + 53, 160, 20, TFT_BLACK);
+    M5.Display.setTextColor(0x93a4, TFT_BLACK);
+    M5.Display.drawString(vol_text, ox + kFmFreqCardX + 420, oy + kFmFreqCardY + 63);
+    M5.Display.drawRect(ox + kFmFreqCardX + 590, oy + kFmFreqCardY + 56, 104, 13, 0x3d54);
+    M5.Display.fillRect(ox + kFmFreqCardX + 591, oy + kFmFreqCardY + 57, 102, 11, TFT_BLACK);
+    const int vol_fillw = static_cast<int>(102 * (rtl_ui_volume / 32.0f));
+    if (vol_fillw > 0) {
+      M5.Display.fillRect(ox + kFmFreqCardX + 591, oy + kFmFreqCardY + 57,
+                          constrain(vol_fillw, 0, 102), 11, TFT_YELLOW);
+    }
   }
 
   // --- STATION / RDS card: Stage 1 carrier + Stage 2 block-sync status.
@@ -4496,26 +4529,39 @@ void draw_fm_dashboard(bool static_panel) {
     const bool block_locked = rtl_rds_block_locked.load(std::memory_order_relaxed);
     const uint32_t good = rtl_rds_good_blocks.load(std::memory_order_relaxed);
     const uint32_t total = rtl_rds_total_blocks.load(std::memory_order_relaxed);
+    const int bler_pct = total > 0
+                             ? static_cast<int>(lroundf(
+                                   100.0f * (1.0f - static_cast<float>(good) /
+                                                       static_cast<float>(total))))
+                             : -1;
+    static bool last_rds_present = false;
+    static bool last_block_locked = false;
+    static int last_bler_pct = -2;
     const int badge_x = ox + kFmRdsCardX + kFmRdsCardW - 183;
     const int badge_y = oy + kFmRdsCardY + 8;
-    M5.Display.fillRect(badge_x, badge_y, 170, 54, TFT_BLACK);
-    M5.Display.drawRoundRect(badge_x, badge_y, 170, 32, 4,
-                             rds_present ? TFT_GREEN : 0x7c4f);
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(rds_present ? TFT_GREEN : 0xc074, TFT_BLACK);
-    M5.Display.drawString(rds_present ? "RDS CARRIER" : "SEARCHING...",
-                          badge_x + 85, badge_y + 16);
-    char bler_text[32];
-    if (total > 0) {
-      const float bler = 100.0f * (1.0f - static_cast<float>(good) / static_cast<float>(total));
-      snprintf(bler_text, sizeof(bler_text), "%s  BLER %.0f%%",
-               block_locked ? "BLOCK SYNC" : "SEARCHING", static_cast<double>(bler));
-    } else {
-      strlcpy(bler_text, "NO BITSTREAM", sizeof(bler_text));
+    if (static_panel || rds_present != last_rds_present ||
+        block_locked != last_block_locked || bler_pct != last_bler_pct) {
+      M5.Display.fillRect(badge_x, badge_y, 170, 54, TFT_BLACK);
+      M5.Display.drawRoundRect(badge_x, badge_y, 170, 32, 4,
+                               rds_present ? TFT_GREEN : 0x7c4f);
+      M5.Display.setTextDatum(middle_center);
+      M5.Display.setTextSize(1);
+      M5.Display.setTextColor(rds_present ? TFT_GREEN : 0xc074, TFT_BLACK);
+      M5.Display.drawString(rds_present ? "RDS CARRIER" : "SEARCHING...",
+                            badge_x + 85, badge_y + 16);
+      char bler_text[32];
+      if (bler_pct >= 0) {
+        snprintf(bler_text, sizeof(bler_text), "%s  BLER %d%%",
+                 block_locked ? "BLOCK SYNC" : "SEARCHING", bler_pct);
+      } else {
+        strlcpy(bler_text, "NO BITSTREAM", sizeof(bler_text));
+      }
+      M5.Display.setTextColor(block_locked ? TFT_GREEN : 0x8fa3, TFT_BLACK);
+      M5.Display.drawString(bler_text, badge_x + 85, badge_y + 44);
     }
-    M5.Display.setTextColor(block_locked ? TFT_GREEN : 0x8fa3, TFT_BLACK);
-    M5.Display.drawString(bler_text, badge_x + 85, badge_y + 44);
+    last_rds_present = rds_present;
+    last_block_locked = block_locked;
+    last_bler_pct = bler_pct;
   }
 
   // --- VU card (needles) ---
@@ -4529,85 +4575,128 @@ void draw_fm_dashboard(bool static_panel) {
   auto vu_val = [](float dbfs) { return constrain((dbfs + 20.0f) / 23.0f, 0.0f, 1.0f); };
   fm_draw_vu_needle(7, 30, 343, 118, vu_val(l_dbfs), &fm_vu_face_l, l_dbfs);
   fm_draw_vu_needle(356, 30, 343, 118, vu_val(r_dbfs), &fm_vu_face_r, r_dbfs);
-  M5.Display.fillRect(ox + kFmVuCardX, oy + kFmVuCardY, kFmVuCardW, 22, TFT_BLACK);
-  M5.Display.setTextDatum(middle_left);
-  M5.Display.setTextSize(1);
-  M5.Display.setTextColor(stereo ? TFT_GREEN : 0x556, TFT_BLACK);
-  M5.Display.drawString(stereo ? "VU  .  STEREO LOCKED" : "VU  .  MONO (searching for 19 kHz pilot)",
-                        ox + kFmVuCardX + 11, oy + kFmVuCardY + 15);
+  static bool last_stereo = false;
+  if (static_panel || stereo != last_stereo) {
+    M5.Display.fillRect(ox + kFmVuCardX, oy + kFmVuCardY, kFmVuCardW, 22, TFT_BLACK);
+    M5.Display.setTextDatum(middle_left);
+    M5.Display.setTextSize(1);
+    M5.Display.setTextColor(stereo ? TFT_GREEN : 0x556, TFT_BLACK);
+    M5.Display.drawString(
+        stereo ? "VU  .  STEREO LOCKED" : "VU  .  MONO (searching for 19 kHz pilot)",
+        ox + kFmVuCardX + 11, oy + kFmVuCardY + 15);
+  }
+  last_stereo = stereo;
 
   // SCOPE card content (real FFT spectrum + waterfall) is drawn by
   // draw_fm_scope(), invoked from draw_spectrum() on the main visual loop —
   // same pipeline every other band uses, just redirected to this card.
 
   // --- INPUT LEVEL card (real L/R post-demod peak, segmented bars) ---
-  auto draw_seg_bar = [&](int track_y, float dbfs) {
+  static int last_input_lit[2] = {-1, -1};
+  auto draw_seg_bar = [&](int channel, int track_y, float dbfs) {
     const int bx = ox + kFmInpCardX + 42, by = oy + kFmInpCardY + track_y;
     const float v = constrain((dbfs + 40.0f) / 43.0f, 0.0f, 1.0f);
     const int lit = static_cast<int>(47 * v);
-    for (int i = 0; i < 47; ++i) {
+    if (!static_panel && lit == last_input_lit[channel]) return;
+    const int first = static_panel || last_input_lit[channel] < 0
+                          ? 0
+                          : min(lit, last_input_lit[channel]);
+    const int last = static_panel ? 47 : max(lit, last_input_lit[channel]);
+    for (int i = first; i < last; ++i) {
       const uint16_t col = i >= lit ? static_cast<uint16_t>(0x1904)
                            : i > 42  ? TFT_RED
                            : i > 36  ? TFT_YELLOW
                                      : static_cast<uint16_t>(0x1ea5);
       M5.Display.fillRect(bx + 1 + i * 8, by + 1, 6, 16, col);
     }
+    last_input_lit[channel] = lit;
   };
-  draw_seg_bar(34, l_dbfs);
-  draw_seg_bar(58, r_dbfs);
+  draw_seg_bar(0, 34, l_dbfs);
+  draw_seg_bar(1, 58, r_dbfs);
 
   // --- RECORDING card ---
   const bool rec_active = g_audio_rec_active.load(std::memory_order_acquire);
   const size_t rec_samples = g_audio_rec_write.load(std::memory_order_acquire);
   const float rec_sec = static_cast<float>(rec_samples) / static_cast<float>(kAudioRecRateHz);
-  M5.Display.fillRect(ox + kFmRecCardX + 4, oy + kFmRecCardY + 20, kFmRecCardW - 8, 42, TFT_BLACK);
-  M5.Display.fillCircle(ox + kFmRecCardX + 23, oy + kFmRecCardY + 41, 7,
-                        rec_active ? TFT_RED : 0x2945);
-  M5.Display.setTextDatum(middle_left);
-  M5.Display.setTextSize(2);
-  M5.Display.setTextColor(rec_active ? 0xfaeb : 0x556, TFT_BLACK);
-  M5.Display.drawString(rec_active ? "REC" : "STANDBY", ox + kFmRecCardX + 45, oy + kFmRecCardY + 41);
-  char rec_bars_txt[8];
   const int lit_bars = static_cast<int>(constrain(rec_sec / kAudioRecMaxSeconds, 0.0f, 1.0f) * 8);
-  for (int i = 0; i < 8; ++i) {
-    M5.Display.fillRect(ox + kFmRecCardX + 130 + i * 15, oy + kFmRecCardY + 33, 11, 16,
-                        i < lit_bars ? 0x1567 : 0x1d28);
+  const unsigned rec_whole_sec = static_cast<unsigned>(rec_sec);
+  static bool last_rec_active = false;
+  static int last_rec_lit_bars = -1;
+  static unsigned last_rec_whole_sec = ~0u;
+  if (static_panel || rec_active != last_rec_active || lit_bars != last_rec_lit_bars ||
+      rec_whole_sec != last_rec_whole_sec) {
+    M5.Display.fillRect(ox + kFmRecCardX + 4, oy + kFmRecCardY + 20,
+                        kFmRecCardW - 8, 42, TFT_BLACK);
+    M5.Display.fillCircle(ox + kFmRecCardX + 23, oy + kFmRecCardY + 41, 7,
+                          rec_active ? TFT_RED : 0x2945);
+    M5.Display.setTextDatum(middle_left);
+    M5.Display.setTextSize(2);
+    M5.Display.setTextColor(rec_active ? 0xfaeb : 0x556, TFT_BLACK);
+    M5.Display.drawString(rec_active ? "REC" : "STANDBY",
+                          ox + kFmRecCardX + 45, oy + kFmRecCardY + 41);
+    for (int i = 0; i < 8; ++i) {
+      M5.Display.fillRect(ox + kFmRecCardX + 130 + i * 15,
+                          oy + kFmRecCardY + 33, 11, 16,
+                          i < lit_bars ? 0x1567 : 0x1d28);
+    }
+    char rec_time[12];
+    snprintf(rec_time, sizeof(rec_time), "%02u:%02u", rec_whole_sec / 60,
+             rec_whole_sec % 60);
+    M5.Display.setTextDatum(middle_right);
+    M5.Display.setTextColor(rec_active ? 0xfaeb : 0x556, TFT_BLACK);
+    M5.Display.drawString(rec_time, ox + kFmRecCardX + kFmRecCardW - 12,
+                          oy + kFmRecCardY + 33);
   }
-  char rec_time[12];
-  snprintf(rec_time, sizeof(rec_time), "%02u:%02u", static_cast<unsigned>(rec_sec) / 60,
-           static_cast<unsigned>(rec_sec) % 60);
-  M5.Display.setTextDatum(middle_right);
-  M5.Display.setTextColor(rec_active ? 0xfaeb : 0x556, TFT_BLACK);
-  M5.Display.drawString(rec_time, ox + kFmRecCardX + kFmRecCardW - 12, oy + kFmRecCardY + 33);
+  last_rec_active = rec_active;
+  last_rec_lit_bars = lit_bars;
+  last_rec_whole_sec = rec_whole_sec;
 
   // --- PRESETS card ---
-  M5.Display.fillRect(ox + kFmPreCardX + 4, oy + kFmPreCardY + 24, kFmPreCardW - 8, 160, TFT_BLACK);
+  const int scan_step = rtl_fm_preset_scan_step.load(std::memory_order_relaxed);
+  const int scan_total = max(1, rtl_fm_preset_scan_total_steps.load(std::memory_order_relaxed));
+  const int scan_found = rtl_fm_preset_scan_found.load(std::memory_order_relaxed);
+  const uint32_t scan_hz = rtl_fm_preset_scan_freq_hz.load(std::memory_order_relaxed);
+  static bool last_preset_scanning = false;
+  static int last_scan_step = -1;
+  static int last_scan_total = -1;
+  static int last_scan_found = -1;
+  static uint32_t last_scan_hz = 0;
+  static int last_preset_count = -1;
+  static int last_preset_scroll_top = -1;
+  static uint32_t last_preset_selected_hz = 0;
+  const bool presets_dirty =
+      static_panel || scanning != last_preset_scanning ||
+      (scanning && (scan_step != last_scan_step || scan_total != last_scan_total ||
+                    scan_found != last_scan_found || scan_hz != last_scan_hz)) ||
+      (!scanning && (fm_preset_count != last_preset_count ||
+                     fm_preset_scroll_top != last_preset_scroll_top ||
+                     rtl_ui_frequency_hz != last_preset_selected_hz));
+  if (presets_dirty) {
+    M5.Display.fillRect(ox + kFmPreCardX + 4, oy + kFmPreCardY + 24,
+                        kFmPreCardW - 8, 160, TFT_BLACK);
   if (scanning) {
-    const int step = rtl_fm_preset_scan_step.load(std::memory_order_relaxed);
-    const int total = max(1, rtl_fm_preset_scan_total_steps.load(std::memory_order_relaxed));
-    const int found = rtl_fm_preset_scan_found.load(std::memory_order_relaxed);
     M5.Display.setTextDatum(middle_left);
     M5.Display.setTextSize(2);
     M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
     M5.Display.drawString("SCANNING BAND", ox + kFmPreCardX + 12, oy + kFmPreCardY + 40);
     char scan_freq[16];
     snprintf(scan_freq, sizeof(scan_freq), "%.1f MHz",
-             rtl_fm_preset_scan_freq_hz.load(std::memory_order_relaxed) / 1000000.0);
+             scan_hz / 1000000.0);
     M5.Display.setTextDatum(middle_right);
     M5.Display.drawString(scan_freq, ox + kFmPreCardX + kFmPreCardW - 12, oy + kFmPreCardY + 40);
     const int bar_x = ox + kFmPreCardX + 12, bar_y = oy + kFmPreCardY + 80;
     const int bar_w = kFmPreCardW - 24;
     M5.Display.drawRect(bar_x, bar_y, bar_w, 20, 0x3347);
-    const int fillw = static_cast<int>(bar_w * constrain(step / float(total), 0.0f, 1.0f));
+    const int fillw = static_cast<int>(bar_w * constrain(scan_step / float(scan_total), 0.0f, 1.0f));
     if (fillw > 0) M5.Display.fillRect(bar_x + 1, bar_y + 1, min(fillw, bar_w - 2), 18, 0x0e74);
     char step_txt[24];
-    snprintf(step_txt, sizeof(step_txt), "STEP %d / %d", step, total);
+    snprintf(step_txt, sizeof(step_txt), "STEP %d / %d", scan_step, scan_total);
     M5.Display.setTextDatum(middle_left);
     M5.Display.setTextSize(1);
     M5.Display.setTextColor(0x8fa3, TFT_BLACK);
     M5.Display.drawString(step_txt, bar_x, bar_y + 40);
     char found_txt[16];
-    snprintf(found_txt, sizeof(found_txt), "%d FOUND", found);
+    snprintf(found_txt, sizeof(found_txt), "%d FOUND", scan_found);
     M5.Display.setTextDatum(middle_right);
     M5.Display.setTextColor(0x5cff9a, TFT_BLACK);
     M5.Display.drawString(found_txt, bar_x + bar_w, bar_y + 40);
@@ -4664,21 +4753,44 @@ void draw_fm_dashboard(bool static_panel) {
     M5.Display.setTextColor(TFT_WHITE, can_down ? 0x1567 : 0x2230);
     M5.Display.drawString("v", scroll_x + 21, oy + kFmPreCardY + 159);
   }
+  }
+  last_preset_scanning = scanning;
+  last_scan_step = scan_step;
+  last_scan_total = scan_total;
+  last_scan_found = scan_found;
+  last_scan_hz = scan_hz;
+  last_preset_count = fm_preset_count;
+  last_preset_scroll_top = fm_preset_scroll_top;
+  last_preset_selected_hz = rtl_ui_frequency_hz;
 
   // --- TUNER card ---
-  const int tn_x = ox + kFmTunCardX + 16, tn_w = kFmTunCardW - 32;
-  M5.Display.fillRect(ox + kFmTunCardX + 4, oy + kFmTunCardY + 20, kFmTunCardW - 8, 24, TFT_BLACK);
-  char tune_text[16];
-  snprintf(tune_text, sizeof(tune_text), "%.1f", shown_hz / 1000000.0);
-  M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextSize(2);
-  M5.Display.setTextColor(0x5cff9a, TFT_BLACK);
-  M5.Display.drawString(tune_text, ox + kFmTunCardX + kFmTunCardW / 2, oy + kFmTunCardY + 32);
-  M5.Display.fillRect(tn_x, oy + kFmTunCardY + 63, tn_w, 12, TFT_BLACK);
-  const float frac = constrain((shown_hz - kRtlFmMinHz) / float(kRtlFmMaxHz - kRtlFmMinHz), 0.0f, 1.0f);
-  const int needle_x = tn_x + static_cast<int>(tn_w * frac);
-  M5.Display.fillTriangle(needle_x - 5, oy + kFmTunCardY + 63, needle_x + 5,
-                          oy + kFmTunCardY + 63, needle_x, oy + kFmTunCardY + 75, 0x5cff9a);
+  if (static_panel || shown_hz != last_shown_hz) {
+    const int tn_x = ox + kFmTunCardX + 16, tn_w = kFmTunCardW - 32;
+    M5.Display.fillRect(ox + kFmTunCardX + 4, oy + kFmTunCardY + 20,
+                        kFmTunCardW - 8, 24, TFT_BLACK);
+    char tune_text[16];
+    snprintf(tune_text, sizeof(tune_text), "%.1f", shown_hz / 1000000.0);
+    M5.Display.setTextDatum(middle_center);
+    M5.Display.setTextSize(2);
+    M5.Display.setTextColor(0x5cff9a, TFT_BLACK);
+    M5.Display.drawString(tune_text, ox + kFmTunCardX + kFmTunCardW / 2,
+                          oy + kFmTunCardY + 32);
+    M5.Display.fillRect(tn_x, oy + kFmTunCardY + 63, tn_w, 12, TFT_BLACK);
+    const float frac = constrain(
+        (shown_hz - kRtlFmMinHz) / float(kRtlFmMaxHz - kRtlFmMinHz), 0.0f, 1.0f);
+    const int needle_x = tn_x + static_cast<int>(tn_w * frac);
+    M5.Display.fillTriangle(needle_x - 5, oy + kFmTunCardY + 63, needle_x + 5,
+                            oy + kFmTunCardY + 63, needle_x,
+                            oy + kFmTunCardY + 75, 0x5cff9a);
+  }
+
+  last_shown_hz = shown_hz;
+  last_step_hz = rtl_fm_step_hz;
+  last_bandwidth_hz = bandwidth_hz;
+  last_sig_db = sig_db;
+  last_sig_fillw = sig_fillw;
+  last_sig_color = sig_color;
+  last_volume = rtl_ui_volume;
 }
 
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
@@ -6717,9 +6829,7 @@ orcsdr::settings::State global_settings_state() {
 }
 
 void open_global_settings(orcsdr::settings::Section section) {
-  // Fill the FM background cache only after USB stream allocations have
-  // succeeded. Allocating this sprite during the pre-start dashboard draw can
-  // fragment memory needed by the three DMA transfers.
+  // Cache only the FM panel, after the RTL stream has claimed its DMA memory.
   if (rtl_ui_band == RtlBand::fm) (void)fm_load_dashboard_sprite();
   settings_restore_graphics = rtl_graphics_enabled.exchange(false, std::memory_order_acq_rel);
   rtl_nav_open = false;
@@ -6731,6 +6841,13 @@ void close_global_settings() {
   if (rtl_ui_band == RtlBand::adsb) {
     orcsdr::adsb::draw();
     draw_global_settings_gear();
+  } else if (rtl_ui_band == RtlBand::fm && fm_dashboard_face_ready) {
+    // Repaint the three owned regions without clearing the entire display.
+    draw_sdr_header(rtl_ui_band, rtl_ui_frequency_hz,
+                    rtl_live_volume.load(std::memory_order_acquire));
+    draw_fm_dashboard(true);
+    draw_sdr_controls(rtl_ui_band, true);
+    bump_rtl_ui();
   } else {
     draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
                     rtl_live_volume.load(std::memory_order_acquire));
