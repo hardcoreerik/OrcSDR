@@ -117,6 +117,22 @@ no duplicate USB implementation.
 
 Detailed gates and clean-room boundaries live in `phasing.md` Phase 6.
 
+### P4 — global Settings and optional connectivity
+
+- [x] Add a build-verified isolated eight-category Settings shell with a
+      persistent gear and ADS-B contextual deep link.
+- [x] Preserve `orclink` and migrate the current single Wi-Fi credential into
+      slot zero of a bounded four-profile layout.
+- [x] Persist the first local display/audio/radio/location defaults without
+      exposing stored passwords or presenting unsupported controls as active.
+- [ ] Hardware-verify navigation, bounded repaint, reception coexistence, and
+      reboot migration. No Settings firmware has been flashed yet.
+- [ ] Complete Wi-Fi editing/keyboard, safe manifest downloads, maps/storage,
+      BLE feasibility, optional Companion, and M5Launcher phases.
+
+Detailed gates live in `phasing.md` Phase 7. Build verification is not live
+network, BLE, Companion, Launcher, or hardware acceptance evidence.
+
 ### Deferred until measurements justify them
 
 - Bias tee, direct sampling/HF, gain/PPM controls, SpyServer, WebSDR, 978 MHz UAT,

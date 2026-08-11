@@ -116,6 +116,23 @@ so replay and build evidence cannot be mistaken for current live aircraft.
 Phase 6.1 for the shell and Phase 6.2–6.6 for high-rate input, decoding,
 enrichment, and hardware acceptance.
 
+## Product initiative — global Settings and connectivity
+
+OrcSDR will provide one on-device Settings application for connectivity,
+receiver location, data/maps, display/audio, radio defaults, storage,
+optional Companion integration, and system information. A persistent gear
+opens it without stopping ordinary reception; disruptive SD/network work must
+use an explicit pause/resume confirmation. The existing `orclink` NVS namespace
+is retained, including migration of the legacy single Wi-Fi credential into
+the first of four bounded profile slots.
+
+Phone, BLE, GPS, map building, and TheOrc/HIVE are not prerequisites. BLE is
+shown only after the Tab5 ESP32-C6 SDIO path is proven, and M5Launcher remains
+the firmware/partition owner.
+
+**Status: Build-verified foundation; hardware acceptance and service phases
+pending.** See `phasing.md` Phase 7.
+
 ## Summary table
 
 | Gap | New or already tracked | Phase |
@@ -126,3 +143,4 @@ enrichment, and hardware acceptance.
 | Open performance gates | Already tracked (`PROJECT_STATUS.md` P0/P1) | Unchanged |
 | No tool-shell abstraction | New | Phase 3 |
 | ADS-B 1090 dashboard | Product initiative | Phase 6 |
+| Global Settings and connectivity | Product initiative | Phase 7 |

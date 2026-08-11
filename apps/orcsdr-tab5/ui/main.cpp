@@ -17,6 +17,7 @@
 #include <freertos/queue.h>
 #include <freertos/task.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdarg>
@@ -35,6 +36,7 @@
 #include "orcsdr_splash.hpp"
 #include "adsb_dashboard.hpp"
 #include "adsb_decoder.hpp"
+#include "settings_app.hpp"
 #if !RTL_USE_LEGACY_USB
 #include "rtl_sdr_v4_esp.h"
 #endif
@@ -1068,6 +1070,20 @@ bool wifi_connected = false;
 int wifi_network_count = -1;
 char wifi_ssid[33]{};
 char wifi_password[64]{};
+struct WifiProfile {
+  char ssid[33]{};
+  char password[64]{};
+};
+WifiProfile wifi_profiles[4]{};
+uint8_t wifi_profile_count = 0;
+uint8_t settings_brightness = 180;
+uint16_t settings_screen_timeout_sec = 0;
+bool settings_sound_default = true;
+bool settings_auto_start_reception = true;
+bool settings_graphics_default = true;
+char settings_location_label[40]{};
+char settings_map_pack[40]{};
+bool settings_restore_graphics = true;
 std::atomic<uint32_t> rtl_sdr_status_revision{0};
 uint32_t drawn_rtl_sdr_status_revision = 0;
 char rtl_sdr_status[96] = "RTL-SDR: waiting for USB-A host";
@@ -1411,6 +1427,11 @@ void set_orc_tool(OrcTool tool);
 void draw_tool_tabs();
 void draw_capture_tool_panel();
 bool handle_tool_tab_touch(int32_t x, int32_t y);
+orcsdr::settings::State global_settings_state();
+void open_global_settings(orcsdr::settings::Section section);
+void handle_global_settings_touch(int32_t x, int32_t y);
+void draw_global_settings_gear();
+void start_wifi_inventory();
 
 void draw_touch_state(const char* message, uint32_t color) {
   M5.Display.fillRect(300, 480, 680, 70, TFT_BLACK);
@@ -1424,7 +1445,7 @@ void draw_touch_state(const char* message, uint32_t color) {
 static bool g_suppress_home_paint = false;
 
 void draw_session_state(const char* message, uint32_t color) {
-  if (g_suppress_home_paint) return;
+  if (g_suppress_home_paint || orcsdr::settings::active()) return;
   M5.Display.fillRect(250, 210, 780, 55, TFT_BLACK);
   M5.Display.setTextColor(color, TFT_BLACK);
   M5.Display.setTextDatum(middle_center);
@@ -1433,7 +1454,7 @@ void draw_session_state(const char* message, uint32_t color) {
 }
 
 void draw_wifi_state() {
-  if (g_suppress_home_paint) return;
+  if (g_suppress_home_paint || orcsdr::settings::active()) return;
   char message[80];
   uint32_t color = TFT_ORANGE;
   if (!wifi_station_ready) {
@@ -1475,7 +1496,7 @@ const char* charging_state() {
 
 void draw_power_state() {
   /* Never paint over the SDR control rows (tune row sits ~648–700). */
-  if (g_suppress_home_paint) return;
+  if (g_suppress_home_paint || orcsdr::settings::active()) return;
   if (rtl_ui_active.load(std::memory_order_acquire)) {
     return;
   }
@@ -1500,6 +1521,7 @@ void set_rtl_sdr_status(const char* status) {
 
 void draw_rtl_sdr_state() {
   if (g_suppress_home_paint) return;
+  if (orcsdr::settings::active()) return;
   const bool ready = strstr(rtl_sdr_status, "ready") != nullptr;
   M5.Display.fillRect(150, 545, 980, 40, TFT_BLACK);
   M5.Display.setTextColor(ready ? TFT_GREEN : TFT_ORANGE, TFT_BLACK);
@@ -1515,6 +1537,7 @@ void draw_rtl_sdr_state() {
     M5.Display.setTextSize(3);
     M5.Display.drawString("Open SDR radio", 640, 360);
   }
+  draw_global_settings_gear();
 }
 
 void usb_string_to_ascii(const usb_str_desc_t* descriptor, char* output,
@@ -3736,6 +3759,7 @@ void update_signal_level_from_iq(const uint8_t* iq, size_t bytes) {
  * Strip is y=0..28 only — never paints frequency/VOL/help.
  */
 void draw_signal_meter(bool force_chrome = false) {
+  if (orcsdr::settings::active()) return;
   const float raw = rtl_signal_dbfs.load(std::memory_order_relaxed);
   rtl_signal_dbfs_smooth = 0.88f * rtl_signal_dbfs_smooth + 0.12f * raw;
 
@@ -3799,6 +3823,7 @@ void draw_signal_meter(bool force_chrome = false) {
 }
 
 void draw_sdr_header(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
+  if (orcsdr::settings::active()) return;
   char label[96];
   char frequency_text[24];
   format_frequency(frequency_text, sizeof(frequency_text), frequency_hz);
@@ -3818,8 +3843,21 @@ void draw_sdr_header(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   } else {
     strlcpy(label, "SOUND OFF", sizeof(label));
   }
-  M5.Display.drawString(label, 1100, 48);
+  M5.Display.drawString(label, 1080, 48);
   draw_tool_tabs();
+  draw_global_settings_gear();
+}
+
+void draw_global_settings_gear() {
+  constexpr int cx = 1240, cy = 37;
+  M5.Display.fillRoundRect(1211, 8, 58, 58, 8, 0x2104);
+  M5.Display.drawRoundRect(1211, 8, 58, 58, 8, TFT_LIGHTGREY);
+  M5.Display.drawCircle(cx, cy, 13, TFT_CYAN);
+  M5.Display.drawCircle(cx, cy, 5, TFT_CYAN);
+  M5.Display.drawLine(cx - 21, cy, cx - 13, cy, TFT_CYAN);
+  M5.Display.drawLine(cx + 13, cy, cx + 21, cy, TFT_CYAN);
+  M5.Display.drawLine(cx, cy - 21, cx, cy - 13, TFT_CYAN);
+  M5.Display.drawLine(cx, cy + 13, cx, cy + 21, TFT_CYAN);
 }
 
 void draw_cb_dashboard(bool static_panel) {
@@ -4617,6 +4655,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   if (band == RtlBand::adsb) {
     if (!orcsdr::adsb::active()) orcsdr::adsb::enter(adsb_settings);
     else orcsdr::adsb::draw();
+    draw_global_settings_gear();
     return;
   }
   if (!rtl_spectrum_window_ready) {
@@ -6545,10 +6584,11 @@ void initialize_wifi() {
 }
 
 void start_wifi_inventory() {
-  if (!wifi_station_ready || wifi_configured) return;
+  if (!wifi_station_ready) return;
+  if (wifi_scan_running) return;
+  WiFi.scanDelete();
   wifi_network_count = WiFi.scanNetworks(true, true);
   wifi_scan_running = wifi_network_count == WIFI_SCAN_RUNNING;
-  if (!wifi_scan_running) WiFi.scanDelete();
   draw_wifi_state();
 }
 
@@ -6569,7 +6609,6 @@ void poll_wifi() {
     if (result != WIFI_SCAN_RUNNING) {
       wifi_scan_running = false;
       wifi_network_count = result;
-      if (result >= 0) WiFi.scanDelete();
       state_changed = true;
     }
   }
@@ -6581,6 +6620,123 @@ void poll_wifi() {
   if (state_changed) {
     draw_wifi_state();
     if (authenticated) emit_identity();
+  }
+}
+
+orcsdr::settings::State global_settings_state() {
+  orcsdr::settings::State state;
+  state.wifi_ready = wifi_station_ready;
+  state.wifi_scanning = wifi_scan_running;
+  state.wifi_connected = wifi_connected;
+  strlcpy(state.wifi_ssid, wifi_connected ? WiFi.SSID().c_str() : wifi_ssid,
+          sizeof(state.wifi_ssid));
+  const String ip = wifi_connected ? WiFi.localIP().toString() : String();
+  strlcpy(state.wifi_ip, ip.c_str(), sizeof(state.wifi_ip));
+  state.wifi_rssi = wifi_connected ? WiFi.RSSI() : 0;
+  state.saved_network_count = wifi_profile_count;
+  if (!wifi_scan_running && wifi_network_count > 0) {
+    state.network_count = static_cast<uint8_t>(
+        std::min<int>(wifi_network_count, static_cast<int>(std::size(state.networks))));
+    for (uint8_t i = 0; i < state.network_count; ++i) {
+      WiFi.SSID(i).toCharArray(state.networks[i].ssid, sizeof(state.networks[i].ssid));
+      state.networks[i].rssi = WiFi.RSSI(i);
+      state.networks[i].secure = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+      for (uint8_t saved = 0; saved < wifi_profile_count; ++saved) {
+        if (strcmp(state.networks[i].ssid, wifi_profiles[saved].ssid) == 0) {
+          state.networks[i].saved = true;
+          break;
+        }
+      }
+    }
+  }
+  state.location_configured = adsb_settings.location_configured;
+  state.latitude_e7 = adsb_settings.latitude_e7;
+  state.longitude_e7 = adsb_settings.longitude_e7;
+  state.radar_range_nm = adsb_settings.radar_range_nm;
+  strlcpy(state.location_label, settings_location_label, sizeof(state.location_label));
+  strlcpy(state.map_pack, settings_map_pack, sizeof(state.map_pack));
+  state.brightness = settings_brightness;
+  state.screen_timeout_sec = settings_screen_timeout_sec;
+  state.volume = rtl_live_volume.load(std::memory_order_acquire);
+  state.sound_default = settings_sound_default;
+  state.auto_start_reception = settings_auto_start_reception;
+  state.graphics_default = settings_graphics_default;
+  strlcpy(state.default_band, rtl_band_name(rtl_ui_band), sizeof(state.default_band));
+  state.fm_frequency_hz = rtl_saved_fm_hz;
+  state.sd_ready = g_sd_ready;
+  state.companion_supported = false;
+  snprintf(state.build_identity, sizeof(state.build_identity), "%s %s", __DATE__, __TIME__);
+  state.uptime_seconds = millis() / 1000;
+  return state;
+}
+
+void open_global_settings(orcsdr::settings::Section section) {
+  settings_restore_graphics = rtl_graphics_enabled.exchange(false, std::memory_order_acq_rel);
+  rtl_nav_open = false;
+  orcsdr::settings::enter(global_settings_state(), section);
+}
+
+void close_global_settings() {
+  rtl_graphics_enabled.store(settings_restore_graphics, std::memory_order_release);
+  if (rtl_ui_band == RtlBand::adsb) {
+    orcsdr::adsb::draw();
+    draw_global_settings_gear();
+  } else {
+    draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
+                    rtl_live_volume.load(std::memory_order_acquire));
+  }
+}
+
+void handle_global_settings_touch(int32_t x, int32_t y) {
+  const auto action = orcsdr::settings::handle_touch(x, y);
+  switch (action.kind) {
+    case orcsdr::settings::ActionKind::close:
+      close_global_settings();
+      break;
+    case orcsdr::settings::ActionKind::scan_wifi:
+      start_wifi_inventory();
+      orcsdr::settings::update(global_settings_state());
+      break;
+    case orcsdr::settings::ActionKind::location_changed: {
+      const auto& state = orcsdr::settings::state();
+      adsb_settings.location_configured = state.location_configured;
+      adsb_settings.latitude_e7 = state.latitude_e7;
+      adsb_settings.longitude_e7 = state.longitude_e7;
+      adsb_settings_persist_pending.store(true, std::memory_order_release);
+      break;
+    }
+    case orcsdr::settings::ActionKind::range_changed:
+      adsb_settings.radar_range_nm = static_cast<uint16_t>(action.value);
+      adsb_settings_persist_pending.store(true, std::memory_order_release);
+      break;
+    case orcsdr::settings::ActionKind::brightness_changed:
+      settings_brightness = static_cast<uint8_t>(action.value);
+      M5.Display.setBrightness(settings_brightness);
+      preferences.putUChar("set_bright", settings_brightness);
+      break;
+    case orcsdr::settings::ActionKind::timeout_changed:
+      settings_screen_timeout_sec = static_cast<uint16_t>(action.value);
+      preferences.putUShort("set_timeout", settings_screen_timeout_sec);
+      break;
+    case orcsdr::settings::ActionKind::volume_changed:
+      rtl_ui_volume = static_cast<uint8_t>(action.value);
+      rtl_live_volume.store(rtl_ui_volume, std::memory_order_release);
+      apply_speaker_volume(rtl_ui_volume);
+      preferences.putUChar("set_volume", rtl_ui_volume);
+      break;
+    case orcsdr::settings::ActionKind::sound_changed:
+      settings_sound_default = action.value != 0;
+      preferences.putBool("set_sound", settings_sound_default);
+      break;
+    case orcsdr::settings::ActionKind::auto_start_changed:
+      settings_auto_start_reception = action.value != 0;
+      preferences.putBool("set_auto_rx", settings_auto_start_reception);
+      break;
+    case orcsdr::settings::ActionKind::graphics_changed:
+      settings_graphics_default = action.value != 0;
+      preferences.putBool("set_gfx", settings_graphics_default);
+      break;
+    default: break;
   }
 }
 
@@ -6804,12 +6960,48 @@ void load_state() {
   const String stored_password = preferences.isKey("wifi_pass")
                                      ? preferences.getString("wifi_pass", "")
                                      : String();
-  wifi_configured = !stored_ssid.isEmpty() && stored_ssid.length() <= 32 &&
-                    stored_password.length() <= 63;
-  if (wifi_configured) {
-    stored_ssid.toCharArray(wifi_ssid, sizeof(wifi_ssid));
-    stored_password.toCharArray(wifi_password, sizeof(wifi_password));
+  for (uint8_t i = 0; i < std::size(wifi_profiles); ++i) {
+    char ssid_key[16], pass_key[16];
+    snprintf(ssid_key, sizeof(ssid_key), "wifi%u_ssid", i);
+    snprintf(pass_key, sizeof(pass_key), "wifi%u_pass", i);
+    const String ssid = preferences.getString(ssid_key, "");
+    const String password = preferences.getString(pass_key, "");
+    if (ssid.isEmpty() || ssid.length() > 32 || password.length() > 63) continue;
+    ssid.toCharArray(wifi_profiles[wifi_profile_count].ssid,
+                     sizeof(wifi_profiles[wifi_profile_count].ssid));
+    password.toCharArray(wifi_profiles[wifi_profile_count].password,
+                         sizeof(wifi_profiles[wifi_profile_count].password));
+    ++wifi_profile_count;
   }
+  const bool legacy_valid = !stored_ssid.isEmpty() && stored_ssid.length() <= 32 &&
+                            stored_password.length() <= 63;
+  if (wifi_profile_count == 0 && legacy_valid) {
+    stored_ssid.toCharArray(wifi_profiles[0].ssid, sizeof(wifi_profiles[0].ssid));
+    stored_password.toCharArray(wifi_profiles[0].password,
+                                sizeof(wifi_profiles[0].password));
+    preferences.putString("wifi0_ssid", wifi_profiles[0].ssid);
+    preferences.putString("wifi0_pass", wifi_profiles[0].password);
+    wifi_profile_count = 1;
+  }
+  wifi_configured = wifi_profile_count > 0;
+  if (wifi_configured) {
+    strlcpy(wifi_ssid, wifi_profiles[0].ssid, sizeof(wifi_ssid));
+    strlcpy(wifi_password, wifi_profiles[0].password, sizeof(wifi_password));
+  }
+  settings_brightness = preferences.getUChar("set_bright", 180);
+  if (settings_brightness < 16) settings_brightness = 16;
+  settings_screen_timeout_sec = preferences.getUShort("set_timeout", 0);
+  settings_sound_default = preferences.getBool("set_sound", true);
+  settings_auto_start_reception = preferences.getBool("set_auto_rx", true);
+  settings_graphics_default = preferences.getBool("set_gfx", true);
+  const String location_label = preferences.getString("loc_label", "");
+  const String map_pack = preferences.getString("map_pack", "");
+  location_label.toCharArray(settings_location_label, sizeof(settings_location_label));
+  map_pack.toCharArray(settings_map_pack, sizeof(settings_map_pack));
+  rtl_ui_volume = preferences.getUChar("set_volume", kRtlVolumeDefault);
+  rtl_live_volume.store(rtl_ui_volume, std::memory_order_release);
+  rtl_graphics_enabled.store(settings_graphics_default, std::memory_order_release);
+  M5.Display.setBrightness(settings_brightness);
   // Reuse last good FM LO (KZEL 96.113 default when none stored yet).
   if (preferences.isKey("sdr_fm_hz")) {
     const uint32_t stored_fm = preferences.getUInt("sdr_fm_hz", kRtlFmDefaultHz);
@@ -7180,6 +7372,23 @@ void request_hot_retune(uint32_t frequency_hz) {
 // from loop() was silencing the ES8388 speaker path after 0.8.26.
 void poll_sdr_touch_from_stream() {
   if (rtl_ui_band == RtlBand::adsb && orcsdr::adsb::active()) return;
+  if (orcsdr::settings::active()) {
+    static uint32_t settings_last_poll_ms = 0;
+    static uint32_t settings_last_update_ms = 0;
+    const uint32_t now = millis();
+    if (now - settings_last_poll_ms < 33) return;
+    settings_last_poll_ms = now;
+    M5.update();
+    if (now - settings_last_update_ms >= 500) {
+      settings_last_update_ms = now;
+      orcsdr::settings::update(global_settings_state());
+    }
+    const auto touch = M5.Touch.getDetail(0);
+    const bool pressed = touch.isPressed() || touch.wasPressed();
+    if (pressed && !was_pressed) handle_global_settings_touch(touch.x, touch.y);
+    was_pressed = pressed;
+    return;
+  }
   static uint32_t last_touch_poll_ms = 0;
   static bool flick_thresh_set = false;
   static bool scope_dragging = false;
@@ -7359,11 +7568,23 @@ void poll_sdr_touch_from_stream() {
 }
 
 void handle_sdr_touch(int32_t x, int32_t y) {
+  if (orcsdr::settings::active()) {
+    handle_global_settings_touch(x, y);
+    return;
+  }
+  if (x >= 1211 && x < 1269 && y >= 8 && y < 66) {
+    open_global_settings(rtl_ui_band == RtlBand::adsb
+                             ? orcsdr::settings::Section::location_adsb
+                             : orcsdr::settings::Section::connectivity);
+    return;
+  }
   if (rtl_ui_band == RtlBand::adsb) {
     const orcsdr::adsb::Action action = orcsdr::adsb::handle_touch(x, y);
     if (action == orcsdr::adsb::Action::settings_changed) {
       adsb_settings = orcsdr::adsb::settings();
       adsb_settings_persist_pending.store(true, std::memory_order_release);
+    } else if (action == orcsdr::adsb::Action::open_global_settings) {
+      open_global_settings(orcsdr::settings::Section::location_adsb);
     } else if (action == orcsdr::adsb::Action::exit) {
       rtl_ui_active.store(false, std::memory_order_release);
       queue_local_rtl_listen(RtlBand::browse, kAdsbDefaultHz);
@@ -8219,6 +8440,11 @@ void process_command(char* command) {
     strlcpy(wifi_password, candidate_password, sizeof(wifi_password));
     preferences.putString("wifi_ssid", wifi_ssid);
     preferences.putString("wifi_pass", wifi_password);
+    strlcpy(wifi_profiles[0].ssid, wifi_ssid, sizeof(wifi_profiles[0].ssid));
+    strlcpy(wifi_profiles[0].password, wifi_password, sizeof(wifi_profiles[0].password));
+    if (wifi_profile_count == 0) wifi_profile_count = 1;
+    preferences.putString("wifi0_ssid", wifi_profiles[0].ssid);
+    preferences.putString("wifi0_pass", wifi_profiles[0].password);
     wifi_configured = true;
     append_journal("wifi_configured");
     Serial.println("WIFI_CONFIGURED");
@@ -8345,6 +8571,11 @@ void setup() {
     abort();
   }
   Serial.println("RTL_ADSB_SELF_CHECK_OK");
+  if (!orcsdr::settings::self_check()) {
+    Serial.println("ORC_SETTINGS_SELF_CHECK_FAIL");
+    abort();
+  }
+  Serial.println("ORC_SETTINGS_SELF_CHECK_OK");
 
 #if ORC_LORA_TEST_BUILD
   g_suppress_home_paint = true;
@@ -8449,6 +8680,7 @@ void setup() {
 void loop() {
   const bool adsb_ui = rtl_ui_band == RtlBand::adsb && orcsdr::adsb::active();
   const bool radio_ui = rtl_ui_active.load(std::memory_order_acquire);
+  const bool settings_ui = orcsdr::settings::active();
   // Single-owner rule: while radio UI streams, only the USB task may M5.update().
   // Dual M5.update() (loop + stream) was correlated with total speaker silence.
   if (!radio_ui || adsb_ui) {
@@ -8470,10 +8702,20 @@ void loop() {
       rtl_sdr_status_revision.load(std::memory_order_acquire);
   if (drawn_rtl_sdr_status_revision != current_rtl_sdr_status_revision) {
     drawn_rtl_sdr_status_revision = current_rtl_sdr_status_revision;
-    if (!radio_ui && !adsb_ui) draw_rtl_sdr_state();
+    if (!radio_ui && !adsb_ui && !settings_ui) draw_rtl_sdr_state();
   }
 
-  if (adsb_ui) {
+  if (settings_ui && (adsb_ui || !radio_ui)) {
+    static uint32_t settings_last_update_ms = 0;
+    if (millis() - settings_last_update_ms >= 500) {
+      settings_last_update_ms = millis();
+      orcsdr::settings::update(global_settings_state());
+    }
+    const auto touch = M5.Touch.getDetail(0);
+    const bool pressed = touch.isPressed() || touch.wasPressed();
+    if (pressed && !was_pressed) handle_global_settings_touch(touch.x, touch.y);
+    was_pressed = pressed;
+  } else if (adsb_ui) {
     enrich_one_adsb_track();
     publish_adsb_snapshot(millis());
     orcsdr::adsb::update();
@@ -8488,7 +8730,7 @@ void loop() {
     // gate was blocking every autonomous flash-reboot-resume cycle during
     // headless/serial-driven development; see phasing.md's RDS Phase 5).
     static bool auto_start_done = false;
-    if (!auto_start_done && rtl_device_ready()) {
+    if (!auto_start_done && settings_auto_start_reception && rtl_device_ready()) {
       auto_start_done = true;
       queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz);
       // The whole demod chain (mono, stereo, RDS) only runs when audio is
@@ -8504,7 +8746,9 @@ void loop() {
     const auto touch = M5.Touch.getDetail(0);
     const bool pressed = touch.isPressed() || touch.wasPressed();
     if (pressed && !was_pressed) {
-      if (point_in_button(touch.x, touch.y)) {
+      if (touch.x >= 1211 && touch.x < 1269 && touch.y >= 8 && touch.y < 66) {
+        open_global_settings(orcsdr::settings::Section::connectivity);
+      } else if (point_in_button(touch.x, touch.y)) {
         if (rtl_device_ready()) {
           queue_local_rtl_listen(RtlBand::fm, rtl_saved_fm_hz);
         } else {

@@ -596,6 +596,62 @@ selection, and radar operation remain identical.
 Exit: the feature may be labeled Hardware-verified only after both the
 independent-receiver comparison and on-device visual/touch pass are recorded.
 
+## Phase 7 — global Settings and connectivity control center
+
+Goal: keep all essential configuration on the Tab5 while allowing optional
+phone and network enhancements. Settings navigation must not stop reception or
+reintroduce periodic full-screen repaint.
+
+### 7.1 — on-device shell and NVS migration (build-verified)
+
+- [x] Add an isolated `settings_app` module with enter/draw/update/touch seams
+      and eight fixed categories.
+- [x] Add a persistent header gear and route the ADS-B Settings tab to the
+      global Location & ADS-B section.
+- [x] Preserve the `orclink` namespace and migrate the legacy Wi-Fi credential
+      into slot zero of a bounded four-profile layout without logging or
+      displaying passwords.
+- [x] Persist brightness, screen-timeout preference, volume, default sound,
+      auto-start reception, graphics default, receiver coordinates, and radar
+      range. Unsupported hardware controls remain absent or read-only.
+- [x] Keep static chrome event-driven and restrict status refreshes to bounded
+      header/content regions.
+- [ ] Flash and accept every category, touch target, reboot migration, and
+      reception coexistence on the physical Tab5.
+
+Build evidence (2026-08-11): `m5tab5_ui` completed successfully from the clean
+Settings worktree. No firmware was flashed in this phase.
+
+### 7.2 — Wi-Fi profiles and safe data updates
+
+- [ ] Add prioritized profile editing, hidden networks, full masked ASCII
+      keyboard, connect testing, reconnect, and forget flows.
+- [ ] Publish and validate a versioned release manifest; stream changed files
+      through hashed `.part` files with free-space checks and rollback.
+- [ ] Install both the optimized aircraft index and complete FAA source archive;
+      add the compact ZIP/place index and confirmed representative-point flow.
+
+### 7.3 — maps, storage, diagnostics, and pause/resume
+
+- [ ] Validate/import/remove four-range personalized map packs with attribution.
+- [ ] Report bounded SD category usage and require hold/confirm for targeted
+      deletion; do not add a partition manager.
+- [ ] Gate downloads, map install, bulk deletion, and maintenance behind a
+      reception pause/resume confirmation that restores the previous band.
+- [ ] Add diagnostic export and confirmation-gated reboot/reset actions.
+
+### 7.4 — optional BLE, Companion, and Launcher
+
+- [ ] Run the ESP32-C6 SDIO BLE feasibility spike before exposing any BLE UI.
+- [ ] Implement direct authenticated local Companion discovery/pairing only in
+      clean OrcSDR and Companion worktrees; absence of phone/BLE/HIVE is valid.
+- [ ] Package for M5Launcher and add return-to-Launcher only after upstream
+      partition/handoff behavior is hardware-verified.
+
+Exit: Settings is Hardware-verified only after migration/reboot, Wi-Fi,
+bounded repaint, reception coexistence, update rollback, and optional-service
+absence tests pass on the Tab5.
+
 ## Explicitly out of scope for this phasing pass
 
 - Gap 2 (dual USB paths) and Gap 4 (performance gates) are already tracked

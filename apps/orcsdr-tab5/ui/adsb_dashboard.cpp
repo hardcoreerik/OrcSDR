@@ -215,7 +215,7 @@ void draw_header() {
          g_live ? TFT_DARKGREEN : TFT_MAROON);
   char range[24];
   snprintf(range, sizeof(range), "%u NM", g_settings.radar_range_nm);
-  text(range, 1235, 37, TFT_LIGHTGREY, 2, middle_right);
+  text(range, 1195, 37, TFT_LIGHTGREY, 2, middle_right);
 }
 
 void draw_header_live_values() {
@@ -618,7 +618,9 @@ Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return Action::none;
   if (g_edit != EditField::none) return handle_keypad(x, y);
   if (y >= kTabsY) {
-    g_view = static_cast<View>(constrain(x / kTabW, 0, 4));
+    const View requested = static_cast<View>(constrain(x / kTabW, 0, 4));
+    if (requested == View::settings) return Action::open_global_settings;
+    g_view = requested;
     redraw();
     return Action::none;
   }
