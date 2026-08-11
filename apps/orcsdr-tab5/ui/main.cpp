@@ -8,6 +8,7 @@
 #include <esp_mac.h>
 #include <esp_intr_alloc.h>
 #include <esp_heap_caps.h>
+#include <esp_attr.h>
 #include <mbedtls/md.h>
 #include <mbedtls/sha256.h>
 #include <driver/usb_serial_jtag.h>
@@ -1074,8 +1075,15 @@ struct WifiProfile {
   char ssid[33]{};
   char password[64]{};
 };
-WifiProfile wifi_profiles[4]{};
+EXT_RAM_BSS_ATTR WifiProfile wifi_profiles[4]{};
 uint8_t wifi_profile_count = 0;
+struct WifiScanResult {
+  char ssid[33]{};
+  int16_t rssi = 0;
+  bool secure = false;
+};
+EXT_RAM_BSS_ATTR WifiScanResult wifi_scan_results[6]{};
+uint8_t wifi_scan_result_count = 0;
 uint8_t settings_brightness = 180;
 uint16_t settings_screen_timeout_sec = 0;
 bool settings_sound_default = true;
@@ -6587,6 +6595,7 @@ void start_wifi_inventory() {
   if (!wifi_station_ready) return;
   if (wifi_scan_running) return;
   WiFi.scanDelete();
+  wifi_scan_result_count = 0;
   wifi_network_count = WiFi.scanNetworks(true, true);
   wifi_scan_running = wifi_network_count == WIFI_SCAN_RUNNING;
   draw_wifi_state();
@@ -6609,6 +6618,17 @@ void poll_wifi() {
     if (result != WIFI_SCAN_RUNNING) {
       wifi_scan_running = false;
       wifi_network_count = result;
+      wifi_scan_result_count = result > 0
+                                   ? static_cast<uint8_t>(std::min<int>(
+                                         result, std::size(wifi_scan_results)))
+                                   : 0;
+      for (uint8_t i = 0; i < wifi_scan_result_count; ++i) {
+        WiFi.SSID(i).toCharArray(wifi_scan_results[i].ssid,
+                                sizeof(wifi_scan_results[i].ssid));
+        wifi_scan_results[i].rssi = WiFi.RSSI(i);
+        wifi_scan_results[i].secure = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+      }
+      WiFi.scanDelete();
       state_changed = true;
     }
   }
@@ -6634,13 +6654,13 @@ orcsdr::settings::State global_settings_state() {
   strlcpy(state.wifi_ip, ip.c_str(), sizeof(state.wifi_ip));
   state.wifi_rssi = wifi_connected ? WiFi.RSSI() : 0;
   state.saved_network_count = wifi_profile_count;
-  if (!wifi_scan_running && wifi_network_count > 0) {
-    state.network_count = static_cast<uint8_t>(
-        std::min<int>(wifi_network_count, static_cast<int>(std::size(state.networks))));
+  if (!wifi_scan_running && wifi_scan_result_count > 0) {
+    state.network_count = wifi_scan_result_count;
     for (uint8_t i = 0; i < state.network_count; ++i) {
-      WiFi.SSID(i).toCharArray(state.networks[i].ssid, sizeof(state.networks[i].ssid));
-      state.networks[i].rssi = WiFi.RSSI(i);
-      state.networks[i].secure = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+      strlcpy(state.networks[i].ssid, wifi_scan_results[i].ssid,
+              sizeof(state.networks[i].ssid));
+      state.networks[i].rssi = wifi_scan_results[i].rssi;
+      state.networks[i].secure = wifi_scan_results[i].secure;
       for (uint8_t saved = 0; saved < wifi_profile_count; ++saved) {
         if (strcmp(state.networks[i].ssid, wifi_profiles[saved].ssid) == 0) {
           state.networks[i].saved = true;
@@ -6964,8 +6984,10 @@ void load_state() {
     char ssid_key[16], pass_key[16];
     snprintf(ssid_key, sizeof(ssid_key), "wifi%u_ssid", i);
     snprintf(pass_key, sizeof(pass_key), "wifi%u_pass", i);
-    const String ssid = preferences.getString(ssid_key, "");
-    const String password = preferences.getString(pass_key, "");
+    const String ssid = preferences.isKey(ssid_key)
+                            ? preferences.getString(ssid_key, "") : String();
+    const String password = preferences.isKey(pass_key)
+                                ? preferences.getString(pass_key, "") : String();
     if (ssid.isEmpty() || ssid.length() > 32 || password.length() > 63) continue;
     ssid.toCharArray(wifi_profiles[wifi_profile_count].ssid,
                      sizeof(wifi_profiles[wifi_profile_count].ssid));
@@ -6994,8 +7016,10 @@ void load_state() {
   settings_sound_default = preferences.getBool("set_sound", true);
   settings_auto_start_reception = preferences.getBool("set_auto_rx", true);
   settings_graphics_default = preferences.getBool("set_gfx", true);
-  const String location_label = preferences.getString("loc_label", "");
-  const String map_pack = preferences.getString("map_pack", "");
+  const String location_label = preferences.isKey("loc_label")
+                                    ? preferences.getString("loc_label", "") : String();
+  const String map_pack = preferences.isKey("map_pack")
+                              ? preferences.getString("map_pack", "") : String();
   location_label.toCharArray(settings_location_label, sizeof(settings_location_label));
   map_pack.toCharArray(settings_map_pack, sizeof(settings_map_pack));
   rtl_ui_volume = preferences.getUChar("set_volume", kRtlVolumeDefault);
@@ -8730,7 +8754,8 @@ void loop() {
     // gate was blocking every autonomous flash-reboot-resume cycle during
     // headless/serial-driven development; see phasing.md's RDS Phase 5).
     static bool auto_start_done = false;
-    if (!auto_start_done && settings_auto_start_reception && rtl_device_ready()) {
+    if (!auto_start_done && settings_auto_start_reception && !wifi_scan_running &&
+        rtl_device_ready()) {
       auto_start_done = true;
       queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz);
       // The whole demod chain (mono, stereo, RDS) only runs when audio is

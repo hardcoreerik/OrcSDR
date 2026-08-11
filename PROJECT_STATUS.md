@@ -126,7 +126,8 @@ Detailed gates and clean-room boundaries live in `phasing.md` Phase 6.
 - [x] Persist the first local display/audio/radio/location defaults without
       exposing stored passwords or presenting unsupported controls as active.
 - [ ] Hardware-verify navigation, bounded repaint, reception coexistence, and
-      reboot migration. No Settings firmware has been flashed yet.
+      reboot migration. The foundation is flashed and FM auto-start/audio are
+      restored; physical Settings navigation and persistence acceptance remain.
 - [ ] Complete Wi-Fi editing/keyboard, safe manifest downloads, maps/storage,
       BLE feasibility, optional Companion, and M5Launcher phases.
 

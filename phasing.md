@@ -619,8 +619,12 @@ reintroduce periodic full-screen repaint.
 - [ ] Flash and accept every category, touch target, reboot migration, and
       reception coexistence on the physical Tab5.
 
-Build evidence (2026-08-11): `m5tab5_ui` completed successfully from the clean
-Settings worktree. No firmware was flashed in this phase.
+Evidence (2026-08-11, Tab5 COM17): `m5tab5_ui` built and flashed; both ADS-B and
+Settings self-checks passed. A first flash exposed Wi-Fi scan memory competing
+with USB stream startup; the bounded scan snapshot now releases Arduino's scan
+buffer before auto-start, which waits for scan completion. The corrected boot
+reported `RTL_START ESP_OK` at 960 kS/s, WBFM stereo lock, and enabled audio.
+Category/touch/reboot acceptance remains open.
 
 ### 7.2 — Wi-Fi profiles and safe data updates
 

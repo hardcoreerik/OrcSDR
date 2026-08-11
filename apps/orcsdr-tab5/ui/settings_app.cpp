@@ -1,6 +1,7 @@
 #include "settings_app.hpp"
 
 #include <M5Unified.h>
+#include <esp_attr.h>
 
 #include <algorithm>
 #include <cmath>
@@ -31,7 +32,7 @@ static_assert(std::size(kRanges) == 4 && kRanges[0] == 10 && kRanges[3] == 100);
 
 enum class EditField : uint8_t { none, latitude, longitude };
 
-State g_state;
+EXT_RAM_BSS_ATTR State g_state;
 Section g_section = Section::connectivity;
 EditField g_edit = EditField::none;
 bool g_active = false;
