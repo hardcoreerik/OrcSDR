@@ -465,6 +465,154 @@ Exit: an RDS DSP change (filter coefficient, loop gain, decode logic) can
 be tested against a fixed recorded signal without touching live RF or
 asking anyone to re-tune a physical device.
 
+## Phase 6 — ADS-B 1090 dashboard and native decoder
+
+Goal: turn the existing 1090 MHz band-guide entry into a standalone Tab5
+aircraft-tracking tool without importing GPL decoder/tuner code or presenting
+synthetic data as live reception. The four required data views are Radar,
+Aircraft List, Target, and RF Statistics; Settings is a control view.
+
+Research boundary: use [T-Display-P4 ADS-B](https://github.com/jstockdale/T-Display-P4)
+for ESP32-P4 product/reliability patterns, [dump1090](https://github.com/antirez/dump1090)
+and [readsb](https://github.com/wiedehopf/readsb) for externally observable
+decoder/state behavior, and [tar1090](https://github.com/wiedehopf/tar1090)
+for view separation. Do not copy their GPL tuner, decoder, or UI source.
+
+### 6.1 — UI and state contract (implemented; build/hardware gates below)
+
+- [x] Add an isolated `adsb_dashboard` UI module with enter/draw/update/touch
+      seams rather than another dashboard body inside `main.cpp`.
+- [x] Route the existing ADS-B 1090 quick entry to a dedicated 1280x720 tool.
+- [x] Render all four data views from one deterministic aircraft snapshot;
+      radar/list selection follows the same ICAO into Target.
+- [x] Mark every synthetic screen `DEMO`; live RF capture may run behind it,
+      but synthetic aircraft never claim to be received data. The badge changes
+      to `LIVE` only after a CRC-valid aircraft enters the live snapshot.
+- [x] Add Settings for signed receiver coordinates and 10/25/50/100 NM radar
+      range, persisted through the existing NVS namespace. Gain remains an
+      honest read-only `AUTO` until a measured driver API exists.
+- [x] Use generic M5GFX aircraft silhouettes and native primitives. Do not
+      ship airline trademarks, photos, or a new asset pipeline.
+- [x] Render absent/unconfigured values as `--`; retain dBFS wording until an
+      RF calibration supports dBm, and show CPU as `N/A` until measured.
+
+Exit: the targeted PlatformIO environment builds; all views, selection, lock,
+coordinate validation/persistence, range cycling, and Exit ADS-B are accepted
+on the physical Tab5. Until that visual/touch pass occurs, evidence stops at
+Build-verified.
+
+### 6.2 — measured 2.048 MS/s driver path
+
+ADS-B's one-microsecond pulse timing requires a measured high-rate path, not
+only an allowlisted constant.
+
+1. [x] Implement the clean-room 2.048 MS/s rate path using OrcSDR's measured
+      controls/public hardware information; do not import librtlsdr tables.
+2. [x] Stream at 1090 MHz for five minutes at at least 95% effective rate and
+      record drops/fatal USB errors.
+3. [ ] Verify hot stop/replug behavior, keep the existing 960 kS/s FM path
+      unchanged, and rerun its targeted regression gate.
+
+Evidence (2026-08-11, Tab5 COM17 + RTL-SDR Blog V4): 2,047,654 effective S/s
+after 290 seconds (99.98% of target), five startup drops, zero later drops,
+and no fatal USB error.
+
+Exit: named Tab5 + Blog V4 logs prove sustained 2.048 MS/s input. An allowlist
+constant or successful build alone is not evidence for this phase.
+
+### 6.3 — replay-tested Mode-S/DF17 decoder
+
+1. [x] Add a decoder component consuming CU8 IQ blocks, with no display or
+      driver ownership: magnitude/preamble detection, 56/112-bit extraction,
+      CRC/ICAO recovery, DF17 identity/altitude/velocity, and even/odd CPR.
+2. [x] Validate known frames and one short provenance-recorded CU8 fixture
+      before connecting the component to live IQ.
+3. [x] Maintain a fixed 64-aircraft table with per-field validity and a
+      60-second recently-seen expiry. Aircraft without valid positions remain
+      list-visible but never appear on radar.
+
+Data flow is one way:
+
+```text
+IQ callback -> Mode-S decoder -> bounded aircraft table -> revisioned UI snapshot
+```
+
+The IQ callback never draws, allocates an unbounded container, writes NVS, or
+touches the SD card.
+
+Exit: fixed inputs produce deterministic frames, CRC counts, CPR positions,
+and stale-aircraft cleanup without an RTL-SDR attached.
+
+Implemented: fixed-memory CU8 magnitude/preamble extraction, validated 56-bit
+DF11 and 112-bit DF17 extraction, CRC/ICAO, identity, altitude, velocity and
+global even/odd CPR; known-frame and generated CU8 checks; a fixed 64-aircraft
+table with validity flags and 60-second expiry; and a revisioned six-row UI
+snapshot. A 2026-08-11 live trace reconstructed
+to CRC-valid DF17 `8DA2955158B505036BFB54BC90AC` (ICAO `A29551`, altitude
+35,000 ft), matching ASA1310 at 35,000 ft in an independent live feed. The
+fractional-sample decoder now passes that exact captured magnitude waveform
+on-device without weakening CRC acceptance.
+
+### 6.4 — live RF integration
+
+- [x] Feed measured 2.048 MS/s blocks into the decoder and publish snapshots
+      to the existing four views without changing UI touch behavior.
+- [x] Replace demo metrics with real frame rate, aircraft/message counts, and
+      relative strongest signal once live mode is entered. Retain `DEMO` until
+      the first CRC-valid live snapshot rather than switching on RF start alone.
+- [x] Add read-only `RTL_ADSB_STATUS` diagnostics for frames, CRC pass/fail,
+      message rate, aircraft count, drops, and strongest dBFS.
+- [x] Preserve selection by ICAO; locked stale targets retain last-known data
+      with a `STALE` badge, while unlocked stale selections clear.
+
+Live IQ is delivered through a bounded four-block PSRAM queue to a separate
+decoder task. `RTL_ADSB_STATUS` reports transport/decoder/drop, aircraft,
+message, and relative-signal counters. Snapshot publication and stale-selection
+behavior are flashed; a new live CRC-valid frame and physical view/touch pass
+remain the acceptance gates.
+
+Final-pipeline soak (2026-08-11, COM17): at 570 seconds the flashed
+live-snapshot/DF11+DF17 build sustained 2,047,809 S/s, with five driver startup
+drops, three startup UI-queue drops, no later growth, and no panic. It received
+no CRC-valid aircraft during an interval when the independent feed reported no
+aircraft within 50 NM; this is transport evidence, not live-air acceptance.
+
+Exit: live frames update all views while USB/DSP/UI remain responsive and no
+synthetic values appear in live mode.
+
+### 6.5 — optional local aircraft metadata
+
+- [x] Accept the sorted fixed-record `/orcsdr/adsb_aircraft.idx` generated from
+      the FAA `MASTER` and `ACFTREF` files; retain the complete supplied FAA
+      release separately as `/orcsdr/faa_database_full.zip`.
+- [x] Look up only newly seen ICAOs by binary search, cache registration,
+      manufacturer/model, and registered owner in the bounded aircraft table,
+      and keep SD work outside the IQ callback.
+- [x] Fall back to decoded ICAO/callsign cleanly when the file is missing,
+      malformed, or has no match. No online lookup or bundled airline art.
+
+Evidence (2026-08-11, Tab5 COM17): both SD transfers returned device-computed
+SHA-256 values matching their host files. After restarting live 1090 MHz
+reception, ICAO `A31111` resolved from the SD index to registration `N297SF`.
+FAA ownership is labeled as registered-owner data rather than inferred airline
+operation.
+
+Exit: adding/removing the optional file changes enrichment only; reception,
+selection, and radar operation remain identical.
+
+### 6.6 — hardware and RF acceptance
+
+- [ ] Compare live aircraft, callsigns, altitude, velocity, and position
+      against an independent receiver at the same site.
+- [ ] Record five-minute effective sample rate, decoder frame/CRC rates, USB
+      drops, UI responsiveness, and stale cleanup.
+- [ ] Reboot after saving receiver location/range and verify exact restoration.
+- [ ] Accept all four views, Settings, target lock, and exit navigation on the
+      physical Tab5.
+
+Exit: the feature may be labeled Hardware-verified only after both the
+independent-receiver comparison and on-device visual/touch pass are recorded.
+
 ## Explicitly out of scope for this phasing pass
 
 - Gap 2 (dual USB paths) and Gap 4 (performance gates) are already tracked

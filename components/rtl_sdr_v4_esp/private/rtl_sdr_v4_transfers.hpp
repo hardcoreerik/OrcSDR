@@ -557,8 +557,9 @@ static_assert(sizeof(kRtlCleanupTransfers) / sizeof(kRtlCleanupTransfers[0]) == 
 /** Measured sample-rate slice inside init (indices inclusive). */
 constexpr size_t kRtlSampleRateFirst = 462;
 constexpr size_t kRtlSampleRateLast = 477;
-/** Within the slice, this index is patched for 960 kS/s (measured). */
-constexpr size_t kRtlSampleRate960kPatchIndex = 464;
+/** Within the slice, these indices hold the RTL2832 sample-rate ratio. */
+constexpr size_t kRtlSampleRateRatioHighIndex = 464;
+constexpr size_t kRtlSampleRateRatioLowIndex = 466;
 
 /**
  * Independently observed final-tune skeleton. PLL bytes are patched at runtime
