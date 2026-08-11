@@ -603,13 +603,19 @@ static esp_err_t run_init_table(rtl_sdr_v4_esp_handle *h)
     return ESP_OK;
 }
 
-static esp_err_t run_sample_rate_960k(rtl_sdr_v4_esp_handle *h)
+static esp_err_t run_sample_rate(rtl_sdr_v4_esp_handle *h, uint32_t sample_rate_sps)
 {
+    constexpr uint64_t kRtlClockHz = 28800000ull;
+    uint32_t ratio = static_cast<uint32_t>((kRtlClockHz << 22) / sample_rate_sps);
+    ratio &= 0x0ffffffcu;
     for (size_t i = kRtlSampleRateFirst; i <= kRtlSampleRateLast; ++i) {
         RtlControlRecord rec = kRtlInitTransfers[i];
-        if (i == kRtlSampleRate960kPatchIndex) {
-            rec.data[0] = 0x07;
-            rec.data[1] = 0x80;
+        if (i == kRtlSampleRateRatioHighIndex) {
+            rec.data[0] = static_cast<uint8_t>(ratio >> 24);
+            rec.data[1] = static_cast<uint8_t>(ratio >> 16);
+        } else if (i == kRtlSampleRateRatioLowIndex) {
+            rec.data[0] = static_cast<uint8_t>(ratio >> 8);
+            rec.data[1] = static_cast<uint8_t>(ratio);
         }
         esp_err_t e = run_record(h, rec, false);
         if (e != ESP_OK) {
@@ -652,14 +658,14 @@ static esp_err_t run_tune(rtl_sdr_v4_esp_handle *h, uint32_t frequency_hz)
     return ESP_OK;
 }
 
-#if defined(ORC_LORA_TEST_BUILD) && ORC_LORA_TEST_BUILD
-static esp_err_t run_lora_uhf_frontend(rtl_sdr_v4_esp_handle *h)
+static esp_err_t run_uhf_frontend(rtl_sdr_v4_esp_handle *h)
 {
     constexpr RtlControlRecord kUhf[] = {
         {0x0074, 0x0610, 0x40, 2, {0x17, 0x28}},
         {0x0074, 0x0610, 0x40, 2, {0x1a, 0x68}},
         {0x0074, 0x0610, 0x40, 2, {0x1b, 0x00}},
         {0x0074, 0x0610, 0x40, 2, {0x05, 0x83}},
+        {0x0074, 0x0610, 0x40, 2, {0x0c, 0x6b}},
     };
     for (const auto &record : kUhf) {
         esp_err_t err = run_record(h, record, false);
@@ -669,7 +675,6 @@ static esp_err_t run_lora_uhf_frontend(rtl_sdr_v4_esp_handle *h)
     }
     return ESP_OK;
 }
-#endif
 
 static void run_cleanup_best_effort(rtl_sdr_v4_esp_handle *h)
 {
@@ -1423,15 +1428,6 @@ esp_err_t rtl_sdr_v4_esp_start(rtl_sdr_v4_esp_handle_t handle,
         return verr;
     }
 
-    /* Only 960k clean-room rate path is measured for continuous stream */
-    if (stream->sample_rate_sps != RTL_SDR_V4_ESP_RATE_960K) {
-        HandleLock lk(handle, kQueryLockTicks);
-        if (lk.ok()) {
-            set_error_unlocked(handle, RTL_SDR_V4_ESP_ERR_BAD_RATE);
-        }
-        return RTL_SDR_V4_ESP_ERR_BAD_RATE;
-    }
-
     HandleLock lk(handle);
     if (!lk.ok()) {
         return RTL_SDR_V4_ESP_ERR_TIMEOUT;
@@ -1471,7 +1467,7 @@ esp_err_t rtl_sdr_v4_esp_start(rtl_sdr_v4_esp_handle_t handle,
         if (ret != ESP_OK) {
             break;
         }
-        ret = run_sample_rate_960k(handle);
+        ret = run_sample_rate(handle, stream->sample_rate_sps);
         if (ret != ESP_OK) {
             break;
         }
@@ -1479,12 +1475,12 @@ esp_err_t rtl_sdr_v4_esp_start(rtl_sdr_v4_esp_handle_t handle,
         if (ret != ESP_OK) {
             break;
         }
-#if defined(ORC_LORA_TEST_BUILD) && ORC_LORA_TEST_BUILD
-        ret = run_lora_uhf_frontend(handle);
-        if (ret != ESP_OK) {
-            break;
+        if (freq >= 300000000u) {
+            ret = run_uhf_frontend(handle);
+            if (ret != ESP_OK) {
+                break;
+            }
         }
-#endif
 
         ret = ensure_ring(handle, handle->cfg.transfer_bytes);
         if (ret != ESP_OK) {

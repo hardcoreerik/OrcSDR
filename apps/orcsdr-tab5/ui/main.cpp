@@ -33,6 +33,8 @@
 
 #include "rtl_sdr_v4_transfers.h"
 #include "orcsdr_splash.hpp"
+#include "adsb_dashboard.hpp"
+#include "adsb_decoder.hpp"
 #if !RTL_USE_LEGACY_USB
 #include "rtl_sdr_v4_esp.h"
 #endif
@@ -485,11 +487,12 @@ constexpr uint32_t kRtlBrowseDefaultHz = 146520000;
 constexpr uint32_t kLoraMinHz = 902000000;
 constexpr uint32_t kLoraMaxHz = 928000000;
 constexpr uint32_t kLoraDefaultHz = 906875000;  // Meshtastic US LongFast default slot
+constexpr uint32_t kAdsbDefaultHz = 1090000000;
 // Clean-room LO offset: LO = RF + 1.814972 MHz (from 100 MHz observation).
 constexpr double kRtlIfOffsetHz = 1814972.0;
 constexpr double kRtlXtalHz = 28800000.0;
 
-enum class RtlBand : uint8_t { fm, am, wx, cb, lora, browse };
+enum class RtlBand : uint8_t { fm, am, wx, cb, lora, browse, adsb };
 enum class CbMode : uint8_t { am, usb, lsb };
 
 constexpr uint32_t kCbChannelsHz[] = {
@@ -541,7 +544,7 @@ constexpr RfBandGuide kRfBandGuide[] = {
     {462550000, 467725000, 462562500, RtlBand::browse, "FRS / GMRS", "UHF / personal two-way", false},
     {kLoraMinHz, kLoraMaxHz, kLoraDefaultHz, RtlBand::lora, "LORA / ISM", "UHF / LoRa CSS and mesh data", true},
     {977900000, 978100000, 978000000, RtlBand::browse, "ADS-B UAT", "UHF / aircraft position", false},
-    {1089900000, 1090100000, 1090000000, RtlBand::browse, "ADS-B / MODE S", "L-band / aircraft tracking", true},
+    {1089900000, 1090100000, kAdsbDefaultHz, RtlBand::adsb, "ADS-B / MODE S", "L-band / aircraft tracking", true},
     {1525000000, 1559000000, 1545000000, RtlBand::browse, "SATCOM", "L-band / satellite downlinks", true},
     {1575000000, 1576000000, 1575420000, RtlBand::browse, "GNSS / GPS", "L-band / navigation", false},
     {1610600000, 1626500000, 1620000000, RtlBand::browse, "SATCOM", "L-band / mobile satellite", false},
@@ -1019,6 +1022,8 @@ bool paired = false;
 bool authenticated = false;
 bool offline_transition_handled = false;
 Preferences preferences;
+orcsdr::adsb::Settings adsb_settings;
+std::atomic<bool> adsb_settings_persist_pending{false};
 JournalState journal{};
 WorkflowState workflow{};
 uint8_t pairing_key[32];
@@ -1126,6 +1131,236 @@ uint8_t rtl_capture_max = 0;
 double rtl_capture_mean = 0;
 char rtl_capture_sha256[65]{};
 char rtl_capture_error[64] = "not run";
+orcsdr::adsb_rx::Decoder adsb_decoder;
+constexpr size_t kAdsbIqBlockBytes = 32768;
+constexpr uint8_t kAdsbIqBlockCount = 4;
+uint8_t* adsb_iq_blocks[kAdsbIqBlockCount]{};
+size_t adsb_iq_sizes[kAdsbIqBlockCount]{};
+QueueHandle_t adsb_iq_free = nullptr;
+QueueHandle_t adsb_iq_ready = nullptr;
+std::atomic<uint32_t> adsb_iq_drops{0};
+
+struct AdsbTrack {
+  bool used = false;
+  uint32_t icao = 0;
+  char callsign[9]{};
+  bool has_callsign = false;
+  int altitude_ft = 0;
+  bool has_altitude = false;
+  int speed_kts = 0;
+  bool has_speed = false;
+  int heading_deg = 0;
+  bool has_heading = false;
+  int vertical_rate_fpm = 0;
+  bool has_vertical_rate = false;
+  double latitude = 0;
+  double longitude = 0;
+  bool has_position = false;
+  orcsdr::adsb_rx::Frame even_cpr{};
+  orcsdr::adsb_rx::Frame odd_cpr{};
+  uint32_t even_cpr_ms = 0;
+  uint32_t odd_cpr_ms = 0;
+  uint32_t last_seen_ms = 0;
+  uint16_t signal = 0;
+  bool metadata_pending = false;
+  char registration[9]{};
+  char type[49]{};
+  char owner[51]{};
+};
+
+constexpr size_t kAdsbTrackCount = 64;
+AdsbTrack adsb_tracks[kAdsbTrackCount]{};
+portMUX_TYPE adsb_tracks_mux = portMUX_INITIALIZER_UNLOCKED;
+std::atomic<uint32_t> adsb_track_revision{0};
+std::atomic<uint32_t> adsb_total_messages{0};
+std::atomic<uint8_t> adsb_aircraft_count{0};
+
+void reset_adsb_tracks() {
+  portENTER_CRITICAL(&adsb_tracks_mux);
+  std::memset(adsb_tracks, 0, sizeof(adsb_tracks));
+  portEXIT_CRITICAL(&adsb_tracks_mux);
+  adsb_track_revision.store(0, std::memory_order_relaxed);
+  adsb_total_messages.store(0, std::memory_order_relaxed);
+  adsb_aircraft_count.store(0, std::memory_order_relaxed);
+}
+
+void expire_adsb_tracks(uint32_t now) {
+  uint8_t count = 0;
+  bool changed = false;
+  portENTER_CRITICAL(&adsb_tracks_mux);
+  for (auto& track : adsb_tracks) {
+    if (track.used && now - track.last_seen_ms > 60000u) {
+      track = {};
+      changed = true;
+    }
+    if (track.used) ++count;
+  }
+  portEXIT_CRITICAL(&adsb_tracks_mux);
+  adsb_aircraft_count.store(count, std::memory_order_relaxed);
+  if (changed) adsb_track_revision.fetch_add(1, std::memory_order_release);
+}
+
+void publish_adsb_snapshot(uint32_t now) {
+  static uint32_t last_sample_ms = 0;
+  static uint32_t last_sample_messages = 0;
+  static uint32_t last_state_revision = UINT32_MAX;
+  static float published_rate = -1;
+  static uint32_t ui_revision = 0;
+  if (now - last_sample_ms < 1000u) return;
+
+  const uint32_t messages = adsb_total_messages.load(std::memory_order_relaxed);
+  const uint32_t state_revision = adsb_track_revision.load(std::memory_order_acquire);
+  const float message_rate = (messages - last_sample_messages) * 1000.0f /
+                             static_cast<float>(now - last_sample_ms);
+  last_sample_messages = messages;
+  last_sample_ms = now;
+  if (state_revision == last_state_revision && fabsf(message_rate - published_rate) < 0.05f)
+    return;
+
+  orcsdr::adsb::Snapshot snapshot{};
+  portENTER_CRITICAL(&adsb_tracks_mux);
+  for (const auto& track : adsb_tracks) {
+    if (!track.used || snapshot.visible_count == orcsdr::adsb::kVisibleAircraft) continue;
+    auto& aircraft = snapshot.aircraft[snapshot.visible_count++];
+    aircraft.icao = track.icao;
+    strlcpy(aircraft.callsign, track.callsign, sizeof(aircraft.callsign));
+    strlcpy(aircraft.registration, track.registration, sizeof(aircraft.registration));
+    strlcpy(aircraft.type, track.type, sizeof(aircraft.type));
+    strlcpy(aircraft.owner, track.owner, sizeof(aircraft.owner));
+    aircraft.altitude_ft = track.altitude_ft;
+    aircraft.speed_kts = track.speed_kts;
+    aircraft.heading_deg = track.heading_deg;
+    aircraft.vertical_rate_fpm = track.vertical_rate_fpm;
+    aircraft.latitude = static_cast<float>(track.latitude);
+    aircraft.longitude = static_cast<float>(track.longitude);
+    aircraft.has_callsign = track.has_callsign;
+    aircraft.has_altitude = track.has_altitude;
+    aircraft.has_speed = track.has_speed;
+    aircraft.has_heading = track.has_heading;
+    aircraft.has_vertical_rate = track.has_vertical_rate;
+    aircraft.has_position = track.has_position;
+  }
+  portEXIT_CRITICAL(&adsb_tracks_mux);
+
+  snapshot.total_messages = messages;
+  snapshot.aircraft_count = adsb_aircraft_count.load(std::memory_order_relaxed);
+  snapshot.message_rate = message_rate;
+  snapshot.strongest_signal_dbfs = rtl_signal_dbfs.load(std::memory_order_relaxed);
+  snapshot.revision = ++ui_revision;
+  last_state_revision = state_revision;
+  published_rate = message_rate;
+  orcsdr::adsb::set_live_snapshot(snapshot);
+}
+
+void on_adsb_frame(const orcsdr::adsb_rx::Frame& frame, void*) {
+  const uint32_t now = millis();
+  bool added = false;
+  bool decode_position = false;
+  orcsdr::adsb_rx::Frame even_cpr{}, odd_cpr{};
+  bool use_odd = false;
+  portENTER_CRITICAL(&adsb_tracks_mux);
+  AdsbTrack* track = nullptr;
+  AdsbTrack* oldest = &adsb_tracks[0];
+  for (auto& candidate : adsb_tracks) {
+    if (candidate.used && candidate.icao == frame.icao) {
+      track = &candidate;
+      break;
+    }
+    if (!candidate.used) oldest = &candidate;
+    else if (oldest->used && candidate.last_seen_ms < oldest->last_seen_ms) oldest = &candidate;
+  }
+  if (!track) {
+    track = oldest;
+    added = !track->used;
+    *track = {};
+    track->used = true;
+    track->icao = frame.icao;
+    track->metadata_pending = true;
+  }
+  track->last_seen_ms = now;
+  track->signal = frame.signal;
+  if (frame.has_callsign) {
+    strlcpy(track->callsign, frame.callsign, sizeof(track->callsign));
+    track->has_callsign = true;
+  }
+  if (frame.has_altitude) {
+    track->altitude_ft = frame.altitude_ft;
+    track->has_altitude = true;
+  }
+  if (frame.has_speed) {
+    track->speed_kts = frame.speed_kts;
+    track->has_speed = true;
+  }
+  if (frame.has_heading) {
+    track->heading_deg = frame.heading_deg;
+    track->has_heading = true;
+  }
+  if (frame.has_vertical_rate) {
+    track->vertical_rate_fpm = frame.vertical_rate_fpm;
+    track->has_vertical_rate = true;
+  }
+  if (frame.has_cpr) {
+    if (frame.cpr_odd) {
+      track->odd_cpr = frame;
+      track->odd_cpr_ms = now;
+    } else {
+      track->even_cpr = frame;
+      track->even_cpr_ms = now;
+    }
+    const uint32_t pair_age = track->even_cpr_ms > track->odd_cpr_ms
+                                  ? track->even_cpr_ms - track->odd_cpr_ms
+                                  : track->odd_cpr_ms - track->even_cpr_ms;
+    if (track->even_cpr_ms && track->odd_cpr_ms && pair_age <= 10000u) {
+      even_cpr = track->even_cpr;
+      odd_cpr = track->odd_cpr;
+      use_odd = track->odd_cpr_ms > track->even_cpr_ms;
+      decode_position = true;
+    }
+  }
+  portEXIT_CRITICAL(&adsb_tracks_mux);
+  if (decode_position) {
+    double latitude = 0, longitude = 0;
+    if (orcsdr::adsb_rx::decode_global_cpr(even_cpr, odd_cpr, use_odd,
+                                           &latitude, &longitude)) {
+      portENTER_CRITICAL(&adsb_tracks_mux);
+      if (track->used && track->icao == frame.icao) {
+        track->latitude = latitude;
+        track->longitude = longitude;
+        track->has_position = true;
+      }
+      portEXIT_CRITICAL(&adsb_tracks_mux);
+    }
+  }
+  if (added) adsb_aircraft_count.fetch_add(1, std::memory_order_relaxed);
+  adsb_total_messages.fetch_add(1, std::memory_order_relaxed);
+  adsb_track_revision.fetch_add(1, std::memory_order_release);
+
+  static uint32_t last_log_ms = 0;
+  if (now - last_log_ms < 250) return;
+  last_log_ms = now;
+  char raw[29]{};
+  for (size_t i = 0; i < frame.bit_length / 8; ++i)
+    snprintf(raw + i * 2, sizeof(raw) - i * 2, "%02X", frame.bytes[i]);
+  Serial.printf("RTL_ADSB_FRAME raw=%s icao=%06lX tc=%u callsign=%s "
+                "altitude_ft=%d altitude_valid=%d speed_kts=%d speed_valid=%d "
+                "heading_deg=%d heading_valid=%d vertical_fpm=%d vertical_valid=%d signal=%u\n",
+                raw, static_cast<unsigned long>(frame.icao), frame.type_code,
+                frame.has_callsign ? frame.callsign : "-", frame.altitude_ft,
+                frame.has_altitude ? 1 : 0, frame.speed_kts, frame.has_speed ? 1 : 0,
+                frame.heading_deg, frame.has_heading ? 1 : 0, frame.vertical_rate_fpm,
+                frame.has_vertical_rate ? 1 : 0, frame.signal);
+}
+
+void adsb_decoder_task(void*) {
+  uint8_t index = 0;
+  while (true) {
+    if (xQueueReceive(adsb_iq_ready, &index, portMAX_DELAY) == pdTRUE) {
+      adsb_decoder.process_cu8(adsb_iq_blocks[index], adsb_iq_sizes[index], on_adsb_frame,
+                              nullptr);
+      (void)xQueueSend(adsb_iq_free, &index, portMAX_DELAY);
+    }
+  }
+}
 
 void emit_identity();
 bool decode_hex(const char* value, uint8_t* output, size_t output_size);
@@ -1167,6 +1402,7 @@ bool rds_capture_stop_and_export();
 bool rds_replay(const char* path);
 void rds_capture_status_print();
 bool ensure_tab5_sd();
+void enrich_one_adsb_track();
 bool sd_put_path_allowed(const char* path);
 void bump_rtl_ui();
 const char* orc_tool_name(OrcTool tool);
@@ -1448,6 +1684,7 @@ const char* rtl_band_name(RtlBand band) {
     case RtlBand::cb: return "CB";
     case RtlBand::lora: return "LORA";
     case RtlBand::browse: return "BROWSE";
+    case RtlBand::adsb: return "ADSB";
     default: return "FM";
   }
 }
@@ -1461,6 +1698,7 @@ bool rtl_band_from_name(const char* name, RtlBand* out_band) {
   if (strcmp(name, "CB") == 0) { *out_band = RtlBand::cb; return true; }
   if (strcmp(name, "LORA") == 0) { *out_band = RtlBand::lora; return true; }
   if (strcmp(name, "BROWSE") == 0) { *out_band = RtlBand::browse; return true; }
+  if (strcmp(name, "ADSB") == 0) { *out_band = RtlBand::adsb; return true; }
   return false;
 }
 
@@ -1474,6 +1712,7 @@ const char* rtl_mode_name(RtlBand band) {
                                                                       : "AM";
     case RtlBand::lora: return "CSS";
     case RtlBand::browse: return "NFM";
+    case RtlBand::adsb: return "1090";
     default: return "WBFM";
   }
 }
@@ -1485,6 +1724,7 @@ uint32_t rtl_band_default_frequency(RtlBand band) {
     case RtlBand::cb: return kCbDefaultHz;
     case RtlBand::lora: return kLoraDefaultHz;
     case RtlBand::browse: return kRtlBrowseDefaultHz;
+    case RtlBand::adsb: return kAdsbDefaultHz;
     default: return rtl_saved_fm_hz;
   }
 }
@@ -1492,7 +1732,8 @@ uint32_t rtl_band_default_frequency(RtlBand band) {
 uint32_t rtl_filter_default_hz(RtlBand band) {
   if (band == RtlBand::lora) return lora_bandwidth_hz.load(std::memory_order_relaxed);
   if (band == RtlBand::am || band == RtlBand::cb) return kRtlAmFilterDefaultHz;
-  if (band == RtlBand::wx || band == RtlBand::browse) return kRtlWxFilterDefaultHz;
+  if (band == RtlBand::wx || band == RtlBand::browse || band == RtlBand::adsb)
+    return kRtlWxFilterDefaultHz;
   return kRtlFmFilterDefaultHz;
 }
 
@@ -1539,6 +1780,8 @@ uint32_t rtl_clamp_frequency(RtlBand band, uint32_t frequency_hz) {
       return frequency_hz;
     case RtlBand::wx:
       return kRtlWxHz;
+    case RtlBand::adsb:
+      return kAdsbDefaultHz;
     case RtlBand::browse:
       return constrain(frequency_hz, kRtlBrowseMinHz, kRtlBrowseMaxHz);
     default:
@@ -1739,6 +1982,79 @@ bool ensure_tab5_sd() {
   g_sd_ready = true;
   Serial.println("RTL_REC_SD ready bus=spi");
   return true;
+}
+
+#pragma pack(push, 1)
+struct AdsbIndexHeader {
+  char magic[8];
+  uint32_t record_size;
+  uint32_t record_count;
+};
+
+struct AdsbIndexRecord {
+  uint32_t icao;
+  char registration[9];
+  char type[49];
+  char owner[51];
+};
+#pragma pack(pop)
+
+bool lookup_adsb_metadata(uint32_t icao, AdsbIndexRecord* result) {
+  constexpr const char* kPath = "/orcsdr/adsb_aircraft.idx";
+  if (!result || !ensure_tab5_sd() || !g_sd_fs->exists(kPath)) return false;
+  File file = g_sd_fs->open(kPath, FILE_READ);
+  AdsbIndexHeader header{};
+  if (!file || file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) != sizeof(header) ||
+      std::memcmp(header.magic, "ORCADSB1", 8) != 0 ||
+      header.record_size != sizeof(AdsbIndexRecord)) {
+    file.close();
+    return false;
+  }
+  uint32_t low = 0, high = header.record_count;
+  while (low < high) {
+    const uint32_t middle = low + (high - low) / 2;
+    if (!file.seek(sizeof(header) + middle * sizeof(AdsbIndexRecord)) ||
+        file.read(reinterpret_cast<uint8_t*>(result), sizeof(*result)) != sizeof(*result)) {
+      file.close();
+      return false;
+    }
+    if (result->icao < icao) low = middle + 1;
+    else high = middle;
+  }
+  const bool found = low < header.record_count && result->icao == icao;
+  file.close();
+  return found;
+}
+
+void enrich_one_adsb_track() {
+  uint32_t icao = 0;
+  portENTER_CRITICAL(&adsb_tracks_mux);
+  for (auto& track : adsb_tracks) {
+    if (!track.used || !track.metadata_pending) continue;
+    track.metadata_pending = false;
+    icao = track.icao;
+    break;
+  }
+  portEXIT_CRITICAL(&adsb_tracks_mux);
+  if (!icao) return;
+
+  AdsbIndexRecord metadata{};
+  const bool found = lookup_adsb_metadata(icao, &metadata);
+  if (found) {
+    portENTER_CRITICAL(&adsb_tracks_mux);
+    for (auto& track : adsb_tracks) {
+      if (!track.used || track.icao != icao) continue;
+      strlcpy(track.registration, metadata.registration, sizeof(track.registration));
+      strlcpy(track.type, metadata.type, sizeof(track.type));
+      strlcpy(track.owner, metadata.owner, sizeof(track.owner));
+      break;
+    }
+    portEXIT_CRITICAL(&adsb_tracks_mux);
+    adsb_track_revision.fetch_add(1, std::memory_order_release);
+  }
+  Serial.printf("RTL_ADSB_META icao=%06lX found=%d registration=%s\n",
+                static_cast<unsigned long>(icao), found ? 1 : 0,
+                found ? metadata.registration : "-");
 }
 
 size_t format_lora_csv(char* output, size_t output_size,
@@ -4298,6 +4614,11 @@ void draw_fm_dashboard(bool static_panel) {
 }
 
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
+  if (band == RtlBand::adsb) {
+    if (!orcsdr::adsb::active()) orcsdr::adsb::enter(adsb_settings);
+    else orcsdr::adsb::draw();
+    return;
+  }
   if (!rtl_spectrum_window_ready) {
     constexpr float kPi = 3.14159265358979323846f;
     for (size_t index = 0; index < kRtlSpectrumBins; ++index) {
@@ -5712,6 +6033,8 @@ void usb_host_task(void*) {
 }
 
 void initialize_rtl_sdr_host() {
+  M5.Power.setExtOutput(false, m5::ext_USB);
+  delay(100);
   M5.Power.setExtOutput(true, m5::ext_USB);
   set_rtl_sdr_status("RTL-SDR: USB-A power enabled");
   if (xTaskCreate(usb_host_task, "rtl_usb_host", 8192, nullptr, 4, nullptr) != pdPASS) {
@@ -5758,9 +6081,19 @@ static void on_rtl_driver_event(rtl_sdr_v4_esp_event_t event, const void *payloa
       if (iq == nullptr || iq->data == nullptr || iq->bytes == 0) break;
       const size_t n =
           iq->bytes <= sizeof(rtl_iq_processing) ? iq->bytes : sizeof(rtl_iq_processing);
+      if (g_stream_band == RtlBand::adsb && adsb_iq_free && adsb_iq_ready) {
+        uint8_t index = 0;
+        if (xQueueReceive(adsb_iq_free, &index, 0) == pdTRUE) {
+          std::memcpy(adsb_iq_blocks[index], iq->data, n);
+          adsb_iq_sizes[index] = n;
+          (void)xQueueSend(adsb_iq_ready, &index, 0);
+        } else {
+          adsb_iq_drops.fetch_add(1, std::memory_order_relaxed);
+        }
+      }
       update_signal_level_from_iq(iq->data, n);
-      /* The callback owns this borrowed block until return; avoid a full-URB copy. */
-      spectrum_offer_iq_snapshot(iq->data, n);
+      /* ADS-B needs the full callback budget; it has no spectrum or audio path. */
+      if (g_stream_band != RtlBand::adsb) spectrum_offer_iq_snapshot(iq->data, n);
       if (g_stream_band == RtlBand::lora) lora_iq_offer(iq->data, n);
       if (g_stream_band != RtlBand::lora &&
           (rtl_audio_enabled.load(std::memory_order_relaxed) ||
@@ -5852,10 +6185,15 @@ static void rtl_driver_app_task(void *) {
       rtl_rds_good_blocks.store(0, std::memory_order_relaxed);
       rtl_rds_total_blocks.store(0, std::memory_order_relaxed);
       if (band == RtlBand::lora) lora_iq_reset_detector();
+      if (band == RtlBand::adsb) {
+        adsb_decoder.reset();
+        adsb_iq_drops.store(0, std::memory_order_relaxed);
+        reset_adsb_tracks();
+      }
       rtl_capture_state.store(RtlCaptureState::running, std::memory_order_release);
       rtl_ui_active.store(true, std::memory_order_release);
       set_rtl_sdr_status("RTL-SDR V4: continuous listening (driver)");
-      draw_sdr_screen(band, frequency_hz, volume);
+      if (band != RtlBand::adsb) draw_sdr_screen(band, frequency_hz, volume);
       M5.Speaker.stop();
       if (rtl_audio_enabled.load(std::memory_order_acquire)) {
         delay(20);
@@ -5866,9 +6204,11 @@ static void rtl_driver_app_task(void *) {
       rtl_sdr_v4_esp_stream_config_default(&st);
       st.preset = RTL_SDR_V4_ESP_PRESET_CUSTOM_HZ;
       st.frequency_hz = frequency_hz;
-      st.sample_rate_sps = RTL_SDR_V4_ESP_RATE_960K;
+      st.sample_rate_sps = band == RtlBand::adsb ? RTL_SDR_V4_ESP_RATE_2048K
+                                                  : RTL_SDR_V4_ESP_RATE_960K;
       esp_err_t err = rtl_sdr_v4_esp_start(g_rtl, &st);
-      Serial.printf("RTL_START %s\n", rtl_sdr_v4_esp_err_to_name(err));
+      Serial.printf("RTL_START %s rate=%u frequency_hz=%u\n",
+                    rtl_sdr_v4_esp_err_to_name(err), st.sample_rate_sps, frequency_hz);
       if (err == ESP_OK && band == RtlBand::fm) {
         Serial.printf("RTL_WBFM_DSP rate=%u filter_hz=%u iq_lpf_k=%.2f audio_lpf_k=%.2f "
                       "decim=%u/%u note=app_side_filter\n",
@@ -5886,6 +6226,7 @@ static void rtl_driver_app_task(void *) {
         /* Stay on radio UI so power/home chrome cannot paint over controls. */
       } else {
         uint32_t spectrum_last_ms = 0;
+        uint32_t adsb_metrics_last_ms = 0;
         uint32_t last_lo_applied_hz = frequency_hz;
         uint32_t last_lo_apply_ms = 0;
         bool auto_fm_scanning = false;
@@ -6030,15 +6371,41 @@ static void rtl_driver_app_task(void *) {
           }
 
           const uint32_t ui_revision = rtl_ui_revision.load(std::memory_order_acquire);
-          if (ui_revision != drawn_rtl_ui_revision) {
+          if (g_stream_band != RtlBand::adsb && ui_revision != drawn_rtl_ui_revision) {
             drawn_rtl_ui_revision = ui_revision;
             draw_sdr_header(g_stream_band, rtl_ui_frequency_hz,
                             rtl_live_volume.load(std::memory_order_acquire));
           }
 
           const uint32_t now = millis();
+          if (g_stream_band == RtlBand::adsb && now - adsb_metrics_last_ms >= 5000) {
+            adsb_metrics_last_ms = now;
+            expire_adsb_tracks(now);
+            rtl_sdr_v4_esp_metrics_t metrics{};
+            if (rtl_sdr_v4_esp_get_metrics(g_rtl, &metrics) == ESP_OK) {
+              const auto& decode = adsb_decoder.stats();
+              Serial.printf("RTL_ADSB_STATUS uptime_ms=%u effective_sps=%u bytes=%llu "
+                            "blocks=%u short=%u overruns=%u drops=%u signal_dbfs=%.1f "
+                            "sample_min=%u sample_max=%u sample_mean=%.1f iq_queue_drops=%u "
+                            "mag_min=%u mag_max=%u preambles=%u frames=%u df17=%u crc_ok=%u "
+                            "aircraft=%u messages=%u\n",
+                            metrics.uptime_ms, metrics.effective_sps,
+                            static_cast<unsigned long long>(metrics.bytes_total),
+                            metrics.blocks_total, metrics.short_transfers, metrics.overruns,
+                            metrics.consumer_drops,
+                            static_cast<double>(rtl_signal_dbfs.load(std::memory_order_relaxed)),
+                            metrics.sample_min, metrics.sample_max,
+                            static_cast<double>(metrics.sample_mean),
+                            adsb_iq_drops.load(std::memory_order_relaxed),
+                            decode.magnitude_min, decode.magnitude_max, decode.preambles,
+                            decode.frames, decode.df17, decode.crc_ok,
+                            adsb_aircraft_count.load(std::memory_order_relaxed),
+                            adsb_total_messages.load(std::memory_order_relaxed));
+            }
+          }
           /* SIG meter stays on even with GFX off (antenna peaking). */
-          if (now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
+          if (g_stream_band != RtlBand::adsb &&
+              now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
             rtl_signal_meter_last_ms = now;
             draw_signal_meter(false);
             /* Capture tool owns the screen below the header while active —
@@ -6061,7 +6428,8 @@ static void rtl_driver_app_task(void *) {
             draw_lora_dashboard(false);
           }
           const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
-          if (gfx_on && orc_tool_current() != OrcTool::Capture) {
+          if (g_stream_band != RtlBand::adsb && gfx_on &&
+              orc_tool_current() != OrcTool::Capture) {
             const bool sound_on = rtl_audio_enabled.load(std::memory_order_relaxed);
             const bool audio_stressed =
                 sound_on && rtl_audio.dropped_chunks > 0 &&
@@ -6089,7 +6457,8 @@ static void rtl_driver_app_task(void *) {
         rtl_capture_state.store(RtlCaptureState::complete, std::memory_order_release);
         set_rtl_sdr_status("RTL-SDR V4: stopped");
         /* Keep rtl_ui_active true so home/power does not paint over SDR controls. */
-        draw_sdr_controls(g_stream_band, false);
+        if (rtl_ui_band == RtlBand::adsb) orcsdr::adsb::draw();
+        else draw_sdr_controls(g_stream_band, false);
         Serial.printf("RTL_STOP bytes=%llu\n",
                       static_cast<unsigned long long>(rtl_capture_bytes));
       }
@@ -6109,9 +6478,32 @@ static void rtl_driver_app_task(void *) {
 }
 
 void initialize_rtl_sdr_host() {
+  M5.Power.setExtOutput(false, m5::ext_USB);
+  delay(100);
   M5.Power.setExtOutput(true, m5::ext_USB);
   set_rtl_sdr_status("RTL-SDR: USB-A power enabled");
   delay(200);
+
+  adsb_iq_free = xQueueCreate(kAdsbIqBlockCount, sizeof(uint8_t));
+  adsb_iq_ready = xQueueCreate(kAdsbIqBlockCount, sizeof(uint8_t));
+  if (!adsb_iq_free || !adsb_iq_ready) {
+    set_rtl_sdr_status("ADS-B: queue allocation failed");
+    return;
+  }
+  for (uint8_t i = 0; i < kAdsbIqBlockCount; ++i) {
+    adsb_iq_blocks[i] = static_cast<uint8_t*>(
+        heap_caps_malloc(kAdsbIqBlockBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!adsb_iq_blocks[i]) {
+      set_rtl_sdr_status("ADS-B: PSRAM allocation failed");
+      return;
+    }
+    (void)xQueueSend(adsb_iq_free, &i, 0);
+  }
+  if (xTaskCreatePinnedToCore(adsb_decoder_task, "adsb_decode", 6144, nullptr, 4, nullptr, 1) !=
+      pdPASS) {
+    set_rtl_sdr_status("ADS-B: decoder task failed");
+    return;
+  }
 
   rtl_sdr_v4_esp_config_t cfg;
   rtl_sdr_v4_esp_config_default(&cfg);
@@ -6438,12 +6830,25 @@ void load_state() {
   rtl_ui_frequency_hz = rtl_saved_fm_hz;
   rtl_requested_frequency_hz.store(rtl_saved_fm_hz, std::memory_order_release);
   Serial.printf("RTL_FM_LOAD frequency_hz=%u\n", rtl_saved_fm_hz);
+  adsb_settings.location_configured = preferences.getBool("adsb_loc_set", false);
+  adsb_settings.latitude_e7 = preferences.getInt("adsb_lat_e7", 0);
+  adsb_settings.longitude_e7 = preferences.getInt("adsb_lon_e7", 0);
+  adsb_settings.radar_range_nm = preferences.getUShort("adsb_range", 25);
+  if (adsb_settings.latitude_e7 < -900000000 || adsb_settings.latitude_e7 > 900000000 ||
+      adsb_settings.longitude_e7 < -1800000000 ||
+      adsb_settings.longitude_e7 > 1800000000 ||
+      (adsb_settings.radar_range_nm != 10 && adsb_settings.radar_range_nm != 25 &&
+       adsb_settings.radar_range_nm != 50 && adsb_settings.radar_range_nm != 100)) {
+    adsb_settings = {};
+    adsb_settings.radar_range_nm = 25;
+  }
   if (preferences.isKey("last_band")) {
     const auto stored_band = static_cast<RtlBand>(
         preferences.getUInt("last_band", static_cast<uint32_t>(RtlBand::fm)));
     if (stored_band == RtlBand::fm || stored_band == RtlBand::am ||
         stored_band == RtlBand::wx || stored_band == RtlBand::cb ||
-        stored_band == RtlBand::lora || stored_band == RtlBand::browse) {
+        stored_band == RtlBand::lora || stored_band == RtlBand::browse ||
+        stored_band == RtlBand::adsb) {
       rtl_ui_band = stored_band;
       rtl_requested_band.store(stored_band, std::memory_order_release);
       Serial.printf("RTL_BAND_RESTORE band=%s\n", rtl_band_name(stored_band));
@@ -6525,6 +6930,14 @@ bool point_in_button(int32_t x, int32_t y) {
 }
 
 void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz) {
+  if (band == RtlBand::adsb) {
+    rtl_audio_enabled.store(false, std::memory_order_release);
+    rtl_audio_play_count = 0;
+    M5.Speaker.stop();
+    orcsdr::adsb::enter(adsb_settings);
+    frequency_hz = kAdsbDefaultHz;
+    Serial.println("RTL_ADSB_CAPTURE live_rf=true ui_data=demo");
+  }
 #if RTL_USE_LEGACY_USB
   if (rtl_sdr_device == nullptr) return;
 #else
@@ -6572,6 +6985,7 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz) {
                  : band == RtlBand::cb     ? "sdr_cb"
                  : band == RtlBand::lora   ? "sdr_lora"
                  : band == RtlBand::browse ? "sdr_browse"
+                 : band == RtlBand::adsb   ? "sdr_adsb"
                                            : "sdr_fm");
 }
 
@@ -6595,6 +7009,7 @@ void adjust_rtl_volume(int delta) {
 }
 
 bool point_in_scope(int32_t x, int32_t y) {
+  if (rtl_ui_band == RtlBand::adsb) return false;
   // FM's dashboard is a full custom 1152x470 surface (presets, scan, tuner) —
   // it has no pan/zoom gesture area, so every touch must reach handle_fm_touch.
   if (rtl_ui_band == RtlBand::fm) return false;
@@ -6726,7 +7141,7 @@ bool handle_fm_touch(int32_t x, int32_t y) {
 }
 
 void request_hot_retune(uint32_t frequency_hz) {
-  if (rtl_ui_band == RtlBand::wx) return;
+  if (rtl_ui_band == RtlBand::wx || rtl_ui_band == RtlBand::adsb) return;
   frequency_hz = rtl_clamp_frequency(rtl_ui_band, frequency_hz);
   if (frequency_hz == 0) return;
   /* UI: 1 kHz display quantize. */
@@ -6764,6 +7179,7 @@ void request_hot_retune(uint32_t frequency_hz) {
 // Only this path may call M5.update() while rtl_ui_active — concurrent update
 // from loop() was silencing the ES8388 speaker path after 0.8.26.
 void poll_sdr_touch_from_stream() {
+  if (rtl_ui_band == RtlBand::adsb && orcsdr::adsb::active()) return;
   static uint32_t last_touch_poll_ms = 0;
   static bool flick_thresh_set = false;
   static bool scope_dragging = false;
@@ -6943,6 +7359,17 @@ void poll_sdr_touch_from_stream() {
 }
 
 void handle_sdr_touch(int32_t x, int32_t y) {
+  if (rtl_ui_band == RtlBand::adsb) {
+    const orcsdr::adsb::Action action = orcsdr::adsb::handle_touch(x, y);
+    if (action == orcsdr::adsb::Action::settings_changed) {
+      adsb_settings = orcsdr::adsb::settings();
+      adsb_settings_persist_pending.store(true, std::memory_order_release);
+    } else if (action == orcsdr::adsb::Action::exit) {
+      rtl_ui_active.store(false, std::memory_order_release);
+      queue_local_rtl_listen(RtlBand::browse, kAdsbDefaultHz);
+    }
+    return;
+  }
   if (handle_tool_tab_touch(x, y)) return;
   if (handle_cb_touch(x, y)) return;
   if (handle_lora_touch(x, y)) return;
@@ -7154,6 +7581,34 @@ void set_online() {
 }
 
 void process_command(char* command) {
+  if (strncmp(command, "RTL_ADSB_LOCATION ", 18) == 0) {
+    double latitude = 0, longitude = 0;
+    char trailing = 0;
+    if (sscanf(command + 18, "%lf %lf %c", &latitude, &longitude, &trailing) != 2 ||
+        latitude < -90.0 || latitude > 90.0 || longitude < -180.0 || longitude > 180.0) {
+      Serial.println("RTL_ADSB_LOCATION_ERROR invalid_coordinate");
+      return;
+    }
+    adsb_settings.location_configured = true;
+    adsb_settings.latitude_e7 = static_cast<int32_t>(llround(latitude * 10000000.0));
+    adsb_settings.longitude_e7 = static_cast<int32_t>(llround(longitude * 10000000.0));
+    preferences.putBool("adsb_loc_set", true);
+    preferences.putInt("adsb_lat_e7", adsb_settings.latitude_e7);
+    preferences.putInt("adsb_lon_e7", adsb_settings.longitude_e7);
+    if (orcsdr::adsb::active()) orcsdr::adsb::enter(adsb_settings);
+    Serial.println("RTL_ADSB_LOCATION_OK");
+    return;
+  }
+  if (strcmp(command, "RTL_ADSB_STOP") == 0 && rtl_ui_band == RtlBand::adsb) {
+    rtl_stop_requested.store(true, std::memory_order_release);
+    Serial.println("RTL_ADSB_STOPPING");
+    return;
+  }
+  if (strcmp(command, "RTL_ADSB_START") == 0) {
+    queue_local_rtl_listen(RtlBand::adsb, kAdsbDefaultHz);
+    Serial.println("RTL_ADSB_STARTING");
+    return;
+  }
   if (strcmp(command, "SD_LIST") == 0) {
     sd_list();
     return;
@@ -7470,7 +7925,7 @@ void process_command(char* command) {
   if (strcmp(command, "RTL_HELP") == 0) {
     Serial.println("RTL_HELP_BEGIN");
     Serial.println("RTL_STATUS                    - device connection info");
-    Serial.println("RTL_TUNE <BAND> <HZ>           - tune band+freq (auth) BAND=FM|AM|WX|CB|LORA|BROWSE");
+    Serial.println("RTL_TUNE <BAND> <HZ>           - tune band+freq (auth) BAND=FM|AM|WX|CB|LORA|BROWSE|ADSB");
     Serial.println("RTL_FREQ                       - query current band/frequency/mode");
     Serial.println("RTL_FREQ <HZ>                  - hot-retune within current band (auth)");
     Serial.println("RTL_VOLUME                     - query current volume");
@@ -7501,10 +7956,10 @@ void process_command(char* command) {
     }
     RtlBand band;
     if (!rtl_band_from_name(band_name, &band)) {
-      Serial.println("RTL_TUNE_INVALID unknown band (FM|AM|WX|CB|LORA|BROWSE)");
+      Serial.println("RTL_TUNE_INVALID unknown band (FM|AM|WX|CB|LORA|BROWSE|ADSB)");
       return;
     }
-    if (!rtl_device_ready()) {
+    if (band != RtlBand::adsb && !rtl_device_ready()) {
       Serial.println("RTL_TUNE_UNAVAILABLE device not ready");
       return;
     }
@@ -7885,6 +8340,11 @@ void setup() {
   M5.begin(config);
   M5.Display.setRotation(1);
   M5.Display.setBrightness(180);
+  if (!orcsdr::adsb::self_check() || !orcsdr::adsb_rx::Decoder::self_check()) {
+    Serial.println("RTL_ADSB_SELF_CHECK_FAIL");
+    abort();
+  }
+  Serial.println("RTL_ADSB_SELF_CHECK_OK");
 
 #if ORC_LORA_TEST_BUILD
   g_suppress_home_paint = true;
@@ -7987,24 +8447,42 @@ void setup() {
 }
 
 void loop() {
+  const bool adsb_ui = rtl_ui_band == RtlBand::adsb && orcsdr::adsb::active();
   const bool radio_ui = rtl_ui_active.load(std::memory_order_acquire);
   // Single-owner rule: while radio UI streams, only the USB task may M5.update().
   // Dual M5.update() (loop + stream) was correlated with total speaker silence.
-  if (!radio_ui) {
+  if (!radio_ui || adsb_ui) {
     M5.update();
   }
   poll_serial();
   poll_wifi();
+  if (adsb_settings_persist_pending.exchange(false, std::memory_order_acq_rel)) {
+    preferences.putBool("adsb_loc_set", adsb_settings.location_configured);
+    preferences.putInt("adsb_lat_e7", adsb_settings.latitude_e7);
+    preferences.putInt("adsb_lon_e7", adsb_settings.longitude_e7);
+    preferences.putUShort("adsb_range", adsb_settings.radar_range_nm);
+    Serial.printf("RTL_ADSB_SETTINGS_SAVE configured=%d range_nm=%u\n",
+                  adsb_settings.location_configured ? 1 : 0,
+                  adsb_settings.radar_range_nm);
+  }
 
   const uint32_t current_rtl_sdr_status_revision =
       rtl_sdr_status_revision.load(std::memory_order_acquire);
   if (drawn_rtl_sdr_status_revision != current_rtl_sdr_status_revision) {
     drawn_rtl_sdr_status_revision = current_rtl_sdr_status_revision;
-    if (!radio_ui) draw_rtl_sdr_state();
+    if (!radio_ui && !adsb_ui) draw_rtl_sdr_state();
   }
 
+  if (adsb_ui) {
+    enrich_one_adsb_track();
+    publish_adsb_snapshot(millis());
+    orcsdr::adsb::update();
+    const auto touch = M5.Touch.getDetail(0);
+    const bool pressed = touch.isPressed() || touch.wasPressed();
+    if (pressed && !was_pressed) handle_sdr_touch(touch.x, touch.y);
+    was_pressed = pressed;
   // Home-screen taps when radio UI is not active.
-  if (!radio_ui) {
+  } else if (!radio_ui) {
     // One-shot auto-start once the RTL-SDR is ready, restoring the band the
     // device was last on instead of waiting for a home-screen tap (that tap
     // gate was blocking every autonomous flash-reboot-resume cycle during
@@ -8017,9 +8495,11 @@ void loop() {
       // enabled -- see the EVT_IQ_BLOCK gate in the streaming task. Without
       // this, RDS status stays at floor forever regardless of how strong
       // the RF signal is, since demodulate_fm() itself never executes.
-      rtl_audio_enabled.store(true, std::memory_order_release);
-      rtl_audio_play_count = 0;
-      (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
+      if (rtl_ui_band != RtlBand::adsb) {
+        rtl_audio_enabled.store(true, std::memory_order_release);
+        rtl_audio_play_count = 0;
+        (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
+      }
     }
     const auto touch = M5.Touch.getDetail(0);
     const bool pressed = touch.isPressed() || touch.wasPressed();

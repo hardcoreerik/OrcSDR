@@ -1,8 +1,8 @@
 # OrcSDR project status
 
-Snapshot date: **2026-08-09**
-Source branch: **`codex/sdr-bandwidth-navigation`**
-Mainline baseline: **`origin/main` at `bda29fd`**
+Snapshot date: **2026-08-10**
+Source branch: **`codex/ads-b-dashboard`**
+Mainline baseline: **`origin/main` at `929abc7`**
 
 This is the authoritative current-status and roadmap index. Historical design,
 research, and validation documents remain useful evidence, but do not override
@@ -45,6 +45,7 @@ this file when their paths, versions, or completion claims differ.
 | AM/HF fidelity | **Experimental** | Do not claim calibrated HF/direct-sampling support |
 | Second ESP32-P4 board | **Planned** | No second-board hardware evidence yet |
 | rtl_tcp over Ethernet | **Planned** | App does not exist yet |
+| ADS-B 1090 | **Flashed — live pipeline implemented; acceptance pending** | COM17 upload hash-verified. Five-minute 1090 MHz run sustained 2,047,654 S/s (99.98% of 2.048 MS/s) with five startup drops and none afterward. A live RF trace reconstructed to CRC-valid DF17 `8DA2955158B505036BFB54BC90AC` (ICAO `A29551`, 35,000 ft), matching ASA1310's simultaneous independent track; the same captured magnitude waveform now passes the on-device fractional-sample replay check. The bounded aircraft table and revisioned dashboard snapshot are flashed. Dynamic updates no longer clear the full screen each second. A 315,547-record FAA index and the complete supplied FAA archive are SD hash-verified; live ICAO `A31111` resolved to `N297SF`. The UI honestly remains `DEMO` until a new on-device live frame passes CRC; physical view/touch acceptance remains open. |
 
 ## Roadmap
 
@@ -100,9 +101,25 @@ no duplicate USB implementation.
 - [ ] Sustain at least 1.0 MS/s for ten minutes and document drop rate.
 - [ ] Add mDNS discovery; evaluate Wi-Fi IQ only after Ethernet is stable.
 
+### P3 — ADS-B 1090
+
+- [x] Add an explicitly labeled deterministic-demo shell for Radar, List,
+      Target, RF Stats, and persisted receiver settings.
+- [x] Measure the 2.048 MS/s driver path at 1090 MHz for five minutes.
+- [x] Complete replay-tested Mode-S/DF17 decode: validated 56-bit DF11 and
+      112-bit DF17 extraction, CRC/ICAO, identity/altitude/velocity, global
+      CPR, captured-waveform replay, and bounded 64-aircraft state.
+- [x] Connect the decoder table to a revisioned live dashboard snapshot while
+      preserving the explicit `DEMO` gate until a live CRC-valid frame arrives.
+- [x] Add SD-backed FAA registration, model, and registered-owner enrichment
+      without dropping the complete source database or blocking the IQ callback.
+- [ ] Accept live aircraft against an independent receiver on the Tab5.
+
+Detailed gates and clean-room boundaries live in `phasing.md` Phase 6.
+
 ### Deferred until measurements justify them
 
-- Bias tee, direct sampling/HF, gain/PPM controls, SpyServer, WebSDR, ADS-B,
+- Bias tee, direct sampling/HF, gain/PPM controls, SpyServer, WebSDR, 978 MHz UAT,
   multi-client IQ fanout, and ESP32-S2/S3 production-rate claims.
 - LP-core DSP offload: the P4 LP core is intended for low-power service work and
   is not the first choice for the 960 kS/s floating-point demodulation path.

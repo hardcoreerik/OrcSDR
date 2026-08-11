@@ -86,6 +86,36 @@ surface specifically.
 (tool-shell abstraction, sequenced after the split lands so it has stable
 module boundaries to plug into).
 
+## Product initiative — ADS-B 1090 dashboard
+
+The supplied four-panel concept is accepted as the product contract for an
+on-device **1090 MHz Mode-S/ADS-B** tool: Radar, Aircraft List, selected
+Target, and RF Statistics share one aircraft snapshot and one selected ICAO.
+Settings is a fifth control view for receiver coordinates and radar range,
+not another data panel. The first implementation is deliberately marked
+`DEMO`; it exercises navigation and persistence without claiming live RF.
+
+Peer projects establish useful boundaries:
+
+- [T-Display-P4 ADS-B](https://github.com/jstockdale/T-Display-P4) proves the
+  ESP32-P4 + RTL-SDR vertical-app shape and informs product/reliability goals.
+- [dump1090](https://github.com/antirez/dump1090) and
+  [readsb](https://github.com/wiedehopf/readsb) inform frame validation,
+  bounded recently-seen aircraft state, and replay-first decoder checks.
+- [tar1090](https://github.com/wiedehopf/tar1090) reinforces the separation
+  between decoder state and selectable radar/list/detail views.
+
+These are architecture and behavior references only. OrcSDR does not copy
+GPL tuner, decoder, or UI source, and it does not bundle airline logos or
+aircraft photos. The 2.048 MS/s path is implemented and hardware-measured. The
+clean-room decoder, bounded state table, and live snapshot path are flashed;
+the dashboard keeps its `DEMO` badge until a newly received frame passes CRC,
+so replay and build evidence cannot be mistaken for current live aircraft.
+
+**Status: Live pipeline flashed; physical acceptance pending.** See `phasing.md`
+Phase 6.1 for the shell and Phase 6.2–6.6 for high-rate input, decoding,
+enrichment, and hardware acceptance.
+
 ## Summary table
 
 | Gap | New or already tracked | Phase |
@@ -95,3 +125,4 @@ module boundaries to plug into).
 | No CI | New | Phase 2 |
 | Open performance gates | Already tracked (`PROJECT_STATUS.md` P0/P1) | Unchanged |
 | No tool-shell abstraction | New | Phase 3 |
+| ADS-B 1090 dashboard | Product initiative | Phase 6 |
