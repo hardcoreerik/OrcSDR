@@ -1,6 +1,8 @@
 # OrcSDR serial CLI (Tab5 host protocol)
 
-**Transport:** USB-serial (COM17 on the reference dev machine), 115200 baud, 8N1, line-terminated (`\n`).
+**Transport:** native ESP32-P4 USB Serial/JTAG (`COM17` on the reference bench;
+the COM number is not a device identity), 8N1, line-terminated (`\n`). Examples
+use 115200 for compatibility; see the native-USB note below.
 **Firmware:** `apps/orcsdr-tab5/ui/main.cpp`, `process_command()` / `poll_serial()`.
 
 This is the human/AI-facing control surface for the Tab5 radio — everything
@@ -34,6 +36,59 @@ $port.Close()
 
 Any serial library in any language works the same way — this is a plain
 line protocol, nothing OrcSDR-specific about the transport itself.
+
+## USB Serial/JTAG: baud, identity, and large transfers
+
+The Tab5's PC-facing port is the ESP32-P4's native USB Serial/JTAG interface,
+not an external USB-to-UART bridge. On the accepted bench unit Windows reports
+`USB\VID_303A&PID_1001&MI_00`. Confirm the current COM assignment instead of
+assuming `COM17`:
+
+```powershell
+Get-PnpDevice -Class Ports |
+    Format-Table Status, FriendlyName, InstanceId -AutoSize
+
+Get-CimInstance Win32_SerialPort |
+    Select-Object DeviceID, Name, Description, PNPDeviceID
+```
+
+For this native USB connection, the `115200` or `921600` value passed to
+`SerialPort` is configuration metadata, not a physical UART bit clock. A host
+connection at 921600 was hardware-verified while firmware still used
+`Serial.begin(115200)`; it did not provide an 8x transfer-speed increase. Keep
+the existing scripts at 115200 unless the hardware path changes to a real UART
+bridge. With a real UART bridge, both ends must use the same baud.
+
+Large captures use binary chunks, not ASCII samples or hex text. The current
+protocol uses 16 KiB host-to-device chunks and 2 KiB device-to-host chunks,
+then verifies the complete file with SHA-256. Use the repository clients:
+
+```powershell
+# PC -> Tab5
+.\tools\copy_to_tab5_sd.ps1 '.\capture.s16' `
+    '/orcsdr/rds_debug/capture.s16' -Port COM17
+
+# Tab5 -> PC
+.\tools\copy_from_tab5_sd.ps1 '/orcsdr/rds_debug/capture.s16' `
+    -Destination '.\capture.s16' -Port COM17
+```
+
+Transfer rules and failure meanings:
+
+- Only one process may own the COM port. Close serial monitors before running
+  a transfer or upload. `PermissionError(13)` / `Access is denied` usually
+  means a monitor or an orphaned PlatformIO/esptool process still holds it;
+  identify the exact holder and stop only that process.
+- Do not run an automatic logger beside a binary transfer. Firmware now blocks
+  radio auto-start while `SD_GET`/`SD_PUT` is active so radio logs cannot be
+  inserted into file bytes.
+- Do not accept byte count alone. Completion requires the device and host
+  SHA-256 values to match. The RDS investigation verified two 3,840,000-byte
+  downloads this way.
+
+Classification: native-USB baud behavior is expected device operation (a
+how-to), port contention is a host-side troubleshooting condition, and the
+former radio-log interleaving was a firmware bug fixed by the transfer guard.
 
 ## Auth model
 
@@ -115,37 +170,42 @@ actually broadcasts RDS.
 
 ## RDS (FM band only)
 
-RDS decoding is staged and **not yet fully working** — see `phasing.md`'s
-RDS phase for the current status. As of this writing: Stage 1 (carrier
-detection) is hardware-verified; Stage 2 (bit/block sync, giving PI/PS/PTY/
-RadioText) is implemented but not yet achieving reliable lock on real air —
-symbol timing recovery is the current open problem.
+RDS decoding is staged — see `phasing.md` for the current status. Stage 1
+(carrier detection) and Stage 2 (bit/block sync) are hardware-verified against
+live 96.1 KZEL and a captured MPX replay. Stage 3 parsing/display of PS, PTY,
+and RadioText remains open.
 
 | Command | Auth | Reply |
 |---|---|---|
 | `RTL_RDS_STATUS` | no | see below |
+| `RTL_RDS_CAPTURE_START` | no | starts an 8-second, 240 kS/s MPX capture in PSRAM |
+| `RTL_RDS_CAPTURE_STOP` / `RTL_RDS_CAPTURE_SAVE` | no | stops and exports `.s16` plus `.json` metadata to SD |
+| `RTL_RDS_CAPTURE_STATUS` | no | capture progress, frequency, SD state, and last path |
+| `RTL_RDS_REPLAY <path.s16>` | no | resets and replays an MPX capture through the same RDS processor; live radio must be stopped |
 
 ```text
 RDS_STATUS carrier=0|1 carrier_signal=<dB> block_locked=0|1 bler=<%>
            good=<n> total=<n> hyp0_streak=<n> hyp1_streak=<n>
            timing_chip_rate=<Hz> timing_correction_ppm=<ppm>
+           nco_freq_off=<rad/sample> i_lpf=<n> q_lpf=<n> mu=<0..1>
            A=<hex16> B=<hex16> C=<hex16> D=<hex16>
+           driver_overruns=<n> driver_drops=<n> effective_sps=<n>
+           audio_chunks=<n> audio_drops=<n>
 ```
 
 - `carrier` — Stage 1, whether 57 kHz subcarrier energy is present.
 - `block_locked` / `bler` / `good` / `total` — Stage 2 block-sync status.
   `bler=100%` with `total=0` means block sync has never been achieved since
   tuning to this frequency, not that the signal is bad.
-- `hyp0_streak` / `hyp1_streak` — internal: two chip-alignment hypotheses
-  run in parallel (see `phasing.md`), each needs a streak of 4 consecutive
-  correctly-spaced offset-word matches to declare lock.
+- `hyp0_streak` / `hyp1_streak` — best streak for each chip-pair polarity
+  across four fractional timing phases. A streak of 4 correctly-spaced
+  offset-word matches declares lock.
 - `A`/`B`/`C`/`D` — last decoded block content (hex). **Not meaningful
   until `block_locked=1`** — treat as noise otherwise, per the current
   known-issue in `phasing.md`.
 
-There's also a periodic (every 2s, unthrottleable currently) diagnostic
-pair printed automatically whenever tuned to FM with RDS carrier energy
-present, useful for watching convergence live rather than polling:
+The legacy periodic diagnostic pair is compiled off by default. Use
+`RTL_RDS_STATUS` for on-demand diagnostics without a continuous serial load:
 
 ```text
 RDS_STAGE2 locked=... bler=... good=... total=... hyp0_locked=... hyp0_streak=...
@@ -154,11 +214,41 @@ RDS_STAGE2 locked=... bler=... good=... total=... hyp0_locked=... hyp0_streak=..
 RDS_TIMING chip_rate=... mu=... symbols_sec=... correction_ppm=... freq_off=...
 ```
 
-`i_lpf`/`q_lpf` — Costas-loop-tracked carrier baseband; a locked carrier
-shows `|i_lpf|` consistently larger than `|q_lpf|` (BPSK-like, data on the
-I axis). `symbols_sec` should read close to 2375 (the RDS biphase chip
-rate, not the final 1187.5 bit/s information rate) when timing recovery is
-working — see `phasing.md` for what "working" looks like precisely.
+`i_lpf`/`q_lpf` are the complex 57 kHz baseband before carrier-independent
+differential pairing. `timing_correction_ppm` reports the measured RTL sample
+clock calibration (`-10` on the accepted fixture); `nco_freq_off` is retained
+for protocol compatibility and currently reports zero. The driver/audio fields
+are explicit, on-demand stream-continuity counters. `symbols_sec` should read
+close to 2375 (the RDS biphase chip rate, not the final 1187.5 bit/s information
+rate).
+
+### MPX capture and replay
+
+Capture stores signed 16-bit little-endian FM multiplex samples at 240 kS/s
+under `/orcsdr/rds_debug/`, with a sibling JSON file containing the sample
+rate, tuned frequency, sample count, radians-per-LSB scale, and start uptime.
+The raw `.s16` file is directly consumable by Redsea:
+
+```text
+RTL_RDS_CAPTURE_START
+... wait up to 8 seconds ...
+RTL_RDS_CAPTURE_STOP
+RTL_RDS_CAPTURE_STATUS
+```
+
+After copying the reported `.s16` file to a PC:
+
+```bash
+redsea --input mpx -r 240k < capture.s16
+```
+
+For deterministic on-device replay, stop the live radio first and use the SD
+path reported by `RTL_RDS_CAPTURE_STOP`:
+
+```text
+RTL_RDS_REPLAY /orcsdr/rds_debug/001_96113000_mpx.s16
+RTL_RDS_STATUS
+```
 
 ## Recording (post-demod WAV capture)
 
@@ -178,11 +268,12 @@ Chunked binary protocol (`SD_LIST`, `SD_GET_BEGIN`/`_CHUNK`/`_ABORT`,
 `SD_PUT_BEGIN`/`_DATA`/`_ABORT`, `SD_REMOVE`) with SHA-256 verification and
 staged-write rollback on failure. All paths must be under `/orcsdr/`.
 
-**Use `tools/copy_to_tab5_sd.ps1`** rather than re-implementing this by
-hand — it's the reference client and handles the chunking/hashing:
+Use `tools/copy_to_tab5_sd.ps1` and `tools/copy_from_tab5_sd.ps1` rather than
+re-implementing the binary framing by hand; they handle chunking and hashing:
 
 ```powershell
 .\tools\copy_to_tab5_sd.ps1 <local-file> /orcsdr/<name> -Port COM17
+.\tools\copy_from_tab5_sd.ps1 /orcsdr/<name> -Destination <local-file> -Port COM17
 ```
 
 `SD_LIST` alone (no chunking needed) returns one `SD_LIST_ENTRY
@@ -232,15 +323,12 @@ general-purpose IQ dumping).
 > RTL_TUNE FM 96100000
 > RTL_RDS_STATUS
 < RDS_STATUS carrier=1 carrier_signal=-6.2 block_locked=0 bler=100.0% ...
-  (watch the free-running RDS_STAGE2/RDS_TIMING lines, or poll RTL_RDS_STATUS)
+  (poll RTL_RDS_STATUS; continuous stream diagnostics are disabled by default)
 ```
 
 ## What's not here yet
 
 - No JSON output mode — everything is `key=value` space-separated text.
   Fine for line-oriented parsing, more work for a strict JSON client.
-- No capture/replay harness for offline RDS DSP iteration (recording raw
-  MPX to SD and re-running the decode chain against a fixed file instead
-  of live RF) — flagged as a real gap in `phasing.md`, not yet built.
 - `RTL_HELP`'s command list is maintained by hand alongside this doc — if
   you add a command, update both.

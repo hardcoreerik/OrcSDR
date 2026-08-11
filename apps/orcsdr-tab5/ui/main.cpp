@@ -193,7 +193,7 @@ constexpr float kStereoLockOff = 0.018f;
 /** 57 kHz RDS subcarrier, ~2.4 kHz half-BW (matches the actual ~4.8 kHz
  * occupied RDS signal — narrowed from an initial 4 kHz Stage-1-only guess
  * after Stage 2 block sync failed to converge on real air; a too-wide
- * bandpass was letting extra noise into the Costas loop): r=0.960923,
+ * bandpass was inflating the carrier-energy estimate): r=0.960923,
  * θ=1.492257. */
 constexpr float kRdsBpTwoRCos = 0.151988f;
 constexpr float kRdsBpR2 = 0.938155f;
@@ -203,42 +203,30 @@ constexpr float kRdsEnvK = 0.00014f;
 constexpr float kRdsCarrierOn = 0.006f;
 constexpr float kRdsCarrierOff = 0.0035f;
 /*
- * RDS Stage 2 — symbol/bit/block recovery. Carrier is tracked with a
+ * RDS Stage 2 — symbol/bit/block recovery. The nominal carrier is mixed with a
  * recursive complex-rotator NCO (4 mul + 2 add per sample) rather than
  * per-sample sinf/cosf: at 240 kS/s, calling sinf+cosf every sample would
  * cost ~480,000 transcendental calls/sec just for RDS, on top of everything
  * else demodulate_fm already does. The rotation increment (which needs one
  * sin+cos pair) is only recomputed every kRdsNcoRecalcSamples — the loop's
- * frequency correction moves slowly enough that this is indistinguishable
- * from recomputing every sample, at ~1/64th the trig cost.
+ * fixed complex rotator; differential complex chip pairing cancels carrier
+ * phase and slow tuner offset without a Costas loop.
  */
 constexpr float kRdsNcoNominal = 1.492257f;      /* 2*pi*57000/240000 rad/sample */
 constexpr int kRdsNcoRecalcSamples = 64;
-/* 2nd-order Costas loop, Bn=20 Hz, zeta=0.707 — narrow on purpose: the
- * carrier is derived from a very stable broadcast oscillator, this loop
- * only needs to track slow RTL-SDR tuning-offset drift, not fast dynamics. */
-constexpr float kRdsCostasKp = 0.000111100f;
-constexpr float kRdsCostasKi = 0.0000000062f;
-constexpr float kRdsNcoFreqClamp = 0.007854f;    /* +-300 Hz equivalent */
 constexpr float kRdsSymLpfK = 0.060899f;         /* single-pole, ~2.4 kHz BW */
-constexpr float kRdsChipInc = 0.009896f;         /* 2375 chips/sec at 240 kS/s */
-/*
- * Gardner timing-error detector: the chip-rate accumulator above was
- * open-loop (assumed the RTL-SDR's sample clock exactly matches nominal),
- * verified on real air (96.1 KZEK, after the Costas sign fix that DID get
- * carrier phase tracking working) to never sustain block sync despite a
- * clean I-dominant constellation — the signature of a timing, not carrier,
- * problem. Gardner's classic three-point formula (mid * (ontime -
- * last_ontime)) is implemented with matched boxcar sums for both the mid
- * and ontime samples, so they're on a consistent scale, unlike mixing a
- * continuous LPF value with a boxcar sum.
- */
-constexpr float kRdsTimingKp = 0.000001f;
-constexpr float kRdsTimingKi = 0.000000001f;
-constexpr float kRdsTimingClamp = 0.00000495f;  /* +-~500 ppm — the 200ppm and
-    2000ppm diagnostic clamps both pinned exactly at their limit (confirming
-    a sign error, now fixed above), this is a plausible-but-generous real
-    RTL-SDR clock-offset bound for the fixed loop to actually settle within. */
+/* Measured from the verified 96.1 MHz MPX capture. Keep this explicit because
+ * the RTL sample clock is physical hardware, not an exact 240 kHz source. */
+constexpr float kRdsChipRateCorrectionPpm = -10.0f;
+constexpr float kRdsChipInc =
+    (2375.0f / 240000.0f) * (1.0f + kRdsChipRateCorrectionPpm * 1.0e-6f);
+constexpr size_t kRdsTimingTracks = 4;
+constexpr uint32_t kRdsMpxRateHz = kRtlSampleRateSps / kFmRfDecim;
+constexpr size_t kRdsCaptureSeconds = 8;
+constexpr size_t kRdsCaptureSamples = kRdsMpxRateHz * kRdsCaptureSeconds;
+constexpr float kRdsMpxToInt16 = 32767.0f / 3.14159265358979323846f;
+constexpr float kRdsInt16ToMpx = 1.0f / kRdsMpxToInt16;
+static_assert(kRdsMpxRateHz == 240000, "RDS MPX file format requires 240 kS/s");
 /* RDS/RBDS generator polynomial x^10+x^8+x^7+x^5+x^4+x^3+1, and the five
  * offset words (IEC 62106). Verified by direct polynomial-division check
  * against all five before this was written into demodulate_fm. */
@@ -248,6 +236,7 @@ constexpr uint16_t kRdsOffsetB = 0x198;
 constexpr uint16_t kRdsOffsetC = 0x168;
 constexpr uint16_t kRdsOffsetCp = 0x350;         /* C', used in version-B groups */
 constexpr uint16_t kRdsOffsetD = 0x1B4;
+constexpr int kRdsBadBlocksBeforeUnlock = 32;
 
 /** One candidate bit-alignment hypothesis for RDS block sync. Chip pairing
  * has a 1-chip (half-bit) ambiguity that can't be resolved analytically —
@@ -257,8 +246,9 @@ constexpr uint16_t kRdsOffsetD = 0x1B4;
 struct RdsHypothesis {
   uint32_t shift_reg = 0;
   int bit_fill = 0;               /* caps at 26: "do we have a full window yet" */
-  bool have_prev_raw_bit = false;
-  bool prev_raw_bit = false;      /* for differential decode */
+  bool have_prev_pair = false;
+  float prev_pair_i = 0;
+  float prev_pair_q = 0;
   bool have_prev_match = false;
   int prev_match_type = 0;        /* 0=A,1=B,2=C/C',3=D */
   uint32_t prev_match_bitpos = 0;
@@ -272,6 +262,17 @@ struct RdsHypothesis {
   bool group_info_valid[4] = {false, false, false, false};
   uint32_t good_blocks = 0;
   uint32_t total_blocks = 0;
+};
+
+struct RdsTimingTrack {
+  float chip_i_sum = 0;
+  float chip_q_sum = 0;
+  float prev_chip_i = 0;
+  float prev_chip_q = 0;
+  float chip_phase = 0;
+  bool have_prev_chip = false;
+  uint32_t chip_index = 0;
+  RdsHypothesis hyp[2];
 };
 
 /** Binary polynomial division of a 26-bit RDS block by the generator poly.
@@ -303,8 +304,8 @@ int rds_offset_match(uint16_t syn) {
  * spacing declares lock. Positional mode (locked): only checks the syndrome
  * at the next expected 26-bit boundary — cheaper, and gives a clean BLER
  * count (attempted vs. matched) since every expected position is counted
- * whether or not the block checks out. Drops back to search mode after 8
- * consecutive bad blocks.
+ * whether or not the block checks out. Drops back to search mode after a
+ * sustained 32-block failure burst (~0.67 s), not a short noisy-air fade.
  */
 void rds_hypothesis_feed(RdsHypothesis& h, bool bit) {
   h.shift_reg = ((h.shift_reg << 1) | (bit ? 1u : 0u)) & 0x3FFFFFFu;
@@ -353,7 +354,7 @@ void rds_hypothesis_feed(RdsHypothesis& h, bool bit) {
     } else {
       ++h.bad_block_streak;
       h.group_info_valid[h.next_expected_type] = false;
-      if (h.bad_block_streak >= 8) {
+      if (h.bad_block_streak >= kRdsBadBlocksBeforeUnlock) {
         h.locked = false;
         h.streak = 0;
         h.have_prev_match = false;
@@ -644,29 +645,71 @@ struct RtlAudioState {
   float rds_env = 0;
   bool rds_carrier_present = false;
 
-  /* ---- RDS Stage 2 — coherent carrier + symbol/bit/block recovery ---- */
+  /* ---- RDS Stage 2 — complex differential symbol/bit/block recovery ---- */
   /** Recursive complex-rotator NCO (see kRdsNcoNominal comment for why this
    * isn't per-sample sinf/cosf). Unit vector, rotated each RF sample. */
   float rds_nco_i = 1.0f, rds_nco_q = 0.0f;
   float rds_nco_inc_cos = 1.0f, rds_nco_inc_sin = 0.0f;
-  float rds_nco_freq_offset = 0;  /* Costas integral term, rad/sample */
   int rds_nco_recalc_counter = 0;
-  float rds_i_lpf = 0, rds_q_lpf = 0;  /* Costas-mixed baseband, for loop error only */
-  /* Gardner timing recovery: matched boxcar sums for the first/second half
-   * of the current chip period (split at the mu=0.5 crossing below). */
-  float rds_chip_accum_a = 0, rds_chip_accum_b = 0;
-  float rds_chip_last_ontime = 0;
-  float rds_timing_freq_offset = 0;  /* adaptive chip-rate correction */
-  float rds_chip_phase = 0;            /* fractional chip-boundary accumulator, 0..1 */
-  bool rds_chip_prev = false;
-  bool rds_chip_have_prev = false;
-  uint32_t rds_chip_prev_index = 0;
-  uint32_t rds_chip_index = 0;
-  RdsHypothesis rds_hyp[2];
+  float rds_i_lpf = 0, rds_q_lpf = 0;
+  RdsTimingTrack rds_timing[kRdsTimingTracks];
+  bool rds_had_block_lock = false;
   uint32_t rds_diag_chip_count = 0;  /* for symbols/sec, reset each print window */
 };
 
 RtlAudioState rtl_audio;
+
+void rtl_rds_reset() {
+  rtl_audio.rds_bp_y1 = 0;
+  rtl_audio.rds_bp_y2 = 0;
+  rtl_audio.rds_env = 0;
+  rtl_audio.rds_carrier_present = false;
+  rtl_audio.rds_nco_i = 1.0f;
+  rtl_audio.rds_nco_q = 0.0f;
+  rtl_audio.rds_nco_inc_cos = 1.0f;
+  rtl_audio.rds_nco_inc_sin = 0.0f;
+  rtl_audio.rds_nco_recalc_counter = 0;
+  rtl_audio.rds_i_lpf = 0;
+  rtl_audio.rds_q_lpf = 0;
+  for (size_t index = 0; index < kRdsTimingTracks; ++index) {
+    rtl_audio.rds_timing[index] = RdsTimingTrack();
+    rtl_audio.rds_timing[index].chip_phase =
+        static_cast<float>(index) / static_cast<float>(kRdsTimingTracks);
+  }
+  rtl_audio.rds_had_block_lock = false;
+  rtl_audio.rds_diag_chip_count = 0;
+}
+
+struct RdsSelection {
+  const RdsHypothesis* best = nullptr;
+  bool locked = false;
+  int parity_streak[2] = {0, 0};
+  float chip_phase = 0;
+};
+
+RdsSelection rds_select() {
+  RdsSelection result;
+  for (const RdsTimingTrack& timing : rtl_audio.rds_timing) {
+    for (size_t parity = 0; parity < 2; ++parity) {
+      const RdsHypothesis& candidate = timing.hyp[parity];
+      if (candidate.streak > result.parity_streak[parity]) {
+        result.parity_streak[parity] = candidate.streak;
+      }
+      const bool better = result.best == nullptr ||
+                          (candidate.locked && !result.best->locked) ||
+                          (candidate.locked == result.best->locked &&
+                           (candidate.good_blocks > result.best->good_blocks ||
+                            (candidate.good_blocks == result.best->good_blocks &&
+                             candidate.streak > result.best->streak)));
+      if (better) {
+        result.best = &candidate;
+        result.chip_phase = timing.chip_phase;
+      }
+      result.locked = result.locked || candidate.locked;
+    }
+  }
+  return result;
+}
 
 /** Soft reset of FM/NFM filter memory after LO change (keep AGC/fade partially). */
 void rtl_audio_reset_demod_filters() {
@@ -698,29 +741,7 @@ void rtl_audio_reset_demod_filters() {
   rtl_audio.deemphasis_r = 0;
   rtl_audio.dc_l = 0;
   rtl_audio.dc_r = 0;
-  rtl_audio.rds_bp_y1 = 0;
-  rtl_audio.rds_bp_y2 = 0;
-  rtl_audio.rds_env = 0;
-  rtl_audio.rds_carrier_present = false;
-  rtl_audio.rds_nco_i = 1.0f;
-  rtl_audio.rds_nco_q = 0.0f;
-  rtl_audio.rds_nco_inc_cos = 1.0f;
-  rtl_audio.rds_nco_inc_sin = 0.0f;
-  rtl_audio.rds_nco_freq_offset = 0;
-  rtl_audio.rds_nco_recalc_counter = 0;
-  rtl_audio.rds_i_lpf = 0;
-  rtl_audio.rds_q_lpf = 0;
-  rtl_audio.rds_chip_accum_a = 0;
-  rtl_audio.rds_chip_accum_b = 0;
-  rtl_audio.rds_chip_last_ontime = 0;
-  rtl_audio.rds_timing_freq_offset = 0;
-  rtl_audio.rds_chip_phase = 0;
-  rtl_audio.rds_chip_prev = false;
-  rtl_audio.rds_chip_have_prev = false;
-  rtl_audio.rds_chip_prev_index = 0;
-  rtl_audio.rds_chip_index = 0;
-  rtl_audio.rds_hyp[0] = RdsHypothesis();
-  rtl_audio.rds_hyp[1] = RdsHypothesis();
+  rtl_rds_reset();
 }
 int16_t rtl_audio_buffers[3][kRtlAudioBufferSamples];
 /* Batch small demod bursts into longer playRaw chunks (reduces chop). */
@@ -745,8 +766,7 @@ static std::atomic<float> rtl_signal_dbfs{-90.0f};
 static std::atomic<float> rtl_audio_left_dbfs{-90.0f};
 static std::atomic<float> rtl_audio_right_dbfs{-90.0f};
 static std::atomic<bool> rtl_stereo_locked{false};
-// RDS Stage 1: carrier presence only (not bit/block sync — see main.cpp
-// comment at rds_bp_y1 and phasing.md's RDS phase for the staged plan).
+// RDS Stage 1 carrier presence and Stage 2 block sync telemetry.
 static std::atomic<float> rtl_rds_signal_dbfs{-90.0f};
 static std::atomic<bool> rtl_rds_carrier_present{false};
 // RDS Stage 2: block-sync status, whichever chip-alignment hypothesis is
@@ -922,6 +942,17 @@ static char g_audio_rec_last_path[64] = "";
 static std::atomic<uint8_t> g_orc_tool{static_cast<uint8_t>(OrcTool::Radio)};
 static std::atomic<bool> g_audio_rec_export_pending{false};
 
+/* ---- FM multiplex capture for repeatable RDS replay ---- */
+static int16_t* g_rds_capture_buf = nullptr;
+static std::atomic<size_t> g_rds_capture_write{0};
+static std::atomic<bool> g_rds_capture_active{false};
+static std::atomic<bool> g_rds_capture_ready{false};
+static std::atomic<bool> g_rds_capture_writing{false};
+static uint32_t g_rds_capture_frequency_hz = 0;
+static uint32_t g_rds_capture_started_ms = 0;
+static uint32_t g_rds_capture_file_seq = 0;
+static char g_rds_capture_last_path[96] = "";
+
 /* ---- Raw CU8 IQ capture and adaptive LoRa energy trigger ---- */
 constexpr size_t kIqRecSeconds = 3;
 constexpr size_t kIqRecMaxBytes = kRtlSampleRateSps * 2u * kIqRecSeconds;
@@ -1022,6 +1053,7 @@ struct SdGetState {
   mbedtls_sha256_context sha;
 };
 SdGetState g_sd_get;
+static std::atomic<bool> g_sd_transfer_active{false};
 struct IqGetState {
   bool active = false;
   size_t sent = 0;
@@ -1363,8 +1395,15 @@ bool audio_rec_start();
 bool audio_rec_stop_and_export();
 void audio_rec_append(const int16_t* samples, size_t count);
 void audio_rec_status_print();
+void rds_process_mpx_sample(float phase);
+void rds_publish_state();
+bool rds_capture_start();
+bool rds_capture_stop_and_export();
+bool rds_replay(const char* path);
+void rds_capture_status_print();
 bool ensure_tab5_sd();
 void enrich_one_adsb_track();
+bool sd_put_path_allowed(const char* path);
 void bump_rtl_ui();
 const char* orc_tool_name(OrcTool tool);
 OrcTool orc_tool_current();
@@ -2465,6 +2504,161 @@ void audio_rec_status_print() {
       g_sd_ready ? "ready" : (g_sd_tried ? "missing" : "untried"));
 }
 
+bool rds_capture_start() {
+  if (rtl_ui_band != RtlBand::fm) {
+    Serial.println("RTL_RDS_CAPTURE_ERROR fm_mode_required");
+    return false;
+  }
+  if (g_rds_capture_active.load(std::memory_order_acquire)) {
+    Serial.println("RTL_RDS_CAPTURE_ALREADY");
+    return true;
+  }
+  if (g_rds_capture_buf == nullptr) {
+    g_rds_capture_buf = static_cast<int16_t*>(heap_caps_malloc(
+        kRdsCaptureSamples * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  }
+  if (g_rds_capture_buf == nullptr) {
+    Serial.println("RTL_RDS_CAPTURE_ERROR no_psram_buffer");
+    return false;
+  }
+  g_rds_capture_frequency_hz = rtl_ui_frequency_hz;
+  g_rds_capture_started_ms = millis();
+  g_rds_capture_last_path[0] = '\0';
+  g_rds_capture_write.store(0, std::memory_order_release);
+  g_rds_capture_ready.store(false, std::memory_order_release);
+  g_rds_capture_active.store(true, std::memory_order_release);
+  Serial.printf("RTL_RDS_CAPTURE_START samples=%u seconds=%u rate=%u frequency_hz=%u\n",
+                static_cast<unsigned>(kRdsCaptureSamples),
+                static_cast<unsigned>(kRdsCaptureSeconds), kRdsMpxRateHz,
+                g_rds_capture_frequency_hz);
+  return true;
+}
+
+bool rds_capture_write_files(size_t samples) {
+  if (g_rds_capture_buf == nullptr || samples == 0 || !ensure_tab5_sd()) return false;
+  g_sd_fs->mkdir("/orcsdr");
+  g_sd_fs->mkdir("/orcsdr/rds_debug");
+  char raw_path[96];
+  char json_path[96];
+  do {
+    ++g_rds_capture_file_seq;
+    snprintf(raw_path, sizeof(raw_path), "/orcsdr/rds_debug/%03u_%u_mpx.s16",
+             static_cast<unsigned>(g_rds_capture_file_seq),
+             g_rds_capture_frequency_hz);
+  } while (g_sd_fs->exists(raw_path));
+  snprintf(json_path, sizeof(json_path), "/orcsdr/rds_debug/%03u_%u_mpx.json",
+           static_cast<unsigned>(g_rds_capture_file_seq),
+           g_rds_capture_frequency_hz);
+
+  File raw = g_sd_fs->open(raw_path, FILE_WRITE, true);
+  if (!raw) {
+    Serial.println("RTL_RDS_CAPTURE_ERROR raw_open_failed");
+    return false;
+  }
+  const size_t bytes = samples * sizeof(int16_t);
+  const size_t wrote = raw.write(reinterpret_cast<const uint8_t*>(g_rds_capture_buf), bytes);
+  raw.close();
+  if (wrote != bytes) {
+    g_sd_fs->remove(raw_path);
+    Serial.printf("RTL_RDS_CAPTURE_ERROR short_write got=%u want=%u\n",
+                  static_cast<unsigned>(wrote), static_cast<unsigned>(bytes));
+    return false;
+  }
+
+  File metadata = g_sd_fs->open(json_path, FILE_WRITE, true);
+  if (!metadata) {
+    Serial.printf("RTL_RDS_CAPTURE_ERROR metadata_open_failed raw=\"%s\"\n", raw_path);
+    return false;
+  }
+  metadata.printf(
+      "{\"format\":\"s16le_mpx\",\"sample_rate_hz\":%u,\"frequency_hz\":%u,"
+      "\"samples\":%u,\"scale_radians_per_lsb\":%.10g,\"start_uptime_ms\":%u}\n",
+      kRdsMpxRateHz, g_rds_capture_frequency_hz, static_cast<unsigned>(samples),
+      static_cast<double>(kRdsInt16ToMpx), g_rds_capture_started_ms);
+  metadata.close();
+  strlcpy(g_rds_capture_last_path, raw_path, sizeof(g_rds_capture_last_path));
+  Serial.printf("RTL_RDS_CAPTURE_SAVED path=\"%s\" metadata=\"%s\" samples=%u rate=%u\n",
+                raw_path, json_path, static_cast<unsigned>(samples), kRdsMpxRateHz);
+  return true;
+}
+
+bool rds_capture_stop_and_export() {
+  g_rds_capture_active.store(false, std::memory_order_release);
+  while (g_rds_capture_writing.load(std::memory_order_acquire)) delay(1);
+  const size_t samples = g_rds_capture_write.load(std::memory_order_acquire);
+  if (samples == 0) {
+    Serial.println("RTL_RDS_CAPTURE_STOP empty");
+    return false;
+  }
+  g_rds_capture_ready.store(true, std::memory_order_release);
+  Serial.printf("RTL_RDS_CAPTURE_STOP samples=%u seconds=%.3f\n",
+                static_cast<unsigned>(samples),
+                static_cast<double>(samples) / static_cast<double>(kRdsMpxRateHz));
+  if (rds_capture_write_files(samples)) return true;
+  Serial.printf("RTL_RDS_CAPTURE_PSRAM_HOLD samples=%u note=insert_sd_then_stop_again\n",
+                static_cast<unsigned>(samples));
+  return false;
+}
+
+void rds_capture_status_print() {
+  const size_t samples = g_rds_capture_write.load(std::memory_order_acquire);
+  Serial.printf(
+      "RTL_RDS_CAPTURE_STATUS active=%s ready=%s samples=%u seconds=%.3f max_seconds=%u "
+      "rate=%u frequency_hz=%u last_path=\"%s\" sd=%s\n",
+      g_rds_capture_active.load(std::memory_order_acquire) ? "true" : "false",
+      g_rds_capture_ready.load(std::memory_order_acquire) ? "true" : "false",
+      static_cast<unsigned>(samples),
+      static_cast<double>(samples) / static_cast<double>(kRdsMpxRateHz),
+      static_cast<unsigned>(kRdsCaptureSeconds), kRdsMpxRateHz,
+      g_rds_capture_frequency_hz,
+      g_rds_capture_last_path[0] ? g_rds_capture_last_path : "none",
+      g_sd_ready ? "ready" : (g_sd_tried ? "missing" : "untried"));
+}
+
+bool rds_replay(const char* path) {
+  const size_t path_len = path == nullptr ? 0 : strlen(path);
+  if (!sd_put_path_allowed(path) || path_len < 4 || strcmp(path + path_len - 4, ".s16") != 0) {
+    Serial.println("RTL_RDS_REPLAY_ERROR invalid_path");
+    return false;
+  }
+  if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running) {
+    Serial.println("RTL_RDS_REPLAY_ERROR radio_busy");
+    return false;
+  }
+  if (!ensure_tab5_sd()) {
+    Serial.println("RTL_RDS_REPLAY_ERROR sd_unavailable");
+    return false;
+  }
+  File file = g_sd_fs->open(path, FILE_READ);
+  if (!file || file.isDirectory() || file.size() == 0 || (file.size() & 1u) != 0) {
+    if (file) file.close();
+    Serial.println("RTL_RDS_REPLAY_ERROR invalid_file");
+    return false;
+  }
+
+  rtl_rds_reset();
+  uint32_t samples = 0;
+  int16_t chunk[512];
+  while (file.available()) {
+    const size_t bytes = file.read(reinterpret_cast<uint8_t*>(chunk), sizeof(chunk));
+    if ((bytes & 1u) != 0) {
+      file.close();
+      Serial.println("RTL_RDS_REPLAY_ERROR short_sample");
+      return false;
+    }
+    const size_t count = bytes / sizeof(int16_t);
+    for (size_t index = 0; index < count; ++index) {
+      rds_process_mpx_sample(static_cast<float>(chunk[index]) * kRdsInt16ToMpx);
+    }
+    samples += static_cast<uint32_t>(count);
+  }
+  file.close();
+  rds_publish_state();
+  Serial.printf("RTL_RDS_REPLAY_DONE path=\"%s\" samples=%u seconds=%.3f\n", path,
+                samples, static_cast<double>(samples) / static_cast<double>(kRdsMpxRateHz));
+  return true;
+}
+
 void spectrum_offer_iq_snapshot(const uint8_t* iq, size_t bytes) {
   if (iq == nullptr || bytes < kRtlSpectrumBins * 2) return;
   if (!rtl_graphics_enabled.load(std::memory_order_relaxed)) return;
@@ -2937,6 +3131,7 @@ void sd_get_abort(const char* reason) {
   if (g_sd_get.active) mbedtls_sha256_free(&g_sd_get.sha);
   g_sd_get = {};
   Serial.printf("SD_GET_ERROR %s\n", reason ? reason : "aborted");
+  g_sd_transfer_active.store(false, std::memory_order_release);
 }
 
 void sd_get_begin(const char* path_hex) {
@@ -2944,24 +3139,29 @@ void sd_get_begin(const char* path_hex) {
     Serial.println("SD_GET_ERROR transfer_busy");
     return;
   }
+  g_sd_transfer_active.store(true, std::memory_order_release);
   if (sd_transfer_radio_busy()) {
     Serial.println("SD_GET_ERROR radio_busy");
+    g_sd_transfer_active.store(false, std::memory_order_release);
     return;
   }
   char path[sizeof(g_sd_get.path)];
   if (!decode_hex_text(path_hex, path, sizeof(path)) || !sd_put_path_allowed(path)) {
     Serial.println("SD_GET_ERROR invalid_path");
+    g_sd_transfer_active.store(false, std::memory_order_release);
     return;
   }
   if (orcsdr_splash_is_active()) orcsdr_splash_end();
   if (!ensure_tab5_sd()) {
     Serial.println("SD_GET_ERROR sd_unavailable");
+    g_sd_transfer_active.store(false, std::memory_order_release);
     return;
   }
   g_sd_get.file = g_sd_fs->open(path, FILE_READ);
   if (!g_sd_get.file || g_sd_get.file.isDirectory()) {
     g_sd_get = {};
     Serial.println("SD_GET_ERROR open_failed");
+    g_sd_transfer_active.store(false, std::memory_order_release);
     return;
   }
   g_sd_get.size = g_sd_get.file.size();
@@ -2969,6 +3169,7 @@ void sd_get_begin(const char* path_hex) {
     g_sd_get.file.close();
     g_sd_get = {};
     Serial.println("SD_GET_ERROR invalid_size");
+    g_sd_transfer_active.store(false, std::memory_order_release);
     return;
   }
   strlcpy(g_sd_get.path, path, sizeof(g_sd_get.path));
@@ -3018,6 +3219,7 @@ void sd_get_chunk() {
   print_hex(digest, sizeof(digest));
   Serial.printf(" path=\"%s\"\n", g_sd_get.path);
   g_sd_get = {};
+  g_sd_transfer_active.store(false, std::memory_order_release);
 }
 
 void iq_get_reset() {
@@ -3117,6 +3319,7 @@ void sd_put_abort(const char* reason) {
   if (g_sd_put.active) mbedtls_sha256_free(&g_sd_put.sha);
   g_sd_put = {};
   Serial.printf("SD_PUT_ERROR %s\n", reason ? reason : "aborted");
+  g_sd_transfer_active.store(false, std::memory_order_release);
 }
 
 bool sd_put_commit() {
@@ -3138,6 +3341,7 @@ bool sd_put_commit() {
     g_sd_fs->remove(g_sd_put.temporary);
     Serial.println("SD_PUT_ERROR sha_mismatch");
     g_sd_put = {};
+    g_sd_transfer_active.store(false, std::memory_order_release);
     return false;
   }
 
@@ -3149,6 +3353,7 @@ bool sd_put_commit() {
     g_sd_fs->remove(g_sd_put.temporary);
     Serial.println("SD_PUT_ERROR backup_failed");
     g_sd_put = {};
+    g_sd_transfer_active.store(false, std::memory_order_release);
     return false;
   }
   if (!g_sd_fs->rename(g_sd_put.temporary, g_sd_put.target)) {
@@ -3156,6 +3361,7 @@ bool sd_put_commit() {
     g_sd_fs->remove(g_sd_put.temporary);
     Serial.println("SD_PUT_ERROR rename_failed");
     g_sd_put = {};
+    g_sd_transfer_active.store(false, std::memory_order_release);
     return false;
   }
   if (had_target) g_sd_fs->remove(backup);
@@ -3164,6 +3370,7 @@ bool sd_put_commit() {
   print_hex(digest, sizeof(digest));
   Serial.printf(" path=\"%s\"\n", g_sd_put.target);
   g_sd_put = {};
+  g_sd_transfer_active.store(false, std::memory_order_release);
   return true;
 }
 
@@ -3172,19 +3379,23 @@ void sd_put_begin(char* arguments) {
     Serial.println("SD_PUT_ERROR already_active");
     return;
   }
+  g_sd_transfer_active.store(true, std::memory_order_release);
   if (sd_transfer_radio_busy()) {
     Serial.println("SD_PUT_ERROR radio_busy");
+    g_sd_transfer_active.store(false, std::memory_order_release);
     return;
   }
   char* sha_text = strchr(arguments, ' ');
   if (sha_text == nullptr) {
     Serial.println("SD_PUT_ERROR invalid_begin");
+    g_sd_transfer_active.store(false, std::memory_order_release);
     return;
   }
   *sha_text++ = '\0';
   char* path_hex = strchr(sha_text, ' ');
   if (path_hex == nullptr) {
     Serial.println("SD_PUT_ERROR invalid_begin");
+    g_sd_transfer_active.store(false, std::memory_order_release);
     return;
   }
   *path_hex++ = '\0';
@@ -3194,6 +3405,7 @@ void sd_put_begin(char* arguments) {
   if (size == 0 || size > kSdPutMaxBytes || !decode_hex(sha_text, digest, sizeof(digest)) ||
       !decode_hex_text(path_hex, target, sizeof(target)) || !sd_put_path_allowed(target)) {
     Serial.println("SD_PUT_ERROR invalid_begin");
+    g_sd_transfer_active.store(false, std::memory_order_release);
     return;
   }
   /* Stop the SD-backed loading animation before taking exclusive card ownership. */
@@ -3201,6 +3413,7 @@ void sd_put_begin(char* arguments) {
   if (!ensure_tab5_sd() ||
       (!g_sd_fs->exists("/orcsdr") && !g_sd_fs->mkdir("/orcsdr"))) {
     Serial.println("SD_PUT_ERROR sd_unavailable");
+    g_sd_transfer_active.store(false, std::memory_order_release);
     return;
   }
 
@@ -3211,6 +3424,7 @@ void sd_put_begin(char* arguments) {
   if (!g_sd_put.file) {
     g_sd_put = {};
     Serial.println("SD_PUT_ERROR open_failed");
+    g_sd_transfer_active.store(false, std::memory_order_release);
     return;
   }
   g_sd_put.expected = size;
@@ -4963,6 +5177,135 @@ void queue_audio_samples(int16_t* audio, size_t audio_count) {
   rtl_audio.buffer = (rtl_audio.buffer + 1) % std::size(rtl_audio_buffers);
 }
 
+void rds_process_mpx_sample(float phase) {
+  /* Keep the resonator only for the UI's 57 kHz energy indicator. */
+  const float rds_bp0 = phase + kRdsBpTwoRCos * rtl_audio.rds_bp_y1 -
+                        kRdsBpR2 * rtl_audio.rds_bp_y2;
+  rtl_audio.rds_bp_y2 = rtl_audio.rds_bp_y1;
+  rtl_audio.rds_bp_y1 = rds_bp0;
+  rtl_audio.rds_env += kRdsEnvK * (fabsf(rds_bp0) - rtl_audio.rds_env);
+
+  const float new_i = rtl_audio.rds_nco_i * rtl_audio.rds_nco_inc_cos -
+                      rtl_audio.rds_nco_q * rtl_audio.rds_nco_inc_sin;
+  const float new_q = rtl_audio.rds_nco_i * rtl_audio.rds_nco_inc_sin +
+                      rtl_audio.rds_nco_q * rtl_audio.rds_nco_inc_cos;
+  rtl_audio.rds_nco_i = new_i;
+  rtl_audio.rds_nco_q = new_q;
+  if (++rtl_audio.rds_nco_recalc_counter >= kRdsNcoRecalcSamples) {
+    rtl_audio.rds_nco_recalc_counter = 0;
+    const float mag = sqrtf(rtl_audio.rds_nco_i * rtl_audio.rds_nco_i +
+                            rtl_audio.rds_nco_q * rtl_audio.rds_nco_q) +
+                      1.0e-9f;
+    rtl_audio.rds_nco_i /= mag;
+    rtl_audio.rds_nco_q /= mag;
+    rtl_audio.rds_nco_inc_cos = cosf(kRdsNcoNominal);
+    rtl_audio.rds_nco_inc_sin = sinf(kRdsNcoNominal);
+  }
+
+  /*
+   * Decode from raw MPX, not the narrow all-pole energy resonator above.
+   * Differential complex pairing removes the unknown BPSK carrier phase and
+   * slow tuner offset, so no fragile Costas loop is required.
+   */
+  const float mix_i = phase * rtl_audio.rds_nco_i;
+  const float mix_q = phase * rtl_audio.rds_nco_q;
+  rtl_audio.rds_i_lpf += kRdsSymLpfK * (mix_i - rtl_audio.rds_i_lpf);
+  rtl_audio.rds_q_lpf += kRdsSymLpfK * (mix_q - rtl_audio.rds_q_lpf);
+  for (RdsTimingTrack& timing : rtl_audio.rds_timing) {
+    timing.chip_i_sum += rtl_audio.rds_i_lpf;
+    timing.chip_q_sum += rtl_audio.rds_q_lpf;
+    timing.chip_phase += kRdsChipInc;
+    if (timing.chip_phase < 1.0f) continue;
+    timing.chip_phase -= 1.0f;
+    const float chip_i = timing.chip_i_sum;
+    const float chip_q = timing.chip_q_sum;
+    timing.chip_i_sum = 0.0f;
+    timing.chip_q_sum = 0.0f;
+
+    if (timing.have_prev_chip) {
+      RdsHypothesis& h = timing.hyp[(timing.chip_index - 1u) & 1u];
+      const float pair_i = chip_i - timing.prev_chip_i;
+      const float pair_q = chip_q - timing.prev_chip_q;
+      if (h.have_prev_pair) {
+        const bool data_bit = pair_i * h.prev_pair_i + pair_q * h.prev_pair_q < 0.0f;
+        rds_hypothesis_feed(h, data_bit);
+      }
+      h.prev_pair_i = pair_i;
+      h.prev_pair_q = pair_q;
+      h.have_prev_pair = true;
+    }
+    timing.prev_chip_i = chip_i;
+    timing.prev_chip_q = chip_q;
+    timing.have_prev_chip = true;
+    ++timing.chip_index;
+  }
+  ++rtl_audio.rds_diag_chip_count;
+}
+
+void rds_publish_state() {
+  if (rtl_audio.rds_carrier_present) {
+    if (rtl_audio.rds_env < kRdsCarrierOff) rtl_audio.rds_carrier_present = false;
+  } else if (rtl_audio.rds_env > kRdsCarrierOn) {
+    rtl_audio.rds_carrier_present = true;
+  }
+  rtl_rds_signal_dbfs.store(20.0f * log10f(rtl_audio.rds_env + 1.0e-6f),
+                            std::memory_order_relaxed);
+  rtl_rds_carrier_present.store(rtl_audio.rds_carrier_present,
+                                std::memory_order_relaxed);
+
+  RdsSelection selection = rds_select();
+  if (selection.locked) {
+    rtl_audio.rds_had_block_lock = true;
+  } else if (rtl_audio.rds_had_block_lock) {
+    /* The verified outage capture locks after a clean replay reset but not
+     * from accumulated live state. Reset once when all timing hypotheses
+     * lose the established lock so search can reacquire from clean state. */
+    rtl_rds_reset();
+    selection = rds_select();
+  }
+  const RdsHypothesis& best = *selection.best;
+  rtl_rds_block_locked.store(selection.locked, std::memory_order_relaxed);
+  rtl_rds_good_blocks.store(best.good_blocks, std::memory_order_relaxed);
+  rtl_rds_total_blocks.store(best.total_blocks, std::memory_order_relaxed);
+
+  static uint32_t rds_diag_last_ms = 0;
+  const uint32_t now_diag = millis();
+  const uint32_t elapsed_ms = now_diag - rds_diag_last_ms;
+  if (!kStreamDiagnosticsEnabled || elapsed_ms < 2000) return;
+  rds_diag_last_ms = now_diag;
+  const float bler = best.total_blocks > 0
+                         ? 100.0f * (1.0f - static_cast<float>(best.good_blocks) /
+                                                 static_cast<float>(best.total_blocks))
+                         : 100.0f;
+  Serial.printf(
+      "RDS_STAGE2 locked=%d bler=%.1f%% good=%lu total=%lu "
+      "hyp0_locked=%d hyp0_streak=%d hyp1_locked=%d hyp1_streak=%d "
+      "nco_freq_off=%.6f i_lpf=%.2f q_lpf=%.2f bp_env=%.5f "
+      "A=%04x B=%04x C=%04x D=%04x\n",
+      selection.locked, static_cast<double>(bler),
+      static_cast<unsigned long>(best.good_blocks),
+      static_cast<unsigned long>(best.total_blocks), selection.locked,
+      selection.parity_streak[0], selection.locked, selection.parity_streak[1],
+      0.0,
+      static_cast<double>(rtl_audio.rds_i_lpf),
+      static_cast<double>(rtl_audio.rds_q_lpf),
+      static_cast<double>(rtl_audio.rds_env), best.group_info[0], best.group_info[1],
+      best.group_info[2], best.group_info[3]);
+
+  const float effective_chip_rate = kRdsChipInc * kRdsMpxRateHz;
+  const float symbols_per_sec =
+      rtl_audio.rds_diag_chip_count * 1000.0f / static_cast<float>(elapsed_ms);
+  Serial.printf(
+      "RDS_TIMING chip_rate=%.2f mu=%.3f symbols_sec=%.1f correction_ppm=%.1f "
+      "freq_off=%.9f\n",
+      static_cast<double>(effective_chip_rate),
+      static_cast<double>(selection.chip_phase),
+      static_cast<double>(symbols_per_sec),
+      static_cast<double>(kRdsChipRateCorrectionPpm),
+      0.0);
+  rtl_audio.rds_diag_chip_count = 0;
+}
+
 /**
  * FM / NFM polar demod at kRtlSampleRateSps.
  * wbfm=true: broadcast mono path (channel LPF + 75 µs de-emphasis), plus a
@@ -4987,6 +5330,17 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
   float meter_peak_l = 0.0f;
   float meter_peak_r = 0.0f;
   bool meter_any = false;
+  bool capture_mpx = false;
+  size_t capture_write = 0;
+  if (wbfm && g_rds_capture_active.load(std::memory_order_acquire)) {
+    g_rds_capture_writing.store(true, std::memory_order_release);
+    if (g_rds_capture_active.load(std::memory_order_acquire)) {
+      capture_mpx = true;
+      capture_write = g_rds_capture_write.load(std::memory_order_relaxed);
+    } else {
+      g_rds_capture_writing.store(false, std::memory_order_release);
+    }
+  }
 
   for (size_t offset = 0; offset + 1 < bytes; offset += 2) {
     /* Center CU8 and complex channel LPF (pre-demod adjacent-channel relief). */
@@ -5007,6 +5361,10 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
     if (rtl_audio.have_previous) {
       const float phase = fast_phase(rtl_audio.previous_i * q - rtl_audio.previous_q * i,
                                      rtl_audio.previous_i * i + rtl_audio.previous_q * q);
+      if (capture_mpx && capture_write < kRdsCaptureSamples) {
+        const float scaled = constrain(phase * kRdsMpxToInt16, -32767.0f, 32767.0f);
+        g_rds_capture_buf[capture_write++] = static_cast<int16_t>(scaled);
+      }
 
       /*
        * Stereo pilot/L-R recovery, tapped from the full-bandwidth composite
@@ -5062,134 +5420,7 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
          */
         diff = rtl_audio.stereo_locked ? 2.0f * phase * carrier : 0.0f;
 
-        /*
-         * RDS Stage 1 — carrier presence. Same composite tap as the
-         * pilot/sub resonators above (pre mono-LPF: RDS lives at 57 kHz,
-         * the LPF below would discard it entirely). A resonator isolates
-         * energy in the ~57 kHz band; its rectified envelope gives a rough
-         * signal-strength reading. Hardware-verified 2026-08-10 on 96.1
-         * KZEK before Stage 2 below was written on top of it.
-         */
-        const float rds_bp0 = phase + kRdsBpTwoRCos * rtl_audio.rds_bp_y1 -
-                              kRdsBpR2 * rtl_audio.rds_bp_y2;
-        rtl_audio.rds_bp_y2 = rtl_audio.rds_bp_y1;
-        rtl_audio.rds_bp_y1 = rds_bp0;
-        rtl_audio.rds_env += kRdsEnvK * (fabsf(rds_bp0) - rtl_audio.rds_env);
-
-        /*
-         * RDS Stage 2 — coherent carrier tracking, symbol timing, and block
-         * sync. rds_bp0 above is the bandpassed composite signal; this
-         * Costas loop locks an NCO onto its actual 57 kHz carrier phase
-         * (the resonator chain gives the right frequency for free — 57 kHz
-         * is exactly 3x the already-locked pilot — but not the right
-         * phase, which the loop corrects adaptively).
-         */
-        {
-          const float new_i = rtl_audio.rds_nco_i * rtl_audio.rds_nco_inc_cos -
-                              rtl_audio.rds_nco_q * rtl_audio.rds_nco_inc_sin;
-          const float new_q = rtl_audio.rds_nco_i * rtl_audio.rds_nco_inc_sin +
-                              rtl_audio.rds_nco_q * rtl_audio.rds_nco_inc_cos;
-          rtl_audio.rds_nco_i = new_i;
-          rtl_audio.rds_nco_q = new_q;
-          if (++rtl_audio.rds_nco_recalc_counter >= kRdsNcoRecalcSamples) {
-            rtl_audio.rds_nco_recalc_counter = 0;
-            const float mag = sqrtf(rtl_audio.rds_nco_i * rtl_audio.rds_nco_i +
-                                    rtl_audio.rds_nco_q * rtl_audio.rds_nco_q) +
-                              1.0e-9f;
-            rtl_audio.rds_nco_i /= mag;
-            rtl_audio.rds_nco_q /= mag;
-            const float total_freq = kRdsNcoNominal + rtl_audio.rds_nco_freq_offset;
-            rtl_audio.rds_nco_inc_cos = cosf(total_freq);
-            rtl_audio.rds_nco_inc_sin = sinf(total_freq);
-          }
-
-          const float mix_i = rds_bp0 * rtl_audio.rds_nco_i;
-          const float mix_q = rds_bp0 * rtl_audio.rds_nco_q;
-          /* Continuous LPF drives the Costas loop error (smooth tracking). */
-          rtl_audio.rds_i_lpf += kRdsSymLpfK * (mix_i - rtl_audio.rds_i_lpf);
-          rtl_audio.rds_q_lpf += kRdsSymLpfK * (mix_q - rtl_audio.rds_q_lpf);
-          /* Gardner timing recovery accumulates two matched boxcar sums per
-           * chip period (split at the mu=0.5 crossing below) instead of a
-           * point-sample off the loop's LPF — verified on real air (96.1
-           * KZEK) that a carrier-locked-but-open-loop-timing chain still
-           * never sustains block sync. Which half is currently filling is
-           * determined purely by mu, checked below. */
-          if (rtl_audio.rds_chip_phase < 0.5f) {
-            rtl_audio.rds_chip_accum_a += mix_i;
-          } else {
-            rtl_audio.rds_chip_accum_b += mix_i;
-          }
-
-          /* Sign flipped from the textbook sign(I)*Q form: verified on real
-           * air (96.1 KZEK) that the un-flipped version never converged (Q
-           * stayed comparable to I indefinitely instead of shrinking toward
-           * it, the signature of a loop pushing the wrong way) — this is
-           * the NCO-vs-received-signal rotation-direction convention this
-           * particular mixer (mix = bp0 * (cos+j*sin), not bp0 *
-           * conj(cos+j*sin)) actually needs for negative feedback. */
-          const float costas_error =
-              -(rtl_audio.rds_i_lpf >= 0.0f ? 1.0f : -1.0f) * rtl_audio.rds_q_lpf;
-          rtl_audio.rds_nco_freq_offset += kRdsCostasKi * costas_error;
-          rtl_audio.rds_nco_freq_offset = constrain(
-              rtl_audio.rds_nco_freq_offset, -kRdsNcoFreqClamp, kRdsNcoFreqClamp);
-          /* Kp (phase) term folded in as a small-angle rotation — the error
-           * term is tiny enough in practice that this is exact, not an
-           * approximation worth worrying about. */
-          const float phase_nudge = kRdsCostasKp * costas_error;
-          const float nudged_i = rtl_audio.rds_nco_i - rtl_audio.rds_nco_q * phase_nudge;
-          const float nudged_q = rtl_audio.rds_nco_q + rtl_audio.rds_nco_i * phase_nudge;
-          rtl_audio.rds_nco_i = nudged_i;
-          rtl_audio.rds_nco_q = nudged_q;
-
-          rtl_audio.rds_chip_phase += kRdsChipInc + rtl_audio.rds_timing_freq_offset;
-          if (rtl_audio.rds_chip_phase >= 1.0f) {
-            rtl_audio.rds_chip_phase -= 1.0f;
-            /* accum_a already holds the full first-half sum by the time we
-             * reach the boundary (we've been filling accum_b since mu
-             * crossed 0.5) — no separate "mid crossing" event needed, it's
-             * just accum_a's final value. */
-            const float mid_sample = rtl_audio.rds_chip_accum_a;
-            const float ontime_sample =
-                rtl_audio.rds_chip_accum_a + rtl_audio.rds_chip_accum_b;
-            rtl_audio.rds_chip_accum_a = 0.0f;
-            rtl_audio.rds_chip_accum_b = 0.0f;
-
-            /* Gardner: error = mid * (ontime - last_ontime). Both terms are
-             * matched boxcar sums, same scale, unlike an earlier version
-             * that mixed a continuous LPF value with a boxcar sum. Sign
-             * flipped (same class of bug as the Costas loop's sign fix) —
-             * verified live (autonomous serial test, 96.1 KZEK) that the
-             * un-flipped version pinned at the clamp regardless of clamp
-             * size (200ppm and 2000ppm both pinned exactly at the limit),
-             * which only makes sense as a wrong-direction loop, not a
-             * genuine multi-thousand-ppm clock offset. */
-            const float timing_error =
-                -mid_sample * (ontime_sample - rtl_audio.rds_chip_last_ontime);
-            rtl_audio.rds_chip_last_ontime = ontime_sample;
-            rtl_audio.rds_timing_freq_offset += kRdsTimingKi * timing_error;
-            rtl_audio.rds_timing_freq_offset = constrain(
-                rtl_audio.rds_timing_freq_offset, -kRdsTimingClamp, kRdsTimingClamp);
-            rtl_audio.rds_chip_phase -= kRdsTimingKp * timing_error;
-            rtl_audio.rds_chip_phase = constrain(rtl_audio.rds_chip_phase, 0.0f, 0.999f);
-
-            const bool chip = ontime_sample >= 0.0f;
-            if (rtl_audio.rds_chip_have_prev) {
-              const bool pair_bit = rtl_audio.rds_chip_prev && !chip;
-              RdsHypothesis& h =
-                  rtl_audio.rds_hyp[rtl_audio.rds_chip_prev_index & 1u];
-              bool data_bit = pair_bit;
-              if (h.have_prev_raw_bit) data_bit = (pair_bit != h.prev_raw_bit);
-              h.prev_raw_bit = pair_bit;
-              h.have_prev_raw_bit = true;
-              rds_hypothesis_feed(h, data_bit);
-            }
-            rtl_audio.rds_chip_prev = chip;
-            rtl_audio.rds_chip_prev_index = rtl_audio.rds_chip_index;
-            rtl_audio.rds_chip_have_prev = true;
-            ++rtl_audio.rds_chip_index;
-            ++rtl_audio.rds_diag_chip_count;
-          }
-        }
+        rds_process_mpx_sample(phase);
       }
 
       /* Post-discriminator mono audio LPF, then boxcar to 48 kHz. */
@@ -5248,6 +5479,17 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
     rtl_audio.previous_q = q;
     rtl_audio.have_previous = true;
   }
+  if (capture_mpx) {
+    g_rds_capture_write.store(capture_write, std::memory_order_release);
+    if (capture_write >= kRdsCaptureSamples) {
+      g_rds_capture_active.store(false, std::memory_order_release);
+      g_rds_capture_ready.store(true, std::memory_order_release);
+      Serial.printf("RTL_RDS_CAPTURE_FULL samples=%u seconds=%u note=send_stop_to_export\n",
+                    static_cast<unsigned>(capture_write),
+                    static_cast<unsigned>(kRdsCaptureSeconds));
+    }
+    g_rds_capture_writing.store(false, std::memory_order_release);
+  }
   if (wbfm) {
     /* dBFS relative to int16 full scale; matches the mono peak's own units. */
     constexpr float kFullScaleInv = 1.0f / 32768.0f;
@@ -5258,73 +5500,7 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
       rtl_audio_left_dbfs.store(l_dbfs, std::memory_order_relaxed);
       rtl_audio_right_dbfs.store(r_dbfs, std::memory_order_relaxed);
     }
-    /* rds_env lives in the same unitless discriminator-phase domain as
-     * pilot_env, not true dBFS — this is a monotonic log-scale indicator
-     * for the UI meter, not a calibrated level. */
-    const bool rds_was_present = rtl_audio.rds_carrier_present;
-    if (rds_was_present) {
-      if (rtl_audio.rds_env < kRdsCarrierOff) rtl_audio.rds_carrier_present = false;
-    } else if (rtl_audio.rds_env > kRdsCarrierOn) {
-      rtl_audio.rds_carrier_present = true;
-    }
-    rtl_rds_signal_dbfs.store(20.0f * log10f(rtl_audio.rds_env + 1.0e-6f),
-                              std::memory_order_relaxed);
-    rtl_rds_carrier_present.store(rtl_audio.rds_carrier_present, std::memory_order_relaxed);
-
-    /* RDS Stage 2 publish + throttled serial diagnostics (verification
-     * checkpoint — see phasing.md). Pick whichever hypothesis is locked;
-     * if neither is, report the one with more total attempts so search
-     * progress is still visible on serial before lock happens. */
-    const RdsHypothesis& hyp0 = rtl_audio.rds_hyp[0];
-    const RdsHypothesis& hyp1 = rtl_audio.rds_hyp[1];
-    const RdsHypothesis& best =
-        hyp0.locked ? hyp0
-        : hyp1.locked ? hyp1
-        : (hyp0.total_blocks >= hyp1.total_blocks ? hyp0 : hyp1);
-    rtl_rds_block_locked.store(hyp0.locked || hyp1.locked, std::memory_order_relaxed);
-    rtl_rds_good_blocks.store(best.good_blocks, std::memory_order_relaxed);
-    rtl_rds_total_blocks.store(best.total_blocks, std::memory_order_relaxed);
-
-    static uint32_t rds_diag_last_ms = 0;
-    const uint32_t now_diag = millis();
-    if (kStreamDiagnosticsEnabled && now_diag - rds_diag_last_ms >= 2000) {
-      rds_diag_last_ms = now_diag;
-      const float bler = best.total_blocks > 0
-                             ? 100.0f * (1.0f - static_cast<float>(best.good_blocks) /
-                                                     static_cast<float>(best.total_blocks))
-                             : 100.0f;
-      Serial.printf(
-          "RDS_STAGE2 locked=%d bler=%.1f%% good=%lu total=%lu "
-          "hyp0_locked=%d hyp0_streak=%d hyp1_locked=%d hyp1_streak=%d "
-          "nco_freq_off=%.6f i_lpf=%.2f q_lpf=%.2f bp_env=%.5f "
-          "A=%04x B=%04x C=%04x D=%04x\n",
-          hyp0.locked || hyp1.locked, static_cast<double>(bler),
-          static_cast<unsigned long>(best.good_blocks),
-          static_cast<unsigned long>(best.total_blocks), hyp0.locked, hyp0.streak,
-          hyp1.locked, hyp1.streak,
-          static_cast<double>(rtl_audio.rds_nco_freq_offset),
-          static_cast<double>(rtl_audio.rds_i_lpf),
-          static_cast<double>(rtl_audio.rds_q_lpf),
-          static_cast<double>(rtl_audio.rds_env),
-          best.group_info[0], best.group_info[1],
-          best.group_info[2], best.group_info[3]);
-
-      const float window_sec = (now_diag - (rds_diag_last_ms - 2000)) / 1000.0f;
-      const float symbols_per_sec =
-          window_sec > 0.0f ? rtl_audio.rds_diag_chip_count / window_sec : 0.0f;
-      const float effective_chip_rate =
-          (kRdsChipInc + rtl_audio.rds_timing_freq_offset) * 240000.0f;
-      const float correction_ppm =
-          (rtl_audio.rds_timing_freq_offset / kRdsChipInc) * 1.0e6f;
-      Serial.printf(
-          "RDS_TIMING chip_rate=%.2f mu=%.3f symbols_sec=%.1f "
-          "correction_ppm=%.1f freq_off=%.9f\n",
-          static_cast<double>(effective_chip_rate),
-          static_cast<double>(rtl_audio.rds_chip_phase),
-          static_cast<double>(symbols_per_sec), static_cast<double>(correction_ppm),
-          static_cast<double>(rtl_audio.rds_timing_freq_offset));
-      rtl_audio.rds_diag_chip_count = 0;
-    }
+    rds_publish_state();
   }
   queue_audio_samples(audio, audio_count);
 }
@@ -5972,6 +6148,10 @@ static void on_rtl_driver_event(rtl_sdr_v4_esp_event_t event, const void *payloa
 
 static void rtl_driver_app_task(void *) {
   while (true) {
+    if (g_sd_transfer_active.load(std::memory_order_acquire)) {
+      vTaskDelay(pdMS_TO_TICKS(20));
+      continue;
+    }
     if (g_rtl != nullptr && g_rtl_device_ready.load(std::memory_order_acquire) &&
         rtl_capture_requested.exchange(false, std::memory_order_acq_rel)) {
       const RtlBand band = rtl_requested_band.load(std::memory_order_acquire);
@@ -7757,6 +7937,8 @@ void process_command(char* command) {
     Serial.println("RTL_PRESET_LIST                - list current FM presets");
     Serial.println("RTL_PRESET_TUNE <n>            - tune to preset n, 1-based (auth, FM only)");
     Serial.println("RTL_RDS_STATUS                 - on-demand RDS Stage1/2 diagnostic dump");
+    Serial.println("RTL_RDS_CAPTURE_START/STOP/STATUS - capture FM MPX to SD for replay");
+    Serial.println("RTL_RDS_REPLAY <path.s16>       - replay captured MPX while radio is stopped");
     Serial.println("RTL_REC_START/STOP/STATUS/SAVE - audio capture-to-WAV control");
     Serial.println("RTL_TOOL [RADIO|SCOPE|CAPTURE] - query/switch active tool tab");
     Serial.println("RTL_CAPTURE|RTL_LISTEN [FM|AM|WX|LORA] - one-shot/continuous band capture (auth)");
@@ -7866,11 +8048,28 @@ void process_command(char* command) {
                   fm_presets[index].freq_hz);
     return;
   }
+  if (strcmp(command, "RTL_RDS_CAPTURE_START") == 0) {
+    (void)rds_capture_start();
+    return;
+  }
+  if (strcmp(command, "RTL_RDS_CAPTURE_STOP") == 0 ||
+      strcmp(command, "RTL_RDS_CAPTURE_SAVE") == 0) {
+    (void)rds_capture_stop_and_export();
+    return;
+  }
+  if (strcmp(command, "RTL_RDS_CAPTURE_STATUS") == 0) {
+    rds_capture_status_print();
+    return;
+  }
+  if (strncmp(command, "RTL_RDS_REPLAY ", 15) == 0) {
+    (void)rds_replay(command + 15);
+    return;
+  }
   if (strcmp(command, "RTL_RDS_STATUS") == 0) {
-    const RdsHypothesis& h0 = rtl_audio.rds_hyp[0];
-    const RdsHypothesis& h1 = rtl_audio.rds_hyp[1];
-    const RdsHypothesis& best =
-        h0.locked ? h0 : h1.locked ? h1 : (h0.total_blocks >= h1.total_blocks ? h0 : h1);
+    const RdsSelection selection = rds_select();
+    const RdsHypothesis& best = *selection.best;
+    rtl_sdr_v4_esp_metrics_t metrics{};
+    if (g_rtl != nullptr) (void)rtl_sdr_v4_esp_get_metrics(g_rtl, &metrics);
     const float bler = best.total_blocks > 0
                            ? 100.0f * (1.0f - static_cast<float>(best.good_blocks) /
                                                    static_cast<float>(best.total_blocks))
@@ -7879,15 +8078,24 @@ void process_command(char* command) {
         "RDS_STATUS carrier=%d carrier_signal=%.1f block_locked=%d bler=%.1f%% "
         "good=%lu total=%lu hyp0_streak=%d hyp1_streak=%d "
         "timing_chip_rate=%.2f timing_correction_ppm=%.1f "
-        "A=%04x B=%04x C=%04x D=%04x\n",
+        "nco_freq_off=%.6f i_lpf=%.2f q_lpf=%.2f mu=%.3f "
+        "A=%04x B=%04x C=%04x D=%04x driver_overruns=%u driver_drops=%u "
+        "effective_sps=%u audio_chunks=%u audio_drops=%u\n",
         rtl_rds_carrier_present.load(std::memory_order_relaxed) ? 1 : 0,
         static_cast<double>(rtl_rds_signal_dbfs.load(std::memory_order_relaxed)),
-        h0.locked || h1.locked, static_cast<double>(bler),
+        selection.locked, static_cast<double>(bler),
         static_cast<unsigned long>(best.good_blocks),
-        static_cast<unsigned long>(best.total_blocks), h0.streak, h1.streak,
-        static_cast<double>((kRdsChipInc + rtl_audio.rds_timing_freq_offset) * 240000.0f),
-        static_cast<double>((rtl_audio.rds_timing_freq_offset / kRdsChipInc) * 1.0e6f),
-        best.group_info[0], best.group_info[1], best.group_info[2], best.group_info[3]);
+        static_cast<unsigned long>(best.total_blocks), selection.parity_streak[0],
+        selection.parity_streak[1],
+        static_cast<double>(kRdsChipInc * kRdsMpxRateHz),
+        static_cast<double>(kRdsChipRateCorrectionPpm),
+        0.0,
+        static_cast<double>(rtl_audio.rds_i_lpf),
+        static_cast<double>(rtl_audio.rds_q_lpf),
+        static_cast<double>(selection.chip_phase),
+        best.group_info[0], best.group_info[1], best.group_info[2], best.group_info[3],
+        metrics.overruns, metrics.consumer_drops, metrics.effective_sps,
+        rtl_audio.queued_chunks, rtl_audio.dropped_chunks);
     return;
   }
 

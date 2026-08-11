@@ -72,6 +72,12 @@ The PC-facing USB Serial/JTAG connection remains available for flashing and
 also supports verified file transfer into `/orcsdr/`. A transfer started during
 the splash cleanly stops the animation first. Stop radio/recording, then run:
 
+`COM17` is only the current bench assignment. The ESP32-P4 connection is native
+USB Serial/JTAG, so the SerialPort baud value is metadata rather than a physical
+UART rate. See [the serial CLI USB/transfer note](../../docs/API_SERIAL_CLI.md#usb-serialjtag-baud-identity-and-large-transfers)
+for device identification, 921600 test results, port-contention recovery, and
+verified downloads from the Tab5.
+
 ```powershell
 Set-Location F:\Ai\OrcSDR
 .\tools\copy_to_tab5_sd.ps1 -Path 'F:\path\asset.orsplash' -Port COM17

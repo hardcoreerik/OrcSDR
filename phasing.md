@@ -164,40 +164,21 @@ entangled with `demodulate_fm`'s internals beyond the one tap point.
       went green on 96.1 KZEK (Tab5 + Blog V4). Confirms the 57 kHz tap and
       resonator are seeing real RDS energy, not noise, before any bit-level
       DSP was built on top of it.
-2. [x] **Stage 2 — physical layer: bits and blocks.** **Landed** — needs
-      hardware acceptance before Stage 3 is written (do not parse fields out
-      of blocks that were never confirmed to sync on real air):
-      - Coherent carrier tracking via a Costas loop (NCO + phase/frequency
-        error `= sign(I)*Q`, standard 2nd-order BPSK Costas detector, `Bn`
-        = 20 Hz / `zeta` = 0.707) rather than relying on the pilot-derived
-        squaring-chain carrier alone — the squaring chain gives the right
-        *frequency* for free (57 kHz = 3x the already-locked pilot) but an
-        unknown fixed *phase* offset from the resonators' own phase
-        response, which the Costas loop corrects adaptively.
-      - NCO implemented as a recursive complex rotator (4 multiplies + 2
-        adds/sample), not per-sample `sinf`/`cosf` — at 240 kS/s that would
-        be ~480,000 transcendental calls/sec for RDS alone, on top of
-        everything else `demodulate_fm` already does per sample. The
-        rotation increment (the only place `sinf`/`cosf` is actually
-        called) is recomputed once every 64 samples instead, since the
-        loop's frequency correction moves far slower than that — a ~64x
-        reduction in trig cost for output indistinguishable from recomputing
-        every sample. This is the concrete "most efficient way to run this
-        on the P4" answer for this stage.
-      - Symbol timing recovery at 2375 chips/sec (2 chips per RDS data bit)
-        via a fractional-sample accumulator, sampling the Costas-mixed,
-        LPF'd (~2.4 kHz) I channel at each chip boundary.
-      - Differential Manchester (biphase) bit recovery. The exact
-        polarity/alignment convention is a real source of undetectable bugs
-        without live RF, so rather than committing to one convention, two
-        chip-pairing hypotheses run in parallel (offset by one chip —
-        resolves the alignment ambiguity). A *third* ambiguity — absolute
-        polarity — does **not** need a separate search: differential
-        decoding (`data_bit = raw_bit XOR previous_raw_bit`, applied
-        per-hypothesis) cancels a consistent polarity flip by construction,
-        which is exactly why RDS's transmit-side differential encoding
-        exists. So two hypotheses cover the real degrees of freedom, not
-        four.
+2. [x] **Stage 2 — physical layer: bits and blocks.** **Implemented and
+      hardware-accepted** — do not parse fields out of blocks that were never
+      confirmed to sync on real air:
+      - Carrier-independent complex demodulation: raw MPX is mixed to 57 kHz
+        baseband with a recursive complex NCO and a ~2.4 kHz one-pole LPF.
+        Complex differential chip-pair dot products cancel unknown carrier
+        phase and slow tuner offset without the prior Costas loop, whose
+        direction/clamp behavior did not survive captured-MPX replay.
+      - Symbol timing at 2375 chips/sec (2 chips per RDS data bit) uses four
+        evenly spaced fractional-chip tracks and both chip-pair polarities.
+        The verified capture measured a small `-10 ppm` sample-clock
+        calibration; it remains an explicit hardware tuning constant.
+      - Differential Manchester (biphase) bit recovery compares consecutive
+        complex pair vectors. Absolute carrier polarity cancels in the dot
+        product, while the two pair alignments cover the half-bit ambiguity.
       - Block sync via the offset-word/CRC search verified in this planning
         pass (generator polynomial `x^10+x^8+x^7+x^5+x^4+x^3+1`, confirmed
         by direct polynomial-division check against all five offset words
@@ -206,7 +187,10 @@ entangled with `demodulate_fm`'s internals beyond the one tap point.
         consecutive matches land at the expected 26-bit spacing in
         A,B,C(or C'),D order, then switches to cheaper positional checking
         (only testing the syndrome at the next expected boundary, not every
-        bit) and drops back to search mode after 8 consecutive bad blocks.
+        bit) and drops back to search mode after 32 consecutive bad blocks.
+        When every established timing hypothesis loses lock, the RDS-only
+        demod state resets once; the captured outage proved that a clean state
+        reacquires data that stale accumulated state could not.
       - Block error rate (BLER) exposed to both the UI (FM dashboard's
         STATION/RDS card) and a throttled serial diagnostic line
         (`RDS_STAGE2 locked=... bler=...% good=... total=... A=... B=...
@@ -214,32 +198,14 @@ entangled with `demodulate_fm`'s internals beyond the one tap point.
         is a genuinely useful RF quality metric (multipath damages RDS
         specifically because the group structure is deliberately per-block
         CRC-protected), not just a decoder-internal detail.
-      - **Status as of 2026-08-10: block sync achieved on real air.**
-        Iterated three times against live serial data from 96.1 KZEK,
-        autonomously (see the new autonomous-test-loop note below — no
-        manual re-tuning needed after the first fix landed): (1) the
-        Costas loop's error-term sign was backward — confirmed via
-        `i_lpf`/`q_lpf` ratio (before the fix, comparable magnitudes and
-        random sign relative to each other; after, `|i_lpf|` consistently
-        dominant, the BPSK-locked signature) — but block sync still never
-        exceeded `streak=1`. (2) Added closed-loop Gardner timing recovery
-        (was previously a pure open-loop chip-rate accumulator) — its
-        correction term immediately pinned at the configured clamp
-        regardless of clamp size (tested 200ppm and 2000ppm, both pinned
-        exactly at their limit), which is the signature of a wrong-direction
-        loop, not genuine multi-thousand-ppm clock drift. (3) Flipped the
-        Gardner error sign the same way as the Costas fix — **block sync
-        immediately started working**: `RDS_STAGE2 locked=1 bler=0.0%`
-        with the PI code (`0x5277`) repeating stably across multiple
-        separate lock episodes, which is the actual validation bar (PI
-        stability across groups), not just a single lucky CRC match.
-      - **Remaining refinement, not a correctness blocker**: lock is still
-        intermittent — the timing loop's correction term pins at its
-        (500ppm) clamp within a lock episode rather than fully settling,
-        which likely causes the periodic drop-outs. Next step is probably
-        widening the clamp further and/or increasing `kRdsTimingKi` so it
-        converges faster than a typical lock episode's duration. Low risk,
-        iterate the same autonomous way.
+      - **Hardware acceptance 2026-08-11:** deterministic replay locks with
+        PI `0x5277`; a three-minute live run stayed locked at every 5-second
+        sample from 30s through 150s while clean-state reacquisition reset the
+        counters several times. One later outage lasted between 10 and 15
+        seconds and recovered automatically by 165s. USB overruns, driver
+        drops, and audio drops remained zero throughout. This accepts Stage 2
+        block recovery while leaving BLER improvement and Stage 3 metadata as
+        separate work.
       - **Autonomous test loop unblocked**: fixed two boot-time gates that
         were silently preventing hands-off iteration — the splash screen's
         indefinite tap-wait (now skipped, see `kSkipSplashGate` in
@@ -423,7 +389,21 @@ every RDS DSP change. Two iterations in a row against 96.1 KZEK each cost a
 full flash-and-hands-on-the-device cycle; a recorded-signal fixture turns
 that into a repeatable, zero-hardware test.
 
-1. [ ] **Capture.** Record the composite discriminator output (`phase` in
+Hardware-accepted checkpoint (2026-08-11): the branch captured 8 seconds of
+96.1 KZEL MPX (`1,920,000` signed-16 samples at 240 kS/s), saved and replayed
+the file on Tab5, and copied all `3,840,000` bytes to the PC with matching
+device/host SHA-256
+`19e9207691c796b24b60740378878e6020af3a6bc06508a42acbec4fa3c3d856`.
+Redsea decoded PI `0x5277`, PS `KZEL`, and continuous 0A/2A groups. The same
+fixture gives OrcSDR block lock (`267/364` good blocks, 26.6% BLER). A second
+capture taken during an OrcSDR live unlock transferred with matching SHA-256
+`9a4fd9df82a7dbf88062835c0668593943662f3847d1043269b02b30ae92a724`;
+Redsea decoded 83 valid groups from it, and clean on-device replay locked with
+PI `0x5277` (`137/324`, 57.7% BLER). That comparison isolated the live failure
+to accumulated decoder state and directly motivated the reset-on-full-lock-loss
+reacquisition fix.
+
+1. [x] **Capture.** Record the composite discriminator output (`phase` in
       `demodulate_fm`, the same 240 kS/s pre-mono-LPF tap the pilot/sub/RDS
       resonators already use — capturing here rather than raw IQ preserves
       full generality: any future filter/carrier/timing change can be
@@ -440,8 +420,8 @@ that into a repeatable, zero-hardware test.
       and write to `/orcsdr/rds_debug/<band>_<freq>_mpx.raw` +
       a sibling `.json` with sample rate, frequency, timestamp, sample
       count, and the fixed-point scale factor.
-2. [ ] **Replay.** Factor the existing per-sample RDS chain (57 kHz
-      bandpass through Gardner/block-sync — currently inline in
+2. [x] **Replay.** Factor the existing per-sample RDS chain (57 kHz
+      complex baseband through differential pairing/block-sync — previously inline in
       `demodulate_fm`) into a standalone function taking one `phase` sample
       and updating `rtl_audio`'s RDS fields, callable both from the live
       per-sample loop and from a replay path that reads a captured file
@@ -451,7 +431,7 @@ that into a repeatable, zero-hardware test.
       Add an `RTL_RDS_REPLAY <path>` command that runs the captured file
       through this function end-to-end and reports the same `RDS_STATUS`
       output a live session would, without touching the RTL-SDR at all.
-3. [ ] **PC oracle (optional but high-value).** Copy a capture off the
+3. [x] **PC oracle (optional but high-value).** Copy a capture off the
       device (`copy_to_tab5_sd.ps1`'s `SD_GET` direction — the tooling
       already exists) and feed it to redsea on a PC after converting the
       fixed-point format to whatever redsea expects as input. If redsea
@@ -464,6 +444,9 @@ that into a repeatable, zero-hardware test.
 Exit: an RDS DSP change (filter coefficient, loop gain, decode logic) can
 be tested against a fixed recorded signal without touching live RF or
 asking anyone to re-tune a physical device.
+
+Exit achieved on the captured KZEL fixture above. Redsea remains a developer
+oracle only; it is not a firmware or end-user runtime dependency.
 
 ## Phase 6 — ADS-B 1090 dashboard and native decoder
 
