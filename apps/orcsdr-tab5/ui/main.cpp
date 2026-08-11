@@ -188,11 +188,13 @@ constexpr float kStereoEnvK = 0.00014f;
 /** Pilot is nominally 8-10% of peak deviation; latch well below that. */
 constexpr float kStereoLockOn = 0.030f;
 constexpr float kStereoLockOff = 0.018f;
-/** 57 kHz RDS subcarrier, ~4 kHz BW (Stage 1 carrier detect only — wide
- * enough to catch the ~4.8 kHz occupied signal with fast lock, not yet
- * narrowed for symbol extraction): r=0.947639, θ=1.492257. */
-constexpr float kRdsBpTwoRCos = 0.148702f;
-constexpr float kRdsBpR2 = 0.898022f;
+/** 57 kHz RDS subcarrier, ~2.4 kHz half-BW (matches the actual ~4.8 kHz
+ * occupied RDS signal — narrowed from an initial 4 kHz Stage-1-only guess
+ * after Stage 2 block sync failed to converge on real air; a too-wide
+ * bandpass was letting extra noise into the Costas loop): r=0.960923,
+ * θ=1.492257. */
+constexpr float kRdsBpTwoRCos = 0.151988f;
+constexpr float kRdsBpR2 = 0.938155f;
 constexpr float kRdsEnvK = 0.00014f;
 /** RDS is a much smaller fraction of deviation than the pilot; threshold is
  * provisional until verified against a real broadcast. */
@@ -218,6 +220,20 @@ constexpr float kRdsCostasKi = 0.0000000062f;
 constexpr float kRdsNcoFreqClamp = 0.007854f;    /* +-300 Hz equivalent */
 constexpr float kRdsSymLpfK = 0.060899f;         /* single-pole, ~2.4 kHz BW */
 constexpr float kRdsChipInc = 0.009896f;         /* 2375 chips/sec at 240 kS/s */
+/*
+ * Gardner timing-error detector: the chip-rate accumulator above was
+ * open-loop (assumed the RTL-SDR's sample clock exactly matches nominal),
+ * verified on real air (96.1 KZEK, after the Costas sign fix that DID get
+ * carrier phase tracking working) to never sustain block sync despite a
+ * clean I-dominant constellation — the signature of a timing, not carrier,
+ * problem. Gardner's classic three-point formula (mid * (ontime -
+ * last_ontime)) is implemented with matched boxcar sums for both the mid
+ * and ontime samples, so they're on a consistent scale, unlike mixing a
+ * continuous LPF value with a boxcar sum.
+ */
+constexpr float kRdsTimingKp = 0.000001f;
+constexpr float kRdsTimingKi = 0.000000001f;
+constexpr float kRdsTimingClamp = 0.00000198f;  /* +-~200 ppm chip-rate drift */
 /* RDS/RBDS generator polynomial x^10+x^8+x^7+x^5+x^4+x^3+1, and the five
  * offset words (IEC 62106). Verified by direct polynomial-division check
  * against all five before this was written into demodulate_fm. */
@@ -336,6 +352,11 @@ void rds_hypothesis_feed(RdsHypothesis& h, bool bit) {
         h.locked = false;
         h.streak = 0;
         h.have_prev_match = false;
+        /* Without this, good/total stayed frozen at whatever they were
+         * when lock was lost, making a stale past episode look like a
+         * live 60%-ish BLER forever instead of showing search is ongoing. */
+        h.good_blocks = 0;
+        h.total_blocks = 0;
       }
     }
     h.next_expected_type = (h.next_expected_type + 1) % 4;
@@ -623,13 +644,19 @@ struct RtlAudioState {
   float rds_nco_inc_cos = 1.0f, rds_nco_inc_sin = 0.0f;
   float rds_nco_freq_offset = 0;  /* Costas integral term, rad/sample */
   int rds_nco_recalc_counter = 0;
-  float rds_i_lpf = 0, rds_q_lpf = 0;  /* Costas-mixed baseband, symbol-rate LPF */
-  float rds_chip_phase = 0;            /* fractional chip-boundary accumulator */
+  float rds_i_lpf = 0, rds_q_lpf = 0;  /* Costas-mixed baseband, for loop error only */
+  /* Gardner timing recovery: matched boxcar sums for the first/second half
+   * of the current chip period (split at the mu=0.5 crossing below). */
+  float rds_chip_accum_a = 0, rds_chip_accum_b = 0;
+  float rds_chip_last_ontime = 0;
+  float rds_timing_freq_offset = 0;  /* adaptive chip-rate correction */
+  float rds_chip_phase = 0;            /* fractional chip-boundary accumulator, 0..1 */
   bool rds_chip_prev = false;
   bool rds_chip_have_prev = false;
   uint32_t rds_chip_prev_index = 0;
   uint32_t rds_chip_index = 0;
   RdsHypothesis rds_hyp[2];
+  uint32_t rds_diag_chip_count = 0;  /* for symbols/sec, reset each print window */
 };
 
 RtlAudioState rtl_audio;
@@ -676,6 +703,10 @@ void rtl_audio_reset_demod_filters() {
   rtl_audio.rds_nco_recalc_counter = 0;
   rtl_audio.rds_i_lpf = 0;
   rtl_audio.rds_q_lpf = 0;
+  rtl_audio.rds_chip_accum_a = 0;
+  rtl_audio.rds_chip_accum_b = 0;
+  rtl_audio.rds_chip_last_ontime = 0;
+  rtl_audio.rds_timing_freq_offset = 0;
   rtl_audio.rds_chip_phase = 0;
   rtl_audio.rds_chip_prev = false;
   rtl_audio.rds_chip_have_prev = false;
@@ -1378,6 +1409,18 @@ const char* rtl_band_name(RtlBand band) {
   }
 }
 
+/** Reverse of rtl_band_name(), for serial commands. Uppercase only, matching
+ * the existing RTL_LISTEN FM/AM/WX convention elsewhere in this file. */
+bool rtl_band_from_name(const char* name, RtlBand* out_band) {
+  if (strcmp(name, "FM") == 0) { *out_band = RtlBand::fm; return true; }
+  if (strcmp(name, "AM") == 0) { *out_band = RtlBand::am; return true; }
+  if (strcmp(name, "WX") == 0) { *out_band = RtlBand::wx; return true; }
+  if (strcmp(name, "CB") == 0) { *out_band = RtlBand::cb; return true; }
+  if (strcmp(name, "LORA") == 0) { *out_band = RtlBand::lora; return true; }
+  if (strcmp(name, "BROWSE") == 0) { *out_band = RtlBand::browse; return true; }
+  return false;
+}
+
 const char* rtl_mode_name(RtlBand band) {
   switch (band) {
     case RtlBand::am: return "AM";
@@ -1469,6 +1512,14 @@ void persist_fm_frequency(uint32_t frequency_hz) {
   // Preferences opened in load_state(); keep writes off the bulk-IQ path.
   preferences.putUInt("sdr_fm_hz", frequency_hz);
   Serial.printf("RTL_FM_SAVE frequency_hz=%u\n", frequency_hz);
+}
+
+void persist_fm_presets() {
+  // Called only at scan completion (not the per-sample IQ path) — same tier
+  // as persist_fm_frequency's NVS write.
+  preferences.putBytes("fm_presets", fm_presets, sizeof(fm_presets));
+  preferences.putUChar("fm_preset_count", static_cast<uint8_t>(fm_preset_count));
+  Serial.printf("RTL_PRESETS_SAVE count=%d\n", fm_preset_count);
 }
 
 uint32_t rtl_step_frequency(RtlBand band, uint32_t frequency_hz, int direction) {
@@ -4727,11 +4778,30 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
 
           const float mix_i = rds_bp0 * rtl_audio.rds_nco_i;
           const float mix_q = rds_bp0 * rtl_audio.rds_nco_q;
+          /* Continuous LPF drives the Costas loop error (smooth tracking). */
           rtl_audio.rds_i_lpf += kRdsSymLpfK * (mix_i - rtl_audio.rds_i_lpf);
           rtl_audio.rds_q_lpf += kRdsSymLpfK * (mix_q - rtl_audio.rds_q_lpf);
+          /* Gardner timing recovery accumulates two matched boxcar sums per
+           * chip period (split at the mu=0.5 crossing below) instead of a
+           * point-sample off the loop's LPF — verified on real air (96.1
+           * KZEK) that a carrier-locked-but-open-loop-timing chain still
+           * never sustains block sync. Which half is currently filling is
+           * determined purely by mu, checked below. */
+          if (rtl_audio.rds_chip_phase < 0.5f) {
+            rtl_audio.rds_chip_accum_a += mix_i;
+          } else {
+            rtl_audio.rds_chip_accum_b += mix_i;
+          }
 
+          /* Sign flipped from the textbook sign(I)*Q form: verified on real
+           * air (96.1 KZEK) that the un-flipped version never converged (Q
+           * stayed comparable to I indefinitely instead of shrinking toward
+           * it, the signature of a loop pushing the wrong way) — this is
+           * the NCO-vs-received-signal rotation-direction convention this
+           * particular mixer (mix = bp0 * (cos+j*sin), not bp0 *
+           * conj(cos+j*sin)) actually needs for negative feedback. */
           const float costas_error =
-              (rtl_audio.rds_i_lpf >= 0.0f ? 1.0f : -1.0f) * rtl_audio.rds_q_lpf;
+              -(rtl_audio.rds_i_lpf >= 0.0f ? 1.0f : -1.0f) * rtl_audio.rds_q_lpf;
           rtl_audio.rds_nco_freq_offset += kRdsCostasKi * costas_error;
           rtl_audio.rds_nco_freq_offset = constrain(
               rtl_audio.rds_nco_freq_offset, -kRdsNcoFreqClamp, kRdsNcoFreqClamp);
@@ -4744,10 +4814,32 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
           rtl_audio.rds_nco_i = nudged_i;
           rtl_audio.rds_nco_q = nudged_q;
 
-          rtl_audio.rds_chip_phase += kRdsChipInc;
+          rtl_audio.rds_chip_phase += kRdsChipInc + rtl_audio.rds_timing_freq_offset;
           if (rtl_audio.rds_chip_phase >= 1.0f) {
             rtl_audio.rds_chip_phase -= 1.0f;
-            const bool chip = rtl_audio.rds_i_lpf >= 0.0f;
+            /* accum_a already holds the full first-half sum by the time we
+             * reach the boundary (we've been filling accum_b since mu
+             * crossed 0.5) — no separate "mid crossing" event needed, it's
+             * just accum_a's final value. */
+            const float mid_sample = rtl_audio.rds_chip_accum_a;
+            const float ontime_sample =
+                rtl_audio.rds_chip_accum_a + rtl_audio.rds_chip_accum_b;
+            rtl_audio.rds_chip_accum_a = 0.0f;
+            rtl_audio.rds_chip_accum_b = 0.0f;
+
+            /* Gardner: error = mid * (ontime - last_ontime). Both terms are
+             * matched boxcar sums, same scale, unlike an earlier version
+             * that mixed a continuous LPF value with a boxcar sum. */
+            const float timing_error =
+                mid_sample * (ontime_sample - rtl_audio.rds_chip_last_ontime);
+            rtl_audio.rds_chip_last_ontime = ontime_sample;
+            rtl_audio.rds_timing_freq_offset += kRdsTimingKi * timing_error;
+            rtl_audio.rds_timing_freq_offset = constrain(
+                rtl_audio.rds_timing_freq_offset, -kRdsTimingClamp, kRdsTimingClamp);
+            rtl_audio.rds_chip_phase -= kRdsTimingKp * timing_error;
+            rtl_audio.rds_chip_phase = constrain(rtl_audio.rds_chip_phase, 0.0f, 0.999f);
+
+            const bool chip = ontime_sample >= 0.0f;
             if (rtl_audio.rds_chip_have_prev) {
               const bool pair_bit = rtl_audio.rds_chip_prev && !chip;
               RdsHypothesis& h =
@@ -4762,6 +4854,7 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
             rtl_audio.rds_chip_prev_index = rtl_audio.rds_chip_index;
             rtl_audio.rds_chip_have_prev = true;
             ++rtl_audio.rds_chip_index;
+            ++rtl_audio.rds_diag_chip_count;
           }
         }
       }
@@ -4870,12 +4963,34 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
       Serial.printf(
           "RDS_STAGE2 locked=%d bler=%.1f%% good=%lu total=%lu "
           "hyp0_locked=%d hyp0_streak=%d hyp1_locked=%d hyp1_streak=%d "
+          "nco_freq_off=%.6f i_lpf=%.2f q_lpf=%.2f bp_env=%.5f "
           "A=%04x B=%04x C=%04x D=%04x\n",
           hyp0.locked || hyp1.locked, static_cast<double>(bler),
           static_cast<unsigned long>(best.good_blocks),
           static_cast<unsigned long>(best.total_blocks), hyp0.locked, hyp0.streak,
-          hyp1.locked, hyp1.streak, best.group_info[0], best.group_info[1],
+          hyp1.locked, hyp1.streak,
+          static_cast<double>(rtl_audio.rds_nco_freq_offset),
+          static_cast<double>(rtl_audio.rds_i_lpf),
+          static_cast<double>(rtl_audio.rds_q_lpf),
+          static_cast<double>(rtl_audio.rds_env),
+          best.group_info[0], best.group_info[1],
           best.group_info[2], best.group_info[3]);
+
+      const float window_sec = (now_diag - (rds_diag_last_ms - 2000)) / 1000.0f;
+      const float symbols_per_sec =
+          window_sec > 0.0f ? rtl_audio.rds_diag_chip_count / window_sec : 0.0f;
+      const float effective_chip_rate =
+          (kRdsChipInc + rtl_audio.rds_timing_freq_offset) * 240000.0f;
+      const float correction_ppm =
+          (rtl_audio.rds_timing_freq_offset / kRdsChipInc) * 1.0e6f;
+      Serial.printf(
+          "RDS_TIMING chip_rate=%.2f mu=%.3f symbols_sec=%.1f "
+          "correction_ppm=%.1f freq_off=%.9f\n",
+          static_cast<double>(effective_chip_rate),
+          static_cast<double>(rtl_audio.rds_chip_phase),
+          static_cast<double>(symbols_per_sec), static_cast<double>(correction_ppm),
+          static_cast<double>(rtl_audio.rds_timing_freq_offset));
+      rtl_audio.rds_diag_chip_count = 0;
     }
   }
   queue_audio_samples(audio, audio_count);
@@ -5690,6 +5805,7 @@ static void rtl_driver_app_task(void *) {
               rtl_fm_preset_scan_active.store(false, std::memory_order_release);
               request_hot_retune(preset_scan_return_hz);
               draw_fm_dashboard(true);
+              persist_fm_presets();
               Serial.printf("RTL_PRESET_SCAN done found=%d\n", fm_preset_count);
             } else {
               preset_scan_frequency_hz += kRtlFmAutoStepHz;
@@ -6117,6 +6233,13 @@ void load_state() {
   } else {
     rtl_saved_fm_hz = kRtlFmDefaultHz;
     preferences.putUInt("sdr_fm_hz", rtl_saved_fm_hz);
+  }
+  if (preferences.isKey("fm_presets") &&
+      preferences.getBytesLength("fm_presets") == sizeof(fm_presets)) {
+    preferences.getBytes("fm_presets", fm_presets, sizeof(fm_presets));
+    const uint8_t stored_count = preferences.getUChar("fm_preset_count", 0);
+    fm_preset_count = (stored_count <= kFmPresetCapacity) ? stored_count : 0;
+    Serial.printf("RTL_PRESETS_LOAD count=%d\n", fm_preset_count);
   }
   rtl_ui_frequency_hz = rtl_saved_fm_hz;
   rtl_requested_frequency_hz.store(rtl_saved_fm_hz, std::memory_order_release);
@@ -7142,6 +7265,144 @@ void process_command(char* command) {
                   rtl_sdr_speed, rtl_sdr_serial);
     return;
   }
+
+  // ---------------------------------------------------------------------
+  // CLI/serial control surface for scripted/AI-driven tuning and decoding
+  // work — everything below is read-only or directly mirrors an existing
+  // touch action, so it follows the same auth convention as its touch-UI
+  // equivalent (state changes require `authenticated`, status queries do
+  // not, matching RTL_STATUS/RTL_REC_STATUS/RTL_TOOL above).
+  // ---------------------------------------------------------------------
+  if (strcmp(command, "RTL_HELP") == 0) {
+    Serial.println("RTL_HELP_BEGIN");
+    Serial.println("RTL_STATUS                    - device connection info");
+    Serial.println("RTL_TUNE <BAND> <HZ>           - tune band+freq (auth) BAND=FM|AM|WX|CB|LORA|BROWSE");
+    Serial.println("RTL_FREQ                       - query current band/frequency/mode");
+    Serial.println("RTL_FREQ <HZ>                  - hot-retune within current band (auth)");
+    Serial.println("RTL_VOLUME                     - query current volume");
+    Serial.println("RTL_VOLUME <0-32>              - set volume (auth)");
+    Serial.println("RTL_SIGNAL                     - signal dBFS, stereo lock, L/R levels");
+    Serial.println("RTL_PRESET_SCAN                - start FM band scan for presets (auth, FM only)");
+    Serial.println("RTL_PRESET_LIST                - list current FM presets");
+    Serial.println("RTL_PRESET_TUNE <n>            - tune to preset n, 1-based (auth, FM only)");
+    Serial.println("RTL_RDS_STATUS                 - on-demand RDS Stage1/2 diagnostic dump");
+    Serial.println("RTL_REC_START/STOP/STATUS/SAVE - audio capture-to-WAV control");
+    Serial.println("RTL_TOOL [RADIO|SCOPE|CAPTURE] - query/switch active tool tab");
+    Serial.println("RTL_CAPTURE|RTL_LISTEN [FM|AM|WX|LORA] - one-shot/continuous band capture (auth)");
+    Serial.println("RTL_STOP                       - stop active capture (auth)");
+    Serial.println("SD_LIST/SD_GET_*/SD_PUT_*      - SD card file transfer (see copy_to_tab5_sd.ps1)");
+    Serial.println("RTL_HELP_END");
+    return;
+  }
+  if (strncmp(command, "RTL_TUNE ", 9) == 0 && authenticated) {
+    char band_name[16] = {0};
+    unsigned long freq_hz = 0;
+    if (sscanf(command + 9, "%15s %lu", band_name, &freq_hz) != 2) {
+      Serial.println("RTL_TUNE_INVALID usage: RTL_TUNE <BAND> <HZ>");
+      return;
+    }
+    RtlBand band;
+    if (!rtl_band_from_name(band_name, &band)) {
+      Serial.println("RTL_TUNE_INVALID unknown band (FM|AM|WX|CB|LORA|BROWSE)");
+      return;
+    }
+    if (!rtl_device_ready()) {
+      Serial.println("RTL_TUNE_UNAVAILABLE device not ready");
+      return;
+    }
+    queue_local_rtl_listen(band, static_cast<uint32_t>(freq_hz));
+    Serial.printf("RTL_TUNE_OK band=%s frequency_hz=%lu\n", rtl_band_name(band), freq_hz);
+    return;
+  }
+  if (strcmp(command, "RTL_FREQ") == 0) {
+    Serial.printf("RTL_FREQ_STATUS band=%s frequency_hz=%u mode=%s\n",
+                  rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz,
+                  rtl_mode_name(rtl_ui_band));
+    return;
+  }
+  if (strncmp(command, "RTL_FREQ ", 9) == 0 && authenticated) {
+    const unsigned long freq_hz = strtoul(command + 9, nullptr, 10);
+    if (freq_hz == 0) {
+      Serial.println("RTL_FREQ_INVALID usage: RTL_FREQ <HZ>");
+      return;
+    }
+    request_hot_retune(static_cast<uint32_t>(freq_hz));
+    Serial.printf("RTL_FREQ_OK band=%s frequency_hz=%lu\n", rtl_band_name(rtl_ui_band), freq_hz);
+    return;
+  }
+  if (strcmp(command, "RTL_VOLUME") == 0) {
+    Serial.printf("RTL_VOLUME_STATUS volume=%u\n", rtl_ui_volume);
+    return;
+  }
+  if (strcmp(command, "RTL_SIGNAL") == 0) {
+    Serial.printf(
+        "RTL_SIGNAL_STATUS band=%s frequency_hz=%u signal_dbfs=%.1f "
+        "stereo_locked=%d left_dbfs=%.1f right_dbfs=%.1f "
+        "rds_carrier=%d rds_signal=%.1f\n",
+        rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz,
+        static_cast<double>(rtl_signal_dbfs_smooth),
+        rtl_stereo_locked.load(std::memory_order_relaxed) ? 1 : 0,
+        static_cast<double>(rtl_audio_left_dbfs.load(std::memory_order_relaxed)),
+        static_cast<double>(rtl_audio_right_dbfs.load(std::memory_order_relaxed)),
+        rtl_rds_carrier_present.load(std::memory_order_relaxed) ? 1 : 0,
+        static_cast<double>(rtl_rds_signal_dbfs.load(std::memory_order_relaxed)));
+    return;
+  }
+  if (strcmp(command, "RTL_PRESET_SCAN") == 0 && authenticated) {
+    if (rtl_ui_band != RtlBand::fm) {
+      Serial.println("RTL_PRESET_SCAN_INVALID FM band only");
+      return;
+    }
+    rtl_fm_preset_scan_requested.store(true, std::memory_order_relaxed);
+    Serial.println("RTL_PRESET_SCAN_QUEUED");
+    return;
+  }
+  if (strcmp(command, "RTL_PRESET_LIST") == 0) {
+    Serial.printf("RTL_PRESET_LIST_BEGIN count=%d\n", fm_preset_count);
+    for (int i = 0; i < fm_preset_count; ++i) {
+      Serial.printf("RTL_PRESET %d frequency_hz=%u level=%.1f\n", i + 1,
+                    fm_presets[i].freq_hz, static_cast<double>(fm_presets[i].level_dbfs));
+    }
+    Serial.println("RTL_PRESET_LIST_END");
+    return;
+  }
+  if (strncmp(command, "RTL_PRESET_TUNE ", 17) == 0 && authenticated) {
+    const int index = atoi(command + 17) - 1;
+    if (index < 0 || index >= fm_preset_count) {
+      Serial.println("RTL_PRESET_TUNE_INVALID index out of range");
+      return;
+    }
+    queue_local_rtl_listen(RtlBand::fm, fm_presets[index].freq_hz);
+    persist_fm_frequency(fm_presets[index].freq_hz);
+    Serial.printf("RTL_PRESET_TUNE_OK index=%d frequency_hz=%u\n", index + 1,
+                  fm_presets[index].freq_hz);
+    return;
+  }
+  if (strcmp(command, "RTL_RDS_STATUS") == 0) {
+    const RdsHypothesis& h0 = rtl_audio.rds_hyp[0];
+    const RdsHypothesis& h1 = rtl_audio.rds_hyp[1];
+    const RdsHypothesis& best =
+        h0.locked ? h0 : h1.locked ? h1 : (h0.total_blocks >= h1.total_blocks ? h0 : h1);
+    const float bler = best.total_blocks > 0
+                           ? 100.0f * (1.0f - static_cast<float>(best.good_blocks) /
+                                                   static_cast<float>(best.total_blocks))
+                           : 100.0f;
+    Serial.printf(
+        "RDS_STATUS carrier=%d carrier_signal=%.1f block_locked=%d bler=%.1f%% "
+        "good=%lu total=%lu hyp0_streak=%d hyp1_streak=%d "
+        "timing_chip_rate=%.2f timing_correction_ppm=%.1f "
+        "A=%04x B=%04x C=%04x D=%04x\n",
+        rtl_rds_carrier_present.load(std::memory_order_relaxed) ? 1 : 0,
+        static_cast<double>(rtl_rds_signal_dbfs.load(std::memory_order_relaxed)),
+        h0.locked || h1.locked, static_cast<double>(bler),
+        static_cast<unsigned long>(best.good_blocks),
+        static_cast<unsigned long>(best.total_blocks), h0.streak, h1.streak,
+        static_cast<double>((kRdsChipInc + rtl_audio.rds_timing_freq_offset) * 240000.0f),
+        static_cast<double>((rtl_audio.rds_timing_freq_offset / kRdsChipInc) * 1.0e6f),
+        best.group_info[0], best.group_info[1], best.group_info[2], best.group_info[3]);
+    return;
+  }
+
   if (strncmp(command, "PAIR ", 5) == 0) {
     uint8_t candidate[sizeof(pairing_key)];
     if (!decode_hex(command + 5, candidate, sizeof(candidate))) {

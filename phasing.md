@@ -214,10 +214,24 @@ entangled with `demodulate_fm`'s internals beyond the one tap point.
         is a genuinely useful RF quality metric (multipath damages RDS
         specifically because the group structure is deliberately per-block
         CRC-protected), not just a decoder-internal detail.
-      - **Needs hardware acceptance**: tune to a real RDS station (Stage 1
-        already confirmed 96.1 KZEK carries an RDS carrier) and check
-        `RDS_STAGE2 locked=1` appears on serial, or the dashboard badge
-        reads `BLOCK SYNC` with a low BLER%, within a few seconds of tuning.
+      - **Status as of 2026-08-10: still not locking on real air.**
+        Iterated twice against live serial data from 96.1 KZEK: (1) the
+        Costas loop's error-term sign was backward — confirmed via
+        `i_lpf`/`q_lpf` ratio (before the fix, comparable magnitudes and
+        random sign relative to each other; after, `|i_lpf|` consistently
+        dominant, the BPSK-locked signature) — but block sync still never
+        exceeded `streak=1`. (2) Added closed-loop Gardner timing recovery
+        (was previously a pure open-loop chip-rate accumulator, exactly the
+        gap an external review independently flagged as the most likely
+        remaining cause) — its correction term immediately pinned at the
+        configured clamp (200 ppm) rather than settling to an equilibrium,
+        which reads as another sign/scale issue rather than genuine 200+
+        ppm clock drift. Not yet re-verified after a third fix.
+      - **Before another live iteration: build the capture/replay harness
+        below.** Two live-hardware debug cycles in a row each needed a
+        reflash + the user manually re-tuning FM/96.1 + a fresh serial
+        capture — expensive for both correctness and the user's time, and
+        exactly the failure mode a recorded-signal test fixture eliminates.
 3. [ ] **Stage 3 — station metadata.** Once blocks sync reliably: PI
       (block A, every group), PTY + TP (block B), PS name (group type
       0A/0B, 2 chars per group from block D at the segment address in block
@@ -243,6 +257,55 @@ kHz LPF, symbol timing, differential decode). gr-rds
 (github.com/bastibl/gr-rds) is useful for cross-checking the block-sync/CRC
 implementation but is GPL-3.0 — use as a validation oracle on a PC, not as
 a code source, to keep this project's licensing posture unchanged.
+
+## Phase 5 — RDS capture/replay test fixture (do this before more live RDS iteration)
+
+Goal: stop needing a reflash + a manual re-tune + a live serial capture for
+every RDS DSP change. Two iterations in a row against 96.1 KZEK each cost a
+full flash-and-hands-on-the-device cycle; a recorded-signal fixture turns
+that into a repeatable, zero-hardware test.
+
+1. [ ] **Capture.** Record the composite discriminator output (`phase` in
+      `demodulate_fm`, the same 240 kS/s pre-mono-LPF tap the pilot/sub/RDS
+      resonators already use — capturing here rather than raw IQ preserves
+      full generality: any future filter/carrier/timing change can be
+      replayed against it without re-deriving the FM discriminator too)
+      into a PSRAM ring buffer during live reception, then flush to SD only
+      after capture stops — never write SD from the real-time IQ path, per
+      this project's own established rule (see the existing
+      `g_audio_rec_buf`/`audio_rec_stop_and_export()` pattern for the
+      precedent to follow). Store as fixed-point int16 (phase is bounded,
+      roughly ±π — scale by a constant, document it in the file header) to
+      keep a useful capture length (10-20s) under a few MB. Add
+      `RTL_RDS_CAPTURE_START`/`_STOP` serial commands (see
+      `docs/API_SERIAL_CLI.md` for the command-doc convention to follow)
+      and write to `/orcsdr/rds_debug/<band>_<freq>_mpx.raw` +
+      a sibling `.json` with sample rate, frequency, timestamp, sample
+      count, and the fixed-point scale factor.
+2. [ ] **Replay.** Factor the existing per-sample RDS chain (57 kHz
+      bandpass through Gardner/block-sync — currently inline in
+      `demodulate_fm`) into a standalone function taking one `phase` sample
+      and updating `rtl_audio`'s RDS fields, callable both from the live
+      per-sample loop and from a replay path that reads a captured file
+      back sample-by-sample. This is a mechanical extraction, not a
+      redesign — the code already operates on one sample at a time, it
+      just needs a real function boundary instead of being embedded inline.
+      Add an `RTL_RDS_REPLAY <path>` command that runs the captured file
+      through this function end-to-end and reports the same `RDS_STATUS`
+      output a live session would, without touching the RTL-SDR at all.
+3. [ ] **PC oracle (optional but high-value).** Copy a capture off the
+      device (`copy_to_tab5_sd.ps1`'s `SD_GET` direction — the tooling
+      already exists) and feed it to redsea on a PC after converting the
+      fixed-point format to whatever redsea expects as input. If redsea
+      decodes the same capture correctly and OrcSDR doesn't, that isolates
+      the problem to the RDS decoder specifically — antenna, RF reception,
+      and FM demod quality are proven sufficient. This is the single
+      strongest debugging signal available for this subsystem and is worth
+      the format-conversion effort once Phase 5.1/5.2 land.
+
+Exit: an RDS DSP change (filter coefficient, loop gain, decode logic) can
+be tested against a fixed recorded signal without touching live RF or
+asking anyone to re-tune a physical device.
 
 ## Explicitly out of scope for this phasing pass
 

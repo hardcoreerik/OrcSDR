@@ -159,6 +159,7 @@ SPLASH_FPS ...
 | `docs/IMPLEMENTATION_FROM_PEER_RESEARCH.md` | Detailed workstreams and design rationale |
 | `docs/PORTING.md` | Driver extraction and target gates |
 | `docs/API_RTL_SDR_V4_ESP.md` | Public API contract |
+| `docs/API_SERIAL_CLI.md` | Tab5 serial CLI — tuning, telemetry, RDS status, presets, file transfer |
 | `docs/M5TAB5_VALIDATION_REPORT.md` | Historical hardware evidence |
 | `docs/GATE2_IMPLEMENTATION_LOCK.md` | Historical Gate-2 handoff snapshot |
 | `docs/OrcSDR_Splash_README.md` | Splash asset and playback contract |
