@@ -1,6 +1,8 @@
 # OrcSDR serial CLI (Tab5 host protocol)
 
-**Transport:** USB-serial (COM17 on the reference dev machine), 115200 baud, 8N1, line-terminated (`\n`).
+**Transport:** native ESP32-P4 USB Serial/JTAG (`COM17` on the reference bench;
+the COM number is not a device identity), 8N1, line-terminated (`\n`). Examples
+use 115200 for compatibility; see the native-USB note below.
 **Firmware:** `apps/orcsdr-tab5/ui/main.cpp`, `process_command()` / `poll_serial()`.
 
 This is the human/AI-facing control surface for the Tab5 radio — everything
@@ -34,6 +36,59 @@ $port.Close()
 
 Any serial library in any language works the same way — this is a plain
 line protocol, nothing OrcSDR-specific about the transport itself.
+
+## USB Serial/JTAG: baud, identity, and large transfers
+
+The Tab5's PC-facing port is the ESP32-P4's native USB Serial/JTAG interface,
+not an external USB-to-UART bridge. On the accepted bench unit Windows reports
+`USB\VID_303A&PID_1001&MI_00`. Confirm the current COM assignment instead of
+assuming `COM17`:
+
+```powershell
+Get-PnpDevice -Class Ports |
+    Format-Table Status, FriendlyName, InstanceId -AutoSize
+
+Get-CimInstance Win32_SerialPort |
+    Select-Object DeviceID, Name, Description, PNPDeviceID
+```
+
+For this native USB connection, the `115200` or `921600` value passed to
+`SerialPort` is configuration metadata, not a physical UART bit clock. A host
+connection at 921600 was hardware-verified while firmware still used
+`Serial.begin(115200)`; it did not provide an 8x transfer-speed increase. Keep
+the existing scripts at 115200 unless the hardware path changes to a real UART
+bridge. With a real UART bridge, both ends must use the same baud.
+
+Large captures use binary chunks, not ASCII samples or hex text. The current
+protocol uses 16 KiB host-to-device chunks and 2 KiB device-to-host chunks,
+then verifies the complete file with SHA-256. Use the repository clients:
+
+```powershell
+# PC -> Tab5
+.\tools\copy_to_tab5_sd.ps1 '.\capture.s16' `
+    '/orcsdr/rds_debug/capture.s16' -Port COM17
+
+# Tab5 -> PC
+.\tools\copy_from_tab5_sd.ps1 '/orcsdr/rds_debug/capture.s16' `
+    -Destination '.\capture.s16' -Port COM17
+```
+
+Transfer rules and failure meanings:
+
+- Only one process may own the COM port. Close serial monitors before running
+  a transfer or upload. `PermissionError(13)` / `Access is denied` usually
+  means a monitor or an orphaned PlatformIO/esptool process still holds it;
+  identify the exact holder and stop only that process.
+- Do not run an automatic logger beside a binary transfer. Firmware now blocks
+  radio auto-start while `SD_GET`/`SD_PUT` is active so radio logs cannot be
+  inserted into file bytes.
+- Do not accept byte count alone. Completion requires the device and host
+  SHA-256 values to match. The RDS investigation verified two 3,840,000-byte
+  downloads this way.
+
+Classification: native-USB baud behavior is expected device operation (a
+how-to), port contention is a host-side troubleshooting condition, and the
+former radio-log interleaving was a firmware bug fixed by the transfer guard.
 
 ## Auth model
 
@@ -213,11 +268,12 @@ Chunked binary protocol (`SD_LIST`, `SD_GET_BEGIN`/`_CHUNK`/`_ABORT`,
 `SD_PUT_BEGIN`/`_DATA`/`_ABORT`, `SD_REMOVE`) with SHA-256 verification and
 staged-write rollback on failure. All paths must be under `/orcsdr/`.
 
-**Use `tools/copy_to_tab5_sd.ps1`** rather than re-implementing this by
-hand — it's the reference client and handles the chunking/hashing:
+Use `tools/copy_to_tab5_sd.ps1` and `tools/copy_from_tab5_sd.ps1` rather than
+re-implementing the binary framing by hand; they handle chunking and hashing:
 
 ```powershell
 .\tools\copy_to_tab5_sd.ps1 <local-file> /orcsdr/<name> -Port COM17
+.\tools\copy_from_tab5_sd.ps1 /orcsdr/<name> -Destination <local-file> -Port COM17
 ```
 
 `SD_LIST` alone (no chunking needed) returns one `SD_LIST_ENTRY
