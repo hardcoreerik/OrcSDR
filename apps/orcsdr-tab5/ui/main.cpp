@@ -232,15 +232,11 @@ constexpr float kRdsChipInc = 0.009896f;         /* 2375 chips/sec at 240 kS/s *
  * continuous LPF value with a boxcar sum.
  */
 constexpr float kRdsTimingKp = 0.000001f;
-/* Ki = Kp^2/(4*zeta^2), zeta=0.707 — critically damped relative to Kp.
- * The original 1e-9 was ~2000x too large for this Kp: even after the sign
- * fix, the integral term still railed at whatever clamp was set (200ppm,
- * then 2000ppm, then 500ppm — all pinned exactly at their limit) because
- * an oversized Ki has essentially no damping and just races to the wall
- * before the proportional term can act. This is a properly-ratioed value,
- * not another guess. */
-constexpr float kRdsTimingKi = 0.0000000000005f;
-constexpr float kRdsTimingClamp = 0.00000495f;  /* +-~500 ppm safety bound */
+constexpr float kRdsTimingKi = 0.000000001f;
+constexpr float kRdsTimingClamp = 0.00000495f;  /* +-~500 ppm — the 200ppm and
+    2000ppm diagnostic clamps both pinned exactly at their limit (confirming
+    a sign error, now fixed above), this is a plausible-but-generous real
+    RTL-SDR clock-offset bound for the fixed loop to actually settle within. */
 /* RDS/RBDS generator polynomial x^10+x^8+x^7+x^5+x^4+x^3+1, and the five
  * offset words (IEC 62106). Verified by direct polynomial-division check
  * against all five before this was written into demodulate_fm. */
@@ -377,6 +373,7 @@ void rds_hypothesis_feed(RdsHypothesis& h, bool bit) {
 constexpr size_t kRtlSpectrumBins = 256;
 /** Average this many non-overlapping windows for a quieter, more precise trace. */
 constexpr size_t kRtlSpectrumWelchWindows = 2;
+constexpr bool kStreamDiagnosticsEnabled = false;
 // Keep scope cadence stable when sound is toggled; only back off if audio drops.
 constexpr uint32_t kRtlSpectrumIntervalMs = 100;
 constexpr uint32_t kRtlSpectrumStressedIntervalMs = 220;
@@ -1153,7 +1150,6 @@ static bool g_suppress_home_paint = false;
 
 void draw_session_state(const char* message, uint32_t color) {
   if (g_suppress_home_paint) return;
-  if (rtl_ui_active.load(std::memory_order_acquire)) return;
   M5.Display.fillRect(250, 210, 780, 55, TFT_BLACK);
   M5.Display.setTextColor(color, TFT_BLACK);
   M5.Display.setTextDatum(middle_center);
@@ -1163,7 +1159,6 @@ void draw_session_state(const char* message, uint32_t color) {
 
 void draw_wifi_state() {
   if (g_suppress_home_paint) return;
-  if (rtl_ui_active.load(std::memory_order_acquire)) return;
   char message[80];
   uint32_t color = TFT_ORANGE;
   if (!wifi_station_ready) {
@@ -1620,7 +1615,7 @@ void flush_audio_play_batch(bool force) {
     ++rtl_audio.queued_chunks;
   } else {
     ++rtl_audio.dropped_chunks;
-    if ((rtl_audio.dropped_chunks % 32) == 1) {
+    if (kStreamDiagnosticsEnabled && (rtl_audio.dropped_chunks % 32) == 1) {
       Serial.printf("RTL_AUDIO_DROP chunks_ok=%u dropped=%u peak=%d volume=%u running=%s\n",
                     rtl_audio.queued_chunks, rtl_audio.dropped_chunks, rtl_audio.peak,
                     rtl_live_volume.load(std::memory_order_acquire),
@@ -4567,13 +4562,15 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
         window_ms == 0 ? 0 : static_cast<uint32_t>(
                                   (static_cast<uint64_t>(dsp_us) * 100u) /
                                   (static_cast<uint64_t>(window_ms) * 1000u));
-    Serial.printf("RTL_SPECTRUM_FPS fps=%u bins=%u welch=%u tool=%s audio_dropped=%u "
-                  "audio_chunks=%u audio_peak=%d dsp_load_pct=%u dsp_blocks=%u "
-                  "dsp_block_us_max=%u\n",
-                  rtl_spectrum_fps, static_cast<unsigned>(kRtlSpectrumBins),
-                  static_cast<unsigned>(windows), orc_tool_name(tool),
-                  rtl_audio.dropped_chunks, rtl_audio.queued_chunks, rtl_audio.peak,
-                  dsp_load_pct, dsp_blocks, dsp_max_us);
+    if (kStreamDiagnosticsEnabled) {
+      Serial.printf("RTL_SPECTRUM_FPS fps=%u bins=%u welch=%u tool=%s audio_dropped=%u "
+                    "audio_chunks=%u audio_peak=%d dsp_load_pct=%u dsp_blocks=%u "
+                    "dsp_block_us_max=%u\n",
+                    rtl_spectrum_fps, static_cast<unsigned>(kRtlSpectrumBins),
+                    static_cast<unsigned>(windows), orc_tool_name(tool),
+                    rtl_audio.dropped_chunks, rtl_audio.queued_chunks, rtl_audio.peak,
+                    dsp_load_pct, dsp_blocks, dsp_max_us);
+    }
   }
 }
 
@@ -4765,16 +4762,8 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
          * (the resonator chain gives the right frequency for free — 57 kHz
          * is exactly 3x the already-locked pilot — but not the right
          * phase, which the loop corrects adaptively).
-         *
-         * Temporarily gated behind kRdsStage2Enabled: diagnostic A/B test
-         * for a reported recurring audio pause that started after this
-         * block was added — everything here runs per RF sample (240 kS/s)
-         * on the same core that also handles audio playback (see boot log:
-         * usb=core0, iq_demod+ui=core1 — audio isn't split out), so it's
-         * the leading suspect before a core-rebalancing fix is attempted.
          */
-        constexpr bool kRdsStage2Enabled = false;
-        if (kRdsStage2Enabled) {
+        {
           const float new_i = rtl_audio.rds_nco_i * rtl_audio.rds_nco_inc_cos -
                               rtl_audio.rds_nco_q * rtl_audio.rds_nco_inc_sin;
           const float new_q = rtl_audio.rds_nco_i * rtl_audio.rds_nco_inc_sin +
@@ -4977,7 +4966,7 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
 
     static uint32_t rds_diag_last_ms = 0;
     const uint32_t now_diag = millis();
-    if (now_diag - rds_diag_last_ms >= 2000) {
+    if (kStreamDiagnosticsEnabled && now_diag - rds_diag_last_ms >= 2000) {
       rds_diag_last_ms = now_diag;
       const float bler = best.total_blocks > 0
                              ? 100.0f * (1.0f - static_cast<float>(best.good_blocks) /
@@ -5589,22 +5578,6 @@ static void on_rtl_driver_event(rtl_sdr_v4_esp_event_t event, const void *payloa
       break;
     case RTL_SDR_V4_ESP_EVT_IQ_BLOCK: {
       const uint32_t dsp_started_us = micros();
-      /* Diagnostic for the reported ~5s recurring audio pause (station-
-       * independent, so not RF content -- see phasing.md). Measures the
-       * gap between consecutive IQ block deliveries directly: a stall
-       * here means core1 wasn't processing IQ/audio at all for that
-       * long, which is a stronger, more direct signal than inferring it
-       * from downstream symptoms. */
-      static uint32_t last_iq_block_us = 0;
-      if (last_iq_block_us != 0) {
-        const uint32_t gap_us = dsp_started_us - last_iq_block_us;
-        if (gap_us > 30000) {
-          Serial.printf("RTL_IQ_GAP gap_ms=%.1f at_ms=%lu\n",
-                        static_cast<double>(gap_us) / 1000.0,
-                        static_cast<unsigned long>(millis()));
-        }
-      }
-      last_iq_block_us = dsp_started_us;
       const auto *iq = static_cast<const rtl_sdr_v4_esp_iq_block_t *>(payload);
       if (iq == nullptr || iq->data == nullptr || iq->bytes == 0) break;
       const size_t n =
@@ -5834,8 +5807,10 @@ static void rtl_driver_app_task(void *) {
               fm_preset_offer(snapped_hz, level);
               rtl_fm_preset_scan_found.store(fm_preset_count, std::memory_order_relaxed);
             }
-            Serial.printf("RTL_PRESET_SCAN sample center=%u peak=%u level=%.1f\n",
-                          preset_scan_frequency_hz, found_hz, static_cast<double>(level));
+            if (kStreamDiagnosticsEnabled) {
+              Serial.printf("RTL_PRESET_SCAN sample center=%u peak=%u level=%.1f\n",
+                            preset_scan_frequency_hz, found_hz, static_cast<double>(level));
+            }
             ++preset_scan_step_index;
             rtl_fm_preset_scan_step.store(preset_scan_step_index, std::memory_order_relaxed);
             if (preset_scan_frequency_hz + kRtlFmAutoStepHz / 2 >= kRtlFmMaxHz ||
@@ -5981,19 +5956,6 @@ void initialize_rtl_sdr_host() {
   Serial.printf("RTL_INSTALL ok v%s caps=0x%08x\n", rtl_sdr_v4_esp_get_version_string(),
                 static_cast<unsigned>(rtl_sdr_v4_esp_get_capabilities()));
   set_rtl_sdr_status("RTL-SDR: driver host active, waiting");
-  /*
-   * Tried moving rtl_app to core0 (2026-08-10) to relieve core1 for the
-   * inline demod+speaker delivery task, without touching the delivery
-   * path itself (which has documented prior-failure history — see
-   * on_rtl_driver_event's comment). Reverted: capture never actually
-   * started (RTL_SIGNAL stuck at floor, screen stuck on home/"Host
-   * offline") — rtl_app is apparently not pure UI, it's on the critical
-   * path that consumes rtl_capture_requested and actually starts
-   * streaming, and at its low priority (5) it got starved behind core0's
-   * USB host (prio 20) and client (prio 19) tasks. Whatever drives that
-   * state machine needs to stay off core0, or needs a priority bump if
-   * it moves — not attempted again in this pass.
-   */
   if (xTaskCreatePinnedToCore(rtl_driver_app_task, "rtl_app", 8192, nullptr, kRtlAppTaskPrio,
                               nullptr, 1) != pdPASS) {
     set_rtl_sdr_status("RTL-SDR: app task failed");
