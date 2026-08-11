@@ -7754,8 +7754,6 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     if (action == orcsdr::adsb::Action::settings_changed) {
       adsb_settings = orcsdr::adsb::settings();
       adsb_settings_persist_pending.store(true, std::memory_order_release);
-    } else if (action == orcsdr::adsb::Action::open_global_settings) {
-      open_global_settings(orcsdr::settings::Section::location_adsb);
     } else if (action == orcsdr::adsb::Action::exit) {
       rtl_ui_active.store(false, std::memory_order_release);
       queue_local_rtl_listen(RtlBand::browse, kAdsbDefaultHz);

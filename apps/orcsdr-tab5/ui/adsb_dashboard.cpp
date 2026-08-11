@@ -619,7 +619,6 @@ Action handle_touch(int32_t x, int32_t y) {
   if (g_edit != EditField::none) return handle_keypad(x, y);
   if (y >= kTabsY) {
     const View requested = static_cast<View>(constrain(x / kTabW, 0, 4));
-    if (requested == View::settings) return Action::open_global_settings;
     g_view = requested;
     redraw();
     return Action::none;
