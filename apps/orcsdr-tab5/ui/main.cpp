@@ -233,7 +233,10 @@ constexpr float kRdsChipInc = 0.009896f;         /* 2375 chips/sec at 240 kS/s *
  */
 constexpr float kRdsTimingKp = 0.000001f;
 constexpr float kRdsTimingKi = 0.000000001f;
-constexpr float kRdsTimingClamp = 0.00000198f;  /* +-~200 ppm chip-rate drift */
+constexpr float kRdsTimingClamp = 0.00000495f;  /* +-~500 ppm — the 200ppm and
+    2000ppm diagnostic clamps both pinned exactly at their limit (confirming
+    a sign error, now fixed above), this is a plausible-but-generous real
+    RTL-SDR clock-offset bound for the fixed loop to actually settle within. */
 /* RDS/RBDS generator polynomial x^10+x^8+x^7+x^5+x^4+x^3+1, and the five
  * offset words (IEC 62106). Verified by direct polynomial-division check
  * against all five before this was written into demodulate_fm. */
@@ -4829,9 +4832,15 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
 
             /* Gardner: error = mid * (ontime - last_ontime). Both terms are
              * matched boxcar sums, same scale, unlike an earlier version
-             * that mixed a continuous LPF value with a boxcar sum. */
+             * that mixed a continuous LPF value with a boxcar sum. Sign
+             * flipped (same class of bug as the Costas loop's sign fix) —
+             * verified live (autonomous serial test, 96.1 KZEK) that the
+             * un-flipped version pinned at the clamp regardless of clamp
+             * size (200ppm and 2000ppm both pinned exactly at the limit),
+             * which only makes sense as a wrong-direction loop, not a
+             * genuine multi-thousand-ppm clock offset. */
             const float timing_error =
-                mid_sample * (ontime_sample - rtl_audio.rds_chip_last_ontime);
+                -mid_sample * (ontime_sample - rtl_audio.rds_chip_last_ontime);
             rtl_audio.rds_chip_last_ontime = ontime_sample;
             rtl_audio.rds_timing_freq_offset += kRdsTimingKi * timing_error;
             rtl_audio.rds_timing_freq_offset = constrain(
@@ -7281,6 +7290,8 @@ void process_command(char* command) {
     Serial.println("RTL_FREQ <HZ>                  - hot-retune within current band (auth)");
     Serial.println("RTL_VOLUME                     - query current volume");
     Serial.println("RTL_VOLUME <0-32>              - set volume (auth)");
+    Serial.println("RTL_SOUND                      - query audio-enabled state");
+    Serial.println("RTL_SOUND ON|OFF                - enable/disable audio+demod pipeline (no auth)");
     Serial.println("RTL_SIGNAL                     - signal dBFS, stereo lock, L/R levels");
     Serial.println("RTL_PRESET_SCAN                - start FM band scan for presets (auth, FM only)");
     Serial.println("RTL_PRESET_LIST                - list current FM presets");
@@ -7332,6 +7343,23 @@ void process_command(char* command) {
   }
   if (strcmp(command, "RTL_VOLUME") == 0) {
     Serial.printf("RTL_VOLUME_STATUS volume=%u\n", rtl_ui_volume);
+    return;
+  }
+  if (strcmp(command, "RTL_SOUND") == 0) {
+    Serial.printf("RTL_SOUND_STATUS enabled=%d\n",
+                  rtl_audio_enabled.load(std::memory_order_relaxed) ? 1 : 0);
+    return;
+  }
+  if (strcmp(command, "RTL_SOUND ON") == 0 || strcmp(command, "RTL_SOUND OFF") == 0) {
+    const bool enable = command[10] == 'O' && command[11] == 'N';
+    rtl_audio_enabled.store(enable, std::memory_order_release);
+    rtl_audio_play_count = 0;
+    if (enable) {
+      (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
+    } else {
+      M5.Speaker.stop();
+    }
+    Serial.printf("RTL_SOUND_OK enabled=%d\n", enable ? 1 : 0);
     return;
   }
   if (strcmp(command, "RTL_SIGNAL") == 0) {
@@ -7720,11 +7748,21 @@ void setup() {
 
   /* Dependencies are up: reveal the gate while the background keeps looping. */
   orcsdr_splash_set_ready(true);
-  (void)orcsdr_splash_wait_start();
+  /* Skipped for now (autonomous RDS dev cycle: flash -> reboot -> resume
+   * FM reception with no touch input) — the splash previously blocked
+   * indefinitely on a screen tap, so every post-flash reboot sat looping
+   * the animation forever instead of restoring the last band. Flip back
+   * to (void)orcsdr_splash_wait_start(); to restore the tap gate. */
+  constexpr bool kSkipSplashGate = true;
+  if (!kSkipSplashGate) (void)orcsdr_splash_wait_start();
   orcsdr_splash_end();
   g_suppress_home_paint = false;
 
-  draw_ui();
+  // "OrcLink" branded home screen removed — with the auto-start above,
+  // it was showing as a second splash-like gate between the boot splash
+  // and the radio UI actually appearing, which is exactly what it's not
+  // supposed to do anymore.
+  M5.Display.fillScreen(TFT_BLACK);
   draw_rtl_sdr_state();
   append_journal("boot");
   last_ping_ms = millis();
@@ -7754,6 +7792,22 @@ void loop() {
 
   // Home-screen taps when radio UI is not active.
   if (!radio_ui) {
+    // One-shot auto-start once the RTL-SDR is ready, restoring the band the
+    // device was last on instead of waiting for a home-screen tap (that tap
+    // gate was blocking every autonomous flash-reboot-resume cycle during
+    // headless/serial-driven development; see phasing.md's RDS Phase 5).
+    static bool auto_start_done = false;
+    if (!auto_start_done && rtl_device_ready()) {
+      auto_start_done = true;
+      queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz);
+      // The whole demod chain (mono, stereo, RDS) only runs when audio is
+      // enabled -- see the EVT_IQ_BLOCK gate in the streaming task. Without
+      // this, RDS status stays at floor forever regardless of how strong
+      // the RF signal is, since demodulate_fm() itself never executes.
+      rtl_audio_enabled.store(true, std::memory_order_release);
+      rtl_audio_play_count = 0;
+      (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
+    }
     const auto touch = M5.Touch.getDetail(0);
     const bool pressed = touch.isPressed() || touch.wasPressed();
     if (pressed && !was_pressed) {

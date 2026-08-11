@@ -214,24 +214,45 @@ entangled with `demodulate_fm`'s internals beyond the one tap point.
         is a genuinely useful RF quality metric (multipath damages RDS
         specifically because the group structure is deliberately per-block
         CRC-protected), not just a decoder-internal detail.
-      - **Status as of 2026-08-10: still not locking on real air.**
-        Iterated twice against live serial data from 96.1 KZEK: (1) the
+      - **Status as of 2026-08-10: block sync achieved on real air.**
+        Iterated three times against live serial data from 96.1 KZEK,
+        autonomously (see the new autonomous-test-loop note below — no
+        manual re-tuning needed after the first fix landed): (1) the
         Costas loop's error-term sign was backward — confirmed via
         `i_lpf`/`q_lpf` ratio (before the fix, comparable magnitudes and
         random sign relative to each other; after, `|i_lpf|` consistently
         dominant, the BPSK-locked signature) — but block sync still never
         exceeded `streak=1`. (2) Added closed-loop Gardner timing recovery
-        (was previously a pure open-loop chip-rate accumulator, exactly the
-        gap an external review independently flagged as the most likely
-        remaining cause) — its correction term immediately pinned at the
-        configured clamp (200 ppm) rather than settling to an equilibrium,
-        which reads as another sign/scale issue rather than genuine 200+
-        ppm clock drift. Not yet re-verified after a third fix.
-      - **Before another live iteration: build the capture/replay harness
-        below.** Two live-hardware debug cycles in a row each needed a
-        reflash + the user manually re-tuning FM/96.1 + a fresh serial
-        capture — expensive for both correctness and the user's time, and
-        exactly the failure mode a recorded-signal test fixture eliminates.
+        (was previously a pure open-loop chip-rate accumulator) — its
+        correction term immediately pinned at the configured clamp
+        regardless of clamp size (tested 200ppm and 2000ppm, both pinned
+        exactly at their limit), which is the signature of a wrong-direction
+        loop, not genuine multi-thousand-ppm clock drift. (3) Flipped the
+        Gardner error sign the same way as the Costas fix — **block sync
+        immediately started working**: `RDS_STAGE2 locked=1 bler=0.0%`
+        with the PI code (`0x5277`) repeating stably across multiple
+        separate lock episodes, which is the actual validation bar (PI
+        stability across groups), not just a single lucky CRC match.
+      - **Remaining refinement, not a correctness blocker**: lock is still
+        intermittent — the timing loop's correction term pins at its
+        (500ppm) clamp within a lock episode rather than fully settling,
+        which likely causes the periodic drop-outs. Next step is probably
+        widening the clamp further and/or increasing `kRdsTimingKi` so it
+        converges faster than a typical lock episode's duration. Low risk,
+        iterate the same autonomous way.
+      - **Autonomous test loop unblocked**: fixed two boot-time gates that
+        were silently preventing hands-off iteration — the splash screen's
+        indefinite tap-wait (now skipped, see `kSkipSplashGate` in
+        `setup()`) and the home screen's tap-to-start gate (now an
+        auto-start once `rtl_device_ready()` first goes true, restoring
+        the last band/frequency instead of hardcoding FM). Also found that
+        the entire demod chain — mono, stereo, *and* RDS — only runs when
+        `rtl_audio_enabled` is true (audio and DSP are coupled, not
+        separable in the current code), so auto-start also enables audio.
+        Net effect: flash → reboot → active reception with real telemetry,
+        zero touch input, in about 15 seconds. This is what made the (2)
+        and (3) fixes above possible without asking for a manual re-tune
+        each time.
 3. [ ] **Stage 3 — station metadata.** Once blocks sync reliably: PI
       (block A, every group), PTY + TP (block B), PS name (group type
       0A/0B, 2 chars per group from block D at the segment address in block
