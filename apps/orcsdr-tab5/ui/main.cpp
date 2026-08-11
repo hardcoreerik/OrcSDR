@@ -4334,10 +4334,27 @@ void draw_lora_dashboard(bool static_panel) {
 // enough to require multiple taps per button press.
 M5Canvas fm_vu_face_l(&M5.Display);
 M5Canvas fm_vu_face_r(&M5.Display);
+M5Canvas fm_dashboard_face(&M5.Display);
 bool fm_vu_sprites_ready = false;
+bool fm_dashboard_face_ready = false;
+
+bool fm_load_dashboard_sprite() {
+  if (fm_dashboard_face_ready) return true;
+  if (!ensure_tab5_sd() || !g_sd_fs->exists(kFmDashboardPath)) return false;
+  fm_dashboard_face.setColorDepth(16);
+  fm_dashboard_face.setPsram(true);
+  if (!fm_dashboard_face.getBuffer() &&
+      !fm_dashboard_face.createSprite(kSpectrumWidth, kCbPanelHeight)) return false;
+  fm_dashboard_face_ready = fm_dashboard_face.drawJpgFile(
+      *g_sd_fs, kFmDashboardPath, 0, 0, kSpectrumWidth, kCbPanelHeight);
+  return fm_dashboard_face_ready;
+}
 
 void fm_load_vu_sprites() {
   constexpr int w = 343, h = 118, bandH = 30, faceH = h - bandH;
+  if (fm_vu_sprites_ready) return;
+  fm_vu_face_l.setPsram(true);
+  fm_vu_face_r.setPsram(true);
   if (!fm_vu_face_l.getBuffer()) fm_vu_face_l.createSprite(w, faceH);
   if (!fm_vu_face_r.getBuffer()) fm_vu_face_r.createSprite(w, faceH);
   fm_vu_sprites_ready = false;
@@ -4399,12 +4416,17 @@ void fm_draw_vu_needle(int card_x, int card_y, int w, int h, float val01,
 // Full-screen FM/AM dashboard: same 1152x470 footprint as the LoRa command
 // center, JPEG background + live overlays following docs/fm mockup layout.
 void draw_fm_dashboard(bool static_panel) {
-  if (rtl_ui_band != RtlBand::fm || rtl_nav_open) return;
+  if (orcsdr::settings::active() || rtl_ui_band != RtlBand::fm || rtl_nav_open) return;
   const int ox = kSpectrumX, oy = kSpectrumY;
 
   if (static_panel) {
-    const bool image_ok = ensure_tab5_sd() && g_sd_fs->exists(kFmDashboardPath) &&
-                          M5.Display.drawJpgFile(*g_sd_fs, kFmDashboardPath, ox, oy);
+    bool image_ok = fm_dashboard_face_ready;
+    if (image_ok) {
+      fm_dashboard_face.pushSprite(&M5.Display, ox, oy);
+    } else {
+      image_ok = ensure_tab5_sd() && g_sd_fs->exists(kFmDashboardPath) &&
+                 M5.Display.drawJpgFile(*g_sd_fs, kFmDashboardPath, ox, oy);
+    }
     if (!image_ok) {
       M5.Display.fillRect(ox, oy, kSpectrumWidth, kCbPanelHeight, TFT_BLACK);
       M5.Display.drawRoundRect(ox, oy, kSpectrumWidth, kCbPanelHeight, 16, TFT_DARKCYAN);
@@ -6291,6 +6313,10 @@ static void rtl_driver_app_task(void *) {
                g_rtl_device_ready.load(std::memory_order_acquire)) {
           /* Touch + hot retune on this task (not in IQ callback): responsive STOP/FREQ. */
           poll_sdr_touch_from_stream();
+          if (orcsdr::settings::active()) {
+            vTaskDelay(pdMS_TO_TICKS(20));
+            continue;
+          }
 
           /*
            * Coalesce LO applies: only retune when the 5 kHz target changed and
@@ -6691,6 +6717,10 @@ orcsdr::settings::State global_settings_state() {
 }
 
 void open_global_settings(orcsdr::settings::Section section) {
+  // Fill the FM background cache only after USB stream allocations have
+  // succeeded. Allocating this sprite during the pre-start dashboard draw can
+  // fragment memory needed by the three DMA transfers.
+  if (rtl_ui_band == RtlBand::fm) (void)fm_load_dashboard_sprite();
   settings_restore_graphics = rtl_graphics_enabled.exchange(false, std::memory_order_acq_rel);
   rtl_nav_open = false;
   orcsdr::settings::enter(global_settings_state(), section);
