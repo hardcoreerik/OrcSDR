@@ -1,8 +1,8 @@
 # OrcSDR project status
 
-Snapshot date: **2026-08-10**
-Source branch: **`codex/ads-b-dashboard`**
-Mainline baseline: **`origin/main` at `929abc7`**
+Snapshot date: **2026-08-11**
+Source branch: **`codex/ads-b-dashboard`** (Waveshare second-board work in workspace)
+Mainline baseline: **`origin/main` includes ADS-B merge; see git for tip**
 
 This is the authoritative current-status and roadmap index. Historical design,
 research, and validation documents remain useful evidence, but do not override
@@ -23,11 +23,14 @@ this file when their paths, versions, or completion claims differ.
 | Area | State | Evidence boundary |
 |---|---|---|
 | RTL-SDRv4-ESP API | **Implemented, v0.4.1** | Header and component source |
-| Blog V4 USB identity and 960 kS/s stream | **Hardware-verified** | Tab5 + Blog V4 on the measured USB host path |
-| Multi-URB stream, IQ ring, metrics | **Implemented** | Component source; five-minute acceptance still required |
+| Blog V4 USB identity and 960 kS/s stream | **Hardware-verified** | Tab5 + Blog V4; **also Waveshare P4** (driver unmodified) |
+| Multi-URB stream, IQ ring, metrics | **Implemented** | Component source; five-minute formal soak still required |
 | In-stream hot retune | **Implemented** | Component v0.4.1; settle-time measurement pending |
 | Core split | **Implemented** | USB core 0; IQ delivery and app work on core 1 |
 | Tab5 radio shell | **Implemented** | FM/AM/WX/CB/LoRa, radio/scope/capture tabs, sound/GFX toggles |
+| Waveshare P4 second board | **Hardware-verified** | `apps/orcsdr-waveshare`; Gate 4 RF path; see `docs/WAVESHARE_P4_VALIDATION.md` |
+| Waveshare Ethernet web UI | **Hardware-verified** | ADS-B Tab5-style SPA + FM station page; IP101 DHCP |
+| Waveshare FM browser audio | **Implemented / partial accept** | On-device 48 kHz PCM + `/api/audio`; Web Audio play/scope/waterfall |
 | CB channel dashboard | **Flashed; operator acceptance pending** | 40-channel AM/USB/LSB plan, 2/3 scope, touch channel dial, clarifier, squelch, live S/RF bar |
 | LoRa/Meshtastic receive path | **Flashed; live RF acceptance pending** | 250 ms pre-roll, adaptive 9 dB energy trigger, verified SD bridge, and dashboard message return; synthetic full-chain and COM17 protocol checks pass |
 | SDR navigation | **Flashed; operator acceptance pending** | Full 24–1766 MHz browse, US band/use guide, direct entry, pinch, peak find, FM auto tune |
@@ -43,9 +46,9 @@ this file when their paths, versions, or completion claims differ.
 | Live speaker versus recorded PCM | **Open performance gate** | Recorder taps PCM immediately before `playRaw`; clean WAVs plus poor live sound isolate the remaining fault to speaker queue/DMA/output after the DSP tap |
 | Paired FM IQ/WAV DSP lab | **Planned** | Buffer synchronized raw CU8 IQ, post-DSP PCM, and metadata in PSRAM; write after capture and evaluate filter variants offline |
 | AM/HF fidelity | **Experimental** | Do not claim calibrated HF/direct-sampling support |
-| Second ESP32-P4 board | **Planned** | No second-board hardware evidence yet |
-| rtl_tcp over Ethernet | **Planned** | App does not exist yet |
-| ADS-B 1090 | **Flashed — live pipeline implemented; acceptance pending** | COM17 upload hash-verified. Five-minute 1090 MHz run sustained 2,047,654 S/s (99.98% of 2.048 MS/s) with five startup drops and none afterward. A live RF trace reconstructed to CRC-valid DF17 `8DA2955158B505036BFB54BC90AC` (ICAO `A29551`, 35,000 ft), matching ASA1310's simultaneous independent track; the same captured magnitude waveform now passes the on-device fractional-sample replay check. The bounded aircraft table and revisioned dashboard snapshot are flashed. Dynamic updates no longer clear the full screen each second. A 315,547-record FAA index and the complete supplied FAA archive are SD hash-verified; live ICAO `A31111` resolved to `N297SF`. The UI honestly remains `DEMO` until a new on-device live frame passes CRC; physical view/touch acceptance remains open. |
+| Second ESP32-P4 board | **Hardware-verified** | Waveshare Module-DEV-KIT: Blog V4 HS enum, 960k FM + 2.048 MS/s ADS-B, live aircraft; **no `rtl_sdr_v4_esp` source changes** |
+| rtl_tcp over Ethernet | **Planned** | App does not exist yet (Waveshare has Ethernet HTTP shell; not rtl_tcp) |
+| ADS-B 1090 | **Hardware-verified on Tab5 + Waveshare** | Tab5: COM17 path, 2.048 MS/s soak metrics, CRC DF17, FAA index. **Waveshare:** live CRC frames and aircraft on web/LCD shell (e.g. ICAO seen in-session); preambles/mag/crc exported on `/api/state`. Tab5 physical UI acceptance still open; Waveshare is network-first UI. |
 
 ## Roadmap
 
@@ -90,10 +93,12 @@ paired IQ/WAV dataset that can drive FM filter decisions without tuning by ear.
 - [ ] Record retune settle time and recovery behavior after a failed retune.
 - [ ] Remove the legacy in-app USB path only after a soak build passes.
 - [ ] Build and run `examples/p4_serial_smoke` outside the Tab5 UI.
-- [ ] Repeat the driver gate on one other ESP32-P4 board.
+- [x] Repeat the driver gate on one other ESP32-P4 board (**Waveshare
+      Module-DEV-KIT**, driver unmodified — `docs/WAVESHARE_P4_VALIDATION.md`).
 
 Exit: portable driver behavior is measured on two P4 boards and the Tab5 app has
-no duplicate USB implementation.
+no duplicate USB implementation. **Two-board RF path is met;** formal soak and
+hot-plug recovery remain.
 
 ### P2 — network transport
 
@@ -113,6 +118,7 @@ no duplicate USB implementation.
       preserving the explicit `DEMO` gate until a live CRC-valid frame arrives.
 - [x] Add SD-backed FAA registration, model, and registered-owner enrichment
       without dropping the complete source database or blocking the IQ callback.
+- [x] Second-board live aircraft on Waveshare (`apps/orcsdr-waveshare` + web UI).
 - [ ] Accept live aircraft against an independent receiver on the Tab5.
 
 Detailed gates and clean-room boundaries live in `phasing.md` Phase 6.

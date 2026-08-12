@@ -18,12 +18,14 @@
 
 OrcSDR combines a touchscreen radio interface, live spectrum and waterfall visualization, audio, tuning, signal monitoring, radio tools, and a clean-room **ESP-IDF USB Host driver for the RTL-SDR Blog V4**.
 
-The primary reference implementation runs on the **M5Stack Tab5**, powered by the **ESP32-P4**.
+The primary product UI runs on the **M5Stack Tab5** (ESP32-P4). The same **RTL-SDRv4-ESP** driver is also **hardware-verified on a second ESP32-P4 board** (Waveshare Module-DEV-KIT) **with no driver source changes** — only board BSP and a network-first app shell.
 
-**Core technologies:** ESP32-P4 · M5Stack Tab5 · RTL-SDR Blog V4 · ESP-IDF USB Host · Software-Defined Radio · DSP · Spectrum · Waterfall · LoRa
+**Core technologies:** ESP32-P4 · M5Stack Tab5 · Waveshare P4 · RTL-SDR Blog V4 · ESP-IDF USB Host · Software-Defined Radio · DSP · Spectrum · Waterfall · LoRa · Ethernet web UI
 
 <p align="center">
-  <a href="#-flash-orcsdr-to-the-m5stack-tab5"><strong>Flash OrcSDR</strong></a>
+  <a href="#-flash-orcsdr-to-the-m5stack-tab5"><strong>Flash Tab5</strong></a>
+  &nbsp;•&nbsp;
+  <a href="#second-board-waveshare-esp32-p4"><strong>Waveshare P4</strong></a>
   &nbsp;•&nbsp;
   <a href="#orcsdr-interface"><strong>Interface</strong></a>
   &nbsp;•&nbsp;
@@ -40,7 +42,7 @@ The primary reference implementation runs on the **M5Stack Tab5**, powered by th
 > Jump directly to **[Flash OrcSDR to the M5Stack Tab5](#-flash-orcsdr-to-the-m5stack-tab5)** to get started.
 
 > [!NOTE]
-> **Project status:** OrcSDR is under active development. The Tab5 application is the reference implementation while the reusable `RTL-SDRv4-ESP` driver continues to be separated and hardened as a standalone ESP-IDF component.
+> **Project status:** OrcSDR is under active development. Tab5 is the full radio appliance UI. The reusable `RTL-SDRv4-ESP` driver is portable across ESP32-P4 hosts — measured on Tab5 and Waveshare (see [`docs/WAVESHARE_P4_VALIDATION.md`](docs/WAVESHARE_P4_VALIDATION.md)).
 
 ---
 
@@ -176,10 +178,39 @@ Current LoRa capabilities include:
 
 ---
 
+# Second board: Waveshare ESP32-P4
+
+> [!IMPORTANT]
+> **Driver portability proof (Gate 4)**
+>
+> The **RTL-SDRv4-ESP** component runs on Waveshare **without any driver patches**.
+> App: [`apps/orcsdr-waveshare`](apps/orcsdr-waveshare/). Full write-up:
+> [`docs/WAVESHARE_P4_VALIDATION.md`](docs/WAVESHARE_P4_VALIDATION.md).
+
+| Item | Detail |
+|---|---|
+| Board | Waveshare ESP32-P4-Module-DEV-KIT |
+| Dongle | RTL-SDR Blog V4 on **lower-left USB-A (next to Ethernet)** |
+| OTG | Jumper set to **HOST** |
+| Console | Type-C CH343 (e.g. COM3) |
+| UI | Compact ILI9341 status LCD + **Ethernet web UI** (`/` ADS-B, `/fm` radio) |
+| Verified RF | ADS-B 2.048 MS/s live aircraft; FM 960 kS/s + browser PCM |
+
+```powershell
+cd OrcSDR/apps/orcsdr-waveshare
+pio run -e waveshare_p4_adsb -t upload --upload-port COM3
+```
+
+Then open `http://<device-dhcp-ip>/` from the LAN (serial prints `ETH_STATUS ... ip=`).
+
+This is a **second-board shell**, not a full clone of the Tab5 1280×720 appliance UI.
+
+---
+
 # 🚀 Flash OrcSDR to the M5Stack Tab5
 
 > [!IMPORTANT]
-> **Fastest path to running OrcSDR on real hardware**
+> **Fastest path to the full touchscreen OrcSDR appliance**
 >
 > Reference hardware: **M5Stack Tab5 + RTL-SDR Blog V4**
 
@@ -309,29 +340,31 @@ Power-cycle or reset the Tab5 after flashing if needed.
 ### Platform
 
 - ESP32-P4
-- M5Stack Tab5 reference hardware
+- M5Stack Tab5 product reference UI
+- Waveshare ESP32-P4 second-board shell (web + LCD)
 - ESP-IDF USB Host
 - PlatformIO build environment
-- Reusable `RTL-SDRv4-ESP` component
+- Reusable `RTL-SDRv4-ESP` component (portable P4 host driver)
 - Clean-room RTL-SDR Blog V4 USB implementation
 
 ---
 
 ## Hardware
 
-The current reference platform is:
-
 | Component | Hardware |
 | --- | --- |
-| MCU | **ESP32-P4** |
-| Reference device | **M5Stack Tab5** |
+| MCU | **ESP32-P4** (High-Speed USB host) |
+| Product reference | **M5Stack Tab5** |
+| Second board (measured) | **Waveshare ESP32-P4-Module-DEV-KIT** |
 | SDR | **RTL-SDR Blog V4** |
 | Interface | USB Host |
 | USB VID:PID | `0bda:2838` |
 | USB manufacturer | `RTLSDRBlog` |
 | USB product | `Blog V4` |
 
-The **ESP32-P4 High-Speed USB Host** is the currently measured reference target.
+The **ESP32-P4 High-Speed USB Host** is the measured silicon class. Driver
+behavior is verified on **two boards** (Tab5 + Waveshare) without
+board-specific patches inside `rtl_sdr_v4_esp`.
 
 ESP32-S2 and ESP32-S3 support is **not currently claimed** until those platforms have been measured and validated.
 
@@ -342,10 +375,11 @@ ESP32-S2 and ESP32-S3 support is **not currently claimed** until those platforms
 ```text
 OrcSDR/
 ├── apps/
-│   └── orcsdr-tab5/             M5Stack Tab5 SDR application
+│   ├── orcsdr-tab5/             M5Stack Tab5 SDR application (product UI)
+│   └── orcsdr-waveshare/        Waveshare P4 second-board shell + web UI
 │
 ├── components/
-│   └── rtl_sdr_v4_esp/          Reusable RTL-SDR Blog V4 driver
+│   └── rtl_sdr_v4_esp/          Reusable RTL-SDR Blog V4 driver (P4 HS)
 │
 ├── examples/
 │   └── p4_serial_smoke/         Minimal ESP32-P4 driver example
@@ -353,6 +387,7 @@ OrcSDR/
 ├── docs/                        Technical documentation
 │   ├── API_RTL_SDR_V4_ESP.md
 │   ├── PORTING.md
+│   ├── WAVESHARE_P4_VALIDATION.md
 │   ├── FM_DSP_CAPTURE_LAB.md
 │   └── RTL_SDR_V4_CLEAN_ROOM_SPEC.md
 │
@@ -388,11 +423,26 @@ Application-specific documentation is available here:
 
 ---
 
+# OrcSDR Waveshare Application
+
+`apps/orcsdr-waveshare/` is the **second-board** shell for the Waveshare
+ESP32-P4-Module-DEV-KIT. It links the **same** `rtl_sdr_v4_esp` component used
+on Tab5 — **no driver forks or patches**.
+
+- Compact ILI9341 status LCD (OrcLink-proven pin map)
+- Ethernet web UI: Tab5-style ADS-B dashboard + FM station page
+- Live ADS-B and FM RF paths measured on hardware
+
+**[`apps/orcsdr-waveshare/README.md`](apps/orcsdr-waveshare/README.md)** ·
+**[`docs/WAVESHARE_P4_VALIDATION.md`](docs/WAVESHARE_P4_VALIDATION.md)**
+
+---
+
 # RTL-SDRv4-ESP
 
 At the core of OrcSDR is **RTL-SDRv4-ESP**, a standalone ESP-IDF USB Host driver for the **RTL-SDR Blog V4**.
 
-This driver is a major part of the OrcSDR project: it is intended to let ESP32-P4 applications communicate with an RTL-SDR V4 directly, without relying on a desktop host or the OrcSDR user interface.
+This driver is a major part of the OrcSDR project: it is intended to let ESP32-P4 applications communicate with an RTL-SDR V4 directly, without relying on a desktop host or the OrcSDR user interface. It is **board-agnostic**: Tab5 and Waveshare both call the public C API; only the app supplies USB power policy, display, and networking.
 
 ```text
 components/rtl_sdr_v4_esp/
@@ -447,7 +497,7 @@ ESP_ERROR_CHECK(
 
 ## Driver Status
 
-The public `RTL-SDRv4-ESP` API is currently **v0.3.0**.
+The public `RTL-SDRv4-ESP` API is currently **v0.4.1** (multi-URB streaming + hot retune).
 
 Current API work includes:
 
@@ -559,16 +609,20 @@ Current areas of development include:
 - Expand CB, LoRa, and amateur-radio tooling
 - Improve frequency and band navigation
 - Continue separating radio logic from the Tab5 UI
-- Validate additional ESP32 USB Host targets
+- Formal five-minute soak + hot-plug recovery on Tab5 and Waveshare
+- Expand Waveshare web FM (DSP, stereo) and ADS-B radar polish
+- Validate ESP32-S2/S3 Full-Speed hosts only after measurement
 - Build reusable examples around `RTL-SDRv4-ESP`
 
 Engineering notes and current development documents include:
 
 - [`docs/PORTING.md`](docs/PORTING.md)
+- [`docs/WAVESHARE_P4_VALIDATION.md`](docs/WAVESHARE_P4_VALIDATION.md)
 - [`docs/M5TAB5_RTL_RADIO_NEXT_STEPS.md`](docs/M5TAB5_RTL_RADIO_NEXT_STEPS.md)
 - [`docs/FM_DSP_CAPTURE_LAB.md`](docs/FM_DSP_CAPTURE_LAB.md)
 - [`docs/IMPLEMENTATION_FROM_PEER_RESEARCH.md`](docs/IMPLEMENTATION_FROM_PEER_RESEARCH.md)
 - [`docs/COMPETITIVE_ANALYSIS_ESP32_RTLSDR.md`](docs/COMPETITIVE_ANALYSIS_ESP32_RTLSDR.md)
+- [`PROJECT_STATUS.md`](PROJECT_STATUS.md)
 
 ---
 

@@ -67,9 +67,14 @@ The review independently re-derived the same P0 gates already open in
 the live-speaker-vs-recorded-PCM discrepancy, and hot-plug/second-board
 validation. This is a **confirmation**, not a new finding — it's listed here
 only so the review is fully accounted for; the tracked item and its evidence
-boundary remain in `PROJECT_STATUS.md` P0/P1 unchanged.
+boundary remain in `PROJECT_STATUS.md` P0/P1.
 
-**Status: Already tracked** — `PROJECT_STATUS.md` P0/P1. No duplicate entry.
+**Update 2026-08-11:** second-board **RF** is now **hardware-verified** on
+Waveshare ESP32-P4 (`docs/WAVESHARE_P4_VALIDATION.md`); driver source was not
+modified. Hot-plug recovery and formal five-minute soak remain open in P1.
+
+**Status: Partially closed** — second-board RF done; soak/hot-plug still open
+in `PROJECT_STATUS.md` P1.
 
 ### Gap 5 — monolithic touch/draw logic; no tool-shell abstraction
 

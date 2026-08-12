@@ -9,7 +9,8 @@ Standalone **ESP-IDF component**: USB Host client for the official
 | **Component id** | `rtl_sdr_v4_esp` |
 | **Header** | `rtl_sdr_v4_esp.h` |
 | **API version** | **0.4.1** (multi-URB streaming + safe hot retune) |
-| **Primary silicon** | ESP32-P4 High-Speed USB host (measured) |
+| **Primary silicon** | ESP32-P4 High-Speed USB host (**measured**) |
+| **Measured boards** | M5Stack Tab5 · Waveshare ESP32-P4-Module-DEV-KIT |
 | **Provenance** | Clean-room observed transfers — not a librtlsdr port |
 
 ## What this is
@@ -84,8 +85,13 @@ if (err != ESP_OK) {
 | Dual-core IQ ring | **Core0 USB / Core1 delivery** |
 
 Measured Tab5 radio behavior (960 kS/s, KZEL/NOAA, continuous listen) remains
-the regression reference. See [`PROJECT_STATUS.md`](../../PROJECT_STATUS.md)
-for the outstanding soak, hot-plug, and second-board gates.
+the primary regression reference. **Second-board RF** is hardware-verified on
+Waveshare ESP32-P4 with **this component unmodified** (ADS-B 2.048 MS/s + FM
+960 kS/s) — see
+[`docs/WAVESHARE_P4_VALIDATION.md`](../../docs/WAVESHARE_P4_VALIDATION.md).
+
+Outstanding: formal five-minute soak artifact, hot-plug recovery.
+See [`PROJECT_STATUS.md`](../../PROJECT_STATUS.md).
 
 ## Identity filter
 
