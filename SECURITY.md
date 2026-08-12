@@ -1,35 +1,70 @@
-# Security Policy
+# OrcSDR Security Policy
 
-## Supported versions
+OrcSDR is a receive-only, local-first SDR application for the M5Stack Tab5
+(ESP32-P4) and RTL-SDR Blog V4. It does not provide a public cloud service or a
+remote administration endpoint in the current release.
 
-Security fixes are developed on `main`. Please reproduce issues against the
-latest commit on `main` or the latest published OrcSDR release before reporting
-them.
+## Supported code
 
-## Reporting a vulnerability
+Security fixes are developed on `main`. Reports should reproduce against the
+latest commit on `main` or the latest published release. Older commits and
+locally modified firmware may receive guidance, but are not maintained as
+separate security branches.
 
-Please report suspected vulnerabilities privately through
-[GitHub Security Advisories](https://github.com/hardcoreerik/OrcSDR/security/advisories/new).
+## Report privately
 
-Include the affected commit or release, hardware configuration, reproduction
-steps, impact, and any relevant serial output. Do not include Wi-Fi passwords,
-Companion pairing credentials, private location data, or recordings containing
-sensitive content.
+Use [GitHub Security Advisories](https://github.com/hardcoreerik/OrcSDR/security/advisories/new)
+for an unpatched vulnerability. Do not open a public issue until a fix or
+coordinated disclosure has been agreed.
 
-Please do not open a public issue for an unpatched vulnerability. We will
-acknowledge a report, assess its impact, and coordinate a fix and disclosure
-timeline with the reporter.
+Include:
 
-## Scope
+- the affected commit or release and whether the target is a Tab5;
+- connected hardware, especially an RTL-SDR, USB storage, or a serial host;
+- exact reproduction steps, expected impact, and a minimal proof of concept;
+- relevant sanitized serial output, crash logs, or files hashes.
 
-This policy covers OrcSDR firmware, the Tab5 application, the RTL-SDR USB host
-component, supplied scripts, and data/update handling in this repository.
-Third-party hardware, upstream dependencies, and externally hosted services
-should also be reported to their respective maintainers where appropriate.
+Never include Wi-Fi passwords, Companion pairing material, device fingerprints,
+private receiver coordinates, recordings, IQ captures, or real aircraft/location
+data unless specifically requested through the private report.
 
-## Security boundaries
+We will acknowledge the report, validate the impact, and coordinate a fix and
+disclosure schedule with the reporter.
 
-OrcSDR is an actively developed receive-only radio project. Treat device
-storage, saved network profiles, receiver-location settings, diagnostics, and
-recordings as sensitive local data. Never commit credentials or private capture
-data to this repository.
+## In scope
+
+- Tab5 firmware under `apps/orcsdr-tab5`, including Settings, Wi-Fi profile
+  handling, receiver-location storage, serial commands, and SD-card transfer.
+- `components/rtl_sdr_v4_esp`, including USB Host ownership, RTL-SDR control,
+  IQ streaming, and malformed-device/input handling.
+- Repository scripts that build, flash, transfer, validate, or install OrcSDR
+  artifacts.
+- OrcSDR-managed SD data: database, metadata, map-pack, recording, capture,
+  log, manifest, and update artifacts.
+- Future authenticated OrcSDR Companion interfaces when their implementation is
+  present in this repository.
+
+Examples include arbitrary code execution through USB or SD input, unintended
+disclosure of saved network/location data, credential exposure in diagnostics,
+unsafe update or file-replacement behavior, authentication bypass, and denial
+of service that persists across reboot.
+
+## Out of scope
+
+- RF reception of unencrypted broadcasts, including ADS-B, RDS, LoRa, and
+  public radio traffic. Their contents are not authenticated by OrcSDR.
+- Security of the RF protocol, attached third-party dongles, an untrusted power
+  source, or physical possession of an unlocked device.
+- Vulnerabilities solely in upstream ESP-IDF, Arduino, M5Unified, M5GFX,
+  Espressif ESP-Hosted, or the operating system. Report them upstream as well;
+  include OrcSDR-specific impact in the private report.
+
+## Local-data and update boundaries
+
+Treat the Tab5 and its microSD card as sensitive local storage. Saved Wi-Fi
+profiles, exact receiver coordinates, diagnostics, recordings, and captures
+must not be committed, attached to public issues, or placed in sample assets.
+
+Database, map-pack, and future update artifacts must be versioned, size-bounded,
+integrity-checked, and installed through a staged replacement path that leaves a
+known-good prior file available until the replacement opens successfully.
