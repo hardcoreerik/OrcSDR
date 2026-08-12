@@ -21,7 +21,14 @@ new M5GFX version, update the OLD strings below to match, and rebuild.
 """
 
 import os
-Import("env")  # noqa: F821 — injected by SCons / PlatformIO
+import sys
+
+try:
+    Import  # noqa: F821 - injected only by PlatformIO.
+except NameError:
+    env = None
+else:
+    Import("env")  # noqa: F821 - injected by SCons / PlatformIO
 
 MARKER = "// NEONDRIVE-PATCH: IDF5.4-I2C-NG"
 
@@ -161,8 +168,7 @@ def patch_file(filepath):
 
     # Short-circuit: already patched
     if MARKER in src:
-        env_name = env["PIOENV"]
-        print(f"[patch_m5gfx] OK (already patched) [{env_name}]")
+        print(f"[patch_m5gfx] OK (already patched) [{filepath}]")
         return
 
     # Apply all patches; abort the write if any anchor is missing
@@ -175,18 +181,22 @@ def patch_file(filepath):
     if ok1 and ok1b and ok2 and ok3:
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(patched)
-        env_name = env["PIOENV"]
-        print(f"[patch_m5gfx] PATCHED — {filepath} [{env_name}]")
+        print(f"[patch_m5gfx] PATCHED — {filepath}")
     else:
         print(f"[patch_m5gfx] ERROR — one or more anchors missing; file NOT modified.")
         print(f"[patch_m5gfx]   See tools/patch_m5gfx.py and CLAUDE.md for details.")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
-libdeps_dir = env.subst("$PROJECT_LIBDEPS_DIR")
-pio_env     = env["PIOENV"]
-common_cpp  = os.path.join(
-    libdeps_dir, pio_env, "M5GFX",
-    "src", "lgfx", "v1", "platforms", "esp32", "common.cpp"
-)
+if env is None:
+    if len(sys.argv) != 2:
+        raise SystemExit("usage: patch_m5gfx.py <common.cpp>")
+    common_cpp = sys.argv[1]
+else:
+    libdeps_dir = env.subst("$PROJECT_LIBDEPS_DIR")
+    pio_env = env["PIOENV"]
+    common_cpp = os.path.join(
+        libdeps_dir, pio_env, "M5GFX",
+        "src", "lgfx", "v1", "platforms", "esp32", "common.cpp"
+    )
 patch_file(common_cpp)

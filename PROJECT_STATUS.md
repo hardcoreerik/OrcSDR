@@ -27,6 +27,7 @@ this file when their paths, versions, or completion claims differ.
 | Multi-URB stream, IQ ring, metrics | **Implemented** | Component source; five-minute acceptance still required |
 | In-stream hot retune | **Implemented** | Component v0.4.1; settle-time measurement pending |
 | Core split | **Implemented** | USB core 0; IQ delivery and app work on core 1 |
+| Native Tab5 build | **Build-verified** | Native ESP-IDF 5.5.3 build produces `orcsdr_tab5.bin`; P4 ESP-Hosted host is locked to 2.12.6. Hardware pairing/scan-connect acceptance remains pending. |
 | Tab5 radio shell | **Implemented** | FM/AM/WX/CB/LoRa, radio/scope/capture tabs, sound/GFX toggles |
 | CB channel dashboard | **Flashed; operator acceptance pending** | 40-channel AM/USB/LSB plan, 2/3 scope, touch channel dial, clarifier, squelch, live S/RF bar |
 | LoRa/Meshtastic receive path | **Flashed; live RF acceptance pending** | 250 ms pre-roll, adaptive 9 dB energy trigger, verified SD bridge, and dashboard message return; synthetic full-chain and COM17 protocol checks pass |
@@ -116,6 +117,27 @@ no duplicate USB implementation.
 - [ ] Accept live aircraft against an independent receiver on the Tab5.
 
 Detailed gates and clean-room boundaries live in `phasing.md` Phase 6.
+
+### P4 — global Settings and optional connectivity
+
+- [x] Add a build-verified isolated eight-category Settings shell with a
+      persistent gear and ADS-B contextual deep link.
+- [x] Preserve `orclink` and migrate the current single Wi-Fi credential into
+      slot zero of a bounded four-profile layout.
+- [x] Persist the first local display/audio/radio/location defaults without
+      exposing stored passwords or presenting unsupported controls as active.
+- [x] Apply the isolated ESP-Hosted A–F coexistence result in the production
+      path: do not stop RTL reception for Wi-Fi scan/connect; keep SDIO pin
+      setup before station mode, clean `WiFi.mode(WIFI_OFF)` teardown, USB host
+      on core 0, and DSP/audio/UI/Hosted control on core 1.
+- [ ] Hardware-verify navigation, bounded repaint, reception coexistence, and
+      reboot migration, including `RTL_WIFI_COEX` sample-rate, USB-drop,
+      audio-drop, DSP-block, UI-cadence, and scan/connect-latency evidence.
+- [ ] Complete Wi-Fi editing/keyboard, safe manifest downloads, maps/storage,
+      BLE feasibility, optional Companion, and M5Launcher phases.
+
+Detailed gates live in `phasing.md` Phase 7. Build verification is not live
+network, BLE, Companion, Launcher, or hardware acceptance evidence.
 
 ### Deferred until measurements justify them
 
