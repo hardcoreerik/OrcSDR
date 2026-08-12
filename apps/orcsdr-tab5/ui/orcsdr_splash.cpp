@@ -704,7 +704,7 @@ bool start_animated() {
 }
 
 void reset_state() {
-  g_splash.file = File();
+  if (g_splash.file) g_splash.file.close();
   g_splash.header = {};
   g_splash.index = nullptr;
   g_splash.decoder = nullptr;

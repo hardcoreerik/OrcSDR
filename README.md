@@ -20,6 +20,12 @@ OrcSDR combines a touchscreen radio interface, live spectrum and waterfall visua
 
 The primary reference implementation runs on the **M5Stack Tab5**, powered by the **ESP32-P4**.
 
+> [!IMPORTANT]
+> **Tab5 builds are native ESP-IDF.** Arduino and M5Stack libraries are ESP-IDF
+> components only; PlatformIO is not a supported build, flash, or release path.
+> See [`docs/TAB5_BUILD_POLICY.md`](docs/TAB5_BUILD_POLICY.md) for the exact
+> P4/C6 ESP-Hosted 2.12.6 pairing and release gate.
+
 **Core technologies:** ESP32-P4 · M5Stack Tab5 · RTL-SDR Blog V4 · ESP-IDF USB Host · Software-Defined Radio · DSP · Spectrum · Waterfall · LoRa
 
 <p align="center">

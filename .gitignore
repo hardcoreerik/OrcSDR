@@ -6,6 +6,10 @@ sdkconfig.old
 dependencies.lock
 managed_components/
 
+# The Tab5 native ESP-IDF project pins its component graph for reproducible
+# P4/C6 ESP-Hosted pairing.
+!apps/orcsdr-tab5/dependencies.lock
+
 # Tooling
 .vscode/
 .idea/

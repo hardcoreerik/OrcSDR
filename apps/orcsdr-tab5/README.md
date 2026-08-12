@@ -47,16 +47,19 @@ Driver component (portable USB/stream):
 Hard rules: clean-room V4 only; no librtlsdr; do not claim calibrated OTA RF
 from UI features alone.
 
-## Build (PlatformIO)
+## Build (native ESP-IDF)
 
 ```powershell
-# Python 3.10–3.13 required for pioarduino 55.03.38-1
 cd apps/orcsdr-tab5
-pio run -e m5tab5_ui
-pio run -e m5tab5_ui -t upload --upload-port COMxx
+.\tools\build-tab5-idf.ps1
+# After explicit hardware authorization:
+idf.py -p COM17 flash
 ```
 
-Pins: pioarduino `55.03.38-1`, Arduino `3.3.8`, M5Unified `0.2.15`, M5GFX `0.2.21`.
+This is a native ESP-IDF build. Arduino, M5Unified, and M5GFX are pinned
+ESP-IDF components; PlatformIO is not a supported OrcSDR build or flash path.
+The exact P4/C6 ESP-Hosted 2.12.6 pair and release test are defined in
+[`docs/TAB5_BUILD_POLICY.md`](../../docs/TAB5_BUILD_POLICY.md).
 
 `m5tab5_ui` is the complete firmware: regular splash/home flow, NAV band
 selection, and the LoRa dashboard/PSRAM decoder capture path. The optional
@@ -100,10 +103,10 @@ The firmware also accepts `SD_REMOVE <ASCII-path-as-hex>` for files below
 `/orcsdr/` and the one legacy root splash filename. Removal is refused while
 radio or recording is active.
 
-## ESP-IDF serial agent
+## ESP-IDF application
 
-The `main/` tree is the lighter ESP-IDF serial/recovery agent (hello, snapshot,
-heartbeat). Prefer PlatformIO `m5tab5_ui` for the full radio.
+The `main/` component builds the complete Tab5 radio/UI application under
+native ESP-IDF; it is not a separate recovery-agent build.
 
 ## Relationship
 

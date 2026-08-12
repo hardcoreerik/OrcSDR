@@ -5,6 +5,7 @@
 #include <M5Unified.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <esp32-hal-hosted.h>
 #include <esp_mac.h>
 #include <esp_intr_alloc.h>
 #include <esp_heap_caps.h>
@@ -1077,6 +1078,7 @@ struct IqGetState {
 IqGetState g_iq_get;
 uint8_t g_sd_put_chunk[kSdPutChunkBytes];
 bool wifi_station_ready = false;
+bool wifi_hosted_versions_match = false;
 bool wifi_scan_running = false;
 std::atomic<bool> wifi_scan_requested{false};
 std::atomic<bool> wifi_connect_requested{false};
@@ -1221,7 +1223,7 @@ std::atomic<uint8_t> adsb_aircraft_count{0};
 
 void reset_adsb_tracks() {
   portENTER_CRITICAL(&adsb_tracks_mux);
-  std::memset(adsb_tracks, 0, sizeof(adsb_tracks));
+  for (auto& track : adsb_tracks) track = {};
   portEXIT_CRITICAL(&adsb_tracks_mux);
   adsb_track_revision.store(0, std::memory_order_relaxed);
   adsb_total_messages.store(0, std::memory_order_relaxed);
@@ -2269,8 +2271,9 @@ size_t format_lora_csv(char* output, size_t output_size,
   }
   int used = snprintf(
       output, output_size,
-      "%lu,%u,!%08lx,%s,%08lx,%u,%d,%d,%ld,%ld,\"",
-      static_cast<unsigned long>(packet.received_ms), record.frequency_hz,
+      "%lu,%lu,!%08lx,%s,%08lx,%u,%d,%d,%ld,%ld,\"",
+      static_cast<unsigned long>(packet.received_ms),
+      static_cast<unsigned long>(record.frequency_hz),
       static_cast<unsigned long>(packet.sender),
       destination,
       static_cast<unsigned long>(packet.packet_id),
@@ -2557,8 +2560,9 @@ bool iq_rec_stop_and_export() {
   char path[96];
   do {
     ++g_iq_rec_file_seq;
-    snprintf(path, sizeof(path), "/orcsdr/iq_%03u_%u_sf%u_bw%u.orciq",
-             static_cast<unsigned>(g_iq_rec_file_seq), g_iq_rec_frequency_hz,
+    snprintf(path, sizeof(path), "/orcsdr/iq_%03u_%lu_sf%u_bw%u.orciq",
+             static_cast<unsigned>(g_iq_rec_file_seq),
+             static_cast<unsigned long>(g_iq_rec_frequency_hz),
              static_cast<unsigned>(g_iq_rec_sf),
              static_cast<unsigned>(g_iq_rec_bandwidth_hz));
   } while (g_sd_fs->exists(path));
@@ -2741,13 +2745,13 @@ bool rds_capture_write_files(size_t samples) {
   char json_path[96];
   do {
     ++g_rds_capture_file_seq;
-    snprintf(raw_path, sizeof(raw_path), "/orcsdr/rds_debug/%03u_%u_mpx.s16",
-             static_cast<unsigned>(g_rds_capture_file_seq),
-             g_rds_capture_frequency_hz);
+    snprintf(raw_path, sizeof(raw_path), "/orcsdr/rds_debug/%03u_%lu_mpx.s16",
+              static_cast<unsigned>(g_rds_capture_file_seq),
+              static_cast<unsigned long>(g_rds_capture_frequency_hz));
   } while (g_sd_fs->exists(raw_path));
-  snprintf(json_path, sizeof(json_path), "/orcsdr/rds_debug/%03u_%u_mpx.json",
-           static_cast<unsigned>(g_rds_capture_file_seq),
-           g_rds_capture_frequency_hz);
+  snprintf(json_path, sizeof(json_path), "/orcsdr/rds_debug/%03u_%lu_mpx.json",
+            static_cast<unsigned>(g_rds_capture_file_seq),
+            static_cast<unsigned long>(g_rds_capture_frequency_hz));
 
   File raw = g_sd_fs->open(raw_path, FILE_WRITE, true);
   if (!raw) {
@@ -2770,10 +2774,11 @@ bool rds_capture_write_files(size_t samples) {
     return false;
   }
   metadata.printf(
-      "{\"format\":\"s16le_mpx\",\"sample_rate_hz\":%u,\"frequency_hz\":%u,"
-      "\"samples\":%u,\"scale_radians_per_lsb\":%.10g,\"start_uptime_ms\":%u}\n",
-      kRdsMpxRateHz, g_rds_capture_frequency_hz, static_cast<unsigned>(samples),
-      static_cast<double>(kRdsInt16ToMpx), g_rds_capture_started_ms);
+      "{\"format\":\"s16le_mpx\",\"sample_rate_hz\":%lu,\"frequency_hz\":%lu,"
+      "\"samples\":%u,\"scale_radians_per_lsb\":%.10g,\"start_uptime_ms\":%lu}\n",
+      static_cast<unsigned long>(kRdsMpxRateHz),
+      static_cast<unsigned long>(g_rds_capture_frequency_hz), static_cast<unsigned>(samples),
+      static_cast<double>(kRdsInt16ToMpx), static_cast<unsigned long>(g_rds_capture_started_ms));
   metadata.close();
   strlcpy(g_rds_capture_last_path, raw_path, sizeof(g_rds_capture_last_path));
   Serial.printf("RTL_RDS_CAPTURE_SAVED path=\"%s\" metadata=\"%s\" samples=%u rate=%u\n",
@@ -3081,7 +3086,8 @@ void draw_nav_panel() {
            rtl_pinch_mode == SdrPinchMode::Span ? "SPAN" : "FILTER");
   button(780, 265, 416, 48, label, TFT_DARKCYAN, 3);
   const uint32_t step = rtl_ui_band == RtlBand::am ? rtl_am_step_hz : rtl_fm_step_hz;
-  snprintf(label, sizeof(label), "STEP: %u kHz  v", step / 1000u);
+  snprintf(label, sizeof(label), "STEP: %lu kHz  v",
+           static_cast<unsigned long>(step / 1000u));
   button(780, 325, 416, 48, label, TFT_DARKCYAN, 3);
 
   if (rtl_nav_dropdown == SdrNavDropdown::Pinch) {
@@ -3092,7 +3098,8 @@ void draw_nav_panel() {
   if (rtl_nav_dropdown == SdrNavDropdown::Step) {
     static const uint32_t steps[] = {1000, 5000, 10000, 50000, 100000, 1000000};
     for (int index = 0; index < 6; ++index) {
-      snprintf(label, sizeof(label), "%u kHz", steps[index] / 1000u);
+      snprintf(label, sizeof(label), "%lu kHz",
+               static_cast<unsigned long>(steps[index] / 1000u));
       button(780 + (index % 2) * 216, 385 + (index / 2) * 54, 200, 48, label,
              TFT_DARKGREY, 3);
     }
@@ -3325,10 +3332,26 @@ void sd_list() {
   Serial.printf("SD_LIST_DONE count=%u\n", static_cast<unsigned>(count));
 }
 
+void reset_sd_get_state() {
+  g_sd_get.active = false;
+  g_sd_get.size = 0;
+  g_sd_get.sent = 0;
+  g_sd_get.path[0] = '\0';
+}
+
+void reset_sd_put_state() {
+  g_sd_put.active = false;
+  g_sd_put.expected = 0;
+  g_sd_put.received = 0;
+  g_sd_put.target[0] = '\0';
+  g_sd_put.temporary[0] = '\0';
+  std::memset(g_sd_put.expected_sha, 0, sizeof(g_sd_put.expected_sha));
+}
+
 void sd_get_abort(const char* reason) {
   if (g_sd_get.file) g_sd_get.file.close();
   if (g_sd_get.active) mbedtls_sha256_free(&g_sd_get.sha);
-  g_sd_get = {};
+  reset_sd_get_state();
   Serial.printf("SD_GET_ERROR %s\n", reason ? reason : "aborted");
   g_sd_transfer_active.store(false, std::memory_order_release);
 }
@@ -3358,7 +3381,8 @@ void sd_get_begin(const char* path_hex) {
   }
   g_sd_get.file = g_sd_fs->open(path, FILE_READ);
   if (!g_sd_get.file || g_sd_get.file.isDirectory()) {
-    g_sd_get = {};
+    if (g_sd_get.file) g_sd_get.file.close();
+    reset_sd_get_state();
     Serial.println("SD_GET_ERROR open_failed");
     g_sd_transfer_active.store(false, std::memory_order_release);
     return;
@@ -3366,7 +3390,7 @@ void sd_get_begin(const char* path_hex) {
   g_sd_get.size = g_sd_get.file.size();
   if (g_sd_get.size == 0 || g_sd_get.size > kSdPutMaxBytes) {
     g_sd_get.file.close();
-    g_sd_get = {};
+    reset_sd_get_state();
     Serial.println("SD_GET_ERROR invalid_size");
     g_sd_transfer_active.store(false, std::memory_order_release);
     return;
@@ -3417,7 +3441,7 @@ void sd_get_chunk() {
                 static_cast<unsigned long long>(g_sd_get.sent));
   print_hex(digest, sizeof(digest));
   Serial.printf(" path=\"%s\"\n", g_sd_get.path);
-  g_sd_get = {};
+  reset_sd_get_state();
   g_sd_transfer_active.store(false, std::memory_order_release);
 }
 
@@ -3516,7 +3540,7 @@ void sd_put_abort(const char* reason) {
   if (g_sd_put.file) g_sd_put.file.close();
   if (g_sd_put.temporary[0]) g_sd_fs->remove(g_sd_put.temporary);
   if (g_sd_put.active) mbedtls_sha256_free(&g_sd_put.sha);
-  g_sd_put = {};
+  reset_sd_put_state();
   Serial.printf("SD_PUT_ERROR %s\n", reason ? reason : "aborted");
   g_sd_transfer_active.store(false, std::memory_order_release);
 }
@@ -3539,7 +3563,7 @@ bool sd_put_commit() {
   if (difference != 0) {
     g_sd_fs->remove(g_sd_put.temporary);
     Serial.println("SD_PUT_ERROR sha_mismatch");
-    g_sd_put = {};
+    reset_sd_put_state();
     g_sd_transfer_active.store(false, std::memory_order_release);
     return false;
   }
@@ -3551,7 +3575,7 @@ bool sd_put_commit() {
   if (had_target && !g_sd_fs->rename(g_sd_put.target, backup)) {
     g_sd_fs->remove(g_sd_put.temporary);
     Serial.println("SD_PUT_ERROR backup_failed");
-    g_sd_put = {};
+    reset_sd_put_state();
     g_sd_transfer_active.store(false, std::memory_order_release);
     return false;
   }
@@ -3559,7 +3583,7 @@ bool sd_put_commit() {
     if (had_target) (void)g_sd_fs->rename(backup, g_sd_put.target);
     g_sd_fs->remove(g_sd_put.temporary);
     Serial.println("SD_PUT_ERROR rename_failed");
-    g_sd_put = {};
+    reset_sd_put_state();
     g_sd_transfer_active.store(false, std::memory_order_release);
     return false;
   }
@@ -3568,7 +3592,7 @@ bool sd_put_commit() {
                 static_cast<unsigned long long>(g_sd_put.received));
   print_hex(digest, sizeof(digest));
   Serial.printf(" path=\"%s\"\n", g_sd_put.target);
-  g_sd_put = {};
+  reset_sd_put_state();
   g_sd_transfer_active.store(false, std::memory_order_release);
   return true;
 }
@@ -3621,7 +3645,7 @@ void sd_put_begin(char* arguments) {
   g_sd_fs->remove(g_sd_put.temporary);
   g_sd_put.file = g_sd_fs->open(g_sd_put.temporary, FILE_WRITE);
   if (!g_sd_put.file) {
-    g_sd_put = {};
+    reset_sd_put_state();
     Serial.println("SD_PUT_ERROR open_failed");
     g_sd_transfer_active.store(false, std::memory_order_release);
     return;
@@ -3685,12 +3709,12 @@ void draw_capture_tool_panel() {
   snprintf(line, sizeof(line), "state: %s%s", active ? "RECORDING" : "idle",
            full ? " (buffer full)" : "");
   M5.Display.drawString(line, kSpectrumX + 16, panel_y + 48);
-  snprintf(line, sizeof(line), "buffered: %.2f / %u s   samples=%u   rate=%u",
-           static_cast<double>(sec), static_cast<unsigned>(kAudioRecMaxSeconds),
-           static_cast<unsigned>(samples), kAudioRecRateHz);
+  snprintf(line, sizeof(line), "buffered: %.2f / %u s   samples=%u   rate=%lu",
+            static_cast<double>(sec), static_cast<unsigned>(kAudioRecMaxSeconds),
+            static_cast<unsigned>(samples), static_cast<unsigned long>(kAudioRecRateHz));
   M5.Display.drawString(line, kSpectrumX + 16, panel_y + 72);
-  snprintf(line, sizeof(line), "LO meta: %s  %u Hz", rtl_band_name(g_audio_rec_band),
-           g_audio_rec_freq_hz);
+  snprintf(line, sizeof(line), "LO meta: %s  %lu Hz", rtl_band_name(g_audio_rec_band),
+            static_cast<unsigned long>(g_audio_rec_freq_hz));
   M5.Display.drawString(line, kSpectrumX + 16, panel_y + 96);
   snprintf(line, sizeof(line), "last file: %s",
            g_audio_rec_last_path[0] ? g_audio_rec_last_path : "(none yet)");
@@ -4636,8 +4660,9 @@ void draw_fm_dashboard(bool static_panel) {
 
   char chan_text[48];
   if (static_panel || rtl_fm_step_hz != last_step_hz || bandwidth_hz != last_bandwidth_hz) {
-    snprintf(chan_text, sizeof(chan_text), "STEP %u kHz  .  WFM  .  BW %u kHz",
-             rtl_fm_step_hz / 1000, bandwidth_hz / 1000);
+    snprintf(chan_text, sizeof(chan_text), "STEP %lu kHz  .  WFM  .  BW %lu kHz",
+             static_cast<unsigned long>(rtl_fm_step_hz / 1000),
+             static_cast<unsigned long>(bandwidth_hz / 1000));
     M5.Display.fillRect(ox + kFmFreqCardX + 16, oy + kFmFreqCardY + 82, 400, 22, TFT_BLACK);
     M5.Display.setTextSize(1);
     M5.Display.setTextColor(0x00c8f0, TFT_BLACK);
@@ -6934,6 +6959,29 @@ void initialize_wifi() {
   WiFi.setPins(kWifiClockPin, kWifiCommandPin, kWifiData0Pin, kWifiData1Pin,
                kWifiData2Pin, kWifiData3Pin, kWifiResetPin);
   wifi_station_ready = WiFi.mode(WIFI_STA);
+  uint32_t host_major = 0, host_minor = 0, host_patch = 0;
+  uint32_t slave_major = 0, slave_minor = 0, slave_patch = 0;
+  if (wifi_station_ready) {
+    hostedGetHostVersion(&host_major, &host_minor, &host_patch);
+    hostedGetSlaveVersion(&slave_major, &slave_minor, &slave_patch);
+    wifi_hosted_versions_match = host_major == slave_major && host_minor == slave_minor &&
+                                 host_patch == slave_patch;
+    Serial.printf("RTL_WIFI_HOSTED host=%lu.%lu.%lu slave=%lu.%lu.%lu match=%d\n",
+                  static_cast<unsigned long>(host_major),
+                  static_cast<unsigned long>(host_minor),
+                  static_cast<unsigned long>(host_patch),
+                  static_cast<unsigned long>(slave_major),
+                  static_cast<unsigned long>(slave_minor),
+                  static_cast<unsigned long>(slave_patch),
+                  wifi_hosted_versions_match ? 1 : 0);
+    if (!wifi_hosted_versions_match) {
+      WiFi.mode(WIFI_OFF);
+      wifi_station_ready = false;
+      strlcpy(wifi_status_message, "ESP-Hosted version mismatch",
+              sizeof(wifi_status_message));
+      Serial.println("RTL_WIFI_BLOCKED hosted_version_mismatch");
+    }
+  }
   Serial.printf("RTL_WIFI_INIT station=%d core=%d\n", wifi_station_ready ? 1 : 0,
                 xPortGetCoreID());
   draw_wifi_state();
@@ -6985,6 +7033,7 @@ void stop_wifi() {
   WiFi.disconnect(true, false);
   WiFi.mode(WIFI_OFF);
   wifi_station_ready = false;
+  wifi_hosted_versions_match = false;
   wifi_connected = false;
   wifi_connecting = false;
   wifi_scan_running = false;
@@ -7209,7 +7258,7 @@ void handle_global_settings_touch(int32_t x, int32_t y) {
         }
         for (uint8_t i = index; i + 1 < wifi_profile_count; ++i)
           wifi_profiles[i] = wifi_profiles[i + 1];
-        memset(&wifi_profiles[--wifi_profile_count], 0, sizeof(WifiProfile));
+        wifi_profiles[--wifi_profile_count] = {};
         persist_wifi_profiles();
         if (wifi_profile_count) select_wifi_profile(0);
         else {
@@ -8339,6 +8388,29 @@ void set_online() {
 }
 
 void process_command(char* command) {
+  if (strcmp(command, "RTL_WIFI_SCAN") == 0) {
+    wifi_scan_requested.store(true, std::memory_order_release);
+    Serial.println("RTL_WIFI_SCAN_QUEUED");
+    return;
+  }
+  if (strcmp(command, "RTL_WIFI_CONNECT_SAVED") == 0) {
+    if (wifi_profile_count == 0) {
+      Serial.println("RTL_WIFI_CONNECT_ERROR no_saved_profile");
+      return;
+    }
+    select_wifi_profile(0);
+    wifi_connect_requested.store(true, std::memory_order_release);
+    Serial.println("RTL_WIFI_CONNECT_QUEUED saved_profile=0");
+    return;
+  }
+  if (strcmp(command, "RTL_WIFI_STATUS") == 0) {
+    Serial.printf("RTL_WIFI_STATUS station=%d hosted_match=%d scanning=%d connecting=%d "
+                  "connected=%d saved_profiles=%u\n",
+                  wifi_station_ready ? 1 : 0, wifi_hosted_versions_match ? 1 : 0,
+                  wifi_scan_running ? 1 : 0, wifi_connecting ? 1 : 0,
+                  wifi_connected ? 1 : 0, wifi_profile_count);
+    return;
+  }
   if (strncmp(command, "RTL_ADSB_LOCATION ", 18) == 0) {
     double latitude = 0, longitude = 0;
     char trailing = 0;
@@ -8513,8 +8585,8 @@ void process_command(char* command) {
   }
   if (strcmp(command, "LORA_MESSAGE_CLEAR") == 0) {
     portENTER_CRITICAL(&lora_message_mux);
-    memset(lora_display_packets, 0, sizeof(lora_display_packets));
-    memset(lora_node_positions, 0, sizeof(lora_node_positions));
+    for (auto& packet : lora_display_packets) packet = {};
+    for (auto& position : lora_node_positions) position = {};
     portEXIT_CRITICAL(&lora_message_mux);
     Serial.println("LORA_MESSAGE_CLEARED");
     return;
@@ -8986,6 +9058,12 @@ void process_command(char* command) {
     char candidate_password[sizeof(wifi_password)];
     uint8_t signature[32];
     char signed_value[208];
+    if (strlen(ssid_hex) > 2 * (sizeof(candidate_ssid) - 1) ||
+        strlen(password_hex) > 2 * (sizeof(candidate_password) - 1) ||
+        strlen(signature_text) != 2 * sizeof(signature)) {
+      Serial.println("WIFI_INVALID");
+      return;
+    }
     snprintf(signed_value, sizeof(signed_value), "wifi|%s|%s", ssid_hex, password_hex);
     if (!decode_hex_text(ssid_hex, candidate_ssid, sizeof(candidate_ssid)) ||
         candidate_ssid[0] == '\0' ||
@@ -9063,6 +9141,11 @@ void process_command(char* command) {
     uint8_t replacement[sizeof(pairing_key)];
     uint8_t signature[32];
     char signed_value[80];
+    if (strlen(key_text) != 2 * sizeof(replacement) ||
+        strlen(signature_text) != 2 * sizeof(signature)) {
+      Serial.println("ROTATE_INVALID");
+      return;
+    }
     snprintf(signed_value, sizeof(signed_value), "rotate|%s", key_text);
     if (!decode_hex(key_text, replacement, sizeof(replacement)) ||
         !decode_hex(signature_text, signature, sizeof(signature)) ||

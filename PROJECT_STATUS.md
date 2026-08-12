@@ -27,6 +27,7 @@ this file when their paths, versions, or completion claims differ.
 | Multi-URB stream, IQ ring, metrics | **Implemented** | Component source; five-minute acceptance still required |
 | In-stream hot retune | **Implemented** | Component v0.4.1; settle-time measurement pending |
 | Core split | **Implemented** | USB core 0; IQ delivery and app work on core 1 |
+| Native Tab5 build | **Build-verified** | Native ESP-IDF 5.5.3 build produces `orcsdr_tab5.bin`; P4 ESP-Hosted host is locked to 2.12.6. Hardware pairing/scan-connect acceptance remains pending. |
 | Tab5 radio shell | **Implemented** | FM/AM/WX/CB/LoRa, radio/scope/capture tabs, sound/GFX toggles |
 | CB channel dashboard | **Flashed; operator acceptance pending** | 40-channel AM/USB/LSB plan, 2/3 scope, touch channel dial, clarifier, squelch, live S/RF bar |
 | LoRa/Meshtastic receive path | **Flashed; live RF acceptance pending** | 250 ms pre-roll, adaptive 9 dB energy trigger, verified SD bridge, and dashboard message return; synthetic full-chain and COM17 protocol checks pass |
