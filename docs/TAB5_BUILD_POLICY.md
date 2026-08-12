@@ -13,6 +13,11 @@ The P4 application pins `espressif/esp_hosted` to **2.12.6** in
 `apps/orcsdr-tab5/main/idf_component.yml`. Commit the generated
 `apps/orcsdr-tab5/dependencies.lock` with every dependency change.
 
+The native build helper validates and applies the one Tab5 integration patch
+required by the upstream 2.12.6 component: Arduino owns Hosted initialization
+so `WiFi.setPins()` runs before `esp_hosted_init()`. The helper refuses an
+unexpected component source instead of silently patching another version.
+
 The Tab5 C6 slave must be installed separately with the matching **2.12.6**
 M5Burner ESP-Hosted package. OrcSDR's P4 image does not update the C6.
 Never downgrade the C6 to accommodate an old P4 host library.

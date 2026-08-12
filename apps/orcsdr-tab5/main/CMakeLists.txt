@@ -8,8 +8,6 @@ idf_component_register(
     INCLUDE_DIRS "." "../ui"
     REQUIRES
         arduino-esp32
-        esp_hosted
-        esp_wifi_remote
         m5unified
         m5gfx
         nvs_flash

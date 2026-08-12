@@ -26,11 +26,20 @@ function Wait-Line([string]$Pattern, [int]$Seconds) {
 try {
   $serial.DiscardInBuffer()
   $serial.WriteLine('RTL_WIFI_STATUS')
-  Wait-Line '^RTL_WIFI_STATUS .*hosted_match=1' $TimeoutSeconds | Out-Null
+  $status = Wait-Line '^RTL_WIFI_STATUS ' $TimeoutSeconds
   $serial.WriteLine('RTL_WIFI_SCAN')
+  if ($status -notmatch 'hosted_match=1') {
+    Wait-Line '^RTL_WIFI_HOSTED .* match=1$' $TimeoutSeconds | Out-Null
+  }
   Wait-Line '^RTL_WIFI_COEX event=scan_complete ' $TimeoutSeconds | Out-Null
-  $serial.WriteLine('RTL_WIFI_CONNECT_SAVED')
-  Wait-Line '^RTL_WIFI_COEX event=connect_complete ' $TimeoutSeconds | Out-Null
+  $serial.WriteLine('RTL_WIFI_STATUS')
+  $status = Wait-Line '^RTL_WIFI_STATUS .*hosted_match=1' $TimeoutSeconds
+  if ($status -match 'saved_profiles=([1-9][0-9]*)') {
+    $serial.WriteLine('RTL_WIFI_CONNECT_SAVED')
+    Wait-Line '^RTL_WIFI_COEX event=connect_complete ' $TimeoutSeconds | Out-Null
+  } else {
+    Add-Content -LiteralPath $logPath -Value 'RTL_WIFI_CONNECT_SKIPPED no_saved_profile'
+  }
   Add-Content -LiteralPath $logPath -Value 'RTL_WIFI_RELEASE_TEST PASS'
   Write-Output "PASS $logPath"
 } finally {

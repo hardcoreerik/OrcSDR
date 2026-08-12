@@ -1143,6 +1143,7 @@ std::atomic<uint32_t> rtl_requested_frequency_hz{kRtlFmDefaultHz};
 std::atomic<uint32_t> rtl_hot_retune_hz{0};
 std::atomic<uint8_t> rtl_requested_volume{kRtlVolumeDefault};
 std::atomic<uint8_t> rtl_live_volume{kRtlVolumeDefault};
+std::atomic<bool> rtl_audio_user_enabled{true};
 std::atomic<bool> rtl_audio_enabled{false};
 std::atomic<bool> rtl_speaker_start_allowed{false};
 std::atomic<bool> rtl_volume_changed{false};
@@ -1931,10 +1932,31 @@ bool ensure_speaker_running(uint8_t volume) {
 }
 
 void allow_boot_speaker() {
-  if (rtl_speaker_start_allowed.exchange(true, std::memory_order_acq_rel)) return;
-  Serial.println("BOOT_STAGE speaker_start");
+  if (!rtl_speaker_start_allowed.exchange(true, std::memory_order_acq_rel)) {
+    Serial.println("BOOT_STAGE speaker_start");
+  }
   if (rtl_audio_enabled.load(std::memory_order_acquire))
     (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
+}
+
+bool rtl_band_has_audio(RtlBand band) {
+  return band != RtlBand::adsb && band != RtlBand::lora;
+}
+
+void sync_rtl_audio_for_band(RtlBand band) {
+  const bool enabled = rtl_audio_user_enabled.load(std::memory_order_acquire) &&
+                       rtl_band_has_audio(band);
+  rtl_audio_enabled.store(enabled, std::memory_order_release);
+  rtl_audio_play_count = 0;
+  if (!enabled) M5.Speaker.stop();
+}
+
+void set_rtl_audio_user_enabled(bool enabled) {
+  rtl_audio_user_enabled.store(enabled, std::memory_order_release);
+  sync_rtl_audio_for_band(rtl_ui_band);
+  if (rtl_audio_enabled.load(std::memory_order_acquire)) {
+    (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
+  }
 }
 
 bool rtl_audio_block_ready(size_t index, uint32_t now) {
@@ -6925,7 +6947,9 @@ void initialize_rtl_sdr_host() {
   Serial.printf("RTL_INSTALL ok v%s caps=0x%08x\n", rtl_sdr_v4_esp_get_version_string(),
                 static_cast<unsigned>(rtl_sdr_v4_esp_get_capabilities()));
   set_rtl_sdr_status("RTL-SDR: driver host active, waiting");
-  if (xTaskCreatePinnedToCore(rtl_driver_app_task, "rtl_app", 8192, nullptr, kRtlAppTaskPrio,
+  // LoRa/dashboard formatting reaches newlib's float formatter on this task.
+  // 8 KiB overruns the stack guard during navigation; retain margin for UI draws.
+  if (xTaskCreatePinnedToCore(rtl_driver_app_task, "rtl_app", 12288, nullptr, kRtlAppTaskPrio,
                               nullptr, 1) != pdPASS) {
     set_rtl_sdr_status("RTL-SDR: app task failed");
   }
@@ -6956,6 +6980,13 @@ void select_wifi_profile(uint8_t index) {
 }
 
 void initialize_wifi() {
+  const uint32_t dma_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+  const uint32_t dma_largest =
+      heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+  Serial.printf("RTL_WIFI_DMA free=%lu largest=%lu txq=%d rxq=%d\n",
+                static_cast<unsigned long>(dma_free),
+                static_cast<unsigned long>(dma_largest),
+                CONFIG_ESP_HOSTED_SDIO_TX_Q_SIZE, CONFIG_ESP_HOSTED_SDIO_RX_Q_SIZE);
   WiFi.setPins(kWifiClockPin, kWifiCommandPin, kWifiData0Pin, kWifiData1Pin,
                kWifiData2Pin, kWifiData3Pin, kWifiResetPin);
   wifi_station_ready = WiFi.mode(WIFI_STA);
@@ -7311,6 +7342,7 @@ void handle_global_settings_touch(int32_t x, int32_t y) {
     case orcsdr::settings::ActionKind::sound_changed:
       settings_sound_default = action.value != 0;
       preferences.putBool("set_sound", settings_sound_default);
+      set_rtl_audio_user_enabled(settings_sound_default);
       break;
     case orcsdr::settings::ActionKind::auto_start_changed:
       settings_auto_start_reception = action.value != 0;
@@ -7578,6 +7610,9 @@ void load_state() {
   if (settings_brightness < 16) settings_brightness = 16;
   settings_screen_timeout_sec = preferences.getUShort("set_timeout", 0);
   settings_sound_default = preferences.getBool("set_sound", true);
+  rtl_audio_user_enabled.store(settings_sound_default, std::memory_order_release);
+  rtl_audio_enabled.store(settings_sound_default && rtl_band_has_audio(rtl_ui_band),
+                          std::memory_order_release);
   settings_auto_start_reception = preferences.getBool("set_auto_rx", true);
   settings_graphics_default = preferences.getBool("set_gfx", true);
   const String location_label = preferences.isKey("loc_label")
@@ -7710,10 +7745,8 @@ bool point_in_button(int32_t x, int32_t y) {
 }
 
 void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz) {
+  sync_rtl_audio_for_band(band);
   if (band == RtlBand::adsb) {
-    rtl_audio_enabled.store(false, std::memory_order_release);
-    rtl_audio_play_count = 0;
-    M5.Speaker.stop();
     orcsdr::adsb::enter(adsb_settings);
     frequency_hz = kAdsbDefaultHz;
     Serial.println("RTL_ADSB_CAPTURE live_rf=true ui_data=demo");
@@ -7736,9 +7769,6 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz) {
   }
   if (band == RtlBand::lora) {
     rtl_scope_span_hz.store(kRtlScopeSpanMaxHz, std::memory_order_relaxed);
-    rtl_audio_enabled.store(false, std::memory_order_relaxed);
-    rtl_audio_play_count = 0;
-    M5.Speaker.stop();
   }
   if (band == RtlBand::fm) {
     persist_fm_frequency(frequency_hz);
@@ -8289,14 +8319,8 @@ void handle_sdr_touch(int32_t x, int32_t y) {
       queue_local_rtl_listen(rtl_ui_band, next);
     }
   } else if (tune_index == 2) {
-    const bool next = !rtl_audio_enabled.load(std::memory_order_acquire);
-    rtl_audio_enabled.store(next, std::memory_order_release);
-    rtl_audio_play_count = 0;
-    if (next) {
-      (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
-    } else {
-      M5.Speaker.stop();
-    }
+    const bool next = !rtl_audio_user_enabled.load(std::memory_order_acquire);
+    set_rtl_audio_user_enabled(next);
     Serial.printf("RTL_SOUND %s\n", next ? "on" : "off");
     bump_rtl_ui();
     const bool running =
@@ -8825,13 +8849,7 @@ void process_command(char* command) {
   }
   if (strcmp(command, "RTL_SOUND ON") == 0 || strcmp(command, "RTL_SOUND OFF") == 0) {
     const bool enable = command[10] == 'O' && command[11] == 'N';
-    rtl_audio_enabled.store(enable, std::memory_order_release);
-    rtl_audio_play_count = 0;
-    if (enable) {
-      (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
-    } else {
-      M5.Speaker.stop();
-    }
+    set_rtl_audio_user_enabled(enable);
     Serial.printf("RTL_SOUND_OK enabled=%d\n", enable ? 1 : 0);
     return;
   }
@@ -9382,10 +9400,6 @@ void loop() {
       // enabled -- see the EVT_IQ_BLOCK gate in the streaming task. Without
       // this, RDS status stays at floor forever regardless of how strong
       // the RF signal is, since demodulate_fm() itself never executes.
-      if (rtl_ui_band != RtlBand::adsb) {
-        rtl_audio_enabled.store(true, std::memory_order_release);
-        rtl_audio_play_count = 0;
-      }
     }
     const auto touch = M5.Touch.getDetail(0);
     const bool pressed = touch.isPressed() || touch.wasPressed();
