@@ -31,6 +31,7 @@ static_assert(static_cast<uint8_t>(Section::count) == std::size(kLabels));
 static_assert(std::size(kRanges) == 4 && kRanges[0] == 10 && kRanges[3] == 100);
 
 enum class EditField : uint8_t { none, latitude, longitude };
+enum class WifiEdit : uint8_t { none, ssid, password };
 
 EXT_RAM_BSS_ATTR State g_state;
 Section g_section = Section::connectivity;
@@ -39,6 +40,15 @@ bool g_active = false;
 bool g_latitude_set = false;
 bool g_longitude_set = false;
 char g_entry[20]{};
+WifiEdit g_wifi_edit = WifiEdit::none;
+bool g_wifi_shift = false;
+bool g_wifi_symbols = false;
+bool g_wifi_show_password = false;
+char g_wifi_edit_ssid[33]{};
+char g_wifi_edit_password[64]{};
+char g_wifi_request_ssid[33]{};
+char g_wifi_request_password[64]{};
+bool g_wifi_request_pending = false;
 
 bool hit(int x, int y, int bx, int by, int bw, int bh) {
   return x >= bx && x < bx + bw && y >= by && y < by + bh;
@@ -76,7 +86,8 @@ void draw_header() {
   if (g_state.wifi_connected)
     snprintf(status, sizeof(status), "%s  %s", g_state.wifi_ssid, g_state.wifi_ip);
   else
-    strlcpy(status, g_state.wifi_scanning ? "Wi-Fi scanning" : "Wi-Fi offline",
+    strlcpy(status, g_state.wifi_connecting ? "Wi-Fi connecting"
+                    : g_state.wifi_scanning ? "Wi-Fi scanning" : "Wi-Fi offline",
             sizeof(status));
   text(status, 1020, 36, g_state.wifi_connected ? kGreen : kMuted, 2, middle_right);
   button("CLOSE", 1090, 13, 162, 46, TFT_MAROON);
@@ -98,24 +109,48 @@ void draw_rail() {
 
 void draw_connectivity() {
   text("CONNECTIVITY", 330, 115, kBlue, 3);
-  char value[64];
-  value_row("STATUS", g_state.wifi_connected ? "CONNECTED" : "OFFLINE", 165,
-            g_state.wifi_connected ? kGreen : TFT_ORANGE);
-  value_row("SSID", g_state.wifi_connected ? g_state.wifi_ssid : "--", 215);
-  value_row("IP ADDRESS", g_state.wifi_connected ? g_state.wifi_ip : "--", 265);
-  snprintf(value, sizeof(value), g_state.wifi_connected ? "%d dBm" : "--",
-           g_state.wifi_rssi);
-  value_row("SIGNAL", value, 315);
-  snprintf(value, sizeof(value), "%u / 4", g_state.saved_network_count);
-  value_row("SAVED NETWORKS", value, 365);
-  value_row("WI-FI ANTENNA", "BOARD DEFAULT (READ ONLY)", 415, kMuted);
-  button(g_state.wifi_scanning ? "SCANNING..." : "SCAN NETWORKS", 330, 470, 260,
-         52, g_state.wifi_scanning ? TFT_DARKGREY : TFT_DARKCYAN);
-  int y = 548;
-  for (uint8_t i = 0; i < g_state.network_count && i < 6; ++i) {
-    snprintf(value, sizeof(value), "%s  %d dBm%s", g_state.networks[i].ssid,
-             g_state.networks[i].rssi, g_state.networks[i].secure ? "  LOCK" : "");
-    text(value, 340 + (i % 2) * 440, y + (i / 2) * 42, TFT_LIGHTGREY, 2);
+  char value[96];
+  const char* status = g_state.wifi_connected ? "CONNECTED"
+                       : g_state.wifi_connecting ? "CONNECTING"
+                                                : "OFFLINE";
+  const uint16_t status_color = g_state.wifi_connected ? kGreen
+                                : g_state.wifi_connecting ? TFT_YELLOW
+                                                         : TFT_ORANGE;
+  snprintf(value, sizeof(value), "%s  %s  %s", status,
+           g_state.wifi_ssid[0] ? g_state.wifi_ssid : "--",
+           g_state.wifi_connected ? g_state.wifi_ip : "");
+  text(value, 330, 155, status_color, 2);
+  if (g_state.wifi_message[0]) text(g_state.wifi_message, 1218, 155, kMuted, 1, middle_right);
+  button(g_state.wifi_scanning ? "SCANNING..." : "SCAN", 330, 180, 170, 46,
+         g_state.wifi_scanning ? TFT_DARKGREY : TFT_DARKCYAN);
+  button("ADD HIDDEN", 520, 180, 210, 46, TFT_NAVY);
+  value_row("WI-FI ANTENNA", "BOARD DEFAULT (READ ONLY)", 245, kMuted);
+
+  text("SAVED NETWORKS (PRIORITY ORDER)", 330, 290, kBlue, 2);
+  for (uint8_t i = 0; i < g_state.saved_network_count && i < 4; ++i) {
+    const int y = 318 + i * 52;
+    snprintf(value, sizeof(value), "%u  %.24s%s", i + 1, g_state.profiles[i].ssid,
+             g_state.profiles[i].connected ? "  CONNECTED" : "");
+    text(value, 340, y + 23, g_state.profiles[i].connected ? kGreen : TFT_WHITE, 2);
+    button("USE", 720, y, 90, 44, TFT_DARKCYAN);
+    button("UP", 820, y, 76, 44, i ? TFT_NAVY : TFT_DARKGREY);
+    button("DOWN", 906, y, 90, 44,
+           i + 1 < g_state.saved_network_count ? TFT_NAVY : TFT_DARKGREY);
+    button("FORGET", 1006, y, 170, 44, TFT_MAROON);
+  }
+  if (g_state.saved_network_count == 0)
+    text("NO SAVED NETWORKS", 340, 342, kMuted, 2);
+
+  text("AVAILABLE NETWORKS", 330, 548, kBlue, 2);
+  const uint8_t shown = std::min<uint8_t>(g_state.network_count, 6);
+  for (uint8_t i = 0; i < shown; ++i) {
+    const int x = 330 + (i % 2) * 428;
+    const int y = 572 + (i / 2) * 42;
+    snprintf(value, sizeof(value), "%.18s  %d%s%s", g_state.networks[i].ssid,
+             g_state.networks[i].rssi, g_state.networks[i].secure ? "  LOCK" : "  OPEN",
+             g_state.networks[i].saved ? "  SAVED" : "");
+    button(value, x, y, 418, 36,
+           g_state.networks[i].saved ? 0x2945 : TFT_DARKCYAN);
   }
 }
 
@@ -263,6 +298,144 @@ void draw_keypad() {
   button("SAVE", 795, 515, 385, 58, TFT_DARKGREEN);
 }
 
+void begin_wifi_edit(WifiEdit edit, const char* ssid = nullptr) {
+  g_wifi_edit = edit;
+  g_wifi_shift = false;
+  g_wifi_symbols = false;
+  g_wifi_show_password = false;
+  if (ssid) strlcpy(g_wifi_edit_ssid, ssid, sizeof(g_wifi_edit_ssid));
+  else g_wifi_edit_ssid[0] = '\0';
+  g_wifi_edit_password[0] = '\0';
+}
+
+const char* wifi_key_row(int row) {
+  static constexpr const char* kNormal[] = {
+      "1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm"};
+  static constexpr const char* kShift[] = {
+      "1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"};
+  static constexpr const char* kSymbols[] = {
+      "!@#$%^&*()", "-_=+[]{}\\|", ";:'\",.<>?/`~", ""};
+  return g_wifi_symbols ? kSymbols[row] : (g_wifi_shift ? kShift[row] : kNormal[row]);
+}
+
+void draw_wifi_keyboard() {
+  M5.Display.fillRect(kRailW, kHeaderH, 1280 - kRailW, 720 - kHeaderH, kBg);
+  text(g_wifi_edit == WifiEdit::ssid ? "HIDDEN NETWORK SSID" : "WI-FI PASSWORD",
+       330, 108, kBlue, 3);
+  char shown[64]{};
+  const char* entry = g_wifi_edit == WifiEdit::ssid ? g_wifi_edit_ssid
+                                                    : g_wifi_edit_password;
+  if (g_wifi_edit == WifiEdit::password && !g_wifi_show_password) {
+    const size_t count = std::min(strlen(entry), sizeof(shown) - 1);
+    memset(shown, '*', count);
+  } else {
+    strlcpy(shown, entry, sizeof(shown));
+  }
+  button(shown[0] ? shown : " ", 330, 140, 846, 56, TFT_NAVY);
+
+  for (int row = 0; row < 4; ++row) {
+    const char* keys = wifi_key_row(row);
+    const int count = static_cast<int>(strlen(keys));
+    if (count == 0) continue;
+    const int gap = 6;
+    const int key_w = (846 - (count - 1) * gap) / count;
+    for (int col = 0; col < count; ++col) {
+      char label[2] = {keys[col], '\0'};
+      button(label, 330 + col * (key_w + gap), 215 + row * 62,
+             key_w, 50, TFT_DARKGREY);
+    }
+  }
+  button(g_wifi_shift ? "SHIFT ON" : "SHIFT", 330, 475, 150, 46, TFT_DARKCYAN);
+  button(g_wifi_symbols ? "LETTERS" : "SYMBOLS", 492, 475, 170, 46, TFT_DARKCYAN);
+  button("SPACE", 674, 475, 170, 46, TFT_DARKGREY);
+  button("BACK", 856, 475, 150, 46, TFT_DARKGREY);
+  if (g_wifi_edit == WifiEdit::password)
+    button(g_wifi_show_password ? "HIDE" : "SHOW", 1018, 475, 158, 46, TFT_NAVY);
+  button("CANCEL", 330, 550, 250, 54, TFT_MAROON);
+  button(g_wifi_edit == WifiEdit::ssid ? "NEXT" : "CONNECT",
+         926, 550, 250, 54, TFT_DARKGREEN);
+}
+
+Action queue_wifi_request(const char* ssid, const char* password) {
+  if (!ssid || !ssid[0]) return {};
+  strlcpy(g_wifi_request_ssid, ssid, sizeof(g_wifi_request_ssid));
+  strlcpy(g_wifi_request_password, password ? password : "",
+          sizeof(g_wifi_request_password));
+  memset(g_wifi_edit_password, 0, sizeof(g_wifi_edit_password));
+  g_wifi_request_pending = true;
+  g_wifi_edit = WifiEdit::none;
+  draw_content();
+  return {ActionKind::connect_wifi, 0};
+}
+
+Action handle_wifi_keyboard(int x, int y) {
+  if (hit(x, y, 330, 550, 250, 54)) {
+    memset(g_wifi_edit_password, 0, sizeof(g_wifi_edit_password));
+    g_wifi_edit = WifiEdit::none;
+    draw_content();
+    return {};
+  }
+  if (hit(x, y, 926, 550, 250, 54)) {
+    if (g_wifi_edit == WifiEdit::ssid) {
+      if (!g_wifi_edit_ssid[0]) return {};
+      g_wifi_edit = WifiEdit::password;
+      draw_wifi_keyboard();
+      return {};
+    }
+    return queue_wifi_request(g_wifi_edit_ssid, g_wifi_edit_password);
+  }
+  if (hit(x, y, 330, 475, 150, 46)) {
+    g_wifi_shift = !g_wifi_shift;
+    g_wifi_symbols = false;
+    draw_wifi_keyboard();
+    return {};
+  }
+  if (hit(x, y, 492, 475, 170, 46)) {
+    g_wifi_symbols = !g_wifi_symbols;
+    draw_wifi_keyboard();
+    return {};
+  }
+  char* entry = g_wifi_edit == WifiEdit::ssid ? g_wifi_edit_ssid
+                                               : g_wifi_edit_password;
+  const size_t capacity = g_wifi_edit == WifiEdit::ssid
+                              ? sizeof(g_wifi_edit_ssid)
+                              : sizeof(g_wifi_edit_password);
+  size_t length = strlen(entry);
+  if (hit(x, y, 674, 475, 170, 46)) {
+    if (length + 1 < capacity) entry[length++] = ' ', entry[length] = '\0';
+    draw_wifi_keyboard();
+    return {};
+  }
+  if (hit(x, y, 856, 475, 150, 46)) {
+    if (length) entry[length - 1] = '\0';
+    draw_wifi_keyboard();
+    return {};
+  }
+  if (g_wifi_edit == WifiEdit::password && hit(x, y, 1018, 475, 158, 46)) {
+    g_wifi_show_password = !g_wifi_show_password;
+    draw_wifi_keyboard();
+    return {};
+  }
+  for (int row = 0; row < 4; ++row) {
+    const char* keys = wifi_key_row(row);
+    const int count = static_cast<int>(strlen(keys));
+    if (count == 0) continue;
+    const int gap = 6;
+    const int key_w = (846 - (count - 1) * gap) / count;
+    for (int col = 0; col < count; ++col) {
+      if (!hit(x, y, 330 + col * (key_w + gap), 215 + row * 62, key_w, 50)) continue;
+      if (length + 1 < capacity) {
+        entry[length] = keys[col];
+        entry[length + 1] = '\0';
+      }
+      if (g_wifi_shift && !g_wifi_symbols) g_wifi_shift = false;
+      draw_wifi_keyboard();
+      return {};
+    }
+  }
+  return {};
+}
+
 bool valid_coordinate(EditField field, double value) {
   return std::isfinite(value) &&
          (field == EditField::latitude ? value >= -90.0 && value <= 90.0
@@ -325,6 +498,7 @@ void enter(const State& state_value, Section section) {
   g_state = state_value;
   g_section = section;
   g_edit = EditField::none;
+  g_wifi_edit = WifiEdit::none;
   g_active = true;
   g_latitude_set = state_value.location_configured;
   g_longitude_set = state_value.location_configured;
@@ -340,20 +514,30 @@ void draw() {
 
 void update(const State& state_value) {
   const bool header_changed = g_state.wifi_connected != state_value.wifi_connected ||
+                              g_state.wifi_connecting != state_value.wifi_connecting ||
                               g_state.wifi_scanning != state_value.wifi_scanning ||
                               strcmp(g_state.wifi_ssid, state_value.wifi_ssid) != 0 ||
                               strcmp(g_state.wifi_ip, state_value.wifi_ip) != 0;
   const bool page_changed = g_section == Section::connectivity &&
                             (g_state.wifi_scanning != state_value.wifi_scanning ||
+                             g_state.wifi_connecting != state_value.wifi_connecting ||
                              g_state.network_count != state_value.network_count ||
-                             g_state.wifi_rssi != state_value.wifi_rssi);
+                             g_state.saved_network_count != state_value.saved_network_count ||
+                             g_state.wifi_rssi != state_value.wifi_rssi ||
+                             memcmp(g_state.networks, state_value.networks,
+                                    sizeof(g_state.networks)) != 0 ||
+                             strcmp(g_state.wifi_message, state_value.wifi_message) != 0 ||
+                             memcmp(g_state.profiles, state_value.profiles,
+                                    sizeof(g_state.profiles)) != 0);
   g_state = state_value;
   if (header_changed) draw_header();
-  if (page_changed && g_edit == EditField::none) draw_content();
+  if (page_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
+    draw_content();
 }
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
+  if (g_wifi_edit != WifiEdit::none) return handle_wifi_keyboard(x, y);
   if (g_edit != EditField::none) return handle_keypad(x, y);
   if (hit(x, y, 1090, 13, 162, 46)) {
     g_active = false;
@@ -368,11 +552,42 @@ Action handle_touch(int32_t x, int32_t y) {
     }
     return {};
   }
-  if (g_section == Section::connectivity && hit(x, y, 330, 470, 260, 52) &&
-      !g_state.wifi_scanning) {
-    return {ActionKind::scan_wifi, 0};
-  }
-  if (g_section == Section::location_adsb) {
+  if (g_section == Section::connectivity) {
+    if (hit(x, y, 330, 180, 170, 46) && !g_state.wifi_scanning)
+      return {ActionKind::scan_wifi, 0};
+    if (hit(x, y, 520, 180, 210, 46)) {
+      begin_wifi_edit(WifiEdit::ssid);
+      draw_wifi_keyboard();
+      return {};
+    }
+    for (uint8_t i = 0; i < g_state.saved_network_count && i < 4; ++i) {
+      const int row_y = 318 + i * 52;
+      if (hit(x, y, 720, row_y, 90, 44))
+        return {ActionKind::connect_saved_wifi, i};
+      if (i && hit(x, y, 820, row_y, 76, 44))
+        return {ActionKind::move_wifi_up, i};
+      if (i + 1 < g_state.saved_network_count && hit(x, y, 906, row_y, 90, 44))
+        return {ActionKind::move_wifi_down, i};
+      if (hit(x, y, 1006, row_y, 170, 44))
+        return {ActionKind::forget_wifi, i};
+    }
+    for (uint8_t i = 0; i < std::min<uint8_t>(g_state.network_count, 6); ++i) {
+      const int row_x = 330 + (i % 2) * 428;
+      const int row_y = 572 + (i / 2) * 42;
+      if (!hit(x, y, row_x, row_y, 418, 36)) continue;
+      if (g_state.networks[i].saved) {
+        for (uint8_t saved = 0; saved < g_state.saved_network_count; ++saved)
+          if (strcmp(g_state.networks[i].ssid, g_state.profiles[saved].ssid) == 0)
+            return {ActionKind::connect_saved_wifi, saved};
+        return {};
+      }
+      if (!g_state.networks[i].secure)
+        return queue_wifi_request(g_state.networks[i].ssid, "");
+      begin_wifi_edit(WifiEdit::password, g_state.networks[i].ssid);
+      draw_wifi_keyboard();
+      return {};
+    }
+  } else if (g_section == Section::location_adsb) {
     if (hit(x, y, 820, 204, 398, 54)) { start_edit(EditField::latitude); draw_keypad(); }
     else if (hit(x, y, 820, 274, 398, 54)) { start_edit(EditField::longitude); draw_keypad(); }
     else if (hit(x, y, 820, 344, 398, 54)) {
@@ -421,6 +636,18 @@ Action handle_touch(int32_t x, int32_t y) {
 bool active() { return g_active; }
 const State& state() { return g_state; }
 
+bool take_wifi_credentials(char* ssid, size_t ssid_size,
+                           char* password, size_t password_size) {
+  if (!g_wifi_request_pending || !ssid || !password || ssid_size == 0 ||
+      password_size == 0) return false;
+  strlcpy(ssid, g_wifi_request_ssid, ssid_size);
+  strlcpy(password, g_wifi_request_password, password_size);
+  memset(g_wifi_request_password, 0, sizeof(g_wifi_request_password));
+  g_wifi_request_ssid[0] = '\0';
+  g_wifi_request_pending = false;
+  return true;
+}
+
 bool self_check() {
   if (!valid_coordinate(EditField::latitude, 90.0) ||
       valid_coordinate(EditField::latitude, 90.00001) ||
@@ -428,6 +655,24 @@ bool self_check() {
       valid_coordinate(EditField::longitude, -180.00001)) return false;
   if (next_value<uint16_t>(100, kRanges) != 10 ||
       next_value<uint16_t>(0, kTimeouts) != 30) return false;
+  if (strlen(wifi_key_row(0)) != 10 || strlen(wifi_key_row(2)) != 9) return false;
+  const bool saved_symbols = g_wifi_symbols;
+  g_wifi_symbols = true;
+  const bool symbols_ok = strchr(wifi_key_row(1), '\\') &&
+                          strchr(wifi_key_row(2), '~');
+  g_wifi_symbols = saved_symbols;
+  char ssid[33]{}, password[64]{};
+  strlcpy(g_wifi_request_ssid, "SELF-CHECK", sizeof(g_wifi_request_ssid));
+  strlcpy(g_wifi_request_password, "not-a-real-password",
+          sizeof(g_wifi_request_password));
+  g_wifi_request_pending = true;
+  const bool handoff_ok = take_wifi_credentials(
+      ssid, sizeof(ssid), password, sizeof(password));
+  const bool credentials_ok = handoff_ok && strcmp(ssid, "SELF-CHECK") == 0 &&
+                              strcmp(password, "not-a-real-password") == 0 &&
+                              g_wifi_request_password[0] == '\0';
+  memset(password, 0, sizeof(password));
+  if (!symbols_ok || !credentials_ok) return false;
   return true;
 }
 

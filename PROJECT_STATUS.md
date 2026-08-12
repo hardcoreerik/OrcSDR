@@ -125,9 +125,13 @@ Detailed gates and clean-room boundaries live in `phasing.md` Phase 6.
       slot zero of a bounded four-profile layout.
 - [x] Persist the first local display/audio/radio/location defaults without
       exposing stored passwords or presenting unsupported controls as active.
+- [x] Apply the isolated ESP-Hosted A–F coexistence result in the production
+      path: do not stop RTL reception for Wi-Fi scan/connect; keep SDIO pin
+      setup before station mode, clean `WiFi.mode(WIFI_OFF)` teardown, USB host
+      on core 0, and DSP/audio/UI/Hosted control on core 1.
 - [ ] Hardware-verify navigation, bounded repaint, reception coexistence, and
-      reboot migration. The foundation is flashed and FM auto-start/audio are
-      restored; physical Settings navigation and persistence acceptance remain.
+      reboot migration, including `RTL_WIFI_COEX` sample-rate, USB-drop,
+      audio-drop, DSP-block, UI-cadence, and scan/connect-latency evidence.
 - [ ] Complete Wi-Fi editing/keyboard, safe manifest downloads, maps/storage,
       BLE feasibility, optional Companion, and M5Launcher phases.
 

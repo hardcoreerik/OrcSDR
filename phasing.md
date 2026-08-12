@@ -616,15 +616,20 @@ reintroduce periodic full-screen repaint.
       range. Unsupported hardware controls remain absent or read-only.
 - [x] Keep static chrome event-driven and restrict status refreshes to bounded
       header/content regions.
+- [x] Apply the isolated ESP-Hosted A–F coexistence result: Wi-Fi scan/connect
+      remains available during RTL reception. USB host/bulk IQ remains pinned to
+      core 0; inline DSP, audio queueing, UI, and Hosted control remain on core
+      1. The production path emits `RTL_WIFI_COEX` snapshots for effective
+      sample rate, USB drops, audio drops, DSP maximum block time, UI cadence,
+      and Wi-Fi operation latency.
 - [ ] Flash and accept every category, touch target, reboot migration, and
       reception coexistence on the physical Tab5.
 
-Evidence (2026-08-11, Tab5 COM17): `m5tab5_ui` built and flashed; both ADS-B and
-Settings self-checks passed. A first flash exposed Wi-Fi scan memory competing
-with USB stream startup; the bounded scan snapshot now releases Arduino's scan
-buffer before auto-start, which waits for scan completion. The corrected boot
-reported `RTL_START ESP_OK` at 960 kS/s, WBFM stereo lock, and enabled audio.
-Category/touch/reboot acceptance remains open.
+Evidence (2026-08-11, Tab5 COM17): isolated Hosted profiles A–F completed with
+960 kS/s RTL/FM active through Hosted lifecycle cycling and soak. That is
+hardware evidence for coexistence, not yet for the production Settings UI.
+Production implementation is build-verified; category/touch/reboot/coexistence
+acceptance remains open.
 
 ### 7.2 — Wi-Fi profiles and safe data updates
 

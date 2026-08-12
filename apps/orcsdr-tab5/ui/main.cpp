@@ -146,11 +146,14 @@ constexpr size_t kRtlBulkBytes = 32768;
 constexpr size_t kRtlControlMps = 64;
 constexpr uint32_t kRtlControlTimeoutMs = 1000;
 constexpr uint32_t kRtlCaptureTimeoutMs = 30000;
-/* Demod staging (~one URB). playRaw is fed from a larger batch buffer. */
+/* Demod staging (~one URB). */
 constexpr size_t kRtlAudioBufferSamples = 2048;
-/* ~25 ms batches at 48 kHz — fewer playRaw calls, more stable codec feed. */
-constexpr size_t kRtlAudioPlayBatchSamples = 1200;
-constexpr size_t kRtlAudioPlayBufferSamples = 4096;
+/* ~25 ms blocks at 48 kHz. M5Unified requires rotating runtime buffers. */
+constexpr size_t kRtlAudioPlayBatchSamples = 2048;
+constexpr size_t kRtlAudioPlayBlockCount = 3;
+constexpr size_t kRtlAudioPlayBlockFrames = kRtlAudioPlayBatchSamples;
+constexpr size_t kRtlAudioPlayBlockSamples = kRtlAudioPlayBlockFrames * 2;
+constexpr uint32_t kRtlAudioPlaySafetyMs = 12;
 /*
  * WBFM mono DSP targets (app-side; not RF hardware calibration).
  * Pipeline: 960 kS/s IQ → complex channel LPF → ×4 → discr → audio LPF → ×5 → 48 kHz
@@ -747,9 +750,18 @@ void rtl_audio_reset_demod_filters() {
   rtl_rds_reset();
 }
 int16_t rtl_audio_buffers[3][kRtlAudioBufferSamples];
-/* Batch small demod bursts into longer playRaw chunks (reduces chop). */
-static int16_t rtl_audio_play_batch[kRtlAudioPlayBufferSamples];
+/* M5Unified queues pointers; never overwrite a block until its audio has played. */
+static int16_t rtl_audio_play_blocks[kRtlAudioPlayBlockCount][kRtlAudioPlayBlockSamples];
 static size_t rtl_audio_play_count = 0;
+static size_t rtl_audio_play_block_index = 0;
+static uint32_t rtl_audio_play_block_ready_ms[kRtlAudioPlayBlockCount]{};
+static std::atomic<uint32_t> rtl_audio_ring_overruns{0};
+static std::atomic<uint32_t> rtl_audio_submit_failures{0};
+static std::atomic<bool> rtl_audio_test_tone{false};
+static std::atomic<bool> rtl_audio_test_metrics{false};
+static uint32_t rtl_audio_test_started_ms = 0;
+static uint32_t rtl_audio_test_last_report_ms = 0;
+static UBaseType_t rtl_audio_test_task_baseline = 0;
 // Dual-core IQ ring (prefer PSRAM). USB produces, DSP consumes.
 struct RtlIqBlock {
   uint8_t* data;
@@ -1066,11 +1078,17 @@ IqGetState g_iq_get;
 uint8_t g_sd_put_chunk[kSdPutChunkBytes];
 bool wifi_station_ready = false;
 bool wifi_scan_running = false;
+std::atomic<bool> wifi_scan_requested{false};
+std::atomic<bool> wifi_connect_requested{false};
 bool wifi_configured = false;
 bool wifi_connected = false;
+bool wifi_connecting = false;
+bool wifi_save_after_connect = false;
+uint32_t wifi_connect_started_ms = 0;
 int wifi_network_count = -1;
 char wifi_ssid[33]{};
 char wifi_password[64]{};
+char wifi_status_message[48]{};
 struct WifiProfile {
   char ssid[33]{};
   char password[64]{};
@@ -1084,6 +1102,7 @@ struct WifiScanResult {
 };
 EXT_RAM_BSS_ATTR WifiScanResult wifi_scan_results[6]{};
 uint8_t wifi_scan_result_count = 0;
+uint32_t wifi_scan_started_ms = 0;
 uint8_t settings_brightness = 180;
 uint16_t settings_screen_timeout_sec = 0;
 bool settings_sound_default = true;
@@ -1123,6 +1142,7 @@ std::atomic<uint32_t> rtl_hot_retune_hz{0};
 std::atomic<uint8_t> rtl_requested_volume{kRtlVolumeDefault};
 std::atomic<uint8_t> rtl_live_volume{kRtlVolumeDefault};
 std::atomic<bool> rtl_audio_enabled{false};
+std::atomic<bool> rtl_speaker_start_allowed{false};
 std::atomic<bool> rtl_volume_changed{false};
 /** When false: no scope/waterfall updates (audio + SIG meter still run). A/B for chop diagnosis. */
 std::atomic<bool> rtl_graphics_enabled{true};
@@ -1418,6 +1438,7 @@ bool audio_rec_ensure_buffer();
 bool audio_rec_start();
 bool audio_rec_stop_and_export();
 void audio_rec_append(const int16_t* samples, size_t count);
+void queue_audio_samples(int16_t* audio, size_t audio_count);
 void audio_rec_status_print();
 void rds_process_mpx_sample(float phase);
 void rds_publish_state();
@@ -1440,6 +1461,7 @@ void open_global_settings(orcsdr::settings::Section section);
 void handle_global_settings_touch(int32_t x, int32_t y);
 void draw_global_settings_gear();
 void start_wifi_inventory();
+void stop_wifi();
 
 void draw_touch_state(const char* message, uint32_t color) {
   M5.Display.fillRect(300, 480, 680, 70, TFT_BLACK);
@@ -1890,20 +1912,46 @@ void apply_speaker_volume(uint8_t volume) {
 
 bool ensure_speaker_running(uint8_t volume) {
   if (!rtl_audio_enabled.load(std::memory_order_acquire)) return false;
-  static bool dma_configured = false;
-  if (!dma_configured) {
-    // Deep DMA queue: absorbs retune gaps and spectrum draws without underruns.
-    auto cfg = M5.Speaker.config();
-    cfg.dma_buf_count = 24;
-    cfg.dma_buf_len = 512;
-    M5.Speaker.config(cfg);
-    dma_configured = true;
-  }
+  if (!rtl_speaker_start_allowed.load(std::memory_order_acquire)) return false;
   apply_speaker_volume(volume);
   if (!M5.Speaker.isEnabled()) return false;
-  if (!M5.Speaker.isRunning() && !M5.Speaker.begin()) return false;
+  if (!M5.Speaker.isRunning()) {
+    // Speaker.begin() deletes and recreates the shared I2S TX channel.  The
+    // RTL delivery task and UI can both request it during stream startup.
+    static SemaphoreHandle_t begin_mutex = xSemaphoreCreateMutex();
+    if (begin_mutex == nullptr || xSemaphoreTake(begin_mutex, pdMS_TO_TICKS(250)) != pdTRUE) return false;
+    const bool started = M5.Speaker.isRunning() || M5.Speaker.begin();
+    xSemaphoreGive(begin_mutex);
+    if (!started) return false;
+  }
   apply_speaker_volume(volume);
   return M5.Speaker.isRunning() || M5.Speaker.isEnabled();
+}
+
+void allow_boot_speaker() {
+  if (rtl_speaker_start_allowed.exchange(true, std::memory_order_acq_rel)) return;
+  Serial.println("BOOT_STAGE speaker_start");
+  if (rtl_audio_enabled.load(std::memory_order_acquire))
+    (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
+}
+
+bool rtl_audio_block_ready(size_t index, uint32_t now) {
+  return static_cast<int32_t>(now - rtl_audio_play_block_ready_ms[index]) >= 0;
+}
+
+bool rtl_audio_select_writable_block(uint32_t now) {
+  if (rtl_audio_play_count != 0 || rtl_audio_block_ready(rtl_audio_play_block_index, now)) {
+    return true;
+  }
+  for (size_t offset = 1; offset < kRtlAudioPlayBlockCount; ++offset) {
+    const size_t candidate = (rtl_audio_play_block_index + offset) % kRtlAudioPlayBlockCount;
+    if (rtl_audio_block_ready(candidate, now)) {
+      rtl_audio_play_block_index = candidate;
+      return true;
+    }
+  }
+  rtl_audio_ring_overruns.fetch_add(1, std::memory_order_relaxed);
+  return false;
 }
 
 void flush_audio_play_batch(bool force) {
@@ -1913,21 +1961,31 @@ void flush_audio_play_batch(bool force) {
     apply_speaker_volume(rtl_live_volume.load(std::memory_order_acquire));
   }
   if (!M5.Speaker.isRunning()) {
-    ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
-  }
-  /* Capture the exact PCM going to the speaker (post AGC/limiter). */
-  if (g_audio_rec_active.load(std::memory_order_acquire)) {
-    audio_rec_append(rtl_audio_play_batch, rtl_audio_play_count);
+    if (!ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire))) {
+      rtl_audio_play_count = 0;
+      return;
+    }
   }
   if (!rtl_audio_enabled.load(std::memory_order_acquire)) {
     rtl_audio_play_count = 0;
     return;
   }
-  if (M5.Speaker.playRaw(rtl_audio_play_batch, rtl_audio_play_count, 48000, false, 1, 0,
-                         false)) {
+  const uint32_t now = millis();
+  if (!rtl_audio_select_writable_block(now)) {
+    rtl_audio_play_count = 0;
+    return;
+  }
+  const size_t submitted_index = rtl_audio_play_block_index;
+  if (M5.Speaker.playRaw(rtl_audio_play_blocks[submitted_index], rtl_audio_play_count * 2,
+                         48000, true, 1, 0, false)) {
     ++rtl_audio.queued_chunks;
+    const uint32_t duration_ms = static_cast<uint32_t>(
+        (rtl_audio_play_count * 1000u + 47999u) / 48000u);
+    rtl_audio_play_block_ready_ms[submitted_index] = now + duration_ms + kRtlAudioPlaySafetyMs;
+    rtl_audio_play_block_index = (submitted_index + 1) % kRtlAudioPlayBlockCount;
   } else {
     ++rtl_audio.dropped_chunks;
+    rtl_audio_submit_failures.fetch_add(1, std::memory_order_relaxed);
     if (kStreamDiagnosticsEnabled && (rtl_audio.dropped_chunks % 32) == 1) {
       Serial.printf("RTL_AUDIO_DROP chunks_ok=%u dropped=%u peak=%d volume=%u running=%s\n",
                     rtl_audio.queued_chunks, rtl_audio.dropped_chunks, rtl_audio.peak,
@@ -1936,6 +1994,116 @@ void flush_audio_play_batch(bool force) {
     }
   }
   rtl_audio_play_count = 0;
+}
+
+const char* rtl_audio_test_mode_name() {
+  if (rtl_audio_test_tone.load(std::memory_order_acquire)) return "tone";
+  if (rtl_audio_test_metrics.load(std::memory_order_acquire)) return "fm";
+  return "idle";
+}
+
+void rtl_audio_test_emit_status() {
+  rtl_sdr_v4_esp_metrics_t metrics{};
+  if (g_rtl != nullptr) (void)rtl_sdr_v4_esp_get_metrics(g_rtl, &metrics);
+  const auto speaker = M5.Speaker.config();
+  const uint32_t elapsed = rtl_audio_test_started_ms == 0 ? 0 : millis() - rtl_audio_test_started_ms;
+  Serial.printf(
+      "{\"type\":\"rtl_audio_test\",\"mode\":\"%s\",\"elapsed_ms\":%u,"
+      "\"speaker_enabled\":%u,\"speaker_running\":%u,\"sample_rate\":%u,"
+      "\"stereo\":%u,\"speaker_core\":%u,\"speaker_priority\":%u,"
+      "\"ring_blocks\":%u,\"ring_overruns\":%u,\"submit_failures\":%u,"
+      "\"audio_chunks\":%u,\"audio_drops\":%u,\"effective_sps\":%u,"
+      "\"usb_overruns\":%u,\"usb_drops\":%u,\"dsp_block_us_max\":%u,"
+      "\"dsp_gate_us\":13653,\"task_count\":%u,\"task_delta\":%d,\"free_heap\":%u}\n",
+      rtl_audio_test_mode_name(), elapsed, M5.Speaker.isEnabled() ? 1 : 0,
+      M5.Speaker.isRunning() ? 1 : 0, static_cast<unsigned>(speaker.sample_rate),
+      speaker.stereo ? 1 : 0, static_cast<unsigned>(speaker.task_pinned_core),
+      static_cast<unsigned>(speaker.task_priority), static_cast<unsigned>(kRtlAudioPlayBlockCount),
+      rtl_audio_ring_overruns.load(std::memory_order_relaxed),
+      rtl_audio_submit_failures.load(std::memory_order_relaxed), rtl_audio.queued_chunks,
+      rtl_audio.dropped_chunks, metrics.effective_sps, metrics.overruns, metrics.consumer_drops,
+      rtl_dsp_block_us_max.load(std::memory_order_relaxed),
+      static_cast<unsigned>(uxTaskGetNumberOfTasks()),
+      static_cast<int>(uxTaskGetNumberOfTasks()) - static_cast<int>(rtl_audio_test_task_baseline),
+      ESP.getFreeHeap());
+}
+
+void rtl_audio_test_start_tone() {
+  rtl_audio_test_metrics.store(true, std::memory_order_release);
+  rtl_audio_test_tone.store(true, std::memory_order_release);
+  rtl_audio_test_started_ms = millis();
+  rtl_audio_test_last_report_ms = 0;
+  rtl_audio_ring_overruns.store(0, std::memory_order_relaxed);
+  rtl_audio_submit_failures.store(0, std::memory_order_relaxed);
+  rtl_audio_play_count = 0;
+  rtl_audio_play_block_index = 0;
+  for (auto& ready_ms : rtl_audio_play_block_ready_ms) ready_ms = 0;
+  rtl_audio_enabled.store(true, std::memory_order_release);
+  allow_boot_speaker();
+  const bool speaker_ok = ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
+  rtl_audio_test_task_baseline = uxTaskGetNumberOfTasks();
+  Serial.printf("RTL_AUDIO_TEST_TONE %s\n", speaker_ok ? "OK" : "ERR");
+  rtl_audio_test_emit_status();
+}
+
+void rtl_audio_test_start_fm() {
+  if (!rtl_ui_active.load(std::memory_order_acquire) || g_stream_band != RtlBand::fm) {
+    Serial.println("RTL_AUDIO_TEST_FM_ERR active_fm_required");
+    return;
+  }
+  rtl_audio_test_tone.store(false, std::memory_order_release);
+  rtl_audio_test_metrics.store(true, std::memory_order_release);
+  rtl_audio_test_started_ms = millis();
+  rtl_audio_test_last_report_ms = 0;
+  rtl_audio_ring_overruns.store(0, std::memory_order_relaxed);
+  rtl_audio_submit_failures.store(0, std::memory_order_relaxed);
+  rtl_audio_play_count = 0;
+  rtl_audio_play_block_index = 0;
+  for (auto& ready_ms : rtl_audio_play_block_ready_ms) ready_ms = 0;
+  rtl_audio_enabled.store(true, std::memory_order_release);
+  allow_boot_speaker();
+  if (!ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire))) {
+    rtl_audio_test_metrics.store(false, std::memory_order_release);
+    Serial.println("RTL_AUDIO_TEST_FM_ERR speaker_not_running");
+    return;
+  }
+  rtl_audio_test_task_baseline = uxTaskGetNumberOfTasks();
+  Serial.println("RTL_AUDIO_TEST_FM_OK");
+  rtl_audio_test_emit_status();
+}
+
+void rtl_audio_test_stop() {
+  rtl_audio_test_tone.store(false, std::memory_order_release);
+  rtl_audio_test_metrics.store(false, std::memory_order_release);
+  rtl_audio_play_count = 0;
+  M5.Speaker.stop();
+  Serial.println("RTL_AUDIO_TEST_STOP_OK");
+}
+
+void rtl_audio_test_service() {
+  if (!rtl_audio_test_metrics.load(std::memory_order_acquire)) return;
+  const uint32_t now = millis();
+  if (rtl_audio_test_tone.load(std::memory_order_acquire)) {
+    static constexpr int16_t kTonePeriod[] = {
+        0, 1175, 2329, 3444, 4500, 5479, 6364, 7140, 7794, 8315, 8693, 8923,
+        9000, 8923, 8693, 8315, 7794, 7140, 6364, 5479, 4500, 3444, 2329, 1175,
+        0, -1175, -2329, -3444, -4500, -5479, -6364, -7140, -7794, -8315, -8693,
+        -8923, -9000, -8923, -8693, -8315, -7794, -7140, -6364, -5479, -4500,
+        -3444, -2329, -1175};
+    static int16_t tone_block[480];
+    static size_t tone_index = 0;
+    static uint32_t next_tone_ms = 0;
+    if (next_tone_ms == 0) next_tone_ms = now;
+    for (uint8_t block = 0; block < 3 && static_cast<int32_t>(now - next_tone_ms) >= 0; ++block) {
+      for (auto& sample : tone_block) sample = kTonePeriod[tone_index++ % std::size(kTonePeriod)];
+      queue_audio_samples(tone_block, std::size(tone_block));
+      next_tone_ms += 10;
+    }
+  }
+  if (now - rtl_audio_test_last_report_ms >= 1000) {
+    rtl_audio_test_last_report_ms = now;
+    rtl_audio_test_emit_status();
+  }
 }
 
 bool audio_rec_ensure_buffer() {
@@ -5347,12 +5515,21 @@ int16_t shape_audio_sample(float demodulated, float base_scale) {
 
 void queue_audio_samples(int16_t* audio, size_t audio_count) {
   if (audio_count == 0) return;
-  /* Append into batch buffer; flush ~20 ms blocks for smoother codec feed. */
+  /* Capture the post-DSP mono stream before expanding it for the stereo codec. */
+  if (g_audio_rec_active.load(std::memory_order_acquire)) {
+    audio_rec_append(audio, audio_count);
+  }
+  /* M5Unified retains playRaw pointers, so fill one owned stereo block at a time. */
   for (size_t i = 0; i < audio_count; ++i) {
-    if (rtl_audio_play_count >= kRtlAudioPlayBufferSamples) {
+    if (!rtl_audio_select_writable_block(millis())) break;
+    if (rtl_audio_play_count >= kRtlAudioPlayBlockFrames) {
       flush_audio_play_batch(true);
+      if (!rtl_audio_select_writable_block(millis())) break;
     }
-    rtl_audio_play_batch[rtl_audio_play_count++] = audio[i];
+    int16_t* const output = rtl_audio_play_blocks[rtl_audio_play_block_index];
+    output[rtl_audio_play_count * 2] = audio[i];
+    output[rtl_audio_play_count * 2 + 1] = audio[i];
+    ++rtl_audio_play_count;
   }
   flush_audio_play_batch(false);
   rtl_audio.buffer = (rtl_audio.buffer + 1) % std::size(rtl_audio_buffers);
@@ -6278,7 +6455,8 @@ static void on_rtl_driver_event(rtl_sdr_v4_esp_event_t event, const void *payloa
       if (g_stream_band == RtlBand::lora) lora_iq_offer(iq->data, n);
       if (g_stream_band != RtlBand::lora &&
           (rtl_audio_enabled.load(std::memory_order_relaxed) ||
-           g_audio_rec_active.load(std::memory_order_relaxed))) {
+           g_audio_rec_active.load(std::memory_order_relaxed)) &&
+          !rtl_audio_test_tone.load(std::memory_order_relaxed)) {
         if (g_stream_band == RtlBand::cb) {
           if (cb_audio_gate_open()) {
             const CbMode mode = cb_mode.load(std::memory_order_relaxed);
@@ -6354,6 +6532,10 @@ static void rtl_driver_app_task(void *) {
       rtl_dsp_window_blocks.store(0, std::memory_order_relaxed);
       rtl_dsp_block_us_max.store(0, std::memory_order_relaxed);
       rtl_audio_play_count = 0;
+      rtl_audio_play_block_index = 0;
+      memset(rtl_audio_play_block_ready_ms, 0, sizeof(rtl_audio_play_block_ready_ms));
+      rtl_audio_ring_overruns.store(0, std::memory_order_relaxed);
+      rtl_audio_submit_failures.store(0, std::memory_order_relaxed);
       rtl_signal_dbfs.store(-90.0f, std::memory_order_relaxed);
       rtl_signal_dbfs_smooth = -80.0f;
       rtl_signal_meter_last_ms = 0;
@@ -6371,15 +6553,9 @@ static void rtl_driver_app_task(void *) {
         adsb_iq_drops.store(0, std::memory_order_relaxed);
         reset_adsb_tracks();
       }
-      rtl_capture_state.store(RtlCaptureState::running, std::memory_order_release);
       rtl_ui_active.store(true, std::memory_order_release);
-      set_rtl_sdr_status("RTL-SDR V4: continuous listening (driver)");
       if (band != RtlBand::adsb) draw_sdr_screen(band, frequency_hz, volume);
       M5.Speaker.stop();
-      if (rtl_audio_enabled.load(std::memory_order_acquire)) {
-        delay(20);
-        (void)ensure_speaker_running(volume);
-      }
 
       rtl_sdr_v4_esp_stream_config_t st;
       rtl_sdr_v4_esp_stream_config_default(&st);
@@ -6390,6 +6566,12 @@ static void rtl_driver_app_task(void *) {
       esp_err_t err = rtl_sdr_v4_esp_start(g_rtl, &st);
       Serial.printf("RTL_START %s rate=%u frequency_hz=%u\n",
                     rtl_sdr_v4_esp_err_to_name(err), st.sample_rate_sps, frequency_hz);
+      if (err == ESP_ERR_NO_MEM) {
+        vTaskDelay(pdMS_TO_TICKS(500));
+        err = rtl_sdr_v4_esp_start(g_rtl, &st);
+        Serial.printf("RTL_START_RETRY %s rate=%u frequency_hz=%u\n",
+                      rtl_sdr_v4_esp_err_to_name(err), st.sample_rate_sps, frequency_hz);
+      }
       if (err == ESP_OK && band == RtlBand::fm) {
         Serial.printf("RTL_WBFM_DSP rate=%u filter_hz=%u iq_lpf_k=%.2f audio_lpf_k=%.2f "
                       "decim=%u/%u note=app_side_filter\n",
@@ -6406,6 +6588,9 @@ static void rtl_driver_app_task(void *) {
         draw_sdr_controls(band, false);
         /* Stay on radio UI so power/home chrome cannot paint over controls. */
       } else {
+        rtl_capture_state.store(RtlCaptureState::running, std::memory_order_release);
+        set_rtl_sdr_status("RTL-SDR V4: continuous listening (driver)");
+        allow_boot_speaker();
         uint32_t spectrum_last_ms = 0;
         uint32_t adsb_metrics_last_ms = 0;
         uint32_t last_lo_applied_hz = frequency_hz;
@@ -6699,6 +6884,8 @@ void initialize_rtl_sdr_host() {
    */
   cfg.transfer_bytes = 32768;
   cfg.transfer_count = 3;
+  // Keep USB ownership deterministic; DSP, UI, and Hosted control stay on core 1.
+  cfg.usb_task_core_id = 0;
   esp_err_t err = rtl_sdr_v4_esp_config_validate(&cfg);
   if (err != ESP_OK) {
     set_rtl_sdr_status("RTL-SDR: config invalid");
@@ -6717,39 +6904,105 @@ void initialize_rtl_sdr_host() {
                               nullptr, 1) != pdPASS) {
     set_rtl_sdr_status("RTL-SDR: app task failed");
   }
-  Serial.println("RTL_CORE_SPLIT usb=core0 iq_demod+ui=core1 (inline demod)");
+  Serial.println("RTL_CORE_SPLIT usb=core0 dsp_audio_ui_hosted=core1 (inline demod)");
 }
 #endif /* RTL_USE_LEGACY_USB */
 
+void persist_wifi_profiles() {
+  for (uint8_t i = 0; i < std::size(wifi_profiles); ++i) {
+    char ssid_key[16], pass_key[16];
+    snprintf(ssid_key, sizeof(ssid_key), "wifi%u_ssid", i);
+    snprintf(pass_key, sizeof(pass_key), "wifi%u_pass", i);
+    if (i < wifi_profile_count) {
+      preferences.putString(ssid_key, wifi_profiles[i].ssid);
+      preferences.putString(pass_key, wifi_profiles[i].password);
+    } else {
+      preferences.remove(ssid_key);
+      preferences.remove(pass_key);
+    }
+  }
+  wifi_configured = wifi_profile_count > 0;
+}
+
+void select_wifi_profile(uint8_t index) {
+  if (index >= wifi_profile_count) return;
+  strlcpy(wifi_ssid, wifi_profiles[index].ssid, sizeof(wifi_ssid));
+  strlcpy(wifi_password, wifi_profiles[index].password, sizeof(wifi_password));
+}
+
 void initialize_wifi() {
-  delay(1500);
   WiFi.setPins(kWifiClockPin, kWifiCommandPin, kWifiData0Pin, kWifiData1Pin,
                kWifiData2Pin, kWifiData3Pin, kWifiResetPin);
   wifi_station_ready = WiFi.mode(WIFI_STA);
+  Serial.printf("RTL_WIFI_INIT station=%d core=%d\n", wifi_station_ready ? 1 : 0,
+                xPortGetCoreID());
   draw_wifi_state();
 }
 
+void log_wifi_coexistence(const char* event, uint32_t elapsed_ms = 0) {
+  rtl_sdr_v4_esp_metrics_t metrics{};
+  if (g_rtl != nullptr) (void)rtl_sdr_v4_esp_get_metrics(g_rtl, &metrics);
+  Serial.printf("RTL_WIFI_COEX event=%s elapsed_ms=%u effective_sps=%u usb_overruns=%u "
+                "usb_drops=%u audio_chunks=%u audio_drops=%u dsp_block_us_max=%u "
+                "ui_fps=%u\n",
+                event, elapsed_ms, metrics.effective_sps, metrics.overruns,
+                metrics.consumer_drops, rtl_audio.queued_chunks, rtl_audio.dropped_chunks,
+                rtl_dsp_block_us_max.load(std::memory_order_relaxed), rtl_spectrum_fps);
+}
+
 void start_wifi_inventory() {
+  if (!wifi_station_ready) initialize_wifi();
   if (!wifi_station_ready) return;
   if (wifi_scan_running) return;
   WiFi.scanDelete();
   wifi_scan_result_count = 0;
+  wifi_scan_started_ms = millis();
+  strlcpy(wifi_status_message, "Scanning networks", sizeof(wifi_status_message));
   wifi_network_count = WiFi.scanNetworks(true, true);
   wifi_scan_running = wifi_network_count == WIFI_SCAN_RUNNING;
+  log_wifi_coexistence(wifi_scan_running ? "scan_started" : "scan_start_failed");
   draw_wifi_state();
 }
 
 void start_wifi_connection() {
-  if (!wifi_station_ready || !wifi_configured) return;
+  if (!wifi_station_ready) initialize_wifi();
+  if (!wifi_station_ready || !wifi_ssid[0]) return;
   if (wifi_scan_running) WiFi.scanDelete();
   wifi_scan_running = false;
   wifi_network_count = -1;
   wifi_connected = false;
+  wifi_connecting = true;
+  wifi_connect_started_ms = millis();
+  strlcpy(wifi_status_message, "Testing connection", sizeof(wifi_status_message));
+  WiFi.disconnect();
   WiFi.begin(wifi_ssid, wifi_password);
+  log_wifi_coexistence("connect_started");
   draw_wifi_state();
 }
 
+void stop_wifi() {
+  if (!wifi_station_ready) return;
+  WiFi.disconnect(true, false);
+  WiFi.mode(WIFI_OFF);
+  wifi_station_ready = false;
+  wifi_connected = false;
+  wifi_connecting = false;
+  wifi_scan_running = false;
+  strlcpy(wifi_status_message, "Wi-Fi off", sizeof(wifi_status_message));
+  Serial.println("RTL_WIFI_OFF");
+}
+
+void start_wifi_connection(const char* ssid, const char* password, bool save_on_success) {
+  if (!ssid || !ssid[0]) return;
+  strlcpy(wifi_ssid, ssid, sizeof(wifi_ssid));
+  strlcpy(wifi_password, password ? password : "", sizeof(wifi_password));
+  wifi_save_after_connect = save_on_success;
+  wifi_connect_requested.store(true, std::memory_order_release);
+}
+
 void poll_wifi() {
+  if (wifi_scan_requested.exchange(false, std::memory_order_acq_rel)) start_wifi_inventory();
+  if (wifi_connect_requested.exchange(false, std::memory_order_acq_rel)) start_wifi_connection();
   bool state_changed = false;
   if (wifi_scan_running) {
     const int result = WiFi.scanComplete();
@@ -6767,10 +7020,59 @@ void poll_wifi() {
         wifi_scan_results[i].secure = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
       }
       WiFi.scanDelete();
+      log_wifi_coexistence("scan_complete", millis() - wifi_scan_started_ms);
+      allow_boot_speaker();
       state_changed = true;
     }
   }
-  const bool connected = WiFi.status() == WL_CONNECTED;
+  const wl_status_t wifi_status = WiFi.status();
+  const bool connected = wifi_status == WL_CONNECTED;
+  if (wifi_connecting && connected) {
+    wifi_connecting = false;
+    if (wifi_save_after_connect) {
+      int existing = -1;
+      for (uint8_t i = 0; i < wifi_profile_count; ++i)
+        if (strcmp(wifi_profiles[i].ssid, wifi_ssid) == 0) existing = i;
+      if (existing >= 0) {
+        strlcpy(wifi_profiles[existing].password, wifi_password,
+                sizeof(wifi_profiles[existing].password));
+      } else if (wifi_profile_count < std::size(wifi_profiles)) {
+        strlcpy(wifi_profiles[wifi_profile_count].ssid, wifi_ssid,
+                sizeof(wifi_profiles[wifi_profile_count].ssid));
+        strlcpy(wifi_profiles[wifi_profile_count].password, wifi_password,
+                sizeof(wifi_profiles[wifi_profile_count].password));
+        ++wifi_profile_count;
+      }
+      persist_wifi_profiles();
+    }
+    wifi_save_after_connect = false;
+    strlcpy(wifi_status_message, "Connection successful", sizeof(wifi_status_message));
+    log_wifi_coexistence("connect_complete", millis() - wifi_connect_started_ms);
+    allow_boot_speaker();
+    state_changed = true;
+  } else if (wifi_connecting &&
+             (millis() - wifi_connect_started_ms >= 15000u ||
+              wifi_status == WL_CONNECT_FAILED || wifi_status == WL_NO_SSID_AVAIL)) {
+    const bool discard_candidate = wifi_save_after_connect;
+    wifi_connecting = false;
+    wifi_save_after_connect = false;
+    WiFi.disconnect();
+    if (discard_candidate) {
+      int saved = -1;
+      for (uint8_t i = 0; i < wifi_profile_count; ++i)
+        if (strcmp(wifi_profiles[i].ssid, wifi_ssid) == 0) saved = i;
+      if (saved >= 0) select_wifi_profile(static_cast<uint8_t>(saved));
+      else if (wifi_profile_count) select_wifi_profile(0);
+      else {
+        wifi_ssid[0] = '\0';
+        memset(wifi_password, 0, sizeof(wifi_password));
+      }
+    }
+    strlcpy(wifi_status_message, "Connection failed", sizeof(wifi_status_message));
+    log_wifi_coexistence("connect_failed", millis() - wifi_connect_started_ms);
+    allow_boot_speaker();
+    state_changed = true;
+  }
   if (connected != wifi_connected) {
     wifi_connected = connected;
     state_changed = true;
@@ -6786,12 +7088,20 @@ orcsdr::settings::State global_settings_state() {
   state.wifi_ready = wifi_station_ready;
   state.wifi_scanning = wifi_scan_running;
   state.wifi_connected = wifi_connected;
+  state.wifi_connecting = wifi_connecting;
   strlcpy(state.wifi_ssid, wifi_connected ? WiFi.SSID().c_str() : wifi_ssid,
           sizeof(state.wifi_ssid));
   const String ip = wifi_connected ? WiFi.localIP().toString() : String();
   strlcpy(state.wifi_ip, ip.c_str(), sizeof(state.wifi_ip));
+  strlcpy(state.wifi_message, wifi_status_message, sizeof(state.wifi_message));
   state.wifi_rssi = wifi_connected ? WiFi.RSSI() : 0;
   state.saved_network_count = wifi_profile_count;
+  for (uint8_t i = 0; i < wifi_profile_count; ++i) {
+    strlcpy(state.profiles[i].ssid, wifi_profiles[i].ssid,
+            sizeof(state.profiles[i].ssid));
+    state.profiles[i].connected =
+        wifi_connected && strcmp(WiFi.SSID().c_str(), wifi_profiles[i].ssid) == 0;
+  }
   if (!wifi_scan_running && wifi_scan_result_count > 0) {
     state.network_count = wifi_scan_result_count;
     for (uint8_t i = 0; i < state.network_count; ++i) {
@@ -6861,9 +7171,67 @@ void handle_global_settings_touch(int32_t x, int32_t y) {
       close_global_settings();
       break;
     case orcsdr::settings::ActionKind::scan_wifi:
-      start_wifi_inventory();
+      wifi_scan_requested.store(true, std::memory_order_release);
+      strlcpy(wifi_status_message, "Scan queued", sizeof(wifi_status_message));
       orcsdr::settings::update(global_settings_state());
       break;
+    case orcsdr::settings::ActionKind::connect_wifi: {
+      char ssid[33]{}, password[64]{};
+      if (!orcsdr::settings::take_wifi_credentials(
+              ssid, sizeof(ssid), password, sizeof(password))) break;
+      bool already_saved = false;
+      for (uint8_t i = 0; i < wifi_profile_count; ++i)
+        already_saved |= strcmp(wifi_profiles[i].ssid, ssid) == 0;
+      if (!already_saved && wifi_profile_count >= std::size(wifi_profiles)) {
+        strlcpy(wifi_status_message, "Four-profile limit reached",
+                sizeof(wifi_status_message));
+      } else {
+        start_wifi_connection(ssid, password, true);
+      }
+      memset(password, 0, sizeof(password));
+      orcsdr::settings::update(global_settings_state());
+      break;
+    }
+    case orcsdr::settings::ActionKind::connect_saved_wifi:
+      if (action.value >= 0 && action.value < wifi_profile_count) {
+        select_wifi_profile(static_cast<uint8_t>(action.value));
+        wifi_save_after_connect = false;
+        wifi_connect_requested.store(true, std::memory_order_release);
+        orcsdr::settings::update(global_settings_state());
+      }
+      break;
+    case orcsdr::settings::ActionKind::forget_wifi:
+      if (action.value >= 0 && action.value < wifi_profile_count) {
+        const uint8_t index = static_cast<uint8_t>(action.value);
+        if (wifi_connected && strcmp(WiFi.SSID().c_str(), wifi_profiles[index].ssid) == 0) {
+          WiFi.disconnect();
+          wifi_connected = false;
+        }
+        for (uint8_t i = index; i + 1 < wifi_profile_count; ++i)
+          wifi_profiles[i] = wifi_profiles[i + 1];
+        memset(&wifi_profiles[--wifi_profile_count], 0, sizeof(WifiProfile));
+        persist_wifi_profiles();
+        if (wifi_profile_count) select_wifi_profile(0);
+        else {
+          wifi_ssid[0] = wifi_password[0] = '\0';
+          stop_wifi();
+        }
+        strlcpy(wifi_status_message, "Profile forgotten", sizeof(wifi_status_message));
+        orcsdr::settings::update(global_settings_state());
+      }
+      break;
+    case orcsdr::settings::ActionKind::move_wifi_up:
+    case orcsdr::settings::ActionKind::move_wifi_down: {
+      const int from = action.value;
+      const int to = action.kind == orcsdr::settings::ActionKind::move_wifi_up
+                         ? from - 1 : from + 1;
+      if (from >= 0 && from < wifi_profile_count && to >= 0 && to < wifi_profile_count) {
+        std::swap(wifi_profiles[from], wifi_profiles[to]);
+        persist_wifi_profiles();
+        orcsdr::settings::update(global_settings_state());
+      }
+      break;
+    }
     case orcsdr::settings::ActionKind::location_changed: {
       const auto& state = orcsdr::settings::state();
       adsb_settings.location_configured = state.location_configured;
@@ -8322,6 +8690,7 @@ void process_command(char* command) {
     Serial.println("RTL_VOLUME <0-32>              - set volume (auth)");
     Serial.println("RTL_SOUND                      - query audio-enabled state");
     Serial.println("RTL_SOUND ON|OFF                - enable/disable audio+demod pipeline (no auth)");
+    Serial.println("RTL_AUDIO_TEST STATUS|TONE|FM|STOP - audio output validation (no auth)");
     Serial.println("RTL_SIGNAL                     - signal dBFS, stereo lock, L/R levels");
     Serial.println("RTL_PRESET_SCAN                - start FM band scan for presets (auth, FM only)");
     Serial.println("RTL_PRESET_LIST                - list current FM presets");
@@ -8394,18 +8763,39 @@ void process_command(char* command) {
     Serial.printf("RTL_SOUND_OK enabled=%d\n", enable ? 1 : 0);
     return;
   }
+  if (strcmp(command, "RTL_AUDIO_TEST STATUS") == 0) {
+    rtl_audio_test_emit_status();
+    return;
+  }
+  if (strcmp(command, "RTL_AUDIO_TEST TONE") == 0) {
+    rtl_audio_test_start_tone();
+    return;
+  }
+  if (strcmp(command, "RTL_AUDIO_TEST FM") == 0) {
+    rtl_audio_test_start_fm();
+    return;
+  }
+  if (strcmp(command, "RTL_AUDIO_TEST STOP") == 0) {
+    rtl_audio_test_stop();
+    return;
+  }
   if (strcmp(command, "RTL_SIGNAL") == 0) {
+    const int signal_tenths = static_cast<int>(lroundf(rtl_signal_dbfs_smooth * 10.0f));
+    const int left_tenths = static_cast<int>(
+        lroundf(rtl_audio_left_dbfs.load(std::memory_order_relaxed) * 10.0f));
+    const int right_tenths = static_cast<int>(
+        lroundf(rtl_audio_right_dbfs.load(std::memory_order_relaxed) * 10.0f));
+    const int rds_tenths = static_cast<int>(
+        lroundf(rtl_rds_signal_dbfs.load(std::memory_order_relaxed) * 10.0f));
     Serial.printf(
-        "RTL_SIGNAL_STATUS band=%s frequency_hz=%u signal_dbfs=%.1f "
-        "stereo_locked=%d left_dbfs=%.1f right_dbfs=%.1f "
-        "rds_carrier=%d rds_signal=%.1f\n",
-        rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz,
-        static_cast<double>(rtl_signal_dbfs_smooth),
+        "RTL_SIGNAL_STATUS band=%s frequency_hz=%u signal_dbfs_tenths=%d "
+        "stereo_locked=%d left_dbfs_tenths=%d right_dbfs_tenths=%d "
+        "rds_carrier=%d rds_signal_tenths=%d\n",
+        rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz, signal_tenths,
         rtl_stereo_locked.load(std::memory_order_relaxed) ? 1 : 0,
-        static_cast<double>(rtl_audio_left_dbfs.load(std::memory_order_relaxed)),
-        static_cast<double>(rtl_audio_right_dbfs.load(std::memory_order_relaxed)),
+        left_tenths, right_tenths,
         rtl_rds_carrier_present.load(std::memory_order_relaxed) ? 1 : 0,
-        static_cast<double>(rtl_rds_signal_dbfs.load(std::memory_order_relaxed)));
+        rds_tenths);
     return;
   }
   if (strcmp(command, "RTL_PRESET_SCAN") == 0 && authenticated) {
@@ -8733,6 +9123,17 @@ void setup() {
 
   auto config = M5.config();
   M5.begin(config);
+  // Tab5 codec/amp remains owned by M5Unified. Configure its one worker before first begin.
+  auto speaker_config = M5.Speaker.config();
+  speaker_config.sample_rate = 48000;
+  speaker_config.stereo = true;
+  // Speaker_Class allocates its mixing buffer on spk_task's stack. 256 frames
+  // leaves too little stack on Tab5; 512 retains a safe task stack margin.
+  speaker_config.dma_buf_len = 512;
+  speaker_config.dma_buf_count = 8;
+  speaker_config.task_priority = 6;
+  speaker_config.task_pinned_core = 1;
+  M5.Speaker.config(speaker_config);
   M5.Display.setRotation(1);
   M5.Display.setBrightness(180);
   if (!orcsdr::adsb::self_check() || !orcsdr::adsb_rx::Decoder::self_check()) {
@@ -8806,16 +9207,6 @@ void setup() {
   orcsdr_splash_set_status("Loading saved settings…");
   load_state();
 
-  orcsdr_splash_set_status("Starting Wi-Fi stack…");
-  initialize_wifi();
-  if (wifi_configured) {
-    orcsdr_splash_set_status("Connecting Wi-Fi…");
-    start_wifi_connection();
-  } else {
-    orcsdr_splash_set_status("Scanning Wi-Fi networks…");
-    start_wifi_inventory();
-  }
-
   orcsdr_splash_set_status("Starting RTL-SDR USB host…");
   initialize_rtl_sdr_host();
 
@@ -8856,6 +9247,7 @@ void loop() {
     M5.update();
   }
   poll_serial();
+  rtl_audio_test_service();
   poll_wifi();
   if (adsb_settings_persist_pending.exchange(false, std::memory_order_acq_rel)) {
     preferences.putBool("adsb_loc_set", adsb_settings.location_configured);
@@ -8910,7 +9302,6 @@ void loop() {
       if (rtl_ui_band != RtlBand::adsb) {
         rtl_audio_enabled.store(true, std::memory_order_release);
         rtl_audio_play_count = 0;
-        (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
       }
     }
     const auto touch = M5.Touch.getDetail(0);

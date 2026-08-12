@@ -891,6 +891,16 @@ static void free_bulk_pool(rtl_sdr_v4_esp_handle *h)
 
 static esp_err_t alloc_bulk_pool(rtl_sdr_v4_esp_handle *h, uint32_t num, uint32_t len)
 {
+    if (h->bulk != nullptr && h->bulk_num == num && h->bulk_len == len) {
+        for (uint32_t i = 0; i < num; ++i) {
+            h->bulk[i]->device_handle = h->dev;
+            h->bulk[i]->bEndpointAddress = RTL_SDR_V4_ESP_BULK_EP_IN;
+            h->bulk[i]->num_bytes = len;
+            h->bulk[i]->callback = bulk_cb;
+            h->bulk[i]->context = h;
+        }
+        return ESP_OK;
+    }
     free_bulk_pool(h);
     h->bulk = static_cast<usb_transfer_t **>(calloc(num, sizeof(usb_transfer_t *)));
     if (h->bulk == nullptr) {
@@ -1389,7 +1399,8 @@ static esp_err_t stop_stream_internal(rtl_sdr_v4_esp_handle *h, uint32_t timeout
         h->iface_claimed = false;
     }
 
-    free_bulk_pool(h);
+    /* Retain the DMA transfer pool for the next stream start. Wi-Fi may claim
+     * enough internal memory after boot that recreating this pool fails. */
     h->stream_start_ms = 0;
     h->state = RTL_SDR_V4_ESP_STATE_IDLE;
     set_error_unlocked(h, ESP_OK);

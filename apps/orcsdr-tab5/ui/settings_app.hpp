@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace orcsdr::settings {
@@ -23,15 +24,23 @@ struct WifiNetwork {
   bool saved = false;
 };
 
+struct WifiProfileView {
+  char ssid[33]{};
+  bool connected = false;
+};
+
 struct State {
   bool wifi_ready = false;
   bool wifi_scanning = false;
   bool wifi_connected = false;
+  bool wifi_connecting = false;
   char wifi_ssid[33]{};
   char wifi_ip[16]{};
+  char wifi_message[48]{};
   int16_t wifi_rssi = 0;
   WifiNetwork networks[6]{};
   uint8_t network_count = 0;
+  WifiProfileView profiles[4]{};
   uint8_t saved_network_count = 0;
 
   bool location_configured = false;
@@ -63,6 +72,11 @@ enum class ActionKind : uint8_t {
   none,
   close,
   scan_wifi,
+  connect_wifi,
+  connect_saved_wifi,
+  forget_wifi,
+  move_wifi_up,
+  move_wifi_down,
   location_changed,
   range_changed,
   brightness_changed,
@@ -84,6 +98,8 @@ void update(const State& state);
 Action handle_touch(int32_t x, int32_t y);
 bool active();
 const State& state();
+bool take_wifi_credentials(char* ssid, size_t ssid_size,
+                           char* password, size_t password_size);
 bool self_check();
 
 }  // namespace orcsdr::settings
