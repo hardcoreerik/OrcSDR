@@ -1083,6 +1083,7 @@ bool wifi_scan_running = false;
 std::atomic<bool> wifi_scan_requested{false};
 std::atomic<bool> wifi_connect_requested{false};
 bool wifi_configured = false;
+bool settings_wifi_power_enabled = true;
 bool wifi_connected = false;
 bool wifi_connecting = false;
 bool wifi_save_after_connect = false;
@@ -7043,6 +7044,7 @@ void log_wifi_coexistence(const char* event, uint32_t elapsed_ms = 0) {
 }
 
 void start_wifi_inventory() {
+  if (!settings_wifi_power_enabled) return;
   if (!wifi_station_ready) initialize_wifi();
   if (!wifi_station_ready) return;
   if (wifi_scan_running) return;
@@ -7058,6 +7060,7 @@ void start_wifi_inventory() {
 }
 
 void start_wifi_connection() {
+  if (!settings_wifi_power_enabled) return;
   if (!wifi_station_ready) initialize_wifi();
   if (!wifi_station_ready || !wifi_ssid[0]) return;
   if (wifi_scan_running) WiFi.scanDelete();
@@ -7075,9 +7078,10 @@ void start_wifi_connection() {
 }
 
 void stop_wifi() {
-  if (!wifi_station_ready) return;
-  WiFi.disconnect(true, false);
-  WiFi.mode(WIFI_OFF);
+  if (wifi_station_ready) {
+    WiFi.disconnect(true, false);
+    WiFi.mode(WIFI_OFF);
+  }
   wifi_station_ready = false;
   wifi_hosted_versions_match = false;
   wifi_connected = false;
@@ -7096,6 +7100,11 @@ void start_wifi_connection(const char* ssid, const char* password, bool save_on_
 }
 
 void poll_wifi() {
+  if (!settings_wifi_power_enabled) {
+    wifi_scan_requested.store(false, std::memory_order_release);
+    wifi_connect_requested.store(false, std::memory_order_release);
+    return;
+  }
   if (wifi_scan_requested.exchange(false, std::memory_order_acq_rel)) start_wifi_inventory();
   if (wifi_connect_requested.exchange(false, std::memory_order_acq_rel)) start_wifi_connection();
   bool state_changed = false;
@@ -7180,6 +7189,7 @@ void poll_wifi() {
 
 orcsdr::settings::State global_settings_state() {
   orcsdr::settings::State state;
+  state.wifi_power_enabled = settings_wifi_power_enabled;
   state.wifi_ready = wifi_station_ready;
   state.wifi_scanning = wifi_scan_running;
   state.wifi_connected = wifi_connected;
@@ -7270,6 +7280,18 @@ void handle_global_settings_touch(int32_t x, int32_t y) {
   switch (action.kind) {
     case orcsdr::settings::ActionKind::close:
       close_global_settings();
+      break;
+    case orcsdr::settings::ActionKind::wifi_power_changed:
+      settings_wifi_power_enabled = action.value != 0;
+      preferences.putBool("set_wifi_power", settings_wifi_power_enabled);
+      if (!settings_wifi_power_enabled) {
+        wifi_scan_requested.store(false, std::memory_order_release);
+        wifi_connect_requested.store(false, std::memory_order_release);
+        stop_wifi();
+      } else {
+        strlcpy(wifi_status_message, "Wi-Fi ready; choose Scan or Use", sizeof(wifi_status_message));
+      }
+      orcsdr::settings::update(global_settings_state());
       break;
     case orcsdr::settings::ActionKind::scan_wifi:
       wifi_scan_requested.store(true, std::memory_order_release);
@@ -7638,6 +7660,7 @@ void load_state() {
   settings_rotation = preferences.getUChar("set_rotation", 1);
   if (settings_rotation != 1 && settings_rotation != 3) settings_rotation = 1;
   settings_screen_timeout_sec = preferences.getUShort("set_timeout", 0);
+  settings_wifi_power_enabled = preferences.getBool("set_wifi_power", true);
   settings_sound_default = preferences.getBool("set_sound", true);
   rtl_audio_user_enabled.store(settings_sound_default, std::memory_order_release);
   rtl_audio_enabled.store(settings_sound_default && rtl_band_has_audio(rtl_ui_band),

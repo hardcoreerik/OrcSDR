@@ -30,6 +30,7 @@ struct WifiProfileView {
 };
 
 struct State {
+  bool wifi_power_enabled = true;
   bool wifi_ready = false;
   bool wifi_scanning = false;
   bool wifi_connected = false;
@@ -77,6 +78,7 @@ struct State {
 enum class ActionKind : uint8_t {
   none,
   close,
+  wifi_power_changed,
   scan_wifi,
   connect_wifi,
   connect_saved_wifi,

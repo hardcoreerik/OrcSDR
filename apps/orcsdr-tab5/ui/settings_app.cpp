@@ -86,7 +86,8 @@ void draw_header() {
   if (g_state.wifi_connected)
     snprintf(status, sizeof(status), "%s  %s", g_state.wifi_ssid, g_state.wifi_ip);
   else
-    strlcpy(status, g_state.wifi_connecting ? "Wi-Fi connecting"
+    strlcpy(status, !g_state.wifi_power_enabled ? "Wi-Fi powered off"
+                    : g_state.wifi_connecting ? "Wi-Fi connecting"
                     : g_state.wifi_scanning ? "Wi-Fi scanning" : "Wi-Fi offline",
             sizeof(status));
   text(status, 1020, 36, g_state.wifi_connected ? kGreen : kMuted, 2, middle_right);
@@ -110,10 +111,12 @@ void draw_rail() {
 void draw_connectivity() {
   text("CONNECTIVITY", 330, 115, kBlue, 3);
   char value[96];
-  const char* status = g_state.wifi_connected ? "CONNECTED"
+  const char* status = !g_state.wifi_power_enabled ? "POWERED OFF"
+                       : g_state.wifi_connected ? "CONNECTED"
                        : g_state.wifi_connecting ? "CONNECTING"
                                                 : "OFFLINE";
-  const uint16_t status_color = g_state.wifi_connected ? kGreen
+  const uint16_t status_color = !g_state.wifi_power_enabled ? TFT_ORANGE
+                                : g_state.wifi_connected ? kGreen
                                 : g_state.wifi_connecting ? TFT_YELLOW
                                                          : TFT_ORANGE;
   snprintf(value, sizeof(value), "%s  %s  %s", status,
@@ -124,6 +127,8 @@ void draw_connectivity() {
   button(g_state.wifi_scanning ? "SCANNING..." : "SCAN", 330, 180, 170, 46,
          g_state.wifi_scanning ? TFT_DARKGREY : TFT_DARKCYAN);
   button("ADD HIDDEN", 520, 180, 210, 46, TFT_NAVY);
+  button(g_state.wifi_power_enabled ? "POWER OFF" : "POWER ON", 750, 180, 170, 46,
+         g_state.wifi_power_enabled ? TFT_MAROON : TFT_DARKGREEN);
   value_row("WI-FI ANTENNA", "BOARD DEFAULT (READ ONLY)", 245, kMuted);
 
   text("SAVED NETWORKS (PRIORITY ORDER)", 330, 290, kBlue, 2);
@@ -536,13 +541,15 @@ void draw() {
 }
 
 void update(const State& state_value) {
-  const bool header_changed = g_state.wifi_connected != state_value.wifi_connected ||
+  const bool header_changed = g_state.wifi_power_enabled != state_value.wifi_power_enabled ||
+                              g_state.wifi_connected != state_value.wifi_connected ||
                               g_state.wifi_connecting != state_value.wifi_connecting ||
                               g_state.wifi_scanning != state_value.wifi_scanning ||
                               strcmp(g_state.wifi_ssid, state_value.wifi_ssid) != 0 ||
                               strcmp(g_state.wifi_ip, state_value.wifi_ip) != 0;
   const bool page_changed = g_section == Section::connectivity &&
-                            (g_state.wifi_scanning != state_value.wifi_scanning ||
+                            (g_state.wifi_power_enabled != state_value.wifi_power_enabled ||
+                             g_state.wifi_scanning != state_value.wifi_scanning ||
                              g_state.wifi_connecting != state_value.wifi_connecting ||
                              g_state.network_count != state_value.network_count ||
                              g_state.saved_network_count != state_value.saved_network_count ||
@@ -584,6 +591,9 @@ Action handle_touch(int32_t x, int32_t y) {
     return {};
   }
   if (g_section == Section::connectivity) {
+    if (hit(x, y, 750, 180, 170, 46))
+      return {ActionKind::wifi_power_changed, g_state.wifi_power_enabled ? 0 : 1};
+    if (!g_state.wifi_power_enabled) return {};
     if (hit(x, y, 330, 180, 170, 46) && !g_state.wifi_scanning)
       return {ActionKind::scan_wifi, 0};
     if (hit(x, y, 520, 180, 210, 46)) {
