@@ -1158,6 +1158,9 @@ enum class BootInitStage : uint8_t {
 BootInitStage boot_init_stage = BootInitStage::idle;
 uint32_t boot_init_stage_started_ms = 0;
 bool boot_auto_start_allowed = false;
+uint32_t power_monitor_until_ms = 0;
+uint32_t power_monitor_next_ms = 0;
+char power_monitor_tag[24]{};
 std::atomic<bool> rtl_volume_changed{false};
 /** When false: no scope/waterfall updates (audio + SIG meter still run). A/B for chop diagnosis. */
 std::atomic<bool> rtl_graphics_enabled{true};
@@ -1477,6 +1480,8 @@ void handle_global_settings_touch(int32_t x, int32_t y);
 void draw_global_settings_gear();
 void start_wifi_inventory();
 void stop_wifi();
+void begin_power_monitor(const char* tag, uint32_t duration_ms = 1000);
+void service_power_monitor();
 
 void draw_touch_state(const char* message, uint32_t color) {
   M5.Display.fillRect(300, 480, 680, 70, TFT_BLACK);
@@ -1946,6 +1951,7 @@ bool ensure_speaker_running(uint8_t volume) {
 void allow_boot_speaker() {
   if (!rtl_speaker_start_allowed.exchange(true, std::memory_order_acq_rel)) {
     Serial.println("BOOT_STAGE speaker_start");
+    begin_power_monitor("speaker_start");
   }
   if (rtl_audio_enabled.load(std::memory_order_acquire))
     (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
@@ -6625,6 +6631,7 @@ static void rtl_driver_app_task(void *) {
       esp_err_t err = rtl_sdr_v4_esp_start(g_rtl, &st);
       Serial.printf("RTL_START %s rate=%u frequency_hz=%u\n",
                     rtl_sdr_v4_esp_err_to_name(err), st.sample_rate_sps, frequency_hz);
+      begin_power_monitor("rtl_start");
       if (err == ESP_ERR_NO_MEM) {
         vTaskDelay(pdMS_TO_TICKS(500));
         err = rtl_sdr_v4_esp_start(g_rtl, &st);
@@ -7044,6 +7051,7 @@ void start_wifi_inventory() {
   wifi_scan_started_ms = millis();
   strlcpy(wifi_status_message, "Scanning networks", sizeof(wifi_status_message));
   wifi_network_count = WiFi.scanNetworks(true, true);
+  begin_power_monitor("wifi_scan");
   wifi_scan_running = wifi_network_count == WIFI_SCAN_RUNNING;
   log_wifi_coexistence(wifi_scan_running ? "scan_started" : "scan_start_failed");
   draw_wifi_state();
@@ -7061,6 +7069,7 @@ void start_wifi_connection() {
   strlcpy(wifi_status_message, "Testing connection", sizeof(wifi_status_message));
   WiFi.disconnect();
   WiFi.begin(wifi_ssid, wifi_password);
+  begin_power_monitor("wifi_connect");
   log_wifi_coexistence("connect_started");
   draw_wifi_state();
 }
@@ -9235,6 +9244,32 @@ void poll_serial() {
   }
 }
 
+void emit_power_sample(const char* tag) {
+  Serial.printf(
+      "POWER_SAMPLE tag=%s uptime_ms=%lu battery_mv=%d battery_ma=%ld battery_pct=%ld "
+      "charging=%s\n",
+      tag ? tag : "sample", static_cast<unsigned long>(millis()),
+      M5.Power.getBatteryVoltage(), static_cast<long>(M5.Power.getBatteryCurrent()),
+      static_cast<long>(M5.Power.getBatteryLevel()), charging_state());
+}
+
+void begin_power_monitor(const char* tag, uint32_t duration_ms) {
+  strlcpy(power_monitor_tag, tag ? tag : "action", sizeof(power_monitor_tag));
+  power_monitor_until_ms = millis() + duration_ms;
+  power_monitor_next_ms = millis() + 200;
+  emit_power_sample(power_monitor_tag);
+}
+
+void service_power_monitor() {
+  if (!power_monitor_until_ms || static_cast<int32_t>(millis() - power_monitor_until_ms) >= 0) {
+    power_monitor_until_ms = 0;
+    return;
+  }
+  if (static_cast<int32_t>(millis() - power_monitor_next_ms) < 0) return;
+  power_monitor_next_ms = millis() + 200;
+  emit_power_sample(power_monitor_tag);
+}
+
 const char* boot_init_stage_name(BootInitStage stage) {
   switch (stage) {
     case BootInitStage::usb_power_off: return "usb_power_off";
@@ -9250,6 +9285,7 @@ void set_boot_init_stage(BootInitStage stage) {
   boot_init_stage = stage;
   boot_init_stage_started_ms = millis();
   Serial.printf("BOOT_STAGE %s\n", boot_init_stage_name(stage));
+  begin_power_monitor(boot_init_stage_name(stage));
 }
 
 void begin_boot_device_staging() {
@@ -9433,6 +9469,7 @@ void loop() {
   poll_serial();
   rtl_audio_test_service();
   service_boot_device_staging();
+  service_power_monitor();
   if (boot_auto_start_allowed) poll_wifi();
   if (adsb_settings_persist_pending.exchange(false, std::memory_order_acq_rel)) {
     preferences.putBool("adsb_loc_set", adsb_settings.location_configured);
