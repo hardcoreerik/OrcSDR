@@ -3,9 +3,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. 'C:\Espressif\Initialize-Idf.ps1' -IdfId $IdfId
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
-. 'C:\Espressif\Initialize-Idf.ps1' -IdfId $IdfId
 Set-Location (Join-Path $PSScriptRoot '..')
 
 # Resolve the locked component graph before applying the Tab5 lifecycle patch.
@@ -15,28 +15,13 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $hostInit = Join-Path (Get-Location) 'managed_components\espressif__esp_hosted\host\port\esp\freertos\src\port_esp_hosted_host_init.c'
 $source = Get-Content -LiteralPath $hostInit -Raw
- $original = @'
-DEFINE_LOG_TAG(host_init);
-
-//ESP_SYSTEM_INIT_FN(esp_hosted_host_init, BIT(0), 120)
-static void __attribute__((constructor)) esp_hosted_host_init(void)
-{
-	ESP_LOGI(TAG, "ESP Hosted : Host chip_ip[%d]", CONFIG_IDF_FIRMWARE_CHIP_ID);
-	ESP_ERROR_CHECK(esp_hosted_init());
-}
-
-static void __attribute__((destructor)) esp_hosted_host_deinit(void)
-{
-	ESP_LOGI(TAG, "ESP Hosted deinit");
-	esp_hosted_deinit();
-}
-'@
+$hostedInitPattern = '(?s)DEFINE_LOG_TAG\(host_init\);\s*//ESP_SYSTEM_INIT_FN\(esp_hosted_host_init, BIT\(0\), 120\)\s*static void __attribute__\(\(constructor\)\) esp_hosted_host_init\(void\)\s*\{\s*ESP_LOGI\(TAG, "ESP Hosted : Host chip_ip\[%d\]", CONFIG_IDF_FIRMWARE_CHIP_ID\);\s*ESP_ERROR_CHECK\(esp_hosted_init\(\)\);\s*\}\s*static void __attribute__\(\(destructor\)\) esp_hosted_host_deinit\(void\)\s*\{\s*ESP_LOGI\(TAG, "ESP Hosted deinit"\);\s*esp_hosted_deinit\(\);\s*\}'
 $replacement = @'
 /* OrcSDR owns the 2.12.6 Hosted lifecycle through Arduino WiFi so Tab5 SDIO
  * pins are installed before esp_hosted_init(). Do not restore the constructor. */
 '@
-if ($source.Contains($original)) {
-  Set-Content -LiteralPath $hostInit -Value $source.Replace($original, $replacement) -NoNewline
+if ($source -match $hostedInitPattern) {
+  Set-Content -LiteralPath $hostInit -Value ([regex]::Replace($source, $hostedInitPattern, $replacement, 1)) -NoNewline
   Write-Output 'TAB5_HOSTED_LIFECYCLE_PATCH applied version=2.12.6'
 } elseif ($source.Contains('DEFINE_LOG_TAG(host_init);') -and
           $source.Contains('OrcSDR owns the 2.12.6 Hosted lifecycle')) {

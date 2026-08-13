@@ -7213,6 +7213,11 @@ orcsdr::settings::State global_settings_state() {
   state.fm_frequency_hz = rtl_saved_fm_hz;
   state.sd_ready = g_sd_ready;
   state.companion_supported = false;
+  state.battery_level = M5.Power.getBatteryLevel();
+  state.battery_mv = M5.Power.getBatteryVoltage();
+  state.battery_current_ma = M5.Power.getBatteryCurrent();
+  state.vbus_mv = M5.Power.getVBUSVoltage();
+  strlcpy(state.charging_state, charging_state(), sizeof(state.charging_state));
   snprintf(state.build_identity, sizeof(state.build_identity), "%s %s", __DATE__, __TIME__);
   state.uptime_seconds = millis() / 1000;
   return state;

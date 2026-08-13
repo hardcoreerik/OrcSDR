@@ -64,6 +64,11 @@ struct State {
   uint64_t sd_free_bytes = 0;
   bool companion_supported = false;
   uint8_t paired_phone_count = 0;
+  int32_t battery_level = -1;
+  int16_t battery_mv = -1;
+  int32_t battery_current_ma = 0;
+  int16_t vbus_mv = -1;
+  char charging_state[16]{};
   char build_identity[40]{};
   uint32_t uptime_seconds = 0;
 };

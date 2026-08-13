@@ -247,18 +247,39 @@ void draw_companion() {
        TFT_LIGHTGREY, 2);
 }
 
+void draw_system_power() {
+  M5.Display.fillRect(330, 160, 890, 250, kBg);
+  char value[48];
+  if (g_state.battery_mv >= 0) {
+    snprintf(value, sizeof(value), "%d mV  /  %ld%%", g_state.battery_mv,
+             static_cast<long>(g_state.battery_level));
+  } else {
+    strlcpy(value, "UNAVAILABLE", sizeof(value));
+  }
+  value_row("BATTERY RAIL", value, 175, g_state.battery_mv >= 0 ? kGreen : TFT_ORANGE);
+  value_row("CHARGE STATE", g_state.charging_state[0] ? g_state.charging_state : "UNKNOWN", 225);
+  snprintf(value, sizeof(value), "%ld mA (RAW)",
+           static_cast<long>(g_state.battery_current_ma));
+  value_row("BATTERY CURRENT", value, 275);
+  if (g_state.vbus_mv >= 0)
+    snprintf(value, sizeof(value), "%d mV", g_state.vbus_mv);
+  else
+    strlcpy(value, "NOT EXPOSED", sizeof(value));
+  value_row("USB / VBUS", value, 325, g_state.vbus_mv >= 0 ? kGreen : kMuted);
+  value_row("EXTERNAL 7.4 V", "NO SEPARATE SENSOR", 375, kMuted);
+}
+
 void draw_system() {
   text("SYSTEM", 330, 115, kBlue, 3);
   char value[40];
-  value_row("BUILD", g_state.build_identity, 175);
+  draw_system_power();
+  value_row("BUILD", g_state.build_identity, 435);
   snprintf(value, sizeof(value), "%lu SEC", static_cast<unsigned long>(g_state.uptime_seconds));
-  value_row("UPTIME", value, 225);
-  value_row("NETWORK", g_state.wifi_connected ? "CONNECTED" : "OFFLINE", 275);
-  value_row("SD", g_state.sd_ready ? "READY" : "UNAVAILABLE", 325);
-  value_row("USB / DECODER", "SEE SERIAL DIAGNOSTICS", 375);
-  value_row("M5LAUNCHER", "COMPATIBILITY INFO ONLY", 425, kMuted);
+  value_row("UPTIME", value, 475);
+  value_row("NETWORK", g_state.wifi_connected ? "CONNECTED" : "OFFLINE", 515);
+  value_row("SD", g_state.sd_ready ? "READY" : "UNAVAILABLE", 555);
   text("Reboot, reset, export, and Launcher handoff require separate safety gates.",
-       330, 515, TFT_LIGHTGREY, 2);
+       330, 605, TFT_LIGHTGREY, 2);
 }
 
 void draw_content() {
@@ -529,10 +550,18 @@ void update(const State& state_value) {
                              strcmp(g_state.wifi_message, state_value.wifi_message) != 0 ||
                              memcmp(g_state.profiles, state_value.profiles,
                                     sizeof(g_state.profiles)) != 0);
+  const bool power_changed = g_section == Section::system &&
+                             (g_state.battery_level != state_value.battery_level ||
+                              g_state.battery_mv != state_value.battery_mv ||
+                              g_state.battery_current_ma != state_value.battery_current_ma ||
+                              g_state.vbus_mv != state_value.vbus_mv ||
+                              strcmp(g_state.charging_state, state_value.charging_state) != 0);
   g_state = state_value;
   if (header_changed) draw_header();
   if (page_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_content();
+  if (power_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
+    draw_system_power();
 }
 
 Action handle_touch(int32_t x, int32_t y) {
