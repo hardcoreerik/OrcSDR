@@ -1463,6 +1463,7 @@ orcsdr::settings::State global_settings_state();
 void open_global_settings(orcsdr::settings::Section section);
 void handle_global_settings_touch(int32_t x, int32_t y);
 void draw_global_settings_gear();
+bool service_position_rotation();
 void start_wifi_inventory();
 void stop_wifi();
 
@@ -7984,6 +7985,89 @@ void request_hot_retune(uint32_t frequency_hz) {
   }
 }
 
+constexpr float absf(float value) { return value < 0.0f ? -value : value; }
+
+// ponytail: Tab5 mounting calibration; adjust these constants if live IMU
+// measurements show a different comfortable flip angle or reversed Y axis.
+constexpr float kRotationTiltThresholdG = 0.65f;
+constexpr float kRotationAxisMarginG = 0.15f;
+constexpr bool kRotationInvertY = false;
+constexpr uint8_t kRotationStableSamples = 6;
+constexpr uint32_t kRotationPollIntervalMs = 100;
+
+constexpr uint8_t position_rotation(float accel_x, float accel_y,
+                                    uint8_t current_rotation) {
+  if (absf(accel_y) < kRotationTiltThresholdG ||
+      absf(accel_y) < absf(accel_x) + kRotationAxisMarginG) {
+    return current_rotation;
+  }
+  const bool positive_y_down = (accel_y > 0.0f) != kRotationInvertY;
+  return positive_y_down ? 3 : 1;
+}
+
+static_assert(position_rotation(0.0f, -0.8f, 3) == 1);
+static_assert(position_rotation(0.0f, 0.8f, 1) == 3);
+static_assert(position_rotation(0.7f, 0.7f, 1) == 1);
+
+void redraw_after_rotation() {
+  M5.Display.fillScreen(TFT_BLACK);
+  if (orcsdr::settings::active()) {
+    orcsdr::settings::draw();
+  } else if (rtl_ui_active.load(std::memory_order_acquire)) {
+    if (rtl_ui_band == RtlBand::adsb && orcsdr::adsb::active()) {
+      orcsdr::adsb::draw();
+      draw_global_settings_gear();
+    } else {
+      draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
+                      rtl_live_volume.load(std::memory_order_acquire));
+    }
+  } else {
+    draw_rtl_sdr_state();
+    draw_session_state(authenticated ? "Authenticated host online"
+                                     : paired ? "Waiting for authenticated host"
+                                              : "Unpaired - USB provisioning",
+                       authenticated ? TFT_GREEN : paired ? TFT_YELLOW : TFT_ORANGE);
+    draw_wifi_state();
+    draw_power_state();
+  }
+}
+
+bool service_position_rotation() {
+  static uint32_t last_poll_ms = 0;
+  static uint8_t current_rotation = 1;
+  static uint8_t pending_rotation = 1;
+  static uint8_t stable_samples = 0;
+
+  const uint32_t now = millis();
+  if (now - last_poll_ms < kRotationPollIntervalMs || !M5.Imu.isEnabled()) return false;
+  last_poll_ms = now;
+
+  float accel_x, accel_y, accel_z;
+  if (!M5.Imu.getAccel(&accel_x, &accel_y, &accel_z)) return false;
+  const uint8_t next = position_rotation(accel_x, accel_y, current_rotation);
+  if (next == current_rotation) {
+    pending_rotation = current_rotation;
+    stable_samples = 0;
+    return false;
+  }
+  if (next != pending_rotation) {
+    pending_rotation = next;
+    stable_samples = 1;
+    return false;
+  }
+  if (++stable_samples < kRotationStableSamples) return false;
+
+  current_rotation = pending_rotation;
+  stable_samples = 0;
+  was_pressed = false;
+  M5.Display.setRotation(current_rotation);
+  Serial.printf("SCREEN_ROTATION rotation=%u accel_x=%.3f accel_y=%.3f accel_z=%.3f\n",
+                current_rotation, static_cast<double>(accel_x),
+                static_cast<double>(accel_y), static_cast<double>(accel_z));
+  redraw_after_rotation();
+  return true;
+}
+
 // Capture runs on the high-priority USB task and previously starved Arduino
 // loop() touch polling. Service edges here so buttons work during waterfall.
 // Only this path may call M5.update() while rtl_ui_active — concurrent update
@@ -7997,6 +8081,7 @@ void poll_sdr_touch_from_stream() {
     if (now - settings_last_poll_ms < 33) return;
     settings_last_poll_ms = now;
     M5.update();
+    if (service_position_rotation()) return;
     if (now - settings_last_update_ms >= 500) {
       settings_last_update_ms = now;
       orcsdr::settings::update(global_settings_state());
@@ -8026,6 +8111,7 @@ void poll_sdr_touch_from_stream() {
     flick_thresh_set = true;
   }
   M5.update();
+  if (service_position_rotation()) return;
   const uint8_t touch_count = M5.Touch.getCount();
   const auto touch = M5.Touch.getDetail(0);
   const bool pressed = touch.isPressed() || touch.wasPressed();
@@ -9346,6 +9432,7 @@ void loop() {
   // Dual M5.update() (loop + stream) was correlated with total speaker silence.
   if (!radio_ui || adsb_ui) {
     M5.update();
+    if (service_position_rotation()) return;
   }
   poll_serial();
   rtl_audio_test_service();
