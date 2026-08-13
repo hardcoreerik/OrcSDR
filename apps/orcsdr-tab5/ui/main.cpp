@@ -1147,6 +1147,17 @@ std::atomic<uint8_t> rtl_live_volume{kRtlVolumeDefault};
 std::atomic<bool> rtl_audio_user_enabled{true};
 std::atomic<bool> rtl_audio_enabled{false};
 std::atomic<bool> rtl_speaker_start_allowed{false};
+enum class BootInitStage : uint8_t {
+  idle,
+  usb_power_off,
+  usb_power_settle,
+  rtl_enumerating,
+  speaker_settle,
+  ready,
+};
+BootInitStage boot_init_stage = BootInitStage::idle;
+uint32_t boot_init_stage_started_ms = 0;
+bool boot_auto_start_allowed = false;
 std::atomic<bool> rtl_volume_changed{false};
 /** When false: no scope/waterfall updates (audio + SIG meter still run). A/B for chop diagnosis. */
 std::atomic<bool> rtl_graphics_enabled{true};
@@ -6896,12 +6907,6 @@ static void rtl_driver_app_task(void *) {
 }
 
 void initialize_rtl_sdr_host() {
-  M5.Power.setExtOutput(false, m5::ext_USB);
-  delay(100);
-  M5.Power.setExtOutput(true, m5::ext_USB);
-  set_rtl_sdr_status("RTL-SDR: USB-A power enabled");
-  delay(200);
-
   adsb_iq_free = xQueueCreate(kAdsbIqBlockCount, sizeof(uint8_t));
   adsb_iq_ready = xQueueCreate(kAdsbIqBlockCount, sizeof(uint8_t));
   if (!adsb_iq_free || !adsb_iq_ready) {
@@ -9229,6 +9234,68 @@ void poll_serial() {
     }
   }
 }
+
+const char* boot_init_stage_name(BootInitStage stage) {
+  switch (stage) {
+    case BootInitStage::usb_power_off: return "usb_power_off";
+    case BootInitStage::usb_power_settle: return "usb_power_settle";
+    case BootInitStage::rtl_enumerating: return "rtl_enumerating";
+    case BootInitStage::speaker_settle: return "speaker_settle";
+    case BootInitStage::ready: return "ready";
+    default: return "idle";
+  }
+}
+
+void set_boot_init_stage(BootInitStage stage) {
+  boot_init_stage = stage;
+  boot_init_stage_started_ms = millis();
+  Serial.printf("BOOT_STAGE %s\n", boot_init_stage_name(stage));
+}
+
+void begin_boot_device_staging() {
+  boot_auto_start_allowed = false;
+  M5.Power.setExtOutput(false, m5::ext_USB);
+  set_rtl_sdr_status("Boot: USB-A rail disabled");
+  set_boot_init_stage(BootInitStage::usb_power_off);
+}
+
+void service_boot_device_staging() {
+  const uint32_t elapsed_ms = millis() - boot_init_stage_started_ms;
+  switch (boot_init_stage) {
+    case BootInitStage::usb_power_off:
+      if (elapsed_ms < 150) return;
+      M5.Power.setExtOutput(true, m5::ext_USB);
+      set_rtl_sdr_status("Boot: USB-A rail settling");
+      set_boot_init_stage(BootInitStage::usb_power_settle);
+      return;
+    case BootInitStage::usb_power_settle:
+      if (elapsed_ms < 350) return;
+      set_rtl_sdr_status("Boot: starting RTL-SDR host");
+      initialize_rtl_sdr_host();
+      set_boot_init_stage(BootInitStage::rtl_enumerating);
+      return;
+    case BootInitStage::rtl_enumerating:
+      if (!rtl_device_ready()) {
+        if (elapsed_ms >= 8000) {
+          Serial.println("BOOT_RTL_TIMEOUT no_device");
+          boot_auto_start_allowed = true;
+          set_boot_init_stage(BootInitStage::ready);
+        }
+        return;
+      }
+      sync_rtl_audio_for_band(rtl_ui_band);
+      allow_boot_speaker();
+      set_boot_init_stage(BootInitStage::speaker_settle);
+      return;
+    case BootInitStage::speaker_settle:
+      if (elapsed_ms < 300) return;
+      boot_auto_start_allowed = true;
+      set_boot_init_stage(BootInitStage::ready);
+      return;
+    default:
+      return;
+  }
+}
 }  // namespace
 
 void orcsdr_splash_poll_serial(void) {
@@ -9325,7 +9392,7 @@ void setup() {
   load_state();
 
   orcsdr_splash_set_status("Starting RTL-SDR USB host…");
-  initialize_rtl_sdr_host();
+  begin_boot_device_staging();
 
   /* Dependencies are up: reveal the gate while the background keeps looping. */
   orcsdr_splash_set_ready(true);
@@ -9365,7 +9432,8 @@ void loop() {
   }
   poll_serial();
   rtl_audio_test_service();
-  poll_wifi();
+  service_boot_device_staging();
+  if (boot_auto_start_allowed) poll_wifi();
   if (adsb_settings_persist_pending.exchange(false, std::memory_order_acq_rel)) {
     preferences.putBool("adsb_loc_set", adsb_settings.location_configured);
     preferences.putInt("adsb_lat_e7", adsb_settings.latitude_e7);
@@ -9408,7 +9476,7 @@ void loop() {
     // gate was blocking every autonomous flash-reboot-resume cycle during
     // headless/serial-driven development; see phasing.md's RDS Phase 5).
     static bool auto_start_done = false;
-    if (!auto_start_done && settings_auto_start_reception && !wifi_scan_running &&
+    if (!auto_start_done && boot_auto_start_allowed && settings_auto_start_reception && !wifi_scan_running &&
         rtl_device_ready()) {
       auto_start_done = true;
       queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz);
