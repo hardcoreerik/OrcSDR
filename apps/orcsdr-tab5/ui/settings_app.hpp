@@ -51,6 +51,7 @@ struct State {
   char map_pack[40]{};
 
   uint8_t brightness = 180;
+  uint8_t rotation = 1;
   uint16_t screen_timeout_sec = 0;
   uint8_t volume = 128;
   bool sound_default = true;
@@ -85,6 +86,7 @@ enum class ActionKind : uint8_t {
   location_changed,
   range_changed,
   brightness_changed,
+  rotation_changed,
   timeout_changed,
   volume_changed,
   sound_changed,

@@ -1106,6 +1106,7 @@ EXT_RAM_BSS_ATTR WifiScanResult wifi_scan_results[6]{};
 uint8_t wifi_scan_result_count = 0;
 uint32_t wifi_scan_started_ms = 0;
 uint8_t settings_brightness = 180;
+uint8_t settings_rotation = 1;
 uint16_t settings_screen_timeout_sec = 0;
 bool settings_sound_default = true;
 bool settings_auto_start_reception = true;
@@ -7204,6 +7205,7 @@ orcsdr::settings::State global_settings_state() {
   strlcpy(state.location_label, settings_location_label, sizeof(state.location_label));
   strlcpy(state.map_pack, settings_map_pack, sizeof(state.map_pack));
   state.brightness = settings_brightness;
+  state.rotation = settings_rotation;
   state.screen_timeout_sec = settings_screen_timeout_sec;
   state.volume = rtl_live_volume.load(std::memory_order_acquire);
   state.sound_default = settings_sound_default;
@@ -7333,6 +7335,12 @@ void handle_global_settings_touch(int32_t x, int32_t y) {
       settings_brightness = static_cast<uint8_t>(action.value);
       M5.Display.setBrightness(settings_brightness);
       preferences.putUChar("set_bright", settings_brightness);
+      break;
+    case orcsdr::settings::ActionKind::rotation_changed:
+      settings_rotation = action.value == 3 ? 3 : 1;
+      M5.Display.setRotation(settings_rotation);
+      preferences.putUChar("set_rotation", settings_rotation);
+      orcsdr::settings::draw();
       break;
     case orcsdr::settings::ActionKind::timeout_changed:
       settings_screen_timeout_sec = static_cast<uint16_t>(action.value);
@@ -7613,6 +7621,8 @@ void load_state() {
   }
   settings_brightness = preferences.getUChar("set_bright", 180);
   if (settings_brightness < 16) settings_brightness = 16;
+  settings_rotation = preferences.getUChar("set_rotation", 1);
+  if (settings_rotation != 1 && settings_rotation != 3) settings_rotation = 1;
   settings_screen_timeout_sec = preferences.getUShort("set_timeout", 0);
   settings_sound_default = preferences.getBool("set_sound", true);
   rtl_audio_user_enabled.store(settings_sound_default, std::memory_order_release);
@@ -7630,6 +7640,7 @@ void load_state() {
   rtl_live_volume.store(rtl_ui_volume, std::memory_order_release);
   rtl_graphics_enabled.store(settings_graphics_default, std::memory_order_release);
   M5.Display.setBrightness(settings_brightness);
+  M5.Display.setRotation(settings_rotation);
   // Reuse last good FM LO (KZEL 96.113 default when none stored yet).
   if (preferences.isKey("sdr_fm_hz")) {
     const uint32_t stored_fm = preferences.getUInt("sdr_fm_hz", kRtlFmDefaultHz);

@@ -205,6 +205,8 @@ void draw_display_audio() {
   value_row("DEFAULT SOUND", g_state.sound_default ? "ON" : "OFF", 555,
             g_state.sound_default ? kGreen : kMuted);
   button("TOGGLE", 960, 580, 160, 48, TFT_DARKCYAN);
+  value_row("SCREEN ORIENTATION", g_state.rotation == 3 ? "LANDSCAPE 180" : "LANDSCAPE", 635);
+  button("ROTATE", 960, 660, 160, 48, TFT_DARKCYAN);
 }
 
 void draw_radio_defaults() {
@@ -646,6 +648,10 @@ Action handle_touch(int32_t x, int32_t y) {
       g_state.sound_default = !g_state.sound_default;
       draw_content();
       return {ActionKind::sound_changed, g_state.sound_default};
+    }
+    if (hit(x, y, 960, 660, 160, 48)) {
+      g_state.rotation = g_state.rotation == 3 ? 1 : 3;
+      return {ActionKind::rotation_changed, g_state.rotation};
     }
   } else if (g_section == Section::radio_defaults) {
     if (hit(x, y, 330, 500, 260, 50)) {
