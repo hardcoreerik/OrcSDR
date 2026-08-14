@@ -111,6 +111,7 @@ void draw_header() {
   M5.Display.drawFastVLine(865, 25, 82, kCyan);
   audio_header::draw(g_audio_control, g_snapshot.volume, g_snapshot.sound_enabled,
                      g_snapshot.battery_percent);
+  audio_header::draw_home_button();
   draw_gear(1220, 66, kCyan);
 }
 

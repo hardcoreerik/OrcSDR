@@ -1,5 +1,7 @@
 #include "adsb_dashboard.hpp"
 
+#include "dashboard_audio_control.hpp"
+
 #include <M5Unified.h>
 
 #include <algorithm>
@@ -216,6 +218,7 @@ void draw_header() {
   char range[24];
   snprintf(range, sizeof(range), "%u NM", g_settings.radar_range_nm);
   text(range, 1195, 37, TFT_LIGHTGREY, 2, middle_right);
+  audio_header::draw_home_button();
 }
 
 void draw_header_live_values() {

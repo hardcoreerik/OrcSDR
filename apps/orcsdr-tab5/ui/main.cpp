@@ -44,6 +44,7 @@ extern "C" {
 #include "orcsdr_splash.hpp"
 #include "adsb_dashboard.hpp"
 #include "adsb_decoder.hpp"
+#include "dashboard_audio_control.hpp"
 #include "dashboard_registry.hpp"
 #include "fm_dashboard.hpp"
 #include "home_dashboard.hpp"
@@ -4191,6 +4192,7 @@ void draw_sdr_header(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   }
   M5.Display.drawString(label, 1080, 48);
   draw_tool_tabs();
+  orcsdr::audio_header::draw_home_button();
   draw_global_settings_gear();
 }
 
@@ -6429,6 +6431,7 @@ static void rtl_driver_app_task(void *) {
         /* Stay on radio UI so power/home chrome cannot paint over controls. */
       } else {
         rtl_capture_state.store(RtlCaptureState::running, std::memory_order_release);
+        sync_rtl_audio_for_band(band);
         if (band == RtlBand::p25 &&
             !p25_survey_active.load(std::memory_order_relaxed)) {
           p25_entry_probe_tsbk_good = orcsdr::p25decoder::snapshot().tsbk_good;
@@ -6695,9 +6698,13 @@ static void rtl_driver_app_task(void *) {
         Serial.println("RTL_STOP_REQUESTED");
         rtl_auto_fm_active.store(false, std::memory_order_release);
         flush_audio_play_batch(true);
-        (void)rtl_sdr_v4_esp_stop(g_rtl, 2000);
-        rtl_capture_state.store(RtlCaptureState::complete, std::memory_order_release);
-        set_rtl_sdr_status("RTL-SDR V4: stopped");
+        const esp_err_t stop_err = rtl_sdr_v4_esp_stop(g_rtl, 2000);
+        Serial.printf("RTL_STOP_RESULT %s\n", rtl_sdr_v4_esp_err_to_name(stop_err));
+        rtl_capture_state.store(stop_err == ESP_OK ? RtlCaptureState::complete
+                                                   : RtlCaptureState::failed,
+                                std::memory_order_release);
+        set_rtl_sdr_status(stop_err == ESP_OK ? "RTL-SDR V4: stopped"
+                                              : "RTL-SDR V4: stop failed");
         /* Documentation capture freezes the last live frame while reception stops. */
         if (!ui_documentation_mode && !orcsdr::home::active()) {
           /* Keep rtl_ui_active true so home/power does not paint over SDR controls. */
@@ -6712,7 +6719,9 @@ static void rtl_driver_app_task(void *) {
         Serial.printf("RTL_STOP bytes=%llu\n",
                       static_cast<unsigned long long>(rtl_capture_bytes));
       }
-      if (rtl_restart_requested.exchange(false, std::memory_order_acq_rel) &&
+      const bool restart = rtl_restart_requested.exchange(false, std::memory_order_acq_rel);
+      if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::complete &&
+          restart &&
           g_rtl_device_ready.load(std::memory_order_acquire)) {
         rtl_stop_requested.store(false, std::memory_order_release);
         rtl_capture_requested.store(true, std::memory_order_release);
@@ -8328,7 +8337,7 @@ bool point_in_button(int32_t x, int32_t y) {
 
 void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
                             bool persist_navigation) {
-  sync_rtl_audio_for_band(band);
+  if (!rtl_band_has_audio(band)) sync_rtl_audio_for_band(band);
   if (band == RtlBand::adsb) {
     if (!orcsdr::home::active()) orcsdr::adsb::enter(adsb_settings);
     frequency_hz = kAdsbDefaultHz;
@@ -8770,6 +8779,10 @@ void poll_sdr_touch_from_stream() {
 void handle_sdr_touch(int32_t x, int32_t y) {
   if (orcsdr::settings::active()) {
     handle_global_settings_touch(x, y);
+    return;
+  }
+  if (orcsdr::audio_header::home_hit(x, y)) {
+    show_home();
     return;
   }
   if (x >= 1211 && x < 1269 && y >= 8 && y < 66) {
