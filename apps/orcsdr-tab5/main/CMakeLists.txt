@@ -4,6 +4,7 @@ idf_component_register(
         "../ui/orcsdr_splash.cpp"
         "../ui/adsb_dashboard.cpp"
         "../ui/adsb_decoder.cpp"
+        "../ui/fm_dashboard.cpp"
         "../ui/settings_app.cpp"
     INCLUDE_DIRS "." "../ui"
     REQUIRES
@@ -20,6 +21,8 @@ idf_component_register(
         esp_timer
         spi_flash
         usb
+    EMBED_FILES
+        "orc_badge_104.png"
 )
 
 target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)

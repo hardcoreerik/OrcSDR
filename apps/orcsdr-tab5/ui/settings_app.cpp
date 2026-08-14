@@ -86,7 +86,8 @@ void draw_header() {
   if (g_state.wifi_connected)
     snprintf(status, sizeof(status), "%s  %s", g_state.wifi_ssid, g_state.wifi_ip);
   else
-    strlcpy(status, g_state.wifi_connecting ? "Wi-Fi connecting"
+    strlcpy(status, !g_state.wifi_power_enabled ? "Wi-Fi powered off"
+                    : g_state.wifi_connecting ? "Wi-Fi connecting"
                     : g_state.wifi_scanning ? "Wi-Fi scanning" : "Wi-Fi offline",
             sizeof(status));
   text(status, 1020, 36, g_state.wifi_connected ? kGreen : kMuted, 2, middle_right);
@@ -110,10 +111,12 @@ void draw_rail() {
 void draw_connectivity() {
   text("CONNECTIVITY", 330, 115, kBlue, 3);
   char value[96];
-  const char* status = g_state.wifi_connected ? "CONNECTED"
+  const char* status = !g_state.wifi_power_enabled ? "POWERED OFF"
+                       : g_state.wifi_connected ? "CONNECTED"
                        : g_state.wifi_connecting ? "CONNECTING"
                                                 : "OFFLINE";
-  const uint16_t status_color = g_state.wifi_connected ? kGreen
+  const uint16_t status_color = !g_state.wifi_power_enabled ? TFT_ORANGE
+                                : g_state.wifi_connected ? kGreen
                                 : g_state.wifi_connecting ? TFT_YELLOW
                                                          : TFT_ORANGE;
   snprintf(value, sizeof(value), "%s  %s  %s", status,
@@ -124,7 +127,12 @@ void draw_connectivity() {
   button(g_state.wifi_scanning ? "SCANNING..." : "SCAN", 330, 180, 170, 46,
          g_state.wifi_scanning ? TFT_DARKGREY : TFT_DARKCYAN);
   button("ADD HIDDEN", 520, 180, 210, 46, TFT_NAVY);
-  value_row("WI-FI ANTENNA", "BOARD DEFAULT (READ ONLY)", 245, kMuted);
+  button(g_state.wifi_power_enabled ? "POWER OFF" : "POWER ON", 750, 180, 170, 46,
+         g_state.wifi_power_enabled ? TFT_MAROON : TFT_DARKGREEN);
+  text("WI-FI ANTENNA", 330, 245, kMuted, 2);
+  button(g_state.wifi_external_antenna ? "EXTERNAL (MMCX)" : "INTERNAL",
+         820, 218, 398, 54,
+         g_state.wifi_external_antenna ? TFT_DARKGREEN : TFT_NAVY);
 
   text("SAVED NETWORKS (PRIORITY ORDER)", 330, 290, kBlue, 2);
   for (uint8_t i = 0; i < g_state.saved_network_count && i < 4; ++i) {
@@ -205,6 +213,8 @@ void draw_display_audio() {
   value_row("DEFAULT SOUND", g_state.sound_default ? "ON" : "OFF", 555,
             g_state.sound_default ? kGreen : kMuted);
   button("TOGGLE", 960, 580, 160, 48, TFT_DARKCYAN);
+  value_row("SCREEN ORIENTATION", g_state.rotation == 3 ? "LANDSCAPE 180" : "LANDSCAPE", 635);
+  button("ROTATE", 960, 660, 160, 48, TFT_DARKCYAN);
 }
 
 void draw_radio_defaults() {
@@ -247,18 +257,39 @@ void draw_companion() {
        TFT_LIGHTGREY, 2);
 }
 
+void draw_system_power() {
+  M5.Display.fillRect(330, 160, 890, 250, kBg);
+  char value[48];
+  if (g_state.battery_mv >= 0) {
+    snprintf(value, sizeof(value), "%d mV  /  %ld%%", g_state.battery_mv,
+             static_cast<long>(g_state.battery_level));
+  } else {
+    strlcpy(value, "UNAVAILABLE", sizeof(value));
+  }
+  value_row("BATTERY RAIL", value, 175, g_state.battery_mv >= 0 ? kGreen : TFT_ORANGE);
+  value_row("CHARGE STATE", g_state.charging_state[0] ? g_state.charging_state : "UNKNOWN", 225);
+  snprintf(value, sizeof(value), "%ld mA (RAW)",
+           static_cast<long>(g_state.battery_current_ma));
+  value_row("BATTERY CURRENT", value, 275);
+  if (g_state.vbus_mv >= 0)
+    snprintf(value, sizeof(value), "%d mV", g_state.vbus_mv);
+  else
+    strlcpy(value, "NOT EXPOSED", sizeof(value));
+  value_row("USB / VBUS", value, 325, g_state.vbus_mv >= 0 ? kGreen : kMuted);
+  value_row("EXTERNAL 7.4 V", "NO SEPARATE SENSOR", 375, kMuted);
+}
+
 void draw_system() {
   text("SYSTEM", 330, 115, kBlue, 3);
   char value[40];
-  value_row("BUILD", g_state.build_identity, 175);
+  draw_system_power();
+  value_row("BUILD", g_state.build_identity, 435);
   snprintf(value, sizeof(value), "%lu SEC", static_cast<unsigned long>(g_state.uptime_seconds));
-  value_row("UPTIME", value, 225);
-  value_row("NETWORK", g_state.wifi_connected ? "CONNECTED" : "OFFLINE", 275);
-  value_row("SD", g_state.sd_ready ? "READY" : "UNAVAILABLE", 325);
-  value_row("USB / DECODER", "SEE SERIAL DIAGNOSTICS", 375);
-  value_row("M5LAUNCHER", "COMPATIBILITY INFO ONLY", 425, kMuted);
+  value_row("UPTIME", value, 475);
+  value_row("NETWORK", g_state.wifi_connected ? "CONNECTED" : "OFFLINE", 515);
+  value_row("SD", g_state.sd_ready ? "READY" : "UNAVAILABLE", 555);
   text("Reboot, reset, export, and Launcher handoff require separate safety gates.",
-       330, 515, TFT_LIGHTGREY, 2);
+       330, 605, TFT_LIGHTGREY, 2);
 }
 
 void draw_content() {
@@ -513,13 +544,17 @@ void draw() {
 }
 
 void update(const State& state_value) {
-  const bool header_changed = g_state.wifi_connected != state_value.wifi_connected ||
+  const bool header_changed = g_state.wifi_power_enabled != state_value.wifi_power_enabled ||
+                              g_state.wifi_external_antenna != state_value.wifi_external_antenna ||
+                              g_state.wifi_connected != state_value.wifi_connected ||
                               g_state.wifi_connecting != state_value.wifi_connecting ||
                               g_state.wifi_scanning != state_value.wifi_scanning ||
                               strcmp(g_state.wifi_ssid, state_value.wifi_ssid) != 0 ||
                               strcmp(g_state.wifi_ip, state_value.wifi_ip) != 0;
   const bool page_changed = g_section == Section::connectivity &&
-                            (g_state.wifi_scanning != state_value.wifi_scanning ||
+                            (g_state.wifi_power_enabled != state_value.wifi_power_enabled ||
+                             g_state.wifi_external_antenna != state_value.wifi_external_antenna ||
+                             g_state.wifi_scanning != state_value.wifi_scanning ||
                              g_state.wifi_connecting != state_value.wifi_connecting ||
                              g_state.network_count != state_value.network_count ||
                              g_state.saved_network_count != state_value.saved_network_count ||
@@ -529,10 +564,18 @@ void update(const State& state_value) {
                              strcmp(g_state.wifi_message, state_value.wifi_message) != 0 ||
                              memcmp(g_state.profiles, state_value.profiles,
                                     sizeof(g_state.profiles)) != 0);
+  const bool power_changed = g_section == Section::system &&
+                             (g_state.battery_level != state_value.battery_level ||
+                              g_state.battery_mv != state_value.battery_mv ||
+                              g_state.battery_current_ma != state_value.battery_current_ma ||
+                              g_state.vbus_mv != state_value.vbus_mv ||
+                              strcmp(g_state.charging_state, state_value.charging_state) != 0);
   g_state = state_value;
   if (header_changed) draw_header();
   if (page_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_content();
+  if (power_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
+    draw_system_power();
 }
 
 Action handle_touch(int32_t x, int32_t y) {
@@ -553,6 +596,11 @@ Action handle_touch(int32_t x, int32_t y) {
     return {};
   }
   if (g_section == Section::connectivity) {
+    if (hit(x, y, 750, 180, 170, 46))
+      return {ActionKind::wifi_power_changed, g_state.wifi_power_enabled ? 0 : 1};
+    if (hit(x, y, 820, 218, 398, 54))
+      return {ActionKind::wifi_antenna_changed, g_state.wifi_external_antenna ? 0 : 1};
+    if (!g_state.wifi_power_enabled) return {};
     if (hit(x, y, 330, 180, 170, 46) && !g_state.wifi_scanning)
       return {ActionKind::scan_wifi, 0};
     if (hit(x, y, 520, 180, 210, 46)) {
@@ -617,6 +665,10 @@ Action handle_touch(int32_t x, int32_t y) {
       g_state.sound_default = !g_state.sound_default;
       draw_content();
       return {ActionKind::sound_changed, g_state.sound_default};
+    }
+    if (hit(x, y, 960, 660, 160, 48)) {
+      g_state.rotation = g_state.rotation == 3 ? 1 : 3;
+      return {ActionKind::rotation_changed, g_state.rotation};
     }
   } else if (g_section == Section::radio_defaults) {
     if (hit(x, y, 330, 500, 260, 50)) {

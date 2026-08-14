@@ -30,6 +30,8 @@ struct WifiProfileView {
 };
 
 struct State {
+  bool wifi_power_enabled = true;
+  bool wifi_external_antenna = false;
   bool wifi_ready = false;
   bool wifi_scanning = false;
   bool wifi_connected = false;
@@ -51,6 +53,7 @@ struct State {
   char map_pack[40]{};
 
   uint8_t brightness = 180;
+  uint8_t rotation = 1;
   uint16_t screen_timeout_sec = 0;
   uint8_t volume = 128;
   bool sound_default = true;
@@ -64,6 +67,11 @@ struct State {
   uint64_t sd_free_bytes = 0;
   bool companion_supported = false;
   uint8_t paired_phone_count = 0;
+  int32_t battery_level = -1;
+  int16_t battery_mv = -1;
+  int32_t battery_current_ma = 0;
+  int16_t vbus_mv = -1;
+  char charging_state[16]{};
   char build_identity[40]{};
   uint32_t uptime_seconds = 0;
 };
@@ -71,6 +79,8 @@ struct State {
 enum class ActionKind : uint8_t {
   none,
   close,
+  wifi_power_changed,
+  wifi_antenna_changed,
   scan_wifi,
   connect_wifi,
   connect_saved_wifi,
@@ -80,6 +90,7 @@ enum class ActionKind : uint8_t {
   location_changed,
   range_changed,
   brightness_changed,
+  rotation_changed,
   timeout_changed,
   volume_changed,
   sound_changed,
