@@ -661,6 +661,33 @@ Exit: Settings is Hardware-verified only after migration/reboot, Wi-Fi,
 bounded repaint, reception coexistence, update rollback, and optional-service
 absence tests pass on the Tab5.
 
+## Phase 8 — automated screenshots, guide, and narrated media
+
+### 8.1 — build-verified capture and publishing foundation
+
+- [x] Add an authenticated 44-screen documentation catalog with a boot-time
+      uniqueness and view-coverage self-check.
+- [x] Add transient live/demo staging, a visible demo badge, exact M5GFX BMP
+      capture, SHA-256 reporting, and non-persistent state restoration.
+- [x] Add the versioned manifest, Windows entry point, sanitized capture rules,
+      PNG annotation, strict Material for MkDocs guide, and pinned Pages job.
+- [x] Add local Kokoro narration, captions, transcripts, thumbnails, per-family
+      videos, and a chaptered full walkthrough without automatic publishing.
+- [ ] Flash the documentation build and verify every capture, restoration, NVS
+      stability, privacy redaction, and radio/audio recovery on the Tab5.
+- [ ] Approve the `am_michael` pronunciation sample before rendering the suite.
+- [ ] Review the generated guide before enabling the merged-main Pages deploy.
+
+Evidence (2026-08-14): the native ESP-IDF build completed with ESP-Hosted
+2.12.6 and produced a 1,668,416-byte application image. Manifest, Python,
+PowerShell, link/alt-text, and `mkdocs build --strict` checks pass. This is
+build evidence only; no screenshot, narration, or hardware restoration claim
+is made yet.
+
+Exit: every catalog screen has a privacy-reviewed 1280x720 capture and hash,
+the device returns to its prior state without an NVS change or reset, the
+strict site builds, and approved audio/video outputs pass `ffprobe` checks.
+
 ## Explicitly out of scope for this phasing pass
 
 - Gap 2 (dual USB paths) and Gap 4 (performance gates) are already tracked

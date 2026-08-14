@@ -10,6 +10,7 @@
 #include <esp_intr_alloc.h>
 #include <esp_heap_caps.h>
 #include <esp_attr.h>
+#include <esp_app_desc.h>
 #include <mbedtls/md.h>
 #include <mbedtls/sha256.h>
 #include <driver/usb_serial_jtag.h>
@@ -47,6 +48,7 @@ extern "C" {
 #include "p25_dashboard.hpp"
 #include "p25_decoder.hpp"
 #include "settings_app.hpp"
+#include "ui_capture.hpp"
 #if !RTL_USE_LEGACY_USB
 #include "rtl_sdr_v4_esp.h"
 #endif
@@ -907,7 +909,7 @@ struct LoraNodePosition {
 };
 constexpr size_t kLoraNodePositionCount = 8;
 static LoraNodePosition lora_node_positions[kLoraNodePositionCount]{};
-enum class LoraView : uint8_t { Live = 0, Packets = 1, Map = 2 };
+enum class LoraView : uint8_t { Live = 0, Packets = 1, Map = 2, Count = 3 };
 static LoraView lora_view = LoraView::Live;
 static std::atomic<int32_t> rtl_scope_peak_offset_hz{0};
 static std::atomic<float> rtl_scope_peak_level{-120.0f};
@@ -1042,6 +1044,7 @@ uint32_t last_power_draw_ms = 0;
 bool was_pressed = false;
 bool paired = false;
 bool authenticated = false;
+bool ui_documentation_mode = false;
 bool offline_transition_handled = false;
 Preferences preferences;
 orcsdr::adsb::Settings adsb_settings;
@@ -1498,7 +1501,8 @@ void draw_sdr_controls(RtlBand band, bool running);
 void handle_sdr_touch(int32_t x, int32_t y);
 void poll_sdr_touch_from_stream();
 void request_hot_retune(uint32_t frequency_hz);
-void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz);
+void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
+                            bool persist_navigation = true);
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume);
 void adjust_rtl_volume(int delta);
 void draw_nav_panel();
@@ -6661,14 +6665,17 @@ static void rtl_driver_app_task(void *) {
         (void)rtl_sdr_v4_esp_stop(g_rtl, 2000);
         rtl_capture_state.store(RtlCaptureState::complete, std::memory_order_release);
         set_rtl_sdr_status("RTL-SDR V4: stopped");
-        /* Keep rtl_ui_active true so home/power does not paint over SDR controls. */
-        if (rtl_ui_band == RtlBand::adsb) orcsdr::adsb::draw();
-        else if (rtl_ui_band == RtlBand::fm)
-          orcsdr::fm::update(fm_dashboard_snapshot());
-        else if (rtl_ui_band == RtlBand::p25)
-          orcsdr::p25::update(p25_dashboard_snapshot());
-        else
-          draw_sdr_controls(g_stream_band, false);
+        /* Documentation capture freezes the last live frame while reception stops. */
+        if (!ui_documentation_mode) {
+          /* Keep rtl_ui_active true so home/power does not paint over SDR controls. */
+          if (rtl_ui_band == RtlBand::adsb) orcsdr::adsb::draw();
+          else if (rtl_ui_band == RtlBand::fm)
+            orcsdr::fm::update(fm_dashboard_snapshot());
+          else if (rtl_ui_band == RtlBand::p25)
+            orcsdr::p25::update(p25_dashboard_snapshot());
+          else
+            draw_sdr_controls(g_stream_band, false);
+        }
         Serial.printf("RTL_STOP bytes=%llu\n",
                       static_cast<unsigned long long>(rtl_capture_bytes));
       }
@@ -8072,7 +8079,8 @@ bool point_in_button(int32_t x, int32_t y) {
          y >= kButtonY && y < kButtonY + kButtonHeight;
 }
 
-void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz) {
+void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
+                            bool persist_navigation) {
   sync_rtl_audio_for_band(band);
   if (band == RtlBand::adsb) {
     orcsdr::adsb::enter(adsb_settings);
@@ -8106,10 +8114,11 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz) {
   if (band == RtlBand::p25) {
     rtl_scope_span_hz.store(kRtlScopeSpanMaxHz, std::memory_order_relaxed);
   }
-  if (band == RtlBand::fm) {
+  if (band == RtlBand::fm && persist_navigation) {
     persist_fm_frequency(frequency_hz);
   }
-  preferences.putUInt("last_band", static_cast<uint32_t>(band));
+  if (persist_navigation)
+    preferences.putUInt("last_band", static_cast<uint32_t>(band));
   rtl_requested_band.store(band, std::memory_order_release);
   rtl_requested_frequency_hz.store(frequency_hz, std::memory_order_release);
   rtl_hot_retune_hz.store(0, std::memory_order_release);
@@ -8126,14 +8135,15 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz) {
     rtl_capture_requested.store(true, std::memory_order_release);
   }
   bump_rtl_ui();
-  append_journal(band == RtlBand::am       ? "sdr_am"
-                 : band == RtlBand::wx     ? "sdr_wx"
-                 : band == RtlBand::cb     ? "sdr_cb"
-                 : band == RtlBand::lora   ? "sdr_lora"
-                 : band == RtlBand::browse ? "sdr_browse"
-                 : band == RtlBand::adsb   ? "sdr_adsb"
-                 : band == RtlBand::p25    ? "sdr_p25"
-                                           : "sdr_fm");
+  if (persist_navigation)
+    append_journal(band == RtlBand::am       ? "sdr_am"
+                   : band == RtlBand::wx     ? "sdr_wx"
+                   : band == RtlBand::cb     ? "sdr_cb"
+                   : band == RtlBand::lora   ? "sdr_lora"
+                   : band == RtlBand::browse ? "sdr_browse"
+                   : band == RtlBand::adsb   ? "sdr_adsb"
+                   : band == RtlBand::p25    ? "sdr_p25"
+                                             : "sdr_fm");
 }
 
 void adjust_rtl_volume(int delta) {
@@ -8284,6 +8294,7 @@ void request_hot_retune(uint32_t frequency_hz) {
 // Only this path may call M5.update() while rtl_ui_active — concurrent update
 // from loop() was silencing the ES8388 speaker path after 0.8.26.
 void poll_sdr_touch_from_stream() {
+  if (ui_documentation_mode) return;
   if (rtl_ui_band == RtlBand::adsb && orcsdr::adsb::active()) return;
   if (orcsdr::settings::active()) {
     static uint32_t settings_last_poll_ms = 0;
@@ -8726,7 +8737,605 @@ void set_online() {
   emit_pending_journal();
 }
 
+struct UiDocScreen {
+  const char* id;
+  const char* modes;
+};
+
+constexpr UiDocScreen kUiDocScreens[] = {
+    {"home", "demo"},
+    {"nav", "demo"},
+    {"settings.connectivity", "demo"},
+    {"settings.location-adsb", "demo"},
+    {"settings.data-maps", "demo"},
+    {"settings.display-audio", "demo"},
+    {"settings.radio-defaults", "demo"},
+    {"settings.storage", "demo"},
+    {"settings.companion", "demo"},
+    {"settings.system", "demo"},
+    {"fm.listen", "live,demo"},
+    {"fm.spectrum", "live,demo"},
+    {"fm.station-rds", "live,demo"},
+    {"fm.rf-health", "live,demo"},
+    {"fm.settings", "demo"},
+    {"p25.monitor", "live,demo"},
+    {"p25.spectrum", "live,demo"},
+    {"p25.talkgroups", "live,demo"},
+    {"p25.program", "live,demo"},
+    {"p25.rf-health", "live,demo"},
+    {"adsb.radar", "live,demo"},
+    {"adsb.list", "live,demo"},
+    {"adsb.target", "live,demo"},
+    {"adsb.stats", "live,demo"},
+    {"adsb.settings", "demo"},
+    {"lora.live", "live,demo"},
+    {"lora.packets", "live,demo"},
+    {"lora.map", "live,demo"},
+    {"am.radio", "live,demo"},
+    {"am.scope", "live,demo"},
+    {"am.capture", "live,demo"},
+    {"wx.radio", "live,demo"},
+    {"wx.scope", "live,demo"},
+    {"wx.capture", "live,demo"},
+    {"cb.radio", "live,demo"},
+    {"cb.scope", "live,demo"},
+    {"cb.capture", "live,demo"},
+    {"browse.radio", "live,demo"},
+    {"browse.scope", "live,demo"},
+    {"browse.capture", "live,demo"},
+    {"overlay.volume", "demo"},
+    {"overlay.frequency-keypad", "demo"},
+    {"overlay.wifi-results", "demo"},
+    {"overlay.masked-keyboard", "demo"},
+};
+
+struct UiDocState {
+  bool active = false;
+  bool was_receiving = false;
+  bool was_ui_active = false;
+  bool was_settings_active = false;
+  bool graphics_enabled = true;
+  bool nav_open = false;
+  RtlBand band = RtlBand::fm;
+  uint32_t frequency_hz = kRtlFmDefaultHz;
+  OrcTool tool = OrcTool::Radio;
+  orcsdr::fm::View fm_view = orcsdr::fm::View::listen;
+  orcsdr::p25::View p25_view = orcsdr::p25::View::monitor;
+  uint8_t adsb_view = 0;
+  orcsdr::settings::Section settings_section = orcsdr::settings::Section::connectivity;
+  LoraView lora = LoraView::Live;
+  LoraDisplayPacket lora_packets[kLoraDisplayPacketCount]{};
+  LoraNodePosition lora_positions[kLoraNodePositionCount]{};
+  uint32_t lora_message_count = 0;
+  float lora_noise = -80.0f;
+  float lora_trigger = -71.0f;
+  float signal_dbfs = -80.0f;
+  CbMode cb_mode_value = CbMode::am;
+  int32_t cb_clarifier = 0;
+  int32_t cb_squelch = -55;
+  bool cb_squelch_was_open = false;
+  char current_screen[40]{};
+  bool current_demo = true;
+};
+
+UiDocState ui_doc;
+
+bool ui_doc_screen_exists(const char* id, const char* mode = nullptr) {
+  for (const auto& screen : kUiDocScreens) {
+    if (strcmp(screen.id, id) != 0) continue;
+    return mode == nullptr || strstr(screen.modes, mode) != nullptr;
+  }
+  return false;
+}
+
+size_t ui_doc_prefix_count(const char* prefix) {
+  size_t count = 0;
+  const size_t length = strlen(prefix);
+  for (const auto& screen : kUiDocScreens)
+    if (strncmp(screen.id, prefix, length) == 0) ++count;
+  return count;
+}
+
+bool ui_doc_self_check() {
+  if (static_cast<uint8_t>(orcsdr::fm::View::count) != 5 ||
+      static_cast<uint8_t>(orcsdr::p25::View::count) != 5 ||
+      static_cast<uint8_t>(orcsdr::settings::Section::count) != 8 ||
+      ui_doc_prefix_count("fm.") != static_cast<uint8_t>(orcsdr::fm::View::count) ||
+      ui_doc_prefix_count("p25.") != static_cast<uint8_t>(orcsdr::p25::View::count) ||
+      ui_doc_prefix_count("settings.") !=
+          static_cast<uint8_t>(orcsdr::settings::Section::count) ||
+      ui_doc_prefix_count("adsb.") != orcsdr::adsb::kDocumentationViewCount ||
+      ui_doc_prefix_count("lora.") != static_cast<uint8_t>(LoraView::Count) ||
+      ui_doc_prefix_count("am.") != static_cast<uint8_t>(OrcTool::Count) ||
+      ui_doc_prefix_count("wx.") != static_cast<uint8_t>(OrcTool::Count) ||
+      ui_doc_prefix_count("cb.") != static_cast<uint8_t>(OrcTool::Count) ||
+      ui_doc_prefix_count("browse.") != static_cast<uint8_t>(OrcTool::Count) ||
+      !orcsdr::ui_capture::valid_slug("fm-listen") ||
+      orcsdr::ui_capture::valid_slug("../private")) return false;
+  for (size_t i = 0; i < std::size(kUiDocScreens); ++i) {
+    if (!kUiDocScreens[i].id[0] || !kUiDocScreens[i].modes[0]) return false;
+    for (size_t j = i + 1; j < std::size(kUiDocScreens); ++j)
+      if (strcmp(kUiDocScreens[i].id, kUiDocScreens[j].id) == 0) return false;
+  }
+  return ui_doc_screen_exists("settings.system") &&
+         ui_doc_screen_exists("fm.settings") &&
+         ui_doc_screen_exists("p25.rf-health") &&
+         ui_doc_screen_exists("adsb.settings") &&
+         ui_doc_screen_exists("lora.map") &&
+         ui_doc_screen_exists("browse.capture");
+}
+
+void ui_doc_leave_surfaces() {
+  orcsdr::settings::leave();
+  orcsdr::fm::leave();
+  orcsdr::p25::leave();
+  orcsdr::adsb::leave();
+  M5.Display.clearScrollRect();
+}
+
+void ui_doc_badge() {
+  M5.Display.fillRoundRect(572, 8, 136, 42, 10, TFT_MAROON);
+  M5.Display.drawRoundRect(572, 8, 136, 42, 10, TFT_YELLOW);
+  M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(TFT_WHITE, TFT_MAROON);
+  M5.Display.drawString("DEMO", 640, 29);
+}
+
+orcsdr::fm::Snapshot ui_doc_fm_snapshot(bool demo) {
+  if (!demo) return fm_dashboard_snapshot();
+  orcsdr::fm::Snapshot snapshot{};
+  snapshot.frequency_hz = 101700000;
+  snapshot.step_hz = 100000;
+  snapshot.filter_bandwidth_hz = 180000;
+  snapshot.span_hz = 2000000;
+  snapshot.effective_sps = 959800;
+  snapshot.target_sps = 960000;
+  snapshot.dsp_percent = 38;
+  snapshot.audio_ring_pressure_percent = 42;
+  snapshot.battery_percent = 76;
+  snapshot.relative_dbfs = -31.5f;
+  snapshot.left_dbfs = -8.0f;
+  snapshot.right_dbfs = -8.7f;
+  snapshot.running = snapshot.driver_ready = snapshot.stereo = true;
+  snapshot.rds_carrier = snapshot.rds_locked = snapshot.wifi_connected = true;
+  snapshot.sound_enabled = snapshot.graphics_enabled = true;
+  snapshot.volume = 128;
+  snapshot.preset_index = 2;
+  snapshot.preset_count = 10;
+  strlcpy(snapshot.program_service, "KEXP-FM", sizeof(snapshot.program_service));
+  strlcpy(snapshot.radio_text, "Where the Music Matters", sizeof(snapshot.radio_text));
+  strlcpy(snapshot.pi_code, "259F", sizeof(snapshot.pi_code));
+  strlcpy(snapshot.program_type, "Music", sizeof(snapshot.program_type));
+  return snapshot;
+}
+
+orcsdr::p25::Snapshot ui_doc_p25_snapshot(bool demo) {
+  if (!demo) return p25_dashboard_snapshot();
+  orcsdr::p25::Snapshot snapshot{};
+  snapshot.frequency_hz = 453487500;
+  snapshot.span_hz = snapshot.target_sps = 960000;
+  snapshot.effective_sps = 959700;
+  snapshot.dsp_percent = 44;
+  snapshot.audio_ring_pressure_percent = 35;
+  snapshot.battery_percent = 76;
+  snapshot.relative_dbfs = -37.0f;
+  snapshot.running = snapshot.driver_ready = snapshot.wifi_connected = true;
+  snapshot.sound_enabled = snapshot.survey_active = snapshot.auto_follow = true;
+  snapshot.encryption_skip = snapshot.following_voice = true;
+  snapshot.candidate_count = 4;
+  snapshot.candidate_index = 1;
+  snapshot.volume = 128;
+  snapshot.candidate_levels[0] = -53.0f;
+  snapshot.candidate_levels[1] = -37.0f;
+  snapshot.candidate_levels[2] = -61.0f;
+  snapshot.candidate_levels[3] = -58.0f;
+  snapshot.decoded.frame_sync = snapshot.decoded.identity_valid = true;
+  snapshot.decoded.nac = 0x3A5;
+  snapshot.decoded.wacn = 0xBEE00;
+  snapshot.decoded.system_id = 0x2A7;
+  snapshot.decoded.rfss = 1;
+  snapshot.decoded.site = 1;
+  snapshot.decoded.sync_words = 1842;
+  snapshot.decoded.nid_good = 1801;
+  snapshot.decoded.tsbk_good = 932;
+  snapshot.decoded.estimated_ber_percent = 1.2f;
+  snapshot.decoded.current_grant = {true, false, false, false, 38130, 1204521,
+                                    453487500, millis()};
+  snapshot.decoded.recent_grants[0] = snapshot.decoded.current_grant;
+  snapshot.imbe_frames = 428;
+  snapshot.imbe_errors = 2;
+  return snapshot;
+}
+
+orcsdr::settings::State ui_doc_settings_state() {
+  auto state = global_settings_state();
+  state.wifi_power_enabled = state.wifi_ready = state.wifi_connected = true;
+  state.wifi_scanning = state.wifi_connecting = false;
+  state.wifi_rssi = -48;
+  strlcpy(state.wifi_ssid, "OrcSDR Demo", sizeof(state.wifi_ssid));
+  strlcpy(state.wifi_ip, "192.0.2.42", sizeof(state.wifi_ip));
+  strlcpy(state.wifi_message, "Connected using external antenna",
+          sizeof(state.wifi_message));
+  state.network_count = 3;
+  strlcpy(state.networks[0].ssid, "OrcSDR Demo", sizeof(state.networks[0].ssid));
+  state.networks[0].rssi = -48;
+  state.networks[0].secure = state.networks[0].saved = true;
+  strlcpy(state.networks[1].ssid, "Workshop Guest", sizeof(state.networks[1].ssid));
+  state.networks[1].rssi = -62;
+  state.networks[1].secure = true;
+  strlcpy(state.networks[2].ssid, "Open Lab", sizeof(state.networks[2].ssid));
+  state.networks[2].rssi = -71;
+  state.saved_network_count = 1;
+  strlcpy(state.profiles[0].ssid, "OrcSDR Demo", sizeof(state.profiles[0].ssid));
+  state.profiles[0].connected = true;
+  state.location_configured = true;
+  state.latitude_e7 = 455230640;
+  state.longitude_e7 = -1226764830;
+  strlcpy(state.location_label, "Portland, Oregon", sizeof(state.location_label));
+  strlcpy(state.map_pack, "Portland 10/25/50/100 NM", sizeof(state.map_pack));
+  state.wifi_external_antenna = true;
+  state.sd_ready = true;
+  state.sd_total_bytes = 32ull * 1024 * 1024 * 1024;
+  state.sd_free_bytes = 21ull * 1024 * 1024 * 1024;
+  state.battery_level = 76;
+  state.battery_mv = 7900;
+  state.battery_current_ma = -320;
+  state.vbus_mv = 5000;
+  strlcpy(state.charging_state, "CHARGING", sizeof(state.charging_state));
+  strlcpy(state.build_identity, "OrcSDR documentation build",
+          sizeof(state.build_identity));
+  state.uptime_seconds = 7342;
+  strlcpy(state.default_band, "FM", sizeof(state.default_band));
+  state.fm_frequency_hz = 101700000;
+  return state;
+}
+
+bool ui_doc_view_for_suffix(const char* suffix, orcsdr::fm::View* view) {
+  static constexpr const char* names[] = {"listen", "spectrum", "station-rds",
+                                           "rf-health", "settings"};
+  for (uint8_t i = 0; i < std::size(names); ++i)
+    if (strcmp(suffix, names[i]) == 0) {
+      *view = static_cast<orcsdr::fm::View>(i);
+      return true;
+    }
+  return false;
+}
+
+bool ui_doc_view_for_suffix(const char* suffix, orcsdr::p25::View* view) {
+  static constexpr const char* names[] = {"monitor", "spectrum", "talkgroups",
+                                           "program", "rf-health"};
+  for (uint8_t i = 0; i < std::size(names); ++i)
+    if (strcmp(suffix, names[i]) == 0) {
+      *view = static_cast<orcsdr::p25::View>(i);
+      return true;
+    }
+  return false;
+}
+
+bool ui_doc_render(const char* screen_id, bool demo) {
+  if (!ui_doc_screen_exists(screen_id, demo ? "demo" : "live")) return false;
+  ui_doc_leave_surfaces();
+  rtl_nav_open = false;
+  rtl_frequency_keypad_open = false;
+
+  if (strcmp(screen_id, "home") == 0) {
+    rtl_ui_active.store(false, std::memory_order_release);
+    M5.Display.fillScreen(TFT_BLACK);
+    draw_rtl_sdr_state();
+    draw_session_state("Documentation capture mode", TFT_CYAN);
+    draw_power_state();
+  } else if (strcmp(screen_id, "nav") == 0 ||
+             strcmp(screen_id, "overlay.frequency-keypad") == 0) {
+    rtl_ui_active.store(true, std::memory_order_release);
+    rtl_ui_band = RtlBand::browse;
+    rtl_ui_frequency_hz = kRtlBrowseDefaultHz;
+    g_orc_tool.store(static_cast<uint8_t>(OrcTool::Radio), std::memory_order_release);
+    draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz, rtl_ui_volume);
+    rtl_nav_open = true;
+    rtl_frequency_keypad_open = strcmp(screen_id, "overlay.frequency-keypad") == 0;
+    if (rtl_frequency_keypad_open)
+      strlcpy(rtl_frequency_entry, "146.520", sizeof(rtl_frequency_entry));
+    draw_tool_tabs();
+  } else if (strncmp(screen_id, "settings.", 9) == 0 ||
+             strncmp(screen_id, "overlay.wifi-", 13) == 0) {
+    static constexpr const char* names[] = {"connectivity", "location-adsb", "data-maps",
+        "display-audio", "radio-defaults", "storage", "companion", "system"};
+    orcsdr::settings::Section section = orcsdr::settings::Section::connectivity;
+    const char* suffix = screen_id + 9;
+    for (uint8_t i = 0; i < std::size(names); ++i)
+      if (strcmp(suffix, names[i]) == 0) section = static_cast<orcsdr::settings::Section>(i);
+    const bool keyboard = strcmp(screen_id, "overlay.masked-keyboard") == 0;
+    orcsdr::settings::show_documentation_section(
+        orcsdr::settings::Section::connectivity, ui_doc_settings_state(), keyboard);
+    if (strncmp(screen_id, "settings.", 9) == 0)
+      orcsdr::settings::show_documentation_section(section, ui_doc_settings_state());
+  } else if (strncmp(screen_id, "fm.", 3) == 0 ||
+             strcmp(screen_id, "overlay.volume") == 0) {
+    orcsdr::fm::View view = orcsdr::fm::View::listen;
+    if (strncmp(screen_id, "fm.", 3) == 0 &&
+        !ui_doc_view_for_suffix(screen_id + 3, &view)) return false;
+    orcsdr::fm::show_documentation_view(view, ui_doc_fm_snapshot(demo),
+                                        strcmp(screen_id, "overlay.volume") == 0);
+  } else if (strncmp(screen_id, "p25.", 4) == 0) {
+    orcsdr::p25::View view;
+    if (!ui_doc_view_for_suffix(screen_id + 4, &view)) return false;
+    orcsdr::p25::show_documentation_view(view, ui_doc_p25_snapshot(demo));
+  } else if (strncmp(screen_id, "adsb.", 5) == 0) {
+    static constexpr const char* names[] = {"radar", "list", "target", "stats", "settings"};
+    uint8_t view = 0;
+    bool found = false;
+    for (uint8_t i = 0; i < std::size(names); ++i)
+      if (strcmp(screen_id + 5, names[i]) == 0) { view = i; found = true; }
+    if (!found) return false;
+    auto settings = adsb_settings;
+    if (demo) {
+      settings.location_configured = true;
+      settings.latitude_e7 = 455230640;
+      settings.longitude_e7 = -1226764830;
+      settings.radar_range_nm = 25;
+    }
+    orcsdr::adsb::show_documentation_view(view, settings, demo);
+  } else if (strncmp(screen_id, "lora.", 5) == 0) {
+    const char* suffix = screen_id + 5;
+    lora_view = strcmp(suffix, "packets") == 0 ? LoraView::Packets
+                : strcmp(suffix, "map") == 0 ? LoraView::Map : LoraView::Live;
+    rtl_ui_active.store(true, std::memory_order_release);
+    rtl_ui_band = RtlBand::lora;
+    rtl_ui_frequency_hz = kLoraDefaultHz;
+    if (demo) {
+      lora_display_packets[0] = {};
+      strlcpy(lora_display_packets[0].text, "Position and telemetry received",
+              sizeof(lora_display_packets[0].text));
+      lora_display_packets[0].sender = 0xA1B2C3D4;
+      lora_display_packets[0].destination = 0xFFFFFFFF;
+      lora_display_packets[0].packet_id = 7;
+      lora_display_packets[0].received_ms = millis();
+      lora_display_packets[0].latitude_e7 = 455230640;
+      lora_display_packets[0].longitude_e7 = -1226764830;
+      lora_display_packets[0].snr_tenths = 94;
+      lora_display_packets[0].signal_tenths = -720;
+      lora_display_packets[0].port = 1;
+      lora_node_positions[0] = {0xA1B2C3D4, millis(), 455230640, -1226764830};
+      lora_messages.store(1, std::memory_order_relaxed);
+      lora_noise_dbfs.store(-80.0f, std::memory_order_relaxed);
+      lora_trigger_dbfs.store(-71.0f, std::memory_order_relaxed);
+      rtl_signal_dbfs_smooth = -54.0f;
+    }
+    draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz, rtl_ui_volume);
+  } else {
+    struct GenericBand { const char* name; RtlBand band; uint32_t frequency; };
+    static constexpr GenericBand bands[] = {{"am.", RtlBand::am, kRtlAmDefaultHz},
+        {"wx.", RtlBand::wx, kRtlWxHz}, {"cb.", RtlBand::cb, kCbDefaultHz},
+        {"browse.", RtlBand::browse, kRtlBrowseDefaultHz}};
+    bool found = false;
+    for (const auto& entry : bands) {
+      const size_t prefix = strlen(entry.name);
+      if (strncmp(screen_id, entry.name, prefix) != 0) continue;
+      const char* suffix = screen_id + prefix;
+      const OrcTool tool = strcmp(suffix, "scope") == 0 ? OrcTool::Scope
+                           : strcmp(suffix, "capture") == 0 ? OrcTool::Capture
+                                                            : OrcTool::Radio;
+      rtl_ui_active.store(true, std::memory_order_release);
+      rtl_ui_band = entry.band;
+      rtl_ui_frequency_hz = entry.frequency;
+      g_orc_tool.store(static_cast<uint8_t>(tool), std::memory_order_release);
+      if (demo) {
+        rtl_signal_dbfs_smooth = -38.0f;
+        if (entry.band == RtlBand::cb) {
+          cb_mode.store(CbMode::am, std::memory_order_relaxed);
+          cb_clarifier_hz.store(0, std::memory_order_relaxed);
+          cb_squelch_dbfs.store(-55, std::memory_order_relaxed);
+          cb_squelch_open.store(true, std::memory_order_relaxed);
+        }
+      }
+      draw_sdr_screen(entry.band, entry.frequency, rtl_ui_volume);
+      found = true;
+      break;
+    }
+    if (!found) return false;
+  }
+  if (demo) ui_doc_badge();
+  strlcpy(ui_doc.current_screen, screen_id, sizeof(ui_doc.current_screen));
+  ui_doc.current_demo = demo;
+  return true;
+}
+
+bool ui_doc_live_band(const char* screen_id, RtlBand* band, uint32_t* frequency_hz) {
+  if (strncmp(screen_id, "fm.", 3) == 0) {
+    *band = RtlBand::fm; *frequency_hz = rtl_saved_fm_hz; return true;
+  }
+  if (strncmp(screen_id, "p25.", 4) == 0) {
+    *band = RtlBand::p25; *frequency_hz = p25_control_frequency_hz; return true;
+  }
+  if (strncmp(screen_id, "adsb.", 5) == 0) {
+    *band = RtlBand::adsb; *frequency_hz = kAdsbDefaultHz; return true;
+  }
+  if (strncmp(screen_id, "lora.", 5) == 0) {
+    *band = RtlBand::lora; *frequency_hz = kLoraDefaultHz; return true;
+  }
+  struct Entry { const char* prefix; RtlBand band; uint32_t frequency; };
+  static constexpr Entry entries[] = {{"am.", RtlBand::am, kRtlAmDefaultHz},
+      {"wx.", RtlBand::wx, kRtlWxHz}, {"cb.", RtlBand::cb, kCbDefaultHz},
+      {"browse.", RtlBand::browse, kRtlBrowseDefaultHz}};
+  for (const auto& entry : entries)
+    if (strncmp(screen_id, entry.prefix, strlen(entry.prefix)) == 0) {
+      *band = entry.band; *frequency_hz = entry.frequency; return true;
+    }
+  return false;
+}
+
+void ui_doc_enter() {
+  if (ui_doc.active) return;
+  ui_doc = {};
+  ui_doc.active = true;
+  ui_doc.was_receiving =
+      rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
+  ui_doc.was_ui_active = rtl_ui_active.load(std::memory_order_acquire);
+  ui_doc.was_settings_active = orcsdr::settings::active();
+  ui_doc.graphics_enabled = rtl_graphics_enabled.exchange(false, std::memory_order_acq_rel);
+  ui_doc.nav_open = rtl_nav_open;
+  ui_doc.band = rtl_ui_band;
+  ui_doc.frequency_hz = rtl_ui_frequency_hz;
+  ui_doc.tool = orc_tool_current();
+  if (orcsdr::fm::active()) ui_doc.fm_view = orcsdr::fm::view();
+  if (orcsdr::p25::active()) ui_doc.p25_view = orcsdr::p25::view();
+  if (orcsdr::adsb::active()) ui_doc.adsb_view = orcsdr::adsb::view();
+  if (orcsdr::settings::active()) ui_doc.settings_section = orcsdr::settings::section();
+  ui_doc.lora = lora_view;
+  memcpy(ui_doc.lora_packets, lora_display_packets, sizeof(lora_display_packets));
+  memcpy(ui_doc.lora_positions, lora_node_positions, sizeof(lora_node_positions));
+  ui_doc.lora_message_count = lora_messages.load(std::memory_order_relaxed);
+  ui_doc.lora_noise = lora_noise_dbfs.load(std::memory_order_relaxed);
+  ui_doc.lora_trigger = lora_trigger_dbfs.load(std::memory_order_relaxed);
+  ui_doc.signal_dbfs = rtl_signal_dbfs_smooth;
+  ui_doc.cb_mode_value = cb_mode.load(std::memory_order_relaxed);
+  ui_doc.cb_clarifier = cb_clarifier_hz.load(std::memory_order_relaxed);
+  ui_doc.cb_squelch = cb_squelch_dbfs.load(std::memory_order_relaxed);
+  ui_doc.cb_squelch_was_open = cb_squelch_open.load(std::memory_order_relaxed);
+  ui_documentation_mode = true;
+}
+
+bool ui_doc_pause_reception() {
+  rtl_capture_requested.store(false, std::memory_order_release);
+  rtl_restart_requested.store(false, std::memory_order_release);
+  if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
+    rtl_stop_requested.store(true, std::memory_order_release);
+  const uint32_t deadline = millis() + 5000;
+  while (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
+         static_cast<int32_t>(deadline - millis()) > 0) delay(10);
+  return rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running;
+}
+
+void ui_doc_exit() {
+  if (!ui_doc.active) return;
+  const UiDocState saved = ui_doc;
+  ui_documentation_mode = false;
+  ui_doc = {};
+  memcpy(lora_display_packets, saved.lora_packets, sizeof(lora_display_packets));
+  memcpy(lora_node_positions, saved.lora_positions, sizeof(lora_node_positions));
+  lora_messages.store(saved.lora_message_count, std::memory_order_relaxed);
+  lora_noise_dbfs.store(saved.lora_noise, std::memory_order_relaxed);
+  lora_trigger_dbfs.store(saved.lora_trigger, std::memory_order_relaxed);
+  rtl_signal_dbfs_smooth = saved.signal_dbfs;
+  cb_mode.store(saved.cb_mode_value, std::memory_order_relaxed);
+  cb_clarifier_hz.store(saved.cb_clarifier, std::memory_order_relaxed);
+  cb_squelch_dbfs.store(saved.cb_squelch, std::memory_order_relaxed);
+  cb_squelch_open.store(saved.cb_squelch_was_open, std::memory_order_relaxed);
+  lora_view = saved.lora;
+  rtl_graphics_enabled.store(saved.graphics_enabled, std::memory_order_release);
+  rtl_ui_band = saved.band;
+  rtl_ui_frequency_hz = saved.frequency_hz;
+  g_orc_tool.store(static_cast<uint8_t>(saved.tool), std::memory_order_release);
+  rtl_ui_active.store(saved.was_ui_active, std::memory_order_release);
+  rtl_nav_open = saved.nav_open;
+  ui_doc_leave_surfaces();
+  if (saved.was_settings_active) {
+    orcsdr::settings::enter(global_settings_state(), saved.settings_section);
+  } else if (saved.was_ui_active) {
+    if (saved.band == RtlBand::fm)
+      orcsdr::fm::show_documentation_view(saved.fm_view, fm_dashboard_snapshot());
+    else if (saved.band == RtlBand::p25)
+      orcsdr::p25::show_documentation_view(saved.p25_view, p25_dashboard_snapshot());
+    else if (saved.band == RtlBand::adsb)
+      orcsdr::adsb::show_documentation_view(saved.adsb_view, adsb_settings, false);
+    else
+      draw_sdr_screen(saved.band, saved.frequency_hz, rtl_ui_volume);
+  } else {
+    M5.Display.fillScreen(TFT_BLACK);
+    draw_rtl_sdr_state();
+    draw_power_state();
+  }
+  if (saved.was_receiving)
+    queue_local_rtl_listen(saved.band, saved.frequency_hz, false);
+}
+
 void process_command(char* command) {
+  if (strncmp(command, "UI_DOC_", 7) == 0 || strncmp(command, "UI_CAPTURE ", 11) == 0) {
+    if (!authenticated) {
+      Serial.println("UI_DOC_ERROR auth_required");
+      return;
+    }
+    last_ping_ms = millis();
+    if (strcmp(command, "UI_DOC_LIST") == 0) {
+      const esp_app_desc_t* app = esp_app_get_description();
+      Serial.printf("UI_DOC_LIST_BEGIN count=%u firmware=\"%s\"\n",
+                    static_cast<unsigned>(std::size(kUiDocScreens)), app->version);
+      for (const auto& screen : kUiDocScreens)
+        Serial.printf("UI_DOC_SCREEN id=%s modes=%s\n", screen.id, screen.modes);
+      Serial.println("UI_DOC_LIST_DONE");
+      return;
+    }
+    if (strncmp(command, "UI_DOC_SHOW ", 12) == 0) {
+      char screen[40]{};
+      char mode[8]{};
+      char trailing = 0;
+      if (sscanf(command + 12, "%39s %7s %c", screen, mode, &trailing) != 2 ||
+          (strcmp(mode, "live") != 0 && strcmp(mode, "demo") != 0)) {
+        Serial.println("UI_DOC_ERROR usage: UI_DOC_SHOW <screen-id> <live|demo>");
+        return;
+      }
+      if (!ui_doc_screen_exists(screen, mode)) {
+        Serial.println("UI_DOC_ERROR unknown_screen_or_mode");
+        return;
+      }
+      ui_doc_enter();
+      if (strcmp(mode, "demo") == 0) {
+        if (!ui_doc_pause_reception()) {
+          Serial.println("UI_DOC_ERROR reception_stop_timeout");
+          return;
+        }
+      } else {
+        RtlBand band;
+        uint32_t frequency_hz = 0;
+        if (ui_doc_live_band(screen, &band, &frequency_hz))
+          queue_local_rtl_listen(band, frequency_hz, false);
+      }
+      if (!ui_doc_render(screen, strcmp(mode, "demo") == 0)) {
+        Serial.println("UI_DOC_ERROR unknown_screen_or_mode");
+        return;
+      }
+      Serial.printf("UI_DOC_SHOW_DONE id=%s mode=%s\n", screen, mode);
+      return;
+    }
+    if (strncmp(command, "UI_CAPTURE ", 11) == 0) {
+      const char* slug = command + 11;
+      if (!ui_doc.active || !ui_doc.current_screen[0]) {
+        Serial.println("UI_CAPTURE_ERROR documentation_mode_inactive");
+        return;
+      }
+      if (!orcsdr::ui_capture::valid_slug(slug)) {
+        Serial.println("UI_CAPTURE_ERROR invalid_slug");
+        return;
+      }
+      if (!ui_doc_pause_reception()) {
+        Serial.println("UI_CAPTURE_ERROR reception_stop_timeout");
+        return;
+      }
+      if (!ensure_tab5_sd() || g_sd_fs == nullptr) {
+        Serial.println("UI_CAPTURE_ERROR sd_unavailable");
+        return;
+      }
+      const auto result = orcsdr::ui_capture::save_bmp(M5.Display, *g_sd_fs, slug);
+      if (!result.ok) {
+        Serial.printf("UI_CAPTURE_ERROR %s\n", result.error ? result.error : "capture_failed");
+        return;
+      }
+      const esp_app_desc_t* app = esp_app_get_description();
+      Serial.printf("UI_CAPTURE_DONE slug=%s path=\"/orcsdr/screenshots/%s.bmp\" "
+                    "bytes=%u width=%u height=%u firmware=\"%s\" sha256=",
+                    slug, slug, static_cast<unsigned>(result.bytes), result.width,
+                    result.height, app->version);
+      print_hex(result.sha256, sizeof(result.sha256));
+      Serial.println();
+      return;
+    }
+    if (strcmp(command, "UI_DOC_EXIT") == 0) {
+      ui_doc_exit();
+      Serial.println("UI_DOC_EXIT_DONE restored=true");
+      return;
+    }
+  }
   if (strcmp(command, "RTL_WIFI_SCAN") == 0) {
     wifi_scan_requested.store(true, std::memory_order_release);
     Serial.println("RTL_WIFI_SCAN_QUEUED");
@@ -9725,6 +10334,11 @@ void setup() {
     abort();
   }
   Serial.println("ORC_SETTINGS_SELF_CHECK_OK");
+  if (!ui_doc_self_check()) {
+    Serial.println("UI_DOC_SELF_CHECK_FAIL");
+    abort();
+  }
+  Serial.println("UI_DOC_SELF_CHECK_OK");
 
 #if ORC_LORA_TEST_BUILD
   g_suppress_home_paint = true;
@@ -9826,6 +10440,10 @@ void loop() {
     M5.update();
   }
   poll_serial();
+  if (ui_documentation_mode) {
+    delay(10);
+    return;
+  }
   rtl_audio_test_service();
   service_boot_device_staging();
   service_power_monitor();

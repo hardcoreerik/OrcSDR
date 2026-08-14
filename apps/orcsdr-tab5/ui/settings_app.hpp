@@ -104,11 +104,15 @@ struct Action {
 };
 
 void enter(const State& state, Section section = Section::connectivity);
+void leave();
 void draw();
 void update(const State& state);
 Action handle_touch(int32_t x, int32_t y);
 bool active();
 const State& state();
+Section section();
+void show_documentation_section(Section section, const State& state,
+                                bool show_wifi_keyboard = false);
 bool take_wifi_credentials(char* ssid, size_t ssid_size,
                            char* password, size_t password_size);
 bool self_check();

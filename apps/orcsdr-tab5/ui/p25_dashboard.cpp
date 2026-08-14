@@ -671,6 +671,20 @@ bool active() { return g_active; }
 bool spectrum_active() { return g_active && g_view == View::spectrum; }
 View view() { return g_view; }
 
+void show_documentation_view(View requested, const Snapshot& snapshot,
+                             bool show_volume_tray) {
+  if (requested >= View::count) return;
+  g_snapshot = snapshot;
+  g_view = requested;
+  g_active = true;
+  audio_header::reset(g_audio_control);
+  if (show_volume_tray) {
+    g_audio_control.expanded = true;
+    g_audio_control.hide_at_ms = UINT32_MAX;
+  }
+  draw();
+}
+
 bool self_check() {
   if (static_cast<uint8_t>(View::count) != 5 || kSpectrumX + kSpectrumW > 1280 ||
       kTabsY >= 720 || std::size(kTalkgroups) != 8) return false;

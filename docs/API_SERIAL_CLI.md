@@ -284,6 +284,24 @@ All SD writes are refused with `..._ERROR radio_busy` while a capture/
 stream is active — stop the radio (`RTL_STOP`, needs auth) or wait for it
 to be idle first.
 
+## Documentation capture
+
+The authenticated documentation commands stage stable views and save an exact
+1280x720 BMP through M5GFX. Use `tools/build-help-media.ps1` instead of driving
+the commands by hand; it verifies the firmware/catalog, retrieves each BMP
+through the hash-checked SD protocol, and always attempts state restoration.
+
+| Command | Reply | Notes |
+|---|---|---|
+| `UI_DOC_LIST` | `UI_DOC_LIST_BEGIN`, one `UI_DOC_SCREEN` per view, `UI_DOC_LIST_DONE` | Enumerates the firmware-owned screen catalog. |
+| `UI_DOC_SHOW <screen-id> <live\|demo>` | `UI_DOC_SHOW_DONE` | Enters documentation mode without persisting navigation or demo state. Demo views carry a visible `DEMO` badge. |
+| `UI_CAPTURE <slug>` | `UI_CAPTURE_DONE ... bytes=... width=1280 height=720 firmware=... sha256=...` | Freezes the frame, stops reception if needed, and writes `/orcsdr/screenshots/<slug>.bmp`. |
+| `UI_DOC_EXIT` | `UI_DOC_EXIT_DONE restored=true` | Restores the prior dashboard, view, sound, and reception state. |
+
+All four commands require the normal `PAIR`/`AUTH` session. Arbitrary editors
+cannot be selected; the only keyboard capture is a sanitized deterministic
+example, so saved credentials and private location fields are never exposed.
+
 ## IQ / LoRa capture
 
 `RTL_IQ_START`/`_STOP`/`_SAVE`/`_STATUS`, `RTL_IQ_RETRIEVE_BEGIN`/`_END`,

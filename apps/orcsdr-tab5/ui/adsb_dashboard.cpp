@@ -62,7 +62,7 @@ constexpr DisplayAircraft kDemoAircraft[] = {
      67.0f, 70, 38.2100f, -121.6000f, -64.0f, true, true, true, true, false, false},
 };
 
-static_assert(static_cast<uint8_t>(View::count) == 5);
+static_assert(static_cast<uint8_t>(View::count) == kDocumentationViewCount);
 static_assert(kRanges[0] == 10 && kRanges[1] == 25 && kRanges[2] == 50 &&
               kRanges[3] == 100);
 
@@ -588,6 +588,8 @@ void enter(const Settings& settings_value) {
   redraw();
 }
 
+void leave() { g_active = false; }
+
 void draw() { if (g_active) redraw(); }
 
 void update() {
@@ -678,6 +680,29 @@ Action handle_touch(int32_t x, int32_t y) {
 
 const Settings& settings() { return g_settings; }
 bool active() { return g_active; }
+
+void show_documentation_view(uint8_t requested, const Settings& settings_value,
+                             bool demo) {
+  if (requested >= static_cast<uint8_t>(View::count)) return;
+  g_settings = settings_value;
+  g_view = static_cast<View>(requested);
+  g_edit = EditField::none;
+  g_selected = 0;
+  g_locked = false;
+  g_active = true;
+  g_live = !demo && g_live_snapshot.visible_count > 0;
+  g_latitude_set = settings_value.location_configured;
+  g_longitude_set = settings_value.location_configured;
+  if (g_live) {
+    apply_live_snapshot();
+  } else {
+    std::copy(std::begin(kDemoAircraft), std::end(kDemoAircraft), g_aircraft);
+    g_aircraft_count = std::size(kDemoAircraft);
+  }
+  redraw();
+}
+
+uint8_t view() { return static_cast<uint8_t>(g_view); }
 
 bool self_check() {
   for (size_t i = 0; i < std::size(kDemoAircraft); ++i) {

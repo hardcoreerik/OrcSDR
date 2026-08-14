@@ -80,6 +80,9 @@ Action handle_touch(int32_t x, int32_t y);
 bool active();
 bool spectrum_active();
 View view();
+void show_documentation_view(View view, const Snapshot& snapshot,
+                             bool show_volume_tray = false,
+                             bool show_frequency_keypad = false);
 bool self_check();
 
 }  // namespace orcsdr::fm
