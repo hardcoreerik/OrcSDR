@@ -1213,6 +1213,22 @@ std::atomic<uint32_t> p25_imbe_errors{0};
 std::atomic<uint32_t> p25_pcm_frames{0};
 std::atomic<uint32_t> p25_audio_last_ms{0};
 std::atomic<uint32_t> p25_voice_session{0};
+std::atomic<uint32_t> p25_voice_stack_hwm{0};
+std::atomic<uint32_t> p25_imbe_max_us{0};
+std::atomic<uint32_t> p25_imbe_synth_max_us{0};
+std::atomic<uint32_t> p25_audio_queue_max_us{0};
+struct P25VoiceContext {
+  mbe_parms current{};
+  mbe_parms previous{};
+  mbe_parms enhanced{};
+  int16_t pcm8k[160]{};
+  int16_t pcm48k[960]{};
+  char matrix[8][23]{};
+  char decoded[88]{};
+  char error_text[16]{};
+  int16_t previous_sample = 0;
+};
+P25VoiceContext p25_voice_context{};
 uint8_t p25_candidate_index = 0;
 float p25_candidate_levels[std::size(kP25ControlChannelsHz)] = {
     -120.0f, -120.0f, -120.0f, -120.0f};
@@ -5228,10 +5244,9 @@ bool p25_voice_self_check() {
 }
 
 void p25_voice_task(void*) {
-  mbe_parms current{}, previous{}, enhanced{};
-  mbe_initMbeParms(&current, &previous, &enhanced);
+  auto& context = p25_voice_context;
+  mbe_initMbeParms(&context.current, &context.previous, &context.enhanced);
   uint32_t session = p25_voice_session.load(std::memory_order_acquire);
-  int16_t previous_sample = 0;
   for (;;) {
     orcsdr::p25decoder::VoiceFrame frame;
     if (!orcsdr::p25decoder::pop_voice_frame(&frame)) {
@@ -5241,36 +5256,59 @@ void p25_voice_task(void*) {
     const uint32_t next_session = p25_voice_session.load(std::memory_order_acquire);
     if (next_session != session) {
       session = next_session;
-      previous_sample = 0;
-      mbe_initMbeParms(&current, &previous, &enhanced);
+      context.previous_sample = 0;
+      mbe_initMbeParms(&context.current, &context.previous, &context.enhanced);
     }
     if (g_stream_band != RtlBand::p25 ||
         p25_follow_state.load(std::memory_order_acquire) != P25FollowState::voice ||
         !rtl_audio_user_enabled.load(std::memory_order_acquire)) continue;
 
-    char matrix[8][23];
-    char decoded[88]{};
-    char error_text[16]{};
+    const int64_t started_us = esp_timer_get_time();
+    std::memset(context.decoded, 0, sizeof(context.decoded));
+    std::memset(context.error_text, 0, sizeof(context.error_text));
     int errors = 0, total_errors = 0;
-    int16_t pcm8k[160];
-    int16_t pcm48k[960];
-    p25_imbe_matrix(frame, matrix);
-    mbe_processImbe7200x4400Frame(pcm8k, &errors, &total_errors, error_text, matrix,
-                                  decoded, &current, &previous, &enhanced, 3);
+    p25_imbe_matrix(frame, context.matrix);
+    mbe_processImbe7200x4400Frame(
+        context.pcm8k, &errors, &total_errors, context.error_text, context.matrix,
+        context.decoded, &context.current, &context.previous, &context.enhanced, 1);
+    const uint32_t synth_us = static_cast<uint32_t>(esp_timer_get_time() - started_us);
+    uint32_t previous_synth_max = p25_imbe_synth_max_us.load(std::memory_order_relaxed);
+    while (synth_us > previous_synth_max &&
+           !p25_imbe_synth_max_us.compare_exchange_weak(
+               previous_synth_max, synth_us, std::memory_order_relaxed)) {}
     size_t output = 0;
-    for (const int16_t sample : pcm8k) {
-      const int32_t delta = static_cast<int32_t>(sample) - previous_sample;
+    for (const int16_t sample : context.pcm8k) {
+      const int32_t delta = static_cast<int32_t>(sample) - context.previous_sample;
       for (int phase = 1; phase <= 6; ++phase)
-        pcm48k[output++] = static_cast<int16_t>(previous_sample + delta * phase / 6);
-      previous_sample = sample;
+        context.pcm48k[output++] = static_cast<int16_t>(
+            context.previous_sample + delta * phase / 6);
+      context.previous_sample = sample;
     }
     p25_imbe_frames.fetch_add(1, std::memory_order_relaxed);
     p25_imbe_errors.fetch_add(static_cast<uint32_t>(std::max(0, total_errors)),
                               std::memory_order_relaxed);
     p25_pcm_frames.fetch_add(output, std::memory_order_relaxed);
     p25_audio_last_ms.store(millis(), std::memory_order_release);
-    queue_audio_samples(pcm48k, output);
-    vTaskDelay(pdMS_TO_TICKS(18));
+    const uint32_t stack_hwm = uxTaskGetStackHighWaterMark(nullptr);
+    uint32_t previous_hwm = p25_voice_stack_hwm.load(std::memory_order_relaxed);
+    while ((previous_hwm == 0 || stack_hwm < previous_hwm) &&
+           !p25_voice_stack_hwm.compare_exchange_weak(
+               previous_hwm, stack_hwm, std::memory_order_relaxed)) {}
+    const int64_t audio_started_us = esp_timer_get_time();
+    queue_audio_samples(context.pcm48k, output);
+    const uint32_t audio_us = static_cast<uint32_t>(esp_timer_get_time() - audio_started_us);
+    uint32_t previous_audio_max = p25_audio_queue_max_us.load(std::memory_order_relaxed);
+    while (audio_us > previous_audio_max &&
+           !p25_audio_queue_max_us.compare_exchange_weak(
+               previous_audio_max, audio_us, std::memory_order_relaxed)) {}
+    const uint32_t elapsed_us = static_cast<uint32_t>(esp_timer_get_time() - started_us);
+    uint32_t previous_max = p25_imbe_max_us.load(std::memory_order_relaxed);
+    while (elapsed_us > previous_max && !p25_imbe_max_us.compare_exchange_weak(
+               previous_max, elapsed_us, std::memory_order_relaxed)) {}
+    if (elapsed_us < 18000)
+      vTaskDelay(pdMS_TO_TICKS((18000 - elapsed_us + 999) / 1000));
+    else
+      taskYIELD();
   }
 }
 
@@ -6638,7 +6676,7 @@ void initialize_rtl_sdr_host() {
     set_rtl_sdr_status("ADS-B: decoder task failed");
     return;
   }
-  if (xTaskCreatePinnedToCore(p25_voice_task, "p25_voice", 8192, nullptr, 4, nullptr, 1) !=
+  if (xTaskCreatePinnedToCore(p25_voice_task, "p25_voice", 8192, nullptr, 6, nullptr, 1) !=
       pdPASS) {
     set_rtl_sdr_status("P25: voice task failed");
     return;
@@ -8981,7 +9019,8 @@ void process_command(char* command) {
         "sync_words=%lu nid_good=%lu nid_failed=%lu tsbk_good=%lu tsbk_failed=%lu "
         "ber_percent=%.2f grants=%d follow=%s control_hz=%lu voice_hz=%lu "
         "voice_ldus=%lu voice_frames=%lu voice_queue_drops=%lu imbe_frames=%lu "
-        "imbe_errors=%lu pcm_frames=%lu\n",
+        "imbe_errors=%lu pcm_frames=%lu voice_stack_hwm=%lu imbe_max_us=%lu "
+        "imbe_synth_max_us=%lu audio_queue_max_us=%lu\n",
         static_cast<unsigned long>(rtl_ui_frequency_hz),
         p25_survey_active.load(std::memory_order_relaxed) ? 1 : 0,
         static_cast<unsigned>(p25_candidate_index),
@@ -9004,7 +9043,11 @@ void process_command(char* command) {
         static_cast<unsigned long>(decoded.voice_queue_drops),
         static_cast<unsigned long>(p25_imbe_frames.load(std::memory_order_relaxed)),
         static_cast<unsigned long>(p25_imbe_errors.load(std::memory_order_relaxed)),
-        static_cast<unsigned long>(p25_pcm_frames.load(std::memory_order_relaxed)));
+        static_cast<unsigned long>(p25_pcm_frames.load(std::memory_order_relaxed)),
+        static_cast<unsigned long>(p25_voice_stack_hwm.load(std::memory_order_relaxed)),
+        static_cast<unsigned long>(p25_imbe_max_us.load(std::memory_order_relaxed)),
+        static_cast<unsigned long>(p25_imbe_synth_max_us.load(std::memory_order_relaxed)),
+        static_cast<unsigned long>(p25_audio_queue_max_us.load(std::memory_order_relaxed)));
     for (size_t i = 0; i < std::size(kP25ControlChannelsHz); ++i)
       Serial.printf("RTL_P25_CANDIDATE index=%u frequency_hz=%lu relative_dbfs=%.1f\n",
                     static_cast<unsigned>(i),

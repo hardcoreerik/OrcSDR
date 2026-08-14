@@ -41,6 +41,33 @@ mbe_rand_phase()
   return mbe_rand() * (((float)M_PI) * 2.0F) - ((float)M_PI);
 }
 
+typedef struct
+{
+  float c;
+  float s;
+  float dc;
+  float ds;
+} mbe_oscillator;
+
+static inline void
+mbe_oscillator_init (mbe_oscillator *osc, float phase, float step)
+{
+  osc->c = cosf (phase);
+  osc->s = sinf (phase);
+  osc->dc = cosf (step);
+  osc->ds = sinf (step);
+}
+
+static inline float
+mbe_oscillator_next (mbe_oscillator *osc)
+{
+  const float sample = osc->c;
+  const float next_c = (osc->c * osc->dc) - (osc->s * osc->ds);
+  osc->s = (osc->s * osc->dc) + (osc->c * osc->ds);
+  osc->c = next_c;
+  return sample;
+}
+
 void
 mbe_printVersion (char *str)
 {
@@ -227,7 +254,8 @@ mbe_synthesizeSpeechf (float *aout_buf, mbe_parms * cur_mp, mbe_parms * prev_mp,
   float uvsine, uvrand, uvthreshold, uvthresholdf;
   float uvstep, uvoffset;
   float qfactor;
-  float rphase[64], rphase2[64];
+  mbe_oscillator voiced1, voiced2;
+  mbe_oscillator uvosc1[64], uvosc2[64];
 
   const int N = 160;
 
@@ -324,18 +352,19 @@ mbe_synthesizeSpeechf (float *aout_buf, mbe_parms * cur_mp, mbe_parms * prev_mp,
           // init random phase
           for (i = 0; i < uvquality; i++)
             {
-              rphase[i] = mbe_rand_phase();
+              mbe_oscillator_init (&uvosc1[i], mbe_rand_phase(), cw0 * ((float) l + ((float) i * uvstep) - uvoffset));
             }
+          mbe_oscillator_init (&voiced1, prev_mp->PHIl[l], pw0l);
           for (n = 0; n < N; n++)
             {
               C1 = 0;
               // eq 131
-              C1 = Ws[n + N] * prev_mp->Ml[l] * cosf ((pw0l * (float) n) + prev_mp->PHIl[l]);
+              C1 = Ws[n + N] * prev_mp->Ml[l] * mbe_oscillator_next (&voiced1);
               C3 = 0;
               // unvoiced multisine mix
               for (i = 0; i < uvquality; i++)
                 {
-                  C3 = C3 + cosf ((cw0 * (float) n * ((float) l + ((float) i * uvstep) - uvoffset)) + rphase[i]);
+                  C3 = C3 + mbe_oscillator_next (&uvosc1[i]);
                   if (cw0l > uvthreshold)
                     {
                       C3 = C3 + ((cw0l - uvthreshold) * uvrand * mbe_rand());
@@ -352,18 +381,19 @@ mbe_synthesizeSpeechf (float *aout_buf, mbe_parms * cur_mp, mbe_parms * prev_mp,
           // init random phase
           for (i = 0; i < uvquality; i++)
             {
-              rphase[i] = mbe_rand_phase();
+              mbe_oscillator_init (&uvosc1[i], mbe_rand_phase(), pw0 * ((float) l + ((float) i * uvstep) - uvoffset));
             }
+          mbe_oscillator_init (&voiced1, cur_mp->PHIl[l] - (cw0l * (float) N), cw0l);
           for (n = 0; n < N; n++)
             {
               C1 = 0;
               // eq 132
-              C1 = Ws[n] * cur_mp->Ml[l] * cosf ((cw0l * (float) (n - N)) + cur_mp->PHIl[l]);
+              C1 = Ws[n] * cur_mp->Ml[l] * mbe_oscillator_next (&voiced1);
               C3 = 0;
               // unvoiced multisine mix
               for (i = 0; i < uvquality; i++)
                 {
-                  C3 = C3 + cosf ((pw0 * (float) n * ((float) l + ((float) i * uvstep) - uvoffset)) + rphase[i]);
+                  C3 = C3 + mbe_oscillator_next (&uvosc1[i]);
                   if (pw0l > uvthreshold)
                     {
                       C3 = C3 + ((pw0l - uvthreshold) * uvrand * mbe_rand());
@@ -378,14 +408,16 @@ mbe_synthesizeSpeechf (float *aout_buf, mbe_parms * cur_mp, mbe_parms * prev_mp,
       else if ((cur_mp->Vl[l] == 1) || (prev_mp->Vl[l] == 1))
         {
           Ss = aout_buf;
+          mbe_oscillator_init (&voiced1, prev_mp->PHIl[l], pw0l);
+          mbe_oscillator_init (&voiced2, cur_mp->PHIl[l] - (cw0l * (float) N), cw0l);
           for (n = 0; n < N; n++)
             {
               C1 = 0;
               // eq 133-1
-              C1 = Ws[n + N] * prev_mp->Ml[l] * cosf ((pw0l * (float) n) + prev_mp->PHIl[l]);
+              C1 = Ws[n + N] * prev_mp->Ml[l] * mbe_oscillator_next (&voiced1);
               C2 = 0;
               // eq 133-2
-              C2 = Ws[n] * cur_mp->Ml[l] * cosf ((cw0l * (float) (n - N)) + cur_mp->PHIl[l]);
+              C2 = Ws[n] * cur_mp->Ml[l] * mbe_oscillator_next (&voiced2);
               *Ss = *Ss + C1 + C2;
               Ss++;
             }
@@ -417,12 +449,12 @@ mbe_synthesizeSpeechf (float *aout_buf, mbe_parms * cur_mp, mbe_parms * prev_mp,
           // init random phase
           for (i = 0; i < uvquality; i++)
             {
-              rphase[i] = mbe_rand_phase();
+              mbe_oscillator_init (&uvosc1[i], mbe_rand_phase(), pw0 * ((float) l + ((float) i * uvstep) - uvoffset));
             }
           // init random phase
           for (i = 0; i < uvquality; i++)
             {
-              rphase2[i] = mbe_rand_phase();
+              mbe_oscillator_init (&uvosc2[i], mbe_rand_phase(), cw0 * ((float) l + ((float) i * uvstep) - uvoffset));
             }
           for (n = 0; n < N; n++)
             {
@@ -430,7 +462,7 @@ mbe_synthesizeSpeechf (float *aout_buf, mbe_parms * cur_mp, mbe_parms * prev_mp,
               // unvoiced multisine mix
               for (i = 0; i < uvquality; i++)
                 {
-                  C3 = C3 + cosf ((pw0 * (float) n * ((float) l + ((float) i * uvstep) - uvoffset)) + rphase[i]);
+                  C3 = C3 + mbe_oscillator_next (&uvosc1[i]);
                   if (pw0l > uvthreshold)
                     {
                       C3 = C3 + ((pw0l - uvthreshold) * uvrand * mbe_rand());
@@ -441,7 +473,7 @@ mbe_synthesizeSpeechf (float *aout_buf, mbe_parms * cur_mp, mbe_parms * prev_mp,
               // unvoiced multisine mix
               for (i = 0; i < uvquality; i++)
                 {
-                  C4 = C4 + cosf ((cw0 * (float) n * ((float) l + ((float) i * uvstep) - uvoffset)) + rphase2[i]);
+                  C4 = C4 + mbe_oscillator_next (&uvosc2[i]);
                   if (cw0l > uvthreshold)
                     {
                       C4 = C4 + ((cw0l - uvthreshold) * uvrand * mbe_rand());
