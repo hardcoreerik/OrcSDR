@@ -1,0 +1,7 @@
+Pillow==11.3.0
+pyserial==3.5
+mkdocs==1.6.1
+mkdocs-material==9.7.1
+moviepy==2.2.1
+kokoro==0.9.4
+soundfile==0.13.1

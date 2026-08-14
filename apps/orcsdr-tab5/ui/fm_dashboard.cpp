@@ -111,6 +111,7 @@ void draw_header() {
   M5.Display.drawFastVLine(865, 25, 82, kCyan);
   audio_header::draw(g_audio_control, g_snapshot.volume, g_snapshot.sound_enabled,
                      g_snapshot.battery_percent);
+  audio_header::draw_home_button();
   draw_gear(1220, 66, kCyan);
 }
 
@@ -651,6 +652,23 @@ Action handle_touch(int32_t x, int32_t y) {
 bool active() { return g_active; }
 bool spectrum_active() { return g_active && !g_keypad && g_view == View::spectrum; }
 View view() { return g_view; }
+
+void show_documentation_view(View requested, const Snapshot& snapshot,
+                             bool show_volume_tray,
+                             bool show_frequency_keypad) {
+  if (requested >= View::count) return;
+  g_snapshot = snapshot;
+  g_view = requested;
+  g_active = true;
+  g_keypad = show_frequency_keypad;
+  g_entry[0] = '\0';
+  audio_header::reset(g_audio_control);
+  if (show_volume_tray) {
+    g_audio_control.expanded = true;
+    g_audio_control.hide_at_ms = UINT32_MAX;
+  }
+  draw();
+}
 
 bool self_check() {
   return static_cast<uint8_t>(View::count) == 5 && kFmMinHz < kFmMaxHz &&

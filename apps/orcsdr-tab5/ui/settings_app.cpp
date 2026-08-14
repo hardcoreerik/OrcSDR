@@ -536,6 +536,12 @@ void enter(const State& state_value, Section section) {
   draw();
 }
 
+void leave() {
+  g_active = false;
+  g_edit = EditField::none;
+  g_wifi_edit = WifiEdit::none;
+}
+
 void draw() {
   M5.Display.fillScreen(kBg);
   draw_header();
@@ -687,6 +693,24 @@ Action handle_touch(int32_t x, int32_t y) {
 
 bool active() { return g_active; }
 const State& state() { return g_state; }
+Section section() { return g_section; }
+
+void show_documentation_section(Section section, const State& state_value,
+                                bool show_wifi_keyboard) {
+  if (section >= Section::count) return;
+  g_state = state_value;
+  g_section = section;
+  g_edit = EditField::none;
+  g_wifi_edit = WifiEdit::none;
+  g_active = true;
+  if (show_wifi_keyboard) {
+    begin_wifi_edit(WifiEdit::password, "Demo Network");
+    strlcpy(g_wifi_edit_password, "example-password",
+            sizeof(g_wifi_edit_password));
+  }
+  draw();
+  if (show_wifi_keyboard) draw_wifi_keyboard();
+}
 
 bool take_wifi_credentials(char* ssid, size_t ssid_size,
                            char* password, size_t password_size) {

@@ -133,6 +133,18 @@ the firmware/partition owner.
 **Status: Build-verified foundation; hardware acceptance and service phases
 pending.** See `phasing.md` Phase 7.
 
+## Product initiative — automated guide and media
+
+OrcSDR will maintain one versioned screen manifest covering every usable view.
+Authenticated serial capture writes exact 1280x720 frames to SD, while a local
+Windows pipeline retrieves and hashes them, creates annotated PNGs, builds the
+Material for MkDocs guide, and renders captioned Kokoro-narrated videos. Live
+data is preferred only when a bounded condition is met; otherwise the capture
+is visibly labeled `DEMO`. Generated MP4 files remain outside Git history.
+
+**Status: Build-verified tooling and firmware interface; hardware capture,
+privacy review, and voice approval pending.** See `phasing.md` Phase 8.
+
 ## Summary table
 
 | Gap | New or already tracked | Phase |
@@ -144,3 +156,4 @@ pending.** See `phasing.md` Phase 7.
 | No tool-shell abstraction | New | Phase 3 |
 | ADS-B 1090 dashboard | Product initiative | Phase 6 |
 | Global Settings and connectivity | Product initiative | Phase 7 |
+| Automated guide and media | Product initiative | Phase 8 |

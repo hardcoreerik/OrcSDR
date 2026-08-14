@@ -177,7 +177,9 @@ static void set_error_unlocked(rtl_sdr_v4_esp_handle *h, esp_err_t err)
 
 static esp_err_t check_not_reentrant(const rtl_sdr_v4_esp_handle *h)
 {
-    if (h != nullptr && h->in_callback_depth > 0) {
+    const TaskHandle_t current = xTaskGetCurrentTaskHandle();
+    if (h != nullptr &&
+        (current == h->delivery_task || current == h->client_task || current == h->host_task)) {
         return RTL_SDR_V4_ESP_ERR_REENTRANT;
     }
     return ESP_OK;
@@ -1614,20 +1616,23 @@ esp_err_t rtl_sdr_v4_esp_stop(rtl_sdr_v4_esp_handle_t handle, uint32_t timeout_m
     if (!handle_live(handle)) {
         return RTL_SDR_V4_ESP_ERR_STALE_HANDLE;
     }
+    esp_err_t re = check_not_reentrant(handle);
+    if (re != ESP_OK) {
+        return re;
+    }
+    /* Stop new USB resubmissions before taking the API lock so the higher
+     * priority delivery task can drain instead of starving its owner. */
+    handle->pause_resubmit = true;
     {
-        HandleLock lk(handle);
+        HandleLock lk(handle, pdMS_TO_TICKS(timeout_ms ? timeout_ms :
+                                            RTL_SDR_V4_ESP_DEFAULT_STOP_TIMEOUT_MS));
         if (!lk.ok()) {
+            handle->pause_resubmit = false;
             return RTL_SDR_V4_ESP_ERR_TIMEOUT;
-        }
-        if (!handle->destroying) {
-            esp_err_t re = check_not_reentrant(handle);
-            if (re != ESP_OK) {
-                set_error_unlocked(handle, re);
-                return re;
-            }
         }
         if (handle->state == RTL_SDR_V4_ESP_STATE_IDLE ||
             handle->state == RTL_SDR_V4_ESP_STATE_UNINSTALLED) {
+            handle->pause_resubmit = false;
             return ESP_OK;
         }
     }

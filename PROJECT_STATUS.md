@@ -1,8 +1,8 @@
 # OrcSDR project status
 
-Snapshot date: **2026-08-10**
-Source branch: **`codex/ads-b-dashboard`**
-Mainline baseline: **`origin/main` at `929abc7`**
+Snapshot date: **2026-08-14**
+Source branch: **`codex/user-guide-media`**
+Mainline baseline: **`origin/main` at `321f1bb6cec89d00e34f06d82cb813d47022d385`**
 
 This is the authoritative current-status and roadmap index. Historical design,
 research, and validation documents remain useful evidence, but do not override
@@ -47,6 +47,7 @@ this file when their paths, versions, or completion claims differ.
 | Second ESP32-P4 board | **Planned** | No second-board hardware evidence yet |
 | rtl_tcp over Ethernet | **Planned** | App does not exist yet |
 | ADS-B 1090 | **Flashed — live pipeline implemented; acceptance pending** | COM17 upload hash-verified. Five-minute 1090 MHz run sustained 2,047,654 S/s (99.98% of 2.048 MS/s) with five startup drops and none afterward. A live RF trace reconstructed to CRC-valid DF17 `8DA2955158B505036BFB54BC90AC` (ICAO `A29551`, 35,000 ft), matching ASA1310's simultaneous independent track; the same captured magnitude waveform now passes the on-device fractional-sample replay check. The bounded aircraft table and revisioned dashboard snapshot are flashed. Dynamic updates no longer clear the full screen each second. A 315,547-record FAA index and the complete supplied FAA archive are SD hash-verified; live ICAO `A31111` resolved to `N297SF`. The UI honestly remains `DEMO` until a new on-device live frame passes CRC; physical view/touch acceptance remains open. |
+| User guide and media pipeline | **Build-verified** | Native build plus 44-screen manifest, capture tooling, strict MkDocs site, and local narrated-video scripts. Hardware captures, privacy review, voice approval, and rendered media remain pending. |
 
 ## Roadmap
 
@@ -139,6 +140,17 @@ Detailed gates and clean-room boundaries live in `phasing.md` Phase 6.
 Detailed gates live in `phasing.md` Phase 7. Build verification is not live
 network, BLE, Companion, Launcher, or hardware acceptance evidence.
 
+### P5 — public user guide and media
+
+- [x] Add firmware-owned documentation screen IDs and build-time coverage checks.
+- [x] Add authenticated, hash-reported 1280x720 SD capture and state restoration.
+- [x] Add the manifest-driven Pages, annotation, narration, caption, transcript,
+      thumbnail, and video pipeline.
+- [ ] Capture and privacy-review every view on hardware.
+- [ ] Approve the voice sample, render the suite, and review Pages before deploy.
+
+Detailed gates live in `phasing.md` Phase 8.
+
 ### Deferred until measurements justify them
 
 - Bias tee, direct sampling/HF, gain/PPM controls, SpyServer, WebSDR, 978 MHz UAT,
@@ -172,12 +184,12 @@ hardware proof and a branch is not considered landed until its merge is verified
 
 ## Verification commands
 
-Use Python 3.11 for the measured PlatformIO toolchain:
+Use the repository's native ESP-IDF 5.5.3 workflow; PlatformIO is not the
+production Tab5 build path:
 
 ```powershell
 Set-Location F:\Ai\OrcSDR\apps\orcsdr-tab5
-& 'C:\Users\hardc\AppData\Local\Programs\Python\Python311\python.exe' -m platformio run -e m5tab5_ui
-& 'C:\Users\hardc\AppData\Local\Programs\Python\Python311\python.exe' -m platformio run -e m5tab5_ui -t upload --upload-port COM17
+.\tools\build-tab5-idf.ps1
 ```
 
 Required runtime lines for the next performance record:

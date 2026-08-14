@@ -37,3 +37,6 @@ Thumbs.db
 *.pem
 tmp/
 .local/
+site/
+artifacts/help-media/
+docs/user-guide/assets/screenshots/raw/

@@ -17,14 +17,18 @@ constexpr uint16_t kMuted = 0x8c71;
 constexpr uint16_t kGrid = 0x2945;
 constexpr int kRegionX = 866;
 constexpr int kRegionY = 25;
-constexpr int kRegionW = 314;
+constexpr int kRegionW = 244;
 constexpr int kRegionH = 82;
 constexpr int kIndicatorX = 870;
 constexpr int kIndicatorW = 88;
 constexpr int kButtonY = 34;
 constexpr int kButtonH = 64;
-constexpr int kButtonW = 96;
-constexpr int kButtonX[] = {872, 974, 1076};
+constexpr int kButtonW = 74;
+constexpr int kButtonX[] = {872, 950, 1028};
+constexpr int kHomeX = 1116;
+constexpr int kHomeY = 8;
+constexpr int kHomeW = 58;
+constexpr int kHomeH = 58;
 constexpr uint32_t kTrayTimeoutMs = 4000;
 
 bool hit(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
@@ -87,7 +91,19 @@ void draw(const Control& control, uint8_t volume, bool sound_enabled,
   text(level, 926, 67, sound_enabled ? TFT_WHITE : kMuted, 2);
   text("USB", 977, 67, TFT_WHITE, 1);
   draw_battery(1001, 50, battery_percent);
-  text("--:--", 1121, 67, TFT_WHITE, 2);
+}
+
+void draw_home_button() {
+  M5.Display.fillRoundRect(kHomeX, kHomeY, kHomeW, kHomeH, 8, kPanel);
+  M5.Display.drawRoundRect(kHomeX, kHomeY, kHomeW, kHomeH, 8, kCyan);
+  const int cx = kHomeX + kHomeW / 2;
+  M5.Display.fillTriangle(cx, 17, kHomeX + 9, 38, kHomeX + kHomeW - 9, 38, kGreen);
+  M5.Display.fillRect(kHomeX + 17, 35, 24, 21, kGreen);
+  M5.Display.fillRect(cx - 4, 43, 8, 13, kPanel);
+}
+
+bool home_hit(int32_t x, int32_t y) {
+  return hit(x, y, kHomeX, kHomeY, kHomeW, kHomeH);
 }
 
 Action handle_touch(Control& control, int32_t x, int32_t y, uint32_t now_ms) {
@@ -123,14 +139,15 @@ bool self_check() {
   Control control{};
   if (handle_touch(control, 900, 60, 100) != Action::opened || !control.expanded)
     return false;
-  if (handle_touch(control, 920, 60, 200) != Action::volume_down) return false;
-  if (handle_touch(control, 1020, 60, 300) != Action::sound_toggle) return false;
-  if (handle_touch(control, 1120, 60, 400) != Action::volume_up) return false;
+  if (handle_touch(control, 900, 60, 200) != Action::volume_down) return false;
+  if (handle_touch(control, 980, 60, 300) != Action::sound_toggle) return false;
+  if (handle_touch(control, 1060, 60, 400) != Action::volume_up) return false;
   if (handle_touch(control, 1220, 60, 500) != Action::none) return false;
   if (service_timeout(control, 4399) || !service_timeout(control, 4400)) return false;
   reset(control);
   if (handle_touch(control, 800, 60, 0) != Action::none) return false;
-  return kRegionX + kRegionW <= 1180 && kButtonX[2] + kButtonW <= 1180;
+  return kRegionX + kRegionW <= kHomeX && kButtonX[2] + kButtonW <= kHomeX &&
+         home_hit(kHomeX + 1, kHomeY + 1) && !home_hit(kHomeX - 1, kHomeY);
 }
 
 }  // namespace orcsdr::audio_header
