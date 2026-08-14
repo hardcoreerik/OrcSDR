@@ -193,8 +193,8 @@ Current LoRa capabilities include:
 
 - **M5Stack Tab5**
 - **RTL-SDR Blog V4**
-- PlatformIO
-- Python 3.10–3.13
+- **Espressif ESP-IDF 5.5.3 for Windows**
+- **M5Burner ESP-Hosted 2.12.6 slave firmware** for the Tab5 C6
 - USB cable for flashing the Tab5
 - USB connection from the Tab5 USB Host port to the RTL-SDR
 - Antenna appropriate for what you want to receive
@@ -203,7 +203,7 @@ Current LoRa capabilities include:
 
 ```bash
 git clone https://github.com/hardcoreerik/OrcSDR.git
-cd OrcSDR/apps/orcsdr-tab5
+cd OrcSDR
 ```
 
 If you already have OrcSDR cloned:
@@ -211,15 +211,14 @@ If you already have OrcSDR cloned:
 ```bash
 cd OrcSDR
 git pull
-cd apps/orcsdr-tab5
 ```
 
 ### 2. Find the Tab5 port
 
-Connect the Tab5 to your computer over USB and list detected devices:
+Connect the Tab5 to your computer over USB and run:
 
-```bash
-pio device list
+```powershell
+Get-CimInstance Win32_SerialPort | Select-Object DeviceID, Name
 ```
 
 On Windows, note the assigned COM port. For example:
@@ -228,29 +227,20 @@ On Windows, note the assigned COM port. For example:
 COM8
 ```
 
-### 3. Build OrcSDR
+### 3. Build and flash OrcSDR
 
-From `OrcSDR/apps/orcsdr-tab5`:
+Replace `COM8` with the Tab5 port, then copy and paste:
 
-```bash
-pio run -e m5tab5_ui
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\apps\orcsdr-tab5\tools\install-tab5.ps1 -Port COM8
 ```
 
-### 4. Flash OrcSDR
+This uses the pinned native ESP-IDF component graph, preserves saved NVS
+settings, and refuses unexpected ESP-Hosted or M5GFX component sources.
+PlatformIO is not a supported OrcSDR build or flash path.
 
-Replace `COMxx` with the serial port assigned to your Tab5:
-
-```bash
-pio run -e m5tab5_ui -t upload --upload-port COMxx
-```
-
-Example:
-
-```bash
-pio run -e m5tab5_ui -t upload --upload-port COM8
-```
-
-### 5. Connect the RTL-SDR Blog V4
+### 4. Connect the RTL-SDR Blog V4
 
 Connect the SDR to the Tab5 USB Host interface:
 
