@@ -25,6 +25,7 @@
 #include <cstdarg>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 
 #if !defined(RTL_USE_LEGACY_USB)
 #define RTL_USE_LEGACY_USB 0
@@ -39,6 +40,7 @@
 #include "adsb_dashboard.hpp"
 #include "adsb_decoder.hpp"
 #include "fm_dashboard.hpp"
+#include "p25_dashboard.hpp"
 #include "settings_app.hpp"
 #if !RTL_USE_LEGACY_USB
 #include "rtl_sdr_v4_esp.h"
@@ -485,11 +487,18 @@ constexpr uint32_t kLoraMinHz = 902000000;
 constexpr uint32_t kLoraMaxHz = 928000000;
 constexpr uint32_t kLoraDefaultHz = 906875000;  // Meshtastic US LongFast default slot
 constexpr uint32_t kAdsbDefaultHz = 1090000000;
+constexpr uint32_t kP25MinHz = 450000000;
+constexpr uint32_t kP25MaxHz = 470000000;
+constexpr uint32_t kP25DefaultHz = 453812500;
+constexpr uint32_t kP25StepHz = 12500;
+constexpr uint32_t kP25ControlChannelsHz[] = {
+    453812500, 453925000, 460187500, 460312500};
+static_assert(std::size(kP25ControlChannelsHz) == 4);
 // Clean-room LO offset: LO = RF + 1.814972 MHz (from 100 MHz observation).
 constexpr double kRtlIfOffsetHz = 1814972.0;
 constexpr double kRtlXtalHz = 28800000.0;
 
-enum class RtlBand : uint8_t { fm, am, wx, cb, lora, browse, adsb };
+enum class RtlBand : uint8_t { fm, am, wx, cb, lora, browse, adsb, p25 };
 enum class CbMode : uint8_t { am, usb, lsb };
 
 constexpr uint32_t kCbChannelsHz[] = {
@@ -538,18 +547,19 @@ constexpr RfBandGuide kRfBandGuide[] = {
     {222000000, 225000000, 223500000, RtlBand::browse, "HAM RADIO", "VHF / 1.25 m amateur", false},
     {406000000, 406100000, 406050000, RtlBand::browse, "DISTRESS SAT", "UHF / emergency beacons", false},
     {420000000, 450000000, 446000000, RtlBand::browse, "HAM RADIO", "UHF / 70 cm amateur", true},
+    {kP25MinHz, kP25MaxHz, kP25DefaultHz, RtlBand::p25, "P25 / LRIG", "UHF / Lane County public safety", true},
     {462550000, 467725000, 462562500, RtlBand::browse, "FRS / GMRS", "UHF / personal two-way", false},
     {kLoraMinHz, kLoraMaxHz, kLoraDefaultHz, RtlBand::lora, "LORA / ISM", "UHF / LoRa CSS and mesh data", true},
     {977900000, 978100000, 978000000, RtlBand::browse, "ADS-B UAT", "UHF / aircraft position", false},
     {1089900000, 1090100000, kAdsbDefaultHz, RtlBand::adsb, "ADS-B / MODE S", "L-band / aircraft tracking", true},
-    {1525000000, 1559000000, 1545000000, RtlBand::browse, "SATCOM", "L-band / satellite downlinks", true},
+    {1525000000, 1559000000, 1545000000, RtlBand::browse, "SATCOM", "L-band / satellite downlinks", false},
     {1575000000, 1576000000, 1575420000, RtlBand::browse, "GNSS / GPS", "L-band / navigation", false},
     {1610600000, 1626500000, 1620000000, RtlBand::browse, "SATCOM", "L-band / mobile satellite", false},
 };
-static_assert(std::size(kRfBandGuide) == 20);
+static_assert(std::size(kRfBandGuide) == 21);
 constexpr const char* kRfQuickLabels[] = {
     "CB 27", "HAM 10M", "HAM 6M", "FM RADIO", "AIRBAND", "NOAA SAT",
-    "HAM 2M", "NOAA WX", "HAM 70CM", "LORA 915", "ADS-B 1090", "SATCOM L"};
+    "HAM 2M", "NOAA WX", "HAM 70CM", "P25 LRIG", "LORA 915", "ADS-B 1090"};
 static_assert(std::size(kRfQuickLabels) == 12);
 
 constexpr bool rf_band_guide_valid() {
@@ -1178,6 +1188,14 @@ uint32_t rtl_ui_frequency_hz = kRtlFmDefaultHz;
 // Last good FM LO; seeded from NVS (or kRtlFmDefaultHz) and rewritten on retune.
 uint32_t rtl_saved_fm_hz = kRtlFmDefaultHz;
 uint8_t rtl_ui_volume = kRtlVolumeDefault;
+std::atomic<bool> p25_survey_active{false};
+std::atomic<bool> p25_hold{false};
+std::atomic<bool> p25_auto_follow{true};
+std::atomic<bool> p25_encryption_skip{true};
+uint8_t p25_candidate_index = 0;
+float p25_candidate_levels[std::size(kP25ControlChannelsHz)] = {
+    -120.0f, -120.0f, -120.0f, -120.0f};
+uint32_t p25_survey_sample_at_ms = 0;
 uint64_t rtl_capture_bytes = 0;
 uint8_t rtl_capture_min = 0;
 uint8_t rtl_capture_max = 0;
@@ -1427,6 +1445,7 @@ void draw_cb_dashboard(bool static_panel);
 bool handle_cb_touch(int32_t x, int32_t y);
 void draw_lora_dashboard(bool static_panel);
 void draw_fm_dashboard(bool static_panel);
+void draw_p25_dashboard(bool static_panel);
 void draw_lora_packets_view(bool force);
 void draw_lora_map_view(bool force);
 bool handle_lora_touch(int32_t x, int32_t y);
@@ -1471,6 +1490,9 @@ void handle_global_settings_touch(int32_t x, int32_t y);
 void draw_global_settings_gear();
 orcsdr::fm::Snapshot fm_dashboard_snapshot();
 void handle_fm_dashboard_action(const orcsdr::fm::Action& action);
+orcsdr::p25::Snapshot p25_dashboard_snapshot();
+void handle_p25_dashboard_action(const orcsdr::p25::Action& action);
+void service_p25_survey(uint32_t now);
 void start_wifi_inventory();
 void stop_wifi();
 void begin_power_monitor(const char* tag, uint32_t duration_ms = 1000);
@@ -1751,6 +1773,7 @@ const char* rtl_band_name(RtlBand band) {
     case RtlBand::lora: return "LORA";
     case RtlBand::browse: return "BROWSE";
     case RtlBand::adsb: return "ADSB";
+    case RtlBand::p25: return "P25";
     default: return "FM";
   }
 }
@@ -1765,6 +1788,7 @@ bool rtl_band_from_name(const char* name, RtlBand* out_band) {
   if (strcmp(name, "LORA") == 0) { *out_band = RtlBand::lora; return true; }
   if (strcmp(name, "BROWSE") == 0) { *out_band = RtlBand::browse; return true; }
   if (strcmp(name, "ADSB") == 0) { *out_band = RtlBand::adsb; return true; }
+  if (strcmp(name, "P25") == 0) { *out_band = RtlBand::p25; return true; }
   return false;
 }
 
@@ -1779,6 +1803,7 @@ const char* rtl_mode_name(RtlBand band) {
     case RtlBand::lora: return "CSS";
     case RtlBand::browse: return "NFM";
     case RtlBand::adsb: return "1090";
+    case RtlBand::p25: return "P25 C4FM";
     default: return "WBFM";
   }
 }
@@ -1791,6 +1816,7 @@ uint32_t rtl_band_default_frequency(RtlBand band) {
     case RtlBand::lora: return kLoraDefaultHz;
     case RtlBand::browse: return kRtlBrowseDefaultHz;
     case RtlBand::adsb: return kAdsbDefaultHz;
+    case RtlBand::p25: return kP25DefaultHz;
     default: return rtl_saved_fm_hz;
   }
 }
@@ -1798,6 +1824,7 @@ uint32_t rtl_band_default_frequency(RtlBand band) {
 uint32_t rtl_filter_default_hz(RtlBand band) {
   if (band == RtlBand::lora) return lora_bandwidth_hz.load(std::memory_order_relaxed);
   if (band == RtlBand::am || band == RtlBand::cb) return kRtlAmFilterDefaultHz;
+  if (band == RtlBand::p25) return kP25StepHz;
   if (band == RtlBand::wx || band == RtlBand::browse || band == RtlBand::adsb)
     return kRtlWxFilterDefaultHz;
   return kRtlFmFilterDefaultHz;
@@ -1810,6 +1837,7 @@ uint32_t rtl_clamp_filter_hz(RtlBand band, uint32_t bandwidth_hz) {
     if (bandwidth_hz <= 375000) return 250000;
     return 500000;
   }
+  if (band == RtlBand::p25) return kP25StepHz;
   const bool am = band == RtlBand::am;
   const uint32_t low = band == RtlBand::cb ? 2400 : am ? 4000 : band == RtlBand::fm ? 50000 : 8000;
   const uint32_t high = band == RtlBand::cb ? 12000 : am ? 30000 : band == RtlBand::fm ? 300000 : 100000;
@@ -1848,6 +1876,8 @@ uint32_t rtl_clamp_frequency(RtlBand band, uint32_t frequency_hz) {
       return kRtlWxHz;
     case RtlBand::adsb:
       return kAdsbDefaultHz;
+    case RtlBand::p25:
+      return constrain(frequency_hz, kP25MinHz, kP25MaxHz);
     case RtlBand::browse:
       return constrain(frequency_hz, kRtlBrowseMinHz, kRtlBrowseMaxHz);
     default:
@@ -1890,6 +1920,13 @@ uint32_t rtl_step_frequency(RtlBand band, uint32_t frequency_hz, int direction) 
     return direction < 0
                ? (frequency_hz <= kLoraMinHz + step ? kLoraMinHz : frequency_hz - step)
                : min(frequency_hz + step, kLoraMaxHz);
+  }
+  if (band == RtlBand::p25) {
+    if (direction < 0)
+      return frequency_hz <= kP25MinHz + kP25StepHz
+                 ? kP25MinHz
+                 : rtl_clamp_frequency(band, frequency_hz - kP25StepHz);
+    return rtl_clamp_frequency(band, frequency_hz + kP25StepHz);
   }
   const uint32_t step = band == RtlBand::am ? rtl_am_step_hz : rtl_fm_step_hz;
   if (direction < 0) {
@@ -1951,7 +1988,7 @@ void allow_boot_speaker() {
 }
 
 bool rtl_band_has_audio(RtlBand band) {
-  return band != RtlBand::adsb && band != RtlBand::lora;
+  return band != RtlBand::adsb && band != RtlBand::lora && band != RtlBand::p25;
 }
 
 void sync_rtl_audio_for_band(RtlBand band) {
@@ -4569,8 +4606,15 @@ void draw_fm_dashboard(bool static_panel) {
   else if (orcsdr::fm::active()) orcsdr::fm::update(snapshot);
 }
 
+void draw_p25_dashboard(bool static_panel) {
+  const auto snapshot = p25_dashboard_snapshot();
+  if (static_panel) orcsdr::p25::enter(snapshot);
+  else if (orcsdr::p25::active()) orcsdr::p25::update(snapshot);
+}
+
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   if (band == RtlBand::adsb) {
+    orcsdr::p25::leave();
     if (!orcsdr::adsb::active()) orcsdr::adsb::enter(adsb_settings);
     else orcsdr::adsb::draw();
     draw_global_settings_gear();
@@ -4585,11 +4629,19 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
     rtl_spectrum_window_ready = true;
   }
   if (band == RtlBand::fm) {
+    orcsdr::p25::leave();
     reset_spectrum_renderer();
     draw_fm_dashboard(true);
     return;
   }
+  if (band == RtlBand::p25) {
+    orcsdr::fm::leave();
+    reset_spectrum_renderer();
+    draw_p25_dashboard(true);
+    return;
+  }
   orcsdr::fm::leave();
+  orcsdr::p25::leave();
   M5.Display.fillScreen(TFT_BLACK);
   draw_sdr_header(band, frequency_hz, volume);
   if (band == RtlBand::lora) {
@@ -4793,6 +4845,7 @@ void draw_band_edges() {
 void draw_spectrum(const uint8_t* iq, size_t bytes) {
   if (rtl_ui_band == RtlBand::lora && lora_view != LoraView::Live) return;
   if (rtl_ui_band == RtlBand::fm && !orcsdr::fm::spectrum_active()) return;
+  if (rtl_ui_band == RtlBand::p25 && !orcsdr::p25::spectrum_active()) return;
   uint8_t local_iq[sizeof(rtl_spectrum_iq_snap)];
   size_t local_bytes = 0;
   portENTER_CRITICAL(&rtl_spectrum_snap_mux);
@@ -4932,6 +4985,13 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   }
   if (rtl_ui_band == RtlBand::fm) {
     orcsdr::fm::draw_spectrum(rtl_spectrum_levels, first_bin, visible_bins, floor);
+    rtl_spectrum_trace_last_ms = now;
+    rtl_spectrum_trace_valid = true;
+    ++rtl_spectrum_frames;
+    return;
+  }
+  if (rtl_ui_band == RtlBand::p25) {
+    orcsdr::p25::draw_spectrum(rtl_spectrum_levels, first_bin, visible_bins, floor);
     rtl_spectrum_trace_last_ms = now;
     rtl_spectrum_trace_valid = true;
     ++rtl_spectrum_frames;
@@ -5739,7 +5799,10 @@ void run_rtl_capture() {
       const uint8_t live_volume = rtl_live_volume.load(std::memory_order_acquire);
       rtl_ui_volume = live_volume;
       drawn_rtl_ui_revision = ui_revision;
-      draw_sdr_header(band, frequency_hz, live_volume);
+      if (band == RtlBand::p25)
+        orcsdr::p25::update(p25_dashboard_snapshot());
+      else
+        draw_sdr_header(band, frequency_hz, live_volume);
     }
     const uint32_t drops_before_draw = rtl_audio.dropped_chunks;
     if (drops_before_draw == 0 &&
@@ -6313,12 +6376,15 @@ static void rtl_driver_app_task(void *) {
             drawn_rtl_ui_revision = ui_revision;
             if (g_stream_band == RtlBand::fm)
               orcsdr::fm::update(fm_dashboard_snapshot());
+            else if (g_stream_band == RtlBand::p25)
+              orcsdr::p25::update(p25_dashboard_snapshot());
             else
               draw_sdr_header(g_stream_band, rtl_ui_frequency_hz,
                               rtl_live_volume.load(std::memory_order_acquire));
           }
 
           const uint32_t now = millis();
+          service_p25_survey(now);
           if (g_stream_band == RtlBand::adsb && now - adsb_metrics_last_ms >= 5000) {
             adsb_metrics_last_ms = now;
             expire_adsb_tracks(now);
@@ -6349,8 +6415,12 @@ static void rtl_driver_app_task(void *) {
               now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
             rtl_signal_meter_last_ms = now;
             draw_fm_dashboard(false);
+          } else if (g_stream_band == RtlBand::p25 &&
+                     now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
+            rtl_signal_meter_last_ms = now;
+            draw_p25_dashboard(false);
           } else if (g_stream_band != RtlBand::adsb &&
-                     g_stream_band != RtlBand::fm &&
+                     g_stream_band != RtlBand::fm && g_stream_band != RtlBand::p25 &&
               now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
             rtl_signal_meter_last_ms = now;
             draw_signal_meter(false);
@@ -6409,6 +6479,8 @@ static void rtl_driver_app_task(void *) {
         if (rtl_ui_band == RtlBand::adsb) orcsdr::adsb::draw();
         else if (rtl_ui_band == RtlBand::fm)
           orcsdr::fm::update(fm_dashboard_snapshot());
+        else if (rtl_ui_band == RtlBand::p25)
+          orcsdr::p25::update(p25_dashboard_snapshot());
         else
           draw_sdr_controls(g_stream_band, false);
         Serial.printf("RTL_STOP bytes=%llu\n",
@@ -6876,6 +6948,152 @@ void handle_fm_dashboard_action(const orcsdr::fm::Action& action) {
   if (orcsdr::fm::active()) orcsdr::fm::update(fm_dashboard_snapshot());
 }
 
+orcsdr::p25::Snapshot p25_dashboard_snapshot() {
+  orcsdr::p25::Snapshot snapshot;
+  snapshot.frequency_hz = rtl_ui_frequency_hz;
+  snapshot.span_hz = rtl_scope_span_hz.load(std::memory_order_relaxed);
+  snapshot.relative_dbfs = rtl_signal_dbfs.load(std::memory_order_relaxed);
+  snapshot.running =
+      rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
+  snapshot.driver_ready = rtl_device_ready();
+  snapshot.wifi_connected = wifi_connected;
+  snapshot.survey_active = p25_survey_active.load(std::memory_order_relaxed);
+  snapshot.hold = p25_hold.load(std::memory_order_relaxed);
+  snapshot.auto_follow = p25_auto_follow.load(std::memory_order_relaxed);
+  snapshot.encryption_skip = p25_encryption_skip.load(std::memory_order_relaxed);
+  snapshot.candidate_index = p25_candidate_index;
+  snapshot.candidate_count = static_cast<uint8_t>(std::size(kP25ControlChannelsHz));
+  std::copy(std::begin(p25_candidate_levels), std::end(p25_candidate_levels),
+            std::begin(snapshot.candidate_levels));
+  snapshot.battery_percent = M5.Power.getBatteryLevel();
+#if !RTL_USE_LEGACY_USB
+  rtl_sdr_v4_esp_metrics_t metrics{};
+  if (g_rtl != nullptr) {
+    (void)rtl_sdr_v4_esp_get_metrics(g_rtl, &metrics);
+    snapshot.effective_sps = metrics.effective_sps;
+    snapshot.target_sps = metrics.sample_rate_sps ? metrics.sample_rate_sps : kRtlSampleRateSps;
+    snapshot.usb_overruns = metrics.overruns;
+    snapshot.consumer_drops = metrics.consumer_drops;
+    const esp_err_t last_error = rtl_sdr_v4_esp_get_last_error(g_rtl);
+    if (last_error != ESP_OK)
+      strlcpy(snapshot.last_error, rtl_sdr_v4_esp_err_to_name(last_error),
+              sizeof(snapshot.last_error));
+  }
+#else
+  snapshot.target_sps = kRtlSampleRateSps;
+#endif
+  snapshot.audio_underruns = rtl_audio.dropped_chunks +
+      rtl_audio_ring_overruns.load(std::memory_order_relaxed) +
+      rtl_audio_submit_failures.load(std::memory_order_relaxed);
+  constexpr uint32_t kIqBlockPeriodUs =
+      static_cast<uint32_t>((32768ull / 2ull) * 1000000ull / kRtlSampleRateSps);
+  snapshot.dsp_percent = std::min<uint32_t>(999,
+      rtl_dsp_block_us_max.load(std::memory_order_relaxed) * 100u / kIqBlockPeriodUs);
+  return snapshot;
+}
+
+void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
+  using orcsdr::p25::ActionKind;
+  auto tune = [](uint32_t frequency_hz) {
+    frequency_hz = rtl_clamp_frequency(RtlBand::p25, frequency_hz);
+    if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
+      request_hot_retune(frequency_hz);
+    else
+      queue_local_rtl_listen(RtlBand::p25, frequency_hz);
+  };
+  switch (action.kind) {
+    case ActionKind::tune_hz:
+      p25_survey_active.store(false, std::memory_order_relaxed);
+      tune(action.value);
+      break;
+    case ActionKind::previous_candidate:
+      p25_survey_active.store(false, std::memory_order_relaxed);
+      p25_candidate_index = static_cast<uint8_t>(
+          (p25_candidate_index + std::size(kP25ControlChannelsHz) - 1) %
+          std::size(kP25ControlChannelsHz));
+      tune(kP25ControlChannelsHz[p25_candidate_index]);
+      break;
+    case ActionKind::next_candidate:
+      p25_survey_active.store(false, std::memory_order_relaxed);
+      p25_candidate_index = static_cast<uint8_t>(
+          (p25_candidate_index + 1) % std::size(kP25ControlChannelsHz));
+      tune(kP25ControlChannelsHz[p25_candidate_index]);
+      break;
+    case ActionKind::survey_toggle:
+      if (p25_survey_active.exchange(
+              !p25_survey_active.load(std::memory_order_relaxed),
+              std::memory_order_relaxed)) {
+        Serial.println("RTL_P25_SURVEY stop");
+      } else {
+        std::fill(std::begin(p25_candidate_levels), std::end(p25_candidate_levels), -120.0f);
+        p25_candidate_index = 0;
+        p25_survey_sample_at_ms = millis() + 1500;
+        tune(kP25ControlChannelsHz[0]);
+        Serial.println("RTL_P25_SURVEY start candidates=4 dwell_ms=1500");
+      }
+      break;
+    case ActionKind::hold_toggle:
+      p25_hold.store(!p25_hold.load(std::memory_order_relaxed), std::memory_order_relaxed);
+      break;
+    case ActionKind::auto_follow_toggle:
+      p25_auto_follow.store(!p25_auto_follow.load(std::memory_order_relaxed),
+                            std::memory_order_relaxed);
+      break;
+    case ActionKind::encryption_skip_toggle:
+      p25_encryption_skip.store(!p25_encryption_skip.load(std::memory_order_relaxed),
+                                std::memory_order_relaxed);
+      break;
+    case ActionKind::span_down:
+    case ActionKind::span_up: {
+      const uint32_t current = rtl_scope_span_hz.load(std::memory_order_relaxed);
+      rtl_scope_span_hz.store(
+          action.kind == ActionKind::span_down
+              ? std::max(kRtlScopeSpanMinHz, current / 2)
+              : std::min(kRtlScopeSpanMaxHz, current * 2),
+          std::memory_order_relaxed);
+      reset_spectrum_renderer();
+      break;
+    }
+    case ActionKind::open_device_settings:
+      open_global_settings(orcsdr::settings::Section::radio_defaults);
+      break;
+    case ActionKind::exit_to_home:
+      p25_survey_active.store(false, std::memory_order_relaxed);
+      orcsdr::p25::leave();
+      queue_local_rtl_listen(RtlBand::browse, rtl_ui_frequency_hz);
+      draw_sdr_screen(RtlBand::browse, rtl_ui_frequency_hz, rtl_ui_volume);
+      break;
+    case ActionKind::none: break;
+  }
+  if (orcsdr::p25::active()) orcsdr::p25::update(p25_dashboard_snapshot());
+}
+
+void service_p25_survey(uint32_t now) {
+  if (!p25_survey_active.load(std::memory_order_relaxed) ||
+      g_stream_band != RtlBand::p25 || now < p25_survey_sample_at_ms) return;
+  const float level = rtl_signal_dbfs.load(std::memory_order_relaxed);
+  p25_candidate_levels[p25_candidate_index] = level;
+  Serial.printf("RTL_P25_SURVEY_SAMPLE index=%u frequency_hz=%lu relative_dbfs=%.1f\n",
+                static_cast<unsigned>(p25_candidate_index),
+                static_cast<unsigned long>(kP25ControlChannelsHz[p25_candidate_index]),
+                static_cast<double>(level));
+  if (++p25_candidate_index < std::size(kP25ControlChannelsHz)) {
+    request_hot_retune(kP25ControlChannelsHz[p25_candidate_index]);
+    p25_survey_sample_at_ms = now + 1500;
+    return;
+  }
+  p25_candidate_index = static_cast<uint8_t>(std::max_element(
+      std::begin(p25_candidate_levels), std::end(p25_candidate_levels)) -
+      std::begin(p25_candidate_levels));
+  p25_survey_active.store(false, std::memory_order_relaxed);
+  request_hot_retune(kP25ControlChannelsHz[p25_candidate_index]);
+  Serial.printf("RTL_P25_SURVEY_DONE best_index=%u frequency_hz=%lu relative_dbfs=%.1f decoded=false\n",
+                static_cast<unsigned>(p25_candidate_index),
+                static_cast<unsigned long>(kP25ControlChannelsHz[p25_candidate_index]),
+                static_cast<double>(p25_candidate_levels[p25_candidate_index]));
+  if (orcsdr::p25::active()) orcsdr::p25::update(p25_dashboard_snapshot());
+}
+
 orcsdr::settings::State global_settings_state() {
   orcsdr::settings::State state;
   state.wifi_power_enabled = settings_wifi_power_enabled;
@@ -6952,6 +7170,9 @@ void close_global_settings() {
     draw_global_settings_gear();
   } else if (rtl_ui_band == RtlBand::fm) {
     orcsdr::fm::draw();
+    bump_rtl_ui();
+  } else if (rtl_ui_band == RtlBand::p25) {
+    orcsdr::p25::draw();
     bump_rtl_ui();
   } else {
     draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
@@ -7411,9 +7632,13 @@ void load_state() {
     if (stored_band == RtlBand::fm || stored_band == RtlBand::am ||
         stored_band == RtlBand::wx || stored_band == RtlBand::cb ||
         stored_band == RtlBand::lora || stored_band == RtlBand::browse ||
-        stored_band == RtlBand::adsb) {
+        stored_band == RtlBand::adsb || stored_band == RtlBand::p25) {
       rtl_ui_band = stored_band;
       rtl_requested_band.store(stored_band, std::memory_order_release);
+      if (stored_band == RtlBand::p25) {
+        rtl_ui_frequency_hz = kP25DefaultHz;
+        rtl_requested_frequency_hz.store(kP25DefaultHz, std::memory_order_release);
+      }
       Serial.printf("RTL_BAND_RESTORE band=%s\n", rtl_band_name(stored_band));
     }
   }
@@ -7518,6 +7743,9 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz) {
   if (band == RtlBand::lora) {
     rtl_scope_span_hz.store(kRtlScopeSpanMaxHz, std::memory_order_relaxed);
   }
+  if (band == RtlBand::p25) {
+    rtl_scope_span_hz.store(kRtlScopeSpanMaxHz, std::memory_order_relaxed);
+  }
   if (band == RtlBand::fm) {
     persist_fm_frequency(frequency_hz);
   }
@@ -7544,6 +7772,7 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz) {
                  : band == RtlBand::lora   ? "sdr_lora"
                  : band == RtlBand::browse ? "sdr_browse"
                  : band == RtlBand::adsb   ? "sdr_adsb"
+                 : band == RtlBand::p25    ? "sdr_p25"
                                            : "sdr_fm");
 }
 
@@ -7654,10 +7883,13 @@ void request_hot_retune(uint32_t frequency_hz) {
   frequency_hz = rtl_clamp_frequency(rtl_ui_band, frequency_hz);
   if (frequency_hz == 0) return;
   /* UI: 1 kHz display quantize. */
-  const uint32_t ui_hz = (frequency_hz / 1000u) * 1000u;
+  const uint32_t ui_hz = rtl_ui_band == RtlBand::p25
+                             ? frequency_hz
+                             : (frequency_hz / 1000u) * 1000u;
   /* LO: 5 kHz — avoids thrashing bulk/EP0. */
-  const uint32_t lo_hz =
-      (frequency_hz / kRtlHotRetuneQuantHz) * kRtlHotRetuneQuantHz;
+  const uint32_t lo_hz = rtl_ui_band == RtlBand::p25
+                             ? frequency_hz
+                             : (frequency_hz / kRtlHotRetuneQuantHz) * kRtlHotRetuneQuantHz;
   const bool ui_changed = (ui_hz != rtl_ui_frequency_hz);
   rtl_ui_frequency_hz = ui_hz;
   rtl_requested_frequency_hz.store(ui_hz, std::memory_order_release);
@@ -7671,6 +7903,10 @@ void request_hot_retune(uint32_t frequency_hz) {
   if (ui_changed) {
     if (rtl_ui_band == RtlBand::fm && orcsdr::fm::active()) {
       orcsdr::fm::update(fm_dashboard_snapshot());
+      return;
+    }
+    if (rtl_ui_band == RtlBand::p25 && orcsdr::p25::active()) {
+      orcsdr::p25::update(p25_dashboard_snapshot());
       return;
     }
     char frequency_text[24];
@@ -7896,6 +8132,8 @@ void handle_sdr_touch(int32_t x, int32_t y) {
   if (x >= 1211 && x < 1269 && y >= 8 && y < 66) {
     open_global_settings(rtl_ui_band == RtlBand::adsb
                              ? orcsdr::settings::Section::location_adsb
+                             : rtl_ui_band == RtlBand::p25
+                                   ? orcsdr::settings::Section::radio_defaults
                              : orcsdr::settings::Section::connectivity);
     return;
   }
@@ -7912,6 +8150,10 @@ void handle_sdr_touch(int32_t x, int32_t y) {
   }
   if (rtl_ui_band == RtlBand::fm && orcsdr::fm::active()) {
     handle_fm_dashboard_action(orcsdr::fm::handle_touch(x, y));
+    return;
+  }
+  if (rtl_ui_band == RtlBand::p25 && orcsdr::p25::active()) {
+    handle_p25_dashboard_action(orcsdr::p25::handle_touch(x, y));
     return;
   }
   if (handle_tool_tab_touch(x, y)) return;
@@ -8484,7 +8726,7 @@ void process_command(char* command) {
   if (strcmp(command, "RTL_HELP") == 0) {
     Serial.println("RTL_HELP_BEGIN");
     Serial.println("RTL_STATUS                    - device connection info");
-    Serial.println("RTL_TUNE <BAND> <HZ>           - tune band+freq (auth) BAND=FM|AM|WX|CB|LORA|BROWSE|ADSB");
+    Serial.println("RTL_TUNE <BAND> <HZ>           - tune band+freq (auth) BAND=FM|AM|WX|CB|LORA|BROWSE|ADSB|P25");
     Serial.println("RTL_FREQ                       - query current band/frequency/mode");
     Serial.println("RTL_FREQ <HZ>                  - hot-retune within current band (auth)");
     Serial.println("RTL_VOLUME                     - query current volume");
@@ -8499,12 +8741,37 @@ void process_command(char* command) {
     Serial.println("RTL_RDS_STATUS                 - on-demand RDS Stage1/2 diagnostic dump");
     Serial.println("RTL_RDS_CAPTURE_START/STOP/STATUS - capture FM MPX to SD for replay");
     Serial.println("RTL_RDS_REPLAY <path.s16>       - replay captured MPX while radio is stopped");
+    Serial.println("RTL_P25_STATUS                 - profile, survey, RF levels; decoded fields are explicit");
+    Serial.println("RTL_P25_SCAN                   - survey known Lane County control candidates (auth)");
     Serial.println("RTL_REC_START/STOP/STATUS/SAVE - audio capture-to-WAV control");
     Serial.println("RTL_TOOL [RADIO|SCOPE|CAPTURE] - query/switch active tool tab");
     Serial.println("RTL_CAPTURE|RTL_LISTEN [FM|AM|WX|LORA] - one-shot/continuous band capture (auth)");
     Serial.println("RTL_STOP                       - stop active capture (auth)");
     Serial.println("SD_LIST/SD_GET_*/SD_PUT_*      - SD card file transfer (see copy_to_tab5_sd.ps1)");
     Serial.println("RTL_HELP_END");
+    return;
+  }
+  if (strcmp(command, "RTL_P25_STATUS") == 0) {
+    Serial.printf(
+        "RTL_P25_STATUS profile=SW7_LRIG site=Lane_County_Simulcast wacn=BEE00 "
+        "sysid=1F3 nac=1F0 frequency_hz=%lu survey=%d candidate=%u "
+        "relative_dbfs=%.1f decoded=false frame_sync=0 grants=0 voice=false\n",
+        static_cast<unsigned long>(rtl_ui_frequency_hz),
+        p25_survey_active.load(std::memory_order_relaxed) ? 1 : 0,
+        static_cast<unsigned>(p25_candidate_index),
+        static_cast<double>(rtl_signal_dbfs.load(std::memory_order_relaxed)));
+    for (size_t i = 0; i < std::size(kP25ControlChannelsHz); ++i)
+      Serial.printf("RTL_P25_CANDIDATE index=%u frequency_hz=%lu relative_dbfs=%.1f\n",
+                    static_cast<unsigned>(i),
+                    static_cast<unsigned long>(kP25ControlChannelsHz[i]),
+                    static_cast<double>(p25_candidate_levels[i]));
+    return;
+  }
+  if (strcmp(command, "RTL_P25_SCAN") == 0 && authenticated) {
+    if (rtl_ui_band != RtlBand::p25)
+      queue_local_rtl_listen(RtlBand::p25, kP25DefaultHz);
+    if (!p25_survey_active.load(std::memory_order_relaxed))
+      handle_p25_dashboard_action({orcsdr::p25::ActionKind::survey_toggle});
     return;
   }
   if (strncmp(command, "RTL_TUNE ", 9) == 0 && authenticated) {
@@ -8516,7 +8783,7 @@ void process_command(char* command) {
     }
     RtlBand band;
     if (!rtl_band_from_name(band_name, &band)) {
-      Serial.println("RTL_TUNE_INVALID unknown band (FM|AM|WX|CB|LORA|BROWSE|ADSB)");
+      Serial.println("RTL_TUNE_INVALID unknown band (FM|AM|WX|CB|LORA|BROWSE|ADSB|P25)");
       return;
     }
     if (band != RtlBand::adsb && !rtl_device_ready()) {
@@ -9041,6 +9308,11 @@ void setup() {
     abort();
   }
   Serial.println("RTL_FM_DASHBOARD_SELF_CHECK_OK");
+  if (!orcsdr::p25::self_check()) {
+    Serial.println("RTL_P25_DASHBOARD_SELF_CHECK_FAIL");
+    abort();
+  }
+  Serial.println("RTL_P25_DASHBOARD_SELF_CHECK_OK");
   if (!orcsdr::settings::self_check()) {
     Serial.println("ORC_SETTINGS_SELF_CHECK_FAIL");
     abort();
