@@ -37,15 +37,16 @@ constexpr uint32_t kControlChannels[] = {453812500, 453925000, 460187500, 460312
 struct Talkgroup {
   uint16_t id;
   const char* alias;
-  bool encrypted;
+  bool may_encrypt;
   uint8_t priority;
 };
 
+// Lane County/SW7 metadata verified against the public system listing on 2026-08-14.
 constexpr Talkgroup kTalkgroups[] = {
-    {20391, "LCF Firecom 1", false, 1}, {20392, "LCF Firecom 2", false, 2},
-    {20393, "LCF Firecom 3", false, 3}, {20397, "Metro Fire 4", false, 2},
-    {20203, "Lane East 1", false, 3},   {20440, "Springfield PW", false, 4},
-    {20101, "Springfield PD 1", true, 5}, {20701, "Mutual Aid 1", false, 1},
+    {20001, "LCSO DISP 1", true, 1},    {20003, "LCSO SEC 2", true, 2},
+    {20051, "EPD DISP", true, 1},       {20101, "SPD DISP", true, 1},
+    {20204, "LCF East 8", false, 2},    {20391, "LCF Firecom 1", false, 1},
+    {20411, "Eugene PW Disp", false, 3}, {20440, "SPW Ch 1", false, 3},
 };
 
 static_assert(static_cast<uint8_t>(View::count) == 5);
@@ -304,6 +305,8 @@ void draw_talkgroups_static() {
   card(24, 148, 1232, 86);
   label("PROGRAMMED SYSTEM", 44, 164);
   text("SW7 / LRIG — Lane County Simulcast", 44, 205, TFT_WHITE, 3, middle_left);
+  M5.Display.drawFastVLine(770, 160, 62, kGrid);
+  label("CURRENT TG", 798, 164);
   label("TGID", 44, 250);
   label("ALIAS", 190, 250);
   label("MODE", 690, 250);
@@ -316,24 +319,40 @@ void draw_talkgroups_static() {
     snprintf(id, sizeof(id), "%u", kTalkgroups[row].id);
     text(id, 44, y + 14, TFT_WHITE, 2, middle_left);
     text(kTalkgroups[row].alias, 190, y + 14, TFT_WHITE, 2, middle_left);
-    text(kTalkgroups[row].encrypted ? "ENC" : "CLEAR", 690, y + 14,
-         kTalkgroups[row].encrypted ? kRed : kGreen, 2, middle_left);
+    text(kTalkgroups[row].may_encrypt ? "MIXED" : "CLEAR", 690, y + 14,
+         kTalkgroups[row].may_encrypt ? kYellow : kGreen, 2, middle_left);
     char priority[8];
     snprintf(priority, sizeof(priority), "P%u", kTalkgroups[row].priority);
     text(priority, 850, y + 14, kCyan, 2, middle_left);
   }
-  text("LIVE ACTIVITY FROM DECODED CONTROL-CHANNEL GRANTS", 640, 602, kMuted, 1);
+  text("LIVE DECODED ACTIVITY  •  TAP A ROW TO HOLD / RELEASE", 640, 602, kMuted, 1);
 }
 
 void draw_talkgroups_dynamic() {
+  char current[80];
+  M5.Display.fillRect(796, 194, 438, 30, kPanel);
+  const auto& current_grant = g_snapshot.decoded.current_grant;
+  if (current_grant.valid) {
+    snprintf(current, sizeof(current), "%u  %s", current_grant.talkgroup,
+             talkgroup_alias(current_grant.talkgroup));
+    text(current, 798, 207, current_grant.encrypted ? kYellow : kGreen, 2, middle_left);
+  } else {
+    text("—", 798, 207, kMuted, 2, middle_left);
+  }
   for (int row = 0; row < 8; ++row) {
     bool active = false;
-    for (const auto& grant : g_snapshot.decoded.recent_grants)
-      active |= grant_live(grant) && grant.talkgroup == kTalkgroups[row].id;
+    bool encrypted_now = false;
+    for (const auto& grant : g_snapshot.decoded.recent_grants) {
+      if (grant_live(grant) && grant.talkgroup == kTalkgroups[row].id) {
+        active = true;
+        encrypted_now |= grant.encrypted;
+      }
+    }
     const int y = 280 + row * 37;
     M5.Display.fillRect(1038, y, 190, 28, kBg);
-    text(kTalkgroups[row].encrypted ? "SKIP" : active ? "ACTIVE" : "SCAN",
-         1050, y + 14, kTalkgroups[row].encrypted ? kMuted : active ? kYellow : kGreen,
+    const bool held = g_snapshot.hold && g_snapshot.hold_talkgroup == kTalkgroups[row].id;
+    text(held ? "HOLD" : encrypted_now ? "ENC SKIP" : active ? "ACTIVE" : "SCAN",
+         1050, y + 14, held ? kYellow : encrypted_now ? kRed : active ? kGreen : kMuted,
          2, middle_left);
   }
 }
@@ -403,8 +422,12 @@ void draw_health_static() {
   for (int row = 0; row < 2; ++row)
     for (int col = 0; col < 4; ++col)
       card(24 + col * 308, 274 + row * 126, 294, 112);
-  card(24, 536, 1232, 74);
-  label("LAST ERROR", 44, 550);
+  card(24, 536, 280, 74);
+  label("AUDIO UNDERRUNS", 44, 550);
+  card(318, 536, 280, 74);
+  label("WI-FI", 338, 550);
+  card(612, 536, 644, 74);
+  label("LAST ERROR", 632, 550);
 }
 
 void draw_health_dynamic() {
@@ -455,8 +478,14 @@ void draw_health_dynamic() {
   health_card(948, 400, 294, 112, "DRIVER STATE",
               g_snapshot.running ? "RUNNING" : g_snapshot.driver_ready ? "READY" : "OFFLINE",
               g_snapshot.running || g_snapshot.driver_ready);
-  M5.Display.fillRect(160, 566, 1070, 30, kPanel);
-  text(g_snapshot.last_error[0] ? g_snapshot.last_error : "—", 170, 580,
+  M5.Display.fillRect(178, 566, 108, 30, kPanel);
+  snprintf(value, sizeof(value), "%lu", static_cast<unsigned long>(g_snapshot.audio_underruns));
+  text(value, 232, 580, g_snapshot.audio_underruns == 0 ? kGreen : kYellow, 2);
+  M5.Display.fillRect(404, 566, 176, 30, kPanel);
+  text(g_snapshot.wifi_connected ? "CONNECTED" : "OFFLINE", 492, 580,
+       g_snapshot.wifi_connected ? kGreen : kMuted, 2);
+  M5.Display.fillRect(744, 566, 486, 30, kPanel);
+  text(g_snapshot.last_error[0] ? g_snapshot.last_error : "—", 754, 580,
        g_snapshot.last_error[0] ? kYellow : TFT_WHITE, 2, middle_left);
 }
 
@@ -521,6 +550,7 @@ void update(const Snapshot& snapshot) {
   const bool controls_changed =
       snapshot.survey_active != g_snapshot.survey_active ||
       snapshot.hold != g_snapshot.hold ||
+      snapshot.hold_talkgroup != g_snapshot.hold_talkgroup ||
       snapshot.auto_follow != g_snapshot.auto_follow ||
       snapshot.encryption_skip != g_snapshot.encryption_skip ||
       snapshot.following_voice != g_snapshot.following_voice ||
@@ -610,6 +640,11 @@ Action handle_touch(int32_t x, int32_t y) {
               static_cast<uint32_t>(std::clamp<int64_t>(selected, kP25MinHz, kP25MaxHz))};
     }
   }
+  if (g_view == View::talkgroups && y >= 280 && y < 576) {
+    const size_t row = static_cast<size_t>((y - 280) / 37);
+    if (row < std::size(kTalkgroups))
+      return {ActionKind::hold_talkgroup, kTalkgroups[row].id};
+  }
   if (g_view == View::program) {
     if (hit(x, y, 44, 395, 270, 58)) return {ActionKind::auto_follow_toggle};
     if (hit(x, y, 330, 395, 270, 58)) return {ActionKind::encryption_skip_toggle};
@@ -626,12 +661,15 @@ View view() { return g_view; }
 
 bool self_check() {
   if (static_cast<uint8_t>(View::count) != 5 || kSpectrumX + kSpectrumW > 1280 ||
-      kTabsY >= 720) return false;
+      kTabsY >= 720 || std::size(kTalkgroups) != 8) return false;
   for (size_t i = 0; i < std::size(kControlChannels); ++i) {
     if (kControlChannels[i] < kP25MinHz || kControlChannels[i] > kP25MaxHz) return false;
     for (size_t j = i + 1; j < std::size(kControlChannels); ++j)
       if (kControlChannels[i] == kControlChannels[j]) return false;
   }
+  for (size_t i = 0; i < std::size(kTalkgroups); ++i)
+    for (size_t j = i + 1; j < std::size(kTalkgroups); ++j)
+      if (kTalkgroups[i].id == kTalkgroups[j].id) return false;
   return true;
 }
 

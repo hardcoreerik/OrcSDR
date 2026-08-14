@@ -7118,6 +7118,7 @@ orcsdr::p25::Snapshot p25_dashboard_snapshot() {
   snapshot.wifi_connected = wifi_connected;
   snapshot.survey_active = p25_survey_active.load(std::memory_order_relaxed);
   snapshot.hold = p25_hold.load(std::memory_order_relaxed);
+  snapshot.hold_talkgroup = p25_hold_talkgroup;
   snapshot.auto_follow = p25_auto_follow.load(std::memory_order_relaxed);
   snapshot.encryption_skip = p25_encryption_skip.load(std::memory_order_relaxed);
   snapshot.following_voice =
@@ -7208,6 +7209,18 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
     case ActionKind::hold_toggle:
       p25_hold.store(!p25_hold.load(std::memory_order_relaxed), std::memory_order_relaxed);
       if (!p25_hold.load(std::memory_order_relaxed)) p25_hold_talkgroup = 0;
+      break;
+    case ActionKind::hold_talkgroup:
+      if (p25_hold.load(std::memory_order_relaxed) && p25_hold_talkgroup == action.value) {
+        p25_hold.store(false, std::memory_order_relaxed);
+        p25_hold_talkgroup = 0;
+      } else {
+        p25_hold_talkgroup = static_cast<uint16_t>(action.value);
+        p25_hold.store(true, std::memory_order_relaxed);
+      }
+      Serial.printf("RTL_P25_HOLD enabled=%d tg=%u\n",
+                    p25_hold.load(std::memory_order_relaxed) ? 1 : 0,
+                    p25_hold_talkgroup);
       break;
     case ActionKind::skip_talkgroup: {
       const auto decoded = orcsdr::p25decoder::snapshot();

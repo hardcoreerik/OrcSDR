@@ -26,6 +26,7 @@ struct Snapshot {
   bool wifi_connected = false;
   bool survey_active = false;
   bool hold = false;
+  uint16_t hold_talkgroup = 0;
   bool auto_follow = true;
   bool encryption_skip = true;
   bool following_voice = false;
@@ -45,6 +46,7 @@ enum class ActionKind : uint8_t {
   next_candidate,
   survey_toggle,
   hold_toggle,
+  hold_talkgroup,
   skip_talkgroup,
   auto_follow_toggle,
   encryption_skip_toggle,
