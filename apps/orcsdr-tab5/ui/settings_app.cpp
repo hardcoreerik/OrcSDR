@@ -129,7 +129,10 @@ void draw_connectivity() {
   button("ADD HIDDEN", 520, 180, 210, 46, TFT_NAVY);
   button(g_state.wifi_power_enabled ? "POWER OFF" : "POWER ON", 750, 180, 170, 46,
          g_state.wifi_power_enabled ? TFT_MAROON : TFT_DARKGREEN);
-  value_row("WI-FI ANTENNA", "BOARD DEFAULT (READ ONLY)", 245, kMuted);
+  text("WI-FI ANTENNA", 330, 245, kMuted, 2);
+  button(g_state.wifi_external_antenna ? "EXTERNAL (MMCX)" : "INTERNAL",
+         820, 218, 398, 54,
+         g_state.wifi_external_antenna ? TFT_DARKGREEN : TFT_NAVY);
 
   text("SAVED NETWORKS (PRIORITY ORDER)", 330, 290, kBlue, 2);
   for (uint8_t i = 0; i < g_state.saved_network_count && i < 4; ++i) {
@@ -542,6 +545,7 @@ void draw() {
 
 void update(const State& state_value) {
   const bool header_changed = g_state.wifi_power_enabled != state_value.wifi_power_enabled ||
+                              g_state.wifi_external_antenna != state_value.wifi_external_antenna ||
                               g_state.wifi_connected != state_value.wifi_connected ||
                               g_state.wifi_connecting != state_value.wifi_connecting ||
                               g_state.wifi_scanning != state_value.wifi_scanning ||
@@ -549,6 +553,7 @@ void update(const State& state_value) {
                               strcmp(g_state.wifi_ip, state_value.wifi_ip) != 0;
   const bool page_changed = g_section == Section::connectivity &&
                             (g_state.wifi_power_enabled != state_value.wifi_power_enabled ||
+                             g_state.wifi_external_antenna != state_value.wifi_external_antenna ||
                              g_state.wifi_scanning != state_value.wifi_scanning ||
                              g_state.wifi_connecting != state_value.wifi_connecting ||
                              g_state.network_count != state_value.network_count ||
@@ -593,6 +598,8 @@ Action handle_touch(int32_t x, int32_t y) {
   if (g_section == Section::connectivity) {
     if (hit(x, y, 750, 180, 170, 46))
       return {ActionKind::wifi_power_changed, g_state.wifi_power_enabled ? 0 : 1};
+    if (hit(x, y, 820, 218, 398, 54))
+      return {ActionKind::wifi_antenna_changed, g_state.wifi_external_antenna ? 0 : 1};
     if (!g_state.wifi_power_enabled) return {};
     if (hit(x, y, 330, 180, 170, 46) && !g_state.wifi_scanning)
       return {ActionKind::scan_wifi, 0};

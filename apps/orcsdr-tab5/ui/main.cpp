@@ -1084,6 +1084,7 @@ std::atomic<bool> wifi_scan_requested{false};
 std::atomic<bool> wifi_connect_requested{false};
 bool wifi_configured = false;
 bool settings_wifi_power_enabled = true;
+bool settings_wifi_external_antenna = false;
 bool wifi_connected = false;
 bool wifi_connecting = false;
 bool wifi_save_after_connect = false;
@@ -6993,6 +6994,12 @@ void select_wifi_profile(uint8_t index) {
   strlcpy(wifi_password, wifi_profiles[index].password, sizeof(wifi_password));
 }
 
+void apply_wifi_antenna() {
+  M5.getIOExpander(0).digitalWrite(0, settings_wifi_external_antenna);
+  Serial.printf("RTL_WIFI_ANTENNA %s\n",
+                settings_wifi_external_antenna ? "external_mmcx" : "internal");
+}
+
 void initialize_wifi() {
   const uint32_t dma_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
   const uint32_t dma_largest =
@@ -7001,6 +7008,7 @@ void initialize_wifi() {
                 static_cast<unsigned long>(dma_free),
                 static_cast<unsigned long>(dma_largest),
                 CONFIG_ESP_HOSTED_SDIO_TX_Q_SIZE, CONFIG_ESP_HOSTED_SDIO_RX_Q_SIZE);
+  apply_wifi_antenna();
   WiFi.setPins(kWifiClockPin, kWifiCommandPin, kWifiData0Pin, kWifiData1Pin,
                kWifiData2Pin, kWifiData3Pin, kWifiResetPin);
   wifi_station_ready = WiFi.mode(WIFI_STA);
@@ -7190,6 +7198,7 @@ void poll_wifi() {
 orcsdr::settings::State global_settings_state() {
   orcsdr::settings::State state;
   state.wifi_power_enabled = settings_wifi_power_enabled;
+  state.wifi_external_antenna = settings_wifi_external_antenna;
   state.wifi_ready = wifi_station_ready;
   state.wifi_scanning = wifi_scan_running;
   state.wifi_connected = wifi_connected;
@@ -7291,6 +7300,16 @@ void handle_global_settings_touch(int32_t x, int32_t y) {
       } else {
         strlcpy(wifi_status_message, "Wi-Fi ready; choose Scan or Use", sizeof(wifi_status_message));
       }
+      orcsdr::settings::update(global_settings_state());
+      break;
+    case orcsdr::settings::ActionKind::wifi_antenna_changed:
+      settings_wifi_external_antenna = action.value != 0;
+      preferences.putBool("set_wifi_ext_ant", settings_wifi_external_antenna);
+      apply_wifi_antenna();
+      strlcpy(wifi_status_message,
+              settings_wifi_external_antenna ? "External MMCX antenna selected"
+                                             : "Internal antenna selected",
+              sizeof(wifi_status_message));
       orcsdr::settings::update(global_settings_state());
       break;
     case orcsdr::settings::ActionKind::scan_wifi:
@@ -7661,6 +7680,7 @@ void load_state() {
   if (settings_rotation != 1 && settings_rotation != 3) settings_rotation = 1;
   settings_screen_timeout_sec = preferences.getUShort("set_timeout", 0);
   settings_wifi_power_enabled = preferences.getBool("set_wifi_power", true);
+  settings_wifi_external_antenna = preferences.getBool("set_wifi_ext_ant", false);
   settings_sound_default = preferences.getBool("set_sound", true);
   rtl_audio_user_enabled.store(settings_sound_default, std::memory_order_release);
   rtl_audio_enabled.store(settings_sound_default && rtl_band_has_audio(rtl_ui_band),
