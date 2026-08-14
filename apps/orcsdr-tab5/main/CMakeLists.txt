@@ -4,6 +4,7 @@ idf_component_register(
         "../ui/orcsdr_splash.cpp"
         "../ui/adsb_dashboard.cpp"
         "../ui/adsb_decoder.cpp"
+        "../ui/dashboard_audio_control.cpp"
         "../ui/fm_dashboard.cpp"
         "../ui/p25_dashboard.cpp"
         "../ui/p25_decoder.cpp"

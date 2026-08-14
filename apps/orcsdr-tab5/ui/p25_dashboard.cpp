@@ -1,5 +1,7 @@
 #include "p25_dashboard.hpp"
 
+#include "dashboard_audio_control.hpp"
+
 #include <M5Unified.h>
 
 #include <algorithm>
@@ -55,6 +57,7 @@ static_assert(std::size(kControlChannels) == 4);
 Snapshot g_snapshot{};
 View g_view = View::monitor;
 bool g_active = false;
+audio_header::Control g_audio_control{};
 uint32_t g_last_dynamic_ms = 0;
 uint16_t g_waterfall_row[kSpectrumW]{};
 
@@ -106,15 +109,6 @@ void draw_radio_icon(int cx, int cy, uint16_t color) {
   M5.Display.drawLine(cx - 22, cy - 22, cx + 20, cy - 38, color);
 }
 
-void draw_battery(int x, int y) {
-  M5.Display.drawRoundRect(x, y, 68, 32, 5, TFT_WHITE);
-  M5.Display.fillRect(x + 68, y + 9, 6, 14, TFT_WHITE);
-  const int pct = std::clamp<int32_t>(g_snapshot.battery_percent, 0, 100);
-  const int cells = g_snapshot.battery_percent < 0 ? 0 : (pct + 24) / 25;
-  for (int i = 0; i < 4; ++i)
-    M5.Display.fillRect(x + 7 + i * 14, y + 6, 11, 20, i < cells ? kGreen : kGrid);
-}
-
 void draw_header() {
   M5.Display.fillRect(0, 0, 1280, kHeaderH, kBg);
   M5.Display.drawFastHLine(8, kHeaderH - 1, 1264, kCyan);
@@ -127,9 +121,8 @@ void draw_header() {
   draw_radio_icon(456, 70, kCyan);
   text("P25 Trunking", 530, 66, TFT_WHITE, 4, middle_left);
   M5.Display.drawFastVLine(865, 25, 82, kCyan);
-  text("USB", 914, 66, TFT_WHITE, 2);
-  draw_battery(976, 47);
-  text("--:--", 1085, 66, TFT_WHITE, 3);
+  audio_header::draw(g_audio_control, g_snapshot.volume, g_snapshot.sound_enabled,
+                     g_snapshot.battery_percent);
   draw_gear(1220, 66, kCyan);
 }
 
@@ -528,6 +521,7 @@ void enter(const Snapshot& snapshot) {
   g_snapshot = snapshot;
   g_view = View::monitor;
   g_active = true;
+  audio_header::reset(g_audio_control);
   draw();
 }
 
@@ -546,7 +540,9 @@ void draw() {
 
 void update(const Snapshot& snapshot) {
   if (!g_active) return;
-  const bool header_changed = snapshot.battery_percent != g_snapshot.battery_percent;
+  const bool header_changed = snapshot.battery_percent != g_snapshot.battery_percent ||
+                              snapshot.volume != g_snapshot.volume ||
+                              snapshot.sound_enabled != g_snapshot.sound_enabled;
   const bool controls_changed =
       snapshot.survey_active != g_snapshot.survey_active ||
       snapshot.hold != g_snapshot.hold ||
@@ -566,9 +562,11 @@ void update(const Snapshot& snapshot) {
       snapshot.decoded.current_grant.seen_ms != g_snapshot.decoded.current_grant.seen_ms;
   g_snapshot = snapshot;
   const uint32_t now = millis();
+  if (header_changed || audio_header::service_timeout(g_audio_control, now))
+    audio_header::draw(g_audio_control, g_snapshot.volume, g_snapshot.sound_enabled,
+                       g_snapshot.battery_percent);
   if (now - g_last_dynamic_ms < 200) return;
   g_last_dynamic_ms = now;
-  if (header_changed) draw_battery(976, 47);
   if (controls_changed && (g_view == View::monitor || g_view == View::program)) {
     draw_view_static();
   }
@@ -613,6 +611,20 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
+  const auto audio_action = audio_header::handle_touch(g_audio_control, x, y, millis());
+  if (audio_action != audio_header::Action::none) {
+    if (audio_action == audio_header::Action::opened ||
+        audio_action == audio_header::Action::closed) {
+      audio_header::draw(g_audio_control, g_snapshot.volume, g_snapshot.sound_enabled,
+                         g_snapshot.battery_percent);
+      return {};
+    }
+    if (audio_action == audio_header::Action::volume_down)
+      return {ActionKind::volume_down};
+    if (audio_action == audio_header::Action::sound_toggle)
+      return {ActionKind::sound_toggle};
+    return {ActionKind::volume_up};
+  }
   if (hit(x, y, 1180, 25, 80, 82)) return {ActionKind::open_device_settings};
   if (y >= kTabsY) {
     const uint8_t next = std::min<uint8_t>(x / kTabW, static_cast<uint8_t>(View::count) - 1);
@@ -670,7 +682,7 @@ bool self_check() {
   for (size_t i = 0; i < std::size(kTalkgroups); ++i)
     for (size_t j = i + 1; j < std::size(kTalkgroups); ++j)
       if (kTalkgroups[i].id == kTalkgroups[j].id) return false;
-  return true;
+  return audio_header::self_check();
 }
 
 }  // namespace orcsdr::p25

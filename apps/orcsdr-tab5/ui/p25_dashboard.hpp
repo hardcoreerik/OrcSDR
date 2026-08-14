@@ -24,6 +24,7 @@ struct Snapshot {
   bool running = false;
   bool driver_ready = false;
   bool wifi_connected = false;
+  bool sound_enabled = true;
   bool survey_active = false;
   bool hold = false;
   uint16_t hold_talkgroup = 0;
@@ -34,6 +35,7 @@ struct Snapshot {
   uint32_t imbe_errors = 0;
   uint8_t candidate_index = 0;
   uint8_t candidate_count = 0;
+  uint8_t volume = 0;
   float candidate_levels[4] = {-120.0f, -120.0f, -120.0f, -120.0f};
   p25decoder::Snapshot decoded{};
   char last_error[32]{};
@@ -52,6 +54,9 @@ enum class ActionKind : uint8_t {
   encryption_skip_toggle,
   span_down,
   span_up,
+  sound_toggle,
+  volume_down,
+  volume_up,
   open_device_settings,
   exit_to_home,
 };

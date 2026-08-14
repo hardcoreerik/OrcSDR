@@ -1170,6 +1170,7 @@ uint32_t power_monitor_until_ms = 0;
 uint32_t power_monitor_next_ms = 0;
 char power_monitor_tag[24]{};
 std::atomic<bool> rtl_volume_changed{false};
+std::atomic<uint32_t> rtl_audio_settings_persist_due_ms{0};
 /** When false: no scope/waterfall updates (audio + SIG meter still run). A/B for chop diagnosis. */
 std::atomic<bool> rtl_graphics_enabled{true};
 enum class SdrPinchMode : uint8_t { Span, Filter };
@@ -2042,12 +2043,19 @@ void sync_rtl_audio_for_band(RtlBand band) {
   if (!enabled) M5.Speaker.stop();
 }
 
+void schedule_rtl_audio_settings_persist() {
+  uint32_t due = millis() + 1500;
+  if (due == 0) due = 1;
+  rtl_audio_settings_persist_due_ms.store(due, std::memory_order_release);
+}
+
 void set_rtl_audio_user_enabled(bool enabled) {
   rtl_audio_user_enabled.store(enabled, std::memory_order_release);
   sync_rtl_audio_for_band(rtl_ui_band);
   if (rtl_audio_enabled.load(std::memory_order_acquire)) {
     (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
   }
+  schedule_rtl_audio_settings_persist();
 }
 
 bool rtl_audio_block_ready(size_t index, uint32_t now) {
@@ -6981,7 +6989,7 @@ orcsdr::fm::Snapshot fm_dashboard_snapshot() {
   snapshot.rds_carrier = rtl_rds_carrier_present.load(std::memory_order_relaxed);
   snapshot.rds_locked = rtl_rds_block_locked.load(std::memory_order_relaxed);
   snapshot.wifi_connected = wifi_connected;
-  snapshot.sound_enabled = rtl_audio_enabled.load(std::memory_order_relaxed);
+  snapshot.sound_enabled = rtl_audio_user_enabled.load(std::memory_order_relaxed);
   snapshot.graphics_enabled = rtl_graphics_enabled.load(std::memory_order_relaxed);
   snapshot.recording = g_audio_rec_active.load(std::memory_order_relaxed);
   snapshot.preset_scanning =
@@ -7140,6 +7148,8 @@ orcsdr::p25::Snapshot p25_dashboard_snapshot() {
       rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
   snapshot.driver_ready = rtl_device_ready();
   snapshot.wifi_connected = wifi_connected;
+  snapshot.sound_enabled = rtl_audio_user_enabled.load(std::memory_order_relaxed);
+  snapshot.volume = rtl_ui_volume;
   snapshot.survey_active = p25_survey_active.load(std::memory_order_relaxed);
   snapshot.hold = p25_hold.load(std::memory_order_relaxed);
   snapshot.hold_talkgroup = p25_hold_talkgroup;
@@ -7296,6 +7306,16 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
       reset_spectrum_renderer();
       break;
     }
+    case ActionKind::sound_toggle:
+      set_rtl_audio_user_enabled(
+          !rtl_audio_user_enabled.load(std::memory_order_acquire));
+      break;
+    case ActionKind::volume_down:
+      adjust_rtl_volume(-static_cast<int>(kRtlVolumeStep));
+      break;
+    case ActionKind::volume_up:
+      adjust_rtl_volume(static_cast<int>(kRtlVolumeStep));
+      break;
     case ActionKind::open_device_settings:
       open_global_settings(orcsdr::settings::Section::radio_defaults);
       break;
@@ -7460,7 +7480,7 @@ orcsdr::settings::State global_settings_state() {
   state.rotation = settings_rotation;
   state.screen_timeout_sec = settings_screen_timeout_sec;
   state.volume = rtl_live_volume.load(std::memory_order_acquire);
-  state.sound_default = settings_sound_default;
+  state.sound_default = rtl_audio_user_enabled.load(std::memory_order_acquire);
   state.auto_start_reception = settings_auto_start_reception;
   state.graphics_default = settings_graphics_default;
   strlcpy(state.default_band, rtl_band_name(rtl_ui_band), sizeof(state.default_band));
@@ -7620,12 +7640,13 @@ void handle_global_settings_touch(int32_t x, int32_t y) {
     case orcsdr::settings::ActionKind::volume_changed:
       rtl_ui_volume = static_cast<uint8_t>(action.value);
       rtl_live_volume.store(rtl_ui_volume, std::memory_order_release);
+      rtl_requested_volume.store(rtl_ui_volume, std::memory_order_release);
+      rtl_volume_changed.store(true, std::memory_order_release);
       apply_speaker_volume(rtl_ui_volume);
-      preferences.putUChar("set_volume", rtl_ui_volume);
+      schedule_rtl_audio_settings_persist();
       break;
     case orcsdr::settings::ActionKind::sound_changed:
       settings_sound_default = action.value != 0;
-      preferences.putBool("set_sound", settings_sound_default);
       set_rtl_audio_user_enabled(settings_sound_default);
       break;
     case orcsdr::settings::ActionKind::auto_start_changed:
@@ -8127,11 +8148,7 @@ void adjust_rtl_volume(int delta) {
   rtl_volume_changed.store(true, std::memory_order_release);
   apply_speaker_volume(next);
   bump_rtl_ui();
-  // NVS journal writes block for milliseconds; skip while the live stream owns
-  // the audio path so VOL taps stay responsive and do not glitch the speaker.
-  if (!rtl_ui_active.load(std::memory_order_acquire)) {
-    append_journal("sdr_volume");
-  }
+  schedule_rtl_audio_settings_persist();
 }
 
 bool point_in_scope(int32_t x, int32_t y) {
@@ -9817,6 +9834,22 @@ void loop() {
     Serial.printf("RTL_ADSB_SETTINGS_SAVE configured=%d range_nm=%u\n",
                   adsb_settings.location_configured ? 1 : 0,
                   adsb_settings.radar_range_nm);
+  }
+  uint32_t audio_persist_due =
+      rtl_audio_settings_persist_due_ms.load(std::memory_order_acquire);
+  if (audio_persist_due != 0 &&
+      static_cast<int32_t>(millis() - audio_persist_due) >= 0 &&
+      rtl_audio_settings_persist_due_ms.compare_exchange_strong(
+          audio_persist_due, 0, std::memory_order_acq_rel)) {
+    const uint8_t volume = rtl_live_volume.load(std::memory_order_acquire);
+    const bool sound_enabled = rtl_audio_user_enabled.load(std::memory_order_acquire);
+    if (preferences.getUChar("set_volume", kRtlVolumeDefault) != volume)
+      preferences.putUChar("set_volume", volume);
+    if (preferences.getBool("set_sound", true) != sound_enabled)
+      preferences.putBool("set_sound", sound_enabled);
+    settings_sound_default = sound_enabled;
+    Serial.printf("RTL_AUDIO_SETTINGS_SAVE volume=%u sound=%d\n", volume,
+                  sound_enabled ? 1 : 0);
   }
 
   const uint32_t current_rtl_sdr_status_revision =

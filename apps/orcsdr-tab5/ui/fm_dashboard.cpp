@@ -1,5 +1,7 @@
 #include "fm_dashboard.hpp"
 
+#include "dashboard_audio_control.hpp"
+
 #include <M5Unified.h>
 
 #include <algorithm>
@@ -39,6 +41,7 @@ Snapshot g_snapshot{};
 View g_view = View::listen;
 bool g_active = false;
 bool g_keypad = false;
+audio_header::Control g_audio_control{};
 char g_entry[12]{};
 uint32_t g_last_dynamic_ms = 0;
 uint16_t g_waterfall_row[kSpectrumW]{};
@@ -93,15 +96,6 @@ void draw_gear(int cx, int cy, uint16_t color) {
   }
 }
 
-void draw_battery(int x, int y) {
-  M5.Display.drawRoundRect(x, y, 68, 32, 5, TFT_WHITE);
-  M5.Display.fillRect(x + 68, y + 9, 6, 14, TFT_WHITE);
-  const int pct = std::clamp<int32_t>(g_snapshot.battery_percent, 0, 100);
-  const int cells = g_snapshot.battery_percent < 0 ? 0 : (pct + 24) / 25;
-  for (int i = 0; i < 4; ++i)
-    M5.Display.fillRect(x + 7 + i * 14, y + 6, 11, 20, i < cells ? kGreen : kGrid);
-}
-
 void draw_header() {
   M5.Display.fillRect(0, 0, 1280, kHeaderH, kBg);
   M5.Display.drawFastHLine(8, kHeaderH - 1, 1264, kCyan);
@@ -115,9 +109,8 @@ void draw_header() {
   draw_radio_icon(456, 70, kCyan);
   text("FM Broadcast", 530, 66, TFT_WHITE, 4, middle_left);
   M5.Display.drawFastVLine(865, 25, 82, kCyan);
-  text("USB", 914, 66, TFT_WHITE, 2);
-  draw_battery(976, 47);
-  text("--:--", 1085, 66, TFT_WHITE, 3);
+  audio_header::draw(g_audio_control, g_snapshot.volume, g_snapshot.sound_enabled,
+                     g_snapshot.battery_percent);
   draw_gear(1220, 66, kCyan);
 }
 
@@ -477,6 +470,7 @@ void enter(const Snapshot& snapshot) {
   g_view = View::listen;
   g_active = true;
   g_keypad = false;
+  audio_header::reset(g_audio_control);
   g_entry[0] = '\0';
   draw();
 }
@@ -496,8 +490,14 @@ void draw() {
 
 void update(const Snapshot& snapshot) {
   if (!g_active) return;
+  const bool header_changed = snapshot.battery_percent != g_snapshot.battery_percent ||
+                              snapshot.volume != g_snapshot.volume ||
+                              snapshot.sound_enabled != g_snapshot.sound_enabled;
   g_snapshot = snapshot;
   const uint32_t now = millis();
+  if (header_changed || audio_header::service_timeout(g_audio_control, now))
+    audio_header::draw(g_audio_control, g_snapshot.volume, g_snapshot.sound_enabled,
+                       g_snapshot.battery_percent);
   if (now - g_last_dynamic_ms < 150) return;
   g_last_dynamic_ms = now;
   draw_dynamic();
@@ -544,6 +544,20 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
+  const auto audio_action = audio_header::handle_touch(g_audio_control, x, y, millis());
+  if (audio_action != audio_header::Action::none) {
+    if (audio_action == audio_header::Action::opened ||
+        audio_action == audio_header::Action::closed) {
+      audio_header::draw(g_audio_control, g_snapshot.volume, g_snapshot.sound_enabled,
+                         g_snapshot.battery_percent);
+      return {};
+    }
+    if (audio_action == audio_header::Action::volume_down)
+      return {ActionKind::volume_down};
+    if (audio_action == audio_header::Action::sound_toggle)
+      return {ActionKind::sound_toggle};
+    return {ActionKind::volume_up};
+  }
   if (g_keypad) {
     if (hit(x, y, 380, 525, 250, 55)) {
       g_keypad = false;
@@ -640,7 +654,8 @@ View view() { return g_view; }
 
 bool self_check() {
   return static_cast<uint8_t>(View::count) == 5 && kFmMinHz < kFmMaxHz &&
-         kSpectrumX + kSpectrumW <= 1280 && kTabsY < 720;
+         kSpectrumX + kSpectrumW <= 1280 && kTabsY < 720 &&
+         audio_header::self_check();
 }
 
 }  // namespace orcsdr::fm
