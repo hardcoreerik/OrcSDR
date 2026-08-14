@@ -196,6 +196,12 @@ class Tab5:
 def capture(args: argparse.Namespace) -> None:
     data = load_manifest(args.manifest)
     validate_manifest(data)
+    selected = set(args.screen or ())
+    known = {screen["id"] for screen in data["screens"]}
+    if selected - known:
+        raise ValueError(f"Unknown screen IDs: {sorted(selected - known)}")
+    capture_screens = [screen for screen in data["screens"]
+                       if not selected or screen["id"] in selected]
     raw_dir = args.output / "raw"
     client = Tab5(args.port, args.pairing_key)
     condition_cache: dict[str, bool] = {}
@@ -208,7 +214,7 @@ def capture(args: argparse.Namespace) -> None:
         release_tokens = {args.release, args.release[:7]}
         if not any(token and token in firmware for token in release_tokens):
             raise RuntimeError(f"Connected firmware '{firmware}' does not match requested release '{args.release}'")
-        for index, screen in enumerate(data["screens"], 1):
+        for index, screen in enumerate(capture_screens, 1):
             source = screen["source"]
             condition = screen.get("live_condition")
             if source == "live" and condition:
@@ -238,7 +244,7 @@ def capture(args: argparse.Namespace) -> None:
             screen["actual_source"] = source
             screen["firmware_build"] = firmware
             screen["capture_sha256"] = capture_hash
-            print(f"[{index}/{len(data['screens'])}] {screen['id']} {source} {capture_hash}")
+            print(f"[{index}/{len(capture_screens)}] {screen['id']} {source} {capture_hash}")
     finally:
         try:
             client.authenticate()
@@ -248,9 +254,11 @@ def capture(args: argparse.Namespace) -> None:
             print(f"warning: UI_DOC_EXIT failed: {error}", file=sys.stderr)
         client.close()
     persisted = json.loads(args.manifest.read_text(encoding="utf-8"))
-    captures = {screen["id"]: screen for screen in data["screens"]}
+    captures = {screen["id"]: screen for screen in capture_screens}
     for screen in persisted["screens"]:
-        captured = captures[screen["id"]]
+        captured = captures.get(screen["id"])
+        if not captured:
+            continue
         for key in ("actual_source", "firmware_build", "capture_sha256"):
             screen[key] = captured[key]
     args.manifest.write_text(json.dumps(persisted, indent=2) + "\n", encoding="utf-8")
@@ -442,6 +450,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts" / "help-media")
     parser.add_argument("--port", default="COM17")
     parser.add_argument("--release", default="")
+    parser.add_argument("--screen", action="append", help="capture only this screen ID; repeat as needed")
     parser.add_argument("--pairing-key", type=Path, default=ROOT / ".orclink" / "ui-doc.key")
     parser.add_argument("--ffmpeg", default="ffmpeg")
     args = parser.parse_args()

@@ -2,7 +2,8 @@
 
 | Feature | Status | Notes |
 |---|---|---|
-| FM receive, stereo audio, presets, and health | Implemented | RDS quality remains station and signal dependent |
+| FM receive, stereo audio, presets, and health | Implemented | Live hardware verified |
+| FM RDS decoding | Experimental | Carrier detection and decoded fields are not yet reliable across stations |
 | P25 control and clear voice following | Experimental | Encrypted voice is not decoded |
 | ADS-B 1090 dashboard and aircraft database | Experimental | Live coverage depends on antenna, location, and valid position messages |
 | LoRa receive, packet views, and capture | Experimental | No transmit path |

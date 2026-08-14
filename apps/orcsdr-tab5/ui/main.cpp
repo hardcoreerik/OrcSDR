@@ -9564,7 +9564,9 @@ void process_command(char* command) {
       } else {
         RtlBand band;
         uint32_t frequency_hz = 0;
-        if (ui_doc_live_band(screen, &band, &frequency_hz))
+        if (ui_doc_live_band(screen, &band, &frequency_hz) &&
+            (rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running ||
+             rtl_ui_band != band || rtl_ui_frequency_hz != frequency_hz))
           queue_local_rtl_listen(band, frequency_hz, false);
       }
       if (!ui_doc_render(screen, strcmp(mode, "demo") == 0)) {
