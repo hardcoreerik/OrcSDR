@@ -9207,7 +9207,7 @@ bool ui_doc_pause_reception() {
   return rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running;
 }
 
-void ui_doc_exit() {
+[[gnu::noinline]] void ui_doc_exit() {
   if (!ui_doc.active) return;
   const UiDocState saved = ui_doc;
   ui_documentation_mode = false;

@@ -50,14 +50,26 @@ def validate_manifest(data: dict) -> None:
 class Tab5:
     def __init__(self, port: str, key_path: Path):
         import serial
-        # USB Serial/JTAG ignores UART baud divisors; 921600 documents the
-        # hardware-verified high-throughput transfer mode for bridge users.
+        # USB Serial/JTAG ignores UART baud divisors; retain the project's
+        # hardware-verified high-throughput transfer setting.
         self.serial = serial.Serial(port, 921600, timeout=0.25, write_timeout=5)
         self.serial.dtr = False
         self.serial.rts = False
         self.key_path = key_path
-        time.sleep(0.2)
-        self.serial.reset_input_buffer()
+        # Opening Tab5's native USB Serial/JTAG port can reset the P4. Probe
+        # the command loop instead of racing the measured staged boot.
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            self.send("RTL_STATUS")
+            try:
+                self.wait(("RTL_SDR_STATUS",), 1)
+                self.serial.reset_input_buffer()
+                break
+            except TimeoutError:
+                time.sleep(0.25)
+        else:
+            self.close()
+            raise TimeoutError("Tab5 command loop did not become ready")
 
     def close(self) -> None:
         self.serial.close()
