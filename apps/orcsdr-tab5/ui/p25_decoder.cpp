@@ -28,6 +28,8 @@ constexpr float kSlicerScale = 2.0f * kPi * kOuterDeviationHz / kChannelRate;
 constexpr float kSlicerThreshold = 2.0f * kSlicerScale / 3.0f;
 constexpr float kAgcTarget = kSlicerThreshold;
 constexpr uint32_t kLockTimeoutMs = 3000;
+constexpr size_t kLduPayloadDibits = 784;
+constexpr size_t kVoiceQueueDepth = 18;
 constexpr uint64_t kBchGenerator = 0xCD930BDD3B2Bull;
 constexpr uint64_t kBchMask = (uint64_t{1} << 63) - 1;
 
@@ -65,6 +67,38 @@ struct BandPlanSlot {
   uint32_t spacing_hz = 0;
   uint64_t base_hz = 0;
 };
+
+constexpr std::array<size_t, 9> kVoiceBitOffsets = {
+    0, 144, 328, 512, 696, 880, 1064, 1248, 1424};
+
+std::array<VoiceFrame, kVoiceQueueDepth> g_voice_queue{};
+std::atomic<uint8_t> g_voice_write{0};
+std::atomic<uint8_t> g_voice_read{0};
+
+bool enqueue_voice_frame(const uint8_t* bits, uint32_t sequence) {
+  const uint8_t write = g_voice_write.load(std::memory_order_relaxed);
+  const uint8_t next = static_cast<uint8_t>((write + 1) % kVoiceQueueDepth);
+  if (next == g_voice_read.load(std::memory_order_acquire)) return false;
+  std::memcpy(g_voice_queue[write].bits, bits, kVoiceFrameBits);
+  g_voice_queue[write].sequence = sequence;
+  g_voice_write.store(next, std::memory_order_release);
+  return true;
+}
+
+bool dequeue_voice_frame(VoiceFrame* frame) {
+  if (frame == nullptr) return false;
+  const uint8_t read = g_voice_read.load(std::memory_order_relaxed);
+  if (read == g_voice_write.load(std::memory_order_acquire)) return false;
+  *frame = g_voice_queue[read];
+  g_voice_read.store(static_cast<uint8_t>((read + 1) % kVoiceQueueDepth),
+                     std::memory_order_release);
+  return true;
+}
+
+void clear_voice_queue() {
+  g_voice_read.store(g_voice_write.load(std::memory_order_acquire),
+                     std::memory_order_release);
+}
 
 std::array<uint8_t, 126> g_gf_exp{};
 std::array<int8_t, 64> g_gf_log{};
@@ -327,10 +361,29 @@ class Decoder {
       }
     }
     const Snapshot result = decoder.state_;
-    return result.nac == kNac && result.nid_good == 1 &&
-           result.nid_corrected_bits == 5 && result.tsbk_good == 1 &&
-           result.wacn == 0xBEE00 && result.system_id == 0x1F3 &&
-           result.last_trellis_metric > 0;
+    const bool control_ok = result.nac == kNac && result.nid_good == 1 &&
+                            result.nid_corrected_bits == 5 && result.tsbk_good == 1 &&
+                            result.wacn == 0xBEE00 && result.system_id == 0x1F3 &&
+                            result.last_trellis_metric > 0;
+    clear_voice_queue();
+    Decoder voice_decoder;
+    for (size_t source = 0; source < kLduPayloadDibits * 2; source += 2) {
+      const auto pattern = [](size_t bit) { return static_cast<uint8_t>(((bit * 13) ^ 5) & 1); };
+      voice_decoder.ldu_payload_[source / 2] =
+          static_cast<uint8_t>((pattern(source) << 1) | pattern(source + 1));
+    }
+    voice_decoder.decode_ldu();
+    bool voice_ok = voice_decoder.state_.voice_frames == 9;
+    for (size_t frame_index = 0; frame_index < kVoiceBitOffsets.size(); ++frame_index) {
+      VoiceFrame frame;
+      voice_ok &= dequeue_voice_frame(&frame) && frame.sequence == frame_index + 1;
+      for (size_t bit = 0; voice_ok && bit < kVoiceFrameBits; ++bit) {
+        const size_t source = kVoiceBitOffsets[frame_index] + bit;
+        voice_ok &= frame.bits[bit] == static_cast<uint8_t>(((source * 13) ^ 5) & 1);
+      }
+    }
+    clear_voice_queue();
+    return control_ok && voice_ok;
   }
 
  private:
@@ -433,8 +486,13 @@ class Decoder {
       if (frame_data_count_ == nid_dibits_.size()) decode_nid();
       return;
     }
-    tsbk_channel_[frame_data_count_++] = canonical;
-    if (frame_data_count_ == tsbk_channel_.size()) decode_tsbk();
+    if (frame_duid_ == 0x7) {
+      tsbk_channel_[frame_data_count_++] = canonical;
+      if (frame_data_count_ == tsbk_channel_.size()) decode_tsbk();
+    } else {
+      ldu_payload_[frame_data_count_++] = canonical;
+      if (frame_data_count_ == ldu_payload_.size()) decode_ldu();
+    }
   }
 
   void decode_nid() {
@@ -451,7 +509,8 @@ class Decoder {
     const uint8_t duid = decoded & 0x0F;
     const uint8_t trailing = nid_dibits_[31] & 1;
     const uint8_t expected_trailing = (duid == 0x5 || duid == 0xA) ? 1 : 0;
-    if (corrected < 0 || trailing != expected_trailing || duid != 0x7) {
+    if (corrected < 0 || trailing != expected_trailing ||
+        (duid != 0x7 && duid != 0x5 && duid != 0xA)) {
       ++state_.nid_failed;
       frame_active_ = false;
       refresh_health(millis());
@@ -464,6 +523,25 @@ class Decoder {
     fec_total_bits_ += 64;
     collecting_nid_ = false;
     frame_data_count_ = 0;
+    frame_duid_ = duid;
+  }
+
+  void decode_ldu() {
+    uint8_t voice_bits[kVoiceFrameBits];
+    ++state_.voice_ldus;
+    state_.last_voice_ms = millis();
+    last_valid_ms_ = state_.last_voice_ms;
+    for (const size_t offset : kVoiceBitOffsets) {
+      for (size_t bit = 0; bit < kVoiceFrameBits; ++bit) {
+        const size_t source = offset + bit;
+        const uint8_t dibit = ldu_payload_[source / 2];
+        voice_bits[bit] = static_cast<uint8_t>((dibit >> (1 - source % 2)) & 1u);
+      }
+      const uint32_t sequence = ++state_.voice_frames;
+      if (!enqueue_voice_frame(voice_bits, sequence)) ++state_.voice_queue_drops;
+    }
+    frame_active_ = false;
+    refresh_health(last_valid_ms_);
   }
 
   void decode_tsbk() {
@@ -612,11 +690,13 @@ class Decoder {
   bool frame_active_ = false;
   bool collecting_nid_ = true;
   uint8_t frame_rotation_ = 0;
+  uint8_t frame_duid_ = 0;
   size_t frame_air_index_ = 0;
   size_t frame_data_count_ = 0;
   uint8_t tsbk_blocks_ = 0;
   std::array<uint8_t, 32> nid_dibits_{};
   std::array<uint8_t, 98> tsbk_channel_{};
+  std::array<uint8_t, kLduPayloadDibits> ldu_payload_{};
 };
 
 Decoder g_decoder;
@@ -633,6 +713,7 @@ void publish_snapshot() {
 }  // namespace
 
 void reset() {
+  clear_voice_queue();
   g_decoder.reset();
   publish_snapshot();
 }
@@ -648,6 +729,10 @@ Snapshot snapshot() {
   value = g_public_snapshot;
   portEXIT_CRITICAL(&g_snapshot_mux);
   return value;
+}
+
+bool pop_voice_frame(VoiceFrame* frame) {
+  return dequeue_voice_frame(frame);
 }
 
 bool self_check() { return Decoder::self_check(); }

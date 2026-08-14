@@ -19,6 +19,10 @@
 #include <freertos/queue.h>
 #include <freertos/task.h>
 
+extern "C" {
+#include "mbelib.h"
+}
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -159,6 +163,8 @@ constexpr size_t kRtlAudioPlayBlockCount = 3;
 constexpr size_t kRtlAudioPlayBlockFrames = kRtlAudioPlayBatchSamples;
 constexpr size_t kRtlAudioPlayBlockSamples = kRtlAudioPlayBlockFrames * 2;
 constexpr uint32_t kRtlAudioPlaySafetyMs = 12;
+constexpr uint32_t kP25VoiceHangMs = 1800;
+constexpr uint32_t kP25VoiceAcquireMs = 3000;
 /*
  * WBFM mono DSP targets (app-side; not RF hardware calibration).
  * Pipeline: 960 kS/s IQ → complex channel LPF → ×4 → discr → audio LPF → ×5 → 48 kHz
@@ -1193,6 +1199,20 @@ std::atomic<bool> p25_survey_active{false};
 std::atomic<bool> p25_hold{false};
 std::atomic<bool> p25_auto_follow{true};
 std::atomic<bool> p25_encryption_skip{true};
+enum class P25FollowState : uint8_t { control, voice };
+std::atomic<P25FollowState> p25_follow_state{P25FollowState::control};
+uint32_t p25_control_frequency_hz = kP25DefaultHz;
+uint32_t p25_voice_frequency_hz = 0;
+uint32_t p25_follow_started_ms = 0;
+uint16_t p25_hold_talkgroup = 0;
+uint16_t p25_skipped_talkgroup = 0;
+uint32_t p25_skip_until_ms = 0;
+orcsdr::p25decoder::Grant p25_follow_grant{};
+std::atomic<uint32_t> p25_imbe_frames{0};
+std::atomic<uint32_t> p25_imbe_errors{0};
+std::atomic<uint32_t> p25_pcm_frames{0};
+std::atomic<uint32_t> p25_audio_last_ms{0};
+std::atomic<uint32_t> p25_voice_session{0};
 uint8_t p25_candidate_index = 0;
 float p25_candidate_levels[std::size(kP25ControlChannelsHz)] = {
     -120.0f, -120.0f, -120.0f, -120.0f};
@@ -1495,6 +1515,8 @@ void handle_fm_dashboard_action(const orcsdr::fm::Action& action);
 orcsdr::p25::Snapshot p25_dashboard_snapshot();
 void handle_p25_dashboard_action(const orcsdr::p25::Action& action);
 void service_p25_survey(uint32_t now);
+void service_p25_follow(uint32_t now);
+bool p25_voice_self_check();
 void start_wifi_inventory();
 void stop_wifi();
 void begin_power_monitor(const char* tag, uint32_t duration_ms = 1000);
@@ -1990,7 +2012,7 @@ void allow_boot_speaker() {
 }
 
 bool rtl_band_has_audio(RtlBand band) {
-  return band != RtlBand::adsb && band != RtlBand::lora && band != RtlBand::p25;
+  return band != RtlBand::adsb && band != RtlBand::lora;
 }
 
 void sync_rtl_audio_for_band(RtlBand band) {
@@ -5164,6 +5186,94 @@ void queue_audio_samples(int16_t* audio, size_t audio_count) {
   rtl_audio.buffer = (rtl_audio.buffer + 1) % std::size(rtl_audio_buffers);
 }
 
+// TIA-102.BABA IMBE channel deinterleave: vector bit -> transmitted bit.
+// Cross-checked against the Apache-2.0 GopherTrunk implementation and the
+// ISC-licensed DSD/mbelib schedule; mbelib then owns FEC and synthesis.
+constexpr uint8_t kP25ImbeDeinterleave[orcsdr::p25decoder::kVoiceFrameBits] = {
+    132,127,120,115,108,103,96,91,84,79,72,67,60,55,48,43,36,31,24,19,12,7,0,
+    126,121,114,109,102,97,90,85,78,73,66,61,54,49,42,37,30,25,18,13,6,1,139,
+    122,117,110,105,98,93,86,81,74,69,62,57,50,45,38,33,26,21,14,9,2,138,133,
+    116,111,104,99,92,87,80,75,68,63,56,51,44,39,32,27,20,15,8,3,141,134,129,
+    64,59,52,47,40,35,28,23,16,11,4,140,135,128,123,10,5,143,136,131,124,119,
+    112,107,100,95,88,83,76,71,101,94,89,82,77,70,65,58,53,46,41,34,29,22,17,
+    142,137,130,125,118,113,106};
+
+void p25_imbe_matrix(const orcsdr::p25decoder::VoiceFrame& frame, char output[8][23]) {
+  constexpr uint8_t kRows[8] = {23, 23, 23, 23, 15, 15, 15, 7};
+  size_t vector = 0;
+  std::memset(output, 0, 8 * 23);
+  for (size_t row = 0; row < std::size(kRows); ++row)
+    for (size_t column = 0; column < kRows[row]; ++column)
+      output[row][column] = static_cast<char>(frame.bits[kP25ImbeDeinterleave[vector++]]);
+}
+
+bool p25_voice_self_check() {
+  constexpr uint8_t kOnAir[18] = {
+      0x84,0xC6,0xA9,0x94,0x03,0xFF,0x81,0xC8,0x26,
+      0x14,0x2C,0x03,0x90,0xEC,0x85,0x33,0x59,0xBC};
+  constexpr uint8_t kExpected[11] = {
+      0x89,0xEC,0x59,0x0E,0xB5,0x6D,0x85,0xFE,0x76,0xC4,0xC0};
+  orcsdr::p25decoder::VoiceFrame frame;
+  for (size_t bit = 0; bit < orcsdr::p25decoder::kVoiceFrameBits; ++bit)
+    frame.bits[bit] = (kOnAir[bit / 8] >> (7 - bit % 8)) & 1u;
+  char matrix[8][23];
+  char decoded[88]{};
+  p25_imbe_matrix(frame, matrix);
+  (void)mbe_eccImbe7200x4400C0(matrix);
+  mbe_demodulateImbe7200x4400Data(matrix);
+  (void)mbe_eccImbe7200x4400Data(matrix, decoded);
+  for (size_t bit = 0; bit < 88; ++bit)
+    if ((decoded[bit] & 1) != ((kExpected[bit / 8] >> (7 - bit % 8)) & 1u)) return false;
+  return true;
+}
+
+void p25_voice_task(void*) {
+  mbe_parms current{}, previous{}, enhanced{};
+  mbe_initMbeParms(&current, &previous, &enhanced);
+  uint32_t session = p25_voice_session.load(std::memory_order_acquire);
+  int16_t previous_sample = 0;
+  for (;;) {
+    orcsdr::p25decoder::VoiceFrame frame;
+    if (!orcsdr::p25decoder::pop_voice_frame(&frame)) {
+      vTaskDelay(pdMS_TO_TICKS(2));
+      continue;
+    }
+    const uint32_t next_session = p25_voice_session.load(std::memory_order_acquire);
+    if (next_session != session) {
+      session = next_session;
+      previous_sample = 0;
+      mbe_initMbeParms(&current, &previous, &enhanced);
+    }
+    if (g_stream_band != RtlBand::p25 ||
+        p25_follow_state.load(std::memory_order_acquire) != P25FollowState::voice ||
+        !rtl_audio_user_enabled.load(std::memory_order_acquire)) continue;
+
+    char matrix[8][23];
+    char decoded[88]{};
+    char error_text[16]{};
+    int errors = 0, total_errors = 0;
+    int16_t pcm8k[160];
+    int16_t pcm48k[960];
+    p25_imbe_matrix(frame, matrix);
+    mbe_processImbe7200x4400Frame(pcm8k, &errors, &total_errors, error_text, matrix,
+                                  decoded, &current, &previous, &enhanced, 3);
+    size_t output = 0;
+    for (const int16_t sample : pcm8k) {
+      const int32_t delta = static_cast<int32_t>(sample) - previous_sample;
+      for (int phase = 1; phase <= 6; ++phase)
+        pcm48k[output++] = static_cast<int16_t>(previous_sample + delta * phase / 6);
+      previous_sample = sample;
+    }
+    p25_imbe_frames.fetch_add(1, std::memory_order_relaxed);
+    p25_imbe_errors.fetch_add(static_cast<uint32_t>(std::max(0, total_errors)),
+                              std::memory_order_relaxed);
+    p25_pcm_frames.fetch_add(output, std::memory_order_relaxed);
+    p25_audio_last_ms.store(millis(), std::memory_order_release);
+    queue_audio_samples(pcm48k, output);
+    vTaskDelay(pdMS_TO_TICKS(18));
+  }
+}
+
 void rds_process_mpx_sample(float phase) {
   /* Keep the resonator only for the UI's 57 kHz energy indicator. */
   const float rds_bp0 = phase + kRdsBpTwoRCos * rtl_audio.rds_bp_y1 -
@@ -6390,6 +6500,7 @@ static void rtl_driver_app_task(void *) {
 
           const uint32_t now = millis();
           service_p25_survey(now);
+          service_p25_follow(now);
           if (g_stream_band == RtlBand::adsb && now - adsb_metrics_last_ms >= 5000) {
             adsb_metrics_last_ms = now;
             expire_adsb_tracks(now);
@@ -6525,6 +6636,11 @@ void initialize_rtl_sdr_host() {
   if (xTaskCreatePinnedToCore(adsb_decoder_task, "adsb_decode", 6144, nullptr, 4, nullptr, 1) !=
       pdPASS) {
     set_rtl_sdr_status("ADS-B: decoder task failed");
+    return;
+  }
+  if (xTaskCreatePinnedToCore(p25_voice_task, "p25_voice", 8192, nullptr, 4, nullptr, 1) !=
+      pdPASS) {
+    set_rtl_sdr_status("P25: voice task failed");
     return;
   }
 
@@ -6966,11 +7082,19 @@ orcsdr::p25::Snapshot p25_dashboard_snapshot() {
   snapshot.hold = p25_hold.load(std::memory_order_relaxed);
   snapshot.auto_follow = p25_auto_follow.load(std::memory_order_relaxed);
   snapshot.encryption_skip = p25_encryption_skip.load(std::memory_order_relaxed);
+  snapshot.following_voice =
+      p25_follow_state.load(std::memory_order_acquire) == P25FollowState::voice;
+  snapshot.imbe_frames = p25_imbe_frames.load(std::memory_order_relaxed);
+  snapshot.imbe_errors = p25_imbe_errors.load(std::memory_order_relaxed);
   snapshot.candidate_index = p25_candidate_index;
   snapshot.candidate_count = static_cast<uint8_t>(std::size(kP25ControlChannelsHz));
   std::copy(std::begin(p25_candidate_levels), std::end(p25_candidate_levels),
             std::begin(snapshot.candidate_levels));
   snapshot.decoded = orcsdr::p25decoder::snapshot();
+  if (p25_follow_state.load(std::memory_order_acquire) == P25FollowState::voice) {
+    snapshot.decoded.current_grant = p25_follow_grant;
+    snapshot.decoded.recent_grants[0] = p25_follow_grant;
+  }
   snapshot.battery_percent = M5.Power.getBatteryLevel();
 #if !RTL_USE_LEGACY_USB
   rtl_sdr_v4_esp_metrics_t metrics{};
@@ -7002,6 +7126,10 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
   using orcsdr::p25::ActionKind;
   auto tune = [](uint32_t frequency_hz) {
     frequency_hz = rtl_clamp_frequency(RtlBand::p25, frequency_hz);
+    p25_follow_state.store(P25FollowState::control, std::memory_order_release);
+    p25_voice_session.fetch_add(1, std::memory_order_acq_rel);
+    p25_control_frequency_hz = frequency_hz;
+    p25_voice_frequency_hz = 0;
     if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
       request_hot_retune(frequency_hz);
     else
@@ -7041,10 +7169,36 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
       break;
     case ActionKind::hold_toggle:
       p25_hold.store(!p25_hold.load(std::memory_order_relaxed), std::memory_order_relaxed);
+      if (!p25_hold.load(std::memory_order_relaxed)) p25_hold_talkgroup = 0;
       break;
+    case ActionKind::skip_talkgroup: {
+      const auto decoded = orcsdr::p25decoder::snapshot();
+      const uint16_t talkgroup =
+          p25_follow_state.load(std::memory_order_acquire) == P25FollowState::voice
+              ? p25_follow_grant.talkgroup : decoded.current_grant.talkgroup;
+      if (talkgroup != 0) {
+        p25_skipped_talkgroup = talkgroup;
+        p25_skip_until_ms = millis() + 30000;
+        Serial.printf("RTL_P25_SKIP tg=%u duration_ms=30000\n", talkgroup);
+      }
+      if (p25_follow_state.load(std::memory_order_acquire) == P25FollowState::voice) {
+        p25_follow_state.store(P25FollowState::control, std::memory_order_release);
+        p25_voice_session.fetch_add(1, std::memory_order_acq_rel);
+        p25_voice_frequency_hz = 0;
+        request_hot_retune(p25_control_frequency_hz);
+      }
+      break;
+    }
     case ActionKind::auto_follow_toggle:
       p25_auto_follow.store(!p25_auto_follow.load(std::memory_order_relaxed),
                             std::memory_order_relaxed);
+      if (!p25_auto_follow.load(std::memory_order_relaxed) &&
+          p25_follow_state.load(std::memory_order_acquire) == P25FollowState::voice) {
+        p25_follow_state.store(P25FollowState::control, std::memory_order_release);
+        p25_voice_session.fetch_add(1, std::memory_order_acq_rel);
+        p25_voice_frequency_hz = 0;
+        request_hot_retune(p25_control_frequency_hz);
+      }
       break;
     case ActionKind::encryption_skip_toggle:
       p25_encryption_skip.store(!p25_encryption_skip.load(std::memory_order_relaxed),
@@ -7066,6 +7220,8 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
       break;
     case ActionKind::exit_to_home:
       p25_survey_active.store(false, std::memory_order_relaxed);
+      p25_follow_state.store(P25FollowState::control, std::memory_order_release);
+      p25_voice_session.fetch_add(1, std::memory_order_acq_rel);
       orcsdr::p25::leave();
       queue_local_rtl_listen(RtlBand::browse, rtl_ui_frequency_hz);
       draw_sdr_screen(RtlBand::browse, rtl_ui_frequency_hz, rtl_ui_volume);
@@ -7110,6 +7266,53 @@ void service_p25_survey(uint32_t now) {
                 p25_candidate_tsbk_good[p25_candidate_index] > 0 ? 1 : 0,
                 static_cast<unsigned long>(p25_candidate_tsbk_good[p25_candidate_index]));
   if (orcsdr::p25::active()) orcsdr::p25::update(p25_dashboard_snapshot());
+}
+
+void service_p25_follow(uint32_t now) {
+  if (g_stream_band != RtlBand::p25 ||
+      p25_survey_active.load(std::memory_order_relaxed)) return;
+  const auto decoded = orcsdr::p25decoder::snapshot();
+  if (p25_follow_state.load(std::memory_order_acquire) == P25FollowState::voice) {
+    const bool never_acquired = decoded.last_voice_ms == 0 &&
+                                now - p25_follow_started_ms >= kP25VoiceAcquireMs;
+    const bool ended = decoded.last_voice_ms != 0 &&
+                       now - decoded.last_voice_ms >= kP25VoiceHangMs;
+    if (!never_acquired && !ended) return;
+    p25_follow_state.store(P25FollowState::control, std::memory_order_release);
+    p25_voice_session.fetch_add(1, std::memory_order_acq_rel);
+    p25_voice_frequency_hz = 0;
+    request_hot_retune(p25_control_frequency_hz);
+    Serial.printf("RTL_P25_FOLLOW_RETURN control_hz=%lu reason=%s tg=%u\n",
+                  static_cast<unsigned long>(p25_control_frequency_hz),
+                  never_acquired ? "no_voice" : "hang", p25_follow_grant.talkgroup);
+    return;
+  }
+
+  if (!p25_auto_follow.load(std::memory_order_relaxed)) return;
+  const auto& grant = decoded.current_grant;
+  if (!grant.valid || grant.frequency_hz == 0 || now - grant.seen_ms > 1500) return;
+  if (p25_skipped_talkgroup != 0 &&
+      static_cast<int32_t>(p25_skip_until_ms - now) <= 0) p25_skipped_talkgroup = 0;
+  if (grant.talkgroup == p25_skipped_talkgroup) return;
+  if (grant.tdma || (grant.encrypted && p25_encryption_skip.load(std::memory_order_relaxed))) return;
+  if (p25_hold.load(std::memory_order_relaxed)) {
+    if (p25_hold_talkgroup == 0) p25_hold_talkgroup = grant.talkgroup;
+    if (grant.talkgroup != p25_hold_talkgroup) return;
+  }
+  if (grant.frequency_hz == rtl_ui_frequency_hz) return;
+
+  p25_control_frequency_hz = rtl_ui_frequency_hz;
+  p25_voice_frequency_hz = grant.frequency_hz;
+  p25_follow_grant = grant;
+  p25_follow_started_ms = now;
+  p25_follow_state.store(P25FollowState::voice, std::memory_order_release);
+  p25_voice_session.fetch_add(1, std::memory_order_acq_rel);
+  (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
+  request_hot_retune(grant.frequency_hz);
+  Serial.printf("RTL_P25_FOLLOW_VOICE control_hz=%lu voice_hz=%lu tg=%u src=%lu emergency=%d\n",
+                static_cast<unsigned long>(p25_control_frequency_hz),
+                static_cast<unsigned long>(grant.frequency_hz), grant.talkgroup,
+                static_cast<unsigned long>(grant.source_id), grant.emergency ? 1 : 0);
 }
 
 orcsdr::settings::State global_settings_state() {
@@ -8776,7 +8979,9 @@ void process_command(char* command) {
         "frequency_hz=%lu survey=%d candidate=%u relative_dbfs=%.1f "
         "frame_sync=%d identity=%d nac=%03X wacn=%05lX sysid=%03X rfss=%u site=%u "
         "sync_words=%lu nid_good=%lu nid_failed=%lu tsbk_good=%lu tsbk_failed=%lu "
-        "ber_percent=%.2f grants=%d voice=false\n",
+        "ber_percent=%.2f grants=%d follow=%s control_hz=%lu voice_hz=%lu "
+        "voice_ldus=%lu voice_frames=%lu voice_queue_drops=%lu imbe_frames=%lu "
+        "imbe_errors=%lu pcm_frames=%lu\n",
         static_cast<unsigned long>(rtl_ui_frequency_hz),
         p25_survey_active.load(std::memory_order_relaxed) ? 1 : 0,
         static_cast<unsigned>(p25_candidate_index),
@@ -8789,7 +8994,17 @@ void process_command(char* command) {
         static_cast<unsigned long>(decoded.tsbk_good),
         static_cast<unsigned long>(decoded.tsbk_failed),
         static_cast<double>(decoded.estimated_ber_percent),
-        decoded.current_grant.valid ? 1 : 0);
+        decoded.current_grant.valid ? 1 : 0,
+        p25_follow_state.load(std::memory_order_acquire) == P25FollowState::voice
+            ? "voice" : "control",
+        static_cast<unsigned long>(p25_control_frequency_hz),
+        static_cast<unsigned long>(p25_voice_frequency_hz),
+        static_cast<unsigned long>(decoded.voice_ldus),
+        static_cast<unsigned long>(decoded.voice_frames),
+        static_cast<unsigned long>(decoded.voice_queue_drops),
+        static_cast<unsigned long>(p25_imbe_frames.load(std::memory_order_relaxed)),
+        static_cast<unsigned long>(p25_imbe_errors.load(std::memory_order_relaxed)),
+        static_cast<unsigned long>(p25_pcm_frames.load(std::memory_order_relaxed)));
     for (size_t i = 0; i < std::size(kP25ControlChannelsHz); ++i)
       Serial.printf("RTL_P25_CANDIDATE index=%u frequency_hz=%lu relative_dbfs=%.1f\n",
                     static_cast<unsigned>(i),
@@ -9348,6 +9563,11 @@ void setup() {
     abort();
   }
   Serial.println("RTL_P25_DECODER_SELF_CHECK_OK");
+  if (!p25_voice_self_check()) {
+    Serial.println("RTL_P25_VOICE_SELF_CHECK_FAIL");
+    abort();
+  }
+  Serial.println("RTL_P25_VOICE_SELF_CHECK_OK");
   if (!orcsdr::settings::self_check()) {
     Serial.println("ORC_SETTINGS_SELF_CHECK_FAIL");
     abort();

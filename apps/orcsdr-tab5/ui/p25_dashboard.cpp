@@ -213,6 +213,8 @@ void draw_monitor_static() {
 
 void draw_monitor_dynamic() {
   char value[96];
+  M5.Display.fillRect(40, 160, 390, 30, kPanel);
+  label(g_snapshot.following_voice ? "VOICE CHANNEL" : "CONTROL CHANNEL", 44, 166);
   M5.Display.fillRect(42, 198, 384, 55, kPanel);
   format_mhz(value, sizeof(value), g_snapshot.frequency_hz);
   text(value, 52, 227, TFT_WHITE, 4, middle_left);
@@ -231,8 +233,9 @@ void draw_monitor_dynamic() {
   M5.Display.fillRect(42, 330, 764, 135, kPanel);
   const auto& grant = g_snapshot.decoded.current_grant;
   if (grant.valid) {
-    text(grant_live(grant) ? "LIVE CONTROL-CHANNEL GRANT" : "LAST GRANT — STALE",
-         424, 362, grant_live(grant) ? kGreen : kYellow, 2);
+    text(g_snapshot.following_voice ? "FOLLOWING CLEAR PHASE I VOICE" :
+         grant_live(grant) ? "LIVE CONTROL-CHANNEL GRANT" : "LAST GRANT — STALE",
+         424, 362, (g_snapshot.following_voice || grant_live(grant)) ? kGreen : kYellow, 2);
     snprintf(value, sizeof(value), "TGID  %u     %s     SOURCE  %lu", grant.talkgroup,
              talkgroup_alias(grant.talkgroup), static_cast<unsigned long>(grant.source_id));
     text(value, 58, 410, TFT_WHITE, 2, middle_left);
@@ -257,9 +260,10 @@ void draw_monitor_dynamic() {
   draw_meter(872, 350, 345, g_snapshot.relative_dbfs, 16);
   snprintf(value, sizeof(value), "RELATIVE  %.1f dBFS", static_cast<double>(g_snapshot.relative_dbfs));
   text(value, 872, 404, TFT_WHITE, 2, middle_left);
-  text(g_snapshot.survey_active ? "SURVEYING KNOWN CHANNELS" :
+  text(g_snapshot.following_voice ? "IMBE VOICE DECODING" :
+       g_snapshot.survey_active ? "SURVEYING KNOWN CHANNELS" :
        g_snapshot.decoded.frame_sync ? "P25 FRAME SYNC" : "NO P25 FRAME SYNC",
-       872, 444, g_snapshot.survey_active ? kYellow :
+       872, 444, g_snapshot.following_voice ? kGreen : g_snapshot.survey_active ? kYellow :
        g_snapshot.decoded.frame_sync ? kGreen : kMuted, 1, middle_left);
 }
 
@@ -409,9 +413,9 @@ void draw_health_dynamic() {
   snprintf(value, sizeof(value), "%.4f MHz", g_snapshot.frequency_hz / 1000000.0);
   text(value, 219, 219, TFT_WHITE, 3);
   M5.Display.fillRect(446, 194, 354, 50, kPanel);
-  text(g_snapshot.survey_active ? "SURVEYING" :
+  text(g_snapshot.following_voice ? "VOICE" : g_snapshot.survey_active ? "SURVEYING" :
        g_snapshot.decoded.frame_sync ? "P25 LOCK" : "SEARCHING", 623, 219,
-       g_snapshot.survey_active ? kYellow :
+       g_snapshot.following_voice ? kGreen : g_snapshot.survey_active ? kYellow :
        g_snapshot.decoded.frame_sync ? kGreen : kYellow, 3);
   M5.Display.fillRect(850, 194, 388, 50, kPanel);
   text("SW7 / LRIG", 1044, 219, TFT_WHITE, 3);
@@ -428,12 +432,21 @@ void draw_health_dynamic() {
   health_card(948, 274, 294, 112, "RELATIVE LEVEL", value, g_snapshot.relative_dbfs > -75.0f);
   snprintf(value, sizeof(value), "%lu%%", static_cast<unsigned long>(g_snapshot.dsp_percent));
   health_card(24, 400, 294, 112, "DSP MAX TIME", value, g_snapshot.dsp_percent < 80);
-  snprintf(value, sizeof(value), "%lu / %lu",
-           static_cast<unsigned long>(g_snapshot.decoded.tsbk_good),
-           static_cast<unsigned long>(g_snapshot.decoded.tsbk_failed));
-  health_card(332, 400, 294, 112, "TSBK GOOD / BAD", value,
-              g_snapshot.decoded.tsbk_good > 0 && g_snapshot.decoded.tsbk_failed == 0,
-              g_snapshot.decoded.nid_good > 0);
+  if (g_snapshot.following_voice) {
+    snprintf(value, sizeof(value), "%lu / %lu",
+             static_cast<unsigned long>(g_snapshot.imbe_frames),
+             static_cast<unsigned long>(g_snapshot.imbe_errors));
+    health_card(332, 400, 294, 112, "IMBE FRAMES / ERRORS", value,
+                g_snapshot.imbe_frames > 0 && g_snapshot.imbe_errors == 0,
+                g_snapshot.imbe_frames > 0);
+  } else {
+    snprintf(value, sizeof(value), "%lu / %lu",
+             static_cast<unsigned long>(g_snapshot.decoded.tsbk_good),
+             static_cast<unsigned long>(g_snapshot.decoded.tsbk_failed));
+    health_card(332, 400, 294, 112, "TSBK GOOD / BAD", value,
+                g_snapshot.decoded.tsbk_good > 0 && g_snapshot.decoded.tsbk_failed == 0,
+                g_snapshot.decoded.nid_good > 0);
+  }
   snprintf(value, sizeof(value), "%.2f%%",
            static_cast<double>(g_snapshot.decoded.estimated_ber_percent));
   health_card(640, 400, 294, 112, "ESTIMATED BER", value,
@@ -510,12 +523,15 @@ void update(const Snapshot& snapshot) {
       snapshot.hold != g_snapshot.hold ||
       snapshot.auto_follow != g_snapshot.auto_follow ||
       snapshot.encryption_skip != g_snapshot.encryption_skip ||
+      snapshot.following_voice != g_snapshot.following_voice ||
       snapshot.candidate_index != g_snapshot.candidate_index ||
       memcmp(snapshot.candidate_levels, g_snapshot.candidate_levels,
              sizeof(snapshot.candidate_levels)) != 0;
   const bool decoded_changed =
       snapshot.decoded.tsbk_good != g_snapshot.decoded.tsbk_good ||
       snapshot.decoded.tsbk_failed != g_snapshot.decoded.tsbk_failed ||
+      snapshot.imbe_frames != g_snapshot.imbe_frames ||
+      snapshot.imbe_errors != g_snapshot.imbe_errors ||
       snapshot.decoded.identity_valid != g_snapshot.decoded.identity_valid ||
       snapshot.decoded.current_grant.seen_ms != g_snapshot.decoded.current_grant.seen_ms;
   g_snapshot = snapshot;
@@ -581,7 +597,7 @@ Action handle_touch(int32_t x, int32_t y) {
     if (x < 502) return {ActionKind::next_candidate};
     if (x < 748) return {ActionKind::survey_toggle};
     if (x < 994) return {ActionKind::hold_toggle};
-    return {ActionKind::next_candidate};
+    return {ActionKind::skip_talkgroup};
   }
   if (g_view == View::spectrum) {
     if (hit(x, y, 390, 565, 80, 45)) return {ActionKind::span_down};

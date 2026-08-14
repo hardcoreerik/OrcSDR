@@ -28,6 +28,9 @@ struct Snapshot {
   bool hold = false;
   bool auto_follow = true;
   bool encryption_skip = true;
+  bool following_voice = false;
+  uint32_t imbe_frames = 0;
+  uint32_t imbe_errors = 0;
   uint8_t candidate_index = 0;
   uint8_t candidate_count = 0;
   float candidate_levels[4] = {-120.0f, -120.0f, -120.0f, -120.0f};
@@ -42,6 +45,7 @@ enum class ActionKind : uint8_t {
   next_candidate,
   survey_toggle,
   hold_toggle,
+  skip_talkgroup,
   auto_follow_toggle,
   encryption_skip_toggle,
   span_down,

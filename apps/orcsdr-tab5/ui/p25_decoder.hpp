@@ -6,6 +6,12 @@
 namespace orcsdr::p25decoder {
 
 constexpr size_t kRecentGrantCount = 8;
+constexpr size_t kVoiceFrameBits = 144;
+
+struct VoiceFrame {
+  uint8_t bits[kVoiceFrameBits]{};
+  uint32_t sequence = 0;
+};
 
 struct Grant {
   bool valid = false;
@@ -32,6 +38,10 @@ struct Snapshot {
   uint32_t nid_corrected_bits = 0;
   uint32_t tsbk_good = 0;
   uint32_t tsbk_failed = 0;
+  uint32_t voice_ldus = 0;
+  uint32_t voice_frames = 0;
+  uint32_t voice_queue_drops = 0;
+  uint32_t last_voice_ms = 0;
   uint16_t last_trellis_metric = 0;
   float estimated_ber_percent = 0.0f;
   float frame_error_percent = 0.0f;
@@ -46,6 +56,7 @@ struct Snapshot {
 void reset();
 void process_cu8(const uint8_t* iq, size_t bytes);
 Snapshot snapshot();
+bool pop_voice_frame(VoiceFrame* frame);
 
 // Deterministic protocol/FEC check. It does not touch live decoder state.
 bool self_check();

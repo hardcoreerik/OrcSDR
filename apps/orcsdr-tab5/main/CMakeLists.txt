@@ -13,6 +13,7 @@ idf_component_register(
         arduino-esp32
         m5unified
         m5gfx
+        mbelib
         nvs_flash
         rtl_sdr_v4_esp
         esp_driver_usb_serial_jtag
