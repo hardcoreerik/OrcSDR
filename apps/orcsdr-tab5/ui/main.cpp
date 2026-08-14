@@ -1202,6 +1202,7 @@ std::atomic<bool> p25_encryption_skip{true};
 enum class P25FollowState : uint8_t { control, voice };
 std::atomic<P25FollowState> p25_follow_state{P25FollowState::control};
 uint32_t p25_control_frequency_hz = kP25DefaultHz;
+std::atomic<uint32_t> p25_control_persist_hz{0};
 uint32_t p25_voice_frequency_hz = 0;
 uint32_t p25_follow_started_ms = 0;
 uint16_t p25_hold_talkgroup = 0;
@@ -1234,6 +1235,8 @@ float p25_candidate_levels[std::size(kP25ControlChannelsHz)] = {
     -120.0f, -120.0f, -120.0f, -120.0f};
 uint32_t p25_candidate_tsbk_good[std::size(kP25ControlChannelsHz)]{};
 uint32_t p25_survey_sample_at_ms = 0;
+uint32_t p25_entry_probe_at_ms = 0;
+uint32_t p25_entry_probe_tsbk_good = 0;
 uint64_t rtl_capture_bytes = 0;
 uint8_t rtl_capture_min = 0;
 uint8_t rtl_capture_max = 0;
@@ -1856,7 +1859,7 @@ uint32_t rtl_band_default_frequency(RtlBand band) {
     case RtlBand::lora: return kLoraDefaultHz;
     case RtlBand::browse: return kRtlBrowseDefaultHz;
     case RtlBand::adsb: return kAdsbDefaultHz;
-    case RtlBand::p25: return kP25DefaultHz;
+    case RtlBand::p25: return p25_control_frequency_hz;
     default: return rtl_saved_fm_hz;
   }
 }
@@ -3289,11 +3292,14 @@ bool handle_nav_touch(int32_t x, int32_t y) {
       if (entry == nullptr) break;
       rtl_nav_open = false;
       rtl_nav_dropdown = SdrNavDropdown::None;
+      const uint32_t preset_hz = entry->mode == RtlBand::p25
+                                     ? p25_control_frequency_hz
+                                     : entry->preset_hz;
       const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
       if (state == RtlCaptureState::running && rtl_ui_band == entry->mode) {
-        request_hot_retune(entry->preset_hz);
+        request_hot_retune(preset_hz);
       } else {
-        queue_local_rtl_listen(entry->mode, entry->preset_hz);
+        queue_local_rtl_listen(entry->mode, preset_hz);
       }
       draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz, rtl_ui_volume);
       return true;
@@ -6319,7 +6325,18 @@ static void rtl_driver_app_task(void *) {
       rtl_audio_ring_overruns.store(0, std::memory_order_relaxed);
       rtl_audio_submit_failures.store(0, std::memory_order_relaxed);
       rtl_signal_dbfs.store(-90.0f, std::memory_order_relaxed);
-      if (band == RtlBand::p25) orcsdr::p25decoder::reset();
+      if (band == RtlBand::p25) {
+        orcsdr::p25decoder::reset();
+        p25_voice_session.fetch_add(1, std::memory_order_acq_rel);
+        p25_imbe_frames.store(0, std::memory_order_relaxed);
+        p25_imbe_errors.store(0, std::memory_order_relaxed);
+        p25_pcm_frames.store(0, std::memory_order_relaxed);
+        p25_audio_last_ms.store(0, std::memory_order_relaxed);
+        p25_voice_stack_hwm.store(0, std::memory_order_relaxed);
+        p25_imbe_max_us.store(0, std::memory_order_relaxed);
+        p25_imbe_synth_max_us.store(0, std::memory_order_relaxed);
+        p25_audio_queue_max_us.store(0, std::memory_order_relaxed);
+      }
       rtl_signal_dbfs_smooth = -80.0f;
       rtl_signal_meter_last_ms = 0;
       rtl_audio_left_dbfs.store(-90.0f, std::memory_order_relaxed);
@@ -6373,6 +6390,13 @@ static void rtl_driver_app_task(void *) {
         /* Stay on radio UI so power/home chrome cannot paint over controls. */
       } else {
         rtl_capture_state.store(RtlCaptureState::running, std::memory_order_release);
+        if (band == RtlBand::p25 &&
+            !p25_survey_active.load(std::memory_order_relaxed)) {
+          p25_entry_probe_tsbk_good = orcsdr::p25decoder::snapshot().tsbk_good;
+          p25_entry_probe_at_ms = millis() + 2500;
+          Serial.printf("RTL_P25_PROBE start control_hz=%lu dwell_ms=2500\n",
+                        static_cast<unsigned long>(p25_control_frequency_hz));
+        }
         set_rtl_sdr_status("RTL-SDR V4: continuous listening (driver)");
         allow_boot_speaker();
         uint32_t spectrum_last_ms = 0;
@@ -7161,49 +7185,55 @@ orcsdr::p25::Snapshot p25_dashboard_snapshot() {
   return snapshot;
 }
 
+void tune_p25_control(uint32_t frequency_hz) {
+  frequency_hz = rtl_clamp_frequency(RtlBand::p25, frequency_hz);
+  p25_follow_state.store(P25FollowState::control, std::memory_order_release);
+  p25_voice_session.fetch_add(1, std::memory_order_acq_rel);
+  p25_control_frequency_hz = frequency_hz;
+  p25_voice_frequency_hz = 0;
+  if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
+    request_hot_retune(frequency_hz);
+  else
+    queue_local_rtl_listen(RtlBand::p25, frequency_hz);
+}
+
+void start_p25_survey() {
+  std::fill(std::begin(p25_candidate_levels), std::end(p25_candidate_levels), -120.0f);
+  std::fill(std::begin(p25_candidate_tsbk_good), std::end(p25_candidate_tsbk_good), 0);
+  p25_candidate_index = 0;
+  p25_entry_probe_at_ms = 0;
+  p25_survey_sample_at_ms = millis() + 1500;
+  p25_survey_active.store(true, std::memory_order_relaxed);
+  tune_p25_control(kP25ControlChannelsHz[0]);
+  Serial.println("RTL_P25_SURVEY start candidates=4 dwell_ms=1500");
+}
+
 void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
   using orcsdr::p25::ActionKind;
-  auto tune = [](uint32_t frequency_hz) {
-    frequency_hz = rtl_clamp_frequency(RtlBand::p25, frequency_hz);
-    p25_follow_state.store(P25FollowState::control, std::memory_order_release);
-    p25_voice_session.fetch_add(1, std::memory_order_acq_rel);
-    p25_control_frequency_hz = frequency_hz;
-    p25_voice_frequency_hz = 0;
-    if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
-      request_hot_retune(frequency_hz);
-    else
-      queue_local_rtl_listen(RtlBand::p25, frequency_hz);
-  };
   switch (action.kind) {
     case ActionKind::tune_hz:
       p25_survey_active.store(false, std::memory_order_relaxed);
-      tune(action.value);
+      tune_p25_control(action.value);
       break;
     case ActionKind::previous_candidate:
       p25_survey_active.store(false, std::memory_order_relaxed);
       p25_candidate_index = static_cast<uint8_t>(
           (p25_candidate_index + std::size(kP25ControlChannelsHz) - 1) %
           std::size(kP25ControlChannelsHz));
-      tune(kP25ControlChannelsHz[p25_candidate_index]);
+      tune_p25_control(kP25ControlChannelsHz[p25_candidate_index]);
       break;
     case ActionKind::next_candidate:
       p25_survey_active.store(false, std::memory_order_relaxed);
       p25_candidate_index = static_cast<uint8_t>(
           (p25_candidate_index + 1) % std::size(kP25ControlChannelsHz));
-      tune(kP25ControlChannelsHz[p25_candidate_index]);
+      tune_p25_control(kP25ControlChannelsHz[p25_candidate_index]);
       break;
     case ActionKind::survey_toggle:
-      if (p25_survey_active.exchange(
-              !p25_survey_active.load(std::memory_order_relaxed),
-              std::memory_order_relaxed)) {
+      if (p25_survey_active.load(std::memory_order_relaxed)) {
+        p25_survey_active.store(false, std::memory_order_relaxed);
         Serial.println("RTL_P25_SURVEY stop");
       } else {
-        std::fill(std::begin(p25_candidate_levels), std::end(p25_candidate_levels), -120.0f);
-        std::fill(std::begin(p25_candidate_tsbk_good), std::end(p25_candidate_tsbk_good), 0);
-        p25_candidate_index = 0;
-        p25_survey_sample_at_ms = millis() + 1500;
-        tune(kP25ControlChannelsHz[0]);
-        Serial.println("RTL_P25_SURVEY start candidates=4 dwell_ms=1500");
+        start_p25_survey();
       }
       break;
     case ActionKind::hold_toggle:
@@ -7283,8 +7313,23 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
 }
 
 void service_p25_survey(uint32_t now) {
+  if (g_stream_band != RtlBand::p25) return;
+  if (p25_entry_probe_at_ms != 0 && now >= p25_entry_probe_at_ms) {
+    p25_entry_probe_at_ms = 0;
+    const auto decoded = orcsdr::p25decoder::snapshot();
+    if (decoded.tsbk_good <= p25_entry_probe_tsbk_good) {
+      Serial.println("RTL_P25_PROBE no_control fallback=survey");
+      start_p25_survey();
+    } else {
+      p25_control_persist_hz.store(p25_control_frequency_hz, std::memory_order_release);
+      Serial.printf("RTL_P25_PROBE control_hz=%lu tsbk_good=%lu\n",
+                    static_cast<unsigned long>(p25_control_frequency_hz),
+                    static_cast<unsigned long>(decoded.tsbk_good));
+    }
+    return;
+  }
   if (!p25_survey_active.load(std::memory_order_relaxed) ||
-      g_stream_band != RtlBand::p25 || now < p25_survey_sample_at_ms) return;
+      now < p25_survey_sample_at_ms) return;
   const float level = rtl_signal_dbfs.load(std::memory_order_relaxed);
   const auto decoded = orcsdr::p25decoder::snapshot();
   p25_candidate_levels[p25_candidate_index] = level;
@@ -7308,7 +7353,10 @@ void service_p25_survey(uint32_t now) {
             std::begin(p25_candidate_levels), std::end(p25_candidate_levels)) -
             std::begin(p25_candidate_levels));
   p25_survey_active.store(false, std::memory_order_relaxed);
-  request_hot_retune(kP25ControlChannelsHz[p25_candidate_index]);
+  p25_control_frequency_hz = kP25ControlChannelsHz[p25_candidate_index];
+  request_hot_retune(p25_control_frequency_hz);
+  if (p25_candidate_tsbk_good[p25_candidate_index] > 0)
+    p25_control_persist_hz.store(p25_control_frequency_hz, std::memory_order_release);
   Serial.printf("RTL_P25_SURVEY_DONE best_index=%u frequency_hz=%lu relative_dbfs=%.1f "
                 "decoded=%d tsbk_good=%lu\n",
                 static_cast<unsigned>(p25_candidate_index),
@@ -7876,6 +7924,19 @@ void load_state() {
     rtl_saved_fm_hz = kRtlFmDefaultHz;
     preferences.putUInt("sdr_fm_hz", rtl_saved_fm_hz);
   }
+  const uint32_t stored_p25_control =
+      preferences.getUInt("p25_ctrl_hz", kP25DefaultHz);
+  const auto stored_p25_candidate =
+      std::find(std::begin(kP25ControlChannelsHz), std::end(kP25ControlChannelsHz),
+                stored_p25_control);
+  if (stored_p25_candidate != std::end(kP25ControlChannelsHz)) {
+    p25_control_frequency_hz = stored_p25_control;
+    p25_candidate_index = static_cast<uint8_t>(
+        stored_p25_candidate - std::begin(kP25ControlChannelsHz));
+  }
+  Serial.printf("RTL_P25_LOAD control_hz=%lu candidate=%u\n",
+                static_cast<unsigned long>(p25_control_frequency_hz),
+                static_cast<unsigned>(p25_candidate_index));
   if (preferences.isKey("fm_presets") &&
       preferences.getBytesLength("fm_presets") == sizeof(fm_presets)) {
     preferences.getBytes("fm_presets", fm_presets, sizeof(fm_presets));
@@ -7908,8 +7969,9 @@ void load_state() {
       rtl_ui_band = stored_band;
       rtl_requested_band.store(stored_band, std::memory_order_release);
       if (stored_band == RtlBand::p25) {
-        rtl_ui_frequency_hz = kP25DefaultHz;
-        rtl_requested_frequency_hz.store(kP25DefaultHz, std::memory_order_release);
+        rtl_ui_frequency_hz = p25_control_frequency_hz;
+        rtl_requested_frequency_hz.store(p25_control_frequency_hz,
+                                         std::memory_order_release);
       }
       Serial.printf("RTL_BAND_RESTORE band=%s\n", rtl_band_name(stored_band));
     }
@@ -8002,6 +8064,11 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz) {
   if (!g_rtl_device_ready.load(std::memory_order_acquire) || g_rtl == nullptr) return;
 #endif
   frequency_hz = rtl_clamp_frequency(band, frequency_hz);
+  if (band == RtlBand::p25) {
+    p25_control_frequency_hz = frequency_hz;
+    p25_follow_state.store(P25FollowState::control, std::memory_order_release);
+    p25_voice_frequency_hz = 0;
+  }
   if (rtl_ui_band == RtlBand::lora && band != RtlBand::lora &&
       g_iq_rec_active.exchange(false, std::memory_order_acq_rel)) {
     g_iq_rec_export_pending.store(true, std::memory_order_release);
@@ -9734,6 +9801,14 @@ void loop() {
   service_boot_device_staging();
   service_power_monitor();
   if (boot_auto_start_allowed) poll_wifi();
+  const uint32_t p25_control_hz =
+      p25_control_persist_hz.exchange(0, std::memory_order_acq_rel);
+  if (p25_control_hz != 0 &&
+      preferences.getUInt("p25_ctrl_hz", 0) != p25_control_hz) {
+    preferences.putUInt("p25_ctrl_hz", p25_control_hz);
+    Serial.printf("RTL_P25_SAVE control_hz=%lu\n",
+                  static_cast<unsigned long>(p25_control_hz));
+  }
   if (adsb_settings_persist_pending.exchange(false, std::memory_order_acq_rel)) {
     preferences.putBool("adsb_loc_set", adsb_settings.location_configured);
     preferences.putInt("adsb_lat_e7", adsb_settings.latitude_e7);

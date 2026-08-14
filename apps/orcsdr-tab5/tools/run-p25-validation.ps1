@@ -102,13 +102,11 @@ try {
   if ($tuneLine -notmatch '^RTL_TUNE_OK') { throw "P25 tune failed: $tuneLine" }
   Write-Output $tuneLine
 
-  Start-Sleep -Seconds 2
-  $serial.WriteLine('PING')
-  $serial.WriteLine('RTL_P25_SCAN')
-  Write-Output 'P25_VALIDATION_SCAN started=true candidates=4'
+  Write-Output 'P25_VALIDATION_AUTO_RECOVERY waiting=true candidates=4'
 
   $samples = [System.Collections.Generic.List[string]]::new()
   $surveyDone = $null
+  $probeFallback = $false
   $lastPing = [DateTime]::UtcNow
   $deadline = [DateTime]::UtcNow.AddSeconds($SurveySeconds)
   while ([DateTime]::UtcNow -lt $deadline -and $null -eq $surveyDone) {
@@ -121,6 +119,9 @@ try {
       if ($line -match '^RTL_P25_SURVEY_SAMPLE ') {
         $samples.Add($line)
         Write-Output $line
+      } elseif ($line -match '^RTL_P25_PROBE no_control fallback=survey$') {
+        $probeFallback = $true
+        Write-Output $line
       } elseif ($line -match '^RTL_P25_SURVEY_DONE ') {
         $surveyDone = $line
         Write-Output $line
@@ -130,8 +131,8 @@ try {
     } catch [System.TimeoutException] {}
   }
 
-  if ($samples.Count -ne 4 -or $null -eq $surveyDone) {
-    throw "P25 survey incomplete: samples=$($samples.Count)"
+  if (-not $probeFallback -or $samples.Count -ne 4 -or $null -eq $surveyDone) {
+    throw "P25 automatic recovery incomplete: fallback=$probeFallback samples=$($samples.Count)"
   }
 
   $decoded = $surveyDone -match 'decoded=1'
