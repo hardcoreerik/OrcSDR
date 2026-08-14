@@ -11,6 +11,11 @@ namespace {
 constexpr char kDirectory[] = "/orcsdr/screenshots";
 constexpr size_t kRowsPerRead = 8;
 
+constexpr uint16_t from_swap565(uint16_t value) {
+  return static_cast<uint16_t>((value << 8) | (value >> 8));
+}
+static_assert(from_swap565(0xff05) == 0x05ff);
+
 void put_u16(uint8_t* out, uint16_t value) {
   out[0] = static_cast<uint8_t>(value);
   out[1] = static_cast<uint8_t>(value >> 8);
@@ -102,7 +107,7 @@ Result save_bmp(M5GFX& display, fs::FS& filesystem, const char* slug) {
     for (int row = rows - 1; ok && row >= 0; --row) {
       const uint16_t* source = pixels + static_cast<size_t>(row) * result.width;
       for (size_t x = 0; x < result.width; ++x) {
-        const uint16_t rgb565 = source[x];
+        const uint16_t rgb565 = from_swap565(source[x]);
         bgr[x * 3] = static_cast<uint8_t>((rgb565 & 0x1f) * 255 / 31);
         bgr[x * 3 + 1] = static_cast<uint8_t>(((rgb565 >> 5) & 0x3f) * 255 / 63);
         bgr[x * 3 + 2] = static_cast<uint8_t>(((rgb565 >> 11) & 0x1f) * 255 / 31);
