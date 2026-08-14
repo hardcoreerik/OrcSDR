@@ -41,6 +41,7 @@
 #include "adsb_decoder.hpp"
 #include "fm_dashboard.hpp"
 #include "p25_dashboard.hpp"
+#include "p25_decoder.hpp"
 #include "settings_app.hpp"
 #if !RTL_USE_LEGACY_USB
 #include "rtl_sdr_v4_esp.h"
@@ -1195,6 +1196,7 @@ std::atomic<bool> p25_encryption_skip{true};
 uint8_t p25_candidate_index = 0;
 float p25_candidate_levels[std::size(kP25ControlChannelsHz)] = {
     -120.0f, -120.0f, -120.0f, -120.0f};
+uint32_t p25_candidate_tsbk_good[std::size(kP25ControlChannelsHz)]{};
 uint32_t p25_survey_sample_at_ms = 0;
 uint64_t rtl_capture_bytes = 0;
 uint8_t rtl_capture_min = 0;
@@ -6080,10 +6082,11 @@ static void on_rtl_driver_event(rtl_sdr_v4_esp_event_t event, const void *payloa
         }
       }
       update_signal_level_from_iq(iq->data, n);
+      if (g_stream_band == RtlBand::p25) orcsdr::p25decoder::process_cu8(iq->data, n);
       /* ADS-B needs the full callback budget; it has no spectrum or audio path. */
       if (g_stream_band != RtlBand::adsb) spectrum_offer_iq_snapshot(iq->data, n);
       if (g_stream_band == RtlBand::lora) lora_iq_offer(iq->data, n);
-      if (g_stream_band != RtlBand::lora &&
+      if (g_stream_band != RtlBand::lora && g_stream_band != RtlBand::p25 &&
           (rtl_audio_enabled.load(std::memory_order_relaxed) ||
            g_audio_rec_active.load(std::memory_order_relaxed)) &&
           !rtl_audio_test_tone.load(std::memory_order_relaxed)) {
@@ -6117,6 +6120,7 @@ static void on_rtl_driver_event(rtl_sdr_v4_esp_event_t event, const void *payloa
     case RTL_SDR_V4_ESP_EVT_STOPPED:
       break;
     case RTL_SDR_V4_ESP_EVT_RETUNED: {
+      if (g_stream_band == RtlBand::p25) orcsdr::p25decoder::reset();
       const auto *hz = static_cast<const uint32_t *>(payload);
       if (hz != nullptr) {
         rtl_ui_frequency_hz = *hz;
@@ -6167,6 +6171,7 @@ static void rtl_driver_app_task(void *) {
       rtl_audio_ring_overruns.store(0, std::memory_order_relaxed);
       rtl_audio_submit_failures.store(0, std::memory_order_relaxed);
       rtl_signal_dbfs.store(-90.0f, std::memory_order_relaxed);
+      if (band == RtlBand::p25) orcsdr::p25decoder::reset();
       rtl_signal_dbfs_smooth = -80.0f;
       rtl_signal_meter_last_ms = 0;
       rtl_audio_left_dbfs.store(-90.0f, std::memory_order_relaxed);
@@ -6965,6 +6970,7 @@ orcsdr::p25::Snapshot p25_dashboard_snapshot() {
   snapshot.candidate_count = static_cast<uint8_t>(std::size(kP25ControlChannelsHz));
   std::copy(std::begin(p25_candidate_levels), std::end(p25_candidate_levels),
             std::begin(snapshot.candidate_levels));
+  snapshot.decoded = orcsdr::p25decoder::snapshot();
   snapshot.battery_percent = M5.Power.getBatteryLevel();
 #if !RTL_USE_LEGACY_USB
   rtl_sdr_v4_esp_metrics_t metrics{};
@@ -7026,6 +7032,7 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
         Serial.println("RTL_P25_SURVEY stop");
       } else {
         std::fill(std::begin(p25_candidate_levels), std::end(p25_candidate_levels), -120.0f);
+        std::fill(std::begin(p25_candidate_tsbk_good), std::end(p25_candidate_tsbk_good), 0);
         p25_candidate_index = 0;
         p25_survey_sample_at_ms = millis() + 1500;
         tune(kP25ControlChannelsHz[0]);
@@ -7072,25 +7079,36 @@ void service_p25_survey(uint32_t now) {
   if (!p25_survey_active.load(std::memory_order_relaxed) ||
       g_stream_band != RtlBand::p25 || now < p25_survey_sample_at_ms) return;
   const float level = rtl_signal_dbfs.load(std::memory_order_relaxed);
+  const auto decoded = orcsdr::p25decoder::snapshot();
   p25_candidate_levels[p25_candidate_index] = level;
-  Serial.printf("RTL_P25_SURVEY_SAMPLE index=%u frequency_hz=%lu relative_dbfs=%.1f\n",
+  p25_candidate_tsbk_good[p25_candidate_index] = decoded.tsbk_good;
+  Serial.printf("RTL_P25_SURVEY_SAMPLE index=%u frequency_hz=%lu relative_dbfs=%.1f "
+                "frame_sync=%d tsbk_good=%lu\n",
                 static_cast<unsigned>(p25_candidate_index),
                 static_cast<unsigned long>(kP25ControlChannelsHz[p25_candidate_index]),
-                static_cast<double>(level));
+                static_cast<double>(level), decoded.frame_sync ? 1 : 0,
+                static_cast<unsigned long>(decoded.tsbk_good));
   if (++p25_candidate_index < std::size(kP25ControlChannelsHz)) {
     request_hot_retune(kP25ControlChannelsHz[p25_candidate_index]);
     p25_survey_sample_at_ms = now + 1500;
     return;
   }
-  p25_candidate_index = static_cast<uint8_t>(std::max_element(
-      std::begin(p25_candidate_levels), std::end(p25_candidate_levels)) -
-      std::begin(p25_candidate_levels));
+  const auto best_decoded = std::max_element(std::begin(p25_candidate_tsbk_good),
+                                             std::end(p25_candidate_tsbk_good));
+  p25_candidate_index = *best_decoded > 0
+      ? static_cast<uint8_t>(best_decoded - std::begin(p25_candidate_tsbk_good))
+      : static_cast<uint8_t>(std::max_element(
+            std::begin(p25_candidate_levels), std::end(p25_candidate_levels)) -
+            std::begin(p25_candidate_levels));
   p25_survey_active.store(false, std::memory_order_relaxed);
   request_hot_retune(kP25ControlChannelsHz[p25_candidate_index]);
-  Serial.printf("RTL_P25_SURVEY_DONE best_index=%u frequency_hz=%lu relative_dbfs=%.1f decoded=false\n",
+  Serial.printf("RTL_P25_SURVEY_DONE best_index=%u frequency_hz=%lu relative_dbfs=%.1f "
+                "decoded=%d tsbk_good=%lu\n",
                 static_cast<unsigned>(p25_candidate_index),
                 static_cast<unsigned long>(kP25ControlChannelsHz[p25_candidate_index]),
-                static_cast<double>(p25_candidate_levels[p25_candidate_index]));
+                static_cast<double>(p25_candidate_levels[p25_candidate_index]),
+                p25_candidate_tsbk_good[p25_candidate_index] > 0 ? 1 : 0,
+                static_cast<unsigned long>(p25_candidate_tsbk_good[p25_candidate_index]));
   if (orcsdr::p25::active()) orcsdr::p25::update(p25_dashboard_snapshot());
 }
 
@@ -8752,14 +8770,26 @@ void process_command(char* command) {
     return;
   }
   if (strcmp(command, "RTL_P25_STATUS") == 0) {
+    const auto decoded = orcsdr::p25decoder::snapshot();
     Serial.printf(
-        "RTL_P25_STATUS profile=SW7_LRIG site=Lane_County_Simulcast wacn=BEE00 "
-        "sysid=1F3 nac=1F0 frequency_hz=%lu survey=%d candidate=%u "
-        "relative_dbfs=%.1f decoded=false frame_sync=0 grants=0 voice=false\n",
+        "RTL_P25_STATUS profile=SW7_LRIG site=Lane_County_Simulcast "
+        "frequency_hz=%lu survey=%d candidate=%u relative_dbfs=%.1f "
+        "frame_sync=%d identity=%d nac=%03X wacn=%05lX sysid=%03X rfss=%u site=%u "
+        "sync_words=%lu nid_good=%lu nid_failed=%lu tsbk_good=%lu tsbk_failed=%lu "
+        "ber_percent=%.2f grants=%d voice=false\n",
         static_cast<unsigned long>(rtl_ui_frequency_hz),
         p25_survey_active.load(std::memory_order_relaxed) ? 1 : 0,
         static_cast<unsigned>(p25_candidate_index),
-        static_cast<double>(rtl_signal_dbfs.load(std::memory_order_relaxed)));
+        static_cast<double>(rtl_signal_dbfs.load(std::memory_order_relaxed)),
+        decoded.frame_sync ? 1 : 0, decoded.identity_valid ? 1 : 0,
+        decoded.nac, static_cast<unsigned long>(decoded.wacn), decoded.system_id,
+        decoded.rfss, decoded.site, static_cast<unsigned long>(decoded.sync_words),
+        static_cast<unsigned long>(decoded.nid_good),
+        static_cast<unsigned long>(decoded.nid_failed),
+        static_cast<unsigned long>(decoded.tsbk_good),
+        static_cast<unsigned long>(decoded.tsbk_failed),
+        static_cast<double>(decoded.estimated_ber_percent),
+        decoded.current_grant.valid ? 1 : 0);
     for (size_t i = 0; i < std::size(kP25ControlChannelsHz); ++i)
       Serial.printf("RTL_P25_CANDIDATE index=%u frequency_hz=%lu relative_dbfs=%.1f\n",
                     static_cast<unsigned>(i),
@@ -9313,6 +9343,11 @@ void setup() {
     abort();
   }
   Serial.println("RTL_P25_DASHBOARD_SELF_CHECK_OK");
+  if (!orcsdr::p25decoder::self_check()) {
+    Serial.println("RTL_P25_DECODER_SELF_CHECK_FAIL");
+    abort();
+  }
+  Serial.println("RTL_P25_DECODER_SELF_CHECK_OK");
   if (!orcsdr::settings::self_check()) {
     Serial.println("ORC_SETTINGS_SELF_CHECK_FAIL");
     abort();

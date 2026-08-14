@@ -6,6 +6,7 @@ idf_component_register(
         "../ui/adsb_decoder.cpp"
         "../ui/fm_dashboard.cpp"
         "../ui/p25_dashboard.cpp"
+        "../ui/p25_decoder.cpp"
         "../ui/settings_app.cpp"
     INCLUDE_DIRS "." "../ui"
     REQUIRES

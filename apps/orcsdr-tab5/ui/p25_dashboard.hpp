@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "p25_decoder.hpp"
+
 namespace orcsdr::p25 {
 
 enum class View : uint8_t { monitor, spectrum, talkgroups, program, rf_health, count };
@@ -29,6 +31,7 @@ struct Snapshot {
   uint8_t candidate_index = 0;
   uint8_t candidate_count = 0;
   float candidate_levels[4] = {-120.0f, -120.0f, -120.0f, -120.0f};
+  p25decoder::Snapshot decoded{};
   char last_error[32]{};
 };
 

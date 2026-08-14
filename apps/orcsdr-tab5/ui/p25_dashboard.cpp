@@ -174,6 +174,16 @@ void format_mhz(char* output, size_t size, uint32_t frequency_hz) {
   snprintf(output, size, "%.4f", frequency_hz / 1000000.0);
 }
 
+const char* talkgroup_alias(uint16_t id) {
+  for (const auto& talkgroup : kTalkgroups)
+    if (talkgroup.id == id) return talkgroup.alias;
+  return "Unknown talkgroup";
+}
+
+bool grant_live(const p25decoder::Grant& grant) {
+  return grant.valid && millis() - grant.seen_ms < 5000;
+}
+
 void draw_meter(int x, int y, int w, float dbfs, int segments = 18) {
   const float normalized = std::clamp((dbfs + 90.0f) / 70.0f, 0.0f, 1.0f);
   const int lit = static_cast<int>(normalized * segments);
@@ -209,19 +219,48 @@ void draw_monitor_dynamic() {
   text("MHz", 340, 230, TFT_WHITE, 2, middle_left);
   M5.Display.fillRect(476, 198, 760, 55, kPanel);
   text("SW7 / LRIG   Lane County Simulcast", 478, 215, TFT_WHITE, 3, middle_left);
-  text("PROFILE: WACN BEE00  SYSID 1F3  NAC 1F0", 478, 246, kMuted, 1, middle_left);
+  if (g_snapshot.decoded.identity_valid) {
+    snprintf(value, sizeof(value), "DECODED: WACN %05lX  SYSID %03X  NAC %03X",
+             static_cast<unsigned long>(g_snapshot.decoded.wacn),
+             g_snapshot.decoded.system_id, g_snapshot.decoded.nac);
+    text(value, 478, 246, kGreen, 1, middle_left);
+  } else {
+    text("PROFILE: WACN BEE00  SYSID 1F3  NAC 1F0", 478, 246, kMuted, 1, middle_left);
+  }
 
   M5.Display.fillRect(42, 330, 764, 135, kPanel);
-  text("WAITING FOR P25 CONTROL-CHANNEL DECODER", 424, 362, kYellow, 2);
-  text("TGID  —     ALIAS  —     SOURCE  —", 58, 410, TFT_WHITE, 2, middle_left);
-  text("VOICE FREQUENCY  —     MODE  —", 58, 447, kMuted, 2, middle_left);
+  const auto& grant = g_snapshot.decoded.current_grant;
+  if (grant.valid) {
+    text(grant_live(grant) ? "LIVE CONTROL-CHANNEL GRANT" : "LAST GRANT — STALE",
+         424, 362, grant_live(grant) ? kGreen : kYellow, 2);
+    snprintf(value, sizeof(value), "TGID  %u     %s     SOURCE  %lu", grant.talkgroup,
+             talkgroup_alias(grant.talkgroup), static_cast<unsigned long>(grant.source_id));
+    text(value, 58, 410, TFT_WHITE, 2, middle_left);
+    if (grant.frequency_hz)
+      snprintf(value, sizeof(value), "VOICE  %.4f MHz     MODE  %s%s",
+               grant.frequency_hz / 1000000.0, grant.tdma ? "PHASE II" : "PHASE I",
+               grant.encrypted ? "  ENCRYPTED" : "  CLEAR");
+    else
+      snprintf(value, sizeof(value), "VOICE  AWAITING BAND PLAN     MODE  %s%s",
+               grant.tdma ? "PHASE II" : "PHASE I",
+               grant.encrypted ? "  ENCRYPTED" : "  CLEAR");
+    text(value, 58, 447, grant.encrypted ? kRed : kGreen, 2, middle_left);
+  } else {
+    text(g_snapshot.decoded.frame_sync ? "P25 CONTROL CHANNEL LOCKED" :
+         "SEARCHING FOR P25 CONTROL CHANNEL", 424, 362,
+         g_snapshot.decoded.frame_sync ? kGreen : kYellow, 2);
+    text("TGID  —     ALIAS  —     SOURCE  —", 58, 410, TFT_WHITE, 2, middle_left);
+    text("VOICE FREQUENCY  —     MODE  —", 58, 447, kMuted, 2, middle_left);
+  }
 
   M5.Display.fillRect(856, 330, 382, 135, kPanel);
   draw_meter(872, 350, 345, g_snapshot.relative_dbfs, 16);
   snprintf(value, sizeof(value), "RELATIVE  %.1f dBFS", static_cast<double>(g_snapshot.relative_dbfs));
   text(value, 872, 404, TFT_WHITE, 2, middle_left);
-  text(g_snapshot.survey_active ? "SURVEYING KNOWN CHANNELS" : "RF CANDIDATE — NOT DECODED",
-       872, 444, g_snapshot.survey_active ? kYellow : kMuted, 1, middle_left);
+  text(g_snapshot.survey_active ? "SURVEYING KNOWN CHANNELS" :
+       g_snapshot.decoded.frame_sync ? "P25 FRAME SYNC" : "NO P25 FRAME SYNC",
+       872, 444, g_snapshot.survey_active ? kYellow :
+       g_snapshot.decoded.frame_sync ? kGreen : kMuted, 1, middle_left);
 }
 
 void draw_spectrum_static() {
@@ -278,18 +317,26 @@ void draw_talkgroups_static() {
     char priority[8];
     snprintf(priority, sizeof(priority), "P%u", kTalkgroups[row].priority);
     text(priority, 850, y + 14, kCyan, 2, middle_left);
-    text(kTalkgroups[row].encrypted ? "SKIP" : "SCAN", 1050, y + 14,
-         kTalkgroups[row].encrypted ? kMuted : kGreen, 2, middle_left);
   }
-  text("PROFILE DATA — LIVE TG ACTIVITY REQUIRES DECODER", 640, 602, kYellow, 1);
+  text("LIVE ACTIVITY FROM DECODED CONTROL-CHANNEL GRANTS", 640, 602, kMuted, 1);
+}
+
+void draw_talkgroups_dynamic() {
+  for (int row = 0; row < 8; ++row) {
+    bool active = false;
+    for (const auto& grant : g_snapshot.decoded.recent_grants)
+      active |= grant_live(grant) && grant.talkgroup == kTalkgroups[row].id;
+    const int y = 280 + row * 37;
+    M5.Display.fillRect(1038, y, 190, 28, kBg);
+    text(kTalkgroups[row].encrypted ? "SKIP" : active ? "ACTIVE" : "SCAN",
+         1050, y + 14, kTalkgroups[row].encrypted ? kMuted : active ? kYellow : kGreen,
+         2, middle_left);
+  }
 }
 
 void draw_program_static() {
   card(24, 148, 600, 174);
   label("SYSTEM / SITE", 44, 164);
-  text("SW7 / LRIG", 44, 207, TFT_WHITE, 3, middle_left);
-  text("WACN BEE00   SYSID 1F3   NAC 1F0", 44, 250, kCyan, 2, middle_left);
-  text("RFSS 1   SITE 1   Lane County Simulcast", 44, 287, TFT_WHITE, 2, middle_left);
   card(638, 148, 618, 174);
   label("CONTROL CHANNELS", 658, 164);
   for (size_t i = 0; i < std::size(kControlChannels); ++i) {
@@ -312,6 +359,24 @@ void draw_program_static() {
   button(902, 468, 330, 50, "PHASE I  •  12.5 kHz", kGreen, true);
   text("Single tuner: follow voice traffic, then return to the control channel.",
        640, 574, kMuted, 1);
+}
+
+void draw_program_dynamic() {
+  char value[96];
+  M5.Display.fillRect(42, 198, 560, 108, kPanel);
+  text("SW7 / LRIG", 44, 207, TFT_WHITE, 3, middle_left);
+  if (g_snapshot.decoded.identity_valid) {
+    snprintf(value, sizeof(value), "WACN %05lX   SYSID %03X   NAC %03X",
+             static_cast<unsigned long>(g_snapshot.decoded.wacn),
+             g_snapshot.decoded.system_id, g_snapshot.decoded.nac);
+    text(value, 44, 250, kGreen, 2, middle_left);
+    snprintf(value, sizeof(value), "RFSS %u   SITE %u   Lane County Simulcast",
+             g_snapshot.decoded.rfss, g_snapshot.decoded.site);
+    text(value, 44, 287, TFT_WHITE, 2, middle_left);
+  } else {
+    text("PROFILE  BEE00 / 1F3 / 1F0 — AWAITING DECODE", 44, 250, kMuted, 2, middle_left);
+    text("Lane County Simulcast", 44, 287, TFT_WHITE, 2, middle_left);
+  }
 }
 
 void health_card(int x, int y, int w, int h, const char* title, const char* value,
@@ -344,8 +409,10 @@ void draw_health_dynamic() {
   snprintf(value, sizeof(value), "%.4f MHz", g_snapshot.frequency_hz / 1000000.0);
   text(value, 219, 219, TFT_WHITE, 3);
   M5.Display.fillRect(446, 194, 354, 50, kPanel);
-  text(g_snapshot.survey_active ? "SURVEYING" : "RF ONLY", 623, 219,
-       g_snapshot.survey_active ? kYellow : kGreen, 3);
+  text(g_snapshot.survey_active ? "SURVEYING" :
+       g_snapshot.decoded.frame_sync ? "P25 LOCK" : "SEARCHING", 623, 219,
+       g_snapshot.survey_active ? kYellow :
+       g_snapshot.decoded.frame_sync ? kGreen : kYellow, 3);
   M5.Display.fillRect(850, 194, 388, 50, kPanel);
   text("SW7 / LRIG", 1044, 219, TFT_WHITE, 3);
 
@@ -361,8 +428,17 @@ void draw_health_dynamic() {
   health_card(948, 274, 294, 112, "RELATIVE LEVEL", value, g_snapshot.relative_dbfs > -75.0f);
   snprintf(value, sizeof(value), "%lu%%", static_cast<unsigned long>(g_snapshot.dsp_percent));
   health_card(24, 400, 294, 112, "DSP MAX TIME", value, g_snapshot.dsp_percent < 80);
-  health_card(332, 400, 294, 112, "P25 FRAME SYNC", "—", false, false);
-  health_card(640, 400, 294, 112, "DEMODULATOR BER", "—", false, false);
+  snprintf(value, sizeof(value), "%lu / %lu",
+           static_cast<unsigned long>(g_snapshot.decoded.tsbk_good),
+           static_cast<unsigned long>(g_snapshot.decoded.tsbk_failed));
+  health_card(332, 400, 294, 112, "TSBK GOOD / BAD", value,
+              g_snapshot.decoded.tsbk_good > 0 && g_snapshot.decoded.tsbk_failed == 0,
+              g_snapshot.decoded.nid_good > 0);
+  snprintf(value, sizeof(value), "%.2f%%",
+           static_cast<double>(g_snapshot.decoded.estimated_ber_percent));
+  health_card(640, 400, 294, 112, "ESTIMATED BER", value,
+              g_snapshot.decoded.estimated_ber_percent < 2.0f,
+              g_snapshot.decoded.nid_good > 0);
   health_card(948, 400, 294, 112, "DRIVER STATE",
               g_snapshot.running ? "RUNNING" : g_snapshot.driver_ready ? "READY" : "OFFLINE",
               g_snapshot.running || g_snapshot.driver_ready);
@@ -389,6 +465,8 @@ void draw_dynamic() {
   switch (g_view) {
     case View::monitor: draw_monitor_dynamic(); break;
     case View::spectrum: draw_spectrum_dynamic(); break;
+    case View::talkgroups: draw_talkgroups_dynamic(); break;
+    case View::program: draw_program_dynamic(); break;
     case View::rf_health: draw_health_dynamic(); break;
     default: break;
   }
@@ -435,6 +513,11 @@ void update(const Snapshot& snapshot) {
       snapshot.candidate_index != g_snapshot.candidate_index ||
       memcmp(snapshot.candidate_levels, g_snapshot.candidate_levels,
              sizeof(snapshot.candidate_levels)) != 0;
+  const bool decoded_changed =
+      snapshot.decoded.tsbk_good != g_snapshot.decoded.tsbk_good ||
+      snapshot.decoded.tsbk_failed != g_snapshot.decoded.tsbk_failed ||
+      snapshot.decoded.identity_valid != g_snapshot.decoded.identity_valid ||
+      snapshot.decoded.current_grant.seen_ms != g_snapshot.decoded.current_grant.seen_ms;
   g_snapshot = snapshot;
   const uint32_t now = millis();
   if (now - g_last_dynamic_ms < 200) return;
@@ -443,7 +526,8 @@ void update(const Snapshot& snapshot) {
   if (controls_changed && (g_view == View::monitor || g_view == View::program)) {
     draw_view_static();
   }
-  draw_dynamic();
+  if ((g_view != View::talkgroups && g_view != View::program) || decoded_changed ||
+      controls_changed) draw_dynamic();
 }
 
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, float floor) {
