@@ -8302,6 +8302,18 @@ void poll_sdr_touch_from_stream() {
     was_pressed = pressed;
     return;
   }
+  if (rtl_ui_band == RtlBand::p25 && orcsdr::p25::active()) {
+    static uint32_t p25_last_poll_ms = 0;
+    const uint32_t now = millis();
+    if (now - p25_last_poll_ms < 33) return;
+    p25_last_poll_ms = now;
+    M5.update();
+    const auto touch = M5.Touch.getDetail(0);
+    const bool pressed = touch.isPressed() || touch.wasPressed();
+    if (pressed && !was_pressed) handle_sdr_touch(touch.x, touch.y);
+    was_pressed = pressed;
+    return;
+  }
   static uint32_t last_touch_poll_ms = 0;
   static bool flick_thresh_set = false;
   static bool scope_dragging = false;
