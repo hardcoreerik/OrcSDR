@@ -4,13 +4,17 @@ idf_component_register(
         "../ui/orcsdr_splash.cpp"
         "../ui/adsb_dashboard.cpp"
         "../ui/adsb_decoder.cpp"
+        "../ui/dashboard_audio_control.cpp"
         "../ui/fm_dashboard.cpp"
+        "../ui/p25_dashboard.cpp"
+        "../ui/p25_decoder.cpp"
         "../ui/settings_app.cpp"
     INCLUDE_DIRS "." "../ui"
     REQUIRES
         arduino-esp32
         m5unified
         m5gfx
+        mbelib
         nvs_flash
         rtl_sdr_v4_esp
         esp_driver_usb_serial_jtag
