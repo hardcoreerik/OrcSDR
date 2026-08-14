@@ -59,7 +59,7 @@ Result save_bmp(M5GFX& display, fs::FS& filesystem, const char* slug) {
   char path[112];
   snprintf(path, sizeof(path), "%s/%s.bmp", kDirectory, slug);
   filesystem.remove(path);
-  File file = filesystem.open(path, FILE_WRITE);
+  File file = filesystem.open(path, FILE_WRITE, true);
   if (!file) {
     result.error = "open_failed";
     return result;
