@@ -52,9 +52,11 @@ class Tab5:
         import serial
         # USB Serial/JTAG ignores UART baud divisors; retain the project's
         # hardware-verified high-throughput transfer setting.
-        self.serial = serial.Serial(port, 921600, timeout=0.25, write_timeout=5)
+        self.serial = serial.Serial(None, 921600, timeout=0.25, write_timeout=5)
         self.serial.dtr = False
         self.serial.rts = False
+        self.serial.port = port
+        self.serial.open()
         self.key_path = key_path
         # Opening Tab5's native USB Serial/JTAG port can reset the P4. Probe
         # the command loop instead of racing the measured staged boot.
