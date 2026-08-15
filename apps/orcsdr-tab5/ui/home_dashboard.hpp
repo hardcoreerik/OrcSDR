@@ -46,6 +46,7 @@ enum class ActionKind : uint8_t {
   sound_toggle,
   volume_down,
   volume_up,
+  open_device_settings,
   waterfall_contrast_down,
   waterfall_contrast_up,
 };
@@ -58,6 +59,7 @@ struct Action {
 
 void enter(const Snapshot& snapshot);
 void leave();
+void draw();
 void update(const Snapshot& snapshot);
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor, bool audio_stressed = false);

@@ -24,6 +24,9 @@ constexpr int kRowH = 52, kRowGap = 8, kRowPitch = kRowH + kRowGap;
 constexpr int kVisibleRows = 6;
 constexpr int kAllY = 590;
 constexpr int kTapDragThreshold = 10;
+// Global device-settings affordance: reserve this rectangle in every Home
+// surface rather than letting status content grow into it.
+constexpr int kSettingsX = 1211, kSettingsY = 8, kSettingsW = 58, kSettingsH = 58;
 
 extern const uint8_t orc_badge_start[] asm("_binary_orc_badge_104_png_start");
 extern const uint8_t orc_badge_end[] asm("_binary_orc_badge_104_png_end");
@@ -131,27 +134,40 @@ void draw_menu_icon(dashboards::Id id, int x, int y, uint16_t color) {
 }
 
 void draw_header_status() {
-  M5.Display.fillRect(720, 20, 526, 72, TFT_BLACK);
-  panel(720, 20, 526, 72, kCyan, 9);
-  draw_wifi_icon(750, 55, current.wifi_connected ? kCyan : kDim);
-  text("Wi-Fi", 780, 42, TFT_WHITE, 2);
+  M5.Display.fillRect(720, 20, 480, 72, TFT_BLACK);
+  panel(720, 20, 480, 72, kCyan, 9);
+  draw_wifi_icon(746, 55, current.wifi_connected ? kCyan : kDim);
+  text("Wi-Fi", 774, 42, TFT_WHITE, 2);
   text(current.wifi_connected && current.wifi_ip[0] ? current.wifi_ip : "OFFLINE",
-       780, 66, current.wifi_connected ? kCyan : TFT_ORANGE, 1);
-  M5.Display.drawFastVLine(858, 30, 52, kDim);
-  draw_usb_icon(885, 54, current.usb_connected ? kCyan : kDim);
-  text("USB", 907, 42, TFT_WHITE, 2);
-  text(current.usb_connected ? "CONNECTED" : "DISCONNECTED", 907, 66,
+       774, 66, current.wifi_connected ? kCyan : TFT_ORANGE, 1);
+  M5.Display.drawFastVLine(834, 30, 52, kDim);
+  draw_usb_icon(855, 54, current.usb_connected ? kCyan : kDim);
+  text("USB", 878, 42, TFT_WHITE, 2);
+  text(current.usb_connected ? "CONNECTED" : "DISCONNECTED", 878, 66,
        current.usb_connected ? kCyan : TFT_ORANGE, 1);
-  M5.Display.drawFastVLine(1012, 30, 52, kDim);
-  draw_battery(1034, 39);
+  M5.Display.drawFastVLine(958, 30, 52, kDim);
+  draw_battery(974, 39);
   char value[12];
   snprintf(value, sizeof(value), "%ld%%", static_cast<long>(current.battery_percent));
-  text(current.battery_percent >= 0 ? value : "--", 1102, 54, TFT_WHITE, 2);
-  M5.Display.drawFastVLine(1134, 30, 52, kDim);
-  text(current.clock[0] ? current.clock : "--:--", 1228, 42, TFT_WHITE, 2,
+  text(current.battery_percent >= 0 ? value : "--", 1042, 54, TFT_WHITE, 2);
+  M5.Display.drawFastVLine(1072, 30, 52, kDim);
+  text(current.clock[0] ? current.clock : "--:--", 1184, 42, TFT_WHITE, 2,
        middle_right);
-  text(current.date[0] ? current.date : "UPTIME", 1228, 68, kCyan, 1,
+  text(current.date[0] ? current.date : "UPTIME", 1184, 68, kCyan, 1,
        middle_right);
+}
+
+void draw_device_settings_gear() {
+  constexpr int cx = kSettingsX + kSettingsW / 2;
+  constexpr int cy = kSettingsY + kSettingsH / 2;
+  M5.Display.fillRoundRect(kSettingsX, kSettingsY, kSettingsW, kSettingsH, 8, 0x2104);
+  M5.Display.drawRoundRect(kSettingsX, kSettingsY, kSettingsW, kSettingsH, 8, TFT_LIGHTGREY);
+  M5.Display.drawCircle(cx, cy, 13, kCyan);
+  M5.Display.drawCircle(cx, cy, 5, kCyan);
+  M5.Display.drawLine(cx - 21, cy, cx - 13, cy, kCyan);
+  M5.Display.drawLine(cx + 13, cy, cx + 21, cy, kCyan);
+  M5.Display.drawLine(cx, cy - 21, cx, cy - 13, kCyan);
+  M5.Display.drawLine(cx, cy + 13, cx, cy + 21, kCyan);
 }
 
 void draw_header() {
@@ -163,6 +179,7 @@ void draw_header() {
   M5.Display.drawFastVLine(306, 22, 76, kCyan);
   text("HOME", 338, 59, TFT_WHITE, 5);
   draw_header_status();
+  draw_device_settings_gear();
 }
 
 void draw_recent_list() {
@@ -383,8 +400,9 @@ void draw_browser() {
   M5.Display.fillScreen(TFT_BLACK);
   M5.Display.drawRoundRect(10, 10, 1260, 700, 14, kCyan);
   text("ALL DASHBOARDS", 38, 48, TFT_WHITE, 4);
-  panel(1120, 20, 120, 54, kCyan, 8);
-  text("HOME", 1180, 47, kCyan, 2, middle_center);
+  panel(1072, 20, 120, 54, kCyan, 8);
+  text("HOME", 1132, 47, kCyan, 2, middle_center);
+  draw_device_settings_gear();
   for (size_t i = 0; i < dashboards::count(); ++i) {
     const auto* entry = dashboards::descriptor(i);
     if (!entry) continue;
@@ -407,8 +425,10 @@ void draw_all() {
 }
 
 Action tap_action(int32_t x, int32_t y) {
+  if (inside(x, y, kSettingsX, kSettingsY, kSettingsW, kSettingsH))
+    return {ActionKind::open_device_settings};
   if (browser) {
-    if (inside(x, y, 1120, 20, 120, 54)) return {ActionKind::close_browser};
+    if (inside(x, y, 1072, 20, 120, 54)) return {ActionKind::close_browser};
     for (size_t i = 0; i < dashboards::count(); ++i) {
       const int col = static_cast<int>(i % 3), row = static_cast<int>(i / 3);
       if (inside(x, y, 30 + col * 410, 104 + row * 140, 390, 118)) {
@@ -461,6 +481,12 @@ void enter(const Snapshot& snapshot) {
 }
 
 void leave() { shown = browser = false; gesture = {}; }
+
+void draw() {
+  if (!shown) return;
+  if (browser) draw_browser();
+  else draw_all();
+}
 
 void update(const Snapshot& snapshot) {
   if (!shown || browser || snapshot.revision == current.revision) return;
@@ -603,6 +629,8 @@ bool self_check() {
   return dashboards::self_check() && kVisibleRows == 6 && kTapDragThreshold == 10 &&
          dashboards::count() > static_cast<size_t>(kVisibleRows) &&
          waterfall_range_db(1) == 48 && waterfall_range_db(7) == 12 &&
+         tap_action(kSettingsX + 1, kSettingsY + 1).kind ==
+             ActionKind::open_device_settings &&
          std::abs(home_spectrum_floor(levels, std::size(levels), 10.0f) - 62.0f) < 0.01f;
 }
 

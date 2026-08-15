@@ -1,0 +1,86 @@
+#include "screen_controller.hpp"
+
+#include <initializer_list>
+
+namespace orcsdr::screens {
+namespace {
+Status g_status{};
+bool g_transitioning = false;
+}
+
+void begin_transition(Id next, uint32_t now_ms, bool remember_return) {
+  if (next == Id::settings && remember_return && g_status.active != Id::settings &&
+      g_status.active != Id::none)
+    g_status.return_to = g_status.active;
+  g_status.active = next;
+  g_status.last_transition_ms = now_ms;
+  ++g_status.transitions;
+  g_transitioning = true;
+}
+
+void finish_transition() { g_transitioning = false; }
+
+Id close_settings(uint32_t now_ms) {
+  const Id target = g_status.return_to == Id::none ? Id::home : g_status.return_to;
+  begin_transition(target, now_ms, false);
+  return target;
+}
+
+bool owns(Id id) { return !g_transitioning && g_status.active == id; }
+
+bool is_active(Id id) { return g_status.active == id; }
+
+bool may_draw(Id id) {
+  if (g_transitioning || g_status.active != id) {
+    ++g_status.rejected_draws;
+    return false;
+  }
+  return true;
+}
+
+void note_visible_update(Id id) {
+  if (may_draw(id)) ++g_status.visible_updates;
+}
+
+const Status& status() { return g_status; }
+
+const char* name(Id id) {
+  switch (id) {
+    case Id::home: return "home";
+    case Id::fm: return "fm";
+    case Id::p25: return "p25";
+    case Id::adsb: return "adsb";
+    case Id::lora: return "lora";
+    case Id::radio: return "radio";
+    case Id::settings: return "settings";
+    case Id::documentation: return "documentation";
+    default: return "none";
+  }
+}
+
+bool self_check() {
+  const Status saved = g_status;
+  const bool saved_transitioning = g_transitioning;
+  g_status = {};
+  begin_transition(Id::home, 10, false);
+  const bool entering_blocks_draw = !may_draw(Id::home);
+  finish_transition();
+  const bool home_owns = owns(Id::home) && may_draw(Id::home);
+  bool settings_return = true;
+  uint32_t now = 20;
+  for (const Id screen : {Id::home, Id::fm, Id::p25, Id::adsb, Id::lora}) {
+    begin_transition(screen, now++, false);
+    finish_transition();
+    begin_transition(Id::settings, now++, true);
+    finish_transition();
+    settings_return = settings_return && close_settings(now++) == screen;
+    finish_transition();
+    settings_return = settings_return && owns(screen);
+  }
+  const bool restored = g_status.transitions == 16;
+  g_status = saved;
+  g_transitioning = saved_transitioning;
+  return entering_blocks_draw && home_owns && settings_return && restored;
+}
+
+}  // namespace orcsdr::screens

@@ -40,6 +40,5 @@ bool request_check(bool wifi_connected);
 bool request_install(uint8_t pack_index, bool wifi_connected);
 bool request_remove(uint8_t pack_index);
 State state();
-bool self_check();
 
 }  // namespace orcsdr::catalog

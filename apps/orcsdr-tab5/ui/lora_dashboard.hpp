@@ -103,6 +103,7 @@ struct Action {
 
 void enter(const Snapshot& snapshot);
 void leave();
+void draw();
 void update(const Snapshot& snapshot);
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, float floor);
 Action handle_touch(int32_t x, int32_t y);

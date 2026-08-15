@@ -7,6 +7,7 @@ idf_component_register(
         "../ui/catalog_sync.cpp"
         "../ui/dashboard_audio_control.cpp"
         "../ui/dashboard_registry.cpp"
+        "../ui/screen_controller.cpp"
         "../ui/fm_dashboard.cpp"
         "../ui/fm_config.cpp"
         "../ui/home_dashboard.cpp"

@@ -452,6 +452,11 @@ void leave() {
   g_active = false;
 }
 
+void draw() {
+  if (!g_active) return;
+  draw_static();
+}
+
 void update(const Snapshot& snapshot) {
   if (!g_active) return;
   g_snapshot = snapshot;
