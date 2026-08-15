@@ -35,6 +35,19 @@ The asset URL prefix is included before signing, so GitHub Release upload cannot
 alter the signed manifest. Do not publish a pack until its source-rights entry
 is complete.
 
+For NASR, NOAA, and FCC packs, normalize only reviewed columns into the common
+runtime format. For example:
+
+```powershell
+python .\tools\data_catalog\build_record_index.py `
+  --pack faa_aviation --input .\reviewed-atc.csv --out .\faa_aviation.idx `
+  --field airport_id --field frequency_mhz --field service --field location
+```
+
+The builder preserves source-row order, writes no hidden metadata, and does not
+download a source or decide whether it may be redistributed. The original ZIP
+remains the catalog archive; this record file is the device runtime subset.
+
 ## Supported first-release pack IDs
 
 | ID | Runtime data | Source archive | Refresh |
