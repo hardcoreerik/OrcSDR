@@ -69,6 +69,14 @@ No inactive dashboard may animate, repaint, poll touch, or modify display
 state. A future dashboard must register a screen ID and route entry, update,
 and touch through `ScreenController` before it writes display primitives.
 
+## Shared radio UI service
+
+`apps/orcsdr-tab5/ui/radio_ui_service.{hpp,cpp}` owns the shared generic
+spectrum grid, axis, filter-edge, and waterfall-color rendering primitives.
+`main.cpp` supplies a compact frequency/span/filter snapshot; the service has
+no RTL, USB, DSP, or touch ownership. This keeps the render slice reusable
+without moving live radio state out of its deterministic owner.
+
 The former generic **Browse** screen is retired as a user route. Until a band
 has a dedicated dashboard, tuning AM, WX, CB, airband, marine, satellite, or
 other general receiver ranges presents the shared Home workspace instead. The

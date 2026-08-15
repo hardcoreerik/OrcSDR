@@ -56,6 +56,7 @@ extern "C" {
 #include "p25_dashboard.hpp"
 #include "p25_config.hpp"
 #include "p25_decoder.hpp"
+#include "radio_ui_service.hpp"
 #include "settings_app.hpp"
 #include "ui_capture.hpp"
 #if !RTL_USE_LEGACY_USB
@@ -4407,31 +4408,6 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   orcsdr::screens::finish_transition();
 }
 
-uint16_t waterfall_color(float level) {
-  level = constrain(level, 0.0f, 1.0f);
-  uint8_t red = 0;
-  uint8_t green = 0;
-  uint8_t blue = 0;
-  if (level < 0.25f) {
-    blue = static_cast<uint8_t>(40 + level * 4 * 180);
-  } else if (level < 0.5f) {
-    const float ramp = (level - 0.25f) * 4;
-    green = static_cast<uint8_t>(ramp * 220);
-    blue = 220;
-  } else if (level < 0.75f) {
-    const float ramp = (level - 0.5f) * 4;
-    red = static_cast<uint8_t>(ramp * 255);
-    green = 220;
-    blue = static_cast<uint8_t>((1.0f - ramp) * 220);
-  } else {
-    const float ramp = (level - 0.75f) * 4;
-    red = 255;
-    green = static_cast<uint8_t>(220 + ramp * 35);
-    blue = static_cast<uint8_t>(ramp * 255);
-  }
-  return M5.Display.color565(red, green, blue);
-}
-
 void draw_documentation_spectrum() {
   const int width = spectrum_draw_width() - 2;
   uint8_t strength[kSpectrumWidth];
@@ -4459,7 +4435,7 @@ void draw_documentation_spectrum() {
     for (int x = 0; x < width; ++x) {
       const int source = constrain(x + shift, 0, width - 1);
       const int noise = ((x * 13 + row * 29) & 31) - 15;
-      rtl_waterfall_row[x] = waterfall_color(
+      rtl_waterfall_row[x] = orcsdr::radio_ui::waterfall_color(
           constrain((static_cast<int>(strength[source]) + noise) / 255.0f,
                     0.0f, 1.0f));
     }
@@ -4493,14 +4469,30 @@ int spectrum_draw_width() {
              : kSpectrumWidth;
 }
 
-void draw_spectrum_grid() {
-  const int width = spectrum_draw_width();
-  for (int line = 1; line < 4; ++line) {
-    const int y = kSpectrumY + line * kSpectrumHeight / 4;
-    M5.Display.drawFastHLine(kSpectrumX + 1, y, width - 2, 0x2104);
+orcsdr::radio_ui::ScopeGeometry generic_scope_geometry() {
+  return {kSpectrumX, kSpectrumY, spectrum_draw_width(), kSpectrumHeight};
+}
+
+orcsdr::radio_ui::ScopeState generic_scope_state() {
+  orcsdr::radio_ui::ScopeState state{};
+  state.frequency_hz = rtl_ui_frequency_hz;
+  state.span_hz = rtl_scope_span_hz.load(std::memory_order_relaxed);
+  state.filter_bandwidth_hz = rtl_filter_bandwidth_hz.load(std::memory_order_relaxed);
+  state.cb_channels = rtl_ui_band == RtlBand::cb;
+  if (state.cb_channels) {
+    const double center = rtl_ui_frequency_hz / 1000000.0;
+    const double half_span = static_cast<double>(state.span_hz) / 2000000.0;
+    for (int marker = 0; marker <= 4; ++marker) {
+      const double mark = center - half_span + marker * (half_span / 2.0);
+      state.cb_marker_channels[marker] = static_cast<uint8_t>(
+          cb_channel_index(static_cast<uint32_t>(mark * 1000000.0)));
+    }
   }
-  M5.Display.drawFastVLine(kSpectrumX + width / 2, kSpectrumY + 1,
-                           kSpectrumHeight - 2, TFT_GREEN);
+  return state;
+}
+
+void draw_spectrum_grid() {
+  orcsdr::radio_ui::draw_grid(generic_scope_geometry());
 }
 
 void redraw_spectrum_panel() {
@@ -4514,47 +4506,12 @@ void redraw_spectrum_panel() {
 
 void draw_spectrum_axis() {
   if (!orcsdr::screens::is_active(orcsdr::screens::Id::radio)) return;
-  const uint32_t span_hz = rtl_scope_span_hz.load(std::memory_order_relaxed);
-  const int width = spectrum_draw_width();
-  const double center = rtl_ui_frequency_hz / 1000000.0;
-  const double half_span = static_cast<double>(span_hz) / 2000000.0;
-  char label[32];
-  M5.Display.fillRect(kSpectrumX - 24, kSpectrumY + kSpectrumHeight + 1,
-                      width + 24, 19, TFT_BLACK);
-  M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextSize(2);
-  for (int marker = 0; marker <= 4; ++marker) {
-    const double mark = center - half_span + marker * (half_span / 2.0);
-    if (rtl_ui_band == RtlBand::cb) {
-      const size_t channel = cb_channel_index(static_cast<uint32_t>(mark * 1000000.0));
-      snprintf(label, sizeof(label), "CH %u", static_cast<unsigned>(channel + 1));
-    } else if (rtl_ui_frequency_hz >= 1000000) {
-      snprintf(label, sizeof(label), marker == 4 ? "%.3f MHz" : "%.3f", mark);
-    } else {
-      snprintf(label, sizeof(label), marker == 4 ? "%.1f kHz" : "%.1f", mark * 1000.0);
-    }
-    M5.Display.setTextColor(marker == 2 ? TFT_GREEN : TFT_LIGHTGREY, TFT_BLACK);
-    M5.Display.drawString(label, kSpectrumX + marker * width / 4,
-                          kSpectrumY + kSpectrumHeight + 11);
-  }
+  orcsdr::radio_ui::draw_axis(generic_scope_geometry(), generic_scope_state());
 }
 
 void draw_band_edges() {
   if (!orcsdr::screens::is_active(orcsdr::screens::Id::radio)) return;
-  const uint32_t span_hz = rtl_scope_span_hz.load(std::memory_order_relaxed);
-  const uint32_t bandwidth_hz = rtl_filter_bandwidth_hz.load(std::memory_order_relaxed);
-  const int width = spectrum_draw_width();
-  const int half_width = constrain(
-      static_cast<int>((static_cast<uint64_t>(bandwidth_hz) * width) /
-                       (2u * span_hz)),
-      3, width / 2 - 2);
-  const int center = kSpectrumX + width / 2;
-  for (int offset = -1; offset <= 1; ++offset) {
-    M5.Display.drawFastVLine(center - half_width + offset, kSpectrumY + 1,
-                             kSpectrumHeight - 2, TFT_YELLOW);
-    M5.Display.drawFastVLine(center + half_width + offset, kSpectrumY + 1,
-                             kSpectrumHeight - 2, TFT_YELLOW);
-  }
+  orcsdr::radio_ui::draw_filter_edges(generic_scope_geometry(), generic_scope_state());
 }
 
 /**
@@ -4789,7 +4746,7 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
     const int cell_x = static_cast<int>((bin - first_bin) * waterfall_width / visible_bins);
     const int next_x = static_cast<int>((bin - first_bin + 1) * waterfall_width /
                                         visible_bins);
-    const uint16_t color = waterfall_color(normalized);
+    const uint16_t color = orcsdr::radio_ui::waterfall_color(normalized);
     for (int pixel = cell_x; pixel < next_x; ++pixel) {
       rtl_waterfall_row[pixel] = color;
     }

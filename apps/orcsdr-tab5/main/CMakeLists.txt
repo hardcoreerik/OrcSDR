@@ -15,6 +15,7 @@ idf_component_register(
         "../ui/p25_dashboard.cpp"
         "../ui/p25_config.cpp"
         "../ui/p25_decoder.cpp"
+        "../ui/radio_ui_service.cpp"
         "../ui/settings_app.cpp"
         "../ui/ui_capture.cpp"
     INCLUDE_DIRS "." "../ui"
