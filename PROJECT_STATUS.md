@@ -137,6 +137,16 @@ Detailed gates and clean-room boundaries live in `phasing.md` Phase 6.
 - [ ] Complete Wi-Fi editing/keyboard, safe manifest downloads, maps/storage,
       BLE feasibility, optional Companion, and M5Launcher phases.
 
+### P4.1 — U.S. data catalog
+
+- [x] Add build-verified manual Settings catalog UI and a signed GitHub Release
+      manifest client for independent FAA aircraft, FAA aviation, NOAA Weather
+      Radio, and FCC FM/AM SD packs.
+- [x] Stream catalog artifacts through hash-verified `.part` files with atomic
+      activation/backup and keep P25 configuration outside catalog ownership.
+- [ ] Publish rights-reviewed data assets and hardware-verify download,
+      rollback, source archive retention, and concurrent RTL/Wi-Fi behavior.
+
 Detailed gates live in `phasing.md` Phase 7. Build verification is not live
 network, BLE, Companion, Launcher, or hardware acceptance evidence.
 

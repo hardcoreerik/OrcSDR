@@ -1,0 +1,11 @@
+{
+  "schema": "catalog-input-v1",
+  "generated_at": "2026-08-14",
+  "minimum_firmware": "v0.2.0-alpha.3",
+  "packs": [
+    {"id": "faa_aircraft", "version": "2026-08-14", "source_date": "2026-08-14", "source_url": "https://www.faa.gov/licenses_certificates/aircraft_certification/aircraft_registry/releasable_aircraft_download/index.cfm", "redistribution": "FAA public release", "runtime": "F:/data/adsb_aircraft.idx", "archive": "F:/data/ReleasableAircraft.zip", "runtime_destination": "/orcsdr/data/adsb_aircraft.idx", "archive_destination": "/orcsdr/data/faa_aircraft_source.zip"},
+    {"id": "faa_aviation", "version": "AIRAC-YYYYMMDD", "source_date": "YYYY-MM-DD", "source_url": "https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/NASR_Subscription/", "redistribution": "FAA public release", "runtime": "F:/data/faa_aviation.idx", "archive": "F:/data/NASR.zip", "runtime_destination": "/orcsdr/data/faa_aviation.idx", "archive_destination": "/orcsdr/data/faa_nasr_source.zip"},
+    {"id": "noaa_weather", "version": "YYYY-MM-DD", "source_date": "YYYY-MM-DD", "source_url": "https://www.weather.gov/nwr/", "redistribution": "NOAA public information", "runtime": "F:/data/noaa_weather.idx", "archive": "F:/data/noaa_weather_source.zip", "runtime_destination": "/orcsdr/data/noaa_weather.idx", "archive_destination": "/orcsdr/data/noaa_weather_source.zip"},
+    {"id": "fcc_broadcast", "version": "YYYY-MM-DD", "source_date": "YYYY-MM-DD", "source_url": "https://enterpriseefiling.fcc.gov/dataentry/public/tv/lmsDatabase.html", "redistribution": "FCC public data", "runtime": "F:/data/fcc_broadcast.idx", "archive": "F:/data/Current_LMS_Dump.zip", "runtime_destination": "/orcsdr/data/fcc_broadcast.idx", "archive_destination": "/orcsdr/data/fcc_broadcast_source.zip"}
+  ]
+}

@@ -133,6 +133,19 @@ the firmware/partition owner.
 **Status: Build-verified foundation; hardware acceptance and service phases
 pending.** See `phasing.md` Phase 7.
 
+### U.S. data catalog and SD sync
+
+Settings will expose a user-initiated U.S. data catalog backed by signed GitHub
+Release assets, not a permanent OrcSDR data service. Each approved pack carries
+a compact runtime index and its source archive, provenance, source date,
+license/redistribution review, size, and SHA-256. The initial packs are FAA
+aircraft registration, FAA aviation/NASR, NOAA Weather Radio, and FCC FM/AM.
+P25 remains a user-owned editable SD profile unless a future source explicitly
+permits redistribution; maps remain imported/validated separately.
+
+**Status: Build-verified catalog client and pack-publishing tooling; no public
+catalog release or hardware install evidence yet.** See `phasing.md` Phase 7.2.
+
 ## Product initiative — automated guide and media
 
 OrcSDR will maintain one versioned screen manifest covering every usable view.

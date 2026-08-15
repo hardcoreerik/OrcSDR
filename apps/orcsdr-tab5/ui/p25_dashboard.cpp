@@ -34,25 +34,8 @@ constexpr int kWaterfallY = 420;
 constexpr int kWaterfallH = 130;
 constexpr uint32_t kP25MinHz = 450000000;
 constexpr uint32_t kP25MaxHz = 470000000;
-constexpr uint32_t kControlChannels[] = {453812500, 453925000, 460187500, 460312500};
-
-struct Talkgroup {
-  uint16_t id;
-  const char* alias;
-  bool may_encrypt;
-  uint8_t priority;
-};
-
-// Lane County/SW7 metadata verified against the public system listing on 2026-08-14.
-constexpr Talkgroup kTalkgroups[] = {
-    {20001, "LCSO DISP 1", true, 1},    {20003, "LCSO SEC 2", true, 2},
-    {20051, "EPD DISP", true, 1},       {20101, "SPD DISP", true, 1},
-    {20204, "LCF East 8", false, 2},    {20391, "LCF Firecom 1", false, 1},
-    {20411, "Eugene PW Disp", false, 3}, {20440, "SPW Ch 1", false, 3},
-};
 
 static_assert(static_cast<uint8_t>(View::count) == 5);
-static_assert(std::size(kControlChannels) == 4);
 
 Snapshot g_snapshot{};
 View g_view = View::monitor;
@@ -170,8 +153,8 @@ void format_mhz(char* output, size_t size, uint32_t frequency_hz) {
 }
 
 const char* talkgroup_alias(uint16_t id) {
-  for (const auto& talkgroup : kTalkgroups)
-    if (talkgroup.id == id) return talkgroup.alias;
+  for (size_t i = 0; i < g_snapshot.config.talkgroup_count; ++i)
+    if (g_snapshot.config.talkgroups[i].id == id) return g_snapshot.config.talkgroups[i].alias;
   return "Unknown talkgroup";
 }
 
@@ -215,7 +198,7 @@ void draw_monitor_dynamic() {
   text(value, 52, 227, TFT_WHITE, 4, middle_left);
   text("MHz", 340, 230, TFT_WHITE, 2, middle_left);
   M5.Display.fillRect(476, 198, 760, 55, kPanel);
-  text("SW7 / LRIG   Lane County Simulcast", 478, 215, TFT_WHITE, 3, middle_left);
+  text(g_snapshot.config.system_name, 478, 215, TFT_WHITE, 3, middle_left);
   if (g_snapshot.decoded.identity_valid) {
     snprintf(value, sizeof(value), "DECODED: WACN %05lX  SYSID %03X  NAC %03X",
              static_cast<unsigned long>(g_snapshot.decoded.wacn),
@@ -298,7 +281,7 @@ void draw_spectrum_dynamic() {
 void draw_talkgroups_static() {
   card(24, 148, 1232, 86);
   label("PROGRAMMED SYSTEM", 44, 164);
-  text("SW7 / LRIG — Lane County Simulcast", 44, 205, TFT_WHITE, 3, middle_left);
+  text(g_snapshot.config.system_name, 44, 205, TFT_WHITE, 3, middle_left);
   M5.Display.drawFastVLine(770, 160, 62, kGrid);
   label("CURRENT TG", 798, 164);
   label("TGID", 44, 250);
@@ -309,15 +292,14 @@ void draw_talkgroups_static() {
   for (int row = 0; row < 8; ++row) {
     const int y = 280 + row * 37;
     M5.Display.drawFastHLine(32, y + 30, 1216, kGrid);
+    if (row >= g_snapshot.config.talkgroup_count) continue;
+    const auto& talkgroup = g_snapshot.config.talkgroups[row];
     char id[8];
-    snprintf(id, sizeof(id), "%u", kTalkgroups[row].id);
+    snprintf(id, sizeof(id), "%u", talkgroup.id);
     text(id, 44, y + 14, TFT_WHITE, 2, middle_left);
-    text(kTalkgroups[row].alias, 190, y + 14, TFT_WHITE, 2, middle_left);
-    text(kTalkgroups[row].may_encrypt ? "MIXED" : "CLEAR", 690, y + 14,
-         kTalkgroups[row].may_encrypt ? kYellow : kGreen, 2, middle_left);
-    char priority[8];
-    snprintf(priority, sizeof(priority), "P%u", kTalkgroups[row].priority);
-    text(priority, 850, y + 14, kCyan, 2, middle_left);
+    text(talkgroup.alias, 190, y + 14, TFT_WHITE, 2, middle_left);
+    text("USER", 690, y + 14, kCyan, 2, middle_left);
+    text("—", 850, y + 14, kMuted, 2, middle_left);
   }
   text("LIVE DECODED ACTIVITY  •  TAP A ROW TO HOLD / RELEASE", 640, 602, kMuted, 1);
 }
@@ -333,18 +315,19 @@ void draw_talkgroups_dynamic() {
   } else {
     text("—", 798, 207, kMuted, 2, middle_left);
   }
-  for (int row = 0; row < 8; ++row) {
+  for (int row = 0; row < g_snapshot.config.talkgroup_count; ++row) {
     bool active = false;
     bool encrypted_now = false;
     for (const auto& grant : g_snapshot.decoded.recent_grants) {
-      if (grant_live(grant) && grant.talkgroup == kTalkgroups[row].id) {
+      if (grant_live(grant) && grant.talkgroup == g_snapshot.config.talkgroups[row].id) {
         active = true;
         encrypted_now |= grant.encrypted;
       }
     }
     const int y = 280 + row * 37;
     M5.Display.fillRect(1038, y, 190, 28, kBg);
-    const bool held = g_snapshot.hold && g_snapshot.hold_talkgroup == kTalkgroups[row].id;
+    const bool held = g_snapshot.hold &&
+                      g_snapshot.hold_talkgroup == g_snapshot.config.talkgroups[row].id;
     text(held ? "HOLD" : encrypted_now ? "ENC SKIP" : active ? "ACTIVE" : "SCAN",
          1050, y + 14, held ? kYellow : encrypted_now ? kRed : active ? kGreen : kMuted,
          2, middle_left);
@@ -356,11 +339,11 @@ void draw_program_static() {
   label("SYSTEM / SITE", 44, 164);
   card(638, 148, 618, 174);
   label("CONTROL CHANNELS", 658, 164);
-  for (size_t i = 0; i < std::size(kControlChannels); ++i) {
+  for (size_t i = 0; i < g_snapshot.candidate_count; ++i) {
     char value[48];
     snprintf(value, sizeof(value), "%c %.4f MHz   %.1f dBFS",
              i == g_snapshot.candidate_index ? '>' : ' ',
-             kControlChannels[i] / 1000000.0,
+             g_snapshot.config.control_channels_hz[i] / 1000000.0,
              static_cast<double>(g_snapshot.candidate_levels[i]));
     text(value, 660, 204 + static_cast<int>(i) * 27,
          i == g_snapshot.candidate_index ? kGreen : TFT_WHITE, 2, middle_left);
@@ -371,7 +354,7 @@ void draw_program_static() {
   button(330, 395, 270, 58, "SKIP ENCRYPTED", kGreen, g_snapshot.encryption_skip);
   button(616, 395, 270, 58, "SURVEY", kCyan, g_snapshot.survey_active);
   button(902, 395, 330, 58, "DEVICE SETTINGS");
-  button(44, 468, 556, 50, "IMPORT / EDIT: DEFERRED", kMuted);
+  button(44, 468, 556, 50, "RELOAD /ORCSDR/P25.CFG", kCyan);
   button(616, 468, 270, 50, "HOME / NAV", kYellow);
   button(902, 468, 330, 50, "PHASE I  •  12.5 kHz", kGreen, true);
   text("Single tuner: follow voice traffic, then return to the control channel.",
@@ -381,18 +364,18 @@ void draw_program_static() {
 void draw_program_dynamic() {
   char value[96];
   M5.Display.fillRect(42, 198, 560, 108, kPanel);
-  text("SW7 / LRIG", 44, 207, TFT_WHITE, 3, middle_left);
+  text(g_snapshot.config.system_name, 44, 207, TFT_WHITE, 3, middle_left);
   if (g_snapshot.decoded.identity_valid) {
     snprintf(value, sizeof(value), "WACN %05lX   SYSID %03X   NAC %03X",
              static_cast<unsigned long>(g_snapshot.decoded.wacn),
              g_snapshot.decoded.system_id, g_snapshot.decoded.nac);
     text(value, 44, 250, kGreen, 2, middle_left);
-    snprintf(value, sizeof(value), "RFSS %u   SITE %u   Lane County Simulcast",
-             g_snapshot.decoded.rfss, g_snapshot.decoded.site);
+    snprintf(value, sizeof(value), "RFSS %u   SITE %u   %s",
+             g_snapshot.decoded.rfss, g_snapshot.decoded.site, g_snapshot.config_status);
     text(value, 44, 287, TFT_WHITE, 2, middle_left);
   } else {
-    text("PROFILE  BEE00 / 1F3 / 1F0 — AWAITING DECODE", 44, 250, kMuted, 2, middle_left);
-    text("Lane County Simulcast", 44, 287, TFT_WHITE, 2, middle_left);
+    text("AWAITING P25 CONTROL-CHANNEL DECODE", 44, 250, kMuted, 2, middle_left);
+    text(g_snapshot.config_status, 44, 287, TFT_WHITE, 2, middle_left);
   }
 }
 
@@ -435,7 +418,7 @@ void draw_health_dynamic() {
        g_snapshot.following_voice ? kGreen : g_snapshot.survey_active ? kYellow :
        g_snapshot.decoded.frame_sync ? kGreen : kYellow, 3);
   M5.Display.fillRect(850, 194, 388, 50, kPanel);
-  text("SW7 / LRIG", 1044, 219, TFT_WHITE, 3);
+  text(g_snapshot.config.system_name, 1044, 219, TFT_WHITE, 2);
 
   snprintf(value, sizeof(value), "%.1f%%",
            g_snapshot.target_sps ? 100.0 * g_snapshot.effective_sps / g_snapshot.target_sps : 0.0);
@@ -552,6 +535,7 @@ void update(const Snapshot& snapshot) {
       snapshot.encryption_skip != g_snapshot.encryption_skip ||
       snapshot.following_voice != g_snapshot.following_voice ||
       snapshot.candidate_index != g_snapshot.candidate_index ||
+      snapshot.config_revision != g_snapshot.config_revision ||
       memcmp(snapshot.candidate_levels, g_snapshot.candidate_levels,
              sizeof(snapshot.candidate_levels)) != 0;
   const bool decoded_changed =
@@ -655,14 +639,15 @@ Action handle_touch(int32_t x, int32_t y) {
   }
   if (g_view == View::talkgroups && y >= 280 && y < 576) {
     const size_t row = static_cast<size_t>((y - 280) / 37);
-    if (row < std::size(kTalkgroups))
-      return {ActionKind::hold_talkgroup, kTalkgroups[row].id};
+    if (row < g_snapshot.config.talkgroup_count)
+      return {ActionKind::hold_talkgroup, g_snapshot.config.talkgroups[row].id};
   }
   if (g_view == View::program) {
     if (hit(x, y, 44, 395, 270, 58)) return {ActionKind::auto_follow_toggle};
     if (hit(x, y, 330, 395, 270, 58)) return {ActionKind::encryption_skip_toggle};
     if (hit(x, y, 616, 395, 270, 58)) return {ActionKind::survey_toggle};
     if (hit(x, y, 902, 395, 330, 58)) return {ActionKind::open_device_settings};
+    if (hit(x, y, 44, 468, 556, 50)) return {ActionKind::reload_config};
     if (hit(x, y, 616, 468, 270, 50)) return {ActionKind::exit_to_home};
   }
   return {};
@@ -687,17 +672,8 @@ void show_documentation_view(View requested, const Snapshot& snapshot,
 }
 
 bool self_check() {
-  if (static_cast<uint8_t>(View::count) != 5 || kSpectrumX + kSpectrumW > 1280 ||
-      kTabsY >= 720 || std::size(kTalkgroups) != 8) return false;
-  for (size_t i = 0; i < std::size(kControlChannels); ++i) {
-    if (kControlChannels[i] < kP25MinHz || kControlChannels[i] > kP25MaxHz) return false;
-    for (size_t j = i + 1; j < std::size(kControlChannels); ++j)
-      if (kControlChannels[i] == kControlChannels[j]) return false;
-  }
-  for (size_t i = 0; i < std::size(kTalkgroups); ++i)
-    for (size_t j = i + 1; j < std::size(kTalkgroups); ++j)
-      if (kTalkgroups[i].id == kTalkgroups[j].id) return false;
-  return audio_header::self_check();
+  return static_cast<uint8_t>(View::count) == 5 && kSpectrumX + kSpectrumW <= 1280 &&
+         kTabsY < 720 && p25config::self_check() && audio_header::self_check();
 }
 
 }  // namespace orcsdr::p25

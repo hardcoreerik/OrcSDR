@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "p25_decoder.hpp"
+#include "p25_config.hpp"
 
 namespace orcsdr::p25 {
 
@@ -36,7 +37,10 @@ struct Snapshot {
   uint8_t candidate_index = 0;
   uint8_t candidate_count = 0;
   uint8_t volume = 0;
-  float candidate_levels[4] = {-120.0f, -120.0f, -120.0f, -120.0f};
+  float candidate_levels[p25config::kMaxControlChannels]{};
+  p25config::Config config{};
+  uint32_t config_revision = 0;
+  char config_status[64]{};
   p25decoder::Snapshot decoded{};
   char last_error[32]{};
 };
@@ -52,6 +56,7 @@ enum class ActionKind : uint8_t {
   skip_talkgroup,
   auto_follow_toggle,
   encryption_skip_toggle,
+  reload_config,
   span_down,
   span_up,
   sound_toggle,
