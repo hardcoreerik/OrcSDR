@@ -4288,8 +4288,23 @@ void format_lora_destination(char* output, size_t output_size,
   }
 }
 
+void format_lora_tenths(char* output, size_t output_size, int16_t value,
+                        bool show_plus = false) {
+  const int magnitude = value < 0 ? -static_cast<int>(value) : value;
+  snprintf(output, output_size, "%s%d.%d", value < 0 ? "-" : show_plus ? "+" : "",
+           magnitude / 10, magnitude % 10);
+}
+
+void format_lora_e7(char* output, size_t output_size, int32_t value) {
+  const int64_t magnitude = value < 0 ? -static_cast<int64_t>(value) : value;
+  const int64_t rounded = (magnitude + 50) / 100;
+  snprintf(output, output_size, "%s%lld.%05lld", value < 0 ? "-" : "",
+           static_cast<long long>(rounded / 100000),
+           static_cast<long long>(rounded % 100000));
+}
+
 void draw_lora_asset(const char* path) {
-  const bool image_ok = ensure_tab5_sd() && g_sd_fs->exists(path) &&
+  const bool image_ok = !ui_documentation_mode && ensure_tab5_sd() && g_sd_fs->exists(path) &&
                         M5.Display.drawJpgFile(*g_sd_fs, path, kSpectrumX, kSpectrumY);
   if (!image_ok) {
     M5.Display.fillRect(kSpectrumX, kSpectrumY, kSpectrumWidth, kCbPanelHeight, TFT_BLACK);
@@ -4370,9 +4385,15 @@ void draw_lora_live_view(bool force) {
       M5.Display.drawString(line, left_x + 14,
                             kSpectrumY + 142 + static_cast<int>(row) * line_spacing);
     }
-    snprintf(value, sizeof(value), "SNR %+.1f dB   SIG %.1f dBFS",
-             packets[0].snr_tenths == INT16_MAX ? 0.0 : packets[0].snr_tenths / 10.0,
-             packets[0].signal_tenths == INT16_MAX ? 0.0 : packets[0].signal_tenths / 10.0);
+    char snr[16];
+    char signal[16];
+    format_lora_tenths(snr, sizeof(snr),
+                       packets[0].snr_tenths == INT16_MAX ? 0 : packets[0].snr_tenths,
+                       true);
+    format_lora_tenths(signal, sizeof(signal),
+                       packets[0].signal_tenths == INT16_MAX ? 0
+                                                             : packets[0].signal_tenths);
+    snprintf(value, sizeof(value), "SNR %s dB   SIG %s dBFS", snr, signal);
     M5.Display.setTextSize(2);
     M5.Display.setTextColor(TFT_LIGHTGREY);
     M5.Display.drawString(value, left_x + 14, kSpectrumY + 236);
@@ -4424,9 +4445,9 @@ void draw_lora_live_view(bool force) {
   M5.Display.setTextSize(1);
   M5.Display.setTextColor(TFT_LIGHTGREY);
   M5.Display.drawString(status, scope_x + 14, kSpectrumY + 360);
-  snprintf(status, sizeof(status), "NOISE %.0f   TRIG %.0f",
-           static_cast<double>(lora_noise_dbfs.load(std::memory_order_relaxed)),
-           static_cast<double>(lora_trigger_dbfs.load(std::memory_order_relaxed)));
+  snprintf(status, sizeof(status), "NOISE %ld   TRIG %ld",
+           static_cast<long>(lroundf(lora_noise_dbfs.load(std::memory_order_relaxed))),
+           static_cast<long>(lroundf(lora_trigger_dbfs.load(std::memory_order_relaxed))));
   M5.Display.setTextDatum(middle_right);
   M5.Display.drawString(status, scope_x + scope_w - 14, kSpectrumY + 360);
   M5.Display.setTextDatum(middle_left);
@@ -4473,7 +4494,11 @@ void draw_lora_packets_view(bool force) {
     M5.Display.setTextSize(4);
     M5.Display.setTextColor(TFT_GREEN);
     if (packets[index].snr_tenths == INT16_MAX) strlcpy(value, "SNR --", sizeof(value));
-    else snprintf(value, sizeof(value), "%+.1f dB", packets[index].snr_tenths / 10.0);
+    else {
+      char snr[16];
+      format_lora_tenths(snr, sizeof(snr), packets[index].snr_tenths, true);
+      snprintf(value, sizeof(value), "%s dB", snr);
+    }
     M5.Display.drawString(value, kSpectrumX + 1050, y + 48);
     M5.Display.setTextSize(3);
     if (packets[index].signal_tenths == INT16_MAX) strlcpy(value, "SIG --", sizeof(value));
@@ -4548,14 +4573,14 @@ void draw_lora_map_view(bool force) {
   M5.Display.setTextSize(2);
   M5.Display.setTextColor(TFT_CYAN);
   M5.Display.drawString("LATITUDE", info_x, kSpectrumY + 145);
-  snprintf(value, sizeof(value), "%.5f", center_lat);
+  format_lora_e7(value, sizeof(value), positions[0].latitude_e7);
   M5.Display.setTextSize(3);
   M5.Display.setTextColor(TFT_WHITE);
   M5.Display.drawString(value, info_x, kSpectrumY + 174);
   M5.Display.setTextSize(2);
   M5.Display.setTextColor(TFT_CYAN);
   M5.Display.drawString("LONGITUDE", info_x, kSpectrumY + 205);
-  snprintf(value, sizeof(value), "%.5f", center_lon);
+  format_lora_e7(value, sizeof(value), positions[0].longitude_e7);
   M5.Display.setTextSize(3);
   M5.Display.setTextColor(TFT_WHITE);
   M5.Display.drawString(value, info_x, kSpectrumY + 234);
@@ -4624,10 +4649,12 @@ void draw_lora_dashboard(bool static_panel) {
   M5.Display.setTextSize(2);
   M5.Display.setTextColor(TFT_CYAN);
   if (position.node != 0) {
-    snprintf(value, sizeof(value), "GPS !%08lx   %.5f, %.5f",
-             static_cast<unsigned long>(position.node),
-             position.latitude_e7 / 10000000.0,
-             position.longitude_e7 / 10000000.0);
+    char latitude[20];
+    char longitude[20];
+    format_lora_e7(latitude, sizeof(latitude), position.latitude_e7);
+    format_lora_e7(longitude, sizeof(longitude), position.longitude_e7);
+    snprintf(value, sizeof(value), "GPS !%08lx   %s, %s",
+             static_cast<unsigned long>(position.node), latitude, longitude);
   } else {
     strlcpy(value, "GPS  WAITING FOR POSITION", sizeof(value));
   }
@@ -4760,6 +4787,45 @@ uint16_t waterfall_color(float level) {
     blue = static_cast<uint8_t>(ramp * 255);
   }
   return M5.Display.color565(red, green, blue);
+}
+
+void draw_documentation_spectrum() {
+  const int width = spectrum_draw_width() - 2;
+  uint8_t strength[kSpectrumWidth];
+  for (int x = 0; x < width; ++x) {
+    const float center = static_cast<float>(x - width / 2);
+    const float side = static_cast<float>(x - width * 3 / 4);
+    const float level = 24.0f + 190.0f * expf(-(center * center) / 850.0f) +
+                        95.0f * expf(-(side * side) / 260.0f) +
+                        8.0f * sinf(static_cast<float>(x) * 0.17f);
+    strength[x] = static_cast<uint8_t>(constrain(level, 0.0f, 255.0f));
+  }
+
+  M5.Display.startWrite();
+  int previous_y = kSpectrumY + kSpectrumHeight - 2;
+  for (int x = 0; x < width; ++x) {
+    const int y = kSpectrumY + kSpectrumHeight - 2 -
+                  strength[x] * (kSpectrumHeight - 4) / 255;
+    if (x != 0)
+      M5.Display.drawLine(kSpectrumX + x, previous_y, kSpectrumX + x + 1, y,
+                          TFT_CYAN);
+    previous_y = y;
+  }
+  for (int row = 1; row < kWaterfallHeight - 1; ++row) {
+    const int shift = (row / 12) % 9 - 4;
+    for (int x = 0; x < width; ++x) {
+      const int source = constrain(x + shift, 0, width - 1);
+      const int noise = ((x * 13 + row * 29) & 31) - 15;
+      rtl_waterfall_row[x] = waterfall_color(
+          constrain((static_cast<int>(strength[source]) + noise) / 255.0f,
+                    0.0f, 1.0f));
+    }
+    M5.Display.pushImage(kSpectrumX + 1, kWaterfallY + row, width, 1,
+                         rtl_waterfall_row);
+  }
+  M5.Display.drawFastVLine(kSpectrumX + width / 2, kSpectrumY + 1,
+                           kSpectrumHeight - 2, TFT_GREEN);
+  M5.Display.endWrite();
 }
 
 void draw_lora_live_graphs(size_t first_bin, size_t visible_bins, float floor) {
@@ -9061,7 +9127,7 @@ constexpr UiDocScreen kUiDocScreens[] = {
     {"browse.capture", "live,demo"},
     {"overlay.volume", "demo"},
     {"overlay.frequency-keypad", "demo"},
-    {"overlay.wifi-results", "demo"},
+    {"overlay.wifi-scanning", "demo"},
     {"overlay.masked-keyboard", "demo"},
 };
 
@@ -9322,10 +9388,19 @@ bool ui_doc_render(const char* screen_id, bool demo) {
     for (uint8_t i = 0; i < std::size(names); ++i)
       if (strcmp(suffix, names[i]) == 0) section = static_cast<orcsdr::settings::Section>(i);
     const bool keyboard = strcmp(screen_id, "overlay.masked-keyboard") == 0;
+    auto state = ui_doc_settings_state();
+    if (strcmp(screen_id, "overlay.wifi-scanning") == 0) {
+      state.wifi_connected = false;
+      state.wifi_scanning = true;
+      state.network_count = 0;
+      state.wifi_ip[0] = '\0';
+      strlcpy(state.wifi_message, "Scanning for nearby networks",
+              sizeof(state.wifi_message));
+    }
     orcsdr::settings::show_documentation_section(
-        orcsdr::settings::Section::connectivity, ui_doc_settings_state(), keyboard);
+        orcsdr::settings::Section::connectivity, state, keyboard);
     if (strncmp(screen_id, "settings.", 9) == 0)
-      orcsdr::settings::show_documentation_section(section, ui_doc_settings_state());
+      orcsdr::settings::show_documentation_section(section, state);
   } else if (strncmp(screen_id, "fm.", 3) == 0 ||
              strcmp(screen_id, "overlay.volume") == 0) {
     orcsdr::fm::View view = orcsdr::fm::View::listen;
@@ -9406,6 +9481,10 @@ bool ui_doc_render(const char* screen_id, bool demo) {
         }
       }
       draw_sdr_screen(entry.band, entry.frequency, rtl_ui_volume);
+      if (demo) {
+        if (tool == OrcTool::Capture) draw_capture_tool_panel();
+        else draw_documentation_spectrum();
+      }
       found = true;
       break;
     }
