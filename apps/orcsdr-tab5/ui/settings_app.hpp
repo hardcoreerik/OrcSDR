@@ -29,6 +29,18 @@ struct WifiProfileView {
   bool connected = false;
 };
 
+struct CatalogPackView {
+  char id[20]{};
+  char title[28]{};
+  char version[16]{};
+  char source_date[16]{};
+  char status[24]{};
+  uint32_t runtime_bytes = 0;
+  uint32_t archive_bytes = 0;
+  bool installed = false;
+  bool update_available = false;
+};
+
 struct State {
   bool wifi_power_enabled = true;
   bool wifi_external_antenna = false;
@@ -65,6 +77,12 @@ struct State {
   bool sd_ready = false;
   uint64_t sd_total_bytes = 0;
   uint64_t sd_free_bytes = 0;
+  bool catalog_ready = false;
+  bool catalog_busy = false;
+  uint8_t catalog_progress_percent = 0;
+  char catalog_message[80]{};
+  char catalog_date[16]{};
+  CatalogPackView catalog_packs[4]{};
   bool companion_supported = false;
   uint8_t paired_phone_count = 0;
   int32_t battery_level = -1;
@@ -96,6 +114,9 @@ enum class ActionKind : uint8_t {
   sound_changed,
   auto_start_changed,
   graphics_changed
+  ,catalog_check
+  ,catalog_install
+  ,catalog_remove
 };
 
 struct Action {

@@ -44,6 +44,7 @@ extern "C" {
 #include "orcsdr_splash.hpp"
 #include "adsb_dashboard.hpp"
 #include "adsb_decoder.hpp"
+#include "catalog_sync.hpp"
 #include "dashboard_audio_control.hpp"
 #include "dashboard_registry.hpp"
 #include "fm_dashboard.hpp"
@@ -1525,6 +1526,7 @@ bool rds_capture_stop_and_export();
 bool rds_replay(const char* path);
 void rds_capture_status_print();
 bool ensure_tab5_sd();
+uint64_t sd_total_bytes();
 void enrich_one_adsb_track();
 bool sd_put_path_allowed(const char* path);
 void bump_rtl_ui();
@@ -2315,6 +2317,11 @@ bool ensure_tab5_sd() {
   g_sd_ready = true;
   Serial.println("RTL_REC_SD ready bus=spi");
   return true;
+}
+
+uint64_t sd_total_bytes() {
+  if (!g_sd_ready || g_sd_fs == nullptr) return 0;
+  return g_sd_fs == &SD_MMC ? SD_MMC.totalBytes() : SD.totalBytes();
 }
 
 #pragma pack(push, 1)
@@ -7594,6 +7601,28 @@ orcsdr::settings::State global_settings_state() {
   strlcpy(state.default_band, rtl_band_name(rtl_ui_band), sizeof(state.default_band));
   state.fm_frequency_hz = rtl_saved_fm_hz;
   state.sd_ready = g_sd_ready;
+  state.sd_total_bytes = sd_total_bytes();
+  state.sd_free_bytes = g_sd_ready && g_sd_fs ? state.sd_total_bytes -
+      (g_sd_fs == &SD_MMC ? SD_MMC.usedBytes() : SD.usedBytes()) : 0;
+  const auto catalog_state = orcsdr::catalog::state();
+  state.catalog_ready = catalog_state.ready;
+  state.catalog_busy = catalog_state.busy;
+  state.catalog_progress_percent = catalog_state.progress_percent;
+  strlcpy(state.catalog_message, catalog_state.message, sizeof(state.catalog_message));
+  strlcpy(state.catalog_date, catalog_state.catalog_date, sizeof(state.catalog_date));
+  for (uint8_t i = 0; i < std::size(state.catalog_packs); ++i) {
+    const auto& source = catalog_state.packs[i];
+    auto& target = state.catalog_packs[i];
+    strlcpy(target.id, source.id, sizeof(target.id));
+    strlcpy(target.title, source.title, sizeof(target.title));
+    strlcpy(target.version, source.version, sizeof(target.version));
+    strlcpy(target.source_date, source.source_date, sizeof(target.source_date));
+    strlcpy(target.status, source.status, sizeof(target.status));
+    target.runtime_bytes = source.runtime_bytes;
+    target.archive_bytes = source.archive_bytes;
+    target.installed = source.installed;
+    target.update_available = source.update_available;
+  }
   state.companion_supported = false;
   state.battery_level = M5.Power.getBatteryLevel();
   state.battery_mv = M5.Power.getBatteryVoltage();
@@ -7980,6 +8009,25 @@ void handle_global_settings_touch(int32_t x, int32_t y) {
     case orcsdr::settings::ActionKind::graphics_changed:
       settings_graphics_default = action.value != 0;
       preferences.putBool("set_gfx", settings_graphics_default);
+      break;
+    case orcsdr::settings::ActionKind::catalog_check:
+      if (ensure_tab5_sd()) {
+        orcsdr::catalog::begin(g_sd_fs, sd_total_bytes() -
+            (g_sd_fs == &SD_MMC ? SD_MMC.usedBytes() : SD.usedBytes()));
+        if (!orcsdr::catalog::request_check(wifi_connected))
+          Serial.println("ORC_CATALOG_CHECK_REJECTED");
+      }
+      orcsdr::settings::update(global_settings_state());
+      break;
+    case orcsdr::settings::ActionKind::catalog_install:
+      if (!orcsdr::catalog::request_install(static_cast<uint8_t>(action.value), wifi_connected))
+        Serial.println("ORC_CATALOG_INSTALL_REJECTED");
+      orcsdr::settings::update(global_settings_state());
+      break;
+    case orcsdr::settings::ActionKind::catalog_remove:
+      if (!orcsdr::catalog::request_remove(static_cast<uint8_t>(action.value)))
+        Serial.println("ORC_CATALOG_REMOVE_REJECTED");
+      orcsdr::settings::update(global_settings_state());
       break;
     default: break;
   }
@@ -10691,6 +10739,12 @@ void setup() {
     abort();
   }
   Serial.println("ORC_SETTINGS_SELF_CHECK_OK");
+  if (!orcsdr::catalog::self_check()) {
+    Serial.println("ORC_CATALOG_SELF_CHECK_FAIL");
+    abort();
+  }
+  Serial.println("ORC_CATALOG_SELF_CHECK_OK");
+  orcsdr::catalog::begin(nullptr);
   if (!orcsdr::home::self_check()) {
     Serial.println("ORC_HOME_SELF_CHECK_FAIL");
     abort();

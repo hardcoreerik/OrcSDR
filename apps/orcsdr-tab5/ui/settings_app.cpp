@@ -49,6 +49,7 @@ char g_wifi_edit_password[64]{};
 char g_wifi_request_ssid[33]{};
 char g_wifi_request_password[64]{};
 bool g_wifi_request_pending = false;
+int8_t g_catalog_remove_armed = -1;
 
 bool hit(int x, int y, int bx, int by, int bw, int bh) {
   return x >= bx && x < bx + bw && y >= by && y < by + bh;
@@ -186,13 +187,34 @@ void draw_location() {
 
 void draw_data_maps() {
   text("DATA & MAPS", 330, 115, kBlue, 3);
-  value_row("AIRCRAFT RUNTIME INDEX", g_state.sd_ready ? "SD CARD" : "UNAVAILABLE", 175);
-  value_row("FAA SOURCE ARCHIVE", g_state.sd_ready ? "SD CARD" : "UNAVAILABLE", 225);
-  value_row("LOCATION INDEX", "NOT INSTALLED", 275);
-  value_row("MAP PACK", g_state.map_pack[0] ? g_state.map_pack : "NOT INSTALLED", 325);
-  value_row("AUTOMATIC UPDATES", "OFF", 375, kMuted);
-  text("Updates and map installs will require reception pause confirmation.",
-       330, 465, TFT_LIGHTGREY, 2);
+  char catalog[112];
+  snprintf(catalog, sizeof(catalog), "%s%s", g_state.catalog_ready ? "SIGNED CATALOG " : "NO CATALOG ",
+           g_state.catalog_date[0] ? g_state.catalog_date : "CHECK MANUALLY");
+  text(catalog, 330, 153, g_state.catalog_ready ? kGreen : kMuted, 2);
+  button(g_state.catalog_busy ? "WORKING..." : "CHECK FOR UPDATES", 940, 126, 278, 48,
+         g_state.catalog_busy ? TFT_DARKGREY : TFT_DARKCYAN);
+  if (g_state.catalog_message[0]) text(g_state.catalog_message, 330, 180, kMuted, 1);
+  for (uint8_t i = 0; i < 4; ++i) {
+    const auto& pack = g_state.catalog_packs[i];
+    const int y = 205 + i * 110;
+    M5.Display.fillRoundRect(330, y, 888, 98, 8, kPanel);
+    M5.Display.drawRoundRect(330, y, 888, 98, 8, kBlue);
+    text(pack.title[0] ? pack.title : "DATA PACK", 350, y + 24, kBlue, 2);
+    char detail[96];
+    snprintf(detail, sizeof(detail), "v%s  source %s  %.1f + %.1f MB",
+             pack.version[0] ? pack.version : "--", pack.source_date[0] ? pack.source_date : "--",
+             pack.runtime_bytes / 1048576.0, pack.archive_bytes / 1048576.0);
+    text(detail, 350, y + 52, TFT_WHITE, 1);
+    text(pack.status[0] ? pack.status : "CHECK CATALOG", 350, y + 76,
+         pack.installed ? kGreen : kMuted, 1);
+    const char* install = pack.installed ? (pack.update_available ? "UPDATE" : "REINSTALL") : "INSTALL";
+    button(install, 930, y + 16, 132, 36,
+           g_state.catalog_busy || !g_state.catalog_ready ? TFT_DARKGREY : TFT_DARKCYAN);
+    button(g_catalog_remove_armed == i ? "CONFIRM" : "REMOVE", 1072, y + 16, 126, 36,
+           pack.installed && !g_state.catalog_busy ? TFT_MAROON : TFT_DARKGREY);
+  }
+  text("Manual only. Downloads keep reception active; use an imported map pack separately.",
+       330, 662, TFT_LIGHTGREY, 1);
 }
 
 void draw_display_audio() {
@@ -530,6 +552,7 @@ void enter(const State& state_value, Section section) {
   g_section = section;
   g_edit = EditField::none;
   g_wifi_edit = WifiEdit::none;
+  g_catalog_remove_armed = -1;
   g_active = true;
   g_latitude_set = state_value.location_configured;
   g_longitude_set = state_value.location_configured;
@@ -576,12 +599,20 @@ void update(const State& state_value) {
                               g_state.battery_current_ma != state_value.battery_current_ma ||
                               g_state.vbus_mv != state_value.vbus_mv ||
                               strcmp(g_state.charging_state, state_value.charging_state) != 0);
+  const bool catalog_changed = g_section == Section::data_maps &&
+      (g_state.catalog_ready != state_value.catalog_ready || g_state.catalog_busy != state_value.catalog_busy ||
+       g_state.catalog_progress_percent != state_value.catalog_progress_percent ||
+       strcmp(g_state.catalog_message, state_value.catalog_message) != 0 ||
+       strcmp(g_state.catalog_date, state_value.catalog_date) != 0 ||
+       memcmp(g_state.catalog_packs, state_value.catalog_packs, sizeof(g_state.catalog_packs)) != 0);
   g_state = state_value;
   if (header_changed) draw_header();
   if (page_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_content();
   if (power_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_system_power();
+  if (catalog_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
+    draw_content();
 }
 
 Action handle_touch(int32_t x, int32_t y) {
@@ -648,6 +679,23 @@ Action handle_touch(int32_t x, int32_t y) {
       g_state.radar_range_nm = next_value(g_state.radar_range_nm, kRanges);
       draw_content();
       return {ActionKind::range_changed, g_state.radar_range_nm};
+    }
+  } else if (g_section == Section::data_maps) {
+    if (hit(x, y, 940, 126, 278, 48) && !g_state.catalog_busy)
+      return {ActionKind::catalog_check, 0};
+    for (uint8_t i = 0; i < 4; ++i) {
+      const int row_y = 205 + i * 110;
+      if (hit(x, y, 930, row_y + 16, 132, 36) && g_state.catalog_ready && !g_state.catalog_busy)
+        return {ActionKind::catalog_install, i};
+      if (hit(x, y, 1072, row_y + 16, 126, 36) && g_state.catalog_packs[i].installed && !g_state.catalog_busy) {
+        if (g_catalog_remove_armed == i) {
+          g_catalog_remove_armed = -1;
+          return {ActionKind::catalog_remove, i};
+        }
+        g_catalog_remove_armed = i;
+        draw_content();
+        return {};
+      }
     }
   } else if (g_section == Section::display_audio) {
     if (hit(x, y, 850, 205, 90, 48) || hit(x, y, 960, 205, 90, 48)) {
