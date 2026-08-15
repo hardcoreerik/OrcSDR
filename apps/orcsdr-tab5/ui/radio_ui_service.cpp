@@ -9,6 +9,8 @@
 namespace orcsdr::radio_ui {
 namespace {
 constexpr uint16_t kGrid = 0x2104;
+constexpr int kBandWidths[] = {110, 110, 110, 120, 140, 160, 170, 200};
+constexpr int kTuneWidths[] = {170, 170, 220, 150, 150, 220};
 }
 
 uint16_t waterfall_color(float level) {
@@ -108,11 +110,58 @@ int button_at(int x, int y, int height, int gap, int touch_x, int touch_y,
   return -1;
 }
 
+ControlAction control_action(const ControlLayout& layout, bool lora, int touch_x,
+                             int touch_y) {
+  const int index = button_at(layout.edge, lora ? layout.tune_y : layout.band_y,
+                              layout.height, layout.gap, touch_x, touch_y,
+                              lora ? kTuneWidths : kBandWidths,
+                              lora ? std::size(kTuneWidths) : std::size(kBandWidths));
+  if (index < 0) {
+    if (lora) return ControlAction::none;
+    const int tune = button_at(layout.edge, layout.tune_y, layout.height, layout.gap,
+                               touch_x, touch_y, kTuneWidths, std::size(kTuneWidths));
+    switch (tune) {
+      case 0: return ControlAction::frequency_down;
+      case 1: return ControlAction::frequency_up;
+      case 2: return ControlAction::toggle_sound;
+      case 3: return ControlAction::volume_down;
+      case 4: return ControlAction::volume_up;
+      case 5: return ControlAction::toggle_graphics;
+      default: return ControlAction::none;
+    }
+  }
+  if (lora) {
+    switch (index) {
+      case 0: return ControlAction::frequency_down;
+      case 1: return ControlAction::frequency_up;
+      case 2: return ControlAction::cycle_lora_bandwidth;
+      case 3: return ControlAction::cycle_lora_spreading_factor;
+      case 4: return ControlAction::toggle_iq_record;
+      case 5: return ControlAction::toggle_capture;
+      default: return ControlAction::none;
+    }
+  }
+  switch (index) {
+    case 0: return ControlAction::fm;
+    case 1: return ControlAction::am;
+    case 2: return ControlAction::wx;
+    case 3: return ControlAction::cb;
+    case 4: return ControlAction::lora;
+    case 5: return ControlAction::browse;
+    case 6: return ControlAction::toggle_audio_record;
+    case 7: return ControlAction::toggle_capture;
+    default: return ControlAction::none;
+  }
+}
+
 bool self_check() {
   constexpr int widths[] = {110, 170};
   return button_at(32, 100, 64, 12, 40, 120, widths, std::size(widths)) == 0 &&
          button_at(32, 100, 64, 12, 200, 120, widths, std::size(widths)) == 1 &&
-         button_at(32, 100, 64, 12, 32, 164, widths, std::size(widths)) == -1;
+         button_at(32, 100, 64, 12, 32, 164, widths, std::size(widths)) == -1 &&
+         control_action({32, 100, 200, 64, 12}, false, 40, 120) == ControlAction::fm &&
+         control_action({32, 100, 200, 64, 12}, true, 40, 220) ==
+             ControlAction::frequency_down;
 }
 
 }  // namespace orcsdr::radio_ui

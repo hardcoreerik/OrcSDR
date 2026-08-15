@@ -8586,31 +8586,30 @@ void handle_sdr_touch(int32_t x, int32_t y) {
   }
   if (handle_tool_tab_touch(x, y)) return;
   if (handle_cb_touch(x, y)) return;
-  static constexpr int kBandWidths[] = {110, 110, 110, 120, 140, 160, 170, 200};
-  static constexpr int kTuneWidths[] = {170, 170, 220, 150, 150, 220};
+  const orcsdr::radio_ui::ControlLayout control_layout{
+      kSdrEdge, kSdrBandY, kSdrTuneY, kSdrControlsHeight, kSdrGap};
   if (rtl_ui_band == RtlBand::lora) {
-    const int index = orcsdr::radio_ui::button_at(
-        kSdrEdge, kSdrTuneY, kSdrControlsHeight, kSdrGap, x, y, kTuneWidths,
-        std::size(kTuneWidths));
-    if (index < 0) return;
-    if (index == 0 || index == 1) {
+    const auto action = orcsdr::radio_ui::control_action(control_layout, true, x, y);
+    if (action == orcsdr::radio_ui::ControlAction::none) return;
+    if (action == orcsdr::radio_ui::ControlAction::frequency_down ||
+        action == orcsdr::radio_ui::ControlAction::frequency_up) {
       const uint32_t next = rtl_step_frequency(RtlBand::lora, rtl_ui_frequency_hz,
-                                               index == 0 ? -1 : 1);
+                                               action == orcsdr::radio_ui::ControlAction::frequency_down ? -1 : 1);
       if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running) {
         request_hot_retune(next);
       } else {
         queue_local_rtl_listen(RtlBand::lora, next);
       }
-    } else if (index == 2) {
+    } else if (action == orcsdr::radio_ui::ControlAction::cycle_lora_bandwidth) {
       uint32_t bandwidth = lora_bandwidth_hz.load(std::memory_order_relaxed);
       bandwidth = bandwidth == 125000 ? 250000 : bandwidth == 250000 ? 500000 : 125000;
       lora_bandwidth_hz.store(bandwidth, std::memory_order_relaxed);
       rtl_filter_bandwidth_hz.store(bandwidth, std::memory_order_relaxed);
       reset_spectrum_renderer();
-    } else if (index == 3) {
+    } else if (action == orcsdr::radio_ui::ControlAction::cycle_lora_spreading_factor) {
       const uint8_t sf = lora_sf.load(std::memory_order_relaxed);
       lora_sf.store(sf >= 12 ? 7 : sf + 1, std::memory_order_relaxed);
-    } else if (index == 4) {
+    } else if (action == orcsdr::radio_ui::ControlAction::toggle_iq_record) {
       if (g_iq_rec_active.load(std::memory_order_acquire)) (void)iq_rec_stop_and_export();
       else (void)iq_rec_start();
     } else {
@@ -8628,35 +8627,32 @@ void handle_sdr_touch(int32_t x, int32_t y) {
                           RtlCaptureState::running);
     return;
   }
-  const int band_index = orcsdr::radio_ui::button_at(
-      kSdrEdge, kSdrBandY, kSdrControlsHeight, kSdrGap, x, y, kBandWidths,
-      std::size(kBandWidths));
-  if (band_index >= 0) {
-    if (band_index == 0) {
+  const auto action = orcsdr::radio_ui::control_action(control_layout, false, x, y);
+  if (action == orcsdr::radio_ui::ControlAction::fm) {
       queue_local_rtl_listen(RtlBand::fm, rtl_ui_band == RtlBand::fm
                                                ? rtl_ui_frequency_hz
                                                : rtl_saved_fm_hz);
-    } else if (band_index == 1) {
+  } else if (action == orcsdr::radio_ui::ControlAction::am) {
       queue_local_rtl_listen(RtlBand::am, rtl_ui_band == RtlBand::am
                                                ? rtl_ui_frequency_hz
                                                : kRtlAmDefaultHz);
-    } else if (band_index == 2) {
+  } else if (action == orcsdr::radio_ui::ControlAction::wx) {
       queue_local_rtl_listen(RtlBand::wx, kRtlWxHz);
-    } else if (band_index == 3) {
+  } else if (action == orcsdr::radio_ui::ControlAction::cb) {
       queue_local_rtl_listen(RtlBand::cb, rtl_ui_band == RtlBand::cb
                                               ? rtl_ui_frequency_hz
                                               : kCbDefaultHz);
-    } else if (band_index == 4) {
+  } else if (action == orcsdr::radio_ui::ControlAction::lora) {
       queue_local_rtl_listen(RtlBand::lora, rtl_ui_band == RtlBand::lora
                                                 ? rtl_ui_frequency_hz
                                                 : kLoraDefaultHz);
-    } else if (band_index == 5) {
+  } else if (action == orcsdr::radio_ui::ControlAction::browse) {
       queue_local_rtl_listen(RtlBand::browse,
                              rtl_ui_band == RtlBand::browse
                                  ? rtl_ui_frequency_hz
                                  : constrain(rtl_ui_frequency_hz,
                                              kRtlBrowseMinHz, kRtlBrowseMaxHz));
-    } else if (band_index == 6) {
+  } else if (action == orcsdr::radio_ui::ControlAction::toggle_audio_record) {
       /* REC toggle — Capture tool records post-demod PCM for offline analysis. */
       if (g_audio_rec_active.load(std::memory_order_acquire)) {
         (void)audio_rec_stop_and_export();
@@ -8668,7 +8664,7 @@ void handle_sdr_touch(int32_t x, int32_t y) {
           rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
       draw_sdr_controls(rtl_ui_band, running);
       if (orc_tool_current() == OrcTool::Capture) draw_capture_tool_panel();
-    } else if (band_index == 7) {
+  } else if (action == orcsdr::radio_ui::ControlAction::toggle_capture) {
       const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
       if (state == RtlCaptureState::running) {
         rtl_restart_requested.store(false, std::memory_order_release);
@@ -8678,18 +8674,15 @@ void handle_sdr_touch(int32_t x, int32_t y) {
       } else {
         queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz);
       }
-    }
     return;
   }
 
-  const int tune_index = orcsdr::radio_ui::button_at(
-      kSdrEdge, kSdrTuneY, kSdrControlsHeight, kSdrGap, x, y, kTuneWidths,
-      std::size(kTuneWidths));
-  if (tune_index < 0) return;
-  if (tune_index == 0 || tune_index == 1) {
+  if (action == orcsdr::radio_ui::ControlAction::none) return;
+  if (action == orcsdr::radio_ui::ControlAction::frequency_down ||
+      action == orcsdr::radio_ui::ControlAction::frequency_up) {
     if (rtl_ui_band == RtlBand::wx) return;
     const uint32_t next = rtl_step_frequency(rtl_ui_band, rtl_ui_frequency_hz,
-                                             tune_index == 0 ? -1 : 1);
+                                             action == orcsdr::radio_ui::ControlAction::frequency_down ? -1 : 1);
     const RtlCaptureState st = rtl_capture_state.load(std::memory_order_acquire);
     if (st == RtlCaptureState::running) {
       /* Hot retune in-stream — do not tear down USB for FREQ +/- */
@@ -8697,7 +8690,7 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     } else {
       queue_local_rtl_listen(rtl_ui_band, next);
     }
-  } else if (tune_index == 2) {
+  } else if (action == orcsdr::radio_ui::ControlAction::toggle_sound) {
     const bool next = !rtl_audio_user_enabled.load(std::memory_order_acquire);
     set_rtl_audio_user_enabled(next);
     Serial.printf("RTL_SOUND %s\n", next ? "on" : "off");
@@ -8705,11 +8698,11 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     const bool running =
         rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
     draw_sdr_controls(rtl_ui_band, running);
-  } else if (tune_index == 3) {
+  } else if (action == orcsdr::radio_ui::ControlAction::volume_down) {
     adjust_rtl_volume(-static_cast<int>(kRtlVolumeStep));
-  } else if (tune_index == 4) {
+  } else if (action == orcsdr::radio_ui::ControlAction::volume_up) {
     adjust_rtl_volume(static_cast<int>(kRtlVolumeStep));
-  } else if (tune_index == 5) {
+  } else if (action == orcsdr::radio_ui::ControlAction::toggle_graphics) {
     const bool next =
         !rtl_graphics_enabled.load(std::memory_order_acquire);
     rtl_graphics_enabled.store(next, std::memory_order_release);
