@@ -1521,6 +1521,7 @@ void request_hot_retune(uint32_t frequency_hz);
 void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
                             bool persist_navigation = true);
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume);
+void refresh_active_screen();
 void adjust_rtl_volume(int delta);
 void draw_nav_panel();
 bool handle_nav_touch(int32_t x, int32_t y);
@@ -2020,16 +2021,6 @@ size_t cb_channel_index(uint32_t frequency_hz) {
     if (kCbChannelsHz[channel] == snapped) return channel;
   }
   return 18;
-}
-
-void format_frequency(char* output, size_t output_size, uint32_t frequency_hz) {
-  if (frequency_hz >= 1000000) {
-    // 0.001 MHz (1 kHz) resolution for fine tuning / dipole peaking.
-    snprintf(output, output_size, "%.3f MHz", frequency_hz / 1000000.0);
-  } else {
-    // 0.1 kHz display on MW so AM steps stay readable.
-    snprintf(output, output_size, "%.1f kHz", frequency_hz / 1000.0);
-  }
 }
 
 void apply_speaker_volume(uint8_t volume) {
@@ -4363,6 +4354,18 @@ orcsdr::screens::Id screen_for_band(RtlBand band) {
   }
 }
 
+void refresh_active_screen() {
+  using Id = orcsdr::screens::Id;
+  switch (orcsdr::screens::status().active) {
+    case Id::home: draw_home_dashboard(); break;
+    case Id::fm: draw_fm_dashboard(false); break;
+    case Id::p25: draw_p25_dashboard(false); break;
+    case Id::adsb: draw_adsb_dashboard(false); break;
+    case Id::lora: draw_lora_dashboard(false); break;
+    default: break;  // Settings, documentation, and no screen own their draws.
+  }
+}
+
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   // Home is the common receiver workspace until a band has its own dashboard.
   // Do not resurrect the retired generic Browse surface for AM/WX/CB/Airband.
@@ -5667,16 +5670,7 @@ void run_rtl_capture() {
       const uint8_t live_volume = rtl_live_volume.load(std::memory_order_acquire);
       rtl_ui_volume = live_volume;
       drawn_rtl_ui_revision = ui_revision;
-      if (orcsdr::home::active())
-        draw_home_dashboard();
-      else if (band == RtlBand::fm)
-        draw_fm_dashboard(false);
-      else if (band == RtlBand::p25)
-        draw_p25_dashboard(false);
-      else if (band == RtlBand::lora)
-        draw_lora_dashboard(false);
-      else
-        show_home();
+      refresh_active_screen();
     }
     const uint32_t drops_before_draw = rtl_audio.dropped_chunks;
     if (drops_before_draw == 0 &&
@@ -6275,14 +6269,7 @@ static void rtl_driver_app_task(void *) {
           if (!orcsdr::settings::active() && g_stream_band != RtlBand::adsb &&
               ui_revision != drawn_rtl_ui_revision) {
             drawn_rtl_ui_revision = ui_revision;
-            if (orcsdr::home::active())
-              draw_home_dashboard();
-            else if (g_stream_band == RtlBand::fm)
-              draw_fm_dashboard(false);
-            else if (g_stream_band == RtlBand::p25)
-              draw_p25_dashboard(false);
-            else
-              show_home();
+            refresh_active_screen();
           }
 
           const uint32_t now = millis();
@@ -6314,30 +6301,12 @@ static void rtl_driver_app_task(void *) {
                             adsb_total_messages.load(std::memory_order_relaxed));
             }
           }
-          /* SIG meter stays on even with GFX off (antenna peaking). */
-          if (!orcsdr::settings::active() && orcsdr::home::active() &&
+          // One active owner receives the bounded periodic status repaint.
+          if (!orcsdr::settings::active() &&
+              orcsdr::screens::status().active != orcsdr::screens::Id::adsb &&
               now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
             rtl_signal_meter_last_ms = now;
-            draw_home_dashboard();
-          } else if (!orcsdr::settings::active() && g_stream_band == RtlBand::fm &&
-              now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
-            rtl_signal_meter_last_ms = now;
-            draw_fm_dashboard(false);
-          } else if (!orcsdr::settings::active() && g_stream_band == RtlBand::p25 &&
-                     now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
-            rtl_signal_meter_last_ms = now;
-            draw_p25_dashboard(false);
-          } else if (!orcsdr::settings::active() && g_stream_band == RtlBand::lora &&
-                     now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
-            rtl_signal_meter_last_ms = now;
-            draw_lora_dashboard(false);
-          } else if (!orcsdr::settings::active() && g_stream_band != RtlBand::adsb &&
-                     g_stream_band != RtlBand::fm && g_stream_band != RtlBand::p25 &&
-                     g_stream_band != RtlBand::lora &&
-                     now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
-            // Generic bands use Home; never revive the retired Browse chrome.
-            rtl_signal_meter_last_ms = now;
-            show_home();
+            refresh_active_screen();
           }
           /* Auto-export WAV after buffer fills (never write SD on the IQ callback). */
           if (g_audio_rec_export_pending.exchange(false, std::memory_order_acq_rel)) {
@@ -6345,14 +6314,11 @@ static void rtl_driver_app_task(void *) {
             if (orcsdr::settings::active()) {
               // Settings owns the framebuffer until close; preserve the finished recording only.
             } else if (orc_tool_current() == OrcTool::Capture) draw_capture_tool_panel();
-            else if (g_stream_band == RtlBand::fm)
-              draw_fm_dashboard(false);
-            else
-              show_home();
+            else refresh_active_screen();
           }
           if (g_iq_rec_export_pending.exchange(false, std::memory_order_acq_rel)) {
             (void)iq_rec_stop_and_export();
-            if (!orcsdr::settings::active()) draw_lora_dashboard(false);
+            if (!orcsdr::settings::active()) refresh_active_screen();
           }
           const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
           if (!orcsdr::settings::active() &&
@@ -6389,16 +6355,7 @@ static void rtl_driver_app_task(void *) {
         set_rtl_sdr_status(stop_err == ESP_OK ? "RTL-SDR V4: stopped"
                                               : "RTL-SDR V4: stop failed");
         /* Documentation capture freezes the last live frame while reception stops. */
-        if (!ui_documentation_mode && !orcsdr::home::active()) {
-          /* Keep rtl_ui_active true so home/power does not paint over SDR controls. */
-          if (rtl_ui_band == RtlBand::adsb) draw_adsb_dashboard(false);
-          else if (rtl_ui_band == RtlBand::fm)
-            draw_fm_dashboard(false);
-          else if (rtl_ui_band == RtlBand::p25)
-            draw_p25_dashboard(false);
-          else
-            draw_sdr_controls(g_stream_band, false);
-        }
+        if (!ui_documentation_mode) refresh_active_screen();
         Serial.printf("RTL_STOP bytes=%llu\n",
                       static_cast<unsigned long long>(rtl_capture_bytes));
       }
@@ -8428,37 +8385,9 @@ void request_hot_retune(uint32_t frequency_hz) {
   if (lo_hz != 0) {
     rtl_hot_retune_hz.store(lo_hz, std::memory_order_release);
   }
-  /*
-   * Do not full-repaint header on every drag sample — that was starving audio
-   * on Core 1. Light frequency-only redraw instead.
-   */
-  if (ui_changed) {
-    if (orcsdr::screens::owns(orcsdr::screens::Id::home) && orcsdr::home::active()) {
-      draw_home_dashboard();
-      return;
-    }
-    if (rtl_ui_band == RtlBand::fm && orcsdr::screens::owns(orcsdr::screens::Id::fm) &&
-        orcsdr::fm::active()) {
-      draw_fm_dashboard(false);
-      return;
-    }
-    if (rtl_ui_band == RtlBand::p25 && orcsdr::screens::owns(orcsdr::screens::Id::p25) &&
-        orcsdr::p25::active()) {
-      draw_p25_dashboard(false);
-      return;
-    }
-    char frequency_text[24];
-    format_frequency(frequency_text, sizeof(frequency_text), ui_hz);
-    char label[64];
-    snprintf(label, sizeof(label), "%s  %s", rtl_band_name(rtl_ui_band), frequency_text);
-    /* Frequency row only (below SIG strip) — do not touch the meter. */
-    M5.Display.fillRect(180, 34, 760, 36, TFT_BLACK);
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(4);
-    M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-    M5.Display.drawString(label, 560, 48);
-    draw_rf_band_guide(ui_hz);
-  }
+  // The active owner decides whether and where a frequency change is visible.
+  // Never paint retired generic header chrome over Settings or another dashboard.
+  if (ui_changed) refresh_active_screen();
 }
 
 // Capture runs on the high-priority USB task and previously starved Arduino

@@ -47,6 +47,10 @@ new screen is being entered. This distinction prevents stale dashboards,
 waterfalls, meters, and Settings content from drawing over a newly selected
 surface.
 
+Timed radio, recording, and retune events use the active-screen refresh
+dispatcher. They may request a bounded repaint, but they never select a
+dashboard from the current band or draw a legacy header directly.
+
 ## Dashboard responsibilities
 
 Each dashboard owns only its static renderer, bounded dynamic update regions,
