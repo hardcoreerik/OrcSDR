@@ -1,0 +1,8 @@
+# Copy to /orcsdr/lora.cfg on the Tab5 SD card. Do not commit real keys.
+profile=US_LONGFAST
+region=US 902-928
+frequency_hz=906875000
+sf=11
+bandwidth_hz=250000
+# Optional, authorized receive key only: exactly 64 hexadecimal characters.
+# authorized_receive_key=

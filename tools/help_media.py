@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "docs" / "help_media" / "manifest.json"
 ASSETS = ROOT / "docs" / "user-guide" / "assets" / "screenshots"
-REQUIRED_PREFIX_COUNTS = {"settings.": 8, "fm.": 5, "p25.": 5, "adsb.": 5, "lora.": 3}
+REQUIRED_PREFIX_COUNTS = {"settings.": 8, "fm.": 5, "p25.": 5, "adsb.": 5, "lora.": 5}
 
 
 def load_manifest(path: Path = MANIFEST) -> dict:

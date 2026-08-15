@@ -158,6 +158,22 @@ is visibly labeled `DEMO`. Generated MP4 files remain outside Git history.
 **Status: Build-verified tooling and firmware interface; hardware capture,
 privacy review, and voice approval pending.** See `phasing.md` Phase 8.
 
+## Product initiative — native Meshtastic receive
+
+LoRa becomes a passive five-panel M5GFX dashboard: Overview, Nodes, Traffic,
+Map, and RF Health. One bounded snapshot drives every panel; absent fields use
+`—`, unknown encrypted frames remain `ENCRYPTED`, and no topology or location
+is inferred. The first protocol target is Meshtastic US LongFast receive only;
+MeshCore, transmit, pairing, and remote control are deferred.
+
+The gate sequence is recorded IQ sync/FEC/CRC, public LongFast parsing,
+authorized-key decryption, bounded queue/error handling, then an authorized
+Heltec network comparison. The 902–928 MHz survey is an explicit occupancy
+tool that restores the monitor; it is not a packet-capture substitute.
+
+**Status: UI/config foundation in progress; no native PHY or live-air claim
+until replay and hardware gates pass.**
+
 ## Summary table
 
 | Gap | New or already tracked | Phase |
@@ -170,3 +186,4 @@ privacy review, and voice approval pending.** See `phasing.md` Phase 8.
 | ADS-B 1090 dashboard | Product initiative | Phase 6 |
 | Global Settings and connectivity | Product initiative | Phase 7 |
 | Automated guide and media | Product initiative | Phase 8 |
+| Native Meshtastic receive | Product initiative | Phase 9 |

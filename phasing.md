@@ -694,6 +694,22 @@ Exit: every catalog screen has a privacy-reviewed 1280x720 capture and hash,
 the device returns to its prior state without an NVS change or reset, the
 strict site builds, and approved audio/video outputs pass `ffprobe` checks.
 
+## Phase 9 — native Meshtastic LongFast receive
+
+1. [ ] Keep the five-panel M5GFX LoRa shell on one bounded snapshot and reuse
+       the shared Home control; remove legacy image plates only after no code
+       references them.
+2. [ ] Validate `/orcsdr/lora.cfg` bounds and complete the masked Settings
+       editor for authorized receive keys without exporting them.
+3. [ ] Prove recorded IQ sync, chirp/FEC/CRC, public LongFast frames,
+       authorized-key decode, encrypted-without-key rendering, malformed
+       frames, queue saturation, and scan restoration.
+4. [ ] Compare native receive metadata against the authorized Heltec V4
+       network, with no TX path, USB drops, watchdogs, or UI flicker.
+
+Exit: native receive-only LongFast data is replay- and hardware-validated.
+MeshCore remains a separate later profile.
+
 ## Explicitly out of scope for this phasing pass
 
 - Gap 2 (dual USB paths) and Gap 4 (performance gates) are already tracked
