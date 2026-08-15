@@ -27,10 +27,23 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def copy_artifact(source: Path, release_dir: Path, release_base: str) -> dict[str, object]:
+def validate_artifact(pack_id: str, source: Path, archive: bool) -> None:
+    with source.open("rb") as stream:
+        prefix = stream.read(8)
+    if archive:
+        if prefix[:4] not in (b"PK\x03\x04", b"PK\x05\x06"):
+            raise ValueError(f"{pack_id} source archive must be a ZIP: {source}")
+    elif pack_id == "faa_aircraft":
+        if prefix != b"ORCADSB1":
+            raise ValueError(f"{pack_id} runtime index must start with ORCADSB1: {source}")
+    elif prefix != b"ORCCAT1\n":
+        raise ValueError(f"{pack_id} runtime index must start with ORCCAT1: {source}")
+
+
+def copy_artifact(source: Path, release_dir: Path, release_base: str, name: str) -> dict[str, object]:
     if not source.is_file():
         raise ValueError(f"missing artifact: {source}")
-    target = release_dir / source.name
+    target = release_dir / name
     shutil.copy2(source, target)
     return {"url": f"{release_base.rstrip('/')}/{target.name}", "bytes": target.stat().st_size,
             "sha256": sha256(target)}
@@ -60,8 +73,14 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     catalog_packs = []
     for pack in packs:
-        runtime = copy_artifact(Path(pack["runtime"]), args.out, args.release_base)
-        archive = copy_artifact(Path(pack["archive"]), args.out, args.release_base)
+        runtime_source = Path(pack["runtime"])
+        archive_source = Path(pack["archive"])
+        validate_artifact(pack["id"], runtime_source, False)
+        validate_artifact(pack["id"], archive_source, True)
+        runtime = copy_artifact(runtime_source, args.out, args.release_base,
+                                f"{pack['id']}-runtime{runtime_source.suffix}")
+        archive = copy_artifact(archive_source, args.out, args.release_base,
+                                f"{pack['id']}-source{archive_source.suffix}")
         runtime["destination"] = pack["runtime_destination"]
         archive["destination"] = pack["archive_destination"]
         catalog_packs.append({

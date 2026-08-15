@@ -6,9 +6,9 @@ Updates**. It never sends Wi-Fi credentials, receiver coordinates, private
 labels, or live traffic data to the catalog.
 
 Each pack has a compact runtime index and the corresponding unmodified source
-archive. It is streamed to `*.part`, SHA-256 verified, checked for readability,
-then activated with an on-SD `.bak` rollback copy. A failed update leaves the
-active pack in place. P25 configuration is deliberately outside this mechanism:
+archive. Both files are streamed to `*.part`, SHA-256 and format-checked, then
+activated together with on-SD `.bak` rollback copies. A failed update leaves the
+previous complete pack in place. P25 configuration is deliberately outside this mechanism:
 `/orcsdr/P25.cfg` is user-owned and is never created, replaced, or removed by a
 catalog operation.
 

@@ -244,7 +244,35 @@ bool hash_matches(const uint8_t digest[32], const char* expected) {
   return strcasecmp(actual, expected) == 0;
 }
 
-bool download_artifact(const Artifact& artifact, uint8_t progress_base, uint8_t progress_span) {
+bool starts_with(File& file, const char* expected, size_t expected_size) {
+  uint8_t actual[16]{};
+  return expected_size <= sizeof(actual) && file.seek(0) &&
+         file.read(actual, expected_size) == expected_size &&
+         memcmp(actual, expected, expected_size) == 0;
+}
+
+bool validate_staged_artifact(const Artifact& artifact, uint8_t pack_index) {
+  char temporary[112]{};
+  snprintf(temporary, sizeof(temporary), "%s.part", artifact.destination);
+  File file = g_fs ? g_fs->open(temporary, FILE_READ) : File{};
+  if (!file || file.size() != artifact.bytes) return false;
+  bool valid = false;
+  if (artifact.archive) {
+    // Every published source artifact is a ZIP. Checking the local header is
+    // intentionally bounded; SHA-256 already proves the downloaded bytes.
+    valid = starts_with(file, "PK\003\004", 4) || starts_with(file, "PK\005\006", 4);
+  } else if (pack_index == 0) {
+    valid = starts_with(file, "ORCADSB1", 8);
+  } else {
+    // Non-ADS-B indexes use the common line-oriented catalog header.
+    valid = starts_with(file, "ORCCAT1\n", 8);
+  }
+  file.close();
+  return valid;
+}
+
+bool download_artifact(const Artifact& artifact, uint8_t pack_index,
+                       uint8_t progress_base, uint8_t progress_span) {
   if (g_fs == nullptr || artifact.url[0] == '\0') return false;
   if (g_free_bytes < artifact.bytes + kChunkBytes) { set_message("Not enough SD space"); return false; }
   char temporary[112]{};
@@ -283,19 +311,52 @@ bool download_artifact(const Artifact& artifact, uint8_t progress_base, uint8_t 
   file.close();
   if (!ok) { g_fs->remove(temporary); set_message("Download hash or network failure"); return false; }
 
-  File verify = g_fs->open(temporary, FILE_READ);
-  const bool readable = verify && verify.size() == artifact.bytes;
-  if (verify) verify.close();
-  if (!readable) { g_fs->remove(temporary); set_message("Downloaded file validation failed"); return false; }
+  if (!validate_staged_artifact(artifact, pack_index)) {
+    g_fs->remove(temporary); set_message("Downloaded file schema rejected"); return false;
+  }
+  return true;
+}
+
+bool move_active_to_backup(const Artifact& artifact) {
   char backup[112]{};
   snprintf(backup, sizeof(backup), "%s.bak", artifact.destination);
   g_fs->remove(backup);
   if (g_fs->exists(artifact.destination) && !g_fs->rename(artifact.destination, backup)) {
-    g_fs->remove(temporary); set_message("Could not preserve previous pack"); return false;
+    set_message("Could not preserve previous pack"); return false;
   }
-  if (!g_fs->rename(temporary, artifact.destination)) {
-    if (g_fs->exists(backup)) (void)g_fs->rename(backup, artifact.destination);
-    g_fs->remove(temporary); set_message("Could not activate downloaded pack"); return false;
+  return true;
+}
+
+void rollback_artifact(const Artifact& artifact) {
+  char temporary[112]{}, backup[112]{};
+  snprintf(temporary, sizeof(temporary), "%s.part", artifact.destination);
+  snprintf(backup, sizeof(backup), "%s.bak", artifact.destination);
+  if (g_fs->exists(artifact.destination)) (void)g_fs->remove(artifact.destination);
+  if (g_fs->exists(backup)) (void)g_fs->rename(backup, artifact.destination);
+  if (g_fs->exists(temporary)) (void)g_fs->remove(temporary);
+}
+
+void discard_staged(const Artifact& artifact) {
+  char temporary[112]{};
+  snprintf(temporary, sizeof(temporary), "%s.part", artifact.destination);
+  if (g_fs->exists(temporary)) (void)g_fs->remove(temporary);
+}
+
+bool activate_pack(const Pack& pack) {
+  if (!move_active_to_backup(pack.runtime)) return false;
+  if (!move_active_to_backup(pack.archive)) {
+    rollback_artifact(pack.runtime);
+    return false;
+  }
+  char runtime_part[112]{}, archive_part[112]{};
+  snprintf(runtime_part, sizeof(runtime_part), "%s.part", pack.runtime.destination);
+  snprintf(archive_part, sizeof(archive_part), "%s.part", pack.archive.destination);
+  if (!g_fs->rename(runtime_part, pack.runtime.destination) ||
+      !g_fs->rename(archive_part, pack.archive.destination)) {
+    rollback_artifact(pack.runtime);
+    rollback_artifact(pack.archive);
+    set_message("Could not activate downloaded pack");
+    return false;
   }
   return true;
 }
@@ -316,9 +377,20 @@ void worker(void*) {
     set_message(ok ? "Catalog verified" : "Catalog signature or format rejected");
     if (ok) refresh_installed();
   } else if (operation == Operation::install && pack_index < kPackCount && g_packs[pack_index].available) {
-    set_message("Downloading runtime index");
-    ok = download_artifact(g_packs[pack_index].runtime, 0, 45);
-    if (ok) { set_message("Downloading source archive"); ok = download_artifact(g_packs[pack_index].archive, 45, 55); }
+    const auto& pack = g_packs[pack_index];
+    const uint64_t required = static_cast<uint64_t>(pack.runtime.bytes) + pack.archive.bytes + 2 * kChunkBytes;
+    if (g_free_bytes < required) {
+      set_message("Not enough SD space for pack");
+    } else {
+      set_message("Downloading runtime index");
+      ok = download_artifact(pack.runtime, pack_index, 0, 45);
+      if (ok) { set_message("Downloading source archive"); ok = download_artifact(pack.archive, pack_index, 45, 55); }
+      if (ok) ok = activate_pack(pack);
+      if (!ok) {
+        discard_staged(pack.runtime);
+        discard_staged(pack.archive);
+      }
+    }
     set_message(ok ? "Pack installed and verified" : g_state.message);
     if (ok) refresh_installed();
   } else if (operation == Operation::remove && pack_index < kPackCount && g_packs[pack_index].available) {
