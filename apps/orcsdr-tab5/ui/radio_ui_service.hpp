@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace orcsdr::radio_ui {
@@ -19,9 +20,19 @@ struct ScopeState {
   uint8_t cb_marker_channels[5]{};
 };
 
+struct Button {
+  int width = 0;
+  const char* text = "";
+  uint32_t color = 0;
+};
+
 uint16_t waterfall_color(float level);
 void draw_grid(const ScopeGeometry& geometry);
 void draw_axis(const ScopeGeometry& geometry, const ScopeState& state);
 void draw_filter_edges(const ScopeGeometry& geometry, const ScopeState& state);
+void draw_button_row(int x, int y, int height, int gap, const Button* buttons, size_t count);
+int button_at(int x, int y, int height, int gap, int touch_x, int touch_y,
+              const int* widths, size_t count);
+bool self_check();
 
 }  // namespace orcsdr::radio_ui

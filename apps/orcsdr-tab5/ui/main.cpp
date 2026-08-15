@@ -4113,38 +4113,6 @@ const char* rtl_capture_state_name(RtlCaptureState state) {
   }
 }
 
-struct SdrButton {
-  int x;
-  int width;
-  const char* text;
-  uint32_t color;
-};
-
-void draw_sdr_button_row(int y, const SdrButton* buttons, size_t count) {
-  int x = kSdrEdge;
-  for (size_t index = 0; index < count; ++index) {
-    const SdrButton& button = buttons[index];
-    const int width = button.width;
-    M5.Display.fillRoundRect(x, y, width, kSdrControlsHeight, 10, button.color);
-    M5.Display.drawRoundRect(x, y, width, kSdrControlsHeight, 10, TFT_WHITE);
-    M5.Display.setTextColor(TFT_WHITE, button.color);
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(3);
-    M5.Display.drawString(button.text, x + width / 2, y + kSdrControlsHeight / 2);
-    x += width + kSdrGap;
-  }
-}
-
-int sdr_button_at(int y, int touch_x, int touch_y, const int* widths, size_t count) {
-  if (touch_y < y || touch_y >= y + kSdrControlsHeight) return -1;
-  int x = kSdrEdge;
-  for (size_t index = 0; index < count; ++index) {
-    if (touch_x >= x && touch_x < x + widths[index]) return static_cast<int>(index);
-    x += widths[index] + kSdrGap;
-  }
-  return -1;
-}
-
 void draw_sdr_controls(RtlBand band, bool running) {
   if (!orcsdr::screens::is_active(orcsdr::screens::Id::radio)) return;
   const int first_row_y = band == RtlBand::lora ? kSdrTuneY : kSdrBandY;
@@ -4158,52 +4126,55 @@ void draw_sdr_controls(RtlBand band, bool running) {
     snprintf(spreading_factor, sizeof(spreading_factor), "SF %u",
              static_cast<unsigned>(lora_sf.load(std::memory_order_relaxed)));
     const bool iq_on = g_iq_rec_active.load(std::memory_order_acquire);
-    const SdrButton lora_row[] = {
-        {0, 170, "FREQ -", TFT_DARKGREY},
-        {0, 170, "FREQ +", TFT_DARKGREY},
-        {0, 220, bandwidth, TFT_DARKCYAN},
-        {0, 150, spreading_factor, TFT_NAVY},
-        {0, 150, iq_on ? "IQ STOP" : "IQ CAP",
+    const orcsdr::radio_ui::Button lora_row[] = {
+        {170, "FREQ -", TFT_DARKGREY},
+        {170, "FREQ +", TFT_DARKGREY},
+        {220, bandwidth, TFT_DARKCYAN},
+        {150, spreading_factor, TFT_NAVY},
+        {150, iq_on ? "IQ STOP" : "IQ CAP",
          static_cast<uint32_t>(iq_on ? TFT_MAROON : TFT_NAVY)},
-        {0, 220, running ? "STOP" : "START",
+        {220, running ? "STOP" : "START",
          static_cast<uint32_t>(running ? TFT_MAROON : TFT_DARKGREEN)},
     };
-    draw_sdr_button_row(kSdrTuneY, lora_row, std::size(lora_row));
+    orcsdr::radio_ui::draw_button_row(kSdrEdge, kSdrTuneY, kSdrControlsHeight,
+                                      kSdrGap, lora_row, std::size(lora_row));
     return;
   }
   const bool rec_on = g_audio_rec_active.load(std::memory_order_acquire);
-  const SdrButton band_row[] = {
-      {0, 110, "FM",
+  const orcsdr::radio_ui::Button band_row[] = {
+      {110, "FM",
        static_cast<uint32_t>(band == RtlBand::fm ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 110, "AM",
+      {110, "AM",
        static_cast<uint32_t>(band == RtlBand::am ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 110, "WX",
+      {110, "WX",
        static_cast<uint32_t>(band == RtlBand::wx ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 120, "CB",
+      {120, "CB",
        static_cast<uint32_t>(band == RtlBand::cb ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 140, "LORA",
+      {140, "LORA",
        static_cast<uint32_t>(band == RtlBand::lora ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 160, "BROWSE",
+      {160, "BROWSE",
        static_cast<uint32_t>(band == RtlBand::browse ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {0, 170, rec_on ? "REC*" : "REC",
+      {170, rec_on ? "REC*" : "REC",
        static_cast<uint32_t>(rec_on ? TFT_MAROON : TFT_DARKGREY)},
-      {0, 200, running ? "STOP" : "START",
+      {200, running ? "STOP" : "START",
        static_cast<uint32_t>(running ? TFT_MAROON : TFT_DARKGREEN)},
   };
   const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
   const bool sound_on = rtl_audio_enabled.load(std::memory_order_acquire);
-  const SdrButton tune_row[] = {
-      {0, 170, "FREQ -", TFT_DARKGREY},
-      {0, 170, "FREQ +", TFT_DARKGREY},
-      {0, 220, sound_on ? "SOUND ON" : "SOUND OFF",
+  const orcsdr::radio_ui::Button tune_row[] = {
+      {170, "FREQ -", TFT_DARKGREY},
+      {170, "FREQ +", TFT_DARKGREY},
+      {220, sound_on ? "SOUND ON" : "SOUND OFF",
        static_cast<uint32_t>(sound_on ? TFT_DARKGREEN : TFT_MAROON)},
-      {0, 150, "VOL -", TFT_NAVY},
-      {0, 150, "VOL +", TFT_NAVY},
-      {0, 220, gfx_on ? "GFX ON" : "GFX OFF",
+      {150, "VOL -", TFT_NAVY},
+      {150, "VOL +", TFT_NAVY},
+      {220, gfx_on ? "GFX ON" : "GFX OFF",
        static_cast<uint32_t>(gfx_on ? TFT_DARKGREEN : TFT_MAROON)},
   };
-  draw_sdr_button_row(kSdrBandY, band_row, std::size(band_row));
-  draw_sdr_button_row(kSdrTuneY, tune_row, std::size(tune_row));
+  orcsdr::radio_ui::draw_button_row(kSdrEdge, kSdrBandY, kSdrControlsHeight,
+                                    kSdrGap, band_row, std::size(band_row));
+  orcsdr::radio_ui::draw_button_row(kSdrEdge, kSdrTuneY, kSdrControlsHeight,
+                                    kSdrGap, tune_row, std::size(tune_row));
 }
 
 /** Freeze scope/waterfall with a clear banner (audio keeps running). */
@@ -8618,8 +8589,9 @@ void handle_sdr_touch(int32_t x, int32_t y) {
   static constexpr int kBandWidths[] = {110, 110, 110, 120, 140, 160, 170, 200};
   static constexpr int kTuneWidths[] = {170, 170, 220, 150, 150, 220};
   if (rtl_ui_band == RtlBand::lora) {
-    const int index = sdr_button_at(kSdrTuneY, x, y, kTuneWidths,
-                                    std::size(kTuneWidths));
+    const int index = orcsdr::radio_ui::button_at(
+        kSdrEdge, kSdrTuneY, kSdrControlsHeight, kSdrGap, x, y, kTuneWidths,
+        std::size(kTuneWidths));
     if (index < 0) return;
     if (index == 0 || index == 1) {
       const uint32_t next = rtl_step_frequency(RtlBand::lora, rtl_ui_frequency_hz,
@@ -8656,7 +8628,9 @@ void handle_sdr_touch(int32_t x, int32_t y) {
                           RtlCaptureState::running);
     return;
   }
-  const int band_index = sdr_button_at(kSdrBandY, x, y, kBandWidths, std::size(kBandWidths));
+  const int band_index = orcsdr::radio_ui::button_at(
+      kSdrEdge, kSdrBandY, kSdrControlsHeight, kSdrGap, x, y, kBandWidths,
+      std::size(kBandWidths));
   if (band_index >= 0) {
     if (band_index == 0) {
       queue_local_rtl_listen(RtlBand::fm, rtl_ui_band == RtlBand::fm
@@ -8708,7 +8682,9 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     return;
   }
 
-  const int tune_index = sdr_button_at(kSdrTuneY, x, y, kTuneWidths, std::size(kTuneWidths));
+  const int tune_index = orcsdr::radio_ui::button_at(
+      kSdrEdge, kSdrTuneY, kSdrControlsHeight, kSdrGap, x, y, kTuneWidths,
+      std::size(kTuneWidths));
   if (tune_index < 0) return;
   if (tune_index == 0 || tune_index == 1) {
     if (rtl_ui_band == RtlBand::wx) return;
@@ -10512,6 +10488,11 @@ void setup() {
     abort();
   }
   Serial.println("ORC_SCREEN_CONTROLLER_SELF_CHECK_OK");
+  if (!orcsdr::radio_ui::self_check()) {
+    Serial.println("ORC_RADIO_UI_SELF_CHECK_FAIL");
+    abort();
+  }
+  Serial.println("ORC_RADIO_UI_SELF_CHECK_OK");
   if (!orcsdr::home::self_check()) {
     Serial.println("ORC_HOME_SELF_CHECK_FAIL");
     abort();

@@ -72,10 +72,10 @@ and touch through `ScreenController` before it writes display primitives.
 ## Shared radio UI service
 
 `apps/orcsdr-tab5/ui/radio_ui_service.{hpp,cpp}` owns the shared generic
-spectrum grid, axis, filter-edge, and waterfall-color rendering primitives.
-`main.cpp` supplies a compact frequency/span/filter snapshot; the service has
-no RTL, USB, DSP, or touch ownership. This keeps the render slice reusable
-without moving live radio state out of its deterministic owner.
+spectrum grid, axis, filter-edge, waterfall-color, and control-row geometry.
+`main.cpp` supplies compact frequency/span/filter snapshots and performs the
+state-changing radio actions after service hit-testing. The service has no RTL,
+USB, DSP, or touch-polling ownership, keeping live radio state deterministic.
 
 The former generic **Browse** screen is retired as a user route. Until a band
 has a dedicated dashboard, tuning AM, WX, CB, airband, marine, satellite, or

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <iterator>
 
 namespace orcsdr::radio_ui {
 namespace {
@@ -81,6 +82,37 @@ void draw_filter_edges(const ScopeGeometry& geometry, const ScopeState& state) {
     M5.Display.drawFastVLine(center + half_width + offset, geometry.y + 1,
                              geometry.height - 2, TFT_YELLOW);
   }
+}
+
+void draw_button_row(int x, int y, int height, int gap, const Button* buttons,
+                     size_t count) {
+  for (size_t index = 0; index < count; ++index) {
+    const Button& button = buttons[index];
+    M5.Display.fillRoundRect(x, y, button.width, height, 10, button.color);
+    M5.Display.drawRoundRect(x, y, button.width, height, 10, TFT_WHITE);
+    M5.Display.setTextColor(TFT_WHITE, button.color);
+    M5.Display.setTextDatum(middle_center);
+    M5.Display.setTextSize(3);
+    M5.Display.drawString(button.text, x + button.width / 2, y + height / 2);
+    x += button.width + gap;
+  }
+}
+
+int button_at(int x, int y, int height, int gap, int touch_x, int touch_y,
+              const int* widths, size_t count) {
+  if (touch_y < y || touch_y >= y + height) return -1;
+  for (size_t index = 0; index < count; ++index) {
+    if (touch_x >= x && touch_x < x + widths[index]) return static_cast<int>(index);
+    x += widths[index] + gap;
+  }
+  return -1;
+}
+
+bool self_check() {
+  constexpr int widths[] = {110, 170};
+  return button_at(32, 100, 64, 12, 40, 120, widths, std::size(widths)) == 0 &&
+         button_at(32, 100, 64, 12, 200, 120, widths, std::size(widths)) == 1 &&
+         button_at(32, 100, 64, 12, 32, 164, widths, std::size(widths)) == -1;
 }
 
 }  // namespace orcsdr::radio_ui
