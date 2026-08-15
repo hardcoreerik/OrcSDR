@@ -1,0 +1,6 @@
+# Preserve the free review allowance: reviewers opt in only when a PR is ready.
+reviews:
+  auto_review:
+    enabled: false
+    drafts: false
+    auto_incremental_review: false
