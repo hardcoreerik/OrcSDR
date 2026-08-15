@@ -6157,7 +6157,7 @@ static void rtl_driver_app_task(void *) {
             reset_spectrum_renderer();
             request_hot_retune(auto_fm_frequency_hz);
             auto_fm_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
-            draw_fm_dashboard(false);
+            refresh_active_screen();
             Serial.println("RTL_AUTO_FM start");
           }
           if (auto_fm_scanning && now_retune >= auto_fm_sample_at_ms) {
@@ -6177,7 +6177,7 @@ static void rtl_driver_app_task(void *) {
               rtl_auto_fm_active.store(false, std::memory_order_release);
               request_hot_retune(auto_fm_best_hz);
               persist_fm_frequency(auto_fm_best_hz);
-              draw_fm_dashboard(false);
+              refresh_active_screen();
               Serial.printf("RTL_AUTO_FM done frequency_hz=%u level=%.1f\n",
                             auto_fm_best_hz, static_cast<double>(auto_fm_best_level));
             } else {
@@ -6209,7 +6209,7 @@ static void rtl_driver_app_task(void *) {
             request_hot_retune(preset_scan_frequency_hz);
             rtl_fm_preset_scan_freq_hz.store(preset_scan_frequency_hz, std::memory_order_relaxed);
             preset_scan_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
-            draw_fm_dashboard(false);
+            refresh_active_screen();
             Serial.println("RTL_PRESET_SCAN start");
           }
           if (preset_scanning && now_retune >= preset_scan_sample_at_ms) {
@@ -6234,7 +6234,7 @@ static void rtl_driver_app_task(void *) {
               preset_scanning = false;
               rtl_fm_preset_scan_active.store(false, std::memory_order_release);
               request_hot_retune(preset_scan_return_hz);
-              draw_fm_dashboard(false);
+              refresh_active_screen();
               persist_fm_presets();
               Serial.printf("RTL_PRESET_SCAN done found=%d\n", fm_preset_count);
             } else {
@@ -6822,7 +6822,7 @@ void handle_fm_dashboard_action(const orcsdr::fm::Action& action) {
       break;
     case ActionKind::none: break;
   }
-  if (orcsdr::fm::active()) draw_fm_dashboard(false);
+  refresh_active_screen();
 }
 
 orcsdr::lora::Snapshot lora_dashboard_snapshot() {
@@ -7097,7 +7097,7 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
       break;
     case ActionKind::none: break;
   }
-  if (orcsdr::p25::active()) draw_p25_dashboard(false);
+  refresh_active_screen();
 }
 
 void service_lora_survey(uint32_t now) {
@@ -7182,7 +7182,7 @@ void handle_lora_dashboard_action(const orcsdr::lora::Action& action) {
     default:
       break;
   }
-  if (orcsdr::lora::active()) draw_lora_dashboard(false);
+  refresh_active_screen();
 }
 
 void service_p25_survey(uint32_t now) {
@@ -7237,7 +7237,7 @@ void service_p25_survey(uint32_t now) {
                 static_cast<double>(p25_candidate_levels[p25_candidate_index]),
                 p25_candidate_tsbk_good[p25_candidate_index] > 0 ? 1 : 0,
                 static_cast<unsigned long>(p25_candidate_tsbk_good[p25_candidate_index]));
-  if (orcsdr::p25::active()) draw_p25_dashboard(false);
+  refresh_active_screen();
 }
 
 void service_p25_follow(uint32_t now) {
@@ -10749,7 +10749,7 @@ void loop() {
   } else if (adsb_ui && orcsdr::screens::owns(orcsdr::screens::Id::adsb)) {
     enrich_one_adsb_track();
     publish_adsb_snapshot(millis());
-    draw_adsb_dashboard(false);
+    refresh_active_screen();
     const auto touch = M5.Touch.getDetail(0);
     const bool pressed = touch.isPressed() || touch.wasPressed();
     if (pressed && !was_pressed) handle_sdr_touch(touch.x, touch.y);
