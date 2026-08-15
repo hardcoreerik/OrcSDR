@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_crt_bundle.h>
+#include <esp_app_desc.h>
 #include <esp_http_client.h>
 #include <esp_heap_caps.h>
 #include <mbedtls/base64.h>
@@ -81,6 +82,42 @@ bool valid_hash(const char* value) {
 bool valid_destination(const char* value) {
   return strncmp(value, kDataRoot, strlen(kDataRoot)) == 0 &&
          strstr(value, "..") == nullptr && strlen(value) < 95;
+}
+
+struct FirmwareVersion {
+  uint16_t major = 0;
+  uint16_t minor = 0;
+  uint16_t patch = 0;
+  int16_t alpha = -1;  // A final release sorts after its alpha builds.
+};
+
+bool parse_firmware_version(const char* text, FirmwareVersion* output) {
+  if (text == nullptr || output == nullptr) return false;
+  const char* value = *text == 'v' ? text + 1 : text;
+  unsigned major = 0, minor = 0, patch = 0, alpha = 0;
+  if (sscanf(value, "%u.%u.%u-alpha.%u", &major, &minor, &patch, &alpha) == 4) {
+    if (major > UINT16_MAX || minor > UINT16_MAX || patch > UINT16_MAX || alpha > INT16_MAX) return false;
+    *output = {static_cast<uint16_t>(major), static_cast<uint16_t>(minor),
+               static_cast<uint16_t>(patch), static_cast<int16_t>(alpha)};
+    return true;
+  }
+  if (sscanf(value, "%u.%u.%u", &major, &minor, &patch) != 3 ||
+      major > UINT16_MAX || minor > UINT16_MAX || patch > UINT16_MAX) return false;
+  *output = {static_cast<uint16_t>(major), static_cast<uint16_t>(minor),
+             static_cast<uint16_t>(patch), -1};
+  return true;
+}
+
+bool firmware_supports(const char* minimum) {
+  FirmwareVersion required{}, current{};
+  const esp_app_desc_t* app = esp_app_get_description();
+  if (app == nullptr || !parse_firmware_version(minimum, &required) ||
+      !parse_firmware_version(app->version, &current)) return false;
+  if (current.major != required.major) return current.major > required.major;
+  if (current.minor != required.minor) return current.minor > required.minor;
+  if (current.patch != required.patch) return current.patch > required.patch;
+  if (current.alpha < 0) return true;
+  return required.alpha >= 0 && current.alpha >= required.alpha;
 }
 
 void set_message(const char* value) {
@@ -189,11 +226,13 @@ bool parse_manifest(const uint8_t* data, size_t size) {
   do {
     const cJSON* schema = cJSON_GetObjectItemCaseSensitive(root, "schema");
     const cJSON* date = cJSON_GetObjectItemCaseSensitive(root, "generated_at");
+    const cJSON* minimum = cJSON_GetObjectItemCaseSensitive(root, "minimum_firmware");
     const cJSON* packs = cJSON_GetObjectItemCaseSensitive(root, "packs");
     char catalog_date[sizeof(g_state.catalog_date)]{};
     const int pack_count = cJSON_IsArray(packs) ? cJSON_GetArraySize(packs) : 0;
     if (!cJSON_IsString(schema) || strcmp(schema->valuestring, "catalog-v1") != 0 ||
-        !safe_text(date, catalog_date, sizeof(catalog_date)) || pack_count < 1 ||
+        !safe_text(date, catalog_date, sizeof(catalog_date)) || !cJSON_IsString(minimum) ||
+        !firmware_supports(minimum->valuestring) || pack_count < 1 ||
         pack_count > kPackCount) break;
     Pack parsed[kPackCount]{};
     PackView views[kPackCount]{};
@@ -447,7 +486,8 @@ State state() {
 
 bool self_check() {
   constexpr char kSubset[] =
-      "{\"schema\":\"catalog-v1\",\"generated_at\":\"2026-08-14\",\"packs\":[{"
+      "{\"schema\":\"catalog-v1\",\"generated_at\":\"2026-08-14\","
+      "\"minimum_firmware\":\"v0.0.0\",\"packs\":[{"
       "\"id\":\"faa_aircraft\",\"version\":\"test\",\"source_date\":\"2026-08-14\","
       "\"artifacts\":{\"runtime\":{\"url\":\"https://example.test/index\","
       "\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\","
