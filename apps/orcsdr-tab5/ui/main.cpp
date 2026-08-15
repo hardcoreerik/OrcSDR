@@ -467,9 +467,14 @@ constexpr int kNavPanelW = 456;
 constexpr int kNavPanelH = 456;
 constexpr uint8_t kRtlVolumeMin = 0;
 constexpr uint8_t kRtlVolumeMax = 255;
+// The Tab5 amp can trip the rail detector with a full-scale P25 voice burst.
+// Keep the saved/UI range intact but cap the physical codec level until a
+// hardware-calibrated speaker profile exists.
+constexpr uint8_t kRtlSpeakerHardwareMax = 200;
 // ~50% of the M5 speaker scale (0-255). Operator found 220 too loud as a start.
 constexpr uint8_t kRtlVolumeDefault = 128;
 constexpr uint8_t kRtlVolumeStep = 16;
+static_assert(kRtlSpeakerHardwareMax <= kRtlVolumeMax);
 constexpr uint32_t kRtlFmMinHz = 87500000;
 constexpr uint32_t kRtlFmMaxHz = 108000000;
 /* FREQ +/- coarse step. Header still shows 0.001 MHz; LO apply is 5 kHz. */
@@ -788,7 +793,7 @@ static uint8_t rtl_iq_processing[32768 + 512];
 /* Relative RF level from IQ power (dBFS-ish, 0 = full-scale CU8). */
 static std::atomic<float> rtl_signal_dbfs{-90.0f};
 /** WBFM stereo: fresh-per-callback dBFS (same granularity as rtl_signal_dbfs);
- * UI applies its own EMA at redraw cadence, matching draw_signal_meter. */
+ * dashboard snapshots apply their own EMA at redraw cadence. */
 static std::atomic<float> rtl_audio_left_dbfs{-90.0f};
 static std::atomic<float> rtl_audio_right_dbfs{-90.0f};
 static std::atomic<bool> rtl_stereo_locked{false};
@@ -2029,8 +2034,9 @@ void format_frequency(char* output, size_t output_size, uint32_t frequency_hz) {
 
 void apply_speaker_volume(uint8_t volume) {
   // Keep master and virtual-channel levels aligned; some M5 paths only honor one.
-  M5.Speaker.setVolume(volume);
-  M5.Speaker.setChannelVolume(0, volume);
+  const uint8_t physical_volume = std::min(volume, kRtlSpeakerHardwareMax);
+  M5.Speaker.setVolume(physical_volume);
+  M5.Speaker.setChannelVolume(0, physical_volume);
 }
 
 bool ensure_speaker_running(uint8_t volume) {
@@ -4250,121 +4256,8 @@ void update_signal_level_from_iq(const uint8_t* iq, size_t bytes) {
   rtl_signal_dbfs.store(dbfs, std::memory_order_relaxed);
 }
 
-/**
- * Top-of-screen horizontal SIG meter (left → right).
- * 6× old vertical travel (42 → 252 px). Redraws cheaply (fill only when width changes).
- * Strip is y=0..28 only — never paints frequency/VOL/help.
- */
-void draw_signal_meter(bool force_chrome = false) {
-  if (orcsdr::settings::active()) return;
-  const float raw = rtl_signal_dbfs.load(std::memory_order_relaxed);
-  rtl_signal_dbfs_smooth = 0.88f * rtl_signal_dbfs_smooth + 0.12f * raw;
-
-  float t = (rtl_signal_dbfs_smooth + 70.0f) / 70.0f;
-  if (t < 0.0f) t = 0.0f;
-  if (t > 1.0f) t = 1.0f;
-
-  constexpr int kLabelX = 8;
-  constexpr int kBarX = 44;
-  constexpr int kBarY = 8;
-  constexpr int kBarH = 18;
-  constexpr int kBarW = 42 * 6; /* 252 px — 6× former vertical travel */
-  constexpr int kDbX = kBarX + kBarW + 10;
-
-  static int s_last_fill_w = -1;
-  static int s_last_db_i = 999;
-  static uint32_t s_last_fill_color = 0;
-  static bool s_chrome_drawn = false;
-
-  const int fill_w = static_cast<int>(t * (kBarW - 2));
-  const int db_i = static_cast<int>(lroundf(rtl_signal_dbfs_smooth));
-  uint32_t fill_color = TFT_GREEN;
-  if (t > 0.85f) fill_color = TFT_RED;
-  else if (t > 0.65f) fill_color = TFT_YELLOW;
-
-  if (force_chrome || !s_chrome_drawn) {
-    M5.Display.fillRect(0, 0, kDbX + 130, 30, TFT_BLACK);
-    M5.Display.setTextDatum(middle_left);
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    M5.Display.drawString("SIG", kLabelX, kBarY + kBarH / 2);
-    M5.Display.drawRect(kBarX, kBarY, kBarW, kBarH, TFT_DARKGREY);
-    for (int tick = 1; tick <= 3; ++tick) {
-      const int tx = kBarX + (kBarW * tick) / 4;
-      M5.Display.drawFastVLine(tx, kBarY + kBarH, 3, TFT_DARKGREY);
-    }
-    s_chrome_drawn = true;
-    s_last_fill_w = -1;
-    s_last_db_i = 999;
-    s_last_fill_color = 0;
-  }
-
-  if (s_last_fill_w < 0 || fill_color != s_last_fill_color) {
-    M5.Display.fillRect(kBarX + 1, kBarY + 1, kBarW - 2, kBarH - 2, TFT_BLACK);
-    if (fill_w > 0)
-      M5.Display.fillRect(kBarX + 1, kBarY + 1, fill_w, kBarH - 2, fill_color);
-  } else if (fill_w > s_last_fill_w) {
-    M5.Display.fillRect(kBarX + 1 + s_last_fill_w, kBarY + 1,
-                        fill_w - s_last_fill_w, kBarH - 2, fill_color);
-  } else if (fill_w < s_last_fill_w) {
-    M5.Display.fillRect(kBarX + 1 + fill_w, kBarY + 1,
-                        s_last_fill_w - fill_w, kBarH - 2, TFT_BLACK);
-  }
-  if (fill_w != s_last_fill_w || fill_color != s_last_fill_color) {
-    s_last_fill_w = fill_w;
-    s_last_fill_color = fill_color;
-  }
-
-  if (db_i != s_last_db_i) {
-    M5.Display.fillRect(kDbX, 4, 120, 24, TFT_BLACK);
-    char db_label[20];
-    snprintf(db_label, sizeof(db_label), "%+.0f dB", static_cast<double>(db_i));
-    M5.Display.setTextDatum(middle_left);
-    M5.Display.setTextSize(3);
-    M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-    M5.Display.drawString(db_label, kDbX, kBarY + kBarH / 2);
-    M5.Display.setTextSize(2);
-    s_last_db_i = db_i;
-  }
-}
-
-void draw_sdr_header(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
-  if (orcsdr::settings::active() || !orcsdr::screens::is_active(orcsdr::screens::Id::radio)) return;
-  char label[96];
-  char frequency_text[24];
-  format_frequency(frequency_text, sizeof(frequency_text), frequency_hz);
-  /* Full header clear; layout: meter (0..28), title (34..58), help (68..84). */
-  M5.Display.fillRect(0, 0, 1280, kSpectrumY - 4, TFT_BLACK);
-  draw_signal_meter(true);
-
-  M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextSize(4);
-  M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-  snprintf(label, sizeof(label), "%s  %s", rtl_band_name(band), frequency_text);
-  M5.Display.drawString(label, 560, 48);
-  M5.Display.setTextSize(3);
-  M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-  if (rtl_audio_enabled.load(std::memory_order_relaxed)) {
-    snprintf(label, sizeof(label), "VOL %u", volume);
-  } else {
-    strlcpy(label, "SOUND OFF", sizeof(label));
-  }
-  M5.Display.drawString(label, 1080, 48);
-  draw_tool_tabs();
-  orcsdr::audio_header::draw_home_button();
-  draw_global_settings_gear();
-}
-
 void draw_global_settings_gear() {
-  constexpr int cx = 1240, cy = 37;
-  M5.Display.fillRoundRect(1211, 8, 58, 58, 8, 0x2104);
-  M5.Display.drawRoundRect(1211, 8, 58, 58, 8, TFT_LIGHTGREY);
-  M5.Display.drawCircle(cx, cy, 13, TFT_CYAN);
-  M5.Display.drawCircle(cx, cy, 5, TFT_CYAN);
-  M5.Display.drawLine(cx - 21, cy, cx - 13, cy, TFT_CYAN);
-  M5.Display.drawLine(cx + 13, cy, cx + 21, cy, TFT_CYAN);
-  M5.Display.drawLine(cx, cy - 21, cx, cy - 13, TFT_CYAN);
-  M5.Display.drawLine(cx, cy + 13, cx, cy + 21, TFT_CYAN);
+  orcsdr::audio_header::draw_settings_button();
 }
 
 void draw_cb_dashboard(bool static_panel) {
@@ -4572,55 +4465,6 @@ void draw_documentation_spectrum() {
   }
   M5.Display.drawFastVLine(kSpectrumX + width / 2, kSpectrumY + 1,
                            kSpectrumHeight - 2, TFT_GREEN);
-  M5.Display.endWrite();
-}
-
-void draw_lora_live_graphs(size_t first_bin, size_t visible_bins, float floor) {
-  constexpr int scope_x = kSpectrumX + 712;
-  constexpr int scope_y = kSpectrumY + 78;
-  constexpr int scope_w = 366;
-  constexpr int scope_h = 80;
-  constexpr int waterfall_x = kSpectrumX + 46;
-  constexpr int waterfall_y = kSpectrumY + 270;
-  constexpr int waterfall_w = 616;
-  constexpr int waterfall_h = 150;
-
-  M5.Display.startWrite();
-  M5.Display.fillRect(scope_x, scope_y, scope_w, scope_h, TFT_BLACK);
-  for (int line = 1; line < 4; ++line) {
-    M5.Display.drawFastVLine(scope_x + line * scope_w / 4, scope_y, scope_h, 0x2104);
-  }
-  M5.Display.drawFastHLine(scope_x, scope_y + scope_h / 2, scope_w, 0x2104);
-  int previous_x = scope_x;
-  int previous_y = scope_y + scope_h - 1;
-  for (size_t bin = first_bin; bin < first_bin + visible_bins; ++bin) {
-    const float normalized =
-        constrain((rtl_spectrum_levels[bin] - floor) / 48.0f, 0.0f, 1.0f);
-    const int x = scope_x + static_cast<int>((bin - first_bin) * (scope_w - 1) /
-                                              (visible_bins - 1));
-    const int y = scope_y + scope_h - 1 - static_cast<int>(normalized * (scope_h - 2));
-    if (bin != first_bin) M5.Display.drawLine(previous_x, previous_y, x, y, TFT_CYAN);
-    previous_x = x;
-    previous_y = y;
-  }
-  M5.Display.drawFastVLine(scope_x + scope_w / 2, scope_y, scope_h, TFT_GREEN);
-
-  M5.Display.setScrollRect(waterfall_x, waterfall_y, waterfall_w, waterfall_h,
-                           TFT_BLACK);
-  M5.Display.scroll(0, -1);
-  for (size_t bin = first_bin; bin < first_bin + visible_bins; ++bin) {
-    const float normalized =
-        constrain((rtl_spectrum_levels[bin] - floor) / 48.0f, 0.0f, 1.0f);
-    const int cell_x = static_cast<int>((bin - first_bin) * waterfall_w / visible_bins);
-    const int next_x = static_cast<int>((bin - first_bin + 1) * waterfall_w /
-                                        visible_bins);
-    const uint16_t color = waterfall_color(normalized);
-    for (int pixel = cell_x; pixel < next_x; ++pixel) rtl_waterfall_row[pixel] = color;
-  }
-  M5.Display.pushImage(waterfall_x, waterfall_y + waterfall_h - 1,
-                       waterfall_w, 1, rtl_waterfall_row);
-  M5.Display.drawFastVLine(waterfall_x + waterfall_w / 2, waterfall_y,
-                           waterfall_h, TFT_GREEN);
   M5.Display.endWrite();
 }
 
@@ -5106,6 +4950,16 @@ bool p25_voice_self_check() {
   return true;
 }
 
+int16_t p25_safe_pcm_sample(int16_t sample) {
+  // IMBE synthesis can emit a full-scale first sample after a voice retune.
+  // Leave conversational headroom before the shared Tab5 speaker ceiling.
+  constexpr int32_t kGainNumerator = 3;
+  constexpr int32_t kGainDenominator = 5;
+  constexpr int32_t kPeak = 10000;
+  const int32_t scaled = static_cast<int32_t>(sample) * kGainNumerator / kGainDenominator;
+  return static_cast<int16_t>(std::clamp(scaled, -kPeak, kPeak));
+}
+
 void p25_voice_task(void*) {
   auto& context = p25_voice_context;
   mbe_initMbeParms(&context.current, &context.previous, &context.enhanced);
@@ -5141,11 +4995,12 @@ void p25_voice_task(void*) {
                previous_synth_max, synth_us, std::memory_order_relaxed)) {}
     size_t output = 0;
     for (const int16_t sample : context.pcm8k) {
-      const int32_t delta = static_cast<int32_t>(sample) - context.previous_sample;
+      const int16_t safe_sample = p25_safe_pcm_sample(sample);
+      const int32_t delta = static_cast<int32_t>(safe_sample) - context.previous_sample;
       for (int phase = 1; phase <= 6; ++phase)
         context.pcm48k[output++] = static_cast<int16_t>(
             context.previous_sample + delta * phase / 6);
-      context.previous_sample = sample;
+      context.previous_sample = safe_sample;
     }
     p25_imbe_frames.fetch_add(1, std::memory_order_relaxed);
     p25_imbe_errors.fetch_add(static_cast<uint32_t>(std::max(0, total_errors)),
@@ -5812,10 +5667,16 @@ void run_rtl_capture() {
       const uint8_t live_volume = rtl_live_volume.load(std::memory_order_acquire);
       rtl_ui_volume = live_volume;
       drawn_rtl_ui_revision = ui_revision;
-      if (band == RtlBand::p25)
+      if (orcsdr::home::active())
+        draw_home_dashboard();
+      else if (band == RtlBand::fm)
+        draw_fm_dashboard(false);
+      else if (band == RtlBand::p25)
         draw_p25_dashboard(false);
+      else if (band == RtlBand::lora)
+        draw_lora_dashboard(false);
       else
-        draw_sdr_header(band, frequency_hz, live_volume);
+        show_home();
     }
     const uint32_t drops_before_draw = rtl_audio.dropped_chunks;
     if (drops_before_draw == 0 &&
@@ -6421,8 +6282,7 @@ static void rtl_driver_app_task(void *) {
             else if (g_stream_band == RtlBand::p25)
               draw_p25_dashboard(false);
             else
-              draw_sdr_header(g_stream_band, rtl_ui_frequency_hz,
-                              rtl_live_volume.load(std::memory_order_acquire));
+              show_home();
           }
 
           const uint32_t now = millis();
@@ -6473,16 +6333,11 @@ static void rtl_driver_app_task(void *) {
             draw_lora_dashboard(false);
           } else if (!orcsdr::settings::active() && g_stream_band != RtlBand::adsb &&
                      g_stream_band != RtlBand::fm && g_stream_band != RtlBand::p25 &&
-              now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
+                     g_stream_band != RtlBand::lora &&
+                     now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
+            // Generic bands use Home; never revive the retired Browse chrome.
             rtl_signal_meter_last_ms = now;
-            draw_signal_meter(false);
-            /* Capture tool owns the screen below the header while active —
-             * dashboard repaints here would fight its debug panel for the
-             * same pixels (this was the "leftover screens" glitch). */
-            if (orc_tool_current() != OrcTool::Capture) {
-              draw_cb_dashboard(false);
-              draw_fm_dashboard(false);
-            }
+            show_home();
           }
           /* Auto-export WAV after buffer fills (never write SD on the IQ callback). */
           if (g_audio_rec_export_pending.exchange(false, std::memory_order_acq_rel)) {
@@ -6493,7 +6348,7 @@ static void rtl_driver_app_task(void *) {
             else if (g_stream_band == RtlBand::fm)
               draw_fm_dashboard(false);
             else
-              draw_sdr_controls(g_stream_band, true);
+              show_home();
           }
           if (g_iq_rec_export_pending.exchange(false, std::memory_order_acq_rel)) {
             (void)iq_rec_stop_and_export();
@@ -7652,6 +7507,10 @@ void show_home(bool demo) {
   orcsdr::settings::leave();
   rtl_nav_open = false;
   rtl_frequency_keypad_open = false;
+  // Home is only a screen owner: retain the active listening path.
+  sync_rtl_audio_for_band(rtl_ui_band);
+  if (rtl_audio_enabled.load(std::memory_order_acquire))
+    (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
   M5.Display.fillScreen(TFT_BLACK);
   orcsdr::home::enter(home_dashboard_snapshot(demo));
   if (demo) {
@@ -7741,7 +7600,10 @@ void handle_home_action(const orcsdr::home::Action& action) {
       open_global_settings(orcsdr::settings::Section::connectivity);
       return;
     case ActionKind::tune_frequency:
-      if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
+      if (rtl_ui_band == RtlBand::p25) {
+        p25_survey_active.store(false, std::memory_order_relaxed);
+        tune_p25_control(action.value);
+      } else if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
         request_hot_retune(action.value);
       else
         queue_local_rtl_listen(rtl_ui_band, action.value, false);
@@ -7993,27 +7855,6 @@ void redraw_global_settings() {
 
 void handle_global_settings_touch(int32_t x, int32_t y) {
   handle_global_settings_action(orcsdr::settings::handle_touch(x, y));
-}
-
-void draw_ui() {
-  M5.Display.fillScreen(TFT_BLACK);
-  M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-  M5.Display.setTextSize(5);
-  M5.Display.drawString("OrcLink", 640, 90);
-
-  M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-  M5.Display.setTextSize(3);
-  M5.Display.drawString("M5Tab5 agent online", 640, 175);
-
-  M5.Display.fillRoundRect(kButtonX, kButtonY, kButtonWidth, kButtonHeight, 18, TFT_DARKCYAN);
-  M5.Display.drawRoundRect(kButtonX, kButtonY, kButtonWidth, kButtonHeight, 18, TFT_CYAN);
-  M5.Display.setTextColor(TFT_WHITE, TFT_DARKCYAN);
-  M5.Display.setTextSize(3);
-  M5.Display.drawString("Tap to verify touch", 640, 360);
-
-  M5.Display.setTextSize(3);
-  draw_touch_state("Waiting for touch", TFT_LIGHTGREY);
 }
 
 bool decode_hex(const char* value, uint8_t* output, size_t output_size) {
@@ -8856,7 +8697,7 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     show_home();
     return;
   }
-  if (x >= 1211 && x < 1269 && y >= 8 && y < 66) {
+  if (orcsdr::audio_header::settings_hit(x, y)) {
     open_global_settings(rtl_ui_band == RtlBand::adsb
                              ? orcsdr::settings::Section::location_adsb
                              : (rtl_ui_band == RtlBand::p25 || rtl_ui_band == RtlBand::lora)
@@ -11012,7 +10853,7 @@ void loop() {
     } else {
       const bool pressed = touch.isPressed() || touch.wasPressed();
       if (pressed && !was_pressed) {
-        if (touch.x >= 1211 && touch.x < 1269 && touch.y >= 8 && touch.y < 66) {
+        if (orcsdr::audio_header::settings_hit(touch.x, touch.y)) {
           open_global_settings(orcsdr::settings::Section::connectivity);
         } else if (point_in_button(touch.x, touch.y)) {
           if (rtl_device_ready()) queue_local_rtl_listen(RtlBand::fm, rtl_saved_fm_hz);

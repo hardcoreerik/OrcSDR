@@ -29,6 +29,10 @@ constexpr int kHomeX = 1116;
 constexpr int kHomeY = 8;
 constexpr int kHomeW = 58;
 constexpr int kHomeH = 58;
+constexpr int kSettingsX = 1211;
+constexpr int kSettingsY = 8;
+constexpr int kSettingsW = 58;
+constexpr int kSettingsH = 58;
 constexpr uint32_t kTrayTimeoutMs = 4000;
 
 bool hit(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
@@ -106,6 +110,23 @@ bool home_hit(int32_t x, int32_t y) {
   return hit(x, y, kHomeX, kHomeY, kHomeW, kHomeH);
 }
 
+void draw_settings_button() {
+  constexpr int cx = kSettingsX + kSettingsW / 2;
+  constexpr int cy = kSettingsY + kSettingsH / 2;
+  M5.Display.fillRoundRect(kSettingsX, kSettingsY, kSettingsW, kSettingsH, 8, kPanel);
+  M5.Display.drawRoundRect(kSettingsX, kSettingsY, kSettingsW, kSettingsH, 8, TFT_LIGHTGREY);
+  M5.Display.drawCircle(cx, cy, 13, kCyan);
+  M5.Display.drawCircle(cx, cy, 5, kCyan);
+  M5.Display.drawLine(cx - 21, cy, cx - 13, cy, kCyan);
+  M5.Display.drawLine(cx + 13, cy, cx + 21, cy, kCyan);
+  M5.Display.drawLine(cx, cy - 21, cx, cy - 13, kCyan);
+  M5.Display.drawLine(cx, cy + 13, cx, cy + 21, kCyan);
+}
+
+bool settings_hit(int32_t x, int32_t y) {
+  return hit(x, y, kSettingsX, kSettingsY, kSettingsW, kSettingsH);
+}
+
 Action handle_touch(Control& control, int32_t x, int32_t y, uint32_t now_ms) {
   if (!control.expanded) {
     if (!hit(x, y, kIndicatorX, kRegionY, kIndicatorW, kRegionH)) return Action::none;
@@ -115,7 +136,7 @@ Action handle_touch(Control& control, int32_t x, int32_t y, uint32_t now_ms) {
   }
 
   // Leave the Settings gear live while the tray is open.
-  if (hit(x, y, 1180, kRegionY, 80, kRegionH)) return Action::none;
+  if (settings_hit(x, y)) return Action::none;
   for (size_t i = 0; i < 3; ++i) {
     if (!hit(x, y, kButtonX[i], kButtonY, kButtonW, kButtonH)) continue;
     control.hide_at_ms = now_ms + kTrayTimeoutMs;
@@ -147,7 +168,10 @@ bool self_check() {
   reset(control);
   if (handle_touch(control, 800, 60, 0) != Action::none) return false;
   return kRegionX + kRegionW <= kHomeX && kButtonX[2] + kButtonW <= kHomeX &&
-         home_hit(kHomeX + 1, kHomeY + 1) && !home_hit(kHomeX - 1, kHomeY);
+         kHomeX + kHomeW <= kSettingsX && home_hit(kHomeX + 1, kHomeY + 1) &&
+         !home_hit(kHomeX - 1, kHomeY) &&
+         settings_hit(kSettingsX + 1, kSettingsY + 1) &&
+         !settings_hit(kSettingsX - 1, kSettingsY);
 }
 
 }  // namespace orcsdr::audio_header

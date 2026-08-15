@@ -72,18 +72,6 @@ void button(int x, int y, int w, int h, const char* title, uint16_t color = kCya
   text(title, x + w / 2, y + h / 2, selected ? color : TFT_WHITE, 2);
 }
 
-void draw_gear(int cx, int cy, uint16_t color) {
-  M5.Display.drawCircle(cx, cy, 20, color);
-  M5.Display.drawCircle(cx, cy, 7, color);
-  for (int i = 0; i < 8; ++i) {
-    const float a = i * 3.14159265f / 4.0f;
-    M5.Display.drawLine(cx + static_cast<int>(cosf(a) * 21),
-                        cy + static_cast<int>(sinf(a) * 21),
-                        cx + static_cast<int>(cosf(a) * 29),
-                        cy + static_cast<int>(sinf(a) * 29), color);
-  }
-}
-
 void draw_radio_icon(int cx, int cy, uint16_t color) {
   M5.Display.drawRoundRect(cx - 28, cy - 20, 56, 42, 8, color);
   M5.Display.drawCircle(cx + 10, cy + 2, 10, color);
@@ -107,7 +95,7 @@ void draw_header() {
   audio_header::draw(g_audio_control, g_snapshot.volume, g_snapshot.sound_enabled,
                      g_snapshot.battery_percent);
   audio_header::draw_home_button();
-  draw_gear(1220, 66, kCyan);
+  audio_header::draw_settings_button();
 }
 
 void draw_tab_icon(View view, int cx, int cy, uint16_t color) {
@@ -610,7 +598,7 @@ Action handle_touch(int32_t x, int32_t y) {
       return {ActionKind::sound_toggle};
     return {ActionKind::volume_up};
   }
-  if (hit(x, y, 1180, 25, 80, 82)) return {ActionKind::open_device_settings};
+  if (audio_header::settings_hit(x, y)) return {ActionKind::open_device_settings};
   if (y >= kTabsY) {
     const uint8_t next = std::min<uint8_t>(x / kTabW, static_cast<uint8_t>(View::count) - 1);
     if (next != static_cast<uint8_t>(g_view)) {

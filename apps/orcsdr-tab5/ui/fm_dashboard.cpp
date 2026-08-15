@@ -112,7 +112,7 @@ void draw_header() {
   audio_header::draw(g_audio_control, g_snapshot.volume, g_snapshot.sound_enabled,
                      g_snapshot.battery_percent);
   audio_header::draw_home_button();
-  draw_gear(1220, 66, kCyan);
+  audio_header::draw_settings_button();
 }
 
 void draw_tab_icon(View view, int cx, int cy, uint16_t color) {
@@ -559,6 +559,7 @@ Action handle_touch(int32_t x, int32_t y) {
       return {ActionKind::sound_toggle};
     return {ActionKind::volume_up};
   }
+  if (audio_header::settings_hit(x, y)) return {ActionKind::open_device_settings};
   if (g_keypad) {
     if (hit(x, y, 380, 525, 250, 55)) {
       g_keypad = false;
@@ -596,11 +597,6 @@ Action handle_touch(int32_t x, int32_t y) {
     return {};
   }
 
-  if (hit(x, y, 1180, 25, 80, 82)) {
-    g_view = View::settings;
-    draw();
-    return {};
-  }
   if (y >= kTabsY) {
     const uint8_t next = std::min<uint8_t>(x / kTabW, static_cast<uint8_t>(View::count) - 1);
     if (next != static_cast<uint8_t>(g_view)) {

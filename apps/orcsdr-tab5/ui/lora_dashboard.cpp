@@ -64,18 +64,6 @@ void button(int x, int y, int w, int h, const char* title, uint16_t color = kCya
   text(title, x + w / 2, y + h / 2, selected ? color : TFT_WHITE, 2);
 }
 
-void draw_gear(int cx, int cy) {
-  M5.Display.drawCircle(cx, cy, 20, kCyan);
-  M5.Display.drawCircle(cx, cy, 7, kCyan);
-  for (int i = 0; i < 8; ++i) {
-    const float a = i * 3.14159265f / 4.0f;
-    M5.Display.drawLine(cx + static_cast<int>(cosf(a) * 21),
-                        cy + static_cast<int>(sinf(a) * 21),
-                        cx + static_cast<int>(cosf(a) * 29),
-                        cy + static_cast<int>(sinf(a) * 29), kCyan);
-  }
-}
-
 void draw_radio_icon(int cx, int cy, uint16_t color) {
   M5.Display.drawCircle(cx, cy - 8, 6, color);
   M5.Display.drawCircle(cx, cy - 8, 16, color);
@@ -107,7 +95,7 @@ void draw_header() {
   text(g_snapshot.key_loaded ? "KEY LOADED" : "PUBLIC ONLY", 1050, 73,
        g_snapshot.key_loaded ? kGreen : kMuted, 1, middle_left);
   audio_header::draw_home_button();
-  draw_gear(1220, 63);
+  audio_header::draw_settings_button();
 }
 
 void draw_tab_icon(View view, int cx, int cy, uint16_t color) {
@@ -505,7 +493,7 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
   if (audio_header::home_hit(x, y)) return {ActionKind::exit_home};
-  if (hit(x, y, 1180, 20, 88, 84)) return {ActionKind::open_settings};
+  if (audio_header::settings_hit(x, y)) return {ActionKind::open_settings};
   if (hit(x, y, 0, kTabsY, 1280, 80))
     return {ActionKind::select_view, static_cast<uint32_t>(x / kTabW)};
   if (g_view == View::overview) {

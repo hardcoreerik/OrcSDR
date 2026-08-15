@@ -74,7 +74,9 @@ not a competing navigation surface.
 ## Header constraint
 
 The persistent header baseline is **Home**, **Device Settings**, **Battery /
-Power**, and, on a listening surface, **Volume**:
+Power**, and **Volume**. `dashboard_audio_control` is the single owner of the
+Home, Settings, and FM/P25 volume-control geometry; it also owns their touch
+hitboxes and overlap self-check.
 
 - **Home:** routes to the Home screen. It may be omitted only when Home itself
   is the active surface.
@@ -83,14 +85,15 @@ Power**, and, on a listening surface, **Volume**:
   before that rectangle; it may compress, but it may not cover, move, or omit
   the control. Closing Settings returns to the exact originating screen.
 - **Battery / Power:** a readable battery state belongs in the top status area.
-- **Volume:** listening surfaces use the shared global volume/mute control.
-  Data-only surfaces such as ADS-B and LoRa omit it rather than displaying a
-  dead audio control.
+- **Volume:** FM and P25 use the shared global volume/mute control today.
+  ADS-B and LoRa reserve the Home and Settings positions but still need their
+  header-status reflow before the same global volume control can be added
+  without covering live telemetry. This is an explicit migration item, not a
+  reason to duplicate a header implementation.
 
 New dashboard headers must preserve those rectangles and their touch routing.
-The existing `dashboard_audio_control` helper is the shared implementation for
-the listening-header Home, battery, and volume elements; it should be extended
-before duplicating a new audio header.
+New header controls must extend `dashboard_audio_control` rather than add a
+second geometry or touch implementation.
 
 ## Diagnostics and validation
 
