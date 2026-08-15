@@ -183,8 +183,10 @@ bool parse_manifest(const uint8_t* data, size_t size) {
     const cJSON* schema = cJSON_GetObjectItemCaseSensitive(root, "schema");
     const cJSON* date = cJSON_GetObjectItemCaseSensitive(root, "generated_at");
     const cJSON* packs = cJSON_GetObjectItemCaseSensitive(root, "packs");
+    char catalog_date[sizeof(g_state.catalog_date)]{};
     if (!cJSON_IsString(schema) || strcmp(schema->valuestring, "catalog-v1") != 0 ||
-        !safe_text(date, g_state.catalog_date, sizeof(g_state.catalog_date)) || !cJSON_IsArray(packs)) break;
+        !safe_text(date, catalog_date, sizeof(catalog_date)) || !cJSON_IsArray(packs) ||
+        cJSON_GetArraySize(packs) != kPackCount) break;
     Pack parsed[kPackCount]{};
     PackView views[kPackCount]{};
     for (uint8_t expected = 0; expected < kPackCount; ++expected) {
@@ -213,6 +215,7 @@ bool parse_manifest(const uint8_t* data, size_t size) {
       portENTER_CRITICAL(&g_lock);
       memcpy(g_packs, parsed, sizeof(g_packs));
       memcpy(g_state.packs, views, sizeof(views));
+      strlcpy(g_state.catalog_date, catalog_date, sizeof(g_state.catalog_date));
       g_state.ready = true;
       portEXIT_CRITICAL(&g_lock);
     }
