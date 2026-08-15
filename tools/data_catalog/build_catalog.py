@@ -42,6 +42,8 @@ def main() -> None:
     parser.add_argument("--out", type=Path, required=True, help="release-asset directory")
     parser.add_argument("--private-key", type=Path, required=True,
                         help="offline P-256 PEM key; never commit it")
+    parser.add_argument("--verify-public-key", type=Path,
+                        help="optional PEM key used to verify the generated signature")
     parser.add_argument("--release-base", required=True,
                         help="final GitHub Release asset URL prefix")
     parser.add_argument("--openssl", default="openssl")
@@ -51,8 +53,10 @@ def main() -> None:
     if spec.get("schema") != "catalog-input-v1":
         raise ValueError("expected catalog-input-v1")
     packs = spec.get("packs", [])
-    if [pack.get("id") for pack in packs] != list(PACK_IDS):
-        raise ValueError("packs must be the four approved IDs in canonical order")
+    ids = [pack.get("id") for pack in packs]
+    expected_ids = [pack_id for pack_id in PACK_IDS if pack_id in ids]
+    if not ids or ids != expected_ids or len(set(ids)) != len(ids):
+        raise ValueError("packs must be unique supported IDs in canonical order")
     args.out.mkdir(parents=True, exist_ok=True)
     catalog_packs = []
     for pack in packs:
@@ -73,6 +77,9 @@ def main() -> None:
     der_path = args.out / "catalog-v1.sig.der"
     subprocess.run([args.openssl, "dgst", "-sha256", "-sign", str(args.private_key),
                     "-out", str(der_path), str(catalog_path)], check=True)
+    if args.verify_public_key:
+        subprocess.run([args.openssl, "dgst", "-sha256", "-verify", str(args.verify_public_key),
+                        "-signature", str(der_path), str(catalog_path)], check=True)
     (args.out / "catalog-v1.sig").write_bytes(base64.b64encode(der_path.read_bytes()) + b"\n")
     der_path.unlink()
     print(json.dumps({"catalog": str(catalog_path), "sha256": sha256(catalog_path),

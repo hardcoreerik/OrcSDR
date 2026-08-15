@@ -26,6 +26,7 @@ of `tools/data_catalog/catalog-input.example.json`, then run:
 python .\tools\data_catalog\build_catalog.py .\my-catalog-input.json `
   --out .\artifacts\data-catalog-v1 `
   --private-key F:\secure\orcsdr-catalog-signing-key.pem `
+  --verify-public-key .\apps\orcsdr-tab5\main\catalog_public_key.pem `
   --release-base https://github.com/hardcoreerik/OrcSDR/releases/download/data-catalog-v1 `
   --openssl "C:\Program Files\Git\usr\bin\openssl.exe"
 ```

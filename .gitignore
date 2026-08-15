@@ -40,5 +40,5 @@ tmp/
 site/
 artifacts/help-media/
 artifacts/data-source-cache/
-artifacts/data-catalog-v1-input/
+artifacts/data-catalog-v1*/
 docs/user-guide/assets/screenshots/raw/

@@ -56,6 +56,13 @@ constexpr const char* kIds[kPackCount] = {
 constexpr const char* kTitles[kPackCount] = {
     "FAA AIRCRAFT", "FAA AVIATION", "NOAA WEATHER", "FCC FM / AM"};
 
+int pack_index(const char* id) {
+  if (id == nullptr) return -1;
+  for (uint8_t index = 0; index < kPackCount; ++index)
+    if (strcmp(id, kIds[index]) == 0) return index;
+  return -1;
+}
+
 bool safe_text(const cJSON* item, char* output, size_t output_size) {
   if (!cJSON_IsString(item) || item->valuestring == nullptr) return false;
   strlcpy(output, item->valuestring, output_size);
@@ -184,32 +191,39 @@ bool parse_manifest(const uint8_t* data, size_t size) {
     const cJSON* date = cJSON_GetObjectItemCaseSensitive(root, "generated_at");
     const cJSON* packs = cJSON_GetObjectItemCaseSensitive(root, "packs");
     char catalog_date[sizeof(g_state.catalog_date)]{};
+    const int pack_count = cJSON_IsArray(packs) ? cJSON_GetArraySize(packs) : 0;
     if (!cJSON_IsString(schema) || strcmp(schema->valuestring, "catalog-v1") != 0 ||
-        !safe_text(date, catalog_date, sizeof(catalog_date)) || !cJSON_IsArray(packs) ||
-        cJSON_GetArraySize(packs) != kPackCount) break;
+        !safe_text(date, catalog_date, sizeof(catalog_date)) || pack_count < 1 ||
+        pack_count > kPackCount) break;
     Pack parsed[kPackCount]{};
     PackView views[kPackCount]{};
-    for (uint8_t expected = 0; expected < kPackCount; ++expected) {
-      const cJSON* node = cJSON_GetArrayItem(packs, expected);
+    bool seen[kPackCount]{};
+    for (uint8_t index = 0; index < kPackCount; ++index) {
+      strlcpy(views[index].id, kIds[index], sizeof(views[index].id));
+      strlcpy(views[index].title, kTitles[index], sizeof(views[index].title));
+      strlcpy(views[index].status, "NOT PUBLISHED", sizeof(views[index].status));
+    }
+    for (int node_index = 0; node_index < pack_count; ++node_index) {
+      const cJSON* node = cJSON_GetArrayItem(packs, node_index);
       if (!cJSON_IsObject(node)) break;
       const cJSON* id = cJSON_GetObjectItemCaseSensitive(node, "id");
       const cJSON* artifacts = cJSON_GetObjectItemCaseSensitive(node, "artifacts");
-      if (!cJSON_IsString(id) || strcmp(id->valuestring, kIds[expected]) != 0 || !cJSON_IsObject(artifacts)) break;
+      const int index = cJSON_IsString(id) ? pack_index(id->valuestring) : -1;
+      if (index < 0 || seen[index] || !cJSON_IsObject(artifacts)) break;
       const cJSON* runtime = cJSON_GetObjectItemCaseSensitive(artifacts, "runtime");
       const cJSON* archive = cJSON_GetObjectItemCaseSensitive(artifacts, "archive");
-      if (!parse_artifact(runtime, false, &parsed[expected].runtime) ||
-          !parse_artifact(archive, true, &parsed[expected].archive)) break;
-      parsed[expected].available = true;
-      strlcpy(views[expected].id, kIds[expected], sizeof(views[expected].id));
-      strlcpy(views[expected].title, kTitles[expected], sizeof(views[expected].title));
-      safe_text(cJSON_GetObjectItemCaseSensitive(node, "version"), views[expected].version,
-                sizeof(views[expected].version));
-      safe_text(cJSON_GetObjectItemCaseSensitive(node, "source_date"), views[expected].source_date,
-                sizeof(views[expected].source_date));
-      views[expected].runtime_bytes = parsed[expected].runtime.bytes;
-      views[expected].archive_bytes = parsed[expected].archive.bytes;
-      strlcpy(views[expected].status, "AVAILABLE", sizeof(views[expected].status));
-      if (expected + 1 == kPackCount) ok = true;
+      if (!parse_artifact(runtime, false, &parsed[index].runtime) ||
+          !parse_artifact(archive, true, &parsed[index].archive) ||
+          !safe_text(cJSON_GetObjectItemCaseSensitive(node, "version"), views[index].version,
+                     sizeof(views[index].version)) ||
+          !safe_text(cJSON_GetObjectItemCaseSensitive(node, "source_date"), views[index].source_date,
+                     sizeof(views[index].source_date))) break;
+      parsed[index].available = true;
+      seen[index] = true;
+      views[index].runtime_bytes = parsed[index].runtime.bytes;
+      views[index].archive_bytes = parsed[index].archive.bytes;
+      strlcpy(views[index].status, "AVAILABLE", sizeof(views[index].status));
+      if (node_index + 1 == pack_count) ok = true;
     }
     if (ok) {
       portENTER_CRITICAL(&g_lock);
@@ -360,7 +374,20 @@ State state() {
 }
 
 bool self_check() {
-  return kPackCount == 4 && strcmp(kIds[0], "faa_aircraft") == 0 &&
+  constexpr char kSubset[] =
+      "{\"schema\":\"catalog-v1\",\"generated_at\":\"2026-08-14\",\"packs\":[{"
+      "\"id\":\"faa_aircraft\",\"version\":\"test\",\"source_date\":\"2026-08-14\","
+      "\"artifacts\":{\"runtime\":{\"url\":\"https://example.test/index\","
+      "\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\","
+      "\"destination\":\"/orcsdr/data/adsb_aircraft.idx\",\"bytes\":1},"
+      "\"archive\":{\"url\":\"https://example.test/source\","
+      "\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\","
+      "\"destination\":\"/orcsdr/data/faa_aircraft_source.zip\",\"bytes\":1}}}]}";
+  const bool subset_ok = parse_manifest(reinterpret_cast<const uint8_t*>(kSubset), strlen(kSubset)) &&
+                         g_packs[0].available && !g_packs[1].available;
+  g_state = {};
+  for (auto& pack : g_packs) pack = {};
+  return subset_ok && kPackCount == 4 && strcmp(kIds[0], "faa_aircraft") == 0 &&
          valid_hash("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") &&
          valid_destination("/orcsdr/data/faa_aircraft.idx") &&
          !valid_destination("/orcsdr/data/../secret");
