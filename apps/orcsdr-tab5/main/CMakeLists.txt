@@ -4,12 +4,15 @@ idf_component_register(
         "../ui/orcsdr_splash.cpp"
         "../ui/adsb_dashboard.cpp"
         "../ui/adsb_decoder.cpp"
+        "../ui/catalog_sync.cpp"
         "../ui/dashboard_audio_control.cpp"
         "../ui/dashboard_registry.cpp"
         "../ui/fm_dashboard.cpp"
+        "../ui/fm_config.cpp"
         "../ui/home_dashboard.cpp"
         "../ui/lora_dashboard.cpp"
         "../ui/p25_dashboard.cpp"
+        "../ui/p25_config.cpp"
         "../ui/p25_decoder.cpp"
         "../ui/settings_app.cpp"
         "../ui/ui_capture.cpp"
@@ -27,10 +30,14 @@ idf_component_register(
         esp_psram
         esp_system
         esp_timer
+        esp_http_client
+        esp-tls
+        json
         spi_flash
         usb
     EMBED_FILES
         "orc_badge_104.png"
+        "catalog_public_key.pem"
 )
 
 target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)

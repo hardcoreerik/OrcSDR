@@ -639,6 +639,12 @@ acceptance remains open.
       through hashed `.part` files with free-space checks and rollback.
 - [ ] Install both the optimized aircraft index and complete FAA source archive;
       add the compact ZIP/place index and confirmed representative-point flow.
+- [x] Build-verify a manual-only signed `catalog-v1` client with independent
+      FAA aircraft, FAA aviation, NOAA Weather Radio, and FCC FM/AM packs;
+      preserve runtime index plus source archive and never modify `P25.cfg`.
+- [ ] Publish the first rights-reviewed GitHub Release catalog and verify
+      signature, install, rollback, free-space rejection, and live RTL/Wi-Fi
+      coexistence on the Tab5.
 
 ### 7.3 — maps, storage, diagnostics, and pause/resume
 

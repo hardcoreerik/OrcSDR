@@ -45,12 +45,15 @@ extern "C" {
 #include "orcsdr_splash.hpp"
 #include "adsb_dashboard.hpp"
 #include "adsb_decoder.hpp"
+#include "catalog_sync.hpp"
 #include "dashboard_audio_control.hpp"
 #include "dashboard_registry.hpp"
 #include "fm_dashboard.hpp"
+#include "fm_config.hpp"
 #include "home_dashboard.hpp"
 #include "lora_dashboard.hpp"
 #include "p25_dashboard.hpp"
+#include "p25_config.hpp"
 #include "p25_decoder.hpp"
 #include "settings_app.hpp"
 #include "ui_capture.hpp"
@@ -500,9 +503,6 @@ constexpr uint32_t kP25MinHz = 450000000;
 constexpr uint32_t kP25MaxHz = 470000000;
 constexpr uint32_t kP25DefaultHz = 453812500;
 constexpr uint32_t kP25StepHz = 12500;
-constexpr uint32_t kP25ControlChannelsHz[] = {
-    453812500, 453925000, 460187500, 460312500};
-static_assert(std::size(kP25ControlChannelsHz) == 4);
 // Clean-room LO offset: LO = RF + 1.814972 MHz (from 100 MHz observation).
 constexpr double kRtlIfOffsetHz = 1814972.0;
 constexpr double kRtlXtalHz = 28800000.0;
@@ -811,6 +811,7 @@ struct FmPreset {
 };
 static FmPreset fm_presets[kFmPresetCapacity];
 static int fm_preset_count = 0;
+std::atomic<bool> fm_config_save_pending{false};
 static int fm_preset_scroll_top = 0;
 static std::atomic<bool> rtl_fm_preset_scan_requested{false};
 static std::atomic<bool> rtl_fm_preset_scan_cancel{false};
@@ -1216,7 +1217,10 @@ std::atomic<bool> p25_encryption_skip{true};
 enum class P25FollowState : uint8_t { control, voice };
 std::atomic<P25FollowState> p25_follow_state{P25FollowState::control};
 uint32_t p25_control_frequency_hz = kP25DefaultHz;
-std::atomic<uint32_t> p25_control_persist_hz{0};
+orcsdr::p25config::Config p25_config{};
+char p25_config_status[64] = "SD profile pending";
+uint32_t p25_config_revision = 0;
+std::atomic<bool> p25_config_save_pending{false};
 uint32_t p25_voice_frequency_hz = 0;
 uint32_t p25_follow_started_ms = 0;
 uint16_t p25_hold_talkgroup = 0;
@@ -1245,9 +1249,8 @@ struct P25VoiceContext {
 };
 P25VoiceContext p25_voice_context{};
 uint8_t p25_candidate_index = 0;
-float p25_candidate_levels[std::size(kP25ControlChannelsHz)] = {
-    -120.0f, -120.0f, -120.0f, -120.0f};
-uint32_t p25_candidate_tsbk_good[std::size(kP25ControlChannelsHz)]{};
+float p25_candidate_levels[orcsdr::p25config::kMaxControlChannels] = {};
+uint32_t p25_candidate_tsbk_good[orcsdr::p25config::kMaxControlChannels]{};
 uint32_t p25_survey_sample_at_ms = 0;
 uint32_t p25_entry_probe_at_ms = 0;
 uint32_t p25_entry_probe_tsbk_good = 0;
@@ -1530,6 +1533,7 @@ bool rds_replay(const char* path);
 void rds_capture_status_print();
 bool ensure_tab5_sd();
 void load_lora_config();
+uint64_t sd_total_bytes();
 void enrich_one_adsb_track();
 bool sd_put_path_allowed(const char* path);
 void bump_rtl_ui();
@@ -1956,6 +1960,7 @@ void persist_fm_frequency(uint32_t frequency_hz) {
   rtl_saved_fm_hz = frequency_hz;
   // Preferences opened in load_state(); keep writes off the bulk-IQ path.
   preferences.putUInt("sdr_fm_hz", frequency_hz);
+  fm_config_save_pending.store(true, std::memory_order_release);
   Serial.printf("RTL_FM_SAVE frequency_hz=%u\n", frequency_hz);
 }
 
@@ -1964,6 +1969,7 @@ void persist_fm_presets() {
   // as persist_fm_frequency's NVS write.
   preferences.putBytes("fm_presets", fm_presets, sizeof(fm_presets));
   preferences.putUChar("fm_preset_count", static_cast<uint8_t>(fm_preset_count));
+  fm_config_save_pending.store(true, std::memory_order_release);
   Serial.printf("RTL_PRESETS_SAVE count=%d\n", fm_preset_count);
 }
 
@@ -2372,6 +2378,123 @@ void load_lora_config() {
                 lora_authorized_key_loaded ? 1 : 0);
 }
 
+uint64_t sd_total_bytes() {
+  if (!g_sd_ready || g_sd_fs == nullptr) return 0;
+  return g_sd_fs == &SD_MMC ? SD_MMC.totalBytes() : SD.totalBytes();
+}
+
+void apply_p25_config(const orcsdr::p25config::Config& config, const char* status) {
+  p25_config = config;
+  p25_auto_follow.store(config.auto_follow, std::memory_order_release);
+  p25_encryption_skip.store(config.encryption_skip, std::memory_order_release);
+  p25_hold_talkgroup = config.hold_talkgroup;
+  p25_hold.store(config.hold_talkgroup != 0, std::memory_order_release);
+  p25_control_frequency_hz = config.last_control_channel_hz != 0
+                                 ? config.last_control_channel_hz
+                                 : config.control_channels_hz[0];
+  p25_candidate_index = 0;
+  for (size_t i = 0; i < config.control_channel_count; ++i) {
+    if (config.control_channels_hz[i] == p25_control_frequency_hz) {
+      p25_candidate_index = static_cast<uint8_t>(i);
+      break;
+    }
+  }
+  std::fill(std::begin(p25_candidate_levels), std::end(p25_candidate_levels), -120.0f);
+  std::fill(std::begin(p25_candidate_tsbk_good), std::end(p25_candidate_tsbk_good), 0);
+  strlcpy(p25_config_status, status, sizeof(p25_config_status));
+  ++p25_config_revision;
+  Serial.printf("RTL_P25_CONFIG_LOAD status=\"%s\" channels=%u talkgroups=%u control_hz=%lu\n",
+                p25_config_status, static_cast<unsigned>(config.control_channel_count),
+                static_cast<unsigned>(config.talkgroup_count),
+                static_cast<unsigned long>(p25_control_frequency_hz));
+}
+
+void load_p25_config() {
+  orcsdr::p25config::Config config{};
+  char error[64]{};
+  if (!ensure_tab5_sd() || g_sd_fs == nullptr) {
+    orcsdr::p25config::defaults(&config);
+    const uint32_t stored = preferences.getUInt("p25_ctrl_hz", 0);
+    for (size_t i = 0; i < config.control_channel_count; ++i)
+      if (config.control_channels_hz[i] == stored) config.last_control_channel_hz = stored;
+    apply_p25_config(config, "SD unavailable; starter profile");
+    return;
+  }
+  const auto result = orcsdr::p25config::load(*g_sd_fs, orcsdr::p25config::kPath,
+                                               &config, error, sizeof(error));
+  if (result == orcsdr::p25config::LoadResult::ok) {
+    apply_p25_config(config, "P25.cfg loaded");
+    return;
+  }
+  if (result == orcsdr::p25config::LoadResult::missing) {
+    orcsdr::p25config::defaults(&config);
+    if (orcsdr::p25config::save(*g_sd_fs, config, error, sizeof(error))) {
+      apply_p25_config(config, "P25.cfg created; edit on SD");
+    } else {
+      apply_p25_config(config, "Starter profile; SD save failed");
+    }
+    return;
+  }
+  char backup[48]{};
+  snprintf(backup, sizeof(backup), "%s.bak", orcsdr::p25config::kPath);
+  if (orcsdr::p25config::load(*g_sd_fs, backup, &config, error, sizeof(error)) ==
+      orcsdr::p25config::LoadResult::ok) {
+    apply_p25_config(config, "P25.cfg invalid; backup loaded");
+    return;
+  }
+  orcsdr::p25config::defaults(&config);
+  apply_p25_config(config, "P25.cfg invalid; starter active");
+  Serial.printf("RTL_P25_CONFIG_ERROR detail=\"%s\"\n", error);
+}
+
+void request_p25_config_save() {
+  p25_config.last_control_channel_hz = p25_control_frequency_hz;
+  p25_config.auto_follow = p25_auto_follow.load(std::memory_order_acquire);
+  p25_config.encryption_skip = p25_encryption_skip.load(std::memory_order_acquire);
+  p25_config.hold_talkgroup = p25_hold.load(std::memory_order_acquire) ? p25_hold_talkgroup : 0;
+  p25_config_save_pending.store(true, std::memory_order_release);
+  ++p25_config_revision;
+}
+
+orcsdr::fmconfig::Config fm_config_from_runtime() {
+  orcsdr::fmconfig::Config config{};
+  config.startup_frequency_hz = rtl_saved_fm_hz;
+  for (int i = 0; i < fm_preset_count && i < static_cast<int>(orcsdr::fmconfig::kMaxPresets); ++i)
+    config.presets_hz[config.preset_count++] = fm_presets[i].freq_hz;
+  return config;
+}
+
+void apply_fm_config(const orcsdr::fmconfig::Config& config, const char* status) {
+  rtl_saved_fm_hz = config.startup_frequency_hz;
+  fm_preset_count = config.preset_count;
+  fm_preset_scroll_top = 0;
+  for (int i = 0; i < fm_preset_count; ++i) {
+    fm_presets[i].freq_hz = config.presets_hz[i];
+    fm_presets[i].level_dbfs = -120.0f;
+  }
+  Serial.printf("RTL_FM_CONFIG_LOAD status=\"%s\" frequency_hz=%lu presets=%d\n", status,
+                static_cast<unsigned long>(rtl_saved_fm_hz), fm_preset_count);
+}
+
+void load_fm_config() {
+  if (!ensure_tab5_sd() || g_sd_fs == nullptr) return;
+  orcsdr::fmconfig::Config config{};
+  char error[64]{};
+  const auto result = orcsdr::fmconfig::load(*g_sd_fs, orcsdr::fmconfig::kPath,
+                                              &config, error, sizeof(error));
+  if (result == orcsdr::fmconfig::LoadResult::ok) {
+    apply_fm_config(config, "FM.cfg loaded");
+    return;
+  }
+  if (result == orcsdr::fmconfig::LoadResult::missing) {
+    config = fm_config_from_runtime();
+    if (orcsdr::fmconfig::save(*g_sd_fs, config, error, sizeof(error)))
+      Serial.println("RTL_FM_CONFIG_CREATE path=/orcsdr/FM.cfg");
+  } else {
+    Serial.printf("RTL_FM_CONFIG_ERROR detail=\"%s\" retaining NVS state\n", error);
+}
+}
+
 #pragma pack(push, 1)
 struct AdsbIndexHeader {
   char magic[8];
@@ -2388,9 +2511,12 @@ struct AdsbIndexRecord {
 #pragma pack(pop)
 
 bool lookup_adsb_metadata(uint32_t icao, AdsbIndexRecord* result) {
-  constexpr const char* kPath = "/orcsdr/adsb_aircraft.idx";
-  if (!result || !ensure_tab5_sd() || !g_sd_fs->exists(kPath)) return false;
-  File file = g_sd_fs->open(kPath, FILE_READ);
+  constexpr const char* kManagedPath = "/orcsdr/data/adsb_aircraft.idx";
+  constexpr const char* kLegacyPath = "/orcsdr/adsb_aircraft.idx";
+  if (!result || !ensure_tab5_sd()) return false;
+  const char* path = g_sd_fs->exists(kManagedPath) ? kManagedPath : kLegacyPath;
+  if (!g_sd_fs->exists(path)) return false;
+  File file = g_sd_fs->open(path, FILE_READ);
   AdsbIndexHeader header{};
   if (!file || file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) != sizeof(header) ||
       std::memcmp(header.magic, "ORCADSB1", 8) != 0 ||
@@ -6951,9 +7077,12 @@ orcsdr::p25::Snapshot p25_dashboard_snapshot() {
   snapshot.imbe_frames = p25_imbe_frames.load(std::memory_order_relaxed);
   snapshot.imbe_errors = p25_imbe_errors.load(std::memory_order_relaxed);
   snapshot.candidate_index = p25_candidate_index;
-  snapshot.candidate_count = static_cast<uint8_t>(std::size(kP25ControlChannelsHz));
-  std::copy(std::begin(p25_candidate_levels), std::end(p25_candidate_levels),
-            std::begin(snapshot.candidate_levels));
+  snapshot.candidate_count = p25_config.control_channel_count;
+  std::copy_n(std::begin(p25_candidate_levels), p25_config.control_channel_count,
+              std::begin(snapshot.candidate_levels));
+  snapshot.config = p25_config;
+  snapshot.config_revision = p25_config_revision;
+  strlcpy(snapshot.config_status, p25_config_status, sizeof(snapshot.config_status));
   snapshot.decoded = orcsdr::p25decoder::snapshot();
   if (p25_follow_state.load(std::memory_order_acquire) == P25FollowState::voice) {
     snapshot.decoded.current_grant = p25_follow_grant;
@@ -7005,8 +7134,9 @@ void start_p25_survey() {
   p25_entry_probe_at_ms = 0;
   p25_survey_sample_at_ms = millis() + 1500;
   p25_survey_active.store(true, std::memory_order_relaxed);
-  tune_p25_control(kP25ControlChannelsHz[0]);
-  Serial.println("RTL_P25_SURVEY start candidates=4 dwell_ms=1500");
+  tune_p25_control(p25_config.control_channels_hz[0]);
+  Serial.printf("RTL_P25_SURVEY start candidates=%u dwell_ms=1500\n",
+                static_cast<unsigned>(p25_config.control_channel_count));
 }
 
 void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
@@ -7019,15 +7149,17 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
     case ActionKind::previous_candidate:
       p25_survey_active.store(false, std::memory_order_relaxed);
       p25_candidate_index = static_cast<uint8_t>(
-          (p25_candidate_index + std::size(kP25ControlChannelsHz) - 1) %
-          std::size(kP25ControlChannelsHz));
-      tune_p25_control(kP25ControlChannelsHz[p25_candidate_index]);
+          (p25_candidate_index + p25_config.control_channel_count - 1) %
+          p25_config.control_channel_count);
+      tune_p25_control(p25_config.control_channels_hz[p25_candidate_index]);
+      request_p25_config_save();
       break;
     case ActionKind::next_candidate:
       p25_survey_active.store(false, std::memory_order_relaxed);
       p25_candidate_index = static_cast<uint8_t>(
-          (p25_candidate_index + 1) % std::size(kP25ControlChannelsHz));
-      tune_p25_control(kP25ControlChannelsHz[p25_candidate_index]);
+          (p25_candidate_index + 1) % p25_config.control_channel_count);
+      tune_p25_control(p25_config.control_channels_hz[p25_candidate_index]);
+      request_p25_config_save();
       break;
     case ActionKind::survey_toggle:
       if (p25_survey_active.load(std::memory_order_relaxed)) {
@@ -7040,6 +7172,7 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
     case ActionKind::hold_toggle:
       p25_hold.store(!p25_hold.load(std::memory_order_relaxed), std::memory_order_relaxed);
       if (!p25_hold.load(std::memory_order_relaxed)) p25_hold_talkgroup = 0;
+      request_p25_config_save();
       break;
     case ActionKind::hold_talkgroup:
       if (p25_hold.load(std::memory_order_relaxed) && p25_hold_talkgroup == action.value) {
@@ -7052,6 +7185,7 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
       Serial.printf("RTL_P25_HOLD enabled=%d tg=%u\n",
                     p25_hold.load(std::memory_order_relaxed) ? 1 : 0,
                     p25_hold_talkgroup);
+      request_p25_config_save();
       break;
     case ActionKind::skip_talkgroup: {
       const auto decoded = orcsdr::p25decoder::snapshot();
@@ -7081,10 +7215,17 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
         p25_voice_frequency_hz = 0;
         request_hot_retune(p25_control_frequency_hz);
       }
+      request_p25_config_save();
       break;
     case ActionKind::encryption_skip_toggle:
       p25_encryption_skip.store(!p25_encryption_skip.load(std::memory_order_relaxed),
                                 std::memory_order_relaxed);
+      request_p25_config_save();
+      break;
+    case ActionKind::reload_config:
+      p25_survey_active.store(false, std::memory_order_release);
+      load_p25_config();
+      if (rtl_ui_band == RtlBand::p25) tune_p25_control(p25_control_frequency_hz);
       break;
     case ActionKind::span_down:
     case ActionKind::span_up: {
@@ -7213,7 +7354,7 @@ void service_p25_survey(uint32_t now) {
       Serial.println("RTL_P25_PROBE no_control fallback=survey");
       start_p25_survey();
     } else {
-      p25_control_persist_hz.store(p25_control_frequency_hz, std::memory_order_release);
+      request_p25_config_save();
       Serial.printf("RTL_P25_PROBE control_hz=%lu tsbk_good=%lu\n",
                     static_cast<unsigned long>(p25_control_frequency_hz),
                     static_cast<unsigned long>(decoded.tsbk_good));
@@ -7229,11 +7370,11 @@ void service_p25_survey(uint32_t now) {
   Serial.printf("RTL_P25_SURVEY_SAMPLE index=%u frequency_hz=%lu relative_dbfs=%.1f "
                 "frame_sync=%d tsbk_good=%lu\n",
                 static_cast<unsigned>(p25_candidate_index),
-                static_cast<unsigned long>(kP25ControlChannelsHz[p25_candidate_index]),
+                static_cast<unsigned long>(p25_config.control_channels_hz[p25_candidate_index]),
                 static_cast<double>(level), decoded.frame_sync ? 1 : 0,
                 static_cast<unsigned long>(decoded.tsbk_good));
-  if (++p25_candidate_index < std::size(kP25ControlChannelsHz)) {
-    request_hot_retune(kP25ControlChannelsHz[p25_candidate_index]);
+  if (++p25_candidate_index < p25_config.control_channel_count) {
+    request_hot_retune(p25_config.control_channels_hz[p25_candidate_index]);
     p25_survey_sample_at_ms = now + 1500;
     return;
   }
@@ -7245,14 +7386,14 @@ void service_p25_survey(uint32_t now) {
             std::begin(p25_candidate_levels), std::end(p25_candidate_levels)) -
             std::begin(p25_candidate_levels));
   p25_survey_active.store(false, std::memory_order_relaxed);
-  p25_control_frequency_hz = kP25ControlChannelsHz[p25_candidate_index];
+  p25_control_frequency_hz = p25_config.control_channels_hz[p25_candidate_index];
   request_hot_retune(p25_control_frequency_hz);
   if (p25_candidate_tsbk_good[p25_candidate_index] > 0)
-    p25_control_persist_hz.store(p25_control_frequency_hz, std::memory_order_release);
+    request_p25_config_save();
   Serial.printf("RTL_P25_SURVEY_DONE best_index=%u frequency_hz=%lu relative_dbfs=%.1f "
                 "decoded=%d tsbk_good=%lu\n",
                 static_cast<unsigned>(p25_candidate_index),
-                static_cast<unsigned long>(kP25ControlChannelsHz[p25_candidate_index]),
+                static_cast<unsigned long>(p25_config.control_channels_hz[p25_candidate_index]),
                 static_cast<double>(p25_candidate_levels[p25_candidate_index]),
                 p25_candidate_tsbk_good[p25_candidate_index] > 0 ? 1 : 0,
                 static_cast<unsigned long>(p25_candidate_tsbk_good[p25_candidate_index]));
@@ -7358,6 +7499,28 @@ orcsdr::settings::State global_settings_state() {
   strlcpy(state.default_band, rtl_band_name(rtl_ui_band), sizeof(state.default_band));
   state.fm_frequency_hz = rtl_saved_fm_hz;
   state.sd_ready = g_sd_ready;
+  state.sd_total_bytes = sd_total_bytes();
+  state.sd_free_bytes = g_sd_ready && g_sd_fs ? state.sd_total_bytes -
+      (g_sd_fs == &SD_MMC ? SD_MMC.usedBytes() : SD.usedBytes()) : 0;
+  const auto catalog_state = orcsdr::catalog::state();
+  state.catalog_ready = catalog_state.ready;
+  state.catalog_busy = catalog_state.busy;
+  state.catalog_progress_percent = catalog_state.progress_percent;
+  strlcpy(state.catalog_message, catalog_state.message, sizeof(state.catalog_message));
+  strlcpy(state.catalog_date, catalog_state.catalog_date, sizeof(state.catalog_date));
+  for (uint8_t i = 0; i < std::size(state.catalog_packs); ++i) {
+    const auto& source = catalog_state.packs[i];
+    auto& target = state.catalog_packs[i];
+    strlcpy(target.id, source.id, sizeof(target.id));
+    strlcpy(target.title, source.title, sizeof(target.title));
+    strlcpy(target.version, source.version, sizeof(target.version));
+    strlcpy(target.source_date, source.source_date, sizeof(target.source_date));
+    strlcpy(target.status, source.status, sizeof(target.status));
+    target.runtime_bytes = source.runtime_bytes;
+    target.archive_bytes = source.archive_bytes;
+    target.installed = source.installed;
+    target.update_available = source.update_available;
+  }
   state.companion_supported = false;
   state.battery_level = M5.Power.getBatteryLevel();
   state.battery_mv = M5.Power.getBatteryVoltage();
@@ -7745,6 +7908,25 @@ void handle_global_settings_touch(int32_t x, int32_t y) {
       settings_graphics_default = action.value != 0;
       preferences.putBool("set_gfx", settings_graphics_default);
       break;
+    case orcsdr::settings::ActionKind::catalog_check:
+      if (ensure_tab5_sd()) {
+        orcsdr::catalog::begin(g_sd_fs, sd_total_bytes() -
+            (g_sd_fs == &SD_MMC ? SD_MMC.usedBytes() : SD.usedBytes()));
+        if (!orcsdr::catalog::request_check(wifi_connected))
+          Serial.println("ORC_CATALOG_CHECK_REJECTED");
+      }
+      orcsdr::settings::update(global_settings_state());
+      break;
+    case orcsdr::settings::ActionKind::catalog_install:
+      if (!orcsdr::catalog::request_install(static_cast<uint8_t>(action.value), wifi_connected))
+        Serial.println("ORC_CATALOG_INSTALL_REJECTED");
+      orcsdr::settings::update(global_settings_state());
+      break;
+    case orcsdr::settings::ActionKind::catalog_remove:
+      if (!orcsdr::catalog::request_remove(static_cast<uint8_t>(action.value)))
+        Serial.println("ORC_CATALOG_REMOVE_REJECTED");
+      orcsdr::settings::update(global_settings_state());
+      break;
     default: break;
   }
 }
@@ -8033,19 +8215,7 @@ void load_state() {
     rtl_saved_fm_hz = kRtlFmDefaultHz;
     preferences.putUInt("sdr_fm_hz", rtl_saved_fm_hz);
   }
-  const uint32_t stored_p25_control =
-      preferences.getUInt("p25_ctrl_hz", kP25DefaultHz);
-  const auto stored_p25_candidate =
-      std::find(std::begin(kP25ControlChannelsHz), std::end(kP25ControlChannelsHz),
-                stored_p25_control);
-  if (stored_p25_candidate != std::end(kP25ControlChannelsHz)) {
-    p25_control_frequency_hz = stored_p25_control;
-    p25_candidate_index = static_cast<uint8_t>(
-        stored_p25_candidate - std::begin(kP25ControlChannelsHz));
-  }
-  Serial.printf("RTL_P25_LOAD control_hz=%lu candidate=%u\n",
-                static_cast<unsigned long>(p25_control_frequency_hz),
-                static_cast<unsigned>(p25_candidate_index));
+  load_p25_config();
   if (preferences.isKey("fm_presets") &&
       preferences.getBytesLength("fm_presets") == sizeof(fm_presets)) {
     preferences.getBytes("fm_presets", fm_presets, sizeof(fm_presets));
@@ -8053,6 +8223,7 @@ void load_state() {
     fm_preset_count = (stored_count <= kFmPresetCapacity) ? stored_count : 0;
     Serial.printf("RTL_PRESETS_LOAD count=%d\n", fm_preset_count);
   }
+  load_fm_config();
   rtl_ui_frequency_hz = rtl_saved_fm_hz;
   rtl_requested_frequency_hz.store(rtl_saved_fm_hz, std::memory_order_release);
   Serial.printf("RTL_FM_LOAD frequency_hz=%u\n", rtl_saved_fm_hz);
@@ -9901,16 +10072,24 @@ void process_command(char* command) {
         static_cast<unsigned long>(p25_imbe_max_us.load(std::memory_order_relaxed)),
         static_cast<unsigned long>(p25_imbe_synth_max_us.load(std::memory_order_relaxed)),
         static_cast<unsigned long>(p25_audio_queue_max_us.load(std::memory_order_relaxed)));
-    for (size_t i = 0; i < std::size(kP25ControlChannelsHz); ++i)
+    for (size_t i = 0; i < p25_config.control_channel_count; ++i)
       Serial.printf("RTL_P25_CANDIDATE index=%u frequency_hz=%lu relative_dbfs=%.1f\n",
                     static_cast<unsigned>(i),
-                    static_cast<unsigned long>(kP25ControlChannelsHz[i]),
+                    static_cast<unsigned long>(p25_config.control_channels_hz[i]),
                     static_cast<double>(p25_candidate_levels[i]));
+    return;
+  }
+  if (strcmp(command, "RTL_P25_CONFIG_RELOAD") == 0 && authenticated) {
+    p25_survey_active.store(false, std::memory_order_release);
+    load_p25_config();
+    if (rtl_ui_band == RtlBand::p25) tune_p25_control(p25_control_frequency_hz);
+    if (orcsdr::p25::active()) orcsdr::p25::draw();
+    Serial.printf("RTL_P25_CONFIG_RELOAD status=\"%s\"\n", p25_config_status);
     return;
   }
   if (strcmp(command, "RTL_P25_SCAN") == 0 && authenticated) {
     if (rtl_ui_band != RtlBand::p25)
-      queue_local_rtl_listen(RtlBand::p25, kP25DefaultHz);
+      queue_local_rtl_listen(RtlBand::p25, p25_control_frequency_hz);
     if (!p25_survey_active.load(std::memory_order_relaxed))
       handle_p25_dashboard_action({orcsdr::p25::ActionKind::survey_toggle});
     return;
@@ -10449,6 +10628,11 @@ void setup() {
     abort();
   }
   Serial.println("RTL_FM_DASHBOARD_SELF_CHECK_OK");
+  if (!orcsdr::fmconfig::self_check()) {
+    Serial.println("RTL_FM_CONFIG_SELF_CHECK_FAIL");
+    abort();
+  }
+  Serial.println("RTL_FM_CONFIG_SELF_CHECK_OK");
   if (!orcsdr::p25::self_check()) {
     Serial.println("RTL_P25_DASHBOARD_SELF_CHECK_FAIL");
     abort();
@@ -10469,6 +10653,12 @@ void setup() {
     abort();
   }
   Serial.println("ORC_SETTINGS_SELF_CHECK_OK");
+  if (!orcsdr::catalog::self_check()) {
+    Serial.println("ORC_CATALOG_SELF_CHECK_FAIL");
+    abort();
+  }
+  Serial.println("ORC_CATALOG_SELF_CHECK_OK");
+  orcsdr::catalog::begin(nullptr);
   if (!orcsdr::home::self_check()) {
     Serial.println("ORC_HOME_SELF_CHECK_FAIL");
     abort();
@@ -10592,13 +10782,30 @@ void loop() {
   service_boot_device_staging();
   service_power_monitor();
   if (boot_auto_start_allowed) poll_wifi();
-  const uint32_t p25_control_hz =
-      p25_control_persist_hz.exchange(0, std::memory_order_acq_rel);
-  if (p25_control_hz != 0 &&
-      preferences.getUInt("p25_ctrl_hz", 0) != p25_control_hz) {
-    preferences.putUInt("p25_ctrl_hz", p25_control_hz);
-    Serial.printf("RTL_P25_SAVE control_hz=%lu\n",
-                  static_cast<unsigned long>(p25_control_hz));
+  if (fm_config_save_pending.exchange(false, std::memory_order_acq_rel)) {
+    char error[64]{};
+    const auto config = fm_config_from_runtime();
+    if (ensure_tab5_sd() && g_sd_fs != nullptr &&
+        orcsdr::fmconfig::save(*g_sd_fs, config, error, sizeof(error))) {
+      Serial.printf("RTL_FM_CONFIG_SAVE frequency_hz=%lu presets=%u\n",
+                    static_cast<unsigned long>(config.startup_frequency_hz),
+                    static_cast<unsigned>(config.preset_count));
+    } else {
+      Serial.printf("RTL_FM_CONFIG_ERROR detail=\"%s\"\n", error);
+    }
+  }
+  if (p25_config_save_pending.exchange(false, std::memory_order_acq_rel)) {
+    char error[64]{};
+    if (ensure_tab5_sd() && g_sd_fs != nullptr &&
+        orcsdr::p25config::save(*g_sd_fs, p25_config, error, sizeof(error))) {
+      strlcpy(p25_config_status, "P25.cfg saved", sizeof(p25_config_status));
+      Serial.printf("RTL_P25_CONFIG_SAVE control_hz=%lu\n",
+                    static_cast<unsigned long>(p25_config.last_control_channel_hz));
+    } else {
+      snprintf(p25_config_status, sizeof(p25_config_status), "P25.cfg save: %.46s", error);
+      Serial.printf("RTL_P25_CONFIG_ERROR detail=\"%s\"\n", p25_config_status);
+    }
+    ++p25_config_revision;
   }
   if (adsb_settings_persist_pending.exchange(false, std::memory_order_acq_rel)) {
     preferences.putBool("adsb_loc_set", adsb_settings.location_configured);
