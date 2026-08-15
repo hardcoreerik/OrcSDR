@@ -1,117 +1,63 @@
-# LoRa / Meshtastic receive path
+# LoRa / Meshtastic receive
 
-The Tab5 LoRa dashboard is a receive-only SDR instrument. In LoRa mode it keeps
-a 250 ms IQ pre-roll, learns the local noise floor, and captures three seconds
-when RF energy rises 9 dB above that floor. Captures are raw interleaved
-unsigned 8-bit IQ at 960 kS/s in the `ORCIQ01` format. LoRa chirp/FEC and
-Meshtastic decoding run on the connected PC so they do not reduce the Tab5
-scope frame rate.
+OrcSDR's LoRa dashboard is a passive, receive-only SDR instrument. It never
+transmits, pairs, controls mesh nodes, or invents mesh activity.
 
-This receive path is part of the regular `m5tab5_ui` firmware. Completed IQ
-captures remain in PSRAM for verified PC retrieval, so decoding does not stop
-the RF stream or write automatic IQ captures to SD. Use the top **NAV** tab to
-enter LoRa from the normal radio UI. `m5tab5_lora_test` remains only as an
-optional splash-free, LoRa-auto-start bench environment.
+## Five-panel dashboard
 
-The US preset opens at **906.875 MHz, SF11, BW250**, matching the current
-Meshtastic US LongFast default slot. Match the transmitting nodes' region,
-frequency slot, modem preset, and channel key when they differ.
+- **Overview** shows the configured US LongFast receive profile, live RTL
+  spectrum/waterfall, capture controls, and recent verified traffic.
+- **Nodes** lists bounded sender records. A field is shown only when received;
+  otherwise it is `—`. Links are never inferred from signal strength.
+- **Traffic** retains local receive events. Payloads without an authorized key
+  are marked `ENCRYPTED`, not shown as decoded text.
+- **Map** is an M5GFX topology grid, not an online map. It plots only verified
+  received coordinates and links only when protocol evidence supplies them.
+- **RF Health** reports receiver rate, USB/consumer drops, capture/log state,
+  activity, and native decoder readiness.
 
-## Dashboard views
+The shared **Home** button returns to Home; the gear opens Global Settings.
+LoRa deliberately has no audio controls or alert tones.
 
-LoRa mode keeps RF capture running while the operator switches among three
-full-width command-center views. The generated artwork supplies only the visual
-plates; firmware draws every live value and decoded field on top:
+## Current receive boundary
 
-- **LIVE** combines the newest verified decode with a compact live FFT scope and
-  a continuously scrolling waterfall. The decode area shows source, destination,
-  port, packet ID, signal/SNR, complete GPS coordinates, and up to 108 bytes of
-  text or summarized telemetry metrics. NodeInfo packets expand into the node's
-  name, short name, ID, and hardware model. A separate Last Message card retains
-  the newest text message, LongFast channel, message type, and destination node.
-- **MESSAGES** shows only the newest three verified packets so their message text
-  can remain very large. Each card retains age, source, destination, port, SNR,
-  and relative signal without shrinking the message into a log-table font.
-- **MAP** uses most of the content area for an offline local plot centered on the
-  newest valid Meshtastic Position packet. Its wide viewport covers approximately
-  **5 by 2 miles (10 square miles)** and retains the last position received per
-  node. Large side cards show center node, coordinates, signal, age, and slot.
+The Tab5 captures CU8 IQ at 960 kS/s, displays the RF view, and maintains a
+bounded local event/log path. Existing `LORA_PACKET` serial input remains a
+regression bridge for known, externally verified Meshtastic decode records.
+It is not described as native decoding.
 
-LoRa uses one lower control row: frequency down/up, bandwidth, spreading factor,
-manual IQ capture, and start/stop. Band switching and secondary controls live in
-the top NAV tab; audio volume and duplicate band buttons are omitted. The space
-above the bottom controls is a persistent status rail for GPS, slot/SF/BW,
-verified packet count, packet age, and an **SD LOG** checkbox. Logging is off at
-boot. Tap the checkbox to append verified dashboard packets to
-`/orcsdr/lora_packets.csv`; tap it again to stop and close the file.
+Native LongFast work is staged as IQ -> chirp/FEC/CRC -> Meshtastic frame parse
+-> authorized decryption -> bounded snapshot. Until its recorded-IQ vectors
+pass, the dashboard displays **PHY PENDING**. Unknown encrypted traffic is not
+decrypted, recovered, or attributed.
 
-SD logging is intentionally decoupled from the RF display. The decoder/serial
-path only copies each completed packet into a 32-record RAM queue. A low-priority
-task on core 0 formats CSV into a 4 KB batch and writes after five seconds or
-when the batch is nearly full, waiting at least 500 ms after the newest packet.
-No SD calls occur in the scope, waterfall, USB, or render path. The status rail
-shows `SD STARTING`, `SD LOG ON`, `SD ERROR`, and the dropped-record count so a
-slow or missing card cannot silently stall the graphs.
+## Local data and capture
 
-The CSV columns are `uptime_ms`, `frequency_hz`, `from`, `to`, `packet_id`,
-`port`, `snr_tenths`, `signal_tenths`, `latitude_e7`, `longitude_e7`, and `text`.
-This is decoded packet evidence, not raw IQ. Use IQ CAP when RF samples are
-required for PHY/DSP work. The equivalent serial controls are `LORA_SD_LOG ON`,
-`LORA_SD_LOG OFF`, and `LORA_SD_LOG STATUS`.
+`/orcsdr/lora_packets.csv` is optional local SD evidence. The 32-record RAM
+queue and low-priority SD writer keep writes out of USB, IQ, and rendering
+paths. Clearing the Traffic screen clears only the RAM list; it does not delete
+the saved CSV. IQ capture remains explicit and is exported separately.
 
-The map is deliberately not a street map. It plots only coordinates explicitly
-decoded from RF packets, requires no network or tile storage, and does not infer a
-location from signal strength. `SIG` is capture-relative dBFS, not calibrated RSSI.
+**Scan Band** is an explicit 902–928 MHz survey over fourteen 2 MHz spans. It
+temporarily retunes the configured monitor, reports observed energy, then
+restores the prior frequency. It is a survey, not reliable packet capture;
+normal fixed-profile monitoring is the correct decode mode.
 
-## Capture and decode
+## Configuration
 
-1. Copy the three dashboard plates from `apps/orcsdr-tab5/assets/` to matching
-   paths under `/orcsdr/` on the Tab5 SD card:
+`/orcsdr/lora.cfg` is user-owned. The initial loader accepts `profile`,
+`region`, `frequency_hz`, `sf`, `bandwidth_hz`, and a 64-hex-character
+`authorized_receive_key`; invalid frequency/SF/BW values are ignored. Keys
+remain local: no diagnostic, CSV export, screenshot, or API may include them.
+Start from [`lora.cfg.example`](lora.cfg.example); never commit a populated
+copy.
+The masked Settings editor, channels, favorites, and map marks are still gated
+on the native frame/decryption component's recorded-IQ validation.
 
-   - `lora_live_command_center_1152x470.jpg`
-   - `lora_messages_command_center_1152x470.jpg`
-   - `lora_map_command_center_1152x470.jpg`
-2. Install the decoder once:
+## Validation
 
-   ```powershell
-   py -3.11 -m pip install -r tools/requirements-lora.txt
-   ```
-
-3. Connect a Meshtastic node on COM24 for in-memory channel and direct-message
-   keys, then start the live bridge:
-
-   ```powershell
-   tools\monitor_lora_to_pc.bat COM17 COM24
-   ```
-
-The bridge watches for an adaptive energy capture, verifies the IQ transfer,
-decodes LoRa CRC and Meshtastic encryption, and returns validated packets to the
-dashboard. Channel PSKs and per-node PKI keys stay in process memory and are never
-printed or written to the evidence directory. Text, routing, NodeInfo, telemetry,
-and Position port types can appear; valid Position latitude/longitude feeds MAP.
-Use `--capture-dir <existing-dir>` to retain transferred IQ files; otherwise the
-verified host copy is temporary.
-
-**IQ CAP** remains a manual three-second capture control. A saved file can be
-decoded directly with:
-
-```powershell
-py -3.11 tools/decode_orciq.py path\to\capture.orciq
-```
-
-Without `--mesh-port`, the decoder tries clear packets and Meshtastic's public
-default channel. For a private channel, put only its hex or base64 PSK in a
-gitignored file and add `--psk-file path\to\channel.key`. The key is never printed.
-Failed CRC, sync, key, and protobuf checks are reported as failures rather than
-rendered as verified packets.
-
-Run the complete synthetic receive-chain check with:
-
-```powershell
-py -3.11 tools/decode_orciq.py --self-test
-```
-
-Current boundary: RF capture and display are on the Tab5, while LoRa PHY and
-Meshtastic decryption remain PC-assisted. Standard channel AES-CTR and PKI direct
-messages (X25519/AES-CCM) are supported when COM24 supplies the required keys in
-memory. Compressed text still requires an additional codec.
+Before live claims, test recorded sync, CRC pass/fail, public LongFast,
+authorized-key decode, encrypted-without-key, malformed frames, queue
+saturation, profile change, and scan restoration. Hardware acceptance compares
+metadata with the authorized Heltec V4 network and verifies no USB drops,
+watchdogs, flicker, or sustained heap/task growth.

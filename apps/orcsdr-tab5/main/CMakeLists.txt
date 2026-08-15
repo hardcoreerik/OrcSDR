@@ -8,6 +8,7 @@ idf_component_register(
         "../ui/dashboard_registry.cpp"
         "../ui/fm_dashboard.cpp"
         "../ui/home_dashboard.cpp"
+        "../ui/lora_dashboard.cpp"
         "../ui/p25_dashboard.cpp"
         "../ui/p25_decoder.cpp"
         "../ui/settings_app.cpp"
