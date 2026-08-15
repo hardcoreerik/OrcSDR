@@ -2456,9 +2456,12 @@ struct AdsbIndexRecord {
 #pragma pack(pop)
 
 bool lookup_adsb_metadata(uint32_t icao, AdsbIndexRecord* result) {
-  constexpr const char* kPath = "/orcsdr/adsb_aircraft.idx";
-  if (!result || !ensure_tab5_sd() || !g_sd_fs->exists(kPath)) return false;
-  File file = g_sd_fs->open(kPath, FILE_READ);
+  constexpr const char* kManagedPath = "/orcsdr/data/adsb_aircraft.idx";
+  constexpr const char* kLegacyPath = "/orcsdr/adsb_aircraft.idx";
+  if (!result || !ensure_tab5_sd()) return false;
+  const char* path = g_sd_fs->exists(kManagedPath) ? kManagedPath : kLegacyPath;
+  if (!g_sd_fs->exists(path)) return false;
+  File file = g_sd_fs->open(path, FILE_READ);
   AdsbIndexHeader header{};
   if (!file || file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) != sizeof(header) ||
       std::memcmp(header.magic, "ORCADSB1", 8) != 0 ||

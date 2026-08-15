@@ -39,4 +39,6 @@ tmp/
 .local/
 site/
 artifacts/help-media/
+artifacts/data-source-cache/
+artifacts/data-catalog-v1-input/
 docs/user-guide/assets/screenshots/raw/
