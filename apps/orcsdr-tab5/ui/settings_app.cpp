@@ -601,7 +601,6 @@ void update(const State& state_value) {
                               strcmp(g_state.charging_state, state_value.charging_state) != 0);
   const bool catalog_changed = g_section == Section::data_maps &&
       (g_state.catalog_ready != state_value.catalog_ready || g_state.catalog_busy != state_value.catalog_busy ||
-       g_state.catalog_progress_percent != state_value.catalog_progress_percent ||
        strcmp(g_state.catalog_message, state_value.catalog_message) != 0 ||
        strcmp(g_state.catalog_date, state_value.catalog_date) != 0 ||
        memcmp(g_state.catalog_packs, state_value.catalog_packs, sizeof(g_state.catalog_packs)) != 0);

@@ -2438,6 +2438,7 @@ void load_fm_config() {
   } else {
     Serial.printf("RTL_FM_CONFIG_ERROR detail=\"%s\" retaining NVS state\n", error);
 }
+}
 
 #pragma pack(push, 1)
 struct AdsbIndexHeader {
