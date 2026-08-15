@@ -410,7 +410,7 @@ void draw_health_dynamic() {
   draw_event_row(g_snapshot.events[1], 880, 382, 340, true);
   snprintf(value, sizeof(value), "RATE %.3f MSPS", g_snapshot.effective_sps / 1000000.0);
   text(value, 60, 548, kGreen, 1, middle_left);
-  snprintf(value, sizeof(value), "USB %lu  DROP %lu  CRC %lu", 
+  snprintf(value, sizeof(value), "USB %lu  DROP %lu  CRC %lu",
            static_cast<unsigned long>(g_snapshot.usb_overruns),
            static_cast<unsigned long>(g_snapshot.consumer_drops),
            static_cast<unsigned long>(g_snapshot.crc_ok));
