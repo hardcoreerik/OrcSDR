@@ -9318,6 +9318,93 @@ bool ui_doc_pause_reception() {
   ui_doc = {};
 }
 
+struct UiRegressionSnapshot {
+  RtlBand band = RtlBand::browse;
+  uint32_t frequency_hz = 0;
+  uint8_t volume = 0;
+  OrcTool tool = OrcTool::Radio;
+  bool nav_open = false;
+  bool keypad_open = false;
+  bool ui_active = false;
+  bool sound_enabled = false;
+  bool graphics_enabled = false;
+  orcsdr::screens::Id screen = orcsdr::screens::Id::none;
+};
+
+UiRegressionSnapshot ui_regression_snapshot() {
+  return {rtl_ui_band,
+          rtl_ui_frequency_hz,
+          rtl_ui_volume,
+          orc_tool_current(),
+          rtl_nav_open,
+          rtl_frequency_keypad_open,
+          rtl_ui_active.load(std::memory_order_acquire),
+          rtl_audio_user_enabled.load(std::memory_order_acquire),
+          rtl_graphics_enabled.load(std::memory_order_acquire),
+          orcsdr::screens::status().active};
+}
+
+bool ui_regression_restored(const UiRegressionSnapshot& before) {
+  return rtl_ui_band == before.band && rtl_ui_frequency_hz == before.frequency_hz &&
+         rtl_ui_volume == before.volume && orc_tool_current() == before.tool &&
+         rtl_nav_open == before.nav_open &&
+         rtl_frequency_keypad_open == before.keypad_open &&
+         rtl_ui_active.load(std::memory_order_acquire) == before.ui_active &&
+         rtl_audio_user_enabled.load(std::memory_order_acquire) == before.sound_enabled &&
+         rtl_graphics_enabled.load(std::memory_order_acquire) == before.graphics_enabled &&
+         orcsdr::screens::status().active == before.screen;
+}
+
+bool ui_regression_restore_screen(const UiRegressionSnapshot& before) {
+  switch (before.screen) {
+    case orcsdr::screens::Id::home:
+      show_home();
+      return true;
+    case orcsdr::screens::Id::fm:
+    case orcsdr::screens::Id::p25:
+    case orcsdr::screens::Id::adsb:
+    case orcsdr::screens::Id::lora:
+      draw_sdr_screen(before.band, before.frequency_hz, before.volume);
+      return true;
+    default:
+      return false;
+  }
+}
+
+void run_ui_regression(bool workflow) {
+  const UiRegressionSnapshot before = ui_regression_snapshot();
+  const bool radio_ui_ok = orcsdr::radio_ui::self_check();
+  const bool screen_ok = orcsdr::screens::self_check();
+  const bool header_ok = orcsdr::audio_header::self_check();
+  const bool home_ok = orcsdr::home::self_check();
+  bool workflow_ok = true;
+  if (workflow) {
+    const bool supported_screen = before.screen == orcsdr::screens::Id::home ||
+                                  before.screen == orcsdr::screens::Id::fm ||
+                                  before.screen == orcsdr::screens::Id::p25 ||
+                                  before.screen == orcsdr::screens::Id::adsb ||
+                                  before.screen == orcsdr::screens::Id::lora;
+    if (ui_documentation_mode || orcsdr::settings::active() || before.nav_open ||
+        before.keypad_open || !supported_screen) {
+      Serial.printf("RTL_UI_REGRESSION_RESULT mode=RUN pass=0 reason=unsafe_overlay active=%s\n",
+                    orcsdr::screens::name(before.screen));
+      return;
+    }
+    show_home();
+    draw_home_dashboard();
+    workflow_ok = ui_regression_restore_screen(before);
+  }
+  const bool restored = ui_regression_restored(before);
+  const bool pass = radio_ui_ok && screen_ok && header_ok && home_ok && workflow_ok && restored;
+  Serial.printf(
+      "RTL_UI_REGRESSION_RESULT mode=%s pass=%d radio_ui=%d screen=%d header=%d home=%d "
+      "workflow=%d restored=%d active=%s band=%s frequency_hz=%u\n",
+      workflow ? "RUN" : "CHECK", pass ? 1 : 0, radio_ui_ok ? 1 : 0,
+      screen_ok ? 1 : 0, header_ok ? 1 : 0, home_ok ? 1 : 0, workflow_ok ? 1 : 0,
+      restored ? 1 : 0, orcsdr::screens::name(orcsdr::screens::status().active),
+      rtl_band_name(rtl_ui_band), static_cast<unsigned>(rtl_ui_frequency_hz));
+}
+
 void process_command(char* command) {
   if (strncmp(command, "UI_DOC_", 7) == 0 || strncmp(command, "UI_CAPTURE ", 11) == 0) {
     if (!authenticated) {
@@ -9435,6 +9522,14 @@ void process_command(char* command) {
                   orcsdr::screens::name(state.active), orcsdr::screens::name(state.return_to),
                   state.transitions, state.rejected_draws, state.visible_updates,
                   state.last_transition_ms);
+    return;
+  }
+  if (strcmp(command, "RTL_UI_REGRESSION CHECK") == 0) {
+    run_ui_regression(false);
+    return;
+  }
+  if (strcmp(command, "RTL_UI_REGRESSION RUN") == 0) {
+    run_ui_regression(true);
     return;
   }
   if (strcmp(command, "RTL_CATALOG_STATUS") == 0) {
@@ -9831,6 +9926,7 @@ void process_command(char* command) {
     Serial.println("RTL_HELP_BEGIN");
     Serial.println("RTL_STATUS                    - device connection info");
     Serial.println("RTL_SCREEN_STATUS             - active screen ownership diagnostics");
+    Serial.println("RTL_UI_REGRESSION CHECK|RUN   - passive checks or Home->screen restore test");
     Serial.println("RTL_TUNE <BAND> <HZ>           - tune band+freq (auth) BAND=FM|AM|WX|CB|LORA|BROWSE|ADSB|P25");
     Serial.println("RTL_FREQ                       - query current band/frequency/mode");
     Serial.println("RTL_FREQ <HZ>                  - hot-retune within current band (auth)");
