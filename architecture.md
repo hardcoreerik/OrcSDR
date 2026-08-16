@@ -50,6 +50,8 @@ surface.
 Timed radio, recording, and retune events use the active-screen refresh
 dispatcher. They may request a bounded repaint, but they never select a
 dashboard from the current band or draw a legacy header directly.
+The RTL application task likewise posts a screen-transition request; the UI
+loop alone consumes it and writes the framebuffer.
 
 ## Dashboard responsibilities
 

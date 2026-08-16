@@ -1167,6 +1167,8 @@ static inline bool rtl_device_ready() {
 #endif
 std::atomic<RtlCaptureState> rtl_capture_state{RtlCaptureState::disconnected};
 std::atomic<bool> rtl_capture_requested{false};
+// The RTL task may request a screen handoff, but only the UI loop may draw it.
+std::atomic<bool> rtl_screen_transition_requested{false};
 std::atomic<RtlBand> rtl_requested_band{RtlBand::fm};
 std::atomic<uint32_t> rtl_requested_frequency_hz{kRtlFmDefaultHz};
 // Non-zero = apply PLL retune without tearing down the IQ stream (fluid scroll).
@@ -5412,7 +5414,7 @@ void run_rtl_capture() {
   rtl_ui_active.store(true, std::memory_order_release);
   set_rtl_sdr_status(continuous ? "RTL-SDR V4: continuous listening"
                                 : "RTL-SDR V4: bounded capture running");
-  draw_sdr_screen(band, frequency_hz, volume);
+  rtl_screen_transition_requested.store(true, std::memory_order_release);
   rtl_capture_bytes = 0;
   rtl_capture_min = 0;
   rtl_capture_max = 0;
@@ -5998,7 +6000,7 @@ static void rtl_driver_app_task(void *) {
       }
       rtl_ui_active.store(true, std::memory_order_release);
       if (!orcsdr::home::active() && band != RtlBand::adsb)
-        draw_sdr_screen(band, frequency_hz, volume);
+        rtl_screen_transition_requested.store(true, std::memory_order_release);
       M5.Speaker.stop();
 
       rtl_sdr_v4_esp_stream_config_t st;
@@ -10792,6 +10794,14 @@ void loop() {
   if (drawn_rtl_sdr_status_revision != current_rtl_sdr_status_revision) {
     drawn_rtl_sdr_status_revision = current_rtl_sdr_status_revision;
     if (!radio_ui && !adsb_ui && !settings_ui) draw_rtl_sdr_state();
+  }
+
+  // Receive tasks only request this handoff; this UI path is the sole writer.
+  if (rtl_screen_transition_requested.exchange(false, std::memory_order_acq_rel) &&
+      !settings_ui && orcsdr::screens::status().active != orcsdr::screens::Id::documentation &&
+      !orcsdr::home::active()) {
+    draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
+                    rtl_live_volume.load(std::memory_order_acquire));
   }
 
   if (settings_ui && (adsb_ui || !radio_ui)) {
