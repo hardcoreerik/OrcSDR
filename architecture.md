@@ -87,6 +87,13 @@ and restores the exact `ScreenController` return target after Settings closes.
 for the restored screen; it remains the owner of receiver state, NVS writes,
 and audio/DSP lifecycle.
 
+## Device status service
+
+`apps/orcsdr-tab5/ui/device_status_service.{hpp,cpp}` is the read-only source
+for displayable power, Wi-Fi, and RTL readiness data. Home and global Settings
+consume the same bounded snapshot; collecting it neither starts Wi-Fi nor
+touches SD, radio, or decoder state.
+
 The former generic **Browse** screen is retired as a user route. Until a band
 has a dedicated dashboard, tuning AM, WX, CB, airband, marine, satellite, or
 other general receiver ranges presents the shared Home workspace instead. The

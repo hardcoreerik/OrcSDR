@@ -48,6 +48,7 @@ extern "C" {
 #include "catalog_sync.hpp"
 #include "dashboard_audio_control.hpp"
 #include "dashboard_registry.hpp"
+#include "device_status_service.hpp"
 #include "screen_controller.hpp"
 #include "fm_dashboard.hpp"
 #include "fm_config.hpp"
@@ -7218,18 +7219,18 @@ void service_p25_follow(uint32_t now) {
 
 orcsdr::settings::State global_settings_state() {
   orcsdr::settings::State state;
+  const auto device = orcsdr::device_status::collect(
+      wifi_connected, wifi_ssid, rtl_device_ready(), rtl_sdr_status);
   state.wifi_power_enabled = settings_wifi_power_enabled;
   state.wifi_external_antenna = settings_wifi_external_antenna;
   state.wifi_ready = wifi_station_ready;
   state.wifi_scanning = wifi_scan_running;
-  state.wifi_connected = wifi_connected;
+  state.wifi_connected = device.wifi_connected;
   state.wifi_connecting = wifi_connecting;
-  strlcpy(state.wifi_ssid, wifi_connected ? WiFi.SSID().c_str() : wifi_ssid,
-          sizeof(state.wifi_ssid));
-  const String ip = wifi_connected ? WiFi.localIP().toString() : String();
-  strlcpy(state.wifi_ip, ip.c_str(), sizeof(state.wifi_ip));
+  strlcpy(state.wifi_ssid, device.wifi_ssid, sizeof(state.wifi_ssid));
+  strlcpy(state.wifi_ip, device.wifi_ip, sizeof(state.wifi_ip));
   strlcpy(state.wifi_message, wifi_status_message, sizeof(state.wifi_message));
-  state.wifi_rssi = wifi_connected ? WiFi.RSSI() : 0;
+  state.wifi_rssi = device.wifi_rssi;
   state.saved_network_count = wifi_profile_count;
   for (uint8_t i = 0; i < wifi_profile_count; ++i) {
     strlcpy(state.profiles[i].ssid, wifi_profiles[i].ssid,
@@ -7291,10 +7292,10 @@ orcsdr::settings::State global_settings_state() {
     target.update_available = source.update_available;
   }
   state.companion_supported = false;
-  state.battery_level = M5.Power.getBatteryLevel();
-  state.battery_mv = M5.Power.getBatteryVoltage();
-  state.battery_current_ma = M5.Power.getBatteryCurrent();
-  state.vbus_mv = M5.Power.getVBUSVoltage();
+  state.battery_level = device.battery_percent;
+  state.battery_mv = device.battery_mv;
+  state.battery_current_ma = device.battery_current_ma;
+  state.vbus_mv = device.vbus_mv;
   strlcpy(state.charging_state, charging_state(), sizeof(state.charging_state));
   snprintf(state.build_identity, sizeof(state.build_identity), "%s %s", __DATE__, __TIME__);
   state.uptime_seconds = millis() / 1000;
@@ -7304,6 +7305,8 @@ orcsdr::settings::State global_settings_state() {
 orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   static orcsdr::home::Snapshot previous{};
   orcsdr::home::Snapshot snapshot{};
+  const auto device = orcsdr::device_status::collect(
+      wifi_connected, wifi_ssid, rtl_device_ready(), rtl_sdr_status);
   snapshot.frequency_hz = demo ? 145700000 : rtl_ui_frequency_hz;
   snapshot.requested_frequency_hz = demo
                                         ? snapshot.frequency_hz
@@ -7322,8 +7325,8 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
                                                        : 12500;
   strlcpy(snapshot.mode, demo ? "FM" : rtl_band_name(rtl_ui_band),
           sizeof(snapshot.mode));
-  snapshot.battery_percent = demo ? 76 : M5.Power.getBatteryLevel();
-  snapshot.vbus_mv = demo ? 5000 : M5.Power.getVBUSVoltage();
+  snapshot.battery_percent = demo ? 76 : device.battery_percent;
+  snapshot.vbus_mv = demo ? 5000 : device.vbus_mv;
   snapshot.volume = demo ? 128 : rtl_live_volume.load(std::memory_order_acquire);
   snapshot.usb_connected = snapshot.vbus_mv >= 4000;
   if (!demo) {
@@ -7331,21 +7334,20 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
     rtl_signal_dbfs_smooth = 0.88f * rtl_signal_dbfs_smooth + 0.12f * raw;
   }
   snapshot.relative_dbfs = demo ? -32.0f : rtl_signal_dbfs_smooth;
-  snapshot.wifi_connected = demo || wifi_connected;
+  snapshot.wifi_connected = demo || device.wifi_connected;
   if (demo) {
     strlcpy(snapshot.wifi_ip, "192.0.2.42", sizeof(snapshot.wifi_ip));
     strlcpy(snapshot.clock, "12:45", sizeof(snapshot.clock));
     strlcpy(snapshot.date, "DEMO", sizeof(snapshot.date));
   } else {
-    const String ip = wifi_connected ? WiFi.localIP().toString() : String();
-    ip.toCharArray(snapshot.wifi_ip, sizeof(snapshot.wifi_ip));
+    strlcpy(snapshot.wifi_ip, device.wifi_ip, sizeof(snapshot.wifi_ip));
     const uint32_t seconds = millis() / 1000u;
     snprintf(snapshot.clock, sizeof(snapshot.clock), "UP %02lu:%02lu",
              static_cast<unsigned long>((seconds / 3600u) % 100u),
              static_cast<unsigned long>((seconds / 60u) % 60u));
     strlcpy(snapshot.date, "DEVICE UPTIME", sizeof(snapshot.date));
   }
-  snapshot.driver_ready = demo || rtl_device_ready();
+  snapshot.driver_ready = demo || device.rtl_ready;
   snapshot.receiving = demo ||
       rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
   snapshot.sound_enabled = rtl_audio_user_enabled.load(std::memory_order_relaxed);
@@ -10606,6 +10608,11 @@ void setup() {
     abort();
   }
   Serial.println("ORC_RADIO_UI_SELF_CHECK_OK");
+  if (!orcsdr::device_status::self_check()) {
+    Serial.println("ORC_DEVICE_STATUS_SELF_CHECK_FAIL");
+    abort();
+  }
+  Serial.println("ORC_DEVICE_STATUS_SELF_CHECK_OK");
   if (!orcsdr::home::self_check()) {
     Serial.println("ORC_HOME_SELF_CHECK_FAIL");
     abort();
