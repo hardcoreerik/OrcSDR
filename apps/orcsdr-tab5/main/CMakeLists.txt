@@ -12,6 +12,7 @@ idf_component_register(
         "../ui/fm_config.cpp"
         "../ui/home_dashboard.cpp"
         "../ui/lora_dashboard.cpp"
+        "../ui/navigation_service.cpp"
         "../ui/p25_dashboard.cpp"
         "../ui/p25_config.cpp"
         "../ui/p25_decoder.cpp"

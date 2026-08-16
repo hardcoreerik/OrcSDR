@@ -53,6 +53,7 @@ extern "C" {
 #include "fm_config.hpp"
 #include "home_dashboard.hpp"
 #include "lora_dashboard.hpp"
+#include "navigation_service.hpp"
 #include "p25_dashboard.hpp"
 #include "p25_config.hpp"
 #include "p25_decoder.hpp"
@@ -1141,7 +1142,6 @@ bool settings_auto_start_reception = true;
 bool settings_graphics_default = true;
 char settings_location_label[40]{};
 char settings_map_pack[40]{};
-bool settings_restore_graphics = true;
 std::atomic<uint32_t> rtl_sdr_status_revision{0};
 uint32_t drawn_rtl_sdr_status_revision = 0;
 char rtl_sdr_status[96] = "RTL-SDR: waiting for USB-A host";
@@ -1556,6 +1556,7 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo = false);
 void show_home(bool demo = false);
 void draw_home_dashboard();
 void handle_home_action(const orcsdr::home::Action& action);
+void persist_dashboard_open(orcsdr::dashboards::Id id);
 void open_global_settings(orcsdr::settings::Section section);
 void handle_global_settings_touch(int32_t x, int32_t y);
 void update_global_settings();
@@ -7383,38 +7384,77 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   return snapshot;
 }
 
-void show_home(bool demo) {
-  orcsdr::screens::begin_transition(orcsdr::screens::Id::home, millis());
-  orcsdr::fm::leave();
-  orcsdr::p25::leave();
-  orcsdr::adsb::leave();
-  orcsdr::lora::leave();
-  orcsdr::settings::leave();
+void navigation_close_overlays() {
   rtl_nav_open = false;
   rtl_frequency_keypad_open = false;
-  // Home is only a screen owner: retain the active listening path.
+}
+
+void navigation_sync_audio() {
   sync_rtl_audio_for_band(rtl_ui_band);
-  if (rtl_audio_enabled.load(std::memory_order_acquire))
-    (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
-  M5.Display.fillScreen(TFT_BLACK);
-  orcsdr::home::enter(home_dashboard_snapshot(demo));
-  if (demo) {
-    float levels[256];
-    for (size_t i = 0; i < std::size(levels); ++i) {
-      const float center = static_cast<float>(static_cast<int>(i) - 128);
-      const float carrier = 72.0f * expf(-(center * center) / 70.0f);
-      const float side = 20.0f * expf(-((center - 52.0f) * (center - 52.0f)) / 18.0f);
-      levels[i] = -105.0f + carrier + side + 4.0f * sinf(i * 0.39f);
-    }
-    orcsdr::home::draw_spectrum(levels, 0, std::size(levels), -105.0f);
+}
+
+bool navigation_audio_enabled() {
+  return rtl_audio_enabled.load(std::memory_order_acquire);
+}
+
+uint8_t navigation_volume() {
+  return rtl_live_volume.load(std::memory_order_acquire);
+}
+
+bool navigation_disable_graphics() {
+  return rtl_graphics_enabled.exchange(false, std::memory_order_acq_rel);
+}
+
+void navigation_restore_graphics(bool enabled) {
+  rtl_graphics_enabled.store(enabled, std::memory_order_release);
+}
+
+void navigation_persist_settings_open() {
+  if (!ui_documentation_mode) persist_dashboard_open(orcsdr::dashboards::Id::settings);
+}
+
+void navigation_restore_screen(orcsdr::screens::Id restore) {
+  if (restore == orcsdr::screens::Id::home) {
+    orcsdr::home::draw();
+  } else if (restore == orcsdr::screens::Id::adsb) {
+    draw_adsb_dashboard(true);
+    draw_global_settings_gear();
+  } else if (restore == orcsdr::screens::Id::fm) {
+    orcsdr::fm::draw();
+    bump_rtl_ui();
+  } else if (restore == orcsdr::screens::Id::p25) {
+    orcsdr::p25::draw();
+    bump_rtl_ui();
+  } else if (restore == orcsdr::screens::Id::lora) {
+    orcsdr::lora::draw();
+  } else {
+    draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
+                    rtl_live_volume.load(std::memory_order_acquire));
   }
-  orcsdr::screens::finish_transition();
+}
+
+void configure_navigation_service() {
+  orcsdr::navigation::configure({
+      home_dashboard_snapshot,
+      navigation_sync_audio,
+      navigation_audio_enabled,
+      navigation_volume,
+      ensure_speaker_running,
+      navigation_close_overlays,
+      global_settings_state,
+      navigation_persist_settings_open,
+      navigation_disable_graphics,
+      navigation_restore_graphics,
+      navigation_restore_screen,
+  });
+}
+
+void show_home(bool demo) {
+  orcsdr::navigation::show_home(demo);
 }
 
 void draw_home_dashboard() {
-  if (!orcsdr::screens::may_draw(orcsdr::screens::Id::home) || !orcsdr::home::active()) return;
-  orcsdr::screens::note_visible_update(orcsdr::screens::Id::home);
-  orcsdr::home::update(home_dashboard_snapshot());
+  orcsdr::navigation::draw_home();
 }
 
 orcsdr::dashboards::Id dashboard_for_band(RtlBand band, uint32_t frequency_hz) {
@@ -7530,39 +7570,11 @@ void handle_home_action(const orcsdr::home::Action& action) {
 }
 
 void open_global_settings(orcsdr::settings::Section section) {
-  if (!ui_documentation_mode)
-    persist_dashboard_open(orcsdr::dashboards::Id::settings);
-  orcsdr::screens::begin_transition(orcsdr::screens::Id::settings, millis(), true);
-  settings_restore_graphics = rtl_graphics_enabled.exchange(false, std::memory_order_acq_rel);
-  rtl_nav_open = false;
-  M5.Display.fillScreen(TFT_BLACK);
-  orcsdr::settings::enter(global_settings_state(), section);
-  orcsdr::screens::finish_transition();
+  orcsdr::navigation::open_settings(section);
 }
 
 void close_global_settings() {
-  rtl_graphics_enabled.store(settings_restore_graphics, std::memory_order_release);
-  const auto restore = orcsdr::screens::close_settings(millis());
-  orcsdr::settings::leave();
-  M5.Display.fillScreen(TFT_BLACK);
-  orcsdr::screens::finish_transition();
-  if (restore == orcsdr::screens::Id::home) {
-    orcsdr::home::draw();
-  } else if (restore == orcsdr::screens::Id::adsb) {
-    draw_adsb_dashboard(true);
-    draw_global_settings_gear();
-  } else if (restore == orcsdr::screens::Id::fm) {
-    orcsdr::fm::draw();
-    bump_rtl_ui();
-  } else if (restore == orcsdr::screens::Id::p25) {
-    orcsdr::p25::draw();
-    bump_rtl_ui();
-  } else if (restore == orcsdr::screens::Id::lora) {
-    orcsdr::lora::draw();
-  } else {
-    draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
-                    rtl_live_volume.load(std::memory_order_acquire));
-  }
+  orcsdr::navigation::close_settings();
 }
 
 void handle_global_settings_action(const orcsdr::settings::Action& action) {
@@ -10548,6 +10560,7 @@ void setup() {
   M5.Speaker.config(speaker_config);
   M5.Display.setRotation(1);
   M5.Display.setBrightness(180);
+  configure_navigation_service();
   if (!orcsdr::adsb::self_check() || !orcsdr::adsb_rx::Decoder::self_check()) {
     Serial.println("RTL_ADSB_SELF_CHECK_FAIL");
     abort();

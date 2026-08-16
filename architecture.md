@@ -78,6 +78,15 @@ state-changing radio actions after service action classification. The service
 has no RTL, USB, DSP, or touch-polling ownership, keeping live radio state
 deterministic.
 
+## Navigation service
+
+`apps/orcsdr-tab5/ui/navigation_service.{hpp,cpp}` owns Home and Settings
+screen handoff: it clears the framebuffer once, enters the selected surface,
+and restores the exact `ScreenController` return target after Settings closes.
+`main.cpp` supplies current radio/settings snapshots and the bounded renderer
+for the restored screen; it remains the owner of receiver state, NVS writes,
+and audio/DSP lifecycle.
+
 The former generic **Browse** screen is retired as a user route. Until a band
 has a dedicated dashboard, tuning AM, WX, CB, airband, marine, satellite, or
 other general receiver ranges presents the shared Home workspace instead. The
