@@ -213,12 +213,10 @@ void draw_header() {
   char rate[20];
   snprintf(rate, sizeof(rate), "%.1f/s", g_live ? g_live_snapshot.message_rate : 58.7f);
   text(rate, 785, 37, kGreen, 2, middle_left);
-  button(g_live ? "LIVE" : "DEMO", 1045, 14, 100, 44,
+  button(g_live ? "LIVE" : "DEMO", 1018, 14, 84, 44,
          g_live ? TFT_DARKGREEN : TFT_MAROON);
-  char range[24];
-  snprintf(range, sizeof(range), "%u NM", g_settings.radar_range_nm);
-  text(range, 1195, 37, TFT_LIGHTGREY, 2, middle_right);
   audio_header::draw_home_button();
+  audio_header::draw_settings_button();
 }
 
 void draw_header_live_values() {
@@ -230,7 +228,7 @@ void draw_header_live_values() {
   text(value, 445, 37, TFT_WHITE, 2, middle_left);
   snprintf(value, sizeof(value), "%.1f/s", g_live ? g_live_snapshot.message_rate : 58.7f);
   text(value, 785, 37, kGreen, 2, middle_left);
-  button(g_live ? "LIVE" : "DEMO", 1045, 14, 100, 44,
+  button(g_live ? "LIVE" : "DEMO", 1018, 14, 84, 44,
          g_live ? TFT_DARKGREEN : TFT_MAROON);
 }
 

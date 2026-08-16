@@ -20,6 +20,11 @@ command," so typos fail silently. `RTL_HELP` is authoritative for the exact
 command set; this document explains what each one does and how to use them
 together.
 
+Every operator-facing control must expose a matching serial command or record
+why it cannot. `RTL_SCREEN_STATUS` is the read-only render-ownership diagnostic:
+it reports the active screen, Settings return target, transitions, rejected
+inactive draws, and visible update count.
+
 ## Quick start
 
 ```powershell
@@ -283,6 +288,49 @@ bytes=... modified=... pathhex=<hex>` line per file, then
 All SD writes are refused with `..._ERROR radio_busy` while a capture/
 stream is active — stop the radio (`RTL_STOP`, needs auth) or wait for it
 to be idle first.
+
+## Data Catalog
+
+These commands invoke the exact same manual Data & Maps actions as the
+touchscreen. They never run at boot and they do not create an alternate
+download path. Connect Wi-Fi first, then check the signed catalog before
+selecting a pack by its returned stable `id`.
+
+| Command | Reply | Notes |
+|---|---|---|
+| `RTL_CATALOG_STATUS` | `RTL_CATALOG_STATUS`, one `RTL_CATALOG_PACK` per pack | Safe query of catalog state and the four stable pack IDs. |
+| `RTL_CATALOG_CHECK` | `RTL_CATALOG_CHECK_QUEUED` or `_REJECTED` | Downloads and verifies the signed release manifest. Requires mounted SD and connected Wi-Fi. |
+| `RTL_CATALOG_INSTALL <id>` | `RTL_CATALOG_INSTALL_QUEUED` or `_REJECTED` | Streams the selected published pack to SD, validates its hash/schema, then activates it atomically. Run a check first. |
+| `RTL_CATALOG_REMOVE <id> CONFIRM` | `RTL_CATALOG_REMOVE_QUEUED` or `_REJECTED` | Removes only the selected installed pack. The literal `CONFIRM` is required. |
+
+Example:
+
+```text
+RTL_CATALOG_CHECK
+RTL_CATALOG_STATUS
+RTL_CATALOG_INSTALL faa_aircraft
+```
+
+## UI regression
+
+The regression command checks the shared radio-control geometry and screen
+ownership self-checks without changing receiver state or NVS. `RUN` also
+exercises an actual screen handoff: Home to the current FM, P25, ADS-B, or
+LoRa dashboard and back to Home. It refuses to run over Settings, NAV, keypad,
+or documentation overlays.
+
+| Command | Reply | Notes |
+|---|---|---|
+| `RTL_UI_REGRESSION CHECK` | `RTL_UI_REGRESSION_RESULT ... pass=1` | Passive checks only. |
+| `RTL_UI_REGRESSION RUN` | `RTL_UI_REGRESSION_RESULT ... transitioned=1 restored=1` | Exercises the bounded handoff and confirms the original UI snapshot returned. |
+
+Use the repeatable runner; it disables DTR/RTS before opening COM17 so it does
+not reset the Tab5:
+
+```powershell
+.\tools\run-tab5-ui-regression.ps1 -Port COM17
+.\tools\run-tab5-ui-regression.ps1 -Port COM17 -Run
+```
 
 ## Documentation capture
 

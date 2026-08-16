@@ -17,7 +17,6 @@ constexpr Descriptor kEntries[] = {
     {Id::airband, "AIRBAND", "VHF aviation voice", Category::aviation, true},
     {Id::marine, "MARINE", "VHF marine receiver", Category::audio, true},
     {Id::satellite, "SATELLITE", "Satellite receive workspace", Category::digital, true},
-    {Id::utilities, "UTILITIES", "Browse, scope and capture tools", Category::utility, true},
     {Id::settings, "SETTINGS", "Global device settings", Category::system, true},
 };
 
@@ -99,7 +98,7 @@ bool self_check() {
                      g_recent[1] == Id::fm && !record_open(Id::p25);
   g_recent = saved;
   g_recent_count = saved_count;
-  return loaded && moved && std::size(kEntries) == 12;
+  return loaded && moved && std::size(kEntries) == 11;
 }
 
 }  // namespace orcsdr::dashboards

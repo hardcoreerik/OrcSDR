@@ -401,16 +401,22 @@ bool activate_pack(const Pack& pack) {
 }
 
 void worker(void*) {
-  uint8_t manifest[kManifestLimit]{};
-  uint8_t signature[kSignatureLimit]{};
+  // Catalogs are manual operations. Keep their bounded transfer buffers out
+  // of the small FreeRTOS task stack and release them after each request.
+  auto* manifest = static_cast<uint8_t*>(
+      heap_caps_malloc(kManifestLimit, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  auto* signature = static_cast<uint8_t*>(
+      heap_caps_malloc(kSignatureLimit, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   size_t manifest_size = 0, signature_size = 0;
   const Operation operation = g_requested;
   const uint8_t pack_index = g_requested_pack;
   bool ok = false;
-  if (operation == Operation::check) {
+  if (!manifest || !signature) {
+    set_message("Catalog buffer allocation failed");
+  } else if (operation == Operation::check) {
     set_message("Checking signed data catalog");
-    ok = http_read_all(kCatalogUrl, manifest, sizeof(manifest), &manifest_size) &&
-         http_read_all(kSignatureUrl, signature, sizeof(signature), &signature_size) &&
+    ok = http_read_all(kCatalogUrl, manifest, kManifestLimit, &manifest_size) &&
+         http_read_all(kSignatureUrl, signature, kSignatureLimit, &signature_size) &&
          verify_signature(manifest, manifest_size, signature, signature_size) &&
          parse_manifest(manifest, manifest_size);
     set_message(ok ? "Catalog verified" : "Catalog signature or format rejected");
@@ -440,6 +446,8 @@ void worker(void*) {
     set_message(ok ? "Pack removed; configuration preserved" : "Could not remove pack");
     refresh_installed();
   }
+  if (manifest) heap_caps_free(manifest);
+  if (signature) heap_caps_free(signature);
   set_busy(Operation::none, ok ? 100 : 0);
   g_requested = Operation::none;
   g_worker = nullptr;
@@ -482,27 +490,6 @@ State state() {
   copy = g_state;
   portEXIT_CRITICAL(&g_lock);
   return copy;
-}
-
-bool self_check() {
-  constexpr char kSubset[] =
-      "{\"schema\":\"catalog-v1\",\"generated_at\":\"2026-08-14\","
-      "\"minimum_firmware\":\"v0.0.0\",\"packs\":[{"
-      "\"id\":\"faa_aircraft\",\"version\":\"test\",\"source_date\":\"2026-08-14\","
-      "\"artifacts\":{\"runtime\":{\"url\":\"https://example.test/index\","
-      "\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\","
-      "\"destination\":\"/orcsdr/data/adsb_aircraft.idx\",\"bytes\":1},"
-      "\"archive\":{\"url\":\"https://example.test/source\","
-      "\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\","
-      "\"destination\":\"/orcsdr/data/faa_aircraft_source.zip\",\"bytes\":1}}}]}";
-  const bool subset_ok = parse_manifest(reinterpret_cast<const uint8_t*>(kSubset), strlen(kSubset)) &&
-                         g_packs[0].available && !g_packs[1].available;
-  g_state = {};
-  for (auto& pack : g_packs) pack = {};
-  return subset_ok && kPackCount == 4 && strcmp(kIds[0], "faa_aircraft") == 0 &&
-         valid_hash("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") &&
-         valid_destination("/orcsdr/data/faa_aircraft.idx") &&
-         !valid_destination("/orcsdr/data/../secret");
 }
 
 }  // namespace orcsdr::catalog

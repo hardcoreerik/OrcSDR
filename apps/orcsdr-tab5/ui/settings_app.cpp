@@ -21,6 +21,7 @@ constexpr int kHeaderH = 72;
 constexpr int kRailW = 286;
 constexpr int kRailY = 82;
 constexpr int kRailRowH = 72;
+constexpr uint8_t kSettingsMinTextSize = 2;
 constexpr uint16_t kRanges[] = {10, 25, 50, 100};
 constexpr uint16_t kTimeouts[] = {0, 30, 60, 120, 300};
 constexpr const char* kLabels[] = {
@@ -58,7 +59,7 @@ bool hit(int x, int y, int bx, int by, int bw, int bh) {
 void text(const char* value, int x, int y, uint16_t color, uint8_t size = 2,
           textdatum_t datum = middle_left) {
   M5.Display.setTextDatum(datum);
-  M5.Display.setTextSize(size);
+  M5.Display.setTextSize(std::max(size, kSettingsMinTextSize));
   M5.Display.setTextColor(color, kBg);
   M5.Display.drawString(value, x, y);
 }
@@ -193,28 +194,27 @@ void draw_data_maps() {
   text(catalog, 330, 153, g_state.catalog_ready ? kGreen : kMuted, 2);
   button(g_state.catalog_busy ? "WORKING..." : "CHECK FOR UPDATES", 940, 126, 278, 48,
          g_state.catalog_busy ? TFT_DARKGREY : TFT_DARKCYAN);
-  if (g_state.catalog_message[0]) text(g_state.catalog_message, 330, 180, kMuted, 1);
+  if (g_state.catalog_message[0]) text(g_state.catalog_message, 330, 180, kMuted, 2);
   for (uint8_t i = 0; i < 4; ++i) {
     const auto& pack = g_state.catalog_packs[i];
-    const int y = 205 + i * 110;
-    M5.Display.fillRoundRect(330, y, 888, 98, 8, kPanel);
-    M5.Display.drawRoundRect(330, y, 888, 98, 8, kBlue);
-    text(pack.title[0] ? pack.title : "DATA PACK", 350, y + 24, kBlue, 2);
+    const int y = 190 + i * 126;
+    M5.Display.fillRoundRect(330, y, 888, 116, 8, kPanel);
+    M5.Display.drawRoundRect(330, y, 888, 116, 8, kBlue);
+    text(pack.title[0] ? pack.title : "DATA PACK", 350, y + 24, kBlue, 3);
     char detail[96];
     snprintf(detail, sizeof(detail), "v%s  source %s  %.1f + %.1f MB",
              pack.version[0] ? pack.version : "--", pack.source_date[0] ? pack.source_date : "--",
              pack.runtime_bytes / 1048576.0, pack.archive_bytes / 1048576.0);
-    text(detail, 350, y + 52, TFT_WHITE, 1);
-    text(pack.status[0] ? pack.status : "CHECK CATALOG", 350, y + 76,
-         pack.installed ? kGreen : kMuted, 1);
+    text(detail, 350, y + 57, TFT_WHITE, 2);
+    text(pack.status[0] ? pack.status : "CHECK CATALOG", 350, y + 87,
+         pack.installed ? kGreen : kMuted, 2);
     const char* install = pack.installed ? (pack.update_available ? "UPDATE" : "REINSTALL") : "INSTALL";
-    button(install, 930, y + 16, 132, 36,
+    button(install, 930, y + 18, 132, 48,
            g_state.catalog_busy || !g_state.catalog_ready ? TFT_DARKGREY : TFT_DARKCYAN);
-    button(g_catalog_remove_armed == i ? "CONFIRM" : "REMOVE", 1072, y + 16, 126, 36,
+    button(g_catalog_remove_armed == i ? "CONFIRM" : "REMOVE", 1072, y + 18, 126, 48,
            pack.installed && !g_state.catalog_busy ? TFT_MAROON : TFT_DARKGREY);
   }
-  text("Manual only. Downloads keep reception active; use an imported map pack separately.",
-       330, 662, TFT_LIGHTGREY, 1);
+  text("Manual only. Downloads keep reception active.", 330, 702, TFT_LIGHTGREY, 2);
 }
 
 void draw_display_audio() {
@@ -683,10 +683,10 @@ Action handle_touch(int32_t x, int32_t y) {
     if (hit(x, y, 940, 126, 278, 48) && !g_state.catalog_busy)
       return {ActionKind::catalog_check, 0};
     for (uint8_t i = 0; i < 4; ++i) {
-      const int row_y = 205 + i * 110;
-      if (hit(x, y, 930, row_y + 16, 132, 36) && g_state.catalog_ready && !g_state.catalog_busy)
+      const int row_y = 190 + i * 126;
+      if (hit(x, y, 930, row_y + 18, 132, 48) && g_state.catalog_ready && !g_state.catalog_busy)
         return {ActionKind::catalog_install, i};
-      if (hit(x, y, 1072, row_y + 16, 126, 36) && g_state.catalog_packs[i].installed && !g_state.catalog_busy) {
+      if (hit(x, y, 1072, row_y + 18, 126, 48) && g_state.catalog_packs[i].installed && !g_state.catalog_busy) {
         if (g_catalog_remove_armed == i) {
           g_catalog_remove_armed = -1;
           return {ActionKind::catalog_remove, i};

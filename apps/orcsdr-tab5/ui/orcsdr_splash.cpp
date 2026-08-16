@@ -672,7 +672,8 @@ void free_splash_resources() {
   g_splash.framebuffer = nullptr;
   g_splash.framebuffer_bytes = 0;
   if (g_splash.file) g_splash.file.close();
-  if (g_splash.use_sdmmc) SD_MMC.end();
+  // The main application adopts this mount after splash playback.  Do not
+  // unmount it here and leave its cached filesystem pointer stale.
   g_splash.active.store(false, std::memory_order_release);
   splash_log("SPLASH_FREE ok");
 }

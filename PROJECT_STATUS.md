@@ -29,9 +29,10 @@ this file when their paths, versions, or completion claims differ.
 | Core split | **Implemented** | USB core 0; IQ delivery and app work on core 1 |
 | Native Tab5 build | **Build-verified** | Native ESP-IDF 5.5.3 build produces `orcsdr_tab5.bin`; P4 ESP-Hosted host is locked to 2.12.6. Hardware pairing/scan-connect acceptance remains pending. |
 | Tab5 radio shell | **Implemented** | FM/AM/WX/CB/LoRa, radio/scope/capture tabs, sound/GFX toggles |
+| Screen ownership controller | **Hardware-verified** | `ScreenController` is the sole display-route owner for Home, FM, P25, ADS-B, LoRa, generic Radio/Scope/Capture, Settings, and documentation mode. The Tab5 transition check passed after the final UI-loop handoff; documentation capture now claims and restores its controller identity. |
 | CB channel dashboard | **Flashed; operator acceptance pending** | 40-channel AM/USB/LSB plan, 2/3 scope, touch channel dial, clarifier, squelch, live S/RF bar |
 | LoRa/Meshtastic receive path | **Flashed; live RF acceptance pending** | 250 ms pre-roll, adaptive 9 dB energy trigger, verified SD bridge, and dashboard message return; synthetic full-chain and COM17 protocol checks pass |
-| SDR navigation | **Flashed; operator acceptance pending** | Full 24–1766 MHz browse, US band/use guide, direct entry, pinch, peak find, FM auto tune |
+| SDR navigation | **Implemented; Home-first migration in progress** | Full 24–1766 MHz tune range, US band/use guide, direct entry, pinch, peak find, and FM auto tune. The legacy Browse surface is retired from user navigation; Home is the interim workspace for bands without a dedicated dashboard. |
 | Browse demodulation | **Partial** | NFM spectrum/listen path; AM/SSB/digital mode selection and sub-24 MHz direct sampling remain open |
 | Variant-4 splash | **Implemented on this branch** | Looping SD asset playback and static ready/button overlay |
 | Final splash smoothness | **Active performance gate** | Compact 24 FPS pack verified; 25 MHz SPI measured 15–16 FPS |
@@ -217,6 +218,7 @@ SPLASH_FPS ...
 | Document | Role |
 |---|---|
 | `PROJECT_STATUS.md` | Current truth, priorities, and evidence boundary |
+| `architecture.md` | Implemented runtime ownership, ScreenController contract, and dashboard drawing boundary |
 | `docs/IMPLEMENTATION_FROM_PEER_RESEARCH.md` | Detailed workstreams and design rationale |
 | `docs/PORTING.md` | Driver extraction and target gates |
 | `docs/API_RTL_SDR_V4_ESP.md` | Public API contract |
