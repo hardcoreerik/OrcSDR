@@ -77,10 +77,17 @@ bool self_check() {
     finish_transition();
     settings_return = settings_return && owns(screen);
   }
-  const bool restored = g_status.transitions == 16;
+  begin_transition(Id::documentation, now++, false);
+  finish_transition();
+  const bool documentation_owns = owns(Id::documentation);
+  begin_transition(Id::home, now++, false);
+  finish_transition();
+  const bool documentation_restores = owns(Id::home);
+  const bool restored = g_status.transitions == 18;
   g_status = saved;
   g_transitioning = saved_transitioning;
-  return entering_blocks_draw && home_owns && settings_return && restored;
+  return entering_blocks_draw && home_owns && settings_return && documentation_owns &&
+         documentation_restores && restored;
 }
 
 }  // namespace orcsdr::screens

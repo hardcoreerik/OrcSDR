@@ -129,8 +129,10 @@ second geometry or touch implementation.
 ## Diagnostics and validation
 
 At boot, `ScreenController::self_check()` verifies transition blocking and
-Settings return for Home, FM, P25, ADS-B, and LoRa. A failure stops boot rather
-than shipping ambiguous ownership behavior.
+Settings return for Home, FM, P25, ADS-B, and LoRa. Documentation capture also
+claims the `documentation` identity while it freezes a rendered surface, then
+restores the original controller identity before normal updates resume. A
+failure stops boot rather than shipping ambiguous ownership behavior.
 
 `RTL_SCREEN_STATUS` reports the active and return screens plus transition,
 rejected-draw, and visible-update counters. It is read-only and performs no

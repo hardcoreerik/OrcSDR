@@ -8861,6 +8861,7 @@ struct UiDocState {
   bool was_home_active = false;
   bool graphics_enabled = true;
   bool nav_open = false;
+  orcsdr::screens::Id screen = orcsdr::screens::Id::none;
   RtlBand band = RtlBand::fm;
   uint32_t frequency_hz = kRtlFmDefaultHz;
   OrcTool tool = OrcTool::Radio;
@@ -9219,6 +9220,9 @@ bool ui_doc_render(const char* screen_id, bool demo) {
     if (!found) return false;
   }
   if (demo) ui_doc_badge();
+  // Freeze the rendered production surface under a distinct controller owner.
+  orcsdr::screens::begin_transition(orcsdr::screens::Id::documentation, millis());
+  orcsdr::screens::finish_transition();
   strlcpy(ui_doc.current_screen, screen_id, sizeof(ui_doc.current_screen));
   ui_doc.current_demo = demo;
   return true;
@@ -9257,6 +9261,7 @@ void ui_doc_enter() {
   ui_doc.was_ui_active = rtl_ui_active.load(std::memory_order_acquire);
   ui_doc.was_settings_active = orcsdr::settings::active();
   ui_doc.was_home_active = orcsdr::home::active();
+  ui_doc.screen = orcsdr::screens::status().active;
   ui_doc.graphics_enabled = rtl_graphics_enabled.exchange(false, std::memory_order_acq_rel);
   ui_doc.nav_open = rtl_nav_open;
   ui_doc.band = rtl_ui_band;
@@ -9278,6 +9283,8 @@ void ui_doc_enter() {
   ui_doc.cb_squelch = cb_squelch_dbfs.load(std::memory_order_relaxed);
   ui_doc.cb_squelch_was_open = cb_squelch_open.load(std::memory_order_relaxed);
   ui_documentation_mode = true;
+  orcsdr::screens::begin_transition(orcsdr::screens::Id::documentation, millis());
+  orcsdr::screens::finish_transition();
 }
 
 bool ui_doc_pause_reception() {
@@ -9314,18 +9321,30 @@ bool ui_doc_pause_reception() {
   if (ui_doc.was_home_active) {
     show_home();
   } else if (ui_doc.was_settings_active) {
+    orcsdr::screens::begin_transition(orcsdr::screens::Id::settings, millis());
+    M5.Display.fillScreen(TFT_BLACK);
     orcsdr::settings::enter(global_settings_state(), ui_doc.settings_section);
+    orcsdr::screens::finish_transition();
   } else if (ui_doc.was_ui_active) {
-    if (ui_doc.band == RtlBand::fm)
+    if (ui_doc.band == RtlBand::fm) {
+      orcsdr::screens::begin_transition(orcsdr::screens::Id::fm, millis());
       orcsdr::fm::show_documentation_view(ui_doc.fm_view, fm_dashboard_snapshot());
-    else if (ui_doc.band == RtlBand::p25)
+      orcsdr::screens::finish_transition();
+    } else if (ui_doc.band == RtlBand::p25) {
+      orcsdr::screens::begin_transition(orcsdr::screens::Id::p25, millis());
       orcsdr::p25::show_documentation_view(ui_doc.p25_view, p25_dashboard_snapshot());
-    else if (ui_doc.band == RtlBand::adsb)
+      orcsdr::screens::finish_transition();
+    } else if (ui_doc.band == RtlBand::adsb) {
+      orcsdr::screens::begin_transition(orcsdr::screens::Id::adsb, millis());
       orcsdr::adsb::show_documentation_view(ui_doc.adsb_view, adsb_settings, false);
-    else if (ui_doc.band == RtlBand::lora)
+      orcsdr::screens::finish_transition();
+    } else if (ui_doc.band == RtlBand::lora) {
+      orcsdr::screens::begin_transition(orcsdr::screens::Id::lora, millis());
       orcsdr::lora::show_documentation_view(ui_doc.lora_view, lora_dashboard_snapshot());
-    else
+      orcsdr::screens::finish_transition();
+    } else {
       draw_sdr_screen(ui_doc.band, ui_doc.frequency_hz, rtl_ui_volume);
+    }
   } else {
     show_home();
   }
