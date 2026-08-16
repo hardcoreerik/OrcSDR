@@ -9378,6 +9378,7 @@ void run_ui_regression(bool workflow) {
   const bool header_ok = orcsdr::audio_header::self_check();
   const bool home_ok = orcsdr::home::self_check();
   bool workflow_ok = true;
+  bool transitioned = !workflow;
   if (workflow) {
     const bool supported_screen = before.screen == orcsdr::screens::Id::home ||
                                   before.screen == orcsdr::screens::Id::fm ||
@@ -9392,16 +9393,26 @@ void run_ui_regression(bool workflow) {
     }
     show_home();
     draw_home_dashboard();
-    workflow_ok = ui_regression_restore_screen(before);
+    const bool dashboard_band = before.band == RtlBand::fm || before.band == RtlBand::p25 ||
+                                before.band == RtlBand::adsb || before.band == RtlBand::lora;
+    if (before.screen == orcsdr::screens::Id::home && dashboard_band) {
+      draw_sdr_screen(before.band, before.frequency_hz, before.volume);
+      workflow_ok = orcsdr::screens::status().active == screen_for_band(before.band);
+      transitioned = workflow_ok;
+      show_home();
+    } else {
+      workflow_ok = ui_regression_restore_screen(before);
+      transitioned = workflow_ok;
+    }
   }
   const bool restored = ui_regression_restored(before);
-  const bool pass = radio_ui_ok && screen_ok && header_ok && home_ok && workflow_ok && restored;
+  const bool pass = radio_ui_ok && screen_ok && header_ok && home_ok && workflow_ok && transitioned && restored;
   Serial.printf(
       "RTL_UI_REGRESSION_RESULT mode=%s pass=%d radio_ui=%d screen=%d header=%d home=%d "
-      "workflow=%d restored=%d active=%s band=%s frequency_hz=%u\n",
+      "workflow=%d transitioned=%d restored=%d active=%s band=%s frequency_hz=%u\n",
       workflow ? "RUN" : "CHECK", pass ? 1 : 0, radio_ui_ok ? 1 : 0,
       screen_ok ? 1 : 0, header_ok ? 1 : 0, home_ok ? 1 : 0, workflow_ok ? 1 : 0,
-      restored ? 1 : 0, orcsdr::screens::name(orcsdr::screens::status().active),
+      transitioned ? 1 : 0, restored ? 1 : 0, orcsdr::screens::name(orcsdr::screens::status().active),
       rtl_band_name(rtl_ui_band), static_cast<unsigned>(rtl_ui_frequency_hz));
 }
 

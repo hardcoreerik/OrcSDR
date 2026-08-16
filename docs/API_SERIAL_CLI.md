@@ -311,6 +311,27 @@ RTL_CATALOG_STATUS
 RTL_CATALOG_INSTALL faa_aircraft
 ```
 
+## UI regression
+
+The regression command checks the shared radio-control geometry and screen
+ownership self-checks without changing receiver state or NVS. `RUN` also
+exercises an actual screen handoff: Home to the current FM, P25, ADS-B, or
+LoRa dashboard and back to Home. It refuses to run over Settings, NAV, keypad,
+or documentation overlays.
+
+| Command | Reply | Notes |
+|---|---|---|
+| `RTL_UI_REGRESSION CHECK` | `RTL_UI_REGRESSION_RESULT ... pass=1` | Passive checks only. |
+| `RTL_UI_REGRESSION RUN` | `RTL_UI_REGRESSION_RESULT ... transitioned=1 restored=1` | Exercises the bounded handoff and confirms the original UI snapshot returned. |
+
+Use the repeatable runner; it disables DTR/RTS before opening COM17 so it does
+not reset the Tab5:
+
+```powershell
+.\tools\run-tab5-ui-regression.ps1 -Port COM17
+.\tools\run-tab5-ui-regression.ps1 -Port COM17 -Run
+```
+
 ## Documentation capture
 
 The authenticated documentation commands stage stable views and save an exact
