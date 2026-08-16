@@ -9525,9 +9525,9 @@ void process_command(char* command) {
         return;
       }
       const esp_app_desc_t* app = esp_app_get_description();
-      Serial.printf("UI_CAPTURE_DONE slug=%s path=\"/orcsdr/screenshots/%s.bmp\" "
+      Serial.printf("UI_CAPTURE_DONE slug=%s path=\"/orcsdr/UIDOC.BMP\" "
                     "bytes=%u width=%u height=%u firmware=\"%s\" sha256=",
-                    slug, slug, static_cast<unsigned>(result.bytes), result.width,
+                    slug, static_cast<unsigned>(result.bytes), result.width,
                     result.height, app->version);
       print_hex(result.sha256, sizeof(result.sha256));
       Serial.println();

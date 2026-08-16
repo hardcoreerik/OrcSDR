@@ -31,7 +31,11 @@ The primary reference implementation runs on the **M5Stack Tab5**, powered by th
 <p align="center">
   <a href="#-flash-orcsdr-to-the-m5stack-tab5"><strong>Flash OrcSDR</strong></a>
   &nbsp;•&nbsp;
+  <a href="#release-snapshot"><strong>Release status</strong></a>
+  &nbsp;•&nbsp;
   <a href="#orcsdr-interface"><strong>Interface</strong></a>
+  &nbsp;•&nbsp;
+  <a href="#dashboard-gallery"><strong>Dashboards</strong></a>
   &nbsp;•&nbsp;
   <a href="#lora-monitoring--messaging"><strong>LoRa</strong></a>
   &nbsp;•&nbsp;
@@ -47,6 +51,23 @@ The primary reference implementation runs on the **M5Stack Tab5**, powered by th
 
 > [!NOTE]
 > **Project status:** OrcSDR is under active development. The Tab5 application is the reference implementation while the reusable `RTL-SDRv4-ESP` driver continues to be separated and hardened as a standalone ESP-IDF component.
+
+---
+
+## Release snapshot
+
+[`v0.2.0-alpha.4`](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.2.0-alpha.4) is the current Tab5 prerelease. It is an early hardware-testing build for an M5Stack Tab5 and RTL-SDR Blog V4; it is not a claim that every radio mode has production-level field validation.
+
+| Area | Current status | What that means |
+| --- | --- | --- |
+| FM receiver, stereo audio, presets, and health | Implemented | Live hardware verified |
+| P25 control and clear voice following | Experimental | Encrypted voice is not decoded |
+| ADS-B 1090 dashboard and aircraft database | Experimental | Coverage depends on antenna, location, and valid position messages |
+| LoRa receive, packet views, and capture | Experimental | Receive only; no transmit path |
+| AM, WX, CB, and Browse tools | Experimental | Share the radio, scope, and capture foundation |
+| Global on-device Settings | Implemented | Wi-Fi and Companion are optional |
+
+Read the concise [release note](docs/releases/v0.2.0-alpha.4.md), the [feature-status guide](docs/user-guide/feature-status.md), and the [native Tab5 build policy](docs/TAB5_BUILD_POLICY.md) before testing an alpha build.
 
 ---
 
@@ -131,6 +152,14 @@ OrcSDR is designed around a touchscreen-first radio experience.
 </p>
 
 The interface combines live spectrum and waterfall displays with direct frequency tuning, band navigation, presets, signal monitoring, and dedicated radio modes.
+
+## Dashboard gallery
+
+These 1280×720 frames were captured from the Tab5 release build. Reproducible demo states retain the visible `DEMO` label; they are not presented as live RF results.
+
+| FM Listen | ADS-B Radar | LoRa Overview |
+| --- | --- | --- |
+| ![OrcSDR FM Listen dashboard on Tab5](docs/user-guide/assets/screenshots/landing/fm-listen.png) | ![OrcSDR ADS-B Radar dashboard on Tab5](docs/user-guide/assets/screenshots/landing/adsb-radar.png) | ![OrcSDR LoRa Overview dashboard on Tab5](docs/user-guide/assets/screenshots/landing/lora-overview.png) |
 
 Current interface work includes:
 
@@ -229,7 +258,13 @@ COM8
 
 ### 3. Build and flash OrcSDR
 
-Replace `COM8` with the Tab5 port, then copy and paste:
+Build first with the supported native ESP-IDF wrapper:
+
+```powershell
+.\apps\orcsdr-tab5\tools\build-tab5-idf.ps1
+```
+
+Then, only when you are ready to write the device, replace `COM8` with the Tab5 port:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
@@ -238,7 +273,8 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 This uses the pinned native ESP-IDF component graph, preserves saved NVS
 settings, and refuses unexpected ESP-Hosted or M5GFX component sources.
-PlatformIO is not a supported OrcSDR build or flash path.
+Back up a known-good device image before testing an alpha release. PlatformIO
+is not a supported OrcSDR build or flash path.
 
 ### 4. Connect the RTL-SDR Blog V4
 
@@ -307,7 +343,7 @@ Power-cycle or reset the Tab5 after flashing if needed.
 - ESP32-P4
 - M5Stack Tab5 reference hardware
 - ESP-IDF USB Host
-- PlatformIO build environment
+- Native ESP-IDF 5.5.3 toolchain
 - Reusable `RTL-SDRv4-ESP` component
 - Clean-room RTL-SDR Blog V4 USB implementation
 

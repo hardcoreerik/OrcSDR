@@ -38,7 +38,7 @@ def validate_manifest(data: dict) -> None:
     for band in ("am", "wx", "cb", "browse"):
         assert {f"{band}.radio", f"{band}.scope", f"{band}.capture"} <= set(ids)
     assert {"home", "nav", "overlay.volume", "overlay.frequency-keypad",
-            "overlay.wifi-results", "overlay.masked-keyboard"} <= set(ids)
+            "overlay.wifi-scanning", "overlay.masked-keyboard"} <= set(ids)
     for screen in screens:
         for key in ("id", "title", "dashboard", "tab", "source", "redactions",
                     "callouts", "workflow_steps", "narration", "video_timing"):
@@ -238,7 +238,16 @@ def capture(args: argparse.Namespace) -> None:
                 raise RuntimeError(result)
             remote = re.search(r'path="([^"]+)"', result).group(1)
             capture_hash = re.search(r"sha256=([0-9a-fA-F]{64})", result).group(1).lower()
-            local_hash = client.get_file(remote, raw_dir / f"{slug}.bmp")
+            for attempt in range(3):
+                client.send("RTL_STOP")
+                client.wait(("RTL_STOPPING",), 5)
+                time.sleep(1)
+                try:
+                    local_hash = client.get_file(remote, raw_dir / f"{slug}.bmp")
+                    break
+                except RuntimeError as error:
+                    if str(error) != "SD_GET_ERROR radio_busy" or attempt == 2:
+                        raise
             if capture_hash != local_hash:
                 raise RuntimeError(f"Capture/transfer hash mismatch for {screen['id']}")
             screen["actual_source"] = source

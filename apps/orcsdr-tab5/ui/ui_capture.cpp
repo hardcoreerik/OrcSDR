@@ -8,7 +8,7 @@
 namespace orcsdr::ui_capture {
 namespace {
 
-constexpr char kDirectory[] = "/orcsdr/screenshots";
+constexpr char kCapturePath[] = "/orcsdr/UIDOC.BMP";
 constexpr size_t kRowsPerRead = 8;
 
 constexpr uint16_t from_swap565(uint16_t value) {
@@ -59,12 +59,8 @@ Result save_bmp(M5GFX& display, fs::FS& filesystem, const char* slug) {
     return result;
   }
 
-  filesystem.mkdir("/orcsdr");
-  filesystem.mkdir(kDirectory);
-  char path[112];
-  snprintf(path, sizeof(path), "%s/%s.bmp", kDirectory, slug);
-  filesystem.remove(path);
-  File file = filesystem.open(path, FILE_WRITE, true);
+  filesystem.remove(kCapturePath);
+  File file = filesystem.open(kCapturePath, FILE_WRITE, true);
   if (!file) {
     result.error = "open_failed";
     return result;
@@ -77,7 +73,7 @@ Result save_bmp(M5GFX& display, fs::FS& filesystem, const char* slug) {
     free(pixels);
     free(bgr);
     file.close();
-    filesystem.remove(path);
+    filesystem.remove(kCapturePath);
     result.error = "allocation_failed";
     return result;
   }
@@ -124,7 +120,7 @@ Result save_bmp(M5GFX& display, fs::FS& filesystem, const char* slug) {
   file.close();
   result.ok = ok && result.bytes == kHeaderSize + image_bytes;
   if (!result.ok) {
-    filesystem.remove(path);
+    filesystem.remove(kCapturePath);
     result.error = ok ? "size_mismatch" : "write_failed";
   }
   return result;

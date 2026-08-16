@@ -8,6 +8,30 @@ $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
 Set-Location (Join-Path $PSScriptRoot '..')
 
+# Migrate the generated pre-custom-partition SDK config without disturbing any
+# other local settings. Current source owns a 4 MB factory partition.
+$sdkconfig = Join-Path (Get-Location) 'sdkconfig'
+if (Test-Path -LiteralPath $sdkconfig) {
+  $config = Get-Content -LiteralPath $sdkconfig -Raw
+  $legacyPartitionConfig = $config.Contains('# CONFIG_PARTITION_TABLE_CUSTOM is not set') -and
+    $config.Contains('CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y') -and
+    $config.Contains('CONFIG_PARTITION_TABLE_FILENAME="partitions_singleapp_large.csv"')
+  $legacyLoopStack = $config.Contains('CONFIG_ARDUINO_LOOP_STACK_SIZE=8192')
+  if ($legacyPartitionConfig -or $legacyLoopStack) {
+    if ($legacyPartitionConfig) {
+      $config = $config.Replace('# CONFIG_PARTITION_TABLE_CUSTOM is not set', 'CONFIG_PARTITION_TABLE_CUSTOM=y').Replace(
+        'CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y', '# CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE is not set').Replace(
+        'CONFIG_PARTITION_TABLE_FILENAME="partitions_singleapp_large.csv"', 'CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"')
+      Write-Output 'TAB5_PARTITION_CONFIG migrated factory=4M'
+    }
+    if ($legacyLoopStack) {
+      $config = $config.Replace('CONFIG_ARDUINO_LOOP_STACK_SIZE=8192', 'CONFIG_ARDUINO_LOOP_STACK_SIZE=16384')
+      Write-Output 'TAB5_LOOP_STACK migrated bytes=16384'
+    }
+    Set-Content -LiteralPath $sdkconfig -Value $config -NoNewline
+  }
+}
+
 # Resolve the locked component graph before applying the Tab5 lifecycle patch.
 # Arduino's ESP-Hosted adapter must set the Tab5 SDIO pins before initialization.
 idf.py reconfigure
