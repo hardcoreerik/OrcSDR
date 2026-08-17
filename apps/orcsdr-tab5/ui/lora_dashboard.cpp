@@ -31,6 +31,8 @@ constexpr int kPlotW = 780;
 constexpr int kPlotH = 124;
 constexpr int kWaterfallY = 402;
 constexpr int kWaterfallH = 126;
+constexpr uint32_t kDynamicRefreshIntervalMs = 1000;
+constexpr uint32_t kSpectrumRefreshIntervalMs = 250;
 
 Snapshot g_snapshot{};
 View g_view = View::overview;
@@ -38,6 +40,7 @@ bool g_active = false;
 bool g_follow_node = false;
 uint8_t g_filter = 0;
 uint32_t g_last_dynamic_ms = 0;
+uint32_t g_last_spectrum_ms = 0;
 uint16_t g_waterfall_row[kPlotW]{};
 
 bool hit(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
@@ -431,6 +434,7 @@ void enter(const Snapshot& snapshot) {
   g_snapshot = snapshot;
   g_active = true;
   g_last_dynamic_ms = 0;
+  g_last_spectrum_ms = 0;
   draw_static();
 }
 
@@ -447,19 +451,26 @@ void draw() {
 
 void update(const Snapshot& snapshot) {
   if (!g_active) return;
+  const bool content_changed = snapshot.revision != g_snapshot.revision;
   g_snapshot = snapshot;
   const uint32_t now = millis();
-  if (now - g_last_dynamic_ms < 200) return;
+  if (!content_changed && now - g_last_dynamic_ms < kDynamicRefreshIntervalMs) return;
   g_last_dynamic_ms = now;
+  M5.Display.startWrite();
   draw_dynamic();
+  M5.Display.endWrite();
 }
 
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, float floor) {
   if (!spectrum_active() || levels == nullptr || visible_bins < 2) return;
+  const uint32_t now = millis();
+  if (now - g_last_spectrum_ms < kSpectrumRefreshIntervalMs) return;
+  g_last_spectrum_ms = now;
   const int x = g_view == View::rf_health ? 42 : kPlotX;
   const int y = g_view == View::rf_health ? 300 : kPlotY;
   const int w = g_view == View::rf_health ? 770 : kPlotW;
   const int h = g_view == View::rf_health ? 130 : kPlotH;
+  M5.Display.startWrite();
   M5.Display.fillRect(x + 1, y + 1, w - 2, h - 2, kBg);
   for (int i = 1; i < 5; ++i) {
     M5.Display.drawFastHLine(x, y + i * h / 5, w, kGrid);
@@ -488,6 +499,7 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
     M5.Display.scroll(0, -1);
     M5.Display.pushImage(kPlotX, kWaterfallY + kWaterfallH - 2, kPlotW, 1, g_waterfall_row);
   }
+  M5.Display.endWrite();
 }
 
 Action handle_touch(int32_t x, int32_t y) {

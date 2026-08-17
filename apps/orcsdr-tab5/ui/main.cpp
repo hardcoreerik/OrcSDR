@@ -6942,7 +6942,12 @@ orcsdr::lora::Snapshot lora_dashboard_snapshot() {
   portEXIT_CRITICAL(&lora_message_mux);
   snapshot.selected_node = std::min<uint8_t>(lora_selected_node,
       snapshot.node_count == 0 ? 0 : static_cast<uint8_t>(snapshot.node_count - 1));
-  snapshot.revision = snapshot.decoded_frames + snapshot.event_count;
+  snapshot.revision = snapshot.decoded_frames;
+  snapshot.revision ^= static_cast<uint32_t>(snapshot.event_count) << 24;
+  snapshot.revision ^= static_cast<uint32_t>(snapshot.node_count) << 16;
+  snapshot.revision ^= static_cast<uint32_t>(snapshot.selected_node) << 8;
+  snapshot.revision ^= snapshot.survey_active ? 1u : 0u;
+  snapshot.revision ^= snapshot.sd_logging ? 2u : 0u;
   return snapshot;
 }
 
