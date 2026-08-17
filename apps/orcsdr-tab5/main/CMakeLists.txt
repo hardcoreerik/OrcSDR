@@ -13,6 +13,7 @@ idf_component_register(
         "../ui/fm_config.cpp"
         "../ui/home_dashboard.cpp"
         "../ui/lora_dashboard.cpp"
+        "../ui/lora_native_decoder.cpp"
         "../ui/navigation_service.cpp"
         "../ui/p25_dashboard.cpp"
         "../ui/p25_config.cpp"
@@ -30,6 +31,7 @@ idf_component_register(
         rtl_sdr_v4_esp
         esp_driver_usb_serial_jtag
         esp_driver_jpeg
+        esp-dsp
         esp_hw_support
         esp_psram
         esp_system
