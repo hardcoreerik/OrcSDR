@@ -84,6 +84,9 @@ struct State {
   char catalog_date[16]{};
   CatalogPackView catalog_packs[4]{};
   bool companion_supported = false;
+  bool web_console_enabled = false;
+  bool web_console_listening = false;
+  char web_console_url[48]{};
   uint8_t paired_phone_count = 0;
   int32_t battery_level = -1;
   int16_t battery_mv = -1;
@@ -117,6 +120,7 @@ enum class ActionKind : uint8_t {
   ,catalog_check
   ,catalog_install
   ,catalog_remove
+  ,web_console_changed
 };
 
 struct Action {

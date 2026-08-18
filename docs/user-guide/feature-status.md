@@ -12,3 +12,4 @@
 | Offline personalized map packs | Deferred | Import/status shell precedes the builder workflow |
 | Bluetooth speaker audio | Unavailable | Tab5 C6 supports BLE, not ordinary Classic Bluetooth A2DP output |
 | Companion phone integration | Deferred | On-device operation never depends on it |
+| LAN web console + Android TV viewer | Experimental | Opt-in Mission Control display (not a Tab5 clone); no TLS. Sideload `apps/orcsdr-tv` on Android 9 TV. Unplug the PC flash/JTAG USB cable after flashing — that cable, not general power, is the bench brownout trigger. |

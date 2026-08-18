@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,height=device-height,initial-scale=1,user-scalable=no">
+<title>OrcSDR Mission Control</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#04070c;color:#e8eef4;
+font-family:Roboto,Arial,Helvetica,sans-serif}
+body{background:radial-gradient(1200px 700px at 50% -10%,#0b1a28 0%,#04070c 55%)}
+#app{position:absolute;inset:2.4vh 2.8vw;display:flex;flex-direction:column;gap:1.2vh}
+#bar{display:flex;align-items:center;height:7.2vh;padding:0 1.2vw;border:1px solid rgba(0,188,255,.28);
+background:rgba(0,10,18,.72);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+.brand{display:flex;align-items:center;gap:.7vw;min-width:22vw}
+.brand img{width:5.2vh;height:5.2vh;border-radius:8px}
+.word{font-size:2.4vh;font-weight:700;letter-spacing:.12em;color:#6bff00}
+.sub{font-size:1.35vh;color:#7ad7ff;letter-spacing:.18em;margin-top:.15vh}
+.modepill{margin:0 auto;font-size:2vh;letter-spacing:.28em;color:#e8eef4}
+.stats{display:flex;gap:1.4vw;align-items:center;font-size:1.45vh;letter-spacing:.12em}
+.dot{width:.85vh;height:.85vh;border-radius:50%;background:#5a6a72;display:inline-block;margin-right:.4vw}
+.dot.ok{background:#6bff00;box-shadow:0 0 8px #6bff00}
+.dot.warn{background:#ff9a2e}
+.dot.bad{background:#ff3b3b}
+.clk{color:#7ad7ff;font-variant-numeric:tabular-nums}
+#hero{display:grid;grid-template-columns:1.4fr .9fr;gap:1.2vw;height:20vh}
+.panel{border:1px solid rgba(0,188,255,.22);background:rgba(0,12,20,.62);
+box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}
+.freqbox{padding:1.2vh 1.6vw}
+.k{font-size:1.3vh;letter-spacing:.22em;color:#7ad7ff}
+.freq{font-size:9.4vh;line-height:.9;font-weight:700;letter-spacing:.02em;font-variant-numeric:tabular-nums;
+color:#f4f8fb;text-shadow:0 0 24px rgba(0,188,255,.18)}
+.unit{font-size:2.4vh;color:#6bff00;margin-left:.4vw}
+.meta{margin-top:.6vh;font-size:1.6vh;color:#9eb3c0;letter-spacing:.14em}
+.meta b{color:#6bff00;font-weight:600}
+.sigbox{padding:1.2vh 1.4vw;display:flex;flex-direction:column;justify-content:space-between}
+.sigv{font-size:5.2vh;font-weight:700;font-variant-numeric:tabular-nums}
+.sigv.ok{color:#6bff00}.sigv.mid{color:#ff9a2e}.sigv.low{color:#8a96a0}
+.meter{height:1.5vh;background:#0a1218;border:1px solid rgba(0,188,255,.2);position:relative;overflow:hidden}
+.meter>i{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,#124,#2ad,#6bff00)}
+.hist{height:5.4vh;width:100%}
+#viz{flex:1;min-height:0;display:flex;flex-direction:column;gap:.7vh}
+.scope{flex:1;min-height:0;position:relative}
+.scope canvas{position:absolute;inset:0;width:100%;height:100%}
+.axis{position:absolute;left:1vw;right:1vw;bottom:.4vh;display:flex;justify-content:space-between;
+font-size:1.25vh;color:#6d8494;letter-spacing:.08em;pointer-events:none}
+.reticle{position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(107,255,0,.55);pointer-events:none}
+.reticle b{position:absolute;left:50%;top:.4vh;transform:translateX(-50%);font-size:1.2vh;color:#6bff00;letter-spacing:.16em}
+#foot{height:8.2vh;display:grid;grid-template-columns:1.2fr .7fr .7fr .8fr .9fr auto;gap:.8vw;align-items:stretch}
+.cell{padding:.8vh 1vw;min-width:0}
+.cell .v{font-size:2.1vh;margin-top:.35vh;color:#e8eef4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#tvsound{border:1px solid #00bcff;background:#041018;color:#7ad7ff;font-size:1.7vh;letter-spacing:.16em;min-width:12vw}
+#tvsound.on{border-color:#6bff00;color:#6bff00;background:#062010}
+#tvsound:focus{outline:2px solid #fff}
+audio{display:none}
+#boot,#stale{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+background:rgba(4,7,12,.88);z-index:5;transition:opacity .4s}
+#boot.gone,#stale.hide{opacity:0;pointer-events:none}
+#boot .t{font-size:5vh;letter-spacing:.28em;color:#6bff00}
+#boot .s,#stale .s{margin-top:2vh;color:#7ad7ff;letter-spacing:.2em;font-size:1.8vh}
+#stale .t{font-size:3.2vh;letter-spacing:.2em;color:#ff9a2e}
+</style>
+</head>
+<body>
+<div id="boot"><div class="t">ORCSDR</div><div class="s" id="bootmsg">CONNECTING TO RECEIVER</div></div>
+<div id="stale" class="hide"><div class="t">DATA STALE</div><div class="s">RECONNECTING TO TAB5</div></div>
+<div id="app">
+  <div id="bar">
+    <div class="brand">
+      <img src="/badge.png" alt="">
+      <div><div class="word">ORCSDR</div><div class="sub">LIVE RECEIVER CONSOLE</div></div>
+    </div>
+    <div class="modepill" id="modepill">—</div>
+    <div class="stats">
+      <span><i class="dot" id="d_tab5"></i>TAB5 <span id="tab5s">—</span></span>
+      <span><i class="dot" id="d_sdr"></i>SDR <span id="sdrs">—</span></span>
+      <span id="lat">— ms</span>
+      <span class="clk" id="clock">--:--:--</span>
+    </div>
+  </div>
+  <div id="hero">
+    <div class="panel freqbox">
+      <div class="k">CENTER FREQUENCY</div>
+      <div><span class="freq" id="freq">—</span><span class="unit" id="unit">MHz</span></div>
+      <div class="meta" id="fmeta">—</div>
+    </div>
+    <div class="panel sigbox">
+      <div class="k">SIGNAL</div>
+      <div class="sigv" id="sigv">—</div>
+      <div class="meter"><i id="sigbar"></i></div>
+      <canvas id="hist" class="hist"></canvas>
+    </div>
+  </div>
+  <div id="viz">
+    <div class="panel scope" id="specwrap">
+      <canvas id="spec"></canvas>
+      <div class="reticle"><b>TUNED</b></div>
+      <div class="axis" id="specaxis"></div>
+    </div>
+    <div class="panel scope" id="fallwrap" style="flex:1.15">
+      <canvas id="fall"></canvas>
+    </div>
+  </div>
+  <div id="foot">
+    <div class="panel cell"><div class="k">NOW RECEIVING</div><div class="v" id="now">—</div></div>
+    <div class="panel cell"><div class="k">AUDIO</div><div class="v" id="aud">—</div></div>
+    <div class="panel cell"><div class="k">USB / SPS</div><div class="v" id="usb">—</div></div>
+    <div class="panel cell"><div class="k">NETWORK</div><div class="v" id="net">—</div></div>
+    <div class="panel cell"><div class="k">POWER</div><div class="v" id="pwr">—</div></div>
+    <button id="tvsound">TV SOUND</button>
+  </div>
+</div>
+<audio id="radio" preload="auto" autoplay playsinline></audio>
+<script>
+var S={freq:0,sig:-90,left:-90,right:-90,span:960000,mode:'',recv:false,rtl:false,usb:false,wifi:false,
+sound:true,stereo:false,rdsC:false,rdsL:false,rec:false,vol:0,bw:0,sps:0,batt:-1,ip:'',clk:'',fresh:0,rtt:0};
+var D={freq:0,sig:-90,left:-90,right:-90}, bins=new Float32Array(64), peak=new Float32Array(64);
+var hist=[], lastArrow=0,lastAct=0,lastSound=0,lastQueue=0,audioOn=false,soundTimer=0,linked=false,fallBuf=null;
+function $(id){return document.getElementById(id)}
+function lerp(a,b,t){return a+(b-a)*t}
+function modeName(m){
+  m=(m||'').toLowerCase();
+  if(m==='fm') return 'FM BROADCAST';
+  if(m==='p25') return 'P25';
+  if(m==='adsb') return 'ADS-B';
+  if(m==='am'||m==='shortwave') return 'SHORTWAVE';
+  if(m==='wx'||m==='weather') return 'WEATHER';
+  if(m==='air'||m==='airband') return 'AIRBAND';
+  if(m==='lora') return 'LORA';
+  if(m==='cb') return 'CB';
+  return (m||'STANDBY').toUpperCase();
+}
+function mhz(hz){
+  if(!hz) return '—';
+  if(hz>=1000000) return (hz/1000000).toFixed(3);
+  return (hz/1000).toFixed(1);
+}
+function axisHz(off){
+  var c=D.freq||S.freq, sp=S.span||960000, hz=c+(off-0.5)*sp;
+  return hz>=1e6?(hz/1e6).toFixed(2)+' MHz':(hz/1e3).toFixed(0)+' kHz';
+}
+function sizeCan(c, host){
+  var r=Math.min(2, window.devicePixelRatio||1), w=host.clientWidth, h=host.clientHeight;
+  if(w<8||h<8) return;
+  if(c.width!==Math.floor(w*r)||c.height!==Math.floor(h*r)){ c.width=Math.floor(w*r); c.height=Math.floor(h*r); }
+}
+function pal(v){
+  var n=Math.max(0,Math.min(1,v));
+  if(n<.2) return [4,8,14, 20+n*80];
+  if(n<.45){ var t=(n-.2)/.25; return [8+t*10, 30+t*70, 50+t*150, 255]; }
+  if(n<.75){ var t=(n-.45)/.3; return [20+t*40, 120+t*90, 200+t*40, 255]; }
+  var t=(n-.75)/.25; return [70+t*185, 210+t*45, 240-t*80, 255];
+}
+function paintSpec(){
+  var c=$('spec'), host=$('specwrap'); sizeCan(c,host);
+  var g=c.getContext('2d'), w=c.width, h=c.height, n=bins.length;
+  g.fillStyle='#03070b'; g.fillRect(0,0,w,h);
+  g.strokeStyle='rgba(0,188,255,.12)'; g.lineWidth=1; g.beginPath();
+  for(var i=1;i<5;i++){ g.moveTo(0,i*h/5); g.lineTo(w,i*h/5); g.moveTo(i*w/5,0); g.lineTo(i*w/5,h);} g.stroke();
+  g.beginPath();
+  for(var i=0;i<n;i++){
+    var x=i*(w-2)/(n-1), y=h-6-(peak[i])*(h-14);
+    if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
+  }
+  g.strokeStyle='rgba(0,188,255,.35)'; g.stroke();
+  g.beginPath();
+  for(var i=0;i<n;i++){
+    var x=i*(w-2)/(n-1), y=h-6-(bins[i])*(h-14);
+    if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
+  }
+  g.strokeStyle='#6bff00'; g.lineWidth=2; g.stroke();
+  var grd=g.createLinearGradient(0,0,0,h);
+  grd.addColorStop(0,'rgba(0,188,255,.18)'); grd.addColorStop(1,'rgba(0,188,255,0)');
+  g.lineTo(w,h); g.lineTo(0,h); g.closePath(); g.fillStyle=grd; g.fill();
+}
+function paintFall(){
+  var c=$('fall'), host=$('fallwrap'); sizeCan(c,host);
+  var g=c.getContext('2d'), w=c.width, h=c.height;
+  if(!fallBuf || fallBuf.width!==w || fallBuf.height!==h){
+    fallBuf=g.createImageData(w,h);
+    for(var i=3;i<fallBuf.data.length;i+=4) fallBuf.data[i]=255;
+  }
+  fallBuf.data.copyWithin(0, w*4);
+  var row=(h-1)*w*4, n=bins.length;
+  for(var x=0;x<w;x++){
+    var v=bins[Math.min(n-1, Math.floor(x*n/w))];
+    var p=pal(v), o=row+x*4;
+    fallBuf.data[o]=p[0]; fallBuf.data[o+1]=p[1]; fallBuf.data[o+2]=p[2]; fallBuf.data[o+3]=255;
+  }
+  g.putImageData(fallBuf,0,0);
+  g.strokeStyle='rgba(107,255,0,.45)'; g.beginPath(); g.moveTo(w/2,0); g.lineTo(w/2,h); g.stroke();
+}
+function paintHist(){
+  var c=$('hist'); sizeCan(c,c.parentNode);
+  var g=c.getContext('2d'), w=c.width, h=c.height;
+  g.clearRect(0,0,w,h);
+  if(hist.length<2) return;
+  g.strokeStyle='#00bcff'; g.lineWidth=2; g.beginPath();
+  for(var i=0;i<hist.length;i++){
+    var x=i*(w-2)/Math.max(1,hist.length-1);
+    var y=h-4-((hist[i]+90)/70)*(h-8);
+    if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
+  }
+  g.stroke();
+}
+function applyUi(){
+  $('freq').textContent=mhz(D.freq);
+  $('unit').textContent=(D.freq||S.freq)>=1e6?'MHz':'kHz';
+  $('modepill').textContent=modeName(S.mode);
+  var bw=S.bw?Math.round(S.bw/1000)+' kHz':'BW —';
+  var flags=[];
+  if(S.mode.toLowerCase()==='fm'){
+    flags.push(S.stereo?'STEREO':'MONO');
+    if(S.rdsL) flags.push('RDS LOCK');
+    else if(S.rdsC) flags.push('RDS CARRIER');
+  }
+  if(S.rec) flags.push('REC');
+  $('fmeta').innerHTML=modeName(S.mode)+'  ·  '+bw+(flags.length?'  ·  <b>'+flags.join(' · ')+'</b>':'');
+  var sig=D.sig;
+  $('sigv').textContent=(typeof sig==='number')?sig.toFixed(1)+' dBFS':'—';
+  $('sigv').className='sigv '+(sig>-25?'ok':sig>-45?'mid':'low');
+  $('sigbar').style.width=Math.max(0,Math.min(100,(sig+90)/70*100))+'%';
+  var live=S.recv&&S.rtl&&(Date.now()-S.fresh<2500);
+  $('d_tab5').className='dot '+(S.wifi?'ok':'bad');
+  $('tab5s').textContent=S.wifi?(S.ip||'LIVE'):'OFFLINE';
+  $('d_sdr').className='dot '+(S.rtl?(S.recv?'ok':'warn'):'bad');
+  $('sdrs').textContent=S.rtl?(S.recv?'STREAMING':'READY'):'OFFLINE';
+  $('lat').textContent=S.rtt?S.rtt+' ms':'— ms';
+  $('clock').textContent=S.clk||'--:--:--';
+  $('now').textContent=live?(modeName(S.mode)+'  '+mhz(D.freq)+' '+$('unit').textContent):'STANDBY';
+  var aud=S.sound?(S.vol+'/100'):'MUTE';
+  if(S.mode.toLowerCase()==='fm' && S.left>-80) aud+='  L '+S.left.toFixed(0)+'  R '+S.right.toFixed(0);
+  $('aud').textContent=aud;
+  $('usb').textContent=(S.usb?'V4 LINK':'NO USB')+'  '+(S.sps?(S.sps/1e6).toFixed(3)+' MSPS':'—');
+  $('net').textContent=(S.ip||'NO LAN')+(S.rtt?'  '+S.rtt+' ms':'');
+  $('pwr').textContent=S.batt>=0?(S.batt+'%  BATT'):'—';
+  var ax='';
+  for(var i=0;i<5;i++) ax+='<span>'+axisHz(i/4)+'</span>';
+  $('specaxis').innerHTML=ax;
+  var stale=linked && Date.now()-S.fresh>3500;
+  $('stale').className=stale?'':'hide';
+  if(S.wifi&&S.rtl){ linked=true; $('boot').className='gone'; $('bootmsg').textContent='TELEMETRY LINK ESTABLISHED'; }
+}
+function tick(){
+  var t0=Date.now();
+  var x=new XMLHttpRequest();
+  x.onreadystatechange=function(){
+    if(x.readyState===4){
+      S.rtt=Date.now()-t0;
+      if(x.status===200){
+        try{
+          var j=JSON.parse(x.responseText);
+          S.freq=j.frequency_hz||0; S.sig=typeof j.signal_dbfs==='number'?j.signal_dbfs:-90;
+          S.left=typeof j.left_dbfs==='number'?j.left_dbfs:-90;
+          S.right=typeof j.right_dbfs==='number'?j.right_dbfs:-90;
+          S.span=j.span_hz||960000; S.mode=j.mode||''; S.recv=!!j.receiving; S.rtl=!!j.rtl_ready;
+          S.usb=!!j.usb_connected; S.wifi=!!j.wifi_connected; S.sound=!!j.sound_enabled;
+          S.stereo=!!j.stereo; S.rdsC=!!j.rds_carrier; S.rdsL=!!j.rds_locked; S.rec=!!j.recording;
+          S.vol=j.volume||0; S.bw=j.filter_bandwidth_hz||0; S.sps=j.effective_sps||0;
+          S.batt=j.battery_percent; S.ip=j.wifi_ip||''; S.clk=j.clock||''; S.fresh=Date.now();
+          hist.push(S.sig); if(hist.length>120) hist.shift();
+          if(j.spectrum && j.spectrum.length){
+            for(var i=0;i<64;i++){
+              var v=(j.spectrum[i]||0)/255;
+              bins[i]=bins[i]*.55+v*.45;
+              peak[i]=Math.max(peak[i]*0.97, bins[i]);
+            }
+          }
+        }catch(e){}
+      }
+    }
+  };
+  x.open('GET','/api/status',true); x.send();
+}
+function pumpSpec(){
+  var x=new XMLHttpRequest();
+  x.responseType='arraybuffer';
+  x.onload=function(){
+    if(x.status!==200||!x.response||x.response.byteLength<4) return;
+    var u=new Uint8Array(x.response);
+    for(var i=0;i<64 && i<u.length;i++){
+      var v=u[i]/255;
+      bins[i]=bins[i]*.5+v*.5;
+      peak[i]=Math.max(peak[i]*0.975, bins[i]);
+    }
+    S.fresh=Date.now();
+  };
+  x.open('GET','/api/spectrum',true); x.send();
+}
+var lastFall=0,lastUi=0;
+function frame(){
+  D.freq=D.freq?lerp(D.freq,S.freq,.18):S.freq;
+  D.sig=lerp(D.sig,S.sig,.16);
+  D.left=lerp(D.left,S.left,.16);
+  D.right=lerp(D.right,S.right,.16);
+  paintSpec();
+  var now=Date.now();
+  if(now-lastFall>90){ lastFall=now; paintFall(); }
+  if(now-lastUi>100){ lastUi=now; applyUi(); paintHist(); }
+  requestAnimationFrame(frame);
+}
+function setSoundUi(on){
+  var b=$('tvsound');
+  b.textContent=on?'TV SOUND ON':'TV SOUND';
+  b.className=on?'on':'';
+}
+function queueClip(){
+  if(!audioOn) return;
+  lastQueue=Date.now();
+  var a=$('radio');
+  a.src='/api/audio.wav?t='+lastQueue;
+  var p=a.play(); if(p&&p.catch) p.catch(function(){});
+}
+function pumpAudio(){
+  if(!audioOn) return;
+  var a=$('radio'), age=Date.now()-lastQueue;
+  if(age<250) return;
+  var nearEnd=false,pos=0,dur=0;
+  try{ pos=a.currentTime||0; dur=a.duration||0; nearEnd=dur>0&&pos>=dur-0.06; }catch(e){}
+  if(!a.src||a.ended||nearEnd){ queueClip(); return; }
+  if(a.paused&&(pos>0||age>900)) queueClip();
+}
+function startTvSound(){
+  audioOn=true;
+  try{ localStorage.setItem('orcsdr_tv_sound','1'); }catch(e){}
+  setSoundUi(true); queueClip();
+  if(soundTimer) clearInterval(soundTimer);
+  soundTimer=setInterval(pumpAudio,80);
+}
+function stopTvSound(){
+  audioOn=false;
+  if(soundTimer){ clearInterval(soundTimer); soundTimer=0; }
+  try{ localStorage.setItem('orcsdr_tv_sound','0'); }catch(e){}
+  setSoundUi(false);
+  var a=$('radio'); try{ a.pause(); }catch(e){}
+  a.removeAttribute('src'); try{ a.load(); }catch(e){}
+}
+function toggleTvSound(){
+  var now=Date.now();
+  if(now-lastSound<700) return;
+  lastSound=now;
+  if(audioOn) stopTvSound(); else startTvSound();
+}
+function fromArrow(){ return Date.now()-lastArrow<400; }
+$('tvsound').addEventListener('click',function(e){
+  if(fromArrow()){ e.preventDefault(); return; }
+  toggleTvSound();
+});
+document.addEventListener('keydown',function(e){
+  var code=e.keyCode||e.which;
+  if(code===37||code===38||code===39||code===40||code===19||code===20||code===21||code===22||
+     e.key==='ArrowLeft'||e.key==='ArrowRight'||e.key==='ArrowUp'||e.key==='ArrowDown'){
+    lastArrow=Date.now(); return;
+  }
+  if(e.key==='Enter'||code===13||code===23){
+    lastArrow=Date.now();
+    if(document.activeElement===$('tvsound')){ toggleTvSound(); e.preventDefault(); }
+  }
+});
+$('radio').addEventListener('ended',function(){ if(audioOn) queueClip(); });
+$('radio').addEventListener('error',function(){ if(audioOn) setTimeout(queueClip,200); });
+try{ if(localStorage.getItem('orcsdr_tv_sound')==='1') setTimeout(startTvSound,1800); }catch(e){}
+setTimeout(function(){ if(!linked) $('bootmsg').textContent='SEARCHING FOR TAB5'; },2500);
+tick(); setInterval(tick,1000); setInterval(pumpSpec,200); requestAnimationFrame(frame);
+</script>
+</body>
+</html>

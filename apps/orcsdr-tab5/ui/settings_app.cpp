@@ -270,12 +270,24 @@ void draw_storage() {
 
 void draw_companion() {
   text("COMPANION", 330, 115, kBlue, 3);
-  value_row("PHONE CONNECTION", "OPTIONAL", 175, kGreen);
-  value_row("PAIRED PHONES", "0 / 4", 225);
-  value_row("LOCAL DISCOVERY", "NOT ENABLED", 275, kMuted);
+  value_row("WEB CONSOLE", g_state.web_console_enabled ? "ON" : "OFF", 175,
+            g_state.web_console_enabled ? kGreen : kMuted);
+  button(g_state.web_console_enabled ? "DISABLE" : "ENABLE", 960, 150, 170, 48,
+         g_state.web_console_enabled ? TFT_MAROON : TFT_DARKGREEN);
+  value_row("URL",
+            g_state.web_console_listening && g_state.web_console_url[0]
+                ? g_state.web_console_url
+                : "OFFLINE",
+            225, g_state.web_console_listening ? kGreen : kMuted);
+  value_row("LOCAL DISCOVERY",
+            g_state.web_console_listening ? "orcsdr.local" : "NOT ENABLED", 275,
+            g_state.web_console_listening ? kGreen : kMuted);
+  value_row("PHONE CONNECTION", "OPTIONAL", 325, kGreen);
   value_row("BLUETOOTH", g_state.companion_supported ? "AVAILABLE" : "FEASIBILITY PENDING",
-            325, kMuted);
-  text("OrcSDR remains fully usable with no phone, BLE, GPS, or HIVE.", 330, 430,
+            375, kMuted);
+  text("LAN read-only page for Android TV. No passwords, location, or control.",
+       330, 470, TFT_LIGHTGREY, 2);
+  text("OrcSDR remains fully usable with no phone, BLE, GPS, or HIVE.", 330, 510,
        TFT_LIGHTGREY, 2);
 }
 
@@ -604,6 +616,10 @@ void update(const State& state_value) {
        strcmp(g_state.catalog_message, state_value.catalog_message) != 0 ||
        strcmp(g_state.catalog_date, state_value.catalog_date) != 0 ||
        memcmp(g_state.catalog_packs, state_value.catalog_packs, sizeof(g_state.catalog_packs)) != 0);
+  const bool companion_changed = g_section == Section::companion &&
+      (g_state.web_console_enabled != state_value.web_console_enabled ||
+       g_state.web_console_listening != state_value.web_console_listening ||
+       strcmp(g_state.web_console_url, state_value.web_console_url) != 0);
   g_state = state_value;
   if (header_changed) draw_header();
   if (page_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
@@ -611,6 +627,8 @@ void update(const State& state_value) {
   if (power_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_system_power();
   if (catalog_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
+    draw_content();
+  if (companion_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_content();
 }
 
@@ -734,6 +752,9 @@ Action handle_touch(int32_t x, int32_t y) {
       draw_content();
       return {ActionKind::graphics_changed, g_state.graphics_default};
     }
+  } else if (g_section == Section::companion) {
+    if (hit(x, y, 960, 150, 170, 48))
+      return {ActionKind::web_console_changed, g_state.web_console_enabled ? 0 : 1};
   }
   return {};
 }

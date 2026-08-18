@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#071018"
+    android:orientation="vertical"
+    android:padding="36dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="OrcSDR"
+        android:textColor="#5EE0FF"
+        android:textSize="42sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/connect_hint"
+        android:textColor="#7F9BB3"
+        android:textSize="18sp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:text="@string/ip_label"
+        android:textColor="#7F9BB3"
+        android:textSize="18sp" />
+
+    <EditText
+        android:id="@+id/host"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:layout_marginTop="8dp"
+        android:background="#102232"
+        android:digits="0123456789."
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:hint="192.168.1.x"
+        android:inputType="number"
+        android:padding="16dp"
+        android:textColor="#E8F4FF"
+        android:textColorHint="#4A6A80"
+        android:textSize="28sp" />
+
+    <LinearLayout
+        android:id="@+id/pad"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:orientation="vertical" />
+
+    <Button
+        android:id="@+id/connect"
+        android:layout_width="280dp"
+        android:layout_height="64dp"
+        android:layout_marginTop="20dp"
+        android:background="#14556A"
+        android:text="@string/connect"
+        android:textColor="#E8F4FF"
+        android:textSize="22sp" />
+
+    <TextView
+        android:id="@+id/scan_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:text="@string/scanning"
+        android:textColor="#7F9BB3"
+        android:textSize="18sp" />
+
+    <LinearLayout
+        android:id="@+id/found"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="vertical" />
+</LinearLayout>

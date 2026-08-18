@@ -21,6 +21,7 @@ idf_component_register(
         "../ui/radio_ui_service.cpp"
         "../ui/settings_app.cpp"
         "../ui/ui_capture.cpp"
+        "../ui/web_console.cpp"
     INCLUDE_DIRS "." "../ui"
     REQUIRES
         arduino-esp32
@@ -37,6 +38,8 @@ idf_component_register(
         esp_system
         esp_timer
         esp_http_client
+        esp_http_server
+        mdns
         esp-tls
         json
         spi_flash
@@ -44,6 +47,7 @@ idf_component_register(
     EMBED_FILES
         "orc_badge_104.png"
         "catalog_public_key.pem"
+        "../ui/web_console.html"
 )
 
 target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)
