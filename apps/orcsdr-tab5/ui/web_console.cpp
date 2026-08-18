@@ -236,13 +236,28 @@ void stop_mdns() {
   g_mdns_started = false;
 }
 
+uint32_t dma_largest() {
+  return heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+}
+
 void start_mdns() {
   if (g_mdns_started) return;
-  if (mdns_init() != ESP_OK) return;
+  const uint32_t largest = dma_largest();
+  if (largest < 3072) {
+    Serial.printf("RTL_WEB_MDNS skipped dma_largest=%lu\n",
+                  static_cast<unsigned long>(largest));
+    return;
+  }
+  if (mdns_init() != ESP_OK) {
+    Serial.println("RTL_WEB_MDNS init_failed");
+    return;
+  }
   mdns_hostname_set("orcsdr");
   mdns_instance_name_set("OrcSDR");
   mdns_service_add("OrcSDR", "_http", "_tcp", 80, nullptr, 0);
   g_mdns_started = true;
+  Serial.printf("RTL_WEB_MDNS ok dma_largest=%lu\n",
+                static_cast<unsigned long>(dma_largest()));
 }
 
 void stop_server() {
@@ -257,13 +272,20 @@ void stop_server() {
 
 bool start_server() {
   if (g_server != nullptr) return true;
+  Serial.printf("RTL_WEB_DMA pre_start free=%lu largest=%lu\n",
+                static_cast<unsigned long>(
+                    heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
+                static_cast<unsigned long>(dma_largest()));
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = 80;
-  config.max_open_sockets = 4;
+  // 3 sockets are reserved; 5 leaves two clients (status + audio).
+  config.max_open_sockets = 5;
   config.max_uri_handlers = 8;
   config.lru_purge_enable = true;
-  config.stack_size = 8192;
+  config.stack_size = 6144;
   config.core_id = tskNO_AFFINITY;
+  // Hosted SDIO asserts if this heap is empty. Keep the httpd stack in PSRAM.
+  config.task_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
   if (httpd_start(&g_server, &config) != ESP_OK) {
     g_server = nullptr;
     Serial.println("RTL_WEB_ERROR start_failed");

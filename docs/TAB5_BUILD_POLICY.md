@@ -37,7 +37,7 @@ other's room:
 | Consumer | Where it lives | Why |
 |---|---|---|
 | ESP-Hosted SDIO (C6 Wi-Fi) | Reserved internal DMA (~16 KiB in flight) | SDIO mempool asserts if this heap is gone |
-| I2S speaker | Reserved internal DMA (~8 KiB, 4 × 512 stereo) | `Speaker.begin()` fails without it |
+| I2S speaker | Reserved internal DMA (~8 KiB, 4 × 512 stereo) | `Speaker.begin()` fails without it. `spk_task` stack is patched to ≥8 KiB so stereo mixing cannot overflow. |
 | RTL-SDR USB URBs | PSRAM (`CONFIG_USB_HOST_DWC_DMA_CAP_MEMORY_IN_PSRAM`) | 3 × 32 KiB would exhaust on-chip RAM |
 | Hosted worker tasks | PSRAM | stacks must not eat the DMA reserve |
 | malloc ≤ 8 KiB | prefer internal | `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=8192` |
@@ -55,6 +55,12 @@ above ~20 KiB so I2S can still start. After speaker start, leftover
 contiguous DMA of ~12 KiB is enough for Hosted on-demand SDIO. A `WARN`
 line means the reserved DMA room is gone; do not add more internal-DMA
 consumers until it recovers.
+
+After STA is up, do not start httpd or mDNS from internal RAM. Those
+stacks live in PSRAM (`httpd.task_caps` and
+`CONFIG_MDNS_TASK_CREATE_FROM_SPIRAM`). Hosted SDIO still needs a
+~1.5 KiB DMA block per in-flight packet; eating that heap after
+connect panics `sdio_write_task` / `sdio_push_data_to_queue`.
 
 Healthy boot (2026-08-17, Hosted 2.12.6, mempool off):
 

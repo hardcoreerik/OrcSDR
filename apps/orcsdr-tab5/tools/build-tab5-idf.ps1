@@ -53,5 +53,9 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & (Join-Path $PSScriptRoot 'patch_m5gfx.py') $m5gfxCommon
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+$m5unifiedSpeaker = Join-Path (Get-Location) 'managed_components\m5stack__m5unified\src\utility\Speaker_Class.cpp'
+& (Join-Path $PSScriptRoot 'patch_m5unified.py') $m5unifiedSpeaker
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 idf.py build
 exit $LASTEXITCODE

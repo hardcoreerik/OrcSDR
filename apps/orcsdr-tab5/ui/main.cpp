@@ -2165,6 +2165,8 @@ void sync_rtl_audio_for_band(RtlBand band) {
                        rtl_band_has_audio(band);
   rtl_audio_enabled.store(enabled, std::memory_order_release);
   rtl_audio_play_count = 0;
+  // stop() only clears channels. end() waits for spk_task and froze Settings
+  // leave / touch for seconds. Silent bands just stop playback.
   if (!enabled) M5.Speaker.stop();
 }
 
@@ -2180,10 +2182,9 @@ void resume_rtl_speaker() {
     return;
   }
   const uint8_t volume = rtl_live_volume.load(std::memory_order_acquire);
-  const bool already_playing =
-      M5.Speaker.isRunning() && M5.Speaker.getPlayingChannels() > 0;
-  const bool ok = already_playing || restart_rtl_speaker_i2s(volume) ||
-                  ensure_speaker_running(volume);
+  apply_speaker_volume(volume);
+  bool ok = true;
+  if (!M5.Speaker.isRunning()) ok = restart_rtl_speaker_i2s(volume);
   Serial.printf("RTL_SPEAKER_RESUME ok=%d running=%d playing=%u volume=%u\n",
                 ok ? 1 : 0, M5.Speaker.isRunning() ? 1 : 0,
                 static_cast<unsigned>(M5.Speaker.getPlayingChannels()), volume);
@@ -10893,11 +10894,10 @@ void setup() {
   auto speaker_config = M5.Speaker.config();
   speaker_config.sample_rate = 48000;
   speaker_config.stereo = true;
-  // Speaker_Class allocates its mixing buffer on spk_task's stack. 256 frames
-  // leaves too little stack on Tab5; 512 retains a safe task stack margin.
+  // 4 × 512 stereo (~8 KiB) is the reserved I2S DMA slice. Do not shrink
+  // this to fake stack room and do not grow it without raising
+  // RESERVE_INTERNAL — Hosted still needs a 1.5 KiB SDIO block after this.
   speaker_config.dma_buf_len = 512;
-  // 4 × 512 stereo is the reserved I2S DMA slice (~8 KiB). Do not grow this
-  // without shrinking Hosted or raising RESERVE_INTERNAL.
   speaker_config.dma_buf_count = 4;
   speaker_config.task_priority = 6;
   speaker_config.task_pinned_core = 1;
