@@ -368,6 +368,11 @@ void rds_hypothesis_feed(RdsHypothesis& h, bool bit) {
       h.prev_match_type = match_type;
       h.prev_match_bitpos = h.bit_pos;
       h.have_prev_match = true;
+      if (match_type == 0) {
+        h.group_info_valid[1] = false;
+        h.group_info_valid[2] = false;
+        h.group_info_valid[3] = false;
+      }
       h.group_info[match_type] = static_cast<uint16_t>(h.shift_reg >> 10);
       h.group_info_valid[match_type] = true;
       rds_try_finish_group(h);
@@ -393,12 +398,20 @@ void rds_hypothesis_feed(RdsHypothesis& h, bool bit) {
     if (ok) {
       ++h.good_blocks;
       h.bad_block_streak = 0;
+      if (h.next_expected_type == 0) {
+        h.group_info_valid[1] = false;
+        h.group_info_valid[2] = false;
+        h.group_info_valid[3] = false;
+      }
       h.group_info[h.next_expected_type] = static_cast<uint16_t>(h.shift_reg >> 10);
       h.group_info_valid[h.next_expected_type] = true;
       rds_try_finish_group(h);
     } else {
       ++h.bad_block_streak;
-      h.group_info_valid[h.next_expected_type] = false;
+      h.group_info_valid[0] = false;
+      h.group_info_valid[1] = false;
+      h.group_info_valid[2] = false;
+      h.group_info_valid[3] = false;
       if (h.bad_block_streak >= kRdsBadBlocksBeforeUnlock) {
         h.locked = false;
         h.streak = 0;
@@ -858,6 +871,7 @@ static std::atomic<bool> rtl_stereo_locked{false};
 static std::atomic<float> rtl_pilot_env{0.0f};
 static std::atomic<int32_t> rtl_fm_lo_nudge_hz{0};
 static std::atomic<uint32_t> rtl_fm_last_user_tune_ms{0};
+static std::atomic<bool> rtl_fm_force_lo_apply{false};
 // RDS Stage 1 carrier presence and Stage 2 block sync telemetry.
 static std::atomic<float> rtl_rds_signal_dbfs{-90.0f};
 static std::atomic<bool> rtl_rds_carrier_present{false};
@@ -870,10 +884,14 @@ static std::atomic<uint32_t> rtl_rds_total_blocks{0};
 static std::atomic<uint16_t> rtl_rds_pi{0};
 static char rtl_rds_ps[9]{};
 static std::atomic<uint8_t> rtl_rds_ps_mask{0};
+static char rtl_rds_ps_pending[4][2]{};
+static uint8_t rtl_rds_ps_hits[4]{};
 static char rtl_rds_rt[65]{};
 static std::atomic<uint32_t> rtl_rds_rt_mask{0};
 static bool rtl_rds_rt_ab = false;
 static uint8_t rtl_rds_pty = 0;
+static uint8_t rtl_rds_pty_pending = 0;
+static uint8_t rtl_rds_pty_hits = 0;
 
 char rds_printable(uint8_t value) {
   return value >= 32 && value < 127 ? static_cast<char>(value) : ' ';
@@ -892,12 +910,16 @@ const char* rds_pty_name(uint8_t pty) {
 
 void rds_clear_text() {
   memset(rtl_rds_ps, 0, sizeof(rtl_rds_ps));
+  memset(rtl_rds_ps_pending, 0, sizeof(rtl_rds_ps_pending));
+  memset(rtl_rds_ps_hits, 0, sizeof(rtl_rds_ps_hits));
   memset(rtl_rds_rt, 0, sizeof(rtl_rds_rt));
   rtl_rds_ps_mask.store(0, std::memory_order_relaxed);
   rtl_rds_rt_mask.store(0, std::memory_order_relaxed);
   rtl_rds_pi.store(0, std::memory_order_relaxed);
   rtl_rds_rt_ab = false;
   rtl_rds_pty = 0;
+  rtl_rds_pty_pending = 0;
+  rtl_rds_pty_hits = 0;
 }
 
 void rds_decode_group(uint16_t block_a, uint16_t block_b, uint16_t block_c,
@@ -905,18 +927,42 @@ void rds_decode_group(uint16_t block_a, uint16_t block_b, uint16_t block_c,
   if (block_a != 0) rtl_rds_pi.store(block_a, std::memory_order_relaxed);
   const uint8_t group_type = static_cast<uint8_t>((block_b >> 12) & 0x0F);
   const bool version_b = ((block_b >> 11) & 0x1) != 0;
-  rtl_rds_pty = static_cast<uint8_t>((block_b >> 5) & 0x1F);
+  /* Every group carries PTY in B. One flipped/wrong-hyp B used to jump
+   * Classical to Talk/News for a frame. Same value must land three times. */
+  const uint8_t pty = static_cast<uint8_t>((block_b >> 5) & 0x1F);
+  if (pty == rtl_rds_pty_pending) {
+    if (rtl_rds_pty_hits < 8) ++rtl_rds_pty_hits;
+  } else {
+    rtl_rds_pty_pending = pty;
+    rtl_rds_pty_hits = 1;
+  }
+  if (rtl_rds_pty_hits >= 3 && (pty != 0 || rtl_rds_pty == 0)) {
+    rtl_rds_pty = pty;
+  }
   if (group_type == 0) {
     const uint8_t seg = static_cast<uint8_t>(block_b & 0x3);
-    rtl_rds_ps[seg * 2] = rds_printable(static_cast<uint8_t>(block_d >> 8));
-    rtl_rds_ps[seg * 2 + 1] = rds_printable(static_cast<uint8_t>(block_d));
-    rtl_rds_ps[8] = '\0';
-    const uint8_t prev = rtl_rds_ps_mask.load(std::memory_order_relaxed);
-    const uint8_t mask = static_cast<uint8_t>(prev | (1u << seg));
-    rtl_rds_ps_mask.store(mask, std::memory_order_relaxed);
-    if (mask != prev) {
-      Serial.printf("RTL_RDS_PS pi=%04X ps=\"%s\" mask=%X pty=%u\n", block_a,
-                    rtl_rds_ps, mask, rtl_rds_pty);
+    const char c0 = rds_printable(static_cast<uint8_t>(block_d >> 8));
+    const char c1 = rds_printable(static_cast<uint8_t>(block_d));
+    /* Same 2-char slot must arrive twice. Stops KWAX/KZEL letters from
+     * sliding into the wrong pair when B and D came from different groups. */
+    if (rtl_rds_ps_pending[seg][0] == c0 && rtl_rds_ps_pending[seg][1] == c1) {
+      if (rtl_rds_ps_hits[seg] < 3) ++rtl_rds_ps_hits[seg];
+    } else {
+      rtl_rds_ps_pending[seg][0] = c0;
+      rtl_rds_ps_pending[seg][1] = c1;
+      rtl_rds_ps_hits[seg] = 1;
+    }
+    if (rtl_rds_ps_hits[seg] >= 2) {
+      rtl_rds_ps[seg * 2] = c0;
+      rtl_rds_ps[seg * 2 + 1] = c1;
+      rtl_rds_ps[8] = '\0';
+      const uint8_t prev = rtl_rds_ps_mask.load(std::memory_order_relaxed);
+      const uint8_t mask = static_cast<uint8_t>(prev | (1u << seg));
+      rtl_rds_ps_mask.store(mask, std::memory_order_relaxed);
+      if (mask != prev) {
+        Serial.printf("RTL_RDS_PS pi=%04X ps=\"%s\" mask=%X pty=%u\n", block_a,
+                      rtl_rds_ps, mask, rtl_rds_pty);
+      }
     }
   } else if (group_type == 2) {
     const bool ab_flag = ((block_b >> 4) & 0x1) != 0;
@@ -955,19 +1001,31 @@ void rds_decode_group(uint16_t block_a, uint16_t block_b, uint16_t block_c,
 }
 
 void rds_try_finish_group(RdsHypothesis& hypothesis) {
-  /* Isolated syndrome hits are almost always noise. Need two consecutive
-   * offset-word matches (or a held lock) before trusting PI / PS / RT. */
-  if (!hypothesis.locked && hypothesis.streak < 2) return;
-  if (hypothesis.group_info_valid[0] && hypothesis.group_info[0] != 0)
-    rtl_rds_pi.store(hypothesis.group_info[0], std::memory_order_relaxed);
-  if (hypothesis.group_info_valid[1] && hypothesis.group_info_valid[3]) {
-    rds_decode_group(hypothesis.group_info[0], hypothesis.group_info[1],
-                     hypothesis.group_info[2], hypothesis.group_info[3],
-                     hypothesis.group_info_valid[2]);
-    hypothesis.group_info_valid[1] = false;
-    hypothesis.group_info_valid[3] = false;
-    if (hypothesis.group_info_valid[2]) hypothesis.group_info_valid[2] = false;
+  /* Only a full A-B-C-D cycle from one group. Pairing the last good B with
+   * a later D is what printed KWon Qas / KKZELZEL on air. */
+  if (!hypothesis.group_info_valid[0] || !hypothesis.group_info_valid[1] ||
+      !hypothesis.group_info_valid[2] || !hypothesis.group_info_valid[3]) {
+    return;
   }
+  if (!hypothesis.locked && hypothesis.streak < 4) return;
+  const RdsSelection selection = rds_select();
+  if (selection.best != nullptr && selection.best != &hypothesis &&
+      (selection.best->locked ||
+       selection.best->good_blocks > hypothesis.good_blocks)) {
+    /* Losing chip-phase/parity tracks still CRC-lock on noise and would
+     * overwrite PTY/PS from the winning alignment. */
+    hypothesis.group_info_valid[0] = false;
+    hypothesis.group_info_valid[1] = false;
+    hypothesis.group_info_valid[2] = false;
+    hypothesis.group_info_valid[3] = false;
+    return;
+  }
+  rds_decode_group(hypothesis.group_info[0], hypothesis.group_info[1],
+                   hypothesis.group_info[2], hypothesis.group_info[3], true);
+  hypothesis.group_info_valid[0] = false;
+  hypothesis.group_info_valid[1] = false;
+  hypothesis.group_info_valid[2] = false;
+  hypothesis.group_info_valid[3] = false;
 }
 
 // FM presets: populated by an explicit band scan (not auto on entry). Top 10
@@ -1706,6 +1764,7 @@ void handle_sdr_touch(int32_t x, int32_t y);
 void poll_sdr_touch(bool from_stream);
 void request_hot_retune(uint32_t frequency_hz);
 uint32_t rtl_fm_command_lo_hz(uint32_t display_hz);
+uint32_t rtl_fm_sanitize_display_hz(uint32_t frequency_hz);
 void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
                             bool persist_navigation = true);
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume);
@@ -2156,8 +2215,19 @@ uint32_t rtl_clamp_frequency(RtlBand band, uint32_t frequency_hz) {
   }
 }
 
-void persist_fm_frequency(uint32_t frequency_hz) {
+uint32_t rtl_fm_sanitize_display_hz(uint32_t frequency_hz) {
   frequency_hz = rtl_clamp_frequency(RtlBand::fm, frequency_hz);
+  /* Command LO is display + 13 kHz. That value must never become the
+   * channel shown or saved (home was rebooting to 96.113). */
+  if (kRtlFmLoBiasHz > 0 &&
+      (frequency_hz % 100000u) == static_cast<uint32_t>(kRtlFmLoBiasHz)) {
+    frequency_hz -= static_cast<uint32_t>(kRtlFmLoBiasHz);
+  }
+  return frequency_hz;
+}
+
+void persist_fm_frequency(uint32_t frequency_hz) {
+  frequency_hz = rtl_fm_sanitize_display_hz(frequency_hz);
   if (frequency_hz == rtl_saved_fm_hz) return;
   rtl_saved_fm_hz = frequency_hz;
   // Preferences opened in load_state(); keep writes off the bulk-IQ path.
@@ -2753,7 +2823,7 @@ orcsdr::fmconfig::Config fm_config_from_runtime() {
 }
 
 void apply_fm_config(const orcsdr::fmconfig::Config& config, const char* status) {
-  rtl_saved_fm_hz = config.startup_frequency_hz;
+  rtl_saved_fm_hz = rtl_fm_sanitize_display_hz(config.startup_frequency_hz);
   fm_preset_count = config.preset_count;
   fm_preset_scroll_top = 0;
   for (int i = 0; i < fm_preset_count; ++i) {
@@ -6316,7 +6386,9 @@ static void on_rtl_driver_event(rtl_sdr_v4_esp_event_t event, const void *payloa
     case RTL_SDR_V4_ESP_EVT_RETUNED: {
       if (g_stream_band == RtlBand::p25) orcsdr::p25decoder::reset();
       const auto *hz = static_cast<const uint32_t *>(payload);
-      if (hz != nullptr) {
+      /* FM UI is the channel. Payload is the commanded LO (display + 13 kHz
+       * + nudge). Writing it back is why Home showed 96.113 after a lock. */
+      if (hz != nullptr && g_stream_band != RtlBand::fm) {
         rtl_ui_frequency_hz = *hz;
         rtl_requested_frequency_hz.store(*hz, std::memory_order_release);
       }
@@ -6418,6 +6490,7 @@ static void rtl_driver_app_task(void *) {
                       rtl_sdr_v4_esp_err_to_name(err), st.sample_rate_sps, frequency_hz);
       }
       if (err == ESP_OK && band == RtlBand::fm) {
+        rtl_fm_last_user_tune_ms.store(millis(), std::memory_order_relaxed);
         Serial.printf("RTL_WBFM_DSP rate=%u filter_hz=%u iq_lpf_k=%.2f audio_lpf_k=%.2f "
                       "decim=%u/%u note=app_side_filter\n",
                       kRtlSampleRateSps,
@@ -6447,7 +6520,8 @@ static void rtl_driver_app_task(void *) {
         resume_rtl_speaker();
         uint32_t spectrum_last_ms = 0;
         uint32_t adsb_metrics_last_ms = 0;
-        uint32_t last_lo_applied_hz = frequency_hz;
+        uint32_t last_lo_applied_hz =
+            band == RtlBand::fm ? rtl_fm_command_lo_hz(frequency_hz) : frequency_hz;
         uint32_t last_lo_apply_ms = 0;
         bool auto_fm_scanning = false;
         uint32_t auto_fm_frequency_hz = kRtlFmMinHz + kRtlFmAutoStepHz / 2;
@@ -6577,21 +6651,39 @@ static void rtl_driver_app_task(void *) {
             }
           }
           uint32_t desired_lo = rtl_hot_retune_hz.load(std::memory_order_acquire);
+          const bool force_lo =
+              rtl_fm_force_lo_apply.load(std::memory_order_acquire);
           if (desired_lo != 0 && g_rtl != nullptr &&
-              desired_lo != last_lo_applied_hz &&
+              (force_lo || desired_lo != last_lo_applied_hz) &&
               (now_retune - last_lo_apply_ms) >= kRtlHotRetuneMinIntervalMs) {
-            const uint32_t next = rtl_clamp_frequency(g_stream_band, desired_lo);
+            const uint32_t next =
+                g_stream_band == RtlBand::fm
+                    ? desired_lo
+                    : rtl_clamp_frequency(g_stream_band, desired_lo);
             (void)rtl_hot_retune_hz.compare_exchange_strong(
                 desired_lo, 0, std::memory_order_acq_rel);
+            rtl_fm_force_lo_apply.store(false, std::memory_order_release);
             esp_err_t te = rtl_sdr_v4_esp_retune_hz(g_rtl, next);
             last_lo_apply_ms = now_retune;
             if (te == ESP_OK) {
               last_lo_applied_hz = next;
-              /* Light demod re-sync only — do not flush speaker DMA (reverb/gap). */
-              rtl_audio_reset_demod_filters();
-              Serial.printf("RTL_HOT_TUNE hz=%u ok\n", next);
+              /* Channel changes need a demod/RDS wipe. Auto-center nudges
+               * must not — that was an audible hole every time the LO walked. */
+              if (force_lo || g_stream_band != RtlBand::fm) {
+                rtl_audio_reset_demod_filters();
+              }
+              Serial.printf("RTL_HOT_TUNE display=%u lo=%u ok\n",
+                            rtl_ui_frequency_hz, next);
             } else {
-              Serial.printf("RTL_HOT_TUNE hz=%u -> %s\n", next,
+              /* Keep the request so the next loop retries. A single failed
+               * EP0 after RDS lock was leaving the UI on 95.3 and the LO
+               * on 94.5. */
+              rtl_hot_retune_hz.compare_exchange_strong(desired_lo, next,
+                                                        std::memory_order_release);
+              if (desired_lo == 0) rtl_hot_retune_hz.store(next, std::memory_order_release);
+              rtl_fm_force_lo_apply.store(true, std::memory_order_release);
+              Serial.printf("RTL_HOT_TUNE display=%u lo=%u -> %s retry\n",
+                            rtl_ui_frequency_hz, next,
                             rtl_sdr_v4_esp_err_to_name(te));
             }
           }
@@ -6633,7 +6725,9 @@ static void rtl_driver_app_task(void *) {
             }
           }
           // One active owner receives the bounded periodic status repaint.
-          if (!orcsdr::settings::active() &&
+          // Home already updates from loop(); a full paint here stalls IQ
+          // (choppy music + frozen scope).
+          if (!orcsdr::settings::active() && !orcsdr::home::active() &&
               orcsdr::screens::status().active != orcsdr::screens::Id::adsb &&
               now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
             rtl_signal_meter_last_ms = now;
@@ -6642,13 +6736,17 @@ static void rtl_driver_app_task(void *) {
           if (g_stream_band == RtlBand::fm) {
             rds_log_status();
             const uint32_t center_now = now;
-            if (!preset_scanning && !auto_fm_scanning &&
+            /* Home is listen-only. Walking the LO every ~1 s drained USB and
+             * punched a hole in audio and the scope. Stereo lock means we
+             * are already close enough. */
+            if (!orcsdr::home::active() && !preset_scanning && !auto_fm_scanning &&
+                !rtl_stereo_locked.load(std::memory_order_relaxed) &&
                 center_now - rtl_fm_last_user_tune_ms.load(std::memory_order_relaxed) >= 900) {
               static uint32_t last_center_ms = 0;
               if (center_now - last_center_ms >= 900) {
                 const int32_t peak_off =
                     rtl_scope_peak_offset_hz.load(std::memory_order_relaxed);
-                if (peak_off <= -4000 || peak_off >= 4000) {
+                if (peak_off <= -12000 || peak_off >= 12000) {
                   if (peak_off >= -45000 && peak_off <= 45000 &&
                       rtl_signal_dbfs_smooth > -50.0f) {
                     const int32_t next_nudge =
@@ -7142,7 +7240,11 @@ void handle_fm_dashboard_action(const orcsdr::fm::Action& action) {
       queue_local_rtl_listen(RtlBand::fm, frequency);
   };
   switch (action.kind) {
-    case ActionKind::tune_hz: tune(action.value); break;
+    case ActionKind::tune_hz:
+      Serial.printf("RTL_FM_ENTER display=%u\n",
+                    static_cast<unsigned>(action.value));
+      tune(action.value);
+      break;
     case ActionKind::step_down:
       tune(rtl_step_frequency(RtlBand::fm, rtl_ui_frequency_hz, -1));
       break;
@@ -8514,16 +8616,8 @@ void load_state() {
   M5.Display.setBrightness(settings_brightness);
   M5.Display.setRotation(settings_rotation);
   // Display is the channel. LO bias is applied at tune time.
-  if (preferences.isKey("sdr_fm_hz")) {
-    uint32_t stored_fm = preferences.getUInt("sdr_fm_hz", kRtlFmDefaultHz);
-    if (stored_fm % 100000u == 13000u) stored_fm -= 13000u;
-    if (stored_fm >= kRtlFmMinHz && stored_fm <= kRtlFmMaxHz) {
-      rtl_saved_fm_hz = stored_fm;
-    }
-  } else {
-    rtl_saved_fm_hz = kRtlFmDefaultHz;
-    preferences.putUInt("sdr_fm_hz", rtl_saved_fm_hz);
-  }
+  // FM.cfg may still carry a baked-in 96.113 from an older build — load it
+  // first for presets, then let NVS last-station win.
   load_p25_config();
   if (preferences.isKey("fm_presets") &&
       preferences.getBytesLength("fm_presets") == sizeof(fm_presets)) {
@@ -8533,6 +8627,18 @@ void load_state() {
     Serial.printf("RTL_PRESETS_LOAD count=%d\n", fm_preset_count);
   }
   load_fm_config();
+  if (preferences.isKey("sdr_fm_hz")) {
+    const uint32_t raw_fm = preferences.getUInt("sdr_fm_hz", kRtlFmDefaultHz);
+    const uint32_t stored_fm = rtl_fm_sanitize_display_hz(raw_fm);
+    if (stored_fm >= kRtlFmMinHz && stored_fm <= kRtlFmMaxHz) {
+      rtl_saved_fm_hz = stored_fm;
+      if (stored_fm != raw_fm) preferences.putUInt("sdr_fm_hz", stored_fm);
+    }
+  } else {
+    rtl_saved_fm_hz = rtl_fm_sanitize_display_hz(rtl_saved_fm_hz);
+    preferences.putUInt("sdr_fm_hz", rtl_saved_fm_hz);
+  }
+  rtl_saved_fm_hz = rtl_fm_sanitize_display_hz(rtl_saved_fm_hz);
   rtl_ui_frequency_hz = rtl_saved_fm_hz;
   rtl_requested_frequency_hz.store(rtl_saved_fm_hz, std::memory_order_release);
   Serial.printf("RTL_FM_LOAD frequency_hz=%u\n", rtl_saved_fm_hz);
@@ -8827,13 +8933,19 @@ void request_hot_retune(uint32_t frequency_hz) {
   frequency_hz = rtl_clamp_frequency(rtl_ui_band, frequency_hz);
   if (frequency_hz == 0) return;
   /* UI: 1 kHz display quantize. */
-  const uint32_t ui_hz = rtl_ui_band == RtlBand::p25
-                             ? frequency_hz
-                             : (frequency_hz / 1000u) * 1000u;
+  uint32_t ui_hz = rtl_ui_band == RtlBand::p25
+                       ? frequency_hz
+                       : (frequency_hz / 1000u) * 1000u;
+  if (rtl_ui_band == RtlBand::fm) ui_hz = rtl_fm_sanitize_display_hz(ui_hz);
   const bool ui_changed = (ui_hz != rtl_ui_frequency_hz);
   if (ui_changed && rtl_ui_band == RtlBand::fm) {
     rtl_fm_lo_nudge_hz.store(0, std::memory_order_relaxed);
     rtl_fm_last_user_tune_ms.store(millis(), std::memory_order_relaxed);
+    rtl_fm_force_lo_apply.store(true, std::memory_order_release);
+    if (!rtl_auto_fm_active.load(std::memory_order_relaxed) &&
+        !rtl_fm_preset_scan_active.load(std::memory_order_relaxed)) {
+      persist_fm_frequency(ui_hz);
+    }
   }
   const uint32_t lo_hz = rtl_ui_band == RtlBand::p25
                              ? frequency_hz
