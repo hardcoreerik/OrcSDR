@@ -90,11 +90,14 @@ esp_err_t handle_status(httpd_req_t* req) {
   snap = g_snapshot;
   portEXIT_CRITICAL(&g_mux);
 
-  char ip[24], mode[24], clock[24], date[28];
+  char ip[24], mode[24], clock[24], date[28], ps[20], rt[80], pi[12];
   json_escape(ip, sizeof(ip), snap.wifi_ip);
   json_escape(mode, sizeof(mode), snap.mode);
   json_escape(clock, sizeof(clock), snap.clock);
   json_escape(date, sizeof(date), snap.date);
+  json_escape(ps, sizeof(ps), snap.program_service);
+  json_escape(rt, sizeof(rt), snap.radio_text);
+  json_escape(pi, sizeof(pi), snap.pi_code);
 
   char recent[320] = "[";
   size_t used = 1;
@@ -122,11 +125,12 @@ esp_err_t handle_status(httpd_req_t* req) {
   }
   memcpy(spec + used, "]", 2);
 
-  char json[1700];
+  char json[2048];
   snprintf(json, sizeof(json),
            "{\"wifi_ip\":\"%s\",\"wifi_connected\":%s,\"usb_connected\":%s,"
            "\"rtl_ready\":%s,\"receiving\":%s,\"sound_enabled\":%s,\"stereo\":%s,"
-           "\"rds_carrier\":%s,\"rds_locked\":%s,\"recording\":%s,\"mode\":\"%s\","
+           "\"rds_carrier\":%s,\"rds_locked\":%s,\"program_service\":\"%s\","
+           "\"radio_text\":\"%s\",\"pi_code\":\"%s\",\"recording\":%s,\"mode\":\"%s\","
            "\"frequency_hz\":%lu,\"requested_frequency_hz\":%lu,\"span_hz\":%lu,"
            "\"step_hz\":%lu,\"filter_bandwidth_hz\":%lu,\"effective_sps\":%lu,"
            "\"battery_percent\":%ld,\"signal_dbfs\":%.1f,\"left_dbfs\":%.1f,"
@@ -136,7 +140,8 @@ esp_err_t handle_status(httpd_req_t* req) {
            snap.usb_connected ? "true" : "false", snap.rtl_ready ? "true" : "false",
            snap.receiving ? "true" : "false", snap.sound_enabled ? "true" : "false",
            snap.stereo ? "true" : "false", snap.rds_carrier ? "true" : "false",
-           snap.rds_locked ? "true" : "false", snap.recording ? "true" : "false",
+           snap.rds_locked ? "true" : "false", ps, rt, pi,
+           snap.recording ? "true" : "false",
            mode, static_cast<unsigned long>(snap.frequency_hz),
            static_cast<unsigned long>(snap.requested_frequency_hz),
            static_cast<unsigned long>(snap.span_hz),

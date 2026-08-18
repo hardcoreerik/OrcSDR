@@ -3,7 +3,7 @@
 | Feature | Status | Notes |
 |---|---|---|
 | FM receive, stereo audio, presets, and health | Implemented | Live hardware verified |
-| FM RDS decoding | Experimental | Carrier detection and decoded fields are not yet reliable across stations |
+| FM RDS decoding | Experimental | Live PI / PS on strong stations (KZEL 96.1 verified). PS can still scramble while segments refresh. Needs a 260 kHz FM filter and +13 kHz LO bias on this dongle. |
 | P25 control and clear voice following | Experimental | Encrypted voice is not decoded |
 | ADS-B 1090 dashboard and aircraft database | Experimental | Live coverage depends on antenna, location, and valid position messages |
 | LoRa receive, packet views, and capture | Experimental | No transmit path |

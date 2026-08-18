@@ -13,6 +13,9 @@ struct Snapshot {
   char mode[12]{};
   char clock[12]{};
   char date[20]{};
+  char program_service[9]{};
+  char radio_text[65]{};
+  char pi_code[5]{};
   char recent_id[kRecentSlots][12]{};
   char recent_title[kRecentSlots][16]{};
   uint32_t frequency_hz = 0;
