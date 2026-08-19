@@ -2,11 +2,15 @@
 """Convert simplified OSM GeoJSON LineString features into ORCMAP1 SD runtime data."""
 import json
 import sys
+from itertools import pairwise
 
 KIND = {"road": "R", "water": "W", "airport": "A"}
+RUNTIME_SEGMENT_CAPACITY = 640
 
 def main(source, output):
-    data = json.load(open(source, encoding="utf-8"))
+    with open(source, encoding="utf-8") as stream:
+        data = json.load(stream)
+    segment_count = 0
     with open(output, "w", encoding="ascii", newline="\n") as out:
         out.write("ORCMAP1\n")
         for feature in data.get("features", []):
@@ -15,8 +19,12 @@ def main(source, output):
             if not kind or geometry.get("type") != "LineString":
                 continue
             points = geometry.get("coordinates", [])
-            for a, b in zip(points, points[1:]):
+            for a, b in pairwise(points):
                 out.write(f"{kind} {a[1]:.6f} {a[0]:.6f} {b[1]:.6f} {b[0]:.6f}\n")
+                segment_count += 1
+    if segment_count > RUNTIME_SEGMENT_CAPACITY:
+        raise ValueError(f"{segment_count} map segments exceed device capacity "
+                         f"{RUNTIME_SEGMENT_CAPACITY}")
 
 if __name__ == "__main__":
     main(*sys.argv[1:])

@@ -12,7 +12,7 @@ namespace {
 constexpr size_t kSegmentCapacity = 640;
 enum class Kind : uint8_t { road, water, airport };
 struct Segment { float lat1, lon1, lat2, lon2; Kind kind; };
-Segment g_segments[kSegmentCapacity]{};
+EXT_RAM_BSS_ATTR Segment g_segments[kSegmentCapacity]{};
 size_t g_count = 0;
 bool g_available = false;
 
