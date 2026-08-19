@@ -6,7 +6,7 @@
 
 namespace orcsdr::catalog {
 
-constexpr uint8_t kPackCount = 4;
+constexpr uint8_t kPackCount = 5;
 
 enum class Operation : uint8_t { none, check, install, remove };
 

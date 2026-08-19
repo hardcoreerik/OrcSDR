@@ -1,6 +1,7 @@
 #include "lora_dashboard.hpp"
 
 #include "dashboard_audio_control.hpp"
+#include "offline_map.hpp"
 
 #include <M5Unified.h>
 
@@ -344,10 +345,6 @@ void draw_traffic_dynamic() {
 
 void draw_map_dynamic() {
   M5.Display.fillRect(50, 182, 842, 330, kBg);
-  for (int i = 1; i < 8; ++i) {
-    M5.Display.drawFastHLine(48, 183 + i * 47, 846, kGrid);
-    M5.Display.drawFastVLine(48 + i * 106, 183, 330, kGrid);
-  }
   const Node* center = g_snapshot.node_count ? &g_snapshot.nodes[
       std::min<size_t>(g_snapshot.selected_node, g_snapshot.node_count - 1)] : nullptr;
   if (!center || center->latitude_e7 == INT32_MAX || center->longitude_e7 == INT32_MAX) {
@@ -355,15 +352,15 @@ void draw_map_dynamic() {
   } else {
     const float lat = center->latitude_e7 / 10000000.0f;
     const float lon = center->longitude_e7 / 10000000.0f;
-    const float lon_scale = std::max(0.1f, cosf(lat * 0.01745329252f));
+    offline_map::View map{lat, lon, 15.0f, 50, 182, 842, 330};
+    offline_map::draw_base(map, 0x0320, kGrid, kMuted, kGrid);
+    if (!offline_map::available()) text("OFFLINE MAP PACK NOT INSTALLED", 470, 490, kMuted, 1);
     for (size_t i = 0; i < g_snapshot.node_count; ++i) {
       const Node& node = g_snapshot.nodes[i];
       if (node.latitude_e7 == INT32_MAX || node.longitude_e7 == INT32_MAX) continue;
-      const float east = (node.longitude_e7 / 10000000.0f - lon) * lon_scale;
-      const float north = node.latitude_e7 / 10000000.0f - lat;
-      const int x = 470 + static_cast<int>(east * 43000.0f);
-      const int y = 350 - static_cast<int>(north * 61000.0f);
-      if (!hit(x, y, 60, 193, 820, 310)) continue;
+      int x = 0, y = 0;
+      if (!offline_map::project(map, node.latitude_e7 / 10000000.0f,
+                                node.longitude_e7 / 10000000.0f, &x, &y)) continue;
       const uint16_t color = i == g_snapshot.selected_node ? kGreen : kCyan;
       M5.Display.drawCircle(x, y, i == g_snapshot.selected_node ? 13 : 9, color);
       M5.Display.fillCircle(x, y, 3, color);
@@ -380,8 +377,8 @@ void draw_map_dynamic() {
   } else text("NO NODE SELECTED", 1095, 320, kMuted, 2);
   text(g_follow_node ? "FOLLOWING" : "CENTERED", 970, 350,
        g_follow_node ? kGreen : kCyan, 2, middle_left);
-  text("TOPOLOGY GRID", 970, 390, kMuted, 1, middle_left);
-  text("No online map tiles", 970, 420, kMuted, 1, middle_left);
+  text("OFFLINE LANE COUNTY", 970, 390, kMuted, 1, middle_left);
+  text(offline_map::available() ? "SD VECTOR MAP" : "MAP PACK NOT INSTALLED", 970, 420, kMuted, 1, middle_left);
 }
 
 void draw_health_dynamic() {

@@ -40,6 +40,7 @@ struct Artifact {
 struct Pack {
   Artifact runtime;
   Artifact archive;
+  char version[16]{};
   bool available = false;
 };
 
@@ -53,9 +54,9 @@ Operation g_requested = Operation::none;
 uint8_t g_requested_pack = 0;
 
 constexpr const char* kIds[kPackCount] = {
-    "faa_aircraft", "faa_aviation", "noaa_weather", "fcc_broadcast"};
+    "faa_aircraft", "faa_aviation", "noaa_weather", "fcc_broadcast", "lane_county_map"};
 constexpr const char* kTitles[kPackCount] = {
-    "FAA AIRCRAFT", "FAA AVIATION", "NOAA WEATHER", "FCC FM / AM"};
+    "FAA AIRCRAFT", "FAA AVIATION", "NOAA WEATHER", "FCC FM / AM", "LANE COUNTY MAP"};
 
 int pack_index(const char* id) {
   if (id == nullptr) return -1;
@@ -142,6 +143,20 @@ void refresh_installed() {
     const auto& pack = g_packs[i];
     view.installed = pack.available && pack.runtime.destination[0] &&
                      g_fs->exists(pack.runtime.destination);
+    view.update_available = false;
+    if (view.installed) {
+      char version_path[112]{}, local[sizeof(pack.version)]{};
+      snprintf(version_path, sizeof(version_path), "%s.ver", pack.runtime.destination);
+      File version = g_fs->open(version_path, FILE_READ);
+      if (version) {
+        const size_t used = version.readBytesUntil('\n', local, sizeof(local) - 1);
+        local[used] = '\0';
+        version.close();
+        view.update_available = strcmp(local, pack.version) != 0;
+      } else {
+        view.update_available = true;
+      }
+    }
     if (view.installed && !view.update_available) strlcpy(view.status, "INSTALLED", sizeof(view.status));
     if (!view.installed && pack.available) strlcpy(view.status, "AVAILABLE", sizeof(view.status));
   }
@@ -258,6 +273,7 @@ bool parse_manifest(const uint8_t* data, size_t size) {
           !safe_text(cJSON_GetObjectItemCaseSensitive(node, "source_date"), views[index].source_date,
                      sizeof(views[index].source_date))) break;
       parsed[index].available = true;
+      strlcpy(parsed[index].version, views[index].version, sizeof(parsed[index].version));
       seen[index] = true;
       views[index].runtime_bytes = parsed[index].runtime.bytes;
       views[index].archive_bytes = parsed[index].archive.bytes;
@@ -302,6 +318,8 @@ bool validate_staged_artifact(const Artifact& artifact, uint8_t pack_index) {
     valid = starts_with(file, "PK\003\004", 4) || starts_with(file, "PK\005\006", 4);
   } else if (pack_index == 0) {
     valid = starts_with(file, "ORCADSB1", 8);
+  } else if (pack_index == 4) {
+    valid = starts_with(file, "ORCMAP1", 7);
   } else {
     // Non-ADS-B indexes use the common line-oriented catalog header.
     valid = starts_with(file, "ORCCAT1\n", 8);
@@ -397,6 +415,15 @@ bool activate_pack(const Pack& pack) {
     set_message("Could not activate downloaded pack");
     return false;
   }
+  char version_path[112]{};
+  snprintf(version_path, sizeof(version_path), "%s.ver", pack.runtime.destination);
+  File version = g_fs->open(version_path, FILE_WRITE, true);
+  if (!version || version.print(pack.version) != strlen(pack.version)) {
+    if (version) version.close();
+    set_message("Pack activated but version write failed");
+    return false;
+  }
+  version.close();
   return true;
 }
 
@@ -461,7 +488,7 @@ bool request(Operation operation, uint8_t pack_index, bool needs_wifi) {
   g_requested_pack = pack_index;
   set_busy(operation, 0);
   set_message(operation == Operation::check ? "Catalog check queued" : "Data operation queued");
-  return xTaskCreatePinnedToCore(worker, "catalog_sync", 8192, nullptr, 3, &g_worker, 1) == pdPASS;
+  return xTaskCreatePinnedToCore(worker, "catalog_sync", 12288, nullptr, 3, &g_worker, 1) == pdPASS;
 }
 
 }  // namespace
