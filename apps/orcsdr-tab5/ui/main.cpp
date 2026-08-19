@@ -1169,8 +1169,8 @@ static std::atomic<int16_t> lora_native_last_cfo_tenths_hz{0};
 struct LoraNodePosition {
   uint32_t node = 0;
   uint32_t received_ms = 0;
-  int32_t latitude_e7 = 0;
-  int32_t longitude_e7 = 0;
+  int32_t latitude_e7 = INT32_MAX;
+  int32_t longitude_e7 = INT32_MAX;
 };
 constexpr size_t kLoraNodePositionCount = 8;
 static LoraNodePosition lora_node_positions[kLoraNodePositionCount]{};
@@ -8450,19 +8450,26 @@ void lora_store_packet(const LoraDisplayPacket& input) {
   memmove(&lora_display_packets[1], &lora_display_packets[0],
           sizeof(lora_display_packets[0]) * (kLoraDisplayPacketCount - 1));
   lora_display_packets[0] = packet;
-  if (packet.latitude_e7 != INT32_MAX && packet.longitude_e7 != INT32_MAX && packet.sender != 0) {
+  if (packet.sender != 0) {
     size_t position_index = 0;
     while (position_index < kLoraNodePositionCount &&
            lora_node_positions[position_index].node != packet.sender) {
       ++position_index;
     }
-    if (position_index >= kLoraNodePositionCount) position_index = kLoraNodePositionCount - 1;
+    const bool known_node = position_index < kLoraNodePositionCount;
+    if (!known_node) position_index = kLoraNodePositionCount - 1;
+    LoraNodePosition node = known_node ? lora_node_positions[position_index] : LoraNodePosition{};
+    node.node = packet.sender;
+    node.received_ms = packet.received_ms;
+    if (packet.latitude_e7 != INT32_MAX && packet.longitude_e7 != INT32_MAX) {
+      node.latitude_e7 = packet.latitude_e7;
+      node.longitude_e7 = packet.longitude_e7;
+    }
     if (position_index > 0) {
       memmove(&lora_node_positions[1], &lora_node_positions[0],
               sizeof(lora_node_positions[0]) * position_index);
     }
-    lora_node_positions[0] = {packet.sender, packet.received_ms, packet.latitude_e7,
-                              packet.longitude_e7};
+    lora_node_positions[0] = node;
   }
   portEXIT_CRITICAL(&lora_message_mux);
   enqueue_lora_sd_log(packet);
