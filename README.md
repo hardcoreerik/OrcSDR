@@ -227,18 +227,23 @@ On Windows, note the assigned COM port. For example:
 COM8
 ```
 
-### 3. Build and flash OrcSDR
+### 3. Install OrcSDR
 
-Replace `COM8` with the Tab5 port, then copy and paste:
+ESP-IDF 5.5.3 must already be installed. Then from the repo root:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
-.\apps\orcsdr-tab5\tools\install-tab5.ps1 -Port COM8
+.\install-orcsdr.ps1
 ```
 
-This uses the pinned native ESP-IDF component graph, preserves saved NVS
-settings, and refuses unexpected ESP-Hosted or M5GFX component sources.
-PlatformIO is not a supported OrcSDR build or flash path.
+The script installs `requirements.txt`, finds the Tab5 COM port (or pass
+`-Port COM8`), builds and flashes the P4, and checks that ESP-Hosted
+**host and C6 slave are both 2.12.6**. A mismatch prints M5Burner steps;
+the P4 image cannot update the C6. Re-check with
+`.\install-orcsdr.ps1 -CheckHostedOnly`.
+
+Saved NVS settings are preserved. PlatformIO is not a supported OrcSDR
+build or flash path.
 
 ### 4. Connect the RTL-SDR Blog V4
 

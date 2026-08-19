@@ -14,6 +14,14 @@ Cold-boot with stable power and the dongle disconnected, then attach it after th
 
 Confirm Wi-Fi power is enabled and choose the correct internal or external antenna. Scanning should coexist with reception. A crash or restart is a regression; preserve the serial log and reset reason.
 
+If Settings shows “ESP-Hosted version mismatch”, the P4 app and the C6 slave are not the same version. OrcSDR pins **2.12.6** on both. Flash the C6 with M5Burner’s ESP-Hosted 2.12.6 package (the P4 image cannot do this), then:
+
+```powershell
+.\install-orcsdr.ps1 -CheckHostedOnly
+```
+
+A healthy pair logs `RTL_WIFI_HOSTED host=2.12.6 slave=2.12.6 match=1`. Radio works while they disagree; Wi-Fi stays off.
+
 On-chip DMA RAM is split so Wi-Fi and the radio do not steal each other's room: ESP-Hosted (C6 Wi-Fi) and the I2S speaker stay in reserved internal DMA; RTL-SDR USB URBs stay in PSRAM. Boot logs `RTL_DRAM_BUDGET`. After Wi-Fi starts, `dma_largest` should stay above ~20 KiB so I2S can still start. A scan/connect panic with `HS_MP: mempool create failed` or `sdio_mempool_create` means the Hosted slice was gone — keep `CONFIG_ESP_HOSTED_USE_MEMPOOL=n` and do not raise `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL` above 8 KiB.
 
 A connect that succeeds and then reboots a few seconds later with `sdio_write_task (sendbuf)` or `sdio_push_data_to_queue (pkt_rxbuff)` is the web console / mDNS starting from internal RAM. Those tasks stay in PSRAM so Hosted can still allocate its 1.5 KiB SDIO packets. The TV app can use the numeric IP if mDNS is skipped (`RTL_WEB_MDNS skipped`).

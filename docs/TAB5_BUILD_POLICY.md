@@ -71,6 +71,13 @@ Healthy boot (2026-08-17, Hosted 2.12.6, mempool off):
 | after_usb | ~33 KiB | ~23 KiB |
 | after_speaker | ~20 KiB | ~19 KiB |
 
+## People installer
+
+From the repo root, `install-orcsdr.ps1` installs `requirements.txt`,
+flashes the P4, and reads `RTL_WIFI_HOSTED`. It will not burn the C6; a
+mismatch prints the M5Burner 2.12.6 steps. Developers can still call
+`apps/orcsdr-tab5/tools/install-tab5.ps1 -Port COM17` directly.
+
 ## Native build and release gate
 
 ```powershell

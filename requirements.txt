@@ -1,0 +1,4 @@
+# OrcSDR people-installer (Windows).
+# Used by install-orcsdr.ps1 to talk to the Tab5 after flash and read
+# ESP-Hosted host/slave versions. IDF's Python is preferred when present.
+pyserial>=3.5
