@@ -19,7 +19,20 @@ CONFIG_FREERTOS_HZ=1000
 CONFIG_AUTOSTART_ARDUINO=y
 CONFIG_ESP_HOSTED_SDIO_TX_Q_SIZE=4
 CONFIG_ESP_HOSTED_SDIO_RX_Q_SIZE=2
-CONFIG_ESP_HOSTED_USE_MEMPOOL=y
+# One 20 KB internal-DMA pool asserts after RTL USB is up. Allocate
+# Hosted SDIO buffers on demand instead of rebooting on Scan/Connect.
+CONFIG_ESP_HOSTED_USE_MEMPOOL=n
 CONFIG_ESP_HOSTED_DFLT_TASK_FROM_SPIRAM=y
 CONFIG_USB_HOST_DWC_DMA_CAP_MEMORY_IN_PSRAM=y
-CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=32768
+# Keep incidental mallocs out of on-chip RAM. DMA-capable internal
+# memory is reserved for Hosted SDIO + I2S only; RTL URBs stay in PSRAM.
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=8192
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=40960
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+# mDNS after STA-up was allocating its task from internal RAM and the
+# following Hosted SDIO TX/RX alloc asserted (sendbuf / pkt_rxbuff).
+CONFIG_MDNS_TASK_CREATE_FROM_SPIRAM=y
+CONFIG_MDNS_MEMORY_ALLOC_SPIRAM=y
+# PC USB-JTAG VBUS sag trips the P4 BOD at the default 2.6V. Detector
+# reset is off on purpose; the radio keeps running through the sag.
+CONFIG_ESP_BROWNOUT_DET=n

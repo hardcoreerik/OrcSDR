@@ -95,6 +95,14 @@ Classification: native-USB baud behavior is expected device operation (a
 how-to), port contention is a host-side troubleshooting condition, and the
 former radio-log interleaving was a firmware bug fixed by the transfer guard.
 
+Do not leave this cable connected for radio or Android TV use. The PC USB
+Serial/JTAG link supplies VBUS and keeps the JTAG device enumerated; under
+Wi-Fi + RTL-SDR load that path has produced `ESP_RST_BROWNOUT` on a unit that
+is stable with the same firmware when the flash cable is unplugged. Current
+firmware turns the P4 brownout reset off (`CONFIG_ESP_BROWNOUT_DET=n`) so the
+sag no longer reboots the chip; glitches are still possible. Flash, close the
+COM port, unplug the cable, then use the LAN console.
+
 ## Auth model
 
 Two tiers, and the split is not fully consistent across the codebase (some
@@ -150,6 +158,17 @@ band-plan specific and not usually worth hardcoding in a client.
 |---|---|---|
 | `RTL_VOLUME` | no | `RTL_VOLUME_STATUS volume=<0-32>` |
 | `RTL_VOLUME <0-32>` | yes | `RTL_VOLUME_OK volume=...` or `RTL_VOLUME_INVALID` |
+
+## LAN web console
+
+Off by default. Enable from Settings → Companion or the serial commands
+below. The page is read-only (`GET /` and `GET /api/status`); it does not
+tune, change volume, or return passwords or coordinates.
+
+| Command | Auth | Reply |
+|---|---|---|
+| `RTL_WEB` / `RTL_WEB_STATUS` | no | `RTL_WEB_STATUS enabled=0\|1 listening=0\|1 url=http://…/\|offline` |
+| `RTL_WEB ON\|OFF` | yes | `RTL_WEB_OK enabled=… listening=… url=…` |
 
 ## Telemetry
 

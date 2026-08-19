@@ -53,7 +53,7 @@ The header is immediately followed by `frame_count` index entries, then the JPEG
 - Keep the `.orsplash` file on the Tab5 microSD card; the asset is far larger than onboard flash.
 - Read each JPEG frame by `data_offset + index[i].offset` for `index[i].length` bytes.
 - Decode with the ESP32-P4 hardware JPEG decoder to RGB565.
-- Copy decoded frames directly into the native framebuffer at 41,667 microsecond intervals (24 FPS).
+- Copy decoded frames directly into the native framebuffer at 41,667 microsecond intervals (24 FPS). The blit follows the UI landscape rotation (`1` or `3`) so the splash matches Home/FM.
 - Preserve the status and ready-button framebuffer rectangles; redraw them only when their state changes.
 - Use read-ahead/double buffering so SD reads, JPEG decode, and display scanout overlap.
 - After frame 239, set the frame index back to 0 without inserting a delay.

@@ -17,6 +17,9 @@ extern "C" {
  *   4) orcsdr_splash_set_ready()  — reveal the OrcSDR button
  *   5) orcsdr_splash_wait_start() — keep looping until the button is tapped
  *   6) orcsdr_splash_end()        — stop playback, free buffers, enter home UI
+ *
+ * Call M5.Display.setRotation() to the UI landscape value (1 or 3) before
+ * begin() so the animation matches Home/FM.
  */
 bool orcsdr_splash_begin(void);
 void orcsdr_splash_set_status(const char *message);

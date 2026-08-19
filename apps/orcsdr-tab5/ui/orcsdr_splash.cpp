@@ -78,8 +78,6 @@ constexpr int kReadyButtonX = 440;
 constexpr int kReadyButtonY = 600;
 constexpr int kReadyButtonW = 400;
 constexpr int kReadyButtonH = 82;
-constexpr int kReadyNativeX = kNativeWidth - (kReadyButtonY + kReadyButtonH);
-constexpr int kReadyNativeY = kReadyButtonX;
 
 struct JpegSlot {
   uint8_t* data = nullptr;
@@ -115,6 +113,11 @@ struct SplashState {
   char status[96]{};
   portMUX_TYPE status_mux = portMUX_INITIALIZER_UNLOCKED;
   SplashMode mode = SplashMode::None;
+  uint8_t ui_rotation = 1;
+  int ready_nx = 0;
+  int ready_ny = 0;
+  int ready_nw = 0;
+  int ready_nh = 0;
   bool sd_ok = false;
   bool has_poster = false;
   bool use_sdmmc = false;
@@ -155,6 +158,49 @@ void mark_chrome_dirty() {
   g_splash.chrome_dirty.store(true, std::memory_order_release);
 }
 
+void logical_to_native(int lx, int ly, int* nx, int* ny, uint8_t rotation) {
+  if ((rotation & 3) == 3) {
+    *nx = ly;
+    *ny = kNativeHeight - 1 - lx;
+  } else {
+    *nx = kNativeWidth - 1 - ly;
+    *ny = lx;
+  }
+}
+
+void refresh_ready_native_rect() {
+  int xs[4];
+  int ys[4];
+  const int x0 = kReadyButtonX;
+  const int y0 = kReadyButtonY;
+  const int x1 = x0 + kReadyButtonW - 1;
+  const int y1 = y0 + kReadyButtonH - 1;
+  const uint8_t rotation = g_splash.ui_rotation;
+  logical_to_native(x0, y0, &xs[0], &ys[0], rotation);
+  logical_to_native(x1, y0, &xs[1], &ys[1], rotation);
+  logical_to_native(x0, y1, &xs[2], &ys[2], rotation);
+  logical_to_native(x1, y1, &xs[3], &ys[3], rotation);
+  int min_x = xs[0], max_x = xs[0], min_y = ys[0], max_y = ys[0];
+  for (int i = 1; i < 4; ++i) {
+    if (xs[i] < min_x) min_x = xs[i];
+    if (xs[i] > max_x) max_x = xs[i];
+    if (ys[i] < min_y) min_y = ys[i];
+    if (ys[i] > max_y) max_y = ys[i];
+  }
+  g_splash.ready_nx = min_x;
+  g_splash.ready_ny = min_y;
+  g_splash.ready_nw = max_x - min_x + 1;
+  g_splash.ready_nh = max_y - min_y + 1;
+}
+
+void apply_splash_rotation(uint8_t rotation) {
+  if (rotation != 3) rotation = 1;
+  g_splash.ui_rotation = rotation;
+  M5.Display.setRotation(rotation);
+  refresh_ready_native_rect();
+  splash_log("SPLASH_ROTATION ui=%u", static_cast<unsigned>(rotation));
+}
+
 void draw_status_strip(const char* msg) {
   const int y = kStatusY;
   M5.Display.setTextDatum(middle_center);
@@ -190,23 +236,44 @@ void paint_chrome_overlay() {
 void copy_native_frame(const uint8_t* rgb) {
   if (!rgb || !g_splash.framebuffer) return;
   xSemaphoreTake(g_splash.display_mutex, portMAX_DELAY);
-  constexpr size_t stride = kNativeWidth * 2;
+  constexpr int kWidth = kNativeWidth;
+  constexpr int kHeight = kNativeHeight;
   const bool ready = g_splash.ready.load(std::memory_order_acquire);
-  for (uint16_t y = 0; y < kNativeHeight; ++y) {
-    const uint8_t* src = rgb + static_cast<size_t>(y) * stride;
-    uint8_t* dst = g_splash.framebuffer + static_cast<size_t>(y) * stride;
-    const bool button_row =
-        ready && y >= kReadyNativeY && y < kReadyNativeY + kReadyButtonW;
-    if (!button_row) {
-      memcpy(dst, src, stride);
-      continue;
+  const bool flip180 = g_splash.ui_rotation == 3;
+  const int hole_x0 = g_splash.ready_nx;
+  const int hole_y0 = g_splash.ready_ny;
+  const int hole_x1 = hole_x0 + g_splash.ready_nw;
+  const int hole_y1 = hole_y0 + g_splash.ready_nh;
+  const uint16_t* src16 = reinterpret_cast<const uint16_t*>(rgb);
+  uint16_t* dst16 = reinterpret_cast<uint16_t*>(g_splash.framebuffer);
+
+  if (!flip180) {
+    constexpr size_t stride = kWidth * 2;
+    for (int y = 0; y < kHeight; ++y) {
+      const uint8_t* src = rgb + static_cast<size_t>(y) * stride;
+      uint8_t* dst = g_splash.framebuffer + static_cast<size_t>(y) * stride;
+      const bool button_row = ready && y >= hole_y0 && y < hole_y1;
+      if (!button_row) {
+        memcpy(dst, src, stride);
+        continue;
+      }
+      if (hole_x0 > 0) memcpy(dst, src, static_cast<size_t>(hole_x0) * 2);
+      const int after = hole_x1 < kWidth ? hole_x1 : kWidth;
+      if (after < kWidth) {
+        memcpy(dst + after * 2, src + after * 2,
+               static_cast<size_t>(kWidth - after) * 2);
+      }
     }
-    size_t x = 0;
-    if (button_row) {
-      memcpy(dst, src, kReadyNativeX * 2);
-      x = kReadyNativeX + kReadyButtonH;
+  } else {
+    for (int y = 0; y < kHeight; ++y) {
+      const uint16_t* src = src16 + (kHeight - 1 - y) * kWidth;
+      uint16_t* dst = dst16 + y * kWidth;
+      const bool button_row = ready && y >= hole_y0 && y < hole_y1;
+      for (int x = 0; x < kWidth; ++x) {
+        if (button_row && x >= hole_x0 && x < hole_x1) continue;
+        dst[x] = src[kWidth - 1 - x];
+      }
     }
-    memcpy(dst + x * 2, src + x * 2, (kNativeWidth - x) * 2);
   }
   esp_cache_msync(g_splash.framebuffer, g_splash.framebuffer_bytes,
                   ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_TYPE_DATA);
@@ -498,8 +565,9 @@ void splash_reader_task(void*) {
 
 void splash_play_task(void*) {
   /*
-   * Frames are packed in the panel's native portrait memory order. This avoids
-   * M5GFX's costly per-pixel landscape rotation and preserves static overlays.
+   * Frames are packed as 720x1280 native pixels for rotation 1 (UI landscape).
+   * Rotation 3 (landscape 180) is the same buffer flipped 180°. Chrome is
+   * drawn through M5.Display so it follows the same UI rotation.
    */
   jpeg_decode_cfg_t dec_cfg{};
   dec_cfg.output_format = JPEG_DECODE_OUT_FORMAT_RGB565;
@@ -728,6 +796,11 @@ void reset_state() {
   g_splash.chrome_dirty.store(true, std::memory_order_relaxed);
   g_splash.status[0] = '\0';
   g_splash.mode = SplashMode::None;
+  g_splash.ui_rotation = 1;
+  g_splash.ready_nx = 0;
+  g_splash.ready_ny = 0;
+  g_splash.ready_nw = 0;
+  g_splash.ready_nh = 0;
   g_splash.sd_ok = false;
   g_splash.has_poster = false;
   g_splash.use_sdmmc = false;
@@ -739,6 +812,7 @@ void reset_state() {
 bool orcsdr_splash_begin(void) {
   splash_log("SPLASH_BOOT begin (loading screen)");
   reset_state();
+  apply_splash_rotation(M5.Display.getRotation());
   g_splash.display_mutex = xSemaphoreCreateMutex();
   auto* panel_base = M5.Display.getPanel();
   auto* panel = panel_base && panel_base->getBus() &&

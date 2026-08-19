@@ -1,8 +1,11 @@
 # OrcSDR Security Policy
 
 OrcSDR is a receive-only, local-first SDR application for the M5Stack Tab5
-(ESP32-P4) and RTL-SDR Blog V4. It does not provide a public cloud service or a
-remote administration endpoint in the current release.
+(ESP32-P4) and RTL-SDR Blog V4. It does not provide a public cloud service.
+An optional LAN web console can be enabled in Settings → Companion; it is
+off by default and bindable only while Wi-Fi is connected. It serves the Home
+visual plus local tune/volume/dashboard actions. It does not expose passwords,
+pairing material, or coordinates. There is no TLS in this slice.
 
 ## Supported code
 

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OrcSDR</string>
+    <string name="connect_hint">Type the Tab5 IP from Settings → Companion. This TV is on 192.168.1.184; the Tab5 has a different address on the same LAN.</string>
+    <string name="ip_label">Tab5 address</string>
+    <string name="connect">Open console</string>
+    <string name="scanning">Looking for orcsdr on the LAN…</string>
+</resources>
