@@ -5090,7 +5090,10 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
       (now - rtl_spectrum_trace_last_ms) >= spectrum_interval;
   const bool show_peak = (tool == OrcTool::Scope || tool == OrcTool::Radio);
 
-  if (orcsdr::screens::owns(orcsdr::screens::Id::home) && orcsdr::home::active()) {
+  const bool home_scope =
+      orcsdr::home::active() &&
+      (orcsdr::screens::owns(orcsdr::screens::Id::home) || ui_documentation_mode);
+  if (home_scope) {
     const bool audio_stressed = rtl_audio.dropped_chunks > 0 &&
         rtl_audio.dropped_chunks * 2u > rtl_audio.queued_chunks + 2u;
     orcsdr::home::draw_spectrum(rtl_spectrum_levels, first_bin, visible_bins,
@@ -9400,7 +9403,7 @@ struct UiDocScreen {
 };
 
 constexpr UiDocScreen kUiDocScreens[] = {
-    {"home", "demo"},
+    {"home", "live,demo"},
     {"nav", "demo"},
     {"settings.connectivity", "demo"},
     {"settings.location-adsb", "demo"},
@@ -10093,6 +10096,9 @@ void process_command(char* command) {
         Serial.println("UI_DOC_ERROR unknown_screen_or_mode");
         return;
       }
+      /* Live captures keep the scope painting so a 10 s settle fills waterfall. */
+      if (strcmp(mode, "live") == 0)
+        rtl_graphics_enabled.store(true, std::memory_order_release);
       Serial.printf("UI_DOC_SHOW_DONE id=%s mode=%s\n", screen, mode);
       return;
     }

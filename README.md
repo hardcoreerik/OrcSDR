@@ -126,7 +126,7 @@ OrcSDR is designed around a touchscreen-first radio experience.
 
 <p align="center">
   <img src="docs/images/orcsdr-tab5_2.png"
-       alt="OrcSDR spectrum browser, band navigation, waterfall, and CB radio interfaces on M5Stack Tab5"
+       alt="OrcSDR Home dashboard on M5Stack Tab5 with live spectrum, waterfall, last-used dashboards, and tuning controls"
        width="100%">
 </p>
 
@@ -157,7 +157,7 @@ The LoRa interface combines packet monitoring, signal telemetry, a live scope, w
 
 <p align="center">
   <img src="docs/images/orcsdr-tab5_3.png"
-       alt="OrcSDR LoRa packet monitoring, telemetry, live scope, waterfall, and messaging interface"
+       alt="OrcSDR LoRa Mesh dashboard on M5Stack Tab5: Overview, Nodes, Traffic, Map, and RF Health"
        width="100%">
 </p>
 

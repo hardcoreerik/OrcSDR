@@ -65,6 +65,13 @@ Result save_bmp(M5GFX& display, fs::FS& filesystem, const char* slug) {
   snprintf(path, sizeof(path), "%s/%s.bmp", kDirectory, slug);
   filesystem.remove(path);
   File file = filesystem.open(path, FILE_WRITE, true);
+  if (!file) file = filesystem.open(path, FILE_WRITE);
+  if (!file) {
+    snprintf(path, sizeof(path), "/orcsdr/%s.bmp", slug);
+    filesystem.remove(path);
+    file = filesystem.open(path, FILE_WRITE, true);
+    if (!file) file = filesystem.open(path, FILE_WRITE);
+  }
   if (!file) {
     result.error = "open_failed";
     return result;

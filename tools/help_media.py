@@ -208,11 +208,16 @@ def capture(args: argparse.Namespace) -> None:
     try:
         client.authenticate()
         firmware, device_screens = client.doc_list()
-        requested = {screen["id"] for screen in data["screens"]}
-        if requested != set(device_screens):
-            raise RuntimeError(f"Manifest/device screen mismatch: manifest-only={sorted(requested-set(device_screens))}, device-only={sorted(set(device_screens)-requested)}")
+        requested = {screen["id"] for screen in capture_screens}
+        missing = requested - set(device_screens)
+        if missing:
+            raise RuntimeError(f"Device is missing screens: {sorted(missing)}")
+        extra = set(device_screens) - {screen["id"] for screen in data["screens"]}
+        if extra and not args.allow_any_firmware:
+            raise RuntimeError(f"Manifest/device screen mismatch: device-only={sorted(extra)}")
         release_tokens = {args.release, args.release[:7]}
-        if not any(token and token in firmware for token in release_tokens):
+        if args.release and not args.allow_any_firmware and not any(
+                token and token in firmware for token in release_tokens):
             raise RuntimeError(f"Connected firmware '{firmware}' does not match requested release '{args.release}'")
         for index, screen in enumerate(capture_screens, 1):
             source = screen["source"]
@@ -231,6 +236,7 @@ def capture(args: argparse.Namespace) -> None:
             shown = client.wait(("UI_DOC_SHOW_DONE", "UI_DOC_ERROR"))
             if shown.startswith("UI_DOC_ERROR"):
                 raise RuntimeError(shown)
+            time.sleep(max(0.0, args.settle_seconds))
             slug = screen["id"].replace(".", "-")
             client.send(f"UI_CAPTURE {slug}")
             result = client.wait(("UI_CAPTURE_DONE", "UI_CAPTURE_ERROR"), 30)
@@ -450,6 +456,9 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts" / "help-media")
     parser.add_argument("--port", default="COM17")
     parser.add_argument("--release", default="")
+    parser.add_argument("--allow-any-firmware", action="store_true")
+    parser.add_argument("--settle-seconds", type=float, default=10.0,
+                        help="Wait this many seconds after each screen change before capture")
     parser.add_argument("--screen", action="append", help="capture only this screen ID; repeat as needed")
     parser.add_argument("--pairing-key", type=Path, default=ROOT / ".orclink" / "ui-doc.key")
     parser.add_argument("--ffmpeg", default="ffmpeg")
