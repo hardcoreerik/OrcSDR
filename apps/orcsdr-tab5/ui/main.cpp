@@ -2343,6 +2343,26 @@ void apply_speaker_volume(uint8_t volume) {
 }
 
 uint32_t g_speaker_retry_ms = 0;
+uint8_t g_speaker_fail_streak = 0;
+bool g_speaker_fail_logged = false;
+
+bool speaker_backoff_active(uint32_t now) {
+  return g_speaker_retry_ms != 0 &&
+         static_cast<int32_t>(now - g_speaker_retry_ms) < 0;
+}
+
+void speaker_note_fail(uint32_t now) {
+  if (g_speaker_fail_streak < 4) ++g_speaker_fail_streak;
+  uint32_t delay_ms = 1000u << (g_speaker_fail_streak - 1u);
+  if (delay_ms > 8000u) delay_ms = 8000u;
+  g_speaker_retry_ms = now + delay_ms;
+}
+
+void speaker_note_ok() {
+  g_speaker_fail_streak = 0;
+  g_speaker_fail_logged = false;
+  g_speaker_retry_ms = 0;
+}
 
 SemaphoreHandle_t speaker_begin_mutex() {
   static SemaphoreHandle_t mutex = xSemaphoreCreateMutex();
@@ -2351,19 +2371,53 @@ SemaphoreHandle_t speaker_begin_mutex() {
 
 bool restart_rtl_speaker_i2s(uint8_t volume) {
   const uint32_t now = millis();
-  if (static_cast<int32_t>(now - g_speaker_retry_ms) < 0) return false;
+  if (speaker_backoff_active(now)) return false;
+  const uint32_t dma_largest =
+      heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+  /* 4×512 stereo ≈ 8 KiB. After Wi-Fi/USB the leftover slab can be ~5 KiB;
+   * retrying begin/end every second fragments that slab and stalls IQ. */
+  if (dma_largest < 4096u) {
+    speaker_note_fail(now);
+    if (!g_speaker_fail_logged) {
+      g_speaker_fail_logged = true;
+      Serial.printf("RTL_SPEAKER_BEGIN_FAIL dma_largest=%lu need=4096\n",
+                    static_cast<unsigned long>(dma_largest));
+      log_dram_budget("speaker_begin_fail");
+    }
+    return false;
+  }
   SemaphoreHandle_t mutex = speaker_begin_mutex();
-  if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(250)) != pdTRUE) return false;
+  if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(250)) != pdTRUE)
+    return false;
+  auto speaker_config = M5.Speaker.config();
+  speaker_config.sample_rate = 48000;
+  speaker_config.stereo = true;
+  speaker_config.task_priority = 6;
+  speaker_config.task_pinned_core = 1;
+  if (dma_largest >= 8192u) {
+    speaker_config.dma_buf_len = 512;
+    speaker_config.dma_buf_count = 4;
+  } else {
+    speaker_config.dma_buf_len = 512;
+    speaker_config.dma_buf_count = 2;
+    Serial.printf("RTL_SPEAKER_DMA fallback count=2 largest=%lu\n",
+                  static_cast<unsigned long>(dma_largest));
+  }
+  M5.Speaker.config(speaker_config);
   if (M5.Speaker.isRunning()) M5.Speaker.end();
   apply_speaker_volume(volume);
   const bool started = M5.Speaker.begin();
   xSemaphoreGive(mutex);
   if (!started) {
-    g_speaker_retry_ms = now + 400;
-    Serial.println("RTL_SPEAKER_BEGIN_FAIL");
-    log_dram_budget("speaker_begin_fail");
+    speaker_note_fail(now);
+    if (!g_speaker_fail_logged) {
+      g_speaker_fail_logged = true;
+      Serial.println("RTL_SPEAKER_BEGIN_FAIL");
+      log_dram_budget("speaker_begin_fail");
+    }
     return false;
   }
+  speaker_note_ok();
   apply_speaker_volume(volume);
   return M5.Speaker.isRunning();
 }
@@ -2400,7 +2454,6 @@ void sync_rtl_audio_for_band(RtlBand band) {
 }
 
 void resume_rtl_speaker() {
-  g_speaker_retry_ms = 0;
   sync_rtl_audio_for_band(rtl_ui_band);
   if (!rtl_speaker_start_allowed.exchange(true, std::memory_order_acq_rel)) {
     Serial.println("BOOT_STAGE speaker_start");
@@ -2496,7 +2549,6 @@ void flush_audio_play_batch(bool force) {
                     rtl_audio.queued_chunks, rtl_audio.dropped_chunks, rtl_audio.peak,
                     rtl_live_volume.load(std::memory_order_acquire),
                     M5.Speaker.isRunning() ? "true" : "false");
-      g_speaker_retry_ms = 0;
       (void)restart_rtl_speaker_i2s(rtl_live_volume.load(std::memory_order_acquire));
     }
   }
@@ -11671,7 +11723,8 @@ void loop() {
       rtl_band_has_audio(rtl_ui_band)) {
     static uint32_t last_speaker_watch_ms = 0;
     const uint32_t watch_now = millis();
-    if (watch_now - last_speaker_watch_ms >= 1000 && !M5.Speaker.isRunning()) {
+    if (watch_now - last_speaker_watch_ms >= 1000 && !M5.Speaker.isRunning() &&
+        !speaker_backoff_active(watch_now)) {
       last_speaker_watch_ms = watch_now;
       Serial.println("RTL_SPEAKER_WATCHDOG restart");
       resume_rtl_speaker();
