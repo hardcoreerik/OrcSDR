@@ -11623,6 +11623,14 @@ void loop() {
   rtl_audio_test_service();
   service_boot_device_staging();
   service_power_monitor();
+  {
+    static bool catalog_was_busy = false;
+    const auto catalog_state = orcsdr::catalog::state();
+    if (catalog_was_busy && !catalog_state.busy && g_sd_fs != nullptr)
+      (void)orcsdr::offline_map::load(g_sd_fs);
+    catalog_was_busy = catalog_state.busy;
+    orcsdr::catalog::poll(wifi_connected);
+  }
   if (boot_auto_start_allowed) poll_wifi();
   {
     static uint32_t last_web_ms = 0;

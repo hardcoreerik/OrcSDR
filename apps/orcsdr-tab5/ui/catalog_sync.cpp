@@ -419,8 +419,9 @@ bool activate_pack(const Pack& pack) {
   File version = g_fs->open(version_path, FILE_WRITE, true);
   if (!version || version.print(pack.version) != strlen(pack.version)) {
     if (version) version.close();
-    set_message("Pack activated but version write failed");
-    return false;
+    // The verified runtime/archive pair is already active. Keep it and expose
+    // an update on the next check rather than reporting a false failed install.
+    return true;
   }
   version.close();
   return true;
