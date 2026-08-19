@@ -42,17 +42,21 @@ struct Snapshot {
   uint32_t total_messages = 0;
   float message_rate = 0;
   float strongest_signal_dbfs = 0;
+  uint32_t effective_sps = 0;
+  uint32_t usb_overruns = 0;
+  uint32_t consumer_drops = 0;
   uint8_t visible_count = 0;
   uint8_t aircraft_count = 0;
 };
 
-enum class Action : uint8_t { none, settings_changed, exit };
+enum class Action : uint8_t { none, settings_changed, atc_listen, atc_resume, exit };
 
 void enter(const Settings& settings);
 void leave();
 void draw();
 void update();
 void set_live_snapshot(const Snapshot& snapshot);
+void set_atc_listening(bool listening, uint32_t frequency_hz);
 Action handle_touch(int32_t x, int32_t y);
 const Settings& settings();
 bool active();
