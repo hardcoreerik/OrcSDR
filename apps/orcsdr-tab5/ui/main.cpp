@@ -8846,7 +8846,7 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
   if (band == RtlBand::adsb) {
     if (!orcsdr::home::active()) orcsdr::adsb::enter(adsb_settings);
     frequency_hz = kAdsbDefaultHz;
-    Serial.println("RTL_ADSB_CAPTURE live_rf=true ui_data=demo");
+    Serial.println("RTL_ADSB_CAPTURE live_rf=true ui_data=live");
   }
 #if RTL_USE_LEGACY_USB
   if (rtl_sdr_device == nullptr) return;
