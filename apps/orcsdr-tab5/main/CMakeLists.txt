@@ -4,6 +4,7 @@ idf_component_register(
         "../ui/orcsdr_splash.cpp"
         "../ui/adsb_dashboard.cpp"
         "../ui/adsb_decoder.cpp"
+        "../ui/atc_presets.cpp"
         "../ui/catalog_sync.cpp"
         "../ui/dashboard_audio_control.cpp"
         "../ui/dashboard_registry.cpp"

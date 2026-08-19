@@ -46,6 +46,7 @@ extern "C" {
 #include "orcsdr_splash.hpp"
 #include "adsb_dashboard.hpp"
 #include "adsb_decoder.hpp"
+#include "atc_presets.hpp"
 #include "catalog_sync.hpp"
 #include "dashboard_audio_control.hpp"
 #include "dashboard_registry.hpp"
@@ -2794,6 +2795,17 @@ void load_lora_config() {
                 lora_config_frequency_hz, lora_sf.load(std::memory_order_relaxed),
                 lora_bandwidth_hz.load(std::memory_order_relaxed),
                 lora_authorized_key_loaded ? 1 : 0);
+}
+
+void refresh_adsb_atc_preset() {
+  adsb_settings.atc_frequency_hz = 0;
+  adsb_settings.atc_label[0] = '\0';
+  orcsdr::atc::Preset preset{};
+  if (!adsb_settings.location_configured || g_sd_fs == nullptr ||
+      !orcsdr::atc::load(g_sd_fs) ||
+      !orcsdr::atc::nearest(adsb_settings.latitude_e7, adsb_settings.longitude_e7, &preset)) return;
+  adsb_settings.atc_frequency_hz = preset.frequency_hz;
+  strlcpy(adsb_settings.atc_label, preset.label, sizeof(adsb_settings.atc_label));
 }
 
 uint64_t sd_total_bytes() {
@@ -8343,6 +8355,7 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       adsb_settings.location_configured = state.location_configured;
       adsb_settings.latitude_e7 = state.latitude_e7;
       adsb_settings.longitude_e7 = state.longitude_e7;
+      refresh_adsb_atc_preset();
       adsb_settings_persist_pending.store(true, std::memory_order_release);
       break;
     }
@@ -8354,6 +8367,7 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       const auto& state = orcsdr::settings::state();
       adsb_settings.location_configured = state.location_configured;
       adsb_settings.latitude_e7 = state.latitude_e7; adsb_settings.longitude_e7 = state.longitude_e7;
+      refresh_adsb_atc_preset();
       strlcpy(settings_location_label, state.location_label, sizeof(settings_location_label));
       adsb_settings_persist_pending.store(true, std::memory_order_release);
       break;
@@ -9270,12 +9284,14 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     } else if (action == orcsdr::adsb::Action::exit) {
       show_home();
     } else if (action == orcsdr::adsb::Action::atc_listen) {
+      const uint32_t frequency_hz = orcsdr::adsb::atc_frequency_hz();
+      if (frequency_hz == 0) return;
       adsb_atc_listening = true;
-      orcsdr::adsb::set_atc_listening(true, 118300000);
-      queue_local_rtl_listen(RtlBand::browse, 118300000, false);
+      orcsdr::adsb::set_atc_listening(true, frequency_hz);
+      queue_local_rtl_listen(RtlBand::browse, frequency_hz, false);
     } else if (action == orcsdr::adsb::Action::atc_resume) {
       adsb_atc_listening = false;
-      orcsdr::adsb::set_atc_listening(false, 118300000);
+      orcsdr::adsb::set_atc_listening(false, orcsdr::adsb::atc_frequency_hz());
       queue_local_rtl_listen(RtlBand::adsb, kAdsbDefaultHz, false);
     }
     return;
@@ -10333,6 +10349,7 @@ void process_command(char* command) {
     adsb_settings.location_configured = true;
     adsb_settings.latitude_e7 = static_cast<int32_t>(llround(latitude * 10000000.0));
     adsb_settings.longitude_e7 = static_cast<int32_t>(llround(longitude * 10000000.0));
+    refresh_adsb_atc_preset();
     preferences.putBool("adsb_loc_set", true);
     preferences.putInt("adsb_lat_e7", adsb_settings.latitude_e7);
     preferences.putInt("adsb_lon_e7", adsb_settings.longitude_e7);
@@ -11373,7 +11390,7 @@ void setup() {
   M5.Display.setBrightness(180);
   configure_navigation_service();
   if (!orcsdr::adsb::self_check() || !orcsdr::adsb_rx::Decoder::self_check() ||
-      !orcsdr::offline_map::self_check()) {
+      !orcsdr::offline_map::self_check() || !orcsdr::atc::self_check()) {
     Serial.println("RTL_ADSB_SELF_CHECK_FAIL");
     abort();
   }
@@ -11470,7 +11487,10 @@ void setup() {
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   load_state();
   const bool test_sd_ready = ensure_tab5_sd();
-  if (test_sd_ready) (void)orcsdr::offline_map::load(g_sd_fs);
+  if (test_sd_ready) {
+    (void)orcsdr::offline_map::load(g_sd_fs);
+    refresh_adsb_atc_preset();
+  }
   initialize_rtl_sdr_host();
 
   const uint32_t device_deadline = millis() + 15000;
@@ -11562,8 +11582,10 @@ void loop() {
   {
     static bool catalog_was_busy = false;
     const auto catalog_state = orcsdr::catalog::state();
-    if (catalog_was_busy && !catalog_state.busy && g_sd_fs != nullptr)
+    if (catalog_was_busy && !catalog_state.busy && g_sd_fs != nullptr) {
       (void)orcsdr::offline_map::load(g_sd_fs);
+      refresh_adsb_atc_preset();
+    }
     catalog_was_busy = catalog_state.busy;
     orcsdr::catalog::poll(wifi_connected);
   }

@@ -10,6 +10,8 @@ struct Settings {
   int32_t latitude_e7 = 0;
   int32_t longitude_e7 = 0;
   uint16_t radar_range_nm = 25;
+  uint32_t atc_frequency_hz = 0;
+  char atc_label[32]{};
 };
 
 constexpr size_t kVisibleAircraft = 6;
@@ -57,6 +59,7 @@ void draw();
 void update();
 void set_live_snapshot(const Snapshot& snapshot);
 void set_atc_listening(bool listening, uint32_t frequency_hz);
+uint32_t atc_frequency_hz();
 Action handle_touch(int32_t x, int32_t y);
 const Settings& settings();
 bool active();
