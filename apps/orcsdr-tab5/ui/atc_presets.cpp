@@ -44,11 +44,11 @@ bool load(fs::FS* filesystem) {
 bool nearest(int32_t latitude_e7, int32_t longitude_e7, Preset* output) {
   if (!output || g_count == 0) return false;
   size_t best = 0;
-  uint64_t best_distance = UINT64_MAX;
+  double best_distance = INFINITY;
   for (size_t i = 0; i < g_count; ++i) {
-    const int64_t lat = static_cast<int64_t>(g_presets[i].latitude_e7) - latitude_e7;
-    const int64_t lon = static_cast<int64_t>(g_presets[i].longitude_e7) - longitude_e7;
-    const uint64_t distance = static_cast<uint64_t>(lat * lat + lon * lon);
+    const double lat = static_cast<double>(g_presets[i].latitude_e7) - latitude_e7;
+    const double lon = static_cast<double>(g_presets[i].longitude_e7) - longitude_e7;
+    const double distance = lat * lat + lon * lon;
     if (distance < best_distance) { best_distance = distance; best = i; }
   }
   *output = g_presets[best];
