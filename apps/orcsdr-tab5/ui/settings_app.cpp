@@ -620,6 +620,13 @@ void update(const State& state_value) {
        strcmp(g_state.catalog_message, state_value.catalog_message) != 0 ||
        strcmp(g_state.catalog_date, state_value.catalog_date) != 0 ||
        memcmp(g_state.catalog_packs, state_value.catalog_packs, sizeof(g_state.catalog_packs)) != 0);
+  const bool location_changed = g_section == Section::location_adsb &&
+      (g_state.ip_location_busy != state_value.ip_location_busy ||
+       g_state.ip_location_ready != state_value.ip_location_ready ||
+       g_state.ip_latitude_e7 != state_value.ip_latitude_e7 ||
+       g_state.ip_longitude_e7 != state_value.ip_longitude_e7 ||
+       strcmp(g_state.ip_location_label, state_value.ip_location_label) != 0 ||
+       strcmp(g_state.ip_location_message, state_value.ip_location_message) != 0);
   const bool companion_changed = g_section == Section::companion &&
       (g_state.web_console_enabled != state_value.web_console_enabled ||
        g_state.web_console_listening != state_value.web_console_listening ||
@@ -631,6 +638,8 @@ void update(const State& state_value) {
   if (power_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_system_power();
   if (catalog_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
+    draw_content();
+  if (location_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_content();
   if (companion_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_content();
