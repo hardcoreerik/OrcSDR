@@ -84,7 +84,6 @@ Snapshot g_live_snapshot{};
 uint32_t g_drawn_revision = 0;
 bool g_live = false;
 bool g_atc_listening = false;
-uint32_t g_atc_frequency_hz = 118300000;
 constexpr size_t kHistorySamples = 12;
 float g_rate_history[kHistorySamples]{};
 float g_signal_history[kHistorySamples]{};
@@ -374,10 +373,17 @@ void draw_target() {
            static_cast<unsigned long>(a.icao));
   text(identity, 48, 215, TFT_LIGHTGREY, 2, middle_left);
   text(a.type, 48, 245, TFT_LIGHTGREY, 2, middle_left);
-  char atc[36];
-  snprintf(atc, sizeof(atc), g_atc_listening ? "RESUME ADS-B" : "LISTEN ATC %.3f",
-           g_atc_frequency_hz / 1000000.0);
-  button(atc, 48, 525, 340, 48, g_atc_listening ? TFT_DARKGREEN : TFT_NAVY);
+  char atc[44];
+  if (g_atc_listening) strlcpy(atc, "RESUME ADS-B", sizeof(atc));
+  else if (g_settings.atc_frequency_hz) {
+    const uint32_t mhz = g_settings.atc_frequency_hz / 1000000;
+    const uint32_t khz = (g_settings.atc_frequency_hz % 1000000) / 1000;
+    snprintf(atc, sizeof(atc), "LISTEN %.22s %lu.%03lu", g_settings.atc_label,
+             static_cast<unsigned long>(mhz), static_cast<unsigned long>(khz));
+  }
+  else strlcpy(atc, "ATC DATA NOT INSTALLED", sizeof(atc));
+  button(atc, 48, 525, 340, 48,
+         g_atc_listening ? TFT_DARKGREEN : g_settings.atc_frequency_hz ? TFT_NAVY : TFT_DARKGREY);
   plane(380, 330, 95, TFT_LIGHTGREY);
   if (a.has_position && g_settings.location_configured) {
     offline_map::View map{g_settings.latitude_e7 / 10000000.0f,
@@ -657,9 +663,12 @@ void set_live_snapshot(const Snapshot& snapshot) {
 
 void set_atc_listening(bool listening, uint32_t frequency_hz) {
   g_atc_listening = listening;
-  if (frequency_hz >= 118000000 && frequency_hz <= 137000000) g_atc_frequency_hz = frequency_hz;
+  if (frequency_hz >= 118000000 && frequency_hz <= 137000000)
+    g_settings.atc_frequency_hz = frequency_hz;
   if (g_active) redraw();
 }
+
+uint32_t atc_frequency_hz() { return g_settings.atc_frequency_hz; }
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return Action::none;
@@ -706,7 +715,9 @@ Action handle_touch(int32_t x, int32_t y) {
       toggle_lock();
       redraw_content();
     }
-    if (hit(x, y, 48, 525, 340, 48)) return g_atc_listening ? Action::atc_resume : Action::atc_listen;
+    if (hit(x, y, 48, 525, 340, 48) &&
+        (g_atc_listening || g_settings.atc_frequency_hz))
+      return g_atc_listening ? Action::atc_resume : Action::atc_listen;
   } else if (g_view == View::settings) {
     if (hit(x, y, 300, 165, 300, 58)) { start_edit(EditField::latitude); redraw(); }
     else if (hit(x, y, 300, 260, 300, 58)) { start_edit(EditField::longitude); redraw(); }
