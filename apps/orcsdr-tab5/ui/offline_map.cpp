@@ -10,10 +10,14 @@ namespace orcsdr::offline_map {
 namespace {
 
 constexpr size_t kSegmentCapacity = 640;
+constexpr size_t kLabelCapacity = 32;
 enum class Kind : uint8_t { road, water, airport };
 struct Segment { float lat1, lon1, lat2, lon2; Kind kind; };
+struct Label { float lat, lon; char text[24]; };
 EXT_RAM_BSS_ATTR Segment g_segments[kSegmentCapacity]{};
+EXT_RAM_BSS_ATTR Label g_labels[kLabelCapacity]{};
 size_t g_count = 0;
+size_t g_label_count = 0;
 bool g_available = false;
 
 bool parse_line(const char* line, Segment* output) {
@@ -30,6 +34,16 @@ bool parse_line(const char* line, Segment* output) {
   else if (kind == 'A') segment.kind = Kind::airport;
   else return false;
   *output = segment;
+  return true;
+}
+
+bool parse_label(const char* line, Label* output) {
+  if (!line || !output) return false;
+  Label label{};
+  if (sscanf(line, "L %f %f %23[^\n]", &label.lat, &label.lon, label.text) != 3 ||
+      label.lat < -90 || label.lat > 90 || label.lon < -180 || label.lon > 180 || !label.text[0])
+    return false;
+  *output = label;
   return true;
 }
 
@@ -81,6 +95,7 @@ bool project(const View& view, float latitude, float longitude, int* x, int* y) 
 
 bool load(fs::FS* filesystem) {
   g_count = 0;
+  g_label_count = 0;
   g_available = false;
   if (!filesystem) return false;
   File file = filesystem->open(kRuntimePath, FILE_READ);
@@ -89,11 +104,16 @@ bool load(fs::FS* filesystem) {
   const bool header_ok = file.readBytesUntil('\n', header, sizeof(header)) == 7 &&
                          strcmp(header, "ORCMAP1") == 0;
   char line[96]{};
-  while (header_ok && file.available() && g_count < kSegmentCapacity) {
+  while (header_ok && file.available()) {
     const size_t used = file.readBytesUntil('\n', line, sizeof(line) - 1);
     line[used] = '\0';
-    Segment segment{};
-    if (parse_line(line, &segment)) g_segments[g_count++] = segment;
+    if (line[0] == 'L' && g_label_count < kLabelCapacity) {
+      Label label{};
+      if (parse_label(line, &label)) g_labels[g_label_count++] = label;
+    } else if (g_count < kSegmentCapacity) {
+      Segment segment{};
+      if (parse_line(line, &segment)) g_segments[g_count++] = segment;
+    }
   }
   file.close();
   g_available = header_ok && g_count > 0;
@@ -114,6 +134,14 @@ void draw_base(const View& view, uint16_t water_color, uint16_t road_color,
     const uint16_t color = g_segments[i].kind == Kind::water ? water_color :
                            g_segments[i].kind == Kind::airport ? airport_color : road_color;
     M5.Display.drawLine(x1, y1, x2, y2, color);
+  }
+  M5.Display.setTextDatum(middle_left);
+  M5.Display.setTextSize(1);
+  M5.Display.setTextColor(airport_color);
+  for (size_t i = 0; i < g_label_count; ++i) {
+    int x = 0, y = 0;
+    if (project(view, g_labels[i].lat, g_labels[i].lon, &x, &y))
+      M5.Display.drawString(g_labels[i].text, x + 3, y);
   }
 }
 
