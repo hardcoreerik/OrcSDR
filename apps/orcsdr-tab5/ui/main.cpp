@@ -56,6 +56,7 @@ extern "C" {
 #include "lora_dashboard.hpp"
 #include "lora_native_decoder.hpp"
 #include "navigation_service.hpp"
+#include "offline_map.hpp"
 #include "nvs_store.hpp"
 #include "p25_dashboard.hpp"
 #include "p25_config.hpp"
@@ -8361,6 +8362,7 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       if (ensure_tab5_sd()) {
         orcsdr::catalog::begin(g_sd_fs, sd_total_bytes() -
             orcsdr::storage::used_bytes());
+        (void)orcsdr::offline_map::load(g_sd_fs);
         if (!orcsdr::catalog::request_check(wifi_connected))
           Serial.println("ORC_CATALOG_CHECK_REJECTED");
       }
@@ -11397,7 +11399,8 @@ void setup() {
   M5.Display.setRotation(settings_rotation);
   M5.Display.setBrightness(180);
   configure_navigation_service();
-  if (!orcsdr::adsb::self_check() || !orcsdr::adsb_rx::Decoder::self_check()) {
+  if (!orcsdr::adsb::self_check() || !orcsdr::adsb_rx::Decoder::self_check() ||
+      !orcsdr::offline_map::self_check()) {
     Serial.println("RTL_ADSB_SELF_CHECK_FAIL");
     abort();
   }
@@ -11494,6 +11497,7 @@ void setup() {
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   load_state();
   const bool test_sd_ready = ensure_tab5_sd();
+  if (test_sd_ready) (void)orcsdr::offline_map::load(g_sd_fs);
   initialize_rtl_sdr_host();
 
   const uint32_t device_deadline = millis() + 15000;

@@ -1,6 +1,7 @@
 #include "adsb_dashboard.hpp"
 
 #include "dashboard_audio_control.hpp"
+#include "offline_map.hpp"
 
 #include <M5Unified.h>
 
@@ -287,6 +288,15 @@ void draw_selected_summary(int x, int y, int w, int h) {
 void draw_radar() {
   const int cx = 345, cy = 354, radius = 245;
   card(18, 92, 675, 532);
+  if (g_settings.location_configured) {
+    offline_map::View map{g_settings.latitude_e7 / 10000000.0f,
+                          g_settings.longitude_e7 / 10000000.0f,
+                          static_cast<float>(g_settings.radar_range_nm),
+                          cx - radius, cy - radius, radius * 2, radius * 2};
+    offline_map::draw_base(map, 0x0320, 0x2945, 0x8c71, 0x2382);
+    if (!offline_map::available())
+      text("OFFLINE MAP PACK NOT INSTALLED", cx, cy + radius - 20, kMuted, 1);
+  }
   for (int ring = 1; ring <= 4; ++ring) M5.Display.drawCircle(cx, cy, radius * ring / 4, 0x2382);
   M5.Display.drawFastHLine(cx - radius, cy, radius * 2, 0x2382);
   M5.Display.drawFastVLine(cx, cy - radius, radius * 2, 0x2382);
@@ -361,6 +371,15 @@ void draw_target() {
   text(identity, 48, 215, TFT_LIGHTGREY, 2, middle_left);
   text(a.type, 48, 245, TFT_LIGHTGREY, 2, middle_left);
   plane(380, 330, 95, TFT_LIGHTGREY);
+  if (a.has_position && g_settings.location_configured) {
+    offline_map::View map{g_settings.latitude_e7 / 10000000.0f,
+                          g_settings.longitude_e7 / 10000000.0f,
+                          static_cast<float>(g_settings.radar_range_nm),
+                          40, 285, 300, 230};
+    offline_map::draw_base(map, 0x0320, 0x2945, 0x8c71, kBorder);
+    int px = 0, py = 0;
+    if (offline_map::project(map, a.latitude, a.longitude, &px, &py)) plane(px, py, 10, kGreen);
+  }
   card(610, 118, 620, 455);
   const char* labels[] = {"ALTITUDE", "SPEED", "HEADING", "VERT RATE",
                           "RANGE", "BEARING", "LATITUDE", "LONGITUDE"};
