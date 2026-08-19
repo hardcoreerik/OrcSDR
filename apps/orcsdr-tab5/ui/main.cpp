@@ -56,6 +56,7 @@ extern "C" {
 #include "home_dashboard.hpp"
 #include "lora_dashboard.hpp"
 #include "lora_native_decoder.hpp"
+#include "location_estimate.hpp"
 #include "navigation_service.hpp"
 #include "offline_map.hpp"
 #include "p25_dashboard.hpp"
@@ -7914,6 +7915,11 @@ orcsdr::settings::State global_settings_state() {
   state.radar_range_nm = adsb_settings.radar_range_nm;
   strlcpy(state.location_label, settings_location_label, sizeof(state.location_label));
   strlcpy(state.map_pack, settings_map_pack, sizeof(state.map_pack));
+  const auto ip_location = orcsdr::location_estimate::state();
+  state.ip_location_busy = ip_location.busy; state.ip_location_ready = ip_location.ready;
+  state.ip_latitude_e7 = ip_location.latitude_e7; state.ip_longitude_e7 = ip_location.longitude_e7;
+  strlcpy(state.ip_location_label, ip_location.label, sizeof(state.ip_location_label));
+  strlcpy(state.ip_location_message, ip_location.message, sizeof(state.ip_location_message));
   state.brightness = settings_brightness;
   state.rotation = settings_rotation;
   state.screen_timeout_sec = settings_screen_timeout_sec;
@@ -8337,6 +8343,18 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       adsb_settings.location_configured = state.location_configured;
       adsb_settings.latitude_e7 = state.latitude_e7;
       adsb_settings.longitude_e7 = state.longitude_e7;
+      adsb_settings_persist_pending.store(true, std::memory_order_release);
+      break;
+    }
+    case orcsdr::settings::ActionKind::location_ip_lookup:
+      (void)orcsdr::location_estimate::request(wifi_connected);
+      update_global_settings();
+      break;
+    case orcsdr::settings::ActionKind::location_ip_confirm: {
+      const auto& state = orcsdr::settings::state();
+      adsb_settings.location_configured = state.location_configured;
+      adsb_settings.latitude_e7 = state.latitude_e7; adsb_settings.longitude_e7 = state.longitude_e7;
+      strlcpy(settings_location_label, state.location_label, sizeof(settings_location_label));
       adsb_settings_persist_pending.store(true, std::memory_order_release);
       break;
     }

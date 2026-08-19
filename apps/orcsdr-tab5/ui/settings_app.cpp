@@ -184,6 +184,10 @@ void draw_location() {
   value_row("RF GAIN", "AUTO (READ ONLY)", 495, kMuted);
   text("Phone GPS proposals require confirmation on this screen.", 330, 565,
        TFT_LIGHTGREY, 2);
+  button(g_state.ip_location_busy ? "LOOKING UP IP AREA" : "LOOK UP IP AREA", 330, 610, 260, 46,
+         g_state.ip_location_busy ? TFT_DARKGREY : TFT_DARKCYAN);
+  if (g_state.ip_location_message[0]) text(g_state.ip_location_message, 610, 633, kMuted, 1, middle_left);
+  if (g_state.ip_location_ready) button("CONFIRM IP AREA", 900, 610, 290, 46, TFT_DARKGREEN);
 }
 
 void draw_data_maps() {
@@ -696,6 +700,13 @@ Action handle_touch(int32_t x, int32_t y) {
       g_state.radar_range_nm = next_value(g_state.radar_range_nm, kRanges);
       draw_content();
       return {ActionKind::range_changed, g_state.radar_range_nm};
+    }
+    if (hit(x, y, 330, 610, 260, 46) && !g_state.ip_location_busy) return {ActionKind::location_ip_lookup, 0};
+    if (g_state.ip_location_ready && hit(x, y, 900, 610, 290, 46)) {
+      g_state.latitude_e7 = g_state.ip_latitude_e7; g_state.longitude_e7 = g_state.ip_longitude_e7;
+      strlcpy(g_state.location_label, g_state.ip_location_label, sizeof(g_state.location_label));
+      g_state.location_configured = true; g_latitude_set = g_longitude_set = true;
+      return {ActionKind::location_ip_confirm, 0};
     }
   } else if (g_section == Section::data_maps) {
     if (hit(x, y, 940, 126, 278, 48) && !g_state.catalog_busy)

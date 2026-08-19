@@ -14,6 +14,7 @@ idf_component_register(
         "../ui/home_dashboard.cpp"
         "../ui/lora_dashboard.cpp"
         "../ui/lora_native_decoder.cpp"
+        "../ui/location_estimate.cpp"
         "../ui/offline_map.cpp"
         "../ui/navigation_service.cpp"
         "../ui/p25_dashboard.cpp"
