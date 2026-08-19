@@ -1385,6 +1385,7 @@ bool settings_graphics_default = true;
 bool settings_web_console_enabled = false;
 char settings_location_label[40]{};
 char settings_map_pack[40]{};
+bool adsb_atc_listening = false;
 std::atomic<uint32_t> rtl_sdr_status_revision{0};
 uint32_t drawn_rtl_sdr_status_revision = 0;
 char rtl_sdr_status[96] = "RTL-SDR: waiting for USB-A host";
@@ -1626,6 +1627,11 @@ void publish_adsb_snapshot(uint32_t now) {
   snapshot.aircraft_count = adsb_aircraft_count.load(std::memory_order_relaxed);
   snapshot.message_rate = message_rate;
   snapshot.strongest_signal_dbfs = rtl_signal_dbfs.load(std::memory_order_relaxed);
+  rtl_sdr_v4_esp_metrics_t adsb_metrics{};
+  if (g_rtl != nullptr) (void)rtl_sdr_v4_esp_get_metrics(g_rtl, &adsb_metrics);
+  snapshot.effective_sps = adsb_metrics.effective_sps;
+  snapshot.usb_overruns = adsb_metrics.overruns;
+  snapshot.consumer_drops = adsb_metrics.consumer_drops;
   snapshot.revision = ++ui_revision;
   last_state_revision = state_revision;
   published_rate = message_rate;
@@ -4841,6 +4847,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   // Do not resurrect the retired generic Browse surface for AM/WX/CB/Airband.
   if (band != RtlBand::fm && band != RtlBand::p25 && band != RtlBand::adsb &&
       band != RtlBand::lora) {
+    if (adsb_atc_listening) { draw_adsb_dashboard(true); return; }
     show_home();
     return;
   }
@@ -9237,13 +9244,21 @@ void handle_sdr_touch(int32_t x, int32_t y) {
                              : orcsdr::settings::Section::connectivity);
     return;
   }
-  if (rtl_ui_band == RtlBand::adsb) {
+  if ((rtl_ui_band == RtlBand::adsb || adsb_atc_listening) && orcsdr::adsb::active()) {
     const orcsdr::adsb::Action action = orcsdr::adsb::handle_touch(x, y);
     if (action == orcsdr::adsb::Action::settings_changed) {
       adsb_settings = orcsdr::adsb::settings();
       adsb_settings_persist_pending.store(true, std::memory_order_release);
     } else if (action == orcsdr::adsb::Action::exit) {
       show_home();
+    } else if (action == orcsdr::adsb::Action::atc_listen) {
+      adsb_atc_listening = true;
+      orcsdr::adsb::set_atc_listening(true, 118300000);
+      queue_local_rtl_listen(RtlBand::browse, 118300000, false);
+    } else if (action == orcsdr::adsb::Action::atc_resume) {
+      adsb_atc_listening = false;
+      orcsdr::adsb::set_atc_listening(false, 118300000);
+      queue_local_rtl_listen(RtlBand::adsb, kAdsbDefaultHz, false);
     }
     return;
   }
@@ -11507,7 +11522,7 @@ void setup() {
 }
 
 void loop() {
-  const bool adsb_ui = rtl_ui_band == RtlBand::adsb && orcsdr::adsb::active();
+  const bool adsb_ui = (rtl_ui_band == RtlBand::adsb || adsb_atc_listening) && orcsdr::adsb::active();
   const bool radio_ui = rtl_ui_active.load(std::memory_order_acquire);
   const bool settings_ui = orcsdr::settings::active();
   const bool home_ui = orcsdr::home::active();

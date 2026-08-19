@@ -83,6 +83,8 @@ size_t g_aircraft_count = std::size(kDemoAircraft);
 Snapshot g_live_snapshot{};
 uint32_t g_drawn_revision = 0;
 bool g_live = false;
+bool g_atc_listening = false;
+uint32_t g_atc_frequency_hz = 118300000;
 
 bool hit(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
   return x >= bx && x < bx + bw && y >= by && y < by + bh;
@@ -370,6 +372,10 @@ void draw_target() {
            static_cast<unsigned long>(a.icao));
   text(identity, 48, 215, TFT_LIGHTGREY, 2, middle_left);
   text(a.type, 48, 245, TFT_LIGHTGREY, 2, middle_left);
+  char atc[36];
+  snprintf(atc, sizeof(atc), g_atc_listening ? "RESUME ADS-B" : "LISTEN ATC %.3f",
+           g_atc_frequency_hz / 1000000.0);
+  button(atc, 48, 525, 340, 48, g_atc_listening ? TFT_DARKGREEN : TFT_NAVY);
   plane(380, 330, 95, TFT_LIGHTGREY);
   if (a.has_position && g_settings.location_configured) {
     offline_map::View map{g_settings.latitude_e7 / 10000000.0f,
@@ -450,10 +456,14 @@ void draw_stats() {
   snprintf(strongest, sizeof(strongest), "%.1f dBFS",
            g_live ? g_live_snapshot.strongest_signal_dbfs : -45.0f);
   struct Metric { const char* label; const char* value; uint16_t color; };
+  char sample_rate[20], drops[20];
+  snprintf(sample_rate, sizeof(sample_rate), "%.3f MS/s", g_live ? g_live_snapshot.effective_sps / 1000000.0 : 0.0);
+  snprintf(drops, sizeof(drops), "%lu / %lu", static_cast<unsigned long>(g_live ? g_live_snapshot.usb_overruns : 0),
+           static_cast<unsigned long>(g_live ? g_live_snapshot.consumer_drops : 0));
   const Metric metrics[] = {{"AIRCRAFT", aircraft, TFT_WHITE},
                             {"MESSAGES", messages, TFT_WHITE},
                             {"STRONGEST", strongest, kGreen},
-                            {"CPU", "N/A", TFT_LIGHTGREY}, {"GAIN", "AUTO", kGreen}};
+                            {"SAMPLE RATE", sample_rate, TFT_WHITE}, {"USB / DSP DROPS", drops, kGreen}};
   for (int i = 0; i < 5; ++i) {
     const int x = 18 + i * 250;
     card(x, 382, 230, 220);
@@ -636,6 +646,12 @@ void set_live_snapshot(const Snapshot& snapshot) {
   if (snapshot.visible_count) g_live = true;
 }
 
+void set_atc_listening(bool listening, uint32_t frequency_hz) {
+  g_atc_listening = listening;
+  if (frequency_hz >= 118000000 && frequency_hz <= 137000000) g_atc_frequency_hz = frequency_hz;
+  if (g_active) redraw();
+}
+
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return Action::none;
   if (g_edit != EditField::none) return handle_keypad(x, y);
@@ -681,6 +697,7 @@ Action handle_touch(int32_t x, int32_t y) {
       toggle_lock();
       redraw_content();
     }
+    if (hit(x, y, 48, 525, 340, 48)) return g_atc_listening ? Action::atc_resume : Action::atc_listen;
   } else if (g_view == View::settings) {
     if (hit(x, y, 300, 165, 300, 58)) { start_edit(EditField::latitude); redraw(); }
     else if (hit(x, y, 300, 260, 300, 58)) { start_edit(EditField::longitude); redraw(); }
