@@ -1815,7 +1815,7 @@ void set_orc_tool(OrcTool tool);
 void draw_tool_tabs();
 void draw_capture_tool_panel();
 bool handle_tool_tab_touch(int32_t x, int32_t y);
-orcsdr::settings::State global_settings_state();
+const orcsdr::settings::State& global_settings_state();
 orcsdr::home::Snapshot home_dashboard_snapshot(bool demo = false);
 void show_home(bool demo = false);
 void draw_home_dashboard();
@@ -1851,6 +1851,7 @@ void draw_touch_state(const char* message, uint32_t color) {
 
 /** True while loading splash owns the display — home chrome must not paint. */
 static bool g_suppress_home_paint = false;
+EXT_RAM_BSS_ATTR orcsdr::settings::State g_settings_snapshot;
 
 void draw_session_state(const char* message, uint32_t color) {
   if (g_suppress_home_paint || orcsdr::settings::active() || orcsdr::home::active()) return;
@@ -7861,8 +7862,9 @@ void service_p25_follow(uint32_t now) {
                 static_cast<unsigned long>(grant.source_id), grant.emergency ? 1 : 0);
 }
 
-orcsdr::settings::State global_settings_state() {
-  orcsdr::settings::State state;
+const orcsdr::settings::State& global_settings_state() {
+  auto& state = g_settings_snapshot;
+  state = {};
   const auto device = orcsdr::device_status::collect(
       wifi_connected, wifi_ssid, rtl_device_ready(), rtl_sdr_status);
   state.wifi_power_enabled = settings_wifi_power_enabled;

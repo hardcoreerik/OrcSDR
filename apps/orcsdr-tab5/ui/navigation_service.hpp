@@ -17,7 +17,7 @@ struct Hooks {
   uint8_t (*volume)() = nullptr;
   bool (*ensure_speaker_running)(uint8_t volume) = nullptr;
   void (*close_overlays)() = nullptr;
-  settings::State (*settings_state)() = nullptr;
+  const settings::State& (*settings_state)() = nullptr;
   void (*persist_settings_open)() = nullptr;
   bool (*disable_graphics)() = nullptr;
   void (*restore_graphics)(bool enabled) = nullptr;
