@@ -1,61 +1,38 @@
 param(
-  [string]$IdfId = 'esp-idf-5.5.3'
+  [string]$IdfPath = 'C:\Espressif\frameworks\esp-idf-v5.5.4'
 )
 
 $ErrorActionPreference = 'Stop'
-. 'C:\Espressif\Initialize-Idf.ps1' -IdfId $IdfId
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
+$env:IDF_PYTHON_ENV_PATH = 'C:\Espressif\python_env\idf5.5_py3.14_env'
+$env:PATH = "$env:IDF_PYTHON_ENV_PATH\Scripts;$env:PATH"
+. (Join-Path $IdfPath 'export.ps1')
 Set-Location (Join-Path $PSScriptRoot '..')
+$buildDir = 'build-native-hosted3'
 
-# Resolve the locked component graph before applying the Tab5 lifecycle patch.
-# Arduino's ESP-Hosted adapter must set the Tab5 SDIO pins before initialization.
-idf.py reconfigure
+# sdkconfig.defaults is the source; sdkconfig is a generated cache. Refuse a
+# build if the cache contradicts the Tab5 C6 power/SDIO startup configuration.
+idf.py -B $buildDir -D "SDKCONFIG=$buildDir/sdkconfig" `
+    -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults' reconfigure
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$hostInit = Join-Path (Get-Location) 'managed_components\espressif__esp_hosted\host\port\esp\freertos\src\port_esp_hosted_host_init.c'
-$source = Get-Content -LiteralPath $hostInit -Raw
-$hostedInitPattern = '(?s)DEFINE_LOG_TAG\(host_init\);\s*//ESP_SYSTEM_INIT_FN\(esp_hosted_host_init, BIT\(0\), 120\)\s*static void __attribute__\(\(constructor\)\) esp_hosted_host_init\(void\)\s*\{\s*ESP_LOGI\(TAG, "ESP Hosted : Host chip_ip\[%d\]", CONFIG_IDF_FIRMWARE_CHIP_ID\);\s*ESP_ERROR_CHECK\(esp_hosted_init\(\)\);\s*\}\s*static void __attribute__\(\(destructor\)\) esp_hosted_host_deinit\(void\)\s*\{\s*ESP_LOGI\(TAG, "ESP Hosted deinit"\);\s*esp_hosted_deinit\(\);\s*\}'
-$replacement = @'
-/* OrcSDR owns the 2.12.6 Hosted lifecycle through Arduino WiFi so Tab5 SDIO
- * pins are installed before esp_hosted_init(). Do not restore the constructor. */
-'@
-if ($source -match $hostedInitPattern) {
-  Set-Content -LiteralPath $hostInit -Value ([regex]::Replace($source, $hostedInitPattern, $replacement, 1)) -NoNewline
-  Write-Output 'TAB5_HOSTED_LIFECYCLE_PATCH applied version=2.12.6'
-} elseif ($source.Contains('DEFINE_LOG_TAG(host_init);') -and
-          $source.Contains('OrcSDR owns the 2.12.6 Hosted lifecycle')) {
-  Set-Content -LiteralPath $hostInit -Value $source.Replace('DEFINE_LOG_TAG(host_init);', '') -NoNewline
-  Write-Output 'TAB5_HOSTED_LIFECYCLE_PATCH repaired version=2.12.6'
-} elseif ($source.Contains('OrcSDR owns the 2.12.6 Hosted lifecycle')) {
-  Write-Output 'TAB5_HOSTED_LIFECYCLE_PATCH already_applied version=2.12.6'
-} else {
-  throw 'Unexpected ESP-Hosted 2.12.6 host-init source; refusing to patch.'
+$required = @(
+  'CONFIG_ESP32P4_TAB5_C6_BOARD=y',
+  '# CONFIG_ESP_HOSTED_AUTO_CALL_INIT_BEFORE_APP_MAIN is not set',
+  'CONFIG_ESP_HOSTED_HOST_RESET_GPIO=15',
+  'CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CLK=12',
+  'CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CMD=13',
+  'CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D0=11',
+  'CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D1=10',
+  'CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D2=9',
+  'CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D3=8',
+  'CONFIG_ESP_HOSTED_HOST_CP_RESET_STRATEGY_ONLY_IF_NECESSARY=y'
+)
+$config = Get-Content -LiteralPath (Join-Path $buildDir 'sdkconfig')
+foreach ($line in $required) {
+  if ($config -notcontains $line) { throw "Generated sdkconfig disagrees with defaults: $line" }
 }
 
-$m5gfxCommon = Join-Path (Get-Location) 'managed_components\m5stack__m5gfx\src\lgfx\v1\platforms\esp32\common.cpp'
-$m5gfxCmake = Join-Path (Get-Location) 'managed_components\m5stack__m5gfx\CMakeLists.txt'
-$m5gfxSource = Get-Content -LiteralPath $m5gfxCmake -Raw
-if ($m5gfxSource.Contains('# list(APPEND COMPONENT_REQUIRES arduino-esp32)')) {
-  Set-Content -LiteralPath $m5gfxCmake -Value $m5gfxSource.Replace(
-      '# list(APPEND COMPONENT_REQUIRES arduino-esp32)',
-      'list(APPEND COMPONENT_REQUIRES arduino-esp32)') -NoNewline
-  Write-Output 'TAB5_M5GFX_ARDUINO_DEP_PATCH applied version=0.2.22'
-} elseif ($m5gfxSource.Contains('list(APPEND COMPONENT_REQUIRES arduino-esp32)')) {
-  Write-Output 'TAB5_M5GFX_ARDUINO_DEP_PATCH already_applied version=0.2.22'
-} else {
-  throw 'Unexpected M5GFX 0.2.22 CMake source; refusing to patch.'
-}
-
-idf.py reconfigure
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-& (Join-Path $PSScriptRoot 'patch_m5gfx.py') $m5gfxCommon
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-$m5unifiedSpeaker = Join-Path (Get-Location) 'managed_components\m5stack__m5unified\src\utility\Speaker_Class.cpp'
-& (Join-Path $PSScriptRoot 'patch_m5unified.py') $m5unifiedSpeaker
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-idf.py build
+idf.py -B $buildDir build
 exit $LASTEXITCODE

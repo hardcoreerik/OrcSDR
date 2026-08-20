@@ -56,10 +56,10 @@ cd apps/orcsdr-tab5
 idf.py -p COM17 flash
 ```
 
-This is a native ESP-IDF build. Arduino, M5Unified, and M5GFX are pinned
+This is a native ESP-IDF 5.5.4 build. M5Unified 0.2.20 and M5GFX 0.2.27 are
 ESP-IDF components; PlatformIO is not a supported OrcSDR build or flash path.
-The exact P4/C6 ESP-Hosted 2.12.6 pair and release test are defined in
-[`docs/TAB5_BUILD_POLICY.md`](../../docs/TAB5_BUILD_POLICY.md).
+The current ESP-Hosted 3.0.6 Tab5 migration, pins, and honest hardware status
+are defined in [`docs/TAB5_ESP_HOSTED_3_MIGRATION.md`](../../docs/TAB5_ESP_HOSTED_3_MIGRATION.md).
 
 `m5tab5_ui` is the complete firmware: regular splash/home flow, NAV band
 selection, and the LoRa dashboard/PSRAM decoder capture path. The optional

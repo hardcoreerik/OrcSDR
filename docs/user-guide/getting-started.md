@@ -14,13 +14,24 @@ Boot lands on Home. If Auto-start reception is on, the last FM station can run i
 
 ## Installation
 
-From a clone of this repository on Windows, with ESP-IDF 5.5.3 installed:
+Current development uses ESP-IDF 5.5.4 and ESP-Hosted 3.0.6. The native P4
+application/radio path is working, but the permanent P4-to-C6 Wi-Fi handshake
+is still under acceptance. Follow the exact build, flash, and status guidance
+in [`../TAB5_ESP_HOSTED_3_MIGRATION.md`](../TAB5_ESP_HOSTED_3_MIGRATION.md).
+
+Do not use the legacy 2.12.6 installer flow as a 3.0.6 verification step.
+For a native build:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\install-orcsdr.ps1
+$env:IDF_PYTHON_ENV_PATH = 'C:\Espressif\python_env\idf5.5_py3.14_env'
+. 'C:\Espressif\frameworks\esp-idf-v5.5.4\export.ps1'
+Set-Location .\apps\orcsdr-tab5
+idf.py reconfigure
+idf.py build
 ```
 
-That installs `requirements.txt`, builds and flashes the P4, then reads `RTL_WIFI_HOSTED`. The Tab5 C6 must already be on ESP-Hosted **2.12.6** (M5Burner). The P4 image does not update the C6. If the pair does not match, follow the printed M5Burner steps and re-run `.\install-orcsdr.ps1 -CheckHostedOnly`.
+The Tab5 C6 must run matching ESP-Hosted **3.0.6**. A normal P4 application
+flash does not update the C6. Do not claim Wi-Fi accepted until serial prints
+the three `I OrcSDR` C6/version/transport lines in the migration document.
 
 Do not use PlatformIO for Tab5 firmware. Preserve a recovery image before replacing known-good firmware.

@@ -1,9 +1,9 @@
 #include "web_console.hpp"
 
-#include <Arduino.h>
 #include <esp_attr.h>
 #include <esp_heap_caps.h>
 #include <esp_http_server.h>
+#include <esp_log.h>
 #include <mdns.h>
 
 #include <atomic>
@@ -17,6 +17,7 @@ extern const uint8_t orc_badge_end[] asm("_binary_orc_badge_104_png_end");
 
 namespace orcsdr::web_console {
 namespace {
+constexpr char kLogTag[] = "OrcSDR";
 
 std::atomic<bool> g_enabled{false};
 bool g_listening = false;
@@ -249,20 +250,18 @@ void start_mdns() {
   if (g_mdns_started) return;
   const uint32_t largest = dma_largest();
   if (largest < 3072) {
-    Serial.printf("RTL_WEB_MDNS skipped dma_largest=%lu\n",
-                  static_cast<unsigned long>(largest));
+    ESP_LOGI(kLogTag, "RTL_WEB_MDNS skipped dma_largest=%lu", static_cast<unsigned long>(largest));
     return;
   }
   if (mdns_init() != ESP_OK) {
-    Serial.println("RTL_WEB_MDNS init_failed");
+    ESP_LOGI(kLogTag, "RTL_WEB_MDNS init_failed");
     return;
   }
   mdns_hostname_set("orcsdr");
   mdns_instance_name_set("OrcSDR");
   mdns_service_add("OrcSDR", "_http", "_tcp", 80, nullptr, 0);
   g_mdns_started = true;
-  Serial.printf("RTL_WEB_MDNS ok dma_largest=%lu\n",
-                static_cast<unsigned long>(dma_largest()));
+  ESP_LOGI(kLogTag, "RTL_WEB_MDNS ok dma_largest=%lu", static_cast<unsigned long>(dma_largest()));
 }
 
 void stop_server() {
@@ -271,13 +270,13 @@ void stop_server() {
     g_server = nullptr;
   }
   stop_mdns();
-  if (g_listening) Serial.println("RTL_WEB_STOP");
+  if (g_listening) ESP_LOGI(kLogTag, "RTL_WEB_STOP");
   g_listening = false;
 }
 
 bool start_server() {
   if (g_server != nullptr) return true;
-  Serial.printf("RTL_WEB_DMA pre_start free=%lu largest=%lu\n",
+  ESP_LOGI(kLogTag, "RTL_WEB_DMA pre_start free=%lu largest=%lu",
                 static_cast<unsigned long>(
                     heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
                 static_cast<unsigned long>(dma_largest()));
@@ -293,7 +292,7 @@ bool start_server() {
   config.task_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
   if (httpd_start(&g_server, &config) != ESP_OK) {
     g_server = nullptr;
-    Serial.println("RTL_WEB_ERROR start_failed");
+    ESP_LOGI(kLogTag, "RTL_WEB_ERROR start_failed");
     return false;
   }
   httpd_uri_t root{};
@@ -331,7 +330,7 @@ bool start_server() {
   httpd_register_uri_handler(g_server, &spectrum);
   start_mdns();
   g_listening = true;
-  Serial.println("RTL_WEB_LISTEN port=80");
+  ESP_LOGI(kLogTag, "RTL_WEB_LISTEN port=80");
   return true;
 }
 

@@ -1,5 +1,8 @@
 # Tab5 build and ESP-Hosted policy
 
+> Current migration details, exact pins, and acceptance status live in
+> [`TAB5_ESP_HOSTED_3_MIGRATION.md`](TAB5_ESP_HOSTED_3_MIGRATION.md).
+
 OrcSDR's Tab5 firmware is a native ESP-IDF project. Build and flash the P4
 with Espressif `idf.py`; do not use PlatformIO for development, release, or
 hardware validation.
@@ -7,25 +10,22 @@ hardware validation.
 Arduino, M5Unified, and M5GFX are ESP-IDF components in the dependency graph,
 not an Arduino-IDE or PlatformIO toolchain.
 
-## Exact Hosted pair
+## Current Hosted pair
 
-The P4 application pins `espressif/esp_hosted` to **2.12.6** in
+The P4 application pins `espressif/esp_hosted` to **3.0.6** in
 `apps/orcsdr-tab5/main/idf_component.yml`. Commit the generated
 `apps/orcsdr-tab5/dependencies.lock` with every dependency change.
 
-The native build helper validates and applies the one Tab5 integration patch
-required by the upstream 2.12.6 component: Arduino owns Hosted initialization
-so `WiFi.setPins()` runs before `esp_hosted_init()`. The helper refuses an
-unexpected component source instead of silently patching another version.
-
-The Tab5 C6 slave must be installed separately with the matching **2.12.6**
-M5Burner ESP-Hosted package. OrcSDR's P4 image does not update the C6.
-Never downgrade the C6 to accommodate an old P4 host library.
+The Tab5 C6 must run the matching **3.0.6** ESP-Hosted firmware. OrcSDR's
+normal P4 application image does not update the C6. Never downgrade the C6
+to accommodate an old P4 host library.
 
 At boot the P4 logs both versions. Wi-Fi is blocked unless it reports:
 
 ```text
-RTL_WIFI_HOSTED host=2.12.6 slave=2.12.6 match=1
+I OrcSDR: ESP32-C6 detected
+I OrcSDR: ESP-Hosted C6 FW: 3.0.6
+I OrcSDR: ESP-Hosted transport: SDIO
 ```
 
 ## Internal DMA budget
@@ -73,16 +73,18 @@ Healthy boot (2026-08-17, Hosted 2.12.6, mempool off):
 
 ## People installer
 
-From the repo root, `install-orcsdr.ps1` installs `requirements.txt`,
-flashes the P4, and reads `RTL_WIFI_HOSTED`. It will not burn the C6; a
-mismatch prints the M5Burner 2.12.6 steps. Developers can still call
-`apps/orcsdr-tab5/tools/install-tab5.ps1 -Port COM17` directly.
+The older installer/release scripts still contain 2.12.6 checks and must not
+be used as 3.0.6 acceptance tooling. Use the explicit native 5.5.4 commands
+in the migration document until those scripts are migrated.
 
 ## Native build and release gate
 
 ```powershell
 Set-Location F:\Ai\OrcSDR\apps\orcsdr-tab5
-.\tools\build-tab5-idf.ps1
+$env:IDF_PYTHON_ENV_PATH = 'C:\Espressif\python_env\idf5.5_py3.14_env'
+. 'C:\Espressif\frameworks\esp-idf-v5.5.4\export.ps1'
+idf.py reconfigure
+idf.py build
 ```
 
 After an explicitly authorized P4 flash, use the serial release test to prove

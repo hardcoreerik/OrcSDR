@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <FS.h>
+#include "orcsdr_storage.hpp"
 
 namespace orcsdr::fmconfig {
 
@@ -21,8 +21,8 @@ struct Config {
 enum class LoadResult : uint8_t { ok, missing, invalid, io_error };
 
 bool validate(const Config& config, char* error, size_t error_size);
-LoadResult load(fs::FS& fs, const char* path, Config* config, char* error, size_t error_size);
-bool save(fs::FS& fs, const Config& config, char* error, size_t error_size);
+LoadResult load(orcsdr::storage::FileSystem& fs, const char* path, Config* config, char* error, size_t error_size);
+bool save(orcsdr::storage::FileSystem& fs, const Config& config, char* error, size_t error_size);
 bool self_check();
 
 }  // namespace orcsdr::fmconfig

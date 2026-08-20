@@ -7,14 +7,12 @@
 
 #include "orcsdr_splash.hpp"
 
-#include <Arduino.h>
 #include <M5Unified.h>
-#include <SPI.h>
-#include <SD.h>
-#include <SD_MMC.h>
-#include <FS.h>
+
+#include "orcsdr_storage.hpp"
 
 #include <driver/jpeg_decode.h>
+#include <driver/gpio.h>
 #include <driver/usb_serial_jtag.h>
 #include <esp_heap_caps.h>
 #include <esp_cache.h>
@@ -121,7 +119,7 @@ struct SplashState {
   bool sd_ok = false;
   bool has_poster = false;
   bool use_sdmmc = false;
-  fs::FS* fs = nullptr; /* SD or SD_MMC */
+  orcsdr::storage::FileSystem* fs = nullptr;
 };
 
 SplashState g_splash;
@@ -360,39 +358,22 @@ bool splash_sd_begin() {
   g_splash.use_sdmmc = false;
 
   /* Tab5 can gate microSD power on GPIO45. */
-  pinMode(kTab5SdPowerPin, OUTPUT);
-  digitalWrite(kTab5SdPowerPin, HIGH);
+  gpio_config_t power{};
+  power.pin_bit_mask = 1ULL << kTab5SdPowerPin;
+  power.mode = GPIO_MODE_OUTPUT;
+  gpio_config(&power);
+  gpio_set_level(static_cast<gpio_num_t>(kTab5SdPowerPin), 1);
   delay(80);
 
-  /* SDIO 4-bit: clk=43 cmd=44 d0=39 d1=40 d2=41 d3=42 (M5 Tab5 pinmap). */
-  SD_MMC.setPins(43, 44, 39, 40, 41, 42);
-  if (SD_MMC.begin("/sd", false /* mode1bit */, false /* format_if_mount_failed */,
-                   SDMMC_FREQ_HIGHSPEED)) {
+  if (orcsdr::storage::mount_tab5_sd()) {
     g_splash.use_sdmmc = true;
-    g_splash.fs = &SD_MMC;
+    g_splash.fs = &orcsdr::storage::filesystem();
     g_splash.sd_ok = true;
     splash_log("SPLASH_SD ready bus=sdmmc");
     return true;
   }
-  splash_log("SPLASH_SD sdmmc_fail → spi");
-
-  SPI.begin(kTab5SdSckPin, kTab5SdMisoPin, kTab5SdMosiPin, kTab5SdCsPin);
-  uint32_t actual_hz = kSplashSdHz;
-  if (!SD.begin(kTab5SdCsPin, SPI, kSplashSdHz)) {
-    delay(50);
-    actual_hz = 10000000;
-    if (!SD.begin(kTab5SdCsPin, SPI, actual_hz)) {
-      actual_hz = 4000000;
-      if (!SD.begin(kTab5SdCsPin, SPI, actual_hz)) {
-        splash_log("SPLASH_SD fail spi");
-        return false;
-      }
-    }
-  }
-  g_splash.fs = &SD;
-  g_splash.sd_ok = true;
-  splash_log("SPLASH_SD ready bus=spi hz=%u", static_cast<unsigned>(actual_hz));
-  return true;
+  splash_log("SPLASH_SD fail sdmmc");
+  return false;
 }
 
 bool open_splash_file() {

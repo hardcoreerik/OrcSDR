@@ -217,7 +217,7 @@ bool validate(const Config& config, char* error, size_t error_size) {
   return true;
 }
 
-LoadResult load(fs::FS& fs, const char* path, Config* config, char* error, size_t error_size) {
+LoadResult load(orcsdr::storage::FileSystem& fs, const char* path, Config* config, char* error, size_t error_size) {
   if (config == nullptr || path == nullptr) return LoadResult::io_error;
   if (!fs.exists(path)) return LoadResult::missing;
   File file = fs.open(path, FILE_READ);
@@ -236,7 +236,7 @@ LoadResult load(fs::FS& fs, const char* path, Config* config, char* error, size_
   return parse_text(text, config, error, error_size) ? LoadResult::ok : LoadResult::invalid;
 }
 
-bool save(fs::FS& fs, const Config& config, char* error, size_t error_size) {
+bool save(orcsdr::storage::FileSystem& fs, const Config& config, char* error, size_t error_size) {
   if (!validate(config, error, error_size)) return false;
   char temporary[48]{};
   char backup[48]{};

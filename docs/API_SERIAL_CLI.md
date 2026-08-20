@@ -332,6 +332,43 @@ RTL_CATALOG_INSTALL faa_aircraft
 
 ## UI regression
 
+## Dashboard control
+
+`RTL_UI` gives a serial agent the same semantic action handlers used by the
+FM, P25, LoRa, and Settings touch views. It is authenticated because every
+action can change device state. Credentials continue to use signed `SET_WIFI`;
+ADS-B coordinates use `RTL_ADSB_LOCATION`.
+
+```text
+RTL_UI STATUS
+RTL_UI OPEN ADSB
+RTL_UI ACTION SETTINGS RANGE 50
+RTL_UI ACTION P25 SURVEY
+RTL_UI ACTION LORA VIEW 3
+RTL_UI ACTION FM TUNE 101900000
+```
+
+`RTL_UI OPEN` accepts `HOME`, `FM`, `P25`, `ADSB`, `LORA`, or `SETTINGS`.
+`RTL_UI ACTION` accepts a domain and one of its visible touch actions:
+
+- `FM`: `TUNE`, `DOWN`, `UP`, `SEEK_DOWN`, `SEEK_UP`, `SAVE`, `STEP`,
+  `FILTER_DOWN`, `FILTER_UP`, `SPAN_DOWN`, `SPAN_UP`, `SOUND`, `VOL_DOWN`,
+  `VOL_UP`, `GRAPHICS`, `RECORD`, `SCAN`, `SETTINGS`, `HOME`.
+- `P25`: `TUNE`, `PREV`, `NEXT`, `SURVEY`, `HOLD`, `HOLD_TG <id>`, `SKIP`,
+  `FOLLOW`, `ENCRYPT_SKIP`, `RELOAD`, `SPAN_DOWN`, `SPAN_UP`, `SOUND`,
+  `VOL_DOWN`, `VOL_UP`, `SETTINGS`, `HOME`.
+- `LORA`: `VIEW <0-5>`, `NODE <index>`, `FAVORITE`, `FILTER`, `SCAN`, `IQ`,
+  `LOG`, `CLEAR`, `EXPORT`, `FOLLOW`, `CHANNELS`, `SETTINGS`, `HOME`.
+- `SETTINGS`: `WIFI_POWER <0|1>`, `ANTENNA <0|1>`, `SCAN`,
+  `CONNECT_SAVED <index>`, `FORGET <index>`, `MOVE_UP <index>`,
+  `MOVE_DOWN <index>`, `RANGE <nm>`, `BRIGHTNESS <0-255>`, `ROTATION <1|3>`,
+  `TIMEOUT <seconds>`, `VOLUME <0-255>`, `SOUND <0|1>`, `AUTO_START <0|1>`,
+  `GRAPHICS <0|1>`, `WEB <0|1>`, `CATALOG_CHECK`, `CATALOG_INSTALL <index>`,
+  `CATALOG_REMOVE <index>`, `CLOSE`.
+
+Each succeeds with `RTL_UI_ACTION_OK`. Inputs are intentionally routed through
+the existing dashboard handlers rather than duplicating touch-only state.
+
 The regression command checks the shared radio-control geometry and screen
 ownership self-checks without changing receiver state or NVS. `RUN` also
 exercises an actual screen handoff: Home to the current FM, P25, ADS-B, or

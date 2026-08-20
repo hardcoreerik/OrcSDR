@@ -46,7 +46,7 @@ bool valid_slug(const char* slug) {
   return true;
 }
 
-Result save_bmp(M5GFX& display, fs::FS& filesystem, const char* slug) {
+Result save_bmp(M5GFX& display, orcsdr::storage::FileSystem& filesystem, const char* slug) {
   Result result{};
   result.width = static_cast<uint16_t>(display.width());
   result.height = static_cast<uint16_t>(display.height());

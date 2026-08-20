@@ -1,7 +1,5 @@
 #include "p25_decoder.hpp"
 
-#include <Arduino.h>
-
 #include <algorithm>
 #include <array>
 #include <atomic>
