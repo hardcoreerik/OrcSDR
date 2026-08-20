@@ -1,8 +1,9 @@
 #pragma once
 
-#include <FS.h>
 #include <cstddef>
 #include <cstdint>
+
+#include "orcsdr_storage.hpp"
 
 namespace orcsdr::offline_map {
 
@@ -19,7 +20,7 @@ struct View {
 };
 
 // Normal UI-code only. This bounded cache is never touched by SDR/audio callbacks.
-bool load(fs::FS* filesystem);
+bool load(orcsdr::storage::FileSystem* filesystem);
 bool available();
 void draw_base(const View& view, uint16_t water_color, uint16_t road_color,
                uint16_t airport_color, uint16_t border_color);

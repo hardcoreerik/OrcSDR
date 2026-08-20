@@ -1,8 +1,9 @@
 #include "location_estimate.hpp"
-#include <Arduino.h>
 #include <cJSON.h>
 #include <esp_crt_bundle.h>
 #include <esp_http_client.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <cmath>
 #include <cstring>
 namespace orcsdr::location_estimate { namespace {

@@ -1,7 +1,8 @@
 #pragma once
 
-#include <FS.h>
 #include <cstdint>
+
+#include "orcsdr_storage.hpp"
 
 namespace orcsdr::atc {
 
@@ -15,7 +16,7 @@ struct Preset {
 };
 
 // FAA aviation indexes may optionally contain: ATC <lat_e7> <lon_e7> <hz> <label>.
-bool load(fs::FS* filesystem);
+bool load(orcsdr::storage::FileSystem* filesystem);
 bool nearest(int32_t latitude_e7, int32_t longitude_e7, Preset* output);
 bool self_check();
 

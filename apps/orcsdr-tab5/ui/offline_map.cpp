@@ -93,12 +93,12 @@ bool project(const View& view, float latitude, float longitude, int* x, int* y) 
   return *x >= view.x && *x < view.x + view.width && *y >= view.y && *y < view.y + view.height;
 }
 
-bool load(fs::FS* filesystem) {
+bool load(orcsdr::storage::FileSystem* filesystem) {
   g_count = 0;
   g_label_count = 0;
   g_available = false;
   if (!filesystem) return false;
-  File file = filesystem->open(kRuntimePath, FILE_READ);
+  orcsdr::storage::File file = filesystem->open(kRuntimePath);
   if (!file) return false;
   char header[9]{};
   const bool header_ok = file.readBytesUntil('\n', header, sizeof(header)) == 7 &&

@@ -1,8 +1,7 @@
 #include "atc_presets.hpp"
 
-#include <Arduino.h>
-
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
 namespace orcsdr::atc {
@@ -20,10 +19,10 @@ bool valid(const Preset& preset) {
 
 }  // namespace
 
-bool load(fs::FS* filesystem) {
+bool load(orcsdr::storage::FileSystem* filesystem) {
   g_count = 0;
   if (!filesystem) return false;
-  File file = filesystem->open(kRuntimePath, FILE_READ);
+  orcsdr::storage::File file = filesystem->open(kRuntimePath);
   if (!file) return false;
   char line[112]{};
   const size_t header_size = file.readBytesUntil('\n', line, sizeof(line) - 1);
