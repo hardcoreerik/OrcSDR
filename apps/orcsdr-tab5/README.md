@@ -61,6 +61,21 @@ ESP-IDF components; PlatformIO is not a supported OrcSDR build or flash path.
 The exact P4/C6 ESP-Hosted 2.12.6 pair and release test are defined in
 [`docs/TAB5_BUILD_POLICY.md`](../../docs/TAB5_BUILD_POLICY.md).
 
+## OrcSDR Hardware
+
+| Component | Current release configuration |
+|---|---|
+| Main controller | ESP32-P4 |
+| ESP-IDF | 5.5.x |
+| ESP-Hosted host | 2.12.6 |
+| Wi-Fi coprocessor | ESP32-C6 |
+| C6 firmware | 2.12.6 |
+| Transport | SDIO, 4-bit |
+
+Startup prints the ESP-IDF version and then, once Wi-Fi initializes, the
+detected C6 and live host/C6 ESP-Hosted versions. Wi-Fi is blocked if those
+two live versions do not match.
+
 `m5tab5_ui` is the complete firmware: regular splash/home flow, NAV band
 selection, and the LoRa dashboard/PSRAM decoder capture path. The optional
 `m5tab5_lora_test` environment uses the same radio features but skips directly

@@ -7041,6 +7041,16 @@ void initialize_wifi() {
     hostedGetSlaveVersion(&slave_major, &slave_minor, &slave_patch);
     wifi_hosted_versions_match = host_major == slave_major && host_minor == slave_minor &&
                                  host_patch == slave_patch;
+    Serial.println("I OrcSDR: ESP32-C6 detected");
+    Serial.printf("I OrcSDR: ESP-Hosted Host FW: %lu.%lu.%lu\n",
+                  static_cast<unsigned long>(host_major),
+                  static_cast<unsigned long>(host_minor),
+                  static_cast<unsigned long>(host_patch));
+    Serial.printf("I OrcSDR: ESP-Hosted C6 FW: %lu.%lu.%lu\n",
+                  static_cast<unsigned long>(slave_major),
+                  static_cast<unsigned long>(slave_minor),
+                  static_cast<unsigned long>(slave_patch));
+    Serial.println("I OrcSDR: ESP-Hosted transport: SDIO 4-bit");
     Serial.printf("RTL_WIFI_HOSTED host=%lu.%lu.%lu slave=%lu.%lu.%lu match=%d\n",
                   static_cast<unsigned long>(host_major),
                   static_cast<unsigned long>(host_minor),
@@ -11341,6 +11351,8 @@ void orcsdr_splash_poll_serial(void) {
 
 void setup() {
   Serial.begin(115200);
+  Serial.println("I OrcSDR: Hardware: ESP32-P4 + ESP32-C6");
+  Serial.printf("I OrcSDR: ESP-IDF: %s\n", esp_get_idf_version());
   const esp_reset_reason_t reset_reason = esp_reset_reason();
   const char* reset_name = "unknown";
   switch (reset_reason) {

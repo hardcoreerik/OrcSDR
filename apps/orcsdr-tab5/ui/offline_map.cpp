@@ -1,5 +1,6 @@
 #include "offline_map.hpp"
 
+#include <M5GFX.h>
 #include <M5Unified.h>
 
 #include <cmath>
@@ -19,6 +20,18 @@ EXT_RAM_BSS_ATTR Label g_labels[kLabelCapacity]{};
 size_t g_count = 0;
 size_t g_label_count = 0;
 bool g_available = false;
+M5Canvas g_base_cache(&M5.Display);
+uint32_t g_generation = 0;
+struct CacheKey {
+  View view{};
+  uint16_t water = 0;
+  uint16_t road = 0;
+  uint16_t airport = 0;
+  uint16_t border = 0;
+  uint32_t generation = 0;
+  bool valid = false;
+} g_cache_key;
+constexpr uint16_t kTransparent = 0x0001;
 
 bool parse_line(const char* line, Segment* output) {
   if (!line || !output) return false;
@@ -85,6 +98,36 @@ bool clip_line(const View& view, int* x1, int* y1, int* x2, int* y2) {
   }
 }
 
+bool same_view(const View& left, const View& right) {
+  return left.center_lat == right.center_lat && left.center_lon == right.center_lon &&
+         left.range_nm == right.range_nm && left.x == right.x && left.y == right.y &&
+         left.width == right.width && left.height == right.height;
+}
+
+template <typename Display>
+void draw_base_to(Display& display, const View& view, uint16_t water_color, uint16_t road_color,
+                  uint16_t airport_color, uint16_t border_color) {
+  display.drawRect(view.x, view.y, view.width, view.height, border_color);
+  if (!g_available) return;
+  for (size_t i = 0; i < g_count; ++i) {
+    int x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+    project_unclipped(view, g_segments[i].lat1, g_segments[i].lon1, &x1, &y1);
+    project_unclipped(view, g_segments[i].lat2, g_segments[i].lon2, &x2, &y2);
+    if (!clip_line(view, &x1, &y1, &x2, &y2)) continue;
+    const uint16_t color = g_segments[i].kind == Kind::water ? water_color :
+                           g_segments[i].kind == Kind::airport ? airport_color : road_color;
+    display.drawLine(x1, y1, x2, y2, color);
+  }
+  display.setTextDatum(middle_left);
+  display.setTextSize(1);
+  display.setTextColor(airport_color);
+  for (size_t i = 0; i < g_label_count; ++i) {
+    int x = 0, y = 0;
+    if (project(view, g_labels[i].lat, g_labels[i].lon, &x, &y))
+      display.drawString(g_labels[i].text, x + 3, y);
+  }
+}
+
 }  // namespace
 
 bool project(const View& view, float latitude, float longitude, int* x, int* y) {
@@ -94,6 +137,7 @@ bool project(const View& view, float latitude, float longitude, int* x, int* y) 
 }
 
 bool load(fs::FS* filesystem) {
+  ++g_generation;
   g_count = 0;
   g_label_count = 0;
   g_available = false;
@@ -124,25 +168,24 @@ bool available() { return g_available; }
 
 void draw_base(const View& view, uint16_t water_color, uint16_t road_color,
                uint16_t airport_color, uint16_t border_color) {
-  M5.Display.drawRect(view.x, view.y, view.width, view.height, border_color);
-  if (!g_available) return;
-  for (size_t i = 0; i < g_count; ++i) {
-    int x1 = 0, y1 = 0, x2 = 0, y2 = 0;
-    project_unclipped(view, g_segments[i].lat1, g_segments[i].lon1, &x1, &y1);
-    project_unclipped(view, g_segments[i].lat2, g_segments[i].lon2, &x2, &y2);
-    if (!clip_line(view, &x1, &y1, &x2, &y2)) continue;
-    const uint16_t color = g_segments[i].kind == Kind::water ? water_color :
-                           g_segments[i].kind == Kind::airport ? airport_color : road_color;
-    M5.Display.drawLine(x1, y1, x2, y2, color);
+  const bool cache_hit = g_cache_key.valid && same_view(g_cache_key.view, view) &&
+                         g_cache_key.water == water_color && g_cache_key.road == road_color &&
+                         g_cache_key.airport == airport_color && g_cache_key.border == border_color &&
+                         g_cache_key.generation == g_generation;
+  if (!cache_hit) {
+    g_base_cache.deleteSprite();
+    g_base_cache.setColorDepth(16);
+    if (!g_base_cache.createSprite(view.width, view.height)) {
+      draw_base_to(M5.Display, view, water_color, road_color, airport_color, border_color);
+      return;
+    }
+    g_base_cache.fillSprite(kTransparent);
+    View cached = view;
+    cached.x = cached.y = 0;
+    draw_base_to(g_base_cache, cached, water_color, road_color, airport_color, border_color);
+    g_cache_key = {view, water_color, road_color, airport_color, border_color, g_generation, true};
   }
-  M5.Display.setTextDatum(middle_left);
-  M5.Display.setTextSize(1);
-  M5.Display.setTextColor(airport_color);
-  for (size_t i = 0; i < g_label_count; ++i) {
-    int x = 0, y = 0;
-    if (project(view, g_labels[i].lat, g_labels[i].lon, &x, &y))
-      M5.Display.drawString(g_labels[i].text, x + 3, y);
-  }
+  g_base_cache.pushSprite(view.x, view.y, kTransparent);
 }
 
 bool self_check() {
