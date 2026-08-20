@@ -1,6 +1,6 @@
 #pragma once
 
-#include <FS.h>
+#include "orcsdr_storage.hpp"
 #include <M5GFX.h>
 
 #include <cstddef>
@@ -18,6 +18,6 @@ struct Result {
 };
 
 bool valid_slug(const char* slug);
-Result save_bmp(M5GFX& display, fs::FS& filesystem, const char* slug);
+Result save_bmp(M5GFX& display, orcsdr::storage::FileSystem& filesystem, const char* slug);
 
 }  // namespace orcsdr::ui_capture

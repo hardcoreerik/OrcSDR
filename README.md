@@ -34,7 +34,7 @@ You power it on, wait for the splash to finish loading Wi-Fi and the dongle, tap
 > Jump to **[Flash OrcSDR to the M5Stack Tab5](#-flash-orcsdr-to-the-m5stack-tab5)** and run it on hardware. The screenshots on this page are from that firmware.
 
 > [!NOTE]
-> **Project status:** OrcSDR is under active development. The Tab5 app is the reference radio. Tab5 builds are **native ESP-IDF 5.5.3**. Arduino and M5Stack libraries are ESP-IDF components only; PlatformIO is not a supported build or flash path. See [`docs/TAB5_BUILD_POLICY.md`](docs/TAB5_BUILD_POLICY.md) for the ESP-Hosted 2.12.6 P4/C6 pair.
+> **Project status:** OrcSDR is under active development. The Tab5 app is the reference radio and builds with **native ESP-IDF 5.5.4**. M5Unified and M5GFX are ESP-IDF components only; PlatformIO is not a supported build or flash path. See [`docs/TAB5_ESP_HOSTED_3_MIGRATION.md`](docs/TAB5_ESP_HOSTED_3_MIGRATION.md) for the ESP-Hosted 3.0.6 P4/C6 migration, exact pins, and current Wi-Fi acceptance status.
 
 ---
 
@@ -481,8 +481,8 @@ Battery rail and charge, USB / VBUS, build identity, uptime, network, SD. Reboot
 
 - **M5Stack Tab5**
 - **RTL-SDR Blog V4**
-- **Espressif ESP-IDF 5.5.3 for Windows**
-- **M5Burner ESP-Hosted 2.12.6 slave firmware** for the Tab5 C6
+- **Espressif ESP-IDF 5.5.4 for Windows**
+- **ESP-Hosted 3.0.6 C6 firmware** for the Tab5 C6
 - USB cable for flashing the Tab5
 - USB connection from the Tab5 USB Host port to the RTL-SDR
 - Antenna appropriate for what you want to receive
@@ -521,21 +521,31 @@ COM8
 
 ### 3. Install OrcSDR
 
-ESP-IDF 5.5.3 must already be installed. Then from the repo root:
+ESP-IDF 5.5.4 must already be installed. The current permanent C6 link is
+still under hardware acceptance, so use the explicit native build steps in
+[`docs/TAB5_ESP_HOSTED_3_MIGRATION.md`](docs/TAB5_ESP_HOSTED_3_MIGRATION.md),
+not the legacy installer as a release gate.
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\install-orcsdr.ps1
+Set-Location .\apps\orcsdr-tab5
+$env:IDF_PYTHON_ENV_PATH = 'C:\Espressif\python_env\idf5.5_py3.14_env'
+. 'C:\Espressif\frameworks\esp-idf-v5.5.4\export.ps1'
+idf.py reconfigure
+idf.py build
 ```
 
-The script installs `requirements.txt`, finds the Tab5 COM port (or pass `-Port COM8`), builds and flashes the P4, and checks that ESP-Hosted **host and C6 slave are both 2.12.6**. A mismatch prints M5Burner steps; the P4 image cannot update the C6. Re-check with `.\install-orcsdr.ps1 -CheckHostedOnly`.
+The legacy script is retained for historical releases and still expects the
+old 2.12.6 pair. It is not valid 3.0.6 acceptance tooling. A P4 application
+flash cannot update the C6.
 
 Saved NVS settings are preserved. PlatformIO is not a supported OrcSDR build or flash path.
 
 A matching boot line looks like:
 
 ```text
-RTL_WIFI_HOSTED host=2.12.6 slave=2.12.6 match=1
+I OrcSDR: ESP32-C6 detected
+I OrcSDR: ESP-Hosted C6 FW: 3.0.6
+I OrcSDR: ESP-Hosted transport: SDIO
 ```
 
 ### 4. Connect the RTL-SDR Blog V4
@@ -596,7 +606,7 @@ OrcSDR/
 │
 ├── tools/                       Capture, transfer, analysis, and test tools
 │
-├── install-orcsdr.ps1           People installer (IDF 5.5.3 + Hosted 2.12.6 check)
+├── install-orcsdr.ps1           Historical installer (2.12.6 check; not the 3.0.6 release gate)
 ├── LICENSE
 └── README.md
 ```

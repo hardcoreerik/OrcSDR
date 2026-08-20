@@ -14,13 +14,20 @@ Cold-boot with stable power and the dongle disconnected, then attach it after th
 
 Confirm Wi-Fi power is enabled and choose the correct internal or external antenna. Scanning should coexist with reception. A crash or restart is a regression; preserve the serial log and reset reason.
 
-If Settings shows “ESP-Hosted version mismatch”, the P4 app and the C6 slave are not the same version. OrcSDR pins **2.12.6** on both. Flash the C6 with M5Burner’s ESP-Hosted 2.12.6 package (the P4 image cannot do this), then:
+The current migration pins ESP-Hosted **3.0.6** on both P4 and C6. The normal
+P4 application image does not update the C6. Current known hardware evidence
+has the radio path working but the C6 SDIO handshake failing before version
+negotiation (`sdmmc_init_ocr` / `send_op_cond 0x107`). Follow
+[`Tab5 ESP-Hosted 3.0.6 migration`](tab5-esp-hosted-3-migration.md) for
+the exact Tab5 pins and acceptance state; do not apply the old 2.12.6 M5Burner
+instructions.
 
 ```powershell
-.\install-orcsdr.ps1 -CheckHostedOnly
+rg "CONFIG_ESP_HOSTED_AUTO_CALL_INIT_BEFORE_APP_MAIN" apps\orcsdr-tab5\sdkconfig
 ```
 
-A healthy pair logs `RTL_WIFI_HOSTED host=2.12.6 slave=2.12.6 match=1`. Radio works while they disagree; Wi-Fi stays off.
+A healthy pair logs the C6 detected, `3.0.6` firmware, and `SDIO` transport
+lines documented in the migration record. Radio works while Wi-Fi is off.
 
 On-chip DMA RAM is split so Wi-Fi and the radio do not steal each other's room: ESP-Hosted (C6 Wi-Fi) and the I2S speaker stay in reserved internal DMA; RTL-SDR USB URBs stay in PSRAM. Boot logs `RTL_DRAM_BUDGET`. After Wi-Fi starts, `dma_largest` should stay above ~20 KiB so I2S can still start. A scan/connect panic with `HS_MP: mempool create failed` or `sdio_mempool_create` means the Hosted slice was gone — keep `CONFIG_ESP_HOSTED_USE_MEMPOOL=n` and do not raise `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL` above 8 KiB.
 

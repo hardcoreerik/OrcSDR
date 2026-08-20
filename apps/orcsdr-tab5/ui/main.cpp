@@ -1,17 +1,14 @@
-#include <Arduino.h>
-#include <SPI.h>
-#include <SD.h>
-#include <SD_MMC.h>
 #include <M5Unified.h>
-#include <Preferences.h>
-#include <WiFi.h>
-#include <esp32-hal-hosted.h>
 #include <esp_mac.h>
 #include <esp_intr_alloc.h>
 #include <esp_heap_caps.h>
 #include <esp_attr.h>
 #include <esp_app_desc.h>
 #include <esp_system.h>
+#include <esp_chip_info.h>
+#include <esp_flash.h>
+#include <esp_psram.h>
+#include <nvs_flash.h>
 #include <mbedtls/md.h>
 #include <mbedtls/sha256.h>
 #include <driver/usb_serial_jtag.h>
@@ -33,6 +30,7 @@ extern "C" {
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
+#include <string>
 
 #if !defined(RTL_USE_LEGACY_USB)
 #define RTL_USE_LEGACY_USB 0
@@ -44,6 +42,7 @@ extern "C" {
 
 #include "rtl_sdr_v4_transfers.h"
 #include "orcsdr_splash.hpp"
+#include "orcsdr_storage.hpp"
 #include "adsb_dashboard.hpp"
 #include "adsb_decoder.hpp"
 #include "catalog_sync.hpp"
@@ -57,6 +56,7 @@ extern "C" {
 #include "lora_dashboard.hpp"
 #include "lora_native_decoder.hpp"
 #include "navigation_service.hpp"
+#include "nvs_store.hpp"
 #include "p25_dashboard.hpp"
 #include "p25_config.hpp"
 #include "p25_decoder.hpp"
@@ -64,6 +64,7 @@ extern "C" {
 #include "settings_app.hpp"
 #include "ui_capture.hpp"
 #include "web_console.hpp"
+#include "wifi_service.hpp"
 #if !RTL_USE_LEGACY_USB
 #include "rtl_sdr_v4_esp.h"
 #endif
@@ -81,7 +82,10 @@ class OrcConsole {
 
   int available() {
     if (has_pending_) return 1;
-    has_pending_ = usb_serial_jtag_read_bytes(&pending_, 1, 0) == 1;
+    // A zero-tick USB Serial/JTAG poll can miss a packet handed off just
+    // after this loop iteration. One RTOS tick keeps the CLI responsive
+    // without moving radio/DSP work off its existing task.
+    has_pending_ = usb_serial_jtag_read_bytes(&pending_, 1, pdMS_TO_TICKS(1)) == 1;
     return has_pending_ ? 1 : 0;
   }
 
@@ -1219,7 +1223,7 @@ static uint32_t g_audio_rec_freq_hz = 0;
 static RtlBand g_audio_rec_band = RtlBand::fm;
 static uint32_t g_audio_rec_file_seq = 0;
 static bool g_sd_ready = false;
-static fs::FS* g_sd_fs = nullptr;
+static orcsdr::storage::FileSystem* g_sd_fs = nullptr;
 static bool g_sd_tried = false;
 static char g_audio_rec_last_path[64] = "";
 static std::atomic<uint8_t> g_orc_tool{static_cast<uint8_t>(OrcTool::Radio)};
@@ -1305,7 +1309,7 @@ bool paired = false;
 bool authenticated = false;
 bool ui_documentation_mode = false;
 bool offline_transition_handled = false;
-Preferences preferences;
+orcsdr::NvsStore preferences;
 orcsdr::adsb::Settings adsb_settings;
 std::atomic<bool> adsb_settings_persist_pending{false};
 JournalState journal{};
@@ -1361,6 +1365,8 @@ int wifi_network_count = -1;
 char wifi_ssid[33]{};
 char wifi_password[64]{};
 char wifi_status_message[48]{};
+char wifi_hosted_failure_stage[24]{"not_started"};
+int32_t wifi_hosted_failure_code = ESP_OK;
 struct WifiProfile {
   char ssid[33]{};
   char password[64]{};
@@ -1853,8 +1859,7 @@ void draw_wifi_state() {
   if (!wifi_station_ready) {
     snprintf(message, sizeof(message), "Wi-Fi unavailable");
   } else if (wifi_connected) {
-    snprintf(message, sizeof(message), "Wi-Fi connected: %s",
-             WiFi.localIP().toString().c_str());
+    snprintf(message, sizeof(message), "Wi-Fi connected: %s", orcsdr::wifi::ip());
     color = TFT_GREEN;
   } else if (wifi_configured) {
     snprintf(message, sizeof(message), "Wi-Fi connecting");
@@ -2231,7 +2236,7 @@ void persist_fm_frequency(uint32_t frequency_hz) {
   if (frequency_hz == rtl_saved_fm_hz) return;
   rtl_saved_fm_hz = frequency_hz;
   // Preferences opened in load_state(); keep writes off the bulk-IQ path.
-  preferences.putUInt("sdr_fm_hz", frequency_hz);
+  preferences.put_u32("sdr_fm_hz", frequency_hz);
   fm_config_save_pending.store(true, std::memory_order_release);
   Serial.printf("RTL_FM_SAVE frequency_hz=%u\n", frequency_hz);
 }
@@ -2584,7 +2589,7 @@ void rtl_audio_test_emit_status() {
       rtl_dsp_block_us_max.load(std::memory_order_relaxed),
       static_cast<unsigned>(uxTaskGetNumberOfTasks()),
       static_cast<int>(uxTaskGetNumberOfTasks()) - static_cast<int>(rtl_audio_test_task_baseline),
-      ESP.getFreeHeap());
+      esp_get_free_heap_size());
 }
 
 void rtl_audio_test_start_tone() {
@@ -2720,26 +2725,16 @@ bool ensure_tab5_sd() {
   if (g_sd_ready) return true;
   if (g_sd_tried && !g_sd_ready) return false;
   g_sd_tried = true;
-  SD_MMC.setPowerChannel(-1);  // Tab5 card power is external; LDO channel 4 is in use.
-  SD_MMC.setPins(43, 44, 39, 40, 41, 42);
-  if (SD_MMC.begin("/sd", false, false, SDMMC_FREQ_HIGHSPEED)) {
-    g_sd_fs = &SD_MMC;
+  if (orcsdr::storage::mount_tab5_sd()) {
+    g_sd_fs = &orcsdr::storage::filesystem();
     g_sd_ready = true;
     Serial.println("RTL_REC_SD ready bus=sdmmc");
     return true;
   }
-  SPI.begin(kTab5SdSckPin, kTab5SdMisoPin, kTab5SdMosiPin, kTab5SdCsPin);
-  /* 10 MHz is safer on long-ish Tab5 SPI than 25 MHz during concurrent USB. */
-  if (!SD.begin(kTab5SdCsPin, SPI, 10000000)) {
-    Serial.println("RTL_REC_SD missing_or_fail");
-    g_sd_fs = nullptr;
-    g_sd_ready = false;
-    return false;
-  }
-  g_sd_fs = &SD;
-  g_sd_ready = true;
-  Serial.println("RTL_REC_SD ready bus=spi");
-  return true;
+  Serial.println("RTL_REC_SD missing_or_fail");
+  g_sd_fs = nullptr;
+  g_sd_ready = false;
+  return false;
 }
 
 void load_lora_config() {
@@ -2790,7 +2785,7 @@ void load_lora_config() {
 
 uint64_t sd_total_bytes() {
   if (!g_sd_ready || g_sd_fs == nullptr) return 0;
-  return g_sd_fs == &SD_MMC ? SD_MMC.totalBytes() : SD.totalBytes();
+  return orcsdr::storage::total_bytes();
 }
 
 void apply_p25_config(const orcsdr::p25config::Config& config, const char* status) {
@@ -4724,9 +4719,7 @@ void draw_cb_dashboard(bool static_panel) {
   if (!orcsdr::screens::is_active(orcsdr::screens::Id::radio)) return;
   if (rtl_ui_band != RtlBand::cb || rtl_nav_open) return;
   if (static_panel) {
-    const bool image_ok = ensure_tab5_sd() && g_sd_fs->exists(kCbDashboardPath) &&
-                          M5.Display.drawJpgFile(*g_sd_fs, kCbDashboardPath,
-                                                 kCbPanelX, kCbPanelY);
+    const bool image_ok = false;  // Native M5GFX has no POSIX filesystem adapter.
     if (!image_ok) {
       M5.Display.fillRoundRect(kCbPanelX, kCbPanelY, kCbPanelWidth,
                                kCbPanelHeight, 10, 0x632c);
@@ -6990,7 +6983,7 @@ void initialize_wifi() {
   Serial.printf("RTL_WIFI_DMA free=%lu largest=%lu txq=%d rxq=%d\n",
                 static_cast<unsigned long>(dma_free),
                 static_cast<unsigned long>(dma_largest),
-                CONFIG_ESP_HOSTED_SDIO_TX_Q_SIZE, CONFIG_ESP_HOSTED_SDIO_RX_Q_SIZE);
+                CONFIG_ESP_HOSTED_HOST_SDIO_TX_Q_SIZE, CONFIG_ESP_HOSTED_HOST_SDIO_RX_Q_SIZE);
   const bool radio_was_running =
       rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
   if (radio_was_running) {
@@ -7009,31 +7002,18 @@ void initialize_wifi() {
                       MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)));
   }
   apply_wifi_antenna();
-  WiFi.setPins(kWifiClockPin, kWifiCommandPin, kWifiData0Pin, kWifiData1Pin,
-               kWifiData2Pin, kWifiData3Pin, kWifiResetPin);
-  wifi_station_ready = WiFi.mode(WIFI_STA);
-  uint32_t host_major = 0, host_minor = 0, host_patch = 0;
-  uint32_t slave_major = 0, slave_minor = 0, slave_patch = 0;
-  if (wifi_station_ready) {
-    hostedGetHostVersion(&host_major, &host_minor, &host_patch);
-    hostedGetSlaveVersion(&slave_major, &slave_minor, &slave_patch);
-    wifi_hosted_versions_match = host_major == slave_major && host_minor == slave_minor &&
-                                 host_patch == slave_patch;
-    Serial.printf("RTL_WIFI_HOSTED host=%lu.%lu.%lu slave=%lu.%lu.%lu match=%d\n",
-                  static_cast<unsigned long>(host_major),
-                  static_cast<unsigned long>(host_minor),
-                  static_cast<unsigned long>(host_patch),
-                  static_cast<unsigned long>(slave_major),
-                  static_cast<unsigned long>(slave_minor),
-                  static_cast<unsigned long>(slave_patch),
-                  wifi_hosted_versions_match ? 1 : 0);
-    if (!wifi_hosted_versions_match) {
-      WiFi.mode(WIFI_OFF);
-      wifi_station_ready = false;
-      strlcpy(wifi_status_message, "ESP-Hosted version mismatch",
-              sizeof(wifi_status_message));
-      Serial.println("RTL_WIFI_BLOCKED hosted_version_mismatch");
-    }
+  wifi_station_ready = orcsdr::wifi::start();
+  strlcpy(wifi_hosted_failure_stage, orcsdr::wifi::hosted_failure_stage(),
+          sizeof(wifi_hosted_failure_stage));
+  wifi_hosted_failure_code = orcsdr::wifi::hosted_failure_code();
+  wifi_hosted_versions_match = wifi_station_ready && orcsdr::wifi::hosted_versions_match();
+  if (!wifi_station_ready) {
+    strlcpy(wifi_status_message, "ESP-Hosted 3.0.6 unavailable", sizeof(wifi_status_message));
+    Serial.println("RTL_WIFI_BLOCKED hosted_init_or_version");
+  } else {
+    Serial.println("I OrcSDR: ESP32-C6 detected");
+    Serial.println("I OrcSDR: ESP-Hosted C6 FW: 3.0.6");
+    Serial.println("I OrcSDR: ESP-Hosted transport: SDIO");
   }
   Serial.printf("RTL_WIFI_INIT station=%d core=%d\n", wifi_station_ready ? 1 : 0,
                 xPortGetCoreID());
@@ -7063,13 +7043,12 @@ void start_wifi_inventory() {
   if (!wifi_station_ready) initialize_wifi();
   if (!wifi_station_ready) return;
   if (wifi_scan_running) return;
-  WiFi.scanDelete();
   wifi_scan_result_count = 0;
   wifi_scan_started_ms = millis();
   strlcpy(wifi_status_message, "Scanning networks", sizeof(wifi_status_message));
-  wifi_network_count = WiFi.scanNetworks(true, true);
+  wifi_network_count = orcsdr::wifi::begin_scan() ? -2 : -1;
   begin_power_monitor("wifi_scan");
-  wifi_scan_running = wifi_network_count == WIFI_SCAN_RUNNING;
+  wifi_scan_running = wifi_network_count == -2;
   log_wifi_coexistence(wifi_scan_running ? "scan_started" : "scan_start_failed");
   draw_wifi_state();
 }
@@ -7078,7 +7057,6 @@ void start_wifi_connection() {
   if (!settings_wifi_power_enabled) return;
   if (!wifi_station_ready) initialize_wifi();
   if (!wifi_station_ready || !wifi_ssid[0]) return;
-  if (wifi_scan_running) WiFi.scanDelete();
   wifi_scan_running = false;
   wifi_network_count = -1;
   wifi_connected = false;
@@ -7090,8 +7068,8 @@ void start_wifi_connection() {
                     heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
                 static_cast<unsigned long>(
                     heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)));
-  WiFi.disconnect();
-  WiFi.begin(wifi_ssid, wifi_password);
+  orcsdr::wifi::disconnect();
+  if (!orcsdr::wifi::connect(wifi_ssid, wifi_password)) wifi_connecting = false;
   begin_power_monitor("wifi_connect");
   log_wifi_coexistence("connect_started");
   draw_wifi_state();
@@ -7099,8 +7077,7 @@ void start_wifi_connection() {
 
 void stop_wifi() {
   if (wifi_station_ready) {
-    WiFi.disconnect(true, false);
-    WiFi.mode(WIFI_OFF);
+    orcsdr::wifi::stop();
   }
   wifi_station_ready = false;
   wifi_hosted_versions_match = false;
@@ -7137,28 +7114,27 @@ void poll_wifi() {
   last_wifi_status_ms = now_ms;
   bool state_changed = false;
   if (wifi_scan_running) {
-    const int result = WiFi.scanComplete();
-    if (result != WIFI_SCAN_RUNNING) {
+    const int result = orcsdr::wifi::scan_results(nullptr, 0);
+    if (result >= 0) {
       wifi_scan_running = false;
       wifi_network_count = result;
       wifi_scan_result_count = result > 0
                                    ? static_cast<uint8_t>(std::min<int>(
                                          result, std::size(wifi_scan_results)))
                                    : 0;
+      orcsdr::wifi::ScanResult scan[16]{};
+      const int received = orcsdr::wifi::scan_results(scan, std::size(scan));
+      wifi_scan_result_count = received > 0 ? static_cast<uint8_t>(received) : 0;
       for (uint8_t i = 0; i < wifi_scan_result_count; ++i) {
-        WiFi.SSID(i).toCharArray(wifi_scan_results[i].ssid,
-                                sizeof(wifi_scan_results[i].ssid));
-        wifi_scan_results[i].rssi = WiFi.RSSI(i);
-        wifi_scan_results[i].secure = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+        strlcpy(wifi_scan_results[i].ssid, scan[i].ssid, sizeof(wifi_scan_results[i].ssid));
+        wifi_scan_results[i].rssi = scan[i].rssi; wifi_scan_results[i].secure = scan[i].secure;
       }
-      WiFi.scanDelete();
       log_wifi_coexistence("scan_complete", millis() - wifi_scan_started_ms);
       allow_boot_speaker();
       state_changed = true;
     }
   }
-  const wl_status_t wifi_status = WiFi.status();
-  const bool connected = wifi_status == WL_CONNECTED;
+  const bool connected = orcsdr::wifi::connected();
   if (wifi_connecting && connected) {
     wifi_connecting = false;
     if (wifi_save_after_connect) {
@@ -7184,11 +7160,11 @@ void poll_wifi() {
     state_changed = true;
   } else if (wifi_connecting &&
              (millis() - wifi_connect_started_ms >= 15000u ||
-              wifi_status == WL_CONNECT_FAILED || wifi_status == WL_NO_SSID_AVAIL)) {
+              orcsdr::wifi::connect_failed())) {
     const bool discard_candidate = wifi_save_after_connect;
     wifi_connecting = false;
     wifi_save_after_connect = false;
-    WiFi.disconnect();
+    orcsdr::wifi::disconnect();
     if (discard_candidate) {
       int saved = -1;
       for (uint8_t i = 0; i < wifi_profile_count; ++i)
@@ -7413,7 +7389,7 @@ orcsdr::lora::Snapshot lora_dashboard_snapshot() {
 #else
   snapshot.driver_ready = rtl_device_ready();
 #endif
-  snapshot.wifi_connected = WiFi.status() == WL_CONNECTED;
+  snapshot.wifi_connected = orcsdr::wifi::connected();
   snapshot.sd_logging = lora_log_ready.load(std::memory_order_relaxed);
   snapshot.survey_active = lora_survey_active;
   snapshot.survey_progress = lora_survey_span;
@@ -7883,7 +7859,7 @@ orcsdr::settings::State global_settings_state() {
     strlcpy(state.profiles[i].ssid, wifi_profiles[i].ssid,
             sizeof(state.profiles[i].ssid));
     state.profiles[i].connected =
-        wifi_connected && strcmp(WiFi.SSID().c_str(), wifi_profiles[i].ssid) == 0;
+        wifi_connected && strcmp(orcsdr::wifi::ssid(), wifi_profiles[i].ssid) == 0;
   }
   if (!wifi_scan_running && wifi_scan_result_count > 0) {
     state.network_count = wifi_scan_result_count;
@@ -7918,7 +7894,7 @@ orcsdr::settings::State global_settings_state() {
   state.sd_ready = g_sd_ready;
   state.sd_total_bytes = sd_total_bytes();
   state.sd_free_bytes = g_sd_ready && g_sd_fs ? state.sd_total_bytes -
-      (g_sd_fs == &SD_MMC ? SD_MMC.usedBytes() : SD.usedBytes()) : 0;
+      orcsdr::storage::used_bytes() : 0;
   const auto catalog_state = orcsdr::catalog::state();
   state.catalog_ready = catalog_state.ready;
   state.catalog_busy = catalog_state.busy;
@@ -8295,8 +8271,8 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
     case orcsdr::settings::ActionKind::forget_wifi:
       if (action.value >= 0 && action.value < wifi_profile_count) {
         const uint8_t index = static_cast<uint8_t>(action.value);
-        if (wifi_connected && strcmp(WiFi.SSID().c_str(), wifi_profiles[index].ssid) == 0) {
-          WiFi.disconnect();
+        if (wifi_connected && strcmp(orcsdr::wifi::ssid(), wifi_profiles[index].ssid) == 0) {
+          orcsdr::wifi::disconnect();
           wifi_connected = false;
         }
         for (uint8_t i = index; i + 1 < wifi_profile_count; ++i)
@@ -8384,7 +8360,7 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
     case orcsdr::settings::ActionKind::catalog_check:
       if (ensure_tab5_sd()) {
         orcsdr::catalog::begin(g_sd_fs, sd_total_bytes() -
-            (g_sd_fs == &SD_MMC ? SD_MMC.usedBytes() : SD.usedBytes()));
+            orcsdr::storage::used_bytes());
         if (!orcsdr::catalog::request_check(wifi_connected))
           Serial.println("ORC_CATALOG_CHECK_REJECTED");
       }
@@ -8608,33 +8584,33 @@ void load_state() {
     workflow.magic = kWorkflowMagic;
     persist_workflow();
   }
-  const String stored_ssid = preferences.isKey("wifi_ssid")
+  const std::string stored_ssid = preferences.isKey("wifi_ssid")
                                  ? preferences.getString("wifi_ssid", "")
-                                 : String();
-  const String stored_password = preferences.isKey("wifi_pass")
+                                 : std::string();
+  const std::string stored_password = preferences.isKey("wifi_pass")
                                      ? preferences.getString("wifi_pass", "")
-                                     : String();
+                                     : std::string();
   for (uint8_t i = 0; i < std::size(wifi_profiles); ++i) {
     char ssid_key[16], pass_key[16];
     snprintf(ssid_key, sizeof(ssid_key), "wifi%u_ssid", i);
     snprintf(pass_key, sizeof(pass_key), "wifi%u_pass", i);
-    const String ssid = preferences.isKey(ssid_key)
-                            ? preferences.getString(ssid_key, "") : String();
-    const String password = preferences.isKey(pass_key)
-                                ? preferences.getString(pass_key, "") : String();
-    if (ssid.isEmpty() || ssid.length() > 32 || password.length() > 63) continue;
-    ssid.toCharArray(wifi_profiles[wifi_profile_count].ssid,
-                     sizeof(wifi_profiles[wifi_profile_count].ssid));
-    password.toCharArray(wifi_profiles[wifi_profile_count].password,
-                         sizeof(wifi_profiles[wifi_profile_count].password));
+    const std::string ssid = preferences.isKey(ssid_key)
+                                 ? preferences.getString(ssid_key, "") : std::string();
+    const std::string password = preferences.isKey(pass_key)
+                                     ? preferences.getString(pass_key, "") : std::string();
+    if (ssid.empty() || ssid.size() > 32 || password.size() > 63) continue;
+    strlcpy(wifi_profiles[wifi_profile_count].ssid, ssid.c_str(),
+            sizeof(wifi_profiles[wifi_profile_count].ssid));
+    strlcpy(wifi_profiles[wifi_profile_count].password, password.c_str(),
+            sizeof(wifi_profiles[wifi_profile_count].password));
     ++wifi_profile_count;
   }
-  const bool legacy_valid = !stored_ssid.isEmpty() && stored_ssid.length() <= 32 &&
-                            stored_password.length() <= 63;
+  const bool legacy_valid = !stored_ssid.empty() && stored_ssid.size() <= 32 &&
+                            stored_password.size() <= 63;
   if (wifi_profile_count == 0 && legacy_valid) {
-    stored_ssid.toCharArray(wifi_profiles[0].ssid, sizeof(wifi_profiles[0].ssid));
-    stored_password.toCharArray(wifi_profiles[0].password,
-                                sizeof(wifi_profiles[0].password));
+    strlcpy(wifi_profiles[0].ssid, stored_ssid.c_str(), sizeof(wifi_profiles[0].ssid));
+    strlcpy(wifi_profiles[0].password, stored_password.c_str(),
+            sizeof(wifi_profiles[0].password));
     preferences.putString("wifi0_ssid", wifi_profiles[0].ssid);
     preferences.putString("wifi0_pass", wifi_profiles[0].password);
     wifi_profile_count = 1;
@@ -8659,12 +8635,12 @@ void load_state() {
   settings_graphics_default = preferences.getBool("set_gfx", true);
   settings_web_console_enabled = preferences.getBool("set_web_console", false);
   orcsdr::web_console::set_enabled(settings_web_console_enabled);
-  const String location_label = preferences.isKey("loc_label")
-                                    ? preferences.getString("loc_label", "") : String();
-  const String map_pack = preferences.isKey("map_pack")
-                              ? preferences.getString("map_pack", "") : String();
-  location_label.toCharArray(settings_location_label, sizeof(settings_location_label));
-  map_pack.toCharArray(settings_map_pack, sizeof(settings_map_pack));
+  const std::string location_label = preferences.isKey("loc_label")
+                                         ? preferences.getString("loc_label", "") : std::string();
+  const std::string map_pack = preferences.isKey("map_pack")
+                                   ? preferences.getString("map_pack", "") : std::string();
+  strlcpy(settings_location_label, location_label.c_str(), sizeof(settings_location_label));
+  strlcpy(settings_map_pack, map_pack.c_str(), sizeof(settings_map_pack));
   rtl_ui_volume = preferences.getUChar("set_volume", kRtlVolumeDefault);
   rtl_live_volume.store(rtl_ui_volume, std::memory_order_release);
   rtl_graphics_enabled.store(settings_graphics_default, std::memory_order_release);
@@ -9396,7 +9372,11 @@ void emit_touch(int32_t x, int32_t y) {
 }
 
 void emit_identity() {
-  const String wifi_ip = wifi_connected ? WiFi.localIP().toString() : "0.0.0.0";
+  esp_chip_info_t chip{};
+  esp_chip_info(&chip);
+  uint32_t flash_size = 0;
+  (void)esp_flash_get_size(nullptr, &flash_size);
+  const char* wifi_ip = wifi_connected ? orcsdr::wifi::ip() : "0.0.0.0";
   const int32_t battery_level = M5.Power.getBatteryLevel();
   const int16_t battery_mv = M5.Power.getBatteryVoltage();
   const int32_t battery_ma = M5.Power.getBatteryCurrent();
@@ -9426,12 +9406,12 @@ void emit_identity() {
       "\"m5tab5.display.status\",\"m5tab5.input.touch\",\"m5tab5.event.journal.sync\","
       "\"m5tab5.network.inventory\",\"m5tab5.network.configure\","
       "\"m5tab5.power.read\"]}}\n",
-      static_cast<unsigned long>(millis()), node_id, ESP.getChipModel(),
-      ESP.getChipRevision(), ESP.getChipCores(), ESP.getFlashChipSize(),
-      ESP.getPsramSize(), ESP.getFreeHeap(), M5.Display.width(), M5.Display.height(),
+      static_cast<unsigned long>(millis()), node_id, CONFIG_IDF_TARGET,
+      chip.revision, chip.cores, flash_size,
+      esp_psram_get_size(), esp_get_free_heap_size(), M5.Display.width(), M5.Display.height(),
       M5.Touch.isEnabled() ? "true" : "false",
       wifi_station_ready ? "true" : "false", wifi_configured ? "true" : "false",
-      wifi_network_count, wifi_connected ? "true" : "false", wifi_ip.c_str(),
+      wifi_network_count, wifi_connected ? "true" : "false", wifi_ip,
       M5.Power.getType() == m5::Power_Class::pmic_unknown ? "false" : "true",
       static_cast<int>(M5.Power.getType()), static_cast<long>(battery_level), battery_mv,
       static_cast<long>(battery_ma), vbus_mv, charging_state(),
@@ -10192,6 +10172,85 @@ void process_command(char* command) {
       return;
     }
   }
+  if (strcmp(command, "RTL_UI STATUS") == 0) {
+    Serial.printf("RTL_UI_STATUS screen=%s band=%s frequency_hz=%u settings=%d fm=%d p25=%d adsb=%d lora=%d\n",
+                  orcsdr::screens::name(orcsdr::screens::status().active),
+                  rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz,
+                  orcsdr::settings::active() ? 1 : 0, orcsdr::fm::active() ? 1 : 0,
+                  orcsdr::p25::active() ? 1 : 0, orcsdr::adsb::active() ? 1 : 0,
+                  orcsdr::lora::active() ? 1 : 0);
+    return;
+  }
+  if (strncmp(command, "RTL_UI OPEN ", 12) == 0 && authenticated) {
+    const char* name = command + 12;
+    using Id = orcsdr::dashboards::Id;
+    if (strcmp(name, "HOME") == 0) show_home();
+    else if (strcmp(name, "FM") == 0) open_dashboard(Id::fm);
+    else if (strcmp(name, "P25") == 0) open_dashboard(Id::p25);
+    else if (strcmp(name, "ADSB") == 0) open_dashboard(Id::adsb);
+    else if (strcmp(name, "LORA") == 0) open_dashboard(Id::lora);
+    else if (strcmp(name, "SETTINGS") == 0) open_dashboard(Id::settings);
+    else { Serial.println("RTL_UI_OPEN_INVALID use HOME|FM|P25|ADSB|LORA|SETTINGS"); return; }
+    Serial.printf("RTL_UI_OPEN_OK target=%s\n", name);
+    return;
+  }
+  if (strncmp(command, "RTL_UI ACTION ", 14) == 0 && authenticated) {
+    char domain[12]{}, action[24]{};
+    unsigned long value = 0;
+    const int fields = sscanf(command + 14, "%11s %23s %lu", domain, action, &value);
+    if (fields < 2) { Serial.println("RTL_UI_ACTION_INVALID usage: RTL_UI ACTION <FM|P25|LORA|SETTINGS> <action> [value]"); return; }
+    if (strcmp(domain, "FM") == 0) {
+      using K = orcsdr::fm::ActionKind; K kind = K::none;
+      if (!strcmp(action, "TUNE")) kind=K::tune_hz; else if (!strcmp(action, "DOWN")) kind=K::step_down;
+      else if (!strcmp(action, "UP")) kind=K::step_up; else if (!strcmp(action, "SEEK_DOWN")) kind=K::seek_down;
+      else if (!strcmp(action, "SEEK_UP")) kind=K::seek_up; else if (!strcmp(action, "SAVE")) kind=K::save_preset;
+      else if (!strcmp(action, "STEP")) kind=K::step_cycle; else if (!strcmp(action, "FILTER_DOWN")) kind=K::filter_down;
+      else if (!strcmp(action, "FILTER_UP")) kind=K::filter_up; else if (!strcmp(action, "SPAN_DOWN")) kind=K::span_down;
+      else if (!strcmp(action, "SPAN_UP")) kind=K::span_up; else if (!strcmp(action, "SOUND")) kind=K::sound_toggle;
+      else if (!strcmp(action, "VOL_DOWN")) kind=K::volume_down; else if (!strcmp(action, "VOL_UP")) kind=K::volume_up;
+      else if (!strcmp(action, "GRAPHICS")) kind=K::graphics_toggle; else if (!strcmp(action, "RECORD")) kind=K::recording_toggle;
+      else if (!strcmp(action, "SCAN")) kind=K::scan_presets; else if (!strcmp(action, "SETTINGS")) kind=K::open_device_settings;
+      else if (!strcmp(action, "HOME")) kind=K::exit_to_browse;
+      if (kind != K::none) { handle_fm_dashboard_action({kind, static_cast<uint32_t>(value)}); Serial.println("RTL_UI_ACTION_OK"); return; }
+    } else if (strcmp(domain, "P25") == 0) {
+      using K = orcsdr::p25::ActionKind; K kind = K::none;
+      if (!strcmp(action, "TUNE")) kind=K::tune_hz; else if (!strcmp(action, "PREV")) kind=K::previous_candidate;
+      else if (!strcmp(action, "NEXT")) kind=K::next_candidate; else if (!strcmp(action, "SURVEY")) kind=K::survey_toggle;
+      else if (!strcmp(action, "HOLD")) kind=K::hold_toggle; else if (!strcmp(action, "HOLD_TG")) kind=K::hold_talkgroup;
+      else if (!strcmp(action, "SKIP")) kind=K::skip_talkgroup; else if (!strcmp(action, "FOLLOW")) kind=K::auto_follow_toggle;
+      else if (!strcmp(action, "ENCRYPT_SKIP")) kind=K::encryption_skip_toggle; else if (!strcmp(action, "RELOAD")) kind=K::reload_config;
+      else if (!strcmp(action, "SPAN_DOWN")) kind=K::span_down; else if (!strcmp(action, "SPAN_UP")) kind=K::span_up;
+      else if (!strcmp(action, "SOUND")) kind=K::sound_toggle; else if (!strcmp(action, "VOL_DOWN")) kind=K::volume_down;
+      else if (!strcmp(action, "VOL_UP")) kind=K::volume_up; else if (!strcmp(action, "SETTINGS")) kind=K::open_device_settings;
+      else if (!strcmp(action, "HOME")) kind=K::exit_to_home;
+      if (kind != K::none) { handle_p25_dashboard_action({kind, static_cast<uint32_t>(value)}); Serial.println("RTL_UI_ACTION_OK"); return; }
+    } else if (strcmp(domain, "LORA") == 0) {
+      using K = orcsdr::lora::ActionKind; K kind = K::none;
+      if (!strcmp(action, "VIEW")) kind=K::select_view; else if (!strcmp(action, "NODE")) kind=K::select_node;
+      else if (!strcmp(action, "FAVORITE")) kind=K::toggle_favorite; else if (!strcmp(action, "FILTER")) kind=K::filter_next;
+      else if (!strcmp(action, "SCAN")) kind=K::scan_toggle; else if (!strcmp(action, "IQ")) kind=K::record_iq_toggle;
+      else if (!strcmp(action, "LOG")) kind=K::logging_toggle; else if (!strcmp(action, "CLEAR")) kind=K::clear_events;
+      else if (!strcmp(action, "EXPORT")) kind=K::export_log; else if (!strcmp(action, "FOLLOW")) kind=K::follow_node;
+      else if (!strcmp(action, "CHANNELS")) kind=K::open_channels; else if (!strcmp(action, "SETTINGS")) kind=K::open_settings;
+      else if (!strcmp(action, "HOME")) kind=K::exit_home;
+      if (kind != K::none) { handle_lora_dashboard_action({kind, static_cast<uint32_t>(value)}); Serial.println("RTL_UI_ACTION_OK"); return; }
+    } else if (strcmp(domain, "SETTINGS") == 0) {
+      using K = orcsdr::settings::ActionKind; K kind = K::none;
+      if (!strcmp(action, "WIFI_POWER")) kind=K::wifi_power_changed; else if (!strcmp(action, "ANTENNA")) kind=K::wifi_antenna_changed;
+      else if (!strcmp(action, "SCAN")) kind=K::scan_wifi; else if (!strcmp(action, "CONNECT_SAVED")) kind=K::connect_saved_wifi;
+      else if (!strcmp(action, "FORGET")) kind=K::forget_wifi; else if (!strcmp(action, "MOVE_UP")) kind=K::move_wifi_up;
+      else if (!strcmp(action, "MOVE_DOWN")) kind=K::move_wifi_down; else if (!strcmp(action, "RANGE")) kind=K::range_changed;
+      else if (!strcmp(action, "BRIGHTNESS")) kind=K::brightness_changed; else if (!strcmp(action, "ROTATION")) kind=K::rotation_changed;
+      else if (!strcmp(action, "TIMEOUT")) kind=K::timeout_changed; else if (!strcmp(action, "VOLUME")) kind=K::volume_changed;
+      else if (!strcmp(action, "SOUND")) kind=K::sound_changed; else if (!strcmp(action, "AUTO_START")) kind=K::auto_start_changed;
+      else if (!strcmp(action, "GRAPHICS")) kind=K::graphics_changed; else if (!strcmp(action, "WEB")) kind=K::web_console_changed;
+      else if (!strcmp(action, "CATALOG_CHECK")) kind=K::catalog_check; else if (!strcmp(action, "CATALOG_INSTALL")) kind=K::catalog_install;
+      else if (!strcmp(action, "CATALOG_REMOVE")) kind=K::catalog_remove; else if (!strcmp(action, "CLOSE")) kind=K::close;
+      if (kind != K::none) { handle_global_settings_action({kind, static_cast<int32_t>(value)}); Serial.println("RTL_UI_ACTION_OK"); return; }
+    }
+    Serial.println("RTL_UI_ACTION_INVALID unknown_action");
+    return;
+  }
   if (strcmp(command, "RTL_WIFI_SCAN") == 0) {
     wifi_scan_requested.store(true, std::memory_order_release);
     Serial.println("RTL_WIFI_SCAN_QUEUED");
@@ -10642,6 +10701,9 @@ void process_command(char* command) {
     Serial.println("RTL_STATUS                    - device connection info");
     Serial.println("RTL_SCREEN_STATUS             - active screen ownership diagnostics");
     Serial.println("RTL_UI_REGRESSION CHECK|RUN   - passive checks or Home->screen restore test");
+    Serial.println("RTL_UI STATUS                  - current screen/dashboard state");
+    Serial.println("RTL_UI OPEN <HOME|FM|P25|ADSB|LORA|SETTINGS> - open dashboard (auth)");
+    Serial.println("RTL_UI ACTION <domain> <action> [value] - mirror FM/P25/LoRa/Settings touch action (auth)");
     Serial.println("RTL_TUNE <BAND> <HZ>           - tune band+freq (auth) BAND=FM|AM|WX|CB|LORA|BROWSE|ADSB|P25");
     Serial.println("RTL_FREQ                       - query current band/frequency/mode");
     Serial.println("RTL_FREQ <HZ>                  - hot-retune within current band (auth)");
@@ -10785,8 +10847,7 @@ void process_command(char* command) {
   if (strcmp(command, "RTL_WEB") == 0 || strcmp(command, "RTL_WEB_STATUS") == 0) {
     char url[48]{};
     if (orcsdr::web_console::listening() && wifi_connected) {
-      const String ip = WiFi.localIP().toString();
-      orcsdr::web_console::format_url(url, sizeof(url), ip.c_str());
+      orcsdr::web_console::format_url(url, sizeof(url), orcsdr::wifi::ip());
     }
     Serial.printf("RTL_WEB_STATUS enabled=%d listening=%d url=%s\n",
                   orcsdr::web_console::enabled() ? 1 : 0,
@@ -10802,8 +10863,7 @@ void process_command(char* command) {
     orcsdr::web_console::poll(wifi_connected);
     char url[48]{};
     if (orcsdr::web_console::listening() && wifi_connected) {
-      const String ip = WiFi.localIP().toString();
-      orcsdr::web_console::format_url(url, sizeof(url), ip.c_str());
+      orcsdr::web_console::format_url(url, sizeof(url), orcsdr::wifi::ip());
     }
     Serial.printf("RTL_WEB_OK enabled=%d listening=%d url=%s\n",
                   settings_web_console_enabled ? 1 : 0,
@@ -11320,7 +11380,7 @@ void setup() {
   M5.Speaker.config(speaker_config);
   log_dram_budget("boot");
   {
-    Preferences rot_prefs;
+    orcsdr::NvsStore rot_prefs;
     if (rot_prefs.begin("orclink", true)) {
       settings_rotation = rot_prefs.getUChar("set_rotation", 1);
       rot_prefs.end();
@@ -11454,28 +11514,23 @@ void setup() {
   return;
 #else
 
-  /*
-   * Loading splash owns the display while dependencies come up.
-   * Status pill updates each boot step; the ready button gates entry to home.
-   */
+  /* ESP-Hosted owns SDMMC Slot 1; bring it up before the splash mounts the
+   * microSD card on Slot 0. This is the supported ESP-Hosted shared-SDMMC
+   * initialization order on ESP32-P4. */
   g_suppress_home_paint = true;
-  (void)orcsdr_splash_begin();
-
-  orcsdr_splash_set_status("Loading device identity…");
   uint8_t mac[6];
   esp_read_mac(mac, ESP_MAC_BASE);
   snprintf(node_id, sizeof(node_id), "m5tab5_%02x%02x%02x%02x%02x%02x",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-
-  orcsdr_splash_set_status("Loading saved settings…");
   load_state();
-
   if (settings_wifi_power_enabled) {
-    orcsdr_splash_set_status("Starting Wi-Fi…");
     initialize_wifi();
   }
 
+  /* Loading splash owns the display while SD-backed splash assets load. */
+  (void)orcsdr_splash_begin();
   orcsdr_splash_set_status("Starting RTL-SDR USB host…");
+
   begin_boot_device_staging();
 
   /* Dependencies are up: reveal the gate while the background keeps looping. */
@@ -11496,6 +11551,15 @@ void setup() {
 }
 
 void loop() {
+  static bool hosted_boot_status_emitted = false;
+  if (!hosted_boot_status_emitted && millis() >= 10000u) {
+    hosted_boot_status_emitted = true;
+    Serial.printf("RTL_WIFI_BOOT_STATUS station=%d hosted_match=%d stage=%s error=0x%lx message=\"%s\"\n",
+                  wifi_station_ready ? 1 : 0, wifi_hosted_versions_match ? 1 : 0,
+                  wifi_hosted_failure_stage,
+                  static_cast<unsigned long>(wifi_hosted_failure_code),
+                  wifi_status_message);
+  }
   const bool adsb_ui = rtl_ui_band == RtlBand::adsb && orcsdr::adsb::active();
   const bool radio_ui = rtl_ui_active.load(std::memory_order_acquire);
   const bool settings_ui = orcsdr::settings::active();
@@ -11797,9 +11861,20 @@ void loop() {
         "\"payload\":{\"node_id\":\"%s\",\"sequence\":%llu,"
         "\"uptime_ms\":%u,\"free_heap_bytes\":%u,\"journal_pending\":%u}}\n",
         static_cast<unsigned long long>(heartbeat_sequence), node_id,
-        static_cast<unsigned long long>(heartbeat_sequence), now, ESP.getFreeHeap(),
+        static_cast<unsigned long long>(heartbeat_sequence), now, esp_get_free_heap_size(),
         journal.count);
   }
 
   delay(10);
+}
+
+extern "C" void app_main(void) {
+  esp_err_t result = nvs_flash_init();
+  if (result == ESP_ERR_NVS_NO_FREE_PAGES || result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    ESP_ERROR_CHECK(nvs_flash_erase());
+    result = nvs_flash_init();
+  }
+  ESP_ERROR_CHECK(result);
+  setup();
+  for (;;) loop();
 }

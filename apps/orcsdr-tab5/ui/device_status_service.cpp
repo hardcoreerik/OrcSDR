@@ -1,7 +1,7 @@
 #include "device_status_service.hpp"
 
 #include <M5Unified.h>
-#include <WiFi.h>
+#include "wifi_service.hpp"
 
 #include <cstring>
 
@@ -18,10 +18,9 @@ Snapshot collect(bool connected, const char* fallback_ssid, bool rtl_ready,
   snapshot.vbus_mv = M5.Power.getVBUSVoltage();
   strlcpy(snapshot.rtl_status, rtl_status ? rtl_status : "", sizeof(snapshot.rtl_status));
   if (connected) {
-    strlcpy(snapshot.wifi_ssid, WiFi.SSID().c_str(), sizeof(snapshot.wifi_ssid));
-    const String ip = WiFi.localIP().toString();
-    strlcpy(snapshot.wifi_ip, ip.c_str(), sizeof(snapshot.wifi_ip));
-    snapshot.wifi_rssi = WiFi.RSSI();
+    strlcpy(snapshot.wifi_ssid, orcsdr::wifi::ssid(), sizeof(snapshot.wifi_ssid));
+    strlcpy(snapshot.wifi_ip, orcsdr::wifi::ip(), sizeof(snapshot.wifi_ip));
+    snapshot.wifi_rssi = orcsdr::wifi::rssi();
   } else {
     strlcpy(snapshot.wifi_ssid, fallback_ssid ? fallback_ssid : "", sizeof(snapshot.wifi_ssid));
   }

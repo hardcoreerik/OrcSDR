@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include <FS.h>
+#include "orcsdr_storage.hpp"
 
 namespace orcsdr::catalog {
 
@@ -34,7 +34,7 @@ struct State {
 
 // The caller owns FS lifetime and must call only from normal application code,
 // never USB/IQ/audio callbacks.
-void begin(fs::FS* filesystem, uint64_t free_bytes = 0);
+void begin(orcsdr::storage::FileSystem* filesystem, uint64_t free_bytes = 0);
 void poll(bool wifi_connected);
 bool request_check(bool wifi_connected);
 bool request_install(uint8_t pack_index, bool wifi_connected);

@@ -1,7 +1,6 @@
 #include "catalog_sync.hpp"
 
-#include <Arduino.h>
-#include <WiFi.h>
+#include "wifi_service.hpp"
 #include <esp_crt_bundle.h>
 #include <esp_app_desc.h>
 #include <esp_http_client.h>
@@ -45,7 +44,7 @@ struct Pack {
 
 EXT_RAM_BSS_ATTR State g_state;
 EXT_RAM_BSS_ATTR Pack g_packs[kPackCount];
-fs::FS* g_fs = nullptr;
+orcsdr::storage::FileSystem* g_fs = nullptr;
 uint64_t g_free_bytes = 0;
 portMUX_TYPE g_lock = portMUX_INITIALIZER_UNLOCKED;
 TaskHandle_t g_worker = nullptr;
@@ -455,7 +454,7 @@ void worker(void*) {
 }
 
 bool request(Operation operation, uint8_t pack_index, bool needs_wifi) {
-  if (g_fs == nullptr || g_worker != nullptr || (needs_wifi && WiFi.status() != WL_CONNECTED)) return false;
+  if (g_fs == nullptr || g_worker != nullptr || (needs_wifi && !orcsdr::wifi::connected())) return false;
   if (!g_fs->exists(kDataRoot) && !g_fs->mkdir(kDataRoot)) return false;
   g_requested = operation;
   g_requested_pack = pack_index;
@@ -466,7 +465,7 @@ bool request(Operation operation, uint8_t pack_index, bool needs_wifi) {
 
 }  // namespace
 
-void begin(fs::FS* filesystem, uint64_t free_bytes) {
+void begin(orcsdr::storage::FileSystem* filesystem, uint64_t free_bytes) {
   g_fs = filesystem;
   g_free_bytes = free_bytes;
   portENTER_CRITICAL(&g_lock);
