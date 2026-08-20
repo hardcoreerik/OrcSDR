@@ -33,6 +33,10 @@ if ($source -match $hostedInitPattern) {
   throw 'Unexpected ESP-Hosted 2.12.6 host-init source; refusing to patch.'
 }
 
+$hostSdio = Join-Path (Get-Location) 'managed_components\espressif__esp_hosted\host\drivers\transport\sdio\sdio_drv.c'
+& (Join-Path $PSScriptRoot 'patch_esp_hosted.py') $hostSdio
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 $m5gfxCommon = Join-Path (Get-Location) 'managed_components\m5stack__m5gfx\src\lgfx\v1\platforms\esp32\common.cpp'
 $m5gfxCmake = Join-Path (Get-Location) 'managed_components\m5stack__m5gfx\CMakeLists.txt'
 $m5gfxSource = Get-Content -LiteralPath $m5gfxCmake -Raw
