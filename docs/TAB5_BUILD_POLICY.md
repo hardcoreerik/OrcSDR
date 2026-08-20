@@ -1,7 +1,7 @@
 # Tab5 build and ESP-Hosted policy
 
 > Current migration details, exact pins, and acceptance status live in
-> [`TAB5_ESP_HOSTED_3_MIGRATION.md`](TAB5_ESP_HOSTED_3_MIGRATION.md).
+> [Tab5 ESP-Hosted 3.0.6 migration guide](user-guide/tab5-esp-hosted-3-migration.md).
 
 OrcSDR's Tab5 firmware is a native ESP-IDF project. Build and flash the P4
 with Espressif `idf.py`; do not use PlatformIO for development, release, or

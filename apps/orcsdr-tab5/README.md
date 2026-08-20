@@ -59,7 +59,7 @@ idf.py -p COM17 flash
 This is a native ESP-IDF 5.5.4 build. M5Unified 0.2.20 and M5GFX 0.2.27 are
 ESP-IDF components; PlatformIO is not a supported OrcSDR build or flash path.
 The current ESP-Hosted 3.0.6 Tab5 migration, pins, and honest hardware status
-are defined in [`docs/TAB5_ESP_HOSTED_3_MIGRATION.md`](../../docs/TAB5_ESP_HOSTED_3_MIGRATION.md).
+are defined in [the Tab5 ESP-Hosted 3.0.6 migration guide](../../docs/user-guide/tab5-esp-hosted-3-migration.md).
 
 `m5tab5_ui` is the complete firmware: regular splash/home flow, NAV band
 selection, and the LoRa dashboard/PSRAM decoder capture path. The optional
