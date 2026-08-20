@@ -11,4 +11,4 @@ The first full run creates a Kokoro `am_michael` pronunciation sample and stops 
 The production firmware remains a native ESP-IDF project. Do not use PlatformIO.
 For the current ESP-IDF 5.5.4 / ESP-Hosted 3.0.6 Tab5 dependency set, pins,
 and non-negotiable hardware acceptance boundary, see
-[`../../TAB5_ESP_HOSTED_3_MIGRATION.md`](../../TAB5_ESP_HOSTED_3_MIGRATION.md).
+[`Tab5 ESP-Hosted 3.0.6 migration`](../tab5-esp-hosted-3-migration.md).

@@ -18,7 +18,7 @@ The current migration pins ESP-Hosted **3.0.6** on both P4 and C6. The normal
 P4 application image does not update the C6. Current known hardware evidence
 has the radio path working but the C6 SDIO handshake failing before version
 negotiation (`sdmmc_init_ocr` / `send_op_cond 0x107`). Follow
-[`../TAB5_ESP_HOSTED_3_MIGRATION.md`](../TAB5_ESP_HOSTED_3_MIGRATION.md) for
+[`Tab5 ESP-Hosted 3.0.6 migration`](tab5-esp-hosted-3-migration.md) for
 the exact Tab5 pins and acceptance state; do not apply the old 2.12.6 M5Burner
 instructions.
 

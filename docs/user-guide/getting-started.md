@@ -17,7 +17,7 @@ Boot lands on Home. If Auto-start reception is on, the last FM station can run i
 Current development uses ESP-IDF 5.5.4 and ESP-Hosted 3.0.6. The native P4
 application/radio path is working, but the permanent P4-to-C6 Wi-Fi handshake
 is still under acceptance. Follow the exact build, flash, and status guidance
-in [`../TAB5_ESP_HOSTED_3_MIGRATION.md`](../TAB5_ESP_HOSTED_3_MIGRATION.md).
+in [`Tab5 ESP-Hosted 3.0.6 migration`](tab5-esp-hosted-3-migration.md).
 
 Do not use the legacy 2.12.6 installer flow as a 3.0.6 verification step.
 For a native build:
