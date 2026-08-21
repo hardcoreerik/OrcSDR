@@ -186,8 +186,8 @@ void draw_location() {
        TFT_LIGHTGREY, 2);
   button(g_state.ip_location_busy ? "LOOKING UP IP AREA" : "LOOK UP IP AREA", 330, 610, 260, 46,
          g_state.ip_location_busy ? TFT_DARKGREY : TFT_DARKCYAN);
-  if (g_state.ip_location_message[0]) text(g_state.ip_location_message, 610, 633, kMuted, 1, middle_left);
   if (g_state.ip_location_ready) button("CONFIRM IP AREA", 900, 610, 290, 46, TFT_DARKGREEN);
+  if (g_state.ip_location_message[0]) text(g_state.ip_location_message, 330, 676, kMuted, 2, middle_left);
 }
 
 void draw_data_maps() {
@@ -715,6 +715,7 @@ Action handle_touch(int32_t x, int32_t y) {
       g_state.latitude_e7 = g_state.ip_latitude_e7; g_state.longitude_e7 = g_state.ip_longitude_e7;
       strlcpy(g_state.location_label, g_state.ip_location_label, sizeof(g_state.location_label));
       g_state.location_configured = true; g_latitude_set = g_longitude_set = true;
+      draw_content();
       return {ActionKind::location_ip_confirm, 0};
     }
   } else if (g_section == Section::data_maps) {

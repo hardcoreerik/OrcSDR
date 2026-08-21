@@ -347,11 +347,18 @@ void draw_map_dynamic() {
   M5.Display.fillRect(50, 182, 842, 330, kBg);
   const Node* center = g_snapshot.node_count ? &g_snapshot.nodes[
       std::min<size_t>(g_snapshot.selected_node, g_snapshot.node_count - 1)] : nullptr;
-  if (!center || center->latitude_e7 == INT32_MAX || center->longitude_e7 == INT32_MAX) {
+  const Node* map_center = center;
+  if (!map_center || map_center->latitude_e7 == INT32_MAX || map_center->longitude_e7 == INT32_MAX) {
+    for (size_t i = 0; i < g_snapshot.node_count; ++i) {
+      const Node& node = g_snapshot.nodes[i];
+      if (node.latitude_e7 != INT32_MAX && node.longitude_e7 != INT32_MAX) { map_center = &node; break; }
+    }
+  }
+  if (!map_center || map_center->latitude_e7 == INT32_MAX || map_center->longitude_e7 == INT32_MAX) {
     text("WAITING FOR VERIFIED POSITION", 470, 350, kMuted, 2);
   } else {
-    const float lat = center->latitude_e7 / 10000000.0f;
-    const float lon = center->longitude_e7 / 10000000.0f;
+    const float lat = map_center->latitude_e7 / 10000000.0f;
+    const float lon = map_center->longitude_e7 / 10000000.0f;
     offline_map::View map{lat, lon, 15.0f, 50, 182, 842, 330};
     offline_map::draw_base(map, 0x0320, kGrid, kMuted, kGrid);
     if (!offline_map::available()) text("OFFLINE MAP PACK NOT INSTALLED", 470, 490, kMuted, 1);

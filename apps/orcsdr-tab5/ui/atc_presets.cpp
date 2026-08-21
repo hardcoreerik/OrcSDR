@@ -1,6 +1,7 @@
 #include "atc_presets.hpp"
 
 #include <cmath>
+#include <cinttypes>
 #include <cstdio>
 #include <cstring>
 
@@ -32,7 +33,7 @@ bool load(orcsdr::storage::FileSystem* filesystem) {
     const size_t size = file.readBytesUntil('\n', line, sizeof(line) - 1);
     line[size] = '\0';
     Preset preset{};
-    if (sscanf(line, "ATC %ld %ld %lu %31[^\n]", &preset.latitude_e7,
+    if (sscanf(line, "ATC %" SCNd32 " %" SCNd32 " %" SCNu32 " %31[^\n]", &preset.latitude_e7,
                &preset.longitude_e7, &preset.frequency_hz, preset.label) == 4 && valid(preset))
       g_presets[g_count++] = preset;
   }

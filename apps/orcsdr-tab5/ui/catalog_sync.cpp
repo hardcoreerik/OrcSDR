@@ -136,14 +136,17 @@ void set_busy(Operation operation, uint8_t progress) {
 
 void refresh_installed() {
   if (g_fs == nullptr) return;
+  Pack packs[kPackCount]{};
+  bool installed[kPackCount]{};
+  bool update_available[kPackCount]{};
   portENTER_CRITICAL(&g_lock);
+  memcpy(packs, g_packs, sizeof(packs));
+  portEXIT_CRITICAL(&g_lock);
   for (uint8_t i = 0; i < kPackCount; ++i) {
-    auto& view = g_state.packs[i];
-    const auto& pack = g_packs[i];
-    view.installed = pack.available && pack.runtime.destination[0] &&
-                     g_fs->exists(pack.runtime.destination);
-    view.update_available = false;
-    if (view.installed) {
+    const auto& pack = packs[i];
+    installed[i] = pack.available && pack.runtime.destination[0] &&
+                   g_fs->exists(pack.runtime.destination);
+    if (installed[i]) {
       char version_path[112]{}, local[sizeof(pack.version)]{};
       snprintf(version_path, sizeof(version_path), "%s.ver", pack.runtime.destination);
       File version = g_fs->open(version_path, FILE_READ);
@@ -151,13 +154,19 @@ void refresh_installed() {
         const size_t used = version.readBytesUntil('\n', local, sizeof(local) - 1);
         local[used] = '\0';
         version.close();
-        view.update_available = strcmp(local, pack.version) != 0;
+        update_available[i] = strcmp(local, pack.version) != 0;
       } else {
-        view.update_available = true;
+        update_available[i] = true;
       }
     }
+  }
+  portENTER_CRITICAL(&g_lock);
+  for (uint8_t i = 0; i < kPackCount; ++i) {
+    auto& view = g_state.packs[i];
+    view.installed = installed[i];
+    view.update_available = update_available[i];
     if (view.installed && !view.update_available) strlcpy(view.status, "INSTALLED", sizeof(view.status));
-    if (!view.installed && pack.available) strlcpy(view.status, "AVAILABLE", sizeof(view.status));
+    if (!view.installed && packs[i].available) strlcpy(view.status, "AVAILABLE", sizeof(view.status));
   }
   portEXIT_CRITICAL(&g_lock);
 }
@@ -318,7 +327,7 @@ bool validate_staged_artifact(const Artifact& artifact, uint8_t pack_index) {
   } else if (pack_index == 0) {
     valid = starts_with(file, "ORCADSB1", 8);
   } else if (pack_index == 4) {
-    valid = starts_with(file, "ORCMAP1", 7);
+    valid = starts_with(file, "ORCMAP1\n", 8);
   } else {
     // Non-ADS-B indexes use the common line-oriented catalog header.
     valid = starts_with(file, "ORCCAT1\n", 8);

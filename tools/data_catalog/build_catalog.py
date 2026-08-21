@@ -37,7 +37,7 @@ def validate_artifact(pack_id: str, source: Path, archive: bool) -> None:
         if prefix != b"ORCADSB1":
             raise ValueError(f"{pack_id} runtime index must start with ORCADSB1: {source}")
     elif pack_id == "lane_county_map":
-        if prefix[:7] != b"ORCMAP1":
+        if prefix != b"ORCMAP1\n":
             raise ValueError(f"{pack_id} runtime index must start with ORCMAP1: {source}")
     elif prefix != b"ORCCAT1\n":
         raise ValueError(f"{pack_id} runtime index must start with ORCCAT1: {source}")

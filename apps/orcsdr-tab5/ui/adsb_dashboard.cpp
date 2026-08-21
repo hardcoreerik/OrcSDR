@@ -649,10 +649,13 @@ void update() {
 
 void set_live_snapshot(const Snapshot& snapshot) {
   if (snapshot.revision != g_live_snapshot.revision) {
-    if (g_history_count < kHistorySamples) ++g_history_count;
-    for (size_t i = 1; i < g_history_count; ++i) {
-      g_rate_history[i - 1] = g_rate_history[i];
-      g_signal_history[i - 1] = g_signal_history[i];
+    if (g_history_count < kHistorySamples) {
+      ++g_history_count;
+    } else {
+      for (size_t i = 1; i < kHistorySamples; ++i) {
+        g_rate_history[i - 1] = g_rate_history[i];
+        g_signal_history[i - 1] = g_signal_history[i];
+      }
     }
     g_rate_history[g_history_count - 1] = snapshot.message_rate;
     g_signal_history[g_history_count - 1] = snapshot.strongest_signal_dbfs;
