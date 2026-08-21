@@ -184,6 +184,10 @@ void draw_location() {
   value_row("RF GAIN", "AUTO (READ ONLY)", 495, kMuted);
   text("Phone GPS proposals require confirmation on this screen.", 330, 565,
        TFT_LIGHTGREY, 2);
+  button(g_state.ip_location_busy ? "LOOKING UP IP AREA" : "LOOK UP IP AREA", 330, 610, 260, 46,
+         g_state.ip_location_busy ? TFT_DARKGREY : TFT_DARKCYAN);
+  if (g_state.ip_location_ready) button("CONFIRM IP AREA", 900, 610, 290, 46, TFT_DARKGREEN);
+  if (g_state.ip_location_message[0]) text(g_state.ip_location_message, 330, 676, kMuted, 2, middle_left);
 }
 
 void draw_data_maps() {
@@ -195,26 +199,26 @@ void draw_data_maps() {
   button(g_state.catalog_busy ? "WORKING..." : "CHECK FOR UPDATES", 940, 126, 278, 48,
          g_state.catalog_busy ? TFT_DARKGREY : TFT_DARKCYAN);
   if (g_state.catalog_message[0]) text(g_state.catalog_message, 330, 180, kMuted, 2);
-  for (uint8_t i = 0; i < 4; ++i) {
+  for (uint8_t i = 0; i < 5; ++i) {
     const auto& pack = g_state.catalog_packs[i];
-    const int y = 190 + i * 126;
-    M5.Display.fillRoundRect(330, y, 888, 116, 8, kPanel);
-    M5.Display.drawRoundRect(330, y, 888, 116, 8, kBlue);
+    const int y = 185 + i * 96;
+    M5.Display.fillRoundRect(330, y, 888, 88, 8, kPanel);
+    M5.Display.drawRoundRect(330, y, 888, 88, 8, kBlue);
     text(pack.title[0] ? pack.title : "DATA PACK", 350, y + 24, kBlue, 3);
     char detail[96];
     snprintf(detail, sizeof(detail), "v%s  source %s  %.1f + %.1f MB",
              pack.version[0] ? pack.version : "--", pack.source_date[0] ? pack.source_date : "--",
              pack.runtime_bytes / 1048576.0, pack.archive_bytes / 1048576.0);
-    text(detail, 350, y + 57, TFT_WHITE, 2);
-    text(pack.status[0] ? pack.status : "CHECK CATALOG", 350, y + 87,
-         pack.installed ? kGreen : kMuted, 2);
+    text(detail, 350, y + 47, TFT_WHITE, 1);
+    text(pack.status[0] ? pack.status : "CHECK CATALOG", 350, y + 70,
+         pack.installed ? kGreen : kMuted, 1);
     const char* install = pack.installed ? (pack.update_available ? "UPDATE" : "REINSTALL") : "INSTALL";
-    button(install, 930, y + 18, 132, 48,
+    button(install, 930, y + 14, 132, 42,
            g_state.catalog_busy || !g_state.catalog_ready ? TFT_DARKGREY : TFT_DARKCYAN);
-    button(g_catalog_remove_armed == i ? "CONFIRM" : "REMOVE", 1072, y + 18, 126, 48,
+    button(g_catalog_remove_armed == i ? "CONFIRM" : "REMOVE", 1072, y + 14, 126, 42,
            pack.installed && !g_state.catalog_busy ? TFT_MAROON : TFT_DARKGREY);
   }
-  text("Manual only. Downloads keep reception active.", 330, 702, TFT_LIGHTGREY, 2);
+  text("Manual only. Downloads keep reception active.", 330, 688, TFT_LIGHTGREY, 1);
 }
 
 void draw_display_audio() {
@@ -616,6 +620,13 @@ void update(const State& state_value) {
        strcmp(g_state.catalog_message, state_value.catalog_message) != 0 ||
        strcmp(g_state.catalog_date, state_value.catalog_date) != 0 ||
        memcmp(g_state.catalog_packs, state_value.catalog_packs, sizeof(g_state.catalog_packs)) != 0);
+  const bool location_changed = g_section == Section::location_adsb &&
+      (g_state.ip_location_busy != state_value.ip_location_busy ||
+       g_state.ip_location_ready != state_value.ip_location_ready ||
+       g_state.ip_latitude_e7 != state_value.ip_latitude_e7 ||
+       g_state.ip_longitude_e7 != state_value.ip_longitude_e7 ||
+       strcmp(g_state.ip_location_label, state_value.ip_location_label) != 0 ||
+       strcmp(g_state.ip_location_message, state_value.ip_location_message) != 0);
   const bool companion_changed = g_section == Section::companion &&
       (g_state.web_console_enabled != state_value.web_console_enabled ||
        g_state.web_console_listening != state_value.web_console_listening ||
@@ -627,6 +638,8 @@ void update(const State& state_value) {
   if (power_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_system_power();
   if (catalog_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
+    draw_content();
+  if (location_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_content();
   if (companion_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_content();
@@ -697,14 +710,22 @@ Action handle_touch(int32_t x, int32_t y) {
       draw_content();
       return {ActionKind::range_changed, g_state.radar_range_nm};
     }
+    if (hit(x, y, 330, 610, 260, 46) && !g_state.ip_location_busy) return {ActionKind::location_ip_lookup, 0};
+    if (g_state.ip_location_ready && hit(x, y, 900, 610, 290, 46)) {
+      g_state.latitude_e7 = g_state.ip_latitude_e7; g_state.longitude_e7 = g_state.ip_longitude_e7;
+      strlcpy(g_state.location_label, g_state.ip_location_label, sizeof(g_state.location_label));
+      g_state.location_configured = true; g_latitude_set = g_longitude_set = true;
+      draw_content();
+      return {ActionKind::location_ip_confirm, 0};
+    }
   } else if (g_section == Section::data_maps) {
     if (hit(x, y, 940, 126, 278, 48) && !g_state.catalog_busy)
       return {ActionKind::catalog_check, 0};
-    for (uint8_t i = 0; i < 4; ++i) {
-      const int row_y = 190 + i * 126;
-      if (hit(x, y, 930, row_y + 18, 132, 48) && g_state.catalog_ready && !g_state.catalog_busy)
+    for (uint8_t i = 0; i < 5; ++i) {
+      const int row_y = 185 + i * 96;
+      if (hit(x, y, 930, row_y + 14, 132, 42) && g_state.catalog_ready && !g_state.catalog_busy)
         return {ActionKind::catalog_install, i};
-      if (hit(x, y, 1072, row_y + 18, 126, 48) && g_state.catalog_packs[i].installed && !g_state.catalog_busy) {
+      if (hit(x, y, 1072, row_y + 14, 126, 42) && g_state.catalog_packs[i].installed && !g_state.catalog_busy) {
         if (g_catalog_remove_armed == i) {
           g_catalog_remove_armed = -1;
           return {ActionKind::catalog_remove, i};

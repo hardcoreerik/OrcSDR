@@ -63,6 +63,12 @@ struct State {
   uint16_t radar_range_nm = 25;
   char location_label[40]{};
   char map_pack[40]{};
+  bool ip_location_busy = false;
+  bool ip_location_ready = false;
+  int32_t ip_latitude_e7 = 0;
+  int32_t ip_longitude_e7 = 0;
+  char ip_location_label[40]{};
+  char ip_location_message[48]{};
 
   uint8_t brightness = 180;
   uint8_t rotation = 1;
@@ -82,7 +88,7 @@ struct State {
   uint8_t catalog_progress_percent = 0;
   char catalog_message[80]{};
   char catalog_date[16]{};
-  CatalogPackView catalog_packs[4]{};
+  CatalogPackView catalog_packs[5]{};
   bool companion_supported = false;
   bool web_console_enabled = false;
   bool web_console_listening = false;
@@ -109,6 +115,8 @@ enum class ActionKind : uint8_t {
   move_wifi_up,
   move_wifi_down,
   location_changed,
+  location_ip_lookup,
+  location_ip_confirm,
   range_changed,
   brightness_changed,
   rotation_changed,

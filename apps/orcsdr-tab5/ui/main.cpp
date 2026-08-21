@@ -45,6 +45,7 @@ extern "C" {
 #include "orcsdr_storage.hpp"
 #include "adsb_dashboard.hpp"
 #include "adsb_decoder.hpp"
+#include "atc_presets.hpp"
 #include "catalog_sync.hpp"
 #include "dashboard_audio_control.hpp"
 #include "dashboard_registry.hpp"
@@ -55,7 +56,9 @@ extern "C" {
 #include "home_dashboard.hpp"
 #include "lora_dashboard.hpp"
 #include "lora_native_decoder.hpp"
+#include "location_estimate.hpp"
 #include "navigation_service.hpp"
+#include "offline_map.hpp"
 #include "nvs_store.hpp"
 #include "p25_dashboard.hpp"
 #include "p25_config.hpp"
@@ -1169,8 +1172,8 @@ static std::atomic<int16_t> lora_native_last_cfo_tenths_hz{0};
 struct LoraNodePosition {
   uint32_t node = 0;
   uint32_t received_ms = 0;
-  int32_t latitude_e7 = 0;
-  int32_t longitude_e7 = 0;
+  int32_t latitude_e7 = INT32_MAX;
+  int32_t longitude_e7 = INT32_MAX;
 };
 constexpr size_t kLoraNodePositionCount = 8;
 static LoraNodePosition lora_node_positions[kLoraNodePositionCount]{};
@@ -1390,6 +1393,7 @@ bool settings_graphics_default = true;
 bool settings_web_console_enabled = false;
 char settings_location_label[40]{};
 char settings_map_pack[40]{};
+bool adsb_atc_listening = false;
 std::atomic<uint32_t> rtl_sdr_status_revision{0};
 uint32_t drawn_rtl_sdr_status_revision = 0;
 char rtl_sdr_status[96] = "RTL-SDR: waiting for USB-A host";
@@ -1631,6 +1635,11 @@ void publish_adsb_snapshot(uint32_t now) {
   snapshot.aircraft_count = adsb_aircraft_count.load(std::memory_order_relaxed);
   snapshot.message_rate = message_rate;
   snapshot.strongest_signal_dbfs = rtl_signal_dbfs.load(std::memory_order_relaxed);
+  rtl_sdr_v4_esp_metrics_t adsb_metrics{};
+  if (g_rtl != nullptr) (void)rtl_sdr_v4_esp_get_metrics(g_rtl, &adsb_metrics);
+  snapshot.effective_sps = adsb_metrics.effective_sps;
+  snapshot.usb_overruns = adsb_metrics.overruns;
+  snapshot.consumer_drops = adsb_metrics.consumer_drops;
   snapshot.revision = ++ui_revision;
   last_state_revision = state_revision;
   published_rate = message_rate;
@@ -1806,7 +1815,7 @@ void set_orc_tool(OrcTool tool);
 void draw_tool_tabs();
 void draw_capture_tool_panel();
 bool handle_tool_tab_touch(int32_t x, int32_t y);
-orcsdr::settings::State global_settings_state();
+const orcsdr::settings::State& global_settings_state();
 orcsdr::home::Snapshot home_dashboard_snapshot(bool demo = false);
 void show_home(bool demo = false);
 void draw_home_dashboard();
@@ -1842,6 +1851,7 @@ void draw_touch_state(const char* message, uint32_t color) {
 
 /** True while loading splash owns the display — home chrome must not paint. */
 static bool g_suppress_home_paint = false;
+EXT_RAM_BSS_ATTR orcsdr::settings::State g_settings_snapshot;
 
 void draw_session_state(const char* message, uint32_t color) {
   if (g_suppress_home_paint || orcsdr::settings::active() || orcsdr::home::active()) return;
@@ -2781,6 +2791,17 @@ void load_lora_config() {
                 lora_config_frequency_hz, lora_sf.load(std::memory_order_relaxed),
                 lora_bandwidth_hz.load(std::memory_order_relaxed),
                 lora_authorized_key_loaded ? 1 : 0);
+}
+
+void refresh_adsb_atc_preset() {
+  adsb_settings.atc_frequency_hz = 0;
+  adsb_settings.atc_label[0] = '\0';
+  orcsdr::atc::Preset preset{};
+  if (!adsb_settings.location_configured || g_sd_fs == nullptr ||
+      !orcsdr::atc::load(g_sd_fs) ||
+      !orcsdr::atc::nearest(adsb_settings.latitude_e7, adsb_settings.longitude_e7, &preset)) return;
+  adsb_settings.atc_frequency_hz = preset.frequency_hz;
+  strlcpy(adsb_settings.atc_label, preset.label, sizeof(adsb_settings.atc_label));
 }
 
 uint64_t sd_total_bytes() {
@@ -4833,6 +4854,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   // Do not resurrect the retired generic Browse surface for AM/WX/CB/Airband.
   if (band != RtlBand::fm && band != RtlBand::p25 && band != RtlBand::adsb &&
       band != RtlBand::lora) {
+    if (adsb_atc_listening) { draw_adsb_dashboard(true); return; }
     show_home();
     return;
   }
@@ -7840,8 +7862,9 @@ void service_p25_follow(uint32_t now) {
                 static_cast<unsigned long>(grant.source_id), grant.emergency ? 1 : 0);
 }
 
-orcsdr::settings::State global_settings_state() {
-  orcsdr::settings::State state;
+const orcsdr::settings::State& global_settings_state() {
+  auto& state = g_settings_snapshot;
+  state = {};
   const auto device = orcsdr::device_status::collect(
       wifi_connected, wifi_ssid, rtl_device_ready(), rtl_sdr_status);
   state.wifi_power_enabled = settings_wifi_power_enabled;
@@ -7882,6 +7905,11 @@ orcsdr::settings::State global_settings_state() {
   state.radar_range_nm = adsb_settings.radar_range_nm;
   strlcpy(state.location_label, settings_location_label, sizeof(state.location_label));
   strlcpy(state.map_pack, settings_map_pack, sizeof(state.map_pack));
+  const auto ip_location = orcsdr::location_estimate::state();
+  state.ip_location_busy = ip_location.busy; state.ip_location_ready = ip_location.ready;
+  state.ip_latitude_e7 = ip_location.latitude_e7; state.ip_longitude_e7 = ip_location.longitude_e7;
+  strlcpy(state.ip_location_label, ip_location.label, sizeof(state.ip_location_label));
+  strlcpy(state.ip_location_message, ip_location.message, sizeof(state.ip_location_message));
   state.brightness = settings_brightness;
   state.rotation = settings_rotation;
   state.screen_timeout_sec = settings_screen_timeout_sec;
@@ -8305,6 +8333,20 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       adsb_settings.location_configured = state.location_configured;
       adsb_settings.latitude_e7 = state.latitude_e7;
       adsb_settings.longitude_e7 = state.longitude_e7;
+      refresh_adsb_atc_preset();
+      adsb_settings_persist_pending.store(true, std::memory_order_release);
+      break;
+    }
+    case orcsdr::settings::ActionKind::location_ip_lookup:
+      (void)orcsdr::location_estimate::request(wifi_connected);
+      update_global_settings();
+      break;
+    case orcsdr::settings::ActionKind::location_ip_confirm: {
+      const auto& state = orcsdr::settings::state();
+      adsb_settings.location_configured = state.location_configured;
+      adsb_settings.latitude_e7 = state.latitude_e7; adsb_settings.longitude_e7 = state.longitude_e7;
+      refresh_adsb_atc_preset();
+      strlcpy(settings_location_label, state.location_label, sizeof(settings_location_label));
       adsb_settings_persist_pending.store(true, std::memory_order_release);
       break;
     }
@@ -8361,6 +8403,7 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       if (ensure_tab5_sd()) {
         orcsdr::catalog::begin(g_sd_fs, sd_total_bytes() -
             orcsdr::storage::used_bytes());
+        (void)orcsdr::offline_map::load(g_sd_fs);
         if (!orcsdr::catalog::request_check(wifi_connected))
           Serial.println("ORC_CATALOG_CHECK_REJECTED");
       }
@@ -8450,19 +8493,26 @@ void lora_store_packet(const LoraDisplayPacket& input) {
   memmove(&lora_display_packets[1], &lora_display_packets[0],
           sizeof(lora_display_packets[0]) * (kLoraDisplayPacketCount - 1));
   lora_display_packets[0] = packet;
-  if (packet.latitude_e7 != INT32_MAX && packet.longitude_e7 != INT32_MAX && packet.sender != 0) {
+  if (packet.sender != 0) {
     size_t position_index = 0;
     while (position_index < kLoraNodePositionCount &&
            lora_node_positions[position_index].node != packet.sender) {
       ++position_index;
     }
-    if (position_index >= kLoraNodePositionCount) position_index = kLoraNodePositionCount - 1;
+    const bool known_node = position_index < kLoraNodePositionCount;
+    if (!known_node) position_index = kLoraNodePositionCount - 1;
+    LoraNodePosition node = known_node ? lora_node_positions[position_index] : LoraNodePosition{};
+    node.node = packet.sender;
+    node.received_ms = packet.received_ms;
+    if (packet.latitude_e7 != INT32_MAX && packet.longitude_e7 != INT32_MAX) {
+      node.latitude_e7 = packet.latitude_e7;
+      node.longitude_e7 = packet.longitude_e7;
+    }
     if (position_index > 0) {
       memmove(&lora_node_positions[1], &lora_node_positions[0],
               sizeof(lora_node_positions[0]) * position_index);
     }
-    lora_node_positions[0] = {packet.sender, packet.received_ms, packet.latitude_e7,
-                              packet.longitude_e7};
+    lora_node_positions[0] = node;
   }
   portEXIT_CRITICAL(&lora_message_mux);
   enqueue_lora_sd_log(packet);
@@ -8788,7 +8838,7 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
   if (band == RtlBand::adsb) {
     if (!orcsdr::home::active()) orcsdr::adsb::enter(adsb_settings);
     frequency_hz = kAdsbDefaultHz;
-    Serial.println("RTL_ADSB_CAPTURE live_rf=true ui_data=demo");
+    Serial.println("RTL_ADSB_CAPTURE live_rf=true ui_data=live");
   }
 #if RTL_USE_LEGACY_USB
   if (rtl_sdr_device == nullptr) return;
@@ -9204,13 +9254,23 @@ void handle_sdr_touch(int32_t x, int32_t y) {
                              : orcsdr::settings::Section::connectivity);
     return;
   }
-  if (rtl_ui_band == RtlBand::adsb) {
+  if ((rtl_ui_band == RtlBand::adsb || adsb_atc_listening) && orcsdr::adsb::active()) {
     const orcsdr::adsb::Action action = orcsdr::adsb::handle_touch(x, y);
     if (action == orcsdr::adsb::Action::settings_changed) {
       adsb_settings = orcsdr::adsb::settings();
       adsb_settings_persist_pending.store(true, std::memory_order_release);
     } else if (action == orcsdr::adsb::Action::exit) {
       show_home();
+    } else if (action == orcsdr::adsb::Action::atc_listen) {
+      const uint32_t frequency_hz = orcsdr::adsb::atc_frequency_hz();
+      if (frequency_hz == 0) return;
+      adsb_atc_listening = true;
+      orcsdr::adsb::set_atc_listening(true, frequency_hz);
+      queue_local_rtl_listen(RtlBand::browse, frequency_hz, false);
+    } else if (action == orcsdr::adsb::Action::atc_resume) {
+      adsb_atc_listening = false;
+      orcsdr::adsb::set_atc_listening(false, orcsdr::adsb::atc_frequency_hz());
+      queue_local_rtl_listen(RtlBand::adsb, kAdsbDefaultHz, false);
     }
     return;
   }
@@ -10350,6 +10410,7 @@ void process_command(char* command) {
     adsb_settings.location_configured = true;
     adsb_settings.latitude_e7 = static_cast<int32_t>(llround(latitude * 10000000.0));
     adsb_settings.longitude_e7 = static_cast<int32_t>(llround(longitude * 10000000.0));
+    refresh_adsb_atc_preset();
     preferences.putBool("adsb_loc_set", true);
     preferences.putInt("adsb_lat_e7", adsb_settings.latitude_e7);
     preferences.putInt("adsb_lon_e7", adsb_settings.longitude_e7);
@@ -11390,7 +11451,8 @@ void setup() {
   M5.Display.setRotation(settings_rotation);
   M5.Display.setBrightness(180);
   configure_navigation_service();
-  if (!orcsdr::adsb::self_check() || !orcsdr::adsb_rx::Decoder::self_check()) {
+  if (!orcsdr::adsb::self_check() || !orcsdr::adsb_rx::Decoder::self_check() ||
+      !orcsdr::offline_map::self_check() || !orcsdr::atc::self_check()) {
     Serial.println("RTL_ADSB_SELF_CHECK_FAIL");
     abort();
   }
@@ -11487,6 +11549,10 @@ void setup() {
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   load_state();
   const bool test_sd_ready = ensure_tab5_sd();
+  if (test_sd_ready) {
+    (void)orcsdr::offline_map::load(g_sd_fs);
+    refresh_adsb_atc_preset();
+  }
   initialize_rtl_sdr_host();
 
   const uint32_t device_deadline = millis() + 15000;
@@ -11560,7 +11626,7 @@ void loop() {
                   static_cast<unsigned long>(wifi_hosted_failure_code),
                   wifi_status_message);
   }
-  const bool adsb_ui = rtl_ui_band == RtlBand::adsb && orcsdr::adsb::active();
+  const bool adsb_ui = (rtl_ui_band == RtlBand::adsb || adsb_atc_listening) && orcsdr::adsb::active();
   const bool radio_ui = rtl_ui_active.load(std::memory_order_acquire);
   const bool settings_ui = orcsdr::settings::active();
   const bool home_ui = orcsdr::home::active();
@@ -11579,6 +11645,16 @@ void loop() {
   rtl_audio_test_service();
   service_boot_device_staging();
   service_power_monitor();
+  {
+    static bool catalog_was_busy = false;
+    const auto catalog_state = orcsdr::catalog::state();
+    if (catalog_was_busy && !catalog_state.busy && g_sd_fs != nullptr) {
+      (void)orcsdr::offline_map::load(g_sd_fs);
+      refresh_adsb_atc_preset();
+    }
+    catalog_was_busy = catalog_state.busy;
+    orcsdr::catalog::poll(wifi_connected);
+  }
   if (boot_auto_start_allowed) poll_wifi();
   {
     static uint32_t last_web_ms = 0;

@@ -16,7 +16,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-PACK_IDS = ("faa_aircraft", "faa_aviation", "noaa_weather", "fcc_broadcast")
+PACK_IDS = ("faa_aircraft", "faa_aviation", "noaa_weather", "fcc_broadcast", "lane_county_map")
 
 
 def sha256(path: Path) -> str:
@@ -36,6 +36,9 @@ def validate_artifact(pack_id: str, source: Path, archive: bool) -> None:
     elif pack_id == "faa_aircraft":
         if prefix != b"ORCADSB1":
             raise ValueError(f"{pack_id} runtime index must start with ORCADSB1: {source}")
+    elif pack_id == "lane_county_map":
+        if prefix != b"ORCMAP1\n":
+            raise ValueError(f"{pack_id} runtime index must start with ORCMAP1: {source}")
     elif prefix != b"ORCCAT1\n":
         raise ValueError(f"{pack_id} runtime index must start with ORCCAT1: {source}")
 
