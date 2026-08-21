@@ -1195,6 +1195,10 @@ static float rtl_session_audio_scale = 5500.0f;
 static bool rtl_session_continuous = true;
 static uint32_t rtl_session_started_ms = 0;
 static std::atomic<uint32_t> rtl_session_frequency_hz{kRtlFmDefaultHz};
+// M5GFX framebuffer writes are single-task only.  The RTL worker requests a
+// repaint; loop() owns the actual draw.
+static std::atomic<bool> rtl_stream_ui_refresh_pending{false};
+static std::atomic<bool> rtl_stream_spectrum_pending{false};
 float rtl_spectrum_real[kRtlSpectrumBins];
 float rtl_spectrum_imaginary[kRtlSpectrumBins];
 float rtl_spectrum_levels[kRtlSpectrumBins];
@@ -2311,7 +2315,7 @@ void log_dram_budget(const char* stage) {
   Serial.printf(
       "RTL_DRAM_BUDGET stage=%s dma_free=%lu dma_largest=%lu intern_free=%lu "
       "intern_largest=%lu psram_free=%lu psram_largest=%lu always_int=%d "
-      "reserve_int=%d hosted_mempool=%d usb_dma_psram=%d lwip_psram=%d\n",
+      "reserve_int=%d hosted_dma_psram=%d usb_dma_psram=%d lwip_psram=%d\n",
       stage, static_cast<unsigned long>(dma_free),
       static_cast<unsigned long>(dma_largest),
       static_cast<unsigned long>(intern_free),
@@ -2319,7 +2323,7 @@ void log_dram_budget(const char* stage) {
       static_cast<unsigned long>(psram_free),
       static_cast<unsigned long>(psram_largest),
       CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL, CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL,
-#ifdef CONFIG_ESP_HOSTED_USE_MEMPOOL
+#ifdef CONFIG_EH_HOST_PORT_DMA_PREFER_SPIRAM
       1,
 #else
       0,
@@ -6573,7 +6577,7 @@ static void rtl_driver_app_task(void *) {
       if (err != ESP_OK) {
         rtl_capture_state.store(RtlCaptureState::failed, std::memory_order_release);
         set_rtl_sdr_status("RTL-SDR V4: start failed");
-        draw_sdr_controls(band, false);
+        rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
         /* Stay on radio UI so power/home chrome cannot paint over controls. */
       } else {
         rtl_capture_state.store(RtlCaptureState::running, std::memory_order_release);
@@ -6632,7 +6636,7 @@ static void rtl_driver_app_task(void *) {
             reset_spectrum_renderer();
             request_hot_retune(auto_fm_frequency_hz);
             auto_fm_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
-            refresh_active_screen();
+            rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
             Serial.println("RTL_AUTO_FM start");
           }
           if (auto_fm_scanning && now_retune >= auto_fm_sample_at_ms) {
@@ -6652,7 +6656,7 @@ static void rtl_driver_app_task(void *) {
               rtl_auto_fm_active.store(false, std::memory_order_release);
               request_hot_retune(auto_fm_best_hz);
               persist_fm_frequency(auto_fm_best_hz);
-              refresh_active_screen();
+              rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
               Serial.printf("RTL_AUTO_FM done frequency_hz=%u level=%.1f\n",
                             auto_fm_best_hz, static_cast<double>(auto_fm_best_level));
             } else {
@@ -6684,7 +6688,7 @@ static void rtl_driver_app_task(void *) {
             request_hot_retune(preset_scan_frequency_hz);
             rtl_fm_preset_scan_freq_hz.store(preset_scan_frequency_hz, std::memory_order_relaxed);
             preset_scan_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
-            refresh_active_screen();
+            rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
             Serial.println("RTL_PRESET_SCAN start");
           }
           if (preset_scanning && now_retune >= preset_scan_sample_at_ms) {
@@ -6709,7 +6713,7 @@ static void rtl_driver_app_task(void *) {
               preset_scanning = false;
               rtl_fm_preset_scan_active.store(false, std::memory_order_release);
               request_hot_retune(preset_scan_return_hz);
-              refresh_active_screen();
+              rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
               persist_fm_presets();
               Serial.printf("RTL_PRESET_SCAN done found=%d\n", fm_preset_count);
             } else {
@@ -6762,7 +6766,7 @@ static void rtl_driver_app_task(void *) {
           if (!orcsdr::settings::active() && g_stream_band != RtlBand::adsb &&
               ui_revision != drawn_rtl_ui_revision) {
             drawn_rtl_ui_revision = ui_revision;
-            refresh_active_screen();
+            rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
           }
 
           const uint32_t now = millis();
@@ -6801,7 +6805,7 @@ static void rtl_driver_app_task(void *) {
               orcsdr::screens::status().active != orcsdr::screens::Id::adsb &&
               now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
             rtl_signal_meter_last_ms = now;
-            refresh_active_screen();
+            rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
           }
           if (g_stream_band == RtlBand::fm) {
             rds_log_status();
@@ -6844,16 +6848,18 @@ static void rtl_driver_app_task(void *) {
             (void)audio_rec_stop_and_export();
             if (orcsdr::settings::active()) {
               // Settings owns the framebuffer until close; preserve the finished recording only.
-            } else if (orc_tool_current() == OrcTool::Capture) draw_capture_tool_panel();
-            else refresh_active_screen();
+            } else {
+              rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+            }
           }
           if (g_iq_rec_export_pending.exchange(false, std::memory_order_acq_rel)) {
             (void)iq_rec_stop_and_export();
-            if (!orcsdr::settings::active()) refresh_active_screen();
+            if (!orcsdr::settings::active())
+              rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
           }
           const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
-          if (!orcsdr::settings::active() &&
-              (g_stream_band != RtlBand::adsb || orcsdr::home::active()) && gfx_on &&
+          if (!orcsdr::settings::active() && !orcsdr::home::active() &&
+              g_stream_band != RtlBand::adsb && gfx_on &&
               orc_tool_current() != OrcTool::Capture) {
             const bool sound_on = rtl_audio_enabled.load(std::memory_order_relaxed);
             const bool audio_stressed =
@@ -6865,12 +6871,12 @@ static void rtl_driver_app_task(void *) {
             if (now - rtl_session_started_ms >= kRtlAudioPrimeMs &&
                 now - spectrum_last_ms >= visual_interval) {
               spectrum_last_ms = now;
-              draw_spectrum(nullptr, 0); /* uses frozen IQ snapshot */
+              rtl_stream_spectrum_pending.store(true, std::memory_order_release);
             }
           } else if (orc_tool_current() == OrcTool::Capture &&
                      (now - spectrum_last_ms) >= 500) {
             spectrum_last_ms = now;
-            draw_capture_tool_panel();
+            rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
           }
 
           vTaskDelay(pdMS_TO_TICKS(20));
@@ -6886,7 +6892,8 @@ static void rtl_driver_app_task(void *) {
         set_rtl_sdr_status(stop_err == ESP_OK ? "RTL-SDR V4: stopped"
                                               : "RTL-SDR V4: stop failed");
         /* Documentation capture freezes the last live frame while reception stops. */
-        if (!ui_documentation_mode) refresh_active_screen();
+        if (!ui_documentation_mode)
+          rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
         Serial.printf("RTL_STOP bytes=%llu\n",
                       static_cast<unsigned long long>(rtl_capture_bytes));
       }
@@ -11632,10 +11639,18 @@ void loop() {
   const bool home_ui = orcsdr::home::active();
   const bool fm_ui = rtl_ui_band == RtlBand::fm && orcsdr::fm::active();
   const bool p25_ui = rtl_ui_band == RtlBand::p25 && orcsdr::p25::active();
+  if (rtl_stream_ui_refresh_pending.exchange(false, std::memory_order_acq_rel) &&
+      !settings_ui && !home_ui) {
+    refresh_active_screen();
+  }
   // Home, Settings, FM, and P25 stay on loop() so a stalled stream task
   // cannot freeze buttons. Stream still owns LoRa/browse scope gestures.
   if (!radio_ui || adsb_ui || settings_ui || home_ui || fm_ui || p25_ui) {
     M5.update();
+  }
+  if (rtl_stream_spectrum_pending.exchange(false, std::memory_order_acq_rel) &&
+      (fm_ui || p25_ui)) {
+    draw_spectrum(nullptr, 0);
   }
   poll_serial();
   if (ui_documentation_mode) {
@@ -11888,6 +11903,12 @@ void loop() {
     if (millis() - home_last_update_ms >= 500) {
       home_last_update_ms = millis();
       draw_home_dashboard();
+    }
+    // Home owns its display; render the frozen spectrum here rather than from
+    // the RTL worker so M5GFX has one framebuffer writer.
+    if (rtl_graphics_enabled.load(std::memory_order_acquire) &&
+        rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running) {
+      draw_spectrum(nullptr, 0);
     }
   } else if (adsb_ui && orcsdr::screens::owns(orcsdr::screens::Id::adsb)) {
     enrich_one_adsb_track();

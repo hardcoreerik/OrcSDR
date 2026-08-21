@@ -54,7 +54,7 @@ void text(const char* value, int x, int y, uint16_t color = TFT_WHITE,
           int size = 2, textdatum_t datum = middle_center) {
   M5.Display.setTextDatum(datum);
   M5.Display.setTextSize(size);
-  M5.Display.setTextColor(color, kBg);
+  M5.Display.setTextColor(color);
   M5.Display.drawString(value, x, y);
 }
 
@@ -369,6 +369,13 @@ void draw_health_dynamic() {
   M5.Display.fillRect(42, 552, 1190, 44, kPanel);
   text("LAST ERROR", 50, 574, kCyan, 2, middle_left);
   text(g_snapshot.last_error[0] ? g_snapshot.last_error : "—", 320, 574, TFT_WHITE, 2, middle_left);
+  M5.Display.fillRect(300, 552, 800, 44, kPanel);
+  const char* detail = g_snapshot.last_error[0] ? g_snapshot.last_error
+                       : !g_snapshot.driver_ready ? "RTL-SDR waiting"
+                       : g_snapshot.consumer_drops ? "IQ consumer drops recorded"
+                       : g_snapshot.usb_overruns ? "USB overruns recorded"
+                       : "No driver error";
+  text(detail, 320, 574, TFT_WHITE, 2, middle_left);
   const bool overall = good[0] && good[1] && good[2] && good[3] && good[4] && good[7];
   text(overall ? "GOOD" : "CHECK", 1140, 574, overall ? kGreen : kYellow, 4, middle_right);
 }
@@ -399,6 +406,10 @@ void draw_settings_dynamic() {
            g_snapshot.volume, static_cast<unsigned long>(g_snapshot.step_hz / 1000),
            static_cast<unsigned long>(g_snapshot.filter_bandwidth_hz / 1000));
   text(value, 65, 566, TFT_WHITE, 2, middle_left);
+  M5.Display.fillRect(240, 230, 48, 34, kPanel);
+  M5.Display.fillRect(530, 400, 54, 34, kPanel);
+  M5.Display.fillRect(500, 485, 88, 34, kPanel);
+  M5.Display.fillRect(1120, 230, 96, 34, kPanel);
   text(g_snapshot.sound_enabled ? "ON" : "OFF", 270, 247,
        g_snapshot.sound_enabled ? kGreen : TFT_RED, 2);
   text(g_snapshot.graphics_enabled ? "ON" : "OFF", 565, 417,

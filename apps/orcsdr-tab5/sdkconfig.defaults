@@ -19,6 +19,9 @@ CONFIG_FREERTOS_HZ=1000
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 CONFIG_ESP_HOSTED_HOST_SDIO_TX_Q_SIZE=4
 CONFIG_ESP_HOSTED_HOST_SDIO_RX_Q_SIZE=2
+# Espressif requires proving the P4<->C6 transport at a conservative clock
+# before raising it for throughput.  Keep 20 MHz until live Wi-Fi is stable.
+CONFIG_ESP_HOSTED_HOST_SDIO_CLK_KHZ=20000
 # Use ESP-Hosted 3.x's Tab5 board profile: it locks Slot 1 to the on-board C6.
 CONFIG_ESP32P4_TAB5_C6_BOARD=y
 CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_HIGH=y
@@ -41,6 +44,9 @@ CONFIG_ESP_HOSTED_HOST_FEAT_NW_SPLIT=y
 CONFIG_ESP_HOSTED_HOST_FEAT_NW_SPLIT_AUTO_INIT=n
 CONFIG_ESP_HOSTED_HOST_FEAT_NW_SPLIT_NETIF_APP_EXTERNAL=y
 CONFIG_ESP_HOSTED_DFLT_TASK_FROM_SPIRAM=y
+# ESP-Hosted streaming mode may receive a large SDIO aggregate. On the P4,
+# allocate that DMA buffer from PSRAM so radio/USB internal DMA remains free.
+CONFIG_EH_HOST_PORT_DMA_PREFER_SPIRAM=y
 CONFIG_USB_HOST_DWC_DMA_CAP_MEMORY_IN_PSRAM=y
 # Keep incidental mallocs out of on-chip RAM. DMA-capable internal
 # memory is reserved for Hosted SDIO + I2S only; RTL URBs stay in PSRAM.

@@ -1,4 +1,5 @@
 #include "orcsdr_storage.hpp"
+#include "wifi_service.hpp"
 
 #include <cerrno>
 #include <cstdarg>
@@ -19,6 +20,11 @@ namespace {
 bool g_mounted = false;
 sdmmc_card_t* g_card = nullptr;
 orcsdr::storage::FileSystem g_filesystem;
+
+// ESP-Hosted owns the P4 SDMMC controller for the C6 on Slot 1.  The Tab5
+// card is Slot 0 on that same controller, so its VFS mount must not re-init it.
+esp_err_t sdmmc_host_init_already_running() { return ESP_OK; }
+esp_err_t sdmmc_host_deinit_already_running() { return ESP_OK; }
 }
 
 namespace orcsdr::storage {
@@ -84,6 +90,11 @@ bool mount_tab5_sd() {
   if (g_mounted) return true;
   esp_vfs_fat_sdmmc_mount_config_t mount = {.format_if_mount_failed = false, .max_files = 8, .allocation_unit_size = 16 * 1024};
   sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+  host.slot = SDMMC_HOST_SLOT_0;
+  if (orcsdr::wifi::hosted_transport_ready()) {
+    host.init = &sdmmc_host_init_already_running;
+    host.deinit = &sdmmc_host_deinit_already_running;
+  }
   host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
   sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
   slot.width = 4;

@@ -271,21 +271,6 @@ function tick(){
   };
   x.open('GET','/api/status',true); x.send();
 }
-function pumpSpec(){
-  var x=new XMLHttpRequest();
-  x.responseType='arraybuffer';
-  x.onload=function(){
-    if(x.status!==200||!x.response||x.response.byteLength<4) return;
-    var u=new Uint8Array(x.response);
-    for(var i=0;i<64 && i<u.length;i++){
-      var v=u[i]/255;
-      bins[i]=bins[i]*.5+v*.5;
-      peak[i]=Math.max(peak[i]*0.975, bins[i]);
-    }
-    S.fresh=Date.now();
-  };
-  x.open('GET','/api/spectrum',true); x.send();
-}
 var lastFall=0,lastUi=0;
 function frame(){
   D.freq=D.freq?lerp(D.freq,S.freq,.18):S.freq;
@@ -360,7 +345,7 @@ $('radio').addEventListener('ended',function(){ if(audioOn) queueClip(); });
 $('radio').addEventListener('error',function(){ if(audioOn) setTimeout(queueClip,200); });
 try{ if(localStorage.getItem('orcsdr_tv_sound')==='1') setTimeout(startTvSound,1800); }catch(e){}
 setTimeout(function(){ if(!linked) $('bootmsg').textContent='SEARCHING FOR TAB5'; },2500);
-tick(); setInterval(tick,1000); setInterval(pumpSpec,200); requestAnimationFrame(frame);
+tick(); setInterval(tick,1000); requestAnimationFrame(frame);
 </script>
 </body>
 </html>

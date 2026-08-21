@@ -60,7 +60,7 @@ void text(const char* value, int x, int y, uint16_t color, uint8_t size = 2,
           textdatum_t datum = middle_left) {
   M5.Display.setTextDatum(datum);
   M5.Display.setTextSize(std::max(size, kSettingsMinTextSize));
-  M5.Display.setTextColor(color, kBg);
+  M5.Display.setTextColor(color);
   M5.Display.drawString(value, x, y);
 }
 

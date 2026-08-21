@@ -23,6 +23,7 @@ const char* ssid();
 const char* ip();
 int16_t rssi();
 bool hosted_versions_match();
+bool hosted_transport_ready();
 const char* hosted_failure_stage();
 int32_t hosted_failure_code();
 
