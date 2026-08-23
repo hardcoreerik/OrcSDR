@@ -15,8 +15,8 @@ extern "C" {
 namespace orcsdr::wifi {
 namespace {
 bool g_started = false;
-bool g_connected = false;
-bool g_failed = false;
+std::atomic<bool> g_connected{false};
+std::atomic<bool> g_failed{false};
 bool g_versions_match = false;
 bool g_hosted_transport_ready = false;
 std::atomic<bool> g_scan_done{false};
@@ -24,31 +24,25 @@ esp_netif_t* g_sta_netif = nullptr;
 const char* g_failure_stage = "none";
 int32_t g_failure_code = ESP_OK;
 char g_ssid[33]{};
-char g_ip[16]{"0.0.0.0"};
+std::atomic<uint32_t> g_ip_addr{0};
 
 void on_wifi_event(void*, esp_event_base_t base, int32_t id, void* data) {
   if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
     const auto* event = static_cast<const wifi_event_sta_disconnected_t*>(data);
     ESP_LOGW("orcsdr_wifi", "station disconnected reason=%u", event ? event->reason : 0u);
-    g_connected = false;
-    g_failed = true;
+    g_connected.store(false, std::memory_order_release);
+    g_failed.store(true, std::memory_order_release);
   }
   if (base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
     g_scan_done.store(true, std::memory_order_release);
-  }
-  if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
-    g_connected = true;
-    g_failed = false;
-    auto* event = static_cast<ip_event_got_ip_t*>(nullptr);
-    (void)event;
   }
 }
 
 void on_ip_event(void*, esp_event_base_t, int32_t, void* data) {
   const auto* event = static_cast<ip_event_got_ip_t*>(data);
-  snprintf(g_ip, sizeof(g_ip), IPSTR, IP2STR(&event->ip_info.ip));
-  g_connected = true;
-  g_failed = false;
+  g_ip_addr.store(event->ip_info.ip.addr, std::memory_order_release);
+  g_failed.store(false, std::memory_order_release);
+  g_connected.store(true, std::memory_order_release);
 }
 }
 
@@ -99,7 +93,7 @@ bool start() {
   return true;
 }
 
-void stop() { if (g_started) { esp_wifi_disconnect(); esp_wifi_stop(); } g_started = false; g_connected = false; }
+void stop() { if (g_started) { esp_wifi_disconnect(); esp_wifi_stop(); } g_started = false; g_connected.store(false, std::memory_order_release); }
 bool begin_scan() {
   if (!g_started) return false;
   g_scan_done.store(false, std::memory_order_release);
@@ -126,7 +120,9 @@ bool connect(const char* network, const char* password) {
   wifi_config_t config{};
   strlcpy(reinterpret_cast<char*>(config.sta.ssid), network, sizeof(config.sta.ssid));
   strlcpy(reinterpret_cast<char*>(config.sta.password), password ? password : "", sizeof(config.sta.password));
-  g_failed = false; g_connected = false; strlcpy(g_ssid, network, sizeof(g_ssid));
+  g_failed.store(false, std::memory_order_release);
+  g_connected.store(false, std::memory_order_release);
+  strlcpy(g_ssid, network, sizeof(g_ssid));
   const esp_err_t set_config = esp_wifi_set_config(WIFI_IF_STA, &config);
   if (set_config != ESP_OK) {
     ESP_LOGE("orcsdr_wifi", "set_config failed: 0x%x", static_cast<unsigned>(set_config));
@@ -137,11 +133,17 @@ bool connect(const char* network, const char* password) {
     ESP_LOGE("orcsdr_wifi", "connect request failed: 0x%x", static_cast<unsigned>(connect));
   return connect == ESP_OK;
 }
-void disconnect() { esp_wifi_disconnect(); g_connected = false; }
-bool connected() { return g_connected; }
-bool connect_failed() { return g_failed; }
+void disconnect() { esp_wifi_disconnect(); g_connected.store(false, std::memory_order_release); }
+bool connected() { return g_connected.load(std::memory_order_acquire); }
+bool connect_failed() { return g_failed.load(std::memory_order_acquire); }
 const char* ssid() { return g_ssid; }
-const char* ip() { return g_ip; }
+const char* ip() {
+  static char snapshot[16];
+  esp_ip4_addr_t address{};
+  address.addr = g_ip_addr.load(std::memory_order_acquire);
+  snprintf(snapshot, sizeof(snapshot), IPSTR, IP2STR(&address));
+  return snapshot;
+}
 int16_t rssi() { wifi_ap_record_t ap{}; return esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? ap.rssi : 0; }
 bool hosted_versions_match() { return g_versions_match; }
 bool hosted_transport_ready() { return g_hosted_transport_ready; }

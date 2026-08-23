@@ -148,4 +148,4 @@ Require all of these before calling a Tab5 Wi-Fi implementation working:
 - [ESP-Hosted SDIO guide](https://github.com/espressif/esp-hosted-mcu/blob/main/docs/sdio.md)
 - [ESP-Hosted Tab5 board profile](https://github.com/espressif/esp-hosted-mcu/blob/main/esp_hosted_fg/esp/esp_driver/network_adapter/main/esp_hosted_config.h)
 - [M5Stack Tab5 native board implementation](https://github.com/m5stack/M5Tab5-UserDemo/blob/main/platforms/tab5/components/m5stack_tab5/m5stack_tab5.c)
-- [OrcSDR migration record](user-guide/tab5-esp-hosted-3-migration.md)
+- [OrcSDR migration record](tab5-esp-hosted-3-migration.md)

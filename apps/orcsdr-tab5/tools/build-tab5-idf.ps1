@@ -13,6 +13,7 @@ $buildDir = 'build-native-hosted3'
 
 # sdkconfig.defaults is the source; regenerate the per-build Kconfig cache so
 # a prior transport choice cannot silently survive a configuration change.
+New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
 Copy-Item -LiteralPath 'sdkconfig.defaults' -Destination (Join-Path $buildDir 'sdkconfig') -Force
 idf.py -B $buildDir -D "SDKCONFIG=$buildDir/sdkconfig" `
     -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults' reconfigure

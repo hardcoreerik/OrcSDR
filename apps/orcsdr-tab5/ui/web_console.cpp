@@ -35,7 +35,7 @@ EXT_RAM_BSS_ATTR int16_t g_audio_clip[kAudioClip]{};
 EXT_RAM_BSS_ATTR uint8_t g_wav_out[44 + kAudioClip * sizeof(int16_t)]{};
 EXT_RAM_BSS_ATTR char g_status_json[2048]{};
 EXT_RAM_BSS_ATTR char g_status_recent[320]{};
-EXT_RAM_BSS_ATTR char g_status_spec[256]{};
+EXT_RAM_BSS_ATTR char g_status_spec[259]{};
 uint32_t g_wifi_up_ms = 0;
 std::atomic<uint32_t> g_audio_w{0};
 std::atomic<uint32_t> g_audio_r{0};

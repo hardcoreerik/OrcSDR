@@ -65,7 +65,7 @@ void File::flush() { if (state_ && state_->stream) fflush(state_->stream); }
 void File::close() { state_.reset(); }
 bool File::isDirectory() const { return state_ && state_->directory != nullptr; }
 const char* File::name() const { return state_ ? state_->path.c_str() : ""; }
-uint64_t File::getLastWrite() const { struct stat info{}; return state_ && stat(state_->path.c_str(), &info) == 0 ? static_cast<uint64_t>(info.st_mtime) : 0; }
+uint64_t File::getLastWrite() const { struct stat info{}; const std::string path = state_ ? mounted_path(state_->path.c_str()) : ""; return state_ && stat(path.c_str(), &info) == 0 ? static_cast<uint64_t>(info.st_mtime) : 0; }
 File File::openNextFile() {
   if (!state_ || !state_->directory) return {};
   while (dirent* entry = readdir(state_->directory)) {
@@ -81,13 +81,13 @@ File FileSystem::open(const char* path, const char* mode, bool) const {
   const std::string mounted = mounted_path(path);
   struct stat info{};
   if (stat(mounted.c_str(), &info) == 0 && S_ISDIR(info.st_mode)) {
-    auto state = std::make_shared<File::State>(); state->directory = opendir(mounted.c_str()); state->path = mounted; return File{std::move(state)};
+    auto state = std::make_shared<File::State>(); state->directory = opendir(mounted.c_str()); state->path = path; return File{std::move(state)};
   }
   auto state = std::make_shared<File::State>();
   const bool writing = mode && mode[0] == 'w';
   state->stream = fopen(mounted.c_str(), writing ? "wb" : "rb");
   if (state->stream && writing) setvbuf(state->stream, nullptr, _IONBF, 0);
-  state->path = mounted;
+  state->path = path;
   return File{std::move(state)};
 }
 bool FileSystem::exists(const char* path) const { const std::string mounted = mounted_path(path); struct stat info{}; return path && stat(mounted.c_str(), &info) == 0; }

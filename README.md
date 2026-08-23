@@ -34,7 +34,7 @@ You power it on, wait for the splash to finish loading Wi-Fi and the dongle, tap
 > Jump to **[Flash OrcSDR to the M5Stack Tab5](#-flash-orcsdr-to-the-m5stack-tab5)** and run it on hardware. The screenshots on this page are from that firmware.
 
 > [!NOTE]
-> **Project status:** OrcSDR is under active development. The Tab5 app is the reference radio and builds with **native ESP-IDF 5.5.4**. M5Unified and M5GFX are ESP-IDF components only; PlatformIO is not a supported build or flash path. See [the Tab5 ESP-Hosted migration record](docs/user-guide/tab5-esp-hosted-3-migration.md) and the [reusable Tab5 Wi-Fi guide](docs/wifi-tab5.md) for the P4/C6 pairing, pins, and acceptance status.
+> **Project status:** OrcSDR is under active development. The Tab5 app is the reference radio and builds with **native ESP-IDF 5.5.4**. M5Unified and M5GFX are ESP-IDF components only; PlatformIO is not a supported build or flash path. See [the Tab5 ESP-Hosted migration record](docs/user-guide/tab5-esp-hosted-3-migration.md) and the [reusable Tab5 Wi-Fi guide](docs/user-guide/wifi-tab5.md) for the P4/C6 pairing, pins, and acceptance status.
 
 ---
 

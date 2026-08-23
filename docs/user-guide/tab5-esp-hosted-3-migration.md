@@ -98,5 +98,5 @@ the upstream recovery path for an actual SDIO enumeration failure.
   write is intentionally authorized.
 - Build proof, flash proof, C6 handshake proof, Wi-Fi scan proof, and visual
   acceptance are separate evidence.
-- See [wifi-tab5.md](../wifi-tab5.md) for the reusable, operational Wi-Fi
+- See [wifi-tab5.md](wifi-tab5.md) for the reusable, operational Wi-Fi
   implementation guide and boot-connect behavior.

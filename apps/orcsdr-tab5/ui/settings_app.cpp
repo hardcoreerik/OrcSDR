@@ -131,8 +131,8 @@ void draw_connectivity() {
   button("ADD HIDDEN", 520, 180, 210, 46, TFT_NAVY);
   button(g_state.wifi_power_enabled ? "POWER OFF" : "POWER ON", 750, 180, 170, 46,
          g_state.wifi_power_enabled ? TFT_MAROON : TFT_DARKGREEN);
-  text("CONNECT ON BOOT", 330, 245, kMuted, 2);
-  button(g_state.wifi_start_at_boot ? "ON" : "OFF", 820, 218, 398, 54,
+  text("CONNECT ON BOOT", 330, 251, kMuted, 2);
+  button(g_state.wifi_start_at_boot ? "ON" : "OFF", 820, 228, 398, 46,
          g_state.wifi_start_at_boot ? TFT_DARKGREEN : TFT_DARKGREY);
   text("WI-FI ANTENNA", 330, 305, kMuted, 2);
   button(g_state.wifi_external_antenna ? "EXTERNAL (MMCX)" : "INTERNAL",
@@ -670,7 +670,7 @@ Action handle_touch(int32_t x, int32_t y) {
   if (g_section == Section::connectivity) {
     if (hit(x, y, 750, 180, 170, 46))
       return {ActionKind::wifi_power_changed, g_state.wifi_power_enabled ? 0 : 1};
-    if (hit(x, y, 820, 218, 398, 54))
+    if (hit(x, y, 820, 228, 398, 46))
       return {ActionKind::wifi_start_at_boot_changed, g_state.wifi_start_at_boot ? 0 : 1};
     if (hit(x, y, 820, 278, 398, 54))
       return {ActionKind::wifi_antenna_changed, g_state.wifi_external_antenna ? 0 : 1};

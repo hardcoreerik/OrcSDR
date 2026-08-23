@@ -359,28 +359,29 @@ bool download_artifact(const Artifact& artifact, uint8_t pack_index,
   if (!ok || declared != artifact.bytes || status != 200) ok = false;
   ESP_LOGI(kTag, "download stage=http_open ok=%d status=%d declared=%lld", ok ? 1 : 0,
            status, static_cast<long long>(declared));
-  uint8_t* chunk = static_cast<uint8_t*>(heap_caps_malloc(kChunkBytes, MALLOC_CAP_8BIT));
   uint8_t* write_batch = static_cast<uint8_t*>(heap_caps_malloc(kWriteBatchBytes, MALLOC_CAP_SPIRAM));
   mbedtls_sha256_context sha;
   mbedtls_sha256_init(&sha);
-  if (ok && (!chunk || !write_batch || mbedtls_sha256_starts(&sha, 0) != 0)) ok = false;
+  if (ok && (!write_batch || mbedtls_sha256_starts(&sha, 0) != 0)) ok = false;
   uint32_t total = 0;
   uint32_t next_yield = kYieldBytes;
   size_t batch_used = 0;
   uint8_t header[8]{};
   size_t header_size = 0;
   while (ok && total < artifact.bytes) {
-    const int got = esp_http_client_read(client, reinterpret_cast<char*>(chunk),
-                                         std::min<uint32_t>(kChunkBytes, artifact.bytes - total));
+    const size_t room = kWriteBatchBytes - batch_used;
+    uint8_t* const target = write_batch + batch_used;
+    const int got = esp_http_client_read(
+        client, reinterpret_cast<char*>(target),
+        std::min<size_t>(room, static_cast<size_t>(artifact.bytes - total)));
     if (got <= 0) { ESP_LOGE(kTag, "download stage=http_read_failed got=%d", got); ok = false; break; }
-    memcpy(write_batch + batch_used, chunk, static_cast<size_t>(got));
     batch_used += static_cast<size_t>(got);
     const size_t header_take = std::min(sizeof(header) - header_size, static_cast<size_t>(got));
     if (header_take) {
-      memcpy(header + header_size, chunk, header_take);
+      memcpy(header + header_size, target, header_take);
       header_size += header_take;
     }
-    if (mbedtls_sha256_update(&sha, chunk, static_cast<size_t>(got)) != 0) { ESP_LOGE(kTag, "download stage=hash_failed"); ok = false; break; }
+    if (mbedtls_sha256_update(&sha, target, static_cast<size_t>(got)) != 0) { ESP_LOGE(kTag, "download stage=hash_failed"); ok = false; break; }
     total += static_cast<uint32_t>(got);
     if (batch_used == kWriteBatchBytes || total == artifact.bytes) {
       const size_t wrote = file.write(write_batch, batch_used);
@@ -400,7 +401,6 @@ bool download_artifact(const Artifact& artifact, uint8_t pack_index,
   if (ok && (total != artifact.bytes || mbedtls_sha256_finish(&sha, digest) != 0 ||
              !hash_matches(digest, artifact.sha256))) ok = false;
   mbedtls_sha256_free(&sha);
-  if (chunk) heap_caps_free(chunk);
   if (write_batch) heap_caps_free(write_batch);
   if (client) { esp_http_client_close(client); esp_http_client_cleanup(client); }
   file.close();

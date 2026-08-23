@@ -1408,6 +1408,7 @@ bool settings_wifi_external_antenna = false;
 bool wifi_connected = false;
 bool wifi_connecting = false;
 bool wifi_radio_paused = false;
+bool radio_io_resume_pending = false;
 bool wifi_save_after_connect = false;
 uint32_t wifi_connect_started_ms = 0;
 int wifi_network_count = -1;
@@ -1437,6 +1438,7 @@ bool settings_sound_default = true;
 bool settings_auto_start_reception = true;
 bool settings_graphics_default = true;
 bool settings_web_console_enabled = false;
+bool web_console_deferred = false;
 char settings_location_label[40]{};
 char settings_map_pack[40]{};
 bool adsb_atc_listening = false;
@@ -7226,6 +7228,10 @@ void start_wifi_connection(const char* ssid, const char* password, bool save_on_
 }
 
 bool pause_radio_for_io(bool& paused) {
+  if (paused) return true;
+  const bool already_owned = wifi_radio_paused || catalog_radio_paused;
+  paused = true;
+  if (already_owned) return true;
   if (rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running) return true;
   // A queued auto-start can otherwise relaunch the radio immediately after
   // the current stream stops, defeating the caller's exclusive I/O window.
@@ -7235,13 +7241,20 @@ bool pause_radio_for_io(bool& paused) {
   const uint32_t deadline = millis() + 5000;
   while (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
          static_cast<int32_t>(deadline - millis()) > 0) delay(10);
-  paused = rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running;
-  return paused;
+  if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running) {
+    paused = false;
+    return false;
+  }
+  radio_io_resume_pending = true;
+  return true;
 }
 
 void resume_radio_after_io(bool& paused) {
   if (!paused) return;
   paused = false;
+  if (wifi_radio_paused || catalog_radio_paused) return;
+  if (!radio_io_resume_pending) return;
+  radio_io_resume_pending = false;
   rtl_stop_requested.store(false, std::memory_order_release);
   rtl_restart_requested.store(true, std::memory_order_release);
   rtl_capture_requested.store(true, std::memory_order_release);
@@ -9009,9 +9022,9 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
   if (!g_rtl_device_ready.load(std::memory_order_acquire) || g_rtl == nullptr) return;
 #endif
   // A successful Wi-Fi connection deliberately leaves the receiver paused.
-  // Any explicit radio request takes ownership back without relaunching the
-  // stale pre-connect band first.
-  wifi_radio_paused = false;
+  // Release that owner only after the new request is fully staged; a catalog
+  // owner can still keep capture stopped until its SD work completes.
+  const bool release_wifi_pause = wifi_radio_paused;
   if (band == RtlBand::lora) {
     load_lora_config();
     if (frequency_hz == kLoraDefaultHz) frequency_hz = lora_config_frequency_hz;
@@ -9053,14 +9066,21 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
   rtl_ui_band = band;
   rtl_ui_frequency_hz = frequency_hz;
   rtl_continuous_requested.store(true, std::memory_order_release);
-  const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
-  if (state == RtlCaptureState::running) {
-    rtl_restart_requested.store(true, std::memory_order_release);
-    rtl_stop_requested.store(true, std::memory_order_release);
+  if (release_wifi_pause) {
+    resume_radio_after_wifi();
+  }
+  if (catalog_radio_paused) {
+    radio_io_resume_pending = true;
   } else {
-    rtl_restart_requested.store(false, std::memory_order_release);
-    rtl_stop_requested.store(false, std::memory_order_release);
-    rtl_capture_requested.store(true, std::memory_order_release);
+    const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
+    if (state == RtlCaptureState::running) {
+      rtl_restart_requested.store(true, std::memory_order_release);
+      rtl_stop_requested.store(true, std::memory_order_release);
+    } else {
+      rtl_restart_requested.store(false, std::memory_order_release);
+      rtl_stop_requested.store(false, std::memory_order_release);
+      rtl_capture_requested.store(true, std::memory_order_release);
+    }
   }
   bump_rtl_ui();
   if (persist_navigation)
@@ -10561,6 +10581,10 @@ void process_command(char* command) {
     return;
   }
   if (strcmp(command, "RTL_UI_REGRESSION RUN") == 0) {
+    if (!authenticated) {
+      Serial.println("RTL_UI_REGRESSION_RESULT mode=RUN pass=0 reason=unauthenticated");
+      return;
+    }
     run_ui_regression(true);
     return;
   }
@@ -11813,15 +11837,24 @@ void setup() {
   snprintf(node_id, sizeof(node_id), "m5tab5_%02x%02x%02x%02x%02x%02x",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   // ESP-Hosted must initialise Slot 1 before load_state() reaches the
-  // SD-backed receiver profiles on Slot 0. This is the ordering used by
-  // Espressif's combined SDIO + SDMMC example.
-  initialize_wifi();
+  // SD-backed receiver profiles on Slot 0. Read only the preferences needed
+  // for C6 bring-up first so power and antenna choices take effect immediately.
+  {
+    orcsdr::NvsStore wifi_prefs;
+    if (wifi_prefs.begin("orclink", true)) {
+      settings_wifi_power_enabled = wifi_prefs.getBool("set_wifi_power", true);
+      settings_wifi_external_antenna = wifi_prefs.getBool("set_wifi_ext_ant", false);
+      wifi_prefs.end();
+    }
+  }
+  if (settings_wifi_power_enabled) initialize_wifi();
   load_state();
   // Keep the optional companion server out of the catalog recovery window.
   // It has a separate crash history under Hosted traffic and is not needed
   // for saved-network connection or signed pack installation.
   if (settings_web_console_enabled) {
     orcsdr::web_console::set_enabled(false);
+    web_console_deferred = true;
     Serial.println("RTL_WEB_DEFERRED catalog_wifi_session");
   }
   apply_wifi_antenna();
@@ -11844,26 +11877,16 @@ void setup() {
     }
   }
 
-  if (wifi_connected) {
-    // Catalog/map recovery must not bring up USB RTL and I2S alongside the
-    // freshly associated SDIO link. The receiver remains available to start
-    // deliberately after the network work completes.
-    boot_auto_start_allowed = true;
-    Serial.println("RTL_BOOT_WIFI_SESSION rtl_staging_deferred");
-  } else {
-    /* Loading splash owns the display while SD-backed splash assets load. */
-    (void)orcsdr_splash_begin();
-    orcsdr_splash_set_status("Starting RTL-SDR USB host…");
-
-    begin_boot_device_staging();
-
-    /* Dependencies are up: reveal the gate while the background keeps looping. */
-    orcsdr_splash_set_ready(true);
-    /* Splash ends on its own so reboot lands on Home without a tap. */
-    constexpr bool kSkipSplashGate = true;
-    if (!kSkipSplashGate) (void)orcsdr_splash_wait_start();
-    orcsdr_splash_end();
-  }
+  /* Loading splash owns the display while SD-backed splash assets load. */
+  (void)orcsdr_splash_begin();
+  orcsdr_splash_set_status("Starting RTL-SDR USB host…");
+  begin_boot_device_staging();
+  /* Dependencies are up: reveal the gate while the background keeps looping. */
+  orcsdr_splash_set_ready(true);
+  /* Splash ends on its own so reboot lands on Home without a tap. */
+  constexpr bool kSkipSplashGate = true;
+  if (!kSkipSplashGate) (void)orcsdr_splash_wait_start();
+  orcsdr_splash_end();
   g_suppress_home_paint = false;
   show_home();
   append_journal("boot");
@@ -11911,7 +11934,7 @@ void loop() {
       Serial.printf("RTL_MAIN_STALL stage=m5_update elapsed_ms=%u\n", elapsed_ms);
   }
   if (rtl_stream_spectrum_pending.exchange(false, std::memory_order_acq_rel) &&
-      (fm_ui || p25_ui)) {
+      (fm_ui || p25_ui || (rtl_ui_band == RtlBand::lora && orcsdr::lora::active()))) {
     draw_spectrum(nullptr, 0);
   }
   {
@@ -11927,6 +11950,11 @@ void loop() {
   }
   rtl_audio_test_service();
   service_boot_device_staging();
+  if (web_console_deferred && boot_init_stage == BootInitStage::ready) {
+    web_console_deferred = false;
+    orcsdr::web_console::set_enabled(settings_web_console_enabled);
+    Serial.printf("RTL_WEB_RESTORED enabled=%d\n", settings_web_console_enabled ? 1 : 0);
+  }
   service_power_monitor();
   {
     static bool catalog_was_busy = false;
@@ -12147,7 +12175,7 @@ void loop() {
   if (home_ui) {
     static bool auto_start_done = false;
     if (!auto_start_done && boot_auto_start_allowed && settings_auto_start_reception &&
-        !wifi_connected && !wifi_scan_running && rtl_device_ready()) {
+        !wifi_scan_running && rtl_device_ready()) {
       auto_start_done = true;
       queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz, false);
     }

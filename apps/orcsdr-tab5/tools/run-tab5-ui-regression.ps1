@@ -290,6 +290,7 @@ try {
   }
 
   if (-not $Soak) {
+    if ($Run) { Connect-Authenticated }
     $command = if ($Run) { 'RTL_UI_REGRESSION RUN' } else { 'RTL_UI_REGRESSION CHECK' }
     $line = Send-And-Wait $command '^RTL_UI_REGRESSION_RESULT '
     if ($line -notmatch ' pass=1 ') { throw "UI regression failed: $line" }
@@ -299,15 +300,17 @@ try {
   [void](Send-And-Wait 'RTL_STATUS' '^RTL_SDR_STATUS ' 20)
   Connect-Authenticated
   $initial = Get-UiState
-  $verbosity = Send-And-Wait 'RTL_SERIAL VERBOSITY' '^RTL_SERIAL_VERBOSITY mode=(QUIET|NORMAL|DEBUG|TRACE)$'
-  $initialVerbosity = $verbosity.Split('=')[-1]
-  [void](Send-And-Wait 'RTL_SERIAL VERBOSITY QUIET' '^RTL_SERIAL_VERBOSITY_OK mode=QUIET$')
-  $sound = Send-And-Wait 'RTL_SOUND' '^RTL_SOUND_STATUS enabled=[01]$'
-  $soundWasEnabled = $sound.EndsWith('1')
-  if (-not $soundWasEnabled) { [void](Send-And-Wait 'RTL_SOUND ON' '^RTL_SOUND_OK enabled=1$') }
-  $random = [Random]::new($Seed)
-
+  $initialVerbosity = $null
+  $soundWasEnabled = $null
   try {
+    $verbosity = Send-And-Wait 'RTL_SERIAL VERBOSITY' '^RTL_SERIAL_VERBOSITY mode=(QUIET|NORMAL|DEBUG|TRACE)$'
+    $initialVerbosity = $verbosity.Split('=')[-1]
+    [void](Send-And-Wait 'RTL_SERIAL VERBOSITY QUIET' '^RTL_SERIAL_VERBOSITY_OK mode=QUIET$')
+    $sound = Send-And-Wait 'RTL_SOUND' '^RTL_SOUND_STATUS enabled=[01]$'
+    $soundWasEnabled = $sound.EndsWith('1')
+    if (-not $soundWasEnabled) { [void](Send-And-Wait 'RTL_SOUND ON' '^RTL_SOUND_OK enabled=1$') }
+    $random = [Random]::new($Seed)
+
     [void](Open-Ui 'FM' 'FM')
     Assert-FmAudioProgress
     for ($cycle = 1; $cycle -le $Cycles; $cycle++) {
@@ -344,8 +347,10 @@ try {
         [void](Send-And-Wait "RTL_TUNE $($initial.Band) $($initial.Frequency)" '^RTL_TUNE_(?:OK|UNAVAILABLE|INVALID)')
       }
       [void](Send-And-Wait "RTL_UI OPEN $($initial.Screen)" '^RTL_UI_OPEN_(?:OK|INVALID)')
-      if (-not $soundWasEnabled) { [void](Send-And-Wait 'RTL_SOUND OFF' '^RTL_SOUND_OK enabled=0$') }
-      [void](Send-And-Wait "RTL_SERIAL VERBOSITY $initialVerbosity" "^RTL_SERIAL_VERBOSITY_OK mode=$initialVerbosity$")
+      if ($soundWasEnabled -eq $false) { [void](Send-And-Wait 'RTL_SOUND OFF' '^RTL_SOUND_OK enabled=0$') }
+      if ($null -ne $initialVerbosity) {
+        [void](Send-And-Wait "RTL_SERIAL VERBOSITY $initialVerbosity" "^RTL_SERIAL_VERBOSITY_OK mode=$initialVerbosity$")
+      }
     } catch {
       Write-Warning "Could not restore initial device state: $($_.Exception.Message)"
     }
