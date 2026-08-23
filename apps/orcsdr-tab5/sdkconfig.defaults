@@ -20,8 +20,10 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 CONFIG_ESP_HOSTED_HOST_SDIO_TX_Q_SIZE=4
 CONFIG_ESP_HOSTED_HOST_SDIO_RX_Q_SIZE=2
 # Espressif requires proving the P4<->C6 transport at a conservative clock
-# before raising it for throughput.  Keep 20 MHz until live Wi-Fi is stable.
-CONFIG_ESP_HOSTED_HOST_SDIO_CLK_KHZ=20000
+# before raising it for throughput. Sustained HTTPS receive is not stable at
+# 20 MHz on this P4/C6 pair, so qualify 10 MHz first.
+CONFIG_ESP_HOSTED_HOST_SDIO_CLK_KHZ=10000
+CONFIG_ESP_HOSTED_HOST_SDIO_BUS_WIDTH_4=y
 # Use ESP-Hosted 3.x's Tab5 board profile: it locks Slot 1 to the on-board C6.
 CONFIG_ESP32P4_TAB5_C6_BOARD=y
 CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_HIGH=y
@@ -32,20 +34,24 @@ CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D0=11
 CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D1=10
 CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D2=9
 CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D3=8
-# The Tab5 power rail is already enabled by M5.begin(). Probe its C6 before
-# asserting reset; ESP-Hosted falls back to reset if enumeration fails.
+# The Tab5 C6 image is brought up by probing first, with a reset fallback if
+# SDIO enumeration fails. This is the mode verified with the installed C6.
 CONFIG_ESP_HOSTED_HOST_CP_RESET_STRATEGY_ONLY_IF_NECESSARY=y
 CONFIG_ESP_HOSTED_HOST_CP_RESET_SETTLE_MS=1500
+# A runtime SDIO timeout must leave Wi-Fi unavailable, not restart the P4
+# forever. ESP_HOSTED_EVENT_TRANSPORT_FAILURE remains available for recovery.
+CONFIG_ESP_HOSTED_HOST_TRANSPORT_RESTART_ON_FAILURE=n
 # Tab5 powers the C6 through M5.begin(); initialize Hosted explicitly after
 # that board setup instead of starting background SDIO retries before app_main.
 CONFIG_ESP_HOSTED_AUTO_CALL_INIT_BEFORE_APP_MAIN=n
 CONFIG_ESP_HOSTED_HOST_FEAT_WIFI=y
-CONFIG_ESP_HOSTED_HOST_FEAT_NW_SPLIT=y
-CONFIG_ESP_HOSTED_HOST_FEAT_NW_SPLIT_AUTO_INIT=n
-CONFIG_ESP_HOSTED_HOST_FEAT_NW_SPLIT_NETIF_APP_EXTERNAL=y
+# Network Split is a separate, paired P4/C6 feature.  OrcSDR uses the normal
+# station APIs and the installed C6 advertises WLAN only, so leave it disabled.
 CONFIG_ESP_HOSTED_DFLT_TASK_FROM_SPIRAM=y
-# ESP-Hosted streaming mode may receive a large SDIO aggregate. On the P4,
-# allocate that DMA buffer from PSRAM so radio/USB internal DMA remains free.
+# Packet Mode is paired with the installed C6 packet image. It trades peak
+# throughput for bounded host buffers during station join and HTTPS downloads.
+CONFIG_ESP_HOSTED_HOST_SDIO_RX_STREAMING_MODE=y
+# Packet buffers are still substantial; preserve internal DMA for SDIO/I2S.
 CONFIG_EH_HOST_PORT_DMA_PREFER_SPIRAM=y
 CONFIG_USB_HOST_DWC_DMA_CAP_MEMORY_IN_PSRAM=y
 # Keep incidental mallocs out of on-chip RAM. DMA-capable internal
@@ -53,6 +59,9 @@ CONFIG_USB_HOST_DWC_DMA_CAP_MEMORY_IN_PSRAM=y
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=8192
 CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=40960
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+# Catalog HTTPS needs TLS buffers larger than the remaining internal DMA headroom.
+# Keep Hosted/I2S DMA internal; place ordinary mbedTLS allocations in PSRAM.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 # mDNS after STA-up was allocating its task from internal RAM and the
 # following Hosted SDIO TX/RX alloc asserted (sendbuf / pkt_rxbuff).
 CONFIG_MDNS_TASK_CREATE_FROM_SPIRAM=y

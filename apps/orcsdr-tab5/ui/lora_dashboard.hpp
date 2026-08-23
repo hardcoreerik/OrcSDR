@@ -112,6 +112,7 @@ bool spectrum_active();
 View view();
 void show_documentation_view(View view, const Snapshot& snapshot);
 void toggle_filter();
+void center_on_selected();
 void toggle_follow_node();
 bool self_check();
 

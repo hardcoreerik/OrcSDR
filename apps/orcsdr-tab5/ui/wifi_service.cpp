@@ -6,6 +6,8 @@
 extern "C" {
 #include <esp_event.h>
 #include <esp_hosted.h>
+#include <esp_hosted_transport_config.h>
+#include <esp_log.h>
 #include <esp_netif.h>
 #include <esp_wifi.h>
 }
@@ -24,8 +26,10 @@ int32_t g_failure_code = ESP_OK;
 char g_ssid[33]{};
 char g_ip[16]{"0.0.0.0"};
 
-void on_wifi_event(void*, esp_event_base_t base, int32_t id, void*) {
+void on_wifi_event(void*, esp_event_base_t base, int32_t id, void* data) {
   if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+    const auto* event = static_cast<const wifi_event_sta_disconnected_t*>(data);
+    ESP_LOGW("orcsdr_wifi", "station disconnected reason=%u", event ? event->reason : 0u);
     g_connected = false;
     g_failed = true;
   }
@@ -123,7 +127,15 @@ bool connect(const char* network, const char* password) {
   strlcpy(reinterpret_cast<char*>(config.sta.ssid), network, sizeof(config.sta.ssid));
   strlcpy(reinterpret_cast<char*>(config.sta.password), password ? password : "", sizeof(config.sta.password));
   g_failed = false; g_connected = false; strlcpy(g_ssid, network, sizeof(g_ssid));
-  return esp_wifi_set_config(WIFI_IF_STA, &config) == ESP_OK && esp_wifi_connect() == ESP_OK;
+  const esp_err_t set_config = esp_wifi_set_config(WIFI_IF_STA, &config);
+  if (set_config != ESP_OK) {
+    ESP_LOGE("orcsdr_wifi", "set_config failed: 0x%x", static_cast<unsigned>(set_config));
+    return false;
+  }
+  const esp_err_t connect = esp_wifi_connect();
+  if (connect != ESP_OK)
+    ESP_LOGE("orcsdr_wifi", "connect request failed: 0x%x", static_cast<unsigned>(connect));
+  return connect == ESP_OK;
 }
 void disconnect() { esp_wifi_disconnect(); g_connected = false; }
 bool connected() { return g_connected; }

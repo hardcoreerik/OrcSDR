@@ -5,6 +5,7 @@
 #include <esp_app_desc.h>
 #include <esp_http_client.h>
 #include <esp_heap_caps.h>
+#include <esp_log.h>
 #include <mbedtls/base64.h>
 #include <mbedtls/pk.h>
 #include <mbedtls/sha256.h>
@@ -16,6 +17,8 @@
 namespace orcsdr::catalog {
 namespace {
 
+constexpr char kTag[] = "catalog_sync";
+
 constexpr char kCatalogUrl[] =
     "https://github.com/hardcoreerik/OrcSDR/releases/download/data-catalog-v1/catalog-v1.json";
 constexpr char kSignatureUrl[] =
@@ -24,6 +27,9 @@ constexpr char kDataRoot[] = "/orcsdr/data";
 constexpr size_t kManifestLimit = 16 * 1024;
 constexpr size_t kSignatureLimit = 512;
 constexpr size_t kChunkBytes = 4096;
+constexpr size_t kWriteBatchBytes = kChunkBytes;
+constexpr size_t kYieldBytes = 64 * 1024;
+constexpr uint8_t kMaxRedirects = 4;
 
 extern const uint8_t catalog_public_key_pem_start[] asm("_binary_catalog_public_key_pem_start");
 extern const uint8_t catalog_public_key_pem_end[] asm("_binary_catalog_public_key_pem_end");
@@ -171,17 +177,35 @@ void refresh_installed() {
   portEXIT_CRITICAL(&g_lock);
 }
 
+bool open_get(esp_http_client_handle_t client, int64_t* declared, int* status,
+              esp_err_t* open_result) {
+  if (client == nullptr || declared == nullptr || status == nullptr || open_result == nullptr) return false;
+  for (uint8_t redirect = 0; redirect <= kMaxRedirects; ++redirect) {
+    *open_result = esp_http_client_open(client, 0);
+    if (*open_result != ESP_OK) return false;
+    *declared = esp_http_client_fetch_headers(client);
+    *status = esp_http_client_get_status_code(client);
+    if (*status < 300 || *status > 308) return true;
+    if (redirect == kMaxRedirects || esp_http_client_set_redirection(client) != ESP_OK) return false;
+    esp_http_client_close(client);
+  }
+  return false;
+}
+
 bool http_read_all(const char* url, uint8_t* output, size_t capacity, size_t* received) {
   if (!url || !output || !received) return false;
   esp_http_client_config_t config{};
   config.url = url;
   config.timeout_ms = 15000;
+  config.buffer_size_tx = 2048;
   config.crt_bundle_attach = esp_crt_bundle_attach;
   config.keep_alive_enable = true;
   esp_http_client_handle_t client = esp_http_client_init(&config);
   if (!client) return false;
-  bool ok = esp_http_client_open(client, 0) == ESP_OK;
-  const int64_t declared = ok ? esp_http_client_fetch_headers(client) : -1;
+  esp_err_t open_result = ESP_FAIL;
+  int64_t declared = -1;
+  int status = -1;
+  bool ok = open_get(client, &declared, &status, &open_result);
   if (!ok || declared < 0 || static_cast<uint64_t>(declared) > capacity) {
     esp_http_client_cleanup(client);
     return false;
@@ -194,10 +218,12 @@ bool http_read_all(const char* url, uint8_t* output, size_t capacity, size_t* re
     if (got == 0) break;
     total += static_cast<size_t>(got);
   }
-  const int status = esp_http_client_get_status_code(client);
   esp_http_client_close(client);
   esp_http_client_cleanup(client);
   *received = total;
+  ESP_LOGI(kTag, "fetch open=%s status=%d declared=%lld received=%u",
+           esp_err_to_name(open_result), status, static_cast<long long>(declared),
+           static_cast<unsigned>(total));
   return ok && status == 200 && total > 0 && (declared == 0 || total == static_cast<size_t>(declared));
 }
 
@@ -307,78 +333,86 @@ bool hash_matches(const uint8_t digest[32], const char* expected) {
   return strcasecmp(actual, expected) == 0;
 }
 
-bool starts_with(File& file, const char* expected, size_t expected_size) {
-  uint8_t actual[16]{};
-  return expected_size <= sizeof(actual) && file.seek(0) &&
-         file.read(actual, expected_size) == expected_size &&
-         memcmp(actual, expected, expected_size) == 0;
-}
-
-bool validate_staged_artifact(const Artifact& artifact, uint8_t pack_index) {
-  char temporary[112]{};
-  snprintf(temporary, sizeof(temporary), "%s.part", artifact.destination);
-  File file = g_fs ? g_fs->open(temporary, FILE_READ) : File{};
-  if (!file || file.size() != artifact.bytes) return false;
-  bool valid = false;
-  if (artifact.archive) {
-    // Every published source artifact is a ZIP. Checking the local header is
-    // intentionally bounded; SHA-256 already proves the downloaded bytes.
-    valid = starts_with(file, "PK\003\004", 4) || starts_with(file, "PK\005\006", 4);
-  } else if (pack_index == 0) {
-    valid = starts_with(file, "ORCADSB1", 8);
-  } else if (pack_index == 4) {
-    valid = starts_with(file, "ORCMAP1\n", 8);
-  } else {
-    // Non-ADS-B indexes use the common line-oriented catalog header.
-    valid = starts_with(file, "ORCCAT1\n", 8);
-  }
-  file.close();
-  return valid;
-}
-
 bool download_artifact(const Artifact& artifact, uint8_t pack_index,
                        uint8_t progress_base, uint8_t progress_span) {
   if (g_fs == nullptr || artifact.url[0] == '\0') return false;
   if (g_free_bytes < artifact.bytes + kChunkBytes) { set_message("Not enough SD space"); return false; }
+  ESP_LOGI(kTag, "download stage=start pack=%u kind=%s bytes=%u", pack_index,
+           artifact.archive ? "archive" : "runtime", static_cast<unsigned>(artifact.bytes));
   char temporary[112]{};
   snprintf(temporary, sizeof(temporary), "%s.part", artifact.destination);
   g_fs->remove(temporary);
   File file = g_fs->open(temporary, FILE_WRITE, true);
   if (!file) { set_message("Cannot create SD staging file"); return false; }
+  ESP_LOGI(kTag, "download stage=staging_open");
 
   esp_http_client_config_t config{};
   config.url = artifact.url;
   config.timeout_ms = 20000;
+  config.buffer_size_tx = 2048;
   config.crt_bundle_attach = esp_crt_bundle_attach;
   esp_http_client_handle_t client = esp_http_client_init(&config);
-  bool ok = client && esp_http_client_open(client, 0) == ESP_OK;
-  const int64_t declared = ok ? esp_http_client_fetch_headers(client) : -1;
-  if (!ok || declared != artifact.bytes || esp_http_client_get_status_code(client) != 200) ok = false;
+  esp_err_t open_result = ESP_FAIL;
+  int64_t declared = -1;
+  int status = -1;
+  bool ok = client && open_get(client, &declared, &status, &open_result);
+  if (!ok || declared != artifact.bytes || status != 200) ok = false;
+  ESP_LOGI(kTag, "download stage=http_open ok=%d status=%d declared=%lld", ok ? 1 : 0,
+           status, static_cast<long long>(declared));
   uint8_t* chunk = static_cast<uint8_t*>(heap_caps_malloc(kChunkBytes, MALLOC_CAP_8BIT));
+  uint8_t* write_batch = static_cast<uint8_t*>(heap_caps_malloc(kWriteBatchBytes, MALLOC_CAP_SPIRAM));
   mbedtls_sha256_context sha;
   mbedtls_sha256_init(&sha);
-  if (ok && (!chunk || mbedtls_sha256_starts(&sha, 0) != 0)) ok = false;
+  if (ok && (!chunk || !write_batch || mbedtls_sha256_starts(&sha, 0) != 0)) ok = false;
   uint32_t total = 0;
+  uint32_t next_yield = kYieldBytes;
+  size_t batch_used = 0;
+  uint8_t header[8]{};
+  size_t header_size = 0;
   while (ok && total < artifact.bytes) {
     const int got = esp_http_client_read(client, reinterpret_cast<char*>(chunk),
                                          std::min<uint32_t>(kChunkBytes, artifact.bytes - total));
-    if (got <= 0 || file.write(chunk, static_cast<size_t>(got)) != static_cast<size_t>(got) ||
-        mbedtls_sha256_update(&sha, chunk, static_cast<size_t>(got)) != 0) { ok = false; break; }
+    if (got <= 0) { ESP_LOGE(kTag, "download stage=http_read_failed got=%d", got); ok = false; break; }
+    memcpy(write_batch + batch_used, chunk, static_cast<size_t>(got));
+    batch_used += static_cast<size_t>(got);
+    const size_t header_take = std::min(sizeof(header) - header_size, static_cast<size_t>(got));
+    if (header_take) {
+      memcpy(header + header_size, chunk, header_take);
+      header_size += header_take;
+    }
+    if (mbedtls_sha256_update(&sha, chunk, static_cast<size_t>(got)) != 0) { ESP_LOGE(kTag, "download stage=hash_failed"); ok = false; break; }
     total += static_cast<uint32_t>(got);
+    if (batch_used == kWriteBatchBytes || total == artifact.bytes) {
+      const size_t wrote = file.write(write_batch, batch_used);
+      if (wrote != batch_used) { ESP_LOGE(kTag, "download stage=sd_write_failed wrote=%u expected=%u", static_cast<unsigned>(wrote), static_cast<unsigned>(batch_used)); ok = false; break; }
+      batch_used = 0;
+    }
+    if (total == static_cast<uint32_t>(got) || total == artifact.bytes) {
+      ESP_LOGI(kTag, "download stage=sd_write_progress bytes=%u", static_cast<unsigned>(total));
+    }
     set_busy(g_requested, progress_base + static_cast<uint8_t>((static_cast<uint64_t>(total) * progress_span) / artifact.bytes));
+    if (total >= next_yield) {
+      vTaskDelay(1);
+      next_yield += kYieldBytes;
+    }
   }
   uint8_t digest[32]{};
   if (ok && (total != artifact.bytes || mbedtls_sha256_finish(&sha, digest) != 0 ||
              !hash_matches(digest, artifact.sha256))) ok = false;
   mbedtls_sha256_free(&sha);
   if (chunk) heap_caps_free(chunk);
+  if (write_batch) heap_caps_free(write_batch);
   if (client) { esp_http_client_close(client); esp_http_client_cleanup(client); }
   file.close();
   if (!ok) { g_fs->remove(temporary); set_message("Download hash or network failure"); return false; }
 
-  if (!validate_staged_artifact(artifact, pack_index)) {
-    g_fs->remove(temporary); set_message("Downloaded file schema rejected"); return false;
-  }
+  const bool schema_ok = artifact.archive
+      ? (memcmp(header, "PK\003\004", 4) == 0 || memcmp(header, "PK\005\006", 4) == 0)
+      : pack_index == 0 ? memcmp(header, "ORCADSB1", 8) == 0
+      : pack_index == 4 ? memcmp(header, "ORCMAP1\n", 8) == 0
+                        : memcmp(header, "ORCCAT1\n", 8) == 0;
+  if (!schema_ok) { g_fs->remove(temporary); set_message("Downloaded file schema rejected"); return false; }
+  ESP_LOGI(kTag, "download stage=validated");
   return true;
 }
 
@@ -451,12 +485,42 @@ void worker(void*) {
     set_message("Catalog buffer allocation failed");
   } else if (operation == Operation::check) {
     set_message("Checking signed data catalog");
-    ok = http_read_all(kCatalogUrl, manifest, kManifestLimit, &manifest_size) &&
-         http_read_all(kSignatureUrl, signature, kSignatureLimit, &signature_size) &&
-         verify_signature(manifest, manifest_size, signature, signature_size) &&
-         parse_manifest(manifest, manifest_size);
-    set_message(ok ? "Catalog verified" : "Catalog signature or format rejected");
-    if (ok) refresh_installed();
+    bool manifest_ok = false;
+    bool signature_ok = false;
+    bool signature_verified = false;
+    if (!http_read_all(kCatalogUrl, manifest, kManifestLimit, &manifest_size)) {
+      set_message("Could not fetch catalog manifest");
+    } else {
+      manifest_ok = true;
+      ESP_LOGI(kTag, "check stage=manifest_ok bytes=%u", static_cast<unsigned>(manifest_size));
+    }
+    if (manifest_ok) {
+      if (!http_read_all(kSignatureUrl, signature, kSignatureLimit, &signature_size)) {
+        set_message("Could not fetch catalog signature");
+      } else {
+        signature_ok = true;
+        ESP_LOGI(kTag, "check stage=signature_ok bytes=%u", static_cast<unsigned>(signature_size));
+      }
+    }
+    if (signature_ok) {
+      signature_verified = verify_signature(manifest, manifest_size, signature, signature_size);
+      if (!signature_verified) set_message("Catalog signature rejected");
+      else ESP_LOGI(kTag, "check stage=signature_verified");
+    }
+    if (signature_verified) {
+      const bool manifest_parsed = parse_manifest(manifest, manifest_size);
+      ESP_LOGI(kTag, "check stage=manifest_parsed ok=%d", manifest_parsed ? 1 : 0);
+      if (!manifest_parsed) {
+        set_message("Catalog manifest rejected");
+      } else {
+        ok = true;
+        set_message("Catalog verified");
+      }
+    }
+    if (ok) {
+      refresh_installed();
+      ESP_LOGI(kTag, "check stage=installed_refreshed");
+    }
   } else if (operation == Operation::install && pack_index < kPackCount && g_packs[pack_index].available) {
     const auto& pack = g_packs[pack_index];
     const uint64_t required = static_cast<uint64_t>(pack.runtime.bytes) + pack.archive.bytes + 2 * kChunkBytes;
@@ -473,7 +537,14 @@ void worker(void*) {
       }
     }
     set_message(ok ? "Pack installed and verified" : g_state.message);
-    if (ok) refresh_installed();
+    if (ok) {
+      portENTER_CRITICAL(&g_lock);
+      auto& view = g_state.packs[pack_index];
+      view.installed = true;
+      view.update_available = false;
+      strlcpy(view.status, "INSTALLED", sizeof(view.status));
+      portEXIT_CRITICAL(&g_lock);
+    }
   } else if (operation == Operation::remove && pack_index < kPackCount && g_packs[pack_index].available) {
     const auto& pack = g_packs[pack_index];
     ok = true;
@@ -491,13 +562,34 @@ void worker(void*) {
 }
 
 bool request(Operation operation, uint8_t pack_index, bool needs_wifi) {
-  if (g_fs == nullptr || g_worker != nullptr || (needs_wifi && !orcsdr::wifi::connected())) return false;
-  if (!g_fs->exists(kDataRoot) && !g_fs->mkdir(kDataRoot)) return false;
+  if (g_fs == nullptr) {
+    set_message("SD storage unavailable");
+    return false;
+  }
+  if (g_worker != nullptr) {
+    set_message("Catalog operation already running");
+    return false;
+  }
+  if (needs_wifi && !orcsdr::wifi::connected()) {
+    set_message("Connect Wi-Fi before downloading");
+    return false;
+  }
+  if ((!g_fs->exists("/orcsdr") && !g_fs->mkdir("/orcsdr")) ||
+      (!g_fs->exists(kDataRoot) && !g_fs->mkdir(kDataRoot))) {
+    set_message("Could not create SD data directory");
+    return false;
+  }
   g_requested = operation;
   g_requested_pack = pack_index;
   set_busy(operation, 0);
   set_message(operation == Operation::check ? "Catalog check queued" : "Data operation queued");
-  return xTaskCreatePinnedToCore(worker, "catalog_sync", 12288, nullptr, 3, &g_worker, 1) == pdPASS;
+  if (xTaskCreatePinnedToCore(worker, "catalog_sync", 12288, nullptr, 3, &g_worker, 1) != pdPASS) {
+    g_requested = Operation::none;
+    set_busy(Operation::none, 0);
+    set_message("Catalog worker creation failed");
+    return false;
+  }
+  return true;
 }
 
 }  // namespace
@@ -515,7 +607,11 @@ void begin(orcsdr::storage::FileSystem* filesystem, uint64_t free_bytes) {
   portEXIT_CRITICAL(&g_lock);
 }
 
-void poll(bool) { if (g_fs != nullptr && g_state.ready) refresh_installed(); }
+void poll(bool) {
+  // SD checks belong to the catalog worker. Calling refresh_installed() from
+  // the UI loop races the worker's File operations as soon as a manifest is
+  // accepted, which can reset the shared SDMMC host.
+}
 bool request_check(bool wifi_connected) { return request(Operation::check, 0, wifi_connected); }
 bool request_install(uint8_t pack_index, bool wifi_connected) { return request(Operation::install, pack_index, wifi_connected); }
 bool request_remove(uint8_t pack_index) { return request(Operation::remove, pack_index, false); }

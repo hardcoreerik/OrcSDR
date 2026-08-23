@@ -104,8 +104,9 @@ bool load(orcsdr::storage::FileSystem* filesystem) {
   const bool header_ok = file.readBytesUntil('\n', header, sizeof(header)) == 7 &&
                          strcmp(header, "ORCMAP1") == 0;
   char line[96]{};
-  while (header_ok && file.available()) {
+  while (header_ok) {
     const size_t used = file.readBytesUntil('\n', line, sizeof(line) - 1);
+    if (used == 0) break;
     line[used] = '\0';
     if (line[0] == 'L' && g_label_count < kLabelCapacity) {
       Label label{};
@@ -122,9 +123,9 @@ bool load(orcsdr::storage::FileSystem* filesystem) {
 
 bool available() { return g_available; }
 
-void draw_base(const View& view, uint16_t water_color, uint16_t road_color,
-               uint16_t airport_color, uint16_t border_color) {
-  M5.Display.drawRect(view.x, view.y, view.width, view.height, border_color);
+void draw_base(lgfx::v1::LovyanGFX& display, const View& view, uint16_t water_color,
+               uint16_t road_color, uint16_t airport_color, uint16_t border_color) {
+  display.drawRect(view.x, view.y, view.width, view.height, border_color);
   if (!g_available) return;
   for (size_t i = 0; i < g_count; ++i) {
     int x1 = 0, y1 = 0, x2 = 0, y2 = 0;
@@ -133,16 +134,24 @@ void draw_base(const View& view, uint16_t water_color, uint16_t road_color,
     if (!clip_line(view, &x1, &y1, &x2, &y2)) continue;
     const uint16_t color = g_segments[i].kind == Kind::water ? water_color :
                            g_segments[i].kind == Kind::airport ? airport_color : road_color;
-    M5.Display.drawLine(x1, y1, x2, y2, color);
+    display.drawLine(x1, y1, x2, y2, color);
   }
-  M5.Display.setTextDatum(middle_left);
-  M5.Display.setTextSize(1);
-  M5.Display.setTextColor(airport_color);
+  display.setTextDatum(middle_left);
+  display.setTextSize(1);
+  display.setTextColor(airport_color);
   for (size_t i = 0; i < g_label_count; ++i) {
     int x = 0, y = 0;
     if (project(view, g_labels[i].lat, g_labels[i].lon, &x, &y))
-      M5.Display.drawString(g_labels[i].text, x + 3, y);
+      display.drawString(g_labels[i].text, x + 3, y);
   }
+  display.setTextDatum(bottom_left);
+  display.setTextColor(road_color);
+  display.drawString("OSM contributors", view.x + 3, view.y + view.height - 2);
+}
+
+void draw_base(const View& view, uint16_t water_color, uint16_t road_color,
+               uint16_t airport_color, uint16_t border_color) {
+  draw_base(M5.Display, view, water_color, road_color, airport_color, border_color);
 }
 
 bool self_check() {

@@ -1232,6 +1232,7 @@ static uint32_t g_audio_rec_file_seq = 0;
 static bool g_sd_ready = false;
 static orcsdr::storage::FileSystem* g_sd_fs = nullptr;
 static bool g_sd_tried = false;
+static uint32_t g_sd_last_attempt_ms = 0;
 static char g_audio_rec_last_path[64] = "";
 static std::atomic<uint8_t> g_orc_tool{static_cast<uint8_t>(OrcTool::Radio)};
 static std::atomic<bool> g_audio_rec_export_pending{false};
@@ -1358,14 +1359,17 @@ IqGetState g_iq_get;
 uint8_t g_sd_put_chunk[kSdPutChunkBytes];
 bool wifi_station_ready = false;
 bool wifi_hosted_versions_match = false;
+bool wifi_c6_power_prepared = false;
 bool wifi_scan_running = false;
 std::atomic<bool> wifi_scan_requested{false};
 std::atomic<bool> wifi_connect_requested{false};
 bool wifi_configured = false;
 bool settings_wifi_power_enabled = true;
+bool settings_wifi_start_at_boot = false;
 bool settings_wifi_external_antenna = false;
 bool wifi_connected = false;
 bool wifi_connecting = false;
+bool wifi_radio_paused = false;
 bool wifi_save_after_connect = false;
 uint32_t wifi_connect_started_ms = 0;
 int wifi_network_count = -1;
@@ -1398,6 +1402,7 @@ bool settings_web_console_enabled = false;
 char settings_location_label[40]{};
 char settings_map_pack[40]{};
 bool adsb_atc_listening = false;
+bool catalog_radio_paused = false;
 std::atomic<uint32_t> rtl_sdr_status_revision{0};
 uint32_t drawn_rtl_sdr_status_revision = 0;
 char rtl_sdr_status[96] = "RTL-SDR: waiting for USB-A host";
@@ -1435,7 +1440,6 @@ std::atomic<bool> rtl_audio_enabled{false};
 std::atomic<bool> rtl_speaker_start_allowed{false};
 enum class BootInitStage : uint8_t {
   idle,
-  usb_power_off,
   usb_power_settle,
   rtl_enumerating,
   speaker_settle,
@@ -2737,12 +2741,13 @@ void audio_rec_append(const int16_t* samples, size_t count) {
 
 bool ensure_tab5_sd() {
   if (g_sd_ready) return true;
-  if (g_sd_tried && !g_sd_ready) return false;
+  if (g_sd_tried && millis() - g_sd_last_attempt_ms < 2000u) return false;
   g_sd_tried = true;
+  g_sd_last_attempt_ms = millis();
   if (orcsdr::storage::mount_tab5_sd()) {
     g_sd_fs = &orcsdr::storage::filesystem();
     g_sd_ready = true;
-    Serial.println("RTL_REC_SD ready bus=sdmmc");
+    Serial.println("RTL_REC_SD ready bus=sdspi");
     return true;
   }
   Serial.println("RTL_REC_SD missing_or_fail");
@@ -7004,8 +7009,21 @@ void apply_wifi_antenna() {
                 settings_wifi_external_antenna ? "external_mmcx" : "internal");
 }
 
+void prepare_wifi_coprocessor() {
+  if (wifi_c6_power_prepared) return;
+  // Tab5 IO expander #2 (0x44), P0 is WLAN_PWR_EN.  Cycle the rail once
+  // before Hosted init so a timed-out C6 cannot survive a P4 app restart.
+  M5.getIOExpander(1).digitalWrite(0, false);
+  delay(100);
+  M5.getIOExpander(1).digitalWrite(0, true);
+  delay(200);
+  wifi_c6_power_prepared = true;
+  Serial.println("RTL_WIFI_C6_POWER_CYCLE ok");
+}
+
 void initialize_wifi() {
   if (wifi_station_ready) return;
+  prepare_wifi_coprocessor();
   const uint32_t dma_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
   const uint32_t dma_largest =
       heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
@@ -7067,15 +7085,24 @@ void log_wifi_coexistence(const char* event, uint32_t elapsed_ms = 0) {
                 rtl_dsp_block_us_max.load(std::memory_order_relaxed), rtl_spectrum_fps);
 }
 
+bool pause_radio_for_catalog();
+void resume_radio_after_catalog();
+bool pause_radio_for_wifi();
+void resume_radio_after_wifi();
+
 void start_wifi_inventory() {
   if (!settings_wifi_power_enabled) return;
   if (!wifi_station_ready) initialize_wifi();
   if (!wifi_station_ready) return;
   if (wifi_scan_running) return;
+  if (!pause_radio_for_wifi()) return;
   wifi_scan_result_count = 0;
   wifi_scan_started_ms = millis();
   strlcpy(wifi_status_message, "Scanning networks", sizeof(wifi_status_message));
   wifi_network_count = orcsdr::wifi::begin_scan() ? -2 : -1;
+  if (wifi_network_count != -2) {
+    resume_radio_after_wifi();
+  }
   begin_power_monitor("wifi_scan");
   wifi_scan_running = wifi_network_count == -2;
   log_wifi_coexistence(wifi_scan_running ? "scan_started" : "scan_start_failed");
@@ -7086,6 +7113,7 @@ void start_wifi_connection() {
   if (!settings_wifi_power_enabled) return;
   if (!wifi_station_ready) initialize_wifi();
   if (!wifi_station_ready || !wifi_ssid[0]) return;
+  if (!pause_radio_for_wifi()) return;
   wifi_scan_running = false;
   wifi_network_count = -1;
   wifi_connected = false;
@@ -7097,8 +7125,13 @@ void start_wifi_connection() {
                     heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
                 static_cast<unsigned long>(
                     heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)));
-  orcsdr::wifi::disconnect();
-  if (!orcsdr::wifi::connect(wifi_ssid, wifi_password)) wifi_connecting = false;
+  // A fresh station connect needs no disconnect RPC.  On ESP-Hosted SDIO this
+  // unnecessary command can race the first configuration RPC after boot.
+  if (orcsdr::wifi::connected()) orcsdr::wifi::disconnect();
+  if (!orcsdr::wifi::connect(wifi_ssid, wifi_password)) {
+    wifi_connecting = false;
+    resume_radio_after_wifi();
+  }
   begin_power_monitor("wifi_connect");
   log_wifi_coexistence("connect_started");
   draw_wifi_state();
@@ -7113,6 +7146,7 @@ void stop_wifi() {
   wifi_connected = false;
   wifi_connecting = false;
   wifi_scan_running = false;
+  resume_radio_after_wifi();
   strlcpy(wifi_status_message, "Wi-Fi off", sizeof(wifi_status_message));
   Serial.println("RTL_WIFI_OFF");
 }
@@ -7124,6 +7158,33 @@ void start_wifi_connection(const char* ssid, const char* password, bool save_on_
   wifi_save_after_connect = save_on_success;
   wifi_connect_requested.store(true, std::memory_order_release);
 }
+
+bool pause_radio_for_io(bool& paused) {
+  if (rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running) return true;
+  // A queued auto-start can otherwise relaunch the radio immediately after
+  // the current stream stops, defeating the caller's exclusive I/O window.
+  rtl_capture_requested.store(false, std::memory_order_release);
+  rtl_restart_requested.store(false, std::memory_order_release);
+  rtl_stop_requested.store(true, std::memory_order_release);
+  const uint32_t deadline = millis() + 5000;
+  while (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
+         static_cast<int32_t>(deadline - millis()) > 0) delay(10);
+  paused = rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running;
+  return paused;
+}
+
+void resume_radio_after_io(bool& paused) {
+  if (!paused) return;
+  paused = false;
+  rtl_stop_requested.store(false, std::memory_order_release);
+  rtl_restart_requested.store(true, std::memory_order_release);
+  rtl_capture_requested.store(true, std::memory_order_release);
+}
+
+bool pause_radio_for_catalog() { return pause_radio_for_io(catalog_radio_paused); }
+void resume_radio_after_catalog() { resume_radio_after_io(catalog_radio_paused); }
+bool pause_radio_for_wifi() { return pause_radio_for_io(wifi_radio_paused); }
+void resume_radio_after_wifi() { resume_radio_after_io(wifi_radio_paused); }
 
 void poll_wifi() {
   if (!settings_wifi_power_enabled) {
@@ -7146,6 +7207,7 @@ void poll_wifi() {
     const int result = orcsdr::wifi::scan_results(nullptr, 0);
     if (result >= 0) {
       wifi_scan_running = false;
+      resume_radio_after_wifi();
       wifi_network_count = result;
       wifi_scan_result_count = result > 0
                                    ? static_cast<uint8_t>(std::min<int>(
@@ -7159,13 +7221,17 @@ void poll_wifi() {
         wifi_scan_results[i].rssi = scan[i].rssi; wifi_scan_results[i].secure = scan[i].secure;
       }
       log_wifi_coexistence("scan_complete", millis() - wifi_scan_started_ms);
-      allow_boot_speaker();
       state_changed = true;
     }
   }
   const bool connected = orcsdr::wifi::connected();
   if (wifi_connecting && connected) {
     wifi_connecting = false;
+    // The C6 association has completed, but immediately relaunching USB RTL
+    // can still reset the P4 under the constrained SDIO/DMA load. Keep the
+    // receiver paused for the connected session; catalog work owns this same
+    // exclusive I/O window and radio actions can resume it deliberately.
+    if (wifi_radio_paused) Serial.println("RTL_WIFI_RADIO_PAUSED connected");
     if (wifi_save_after_connect) {
       int existing = -1;
       for (uint8_t i = 0; i < wifi_profile_count; ++i)
@@ -7185,13 +7251,13 @@ void poll_wifi() {
     wifi_save_after_connect = false;
     strlcpy(wifi_status_message, "Connection successful", sizeof(wifi_status_message));
     log_wifi_coexistence("connect_complete", millis() - wifi_connect_started_ms);
-    allow_boot_speaker();
     state_changed = true;
   } else if (wifi_connecting &&
              (millis() - wifi_connect_started_ms >= 15000u ||
               orcsdr::wifi::connect_failed())) {
     const bool discard_candidate = wifi_save_after_connect;
     wifi_connecting = false;
+    resume_radio_after_wifi();
     wifi_save_after_connect = false;
     orcsdr::wifi::disconnect();
     if (discard_candidate) {
@@ -7207,7 +7273,6 @@ void poll_wifi() {
     }
     strlcpy(wifi_status_message, "Connection failed", sizeof(wifi_status_message));
     log_wifi_coexistence("connect_failed", millis() - wifi_connect_started_ms);
-    allow_boot_speaker();
     state_changed = true;
   }
   if (connected != wifi_connected) {
@@ -7722,6 +7787,9 @@ void handle_lora_dashboard_action(const orcsdr::lora::Action& action) {
     case ActionKind::filter_next:
       orcsdr::lora::toggle_filter();
       break;
+    case ActionKind::center_map:
+      orcsdr::lora::center_on_selected();
+      break;
     case ActionKind::follow_node:
       orcsdr::lora::toggle_follow_node();
       break;
@@ -7875,6 +7943,7 @@ const orcsdr::settings::State& global_settings_state() {
   const auto device = orcsdr::device_status::collect(
       wifi_connected, wifi_ssid, rtl_device_ready(), rtl_sdr_status);
   state.wifi_power_enabled = settings_wifi_power_enabled;
+  state.wifi_start_at_boot = settings_wifi_start_at_boot;
   state.wifi_external_antenna = settings_wifi_external_antenna;
   state.wifi_ready = wifi_station_ready;
   state.wifi_scanning = wifi_scan_running;
@@ -8411,14 +8480,28 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
         orcsdr::catalog::begin(g_sd_fs, sd_total_bytes() -
             orcsdr::storage::used_bytes());
         (void)orcsdr::offline_map::load(g_sd_fs);
-        if (!orcsdr::catalog::request_check(wifi_connected))
+        if (!pause_radio_for_catalog() || !orcsdr::catalog::request_check(wifi_connected)) {
+          resume_radio_after_catalog();
           Serial.println("ORC_CATALOG_CHECK_REJECTED");
+        }
       }
       update_global_settings();
       break;
+    case orcsdr::settings::ActionKind::wifi_start_at_boot_changed:
+      settings_wifi_start_at_boot = action.value != 0;
+      preferences.putBool("set_wifi_boot", settings_wifi_start_at_boot);
+      strlcpy(wifi_status_message,
+              settings_wifi_start_at_boot ? "Wi-Fi will connect to priority network at boot"
+                                          : "Wi-Fi will wait for manual connection",
+              sizeof(wifi_status_message));
+      update_global_settings();
+      break;
     case orcsdr::settings::ActionKind::catalog_install:
-      if (!orcsdr::catalog::request_install(static_cast<uint8_t>(action.value), wifi_connected))
+      if (!pause_radio_for_catalog() ||
+          !orcsdr::catalog::request_install(static_cast<uint8_t>(action.value), wifi_connected)) {
+        resume_radio_after_catalog();
         Serial.println("ORC_CATALOG_INSTALL_REJECTED");
+      }
       update_global_settings();
       break;
     case orcsdr::settings::ActionKind::catalog_remove:
@@ -8683,6 +8766,7 @@ void load_state() {
   if (settings_rotation != 1 && settings_rotation != 3) settings_rotation = 1;
   settings_screen_timeout_sec = preferences.getUShort("set_timeout", 0);
   settings_wifi_power_enabled = preferences.getBool("set_wifi_power", true);
+  settings_wifi_start_at_boot = preferences.getBool("set_wifi_boot", false);
   settings_wifi_external_antenna = preferences.getBool("set_wifi_ext_ant", false);
   settings_sound_default = preferences.getBool("set_sound", true);
   rtl_audio_user_enabled.store(settings_sound_default, std::memory_order_release);
@@ -8843,8 +8927,11 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
                             bool persist_navigation) {
   if (!rtl_band_has_audio(band)) sync_rtl_audio_for_band(band);
   if (band == RtlBand::adsb) {
-    if (!orcsdr::home::active()) orcsdr::adsb::enter(adsb_settings);
     frequency_hz = kAdsbDefaultHz;
+    if (!orcsdr::screens::owns(orcsdr::screens::Id::adsb))
+      draw_sdr_screen(band, frequency_hz, rtl_live_volume.load(std::memory_order_acquire));
+    else if (!orcsdr::adsb::active())
+      orcsdr::adsb::enter(adsb_settings);
     Serial.println("RTL_ADSB_CAPTURE live_rf=true ui_data=live");
   }
 #if RTL_USE_LEGACY_USB
@@ -10303,7 +10390,7 @@ void process_command(char* command) {
       if (kind != K::none) { handle_lora_dashboard_action({kind, static_cast<uint32_t>(value)}); Serial.println("RTL_UI_ACTION_OK"); return; }
     } else if (strcmp(domain, "SETTINGS") == 0) {
       using K = orcsdr::settings::ActionKind; K kind = K::none;
-      if (!strcmp(action, "WIFI_POWER")) kind=K::wifi_power_changed; else if (!strcmp(action, "ANTENNA")) kind=K::wifi_antenna_changed;
+      if (!strcmp(action, "WIFI_POWER")) kind=K::wifi_power_changed; else if (!strcmp(action, "WIFI_BOOT")) kind=K::wifi_start_at_boot_changed; else if (!strcmp(action, "ANTENNA")) kind=K::wifi_antenna_changed;
       else if (!strcmp(action, "SCAN")) kind=K::scan_wifi; else if (!strcmp(action, "CONNECT_SAVED")) kind=K::connect_saved_wifi;
       else if (!strcmp(action, "FORGET")) kind=K::forget_wifi; else if (!strcmp(action, "MOVE_UP")) kind=K::move_wifi_up;
       else if (!strcmp(action, "MOVE_DOWN")) kind=K::move_wifi_down; else if (!strcmp(action, "RANGE")) kind=K::range_changed;
@@ -10357,24 +10444,31 @@ void process_command(char* command) {
     run_ui_regression(true);
     return;
   }
-  if (strcmp(command, "RTL_CATALOG_STATUS") == 0) {
+  if (strcmp(command, "RTL_CATALOG_STATUS") == 0 ||
+      strcmp(command, "RTL_CATALOG_LIST") == 0) {
     const auto state = orcsdr::catalog::state();
-    Serial.printf("RTL_CATALOG_STATUS ready=%d busy=%d progress=%u date=%s message=\"%s\"\n",
+    Serial.printf("RTL_CATALOG_STATUS ready=%d busy=%d operation=%u progress=%u date=%s message=\"%s\"\n",
                   state.ready ? 1 : 0, state.busy ? 1 : 0,
+                  static_cast<unsigned>(state.operation),
                   static_cast<unsigned>(state.progress_percent),
                   state.catalog_date[0] ? state.catalog_date : "--", state.message);
     for (uint8_t i = 0; i < orcsdr::catalog::kPackCount; ++i) {
       const auto& pack = state.packs[i];
-      Serial.printf("RTL_CATALOG_PACK id=%s installed=%d update=%d status=\"%s\"\n",
-                    pack.id, pack.installed ? 1 : 0, pack.update_available ? 1 : 0,
-                    pack.status);
+      Serial.printf("RTL_CATALOG_PACK id=%s version=%s source_date=%s runtime_bytes=%lu archive_bytes=%lu installed=%d update=%d status=\"%s\"\n",
+                    pack.id, pack.version[0] ? pack.version : "--",
+                    pack.source_date[0] ? pack.source_date : "--",
+                    static_cast<unsigned long>(pack.runtime_bytes),
+                    static_cast<unsigned long>(pack.archive_bytes),
+                    pack.installed ? 1 : 0, pack.update_available ? 1 : 0, pack.status);
     }
     return;
   }
-  if (strcmp(command, "RTL_CATALOG_CHECK") == 0) {
+  if (strcmp(command, "RTL_CATALOG_CHECK") == 0 ||
+      strcmp(command, "RTL_CATALOG_FETCH") == 0) {
+    const bool fetch = strcmp(command, "RTL_CATALOG_FETCH") == 0;
     handle_global_settings_action({orcsdr::settings::ActionKind::catalog_check, 0});
-    Serial.println(orcsdr::catalog::state().busy ? "RTL_CATALOG_CHECK_QUEUED"
-                                                  : "RTL_CATALOG_CHECK_REJECTED");
+    Serial.printf("RTL_CATALOG_%s_%s\n", fetch ? "FETCH" : "CHECK",
+                  orcsdr::catalog::state().busy ? "QUEUED" : "REJECTED");
     return;
   }
   if (strncmp(command, "RTL_CATALOG_INSTALL ", 20) == 0 ||
@@ -10796,6 +10890,11 @@ void process_command(char* command) {
     Serial.println("RTL_WEB                        - query LAN web console");
     Serial.println("RTL_WEB ON|OFF                 - enable LAN read-only console (auth)");
     Serial.println("RTL_WEB_STATUS                 - enabled/listening/url");
+    Serial.println("RTL_CATALOG_STATUS|LIST        - signed catalog and pack state");
+    Serial.println("RTL_CATALOG_FETCH              - fetch+verify signed catalog (Wi-Fi required)");
+    Serial.println("RTL_CATALOG_INSTALL <id>       - fetch+verify+activate data/map pack");
+    Serial.println("RTL_CATALOG_REMOVE <id> CONFIRM - remove installed pack (SD only)");
+    Serial.println("RTL_CATALOG packs: faa_aircraft|faa_aviation|noaa_weather|fcc_broadcast|lane_county_map");
     Serial.println("SD_LIST/SD_GET_*/SD_PUT_*      - SD card file transfer (see copy_to_tab5_sd.ps1)");
     Serial.println("RTL_HELP_END");
     return;
@@ -11337,7 +11436,6 @@ void service_power_monitor() {
 
 const char* boot_init_stage_name(BootInitStage stage) {
   switch (stage) {
-    case BootInitStage::usb_power_off: return "usb_power_off";
     case BootInitStage::usb_power_settle: return "usb_power_settle";
     case BootInitStage::rtl_enumerating: return "rtl_enumerating";
     case BootInitStage::speaker_settle: return "speaker_settle";
@@ -11355,20 +11453,16 @@ void set_boot_init_stage(BootInitStage stage) {
 
 void begin_boot_device_staging() {
   boot_auto_start_allowed = false;
-  M5.Power.setExtOutput(false, m5::ext_USB);
-  set_rtl_sdr_status("Boot: USB-A rail disabled");
-  set_boot_init_stage(BootInitStage::usb_power_off);
+  // The Tab5 already owns this rail. Reassert power without cycling it: a
+  // restart-time off/on pulse can reset the P4 while a powered RTL-SDR is attached.
+  M5.Power.setExtOutput(true, m5::ext_USB);
+  set_rtl_sdr_status("Boot: USB-A rail settling");
+  set_boot_init_stage(BootInitStage::usb_power_settle);
 }
 
 void service_boot_device_staging() {
   const uint32_t elapsed_ms = millis() - boot_init_stage_started_ms;
   switch (boot_init_stage) {
-    case BootInitStage::usb_power_off:
-      if (elapsed_ms < 150) return;
-      M5.Power.setExtOutput(true, m5::ext_USB);
-      set_rtl_sdr_status("Boot: USB-A rail settling");
-      set_boot_init_stage(BootInitStage::usb_power_settle);
-      return;
     case BootInitStage::usb_power_settle:
       if (elapsed_ms < 350) return;
       set_rtl_sdr_status("Boot: starting RTL-SDR host");
@@ -11595,23 +11689,58 @@ void setup() {
   esp_read_mac(mac, ESP_MAC_BASE);
   snprintf(node_id, sizeof(node_id), "m5tab5_%02x%02x%02x%02x%02x%02x",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  // ESP-Hosted must initialise Slot 1 before load_state() reaches the
+  // SD-backed receiver profiles on Slot 0. This is the ordering used by
+  // Espressif's combined SDIO + SDMMC example.
+  initialize_wifi();
   load_state();
-  if (settings_wifi_power_enabled) {
-    initialize_wifi();
+  // Keep the optional companion server out of the catalog recovery window.
+  // It has a separate crash history under Hosted traffic and is not needed
+  // for saved-network connection or signed pack installation.
+  if (settings_web_console_enabled) {
+    orcsdr::web_console::set_enabled(false);
+    Serial.println("RTL_WEB_DEFERRED catalog_wifi_session");
+  }
+  apply_wifi_antenna();
+  if (!settings_wifi_power_enabled) stop_wifi();
+  if (settings_wifi_power_enabled && settings_wifi_start_at_boot && wifi_station_ready &&
+      wifi_profile_count) {
+    select_wifi_profile(0);
+    for (uint8_t attempt = 0; attempt < 2 && !wifi_connected; ++attempt) {
+      if (attempt) {
+        Serial.println("RTL_WIFI_BOOT_RETRY saved_profile=0");
+        delay(1000);
+      }
+      start_wifi_connection();
+      const uint32_t wifi_deadline = millis() + 15000;
+      while (wifi_connecting && static_cast<int32_t>(wifi_deadline - millis()) > 0) {
+        M5.update();
+        poll_wifi();
+        delay(10);
+      }
+    }
   }
 
-  /* Loading splash owns the display while SD-backed splash assets load. */
-  (void)orcsdr_splash_begin();
-  orcsdr_splash_set_status("Starting RTL-SDR USB host…");
+  if (wifi_connected) {
+    // Catalog/map recovery must not bring up USB RTL and I2S alongside the
+    // freshly associated SDIO link. The receiver remains available to start
+    // deliberately after the network work completes.
+    boot_auto_start_allowed = true;
+    Serial.println("RTL_BOOT_WIFI_SESSION rtl_staging_deferred");
+  } else {
+    /* Loading splash owns the display while SD-backed splash assets load. */
+    (void)orcsdr_splash_begin();
+    orcsdr_splash_set_status("Starting RTL-SDR USB host…");
 
-  begin_boot_device_staging();
+    begin_boot_device_staging();
 
-  /* Dependencies are up: reveal the gate while the background keeps looping. */
-  orcsdr_splash_set_ready(true);
-  /* Splash ends on its own so reboot lands on Home without a tap. */
-  constexpr bool kSkipSplashGate = true;
-  if (!kSkipSplashGate) (void)orcsdr_splash_wait_start();
-  orcsdr_splash_end();
+    /* Dependencies are up: reveal the gate while the background keeps looping. */
+    orcsdr_splash_set_ready(true);
+    /* Splash ends on its own so reboot lands on Home without a tap. */
+    constexpr bool kSkipSplashGate = true;
+    if (!kSkipSplashGate) (void)orcsdr_splash_wait_start();
+    orcsdr_splash_end();
+  }
   g_suppress_home_paint = false;
   show_home();
   append_journal("boot");
@@ -11666,6 +11795,7 @@ void loop() {
     if (catalog_was_busy && !catalog_state.busy && g_sd_fs != nullptr) {
       (void)orcsdr::offline_map::load(g_sd_fs);
       refresh_adsb_atc_preset();
+      resume_radio_after_catalog();
     }
     catalog_was_busy = catalog_state.busy;
     orcsdr::catalog::poll(wifi_connected);
@@ -11868,7 +11998,7 @@ void loop() {
   if (home_ui) {
     static bool auto_start_done = false;
     if (!auto_start_done && boot_auto_start_allowed && settings_auto_start_reception &&
-        !wifi_scan_running && rtl_device_ready()) {
+        !wifi_connected && !wifi_scan_running && rtl_device_ready()) {
       auto_start_done = true;
       queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz, false);
     }

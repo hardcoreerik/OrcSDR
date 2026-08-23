@@ -43,6 +43,7 @@ struct CatalogPackView {
 
 struct State {
   bool wifi_power_enabled = true;
+  bool wifi_start_at_boot = false;
   bool wifi_external_antenna = false;
   bool wifi_ready = false;
   bool wifi_scanning = false;
@@ -107,6 +108,7 @@ enum class ActionKind : uint8_t {
   none,
   close,
   wifi_power_changed,
+  wifi_start_at_boot_changed,
   wifi_antenna_changed,
   scan_wifi,
   connect_wifi,

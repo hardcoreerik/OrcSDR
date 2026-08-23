@@ -22,6 +22,10 @@ constexpr uint16_t kMuted = 0x9cf3;
 constexpr int kHeaderH = 76;
 constexpr int kTabsY = 646;
 constexpr int kTabW = 256;
+constexpr int kRadarPanelX = 18;
+constexpr int kRadarPanelY = 92;
+constexpr int kRadarPanelW = 675;
+constexpr int kRadarPanelH = 532;
 constexpr uint16_t kRanges[] = {10, 25, 50, 100};
 
 enum class View : uint8_t { radar, list, target, stats, settings, count };
@@ -88,6 +92,52 @@ constexpr size_t kHistorySamples = 12;
 float g_rate_history[kHistorySamples]{};
 float g_signal_history[kHistorySamples]{};
 size_t g_history_count = 0;
+M5Canvas g_radar_base(&M5.Display);
+int32_t g_radar_cache_latitude_e7 = INT32_MIN;
+int32_t g_radar_cache_longitude_e7 = INT32_MIN;
+uint16_t g_radar_cache_range_nm = 0;
+
+void draw_radar_base() {
+  constexpr int cx = 345 - kRadarPanelX;
+  constexpr int cy = 354 - kRadarPanelY;
+  constexpr int radius = 245;
+  const bool stale = g_radar_base.getBuffer() == nullptr ||
+                     g_radar_cache_latitude_e7 != g_settings.latitude_e7 ||
+                     g_radar_cache_longitude_e7 != g_settings.longitude_e7 ||
+                     g_radar_cache_range_nm != g_settings.radar_range_nm;
+  if (!stale) return;
+  g_radar_base.deleteSprite();
+  if (g_radar_base.createSprite(kRadarPanelW, kRadarPanelH) == nullptr) return;
+  g_radar_base.fillSprite(kPanel);
+  g_radar_base.drawRoundRect(0, 0, kRadarPanelW, kRadarPanelH, 12, kBorder);
+  if (g_settings.location_configured) {
+    offline_map::View map{g_settings.latitude_e7 / 10000000.0f,
+                           g_settings.longitude_e7 / 10000000.0f,
+                           static_cast<float>(g_settings.radar_range_nm),
+                           cx - radius, cy - radius, radius * 2, radius * 2};
+    offline_map::draw_base(g_radar_base, map, 0x0320, 0x2945, 0x8c71, 0x2382);
+    if (!offline_map::available()) {
+      g_radar_base.setTextDatum(middle_center);
+      g_radar_base.setTextColor(kMuted);
+      g_radar_base.setTextSize(1);
+      g_radar_base.drawString("OFFLINE MAP PACK NOT INSTALLED", cx, cy + radius - 20);
+    }
+  }
+  for (int ring = 1; ring <= 4; ++ring)
+    g_radar_base.drawCircle(cx, cy, radius * ring / 4, 0x2382);
+  g_radar_base.drawFastHLine(cx - radius, cy, radius * 2, 0x2382);
+  g_radar_base.drawFastVLine(cx, cy - radius, radius * 2, 0x2382);
+  g_radar_base.setTextDatum(middle_center);
+  g_radar_base.setTextSize(2);
+  g_radar_base.setTextColor(TFT_WHITE);
+  g_radar_base.drawString("N", cx, cy - radius - 17);
+  g_radar_base.drawString("S", cx, cy + radius + 17);
+  g_radar_base.drawString("W", cx - radius - 20, cy);
+  g_radar_base.drawString("E", cx + radius + 20, cy);
+  g_radar_cache_latitude_e7 = g_settings.latitude_e7;
+  g_radar_cache_longitude_e7 = g_settings.longitude_e7;
+  g_radar_cache_range_nm = g_settings.radar_range_nm;
+}
 
 bool hit(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
   return x >= bx && x < bx + bw && y >= by && y < by + bh;
@@ -290,23 +340,9 @@ void draw_selected_summary(int x, int y, int w, int h) {
 
 void draw_radar() {
   const int cx = 345, cy = 354, radius = 245;
-  card(18, 92, 675, 532);
-  if (g_settings.location_configured) {
-    offline_map::View map{g_settings.latitude_e7 / 10000000.0f,
-                          g_settings.longitude_e7 / 10000000.0f,
-                          static_cast<float>(g_settings.radar_range_nm),
-                          cx - radius, cy - radius, radius * 2, radius * 2};
-    offline_map::draw_base(map, 0x0320, 0x2945, 0x8c71, 0x2382);
-    if (!offline_map::available())
-      text("OFFLINE MAP PACK NOT INSTALLED", cx, cy + radius - 20, kMuted, 1);
-  }
-  for (int ring = 1; ring <= 4; ++ring) M5.Display.drawCircle(cx, cy, radius * ring / 4, 0x2382);
-  M5.Display.drawFastHLine(cx - radius, cy, radius * 2, 0x2382);
-  M5.Display.drawFastVLine(cx, cy - radius, radius * 2, 0x2382);
-  text("N", cx, cy - radius - 17, TFT_WHITE, 2);
-  text("S", cx, cy + radius + 17, TFT_WHITE, 2);
-  text("W", cx - radius - 20, cy, TFT_WHITE, 2);
-  text("E", cx + radius + 20, cy, TFT_WHITE, 2);
+  draw_radar_base();
+  if (g_radar_base.getBuffer()) g_radar_base.pushSprite(kRadarPanelX, kRadarPanelY);
+  else card(kRadarPanelX, kRadarPanelY, kRadarPanelW, kRadarPanelH);
   plane(cx, cy, 22, kBlue);
   for (size_t i = 0; i < g_aircraft_count; ++i) {
     if (!g_aircraft[i].has_position || !g_settings.location_configured) continue;

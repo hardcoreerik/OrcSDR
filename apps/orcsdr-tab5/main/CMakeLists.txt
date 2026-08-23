@@ -59,8 +59,9 @@ idf_component_register(
         usb
     EMBED_FILES
         "orc_badge_104.png"
-        "catalog_public_key.pem"
         "../ui/web_console.html"
+    EMBED_TXTFILES
+        "catalog_public_key.pem"
 )
 
 target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)

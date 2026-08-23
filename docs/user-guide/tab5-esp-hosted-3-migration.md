@@ -14,7 +14,7 @@ notes remain historical records, not current installation instructions.
 | C6 ESP-Hosted firmware | 3.0.6 installed through the temporary P4 bridge |
 | M5Unified | 0.2.20 |
 | M5GFX | 0.2.27 |
-| Wi-Fi transport | SDIO, Slot 1, 4-bit, 40 MHz |
+| Wi-Fi transport | SDIO, Slot 1, 4-bit, qualified at 10 MHz |
 | microSD transport | SDMMC Slot 0, 4-bit |
 
 M5Unified and M5GFX are ESP-IDF components here. They do not make OrcSDR an
@@ -72,7 +72,7 @@ I (1889) eh_init_evt: esp-hosted fw versions: host=3.0.6 coprocessor=3.0.6 (matc
 RTL_WIFI_BOOT_STATUS station=1 hosted_match=1 stage=none error=0x0
 ```
 
-This proves C6 enumeration, the 4-bit 40 MHz SDIO transport, exact version
+This proves C6 enumeration, the 4-bit SDIO transport, exact version
 pairing, and P4 Wi-Fi station initialization. A live AP scan and visual screen
 acceptance remain separate checks.
 
@@ -98,3 +98,5 @@ the upstream recovery path for an actual SDIO enumeration failure.
   write is intentionally authorized.
 - Build proof, flash proof, C6 handshake proof, Wi-Fi scan proof, and visual
   acceptance are separate evidence.
+- See [wifi-tab5.md](../wifi-tab5.md) for the reusable, operational Wi-Fi
+  implementation guide and boot-connect behavior.

@@ -11,8 +11,9 @@ $env:PATH = "$env:IDF_PYTHON_ENV_PATH\Scripts;$env:PATH"
 Set-Location (Join-Path $PSScriptRoot '..')
 $buildDir = 'build-native-hosted3'
 
-# sdkconfig.defaults is the source; sdkconfig is a generated cache. Refuse a
-# build if the cache contradicts the Tab5 C6 power/SDIO startup configuration.
+# sdkconfig.defaults is the source; regenerate the per-build Kconfig cache so
+# a prior transport choice cannot silently survive a configuration change.
+Copy-Item -LiteralPath 'sdkconfig.defaults' -Destination (Join-Path $buildDir 'sdkconfig') -Force
 idf.py -B $buildDir -D "SDKCONFIG=$buildDir/sdkconfig" `
     -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults' reconfigure
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

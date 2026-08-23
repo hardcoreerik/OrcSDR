@@ -34,7 +34,7 @@ You power it on, wait for the splash to finish loading Wi-Fi and the dongle, tap
 > Jump to **[Flash OrcSDR to the M5Stack Tab5](#-flash-orcsdr-to-the-m5stack-tab5)** and run it on hardware. The screenshots on this page are from that firmware.
 
 > [!NOTE]
-> **Project status:** OrcSDR is under active development. The Tab5 app is the reference radio and builds with **native ESP-IDF 5.5.4**. M5Unified and M5GFX are ESP-IDF components only; PlatformIO is not a supported build or flash path. See [`docs/TAB5_ESP_HOSTED_3_MIGRATION.md`](docs/TAB5_ESP_HOSTED_3_MIGRATION.md) for the ESP-Hosted 3.0.6 P4/C6 migration, exact pins, and current Wi-Fi acceptance status.
+> **Project status:** OrcSDR is under active development. The Tab5 app is the reference radio and builds with **native ESP-IDF 5.5.4**. M5Unified and M5GFX are ESP-IDF components only; PlatformIO is not a supported build or flash path. See [the Tab5 ESP-Hosted migration record](docs/user-guide/tab5-esp-hosted-3-migration.md) and the [reusable Tab5 Wi-Fi guide](docs/wifi-tab5.md) for the P4/C6 pairing, pins, and acceptance status.
 
 ---
 
@@ -521,9 +521,8 @@ COM8
 
 ### 3. Install OrcSDR
 
-ESP-IDF 5.5.4 must already be installed. The current permanent C6 link is
-still under hardware acceptance, so use the explicit native build steps in
-[`docs/TAB5_ESP_HOSTED_3_MIGRATION.md`](docs/TAB5_ESP_HOSTED_3_MIGRATION.md),
+ESP-IDF 5.5.4 must already be installed. Use the explicit native build steps in
+[the Tab5 ESP-Hosted migration record](docs/user-guide/tab5-esp-hosted-3-migration.md),
 not the legacy installer as a release gate.
 
 ```powershell

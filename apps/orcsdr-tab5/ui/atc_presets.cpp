@@ -29,8 +29,9 @@ bool load(orcsdr::storage::FileSystem* filesystem) {
   const size_t header_size = file.readBytesUntil('\n', line, sizeof(line) - 1);
   line[header_size] = '\0';
   if (strcmp(line, "ORCCAT1") != 0) { file.close(); return false; }
-  while (file.available() && g_count < kCapacity) {
+  while (g_count < kCapacity) {
     const size_t size = file.readBytesUntil('\n', line, sizeof(line) - 1);
+    if (size == 0) break;
     line[size] = '\0';
     Preset preset{};
     if (sscanf(line, "ATC %" SCNd32 " %" SCNd32 " %" SCNu32 " %31[^\n]", &preset.latitude_e7,

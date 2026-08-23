@@ -39,6 +39,9 @@ Snapshot g_snapshot{};
 View g_view = View::overview;
 bool g_active = false;
 bool g_follow_node = false;
+bool g_map_center_set = false;
+int32_t g_map_center_lat_e7 = INT32_MAX;
+int32_t g_map_center_lon_e7 = INT32_MAX;
 uint8_t g_filter = 0;
 uint32_t g_last_dynamic_ms = 0;
 uint32_t g_last_spectrum_ms = 0;
@@ -46,6 +49,29 @@ uint16_t g_waterfall_row[kPlotW]{};
 
 bool hit(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
   return x >= bx && x < bx + bw && y >= by && y < by + bh;
+}
+
+bool has_position(const Node& node) {
+  return node.latitude_e7 != INT32_MAX && node.longitude_e7 != INT32_MAX;
+}
+
+const Node* selected_positioned_node() {
+  if (g_snapshot.node_count) {
+    const Node& selected = g_snapshot.nodes[
+        std::min<size_t>(g_snapshot.selected_node, g_snapshot.node_count - 1)];
+    if (has_position(selected)) return &selected;
+  }
+  for (size_t i = 0; i < g_snapshot.node_count; ++i)
+    if (has_position(g_snapshot.nodes[i])) return &g_snapshot.nodes[i];
+  return nullptr;
+}
+
+void follow_selected_position() {
+  const Node* node = selected_positioned_node();
+  if (!node) return;
+  g_map_center_lat_e7 = node->latitude_e7;
+  g_map_center_lon_e7 = node->longitude_e7;
+  g_map_center_set = true;
 }
 
 void text(const char* value, int x, int y, uint16_t color = TFT_WHITE, int size = 2,
@@ -224,17 +250,13 @@ void draw_traffic_static() {
 
 void draw_map_static() {
   card(24, 138, 896, 452);
-  text("TOPOLOGY MAP", 48, 165, kCyan, 2, middle_left);
-  for (int i = 1; i < 8; ++i) {
-    M5.Display.drawFastHLine(48, 183 + i * 47, 846, kGrid);
-    M5.Display.drawFastVLine(48 + i * 106, 183, 330, kGrid);
-  }
+  text("GEOGRAPHIC MAP", 48, 165, kCyan, 2, middle_left);
   card(942, 138, 306, 452);
   text("SELECTED NODE", 966, 165, kCyan, 2, middle_left);
   button(26, 604, 210, 42, "CENTER MAP", kCyan);
   button(252, 604, 210, 42, "FOLLOW NODE", kCyan, g_follow_node);
-  button(478, 604, 210, 42, "MARK POINT", kCyan);
-  button(704, 604, 210, 42, "SAVE SNAPSHOT", kCyan);
+  text("VERIFIED POSITIONS ONLY", 590, 625, kMuted, 1);
+  text("15 NM", 870, 625, kMuted, 1);
 }
 
 void draw_health_static() {
@@ -347,24 +369,18 @@ void draw_map_dynamic() {
   M5.Display.fillRect(50, 182, 842, 330, kBg);
   const Node* center = g_snapshot.node_count ? &g_snapshot.nodes[
       std::min<size_t>(g_snapshot.selected_node, g_snapshot.node_count - 1)] : nullptr;
-  const Node* map_center = center;
-  if (!map_center || map_center->latitude_e7 == INT32_MAX || map_center->longitude_e7 == INT32_MAX) {
-    for (size_t i = 0; i < g_snapshot.node_count; ++i) {
-      const Node& node = g_snapshot.nodes[i];
-      if (node.latitude_e7 != INT32_MAX && node.longitude_e7 != INT32_MAX) { map_center = &node; break; }
-    }
-  }
-  if (!map_center || map_center->latitude_e7 == INT32_MAX || map_center->longitude_e7 == INT32_MAX) {
+  if (g_follow_node || !g_map_center_set) follow_selected_position();
+  if (!g_map_center_set) {
     text("WAITING FOR VERIFIED POSITION", 470, 350, kMuted, 2);
   } else {
-    const float lat = map_center->latitude_e7 / 10000000.0f;
-    const float lon = map_center->longitude_e7 / 10000000.0f;
+    const float lat = g_map_center_lat_e7 / 10000000.0f;
+    const float lon = g_map_center_lon_e7 / 10000000.0f;
     offline_map::View map{lat, lon, 15.0f, 50, 182, 842, 330};
     offline_map::draw_base(map, 0x0320, kGrid, kMuted, kGrid);
     if (!offline_map::available()) text("OFFLINE MAP PACK NOT INSTALLED", 470, 490, kMuted, 1);
     for (size_t i = 0; i < g_snapshot.node_count; ++i) {
       const Node& node = g_snapshot.nodes[i];
-      if (node.latitude_e7 == INT32_MAX || node.longitude_e7 == INT32_MAX) continue;
+      if (!has_position(node)) continue;
       int x = 0, y = 0;
       if (!offline_map::project(map, node.latitude_e7 / 10000000.0f,
                                 node.longitude_e7 / 10000000.0f, &x, &y)) continue;
@@ -437,6 +453,7 @@ void draw_static() {
 void enter(const Snapshot& snapshot) {
   g_snapshot = snapshot;
   g_active = true;
+  g_map_center_set = false;
   g_last_dynamic_ms = 0;
   g_last_spectrum_ms = 0;
   draw_static();
@@ -530,8 +547,6 @@ Action handle_touch(int32_t x, int32_t y) {
   } else if (g_view == View::map) {
     if (hit(x, y, 26, 604, 210, 42)) return {ActionKind::center_map};
     if (hit(x, y, 252, 604, 210, 42)) return {ActionKind::follow_node};
-    if (hit(x, y, 478, 604, 210, 42)) return {ActionKind::mark_point};
-    if (hit(x, y, 704, 604, 210, 42)) return {ActionKind::save_snapshot};
   } else {
     if (hit(x, y, 24, 578, 242, 48)) return {ActionKind::scan_toggle};
     if (hit(x, y, 284, 578, 242, 48)) return {ActionKind::record_iq_toggle};
@@ -555,8 +570,15 @@ void toggle_filter() {
   if (g_active) draw_static();
 }
 
+void center_on_selected() {
+  g_follow_node = false;
+  follow_selected_position();
+  if (g_active) draw_static();
+}
+
 void toggle_follow_node() {
   g_follow_node = !g_follow_node;
+  if (g_follow_node) follow_selected_position();
   if (g_active) draw_static();
 }
 
@@ -567,9 +589,12 @@ bool self_check() {
   snapshot.bandwidth_hz = 250000;
   snapshot.node_count = 1;
   snapshot.nodes[0].id = 0xA1B2C3D4;
+  snapshot.nodes[0].latitude_e7 = 440500000;
+  snapshot.nodes[0].longitude_e7 = -1230900000;
   snapshot.event_count = 1;
   snapshot.events[0].sender = snapshot.nodes[0].id;
-  if (static_cast<uint8_t>(View::count) != 5 || kTabW * 5 != 1280) return false;
+  if (static_cast<uint8_t>(View::count) != 5 || kTabW * 5 != 1280 ||
+      !has_position(snapshot.nodes[0])) return false;
   char value[16];
   format_id(value, sizeof(value), snapshot.nodes[0].id);
   if (strcmp(value, "!A1B2C3D4") != 0) return false;
