@@ -48,6 +48,18 @@ static constexpr uint16_t kVid = RTL_SDR_V4_ESP_USB_VID;
 static constexpr uint16_t kPid = RTL_SDR_V4_ESP_USB_PID;
 static constexpr char kMfg[] = "RTLSDRBlog";
 static constexpr char kProduct[] = "Blog V4";
+static constexpr char kProductV3[] = "Blog V3";
+static constexpr char kMfgGeneric[] = "Realtek";
+static constexpr char kProductGeneric[] = "RTL2838UHIDIR";
+
+/*
+ * Blog V3 / R820T2 low-IF.
+ *
+ * Keep this separate from the V4 clean-room offset.  The V3 tuner and the
+ * RTL2832U DDC must use exactly the same IF or the displayed/decoded RF
+ * frequency will be shifted.
+ */
+static constexpr double kV3R820IfHz = 3570000.0;
 
 static const uint32_t kAllowRates[] = {
     RTL_SDR_V4_ESP_RATE_960K,
@@ -87,9 +99,16 @@ struct rtl_sdr_v4_esp_handle {
     bool iface_claimed = false;
     uint8_t pending_addr = 0;
     bool device_gone = false;
+    volatile bool v3_probe_pending = false;
+    uint8_t v3_probe_addr = 0;
+
+    /* Blog V3 / R820T2 software shadow, registers 0x05..0x1f. */
+    uint8_t v3_r820_regs[0x20 - 0x05]{};
+    bool v3_r820_shadow_valid = false;
 
     TaskHandle_t host_task = nullptr;
     TaskHandle_t client_task = nullptr;
+    TaskHandle_t v3_probe_task = nullptr;
     TaskHandle_t delivery_task = nullptr;
     volatile bool tasks_run = false;
 
@@ -98,6 +117,7 @@ struct rtl_sdr_v4_esp_handle {
     usb_transfer_t *ctrl_xfer = nullptr;
     esp_err_t ctrl_status = ESP_OK;
     bool ctrl_stall = false;
+    volatile bool ctrl_inflight = false;
 
     usb_transfer_t **bulk = nullptr;
     uint32_t bulk_num = 0;
@@ -116,6 +136,22 @@ struct rtl_sdr_v4_esp_handle {
 
     /** LO request; applied by retune path after bulk drain (never EP0 mid-bulk). */
     volatile uint32_t pending_retune_hz = 0;
+
+    /* Blog V3 IQ conditioning state. */
+    /*
+     * First-order complex DC blocker state:
+     *   y[n] = x[n] - x[n-1] + R*y[n-1]
+     *
+     * Applied only to Blog V3 copied IQ blocks before they are delivered to
+     * spectrum/demod/RDS.  It removes the fixed zero-Hz/DC spike without
+     * changing the RF/IF/DDC programming.
+     */
+    float v3_dc_x1_i = 0.0f;
+    float v3_dc_x1_q = 0.0f;
+    float v3_dc_y1_i = 0.0f;
+    float v3_dc_y1_q = 0.0f;
+    bool v3_dc_valid = false;
+    uint32_t v3_dc_frequency_hz = 0;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -461,10 +497,15 @@ static esp_err_t resolve_stream_frequency(const rtl_sdr_v4_esp_stream_config_t *
 /* Clean-room PLL pack (measured Tab5 path)                                   */
 /* -------------------------------------------------------------------------- */
 
-static bool encode_r820_pll(uint32_t frequency_hz, uint8_t *r16_setup, uint8_t *r16_active,
-                            uint8_t *r20, uint8_t *r21, uint8_t *r22)
+static bool encode_r820_pll_with_if(uint32_t frequency_hz,
+                                    double if_offset_hz,
+                                    uint8_t *r16_setup,
+                                    uint8_t *r16_active,
+                                    uint8_t *r20,
+                                    uint8_t *r21,
+                                    uint8_t *r22)
 {
-    const double lo_hz = static_cast<double>(frequency_hz) + kRtlIfOffsetHz;
+    const double lo_hz = static_cast<double>(frequency_hz) + if_offset_hz;
     static constexpr uint16_t kMixCandidates[] = {2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
     uint16_t chosen = 0;
     for (const uint16_t candidate : kMixCandidates) {
@@ -477,6 +518,7 @@ static bool encode_r820_pll(uint32_t frequency_hz, uint8_t *r16_setup, uint8_t *
     if (chosen == 0) {
         return false;
     }
+
     const double n = (lo_hz * chosen) / (2.0 * kRtlXtalHz);
     int nint = static_cast<int>(std::floor(n));
     int nfra = static_cast<int>(std::lround((n - nint) * 65536.0));
@@ -487,23 +529,40 @@ static bool encode_r820_pll(uint32_t frequency_hz, uint8_t *r16_setup, uint8_t *
     if (nfra < 0 || nint < 13) {
         return false;
     }
+
     const int packed = nint - 13;
     const int ni2c = packed >> 2;
     const int si2c = packed & 3;
     if (ni2c < 0 || ni2c > 63) {
         return false;
     }
+
     int mix_log = 0;
     for (uint16_t value = chosen; value > 1; value >>= 1) {
         ++mix_log;
     }
-    const uint8_t active = static_cast<uint8_t>((((mix_log - 1) & 0x07) << 5) | 0x04);
+
+    const uint8_t active =
+        static_cast<uint8_t>((((mix_log - 1) & 0x07) << 5) | 0x04);
+
     *r16_active = active;
     *r16_setup = static_cast<uint8_t>(active + 0x20);
     *r20 = static_cast<uint8_t>((si2c << 6) | ni2c);
     *r21 = static_cast<uint8_t>(nfra & 0xff);
     *r22 = static_cast<uint8_t>((nfra >> 8) & 0xff);
     return true;
+}
+
+/* V4 keeps the original measured clean-room IF offset. */
+static bool encode_r820_pll(uint32_t frequency_hz,
+                            uint8_t *r16_setup,
+                            uint8_t *r16_active,
+                            uint8_t *r20,
+                            uint8_t *r21,
+                            uint8_t *r22)
+{
+    return encode_r820_pll_with_if(frequency_hz, kRtlIfOffsetHz,
+                                   r16_setup, r16_active, r20, r21, r22);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -518,12 +577,15 @@ static void ctrl_cb(usb_transfer_t *xfer)
     }
     h->ctrl_status = (xfer->status == USB_TRANSFER_STATUS_COMPLETED) ? ESP_OK : ESP_FAIL;
     h->ctrl_stall = (xfer->status == USB_TRANSFER_STATUS_STALL);
+    h->ctrl_inflight = false;
     xSemaphoreGive(h->ctrl_sem);
 }
 
 static esp_err_t ctrl_submit(rtl_sdr_v4_esp_handle *h, uint8_t bm, uint8_t bRequest,
                              uint16_t wValue, uint16_t wIndex, const uint8_t *data,
-                             uint16_t wLength, bool expect_stall)
+                             uint16_t wLength, bool expect_stall,
+                             uint8_t *response = nullptr,
+                             uint16_t response_length = 0)
 {
     if (h->ctrl_xfer == nullptr || h->dev == nullptr) {
         return RTL_SDR_V4_ESP_ERR_USB;
@@ -553,20 +615,37 @@ static esp_err_t ctrl_submit(rtl_sdr_v4_esp_handle *h, uint8_t bm, uint8_t bRequ
         h->ctrl_stall = false;
         xSemaphoreTake(h->ctrl_sem, 0);
 
+        h->ctrl_inflight = true;
         esp_err_t ret = usb_host_transfer_submit_control(h->client, x);
         if (ret != ESP_OK) {
+            h->ctrl_inflight = false;
             final_err = RTL_SDR_V4_ESP_ERR_USB;
             break;
         }
-        if (xSemaphoreTake(h->ctrl_sem, pdMS_TO_TICKS(h->cfg.control_timeout_ms + 200)) !=
-            pdTRUE) {
-            final_err = RTL_SDR_V4_ESP_ERR_TIMEOUT;
-            break;
-        }
+        if (xSemaphoreTake(h->ctrl_sem,
+						   pdMS_TO_TICKS(h->cfg.control_timeout_ms + 200)) != pdTRUE) {
+			ESP_LOGW(TAG,
+					 "EP0 timeout value=0x%04x index=0x%04x; transfer may still be in flight",
+					 static_cast<unsigned>(wValue),
+					 static_cast<unsigned>(wIndex));
+
+			final_err = RTL_SDR_V4_ESP_ERR_TIMEOUT;
+			break;
+		}
         if (h->ctrl_status == ESP_OK) {
-            final_err = ESP_OK;
-            break;
-        }
+			if ((bm & USB_BM_REQUEST_TYPE_DIR_IN) != 0 &&
+				response != nullptr && response_length > 0) {
+				const uint16_t copy_length =
+					(response_length < wLength) ? response_length : wLength;
+
+				std::memcpy(response,
+							x->data_buffer + sizeof(usb_setup_packet_t),
+							copy_length);
+			}
+
+			final_err = ESP_OK;
+			break;
+		}
         if (h->ctrl_stall) {
             if (expect_stall) {
                 final_err = ESP_OK;
@@ -589,6 +668,657 @@ static esp_err_t run_record(rtl_sdr_v4_esp_handle *h, const RtlControlRecord &re
 {
     return ctrl_submit(h, rec.request_type, 0, rec.value, rec.index, rec.data, rec.length,
                        expect_stall);
+}
+/* RTL2832U demod register write, matching librtlsdr's wire format. */
+static esp_err_t v3_demod_write_reg(rtl_sdr_v4_esp_handle *h,
+                                    uint8_t page,
+                                    uint8_t addr,
+                                    uint16_t value,
+                                    uint8_t len)
+{
+    if (len != 1 && len != 2) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const uint16_t wValue = static_cast<uint16_t>((static_cast<uint16_t>(addr) << 8) | 0x20u);
+    const uint16_t wIndex = static_cast<uint16_t>(0x0010u | page);
+    uint8_t data[2]{};
+    if (len == 1) {
+        data[0] = static_cast<uint8_t>(value & 0xffu);
+    } else {
+        data[0] = static_cast<uint8_t>((value >> 8) & 0xffu);
+        data[1] = static_cast<uint8_t>(value & 0xffu);
+    }
+    return ctrl_submit(h, 0x40, 0, wValue, wIndex, data, len, false);
+}
+
+/*
+ * Program the RTL2832U digital down-converter for the same low-IF offset used
+ * by encode_r820_pll().  The R820T2 is tuned above the requested RF frequency
+ * by kV3R820IfHz, so the RTL2832U must shift that IF back to complex
+ * baseband before samples are sent through USB.
+ *
+ * This mirrors librtlsdr's rtlsdr_set_if_freq() register packing:
+ * page 1, registers 0x19..0x1b contain a signed 22-bit phase increment.
+ */
+static esp_err_t v3_set_if_freq(rtl_sdr_v4_esp_handle *h, int32_t if_hz)
+{
+    const double scaled =
+        (static_cast<double>(if_hz) * static_cast<double>(1u << 22)) /
+        kRtlXtalHz;
+
+    const int32_t if_reg = -static_cast<int32_t>(std::lround(scaled));
+
+    esp_err_t err =
+        v3_demod_write_reg(h, 1, 0x19,
+                           static_cast<uint8_t>((if_reg >> 16) & 0x3f), 1);
+    if (err != ESP_OK) return err;
+
+    err = v3_demod_write_reg(h, 1, 0x1a,
+                             static_cast<uint8_t>((if_reg >> 8) & 0xff), 1);
+    if (err != ESP_OK) return err;
+
+    err = v3_demod_write_reg(h, 1, 0x1b,
+                             static_cast<uint8_t>(if_reg & 0xff), 1);
+    if (err != ESP_OK) return err;
+    return ESP_OK;
+}
+
+/*
+ * Configure the RTL2832U for the R820T/R820T2 low-IF topology.
+ *
+ * R82xx is not a Zero-IF tuner.  The RTL2832U receives the tuner's low-IF on
+ * the I ADC input and digitally mixes it to complex I/Q baseband.  Therefore
+ * the correct path is:
+ *
+ *   R820T2 LO = requested RF + kV3R820IfHz
+ *   RTL2832U I ADC input
+ *   RTL2832U low-IF DDC = -kV3R820IfHz
+ *   spectrum inversion enabled
+ *   complex I/Q USB output
+ *
+ * The earlier diagnostic build used 0xcd (both ADC inputs).  On this V3 that
+ * produced Q=0x80 exactly, proving that configuration was wrong for R820T2.
+ */
+static esp_err_t v3_prepare_r820_demod_path(rtl_sdr_v4_esp_handle *h)
+{
+    const int32_t if_hz =
+        static_cast<int32_t>(std::lround(kV3R820IfHz));
+
+    /* Default RTL2832 complex-output datapath (opt_adc_iq = 0). */
+    esp_err_t err = v3_demod_write_reg(h, 0, 0x06, 0x80, 1);
+    if (err != ESP_OK) return err;
+
+    /*
+     * R820T/R820T2 low-IF is connected to the I ADC input.  0xcd was the
+     * incorrect two-input setting that left every Q sample at 0x80.
+     */
+    err = v3_demod_write_reg(h, 0, 0x08, 0x4d, 1);
+    if (err != ESP_OK) return err;
+
+    /* Disable Zero-IF baseband mode: R820T2 supplies a real low-IF signal. */
+    err = v3_demod_write_reg(h, 1, 0xb1, 0x1a, 1);
+    if (err != ESP_OK) return err;
+
+    /* Shift the exact same IF used by encode_r820_pll() back to DC. */
+    err = v3_set_if_freq(h, if_hz);
+    if (err != ESP_OK) return err;
+
+    /* R82xx low-IF path requires spectrum inversion. */
+    err = v3_demod_write_reg(h, 1, 0x15, 0x01, 1);
+    if (err != ESP_OK) return err;
+    return ESP_OK;
+}
+
+static esp_err_t prepare_blog_v3_tuner_probe(rtl_sdr_v4_esp_handle *h)
+{
+    /*
+     * Run the common RTL2832U/baseband initialization prefix from the
+     * measured table, but stop before its tuner-detection/expected-STALL area.
+     *
+     * The existing V4 table marks indices 86..91 as expected STALL records,
+     * so V3 probing uses only 0..85 here and performs its own R820T2 probe.
+     */
+    static constexpr size_t kV3CommonInitLast = 85;
+
+    for (size_t i = 0; i <= kV3CommonInitLast; ++i) {
+        esp_err_t err = run_record(h, kRtlInitTransfers[i], false);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG,
+                     "V3 common init record %u failed: %s",
+                     static_cast<unsigned>(i),
+                     rtl_sdr_v4_esp_err_to_name(err));
+            return err;
+        }
+    }
+    return ESP_OK;
+}
+
+static bool probe_blog_v3_r820t2(rtl_sdr_v4_esp_handle *h)
+{
+    if (h == nullptr || h->dev == nullptr) {
+        return false;
+    }
+
+    static constexpr uint8_t kSelectReg0[1] = {0x00};
+
+    esp_err_t err = ctrl_submit(
+        h,
+        0x40,
+        0,
+        0x0034,
+        0x0610,
+        kSelectReg0,
+        1,
+        false);
+
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "V3_TUNER_PROBE select failed: %s",
+                 rtl_sdr_v4_esp_err_to_name(err));
+        return false;
+    }
+
+    uint8_t chip_id = 0;
+
+    err = ctrl_submit(
+        h,
+        0xc0,
+        0,
+        0x0034,
+        0x0600,
+        nullptr,
+        1,
+        false,
+        &chip_id,
+        sizeof(chip_id));
+
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "V3_TUNER_PROBE read failed: %s",
+                 rtl_sdr_v4_esp_err_to_name(err));
+        return false;
+    }
+
+    const bool match = (chip_id == 0x96 || chip_id == 0x69);
+
+    return match;
+}
+
+static constexpr uint8_t kV3R820ShadowStart = 0x05;
+static constexpr uint8_t kV3R820ShadowEnd = 0x1f;
+
+/* Standard R820T/R820T2 reset/init image for registers 0x05..0x1f. */
+static constexpr uint8_t kV3R820Init[] = {
+    0x83, 0x32, 0x75,             /* 05..07 */
+    0xc0, 0x40, 0xd6, 0x6c,       /* 08..0b */
+    0xf5, 0x63, 0x75, 0x68,       /* 0c..0f */
+    0x6c, 0x83, 0x80, 0x00,       /* 10..13 */
+    0x0f, 0x00, 0xc0, 0x30,       /* 14..17 */
+    0x48, 0xcc, 0x60, 0x00,       /* 18..1b */
+    0x54, 0xae, 0x4a, 0xc0        /* 1c..1f */
+};
+
+static int v3_r820_shadow_index(uint8_t reg)
+{
+    if (reg < kV3R820ShadowStart || reg > kV3R820ShadowEnd) {
+        return -1;
+    }
+    return static_cast<int>(reg - kV3R820ShadowStart);
+}
+
+static esp_err_t v3_r820_write_reg_raw(rtl_sdr_v4_esp_handle *h,
+                                       uint8_t reg,
+                                       uint8_t value)
+{
+    const uint8_t payload[2] = {reg, value};
+    return ctrl_submit(h, 0x40, 0, 0x0034, 0x0610,
+                       payload, sizeof(payload), false);
+}
+
+static esp_err_t v3_r820_write_reg(rtl_sdr_v4_esp_handle *h,
+                                   uint8_t reg,
+                                   uint8_t value)
+{
+    esp_err_t err = v3_r820_write_reg_raw(h, reg, value);
+    if (err == ESP_OK && h != nullptr && h->v3_r820_shadow_valid) {
+        const int idx = v3_r820_shadow_index(reg);
+        if (idx >= 0) {
+            h->v3_r820_regs[idx] = value;
+        }
+    }
+    return err;
+}
+
+static esp_err_t v3_r820_write_reg_mask(rtl_sdr_v4_esp_handle *h,
+                                        uint8_t reg,
+                                        uint8_t value,
+                                        uint8_t mask)
+{
+    if (h == nullptr || !h->v3_r820_shadow_valid) {
+        ESP_LOGW(TAG,
+                 "Blog V3 R820 masked write without valid shadow reg=0x%02x",
+                 reg);
+        return RTL_SDR_V4_ESP_ERR_NOT_READY;
+    }
+
+    const int idx = v3_r820_shadow_index(reg);
+    if (idx < 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const uint8_t old_value = h->v3_r820_regs[idx];
+    const uint8_t new_value =
+        static_cast<uint8_t>((old_value & static_cast<uint8_t>(~mask)) |
+                             (value & mask));
+
+    if (new_value == old_value) {
+        return ESP_OK;
+    }
+
+    esp_err_t err = v3_r820_write_reg_raw(h, reg, new_value);
+    if (err == ESP_OK) {
+        h->v3_r820_regs[idx] = new_value;
+    }
+    return err;
+}
+
+static esp_err_t v3_r820_full_init(rtl_sdr_v4_esp_handle *h)
+{
+    if (h == nullptr || h->dev == nullptr) {
+        return RTL_SDR_V4_ESP_ERR_USB;
+    }
+
+    h->v3_r820_shadow_valid = false;
+
+    for (size_t i = 0; i < std::size(kV3R820Init); ++i) {
+        const uint8_t reg =
+            static_cast<uint8_t>(kV3R820ShadowStart + i);
+        const uint8_t value = kV3R820Init[i];
+
+        esp_err_t err = v3_r820_write_reg_raw(h, reg, value);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG,
+                     "Blog V3 R820_INIT failed reg=0x%02x value=0x%02x: %s",
+                     reg, value, rtl_sdr_v4_esp_err_to_name(err));
+            return err;
+        }
+
+        h->v3_r820_regs[i] = value;
+    }
+
+    h->v3_r820_shadow_valid = true;
+
+    /*
+     * Mirror the non-analog initialization tweaks used by the normal R82xx
+     * path.  These are masked writes so unrelated bits in the reset image are
+     * preserved.
+     */
+    esp_err_t err = v3_r820_write_reg_mask(h, 0x0c, 0x00, 0x0f);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg_mask(h, 0x1d, 0x00, 0x38);
+    if (err != ESP_OK) return err;
+    return ESP_OK;
+}
+
+static esp_err_t v3_r820_read_status(rtl_sdr_v4_esp_handle *h,
+                                     uint8_t start_reg,
+                                     uint8_t *out,
+                                     uint16_t len)
+{
+    if (out == nullptr || len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const uint8_t reg = start_reg;
+    esp_err_t err = ctrl_submit(h, 0x40, 0, 0x0034, 0x0610,
+                                &reg, 1, false);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    return ctrl_submit(h, 0xc0, 0, 0x0034, 0x0600,
+                       nullptr, len, false, out, len);
+}
+
+static esp_err_t v3_r820_pll_diag(rtl_sdr_v4_esp_handle *h,
+                                      uint32_t frequency_hz);
+
+static uint8_t v3_bit_reverse8(uint8_t value)
+{
+    value = static_cast<uint8_t>((value >> 4) | (value << 4));
+    value = static_cast<uint8_t>(((value & 0xccu) >> 2) | ((value & 0x33u) << 2));
+    value = static_cast<uint8_t>(((value & 0xaau) >> 1) | ((value & 0x55u) << 1));
+    return value;
+}
+
+/* Configure the R820T2 receive gain state used by the V3 path. */
+static esp_err_t v3_r820_set_auto_gain(rtl_sdr_v4_esp_handle *h)
+{
+    /* Fixed manual gain profile; IF/DDC/tuning are not changed here. */
+    static constexpr uint8_t kV3LnaGain = 0x0C;
+    static constexpr uint8_t kV3MixerGain = 0x08;
+    static constexpr uint8_t kV3VgaGain = 0x08;
+
+    /* LNA manual: bit 4 selects manual control; low nibble is gain index. */
+    esp_err_t err = v3_r820_write_reg_mask(
+        h, 0x05, static_cast<uint8_t>(0x10u | kV3LnaGain), 0x1f);
+    if (err != ESP_OK) return err;
+
+    /* Mixer manual: clear mixer-AGC bit and program the low-nibble index. */
+    err = v3_r820_write_reg_mask(h, 0x07, kV3MixerGain, 0x1f);
+    if (err != ESP_OK) return err;
+
+    /* Fixed VGA, deliberately low to retain ADC headroom on strong FM. */
+    err = v3_r820_write_reg_mask(h, 0x0c, kV3VgaGain, 0x9f);
+    if (err != ESP_OK) return err;
+    return ESP_OK;
+}
+
+/*
+ * Channel-filter calibration mirrors the reference R82xx sequence.
+ *
+ * Calibration LO is 56 MHz.  It is done before the requested receive PLL is
+ * programmed, so start-up subsequently restores the user's actual frequency.
+ */
+static esp_err_t v3_r820_filter_calibrate(rtl_sdr_v4_esp_handle *h)
+{
+    constexpr uint32_t kCalibrationHz = 56000000u;
+    constexpr uint8_t kHpCor = 0x6b;
+    constexpr uint8_t kFiltQ = 0x10;
+
+    uint8_t cal_code = 0;
+
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        /* Set filter capacitor mode used by the standard calibration path. */
+        esp_err_t err = v3_r820_write_reg_mask(h, 0x0b, kHpCor, 0x60);
+        if (err != ESP_OK) return err;
+
+        /* Calibration clock on. */
+        err = v3_r820_write_reg_mask(h, 0x0f, 0x04, 0x04);
+        if (err != ESP_OK) return err;
+
+        /* Crystal cap = 0 pF while calibrating the PLL/filter. */
+        err = v3_r820_write_reg_mask(h, 0x10, 0x00, 0x03);
+        if (err != ESP_OK) return err;
+
+        err = v3_r820_pll_diag(h, kCalibrationHz);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Blog V3 FILTER_CAL PLL failed attempt=%d: %s",
+                     attempt + 1, rtl_sdr_v4_esp_err_to_name(err));
+            return err;
+        }
+
+        /* Start then stop channel-filter calibration trigger. */
+        err = v3_r820_write_reg_mask(h, 0x0b, 0x10, 0x10);
+        if (err != ESP_OK) return err;
+        vTaskDelay(pdMS_TO_TICKS(2));
+
+        err = v3_r820_write_reg_mask(h, 0x0b, 0x00, 0x10);
+        if (err != ESP_OK) return err;
+
+        /* Calibration clock off. */
+        err = v3_r820_write_reg_mask(h, 0x0f, 0x00, 0x04);
+        if (err != ESP_OK) return err;
+
+        uint8_t status[5] = {0, 0, 0, 0, 0};
+        err = v3_r820_read_status(h, 0x00, status, sizeof(status));
+        if (err != ESP_OK) return err;
+
+        const uint8_t decoded4 = v3_bit_reverse8(status[4]);
+        cal_code = static_cast<uint8_t>(decoded4 & 0x0f);
+
+        if (cal_code != 0 && cal_code != 0x0f) {
+            break;
+        }
+    }
+
+    /* Reference behavior: 0x0f means use the widest/narrowest fallback code 0. */
+    if (cal_code == 0x0f) {
+        cal_code = 0;
+    }
+
+    /*
+     * Apply the calibrated fine filter code and the standard <6 MHz filter
+     * configuration.  This is intentionally a broad tuner IF; OrcSDR's
+     * application-side WBFM filter remains responsible for the ~180 kHz
+     * channel selection.
+     */
+    esp_err_t err =
+        v3_r820_write_reg_mask(h, 0x0a,
+                               static_cast<uint8_t>(kFiltQ | cal_code), 0x1f);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg_mask(h, 0x0b, kHpCor, 0xef);
+    if (err != ESP_OK) return err;
+
+    /* Image negative. */
+    err = v3_r820_write_reg_mask(h, 0x07, 0x00, 0x80);
+    if (err != ESP_OK) return err;
+
+    /* +3 dB / 6 MHz filter gain selection. */
+    err = v3_r820_write_reg_mask(h, 0x06, 0x10, 0x30);
+    if (err != ESP_OK) return err;
+
+    /* Channel filter extension enabled. */
+    err = v3_r820_write_reg_mask(h, 0x1e, 0x60, 0x60);
+    if (err != ESP_OK) return err;
+
+    /* Loop-through off. */
+    err = v3_r820_write_reg_mask(h, 0x05, 0x01, 0x80);
+    if (err != ESP_OK) return err;
+
+    /* Loop-through attenuation setting. */
+    err = v3_r820_write_reg_mask(h, 0x1f, 0x00, 0x80);
+    if (err != ESP_OK) return err;
+
+    /* Filter extension widest off. */
+    err = v3_r820_write_reg_mask(h, 0x0f, 0x00, 0x80);
+    if (err != ESP_OK) return err;
+
+    /* Minimum RF poly-filter current. */
+    err = v3_r820_write_reg_mask(h, 0x19, 0x60, 0x60);
+    if (err != ESP_OK) return err;
+    return ESP_OK;
+}
+
+/* Program the R820T2 RF mux/tracking-filter profile for the requested band. */
+static esp_err_t v3_r820_rf_diag(rtl_sdr_v4_esp_handle *h,
+                                      uint32_t frequency_hz)
+{
+    if (h == nullptr || !h->v3_r820_shadow_valid) {
+        return RTL_SDR_V4_ESP_ERR_NOT_READY;
+    }
+
+    struct RfProfile {
+        uint32_t start_mhz;
+        uint8_t open_d;
+        uint8_t rf_mux_poly;
+        uint8_t tf_c;
+        const char *name;
+    };
+
+    /*
+     * R82xx frequency ranges needed by OrcSDR bring-up.  Values are the
+     * standard R820T/R820T2 mux/tracking-filter selections.
+     */
+    static constexpr RfProfile kRanges[] = {
+        {0,   0x08, 0x02, 0xdf, "LOW-0/50"},
+        {50,  0x08, 0x02, 0xbe, "LOW-50/55"},
+        {55,  0x08, 0x02, 0x8b, "LOW-55/60"},
+        {60,  0x08, 0x02, 0x7b, "LOW-60/65"},
+        {65,  0x08, 0x02, 0x69, "LOW-65/70"},
+        {70,  0x08, 0x02, 0x58, "LOW-70/75"},
+        {75,  0x00, 0x02, 0x44, "VHF-75/90"},
+        {90,  0x00, 0x02, 0x34, "FM-90/110"},
+        {110, 0x00, 0x02, 0x24, "VHF-110/140"},
+        {140, 0x00, 0x02, 0x14, "VHF-140/180"},
+        {180, 0x00, 0x02, 0x13, "VHF-180/250"},
+        {250, 0x00, 0x02, 0x11, "VHF-250/280"},
+        {280, 0x00, 0x02, 0x00, "VHF-280/310"},
+        {310, 0x00, 0x41, 0x00, "UHF-310/588"},
+        {588, 0x00, 0x40, 0x00, "UHF-588+"},
+    };
+
+    const uint32_t mhz = frequency_hz / 1000000u;
+    const RfProfile *p = &kRanges[0];
+    for (size_t i = 0; i + 1 < std::size(kRanges); ++i) {
+        if (mhz < kRanges[i + 1].start_mhz) {
+            p = &kRanges[i];
+            break;
+        }
+        p = &kRanges[i + 1];
+    }
+
+    esp_err_t err;
+
+    /* r82xx_set_mux(): preserve every unrelated register bit. */
+    err = v3_r820_write_reg_mask(h, 0x17, p->open_d, 0x08);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg_mask(h, 0x1a, p->rf_mux_poly, 0xc3);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg(h, 0x1b, p->tf_c);
+    if (err != ESP_OK) return err;
+
+    /*
+     * Keep the reset-image crystal-cap selection, but force normal low-cap
+     * crystal drive (bit 3).  Crucially, do not overwrite the PLL divider bits
+     * in R10.
+     */
+    err = v3_r820_write_reg_mask(h, 0x10, 0x08, 0x0b);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg_mask(h, 0x08, 0x00, 0x3f);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg_mask(h, 0x09, 0x00, 0x3f);
+    if (err != ESP_OK) return err;
+
+    /*
+     * Normal R82xx system-frequency selection.  This is the important
+     * difference from the previous experimental whole-register profile:
+     * LNA/mixer thresholds and currents are established while preserving the
+     * other control bits.
+     */
+    err = v3_r820_write_reg_mask(h, 0x1d, 0xe5, 0xc7);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg_mask(h, 0x1c, 0x24, 0xf8);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg(h, 0x0d, 0x53);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg(h, 0x0e, 0x75);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg_mask(h, 0x05, 0x00, 0x60);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg_mask(h, 0x06, 0x00, 0x08);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg_mask(h, 0x11, 0x38, 0x38);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg_mask(h, 0x17, 0x30, 0x30);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg_mask(h, 0x0a, 0x40, 0x60);
+    if (err != ESP_OK) return err;
+
+    /* Non-analog tuner path. */
+    err = v3_r820_write_reg_mask(h, 0x1d, 0x00, 0x38);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg_mask(h, 0x1c, 0x00, 0x04);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg_mask(h, 0x06, 0x00, 0x40);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg_mask(h, 0x1a, 0x30, 0x30);
+    if (err != ESP_OK) return err;
+    return ESP_OK;
+}
+
+static esp_err_t v3_r820_pll_diag(rtl_sdr_v4_esp_handle *h, uint32_t frequency_hz)
+{
+    if (h == nullptr || !h->v3_r820_shadow_valid) {
+        return RTL_SDR_V4_ESP_ERR_NOT_READY;
+    }
+
+    uint8_t r16_setup = 0;
+    uint8_t r16_active = 0;
+    uint8_t r20 = 0;
+    uint8_t r21 = 0;
+    uint8_t r22 = 0;
+
+    if (!encode_r820_pll_with_if(frequency_hz,
+                                 kV3R820IfHz,
+                                 &r16_setup, &r16_active,
+                                 &r20, &r21, &r22)) {
+        ESP_LOGW(TAG, "Blog V3 TUNE_DIAG PLL encode failed freq=%u",
+                 static_cast<unsigned>(frequency_hz));
+        return RTL_SDR_V4_ESP_ERR_BAD_FREQ;
+    }
+
+    /* Program only the R820T2 PLL registers, preserving unrelated state. */
+    /*
+     * Program the divider while preserving R10 crystal/drive bits from the
+     * R820 shadow.  The earlier V3 path wrote R10 as a whole register, which
+     * could erase bit 3 and other tuner state.
+     */
+    esp_err_t err = v3_r820_write_reg_mask(h, 0x1a, 0x00, 0x0c);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg_mask(h, 0x10, r16_setup, 0xe0);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg(h, 0x14, r20);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg(h, 0x15, r21);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg(h, 0x16, r22);
+    if (err != ESP_OK) return err;
+
+    err = v3_r820_write_reg_mask(h, 0x10, r16_active, 0xe0);
+    if (err != ESP_OK) return err;
+
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    uint8_t status[3] = {0, 0, 0};
+    err = v3_r820_read_status(h, 0x00, status, sizeof(status));
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Blog V3 TUNE_DIAG status read failed: %s",
+                 rtl_sdr_v4_esp_err_to_name(err));
+        return err;
+    }
+
+    /*
+     * R82xx status bytes are bit-reversed on the tuner read path.  Decode
+     * them explicitly and use the conventional R82xx PLL-lock indication:
+     * status register 2, bit 6 after bit reversal.
+     */
+    const uint8_t st2 = v3_bit_reverse8(status[2]);
+    const bool pll_locked = (st2 & 0x40u) != 0;
+
+    if (!pll_locked) {
+        ESP_LOGW(TAG, "Blog V3 TUNE_DIAG PLL lock not asserted");
+        return RTL_SDR_V4_ESP_ERR_NOT_READY;
+    }
+
+    err = v3_r820_write_reg_mask(h, 0x1a, 0x08, 0x08);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Blog V3 TUNE_DIAG autotune final write failed: %s",
+                 rtl_sdr_v4_esp_err_to_name(err));
+        return err;
+    }
+
+    return ESP_OK;
 }
 
 static esp_err_t run_init_table(rtl_sdr_v4_esp_handle *h)
@@ -685,9 +1415,135 @@ static void run_cleanup_best_effort(rtl_sdr_v4_esp_handle *h)
     }
 }
 
+
+static esp_err_t v3_prepare_bulk_endpoint(rtl_sdr_v4_esp_handle *h)
+{
+    /*
+     * RTL2832U USB endpoint-A preparation.
+     *
+     * The common init already configures the RTL2832U, but librtlsdr performs
+     * a mandatory endpoint/buffer reset immediately before reading samples.
+     * Mirror that device-side sequence here for V3:
+     *
+     *   USB_EPA_MAXPKT (0x2158) <- 0x0002
+     *   USB_EPA_CTL    (0x2148) <- 0x1002
+     *   USB_EPA_CTL    (0x2148) <- 0x0000
+     *
+     * USBB writes use wIndex 0x0110 and big-endian payload bytes.
+     */
+    static constexpr uint8_t kMaxPkt[2] = {0x00, 0x02};
+    static constexpr uint8_t kResetOn[2] = {0x10, 0x02};
+    static constexpr uint8_t kResetOff[2] = {0x00, 0x00};
+
+    esp_err_t err = ctrl_submit(h, 0x40, 0, 0x2158, 0x0110,
+                                kMaxPkt, sizeof(kMaxPkt), false);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Blog V3 BULK_RESET EPA_MAXPKT failed: %s",
+                 rtl_sdr_v4_esp_err_to_name(err));
+        return err;
+    }
+
+    err = ctrl_submit(h, 0x40, 0, 0x2148, 0x0110,
+                      kResetOn, sizeof(kResetOn), false);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Blog V3 BULK_RESET assert failed: %s",
+                 rtl_sdr_v4_esp_err_to_name(err));
+        return err;
+    }
+
+    err = ctrl_submit(h, 0x40, 0, 0x2148, 0x0110,
+                      kResetOff, sizeof(kResetOff), false);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Blog V3 BULK_RESET release failed: %s",
+                 rtl_sdr_v4_esp_err_to_name(err));
+        return err;
+    }
+
+    /*
+     * Do not issue host-side endpoint flush/clear here.
+     *
+     * At first stream start the ESP-IDF host endpoint is not halted and those
+     * commands return ESP_ERR_INVALID_STATE.  The RTL2832U device-side EPA
+     * reset above is the operation we actually need before the first URBs.
+     *
+     * Host-side halt/flush/clear remains in stop/recovery paths where the
+     * endpoint can legitimately have outstanding or failed transfers.
+     */
+    vTaskDelay(pdMS_TO_TICKS(10));
+    return ESP_OK;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Bulk + ring                                                                */
 /* -------------------------------------------------------------------------- */
+
+static void v3_dc_block_iq(rtl_sdr_v4_esp_handle *h,
+                           uint8_t *data,
+                           size_t bytes)
+{
+    if (h == nullptr || data == nullptr || bytes < 2) {
+        return;
+    }
+
+    bytes &= ~size_t{1};
+
+    /*
+     * R=0.998 gives a corner of roughly 300 Hz at 960 kS/s:
+     *   fc ~= (1-R)*Fs/(2*pi)
+     *
+     * This is intentionally far below the useful WBFM baseband and the
+     * 19/57 kHz pilot/RDS content.  It targets only the fixed center/DC spur.
+     */
+    static constexpr float kDcR = 0.9980f;
+    static constexpr float kCenter = 127.5f;
+
+    /*
+     * A retune can change the DC operating point abruptly.  Restart the
+     * blocker on the first block at the new RF frequency to avoid carrying
+     * the previous station's state into the new one.
+     */
+    if (!h->v3_dc_valid || h->v3_dc_frequency_hz != h->frequency_hz) {
+        h->v3_dc_x1_i = static_cast<float>(data[0]) - kCenter;
+        h->v3_dc_x1_q = static_cast<float>(data[1]) - kCenter;
+        h->v3_dc_y1_i = 0.0f;
+        h->v3_dc_y1_q = 0.0f;
+        h->v3_dc_valid = true;
+        h->v3_dc_frequency_hz = h->frequency_hz;
+    }
+
+    float x1_i = h->v3_dc_x1_i;
+    float x1_q = h->v3_dc_x1_q;
+    float y1_i = h->v3_dc_y1_i;
+    float y1_q = h->v3_dc_y1_q;
+
+    for (size_t n = 0; n < bytes; n += 2) {
+        const float xi = static_cast<float>(data[n]) - kCenter;
+        const float xq = static_cast<float>(data[n + 1]) - kCenter;
+
+        const float yi = xi - x1_i + kDcR * y1_i;
+        const float yq = xq - x1_q + kDcR * y1_q;
+
+        x1_i = xi;
+        x1_q = xq;
+        y1_i = yi;
+        y1_q = yq;
+
+        int oi = static_cast<int>(std::lround(yi + kCenter));
+        int oq = static_cast<int>(std::lround(yq + kCenter));
+        if (oi < 0) oi = 0;
+        if (oi > 255) oi = 255;
+        if (oq < 0) oq = 0;
+        if (oq > 255) oq = 255;
+
+        data[n] = static_cast<uint8_t>(oi);
+        data[n + 1] = static_cast<uint8_t>(oq);
+    }
+
+    h->v3_dc_x1_i = x1_i;
+    h->v3_dc_x1_q = x1_q;
+    h->v3_dc_y1_i = y1_i;
+    h->v3_dc_y1_q = y1_q;
+}
 
 static void bulk_cb(usb_transfer_t *xfer)
 {
@@ -703,6 +1559,9 @@ static void bulk_cb(usb_transfer_t *xfer)
             const size_t n = static_cast<size_t>(xfer->actual_num_bytes);
             const size_t copy = (n <= slot->capacity) ? n : slot->capacity;
             std::memcpy(slot->data, xfer->data_buffer, copy);
+            if (std::strcmp(h->info.product, kProductV3) == 0) {
+                v3_dc_block_iq(h, slot->data, copy);
+            }
             slot->bytes = copy;
             slot->sequence = ++h->iq_sequence;
             slot->frequency_hz = h->frequency_hz;
@@ -745,6 +1604,19 @@ static void bulk_cb(usb_transfer_t *xfer)
     } else if (xfer->status != USB_TRANSFER_STATUS_CANCELED &&
                xfer->status != USB_TRANSFER_STATUS_COMPLETED) {
         ESP_LOGW(TAG, "bulk status=%d bytes=%d", xfer->status, xfer->actual_num_bytes);
+
+        /*
+         * A STALL/error leaves the endpoint unsuitable for immediate
+         * resubmission. Stop this diagnostic stream and let the owner perform
+         * endpoint recovery instead of recursively hitting INVALID_STATE.
+         */
+        h->streaming = false;
+        h->pause_resubmit = true;
+        if (h->live_urbs > 0) {
+            h->live_urbs = h->live_urbs - 1;
+        }
+        xSemaphoreGive(h->bulk_done_sem);
+        return;
     }
 
     /* Resubmit only while streaming and not draining for stop/retune. */
@@ -754,14 +1626,14 @@ static void bulk_cb(usb_transfer_t *xfer)
             ESP_LOGE(TAG, "bulk resubmit failed: %s", esp_err_to_name(ret));
             h->streaming = false;
             if (h->live_urbs > 0) {
-                h->live_urbs--;
+                h->live_urbs = h->live_urbs - 1;
             }
             xSemaphoreGive(h->bulk_done_sem);
         }
         /* still in flight after successful resubmit */
     } else {
         if (h->live_urbs > 0) {
-            h->live_urbs--;
+            h->live_urbs = h->live_urbs - 1;
         }
         xSemaphoreGive(h->bulk_done_sem);
     }
@@ -779,6 +1651,9 @@ static esp_err_t apply_pending_retune(rtl_sdr_v4_esp_handle *h)
     }
 
     h->pause_resubmit = true;
+
+    if (std::strcmp(h->info.product, kProductV3) == 0) {
+    }
 
     /* Wait until all live URBs complete without resubmit (safe EP0 window). */
     const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(800);
@@ -802,15 +1677,50 @@ static esp_err_t apply_pending_retune(rtl_sdr_v4_esp_handle *h)
         return RTL_SDR_V4_ESP_ERR_NOT_STREAMING;
     }
 
-    esp_err_t err = run_tune(h, freq);
-    if (err == ESP_OK) {
-        h->frequency_hz = freq;
-        h->metrics.frequency_hz = freq;
-        h->pending_retune_hz = 0;
-        ESP_LOGI(TAG, "hot retune applied %u Hz", static_cast<unsigned>(freq));
+    const bool is_v3 = std::strcmp(h->info.product, kProductV3) == 0;
+    esp_err_t err = ESP_OK;
+
+    if (is_v3) {
+
+        err = v3_r820_pll_diag(h, freq);
+
+        if (err == ESP_OK) {
+            err = v3_r820_rf_diag(h, freq);
+        }
+
+        if (err == ESP_OK) {
+        }
+
+        if (err == ESP_OK) {
+            const bool tuner_ok = probe_blog_v3_r820t2(h);
+            if (!tuner_ok) {
+                ESP_LOGW(TAG, "Blog V3 HOT_TUNE tuner probe failed after retune");
+                err = RTL_SDR_V4_ESP_ERR_NOT_READY;
+            }
+        }
+
+        if (err == ESP_OK) {
+            h->frequency_hz = freq;
+            h->metrics.frequency_hz = freq;
+            h->pending_retune_hz = 0;
+        } else {
+            ESP_LOGW(TAG, "Blog V3 HOT_TUNE failed hz=%u err=%s",
+                     static_cast<unsigned>(freq),
+                     rtl_sdr_v4_esp_err_to_name(err));
+            h->pending_retune_hz = 0;
+        }
     } else {
-        ESP_LOGW(TAG, "hot retune EP0 failed: %s (keep LO)", rtl_sdr_v4_esp_err_to_name(err));
-        h->pending_retune_hz = 0;
+        err = run_tune(h, freq);
+        if (err == ESP_OK) {
+            h->frequency_hz = freq;
+            h->metrics.frequency_hz = freq;
+            h->pending_retune_hz = 0;
+            ESP_LOGI(TAG, "hot retune applied %u Hz", static_cast<unsigned>(freq));
+        } else {
+            ESP_LOGW(TAG, "hot retune EP0 failed: %s (keep LO)",
+                     rtl_sdr_v4_esp_err_to_name(err));
+            h->pending_retune_hz = 0;
+        }
     }
 
     /* Resume multi-URB stream */
@@ -827,8 +1737,11 @@ static esp_err_t apply_pending_retune(rtl_sdr_v4_esp_handle *h)
             h->bulk[i]->callback = bulk_cb;
             h->bulk[i]->context = h;
             if (usb_host_transfer_submit(h->bulk[i]) == ESP_OK) {
-                h->live_urbs++;
+                h->live_urbs = h->live_urbs + 1;
             }
+        }
+
+        if (is_v3) {
         }
     }
 
@@ -984,15 +1897,38 @@ static bool accept_v4(const usb_device_desc_t *dd, const usb_device_info_t *info
     str_desc_ascii(info->str_desc_manufacturer, mfg, sizeof(mfg));
     str_desc_ascii(info->str_desc_product, prod, sizeof(prod));
     str_desc_ascii(info->str_desc_serial_num, ser, sizeof(ser));
-    if (std::strcmp(mfg, kMfg) != 0 || std::strcmp(prod, kProduct) != 0) {
+    const bool is_v4 =
+        std::strcmp(mfg, kMfg) == 0 &&
+        std::strcmp(prod, kProduct) == 0;
+
+    const bool is_v3_named =
+        std::strcmp(mfg, kMfg) == 0 &&
+        std::strcmp(prod, kProductV3) == 0;
+
+    const bool is_v3_candidate =
+        std::strcmp(mfg, kMfgGeneric) == 0 &&
+        std::strcmp(prod, kProductGeneric) == 0;
+
+    if (!is_v4 && !is_v3_named && !is_v3_candidate) {
+        ESP_LOGW(TAG, "unsupported RTL-SDR identity mfg='%s' product='%s'", mfg, prod);
         return false;
+    }
+
+    if (is_v3_named || is_v3_candidate) {
+        ESP_LOGW(TAG,
+                 "Blog V3 candidate mfg='%s' product='%s'",
+                 mfg, prod);
     }
     out->vid = dd->idVendor;
     out->pid = dd->idProduct;
     out->high_speed = (info->speed == USB_SPEED_HIGH);
     out->present = true;
     std::snprintf(out->manufacturer, sizeof(out->manufacturer), "%s", mfg);
-    std::snprintf(out->product, sizeof(out->product), "%s", prod);
+    if (is_v3_named || is_v3_candidate) {
+        std::snprintf(out->product, sizeof(out->product), "%s", kProductV3);
+    } else {
+        std::snprintf(out->product, sizeof(out->product), "%s", prod);
+    }
     std::snprintf(out->serial, sizeof(out->serial), "%s", ser);
     return true;
 }
@@ -1019,10 +1955,25 @@ static void try_open_device(rtl_sdr_v4_esp_handle *h, uint8_t addr)
         usb_host_device_close(h->client, dev);
         return;
     }
-    h->dev = dev;
-    h->info = di;
-    ESP_LOGI(TAG, "V4 open %s %s serial=%s hs=%d", di.manufacturer, di.product, di.serial,
-             static_cast<int>(di.high_speed));
+	h->dev = dev;
+	h->info = di;
+
+	if (std::strcmp(di.product, kProductV3) == 0) {
+		ESP_LOGW(TAG, "Blog V3 candidate queued for tuner probe");
+		h->v3_probe_addr = addr;
+		h->v3_probe_pending = true;
+        if (h->v3_probe_task != nullptr) {
+            xTaskNotifyGive(h->v3_probe_task);
+        }
+
+		h->dev = nullptr;
+		h->info.present = false;
+		usb_host_device_close(h->client, dev);
+		return;
+	}
+	ESP_LOGI(TAG, "RTL-SDR open %s %s serial=%s hs=%d",
+			 di.manufacturer, di.product, di.serial,
+			 static_cast<int>(di.high_speed));
 
     rtl_sdr_v4_esp_event_cb_t cb = h->cfg.event_cb;
     void *ctx = h->cfg.event_ctx;
@@ -1049,10 +2000,152 @@ static void client_event_cb(const usb_host_client_event_msg_t *event, void *arg)
 static void host_lib_task_fn(void *arg)
 {
     auto *h = static_cast<rtl_sdr_v4_esp_handle *>(arg);
+
+    /*
+     * Keep the USB Host Library task dedicated to usb_host_lib_handle_events().
+     * Do not run blocking EP0 control transfers here: ctrl_submit() waits for a
+     * client callback, while the host library itself must continue servicing
+     * USB events.
+     */
     while (h->tasks_run) {
         uint32_t flags = 0;
         usb_host_lib_handle_events(pdMS_TO_TICKS(100), &flags);
     }
+
+    vTaskDelete(nullptr);
+}
+
+static void v3_probe_task_fn(void *arg)
+{
+    auto *h = static_cast<rtl_sdr_v4_esp_handle *>(arg);
+
+    while (h->tasks_run) {
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
+
+        if (!h->tasks_run) {
+            continue;
+        }
+
+        /*
+         * Reuse the blocking-control worker for live retunes so EP0 work never
+         * runs from USB callbacks/client tasks and no extra task stack is needed.
+         */
+        if (h->pending_retune_hz != 0 && h->streaming && !h->v3_probe_pending) {
+            const esp_err_t retune_err = apply_pending_retune(h);
+            if (retune_err != ESP_OK) {
+                ESP_LOGW(TAG, "retune worker failed: %s",
+                         rtl_sdr_v4_esp_err_to_name(retune_err));
+            }
+        }
+
+        if (!h->v3_probe_pending) {
+            continue;
+        }
+
+        const uint8_t addr = h->v3_probe_addr;
+        h->v3_probe_pending = false;
+        h->v3_probe_addr = 0;
+
+        /* Let enumeration/root-port activity settle before reopening. */
+        vTaskDelay(pdMS_TO_TICKS(100));
+
+        usb_device_handle_t dev = nullptr;
+        esp_err_t open_err = usb_host_device_open(h->client, addr, &dev);
+        if (open_err != ESP_OK) {
+            ESP_LOGW(TAG, "V3_TUNER_PROBE unable to open addr=%u: %s",
+                     static_cast<unsigned>(addr), esp_err_to_name(open_err));
+            continue;
+        }
+
+        h->dev = dev;
+
+        /*
+         * The normal V4 path claims interface 0 before running its EP0 init
+         * table. Do the same for the V3 probe worker.
+         */
+        bool probe_iface_claimed = false;
+        esp_err_t claim_err = usb_host_interface_claim(h->client, dev, 0, 0);
+        if (claim_err != ESP_OK) {
+            ESP_LOGW(TAG, "V3 probe interface claim failed: %s",
+                     esp_err_to_name(claim_err));
+        } else {
+            probe_iface_claimed = true;
+        }
+
+        bool tuner_ok = false;
+        if (probe_iface_claimed) {
+            esp_err_t prep = prepare_blog_v3_tuner_probe(h);
+            if (prep == ESP_OK) {
+                tuner_ok = probe_blog_v3_r820t2(h);
+            } else {
+                ESP_LOGW(TAG, "Blog V3 tuner probe skipped: common init failed");
+            }
+        }
+
+        if (tuner_ok) {
+            /*
+             * Promote the confirmed V3 to the normal active-device state.
+             * Keep this device handle open so get_device_info()/start() see a
+             * present RTL-SDR instead of timing out as "no_device".
+             *
+             * The probe claimed interface 0 only for EP0 setup/probing; release
+             * it now so rtl_sdr_v4_esp_start() can claim it later. Streaming is
+             * still intentionally blocked for V3 by the detection-only guard.
+             */
+
+            if (probe_iface_claimed) {
+                esp_err_t release_err = usb_host_interface_release(h->client, dev, 0);
+                if (release_err != ESP_OK) {
+                    ESP_LOGW(TAG, "V3 probe interface release failed: %s",
+                             esp_err_to_name(release_err));
+                    h->dev = nullptr;
+                    h->info.present = false;
+                    usb_host_device_close(h->client, dev);
+                    continue;
+                }
+                probe_iface_claimed = false;
+            }
+
+            h->dev = dev;
+            h->info.present = true;
+            h->iface_claimed = false;
+            h->device_gone = false;
+            h->state = RTL_SDR_V4_ESP_STATE_IDLE;
+
+            ESP_LOGI(TAG, "RTL-SDR open %s %s serial=%s hs=%d",
+                     h->info.manufacturer, h->info.product, h->info.serial,
+                     static_cast<int>(h->info.high_speed));
+
+            rtl_sdr_v4_esp_event_cb_t cb = h->cfg.event_cb;
+            void *ctx = h->cfg.event_ctx;
+            if (cb != nullptr) {
+                emit_after_unlock(h, RTL_SDR_V4_ESP_EVT_ENUMERATED, &h->info, cb, ctx);
+                emit_after_unlock(h, RTL_SDR_V4_ESP_EVT_READY, nullptr, cb, ctx);
+            }
+
+            /* Ownership of dev has moved to h->dev. Do not close it here. */
+            continue;
+        }
+
+        ESP_LOGW(TAG, "Blog V3 tuner probe failed");
+
+        /*
+         * Never release/close while an EP0 transfer is still in flight.
+         * This prevents the ESP-IDF usbh_dev_close assertion seen earlier.
+         */
+        if (!h->ctrl_inflight) {
+            if (probe_iface_claimed) {
+                usb_host_interface_release(h->client, dev, 0);
+            }
+            h->dev = nullptr;
+            h->info.present = false;
+            usb_host_device_close(h->client, dev);
+        } else {
+            ESP_LOGW(TAG,
+                     "V3 probe cleanup deferred: EP0 transfer still in flight");
+        }
+    }
+
     vTaskDelete(nullptr);
 }
 
@@ -1078,6 +2171,7 @@ static void client_task_fn(void *arg)
                 h->dev = nullptr;
             }
             h->info.present = false;
+            h->v3_r820_shadow_valid = false;
             h->state = RTL_SDR_V4_ESP_STATE_IDLE;
             rtl_sdr_v4_esp_event_cb_t cb = h->cfg.event_cb;
             void *ctx = h->cfg.event_ctx;
@@ -1121,6 +2215,17 @@ static esp_err_t start_usb_stack(rtl_sdr_v4_esp_handle *h)
         return ret;
     }
     h->client_registered = true;
+
+    /*
+     * Dedicated worker for blocking V3 EP0 probes. Keeping this separate from
+     * both host_lib_task_fn() and client_task_fn() ensures both USB event loops
+     * continue running while ctrl_submit() waits for completion callbacks.
+     */
+    if (xTaskCreatePinnedToCore(v3_probe_task_fn, "rtl_v3_probe", 4096, h,
+                                kClientPrio - 1, &h->v3_probe_task,
+                                kUsbCore) != pdPASS) {
+        return ESP_ERR_NO_MEM;
+    }
 
     const UBaseType_t prio =
         h->cfg.usb_task_priority ? h->cfg.usb_task_priority : kClientPrio;
@@ -1396,7 +2501,12 @@ static esp_err_t stop_stream_internal(rtl_sdr_v4_esp_handle *h, uint32_t timeout
     h->pause_resubmit = false;
 
     if (h->iface_claimed && h->dev != nullptr) {
-        run_cleanup_best_effort(h);
+        const bool is_v3 = std::strcmp(h->info.product, kProductV3) == 0;
+        if (!is_v3) {
+            run_cleanup_best_effort(h);
+        } else {
+            ESP_LOGI(TAG, "Blog V3 stop: skip V4 cleanup table");
+        }
         usb_host_interface_release(h->client, h->dev, 0);
         h->iface_claimed = false;
     }
@@ -1462,6 +2572,213 @@ esp_err_t rtl_sdr_v4_esp_start(rtl_sdr_v4_esp_handle_t handle,
     if (handle->dev == nullptr || !handle->info.present) {
         set_error_unlocked(handle, RTL_SDR_V4_ESP_ERR_NO_DEVICE);
         return RTL_SDR_V4_ESP_ERR_NO_DEVICE;
+    }
+    const bool is_v3 = std::strcmp(handle->info.product, kProductV3) == 0;
+
+    /* Blog V3 uses its own RTL2832U/R820T2 initialization and streaming path. */
+    if (is_v3) {
+        lk.release();
+
+        esp_err_t ret = usb_host_interface_claim(handle->client, handle->dev, 0, 0);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "Blog V3 START_DIAG interface claim failed: %s",
+                     esp_err_to_name(ret));
+            HandleLock lk2(handle, kQueryLockTicks);
+            if (lk2.ok()) {
+                set_error_unlocked(handle, RTL_SDR_V4_ESP_ERR_USB);
+            }
+            return RTL_SDR_V4_ESP_ERR_USB;
+        }
+
+        handle->iface_claimed = true;
+
+        ret = prepare_blog_v3_tuner_probe(handle);
+        if (ret == ESP_OK) {
+            const bool tuner_ok = probe_blog_v3_r820t2(handle);
+            if (!tuner_ok) {
+                ret = RTL_SDR_V4_ESP_ERR_NOT_READY;
+            }
+        }
+
+        if (ret == ESP_OK) {
+            ret = v3_r820_full_init(handle);
+            if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "Blog V3 R820_INIT failed: %s",
+                         rtl_sdr_v4_esp_err_to_name(ret));
+            }
+        }
+
+        if (ret == ESP_OK) {
+            ret = v3_r820_filter_calibrate(handle);
+            if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "Blog V3 FILTER_CAL failed: %s",
+                         rtl_sdr_v4_esp_err_to_name(ret));
+            }
+        }
+
+        if (ret == ESP_OK) {
+            ret = v3_r820_set_auto_gain(handle);
+            if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "Blog V3 GAIN setup failed: %s",
+                         rtl_sdr_v4_esp_err_to_name(ret));
+            }
+        }
+
+        if (ret == ESP_OK) {
+
+            ret = run_sample_rate(handle, stream->sample_rate_sps);
+            if (ret == ESP_OK) {
+
+                /*
+                 * Re-probe the tuner after touching the RTL2832 sample-rate
+                 * registers. This verifies the I2C/tuner path remained alive.
+                 */
+                const bool tuner_still_ok = probe_blog_v3_r820t2(handle);
+                if (!tuner_still_ok) {
+                    ESP_LOGW(TAG, "Blog V3 RATE_DIAG tuner probe lost after sample-rate");
+                    ret = RTL_SDR_V4_ESP_ERR_NOT_READY;
+                } else {
+                }
+            } else {
+                ESP_LOGW(TAG, "Blog V3 RATE_DIAG sample-rate failed: %s",
+                         rtl_sdr_v4_esp_err_to_name(ret));
+            }
+        }
+
+        /*
+         * Apply the R820T2 low-IF ADC/DDC routing after the sample-rate table,
+         * so later RTL2832 demod writes cannot overwrite the IF translation.
+         */
+        if (ret == ESP_OK) {
+            ret = v3_prepare_r820_demod_path(handle);
+            if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "Blog V3 DEMOD_PATH failed: %s",
+                         rtl_sdr_v4_esp_err_to_name(ret));
+            }
+        }
+
+        if (ret == ESP_OK) {
+
+            ret = v3_r820_pll_diag(handle, freq);
+
+            if (ret == ESP_OK) {
+                const bool tuner_still_ok = probe_blog_v3_r820t2(handle);
+                if (!tuner_still_ok) {
+                    ESP_LOGW(TAG, "Blog V3 TUNE_DIAG tuner probe lost after PLL programming");
+                    ret = RTL_SDR_V4_ESP_ERR_NOT_READY;
+                } else {
+                }
+            }
+        }
+
+        if (ret == ESP_OK) {
+            ret = v3_r820_rf_diag(handle, freq);
+            if (ret == ESP_OK) {
+                const bool tuner_still_ok = probe_blog_v3_r820t2(handle);
+                if (!tuner_still_ok) {
+                    ESP_LOGW(TAG, "Blog V3 RF_DIAG tuner probe lost after frontend programming");
+                    ret = RTL_SDR_V4_ESP_ERR_NOT_READY;
+                } else {
+                }
+            }
+        }
+
+        if (ret == ESP_OK) {
+
+            /*
+             * Keep interface 0 claimed and start the same RTL2832U bulk-IN
+             * transport used by V4. Only the tuner control path differs.
+             *
+             * Reset/enable RTL2832U endpoint-A immediately before submitting
+             * the first URB. This reset is mandatory on conventional rtl-sdr
+             * hosts before sample reads begin.
+             */
+            ret = v3_prepare_bulk_endpoint(handle);
+
+            if (ret == ESP_OK) {
+                ret = ensure_ring(handle, handle->cfg.transfer_bytes);
+            }
+            if (ret == ESP_OK) {
+                ret = alloc_bulk_pool(handle,
+                                      static_cast<uint32_t>(handle->cfg.transfer_count),
+                                      static_cast<uint32_t>(handle->cfg.transfer_bytes));
+            }
+
+            if (ret == ESP_OK && handle->delivery_task == nullptr) {
+                handle->tasks_run = true;
+                if (xTaskCreatePinnedToCore(delivery_task_fn, "rtl_iq_del", 6144, handle,
+                                            kDeliveryPrio, &handle->delivery_task,
+                                            kDeliveryCore) != pdPASS) {
+                    ret = ESP_ERR_NO_MEM;
+                }
+            }
+
+            if (ret == ESP_OK) {
+                handle->frequency_hz = freq;
+                handle->sample_rate_sps = stream->sample_rate_sps;
+                handle->metrics.frequency_hz = freq;
+                handle->metrics.sample_rate_sps = stream->sample_rate_sps;
+                handle->metrics.bytes_total = 0;
+                handle->metrics.blocks_total = 0;
+                handle->metrics.overruns = 0;
+                handle->metrics.consumer_drops = 0;
+                handle->stream_start_ms = now_ms();
+                handle->pending_retune_hz = 0;
+                handle->pause_resubmit = false;
+                handle->live_urbs = 0;
+                handle->streaming = true;
+                handle->state = RTL_SDR_V4_ESP_STATE_STREAMING;
+
+                for (uint32_t i = 0; i < handle->bulk_num; ++i) {
+                    if (!handle->streaming || handle->pause_resubmit) {
+                        ESP_LOGW(TAG,
+                                 "Blog V3 BULK_DIAG stream stopped before submit[%u]",
+                                 static_cast<unsigned>(i));
+                        ret = RTL_SDR_V4_ESP_ERR_USB;
+                        break;
+                    }
+
+                    esp_err_t submit_err = usb_host_transfer_submit(handle->bulk[i]);
+                    if (submit_err != ESP_OK) {
+                        ESP_LOGW(TAG, "Blog V3 BULK_DIAG submit[%u] failed: %s",
+                                 static_cast<unsigned>(i),
+                                 esp_err_to_name(submit_err));
+                        handle->streaming = false;
+                        ret = RTL_SDR_V4_ESP_ERR_USB;
+                        break;
+                    }
+                    handle->live_urbs = handle->live_urbs + 1;
+                }
+            }
+
+            if (ret == ESP_OK) {
+                HandleLock lk2(handle, kQueryLockTicks);
+                if (lk2.ok()) {
+                    set_error_unlocked(handle, ESP_OK);
+                }
+
+                rtl_sdr_v4_esp_event_cb_t cb = handle->cfg.event_cb;
+                void *ctx = handle->cfg.event_ctx;
+                if (cb != nullptr) {
+                    emit_after_unlock(handle, RTL_SDR_V4_ESP_EVT_STREAM_STARTED, nullptr, cb, ctx);
+                }
+                return ESP_OK;
+            }
+
+            /*
+             * Start failed after claiming interface 0.  Use the generic stop
+             * path to drain anything that was submitted and return to IDLE.
+             */
+            (void)stop_stream_internal(handle, 1000);
+        }
+
+        ESP_LOGW(TAG, "Blog V3 START_DIAG failed: %s",
+                 rtl_sdr_v4_esp_err_to_name(ret));
+        HandleLock lk2(handle, kQueryLockTicks);
+        if (lk2.ok()) {
+            set_error_unlocked(handle, ret);
+        }
+        return ret;
     }
 
     /* USB work without holding API mutex across long EP0 sequences */
@@ -1537,7 +2854,7 @@ esp_err_t rtl_sdr_v4_esp_start(rtl_sdr_v4_esp_handle_t handle,
                 ret = RTL_SDR_V4_ESP_ERR_USB;
                 break;
             }
-            handle->live_urbs++;
+            handle->live_urbs = handle->live_urbs + 1;
         }
         if (ret != ESP_OK) {
             break;
@@ -1577,15 +2894,15 @@ esp_err_t rtl_sdr_v4_esp_retune_hz(rtl_sdr_v4_esp_handle_t handle, uint32_t freq
     if (!handle_ok(handle)) {
         return RTL_SDR_V4_ESP_ERR_STALE_HANDLE;
     }
+
     uint32_t q = 0;
     if (!rtl_sdr_v4_esp_normalize_frequency(frequency_hz, &q)) {
         return RTL_SDR_V4_ESP_ERR_BAD_FREQ;
     }
 
     /*
-     * Queue is always safe (including from event callback). EP0 apply must not
-     * run on the USB client task or nested under in_callback_depth — so if we
-     * are re-entered, only queue and return ESP_OK; app/owner will apply.
+     * Queue retunes to the blocking-control worker. Repeated requests coalesce
+     * to the newest pending frequency.
      */
     {
         HandleLock lk(handle, kQueryLockTicks);
@@ -1596,16 +2913,17 @@ esp_err_t rtl_sdr_v4_esp_retune_hz(rtl_sdr_v4_esp_handle_t handle, uint32_t freq
             set_error_unlocked(handle, RTL_SDR_V4_ESP_ERR_NOT_STREAMING);
             return RTL_SDR_V4_ESP_ERR_NOT_STREAMING;
         }
+
         handle->pending_retune_hz = q;
-        if (handle->in_callback_depth > 0) {
-            /* Coalesce; delivery/app task must call again or service pending. */
-            set_error_unlocked(handle, ESP_OK);
-            return ESP_OK;
-        }
+        set_error_unlocked(handle, ESP_OK);
     }
 
-    /* Apply outside lock: drains bulks, EP0 tune, resubmits. */
-    return apply_pending_retune(handle);
+    if (handle->v3_probe_task == nullptr) {
+        return RTL_SDR_V4_ESP_ERR_NOT_READY;
+    }
+
+    xTaskNotifyGive(handle->v3_probe_task);
+    return ESP_OK;
 }
 
 esp_err_t rtl_sdr_v4_esp_stop(rtl_sdr_v4_esp_handle_t handle, uint32_t timeout_ms)
