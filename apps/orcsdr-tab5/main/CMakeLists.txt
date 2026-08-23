@@ -46,6 +46,7 @@ idf_component_register(
         esp_hw_support
         esp_psram
         esp_system
+        espcoredump
         esp_app_format
         esp_timer
         sdmmc

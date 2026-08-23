@@ -2,6 +2,7 @@
 #include <esp_mac.h>
 #include <esp_intr_alloc.h>
 #include <esp_heap_caps.h>
+#include <esp_log.h>
 #include <esp_attr.h>
 #include <esp_app_desc.h>
 #include <esp_system.h>
@@ -29,6 +30,7 @@ extern "C" {
 #include <cstdarg>
 #include <cstdlib>
 #include <cstring>
+#include <strings.h>
 #include <iterator>
 #include <string>
 
@@ -71,6 +73,43 @@ extern "C" {
 #if !RTL_USE_LEGACY_USB
 #include "rtl_sdr_v4_esp.h"
 #endif
+
+enum class SerialVerbosity : uint8_t { quiet = 0, normal = 1, debug = 2, trace = 3 };
+
+std::atomic<uint8_t> serial_verbosity{static_cast<uint8_t>(SerialVerbosity::normal)};
+
+bool serial_verbosity_at(SerialVerbosity level) {
+  return serial_verbosity.load(std::memory_order_relaxed) >= static_cast<uint8_t>(level);
+}
+
+const char* serial_verbosity_name(SerialVerbosity level) {
+  switch (level) {
+    case SerialVerbosity::quiet: return "QUIET";
+    case SerialVerbosity::normal: return "NORMAL";
+    case SerialVerbosity::debug: return "DEBUG";
+    case SerialVerbosity::trace: return "TRACE";
+  }
+  return "NORMAL";
+}
+
+bool parse_serial_verbosity(const char* text, SerialVerbosity* out) {
+  if (text == nullptr || out == nullptr) return false;
+  if (strcasecmp(text, "QUIET") == 0) *out = SerialVerbosity::quiet;
+  else if (strcasecmp(text, "NORMAL") == 0) *out = SerialVerbosity::normal;
+  else if (strcasecmp(text, "DEBUG") == 0) *out = SerialVerbosity::debug;
+  else if (strcasecmp(text, "TRACE") == 0) *out = SerialVerbosity::trace;
+  else return false;
+  return true;
+}
+
+void apply_serial_verbosity(SerialVerbosity level) {
+  serial_verbosity.store(static_cast<uint8_t>(level), std::memory_order_relaxed);
+  const esp_log_level_t esp_level =
+      level == SerialVerbosity::quiet ? ESP_LOG_ERROR
+      : level == SerialVerbosity::normal ? ESP_LOG_INFO
+      : level == SerialVerbosity::debug ? ESP_LOG_DEBUG : ESP_LOG_VERBOSE;
+  esp_log_level_set("*", esp_level);
+}
 
 class OrcConsole {
  public:
@@ -441,7 +480,6 @@ void rds_hypothesis_feed(RdsHypothesis& h, bool bit) {
 constexpr size_t kRtlSpectrumBins = 256;
 /** Average this many non-overlapping windows for a quieter, more precise trace. */
 constexpr size_t kRtlSpectrumWelchWindows = 2;
-constexpr bool kStreamDiagnosticsEnabled = false;
 // Keep scope cadence stable when sound is toggled; only back off if audio drops.
 constexpr uint32_t kRtlSpectrumIntervalMs = 100;
 constexpr uint32_t kRtlSpectrumStressedIntervalMs = 220;
@@ -966,7 +1004,7 @@ void rds_decode_group(uint16_t block_a, uint16_t block_b, uint16_t block_c,
       const uint8_t prev = rtl_rds_ps_mask.load(std::memory_order_relaxed);
       const uint8_t mask = static_cast<uint8_t>(prev | (1u << seg));
       rtl_rds_ps_mask.store(mask, std::memory_order_relaxed);
-      if (mask != prev) {
+      if (mask != prev && serial_verbosity_at(SerialVerbosity::debug)) {
         Serial.printf("RTL_RDS_PS pi=%04X ps=\"%s\" mask=%X pty=%u\n", block_a,
                       rtl_rds_ps, mask, rtl_rds_pty);
       }
@@ -1001,7 +1039,7 @@ void rds_decode_group(uint16_t block_a, uint16_t block_b, uint16_t block_c,
     }
     rtl_rds_rt[64] = '\0';
     rtl_rds_rt_mask.store(mask, std::memory_order_relaxed);
-    if (mask != prev && rtl_rds_rt[0]) {
+    if (mask != prev && rtl_rds_rt[0] && serial_verbosity_at(SerialVerbosity::debug)) {
       Serial.printf("RTL_RDS_RT pi=%04X rt=\"%s\"\n", block_a, rtl_rds_rt);
     }
   }
@@ -1737,6 +1775,7 @@ void on_adsb_frame(const orcsdr::adsb_rx::Frame& frame, void*) {
   adsb_total_messages.fetch_add(1, std::memory_order_relaxed);
   adsb_track_revision.fetch_add(1, std::memory_order_release);
 
+  if (!serial_verbosity_at(SerialVerbosity::trace)) return;
   static uint32_t last_log_ms = 0;
   if (now - last_log_ms < 250) return;
   last_log_ms = now;
@@ -1871,7 +1910,8 @@ void draw_session_state(const char* message, uint32_t color) {
 }
 
 void draw_wifi_state() {
-  if (g_suppress_home_paint || orcsdr::settings::active() || orcsdr::home::active()) return;
+  if (g_suppress_home_paint || rtl_ui_active.load(std::memory_order_acquire) ||
+      orcsdr::settings::active() || orcsdr::home::active()) return;
   char message[80];
   uint32_t color = TFT_ORANGE;
   if (!wifi_station_ready) {
@@ -3001,9 +3041,10 @@ void enrich_one_adsb_track() {
     portEXIT_CRITICAL(&adsb_tracks_mux);
     adsb_track_revision.fetch_add(1, std::memory_order_release);
   }
-  Serial.printf("RTL_ADSB_META icao=%06lX found=%d registration=%s\n",
-                static_cast<unsigned long>(icao), found ? 1 : 0,
-                found ? metadata.registration : "-");
+  if (serial_verbosity_at(SerialVerbosity::debug))
+    Serial.printf("RTL_ADSB_META icao=%06lX found=%d registration=%s\n",
+                  static_cast<unsigned long>(icao), found ? 1 : 0,
+                  found ? metadata.registration : "-");
 }
 
 size_t format_lora_csv(char* output, size_t output_size,
@@ -3375,9 +3416,10 @@ void lora_iq_offer(const uint8_t* iq, size_t bytes) {
   const size_t pre_roll = lora_copy_pre_roll();
   lora_rf_events.fetch_add(1, std::memory_order_relaxed);
   iq_rec_begin(true, pre_roll);
-  Serial.printf("RTL_LORA_ENERGY level_dbfs=%.1f noise_dbfs=%.1f trigger_dbfs=%.1f preroll_bytes=%u\n",
-                static_cast<double>(level), static_cast<double>(g_lora_noise_floor_dbfs),
-                static_cast<double>(trigger), static_cast<unsigned>(pre_roll));
+  if (serial_verbosity_at(SerialVerbosity::trace))
+    Serial.printf("RTL_LORA_ENERGY level_dbfs=%.1f noise_dbfs=%.1f trigger_dbfs=%.1f preroll_bytes=%u\n",
+                  static_cast<double>(level), static_cast<double>(g_lora_noise_floor_dbfs),
+                  static_cast<double>(trigger), static_cast<unsigned>(pre_roll));
 }
 
 bool iq_rec_stop_and_export() {
@@ -4871,16 +4913,17 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   orcsdr::screens::begin_transition(screen, millis());
   orcsdr::home::leave();
   orcsdr::settings::leave();
+  if (band != RtlBand::fm) orcsdr::fm::leave();
+  if (band != RtlBand::p25) orcsdr::p25::leave();
+  if (band != RtlBand::adsb) orcsdr::adsb::leave();
   if (band != RtlBand::lora) orcsdr::lora::leave();
   if (band == RtlBand::adsb) {
-    orcsdr::p25::leave();
     draw_adsb_dashboard(true);
     draw_global_settings_gear();
     orcsdr::screens::finish_transition();
     return;
   }
   if (band == RtlBand::fm) {
-    orcsdr::p25::leave();
     reset_spectrum_renderer();
     resume_rtl_speaker();
     draw_fm_dashboard(true);
@@ -4888,15 +4931,12 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
     return;
   }
   if (band == RtlBand::p25) {
-    orcsdr::fm::leave();
     reset_spectrum_renderer();
     resume_rtl_speaker();
     draw_p25_dashboard(true);
     orcsdr::screens::finish_transition();
     return;
   }
-  orcsdr::fm::leave();
-  orcsdr::p25::leave();
   M5.Display.fillScreen(TFT_BLACK);
   draw_lora_dashboard(true);
   orcsdr::screens::finish_transition();
@@ -5279,7 +5319,7 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
         window_ms == 0 ? 0 : static_cast<uint32_t>(
                                   (static_cast<uint64_t>(dsp_us) * 100u) /
                                   (static_cast<uint64_t>(window_ms) * 1000u));
-    if (kStreamDiagnosticsEnabled) {
+    if (serial_verbosity_at(SerialVerbosity::trace)) {
       Serial.printf("RTL_SPECTRUM_FPS fps=%u bins=%u welch=%u tool=%s audio_dropped=%u "
                     "audio_chunks=%u audio_peak=%d dsp_load_pct=%u dsp_blocks=%u "
                     "dsp_block_us_max=%u\n",
@@ -5592,6 +5632,7 @@ void rds_log_status() {
   const uint32_t elapsed_ms = now_diag - rds_diag_last_ms;
   if (elapsed_ms < 3000) return;
   rds_diag_last_ms = now_diag;
+  if (!serial_verbosity_at(SerialVerbosity::debug)) return;
   Serial.printf(
       "RTL_RDS carrier=%d locked=%d stereo=%d pilot=%.3f pi=%04X ps=\"%s\" "
       "rt=\"%s\" good=%lu total=%lu streak=%d/%d i=%.3f\n",
@@ -5603,7 +5644,7 @@ void rds_log_status() {
       static_cast<unsigned long>(best.good_blocks),
       static_cast<unsigned long>(best.total_blocks), selection.parity_streak[0],
       selection.parity_streak[1], static_cast<double>(rtl_audio.rds_i_lpf2));
-  if (!kStreamDiagnosticsEnabled) return;
+  if (!serial_verbosity_at(SerialVerbosity::trace)) return;
   const float bler = best.total_blocks > 0
                          ? 100.0f * (1.0f - static_cast<float>(best.good_blocks) /
                                                  static_cast<float>(best.total_blocks))
@@ -6599,6 +6640,12 @@ static void rtl_driver_app_task(void *) {
         resume_rtl_speaker();
         uint32_t spectrum_last_ms = 0;
         uint32_t adsb_metrics_last_ms = 0;
+        uint32_t stream_progress_last_ms = millis();
+        uint64_t stream_progress_bytes = 0;
+        uint8_t stream_stall_checks = 0;
+        rtl_sdr_v4_esp_metrics_t initial_metrics{};
+        if (rtl_sdr_v4_esp_get_metrics(g_rtl, &initial_metrics) == ESP_OK)
+          stream_progress_bytes = initial_metrics.bytes_total;
         uint32_t last_lo_applied_hz =
             band == RtlBand::fm ? rtl_fm_command_lo_hz(frequency_hz) : frequency_hz;
         uint32_t last_lo_apply_ms = 0;
@@ -6707,7 +6754,7 @@ static void rtl_driver_app_task(void *) {
               fm_preset_offer(snapped_hz, level);
               rtl_fm_preset_scan_found.store(fm_preset_count, std::memory_order_relaxed);
             }
-            if (kStreamDiagnosticsEnabled) {
+            if (serial_verbosity_at(SerialVerbosity::trace)) {
               Serial.printf("RTL_PRESET_SCAN sample center=%u peak=%u level=%.1f\n",
                             preset_scan_frequency_hz, found_hz, static_cast<double>(level));
             }
@@ -6775,6 +6822,23 @@ static void rtl_driver_app_task(void *) {
           }
 
           const uint32_t now = millis();
+          if (now - stream_progress_last_ms >= 2000) {
+            stream_progress_last_ms = now;
+            rtl_sdr_v4_esp_metrics_t progress{};
+            if (rtl_sdr_v4_esp_get_metrics(g_rtl, &progress) == ESP_OK) {
+              if (progress.bytes_total > stream_progress_bytes) {
+                stream_progress_bytes = progress.bytes_total;
+                stream_stall_checks = 0;
+              } else if (++stream_stall_checks >= 2) {
+                Serial.printf("RTL_STREAM_STALL band=%s bytes=%llu restarting=1\n",
+                              rtl_band_name(g_stream_band),
+                              static_cast<unsigned long long>(progress.bytes_total));
+                rtl_restart_requested.store(true, std::memory_order_release);
+                rtl_stop_requested.store(true, std::memory_order_release);
+                break;
+              }
+            }
+          }
           service_p25_survey(now);
           service_p25_follow(now);
           service_lora_survey(now);
@@ -6782,7 +6846,8 @@ static void rtl_driver_app_task(void *) {
             adsb_metrics_last_ms = now;
             expire_adsb_tracks(now);
             rtl_sdr_v4_esp_metrics_t metrics{};
-            if (rtl_sdr_v4_esp_get_metrics(g_rtl, &metrics) == ESP_OK) {
+            if (serial_verbosity_at(SerialVerbosity::debug) &&
+                rtl_sdr_v4_esp_get_metrics(g_rtl, &metrics) == ESP_OK) {
               const auto& decode = adsb_decoder.stats();
               Serial.printf("RTL_ADSB_STATUS uptime_ms=%u effective_sps=%u bytes=%llu "
                             "blocks=%u short=%u overruns=%u drops=%u signal_dbfs=%.1f "
@@ -6835,13 +6900,14 @@ static void rtl_driver_app_task(void *) {
                       const uint32_t lo = rtl_fm_command_lo_hz(rtl_ui_frequency_hz);
                       rtl_hot_retune_hz.store(lo, std::memory_order_release);
                       last_center_ms = center_now;
-                      Serial.printf(
-                          "RTL_FM_CENTER display=%u lo=%u peak_off=%d nudge=%d "
-                          "pilot=%.3f stereo=%d\n",
-                          rtl_ui_frequency_hz, lo, peak_off, next_nudge,
-                          static_cast<double>(
-                              rtl_pilot_env.load(std::memory_order_relaxed)),
-                          rtl_stereo_locked.load(std::memory_order_relaxed) ? 1 : 0);
+                      if (serial_verbosity_at(SerialVerbosity::debug))
+                        Serial.printf(
+                            "RTL_FM_CENTER display=%u lo=%u peak_off=%d nudge=%d "
+                            "pilot=%.3f stereo=%d\n",
+                            rtl_ui_frequency_hz, lo, peak_off, next_nudge,
+                            static_cast<double>(
+                                rtl_pilot_env.load(std::memory_order_relaxed)),
+                            rtl_stereo_locked.load(std::memory_order_relaxed) ? 1 : 0);
                     }
                   }
                 }
@@ -7281,7 +7347,6 @@ void poll_wifi() {
   }
   if (state_changed) {
     draw_wifi_state();
-    if (authenticated) emit_identity();
   }
 }
 
@@ -8705,6 +8770,10 @@ void persist_workflow() {
 
 void load_state() {
   preferences.begin("orclink", false);
+  const auto stored_verbosity = static_cast<SerialVerbosity>(
+      std::min<uint8_t>(preferences.getUChar("serial_verb", 1), 3));
+  apply_serial_verbosity(stored_verbosity);
+  Serial.printf("RTL_SERIAL_VERBOSITY mode=%s\n", serial_verbosity_name(stored_verbosity));
   paired = preferences.getBytesLength("pair_key") == sizeof(pairing_key);
   if (paired) preferences.getBytes("pair_key", pairing_key, sizeof(pairing_key));
   if (preferences.getBytesLength("journal") == sizeof(journal)) {
@@ -8939,6 +9008,10 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
 #else
   if (!g_rtl_device_ready.load(std::memory_order_acquire) || g_rtl == nullptr) return;
 #endif
+  // A successful Wi-Fi connection deliberately leaves the receiver paused.
+  // Any explicit radio request takes ownership back without relaunching the
+  // stale pre-connect band first.
+  wifi_radio_paused = false;
   if (band == RtlBand::lora) {
     load_lora_config();
     if (frequency_hz == kLoraDefaultHz) frequency_hz = lora_config_frequency_hz;
@@ -10236,6 +10309,10 @@ void run_ui_regression(bool workflow) {
 }
 
 void process_command(char* command) {
+  // Any command received from an authenticated host proves the session is alive.
+  // This also keeps long-running CLI/soak workflows from expiring while polling status.
+  if (authenticated) last_ping_ms = millis();
+
   if (strncmp(command, "UI_DOC_", 7) == 0 || strncmp(command, "UI_CAPTURE ", 11) == 0) {
     if (!authenticated) {
       Serial.println("UI_DOC_ERROR auth_required");
@@ -10335,7 +10412,46 @@ void process_command(char* command) {
                   orcsdr::lora::active() ? 1 : 0);
     return;
   }
-  if (strncmp(command, "RTL_UI OPEN ", 12) == 0 && authenticated) {
+  if (strcmp(command, "RTL_SERIAL VERBOSITY") == 0) {
+    const auto level = static_cast<SerialVerbosity>(
+        serial_verbosity.load(std::memory_order_relaxed));
+    Serial.printf("RTL_SERIAL_VERBOSITY mode=%s\n", serial_verbosity_name(level));
+    return;
+  }
+  if (strncmp(command, "RTL_SERIAL VERBOSITY ", 21) == 0) {
+    if (!authenticated) {
+      Serial.println("RTL_SERIAL_VERBOSITY_ERROR auth_required");
+      return;
+    }
+    SerialVerbosity level{};
+    if (!parse_serial_verbosity(command + 21, &level)) {
+      Serial.println("RTL_SERIAL_VERBOSITY_INVALID use QUIET|NORMAL|DEBUG|TRACE");
+      return;
+    }
+    preferences.putUChar("serial_verb", static_cast<uint8_t>(level));
+    apply_serial_verbosity(level);
+    Serial.printf("RTL_SERIAL_VERBOSITY_OK mode=%s\n", serial_verbosity_name(level));
+    return;
+  }
+  if (strcmp(command, "RTL_HEALTH") == 0) {
+    const uint32_t dma_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
+    Serial.printf("RTL_HEALTH_STATUS uptime_ms=%u free_heap=%u min_free_heap=%u "
+                  "dma_free=%u dma_min=%u dma_largest=%u tasks=%u main_stack_hwm=%u "
+                  "reset_reason=%d\n",
+                  millis(), esp_get_free_heap_size(), esp_get_minimum_free_heap_size(),
+                  heap_caps_get_free_size(dma_caps),
+                  heap_caps_get_minimum_free_size(dma_caps),
+                  heap_caps_get_largest_free_block(dma_caps),
+                  static_cast<unsigned>(uxTaskGetNumberOfTasks()),
+                  static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)),
+                  static_cast<int>(esp_reset_reason()));
+    return;
+  }
+  if (strncmp(command, "RTL_UI OPEN ", 12) == 0 && !authenticated) {
+    Serial.println("RTL_UI_OPEN_ERROR auth_required");
+    return;
+  }
+  if (strncmp(command, "RTL_UI OPEN ", 12) == 0) {
     const char* name = command + 12;
     using Id = orcsdr::dashboards::Id;
     if (strcmp(name, "HOME") == 0) show_home();
@@ -10348,7 +10464,11 @@ void process_command(char* command) {
     Serial.printf("RTL_UI_OPEN_OK target=%s\n", name);
     return;
   }
-  if (strncmp(command, "RTL_UI ACTION ", 14) == 0 && authenticated) {
+  if (strncmp(command, "RTL_UI ACTION ", 14) == 0 && !authenticated) {
+    Serial.println("RTL_UI_ACTION_ERROR auth_required");
+    return;
+  }
+  if (strncmp(command, "RTL_UI ACTION ", 14) == 0) {
     char domain[12]{}, action[24]{};
     unsigned long value = 0;
     const int fields = sscanf(command + 14, "%11s %23s %lu", domain, action, &value);
@@ -10861,6 +10981,8 @@ void process_command(char* command) {
   if (strcmp(command, "RTL_HELP") == 0) {
     Serial.println("RTL_HELP_BEGIN");
     Serial.println("RTL_STATUS                    - device connection info");
+    Serial.println("RTL_HEALTH                    - heap, task and reset diagnostics");
+    Serial.println("RTL_SERIAL VERBOSITY [QUIET|NORMAL|DEBUG|TRACE] - query/set persistent logging (set auth)");
     Serial.println("RTL_SCREEN_STATUS             - active screen ownership diagnostics");
     Serial.println("RTL_UI_REGRESSION CHECK|RUN   - passive checks or Home->screen restore test");
     Serial.println("RTL_UI STATUS                  - current screen/dashboard state");
@@ -11409,6 +11531,7 @@ void poll_serial() {
 }
 
 void emit_power_sample(const char* tag) {
+  if (!serial_verbosity_at(SerialVerbosity::debug)) return;
   Serial.printf(
       "POWER_SAMPLE tag=%s uptime_ms=%lu battery_mv=%d battery_ma=%ld battery_pct=%ld "
       "charging=%s\n",
@@ -11753,6 +11876,12 @@ void setup() {
 }
 
 void loop() {
+  static uint32_t previous_loop_ms = 0;
+  const uint32_t loop_started_ms = millis();
+  if (previous_loop_ms != 0 && loop_started_ms - previous_loop_ms >= 500)
+    Serial.printf("RTL_MAIN_STALL stage=loop_gap elapsed_ms=%u\n",
+                  loop_started_ms - previous_loop_ms);
+  previous_loop_ms = loop_started_ms;
   static bool hosted_boot_status_emitted = false;
   if (!hosted_boot_status_emitted && millis() >= 10000u) {
     hosted_boot_status_emitted = true;
@@ -11775,13 +11904,23 @@ void loop() {
   // Home, Settings, FM, and P25 stay on loop() so a stalled stream task
   // cannot freeze buttons. Stream still owns LoRa/browse scope gestures.
   if (!radio_ui || adsb_ui || settings_ui || home_ui || fm_ui || p25_ui) {
+    const uint32_t started_ms = millis();
     M5.update();
+    const uint32_t elapsed_ms = millis() - started_ms;
+    if (elapsed_ms >= 500)
+      Serial.printf("RTL_MAIN_STALL stage=m5_update elapsed_ms=%u\n", elapsed_ms);
   }
   if (rtl_stream_spectrum_pending.exchange(false, std::memory_order_acq_rel) &&
       (fm_ui || p25_ui)) {
     draw_spectrum(nullptr, 0);
   }
-  poll_serial();
+  {
+    const uint32_t started_ms = millis();
+    poll_serial();
+    const uint32_t elapsed_ms = millis() - started_ms;
+    if (elapsed_ms >= 500)
+      Serial.printf("RTL_MAIN_STALL stage=serial_dispatch elapsed_ms=%u\n", elapsed_ms);
+  }
   if (ui_documentation_mode) {
     delay(10);
     return;
@@ -11800,12 +11939,22 @@ void loop() {
     catalog_was_busy = catalog_state.busy;
     orcsdr::catalog::poll(wifi_connected);
   }
-  if (boot_auto_start_allowed) poll_wifi();
+  if (boot_auto_start_allowed) {
+    const uint32_t started_ms = millis();
+    poll_wifi();
+    const uint32_t elapsed_ms = millis() - started_ms;
+    if (elapsed_ms >= 500)
+      Serial.printf("RTL_MAIN_STALL stage=wifi_poll elapsed_ms=%u\n", elapsed_ms);
+  }
   {
     static uint32_t last_web_ms = 0;
     if (millis() - last_web_ms >= 400) {
       last_web_ms = millis();
+      const uint32_t started_ms = millis();
       orcsdr::web_console::poll(wifi_connected);
+      const uint32_t elapsed_ms = millis() - started_ms;
+      if (elapsed_ms >= 500)
+        Serial.printf("RTL_MAIN_STALL stage=web_poll elapsed_ms=%u\n", elapsed_ms);
       orcsdr::web_console::Command command{};
       if (orcsdr::web_console::take_command(&command)) {
         using CK = orcsdr::web_console::CommandKind;
@@ -12079,7 +12228,8 @@ void loop() {
     append_journal("session_degraded");
     run_offline_workflow();
   }
-  if (authenticated && now - last_heartbeat_ms >= 2000) {
+  if (authenticated && serial_verbosity_at(SerialVerbosity::debug) &&
+      now - last_heartbeat_ms >= 2000) {
     last_heartbeat_ms = now;
     ++heartbeat_sequence;
     Serial.printf(

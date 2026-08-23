@@ -386,6 +386,45 @@ not reset the Tab5:
 ```powershell
 .\tools\run-tab5-ui-regression.ps1 -Port COM17
 .\tools\run-tab5-ui-regression.ps1 -Port COM17 -Run
+.\tools\run-tab5-ui-regression.ps1 -Port COM17 -Soak -Cycles 10 -DwellSeconds 2
+.\tools\run-tab5-ui-regression.ps1 -Port COM17 -Profile Smoke
+.\tools\run-tab5-ui-regression.ps1 -Port COM17 -Profile Stress -Seed 12345
+.\tools\run-tab5-ui-regression.ps1 -Port COM17 -Profile Stress -Cycles 1 -WifiEvery 1
+.\tools\run-tab5-ui-regression.ps1 -Port COM17 -Profile Overnight -Cycles 500
+```
+
+`-Soak` authenticates with `.orclink\ui-doc.key`, then drives every radio
+dashboard through Home and Settings. `Smoke`, `Stress`, and `Overnight` provide
+5, 50, and 500-cycle defaults. Stress and Overnight randomize the radio order
+from the recorded seed and cycle Wi-Fi every ten passes. All profiles exercise
+mute/unmute, query heap health, require advancing FM audio after every return,
+and save a timestamped log under `artifacts\ui-soak`. The runner fails on panic,
+watchdog, brownout, assertion, reboot, timeout, exclusive-screen violation, or
+lost audio; after failure it stays attached briefly to capture reset evidence.
+It restores the starting dashboard, tuning, sound, and verbosity when possible.
+Use `-WifiEvery 1` for a focused Wi-Fi cycle on every pass.
+
+## Serial verbosity and crash evidence
+
+| Command | Reply | Notes |
+|---|---|---|
+| `RTL_SERIAL VERBOSITY` | `RTL_SERIAL_VERBOSITY mode=...` | Query without authentication. |
+| `RTL_SERIAL VERBOSITY QUIET\|NORMAL\|DEBUG\|TRACE` | `RTL_SERIAL_VERBOSITY_OK mode=...` | Authenticated, persistent setting. `NORMAL` is the default. |
+| `RTL_HEALTH` | `RTL_HEALTH_STATUS ...` | Heap, internal DMA, task count, uptime, and boot reset reason. |
+
+`QUIET` retains errors, command replies, panic text, and reset evidence.
+`NORMAL` adds normal lifecycle information. `DEBUG` enables periodic receiver,
+RDS, power, and heartbeat diagnostics. `TRACE` additionally enables decoded
+ADS-B frames, LoRa energy triggers, spectrum timing, and scan samples.
+
+The partition table reserves a 256 KiB flash core-dump partition. With the
+matching ELF from `build-native-hosted3`, inspect a retained panic using
+`idf.py -B build-native-hosted3 -p COM17 coredump-info`.
+
+Run the host-side crash/audio parser check without a device:
+
+```powershell
+.\tools\run-tab5-ui-regression.ps1 -SelfCheck
 ```
 
 ## Documentation capture

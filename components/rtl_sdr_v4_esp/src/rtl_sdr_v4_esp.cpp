@@ -846,6 +846,7 @@ static esp_err_t apply_pending_retune(rtl_sdr_v4_esp_handle *h)
 static void delivery_task_fn(void *arg)
 {
     auto *h = static_cast<rtl_sdr_v4_esp_handle *>(arg);
+    uint8_t delivered = 0;
     while (h->tasks_run) {
         IqSlot *slot = nullptr;
         if (xQueueReceive(h->filled_q, &slot, pdMS_TO_TICKS(50)) != pdTRUE || slot == nullptr) {
@@ -872,6 +873,11 @@ static void delivery_task_fn(void *arg)
             emit_after_unlock(h, RTL_SDR_V4_ESP_EVT_IQ_BLOCK, &block, cb, ctx);
         }
         (void)xQueueSend(h->free_q, &slot, portMAX_DELAY);
+        // A continuously full IQ queue otherwise prevents CPU1's idle task
+        // from feeding the task watchdog during app-side DSP.
+        if ((++delivered & 7u) == 0u) {
+            vTaskDelay(1);
+        }
     }
     vTaskDelete(nullptr);
 }
