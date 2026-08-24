@@ -1,24 +1,27 @@
 #include "screen_controller.hpp"
 
+#include <atomic>
 #include <initializer_list>
 
 namespace orcsdr::screens {
 namespace {
 Status g_status{};
-bool g_transitioning = false;
+std::atomic<bool> g_transitioning{false};
 }
 
 void begin_transition(Id next, uint32_t now_ms, bool remember_return) {
+  g_transitioning.store(true, std::memory_order_release);
   if (next == Id::settings && remember_return && g_status.active != Id::settings &&
       g_status.active != Id::none)
     g_status.return_to = g_status.active;
   g_status.active = next;
   g_status.last_transition_ms = now_ms;
   ++g_status.transitions;
-  g_transitioning = true;
 }
 
-void finish_transition() { g_transitioning = false; }
+void finish_transition() { g_transitioning.store(false, std::memory_order_release); }
+
+bool transitioning() { return g_transitioning.load(std::memory_order_acquire); }
 
 Id close_settings(uint32_t now_ms) {
   const Id target = g_status.return_to == Id::none ? Id::home : g_status.return_to;
@@ -26,12 +29,12 @@ Id close_settings(uint32_t now_ms) {
   return target;
 }
 
-bool owns(Id id) { return !g_transitioning && g_status.active == id; }
+bool owns(Id id) { return !transitioning() && g_status.active == id; }
 
 bool is_active(Id id) { return g_status.active == id; }
 
 bool may_draw(Id id) {
-  if (g_transitioning || g_status.active != id) {
+  if (transitioning() || g_status.active != id) {
     ++g_status.rejected_draws;
     return false;
   }

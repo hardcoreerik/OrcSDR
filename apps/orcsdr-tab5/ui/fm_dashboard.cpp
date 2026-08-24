@@ -1,6 +1,7 @@
 #include "fm_dashboard.hpp"
 
 #include "dashboard_audio_control.hpp"
+#include "orc_badge.hpp"
 
 #include <M5Unified.h>
 
@@ -12,9 +13,6 @@
 
 namespace orcsdr::fm {
 namespace {
-
-extern const uint8_t orc_badge_start[] asm("_binary_orc_badge_104_png_start");
-extern const uint8_t orc_badge_end[] asm("_binary_orc_badge_104_png_end");
 
 constexpr uint16_t kBg = TFT_BLACK;
 constexpr uint16_t kPanel = 0x0841;
@@ -99,8 +97,7 @@ void draw_gear(int cx, int cy, uint16_t color) {
 void draw_header() {
   M5.Display.fillRect(0, 0, 1280, kHeaderH, kBg);
   M5.Display.drawFastHLine(8, kHeaderH - 1, 1264, kCyan);
-  const size_t badge_size = static_cast<size_t>(orc_badge_end - orc_badge_start);
-  if (!M5.Display.drawPng(orc_badge_start, badge_size, 18, 13)) {
+  if (!badge::draw(18, 13, 104)) {
     M5.Display.drawRoundRect(18, 13, 104, 104, 18, kGreen);
   }
   text("OrcSDR", 142, 38, TFT_WHITE, 4, middle_left);
@@ -112,6 +109,7 @@ void draw_header() {
   audio_header::draw(g_audio_control, g_snapshot.volume, g_snapshot.sound_enabled,
                      g_snapshot.battery_percent);
   audio_header::draw_home_button();
+  audio_header::draw_mute_button(g_snapshot.sound_enabled);
   audio_header::draw_settings_button();
 }
 

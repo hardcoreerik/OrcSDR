@@ -47,6 +47,9 @@ struct Snapshot {
   uint32_t effective_sps = 0;
   uint32_t usb_overruns = 0;
   uint32_t consumer_drops = 0;
+  bool faa_aircraft_installed = false;
+  bool faa_aviation_installed = false;
+  bool sound_enabled = true;
   uint8_t visible_count = 0;
   uint8_t aircraft_count = 0;
 };

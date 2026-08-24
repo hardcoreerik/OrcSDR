@@ -2,6 +2,7 @@
 
 #include "dashboard_audio_control.hpp"
 #include "offline_map.hpp"
+#include "orc_badge.hpp"
 
 #include <M5Unified.h>
 
@@ -12,9 +13,6 @@
 
 namespace orcsdr::lora {
 namespace {
-
-extern const uint8_t orc_badge_start[] asm("_binary_orc_badge_104_png_start");
-extern const uint8_t orc_badge_end[] asm("_binary_orc_badge_104_png_end");
 
 constexpr uint16_t kBg = TFT_BLACK;
 constexpr uint16_t kPanel = 0x0841;
@@ -106,8 +104,7 @@ void draw_radio_icon(int cx, int cy, uint16_t color) {
 void draw_header() {
   M5.Display.fillRect(0, 0, 1280, kHeaderH, kBg);
   M5.Display.drawFastHLine(8, kHeaderH - 1, 1264, kCyan);
-  const size_t badge_size = static_cast<size_t>(orc_badge_end - orc_badge_start);
-  if (!M5.Display.drawPng(orc_badge_start, badge_size, 18, 8))
+  if (!badge::draw(18, 8, 104))
     M5.Display.drawRoundRect(18, 8, 104, 104, 18, kGreen);
   text("OrcSDR", 142, 38, TFT_WHITE, 4, middle_left);
   text("M5STACK TAB5", 142, 81, kCyan, 2, middle_left);
@@ -125,6 +122,7 @@ void draw_header() {
   text(g_snapshot.key_loaded ? "KEY LOADED" : "PUBLIC ONLY", 1050, 73,
        g_snapshot.key_loaded ? kGreen : kMuted, 1, middle_left);
   audio_header::draw_home_button();
+  audio_header::draw_mute_button(g_snapshot.sound_enabled);
   audio_header::draw_settings_button();
 }
 
@@ -598,7 +596,7 @@ bool self_check() {
   char value[16];
   format_id(value, sizeof(value), snapshot.nodes[0].id);
   if (strcmp(value, "!A1B2C3D4") != 0) return false;
-  return audio_header::home_hit(1117, 9) && !audio_header::home_hit(1115, 9);
+  return audio_header::home_hit(1115, 9) && !audio_header::home_hit(1113, 9);
 }
 
 }  // namespace orcsdr::lora

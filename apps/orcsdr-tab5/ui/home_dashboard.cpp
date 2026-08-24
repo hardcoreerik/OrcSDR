@@ -1,6 +1,7 @@
 #include "home_dashboard.hpp"
 
 #include "dashboard_audio_control.hpp"
+#include "orc_badge.hpp"
 
 #include <M5Unified.h>
 
@@ -26,9 +27,8 @@ constexpr int kRowH = 52, kRowGap = 8, kRowPitch = kRowH + kRowGap;
 constexpr int kVisibleRows = 6;
 constexpr int kAllY = 590;
 constexpr int kTapDragThreshold = 10;
-
-extern const uint8_t orc_badge_start[] asm("_binary_orc_badge_104_png_start");
-extern const uint8_t orc_badge_end[] asm("_binary_orc_badge_104_png_end");
+constexpr int kHeaderStatusX = 620;
+constexpr int kHeaderStatusW = 480;
 
 Snapshot current{};
 bool shown = false;
@@ -133,32 +133,31 @@ void draw_menu_icon(dashboards::Id id, int x, int y, uint16_t color) {
 }
 
 void draw_header_status() {
-  M5.Display.fillRect(720, 20, 480, 72, TFT_BLACK);
-  panel(720, 20, 480, 72, kCyan, 9);
-  draw_wifi_icon(746, 55, current.wifi_connected ? kCyan : kDim);
-  text("Wi-Fi", 774, 42, TFT_WHITE, 2);
+  M5.Display.fillRect(kHeaderStatusX, 20, kHeaderStatusW, 72, TFT_BLACK);
+  panel(kHeaderStatusX, 20, kHeaderStatusW, 72, kCyan, 9);
+  draw_wifi_icon(kHeaderStatusX + 26, 55, current.wifi_connected ? kCyan : kDim);
+  text("Wi-Fi", kHeaderStatusX + 54, 42, TFT_WHITE, 2);
   text(current.wifi_connected && current.wifi_ip[0] ? current.wifi_ip : "OFFLINE",
-       774, 66, current.wifi_connected ? kCyan : TFT_ORANGE, 1);
-  M5.Display.drawFastVLine(834, 30, 52, kDim);
-  draw_usb_icon(855, 54, current.usb_connected ? kCyan : kDim);
-  text("USB", 878, 42, TFT_WHITE, 2);
-  text(current.usb_connected ? "CONNECTED" : "DISCONNECTED", 878, 66,
+       kHeaderStatusX + 54, 66, current.wifi_connected ? kCyan : TFT_ORANGE, 1);
+  M5.Display.drawFastVLine(kHeaderStatusX + 114, 30, 52, kDim);
+  draw_usb_icon(kHeaderStatusX + 135, 54, current.usb_connected ? kCyan : kDim);
+  text("USB", kHeaderStatusX + 158, 42, TFT_WHITE, 2);
+  text(current.usb_connected ? "CONNECTED" : "DISCONNECTED", kHeaderStatusX + 158, 66,
        current.usb_connected ? kCyan : TFT_ORANGE, 1);
-  M5.Display.drawFastVLine(958, 30, 52, kDim);
-  draw_battery(974, 39);
+  M5.Display.drawFastVLine(kHeaderStatusX + 238, 30, 52, kDim);
+  draw_battery(kHeaderStatusX + 254, 39);
   char value[12];
   snprintf(value, sizeof(value), "%ld%%", static_cast<long>(current.battery_percent));
-  text(current.battery_percent >= 0 ? value : "--", 1042, 54, TFT_WHITE, 2);
-  M5.Display.drawFastVLine(1072, 30, 52, kDim);
-  text(current.clock[0] ? current.clock : "--:--", 1184, 42, TFT_WHITE, 2,
+  text(current.battery_percent >= 0 ? value : "--", kHeaderStatusX + 322, 54, TFT_WHITE, 2);
+  M5.Display.drawFastVLine(kHeaderStatusX + 352, 30, 52, kDim);
+  text(current.clock[0] ? current.clock : "--:--", kHeaderStatusX + 464, 42, TFT_WHITE, 2,
        middle_right);
-  text(current.date[0] ? current.date : "UPTIME", 1184, 68, kCyan, 1,
+  text(current.date[0] ? current.date : "UPTIME", kHeaderStatusX + 464, 68, kCyan, 1,
        middle_right);
 }
 
 void draw_header() {
-  const size_t bytes = static_cast<size_t>(orc_badge_end - orc_badge_start);
-  if (!M5.Display.drawPng(orc_badge_start, bytes, 24, 12, 96, 96))
+  if (!badge::draw(24, 12, 96))
     M5.Display.drawRoundRect(24, 12, 96, 96, 12, kGreen);
   text("OrcSDR", 132, 46, kGreen, 4);
   text("M5STACK TAB5", 134, 82, kCyan, 2);
@@ -166,6 +165,7 @@ void draw_header() {
   text("HOME", 338, 59, TFT_WHITE, 5);
   draw_header_status();
   audio_header::draw_settings_button();
+  audio_header::draw_mute_button(current.sound_enabled);
 }
 
 void draw_recent_list() {
@@ -418,6 +418,7 @@ void draw_browser() {
   panel(1072, 20, 120, 54, kCyan, 8);
   text("HOME", 1132, 47, kCyan, 2, middle_center);
   audio_header::draw_settings_button();
+  audio_header::draw_mute_button(current.sound_enabled);
   for (size_t i = 0; i < dashboards::count(); ++i) {
     const auto* entry = dashboards::descriptor(i);
     if (!entry) continue;
@@ -444,6 +445,7 @@ void draw_all() {
 Action tap_action(int32_t x, int32_t y) {
   if (audio_header::settings_hit(x, y))
     return {ActionKind::open_device_settings};
+  if (audio_header::mute_hit(x, y)) return {ActionKind::sound_toggle};
   if (browser) {
     if (inside(x, y, 1072, 20, 120, 54)) return {ActionKind::close_browser};
     for (size_t i = 0; i < dashboards::count(); ++i) {
@@ -649,9 +651,10 @@ bool self_check() {
   const float levels[] = {60.0f, 60.0f, 60.0f, 84.0f};
   return dashboards::self_check() && kVisibleRows == 6 && kTapDragThreshold == 10 &&
          dashboards::count() > static_cast<size_t>(kVisibleRows) &&
+         kHeaderStatusX + kHeaderStatusW < 1114 &&
          waterfall_range_db(1) == 48 && waterfall_range_db(7) == 12 &&
-         tap_action(1212, 9).kind ==
-             ActionKind::open_device_settings &&
+         tap_action(1223, 9).kind == ActionKind::open_device_settings &&
+         tap_action(1169, 9).kind == ActionKind::sound_toggle &&
          std::abs(home_spectrum_floor(levels, std::size(levels), 10.0f) - 62.0f) < 0.01f;
 }
 

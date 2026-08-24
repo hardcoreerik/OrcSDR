@@ -2,6 +2,7 @@
 
 #include "dashboard_audio_control.hpp"
 #include "offline_map.hpp"
+#include "orc_badge.hpp"
 
 #include <M5Unified.h>
 
@@ -9,9 +10,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
-
-extern const uint8_t orc_badge_start[] asm("_binary_orc_badge_104_png_start");
-extern const uint8_t orc_badge_end[] asm("_binary_orc_badge_104_png_end");
 
 namespace orcsdr::adsb {
 namespace {
@@ -297,9 +295,7 @@ void plane(int x, int y, int scale, uint16_t color) {
 void draw_header() {
   M5.Display.fillRect(0, 0, 1280, kHeaderH, kBg);
   M5.Display.drawFastHLine(20, kHeaderH - 1, 1240, kBorder);
-  const size_t badge_size = static_cast<size_t>(orc_badge_end - orc_badge_start);
-  if (!M5.Display.drawPng(orc_badge_start, badge_size, 12, 8, 58, 58,
-                          0, 0, 58.0f / 104.0f)) {
+  if (!badge::draw(12, 8, 58)) {
     M5.Display.drawRoundRect(12, 8, 58, 58, 8, kGreen);
     text("O", 41, 37, kGreen, 3);
   }
@@ -322,6 +318,7 @@ void draw_header() {
   text("USB", 905, 29, TFT_WHITE, 1, middle_left);
   text("CONNECTED", 905, 51, kBlue, 1, middle_left);
   audio_header::draw_home_button();
+  audio_header::draw_mute_button(g_live_snapshot.sound_enabled);
   audio_header::draw_settings_button();
 }
 
@@ -737,9 +734,6 @@ void draw_stats() {
                 nullptr, metrics[i].color);
   }
 
-  bool enriched = false;
-  for (size_t i = 0; i < g_aircraft_count; ++i)
-    enriched = enriched || g_aircraft[i].registration[0] || strcmp(g_aircraft[i].type, "--") != 0;
   struct DataCard { const char* title; const char* line1; const char* line2; bool ready; };
   char atc_line[36];
   if (g_settings.atc_frequency_hz)
@@ -747,8 +741,8 @@ void draw_stats() {
              static_cast<unsigned long>(g_settings.atc_frequency_hz / 1000000),
              static_cast<unsigned long>((g_settings.atc_frequency_hz % 1000000) / 1000));
   else strlcpy(atc_line, "NO NEARBY PRESET", sizeof(atc_line));
-  const DataCard data[] = {{"FAA AIRCRAFT DB", enriched ? "REGISTRATION READY" : "NO ENRICHMENT YET", "LIVE LOOKUP", enriched},
-                           {"FAA AVIATION DB", g_settings.atc_frequency_hz ? "ATC PRESET READY" : "NOT INSTALLED", "LOCATION RANKED", g_settings.atc_frequency_hz != 0},
+  const DataCard data[] = {{"FAA AIRCRAFT DB", g_live_snapshot.faa_aircraft_installed ? "INSTALLED" : "NOT INSTALLED", "REGISTRATION LOOKUP", g_live_snapshot.faa_aircraft_installed},
+                           {"FAA AVIATION DB", g_live_snapshot.faa_aviation_installed ? "INSTALLED" : "NOT INSTALLED", "AIRPORT / ATC DATA", g_live_snapshot.faa_aviation_installed},
                            {"OFFLINE MAP", offline_map::available() ? "LANE COUNTY READY" : "NOT INSTALLED", "SD VECTOR PACK", offline_map::available()},
                            {"LISTEN TO ATC", atc_line, g_atc_listening ? "ADS-B PAUSED" : "MANUAL START", g_settings.atc_frequency_hz != 0}};
   for (int i = 0; i < 4; ++i) {
@@ -812,15 +806,15 @@ void draw_settings() {
     card(496, 108, 360, 214);
     text("FAA AIRCRAFT DATABASE", 516, 137, kBlue, 1, middle_left);
     text("Registration, type and owner", 516, 176, TFT_LIGHTGREY, 1, middle_left);
-    text(g_aircraft_count ? "LIVE ENRICHMENT READY" : "WAITING FOR AIRCRAFT",
-         516, 214, g_aircraft_count ? kGreen : kMuted, 1, middle_left);
+    text(g_live_snapshot.faa_aircraft_installed ? "INSTALLED" : "NOT INSTALLED",
+         516, 214, g_live_snapshot.faa_aircraft_installed ? kGreen : TFT_ORANGE, 1, middle_left);
     button("MANAGE FAA DATA", 516, 248, 320, 50, TFT_DARKGREEN);
 
     card(874, 108, 374, 214);
     text("FAA AVIATION DATABASE", 894, 137, kBlue, 1, middle_left);
     text("Airports and verified frequencies", 894, 176, TFT_LIGHTGREY, 1, middle_left);
-    text(g_settings.atc_frequency_hz ? "NEARBY ATC READY" : "ATC DATA UNAVAILABLE",
-         894, 214, g_settings.atc_frequency_hz ? kGreen : TFT_ORANGE, 1, middle_left);
+    text(g_live_snapshot.faa_aviation_installed ? "INSTALLED" : "NOT INSTALLED",
+         894, 214, g_live_snapshot.faa_aviation_installed ? kGreen : TFT_ORANGE, 1, middle_left);
     button("MANAGE AVIATION DATA", 894, 248, 334, 50, TFT_DARKGREEN);
 
     card(496, 340, 360, 264);
