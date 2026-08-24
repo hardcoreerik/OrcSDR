@@ -2789,7 +2789,7 @@ bool ensure_tab5_sd() {
   if (orcsdr::storage::mount_tab5_sd()) {
     g_sd_fs = &orcsdr::storage::filesystem();
     g_sd_ready = true;
-    Serial.println("RTL_REC_SD ready bus=sdspi");
+    Serial.println("RTL_REC_SD ready bus=sdmmc");
     return true;
   }
   Serial.println("RTL_REC_SD missing_or_fail");
@@ -8554,7 +8554,9 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       update_global_settings();
       break;
     case orcsdr::settings::ActionKind::catalog_check:
-      if (ensure_tab5_sd()) {
+      if (orcsdr::catalog::state().busy) {
+        Serial.println("ORC_CATALOG_CHECK_REJECTED");
+      } else if (ensure_tab5_sd()) {
         orcsdr::catalog::begin(g_sd_fs, sd_total_bytes() -
             orcsdr::storage::used_bytes());
         (void)orcsdr::offline_map::load(g_sd_fs);
@@ -8575,7 +8577,9 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       update_global_settings();
       break;
     case orcsdr::settings::ActionKind::catalog_install:
-      if (!pause_radio_for_catalog() ||
+      if (orcsdr::catalog::state().busy) {
+        Serial.println("ORC_CATALOG_INSTALL_REJECTED");
+      } else if (!pause_radio_for_catalog() ||
           !orcsdr::catalog::request_install(static_cast<uint8_t>(action.value), wifi_connected)) {
         resume_radio_after_catalog();
         Serial.println("ORC_CATALOG_INSTALL_REJECTED");

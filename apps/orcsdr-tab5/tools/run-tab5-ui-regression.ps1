@@ -35,6 +35,8 @@ if ($Profile) {
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $LogPath = Join-Path $artifactDir "$timestamp-$($Profile.ToLowerInvariant())-seed$Seed.log"
   }
+}
+if ($LogPath) {
   $parent = Split-Path -Parent $LogPath
   if ($parent) { [void](New-Item -ItemType Directory -Force $parent) }
   $script:logPath = [IO.Path]::GetFullPath($LogPath)
@@ -68,6 +70,26 @@ function Read-MatchingLine([string]$Pattern, [int]$Seconds = $TimeoutSeconds) {
 function Send-And-Wait([string]$Command, [string]$Pattern, [int]$Seconds = $TimeoutSeconds) {
   $script:serial.WriteLine($Command)
   return Read-MatchingLine $Pattern $Seconds
+}
+
+function Wait-DeviceReady([int]$Seconds = 60) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+  $nextProbe = [DateTime]::MinValue
+  while ([DateTime]::UtcNow -lt $deadline) {
+    if ([DateTime]::UtcNow -ge $nextProbe) {
+      $script:serial.WriteLine('RTL_HEALTH')
+      $nextProbe = [DateTime]::UtcNow.AddSeconds(1)
+    }
+    try {
+      $line = $script:serial.ReadLine().Trim()
+      if (!$line) { continue }
+      $script:linesSeen++
+      Write-SoakLine $line
+      if (Test-FatalLine $line) { throw "Device crash/reset detected: $line" }
+      if ($line -match '^RTL_HEALTH_STATUS ') { return }
+    } catch [System.TimeoutException] {}
+  }
+  throw 'Timed out waiting for device readiness.'
 }
 
 function Connect-Authenticated {
@@ -297,6 +319,7 @@ try {
     exit 0
   }
 
+  Wait-DeviceReady
   [void](Send-And-Wait 'RTL_STATUS' '^RTL_SDR_STATUS ' 20)
   Connect-Authenticated
   $initial = Get-UiState

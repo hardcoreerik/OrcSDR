@@ -32,9 +32,11 @@ slot or pins.
 | Removable microSD | 0 | 43 | 44 | 39 | 40 | 41 | 42 |
 
 The C6 reset line is GPIO 15, active high. Its power rail is enabled by the
-Tab5 board startup (`M5.begin()`); do not blindly power-cycle it on every P4
-boot. The Wi-Fi antenna selector is I/O expander `0x43`, pin 0: low selects the
-internal antenna and high selects external MMCX.
+Tab5 board startup (`M5.begin()`). OrcSDR intentionally cycles `WLAN_PWR_EN`
+once per P4 boot before probing the C6 so a coprocessor hung by a prior crash
+cannot survive the restart; do not add a second cycle elsewhere. The Wi-Fi
+antenna selector is I/O expander `0x43`, pin 0: low selects the internal antenna
+and high selects external MMCX.
 
 ## Required project configuration
 
@@ -69,16 +71,16 @@ TLS, mDNS, and large application allocations in PSRAM.
 ## Startup order
 
 1. Start M5Unified/Tab5 board support. This enables the C6 power rail.
-2. Explicitly start ESP-Hosted on Slot 1. Do not enable Hosted auto-init before
+2. Cycle `WLAN_PWR_EN` once to clear a C6 left hung by a prior P4 crash.
+3. Explicitly start ESP-Hosted on Slot 1. Do not enable Hosted auto-init before
    `app_main`.
-3. Probe the already-powered C6 first. Reset only if SDIO enumeration fails.
 4. Load settings and mount the removable card independently on Slot 0.
 5. Start the Wi-Fi station only after the Hosted handshake succeeds.
 6. Start USB RTL-SDR/audio after the network action is finished, or pause it
    before a scan, join, or large catalog transfer and resume it afterwards.
 
-This order prevents boot-time SDIO contention and avoids repeatedly resetting
-an already working C6.
+This order prevents boot-time SDIO contention while ensuring each P4 boot starts
+with a known C6 state.
 
 ## User-facing behavior
 
