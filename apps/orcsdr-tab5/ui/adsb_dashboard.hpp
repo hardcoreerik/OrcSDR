@@ -51,7 +51,14 @@ struct Snapshot {
   uint8_t aircraft_count = 0;
 };
 
-enum class Action : uint8_t { none, settings_changed, atc_listen, atc_resume, exit };
+enum class Action : uint8_t {
+  none,
+  settings_changed,
+  open_data_settings,
+  atc_listen,
+  atc_resume,
+  exit
+};
 
 void enter(const Settings& settings);
 void leave();

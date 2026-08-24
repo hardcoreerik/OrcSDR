@@ -9450,6 +9450,8 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     if (action == orcsdr::adsb::Action::settings_changed) {
       adsb_settings = orcsdr::adsb::settings();
       adsb_settings_persist_pending.store(true, std::memory_order_release);
+    } else if (action == orcsdr::adsb::Action::open_data_settings) {
+      open_global_settings(orcsdr::settings::Section::data_maps);
     } else if (action == orcsdr::adsb::Action::exit) {
       show_home();
     } else if (action == orcsdr::adsb::Action::atc_listen) {
