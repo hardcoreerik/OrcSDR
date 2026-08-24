@@ -22,7 +22,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $script:serial = $null
 $script:linesSeen = 0
-$script:logPath = $null
+$script:soakLogPath = $null
 
 if ($Profile) {
   $Soak = $true
@@ -39,13 +39,13 @@ if ($Profile) {
 if ($LogPath) {
   $parent = Split-Path -Parent $LogPath
   if ($parent) { [void](New-Item -ItemType Directory -Force $parent) }
-  $script:logPath = [IO.Path]::GetFullPath($LogPath)
+  $script:soakLogPath = [IO.Path]::GetFullPath($LogPath)
 }
 if ($Soak -and $Cycles -eq 0) { $Cycles = 10 }
 
 function Write-SoakLine([string]$Line) {
   Write-Host $Line
-  if ($script:logPath) { Add-Content -LiteralPath $script:logPath -Value $Line }
+  if ($script:soakLogPath) { Add-Content -LiteralPath $script:soakLogPath -Value $Line }
 }
 
 function Test-FatalLine([string]$Line) {
@@ -308,7 +308,7 @@ try {
   if ($Profile) {
     $commit = (& git -C (Join-Path $PSScriptRoot '..\..\..') rev-parse --short HEAD 2>$null)
     Write-SoakLine "RTL_UI_SOAK_BEGIN profile=$Profile cycles=$Cycles seed=$Seed port=$Port commit=$commit"
-    Write-SoakLine "RTL_UI_SOAK_LOG path=$($script:logPath)"
+    Write-SoakLine "RTL_UI_SOAK_LOG path=$($script:soakLogPath)"
   }
 
   if (-not $Soak) {
