@@ -1,5 +1,7 @@
 #include "settings_app.hpp"
 
+#include "dashboard_audio_control.hpp"
+
 #include <M5Unified.h>
 #include <esp_attr.h>
 
@@ -93,7 +95,8 @@ void draw_header() {
                     : g_state.wifi_scanning ? "Wi-Fi scanning" : "Wi-Fi offline",
             sizeof(status));
   text(status, 1020, 36, g_state.wifi_connected ? kGreen : kMuted, 2, middle_right);
-  button("CLOSE", 1090, 13, 162, 46, TFT_MAROON);
+  button("CLOSE", 1040, 13, 116, 46, TFT_MAROON);
+  audio_header::draw_mute_button(g_state.sound_default);
 }
 
 void draw_rail() {
@@ -585,6 +588,8 @@ void leave() {
 }
 
 void draw() {
+  M5.Display.setFont(nullptr);
+  M5.Display.setTextSize(1);
   M5.Display.fillScreen(kBg);
   draw_header();
   draw_rail();
@@ -598,6 +603,7 @@ void update(const State& state_value) {
                               g_state.wifi_connected != state_value.wifi_connected ||
                               g_state.wifi_connecting != state_value.wifi_connecting ||
                               g_state.wifi_scanning != state_value.wifi_scanning ||
+                              g_state.sound_default != state_value.sound_default ||
                               strcmp(g_state.wifi_ssid, state_value.wifi_ssid) != 0 ||
                               strcmp(g_state.wifi_ip, state_value.wifi_ip) != 0;
   const bool page_changed = g_section == Section::connectivity &&
@@ -654,7 +660,9 @@ Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
   if (g_wifi_edit != WifiEdit::none) return handle_wifi_keyboard(x, y);
   if (g_edit != EditField::none) return handle_keypad(x, y);
-  if (hit(x, y, 1090, 13, 162, 46)) {
+  if (audio_header::mute_hit(x, y))
+    return {ActionKind::sound_changed, g_state.sound_default ? 0 : 1};
+  if (hit(x, y, 1040, 13, 116, 46)) {
     g_active = false;
     return {ActionKind::close, 0};
   }

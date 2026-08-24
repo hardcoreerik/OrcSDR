@@ -1408,6 +1408,7 @@ bool settings_wifi_external_antenna = false;
 bool wifi_connected = false;
 bool wifi_connecting = false;
 bool wifi_radio_paused = false;
+uint32_t wifi_radio_resume_due_ms = 0;
 bool radio_io_resume_pending = false;
 bool wifi_save_after_connect = false;
 uint32_t wifi_connect_started_ms = 0;
@@ -1478,6 +1479,7 @@ std::atomic<uint8_t> rtl_live_volume{kRtlVolumeDefault};
 std::atomic<bool> rtl_audio_user_enabled{true};
 std::atomic<bool> rtl_audio_enabled{false};
 std::atomic<bool> rtl_speaker_start_allowed{false};
+std::atomic<bool> rtl_speaker_codec_primed{false};
 enum class BootInitStage : uint8_t {
   idle,
   usb_power_settle,
@@ -1642,6 +1644,8 @@ void publish_adsb_snapshot(uint32_t now) {
   static uint32_t last_sample_messages = 0;
   static uint32_t last_state_revision = UINT32_MAX;
   static float published_rate = -1;
+  static bool last_faa_aircraft_installed = false;
+  static bool last_faa_aviation_installed = false;
   static uint32_t ui_revision = 0;
   if (now - last_sample_ms < 1000u) return;
 
@@ -1649,9 +1653,14 @@ void publish_adsb_snapshot(uint32_t now) {
   const uint32_t state_revision = adsb_track_revision.load(std::memory_order_acquire);
   const float message_rate = (messages - last_sample_messages) * 1000.0f /
                              static_cast<float>(now - last_sample_ms);
+  const auto catalog_state = orcsdr::catalog::state();
+  const bool faa_aircraft_installed = catalog_state.packs[0].installed;
+  const bool faa_aviation_installed = catalog_state.packs[1].installed;
   last_sample_messages = messages;
   last_sample_ms = now;
-  if (state_revision == last_state_revision && fabsf(message_rate - published_rate) < 0.05f)
+  if (state_revision == last_state_revision && fabsf(message_rate - published_rate) < 0.05f &&
+      faa_aircraft_installed == last_faa_aircraft_installed &&
+      faa_aviation_installed == last_faa_aviation_installed)
     return;
 
   orcsdr::adsb::Snapshot snapshot{};
@@ -1688,9 +1697,14 @@ void publish_adsb_snapshot(uint32_t now) {
   snapshot.effective_sps = adsb_metrics.effective_sps;
   snapshot.usb_overruns = adsb_metrics.overruns;
   snapshot.consumer_drops = adsb_metrics.consumer_drops;
+  snapshot.faa_aircraft_installed = faa_aircraft_installed;
+  snapshot.faa_aviation_installed = faa_aviation_installed;
+  snapshot.sound_enabled = rtl_audio_user_enabled.load(std::memory_order_relaxed);
   snapshot.revision = ++ui_revision;
   last_state_revision = state_revision;
   published_rate = message_rate;
+  last_faa_aircraft_installed = faa_aircraft_installed;
+  last_faa_aviation_installed = faa_aviation_installed;
   orcsdr::adsb::set_live_snapshot(snapshot);
 }
 
@@ -2488,11 +2502,20 @@ bool restart_rtl_speaker_i2s(uint8_t volume) {
 }
 
 bool ensure_speaker_running(uint8_t volume) {
-  if (!rtl_audio_enabled.load(std::memory_order_acquire)) return false;
   if (!rtl_speaker_start_allowed.load(std::memory_order_acquire)) return false;
+  if (!rtl_speaker_codec_primed.load(std::memory_order_acquire)) {
+    if (!M5.Speaker.isRunning() && !restart_rtl_speaker_i2s(volume)) return false;
+    delay(10);
+    M5.Speaker.end();
+    delay(10);
+    g_speaker_retry_ms = 0;
+    if (!restart_rtl_speaker_i2s(volume)) return false;
+    rtl_speaker_codec_primed.store(true, std::memory_order_release);
+    Serial.println("RTL_SPEAKER_CODEC_PRIME ok");
+  }
   apply_speaker_volume(volume);
-  if (M5.Speaker.isRunning()) return true;
-  return restart_rtl_speaker_i2s(volume);
+  if (!M5.Speaker.isRunning()) return restart_rtl_speaker_i2s(volume);
+  return true;
 }
 
 void allow_boot_speaker() {
@@ -2500,8 +2523,7 @@ void allow_boot_speaker() {
     Serial.println("BOOT_STAGE speaker_start");
     begin_power_monitor("speaker_start");
   }
-  if (rtl_audio_enabled.load(std::memory_order_acquire))
-    (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
+  (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
 }
 
 bool rtl_band_has_audio(RtlBand band) {
@@ -2513,9 +2535,6 @@ void sync_rtl_audio_for_band(RtlBand band) {
                        rtl_band_has_audio(band);
   rtl_audio_enabled.store(enabled, std::memory_order_release);
   rtl_audio_play_count = 0;
-  // stop() only clears channels. end() waits for spk_task and froze Settings
-  // leave / touch for seconds. Silent bands just stop playback.
-  if (!enabled) M5.Speaker.stop();
 }
 
 void resume_rtl_speaker() {
@@ -2524,14 +2543,8 @@ void resume_rtl_speaker() {
     Serial.println("BOOT_STAGE speaker_start");
     begin_power_monitor("speaker_start");
   }
-  if (!rtl_audio_enabled.load(std::memory_order_acquire)) {
-    Serial.println("RTL_SPEAKER_RESUME skipped sound_off");
-    return;
-  }
   const uint8_t volume = rtl_live_volume.load(std::memory_order_acquire);
-  apply_speaker_volume(volume);
-  bool ok = true;
-  if (!M5.Speaker.isRunning()) ok = restart_rtl_speaker_i2s(volume);
+  const bool ok = ensure_speaker_running(volume);
   Serial.printf("RTL_SPEAKER_RESUME ok=%d running=%d playing=%u volume=%u\n",
                 ok ? 1 : 0, M5.Speaker.isRunning() ? 1 : 0,
                 static_cast<unsigned>(M5.Speaker.getPlayingChannels()), volume);
@@ -2549,9 +2562,7 @@ void set_rtl_audio_user_enabled(bool enabled) {
   preferences.putBool("set_sound", enabled);
   g_speaker_retry_ms = 0;
   sync_rtl_audio_for_band(rtl_ui_band);
-  if (rtl_audio_enabled.load(std::memory_order_acquire)) {
-    (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
-  }
+  (void)ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire));
   schedule_rtl_audio_settings_persist();
 }
 
@@ -4787,6 +4798,8 @@ void update_signal_level_from_iq(const uint8_t* iq, size_t bytes) {
 
 void draw_global_settings_gear() {
   orcsdr::audio_header::draw_settings_button();
+  orcsdr::audio_header::draw_mute_button(
+      rtl_audio_user_enabled.load(std::memory_order_acquire));
 }
 
 void draw_cb_dashboard(bool static_panel) {
@@ -6591,8 +6604,6 @@ static void rtl_driver_app_task(void *) {
       rtl_ui_active.store(true, std::memory_order_release);
       if (!orcsdr::home::active() && band != RtlBand::adsb)
         rtl_screen_transition_requested.store(true, std::memory_order_release);
-      if (!rtl_band_has_audio(band)) M5.Speaker.stop();
-
       rtl_sdr_v4_esp_stream_config_t st;
       rtl_sdr_v4_esp_stream_config_default(&st);
       st.preset = RTL_SDR_V4_ESP_PRESET_CUSTOM_HZ;
@@ -7163,6 +7174,7 @@ void start_wifi_inventory() {
   if (!wifi_station_ready) initialize_wifi();
   if (!wifi_station_ready) return;
   if (wifi_scan_running) return;
+  wifi_radio_resume_due_ms = 0;
   if (!pause_radio_for_wifi()) return;
   wifi_scan_result_count = 0;
   wifi_scan_started_ms = millis();
@@ -7181,6 +7193,7 @@ void start_wifi_connection() {
   if (!settings_wifi_power_enabled) return;
   if (!wifi_station_ready) initialize_wifi();
   if (!wifi_station_ready || !wifi_ssid[0]) return;
+  wifi_radio_resume_due_ms = 0;
   if (!pause_radio_for_wifi()) return;
   wifi_scan_running = false;
   wifi_network_count = -1;
@@ -7214,6 +7227,7 @@ void stop_wifi() {
   wifi_connected = false;
   wifi_connecting = false;
   wifi_scan_running = false;
+  wifi_radio_resume_due_ms = 0;
   resume_radio_after_wifi();
   strlcpy(wifi_status_message, "Wi-Fi off", sizeof(wifi_status_message));
   Serial.println("RTL_WIFI_OFF");
@@ -7277,6 +7291,12 @@ void poll_wifi() {
   if (!wifi_scan_running && !wifi_connecting && !wifi_connected) return;
   static uint32_t last_wifi_status_ms = 0;
   const uint32_t now_ms = millis();
+  if (wifi_radio_resume_due_ms != 0 &&
+      static_cast<int32_t>(now_ms - wifi_radio_resume_due_ms) >= 0) {
+    wifi_radio_resume_due_ms = 0;
+    resume_radio_after_wifi();
+    Serial.println("RTL_WIFI_RADIO_RESUME connected");
+  }
   const uint32_t status_interval_ms =
       (wifi_connected && !wifi_scan_running && !wifi_connecting) ? 3000u : 250u;
   if (now_ms - last_wifi_status_ms < status_interval_ms) return;
@@ -7306,11 +7326,9 @@ void poll_wifi() {
   const bool connected = orcsdr::wifi::connected();
   if (wifi_connecting && connected) {
     wifi_connecting = false;
-    // The C6 association has completed, but immediately relaunching USB RTL
-    // can still reset the P4 under the constrained SDIO/DMA load. Keep the
-    // receiver paused for the connected session; catalog work owns this same
-    // exclusive I/O window and radio actions can resume it deliberately.
-    if (wifi_radio_paused) Serial.println("RTL_WIFI_RADIO_PAUSED connected");
+    // Let the C6/SDIO association settle before relaunching USB RTL.
+    wifi_radio_resume_due_ms = millis() + 1000u;
+    Serial.println("RTL_WIFI_RADIO_RESUME_PENDING connected");
     if (wifi_save_after_connect) {
       int existing = -1;
       for (uint8_t i = 0; i < wifi_profile_count; ++i)
@@ -7562,6 +7580,7 @@ orcsdr::lora::Snapshot lora_dashboard_snapshot() {
   snapshot.driver_ready = rtl_device_ready();
 #endif
   snapshot.wifi_connected = orcsdr::wifi::connected();
+  snapshot.sound_enabled = rtl_audio_user_enabled.load(std::memory_order_relaxed);
   snapshot.sd_logging = lora_log_ready.load(std::memory_order_relaxed);
   snapshot.survey_active = lora_survey_active;
   snapshot.survey_progress = lora_survey_span;
@@ -8534,6 +8553,7 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
     case orcsdr::settings::ActionKind::sound_changed:
       settings_sound_default = action.value != 0;
       set_rtl_audio_user_enabled(settings_sound_default);
+      update_global_settings();
       break;
     case orcsdr::settings::ActionKind::auto_start_changed:
       settings_auto_start_reception = action.value != 0;
@@ -9240,14 +9260,14 @@ void request_hot_retune(uint32_t frequency_hz) {
 // stalled stream or Hosted RPC cannot freeze every button.
 void poll_sdr_touch(bool from_stream) {
   if (ui_documentation_mode) return;
-  if (orcsdr::home::active() || orcsdr::settings::active()) return;
-  if (rtl_ui_band == RtlBand::adsb && orcsdr::screens::owns(orcsdr::screens::Id::adsb) &&
-      orcsdr::adsb::active())
-    return;
+  if (orcsdr::screens::transitioning()) return;
+  const auto active_screen = orcsdr::screens::status().active;
   const bool dashboard_on_loop =
-      (rtl_ui_band == RtlBand::fm && orcsdr::fm::active()) ||
-      (rtl_ui_band == RtlBand::p25 && orcsdr::screens::owns(orcsdr::screens::Id::p25) &&
-       orcsdr::p25::active());
+      active_screen == orcsdr::screens::Id::home ||
+      active_screen == orcsdr::screens::Id::settings ||
+      active_screen == orcsdr::screens::Id::adsb ||
+      active_screen == orcsdr::screens::Id::fm ||
+      active_screen == orcsdr::screens::Id::p25;
   if (from_stream && dashboard_on_loop) return;
   if (!from_stream && !dashboard_on_loop) return;
   static uint32_t last_touch_poll_ms = 0;
@@ -9437,6 +9457,13 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     show_home();
     return;
   }
+  if (orcsdr::audio_header::mute_hit(x, y)) {
+    const bool enabled = !rtl_audio_user_enabled.load(std::memory_order_acquire);
+    set_rtl_audio_user_enabled(enabled);
+    orcsdr::audio_header::draw_mute_button(enabled);
+    Serial.printf("RTL_SOUND %s\n", enabled ? "on" : "off");
+    return;
+  }
   if (orcsdr::audio_header::settings_hit(x, y)) {
     open_global_settings(rtl_ui_band == RtlBand::adsb
                              ? orcsdr::settings::Section::location_adsb
@@ -9450,6 +9477,8 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     if (action == orcsdr::adsb::Action::settings_changed) {
       adsb_settings = orcsdr::adsb::settings();
       adsb_settings_persist_pending.store(true, std::memory_order_release);
+    } else if (action == orcsdr::adsb::Action::open_data_settings) {
+      open_global_settings(orcsdr::settings::Section::data_maps);
     } else if (action == orcsdr::adsb::Action::exit) {
       show_home();
     } else if (action == orcsdr::adsb::Action::atc_listen) {
@@ -10027,9 +10056,11 @@ bool ui_doc_render(const char* screen_id, bool demo) {
     auto settings = adsb_settings;
     if (demo) {
       settings.location_configured = true;
-      settings.latitude_e7 = 455230640;
-      settings.longitude_e7 = -1226764830;
+      settings.latitude_e7 = 440522000;
+      settings.longitude_e7 = -1230867000;
       settings.radar_range_nm = 25;
+      settings.atc_frequency_hz = 118900000;
+      strlcpy(settings.atc_label, "EUG TWR", sizeof(settings.atc_label));
     }
     orcsdr::adsb::show_documentation_view(view, settings, demo);
   } else if (strncmp(screen_id, "lora.", 5) == 0) {
@@ -10295,6 +10326,7 @@ void run_ui_regression(bool workflow) {
   const bool home_ok = orcsdr::home::self_check();
   bool workflow_ok = true;
   bool transitioned = !workflow;
+  bool home_font_ok = !workflow;
   if (workflow) {
     const bool supported_screen = before.screen == orcsdr::screens::Id::home ||
                                   before.screen == orcsdr::screens::Id::fm ||
@@ -10307,7 +10339,9 @@ void run_ui_regression(bool workflow) {
                     orcsdr::screens::name(before.screen));
       return;
     }
+    M5.Display.setFont(&fonts::DejaVu18);
     show_home();
+    home_font_ok = M5.Display.getFont() == &fonts::Font0;
     draw_home_dashboard();
     const bool dashboard_band = before.band == RtlBand::fm || before.band == RtlBand::p25 ||
                                 before.band == RtlBand::adsb || before.band == RtlBand::lora;
@@ -10322,13 +10356,15 @@ void run_ui_regression(bool workflow) {
     }
   }
   const bool restored = ui_regression_restored(before);
-  const bool pass = radio_ui_ok && screen_ok && header_ok && home_ok && workflow_ok && transitioned && restored;
+  const bool pass = radio_ui_ok && screen_ok && header_ok && home_ok && home_font_ok &&
+                    workflow_ok && transitioned && restored;
   Serial.printf(
       "RTL_UI_REGRESSION_RESULT mode=%s pass=%d radio_ui=%d screen=%d header=%d home=%d "
-      "workflow=%d transitioned=%d restored=%d active=%s band=%s frequency_hz=%u\n",
+      "home_font=%d workflow=%d transitioned=%d restored=%d active=%s band=%s frequency_hz=%u\n",
       workflow ? "RUN" : "CHECK", pass ? 1 : 0, radio_ui_ok ? 1 : 0,
-      screen_ok ? 1 : 0, header_ok ? 1 : 0, home_ok ? 1 : 0, workflow_ok ? 1 : 0,
-      transitioned ? 1 : 0, restored ? 1 : 0, orcsdr::screens::name(orcsdr::screens::status().active),
+      screen_ok ? 1 : 0, header_ok ? 1 : 0, home_ok ? 1 : 0, home_font_ok ? 1 : 0,
+      workflow_ok ? 1 : 0, transitioned ? 1 : 0, restored ? 1 : 0,
+      orcsdr::screens::name(orcsdr::screens::status().active),
       rtl_band_name(rtl_ui_band), static_cast<unsigned>(rtl_ui_frequency_hz));
 }
 
@@ -10428,12 +10464,14 @@ void process_command(char* command) {
     }
   }
   if (strcmp(command, "RTL_UI STATUS") == 0) {
-    Serial.printf("RTL_UI_STATUS screen=%s band=%s frequency_hz=%u settings=%d fm=%d p25=%d adsb=%d lora=%d\n",
+    Serial.printf("RTL_UI_STATUS screen=%s band=%s frequency_hz=%u settings=%d fm=%d p25=%d "
+                  "adsb=%d lora=%d home_font=%d\n",
                   orcsdr::screens::name(orcsdr::screens::status().active),
                   rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz,
                   orcsdr::settings::active() ? 1 : 0, orcsdr::fm::active() ? 1 : 0,
                   orcsdr::p25::active() ? 1 : 0, orcsdr::adsb::active() ? 1 : 0,
-                  orcsdr::lora::active() ? 1 : 0);
+                  orcsdr::lora::active() ? 1 : 0,
+                  M5.Display.getFont() == &fonts::Font0 ? 1 : 0);
     return;
   }
   if (strcmp(command, "RTL_SERIAL VERBOSITY") == 0) {
@@ -11863,6 +11901,11 @@ void setup() {
   }
   apply_wifi_antenna();
   if (!settings_wifi_power_enabled) stop_wifi();
+  if (ensure_tab5_sd()) {
+    orcsdr::catalog::begin(g_sd_fs, sd_total_bytes() - orcsdr::storage::used_bytes());
+    (void)orcsdr::offline_map::load(g_sd_fs);
+    refresh_adsb_atc_preset();
+  }
   if (settings_wifi_power_enabled && settings_wifi_start_at_boot && wifi_station_ready &&
       wifi_profile_count) {
     select_wifi_profile(0);
@@ -12222,13 +12265,17 @@ void loop() {
       draw_spectrum(nullptr, 0);
     }
   } else if (adsb_ui && orcsdr::screens::owns(orcsdr::screens::Id::adsb)) {
-    enrich_one_adsb_track();
-    publish_adsb_snapshot(millis());
-    refresh_active_screen();
     const auto touch = M5.Touch.getDetail(0);
     const bool pressed = touch.isPressed() || touch.wasPressed();
     if (pressed && !was_pressed) handle_sdr_touch(touch.x, touch.y);
     was_pressed = pressed;
+    // Navigation wins over a pending live-aircraft repaint. Drawing ADS-B and
+    // Home back-to-back in one loop can overlap M5GFX display transactions.
+    if (orcsdr::adsb::active() && orcsdr::screens::owns(orcsdr::screens::Id::adsb)) {
+      enrich_one_adsb_track();
+      publish_adsb_snapshot(millis());
+      refresh_active_screen();
+    }
   } else if (fm_ui || p25_ui) {
     poll_sdr_touch(false);
   } else if (!radio_ui) {

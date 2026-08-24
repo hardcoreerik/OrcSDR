@@ -60,6 +60,7 @@ idf_component_register(
         usb
     EMBED_FILES
         "orc_badge_104.png"
+        "orc_badge_104.rgb565"
         "../ui/web_console.html"
     EMBED_TXTFILES
         "catalog_public_key.pem"

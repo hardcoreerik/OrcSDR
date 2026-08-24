@@ -21,6 +21,7 @@ struct Status {
 // surface once, then calls finish_transition().
 void begin_transition(Id next, uint32_t now_ms, bool remember_return = false);
 void finish_transition();
+bool transitioning();
 Id close_settings(uint32_t now_ms);
 bool owns(Id id);
 // True while id is the selected surface, including its one-time transition draw.

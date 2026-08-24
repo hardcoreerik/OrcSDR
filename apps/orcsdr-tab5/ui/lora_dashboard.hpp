@@ -63,6 +63,7 @@ struct Snapshot {
   bool running = false;
   bool driver_ready = false;
   bool wifi_connected = false;
+  bool sound_enabled = true;
   bool sd_logging = false;
   bool survey_active = false;
   bool native_decoder_ready = false;

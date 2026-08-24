@@ -23,6 +23,8 @@ void draw(const Control& control, uint8_t volume, bool sound_enabled,
           int32_t battery_percent);
 void draw_home_button();
 bool home_hit(int32_t x, int32_t y);
+void draw_mute_button(bool sound_enabled);
+bool mute_hit(int32_t x, int32_t y);
 void draw_settings_button();
 bool settings_hit(int32_t x, int32_t y);
 Action handle_touch(Control& control, int32_t x, int32_t y, uint32_t now_ms);

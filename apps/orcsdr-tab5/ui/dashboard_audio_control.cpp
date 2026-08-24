@@ -25,13 +25,17 @@ constexpr int kButtonY = 34;
 constexpr int kButtonH = 64;
 constexpr int kButtonW = 74;
 constexpr int kButtonX[] = {872, 950, 1028};
-constexpr int kHomeX = 1116;
+constexpr int kHomeX = 1114;
 constexpr int kHomeY = 8;
-constexpr int kHomeW = 58;
+constexpr int kHomeW = 50;
 constexpr int kHomeH = 58;
-constexpr int kSettingsX = 1211;
+constexpr int kMuteX = 1168;
+constexpr int kMuteY = 8;
+constexpr int kMuteW = 50;
+constexpr int kMuteH = 58;
+constexpr int kSettingsX = 1222;
 constexpr int kSettingsY = 8;
-constexpr int kSettingsW = 58;
+constexpr int kSettingsW = 50;
 constexpr int kSettingsH = 58;
 constexpr uint32_t kTrayTimeoutMs = 4000;
 
@@ -110,6 +114,18 @@ bool home_hit(int32_t x, int32_t y) {
   return hit(x, y, kHomeX, kHomeY, kHomeW, kHomeH);
 }
 
+void draw_mute_button(bool sound_enabled) {
+  M5.Display.fillRoundRect(kMuteX, kMuteY, kMuteW, kMuteH, 8, kPanel);
+  M5.Display.drawRoundRect(kMuteX, kMuteY, kMuteW, kMuteH, 8,
+                           sound_enabled ? kGreen : kMuted);
+  draw_speaker(kMuteX + 13, kMuteY + kMuteH / 2,
+               sound_enabled ? kGreen : kMuted, sound_enabled);
+}
+
+bool mute_hit(int32_t x, int32_t y) {
+  return hit(x, y, kMuteX, kMuteY, kMuteW, kMuteH);
+}
+
 void draw_settings_button() {
   constexpr int cx = kSettingsX + kSettingsW / 2;
   constexpr int cy = kSettingsY + kSettingsH / 2;
@@ -163,13 +179,16 @@ bool self_check() {
   if (handle_touch(control, 900, 60, 200) != Action::volume_down) return false;
   if (handle_touch(control, 980, 60, 300) != Action::sound_toggle) return false;
   if (handle_touch(control, 1060, 60, 400) != Action::volume_up) return false;
-  if (handle_touch(control, 1220, 60, 500) != Action::none) return false;
+  if (handle_touch(control, kSettingsX + 1, kSettingsY + 1, 500) != Action::none)
+    return false;
   if (service_timeout(control, 4399) || !service_timeout(control, 4400)) return false;
   reset(control);
   if (handle_touch(control, 800, 60, 0) != Action::none) return false;
   return kRegionX + kRegionW <= kHomeX && kButtonX[2] + kButtonW <= kHomeX &&
-         kHomeX + kHomeW <= kSettingsX && home_hit(kHomeX + 1, kHomeY + 1) &&
+         kHomeX + kHomeW <= kMuteX && kMuteX + kMuteW <= kSettingsX &&
+         home_hit(kHomeX + 1, kHomeY + 1) &&
          !home_hit(kHomeX - 1, kHomeY) &&
+         mute_hit(kMuteX + 1, kMuteY + 1) && !mute_hit(kMuteX - 1, kMuteY) &&
          settings_hit(kSettingsX + 1, kSettingsY + 1) &&
          !settings_hit(kSettingsX - 1, kSettingsY);
 }
