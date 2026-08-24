@@ -59,15 +59,15 @@ struct DisplayAircraft {
 
 constexpr DisplayAircraft kDemoAircraft[] = {
     {0xA1B2C3, "DAL123", "N123DA", "A320", "DELTA AIR LINES", 34000, 452, 45, 1280,
-     23.0f, 45, 37.7749f, -122.4194f, -45.0f, true, true, true, true, true, false},
+     23.0f, 45, 44.3232f, -122.7097f, -45.0f, true, true, true, true, true, false},
     {0xA4B5C6, "UAL456", "N456UA", "B738", "UNITED AIRLINES", 37000, 468, 310, -320,
-     31.0f, 310, 37.9550f, -122.7200f, -50.0f, true, true, true, true, true, false},
+     31.0f, 310, 44.3844f, -123.6370f, -50.0f, true, true, true, true, true, false},
     {0xA7B8C9, "AAL789", "N789AA", "A321", "AMERICAN AIRLINES", 28000, 425, 278, 640,
-     18.0f, 278, 37.7200f, -122.7300f, -53.0f, true, true, true, true, true, false},
+     18.0f, 278, 44.0940f, -123.4997f, -53.0f, true, true, true, true, true, false},
     {0xAA11BB, "SWA234", "N234SW", "B737", "SOUTHWEST AIRLINES", 31000, 410, 122, 0,
-     45.0f, 122, 37.2400f, -121.9100f, -58.0f, true, true, true, true, true, false},
+     45.0f, 122, 43.6547f, -122.2027f, -58.0f, true, true, true, true, true, false},
     {0xCC22DD, "N12345", "N12345", "C172", "PRIVATE", 12500, 250, 196, -160,
-     12.0f, 196, 37.5800f, -122.4100f, -61.0f, true, true, true, true, true, false},
+     12.0f, 196, 43.8600f, -123.1634f, -61.0f, true, true, true, true, true, false},
     {0xEE33FF, "FFT567", "N567FF", "A20N", "FRONTIER AIRLINES", 41000, 490, 70, 320,
      67.0f, 70, 38.2100f, -121.6000f, -64.0f, true, true, true, true, false, false},
 };
@@ -298,7 +298,8 @@ void draw_header() {
   M5.Display.fillRect(0, 0, 1280, kHeaderH, kBg);
   M5.Display.drawFastHLine(20, kHeaderH - 1, 1240, kBorder);
   const size_t badge_size = static_cast<size_t>(orc_badge_end - orc_badge_start);
-  if (!M5.Display.drawPng(orc_badge_start, badge_size, 12, 8, 58, 58)) {
+  if (!M5.Display.drawPng(orc_badge_start, badge_size, 12, 8, 58, 58,
+                          0, 0, 58.0f / 104.0f)) {
     M5.Display.drawRoundRect(12, 8, 58, 58, 8, kGreen);
     text("O", 41, 37, kGreen, 3);
   }
@@ -310,14 +311,14 @@ void draw_header() {
   snprintf(count, sizeof(count), "%u AIRCRAFT", static_cast<unsigned>(displayed_aircraft_count()));
   text(count, 337, 36, TFT_WHITE, 2, middle_left);
   M5.Display.drawFastVLine(510, 12, 52, kBorder);
-  text("MSG RATE", 545, 36, kMuted, 1, middle_left);
-  char rate[20];
-  snprintf(rate, sizeof(rate), "%.1f/s", displayed_message_rate());
-  text(rate, 655, 36, kGreen, 2, middle_left);
-  button(g_demo ? "DEMO" : g_atc_listening ? "ATC" : (g_live ? "LIVE" : "WAIT"),
-         755, 14, 92, 44,
-         g_demo ? TFT_MAROON : g_atc_listening ? TFT_DARKCYAN
-                                                  : (g_live ? TFT_DARKGREEN : TFT_DARKGREY));
+  if (!g_demo) {
+    text("MSG RATE", 545, 36, kMuted, 1, middle_left);
+    char rate[20];
+    snprintf(rate, sizeof(rate), "%.1f/s", displayed_message_rate());
+    text(rate, 655, 36, kGreen, 2, middle_left);
+    button(g_atc_listening ? "ATC" : (g_live ? "LIVE" : "WAIT"), 755, 14, 92, 44,
+           g_atc_listening ? TFT_DARKCYAN : (g_live ? TFT_DARKGREEN : TFT_DARKGREY));
+  }
   text("USB", 905, 29, TFT_WHITE, 1, middle_left);
   text("CONNECTED", 905, 51, kBlue, 1, middle_left);
   audio_header::draw_home_button();
@@ -686,7 +687,11 @@ void draw_stats() {
   text("MESSAGE RATE", 448, 116, kBlue, 1, middle_left);
   snprintf(value, sizeof(value), "%.1f msg/sec", displayed_message_rate());
   text(value, 448, 157, TFT_WHITE, 3, middle_left);
-  if (g_history_count > 1) {
+  if (g_demo) {
+    constexpr int demo[] = {270, 212, 235, 280, 205, 235, 270, 190};
+    for (int i = 1; i < 8; ++i)
+      M5.Display.drawLine(450 + (i - 1) * 50, demo[i - 1], 450 + i * 50, demo[i], kBlue);
+  } else if (g_history_count > 1) {
     const float max_rate = std::max(1.0f, *std::max_element(g_rate_history,
         g_rate_history + g_history_count));
     for (size_t i = 1; i < g_history_count; ++i) {
@@ -696,18 +701,13 @@ void draw_stats() {
       const int y2 = 285 - static_cast<int>(g_rate_history[i] * 90 / max_rate);
       M5.Display.drawLine(x1, y1, x2, y2, kBlue);
     }
-  } else if (g_demo) {
-    constexpr int demo[] = {270, 212, 235, 280, 205, 235, 270, 190};
-    for (int i = 1; i < 8; ++i)
-      M5.Display.drawLine(450 + (i - 1) * 50, demo[i - 1], 450 + i * 50, demo[i], kBlue);
   }
   card(838, 88, 428, 226);
   text("MODE-S ACTIVITY", 860, 116, kBlue, 1, middle_left);
-  const size_t activity_count = g_history_count ? g_history_count : g_demo ? 10 : 0;
+  const size_t activity_count = g_demo ? 10 : g_history_count;
   for (size_t i = 0; i < activity_count; ++i) {
-    const int height = g_history_count
-        ? std::clamp(static_cast<int>((g_signal_history[i] + 100.0f) * 1.2f), 10, 100)
-        : 35 + static_cast<int>((i * 37) % 75);
+    const int height = g_demo ? 35 + static_cast<int>((i * 37) % 75)
+                              : std::clamp(static_cast<int>((g_signal_history[i] + 100.0f) * 1.2f), 10, 100);
     M5.Display.drawRect(866 + static_cast<int>(i) * 35, 282 - height,
                         20, height, kBlue);
   }

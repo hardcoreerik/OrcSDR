@@ -10029,9 +10029,11 @@ bool ui_doc_render(const char* screen_id, bool demo) {
     auto settings = adsb_settings;
     if (demo) {
       settings.location_configured = true;
-      settings.latitude_e7 = 455230640;
-      settings.longitude_e7 = -1226764830;
+      settings.latitude_e7 = 440522000;
+      settings.longitude_e7 = -1230867000;
       settings.radar_range_nm = 25;
+      settings.atc_frequency_hz = 118900000;
+      strlcpy(settings.atc_label, "EUG TWR", sizeof(settings.atc_label));
     }
     orcsdr::adsb::show_documentation_view(view, settings, demo);
   } else if (strncmp(screen_id, "lora.", 5) == 0) {
@@ -11865,6 +11867,11 @@ void setup() {
   }
   apply_wifi_antenna();
   if (!settings_wifi_power_enabled) stop_wifi();
+  if (ensure_tab5_sd()) {
+    orcsdr::catalog::begin(g_sd_fs, sd_total_bytes() - orcsdr::storage::used_bytes());
+    (void)orcsdr::offline_map::load(g_sd_fs);
+    refresh_adsb_atc_preset();
+  }
   if (settings_wifi_power_enabled && settings_wifi_start_at_boot && wifi_station_ready &&
       wifi_profile_count) {
     select_wifi_profile(0);
