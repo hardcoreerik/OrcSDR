@@ -10299,6 +10299,7 @@ void run_ui_regression(bool workflow) {
   const bool home_ok = orcsdr::home::self_check();
   bool workflow_ok = true;
   bool transitioned = !workflow;
+  bool home_font_ok = !workflow;
   if (workflow) {
     const bool supported_screen = before.screen == orcsdr::screens::Id::home ||
                                   before.screen == orcsdr::screens::Id::fm ||
@@ -10311,7 +10312,9 @@ void run_ui_regression(bool workflow) {
                     orcsdr::screens::name(before.screen));
       return;
     }
+    M5.Display.setFont(&fonts::DejaVu18);
     show_home();
+    home_font_ok = M5.Display.getFont() == &fonts::Font0;
     draw_home_dashboard();
     const bool dashboard_band = before.band == RtlBand::fm || before.band == RtlBand::p25 ||
                                 before.band == RtlBand::adsb || before.band == RtlBand::lora;
@@ -10326,13 +10329,15 @@ void run_ui_regression(bool workflow) {
     }
   }
   const bool restored = ui_regression_restored(before);
-  const bool pass = radio_ui_ok && screen_ok && header_ok && home_ok && workflow_ok && transitioned && restored;
+  const bool pass = radio_ui_ok && screen_ok && header_ok && home_ok && home_font_ok &&
+                    workflow_ok && transitioned && restored;
   Serial.printf(
       "RTL_UI_REGRESSION_RESULT mode=%s pass=%d radio_ui=%d screen=%d header=%d home=%d "
-      "workflow=%d transitioned=%d restored=%d active=%s band=%s frequency_hz=%u\n",
+      "home_font=%d workflow=%d transitioned=%d restored=%d active=%s band=%s frequency_hz=%u\n",
       workflow ? "RUN" : "CHECK", pass ? 1 : 0, radio_ui_ok ? 1 : 0,
-      screen_ok ? 1 : 0, header_ok ? 1 : 0, home_ok ? 1 : 0, workflow_ok ? 1 : 0,
-      transitioned ? 1 : 0, restored ? 1 : 0, orcsdr::screens::name(orcsdr::screens::status().active),
+      screen_ok ? 1 : 0, header_ok ? 1 : 0, home_ok ? 1 : 0, home_font_ok ? 1 : 0,
+      workflow_ok ? 1 : 0, transitioned ? 1 : 0, restored ? 1 : 0,
+      orcsdr::screens::name(orcsdr::screens::status().active),
       rtl_band_name(rtl_ui_band), static_cast<unsigned>(rtl_ui_frequency_hz));
 }
 
@@ -10432,12 +10437,14 @@ void process_command(char* command) {
     }
   }
   if (strcmp(command, "RTL_UI STATUS") == 0) {
-    Serial.printf("RTL_UI_STATUS screen=%s band=%s frequency_hz=%u settings=%d fm=%d p25=%d adsb=%d lora=%d\n",
+    Serial.printf("RTL_UI_STATUS screen=%s band=%s frequency_hz=%u settings=%d fm=%d p25=%d "
+                  "adsb=%d lora=%d home_font=%d\n",
                   orcsdr::screens::name(orcsdr::screens::status().active),
                   rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz,
                   orcsdr::settings::active() ? 1 : 0, orcsdr::fm::active() ? 1 : 0,
                   orcsdr::p25::active() ? 1 : 0, orcsdr::adsb::active() ? 1 : 0,
-                  orcsdr::lora::active() ? 1 : 0);
+                  orcsdr::lora::active() ? 1 : 0,
+                  M5.Display.getFont() == &fonts::Font0 ? 1 : 0);
     return;
   }
   if (strcmp(command, "RTL_SERIAL VERBOSITY") == 0) {

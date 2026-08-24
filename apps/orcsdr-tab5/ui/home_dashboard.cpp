@@ -431,6 +431,8 @@ void draw_browser() {
 }
 
 void draw_all() {
+  // Dashboards may select custom M5GFX fonts; Home owns the built-in font.
+  M5.Display.setFont(nullptr);
   M5.Display.fillScreen(TFT_BLACK);
   M5.Display.drawRoundRect(10, 10, 1260, 700, 14, kCyan);
   draw_header();

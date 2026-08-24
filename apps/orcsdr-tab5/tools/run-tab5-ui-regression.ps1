@@ -126,7 +126,7 @@ function Connect-Authenticated {
 
 function Get-UiState {
   $line = Send-And-Wait 'RTL_UI STATUS' '^RTL_UI_STATUS '
-  if ($line -notmatch 'screen=(\S+) band=(\S+) frequency_hz=(\d+) settings=([01]) fm=([01]) p25=([01]) adsb=([01]) lora=([01])') {
+  if ($line -notmatch 'screen=(\S+) band=(\S+) frequency_hz=(\d+) settings=([01]) fm=([01]) p25=([01]) adsb=([01]) lora=([01]) home_font=([01])') {
     throw "Malformed UI status: $line"
   }
   return [pscustomobject]@{
@@ -134,6 +134,7 @@ function Get-UiState {
     Band = $Matches[2].ToUpperInvariant()
     Frequency = [uint32]$Matches[3]
     Active = @([int]$Matches[4], [int]$Matches[5], [int]$Matches[6], [int]$Matches[7], [int]$Matches[8])
+    HomeFont = [int]$Matches[9]
   }
 }
 
@@ -156,6 +157,7 @@ function Wait-UiState([string]$Screen, [string]$Band) {
     $script:serial.WriteLine('PING')
     $state = Get-UiState
     if ($state.Screen -eq $Screen -and $state.Band -eq $Band -and
+        ($Screen -ne 'HOME' -or $state.HomeFont -eq 1) -and
         (Test-ExclusiveScreen $state $Screen)) {
       return $state
     }
