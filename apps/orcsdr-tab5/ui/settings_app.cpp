@@ -60,7 +60,7 @@ void text(const char* value, int x, int y, uint16_t color, uint8_t size = 2,
           textdatum_t datum = middle_left) {
   M5.Display.setTextDatum(datum);
   M5.Display.setTextSize(std::max(size, kSettingsMinTextSize));
-  M5.Display.setTextColor(color, kBg);
+  M5.Display.setTextColor(color);
   M5.Display.drawString(value, x, y);
 }
 
@@ -131,14 +131,17 @@ void draw_connectivity() {
   button("ADD HIDDEN", 520, 180, 210, 46, TFT_NAVY);
   button(g_state.wifi_power_enabled ? "POWER OFF" : "POWER ON", 750, 180, 170, 46,
          g_state.wifi_power_enabled ? TFT_MAROON : TFT_DARKGREEN);
-  text("WI-FI ANTENNA", 330, 245, kMuted, 2);
+  text("CONNECT ON BOOT", 330, 251, kMuted, 2);
+  button(g_state.wifi_start_at_boot ? "ON" : "OFF", 820, 228, 398, 46,
+         g_state.wifi_start_at_boot ? TFT_DARKGREEN : TFT_DARKGREY);
+  text("WI-FI ANTENNA", 330, 305, kMuted, 2);
   button(g_state.wifi_external_antenna ? "EXTERNAL (MMCX)" : "INTERNAL",
-         820, 218, 398, 54,
+         820, 278, 398, 54,
          g_state.wifi_external_antenna ? TFT_DARKGREEN : TFT_NAVY);
 
-  text("SAVED NETWORKS (PRIORITY ORDER)", 330, 290, kBlue, 2);
+  text("SAVED NETWORKS (PRIORITY ORDER)", 330, 350, kBlue, 2);
   for (uint8_t i = 0; i < g_state.saved_network_count && i < 4; ++i) {
-    const int y = 318 + i * 52;
+    const int y = 378 + i * 48;
     snprintf(value, sizeof(value), "%u  %.24s%s", i + 1, g_state.profiles[i].ssid,
              g_state.profiles[i].connected ? "  CONNECTED" : "");
     text(value, 340, y + 23, g_state.profiles[i].connected ? kGreen : TFT_WHITE, 2);
@@ -151,11 +154,11 @@ void draw_connectivity() {
   if (g_state.saved_network_count == 0)
     text("NO SAVED NETWORKS", 340, 342, kMuted, 2);
 
-  text("AVAILABLE NETWORKS", 330, 548, kBlue, 2);
+  text("AVAILABLE NETWORKS", 330, 572, kBlue, 2);
   const uint8_t shown = std::min<uint8_t>(g_state.network_count, 6);
   for (uint8_t i = 0; i < shown; ++i) {
     const int x = 330 + (i % 2) * 428;
-    const int y = 572 + (i / 2) * 42;
+    const int y = 596 + (i / 2) * 36;
     snprintf(value, sizeof(value), "%.18s  %d%s%s", g_state.networks[i].ssid,
              g_state.networks[i].rssi, g_state.networks[i].secure ? "  LOCK" : "  OPEN",
              g_state.networks[i].saved ? "  SAVED" : "");
@@ -590,6 +593,7 @@ void draw() {
 
 void update(const State& state_value) {
   const bool header_changed = g_state.wifi_power_enabled != state_value.wifi_power_enabled ||
+                              g_state.wifi_start_at_boot != state_value.wifi_start_at_boot ||
                               g_state.wifi_external_antenna != state_value.wifi_external_antenna ||
                               g_state.wifi_connected != state_value.wifi_connected ||
                               g_state.wifi_connecting != state_value.wifi_connecting ||
@@ -598,6 +602,7 @@ void update(const State& state_value) {
                               strcmp(g_state.wifi_ip, state_value.wifi_ip) != 0;
   const bool page_changed = g_section == Section::connectivity &&
                             (g_state.wifi_power_enabled != state_value.wifi_power_enabled ||
+                             g_state.wifi_start_at_boot != state_value.wifi_start_at_boot ||
                              g_state.wifi_external_antenna != state_value.wifi_external_antenna ||
                              g_state.wifi_scanning != state_value.wifi_scanning ||
                              g_state.wifi_connecting != state_value.wifi_connecting ||
@@ -665,7 +670,9 @@ Action handle_touch(int32_t x, int32_t y) {
   if (g_section == Section::connectivity) {
     if (hit(x, y, 750, 180, 170, 46))
       return {ActionKind::wifi_power_changed, g_state.wifi_power_enabled ? 0 : 1};
-    if (hit(x, y, 820, 218, 398, 54))
+    if (hit(x, y, 820, 228, 398, 46))
+      return {ActionKind::wifi_start_at_boot_changed, g_state.wifi_start_at_boot ? 0 : 1};
+    if (hit(x, y, 820, 278, 398, 54))
       return {ActionKind::wifi_antenna_changed, g_state.wifi_external_antenna ? 0 : 1};
     if (!g_state.wifi_power_enabled) return {};
     if (hit(x, y, 330, 180, 170, 46) && !g_state.wifi_scanning)
@@ -676,7 +683,7 @@ Action handle_touch(int32_t x, int32_t y) {
       return {};
     }
     for (uint8_t i = 0; i < g_state.saved_network_count && i < 4; ++i) {
-      const int row_y = 318 + i * 52;
+      const int row_y = 378 + i * 48;
       if (hit(x, y, 720, row_y, 90, 44))
         return {ActionKind::connect_saved_wifi, i};
       if (i && hit(x, y, 820, row_y, 76, 44))
@@ -688,7 +695,7 @@ Action handle_touch(int32_t x, int32_t y) {
     }
     for (uint8_t i = 0; i < std::min<uint8_t>(g_state.network_count, 6); ++i) {
       const int row_x = 330 + (i % 2) * 428;
-      const int row_y = 572 + (i / 2) * 42;
+      const int row_y = 596 + (i / 2) * 36;
       if (!hit(x, y, row_x, row_y, 418, 36)) continue;
       if (g_state.networks[i].saved) {
         for (uint8_t saved = 0; saved < g_state.saved_network_count; ++saved)

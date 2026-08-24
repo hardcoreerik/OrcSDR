@@ -43,7 +43,7 @@ void text(const char* value, int x, int y, uint16_t color = TFT_WHITE,
           int size = 2) {
   M5.Display.setTextDatum(middle_center);
   M5.Display.setTextSize(size);
-  M5.Display.setTextColor(color, kBg);
+  M5.Display.setTextColor(color);
   M5.Display.drawString(value, x, y);
 }
 

@@ -11,8 +11,10 @@ $env:PATH = "$env:IDF_PYTHON_ENV_PATH\Scripts;$env:PATH"
 Set-Location (Join-Path $PSScriptRoot '..')
 $buildDir = 'build-native-hosted3'
 
-# sdkconfig.defaults is the source; sdkconfig is a generated cache. Refuse a
-# build if the cache contradicts the Tab5 C6 power/SDIO startup configuration.
+# sdkconfig.defaults is the source; regenerate the per-build Kconfig cache so
+# a prior transport choice cannot silently survive a configuration change.
+New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
+Copy-Item -LiteralPath 'sdkconfig.defaults' -Destination (Join-Path $buildDir 'sdkconfig') -Force
 idf.py -B $buildDir -D "SDKCONFIG=$buildDir/sdkconfig" `
     -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults' reconfigure
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -27,7 +29,11 @@ $required = @(
   'CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D1=10',
   'CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D2=9',
   'CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D3=8',
-  'CONFIG_ESP_HOSTED_HOST_CP_RESET_STRATEGY_ONLY_IF_NECESSARY=y'
+  'CONFIG_ESP_HOSTED_HOST_CP_RESET_STRATEGY_ONLY_IF_NECESSARY=y',
+  'CONFIG_ESP_MAIN_TASK_STACK_SIZE=12288',
+  'CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y',
+  'CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y',
+  'CONFIG_ESP_TASK_WDT_PANIC=y'
 )
 $config = Get-Content -LiteralPath (Join-Path $buildDir 'sdkconfig')
 foreach ($line in $required) {

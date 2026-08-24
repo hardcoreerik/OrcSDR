@@ -33,6 +33,9 @@ constexpr uint32_t kAudioRate = 16000;
 EXT_RAM_BSS_ATTR int16_t g_audio_ring[kAudioRing]{};
 EXT_RAM_BSS_ATTR int16_t g_audio_clip[kAudioClip]{};
 EXT_RAM_BSS_ATTR uint8_t g_wav_out[44 + kAudioClip * sizeof(int16_t)]{};
+EXT_RAM_BSS_ATTR char g_status_json[2048]{};
+EXT_RAM_BSS_ATTR char g_status_recent[320]{};
+EXT_RAM_BSS_ATTR char g_status_spec[259]{};
 uint32_t g_wifi_up_ms = 0;
 std::atomic<uint32_t> g_audio_w{0};
 std::atomic<uint32_t> g_audio_r{0};
@@ -100,7 +103,9 @@ esp_err_t handle_status(httpd_req_t* req) {
   json_escape(rt, sizeof(rt), snap.radio_text);
   json_escape(pi, sizeof(pi), snap.pi_code);
 
-  char recent[320] = "[";
+  char* recent = g_status_recent;
+  recent[0] = '[';
+  recent[1] = '\0';
   size_t used = 1;
   for (uint8_t i = 0; i < snap.recent_count && i < kRecentSlots; ++i) {
     char id[16], title[24];
@@ -109,25 +114,26 @@ esp_err_t handle_status(httpd_req_t* req) {
     char item[56];
     const int n = snprintf(item, sizeof(item), "%s{\"id\":\"%s\",\"title\":\"%s\"}",
                            i ? "," : "", id, title);
-    if (n < 0 || used + static_cast<size_t>(n) + 2 >= sizeof(recent)) break;
+    if (n < 0 || used + static_cast<size_t>(n) + 2 >= sizeof(g_status_recent)) break;
     memcpy(recent + used, item, static_cast<size_t>(n));
     used += static_cast<size_t>(n);
   }
   memcpy(recent + used, "]", 2);
 
-  char spec[256] = "[";
+  char* spec = g_status_spec;
+  spec[0] = '[';
+  spec[1] = '\0';
   used = 1;
   for (uint8_t i = 0; i < snap.spectrum_count && i < kSpectrumBins; ++i) {
     char item[8];
     const int n = snprintf(item, sizeof(item), "%s%u", i ? "," : "", snap.spectrum[i]);
-    if (n < 0 || used + static_cast<size_t>(n) + 2 >= sizeof(spec)) break;
+    if (n < 0 || used + static_cast<size_t>(n) + 2 >= sizeof(g_status_spec)) break;
     memcpy(spec + used, item, static_cast<size_t>(n));
     used += static_cast<size_t>(n);
   }
   memcpy(spec + used, "]", 2);
 
-  char json[2048];
-  snprintf(json, sizeof(json),
+  snprintf(g_status_json, sizeof(g_status_json),
            "{\"wifi_ip\":\"%s\",\"wifi_connected\":%s,\"usb_connected\":%s,"
            "\"rtl_ready\":%s,\"receiving\":%s,\"sound_enabled\":%s,\"stereo\":%s,"
            "\"rds_carrier\":%s,\"rds_locked\":%s,\"program_service\":\"%s\","
@@ -157,7 +163,7 @@ esp_err_t handle_status(httpd_req_t* req) {
 
   httpd_resp_set_type(req, "application/json");
   httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-  return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+  return httpd_resp_send(req, g_status_json, HTTPD_RESP_USE_STRLEN);
 }
 
 void write_wav(uint8_t* out, const int16_t* pcm, size_t samples) {
@@ -286,7 +292,7 @@ bool start_server() {
   config.max_open_sockets = 5;
   config.max_uri_handlers = 8;
   config.lru_purge_enable = true;
-  config.stack_size = 6144;
+  config.stack_size = 8192;
   config.core_id = tskNO_AFFINITY;
   // Hosted SDIO asserts if this heap is empty. Keep the httpd stack in PSRAM.
   config.task_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
