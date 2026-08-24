@@ -244,8 +244,8 @@ void toggle_lock() {
 void text(const char* value, int x, int y, uint16_t color = TFT_WHITE,
           int size = 2, textdatum_t datum = middle_center) {
   switch (size) {
-    case 1: M5.Display.setFont(&fonts::DejaVu12); break;
-    case 2: M5.Display.setFont(&fonts::DejaVu18); break;
+    case 1: M5.Display.setFont(&fonts::DejaVu18); break;
+    case 2: M5.Display.setFont(&fonts::DejaVu24); break;
     case 3: M5.Display.setFont(&fonts::DejaVu24); break;
     default: M5.Display.setFont(&fonts::DejaVu40); break;
   }
