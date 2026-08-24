@@ -552,14 +552,20 @@ void draw_list() {
     if (i == g_selected) M5.Display.fillRoundRect(26, y, 818, 68, 8, 0x1362);
     else M5.Display.drawFastHLine(28, y + 68, 812, kBorder);
     plane(52, y + 34, 10, i == g_selected ? kGreen : kBlue);
+    M5.Display.setClipRect(78, y, 162, 68);
     text(g_aircraft[i].callsign, 82, y + 25, i == g_selected ? kGreen : TFT_WHITE, 2, middle_left);
     text(g_aircraft[i].op, 82, y + 49, TFT_LIGHTGREY, 1, middle_left);
+    M5.Display.clearClipRect();
+    M5.Display.setClipRect(246, y, 144, 68);
     text(g_aircraft[i].registration[0] ? g_aircraft[i].registration : "--",
          250, y + 25, TFT_WHITE, 1, middle_left);
     char identity[16];
     snprintf(identity, sizeof(identity), "%06lX", static_cast<unsigned long>(g_aircraft[i].icao));
     text(identity, 250, y + 49, TFT_LIGHTGREY, 1, middle_left);
+    M5.Display.clearClipRect();
+    M5.Display.setClipRect(396, y, 114, 68);
     text(g_aircraft[i].type, 400, y + 34, TFT_WHITE, 1, middle_left);
+    M5.Display.clearClipRect();
     char value[24];
     if (g_aircraft[i].has_altitude) snprintf(value, sizeof(value), "%d ft", g_aircraft[i].altitude_ft);
     else strlcpy(value, "--", sizeof(value));
