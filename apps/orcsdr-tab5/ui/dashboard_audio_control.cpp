@@ -17,25 +17,29 @@ constexpr uint16_t kMuted = 0x8c71;
 constexpr uint16_t kGrid = 0x2945;
 constexpr int kRegionX = 866;
 constexpr int kRegionY = 25;
-constexpr int kRegionW = 244;
+constexpr int kRegionW = 174;
 constexpr int kRegionH = 82;
 constexpr int kIndicatorX = 870;
 constexpr int kIndicatorW = 88;
 constexpr int kButtonY = 34;
 constexpr int kButtonH = 64;
-constexpr int kButtonW = 74;
-constexpr int kButtonX[] = {872, 950, 1028};
-constexpr int kHomeX = 1114;
+constexpr int kButtonW = 54;
+constexpr int kButtonX[] = {868, 926, 984};
+constexpr int kHomeX = 1040;
 constexpr int kHomeY = 8;
-constexpr int kHomeW = 50;
+constexpr int kHomeW = 58;
 constexpr int kHomeH = 58;
-constexpr int kMuteX = 1168;
+constexpr int kMuteX = 1099;
 constexpr int kMuteY = 8;
-constexpr int kMuteW = 50;
+constexpr int kMuteW = 58;
 constexpr int kMuteH = 58;
-constexpr int kSettingsX = 1222;
+constexpr int kVisualizerX = 1158;
+constexpr int kVisualizerY = 8;
+constexpr int kVisualizerW = 58;
+constexpr int kVisualizerH = 58;
+constexpr int kSettingsX = 1217;
 constexpr int kSettingsY = 8;
-constexpr int kSettingsW = 50;
+constexpr int kSettingsW = 55;
 constexpr int kSettingsH = 58;
 constexpr uint32_t kTrayTimeoutMs = 4000;
 
@@ -97,8 +101,8 @@ void draw(const Control& control, uint8_t volume, bool sound_enabled,
   char level[8];
   snprintf(level, sizeof(level), "%u", volume);
   text(level, 926, 67, sound_enabled ? TFT_WHITE : kMuted, 2);
-  text("USB", 977, 67, TFT_WHITE, 1);
-  draw_battery(1001, 50, battery_percent);
+  text("USB", 965, 67, TFT_WHITE, 1);
+  draw_battery(966, 50, battery_percent);
 }
 
 void draw_home_button() {
@@ -124,6 +128,18 @@ void draw_mute_button(bool sound_enabled) {
 
 bool mute_hit(int32_t x, int32_t y) {
   return hit(x, y, kMuteX, kMuteY, kMuteW, kMuteH);
+}
+
+void draw_visualizer_button(bool enabled) {
+  const uint16_t color = enabled ? kCyan : kMuted;
+  M5.Display.fillRoundRect(kVisualizerX, kVisualizerY, kVisualizerW, kVisualizerH, 8, kPanel);
+  M5.Display.drawRoundRect(kVisualizerX, kVisualizerY, kVisualizerW, kVisualizerH, 8, color);
+  text("VIS", kVisualizerX + kVisualizerW / 2, kVisualizerY + kVisualizerH / 2,
+       color, 2);
+}
+
+bool visualizer_hit(int32_t x, int32_t y) {
+  return hit(x, y, kVisualizerX, kVisualizerY, kVisualizerW, kVisualizerH);
 }
 
 void draw_settings_button() {
@@ -176,19 +192,25 @@ bool self_check() {
   Control control{};
   if (handle_touch(control, 900, 60, 100) != Action::opened || !control.expanded)
     return false;
-  if (handle_touch(control, 900, 60, 200) != Action::volume_down) return false;
-  if (handle_touch(control, 980, 60, 300) != Action::sound_toggle) return false;
-  if (handle_touch(control, 1060, 60, 400) != Action::volume_up) return false;
+  if (handle_touch(control, kButtonX[0] + 1, kButtonY + 1, 200) != Action::volume_down)
+    return false;
+  if (handle_touch(control, kButtonX[1] + 1, kButtonY + 1, 300) != Action::sound_toggle)
+    return false;
+  if (handle_touch(control, kButtonX[2] + 1, kButtonY + 1, 400) != Action::volume_up)
+    return false;
   if (handle_touch(control, kSettingsX + 1, kSettingsY + 1, 500) != Action::none)
     return false;
   if (service_timeout(control, 4399) || !service_timeout(control, 4400)) return false;
   reset(control);
   if (handle_touch(control, 800, 60, 0) != Action::none) return false;
   return kRegionX + kRegionW <= kHomeX && kButtonX[2] + kButtonW <= kHomeX &&
-         kHomeX + kHomeW <= kMuteX && kMuteX + kMuteW <= kSettingsX &&
+         kHomeX + kHomeW <= kMuteX && kMuteX + kMuteW <= kVisualizerX &&
+         kVisualizerX + kVisualizerW <= kSettingsX &&
          home_hit(kHomeX + 1, kHomeY + 1) &&
          !home_hit(kHomeX - 1, kHomeY) &&
          mute_hit(kMuteX + 1, kMuteY + 1) && !mute_hit(kMuteX - 1, kMuteY) &&
+         visualizer_hit(kVisualizerX + 1, kVisualizerY + 1) &&
+         !visualizer_hit(kVisualizerX - 1, kVisualizerY) &&
          settings_hit(kSettingsX + 1, kSettingsY + 1) &&
          !settings_hit(kSettingsX - 1, kSettingsY);
 }
