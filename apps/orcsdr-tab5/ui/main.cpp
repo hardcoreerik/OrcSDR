@@ -4971,6 +4971,7 @@ void close_visualizer() {
 
 void service_visualizer() {
   rtl_sdr_v4_esp_metrics_t metrics{};
+  const uint32_t now = millis();
   if (g_rtl != nullptr) (void)rtl_sdr_v4_esp_get_metrics(g_rtl, &metrics);
   const auto fm = fm_dashboard_snapshot();
   orcsdr::visualizer::Runtime runtime{};
@@ -4993,8 +4994,8 @@ void service_visualizer() {
   const auto second = M5.Touch.getDetail(1);
   orcsdr::visualizer::handle_touch(first.x, first.y,
                                    first.isPressed() || first.wasPressed(),
-                                   M5.Touch.getCount(), second.x, second.y, millis());
-  orcsdr::visualizer::service_ui(millis());
+                                   M5.Touch.getCount(), second.x, second.y, now);
+  orcsdr::visualizer::service_ui(now);
   orcsdr::visualizer::Action action{};
   while (orcsdr::visualizer::take_action(&action)) {
     if (action.kind == orcsdr::visualizer::ActionKind::close) close_visualizer();
@@ -5002,6 +5003,20 @@ void service_visualizer() {
       request_hot_retune(action.value);
     else if (action.kind == orcsdr::visualizer::ActionKind::span_hz)
       rtl_scope_span_hz.store(action.value, std::memory_order_relaxed);
+  }
+}
+
+void service_rtl_speaker_watchdog() {
+  if (!rtl_ui_active.load(std::memory_order_acquire) ||
+      !rtl_audio_enabled.load(std::memory_order_acquire) || !rtl_band_has_audio(rtl_ui_band))
+    return;
+  static uint32_t last_watch_ms = 0;
+  const uint32_t now = millis();
+  if (now - last_watch_ms >= 1000 && !M5.Speaker.isRunning() &&
+      !speaker_backoff_active(now)) {
+    last_watch_ms = now;
+    Serial.println("RTL_SPEAKER_WATCHDOG restart");
+    resume_rtl_speaker();
   }
 }
 
@@ -10544,7 +10559,8 @@ void process_command(char* command) {
     }
     if (strncmp(command, "UI_CAPTURE ", 11) == 0) {
       const char* slug = command + 11;
-      if (!ui_doc.active || !ui_doc.current_screen[0]) {
+      const bool visualizer_capture = orcsdr::visualizer::active();
+      if ((!ui_doc.active || !ui_doc.current_screen[0]) && !visualizer_capture) {
         Serial.println("UI_CAPTURE_ERROR documentation_mode_inactive");
         return;
       }
@@ -10552,7 +10568,7 @@ void process_command(char* command) {
         Serial.println("UI_CAPTURE_ERROR invalid_slug");
         return;
       }
-      if (!ui_doc_pause_reception()) {
+      if (!visualizer_capture && !ui_doc_pause_reception()) {
         Serial.println("UI_CAPTURE_ERROR reception_stop_timeout");
         return;
       }
@@ -12122,6 +12138,18 @@ void loop() {
     if (elapsed_ms >= 500)
       Serial.printf("RTL_MAIN_STALL stage=serial_dispatch elapsed_ms=%u\n", elapsed_ms);
   }
+  if (orcsdr::visualizer::active()) {
+    service_rtl_speaker_watchdog();
+    const uint32_t now = millis();
+    if (!offline_transition_handled && now - last_ping_ms > kSessionTimeoutMs) {
+      authenticated = false;
+      offline_transition_handled = true;
+      append_journal("session_degraded");
+      run_offline_workflow();
+    }
+    delay(1);
+    return;
+  }
   if (ui_documentation_mode) {
     delay(10);
     return;
@@ -12359,17 +12387,7 @@ void loop() {
     }
   }
 
-  if (radio_ui && rtl_audio_enabled.load(std::memory_order_acquire) &&
-      rtl_band_has_audio(rtl_ui_band)) {
-    static uint32_t last_speaker_watch_ms = 0;
-    const uint32_t watch_now = millis();
-    if (watch_now - last_speaker_watch_ms >= 1000 && !M5.Speaker.isRunning() &&
-        !speaker_backoff_active(watch_now)) {
-      last_speaker_watch_ms = watch_now;
-      Serial.println("RTL_SPEAKER_WATCHDOG restart");
-      resume_rtl_speaker();
-    }
-  }
+  if (radio_ui) service_rtl_speaker_watchdog();
 
   if (orcsdr::visualizer::active()) {
     // service_visualizer() above owns the complete full-screen surface.

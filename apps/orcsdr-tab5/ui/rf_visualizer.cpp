@@ -51,6 +51,7 @@ constexpr uint16_t kMuted = 0x7bef;
 constexpr uint16_t kYellow = 0xff80;
 constexpr uint16_t kMagenta = 0xf81f;
 M5Canvas g_canvas(&M5.Display);
+M5Canvas g_display_canvas;
 void* g_display_buffer = nullptr;
 size_t g_display_buffer_bytes = 0;
 
@@ -153,8 +154,12 @@ uint32_t g_last_analysis_report_ms = 0;
 uint32_t g_last_present_report_ms = 0;
 float g_analysis_fps = 0;
 float g_presentation_fps = 0;
-uint32_t g_last_present_ms = 0;
 uint32_t g_last_canvas_push_ms = 0;
+uint32_t g_last_waterfall_row_ms = 0;
+bool g_waterfall_initialized = false;
+bool g_waterfall_canvas_synced = true;
+float g_waterfall_floor = -80;
+float g_waterfall_ceiling = -30;
 uint32_t g_name_until_ms = 0;
 uint32_t g_hud_hide_ms = 0;
 uint32_t g_message_until_ms = 0;
@@ -323,6 +328,16 @@ uint16_t heat_color(uint8_t v, uint8_t palette = 0) {
   const auto byte = [](int value) {
     return static_cast<uint8_t>(std::clamp(value, 0, 255));
   };
+  if (palette == 0) {
+    if (v < 32) return g_canvas.color565(0, 0, static_cast<uint8_t>(v * 2));
+    if (v < 96) return g_canvas.color565(0, 0, static_cast<uint8_t>(64 + (v - 32) * 3));
+    if (v < 144) return g_canvas.color565(0, static_cast<uint8_t>((v - 96) * 5), 255);
+    if (v < 192) return g_canvas.color565(static_cast<uint8_t>((v - 144) * 5), 255,
+                                           static_cast<uint8_t>(255 - (v - 144) * 5));
+    if (v < 232) return g_canvas.color565(255, static_cast<uint8_t>(255 - (v - 192) * 6), 0);
+    return g_canvas.color565(255, static_cast<uint8_t>((v - 232) * 11),
+                             static_cast<uint8_t>((v - 232) * 11));
+  }
   if (palette == 4) return g_canvas.color565(v, v, v);
   if (palette == 5) return g_canvas.color565(v, static_cast<uint8_t>(v * 0.55f), 0);
   if (palette == 6) return g_canvas.color565(static_cast<uint8_t>(v * 0.3f), v, 0);
@@ -334,6 +349,16 @@ uint16_t heat_color(uint8_t v, uint8_t palette = 0) {
   const int b = palette == 3 ? (v < 128 ? v : 255 - v) :
                 v < 128 ? v * 2 : 255 - (v - 128) * 4;
   return g_canvas.color565(byte(r), byte(g), byte(b));
+}
+
+uint8_t waterfall_rate(float choice) {
+  constexpr uint8_t rates[] = {30, 5, 10, 15, 20, 30, 45, 60};
+  return rates[std::clamp(static_cast<int>(choice), 0, 7)];
+}
+
+uint8_t waterfall_intensity(float level, float floor, float ceiling, float gamma) {
+  const float normalized = std::clamp((level - floor) / (ceiling - floor), 0.0f, 1.0f);
+  return static_cast<uint8_t>(255.0f * powf(normalized, gamma));
 }
 
 void present_canvas() {
@@ -733,7 +758,7 @@ void analysis_worker(void*) {
       continue;
     }
     const uint8_t quality = static_cast<uint8_t>(std::clamp(value("visual.quality"), 0.0f, 2.0f));
-    const uint32_t interval = quality <= 1 ? 33 : 66;
+    const uint32_t interval = quality <= 1 ? 30 : 66;
     static uint32_t last_ms = 0;
     if (millis() - last_ms < interval) {
       vTaskDelay(pdMS_TO_TICKS(5));
@@ -786,6 +811,8 @@ void analysis_worker(void*) {
 void draw_frame_chrome() {
   g_canvas.setFont(nullptr);
   g_canvas.clearScrollRect();
+  g_waterfall_initialized = false;
+  g_waterfall_canvas_synced = true;
   g_canvas.fillScreen(kBg);
   g_canvas.drawRoundRect(8, 8, 1264, 704, 12, kGrid);
   char badge[4];
@@ -851,6 +878,62 @@ void draw_history_view(bool audio) {
     g_canvas.pushImage(kPlotX, kPlotY + static_cast<int>(sy), kPlotW, 1, row);
   }
   if (g_history_mutex) xSemaphoreGive(g_history_mutex);
+}
+
+void draw_waterfall_view(const SpectrumFrame& frame) {
+  if (!frame.bins) return;
+  const uint32_t now = millis();
+  const uint8_t rate = waterfall_rate(value("waterfall.speed"));
+  if (g_waterfall_initialized && now - g_last_waterfall_row_ms < 1000u / rate) return;
+  g_last_waterfall_row_ms = now;
+
+  const bool custom_levels = value("waterfall.level_mode") != 0;
+  const float configured_floor = value(custom_levels ? "waterfall.floor_dbfs"
+                                                       : "display.floor_dbfs");
+  const float configured_ceiling = value(custom_levels ? "waterfall.ceiling_dbfs"
+                                                         : "display.ceiling_dbfs");
+  const int auto_levels = static_cast<int>(value("display.auto_levels"));
+  if (!auto_levels || custom_levels) {
+    g_waterfall_floor = configured_floor;
+    g_waterfall_ceiling = configured_ceiling;
+  } else {
+    const float target_floor = std::max(configured_floor, frame.noise - 2.0f);
+    const float target_ceiling = std::min(configured_ceiling,
+        std::max(target_floor + 16.0f, frame.strongest + 1.0f));
+    const float alpha = auto_levels == 2 ? 0.25f : 0.06f;
+    g_waterfall_floor += alpha * (target_floor - g_waterfall_floor);
+    g_waterfall_ceiling += alpha * (target_ceiling - g_waterfall_ceiling);
+  }
+  g_waterfall_ceiling = std::max(g_waterfall_floor + 16.0f, g_waterfall_ceiling);
+
+  const bool first_row = !g_waterfall_initialized;
+  g_waterfall_initialized = true;
+  const bool newest_at_bottom = value("waterfall.direction") != 0;
+
+  static uint16_t row[kPlotW];
+  const float gamma = value("waterfall.gamma");
+  const uint8_t palette = static_cast<uint8_t>(value("waterfall.palette"));
+  for (int x = 0; x < kPlotW; ++x) {
+    const float level = frame.live[static_cast<size_t>(x) * frame.bins / kPlotW];
+    row[x] = heat_color(waterfall_intensity(
+        level, g_waterfall_floor, g_waterfall_ceiling, gamma), palette);
+  }
+  const int y = newest_at_bottom ? kPlotY + kPlotH - 1 : kPlotY;
+  const bool direct = !g_inspect && !g_drawer && !g_chooser &&
+      (!g_message_until_ms || static_cast<int32_t>(g_message_until_ms - now) <= 0) &&
+      g_source_available.load(std::memory_order_acquire);
+  auto& canvas = direct ? g_display_canvas : g_canvas;
+  if (first_row) {
+    for (int py = kPlotY; py < kPlotY + kPlotH; ++py)
+      canvas.pushImage(kPlotX, py, kPlotW, 1, row);
+    g_waterfall_canvas_synced = !direct;
+    return;
+  }
+  canvas.setScrollRect(kPlotX, kPlotY, kPlotW, kPlotH, kBg);
+  canvas.scroll(0, newest_at_bottom ? -1 : 1);
+  canvas.pushImage(kPlotX, y, kPlotW, 1, row);
+  canvas.clearScrollRect();
+  g_waterfall_canvas_synced = !direct;
 }
 
 void draw_phosphor_view() {
@@ -1033,7 +1116,7 @@ void draw_channelizer(const SpectrumFrame& frame) {
 void draw_active_view(const SpectrumFrame& frame) {
   switch (static_cast<View>(g_view.load())) {
     case View::spectrum: draw_spectrum_view(frame); break;
-    case View::waterfall: draw_history_view(false); break;
+    case View::waterfall: draw_waterfall_view(frame); break;
     case View::phosphor: draw_phosphor_view(); break;
     case View::spectrum3d: draw_3d_view(); break;
     case View::constellation: draw_constellation(frame); break;
@@ -1449,7 +1532,12 @@ bool initialize(NvsStore* store, AudioSink audio_sink) {
       (!g_canvas.getBuffer() &&
        !g_canvas.createSprite(panel_config.panel_width, panel_config.panel_height)))
     return false;
+  g_display_canvas.setColorDepth(lgfx::rgb565_nonswapped);
+  g_display_canvas.setBuffer(g_display_buffer, panel_config.panel_width,
+                             panel_config.panel_height);
+  g_display_canvas.setSwapBytes(true);
   g_canvas.setRotation(M5.Display.getRotation());
+  g_display_canvas.setRotation(M5.Display.getRotation());
   g_persist = {};
   g_persist.magic = kPersistMagic;
   g_persist.version = kPersistVersion;
@@ -1570,11 +1658,20 @@ void service_ui(uint32_t now) {
   *g_ui_frame = *g_frame;
   xSemaphoreGive(g_frame_mutex);
   const SpectrumFrame& frame = *g_ui_frame;
-  if (!value("visual.freeze") && frame.revision != g_drawn_revision &&
-      now - g_last_present_ms >= interval) {
-    g_last_present_ms = now;
+  const bool direct_waterfall =
+      view() == View::waterfall && !g_inspect && !g_drawer && !g_chooser &&
+      (!g_message_until_ms || static_cast<int32_t>(g_message_until_ms - now) <= 0) &&
+      g_source_available.load(std::memory_order_acquire);
+  if (view() == View::waterfall && !direct_waterfall && !g_waterfall_canvas_synced &&
+      g_canvas.getBuffer() && g_display_buffer) {
+    memcpy(g_canvas.getBuffer(), g_display_buffer, g_display_buffer_bytes);
+    g_waterfall_canvas_synced = true;
+  }
+  bool frame_drawn = false;
+  if (!value("visual.freeze") && frame.revision != g_drawn_revision) {
     g_drawn_revision = frame.revision;
     draw_active_view(frame);
+    frame_drawn = true;
     ++g_presentation_frames;
   }
   if (now - g_last_analysis_report_ms >= 1000) {
@@ -1610,9 +1707,11 @@ void service_ui(uint32_t now) {
     g_canvas.fillRoundRect(360, 645, 560, 50, 8, kPanel);
     text(g_message, 640, 670, kYellow, 2, middle_center);
   }
-  if (now - g_last_canvas_push_ms >= interval) {
+  if (!direct_waterfall && (frame_drawn || now - g_last_canvas_push_ms >= interval)) {
     g_last_canvas_push_ms = now;
     present_canvas();
+  } else if (frame_drawn) {
+    g_last_canvas_push_ms = now;
   }
 }
 
@@ -1818,6 +1917,12 @@ bool self_check() {
   if (kDrawerY + kDrawerH != 720 || kHudH < 58) return false;
   if (fit_fft_size(1024, 372) != 256 || fit_fft_size(2048, 1024) != 1024 ||
       fit_fft_size(256, 128) != 0)
+    return false;
+  if (waterfall_rate(0) != 30 || waterfall_rate(1) != 5 || waterfall_rate(7) != 60 ||
+      waterfall_intensity(-100, -100, -20, 1) != 0 ||
+      waterfall_intensity(-20, -100, -20, 1) != 255 ||
+      waterfall_intensity(-60, -100, -20, 1) < 126 ||
+      waterfall_intensity(-60, -100, -20, 1) > 128)
     return false;
   if (view_name(View::spectrum3d) == nullptr ||
       strcmp(view_name(View::spectrum3d), "3D SPECTRUM HISTORY") != 0) return false;
