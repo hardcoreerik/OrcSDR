@@ -4979,6 +4979,14 @@ void service_visualizer() {
   runtime.span_hz = rtl_scope_span_hz.load(std::memory_order_relaxed);
   runtime.sample_rate_sps = metrics.effective_sps;
   runtime.audio_rate_sps = 48000;
+  runtime.audio_demod = rtl_ui_band == RtlBand::am ||
+                                (rtl_ui_band == RtlBand::cb &&
+                                 cb_mode.load(std::memory_order_relaxed) == CbMode::am)
+                            ? orcsdr::visualizer::AudioDemod::am
+                            : (rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::wx ||
+                               rtl_ui_band == RtlBand::browse)
+                                  ? orcsdr::visualizer::AudioDemod::fm
+                                  : orcsdr::visualizer::AudioDemod::none;
   runtime.usb_overruns = metrics.overruns;
   runtime.consumer_drops = metrics.consumer_drops;
   runtime.audio_drops = rtl_audio.dropped_chunks;
@@ -11873,9 +11881,11 @@ void setup() {
   }
   M5.Display.setRotation(settings_rotation);
   M5.Display.setBrightness(180);
-  if (!orcsdr::visualizer::initialize(nullptr, visualizer_audio_sink) ||
-      !orcsdr::visualizer::self_check()) {
-    Serial.println("RTL_VIS_SELF_CHECK_FAIL");
+  const bool visualizer_initialized =
+      orcsdr::visualizer::initialize(nullptr, visualizer_audio_sink);
+  if (!visualizer_initialized || !orcsdr::visualizer::self_check()) {
+    Serial.println(visualizer_initialized ? "RTL_VIS_SELF_CHECK_FAIL"
+                                          : "RTL_VIS_INIT_FAIL");
     abort();
   }
   Serial.println("RTL_VIS_SELF_CHECK_OK");

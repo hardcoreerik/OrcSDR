@@ -160,6 +160,8 @@ bool g_waterfall_initialized = false;
 bool g_waterfall_canvas_synced = true;
 float g_waterfall_floor = -80;
 float g_waterfall_ceiling = -30;
+float g_audio_floor = -100;
+float g_audio_ceiling = -20;
 uint32_t g_name_until_ms = 0;
 uint32_t g_hud_hide_ms = 0;
 uint32_t g_message_until_ms = 0;
@@ -361,6 +363,13 @@ uint8_t waterfall_intensity(float level, float floor, float ceiling, float gamma
   return static_cast<uint8_t>(255.0f * powf(normalized, gamma));
 }
 
+int audio_scroll_pixels(uint32_t elapsed_ms, float choice) {
+  constexpr uint8_t spans[] = {5, 10, 20, 30, 60};
+  const uint32_t span_ms = spans[std::clamp(static_cast<int>(choice), 0, 4)] * 1000u;
+  return std::clamp(static_cast<int>((elapsed_ms * kPlotW + span_ms / 2) / span_ms),
+                    1, kPlotW);
+}
+
 void present_canvas() {
   if (g_canvas.getBuffer() && g_display_buffer)
     memcpy(g_display_buffer, g_canvas.getBuffer(), g_display_buffer_bytes);
@@ -450,6 +459,23 @@ int selected_fft_size(View current) {
 int fit_fft_size(int requested, size_t available) {
   while (requested > static_cast<int>(available)) requested >>= 1;
   return requested >= 256 ? requested : 0;
+}
+
+size_t append_audio_window(int16_t* destination, size_t capacity, size_t used,
+                           const int16_t* source, size_t count) {
+  if (!destination || !capacity || !source || !count) return used;
+  if (count >= capacity) {
+    memcpy(destination, source + count - capacity, capacity * sizeof(*destination));
+    return capacity;
+  }
+  used = std::min(used, capacity);
+  const size_t overflow = used + count > capacity ? used + count - capacity : 0;
+  if (overflow) {
+    memmove(destination, destination + overflow, (used - overflow) * sizeof(*destination));
+    used -= overflow;
+  }
+  memcpy(destination + used, source, count * sizeof(*destination));
+  return used + count;
 }
 
 void add_history_row(const SpectrumFrame& frame, bool audio) {
@@ -650,14 +676,65 @@ void analyze_iq(const uint8_t* iq, size_t bytes, SpectrumFrame* next, float* wor
       std::max<int>(1, next->bins));
 }
 
-void analyze_audio(SpectrumFrame* next, float* work) {
+size_t demodulate_audio_snapshot(const uint8_t* iq, size_t bytes, AudioDemod demod,
+                                 uint32_t sample_rate, uint32_t audio_rate,
+                                 int16_t* output, size_t capacity) {
+  if (!iq || bytes < 4 || demod == AudioDemod::none || !output || !capacity) return 0;
+  const uint32_t decimation =
+      std::max<uint32_t>(1, sample_rate / std::max<uint32_t>(1, audio_rate));
+  float previous_i = static_cast<int>(iq[0]) - 127.5f;
+  float previous_q = static_cast<int>(iq[1]) - 127.5f;
+  float sum = 0, dc = 0;
+  uint32_t phase = 0;
+  size_t count = 0;
+  for (size_t offset = 2; offset + 1 < bytes && count < capacity; offset += 2) {
+    const float i = static_cast<int>(iq[offset]) - 127.5f;
+    const float q = static_cast<int>(iq[offset + 1]) - 127.5f;
+    float sample = 0;
+    if (demod == AudioDemod::fm) {
+      const float cross = previous_i * q - previous_q * i;
+      const float dot = previous_i * i + previous_q * q;
+      sample = cross / (fabsf(dot) + 64.0f);
+    } else {
+      sample = fabsf(i) + fabsf(q);
+      dc += 0.002f * (sample - dc);
+      sample = (sample - dc) * 0.02f;
+    }
+    previous_i = i;
+    previous_q = q;
+    sum += sample;
+    if (++phase == decimation) {
+      output[count++] = static_cast<int16_t>(std::clamp(
+          sum * (demod == AudioDemod::fm ? 9000.0f : 7000.0f) / decimation,
+          -16000.0f, 16000.0f));
+      phase = 0;
+      sum = 0;
+    }
+  }
+  return count;
+}
+
+void analyze_audio(SpectrumFrame* next, float* work, const uint8_t* iq, size_t iq_bytes) {
   if (!next || !work || !g_audio_l || !g_audio_mutex) return;
+  static uint32_t analyzed_revision = 0;
   int16_t local[kAudioFrames];
   size_t frames = 0;
   if (xSemaphoreTake(g_audio_mutex, 0) == pdTRUE) {
-    frames = std::min(g_audio_frames, kAudioFrames);
-    memcpy(local, g_audio_l, frames * sizeof(int16_t));
+    if (g_audio_revision != analyzed_revision) {
+      frames = std::min(g_audio_frames, kAudioFrames);
+      memcpy(local, g_audio_l, frames * sizeof(int16_t));
+      analyzed_revision = g_audio_revision;
+    }
     xSemaphoreGive(g_audio_mutex);
+  }
+  if (frames < 256) {
+    Runtime runtime{};
+    portENTER_CRITICAL(&g_runtime_mux);
+    runtime = g_runtime;
+    portEXIT_CRITICAL(&g_runtime_mux);
+    frames = demodulate_audio_snapshot(iq, iq_bytes, runtime.audio_demod,
+                                       runtime.sample_rate_sps, runtime.audio_rate_sps,
+                                       local, std::size(local));
   }
   if (frames < 256) return;
   const int n = fit_fft_size(selected_fft_size(View::audio_spectrogram), frames);
@@ -785,7 +862,7 @@ void analysis_worker(void*) {
     xSemaphoreGive(g_frame_mutex);
     analyze_iq(local_iq, bytes, next, work);
     if (static_cast<View>(g_view.load()) == View::audio_spectrogram)
-      analyze_audio(next, work);
+      analyze_audio(next, work, local_iq, bytes);
     if (static_cast<View>(g_view.load()) == View::channelizer)
       process_channel_audio(local_iq, bytes);
     next->revision = revision;
@@ -869,7 +946,7 @@ void draw_history_view(bool audio) {
   if (g_history_mutex && xSemaphoreTake(g_history_mutex, pdMS_TO_TICKS(20)) != pdTRUE) return;
   const uint8_t palette = static_cast<uint8_t>(audio ? value("audiospec.palette")
                                                      : value("waterfall.palette"));
-  static uint16_t row[kPlotW];
+  uint16_t row[kPlotW];
   for (size_t sy = 0; sy < kPlotH; ++sy) {
     const size_t history_y = (g_history_head + g_history_rows - 1 -
                               sy * g_history_count / kPlotH) % g_history_rows;
@@ -910,7 +987,7 @@ void draw_waterfall_view(const SpectrumFrame& frame) {
   g_waterfall_initialized = true;
   const bool newest_at_bottom = value("waterfall.direction") != 0;
 
-  static uint16_t row[kPlotW];
+  uint16_t row[kPlotW];
   const float gamma = value("waterfall.gamma");
   const uint8_t palette = static_cast<uint8_t>(value("waterfall.palette"));
   for (int x = 0; x < kPlotW; ++x) {
@@ -932,6 +1009,60 @@ void draw_waterfall_view(const SpectrumFrame& frame) {
   canvas.setScrollRect(kPlotX, kPlotY, kPlotW, kPlotH, kBg);
   canvas.scroll(0, newest_at_bottom ? -1 : 1);
   canvas.pushImage(kPlotX, y, kPlotW, 1, row);
+  canvas.clearScrollRect();
+  g_waterfall_canvas_synced = !direct;
+}
+
+void draw_audio_spectrogram(const SpectrumFrame& frame) {
+  if (!frame.audio_bins) return;
+  const uint32_t now = millis();
+  const bool first_column = !g_waterfall_initialized;
+  const int columns = first_column
+                          ? 1
+                          : audio_scroll_pixels(now - g_last_waterfall_row_ms,
+                                                value("audiospec.time_span_s"));
+  g_last_waterfall_row_ms = now;
+  g_waterfall_initialized = true;
+  uint16_t column[kPlotH];
+  const float configured_floor = value("audiospec.floor_dbfs");
+  const float configured_ceiling = value("audiospec.ceiling_dbfs");
+  const int tracking = static_cast<int>(value("audiospec.normalization"));
+  if (!tracking) {
+    g_audio_floor = configured_floor;
+    g_audio_ceiling = configured_ceiling;
+  } else {
+    float mean = 0;
+    float strongest = -160;
+    for (size_t i = 0; i < frame.audio_bins; ++i) {
+      mean += frame.audio[i];
+      strongest = std::max(strongest, frame.audio[i]);
+    }
+    mean /= frame.audio_bins;
+    const float target_floor = std::max(configured_floor, mean - 8.0f);
+    const float target_ceiling = std::min(
+        configured_ceiling, std::max(target_floor + 35.0f, strongest + 3.0f));
+    const float alpha = first_column || tracking == 2 ? 1.0f : 0.06f;
+    g_audio_floor += alpha * (target_floor - g_audio_floor);
+    g_audio_ceiling += alpha * (target_ceiling - g_audio_ceiling);
+  }
+  g_audio_ceiling = std::max(g_audio_floor + 20.0f, g_audio_ceiling);
+  const uint8_t palette = static_cast<uint8_t>(value("audiospec.palette"));
+  for (int y = 0; y < kPlotH; ++y) {
+    const size_t source = static_cast<size_t>(kPlotH - 1 - y) * frame.audio_bins / kPlotH;
+    const float level = frame.audio[std::min(source, static_cast<size_t>(frame.audio_bins - 1))];
+    const uint8_t intensity = static_cast<uint8_t>(std::clamp(
+        (level - g_audio_floor) * 255.0f / (g_audio_ceiling - g_audio_floor),
+        0.0f, 255.0f));
+    column[y] = heat_color(intensity, palette);
+  }
+  const bool direct = !g_inspect && !g_drawer && !g_chooser &&
+      (!g_message_until_ms || static_cast<int32_t>(g_message_until_ms - now) <= 0) &&
+      g_source_available.load(std::memory_order_acquire);
+  auto& canvas = direct ? g_display_canvas : g_canvas;
+  canvas.setScrollRect(kPlotX, kPlotY, kPlotW, kPlotH, kBg);
+  if (!first_column) canvas.scroll(-columns, 0);
+  for (int x = kPlotX + kPlotW - columns; x < kPlotX + kPlotW; ++x)
+    canvas.pushImage(x, kPlotY, 1, kPlotH, column);
   canvas.clearScrollRect();
   g_waterfall_canvas_synced = !direct;
 }
@@ -1126,7 +1257,7 @@ void draw_active_view(const SpectrumFrame& frame) {
     case View::peak_average: draw_peak_average(frame); break;
     case View::doppler: draw_doppler(frame); break;
     case View::channelizer: draw_channelizer(frame); break;
-    case View::audio_spectrogram: draw_history_view(true); break;
+    case View::audio_spectrogram: draw_audio_spectrogram(frame); break;
     default: break;
   }
 }
@@ -1628,9 +1759,9 @@ void offer_audio(const int16_t* left, const int16_t* right, size_t frames,
                  uint32_t sample_rate_sps) {
   if (!g_active.load(std::memory_order_relaxed) || !left || !frames || !g_audio_mutex) return;
   if (xSemaphoreTake(g_audio_mutex, 0) != pdTRUE) return;
-  g_audio_frames = std::min(frames, kAudioFrames);
-  memcpy(g_audio_l, left, g_audio_frames * sizeof(int16_t));
-  memcpy(g_audio_r, right ? right : left, g_audio_frames * sizeof(int16_t));
+  const size_t used = g_audio_frames;
+  g_audio_frames = append_audio_window(g_audio_l, kAudioFrames, used, left, frames);
+  append_audio_window(g_audio_r, kAudioFrames, used, right ? right : left, frames);
   g_audio_rate = sample_rate_sps;
   ++g_audio_revision;
   xSemaphoreGive(g_audio_mutex);
@@ -1686,11 +1817,13 @@ void service_ui(uint32_t now) {
   *g_ui_frame = *g_frame;
   xSemaphoreGive(g_frame_mutex);
   const SpectrumFrame& frame = *g_ui_frame;
-  const bool direct_waterfall =
-      view() == View::waterfall && !g_inspect && !g_drawer && !g_chooser &&
+  const bool direct_history =
+      (view() == View::waterfall || view() == View::audio_spectrogram) &&
+      !g_inspect && !g_drawer && !g_chooser &&
       (!g_message_until_ms || static_cast<int32_t>(g_message_until_ms - now) <= 0) &&
       g_source_available.load(std::memory_order_acquire);
-  if (view() == View::waterfall && !direct_waterfall && !g_waterfall_canvas_synced &&
+  if ((view() == View::waterfall || view() == View::audio_spectrogram) &&
+      !direct_history && !g_waterfall_canvas_synced &&
       g_canvas.getBuffer() && g_display_buffer) {
     memcpy(g_canvas.getBuffer(), g_display_buffer, g_display_buffer_bytes);
     g_waterfall_canvas_synced = true;
@@ -1735,7 +1868,7 @@ void service_ui(uint32_t now) {
     g_canvas.fillRoundRect(360, 645, 560, 50, 8, kPanel);
     text(g_message, 640, 670, kYellow, 2, middle_center);
   }
-  if (!direct_waterfall && (frame_drawn || now - g_last_canvas_push_ms >= interval)) {
+  if (!direct_history && (frame_drawn || now - g_last_canvas_push_ms >= interval)) {
     g_last_canvas_push_ms = now;
     present_canvas();
   } else if (frame_drawn) {
@@ -1946,11 +2079,29 @@ bool self_check() {
   if (fit_fft_size(1024, 372) != 256 || fit_fft_size(2048, 1024) != 1024 ||
       fit_fft_size(256, 128) != 0)
     return false;
+  int16_t audio_window[4] = {1, 2, 3, 4};
+  const int16_t audio_tail[3] = {5, 6, 7};
+  if (append_audio_window(audio_window, 4, 4, audio_tail, 3) != 4 ||
+      audio_window[0] != 4 || audio_window[1] != 5 || audio_window[3] != 7)
+    return false;
+  uint8_t rotating_iq[1024];
+  constexpr uint8_t phases[][2] = {{255, 128}, {128, 255}, {0, 128}, {128, 0}};
+  for (size_t i = 0; i < std::size(rotating_iq) / 2; ++i) {
+    rotating_iq[i * 2] = phases[i % 4][0];
+    rotating_iq[i * 2 + 1] = phases[i % 4][1];
+  }
+  int16_t demodulated[512]{};
+  if (demodulate_audio_snapshot(rotating_iq, sizeof(rotating_iq), AudioDemod::fm,
+                                48000, 48000, demodulated,
+                                std::size(demodulated)) < 256 || demodulated[4] == 0)
+    return false;
   if (waterfall_rate(0) != 30 || waterfall_rate(1) != 5 || waterfall_rate(7) != 60 ||
       waterfall_intensity(-100, -100, -20, 1) != 0 ||
       waterfall_intensity(-20, -100, -20, 1) != 255 ||
       waterfall_intensity(-60, -100, -20, 1) < 126 ||
       waterfall_intensity(-60, -100, -20, 1) > 128)
+    return false;
+  if (audio_scroll_pixels(33, 1) != 4 || audio_scroll_pixels(100, 0) != 24)
     return false;
   const ControlDescriptor* shown[48]{};
   const auto contains = [&](size_t count, const char* id) {

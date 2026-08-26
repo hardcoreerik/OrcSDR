@@ -11,6 +11,8 @@ class NvsStore;
 
 namespace orcsdr::visualizer {
 
+enum class AudioDemod : uint8_t { none, fm, am };
+
 struct Runtime {
   uint32_t center_hz = 0;
   uint32_t span_hz = 960000;
@@ -21,6 +23,7 @@ struct Runtime {
   uint32_t consumer_drops = 0;
   uint32_t audio_drops = 0;
   uint8_t volume = 0;
+  AudioDemod audio_demod = AudioDemod::none;
   bool source_available = false;
   bool sound_enabled = true;
   bool sd_writable = false;

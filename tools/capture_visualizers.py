@@ -91,7 +91,7 @@ def main() -> None:
                 raise RuntimeError(f"{view}: {status}")
             auth_send(client, "RTL_VIS FREEZE ON", ("RTL_VIS_OK", "RTL_VIS_ERROR"))
             result = auth_send(client, f"UI_CAPTURE {slug}",
-                               ("UI_CAPTURE_DONE", "UI_CAPTURE_ERROR"), 45)
+                               ("UI_CAPTURE_DONE", "UI_CAPTURE_ERROR"), 90)
             if not result.startswith("UI_CAPTURE_DONE"):
                 raise RuntimeError(f"{view}: {result}")
             remote = re.search(r'path="([^"]+)"', result).group(1)
