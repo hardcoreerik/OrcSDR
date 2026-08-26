@@ -147,6 +147,8 @@ size_t g_history_head = 0;
 size_t g_history_count = 0;
 uint8_t* g_density = nullptr;
 size_t g_density_rows = 0;
+uint16_t* g_phosphor_row = nullptr;
+uint32_t g_last_density_decay_ms = 0;
 uint32_t g_history_revision = 0;
 uint32_t g_analysis_frames = 0;
 uint32_t g_presentation_frames = 0;
@@ -396,9 +398,12 @@ void button(int x, int y, int w, int h, const char* label, uint16_t color, bool 
 void free_view_buffers() {
   if (g_history) heap_caps_free(g_history);
   if (g_density) heap_caps_free(g_density);
+  if (g_phosphor_row) heap_caps_free(g_phosphor_row);
   g_history = nullptr;
   g_density = nullptr;
+  g_phosphor_row = nullptr;
   g_history_rows = g_history_head = g_history_count = g_density_rows = 0;
+  g_last_density_decay_ms = 0;
   g_history_audio = false;
 }
 
@@ -432,12 +437,43 @@ void allocate_view_buffers(View next) {
     if (!g_history) g_history_rows = 0;
     g_history_audio = next == View::audio_spectrogram;
   } else if (next == View::phosphor) {
-    g_density_rows = std::min<size_t>(512, std::max<size_t>(128, budget / kBins));
+    g_density_rows = (kPlotH + 1) / 2;
     g_density = static_cast<uint8_t*>(
         heap_caps_calloc(g_density_rows, kBins, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (!g_density) g_density_rows = 0;
+    g_phosphor_row = static_cast<uint16_t*>(
+        heap_caps_malloc(kPlotW * 2 * sizeof(uint16_t),
+                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!g_density || !g_phosphor_row) {
+      if (g_density) heap_caps_free(g_density);
+      if (g_phosphor_row) heap_caps_free(g_phosphor_row);
+      g_density = nullptr;
+      g_phosphor_row = nullptr;
+      g_density_rows = 0;
+    }
   }
   if (g_history_mutex) xSemaphoreGive(g_history_mutex);
+}
+
+uint16_t density_decay_scale(uint32_t elapsed_ms, float half_life_s) {
+  const float scale = powf(0.5f, elapsed_ms / std::max(100.0f, half_life_s * 1000.0f));
+  return static_cast<uint16_t>(std::clamp(lroundf(scale * 256.0f), 0l, 256l));
+}
+
+uint8_t density_linear_decay(uint32_t elapsed_ms, float half_life_s) {
+  return static_cast<uint8_t>(std::clamp(
+      lroundf(127.5f * elapsed_ms / std::max(100.0f, half_life_s * 1000.0f)),
+      1l, 255l));
+}
+
+uint8_t density_accumulate(uint8_t current, uint8_t sample, uint8_t mode) {
+  if (mode == 0) return std::max(current, sample);
+  const unsigned increment = mode == 1 ? std::max(1u, sample / 8u) : 24u;
+  return static_cast<uint8_t>(std::min(255u, current + increment));
+}
+
+uint8_t density_display_intensity(uint8_t stored, float exposure) {
+  return static_cast<uint8_t>(std::clamp(
+      lroundf(stored * std::clamp(exposure, 0.25f, 8.0f) * 10.0f), 0l, 255l));
 }
 
 int selected_fft_size(View current) {
@@ -506,15 +542,31 @@ void add_density(const SpectrumFrame& frame) {
   if (g_history_mutex && xSemaphoreTake(g_history_mutex, 0) != pdTRUE) return;
   const float floor = value("display.floor_dbfs");
   const float ceiling = value("display.ceiling_dbfs");
-  const float exposure = value("persistence.exposure");
-  for (size_t i = 0; i < kBins * g_density_rows; ++i)
-    if (g_density[i]) --g_density[i];
+  const float reject = frame.noise + value("persistence.background_reject_db");
+  const uint8_t accumulation = static_cast<uint8_t>(value("persistence.accumulation"));
+  const uint32_t now = millis();
+  const uint32_t elapsed = now - g_last_density_decay_ms;
+  if (!g_last_density_decay_ms) g_last_density_decay_ms = now;
+  if (elapsed >= 100) {
+    const float half_life = value("persistence.half_life_s");
+    const bool exponential = value("persistence.decay_curve") != 0;
+    const uint16_t scale = density_decay_scale(elapsed, half_life);
+    const uint8_t decrement = density_linear_decay(elapsed, half_life);
+    for (size_t i = 0; i < kBins * g_density_rows; ++i) {
+      uint8_t& cell = g_density[i];
+      cell = exponential ? static_cast<uint8_t>(cell * scale / 256)
+                         : cell > decrement ? cell - decrement : 0;
+    }
+    g_last_density_decay_ms = now;
+  }
   for (size_t x = 0; x < kBins; ++x) {
+    if (frame.live[x] < reject) continue;
     const float n = std::clamp((frame.live[x] - floor) / std::max(20.0f, ceiling - floor), 0.0f, 1.0f);
     const size_t y = std::min(g_density_rows - 1,
                               static_cast<size_t>((1.0f - n) * (g_density_rows - 1)));
     uint8_t& cell = g_density[y * kBins + x];
-    cell = static_cast<uint8_t>(std::min(255.0f, cell + 24.0f * exposure));
+    cell = density_accumulate(cell, static_cast<uint8_t>(lroundf(n * 255.0f)),
+                              accumulation);
   }
   ++g_history_revision;
   if (g_history_mutex) xSemaphoreGive(g_history_mutex);
@@ -1068,22 +1120,39 @@ void draw_audio_spectrogram(const SpectrumFrame& frame) {
 }
 
 void draw_phosphor_view() {
-  g_canvas.fillRect(kPlotX, kPlotY, kPlotW, kPlotH, kBg);
-  if (!g_density || !g_density_rows) return;
+  if (!g_density || !g_density_rows || !g_phosphor_row) return;
   if (g_history_mutex && xSemaphoreTake(g_history_mutex, pdMS_TO_TICKS(20)) != pdTRUE) return;
   const uint8_t palette = static_cast<uint8_t>(
       6 + std::clamp(static_cast<int>(value("persistence.palette")), 0, 3));
-  for (int x = 0; x < kPlotW; x += 2) {
-    const size_t sx = static_cast<size_t>(x) * kBins / kPlotW;
-    for (int y = 0; y < kPlotH; y += 2) {
-      const size_t sy = static_cast<size_t>(y) * g_density_rows / kPlotH;
-      const uint8_t intensity = g_density[sy * kBins + sx];
-      if (intensity) g_canvas.fillRect(
-          kPlotX + x, kPlotY + y, 2, 2,
-          heat_color(static_cast<uint8_t>(std::min(255, intensity * 10)), palette));
+  const float exposure = value("persistence.exposure");
+  uint16_t colors[256];
+  for (size_t i = 0; i < std::size(colors); ++i)
+    colors[i] = heat_color(static_cast<uint8_t>(i), palette);
+  const uint32_t now = millis();
+  const bool direct = !g_inspect && !g_drawer && !g_chooser &&
+      (!g_message_until_ms || static_cast<int32_t>(g_message_until_ms - now) <= 0) &&
+      g_source_available.load(std::memory_order_acquire);
+  auto& canvas = direct ? g_display_canvas : g_canvas;
+  for (size_t sy = 0; sy < g_density_rows; ++sy) {
+    for (int x = 0; x < kPlotW; x += 2) {
+      const size_t sx0 = static_cast<size_t>(x) * kBins / kPlotW;
+      const size_t sx1 = std::max(sx0 + 1,
+          std::min(kBins, static_cast<size_t>(x + 2) * kBins / kPlotW));
+      uint8_t intensity = 0;
+      for (size_t sx = sx0; sx < sx1; ++sx)
+        intensity = std::max(intensity, g_density[sy * kBins + sx]);
+      const uint16_t color = colors[density_display_intensity(intensity, exposure)];
+      g_phosphor_row[x] = color;
+      if (x + 1 < kPlotW) g_phosphor_row[x + 1] = color;
     }
+    const int y = kPlotY + static_cast<int>(sy) * 2;
+    memcpy(g_phosphor_row + kPlotW, g_phosphor_row,
+           kPlotW * sizeof(uint16_t));
+    canvas.pushImage(kPlotX, y, kPlotW,
+                     std::min(2, kPlotY + kPlotH - y), g_phosphor_row);
   }
   if (g_history_mutex) xSemaphoreGive(g_history_mutex);
+  g_waterfall_canvas_synced = !direct;
 }
 
 void draw_3d_view() {
@@ -1818,11 +1887,13 @@ void service_ui(uint32_t now) {
   xSemaphoreGive(g_frame_mutex);
   const SpectrumFrame& frame = *g_ui_frame;
   const bool direct_history =
-      (view() == View::waterfall || view() == View::audio_spectrogram) &&
+      (view() == View::waterfall || view() == View::audio_spectrogram ||
+       view() == View::phosphor) &&
       !g_inspect && !g_drawer && !g_chooser &&
       (!g_message_until_ms || static_cast<int32_t>(g_message_until_ms - now) <= 0) &&
       g_source_available.load(std::memory_order_acquire);
-  if ((view() == View::waterfall || view() == View::audio_spectrogram) &&
+  if ((view() == View::waterfall || view() == View::audio_spectrogram ||
+       view() == View::phosphor) &&
       !direct_history && !g_waterfall_canvas_synced &&
       g_canvas.getBuffer() && g_display_buffer) {
     memcpy(g_canvas.getBuffer(), g_display_buffer, g_display_buffer_bytes);
@@ -2078,6 +2149,14 @@ bool self_check() {
   if (kDrawerY + kDrawerH != 720 || kHudH < 58) return false;
   if (fit_fft_size(1024, 372) != 256 || fit_fft_size(2048, 1024) != 1024 ||
       fit_fft_size(256, 128) != 0)
+    return false;
+  if (density_decay_scale(3000, 3.0f) != 128 ||
+      density_linear_decay(3000, 3.0f) != 128 ||
+      density_accumulate(20, 80, 0) != 80 ||
+      density_accumulate(20, 80, 1) != 30 ||
+      density_accumulate(250, 80, 2) != 255 ||
+      density_display_intensity(24, 1.0f) != 240 ||
+      density_display_intensity(24, 0.25f) != 60)
     return false;
   int16_t audio_window[4] = {1, 2, 3, 4};
   const int16_t audio_tail[3] = {5, 6, 7};
