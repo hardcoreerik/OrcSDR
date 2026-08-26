@@ -1163,19 +1163,47 @@ void draw_chooser() {
   }
 }
 
-size_t visible_controls(const ControlDescriptor** output, size_t capacity) {
+bool quick_control_visible(View current, const ControlDescriptor& control,
+                           bool waterfall_custom) {
+  if (control.view != View::common && control.view != current) return false;
+  if (current == View::waterfall &&
+      (strcmp(control.id, "display.floor_dbfs") == 0 ||
+       strcmp(control.id, "display.ceiling_dbfs") == 0))
+    return !waterfall_custom;
+  if (current == View::waterfall &&
+      (strcmp(control.id, "waterfall.floor_dbfs") == 0 ||
+       strcmp(control.id, "waterfall.ceiling_dbfs") == 0))
+    return waterfall_custom;
+  if (control.view != View::common) return control.group == ControlGroup::quick;
+  if (strcmp(control.id, "rf.span_hz") == 0) return current == View::spectrum;
+  if (strcmp(control.id, "visual.freeze") != 0) return false;
+  return current == View::waterfall || current == View::phosphor ||
+         current == View::spectrum3d;
+}
+
+size_t visible_controls_for(View current, ControlGroup wanted, bool waterfall_custom,
+                            const ControlDescriptor** output, size_t capacity) {
   size_t count = 0, total = 0;
   const auto* list = controls(&total);
-  const View current = static_cast<View>(g_view.load());
-  const ControlGroup wanted = g_drawer_page == 0 ? ControlGroup::quick
-                                  : g_drawer_page == 1 ? ControlGroup::advanced
-                                  : g_drawer_page == 2 ? ControlGroup::display
-                                                       : ControlGroup::action;
   for (size_t i = 0; i < total && count < capacity; ++i) {
-    if ((list[i].view == View::common || list[i].view == current) && list[i].group == wanted)
+    const bool applies = list[i].view == View::common || list[i].view == current;
+    const bool group_matches = wanted == ControlGroup::quick
+                                   ? quick_control_visible(current, list[i], waterfall_custom)
+                                   : list[i].group == wanted ||
+                                         (wanted == ControlGroup::advanced &&
+                                          list[i].group == ControlGroup::action);
+    if (applies && group_matches)
       output[count++] = &list[i];
   }
   return count;
+}
+
+size_t visible_controls(const ControlDescriptor** output, size_t capacity) {
+  const ControlGroup wanted = g_drawer_page == 0 ? ControlGroup::quick
+                                  : g_drawer_page == 1 ? ControlGroup::advanced
+                                                       : ControlGroup::display;
+  return visible_controls_for(view(), wanted, value("waterfall.level_mode") != 0,
+                              output, capacity);
 }
 
 void format_value(const ControlDescriptor& c, float v, char* out, size_t size) {
@@ -1923,6 +1951,30 @@ bool self_check() {
       waterfall_intensity(-20, -100, -20, 1) != 255 ||
       waterfall_intensity(-60, -100, -20, 1) < 126 ||
       waterfall_intensity(-60, -100, -20, 1) > 128)
+    return false;
+  const ControlDescriptor* shown[48]{};
+  const auto contains = [&](size_t count, const char* id) {
+    for (size_t i = 0; i < count; ++i)
+      if (strcmp(shown[i]->id, id) == 0) return true;
+    return false;
+  };
+  for (size_t i = 0; i < static_cast<size_t>(View::count); ++i)
+    if (visible_controls_for(static_cast<View>(i), ControlGroup::quick, false,
+                             shown, std::size(shown)) != 5)
+      return false;
+  size_t shown_count = visible_controls_for(View::waterfall, ControlGroup::quick, false,
+                                             shown, std::size(shown));
+  if (!contains(shown_count, "display.floor_dbfs") ||
+      contains(shown_count, "waterfall.floor_dbfs") || contains(shown_count, "fft.size"))
+    return false;
+  shown_count = visible_controls_for(View::waterfall, ControlGroup::quick, true,
+                                     shown, std::size(shown));
+  if (!contains(shown_count, "waterfall.floor_dbfs") ||
+      contains(shown_count, "display.floor_dbfs"))
+    return false;
+  shown_count = visible_controls_for(View::spectrum, ControlGroup::advanced, false,
+                                     shown, std::size(shown));
+  if (!contains(shown_count, "fft.clear_peak") || !contains(shown_count, "visual.reset"))
     return false;
   if (view_name(View::spectrum3d) == nullptr ||
       strcmp(view_name(View::spectrum3d), "3D SPECTRUM HISTORY") != 0) return false;
