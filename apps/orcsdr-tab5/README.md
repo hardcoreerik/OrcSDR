@@ -42,7 +42,9 @@ Splash is the **loading screen** while Wi-Fi, RTL-SDR host, and NVS come up:
 
 Driver component (portable USB/stream):
 
-**[`components/rtl_sdr_v4_esp`](../../components/rtl_sdr_v4_esp)** (RTL-SDRv4-ESP).
+[`esp_rtl_sdr`](https://github.com/hardcoreerik/esp-rtl-sdr), pinned to an
+immutable release by `main/idf_component.yml` and `dependencies.lock`. Do not
+substitute a local component path or a moving branch.
 
 Hard rules: clean-room V4 only; no librtlsdr; do not claim calibrated OTA RF
 from UI features alone.
@@ -112,6 +114,6 @@ native ESP-IDF; it is not a separate recovery-agent build.
 
 | Piece | Location |
 |---|---|
-| Driver (portable) | `components/rtl_sdr_v4_esp` |
+| Driver (portable) | GitHub-managed `esp_rtl_sdr` release |
 | This app | `apps/orcsdr-tab5` |
 | OrcLink | Separate repo — control plane, not required to run this app |

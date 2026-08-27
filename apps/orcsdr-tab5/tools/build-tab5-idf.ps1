@@ -41,4 +41,4 @@ foreach ($line in $required) {
 }
 
 idf.py -B $buildDir build
-exit $LASTEXITCODE
+if ($LASTEXITCODE -ne 0) { throw "ESP-IDF build failed with exit code $LASTEXITCODE." }
