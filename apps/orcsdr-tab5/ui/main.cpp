@@ -4946,9 +4946,9 @@ void close_visualizer() {
 }
 
 void service_visualizer() {
-  rtl_sdr_v4_esp_metrics_t metrics{};
+  esp_rtl_sdr_metrics_t metrics{};
   const uint32_t now = millis();
-  if (g_rtl != nullptr) (void)rtl_sdr_v4_esp_get_metrics(g_rtl, &metrics);
+  if (g_rtl != nullptr) (void)esp_rtl_sdr_get_metrics(g_rtl, &metrics);
   const auto fm = fm_dashboard_snapshot();
   orcsdr::visualizer::Runtime runtime{};
   runtime.center_hz = rtl_ui_frequency_hz;
