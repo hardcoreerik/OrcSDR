@@ -1,10 +1,10 @@
 #include "rf_visualizer.hpp"
 
 #include "nvs_store.hpp"
+#include "rf_analysis.hpp"
 #include "text_editor.hpp"
 
 #include <M5Unified.h>
-#include <dsps_fft2r.h>
 #include <esp_heap_caps.h>
 #include <lgfx/v1/platforms/esp32p4/Panel_DSI.hpp>
 #include <freertos/FreeRTOS.h>
@@ -27,10 +27,7 @@ constexpr uint16_t kPersistVersion = 1;
 constexpr size_t kMaxControls = 192;
 constexpr size_t kPresetValues = 32;
 constexpr size_t kCustomPresets = 4;
-constexpr size_t kIqBytes = 16384;
-constexpr size_t kIqPoints = kIqBytes / 2;
 constexpr size_t kBins = 1024;
-constexpr size_t kAudioFrames = 2048;
 constexpr int kPlotX = 42;
 constexpr int kPlotY = 82;
 constexpr int kPlotW = 1196;
@@ -72,22 +69,7 @@ struct Persisted {
   Preset presets[static_cast<size_t>(View::count)][kCustomPresets];
 };
 
-struct SpectrumFrame {
-  uint32_t revision = 0;
-  uint32_t analyzed_ms = 0;
-  uint16_t bins = 0;
-  float live[kBins]{};
-  float average[kBins]{};
-  float peak[kBins]{};
-  float noise = -120;
-  float strongest = -120;
-  int32_t strongest_offset_hz = 0;
-  uint16_t iq_count = 0;
-  float iq_i[1024]{};
-  float iq_q[1024]{};
-  uint16_t audio_bins = 0;
-  float audio[kBins]{};
-};
+using SpectrumFrame = rf_analysis::Snapshot;
 
 struct Gesture {
   bool down = false;
@@ -120,25 +102,15 @@ Persisted* g_persist_storage = nullptr;
 #define g_persist (*g_persist_storage)
 Runtime g_runtime{};
 portMUX_TYPE g_runtime_mux = portMUX_INITIALIZER_UNLOCKED;
-SemaphoreHandle_t g_iq_mutex = nullptr;
-SemaphoreHandle_t g_audio_mutex = nullptr;
-uint8_t* g_iq = nullptr;
-size_t g_iq_bytes = 0;
-uint32_t g_iq_revision = 0;
-int16_t* g_audio_l = nullptr;
-int16_t* g_audio_r = nullptr;
-size_t g_audio_frames = 0;
-uint32_t g_audio_rate = 48000;
-uint32_t g_audio_revision = 0;
-TaskHandle_t g_analysis_task = nullptr;
 std::atomic<bool> g_active{false};
 std::atomic<bool> g_source_available{false};
 std::atomic<uint8_t> g_view{0};
-std::atomic<uint32_t> g_dropped_input{0};
 SemaphoreHandle_t g_frame_mutex = nullptr;
 SemaphoreHandle_t g_history_mutex = nullptr;
 SpectrumFrame* g_frame = nullptr;
 SpectrumFrame* g_ui_frame = nullptr;
+SpectrumFrame* g_observer_frame = nullptr;
+bool g_initialized = false;
 uint32_t g_drawn_revision = 0;
 uint8_t* g_history = nullptr;
 bool g_history_audio = false;
@@ -202,6 +174,8 @@ size_t g_selected_preset = 0;
 
 void set_value(size_t index, float next, bool persist);
 void allocate_view_buffers(View next);
+void configure_analysis();
+void process_channel_audio(const uint8_t* iq, size_t bytes);
 
 size_t copy_view_values(View current, float* output, size_t capacity) {
   size_t count = 0, descriptor_count = 0;
@@ -296,6 +270,7 @@ void set_value(size_t index, float next, bool persist = true) {
     g_channels[g_selected_channel].offset_hz = next;
   if (strcmp(c.id, "visual.freeze") == 0) persist = false;
   if (persist) g_persist_due_ms = millis() + 2000;
+  if (g_initialized) configure_analysis();
 }
 
 uint32_t capabilities() {
@@ -492,28 +467,6 @@ int selected_fft_size(View current) {
   return sizes[std::clamp(i, 0, 4)];
 }
 
-int fit_fft_size(int requested, size_t available) {
-  while (requested > static_cast<int>(available)) requested >>= 1;
-  return requested >= 256 ? requested : 0;
-}
-
-size_t append_audio_window(int16_t* destination, size_t capacity, size_t used,
-                           const int16_t* source, size_t count) {
-  if (!destination || !capacity || !source || !count) return used;
-  if (count >= capacity) {
-    memcpy(destination, source + count - capacity, capacity * sizeof(*destination));
-    return capacity;
-  }
-  used = std::min(used, capacity);
-  const size_t overflow = used + count > capacity ? used + count - capacity : 0;
-  if (overflow) {
-    memmove(destination, destination + overflow, (used - overflow) * sizeof(*destination));
-    used -= overflow;
-  }
-  memcpy(destination + used, source, count * sizeof(*destination));
-  return used + count;
-}
-
 void add_history_row(const SpectrumFrame& frame, bool audio) {
   if (!g_history || !g_history_rows) return;
   if (g_history_mutex && xSemaphoreTake(g_history_mutex, 0) != pdTRUE) return;
@@ -593,220 +546,127 @@ void update_occupancy(const SpectrumFrame& frame) {
   }
 }
 
-void analyze_iq(const uint8_t* iq, size_t bytes, SpectrumFrame* next, float* work) {
-  if (!iq || !next || !work || bytes < 512) return;
-  const View current = static_cast<View>(g_view.load(std::memory_order_acquire));
-  int n = selected_fft_size(current);
-  n = std::min<int>(n, static_cast<int>(bytes / 2));
-  int power = 1;
-  while ((power << 1) <= n) power <<= 1;
-  n = std::max(256, power);
-  constexpr float pi = 3.14159265358979323846f;
-  float sum_i = 0, sum_q = 0;
-  const size_t iq_points = std::min<size_t>(1024, bytes / 2);
-  for (size_t i = 0; i < iq_points; ++i) {
-    const float re = (static_cast<int>(iq[i * 2]) - 127.5f) / 127.5f;
-    const float im = (static_cast<int>(iq[i * 2 + 1]) - 127.5f) / 127.5f;
-    next->iq_i[i] = re;
-    next->iq_q[i] = im;
-    sum_i += re;
-    sum_q += im;
-  }
-  next->iq_count = static_cast<uint16_t>(iq_points);
-  const float dc_i = sum_i / iq_points;
-  const float dc_q = sum_q / iq_points;
-  for (size_t i = 0; i < iq_points; ++i) {
-    next->iq_i[i] -= dc_i;
-    next->iq_q[i] -= dc_q;
-  }
-  if (current == View::constellation || current == View::polar) {
-    const char* prefix = current == View::constellation ? "constellation." : "polar.";
-    const int source = static_cast<int>(value(current == View::constellation
-                                                   ? "constellation.source"
-                                                   : "polar.source"));
-    const float manual_deg = value(current == View::constellation
-                                        ? "constellation.phase_deg"
-                                        : "polar.rotation_deg");
-    const float manual = manual_deg * pi / 180.0f;
-    static float filtered_i = 0, filtered_q = 0, carrier_phase = 0, carrier_rate = 0;
-    if (source > 0) {
-      Runtime runtime{};
-      portENTER_CRITICAL(&g_runtime_mux);
-      runtime = g_runtime;
-      portEXIT_CRITICAL(&g_runtime_mux);
-      const float bandwidth = current == View::constellation
-                                  ? value("constellation.channel_bw_hz")
-                                  : std::max(2400.0f, runtime.span_hz / 8.0f);
-      const float alpha = std::clamp(6.2831853f * bandwidth /
-                                         std::max(1.0f, static_cast<float>(runtime.sample_rate_sps)),
-                                     0.002f, 0.35f);
-      const int recovery = current == View::constellation
-                               ? static_cast<int>(value("constellation.carrier_recovery"))
-                               : (value("polar.phase_reference") == 2 ? 1 : 0);
-      for (size_t i = 0; i < iq_points; ++i) {
-        filtered_i += alpha * (next->iq_i[i] - filtered_i);
-        filtered_q += alpha * (next->iq_q[i] - filtered_q);
-        const float phase = carrier_phase + manual;
-        const float c = cosf(phase), s = sinf(phase);
-        const float rotated_i = filtered_i * c + filtered_q * s;
-        const float rotated_q = filtered_q * c - filtered_i * s;
-        next->iq_i[i] = rotated_i;
-        next->iq_q[i] = rotated_q;
-        if (recovery) {
-          const float error = recovery == 2
-                                  ? copysignf(1.0f, rotated_i) * rotated_q -
-                                        copysignf(1.0f, rotated_q) * rotated_i
-                                  : atan2f(rotated_q, rotated_i);
-          carrier_rate = std::clamp(carrier_rate + 0.00002f * error, -0.08f, 0.08f);
-          carrier_phase += carrier_rate + 0.002f * error;
-          if (carrier_phase > pi) carrier_phase -= 2 * pi;
-          if (carrier_phase < -pi) carrier_phase += 2 * pi;
-        }
-      }
-      if (source > 1 && current == View::constellation) {
-        const float symbol_rate = value("constellation.symbol_rate");
-        if (symbol_rate > 0 && runtime.sample_rate_sps > symbol_rate) {
-          const float samples_per_symbol = runtime.sample_rate_sps / symbol_rate;
-          float cursor = 0;
-          size_t output = 0;
-          while (cursor < iq_points && output < iq_points) {
-            const size_t index = std::min(iq_points - 1, static_cast<size_t>(cursor));
-            next->iq_i[output] = next->iq_i[index];
-            next->iq_q[output++] = next->iq_q[index];
-            cursor += samples_per_symbol;
-          }
-          next->iq_count = static_cast<uint16_t>(output);
-        }
-      }
-    } else if (manual != 0) {
-      const float c = cosf(manual), s = sinf(manual);
-      for (size_t i = 0; i < iq_points; ++i) {
-        const float re = next->iq_i[i], im = next->iq_q[i];
-        next->iq_i[i] = re * c + im * s;
-        next->iq_q[i] = im * c - re * s;
-      }
-    }
-    (void)prefix;
-  }
-  for (int i = 0; i < n; ++i) {
-    const float window = 0.5f - 0.5f * cosf(2.0f * pi * i / (n - 1));
-    work[i * 2] = ((static_cast<int>(iq[i * 2]) - 127.5f) / 127.5f) * window;
-    work[i * 2 + 1] = ((static_cast<int>(iq[i * 2 + 1]) - 127.5f) / 127.5f) * window;
-  }
-  // ESP-DSP's P4 assembly path assumes internal RAM; visualizer FFT buffers live in PSRAM.
-  if (dsps_fft2r_fc32_ansi(work, n) != ESP_OK || dsps_bit_rev_fc32_ansi(work, n) != ESP_OK)
-    return;
-  next->bins = static_cast<uint16_t>(std::min<int>(kBins, n));
-  next->strongest = -160;
-  float noise_sum = 0;
-  size_t strongest_bin = next->bins / 2;
-  for (size_t x = 0; x < next->bins; ++x) {
-    const size_t source = x * n / next->bins;
-    const size_t shifted = (source + n / 2) % n;
-    const float re = work[shifted * 2];
-    const float im = work[shifted * 2 + 1];
-    const float db = 10.0f * log10f(re * re + im * im + 1.0e-12f) -
-                     20.0f * log10f(static_cast<float>(n));
-    next->live[x] = db;
-    const float linear = powf(10.0f, db / 10.0f);
-    const float old_average = powf(10.0f, next->average[x] / 10.0f);
-    next->average[x] = 10.0f * log10f(0.15f * linear + 0.85f * old_average + 1.0e-14f);
-    next->peak[x] = std::max(db, next->peak[x] - 0.15f);
-    noise_sum += db;
-    if (db > next->strongest) {
-      next->strongest = db;
-      strongest_bin = x;
-    }
-  }
-  next->noise = noise_sum / next->bins;
+
+void configure_analysis() {
   Runtime runtime{};
   portENTER_CRITICAL(&g_runtime_mux);
   runtime = g_runtime;
   portEXIT_CRITICAL(&g_runtime_mux);
-  next->strongest_offset_hz = static_cast<int32_t>(
-      (static_cast<int64_t>(strongest_bin) - next->bins / 2) * runtime.span_hz /
-      std::max<int>(1, next->bins));
+  const View current = static_cast<View>(g_view.load(std::memory_order_acquire));
+  rf_analysis::Config config{};
+  config.center_hz = runtime.center_hz;
+  config.span_hz = runtime.span_hz;
+  config.sample_rate_sps = runtime.sample_rate_sps;
+  config.audio_rate_sps = runtime.audio_rate_sps;
+  config.measurement_bandwidth_hz = runtime.filter_bandwidth_hz;
+  config.fft_size = static_cast<uint16_t>(
+      current == View::audio_spectrogram ? 1024 : selected_fft_size(current));
+  config.audio_fft_size = static_cast<uint16_t>(selected_fft_size(View::audio_spectrogram));
+  config.interval_ms = g_effective_quality == 0 ? 33 : g_effective_quality == 1 ? 66 : 200;
+  config.audio_spectrum = current == View::audio_spectrogram;
+  config.audio_demod = runtime.audio_demod == AudioDemod::fm
+                           ? rf_analysis::AudioDemod::fm
+                           : runtime.audio_demod == AudioDemod::am
+                                 ? rf_analysis::AudioDemod::am
+                                 : rf_analysis::AudioDemod::none;
+  rf_analysis::set_config(config);
 }
 
-size_t demodulate_audio_snapshot(const uint8_t* iq, size_t bytes, AudioDemod demod,
-                                 uint32_t sample_rate, uint32_t audio_rate,
-                                 int16_t* output, size_t capacity) {
-  if (!iq || bytes < 4 || demod == AudioDemod::none || !output || !capacity) return 0;
-  const uint32_t decimation =
-      std::max<uint32_t>(1, sample_rate / std::max<uint32_t>(1, audio_rate));
-  float previous_i = static_cast<int>(iq[0]) - 127.5f;
-  float previous_q = static_cast<int>(iq[1]) - 127.5f;
-  float sum = 0, dc = 0;
-  uint32_t phase = 0;
-  size_t count = 0;
-  for (size_t offset = 2; offset + 1 < bytes && count < capacity; offset += 2) {
-    const float i = static_cast<int>(iq[offset]) - 127.5f;
-    const float q = static_cast<int>(iq[offset + 1]) - 127.5f;
-    float sample = 0;
-    if (demod == AudioDemod::fm) {
-      const float cross = previous_i * q - previous_q * i;
-      const float dot = previous_i * i + previous_q * q;
-      sample = cross / (fabsf(dot) + 64.0f);
-    } else {
-      sample = fabsf(i) + fabsf(q);
-      dc += 0.002f * (sample - dc);
-      sample = (sample - dc) * 0.02f;
-    }
-    previous_i = i;
-    previous_q = q;
-    sum += sample;
-    if (++phase == decimation) {
-      output[count++] = static_cast<int16_t>(std::clamp(
-          sum * (demod == AudioDemod::fm ? 9000.0f : 7000.0f) / decimation,
-          -16000.0f, 16000.0f));
-      phase = 0;
-      sum = 0;
-    }
-  }
-  return count;
-}
-
-void analyze_audio(SpectrumFrame* next, float* work, const uint8_t* iq, size_t iq_bytes) {
-  if (!next || !work || !g_audio_l || !g_audio_mutex) return;
-  static uint32_t analyzed_revision = 0;
-  int16_t local[kAudioFrames];
-  size_t frames = 0;
-  if (xSemaphoreTake(g_audio_mutex, 0) == pdTRUE) {
-    if (g_audio_revision != analyzed_revision) {
-      frames = std::min(g_audio_frames, kAudioFrames);
-      memcpy(local, g_audio_l, frames * sizeof(int16_t));
-      analyzed_revision = g_audio_revision;
-    }
-    xSemaphoreGive(g_audio_mutex);
-  }
-  if (frames < 256) {
+void transform_iq_frame(SpectrumFrame* frame) {
+  if (!frame || !frame->iq_count) return;
+  const View current = static_cast<View>(g_view.load(std::memory_order_acquire));
+  if (current != View::constellation && current != View::polar) return;
+  const int source = static_cast<int>(value(current == View::constellation
+                                                 ? "constellation.source"
+                                                 : "polar.source"));
+  const float manual_deg = value(current == View::constellation
+                                      ? "constellation.phase_deg"
+                                      : "polar.rotation_deg");
+  const float manual = manual_deg * 3.14159265358979323846f / 180.0f;
+  static float filtered_i = 0, filtered_q = 0, carrier_phase = 0, carrier_rate = 0;
+  if (source > 0) {
     Runtime runtime{};
     portENTER_CRITICAL(&g_runtime_mux);
     runtime = g_runtime;
     portEXIT_CRITICAL(&g_runtime_mux);
-    frames = demodulate_audio_snapshot(iq, iq_bytes, runtime.audio_demod,
-                                       runtime.sample_rate_sps, runtime.audio_rate_sps,
-                                       local, std::size(local));
+    const float bandwidth = current == View::constellation
+                                ? value("constellation.channel_bw_hz")
+                                : std::max(2400.0f, runtime.span_hz / 8.0f);
+    const float alpha = std::clamp(6.2831853f * bandwidth /
+                                       std::max(1.0f, static_cast<float>(runtime.sample_rate_sps)),
+                                   0.002f, 0.35f);
+    const int recovery = current == View::constellation
+                             ? static_cast<int>(value("constellation.carrier_recovery"))
+                             : (value("polar.phase_reference") == 2 ? 1 : 0);
+    for (size_t i = 0; i < frame->iq_count; ++i) {
+      filtered_i += alpha * (frame->iq_i[i] - filtered_i);
+      filtered_q += alpha * (frame->iq_q[i] - filtered_q);
+      const float phase = carrier_phase + manual;
+      const float c = cosf(phase), s = sinf(phase);
+      const float rotated_i = filtered_i * c + filtered_q * s;
+      const float rotated_q = filtered_q * c - filtered_i * s;
+      frame->iq_i[i] = rotated_i;
+      frame->iq_q[i] = rotated_q;
+      if (recovery) {
+        const float error = recovery == 2
+                                ? copysignf(1.0f, rotated_i) * rotated_q -
+                                      copysignf(1.0f, rotated_q) * rotated_i
+                                : atan2f(rotated_q, rotated_i);
+        carrier_rate = std::clamp(carrier_rate + 0.00002f * error, -0.08f, 0.08f);
+        carrier_phase += carrier_rate + 0.002f * error;
+        if (carrier_phase > 3.14159265358979323846f)
+          carrier_phase -= 6.28318530717958647692f;
+        if (carrier_phase < -3.14159265358979323846f)
+          carrier_phase += 6.28318530717958647692f;
+      }
+    }
+    if (source > 1 && current == View::constellation) {
+      const float symbol_rate = value("constellation.symbol_rate");
+      if (symbol_rate > 0 && runtime.sample_rate_sps > symbol_rate) {
+        const float samples_per_symbol = runtime.sample_rate_sps / symbol_rate;
+        float cursor = 0;
+        size_t output = 0;
+        while (cursor < frame->iq_count && output < frame->iq_count) {
+          const size_t index =
+              std::min<size_t>(frame->iq_count - 1, static_cast<size_t>(cursor));
+          frame->iq_i[output] = frame->iq_i[index];
+          frame->iq_q[output++] = frame->iq_q[index];
+          cursor += samples_per_symbol;
+        }
+        frame->iq_count = static_cast<uint16_t>(output);
+      }
+    }
+  } else if (manual != 0) {
+    const float c = cosf(manual), s = sinf(manual);
+    for (size_t i = 0; i < frame->iq_count; ++i) {
+      const float re = frame->iq_i[i], im = frame->iq_q[i];
+      frame->iq_i[i] = re * c + im * s;
+      frame->iq_q[i] = im * c - re * s;
+    }
   }
-  if (frames < 256) return;
-  const int n = fit_fft_size(selected_fft_size(View::audio_spectrogram), frames);
-  if (!n) return;
-  constexpr float pi = 3.14159265358979323846f;
-  for (int i = 0; i < n; ++i) {
-    const float window = 0.5f - 0.5f * cosf(2.0f * pi * i / (n - 1));
-    work[i * 2] = local[i] * window / 32768.0f;
-    work[i * 2 + 1] = 0;
+}
+
+void analysis_observer(const rf_analysis::Snapshot& snapshot, const uint8_t* iq,
+                       size_t bytes) {
+  if (!g_active.load(std::memory_order_acquire) || !g_observer_frame) return;
+  *g_observer_frame = snapshot;
+  transform_iq_frame(g_observer_frame);
+  if (xSemaphoreTake(g_frame_mutex, pdMS_TO_TICKS(2)) == pdTRUE) {
+    *g_frame = *g_observer_frame;
+    xSemaphoreGive(g_frame_mutex);
   }
-  if (dsps_fft2r_fc32_ansi(work, n) != ESP_OK || dsps_bit_rev_fc32_ansi(work, n) != ESP_OK)
-    return;
-  next->audio_bins = static_cast<uint16_t>(std::min<int>(kBins, n / 2));
-  for (size_t x = 0; x < next->audio_bins; ++x) {
-    const size_t source = x * (n / 2) / next->audio_bins;
-    const float re = work[source * 2];
-    const float im = work[source * 2 + 1];
-    next->audio[x] = 10.0f * log10f(re * re + im * im + 1.0e-12f) -
-                     20.0f * log10f(static_cast<float>(n));
+  const View current = static_cast<View>(g_view.load(std::memory_order_acquire));
+  if (!value("visual.freeze")) {
+    if (current == View::phosphor) add_density(*g_observer_frame);
+    else if (current == View::waterfall || current == View::spectrum3d ||
+             current == View::occupancy || current == View::doppler)
+      add_history_row(*g_observer_frame, false);
+    else if (current == View::audio_spectrogram)
+      add_history_row(*g_observer_frame, true);
+    if (current == View::occupancy) update_occupancy(*g_observer_frame);
   }
+  if (current == View::channelizer) process_channel_audio(iq, bytes);
+  ++g_analysis_frames;
 }
 
 void process_channel_audio(const uint8_t* iq, size_t bytes) {
@@ -872,70 +732,6 @@ void process_channel_audio(const uint8_t* iq, size_t bytes) {
   if (pcm_count) g_audio_sink(pcm, pcm_count);
 }
 
-void analysis_worker(void*) {
-  float* work = static_cast<float*>(
-      heap_caps_aligned_alloc(16, sizeof(float) * 8192 * 2,
-                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  uint8_t* local_iq = static_cast<uint8_t*>(
-      heap_caps_malloc(kIqBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  SpectrumFrame* next = static_cast<SpectrumFrame*>(
-      heap_caps_malloc(sizeof(SpectrumFrame), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  uint32_t seen_revision = 0;
-  while (true) {
-    if (!g_active.load(std::memory_order_acquire) || !work || !local_iq || !next) {
-      vTaskDelay(pdMS_TO_TICKS(50));
-      continue;
-    }
-    const uint8_t quality = static_cast<uint8_t>(std::clamp(value("visual.quality"), 0.0f, 2.0f));
-    const uint32_t interval = quality <= 1 ? 30 : 66;
-    static uint32_t last_ms = 0;
-    if (millis() - last_ms < interval) {
-      vTaskDelay(pdMS_TO_TICKS(5));
-      continue;
-    }
-    size_t bytes = 0;
-    uint32_t revision = 0;
-    if (xSemaphoreTake(g_iq_mutex, 0) == pdTRUE) {
-      revision = g_iq_revision;
-      if (revision != seen_revision) {
-        bytes = g_iq_bytes;
-        memcpy(local_iq, g_iq, bytes);
-      }
-      xSemaphoreGive(g_iq_mutex);
-    }
-    if (!bytes) {
-      vTaskDelay(pdMS_TO_TICKS(10));
-      continue;
-    }
-    seen_revision = revision;
-    last_ms = millis();
-    if (xSemaphoreTake(g_frame_mutex, pdMS_TO_TICKS(2)) != pdTRUE) continue;
-    *next = *g_frame;
-    xSemaphoreGive(g_frame_mutex);
-    analyze_iq(local_iq, bytes, next, work);
-    if (static_cast<View>(g_view.load()) == View::audio_spectrogram)
-      analyze_audio(next, work, local_iq, bytes);
-    if (static_cast<View>(g_view.load()) == View::channelizer)
-      process_channel_audio(local_iq, bytes);
-    next->revision = revision;
-    next->analyzed_ms = millis();
-    if (xSemaphoreTake(g_frame_mutex, pdMS_TO_TICKS(2)) == pdTRUE) {
-      *g_frame = *next;
-      xSemaphoreGive(g_frame_mutex);
-    }
-    const View current = static_cast<View>(g_view.load());
-    if (!value("visual.freeze")) {
-      if (current == View::phosphor) add_density(*next);
-      else if (current == View::waterfall || current == View::spectrum3d ||
-               current == View::occupancy || current == View::doppler)
-        add_history_row(*next, false);
-      else if (current == View::audio_spectrogram)
-        add_history_row(*next, true);
-      if (current == View::occupancy) update_occupancy(*next);
-    }
-    ++g_analysis_frames;
-  }
-}
 
 void draw_frame_chrome() {
   g_canvas.setFont(nullptr);
@@ -1343,7 +1139,8 @@ void draw_hud() {
   button(954, 14, 104, 52, g_hud_locked ? "LOCKED" : "LOCK", kCyan, g_hud_locked);
   char fps[64];
   snprintf(fps, sizeof(fps), "P %.0f  A %.0f  DROP %lu", static_cast<double>(g_presentation_fps),
-           static_cast<double>(g_analysis_fps), static_cast<unsigned long>(g_dropped_input.load()));
+           static_cast<double>(g_analysis_fps),
+           static_cast<unsigned long>(g_ui_frame ? g_ui_frame->input_drops : 0));
   text(fps, 1260, 40, kMuted, 1, middle_right);
 }
 
@@ -1484,6 +1281,7 @@ void switch_view(int delta) {
   g_persist.last_view = static_cast<uint8_t>(next);
   g_persist_due_ms = millis() + 2000;
   allocate_view_buffers(static_cast<View>(next));
+  configure_analysis();
   g_drawn_revision = 0;
   g_name_until_ms = millis() + kNameTimeoutMs;
   draw_frame_chrome();
@@ -1499,16 +1297,19 @@ void reset_view_defaults() {
       g_persist.values[i] = list[i].default_value;
   g_persist_due_ms = millis() + 1;
   allocate_view_buffers(current);
+  configure_analysis();
 }
 
 void run_action(const ControlDescriptor& c) {
   if (strcmp(c.id, "visual.reset") == 0) reset_view_defaults();
   else if (strcmp(c.id, "fft.clear_peak") == 0 || strcmp(c.id, "peakavg.clear_hold") == 0) {
+    rf_analysis::clear_peak();
     if (xSemaphoreTake(g_frame_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
       for (float& p : g_frame->peak) p = -160;
       xSemaphoreGive(g_frame_mutex);
     }
   } else if (strcmp(c.id, "peakavg.clear_average") == 0) {
+    rf_analysis::clear_average();
     if (xSemaphoreTake(g_frame_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
       for (float& p : g_frame->average) p = -160;
       xSemaphoreGive(g_frame_mutex);
@@ -1709,6 +1510,7 @@ void service_health(uint32_t now) {
   const bool stressed = runtime.usb_overruns > g_last_usb_overruns ||
                         runtime.consumer_drops > g_last_consumer_drops ||
                         runtime.audio_drops > g_last_audio_drops;
+  const uint8_t before = g_effective_quality;
   if (stressed) {
     g_effective_quality = std::min<uint8_t>(2, static_cast<uint8_t>(g_effective_quality + 1));
     g_stable_since_ms = now;
@@ -1720,6 +1522,7 @@ void service_health(uint32_t now) {
   g_last_usb_overruns = runtime.usb_overruns;
   g_last_consumer_drops = runtime.consumer_drops;
   g_last_audio_drops = runtime.audio_drops;
+  if (g_effective_quality != before) configure_analysis();
 }
 
 }  // namespace
@@ -1735,7 +1538,7 @@ bool initialize(NvsStore* store, AudioSink audio_sink) {
   size_t count = 0;
   const auto* list = controls(&count);
   if (count > kMaxControls || !controls_self_check()) return false;
-  if (g_analysis_task) {
+  if (g_initialized) {
     if (g_store) {
       Persisted saved{};
       if (g_store->get_bytes("rf_vis", &saved, sizeof(saved)) == sizeof(saved) &&
@@ -1746,6 +1549,8 @@ bool initialize(NvsStore* store, AudioSink audio_sink) {
                                       static_cast<uint8_t>(View::count) - 1));
       }
     }
+    rf_analysis::set_observer(analysis_observer);
+    configure_analysis();
     return true;
   }
   g_canvas.setPsram(true);
@@ -1779,29 +1584,22 @@ bool initialize(NvsStore* store, AudioSink audio_sink) {
   g_persist.last_view = std::min<uint8_t>(g_persist.last_view,
                                           static_cast<uint8_t>(View::count) - 1);
   g_view.store(g_persist.last_view);
-  g_iq_mutex = xSemaphoreCreateMutex();
-  g_audio_mutex = xSemaphoreCreateMutex();
   g_frame_mutex = xSemaphoreCreateMutex();
   g_history_mutex = xSemaphoreCreateMutex();
-  g_iq = static_cast<uint8_t*>(heap_caps_malloc(kIqBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  g_audio_l = static_cast<int16_t*>(
-      heap_caps_malloc(kAudioFrames * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  g_audio_r = static_cast<int16_t*>(
-      heap_caps_malloc(kAudioFrames * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   g_frame = static_cast<SpectrumFrame*>(
       heap_caps_calloc(1, sizeof(SpectrumFrame), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   g_ui_frame = static_cast<SpectrumFrame*>(
       heap_caps_calloc(1, sizeof(SpectrumFrame), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  if (!g_iq_mutex || !g_audio_mutex || !g_frame_mutex || !g_history_mutex || !g_iq ||
-      !g_audio_l || !g_audio_r || !g_frame || !g_ui_frame)
+  g_observer_frame = static_cast<SpectrumFrame*>(
+      heap_caps_calloc(1, sizeof(SpectrumFrame), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!g_frame_mutex || !g_history_mutex || !g_frame || !g_ui_frame || !g_observer_frame)
     return false;
   for (float& level : g_frame->average) level = -160;
   for (float& level : g_frame->peak) level = -160;
-  if (dsps_fft2r_init_fc32(nullptr, 8192) != ESP_OK) return false;
-  if (xTaskCreatePinnedToCoreWithCaps(analysis_worker, "rf_visualizer", 8192, nullptr, 1,
-                                      &g_analysis_task, 1,
-                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS)
-    return false;
+  if (!rf_analysis::initialize() || !rf_analysis::self_check()) return false;
+  rf_analysis::set_observer(analysis_observer);
+  g_initialized = true;
+  configure_analysis();
   return true;
 }
 
@@ -1810,30 +1608,16 @@ void set_runtime(const Runtime& runtime) {
   g_runtime = runtime;
   portEXIT_CRITICAL(&g_runtime_mux);
   g_source_available.store(runtime.source_available, std::memory_order_release);
+  if (g_initialized) configure_analysis();
 }
 
 void offer_iq(const uint8_t* iq, size_t bytes) {
-  if (!g_active.load(std::memory_order_relaxed) || !iq || bytes < 512 || !g_iq_mutex) return;
-  if (xSemaphoreTake(g_iq_mutex, 0) != pdTRUE) {
-    g_dropped_input.fetch_add(1, std::memory_order_relaxed);
-    return;
-  }
-  g_iq_bytes = std::min(bytes, kIqBytes);
-  memcpy(g_iq, iq, g_iq_bytes);
-  ++g_iq_revision;
-  xSemaphoreGive(g_iq_mutex);
+  rf_analysis::offer_iq(iq, bytes);
 }
 
 void offer_audio(const int16_t* left, const int16_t* right, size_t frames,
                  uint32_t sample_rate_sps) {
-  if (!g_active.load(std::memory_order_relaxed) || !left || !frames || !g_audio_mutex) return;
-  if (xSemaphoreTake(g_audio_mutex, 0) != pdTRUE) return;
-  const size_t used = g_audio_frames;
-  g_audio_frames = append_audio_window(g_audio_l, kAudioFrames, used, left, frames);
-  append_audio_window(g_audio_r, kAudioFrames, used, right ? right : left, frames);
-  g_audio_rate = sample_rate_sps;
-  ++g_audio_revision;
-  xSemaphoreGive(g_audio_mutex);
+  rf_analysis::offer_audio(left, right, frames, sample_rate_sps);
 }
 
 bool enter(uint8_t origin_screen_value, uint8_t origin_tab_value) {
@@ -1844,6 +1628,8 @@ bool enter(uint8_t origin_screen_value, uint8_t origin_tab_value) {
   g_effective_quality = static_cast<uint8_t>(std::clamp(value("visual.quality"), 0.0f, 2.0f));
   allocate_view_buffers(static_cast<View>(g_view.load()));
   g_active.store(true, std::memory_order_release);
+  configure_analysis();
+  rf_analysis::set_enabled(true);
   g_name_until_ms = millis() + kNameTimeoutMs;
   g_drawn_revision = 0;
   draw_frame_chrome();
@@ -1854,6 +1640,7 @@ bool enter(uint8_t origin_screen_value, uint8_t origin_tab_value) {
 
 void leave() {
   g_active.store(false, std::memory_order_release);
+  rf_analysis::set_enabled(false);
   g_channel_solo = false;
   if (!g_history_mutex || xSemaphoreTake(g_history_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
     free_view_buffers();
@@ -2054,7 +1841,8 @@ bool process_command(const char* command, char* response, size_t response_size) 
              active() ? 1 : 0, view_slug(view()), g_source_available.load() ? 1 : 0,
              value("visual.freeze") ? 1 : 0, g_inspect ? 1 : 0, g_drawer ? 1 : 0,
              static_cast<double>(g_presentation_fps), static_cast<double>(g_analysis_fps),
-             static_cast<unsigned long>(g_dropped_input.load()), g_effective_quality);
+             static_cast<unsigned long>(g_ui_frame ? g_ui_frame->input_drops : 0),
+             g_effective_quality);
     return true;
   }
   if (strcmp(command, "RTL_VIS NEXT") == 0) { switch_view(1); strlcpy(response, "RTL_VIS_OK", response_size); return true; }
@@ -2146,10 +1934,7 @@ bool self_check() {
   if (!preset_slot("1", &slot) || slot != 0 || preset_slot("5", &slot) ||
       choice_count("A|B|C") != 3)
     return false;
-  if (kDrawerY + kDrawerH != 720 || kHudH < 58) return false;
-  if (fit_fft_size(1024, 372) != 256 || fit_fft_size(2048, 1024) != 1024 ||
-      fit_fft_size(256, 128) != 0)
-    return false;
+  if (kDrawerY + kDrawerH != 720 || kHudH < 58 || !rf_analysis::self_check()) return false;
   if (density_decay_scale(3000, 3.0f) != 128 ||
       density_linear_decay(3000, 3.0f) != 128 ||
       density_accumulate(20, 80, 0) != 80 ||
@@ -2157,22 +1942,6 @@ bool self_check() {
       density_accumulate(250, 80, 2) != 255 ||
       density_display_intensity(24, 1.0f) != 240 ||
       density_display_intensity(24, 0.25f) != 60)
-    return false;
-  int16_t audio_window[4] = {1, 2, 3, 4};
-  const int16_t audio_tail[3] = {5, 6, 7};
-  if (append_audio_window(audio_window, 4, 4, audio_tail, 3) != 4 ||
-      audio_window[0] != 4 || audio_window[1] != 5 || audio_window[3] != 7)
-    return false;
-  uint8_t rotating_iq[1024];
-  constexpr uint8_t phases[][2] = {{255, 128}, {128, 255}, {0, 128}, {128, 0}};
-  for (size_t i = 0; i < std::size(rotating_iq) / 2; ++i) {
-    rotating_iq[i * 2] = phases[i % 4][0];
-    rotating_iq[i * 2 + 1] = phases[i % 4][1];
-  }
-  int16_t demodulated[512]{};
-  if (demodulate_audio_snapshot(rotating_iq, sizeof(rotating_iq), AudioDemod::fm,
-                                48000, 48000, demodulated,
-                                std::size(demodulated)) < 256 || demodulated[4] == 0)
     return false;
   if (waterfall_rate(0) != 30 || waterfall_rate(1) != 5 || waterfall_rate(7) != 60 ||
       waterfall_intensity(-100, -100, -20, 1) != 0 ||

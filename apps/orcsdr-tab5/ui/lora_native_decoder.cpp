@@ -1,5 +1,7 @@
 #include "lora_native_decoder.hpp"
 
+#include "rf_analysis.hpp"
+
 #include <dsps_fft2r.h>
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
@@ -686,13 +688,13 @@ bool decode_mesh(const uint8_t* data, size_t size, const Config& config, Packet*
 
 bool initialize() {
   if (g_scratch.fft != nullptr && g_scratch.downchirp != nullptr)
-    return dsps_fft2r_init_fc32(nullptr, static_cast<int>(kMaxFft)) == ESP_OK;
+    return rf_analysis::initialize_fft();
   g_scratch.fft = static_cast<float*>(heap_caps_malloc(sizeof(float) * kMaxFft * 2,
                                                          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   g_scratch.downchirp = static_cast<float*>(heap_caps_malloc(sizeof(float) * kMaxFft * 2,
                                                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   if (g_scratch.fft == nullptr || g_scratch.downchirp == nullptr) return false;
-  return dsps_fft2r_init_fc32(nullptr, static_cast<int>(kMaxFft)) == ESP_OK;
+  return rf_analysis::initialize_fft();
 }
 
 static size_t decode_capture_pass(const uint8_t* cu8, size_t bytes, uint32_t sample_rate_sps,
