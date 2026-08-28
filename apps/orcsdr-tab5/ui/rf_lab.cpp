@@ -128,6 +128,8 @@ char g_recipe[32]{"NONE"};
 char g_recipe_status[64]{"IDLE"};
 uint32_t g_recipe_usb_overruns = 0;
 uint32_t g_recipe_consumer_drops = 0;
+float g_bias_volts[3]{};
+uint8_t g_bias_stage = 0;
 
 bool inside(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
   return x >= bx && x < bx + bw && y >= by && y < by + bh;
@@ -177,6 +179,17 @@ bool write_hashed(File& file, mbedtls_sha256_context& sha, const void* data,
 void hex_string(const uint8_t* bytes, size_t count, char* output, size_t capacity) {
   if (!bytes || !output || capacity < count * 2 + 1) return;
   for (size_t i = 0; i < count; ++i) snprintf(output + i * 2, 3, "%02x", bytes[i]);
+}
+
+void json_sanitize(const char* input, char* output, size_t capacity) {
+  if (!output || !capacity) return;
+  size_t written = 0;
+  for (const unsigned char* p = reinterpret_cast<const unsigned char*>(input ? input : "");
+       *p && written + 1 < capacity; ++p)
+    output[written++] = (*p >= 32 && *p <= 126 && *p != '"' && *p != '\\')
+                            ? static_cast<char>(*p)
+                            : '_';
+  output[written] = '\0';
 }
 
 bool begin_part(const char* path, char* part, size_t part_size, File* file) {
@@ -283,28 +296,34 @@ bool write_bmp(const SaveJob& job, const char* directory, uint8_t hash[32]) {
 
 bool write_json(const SaveJob& job, const char* directory, const uint8_t csv_hash[32],
                 const uint8_t bmp_hash[32]) {
-  char path[112], part[120], csv_hex[65]{}, bmp_hex[65]{};
+  char path[112], part[120], csv_hex[65]{}, bmp_hex[65]{}, device[48]{}, health[28]{};
   snprintf(path, sizeof(path), "%s/session.json", directory);
   hex_string(csv_hash, 32, csv_hex, sizeof(csv_hex));
   hex_string(bmp_hash, 32, bmp_hex, sizeof(bmp_hex));
+  json_sanitize(job.runtime.device, device, sizeof(device));
+  json_sanitize(job.runtime.health, health, sizeof(health));
   File file;
   if (!begin_part(path, part, sizeof(part), &file)) return false;
   const esp_app_desc_t* app = esp_app_get_description();
   const size_t written = file.printf(
       "{\n  \"schema_version\":1,\n  \"id\":\"%s\",\n  \"result\":\"%s\",\n"
-      "  \"firmware\":\"%s\",\n  \"driver\":\"%s\",\n  \"device\":\"%s\",\n"
+      "  \"firmware\":\"%s\",\n  \"driver\":\"%s\",\n  \"device\":\"%s\",\n  \"health\":\"%s\",\n"
       "  \"started_ms\":%lu,\n  \"stopped_ms\":%lu,\n  \"readings\":%u,\n"
       "  \"configuration\":{\"frequency_hz\":%lu,\"sample_rate_sps\":%lu,\"ppm\":%d,\"gain_mode\":\"%s\",\"gain_tenth_db\":%d,\"rtl_agc\":%s,\"bias_tee\":%s},\n"
+      "  \"stream\":{\"effective_sps\":%lu,\"usb_overruns\":%lu,\"consumer_drops\":%lu},\n"
       "  \"capabilities\":%lu,\n  \"reference\":{\"configured\":%s,\"frequency_hz\":%lu,\"source_dbm\":%.3f,\"path_loss_db\":%.3f,\"tolerance_db\":%.3f,\"calibrated\":%s,\"dbm_offset\":%.3f,\"note\":\"%s\"},\n"
       "  \"artifacts\":{\"readings.csv\":\"%s\",\"screen.bmp\":\"%s\"}\n}\n",
       job.id, job.result, app ? app->version : "unknown", job.runtime.driver_version,
-      job.runtime.device, static_cast<unsigned long>(job.started_ms),
+      device, health, static_cast<unsigned long>(job.started_ms),
       static_cast<unsigned long>(job.stopped_ms), static_cast<unsigned>(job.count),
       static_cast<unsigned long>(job.runtime.frequency_hz),
       static_cast<unsigned long>(job.runtime.sample_rate_sps), job.runtime.ppm,
       job.runtime.gain_mode == GainMode::automatic ? "AUTO" : "MANUAL",
       job.runtime.gain_tenth_db, job.runtime.rtl_agc ? "true" : "false",
       job.runtime.bias_tee ? "true" : "false",
+      static_cast<unsigned long>(job.runtime.effective_sps),
+      static_cast<unsigned long>(job.runtime.usb_overruns),
+      static_cast<unsigned long>(job.runtime.consumer_drops),
       static_cast<unsigned long>(job.runtime.capabilities),
       job.reference.configured ? "true" : "false",
       static_cast<unsigned long>(job.reference.frequency_hz),
@@ -766,6 +785,10 @@ bool valid_gain(const Runtime& r, int value) {
   return false;
 }
 
+bool bias_voltage_pass(float initial_off, float on, float final_off) {
+  return initial_off <= 0.2f && on >= 4.0f && on <= 5.0f && final_off <= 0.2f;
+}
+
 void handle_tap(int32_t x, int32_t y) {
   if (inside(x, y, 18, 14, 104, 52)) { request_close(); return; }
   if (y >= kFooterY) {
@@ -970,6 +993,19 @@ void service_ui(uint32_t now_ms) {
       }
     }
   }
+  if (strcmp(g_recipe, "source_reconnect") == 0) {
+    if (strcmp(g_recipe_status, "WAITING_FOR_SOURCE_LOSS") == 0 && !r.source_available) {
+      strlcpy(g_recipe_status, "WAITING_FOR_STABLE_RECONNECT", sizeof(g_recipe_status));
+    } else if (strcmp(g_recipe_status, "WAITING_FOR_STABLE_RECONNECT") == 0 &&
+               r.source_available && g_snapshot.source_stable &&
+               g_snapshot.revision > g_loss_revision) {
+      if (g_readings && g_reading_count < kMaxReadings)
+        g_readings[g_reading_count++] = make_reading(now_ms, "SOURCE RESTORED", true);
+      const bool ok = finish_run("PASS");
+      strlcpy(g_recipe_status, ok ? "PASS" : "SAVE_FAILED", sizeof(g_recipe_status));
+      strlcpy(g_recipe, "NONE", sizeof(g_recipe));
+    }
+  }
   if (g_message_until_ms && static_cast<int32_t>(g_message_until_ms - now_ms) > 0) {
     M5.Display.fillRoundRect(260, 598, 760, 42, 7, kPanel);
     M5.Display.drawRoundRect(260, 598, 760, 42, 7, TFT_ORANGE);
@@ -986,7 +1022,8 @@ void handle_touch(int32_t x, int32_t y, bool pressed, uint32_t now_ms) {
     g_bias_hold_fired = false;
     return;
   }
-  if (pressed && g_pressed && bias_button && g_bias_ack && !r.bias_tee &&
+  if (pressed && g_pressed && bias_button &&
+      inside(g_press_x, g_press_y, 700, 454, 252, 48) && g_bias_ack && !r.bias_tee &&
       !g_bias_hold_fired && now_ms - g_press_ms >= kBiasHoldMs) {
     g_bias_hold_fired = true;
     g_bias_ack = false;
@@ -1098,7 +1135,9 @@ bool process_command(const char* command, char* response, size_t response_size) 
                                       &reference_hz, &source_dbm, &path_loss_db,
                                       &tolerance_db, note);
   if (reference_fields >= 4) {
-    if (reference_hz < 500000 || reference_hz > 1766000000UL ||
+    if (!std::isfinite(source_dbm) || !std::isfinite(path_loss_db) ||
+        !std::isfinite(tolerance_db) || reference_hz < 500000 ||
+        reference_hz > 1766000000UL ||
         source_dbm > 20 || source_dbm < -180 || path_loss_db < 0 ||
         path_loss_db > 200 || tolerance_db < 0 || tolerance_db > 100 ||
         (reference_fields == 5 && !safe_note(note))) {
@@ -1115,7 +1154,8 @@ bool process_command(const char* command, char* response, size_t response_size) 
     strlcpy(response, "RTL_LAB_OK reference=configured calibration=invalid", response_size);
     return true;
   }
-  if (strncmp(command, "RTL_LAB SNAPSHOT", 16) == 0) {
+  if (strncmp(command, "RTL_LAB SNAPSHOT", 16) == 0 &&
+      (command[16] == '\0' || command[16] == ' ')) {
     const char* note_value = command[16] == ' ' ? command + 17 : nullptr;
     if (note_value && !safe_note(note_value)) {
       strlcpy(response, "RTL_LAB_ERROR note", response_size); return true;
@@ -1159,10 +1199,69 @@ bool process_command(const char* command, char* response, size_t response_size) 
              g_recipe_status); return true;
   }
   if (strcmp(command, "RTL_LAB RECIPE CANCEL") == 0) {
+    if (strcmp(g_recipe, "bias_off_on_off") == 0) queue(ActionKind::bias_tee, 0);
     if (g_run_active) cancel_run();
     else { strlcpy(g_recipe, "NONE", sizeof(g_recipe));
            strlcpy(g_recipe_status, "CANCELLED", sizeof(g_recipe_status)); }
     strlcpy(response, "RTL_LAB_OK recipe=cancelled", response_size); return true;
+  }
+  if (strcmp(command, "RTL_LAB RECIPE CONFIRM_BIAS_SAFE") == 0) {
+    if (strcmp(g_recipe, "bias_off_on_off") != 0 || g_bias_stage != 1) {
+      strlcpy(response, "RTL_LAB_ERROR recipe=not_waiting_for_bias_confirmation",
+              response_size); return true;
+    }
+    if (g_bias_volts[0] > 0.2f) {
+      queue(ActionKind::bias_tee, 0);
+      finish_run("FAIL_INITIAL_OFF_VOLTAGE");
+      strlcpy(g_recipe, "NONE", sizeof(g_recipe));
+      strlcpy(g_recipe_status, "FAIL_INITIAL_OFF_VOLTAGE", sizeof(g_recipe_status));
+      strlcpy(response, "RTL_LAB_OK recipe=bias_off_on_off status=failed_initial_off",
+              response_size); return true;
+    }
+    queue(ActionKind::bias_tee, 1);
+    g_bias_stage = 2;
+    strlcpy(g_recipe_status, "ENTER_ON_VOLTS", sizeof(g_recipe_status));
+    strlcpy(response, "RTL_LAB_OK recipe=bias_off_on_off status=measure_on_volts",
+            response_size); return true;
+  }
+  float entered_volts = 0;
+  if (sscanf(command, "RTL_LAB RECIPE INPUT %f", &entered_volts) == 1) {
+    if (!std::isfinite(entered_volts) || strcmp(g_recipe, "bias_off_on_off") != 0 ||
+        entered_volts < 0 ||
+        entered_volts > 20 || (g_bias_stage != 0 && g_bias_stage != 2 && g_bias_stage != 3)) {
+      strlcpy(response, "RTL_LAB_ERROR recipe=input_not_expected", response_size); return true;
+    }
+    const uint8_t input_stage = g_bias_stage;
+    char marker[40];
+    if (g_bias_stage == 0) {
+      g_bias_volts[0] = entered_volts;
+      snprintf(marker, sizeof(marker), "BIAS OFF %.3f V", static_cast<double>(entered_volts));
+      g_bias_stage = 1;
+      strlcpy(g_recipe_status, "CONFIRM_SAFE_FOR_ON", sizeof(g_recipe_status));
+    } else if (g_bias_stage == 2) {
+      g_bias_volts[1] = entered_volts;
+      snprintf(marker, sizeof(marker), "BIAS ON %.3f V", static_cast<double>(entered_volts));
+      queue(ActionKind::bias_tee, 0);
+      g_bias_stage = 3;
+      strlcpy(g_recipe_status, "ENTER_FINAL_OFF_VOLTS", sizeof(g_recipe_status));
+    } else {
+      g_bias_volts[2] = entered_volts;
+      snprintf(marker, sizeof(marker), "BIAS FINAL OFF %.3f V",
+               static_cast<double>(entered_volts));
+    }
+    if (g_readings && g_reading_count < kMaxReadings)
+      g_readings[g_reading_count++] = make_reading(millis(), marker, true);
+    if (input_stage == 3) {
+      const bool pass = bias_voltage_pass(g_bias_volts[0], g_bias_volts[1],
+                                          g_bias_volts[2]);
+      const bool saved = finish_run(pass ? "PASS" : "FAIL_VOLTAGE_RANGE");
+      strlcpy(g_recipe, "NONE", sizeof(g_recipe));
+      strlcpy(g_recipe_status, !saved ? "SAVE_FAILED" :
+              (pass ? "PASS" : "FAIL_VOLTAGE_RANGE"),
+              sizeof(g_recipe_status));
+    }
+    snprintf(response, response_size, "RTL_LAB_OK recipe=bias_off_on_off status=%s",
+             g_recipe_status); return true;
   }
   char recipe[32]{};
   if (sscanf(command, "RTL_LAB RECIPE START %31s", recipe) == 1) {
@@ -1186,14 +1285,38 @@ bool process_command(const char* command, char* response, size_t response_size) 
       strlcpy(response, "RTL_LAB_OK recipe=transport status=running", response_size);
       return true;
     }
+    if (strcmp(recipe, "source_reconnect") == 0) {
+      if (!runtime().source_available || !start_run(0, "SOURCE RECONNECT BASELINE")) {
+        strlcpy(response, "RTL_LAB_ERROR recipe=source_or_sd_unavailable", response_size);
+        return true;
+      }
+      strlcpy(g_recipe, recipe, sizeof(g_recipe));
+      strlcpy(g_recipe_status, "WAITING_FOR_SOURCE_LOSS", sizeof(g_recipe_status));
+      strlcpy(response, "RTL_LAB_OK recipe=source_reconnect status=disconnect_source",
+              response_size);
+      return true;
+    }
+    if (strcmp(recipe, "bias_off_on_off") == 0) {
+      if (!has_cap(ESP_RTL_SDR_CAP_BIAS_TEE) ||
+          !start_run(0, "BIAS OFF-ON-OFF")) {
+        strlcpy(response, "RTL_LAB_ERROR recipe=capability_or_sd_unavailable",
+                response_size); return true;
+      }
+      g_bias_volts[0] = g_bias_volts[1] = g_bias_volts[2] = 0;
+      g_bias_stage = 0;
+      strlcpy(g_recipe, recipe, sizeof(g_recipe));
+      strlcpy(g_recipe_status, "ENTER_INITIAL_OFF_VOLTS", sizeof(g_recipe_status));
+      queue(ActionKind::bias_tee, 0);
+      strlcpy(response,
+          "RTL_LAB_OK recipe=bias_off_on_off status=measure_off_volts_then_RECIPE_INPUT",
+          response_size); return true;
+    }
     constexpr const char* carrier_recipes[] = {
         "gain_quick", "gain_full", "tuner_auto", "rtl_agc", "ppm", "hf_path"};
     bool carrier_recipe = false;
     for (const char* candidate : carrier_recipes)
       carrier_recipe |= strcmp(recipe, candidate) == 0;
-    const bool known_guided = carrier_recipe || strcmp(recipe, "rate_passport") == 0 ||
-        strcmp(recipe, "source_reconnect") == 0 ||
-        strcmp(recipe, "bias_off_on_off") == 0;
+    const bool known_guided = carrier_recipe || strcmp(recipe, "rate_passport") == 0;
     if (!known_guided) {
       strlcpy(response, "RTL_LAB_ERROR recipe=unknown", response_size); return true;
     }
@@ -1269,6 +1392,9 @@ bool self_check() {
   a.gain_count = 3;
   a.gain_ladder[0] = 0; a.gain_ladder[1] = 297; a.gain_ladder[2] = 496;
   if (next_gain(a) != 496) return false;
+  if (!bias_voltage_pass(0.0f, 4.5f, 0.1f) ||
+      bias_voltage_pass(0.3f, 4.5f, 0.0f) ||
+      bias_voltage_pass(0.0f, 3.9f, 0.0f)) return false;
   if (!same_calibration_state(a, b)) return false;
   b.ppm = 1;
   return !same_calibration_state(a, b) && parse_page("measurements", &parsed) &&
