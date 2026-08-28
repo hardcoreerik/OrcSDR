@@ -13,12 +13,12 @@ param(
 $ErrorActionPreference = 'Stop'
 $nvsOffset = 0x9000
 $nvsLength = 0x6000
-$python = 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe'
-$nvsTool = 'C:\Espressif\frameworks\esp-idf-v5.5.3\components\nvs_flash\nvs_partition_tool\nvs_tool.py'
+$python = 'C:\Espressif\python_env\idf5.5_py3.14_env\Scripts\python.exe'
+$nvsTool = 'C:\Espressif\frameworks\esp-idf-v5.5.4\components\nvs_flash\nvs_partition_tool\nvs_tool.py'
 
 if (-not (Test-Path -LiteralPath $python -PathType Leaf) -or
     -not (Test-Path -LiteralPath $nvsTool -PathType Leaf)) {
-  throw 'ESP-IDF 5.5.3 NVS tools are not installed.'
+  throw 'ESP-IDF 5.5.4 NVS tools are not installed.'
 }
 
 $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())

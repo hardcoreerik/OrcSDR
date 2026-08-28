@@ -36,9 +36,8 @@ Target module boundaries (mirrors the review's suggested split):
   scan state machine.
 - `host/` — serial protocol (`RTL_REC_START` and friends), SD put/get
   transfer, journal/auth (`load_state`, `append_journal`, `hmac_matches`).
-- Driver boundary unchanged — `components/rtl_sdr_v4_esp` stays the only USB
-  path once Phase 1 lands (actual legacy-path deletion still gates on the P1
-  soak test in `PROJECT_STATUS.md`, not on this split).
+- Driver boundary unchanged — the version-pinned `esp_rtl_sdr` dependency is
+  the only USB path. Driver changes remain in its own repository.
 
 Sequencing (each step keeps the build green):
 
@@ -69,10 +68,8 @@ Goal: catch a header/driver-example break automatically, closing Gap 3.
 1. [ ] Add `.github/workflows/build.yml`: on every push and PR, run
       `pio run` for the Tab5 UI environment (`m5tab5_ui`) and the LoRa test
       environment (`m5tab5_lora_test`).
-2. [ ] Add a second CI job that builds `examples/p4_serial_smoke` standalone
-      against `components/rtl_sdr_v4_esp`, independent of the Tab5 app —
-      this is the review's specific concern (nothing currently proves the
-      published API contract still compiles against its own example).
+2. [x] Keep the standalone P4 smoke build and driver API contract in the
+      `esp-rtl-sdr` repository; OrcSDR CI verifies only the consumer integration.
 3. [ ] No hardware-in-the-loop testing in CI at this stage — that's a much
       larger investment (self-hosted runner with an attached Tab5 + Blog V4)
       and isn't blocking the immediate gap. Track it as a future item only if
@@ -145,7 +142,7 @@ practice.
 
 Component boundary (per Codex's separation point, which matches this
 project's own driver-boundary discipline in `PROJECT_STATUS.md`): the
-`rtl_sdr_v4_esp` driver knows nothing about RDS. RDS consumes only the
+`esp_rtl_sdr` knows nothing about RDS. RDS consumes only the
 already-demodulated MPX/`phase` stream, same as the stereo decoder. Code
 lives in `main.cpp` for now (matching how the stereo decoder landed) but is
 written as clearly-bounded functions/state so it lifts mechanically into

@@ -37,7 +37,7 @@ idf_component_register(
         m5gfx
         mbelib
         nvs_flash
-        rtl_sdr_v4_esp
+        esp_rtl_sdr
         esp_driver_usb_serial_jtag
         esp_driver_jpeg
         fatfs
