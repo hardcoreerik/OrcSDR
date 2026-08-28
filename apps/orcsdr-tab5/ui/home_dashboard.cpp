@@ -164,6 +164,7 @@ void draw_header() {
   M5.Display.drawFastVLine(306, 22, 76, kCyan);
   text("HOME", 338, 59, TFT_WHITE, 5);
   draw_header_status();
+  audio_header::draw_visualizer_button(current.receiving);
   audio_header::draw_settings_button();
   audio_header::draw_mute_button(current.sound_enabled);
 }
@@ -419,6 +420,7 @@ void draw_browser() {
   text("HOME", 1132, 47, kCyan, 2, middle_center);
   audio_header::draw_settings_button();
   audio_header::draw_mute_button(current.sound_enabled);
+  audio_header::draw_visualizer_button(current.receiving);
   for (size_t i = 0; i < dashboards::count(); ++i) {
     const auto* entry = dashboards::descriptor(i);
     if (!entry) continue;
@@ -654,7 +656,7 @@ bool self_check() {
          kHeaderStatusX + kHeaderStatusW < 1114 &&
          waterfall_range_db(1) == 48 && waterfall_range_db(7) == 12 &&
          tap_action(1223, 9).kind == ActionKind::open_device_settings &&
-         tap_action(1169, 9).kind == ActionKind::sound_toggle &&
+         tap_action(1100, 9).kind == ActionKind::sound_toggle &&
          std::abs(home_spectrum_floor(levels, std::size(levels), 10.0f) - 62.0f) < 0.01f;
 }
 

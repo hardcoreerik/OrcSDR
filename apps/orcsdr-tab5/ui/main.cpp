@@ -67,6 +67,7 @@ extern "C" {
 #include "p25_config.hpp"
 #include "p25_decoder.hpp"
 #include "radio_ui_service.hpp"
+#include "rf_visualizer.hpp"
 #include "settings_app.hpp"
 #include "ui_capture.hpp"
 #include "web_console.hpp"
@@ -3732,6 +3733,7 @@ bool rds_replay(const char* path) {
 
 void spectrum_offer_iq_snapshot(const uint8_t* iq, size_t bytes) {
   if (iq == nullptr || bytes < kRtlSpectrumBins * 2) return;
+  orcsdr::visualizer::offer_iq(iq, bytes);
   if (!rtl_graphics_enabled.load(std::memory_order_relaxed)) return;
   const size_t need = sizeof(rtl_spectrum_iq_snap);
   const size_t n = bytes < need ? bytes : need;
@@ -4891,6 +4893,117 @@ void refresh_active_screen() {
   }
 }
 
+uint8_t active_dashboard_tab(orcsdr::screens::Id screen) {
+  switch (screen) {
+    case orcsdr::screens::Id::fm: return static_cast<uint8_t>(orcsdr::fm::view());
+    case orcsdr::screens::Id::p25: return static_cast<uint8_t>(orcsdr::p25::view());
+    case orcsdr::screens::Id::adsb: return orcsdr::adsb::view();
+    case orcsdr::screens::Id::lora: return static_cast<uint8_t>(orcsdr::lora::view());
+    default: return 0;
+  }
+}
+
+void show_visualizer_unavailable() {
+  M5.Display.fillRoundRect(430, 82, 420, 54, 8, TFT_BLACK);
+  M5.Display.drawRoundRect(430, 82, 420, 54, 8, TFT_ORANGE);
+  M5.Display.setFont(nullptr);
+  M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextColor(TFT_ORANGE, TFT_BLACK);
+  M5.Display.setTextSize(2);
+  M5.Display.drawString("Start an RF source first", 640, 109);
+}
+
+void open_visualizer() {
+  if (rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running) {
+    show_visualizer_unavailable();
+    return;
+  }
+  const auto origin = orcsdr::screens::status().active;
+  orcsdr::screens::begin_transition(orcsdr::screens::Id::visualizer, millis());
+  if (!orcsdr::visualizer::enter(static_cast<uint8_t>(origin),
+                                 active_dashboard_tab(origin))) {
+    orcsdr::screens::begin_transition(origin, millis());
+    orcsdr::screens::finish_transition();
+    show_visualizer_unavailable();
+    return;
+  }
+  orcsdr::screens::finish_transition();
+}
+
+void close_visualizer() {
+  const auto origin = static_cast<orcsdr::screens::Id>(orcsdr::visualizer::origin_screen());
+  orcsdr::visualizer::leave();
+  orcsdr::screens::begin_transition(origin, millis());
+  orcsdr::screens::finish_transition();
+  switch (origin) {
+    case orcsdr::screens::Id::home: orcsdr::home::draw(); break;
+    case orcsdr::screens::Id::fm: orcsdr::fm::draw(); break;
+    case orcsdr::screens::Id::p25: orcsdr::p25::draw(); break;
+    case orcsdr::screens::Id::adsb: orcsdr::adsb::draw(); break;
+    case orcsdr::screens::Id::lora: orcsdr::lora::draw(); break;
+    default: show_home(); break;
+  }
+}
+
+void service_visualizer() {
+  esp_rtl_sdr_metrics_t metrics{};
+  const uint32_t now = millis();
+  if (g_rtl != nullptr) (void)esp_rtl_sdr_get_metrics(g_rtl, &metrics);
+  const auto fm = fm_dashboard_snapshot();
+  orcsdr::visualizer::Runtime runtime{};
+  runtime.center_hz = rtl_ui_frequency_hz;
+  runtime.span_hz = rtl_scope_span_hz.load(std::memory_order_relaxed);
+  runtime.sample_rate_sps = metrics.effective_sps;
+  runtime.audio_rate_sps = 48000;
+  runtime.audio_demod = rtl_ui_band == RtlBand::am ||
+                                (rtl_ui_band == RtlBand::cb &&
+                                 cb_mode.load(std::memory_order_relaxed) == CbMode::am)
+                            ? orcsdr::visualizer::AudioDemod::am
+                            : (rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::wx ||
+                               rtl_ui_band == RtlBand::browse)
+                                  ? orcsdr::visualizer::AudioDemod::fm
+                                  : orcsdr::visualizer::AudioDemod::none;
+  runtime.usb_overruns = metrics.overruns;
+  runtime.consumer_drops = metrics.consumer_drops;
+  runtime.audio_drops = rtl_audio.dropped_chunks;
+  runtime.source_available =
+      rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
+  runtime.filtered_iq = runtime.source_available;
+  runtime.stereo_audio = fm.stereo;
+  runtime.sd_writable = g_sd_fs != nullptr;
+  orcsdr::visualizer::set_runtime(runtime);
+  if (!orcsdr::visualizer::active()) return;
+
+  const auto first = M5.Touch.getDetail(0);
+  const auto second = M5.Touch.getDetail(1);
+  orcsdr::visualizer::handle_touch(first.x, first.y,
+                                   first.isPressed() || first.wasPressed(),
+                                   M5.Touch.getCount(), second.x, second.y, now);
+  orcsdr::visualizer::service_ui(now);
+  orcsdr::visualizer::Action action{};
+  while (orcsdr::visualizer::take_action(&action)) {
+    if (action.kind == orcsdr::visualizer::ActionKind::close) close_visualizer();
+    else if (action.kind == orcsdr::visualizer::ActionKind::tune_hz)
+      request_hot_retune(action.value);
+    else if (action.kind == orcsdr::visualizer::ActionKind::span_hz)
+      rtl_scope_span_hz.store(action.value, std::memory_order_relaxed);
+  }
+}
+
+void service_rtl_speaker_watchdog() {
+  if (!rtl_ui_active.load(std::memory_order_acquire) ||
+      !rtl_audio_enabled.load(std::memory_order_acquire) || !rtl_band_has_audio(rtl_ui_band))
+    return;
+  static uint32_t last_watch_ms = 0;
+  const uint32_t now = millis();
+  if (now - last_watch_ms >= 1000 && !M5.Speaker.isRunning() &&
+      !speaker_backoff_active(now)) {
+    last_watch_ms = now;
+    Serial.println("RTL_SPEAKER_WATCHDOG restart");
+    resume_rtl_speaker();
+  }
+}
+
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   // Home is the common receiver workspace until a band has its own dashboard.
   // Do not resurrect the retired generic Browse surface for AM/WX/CB/Airband.
@@ -5379,6 +5492,7 @@ int16_t shape_audio_sample(float demodulated, float base_scale) {
 
 void queue_audio_samples(int16_t* audio, size_t audio_count) {
   if (audio_count == 0) return;
+  orcsdr::visualizer::offer_audio(audio, nullptr, audio_count, 48000);
   /* Capture the post-DSP mono stream before expanding it for the stereo codec. */
   if (g_audio_rec_active.load(std::memory_order_acquire)) {
     audio_rec_append(audio, audio_count);
@@ -5397,6 +5511,10 @@ void queue_audio_samples(int16_t* audio, size_t audio_count) {
   }
   flush_audio_play_batch(false);
   rtl_audio.buffer = (rtl_audio.buffer + 1) % std::size(rtl_audio_buffers);
+}
+
+void visualizer_audio_sink(const int16_t* audio, size_t audio_count) {
+  queue_audio_samples(const_cast<int16_t*>(audio), audio_count);
 }
 
 // TIA-102.BABA IMBE channel deinterleave: vector bit -> transmitted bit.
@@ -6117,8 +6235,10 @@ void run_rtl_capture() {
       }
     }
     if (band == RtlBand::lora) lora_iq_offer(rtl_iq_processing, completed_bytes);
-    // Audio first.
-    if (band == RtlBand::cb) {
+    // The channelizer temporarily owns the speaker route without stopping RF capture.
+    if (orcsdr::visualizer::channel_audio_active()) {
+      rtl_audio_play_count = 0;
+    } else if (band == RtlBand::cb) {
       if (cb_audio_gate_open()) {
         const CbMode mode = cb_mode.load(std::memory_order_relaxed);
         if (mode == CbMode::am) demodulate_am(rtl_iq_processing, completed_bytes, audio_scale);
@@ -6171,19 +6291,18 @@ void run_rtl_capture() {
       }
     }
 
-    // Touch after bulk is re-armed so drag only queues the next retune.
-    poll_sdr_touch(true);
+    spectrum_offer_iq_snapshot(rtl_iq_processing, completed_bytes);
     const uint32_t ui_revision = rtl_ui_revision.load(std::memory_order_acquire);
     if (ui_revision != drawn_rtl_ui_revision) {
       const uint8_t live_volume = rtl_live_volume.load(std::memory_order_acquire);
       rtl_ui_volume = live_volume;
       drawn_rtl_ui_revision = ui_revision;
-      refresh_active_screen();
+      rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
     }
     const uint32_t drops_before_draw = rtl_audio.dropped_chunks;
     if (drops_before_draw == 0 &&
         (millis() - stream_started) >= kRtlAudioPrimeMs) {
-      draw_spectrum(rtl_iq_processing, completed_bytes);
+      rtl_stream_spectrum_pending.store(true, std::memory_order_release);
     }
     if (!continuous &&
         mbedtls_sha256_update(&sha, rtl_iq_processing, completed_bytes) != 0) {
@@ -6458,10 +6577,12 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       update_signal_level_from_iq(iq->data, n);
       if (g_stream_band == RtlBand::p25) orcsdr::p25decoder::process_cu8(iq->data, n);
       /* ADS-B needs the full callback budget; it has no spectrum or audio path. */
-      if (g_stream_band != RtlBand::adsb || orcsdr::home::active())
+      if (g_stream_band != RtlBand::adsb || orcsdr::home::active() ||
+          orcsdr::visualizer::active())
         spectrum_offer_iq_snapshot(iq->data, n);
       if (g_stream_band == RtlBand::lora) lora_iq_offer(iq->data, n);
-      if (g_stream_band != RtlBand::lora && g_stream_band != RtlBand::p25 &&
+      if (!orcsdr::visualizer::channel_audio_active() &&
+          g_stream_band != RtlBand::lora && g_stream_band != RtlBand::p25 &&
           (rtl_audio_enabled.load(std::memory_order_relaxed) ||
            g_audio_rec_active.load(std::memory_order_relaxed)) &&
           !rtl_audio_test_tone.load(std::memory_order_relaxed)) {
@@ -6651,7 +6772,6 @@ static void rtl_driver_app_task(void *) {
         while (!rtl_stop_requested.load(std::memory_order_acquire) &&
                g_rtl_device_ready.load(std::memory_order_acquire)) {
           /* Touch + hot retune on this task (not in IQ callback): responsive STOP/FREQ. */
-          poll_sdr_touch(true);
           if (orcsdr::settings::active()) {
             vTaskDelay(pdMS_TO_TICKS(20));
             continue;
@@ -6967,7 +7087,6 @@ static void rtl_driver_app_task(void *) {
                rtl_capture_state.load(std::memory_order_acquire) !=
                    RtlCaptureState::running) {
       /* Radio UI idle (stopped): still need touch for START / band / FREQ. */
-      poll_sdr_touch(true);
     }
     vTaskDelay(pdMS_TO_TICKS(20));
   }
@@ -9240,17 +9359,11 @@ void request_hot_retune(uint32_t frequency_hz) {
 // from loop() could glitch the ES8388. FM/P25 now stay on loop() so a
 // stalled stream or Hosted RPC cannot freeze every button.
 void poll_sdr_touch(bool from_stream) {
+  (void)from_stream;
   if (ui_documentation_mode) return;
   if (orcsdr::screens::transitioning()) return;
   const auto active_screen = orcsdr::screens::status().active;
-  const bool dashboard_on_loop =
-      active_screen == orcsdr::screens::Id::home ||
-      active_screen == orcsdr::screens::Id::settings ||
-      active_screen == orcsdr::screens::Id::adsb ||
-      active_screen == orcsdr::screens::Id::fm ||
-      active_screen == orcsdr::screens::Id::p25;
-  if (from_stream && dashboard_on_loop) return;
-  if (!from_stream && !dashboard_on_loop) return;
+  if (active_screen == orcsdr::screens::Id::visualizer) return;
   static uint32_t last_touch_poll_ms = 0;
   static bool flick_thresh_set = false;
   static bool scope_dragging = false;
@@ -9269,7 +9382,6 @@ void poll_sdr_touch(bool from_stream) {
     M5.Touch.setFlickThresh(24);
     flick_thresh_set = true;
   }
-  if (from_stream) M5.update();
   const uint8_t touch_count = M5.Touch.getCount();
   const auto touch = M5.Touch.getDetail(0);
   const bool pressed = touch.isPressed() || touch.wasPressed();
@@ -9432,6 +9544,10 @@ void poll_sdr_touch(bool from_stream) {
 void handle_sdr_touch(int32_t x, int32_t y) {
   if (orcsdr::settings::active()) {
     handle_global_settings_touch(x, y);
+    return;
+  }
+  if (orcsdr::audio_header::visualizer_hit(x, y)) {
+    open_visualizer();
     return;
   }
   if (orcsdr::audio_header::home_hit(x, y)) {
@@ -10392,6 +10508,30 @@ void process_command(char* command) {
   // This also keeps long-running CLI/soak workflows from expiring while polling status.
   if (authenticated) last_ping_ms = millis();
 
+  if (strncmp(command, "RTL_VIS", 7) == 0) {
+    const bool read_only = strcmp(command, "RTL_VIS STATUS") == 0 ||
+                           strcmp(command, "RTL_VIS SELF_CHECK") == 0 ||
+                           strncmp(command, "RTL_VIS GET ", 12) == 0 ||
+                           strcmp(command, "RTL_VIS PRESET LIST") == 0;
+    if (!read_only && !authenticated) {
+      Serial.println("RTL_VIS_ERROR auth_required");
+      return;
+    }
+    char response[320]{};
+    if (!orcsdr::visualizer::process_command(command, response, sizeof(response))) {
+      Serial.println("RTL_VIS_ERROR unknown_command");
+      return;
+    }
+    if (strcmp(response, "RTL_VIS_OPEN_REQUEST") == 0) {
+      open_visualizer();
+      Serial.println(orcsdr::visualizer::active() ? "RTL_VIS_OK" :
+                                                   "RTL_VIS_ERROR source_unavailable");
+    } else {
+      Serial.println(response);
+    }
+    return;
+  }
+
   if (strncmp(command, "UI_DOC_", 7) == 0 || strncmp(command, "UI_CAPTURE ", 11) == 0) {
     if (!authenticated) {
       Serial.println("UI_DOC_ERROR auth_required");
@@ -10446,7 +10586,8 @@ void process_command(char* command) {
     }
     if (strncmp(command, "UI_CAPTURE ", 11) == 0) {
       const char* slug = command + 11;
-      if (!ui_doc.active || !ui_doc.current_screen[0]) {
+      const bool visualizer_capture = orcsdr::visualizer::active();
+      if ((!ui_doc.active || !ui_doc.current_screen[0]) && !visualizer_capture) {
         Serial.println("UI_CAPTURE_ERROR documentation_mode_inactive");
         return;
       }
@@ -10454,7 +10595,7 @@ void process_command(char* command) {
         Serial.println("UI_CAPTURE_ERROR invalid_slug");
         return;
       }
-      if (!ui_doc_pause_reception()) {
+      if (!visualizer_capture && !ui_doc_pause_reception()) {
         Serial.println("UI_CAPTURE_ERROR reception_stop_timeout");
         return;
       }
@@ -11812,6 +11953,14 @@ void setup() {
   }
   M5.Display.setRotation(settings_rotation);
   M5.Display.setBrightness(180);
+  const bool visualizer_initialized =
+      orcsdr::visualizer::initialize(nullptr, visualizer_audio_sink);
+  if (!visualizer_initialized || !orcsdr::visualizer::self_check()) {
+    Serial.println(visualizer_initialized ? "RTL_VIS_SELF_CHECK_FAIL"
+                                          : "RTL_VIS_INIT_FAIL");
+    abort();
+  }
+  Serial.println("RTL_VIS_SELF_CHECK_OK");
   configure_navigation_service();
   if (!orcsdr::adsb::self_check() || !orcsdr::adsb_rx::Decoder::self_check() ||
       !orcsdr::offline_map::self_check() || !orcsdr::atc::self_check()) {
@@ -11910,6 +12059,10 @@ void setup() {
   snprintf(node_id, sizeof(node_id), "m5tab5_%02x%02x%02x%02x%02x%02x",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   load_state();
+  if (!orcsdr::visualizer::initialize(&preferences, visualizer_audio_sink)) {
+    Serial.println("RTL_VIS_NVS_INIT_FAIL");
+    abort();
+  }
   const bool test_sd_ready = ensure_tab5_sd();
   if (test_sd_ready) {
     (void)orcsdr::offline_map::load(g_sd_fs);
@@ -11963,6 +12116,10 @@ void setup() {
   }
   if (settings_wifi_power_enabled) initialize_wifi();
   load_state();
+  if (!orcsdr::visualizer::initialize(&preferences, visualizer_audio_sink)) {
+    Serial.println("RTL_VIS_NVS_INIT_FAIL");
+    abort();
+  }
   // Keep the optional companion server out of the catalog recovery window.
   // It has a separate crash history under Hosted traffic and is not needed
   // for saved-network connection or signed pack installation.
@@ -12039,20 +12196,20 @@ void loop() {
   const bool home_ui = orcsdr::home::active();
   const bool fm_ui = rtl_ui_band == RtlBand::fm && orcsdr::fm::active();
   const bool p25_ui = rtl_ui_band == RtlBand::p25 && orcsdr::p25::active();
+  const bool visualizer_ui = orcsdr::visualizer::active();
   if (rtl_stream_ui_refresh_pending.exchange(false, std::memory_order_acq_rel) &&
-      !settings_ui && !home_ui) {
+      !settings_ui && !home_ui && !visualizer_ui) {
     refresh_active_screen();
   }
-  // Home, Settings, FM, and P25 stay on loop() so a stalled stream task
-  // cannot freeze buttons. Stream still owns LoRa/browse scope gestures.
-  if (!radio_ui || adsb_ui || settings_ui || home_ui || fm_ui || p25_ui) {
-    const uint32_t started_ms = millis();
-    M5.update();
-    const uint32_t elapsed_ms = millis() - started_ms;
-    if (elapsed_ms >= 500)
-      Serial.printf("RTL_MAIN_STALL stage=m5_update elapsed_ms=%u\n", elapsed_ms);
-  }
+  // The main UI task is the sole M5Unified/touch/display owner.
+  const uint32_t m5_started_ms = millis();
+  M5.update();
+  const uint32_t m5_elapsed_ms = millis() - m5_started_ms;
+  if (m5_elapsed_ms >= 500)
+    Serial.printf("RTL_MAIN_STALL stage=m5_update elapsed_ms=%u\n", m5_elapsed_ms);
+  service_visualizer();
   if (rtl_stream_spectrum_pending.exchange(false, std::memory_order_acq_rel) &&
+      !orcsdr::visualizer::active() &&
       (fm_ui || p25_ui || (rtl_ui_band == RtlBand::lora && orcsdr::lora::active()))) {
     draw_spectrum(nullptr, 0);
   }
@@ -12062,6 +12219,18 @@ void loop() {
     const uint32_t elapsed_ms = millis() - started_ms;
     if (elapsed_ms >= 500)
       Serial.printf("RTL_MAIN_STALL stage=serial_dispatch elapsed_ms=%u\n", elapsed_ms);
+  }
+  if (orcsdr::visualizer::active()) {
+    service_rtl_speaker_watchdog();
+    const uint32_t now = millis();
+    if (!offline_transition_handled && now - last_ping_ms > kSessionTimeoutMs) {
+      authenticated = false;
+      offline_transition_handled = true;
+      append_journal("session_degraded");
+      run_offline_workflow();
+    }
+    delay(1);
+    return;
   }
   if (ui_documentation_mode) {
     delay(10);
@@ -12300,19 +12469,11 @@ void loop() {
     }
   }
 
-  if (radio_ui && rtl_audio_enabled.load(std::memory_order_acquire) &&
-      rtl_band_has_audio(rtl_ui_band)) {
-    static uint32_t last_speaker_watch_ms = 0;
-    const uint32_t watch_now = millis();
-    if (watch_now - last_speaker_watch_ms >= 1000 && !M5.Speaker.isRunning() &&
-        !speaker_backoff_active(watch_now)) {
-      last_speaker_watch_ms = watch_now;
-      Serial.println("RTL_SPEAKER_WATCHDOG restart");
-      resume_rtl_speaker();
-    }
-  }
+  if (radio_ui) service_rtl_speaker_watchdog();
 
-  if (settings_ui) {
+  if (orcsdr::visualizer::active()) {
+    // service_visualizer() above owns the complete full-screen surface.
+  } else if (settings_ui) {
     static uint32_t settings_last_update_ms = 0;
     if (millis() - settings_last_update_ms >= 500) {
       settings_last_update_ms = millis();
@@ -12324,7 +12485,10 @@ void loop() {
     was_pressed = pressed;
   } else if (home_ui) {
     const auto touch = M5.Touch.getDetail(0);
-    handle_home_action(orcsdr::home::handle_touch(touch.x, touch.y, touch.isPressed()));
+    if (touch.wasPressed() && orcsdr::audio_header::visualizer_hit(touch.x, touch.y))
+      open_visualizer();
+    else
+      handle_home_action(orcsdr::home::handle_touch(touch.x, touch.y, touch.isPressed()));
     static uint32_t home_last_update_ms = 0;
     if (millis() - home_last_update_ms >= 500) {
       home_last_update_ms = millis();
@@ -12348,7 +12512,7 @@ void loop() {
       publish_adsb_snapshot(millis());
       refresh_active_screen();
     }
-  } else if (fm_ui || p25_ui) {
+  } else if (fm_ui || p25_ui || radio_ui) {
     poll_sdr_touch(false);
   } else if (!radio_ui) {
     const auto touch = M5.Touch.getDetail(0);

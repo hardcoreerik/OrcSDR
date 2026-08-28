@@ -1,6 +1,7 @@
 #include "settings_app.hpp"
 
 #include "dashboard_audio_control.hpp"
+#include "text_editor.hpp"
 
 #include <M5Unified.h>
 #include <esp_attr.h>
@@ -381,6 +382,11 @@ void begin_wifi_edit(WifiEdit edit, const char* ssid = nullptr) {
   if (ssid) strlcpy(g_wifi_edit_ssid, ssid, sizeof(g_wifi_edit_ssid));
   else g_wifi_edit_ssid[0] = '\0';
   g_wifi_edit_password[0] = '\0';
+  text_editor::begin(edit == WifiEdit::ssid ? "HIDDEN NETWORK SSID" : "WI-FI PASSWORD",
+                     edit == WifiEdit::ssid ? g_wifi_edit_ssid : g_wifi_edit_password,
+                     edit == WifiEdit::ssid ? sizeof(g_wifi_edit_ssid) - 1
+                                            : sizeof(g_wifi_edit_password) - 1,
+                     edit == WifiEdit::password, edit == WifiEdit::ssid ? "NEXT" : "CONNECT");
 }
 
 const char* wifi_key_row(int row) {
@@ -394,41 +400,14 @@ const char* wifi_key_row(int row) {
 }
 
 void draw_wifi_keyboard() {
-  M5.Display.fillRect(kRailW, kHeaderH, 1280 - kRailW, 720 - kHeaderH, kBg);
-  text(g_wifi_edit == WifiEdit::ssid ? "HIDDEN NETWORK SSID" : "WI-FI PASSWORD",
-       330, 108, kBlue, 3);
-  char shown[64]{};
-  const char* entry = g_wifi_edit == WifiEdit::ssid ? g_wifi_edit_ssid
-                                                    : g_wifi_edit_password;
-  if (g_wifi_edit == WifiEdit::password && !g_wifi_show_password) {
-    const size_t count = std::min(strlen(entry), sizeof(shown) - 1);
-    memset(shown, '*', count);
-  } else {
-    strlcpy(shown, entry, sizeof(shown));
-  }
-  button(shown[0] ? shown : " ", 330, 140, 846, 56, TFT_NAVY);
-
-  for (int row = 0; row < 4; ++row) {
-    const char* keys = wifi_key_row(row);
-    const int count = static_cast<int>(strlen(keys));
-    if (count == 0) continue;
-    const int gap = 6;
-    const int key_w = (846 - (count - 1) * gap) / count;
-    for (int col = 0; col < count; ++col) {
-      char label[2] = {keys[col], '\0'};
-      button(label, 330 + col * (key_w + gap), 215 + row * 62,
-             key_w, 50, TFT_DARKGREY);
-    }
-  }
-  button(g_wifi_shift ? "SHIFT ON" : "SHIFT", 330, 475, 150, 46, TFT_DARKCYAN);
-  button(g_wifi_symbols ? "LETTERS" : "SYMBOLS", 492, 475, 170, 46, TFT_DARKCYAN);
-  button("SPACE", 674, 475, 170, 46, TFT_DARKGREY);
-  button("BACK", 856, 475, 150, 46, TFT_DARKGREY);
-  if (g_wifi_edit == WifiEdit::password)
-    button(g_wifi_show_password ? "HIDE" : "SHOW", 1018, 475, 158, 46, TFT_NAVY);
-  button("CANCEL", 330, 550, 250, 54, TFT_MAROON);
-  button(g_wifi_edit == WifiEdit::ssid ? "NEXT" : "CONNECT",
-         926, 550, 250, 54, TFT_DARKGREEN);
+  if (!text_editor::active())
+    text_editor::begin(g_wifi_edit == WifiEdit::ssid ? "HIDDEN NETWORK SSID" : "WI-FI PASSWORD",
+                       g_wifi_edit == WifiEdit::ssid ? g_wifi_edit_ssid : g_wifi_edit_password,
+                       g_wifi_edit == WifiEdit::ssid ? sizeof(g_wifi_edit_ssid) - 1
+                                                      : sizeof(g_wifi_edit_password) - 1,
+                       g_wifi_edit == WifiEdit::password,
+                       g_wifi_edit == WifiEdit::ssid ? "NEXT" : "CONNECT");
+  text_editor::draw();
 }
 
 Action queue_wifi_request(const char* ssid, const char* password) {
@@ -444,69 +423,27 @@ Action queue_wifi_request(const char* ssid, const char* password) {
 }
 
 Action handle_wifi_keyboard(int x, int y) {
-  if (hit(x, y, 330, 550, 250, 54)) {
+  const auto result = text_editor::handle_touch(x, y);
+  char* entry = g_wifi_edit == WifiEdit::ssid ? g_wifi_edit_ssid : g_wifi_edit_password;
+  const size_t capacity = g_wifi_edit == WifiEdit::ssid ? sizeof(g_wifi_edit_ssid)
+                                                        : sizeof(g_wifi_edit_password);
+  strlcpy(entry, text_editor::value(), capacity);
+  if (result == text_editor::Result::cancelled) {
     memset(g_wifi_edit_password, 0, sizeof(g_wifi_edit_password));
     g_wifi_edit = WifiEdit::none;
     draw_content();
     return {};
   }
-  if (hit(x, y, 926, 550, 250, 54)) {
+  if (result == text_editor::Result::accepted) {
     if (g_wifi_edit == WifiEdit::ssid) {
       if (!g_wifi_edit_ssid[0]) return {};
       g_wifi_edit = WifiEdit::password;
+      text_editor::begin("WI-FI PASSWORD", g_wifi_edit_password,
+                         sizeof(g_wifi_edit_password) - 1, true, "CONNECT");
       draw_wifi_keyboard();
       return {};
     }
     return queue_wifi_request(g_wifi_edit_ssid, g_wifi_edit_password);
-  }
-  if (hit(x, y, 330, 475, 150, 46)) {
-    g_wifi_shift = !g_wifi_shift;
-    g_wifi_symbols = false;
-    draw_wifi_keyboard();
-    return {};
-  }
-  if (hit(x, y, 492, 475, 170, 46)) {
-    g_wifi_symbols = !g_wifi_symbols;
-    draw_wifi_keyboard();
-    return {};
-  }
-  char* entry = g_wifi_edit == WifiEdit::ssid ? g_wifi_edit_ssid
-                                               : g_wifi_edit_password;
-  const size_t capacity = g_wifi_edit == WifiEdit::ssid
-                              ? sizeof(g_wifi_edit_ssid)
-                              : sizeof(g_wifi_edit_password);
-  size_t length = strlen(entry);
-  if (hit(x, y, 674, 475, 170, 46)) {
-    if (length + 1 < capacity) entry[length++] = ' ', entry[length] = '\0';
-    draw_wifi_keyboard();
-    return {};
-  }
-  if (hit(x, y, 856, 475, 150, 46)) {
-    if (length) entry[length - 1] = '\0';
-    draw_wifi_keyboard();
-    return {};
-  }
-  if (g_wifi_edit == WifiEdit::password && hit(x, y, 1018, 475, 158, 46)) {
-    g_wifi_show_password = !g_wifi_show_password;
-    draw_wifi_keyboard();
-    return {};
-  }
-  for (int row = 0; row < 4; ++row) {
-    const char* keys = wifi_key_row(row);
-    const int count = static_cast<int>(strlen(keys));
-    if (count == 0) continue;
-    const int gap = 6;
-    const int key_w = (846 - (count - 1) * gap) / count;
-    for (int col = 0; col < count; ++col) {
-      if (!hit(x, y, 330 + col * (key_w + gap), 215 + row * 62, key_w, 50)) continue;
-      if (length + 1 < capacity) {
-        entry[length] = keys[col];
-        entry[length + 1] = '\0';
-      }
-      if (g_wifi_shift && !g_wifi_symbols) g_wifi_shift = false;
-      draw_wifi_keyboard();
-      return {};
-    }
   }
   return {};
 }

@@ -110,6 +110,7 @@ void draw_header() {
                      g_snapshot.battery_percent);
   audio_header::draw_home_button();
   audio_header::draw_mute_button(g_snapshot.sound_enabled);
+  audio_header::draw_visualizer_button(g_snapshot.running);
   audio_header::draw_settings_button();
 }
 

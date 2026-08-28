@@ -25,6 +25,8 @@ void draw_home_button();
 bool home_hit(int32_t x, int32_t y);
 void draw_mute_button(bool sound_enabled);
 bool mute_hit(int32_t x, int32_t y);
+void draw_visualizer_button(bool enabled);
+bool visualizer_hit(int32_t x, int32_t y);
 void draw_settings_button();
 bool settings_hit(int32_t x, int32_t y);
 Action handle_touch(Control& control, int32_t x, int32_t y, uint32_t now_ms);

@@ -319,6 +319,7 @@ void draw_header() {
   text("CONNECTED", 905, 51, kBlue, 1, middle_left);
   audio_header::draw_home_button();
   audio_header::draw_mute_button(g_live_snapshot.sound_enabled);
+  audio_header::draw_visualizer_button(g_live_snapshot.effective_sps != 0);
   audio_header::draw_settings_button();
 }
 

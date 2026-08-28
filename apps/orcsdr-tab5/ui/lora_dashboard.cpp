@@ -123,6 +123,7 @@ void draw_header() {
        g_snapshot.key_loaded ? kGreen : kMuted, 1, middle_left);
   audio_header::draw_home_button();
   audio_header::draw_mute_button(g_snapshot.sound_enabled);
+  audio_header::draw_visualizer_button(g_snapshot.running);
   audio_header::draw_settings_button();
 }
 
@@ -596,7 +597,7 @@ bool self_check() {
   char value[16];
   format_id(value, sizeof(value), snapshot.nodes[0].id);
   if (strcmp(value, "!A1B2C3D4") != 0) return false;
-  return audio_header::home_hit(1115, 9) && !audio_header::home_hit(1113, 9);
+  return audio_header::self_check();
 }
 
 }  // namespace orcsdr::lora
