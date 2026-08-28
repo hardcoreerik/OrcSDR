@@ -436,6 +436,12 @@ try {
       [void](Open-Ui 'SETTINGS' $targets[-1].Band)
       Watch-Responsive $DwellSeconds 'SETTINGS' $targets[-1].Band
       [void](Open-Ui 'HOME' $targets[-1].Band)
+      [void](Open-Ui 'RF_LAB' $targets[-1].Band)
+      [void](Send-And-Wait 'RTL_LAB SELF_CHECK' '^RTL_LAB_SELF_CHECK pass=1$')
+      [void](Send-And-Wait 'RTL_LAB PAGE CONTROLS' '^RTL_LAB_OK page=CONTROLS$')
+      Watch-Responsive $DwellSeconds 'RF_LAB' $targets[-1].Band
+      [void](Send-And-Wait 'RTL_LAB CLOSE' '^RTL_LAB_OK close=queued$')
+      [void](Wait-UiState 'HOME' $targets[-1].Band)
       [void](Open-Ui 'FM' 'FM')
       Assert-FmAudioProgress
       if ($cycle -eq 1 -or $cycle % 5 -eq 0) { Assert-SoundCycle }

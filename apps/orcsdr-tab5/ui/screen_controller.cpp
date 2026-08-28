@@ -56,6 +56,7 @@ const char* name(Id id) {
     case Id::lora: return "lora";
     case Id::radio: return "radio";
     case Id::visualizer: return "visualizer";
+    case Id::rf_lab: return "rf_lab";
     case Id::settings: return "settings";
     case Id::documentation: return "documentation";
     default: return "none";
@@ -90,11 +91,14 @@ bool self_check() {
   begin_transition(Id::visualizer, now++, false);
   finish_transition();
   const bool visualizer_owns = owns(Id::visualizer);
-  const bool restored = g_status.transitions == 19;
+  begin_transition(Id::rf_lab, now++, false);
+  finish_transition();
+  const bool rf_lab_owns = owns(Id::rf_lab);
+  const bool restored = g_status.transitions == 20;
   g_status = saved;
   g_transitioning = saved_transitioning;
   return entering_blocks_draw && home_owns && settings_return && documentation_owns &&
-         documentation_restores && visualizer_owns && restored;
+         documentation_restores && visualizer_owns && rf_lab_owns && restored;
 }
 
 }  // namespace orcsdr::screens
