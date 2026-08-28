@@ -17,7 +17,7 @@
 #>
 param(
   [string]$Port,
-  [string]$IdfId = 'esp-idf-5.5.3',
+  [string]$IdfPath = 'C:\Espressif\frameworks\esp-idf-v5.5.4',
   [switch]$CheckHostedOnly,
   [switch]$SkipPython,
   [int]$HostedWaitSeconds = 25
@@ -79,7 +79,7 @@ function Get-InstallerPython {
     $cmd = Get-Command $name -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
   }
-  throw 'Python not found. Install ESP-IDF 5.5.3 (includes Python) or Python 3.11+.'
+  throw 'Python not found. Install ESP-IDF 5.5.4 (includes Python) or Python 3.11+.'
 }
 
 function Install-PythonRequirements {
@@ -167,13 +167,12 @@ $script:Port = Resolve-Port -Requested $Port
 Write-Host "Tab5 port: $($script:Port)"
 
 if (-not $CheckHostedOnly) {
-  $idfInit = 'C:\Espressif\Initialize-Idf.ps1'
-  if (-not (Test-Path -LiteralPath $idfInit)) {
-    throw 'ESP-IDF 5.5.3 is not installed. Install from https://docs.espressif.com/projects/esp-idf/en/v5.5.3/esp32p4/get-started/windows-setup.html then re-run.'
+  if (-not (Test-Path -LiteralPath (Join-Path $IdfPath 'export.ps1'))) {
+    throw 'ESP-IDF 5.5.4 is not installed. Install it from https://docs.espressif.com/projects/esp-idf/en/v5.5.4/esp32p4/get-started/windows-setup.html then re-run.'
   }
   $flash = Join-Path $Root 'apps\orcsdr-tab5\tools\install-tab5.ps1'
   Write-Host "Building and flashing P4 via $flash ..."
-  & $flash -Port $script:Port -IdfId $IdfId
+  & $flash -Port $script:Port -IdfPath $IdfPath
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   Write-Host 'Waiting for Tab5 reboot...'
   Start-Sleep -Seconds 8

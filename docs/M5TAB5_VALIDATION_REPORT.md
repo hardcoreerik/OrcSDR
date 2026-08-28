@@ -8,7 +8,7 @@ Status: native display/touch, authenticated direct-USB, bounded edge resilience,
 
 ## Repo-verified
 
-- The firmware builds with ESP-IDF 5.5.3 for `esp32p4` and pre-v3 silicon,
+- Historical validation used an older ESP-IDF checkout. Current firmware builds use ESP-IDF 5.5.4 for `esp32p4` and pre-v3 silicon,
   minimum revision v0.1. That silicon family selection matches the official
   M5Stack Tab5 demo configuration.
 - The original ESP-IDF serial image and the native pioarduino/M5Unified UI both

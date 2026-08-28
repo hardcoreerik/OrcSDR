@@ -38,8 +38,9 @@ disclosure schedule with the reporter.
 
 - Tab5 firmware under `apps/orcsdr-tab5`, including Settings, Wi-Fi profile
   handling, receiver-location storage, serial commands, and SD-card transfer.
-- `components/rtl_sdr_v4_esp`, including USB Host ownership, RTL-SDR control,
-  IQ streaming, and malformed-device/input handling.
+- OrcSDR's version-pinned `esp_rtl_sdr` integration, including configuration,
+  callback handling, and radio/UI actions. Driver defects belong in the
+  [`esp-rtl-sdr`](https://github.com/hardcoreerik/esp-rtl-sdr) repository.
 - Repository scripts that build, flash, transfer, validate, or install OrcSDR
   artifacts.
 - OrcSDR-managed SD data: database, metadata, map-pack, recording, capture,

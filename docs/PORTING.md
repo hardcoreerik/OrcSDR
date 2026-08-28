@@ -1,8 +1,8 @@
-# Porting RTL-SDRv4-ESP to ESP32 devices
+# Porting `esp_rtl_sdr` to ESP32 devices
 
 ## Goals
 
-1. **Standalone driver** (`components/rtl_sdr_v4_esp`) usable without OrcSDR UI.
+1. **Standalone driver** ([`hardcoreerik/esp-rtl-sdr`](https://github.com/hardcoreerik/esp-rtl-sdr)) usable without OrcSDR UI.
 2. **OrcSDR app** (`apps/orcsdr-tab5`) consumes the component for radio UX.
 3. **OrcLink** remains the control-plane project; it does not own this driver.
 
@@ -70,6 +70,6 @@ tunes must stay labeled.
 
 | Lives in OrcLink | Lives in OrcSDR |
 |---|---|
-| Daemon, policy, adapters (Windows host rtl-sdr, etc.) | RTL-SDRv4-ESP component |
-| Firmware-test workflow for OrcLink node identity | Tab5 radio app / examples |
+| Daemon, policy, adapters (Windows host rtl-sdr, etc.) | Version-pinned `esp_rtl_sdr` dependency |
+| Firmware-test workflow for OrcLink node identity | Tab5 radio consumer integration |
 | Control Room, orclinkctl | Optional future OrcLink adapter *calling* OrcSDR |

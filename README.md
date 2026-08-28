@@ -595,11 +595,7 @@ OrcSDR/
 ├── apps/
 │   └── orcsdr-tab5/             M5Stack Tab5 SDR application
 │
-├── components/
-│   └── rtl_sdr_v4_esp/          Reusable RTL-SDR Blog V4 driver
-│
-├── examples/
-│   └── p4_serial_smoke/         Minimal ESP32-P4 driver example
+├── components/                   OrcSDR-owned supporting components
 │
 ├── docs/                        Technical documentation and dashboard captures
 │
@@ -614,48 +610,30 @@ Application notes for the Tab5 firmware live in [`apps/orcsdr-tab5/README.md`](a
 
 ---
 
-# RTL-SDRv4-ESP
+# `esp_rtl_sdr`
 
-At the core of OrcSDR is **RTL-SDRv4-ESP**, a standalone ESP-IDF USB Host driver for the **RTL-SDR Blog V4**.
+OrcSDR consumes the standalone [`esp_rtl_sdr`](https://github.com/hardcoreerik/esp-rtl-sdr)
+ESP-IDF USB Host driver for the **RTL-SDR Blog V4**.
 
-The public API is **v0.4.1**: multi-URB streaming plus safe hot retune. The Tab5 radio uses this component for IQ. The long-term point of the split is that other ESP-IDF projects can talk to a Blog V4 without taking the OrcSDR UI with them.
+The Tab5 firmware pins the immutable `v0.7.9` GitHub release in its component
+manifest and committed ESP-IDF lockfile. The driver is not copied into this
+repository and `managed_components` remains generated and untracked.
 
-```text
-components/rtl_sdr_v4_esp/
-├── include/
-│   └── rtl_sdr_v4_esp.h
-├── src/
-│   └── rtl_sdr_v4_esp.cpp
-├── private/
-│   └── rtl_sdr_v4_transfers.hpp
-├── CMakeLists.txt
-├── Kconfig
-├── idf_component.yml
-└── README.md
-```
-
-Copy or submodule `components/rtl_sdr_v4_esp` into your ESP-IDF project’s `components/` directory, or:
-
-```cmake
-set(EXTRA_COMPONENT_DIRS /path/to/OrcSDR/components)
-```
-
-Basic initialization:
+OrcSDR explicitly uses callback-only IQ delivery, three 32-KiB transfers, and
+USB core 0:
 
 ```cpp
-#include "rtl_sdr_v4_esp.h"
+#include "esp_rtl_sdr.h"
 
-rtl_sdr_v4_esp_config_t cfg;
-rtl_sdr_v4_esp_config_default(&cfg);
-
-rtl_sdr_v4_esp_handle_t sdr;
-
-ESP_ERROR_CHECK(
-    rtl_sdr_v4_esp_install(&cfg, &sdr)
-);
+esp_rtl_sdr_config_t cfg;
+esp_rtl_sdr_config_default(&cfg);
+cfg.delivery_mode = ESP_RTL_SDR_DELIVERY_CALLBACK;
+cfg.transfer_bytes = 32768;
+cfg.transfer_count = 3;
+cfg.usb_task_core_id = 0;
 ```
 
-See [`docs/API_RTL_SDR_V4_ESP.md`](docs/API_RTL_SDR_V4_ESP.md) for the contract (install → start → IQ events → retune → stop → uninstall, no callback re-entry, fail closed). Extraction soak notes live in [`docs/PORTING.md`](docs/PORTING.md).
+See [`docs/API_ESP_RTL_SDR.md`](docs/API_ESP_RTL_SDR.md) for OrcSDR's pinned-driver contract. The complete public API lives in the driver repository; integration notes live in [`docs/PORTING.md`](docs/PORTING.md).
 
 ### Device identity
 
@@ -678,7 +656,7 @@ Product:      Blog V4
 
 ### Clean-room implementation
 
-`RTL-SDRv4-ESP` is a **clean-room implementation** of the USB behavior required to operate the RTL-SDR Blog V4. It is not derived from `librtlsdr` source. Measured behavior lives in [`docs/RTL_SDR_V4_CLEAN_ROOM_SPEC.md`](docs/RTL_SDR_V4_CLEAN_ROOM_SPEC.md).
+`esp_rtl_sdr` is a **clean-room implementation** of the USB behavior required to operate the RTL-SDR Blog V4. It is not derived from `librtlsdr` source. Measured behavior lives in [`docs/RTL_SDR_V4_CLEAN_ROOM_SPEC.md`](docs/RTL_SDR_V4_CLEAN_ROOM_SPEC.md).
 
 ---
 
@@ -775,8 +753,8 @@ https://github.com/hardcoreerik/OrcSDR
 **M5Stack Tab5 Application**  
 [`apps/orcsdr-tab5/`](apps/orcsdr-tab5/)
 
-**RTL-SDRv4-ESP Driver**  
-[`components/rtl_sdr_v4_esp/`](components/rtl_sdr_v4_esp/)
+**`esp_rtl_sdr` Driver**
+[github.com/hardcoreerik/esp-rtl-sdr](https://github.com/hardcoreerik/esp-rtl-sdr)
 
 **The Orc Ecosystem**  
 [TheOrc](https://github.com/hardcoreerik/TheOrc) · [OrcSDR](https://github.com/hardcoreerik/OrcSDR) · [OrcMesh](https://github.com/hardcoreerik/OrcMesh)

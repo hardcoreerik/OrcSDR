@@ -44,21 +44,18 @@ the *sequencing* is right (soak-test before removal) but flags the *cost* of
 carrying both paths in the meantime: every driver-facing change has to be
 reasoned about twice.
 
-**Status: Already tracked** — `PROJECT_STATUS.md` P1. No new tracking needed
-here beyond linking it into the module-split work (Phase 1), since splitting
-the USB path into its own translation unit makes the eventual deletion a
-one-file diff instead of a main.cpp-wide search.
+**Status: Resolved.** The legacy implementation and duplicate EP0 tables were
+removed after the v0.7.9 integration soak. `esp_rtl_sdr` is the only live USB
+implementation.
 
 ### Gap 3 — no CI
 
-There is no `.github/workflows` directory, no automated build of the driver
-component, no automated build of `examples/p4_serial_smoke`, and no unit or
-integration test suite for the driver. For a clean-room USB driver claiming a
-public API contract (`docs/API_RTL_SDR_V4_ESP.md`), an unbuilt example is a
-real regression risk — nothing currently prevents a header change from
-silently breaking the example that's supposed to prove the contract.
+The driver build, host policy tests, and standalone P4 smoke example now live
+in the `esp-rtl-sdr` repository. OrcSDR still needs consumer-build CI for the
+Tab5 application; it must not duplicate the driver's test harness.
 
-**Status: Planned.** See `phasing.md` Phase 2.
+**Status: Partially resolved.** Driver CI is upstream; OrcSDR consumer CI remains
+planned. See `phasing.md` Phase 2.
 
 ### Gap 4 — open performance gates (already tracked, cross-referenced here)
 

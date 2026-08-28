@@ -1,8 +1,8 @@
 # OrcSDR project status
 
-Snapshot date: **2026-08-14**
-Source branch: **`codex/user-guide-media`**
-Mainline baseline: **`origin/main` at `321f1bb6cec89d00e34f06d82cb813d47022d385`**
+Snapshot date: **2026-08-27**
+Source branch: **`codex/esp-rtl-sdr-v0.7.9`**
+Mainline baseline: **`origin/main` at `fc30c1030f26c8dd034d65917ec50e6880b7a871`**
 
 This is the authoritative current-status and roadmap index. Historical design,
 research, and validation documents remain useful evidence, but do not override
@@ -22,12 +22,12 @@ this file when their paths, versions, or completion claims differ.
 
 | Area | State | Evidence boundary |
 |---|---|---|
-| RTL-SDRv4-ESP API | **Implemented, v0.4.1** | Header and component source |
+| `esp_rtl_sdr` API | **Hardware-verified, v0.7.9** | Immutable GitHub dependency; callback-only delivery on Tab5 |
 | Blog V4 USB identity and 960 kS/s stream | **Hardware-verified** | Tab5 + Blog V4 on the measured USB host path |
-| Multi-URB stream, IQ ring, metrics | **Implemented** | Component source; five-minute acceptance still required |
-| In-stream hot retune | **Implemented** | Component v0.4.1; settle-time measurement pending |
+| Multi-URB stream and metrics | **Hardware-verified** | Three 32-KiB transfers; OrcSDR does not allocate the pull ring |
+| In-stream hot retune | **Hardware-verified** | `esp_rtl_sdr` v0.7.9; settle-time measurement remains pending |
 | Core split | **Implemented** | USB core 0; IQ delivery and app work on core 1 |
-| Native Tab5 build | **Build-verified** | Native ESP-IDF 5.5.3 build produces `orcsdr_tab5.bin`; P4 ESP-Hosted host is locked to 2.12.6. Hardware pairing/scan-connect acceptance remains pending. |
+| Native Tab5 build | **Hardware-verified** | Native ESP-IDF 5.5.4 build; ESP-Hosted host/C6 firmware matched at 3.0.6 on COM17. |
 | Tab5 radio shell | **Implemented** | FM/AM/WX/CB/LoRa, radio/scope/capture tabs, sound/GFX toggles |
 | Screen ownership controller | **Hardware-verified** | `ScreenController` is the sole display-route owner for Home, FM, P25, ADS-B, LoRa, generic Radio/Scope/Capture, Settings, and documentation mode. The Tab5 transition check passed after the final UI-loop handoff; documentation capture now claims and restores its controller identity. |
 | CB channel dashboard | **Flashed; operator acceptance pending** | 40-channel AM/USB/LSB plan, 2/3 scope, touch channel dial, clarifier, squelch, live S/RF bar |
@@ -91,8 +91,8 @@ paired IQ/WAV dataset that can drive FM filter decisions without tuning by ear.
       zero fatal USB errors.
 - [ ] Unplug/replug during streaming and recover to Ready without reboot.
 - [ ] Record retune settle time and recovery behavior after a failed retune.
-- [ ] Remove the legacy in-app USB path only after a soak build passes.
-- [ ] Build and run `examples/p4_serial_smoke` outside the Tab5 UI.
+- [x] Remove the legacy in-app USB path after the v0.7.9 integration soak passed.
+- [x] Move standalone smoke ownership to the `esp-rtl-sdr` repository.
 - [ ] Repeat the driver gate on one other ESP32-P4 board.
 
 Exit: portable driver behavior is measured on two P4 boards and the Tab5 app has
@@ -195,7 +195,7 @@ hardware proof and a branch is not considered landed until its merge is verified
 
 ## Verification commands
 
-Use the repository's native ESP-IDF 5.5.3 workflow; PlatformIO is not the
+Use the repository's native ESP-IDF 5.5.4 workflow; PlatformIO is not the
 production Tab5 build path:
 
 ```powershell

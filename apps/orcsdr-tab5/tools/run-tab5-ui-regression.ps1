@@ -16,7 +16,9 @@ param(
   [string]$Profile,
   [int]$Seed = 0,
   [string]$LogPath,
-  [switch]$SelfCheck
+  [switch]$SelfCheck,
+  [switch]$Driver079,
+  [switch]$TestBiasTee
 )
 
 $ErrorActionPreference = 'Stop'
@@ -293,7 +295,85 @@ function Invoke-SelfCheck {
 }
 
 if ($SelfCheck) { Invoke-SelfCheck; exit 0 }
-if ($Run -and $Soak) { throw 'Choose either -Run or -Soak.' }
+if (@($Run, $Soak, $Driver079).Where({ $_ }).Count -gt 1) {
+  throw 'Choose only one of -Run, -Soak, or -Driver079.'
+}
+
+function Get-DriverStatus {
+  $line = Send-And-Wait 'RTL_DRIVER STATUS' '^RTL_DRIVER_STATUS '
+  $pattern = 'version=(\S+) state=(\S+).*gain_auto_cap=([01]) rtl_agc_cap=([01]) gain_cap=([01]) bias_cap=([01]) mode=(AUTO|MANUAL) gain_tenth_db=(\d+) rtl_agc=([01]) bias=([01]) bytes=(\d+) blocks=(\d+) effective_sps=(\d+) overruns=(\d+) drops=(\d+) shadow_ok=([01]) metrics_ok=([01])'
+  if ($line -notmatch $pattern) { throw "Malformed driver status: $line" }
+  [pscustomobject]@{
+    Version = $Matches[1]; State = $Matches[2]; GainAutoCap = [int]$Matches[3]
+    RtlAgcCap = [int]$Matches[4]; GainCap = [int]$Matches[5]; BiasCap = [int]$Matches[6]
+    Mode = $Matches[7]; Gain = [int]$Matches[8]; RtlAgc = [int]$Matches[9]
+    Bias = [int]$Matches[10]; Bytes = [uint64]$Matches[11]; Blocks = [uint64]$Matches[12]
+    EffectiveSps = [uint32]$Matches[13]; Overruns = [uint32]$Matches[14]
+    Drops = [uint32]$Matches[15]; ShadowOk = [int]$Matches[16]; MetricsOk = [int]$Matches[17]
+  }
+}
+
+function Invoke-Driver079Test {
+  Wait-DeviceReady
+  Connect-Authenticated
+  $selfCheck = Send-And-Wait 'RTL_DRIVER SELF_CHECK' '^RTL_DRIVER_SELF_CHECK '
+  if ($selfCheck -notmatch 'pass=1 version=0\.7\.9 ') { throw "Driver self-check failed: $selfCheck" }
+  $deadline = [DateTime]::UtcNow.AddSeconds(30)
+  do {
+    $initial = Get-DriverStatus
+    if ($initial.State -eq 'STREAMING' -and $initial.Bytes -gt 0) { break }
+    Start-Sleep -Milliseconds 500
+  } while ([DateTime]::UtcNow -lt $deadline)
+  if ($initial.State -ne 'STREAMING' -or $initial.Bytes -eq 0) {
+    throw "Driver test requires active IQ streaming; state=$($initial.State) bytes=$($initial.Bytes)"
+  }
+  if ($initial.GainAutoCap -ne 1 -or $initial.RtlAgcCap -ne 1 -or
+      $initial.GainCap -ne 1 -or $initial.BiasCap -ne 1 -or
+      $initial.ShadowOk -ne 1 -or $initial.MetricsOk -ne 1) {
+    throw 'Required v0.7.9 capability or status getter is unavailable.'
+  }
+
+  $last = $initial
+  function Test-Transition([string]$Command, [string]$Mode, [int]$Gain, [int]$RtlAgc) {
+    $reply = Send-And-Wait $Command '^RTL_DRIVER_RESULT '
+    if ($reply -notmatch 'accepted=1 result=ESP_OK') { throw "Driver request rejected: $reply" }
+    Start-Sleep -Seconds 2
+    $next = Get-DriverStatus
+    if ($next.Mode -ne $Mode -or ($Gain -ge 0 -and $next.Gain -ne $Gain) -or
+        ($RtlAgc -ge 0 -and $next.RtlAgc -ne $RtlAgc)) {
+      throw "Shadow mismatch after $Command"
+    }
+    if ($next.Bytes -le $script:last.Bytes) { throw "IQ stopped after $Command" }
+    if ($next.Overruns -gt $initial.Overruns + 16 -or $next.Drops -gt $initial.Drops + 16) {
+      throw "Drop counters grew excessively after $Command"
+    }
+    Write-SoakLine "RTL_DRIVER_079_STEP command=$($Command.Replace(' ', '_')) pass=1 bytes=$($next.Bytes) effective_sps=$($next.EffectiveSps) overruns=$($next.Overruns) drops=$($next.Drops)"
+    $script:last = $next
+  }
+
+  $script:last = $last
+  try {
+    Test-Transition 'RTL_DRIVER GAINMODE MANUAL' 'MANUAL' -1 -1
+    Test-Transition 'RTL_DRIVER GAIN 297' 'MANUAL' 297 -1
+    Test-Transition 'RTL_DRIVER GAINMODE AUTO' 'AUTO' 297 -1
+    Test-Transition 'RTL_DRIVER RTLAGC ON' 'AUTO' 297 1
+    Test-Transition 'RTL_DRIVER RTLAGC OFF' 'AUTO' 297 0
+    if ($TestBiasTee) {
+      $target = 1 - $initial.Bias
+      Test-Transition "RTL_DRIVER BIAS $(if ($target) { 'ON' } else { 'OFF' })" 'AUTO' 297 0
+    }
+    Write-SoakLine "RTL_DRIVER_079_RESULT pass=1 version=$($initial.Version) bias_tested=$([int][bool]$TestBiasTee) evidence=request_acceptance+shadow+iq_continuity"
+  } finally {
+    try {
+      [void](Send-And-Wait "RTL_DRIVER GAIN $($initial.Gain)" '^RTL_DRIVER_RESULT ')
+      [void](Send-And-Wait "RTL_DRIVER GAINMODE $($initial.Mode)" '^RTL_DRIVER_RESULT ')
+      [void](Send-And-Wait "RTL_DRIVER RTLAGC $(if ($initial.RtlAgc) { 'ON' } else { 'OFF' })" '^RTL_DRIVER_RESULT ')
+      if ($TestBiasTee) {
+        [void](Send-And-Wait "RTL_DRIVER BIAS $(if ($initial.Bias) { 'ON' } else { 'OFF' })" '^RTL_DRIVER_RESULT ')
+      }
+    } catch { Write-Warning "Could not restore driver shadow state: $($_.Exception.Message)" }
+  }
+}
 
 $script:serial = [System.IO.Ports.SerialPort]::new($Port, 115200, 'None', 8, 'One')
 $script:serial.NewLine = "`n"
@@ -306,6 +386,8 @@ try {
   $script:serial.Open()
   Start-Sleep -Milliseconds 250
   $script:serial.DiscardInBuffer()
+
+  if ($Driver079) { Invoke-Driver079Test; exit 0 }
 
   if ($Profile) {
     $commit = (& git -C (Join-Path $PSScriptRoot '..\..\..') rev-parse --short HEAD 2>$null)
