@@ -489,6 +489,7 @@ constexpr size_t kRtlSpectrumWelchWindows = 2;
 constexpr uint32_t kRtlSpectrumIntervalMs = 100;
 constexpr uint32_t kRtlSpectrumStressedIntervalMs = 220;
 constexpr size_t kRtlRingDepth = 3;
+constexpr UBaseType_t kRtlDspTaskPrio = 6;
 constexpr uint32_t kRtlAudioPrimeMs = 450;
 constexpr uint32_t kRtlSignalMeterIntervalMs = 200;
 /* Tab5 microSD (M5 docs): SPI pins for optional WAV export. */
@@ -877,11 +878,16 @@ struct RtlIqBlock {
   uint8_t* data;
   size_t bytes;
   uint32_t sequence;
-  bool end_marker;
+  uint8_t slot;
+  RtlBand band;
+  float audio_scale;
+  bool lab_custom_rate;
 };
 static uint8_t* rtl_ring_slots[kRtlRingDepth]{};
 static QueueHandle_t rtl_free_q = nullptr;
 static QueueHandle_t rtl_filled_q = nullptr;
+static std::atomic<uint32_t> rtl_iq_pipeline_drops{0};
+static std::atomic<uint32_t> rtl_iq_sequence{0};
 /* Scratch IQ buffer for demod/spectrum (size >= max bulk transfer). */
 static uint8_t rtl_iq_processing[32768 + 512];
 /* Relative RF level from IQ power (dBFS-ish, 0 = full-scale CU8). */
@@ -2433,13 +2439,13 @@ bool restart_rtl_speaker_i2s(uint8_t volume) {
   if (speaker_backoff_active(now)) return false;
   const uint32_t dma_largest =
       heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-  /* 4×512 stereo ≈ 8 KiB. After Wi-Fi/USB the leftover slab can be ~5 KiB;
-   * retrying begin/end every second fragments that slab and stalls IQ. */
-  if (dma_largest < 4096u) {
+  /* Keep two small DMA buffers available after the USB driver claims its
+   * descriptors. 256 stereo frames × 2 buffers is 2 KiB plus descriptors. */
+  if (dma_largest < 3072u) {
     speaker_note_fail(now);
     if (!g_speaker_fail_logged) {
       g_speaker_fail_logged = true;
-      Serial.printf("RTL_SPEAKER_BEGIN_FAIL dma_largest=%lu need=4096\n",
+      Serial.printf("RTL_SPEAKER_BEGIN_FAIL dma_largest=%lu need=3072\n",
                     static_cast<unsigned long>(dma_largest));
       log_dram_budget("speaker_begin_fail");
     }
@@ -2453,15 +2459,10 @@ bool restart_rtl_speaker_i2s(uint8_t volume) {
   speaker_config.stereo = true;
   speaker_config.task_priority = 6;
   speaker_config.task_pinned_core = 1;
-  if (dma_largest >= 8192u) {
-    speaker_config.dma_buf_len = 512;
-    speaker_config.dma_buf_count = 4;
-  } else {
-    speaker_config.dma_buf_len = 512;
-    speaker_config.dma_buf_count = 2;
-    Serial.printf("RTL_SPEAKER_DMA fallback count=2 largest=%lu\n",
-                  static_cast<unsigned long>(dma_largest));
-  }
+  speaker_config.dma_buf_len = 256;
+  speaker_config.dma_buf_count = 2;
+  Serial.printf("RTL_SPEAKER_DMA len=256 count=2 largest=%lu\n",
+                static_cast<unsigned long>(dma_largest));
   M5.Speaker.config(speaker_config);
   if (M5.Speaker.isRunning()) M5.Speaker.end();
   apply_speaker_volume(volume);
@@ -5061,7 +5062,16 @@ orcsdr::rf_lab::Runtime rf_lab_runtime() {
   return runtime;
 }
 
+void stop_p25_automation() {
+  p25_survey_active.store(false, std::memory_order_release);
+  p25_entry_probe_at_ms = 0;
+  p25_follow_state.store(P25FollowState::control, std::memory_order_release);
+  p25_voice_session.fetch_add(1, std::memory_order_acq_rel);
+  p25_voice_frequency_hz = 0;
+}
+
 void open_rf_lab() {
+  stop_p25_automation();
   const auto origin = orcsdr::screens::status().active;
   orcsdr::rf_lab::set_runtime(rf_lab_runtime());
   orcsdr::screens::begin_transition(orcsdr::screens::Id::rf_lab, millis());
@@ -5128,7 +5138,10 @@ void service_rf_lab() {
       if (!esp_rtl_sdr_is_rate_supported(rate)) result = ESP_ERR_INVALID_ARG;
       else {
         rtl_lab_rate_override_sps.store(rate, std::memory_order_release);
-        queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz, false);
+        uint32_t current_rate = 0;
+        if (esp_rtl_sdr_get_sample_rate(g_rtl, &current_rate) != ESP_OK ||
+            current_rate != rate)
+          queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz, false);
       }
     } else if (action.kind == Kind::ppm) {
       result = esp_rtl_sdr_set_freq_correction(g_rtl, action.value);
@@ -5586,11 +5599,12 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
                                   (static_cast<uint64_t>(dsp_us) * 100u) /
                                   (static_cast<uint64_t>(window_ms) * 1000u));
     if (serial_verbosity_at(SerialVerbosity::trace)) {
-      Serial.printf("RTL_SPECTRUM_FPS fps=%u bins=%u welch=%u tool=%s audio_dropped=%u "
-                    "audio_chunks=%u audio_peak=%d dsp_load_pct=%u dsp_blocks=%u "
+      Serial.printf("RTL_SPECTRUM_FPS fps=%u bins=%u welch=%u tool=%s iq_dropped=%u "
+                    "audio_dropped=%u audio_chunks=%u audio_peak=%d dsp_load_pct=%u dsp_blocks=%u "
                     "dsp_block_us_max=%u\n",
                     rtl_spectrum_fps, static_cast<unsigned>(kRtlSpectrumBins),
                     static_cast<unsigned>(windows), orc_tool_name(tool),
+                    rtl_iq_pipeline_drops.load(std::memory_order_relaxed),
                     rtl_audio.dropped_chunks, rtl_audio.queued_chunks, rtl_audio.peak,
                     dsp_load_pct, dsp_blocks, dsp_max_us);
     }
@@ -6691,9 +6705,9 @@ void initialize_rtl_sdr_host() {
 /*
  * Core split (working path):
  *   Core 0 — driver USB (host + client)
- *   Core 1 — driver delivery posts EVT_IQ_BLOCK → demod+speaker here;
- *            rtl_app does touch / retune / spectrum (lower rate)
- * The extra audio-job queue broke both audio and graphics; keep demod inline.
+ *   Core 1 — driver delivery copies borrowed IQ into a bounded ring;
+ *            rtl_dsp owns demod/decoder/audio work and rtl_app owns controls.
+ * The callback must return promptly so the driver and idle watchdog can run.
  */
 static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, void *ctx) {
   (void)ctx;
@@ -6721,63 +6735,29 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       Serial.println("RTL_SDR_DISCONNECTED");
       break;
     case ESP_RTL_SDR_EVT_IQ_BLOCK: {
-      const uint32_t dsp_started_us = micros();
       const auto *iq = static_cast<const esp_rtl_sdr_iq_block_t *>(payload);
       if (iq == nullptr || iq->data == nullptr || iq->bytes == 0) break;
       const size_t n =
           iq->bytes <= sizeof(rtl_iq_processing) ? iq->bytes : sizeof(rtl_iq_processing);
-      const bool lab_active = orcsdr::rf_lab::active();
+      rtl_capture_bytes += n;
+      uint8_t slot = 0;
+      if (!rtl_free_q || !rtl_filled_q || xQueueReceive(rtl_free_q, &slot, 0) != pdTRUE) {
+        rtl_iq_pipeline_drops.fetch_add(1, std::memory_order_relaxed);
+        break;
+      }
+      std::memcpy(rtl_ring_slots[slot], iq->data, n);
       const uint32_t lab_rate = rtl_lab_rate_override_sps.load(std::memory_order_relaxed);
       const uint32_t decoder_rate = g_stream_band == RtlBand::adsb
                                         ? ESP_RTL_SDR_RATE_2048K
                                         : ESP_RTL_SDR_RATE_960K;
-      const bool lab_custom_rate = lab_active && lab_rate && lab_rate != decoder_rate;
-      if (!lab_custom_rate && g_stream_band == RtlBand::adsb && adsb_iq_free && adsb_iq_ready) {
-        uint8_t index = 0;
-        if (xQueueReceive(adsb_iq_free, &index, 0) == pdTRUE) {
-          std::memcpy(adsb_iq_blocks[index], iq->data, n);
-          adsb_iq_sizes[index] = n;
-          (void)xQueueSend(adsb_iq_ready, &index, 0);
-        } else {
-          adsb_iq_drops.fetch_add(1, std::memory_order_relaxed);
-        }
-      }
-      update_signal_level_from_iq(iq->data, n);
-      if (!lab_custom_rate && g_stream_band == RtlBand::p25)
-        orcsdr::p25decoder::process_cu8(iq->data, n);
-      /* ADS-B needs the full callback budget; it has no spectrum or audio path. */
-      if (g_stream_band != RtlBand::adsb || orcsdr::home::active() ||
-          orcsdr::visualizer::active() || lab_active)
-        spectrum_offer_iq_snapshot(iq->data, n);
-      if (!lab_custom_rate && g_stream_band == RtlBand::lora) lora_iq_offer(iq->data, n);
-      if (!lab_custom_rate && !orcsdr::visualizer::channel_audio_active() &&
-          g_stream_band != RtlBand::lora && g_stream_band != RtlBand::p25 &&
-          (rtl_audio_enabled.load(std::memory_order_relaxed) ||
-           g_audio_rec_active.load(std::memory_order_relaxed)) &&
-          !rtl_audio_test_tone.load(std::memory_order_relaxed)) {
-        if (g_stream_band == RtlBand::cb) {
-          if (cb_audio_gate_open()) {
-            const CbMode mode = cb_mode.load(std::memory_order_relaxed);
-            if (mode == CbMode::am) demodulate_am(iq->data, n, g_stream_audio_scale);
-            else demodulate_ssb(iq->data, n, g_stream_audio_scale, mode);
-          } else {
-            rtl_audio_play_count = 0;
-          }
-        } else if (g_stream_band == RtlBand::am) {
-          demodulate_am(iq->data, n, g_stream_audio_scale);
-        } else {
-          demodulate_fm(iq->data, n, g_stream_audio_scale,
-                        g_stream_band == RtlBand::fm);
-        }
-      }
-      rtl_capture_bytes += n;
-      const uint32_t dsp_elapsed_us = micros() - dsp_started_us;
-      rtl_dsp_window_us.fetch_add(dsp_elapsed_us, std::memory_order_relaxed);
-      rtl_dsp_window_blocks.fetch_add(1, std::memory_order_relaxed);
-      uint32_t previous_max = rtl_dsp_block_us_max.load(std::memory_order_relaxed);
-      while (dsp_elapsed_us > previous_max &&
-             !rtl_dsp_block_us_max.compare_exchange_weak(
-                 previous_max, dsp_elapsed_us, std::memory_order_relaxed)) {
+      const RtlIqBlock block{
+          rtl_ring_slots[slot], n,
+          rtl_iq_sequence.fetch_add(1, std::memory_order_relaxed), slot, g_stream_band,
+          g_stream_audio_scale,
+          orcsdr::rf_lab::active() && lab_rate && lab_rate != decoder_rate};
+      if (xQueueSend(rtl_filled_q, &block, 0) != pdTRUE) {
+        rtl_iq_pipeline_drops.fetch_add(1, std::memory_order_relaxed);
+        (void)xQueueSend(rtl_free_q, &slot, 0);
       }
       break;
     }
@@ -6802,6 +6782,63 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
     }
     default:
       break;
+  }
+}
+
+static void rtl_dsp_task(void *) {
+  RtlIqBlock block{};
+  while (true) {
+    if (xQueueReceive(rtl_filled_q, &block, portMAX_DELAY) != pdTRUE) continue;
+    const uint32_t dsp_started_us = micros();
+    const bool lab_active = orcsdr::rf_lab::active();
+    if (!block.lab_custom_rate && block.band == RtlBand::adsb && adsb_iq_free &&
+        adsb_iq_ready) {
+      uint8_t index = 0;
+      if (xQueueReceive(adsb_iq_free, &index, 0) == pdTRUE) {
+        std::memcpy(adsb_iq_blocks[index], block.data, block.bytes);
+        adsb_iq_sizes[index] = block.bytes;
+        (void)xQueueSend(adsb_iq_ready, &index, 0);
+      } else {
+        adsb_iq_drops.fetch_add(1, std::memory_order_relaxed);
+      }
+    }
+    update_signal_level_from_iq(block.data, block.bytes);
+    if (!block.lab_custom_rate && block.band == RtlBand::p25)
+      orcsdr::p25decoder::process_cu8(block.data, block.bytes);
+    if (block.band != RtlBand::adsb || orcsdr::home::active() ||
+        orcsdr::visualizer::active() || lab_active)
+      spectrum_offer_iq_snapshot(block.data, block.bytes);
+    if (!block.lab_custom_rate && block.band == RtlBand::lora)
+      lora_iq_offer(block.data, block.bytes);
+    if (!block.lab_custom_rate && !orcsdr::visualizer::channel_audio_active() &&
+        block.band != RtlBand::lora && block.band != RtlBand::p25 &&
+        (rtl_audio_enabled.load(std::memory_order_relaxed) ||
+         g_audio_rec_active.load(std::memory_order_relaxed)) &&
+        !rtl_audio_test_tone.load(std::memory_order_relaxed)) {
+      if (block.band == RtlBand::cb) {
+        if (cb_audio_gate_open()) {
+          const CbMode mode = cb_mode.load(std::memory_order_relaxed);
+          if (mode == CbMode::am) demodulate_am(block.data, block.bytes, block.audio_scale);
+          else demodulate_ssb(block.data, block.bytes, block.audio_scale, mode);
+        } else {
+          rtl_audio_play_count = 0;
+        }
+      } else if (block.band == RtlBand::am) {
+        demodulate_am(block.data, block.bytes, block.audio_scale);
+      } else if (block.band != RtlBand::adsb) {
+        demodulate_fm(block.data, block.bytes, block.audio_scale, block.band == RtlBand::fm);
+      }
+    }
+    const uint32_t dsp_elapsed_us = micros() - dsp_started_us;
+    rtl_dsp_window_us.fetch_add(dsp_elapsed_us, std::memory_order_relaxed);
+    rtl_dsp_window_blocks.fetch_add(1, std::memory_order_relaxed);
+    uint32_t previous_max = rtl_dsp_block_us_max.load(std::memory_order_relaxed);
+    while (dsp_elapsed_us > previous_max &&
+           !rtl_dsp_block_us_max.compare_exchange_weak(
+               previous_max, dsp_elapsed_us, std::memory_order_relaxed)) {
+    }
+    (void)xQueueSend(rtl_free_q, &block.slot, portMAX_DELAY);
+    vTaskDelay(1);
   }
 }
 
@@ -6831,6 +6868,7 @@ static void rtl_driver_app_task(void *) {
       rtl_dsp_window_us.store(0, std::memory_order_relaxed);
       rtl_dsp_window_blocks.store(0, std::memory_order_relaxed);
       rtl_dsp_block_us_max.store(0, std::memory_order_relaxed);
+      rtl_iq_pipeline_drops.store(0, std::memory_order_relaxed);
       rtl_audio_play_count = 0;
       rtl_audio_play_block_index = 0;
       memset(rtl_audio_play_block_ready_ms, 0, sizeof(rtl_audio_play_block_ready_ms));
@@ -7264,6 +7302,34 @@ static void rtl_driver_app_task(void *) {
 }
 
 void initialize_rtl_sdr_host() {
+  rtl_free_q = xQueueCreateWithCaps(kRtlRingDepth, sizeof(uint8_t),
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  rtl_filled_q = xQueueCreateWithCaps(kRtlRingDepth, sizeof(RtlIqBlock),
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!rtl_free_q || !rtl_filled_q) {
+    set_rtl_sdr_status("RTL-SDR: IQ queue allocation failed");
+    return;
+  }
+  for (uint8_t i = 0; i < kRtlRingDepth; ++i) {
+    rtl_ring_slots[i] = static_cast<uint8_t*>(
+        heap_caps_malloc(sizeof(rtl_iq_processing), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!rtl_ring_slots[i]) {
+      set_rtl_sdr_status("RTL-SDR: IQ ring allocation failed");
+      return;
+    }
+    (void)xQueueSend(rtl_free_q, &i, 0);
+  }
+  if (xTaskCreatePinnedToCoreWithCaps(rtl_dsp_task, "rtl_dsp", 8192, nullptr,
+                                      kRtlDspTaskPrio, &rtl_dsp_task_handle, 1,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
+    set_rtl_sdr_status("RTL-SDR: DSP task failed");
+    return;
+  }
+  Serial.printf("RTL_IQ_PIPELINE ready slots=%u bytes=%u core=1 priority=%u\n",
+                static_cast<unsigned>(kRtlRingDepth),
+                static_cast<unsigned>(sizeof(rtl_iq_processing)),
+                static_cast<unsigned>(kRtlDspTaskPrio));
+
   adsb_iq_free = xQueueCreate(kAdsbIqBlockCount, sizeof(uint8_t));
   adsb_iq_ready = xQueueCreate(kAdsbIqBlockCount, sizeof(uint8_t));
   if (!adsb_iq_free || !adsb_iq_ready) {
@@ -7327,7 +7393,7 @@ void initialize_rtl_sdr_host() {
                               nullptr, 1) != pdPASS) {
     set_rtl_sdr_status("RTL-SDR: app task failed");
   }
-  Serial.println("RTL_CORE_SPLIT usb=core0 dsp_audio_ui_hosted=core1 (inline demod)");
+  Serial.println("RTL_CORE_SPLIT usb=core0 callback=enqueue dsp_audio_ui_hosted=core1");
 }
 #endif /* RTL_USE_LEGACY_USB */
 
@@ -8259,7 +8325,7 @@ void service_p25_survey(uint32_t now) {
 }
 
 void service_p25_follow(uint32_t now) {
-  if (g_stream_band != RtlBand::p25 ||
+  if (orcsdr::rf_lab::active() || g_stream_band != RtlBand::p25 ||
       p25_survey_active.load(std::memory_order_relaxed)) return;
   const auto decoded = orcsdr::p25decoder::snapshot();
   if (p25_follow_state.load(std::memory_order_acquire) == P25FollowState::voice) {
@@ -9309,6 +9375,9 @@ bool point_in_button(int32_t x, int32_t y) {
 
 void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
                             bool persist_navigation) {
+  if (band != RtlBand::p25) {
+    stop_p25_automation();
+  }
   if (!rtl_band_has_audio(band)) sync_rtl_audio_for_band(band);
   if (band == RtlBand::adsb) {
     frequency_hz = kAdsbDefaultHz;
@@ -12076,6 +12145,10 @@ void service_boot_device_staging() {
   switch (boot_init_stage) {
     case BootInitStage::usb_power_settle:
       if (elapsed_ms < 350) return;
+      /* Reserve the small I2S DMA ring while contiguous internal RAM still
+       * exists. Starting it after USB enumeration cannot allocate reliably. */
+      allow_boot_speaker();
+      log_dram_budget("speaker_before_usb");
       set_rtl_sdr_status("Boot: starting RTL-SDR host");
       initialize_rtl_sdr_host();
       log_dram_budget("after_usb");
