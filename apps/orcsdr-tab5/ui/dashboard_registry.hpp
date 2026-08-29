@@ -19,6 +19,7 @@ enum class Id : uint8_t {
   satellite,
   utilities,
   settings,
+  rf_lab,
   count,
 };
 

@@ -188,6 +188,15 @@ function Get-AudioStatus {
 }
 
 function Assert-FmAudioProgress {
+  $streamDeadline = [DateTime]::UtcNow.AddSeconds(30)
+  do {
+    $driver = Get-DriverStatus
+    if ($driver.State -eq 'STREAMING' -and $driver.Bytes -gt 0) { break }
+    Start-Sleep -Milliseconds 500
+  } while ([DateTime]::UtcNow -lt $streamDeadline)
+  if ($driver.State -ne 'STREAMING' -or $driver.Bytes -eq 0) {
+    throw "FM IQ did not start: state=$($driver.State) bytes=$($driver.Bytes)"
+  }
   $first = Get-AudioStatus
   $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(5, $TimeoutSeconds))
   do {
@@ -300,8 +309,11 @@ if (@($Run, $Soak, $Driver079).Where({ $_ }).Count -gt 1) {
 }
 
 function Get-DriverStatus {
-  $line = Send-And-Wait 'RTL_DRIVER STATUS' '^RTL_DRIVER_STATUS '
   $pattern = 'version=(\S+) state=(\S+).*gain_auto_cap=([01]) rtl_agc_cap=([01]) gain_cap=([01]) bias_cap=([01]) mode=(AUTO|MANUAL) gain_tenth_db=(\d+) rtl_agc=([01]) bias=([01]) bytes=(\d+) blocks=(\d+) effective_sps=(\d+) overruns=(\d+) drops=(\d+) shadow_ok=([01]) metrics_ok=([01])'
+  for ($attempt = 0; $attempt -lt 3; $attempt++) {
+    $line = Send-And-Wait 'RTL_DRIVER STATUS' '^RTL_DRIVER_STATUS '
+    if ($line -match $pattern) { break }
+  }
   if ($line -notmatch $pattern) { throw "Malformed driver status: $line" }
   [pscustomobject]@{
     Version = $Matches[1]; State = $Matches[2]; GainAutoCap = [int]$Matches[3]
@@ -404,8 +416,14 @@ try {
   }
 
   Wait-DeviceReady
-  [void](Send-And-Wait 'RTL_STATUS' '^RTL_SDR_STATUS ' 20)
   Connect-Authenticated
+  $rtlDeadline = [DateTime]::UtcNow.AddSeconds(30)
+  do {
+    $rtlStatus = Send-And-Wait 'RTL_STATUS' '^RTL_SDR_STATUS ' 20
+    if ($rtlStatus -match 'connected=true ') { break }
+    Start-Sleep -Milliseconds 500
+  } while ([DateTime]::UtcNow -lt $rtlDeadline)
+  if ($rtlStatus -notmatch 'connected=true ') { throw "RTL-SDR did not enumerate: $rtlStatus" }
   $initial = Get-UiState
   $initialVerbosity = $null
   $soundWasEnabled = $null
@@ -436,6 +454,12 @@ try {
       [void](Open-Ui 'SETTINGS' $targets[-1].Band)
       Watch-Responsive $DwellSeconds 'SETTINGS' $targets[-1].Band
       [void](Open-Ui 'HOME' $targets[-1].Band)
+      [void](Open-Ui 'RF_LAB' $targets[-1].Band)
+      [void](Send-And-Wait 'RTL_LAB SELF_CHECK' '^RTL_LAB_SELF_CHECK pass=1$')
+      [void](Send-And-Wait 'RTL_LAB PAGE CONTROLS' '^RTL_LAB_OK page=CONTROLS$')
+      Watch-Responsive $DwellSeconds 'RF_LAB' $targets[-1].Band
+      [void](Send-And-Wait 'RTL_LAB CLOSE' '^RTL_LAB_OK close=queued$')
+      [void](Wait-UiState 'HOME' $targets[-1].Band)
       [void](Open-Ui 'FM' 'FM')
       Assert-FmAudioProgress
       if ($cycle -eq 1 -or $cycle % 5 -eq 0) { Assert-SoundCycle }
