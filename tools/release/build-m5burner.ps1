@@ -17,8 +17,8 @@ $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $repo
 if (-not $Version) { $Version = (git describe --tags --exact-match).Trim() }
-if ($Version -notmatch '^v\d+\.\d+\.\d+(-alpha\.\d+)?$') {
-  throw "Use an exact semantic OrcSDR tag, not '$Version'."
+if ($Version -notmatch '^v\d+\.\d+\.\d+(-alpha\.\d+)?(-candidate\.\d+)?$') {
+  throw "Use an exact OrcSDR release tag or candidate label, not '$Version'."
 }
 if ((git status --porcelain --untracked-files=no)) {
   throw 'Tracked source changes are present; package only a clean tagged tree.'

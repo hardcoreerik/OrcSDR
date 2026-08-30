@@ -21,7 +21,7 @@ foreach ($path in @($manifestPath, $sumPath, $coverPath, $readmePath)) {
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 if (-not $Version) { $Version = "v$($manifest.version)" }
-if ($Version -notmatch '^v\d+\.\d+\.\d+(-alpha\.\d+)?$') { throw "Invalid version: $Version" }
+if ($Version -notmatch '^v\d+\.\d+\.\d+(-alpha\.\d+)?(-candidate\.\d+)?$') { throw "Invalid version: $Version" }
 if ($manifest.name -ne 'OrcSDR' -or $manifest.version -ne $Version.TrimStart('v')) {
   throw 'Manifest name or version does not match the expected release.'
 }
