@@ -20,8 +20,9 @@ for the test device, and never reuse that candidate label as a public release.
 
 The command runs the native ESP-IDF build, merges the configured P4 flash
 regions, and writes `dist/OrcSDR-Tab5-<tag>/`. It creates the P4 image,
-`SHA256SUMS.txt`, an upload-field manifest, and the cover image. It does not
-flash hardware, include C6 firmware, or upload anything.
+`SHA256SUMS.txt`, an upload-field manifest, cover image, and a demo-layout
+`*-local-m5burner.zip` with separate P4 bootloader, partition table, and app
+binaries. It does not flash hardware, include C6 firmware, or upload anything.
 
 Verify the hash before attaching the image to a GitHub prerelease or uploading
 it to M5Burner:

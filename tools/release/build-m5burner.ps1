@@ -74,4 +74,39 @@ $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dist 'm5burner
 ) | Set-Content -LiteralPath (Join-Path $dist 'README.txt')
 Copy-Item -LiteralPath (Join-Path $repo 'docs\images\OrcSDR-Main.png') `
   -Destination (Join-Path $dist 'OrcSDR-Main.png') -Force
+
+$localRoot = Join-Path $dist 'local-m5burner'
+$localFirmware = Join-Path $localRoot 'firmware'
+New-Item -ItemType Directory -Force -Path $localFirmware | Out-Null
+Copy-Item -LiteralPath (Join-Path $build 'bootloader\bootloader.bin') `
+  -Destination (Join-Path $localFirmware 'bootloader_0x2000.bin') -Force
+Copy-Item -LiteralPath (Join-Path $build 'partition_table\partition-table.bin') `
+  -Destination (Join-Path $localFirmware 'partition-table_0x8000.bin') -Force
+Copy-Item -LiteralPath (Join-Path $build 'orcsdr_tab5.bin') `
+  -Destination (Join-Path $localFirmware 'orcsdr_tab5_0x10000.bin') -Force
+$localManifest = [ordered]@{
+  name = "OrcSDR $Version"
+  description = 'OrcSDR P4 application for private Tab5 testing. Do not erase for normal upgrades.'
+  keywords = 'Tab5, RTL-SDR, ESP-IDF'
+  author = 'hardcoreerik'
+  repository = 'https://github.com/hardcoreerik/OrcSDR'
+  firmware_category = [ordered]@{
+    path = 'firmware'
+    device = @('Tab5')
+    default_baud = 921600
+  }
+  version = $Version.TrimStart('v')
+  framework = 'ESP-IDF'
+}
+$localManifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $localRoot 'm5burner.json')
+@'
+#!/bin/bash
+esptool.py --chip esp32p4 --port /dev/${port} --baud 921600 --before default_reset --after hard_reset write_flash -z \
+--flash_mode dio --flash_freq 80m --flash_size 16MB \
+0x2000 bootloader_0x2000.bin \
+0x8000 partition-table_0x8000.bin \
+0x10000 orcsdr_tab5_0x10000.bin
+'@ | Set-Content -LiteralPath (Join-Path $localFirmware 'flash.sh') -NoNewline
+$localZip = Join-Path $dist "OrcSDR-Tab5-$Version-local-m5burner.zip"
+Compress-Archive -Path (Join-Path $localRoot '*') -DestinationPath $localZip -Force
 Write-Host "M5Burner bundle ready: $dist"
