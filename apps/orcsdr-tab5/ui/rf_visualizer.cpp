@@ -530,7 +530,7 @@ void update_occupancy(const SpectrumFrame& frame) {
   constexpr size_t counts[] = {4, 8, 16, 32};
   const size_t bands = counts[std::clamp(static_cast<int>(value("occupancy.band_count")), 0, 3)];
   const float threshold = frame.noise + value("occupancy.threshold_offset_db");
-  const uint32_t frame_ms = g_effective_quality == 0 ? 33 : g_effective_quality == 1 ? 66 : 200;
+  const uint32_t frame_ms = g_effective_quality == 0 ? 16 : g_effective_quality == 1 ? 33 : 100;
   const uint32_t required_ms = static_cast<uint32_t>(value("occupancy.minimum_dwell_ms"));
   for (size_t band = 0; band < bands; ++band) {
     const size_t first = band * frame.bins / bands;
@@ -562,7 +562,7 @@ void configure_analysis() {
   config.fft_size = static_cast<uint16_t>(
       current == View::audio_spectrogram ? 1024 : selected_fft_size(current));
   config.audio_fft_size = static_cast<uint16_t>(selected_fft_size(View::audio_spectrogram));
-  config.interval_ms = g_effective_quality == 0 ? 33 : g_effective_quality == 1 ? 66 : 200;
+  config.interval_ms = g_effective_quality == 0 ? 16 : g_effective_quality == 1 ? 33 : 100;
   config.audio_spectrum = current == View::audio_spectrogram;
   config.audio_demod = runtime.audio_demod == AudioDemod::fm
                            ? rf_analysis::AudioDemod::fm
