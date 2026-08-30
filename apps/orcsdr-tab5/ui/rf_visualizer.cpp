@@ -6,6 +6,7 @@
 
 #include <M5Unified.h>
 #include <esp_heap_caps.h>
+#include <esp_lcd_panel_ops.h>
 #include <lgfx/v1/platforms/esp32p4/Panel_DSI.hpp>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -51,6 +52,16 @@ M5Canvas g_canvas(&M5.Display);
 M5Canvas g_display_canvas;
 void* g_display_buffer = nullptr;
 size_t g_display_buffer_bytes = 0;
+esp_lcd_panel_handle_t g_dsi_panel = nullptr;
+uint16_t g_dsi_width = 0;
+uint16_t g_dsi_height = 0;
+void* g_frame_buffers[2] = {};
+uint8_t g_front_frame_buffer = 0;
+uint8_t g_back_frame_buffer = 1;
+bool g_page_flip_active = false;
+bool g_page_flip_pending = false;
+uint32_t g_page_flip_queued_ms = 0;
+constexpr uint32_t kPageFlipSettleMs = 20;
 
 struct Preset {
   char name[21];
@@ -347,8 +358,65 @@ int audio_scroll_pixels(uint32_t elapsed_ms, float choice) {
                     1, kPlotW);
 }
 
-void present_canvas() {
-  if (g_canvas.getBuffer() && g_display_buffer)
+bool is_full_repaint_view(View current) {
+  return current != View::waterfall && current != View::audio_spectrogram;
+}
+
+void set_canvas_buffer(uint8_t index) {
+  if (!g_frame_buffers[index]) return;
+  const auto* panel = static_cast<lgfx::Panel_DSI*>(M5.Display.getPanel());
+  const auto& config = panel->config();
+  g_canvas.setBuffer(g_frame_buffers[index], config.panel_width, config.panel_height);
+  g_display_canvas.setBuffer(g_frame_buffers[index], config.panel_width, config.panel_height);
+  g_canvas.setRotation(M5.Display.getRotation());
+  g_display_canvas.setRotation(M5.Display.getRotation());
+}
+
+void enable_page_flip() {
+  if (g_page_flip_active || !g_dsi_panel || !g_frame_buffers[0] || !g_frame_buffers[1]) return;
+  memcpy(g_frame_buffers[1], g_frame_buffers[0], g_display_buffer_bytes);
+  g_front_frame_buffer = 0;
+  g_back_frame_buffer = 1;
+  g_page_flip_active = true;
+  g_page_flip_pending = false;
+  set_canvas_buffer(g_back_frame_buffer);
+}
+
+void disable_page_flip() {
+  if (!g_page_flip_active) return;
+  const uint8_t visible = g_page_flip_pending ? g_back_frame_buffer : g_front_frame_buffer;
+  if (visible != 0) memcpy(g_frame_buffers[0], g_frame_buffers[visible], g_display_buffer_bytes);
+  if (g_dsi_panel)
+    esp_lcd_panel_draw_bitmap(g_dsi_panel, 0, 0, g_dsi_width, g_dsi_height,
+                              g_frame_buffers[0]);
+  g_front_frame_buffer = 0;
+  g_back_frame_buffer = 1;
+  g_page_flip_active = false;
+  g_page_flip_pending = false;
+  set_canvas_buffer(0);
+}
+
+bool service_page_flip(uint32_t now) {
+  if (!g_page_flip_pending) return true;
+  if (now - g_page_flip_queued_ms < kPageFlipSettleMs) return false;
+  g_front_frame_buffer = g_back_frame_buffer;
+  g_back_frame_buffer = 1 - g_front_frame_buffer;
+  g_page_flip_pending = false;
+  set_canvas_buffer(g_back_frame_buffer);
+  return true;
+}
+
+void present_canvas(uint32_t now) {
+  if (g_page_flip_active) {
+    if (g_page_flip_pending || !g_dsi_panel) return;
+    if (esp_lcd_panel_draw_bitmap(g_dsi_panel, 0, 0, g_dsi_width, g_dsi_height,
+                                  g_canvas.getBuffer()) == ESP_OK) {
+      g_page_flip_pending = true;
+      g_page_flip_queued_ms = now;
+    }
+    return;
+  }
+  if (g_canvas.getBuffer() && g_display_buffer && g_canvas.getBuffer() != g_display_buffer)
     memcpy(g_display_buffer, g_canvas.getBuffer(), g_display_buffer_bytes);
 }
 
@@ -1553,18 +1621,20 @@ bool initialize(NvsStore* store, AudioSink audio_sink) {
     configure_analysis();
     return true;
   }
-  g_canvas.setPsram(true);
   g_canvas.setColorDepth(lgfx::rgb565_nonswapped);
   auto* panel = static_cast<lgfx::Panel_DSI*>(M5.Display.getPanel());
   const auto& panel_config = panel->config();
-  const auto& dsi_config = panel->config_detail();
-  g_display_buffer = dsi_config.buffer;
+  g_dsi_panel = panel->getPanelHandle();
+  g_dsi_width = panel_config.panel_width;
+  g_dsi_height = panel_config.panel_height;
+  g_frame_buffers[0] = panel->getFrameBuffer(0);
+  g_frame_buffers[1] = panel->getFrameBuffer(1);
+  g_display_buffer = g_frame_buffers[0];
   g_display_buffer_bytes = static_cast<size_t>(panel_config.panel_width) *
                            panel_config.panel_height * sizeof(uint16_t);
-  if (!g_display_buffer ||
-      (!g_canvas.getBuffer() &&
-       !g_canvas.createSprite(panel_config.panel_width, panel_config.panel_height)))
-    return false;
+  if (!g_display_buffer || !g_frame_buffers[1] || !g_dsi_panel) return false;
+  g_canvas.setBuffer(g_display_buffer, panel_config.panel_width, panel_config.panel_height);
+  g_canvas.setSwapBytes(true);
   g_display_canvas.setColorDepth(lgfx::rgb565_nonswapped);
   g_display_canvas.setBuffer(g_display_buffer, panel_config.panel_width,
                              panel_config.panel_height);
@@ -1604,11 +1674,19 @@ bool initialize(NvsStore* store, AudioSink audio_sink) {
 }
 
 void set_runtime(const Runtime& runtime) {
+  Runtime previous{};
   portENTER_CRITICAL(&g_runtime_mux);
+  previous = g_runtime;
   g_runtime = runtime;
   portEXIT_CRITICAL(&g_runtime_mux);
   g_source_available.store(runtime.source_available, std::memory_order_release);
-  if (g_initialized) configure_analysis();
+  const bool analysis_changed = previous.center_hz != runtime.center_hz ||
+                                previous.span_hz != runtime.span_hz ||
+                                previous.sample_rate_sps != runtime.sample_rate_sps ||
+                                previous.audio_rate_sps != runtime.audio_rate_sps ||
+                                previous.filter_bandwidth_hz != runtime.filter_bandwidth_hz ||
+                                previous.audio_demod != runtime.audio_demod;
+  if (g_initialized && analysis_changed) configure_analysis();
 }
 
 void offer_iq(const uint8_t* iq, size_t bytes) {
@@ -1626,6 +1704,14 @@ bool enter(uint8_t origin_screen_value, uint8_t origin_tab_value) {
   g_origin_tab = origin_tab_value;
   g_inspect = g_hud_locked = g_drawer = g_chooser = false;
   g_effective_quality = static_cast<uint8_t>(std::clamp(value("visual.quality"), 0.0f, 2.0f));
+  Runtime runtime{};
+  portENTER_CRITICAL(&g_runtime_mux);
+  runtime = g_runtime;
+  portEXIT_CRITICAL(&g_runtime_mux);
+  g_last_usb_overruns = runtime.usb_overruns;
+  g_last_consumer_drops = runtime.consumer_drops;
+  g_last_audio_drops = runtime.audio_drops;
+  g_last_health_ms = g_stable_since_ms = millis();
   allocate_view_buffers(static_cast<View>(g_view.load()));
   g_active.store(true, std::memory_order_release);
   configure_analysis();
@@ -1634,11 +1720,12 @@ bool enter(uint8_t origin_screen_value, uint8_t origin_tab_value) {
   g_drawn_revision = 0;
   draw_frame_chrome();
   draw_handles();
-  present_canvas();
+  present_canvas(millis());
   return true;
 }
 
 void leave() {
+  disable_page_flip();
   g_active.store(false, std::memory_order_release);
   rf_analysis::set_enabled(false);
   g_channel_solo = false;
@@ -1657,6 +1744,13 @@ View view() { return static_cast<View>(g_view.load(std::memory_order_acquire)); 
 
 void service_ui(uint32_t now) {
   if (!active()) return;
+  const bool full_repaint = is_full_repaint_view(view());
+  if (full_repaint) {
+    enable_page_flip();
+    if (!service_page_flip(now)) return;
+  } else {
+    disable_page_flip();
+  }
   if (g_preset_naming) return;
   service_health(now);
   if (g_persist_due_ms && static_cast<int32_t>(now - g_persist_due_ms) >= 0) {
@@ -1668,21 +1762,18 @@ void service_ui(uint32_t now) {
     g_inspect = false;
     draw_frame_chrome();
   }
-  const uint32_t interval = g_effective_quality == 0 ? 16 : g_effective_quality == 1 ? 33 : 66;
   if (xSemaphoreTake(g_frame_mutex, pdMS_TO_TICKS(2)) != pdTRUE) return;
   *g_ui_frame = *g_frame;
   xSemaphoreGive(g_frame_mutex);
   const SpectrumFrame& frame = *g_ui_frame;
   const bool direct_history =
-      (view() == View::waterfall || view() == View::audio_spectrogram ||
-       view() == View::phosphor) &&
+      (view() == View::waterfall || view() == View::audio_spectrogram) &&
       !g_inspect && !g_drawer && !g_chooser &&
       (!g_message_until_ms || static_cast<int32_t>(g_message_until_ms - now) <= 0) &&
       g_source_available.load(std::memory_order_acquire);
-  if ((view() == View::waterfall || view() == View::audio_spectrogram ||
-       view() == View::phosphor) &&
+  if ((view() == View::waterfall || view() == View::audio_spectrogram) &&
       !direct_history && !g_waterfall_canvas_synced &&
-      g_canvas.getBuffer() && g_display_buffer) {
+      g_canvas.getBuffer() && g_display_buffer && g_canvas.getBuffer() != g_display_buffer) {
     memcpy(g_canvas.getBuffer(), g_display_buffer, g_display_buffer_bytes);
     g_waterfall_canvas_synced = true;
   }
@@ -1726,9 +1817,9 @@ void service_ui(uint32_t now) {
     g_canvas.fillRoundRect(360, 645, 560, 50, 8, kPanel);
     text(g_message, 640, 670, kYellow, 2, middle_center);
   }
-  if (!direct_history && (frame_drawn || now - g_last_canvas_push_ms >= interval)) {
+  if (!direct_history && frame_drawn) {
     g_last_canvas_push_ms = now;
-    present_canvas();
+    present_canvas(now);
   } else if (frame_drawn) {
     g_last_canvas_push_ms = now;
   }

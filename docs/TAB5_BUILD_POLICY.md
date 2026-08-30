@@ -10,6 +10,21 @@ hardware validation.
 Arduino, M5Unified, and M5GFX are ESP-IDF components in the dependency graph,
 not an Arduino-IDE or PlatformIO toolchain.
 
+## Pinned Tab5 display patch
+
+The Tab5 uses two DSI framebuffers for full-frame UI rendering. The tracked
+patch at `apps/orcsdr-tab5/tools/patches/m5gfx-tab5-pageflip.patch` exposes
+the M5GFX framebuffers and configures the driver for two buffers. The native
+build entry point applies it idempotently before configuration:
+
+```powershell
+.\tools\apply-m5gfx-tab5-pageflip.ps1
+```
+
+Do not make a one-off change inside ignored `managed_components`. If the
+pinned M5GFX component changes, update the tracked patch first, then build and
+exercise a full-repaint visualizer view with live radio audio.
+
 ## Current Hosted pair
 
 The P4 application pins `espressif/esp_hosted` to **3.0.6** in
@@ -98,3 +113,8 @@ saved password:
 The hardware release record must contain the native build result, the matching
 boot line, scan completion, and connect completion while the normal radio path
 is present.
+
+When the release contains a visual or display change, it must also record a
+live audio/DSP check while cycling the changed view. Full-repaint views must
+remain tear-free; incremental waterfall/audio-spectrogram views must remain
+fluid without speaker stutter.

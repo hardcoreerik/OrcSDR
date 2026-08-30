@@ -399,10 +399,23 @@ void set_config(const Config& value) {
   next.fft_size = static_cast<uint16_t>(std::clamp<int>(next.fft_size, 256, kMaxFft));
   next.audio_fft_size = static_cast<uint16_t>(std::clamp<int>(next.audio_fft_size, 256, 2048));
   next.interval_ms = std::clamp<uint16_t>(next.interval_ms, 16, 1000);
+  bool changed = false;
   portENTER_CRITICAL(&g_config_mux);
-  g_config = next;
+  changed = g_config.center_hz != next.center_hz ||
+            g_config.span_hz != next.span_hz ||
+            g_config.sample_rate_sps != next.sample_rate_sps ||
+            g_config.audio_rate_sps != next.audio_rate_sps ||
+            g_config.measurement_bandwidth_hz != next.measurement_bandwidth_hz ||
+            g_config.fft_size != next.fft_size ||
+            g_config.audio_fft_size != next.audio_fft_size ||
+            g_config.dc_guard_bins != next.dc_guard_bins ||
+            g_config.interval_ms != next.interval_ms ||
+            g_config.window != next.window ||
+            g_config.audio_demod != next.audio_demod ||
+            g_config.audio_spectrum != next.audio_spectrum;
+  if (changed) g_config = next;
   portEXIT_CRITICAL(&g_config_mux);
-  g_stable_frames.store(0, std::memory_order_relaxed);
+  if (changed) g_stable_frames.store(0, std::memory_order_relaxed);
 }
 
 void set_observer(Observer observer) {

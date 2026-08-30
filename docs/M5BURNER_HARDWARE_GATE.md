@@ -43,6 +43,11 @@ After the M5Burner install, confirm on the Tab5:
 - RF Lab opens, reports a live source, and saves one short measurement session
   to SD when an SD card is present.
 
+If the release changes a dashboard or visualization, also open the affected
+view with live FM audio and confirm it remains fluid, does not expose partial
+full-frame redraws, and does not cause audio stutter. This is a visual/device
+acceptance check, not something a package or build log can prove.
+
 Record a photo or screenshot for Home, Connectivity, FM/RF Health, and RF Lab,
 plus any relevant serial output. These observations are hardware evidence; do
 not replace them with a successful build log.
