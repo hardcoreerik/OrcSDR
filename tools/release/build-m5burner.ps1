@@ -32,14 +32,12 @@ if (-not $SkipBuild) {
 }
 
 $binary = Join-Path $app "$build\merged-binary.bin"
-if (-not (Test-Path -LiteralPath $binary)) {
-  . (Join-Path $IdfPath 'export.ps1')
-  Push-Location $app
-  try {
-    idf.py -B $build merge-bin --format raw --output $binary
-    if ($LASTEXITCODE -ne 0) { throw "merge-bin failed ($LASTEXITCODE)." }
-  } finally { Pop-Location }
-}
+. (Join-Path $IdfPath 'export.ps1')
+Push-Location $app
+try {
+  idf.py -B $build merge-bin --format raw --output $binary
+  if ($LASTEXITCODE -ne 0) { throw "merge-bin failed ($LASTEXITCODE)." }
+} finally { Pop-Location }
 if (-not (Test-Path -LiteralPath $binary)) { throw "Missing merged P4 image: $binary" }
 
 $dist = Join-Path $repo "dist\OrcSDR-Tab5-$Version"

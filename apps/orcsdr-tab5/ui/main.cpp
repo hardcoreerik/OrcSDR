@@ -2442,12 +2442,13 @@ bool restart_rtl_speaker_i2s(uint8_t volume) {
   if (speaker_backoff_active(now)) return false;
   const uint32_t dma_largest =
       heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-  /* Keep enough queued PCM to survive one full-screen display update. */
-  if (dma_largest < 4096u) {
+  /* The USB host needs contiguous DMA after it starts; graphics must not
+   * enlarge the speaker allocation beyond that remaining headroom. */
+  if (dma_largest < 3072u) {
     speaker_note_fail(now);
     if (!g_speaker_fail_logged) {
       g_speaker_fail_logged = true;
-      Serial.printf("RTL_SPEAKER_BEGIN_FAIL dma_largest=%lu need=4096\n",
+      Serial.printf("RTL_SPEAKER_BEGIN_FAIL dma_largest=%lu need=3072\n",
                     static_cast<unsigned long>(dma_largest));
       log_dram_budget("speaker_begin_fail");
     }
@@ -2461,10 +2462,9 @@ bool restart_rtl_speaker_i2s(uint8_t volume) {
   speaker_config.stereo = true;
   speaker_config.task_priority = 6;
   speaker_config.task_pinned_core = 1;
-  speaker_config.dma_buf_len = 512;
-  speaker_config.dma_buf_count = dma_largest >= 8192u ? 4 : 2;
-  Serial.printf("RTL_SPEAKER_DMA len=512 count=%u largest=%lu\n",
-                static_cast<unsigned>(speaker_config.dma_buf_count),
+  speaker_config.dma_buf_len = 256;
+  speaker_config.dma_buf_count = 2;
+  Serial.printf("RTL_SPEAKER_DMA len=256 count=2 largest=%lu\n",
                 static_cast<unsigned long>(dma_largest));
   M5.Speaker.config(speaker_config);
   if (M5.Speaker.isRunning()) M5.Speaker.end();
