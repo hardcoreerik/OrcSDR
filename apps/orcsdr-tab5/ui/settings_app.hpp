@@ -49,9 +49,12 @@ struct State {
   bool wifi_scanning = false;
   bool wifi_connected = false;
   bool wifi_connecting = false;
+  bool wifi_hosted_update_required = false;
   char wifi_ssid[33]{};
   char wifi_ip[16]{};
   char wifi_message[48]{};
+  char wifi_hosted_host_version[16]{};
+  char wifi_hosted_c6_version[16]{};
   int16_t wifi_rssi = 0;
   WifiNetwork networks[6]{};
   uint8_t network_count = 0;

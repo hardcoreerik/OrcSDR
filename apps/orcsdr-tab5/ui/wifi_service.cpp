@@ -18,6 +18,7 @@ bool g_started = false;
 std::atomic<bool> g_connected{false};
 std::atomic<bool> g_failed{false};
 bool g_versions_match = false;
+char g_c6_version[16]{"unknown"};
 bool g_hosted_transport_ready = false;
 std::atomic<bool> g_scan_done{false};
 esp_netif_t* g_sta_netif = nullptr;
@@ -50,6 +51,8 @@ bool start() {
   if (g_started) return true;
   g_failure_stage = "none";
   g_failure_code = ESP_OK;
+  g_versions_match = false;
+  strlcpy(g_c6_version, "unknown", sizeof(g_c6_version));
   const esp_err_t netif = esp_netif_init();
   if (netif != ESP_OK && netif != ESP_ERR_INVALID_STATE) {
     g_failure_stage = "netif"; g_failure_code = netif; return false;
@@ -71,6 +74,12 @@ bool start() {
   g_hosted_transport_ready = true;
   esp_hosted_coprocessor_fwver_t cp{};
   const esp_err_t version = esp_hosted_get_coprocessor_fwversion(&cp);
+  if (version == ESP_OK)
+    snprintf(g_c6_version, sizeof(g_c6_version), "%lu.%lu.%lu",
+             static_cast<unsigned long>(cp.major1), static_cast<unsigned long>(cp.minor1),
+             static_cast<unsigned long>(cp.patch1));
+  else
+    strlcpy(g_c6_version, "unavailable", sizeof(g_c6_version));
   g_versions_match = version == ESP_OK &&
                      cp.major1 == 3 && cp.minor1 == 0 && cp.patch1 == 6;
   if (!g_versions_match) { g_failure_stage = "version"; g_failure_code = version; return false; }
@@ -146,6 +155,7 @@ const char* ip() {
 }
 int16_t rssi() { wifi_ap_record_t ap{}; return esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? ap.rssi : 0; }
 bool hosted_versions_match() { return g_versions_match; }
+const char* hosted_c6_version() { return g_c6_version; }
 bool hosted_transport_ready() { return g_hosted_transport_ready; }
 const char* hosted_failure_stage() { return g_failure_stage; }
 int32_t hosted_failure_code() { return g_failure_code; }

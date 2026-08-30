@@ -1382,6 +1382,7 @@ IqGetState g_iq_get;
 uint8_t g_sd_put_chunk[kSdPutChunkBytes];
 bool wifi_station_ready = false;
 bool wifi_hosted_versions_match = false;
+bool wifi_hosted_update_required = false;
 bool wifi_c6_power_prepared = false;
 bool wifi_scan_running = false;
 std::atomic<bool> wifi_scan_requested{false};
@@ -1401,6 +1402,8 @@ int wifi_network_count = -1;
 char wifi_ssid[33]{};
 char wifi_password[64]{};
 char wifi_status_message[48]{};
+char wifi_hosted_host_version[16]{"3.0.6"};
+char wifi_hosted_c6_version[16]{"unknown"};
 char wifi_hosted_failure_stage[24]{"not_started"};
 int32_t wifi_hosted_failure_code = ESP_OK;
 struct WifiProfile {
@@ -7471,9 +7474,16 @@ void initialize_wifi() {
   wifi_hosted_failure_code = orcsdr::wifi::hosted_failure_code();
   wifi_hosted_versions_match = wifi_station_ready && orcsdr::wifi::hosted_versions_match();
   if (!wifi_station_ready) {
+    wifi_hosted_update_required =
+        strcmp(orcsdr::wifi::hosted_failure_stage(), "version") == 0;
+    strlcpy(wifi_hosted_c6_version, orcsdr::wifi::hosted_c6_version(),
+            sizeof(wifi_hosted_c6_version));
     strlcpy(wifi_status_message, "ESP-Hosted 3.0.6 unavailable", sizeof(wifi_status_message));
     Serial.println("RTL_WIFI_BLOCKED hosted_init_or_version");
   } else {
+    wifi_hosted_update_required = false;
+    strlcpy(wifi_hosted_c6_version, orcsdr::wifi::hosted_c6_version(),
+            sizeof(wifi_hosted_c6_version));
     Serial.println("I OrcSDR: ESP32-C6 detected");
     Serial.println("I OrcSDR: ESP-Hosted C6 FW: 3.0.6");
     Serial.println("I OrcSDR: ESP-Hosted transport: SDIO");
@@ -7561,6 +7571,7 @@ void stop_wifi() {
   }
   wifi_station_ready = false;
   wifi_hosted_versions_match = false;
+  wifi_hosted_update_required = false;
   wifi_connected = false;
   wifi_connecting = false;
   wifi_scan_running = false;
@@ -8386,6 +8397,11 @@ const orcsdr::settings::State& global_settings_state() {
   strlcpy(state.wifi_ssid, device.wifi_ssid, sizeof(state.wifi_ssid));
   strlcpy(state.wifi_ip, device.wifi_ip, sizeof(state.wifi_ip));
   strlcpy(state.wifi_message, wifi_status_message, sizeof(state.wifi_message));
+  state.wifi_hosted_update_required = wifi_hosted_update_required;
+  strlcpy(state.wifi_hosted_host_version, wifi_hosted_host_version,
+          sizeof(state.wifi_hosted_host_version));
+  strlcpy(state.wifi_hosted_c6_version, wifi_hosted_c6_version,
+          sizeof(state.wifi_hosted_c6_version));
   state.wifi_rssi = device.wifi_rssi;
   state.saved_network_count = wifi_profile_count;
   for (uint8_t i = 0; i < wifi_profile_count; ++i) {
@@ -12456,6 +12472,8 @@ void setup() {
   orcsdr_splash_end();
   g_suppress_home_paint = false;
   show_home();
+  if (wifi_hosted_update_required)
+    open_global_settings(orcsdr::settings::Section::connectivity);
   append_journal("boot");
   last_ping_ms = millis();
   offline_transition_handled = !paired;
