@@ -133,6 +133,7 @@ uint8_t* g_density_snapshot = nullptr;
 size_t g_density_rows = 0;
 uint16_t* g_phosphor_row = nullptr;
 uint32_t g_last_density_decay_ms = 0;
+uint8_t g_density_decay_phase = 0;
 uint32_t g_last_heavy_view_draw_ms = 0;
 uint32_t g_history_revision = 0;
 uint32_t g_analysis_frames = 0;
@@ -457,6 +458,7 @@ void free_view_buffers() {
   g_phosphor_row = nullptr;
   g_history_rows = g_history_head = g_history_count = g_density_rows = 0;
   g_last_density_decay_ms = 0;
+  g_density_decay_phase = 0;
   g_history_audio = false;
 }
 
@@ -524,10 +526,9 @@ uint8_t density_linear_decay(uint32_t elapsed_ms, float half_life_s) {
 
 uint8_t density_accumulate(uint8_t current, uint8_t sample, uint8_t mode) {
   if (mode == 0) return std::max(current, sample);
-  // Histogram density measures repeated hits, not their amplitude.  A small
-  // increment keeps the default phosphor image particulate instead of filling
-  // every accepted FFT bin into a solid trace.
-  const unsigned increment = mode == 1 ? std::max(1u, sample / 8u) : 1u;
+  // Phosphor persistence is a hit histogram: each FFT paints a visible stroke,
+  // then repeated hits become brighter while isolated noise remains particulate.
+  const unsigned increment = mode == 1 ? std::max(1u, sample / 8u) : 12u;
   return static_cast<uint8_t>(std::min(255u, current + increment));
 }
 
@@ -608,13 +609,18 @@ void add_density(const SpectrumFrame& frame) {
   if (elapsed >= 100) {
     const float half_life = value("persistence.half_life_s");
     const bool exponential = value("persistence.decay_curve") != 0;
-    const uint16_t scale = density_decay_scale(elapsed, half_life);
-    const uint8_t decrement = density_linear_decay(elapsed, half_life);
-    for (size_t i = 0; i < kBins * g_density_rows; ++i) {
+    // Decay interleaved cells each pass. This keeps the producer lock short
+    // without making a visible horizontal erase band.
+    const uint32_t decay_elapsed = elapsed * 8;
+    const uint16_t scale = density_decay_scale(decay_elapsed, half_life);
+    const uint8_t decrement = density_linear_decay(decay_elapsed, half_life);
+    const size_t cell_count = kBins * g_density_rows;
+    for (size_t i = g_density_decay_phase; i < cell_count; i += 8) {
       uint8_t& cell = g_density[i];
       cell = exponential ? static_cast<uint8_t>(cell * scale / 256)
                          : cell > decrement ? cell - decrement : 0;
     }
+    g_density_decay_phase = static_cast<uint8_t>((g_density_decay_phase + 1) & 7);
     g_last_density_decay_ms = now;
   }
   for (size_t x = 0; x < kBins; ++x) {
@@ -625,9 +631,15 @@ void add_density(const SpectrumFrame& frame) {
         std::max(20.0f, ceiling - floor), 0.0f, 1.0f);
     const size_t y = std::min(g_density_rows - 1,
                               static_cast<size_t>((1.0f - n) * (g_density_rows - 1)));
-    uint8_t& cell = g_density[y * kBins + x];
-    cell = density_accumulate(cell, static_cast<uint8_t>(lroundf(sqrtf(relative) * 255.0f)),
-                              accumulation);
+    const uint8_t sample = static_cast<uint8_t>(lroundf(sqrtf(relative) * 255.0f));
+    const int spread = std::clamp(static_cast<int>(value("persistence.point_size")) - 1, 0, 2);
+    for (int offset = -spread; offset <= spread; ++offset) {
+      const int row = static_cast<int>(y) + offset;
+      if (row < 0 || row >= static_cast<int>(g_density_rows)) continue;
+      const uint8_t stroke = offset == 0 ? sample : static_cast<uint8_t>(sample / 3);
+      uint8_t& cell = g_density[static_cast<size_t>(row) * kBins + x];
+      cell = density_accumulate(cell, stroke, accumulation);
+    }
   }
   ++g_history_revision;
   if (g_history_mutex) xSemaphoreGive(g_history_mutex);
@@ -1068,11 +1080,7 @@ void draw_phosphor_view() {
   uint16_t colors[256];
   for (size_t i = 0; i < std::size(colors); ++i)
     colors[i] = heat_color(static_cast<uint8_t>(i), palette);
-  const uint32_t now = millis();
-  const bool direct = !g_inspect && !g_drawer && !g_chooser &&
-      (!g_message_until_ms || static_cast<int32_t>(g_message_until_ms - now) <= 0) &&
-      g_source_available.load(std::memory_order_acquire);
-  auto& canvas = direct ? g_display_canvas : g_canvas;
+  g_canvas.fillRect(kPlotX, kPlotY, kPlotW, kPlotH, kBg);
   for (size_t sy = 0; sy < g_density_rows; ++sy) {
     for (int x = 0; x < kPlotW; x += 2) {
       const size_t sx0 = static_cast<size_t>(x) * kBins / kPlotW;
@@ -1088,10 +1096,16 @@ void draw_phosphor_view() {
     const int y = kPlotY + static_cast<int>(sy) * 2;
     memcpy(g_phosphor_row + kPlotW, g_phosphor_row,
            kPlotW * sizeof(uint16_t));
-    canvas.pushImage(kPlotX, y, kPlotW,
-                     std::min(2, kPlotY + kPlotH - y), g_phosphor_row);
+    g_canvas.pushImage(kPlotX, y, kPlotW,
+                       std::min(2, kPlotY + kPlotH - y), g_phosphor_row);
   }
-  g_waterfall_canvas_synced = !direct;
+  g_canvas.drawRect(kPlotX, kPlotY, kPlotW, kPlotH, kGrid);
+  text("PERSIST", 1243, kPlotY + 14, kMuted, 1);
+  for (int i = 0; i < 5; ++i) {
+    const uint8_t intensity = static_cast<uint8_t>((4 - i) * 63);
+    g_canvas.fillRect(1246, kPlotY + 34 + i * 22, 14, 20, colors[intensity]);
+  }
+  g_waterfall_canvas_synced = true;
 }
 
 void draw_3d_view() {
@@ -2139,8 +2153,8 @@ bool self_check() {
       density_linear_decay(3000, 3.0f) != 128 ||
       density_accumulate(20, 80, 0) != 80 ||
       density_accumulate(20, 80, 1) != 30 ||
-      density_accumulate(20, 80, 2) != 21 ||
-      density_accumulate(250, 80, 2) != 251 ||
+      density_accumulate(20, 80, 2) != 32 ||
+      density_accumulate(250, 80, 2) != 255 ||
       density_display_intensity(24, 1.0f) != 240 ||
       density_display_intensity(24, 0.25f) != 60)
     return false;
