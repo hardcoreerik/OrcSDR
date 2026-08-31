@@ -496,7 +496,7 @@ void allocate_view_buffers(View next) {
     g_density = static_cast<uint8_t*>(
         heap_caps_calloc(g_density_rows, kBins, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     g_density_snapshot = static_cast<uint8_t*>(
-        heap_caps_malloc(g_density_rows * kBins, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        heap_caps_calloc(g_density_rows, kBins, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     g_phosphor_row = static_cast<uint16_t*>(
         heap_caps_malloc(kPlotW * 2 * sizeof(uint16_t),
                          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
@@ -1071,9 +1071,12 @@ void draw_audio_spectrogram(const SpectrumFrame& frame) {
 
 void draw_phosphor_view() {
   if (!g_density || !g_density_snapshot || !g_density_rows || !g_phosphor_row) return;
-  if (g_history_mutex && xSemaphoreTake(g_history_mutex, pdMS_TO_TICKS(20)) != pdTRUE) return;
-  memcpy(g_density_snapshot, g_density, g_density_rows * kBins);
-  if (g_history_mutex) xSemaphoreGive(g_history_mutex);
+  if (!g_history_mutex || xSemaphoreTake(g_history_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    memcpy(g_density_snapshot, g_density, g_density_rows * kBins);
+    if (g_history_mutex) xSemaphoreGive(g_history_mutex);
+  }
+  // If the producer owns the density briefly, render the previous complete
+  // snapshot. Never submit a cleared, incomplete frame to the page flipper.
   const uint8_t palette = static_cast<uint8_t>(
       6 + std::clamp(static_cast<int>(value("persistence.palette")), 0, 3));
   const float exposure = value("persistence.exposure");
