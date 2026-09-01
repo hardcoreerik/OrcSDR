@@ -1,0 +1,3 @@
+[submodule "apps/orcsdr-tdongle-s2/components/esp_rtl_sdr"]
+	path = apps/orcsdr-tdongle-s2/third_party/esp_rtl_sdr
+	url = https://github.com/hardcoreerik/esp-rtl-sdr.git
