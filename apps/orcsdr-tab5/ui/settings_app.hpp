@@ -121,6 +121,7 @@ enum class ActionKind : uint8_t {
   move_wifi_down,
   location_changed,
   location_ip_lookup,
+  location_query_lookup,
   location_ip_confirm,
   range_changed,
   brightness_changed,
@@ -153,6 +154,7 @@ void show_documentation_section(Section section, const State& state,
                                 bool show_wifi_keyboard = false);
 bool take_wifi_credentials(char* ssid, size_t ssid_size,
                            char* password, size_t password_size);
+bool take_location_query(char* query, size_t query_size);
 bool self_check();
 
 }  // namespace orcsdr::settings

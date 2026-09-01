@@ -53,6 +53,9 @@ char g_wifi_edit_password[64]{};
 char g_wifi_request_ssid[33]{};
 char g_wifi_request_password[64]{};
 bool g_wifi_request_pending = false;
+bool g_location_edit = false;
+bool g_location_request_pending = false;
+char g_location_query[64]{};
 int8_t g_catalog_remove_armed = -1;
 
 bool hit(int x, int y, int bx, int by, int bw, int bh) {
@@ -206,12 +209,14 @@ void draw_location() {
   button(value, 820, 344, 398, 54, TFT_DARKCYAN);
   value_row("MAP PACK", g_state.map_pack[0] ? g_state.map_pack : "NOT INSTALLED", 445);
   value_row("RF GAIN", "AUTO (READ ONLY)", 495, kMuted);
-  text("Phone GPS proposals require confirmation on this screen.", 330, 565,
-       TFT_LIGHTGREY, 2);
-  button(g_state.ip_location_busy ? "LOOKING UP IP AREA" : "LOOK UP IP AREA", 330, 610, 260, 46,
+  text("INTERNET LOCATION LOOKUP", 330, 550, kBlue, 2);
+  button(g_state.ip_location_busy ? "LOOKING UP..." : "ZIP / ADDRESS", 330, 575, 250, 46,
          g_state.ip_location_busy ? TFT_DARKGREY : TFT_DARKCYAN);
-  if (g_state.ip_location_ready) button("CONFIRM IP AREA", 900, 610, 290, 46, TFT_DARKGREEN);
-  if (g_state.ip_location_message[0]) text(g_state.ip_location_message, 330, 676, kMuted, 2, middle_left);
+  button("IP AREA", 600, 575, 180, 46,
+         g_state.ip_location_busy ? TFT_DARKGREY : TFT_NAVY);
+  if (g_state.ip_location_ready) button("USE RESULT", 800, 575, 240, 46, TFT_DARKGREEN);
+  if (g_state.ip_location_message[0]) text(g_state.ip_location_message, 330, 645, kMuted, 2, middle_left);
+  text("Address search data (c) OpenStreetMap contributors", 330, 682, kMuted, 1);
 }
 
 void draw_data_maps() {
@@ -465,6 +470,21 @@ Action handle_wifi_keyboard(int x, int y) {
   return {};
 }
 
+Action handle_location_keyboard(int x, int y) {
+  const auto result = text_editor::handle_touch(x, y);
+  strlcpy(g_location_query, text_editor::value(), sizeof(g_location_query));
+  if (result == text_editor::Result::cancelled) {
+    g_location_edit = false;
+    draw_content();
+  } else if (result == text_editor::Result::accepted && g_location_query[0]) {
+    g_location_edit = false;
+    g_location_request_pending = true;
+    draw_content();
+    return {ActionKind::location_query_lookup, 0};
+  }
+  return {};
+}
+
 bool valid_coordinate(EditField field, double value) {
   return std::isfinite(value) &&
          (field == EditField::latitude ? value >= -90.0 && value <= 90.0
@@ -528,6 +548,7 @@ void enter(const State& state_value, Section section) {
   g_section = section;
   g_edit = EditField::none;
   g_wifi_edit = WifiEdit::none;
+  g_location_edit = false;
   g_catalog_remove_armed = -1;
   g_active = true;
   g_latitude_set = state_value.location_configured;
@@ -539,6 +560,7 @@ void leave() {
   g_active = false;
   g_edit = EditField::none;
   g_wifi_edit = WifiEdit::none;
+  g_location_edit = false;
 }
 
 void draw() {
@@ -603,13 +625,13 @@ void update(const State& state_value) {
        strcmp(g_state.web_console_url, state_value.web_console_url) != 0);
   g_state = state_value;
   if (header_changed) draw_header();
-  if (page_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
+  if (page_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none && !g_location_edit)
     draw_content();
   if (power_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_system_power();
   if (catalog_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_content();
-  if (location_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
+  if (location_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none && !g_location_edit)
     draw_content();
   if (companion_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_content();
@@ -617,6 +639,7 @@ void update(const State& state_value) {
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
+  if (g_location_edit) return handle_location_keyboard(x, y);
   if (g_wifi_edit != WifiEdit::none) return handle_wifi_keyboard(x, y);
   if (g_edit != EditField::none) return handle_keypad(x, y);
   if (audio_header::mute_hit(x, y))
@@ -685,8 +708,16 @@ Action handle_touch(int32_t x, int32_t y) {
       draw_content();
       return {ActionKind::range_changed, g_state.radar_range_nm};
     }
-    if (hit(x, y, 330, 610, 260, 46) && !g_state.ip_location_busy) return {ActionKind::location_ip_lookup, 0};
-    if (g_state.ip_location_ready && hit(x, y, 900, 610, 290, 46)) {
+    if (hit(x, y, 330, 575, 250, 46) && !g_state.ip_location_busy) {
+      g_location_edit = true;
+      text_editor::begin("ZIP CODE OR ADDRESS", g_location_query,
+                         sizeof(g_location_query) - 1, false, "LOOK UP");
+      text_editor::draw();
+      return {};
+    }
+    if (hit(x, y, 600, 575, 180, 46) && !g_state.ip_location_busy)
+      return {ActionKind::location_ip_lookup, 0};
+    if (g_state.ip_location_ready && hit(x, y, 800, 575, 240, 46)) {
       g_state.latitude_e7 = g_state.ip_latitude_e7; g_state.longitude_e7 = g_state.ip_longitude_e7;
       strlcpy(g_state.location_label, g_state.ip_location_label, sizeof(g_state.location_label));
       g_state.location_configured = true; g_latitude_set = g_longitude_set = true;
@@ -766,6 +797,7 @@ void show_documentation_section(Section section, const State& state_value,
   g_section = section;
   g_edit = EditField::none;
   g_wifi_edit = WifiEdit::none;
+  g_location_edit = false;
   g_active = true;
   if (show_wifi_keyboard) {
     begin_wifi_edit(WifiEdit::password, "Demo Network");
@@ -786,6 +818,13 @@ bool take_wifi_credentials(char* ssid, size_t ssid_size,
   g_wifi_request_ssid[0] = '\0';
   g_wifi_request_pending = false;
   return true;
+}
+
+bool take_location_query(char* query, size_t query_size) {
+  if (!g_location_request_pending || !query || query_size == 0) return false;
+  strlcpy(query, g_location_query, query_size);
+  g_location_request_pending = false;
+  return query[0] != '\0';
 }
 
 bool self_check() {
@@ -812,7 +851,12 @@ bool self_check() {
                               strcmp(password, "not-a-real-password") == 0 &&
                               g_wifi_request_password[0] == '\0';
   memset(password, 0, sizeof(password));
-  if (!symbols_ok || !credentials_ok) return false;
+  strlcpy(g_location_query, "97401", sizeof(g_location_query));
+  g_location_request_pending = true;
+  char query[64]{};
+  const bool location_ok = take_location_query(query, sizeof(query)) &&
+                           strcmp(query, "97401") == 0;
+  if (!symbols_ok || !credentials_ok || !location_ok) return false;
   return true;
 }
 

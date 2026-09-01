@@ -5233,6 +5233,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   const auto screen = screen_for_band(band);
   orcsdr::screens::begin_transition(screen, millis());
   orcsdr::home::leave();
+  orcsdr::rf24::leave();
   orcsdr::settings::leave();
   if (band != RtlBand::fm) orcsdr::fm::leave();
   if (band != RtlBand::p25) orcsdr::p25::leave();
@@ -8759,10 +8760,7 @@ void open_rf24_dashboard() {
 }
 
 void close_rf24_dashboard() {
-  orcsdr::rf24::leave();
-  orcsdr::screens::begin_transition(orcsdr::screens::Id::home, millis());
-  orcsdr::home::draw();
-  orcsdr::screens::finish_transition();
+  show_home();
 }
 
 void open_dashboard(orcsdr::dashboards::Id id) {
@@ -8770,6 +8768,7 @@ void open_dashboard(orcsdr::dashboards::Id id) {
   if (id != Id::settings && orcsdr::settings::active()) close_global_settings();
   if (id == Id::rf_lab) {
     persist_dashboard_open(id);
+    orcsdr::rf24::leave();
     open_rf_lab();
     return;
   }
@@ -8971,12 +8970,21 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       (void)orcsdr::location_estimate::request(wifi_connected);
       update_global_settings();
       break;
+    case orcsdr::settings::ActionKind::location_query_lookup: {
+      char query[64]{};
+      if (orcsdr::settings::take_location_query(query, sizeof(query)))
+        (void)orcsdr::location_estimate::request(query, wifi_connected);
+      update_global_settings();
+      break;
+    }
     case orcsdr::settings::ActionKind::location_ip_confirm: {
-      const auto& state = orcsdr::settings::state();
-      adsb_settings.location_configured = state.location_configured;
-      adsb_settings.latitude_e7 = state.latitude_e7; adsb_settings.longitude_e7 = state.longitude_e7;
+      const auto location = orcsdr::location_estimate::state();
+      if (!location.ready) break;
+      adsb_settings.location_configured = true;
+      adsb_settings.latitude_e7 = location.latitude_e7;
+      adsb_settings.longitude_e7 = location.longitude_e7;
       refresh_adsb_atc_preset();
-      strlcpy(settings_location_label, state.location_label, sizeof(settings_location_label));
+      strlcpy(settings_location_label, location.label, sizeof(settings_location_label));
       adsb_settings_persist_pending.store(true, std::memory_order_release);
       break;
     }
@@ -11278,6 +11286,7 @@ void process_command(char* command) {
   }
   if (strcmp(command, "RTL_CATALOG_CHECK") == 0 ||
       strcmp(command, "RTL_CATALOG_FETCH") == 0) {
+    if (!authenticated) { Serial.println("RTL_CATALOG_ERROR auth_required"); return; }
     const bool fetch = strcmp(command, "RTL_CATALOG_FETCH") == 0;
     handle_global_settings_action({orcsdr::settings::ActionKind::catalog_check, 0});
     Serial.printf("RTL_CATALOG_%s_%s\n", fetch ? "FETCH" : "CHECK",
@@ -11286,6 +11295,7 @@ void process_command(char* command) {
   }
   if (strncmp(command, "RTL_CATALOG_INSTALL ", 20) == 0 ||
       strncmp(command, "RTL_CATALOG_REMOVE ", 19) == 0) {
+    if (!authenticated) { Serial.println("RTL_CATALOG_ERROR auth_required"); return; }
     const bool remove = strncmp(command, "RTL_CATALOG_REMOVE ", 19) == 0;
     const char* argument = command + (remove ? 19 : 20);
     char id[20]{};
@@ -11311,6 +11321,36 @@ void process_command(char* command) {
                                    index});
     Serial.printf("RTL_CATALOG_%s_%s\n", remove ? "REMOVE" : "INSTALL",
                   orcsdr::catalog::state().busy ? "QUEUED" : "REJECTED");
+    return;
+  }
+  if (strcmp(command, "RTL_LOCATION STATUS") == 0) {
+    const auto location = orcsdr::location_estimate::state();
+    Serial.printf("RTL_LOCATION_STATUS busy=%d ready=%d latitude_e7=%ld longitude_e7=%ld message=\"%s\"\n",
+                  location.busy ? 1 : 0, location.ready ? 1 : 0,
+                  static_cast<long>(location.latitude_e7),
+                  static_cast<long>(location.longitude_e7), location.message);
+    return;
+  }
+  if (strcmp(command, "RTL_LOCATION IP") == 0 ||
+      strncmp(command, "RTL_LOCATION LOOKUP ", 20) == 0 ||
+      strcmp(command, "RTL_LOCATION CONFIRM") == 0) {
+    if (!authenticated) { Serial.println("RTL_LOCATION_ERROR auth_required"); return; }
+    if (strcmp(command, "RTL_LOCATION CONFIRM") == 0) {
+      handle_global_settings_action({orcsdr::settings::ActionKind::location_ip_confirm, 0});
+      Serial.printf("RTL_LOCATION_CONFIRM_%s\n",
+                    orcsdr::location_estimate::state().ready ? "OK" : "REJECTED");
+      return;
+    }
+    const char* query = strncmp(command, "RTL_LOCATION LOOKUP ", 20) == 0
+                            ? command + 20 : nullptr;
+    if (query && (!query[0] || strlen(query) >= 64)) {
+      Serial.println("RTL_LOCATION_ERROR query_length");
+      return;
+    }
+    const bool queued = query ? orcsdr::location_estimate::request(query, wifi_connected)
+                              : orcsdr::location_estimate::request(wifi_connected);
+    Serial.printf("RTL_LOCATION_%s_%s\n", query ? "LOOKUP" : "IP",
+                  queued ? "QUEUED" : "REJECTED");
     return;
   }
   if (strncmp(command, "RTL_ADSB_LOCATION ", 18) == 0) {
@@ -11768,6 +11808,7 @@ void process_command(char* command) {
     Serial.println("RTL_CATALOG_INSTALL <id>       - fetch+verify+activate data/map pack");
     Serial.println("RTL_CATALOG_REMOVE <id> CONFIRM - remove installed pack (SD only)");
     Serial.println("RTL_CATALOG packs: faa_aircraft|faa_aviation|noaa_weather|fcc_broadcast|lane_county_map");
+    Serial.println("RTL_LOCATION STATUS|IP|LOOKUP <zip/address>|CONFIRM - resolve and save receiver location");
     Serial.println("SD_LIST/SD_GET_*/SD_PUT_*      - SD card file transfer (see copy_to_tab5_sd.ps1)");
     Serial.println("RTL_HELP_END");
     return;
@@ -12481,6 +12522,11 @@ void setup() {
     abort();
   }
   Serial.println("ORC_SETTINGS_SELF_CHECK_OK");
+  if (!orcsdr::location_estimate::self_check()) {
+    Serial.println("ORC_LOCATION_SELF_CHECK_FAIL");
+    abort();
+  }
+  Serial.println("ORC_LOCATION_SELF_CHECK_OK");
   if (!orcsdr::screens::self_check()) {
     Serial.println("ORC_SCREEN_CONTROLLER_SELF_CHECK_FAIL");
     abort();
