@@ -9,6 +9,7 @@
 #include "fm_dashboard.hpp"
 #include "lora_dashboard.hpp"
 #include "p25_dashboard.hpp"
+#include "rf24_dashboard.hpp"
 
 namespace orcsdr::navigation {
 namespace {
@@ -32,6 +33,7 @@ void show_home(bool demo) {
   p25::leave();
   adsb::leave();
   lora::leave();
+  rf24::leave();
   settings::leave();
   g_hooks.close_overlays();
   g_hooks.sync_audio();

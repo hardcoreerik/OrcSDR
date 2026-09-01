@@ -19,6 +19,9 @@ param(
   [switch]$SelfCheck,
   [switch]$Driver079,
   [switch]$WifiOnly,
+  [switch]$DataOnly,
+  [switch]$InstallLaneMap,
+  [string]$LocationQuery = '97401',
   [switch]$RequireWifiConnection,
   [switch]$TestBiasTee
 )
@@ -306,8 +309,7 @@ function Assert-WifiLists([int]$ExpectedAccessPoints) {
   return $profileCount
 }
 
-function Assert-WifiCli {
-  $initialUi = Get-UiState
+function Assert-WifiCli($initialUi) {
   $initial = Get-WifiStatus
   try {
     [void](Send-And-Wait 'SET_WIFI 00 00 00' '^WIFI_INVALID$')
@@ -349,6 +351,8 @@ function Assert-WifiCli {
       Write-SoakLine 'RTL_WIFI_CLI_CONNECT skipped=no_saved_profile'
     }
     Assert-Health
+    Connect-Authenticated
+    [void](Open-Ui 'HOME' $initialUi.Band)
     Write-SoakLine "RTL_WIFI_CLI_RESULT pass=1 auto_aps=$autoCount manual_aps=$manualCount profiles=$profileCount connected=$([int]($profileCount -gt 0))"
   } finally {
     try {
@@ -359,6 +363,69 @@ function Assert-WifiCli {
       [void](Send-And-Wait "RTL_UI OPEN $($initialUi.Screen)" '^RTL_UI_OPEN_(?:OK|INVALID)')
     } catch { Write-Warning "Could not restore initial Wi-Fi/UI state: $($_.Exception.Message)" }
   }
+}
+
+function Wait-CatalogIdle([int]$Seconds) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+  do {
+    Start-Sleep -Seconds 1
+    $status = Send-And-Wait 'RTL_CATALOG_STATUS' '^RTL_CATALOG_STATUS ' 10
+    if ($status -match 'busy=0') { return $status }
+  } while ([DateTime]::UtcNow -lt $deadline)
+  throw "Catalog operation timed out: $status"
+}
+
+function Assert-DataServices {
+  $wifi = Get-WifiStatus
+  if ($wifi.Power -eq 0) {
+    [void](Send-And-Wait 'RTL_UI ACTION SETTINGS WIFI_POWER 1' '^RTL_UI_ACTION_OK$' 20)
+    $wifi = Get-WifiStatus
+  }
+  if ($wifi.Connected -eq 0) {
+    if ($wifi.Profiles -eq 0) { throw 'Data service test requires a saved Wi-Fi profile.' }
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+      Connect-Authenticated
+      [void](Send-And-Wait 'RTL_UI ACTION SETTINGS CONNECT_SAVED 0' '^RTL_UI_ACTION_OK$')
+      $event = Read-MatchingLine '^RTL_WIFI_COEX event=connect_(?:complete|failed) ' 45
+      if ($event -match 'event=connect_complete') { break }
+    }
+  }
+  if ((Get-WifiStatus).Connected -ne 1) { throw 'Data service test could not connect Wi-Fi.' }
+
+  [void](Send-And-Wait 'RTL_CATALOG_CHECK' '^RTL_CATALOG_CHECK_QUEUED$')
+  $catalog = Wait-CatalogIdle 60
+  if ($catalog -notmatch 'ready=1 .*message="Catalog verified"') {
+    throw "Catalog verification failed: $catalog"
+  }
+  if ($InstallLaneMap) {
+    Connect-Authenticated
+    [void](Send-And-Wait 'RTL_CATALOG_INSTALL lane_county_map' '^RTL_CATALOG_INSTALL_QUEUED$')
+    $catalog = Wait-CatalogIdle 180
+    if ($catalog -notmatch 'message="Pack installed and verified"') {
+      throw "Lane County map install failed: $catalog"
+    }
+    $pack = Read-MatchingLine '^RTL_CATALOG_PACK id=lane_county_map ' 10
+    if ($pack -notmatch 'installed=1 update=0 status="INSTALLED"') {
+      throw "Lane County map was not activated: $pack"
+    }
+  }
+
+  if ($LocationQuery -notmatch '^[\x20-\x7E]{1,63}$') {
+    throw 'LocationQuery must contain 1-63 printable ASCII characters.'
+  }
+  Connect-Authenticated
+  [void](Send-And-Wait "RTL_LOCATION LOOKUP $LocationQuery" '^RTL_LOCATION_LOOKUP_QUEUED$')
+  $deadline = [DateTime]::UtcNow.AddSeconds(30)
+  do {
+    Start-Sleep -Seconds 1
+    $location = Send-And-Wait 'RTL_LOCATION STATUS' '^RTL_LOCATION_STATUS ' 10
+    if ($location -match 'busy=0') { break }
+  } while ([DateTime]::UtcNow -lt $deadline)
+  if ($location -notmatch 'busy=0 ready=1 latitude_e7=-?\d+ longitude_e7=-?\d+ message="Address found; confirm to save"') {
+    throw "Location lookup failed: $location"
+  }
+  Assert-Health
+  Write-SoakLine "RTL_DATA_SERVICES_RESULT pass=1 catalog=verified lane_map_installed=$([int][bool]$InstallLaneMap) location_query=$LocationQuery"
 }
 
 function Capture-ResetEvidence {
@@ -408,8 +475,8 @@ function Invoke-SelfCheck {
 }
 
 if ($SelfCheck) { Invoke-SelfCheck; exit 0 }
-if (@($Run, $Soak, $Driver079, $WifiOnly).Where({ $_ }).Count -gt 1) {
-  throw 'Choose only one of -Run, -Soak, -Driver079, or -WifiOnly.'
+if (@($Run, $Soak, $Driver079, $WifiOnly, $DataOnly).Where({ $_ }).Count -gt 1) {
+  throw 'Choose only one of -Run, -Soak, -Driver079, -WifiOnly, or -DataOnly.'
 }
 
 function Get-DriverStatus {
@@ -506,8 +573,15 @@ try {
   if ($Driver079) { Invoke-Driver079Test; exit 0 }
   if ($WifiOnly) {
     Wait-DeviceReady 60 11000
+    $initialUi = Get-UiState
     Connect-Authenticated
-    Assert-WifiCli
+    Assert-WifiCli $initialUi
+    exit 0
+  }
+  if ($DataOnly) {
+    Wait-DeviceReady 60 11000
+    Connect-Authenticated
+    Assert-DataServices
     exit 0
   }
 

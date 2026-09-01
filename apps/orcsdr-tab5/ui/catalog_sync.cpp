@@ -30,6 +30,7 @@ constexpr size_t kChunkBytes = 4096;
 constexpr size_t kWriteBatchBytes = kChunkBytes;
 constexpr size_t kYieldBytes = 64 * 1024;
 constexpr uint8_t kMaxRedirects = 4;
+constexpr char kUserAgent[] = "OrcSDR/0.2 (+https://github.com/hardcoreerik/OrcSDR)";
 
 extern const uint8_t catalog_public_key_pem_start[] asm("_binary_catalog_public_key_pem_start");
 extern const uint8_t catalog_public_key_pem_end[] asm("_binary_catalog_public_key_pem_end");
@@ -200,13 +201,14 @@ bool http_read_all(const char* url, uint8_t* output, size_t capacity, size_t* re
   config.buffer_size_tx = 2048;
   config.crt_bundle_attach = esp_crt_bundle_attach;
   config.keep_alive_enable = true;
+  config.user_agent = kUserAgent;
   esp_http_client_handle_t client = esp_http_client_init(&config);
   if (!client) return false;
   esp_err_t open_result = ESP_FAIL;
   int64_t declared = -1;
   int status = -1;
   bool ok = open_get(client, &declared, &status, &open_result);
-  if (!ok || declared < 0 || static_cast<uint64_t>(declared) > capacity) {
+  if (!ok || (declared > 0 && static_cast<uint64_t>(declared) > capacity)) {
     esp_http_client_cleanup(client);
     return false;
   }
@@ -218,13 +220,15 @@ bool http_read_all(const char* url, uint8_t* output, size_t capacity, size_t* re
     if (got == 0) break;
     total += static_cast<size_t>(got);
   }
+  const bool complete = esp_http_client_is_complete_data_received(client);
   esp_http_client_close(client);
   esp_http_client_cleanup(client);
   *received = total;
   ESP_LOGI(kTag, "fetch open=%s status=%d declared=%lld received=%u",
            esp_err_to_name(open_result), status, static_cast<long long>(declared),
            static_cast<unsigned>(total));
-  return ok && status == 200 && total > 0 && (declared == 0 || total == static_cast<size_t>(declared));
+  return ok && complete && status == 200 && total > 0 &&
+         (declared <= 0 || total == static_cast<size_t>(declared));
 }
 
 bool verify_signature(const uint8_t* manifest, size_t manifest_size,
@@ -351,12 +355,13 @@ bool download_artifact(const Artifact& artifact, uint8_t pack_index,
   config.timeout_ms = 20000;
   config.buffer_size_tx = 2048;
   config.crt_bundle_attach = esp_crt_bundle_attach;
+  config.user_agent = kUserAgent;
   esp_http_client_handle_t client = esp_http_client_init(&config);
   esp_err_t open_result = ESP_FAIL;
   int64_t declared = -1;
   int status = -1;
   bool ok = client && open_get(client, &declared, &status, &open_result);
-  if (!ok || declared != artifact.bytes || status != 200) ok = false;
+  if (!ok || (declared > 0 && declared != artifact.bytes) || status != 200) ok = false;
   ESP_LOGI(kTag, "download stage=http_open ok=%d status=%d declared=%lld", ok ? 1 : 0,
            status, static_cast<long long>(declared));
   uint8_t* write_batch = static_cast<uint8_t*>(heap_caps_malloc(kWriteBatchBytes, MALLOC_CAP_SPIRAM));
@@ -583,7 +588,9 @@ bool request(Operation operation, uint8_t pack_index, bool needs_wifi) {
   g_requested_pack = pack_index;
   set_busy(operation, 0);
   set_message(operation == Operation::check ? "Catalog check queued" : "Data operation queued");
-  if (xTaskCreatePinnedToCore(worker, "catalog_sync", 12288, nullptr, 3, &g_worker, 1) != pdPASS) {
+  if (xTaskCreatePinnedToCoreWithCaps(worker, "catalog_sync", 12288, nullptr, 3,
+                                      &g_worker, 1,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     g_requested = Operation::none;
     set_busy(Operation::none, 0);
     set_message("Catalog worker creation failed");
