@@ -11,6 +11,7 @@ managed_components/
 !apps/orcsdr-tab5/dependencies.lock
 
 # Tooling
+dist/
 .vscode/
 .idea/
 __pycache__/

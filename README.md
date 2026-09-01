@@ -11,8 +11,8 @@
 **OrcSDR is a self-contained radio you hold in your hands.** Plug an RTL-SDR Blog V4 into a M5Stack Tab5, flash this firmware, and the tablet becomes the radio: live spectrum, waterfall, speaker audio, FM with RDS, P25 trunking, ADS-B, and a passive LoRa mesh monitor. There is no Raspberry Pi in the bag, no laptop running SDR#, and no desktop app you have to keep open.
 
 <p align="center">
-  <img src="docs/images/orcsdr-tab5_2.png"
-       alt="OrcSDR Home dashboard on the M5Stack Tab5: last-used dashboards, live spectrum, waterfall, and last-tuned frequency"
+  <img src="docs/images/OrcSDR-Main.png"
+       alt="OrcSDR on the M5Stack Tab5 with an RTL-SDR Blog V4 receiver"
        width="100%">
 </p>
 

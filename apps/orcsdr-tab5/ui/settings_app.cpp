@@ -116,6 +116,23 @@ void draw_rail() {
 
 void draw_connectivity() {
   text("CONNECTIVITY", 330, 115, kBlue, 3);
+  if (g_state.wifi_hosted_update_required) {
+    M5.Display.fillRoundRect(330, 145, 888, 448, 12, 0x3104);
+    M5.Display.drawRoundRect(330, 145, 888, 448, 12, TFT_ORANGE);
+    text("WIRELESS COPROCESSOR UPDATE REQUIRED", 370, 195, TFT_ORANGE, 3);
+    text("OrcSDR radio reception remains available.", 370, 242, TFT_WHITE, 2);
+    text("Wi-Fi is disabled until the Tab5 C6 matches the P4.", 370, 278, kMuted, 2);
+    char versions[80];
+    snprintf(versions, sizeof(versions), "P4: %s     C6: %s",
+             g_state.wifi_hosted_host_version, g_state.wifi_hosted_c6_version);
+    text(versions, 370, 333, TFT_WHITE, 2);
+    text("Update the C6 manually in M5Burner:", 370, 395, kBlue, 2);
+    text("1. Select the Tab5 C6 ESP-Hosted package.", 390, 432, TFT_WHITE, 1);
+    text("2. Burn ESP-Hosted 3.0.6, then restart OrcSDR.", 390, 466, TFT_WHITE, 1);
+    text("3. Do not erase for normal OrcSDR upgrades.", 390, 500, TFT_WHITE, 1);
+    text("Close this page to keep using the SDR without Wi-Fi.", 370, 552, kMuted, 2);
+    return;
+  }
   char value[96];
   const char* status = !g_state.wifi_power_enabled ? "POWERED OFF"
                        : g_state.wifi_connected ? "CONNECTED"
@@ -549,12 +566,17 @@ void update(const State& state_value) {
                              g_state.wifi_external_antenna != state_value.wifi_external_antenna ||
                              g_state.wifi_scanning != state_value.wifi_scanning ||
                              g_state.wifi_connecting != state_value.wifi_connecting ||
+                             g_state.wifi_hosted_update_required != state_value.wifi_hosted_update_required ||
                              g_state.network_count != state_value.network_count ||
                              g_state.saved_network_count != state_value.saved_network_count ||
                              g_state.wifi_rssi != state_value.wifi_rssi ||
                              memcmp(g_state.networks, state_value.networks,
                                     sizeof(g_state.networks)) != 0 ||
                              strcmp(g_state.wifi_message, state_value.wifi_message) != 0 ||
+                             strcmp(g_state.wifi_hosted_host_version,
+                                    state_value.wifi_hosted_host_version) != 0 ||
+                             strcmp(g_state.wifi_hosted_c6_version,
+                                    state_value.wifi_hosted_c6_version) != 0 ||
                              memcmp(g_state.profiles, state_value.profiles,
                                     sizeof(g_state.profiles)) != 0);
   const bool power_changed = g_section == Section::system &&
@@ -613,6 +635,7 @@ Action handle_touch(int32_t x, int32_t y) {
     return {};
   }
   if (g_section == Section::connectivity) {
+    if (g_state.wifi_hosted_update_required) return {};
     if (hit(x, y, 750, 180, 170, 46))
       return {ActionKind::wifi_power_changed, g_state.wifi_power_enabled ? 0 : 1};
     if (hit(x, y, 820, 228, 398, 46))

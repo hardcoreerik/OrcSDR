@@ -8,6 +8,7 @@ $env:PYTHONIOENCODING = 'utf-8'
 $env:IDF_PYTHON_ENV_PATH = 'C:\Espressif\python_env\idf5.5_py3.14_env'
 $env:PATH = "$env:IDF_PYTHON_ENV_PATH\Scripts;$env:PATH"
 . (Join-Path $IdfPath 'export.ps1')
+& (Join-Path $PSScriptRoot 'apply-m5gfx-tab5-pageflip.ps1')
 Set-Location (Join-Path $PSScriptRoot '..')
 $buildDir = 'build-native-hosted3'
 
