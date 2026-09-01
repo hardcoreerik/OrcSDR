@@ -748,7 +748,7 @@ Commercial licensing terms are also available from the maintainer.
 https://github.com/hardcoreerik/OrcSDR
 
 **Documentation**  
-[`docs/`](docs/)
+[User Guide](https://hardcoreerik.github.io/OrcSDR/) · [GitHub Wiki](https://github.com/hardcoreerik/OrcSDR/wiki) · [`docs/`](docs/)
 
 **M5Stack Tab5 Application**  
 [`apps/orcsdr-tab5/`](apps/orcsdr-tab5/)
