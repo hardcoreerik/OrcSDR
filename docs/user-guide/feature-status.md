@@ -7,6 +7,7 @@
 | P25 control and clear voice following | Experimental | Encrypted voice is not decoded |
 | ADS-B 1090 dashboard and aircraft database | Experimental | Live coverage depends on antenna, location, and valid position messages |
 | LoRa receive, packet views, and capture | Experimental | No transmit path |
+| Limited 2.4 GHz Wi-Fi analysis and Wi-Fi CSI mesh experiments | Early exploration | Not a current downloadable receiver feature |
 | AM, WX, CB, and Browse tools | Experimental | Shared radio/scope/capture foundation |
 | Global on-device Settings | Implemented | Wi-Fi and Companion remain optional |
 | Offline personalized map packs | Deferred | Import/status shell precedes the builder workflow |
