@@ -32,6 +32,7 @@ idf_component_register(
         "../ui/text_editor.cpp"
         "../ui/ui_capture.cpp"
         "../ui/web_console.cpp"
+        "../ui/rf24_dashboard.cpp"
         "../ui/wifi_service.cpp"
     INCLUDE_DIRS "." "../ui"
     REQUIRES

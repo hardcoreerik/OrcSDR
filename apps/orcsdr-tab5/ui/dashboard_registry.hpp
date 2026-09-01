@@ -20,6 +20,7 @@ enum class Id : uint8_t {
   utilities,
   settings,
   rf_lab,
+  wifi_analysis,
   count,
 };
 

@@ -7,7 +7,9 @@ namespace orcsdr::wifi {
 
 struct ScanResult {
   char ssid[33]{};
+  uint8_t bssid[6]{};
   int16_t rssi = 0;
+  uint8_t channel = 0;
   bool secure = false;
 };
 
