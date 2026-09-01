@@ -33,6 +33,10 @@ constexpr int kPlotX = 42;
 constexpr int kPlotY = 82;
 constexpr int kPlotW = 1196;
 constexpr int kPlotH = 590;
+constexpr int kDopplerColumnStep = 2;
+constexpr size_t kDopplerColumns = (kPlotW + kDopplerColumnStep - 1) / kDopplerColumnStep;
+constexpr int kDopplerRowStep = 2;
+constexpr size_t kOccupancyRows = 24;
 constexpr int kDrawerY = 418;
 constexpr int kDrawerH = 302;
 constexpr int kHudH = 70;
@@ -132,6 +136,9 @@ uint8_t* g_density = nullptr;
 uint8_t* g_density_snapshot = nullptr;
 size_t g_density_rows = 0;
 uint16_t* g_phosphor_row = nullptr;
+uint8_t* g_doppler_snapshot = nullptr;
+uint16_t* g_doppler_row = nullptr;
+int16_t g_doppler_track[kDopplerColumns]{};
 uint32_t g_last_density_decay_ms = 0;
 uint8_t g_density_decay_phase = 0;
 uint32_t g_last_heavy_view_draw_ms = 0;
@@ -184,6 +191,12 @@ uint8_t g_effective_quality = 1;
 uint32_t g_occupancy_frames[32]{};
 uint32_t g_occupancy_busy[32]{};
 uint32_t g_occupancy_dwell_ms[32]{};
+uint8_t g_occupancy_heatmap[kOccupancyRows * 32]{};
+uint32_t g_occupancy_bin_frames = 0;
+uint32_t g_occupancy_bin_busy[32]{};
+uint32_t g_occupancy_bin_started_ms = 0;
+size_t g_occupancy_heatmap_head = 0;
+size_t g_occupancy_heatmap_count = 0;
 ChannelState g_channels[8]{};
 uint8_t g_selected_channel = 0;
 bool g_channel_solo = false;
@@ -452,10 +465,14 @@ void free_view_buffers() {
   if (g_density) heap_caps_free(g_density);
   if (g_density_snapshot) heap_caps_free(g_density_snapshot);
   if (g_phosphor_row) heap_caps_free(g_phosphor_row);
+  if (g_doppler_snapshot) heap_caps_free(g_doppler_snapshot);
+  if (g_doppler_row) heap_caps_free(g_doppler_row);
   g_history = nullptr;
   g_density = nullptr;
   g_density_snapshot = nullptr;
   g_phosphor_row = nullptr;
+  g_doppler_snapshot = nullptr;
+  g_doppler_row = nullptr;
   g_history_rows = g_history_head = g_history_count = g_density_rows = 0;
   g_last_density_decay_ms = 0;
   g_density_decay_phase = 0;
@@ -472,17 +489,30 @@ size_t memory_budget() {
 
 void allocate_view_buffers(View next) {
   if (g_history_mutex && xSemaphoreTake(g_history_mutex, pdMS_TO_TICKS(20)) != pdTRUE) return;
+  const auto ensure_doppler_buffers = [] {
+    if (!g_doppler_snapshot) {
+      g_doppler_snapshot = static_cast<uint8_t*>(
+          heap_caps_malloc(kDopplerColumns * kBins, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    }
+    if (!g_doppler_row) {
+      g_doppler_row = static_cast<uint16_t*>(
+          heap_caps_malloc(kPlotW * kDopplerRowStep * sizeof(uint16_t),
+                           MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    }
+    return g_doppler_snapshot && g_doppler_row;
+  };
   const size_t budget = memory_budget();
   const bool spectrum_history = next == View::waterfall || next == View::spectrum3d ||
-                                next == View::occupancy || next == View::doppler;
+                                next == View::doppler;
   const bool spectrum_family = next == View::spectrum || spectrum_history ||
                                next == View::peak_average || next == View::channelizer;
   if (spectrum_family && g_history && !g_history_audio) {
+    if (next == View::doppler) (void)ensure_doppler_buffers();
     if (g_history_mutex) xSemaphoreGive(g_history_mutex);
     return;
   }
-  if ((next == View::constellation || next == View::iqscope || next == View::polar) ||
-      next == View::phosphor || next == View::audio_spectrogram ||
+  if ((next == View::constellation || next == View::iqscope || next == View::polar ||
+       next == View::occupancy) || next == View::phosphor || next == View::audio_spectrogram ||
       (spectrum_family && g_history_audio))
     free_view_buffers();
   if (spectrum_history || next == View::audio_spectrogram) {
@@ -491,6 +521,7 @@ void allocate_view_buffers(View next) {
         heap_caps_calloc(g_history_rows, kBins, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (!g_history) g_history_rows = 0;
     g_history_audio = next == View::audio_spectrogram;
+    if (next == View::doppler) (void)ensure_doppler_buffers();
   } else if (next == View::phosphor) {
     g_density_rows = (kPlotH + 1) / 2;
     g_density = static_cast<uint8_t*>(
@@ -648,10 +679,14 @@ void add_density(const SpectrumFrame& frame) {
 void update_occupancy(const SpectrumFrame& frame) {
   if (!frame.bins) return;
   constexpr size_t counts[] = {4, 8, 16, 32};
+  constexpr uint32_t time_bins_ms[] = {100, 250, 500, 1000, 2000, 5000, 10000};
   const size_t bands = counts[std::clamp(static_cast<int>(value("occupancy.band_count")), 0, 3)];
   const float threshold = frame.noise + value("occupancy.threshold_offset_db");
   const uint32_t frame_ms = g_effective_quality == 0 ? 16 : g_effective_quality == 1 ? 33 : 100;
   const uint32_t required_ms = static_cast<uint32_t>(value("occupancy.minimum_dwell_ms"));
+  const uint32_t now = millis();
+  if (!g_occupancy_bin_started_ms) g_occupancy_bin_started_ms = now;
+  ++g_occupancy_bin_frames;
   for (size_t band = 0; band < bands; ++band) {
     const size_t first = band * frame.bins / bands;
     const size_t last = (band + 1) * frame.bins / bands;
@@ -662,7 +697,24 @@ void update_occupancy(const SpectrumFrame& frame) {
       g_occupancy_dwell_ms[band] = std::min<uint32_t>(required_ms, g_occupancy_dwell_ms[band] + frame_ms);
     else
       g_occupancy_dwell_ms[band] = 0;
-    if (g_occupancy_dwell_ms[band] >= required_ms) ++g_occupancy_busy[band];
+    if (g_occupancy_dwell_ms[band] >= required_ms) {
+      ++g_occupancy_busy[band];
+      ++g_occupancy_bin_busy[band];
+    }
+  }
+  const uint32_t time_bin_ms = time_bins_ms[
+      std::clamp(static_cast<int>(value("occupancy.time_bin_ms")), 0, 6)];
+  if (now - g_occupancy_bin_started_ms >= time_bin_ms) {
+    uint8_t* row = g_occupancy_heatmap + g_occupancy_heatmap_head * 32;
+    for (size_t band = 0; band < bands; ++band)
+      row[band] = static_cast<uint8_t>(std::min<uint32_t>(255,
+          255 * g_occupancy_bin_busy[band] / std::max<uint32_t>(1, g_occupancy_bin_frames)));
+    for (size_t band = bands; band < 32; ++band) row[band] = 0;
+    g_occupancy_heatmap_head = (g_occupancy_heatmap_head + 1) % kOccupancyRows;
+    g_occupancy_heatmap_count = std::min(kOccupancyRows, g_occupancy_heatmap_count + 1);
+    g_occupancy_bin_frames = 0;
+    memset(g_occupancy_bin_busy, 0, sizeof(g_occupancy_bin_busy));
+    g_occupancy_bin_started_ms = now;
   }
 }
 
@@ -683,6 +735,9 @@ void configure_analysis() {
       current == View::audio_spectrogram ? 1024 : selected_fft_size(current));
   config.audio_fft_size = static_cast<uint16_t>(selected_fft_size(View::audio_spectrogram));
   config.interval_ms = g_effective_quality == 0 ? 16 : g_effective_quality == 1 ? 33 : 100;
+  // Doppler shares Core 1 with DSP/audio. A 4096-point FFT at the display cadence
+  // can starve IDLE1; 20 Hz retains a fluid drift trace without risking reception.
+  if (current == View::doppler) config.interval_ms = std::max<uint16_t>(50, config.interval_ms);
   config.audio_spectrum = current == View::audio_spectrogram;
   config.audio_demod = runtime.audio_demod == AudioDemod::fm
                            ? rf_analysis::AudioDemod::fm
@@ -778,8 +833,7 @@ void analysis_observer(const rf_analysis::Snapshot& snapshot, const uint8_t* iq,
   const View current = static_cast<View>(g_view.load(std::memory_order_acquire));
   if (!value("visual.freeze")) {
     if (current == View::phosphor) add_density(*g_observer_frame);
-    else if (current == View::waterfall || current == View::spectrum3d ||
-             current == View::occupancy || current == View::doppler)
+    else if (current == View::waterfall || current == View::spectrum3d || current == View::doppler)
       add_history_row(*g_observer_frame, false);
     else if (current == View::audio_spectrogram)
       add_history_row(*g_observer_frame, true);
@@ -936,27 +990,6 @@ void draw_spectrum_view(const SpectrumFrame& frame) {
     draw_trace(frame.peak, frame.bins, kYellow, kPlotY, kPlotH, 1, floor, ceiling);
   if (value("fft.center_cursor") > 0)
     g_canvas.drawFastVLine(kPlotX + kPlotW / 2, kPlotY, kPlotH, kGreen);
-}
-
-void draw_history_view(bool audio) {
-  g_canvas.fillRect(kPlotX, kPlotY, kPlotW, kPlotH, kBg);
-  if (!g_history || !g_history_count) return;
-  if (g_history_mutex && xSemaphoreTake(g_history_mutex, pdMS_TO_TICKS(20)) != pdTRUE) return;
-  const size_t history_head = g_history_head;
-  const size_t history_count = g_history_count;
-  if (g_history_mutex) xSemaphoreGive(g_history_mutex);
-  const uint8_t palette = static_cast<uint8_t>(audio ? value("audiospec.palette")
-                                                     : value("waterfall.palette"));
-  uint16_t row[kPlotW];
-  for (size_t sy = 0; sy < kPlotH; ++sy) {
-    const size_t history_y = (history_head + g_history_rows - 1 -
-                              sy * history_count / kPlotH) % g_history_rows;
-    if (g_history_mutex && xSemaphoreTake(g_history_mutex, pdMS_TO_TICKS(2)) != pdTRUE) continue;
-    const uint8_t* source = g_history + history_y * kBins;
-    for (int x = 0; x < kPlotW; ++x) row[x] = heat_color(source[x * kBins / kPlotW], palette);
-    if (g_history_mutex) xSemaphoreGive(g_history_mutex);
-    g_canvas.pushImage(kPlotX, kPlotY + static_cast<int>(sy), kPlotW, 1, row);
-  }
 }
 
 void draw_waterfall_view(const SpectrumFrame& frame) {
@@ -1198,23 +1231,54 @@ void draw_polar(const SpectrumFrame& frame) {
 }
 
 void draw_occupancy() {
-  draw_history_view(false);
-  g_canvas.fillRect(kPlotX, kPlotY + kPlotH / 2, kPlotW, kPlotH / 2, kBg);
   constexpr size_t counts[] = {4, 8, 16, 32};
   const size_t bands = counts[std::clamp(static_cast<int>(value("occupancy.band_count")), 0, 3)];
+  constexpr int heat_y = kPlotY;
+  constexpr int heat_h = 310;
+  constexpr int bars_y = heat_y + heat_h + 80;
+  constexpr int bars_h = 150;
+  g_canvas.fillRect(kPlotX, heat_y, kPlotW, kPlotH, kBg);
+
+  const size_t rows = std::max<size_t>(1, g_occupancy_heatmap_count);
+  const int cell_w = std::max(1, kPlotW / static_cast<int>(bands));
+  const int cell_h = std::max(1, heat_h / static_cast<int>(rows));
+  for (size_t row = 0; row < rows; ++row) {
+    const size_t source = (g_occupancy_heatmap_head + kOccupancyRows - rows + row) % kOccupancyRows;
+    const uint8_t* values = g_occupancy_heatmap + source * 32;
+    for (size_t band = 0; band < bands; ++band) {
+      const int x = kPlotX + static_cast<int>(band) * cell_w;
+      const int y = heat_y + static_cast<int>(row) * cell_h;
+      g_canvas.fillRect(x + 1, y + 1, std::max(1, cell_w - 2), std::max(1, cell_h - 2),
+                        heat_color(values[band], 0));
+    }
+  }
+  g_canvas.drawRect(kPlotX, heat_y, kPlotW, heat_h, kGrid);
+  for (size_t band = 1; band < bands; ++band)
+    g_canvas.drawFastVLine(kPlotX + static_cast<int>(band) * cell_w, heat_y, heat_h, kGrid);
+
+  char label[20];
+  text("OCCUPANCY BY BAND", kPlotX, bars_y - 24, kMuted, 1);
   const int bar_w = kPlotW / static_cast<int>(bands);
   for (size_t i = 0; i < bands; ++i) {
     const float pct = g_occupancy_frames[i]
                           ? 100.0f * g_occupancy_busy[i] / g_occupancy_frames[i]
                           : 0;
-    const int h = static_cast<int>(pct * (kPlotH / 2 - 48) / 100.0f);
+    const int h = static_cast<int>(pct * bars_h / 100.0f);
     g_canvas.fillRect(kPlotX + static_cast<int>(i) * bar_w + 3,
-                        kPlotY + kPlotH - h - 24, std::max(1, bar_w - 6), h,
-                        pct >= value("occupancy.alert_pct") ? TFT_RED : kGreen);
-    char label[12];
+                      bars_y + bars_h - h, std::max(1, bar_w - 6), h,
+                      heat_color(static_cast<uint8_t>(lroundf(pct * 255.0f / 100.0f)), 0));
     snprintf(label, sizeof(label), "%.0f%%", static_cast<double>(pct));
-    text(label, kPlotX + static_cast<int>(i) * bar_w + bar_w / 2,
-         kPlotY + kPlotH - 10, TFT_WHITE, 1, middle_center);
+    text(label, kPlotX + static_cast<int>(i) * bar_w + bar_w / 2, bars_y - 7, TFT_WHITE, 1,
+         middle_center);
+    snprintf(label, sizeof(label), "%u", static_cast<unsigned>(i + 1));
+    text(label, kPlotX + static_cast<int>(i) * bar_w + bar_w / 2, bars_y + bars_h + 16,
+         kMuted, 1, middle_center);
+  }
+  text("BAND #", kPlotX + kPlotW / 2, bars_y + bars_h + 36, kMuted, 1, middle_center);
+  text("OCCUPANCY", 1242, heat_y + 12, kMuted, 1);
+  for (int i = 0; i < 5; ++i) {
+    const uint8_t intensity = static_cast<uint8_t>((4 - i) * 63);
+    g_canvas.fillRect(1246, heat_y + 36 + i * 30, 14, 28, heat_color(intensity, 0));
   }
 }
 
@@ -1231,17 +1295,133 @@ void draw_peak_average(const SpectrumFrame& frame) {
     draw_trace(frame.average, frame.bins, kGreen, kPlotY, kPlotH, 1, floor, ceiling);
 }
 
-void draw_doppler(const SpectrumFrame& frame) {
-  draw_history_view(false);
-  const float span = 2000.0f;
-  const int y = kPlotY + kPlotH / 2 - static_cast<int>(frame.strongest_offset_hz *
-                                                       (kPlotH / 2) / span);
-  if (y >= kPlotY && y < kPlotY + kPlotH)
-    g_canvas.fillCircle(kPlotX + kPlotW - 12, y, 5, kYellow);
-  char value_text[48];
-  snprintf(value_text, sizeof(value_text), "TRACK %+ld Hz",
-           static_cast<long>(frame.strongest_offset_hz));
-  text(value_text, kPlotX + 16, kPlotY + 20, kYellow, 2);
+void draw_doppler(const SpectrumFrame&) {
+  g_canvas.fillRect(kPlotX, kPlotY, kPlotW, kPlotH, kBg);
+  if (!g_history || !g_history_count || !g_doppler_snapshot || !g_doppler_row) return;
+
+  constexpr float spans_hz[] = {250, 500, 1000, 2000, 5000};
+  constexpr uint16_t history_seconds[] = {10, 30, 60, 300, 900};
+  const float span_hz = spans_hz[std::clamp(static_cast<int>(value("doppler.span_hz")), 0, 4)];
+  const uint16_t history_s = history_seconds[
+      std::clamp(static_cast<int>(value("doppler.history_s")), 0, 4)];
+  const uint32_t interval_ms = std::max<uint32_t>(
+      50, g_effective_quality == 0 ? 16 : g_effective_quality == 1 ? 33 : 100);
+  const size_t wanted = static_cast<size_t>(history_s) * 1000 / interval_ms;
+  const size_t samples = std::min(g_history_count, std::max<size_t>(1, wanted));
+  const size_t columns = std::min(kDopplerColumns,
+      g_effective_quality == 0 ? kDopplerColumns : g_effective_quality == 1 ? 448u : 300u);
+  const size_t used_columns = std::min(columns, std::max<size_t>(1,
+      (samples * interval_ms * columns + history_s * 1000 - 1) / (history_s * 1000)));
+  const size_t first_column = columns - used_columns;
+
+  if (g_history_mutex && xSemaphoreTake(g_history_mutex, pdMS_TO_TICKS(20)) != pdTRUE) return;
+  const size_t head = g_history_head;
+  for (size_t column = 0; column < used_columns; ++column) {
+    const size_t sample = used_columns > 1 ? column * (samples - 1) / (used_columns - 1) : 0;
+    const size_t source_row = (head + g_history_rows - samples + sample) % g_history_rows;
+    memcpy(g_doppler_snapshot + (first_column + column) * kBins,
+           g_history + source_row * kBins, kBins);
+  }
+  if (g_history_mutex) xSemaphoreGive(g_history_mutex);
+
+  Runtime runtime{};
+  portENTER_CRITICAL(&g_runtime_mux);
+  runtime = g_runtime;
+  portEXIT_CRITICAL(&g_runtime_mux);
+  const float source_span_hz = std::max(1.0f, static_cast<float>(runtime.span_hz));
+  const int center_bin = static_cast<int>(kBins / 2);
+  const int half_window = std::max(1, static_cast<int>(lroundf(span_hz * kBins / source_span_hz / 2.0f)));
+  const int first_bin = std::max(0, center_bin - half_window);
+  const int last_bin = std::min(static_cast<int>(kBins - 1), center_bin + half_window);
+  const uint8_t palette = static_cast<uint8_t>(value("waterfall.palette"));
+
+  const int tracker = static_cast<int>(value("doppler.tracking"));
+  const int track_window = std::max(
+      1, static_cast<int>(lroundf(value("doppler.track_window_hz") * kBins / source_span_hz)));
+  const uint8_t threshold = static_cast<uint8_t>(std::clamp(
+      lroundf(value("doppler.threshold_db") * 2.5f), 8l, 96l));
+  int previous_track = -1;
+  for (size_t column = 0; column < first_column; ++column) g_doppler_track[column] = -1;
+  for (size_t column = first_column; column < columns; ++column) {
+    const uint8_t* source = g_doppler_snapshot + column * kBins;
+    int tracked_bin = -1;
+    uint8_t tracked_level = 0;
+    uint32_t baseline_sum = 0;
+    for (int bin = first_bin; bin <= last_bin; ++bin) {
+      baseline_sum += source[bin];
+      if (source[bin] > tracked_level) {
+        tracked_level = source[bin];
+        tracked_bin = bin;
+      }
+    }
+    const uint8_t baseline = static_cast<uint8_t>(baseline_sum /
+        std::max(1, last_bin - first_bin + 1));
+    if (!tracker || tracked_level < std::min(255, static_cast<int>(baseline) + threshold)) {
+      g_doppler_track[column] = -1;
+      continue;
+    }
+    if (tracker >= 2) {
+      const int start = std::max(first_bin, tracked_bin - track_window);
+      const int end = std::min(last_bin, tracked_bin + track_window);
+      uint32_t weighted_sum = 0, weight = 0;
+      for (int bin = start; bin <= end; ++bin) {
+        const uint16_t signal = source[bin] > baseline ? source[bin] - baseline : 0;
+        weighted_sum += static_cast<uint32_t>(bin) * signal;
+        weight += signal;
+      }
+      if (weight) tracked_bin = static_cast<int>(weighted_sum / weight);
+    }
+    if (tracker == 3 && previous_track >= 0)
+      tracked_bin = (previous_track * 4 + tracked_bin) / 5;
+    g_doppler_track[column] = static_cast<int16_t>(tracked_bin);
+    previous_track = tracked_bin;
+  }
+
+  for (int y = 0; y < kPlotH; y += kDopplerRowStep) {
+    const float ratio = static_cast<float>(y + kDopplerRowStep / 2) / std::max(1, kPlotH - 1);
+    const int bin = std::clamp(static_cast<int>(lroundf(last_bin - ratio * (last_bin - first_bin))),
+                               first_bin, last_bin);
+    for (int x = 0; x < kPlotW; x += kDopplerColumnStep) {
+      const size_t column = std::min(columns - 1, static_cast<size_t>(x) * columns / kPlotW);
+      const uint16_t color = column < first_column ? kBg
+          : heat_color(g_doppler_snapshot[column * kBins + bin], palette);
+      g_doppler_row[x] = color;
+      if (x + 1 < kPlotW) g_doppler_row[x + 1] = color;
+    }
+    memcpy(g_doppler_row + kPlotW, g_doppler_row, kPlotW * sizeof(uint16_t));
+    g_canvas.pushImage(kPlotX, kPlotY + y, kPlotW,
+                       std::min(kDopplerRowStep, kPlotH - y), g_doppler_row);
+  }
+
+  for (int i = 1; i < 6; ++i)
+    g_canvas.drawFastHLine(kPlotX, kPlotY + i * kPlotH / 6, kPlotW, kGrid);
+  for (int i = 1; i < 6; ++i)
+    g_canvas.drawFastVLine(kPlotX + i * kPlotW / 6, kPlotY, kPlotH, kGrid);
+  if (tracker > 0) {
+    int last_x = -1, last_y = -1;
+    for (size_t column = 0; column < columns; ++column) {
+      const int bin = g_doppler_track[column];
+      if (bin < first_bin || bin > last_bin) continue;
+      const int x = kPlotX + static_cast<int>(column * kPlotW / std::max<size_t>(1, columns - 1));
+      const int y = kPlotY + static_cast<int>((last_bin - bin) * (kPlotH - 1) /
+                                               std::max(1, last_bin - first_bin));
+      if (last_x >= 0) g_canvas.drawLine(last_x, last_y, x, y, kYellow);
+      last_x = x;
+      last_y = y;
+    }
+  }
+  g_canvas.drawRect(kPlotX, kPlotY, kPlotW, kPlotH, kGrid);
+  char label[32];
+  snprintf(label, sizeof(label), "+%.1f kHz", span_hz / 2000.0f);
+  text(label, 6, kPlotY + 10, kMuted, 1);
+  text("0", 24, kPlotY + kPlotH / 2, kMuted, 1);
+  snprintf(label, sizeof(label), "-%.1f kHz", span_hz / 2000.0f);
+  text(label, 6, kPlotY + kPlotH - 8, kMuted, 1);
+  for (int i = 0; i <= 6; ++i) {
+    snprintf(label, sizeof(label), "%us", static_cast<unsigned>(history_s * i / 6));
+    text(label, kPlotX + i * kPlotW / 6, kPlotY + kPlotH + 14, kMuted, 1, middle_center);
+  }
+  text("TIME", kPlotX + kPlotW / 2, kPlotY + kPlotH + 32, kMuted, 1, middle_center);
 }
 
 void draw_channelizer(const SpectrumFrame& frame) {
@@ -1510,6 +1690,12 @@ void run_action(const ControlDescriptor& c) {
     memset(g_occupancy_frames, 0, sizeof(g_occupancy_frames));
     memset(g_occupancy_busy, 0, sizeof(g_occupancy_busy));
     memset(g_occupancy_dwell_ms, 0, sizeof(g_occupancy_dwell_ms));
+    memset(g_occupancy_heatmap, 0, sizeof(g_occupancy_heatmap));
+    memset(g_occupancy_bin_busy, 0, sizeof(g_occupancy_bin_busy));
+    g_occupancy_bin_frames = 0;
+    g_occupancy_bin_started_ms = 0;
+    g_occupancy_heatmap_head = 0;
+    g_occupancy_heatmap_count = 0;
   } else if (strcmp(c.id, "iqscope.arm_single") == 0) {
     size_t index = 0;
     if (find_control("visual.freeze", &index)) set_value(index, 0, false);
@@ -1896,8 +2082,10 @@ void service_ui(uint32_t now) {
   const View current = view();
   const uint32_t heavy_interval = current == View::spectrum3d
       ? (g_effective_quality == 0 ? 66u : g_effective_quality == 1 ? 100u : 125u)
-      : current == View::doppler || current == View::occupancy
-            ? (g_effective_quality == 0 ? 66u : g_effective_quality == 1 ? 100u : 125u)
+      : current == View::doppler
+            ? (g_effective_quality == 0 ? 50u : g_effective_quality == 1 ? 66u : 100u)
+            : current == View::occupancy
+                  ? (g_effective_quality == 0 ? 33u : g_effective_quality == 1 ? 50u : 66u)
             : 0u;
   const bool heavy_due = !heavy_interval ||
       now - g_last_heavy_view_draw_ms >= heavy_interval;
