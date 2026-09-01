@@ -18,6 +18,8 @@ param(
   [string]$LogPath,
   [switch]$SelfCheck,
   [switch]$Driver079,
+  [switch]$WifiOnly,
+  [switch]$RequireWifiConnection,
   [switch]$TestBiasTee
 )
 
@@ -74,7 +76,7 @@ function Send-And-Wait([string]$Command, [string]$Pattern, [int]$Seconds = $Time
   return Read-MatchingLine $Pattern $Seconds
 }
 
-function Wait-DeviceReady([int]$Seconds = 60) {
+function Wait-DeviceReady([int]$Seconds = 60, [int]$MinimumUptimeMs = 0) {
   $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
   $nextProbe = [DateTime]::MinValue
   while ([DateTime]::UtcNow -lt $deadline) {
@@ -88,7 +90,8 @@ function Wait-DeviceReady([int]$Seconds = 60) {
       $script:linesSeen++
       Write-SoakLine $line
       if (Test-FatalLine $line) { throw "Device crash/reset detected: $line" }
-      if ($line -match '^RTL_HEALTH_STATUS ') { return }
+      if ($line -match '^RTL_HEALTH_STATUS uptime_ms=(\d+)' -and
+          [int64]$Matches[1] -ge $MinimumUptimeMs) { return }
     } catch [System.TimeoutException] {}
   }
   throw 'Timed out waiting for device readiness.'
@@ -128,26 +131,27 @@ function Connect-Authenticated {
 
 function Get-UiState {
   $line = Send-And-Wait 'RTL_UI STATUS' '^RTL_UI_STATUS '
-  if ($line -notmatch 'screen=(\S+) band=(\S+) frequency_hz=(\d+) settings=([01]) fm=([01]) p25=([01]) adsb=([01]) lora=([01]) home_font=([01])') {
+  if ($line -notmatch 'screen=(\S+) band=(\S+) frequency_hz=(\d+) settings=([01]) fm=([01]) p25=([01]) adsb=([01]) lora=([01]) rf24=([01]) home_font=([01])') {
     throw "Malformed UI status: $line"
   }
   return [pscustomobject]@{
     Screen = $Matches[1].ToUpperInvariant()
     Band = $Matches[2].ToUpperInvariant()
     Frequency = [uint32]$Matches[3]
-    Active = @([int]$Matches[4], [int]$Matches[5], [int]$Matches[6], [int]$Matches[7], [int]$Matches[8])
-    HomeFont = [int]$Matches[9]
+    Active = @([int]$Matches[4], [int]$Matches[5], [int]$Matches[6], [int]$Matches[7], [int]$Matches[8], [int]$Matches[9])
+    HomeFont = [int]$Matches[10]
   }
 }
 
 function Test-ExclusiveScreen($State, [string]$Screen) {
   $expected = switch ($Screen) {
-    'FM' { @(0,1,0,0,0) }
-    'P25' { @(0,0,1,0,0) }
-    'ADSB' { @(0,0,0,1,0) }
-    'LORA' { @(0,0,0,0,1) }
-    'SETTINGS' { @(1,0,0,0,0) }
-    'HOME' { @(0,0,0,0,0) }
+    'FM' { @(0,1,0,0,0,0) }
+    'P25' { @(0,0,1,0,0,0) }
+    'ADSB' { @(0,0,0,1,0,0) }
+    'LORA' { @(0,0,0,0,1,0) }
+    'WIFI_ANALYSIS' { @(0,0,0,0,0,1) }
+    'SETTINGS' { @(1,0,0,0,0,0) }
+    'HOME' { @(0,0,0,0,0,0) }
     default { return $true }
   }
   return ($State.Active -join ',') -eq ($expected -join ',')
@@ -257,6 +261,106 @@ function Assert-WifiCycle {
   Write-SoakLine 'RTL_UI_SOAK_WIFI pass=1'
 }
 
+function Get-WifiStatus {
+  $line = Send-And-Wait 'RTL_WIFI_STATUS' '^RTL_WIFI_STATUS '
+  if ($line -notmatch 'station=([01]).*connected=([01]).*saved_profiles=(\d+).*power=([01]).*auto_connect=([01]).*antenna=(internal|external).*ap_count=(\d+)') {
+    throw "Malformed Wi-Fi status: $line"
+  }
+  return [pscustomobject]@{
+    Line = $line
+    Station = [int]$Matches[1]
+    Connected = [int]$Matches[2]
+    Profiles = [int]$Matches[3]
+    Power = [int]$Matches[4]
+    AutoConnect = [int]$Matches[5]
+    Antenna = $Matches[6]
+    AccessPoints = [int]$Matches[7]
+  }
+}
+
+function Wait-WifiScan {
+  $result = Read-MatchingLine '^RTL_WIFI_SCAN_RESULTS count=([0-9]+)$' 45
+  if ($result -notmatch 'count=([1-9][0-9]*)$') { throw "Wi-Fi scan returned no APs: $result" }
+  $count = [int]$Matches[1]
+  [void](Read-MatchingLine '^RTL_WIFI_COEX event=scan_complete ' 10)
+  return $count
+}
+
+function Assert-WifiLists([int]$ExpectedAccessPoints) {
+  $begin = Send-And-Wait 'RTL_WIFI_RESULTS' '^RTL_WIFI_RESULTS_BEGIN count=([0-9]+) revision=([0-9]+)$'
+  if ($begin -notmatch 'count=([0-9]+) ' -or [int]$Matches[1] -ne $ExpectedAccessPoints) {
+    throw "Wi-Fi result count changed: $begin"
+  }
+  for ($i = 0; $i -lt $ExpectedAccessPoints; $i++) {
+    [void](Read-MatchingLine "^RTL_WIFI_AP index=$i ssid_hex=[0-9A-Fa-f]* bssid=[0-9A-Fa-f]{12} rssi=-?[0-9]+ channel=[0-9]+ secure=[01]$")
+  }
+  [void](Read-MatchingLine '^RTL_WIFI_RESULTS_END$')
+
+  $profiles = Send-And-Wait 'RTL_WIFI_PROFILES' '^RTL_WIFI_PROFILES_BEGIN count=([0-9]+)$'
+  if ($profiles -notmatch 'count=([0-9]+)$') { throw "Malformed Wi-Fi profiles: $profiles" }
+  $profileCount = [int]$Matches[1]
+  for ($i = 0; $i -lt $profileCount; $i++) {
+    [void](Read-MatchingLine "^RTL_WIFI_PROFILE index=$i ssid_hex=[0-9A-Fa-f]+ connected=[01]$")
+  }
+  [void](Read-MatchingLine '^RTL_WIFI_PROFILES_END$')
+  return $profileCount
+}
+
+function Assert-WifiCli {
+  $initialUi = Get-UiState
+  $initial = Get-WifiStatus
+  try {
+    [void](Send-And-Wait 'SET_WIFI 00 00 00' '^WIFI_INVALID$')
+    [void](Send-And-Wait 'RTL_UI ACTION SETTINGS CONNECT_SAVED 99' '^RTL_UI_ACTION_INVALID profile_index$')
+    [void](Send-And-Wait 'RTL_UI ACTION SETTINGS FORGET 99' '^RTL_UI_ACTION_INVALID profile_index$')
+    [void](Send-And-Wait 'RTL_UI ACTION SETTINGS MOVE_UP 0' '^RTL_UI_ACTION_INVALID profile_move$')
+
+    [void](Send-And-Wait "RTL_UI ACTION SETTINGS WIFI_BOOT $(1 - $initial.AutoConnect)" '^RTL_UI_ACTION_OK$')
+    if ((Get-WifiStatus).AutoConnect -eq $initial.AutoConnect) { throw 'Auto-connect toggle did not apply.' }
+    [void](Send-And-Wait "RTL_UI ACTION SETTINGS WIFI_BOOT $($initial.AutoConnect)" '^RTL_UI_ACTION_OK$')
+
+    $otherAntenna = if ($initial.Antenna -eq 'internal') { 1 } else { 0 }
+    [void](Send-And-Wait "RTL_UI ACTION SETTINGS ANTENNA $otherAntenna" '^RTL_UI_ACTION_OK$')
+    if ((Get-WifiStatus).Antenna -eq $initial.Antenna) { throw 'Antenna toggle did not apply.' }
+    [void](Send-And-Wait "RTL_UI ACTION SETTINGS ANTENNA $(if ($initial.Antenna -eq 'external') { 1 } else { 0 })" '^RTL_UI_ACTION_OK$')
+
+    [void](Send-And-Wait 'RTL_UI ACTION SETTINGS WIFI_POWER 0' '^RTL_UI_ACTION_OK$' 20)
+    $off = Get-WifiStatus
+    if ($off.Power -ne 0 -or $off.Station -ne 0 -or $off.Connected -ne 0) {
+      throw "Wi-Fi power-off state is inconsistent: $($off.Line)"
+    }
+    [void](Send-And-Wait 'RTL_UI ACTION SETTINGS WIFI_POWER 1' '^RTL_UI_ACTION_OK$' 20)
+
+    [void](Open-Ui 'WIFI_ANALYSIS' $initialUi.Band)
+    $autoCount = Wait-WifiScan
+    [void](Send-And-Wait 'RTL_WIFI_SCAN' '^RTL_WIFI_SCAN_QUEUED$')
+    $manualCount = Wait-WifiScan
+    $profileCount = Assert-WifiLists $manualCount
+
+    [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
+    if ((Get-WifiStatus).Connected -ne 0) { throw 'Wi-Fi disconnect did not apply.' }
+    if ($profileCount -gt 0) {
+      [void](Send-And-Wait 'RTL_UI ACTION SETTINGS CONNECT_SAVED 0' '^RTL_UI_ACTION_OK$')
+      [void](Read-MatchingLine '^RTL_WIFI_COEX event=connect_complete ' 45)
+      if ((Get-WifiStatus).Connected -ne 1) { throw 'Saved Wi-Fi profile did not connect.' }
+    } elseif ($RequireWifiConnection) {
+      throw 'Connection proof required, but the device has no saved Wi-Fi profile.'
+    } else {
+      Write-SoakLine 'RTL_WIFI_CLI_CONNECT skipped=no_saved_profile'
+    }
+    Assert-Health
+    Write-SoakLine "RTL_WIFI_CLI_RESULT pass=1 auto_aps=$autoCount manual_aps=$manualCount profiles=$profileCount connected=$([int]($profileCount -gt 0))"
+  } finally {
+    try {
+      Connect-Authenticated
+      [void](Send-And-Wait "RTL_UI ACTION SETTINGS WIFI_BOOT $($initial.AutoConnect)" '^RTL_UI_ACTION_OK$')
+      [void](Send-And-Wait "RTL_UI ACTION SETTINGS ANTENNA $(if ($initial.Antenna -eq 'external') { 1 } else { 0 })" '^RTL_UI_ACTION_OK$')
+      [void](Send-And-Wait "RTL_UI ACTION SETTINGS WIFI_POWER $($initial.Power)" '^RTL_UI_ACTION_OK$' 20)
+      [void](Send-And-Wait "RTL_UI OPEN $($initialUi.Screen)" '^RTL_UI_OPEN_(?:OK|INVALID)')
+    } catch { Write-Warning "Could not restore initial Wi-Fi/UI state: $($_.Exception.Message)" }
+  }
+}
+
 function Capture-ResetEvidence {
   Write-SoakLine 'RTL_UI_SOAK_RECOVERY begin=1'
   $deadline = [DateTime]::UtcNow.AddSeconds(20)
@@ -294,18 +398,18 @@ function Invoke-SelfCheck {
   }
   $audio = '{"type":"rtl_audio_test","speaker_enabled":1,"speaker_running":1,"audio_chunks":42}' | ConvertFrom-Json
   if ($audio.speaker_running -ne 1 -or $audio.audio_chunks -ne 42) { throw 'Audio parser failed.' }
-  if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,0,0,1,0) }) 'ADSB')) {
+  if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,0,0,1,0,0) }) 'ADSB')) {
     throw 'Exclusive dashboard check rejected valid ADS-B state.'
   }
-  if (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,1,0,1,0) }) 'ADSB') {
+  if (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,1,0,1,0,0) }) 'ADSB') {
     throw 'Exclusive dashboard check accepted stale FM state.'
   }
   Write-SoakLine 'RTL_UI_SOAK_SELF_CHECK pass=1'
 }
 
 if ($SelfCheck) { Invoke-SelfCheck; exit 0 }
-if (@($Run, $Soak, $Driver079).Where({ $_ }).Count -gt 1) {
-  throw 'Choose only one of -Run, -Soak, or -Driver079.'
+if (@($Run, $Soak, $Driver079, $WifiOnly).Where({ $_ }).Count -gt 1) {
+  throw 'Choose only one of -Run, -Soak, -Driver079, or -WifiOnly.'
 }
 
 function Get-DriverStatus {
@@ -400,6 +504,12 @@ try {
   $script:serial.DiscardInBuffer()
 
   if ($Driver079) { Invoke-Driver079Test; exit 0 }
+  if ($WifiOnly) {
+    Wait-DeviceReady 60 11000
+    Connect-Authenticated
+    Assert-WifiCli
+    exit 0
+  }
 
   if ($Profile) {
     $commit = (& git -C (Join-Path $PSScriptRoot '..\..\..') rev-parse --short HEAD 2>$null)

@@ -36,6 +36,7 @@ void on_wifi_event(void*, esp_event_base_t base, int32_t id, void* data) {
   }
   if (base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
     g_scan_done.store(true, std::memory_order_release);
+    ESP_LOGI("orcsdr_wifi", "scan done event");
   }
 }
 
@@ -106,7 +107,10 @@ void stop() { if (g_started) { esp_wifi_disconnect(); esp_wifi_stop(); } g_start
 bool begin_scan() {
   if (!g_started) return false;
   g_scan_done.store(false, std::memory_order_release);
-  return esp_wifi_scan_start(nullptr, false) == ESP_OK;
+  const esp_err_t result = esp_wifi_scan_start(nullptr, false);
+  if (result == ESP_OK) return true;
+  ESP_LOGE("orcsdr_wifi", "scan start failed: %s", esp_err_to_name(result));
+  return false;
 }
 int scan_results(ScanResult* results, size_t capacity) {
   uint16_t count = 0;
@@ -120,7 +124,10 @@ int scan_results(ScanResult* results, size_t capacity) {
   g_scan_done.store(false, std::memory_order_release);
   for (uint16_t i = 0; i < received; ++i) {
     strlcpy(results[i].ssid, reinterpret_cast<const char*>(records[i].ssid), sizeof(results[i].ssid));
-    results[i].rssi = records[i].rssi; results[i].secure = records[i].authmode != WIFI_AUTH_OPEN;
+    memcpy(results[i].bssid, records[i].bssid, sizeof(results[i].bssid));
+    results[i].rssi = records[i].rssi;
+    results[i].channel = records[i].primary;
+    results[i].secure = records[i].authmode != WIFI_AUTH_OPEN;
   }
   return received;
 }

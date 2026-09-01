@@ -125,6 +125,10 @@ void draw_menu_icon(dashboards::Id id, int x, int y, uint16_t color) {
   } else if (id == dashboards::Id::settings) {
     M5.Display.drawCircle(x, y, 15, color);
     M5.Display.fillCircle(x, y, 5, color);
+  } else if (id == dashboards::Id::wifi_analysis) {
+    M5.Display.drawCircle(x, y + 7, 3, color);
+    M5.Display.drawArc(x, y + 7, 12, 12, 210, 330, color);
+    M5.Display.drawArc(x, y + 7, 20, 20, 210, 330, color);
   } else {
     M5.Display.drawLine(x - 13, y - 13, x + 13, y + 13, color);
     M5.Display.drawLine(x + 13, y - 13, x - 13, y + 13, color);

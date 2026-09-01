@@ -7,7 +7,7 @@ namespace orcsdr::screens {
 // Exactly one surface may own the framebuffer.  Radio/decoder work is not a
 // surface and continues independently of this state.
 enum class Id : uint8_t {
-  none, home, fm, p25, adsb, lora, radio, visualizer, rf_lab, settings, documentation
+  none, home, fm, p25, adsb, lora, radio, visualizer, rf_lab, wifi_analysis, settings, documentation
 };
 
 struct Status {

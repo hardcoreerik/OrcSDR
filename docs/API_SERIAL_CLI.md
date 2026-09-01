@@ -348,7 +348,8 @@ RTL_UI ACTION LORA VIEW 3
 RTL_UI ACTION FM TUNE 101900000
 ```
 
-`RTL_UI OPEN` accepts `HOME`, `FM`, `P25`, `ADSB`, `LORA`, or `SETTINGS`.
+`RTL_UI OPEN` accepts `HOME`, `FM`, `P25`, `ADSB`, `LORA`, `RF_LAB`,
+`WIFI_ANALYSIS`, or `SETTINGS`.
 `RTL_UI ACTION` accepts a domain and one of its visible touch actions:
 
 - `FM`: `TUNE`, `DOWN`, `UP`, `SEEK_DOWN`, `SEEK_UP`, `SAVE`, `STEP`,
@@ -359,7 +360,7 @@ RTL_UI ACTION FM TUNE 101900000
   `VOL_DOWN`, `VOL_UP`, `SETTINGS`, `HOME`.
 - `LORA`: `VIEW <0-5>`, `NODE <index>`, `FAVORITE`, `FILTER`, `SCAN`, `IQ`,
   `LOG`, `CLEAR`, `EXPORT`, `FOLLOW`, `CHANNELS`, `SETTINGS`, `HOME`.
-- `SETTINGS`: `WIFI_POWER <0|1>`, `ANTENNA <0|1>`, `SCAN`,
+- `SETTINGS`: `WIFI_POWER <0|1>`, `WIFI_BOOT <0|1>`, `ANTENNA <0|1>`, `SCAN`,
   `CONNECT_SAVED <index>`, `FORGET <index>`, `MOVE_UP <index>`,
   `MOVE_DOWN <index>`, `RANGE <nm>`, `BRIGHTNESS <0-255>`, `ROTATION <1|3>`,
   `TIMEOUT <seconds>`, `VOLUME <0-255>`, `SOUND <0|1>`, `AUTO_START <0|1>`,
@@ -368,6 +369,36 @@ RTL_UI ACTION FM TUNE 101900000
 
 Each succeeds with `RTL_UI_ACTION_OK`. Inputs are intentionally routed through
 the existing dashboard handlers rather than duplicating touch-only state.
+
+## Wi-Fi automation
+
+Wi-Fi automation uses the same bounded scan snapshot and Settings handlers as
+the display. SSIDs are returned as hexadecimal bytes so arbitrary SSID text
+cannot forge serial records. Passwords are never returned.
+
+| Command | Auth | Reply / behavior |
+|---|---|---|
+| `RTL_WIFI_STATUS` | no | Station/Hosted state, scan/connect state, profile/AP counts, power, auto-connect, and antenna. |
+| `RTL_WIFI_SCAN` | no | Queues one scan; wait for `RTL_WIFI_SCAN_RESULTS count=N` and `RTL_WIFI_COEX event=scan_complete`. |
+| `RTL_WIFI_RESULTS` | no | Bounded `RTL_WIFI_AP` rows with `ssid_hex`, BSSID, RSSI, channel, and security flag. |
+| `RTL_WIFI_PROFILES` | no | Priority-ordered SSID-only profile list; never returns passwords. |
+| `RTL_WIFI_CONNECT_SAVED` | no | Compatibility shortcut for saved profile 0. Indexed connection uses `RTL_UI ACTION SETTINGS CONNECT_SAVED <index>`. |
+| `RTL_WIFI_DISCONNECT` | yes | Disconnects Wi-Fi and restores the paused radio/audio path. |
+| `SET_WIFI <ssid_hex> <pass_hex> <hmac>` | yes + signed payload | Provisions slot 0 and attempts connection without echoing credentials. |
+
+Power, auto-connect, antenna selection, scan, indexed connection, forget, and
+priority moves use authenticated `RTL_UI ACTION SETTINGS ...` commands listed
+above. Invalid boolean values and profile indices return
+`RTL_UI_ACTION_INVALID` instead of a false success.
+
+Run the complete non-destructive hardware surface with:
+
+```powershell
+apps/orcsdr-tab5/tools/run-tab5-ui-regression.ps1 -WifiOnly -PairingKeyPath <key-file>
+```
+
+Add `-RequireWifiConnection` when a real saved profile must associate for the
+test to pass.
 
 The regression command checks the shared radio-control geometry and screen
 ownership self-checks without changing receiver state or NVS. `RUN` also

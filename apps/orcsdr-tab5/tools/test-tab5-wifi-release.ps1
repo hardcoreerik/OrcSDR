@@ -31,6 +31,10 @@ try {
   if ($status -notmatch 'hosted_match=1') {
     Wait-Line '^RTL_WIFI_HOSTED .* match=1$' $TimeoutSeconds | Out-Null
   }
+  $results = Wait-Line '^RTL_WIFI_SCAN_RESULTS count=([0-9]+)$' $TimeoutSeconds
+  if ($results -notmatch 'count=([1-9][0-9]*)$') {
+    throw "Wi-Fi scan returned no access points: $results"
+  }
   Wait-Line '^RTL_WIFI_COEX event=scan_complete ' $TimeoutSeconds | Out-Null
   $serial.WriteLine('RTL_WIFI_STATUS')
   $status = Wait-Line '^RTL_WIFI_STATUS .*hosted_match=1' $TimeoutSeconds

@@ -18,6 +18,7 @@ constexpr Descriptor kEntries[] = {
     {Id::marine, "MARINE", "VHF marine receiver", Category::audio, true},
     {Id::satellite, "SATELLITE", "Satellite receive workspace", Category::digital, true},
     {Id::rf_lab, "RF LAB", "Live measurements and driver tests", Category::utility, true},
+    {Id::wifi_analysis, "2.4 GHz ANALYZER", "Real Wi-Fi access-point survey", Category::utility, true},
     {Id::settings, "SETTINGS", "Global device settings", Category::system, true},
 };
 
@@ -99,7 +100,8 @@ bool self_check() {
                      g_recent[1] == Id::fm && !record_open(Id::p25);
   g_recent = saved;
   g_recent_count = saved_count;
-  return loaded && moved && std::size(kEntries) == 12 && find(Id::rf_lab) != nullptr;
+  return loaded && moved && std::size(kEntries) == 13 && find(Id::rf_lab) != nullptr &&
+         find(Id::wifi_analysis) != nullptr;
 }
 
 }  // namespace orcsdr::dashboards
