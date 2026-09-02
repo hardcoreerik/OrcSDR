@@ -8,7 +8,6 @@ $env:PYTHONIOENCODING = 'utf-8'
 $env:IDF_PYTHON_ENV_PATH = 'C:\Espressif\python_env\idf5.5_py3.14_env'
 $env:PATH = "$env:IDF_PYTHON_ENV_PATH\Scripts;$env:PATH"
 . (Join-Path $IdfPath 'export.ps1')
-& (Join-Path $PSScriptRoot 'apply-m5gfx-tab5-pageflip.ps1')
 Set-Location (Join-Path $PSScriptRoot '..')
 $buildDir = 'build-native-hosted3'
 
@@ -19,6 +18,12 @@ Copy-Item -LiteralPath 'sdkconfig.defaults' -Destination (Join-Path $buildDir 's
 idf.py -B $buildDir -D "SDKCONFIG=$buildDir/sdkconfig" `
     -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults' reconfigure
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+# The component-manager step above fetches (or re-resolves) managed_components/,
+# which can overwrite an already-patched M5GFX checkout. Apply the patch after
+# reconfigure, not before, so a fresh checkout/worktree has something to patch
+# and a stale patch can't be silently dropped by re-resolution.
+& (Join-Path $PSScriptRoot 'apply-m5gfx-tab5-pageflip.ps1')
 
 $required = @(
   'CONFIG_ESP32P4_TAB5_C6_BOARD=y',
