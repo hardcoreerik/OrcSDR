@@ -351,8 +351,13 @@ function Assert-WifiCoexistence($initialUi) {
   $initialWifi = Get-WifiStatus
   if ($initialWifi.Power -ne 1) { throw 'Wi-Fi coexistence requires Connectivity Power to be on.' }
   if ($initialWifi.Profiles -eq 0) { throw 'Wi-Fi coexistence requires one saved Wi-Fi profile.' }
+  $restoreSoundOff = $false
   try {
     [void](Open-Ui 'FM' 'FM')
+    $restoreSoundOff = (Send-And-Wait 'RTL_SOUND' '^RTL_SOUND_STATUS enabled=[01]$').EndsWith('0')
+    if ($restoreSoundOff) {
+      [void](Send-And-Wait 'RTL_SOUND ON' '^RTL_SOUND_OK enabled=1$')
+    }
     $dropBaseline = (Get-WifiCoexStatus).AudioDrops
     Assert-WifiCoexAudio 'fm_baseline' $dropBaseline
     if ($initialWifi.Connected -eq 1) {
@@ -388,6 +393,7 @@ function Assert-WifiCoexistence($initialUi) {
         if ($restored -notmatch 'event=connect_complete ') { throw "Could not restore Wi-Fi: $restored" }
       }
       [void](Open-Ui $initialUi.Screen $initialUi.Band)
+      if ($restoreSoundOff) { [void](Send-And-Wait 'RTL_SOUND OFF' '^RTL_SOUND_OK enabled=0$') }
     } catch { Write-Warning "Could not restore initial Wi-Fi/UI state: $($_.Exception.Message)" }
   }
 }
