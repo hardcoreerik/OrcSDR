@@ -27,6 +27,44 @@ int32_t g_failure_code = ESP_OK;
 char g_ssid[33]{};
 std::atomic<uint32_t> g_ip_addr{0};
 
+const char* security_name(wifi_auth_mode_t authmode) {
+  switch (authmode) {
+    case WIFI_AUTH_OPEN: return "OPEN";
+    case WIFI_AUTH_WEP: return "WEP";
+    case WIFI_AUTH_WPA_PSK: return "WPA";
+    case WIFI_AUTH_WPA2_PSK: return "WPA2";
+    case WIFI_AUTH_WPA_WPA2_PSK: return "WPA/WPA2";
+    case WIFI_AUTH_ENTERPRISE: return "WPA2-ENT";
+    case WIFI_AUTH_WPA3_PSK: return "WPA3";
+    case WIFI_AUTH_WPA2_WPA3_PSK: return "WPA2/WPA3";
+    case WIFI_AUTH_WAPI_PSK: return "WAPI";
+    case WIFI_AUTH_OWE: return "OWE";
+    case WIFI_AUTH_WPA3_ENT_192: return "WPA3-ENT";
+    case WIFI_AUTH_DPP: return "DPP";
+    case WIFI_AUTH_WPA3_ENTERPRISE: return "WPA3-ENT";
+    case WIFI_AUTH_WPA2_WPA3_ENTERPRISE: return "WPA2/3-ENT";
+    case WIFI_AUTH_WPA_ENTERPRISE: return "WPA-ENT";
+    default: return "UNKNOWN";
+  }
+}
+
+void format_phy(const wifi_ap_record_t& record, char* out, size_t size) {
+  char* cursor = out;
+  size_t remaining = size;
+  const auto append = [&](const char* value) {
+    const int written = snprintf(cursor, remaining, "%s%s", cursor == out ? "" : "/", value);
+    if (written > 0 && static_cast<size_t>(written) < remaining) {
+      cursor += written;
+      remaining -= static_cast<size_t>(written);
+    }
+  };
+  if (record.phy_11b) append("b");
+  if (record.phy_11g) append("g");
+  if (record.phy_11n) append("n");
+  if (record.phy_11ax) append("ax");
+  if (cursor == out) strlcpy(out, "unknown", size);
+}
+
 void on_wifi_event(void*, esp_event_base_t base, int32_t id, void* data) {
   if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
     const auto* event = static_cast<const wifi_event_sta_disconnected_t*>(data);
@@ -127,6 +165,10 @@ int scan_results(ScanResult* results, size_t capacity) {
     memcpy(results[i].bssid, records[i].bssid, sizeof(results[i].bssid));
     results[i].rssi = records[i].rssi;
     results[i].channel = records[i].primary;
+    results[i].secondary_channel_offset = records[i].second == WIFI_SECOND_CHAN_ABOVE ? 4 :
+                                          records[i].second == WIFI_SECOND_CHAN_BELOW ? -4 : 0;
+    strlcpy(results[i].security, security_name(records[i].authmode), sizeof(results[i].security));
+    format_phy(records[i], results[i].phy, sizeof(results[i].phy));
     results[i].secure = records[i].authmode != WIFI_AUTH_OPEN;
   }
   return received;

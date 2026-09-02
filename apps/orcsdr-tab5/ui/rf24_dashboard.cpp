@@ -54,6 +54,28 @@ const char* page_name(Page page) {
   }
 }
 
+uint16_t signal_color(int16_t rssi) {
+  return rssi >= -60 ? kGreen : rssi >= -75 ? kYellow : kMuted;
+}
+
+void channel_footprint(const AccessPoint& ap, int* low, int* high) {
+  *low = static_cast<int>(ap.channel) - 2;
+  *high = static_cast<int>(ap.channel) + 2;
+  if (ap.secondary_channel_offset > 0) *high += 4;
+  if (ap.secondary_channel_offset < 0) *low -= 4;
+}
+
+void scan_detail(const Snapshot& snapshot, char* out, size_t size) {
+  if (snapshot.scanning) {
+    snprintf(out, size, "SCAN IN PROGRESS");
+  } else if (snapshot.scan_complete) {
+    snprintf(out, size, "LAST SCAN %us AGO  |  %ums", snapshot.scan_age_seconds,
+             snapshot.scan_duration_ms);
+  } else {
+    snprintf(out, size, "NO COMPLETED SCAN");
+  }
+}
+
 void draw_header(const Snapshot& snapshot) {
   M5.Display.fillRect(0, 0, 1280, 82, kBg);
   M5.Display.drawFastHLine(20, 80, 1240, kCyan);
@@ -69,7 +91,11 @@ void draw_header(const Snapshot& snapshot) {
   audio_header::draw_mute_button(snapshot.sound_enabled);
   audio_header::draw_visualizer_button(snapshot.visualizer_available);
   audio_header::draw_settings_button();
-  text(snapshot.message, 270, 66, kMuted, 1);
+  char detail[64]{}; scan_detail(snapshot, detail, sizeof(detail));
+  text(detail, 270, 66, kMuted, 1);
+  snprintf(detail, sizeof(detail), "FOUND %u / SHOWING %u", snapshot.total_access_point_count,
+           snapshot.access_point_count);
+  text(detail, 1240, 66, kCyan, 1, middle_right);
 }
 
 void draw_tabs() {
@@ -85,16 +111,19 @@ void draw_tabs() {
 void draw_overview(const Snapshot& snapshot) {
   panel(20, 100, 400, 180); panel(438, 100, 822, 180); panel(20, 298, 1240, 326);
   text("SCAN STATUS", 40, 126, kCyan, 1);
-  char value[48]{}; snprintf(value, sizeof(value), "%u ACCESS POINTS", snapshot.access_point_count);
+  char value[48]{}; snprintf(value, sizeof(value), "%u FOUND", snapshot.total_access_point_count);
   text(value, 40, 172, kGreen, 3);
+  snprintf(value, sizeof(value), "SHOWING STRONGEST %u OF %u", snapshot.access_point_count,
+           snapshot.total_access_point_count);
+  text(value, 40, 196, kMuted, 1);
   const auto* strongest = snapshot.access_point_count ? &snapshot.access_points[0] : nullptr;
   text("STRONGEST OBSERVED", 40, 220, kMuted, 1);
-  text(strongest ? (strongest->ssid[0] ? strongest->ssid : "<hidden>") : "--", 40, 250, TFT_WHITE, 2);
+  text(strongest ? (strongest->ssid[0] ? strongest->ssid : "<hidden>") : "--", 40, 248, TFT_WHITE, 2);
   uint8_t secured = 0;
   for (uint8_t i = 0; i < snapshot.access_point_count; ++i) secured += snapshot.access_points[i].secure;
   snprintf(value, sizeof(value), "SECURITY: %u SECURED / %u OPEN", secured,
            snapshot.access_point_count - secured);
-  text(value, 40, 272, kMuted, 1);
+  text(value, 40, 270, kMuted, 1);
   text("AP OBSERVATIONS BY CHANNEL", 458, 126, kCyan, 1);
   uint8_t counts[15]{};
   for (uint8_t i = 0; i < snapshot.access_point_count; ++i)
@@ -110,51 +139,83 @@ void draw_overview(const Snapshot& snapshot) {
     if (height) M5.Display.fillRect(x + 2, 238 - height, 34, height, kGreen);
   }
   text("TOP OBSERVED ACCESS POINTS", 40, 324, kCyan, 1);
-  text("SSID", 48, 354, kMuted, 1); text("BSSID", 560, 354, kMuted, 1);
-  text("CH", 730, 354, kMuted, 1); text("RSSI", 840, 354, kMuted, 1); text("SECURITY", 1010, 354, kMuted, 1);
+  text("SSID", 48, 354, kMuted, 1); text("BSSID", 500, 354, kMuted, 1);
+  text("CH", 670, 354, kMuted, 1); text("RSSI", 760, 354, kMuted, 1);
+  text("SECURITY", 900, 354, kMuted, 1); text("PHY", 1100, 354, kMuted, 1);
   const uint8_t shown = std::min<uint8_t>(snapshot.access_point_count, 6);
   for (uint8_t i = 0; i < shown; ++i) {
     const auto& ap = snapshot.access_points[i]; char short_bssid[12]{}, rssi[16]{}, channel[8]{};
     const int y = 392 + i * 36; bssid(ap.bssid, short_bssid, sizeof(short_bssid));
     snprintf(channel, sizeof(channel), "%u", ap.channel); snprintf(rssi, sizeof(rssi), "%d dBm", ap.rssi);
-    text(ap.ssid[0] ? ap.ssid : "<hidden>", 48, y, TFT_WHITE, 2); text(short_bssid, 560, y, kMuted, 2);
-    text(channel, 730, y, kCyan, 2); text(rssi, 840, y, ap.rssi >= -67 ? kGreen : kYellow, 2);
-    text(ap.secure ? "SECURED" : "OPEN", 1010, y, ap.secure ? kGreen : kRed, 2);
+    text(ap.ssid[0] ? ap.ssid : "<hidden>", 48, y, TFT_WHITE, 2); text(short_bssid, 500, y, kMuted, 2);
+    text(channel, 670, y, kCyan, 2); text(rssi, 760, y, signal_color(ap.rssi), 2);
+    text(ap.security, 900, y, ap.secure ? kGreen : kRed, 2); text(ap.phy, 1100, y, kMuted, 2);
   }
 }
 
 void draw_channels(const Snapshot& snapshot) {
-  panel(20, 100, 1240, 524); text("CHANNEL OBSERVATIONS", 40, 126, kCyan, 1);
-  text("AP count and strongest scan RSSI. Not airtime or occupancy.", 40, 154, kMuted, 1);
-  uint8_t row = 0;
-  for (uint8_t channel = 1; channel <= 14; ++channel) {
-    uint8_t count = 0; int16_t strongest = -127;
-    for (uint8_t i = 0; i < snapshot.access_point_count; ++i) {
-      const auto& ap = snapshot.access_points[i];
-      if (ap.channel == channel) { ++count; strongest = std::max(strongest, ap.rssi); }
-    }
-    if (!count) continue;
-    const int y = 184 + row++ * 30; char label[48]{};
-    snprintf(label, sizeof(label), "CH %2u   %u AP%s", channel, count, count == 1 ? "" : "s");
-    text(label, 52, y, TFT_WHITE, 2); M5.Display.drawRect(330, y - 9, 600, 18, kMuted);
-    M5.Display.fillRect(332, y - 7, std::min<int>(596, count * 100), 14, kGreen);
-    snprintf(label, sizeof(label), "%d dBm strongest", strongest); text(label, 960, y, strongest >= -67 ? kGreen : kYellow, 1);
+  panel(20, 100, 1240, 524); text("CHANNEL LANDSCAPE", 40, 126, kCyan, 1);
+  text("Observed AP channel footprints from scan beacons — not RF power, airtime, or occupancy.",
+       40, 154, kMuted, 1);
+  constexpr int kPlotLeft = 220, kPlotRight = 1230, kPlotTop = 190, kPlotBottom = 510;
+  constexpr int kSpacing = (kPlotRight - kPlotLeft) / 13;
+  const auto channel_x = [&](int channel) { return kPlotLeft + (channel - 1) * kSpacing; };
+  M5.Display.drawRect(kPlotLeft, kPlotTop, kPlotRight - kPlotLeft, kPlotBottom - kPlotTop, kMuted);
+  for (int channel = 1; channel <= 14; ++channel) {
+    const int x = channel_x(channel); char label[4]{}; snprintf(label, sizeof(label), "%d", channel);
+    M5.Display.drawFastVLine(x, kPlotTop + 1, kPlotBottom - kPlotTop - 2, 0x2104);
+    text(label, x, 174, kCyan, 1, middle_center);
   }
-  if (!row) text("No channel observations yet.", 52, 190, kMuted, 2);
+  const uint8_t shown = std::min<uint8_t>(snapshot.access_point_count, kAccessPointCapacity);
+  for (uint8_t i = 0; i < shown; ++i) {
+    const auto& ap = snapshot.access_points[i];
+    if (ap.channel == 0 || ap.channel > 14) continue;
+    int low = 0, high = 0; channel_footprint(ap, &low, &high);
+    const int left = std::max(kPlotLeft, channel_x(std::max(1, low)));
+    const int right = std::min(kPlotRight, channel_x(std::min(14, high)));
+    const int y = kPlotTop + 12 + i * 18;
+    char label[42]{};
+    snprintf(label, sizeof(label), "%s  %d", ap.ssid[0] ? ap.ssid : "<hidden>", ap.rssi);
+    text(label, 34, y + 5, signal_color(ap.rssi), 1);
+    M5.Display.fillRoundRect(left, y, std::max(4, right - left), 12, 4, signal_color(ap.rssi));
+    M5.Display.drawFastVLine(channel_x(ap.channel), y - 2, 16, TFT_WHITE);
+  }
+  uint16_t overlap[15]{}; uint16_t max_overlap = 1;
+  for (int channel = 1; channel <= 14; ++channel) {
+    for (uint8_t i = 0; i < shown; ++i) {
+      int low = 0, high = 0; channel_footprint(snapshot.access_points[i], &low, &high);
+      if (channel >= low && channel <= high)
+        overlap[channel] += static_cast<uint16_t>(std::max<int>(1, (snapshot.access_points[i].rssi + 100) / 8));
+    }
+    max_overlap = std::max(max_overlap, overlap[channel]);
+  }
+  text("AP-FOOTPRINT OVERLAP ESTIMATE", 40, 548, kCyan, 1);
+  for (int channel = 1; channel <= 14; ++channel) {
+    const int x = channel_x(channel);
+    const int height = overlap[channel] * 48 / max_overlap;
+    const uint16_t color = overlap[channel] * 3 > max_overlap * 2 ? kRed :
+                           overlap[channel] * 3 > max_overlap ? kYellow : kGreen;
+    M5.Display.fillRect(x - 20, 608 - height, 40, height, color);
+  }
+  text("Higher means more/stronger observed AP footprints; it is not channel utilization.",
+       40, 586, kMuted, 1);
 }
 
 void draw_devices(const Snapshot& snapshot) {
   panel(20, 100, 1240, 524); text("OBSERVED ACCESS POINTS", 40, 126, kCyan, 1);
   text("Station discovery requires separately proven promiscuous capture.", 40, 154, kMuted, 1);
-  text("SSID", 48, 194, kMuted, 1); text("BSSID", 560, 194, kMuted, 1);
-  text("CHANNEL", 730, 194, kMuted, 1); text("RSSI", 880, 194, kMuted, 1); text("SECURITY", 1050, 194, kMuted, 1);
+  text("SSID", 48, 194, kMuted, 1); text("BSSID", 430, 194, kMuted, 1);
+  text("CH", 600, 194, kMuted, 1); text("RSSI", 680, 194, kMuted, 1);
+  text("SECURITY", 820, 194, kMuted, 1); text("PHY / WIDTH", 1060, 194, kMuted, 1);
   const uint8_t shown = std::min<uint8_t>(snapshot.access_point_count, 10);
   for (uint8_t i = 0; i < shown; ++i) {
     const auto& ap = snapshot.access_points[i]; char short_bssid[12]{}, value[16]{}; const int y = 232 + i * 36;
     bssid(ap.bssid, short_bssid, sizeof(short_bssid)); snprintf(value, sizeof(value), "%u", ap.channel);
-    text(ap.ssid[0] ? ap.ssid : "<hidden>", 48, y, TFT_WHITE, 2); text(short_bssid, 560, y, kMuted, 2);
-    text(value, 730, y, kCyan, 2); snprintf(value, sizeof(value), "%d dBm", ap.rssi);
-    text(value, 880, y, ap.rssi >= -67 ? kGreen : kYellow, 2); text(ap.secure ? "SECURED" : "OPEN", 1050, y, ap.secure ? kGreen : kRed, 2);
+    text(ap.ssid[0] ? ap.ssid : "<hidden>", 48, y, TFT_WHITE, 2); text(short_bssid, 430, y, kMuted, 2);
+    text(value, 600, y, kCyan, 2); snprintf(value, sizeof(value), "%d dBm", ap.rssi);
+    text(value, 680, y, signal_color(ap.rssi), 2); text(ap.security, 820, y, ap.secure ? kGreen : kRed, 2);
+    snprintf(value, sizeof(value), "%s / HT%d", ap.phy, ap.secondary_channel_offset ? 40 : 20);
+    text(value, 1060, y, kMuted, 2);
   }
 }
 
@@ -202,6 +263,10 @@ void update(const Snapshot& snapshot) {
 void update_header(const Snapshot& snapshot) {
   if (g_active) draw_header(snapshot);
 }
+bool select_page(uint8_t page, const Snapshot& snapshot) {
+  if (!g_active || page >= static_cast<uint8_t>(Page::count)) return false;
+  g_page = static_cast<Page>(page); draw_page(snapshot); draw_tabs(); return true;
+}
 void leave() { g_active = false; }
 bool active() { return g_active; }
 Action handle_touch(int32_t x, int32_t y, const Snapshot& snapshot) {
@@ -222,9 +287,14 @@ Action handle_touch(int32_t x, int32_t y, const Snapshot& snapshot) {
   return {};
 }
 bool self_check() {
+  AccessPoint ht40{};
+  ht40.channel = 6;
+  ht40.secondary_channel_offset = 4;
+  int low = 0, high = 0;
+  channel_footprint(ht40, &low, &high);
   return kAccessPointCapacity == 16 && static_cast<uint8_t>(Page::count) == 5 &&
          tab_at(21) == Page::overview && tab_at(20 + 248 * 4) == Page::settings &&
-         tab_at(1280) == Page::count && audio_header::self_check() &&
+         tab_at(1280) == Page::count && low == 4 && high == 12 &&
          static_cast<uint8_t>(ActionKind::open_visualizer) == 5;
 }
 

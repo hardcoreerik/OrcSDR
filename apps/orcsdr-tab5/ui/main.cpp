@@ -1388,13 +1388,16 @@ bool wifi_c6_power_prepared = false;
 bool wifi_scan_running = false;
 std::atomic<bool> wifi_scan_requested{false};
 std::atomic<bool> wifi_connect_requested{false};
+std::atomic<bool> wifi_connect_pause_requested{false};
 bool wifi_configured = false;
 bool settings_wifi_power_enabled = true;
 bool settings_wifi_start_at_boot = false;
 bool settings_wifi_external_antenna = false;
 bool wifi_connected = false;
 bool wifi_connecting = false;
-bool wifi_radio_paused = false;
+// Power Off remains a separate, conservative path until its freeze is isolated.
+bool wifi_poweroff_radio_paused = false;
+bool wifi_connect_radio_paused = false;
 bool radio_io_resume_pending = false;
 bool radio_io_speaker_resume_pending = false;
 bool wifi_save_after_connect = false;
@@ -1418,11 +1421,16 @@ struct WifiScanResult {
   uint8_t bssid[6]{};
   int16_t rssi = 0;
   uint8_t channel = 0;
+  int8_t secondary_channel_offset = 0;
+  char security[24]{};
+  char phy[12]{};
   bool secure = false;
 };
 EXT_RAM_BSS_ATTR WifiScanResult wifi_scan_results[orcsdr::rf24::kAccessPointCapacity]{};
 uint8_t wifi_scan_result_count = 0;
 uint32_t wifi_scan_started_ms = 0;
+uint32_t wifi_last_scan_completed_ms = 0;
+uint16_t wifi_last_scan_duration_ms = 0;
 uint32_t wifi_scan_revision = 0;
 uint8_t settings_brightness = 180;
 uint8_t settings_rotation = 1;
@@ -4890,12 +4898,23 @@ orcsdr::rf24::Snapshot rf24_dashboard_snapshot() {
   snapshot.revision = wifi_scan_revision;
   snapshot.access_point_count = std::min<uint8_t>(wifi_scan_result_count,
                                                    orcsdr::rf24::kAccessPointCapacity);
+  snapshot.total_access_point_count = wifi_network_count > 0
+                                          ? static_cast<uint16_t>(wifi_network_count) : 0;
+  snapshot.scan_complete = wifi_last_scan_completed_ms != 0;
+  snapshot.scan_age_seconds = snapshot.scan_complete
+                                  ? static_cast<uint16_t>(std::min<uint32_t>(
+                                        65535u, (millis() - wifi_last_scan_completed_ms) / 1000u))
+                                  : 0;
+  snapshot.scan_duration_ms = wifi_last_scan_duration_ms;
   for (uint8_t i = 0; i < snapshot.access_point_count; ++i) {
     auto& access_point = snapshot.access_points[i];
     strlcpy(access_point.ssid, wifi_scan_results[i].ssid, sizeof(access_point.ssid));
     memcpy(access_point.bssid, wifi_scan_results[i].bssid, sizeof(access_point.bssid));
     access_point.rssi = wifi_scan_results[i].rssi;
     access_point.channel = wifi_scan_results[i].channel;
+    access_point.secondary_channel_offset = wifi_scan_results[i].secondary_channel_offset;
+    strlcpy(access_point.security, wifi_scan_results[i].security, sizeof(access_point.security));
+    strlcpy(access_point.phy, wifi_scan_results[i].phy, sizeof(access_point.phy));
     access_point.secure = wifi_scan_results[i].secure;
   }
   std::sort(snapshot.access_points, snapshot.access_points + snapshot.access_point_count,
@@ -7388,13 +7407,15 @@ void initialize_rtl_sdr_host() {
     }
     (void)xQueueSend(adsb_iq_free, &i, 0);
   }
-  if (xTaskCreatePinnedToCore(adsb_decoder_task, "adsb_decode", 6144, nullptr, 4, nullptr, 1) !=
-      pdPASS) {
+  if (xTaskCreatePinnedToCoreWithCaps(adsb_decoder_task, "adsb_decode", 6144, nullptr, 4,
+                                      nullptr, 1,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     set_rtl_sdr_status("ADS-B: decoder task failed");
     return;
   }
-  if (xTaskCreatePinnedToCore(p25_voice_task, "p25_voice", 8192, nullptr, 6, nullptr, 1) !=
-      pdPASS) {
+  if (xTaskCreatePinnedToCoreWithCaps(p25_voice_task, "p25_voice", 8192, nullptr, 6,
+                                      nullptr, 1,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     set_rtl_sdr_status("P25: voice task failed");
     return;
   }
@@ -7432,8 +7453,9 @@ void initialize_rtl_sdr_host() {
   set_rtl_sdr_status("RTL-SDR: driver host active, waiting");
   // LoRa/dashboard formatting reaches newlib's float formatter on this task.
   // 12 KiB still overruns the guard during LoRa navigation; retain 4 KiB headroom.
-  if (xTaskCreatePinnedToCore(rtl_driver_app_task, "rtl_app", 16384, nullptr, kRtlAppTaskPrio,
-                              nullptr, 1) != pdPASS) {
+  if (xTaskCreatePinnedToCoreWithCaps(rtl_driver_app_task, "rtl_app", 16384, nullptr,
+                                      kRtlAppTaskPrio, nullptr, 1,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     set_rtl_sdr_status("RTL-SDR: app task failed");
   }
   Serial.println("RTL_CORE_SPLIT usb=core0 callback=enqueue dsp_audio_ui_hosted=core1");
@@ -7480,17 +7502,8 @@ void prepare_wifi_coprocessor() {
   Serial.println("RTL_WIFI_C6_POWER_CYCLE ok");
 }
 
-bool pause_radio_for_wifi();
-void resume_radio_after_wifi();
-
 void initialize_wifi() {
   if (wifi_station_ready) return;
-  const bool wifi_pause_already_owned = wifi_radio_paused;
-  if (!pause_radio_for_wifi()) {
-    strlcpy(wifi_status_message, "Radio pause failed", sizeof(wifi_status_message));
-    Serial.println("RTL_WIFI_INIT_ERROR radio_pause_failed");
-    return;
-  }
   prepare_wifi_coprocessor();
   const uint32_t dma_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
   const uint32_t dma_largest =
@@ -7522,7 +7535,6 @@ void initialize_wifi() {
   }
   Serial.printf("RTL_WIFI_INIT station=%d core=%d\n", wifi_station_ready ? 1 : 0,
                 xPortGetCoreID());
-  if (!wifi_pause_already_owned) resume_radio_after_wifi();
   log_dram_budget("after_wifi");
   draw_wifi_state();
 }
@@ -7532,31 +7544,53 @@ void log_wifi_coexistence(const char* event, uint32_t elapsed_ms = 0) {
   if (g_rtl != nullptr) (void)esp_rtl_sdr_get_metrics(g_rtl, &metrics);
   Serial.printf("RTL_WIFI_COEX event=%s elapsed_ms=%u effective_sps=%u usb_overruns=%u "
                 "usb_drops=%u audio_chunks=%u audio_drops=%u dsp_block_us_max=%u "
-                "ui_fps=%u\n",
+                "ui_fps=%u connect_pause=%d rtl_ready=%d capture_state=%u capture_requested=%d band=%s "
+                "frequency_hz=%u audio_enabled=%d speaker_running=%d\n",
                 event, elapsed_ms, metrics.effective_sps, metrics.overruns,
                 metrics.consumer_drops, rtl_audio.queued_chunks, rtl_audio.dropped_chunks,
-                rtl_dsp_block_us_max.load(std::memory_order_relaxed), rtl_spectrum_fps);
+                rtl_dsp_block_us_max.load(std::memory_order_relaxed), rtl_spectrum_fps,
+                wifi_connect_radio_paused ? 1 : 0,
+                rtl_device_ready() ? 1 : 0,
+                static_cast<unsigned>(rtl_capture_state.load(std::memory_order_acquire)),
+                rtl_capture_requested.load(std::memory_order_acquire) ? 1 : 0,
+                rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz,
+                rtl_audio_enabled.load(std::memory_order_acquire) ? 1 : 0,
+                M5.Speaker.isRunning() ? 1 : 0);
+}
+
+void print_wifi_coexistence_status() {
+  Serial.printf("RTL_WIFI_COEX_STATUS station=%d scanning=%d connecting=%d connected=%d "
+                "connect_pause=%d rtl_ready=%d capture_state=%u capture_requested=%d band=%s frequency_hz=%u "
+                "audio_enabled=%d speaker_running=%d audio_chunks=%u audio_drops=%u\n",
+                wifi_station_ready ? 1 : 0, wifi_scan_running ? 1 : 0,
+                wifi_connecting ? 1 : 0, wifi_connected ? 1 : 0,
+                wifi_connect_radio_paused ? 1 : 0,
+                rtl_device_ready() ? 1 : 0,
+                static_cast<unsigned>(rtl_capture_state.load(std::memory_order_acquire)),
+                rtl_capture_requested.load(std::memory_order_acquire) ? 1 : 0,
+                rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz,
+                rtl_audio_enabled.load(std::memory_order_acquire) ? 1 : 0,
+                M5.Speaker.isRunning() ? 1 : 0, rtl_audio.queued_chunks,
+                rtl_audio.dropped_chunks);
 }
 
 bool pause_radio_for_catalog();
 void resume_radio_after_catalog();
+bool pause_radio_for_io(bool& paused);
+void resume_radio_after_io(bool& paused);
 void start_wifi_inventory() {
   if (!settings_wifi_power_enabled) return;
-  if (!pause_radio_for_wifi()) return;
   if (!wifi_station_ready) initialize_wifi();
-  if (!wifi_station_ready) {
-    resume_radio_after_wifi();
-    return;
-  }
+  if (!wifi_station_ready) return;
   if (wifi_scan_running) return;
   wifi_scan_result_count = 0;
+  wifi_network_count = 0;
   wifi_scan_started_ms = millis();
   ++wifi_scan_revision;
   strlcpy(wifi_status_message, "Scanning networks", sizeof(wifi_status_message));
   wifi_network_count = orcsdr::wifi::begin_scan() ? -2 : -1;
   if (wifi_network_count != -2) {
     strlcpy(wifi_status_message, "Scan unavailable", sizeof(wifi_status_message));
-    resume_radio_after_wifi();
   }
   begin_power_monitor("wifi_scan");
   wifi_scan_running = wifi_network_count == -2;
@@ -7565,12 +7599,13 @@ void start_wifi_inventory() {
   if (orcsdr::rf24::active()) draw_rf24_dashboard(false);
 }
 
-void start_wifi_connection() {
+void start_wifi_connection(bool pause_radio = false) {
   if (!settings_wifi_power_enabled) return;
-  if (!pause_radio_for_wifi()) return;
   if (!wifi_station_ready) initialize_wifi();
-  if (!wifi_station_ready || !wifi_ssid[0]) {
-    resume_radio_after_wifi();
+  if (!wifi_station_ready || !wifi_ssid[0]) return;
+  if (pause_radio && !pause_radio_for_io(wifi_connect_radio_paused)) {
+    strlcpy(wifi_status_message, "Radio pause failed", sizeof(wifi_status_message));
+    Serial.println("RTL_WIFI_CONNECT_ERROR radio_pause_failed");
     return;
   }
   wifi_scan_running = false;
@@ -7589,7 +7624,8 @@ void start_wifi_connection() {
   if (orcsdr::wifi::connected()) orcsdr::wifi::disconnect();
   if (!orcsdr::wifi::connect(wifi_ssid, wifi_password)) {
     wifi_connecting = false;
-    resume_radio_after_wifi();
+    resume_radio_after_io(wifi_connect_radio_paused);
+    log_wifi_coexistence("connect_start_failed");
   }
   begin_power_monitor("wifi_connect");
   log_wifi_coexistence("connect_started");
@@ -7597,7 +7633,7 @@ void start_wifi_connection() {
 }
 
 void stop_wifi() {
-  if (!pause_radio_for_wifi()) {
+  if (!pause_radio_for_io(wifi_poweroff_radio_paused)) {
     strlcpy(wifi_status_message, "Radio pause failed", sizeof(wifi_status_message));
     Serial.println("RTL_WIFI_OFF_ERROR radio_pause_failed");
     return;
@@ -7611,24 +7647,22 @@ void stop_wifi() {
   wifi_connected = false;
   wifi_connecting = false;
   wifi_scan_running = false;
-  resume_radio_after_wifi();
+  resume_radio_after_io(wifi_connect_radio_paused);
+  resume_radio_after_io(wifi_poweroff_radio_paused);
   strlcpy(wifi_status_message, "Wi-Fi off", sizeof(wifi_status_message));
   Serial.println("RTL_WIFI_OFF");
 }
 
 bool disconnect_wifi() {
   wifi_connect_requested.store(false, std::memory_order_release);
+  wifi_connect_pause_requested.store(false, std::memory_order_release);
   wifi_connecting = false;
   wifi_save_after_connect = false;
   if (wifi_connected) {
-    if (!pause_radio_for_wifi()) {
-      strlcpy(wifi_status_message, "Radio pause failed", sizeof(wifi_status_message));
-      return false;
-    }
     orcsdr::wifi::disconnect();
   }
   wifi_connected = false;
-  if (wifi_radio_paused) resume_radio_after_wifi();
+  resume_radio_after_io(wifi_connect_radio_paused);
   strlcpy(wifi_status_message, "Wi-Fi disconnected", sizeof(wifi_status_message));
   return true;
 }
@@ -7643,9 +7677,8 @@ void start_wifi_connection(const char* ssid, const char* password, bool save_on_
 
 bool pause_radio_for_io(bool& paused) {
   if (paused) return true;
-  const bool already_owned = wifi_radio_paused || catalog_radio_paused;
   paused = true;
-  if (already_owned) return true;
+  if (catalog_radio_paused) return true;
   const bool radio_was_active =
       rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running ||
       rtl_capture_requested.load(std::memory_order_acquire) ||
@@ -7678,7 +7711,7 @@ bool pause_radio_for_io(bool& paused) {
 void resume_radio_after_io(bool& paused) {
   if (!paused) return;
   paused = false;
-  if (wifi_radio_paused || catalog_radio_paused) return;
+  if (catalog_radio_paused) return;
   const bool resume_radio = radio_io_resume_pending;
   const bool resume_speaker = radio_io_speaker_resume_pending;
   radio_io_resume_pending = false;
@@ -7694,8 +7727,6 @@ void resume_radio_after_io(bool& paused) {
 
 bool pause_radio_for_catalog() { return pause_radio_for_io(catalog_radio_paused); }
 void resume_radio_after_catalog() { resume_radio_after_io(catalog_radio_paused); }
-bool pause_radio_for_wifi() { return pause_radio_for_io(wifi_radio_paused); }
-void resume_radio_after_wifi() { resume_radio_after_io(wifi_radio_paused); }
 
 void poll_wifi() {
   if (!settings_wifi_power_enabled) {
@@ -7704,7 +7735,9 @@ void poll_wifi() {
     return;
   }
   if (wifi_scan_requested.exchange(false, std::memory_order_acq_rel)) start_wifi_inventory();
-  if (wifi_connect_requested.exchange(false, std::memory_order_acq_rel)) start_wifi_connection();
+  if (wifi_connect_requested.exchange(false, std::memory_order_acq_rel)) {
+    start_wifi_connection(wifi_connect_pause_requested.exchange(false, std::memory_order_acq_rel));
+  }
   if (!wifi_station_ready) return;
   if (!wifi_scan_running && !wifi_connecting && !wifi_connected) return;
   static uint32_t last_wifi_status_ms = 0;
@@ -7719,6 +7752,9 @@ void poll_wifi() {
     if (result >= 0) {
       wifi_scan_running = false;
       wifi_network_count = result;
+      wifi_last_scan_completed_ms = millis();
+      wifi_last_scan_duration_ms = static_cast<uint16_t>(std::min<uint32_t>(
+          65535u, wifi_last_scan_completed_ms - wifi_scan_started_ms));
       wifi_scan_result_count = result > 0
                                    ? static_cast<uint8_t>(std::min<int>(
                                          result, std::size(wifi_scan_results)))
@@ -7732,16 +7768,18 @@ void poll_wifi() {
         memcpy(wifi_scan_results[i].bssid, scan[i].bssid, sizeof(wifi_scan_results[i].bssid));
         wifi_scan_results[i].rssi = scan[i].rssi;
         wifi_scan_results[i].channel = scan[i].channel;
+        wifi_scan_results[i].secondary_channel_offset = scan[i].secondary_channel_offset;
+        strlcpy(wifi_scan_results[i].security, scan[i].security,
+                sizeof(wifi_scan_results[i].security));
+        strlcpy(wifi_scan_results[i].phy, scan[i].phy, sizeof(wifi_scan_results[i].phy));
         wifi_scan_results[i].secure = scan[i].secure;
       }
       Serial.printf("RTL_WIFI_SCAN_RESULTS count=%u\n",
                     static_cast<unsigned>(wifi_scan_result_count));
       log_wifi_coexistence("scan_complete", millis() - wifi_scan_started_ms);
-      resume_radio_after_wifi();
       state_changed = true;
     } else if (millis() - wifi_scan_started_ms >= 15000u) {
       wifi_scan_running = false;
-      resume_radio_after_wifi();
       strlcpy(wifi_status_message, "Scan timed out", sizeof(wifi_status_message));
       log_wifi_coexistence("scan_timeout", millis() - wifi_scan_started_ms);
       state_changed = true;
@@ -7750,7 +7788,7 @@ void poll_wifi() {
   const bool connected = orcsdr::wifi::connected();
   if (wifi_connecting && connected) {
     wifi_connecting = false;
-    Serial.println("RTL_WIFI_RADIO_PAUSED connected");
+    Serial.println("RTL_WIFI_CONNECTED");
     if (wifi_save_after_connect) {
       int existing = -1;
       for (uint8_t i = 0; i < wifi_profile_count; ++i)
@@ -7770,13 +7808,13 @@ void poll_wifi() {
     wifi_save_after_connect = false;
     strlcpy(wifi_status_message, "Connection successful", sizeof(wifi_status_message));
     log_wifi_coexistence("connect_complete", millis() - wifi_connect_started_ms);
+    resume_radio_after_io(wifi_connect_radio_paused);
     state_changed = true;
   } else if (wifi_connecting &&
              (millis() - wifi_connect_started_ms >= 15000u ||
               orcsdr::wifi::connect_failed())) {
     const bool discard_candidate = wifi_save_after_connect;
     wifi_connecting = false;
-    resume_radio_after_wifi();
     wifi_save_after_connect = false;
     orcsdr::wifi::disconnect();
     if (discard_candidate) {
@@ -7792,6 +7830,7 @@ void poll_wifi() {
     }
     strlcpy(wifi_status_message, "Connection failed", sizeof(wifi_status_message));
     log_wifi_coexistence("connect_failed", millis() - wifi_connect_started_ms);
+    resume_radio_after_io(wifi_connect_radio_paused);
     state_changed = true;
   }
   if (connected != wifi_connected) {
@@ -9513,10 +9552,6 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
 #else
   if (!g_rtl_device_ready.load(std::memory_order_acquire) || g_rtl == nullptr) return;
 #endif
-  // A successful Wi-Fi connection deliberately leaves the receiver paused.
-  // Release that owner only after the new request is fully staged; a catalog
-  // owner can still keep capture stopped until its SD work completes.
-  const bool release_wifi_pause = wifi_radio_paused;
   if (band == RtlBand::lora) {
     load_lora_config();
     if (frequency_hz == kLoraDefaultHz) frequency_hz = lora_config_frequency_hz;
@@ -9558,9 +9593,6 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
   rtl_ui_band = band;
   rtl_ui_frequency_hz = frequency_hz;
   rtl_continuous_requested.store(true, std::memory_order_release);
-  if (release_wifi_pause) {
-    resume_radio_after_wifi();
-  }
   if (catalog_radio_paused) {
     radio_io_resume_pending = true;
   } else {
@@ -11101,6 +11133,24 @@ void process_command(char* command) {
     Serial.printf("RTL_UI_OPEN_OK target=%s\n", name);
     return;
   }
+  if (strncmp(command, "RTL_RF24_PAGE ", 14) == 0 && !authenticated) {
+    Serial.println("RTL_RF24_PAGE_ERROR auth_required");
+    return;
+  }
+  if (strncmp(command, "RTL_RF24_PAGE ", 14) == 0) {
+    unsigned page = 0;
+    if (sscanf(command + 14, "%u", &page) != 1 ||
+        page >= static_cast<unsigned>(orcsdr::rf24::Page::count)) {
+      Serial.println("RTL_RF24_PAGE_INVALID use 0-4");
+      return;
+    }
+    if (!orcsdr::rf24::select_page(static_cast<uint8_t>(page), rf24_dashboard_snapshot())) {
+      Serial.println("RTL_RF24_PAGE_ERROR dashboard_inactive");
+      return;
+    }
+    Serial.printf("RTL_RF24_PAGE_OK page=%u\n", page);
+    return;
+  }
   if (strncmp(command, "RTL_UI ACTION ", 14) == 0 && !authenticated) {
     Serial.println("RTL_UI_ACTION_ERROR auth_required");
     return;
@@ -11183,29 +11233,39 @@ void process_command(char* command) {
     Serial.println("RTL_WIFI_SCAN_QUEUED");
     return;
   }
-  if (strcmp(command, "RTL_WIFI_CONNECT_SAVED") == 0) {
+  if (strcmp(command, "RTL_WIFI_CONNECT_SAVED") == 0 ||
+      strcmp(command, "RTL_WIFI_CONNECT_SAVED PAUSE") == 0) {
     if (wifi_profile_count == 0) {
       Serial.println("RTL_WIFI_CONNECT_ERROR no_saved_profile");
       return;
     }
     select_wifi_profile(0);
+    const bool pause_radio = strcmp(command, "RTL_WIFI_CONNECT_SAVED PAUSE") == 0;
+    wifi_connect_pause_requested.store(pause_radio, std::memory_order_release);
     wifi_connect_requested.store(true, std::memory_order_release);
-    Serial.println("RTL_WIFI_CONNECT_QUEUED saved_profile=0");
+    Serial.printf("RTL_WIFI_CONNECT_QUEUED saved_profile=0 mode=%s\n",
+                  pause_radio ? "pause" : "live");
     return;
   }
   if (strcmp(command, "RTL_WIFI_RESULTS") == 0) {
-    Serial.printf("RTL_WIFI_RESULTS_BEGIN count=%u revision=%u\n",
+    Serial.printf("RTL_WIFI_RESULTS_BEGIN count=%u total=%u revision=%u age_s=%u duration_ms=%u\n",
                   static_cast<unsigned>(wifi_scan_result_count),
-                  static_cast<unsigned>(wifi_scan_revision));
+                  static_cast<unsigned>(wifi_network_count),
+                  static_cast<unsigned>(wifi_scan_revision),
+                  static_cast<unsigned>(wifi_last_scan_completed_ms == 0 ? 0 :
+                      (millis() - wifi_last_scan_completed_ms) / 1000),
+                  static_cast<unsigned>(wifi_last_scan_duration_ms));
     for (uint8_t i = 0; i < wifi_scan_result_count; ++i) {
       Serial.printf("RTL_WIFI_AP index=%u ssid_hex=", static_cast<unsigned>(i));
       print_hex(reinterpret_cast<const uint8_t*>(wifi_scan_results[i].ssid),
                 strlen(wifi_scan_results[i].ssid));
       Serial.print(" bssid=");
       print_hex(wifi_scan_results[i].bssid, sizeof(wifi_scan_results[i].bssid));
-      Serial.printf(" rssi=%d channel=%u secure=%d\n", wifi_scan_results[i].rssi,
+      Serial.printf(" rssi=%d channel=%u secure=%d security=%s phy=%s ht40=%d\n", wifi_scan_results[i].rssi,
                     static_cast<unsigned>(wifi_scan_results[i].channel),
-                    wifi_scan_results[i].secure ? 1 : 0);
+                    wifi_scan_results[i].secure ? 1 : 0,
+                    wifi_scan_results[i].security, wifi_scan_results[i].phy,
+                    wifi_scan_results[i].secondary_channel_offset == 0 ? 0 : 1);
     }
     Serial.println("RTL_WIFI_RESULTS_END");
     return;
@@ -11243,6 +11303,10 @@ void process_command(char* command) {
                   settings_wifi_start_at_boot ? 1 : 0,
                   settings_wifi_external_antenna ? "external" : "internal",
                   static_cast<unsigned>(wifi_scan_result_count));
+    return;
+  }
+  if (strcmp(command, "RTL_WIFI_COEX_STATUS") == 0) {
+    print_wifi_coexistence_status();
     return;
   }
   if (strcmp(command, "RTL_SCREEN_STATUS") == 0) {
@@ -11768,6 +11832,7 @@ void process_command(char* command) {
     Serial.println("RTL_DRIVER STATUS|SELF_CHECK  - v0.7.9 capabilities, shadows and stream metrics");
     Serial.println("RTL_DRIVER GAINMODE AUTO|MANUAL | GAIN <0..496> | RTLAGC ON|OFF | BIAS ON|OFF (auth)");
     Serial.println("RTL_HEALTH                    - heap, task and reset diagnostics");
+    Serial.println("RTL_RESET                     - authenticated software reset");
     Serial.println("RTL_SERIAL VERBOSITY [QUIET|NORMAL|DEBUG|TRACE] - query/set persistent logging (set auth)");
     Serial.println("RTL_SCREEN_STATUS             - active screen ownership diagnostics");
     Serial.println("RTL_UI_REGRESSION CHECK|RUN   - passive checks or Home->screen restore test");
@@ -11776,8 +11841,8 @@ void process_command(char* command) {
     Serial.println("RTL_LAB OPEN|CLOSE|STATUS|PAGE|GET|SET|ACTION|SELF_CHECK - RF Lab UI/control");
     Serial.println("RTL_LAB REFERENCE|SNAPSHOT|RUN|RECIPE|RECORDS - RF Lab evidence workflow (mutations auth)");
     Serial.println("RTL_UI ACTION <domain> <action> [value] - mirror FM/P25/LoRa/Settings touch action (auth)");
-    Serial.println("RTL_WIFI_STATUS|SCAN|RESULTS|PROFILES - Wi-Fi state and bounded AP/profile lists");
-    Serial.println("RTL_WIFI_CONNECT_SAVED|DISCONNECT - connect profile 0 or disconnect (disconnect auth)");
+    Serial.println("RTL_WIFI_STATUS|COEX_STATUS|SCAN|RESULTS|PROFILES - Wi-Fi and radio coexistence state");
+    Serial.println("RTL_WIFI_CONNECT_SAVED [PAUSE]|DISCONNECT - connect profile 0 live or with a temporary SDR pause");
     Serial.println("SET_WIFI <ssid_hex> <pass_hex> <hmac> - signed slot-0 provisioning (auth)");
     Serial.println("RTL_TUNE <BAND> <HZ>           - tune band+freq (auth) BAND=FM|AM|WX|CB|LORA|BROWSE|ADSB|P25");
     Serial.println("RTL_FREQ                       - query current band/frequency/mode");
@@ -11812,6 +11877,15 @@ void process_command(char* command) {
     Serial.println("SD_LIST/SD_GET_*/SD_PUT_*      - SD card file transfer (see copy_to_tab5_sd.ps1)");
     Serial.println("RTL_HELP_END");
     return;
+  }
+  if (strcmp(command, "RTL_RESET") == 0) {
+    if (!authenticated) {
+      Serial.println("RTL_RESET_ERROR auth_required");
+      return;
+    }
+    Serial.println("RTL_RESETTING");
+    delay(25);
+    esp_restart();
   }
   if (strcmp(command, "RTL_P25_STATUS") == 0) {
     const auto decoded = orcsdr::p25decoder::snapshot();
