@@ -265,7 +265,9 @@ bool Decoder::self_check() {
          short_reply.icao == 0x4840d6))
     return false;
 
-  uint8_t cu8[246 * 2]{};
+  // process_cu8's frame-search loop needs kFrameSamples + 1 (247) samples
+  // to run a single pass; 246 would leave the buffer one sample short.
+  uint8_t cu8[247 * 2]{};
   for (size_t i = 0; i < sizeof(cu8); i += 2) cu8[i] = cu8[i + 1] = 127;
   for (const size_t index : {size_t{0}, size_t{2}, size_t{7}, size_t{9}})
     cu8[index * 2] = 220;
