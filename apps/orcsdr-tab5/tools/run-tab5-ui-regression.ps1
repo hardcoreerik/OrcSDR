@@ -174,7 +174,8 @@ function Get-UiState {
 function Test-ExclusiveScreen($State, [string]$Screen) {
   # RF24 is an overlay: FM remains active so the receiver/audio stream continues.
   if ($Screen -eq 'WIFI_ANALYSIS') {
-    return $State.Active[0] -eq 0 -and $State.Active[2] -eq 0 -and
+    return $State.Active[0] -eq 0 -and $State.Active[1] -eq 1 -and
+           $State.Active[2] -eq 0 -and
            $State.Active[3] -eq 0 -and $State.Active[4] -eq 0 -and
            $State.Active[5] -eq 1
   }
@@ -392,8 +393,11 @@ function Assert-WifiCoexistence($initialUi) {
         $restored = Wait-WifiConnectOutcome 'live'
         if ($restored -notmatch 'event=connect_complete ') { throw "Could not restore Wi-Fi: $restored" }
       }
-      [void](Open-Ui $initialUi.Screen $initialUi.Band)
-      if ($restoreSoundOff) { [void](Send-And-Wait 'RTL_SOUND OFF' '^RTL_SOUND_OK enabled=0$') }
+      try {
+        [void](Open-Ui $initialUi.Screen $initialUi.Band)
+      } finally {
+        if ($restoreSoundOff) { [void](Send-And-Wait 'RTL_SOUND OFF' '^RTL_SOUND_OK enabled=0$') }
+      }
     } catch { Write-Warning "Could not restore initial Wi-Fi/UI state: $($_.Exception.Message)" }
   }
 }
