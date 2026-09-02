@@ -63,13 +63,13 @@ int32_t NvsStore::get_i32(const char* key, int32_t fallback) const { int32_t val
 bool NvsStore::get_bool(const char* key, bool fallback) const { return get_u8(key, fallback ? 1 : 0) != 0; }
 
 bool NvsStore::commit(esp_err_t result) { return open_ && result == ESP_OK && nvs_commit(handle_) == ESP_OK; }
-bool NvsStore::put_bytes(const char* key, const void* value, size_t size) { return key && value && commit(nvs_set_blob(handle_, key, value, size)); }
-bool NvsStore::put_string(const char* key, const char* value) { return key && value && commit(nvs_set_str(handle_, key, value)); }
-bool NvsStore::put_u8(const char* key, uint8_t value) { return key && commit(nvs_set_u8(handle_, key, value)); }
-bool NvsStore::put_u16(const char* key, uint16_t value) { return key && commit(nvs_set_u16(handle_, key, value)); }
-bool NvsStore::put_u32(const char* key, uint32_t value) { return key && commit(nvs_set_u32(handle_, key, value)); }
-bool NvsStore::put_i32(const char* key, int32_t value) { return key && commit(nvs_set_i32(handle_, key, value)); }
+bool NvsStore::put_bytes(const char* key, const void* value, size_t size) { return open_ && key && value && commit(nvs_set_blob(handle_, key, value, size)); }
+bool NvsStore::put_string(const char* key, const char* value) { return open_ && key && value && commit(nvs_set_str(handle_, key, value)); }
+bool NvsStore::put_u8(const char* key, uint8_t value) { return open_ && key && commit(nvs_set_u8(handle_, key, value)); }
+bool NvsStore::put_u16(const char* key, uint16_t value) { return open_ && key && commit(nvs_set_u16(handle_, key, value)); }
+bool NvsStore::put_u32(const char* key, uint32_t value) { return open_ && key && commit(nvs_set_u32(handle_, key, value)); }
+bool NvsStore::put_i32(const char* key, int32_t value) { return open_ && key && commit(nvs_set_i32(handle_, key, value)); }
 bool NvsStore::put_bool(const char* key, bool value) { return put_u8(key, value ? 1 : 0); }
-bool NvsStore::remove(const char* key) { return key && commit(nvs_erase_key(handle_, key)); }
+bool NvsStore::remove(const char* key) { return open_ && key && commit(nvs_erase_key(handle_, key)); }
 
 }  // namespace orcsdr

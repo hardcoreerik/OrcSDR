@@ -163,7 +163,10 @@ void Decoder::process_cu8(const uint8_t* data, size_t bytes, FrameCallback callb
     }
   }
   constexpr size_t kFrameSamples = 246;
-  for (size_t pos = 0; pos + kFrameSamples <= count; ++pos) {
+  // Bit interpolation for the last data bit reads one sample past the
+  // kFrameSamples preamble window (see interpolate()), so require that
+  // extra sample to be part of this call's freshly-filled data.
+  for (size_t pos = 0; pos + kFrameSamples + 1 <= count; ++pos) {
     const uint16_t* sample = magnitudes_ + pos;
     if (sample[0] <= sample[1] || sample[2] <= sample[1] || sample[2] <= sample[3] ||
         sample[7] <= sample[6] || sample[7] <= sample[8] || sample[9] <= sample[8] ||
@@ -206,7 +209,9 @@ void Decoder::process_cu8(const uint8_t* data, size_t bytes, FrameCallback callb
     if (callback) callback(decoded, context);
     pos += (valid_bits == 56 ? 131 : kFrameSamples) - 1;
   }
-  overlap_ = std::min(count, kFrameSamples - 1);
+  // Retain kFrameSamples samples (not kFrameSamples - 1) so the extra
+  // lookahead sample the interpolator needs is available on the next call.
+  overlap_ = std::min(count, kFrameSamples);
   std::memmove(magnitudes_, magnitudes_ + count - overlap_, overlap_ * sizeof(uint16_t));
 }
 
