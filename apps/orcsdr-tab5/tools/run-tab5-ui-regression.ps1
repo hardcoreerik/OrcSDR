@@ -18,7 +18,10 @@ param(
   [string]$LogPath,
   [switch]$SelfCheck,
   [switch]$Driver079,
+  [switch]$ResetDevice,
   [switch]$WifiOnly,
+  [switch]$WifiCoexistence,
+  [switch]$WifiCoexistenceDiagnostic,
   [switch]$DataOnly,
   [switch]$InstallLaneMap,
   [string]$LocationQuery = '97401',
@@ -61,7 +64,13 @@ function Test-FatalLine([string]$Line) {
 
 function Read-MatchingLine([string]$Pattern, [int]$Seconds = $TimeoutSeconds) {
   $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+  $nextKeepalive = [DateTime]::UtcNow.AddSeconds(1)
   while ([DateTime]::UtcNow -lt $deadline) {
+    if ([DateTime]::UtcNow -ge $nextKeepalive) {
+      # Long Wi-Fi operations can outlive the device's authenticated serial session.
+      $script:serial.WriteLine('PING')
+      $nextKeepalive = [DateTime]::UtcNow.AddSeconds(1)
+    }
     try {
       $line = $script:serial.ReadLine().Trim()
       if (!$line) { continue }
@@ -100,6 +109,21 @@ function Wait-DeviceReady([int]$Seconds = 60, [int]$MinimumUptimeMs = 0) {
   throw 'Timed out waiting for device readiness.'
 }
 
+function Drain-SerialOutput([int]$QuietMilliseconds = 300, [int]$MaximumMilliseconds = 2500) {
+  $deadline = [DateTime]::UtcNow.AddMilliseconds($MaximumMilliseconds)
+  $quietUntil = [DateTime]::UtcNow.AddMilliseconds($QuietMilliseconds)
+  while ([DateTime]::UtcNow -lt $deadline -and [DateTime]::UtcNow -lt $quietUntil) {
+    try {
+      $line = $script:serial.ReadLine().Trim()
+      if (!$line) { continue }
+      $script:linesSeen++
+      Write-SoakLine $line
+      if (Test-FatalLine $line) { throw "Device crash/reset detected: $line" }
+      $quietUntil = [DateTime]::UtcNow.AddMilliseconds($QuietMilliseconds)
+    } catch [System.TimeoutException] {}
+  }
+}
+
 function Connect-Authenticated {
   $keyFile = (Resolve-Path -LiteralPath $PairingKeyPath).Path
   $keyText = [IO.File]::ReadAllText($keyFile).Trim()
@@ -130,6 +154,7 @@ function Connect-Authenticated {
     $hmac.Dispose()
   }
   Write-SoakLine 'RTL_UI_SOAK_AUTH verified=1'
+  Drain-SerialOutput
 }
 
 function Get-UiState {
@@ -147,12 +172,17 @@ function Get-UiState {
 }
 
 function Test-ExclusiveScreen($State, [string]$Screen) {
+  # RF24 is an overlay: FM remains active so the receiver/audio stream continues.
+  if ($Screen -eq 'WIFI_ANALYSIS') {
+    return $State.Active[0] -eq 0 -and $State.Active[2] -eq 0 -and
+           $State.Active[3] -eq 0 -and $State.Active[4] -eq 0 -and
+           $State.Active[5] -eq 1
+  }
   $expected = switch ($Screen) {
     'FM' { @(0,1,0,0,0,0) }
     'P25' { @(0,0,1,0,0,0) }
     'ADSB' { @(0,0,0,1,0,0) }
     'LORA' { @(0,0,0,0,1,0) }
-    'WIFI_ANALYSIS' { @(0,0,0,0,0,1) }
     'SETTINGS' { @(1,0,0,0,0,0) }
     'HOME' { @(0,0,0,0,0,0) }
     default { return $true }
@@ -278,6 +308,120 @@ function Get-WifiStatus {
     AutoConnect = [int]$Matches[5]
     Antenna = $Matches[6]
     AccessPoints = [int]$Matches[7]
+  }
+}
+
+function Reset-DeviceBaseline {
+  Wait-DeviceReady 60
+  Connect-Authenticated
+  [void](Send-And-Wait 'RTL_RESET' '^RTL_RESETTING$')
+  Write-SoakLine 'RTL_UI_SOAK_RESET serial=1'
+  Start-Sleep -Seconds 1
+  $script:serial.DiscardInBuffer()
+  Wait-DeviceReady 60 11000
+  Write-SoakLine 'RTL_UI_SOAK_RESET_RESULT pass=1'
+}
+
+function Get-WifiCoexStatus {
+  $line = Send-And-Wait 'RTL_WIFI_COEX_STATUS' '^RTL_WIFI_COEX_STATUS '
+  if ($line -notmatch 'station=([01]).*scanning=([01]).*connecting=([01]).*connected=([01]).*connect_pause=([01]).*rtl_ready=([01]).*capture_state=(\d+).*capture_requested=([01]).*band=(\S+).*frequency_hz=(\d+).*audio_enabled=([01]).*speaker_running=([01]).*audio_chunks=(\d+).*audio_drops=(\d+)') {
+    throw "Malformed Wi-Fi coexistence status: $line"
+  }
+  return [pscustomobject]@{
+    Line = $line; Station = [int]$Matches[1]; Scanning = [int]$Matches[2]
+    Connecting = [int]$Matches[3]; Connected = [int]$Matches[4]; ConnectPause = [int]$Matches[5]
+    RtlReady = [int]$Matches[6]; CaptureState = [int]$Matches[7]; CaptureRequested = [int]$Matches[8]; Band = $Matches[9].ToUpperInvariant()
+    Frequency = [uint32]$Matches[10]; AudioEnabled = [int]$Matches[11]; SpeakerRunning = [int]$Matches[12]
+    AudioChunks = [uint64]$Matches[13]; AudioDrops = [uint64]$Matches[14]
+  }
+}
+
+function Assert-WifiCoexAudio([string]$Step) {
+  Assert-FmAudioProgress
+  $status = Get-WifiCoexStatus
+  if ($status.RtlReady -ne 1 -or $status.CaptureState -ne 3 -or $status.Band -ne 'FM' -or
+      $status.AudioEnabled -ne 1 -or $status.SpeakerRunning -ne 1) {
+    throw "Wi-Fi coexistence failed at ${Step}: $($status.Line)"
+  }
+  Write-SoakLine "RTL_WIFI_COEX_TEST step=$Step pass=1 chunks=$($status.AudioChunks) drops=$($status.AudioDrops)"
+}
+
+function Assert-WifiCoexistence($initialUi) {
+  $initialWifi = Get-WifiStatus
+  if ($initialWifi.Power -ne 1) { throw 'Wi-Fi coexistence requires Connectivity Power to be on.' }
+  if ($initialWifi.Profiles -eq 0) { throw 'Wi-Fi coexistence requires one saved Wi-Fi profile.' }
+  try {
+    [void](Open-Ui 'FM' 'FM')
+    Assert-WifiCoexAudio 'fm_baseline'
+    if ($initialWifi.Connected -eq 1) {
+      [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
+      if ((Get-WifiStatus).Connected -ne 0) { throw 'Wi-Fi disconnect did not complete.' }
+      Assert-WifiCoexAudio 'disconnect'
+    }
+    [void](Send-And-Wait 'RTL_WIFI_CONNECT_SAVED' '^RTL_WIFI_CONNECT_QUEUED ' 10)
+    [void](Read-MatchingLine '^RTL_WIFI_COEX event=connect_complete ' 45)
+    if ((Get-WifiStatus).Connected -ne 1) { throw 'Saved Wi-Fi profile did not connect.' }
+    Assert-WifiCoexAudio 'connect'
+    [void](Open-Ui 'WIFI_ANALYSIS' 'FM')
+    [void](Send-And-Wait 'RTL_WIFI_SCAN' '^RTL_WIFI_SCAN_QUEUED$')
+    [void](Wait-WifiScan)
+    Assert-WifiCoexAudio 'rf24_scan'
+    [void](Open-Ui 'FM' 'FM')
+    Assert-WifiCoexAudio 'fm_return'
+    Assert-Health
+    Write-SoakLine 'RTL_WIFI_COEX_TEST_RESULT pass=1 evidence=fm+connect+rf24_scan+return'
+  } finally {
+    try {
+      if ($initialWifi.Connected -eq 0 -and (Get-WifiStatus).Connected -eq 1) {
+        [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
+      }
+      [void](Open-Ui $initialUi.Screen $initialUi.Band)
+    } catch { Write-Warning "Could not restore initial Wi-Fi/UI state: $($_.Exception.Message)" }
+  }
+}
+
+function Wait-WifiConnectOutcome([string]$Mode) {
+  [void](Send-And-Wait "RTL_WIFI_CONNECT_SAVED$($(if ($Mode -eq 'pause') { ' PAUSE' } else { '' }))" "^RTL_WIFI_CONNECT_QUEUED saved_profile=0 mode=$Mode$" 10)
+  return Read-MatchingLine '^RTL_WIFI_COEX event=connect_(?:complete|failed|start_failed) ' 45
+}
+
+function Assert-WifiCoexistenceDiagnostic($initialUi) {
+  $initialWifi = Get-WifiStatus
+  if ($initialWifi.Power -ne 1 -or $initialWifi.Profiles -eq 0) {
+    throw 'Wi-Fi diagnostic requires Connectivity Power on and a saved profile.'
+  }
+  $initialFrequency = $initialUi.Frequency
+  try {
+    [void](Send-And-Wait 'RTL_TUNE FM 96100000' '^RTL_TUNE_OK band=FM frequency_hz=96100000$')
+    Assert-WifiCoexAudio 'fm_961_baseline'
+    if ((Get-WifiStatus).Connected -eq 1) {
+      Connect-Authenticated
+      [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
+    }
+    $paused = Wait-WifiConnectOutcome 'pause'
+    if ($paused -notmatch 'event=connect_complete ') {
+      throw "Paused Wi-Fi comparison did not connect: $paused"
+    }
+    Assert-WifiCoexAudio 'paused_connect_restored'
+    [void](Send-And-Wait 'RTL_WIFI_SCAN' '^RTL_WIFI_SCAN_QUEUED$')
+    [void](Wait-WifiScan)
+    Assert-WifiCoexAudio 'paused_connect_scan'
+    Connect-Authenticated
+    [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
+    $live = Wait-WifiConnectOutcome 'live'
+    $livePass = [int]($live -match 'event=connect_complete ')
+    if ($livePass) { Assert-WifiCoexAudio 'live_connect' }
+    Assert-Health
+    Write-SoakLine "RTL_WIFI_COEX_DIAGNOSTIC_RESULT pass=1 fm_hz=96100000 live_connect=$livePass paused_connect=1 scan=1"
+  } finally {
+    try {
+      Connect-Authenticated
+      if ($initialWifi.Connected -eq 0 -and (Get-WifiStatus).Connected -eq 1) {
+        [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
+      }
+      [void](Send-And-Wait "RTL_TUNE FM $initialFrequency" '^RTL_TUNE_OK band=FM ')
+      [void](Open-Ui $initialUi.Screen $initialUi.Band)
+    } catch { Write-Warning "Could not restore Wi-Fi/UI state: $($_.Exception.Message)" }
   }
 }
 
@@ -465,18 +609,26 @@ function Invoke-SelfCheck {
   }
   $audio = '{"type":"rtl_audio_test","speaker_enabled":1,"speaker_running":1,"audio_chunks":42}' | ConvertFrom-Json
   if ($audio.speaker_running -ne 1 -or $audio.audio_chunks -ne 42) { throw 'Audio parser failed.' }
+  $coex = 'RTL_WIFI_COEX_STATUS station=1 scanning=0 connecting=0 connected=1 connect_pause=0 rtl_ready=1 capture_state=3 capture_requested=0 band=FM frequency_hz=96100000 audio_enabled=1 speaker_running=1 audio_chunks=42 audio_drops=0'
+  if ($coex -notmatch 'connect_pause=0.*rtl_ready=1.*capture_state=3.*band=FM.*speaker_running=1') { throw 'Coexistence parser failed.' }
   if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,0,0,1,0,0) }) 'ADSB')) {
     throw 'Exclusive dashboard check rejected valid ADS-B state.'
   }
   if (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,1,0,1,0,0) }) 'ADSB') {
     throw 'Exclusive dashboard check accepted stale FM state.'
   }
+  if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,1,0,0,0,1) }) 'WIFI_ANALYSIS')) {
+    throw 'RF24 overlay check rejected active FM.'
+  }
+  if (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,1,1,0,0,1) }) 'WIFI_ANALYSIS') {
+    throw 'RF24 overlay check accepted an active P25 dashboard.'
+  }
   Write-SoakLine 'RTL_UI_SOAK_SELF_CHECK pass=1'
 }
 
 if ($SelfCheck) { Invoke-SelfCheck; exit 0 }
-if (@($Run, $Soak, $Driver079, $WifiOnly, $DataOnly).Where({ $_ }).Count -gt 1) {
-  throw 'Choose only one of -Run, -Soak, -Driver079, -WifiOnly, or -DataOnly.'
+if (@($Run, $Soak, $Driver079, $WifiOnly, $WifiCoexistence, $WifiCoexistenceDiagnostic, $DataOnly).Where({ $_ }).Count -gt 1) {
+  throw 'Choose only one of -Run, -Soak, -Driver079, -WifiOnly, -WifiCoexistence, -WifiCoexistenceDiagnostic, or -DataOnly.'
 }
 
 function Get-DriverStatus {
@@ -570,12 +722,28 @@ try {
   Start-Sleep -Milliseconds 250
   $script:serial.DiscardInBuffer()
 
+  if ($ResetDevice) { Reset-DeviceBaseline }
+
   if ($Driver079) { Invoke-Driver079Test; exit 0 }
   if ($WifiOnly) {
     Wait-DeviceReady 60 11000
     $initialUi = Get-UiState
     Connect-Authenticated
     Assert-WifiCli $initialUi
+    exit 0
+  }
+  if ($WifiCoexistence) {
+    Wait-DeviceReady 60 11000
+    $initialUi = Get-UiState
+    Connect-Authenticated
+    Assert-WifiCoexistence $initialUi
+    exit 0
+  }
+  if ($WifiCoexistenceDiagnostic) {
+    Wait-DeviceReady 60 11000
+    $initialUi = Get-UiState
+    Connect-Authenticated
+    Assert-WifiCoexistenceDiagnostic $initialUi
     exit 0
   }
   if ($DataOnly) {
