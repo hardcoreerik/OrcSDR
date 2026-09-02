@@ -363,6 +363,7 @@ function Assert-WifiCoexistence($initialUi) {
     if ((Get-WifiStatus).Connected -ne 1) { throw 'Saved Wi-Fi profile did not connect.' }
     Assert-WifiCoexAudio 'connect'
     [void](Open-Ui 'WIFI_ANALYSIS' 'FM')
+    [void](Send-And-Wait 'RTL_RF24_PAGE 1' '^RTL_RF24_PAGE_OK page=1$')
     [void](Send-And-Wait 'RTL_WIFI_SCAN' '^RTL_WIFI_SCAN_QUEUED$')
     [void](Wait-WifiScan)
     Assert-WifiCoexAudio 'rf24_scan'
@@ -434,12 +435,12 @@ function Wait-WifiScan {
 }
 
 function Assert-WifiLists([int]$ExpectedAccessPoints) {
-  $begin = Send-And-Wait 'RTL_WIFI_RESULTS' '^RTL_WIFI_RESULTS_BEGIN count=([0-9]+) revision=([0-9]+)$'
+  $begin = Send-And-Wait 'RTL_WIFI_RESULTS' '^RTL_WIFI_RESULTS_BEGIN count=([0-9]+) total=([0-9]+) revision=([0-9]+) age_s=([0-9]+) duration_ms=([0-9]+)$'
   if ($begin -notmatch 'count=([0-9]+) ' -or [int]$Matches[1] -ne $ExpectedAccessPoints) {
     throw "Wi-Fi result count changed: $begin"
   }
   for ($i = 0; $i -lt $ExpectedAccessPoints; $i++) {
-    [void](Read-MatchingLine "^RTL_WIFI_AP index=$i ssid_hex=[0-9A-Fa-f]* bssid=[0-9A-Fa-f]{12} rssi=-?[0-9]+ channel=[0-9]+ secure=[01]$")
+    [void](Read-MatchingLine "^RTL_WIFI_AP index=$i ssid_hex=[0-9A-Fa-f]* bssid=[0-9A-Fa-f]{12} rssi=-?[0-9]+ channel=[0-9]+ secure=[01] security=[A-Z0-9/_-]+ phy=[A-Za-z0-9/_-]+ ht40=[01]$")
   }
   [void](Read-MatchingLine '^RTL_WIFI_RESULTS_END$')
 

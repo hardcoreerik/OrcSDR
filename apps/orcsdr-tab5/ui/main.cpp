@@ -1421,11 +1421,16 @@ struct WifiScanResult {
   uint8_t bssid[6]{};
   int16_t rssi = 0;
   uint8_t channel = 0;
+  int8_t secondary_channel_offset = 0;
+  char security[24]{};
+  char phy[12]{};
   bool secure = false;
 };
 EXT_RAM_BSS_ATTR WifiScanResult wifi_scan_results[orcsdr::rf24::kAccessPointCapacity]{};
 uint8_t wifi_scan_result_count = 0;
 uint32_t wifi_scan_started_ms = 0;
+uint32_t wifi_last_scan_completed_ms = 0;
+uint16_t wifi_last_scan_duration_ms = 0;
 uint32_t wifi_scan_revision = 0;
 uint8_t settings_brightness = 180;
 uint8_t settings_rotation = 1;
@@ -4893,12 +4898,23 @@ orcsdr::rf24::Snapshot rf24_dashboard_snapshot() {
   snapshot.revision = wifi_scan_revision;
   snapshot.access_point_count = std::min<uint8_t>(wifi_scan_result_count,
                                                    orcsdr::rf24::kAccessPointCapacity);
+  snapshot.total_access_point_count = wifi_network_count > 0
+                                          ? static_cast<uint16_t>(wifi_network_count) : 0;
+  snapshot.scan_complete = wifi_last_scan_completed_ms != 0;
+  snapshot.scan_age_seconds = snapshot.scan_complete
+                                  ? static_cast<uint16_t>(std::min<uint32_t>(
+                                        65535u, (millis() - wifi_last_scan_completed_ms) / 1000u))
+                                  : 0;
+  snapshot.scan_duration_ms = wifi_last_scan_duration_ms;
   for (uint8_t i = 0; i < snapshot.access_point_count; ++i) {
     auto& access_point = snapshot.access_points[i];
     strlcpy(access_point.ssid, wifi_scan_results[i].ssid, sizeof(access_point.ssid));
     memcpy(access_point.bssid, wifi_scan_results[i].bssid, sizeof(access_point.bssid));
     access_point.rssi = wifi_scan_results[i].rssi;
     access_point.channel = wifi_scan_results[i].channel;
+    access_point.secondary_channel_offset = wifi_scan_results[i].secondary_channel_offset;
+    strlcpy(access_point.security, wifi_scan_results[i].security, sizeof(access_point.security));
+    strlcpy(access_point.phy, wifi_scan_results[i].phy, sizeof(access_point.phy));
     access_point.secure = wifi_scan_results[i].secure;
   }
   std::sort(snapshot.access_points, snapshot.access_points + snapshot.access_point_count,
@@ -7568,6 +7584,7 @@ void start_wifi_inventory() {
   if (!wifi_station_ready) return;
   if (wifi_scan_running) return;
   wifi_scan_result_count = 0;
+  wifi_network_count = 0;
   wifi_scan_started_ms = millis();
   ++wifi_scan_revision;
   strlcpy(wifi_status_message, "Scanning networks", sizeof(wifi_status_message));
@@ -7735,6 +7752,9 @@ void poll_wifi() {
     if (result >= 0) {
       wifi_scan_running = false;
       wifi_network_count = result;
+      wifi_last_scan_completed_ms = millis();
+      wifi_last_scan_duration_ms = static_cast<uint16_t>(std::min<uint32_t>(
+          65535u, wifi_last_scan_completed_ms - wifi_scan_started_ms));
       wifi_scan_result_count = result > 0
                                    ? static_cast<uint8_t>(std::min<int>(
                                          result, std::size(wifi_scan_results)))
@@ -7748,6 +7768,10 @@ void poll_wifi() {
         memcpy(wifi_scan_results[i].bssid, scan[i].bssid, sizeof(wifi_scan_results[i].bssid));
         wifi_scan_results[i].rssi = scan[i].rssi;
         wifi_scan_results[i].channel = scan[i].channel;
+        wifi_scan_results[i].secondary_channel_offset = scan[i].secondary_channel_offset;
+        strlcpy(wifi_scan_results[i].security, scan[i].security,
+                sizeof(wifi_scan_results[i].security));
+        strlcpy(wifi_scan_results[i].phy, scan[i].phy, sizeof(wifi_scan_results[i].phy));
         wifi_scan_results[i].secure = scan[i].secure;
       }
       Serial.printf("RTL_WIFI_SCAN_RESULTS count=%u\n",
@@ -11109,6 +11133,24 @@ void process_command(char* command) {
     Serial.printf("RTL_UI_OPEN_OK target=%s\n", name);
     return;
   }
+  if (strncmp(command, "RTL_RF24_PAGE ", 14) == 0 && !authenticated) {
+    Serial.println("RTL_RF24_PAGE_ERROR auth_required");
+    return;
+  }
+  if (strncmp(command, "RTL_RF24_PAGE ", 14) == 0) {
+    unsigned page = 0;
+    if (sscanf(command + 14, "%u", &page) != 1 ||
+        page >= static_cast<unsigned>(orcsdr::rf24::Page::count)) {
+      Serial.println("RTL_RF24_PAGE_INVALID use 0-4");
+      return;
+    }
+    if (!orcsdr::rf24::select_page(static_cast<uint8_t>(page), rf24_dashboard_snapshot())) {
+      Serial.println("RTL_RF24_PAGE_ERROR dashboard_inactive");
+      return;
+    }
+    Serial.printf("RTL_RF24_PAGE_OK page=%u\n", page);
+    return;
+  }
   if (strncmp(command, "RTL_UI ACTION ", 14) == 0 && !authenticated) {
     Serial.println("RTL_UI_ACTION_ERROR auth_required");
     return;
@@ -11206,18 +11248,24 @@ void process_command(char* command) {
     return;
   }
   if (strcmp(command, "RTL_WIFI_RESULTS") == 0) {
-    Serial.printf("RTL_WIFI_RESULTS_BEGIN count=%u revision=%u\n",
+    Serial.printf("RTL_WIFI_RESULTS_BEGIN count=%u total=%u revision=%u age_s=%u duration_ms=%u\n",
                   static_cast<unsigned>(wifi_scan_result_count),
-                  static_cast<unsigned>(wifi_scan_revision));
+                  static_cast<unsigned>(wifi_network_count),
+                  static_cast<unsigned>(wifi_scan_revision),
+                  static_cast<unsigned>(wifi_last_scan_completed_ms == 0 ? 0 :
+                      (millis() - wifi_last_scan_completed_ms) / 1000),
+                  static_cast<unsigned>(wifi_last_scan_duration_ms));
     for (uint8_t i = 0; i < wifi_scan_result_count; ++i) {
       Serial.printf("RTL_WIFI_AP index=%u ssid_hex=", static_cast<unsigned>(i));
       print_hex(reinterpret_cast<const uint8_t*>(wifi_scan_results[i].ssid),
                 strlen(wifi_scan_results[i].ssid));
       Serial.print(" bssid=");
       print_hex(wifi_scan_results[i].bssid, sizeof(wifi_scan_results[i].bssid));
-      Serial.printf(" rssi=%d channel=%u secure=%d\n", wifi_scan_results[i].rssi,
+      Serial.printf(" rssi=%d channel=%u secure=%d security=%s phy=%s ht40=%d\n", wifi_scan_results[i].rssi,
                     static_cast<unsigned>(wifi_scan_results[i].channel),
-                    wifi_scan_results[i].secure ? 1 : 0);
+                    wifi_scan_results[i].secure ? 1 : 0,
+                    wifi_scan_results[i].security, wifi_scan_results[i].phy,
+                    wifi_scan_results[i].secondary_channel_offset == 0 ? 0 : 1);
     }
     Serial.println("RTL_WIFI_RESULTS_END");
     return;

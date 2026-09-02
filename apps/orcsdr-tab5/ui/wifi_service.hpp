@@ -10,6 +10,9 @@ struct ScanResult {
   uint8_t bssid[6]{};
   int16_t rssi = 0;
   uint8_t channel = 0;
+  int8_t secondary_channel_offset = 0;
+  char security[24]{};
+  char phy[12]{};
   bool secure = false;
 };
 
