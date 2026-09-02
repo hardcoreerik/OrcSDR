@@ -336,14 +336,15 @@ function Get-WifiCoexStatus {
   }
 }
 
-function Assert-WifiCoexAudio([string]$Step) {
+function Assert-WifiCoexAudio([string]$Step, [uint64]$DropBaseline) {
   Assert-FmAudioProgress
   $status = Get-WifiCoexStatus
   if ($status.RtlReady -ne 1 -or $status.CaptureState -ne 3 -or $status.Band -ne 'FM' -or
-      $status.AudioEnabled -ne 1 -or $status.SpeakerRunning -ne 1) {
+      $status.AudioEnabled -ne 1 -or $status.SpeakerRunning -ne 1 -or
+      $status.AudioDrops -gt $DropBaseline) {
     throw "Wi-Fi coexistence failed at ${Step}: $($status.Line)"
   }
-  Write-SoakLine "RTL_WIFI_COEX_TEST step=$Step pass=1 chunks=$($status.AudioChunks) drops=$($status.AudioDrops)"
+  Write-SoakLine "RTL_WIFI_COEX_TEST step=$Step pass=1 chunks=$($status.AudioChunks) drops=$($status.AudioDrops) drop_baseline=$DropBaseline"
 }
 
 function Assert-WifiCoexistence($initialUi) {
@@ -352,29 +353,39 @@ function Assert-WifiCoexistence($initialUi) {
   if ($initialWifi.Profiles -eq 0) { throw 'Wi-Fi coexistence requires one saved Wi-Fi profile.' }
   try {
     [void](Open-Ui 'FM' 'FM')
-    Assert-WifiCoexAudio 'fm_baseline'
+    $dropBaseline = (Get-WifiCoexStatus).AudioDrops
+    Assert-WifiCoexAudio 'fm_baseline' $dropBaseline
     if ($initialWifi.Connected -eq 1) {
+      $dropBaseline = (Get-WifiCoexStatus).AudioDrops
       [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
       if ((Get-WifiStatus).Connected -ne 0) { throw 'Wi-Fi disconnect did not complete.' }
-      Assert-WifiCoexAudio 'disconnect'
+      Assert-WifiCoexAudio 'disconnect' $dropBaseline
     }
+    $dropBaseline = (Get-WifiCoexStatus).AudioDrops
     [void](Send-And-Wait 'RTL_WIFI_CONNECT_SAVED' '^RTL_WIFI_CONNECT_QUEUED ' 10)
     [void](Read-MatchingLine '^RTL_WIFI_COEX event=connect_complete ' 45)
     if ((Get-WifiStatus).Connected -ne 1) { throw 'Saved Wi-Fi profile did not connect.' }
-    Assert-WifiCoexAudio 'connect'
+    Assert-WifiCoexAudio 'connect' $dropBaseline
     [void](Open-Ui 'WIFI_ANALYSIS' 'FM')
     [void](Send-And-Wait 'RTL_RF24_PAGE 1' '^RTL_RF24_PAGE_OK page=1$')
+    $dropBaseline = (Get-WifiCoexStatus).AudioDrops
     [void](Send-And-Wait 'RTL_WIFI_SCAN' '^RTL_WIFI_SCAN_QUEUED$')
     [void](Wait-WifiScan)
-    Assert-WifiCoexAudio 'rf24_scan'
+    Assert-WifiCoexAudio 'rf24_scan' $dropBaseline
+    $dropBaseline = (Get-WifiCoexStatus).AudioDrops
     [void](Open-Ui 'FM' 'FM')
-    Assert-WifiCoexAudio 'fm_return'
+    Assert-WifiCoexAudio 'fm_return' $dropBaseline
     Assert-Health
     Write-SoakLine 'RTL_WIFI_COEX_TEST_RESULT pass=1 evidence=fm+connect+rf24_scan+return'
   } finally {
     try {
-      if ($initialWifi.Connected -eq 0 -and (Get-WifiStatus).Connected -eq 1) {
+      $currentWifi = Get-WifiStatus
+      if ($initialWifi.Connected -eq 0 -and $currentWifi.Connected -eq 1) {
         [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
+      } elseif ($initialWifi.Connected -eq 1 -and $currentWifi.Connected -eq 0) {
+        Connect-Authenticated
+        $restored = Wait-WifiConnectOutcome 'live'
+        if ($restored -notmatch 'event=connect_complete ') { throw "Could not restore Wi-Fi: $restored" }
       }
       [void](Open-Ui $initialUi.Screen $initialUi.Band)
     } catch { Write-Warning "Could not restore initial Wi-Fi/UI state: $($_.Exception.Message)" }
@@ -394,33 +405,41 @@ function Assert-WifiCoexistenceDiagnostic($initialUi) {
   $initialFrequency = $initialUi.Frequency
   try {
     [void](Send-And-Wait 'RTL_TUNE FM 96100000' '^RTL_TUNE_OK band=FM frequency_hz=96100000$')
-    Assert-WifiCoexAudio 'fm_961_baseline'
+    $dropBaseline = (Get-WifiCoexStatus).AudioDrops
+    Assert-WifiCoexAudio 'fm_961_baseline' $dropBaseline
     if ((Get-WifiStatus).Connected -eq 1) {
       Connect-Authenticated
       [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
     }
+    $dropBaseline = (Get-WifiCoexStatus).AudioDrops
     $paused = Wait-WifiConnectOutcome 'pause'
     if ($paused -notmatch 'event=connect_complete ') {
       throw "Paused Wi-Fi comparison did not connect: $paused"
     }
-    Assert-WifiCoexAudio 'paused_connect_restored'
+    Assert-WifiCoexAudio 'paused_connect_restored' $dropBaseline
+    $dropBaseline = (Get-WifiCoexStatus).AudioDrops
     [void](Send-And-Wait 'RTL_WIFI_SCAN' '^RTL_WIFI_SCAN_QUEUED$')
     [void](Wait-WifiScan)
-    Assert-WifiCoexAudio 'paused_connect_scan'
+    Assert-WifiCoexAudio 'paused_connect_scan' $dropBaseline
     Connect-Authenticated
     [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
+    $dropBaseline = (Get-WifiCoexStatus).AudioDrops
     $live = Wait-WifiConnectOutcome 'live'
     $livePass = [int]($live -match 'event=connect_complete ')
-    if ($livePass) { Assert-WifiCoexAudio 'live_connect' }
+    if ($livePass) { Assert-WifiCoexAudio 'live_connect' $dropBaseline }
     Assert-Health
     Write-SoakLine "RTL_WIFI_COEX_DIAGNOSTIC_RESULT pass=1 fm_hz=96100000 live_connect=$livePass paused_connect=1 scan=1"
   } finally {
     try {
       Connect-Authenticated
-      if ($initialWifi.Connected -eq 0 -and (Get-WifiStatus).Connected -eq 1) {
+      $currentWifi = Get-WifiStatus
+      if ($initialWifi.Connected -eq 0 -and $currentWifi.Connected -eq 1) {
         [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
+      } elseif ($initialWifi.Connected -eq 1 -and $currentWifi.Connected -eq 0) {
+        $restored = Wait-WifiConnectOutcome 'live'
+        if ($restored -notmatch 'event=connect_complete ') { throw "Could not restore Wi-Fi: $restored" }
       }
-      [void](Send-And-Wait "RTL_TUNE FM $initialFrequency" '^RTL_TUNE_OK band=FM ')
+      [void](Send-And-Wait "RTL_TUNE $($initialUi.Band) $initialFrequency" "^RTL_TUNE_OK band=$($initialUi.Band) ")
       [void](Open-Ui $initialUi.Screen $initialUi.Band)
     } catch { Write-Warning "Could not restore Wi-Fi/UI state: $($_.Exception.Message)" }
   }
