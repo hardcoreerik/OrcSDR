@@ -1,21 +1,43 @@
 diff --git a/managed_components/m5stack__m5gfx/src/lgfx/v1/platforms/esp32p4/Panel_DSI.hpp b/managed_components/m5stack__m5gfx/src/lgfx/v1/platforms/esp32p4/Panel_DSI.hpp
 --- a/managed_components/m5stack__m5gfx/src/lgfx/v1/platforms/esp32p4/Panel_DSI.hpp
 +++ b/managed_components/m5stack__m5gfx/src/lgfx/v1/platforms/esp32p4/Panel_DSI.hpp
-@@ -60,2 +60,4 @@
+@@ -58,7 +58,9 @@
+     color_depth_t setColorDepth(color_depth_t depth) override;
+ 
      const config_detail_t& config_detail(void) const { return _config_detail; }
      void config_detail(const config_detail_t& config_detail) { _config_detail = config_detail; };
 +    esp_lcd_panel_handle_t getPanelHandle(void) const { return _disp_panel_handle; }
 +    void* getFrameBuffer(size_t index) const { return index < 2 ? _frame_buffers[index] : nullptr; }
-@@ -98 +100,2 @@
+ 
+     void setInvert(bool invert) override;
+     void setSleep(bool flg_sleep) override;
+@@ -94,5 +96,6 @@
+ 
+     config_detail_t _config_detail;
+ 
      esp_lcd_panel_handle_t _disp_panel_handle = nullptr;
 +    void* _frame_buffers[2] = {};
+   };
 diff --git a/managed_components/m5stack__m5gfx/src/lgfx/v1/platforms/esp32p4/Panel_DSI.cpp b/managed_components/m5stack__m5gfx/src/lgfx/v1/platforms/esp32p4/Panel_DSI.cpp
 --- a/managed_components/m5stack__m5gfx/src/lgfx/v1/platforms/esp32p4/Panel_DSI.cpp
 +++ b/managed_components/m5stack__m5gfx/src/lgfx/v1/platforms/esp32p4/Panel_DSI.cpp
-@@ -85 +85 @@
+@@ -79,7 +79,7 @@
+   #else
+     dpi_config.pixel_format = LCD_COLOR_PIXEL_FORMAT_RGB565;
+   #endif
 -    dpi_config.num_fbs = 1;
 +    dpi_config.num_fbs = 2;
-@@ -127 +127,2 @@
+     dpi_config.video_timing.h_size = _cfg.panel_width;
+     dpi_config.video_timing.v_size = _cfg.panel_height;
+     dpi_config.video_timing.hsync_back_porch  = _config_detail.hsync_back_porch;
+@@ -124,7 +124,8 @@
+     auto bus = getBusDSI();
+     if (bus == nullptr) { return false; }
+     if (init_dpi(bus) && init_panel())
+     {
 -        esp_lcd_dpi_panel_get_frame_buffer(_disp_panel_handle, 1, &(_config_detail.buffer));
 +        esp_lcd_dpi_panel_get_frame_buffer(_disp_panel_handle, 2, _frame_buffers, _frame_buffers + 1);
 +        _config_detail.buffer = _frame_buffers[0];
+     }
+ 
+     auto ptr = (uint8_t*)_config_detail.buffer;

@@ -470,19 +470,28 @@ Action handle_wifi_keyboard(int x, int y) {
   return {};
 }
 
+bool accept_location_query();
+
 Action handle_location_keyboard(int x, int y) {
   const auto result = text_editor::handle_touch(x, y);
   strlcpy(g_location_query, text_editor::value(), sizeof(g_location_query));
   if (result == text_editor::Result::cancelled) {
     g_location_edit = false;
     draw_content();
-  } else if (result == text_editor::Result::accepted && g_location_query[0]) {
-    g_location_edit = false;
-    g_location_request_pending = true;
+  } else if (result == text_editor::Result::accepted) {
+    const bool queued = accept_location_query();
     draw_content();
+    if (!queued) return {};
     return {ActionKind::location_query_lookup, 0};
   }
   return {};
+}
+
+bool accept_location_query() {
+  g_location_edit = false;
+  if (!g_location_query[0]) return false;
+  g_location_request_pending = true;
+  return true;
 }
 
 bool valid_coordinate(EditField field, double value) {
@@ -851,12 +860,24 @@ bool self_check() {
                               strcmp(password, "not-a-real-password") == 0 &&
                               g_wifi_request_password[0] == '\0';
   memset(password, 0, sizeof(password));
+  const bool saved_location_edit = g_location_edit;
+  const bool saved_location_pending = g_location_request_pending;
+  char saved_location_query[sizeof(g_location_query)]{};
+  strlcpy(saved_location_query, g_location_query, sizeof(saved_location_query));
+  g_location_edit = true;
+  g_location_request_pending = false;
+  g_location_query[0] = '\0';
+  const bool empty_location_ok = !accept_location_query() && !g_location_edit &&
+                                 !g_location_request_pending;
   strlcpy(g_location_query, "97401", sizeof(g_location_query));
-  g_location_request_pending = true;
+  const bool location_queued = accept_location_query();
   char query[64]{};
-  const bool location_ok = take_location_query(query, sizeof(query)) &&
+  const bool location_ok = location_queued && take_location_query(query, sizeof(query)) &&
                            strcmp(query, "97401") == 0;
-  if (!symbols_ok || !credentials_ok || !location_ok) return false;
+  g_location_edit = saved_location_edit;
+  g_location_request_pending = saved_location_pending;
+  strlcpy(g_location_query, saved_location_query, sizeof(g_location_query));
+  if (!symbols_ok || !credentials_ok || !empty_location_ok || !location_ok) return false;
   return true;
 }
 
