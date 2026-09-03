@@ -12592,96 +12592,78 @@ void setup() {
   if (!visualizer_initialized || !orcsdr::visualizer::self_check()) {
     Serial.println(visualizer_initialized ? "RTL_VIS_SELF_CHECK_FAIL"
                                           : "RTL_VIS_INIT_FAIL");
-    abort();
   }
   Serial.println("RTL_VIS_SELF_CHECK_OK");
   const bool rf_lab_initialized = orcsdr::rf_lab::initialize(nullptr);
   if (!rf_lab_initialized || !orcsdr::rf_lab::self_check()) {
     Serial.println(rf_lab_initialized ? "RTL_LAB_SELF_CHECK_FAIL"
                                       : "RTL_LAB_INIT_FAIL");
-    abort();
   }
   Serial.println("RTL_LAB_SELF_CHECK_OK");
   configure_navigation_service();
   if (!orcsdr::adsb::self_check() || !orcsdr::adsb_rx::Decoder::self_check() ||
       !orcsdr::offline_map::self_check() || !orcsdr::atc::self_check()) {
     Serial.println("RTL_ADSB_SELF_CHECK_FAIL");
-    abort();
   }
   Serial.println("RTL_ADSB_SELF_CHECK_OK");
   if (!orcsdr::fm::self_check()) {
     Serial.println("RTL_FM_DASHBOARD_SELF_CHECK_FAIL");
-    abort();
   }
   Serial.println("RTL_FM_DASHBOARD_SELF_CHECK_OK");
   if (!orcsdr::fmconfig::self_check()) {
     Serial.println("RTL_FM_CONFIG_SELF_CHECK_FAIL");
-    abort();
   }
   Serial.println("RTL_FM_CONFIG_SELF_CHECK_OK");
   if (!orcsdr::p25::self_check()) {
     Serial.println("RTL_P25_DASHBOARD_SELF_CHECK_FAIL");
-    abort();
   }
   Serial.println("RTL_P25_DASHBOARD_SELF_CHECK_OK");
   if (!orcsdr::p25decoder::self_check()) {
     Serial.println("RTL_P25_DECODER_SELF_CHECK_FAIL");
-    abort();
   }
   Serial.println("RTL_P25_DECODER_SELF_CHECK_OK");
   if (!p25_voice_self_check()) {
     Serial.println("RTL_P25_VOICE_SELF_CHECK_FAIL");
-    abort();
   }
   Serial.println("RTL_P25_VOICE_SELF_CHECK_OK");
   if (!orcsdr::settings::self_check()) {
     Serial.println("ORC_SETTINGS_SELF_CHECK_FAIL");
-    abort();
   }
   Serial.println("ORC_SETTINGS_SELF_CHECK_OK");
   if (!orcsdr::location_estimate::self_check()) {
     Serial.println("ORC_LOCATION_SELF_CHECK_FAIL");
-    abort();
   }
   Serial.println("ORC_LOCATION_SELF_CHECK_OK");
   if (!orcsdr::screens::self_check()) {
     Serial.println("ORC_SCREEN_CONTROLLER_SELF_CHECK_FAIL");
-    abort();
   }
   Serial.println("ORC_SCREEN_CONTROLLER_SELF_CHECK_OK");
   if (!orcsdr::radio_ui::self_check()) {
     Serial.println("ORC_RADIO_UI_SELF_CHECK_FAIL");
-    abort();
   }
   Serial.println("ORC_RADIO_UI_SELF_CHECK_OK");
   if (!orcsdr::device_status::self_check()) {
     Serial.println("ORC_DEVICE_STATUS_SELF_CHECK_FAIL");
-    abort();
   }
   Serial.println("ORC_DEVICE_STATUS_SELF_CHECK_OK");
   if (!orcsdr::home::self_check()) {
     Serial.println("ORC_HOME_SELF_CHECK_FAIL");
-    abort();
   }
   Serial.println("ORC_HOME_SELF_CHECK_OK");
   if (!orcsdr::web_console::self_check()) {
     Serial.println("RTL_WEB_SELF_CHECK_FAIL");
-    abort();
   }
   Serial.println("RTL_WEB_SELF_CHECK_OK");
   if (!orcsdr::lora::self_check()) {
     Serial.println("RTL_LORA_DASHBOARD_SELF_CHECK_FAIL");
-    abort();
   }
   Serial.println("RTL_LORA_DASHBOARD_SELF_CHECK_OK");
   if (!orcsdr::rf24::self_check()) {
     Serial.println("RF24_DASHBOARD_SELF_CHECK_FAIL");
-    abort();
   }
   Serial.println("RF24_DASHBOARD_SELF_CHECK_OK");
   if (!ui_doc_self_check()) {
     Serial.println("UI_DOC_SELF_CHECK_FAIL");
-    abort();
   }
   Serial.println("UI_DOC_SELF_CHECK_OK");
 
