@@ -1,69 +1,20 @@
 # M5Burner hardware acceptance gate
 
-This is the proof process for a release built by
-`tools/release/build-m5burner.ps1`. It does **not** authorize a public listing
-until every required observation is recorded against the exact release tag and
-SHA-256.
+This is the release gate for an exact `v0.2.0-beta.1` tag. Build or package
+validation alone does not authorize a GitHub prerelease or public listing.
 
-## 1. Offline package gate
+1. Build both bundles and record their `M5BURNER_BUNDLE_OK` lines, source
+   commit, C6 provenance, and hashes.
+2. Privately publish **OrcSDR Hosted 3.0.6 Bridge**. Install it through its
+   Share Code without erase. Record `C6 before OTA`, then after its restart
+   `C6 after OTA: 3.0.6`. Verify `host=3.0.6 coprocessor=3.0.6 match=1`.
+3. Privately publish and install final **OrcSDR**, also without erase. Confirm
+   Home, FM audio, RTL-SDR, Wi-Fi scan, saved-profile connection, RF24, and
+   the UI regression command.
+4. Run `install-orcsdr.ps1` first against the matching pair, then its explicit
+   `-UpdateC6` route on an authorized recovery-safe device. It must preserve
+   NVS and stop with recovery guidance when Hosted cannot form a link.
 
-From the clean, tagged release worktree:
-
-```powershell
-.\tools\release\build-m5burner.ps1
-.\tools\release\test-m5burner-bundle.ps1 -BundlePath .\dist\OrcSDR-Tab5-<tag> -Version <tag>
-```
-
-Record the printed `M5BURNER_BUNDLE_OK` line, tag, commit, and SHA-256. A pass
-proves package consistency only; it does not prove a Tab5 can install or run
-the image.
-
-## 2. Private M5Burner install
-
-1. Upload the exact verified `.bin` and `OrcSDR-Main.png` through **USER
-   CUSTOM → Publish** with device type **M5Stack Tab5**.
-2. Keep the listing private and install it with its Share Code on the release
-   Tab5. Do not erase for a normal upgrade.
-3. Record the M5Burner listing version, the file hash, and a screenshot of the
-   completed installation.
-
-Stop if M5Burner rejects the image, selects another device type, or reports a
-write failure. Do not substitute another binary or relabel a prior tag.
-
-## 3. First-boot gate
-
-After the M5Burner install, confirm on the Tab5:
-
-- OrcSDR reaches Home without a boot loop or panic.
-- System/About reports the expected release version.
-- Connectivity shows the expected P4/C6 Hosted state. If the C6 is mismatched,
-  Wi-Fi must remain disabled and the setup guidance must be shown; update the
-  C6 only through its documented M5Burner path.
-- A known FM station produces live spectrum and audio with the RTL-SDR Blog V4.
-- RF Lab opens, reports a live source, and saves one short measurement session
-  to SD when an SD card is present.
-
-If the release changes a dashboard or visualization, also open the affected
-view with live FM audio and confirm it remains fluid, does not expose partial
-full-frame redraws, and does not cause audio stutter. This is a visual/device
-acceptance check, not something a package or build log can prove.
-
-Record a photo or screenshot for Home, Connectivity, FM/RF Health, and RF Lab,
-plus any relevant serial output. These observations are hardware evidence; do
-not replace them with a successful build log.
-
-## 4. Publication decision
-
-Only after steps 1–3 pass:
-
-1. Attach the same `.bin`, `SHA256SUMS.txt`, and `OrcSDR-Main.png` to the
-   GitHub prerelease.
-2. Change the M5Burner listing from private to public.
-3. Publish the M5Burner Share Code and GitHub release URL together.
-
-## Launcher-safe gate (later)
-
-Launcher testing starts only after the M5Burner gate passes. It must prove an
-install through Launcher, a successful OrcSDR boot, and a safe return to
-Launcher on a recovery-safe Tab5. Do not claim Launcher support before those
-three observations exist.
+Attach photos/screenshots and serial evidence to the tag record. Only then
+attach the verified artifacts to the GitHub prerelease and change both
+M5Burner listings from private to public.

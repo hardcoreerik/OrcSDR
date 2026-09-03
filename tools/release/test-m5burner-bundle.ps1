@@ -6,7 +6,8 @@ Validates an already-built OrcSDR M5Burner upload bundle without flashing.
 param(
   [Parameter(Mandatory)]
   [string]$BundlePath,
-  [string]$Version
+  [string]$Version,
+  [switch]$Bridge
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,9 +22,18 @@ foreach ($path in @($manifestPath, $sumPath, $coverPath, $readmePath)) {
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 if (-not $Version) { $Version = "v$($manifest.version)" }
-if ($Version -notmatch '^v\d+\.\d+\.\d+(-alpha\.\d+)?(-candidate\.\d+)?$') { throw "Invalid version: $Version" }
-if ($manifest.name -ne 'OrcSDR' -or $manifest.version -ne $Version.TrimStart('v')) {
-  throw 'Manifest name or version does not match the expected release.'
+if ($Version -notmatch '^v\d+\.\d+\.\d+(-(alpha|beta)\.\d+)?(-candidate\.\d+)?$') { throw "Invalid version: $Version" }
+if ($manifest.version -ne $Version.TrimStart('v')) { throw 'Manifest version does not match the expected release.' }
+if ($Bridge) {
+  if ($manifest.name -ne 'OrcSDR Hosted 3.0.6 Bridge' -or -not $manifest.temporary) { throw 'Manifest is not the temporary Hosted bridge.' }
+  $provenancePath = Join-Path $bundle 'c6-provenance.json'
+  if (-not (Test-Path $provenancePath)) { throw 'Bridge is missing C6 provenance.' }
+  $provenance = Get-Content $provenancePath -Raw | ConvertFrom-Json
+  $c6Image = Join-Path $bundle $provenance.firmware
+  if ($provenance.hosted_version -ne '3.0.6' -or -not (Test-Path $c6Image)) { throw 'Bridge C6 image/version is invalid.' }
+  if ((Get-FileHash $c6Image -Algorithm SHA256).Hash.ToLowerInvariant() -ne $provenance.sha256) { throw 'Bridge C6 hash does not match provenance.' }
+} elseif ($manifest.name -ne 'OrcSDR') {
+  throw 'Manifest is not the final OrcSDR package.'
 }
 if ($manifest.device_type -ne 'M5Stack Tab5' -or $manifest.target -ne 'ESP32-P4') {
   throw 'Manifest is not a Tab5 P4 release.'
@@ -38,8 +48,21 @@ $actualHash = (Get-FileHash -LiteralPath $imagePath -Algorithm SHA256).Hash.ToLo
 if ($Matches[1].ToLowerInvariant() -ne $actualHash -or $manifest.sha256 -ne $actualHash) {
   throw 'Firmware SHA-256 does not match the manifest and checksum file.'
 }
-if ((Get-Content -LiteralPath $readmePath -Raw) -notmatch 'P4 application only') {
+if (-not $Bridge -and (Get-Content -LiteralPath $readmePath -Raw) -notmatch 'P4 application only') {
   throw 'Bundle README is missing the P4-only safety notice.'
 }
 
-Write-Host "M5BURNER_BUNDLE_OK version=$Version sha256=$actualHash"
+$zip = Get-ChildItem -LiteralPath $bundle -Filter '*local-m5burner.zip' | Select-Object -First 1
+if (-not $zip) { throw 'Missing local M5Burner package zip.' }
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive = [IO.Compression.ZipFile]::OpenRead($zip.FullName)
+try {
+  $names = @($archive.Entries | ForEach-Object FullName)
+  foreach ($entry in @('m5burner.json', 'firmware/bootloader_0x2000.bin', 'firmware/partition-table_0x8000.bin')) {
+    if ($names -notcontains $entry) { throw "M5Burner zip missing $entry" }
+  }
+  $appEntry = if ($Bridge) { 'firmware/orcsdr_c6_bridge_0x10000.bin' } else { 'firmware/orcsdr_tab5_0x10000.bin' }
+  if ($names -notcontains $appEntry) { throw "M5Burner zip missing $appEntry" }
+} finally { $archive.Dispose() }
+
+Write-Host "M5BURNER_BUNDLE_OK type=$(if($Bridge){'bridge'}else{'final'}) version=$Version sha256=$actualHash"

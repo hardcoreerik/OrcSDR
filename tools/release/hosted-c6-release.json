@@ -1,0 +1,10 @@
+{
+  "hosted_version": "3.0.6",
+  "source_repository": "https://github.com/espressif/esp-hosted.git",
+  "source_revision": "e1a4f5492ac44fa248d77ac971d2055f8c565442",
+  "source_project": "examples/wifi/scan/cp",
+  "target": "esp32c6",
+  "transport": "SDIO (upstream ESP32-C6 default)",
+  "idf_version": "5.5.4",
+  "output_name": "esp_hosted_tab5_c6.bin"
+}

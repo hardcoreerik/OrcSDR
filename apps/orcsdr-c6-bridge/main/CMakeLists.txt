@@ -1,7 +1,12 @@
-idf_component_register(SRCS "main.c"
+set(_bridge_args SRCS "main.c"
                        INCLUDE_DIRS "."
-                       REQUIRES esp_hosted esp_event nvs_flash
-                       PRIV_INCLUDE_DIRS
-                         "../managed_components/espressif__esp_hosted/host"
-                         "../managed_components/espressif__esp_hosted/host/api/include"
-                       EMBED_FILES "F:/Ai/OrcSDR-esp-hosted-3x/mcu_host/components/ota_partition/slave_fw_bin/esp_hosted_3.0.6_tab5_c6.bin")
+                       REQUIRES esp_hosted esp_event nvs_flash)
+if(CMAKE_BUILD_EARLY_EXPANSION)
+  idf_component_register(${_bridge_args})
+else()
+  if(NOT DEFINED C6_FIRMWARE_BIN OR NOT EXISTS "${C6_FIRMWARE_BIN}")
+    message(FATAL_ERROR "Set C6_FIRMWARE_BIN to the reproducibly built ESP-Hosted C6 image.")
+  endif()
+  idf_component_register(${_bridge_args} EMBED_FILES "${C6_FIRMWARE_BIN}")
+endif()
+target_compile_definitions(${COMPONENT_LIB} PRIVATE C6_HOSTED_VERSION="3.0.6")

@@ -1,67 +1,37 @@
 # OrcSDR M5Burner release
 
-![OrcSDR on a M5Stack Tab5 with RTL-SDR Blog V4](images/OrcSDR-Main.png)
+`v0.2.0-beta.1` is a two-package Tab5 release. M5Burner writes the P4 only;
+the first temporary P4 package updates the internal C6 over the existing
+ESP-Hosted SDIO link.
 
-M5Burner publishes the Tab5 **P4** application only. It does not make the
-Tab5 a single-chip device: the on-board C6 must already run ESP-Hosted 3.0.6.
-Never publish a P4 build that has not passed the Tab5 hardware release gate.
+## Required order
 
-## Build the upload bundle
+1. Install **OrcSDR Hosted 3.0.6 Bridge** privately through M5Burner.
+2. Wait for its serial proof: `C6 after OTA: 3.0.6`.
+3. Install the final **OrcSDR** package through M5Burner.
 
-From a clean checkout at the release tag:
+Do not erase for either step. The normal flow preserves P4 NVS, saved Wi-Fi
+profiles, and preferences. If the bridge cannot establish Hosted transport, it
+stops with `C6_BRIDGE_FAIL`; that C6 is a manual recovery case.
+
+## Build and inspect
+
+From a clean checkout at the exact release tag:
 
 ```powershell
 .\tools\release\build-m5burner.ps1
-```
-
-For a private M5Burner trial before merge, pass a distinct candidate label such
-as `-Version v0.2.0-alpha.7-candidate.1`. Upload it privately, use Share Code
-for the test device, and never reuse that candidate label as a public release.
-
-The command runs the native ESP-IDF build, merges the configured P4 flash
-regions, and writes `dist/OrcSDR-Tab5-<tag>/`. It creates the P4 image,
-`SHA256SUMS.txt`, an upload-field manifest, cover image, and a demo-layout
-`*-local-m5burner.zip` with separate P4 bootloader, partition table, and app
-binaries. It does not flash hardware, include C6 firmware, or upload anything.
-
-Verify the hash before attaching the image to a GitHub prerelease or uploading
-it to M5Burner:
-
-```powershell
 .\tools\release\test-m5burner-bundle.ps1 -BundlePath .\dist\OrcSDR-Tab5-<tag> -Version <tag>
+.\tools\release\test-m5burner-bundle.ps1 -BundlePath .\dist\OrcSDR-Tab5-<tag>\Hosted-Bridge -Version <tag> -Bridge
 ```
 
-Then complete the physical install and first-boot gate in
-[`M5BURNER_HARDWARE_GATE.md`](M5BURNER_HARDWARE_GATE.md). A package pass is
-not a hardware pass.
+The build pins the Espressif ESP-Hosted 3.0.6 source revision, emits C6
+provenance and SHA-256, and produces both M5Burner upload bundles plus local
+test zips. It never flashes hardware or uploads a listing.
 
-## Publish in M5Burner
+## Publication gate
 
-Sign in, then open **USER CUSTOM → Publish**. Upload the generated P4 `.bin`
-and cover. Use `m5burner-upload.json` as the source for the listing fields.
-Set the listing public only after the GitHub prerelease has the same image and
-SHA-256. Share Code is useful for alpha testers before public discovery.
-
-Recommended listing:
-
-| Field | Value |
-| --- | --- |
-| Name | OrcSDR |
-| Version | release tag without `v` |
-| Device | M5Stack Tab5 |
-| GitHub | https://github.com/hardcoreerik/OrcSDR |
-| Firmware | generated P4 merged image |
-| Cover | `OrcSDR-Main.png` |
-
-## Upgrade policy
-
-For normal OrcSDR upgrades, **do not erase**: NVS holds user preferences and
-saved Wi-Fi profiles. Erase is only a troubleshooting recovery step.
-
-On first boot, OrcSDR compares the P4 host and C6 slave versions. A mismatch
-opens the Connectivity page with the required C6 action. Radio reception stays
-available; Wi-Fi is intentionally disabled until the C6 is updated manually
-through M5Burner to ESP-Hosted 3.0.6.
-
-Do not attempt P4-initiated C6 updating in this release. It needs a separate,
-hardware-proven recovery design before it can replace M5Burner.
+Use **USER CUSTOM → Publish** for both packages, keep both listings private,
+and test using their Share Codes. Only after the exact-tag hardware gate in
+[M5BURNER_HARDWARE_GATE.md](M5BURNER_HARDWARE_GATE.md) passes may the GitHub
+prerelease be created and the two listings made public. M5Burner publishing
+details are in the [official guide](https://docs.m5stack.com/en/uiflow/m5burner/publish).
