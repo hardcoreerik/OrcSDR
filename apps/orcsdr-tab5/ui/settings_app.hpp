@@ -7,6 +7,7 @@ namespace orcsdr::settings {
 
 enum class Section : uint8_t {
   connectivity,
+  firmware_updates,
   location_adsb,
   data_maps,
   display_audio,
@@ -50,11 +51,16 @@ struct State {
   bool wifi_connected = false;
   bool wifi_connecting = false;
   bool wifi_hosted_update_required = false;
+  bool wifi_hosted_transport_ready = false;
+  bool wifi_c6_image_embedded = false;
+  uint8_t wifi_c6_update_percent = 0;
   char wifi_ssid[33]{};
   char wifi_ip[16]{};
   char wifi_message[48]{};
   char wifi_hosted_host_version[16]{};
   char wifi_hosted_c6_version[16]{};
+  char wifi_c6_update_state[20]{};
+  char wifi_c6_update_stage[24]{};
   int16_t wifi_rssi = 0;
   WifiNetwork networks[6]{};
   uint8_t network_count = 0;
@@ -113,6 +119,7 @@ enum class ActionKind : uint8_t {
   wifi_power_changed,
   wifi_start_at_boot_changed,
   wifi_antenna_changed,
+  c6_update_confirm,
   scan_wifi,
   connect_wifi,
   connect_saved_wifi,

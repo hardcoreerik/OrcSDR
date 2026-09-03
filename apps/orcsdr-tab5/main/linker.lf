@@ -1,0 +1,11 @@
+[sections:orcsdr_embedded]
+entries:
+    .rodata.embedded
+[scheme:orcsdr_embedded_default]
+entries:
+    orcsdr_embedded -> flash_rodata
+[mapping:orcsdr_embedded]
+archive: libmain.a
+entries:
+    * (orcsdr_embedded_default);
+    orcsdr_embedded -> flash_rodata KEEP()

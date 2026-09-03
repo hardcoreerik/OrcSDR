@@ -23,12 +23,12 @@ constexpr uint16_t kMuted = 0x9cf3;
 constexpr int kHeaderH = 72;
 constexpr int kRailW = 286;
 constexpr int kRailY = 82;
-constexpr int kRailRowH = 72;
+constexpr int kRailRowH = 64;
 constexpr uint8_t kSettingsMinTextSize = 2;
 constexpr uint16_t kRanges[] = {10, 25, 50, 100};
 constexpr uint16_t kTimeouts[] = {0, 30, 60, 120, 300};
 constexpr const char* kLabels[] = {
-    "CONNECTIVITY", "LOCATION & ADS-B", "DATA & MAPS", "DISPLAY & AUDIO",
+    "CONNECTIVITY", "FIRMWARE & UPDATES", "LOCATION & ADS-B", "DATA & MAPS", "DISPLAY & AUDIO",
     "RADIO DEFAULTS", "STORAGE", "COMPANION", "SYSTEM"};
 
 static_assert(static_cast<uint8_t>(Section::count) == std::size(kLabels));
@@ -129,11 +129,9 @@ void draw_connectivity() {
     snprintf(versions, sizeof(versions), "P4: %s     C6: %s",
              g_state.wifi_hosted_host_version, g_state.wifi_hosted_c6_version);
     text(versions, 370, 333, TFT_WHITE, 2);
-    text("Update the C6 manually in M5Burner:", 370, 395, kBlue, 2);
-    text("1. Select the Tab5 C6 ESP-Hosted package.", 390, 432, TFT_WHITE, 1);
-    text("2. Burn ESP-Hosted 3.0.6, then restart OrcSDR.", 390, 466, TFT_WHITE, 1);
-    text("3. Do not erase for normal OrcSDR upgrades.", 390, 500, TFT_WHITE, 1);
-    text("Close this page to keep using the SDR without Wi-Fi.", 370, 552, kMuted, 2);
+    text("Open Firmware & Updates to update the reachable C6.", 370, 395, kBlue, 2);
+    text("SDR reception remains available while Wi-Fi is unavailable.", 370, 442, kMuted, 2);
+    text("An unreachable C6 requires the recovery procedure.", 370, 486, kMuted, 2);
     return;
   }
   char value[96];
@@ -188,6 +186,41 @@ void draw_connectivity() {
              g_state.networks[i].saved ? "  SAVED" : "");
     button(value, x, y, 418, 36,
            g_state.networks[i].saved ? 0x2945 : TFT_DARKCYAN);
+  }
+}
+
+void draw_firmware_updates() {
+  text("FIRMWARE & UPDATES", 330, 115, kBlue, 3);
+  char versions[96];
+  snprintf(versions, sizeof(versions), "P4 HOST: %s", g_state.wifi_hosted_host_version);
+  value_row("HOSTED HOST", versions, 165);
+  snprintf(versions, sizeof(versions), "C6: %s   TARGET: 3.0.6", g_state.wifi_hosted_c6_version);
+  value_row("WIRELESS COPROCESSOR", versions, 220,
+            strcmp(g_state.wifi_c6_update_state, "current") == 0 ? kGreen : TFT_ORANGE);
+  value_row("UPDATE IMAGE", g_state.wifi_c6_image_embedded ? "EMBEDDED IN THIS ORCSDR BUILD" : "NOT INCLUDED", 275,
+            g_state.wifi_c6_image_embedded ? kGreen : TFT_ORANGE);
+  char status[96];
+  snprintf(status, sizeof(status), "%s  %u%%  %s", g_state.wifi_c6_update_state,
+           static_cast<unsigned>(g_state.wifi_c6_update_percent), g_state.wifi_c6_update_stage);
+  value_row("STATUS", status, 330,
+            strcmp(g_state.wifi_c6_update_state, "failed") == 0 ? TFT_ORANGE : TFT_WHITE);
+  if (strcmp(g_state.wifi_c6_update_state, "updating") == 0) {
+    M5.Display.drawRect(330, 385, 760, 32, TFT_LIGHTGREY);
+    M5.Display.fillRect(332, 387, 756 * g_state.wifi_c6_update_percent / 100, 28, kBlue);
+    text("Keep OrcSDR powered on. SDR and audio remain active.", 330, 455, kMuted, 2);
+  } else if (strcmp(g_state.wifi_c6_update_state, "ready") == 0) {
+    text("The C6 is reachable but does not match this OrcSDR build.", 330, 405, TFT_WHITE, 2);
+    button("UPDATE C6 TO 3.0.6", 330, 445, 360, 58, TFT_DARKGREEN);
+    text("This sends the embedded image over the internal SDIO link and restarts OrcSDR.",
+         330, 545, kMuted, 1);
+  } else if (strcmp(g_state.wifi_c6_update_state, "current") == 0) {
+    text("C6 firmware already matches. No update is needed.", 330, 410, kGreen, 2);
+  } else if (strcmp(g_state.wifi_c6_update_state, "unreachable") == 0) {
+    text("The C6 cannot establish Hosted transport.", 330, 405, TFT_ORANGE, 2);
+    text("Use the documented recovery procedure; do not retry automatically.", 330, 450, kMuted, 2);
+  } else {
+    text("Update is unavailable in this build or after a failed attempt.", 330, 405, TFT_ORANGE, 2);
+    text("Restart OrcSDR before retrying. Use recovery only if the C6 is unreachable.", 330, 450, kMuted, 2);
   }
 }
 
@@ -363,6 +396,7 @@ void draw_content() {
   M5.Display.fillRect(kRailW, kHeaderH, 1280 - kRailW, 720 - kHeaderH, kBg);
   switch (g_section) {
     case Section::connectivity: draw_connectivity(); break;
+    case Section::firmware_updates: draw_firmware_updates(); break;
     case Section::location_adsb: draw_location(); break;
     case Section::data_maps: draw_data_maps(); break;
     case Section::display_audio: draw_display_audio(); break;
@@ -610,6 +644,14 @@ void update(const State& state_value) {
                                     state_value.wifi_hosted_c6_version) != 0 ||
                              memcmp(g_state.profiles, state_value.profiles,
                                     sizeof(g_state.profiles)) != 0);
+  const bool firmware_changed = g_section == Section::firmware_updates &&
+      (g_state.wifi_hosted_transport_ready != state_value.wifi_hosted_transport_ready ||
+       g_state.wifi_c6_image_embedded != state_value.wifi_c6_image_embedded ||
+       g_state.wifi_c6_update_percent != state_value.wifi_c6_update_percent ||
+       strcmp(g_state.wifi_hosted_host_version, state_value.wifi_hosted_host_version) != 0 ||
+       strcmp(g_state.wifi_hosted_c6_version, state_value.wifi_hosted_c6_version) != 0 ||
+       strcmp(g_state.wifi_c6_update_state, state_value.wifi_c6_update_state) != 0 ||
+       strcmp(g_state.wifi_c6_update_stage, state_value.wifi_c6_update_stage) != 0);
   const bool power_changed = g_section == Section::system &&
                              (g_state.battery_level != state_value.battery_level ||
                               g_state.battery_mv != state_value.battery_mv ||
@@ -635,6 +677,8 @@ void update(const State& state_value) {
   g_state = state_value;
   if (header_changed) draw_header();
   if (page_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none && !g_location_edit)
+    draw_content();
+  if (firmware_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_content();
   if (power_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_system_power();
@@ -792,6 +836,11 @@ Action handle_touch(int32_t x, int32_t y) {
     if (hit(x, y, 960, 150, 170, 48))
       return {ActionKind::web_console_changed, g_state.web_console_enabled ? 0 : 1};
   }
+  if (g_section == Section::firmware_updates) {
+    if (strcmp(g_state.wifi_c6_update_state, "ready") == 0 &&
+        hit(x, y, 330, 445, 360, 58)) return {ActionKind::c6_update_confirm, 0};
+    return {};
+  }
   return {};
 }
 
@@ -877,7 +926,20 @@ bool self_check() {
   g_location_edit = saved_location_edit;
   g_location_request_pending = saved_location_pending;
   strlcpy(g_location_query, saved_location_query, sizeof(g_location_query));
-  if (!symbols_ok || !credentials_ok || !empty_location_ok || !location_ok) return false;
+  const State saved_state = g_state;
+  const Section saved_section = g_section;
+  const bool saved_active = g_active;
+  g_active = true;
+  g_section = Section::firmware_updates;
+  strlcpy(g_state.wifi_c6_update_state, "ready", sizeof(g_state.wifi_c6_update_state));
+  const bool c6_ready_routes = handle_touch(331, 446).kind == ActionKind::c6_update_confirm;
+  strlcpy(g_state.wifi_c6_update_state, "current", sizeof(g_state.wifi_c6_update_state));
+  const bool c6_current_blocks = handle_touch(331, 446).kind == ActionKind::none;
+  g_state = saved_state;
+  g_section = saved_section;
+  g_active = saved_active;
+  if (!symbols_ok || !credentials_ok || !empty_location_ok || !location_ok ||
+      !c6_ready_routes || !c6_current_blocks) return false;
   return true;
 }
 

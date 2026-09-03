@@ -521,21 +521,21 @@ COM8
 
 ### 3. Install OrcSDR
 
-ESP-IDF 5.5.4 must already be installed. Use the explicit native build steps in
-[the Tab5 ESP-Hosted migration record](docs/user-guide/tab5-esp-hosted-3-migration.md),
-not the legacy installer as a release gate.
+ESP-IDF 5.5.4 must already be installed. For a normal Windows install, use the
+installer; it writes the compatible P4 boot layout without erasing NVS, checks
+the Hosted 3.0.6 pair, and leaves a reachable mismatch for Firmware & Updates.
 
 ```powershell
-Set-Location .\apps\orcsdr-tab5
-$env:IDF_PYTHON_ENV_PATH = 'C:\Espressif\python_env\idf5.5_py3.14_env'
-. 'C:\Espressif\frameworks\esp-idf-v5.5.4\export.ps1'
-idf.py reconfigure
-idf.py build
+.\install-orcsdr.ps1 -Port COM8
 ```
 
-The legacy script is retained for historical releases and still expects the
-old 2.12.6 pair. It is not valid 3.0.6 acceptance tooling. A P4 application
-flash cannot update the C6.
+`-UpdateC6` is a guarded recovery route: it temporarily installs the bridge,
+verifies a matching Hosted pair, then restores OrcSDR. Normal users should use
+Firmware & Updates for a reachable C6 mismatch; do not use either route as a
+substitute for the documented manual C6 recovery procedure.
+
+For a source build, use the explicit native steps in
+[the Tab5 ESP-Hosted migration record](docs/user-guide/tab5-esp-hosted-3-migration.md).
 
 Saved NVS settings are preserved. PlatformIO is not a supported OrcSDR build or flash path.
 
@@ -601,7 +601,7 @@ OrcSDR/
 │
 ├── tools/                       Capture, transfer, analysis, and test tools
 │
-├── install-orcsdr.ps1           Historical installer (2.12.6 check; not the 3.0.6 release gate)
+├── install-orcsdr.ps1           Windows P4 installer with guarded Hosted 3.0.6 recovery route
 ├── LICENSE
 └── README.md
 ```

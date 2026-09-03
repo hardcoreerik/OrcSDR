@@ -6,10 +6,14 @@
 extern "C" {
 #include <esp_event.h>
 #include <esp_hosted.h>
+#include <esp_hosted_ota.h>
 #include <esp_hosted_transport_config.h>
 #include <esp_log.h>
 #include <esp_netif.h>
+#include <esp_system.h>
 #include <esp_wifi.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 }
 
 namespace orcsdr::wifi {
@@ -20,12 +24,80 @@ std::atomic<bool> g_failed{false};
 bool g_versions_match = false;
 char g_c6_version[16]{"unknown"};
 bool g_hosted_transport_ready = false;
+portMUX_TYPE g_update_lock = portMUX_INITIALIZER_UNLOCKED;
+C6UpdateStatus g_update_status{};
 std::atomic<bool> g_scan_done{false};
 esp_netif_t* g_sta_netif = nullptr;
 const char* g_failure_stage = "none";
 int32_t g_failure_code = ESP_OK;
 char g_ssid[33]{};
 std::atomic<uint32_t> g_ip_addr{0};
+
+#if ORCSDR_HAS_EMBEDDED_C6_FIRMWARE
+extern const uint8_t esp_hosted_tab5_c6_bin_start[]
+    asm("_binary_esp_hosted_tab5_c6_bin_start");
+extern const uint8_t esp_hosted_tab5_c6_bin_end[]
+    asm("_binary_esp_hosted_tab5_c6_bin_end");
+#endif
+
+void set_update_status(C6UpdateState state, uint8_t progress, const char* stage) {
+  portENTER_CRITICAL(&g_update_lock);
+  g_update_status.state = state;
+  g_update_status.progress_percent = progress;
+  g_update_status.image_embedded = ORCSDR_HAS_EMBEDDED_C6_FIRMWARE;
+  strlcpy(g_update_status.stage, stage ? stage : "none", sizeof(g_update_status.stage));
+  portEXIT_CRITICAL(&g_update_lock);
+}
+
+void update_fail(const char* stage, esp_err_t error) {
+  g_failure_stage = stage;
+  g_failure_code = error;
+  set_update_status(C6UpdateState::failed, 0, stage);
+  ESP_LOGE("orcsdr_wifi", "C6 update failed stage=%s err=%s", stage, esp_err_to_name(error));
+  ESP_LOGE("orcsdr_wifi", "RTL_WIFI_C6_UPDATE state=failed stage=%s err=%s", stage,
+           esp_err_to_name(error));
+}
+
+void c6_update_task(void*) {
+#if ORCSDR_HAS_EMBEDDED_C6_FIRMWARE
+  const size_t size = esp_hosted_tab5_c6_bin_end - esp_hosted_tab5_c6_bin_start;
+  if (size == 0) { update_fail("image_empty", ESP_ERR_INVALID_SIZE); vTaskDelete(nullptr); return; }
+  if (const esp_err_t result = esp_hosted_slave_ota_begin(); result != ESP_OK) {
+    update_fail("ota_begin", result); vTaskDelete(nullptr); return;
+  }
+  uint8_t reported = 0;
+  for (size_t offset = 0; offset < size;) {
+    const size_t chunk = size - offset > 1024 ? 1024 : size - offset;
+    if (const esp_err_t result = esp_hosted_slave_ota_write(esp_hosted_tab5_c6_bin_start + offset, chunk);
+        result != ESP_OK) {
+      (void)esp_hosted_slave_ota_end();
+      update_fail("ota_write", result); vTaskDelete(nullptr); return;
+    }
+    offset += chunk;
+    const uint8_t progress = static_cast<uint8_t>((offset * 100u) / size);
+    set_update_status(C6UpdateState::updating, progress, "writing");
+    if (progress >= reported + 10 || progress == 100) {
+      reported = progress;
+      ESP_LOGI("orcsdr_wifi", "RTL_WIFI_C6_UPDATE state=writing percent=%u", progress);
+    }
+    vTaskDelay(1);
+  }
+  if (const esp_err_t result = esp_hosted_slave_ota_end(); result != ESP_OK) {
+    update_fail("ota_end", result); vTaskDelete(nullptr); return;
+  }
+  if (const esp_err_t result = esp_hosted_slave_ota_activate(); result != ESP_OK) {
+    update_fail("ota_activate", result); vTaskDelete(nullptr); return;
+  }
+  set_update_status(C6UpdateState::rebooting, 100, "restarting");
+  ESP_LOGI("orcsdr_wifi", "RTL_WIFI_C6_UPDATE state=rebooting target=3.0.6 bytes=%u",
+           static_cast<unsigned>(size));
+  vTaskDelay(pdMS_TO_TICKS(300));
+  esp_restart();
+#else
+  update_fail("image_unavailable", ESP_ERR_NOT_SUPPORTED);
+#endif
+  vTaskDelete(nullptr);
+}
 
 const char* security_name(wifi_auth_mode_t authmode) {
   switch (authmode) {
@@ -91,6 +163,7 @@ bool start() {
   g_failure_stage = "none";
   g_failure_code = ESP_OK;
   g_versions_match = false;
+  g_hosted_transport_ready = false;
   strlcpy(g_c6_version, "unknown", sizeof(g_c6_version));
   const esp_err_t netif = esp_netif_init();
   if (netif != ESP_OK && netif != ESP_ERR_INVALID_STATE) {
@@ -105,10 +178,14 @@ bool start() {
     if (g_sta_netif == nullptr) { g_failure_stage = "sta_netif"; g_failure_code = ESP_FAIL; return false; }
   }
   const esp_err_t hosted_init = esp_hosted_init();
-  if (hosted_init != ESP_OK) { g_failure_stage = "hosted_init"; g_failure_code = hosted_init; return false; }
+  if (hosted_init != ESP_OK) {
+    g_failure_stage = "hosted_init"; g_failure_code = hosted_init;
+    set_update_status(C6UpdateState::unreachable, 0, "hosted_init"); return false;
+  }
   const esp_err_t hosted_connect = esp_hosted_connect_to_slave();
   if (hosted_connect != ESP_OK) {
-    g_failure_stage = "hosted_connect"; g_failure_code = hosted_connect; return false;
+    g_failure_stage = "hosted_connect"; g_failure_code = hosted_connect;
+    set_update_status(C6UpdateState::unreachable, 0, "hosted_connect"); return false;
   }
   g_hosted_transport_ready = true;
   esp_hosted_coprocessor_fwver_t cp{};
@@ -121,7 +198,14 @@ bool start() {
     strlcpy(g_c6_version, "unavailable", sizeof(g_c6_version));
   g_versions_match = version == ESP_OK &&
                      cp.major1 == 3 && cp.minor1 == 0 && cp.patch1 == 6;
-  if (!g_versions_match) { g_failure_stage = "version"; g_failure_code = version; return false; }
+  if (!g_versions_match) {
+    g_failure_stage = "version"; g_failure_code = version;
+    set_update_status(version == ESP_OK && ORCSDR_HAS_EMBEDDED_C6_FIRMWARE
+                          ? C6UpdateState::ready : C6UpdateState::unavailable,
+                      0, version == ESP_OK ? "confirm_required" : "version_query");
+    return false;
+  }
+  set_update_status(C6UpdateState::current, 100, "current");
   wifi_init_config_t wifi_cfg = WIFI_INIT_CONFIG_DEFAULT();
   const esp_err_t wifi_init = esp_wifi_init(&wifi_cfg);
   if (wifi_init != ESP_OK && wifi_init != ESP_ERR_WIFI_INIT_STATE) {
@@ -208,4 +292,34 @@ const char* hosted_c6_version() { return g_c6_version; }
 bool hosted_transport_ready() { return g_hosted_transport_ready; }
 const char* hosted_failure_stage() { return g_failure_stage; }
 int32_t hosted_failure_code() { return g_failure_code; }
+C6UpdateStatus c6_update_status() {
+  C6UpdateStatus snapshot{};
+  portENTER_CRITICAL(&g_update_lock);
+  snapshot = g_update_status;
+  portEXIT_CRITICAL(&g_update_lock);
+  return snapshot;
+}
+const char* c6_update_state_name(C6UpdateState state) {
+  switch (state) {
+    case C6UpdateState::unreachable: return "unreachable";
+    case C6UpdateState::current: return "current";
+    case C6UpdateState::ready: return "ready";
+    case C6UpdateState::updating: return "updating";
+    case C6UpdateState::failed: return "failed";
+    case C6UpdateState::rebooting: return "rebooting";
+    default: return "unavailable";
+  }
+}
+bool begin_c6_update() {
+  const C6UpdateStatus status = c6_update_status();
+  if (!g_hosted_transport_ready || !status.image_embedded || status.state != C6UpdateState::ready)
+    return false;
+  set_update_status(C6UpdateState::updating, 0, "starting");
+  if (xTaskCreate(c6_update_task, "c6_ota", 4096, nullptr, 4, nullptr) != pdPASS) {
+    update_fail("task_create", ESP_ERR_NO_MEM);
+    return false;
+  }
+  ESP_LOGI("orcsdr_wifi", "RTL_WIFI_C6_UPDATE state=starting target=3.0.6");
+  return true;
+}
 }  // namespace orcsdr::wifi
