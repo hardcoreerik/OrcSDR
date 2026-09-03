@@ -3020,7 +3020,10 @@ bool lookup_adsb_metadata(uint32_t icao, AdsbIndexRecord* result) {
     if (result->icao < icao) low = middle + 1;
     else high = middle;
   }
-  const bool found = low < header.record_count && result->icao == icao;
+  const bool found = low < header.record_count &&
+                     file.seek(sizeof(header) + low * sizeof(AdsbIndexRecord)) &&
+                     file.read(reinterpret_cast<uint8_t*>(result), sizeof(*result)) == sizeof(*result) &&
+                     result->icao == icao;
   file.close();
   return found;
 }
