@@ -55,7 +55,7 @@ from UI features alone.
 cd apps/orcsdr-tab5
 .\tools\build-tab5-idf.ps1
 # After explicit hardware authorization:
-idf.py -p COM17 flash
+idf.py -p <PORT> flash
 ```
 
 This is a native ESP-IDF 5.5.4 build. M5Unified 0.2.20 and M5GFX 0.2.27 are
