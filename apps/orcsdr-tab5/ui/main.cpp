@@ -10353,7 +10353,7 @@ size_t ui_doc_prefix_count(const char* prefix) {
 bool ui_doc_self_check() {
   if (static_cast<uint8_t>(orcsdr::fm::View::count) != 5 ||
       static_cast<uint8_t>(orcsdr::p25::View::count) != 5 ||
-      static_cast<uint8_t>(orcsdr::settings::Section::count) != 8 ||
+      static_cast<uint8_t>(orcsdr::settings::Section::count) != 9 ||
       ui_doc_prefix_count("fm.") != static_cast<uint8_t>(orcsdr::fm::View::count) ||
       ui_doc_prefix_count("p25.") != static_cast<uint8_t>(orcsdr::p25::View::count) ||
       ui_doc_prefix_count("settings.") !=
