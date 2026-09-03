@@ -3275,6 +3275,10 @@ bool iq_rec_start() {
     Serial.println("RTL_IQ_ERROR lora_mode_required");
     return false;
   }
+  if (!lora_native_decoder_start()) {
+    Serial.println("RTL_IQ_ERROR native_decoder_unavailable");
+    return false;
+  }
   if (g_iq_rec_active.load(std::memory_order_acquire)) return true;
   if (g_iq_rec_ready.load(std::memory_order_acquire) ||
       lora_native_decode_busy.load(std::memory_order_acquire)) {
@@ -3382,6 +3386,10 @@ void lora_native_decode_task(void*) {
 
 bool lora_native_decoder_start() {
   if (lora_native_decoder_ready.load(std::memory_order_acquire)) return true;
+  if (!orcsdr::lora_native::self_check()) {
+    Serial.println("RTL_LORA_NATIVE_SELF_CHECK_FAIL");
+    return false;
+  }
   if (!orcsdr::lora_native::initialize()) return false;
   lora_native_decode_queue = xQueueCreate(1, sizeof(LoraNativeDecodeWork));
   if (lora_native_decode_queue == nullptr ||
@@ -12671,15 +12679,6 @@ void setup() {
     abort();
   }
   Serial.println("RF24_DASHBOARD_SELF_CHECK_OK");
-  if (!orcsdr::lora_native::self_check()) {
-    Serial.println("RTL_LORA_NATIVE_SELF_CHECK_FAIL");
-    abort();
-  }
-  if (!lora_native_decoder_start()) {
-    Serial.println("RTL_LORA_NATIVE_INIT_FAIL");
-  } else {
-    Serial.println("RTL_LORA_NATIVE_READY");
-  }
   if (!ui_doc_self_check()) {
     Serial.println("UI_DOC_SELF_CHECK_FAIL");
     abort();
