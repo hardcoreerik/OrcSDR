@@ -29,10 +29,12 @@ The build pins the Espressif ESP-Hosted 3.0.6 source revision, emits C6
 provenance and SHA-256, and produces the one M5Burner upload bundle plus a
 local test zip. It never flashes hardware or uploads a listing.
 
-## Publication gate
+## Publication record and future-release gate
 
-Use **USER CUSTOM → Publish** for the one package, keep the listing private,
-and test using its Share Code. Only after the exact-tag hardware gate in
-[M5BURNER_HARDWARE_GATE.md](M5BURNER_HARDWARE_GATE.md) passes may the GitHub
-prerelease be created and the listing made public. M5Burner publishing
-details are in the [official guide](https://docs.m5stack.com/en/uiflow/m5burner/publish).
+`v0.2.0-beta.1` is publicly available through M5Burner and as a [GitHub
+prerelease](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.2.0-beta.1).
+For a future release, use **USER CUSTOM → Publish** privately first and test
+with its Share Code. Only after the exact-tag hardware gate in
+[M5BURNER_HARDWARE_GATE.md](M5BURNER_HARDWARE_GATE.md) passes may its GitHub
+prerelease be created and its listing made public. M5Burner publishing details
+are in the [official guide](https://docs.m5stack.com/en/uiflow/m5burner/publish).
