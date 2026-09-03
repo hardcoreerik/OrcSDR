@@ -1,5 +1,5 @@
 #requires -Version 5.1
-<# Installs final P4 without erasing NVS. C6 replacement requires -UpdateC6. #>
+<# Installs final P4 without erasing NVS. -UpdateC6 is a recovery-only bridge route. #>
 param(
   [string]$Port,
   [string]$IdfPath = 'C:\Espressif\frameworks\esp-idf-v5.5.4',
@@ -63,9 +63,9 @@ if ($UpdateC6) {
   }
   Flash-App (Join-Path $Root 'apps\orcsdr-c6-bridge') 'build-release-bridge' $script:Port
   if (-not $DryRun) { Start-Sleep -Seconds 12 }
-  if (-not (Test-HostedPair $script:Port)) { throw 'C6 bridge did not establish a matching Hosted link. Stop here; use the private M5Burner bridge recovery path.' }
+  if (-not (Test-HostedPair $script:Port)) { throw 'C6 bridge did not establish a matching Hosted link. Stop here; use the documented manual C6 recovery path.' }
 } elseif (-not (Test-HostedPair $script:Port)) {
-  Write-Host 'Hosted pair is mismatched. Final P4 flash remains safe, but C6 synchronization is skipped. Re-run with -UpdateC6 or install the private Hosted Bridge through M5Burner first.'
+  Write-Host 'Hosted pair is mismatched. Final P4 flash remains safe. Use Firmware & Updates after installing OrcSDR, or re-run with -UpdateC6 only for recovery.'
 }
 $final = Join-Path $Root 'apps\orcsdr-tab5'
 if (-not $DryRun) { & (Join-Path $final 'tools\build-tab5-idf.ps1') -IdfPath $IdfPath }

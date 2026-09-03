@@ -601,7 +601,7 @@ OrcSDR/
 │
 ├── tools/                       Capture, transfer, analysis, and test tools
 │
-├── install-orcsdr.ps1           Historical installer (2.12.6 check; not the 3.0.6 release gate)
+├── install-orcsdr.ps1           Windows P4 installer with guarded Hosted 3.0.6 recovery route
 ├── LICENSE
 └── README.md
 ```
