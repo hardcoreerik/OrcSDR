@@ -1,5 +1,6 @@
 param(
-  [string]$IdfPath = 'C:\Espressif\frameworks\esp-idf-v5.5.4'
+  [string]$IdfPath = 'C:\Espressif\frameworks\esp-idf-v5.5.4',
+  [string]$C6Firmware
 )
 
 $ErrorActionPreference = 'Stop'
@@ -7,6 +8,13 @@ $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
 $env:IDF_PYTHON_ENV_PATH = 'C:\Espressif\python_env\idf5.5_py3.14_env'
 $env:PATH = "$env:IDF_PYTHON_ENV_PATH\Scripts;$env:PATH"
+$resolvedC6Firmware = $null
+if ($C6Firmware) {
+  if (-not (Test-Path -LiteralPath $C6Firmware -PathType Leaf)) {
+    throw "C6 firmware does not exist: $C6Firmware"
+  }
+  $resolvedC6Firmware = (Resolve-Path -LiteralPath $C6Firmware).Path
+}
 . (Join-Path $IdfPath 'export.ps1')
 Set-Location (Join-Path $PSScriptRoot '..')
 $buildDir = 'build-native-hosted3'
@@ -15,8 +23,12 @@ $buildDir = 'build-native-hosted3'
 # a prior transport choice cannot silently survive a configuration change.
 New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
 Copy-Item -LiteralPath 'sdkconfig.defaults' -Destination (Join-Path $buildDir 'sdkconfig') -Force
-idf.py -B $buildDir -D "SDKCONFIG=$buildDir/sdkconfig" `
-    -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults' reconfigure
+$configureArgs = @('-B', $buildDir, '-D', "SDKCONFIG=$buildDir/sdkconfig",
+                   '-D', 'SDKCONFIG_DEFAULTS=sdkconfig.defaults')
+if ($resolvedC6Firmware) {
+  $configureArgs += @('-D', "C6_FIRMWARE_BIN=$resolvedC6Firmware")
+}
+idf.py @configureArgs reconfigure
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # The component-manager step above fetches (or re-resolves) managed_components/,

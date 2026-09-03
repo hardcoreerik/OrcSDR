@@ -16,6 +16,15 @@ struct ScanResult {
   bool secure = false;
 };
 
+enum class C6UpdateState : uint8_t { unavailable, unreachable, current, ready, updating, failed, rebooting };
+
+struct C6UpdateStatus {
+  C6UpdateState state = C6UpdateState::unavailable;
+  uint8_t progress_percent = 0;
+  bool image_embedded = false;
+  char stage[24]{};
+};
+
 bool start();
 void stop();
 bool begin_scan();
@@ -32,5 +41,8 @@ const char* hosted_c6_version();
 bool hosted_transport_ready();
 const char* hosted_failure_stage();
 int32_t hosted_failure_code();
+C6UpdateStatus c6_update_status();
+const char* c6_update_state_name(C6UpdateState state);
+bool begin_c6_update();
 
 }  // namespace orcsdr::wifi

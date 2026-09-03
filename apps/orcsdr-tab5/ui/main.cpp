@@ -8505,6 +8505,7 @@ const orcsdr::settings::State& global_settings_state() {
   state = {};
   const auto device = orcsdr::device_status::collect(
       wifi_connected, wifi_ssid, rtl_device_ready(), rtl_sdr_status);
+  const auto c6_update = orcsdr::wifi::c6_update_status();
   state.wifi_power_enabled = settings_wifi_power_enabled;
   state.wifi_start_at_boot = settings_wifi_start_at_boot;
   state.wifi_external_antenna = settings_wifi_external_antenna;
@@ -8516,10 +8517,16 @@ const orcsdr::settings::State& global_settings_state() {
   strlcpy(state.wifi_ip, device.wifi_ip, sizeof(state.wifi_ip));
   strlcpy(state.wifi_message, wifi_status_message, sizeof(state.wifi_message));
   state.wifi_hosted_update_required = wifi_hosted_update_required;
+  state.wifi_hosted_transport_ready = orcsdr::wifi::hosted_transport_ready();
+  state.wifi_c6_image_embedded = c6_update.image_embedded;
+  state.wifi_c6_update_percent = c6_update.progress_percent;
   strlcpy(state.wifi_hosted_host_version, wifi_hosted_host_version,
           sizeof(state.wifi_hosted_host_version));
   strlcpy(state.wifi_hosted_c6_version, wifi_hosted_c6_version,
           sizeof(state.wifi_hosted_c6_version));
+  strlcpy(state.wifi_c6_update_state, orcsdr::wifi::c6_update_state_name(c6_update.state),
+          sizeof(state.wifi_c6_update_state));
+  strlcpy(state.wifi_c6_update_stage, c6_update.stage, sizeof(state.wifi_c6_update_stage));
   state.wifi_rssi = device.wifi_rssi;
   state.saved_network_count = wifi_profile_count;
   for (uint8_t i = 0; i < wifi_profile_count; ++i) {
@@ -8926,6 +8933,13 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       } else {
         strlcpy(wifi_status_message, "Wi-Fi ready; choose Scan or Use", sizeof(wifi_status_message));
       }
+      update_global_settings();
+      break;
+    case orcsdr::settings::ActionKind::c6_update_confirm:
+      if (orcsdr::wifi::begin_c6_update())
+        strlcpy(wifi_status_message, "C6 firmware update starting", sizeof(wifi_status_message));
+      else
+        strlcpy(wifi_status_message, "C6 update is not ready", sizeof(wifi_status_message));
       update_global_settings();
       break;
     case orcsdr::settings::ActionKind::wifi_antenna_changed:
@@ -11201,6 +11215,7 @@ void process_command(char* command) {
     } else if (strcmp(domain, "SETTINGS") == 0) {
       using K = orcsdr::settings::ActionKind; K kind = K::none;
       if (!strcmp(action, "WIFI_POWER")) kind=K::wifi_power_changed; else if (!strcmp(action, "WIFI_BOOT")) kind=K::wifi_start_at_boot_changed; else if (!strcmp(action, "ANTENNA")) kind=K::wifi_antenna_changed;
+      else if (!strcmp(action, "C6_UPDATE_CONFIRM")) kind=K::c6_update_confirm;
       else if (!strcmp(action, "SCAN")) kind=K::scan_wifi; else if (!strcmp(action, "CONNECT_SAVED")) kind=K::connect_saved_wifi;
       else if (!strcmp(action, "FORGET")) kind=K::forget_wifi; else if (!strcmp(action, "MOVE_UP")) kind=K::move_wifi_up;
       else if (!strcmp(action, "MOVE_DOWN")) kind=K::move_wifi_down; else if (!strcmp(action, "RANGE")) kind=K::range_changed;
@@ -11306,6 +11321,22 @@ void process_command(char* command) {
                   settings_wifi_start_at_boot ? 1 : 0,
                   settings_wifi_external_antenna ? "external" : "internal",
                   static_cast<unsigned>(wifi_scan_result_count));
+    return;
+  }
+  if (strcmp(command, "RTL_WIFI_C6_STATUS") == 0) {
+    const auto c6 = orcsdr::wifi::c6_update_status();
+    Serial.printf("RTL_WIFI_C6_STATUS host=3.0.6 coprocessor=%s transport=%d embedded=%d "
+                  "state=%s percent=%u stage=%s match=%d\n",
+                  orcsdr::wifi::hosted_c6_version(), orcsdr::wifi::hosted_transport_ready() ? 1 : 0,
+                  c6.image_embedded ? 1 : 0, orcsdr::wifi::c6_update_state_name(c6.state),
+                  static_cast<unsigned>(c6.progress_percent), c6.stage[0] ? c6.stage : "none",
+                  orcsdr::wifi::hosted_versions_match() ? 1 : 0);
+    return;
+  }
+  if (strcmp(command, "RTL_WIFI_C6_UPDATE CONFIRM") == 0) {
+    if (!authenticated) { Serial.println("RTL_WIFI_C6_UPDATE_ERROR auth_required"); return; }
+    Serial.println(orcsdr::wifi::begin_c6_update() ? "RTL_WIFI_C6_UPDATE_QUEUED"
+                                                    : "RTL_WIFI_C6_UPDATE_ERROR not_ready");
     return;
   }
   if (strcmp(command, "RTL_WIFI_COEX_STATUS") == 0) {
@@ -11844,7 +11875,8 @@ void process_command(char* command) {
     Serial.println("RTL_LAB OPEN|CLOSE|STATUS|PAGE|GET|SET|ACTION|SELF_CHECK - RF Lab UI/control");
     Serial.println("RTL_LAB REFERENCE|SNAPSHOT|RUN|RECIPE|RECORDS - RF Lab evidence workflow (mutations auth)");
     Serial.println("RTL_UI ACTION <domain> <action> [value] - mirror FM/P25/LoRa/Settings touch action (auth)");
-    Serial.println("RTL_WIFI_STATUS|COEX_STATUS|SCAN|RESULTS|PROFILES - Wi-Fi and radio coexistence state");
+    Serial.println("RTL_WIFI_STATUS|C6_STATUS|COEX_STATUS|SCAN|RESULTS|PROFILES - Wi-Fi and radio coexistence state");
+    Serial.println("RTL_WIFI_C6_UPDATE CONFIRM - authenticated explicit in-app C6 update");
     Serial.println("RTL_WIFI_CONNECT_SAVED [PAUSE]|DISCONNECT - connect profile 0 live or with a temporary SDR pause");
     Serial.println("SET_WIFI <ssid_hex> <pass_hex> <hmac> - signed slot-0 provisioning (auth)");
     Serial.println("RTL_TUNE <BAND> <HZ>           - tune band+freq (auth) BAND=FM|AM|WX|CB|LORA|BROWSE|ADSB|P25");

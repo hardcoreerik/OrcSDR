@@ -34,6 +34,17 @@ if ($Bridge) {
   if ((Get-FileHash $c6Image -Algorithm SHA256).Hash.ToLowerInvariant() -ne $provenance.sha256) { throw 'Bridge C6 hash does not match provenance.' }
 } elseif ($manifest.name -ne 'OrcSDR') {
   throw 'Manifest is not the final OrcSDR package.'
+} else {
+  $provenancePath = Join-Path $bundle 'c6\c6-provenance.json'
+  $c6Image = Join-Path $bundle $manifest.c6_firmware
+  if (-not $manifest.c6_firmware -or -not (Test-Path $provenancePath) -or -not (Test-Path $c6Image)) {
+    throw 'Final package is missing its embedded C6 update provenance.'
+  }
+  $provenance = Get-Content $provenancePath -Raw | ConvertFrom-Json
+  if ($provenance.hosted_version -ne '3.0.6' -or $manifest.c6_sha256 -ne $provenance.sha256 -or
+      (Get-FileHash $c6Image -Algorithm SHA256).Hash.ToLowerInvariant() -ne $provenance.sha256) {
+    throw 'Final package C6 image does not match its provenance.'
+  }
 }
 if ($manifest.device_type -ne 'M5Stack Tab5' -or $manifest.target -ne 'ESP32-P4') {
   throw 'Manifest is not a Tab5 P4 release.'
@@ -41,6 +52,9 @@ if ($manifest.device_type -ne 'M5Stack Tab5' -or $manifest.target -ne 'ESP32-P4'
 
 $imagePath = Join-Path $bundle $manifest.firmware
 if (-not (Test-Path -LiteralPath $imagePath -PathType Leaf)) { throw "Missing firmware: $imagePath" }
+if (-not $Bridge -and (Get-Item -LiteralPath $imagePath).Length -le (Get-Item -LiteralPath $c6Image).Length) {
+  throw 'Final P4 image is too small to contain the declared C6 update image.'
+}
 $sumLine = (Get-Content -LiteralPath $sumPath -Raw).Trim()
 if ($sumLine -notmatch '^([0-9a-fA-F]{64}) \*(.+)$') { throw 'SHA256SUMS.txt must contain one SHA-256 entry.' }
 if ($Matches[2] -ne $manifest.firmware) { throw 'SHA256SUMS filename does not match the manifest.' }
@@ -48,8 +62,8 @@ $actualHash = (Get-FileHash -LiteralPath $imagePath -Algorithm SHA256).Hash.ToLo
 if ($Matches[1].ToLowerInvariant() -ne $actualHash -or $manifest.sha256 -ne $actualHash) {
   throw 'Firmware SHA-256 does not match the manifest and checksum file.'
 }
-if (-not $Bridge -and (Get-Content -LiteralPath $readmePath -Raw) -notmatch 'P4 application only') {
-  throw 'Bundle README is missing the P4-only safety notice.'
+if (-not $Bridge -and (Get-Content -LiteralPath $readmePath -Raw) -notmatch 'Firmware & Updates') {
+  throw 'Bundle README is missing the in-app C6 update guidance.'
 }
 
 $zip = Get-ChildItem -LiteralPath $bundle -Filter '*local-m5burner.zip' | Select-Object -First 1

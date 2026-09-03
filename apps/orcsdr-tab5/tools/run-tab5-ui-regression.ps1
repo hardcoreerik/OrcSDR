@@ -23,6 +23,7 @@ param(
   [switch]$WifiCoexistence,
   [switch]$WifiCoexistenceDiagnostic,
   [switch]$DataOnly,
+  [switch]$C6Update,
   [switch]$InstallLaneMap,
   [string]$LocationQuery = '97401',
   [switch]$RequireWifiConnection,
@@ -641,6 +642,10 @@ function Invoke-SelfCheck {
   if ($audio.speaker_running -ne 1 -or $audio.audio_chunks -ne 42) { throw 'Audio parser failed.' }
   $coex = 'RTL_WIFI_COEX_STATUS station=1 scanning=0 connecting=0 connected=1 connect_pause=0 rtl_ready=1 capture_state=3 capture_requested=0 band=FM frequency_hz=96100000 audio_enabled=1 speaker_running=1 audio_chunks=42 audio_drops=0'
   if ($coex -notmatch 'connect_pause=0.*rtl_ready=1.*capture_state=3.*band=FM.*speaker_running=1') { throw 'Coexistence parser failed.' }
+  $c6 = 'RTL_WIFI_C6_STATUS host=3.0.6 coprocessor=2.12.6 transport=1 embedded=1 state=ready percent=0 stage=version match=0'
+  if ($c6 -notmatch '^RTL_WIFI_C6_STATUS host=\S+ coprocessor=\S+ transport=1 embedded=1 state=ready percent=0 stage=\S+ match=0$') {
+    throw 'C6 update parser failed.'
+  }
   if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,0,0,1,0,0) }) 'ADSB')) {
     throw 'Exclusive dashboard check rejected valid ADS-B state.'
   }
@@ -657,8 +662,41 @@ function Invoke-SelfCheck {
 }
 
 if ($SelfCheck) { Invoke-SelfCheck; exit 0 }
-if (@($Run, $Soak, $Driver079, $WifiOnly, $WifiCoexistence, $WifiCoexistenceDiagnostic, $DataOnly).Where({ $_ }).Count -gt 1) {
-  throw 'Choose only one of -Run, -Soak, -Driver079, -WifiOnly, -WifiCoexistence, -WifiCoexistenceDiagnostic, or -DataOnly.'
+if (@($Run, $Soak, $Driver079, $WifiOnly, $WifiCoexistence, $WifiCoexistenceDiagnostic, $DataOnly, $C6Update).Where({ $_ }).Count -gt 1) {
+  throw 'Choose only one of -Run, -Soak, -Driver079, -WifiOnly, -WifiCoexistence, -WifiCoexistenceDiagnostic, -DataOnly, or -C6Update.'
+}
+
+function Get-C6UpdateStatus {
+  $line = Send-And-Wait 'RTL_WIFI_C6_STATUS' '^RTL_WIFI_C6_STATUS '
+  if ($line -notmatch '^RTL_WIFI_C6_STATUS host=(\S+) coprocessor=(\S+) transport=([01]) embedded=([01]) state=(\S+) percent=([0-9]+) stage=(\S+) match=([01])$') {
+    throw "Malformed C6 update status: $line"
+  }
+  [pscustomobject]@{
+    Host = $Matches[1]; Coprocessor = $Matches[2]; Transport = [int]$Matches[3]
+    Embedded = [int]$Matches[4]; State = $Matches[5]; Percent = [int]$Matches[6]
+    Stage = $Matches[7]; Match = [int]$Matches[8]
+  }
+}
+
+function Invoke-C6UpdateTest {
+  Wait-DeviceReady 60 11000
+  Connect-Authenticated
+  $before = Get-C6UpdateStatus
+  if ($before.Transport -ne 1 -or $before.Embedded -ne 1 -or $before.State -ne 'ready') {
+    throw "C6 update requires a reachable mismatched C6 and embedded release image: $($before | ConvertTo-Json -Compress)"
+  }
+  [void](Send-And-Wait 'RTL_UI ACTION SETTINGS C6_UPDATE_CONFIRM' '^RTL_UI_ACTION_OK$' 10)
+  $writing = Get-C6UpdateStatus
+  if ($writing.State -notin @('updating', 'rebooting') -or $writing.Percent -gt 100) {
+    throw "C6 update did not enter a bounded update state: $($writing | ConvertTo-Json -Compress)"
+  }
+  Write-SoakLine "RTL_WIFI_C6_UPDATE_TEST queued_via=ui_action host=$($before.Host) coprocessor=$($before.Coprocessor)"
+  Wait-DeviceReady 90 11000
+  $after = Get-C6UpdateStatus
+  if ($after.Match -ne 1 -or $after.Coprocessor -ne '3.0.6' -or $after.State -ne 'current') {
+    throw "C6 update verification failed: $($after | ConvertTo-Json -Compress)"
+  }
+  Write-SoakLine 'RTL_WIFI_C6_UPDATE_TEST pass=1 path=ui_action+status+post_reboot'
 }
 
 function Get-DriverStatus {
@@ -782,6 +820,7 @@ try {
     Assert-DataServices
     exit 0
   }
+  if ($C6Update) { Invoke-C6UpdateTest; exit 0 }
 
   if ($Profile) {
     $commit = (& git -C (Join-Path $PSScriptRoot '..\..\..') rev-parse --short HEAD 2>$null)

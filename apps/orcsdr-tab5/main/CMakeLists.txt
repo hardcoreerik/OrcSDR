@@ -1,3 +1,17 @@
+set(ORCSDR_EMBED_FILES
+    "orc_badge_104.png"
+    "orc_badge_104.rgb565"
+    "../ui/web_console.html")
+set(ORCSDR_LDFRAGMENTS)
+if(C6_FIRMWARE_BIN)
+    get_filename_component(C6_FIRMWARE_BIN "${C6_FIRMWARE_BIN}" ABSOLUTE)
+    if(NOT EXISTS "${C6_FIRMWARE_BIN}")
+        message(FATAL_ERROR "C6_FIRMWARE_BIN does not exist: ${C6_FIRMWARE_BIN}")
+    endif()
+    list(APPEND ORCSDR_EMBED_FILES "${C6_FIRMWARE_BIN}")
+    list(APPEND ORCSDR_LDFRAGMENTS "linker.lf")
+endif()
+
 idf_component_register(
     SRCS
         "../ui/main.cpp"
@@ -64,14 +78,14 @@ idf_component_register(
         json
         spi_flash
         usb
-    EMBED_FILES
-        "orc_badge_104.png"
-        "orc_badge_104.rgb565"
-        "../ui/web_console.html"
+    EMBED_FILES ${ORCSDR_EMBED_FILES}
+    LDFRAGMENTS ${ORCSDR_LDFRAGMENTS}
     EMBED_TXTFILES
         "catalog_public_key.pem"
 )
 
 target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    ORCSDR_HAS_EMBEDDED_C6_FIRMWARE=$<BOOL:${C6_FIRMWARE_BIN}>)
 target_compile_options(${COMPONENT_LIB} PRIVATE
     "$<$<COMPILE_LANGUAGE:CXX>:-include;orcsdr_m5_time.hpp>")
