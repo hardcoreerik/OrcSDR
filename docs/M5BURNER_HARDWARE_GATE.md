@@ -20,5 +20,5 @@ authorize a GitHub prerelease or public listing.
    recovery guidance when Hosted cannot form a link.
 
 Attach photos/screenshots and serial evidence to the tag record. Only then
-attach the verified artifacts to that GitHub prerelease and change its
+create the GitHub prerelease with the verified artifacts and change its
 M5Burner listing from private to public.
