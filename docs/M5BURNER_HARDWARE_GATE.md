@@ -1,7 +1,8 @@
 # M5Burner hardware acceptance gate
 
-This is the release gate for an exact `v0.2.0-beta.1` tag. Build or package
-validation alone does not authorize a GitHub prerelease or public listing.
+This was the release gate for the public `v0.2.0-beta.1` prerelease. Reuse the
+same gate for a future exact tag: build or package validation alone does not
+authorize a GitHub prerelease or public listing.
 
 1. Build the bundle and record its `M5BURNER_BUNDLE_OK` line, source commit,
    C6 provenance, and hashes.
@@ -19,5 +20,5 @@ validation alone does not authorize a GitHub prerelease or public listing.
    recovery guidance when Hosted cannot form a link.
 
 Attach photos/screenshots and serial evidence to the tag record. Only then
-attach the verified artifacts to the GitHub prerelease and change the M5Burner
-listing from private to public.
+attach the verified artifacts to that GitHub prerelease and change its
+M5Burner listing from private to public.

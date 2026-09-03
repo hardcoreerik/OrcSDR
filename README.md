@@ -8,7 +8,7 @@
   <strong>RTL-SDR Blog V4 → USB High-Speed → ESP32-P4 → DSP + Touch UI + Audio</strong>
 </p>
 
-**OrcSDR is a self-contained radio you hold in your hands.** Plug an RTL-SDR Blog V4 into a M5Stack Tab5, flash this firmware, and the tablet becomes the radio: live spectrum, waterfall, speaker audio, FM with RDS, P25 trunking, ADS-B, and a passive LoRa mesh monitor. There is no Raspberry Pi in the bag, no laptop running SDR#, and no desktop app you have to keep open.
+**OrcSDR is a self-contained radio you hold in your hands.** Plug an RTL-SDR Blog V4 into a M5Stack Tab5, flash this firmware, and the tablet becomes the radio: live spectrum, waterfall, speaker audio, FM with RDS, P25 trunking, ADS-B, passive LoRa mesh monitoring, RF Lab tools, and 2.4 GHz Wi-Fi Analysis. There is no Raspberry Pi in the bag, no laptop running SDR#, and no desktop app you have to keep open.
 
 <p align="center">
   <img src="docs/images/OrcSDR-Main.png"
@@ -16,10 +16,31 @@
        width="100%">
 </p>
 
+> [!NOTE]
+> **Public beta — [v0.2.0-beta.1](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.2.0-beta.1)**
+>
+> OrcSDR is available now for the M5Stack Tab5. It is a prerelease: feedback and [bug reports](https://github.com/hardcoreerik/OrcSDR/issues) are welcome.
+
+<a id="install"></a>
+
+## 🔥 Easiest Install — M5Burner
+
+**Minimum hardware:** an **M5Stack Tab5** and an **RTL-SDR Blog V4**. An antenna is needed for the signals you want to receive; an SD card is optional.
+
+1. Open **M5Burner** and search for **OrcSDR**.
+2. Flash **OrcSDR** to the Tab5 without erase.
+3. Boot OrcSDR, then open **Settings → Firmware & Updates**.
+4. If the reachable internal C6 Wi-Fi coprocessor differs from ESP-Hosted 3.0.6, explicitly confirm the offered C6 update.
+5. After restart, verify that the P4 host and C6 coprocessor both report 3.0.6.
+
+M5Burner writes the Tab5 P4 application. OrcSDR performs the separate, explicit in-app C6 update only after it can reach the Hosted transport. Normal upgrades preserve OrcSDR settings and saved Wi-Fi profiles. If the C6 is unreachable, do not keep retrying the in-app updater; use the [documented recovery path](docs/M5BURNER_RELEASE.md).
+
+For developer/source installation, use **native ESP-IDF 5.5.4**. The source-build path remains below and is not the normal user install path.
+
 You power it on, wait for the splash to finish loading Wi-Fi and the dongle, tap **OrcSDR**, and land on Home. Home remembers the last radio you used. The spectrum and waterfall keep drawing while you listen. From there you open a dedicated dashboard for the kind of signal you actually care about, instead of one crowded “everything radio” screen.
 
 <p align="center">
-  <a href="#-flash-orcsdr-to-the-m5stack-tab5"><strong>Flash it</strong></a>
+  <a href="#install"><strong>Install</strong></a>
   &nbsp;•&nbsp;
   <a href="#the-dashboards"><strong>Dashboards</strong></a>
   &nbsp;•&nbsp;
@@ -27,11 +48,6 @@ You power it on, wait for the splash to finish loading Wi-Fi and the dongle, tap
   &nbsp;•&nbsp;
   <a href="#the-orc-ecosystem"><strong>Orc ecosystem</strong></a>
 </p>
-
-> [!IMPORTANT]
-> **Have a M5Stack Tab5 and an RTL-SDR Blog V4?**
->
-> Jump to **[Flash OrcSDR to the M5Stack Tab5](#-flash-orcsdr-to-the-m5stack-tab5)** and run it on hardware. The screenshots on this page are from that firmware.
 
 > [!NOTE]
 > **Project status:** OrcSDR is under active development. The Tab5 app is the reference radio and builds with **native ESP-IDF 5.5.4**. M5Unified and M5GFX are ESP-IDF components only; PlatformIO is not a supported build or flash path. See [the Tab5 ESP-Hosted migration record](docs/user-guide/tab5-esp-hosted-3-migration.md) and the [reusable Tab5 Wi-Fi guide](docs/user-guide/wifi-tab5.md) for the P4/C6 pairing, pins, and acceptance status.
@@ -91,6 +107,8 @@ Quick map:
 | **[P25 Trunking](#p25-trunking)** | Follow a programmed P25 system on a single tuner |
 | **[ADS-B](#ads-b)** | 1090 MHz aircraft radar, list, and target detail |
 | **[LoRa Mesh](#lora-mesh)** | Passive Meshtastic receive monitor |
+| **[RF Lab](#rf-lab)** | Live receiver test bench, measurements, and session records |
+| **[2.4 GHz Analyzer](#24-ghz-analyzer)** | Nearby Wi-Fi access-point survey using the Tab5 internal C6 |
 | **[Settings](#settings)** | Wi-Fi, location, display, radio defaults, storage, companion |
 
 ---
@@ -377,6 +395,20 @@ LoRa health shows frequency, region (US 902–928), whether the monitor is runni
 
 ---
 
+### RF Lab
+
+RF Lab is the live receiver test bench. Its **Live** page shows the shared receiver spectrum and waterfall; **Controls** exposes supported receiver settings such as retuning, sample rate, PPM correction, gain, AGC, and bias-tee state; **Measurements** can capture snapshots or timed runs; and **Records** lists completed sessions saved to SD storage. It reports capability limits rather than pretending unsupported hardware controls are available.
+
+---
+
+### 2.4 GHz Analyzer
+
+The **2.4 GHz Analyzer** uses the Tab5's internal ESP32-C6 through ESP-Hosted 3.0.6 to survey nearby Wi-Fi access points. Start or manually repeat a scan to view observed SSIDs, shortened BSSIDs, primary channel, RSSI, security, PHY/width, and scan age. The channel view draws scan-derived AP channel footprints: it is not an RF-power, airtime, packet-rate, or occupancy measurement.
+
+The Devices page means **observed access points**, not clients or stations. CSI is explicitly unavailable in this release; no motion, presence, room-radar, or CSI measurements are claimed. Wi-Fi power, saved profiles, and antenna selection remain in **Settings → Connectivity**.
+
+---
+
 ### Settings
 
 Settings is the device, not a radio. Open it from Home when you want Wi-Fi, a receiver location, brightness, or to see whether the SD card is healthy. Radio audio keeps going while you are in here.
@@ -392,6 +424,10 @@ The Settings captures below were taken in a sanitized **DEMO** profile (placehol
 </p>
 
 This is how the Tab5 gets on a network. Scan, add a hidden SSID, power the radio off, pick the Wi-Fi antenna (external MMCX on the Tab5), and manage a priority list of saved networks. OrcSDR does not need Wi-Fi to listen to FM. Wi-Fi is for maps packs, companion pages, and anything that talks to the LAN.
+
+#### Firmware & Updates
+
+This page shows the P4 host version, reachable C6 version, and embedded ESP-Hosted target. It offers a C6 update only when the Hosted transport is reachable and the versions differ; the update always requires confirmation. See [the M5Burner release guide](docs/M5BURNER_RELEASE.md) for normal installation and recovery boundaries.
 
 #### Location & ADS-B
 
@@ -465,24 +501,23 @@ Battery rail and charge, USB / VBUS, build identity, uptime, network, SD. Reboot
 
 <p align="center">
   <strong>Ready to run this on a Tab5?</strong><br>
-  <a href="#-flash-orcsdr-to-the-m5stack-tab5">Flash OrcSDR →</a>
+  <a href="#install">Install OrcSDR →</a>
 </p>
 
 ---
 
-# 🚀 Flash OrcSDR to the M5Stack Tab5
+# 🛠️ Developer/source installation
 
 > [!IMPORTANT]
-> **Fastest path to running OrcSDR on real hardware**
+> **Normal users should use M5Burner above.**
 >
-> Reference hardware: **M5Stack Tab5 + RTL-SDR Blog V4**
+> This section is for native ESP-IDF source builds on the reference hardware: **M5Stack Tab5 + RTL-SDR Blog V4**.
 
 ### Requirements
 
 - **M5Stack Tab5**
 - **RTL-SDR Blog V4**
 - **Espressif ESP-IDF 5.5.4 for Windows**
-- **ESP-Hosted 3.0.6 C6 firmware** for the Tab5 C6
 - USB cable for flashing the Tab5
 - USB connection from the Tab5 USB Host port to the RTL-SDR
 - Antenna appropriate for what you want to receive
@@ -503,7 +538,7 @@ cd OrcSDR
 git pull
 ```
 
-A tagged hardware-testing snapshot lives at `v0.2.0-alpha.5` if you want a known cut instead of `main`. See [`docs/releases/v0.2.0-alpha.5.md`](docs/releases/v0.2.0-alpha.5.md).
+For the public prerelease, use [`v0.2.0-beta.1`](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.2.0-beta.1). The historical [`v0.2.0-alpha.5`](docs/releases/v0.2.0-alpha.5.md) record remains available for its original 2.12.6-era hardware context.
 
 ### 2. Find the Tab5 port
 
@@ -727,6 +762,8 @@ Each project is useful on its own. The larger direction is devices that can comm
 ## Contributing
 
 Contributions are welcome in USB Host, DSP, spectrum/waterfall, radio UI, hardware testing, USB traces, V4 behavior documentation, radio modes, test tooling, and docs.
+
+**Found a bug?** OrcSDR is a public beta. Please [open an issue](https://github.com/hardcoreerik/OrcSDR/issues/new?template=bug_report.md) with the OrcSDR version, P4/C6 ESP-Hosted versions, Tab5 and RTL-SDR hardware, dashboard or mode, frequency when relevant, steps to reproduce, and any non-sensitive screenshots or logs.
 
 When contributing to the RTL-SDR V4 driver, preserve the clean-room rules and document the source of any device behavior or measurements.
 
