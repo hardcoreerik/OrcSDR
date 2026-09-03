@@ -28,7 +28,7 @@ $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 $build = 'build-orcsdr-tab5-c6'
 $componentRoot = Join-Path $SourceDirectory '.orcsdr-components'
 $componentLink = Join-Path $componentRoot 'esp_hosted'
-if (Test-Path $componentLink) { Remove-Item -LiteralPath $componentLink -Force }
+if (Test-Path $componentLink) { Remove-Item -LiteralPath $componentLink -Force -Confirm:$false }
 New-Item -ItemType Directory -Force -Path $componentRoot | Out-Null
 New-Item -ItemType Junction -Path $componentLink -Target $SourceDirectory | Out-Null
 $env:PYTHONUTF8 = '1'
