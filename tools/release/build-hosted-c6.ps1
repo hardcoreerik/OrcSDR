@@ -28,7 +28,10 @@ $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 $build = 'build-orcsdr-tab5-c6'
 $componentRoot = Join-Path $SourceDirectory '.orcsdr-components'
 $componentLink = Join-Path $componentRoot 'esp_hosted'
-if (Test-Path $componentLink) { Remove-Item -LiteralPath $componentLink -Force -Confirm:$false }
+if (Test-Path $componentLink) {
+  if (-not ((Get-Item -LiteralPath $componentLink).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Refusing to remove non-link component path: $componentLink" }
+  [IO.Directory]::Delete($componentLink)
+}
 New-Item -ItemType Directory -Force -Path $componentRoot | Out-Null
 New-Item -ItemType Junction -Path $componentLink -Target $SourceDirectory | Out-Null
 $env:PYTHONUTF8 = '1'
