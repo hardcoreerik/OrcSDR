@@ -12,6 +12,13 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Get-Sha256([string]$Path) {
+  $sha = [Security.Cryptography.SHA256]::Create()
+  $stream = [IO.File]::OpenRead($Path)
+  try { return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
+  finally { $stream.Dispose(); $sha.Dispose() }
+}
+
 function Find-ByteSequence([byte[]]$Haystack, [byte[]]$Needle) {
   if ($Needle.Length -eq 0 -or $Needle.Length -gt $Haystack.Length) { return -1 }
   $last = $Haystack.Length - $Needle.Length
@@ -46,7 +53,7 @@ if ($Bridge) {
   $provenance = Get-Content $provenancePath -Raw | ConvertFrom-Json
   $c6Image = Join-Path $bundle $provenance.firmware
   if ($provenance.hosted_version -ne '3.0.6' -or -not (Test-Path $c6Image)) { throw 'Bridge C6 image/version is invalid.' }
-  if ((Get-FileHash $c6Image -Algorithm SHA256).Hash.ToLowerInvariant() -ne $provenance.sha256) { throw 'Bridge C6 hash does not match provenance.' }
+  if ((Get-Sha256 $c6Image) -ne $provenance.sha256) { throw 'Bridge C6 hash does not match provenance.' }
 } elseif ($manifest.name -ne 'OrcSDR') {
   throw 'Manifest is not the final OrcSDR package.'
 } else {
@@ -57,7 +64,7 @@ if ($Bridge) {
   }
   $provenance = Get-Content $provenancePath -Raw | ConvertFrom-Json
   if ($provenance.hosted_version -ne '3.0.6' -or $manifest.c6_sha256 -ne $provenance.sha256 -or
-      (Get-FileHash $c6Image -Algorithm SHA256).Hash.ToLowerInvariant() -ne $provenance.sha256) {
+      (Get-Sha256 $c6Image) -ne $provenance.sha256) {
     throw 'Final package C6 image does not match its provenance.'
   }
 }
@@ -78,14 +85,14 @@ if (-not $Bridge) {
   $embedded = [byte[]]::new($c6Bytes.Length)
   [Array]::Copy($imageBytes, $embeddedOffset, $embedded, 0, $embedded.Length)
   $sha = [Security.Cryptography.SHA256]::Create()
-  try { $embeddedHash = [Convert]::ToHexString($sha.ComputeHash($embedded)).ToLowerInvariant() }
+  try { $embeddedHash = [BitConverter]::ToString($sha.ComputeHash($embedded)).Replace('-', '').ToLowerInvariant() }
   finally { $sha.Dispose() }
   if ($embeddedHash -ne $provenance.sha256) { throw 'Embedded C6 hash does not match provenance.' }
 }
 $sumLine = (Get-Content -LiteralPath $sumPath -Raw).Trim()
 if ($sumLine -notmatch '^([0-9a-fA-F]{64}) \*(.+)$') { throw 'SHA256SUMS.txt must contain one SHA-256 entry.' }
 if ($Matches[2] -ne $manifest.firmware) { throw 'SHA256SUMS filename does not match the manifest.' }
-$actualHash = (Get-FileHash -LiteralPath $imagePath -Algorithm SHA256).Hash.ToLowerInvariant()
+$actualHash = Get-Sha256 $imagePath
 if ($Matches[1].ToLowerInvariant() -ne $actualHash -or $manifest.sha256 -ne $actualHash) {
   throw 'Firmware SHA-256 does not match the manifest and checksum file.'
 }

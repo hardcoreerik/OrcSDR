@@ -14,6 +14,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Get-Sha256([string]$Path) {
+  $sha = [Security.Cryptography.SHA256]::Create()
+  $stream = [IO.File]::OpenRead($Path)
+  try { return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
+  finally { $stream.Dispose(); $sha.Dispose() }
+}
+
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $repo
 if (-not $Version) { $Version = (git describe --tags --exact-match).Trim() }
@@ -61,7 +69,7 @@ if (-not (Test-Path -LiteralPath $binary)) { throw "Missing merged P4 image: $bi
 
 $image = Join-Path $dist "OrcSDR-Tab5-$Version.bin"
 Copy-Item -LiteralPath $binary -Destination $image -Force
-$hash = (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant()
+$hash = Get-Sha256 $image
 Set-Content -LiteralPath (Join-Path $dist 'SHA256SUMS.txt') -NoNewline `
   -Value "$hash *$(Split-Path $image -Leaf)`n"
 

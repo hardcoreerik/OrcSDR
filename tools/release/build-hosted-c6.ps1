@@ -7,6 +7,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Get-Sha256([string]$Path) {
+  $sha = [Security.Cryptography.SHA256]::Create()
+  $stream = [IO.File]::OpenRead($Path)
+  try { return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
+  finally { $stream.Dispose(); $sha.Dispose() }
+}
+
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $lock = Get-Content (Join-Path $PSScriptRoot 'hosted-c6-release.json') -Raw | ConvertFrom-Json
 if (-not (Test-Path (Join-Path $IdfPath 'export.ps1'))) { throw "ESP-IDF 5.5.4 is required at $IdfPath." }
@@ -52,7 +60,7 @@ try {
   Copy-Item $sourceImage $image -Force
 } finally { Pop-Location }
 
-$hash = (Get-FileHash $image -Algorithm SHA256).Hash.ToLowerInvariant()
+$hash = Get-Sha256 $image
 [ordered]@{
   hosted_version = $lock.hosted_version
   source_repository = $lock.source_repository
@@ -63,7 +71,7 @@ $hash = (Get-FileHash $image -Algorithm SHA256).Hash.ToLowerInvariant()
   board_configuration = 'M5Stack Tab5 internal ESP32-C6; P4 host uses ESP32P4_TAB5_C6_BOARD and qualified 4-bit SDIO at 10 MHz'
   idf_version = $lock.idf_version
   toolchain = (& riscv32-esp-elf-gcc --version | Select-Object -First 1)
-  sdkconfig_sha256 = (Get-FileHash (Join-Path $project 'sdkconfig') -Algorithm SHA256).Hash.ToLowerInvariant()
+  sdkconfig_sha256 = Get-Sha256 (Join-Path $project 'sdkconfig')
   firmware = (Split-Path $image -Leaf)
   bytes = (Get-Item $image).Length
   sha256 = $hash
