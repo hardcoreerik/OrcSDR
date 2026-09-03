@@ -57,7 +57,13 @@ machine (e.g. `COM17` on Windows, `/dev/ttyACM0` on Linux) — it's
 machine-specific, not a fixed value, and can change if other USB serial
 devices are plugged in. Always pass it explicitly; do not rely on port
 auto-detection, which can select a different attached device if more than
-one is present. See
+one is present.
+
+If you keep a fixed bench assignment, record it in a local, gitignored
+file (e.g. `.local/dev-environment.local.md`, under the existing
+`.local/` gitignore rule) rather than here — this file is read by
+contributors and coding agents on every machine, so it must stay
+machine-agnostic. See
 [`apps/orcsdr-tab5/README.md`](apps/orcsdr-tab5/README.md) for file-transfer
 and splash-asset details.
 
