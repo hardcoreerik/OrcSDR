@@ -104,6 +104,17 @@ try {
   }
   $appEntry = if ($Bridge) { 'firmware/orcsdr_c6_bridge_0x10000.bin' } else { 'firmware/orcsdr_tab5_0x10000.bin' }
   if ($names -notcontains $appEntry) { throw "M5Burner zip missing $appEntry" }
+  if (-not $Bridge) {
+    if ($names -notcontains 'c6-provenance.json') { throw 'M5Burner zip is missing C6 provenance.' }
+    $reader = [IO.StreamReader]::new(($archive.Entries | Where-Object FullName -eq 'm5burner.json').Open())
+    try { $zipManifest = $reader.ReadToEnd() | ConvertFrom-Json }
+    finally { $reader.Dispose() }
+    if ($zipManifest.embedded_c6.hosted_version -ne '3.0.6' -or
+        $zipManifest.embedded_c6.sha256 -ne $provenance.sha256 -or
+        $zipManifest.embedded_c6.source_revision -ne $provenance.source_revision) {
+      throw 'M5Burner ZIP embedded-C6 metadata does not match provenance.'
+    }
+  }
 } finally { $archive.Dispose() }
 
 Write-Host "M5BURNER_BUNDLE_OK type=$(if($Bridge){'bridge'}else{'final'}) version=$Version sha256=$actualHash"

@@ -102,6 +102,8 @@ Copy-Item -LiteralPath (Join-Path $appBuild 'partition_table\partition-table.bin
   -Destination (Join-Path $localFirmware 'partition-table_0x8000.bin') -Force
 Copy-Item -LiteralPath (Join-Path $appBuild 'orcsdr_tab5.bin') `
   -Destination (Join-Path $localFirmware 'orcsdr_tab5_0x10000.bin') -Force
+Copy-Item -LiteralPath (Join-Path $c6Dir 'c6-provenance.json') `
+  -Destination (Join-Path $localRoot 'c6-provenance.json') -Force
 $localManifest = [ordered]@{
   name = "OrcSDR $Version"
   description = 'OrcSDR P4 application for private Tab5 testing. Do not erase for normal upgrades.'
@@ -115,6 +117,11 @@ $localManifest = [ordered]@{
   }
   version = $Version.TrimStart('v')
   framework = 'ESP-IDF'
+  embedded_c6 = [ordered]@{
+    hosted_version = $c6Provenance.hosted_version
+    sha256 = $c6Provenance.sha256
+    source_revision = $c6Provenance.source_revision
+  }
 }
 $localManifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $localRoot 'm5burner.json')
 @'
