@@ -2,6 +2,12 @@
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $script = Join-Path $root 'install-orcsdr.ps1'
+try {
+  & $script -MockHostedLine 'RTL_WIFI_HOSTED host=3.0.6 coprocessor=3.0.6 match=1' | Out-Null
+  throw 'MockHostedLine without DryRun was accepted.'
+} catch {
+  if ($_.Exception.Message -notmatch 'MockHostedLine is allowed only with -DryRun') { throw }
+}
 & $script -DryRun -MockHostedLine 'RTL_WIFI_HOSTED host=3.0.6 coprocessor=3.0.6 match=1' | Out-Host
 if ($LASTEXITCODE) { throw 'Matched-pair dry run failed.' }
 & $script -DryRun -MockHostedLine 'RTL_WIFI_HOSTED host=3.0.6 coprocessor=2.12.6 match=0' | Out-Host

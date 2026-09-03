@@ -64,6 +64,7 @@ if ($Bridge) {
   }
   $provenance = Get-Content $provenancePath -Raw | ConvertFrom-Json
   if ($provenance.hosted_version -ne '3.0.6' -or $manifest.c6_sha256 -ne $provenance.sha256 -or
+      $manifest.c6_source_revision -ne $provenance.source_revision -or
       (Get-Sha256 $c6Image) -ne $provenance.sha256) {
     throw 'Final package C6 image does not match its provenance.'
   }
@@ -113,6 +114,14 @@ try {
   if ($names -notcontains $appEntry) { throw "M5Burner zip missing $appEntry" }
   if (-not $Bridge) {
     if ($names -notcontains 'c6-provenance.json') { throw 'M5Burner zip is missing C6 provenance.' }
+    $provenanceReader = [IO.StreamReader]::new(($archive.Entries | Where-Object FullName -eq 'c6-provenance.json').Open())
+    try { $zipProvenance = $provenanceReader.ReadToEnd() | ConvertFrom-Json }
+    finally { $provenanceReader.Dispose() }
+    if ($zipProvenance.hosted_version -ne $provenance.hosted_version -or
+        $zipProvenance.sha256 -ne $provenance.sha256 -or
+        $zipProvenance.source_revision -ne $provenance.source_revision) {
+      throw 'M5Burner ZIP C6 provenance does not match the release provenance.'
+    }
     $reader = [IO.StreamReader]::new(($archive.Entries | Where-Object FullName -eq 'm5burner.json').Open())
     try { $zipManifest = $reader.ReadToEnd() | ConvertFrom-Json }
     finally { $reader.Dispose() }

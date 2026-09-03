@@ -12,6 +12,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
 $RequiredHosted = '3.0.6'
+if ($MockHostedLine -and -not $DryRun) {
+  throw 'MockHostedLine is allowed only with -DryRun.'
+}
 
 function Resolve-Port([string]$Requested) {
   if ($Requested) { if ($Requested -notmatch '^COM[0-9]+$') { throw "Port must look like COM17, not '$Requested'." }; return $Requested }
@@ -41,12 +44,21 @@ function Use-Idf {
   . (Join-Path $IdfPath 'export.ps1')
 }
 function Flash-App([string]$App, [string]$Build, [string]$ComPort) {
-  if ($DryRun) { Write-Host "INSTALL_PLAN app=$App offset=0x10000 preserve_nvs=1"; return }
+  if ($DryRun) {
+    Write-Host "INSTALL_PLAN app=$App bootloader=0x2000 partition_table=0x8000 offset=0x10000 preserve_nvs=1"
+    return
+  }
   Push-Location $App
   try {
     $name = if ($Build -eq 'build-native-hosted3') { 'orcsdr_tab5.bin' } else { 'orcsdr_c6_bridge.bin' }
-    & "$env:IDF_PYTHON_ENV_PATH\Scripts\python.exe" -m esptool --chip esp32p4 --port $ComPort --baud 460800 --before default_reset --after hard_reset write_flash 0x10000 (Join-Path $Build $name)
-    if ($LASTEXITCODE) { throw 'Application-only flash failed.' }
+    $bootloader = Join-Path $Build 'bootloader\bootloader.bin'
+    $partitionTable = Join-Path $Build 'partition_table\partition-table.bin'
+    $application = Join-Path $Build $name
+    foreach ($image in @($bootloader, $partitionTable, $application)) {
+      if (-not (Test-Path -LiteralPath $image -PathType Leaf)) { throw "Missing flash image: $image" }
+    }
+    & "$env:IDF_PYTHON_ENV_PATH\Scripts\python.exe" -m esptool --chip esp32p4 --port $ComPort --baud 460800 --before default_reset --after hard_reset write_flash 0x2000 $bootloader 0x8000 $partitionTable 0x10000 $application
+    if ($LASTEXITCODE) { throw 'P4 boot-layout flash failed.' }
   } finally { Pop-Location }
 }
 
