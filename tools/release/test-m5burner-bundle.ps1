@@ -11,6 +11,21 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Find-ByteSequence([byte[]]$Haystack, [byte[]]$Needle) {
+  if ($Needle.Length -eq 0 -or $Needle.Length -gt $Haystack.Length) { return -1 }
+  $last = $Haystack.Length - $Needle.Length
+  for ($offset = 0; $offset -le $last; $offset++) {
+    if ($Haystack[$offset] -ne $Needle[0]) { continue }
+    $matched = $true
+    for ($index = 1; $index -lt $Needle.Length; $index++) {
+      if ($Haystack[$offset + $index] -ne $Needle[$index]) { $matched = $false; break }
+    }
+    if ($matched) { return $offset }
+  }
+  return -1
+}
+
 $bundle = (Resolve-Path -LiteralPath $BundlePath).Path
 $manifestPath = Join-Path $bundle 'm5burner-upload.json'
 $sumPath = Join-Path $bundle 'SHA256SUMS.txt'
@@ -54,6 +69,18 @@ $imagePath = Join-Path $bundle $manifest.firmware
 if (-not (Test-Path -LiteralPath $imagePath -PathType Leaf)) { throw "Missing firmware: $imagePath" }
 if (-not $Bridge -and (Get-Item -LiteralPath $imagePath).Length -le (Get-Item -LiteralPath $c6Image).Length) {
   throw 'Final P4 image is too small to contain the declared C6 update image.'
+}
+if (-not $Bridge) {
+  $imageBytes = [IO.File]::ReadAllBytes($imagePath)
+  $c6Bytes = [IO.File]::ReadAllBytes($c6Image)
+  $embeddedOffset = Find-ByteSequence $imageBytes $c6Bytes
+  if ($embeddedOffset -lt 0) { throw 'Final P4 image does not contain the declared C6 image.' }
+  $embedded = [byte[]]::new($c6Bytes.Length)
+  [Array]::Copy($imageBytes, $embeddedOffset, $embedded, 0, $embedded.Length)
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try { $embeddedHash = [Convert]::ToHexString($sha.ComputeHash($embedded)).ToLowerInvariant() }
+  finally { $sha.Dispose() }
+  if ($embeddedHash -ne $provenance.sha256) { throw 'Embedded C6 hash does not match provenance.' }
 }
 $sumLine = (Get-Content -LiteralPath $sumPath -Raw).Trim()
 if ($sumLine -notmatch '^([0-9a-fA-F]{64}) \*(.+)$') { throw 'SHA256SUMS.txt must contain one SHA-256 entry.' }
