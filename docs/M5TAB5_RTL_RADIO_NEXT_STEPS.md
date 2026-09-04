@@ -1,10 +1,15 @@
 # M5Tab5 RTL radio next steps
 
+> **Historical execution checklist (2026-08-08).** The versions, PlatformIO
+> commands, and pending gates below are retained as history, not current
+> instructions. Use the [native build policy](TAB5_BUILD_POLICY.md),
+> [current project status](../PROJECT_STATUS.md), and
+> [porting evidence](PORTING.md) for new work.
+
 Updated: **2026-08-08**
 Authority: [`../PROJECT_STATUS.md`](../PROJECT_STATUS.md)
 
-This document is the Tab5 execution checklist. It intentionally contains no
-future feature inventory; the project roadmap owns that scope.
+This document was the Tab5 execution checklist at the date above.
 
 ## Current measured target
 

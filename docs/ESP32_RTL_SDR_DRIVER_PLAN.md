@@ -1,5 +1,12 @@
 # ESP32 RTL-SDR Driver Plan
 
+> **Historical design, superseded as an execution plan.** The standalone
+> `esp_rtl_sdr` driver and Waveshare board operation now exist. The proposed
+> paths, API restrictions, and pending milestones below describe the original
+> plan, not current capability. Use [PORTING.md](PORTING.md), the
+> [current integration contract](API_ESP_RTL_SDR.md), and
+> [project status](../PROJECT_STATUS.md) before scheduling work.
+
 ## Goal
 
 Extract the physically verified RTL-SDR.COM V4 USB path from the M5Tab5

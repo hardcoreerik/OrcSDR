@@ -26,10 +26,13 @@ bounded local event/log path. Existing `LORA_PACKET` serial input remains a
 regression bridge for known, externally verified Meshtastic decode records.
 It is not described as native decoding.
 
-Native LongFast work is staged as IQ -> chirp/FEC/CRC -> Meshtastic frame parse
--> authorized decryption -> bounded snapshot. Until its recorded-IQ vectors
-pass, the dashboard displays **PHY PENDING**. Unknown encrypted traffic is not
-decrypted, recovered, or attributed.
+The native LongFast decoder is implemented in `lora_native_decoder` and
+connected to the capture task: IQ -> chirp/FEC/CRC -> Meshtastic frame parse
+-> authorized decryption -> bounded snapshot. Decoder self-check and
+initialization determine readiness; the dashboard displays **PHY PENDING**
+when the native decoder is not ready. Readiness does not certify live RF or
+complete replay coverage. Unknown encrypted traffic is not decrypted,
+recovered, or attributed.
 
 ## Local data and capture
 

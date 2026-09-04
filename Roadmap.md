@@ -9,7 +9,7 @@ point at `phasing.md` for how each item gets implemented.
 ## Evidence labels
 
 Same convention as `PROJECT_STATUS.md`: **Hardware-verified**,
-**Build-verified**, **Implemented**, **Planned**, **Deferred**.
+**Build-verified**, **Implemented**, **Recorded upstream**, **Planned**, **Deferred**.
 
 ## External review: Grok code review (2026-08-10)
 
@@ -31,22 +31,22 @@ entire MVC stack — model, view, controller, and service layer — into one
 class. Concretely, it already makes review diffs hard to scope (a touch-
 handler change and a DSP change land in the same file with no compiler-
 enforced boundary), and it will only get worse as more radio modes/tools are
-added (RDS decode is the next one in the queue, per `docs/lora/README.md` and
-recent stereo-decoder work).
+added. RDS decoding is now implemented in `main.cpp`; ADS-B, P25, LoRa,
+RF analysis, and several UI services already have separate modules. The
+remaining task is incremental separation of shared DSP/session state, not
+recreating those existing modules.
 
 **Status: Planned.** See `phasing.md` Phase 1.
 
 ### Gap 2 — dual USB code paths (`RTL_USE_LEGACY_USB`)
 
-`PROJECT_STATUS.md` already tracks this correctly under P1 ("Remove the
-legacy in-app USB path only after a soak build passes") — the review confirms
-the *sequencing* is right (soak-test before removal) but flags the *cost* of
-carrying both paths in the meantime: every driver-facing change has to be
-reasoned about twice.
+`esp_rtl_sdr` is the only live USB implementation. `main.cpp` forces
+`RTL_USE_LEGACY_USB=0` and rejects attempts to enable it, but disabled legacy
+implementation blocks remain in the source.
 
-**Status: Resolved.** The legacy implementation and duplicate EP0 tables were
-removed after the v0.7.9 integration soak. `esp_rtl_sdr` is the only live USB
-implementation.
+**Status: Runtime duplication resolved; source cleanup remains.** Track the
+remaining deletion under `PROJECT_STATUS.md` P1, separately from driver or
+DSP behavior changes.
 
 ### Gap 3 — no CI
 
@@ -62,9 +62,11 @@ planned. See `phasing.md` Phase 2.
 The review independently re-derived the same P0 gates already open in
 `PROJECT_STATUS.md`: graphics+audio simultaneous FPS/drop-rate measurement,
 the live-speaker-vs-recorded-PCM discrepancy, and hot-plug/second-board
-validation. This is a **confirmation**, not a new finding — it's listed here
-only so the review is fully accounted for; the tracked item and its evidence
-boundary remain in `PROJECT_STATUS.md` P0/P1 unchanged.
+validation. Waveshare operation has since been recorded upstream; see
+[PORTING.md](docs/PORTING.md). Exact-version sustained-rate and recovery gates
+remain distinct from that completed board milestone. Historical performance
+observations require their own measured acceptance, not a blanket reset to
+"not started."
 
 **Status: Already tracked** — `PROJECT_STATUS.md` P0/P1. No duplicate entry.
 
@@ -168,8 +170,11 @@ authorized-key decryption, bounded queue/error handling, then an authorized
 Heltec network comparison. The 902–928 MHz survey is an explicit occupancy
 tool that restores the monitor; it is not a packet-capture substitute.
 
-**Status: UI/config foundation in progress; no native PHY or live-air claim
-until replay and hardware gates pass.**
+**Status: Native decoder and five-panel UI implemented.** Source includes
+capture decoding, initialization/self-checks, and packet publication. Keep
+recorded-IQ and live-air acceptance tied to named evidence; this documentation
+review does not establish a new hardware pass. The serial regression bridge
+is not the native decoding implementation.
 
 ## Summary table
 

@@ -1,5 +1,12 @@
 # M5Tab5 Integration
 
+> **Historical OrcLink platform-integration record.** The provisioning,
+> toolchain, and acceptance statements below belong to that earlier proof.
+> They are not current OrcSDR build instructions or its full feature status.
+> See [project status](../PROJECT_STATUS.md), the
+> [native build policy](TAB5_BUILD_POLICY.md), and
+> [Tab5 Wi-Fi guide](user-guide/wifi-tab5.md) for current operation.
+
 ## Truth status
 
 **Decision:** M5Tab5 is first-class in OrcLink as both an edge node/gateway and a portable operator console.

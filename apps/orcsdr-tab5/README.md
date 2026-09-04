@@ -55,18 +55,18 @@ from UI features alone.
 cd apps/orcsdr-tab5
 .\tools\build-tab5-idf.ps1
 # After explicit hardware authorization:
-idf.py -p <PORT> flash
+idf.py -B build-native-hosted3 -p <PORT> flash
 ```
 
 This is a native ESP-IDF 5.5.4 build. M5Unified 0.2.20 and M5GFX 0.2.27 are
 ESP-IDF components; PlatformIO is not a supported OrcSDR build or flash path.
 The current ESP-Hosted 3.0.6 Tab5 migration, pins, and honest hardware status
-are defined in [`docs/TAB5_ESP_HOSTED_3_MIGRATION.md`](../../docs/TAB5_ESP_HOSTED_3_MIGRATION.md).
+are defined in the [Tab5 ESP-Hosted 3 migration](../../docs/user-guide/tab5-esp-hosted-3-migration.md).
 
-`m5tab5_ui` is the complete firmware: regular splash/home flow, NAV band
-selection, and the LoRa dashboard/PSRAM decoder capture path. The optional
-`m5tab5_lora_test` environment uses the same radio features but skips directly
-to LoRa for bench testing.
+The native application includes the regular splash/home flow, band selection,
+and the LoRa dashboard/decoder capture path. `m5tab5_ui` and
+`m5tab5_lora_test` are historical PlatformIO environment names, not supported
+native build targets.
 
 Do not override the platform ESP-P4 toolchain. After flash, power-cycle if the
 device stays in download mode.

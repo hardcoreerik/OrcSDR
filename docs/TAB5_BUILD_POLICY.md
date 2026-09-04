@@ -1,7 +1,7 @@
 # Tab5 build and ESP-Hosted policy
 
 > Current migration details, exact pins, and acceptance status live in
-> [`TAB5_ESP_HOSTED_3_MIGRATION.md`](TAB5_ESP_HOSTED_3_MIGRATION.md).
+> [Tab5 ESP-Hosted 3 migration](user-guide/tab5-esp-hosted-3-migration.md).
 
 OrcSDR's Tab5 firmware is a native ESP-IDF project. Build and flash the P4
 with Espressif `idf.py`; do not use PlatformIO for development, release, or
@@ -15,10 +15,11 @@ not an Arduino-IDE or PlatformIO toolchain.
 The Tab5 uses two DSI framebuffers for full-frame UI rendering. The tracked
 patch at `apps/orcsdr-tab5/tools/patches/m5gfx-tab5-pageflip.patch` exposes
 the M5GFX framebuffers and configures the driver for two buffers. The native
-build entry point applies it idempotently before configuration:
+build entry point applies it idempotently after `idf.py reconfigure`, which
+may fetch or replace managed components. From `apps/orcsdr-tab5`, use:
 
 ```powershell
-.\tools\apply-m5gfx-tab5-pageflip.ps1
+.\tools\build-tab5-idf.ps1
 ```
 
 Do not make a one-off change inside ignored `managed_components`. If the
@@ -32,8 +33,12 @@ The P4 application pins `espressif/esp_hosted` to **3.0.6** in
 `apps/orcsdr-tab5/dependencies.lock` with every dependency change.
 
 The Tab5 C6 must run the matching **3.0.6** ESP-Hosted firmware. OrcSDR's
-normal P4 application image does not update the C6. Never downgrade the C6
-to accommodate an old P4 host library.
+M5Burner package embeds a matching C6 image. With reachable Hosted transport
+and an eligible older C6, Firmware & Updates offers an explicitly confirmed
+in-app update. Source builds need `-C6Firmware` to embed that image; the
+default helper invocation does not supply it. An unreachable C6 needs the
+[documented recovery path](M5BURNER_RELEASE.md), not repeated in-app retries.
+Never downgrade the C6 to accommodate an old P4 host library.
 
 At boot the P4 logs both versions. Wi-Fi is blocked unless it reports:
 
@@ -86,20 +91,18 @@ Healthy boot (2026-08-17, Hosted 2.12.6, mempool off):
 | after_usb | ~33 KiB | ~23 KiB |
 | after_speaker | ~20 KiB | ~19 KiB |
 
-## People installer
+## Installer and release package
 
-The older installer/release scripts still contain 2.12.6 checks and must not
-be used as 3.0.6 acceptance tooling. Use the explicit native 5.5.4 commands
-in the migration document until those scripts are migrated.
+Use the current [M5Burner release and recovery instructions](M5BURNER_RELEASE.md)
+and [hardware acceptance gate](M5BURNER_HARDWARE_GATE.md). The beta.1 package
+and installer target Hosted 3.0.6; the historical 2.12.6 measurements above do not
+establish acceptance for that pair.
 
 ## Native build and release gate
 
 ```powershell
 Set-Location F:\Ai\OrcSDR\apps\orcsdr-tab5
-$env:IDF_PYTHON_ENV_PATH = 'C:\Espressif\python_env\idf5.5_py3.14_env'
-. 'C:\Espressif\frameworks\esp-idf-v5.5.4\export.ps1'
-idf.py reconfigure
-idf.py build
+.\tools\build-tab5-idf.ps1
 ```
 
 After an explicitly authorized P4 flash, use the serial release test to prove

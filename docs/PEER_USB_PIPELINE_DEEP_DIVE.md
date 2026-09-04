@@ -1,5 +1,12 @@
 # Peer USB pipeline deep-dive (for RTL-SDRv4-ESP Gate 2)
 
+> **Historical research snapshot (2026-08-07).** The proposed in-tree driver
+> paths and implementation steps below are not the current architecture.
+> Use the [driver integration contract](API_ESP_RTL_SDR.md),
+> [porting evidence](PORTING.md), and [architecture](../architecture.md)
+> before applying these recommendations. Preserve the original research and
+> clean-room boundary as historical context.
+
 **Date:** 2026-08-07  
 **Sources reviewed (source-level):**
 
