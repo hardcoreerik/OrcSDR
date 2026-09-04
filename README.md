@@ -44,7 +44,7 @@ You power it on, wait for the splash to finish loading Wi-Fi and the dongle, tap
   &nbsp;•&nbsp;
   <a href="#the-dashboards"><strong>Dashboards</strong></a>
   &nbsp;•&nbsp;
-  <a href="#rtl-sdrv4-esp"><strong>RTL-SDRv4-ESP driver</strong></a>
+  <a href="#esp_rtl_sdr"><strong>esp_rtl_sdr driver</strong></a>
   &nbsp;•&nbsp;
   <a href="#the-orc-ecosystem"><strong>Orc ecosystem</strong></a>
 </p>
@@ -713,7 +713,7 @@ Product:      Blog V4
                 │                       │
                 └───────────┬───────────┘
                             │
-                     RTL-SDRv4-ESP
+                      esp_rtl_sdr
                             │
                      ESP-IDF USB Host
                             │
@@ -726,6 +726,12 @@ Product:      Blog V4
 
 ---
 
+The USB/tuner driver is already standalone. Several decoder modules are
+separate, while DSP/session coordination and Tab5 audio integration remain
+in the application. This diagram shows responsibilities, not a completed
+portable DSP engine. See [architecture.md](architecture.md) for the implemented
+boundaries and [PORTING.md](docs/PORTING.md) for existing Waveshare validation.
+
 ## Development Roadmap
 
 OrcSDR is moving from a working reference radio toward a more reusable embedded SDR platform. Current work includes:
@@ -734,8 +740,8 @@ OrcSDR is moving from a working reference radio toward a more reusable embedded 
 - Improve FM audio quality and RDS lock time on weak stations
 - Finish remaining radio shells (AM, WX, CB, wide browse) to the same dashboard quality as FM / P25 / LoRa
 - Keep separating radio logic from the Tab5 UI
-- Validate additional ESP32-P4 USB Host boards
-- Build reusable examples around `RTL-SDRv4-ESP`
+- Extend board/version validation from the existing Tab5 and Waveshare P4 work
+- Reuse the upstream `esp_rtl_sdr` P4 serial example; assess existing consumer code before adding further examples
 
 Engineering notes:
 

@@ -1,8 +1,12 @@
 # OrcSDR project status
 
-Snapshot date: **2026-08-27**
-Source branch: **`codex/esp-rtl-sdr-v0.7.9`**
-Mainline baseline: **`origin/main` at `fc30c1030f26c8dd034d65917ec50e6880b7a871`**
+Hardware snapshot date: **2026-08-27**
+Historical snapshot branch: **`codex/esp-rtl-sdr-v0.7.9`**
+Historical mainline baseline: **`fc30c1030f26c8dd034d65917ec50e6880b7a871`**
+Documentation/source review: **2026-09-03**, against `main` at **`3eb67fb`**.
+
+This review reconciles driver/board provenance and current source boundaries;
+it does not rerun hardware acceptance or refresh every historical measurement.
 
 This is the authoritative current-status and roadmap index. Historical design,
 research, and validation documents remain useful evidence, but do not override
@@ -15,6 +19,7 @@ this file when their paths, versions, or completion claims differ.
 | **Hardware-verified** | Observed on the named physical device and recorded |
 | **Build-verified** | Compiled or validated from repository artifacts, without a hardware claim |
 | **Implemented** | Present in source; current hardware acceptance may still be pending |
+| **Recorded upstream** | Prior operation documented in the driver repository; not a new local hardware run or proof of every later release gate |
 | **Planned** | Accepted roadmap work, not implemented |
 | **Deferred** | Intentionally outside the current milestone |
 
@@ -31,7 +36,7 @@ this file when their paths, versions, or completion claims differ.
 | Tab5 radio shell | **Implemented** | FM/AM/WX/CB/LoRa, radio/scope/capture tabs, sound/GFX toggles |
 | Screen ownership controller | **Hardware-verified** | `ScreenController` is the sole display-route owner for Home, FM, P25, ADS-B, LoRa, generic Radio/Scope/Capture, Settings, and documentation mode. The Tab5 transition check passed after the final UI-loop handoff; documentation capture now claims and restores its controller identity. |
 | CB channel dashboard | **Flashed; operator acceptance pending** | 40-channel AM/USB/LSB plan, 2/3 scope, touch channel dial, clarifier, squelch, live S/RF bar |
-| LoRa/Meshtastic receive path | **Flashed; live RF acceptance pending** | 250 ms pre-roll, adaptive 9 dB energy trigger, verified SD bridge, and dashboard message return; synthetic full-chain and COM17 protocol checks pass |
+| LoRa/Meshtastic receive path | **Native implementation present; historical hardware evidence not refreshed here** | `lora_native_decoder` performs capture decoding and feeds the dashboard; the serial `LORA_PACKET` bridge remains separate. The earlier snapshot recorded flashed 250 ms pre-roll, adaptive 9 dB energy capture, SD bridge, and synthetic/COM17 checks, with live-RF acceptance pending. Source review does not refresh that hardware verdict. |
 | SDR navigation | **Implemented; Home-first migration in progress** | Full 24–1766 MHz tune range, US band/use guide, direct entry, pinch, peak find, and FM auto tune. The legacy Browse surface is retired from user navigation; Home is the interim workspace for bands without a dedicated dashboard. |
 | Browse demodulation | **Partial** | NFM spectrum/listen path; AM/SSB/digital mode selection and sub-24 MHz direct sampling remain open |
 | Variant-4 splash | **Implemented on this branch** | Looping SD asset playback and static ready/button overlay |
@@ -45,7 +50,7 @@ this file when their paths, versions, or completion claims differ.
 | Live speaker versus recorded PCM | **Open performance gate** | Recorder taps PCM immediately before `playRaw`; clean WAVs plus poor live sound isolate the remaining fault to speaker queue/DMA/output after the DSP tap |
 | Paired FM IQ/WAV DSP lab | **Planned** | Buffer synchronized raw CU8 IQ, post-DSP PCM, and metadata in PSRAM; write after capture and evaluate filter variants offline |
 | AM/HF fidelity | **Experimental** | Do not claim calibrated HF/direct-sampling support |
-| Second ESP32-P4 board | **Planned** | No second-board hardware evidence yet |
+| Second ESP32-P4 board | **Recorded upstream** | Waveshare Module-DEV-KIT operation under OrcSDR is documented by the driver project; [PORTING.md](docs/PORTING.md#existing-implementation-and-evidence) links the provenance and FM application notes. Exact-version soak/recovery acceptance remains separate. |
 | rtl_tcp over Ethernet | **Planned** | App does not exist yet |
 | ADS-B 1090 | **Flashed — live pipeline implemented; acceptance pending** | COM17 upload hash-verified. Five-minute 1090 MHz run sustained 2,047,654 S/s (99.98% of 2.048 MS/s) with five startup drops and none afterward. A live RF trace reconstructed to CRC-valid DF17 `8DA2955158B505036BFB54BC90AC` (ICAO `A29551`, 35,000 ft), matching ASA1310's simultaneous independent track; the same captured magnitude waveform now passes the on-device fractional-sample replay check. The bounded aircraft table and revisioned dashboard snapshot are flashed. Dynamic updates no longer clear the full screen each second. A 315,547-record FAA index and the complete supplied FAA archive are SD hash-verified; live ICAO `A31111` resolved to `N297SF`. The UI honestly remains `DEMO` until a new on-device live frame passes CRC; physical view/touch acceptance remains open. |
 | User guide and media pipeline | **Build-verified** | Native build plus 44-screen manifest, capture tooling, strict MkDocs site, and local narrated-video scripts. Hardware captures, privacy review, voice approval, and rendered media remain pending. |
@@ -91,12 +96,15 @@ paired IQ/WAV dataset that can drive FM filter decisions without tuning by ear.
       zero fatal USB errors.
 - [ ] Unplug/replug during streaming and recover to Ready without reboot.
 - [ ] Record retune settle time and recovery behavior after a failed retune.
-- [x] Remove the legacy in-app USB path after the v0.7.9 integration soak passed.
+- [x] Retire the legacy in-app USB path: enabling it is a compile-time error; `esp_rtl_sdr` is the only live implementation.
+- [ ] Delete the remaining disabled legacy source blocks in a separate code change.
 - [x] Move standalone smoke ownership to the `esp-rtl-sdr` repository.
-- [ ] Repeat the driver gate on one other ESP32-P4 board.
+- [x] Record existing Waveshare second-board operation with upstream provenance.
+- [ ] Attach exact-version sustained-rate and unplug/replug evidence for the boards covered by a release; prior operation alone does not close these gates.
 
-Exit: portable driver behavior is measured on two P4 boards and the Tab5 app has
-no duplicate USB implementation.
+Exit: release-specific driver acceptance is recorded for both P4 boards and
+the Tab5 app has no remaining duplicate USB implementation. Prior Waveshare
+operation is already recorded; disabled legacy code still needs deletion.
 
 ### P2 — network transport
 
@@ -206,7 +214,7 @@ Set-Location F:\Ai\OrcSDR\apps\orcsdr-tab5
 Required runtime lines for the next performance record:
 
 ```text
-RTL_INSTALL ok v0.4.1 ...
+RTL_INSTALL ok v0.7.9 ...
 RTL_CORE_SPLIT usb=core0 iq_demod+ui=core1 ...
 RTL_SPECTRUM_FPS fps=... audio_dropped=... audio_chunks=...
                     dsp_load_pct=... dsp_blocks=... dsp_block_us_max=...
@@ -221,11 +229,11 @@ SPLASH_FPS ...
 | `architecture.md` | Implemented runtime ownership, ScreenController contract, and dashboard drawing boundary |
 | `docs/IMPLEMENTATION_FROM_PEER_RESEARCH.md` | Detailed workstreams and design rationale |
 | `docs/PORTING.md` | Driver extraction and target gates |
-| `docs/API_RTL_SDR_V4_ESP.md` | Public API contract |
+| `docs/API_ESP_RTL_SDR.md` | Pinned driver integration contract; complete public API maintained upstream |
 | `docs/API_SERIAL_CLI.md` | Tab5 serial CLI — tuning, telemetry, RDS status, presets, file transfer |
 | `docs/M5TAB5_VALIDATION_REPORT.md` | Historical hardware evidence |
 | `docs/GATE2_IMPLEMENTATION_LOCK.md` | Historical Gate-2 handoff snapshot |
 | `docs/OrcSDR_Splash_README.md` | Splash asset and playback contract |
 | `docs/cb/README.md` | CB channel, sideband, clarifier, squelch, and asset controls |
-| `docs/lora/README.md` | LoRa IQ capture and Meshtastic host-decoder workflow |
+| `docs/lora/README.md` | Native LoRa capture/decoder boundary and serial regression bridge |
 | `docs/FM_DSP_CAPTURE_LAB.md` | Measured FM WAV evidence and paired IQ/WAV DSP-lab implementation plan |

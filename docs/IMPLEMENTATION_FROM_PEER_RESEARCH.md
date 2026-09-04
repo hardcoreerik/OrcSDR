@@ -1,5 +1,11 @@
 # Implementation plan — close OrcSDR gaps from peer research
 
+> **Historical workstream design.** In-tree driver paths and extraction tasks
+> below describe the 2026-08-06/08 baseline. The standalone driver and
+> second-board operation now exist; use [PORTING.md](PORTING.md) and
+> [project status](../PROJECT_STATUS.md) to distinguish completed work from
+> remaining validation before implementing this plan.
+
 Date: 2026-08-06  
 Depends on: `COMPETITIVE_ANALYSIS_ESP32_RTLSDR.md`, `PORTING.md`, clean-room spec.
 

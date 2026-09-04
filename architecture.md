@@ -7,6 +7,25 @@ application. It is an architecture reference, not a release-acceptance record.
 [`PROJECT_STATUS.md`](PROJECT_STATUS.md) remains the authoritative project-truth
 document for build, flash, and hardware evidence.
 
+## Driver, DSP, and board boundaries
+
+OrcSDR consumes the standalone `esp_rtl_sdr` v0.7.9 component through its C
+API. The driver owns USB/tuner control and IQ delivery; its implementation,
+tests, and P4 serial example live upstream. The Tab5 app selects callback-only
+IQ delivery and owns the downstream DSP queues, radio sessions, and outputs.
+See the [driver integration contract](docs/API_ESP_RTL_SDR.md).
+
+ADS-B, P25, LoRa, and RF analysis already have separate modules and interfaces.
+They still compile into the Tab5 application component. `ui/main.cpp` retains
+FM/AM processing, RDS, radio/session coordination, and speaker integration;
+`rf_analysis.cpp` still depends on M5Unified timing. File/module separation
+does not yet establish a board-independent OrcSDR engine or display/audio HAL.
+
+Tab5 display, touch, speaker, and USB power setup remain application concerns.
+The task/screen boundaries below describe runtime ownership, not independently
+linkable portable components. Prior Waveshare operation and the evidence needed
+to assess shared DSP reuse are documented in [PORTING.md](docs/PORTING.md).
+
 ## Runtime ownership
 
 The native ESP-IDF application separates deterministic radio work from display

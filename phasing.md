@@ -19,10 +19,10 @@ flashable at every step — no phase should require a multi-day broken build.
 
 ## Phase 1 — split `main.cpp` into modules
 
-Goal: break the ~266 KB single translation unit into logical modules without
-changing behavior, closing Roadmap Gap 1 and setting up Gap 2 (legacy USB
-deletion becomes a one-file diff) and Gap 5 (touch/draw abstraction has
-somewhere to live).
+Goal: continue separating DSP/session/host responsibilities from `main.cpp`
+without changing behavior. The ~266 KB size was the original review baseline.
+ADS-B, P25, LoRa, RF analysis, dashboards, and shared UI services already have
+modules; reuse them. Disabled legacy USB blocks remain a separate cleanup item.
 
 Target module boundaries (mirrors the review's suggested split):
 
@@ -65,9 +65,10 @@ tune CB, tune LoRa, confirm dashboards and touch still respond identically).
 
 Goal: catch a header/driver-example break automatically, closing Gap 3.
 
-1. [ ] Add `.github/workflows/build.yml`: on every push and PR, run
-      `pio run` for the Tab5 UI environment (`m5tab5_ui`) and the LoRa test
-      environment (`m5tab5_lora_test`).
+1. [ ] Add native ESP-IDF 5.5.4 Tab5 consumer-build CI, matching the dependency
+      pins, configuration, and post-reconfigure display patch ordering in
+      `apps/orcsdr-tab5/tools/build-tab5-idf.ps1`. Do not revive the historical
+      PlatformIO environments. The existing guide workflow is documentation CI.
 2. [x] Keep the standalone P4 smoke build and driver API contract in the
       `esp-rtl-sdr` repository; OrcSDR CI verifies only the consumer integration.
 3. [ ] No hardware-in-the-loop testing in CI at this stage — that's a much
@@ -76,7 +77,7 @@ Goal: catch a header/driver-example break automatically, closing Gap 3.
       the project reaches the point of wanting hardware regression coverage.
 
 Exit: a broken build or a broken example fails a GitHub Actions check before
-merge, instead of being caught by a human running `pio run` manually.
+merge, instead of being caught by a manual native firmware build.
 
 ## Phase 3 — tool-shell abstraction
 
@@ -476,7 +477,7 @@ for view separation. Do not copy their GPL tuner, decoder, or UI source.
 - [x] Render absent/unconfigured values as `--`; retain dBFS wording until an
       RF calibration supports dBm, and show CPU as `N/A` until measured.
 
-Exit: the targeted PlatformIO environment builds; all views, selection, lock,
+Exit: the native ESP-IDF Tab5 application builds; all views, selection, lock,
 coordinate validation/persistence, range cycling, and Exit ADS-B are accepted
 on the physical Tab5. Until that visual/touch pass occurs, evidence stops at
 Build-verified.
@@ -693,9 +694,12 @@ strict site builds, and approved audio/video outputs pass `ffprobe` checks.
 
 ## Phase 9 — native Meshtastic LongFast receive
 
-1. [ ] Keep the five-panel M5GFX LoRa shell on one bounded snapshot and reuse
-       the shared Home control; remove legacy image plates only after no code
-       references them.
+Source review (2026-09-03): the native decoder and five-panel dashboard are
+present and connected. The remaining checklist separates implementation from
+recorded-IQ and hardware acceptance; it does not schedule the decoder anew.
+
+1. [x] Keep the five-panel M5GFX LoRa shell on one bounded snapshot and reuse
+       the shared Home control. Any unused image-asset cleanup is separate.
 2. [ ] Validate `/orcsdr/lora.cfg` bounds and complete the masked Settings
        editor for authorized receive keys without exporting them.
 3. [ ] Prove recorded IQ sync, chirp/FEC/CRC, public LongFast frames,
