@@ -54,6 +54,7 @@ extern "C" {
 #include "dashboard_registry.hpp"
 #include "device_status_service.hpp"
 #include "screen_controller.hpp"
+#include "scan_engine.hpp"
 #include "fm_dashboard.hpp"
 #include "fm_config.hpp"
 #include "home_dashboard.hpp"
@@ -66,6 +67,7 @@ extern "C" {
 #include "p25_dashboard.hpp"
 #include "p25_config.hpp"
 #include "p25_decoder.hpp"
+#include "radio_session.hpp"
 #include "radio_ui_service.hpp"
 #include "rf_lab.hpp"
 #include "rf_visualizer.hpp"
@@ -563,6 +565,7 @@ constexpr uint32_t kRtlFmMaxHz = 108000000;
 constexpr uint32_t kRtlFmStepHz = 100000;
 constexpr uint32_t kRtlFmAutoStepHz = 800000;
 constexpr uint32_t kRtlFmAutoSettleMs = 500;
+constexpr float kFmPresetMinDbfs = -70.0f;
 /** LO quantize for hot retune — finer than this thrashes USB/audio. */
 constexpr uint32_t kRtlHotRetuneQuantHz = 5000;
 /** Min time between LO applies (each apply drains bulk + EP0). */
@@ -599,7 +602,7 @@ constexpr uint32_t kP25StepHz = 12500;
 constexpr double kRtlIfOffsetHz = 1814972.0;
 constexpr double kRtlXtalHz = 28800000.0;
 
-enum class RtlBand : uint8_t { fm, am, wx, cb, lora, browse, adsb, p25 };
+using RtlBand = orcsdr::radio::Band;
 enum class CbMode : uint8_t { am, usb, lsb };
 
 constexpr uint32_t kCbChannelsHz[] = {
@@ -1077,6 +1080,15 @@ static std::atomic<int> rtl_fm_preset_scan_step{0};
 static std::atomic<int> rtl_fm_preset_scan_total_steps{1};
 static std::atomic<int> rtl_fm_preset_scan_found{0};
 static std::atomic<uint32_t> rtl_fm_preset_scan_freq_hz{kRtlFmMinHz};
+
+enum class ActiveScan : uint8_t { none, fm_presets, p25_survey };
+orcsdr::radio::Session radio_session;
+orcsdr::scan::Engine scan_engine;
+ActiveScan active_scan = ActiveScan::none;  // Streaming task only.
+orcsdr::radio::Token scan_radio_token{};    // Streaming task only.
+std::atomic<bool> cancel_scan_for_takeover{false};
+std::atomic<bool> p25_survey_requested{false};
+std::atomic<bool> p25_survey_cancel_requested{false};
 
 // Runs on the streaming task only (single-threaded access to fm_presets).
 void fm_preset_offer(uint32_t freq_hz, float level_dbfs) {
@@ -1561,7 +1573,6 @@ P25VoiceContext p25_voice_context{};
 uint8_t p25_candidate_index = 0;
 float p25_candidate_levels[orcsdr::p25config::kMaxControlChannels] = {};
 uint32_t p25_candidate_tsbk_good[orcsdr::p25config::kMaxControlChannels]{};
-uint32_t p25_survey_sample_at_ms = 0;
 uint32_t p25_entry_probe_at_ms = 0;
 uint32_t p25_entry_probe_tsbk_good = 0;
 uint64_t rtl_capture_bytes = 0;
@@ -1841,6 +1852,8 @@ void draw_sdr_controls(RtlBand band, bool running);
 void handle_sdr_touch(int32_t x, int32_t y);
 void poll_sdr_touch(bool from_stream);
 void request_hot_retune(uint32_t frequency_hz);
+bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz);
+void set_radio_session_state(orcsdr::radio::ReceiverState state);
 uint32_t rtl_fm_command_lo_hz(uint32_t display_hz);
 uint32_t rtl_fm_sanitize_display_hz(uint32_t frequency_hz);
 void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
@@ -1897,7 +1910,9 @@ orcsdr::p25::Snapshot p25_dashboard_snapshot();
 void handle_p25_dashboard_action(const orcsdr::p25::Action& action);
 orcsdr::lora::Snapshot lora_dashboard_snapshot();
 void handle_lora_dashboard_action(const orcsdr::lora::Action& action);
-void service_p25_survey(uint32_t now);
+void service_shared_scan(uint32_t now);
+void service_p25_entry_probe(uint32_t now);
+void cancel_active_scan(bool restore);
 void service_p25_follow(uint32_t now);
 void service_lora_survey(uint32_t now);
 bool p25_voice_self_check();
@@ -5001,6 +5016,18 @@ void show_visualizer_unavailable() {
   M5.Display.drawString("Start an RF source first", 640, 109);
 }
 
+void acquire_radio_owner(orcsdr::radio::Owner owner) {
+  cancel_scan_for_takeover.store(true, std::memory_order_release);
+  const auto previous = radio_session.snapshot();
+  const auto token = radio_session.acquire(
+      owner, rtl_ui_band, rtl_ui_frequency_hz,
+      previous.sample_rate_sps ? previous.sample_rate_sps : kRtlSampleRateSps);
+  (void)radio_session.set_state(
+      token, rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running
+                 ? orcsdr::radio::ReceiverState::running
+                 : orcsdr::radio::ReceiverState::ready);
+}
+
 void open_visualizer() {
   if (rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running) {
     show_visualizer_unavailable();
@@ -5015,12 +5042,14 @@ void open_visualizer() {
     show_visualizer_unavailable();
     return;
   }
+  acquire_radio_owner(orcsdr::radio::Owner::rf_visualizer);
   orcsdr::screens::finish_transition();
 }
 
 void close_visualizer() {
   const auto origin = static_cast<orcsdr::screens::Id>(orcsdr::visualizer::origin_screen());
   orcsdr::visualizer::leave();
+  acquire_radio_owner(orcsdr::radio::owner_for_band(rtl_ui_band));
   orcsdr::screens::begin_transition(origin, millis());
   orcsdr::screens::finish_transition();
   switch (origin) {
@@ -5134,8 +5163,14 @@ orcsdr::rf_lab::Runtime rf_lab_runtime() {
   return runtime;
 }
 
-void stop_p25_automation() {
+void cancel_p25_survey() {
+  p25_survey_cancel_requested.store(true, std::memory_order_release);
+  p25_survey_requested.store(false, std::memory_order_release);
   p25_survey_active.store(false, std::memory_order_release);
+}
+
+void stop_p25_automation() {
+  cancel_p25_survey();
   p25_entry_probe_at_ms = 0;
   p25_follow_state.store(P25FollowState::control, std::memory_order_release);
   p25_voice_session.fetch_add(1, std::memory_order_acq_rel);
@@ -5152,6 +5187,7 @@ void open_rf_lab() {
     orcsdr::screens::finish_transition();
     return;
   }
+  acquire_radio_owner(orcsdr::radio::Owner::rf_lab);
   orcsdr::home::leave();
   orcsdr::screens::finish_transition();
 }
@@ -5159,6 +5195,7 @@ void open_rf_lab() {
 void close_rf_lab() {
   const auto origin = static_cast<orcsdr::screens::Id>(orcsdr::rf_lab::origin_screen());
   orcsdr::rf_lab::leave();
+  acquire_radio_owner(orcsdr::radio::owner_for_band(rtl_ui_band));
   orcsdr::screens::begin_transition(origin, millis());
   orcsdr::screens::finish_transition();
   switch (origin) {
@@ -6782,6 +6819,11 @@ void initialize_rtl_sdr_host() {
  *            rtl_dsp owns demod/decoder/audio work and rtl_app owns controls.
  * The callback must return promptly so the driver and idle watchdog can run.
  */
+void set_radio_session_state(orcsdr::radio::ReceiverState state) {
+  const auto session = radio_session.snapshot();
+  (void)radio_session.set_state({session.owner, session.generation}, state);
+}
+
 static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, void *ctx) {
   (void)ctx;
   switch (event) {
@@ -6789,6 +6831,7 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
     case ESP_RTL_SDR_EVT_ENUMERATED: {
       g_rtl_device_ready.store(true, std::memory_order_release);
       rtl_capture_state.store(RtlCaptureState::ready, std::memory_order_release);
+      set_radio_session_state(orcsdr::radio::ReceiverState::ready);
       const auto *info = static_cast<const esp_rtl_sdr_device_info_t *>(payload);
       if (info != nullptr) {
         rtl_sdr_vid = info->vid;
@@ -6804,6 +6847,7 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
     case ESP_RTL_SDR_EVT_DISCONNECTED:
       g_rtl_device_ready.store(false, std::memory_order_release);
       rtl_capture_state.store(RtlCaptureState::disconnected, std::memory_order_release);
+      set_radio_session_state(orcsdr::radio::ReceiverState::disconnected);
       set_rtl_sdr_status("RTL-SDR: disconnected");
       Serial.println("RTL_SDR_DISCONNECTED");
       break;
@@ -7018,6 +7062,7 @@ static void rtl_driver_app_task(void *) {
         /* Stay on radio UI so power/home chrome cannot paint over controls. */
       } else {
         rtl_capture_state.store(RtlCaptureState::running, std::memory_order_release);
+        set_radio_session_state(orcsdr::radio::ReceiverState::running);
         sync_rtl_audio_for_band(band);
         g_speaker_retry_ms = 0;
         if (band == RtlBand::p25 &&
@@ -7045,12 +7090,6 @@ static void rtl_driver_app_task(void *) {
         uint32_t auto_fm_sample_at_ms = 0;
         uint32_t auto_fm_best_hz = frequency_hz;
         float auto_fm_best_level = -120.0f;
-        bool preset_scanning = false;
-        uint32_t preset_scan_frequency_hz = kRtlFmMinHz + kRtlFmAutoStepHz / 2;
-        uint32_t preset_scan_sample_at_ms = 0;
-        uint32_t preset_scan_return_hz = frequency_hz;
-        int preset_scan_step_index = 0;
-        constexpr float kFmPresetMinDbfs = -70.0f;
         while (!rtl_stop_requested.load(std::memory_order_acquire) &&
                g_rtl_device_ready.load(std::memory_order_acquire)) {
           /* Touch + hot retune on this task (not in IQ callback): responsive STOP/FREQ. */
@@ -7108,64 +7147,8 @@ static void rtl_driver_app_task(void *) {
               auto_fm_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
             }
           }
-          if (g_stream_band == RtlBand::fm && !preset_scanning && !auto_fm_scanning &&
-              rtl_fm_preset_scan_requested.exchange(false, std::memory_order_acq_rel)) {
-            preset_scanning = true;
-            rtl_fm_preset_scan_active.store(true, std::memory_order_release);
-            rtl_fm_preset_scan_cancel.store(false, std::memory_order_relaxed);
-            preset_scan_frequency_hz = kRtlFmMinHz + kRtlFmAutoStepHz / 2;
-            preset_scan_return_hz = rtl_ui_frequency_hz;
-            preset_scan_step_index = 0;
-            fm_preset_count = 0;
-            fm_preset_scroll_top = 0;
-            const int total_steps = static_cast<int>(
-                (kRtlFmMaxHz - kRtlFmMinHz + kRtlFmAutoStepHz - 1) / kRtlFmAutoStepHz);
-            rtl_fm_preset_scan_total_steps.store(total_steps, std::memory_order_relaxed);
-            rtl_fm_preset_scan_step.store(0, std::memory_order_relaxed);
-            rtl_fm_preset_scan_found.store(0, std::memory_order_relaxed);
-            rtl_scope_span_hz.store(kRtlScopeSpanMaxHz, std::memory_order_relaxed);
-            // Preset scans may start from FM Settings; do not draw the
-            // generic Browse scope over the FM dashboard.
-            reset_spectrum_renderer();
-            request_hot_retune(preset_scan_frequency_hz);
-            rtl_fm_preset_scan_freq_hz.store(preset_scan_frequency_hz, std::memory_order_relaxed);
-            preset_scan_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
-            rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
-            Serial.println("RTL_PRESET_SCAN start");
-          }
-          if (preset_scanning && now_retune >= preset_scan_sample_at_ms) {
-            const float level = rtl_scope_peak_level.load(std::memory_order_relaxed);
-            const int32_t offset = rtl_scope_peak_offset_hz.load(std::memory_order_relaxed);
-            const int64_t found = static_cast<int64_t>(preset_scan_frequency_hz) + offset;
-            const uint32_t found_hz = rtl_clamp_frequency(
-                RtlBand::fm, found > 0 ? static_cast<uint32_t>(found) : 0u);
-            const uint32_t snapped_hz = ((found_hz + 50000u) / 100000u) * 100000u;
-            if (level >= kFmPresetMinDbfs) {
-              fm_preset_offer(snapped_hz, level);
-              rtl_fm_preset_scan_found.store(fm_preset_count, std::memory_order_relaxed);
-            }
-            if (serial_verbosity_at(SerialVerbosity::trace)) {
-              Serial.printf("RTL_PRESET_SCAN sample center=%u peak=%u level=%.1f\n",
-                            preset_scan_frequency_hz, found_hz, static_cast<double>(level));
-            }
-            ++preset_scan_step_index;
-            rtl_fm_preset_scan_step.store(preset_scan_step_index, std::memory_order_relaxed);
-            if (preset_scan_frequency_hz + kRtlFmAutoStepHz / 2 >= kRtlFmMaxHz ||
-                rtl_fm_preset_scan_cancel.exchange(false, std::memory_order_acq_rel)) {
-              preset_scanning = false;
-              rtl_fm_preset_scan_active.store(false, std::memory_order_release);
-              request_hot_retune(preset_scan_return_hz);
-              rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
-              persist_fm_presets();
-              Serial.printf("RTL_PRESET_SCAN done found=%d\n", fm_preset_count);
-            } else {
-              preset_scan_frequency_hz += kRtlFmAutoStepHz;
-              rtl_fm_preset_scan_freq_hz.store(preset_scan_frequency_hz, std::memory_order_relaxed);
-              reset_spectrum_renderer();
-              request_hot_retune(preset_scan_frequency_hz);
-              preset_scan_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
-            }
-          }
+          service_p25_entry_probe(now_retune);
+          service_shared_scan(now_retune);
           uint32_t desired_lo = rtl_hot_retune_hz.load(std::memory_order_acquire);
           const bool force_lo =
               rtl_fm_force_lo_apply.load(std::memory_order_acquire);
@@ -7229,7 +7212,6 @@ static void rtl_driver_app_task(void *) {
               }
             }
           }
-          service_p25_survey(now);
           service_p25_follow(now);
           service_lora_survey(now);
           if (g_stream_band == RtlBand::adsb && now - adsb_metrics_last_ms >= 5000) {
@@ -7273,7 +7255,9 @@ static void rtl_driver_app_task(void *) {
             /* Home is listen-only. Walking the LO every ~1 s drained USB and
              * punched a hole in audio and the scope. Stereo lock means we
              * are already close enough. */
-            if (!orcsdr::home::active() && !preset_scanning && !auto_fm_scanning &&
+            if (!orcsdr::home::active() &&
+                !rtl_fm_preset_scan_active.load(std::memory_order_relaxed) &&
+                !auto_fm_scanning &&
                 !rtl_stereo_locked.load(std::memory_order_relaxed) &&
                 center_now - rtl_fm_last_user_tune_ms.load(std::memory_order_relaxed) >= 900) {
               static uint32_t last_center_ms = 0;
@@ -7342,6 +7326,7 @@ static void rtl_driver_app_task(void *) {
 
           vTaskDelay(pdMS_TO_TICKS(20));
         }
+        cancel_active_scan(false);
         Serial.println("RTL_STOP_REQUESTED");
         rtl_auto_fm_active.store(false, std::memory_order_release);
         flush_audio_play_batch(true);
@@ -7350,6 +7335,8 @@ static void rtl_driver_app_task(void *) {
         rtl_capture_state.store(stop_err == ESP_OK ? RtlCaptureState::complete
                                                    : RtlCaptureState::failed,
                                 std::memory_order_release);
+        set_radio_session_state(stop_err == ESP_OK ? orcsdr::radio::ReceiverState::ready
+                                                   : orcsdr::radio::ReceiverState::failed);
         set_rtl_sdr_status(stop_err == ESP_OK ? "RTL-SDR V4: stopped"
                                               : "RTL-SDR V4: stop failed");
         /* Documentation capture freezes the last live frame while reception stops. */
@@ -8186,26 +8173,18 @@ void tune_p25_control(uint32_t frequency_hz) {
 }
 
 void start_p25_survey() {
-  std::fill(std::begin(p25_candidate_levels), std::end(p25_candidate_levels), -120.0f);
-  std::fill(std::begin(p25_candidate_tsbk_good), std::end(p25_candidate_tsbk_good), 0);
-  p25_candidate_index = 0;
-  p25_entry_probe_at_ms = 0;
-  p25_survey_sample_at_ms = millis() + 1500;
-  p25_survey_active.store(true, std::memory_order_relaxed);
-  tune_p25_control(p25_config.control_channels_hz[0]);
-  Serial.printf("RTL_P25_SURVEY start candidates=%u dwell_ms=1500\n",
-                static_cast<unsigned>(p25_config.control_channel_count));
+  p25_survey_requested.store(true, std::memory_order_release);
 }
 
 void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
   using orcsdr::p25::ActionKind;
   switch (action.kind) {
     case ActionKind::tune_hz:
-      p25_survey_active.store(false, std::memory_order_relaxed);
+      cancel_p25_survey();
       tune_p25_control(action.value);
       break;
     case ActionKind::previous_candidate:
-      p25_survey_active.store(false, std::memory_order_relaxed);
+      cancel_p25_survey();
       p25_candidate_index = static_cast<uint8_t>(
           (p25_candidate_index + p25_config.control_channel_count - 1) %
           p25_config.control_channel_count);
@@ -8213,7 +8192,7 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
       request_p25_config_save();
       break;
     case ActionKind::next_candidate:
-      p25_survey_active.store(false, std::memory_order_relaxed);
+      cancel_p25_survey();
       p25_candidate_index = static_cast<uint8_t>(
           (p25_candidate_index + 1) % p25_config.control_channel_count);
       tune_p25_control(p25_config.control_channels_hz[p25_candidate_index]);
@@ -8221,8 +8200,7 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
       break;
     case ActionKind::survey_toggle:
       if (p25_survey_active.load(std::memory_order_relaxed)) {
-        p25_survey_active.store(false, std::memory_order_relaxed);
-        Serial.println("RTL_P25_SURVEY stop");
+        p25_survey_cancel_requested.store(true, std::memory_order_release);
       } else {
         start_p25_survey();
       }
@@ -8281,7 +8259,7 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
       request_p25_config_save();
       break;
     case ActionKind::reload_config:
-      p25_survey_active.store(false, std::memory_order_release);
+      cancel_p25_survey();
       load_p25_config();
       if (rtl_ui_band == RtlBand::p25) tune_p25_control(p25_control_frequency_hz);
       break;
@@ -8406,7 +8384,148 @@ void handle_lora_dashboard_action(const orcsdr::lora::Action& action) {
   refresh_active_screen();
 }
 
-void service_p25_survey(uint32_t now) {
+bool scan_retune(uint32_t frequency_hz, void*) {
+  if (active_scan == ActiveScan::fm_presets) reset_spectrum_renderer();
+  return request_hot_retune_for(scan_radio_token, frequency_hz);
+}
+
+void scan_measure(size_t index, uint32_t frequency_hz, void*) {
+  if (active_scan == ActiveScan::fm_presets) {
+    const float level = rtl_scope_peak_level.load(std::memory_order_relaxed);
+    const int32_t offset = rtl_scope_peak_offset_hz.load(std::memory_order_relaxed);
+    const int64_t found = static_cast<int64_t>(frequency_hz) + offset;
+    const uint32_t found_hz = rtl_clamp_frequency(
+        RtlBand::fm, found > 0 ? static_cast<uint32_t>(found) : 0u);
+    const uint32_t snapped_hz = ((found_hz + 50000u) / 100000u) * 100000u;
+    if (level >= kFmPresetMinDbfs) fm_preset_offer(snapped_hz, level);
+    rtl_fm_preset_scan_step.store(static_cast<int>(index + 1), std::memory_order_relaxed);
+    rtl_fm_preset_scan_found.store(fm_preset_count, std::memory_order_relaxed);
+    if (serial_verbosity_at(SerialVerbosity::trace))
+      Serial.printf("RTL_PRESET_SCAN sample center=%u peak=%u level=%.1f\n",
+                    frequency_hz, found_hz, static_cast<double>(level));
+    return;
+  }
+  if (active_scan == ActiveScan::p25_survey) {
+    const float level = rtl_signal_dbfs.load(std::memory_order_relaxed);
+    const auto decoded = orcsdr::p25decoder::snapshot();
+    p25_candidate_levels[index] = level;
+    p25_candidate_tsbk_good[index] = decoded.tsbk_good;
+    p25_candidate_index = static_cast<uint8_t>(index);
+    Serial.printf("RTL_P25_SURVEY_SAMPLE index=%u frequency_hz=%lu relative_dbfs=%.1f "
+                  "frame_sync=%d tsbk_good=%lu\n",
+                  static_cast<unsigned>(index), static_cast<unsigned long>(frequency_hz),
+                  static_cast<double>(level), decoded.frame_sync ? 1 : 0,
+                  static_cast<unsigned long>(decoded.tsbk_good));
+  }
+}
+
+void scan_finished(orcsdr::scan::Finish reason, void*) {
+  const ActiveScan finished = active_scan;
+  active_scan = ActiveScan::none;
+  if (finished == ActiveScan::fm_presets) {
+    rtl_fm_preset_scan_active.store(false, std::memory_order_release);
+    rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+    persist_fm_presets();
+    Serial.printf("RTL_PRESET_SCAN %s found=%d\n",
+                  reason == orcsdr::scan::Finish::retune_failed ? "failed" : "done",
+                  fm_preset_count);
+    return;
+  }
+  if (finished != ActiveScan::p25_survey) return;
+  p25_survey_active.store(false, std::memory_order_release);
+  if (reason != orcsdr::scan::Finish::completed) {
+    Serial.printf("RTL_P25_SURVEY %s\n",
+                  reason == orcsdr::scan::Finish::cancelled ? "stop" : "failed");
+    return;
+  }
+  const size_t count = p25_config.control_channel_count;
+  const auto decoded_end = std::begin(p25_candidate_tsbk_good) + count;
+  const auto best_decoded = std::max_element(std::begin(p25_candidate_tsbk_good), decoded_end);
+  p25_candidate_index = *best_decoded > 0
+      ? static_cast<uint8_t>(best_decoded - std::begin(p25_candidate_tsbk_good))
+      : static_cast<uint8_t>(std::max_element(
+            std::begin(p25_candidate_levels), std::begin(p25_candidate_levels) + count) -
+            std::begin(p25_candidate_levels));
+  p25_control_frequency_hz = p25_config.control_channels_hz[p25_candidate_index];
+  (void)request_hot_retune_for(scan_radio_token, p25_control_frequency_hz);
+  if (p25_candidate_tsbk_good[p25_candidate_index] > 0) request_p25_config_save();
+  Serial.printf("RTL_P25_SURVEY_DONE best_index=%u frequency_hz=%lu relative_dbfs=%.1f "
+                "decoded=%d tsbk_good=%lu\n",
+                static_cast<unsigned>(p25_candidate_index),
+                static_cast<unsigned long>(p25_control_frequency_hz),
+                static_cast<double>(p25_candidate_levels[p25_candidate_index]),
+                p25_candidate_tsbk_good[p25_candidate_index] > 0 ? 1 : 0,
+                static_cast<unsigned long>(p25_candidate_tsbk_good[p25_candidate_index]));
+  refresh_active_screen();
+}
+
+orcsdr::scan::Callbacks scan_callbacks() {
+  return {scan_retune, scan_measure, scan_finished, nullptr};
+}
+
+void cancel_active_scan(bool restore) {
+  scan_engine.cancel(restore, scan_callbacks());
+}
+
+void service_shared_scan(uint32_t now) {
+  const auto callbacks = scan_callbacks();
+  if (cancel_scan_for_takeover.exchange(false, std::memory_order_acq_rel))
+    scan_engine.cancel(false, callbacks);
+  if (rtl_fm_preset_scan_cancel.exchange(false, std::memory_order_acq_rel) &&
+      active_scan == ActiveScan::fm_presets)
+    scan_engine.cancel(true, callbacks);
+  if (p25_survey_cancel_requested.exchange(false, std::memory_order_acq_rel) &&
+      active_scan == ActiveScan::p25_survey)
+    scan_engine.cancel(false, callbacks);
+
+  if (!scan_engine.active() && g_stream_band == RtlBand::fm &&
+      !rtl_auto_fm_active.load(std::memory_order_acquire) &&
+      rtl_fm_preset_scan_requested.exchange(false, std::memory_order_acq_rel)) {
+    const size_t count =
+        (kRtlFmMaxHz - kRtlFmMinHz + kRtlFmAutoStepHz - 1) / kRtlFmAutoStepHz;
+    const auto session = radio_session.snapshot();
+    scan_radio_token = {session.owner, session.generation};
+    const orcsdr::scan::Plan plan{orcsdr::scan::Mode::frequency_range, nullptr, count,
+                                  kRtlFmMinHz + kRtlFmAutoStepHz / 2,
+                                  kRtlFmAutoStepHz, kRtlFmAutoSettleMs, true};
+    if (scan_engine.start(plan, rtl_ui_frequency_hz, now)) {
+      active_scan = ActiveScan::fm_presets;
+      fm_preset_count = 0;
+      fm_preset_scroll_top = 0;
+      rtl_fm_preset_scan_active.store(true, std::memory_order_release);
+      rtl_fm_preset_scan_total_steps.store(static_cast<int>(count), std::memory_order_relaxed);
+      rtl_fm_preset_scan_step.store(0, std::memory_order_relaxed);
+      rtl_fm_preset_scan_found.store(0, std::memory_order_relaxed);
+      rtl_scope_span_hz.store(kRtlScopeSpanMaxHz, std::memory_order_relaxed);
+      rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+      Serial.println("RTL_PRESET_SCAN start");
+    }
+  }
+  if (!scan_engine.active() && g_stream_band == RtlBand::p25 &&
+      p25_survey_requested.exchange(false, std::memory_order_acq_rel)) {
+    const auto session = radio_session.snapshot();
+    scan_radio_token = {session.owner, session.generation};
+    const orcsdr::scan::Plan plan{orcsdr::scan::Mode::channel_list,
+                                  p25_config.control_channels_hz,
+                                  p25_config.control_channel_count, 0, 0, 1500, false};
+    if (scan_engine.start(plan, 0, now)) {
+      active_scan = ActiveScan::p25_survey;
+      std::fill(std::begin(p25_candidate_levels), std::end(p25_candidate_levels), -120.0f);
+      std::fill(std::begin(p25_candidate_tsbk_good), std::end(p25_candidate_tsbk_good), 0);
+      p25_candidate_index = 0;
+      p25_entry_probe_at_ms = 0;
+      p25_survey_active.store(true, std::memory_order_release);
+      Serial.printf("RTL_P25_SURVEY start candidates=%u dwell_ms=1500\n",
+                    static_cast<unsigned>(p25_config.control_channel_count));
+    }
+  }
+  const auto progress = scan_engine.progress();
+  if (active_scan == ActiveScan::fm_presets && progress.active)
+    rtl_fm_preset_scan_freq_hz.store(progress.frequency_hz, std::memory_order_relaxed);
+  scan_engine.service(now, callbacks);
+}
+
+void service_p25_entry_probe(uint32_t now) {
   if (g_stream_band != RtlBand::p25) return;
   if (p25_entry_probe_at_ms != 0 && now >= p25_entry_probe_at_ms) {
     p25_entry_probe_at_ms = 0;
@@ -8422,43 +8541,6 @@ void service_p25_survey(uint32_t now) {
     }
     return;
   }
-  if (!p25_survey_active.load(std::memory_order_relaxed) ||
-      now < p25_survey_sample_at_ms) return;
-  const float level = rtl_signal_dbfs.load(std::memory_order_relaxed);
-  const auto decoded = orcsdr::p25decoder::snapshot();
-  p25_candidate_levels[p25_candidate_index] = level;
-  p25_candidate_tsbk_good[p25_candidate_index] = decoded.tsbk_good;
-  Serial.printf("RTL_P25_SURVEY_SAMPLE index=%u frequency_hz=%lu relative_dbfs=%.1f "
-                "frame_sync=%d tsbk_good=%lu\n",
-                static_cast<unsigned>(p25_candidate_index),
-                static_cast<unsigned long>(p25_config.control_channels_hz[p25_candidate_index]),
-                static_cast<double>(level), decoded.frame_sync ? 1 : 0,
-                static_cast<unsigned long>(decoded.tsbk_good));
-  if (++p25_candidate_index < p25_config.control_channel_count) {
-    request_hot_retune(p25_config.control_channels_hz[p25_candidate_index]);
-    p25_survey_sample_at_ms = now + 1500;
-    return;
-  }
-  const auto best_decoded = std::max_element(std::begin(p25_candidate_tsbk_good),
-                                             std::end(p25_candidate_tsbk_good));
-  p25_candidate_index = *best_decoded > 0
-      ? static_cast<uint8_t>(best_decoded - std::begin(p25_candidate_tsbk_good))
-      : static_cast<uint8_t>(std::max_element(
-            std::begin(p25_candidate_levels), std::end(p25_candidate_levels)) -
-            std::begin(p25_candidate_levels));
-  p25_survey_active.store(false, std::memory_order_relaxed);
-  p25_control_frequency_hz = p25_config.control_channels_hz[p25_candidate_index];
-  request_hot_retune(p25_control_frequency_hz);
-  if (p25_candidate_tsbk_good[p25_candidate_index] > 0)
-    request_p25_config_save();
-  Serial.printf("RTL_P25_SURVEY_DONE best_index=%u frequency_hz=%lu relative_dbfs=%.1f "
-                "decoded=%d tsbk_good=%lu\n",
-                static_cast<unsigned>(p25_candidate_index),
-                static_cast<unsigned long>(p25_config.control_channels_hz[p25_candidate_index]),
-                static_cast<double>(p25_candidate_levels[p25_candidate_index]),
-                p25_candidate_tsbk_good[p25_candidate_index] > 0 ? 1 : 0,
-                static_cast<unsigned long>(p25_candidate_tsbk_good[p25_candidate_index]));
-  refresh_active_screen();
 }
 
 void service_p25_follow(uint32_t now) {
@@ -8875,7 +8957,7 @@ void handle_home_action(const orcsdr::home::Action& action) {
       return;
     case ActionKind::tune_frequency:
       if (rtl_ui_band == RtlBand::p25) {
-        p25_survey_active.store(false, std::memory_order_relaxed);
+        cancel_p25_survey();
         tune_p25_control(action.value);
       } else if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
         request_hot_retune(action.value);
@@ -9608,6 +9690,14 @@ void queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
   if (band == RtlBand::fm && persist_navigation) {
     persist_fm_frequency(frequency_hz);
   }
+  cancel_scan_for_takeover.store(true, std::memory_order_release);
+  rtl_fm_preset_scan_requested.store(false, std::memory_order_release);
+  p25_survey_requested.store(false, std::memory_order_release);
+  if (lora_survey_active) lora_survey_active = false;
+  const auto session_token = radio_session.acquire(
+      orcsdr::radio::owner_for_band(band), band, frequency_hz,
+      kRtlSampleRateSps);
+  (void)radio_session.set_state(session_token, orcsdr::radio::ReceiverState::starting);
   if (persist_navigation) {
     preferences.putUInt("last_band", static_cast<uint32_t>(band));
     persist_dashboard_open(dashboard_for_band(band, frequency_hz));
@@ -9745,15 +9835,18 @@ uint32_t rtl_fm_command_lo_hz(uint32_t display_hz) {
   return static_cast<uint32_t>(lo);
 }
 
-void request_hot_retune(uint32_t frequency_hz) {
-  if (rtl_ui_band == RtlBand::wx || rtl_ui_band == RtlBand::adsb) return;
+bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz) {
+  if (!radio_session.owns(token) || rtl_ui_band == RtlBand::wx ||
+      rtl_ui_band == RtlBand::adsb)
+    return false;
   frequency_hz = rtl_clamp_frequency(rtl_ui_band, frequency_hz);
-  if (frequency_hz == 0) return;
+  if (frequency_hz == 0) return false;
   /* UI: 1 kHz display quantize. */
   uint32_t ui_hz = rtl_ui_band == RtlBand::p25
                        ? frequency_hz
                        : (frequency_hz / 1000u) * 1000u;
   if (rtl_ui_band == RtlBand::fm) ui_hz = rtl_fm_sanitize_display_hz(ui_hz);
+  if (!radio_session.retuned(token, ui_hz)) return false;
   const bool ui_changed = (ui_hz != rtl_ui_frequency_hz);
   if (ui_changed && rtl_ui_band == RtlBand::fm) {
     rtl_fm_lo_nudge_hz.store(0, std::memory_order_relaxed);
@@ -9778,6 +9871,12 @@ void request_hot_retune(uint32_t frequency_hz) {
   // The active owner decides whether and where a frequency change is visible.
   // Never paint retired generic header chrome over Settings or another dashboard.
   if (ui_changed) refresh_active_screen();
+  return true;
+}
+
+void request_hot_retune(uint32_t frequency_hz) {
+  const auto session = radio_session.snapshot();
+  (void)request_hot_retune_for({session.owner, session.generation}, frequency_hz);
 }
 
 // Capture used to own M5.update() during radio UI because a second update
@@ -11976,7 +12075,7 @@ void process_command(char* command) {
     return;
   }
   if (strcmp(command, "RTL_P25_CONFIG_RELOAD") == 0 && authenticated) {
-    p25_survey_active.store(false, std::memory_order_release);
+    cancel_p25_survey();
     load_p25_config();
     if (rtl_ui_band == RtlBand::p25) tune_p25_control(p25_control_frequency_hz);
     if (orcsdr::p25::active() && orcsdr::screens::owns(orcsdr::screens::Id::p25))
@@ -12642,6 +12741,10 @@ void setup() {
     Serial.println("ORC_RADIO_UI_SELF_CHECK_FAIL");
   }
   Serial.println("ORC_RADIO_UI_SELF_CHECK_OK");
+  const bool radio_session_ok = orcsdr::radio::Session::self_check();
+  const bool scan_engine_ok = orcsdr::scan::Engine::self_check();
+  Serial.println(radio_session_ok && scan_engine_ok ? "ORC_RADIO_SCAN_SELF_CHECK_OK"
+                                                   : "ORC_RADIO_SCAN_SELF_CHECK_FAIL");
   if (!orcsdr::device_status::self_check()) {
     Serial.println("ORC_DEVICE_STATUS_SELF_CHECK_FAIL");
   }
