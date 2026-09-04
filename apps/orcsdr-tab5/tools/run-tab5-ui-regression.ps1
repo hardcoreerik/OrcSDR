@@ -24,6 +24,7 @@ param(
   [switch]$WifiCoexistenceDiagnostic,
   [switch]$DataOnly,
   [switch]$C6Update,
+  [switch]$RadioScan,
   [switch]$InstallLaneMap,
   [string]$LocationQuery = '97401',
   [switch]$RequireWifiConnection,
@@ -45,6 +46,14 @@ if ($Profile) {
     $artifactDir = Join-Path $PSScriptRoot '..\..\..\artifacts\ui-soak'
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $LogPath = Join-Path $artifactDir "$timestamp-$($Profile.ToLowerInvariant())-seed$Seed.log"
+  }
+}
+if ($RadioScan) {
+  if ($Cycles -eq 0) { $Cycles = 10 }
+  if (!$LogPath) {
+    $artifactDir = Join-Path $PSScriptRoot '..\..\..\artifacts\radio-scan-soak'
+    $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $LogPath = Join-Path $artifactDir "$timestamp-cycles$Cycles.log"
   }
 }
 if ($LogPath) {
@@ -252,14 +261,58 @@ function Assert-FmAudioProgress {
   throw "FM audio did not recover: enabled=$($next.speaker_enabled) running=$($next.speaker_running) chunks_before=$($first.audio_chunks) chunks_after=$($next.audio_chunks)"
 }
 
+function ConvertFrom-HealthStatus([string]$Line) {
+  if ($Line -notmatch '^RTL_HEALTH_STATUS uptime_ms=(\d+) free_heap=(\d+) min_free_heap=(\d+) dma_free=(\d+) dma_min=(\d+) dma_largest=(\d+) tasks=(\d+) main_stack_hwm=(\d+) reset_reason=(\d+)$') {
+    throw "Malformed health status: $Line"
+  }
+  return [pscustomobject]@{
+    Line = $Line
+    UptimeMs = [uint64]$Matches[1]
+    FreeHeap = [uint64]$Matches[2]
+    MinFreeHeap = [uint64]$Matches[3]
+    DmaFree = [uint64]$Matches[4]
+    DmaMin = [uint64]$Matches[5]
+    DmaLargest = [uint64]$Matches[6]
+    Tasks = [uint32]$Matches[7]
+    MainStackHwm = [uint32]$Matches[8]
+    ResetReason = [uint32]$Matches[9]
+  }
+}
+
+function Get-HealthStatus {
+  return ConvertFrom-HealthStatus (Send-And-Wait 'RTL_HEALTH' '^RTL_HEALTH_STATUS ')
+}
+
+function Test-UptimeAdvanced([uint64]$Previous, [uint64]$Current) {
+  $elapsed = ($Current + 0x100000000L - $Previous) % 0x100000000L
+  return $elapsed -gt 0 -and $elapsed -lt 0x80000000L
+}
+
+function Assert-HealthStatus($Health) {
+  if ($Health.FreeHeap -eq 0 -or $Health.DmaFree -eq 0 -or
+      $Health.DmaLargest -eq 0 -or $Health.Tasks -eq 0 -or $Health.MainStackHwm -eq 0) {
+    throw "Device reported exhausted memory or stack: $($Health.Line)"
+  }
+}
+
 function Assert-Health {
-  $line = Send-And-Wait 'RTL_HEALTH' '^RTL_HEALTH_STATUS '
-  if ($line -notmatch 'free_heap=(\d+) min_free_heap=(\d+) dma_free=(\d+) dma_min=(\d+) dma_largest=(\d+)') {
-    throw "Malformed health status: $line"
+  $health = Get-HealthStatus
+  Assert-HealthStatus $health
+}
+
+function ConvertFrom-RadioFrequencyStatus([string]$Line) {
+  if ($Line -notmatch '^RTL_FREQ_STATUS band=(\S+) frequency_hz=(\d+) mode=(.+)$') {
+    throw "Malformed frequency status: $Line"
   }
-  if ([uint64]$Matches[1] -eq 0 -or [uint64]$Matches[3] -eq 0 -or [uint64]$Matches[5] -eq 0) {
-    throw "Device reported exhausted heap: $line"
+  return [pscustomobject]@{
+    Band = $Matches[1].ToUpperInvariant()
+    Frequency = [uint32]$Matches[2]
+    Mode = $Matches[3]
   }
+}
+
+function Get-RadioFrequency {
+  return ConvertFrom-RadioFrequencyStatus (Send-And-Wait 'RTL_FREQ' '^RTL_FREQ_STATUS ')
 }
 
 function Assert-SoundCycle {
@@ -658,12 +711,27 @@ function Invoke-SelfCheck {
   if (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,1,1,0,0,1) }) 'WIFI_ANALYSIS') {
     throw 'RF24 overlay check accepted an active P25 dashboard.'
   }
+  $health = ConvertFrom-HealthStatus 'RTL_HEALTH_STATUS uptime_ms=123 free_heap=456 min_free_heap=400 dma_free=300 dma_min=250 dma_largest=200 tasks=12 main_stack_hwm=2048 reset_reason=1'
+  Assert-HealthStatus $health
+  if ($health.UptimeMs -ne 123 -or $health.DmaLargest -ne 200 -or $health.MainStackHwm -ne 2048) {
+    throw 'Health parser failed.'
+  }
+  if (!(Test-UptimeAdvanced 4294967290 5) -or
+      (Test-UptimeAdvanced 5000 100) -or
+      (Test-UptimeAdvanced 100 100)) {
+    throw 'Uptime rollover check failed.'
+  }
+  $frequency = ConvertFrom-RadioFrequencyStatus 'RTL_FREQ_STATUS band=P25 frequency_hz=453925000 mode=P25 C4FM'
+  if ($frequency.Band -ne 'P25' -or $frequency.Frequency -ne 453925000 -or
+      $frequency.Mode -ne 'P25 C4FM') {
+    throw 'Radio frequency parser failed.'
+  }
   Write-SoakLine 'RTL_UI_SOAK_SELF_CHECK pass=1'
 }
 
 if ($SelfCheck) { Invoke-SelfCheck; exit 0 }
-if (@($Run, $Soak, $Driver079, $WifiOnly, $WifiCoexistence, $WifiCoexistenceDiagnostic, $DataOnly, $C6Update).Where({ $_ }).Count -gt 1) {
-  throw 'Choose only one of -Run, -Soak, -Driver079, -WifiOnly, -WifiCoexistence, -WifiCoexistenceDiagnostic, -DataOnly, or -C6Update.'
+if (@($Run, $Soak, $Driver079, $WifiOnly, $WifiCoexistence, $WifiCoexistenceDiagnostic, $DataOnly, $C6Update, $RadioScan).Where({ $_ }).Count -gt 1) {
+  throw 'Choose only one of -Run, -Soak, -Driver079, -WifiOnly, -WifiCoexistence, -WifiCoexistenceDiagnostic, -DataOnly, -C6Update, or -RadioScan.'
 }
 
 function Get-C6UpdateStatus {
@@ -778,6 +846,68 @@ function Invoke-Driver079Test {
   }
 }
 
+function Invoke-RadioScanTest {
+  Wait-DeviceReady 60 11000
+  Connect-Authenticated
+  $rtlDeadline = [DateTime]::UtcNow.AddSeconds(30)
+  do {
+    $rtlStatus = Send-And-Wait 'RTL_STATUS' '^RTL_SDR_STATUS ' 20
+    if ($rtlStatus -match 'connected=true ') { break }
+    Start-Sleep -Milliseconds 500
+  } while ([DateTime]::UtcNow -lt $rtlDeadline)
+  if ($rtlStatus -notmatch 'connected=true ') { throw "RTL-SDR did not enumerate: $rtlStatus" }
+
+  $initial = Get-UiState
+  $baseline = $null
+  $previousUptime = [uint64]0
+  try {
+    for ($cycle = 0; $cycle -le $Cycles; $cycle++) {
+      [void](Open-Ui 'FM' 'FM')
+      [void](Send-And-Wait 'RTL_PRESET_SCAN' '^RTL_PRESET_SCAN_QUEUED$')
+      [void](Read-MatchingLine '^RTL_PRESET_SCAN start$' 20)
+
+      [void](Open-Ui 'P25' 'P25')
+      $p25 = Get-RadioFrequency
+      if ($p25.Band -ne 'P25') { throw "FM scan restored stale state after takeover: band=$($p25.Band)" }
+
+      $script:serial.WriteLine('RTL_P25_SCAN')
+      [void](Read-MatchingLine '^RTL_P25_SURVEY start candidates=\d+ dwell_ms=1500$' 30)
+      [void](Open-Ui 'LORA' 'LORA')
+      Start-Sleep -Seconds $DwellSeconds
+      $lora = Get-RadioFrequency
+      if ($lora.Band -ne 'LORA') { throw "P25 survey restored stale state after takeover: band=$($lora.Band)" }
+
+      $health = Get-HealthStatus
+      Assert-HealthStatus $health
+      if ($previousUptime -ne 0 -and !(Test-UptimeAdvanced $previousUptime $health.UptimeMs)) {
+        throw "Device uptime did not advance; reset suspected: $($health.Line)"
+      }
+      $previousUptime = $health.UptimeMs
+      if ($cycle -eq 0) {
+        $baseline = $health
+        Write-SoakLine "RTL_RADIO_SCAN_WARMUP pass=1 free_heap=$($health.FreeHeap) dma_free=$($health.DmaFree) dma_largest=$($health.DmaLargest) stack_hwm=$($health.MainStackHwm)"
+      } else {
+        $heapDelta = [int64]$health.FreeHeap - [int64]$baseline.FreeHeap
+        $dmaDelta = [int64]$health.DmaFree - [int64]$baseline.DmaFree
+        if ($heapDelta -lt -4096 -or $dmaDelta -lt -2048 -or $health.DmaLargest -lt 20480) {
+          throw "Radio scan memory regression: heap_delta=$heapDelta dma_delta=$dmaDelta dma_largest=$($health.DmaLargest)"
+        }
+        Write-SoakLine "RTL_RADIO_SCAN_CYCLE cycle=$cycle pass=1 heap_delta=$heapDelta dma_delta=$dmaDelta free_heap=$($health.FreeHeap) dma_largest=$($health.DmaLargest) stack_hwm=$($health.MainStackHwm)"
+      }
+    }
+    Write-SoakLine "RTL_RADIO_SCAN_RESULT pass=1 cycles=$Cycles lines=$script:linesSeen"
+  } finally {
+    try {
+      if ($initial.Band -in @('FM','AM','WX','CB','LORA','BROWSE','ADSB','P25')) {
+        [void](Send-And-Wait "RTL_TUNE $($initial.Band) $($initial.Frequency)" '^RTL_TUNE_(?:OK|UNAVAILABLE|INVALID)')
+      }
+      [void](Send-And-Wait "RTL_UI OPEN $($initial.Screen)" '^RTL_UI_OPEN_(?:OK|INVALID)')
+    } catch {
+      Write-Warning "Could not restore initial device state: $($_.Exception.Message)"
+    }
+  }
+}
+
 $script:serial = [System.IO.Ports.SerialPort]::new($Port, 115200, 'None', 8, 'One')
 $script:serial.NewLine = "`n"
 $script:serial.ReadTimeout = 250
@@ -821,6 +951,7 @@ try {
     exit 0
   }
   if ($C6Update) { Invoke-C6UpdateTest; exit 0 }
+  if ($RadioScan) { Invoke-RadioScanTest; exit 0 }
 
   if ($Profile) {
     $commit = (& git -C (Join-Path $PSScriptRoot '..\..\..') rev-parse --short HEAD 2>$null)

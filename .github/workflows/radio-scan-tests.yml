@@ -1,0 +1,32 @@
+name: Radio scan core
+
+on:
+  pull_request:
+    paths:
+      - apps/orcsdr-tab5/ui/radio_session.*
+      - apps/orcsdr-tab5/ui/scan_engine.*
+      - tests/radio_scan_tests.cpp
+      - tools/test-radio-scan.ps1
+      - tools/test-radio-scan.sh
+      - .github/workflows/radio-scan-tests.yml
+  push:
+    branches: [main]
+    paths:
+      - apps/orcsdr-tab5/ui/radio_session.*
+      - apps/orcsdr-tab5/ui/scan_engine.*
+      - tests/radio_scan_tests.cpp
+      - tools/test-radio-scan.ps1
+      - tools/test-radio-scan.sh
+      - .github/workflows/radio-scan-tests.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Optimized and sanitizer tests
+        run: bash tools/test-radio-scan.sh

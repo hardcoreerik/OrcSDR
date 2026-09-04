@@ -30,6 +30,23 @@ required sdkconfig values, and runs `idf.py build`. This order supports a fresh
 checkout or worktree and prevents component resolution from overwriting the
 patch before compilation.
 
+### Radio session and scan tests
+
+Run the portable state-machine tests from the repository root. The runner uses
+WSL `g++` and executes both an optimized build and an ASan/LSan/UBSan build.
+
+```powershell
+.\tools\test-radio-scan.ps1
+```
+
+The same test runs in GitHub Actions. Hardware scan-takeover testing remains a
+separate, explicitly invoked Tab5 gate:
+
+```powershell
+cd apps\orcsdr-tab5
+.\tools\run-tab5-ui-regression.ps1 -RadioScan -Cycles 10 -Port COM17
+```
+
 ### Flash
 
 ```powershell
