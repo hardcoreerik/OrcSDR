@@ -8425,10 +8425,11 @@ void scan_finished(orcsdr::scan::Finish reason, void*) {
   if (finished == ActiveScan::fm_presets) {
     rtl_fm_preset_scan_active.store(false, std::memory_order_release);
     rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
-    persist_fm_presets();
-    Serial.printf("RTL_PRESET_SCAN %s found=%d\n",
-                  reason == orcsdr::scan::Finish::retune_failed ? "failed" : "done",
-                  fm_preset_count);
+    if (reason == orcsdr::scan::Finish::completed) persist_fm_presets();
+    const char* outcome = reason == orcsdr::scan::Finish::completed
+                              ? "done"
+                              : reason == orcsdr::scan::Finish::cancelled ? "cancelled" : "failed";
+    Serial.printf("RTL_PRESET_SCAN %s found=%d\n", outcome, fm_preset_count);
     return;
   }
   if (finished != ActiveScan::p25_survey) return;
@@ -8456,7 +8457,7 @@ void scan_finished(orcsdr::scan::Finish reason, void*) {
                 static_cast<double>(p25_candidate_levels[p25_candidate_index]),
                 p25_candidate_tsbk_good[p25_candidate_index] > 0 ? 1 : 0,
                 static_cast<unsigned long>(p25_candidate_tsbk_good[p25_candidate_index]));
-  refresh_active_screen();
+  rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
 }
 
 orcsdr::scan::Callbacks scan_callbacks() {

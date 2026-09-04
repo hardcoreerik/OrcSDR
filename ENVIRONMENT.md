@@ -33,7 +33,7 @@ patch before compilation.
 ### Flash
 
 ```powershell
-idf.py -p <PORT> flash
+idf.py -B build-native-hosted3 -p <PORT> flash
 ```
 
 Only after explicit hardware authorization. `<PORT>` is whatever serial

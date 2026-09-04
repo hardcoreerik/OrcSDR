@@ -44,7 +44,7 @@ void Engine::service(uint32_t now_ms, const Callbacks& callbacks) {
 
 void Engine::finish(Finish reason, bool restore, const Callbacks& callbacks) {
   if (restore && restore_hz_ != 0 && callbacks.retune != nullptr)
-    (void)callbacks.retune(restore_hz_, callbacks.context);
+    if (!callbacks.retune(restore_hz_, callbacks.context)) reason = Finish::retune_failed;
   active_ = false;
   tune_pending_ = false;
   if (callbacks.finished != nullptr) callbacks.finished(reason, callbacks.context);
@@ -65,11 +65,12 @@ struct Check {
   size_t measures = 0;
   Finish finish = Finish::retune_failed;
   bool fail_retune = false;
+  uint32_t fail_hz = 0;
 };
 bool check_retune(uint32_t hz, void* context) {
   auto& check = *static_cast<Check*>(context);
   check.tuned[check.tunes++] = hz;
-  return !check.fail_retune;
+  return !check.fail_retune && hz != check.fail_hz;
 }
 void check_measure(size_t, uint32_t, void* context) {
   ++static_cast<Check*>(context)->measures;
@@ -118,7 +119,16 @@ bool Engine::self_check() {
   if (!engine.start({Mode::window_sweep, nullptr, 1, 400, 50, 0, true}, 80, 0))
     return false;
   engine.service(0, callbacks);
-  return !engine.active() && check.measures == 0 && check.finish == Finish::retune_failed;
+  if (engine.active() || check.measures != 0 || check.finish != Finish::retune_failed)
+    return false;
+
+  check = {};
+  check.fail_hz = 75;
+  if (!engine.start({Mode::frequency_range, nullptr, 1, 300, 25, 0, true}, 75, 0))
+    return false;
+  engine.service(0, callbacks);
+  engine.service(0, callbacks);
+  return !engine.active() && check.measures == 1 && check.finish == Finish::retune_failed;
 }
 
 }  // namespace orcsdr::scan
