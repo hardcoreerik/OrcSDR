@@ -23,32 +23,17 @@ cd apps/orcsdr-tab5
 .\tools\build-tab5-idf.ps1
 ```
 
-This script activates the pinned ESP-IDF environment, applies the local
-M5GFX Tab5 page-flip patch, regenerates the per-build sdkconfig from
-`sdkconfig.defaults`, and runs `idf.py build`.
-
-**Known gotcha — first build in a fresh checkout/worktree:** the script
-applies `tools/patches/m5gfx-tab5-pageflip.patch` to `managed_components/`
-*before* running `idf.py reconfigure`. On a machine (or worktree) that has
-never fetched `managed_components/` yet, the patch step has nothing to
-patch and fails outright. Even if you pre-populate `managed_components/`
-(e.g. copied from another checkout) so the patch step succeeds, the
-subsequent `idf.py reconfigure` component-manager step can still
-re-resolve/overwrite `managed_components/m5stack__m5gfx` and silently drop
-the applied patch, producing build errors like `'struct
-lgfx::v1::Panel_DSI' has no member named 'getPanelHandle'`.
-
-Workaround until the script is fixed: run `idf.py reconfigure` once first
-(via `. tools\build-tab5-idf.ps1`'s underlying `idf.py` invocation, or
-manually after activating the IDF environment) so `managed_components/` is
-fully fetched, then apply the patch
-(`tools\apply-m5gfx-tab5-pageflip.ps1`), then build with `idf.py build`
-(skip `reconfigure` on that run so the patched files aren't re-fetched).
+This script activates ESP-IDF 5.5.4, regenerates the per-build sdkconfig from
+`sdkconfig.defaults`, and runs `idf.py reconfigure` so managed components are
+present. It then applies the local M5GFX Tab5 page-flip patch, validates the
+required sdkconfig values, and runs `idf.py build`. This order supports a fresh
+checkout or worktree and prevents component resolution from overwriting the
+patch before compilation.
 
 ### Flash
 
 ```powershell
-idf.py -p <PORT> flash
+idf.py -B build-native-hosted3 -p <PORT> flash
 ```
 
 Only after explicit hardware authorization. `<PORT>` is whatever serial

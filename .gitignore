@@ -1,5 +1,6 @@
 # ESP-IDF / PlatformIO
 build/
+build-native-hosted3/
 .pio/
 sdkconfig
 sdkconfig.old

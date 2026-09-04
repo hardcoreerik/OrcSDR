@@ -12,12 +12,14 @@ document for build, flash, and hardware evidence.
 OrcSDR consumes the standalone `esp_rtl_sdr` v0.7.9 component through its C
 API. The driver owns USB/tuner control and IQ delivery; its implementation,
 tests, and P4 serial example live upstream. The Tab5 app selects callback-only
-IQ delivery and owns the downstream DSP queues, radio sessions, and outputs.
-See the [driver integration contract](docs/API_ESP_RTL_SDR.md).
+IQ delivery and owns the downstream DSP queues and outputs. Its `radio_session`
+service records the current application owner, band, frequency, sample rate,
+and receiver state. Generation tokens reject retunes from an owner that has
+already been replaced. See the [driver integration contract](docs/API_ESP_RTL_SDR.md).
 
 ADS-B, P25, LoRa, and RF analysis already have separate modules and interfaces.
 They still compile into the Tab5 application component. `ui/main.cpp` retains
-FM/AM processing, RDS, radio/session coordination, and speaker integration;
+FM/AM processing, RDS, driver lifecycle, DSP policy, and speaker integration;
 `rf_analysis.cpp` still depends on M5Unified timing. File/module separation
 does not yet establish a board-independent OrcSDR engine or display/audio HAL.
 
@@ -41,6 +43,28 @@ work:
 
 Radio, decoder, Wi-Fi, SD, and audio state may continue to update in the
 background. They provide snapshots to a visible screen; they do not draw.
+
+## Radio session and scan ownership
+
+`apps/orcsdr-tab5/ui/radio_session.{hpp,cpp}` is the application-level tuner
+ownership record. FM, P25, ADS-B, LoRa, the general radio, RF Lab, and RF
+Visualizer acquire a new generation when they take control. A retune carries
+the captured owner and generation; once another consumer acquires the tuner,
+the old token can no longer change the recorded frequency. Starting another
+radio mode cancels an active scan without restoring the old scan frequency.
+
+`apps/orcsdr-tab5/ui/scan_engine.{hpp,cpp}` is a bounded asynchronous state
+machine for channel lists, frequency ranges, and future window sweeps. It owns
+target order, retune/settle/advance timing, cancellation, completion,
+restoration, and progress. Callbacks retain all feature policy: FM decides
+whether a peak becomes a preset, while P25 evaluates RF and decoder results.
+No allocation, delay, filesystem work, or display work occurs in the engine.
+
+FM preset scanning and P25 control-channel survey use this shared engine. The
+existing LoRa survey remains in `main.cpp` because its current cadence samples
+before each retune and labels that value with the next span center. Migrating it
+to settle-then-measure semantics would change observable behavior, so that
+correction and migration require a separate hardware-validated change.
 
 ## ScreenController contract
 
@@ -148,10 +172,13 @@ second geometry or touch implementation.
 ## Diagnostics and validation
 
 At boot, `ScreenController::self_check()` verifies transition blocking and
-Settings return for Home, FM, P25, ADS-B, and LoRa. Documentation capture also
-claims the `documentation` identity while it freezes a rendered surface, then
-restores the original controller identity before normal updates resume. A
-failure stops boot rather than shipping ambiguous ownership behavior.
+Settings return for Home, FM, P25, ADS-B, and LoRa. `radio_session` checks stale
+owner rejection, and `scan_engine` deterministically checks plan validation,
+target order, virtual dwell timing, progress, completion, cancellation,
+restoration, single-target operation, and retune failure. Documentation capture
+also claims the `documentation` identity while it freezes a rendered surface,
+then restores the original controller identity before normal updates resume.
+Self-check failures emit a named serial marker during boot.
 
 `RTL_SCREEN_STATUS` reports the active and return screens plus transition,
 rejected-draw, and visible-update counters. It is read-only and performs no
