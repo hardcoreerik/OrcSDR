@@ -422,7 +422,15 @@ not reset the Tab5:
 .\tools\run-tab5-ui-regression.ps1 -Port COM17 -Profile Stress -Seed 12345
 .\tools\run-tab5-ui-regression.ps1 -Port COM17 -Profile Stress -Cycles 1 -WifiEvery 1
 .\tools\run-tab5-ui-regression.ps1 -Port COM17 -Profile Overnight -Cycles 500
+.\tools\run-tab5-ui-regression.ps1 -Port COM17 -RadioScan -Cycles 10
 ```
+
+`-RadioScan` repeatedly starts FM and P25 scans, transfers tuner ownership to
+another dashboard during each scan, rejects stale restoration, and records heap,
+DMA, stack, uptime, reset, watchdog, and panic evidence. The first cycle warms
+the dashboards before the memory baseline is recorded. The run fails if free
+heap falls by more than 4 KiB, DMA-capable heap falls by more than 2 KiB, or the
+largest DMA-capable block falls below 20 KiB.
 
 `-Soak` authenticates with `.orclink\ui-doc.key`, then drives every radio
 dashboard through Home and Settings. `Smoke`, `Stress`, and `Overnight` provide

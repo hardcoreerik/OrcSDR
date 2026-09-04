@@ -43,4 +43,5 @@ site/
 artifacts/help-media/
 artifacts/data-source-cache/
 artifacts/data-catalog-v1*/
+artifacts/radio-scan-soak/
 docs/user-guide/assets/screenshots/raw/
