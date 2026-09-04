@@ -94,7 +94,7 @@ Healthy boot (2026-08-17, Hosted 2.12.6, mempool off):
 ## Installer and release package
 
 Use the current [M5Burner release and recovery instructions](M5BURNER_RELEASE.md)
-and [hardware acceptance gate](M5BURNER_HARDWARE_GATE.md). The beta.1 package
+and [hardware acceptance gate](M5BURNER_HARDWARE_GATE.md). The current beta package
 and installer target Hosted 3.0.6; the historical 2.12.6 measurements above do not
 establish acceptance for that pair.
 

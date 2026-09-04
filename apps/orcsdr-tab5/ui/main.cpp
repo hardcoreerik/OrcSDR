@@ -1456,8 +1456,6 @@ char settings_location_label[40]{};
 char settings_map_pack[40]{};
 bool adsb_atc_listening = false;
 bool catalog_radio_paused = false;
-std::atomic<uint32_t> rtl_sdr_status_revision{0};
-uint32_t drawn_rtl_sdr_status_revision = 0;
 char rtl_sdr_status[96] = "RTL-SDR: waiting for USB-A host";
 char rtl_sdr_serial[48]{};
 char rtl_sdr_speed[8] = "none";
@@ -2005,28 +2003,6 @@ void draw_power_state() {
 
 void set_rtl_sdr_status(const char* status) {
   strlcpy(rtl_sdr_status, status, sizeof(rtl_sdr_status));
-  rtl_sdr_status_revision.fetch_add(1, std::memory_order_release);
-}
-
-void draw_rtl_sdr_state() {
-  if (g_suppress_home_paint) return;
-  if (orcsdr::settings::active() || orcsdr::home::active()) return;
-  const bool ready = strstr(rtl_sdr_status, "ready") != nullptr;
-  M5.Display.fillRect(150, 545, 980, 40, TFT_BLACK);
-  M5.Display.setTextColor(ready ? TFT_GREEN : TFT_ORANGE, TFT_BLACK);
-  M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextSize(2);
-  M5.Display.drawString(rtl_sdr_status, 640, 565);
-  if (ready) {
-    M5.Display.fillRoundRect(kButtonX, kButtonY, kButtonWidth, kButtonHeight, 18,
-                             TFT_DARKGREEN);
-    M5.Display.drawRoundRect(kButtonX, kButtonY, kButtonWidth, kButtonHeight, 18,
-                             TFT_GREEN);
-    M5.Display.setTextColor(TFT_WHITE, TFT_DARKGREEN);
-    M5.Display.setTextSize(3);
-    M5.Display.drawString("Open SDR radio", 640, 360);
-  }
-  draw_global_settings_gear();
 }
 
 void usb_string_to_ascii(const usb_str_desc_t* descriptor, char* output,
@@ -13188,13 +13164,6 @@ void loop() {
     settings_sound_default = sound_enabled;
     Serial.printf("RTL_AUDIO_SETTINGS_SAVE volume=%u sound=%d\n", volume,
                   sound_enabled ? 1 : 0);
-  }
-
-  const uint32_t current_rtl_sdr_status_revision =
-      rtl_sdr_status_revision.load(std::memory_order_acquire);
-  if (drawn_rtl_sdr_status_revision != current_rtl_sdr_status_revision) {
-    drawn_rtl_sdr_status_revision = current_rtl_sdr_status_revision;
-    if (!radio_ui && !adsb_ui && !settings_ui) draw_rtl_sdr_state();
   }
 
   // Receive tasks only request this handoff; this UI path is the sole writer.
