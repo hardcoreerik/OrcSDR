@@ -283,6 +283,11 @@ function Get-HealthStatus {
   return ConvertFrom-HealthStatus (Send-And-Wait 'RTL_HEALTH' '^RTL_HEALTH_STATUS ')
 }
 
+function Test-UptimeAdvanced([uint64]$Previous, [uint64]$Current) {
+  $elapsed = ($Current + 0x100000000L - $Previous) % 0x100000000L
+  return $elapsed -gt 0 -and $elapsed -lt 0x80000000L
+}
+
 function Assert-HealthStatus($Health) {
   if ($Health.FreeHeap -eq 0 -or $Health.DmaFree -eq 0 -or
       $Health.DmaLargest -eq 0 -or $Health.Tasks -eq 0 -or $Health.MainStackHwm -eq 0) {
@@ -711,6 +716,11 @@ function Invoke-SelfCheck {
   if ($health.UptimeMs -ne 123 -or $health.DmaLargest -ne 200 -or $health.MainStackHwm -ne 2048) {
     throw 'Health parser failed.'
   }
+  if (!(Test-UptimeAdvanced 4294967290 5) -or
+      (Test-UptimeAdvanced 5000 100) -or
+      (Test-UptimeAdvanced 100 100)) {
+    throw 'Uptime rollover check failed.'
+  }
   $frequency = ConvertFrom-RadioFrequencyStatus 'RTL_FREQ_STATUS band=P25 frequency_hz=453925000 mode=P25 C4FM'
   if ($frequency.Band -ne 'P25' -or $frequency.Frequency -ne 453925000 -or
       $frequency.Mode -ne 'P25 C4FM') {
@@ -869,7 +879,7 @@ function Invoke-RadioScanTest {
 
       $health = Get-HealthStatus
       Assert-HealthStatus $health
-      if ($previousUptime -ne 0 -and $health.UptimeMs -le $previousUptime) {
+      if ($previousUptime -ne 0 -and !(Test-UptimeAdvanced $previousUptime $health.UptimeMs)) {
         throw "Device uptime did not advance; reset suspected: $($health.Line)"
       }
       $previousUptime = $health.UptimeMs
