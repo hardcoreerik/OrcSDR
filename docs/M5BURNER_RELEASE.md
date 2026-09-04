@@ -1,6 +1,6 @@
 # OrcSDR M5Burner release
 
-`v0.2.0-beta.1` is one normal Tab5 package. It contains the P4 application
+`v0.2.0-beta.2` is one normal Tab5 package. It contains the P4 application
 and a pinned ESP-Hosted 3.0.6 C6 image. M5Burner writes the P4 only; OrcSDR
 offers a C6 update from Settings after it proves that the existing Hosted link
 is reachable.
@@ -31,8 +31,8 @@ local test zip. It never flashes hardware or uploads a listing.
 
 ## Publication record and future-release gate
 
-`v0.2.0-beta.1` is publicly available through M5Burner and as a [GitHub
-prerelease](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.2.0-beta.1).
+`v0.2.0-beta.2` is publicly available through M5Burner and as a [GitHub beta
+release](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.2.0-beta.2).
 For a future release, use **USER CUSTOM → Publish** privately first and test
 with its Share Code. Only after the exact-tag hardware gate in
 [M5BURNER_HARDWARE_GATE.md](M5BURNER_HARDWARE_GATE.md) passes may its GitHub

@@ -17,7 +17,7 @@
 </p>
 
 > [!NOTE]
-> **Public beta — [v0.2.0-beta.1](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.2.0-beta.1)**
+> **Public beta — [v0.2.0-beta.2](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.2.0-beta.2)**
 >
 > OrcSDR is available now for the M5Stack Tab5. It is a prerelease: feedback and [bug reports](https://github.com/hardcoreerik/OrcSDR/issues) are welcome.
 
@@ -538,11 +538,11 @@ cd OrcSDR
 git pull
 ```
 
-For the public prerelease, check out [`v0.2.0-beta.1`](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.2.0-beta.1) before building:
+For the public beta, check out [`v0.2.0-beta.2`](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.2.0-beta.2) before building:
 
 ```bash
 git fetch --tags
-git checkout v0.2.0-beta.1
+git checkout v0.2.0-beta.2
 ```
 
 The historical [`v0.2.0-alpha.5`](docs/releases/v0.2.0-alpha.5.md) record remains available for its original 2.12.6-era hardware context.
