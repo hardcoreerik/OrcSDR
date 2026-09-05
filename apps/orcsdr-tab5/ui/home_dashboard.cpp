@@ -21,8 +21,8 @@ constexpr int kRailX = 24, kRailY = 112, kRailW = 280, kRailH = 530;
 constexpr int kMainX = 318, kMainY = 112, kMainW = 930, kMainH = 530;
 constexpr int kPlotX = 330, kPlotW = 906;
 constexpr int kSpectrumY = 144, kSpectrumH = 151;
-constexpr int kWaterfallY = 298, kWaterfallH = 148;
-constexpr int kContrastY = 452;
+constexpr int kWaterfallY = 298, kWaterfallH = 158;
+constexpr int kContrastY = 462;
 constexpr int kContrastDownX = 462;
 constexpr int kContrastUpX = 724;
 constexpr int kContrastButtonW = 36;
@@ -267,18 +267,18 @@ float home_spectrum_floor(const float* levels, size_t count, float pipeline_floo
 }
 
 void draw_frequency() {
-  M5.Display.fillRect(kPlotX, 448, 430, 88, TFT_BLACK);
-  text("FREQUENCY", kPlotX, 462, kCyan, 2);
+  M5.Display.fillRect(kPlotX, 458, 430, 88, TFT_BLACK);
+  text("FREQUENCY", kPlotX, 472, kCyan, 2);
   char value[40];
   snprintf(value, sizeof(value), current.frequency_hz >= 1000000 ? "%.3f" : "%.1f",
            current.frequency_hz >= 1000000 ? current.frequency_hz / 1000000.0
                                            : current.frequency_hz / 1000.0);
-  text(value, kPlotX + 25, 506, kGreen, 4);
-  text(current.frequency_hz >= 1000000 ? "MHz" : "kHz", kPlotX + 350, 516,
+  text(value, kPlotX + 40, 516, kGreen, 4);
+  text(current.frequency_hz >= 1000000 ? "MHz" : "kHz", kPlotX + 350, 526,
        kGreen, 2);
   if (current.requested_frequency_hz != 0 &&
       current.requested_frequency_hz != current.frequency_hz)
-    text("TUNING", kPlotX + 425, 516, TFT_YELLOW, 1, middle_right);
+    text("TUNING", kPlotX + 425, 526, TFT_YELLOW, 1, middle_right);
   draw_waterfall_controls();
 }
 
@@ -306,34 +306,34 @@ void draw_spectrum_axis() {
 }
 
 void draw_tuning_controls() {
-  M5.Display.fillRect(kPlotX, 544, 610, 84, TFT_BLACK);
-  panel(kPlotX, 544, 610, 84, kCyan, 9);
-  panel(338, 557, 60, 56, kCyan, 7); text("<", 368, 585, kGreen, 3, middle_center);
-  text("SPAN", 470, 568, kCyan, 2, middle_center);
+  M5.Display.fillRect(kPlotX, 564, 610, 62, TFT_BLACK);
+  panel(kPlotX, 564, 610, 62, kCyan, 9);
+  panel(338, 571, 60, 48, kCyan, 7); text("<", 368, 595, kGreen, 3, middle_center);
+  text("SPAN", 470, 578, kCyan, 2, middle_center);
   char value[24];
   snprintf(value, sizeof(value), "%.0f kHz", current.span_hz / 1000.0);
-  text(value, 470, 596, kGreen, 2, middle_center);
-  panel(548, 557, 60, 56, kCyan, 7); text(">", 578, 585, kGreen, 3, middle_center);
-  panel(640, 557, 60, 56, kCyan, 7); text("<", 670, 585, kGreen, 3, middle_center);
-  text("STEP", 780, 568, kCyan, 2, middle_center);
+  text(value, 470, 606, kGreen, 2, middle_center);
+  panel(548, 571, 60, 48, kCyan, 7); text(">", 578, 595, kGreen, 3, middle_center);
+  panel(640, 571, 60, 48, kCyan, 7); text("<", 670, 595, kGreen, 3, middle_center);
+  text("STEP", 780, 578, kCyan, 2, middle_center);
   snprintf(value, sizeof(value), "%.1f kHz", current.step_hz / 1000.0);
-  text(value, 780, 596, kGreen, 2, middle_center);
-  panel(864, 557, 60, 56, kCyan, 7); text(">", 894, 585, kGreen, 3, middle_center);
+  text(value, 780, 606, kGreen, 2, middle_center);
+  panel(864, 571, 60, 48, kCyan, 7); text(">", 894, 595, kGreen, 3, middle_center);
 }
 
 void draw_audio_controls() {
-  M5.Display.fillRect(998, 458, 236, 72, TFT_BLACK);
-  panel(998, 458, 70, 72, kCyan, 8);
-  text("-", 1033, 494, kGreen, 4, middle_center);
-  panel(1076, 458, 80, 72, kCyan, 8);
-  text(current.sound_enabled ? "VOL" : "MUTE", 1116, 476,
+  M5.Display.fillRect(998, 468, 236, 72, TFT_BLACK);
+  panel(998, 468, 70, 72, kCyan, 8);
+  text("-", 1033, 504, kGreen, 4, middle_center);
+  panel(1076, 468, 80, 72, kCyan, 8);
+  text(current.sound_enabled ? "VOL" : "MUTE", 1116, 486,
        current.sound_enabled ? kCyan : TFT_ORANGE, 2, middle_center);
   char value[8];
   snprintf(value, sizeof(value), "%u", current.volume);
-  text(value, 1116, 505, current.sound_enabled ? kGreen : TFT_LIGHTGREY, 2,
+  text(value, 1116, 515, current.sound_enabled ? kGreen : TFT_LIGHTGREY, 2,
        middle_center);
-  panel(1164, 458, 70, 72, kCyan, 8);
-  text("+", 1199, 494, kGreen, 4, middle_center);
+  panel(1164, 468, 70, 72, kCyan, 8);
+  text("+", 1199, 504, kGreen, 4, middle_center);
 }
 
 void footer_text(const char* value, int x, uint16_t color) {
@@ -403,23 +403,23 @@ void draw_receiver_chrome() {
   M5.Display.fillRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, TFT_BLACK);
   M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kDim);
   draw_frequency();
-  panel(770, 458, 92, 72, kCyan, 8);
-  text("MODE", 816, 474, kCyan, 2, middle_center);
-  text(current.mode[0] ? current.mode : "--", 816, 506, kGreen, 2, middle_center);
-  panel(874, 458, 112, 72, kCyan, 8);
-  text("STEP", 930, 474, kCyan, 2, middle_center);
+  panel(770, 468, 92, 72, kCyan, 8);
+  text("MODE", 816, 484, kCyan, 2, middle_center);
+  text(current.mode[0] ? current.mode : "--", 816, 516, kGreen, 2, middle_center);
+  panel(874, 468, 112, 72, kCyan, 8);
+  text("STEP", 930, 484, kCyan, 2, middle_center);
   char value[24]; snprintf(value, sizeof(value), "%.1f kHz", current.step_hz / 1000.0);
-  text(value, 930, 506, kGreen, 2, middle_center);
+  text(value, 930, 516, kGreen, 2, middle_center);
   draw_audio_controls();
   draw_tuning_controls();
-  panel(950, 557, 128, 56, kCyan, 7);
-  text("FILTER", 1014, 572, kCyan, 2, middle_center);
+  panel(950, 564, 128, 62, kCyan, 7);
+  text("FILTER", 1014, 582, kCyan, 2, middle_center);
   snprintf(value, sizeof(value), "%lu kHz", static_cast<unsigned long>(current.filter_bandwidth_hz / 1000u));
-  text(current.filter_bandwidth_hz ? value : "AUTO", 1014, 598, kGreen, 2, middle_center);
-  panel(1090, 557, 144, 56, kCyan, 7);
-  text("SIGNAL", 1162, 572, kCyan, 2, middle_center);
+  text(current.filter_bandwidth_hz ? value : "AUTO", 1014, 608, kGreen, 2, middle_center);
+  panel(1090, 564, 144, 62, kCyan, 7);
+  text("SIGNAL", 1162, 582, kCyan, 2, middle_center);
   snprintf(value, sizeof(value), "%.1f dBFS", static_cast<double>(current.relative_dbfs));
-  text(value, 1162, 598, kGreen, 2, middle_center);
+  text(value, 1162, 608, kGreen, 2, middle_center);
 }
 
 void draw_browser() {
@@ -481,7 +481,8 @@ Action tap_action(int32_t x, int32_t y) {
       return {ActionKind::open_dashboard, dashboards::recent(index - 1)};
     return {};
   }
-  if (inside(x, y, kPlotX, kSpectrumY, kPlotW, kSpectrumH + kWaterfallH)) {
+  if (inside(x, y, kPlotX, kSpectrumY, kPlotW,
+             kWaterfallY + kWaterfallH - kSpectrumY)) {
     const int64_t offset = (static_cast<int64_t>(x - kPlotX) * current.span_hz) /
                                kPlotW -
                            static_cast<int64_t>(current.span_hz / 2);
@@ -489,13 +490,13 @@ Action tap_action(int32_t x, int32_t y) {
     return {ActionKind::tune_frequency, dashboards::Id::count,
             requested > 0 ? static_cast<uint32_t>(requested) : 0};
   }
-  if (inside(x, y, 338, 557, 60, 56)) return {ActionKind::span_down};
-  if (inside(x, y, 548, 557, 60, 56)) return {ActionKind::span_up};
-  if (inside(x, y, 640, 557, 60, 56)) return {ActionKind::step_down};
-  if (inside(x, y, 864, 557, 60, 56)) return {ActionKind::step_up};
-  if (inside(x, y, 998, 458, 70, 72)) return {ActionKind::volume_down};
-  if (inside(x, y, 1076, 458, 80, 72)) return {ActionKind::sound_toggle};
-  if (inside(x, y, 1164, 458, 70, 72)) return {ActionKind::volume_up};
+  if (inside(x, y, 338, 571, 60, 48)) return {ActionKind::span_down};
+  if (inside(x, y, 548, 571, 60, 48)) return {ActionKind::span_up};
+  if (inside(x, y, 640, 571, 60, 48)) return {ActionKind::step_down};
+  if (inside(x, y, 864, 571, 60, 48)) return {ActionKind::step_up};
+  if (inside(x, y, 998, 468, 70, 72)) return {ActionKind::volume_down};
+  if (inside(x, y, 1076, 468, 80, 72)) return {ActionKind::sound_toggle};
+  if (inside(x, y, 1164, 468, 70, 72)) return {ActionKind::volume_up};
   return {};
 }
 
@@ -536,14 +537,14 @@ void update(const Snapshot& snapshot) {
   M5.Display.startWrite();
   if (tuner_changed) {
     draw_frequency();
-    M5.Display.fillRect(770, 458, 216, 72, TFT_BLACK);
-    panel(770, 458, 92, 72, kCyan, 8);
-    text("MODE", 816, 474, kCyan, 2, middle_center);
-    text(current.mode, 816, 506, kGreen, 2, middle_center);
-    panel(874, 458, 112, 72, kCyan, 8);
+    M5.Display.fillRect(770, 468, 216, 72, TFT_BLACK);
+    panel(770, 468, 92, 72, kCyan, 8);
+    text("MODE", 816, 484, kCyan, 2, middle_center);
+    text(current.mode, 816, 516, kGreen, 2, middle_center);
+    panel(874, 468, 112, 72, kCyan, 8);
     char value[24]; snprintf(value, sizeof(value), "%.1f kHz", current.step_hz / 1000.0);
-    text("STEP", 930, 474, kCyan, 2, middle_center);
-    text(value, 930, 506, kGreen, 2, middle_center);
+    text("STEP", 930, 484, kCyan, 2, middle_center);
+    text(value, 930, 516, kGreen, 2, middle_center);
   }
   if (audio_changed) draw_audio_controls();
   if (tuning_controls_changed) draw_tuning_controls();
@@ -669,6 +670,9 @@ bool self_check() {
              ActionKind::waterfall_contrast_down &&
          tap_action(kContrastUpX + 1, kContrastY + 1).kind ==
              ActionKind::waterfall_contrast_up &&
+         tap_action(339, 572).kind == ActionKind::span_down &&
+         tap_action(865, 572).kind == ActionKind::step_up &&
+         tap_action(999, 469).kind == ActionKind::volume_down &&
          tap_action(1223, 13).kind == ActionKind::open_device_settings &&
          tap_action(1100, 13).kind == ActionKind::sound_toggle &&
          std::abs(home_spectrum_floor(levels, std::size(levels), 10.0f) - 62.0f) < 0.01f;
