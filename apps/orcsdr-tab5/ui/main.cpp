@@ -8718,10 +8718,11 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   } else {
     strlcpy(snapshot.wifi_ip, device.wifi_ip, sizeof(snapshot.wifi_ip));
     const uint32_t seconds = millis() / 1000u;
-    snprintf(snapshot.clock, sizeof(snapshot.clock), "UP %02lu:%02lu",
+    snprintf(snapshot.clock, sizeof(snapshot.clock), "%02lu:%02lu:%02lu",
              static_cast<unsigned long>((seconds / 3600u) % 100u),
-             static_cast<unsigned long>((seconds / 60u) % 60u));
-    strlcpy(snapshot.date, "DEVICE UPTIME", sizeof(snapshot.date));
+             static_cast<unsigned long>((seconds / 60u) % 60u),
+             static_cast<unsigned long>(seconds % 60u));
+    strlcpy(snapshot.date, "UPTIME", sizeof(snapshot.date));
   }
   snapshot.driver_ready = demo || device.rtl_ready;
   snapshot.receiving = demo ||

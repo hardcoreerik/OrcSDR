@@ -18,7 +18,7 @@ constexpr Descriptor kEntries[] = {
     {Id::marine, "MARINE", "VHF marine receiver", Category::audio, true},
     {Id::satellite, "SATELLITE", "Satellite receive workspace", Category::digital, true},
     {Id::rf_lab, "RF LAB", "Live measurements and driver tests", Category::utility, true},
-    {Id::wifi_analysis, "2.4 GHz ANALYZER", "Real Wi-Fi access-point survey", Category::utility, true},
+    {Id::wifi_analysis, "2.4 GHz WIFI", "Real Wi-Fi access-point survey", Category::utility, true},
     {Id::settings, "SETTINGS", "Global device settings", Category::system, true},
 };
 
