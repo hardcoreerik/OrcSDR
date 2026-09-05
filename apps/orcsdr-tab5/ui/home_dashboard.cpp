@@ -149,10 +149,10 @@ void draw_header_status() {
   text(current.wifi_connected && current.wifi_ip[0] ? current.wifi_ip : "OFFLINE",
        kHeaderStatusX + 54, 66, current.wifi_connected ? kCyan : TFT_ORANGE, 1);
   M5.Display.drawFastVLine(kHeaderStatusX + 114, 30, 52, kDim);
-  draw_usb_icon(kHeaderStatusX + 135, 54, current.usb_connected ? kCyan : kDim);
-  text("USB", kHeaderStatusX + 158, 42, TFT_WHITE, 2);
-  text(current.usb_connected ? "CONNECTED" : "DISCONNECTED", kHeaderStatusX + 158, 66,
-       current.usb_connected ? kCyan : TFT_ORANGE, 1);
+  draw_usb_icon(kHeaderStatusX + 135, 54, current.driver_ready ? kCyan : kDim);
+  text("RTL-SDR", kHeaderStatusX + 148, 42, TFT_WHITE, 2);
+  text(current.driver_ready ? "READY" : "NOT READY", kHeaderStatusX + 158, 66,
+       current.driver_ready ? kCyan : TFT_ORANGE, 1);
   M5.Display.drawFastVLine(kHeaderStatusX + 238, 30, 52, kDim);
   draw_battery(kHeaderStatusX + 254, 39);
   char value[12];
