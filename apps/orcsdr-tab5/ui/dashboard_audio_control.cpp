@@ -30,17 +30,17 @@ constexpr int kHomeY = 8;
 constexpr int kHomeW = 58;
 constexpr int kHomeH = 58;
 constexpr int kMuteX = 1099;
-constexpr int kMuteY = 8;
-constexpr int kMuteW = 58;
-constexpr int kMuteH = 58;
+constexpr int kMuteY = 12;
+constexpr int kMuteW = 54;
+constexpr int kMuteH = 54;
 constexpr int kVisualizerX = 1158;
-constexpr int kVisualizerY = 8;
-constexpr int kVisualizerW = 58;
-constexpr int kVisualizerH = 58;
+constexpr int kVisualizerY = 12;
+constexpr int kVisualizerW = 54;
+constexpr int kVisualizerH = 54;
 constexpr int kSettingsX = 1217;
-constexpr int kSettingsY = 8;
-constexpr int kSettingsW = 55;
-constexpr int kSettingsH = 58;
+constexpr int kSettingsY = 12;
+constexpr int kSettingsW = 51;
+constexpr int kSettingsH = 54;
 constexpr uint32_t kTrayTimeoutMs = 4000;
 
 bool hit(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
