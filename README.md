@@ -754,6 +754,10 @@ Contributions are welcome in USB Host, DSP, spectrum/waterfall, radio UI, hardwa
 
 When contributing to the RTL-SDR V4 driver, preserve the clean-room rules and document the source of any device behavior or measurements.
 
+### Contributor acknowledgments
+
+- **OpenAI Codex — AI-assisted development:** assisted with Spectrum3D timestamped history, peak-preserving spectrum reduction, terrain rendering, display scheduling, automated tests, and engineering documentation. Hardware performance and release acceptance remain subject to maintainer verification.
+
 ---
 
 ## License
