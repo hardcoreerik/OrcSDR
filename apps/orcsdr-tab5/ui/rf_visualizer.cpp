@@ -2,11 +2,14 @@
 
 #include "nvs_store.hpp"
 #include "rf_analysis.hpp"
+#include "spectrum_history.hpp"
 #include "text_editor.hpp"
 
 #include <M5Unified.h>
 #include <esp_heap_caps.h>
 #include <esp_lcd_panel_ops.h>
+#include <esp_lcd_mipi_dsi.h>
+#include <esp_timer.h>
 #include <lgfx/v1/platforms/esp32p4/Panel_DSI.hpp>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -18,6 +21,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iterator>
+#include <new>
 #include <strings.h>
 
 namespace orcsdr::visualizer {
@@ -59,13 +63,38 @@ size_t g_display_buffer_bytes = 0;
 esp_lcd_panel_handle_t g_dsi_panel = nullptr;
 uint16_t g_dsi_width = 0;
 uint16_t g_dsi_height = 0;
-void* g_frame_buffers[2] = {};
+void* g_frame_buffers[3] = {};
 uint8_t g_front_frame_buffer = 0;
 uint8_t g_back_frame_buffer = 1;
 bool g_page_flip_active = false;
 bool g_page_flip_pending = false;
 uint32_t g_page_flip_queued_ms = 0;
 constexpr uint32_t kPageFlipSettleMs = 20;
+std::atomic<uint32_t> g_refresh_count{0};
+spectrum_history::FlipBuffers g_terrain_flip;
+bool g_terrain_flip_active = false;
+bool g_terrain_chrome[3]{};
+bool g_terrain_dirty = true;
+uint32_t g_terrain_overlay_state = 0;
+spectrum_history::History* g_terrain_history = nullptr;
+spectrum_history::Snapshot* g_terrain_snapshot = nullptr;
+uint32_t g_terrain_now = 0;
+int64_t g_terrain_deadline_us = 0;
+std::atomic<uint32_t> g_terrain_rows{0}, g_terrain_drops{0}, g_terrain_reduce_us{0};
+struct TerrainTiming {
+  uint32_t frames = 0, missed = 0, spans = 0, submit_errors = 0;
+  uint32_t refresh_start = 0;
+  uint64_t history_us = 0, render_us = 0, submit_us = 0, wait_us = 0;
+  uint32_t samples[128]{};
+  int64_t started_us = 0, waiting_us = 0;
+} g_terrain_timing;
+
+static_assert(std::atomic<uint32_t>::is_always_lock_free);
+bool IRAM_ATTR terrain_refresh_done(esp_lcd_panel_handle_t,
+                                  esp_lcd_dpi_panel_event_data_t*, void*) {
+  g_refresh_count.fetch_add(1, std::memory_order_relaxed);
+  return false;
+}
 
 struct Preset {
   char name[21];
@@ -143,7 +172,7 @@ uint32_t g_last_density_decay_ms = 0;
 uint8_t g_density_decay_phase = 0;
 uint32_t g_last_heavy_view_draw_ms = 0;
 uint32_t g_history_revision = 0;
-uint32_t g_analysis_frames = 0;
+std::atomic<uint32_t> g_analysis_frames{0};
 uint32_t g_presentation_frames = 0;
 uint32_t g_last_analysis_report_ms = 0;
 uint32_t g_last_present_report_ms = 0;
@@ -285,6 +314,7 @@ void set_value(size_t index, float next, bool persist = true) {
   if (strcmp(c.id, "audiospec.ceiling_dbfs") == 0)
     next = std::max(next, value("audiospec.floor_dbfs") + 20.0f);
   g_persist.values[index] = next;
+  g_terrain_dirty = true;
   if (strcmp(c.id, "visual.quality") == 0)
     g_effective_quality = static_cast<uint8_t>(next);
   else if (strcmp(c.id, "channelizer.solo") == 0)
@@ -401,12 +431,32 @@ void enable_page_flip() {
   g_back_frame_buffer = 1;
   g_page_flip_active = true;
   g_page_flip_pending = false;
+  g_terrain_flip_active = view() == View::spectrum3d;
+  if (g_terrain_flip_active) {
+    g_terrain_flip.reset();
+    std::fill_n(g_terrain_chrome, 3, false);
+    g_terrain_deadline_us = 0;
+    g_terrain_dirty = true;
+  }
   set_canvas_buffer(g_back_frame_buffer);
 }
 
-void disable_page_flip() {
-  if (!g_page_flip_active) return;
-  const uint8_t visible = g_page_flip_pending ? g_back_frame_buffer : g_front_frame_buffer;
+bool disable_page_flip() {
+  if (!g_page_flip_active) return true;
+  const uint8_t visible = g_terrain_flip_active ? g_terrain_flip.front :
+      g_page_flip_pending ? g_back_frame_buffer : g_front_frame_buffer;
+  if (g_terrain_flip_active) {
+    // Only on view exit: retire scanout before copying into the dashboard's FB0.
+    const uint32_t refresh = g_refresh_count.load(std::memory_order_relaxed);
+    const int64_t started = esp_timer_get_time();
+    while (g_refresh_count.load(std::memory_order_relaxed) - refresh < 2) {
+      if (esp_timer_get_time() - started > 100000) {
+        ++g_terrain_timing.submit_errors;
+        return false; // Retain ownership on a stalled display; the user can retry exit.
+      }
+      vTaskDelay(1);
+    }
+  }
   if (visible != 0) memcpy(g_frame_buffers[0], g_frame_buffers[visible], g_display_buffer_bytes);
   if (g_dsi_panel)
     esp_lcd_panel_draw_bitmap(g_dsi_panel, 0, 0, g_dsi_width, g_dsi_height,
@@ -415,11 +465,21 @@ void disable_page_flip() {
   g_back_frame_buffer = 1;
   g_page_flip_active = false;
   g_page_flip_pending = false;
+  g_terrain_flip_active = false;
   set_canvas_buffer(0);
+  return true;
 }
 
 bool service_page_flip(uint32_t now) {
   if (!g_page_flip_pending) return true;
+  if (g_terrain_flip_active) {
+    const int next = g_terrain_flip.writable(g_refresh_count.load(std::memory_order_relaxed));
+    if (next < 0) return false;
+    g_back_frame_buffer = static_cast<uint8_t>(next);
+    g_page_flip_pending = false;
+    set_canvas_buffer(g_back_frame_buffer);
+    return true;
+  }
   if (now - g_page_flip_queued_ms < kPageFlipSettleMs) return false;
   g_front_frame_buffer = g_back_frame_buffer;
   g_back_frame_buffer = 1 - g_front_frame_buffer;
@@ -435,6 +495,12 @@ void present_canvas(uint32_t now) {
                                   g_canvas.getBuffer()) == ESP_OK) {
       g_page_flip_pending = true;
       g_page_flip_queued_ms = now;
+      if (g_terrain_flip_active) {
+        g_terrain_flip.submitted(g_back_frame_buffer, g_refresh_count.load(std::memory_order_relaxed));
+        g_front_frame_buffer = g_back_frame_buffer;
+      }
+    } else if (g_terrain_flip_active) {
+      ++g_terrain_timing.submit_errors;
     }
     return;
   }
@@ -461,6 +527,10 @@ void button(int x, int y, int w, int h, const char* label, uint16_t color, bool 
 }
 
 void free_view_buffers() {
+  if (g_terrain_history) heap_caps_free(g_terrain_history);
+  if (g_terrain_snapshot) heap_caps_free(g_terrain_snapshot);
+  g_terrain_history = nullptr;
+  g_terrain_snapshot = nullptr;
   if (g_history) heap_caps_free(g_history);
   if (g_density) heap_caps_free(g_density);
   if (g_density_snapshot) heap_caps_free(g_density_snapshot);
@@ -489,6 +559,24 @@ size_t memory_budget() {
 
 void allocate_view_buffers(View next) {
   if (g_history_mutex && xSemaphoreTake(g_history_mutex, pdMS_TO_TICKS(20)) != pdTRUE) return;
+  if (next == View::spectrum3d) {
+    if (!g_terrain_history) {
+      void* storage = heap_caps_malloc(sizeof(spectrum_history::History), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      if (storage) g_terrain_history = new (storage) spectrum_history::History{};
+    }
+    if (!g_terrain_snapshot) {
+      void* storage = heap_caps_malloc(sizeof(spectrum_history::Snapshot), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      if (storage) g_terrain_snapshot = new (storage) spectrum_history::Snapshot{};
+    }
+    if (!g_terrain_history || !g_terrain_snapshot) {
+      if (g_terrain_history) heap_caps_free(g_terrain_history);
+      if (g_terrain_snapshot) heap_caps_free(g_terrain_snapshot);
+      g_terrain_history = nullptr;
+      g_terrain_snapshot = nullptr;
+    }
+    if (g_history_mutex) xSemaphoreGive(g_history_mutex);
+    return;
+  }
   const auto ensure_doppler_buffers = [] {
     if (!g_doppler_snapshot) {
       g_doppler_snapshot = static_cast<uint8_t*>(
@@ -833,7 +921,25 @@ void analysis_observer(const rf_analysis::Snapshot& snapshot, const uint8_t* iq,
   const View current = static_cast<View>(g_view.load(std::memory_order_acquire));
   if (!value("visual.freeze")) {
     if (current == View::phosphor) add_density(*g_observer_frame);
-    else if (current == View::waterfall || current == View::spectrum3d || current == View::doppler)
+    else if (current == View::spectrum3d) {
+      const int64_t started = esp_timer_get_time();
+      if (xSemaphoreTake(g_history_mutex, 0) == pdTRUE) {
+        if (g_terrain_history) {
+          constexpr size_t choices[] = {16, 24, 32, 48, 64, 96, 128};
+          const size_t slices = choices[std::clamp(static_cast<int>(value("spectrum3d.slices")), 0, 6)];
+          const size_t old_head = g_terrain_history->head;
+          g_terrain_history->push(snapshot.live, snapshot.bins, snapshot.analyzed_ms,
+              snapshot.center_hz, snapshot.span_hz,
+              static_cast<uint32_t>(value("spectrum3d.history_s") * 1000), slices);
+          if (g_terrain_history->head != old_head) ++g_terrain_rows;
+        }
+        xSemaphoreGive(g_history_mutex);
+      } else {
+        ++g_terrain_drops;
+      }
+      g_terrain_reduce_us.fetch_add(static_cast<uint32_t>(esp_timer_get_time() - started));
+    }
+    else if (current == View::waterfall || current == View::doppler)
       add_history_row(*g_observer_frame, false);
     else if (current == View::audio_spectrogram)
       add_history_row(*g_observer_frame, true);
@@ -908,6 +1014,7 @@ void process_channel_audio(const uint8_t* iq, size_t bytes) {
 
 
 void draw_frame_chrome() {
+  if (g_terrain_flip_active) g_terrain_chrome[g_back_frame_buffer] = true;
   g_canvas.setFont(nullptr);
   g_canvas.clearScrollRect();
   g_waterfall_initialized = false;
@@ -1145,46 +1252,62 @@ void draw_phosphor_view() {
 }
 
 void draw_3d_view() {
-  draw_grid();
-  if (!g_history || !g_history_count) return;
-  if (g_history_mutex && xSemaphoreTake(g_history_mutex, pdMS_TO_TICKS(20)) != pdTRUE) return;
-  const size_t history_head = g_history_head;
-  const size_t history_count = g_history_count;
-  if (g_history_mutex) xSemaphoreGive(g_history_mutex);
-  constexpr size_t choices[] = {16, 24, 32, 48, 64, 96, 128};
-  const size_t requested = choices[std::clamp(
-      static_cast<int>(value("spectrum3d.slices")), 0, static_cast<int>(std::size(choices) - 1))];
-  const size_t quality_cap = g_effective_quality == 0 ? 32 : g_effective_quality == 1 ? 24 : 16;
-  const size_t slices = std::min({requested, history_count, quality_cap});
-  if (!slices) return;
-  const int depth_x = 190;
-  const int depth_y = 390;
-  const int step = g_effective_quality == 0 ? 6 : g_effective_quality == 1 ? 8 : 12;
-  uint8_t row[kBins];
-  for (size_t s = 0; s < slices; ++s) {
-    const size_t row_index = (history_head + g_history_rows - 1 -
-                              s * history_count / slices) % g_history_rows;
-    if (g_history_mutex && xSemaphoreTake(g_history_mutex, pdMS_TO_TICKS(2)) != pdTRUE) continue;
-    memcpy(row, g_history + row_index * kBins, sizeof(row));
-    if (g_history_mutex) xSemaphoreGive(g_history_mutex);
-    const float depth = slices > 1 ? static_cast<float>(s) / (slices - 1) : 0.0f;
-    const int dx = static_cast<int>(lroundf(depth * depth_x));
-    const int base_y = kPlotY + kPlotH - 18 - static_cast<int>(lroundf(depth * depth_y));
-    const int width = kPlotW - dx - 8;
-    const int amplitude = static_cast<int>(180.0f * (1.0f - 0.55f * depth));
-    int px = kPlotX + dx, py = base_y;
-    for (int x = step; x < width; x += step) {
-      const uint8_t intensity = row[static_cast<size_t>(x) * kBins / width];
-      const int yy = std::clamp(base_y - intensity * amplitude / 255,
-                                kPlotY + 4, kPlotY + kPlotH - 4);
-      const uint16_t color = heat_color(intensity);
-      g_canvas.drawLine(px, py, kPlotX + dx + x, yy, color);
-      px = kPlotX + dx + x;
-      py = yy;
+  const int64_t started = esp_timer_get_time();
+  if (!g_terrain_snapshot) {
+    text("3D HISTORY MEMORY UNAVAILABLE", 640, 360, kYellow, 2, middle_center);
+    return;
+  }
+  if (xSemaphoreTake(g_history_mutex, 0) == pdTRUE) {
+    if (g_terrain_history) g_terrain_history->copy(*g_terrain_snapshot);
+    xSemaphoreGive(g_history_mutex);
+  } // A busy producer leaves the last coherent snapshot available for animation.
+  g_terrain_timing.history_us += esp_timer_get_time() - started;
+  g_terrain_snapshot->span_ms = static_cast<uint32_t>(value("spectrum3d.history_s") * 1000);
+  spectrum_history::Camera camera;
+  camera.elevation = value("spectrum3d.elevation_deg");
+  camera.azimuth = value("spectrum3d.azimuth_deg");
+  camera.zoom = value("spectrum3d.zoom");
+  camera.depth = value("spectrum3d.depth_scale");
+  camera.gain = value("spectrum3d.z_gain");
+  camera.mode = static_cast<int>(value("spectrum3d.mesh_mode"));
+  camera.color = static_cast<int>(value("spectrum3d.color_mode"));
+  camera.detail = std::max(static_cast<int>(value("spectrum3d.line_decimation")),
+                           static_cast<int>(g_effective_quality));
+  const float orbit = value("spectrum3d.auto_orbit");
+  if (orbit) camera.azimuth += 15 * std::sin(g_terrain_now * (orbit == 1 ? 0.00015f : 0.0004f));
+  // Full uses native plot resolution; Balanced/Eco explicitly use 2x2 raster cells.
+  const int scale = g_effective_quality == 0 ? 1 : 2;
+  g_canvas.fillRect(kPlotX, kPlotY, kPlotW, kPlotH, kBg);
+  if (value("display.grid")) {
+    const spectrum_history::Projection projection(camera, kPlotW, kPlotH);
+    const auto front = projection.at(0), back = projection.at(1);
+    const int divisions = value("display.grid") == 1 ? 4 : 8;
+    const auto plot_x = [](float x) { return kPlotX + std::clamp(static_cast<int>(x), 0, kPlotW - 1); };
+    for (int i = 0; i <= divisions; ++i) {
+      const float f = static_cast<float>(i) / divisions;
+      g_canvas.drawLine(plot_x(front.left + front.width * f), kPlotY + static_cast<int>(front.base),
+                        plot_x(back.left + back.width * f), kPlotY + static_cast<int>(back.base), 0x0823);
+      const auto plane = projection.at(f);
+      g_canvas.drawLine(plot_x(plane.left), kPlotY + static_cast<int>(plane.base),
+                        plot_x(plane.left + plane.width), kPlotY + static_cast<int>(plane.base), 0x0823);
     }
   }
+  uint32_t spans = 0;
+  float floor, ceiling;
+  spectrum_levels(*g_ui_frame, &floor, &ceiling);
+  spectrum_history::render(*g_terrain_snapshot, g_terrain_now,
+      floor, ceiling, camera,
+      kPlotW / scale, kPlotH / scale,
+      [&](int x, int top, int bottom, uint16_t ridge, uint16_t body, bool fill, bool edge) {
+        ++spans;
+        if (fill && bottom > top + 1)
+          g_canvas.fillRect(kPlotX + x * scale, kPlotY + (top + 1) * scale,
+                            scale, (bottom - top - 1) * scale, body);
+        if (edge) g_canvas.fillRect(kPlotX + x * scale, kPlotY + top * scale, scale, scale, ridge);
+      });
+  g_terrain_timing.spans = spans;
+  g_terrain_timing.render_us += esp_timer_get_time() - started;
 }
-
 void draw_constellation(const SpectrumFrame& frame) {
   draw_grid();
   const int cx = kPlotX + kPlotW / 2, cy = kPlotY + kPlotH / 2;
@@ -1637,6 +1760,7 @@ void draw_drawer() {
 }
 
 void switch_view(int delta) {
+  if (g_terrain_flip_active && !disable_page_flip()) return;
   int next = static_cast<int>(g_view.load()) + delta;
   const int count = static_cast<int>(View::count);
   next = (next % count + count) % count;
@@ -1666,6 +1790,16 @@ void reset_view_defaults() {
 
 void run_action(const ControlDescriptor& c) {
   if (strcmp(c.id, "visual.reset") == 0) reset_view_defaults();
+  else if (strcmp(c.id, "spectrum3d.reset_camera") == 0) {
+    const char* ids[] = {"spectrum3d.elevation_deg", "spectrum3d.azimuth_deg", "spectrum3d.zoom",
+                         "spectrum3d.depth_scale", "spectrum3d.z_gain", "spectrum3d.auto_orbit"};
+    for (const char* id : ids) {
+      size_t index = 0;
+      const auto* control = find_control(id, &index);
+      if (control) set_value(index, control->default_value, false);
+    }
+    g_persist_due_ms = millis() + 1;
+  }
   else if (strcmp(c.id, "fft.clear_peak") == 0 || strcmp(c.id, "peakavg.clear_hold") == 0) {
     rf_analysis::clear_peak();
     if (xSemaphoreTake(g_frame_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
@@ -1685,6 +1819,7 @@ void run_action(const ControlDescriptor& c) {
       if (g_history) memset(g_history, 0, g_history_rows * kBins);
       if (g_density) memset(g_density, 0, g_density_rows * kBins);
       g_history_count = 0;
+      if (g_terrain_history) g_terrain_history->clear();
       if (g_history_mutex) xSemaphoreGive(g_history_mutex);
     }
     memset(g_occupancy_frames, 0, sizeof(g_occupancy_frames));
@@ -1931,10 +2066,14 @@ bool initialize(NvsStore* store, AudioSink audio_sink) {
   g_dsi_height = panel_config.panel_height;
   g_frame_buffers[0] = panel->getFrameBuffer(0);
   g_frame_buffers[1] = panel->getFrameBuffer(1);
+  g_frame_buffers[2] = panel->getFrameBuffer(2);
   g_display_buffer = g_frame_buffers[0];
   g_display_buffer_bytes = static_cast<size_t>(panel_config.panel_width) *
                            panel_config.panel_height * sizeof(uint16_t);
-  if (!g_display_buffer || !g_frame_buffers[1] || !g_dsi_panel) return false;
+  if (!g_display_buffer || !g_frame_buffers[1] || !g_frame_buffers[2] || !g_dsi_panel) return false;
+  esp_lcd_dpi_panel_event_callbacks_t callbacks{};
+  callbacks.on_refresh_done = terrain_refresh_done;
+  if (esp_lcd_dpi_panel_register_event_callbacks(g_dsi_panel, &callbacks, nullptr) != ESP_OK) return false;
   g_canvas.setBuffer(g_display_buffer, panel_config.panel_width, panel_config.panel_height);
   g_canvas.setSwapBytes(true);
   g_display_canvas.setColorDepth(lgfx::rgb565_nonswapped);
@@ -2006,6 +2145,10 @@ bool enter(uint8_t origin_screen_value, uint8_t origin_tab_value) {
   g_origin_tab = origin_tab_value;
   g_inspect = g_hud_locked = g_drawer = g_chooser = false;
   g_effective_quality = static_cast<uint8_t>(std::clamp(value("visual.quality"), 0.0f, 2.0f));
+  g_terrain_timing = {};
+  g_terrain_timing.started_us = esp_timer_get_time();
+  g_terrain_timing.refresh_start = g_refresh_count.load();
+  g_terrain_rows = g_terrain_drops = g_terrain_reduce_us = 0;
   Runtime runtime{};
   portENTER_CRITICAL(&g_runtime_mux);
   runtime = g_runtime;
@@ -2026,8 +2169,8 @@ bool enter(uint8_t origin_screen_value, uint8_t origin_tab_value) {
   return true;
 }
 
-void leave() {
-  disable_page_flip();
+bool leave() {
+  if (!disable_page_flip()) return false;
   g_active.store(false, std::memory_order_release);
   rf_analysis::set_enabled(false);
   g_channel_solo = false;
@@ -2037,6 +2180,7 @@ void leave() {
   }
   if (g_store && g_persist_due_ms) g_store->put_bytes("rf_vis", &g_persist, sizeof(g_persist));
   g_persist_due_ms = 0;
+  return true;
 }
 
 bool active() { return g_active.load(std::memory_order_acquire); }
@@ -2046,14 +2190,44 @@ View view() { return static_cast<View>(g_view.load(std::memory_order_acquire)); 
 
 void service_ui(uint32_t now) {
   if (!active()) return;
+  if (now - g_last_analysis_report_ms >= 1000) {
+    g_analysis_fps = g_analysis_frames.exchange(0) * 1000.0f /
+                     std::max<uint32_t>(1, now - g_last_analysis_report_ms);
+    g_last_analysis_report_ms = now;
+  }
+  if (now - g_last_present_report_ms >= 1000) {
+    g_presentation_fps = g_presentation_frames * 1000.0f /
+                         std::max<uint32_t>(1, now - g_last_present_report_ms);
+    g_presentation_frames = 0;
+    g_last_present_report_ms = now;
+  }
+  const bool terrain = view() == View::spectrum3d;
+  const int64_t frame_started = esp_timer_get_time();
+  if (terrain && frame_started < g_terrain_deadline_us) return;
+  if (g_page_flip_active && g_terrain_flip_active != terrain && !disable_page_flip()) return;
   const bool full_repaint = is_full_repaint_view(view());
   if (full_repaint) {
     enable_page_flip();
-    if (!service_page_flip(now)) return;
+    if (!service_page_flip(now)) {
+      if (terrain && !g_terrain_timing.waiting_us) g_terrain_timing.waiting_us = frame_started;
+      return;
+    }
   } else {
-    disable_page_flip();
+    if (!disable_page_flip()) return;
   }
   if (g_preset_naming) return;
+  if (terrain) {
+    if (g_terrain_timing.waiting_us) {
+      g_terrain_timing.wait_us += frame_started - g_terrain_timing.waiting_us;
+      g_terrain_timing.waiting_us = 0;
+    }
+    constexpr int64_t period = 1000000 / 60;
+    if (!g_terrain_deadline_us) g_terrain_deadline_us = frame_started;
+    const uint32_t missed = (frame_started - g_terrain_deadline_us) / period;
+    g_terrain_timing.missed += missed;
+    g_terrain_deadline_us += (missed + 1) * period;
+    if (!value("visual.freeze")) g_terrain_now = now;
+  }
   service_health(now);
   if (g_persist_due_ms && static_cast<int32_t>(now - g_persist_due_ms) >= 0) {
     if (g_store) g_store->put_bytes("rf_vis", &g_persist, sizeof(g_persist));
@@ -2065,7 +2239,7 @@ void service_ui(uint32_t now) {
     draw_frame_chrome();
   }
   if (xSemaphoreTake(g_frame_mutex, pdMS_TO_TICKS(2)) != pdTRUE) return;
-  *g_ui_frame = *g_frame;
+  if (!terrain || g_ui_frame->revision != g_frame->revision) *g_ui_frame = *g_frame;
   xSemaphoreGive(g_frame_mutex);
   const SpectrumFrame& frame = *g_ui_frame;
   const bool direct_history =
@@ -2080,9 +2254,7 @@ void service_ui(uint32_t now) {
     g_waterfall_canvas_synced = true;
   }
   const View current = view();
-  const uint32_t heavy_interval = current == View::spectrum3d
-      ? (g_effective_quality == 0 ? 66u : g_effective_quality == 1 ? 100u : 125u)
-      : current == View::doppler
+  const uint32_t heavy_interval = current == View::doppler
             ? (g_effective_quality == 0 ? 50u : g_effective_quality == 1 ? 66u : 100u)
             : current == View::occupancy
                   ? (g_effective_quality == 0 ? 33u : g_effective_quality == 1 ? 50u : 66u)
@@ -2090,25 +2262,28 @@ void service_ui(uint32_t now) {
   const bool heavy_due = !heavy_interval ||
       now - g_last_heavy_view_draw_ms >= heavy_interval;
   bool frame_drawn = false;
-  if (!value("visual.freeze") && frame.revision != g_drawn_revision && heavy_due) {
+  if (terrain) {
+    const uint32_t overlays = (g_inspect ? 1u : 0u) | (g_drawer ? 2u : 0u) |
+        (g_chooser ? 4u : 0u) | (static_cast<int32_t>(g_name_until_ms - now) > 0 ? 8u : 0u) |
+        (static_cast<int32_t>(g_message_until_ms - now) > 0 ? 16u : 0u) |
+        (!g_source_available.load() ? 32u : 0u);
+    if (overlays != g_terrain_overlay_state) {
+      std::fill_n(g_terrain_chrome, 3, false);
+      g_terrain_dirty = true;
+    }
+    g_terrain_overlay_state = overlays;
+    const bool animating = !value("visual.freeze") && g_source_available.load() &&
+        (frame.revision != g_drawn_revision || (g_terrain_snapshot && g_terrain_snapshot->count &&
+         now - g_terrain_snapshot->rows[0].time_ms < g_terrain_snapshot->span_ms));
+    if (!animating && !g_terrain_dirty) return;
+  }
+  if (terrain || (!value("visual.freeze") && frame.revision != g_drawn_revision && heavy_due)) {
     g_drawn_revision = frame.revision;
-    if (full_repaint) draw_frame_chrome();
+    if (full_repaint && (!terrain || !g_terrain_chrome[g_back_frame_buffer])) draw_frame_chrome();
     draw_active_view(frame);
     frame_drawn = true;
     if (heavy_interval) g_last_heavy_view_draw_ms = now;
-    ++g_presentation_frames;
-  }
-  if (now - g_last_analysis_report_ms >= 1000) {
-    g_analysis_fps = g_analysis_frames * 1000.0f /
-                     std::max<uint32_t>(1, now - g_last_analysis_report_ms);
-    g_analysis_frames = 0;
-    g_last_analysis_report_ms = now;
-  }
-  if (now - g_last_present_report_ms >= 1000) {
-    g_presentation_fps = g_presentation_frames * 1000.0f /
-                         std::max<uint32_t>(1, now - g_last_present_report_ms);
-    g_presentation_frames = 0;
-    g_last_present_report_ms = now;
+    if (!terrain) ++g_presentation_frames;
   }
   if (g_inspect) draw_hud();
   else draw_handles();
@@ -2116,7 +2291,7 @@ void service_ui(uint32_t now) {
   if (g_drawer) draw_drawer();
   if (g_name_until_ms && static_cast<int32_t>(g_name_until_ms - now) > 0 && !g_inspect)
     text(view_name(view()), 640, 68, TFT_WHITE, 2, middle_center);
-  if (!g_source_available.load(std::memory_order_acquire) && !g_source_lost_drawn) {
+  if (!g_source_available.load(std::memory_order_acquire) && (!g_source_lost_drawn || terrain)) {
     for (int y = kPlotY; y < kPlotY + kPlotH; y += 6)
       g_canvas.drawFastHLine(kPlotX, y, kPlotW, kPanel);
     g_canvas.fillRect(410, 315, 460, 90, kPanel);
@@ -2133,7 +2308,16 @@ void service_ui(uint32_t now) {
   }
   if (!direct_history && frame_drawn) {
     g_last_canvas_push_ms = now;
+    const int64_t submit_started = esp_timer_get_time();
     present_canvas(now);
+    if (terrain) {
+      g_terrain_timing.submit_us += esp_timer_get_time() - submit_started;
+      g_terrain_timing.samples[g_terrain_timing.frames % 128] = esp_timer_get_time() - frame_started;
+      ++g_terrain_timing.frames;
+      if (g_page_flip_pending) ++g_presentation_frames;
+      g_terrain_dirty = false;
+      if (g_terrain_overlay_state) std::fill_n(g_terrain_chrome, 3, false);
+    }
   } else if (frame_drawn) {
     g_last_canvas_push_ms = now;
   }
@@ -2145,6 +2329,9 @@ void handle_touch(int32_t x, int32_t y, bool pressed, uint8_t touch_count,
   (void)second_x;
   (void)second_y;
   if (!active()) return;
+  // Touch handlers can repaint chrome; never let them write a submitted buffer.
+  if (g_terrain_flip_active && !service_page_flip(now)) return;
+  if (pressed || g_gesture.down) g_terrain_dirty = true;
   if (g_preset_naming) {
     if (pressed && !g_editor_pressed) {
       const auto result = text_editor::handle_touch(x, y);
@@ -2239,6 +2426,43 @@ bool channel_audio_active() {
 bool process_command(const char* command, char* response, size_t response_size) {
   if (!command || !response || response_size == 0) return false;
   response[0] = '\0';
+  if (strcmp(command, "RTL_VIS PERF") == 0) {
+    const double seconds = std::max<int64_t>(1, esp_timer_get_time() - g_terrain_timing.started_us) / 1e6;
+    snprintf(response, response_size,
+        "RTL_VIS_PERF submit_fps=%.1f source_fps=%.1f history_hz=%.2f refresh_hz=%.1f frames=%lu missed=%lu "
+        "history_drops=%lu submit_errors=%lu buckets=%u raster=%ux%u spans=%lu quality=%u",
+        static_cast<double>(g_presentation_fps), static_cast<double>(g_analysis_fps),
+        g_terrain_rows.load() / seconds,
+        (g_refresh_count.load() - g_terrain_timing.refresh_start) / seconds,
+        static_cast<unsigned long>(g_terrain_timing.frames),
+        static_cast<unsigned long>(g_terrain_timing.missed), static_cast<unsigned long>(g_terrain_drops.load()),
+        static_cast<unsigned long>(g_terrain_timing.submit_errors),
+        256u >> std::max<int>(g_effective_quality, static_cast<int>(value("spectrum3d.line_decimation"))),
+        g_effective_quality ? kPlotW / 2 : kPlotW, g_effective_quality ? kPlotH / 2 : kPlotH,
+        static_cast<unsigned long>(g_terrain_timing.spans), g_effective_quality);
+    return true;
+  }
+  if (strcmp(command, "RTL_VIS PERF TIMING") == 0) {
+    const size_t count = std::min<uint32_t>(128, g_terrain_timing.frames);
+    uint32_t samples[128];
+    std::copy_n(g_terrain_timing.samples, count, samples);
+    std::sort(samples, samples + count);
+    uint64_t sum = 0;
+    for (size_t i = 0; i < count; ++i) sum += samples[i];
+    const double frames = std::max<uint32_t>(1, g_terrain_timing.frames);
+    const double seconds = std::max<int64_t>(1, esp_timer_get_time() - g_terrain_timing.started_us) / 1e6;
+    snprintf(response, response_size,
+        "RTL_VIS_TIMING unit=us frame_avg=%.0f p95=%lu p99=%lu history_avg=%.0f "
+        "geometry_raster_avg=%.0f submit_avg=%.0f wait_avg=%.0f producer_us_per_s=%.0f samples=%u",
+        sum / static_cast<double>(std::max<size_t>(1, count)),
+        static_cast<unsigned long>(count ? samples[(count * 95 - 1) / 100] : 0),
+        static_cast<unsigned long>(count ? samples[(count * 99 - 1) / 100] : 0),
+        g_terrain_timing.history_us / frames,
+        (g_terrain_timing.render_us - g_terrain_timing.history_us) / frames,
+        g_terrain_timing.submit_us / frames, g_terrain_timing.wait_us / frames,
+        g_terrain_reduce_us.load() / seconds, static_cast<unsigned>(count));
+    return true;
+  }
   if (strcmp(command, "RTL_VIS STATUS") == 0) {
     snprintf(response, response_size,
              "RTL_VIS_STATUS active=%d view=%s source=%d frozen=%d hud=%d drawer=%d "
@@ -2248,6 +2472,18 @@ bool process_command(const char* command, char* response, size_t response_size) 
              static_cast<double>(g_presentation_fps), static_cast<double>(g_analysis_fps),
              static_cast<unsigned long>(g_ui_frame ? g_ui_frame->input_drops : 0),
              g_effective_quality);
+    return true;
+  }
+  if (g_terrain_flip_active && !service_page_flip(millis())) {
+    strlcpy(response, "RTL_VIS_ERROR display_busy_retry", response_size);
+    return true;
+  }
+  if (strcmp(command, "RTL_VIS PERF RESET") == 0) {
+    g_terrain_timing = {};
+    g_terrain_timing.started_us = esp_timer_get_time();
+    g_terrain_timing.refresh_start = g_refresh_count.load();
+    g_terrain_rows = g_terrain_drops = g_terrain_reduce_us = 0;
+    strlcpy(response, "RTL_VIS_OK", response_size);
     return true;
   }
   if (strcmp(command, "RTL_VIS NEXT") == 0) { switch_view(1); strlcpy(response, "RTL_VIS_OK", response_size); return true; }

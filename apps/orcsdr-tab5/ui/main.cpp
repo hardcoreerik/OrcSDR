@@ -5493,7 +5493,10 @@ void open_visualizer() {
 
 void close_visualizer() {
   const auto origin = static_cast<orcsdr::screens::Id>(orcsdr::visualizer::origin_screen());
-  orcsdr::visualizer::leave();
+  if (!orcsdr::visualizer::leave()) {
+    Serial.println("RTL_VIS_ERROR display_exit_busy_retry");
+    return;
+  }
   acquire_radio_owner(orcsdr::radio::owner_for_band(rtl_ui_band));
   orcsdr::screens::begin_transition(origin, millis());
   orcsdr::screens::finish_transition();
@@ -11887,6 +11890,8 @@ void process_command(char* command) {
 
   if (strncmp(command, "RTL_VIS", 7) == 0) {
     const bool read_only = strcmp(command, "RTL_VIS STATUS") == 0 ||
+                           strcmp(command, "RTL_VIS PERF") == 0 ||
+                           strcmp(command, "RTL_VIS PERF TIMING") == 0 ||
                            strcmp(command, "RTL_VIS SELF_CHECK") == 0 ||
                            strncmp(command, "RTL_VIS GET ", 12) == 0 ||
                            strcmp(command, "RTL_VIS PRESET LIST") == 0;
