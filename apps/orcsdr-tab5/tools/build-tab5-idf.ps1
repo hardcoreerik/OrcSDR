@@ -58,5 +58,9 @@ foreach ($line in $required) {
   if ($config -notcontains $line) { throw "Generated sdkconfig disagrees with defaults: $line" }
 }
 
+python ../../tools/spectrum3d_manifest.py --build $buildDir --prepare
+if ($LASTEXITCODE -ne 0) { throw 'Spectrum3D input manifest failed.' }
 idf.py -B $buildDir build
 if ($LASTEXITCODE -ne 0) { throw "ESP-IDF build failed with exit code $LASTEXITCODE." }
+python ../../tools/spectrum3d_manifest.py --build $buildDir
+if ($LASTEXITCODE -ne 0) { throw 'Spectrum3D artifact manifest failed.' }

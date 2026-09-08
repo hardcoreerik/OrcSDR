@@ -100,3 +100,11 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     ORCSDR_HAS_EMBEDDED_C6_FIRMWARE=$<BOOL:${C6_FIRMWARE_BIN}>)
 target_compile_options(${COMPONENT_LIB} PRIVATE
     "$<$<COMPILE_LANGUAGE:CXX>:-include;orcsdr_m5_time.hpp>")
+target_include_directories(${COMPONENT_LIB} PRIVATE "${CMAKE_BINARY_DIR}")
+
+execute_process(COMMAND "${PYTHON}" "${CMAKE_CURRENT_LIST_DIR}/../../../tools/spectrum3d_manifest.py"
+    --build "${CMAKE_BINARY_DIR}" --prepare
+    RESULT_VARIABLE spectrum_manifest_result)
+if(NOT spectrum_manifest_result EQUAL 0)
+    message(FATAL_ERROR "Spectrum3D input manifest failed")
+endif()

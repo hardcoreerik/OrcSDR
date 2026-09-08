@@ -12,9 +12,9 @@ not an Arduino-IDE or PlatformIO toolchain.
 
 ## Pinned Tab5 display patch
 
-The Tab5 uses two DSI framebuffers for full-frame UI rendering. The tracked
+The Tab5 uses three DSI framebuffers for full-frame UI rendering. The tracked
 patch at `apps/orcsdr-tab5/tools/patches/m5gfx-tab5-pageflip.patch` exposes
-the M5GFX framebuffers and configures the driver for two buffers. The native
+the M5GFX framebuffers and configures the driver for three buffers. The native
 build entry point applies it idempotently after `idf.py reconfigure`, which
 may fetch or replace managed components. From `apps/orcsdr-tab5`, use:
 

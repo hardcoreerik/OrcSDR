@@ -55,7 +55,7 @@ void offer_audio(const int16_t* left, const int16_t* right, size_t frames,
                  uint32_t sample_rate_sps);
 
 bool enter(uint8_t origin_screen, uint8_t origin_tab = 0);
-void leave();
+bool leave();
 bool active();
 uint8_t origin_screen();
 uint8_t origin_tab();
