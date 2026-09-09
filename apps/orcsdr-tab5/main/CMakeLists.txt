@@ -23,6 +23,8 @@ idf_component_register(
         "../ui/orcsdr_storage.cpp"
         "../ui/adsb_dashboard.cpp"
         "../ui/adsb_decoder.cpp"
+        "../ui/flarm_decoder_core.cpp"
+        "../ui/flarm_receiver.cpp"
         "../ui/atc_presets.cpp"
         "../ui/catalog_sync.cpp"
         "../ui/dashboard_audio_control.cpp"

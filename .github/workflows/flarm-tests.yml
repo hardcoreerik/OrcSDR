@@ -1,0 +1,28 @@
+name: FLARM receiver
+on:
+  pull_request:
+    paths:
+      - 'apps/orcsdr-tab5/ui/flarm_*'
+      - 'apps/orcsdr-tab5/ui/adsb_dashboard.*'
+      - 'apps/orcsdr-tab5/ui/radio_session.*'
+      - 'apps/orcsdr-tab5/ui/screen_controller.*'
+      - 'apps/orcsdr-tab5/ui/dashboard_registry.*'
+      - 'tests/flarm_core_tests.cpp'
+      - 'tests/aviation_dashboard_tests.cpp'
+      - 'tests/support/aviation/**'
+      - 'tests/fixtures/flarm_packets.txt'
+      - 'tools/test-flarm-core.sh'
+      - '.github/workflows/flarm-tests.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - run: bash tools/test-flarm-core.sh

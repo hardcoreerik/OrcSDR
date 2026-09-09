@@ -106,6 +106,7 @@ Quick map:
 | **[FM Broadcast](#fm-broadcast)** | Tune broadcast FM, hear stereo, read RDS |
 | **[P25 Trunking](#p25-trunking)** | Follow a programmed P25 system on a single tuner |
 | **[ADS-B](#ads-b)** | 1090 MHz aircraft radar, list, and target detail |
+| **[FLARM](docs/FLARM.md)** | Experimental EU AIR V6/V7 glider receiver with the ADS-B dashboard layout; host-tested, hardware validation pending |
 | **[LoRa Mesh](#lora-mesh)** | Passive Meshtastic receive monitor |
 | **[RF Lab](#rf-lab)** | Live receiver test bench, measurements, and session records |
 | **[2.4 GHz Analyzer](#24-ghz-analyzer)** | Nearby Wi-Fi access-point survey using the Tab5 internal C6 |

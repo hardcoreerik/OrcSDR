@@ -9,6 +9,7 @@ namespace {
 constexpr Descriptor kEntries[] = {
     {Id::fm, "FM RADIO", "Broadcast FM, stereo and RDS", Category::audio, true},
     {Id::p25, "P25 RADIO", "Trunking monitor and voice follow", Category::digital, true},
+    {Id::flarm, "FLARM", "868 MHz glider tracking, AIR V6 + V7", Category::aviation, true},
     {Id::adsb, "ADS-B", "1090 MHz aircraft tracking", Category::aviation, true},
     {Id::shortwave, "SHORTWAVE", "General HF receiver workspace", Category::audio, true},
     {Id::weather, "WEATHER", "NOAA weather radio", Category::audio, true},
@@ -101,7 +102,7 @@ bool self_check() {
                      g_recent[1] == Id::fm && !record_open(Id::p25);
   g_recent = saved;
   g_recent_count = saved_count;
-  return loaded && moved && std::size(kEntries) == 14 && find(Id::rf_lab) != nullptr &&
+  return loaded && moved && std::size(kEntries) == 15 && find(Id::flarm) != nullptr && find(Id::rf_lab) != nullptr &&
          find(Id::wifi_analysis) != nullptr && find(Id::pocsag) != nullptr;
 }
 

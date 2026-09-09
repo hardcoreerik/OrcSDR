@@ -53,6 +53,7 @@ const char* name(Id id) {
     case Id::fm: return "fm";
     case Id::p25: return "p25";
     case Id::adsb: return "adsb";
+    case Id::flarm: return "flarm";
     case Id::lora: return "lora";
     case Id::radio: return "radio";
     case Id::visualizer: return "visualizer";
@@ -76,7 +77,7 @@ bool self_check() {
   bool settings_return = true;
   uint32_t now = 20;
   for (const Id screen :
-       {Id::home, Id::fm, Id::p25, Id::adsb, Id::lora, Id::wifi_analysis, Id::pocsag}) {
+       {Id::home, Id::fm, Id::p25, Id::adsb, Id::lora, Id::wifi_analysis, Id::pocsag, Id::flarm}) {
     begin_transition(screen, now++, false);
     finish_transition();
     begin_transition(Id::settings, now++, true);
@@ -97,7 +98,7 @@ bool self_check() {
   begin_transition(Id::rf_lab, now++, false);
   finish_transition();
   const bool rf_lab_owns = owns(Id::rf_lab);
-  const bool restored = g_status.transitions == 26;
+  const bool restored = g_status.transitions == 29;
   g_status = saved;
   g_transitioning = saved_transitioning;
   return entering_blocks_draw && home_owns && settings_return && documentation_owns &&
