@@ -1,6 +1,6 @@
 dependencies:
   esp_rtl_sdr:
-    component_hash: 6aae50446fc97072cddf67171f48c0fe9e6b90c8c1bb4ee115b024ba5ea0350d
+    component_hash: 9308cea3d8bbfcb53909c4e18bfc28ce37da5b2a2cd3797d0b75ea605dd3094a
     dependencies:
     - name: idf
       version: '>=5.5.0'

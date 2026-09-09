@@ -159,11 +159,13 @@ void set_busy(Operation operation, uint8_t progress) {
 
 void refresh_installed() {
   if (g_fs == nullptr) return;
-  Pack packs[kPackCount]{};
+  auto* packs = static_cast<Pack*>(
+      heap_caps_malloc(sizeof(Pack) * kPackCount, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!packs) return;
   bool installed[kPackCount]{};
   bool update_available[kPackCount]{};
   portENTER_CRITICAL(&g_lock);
-  memcpy(packs, g_packs, sizeof(packs));
+  std::copy(g_packs, g_packs + kPackCount, packs);
   portEXIT_CRITICAL(&g_lock);
   for (uint8_t i = 0; i < kPackCount; ++i) {
     const auto& pack = packs[i];
@@ -197,6 +199,7 @@ void refresh_installed() {
     if (!view.installed && packs[i].available) strlcpy(view.status, "AVAILABLE", sizeof(view.status));
   }
   portEXIT_CRITICAL(&g_lock);
+  heap_caps_free(packs);
 }
 
 bool open_get(esp_http_client_handle_t client, int64_t* declared, int* status,
@@ -310,8 +313,21 @@ bool parse_manifest(const uint8_t* data, size_t size) {
         !safe_text(date, catalog_date, sizeof(catalog_date)) || !cJSON_IsString(minimum) ||
         !firmware_supports(minimum->valuestring) || pack_count < 1 ||
         pack_count > kPackCount) break;
-    Pack parsed[kPackCount]{};
-    PackView views[kPackCount]{};
+    struct ManifestBuffers {
+      Pack* parsed = nullptr;
+      PackView* views = nullptr;
+      ~ManifestBuffers() {
+        if (parsed) heap_caps_free(parsed);
+        if (views) heap_caps_free(views);
+      }
+    } buffers;
+    buffers.parsed = static_cast<Pack*>(
+        heap_caps_calloc(kPackCount, sizeof(Pack), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    buffers.views = static_cast<PackView*>(
+        heap_caps_calloc(kPackCount, sizeof(PackView), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!buffers.parsed || !buffers.views) break;
+    Pack* parsed = buffers.parsed;
+    PackView* views = buffers.views;
     bool seen[kPackCount]{};
     uint8_t next_dynamic = kBuiltInPackCount;
     for (uint8_t index = 0; index < kBuiltInPackCount; ++index) {
@@ -356,8 +372,8 @@ bool parse_manifest(const uint8_t* data, size_t size) {
     }
     if (ok) {
       portENTER_CRITICAL(&g_lock);
-      memcpy(g_packs, parsed, sizeof(g_packs));
-      memcpy(g_state.packs, views, sizeof(views));
+      std::copy(parsed, parsed + kPackCount, g_packs);
+      std::copy(views, views + kPackCount, g_state.packs);
       strlcpy(g_state.catalog_date, catalog_date, sizeof(g_state.catalog_date));
       g_state.ready = true;
       portEXIT_CRITICAL(&g_lock);
@@ -676,7 +692,7 @@ bool request(Operation operation, uint8_t pack_index, bool needs_wifi) {
   g_requested_pack = pack_index;
   set_busy(operation, 0);
   set_message(operation == Operation::check ? "Catalog check queued" : "Data operation queued");
-  if (xTaskCreatePinnedToCoreWithCaps(worker, "catalog_sync", 12288, nullptr, 3,
+  if (xTaskCreatePinnedToCoreWithCaps(worker, "catalog_sync", 32768, nullptr, 3,
                                       &g_worker, 1,
                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     g_requested = Operation::none;
