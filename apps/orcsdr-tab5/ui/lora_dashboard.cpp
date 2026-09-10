@@ -520,7 +520,7 @@ void draw_map_dynamic() {
     const float lat = g_map_center_lat_e7 / 10000000.0f;
     const float lon = g_map_center_lon_e7 / 10000000.0f;
     offline_map::View map{lat, lon, 15.0f, 50, 182, 842, 330};
-    offline_map::draw_base(map, 0x0320, kGrid, kMuted, kGrid);
+    offline_map::draw_base(map, 0x3557, 0x6f17, 0xfe2a, 0x3d91);
     if (!offline_map::available()) text("OFFLINE MAP PACK NOT INSTALLED", 470, 490, kMuted, 1);
     for (size_t i = 0; i < g_snapshot.node_count; ++i) {
       const Node& node = g_snapshot.nodes[i];

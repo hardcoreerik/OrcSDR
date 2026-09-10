@@ -110,7 +110,7 @@ void draw_radar_base() {
                            g_settings.longitude_e7 / 10000000.0f,
                            static_cast<float>(g_settings.radar_range_nm),
                            8, 8, kRadarPanelW - 16, kRadarPanelH - 16};
-    offline_map::draw_base(g_radar_base, map, 0x0320, 0x2945, 0x8c71, 0x2382);
+    offline_map::draw_base(g_radar_base, map, 0x3557, 0x6f17, 0xfe2a, 0x3d91);
     if (!offline_map::available()) {
       g_radar_base.setTextDatum(middle_center);
       g_radar_base.setTextColor(kMuted);
@@ -119,9 +119,9 @@ void draw_radar_base() {
     }
   }
   for (int ring = 1; ring <= 4; ++ring)
-    g_radar_base.drawCircle(cx, cy, radius * ring / 4, 0x2382);
-  g_radar_base.drawFastHLine(cx - radius, cy, radius * 2, 0x2382);
-  g_radar_base.drawFastVLine(cx, cy - radius, radius * 2, 0x2382);
+    g_radar_base.drawCircle(cx, cy, radius * ring / 4, 0x3d91);
+  g_radar_base.drawFastHLine(cx - radius, cy, radius * 2, 0x3d91);
+  g_radar_base.drawFastVLine(cx, cy - radius, radius * 2, 0x3d91);
   g_radar_base.setTextDatum(middle_center);
   g_radar_base.setTextSize(2);
   g_radar_base.setTextColor(TFT_WHITE);
