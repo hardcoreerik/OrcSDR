@@ -1,5 +1,8 @@
 #include "settings_app.hpp"
 
+#include "map_region_packs.hpp"
+#include "offline_map.hpp"
+
 #include "dashboard_audio_control.hpp"
 #include "text_editor.hpp"
 
@@ -240,16 +243,27 @@ void draw_location() {
   snprintf(value, sizeof(value), "%u NM", g_state.radar_range_nm);
   text("RADAR RANGE", 330, 370, kMuted, 2);
   button(value, 820, 344, 398, 54, TFT_DARKCYAN);
-  value_row("MAP PACK", g_state.map_pack[0] ? g_state.map_pack : "NOT INSTALLED", 445);
-  value_row("RF GAIN", "AUTO (READ ONLY)", 495, kMuted);
-  text("INTERNET LOCATION LOOKUP", 330, 550, kBlue, 2);
-  button(g_state.ip_location_busy ? "LOOKING UP..." : "ZIP / ADDRESS", 330, 575, 250, 46,
+  {
+    const char* pack_label = offline_map::available() ? offline_map::active_label()
+        : (g_state.map_pack[0] ? g_state.map_pack : "NOT INSTALLED");
+    value_row("MAP PACK", pack_label, 445);
+    if (g_state.location_configured) {
+      const auto* nearest = orcsdr::map_region_packs::nearest(
+          g_state.latitude_e7 / 10000000.0f, g_state.longitude_e7 / 10000000.0f);
+      value_row("NEAREST CATALOG MAP",
+                nearest ? nearest->title : "NONE (WORLD COASTS)", 520);
+    } else {
+      value_row("NEAREST CATALOG MAP", "SET HOME FIRST", 520);
+    }
+  }
+  value_row("RF GAIN", "AUTO (READ ONLY)", 570, kMuted);
+  text("INTERNET LOCATION LOOKUP", 330, 600, kBlue, 2);
+  button(g_state.ip_location_busy ? "LOOKING UP..." : "ZIP / ADDRESS", 330, 625, 250, 46,
          g_state.ip_location_busy ? TFT_DARKGREY : TFT_DARKCYAN);
-  button("IP AREA", 600, 575, 180, 46,
+  button("IP AREA", 600, 625, 180, 46,
          g_state.ip_location_busy ? TFT_DARKGREY : TFT_NAVY);
-  if (g_state.ip_location_ready) button("USE RESULT", 800, 575, 240, 46, TFT_DARKGREEN);
-  if (g_state.ip_location_message[0]) text(g_state.ip_location_message, 330, 645, kMuted, 2, middle_left);
-  text("Address search data (c) OpenStreetMap contributors", 330, 682, kMuted, 1);
+  if (g_state.ip_location_ready) button("USE RESULT", 800, 625, 240, 46, TFT_DARKGREEN);
+  if (g_state.ip_location_message[0]) text(g_state.ip_location_message, 330, 678, kMuted, 1, middle_left);
 }
 
 void draw_data_maps() {
@@ -761,16 +775,16 @@ Action handle_touch(int32_t x, int32_t y) {
       draw_content();
       return {ActionKind::range_changed, g_state.radar_range_nm};
     }
-    if (hit(x, y, 330, 575, 250, 46) && !g_state.ip_location_busy) {
+    if (hit(x, y, 330, 625, 250, 46) && !g_state.ip_location_busy) {
       g_location_edit = true;
       text_editor::begin("ZIP CODE OR ADDRESS", g_location_query,
                          sizeof(g_location_query) - 1, false, "LOOK UP");
       text_editor::draw();
       return {};
     }
-    if (hit(x, y, 600, 575, 180, 46) && !g_state.ip_location_busy)
+    if (hit(x, y, 600, 625, 180, 46) && !g_state.ip_location_busy)
       return {ActionKind::location_ip_lookup, 0};
-    if (g_state.ip_location_ready && hit(x, y, 800, 575, 240, 46)) {
+    if (g_state.ip_location_ready && hit(x, y, 800, 625, 240, 46)) {
       g_state.latitude_e7 = g_state.ip_latitude_e7; g_state.longitude_e7 = g_state.ip_longitude_e7;
       strlcpy(g_state.location_label, g_state.ip_location_label, sizeof(g_state.location_label));
       g_state.location_configured = true; g_latitude_set = g_longitude_set = true;
