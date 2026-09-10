@@ -135,6 +135,8 @@ void draw_base(lgfx::v1::LovyanGFX& display, const View& view, uint16_t water_co
     const uint16_t color = g_segments[i].kind == Kind::water ? water_color :
                            g_segments[i].kind == Kind::airport ? airport_color : road_color;
     display.drawLine(x1, y1, x2, y2, color);
+    // One-pixel thicken for water/airport so geography stays readable on Tab5.
+    if (g_segments[i].kind != Kind::road) display.drawLine(x1, y1 + 1, x2, y2 + 1, color);
   }
   display.setTextDatum(middle_left);
   display.setTextSize(1);
