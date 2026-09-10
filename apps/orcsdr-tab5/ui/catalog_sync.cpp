@@ -52,6 +52,7 @@ struct Pack {
   char version[16]{};
   bool available = false;
   bool p25_profile = false;
+  bool broadcast = false;
 };
 
 EXT_RAM_BSS_ATTR State g_state;
@@ -64,15 +65,22 @@ Operation g_requested = Operation::none;
 uint8_t g_requested_pack = 0;
 
 constexpr const char* kIds[kBuiltInPackCount] = {
-    "faa_aircraft", "faa_aviation", "noaa_weather", "fcc_broadcast", "lane_county_map"};
+    "faa_aircraft", "faa_aviation", "noaa_weather", "fcc_broadcast", "lane_county_map",
+    "international_broadcast", "hf_schedules"};
 constexpr const char* kTitles[kBuiltInPackCount] = {
-    "FAA AIRCRAFT", "FAA AVIATION", "NOAA WEATHER", "FCC FM / AM", "LANE COUNTY MAP"};
+    "FAA AIRCRAFT", "FAA AVIATION", "NOAA WEATHER", "US AM / FM", "LANE COUNTY MAP",
+    "WORLD AM / FM", "HF SCHEDULES"};
 
 int pack_index(const char* id) {
   if (id == nullptr) return -1;
   for (uint8_t index = 0; index < kBuiltInPackCount; ++index)
     if (strcmp(id, kIds[index]) == 0) return index;
   return -1;
+}
+
+bool is_broadcast_pack(const char* id) {
+  return id && (!strcmp(id, "fcc_broadcast") || !strcmp(id, "international_broadcast") ||
+                !strcmp(id, "hf_schedules"));
 }
 
 bool valid_p25_pack_id(const char* id) {
@@ -365,6 +373,7 @@ bool parse_manifest(const uint8_t* data, size_t size) {
                      sizeof(views[index].source_date))) break;
       parsed[index].available = true;
       parsed[index].p25_profile = p25_profile;
+      parsed[index].broadcast = is_broadcast_pack(id->valuestring);
       strlcpy(parsed[index].version, views[index].version, sizeof(parsed[index].version));
       seen[index] = true;
       views[index].runtime_bytes = parsed[index].runtime.bytes;
@@ -494,6 +503,7 @@ bool download_artifact(const Artifact& artifact, uint8_t pack_index,
       ? (memcmp(header, "PK\003\004", 4) == 0 || memcmp(header, "PK\005\006", 4) == 0)
       : pack_index == 0 ? memcmp(header, "ORCADSB1", 8) == 0
       : pack_index == 4 ? memcmp(header, "ORCMAP1\n", 8) == 0
+      : g_packs[pack_index].broadcast ? memcmp(header, "ORCBRD1\n", 8) == 0
                         : memcmp(header, "ORCCAT1\n", 8) == 0;
   if (!artifact.archive && g_packs[pack_index].p25_profile) {
     orcsdr::p25config::Config config{};
