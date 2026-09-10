@@ -69,3 +69,13 @@ redistribution gate above. None are bundled by this change.
 
 Maps are imported and validated separately. HF schedules and LoRa regional
 profiles require a separate rights and format review.
+
+## Offline maps
+
+Firmware embeds a world-coastlines `ORCMAP1` pack (`world_coastlines.idx`,
+640 segments / 32 labels). Regional detail packs install to
+`/orcsdr/data/regional_map.idx` and replace the embed at runtime. The catalog
+pack id `lane_county_map` remains the first published regional example; its
+runtime destination should be `regional_map.idx`. Home lat/lon selects a
+nearest catalog map through the `map_region_packs` hint table — expand that
+table as new regions are published.

@@ -115,6 +115,18 @@ def main() -> None:
             if pack["runtime_destination"] != expected_destination or not pack.get("title"):
                 raise ValueError(f"{pack['id']} requires title and runtime_destination {expected_destination}")
             catalog_pack["title"] = pack["title"]
+        if pack["id"] == "lane_county_map":
+            if pack.get("runtime_destination") not in (
+                    "/orcsdr/data/regional_map.idx",
+                    "/orcsdr/data/lane_county_map.idx"):
+                raise ValueError(
+                    "lane_county_map runtime_destination must be regional_map.idx "
+                    "(preferred) or legacy lane_county_map.idx")
+            if pack.get("title"):
+                catalog_pack["title"] = pack["title"]
+            for key in ("center_lat", "center_lon", "cover_radius_nm"):
+                if key in pack:
+                    catalog_pack[key] = pack[key]
         catalog_packs.append(catalog_pack)
     catalog = {"schema": "catalog-v1", "generated_at": spec["generated_at"],
                "minimum_firmware": spec["minimum_firmware"], "packs": catalog_packs}
