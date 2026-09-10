@@ -98,7 +98,7 @@ struct State {
   uint8_t catalog_progress_percent = 0;
   char catalog_message[80]{};
   char catalog_date[16]{};
-  CatalogPackView catalog_packs[5]{};
+  CatalogPackView catalog_packs[7]{};
   bool companion_supported = false;
   bool web_console_enabled = false;
   bool web_console_listening = false;

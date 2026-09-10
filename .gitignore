@@ -46,3 +46,11 @@ artifacts/data-catalog-v1*/
 artifacts/radio-scan-soak/
 artifacts/pocsag-validation/
 docs/user-guide/assets/screenshots/raw/
+
+# Local data-catalog staging / downloads (rebuild from sources; do not commit)
+artifacts/broadcast-staging/
+artifacts/atc-staging/
+artifacts/atc-freq-scout/
+artifacts/aviation-staging/
+artifacts/am-recordings/
+artifacts/nrta-rights-scout/
