@@ -29,8 +29,7 @@ def rdp(pts: list[tuple[float, float]], eps: float) -> list[tuple[float, float]]
         t = ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / (
             (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2
         )
-        t = max(0.0, min(1.0, t)
-        )
+        t = max(0.0, min(1.0, t))
         return math.hypot(p[0] - (a[0] + t * (b[0] - a[0])), p[1] - (a[1] + t * (b[1] - a[1])))
 
     dmax = -1.0
