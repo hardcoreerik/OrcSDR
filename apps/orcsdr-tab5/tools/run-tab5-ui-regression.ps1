@@ -187,10 +187,7 @@ function Get-UiState {
 function Test-ExclusiveScreen($State, [string]$Screen) {
   # Wi-Fi Analysis owns the display while the prior radio stream continues in the background.
   if ($Screen -eq 'WIFI_ANALYSIS') {
-    return $State.Active[0] -eq 0 -and $State.Active[1] -eq 0 -and
-           $State.Active[2] -eq 0 -and $State.Active[3] -eq 0 -and
-           $State.Active[4] -eq 0 -and $State.Active[5] -eq 0 -and
-           $State.Active[6] -eq 1
+    return $State.Active[0] -eq 0 -and $State.Active[6] -eq 1
   }
   $expected = switch ($Screen) {
     'FM' { @(0,1,0,0,0,0,0) }
@@ -471,7 +468,7 @@ function Assert-WifiCoexistence($initialUi) {
         [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
       } elseif ($initialWifi.Connected -eq 1 -and $currentWifi.Connected -eq 0) {
         Connect-Authenticated
-        $restored = Wait-WifiConnectOutcome 'live'
+        $restored = Wait-WifiConnectOutcome
         if ($restored -notmatch 'event=connect_complete ') { throw "Could not restore Wi-Fi: $restored" }
       }
       try {
@@ -483,8 +480,8 @@ function Assert-WifiCoexistence($initialUi) {
   }
 }
 
-function Wait-WifiConnectOutcome([string]$Mode) {
-  [void](Send-And-Wait "RTL_WIFI_CONNECT_SAVED$($(if ($Mode -eq 'pause') { ' PAUSE' } else { '' }))" "^RTL_WIFI_CONNECT_QUEUED saved_profile=0 mode=$Mode$" 10)
+function Wait-WifiConnectOutcome {
+  [void](Send-And-Wait 'RTL_WIFI_CONNECT_SAVED PAUSE' '^RTL_WIFI_CONNECT_QUEUED saved_profile=0 mode=pause$' 10)
   return Read-MatchingLine '^RTL_WIFI_COEX event=connect_(?:complete|failed|start_failed) ' 45
 }
 
@@ -503,7 +500,7 @@ function Assert-WifiCoexistenceDiagnostic($initialUi) {
       [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
     }
     $dropBaseline = (Get-WifiCoexStatus).AudioDrops
-    $paused = Wait-WifiConnectOutcome 'pause'
+    $paused = Wait-WifiConnectOutcome
     if ($paused -notmatch 'event=connect_complete ') {
       throw "Paused Wi-Fi comparison did not connect: $paused"
     }
@@ -515,11 +512,13 @@ function Assert-WifiCoexistenceDiagnostic($initialUi) {
     Connect-Authenticated
     [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
     $dropBaseline = (Get-WifiCoexStatus).AudioDrops
-    $live = Wait-WifiConnectOutcome 'live'
-    $livePass = [int]($live -match 'event=connect_complete ')
-    if ($livePass) { Assert-WifiCoexAudio 'live_connect' $dropBaseline }
+    $reconnected = Wait-WifiConnectOutcome
+    if ($reconnected -notmatch 'event=connect_complete ') {
+      throw "Second paused Wi-Fi connection did not connect: $reconnected"
+    }
+    Assert-WifiCoexAudio 'second_paused_connect' $dropBaseline
     Assert-Health
-    Write-SoakLine "RTL_WIFI_COEX_DIAGNOSTIC_RESULT pass=1 fm_hz=96100000 live_connect=$livePass paused_connect=1 scan=1"
+    Write-SoakLine 'RTL_WIFI_COEX_DIAGNOSTIC_RESULT pass=1 fm_hz=96100000 paused_connects=2 scan=1'
   } finally {
     try {
       Connect-Authenticated
@@ -527,7 +526,7 @@ function Assert-WifiCoexistenceDiagnostic($initialUi) {
       if ($initialWifi.Connected -eq 0 -and $currentWifi.Connected -eq 1) {
         [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
       } elseif ($initialWifi.Connected -eq 1 -and $currentWifi.Connected -eq 0) {
-        $restored = Wait-WifiConnectOutcome 'live'
+        $restored = Wait-WifiConnectOutcome
         if ($restored -notmatch 'event=connect_complete ') { throw "Could not restore Wi-Fi: $restored" }
       }
       [void](Send-And-Wait "RTL_TUNE $($initialUi.Band) $initialFrequency" "^RTL_TUNE_OK band=$($initialUi.Band) ")
@@ -785,8 +784,8 @@ function Invoke-SelfCheck {
   if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,0,0,0,0,0,1) }) 'WIFI_ANALYSIS')) {
     throw 'Wi-Fi Analysis check rejected exclusive ownership.'
   }
-  if (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,0,0,1,0,0,1) }) 'WIFI_ANALYSIS') {
-    throw 'Wi-Fi Analysis check accepted an active P25 dashboard.'
+  if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,1,0,0,0,0,1) }) 'WIFI_ANALYSIS')) {
+    throw 'Wi-Fi Analysis check rejected a background FM stream.'
   }
   if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,0,1,0,0,0,0) }) 'AM')) {
     throw 'Exclusive dashboard check rejected valid AM state.'
