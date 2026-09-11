@@ -669,6 +669,7 @@ function Assert-OfflineCatalogGuard {
       throw "Wi-Fi did not turn off before catalog test: $($wifi.Line)"
     }
 
+    [void](Open-Ui 'FM' 'FM')
     $before = Wait-DriverStreaming 30
     [void](Send-And-Wait 'RTL_CATALOG_CHECK' '^RTL_CATALOG_CHECK_REJECTED$')
     $catalog = Send-And-Wait 'RTL_CATALOG_STATUS' '^RTL_CATALOG_STATUS '
