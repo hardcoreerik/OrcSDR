@@ -7643,6 +7643,11 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       g_rtl_device_ready.store(false, std::memory_order_release);
       g_rtl_profile.store(ESP_RTL_SDR_PROFILE_UNKNOWN, std::memory_order_release);
       g_rtl_device_capabilities.store(0, std::memory_order_release);
+      if (orcsdr::am_finder::active()) orcsdr::am_finder::cancel();
+      rtl_am_scan_requested.store(false, std::memory_order_release);
+      rtl_am_scan_cancel.store(false, std::memory_order_release);
+      rtl_am_scan_active.store(false, std::memory_order_release);
+      rtl_rate_override_sps.store(0, std::memory_order_release);
       rtl_capture_state.store(RtlCaptureState::disconnected, std::memory_order_release);
       set_radio_session_state(orcsdr::radio::ReceiverState::disconnected);
       set_rtl_sdr_status("RTL-SDR: disconnected");
@@ -9888,29 +9893,27 @@ void service_shared_scan(uint32_t now) {
     am_scan_step_hz = rtl_am_scan_spacing_hz;
     am_scan_start_hz = am_scan_step_hz == 9000 ? 531000u : 530000u;
     am_scan_count = (kRtlAmMaxHz - am_scan_start_hz) / am_scan_step_hz + 1;
-    if (am_scan_count > kAmScanMaxChannels ||
-        !esp_rtl_sdr_is_rate_supported(orcsdr::am_finder::kSampleRateSps)) {
-      Serial.println("RTL_AM_SCAN failed reason=rate_unsupported");
-      return;
-    }
     am_finder_restore_hz = rtl_ui_frequency_hz;
-    std::fill_n(am_scan_levels, am_scan_count, -120.0f);
-    rtl_am_scan_active.store(true, std::memory_order_release);
-    rtl_am_scan_callback_logged.store(false, std::memory_order_release);
-    rtl_am_scan_step.store(0, std::memory_order_relaxed);
-    rtl_am_scan_total.store(static_cast<uint16_t>(am_scan_count),
-                             std::memory_order_relaxed);
-    rtl_am_scan_found.store(0, std::memory_order_relaxed);
-    rtl_am_scan_freq_hz.store(orcsdr::am_finder::kCenterHz, std::memory_order_relaxed);
-    rtl_rate_override_sps.store(orcsdr::am_finder::kSampleRateSps,
-                                std::memory_order_release);
-    queue_local_rtl_listen(RtlBand::am, orcsdr::am_finder::kCenterHz, false);
-    rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
-    Serial.printf("RTL_AM_SCAN start mode=wideband rate=%u center_hz=%u channels=%u "
-                  "step_hz=%lu\n",
-                  orcsdr::am_finder::kSampleRateSps, orcsdr::am_finder::kCenterHz,
-                  static_cast<unsigned>(am_scan_count),
-                  static_cast<unsigned long>(am_scan_step_hz));
+    const auto session = radio_session.snapshot();
+    scan_radio_token = {session.owner, session.generation};
+    const orcsdr::scan::Plan plan{orcsdr::scan::Mode::frequency_range, nullptr,
+                                  am_scan_count, am_scan_start_hz, am_scan_step_hz,
+                                  kAmScanSettleMs, true};
+    if (am_scan_count <= kAmScanMaxChannels &&
+        scan_engine.start(plan, am_finder_restore_hz, now)) {
+      active_scan = ActiveScan::am_presets;
+      std::fill_n(am_scan_levels, am_scan_count, -120.0f);
+      rtl_am_scan_active.store(true, std::memory_order_release);
+      rtl_am_scan_step.store(0, std::memory_order_relaxed);
+      rtl_am_scan_total.store(static_cast<uint16_t>(am_scan_count),
+                               std::memory_order_relaxed);
+      rtl_am_scan_found.store(0, std::memory_order_relaxed);
+      rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+      Serial.printf("RTL_AM_SCAN start mode=retune channels=%u step_hz=%lu settle_ms=%lu\n",
+                    static_cast<unsigned>(am_scan_count),
+                    static_cast<unsigned long>(am_scan_step_hz),
+                    static_cast<unsigned long>(kAmScanSettleMs));
+    }
   }
   if (!scan_engine.active() && g_stream_band == RtlBand::pocsag &&
       pocsag_scan_requested.exchange(false, std::memory_order_acq_rel)) {
@@ -13102,6 +13105,16 @@ void process_command(char* command) {
       else if (!strcmp(action, "HOME")) kind=K::exit_to_browse;
       if (kind != K::none) { handle_fm_dashboard_action({kind, static_cast<uint32_t>(value)}); Serial.println("RTL_UI_ACTION_OK"); return; }
     } else if (strcmp(domain, "AM") == 0) {
+      if (!strcmp(action, "SCAN_DISCARD")) {
+        if (!orcsdr::am::scan_prompt_active()) {
+          Serial.println("RTL_UI_ACTION_INVALID am_scan_prompt_inactive");
+          return;
+        }
+        orcsdr::am::clear_scan_results();
+        refresh_active_screen();
+        Serial.println("RTL_UI_ACTION_OK");
+        return;
+      }
       using K = orcsdr::am::ActionKind; K kind = K::none;
       if (!strcmp(action, "TUNE")) kind=K::tune_hz; else if (!strcmp(action, "DOWN")) kind=K::step_down;
       else if (!strcmp(action, "UP")) kind=K::step_up; else if (!strcmp(action, "STEP")) kind=K::step_cycle;
@@ -13796,12 +13809,14 @@ void process_command(char* command) {
     return;
   }
   if (strcmp(command, "RTL_AM_SCAN STATUS") == 0) {
-    Serial.printf("RTL_AM_SCAN_STATUS active=%d step=%u total=%u found=%u frequency_hz=%lu\n",
+    Serial.printf("RTL_AM_SCAN_STATUS active=%d step=%u total=%u found=%u frequency_hz=%lu "
+                  "prompt=%d\n",
                   rtl_am_scan_active.load(std::memory_order_relaxed) ? 1 : 0,
                   static_cast<unsigned>(rtl_am_scan_step.load(std::memory_order_relaxed)),
                   static_cast<unsigned>(rtl_am_scan_total.load(std::memory_order_relaxed)),
                   static_cast<unsigned>(rtl_am_scan_found.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long>(rtl_am_scan_freq_hz.load(std::memory_order_relaxed)));
+                  static_cast<unsigned long>(rtl_am_scan_freq_hz.load(std::memory_order_relaxed)),
+                  orcsdr::am::scan_prompt_active() ? 1 : 0);
     return;
   }
   if (strcmp(command, "RTL_AM_GAIN STATUS") == 0) {

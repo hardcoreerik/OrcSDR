@@ -101,6 +101,7 @@ bool delete_preset(size_t index);
 uint8_t prepare_scan_results(uint32_t start_hz, uint32_t step_hz,
                              const float* levels, size_t count, float* baseline_dbfs);
 void clear_scan_results();
+bool scan_prompt_active();
 constexpr float kAutoGainTargetDbfs = -24.0f;
 bool auto_gain_should_advance(float level_dbfs, size_t step, size_t step_count);
 void populate_presets(Snapshot& snapshot);

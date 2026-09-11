@@ -185,9 +185,9 @@ function Get-UiState {
 }
 
 function Test-ExclusiveScreen($State, [string]$Screen) {
-  # RF24 is an overlay: FM remains active so the receiver/audio stream continues.
+  # Wi-Fi Analysis owns the display while the prior radio stream continues in the background.
   if ($Screen -eq 'WIFI_ANALYSIS') {
-    return $State.Active[0] -eq 0 -and $State.Active[1] -eq 1 -and
+    return $State.Active[0] -eq 0 -and $State.Active[1] -eq 0 -and
            $State.Active[2] -eq 0 -and $State.Active[3] -eq 0 -and
            $State.Active[4] -eq 0 -and $State.Active[5] -eq 0 -and
            $State.Active[6] -eq 1
@@ -782,11 +782,11 @@ function Invoke-SelfCheck {
   if (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,1,0,0,1,0,0) }) 'ADSB') {
     throw 'Exclusive dashboard check accepted stale FM state.'
   }
-  if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,1,0,0,0,0,1) }) 'WIFI_ANALYSIS')) {
-    throw 'RF24 overlay check rejected active FM.'
+  if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,0,0,0,0,0,1) }) 'WIFI_ANALYSIS')) {
+    throw 'Wi-Fi Analysis check rejected exclusive ownership.'
   }
-  if (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,1,0,1,0,0,1) }) 'WIFI_ANALYSIS') {
-    throw 'RF24 overlay check accepted an active P25 dashboard.'
+  if (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,0,0,1,0,0,1) }) 'WIFI_ANALYSIS') {
+    throw 'Wi-Fi Analysis check accepted an active P25 dashboard.'
   }
   if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,0,1,0,0,0,0) }) 'AM')) {
     throw 'Exclusive dashboard check rejected valid AM state.'
@@ -886,12 +886,12 @@ function Set-AmFilter([uint32]$TargetHz) {
 
 function Get-AmScanStatus {
   $line = Send-And-Wait 'RTL_AM_SCAN STATUS' '^RTL_AM_SCAN_STATUS '
-  if ($line -notmatch '^RTL_AM_SCAN_STATUS active=([01]) step=(\d+) total=(\d+) found=(\d+) frequency_hz=(\d+)$') {
+  if ($line -notmatch '^RTL_AM_SCAN_STATUS active=([01]) step=(\d+) total=(\d+) found=(\d+) frequency_hz=(\d+) prompt=([01])$') {
     throw "Malformed AM scan status: $line"
   }
   [pscustomobject]@{
     Active = [int]$Matches[1]; Step = [int]$Matches[2]; Total = [int]$Matches[3]
-    Found = [int]$Matches[4]; Frequency = [uint32]$Matches[5]
+    Found = [int]$Matches[4]; Frequency = [uint32]$Matches[5]; Prompt = [int]$Matches[6]
   }
 }
 
@@ -903,10 +903,13 @@ function Invoke-AmBroadcastTest {
   $initialDriver = $null
   $initialAmGainAuto = $null
   $initialVerbosity = $null
+  $soundWasEnabled = $null
   try {
     $verbosity = Send-And-Wait 'RTL_SERIAL VERBOSITY' '^RTL_SERIAL_VERBOSITY mode=(QUIET|NORMAL|DEBUG|TRACE)$'
     $initialVerbosity = $verbosity.Split('=')[-1]
     [void](Send-And-Wait 'RTL_SERIAL VERBOSITY QUIET' '^RTL_SERIAL_VERBOSITY_OK mode=QUIET$')
+    $soundWasEnabled = (Send-And-Wait 'RTL_SOUND' '^RTL_SOUND_STATUS enabled=[01]$').EndsWith('1')
+    if (-not $soundWasEnabled) { [void](Send-And-Wait 'RTL_SOUND ON' '^RTL_SOUND_OK enabled=1$') }
     Drain-SerialOutput
     $initial = Get-UiState
     $initialSignal = Get-SignalStatus
@@ -989,6 +992,7 @@ function Invoke-AmBroadcastTest {
     }
     [void](Open-Ui 'AM' 'AM')
     Write-SoakLine 'RTL_AM_FM_TRANSITION_REGRESSION pass=1 fm_gain_mode=AUTO'
+    $audioBeforeScan = Get-AudioStatus
     [void](Send-And-Wait 'RTL_UI ACTION AM SCAN' '^RTL_UI_ACTION_OK$')
     $scanDeadline = [DateTime]::UtcNow.AddSeconds(3)
     do {
@@ -999,27 +1003,51 @@ function Invoke-AmBroadcastTest {
     if ($scan.Active -ne 1 -or $scan.Total -lt 100) {
       throw "AM scan did not start: $($scan | ConvertTo-Json -Compress)"
     }
-    $widebandDeadline = [DateTime]::UtcNow.AddSeconds(12)
+    $streamDeadline = [DateTime]::UtcNow.AddSeconds(12)
     do {
       $driver = Get-DriverStatus
       if ($driver.State -eq 'STREAMING' -and
-          $driver.EffectiveSps -ge 2200000 -and $driver.EffectiveSps -le 2600000) { break }
+          $driver.EffectiveSps -gt 0 -and $driver.EffectiveSps -lt 2200000) { break }
       Start-Sleep -Milliseconds 250
-    } while ([DateTime]::UtcNow -lt $widebandDeadline)
+    } while ([DateTime]::UtcNow -lt $streamDeadline)
     if ($driver.State -ne 'STREAMING' -or
-        $driver.EffectiveSps -lt 2200000 -or $driver.EffectiveSps -gt 2600000) {
-      throw "AM finder did not reach 2.4 MS/s: state=$($driver.State) effective_sps=$($driver.EffectiveSps)"
+        $driver.EffectiveSps -eq 0 -or $driver.EffectiveSps -ge 2200000) {
+      throw "AM scan did not preserve the normal stream: state=$($driver.State) effective_sps=$($driver.EffectiveSps)"
     }
-    $scanDeadline = [DateTime]::UtcNow.AddSeconds(12)
+    $scanDeadline = [DateTime]::UtcNow.AddSeconds(60)
     do {
       $scan = Get-AmScanStatus
       if ($scan.Active -eq 0) { break }
       Start-Sleep -Milliseconds 250
     } while ([DateTime]::UtcNow -lt $scanDeadline)
-    if ($scan.Active -ne 0 -or $scan.Step -ne $scan.Total -or $scan.Found -gt 6) {
+    if ($scan.Active -ne 0 -or $scan.Step -ne $scan.Total -or $scan.Found -gt 6 -or
+        $scan.Prompt -ne 1) {
       throw "AM scan did not finish with a valid candidate count: $($scan | ConvertTo-Json -Compress)"
     }
-    Write-SoakLine "RTL_AM_SCAN_REGRESSION pass=1 action=2.4MS+populate channels=$($scan.Total) found=$($scan.Found) capacity=6 effective_sps=$($driver.EffectiveSps)"
+    [void](Send-And-Wait 'RTL_UI ACTION AM SCAN_DISCARD' '^RTL_UI_ACTION_OK$')
+    $scan = Get-AmScanStatus
+    if ($scan.Prompt -ne 0) { throw 'AM scan result popup did not close after DISCARD.' }
+    $restoreDeadline = [DateTime]::UtcNow.AddSeconds(30)
+    do {
+      $restoredDriver = Get-DriverStatus
+      $restoredSignal = Get-SignalStatus
+      $restoredAudio = Get-AudioStatus
+      if ($restoredDriver.State -eq 'STREAMING' -and
+          $restoredDriver.EffectiveSps -gt 0 -and $restoredDriver.EffectiveSps -lt 2200000 -and
+          $restoredSignal.Band -eq 'AM' -and $restoredSignal.Frequency -eq 1280000 -and
+          $restoredAudio.speaker_running -eq 1 -and
+          [uint64]$restoredAudio.audio_chunks -gt [uint64]$audioBeforeScan.audio_chunks) { break }
+      Start-Sleep -Milliseconds 500
+    } while ([DateTime]::UtcNow -lt $restoreDeadline)
+    if ($restoredDriver.State -ne 'STREAMING' -or
+        $restoredDriver.EffectiveSps -eq 0 -or $restoredDriver.EffectiveSps -ge 2200000 -or
+        $restoredSignal.Band -ne 'AM' -or $restoredSignal.Frequency -ne 1280000 -or
+        $restoredAudio.speaker_running -ne 1 -or
+        [uint64]$restoredAudio.audio_chunks -le [uint64]$audioBeforeScan.audio_chunks) {
+      throw "AM radio did not recover after scan: driver=$($restoredDriver | ConvertTo-Json -Compress) signal=$($restoredSignal.Line) audio=$($restoredAudio | ConvertTo-Json -Compress)"
+    }
+    Write-SoakLine "RTL_AM_SCAN_REGRESSION pass=1 action=retune+populate channels=$($scan.Total) found=$($scan.Found) capacity=6 effective_sps=$($driver.EffectiveSps)"
+    Write-SoakLine "RTL_AM_SCAN_RESTORE pass=1 popup=discard band=AM frequency_hz=1280000 effective_sps=$($restoredDriver.EffectiveSps) audio_chunks=$($restoredAudio.audio_chunks)"
     Write-SoakLine 'RTL_AM_REGRESSION_RESULT pass=1 frequencies=3 filters=4 samples=12'
   } finally {
     try {
@@ -1045,6 +1073,9 @@ function Invoke-AmBroadcastTest {
       }
       if ($null -ne $initialVerbosity) {
         [void](Send-And-Wait "RTL_SERIAL VERBOSITY $initialVerbosity" "^RTL_SERIAL_VERBOSITY_OK mode=$initialVerbosity$")
+      }
+      if ($soundWasEnabled -eq $false) {
+        [void](Send-And-Wait 'RTL_SOUND OFF' '^RTL_SOUND_OK enabled=0$')
       }
     } catch {
       Write-Warning "Could not restore initial AM test state: $($_.Exception.Message)"
