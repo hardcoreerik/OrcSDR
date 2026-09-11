@@ -697,7 +697,7 @@ void worker(void*) {
   vTaskDelete(nullptr);
 }
 
-bool request(Operation operation, uint8_t pack_index, bool needs_wifi) {
+bool request(Operation operation, uint8_t pack_index) {
   if (g_fs == nullptr) {
     set_message("SD storage unavailable");
     return false;
@@ -706,7 +706,7 @@ bool request(Operation operation, uint8_t pack_index, bool needs_wifi) {
     set_message("Catalog operation already running");
     return false;
   }
-  if (needs_wifi && !orcsdr::wifi::connected()) {
+  if (operation != Operation::remove && !orcsdr::wifi::connected()) {
     set_message("Connect Wi-Fi before downloading");
     return false;
   }
@@ -750,9 +750,9 @@ void poll(bool) {
   // the UI loop races the worker's File operations as soon as a manifest is
   // accepted, which can reset the shared SDMMC host.
 }
-bool request_check(bool wifi_connected) { return request(Operation::check, 0, wifi_connected); }
-bool request_install(uint8_t pack_index, bool wifi_connected) { return request(Operation::install, pack_index, wifi_connected); }
-bool request_remove(uint8_t pack_index) { return request(Operation::remove, pack_index, false); }
+bool request_check() { return request(Operation::check, 0); }
+bool request_install(uint8_t pack_index) { return request(Operation::install, pack_index); }
+bool request_remove(uint8_t pack_index) { return request(Operation::remove, pack_index); }
 
 State state() {
   State copy{};

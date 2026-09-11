@@ -23,6 +23,7 @@ param(
   [switch]$WifiCoexistence,
   [switch]$WifiCoexistenceDiagnostic,
   [switch]$DataOnly,
+  [switch]$OfflineCatalog,
   [switch]$C6Update,
   [switch]$RadioScan,
   [switch]$AmBroadcast,
@@ -657,6 +658,36 @@ function Wait-DriverStreaming([int]$Seconds = 30) {
   throw "Radio did not resume streaming: state=$($driver.State) bytes=$($driver.Bytes)"
 }
 
+function Assert-OfflineCatalogGuard {
+  $initialWifi = Get-WifiStatus
+  try {
+    if ($initialWifi.Power -ne 0) {
+      [void](Send-And-Wait 'RTL_UI ACTION SETTINGS WIFI_POWER 0' '^RTL_UI_ACTION_OK$' 20)
+    }
+    $wifi = Get-WifiStatus
+    if ($wifi.Power -ne 0 -or $wifi.Connected -ne 0) {
+      throw "Wi-Fi did not turn off before catalog test: $($wifi.Line)"
+    }
+
+    $before = Wait-DriverStreaming 30
+    [void](Send-And-Wait 'RTL_CATALOG_CHECK' '^RTL_CATALOG_CHECK_REJECTED$')
+    $catalog = Send-And-Wait 'RTL_CATALOG_STATUS' '^RTL_CATALOG_STATUS '
+    if ($catalog -notmatch 'busy=0 .*message="Connect Wi-Fi before downloading"') {
+      throw "Offline catalog request was not safely rejected: $catalog"
+    }
+    Start-Sleep -Milliseconds 750
+    $after = Get-DriverStatus
+    if ($after.State -ne 'STREAMING' -or $after.Bytes -le $before.Bytes) {
+      throw "Offline catalog request interrupted radio streaming: before=$($before.Bytes) after=$($after.Bytes) state=$($after.State)"
+    }
+    Write-SoakLine "RTL_OFFLINE_CATALOG_RESULT pass=1 message=wifi_required radio_state=$($after.State) bytes_before=$($before.Bytes) bytes_after=$($after.Bytes)"
+  } finally {
+    if ($initialWifi.Power -ne 0) {
+      [void](Send-And-Wait 'RTL_UI ACTION SETTINGS WIFI_POWER 1' '^RTL_UI_ACTION_OK$' 20)
+    }
+  }
+}
+
 function Assert-DataServices {
   $wifi = Get-WifiStatus
   if ($wifi.Power -eq 0) {
@@ -817,8 +848,8 @@ if ($SelfCheck) { Invoke-SelfCheck; exit 0 }
 if (($InstallLaneMap -or $InstallFaaAircraft) -and !$DataOnly) {
   throw '-InstallLaneMap and -InstallFaaAircraft require -DataOnly.'
 }
-if (@($Run, $Soak, $Driver080Rc2, $WifiOnly, $WifiCoexistence, $WifiCoexistenceDiagnostic, $DataOnly, $C6Update, $RadioScan, $AmBroadcast).Where({ $_ }).Count -gt 1) {
-  throw 'Choose only one of -Run, -Soak, -Driver080Rc2, -WifiOnly, -WifiCoexistence, -WifiCoexistenceDiagnostic, -DataOnly, -C6Update, -RadioScan, or -AmBroadcast.'
+if (@($Run, $Soak, $Driver080Rc2, $WifiOnly, $WifiCoexistence, $WifiCoexistenceDiagnostic, $DataOnly, $OfflineCatalog, $C6Update, $RadioScan, $AmBroadcast).Where({ $_ }).Count -gt 1) {
+  throw 'Choose only one of -Run, -Soak, -Driver080Rc2, -WifiOnly, -WifiCoexistence, -WifiCoexistenceDiagnostic, -DataOnly, -OfflineCatalog, -C6Update, -RadioScan, or -AmBroadcast.'
 }
 
 function Get-C6UpdateStatus {
@@ -1247,6 +1278,12 @@ try {
     Wait-DeviceReady 60 11000
     Connect-Authenticated
     Assert-DataServices
+    exit 0
+  }
+  if ($OfflineCatalog) {
+    Wait-DeviceReady 60 11000
+    Connect-Authenticated
+    Assert-OfflineCatalogGuard
     exit 0
   }
   if ($C6Update) { Invoke-C6UpdateTest; exit 0 }

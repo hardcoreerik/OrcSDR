@@ -10790,7 +10790,10 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
         orcsdr::catalog::begin(g_sd_fs, sd_total_bytes() -
             orcsdr::storage::used_bytes());
         (void)orcsdr::offline_map::load(g_sd_fs);
-        if (!pause_radio_for_catalog() || !orcsdr::catalog::request_check(wifi_connected)) {
+        if (!orcsdr::wifi::connected()) {
+          (void)orcsdr::catalog::request_check();
+          Serial.println("ORC_CATALOG_CHECK_REJECTED");
+        } else if (!pause_radio_for_catalog() || !orcsdr::catalog::request_check()) {
           resume_radio_after_catalog();
           Serial.println("ORC_CATALOG_CHECK_REJECTED");
         }
@@ -10809,8 +10812,11 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
     case orcsdr::settings::ActionKind::catalog_install:
       if (orcsdr::catalog::state().busy) {
         Serial.println("ORC_CATALOG_INSTALL_REJECTED");
+      } else if (!orcsdr::wifi::connected()) {
+        (void)orcsdr::catalog::request_install(static_cast<uint8_t>(action.value));
+        Serial.println("ORC_CATALOG_INSTALL_REJECTED");
       } else if (!pause_radio_for_catalog() ||
-          !orcsdr::catalog::request_install(static_cast<uint8_t>(action.value), wifi_connected)) {
+          !orcsdr::catalog::request_install(static_cast<uint8_t>(action.value))) {
         resume_radio_after_catalog();
         Serial.println("ORC_CATALOG_INSTALL_REJECTED");
       }
