@@ -37,8 +37,8 @@ struct State {
 // never USB/IQ/audio callbacks.
 void begin(orcsdr::storage::FileSystem* filesystem, uint64_t free_bytes = 0);
 void poll(bool wifi_connected);
-bool request_check(bool wifi_connected);
-bool request_install(uint8_t pack_index, bool wifi_connected);
+bool request_check();
+bool request_install(uint8_t pack_index);
 bool request_remove(uint8_t pack_index);
 State state();
 
