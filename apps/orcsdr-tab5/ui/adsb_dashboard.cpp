@@ -743,7 +743,7 @@ void draw_stats() {
   else strlcpy(atc_line, "NO NEARBY PRESET", sizeof(atc_line));
   const DataCard data[] = {{"FAA AIRCRAFT DB", g_live_snapshot.faa_aircraft_installed ? "INSTALLED" : "NOT INSTALLED", "REGISTRATION LOOKUP", g_live_snapshot.faa_aircraft_installed},
                            {"FAA AVIATION DB", g_live_snapshot.faa_aviation_installed ? "INSTALLED" : "NOT INSTALLED", "AIRPORT / ATC DATA", g_live_snapshot.faa_aviation_installed},
-                           {"OFFLINE MAP", offline_map::available() ? "LANE COUNTY READY" : "NOT INSTALLED", "SD VECTOR PACK", offline_map::available()},
+                           {"OFFLINE MAP", offline_map::available() ? offline_map::active_label() : "NOT INSTALLED", "VECTOR BASEMAP", offline_map::available()},
                            {"LISTEN TO ATC", atc_line, g_atc_listening ? "ADS-B PAUSED" : "MANUAL START", g_settings.atc_frequency_hz != 0}};
   for (int i = 0; i < 4; ++i) {
     const int x = 14 + i * 313;
@@ -819,7 +819,11 @@ void draw_settings() {
 
     card(496, 340, 360, 264);
     text("OFFLINE MAP", 516, 370, kBlue, 2, middle_left);
-    text(offline_map::available() ? "Lane County vector map" : "Map pack not installed",
+    text(offline_map::available()
+             ? (offline_map::source() == offline_map::Source::embedded_world
+                    ? "Embedded world coastlines"
+                    : "Regional vector map")
+             : "Map pack not installed",
          516, 414, TFT_WHITE, 1, middle_left);
     text("SD-backed roads, water and labels", 516, 448, kMuted, 1, middle_left);
     button("MANAGE OFFLINE MAP", 516, 516, 320, 54, TFT_NAVY);

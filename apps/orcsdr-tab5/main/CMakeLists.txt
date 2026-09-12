@@ -97,6 +97,7 @@ idf_component_register(
     LDFRAGMENTS ${ORCSDR_LDFRAGMENTS}
     EMBED_TXTFILES
         "catalog_public_key.pem"
+        "world_coastlines.idx"
 )
 
 target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)

@@ -656,11 +656,11 @@ function Assert-DataServices {
     [void](Send-And-Wait 'RTL_CATALOG_INSTALL lane_county_map' '^RTL_CATALOG_INSTALL_QUEUED$')
     $catalog = Wait-CatalogIdle 180
     if ($catalog -notmatch 'message="Pack installed and verified"') {
-      throw "Lane County map install failed: $catalog"
+      throw "Regional map pack install failed: $catalog"
     }
     $pack = Read-MatchingLine '^RTL_CATALOG_PACK id=lane_county_map ' 10
     if ($pack -notmatch 'installed=1 update=0 status="INSTALLED"') {
-      throw "Lane County map was not activated: $pack"
+      throw "Regional map pack was not activated: $pack"
     }
   }
 
@@ -679,7 +679,7 @@ function Assert-DataServices {
     throw "Location lookup failed: $location"
   }
   Assert-Health
-  Write-SoakLine "RTL_DATA_SERVICES_RESULT pass=1 catalog=verified lane_map_installed=$([int][bool]$InstallLaneMap) location_query=$LocationQuery"
+  Write-SoakLine "RTL_DATA_SERVICES_RESULT pass=1 catalog=verified regional_map_installed=$([int][bool]$InstallLaneMap) location_query=$LocationQuery"
 }
 
 function Capture-ResetEvidence {

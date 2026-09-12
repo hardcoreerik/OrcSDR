@@ -19,6 +19,11 @@ EXT_RAM_BSS_ATTR Label g_labels[kLabelCapacity]{};
 size_t g_count = 0;
 size_t g_label_count = 0;
 bool g_available = false;
+Source g_source = Source::none;
+
+// Embedded Natural Earth 110m coastlines ORCMAP1 (see world_coastlines.idx).
+extern const uint8_t world_coastlines_idx_start[] asm("_binary_world_coastlines_idx_start");
+extern const uint8_t world_coastlines_idx_end[] asm("_binary_world_coastlines_idx_end");
 
 bool parse_line(const char* line, Segment* output) {
   if (!line || !output) return false;
@@ -45,6 +50,80 @@ bool parse_label(const char* line, Label* output) {
     return false;
   *output = label;
   return true;
+}
+
+void reset_cache() {
+  g_count = 0;
+  g_label_count = 0;
+  g_available = false;
+  g_source = Source::none;
+}
+
+bool ingest_line(const char* line) {
+  if (!line || !line[0]) return true;
+  if (line[0] == 'L') {
+    if (g_label_count >= kLabelCapacity) return true;
+    Label label{};
+    if (parse_label(line, &label)) g_labels[g_label_count++] = label;
+    return true;
+  }
+  if (g_count >= kSegmentCapacity) return true;
+  Segment segment{};
+  if (parse_line(line, &segment)) g_segments[g_count++] = segment;
+  return true;
+}
+
+bool load_from_bytes(const uint8_t* begin, const uint8_t* end) {
+  if (!begin || !end || end <= begin) return false;
+  const size_t total = static_cast<size_t>(end - begin);
+  size_t offset = 0;
+  char line[96]{};
+  size_t used = 0;
+  bool header_ok = false;
+  while (offset < total) {
+    const char ch = static_cast<char>(begin[offset++]);
+    if (ch == '\n' || used + 1 >= sizeof(line)) {
+      line[used] = '\0';
+      if (!header_ok) {
+        header_ok = strcmp(line, "ORCMAP1") == 0;
+        if (!header_ok) return false;
+      } else if (!ingest_line(line)) {
+        return false;
+      }
+      used = 0;
+      if (ch != '\n') {
+        // Overlong line: drop remainder until newline.
+        while (offset < total && begin[offset] != '\n') ++offset;
+        if (offset < total) ++offset;
+      }
+      continue;
+    }
+    if (ch != '\r') line[used++] = ch;
+  }
+  if (used > 0) {
+    line[used] = '\0';
+    if (!header_ok) header_ok = strcmp(line, "ORCMAP1") == 0;
+    else (void)ingest_line(line);
+  }
+  return header_ok && g_count > 0;
+}
+
+bool load_from_file(orcsdr::storage::FileSystem* filesystem, const char* path) {
+  if (!filesystem || !path) return false;
+  orcsdr::storage::File file = filesystem->open(path);
+  if (!file) return false;
+  char header[9]{};
+  const bool header_ok = file.readBytesUntil('\n', header, sizeof(header)) == 7 &&
+                         strcmp(header, "ORCMAP1") == 0;
+  char line[96]{};
+  while (header_ok) {
+    const size_t n = file.readBytesUntil('\n', line, sizeof(line) - 1);
+    if (n == 0) break;
+    line[n] = '\0';
+    (void)ingest_line(line);
+  }
+  file.close();
+  return header_ok && g_count > 0;
 }
 
 void project_unclipped(const View& view, float latitude, float longitude, int* x, int* y) {
@@ -94,34 +173,40 @@ bool project(const View& view, float latitude, float longitude, int* x, int* y) 
 }
 
 bool load(orcsdr::storage::FileSystem* filesystem) {
-  g_count = 0;
-  g_label_count = 0;
-  g_available = false;
-  if (!filesystem) return false;
-  orcsdr::storage::File file = filesystem->open(kRuntimePath);
-  if (!file) return false;
-  char header[9]{};
-  const bool header_ok = file.readBytesUntil('\n', header, sizeof(header)) == 7 &&
-                         strcmp(header, "ORCMAP1") == 0;
-  char line[96]{};
-  while (header_ok) {
-    const size_t used = file.readBytesUntil('\n', line, sizeof(line) - 1);
-    if (used == 0) break;
-    line[used] = '\0';
-    if (line[0] == 'L' && g_label_count < kLabelCapacity) {
-      Label label{};
-      if (parse_label(line, &label)) g_labels[g_label_count++] = label;
-    } else if (g_count < kSegmentCapacity) {
-      Segment segment{};
-      if (parse_line(line, &segment)) g_segments[g_count++] = segment;
-    }
+  reset_cache();
+  if (filesystem && load_from_file(filesystem, kRuntimePath)) {
+    g_available = true;
+    g_source = Source::regional;
+    return true;
   }
-  file.close();
-  g_available = header_ok && g_count > 0;
-  return g_available;
+  reset_cache();
+  if (filesystem && load_from_file(filesystem, kLegacyRuntimePath)) {
+    g_available = true;
+    g_source = Source::legacy_regional;
+    return true;
+  }
+  reset_cache();
+  if (load_from_bytes(world_coastlines_idx_start, world_coastlines_idx_end)) {
+    g_available = true;
+    g_source = Source::embedded_world;
+    return true;
+  }
+  reset_cache();
+  return false;
 }
 
 bool available() { return g_available; }
+
+Source source() { return g_source; }
+
+const char* active_label() {
+  switch (g_source) {
+    case Source::regional: return "REGIONAL PACK";
+    case Source::legacy_regional: return "REGIONAL PACK";
+    case Source::embedded_world: return "WORLD COASTLINES";
+    case Source::none: default: return "NOT INSTALLED";
+  }
+}
 
 void draw_base(lgfx::v1::LovyanGFX& display, const View& view, uint16_t water_color,
                uint16_t road_color, uint16_t airport_color, uint16_t border_color) {
@@ -146,7 +231,9 @@ void draw_base(lgfx::v1::LovyanGFX& display, const View& view, uint16_t water_co
   }
   display.setTextDatum(bottom_left);
   display.setTextColor(road_color);
-  display.drawString("OSM contributors", view.x + 3, view.y + view.height - 2);
+  const char* credit = g_source == Source::embedded_world ? "Natural Earth"
+                                                          : "OSM contributors";
+  display.drawString(credit, view.x + 3, view.y + view.height - 2);
 }
 
 void draw_base(const View& view, uint16_t water_color, uint16_t road_color,
@@ -158,9 +245,19 @@ bool self_check() {
   View view{44.0f, -123.0f, 25.0f, 0, 0, 400, 400};
   int x = 0, y = 0;
   int x1 = -100, y1 = 200, x2 = 500, y2 = 200;
-  return project(view, 44.0f, -123.0f, &x, &y) && x == 200 && y == 200 &&
-         !project(view, 0.0f, 0.0f, &x, &y) &&
-         clip_line(view, &x1, &y1, &x2, &y2) && x1 == 0 && x2 == 399;
+  const bool geometry_ok =
+      project(view, 44.0f, -123.0f, &x, &y) && x == 200 && y == 200 &&
+      !project(view, 0.0f, 0.0f, &x, &y) &&
+      clip_line(view, &x1, &y1, &x2, &y2) && x1 == 0 && x2 == 399;
+  // Embedded world pack must parse under the ORCMAP1 640/32 caps.
+  reset_cache();
+  const bool embedded_ok =
+      load_from_bytes(world_coastlines_idx_start, world_coastlines_idx_end) &&
+      g_count > 0 && g_count <= kSegmentCapacity &&
+      g_label_count <= kLabelCapacity;
+  reset_cache();
+  return geometry_ok && embedded_ok &&
+         strcmp(kRuntimePath, "/orcsdr/data/regional_map.idx") == 0;
 }
 
 }  // namespace orcsdr::offline_map

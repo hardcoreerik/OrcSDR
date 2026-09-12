@@ -7,6 +7,8 @@
 | NOAA weather | NOAA/NWS | National transmitter data | public-information verification at publish time | source-dependent | curated CSV adapter required |
 | FCC FM/AM | FCC | current audio-station data export | public-data verification at publish time | source-dependent | curated CSV adapter required |
 | P25 profiles | user or named public publisher | local import/export or signed `p25_...` pack | source URL, retrieval date, transformation record, and explicit redistribution permission required; RadioReference data is not bundled | source-dependent | format supported; no system pack published |
+| World coastlines (embedded) | Natural Earth | 110m coastline GeoJSON | public domain | static with firmware | embedded ORCMAP1 default |
+| Regional map packs | OpenStreetMap contributors | Overpass / signed catalog | ODbL attribution on draw | per-pack | catalog `lane_county_map` → `/orcsdr/data/regional_map.idx` |
 | Maps | user/Companion | SD or authenticated import | attribution/manifest validation | user-managed | separate feature |
 | HF schedules | HFCC | public schedule data | explicit terms review required | seasonal | deferred |
 | LoRa profiles | LoRa Alliance | regional parameters | standards/license review required | revision-based | deferred |

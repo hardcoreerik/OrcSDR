@@ -64,7 +64,7 @@ uint8_t g_requested_pack = 0;
 constexpr const char* kIds[kBuiltInPackCount] = {
     "faa_aircraft", "faa_aviation", "noaa_weather", "fcc_broadcast", "lane_county_map"};
 constexpr const char* kTitles[kBuiltInPackCount] = {
-    "FAA AIRCRAFT", "FAA AVIATION", "NOAA WEATHER", "FCC FM / AM", "LANE COUNTY MAP"};
+    "FAA AIRCRAFT", "FAA AVIATION", "NOAA WEATHER", "FCC FM / AM", "LANE COUNTY, OR"};
 
 int pack_index(const char* id) {
   if (id == nullptr) return -1;
@@ -447,11 +447,13 @@ bool download_artifact(const Artifact& artifact, uint8_t pack_index,
   file.close();
   if (!ok) { g_fs->remove(temporary); set_message("Download hash or network failure"); return false; }
 
+  const bool map_pack = pack_index < kBuiltInPackCount &&
+      strcmp(kIds[pack_index], "lane_county_map") == 0;
   bool schema_ok = artifact.archive
       ? (memcmp(header, "PK\003\004", 4) == 0 || memcmp(header, "PK\005\006", 4) == 0)
       : pack_index == 0 ? memcmp(header, "ORCADSB1", 8) == 0
-      : pack_index == 4 ? memcmp(header, "ORCMAP1\n", 8) == 0
-                        : memcmp(header, "ORCCAT1\n", 8) == 0;
+      : map_pack ? memcmp(header, "ORCMAP1\n", 8) == 0
+                 : memcmp(header, "ORCCAT1\n", 8) == 0;
   if (!artifact.archive && g_packs[pack_index].p25_profile) {
     orcsdr::p25config::Config config{};
     char error[64]{};

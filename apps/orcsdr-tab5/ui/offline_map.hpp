@@ -9,7 +9,12 @@ namespace lgfx { inline namespace v1 { class LovyanGFX; } }
 
 namespace orcsdr::offline_map {
 
-constexpr const char kRuntimePath[] = "/orcsdr/data/lane_county_map.idx";
+// Active regional detail pack (catalog installs here). Legacy Lane County path
+// remains a load fallback so already-seeded SD cards keep working.
+constexpr const char kRuntimePath[] = "/orcsdr/data/regional_map.idx";
+constexpr const char kLegacyRuntimePath[] = "/orcsdr/data/lane_county_map.idx";
+
+enum class Source : uint8_t { none, regional, legacy_regional, embedded_world };
 
 struct View {
   float center_lat = 0.0f;
@@ -24,6 +29,9 @@ struct View {
 // Normal UI-code only. This bounded cache is never touched by SDR/audio callbacks.
 bool load(orcsdr::storage::FileSystem* filesystem);
 bool available();
+Source source();
+// Short operator-facing label for Settings / ADS-B status cards.
+const char* active_label();
 void draw_base(const View& view, uint16_t water_color, uint16_t road_color,
                uint16_t airport_color, uint16_t border_color);
 void draw_base(lgfx::v1::LovyanGFX& display, const View& view, uint16_t water_color,
