@@ -1,6 +1,6 @@
-# Tab5 native ESP-Hosted 3.0.6 migration
+# Tab5 native ESP-Hosted 3.0.6 technical record
 
-This is the source of truth for the M5Stack Tab5 P4/C6 migration. It replaces
+This records the M5Stack Tab5 P4/C6 migration and current locked transport. It replaces
 the old 2.12.6 pairing guidance for current development. Historical release
 notes remain historical records, not current installation instructions.
 
@@ -27,7 +27,7 @@ pin map for the other.
 
 | Function | Controller / slot | Pins |
 | --- | --- | --- |
-| C6 ESP-Hosted SDIO | SDMMC Slot 1, 4-bit, 40 MHz | CLK 12, CMD 13, D0 11, D1 10, D2 9, D3 8 |
+| C6 ESP-Hosted SDIO | SDMMC Slot 1, 4-bit, qualified at 10 MHz | CLK 12, CMD 13, D0 11, D1 10, D2 9, D3 8 |
 | C6 reset | ESP-Hosted board profile | GPIO 15, active high |
 | removable microSD | SDMMC Slot 0, 4-bit | CLK 43, CMD 44, D0 39, D1 40, D2 41, D3 42 |
 | Wi-Fi antenna selector | Tab5 I/O expander 0 (`0x43`) | pin 0: low internal, high external MMCX |
@@ -74,7 +74,10 @@ RTL_WIFI_BOOT_STATUS station=1 hosted_match=1 stage=none error=0x0
 
 This proves C6 enumeration, the 4-bit SDIO transport, exact version
 pairing, and P4 Wi-Fi station initialization. A live AP scan and visual screen
-acceptance remain separate checks.
+acceptance remain separate checks. The exact
+`v0.2.0-beta.6-multidongle-rc4` M5Burner package subsequently passed its
+install/boot gate and was published; that result does not promote later source
+or other hardware to Hardware-Verified.
 
 Hosted auto-init is deliberately disabled
 (`CONFIG_ESP_HOSTED_AUTO_CALL_INIT_BEFORE_APP_MAIN=n`). A checked run with it

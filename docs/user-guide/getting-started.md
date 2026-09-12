@@ -2,36 +2,36 @@
 
 ## Hardware
 
-1. Seat the Tab5 securely and connect a supported RTL-SDR Blog V4 to the USB-A host port.
-2. Attach the antenna appropriate for the band you intend to receive.
-3. Insert the prepared microSD card for databases, maps, captures, and screenshots.
-4. Use a stable power source. A depleted external battery can remain an electrical load even when USB is attached. After flashing, unplug the PC USB Serial/JTAG cable (the COM port used by `install-orcsdr.ps1`). Leaving that cable connected can brownout the Tab5 under Wi-Fi + RTL load even when battery or wall power is otherwise fine.
-5. Press the Tab5 power button and allow the staged USB-host and receiver startup to finish.
+1. Seat the Tab5 securely and connect an accepted receiver. RTL-SDR Blog V4 is
+   the tested baseline; see [feature status](feature-status.md) for experimental
+   receiver boundaries.
+2. Attach an antenna appropriate for the band you intend to receive.
+3. Insert the prepared microSD card if you need databases, maps, captures, or screenshots.
+4. Use stable power. After installation, disconnect the PC USB Serial/JTAG
+   cable; on the tested bench it can contribute to brownout under Wi-Fi plus RTL load.
+
+## Install with M5Burner
+
+The current supported user package is
+[`v0.2.0-beta.6-multidongle-rc4`](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.2.0-beta.6-multidongle-rc4).
+Open M5Burner, select the OrcSDR Tab5 package, and burn it without erasing user
+settings unless recovery instructions require an erase. The package carries
+matching ESP-Hosted 3.0.6 firmware for the onboard C6.
+
+Current M5Burner search visibility was not independently reverified during the
+documentation audit. If the entry is not visible, use the exact release page
+above rather than an older 2.12.6 installer path.
 
 ## First boot
 
-Boot lands on Home. If Auto-start reception is on, the last FM station can run in the background. Wi-Fi and phone pairing are optional; reception does not require either.
+Boot lands on Home. Receiver and Wi-Fi startup are staged. Reception does not
+require Wi-Fi; optional Wi-Fi scan/connect/catalog actions temporarily pause an
+active radio session and then attempt to restore it.
 
-## Installation
+## Developer build
 
-Current development uses ESP-IDF 5.5.4 and ESP-Hosted 3.0.6. The native P4
-application/radio path is working, but the permanent P4-to-C6 Wi-Fi handshake
-is still under acceptance. Follow the exact build, flash, and status guidance
-in [`Tab5 ESP-Hosted 3.0.6 migration`](tab5-esp-hosted-3-migration.md).
-
-Do not use the legacy 2.12.6 installer flow as a 3.0.6 verification step.
-For a native build:
-
-```powershell
-$env:IDF_PYTHON_ENV_PATH = 'C:\Espressif\python_env\idf5.5_py3.14_env'
-. 'C:\Espressif\frameworks\esp-idf-v5.5.4\export.ps1'
-Set-Location .\apps\orcsdr-tab5
-idf.py reconfigure
-idf.py build
-```
-
-The Tab5 C6 must run matching ESP-Hosted **3.0.6**. A normal P4 application
-flash does not update the C6. Do not claim Wi-Fi accepted until serial prints
-the three `I OrcSDR` C6/version/transport lines in the migration document.
-
-Do not use PlatformIO for Tab5 firmware. Preserve a recovery image before replacing known-good firmware.
+Source builds use native ESP-IDF 5.5.4 and matching ESP-Hosted 3.0.6. Do not use
+PlatformIO. Follow the [developer reference](reference/developer.md) and
+[migration/acceptance record](tab5-esp-hosted-3-migration.md). A P4-only flash
+does not prove or necessarily replace the C6 image, and a successful build is
+not hardware or RF acceptance.

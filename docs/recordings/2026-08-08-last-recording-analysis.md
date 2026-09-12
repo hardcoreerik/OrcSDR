@@ -1,5 +1,8 @@
 # Last pre-restart recording analysis
 
+> **Historical Evidence.** This analysis applies to the named 2026-08-08
+> recording and must not be read as current-release RF acceptance.
+
 Source on Tab5: `/orcsdr/rec_001_FM_91900000.wav`
 
 The file was retrieved through the USB SD readback protocol and its local

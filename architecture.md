@@ -1,210 +1,104 @@
-# OrcSDR Architecture
+# OrcSDR current architecture
 
-## Purpose and truth source
+This describes `main` at
+`c5b3423fbdeb129ebd63d8ffd5c1bced9c913c04` on 2026-09-12. Historical plans
+and validation reports explain how the design arrived here but are not current
+architecture contracts.
 
-This document describes the implemented runtime boundaries for the Tab5
-application. It is an architecture reference, not a release-acceptance record.
-[`PROJECT_STATUS.md`](PROJECT_STATUS.md) remains the authoritative project-truth
-document for build, flash, and hardware evidence.
+## Platform and dependency boundary
 
-## Driver, DSP, and board boundaries
+OrcSDR's production Tab5 firmware is a native ESP-IDF 5.5.4 application for
+ESP32-P4. The onboard ESP32-C6 runs matching ESP-Hosted 3.0.6 firmware and uses
+4-bit SDIO at the qualified 10 MHz clock. PlatformIO configurations are
+historical and unsupported.
 
-OrcSDR consumes the standalone `esp_rtl_sdr` v0.7.9 component through its C
-API. The driver owns USB/tuner control and IQ delivery; its implementation,
-tests, and P4 serial example live upstream. The Tab5 app selects callback-only
-IQ delivery and owns the downstream DSP queues and outputs. Its `radio_session`
-service records the current application owner, band, frequency, sample rate,
-and receiver state. Generation tokens reject retunes from an owner that has
-already been replaced. See the [driver integration contract](docs/API_ESP_RTL_SDR.md).
+The portable receiver boundary is the external `esp-rtl-sdr` component,
+0.8.0-rc2, pinned immutably at
+`b175dfea6782faa97e512d4a2408767c75977527` by
+`apps/orcsdr-tab5/main/idf_component.yml` and
+`apps/orcsdr-tab5/dependencies.lock`. OrcSDR uses callback delivery and owns
+DSP, UI, storage, and product behavior above that driver. The old local USB
+implementation is forced off, although disabled source blocks remain.
 
-ADS-B, P25, LoRa, and RF analysis have separate modules and interfaces. The
-P25 C4FM protocol/FEC receiver in `p25_decoder_core` accepts caller-provided
-timestamps and IQ and has no FreeRTOS, display, M5, USB, SD, or speaker
-dependency. `p25_voice` similarly owns only IMBE/FEC state and bounded 48 kHz
-PCM production. The thin `p25_decoder` adapter owns the FreeRTOS-safe snapshot
-and voice queue. `ui/main.cpp` still owns P25 tuning/follow policy, task
-scheduling, IQ capture/replay transport, and speaker delivery.
+## Application ownership
 
-The core also decodes the clear LDU2 Encryption Sync field with its inner
-Hamming and outer Reed-Solomon protection. It tags bounded voice frames with
-the validated algorithm/key state. The Tab5 follow policy mutes protected
-frames and optionally returns to the control channel; no decryption exists.
+`apps/orcsdr-tab5/ui/main.cpp` remains the top-level application and still owns
+substantial cross-cutting behavior: startup and tasks; receiver lifecycle and
+hotplug; tuning and stream ownership; generic band routing; FM, AM, WX, CB and
+Browse DSP/audio policy; RDS; P25, ADS-B, LoRa and POCSAG runtime integration;
+Wi-Fi pause/resume orchestration; catalog operations; serial and authenticated
+device commands; SD/IQ/audio transfers; LAN console command dispatch;
+documentation capture; screen transitions; and top-level touch routing.
 
-These modules still compile into the Tab5 application component. `ui/main.cpp`
-also retains FM/AM processing, RDS, driver lifecycle, other DSP policy, and
-speaker integration; `rf_analysis.cpp` still depends on M5Unified timing.
-This first P25 boundary is host-testable, but it does not yet establish a
-complete board-independent OrcSDR engine or display/audio HAL.
+main.cpp measurement (Git-normalized): 713,890 bytes (~697.2 KiB), 15,751 lines.
 
-Tab5 display, touch, speaker, and USB power setup remain application concerns.
-The task/screen boundaries below describe runtime ownership, not independently
-linkable portable components. Prior Waveshare operation and the evidence needed
-to assess shared DSP reuse are documented in [PORTING.md](docs/PORTING.md).
+The measurement uses LF-normalized repository bytes so it is stable across
+Windows and Linux checkouts. The intended modular endpoint—roughly 500 lines of
+application wiring, setup, loop, and task creation—has not been reached. This
+documentation task does not refactor it.
 
-## Runtime ownership
+## Display and dashboard ownership
 
-The native ESP-IDF application separates deterministic radio work from display
-work:
+`screen_controller` is the single framebuffer owner. A transition grants one
+screen permission to draw while radio/decoder work continues independently.
+`navigation_service` owns Home/Settings handoff mechanics; feature dashboards
+render snapshots rather than owning receiver state.
 
-- **Core 0:** USB Host and RTL-SDR bulk IQ ownership.
-- **Core 1:** DSP/audio queueing, touch, UI service, and ESP-Hosted/Wi-Fi
-  control.
-- **DMA/I2S:** audio playback proceeds independently once audio blocks are
-  queued. UI work must not run in the IQ or audio callback path.
-- **ScreenController:** owns which one application surface may write to the
-  framebuffer and receive screen-specific touch handling.
+ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`.
 
-Radio, decoder, Wi-Fi, SD, and audio state may continue to update in the
-background. They provide snapshots to a visible screen; they do not draw.
+Dashboard IDs: `home`, `fm`, `p25`, `adsb`, `shortwave`, `weather`, `cb`, `lora`, `airband`, `marine`, `satellite`, `utilities`, `settings`, `rf_lab`, `wifi_analysis`, `pocsag`, `am`.
 
-## Radio session and scan ownership
+The current screen modules include Home, FM, AM, P25, ADS-B, LoRa, POCSAG, RF
+Lab, RF Visualizer, Wi-Fi analysis, Settings, documentation capture, and the
+shared Radio/Scope/Capture surface. Dashboard catalog entries for Shortwave,
+Airband, Marine, and Satellite route into that shared receiver surface; catalog
+labels do not imply dedicated decoders or complete demodulation modes.
 
-`apps/orcsdr-tab5/ui/radio_session.{hpp,cpp}` is the application-level tuner
-ownership record. FM, P25, ADS-B, LoRa, the general radio, RF Lab, and RF
-Visualizer acquire a new generation when they take control. A retune carries
-the captured owner and generation; once another consumer acquires the tuner,
-the old token can no longer change the recorded frequency. Starting another
-radio mode cancels an active scan without restoring the old scan frequency.
+## Receiver and DSP ownership
 
-`apps/orcsdr-tab5/ui/scan_engine.{hpp,cpp}` is a bounded asynchronous state
-machine for channel lists, frequency ranges, and future window sweeps. It owns
-target order, retune/settle/advance timing, cancellation, completion,
-restoration, and progress. Callbacks retain all feature policy: FM decides
-whether a peak becomes a preset, while P25 evaluates RF and decoder results.
-No allocation, delay, filesystem work, or display work occurs in the engine.
+- `radio_session` serializes receiver ownership and generation changes.
+- `scan_engine` supplies bounded scan behavior shared by supported modes.
+- `fm_dashboard`, `am_dashboard`, `p25_dashboard`, `adsb_dashboard`,
+  `lora_dashboard`, and `pocsag_dashboard` own presentation for their modes.
+- Protocol/DSP cores hold host-testable decode logic where already separated.
+- `main.cpp` still adapts IQ callbacks, mode policy, audio, tune changes, and
+  snapshots into those modules.
 
-FM preset scanning and P25 control-channel survey use this shared engine. The
-existing LoRa survey remains in `main.cpp` because its current cadence samples
-before each retune and labels that value with the next span center. Migrating it
-to settle-then-measure semantics would change observable behavior, so that
-correction and migration require a separate hardware-validated change.
+Receiver profiles are selected inside the single driver API. Blog V4 is the
+tested baseline; Blog V3/V3C and Nooelec profiles exist with experimental
+evidence boundaries. V4L and arbitrary RTL2832 receivers are not accepted by
+inference.
 
-## ScreenController contract
+## Wi-Fi, catalog, and LAN console
 
-`apps/orcsdr-tab5/ui/screen_controller.{hpp,cpp}` is the single runtime owner
-of display routing. Its screen IDs are Home, FM, P25, ADS-B, LoRa, generic
-Radio/Scope/Capture, Settings, and documentation mode.
+ESP-Hosted starts on demand from Settings or deferred saved-profile connection.
+The production path intentionally pauses an active radio session around Wi-Fi
+scan/connect/power changes and signed catalog I/O, then attempts to restore it.
+Documentation must not describe these operations as concurrent uninterrupted
+reception.
 
-Every transition follows one sequence:
+The optional LAN console starts an ESP-IDF HTTP server on port 80 and advertises
+`orcsdr.local`. It serves telemetry, spectrum and audio plus POST
+`/api/action` commands for tune, volume/mute, span/step, and dashboard opening.
+The server has no TLS or application authentication; it is a trusted-LAN
+feature, not a public-network control plane.
 
-1. Select the next screen and, when opening Settings, remember the exact
-   return screen.
-2. Deactivate the previous display owner and clear the framebuffer once.
-3. Enter and draw the new screen's static chrome once.
-4. Finish the transition; only the active screen may perform bounded dynamic
-   repaint or screen-specific touch handling.
+The catalog client downloads signed manifests and hash-verifies staged files
+before atomic activation. Catalog ownership is bounded: user P25 configuration
+remains user-owned, and publication of one catalog does not imply every planned
+pack exists.
 
-Settings is a full-screen route, not an overlay. Closing it restores the exact
-previous surface: Home, FM, P25, ADS-B, LoRa, or generic radio.
+## Build and verification boundary
 
-`may_draw()` rejects dynamic display work during a transition or from an
-inactive screen. `is_active()` permits the one intentional static draw while a
-new screen is being entered. This distinction prevents stale dashboards,
-waterfalls, meters, and Settings content from drawing over a newly selected
-surface.
+GitHub Actions currently runs P25 core, radio-scan core, user-guide, and
+Documentation Truth workflows. Native Tab5 firmware is not currently compiled
+in CI. Host tests and documentation checks do not prove a physical Tab5,
+receiver, antenna, RF signal, display, touch path, or release package.
 
-Timed radio, recording, and retune events use the active-screen refresh
-dispatcher. They may request a bounded repaint, but they never select a
-dashboard from the current band or draw a legacy header directly.
-The RTL application task likewise posts a screen-transition request; the UI
-loop alone consumes it and writes the framebuffer.
-
-## Dashboard responsibilities
-
-Each dashboard owns only its static renderer, bounded dynamic update regions,
-and touch behavior while selected:
-
-| Surface | Owner responsibilities |
-|---|---|
-| Home | Aggregate spectrum/waterfall and navigation snapshot |
-| FM / P25 | Listening controls and active radio presentation |
-| ADS-B / LoRa | Decoder snapshot presentation; no IQ parsing or capture work in UI |
-| Generic Radio | Radio, Scope, and Capture presentation and controls |
-| Settings | Full-screen configuration and exact-route return |
-| Documentation | Temporary capture routing with state restoration |
-
-No inactive dashboard may animate, repaint, poll touch, or modify display
-state. A future dashboard must register a screen ID and route entry, update,
-and touch through `ScreenController` before it writes display primitives.
-
-## Shared radio UI service
-
-`apps/orcsdr-tab5/ui/radio_ui_service.{hpp,cpp}` owns the shared generic
-spectrum grid, axis, filter-edge, waterfall-color, and control-row geometry.
-`main.cpp` supplies compact frequency/span/filter snapshots and performs the
-state-changing radio actions after service action classification. The service
-has no RTL, USB, DSP, or touch-polling ownership, keeping live radio state
-deterministic.
-
-## Navigation service
-
-`apps/orcsdr-tab5/ui/navigation_service.{hpp,cpp}` owns Home and Settings
-screen handoff: it clears the framebuffer once, enters the selected surface,
-and restores the exact `ScreenController` return target after Settings closes.
-`main.cpp` supplies current radio/settings snapshots and the bounded renderer
-for the restored screen; it remains the owner of receiver state, NVS writes,
-and audio/DSP lifecycle.
-
-## Device status service
-
-`apps/orcsdr-tab5/ui/device_status_service.{hpp,cpp}` is the read-only source
-for displayable power, Wi-Fi, and RTL readiness data. Home and global Settings
-consume the same bounded snapshot; collecting it neither starts Wi-Fi nor
-touches SD, radio, or decoder state.
-
-The former generic **Browse** screen is retired as a user route. Until a band
-has a dedicated dashboard, tuning AM, WX, CB, airband, marine, satellite, or
-other general receiver ranges presents the shared Home workspace instead. The
-underlying radio/scope/capture services remain internal implementation support,
-not a competing navigation surface.
-
-## Header constraint
-
-The persistent header baseline is **Home**, **Device Settings**, **Battery /
-Power**, and **Volume**. `dashboard_audio_control` is the single owner of the
-Home, Settings, and FM/P25 volume-control geometry; it also owns their touch
-hitboxes and overlap self-check.
-
-- **Home:** routes to the Home screen. It may be omitted only when Home itself
-  is the active surface.
-- **Device Settings:** every user-facing dashboard reserves the 58 by 58 pixel
-  rectangle at `(1211, 8)` for the settings gear. Status content must terminate
-  before that rectangle; it may compress, but it may not cover, move, or omit
-  the control. Closing Settings returns to the exact originating screen.
-- **Battery / Power:** a readable battery state belongs in the top status area.
-- **Volume:** FM and P25 use the shared global volume/mute control today.
-  ADS-B and LoRa reserve the Home and Settings positions but still need their
-  header-status reflow before the same global volume control can be added
-  without covering live telemetry. This is an explicit migration item, not a
-  reason to duplicate a header implementation.
-
-New dashboard headers must preserve those rectangles and their touch routing.
-New header controls must extend `dashboard_audio_control` rather than add a
-second geometry or touch implementation.
-
-## Diagnostics and validation
-
-At boot, `ScreenController::self_check()` verifies transition blocking and
-Settings return for Home, FM, P25, ADS-B, and LoRa. `radio_session` checks stale
-owner rejection, and `scan_engine` deterministically checks plan validation,
-target order, virtual dwell timing, progress, completion, cancellation,
-restoration, single-target operation, and retune failure. Documentation capture
-also claims the `documentation` identity while it freezes a rendered surface,
-then restores the original controller identity before normal updates resume.
-Self-check failures emit a named serial marker during boot.
-
-The P25 core and voice modules also run in optimized and sanitizer-enabled host
-tests. Device validation uses authenticated P25 status, bounded control-channel
-IQ capture, and stopped-radio replay commands so control identity, grants,
-voice production, drop counters, heap floor, and voice-task stack headroom can
-be checked without display scraping.
-
-`RTL_SCREEN_STATUS` reports the active and return screens plus transition,
-rejected-draw, and visible-update counters. It is read-only and performs no
-periodic allocation or catalog work.
-
-Build evidence for this controller pass is native ESP-IDF compilation. The
-remaining evidence gate is on-device transition acceptance across Home, FM,
-P25, ADS-B, LoRa, generic Radio/Scope/Capture, and Settings. Until that gate
-is recorded, this is implemented source architecture rather than a new
-hardware-verified release claim.
+The Documentation Truth workflow is deterministic and does not invoke an AI
+model or consume AI/API credits. It checks dependency/document coherence,
+architecture measurement drift, workflow claims, local links, selected file
+references, source/document screen IDs, resolved stale claims, and history or
+prompt hygiene. It does **not** prove hardware functionality, RF reception,
+decoder correctness, antenna suitability, physical display/touch behavior,
+feature completeness, software authorship, or whether code was AI-generated.

@@ -1,211 +1,77 @@
 # OrcSDR roadmap
 
-This file tracks externally-sourced review feedback and the gaps it surfaces,
-as accepted roadmap items. `PROJECT_STATUS.md` remains the authoritative
-current-state and evidence-boundary document — this file exists to hold
-review-derived findings that are not yet folded into that snapshot, and to
-point at `phasing.md` for how each item gets implemented.
+This file contains future work only. Current capability and evidence live in
+[`PROJECT_STATUS.md`](PROJECT_STATUS.md); completed milestones remain in tagged
+release notes and dated validation reports.
 
-## Evidence labels
+## Near-term product gaps
 
-Same convention as `PROJECT_STATUS.md`: **Hardware-verified**,
-**Build-verified**, **Implemented**, **Recorded upstream**, **Planned**, **Deferred**.
+### Reduce `main.cpp` ownership
 
-## External review: Grok code review (2026-08-10)
+Continue moving receiver lifecycle, band policy, Wi-Fi/catalog orchestration,
+web commands, and screen/touch routing behind the modules that already exist.
+The endpoint remains a small application-wiring file. Preserve one receiver
+owner and one framebuffer owner during each extraction.
 
-A third-party review (Grok, reviewing `hardcoreerik/OrcSDR` on GitHub) assessed
-the driver, the Tab5 application, and project documentation. It rated the
-driver design, documentation discipline, and evidence-labeling practice as
-strong — comparable to production embedded driver contracts — and flagged
-five structural gaps. None of these are DSP-correctness bugs; they are
-maintainability, portability, and process gaps that get more expensive to fix
-the longer they're deferred.
+### Compile the native Tab5 firmware in CI
 
-### Gap 1 — `main.cpp` is a single ~266 KB translation unit
+The repository has P25, radio-scan, user-guide, and Documentation Truth
+workflows. The remaining CI gap is a reproducible native ESP-IDF Tab5 consumer
+build; hardware, RF, flash, and physical UI acceptance remain separate gates.
 
-DSP (demodulators, AGC, filter state), UI drawing (spectrum, waterfall,
-dashboards, controls, touch routing), the radio/band/capture state machine,
-and the serial host protocol (SD transfer, journal, auth) all live in one
-file. The review's framing: this is the embedded equivalent of collapsing an
-entire MVC stack — model, view, controller, and service layer — into one
-class. Concretely, it already makes review diffs hard to scope (a touch-
-handler change and a DSP change land in the same file with no compiler-
-enforced boundary), and it will only get worse as more radio modes/tools are
-added. RDS decoding is now implemented in `main.cpp`; ADS-B, P25, LoRa,
-RF analysis, and several UI services already have separate modules. The
-remaining task is incremental separation of shared DSP/session state, not
-recreating those existing modules.
+### Finish P25 Phase II receive
 
-**Status: Planned.** See `phasing.md` Phase 1.
+Grant transport, sync, complete-burst retention, DUID classification, and
+hardware observation already exist. Future work is payload decoding and a
+lawful AMBE+2 audio path, followed by bounded hardware/RF validation. Do not
+label Phase II voice complete before those gates pass.
 
-### Gap 2 — dual USB code paths (`RTL_USE_LEGACY_USB`)
+### Complete band-specific receiver experiences
 
-`esp_rtl_sdr` is the only live USB implementation. `main.cpp` forces
-`RTL_USE_LEGACY_USB=0` and rejects attempts to enable it, but disabled legacy
-implementation blocks remain in the source.
+- Shortwave: add correct AM/SSB modes and calibrated HF/direct-sampling evidence.
+- Airband: add proper AM aviation voice behavior and suitable-antenna RF evidence.
+- Marine: decide whether a dedicated workflow is justified and collect RF evidence.
+- Satellite: define a specific receive/decoder target before adding a dedicated UI.
+- CB: complete operator and RF acceptance with a suitable antenna/source.
 
-**Status: Runtime duplication resolved; source cleanup remains.** Track the
-remaining deletion under `PROJECT_STATUS.md` P1, separately from driver or
-DSP behavior changes.
+Generic Browse routing is already implemented and is not a substitute for these
+band-specific outcomes.
 
-### Gap 3 — no CI
+### Add POCSAG persistence deliberately
 
-The driver build, host policy tests, and standalone P4 smoke example now live
-in the `esp-rtl-sdr` repository. OrcSDR still needs consumer-build CI for the
-Tab5 application; it must not duplicate the driver's test harness.
+Current live and identity/message views are bounded RAM state. Future work may
+add persistent CAPCODE identities, an SD-backed searchable archive, and editing
+UI. Keep 512/2400 baud at host-tested status until live RF evidence exists.
 
-**Status: Partially resolved.** Driver CI is upstream; OrcSDR consumer CI remains
-planned. See `phasing.md` Phase 2.
+### Expand receiver acceptance
 
-### Gap 4 — open performance gates (already tracked, cross-referenced here)
+Collect repeatable, versioned evidence for earlier Blog V3 variants, Nooelec
+NESDR SMArt V5 RF reception, Blog V4L, and other explicitly selected devices.
+Do not generalize the single V3C result or infer compatibility from detection.
 
-The review independently re-derived the same P0 gates already open in
-`PROJECT_STATUS.md`: graphics+audio simultaneous FPS/drop-rate measurement,
-the live-speaker-vs-recorded-PCM discrepancy, and hot-plug/second-board
-validation. Waveshare operation has since been recorded upstream; see
-[PORTING.md](docs/PORTING.md). Exact-version sustained-rate and recovery gates
-remain distinct from that completed board milestone. Historical performance
-observations require their own measured acceptance, not a blanket reset to
-"not started."
+### Improve Wi-Fi/radio coexistence
 
-**Status: Already tracked** — `PROJECT_STATUS.md` P0/P1. No duplicate entry.
+The current safe implementation pauses reception for scan/connect/power and
+catalog operations. Remove that pause only if resource ownership and physical
+regression evidence show concurrent operation is reliable.
 
-### Gap 5 — monolithic touch/draw logic; no tool-shell abstraction
+### Complete data-pack coverage
 
-Touch hit-testing, button dispatch, spectrum drawing, and per-band dashboard
-painting are interwoven inside the same functions per band (e.g.
-`handle_cb_touch`, `handle_lora_touch`, `handle_fm_touch`, each hand-rolling
-its own hit-test geometry against shared screen constants). The review's
-concern: every new tool (Analyzer, Gain Lab, IQ dump, the in-flight RDS
-panel) keeps growing the same call sites rather than plugging into a shared
-shape. This is the same root cause as Gap 1, scoped down to the touch/draw
-surface specifically.
+The signed public `data-catalog-v1` and FAA reinstall evidence establish the
+catalog mechanism, not every proposed pack. Publish additional FAA, NOAA, FCC,
+map, or P25 packs only after provenance, redistribution, size, install,
+rollback, and radio-recovery gates pass.
 
-**Status: Planned.** See `phasing.md` Phase 1 (module split) and Phase 3
-(tool-shell abstraction, sequenced after the split lands so it has stable
-module boundaries to plug into).
+## Evidence still needed
 
-## Product initiative — ADS-B 1090 dashboard
+- Current M5Burner search/catalog visibility.
+- Post-RC4 receiver-recovery behavior on hardware.
+- Other Tab5/display revisions beyond the owner ESP32-P4 revision 1.3 unit.
+- Long-duration current-main soak and repeatable receiver recovery.
+- Current-release RF acceptance for Shortwave, Airband, Marine, Satellite, and CB.
 
-The supplied four-panel concept is accepted as the product contract for an
-on-device **1090 MHz Mode-S/ADS-B** tool: Radar, Aircraft List, selected
-Target, and RF Statistics share one aircraft snapshot and one selected ICAO.
-Settings is a fifth control view for receiver coordinates and radar range,
-not another data panel. The first implementation is deliberately marked
-`DEMO`; it exercises navigation and persistence without claiming live RF.
+## Follow-up cleanup
 
-Peer projects establish useful boundaries:
-
-- [T-Display-P4 ADS-B](https://github.com/jstockdale/T-Display-P4) proves the
-  ESP32-P4 + RTL-SDR vertical-app shape and informs product/reliability goals.
-- [dump1090](https://github.com/antirez/dump1090) and
-  [readsb](https://github.com/wiedehopf/readsb) inform frame validation,
-  bounded recently-seen aircraft state, and replay-first decoder checks.
-- [tar1090](https://github.com/wiedehopf/tar1090) reinforces the separation
-  between decoder state and selectable radar/list/detail views.
-
-These are architecture and behavior references only. OrcSDR does not copy
-GPL tuner, decoder, or UI source, and it does not bundle airline logos or
-aircraft photos. The 2.048 MS/s path is implemented and hardware-measured. The
-clean-room decoder, bounded state table, and live snapshot path are flashed;
-the dashboard keeps its `DEMO` badge until a newly received frame passes CRC,
-so replay and build evidence cannot be mistaken for current live aircraft.
-
-**Status: Live pipeline flashed; physical acceptance pending.** See `phasing.md`
-Phase 6.1 for the shell and Phase 6.2–6.6 for high-rate input, decoding,
-enrichment, and hardware acceptance.
-
-## Product initiative — global Settings and connectivity
-
-OrcSDR will provide one on-device Settings application for connectivity,
-receiver location, data/maps, display/audio, radio defaults, storage,
-optional Companion integration, and system information. A persistent gear
-opens it without stopping ordinary reception; disruptive SD/network work must
-use an explicit pause/resume confirmation. The existing `orclink` NVS namespace
-is retained, including migration of the legacy single Wi-Fi credential into
-the first of four bounded profile slots.
-
-Phone, BLE, GPS, map building, and TheOrc/HIVE are not prerequisites. BLE is
-shown only after the Tab5 ESP32-C6 SDIO path is proven, and M5Launcher remains
-the firmware/partition owner.
-
-**Status: Build-verified foundation; hardware acceptance and service phases
-pending.** See `phasing.md` Phase 7.
-
-### U.S. data catalog and SD sync
-
-Settings will expose a user-initiated U.S. data catalog backed by signed GitHub
-Release assets, not a permanent OrcSDR data service. Each approved pack carries
-a compact runtime index and its source archive, provenance, source date,
-license/redistribution review, size, and SHA-256. The initial packs are FAA
-aircraft registration, FAA aviation/NASR, NOAA Weather Radio, and FCC FM/AM.
-P25 remains a user-owned editable SD profile unless a future source explicitly
-permits redistribution; maps remain imported/validated separately.
-
-**Status: Build-verified catalog client and pack-publishing tooling; no public
-catalog release or hardware install evidence yet.** See `phasing.md` Phase 7.2.
-
-## Product initiative — automated guide and media
-
-OrcSDR will maintain one versioned screen manifest covering every usable view.
-Authenticated serial capture writes exact 1280x720 frames to SD, while a local
-Windows pipeline retrieves and hashes them, creates annotated PNGs, builds the
-Material for MkDocs guide, and renders captioned Kokoro-narrated videos. Live
-data is preferred only when a bounded condition is met; otherwise the capture
-is visibly labeled `DEMO`. Generated MP4 files remain outside Git history.
-
-**Status: Build-verified tooling and firmware interface; hardware capture,
-privacy review, and voice approval pending.** See `phasing.md` Phase 8.
-
-## Product initiative — native Meshtastic receive
-
-LoRa becomes a passive five-panel M5GFX dashboard: Overview, Nodes, Traffic,
-Map, and RF Health. One bounded snapshot drives every panel; absent fields use
-`—`, unknown encrypted frames remain `ENCRYPTED`, and no topology or location
-is inferred. The first protocol target is Meshtastic US LongFast receive only;
-MeshCore, transmit, pairing, and remote control are deferred.
-
-The gate sequence is recorded IQ sync/FEC/CRC, public LongFast parsing,
-authorized-key decryption, bounded queue/error handling, then an authorized
-Heltec network comparison. The 902–928 MHz survey is an explicit occupancy
-tool that restores the monitor; it is not a packet-capture substitute.
-
-**Status: Native decoder and five-panel UI implemented.** Source includes
-capture decoding, initialization/self-checks, and packet publication. Keep
-recorded-IQ and live-air acceptance tied to named evidence; this documentation
-review does not establish a new hardware pass. The serial regression bridge
-is not the native decoding implementation.
-
-## Product initiative — POCSAG pager dashboard
-
-A receive-only POCSAG pager monitor: native FSK/BCH decode, an in-memory
-CAPCODE identity table, a RAM-only session list, and a five-view
-M5GFX dashboard (LIVE/IDS/SIGNAL/ACTIVITY/SESSION), architected like P25 —
-a pure host-testable protocol/DSP core, a thin runtime adapter, and a
-`ScreenController`-routed dashboard that only ever renders a snapshot.
-POCSAG rides the existing hardware-verified 960 kS/s RTL front end rather
-than adding a second high-rate IQ path. Frequency and baud are a
-user-edited SD scan profile (`/orcsdr/pocsag_scan.cfg`), not a hardcoded default —
-POCSAG channels vary by country and carrier.
-
-**Status: Hardware-verified at 1200 baud.** The Tab5 decoded an in-house
-433.920 MHz `TEST` transmission on CAPCODE 1234560; the same transmission was
-independently decoded by a Flipper Zero. LIVE, IDS, SIGNAL, ACTIVITY, and
-SESSION render bounded live data. SD persistence, editing UI, searchable
-archive, profile editor, and broader RF acceptance remain open. See
-`phasing.md` Phase 10.
-
-## Summary table
-
-| Gap | New or already tracked | Phase |
-|---|---|---|
-| `main.cpp` monolith | New | Phase 1 |
-| Dual USB paths | Already tracked (`PROJECT_STATUS.md` P1) | Linked into Phase 1 |
-| No CI | New | Phase 2 |
-| Open performance gates | Already tracked (`PROJECT_STATUS.md` P0/P1) | Unchanged |
-| No tool-shell abstraction | New | Phase 3 |
-| ADS-B 1090 dashboard | Product initiative | Phase 6 |
-| Global Settings and connectivity | Product initiative | Phase 7 |
-| Automated guide and media | Product initiative | Phase 8 |
-| Native Meshtastic receive | Product initiative | Phase 9 |
-| POCSAG pager dashboard | Product initiative | Phase 10 |
+`apps/orcsdr-tab5/tools/patch_m5gfx.py` appears to retain obsolete
+PlatformIO/NEONDRIVE-era assumptions. Confirm it has no native build dependency
+before removing it in a separate source/tool cleanup change.

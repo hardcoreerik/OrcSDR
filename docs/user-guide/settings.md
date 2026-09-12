@@ -17,4 +17,7 @@ Saved Wi-Fi passwords are masked and never returned through the Settings UI or d
 
 Companion → ENABLE starts the TV Mission Control page at `http://<tab5-ip>/` and
 advertises `orcsdr.local`. Use that URL from a browser or the sideloaded
-`apps/orcsdr-tv` app. The console does not accept tune or volume commands.
+`apps/orcsdr-tv` app. This is a read/write HTTP control surface, not only a
+viewer: it can tune, change volume or mute state, adjust span/step, and open
+dashboards. It has no TLS or application authentication. Enable it only on a
+trusted LAN, and do not expose port 80 to the Internet.

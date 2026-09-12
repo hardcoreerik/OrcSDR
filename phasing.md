@@ -1,5 +1,10 @@
 # Implementation phasing: Grok review gaps
 
+> **Historical execution ledger.** Completed and superseded phases are retained
+> for chronology; this file is not the current capability source or future
+> roadmap. Use [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for current evidence and
+> [`Roadmap.md`](Roadmap.md) for remaining work.
+
 Implementation plan for the gaps tracked in `Roadmap.md`. Follows the same
 phase/exit-criteria shape as `PROJECT_STATUS.md`'s P0/P1/P2 roadmap. Each
 phase is scoped to land independently and keep the firmware building and

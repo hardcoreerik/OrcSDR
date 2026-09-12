@@ -1,5 +1,11 @@
 # P25 Phase II work phase
 
+> **Historical Evidence / superseded work plan.** This records the branch and
+> gate sequence used to land the current Phase II transport, sync, complete
+> burst retention, and DUID classification stages. Branch names below are not
+> the current worktree. Current gaps are payload decode and AMBE+2 audio; see
+> [`PROJECT_STATUS.md`](../PROJECT_STATUS.md) and [`Roadmap.md`](../Roadmap.md).
+
 This work adds clear-voice P25 Phase II in small, independently testable pull
 requests while preserving the working Phase I receiver. Public status remains
 **P25 WIP** until live Phase II audio passes.

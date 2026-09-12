@@ -31,16 +31,16 @@ Current release images include the matching ESP-Hosted C6 firmware used by the T
 - **Home:** tune and listen while viewing the live spectrum, waterfall, signal level, receiver status, and recently used dashboards.
 - **FM Radio:** receive broadcast FM with stereo audio, RDS station information, presets, and station tuning tools.
 - **AM Radio:** receive broadcast AM with region-aware channel steps, presets, automatic tuning, and a full-band station scan.
-- **Shortwave:** explore HF signals with a general-purpose shortwave receiver workspace and selectable demodulation modes.
+- **Shortwave:** enter the generic Browse/NFM workspace for experimental HF exploration; calibrated HF and complete AM/SSB modes are not yet available.
 - **Weather:** quickly tune the standard NOAA weather-radio channels.
-- **Airband:** listen to VHF aviation voice channels and use saved airport and frequency presets.
+- **Airband:** opens generic Browse near 121.5 MHz. Proper AM aviation voice reception is not yet implemented.
 - **Marine:** listen across the standard VHF marine channel plan.
 - **CB Radio:** tune the 40-channel Citizens Band service using AM or supported sideband modes.
 - **P25 Radio:** monitor trunked P25 control channels and follow supported voice traffic.
 - **ADS-B:** receive 1090 MHz aircraft broadcasts and show decoded aircraft, position, altitude, and flight details.
 - **LoRa:** passively monitor LoRa and Meshtastic traffic with spectrum, packet, node, traffic, map, and RF-health views.
-- **POCSAG:** receive pager traffic, identify CAPCODEs, and retain decoded messages in a local archive.
-- **Satellite:** provides a dedicated workspace for receiving and inspecting satellite signals.
+- **POCSAG:** receive pager traffic and inspect bounded RAM-only CAPCODE/message state. A persistent searchable archive is not implemented.
+- **Satellite:** opens generic Browse near 137.5 MHz; no dedicated satellite decoder or dashboard is implemented.
 - **RF Lab:** make live RF measurements, inspect receiver behavior, record IQ data, and open full-screen visualization tools.
 - **2.4 GHz Wi-Fi:** survey nearby access points, channels, signal strength, and advertised network security using the Tab5 wireless co-processor.
 - **Settings:** manage audio, display, Wi-Fi, storage, data packs, firmware information, and device updates.

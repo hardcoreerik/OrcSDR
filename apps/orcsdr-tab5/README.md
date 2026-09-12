@@ -1,6 +1,8 @@
 # OrcSDR Tab5 app (portable RF shell + radio)
 
-Measured M5Stack **Tab5** (ESP32-P4) + official RTL-SDR Blog V4 USB host path.
+M5Stack **Tab5** (ESP32-P4) native ESP-IDF application. RTL-SDR Blog V4 is the
+tested baseline; V3/V3C and Nooelec profiles have narrower experimental
+evidence boundaries documented below.
 
 Direction: not only an FM radio — a **portable RF tool shell** where listen,
 scope, and capture are first tabs, and later tools (band scan, IQ dump, gain
@@ -46,8 +48,16 @@ Driver component (portable USB/stream):
 immutable release by `main/idf_component.yml` and `dependencies.lock`. Do not
 substitute a local component path or a moving branch.
 
-Hard rules: clean-room V4 only; no librtlsdr; do not claim calibrated OTA RF
-from UI features alone.
+Hard rules: clean-room `esp-rtl-sdr` integration; no librtlsdr; do not claim
+calibrated OTA RF or general receiver compatibility from UI/detection alone.
+
+| Receiver | Current evidence |
+|---|---|
+| Blog V4 | RF-Verified tested baseline. |
+| Blog V3C | RF-Verified/Experimental on one RC4 unit; gain/sensitivity provisional. |
+| Earlier Blog V3 | Implemented/Experimental; broad compatibility Not Verified. |
+| Nooelec NESDR SMArt V5 | Implemented/Experimental; repeatable RF Not Verified. |
+| Blog V4L and other receivers | Not Verified/Unsupported unless explicitly profiled and accepted. |
 
 ## Build (native ESP-IDF)
 

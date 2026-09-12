@@ -1,239 +1,119 @@
-# OrcSDR project status
+# OrcSDR current project status
 
-Hardware snapshot date: **2026-08-27**
-Historical snapshot branch: **`codex/esp-rtl-sdr-v0.7.9`**
-Historical mainline baseline: **`fc30c1030f26c8dd034d65917ec50e6880b7a871`**
-Documentation/source review: **2026-09-03**, against `main` at **`3eb67fb`**.
+Current source snapshot: **2026-09-12**, `main` at
+**`c5b3423fbdeb129ebd63d8ffd5c1bced9c913c04`**.
 
-This review reconciles driver/board provenance and current source boundaries;
-it does not rerun hardware acceptance or refresh every historical measurement.
+Current published firmware: **`v0.2.0-beta.6-multidongle-rc4`**. Its exact
+M5Burner package was installed and booted on the owner Tab5 before publication.
+That release evidence does not automatically prove later `main` commits or
+other hardware.
 
-This is the authoritative current-status and roadmap index. Historical design,
-research, and validation documents remain useful evidence, but do not override
-this file when their paths, versions, or completion claims differ.
+This is the authoritative current capability and evidence summary. Release
+notes and validation reports are immutable, dated evidence; they do not
+override this document for current state. Future work belongs in
+[`Roadmap.md`](Roadmap.md).
 
-## Evidence labels
+## Evidence vocabulary
 
-| Label | Meaning |
+| Status | Meaning |
 |---|---|
-| **Hardware-verified** | Observed on the named physical device and recorded |
-| **Build-verified** | Compiled or validated from repository artifacts, without a hardware claim |
-| **Implemented** | Present in source; current hardware acceptance may still be pending |
-| **Recorded upstream** | Prior operation documented in the driver repository; not a new local hardware run or proof of every later release gate |
-| **Planned** | Accepted roadmap work, not implemented |
-| **Deferred** | Intentionally outside the current milestone |
+| **Planned** | No integrated implementation exists. |
+| **Implemented** | An integrated source path exists. |
+| **Build-Verified** | The relevant target compiled or a deterministic validator passed. |
+| **Runtime-Verified** | The feature executed successfully in software or on target. |
+| **Hardware-Verified** | It executed on specifically identified physical hardware. |
+| **RF-Verified** | It was confirmed with a suitable real RF signal/source and recorded evidence. |
+| **Regression-Tested** | A repeatable automated or scripted regression exists. |
+| **Community-Verified** | It was independently demonstrated on externally owned hardware. |
+| **Experimental** | Reliability/support modifier that may accompany an evidence level. |
+| **Unsupported** | Deliberately outside the compatibility contract. |
+| **Not Implemented** | Known missing behavior. |
+| **Historical Evidence** | Valid dated evidence, not a current-version claim. |
 
-## Current snapshot
+## Current platform and dependencies
 
-| Area | State | Evidence boundary |
-|---|---|---|
-| `esp_rtl_sdr` API | **Hardware-verified, v0.7.9** | Immutable GitHub dependency; callback-only delivery on Tab5 |
-| Blog V4 USB identity and 960 kS/s stream | **Hardware-verified** | Tab5 + Blog V4 on the measured USB host path |
-| Multi-URB stream and metrics | **Hardware-verified** | Three 32-KiB transfers; OrcSDR does not allocate the pull ring |
-| In-stream hot retune | **Hardware-verified** | `esp_rtl_sdr` v0.7.9; settle-time measurement remains pending |
-| Core split | **Implemented** | USB core 0; IQ delivery and app work on core 1 |
-| Native Tab5 build | **Hardware-verified** | Native ESP-IDF 5.5.4 build; ESP-Hosted host/C6 firmware matched at 3.0.6 on COM17. |
-| Tab5 radio shell | **Implemented** | FM/AM/WX/CB/LoRa, radio/scope/capture tabs, sound/GFX toggles |
-| Screen ownership controller | **Hardware-verified** | `ScreenController` is the sole display-route owner for Home, FM, P25, ADS-B, LoRa, generic Radio/Scope/Capture, Settings, and documentation mode. The Tab5 transition check passed after the final UI-loop handoff; documentation capture now claims and restores its controller identity. |
-| CB channel dashboard | **Flashed; operator acceptance pending** | 40-channel AM/USB/LSB plan, 2/3 scope, touch channel dial, clarifier, squelch, live S/RF bar |
-| LoRa/Meshtastic receive path | **Native implementation present; historical hardware evidence not refreshed here** | `lora_native_decoder` performs capture decoding and feeds the dashboard; the serial `LORA_PACKET` bridge remains separate. The earlier snapshot recorded flashed 250 ms pre-roll, adaptive 9 dB energy capture, SD bridge, and synthetic/COM17 checks, with live-RF acceptance pending. Source review does not refresh that hardware verdict. |
-| SDR navigation | **Implemented; Home-first migration in progress** | Full 24–1766 MHz tune range, US band/use guide, direct entry, pinch, peak find, and FM auto tune. The legacy Browse surface is retired from user navigation; Home is the interim workspace for bands without a dedicated dashboard. |
-| Browse demodulation | **Partial** | NFM spectrum/listen path; AM/SSB/digital mode selection and sub-24 MHz direct sampling remain open |
-| Variant-4 splash | **Implemented on this branch** | Looping SD asset playback and static ready/button overlay |
-| Final splash smoothness | **Active performance gate** | Compact 24 FPS pack verified; 25 MHz SPI measured 15–16 FPS |
-| Current SD splash asset | **Hardware-verified** | 14,271,890 bytes, 240 frames at 24 FPS; device SHA-256 matches source |
-| Splash/USB core isolation | **Hardware-verified** | SD reader pinned to core 1 with a per-frame WDT yield; 28-second run had no WDT/panic |
-| In-device SD file transfer | **Hardware-verified** | COM17 list/get/put, staged writes, device SHA-256, rollback |
-| Graphics with audio enabled | **Open performance gate** | Establish before/after `RTL_SPECTRUM_FPS` and audio-drop evidence |
-| Audio/graphics optimization pass | **Implemented on this branch** | 10 FPS parity target, lighter DSP hot path, timing counters; hardware A/B pending |
-| FM post-DSP recording quality | **Hardware-verified** | Ten SD WAVs are valid 48 kHz mono PCM with no clipping or digital-zero gaps; a 12-second capture was clean enough for music fingerprinting |
-| Tab5 audio output | **Hardware-verified** | Recorded post-DSP PCM is clean, and operator testing confirmed that the Tab5 3.5 mm output through an external speaker sounds as intended. The built-in speaker's limited fidelity explains the reported quality difference; it is not evidence of a DSP, queue, or DMA defect. |
-| Paired FM IQ/WAV DSP lab | **Planned** | Buffer synchronized raw CU8 IQ, post-DSP PCM, and metadata in PSRAM; write after capture and evaluate filter variants offline |
-| AM/HF fidelity | **Experimental** | Do not claim calibrated HF/direct-sampling support |
-| Second ESP32-P4 board | **Recorded upstream** | Waveshare Module-DEV-KIT operation under OrcSDR is documented by the driver project; [PORTING.md](docs/PORTING.md#existing-implementation-and-evidence) links the provenance and FM application notes. Exact-version soak/recovery acceptance remains separate. |
-| rtl_tcp over Ethernet | **Planned** | App does not exist yet |
-| ADS-B 1090 | **Hardware-verified** | COM17 upload hash-verified. Five-minute 1090 MHz runs sustained approximately 2.048 MS/s with startup-only drops and no later growth. Live CRC-valid DF17 traffic was decoded, cross-checked against an independent track, displayed on the Tab5, and enriched from the SD-backed FAA database. Operator testing confirmed that ADS-B starts and continues receiving normally. The dashboard now displays only live receiver state; an empty sky reports waiting/searching without synthetic aircraft or a `DEMO` fallback. |
-| User guide and media pipeline | **Build-verified** | Native build plus 44-screen manifest, capture tooling, strict MkDocs site, and local narrated-video scripts. Hardware captures, privacy review, voice approval, and rendered media remain pending. |
-| POCSAG pager dashboard | **Build-verified; boot hardware-verified** | `pocsag_decoder_core` (host-testable, no FreeRTOS/M5GFX/USB/SD dependency) implements the full chain: DC-reject + two-stage CIC decimation (960 kS/s to 38.4 kS/s) + FM/FSK discriminator, parallel 512/1200/2400-baud x normal/inverted AUTO search with false-positive-controlled sync correlation, BCH(31,21) syndrome-table correction (0/1/2-bit correct, 3+ reject), even-parity cross-check, and address/numeric/alphanumeric codeword assembly. `tools/test-pocsag-core.ps1` passes both an optimized build and an ASan/UBSan build against deterministic BCH and full synthetic-IQ-to-message round-trip vectors. Wired live: `radio::Band::pocsag`/`Owner::pocsag`, a Home dashboard-catalog entry, and an RTL band-guide quick-launch tune the shared 960 kS/s RTL stream into the decoder inline, publish decoded messages through a mutex-protected ring into a five-tab M5GFX dashboard (`pocsag_dashboard`) routed through `ScreenController`. LIVE/IDS/SIGNAL/ACTIVITY render real content; ARCHIVE remains a placeholder. A "FIND PAGERS" discovery scan (shared `scan_engine`, user-editable `/orcsdr/pocsag_scan.cfg` channel list, BCH-valid-required winner selection) is build-verified but not yet run against a real signal. **Flashed and booted on a physical Tab5**: fixed a real hardware-only boot crash (three `static` objects starving ESP-IDF's early internal-DRAM DMA-pool reservation — undetectable by build/link/host-test, only a flashed boot proved it; see `phasing.md` Phase 10 commit history), then confirmed a clean boot with `RTL_POCSAG_SELF_CHECK_OK` and no abort. One live decode was received on an untested frequency, but its own diagnostics (0% valid codewords, 87.5% uncorrectable, immediate sync loss) show it was very likely a false-positive sync-word lock on noise, not a genuine page — **no message has yet been confirmed as a real, over-the-air POCSAG decode**. No CAPCODE identity store persistence, message archive, or Settings UI exists yet, and the numeric/alphanumeric character-set bit order remains uncross-checked against a live signal or an external oracle. |
-## Roadmap
-
-### P0 — finish the Tab5 product loop
-
-- [ ] Measure graphics-on/audio-off and graphics-on/audio-on FPS for five minutes.
-- [x] Remove the deliberate audio-on render throttle; retain a reduced cadence only when drops rise.
-- [x] Remove the full-URB app copy, software `double` accumulation, and per-sample `tanhf`.
-- [x] Add `dsp_load_pct`, block count, and maximum block time to the FPS log.
-- [ ] Verify the optimized path keeps audio drops near zero on hardware.
-- [ ] Add the paired FM DSP capture described in `docs/FM_DSP_CAPTURE_LAB.md`:
-      5–8 seconds of 960 kS/s CU8 IQ, synchronized 48 kHz PCM, and settings metadata.
-- [ ] Save paired captures after reception stops as SigMF data/metadata plus WAV;
-      do not write to SD in the real-time receive path.
-- [ ] Replay one IQ capture through at least three offline filter variants and
-      compare SNR, bandwidth, clipping, discontinuities, and CPU cost.
-- [x] Compare the built-in speaker with the Tab5 3.5 mm output. External-speaker
-      playback sounds as intended; the reported fidelity difference comes from
-      the built-in speaker rather than the DSP, queue, or DMA path.
-- [ ] Confirm sound defaults off, NAV leaves animation live, and controls remain static.
-- [ ] Accept BROWSE panning/direct entry and US band-guide labels on the physical display.
-- [ ] Accept CB channel snapping, scope taps, dial, AM/USB/LSB voice,
-      clarifier, squelch, S/RF display, and six dashboard controls.
-- [x] Add adaptive energy-triggered LoRa IQ capture and a host watcher that
-      pauses, SHA-256 verifies, decodes, returns text, and resumes the SDR.
-- [ ] Transmit a live Meshtastic packet and record `RTL_LORA_ENERGY` through
-      `LORA_MESSAGE_OK`, then visually accept the readable Tab5 message.
-- [x] Install the final variant-4 SD pack and record stable loop FPS (15–16 FPS at 25 MHz SPI).
-- [x] Soak the splash past Ready for 28 seconds with no `task_wdt` reset or panic.
-- [x] Copy the 14,271,890-byte compact splash pack through COM17; device SHA-256 matched `AA490D5E…BCD1FA`.
-- [ ] Run operator acceptance for FM, WX, AM experimental mode, volume, mute,
-      start/stop, pinch navigation, peak find, and auto tune.
-
-Exit: smooth scope with audio enabled, no control corruption, approximately zero
-audio drops, a serial log attached to the validation record, and a repeatable
-paired IQ/WAV dataset that can drive FM filter decisions without tuning by ear.
-
-### P1 — close driver reliability and portability
-
-- [ ] Prove 960 kS/s for five minutes at at least 95% effective sample rate with
-      zero fatal USB errors.
-- [ ] Unplug/replug during streaming and recover to Ready without reboot.
-- [ ] Record retune settle time and recovery behavior after a failed retune.
-- [x] Retire the legacy in-app USB path: enabling it is a compile-time error; `esp_rtl_sdr` is the only live implementation.
-- [ ] Delete the remaining disabled legacy source blocks in a separate code change.
-- [x] Move standalone smoke ownership to the `esp-rtl-sdr` repository.
-- [x] Record existing Waveshare second-board operation with upstream provenance.
-- [ ] Attach exact-version sustained-rate and unplug/replug evidence for the boards covered by a release; prior operation alone does not close these gates.
-
-Exit: release-specific driver acceptance is recorded for both P4 boards and
-the Tab5 app has no remaining duplicate USB implementation. Prior Waveshare
-operation is already recorded; disabled legacy code still needs deletion.
-
-### P2 — network transport
-
-- [ ] Add a single-client `rtl_tcp` app over Ethernet.
-- [ ] Sustain at least 1.0 MS/s for ten minutes and document drop rate.
-- [ ] Add mDNS discovery; evaluate Wi-Fi IQ only after Ethernet is stable.
-
-### P3 — ADS-B 1090
-
-- [x] Remove the bring-up-only synthetic aircraft and `DEMO` dashboard path;
-      Radar, List, Target, RF Stats, and Settings now show live receiver state.
-- [x] Measure the 2.048 MS/s driver path at 1090 MHz for five minutes.
-- [x] Complete replay-tested Mode-S/DF17 decode: validated 56-bit DF11 and
-      112-bit DF17 extraction, CRC/ICAO, identity/altitude/velocity, global
-      CPR, captured-waveform replay, and bounded 64-aircraft state.
-- [x] Connect the decoder table to a revisioned live dashboard snapshot.
-- [x] Add SD-backed FAA registration, model, and registered-owner enrichment
-      without dropping the complete source database or blocking the IQ callback.
-- [x] Accept live aircraft against an independent receiver on the Tab5.
-
-Detailed gates and clean-room boundaries live in `phasing.md` Phase 6.
-
-### P4 — global Settings and optional connectivity
-
-- [x] Add a build-verified isolated eight-category Settings shell with a
-      persistent gear and ADS-B contextual deep link.
-- [x] Preserve `orclink` and migrate the current single Wi-Fi credential into
-      slot zero of a bounded four-profile layout.
-- [x] Persist the first local display/audio/radio/location defaults without
-      exposing stored passwords or presenting unsupported controls as active.
-- [x] Apply the isolated ESP-Hosted A–F coexistence result in the production
-      path: do not stop RTL reception for Wi-Fi scan/connect; keep SDIO pin
-      setup before station mode, clean `WiFi.mode(WIFI_OFF)` teardown, USB host
-      on core 0, and DSP/audio/UI/Hosted control on core 1.
-- [ ] Hardware-verify navigation, bounded repaint, reception coexistence, and
-      reboot migration, including `RTL_WIFI_COEX` sample-rate, USB-drop,
-      audio-drop, DSP-block, UI-cadence, and scan/connect-latency evidence.
-- [ ] Complete Wi-Fi editing/keyboard, safe manifest downloads, maps/storage,
-      BLE feasibility, optional Companion, and M5Launcher phases.
-
-### P4.1 — U.S. data catalog
-
-- [x] Add build-verified manual Settings catalog UI and a signed GitHub Release
-      manifest client for independent FAA aircraft, FAA aviation, NOAA Weather
-      Radio, and FCC FM/AM SD packs.
-- [x] Stream catalog artifacts through hash-verified `.part` files with atomic
-      activation/backup and keep P25 configuration outside catalog ownership.
-- [ ] Publish rights-reviewed data assets and hardware-verify download,
-      rollback, source archive retention, and concurrent RTL/Wi-Fi behavior.
-
-Detailed gates live in `phasing.md` Phase 7. Build verification is not live
-network, BLE, Companion, Launcher, or hardware acceptance evidence.
-
-### P5 — public user guide and media
-
-- [x] Add firmware-owned documentation screen IDs and build-time coverage checks.
-- [x] Add authenticated, hash-reported 1280x720 SD capture and state restoration.
-- [x] Add the manifest-driven Pages, annotation, narration, caption, transcript,
-      thumbnail, and video pipeline.
-- [ ] Capture and privacy-review every view on hardware.
-- [ ] Approve the voice sample, render the suite, and review Pages before deploy.
-
-Detailed gates live in `phasing.md` Phase 8.
-
-### Deferred until measurements justify them
-
-- Bias tee, direct sampling/HF, gain/PPM controls, SpyServer, WebSDR, 978 MHz UAT,
-  multi-client IQ fanout, and ESP32-S2/S3 production-rate claims.
-- LP-core DSP offload: the P4 LP core is intended for low-power service work and
-  is not the first choice for the 960 kS/s floating-point demodulation path.
-- P4 PIE/ESP-DSP assembly kernels: adopt only for a profiler-identified FFT,
-  FIR, or vector hot spot with an A/B quality and throughput check.
-- P4 PPA: evaluate for framebuffer fill/blend/scale work only; it does not
-  replace RF demodulation.
-
-## Commit-derived history
-
-| Date | Commit | Delivered |
-|---|---|---|
-| 2026-08-06 | `96e0370` | Initial monorepo, Tab5 app, clean-room driver skeleton, specs |
-| 2026-08-06 | `fc9678b` | Peer analysis and gap-closing implementation plan |
-| 2026-08-06 | `4948c8e` | Hardened standalone public API contract |
-| 2026-08-07 | `ba6ffc3` | Gate-2 multi-URB streaming, IQ delivery, component-backed Tab5 radio |
-| 2026-08-07 | `bda29fd` | FM quality work and portable radio/scope/capture shell |
-| 2026-08-08 | `84cf9a1` | Variant-4 animated boot splash |
-| 2026-08-08 | `f972eb3` | Pinch span and filter navigation |
-| 2026-08-08 | `f28b131` | FM auto tune and peak controls |
-| 2026-08-08 | `0c76bf1` | SDR navigation drawer |
-| 2026-08-08 | `269b191` | Muted-mode scope performance prioritization |
-| 2026-08-08 | `20441dc` | Scope animation remains live with navigation open |
-| 2026-08-08 | `cc463bb` | LoRa dashboard/decoder and CB sideband, clarifier, squelch |
-
-The entries after `bda29fd` are branch work until merged into `main`; a commit is not
-hardware proof and a branch is not considered landed until its merge is verified.
-
-## Verification commands
-
-Use the repository's native ESP-IDF 5.5.4 workflow; PlatformIO is not the
-production Tab5 build path:
-
-```powershell
-Set-Location F:\Ai\OrcSDR\apps\orcsdr-tab5
-.\tools\build-tab5-idf.ps1
-```
-
-Required runtime lines for the next performance record:
-
-```text
-RTL_INSTALL ok v0.7.9 ...
-RTL_CORE_SPLIT usb=core0 iq_demod+ui=core1 ...
-RTL_SPECTRUM_FPS fps=... audio_dropped=... audio_chunks=...
-                    dsp_load_pct=... dsp_blocks=... dsp_block_us_max=...
-SPLASH_FPS ...
-```
-
-## Documentation map
-
-| Document | Role |
+| Item | Current state |
 |---|---|
-| `PROJECT_STATUS.md` | Current truth, priorities, and evidence boundary |
-| `architecture.md` | Implemented runtime ownership, ScreenController contract, and dashboard drawing boundary |
-| `docs/IMPLEMENTATION_FROM_PEER_RESEARCH.md` | Detailed workstreams and design rationale |
-| `docs/PORTING.md` | Driver extraction and target gates |
-| `docs/API_ESP_RTL_SDR.md` | Pinned driver integration contract; complete public API maintained upstream |
-| `docs/API_SERIAL_CLI.md` | Tab5 serial CLI — tuning, telemetry, RDS status, presets, file transfer |
-| `docs/M5TAB5_VALIDATION_REPORT.md` | Historical hardware evidence |
-| `docs/GATE2_IMPLEMENTATION_LOCK.md` | Historical Gate-2 handoff snapshot |
-| `docs/OrcSDR_Splash_README.md` | Splash asset and playback contract |
-| `docs/cb/README.md` | CB channel, sideband, clarifier, squelch, and asset controls |
-| `docs/lora/README.md` | Native LoRa capture/decoder boundary and serial regression bridge |
-| `docs/FM_DSP_CAPTURE_LAB.md` | Measured FM WAV evidence and paired IQ/WAV DSP-lab implementation plan |
+| Firmware policy | Native ESP-IDF only; PlatformIO files are historical and unsupported. |
+| ESP-IDF | 5.5.4 |
+| ESP-Hosted host/C6 | 3.0.6 / 3.0.6 over Tab5 SDIO at the qualified 10 MHz clock |
+| M5Unified / M5GFX | 0.2.20 / 0.2.27 |
+| `esp-rtl-sdr` | 0.8.0-rc2, immutable pin `b175dfea6782faa97e512d4a2408767c75977527` in the manifest and lock file |
+| USB implementation | Current `esp-rtl-sdr` path; the legacy USB source is compiled out but remains in source. |
+| Radio policy | Receive-only. Transmission is Not Implemented. |
+
+## Receiver evidence
+
+| Receiver | Status | Boundary |
+|---|---|---|
+| RTL-SDR Blog V4 | **RF-Verified / tested baseline** | Primary release receiver. |
+| RTL-SDR Blog V3C | **RF-Verified / Experimental** | One V3C passed RC4 detection, initialization, streaming, FM/RDS, retune, hotplug, and USB/battery boot. Gain and sensitivity comparisons remain provisional. |
+| Earlier RTL-SDR Blog V3 variants | **Implemented / Experimental** | Profile exists; the V3C result is not a blanket earlier-V3 compatibility claim. |
+| Nooelec NESDR SMArt V5 | **Implemented / Experimental** | Detection and streaming are provisional; repeatable RF reception is Not Verified. |
+| RTL-SDR Blog V4L | **Not Verified** | No explicit profile acceptance evidence was found. |
+| Other receivers | **Unsupported / Not Verified** | Generic RTL2832 compatibility is not claimed. |
+
+## Capability and evidence matrix
+
+| Capability | Status | Evidence boundary and limitations |
+|---|---|---|
+| FM receive, stereo, RDS, presets | **RF-Verified / Regression-Tested** | Verified on Blog V4 and V3C. Results remain bounded to the tested dongle, antenna, band, and setup. |
+| AM broadcast dashboard and 119-channel scan | **Hardware-Verified / Experimental** | The exact RC4 package exercised the dashboard and scan. General reception quality and gain calibration are not established. |
+| NOAA Weather Radio | **Implemented** | Current-release RF acceptance is Not Verified. |
+| CB | **Implemented / Runtime-Verified** | Flashed and exercised; operator/RF acceptance is still pending. |
+| Shortwave | **Implemented / Experimental** | Routes to the generic Browse/NFM workspace. A complete calibrated HF AM/SSB experience is Not Implemented. |
+| Airband | **Implemented / Experimental** | Routes to generic Browse near 121.5 MHz using NFM. Proper AM aviation voice is Not Implemented. |
+| Marine | **Implemented / Experimental** | Generic NFM routing exists; no dedicated dashboard or current RF acceptance is recorded. |
+| Satellite | **Implemented / Experimental** | Generic Browse routing near 137.5 MHz exists. No dedicated satellite decoder/dashboard is implemented. |
+| P25 Phase I | **RF-Verified / Hardware-Verified / Regression-Tested** | Documented control, clear voice, encrypted-call detection/muting, and follow behavior. System compatibility remains evidence-bounded. |
+| P25 Phase II | **Implemented / Runtime-Verified / Regression-Tested / Experimental** | Grant transport, burst sync, complete-burst retention, DUID classification, and hardware observation exist. Payload decode and AMBE+2 voice/audio are Not Implemented. |
+| ADS-B 1090 | **RF-Verified / Hardware-Verified / Regression-Tested** | Live CRC-valid traffic was independently track-compared and FAA-enriched. It is live-only and reception depends on antenna, location, and traffic. |
+| LoRa/Meshtastic receive | **Hardware-Verified / Experimental** | Native receive and dashboard paths exist and traffic has been observed. Reliability, missed-packet rate, backlog behavior, and antenna coverage remain bounded experiments. |
+| POCSAG | **RF-Verified at 1200 baud / Regression-Tested** | `TEST` for CAPCODE 1234560 was decoded on Tab5 from an in-house 433.920 MHz source and independently on a Flipper Zero. 512/2400 are host-tested only. Identity/message state is RAM-only; persistent searchable archive is Not Implemented. |
+| RF Lab and RF Visualizer | **Implemented / Regression-Tested** | Integrated screens and self-check/regression tooling exist; they do not prove RF calibration. |
+| Wi-Fi analysis | **Implemented / Hardware-Verified / Experimental** | ESP-Hosted 3.0.6 and access-point survey work on the owner Tab5. Scan, connect, power-off, and catalog I/O deliberately pause and then resume radio reception. |
+| Signed data catalog | **Hardware-Verified / Experimental** | Public `data-catalog-v1` exists; FAA catalog reinstall and radio recovery are recorded. This does not mean every proposed pack is published or accepted. |
+| LAN web console | **Implemented / Experimental** | Opt-in HTTP telemetry, audio, spectrum, tuning, volume/mute, span/step, and dashboard actions. No TLS or authentication; trusted LAN only. |
+| Android TV client | **Implemented / Experimental** | LAN client only; the Tab5 remains the radio. |
+| Global Settings and documentation capture | **Implemented / Hardware-Verified** | Current screens are integrated under the display owner; exact capture coverage remains release/evidence specific. |
+
+## Automated validation
+
+| Workflow/check | Current coverage |
+|---|---|
+| P25 core | Optimized and ASan/UBSan host tests plus data-catalog validation. |
+| Radio scan core | Optimized and ASan/UBSan radio-session/scan tests. |
+| User guide | Help-media validation, documentation validation, and strict MkDocs build. |
+| Documentation Truth | Deterministic dependency/doc coherence, CI claims, architecture measurement, local links, screen/dashboard enums, resolved stale claims, and history/prompt hygiene. |
+
+Current CI does **not** compile the native Tab5 consumer firmware. POCSAG core
+and store scripts are not currently wired into GitHub Actions. CI also does not
+prove hardware operation, RF reception, antenna suitability, display/touch
+behavior, release-package installation, or long-duration soak behavior.
+
+## Current evidence boundaries and open limitations
+
+- The physical Tab5 evidence is for the owner unit, ESP32-P4 revision 1.3. Other
+  Tab5/display revisions are Not Verified.
+- Current `main` is source-reviewed at the snapshot above; RC4 hardware evidence
+  applies to the immutable RC4 package, not automatically to post-release commits.
+- Post-RC4 receiver-recovery behavior, current M5Burner search visibility, V4L,
+  broad earlier-V3 support, repeatable Nooelec RF, and long current-main soak are
+  Not Verified from committed public evidence.
+- Shortwave, Airband, Marine, Satellite, and CB do not have broad current-release
+  RF acceptance. P25 Phase II voice/audio is Not Implemented.
+- Wi-Fi credentials and signing material are private and are not documentation
+  or CI inputs.
+
+## Authoritative document map
+
+| Purpose | Document |
+|---|---|
+| Public summary | [`README.md`](README.md) |
+| Current evidence | This file |
+| Software ownership | [`architecture.md`](architecture.md) |
+| User operation and safety | [`docs/user-guide/`](docs/user-guide/index.md) |
+| Security | [`SECURITY.md`](SECURITY.md) |
+| Developer contracts | [`docs/API_ESP_RTL_SDR.md`](docs/API_ESP_RTL_SDR.md), [`docs/TAB5_BUILD_POLICY.md`](docs/TAB5_BUILD_POLICY.md), [`docs/RADIO_CONFIGURATION.md`](docs/RADIO_CONFIGURATION.md) |
+| Future work | [`Roadmap.md`](Roadmap.md) |
+| Exact-version evidence | [`docs/releases/`](docs/releases/v0.2.0-beta.6-multidongle-rc4.md) and dated validation reports |
