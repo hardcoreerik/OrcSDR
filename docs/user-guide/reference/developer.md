@@ -28,7 +28,8 @@ callbacks.
 - Do not add a PSRAM sprite plus a full-frame memcpy for high-rate rendering.
   It competes with the radio/audio pipeline and regresses frame pacing.
 - M5GFX's Tab5 double-framebuffer support is a pinned local patch. Native and
-  M5Burner builds apply it through `tools/apply-m5gfx-tab5-pageflip.ps1`.
+  M5Burner builds apply it through
+  `apps/orcsdr-tab5/tools/apply-m5gfx-tab5-pageflip.ps1`.
   Update the tracked patch with any M5GFX component upgrade; never edit only
   the ignored `managed_components` copy.
 
