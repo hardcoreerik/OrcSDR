@@ -26,7 +26,7 @@ Keep the repair narrow and link its pull request to the issue. Do not mix depend
 
 ## 4. Verify the release package
 
-Run the narrow automated regression first. For hardware faults, install the exact completed `.bin` intended for release and repeat the original steps. Record the firmware hash, hardware setup, result, and any remaining limitations.
+Run the narrow automated regression first. For every firmware-changing repair, install the exact completed `.bin` intended for release and repeat the original steps. Record the packaged image hash, test setup, result, and any remaining limitations.
 
 A source build, successful flash, or development image is not a substitute for testing the packaged release image.
 
