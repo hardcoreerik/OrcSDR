@@ -1,0 +1,418 @@
+{
+  "schema": "orcsdr-broadcast-source-ledger-v1",
+  "sources": [
+    {
+      "id": "fcc_lms",
+      "country": "US",
+      "services": [
+        "am",
+        "fm"
+      ],
+      "publisher": "Federal Communications Commission",
+      "catalog_url": "https://opendata.fcc.gov/Media/LMS-Public-Database-Files/nsck-y87u",
+      "redistribution": "Public Domain U.S. Government",
+      "release_allowed": true,
+      "source_tier": "official_regulator",
+      "notes": "Use the current LMS database-download link; do not depend on a guessed archive URL. Base normalizer reads facility.dat only. Run tools/data_catalog/enrich_fcc_lms_coords.py after normalize_fcc_lms.py to add coordinates from app_am_antenna.dat (AM) and app_location.dat (FM, aloc_lat_* / aloc_long_* columns \u2014 NOT allot_lat_*, which is the FM channel allotment reference point). Coordinate coverage after enrichment: 93.2% (56,699 of 60,823 records; 94% of AM, 93% of FM)."
+    },
+    {
+      "id": "acma_broadcast_transmitters",
+      "country": "AU",
+      "services": [
+        "am",
+        "fm",
+        "shortwave"
+      ],
+      "publisher": "Australian Communications and Media Authority",
+      "catalog_url": "https://www.acma.gov.au/list-transmitters-licence-broadcast",
+      "download_url": "https://www.acma.gov.au/sites/default/files/2026-07/BroadcastTransmitterExcel.zip",
+      "redistribution": "CC BY 2.5 Australia; attribute ACMA",
+      "release_allowed": true,
+      "notes": "A licence record does not prove a transmitter is on air."
+    },
+    {
+      "id": "ofcom_txparams",
+      "country": "GB",
+      "services": [
+        "am",
+        "fm"
+      ],
+      "publisher": "Office of Communications",
+      "catalog_url": "https://www.ofcom.org.uk/tv-radio-and-on-demand/coverage-and-transmitters/radio-tech-parameters",
+      "download_url": "https://www.ofcom.org.uk/siteassets/resources/documents/spectrum/tv-transmitter-guidance/tech-parameters/txparamsvhf.csv?v=423472",
+      "redistribution": "Attribute Ofcom and the dataset title; UK National Data Library lists the dataset under OGL",
+      "release_allowed": true,
+      "notes": "catalog_url is the human download page, NOT an exact CSV file URL; acquire VHF/MF CSVs via manual browser click on that page when automated fetch 403s (Cloudflare). Receipt browser-downloaded CSV (often cp1252). Optional historical VHF siteassets candidate may appear as download_url but prefer catalog click (cache-buster ?v= may change). MF is a separate CSV listed on the same catalog page. Normalize: Site\u2192transmitter; Area Isle of Man/Jersey/Guernsey\u2192IM/JE/GG else GB."
+    },
+    {
+      "id": "ised_sms_broadcast",
+      "country": "CA",
+      "services": [
+        "am",
+        "fm"
+      ],
+      "publisher": "Innovation, Science and Economic Development Canada",
+      "catalog_url": "https://open.canada.ca/data/en/dataset/508040d7-6fa9-46e4-afbc-aa61f3ca317e",
+      "download_url": "https://www.ic.gc.ca/engineering/SMS_TAFL_Files/TAFL_Broadcast-LTAF_RadioDiff.zip",
+      "redistribution": "Open Government Licence - Canada",
+      "release_allowed": true,
+      "notes": "Use the published Broadcast Service CSV or Broadcasting Database extract."
+    },
+    {
+      "id": "ofca_sound_freq_table",
+      "country": "HK",
+      "services": [
+        "am",
+        "fm"
+      ],
+      "publisher": "Office of the Communications Authority",
+      "catalog_url": "https://data.gov.hk/en-data/dataset/hk-ofca-ofca-ofca-dataset-21",
+      "download_url": "https://www.ofca.gov.hk/filemanager/ofca/common/datagovhk/analogue_sound_broadcasting_frequency_en.csv",
+      "terms_url": "https://data.gov.hk/en/terms-and-conditions",
+      "redistribution": "Attribute the Government of the HKSAR, Office of the Communications Authority, and DATA.GOV.HK; free redistribution for commercial and non-commercial use under DATA.GOV.HK Terms and Conditions",
+      "release_allowed": true,
+      "notes": "Analogue sound broadcasting frequency table (English CSV). MODULATION VHF/FM or MF/AM; FREQ in MHz (AM as 0.567 etc.); ERP in watts. country=HK (not CN). Alternate language CSVs: analogue_sound_broadcasting_frequency_tc.csv / _sc.csv on the same OFCA path. PDF companion: freq_table_sound_en.pdf. Prefer English CSV for ORCBRD1. No coordinates in CSV."
+    },
+    {
+      "id": "ncc_am_fm_stations",
+      "country": "TW",
+      "services": [
+        "am",
+        "fm"
+      ],
+      "publisher": "National Communications Commission",
+      "catalog_url": "https://data.gov.tw/dataset/6445",
+      "download_url": "https://api.ncc.gov.tw/uploaddowndoc?file=datagov/1522493929772027904.xls&filedisplay=FM.xls&flag=doc",
+      "am_catalog_url": "https://data.gov.tw/dataset/6446",
+      "am_download_url": "https://api.ncc.gov.tw/chncc/app/data/doc?id=104&module=commonMessage45&detailNo=1522500810712289280&serno=51003_4173_news&type=s",
+      "terms_url": "https://data.gov.tw/license",
+      "redistribution": "\u653f\u5e9c\u8cc7\u6599\u958b\u653e\u6388\u6b0a\u689d\u6b3e-\u7b2c1\u7248 (OGDL-Taiwan-1.0), CC BY 4.0 compatible; attribute National Communications Commission (\u570b\u5bb6\u901a\u8a0a\u50b3\u64ad\u59d4\u54e1\u6703) and the dataset titles; https://data.gov.tw/license",
+      "release_allowed": true,
+      "attribution_required": "National Communications Commission (\u570b\u5bb6\u901a\u8a0a\u50b3\u64ad\u59d4\u54e1\u6703) [year] \u2014 \u7121\u7dda\u8abf\u983bFM\u5ee3\u64ad\u96fb\u81fa\u983b\u7387\u53ca\u767c\u5c04\u6a5f\u4f4d\u5740\u7d00\u9304 (data.gov.tw/6445) and \u7121\u7dda\u8abf\u5e45AM\u5ee3\u64ad\u96fb\u81fa\u983b\u7387\u53ca\u767c\u5c04\u6a5f\u4f4d\u5740\u7d00\u9304 (data.gov.tw/6446); Open Government Data License, version 1.0 (https://data.gov.tw/license)",
+      "notes": "FM open-data distribution is XLS from data.gov.tw dataset 6445 (resourceDownloadUrl on api.ncc.gov.tw/uploaddowndoc, file datagov/1522493929772027904.xls; sheet \u8abf\u983bFM_115_7_3 as-of ROC 115/7/3 = 2026-07-03). AM open-data dataset 6446 still advertises XLS datagov/1490970926492160000.xls but that object returns alert \u6b32\u4e0b\u8f09\u7684\u6a94\u6848\u4e0d\u5b58\u5728 on api.ncc.gov.tw (verified 2026-09-10). AM fallback is the same-day NCC portal PDF (serno 51003_4173_news / detailNo 1522500810712289280), table-extracted to ncc-am.csv. Columns: station name, frequency (FM MHz / AM kHz), transmitter address, east longitude, north latitude, station class. country=TW. HF overseas rows in the AM table emit service=shortwave. License code 1 on data.gov.tw = OGDL v1."
+    },
+    {
+      "id": "mic_radio_use_web_api",
+      "country": "JP",
+      "services": [
+        "am",
+        "fm",
+        "shortwave"
+      ],
+      "publisher": "Ministry of Internal Affairs and Communications",
+      "catalog_url": "https://www.tele.soumu.go.jp/j/musen/webapi/",
+      "terms_url": "https://www.tele.soumu.go.jp/j/musen/webapi/kiyaku/index.htm",
+      "redistribution": "Government Standard Terms of Use (\u653f\u5e9c\u6a19\u6e96\u5229\u7528\u898f\u7d04) per MIC Web-API \u5229\u7528\u898f\u7d04 Article 4",
+      "release_allowed": true,
+      "attribution_required": "This service is created based on information obtained using the Web-API function of the Ministry of Internal Affairs and Communications' Radio Wave Utilization Portal, but the content of the service is not guaranteed by the Ministry of Internal Affairs and Communications. (per MIC Web-API \u5229\u7528\u898f\u7d04 Article 3)",
+      "acquisition_rate_limit": "MIC Web-API \u5229\u7528\u898f\u7d04 Article 6.3 prohibits massive access in a short period. Pace bulk fetches (per-prefecture or per-service pagination, courteous throttling). A single-pass acquisition is permitted; sustained hammering is not.",
+      "warranty_disclaimer": "MIC Web-API \u5229\u7528\u898f\u7d04 Article 7: no MIC guarantee of completeness, accuracy, usefulness, or safety of the content. Any downstream OrcSDR display must not imply MIC endorsement of station identity.",
+      "notes": "Official \u96fb\u6ce2\u5229\u7528\u30dd\u30fc\u30bf\u30eb \u7121\u7dda\u5c40\u7b49\u60c5\u5831\u691c\u7d22 Web-API (REST; JSON/XML/CSV). Terms flipped to release_allowed:true on operator-supplied English translation of the terms_url page (2026-09-10). Article 4 explicitly binds content reuse to the Government Standard Terms of Use \u2014 redistribution and commercial use permitted with attribution and modification disclosure. On-device or downstream display of records from this pack must carry the exact Article 3 disclaimer stored in attribution_required. Acquisition itself remains 403 to non-interactive HTTPS in this session; operator handles the fetch (single-pass, throttled). Endpoint remains a search API \u2014 bulk radio-only coverage is achieved by iterating structured queries (e.g. by \u90fd\u9053\u5e9c\u770c prefecture and service filters), not by a single dump."
+    },
+    {
+      "id": "mic_regional_bureau_lists",
+      "country": "JP",
+      "services": [
+        "am",
+        "fm",
+        "shortwave"
+      ],
+      "publisher": "Ministry of Internal Affairs and Communications (regional bureaus)",
+      "catalog_url": "https://www.soumu.go.jp/soutsu/",
+      "terms_url": "https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html",
+      "redistribution": "Public Data License v1.0 (\u516c\u5171\u30c7\u30fc\u30bf\u5229\u7528\u898f\u7d04) per www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html; attribution required; modifications must be disclosed; must not present derivative as original government work",
+      "release_allowed": true,
+      "attribution_required": "\u51fa\u5178\uff1a\u7dcf\u52d9\u7701\u30db\u30fc\u30e0\u30da\u30fc\u30b8 (\u8a72\u5f53\u30da\u30fc\u30b8\u306eURL) \u2014 this data pack is derived from lists published by the Ministry of Internal Affairs and Communications (Kanto Regional Bureau at www.soumu.go.jp/soutsu/kanto/bc/radio/list/ and Kinki Regional Bureau at www.soumu.go.jp/soutsu/kinki/housou/radio/) under \u516c\u5171\u30c7\u30fc\u30bf\u5229\u7528\u898f\u7d04 v1.0. Modifications: HTML tables were extracted into ORCBRD1 station-card NDJSON.",
+      "notes": "Phase 1 slice: **Kanto (\u95a2\u6771) and Kinki (\u8fd1\u757f) regional bureaus only** \u2014 Tokyo/Saitama/Chiba/Kanagawa/Ibaraki/Tochigi/Gunma/Yamanashi + Osaka/Kyoto/Hyogo/Nara/Shiga/Wakayama = ~14 of 47 \u90fd\u9053\u5e9c\u770c by count, ~60% of Japan by population coverage. Alternative rights-clean MIC surface used because tele.soumu.go.jp is currently DNS-unresolvable globally (verified against Google DNS and Cloudflare 2026-09-10). Data shape: HTML tables (Shift-JIS) with \u4e8b\u696d\u8005\u540d / \u5c40\u540d / \u9001\u4fe1\u5834\u6240 / \u5468\u6ce2\u6570 / \u96fb\u529b. Coordinates not published on these pages. Kinki tables include \u96fb\u529b (power_w); Kanto tables do not. Records marked status=LICENSED because the source lists only currently-licensed broadcasters; a frequency match remains a reference result, never proof of on-air identity. Phase 2 (follow-up) needs per-bureau URL discovery for Hokkaido/Tohoku/Shinetsu/Hokuriku/Tokai/Chugoku/Shikoku/Kyushu/Okinawa to reach national coverage; Tokai bureau links regional PDFs (\u611b\u77e5/\u5c90\u961c/\u4e09\u91cd/\u9759\u5ca1) at main_content/001066765.pdf / 000935323.pdf / 000935324.pdf that could be extracted next."
+    },
+    {
+      "id": "nrta_prefecture_broadcast_directory",
+      "country": "CN",
+      "services": [
+        "am",
+        "fm"
+      ],
+      "publisher": "National Radio and Television Administration",
+      "catalog_url": "https://www.nrta.gov.cn/col/col69/index.html",
+      "download_url": "https://www.nrta.gov.cn/art/2026/7/7/art_69_73655.html",
+      "terms_url": "https://www.nrta.gov.cn/col/col226/index.html",
+      "redistribution": "Permission required; NRTA website statement forbids unauthorized republication",
+      "release_allowed": false,
+      "notes": "Official prefecture-level-and-above broadcast institutions/channels/frequencies directory (\u5730\u7ea7\u4ee5\u4e0a\u5e7f\u64ad\u7535\u89c6\u64ad\u51fa\u673a\u6784\u53ca\u9891\u9053\u9891\u7387\u540d\u5f55). NOT a transmitter registry: no coordinates, ERP, live status, or AM/FM Hz values. Inspected 2026-06-30 edition (art_69_73655, published 2026-07-07): sheet \u5168\u90e8\u5730\u7ea7\u53f0, 386 institutions, columns \u7701\u4efd/\u7ea7\u522b/\u53f0\u540d/\u8bb8\u53ef\u8bc1\u7f16\u53f7/\u8282\u76ee\u8bbe\u7f6e/\u5e7f\u64ad\u9891\u7387/\u7535\u89c6\u9891\u9053 where \u5e7f\u64ad\u9891\u7387 is a program COUNT (sum 1001) and \u8282\u76ee\u8bbe\u7f6e lists radio program names without kHz/MHz (0 Hz-pattern rows). Primary candidate art_69_73007 (as-of 2026-03-31) returned \u7f51\u7ad9\u7ef4\u62a4\u4e2d in-session. Website statement (col/col226): content copyright belongs to NRTA; commercial original-form republication forbidden; unauthorized republication of information requires contacting the site for legal authorization. No open data licence found. Do not flip release_allowed or stage ORCBRD1 until explicit written redistribution permission is recorded. County-level (art_69_73654) and education-TV (art_69_73653) directories are out of AM/FM transmitter scope."
+    },
+    {
+      "id": "slks_lokalradio_freq",
+      "country": "DK",
+      "services": [
+        "fm"
+      ],
+      "publisher": "Slots- og Kulturstyrelsen (Danish Culture Ministry)",
+      "catalog_url": "https://slks.dk/tilskud-tilladelser/kulturarv/radio-og-tv/lokalradio/",
+      "download_url": "https://slks.dk/fileadmin/user_upload/dokumenter/KS/medier/radio/Lokalradio/Oversigt_over_frekvenser_til_lokalradiovirksomhed.pdf",
+      "redistribution": "Danish public sector information; reusable with attribution per Danish public administration norms",
+      "release_allowed": true,
+      "source_tier": "official_regulator",
+      "attribution_required": "Source: Slots- og Kulturstyrelsen (SLKS) \u2014 Oversigt over frekvenser til lokalradiovirksomhed (Denmark local FM radio frequency plan).",
+      "notes": "Official SLKS PDF listing Denmark's non-commercial (120) and commercial (468) local FM frequency allotments \u2014 one row per (frequency, municipality) allotment. 588 unique records across ~259 Danish municipalities. No coordinates, no callsigns, no power in this file. Section (non-commercial / commercial) stored in mode field."
+    },
+    {
+      "id": "morze_ru_radio",
+      "country": "RU",
+      "services": [
+        "fm"
+      ],
+      "publisher": "morze.ru community reference site",
+      "catalog_url": "https://www.morze.ru/radio_tv/radio_tv.htm",
+      "download_url": "https://www.morze.ru/radio_tv/radio_tv.htm",
+      "redistribution": "morze.ru community reference \u2014 no explicit open licence declared. Operator supplied URL for scraping (2026-09-10); treated as Tier 3 general_web reference data.",
+      "release_allowed": true,
+      "source_tier": "general_web",
+      "attribution_required": "Russian Moscow FM radio station data derived from morze.ru radio_tv reference pages. Attribution to morze.ru required.",
+      "notes": "Moscow FM stations including OIRT band (66-73 MHz) and CCIR (87-108 MHz), extracted from morze.ru's four Moscow radio_tv HTML pages. 52 unique records = 51 with transmitter coordinates + 52 with power. Site-level coordinates (Ostankino/Balashikha MO/Universitet MSK/etc.) come from a second table on the same pages. Encoding cp1251."
+    },
+    {
+      "id": "ukraine_com_radio",
+      "country": "UA",
+      "services": [
+        "fm"
+      ],
+      "publisher": "ukraine.com editorial",
+      "catalog_url": "https://ukraine.com/culture/music/radio/",
+      "download_url": "https://ukraine.com/culture/music/radio/",
+      "redistribution": "ukraine.com editorial content \u2014 no explicit open licence declared. Operator supplied this URL for scraping (2026-09-10); treated as Tier 3 general_web reference data. Attribution to ukraine.com in on-device UI required if records are surfaced.",
+      "release_allowed": true,
+      "source_tier": "general_web",
+      "attribution_required": "Ukrainian radio station data derived from ukraine.com's culture/music/radio editorial guide. Attribution to ukraine.com required.",
+      "notes": "40 FM entries covering Kyiv, Dnipro, Lviv, Odesa, Kharkiv, Simferopol, Donetsk, Lugansk and other Ukrainian cities. Frequency range extended to 65-108.5 MHz to include Soviet-era OIRT band (66-74 MHz) which is still in use for some legacy Ukrainian FM stations (e.g. 66.26 MHz Lvivska Khvilia, 68.51 MHz Radio Reesurrection)."
+    },
+    {
+      "id": "wikipedia_radio_list",
+      "country": "MULTI",
+      "services": [
+        "am",
+        "fm"
+      ],
+      "publisher": "Wikipedia contributors (via en.wikipedia.org)",
+      "catalog_url": "https://en.wikipedia.org/wiki/Category:Lists_of_radio_stations_by_country",
+      "terms_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "redistribution": "CC BY-SA 4.0 \u2014 attribution AND share-alike propagate; any downstream redistribution of these records inherits the share-alike obligation",
+      "release_allowed": true,
+      "source_tier": "general_web",
+      "attribution_required": "Records marked source=wikipedia_radio_list are derived from English Wikipedia 'List of radio stations in <country>' articles, licensed under Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0). Each record's source_url pins the exact revision (oldid=<revid>) used. Downstream OrcSDR redistribution of these records must preserve attribution to Wikipedia contributors and the CC BY-SA 4.0 share-alike condition.",
+      "notes": "Tier 3 general-web fallback for small countries where no rights-clean regulator dataset was found. Data quality is much lower than Tier 1: no coordinates, no power, no callsign (name field carries Wikipedia's 'branding' column). First staged batch (2026-09-10): Malta (32 records), Cyprus (91), Luxembourg (10) = 133 total. Each Wikipedia article is fetched via MediaWiki API prop=text and saved with its revid; the normalizer parses <table class='wikitable'> rows and identifies frequency/name/city columns by header keyword. Share-alike: because CC BY-SA 4.0 propagates, any signed catalog pack containing these records must publish under a share-alike-compatible licence (OrcSDR's catalog itself is not currently declared as SA \u2014 hold this out of the signed international pack until a share-alike-compatible pack format exists, or record it in a Tier-3-labelled sub-pack that carries its own CC BY-SA 4.0 notice)."
+    },
+    {
+      "id": "ift_infraestructura_am_fm",
+      "country": "MX",
+      "services": [
+        "am",
+        "fm"
+      ],
+      "publisher": "Instituto Federal de Telecomunicaciones (IFT)",
+      "catalog_url": "https://rpc.ift.org.mx/vrpc/visor/downloads",
+      "download_url": "https://rpc.ift.org.mx/vrpc/assets/publish/uploads/infraestructura/01_infraestructura_AM_FM_250826.xlsx",
+      "terms_url": "https://www.ift.org.mx/estadisticas/datos-abiertos",
+      "redistribution": "Mexico federal T\u00e9rminos y Condiciones de Uso for open data (CC BY-like \u2014 attribution required, redistribution permitted); operator (2026-09-10) explicitly approved for use in OrcSDR pack",
+      "release_allowed": true,
+      "source_tier": "official_regulator",
+      "attribution_required": "Source: Instituto Federal de Telecomunicaciones (IFT) \u2014 Registro P\u00fablico de Concesiones, Infraestructura de Estaciones AM/FM (01_infraestructura_AM_FM_250826.xlsx), monthly refresh from rpc.ift.org.mx.",
+      "notes": "IFT publishes AM+FM infrastructure in a single XLSX with monthly refresh. 2,278 unique stations = 340 AM + 1,938 FM. 100% carry callsign (Mexican FM callsigns begin with XH, AM with XE). No coordinates in this specific dataset \u2014 that's the main gap vs Brazil/Switzerland. Other fields captured: concessionaire (operator company), poblaci\u00f3n (city), estado (state), tipo (CONCESI\u00d3N/PERMISO/AUTORIZACI\u00d3N \u2192 status), tipo de uso (COMERCIAL/SOCIAL COMUNITARIA/P\u00daBLICA), and tipo de frecuencia (PRINCIPAL/COMPLEMENTARIA \u2192 mode). Two header rows above data (title + double-header for POBLACION/ESTADO)."
+    },
+    {
+      "id": "anatel_planos_basicos",
+      "country": "BR",
+      "services": [
+        "am",
+        "fm"
+      ],
+      "publisher": "Ag\u00eancia Nacional de Telecomunica\u00e7\u00f5es (Anatel)",
+      "catalog_url": "https://dados.gov.br/dados/conjuntos-dados/radiodifusao---plano-basico",
+      "download_url": "https://informacoes.anatel.gov.br/paineis/outorga-e-licenciamento/estacoes-de-tv-fm-e-om",
+      "terms_url": "https://www.gov.br/anatel/pt-br/dados/dados-abertos",
+      "redistribution": "Operator-supplied archive; Anatel parent site declares CC BY-ND 3.0 but Brazilian national open-data policy on dados.gov.br requires CC BY (ND excluded). Operator (2026-09-10) called release_allowed:true, treating the OrcSDR device pack as compatible with reuse of Anatel's Planos B\u00e1sicos.",
+      "release_allowed": true,
+      "source_tier": "official_regulator",
+      "attribution_required": "Source: Ag\u00eancia Nacional de Telecomunica\u00e7\u00f5es (Anatel) \u2014 Planos B\u00e1sicos de Radiodifus\u00e3o FM (PBFM) and OM (PBOM), retrieved via the operator on 2026-09-10 from the Anatel outorga e licenciamento dashboard on informacoes.anatel.gov.br and dados.gov.br.",
+      "notes": "Planos B\u00e1sicos = channel-allotment plans (FCC allotment equivalent). Zip contains PBFM.csv (9,388 FM allotments), PBOM.csv (2,074 AM/OM), PBOT.csv, PBTVD.csv, and Contorno_Protegido.csv (protected-contour polygons \u2014 80 MB \u2014 not consumed). Normalizer extracts only PBFM + PBOM. 100% records carry decimal-degree coordinates; 77% carry ERP (power). Status field carries 'PRIM\u00c1RIO' verbatim (primary allotment) \u2014 this is allotment data, not per-transmitter licence data, so no callsign. Class stored in mode field (A/B/C/E3/etc.). If a future rights review flips this back to release_allowed:false, revert."
+    },
+    {
+      "id": "uke_radiofonia_permits",
+      "country": "PL",
+      "services": [
+        "am",
+        "fm"
+      ],
+      "publisher": "Urz\u0105d Komunikacji Elektronicznej (UKE)",
+      "catalog_url": "https://dane.gov.pl/pl/dataset/723,wykazy-pozwolen-radiowych-dla-stacji-radiofonicznych-pracujacych-w-suzbie-radiodyfuzyjnej",
+      "download_url": "https://api.dane.gov.pl/media/resources/20260630/wykaz_pozwolen_radiofonia.zip",
+      "terms_url": "https://dane.gov.pl/pl/knowledgebase/useful-info/terms-of-use",
+      "redistribution": "Poland Open Data Act (Ustawa o otwartych danych) \u2014 public sector information reusable with source attribution; dane.gov.pl default",
+      "release_allowed": true,
+      "source_tier": "official_regulator",
+      "attribution_required": "Source: Urz\u0105d Komunikacji Elektronicznej (UKE) \u2014 Wykazy pozwole\u0144 radiowych dla stacji radiofonicznych pracuj\u0105cych w s\u0142u\u017cbie radiodyfuzyjnej, published on dane.gov.pl under Poland's Open Data Act.",
+      "notes": "Monthly refresh; latest snapshot 2026-06-23. Zip contains DAB, MW (fale \u015brednie), long-wave, and UKF (FM) permit CSVs \u2014 semicolon-delimited. FM CSV is cp1250; MW CSV is UTF-8 (encoding auto-detected in normalizer). Coordinates are DMS in Polish notation (14E56'04\" for longitude, 53N01'11\" for latitude). Normalizer emits ORCBRD1 records from `pozwolenie_ukf_h/r` (FM) and `pozwolenia_falesrednie_h/r` (AM); DAB and long-wave are excluded. Result: 3,029 records = 4 AM + 3,025 FM, all with coordinates and power (ERP-kW preferred, falling back to max output kW)."
+    },
+    {
+      "id": "anfr_installations_radioelectriques",
+      "country": "FR",
+      "services": [
+        "fm"
+      ],
+      "publisher": "Agence Nationale des Fr\u00e9quences (ANFR)",
+      "catalog_url": "https://www.data.gouv.fr/fr/datasets/donnees-sur-les-installations-radioelectriques-de-plus-de-5-watts-1/",
+      "download_url": "https://static.data.gouv.fr/resources/donnees-sur-les-installations-radioelectriques-de-plus-de-5-watts-1/20260906-082442/20260831-export-etalab-data.zip",
+      "terms_url": "https://www.etalab.gouv.fr/licence-ouverte-open-licence",
+      "redistribution": "Licence Ouverte 2.0 (Etalab) \u2014 CC BY 4.0 compatible; free reuse including commercial with attribution to ANFR",
+      "release_allowed": true,
+      "source_tier": "official_regulator",
+      "attribution_required": "Source: Agence Nationale des Fr\u00e9quences (ANFR), Donn\u00e9es sur les installations radio\u00e9lectriques de plus de 5 watts, publi\u00e9es sur data.gouv.fr sous Licence Ouverte 2.0 (Etalab)",
+      "notes": "Multi-table relational dump (semicolon-separated, Latin-1) via monthly data + reference zips on static.data.gouv.fr. Contains all radio installations >5W in France except Aviation Civile / Minist\u00e8re de la D\u00e9fense / Minist\u00e8re de l'Int\u00e9rieur. Filter EMR_LB_SYSTEME='FM' isolates FM broadcast (11,179 rows as of 2026-08-31); other services in the dump include LTE/UMTS/GSM/5G/DAB/DVB-T/FH/PMR/TETRA/marine/aeronautical which are out of ORCBRD1 scope. Join chain: SUP_EMETTEUR \u2192 SUP_BANDE (freq) \u2192 SUP_ANTENNE \u2192 SUP_SUPPORT (DMS coords) \u2192 SUP_STATION \u2192 SUP_EXPLOITANT (operator name). No callsign; name=operator. 11,178/11,179 records carry coordinates."
+    },
+    {
+      "id": "bakom_radio_fernsehsender",
+      "country": "CH",
+      "services": [
+        "fm"
+      ],
+      "publisher": "Bundesamt f\u00fcr Kommunikation (BAKOM) / Federal Office of Communications",
+      "catalog_url": "https://opendata.swiss/en/dataset/schweizerische-radio-und-fernsehsender",
+      "download_url": "https://data.geo.admin.ch/ch.bakom.radio-fernsehsender/radio-fernsehsender/radio-fernsehsender_2056_en.json",
+      "terms_url": "https://opendata.swiss/en/terms-of-use#terms_open",
+      "redistribution": "opendata.swiss terms_open \u2014 free reuse for any purpose (including commercial), source citation required",
+      "release_allowed": true,
+      "attribution_required": "Source: Bundesamt f\u00fcr Kommunikation (BAKOM) \u2014 Swiss radio and TV broadcasters (ch.bakom.radio-fernsehsender), retrieved from data.geo.admin.ch under opendata.swiss terms_open (https://opendata.swiss/en/terms-of-use#terms_open)",
+      "notes": "GeoJSON feature collection at data.geo.admin.ch/ch.bakom.radio-fernsehsender/. 440 transmitter sites in Switzerland, each with a parallel comma-separated service / program / freqchan triple. Normalizer keeps only service=RADIO (analogue FM); DAB+ and DVB-T are excluded. Switzerland shut down its last AM broadcaster (Berom\u00fcnster) in 2008; no AM records. Coordinates are Swiss LV95 (EPSG:2056) and are reprojected to WGS84 via pyproj. Output: 288 FM records with full lat/lon_e7 + power_w. English GeoJSON preferred for ORCBRD1 (also available in de/fr/it/rm)."
+    },
+    {
+      "id": "nz_rsm_rrf",
+      "country": "NZ",
+      "services": [
+        "am",
+        "fm"
+      ],
+      "publisher": "Radio Spectrum Management (Ministry of Business, Innovation and Employment)",
+      "catalog_url": "https://www.rsm.govt.nz/online-services-resources/tools/spectrum-search-lite",
+      "download_url": "https://www.rsm.govt.nz/assets/Uploads/documents/prism/prism.zip",
+      "terms_url": "https://www.rsm.govt.nz/copyright",
+      "redistribution": "Crown copyright; RSM copyright grants 'personal or in-house use' with acknowledgement. OrcSDR ships a thin-client tool where the user selects location and consumes station data for their own personal or in-home listening \u2014 the 'personal use' condition is satisfied at the user endpoint. Attribution obligation flows through to the on-device UI.",
+      "release_allowed": true,
+      "attribution_required": "Radio Spectrum Management (Ministry of Business, Innovation and Employment, New Zealand) \u2014 Register of Radio Frequencies (PRISM), Crown copyright. Reproduced under RSM's personal or in-house use permission (https://www.rsm.govt.nz/copyright). OrcSDR users are the personal-use party; source acknowledgement must appear in the OrcSDR device pack manifest and on-device attribution surface.",
+      "notes": "Register of Radio Frequencies (RRF) via PRISM download at rsm.govt.nz/assets/Uploads/documents/prism/prism.zip (51 MB, Microsoft Access 2000 .mdb format; Last-Modified 2022-12-04, stale). Openly downloadable (HTTP 200, no auth). RSM copyright page (rsm.govt.nz/copyright) restricts reuse to 'personal or in-house use' with source acknowledgement. Flipped release_allowed to true on operator (2026-09-10) explicit legal judgment: OrcSDR's distribution model is user-installed thin client, user selects location, user consumes station data personally at home \u2014 the 'personal use' condition is satisfied at the user endpoint, OrcSDR is the delivery mechanism not the re-publisher. This flip depends on OrcSDR faithfully passing the RSM source acknowledgement through to end users on-device (attribution_required field must be surfaced). If RSM communicates a narrower interpretation in the future, revert release_allowed to false and pull the pack. Data is stale (Dec 2022); prefer a fresher pull via RealMe-authenticated RRF CSV export when available. RSM's api.business.govt.nz key-gated API and data.govt.nz mirror remain alternate paths to consider for freshness."
+    },
+    {
+      "id": "bnetza_rundfunk_gbg",
+      "country": "DE",
+      "services": [
+        "am",
+        "fm"
+      ],
+      "publisher": "Bundesnetzagentur (BNetzA)",
+      "catalog_url": "https://www.bundesnetzagentur.de/DE/Fachthemen/Telekommunikation/Frequenzen/OeffentlicheNetze/Rundfunk/start.html",
+      "terms_url": "https://www.bundesnetzagentur.de/DE/Service/Impressum/start.html",
+      "redistribution": "Permission required; transmitter data behind closed user group (Geschlossene Benutzergruppe / GBG-Rundfunksenderdaten)",
+      "release_allowed": false,
+      "notes": "Official federal spectrum regulator for Germany. UKW (FM) / DAB / DVB-T transmitter datasets exist in XLSX + ZIP + XML format but are only distributed via a Geschlossene Benutzergruppe: access requires the paper Antrag 'Informationsblatt und Antrag zur Aufnahme in die GBG-Rundfunksenderdaten' (pdf 85 KB) linked from the Rundfunk landing page. The public site publishes only Formatbeschreibung documents (Stand 3. Juli 2025) \u2014 not the transmitter data itself. No open-data licence (CC BY, DL-DE-BY-2.0, DL-DE Zero, GovData) stated. BNetzA's EMF-Datenbank at www.bundesnetzagentur.de/emf covers mobile/cellular only, not broadcast. GovData.de search returned no matching Bundesnetzagentur Rundfunk dataset (2026-09-10). Do not flip release_allowed until either (a) the operator applies for GBG membership and BNetzA explicitly permits ORCBRD1 redistribution, or (b) a state-level Landesmedienanstalt is found publishing its region's FM assignments under an explicit open licence. Community mirrors like ukwtv.de are Verein-published and are excluded by the crowdsourced-source rule."
+    },
+    {
+      "id": "fmlist_fmscan",
+      "country": "MULTI",
+      "services": [
+        "am",
+        "fm"
+      ],
+      "publisher": "UKW/TV-Arbeitskreis e.V. (Radio Data Center GmbH for commercial licences)",
+      "catalog_url": "https://www.fmlist.org",
+      "terms_url": "https://www.fmlist.org/Datenschutzerklaerung.htm",
+      "redistribution": "Prohibited without prior written authorisation. Data is licensed only for 'private, personal and non-commercial purposes' per FMLIST/FMSCAN copyright statement. Derivative works, public software, and commercial products all require written permission from Radio Data Center GmbH.",
+      "release_allowed": false,
+      "source_tier": "community_curated",
+      "notes": "HARD BLOCKED for OrcSDR use. The FMLIST/FMSCAN terms (operator-reviewed 2026-09-10) explicitly enumerate 'derivative work(s)', 'public software', and 'commercial product(s) or service(s)' as requiring prior written authorisation from Radio Data Center GmbH \u2014 every one of those describes an OrcSDR device pack. Also: 'Use of scraping tools or scripts with scraping purpose is not allowed and access will be blocked. Any unauthorized use will be detected and prosecuted.' The thin-client argument that rescued nz_rsm_rrf does NOT apply here because FMLIST names derivative works and public software specifically. FMLIST's own disclaimer also acknowledges the data itself comes from other sources including 'government and authorities databases' \u2014 those upstream sources are where OrcSDR should go directly. Do not stage FMLIST or FMSCAN data. Do not scrape. This ledger row exists to document the block and prevent re-attempts."
+    },
+    {
+      "id": "hfcc",
+      "country": "GLOBAL",
+      "services": [
+        "shortwave"
+      ],
+      "publisher": "High Frequency Coordination Conference",
+      "catalog_url": "https://new.hfcc.org/data/a26/index.phtml",
+      "redistribution": "Permission required",
+      "release_allowed": false,
+      "notes": "Authoritative coordination schedules, not proof a transmitter is on air."
+    },
+    {
+      "id": "eibi",
+      "country": "GLOBAL",
+      "services": [
+        "shortwave"
+      ],
+      "publisher": "EiBi",
+      "catalog_url": "https://www.eibispace.de/",
+      "redistribution": "Terms review required",
+      "release_allowed": false,
+      "notes": "Do not package the dataset until the supplied readme terms allow it."
+    },
+    {
+      "id": "enacom_licencias_adjudicadas",
+      "country": "AR",
+      "services": [
+        "fm"
+      ],
+      "publisher": "ENACOM (Ente Nacional de Comunicaciones)",
+      "catalog_url": "https://www.enacom.gob.ar/licencias",
+      "download_url": null,
+      "redistribution": "Argentine public regulator data; released as public information by ENACOM. Reproducible with attribution.",
+      "release_allowed": true,
+      "source_tier": "official_regulator",
+      "attribution_required": "Source: ENACOM (Ente Nacional de Comunicaciones), Argentina - Licencias Adjudicadas de radiodifusion sonora por modulacion de frecuencia.",
+      "notes": "ENACOM public licence-adjudication table (Licencias Adjudicadas). The public grid is JavaScript-only with no bulk export; rows collected via browser copy-paste (operator-supplied 2019 snapshot). 189 unique (name, city, frequency) FM licence records across 12 provinces. No coordinates, no callsign, no power in this table."
+    },
+    {
+      "id": "asiawaves_net",
+      "country": "MULTI",
+      "services": [
+        "fm",
+        "am"
+      ],
+      "publisher": "Asiawaves (Alan G. Davies)",
+      "catalog_url": "https://www.asiawaves.net/",
+      "download_url": null,
+      "redistribution": "Non-commercial use with attribution is permitted per asiawaves.net copyright notice (http://www.asiawaves.net/copy.htm). Whole-page reproduction not permitted; facts (frequency, station name, city, power) extracted and reformatted into ORCBRD1.",
+      "release_allowed": true,
+      "source_tier": "community_curated",
+      "attribution_required": "Radio directory data compiled by Asiawaves (Alan G. Davies) at http://www.asiawaves.net/ - used non-commercially with attribution.",
+      "notes": "Community DXer reference site covering FM/MW broadcasting across South, Southeast, and Middle East Asia. 5119 records across 18 countries: IN (914), PH (1023), VN (867), KH (596), NP (401), TW (315), ID (270), TH (205), PK (187), MM (98), BD (72), SG (57), LA (37), QA (25), BH (23), AE (15), HK (7), BN (7). Includes power (kW) where declared. INACTIVE/silent stations filtered out."
+    },
+    {
+      "id": "radiomap_eu",
+      "country": "MULTI",
+      "services": [
+        "fm",
+        "am"
+      ],
+      "publisher": "Mikhail Shcherbak (Predavatel), Radiomap.eu / WorldRadioMap.com",
+      "catalog_url": "https://radiomap.eu/",
+      "download_url": null,
+      "redistribution": "PROHIBITED. Terms of Service (https://radiomap.eu/about/terms.htm) restrict use to personal, non-commercial only, and expressly forbid: (a) taking search results and reformatting/displaying them, (b) mirroring pages, (c) automated queries. Commercial use requires separate agreement. Even non-commercial reformatting is prohibited.",
+      "release_allowed": false,
+      "source_tier": "community_curated",
+      "attribution_required": null,
+      "notes": "HARD BLOCK \u2014 Radiomap.eu (Europe) and its sister WorldRadioMap.com (rest of world) share ToS. Global coverage would be extremely valuable (hundreds of cities with FM/AM freq + station name) but redistribution and reformatting are explicitly forbidden by ToS section 1. Same rights posture as FMLIST \u2014 contact required for any commercial or reformatted use. If user obtains written permission from Mikhail Shcherbak (Predavatel), flip release_allowed."
+    },
+    {
+      "id": "ourairports_atc",
+      "country": "MULTI",
+      "services": [
+        "atc"
+      ],
+      "publisher": "OurAirports (David Megginson)",
+      "catalog_url": "https://ourairports.com/data/",
+      "download_url": "https://davidmegginson.github.io/ourairports-data/",
+      "redistribution": "Public Domain. OurAirports data is dedicated to the public domain with no restrictions on use. See https://ourairports.com/data/ - 'The data is in the public domain, so you're welcome to redistribute it in any form.'",
+      "release_allowed": true,
+      "source_tier": "community_curated",
+      "attribution_required": "OurAirports (ourairports.com) \u2014 Public Domain. Attribution appreciated but not required.",
+      "notes": "Global aviation airports + ATC frequencies database. 10,791 airports with 27,801 ATC frequencies across 194 countries after filtering to non-closed airports with at least one frequency in 108-137 MHz aviation VHF band. Includes lat/lon per airport (E7). Used by OrcSDR ADS-B dashboard Settings tab for 'ATC audio within 25 nm' auto-population."
+    }
+  ]
+}

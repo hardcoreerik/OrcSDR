@@ -16,7 +16,14 @@ import shutil
 import subprocess
 from pathlib import Path
 
-PACK_IDS = ("faa_aircraft", "faa_aviation", "noaa_weather", "fcc_broadcast", "lane_county_map")
+PACK_IDS = ("faa_aircraft", "faa_aviation", "noaa_weather", "fcc_broadcast", "lane_county_map",
+            "international_broadcast", "hf_schedules")
+BROADCAST_DESTINATIONS = {
+    "fcc_broadcast": "/orcsdr/data/fcc_broadcast.idx",
+    "international_broadcast": "/orcsdr/data/international_broadcast.idx",
+    "hf_schedules": "/orcsdr/data/hf_schedules.idx",
+}
+DEFAULT_BROADCAST_LEDGER = Path(__file__).with_name("broadcast-sources.json")
 
 
 def is_p25_pack(pack_id: str) -> bool:
@@ -56,6 +63,9 @@ def validate_artifact(pack_id: str, source: Path, archive: bool) -> None:
     elif pack_id == "lane_county_map":
         if prefix != b"ORCMAP1\n":
             raise ValueError(f"{pack_id} runtime index must start with ORCMAP1: {source}")
+    elif pack_id in BROADCAST_DESTINATIONS:
+        if prefix != b"ORCBRD1\n":
+            raise ValueError(f"{pack_id} runtime index must start with ORCBRD1: {source}")
     elif prefix != b"ORCCAT1\n":
         raise ValueError(f"{pack_id} runtime index must start with ORCCAT1: {source}")
 
@@ -69,6 +79,18 @@ def copy_artifact(source: Path, release_dir: Path, release_base: str, name: str)
             "sha256": sha256(target)}
 
 
+def validate_broadcast_sources(pack: dict[str, object], allowed_sources: dict[str, dict[str, object]]) -> None:
+    source_ids = pack.get("source_ids")
+    if not isinstance(source_ids, list) or not source_ids or not all(isinstance(value, str) for value in source_ids):
+        raise ValueError(f"{pack['id']} requires non-empty source_ids")
+    for source_id in source_ids:
+        source = allowed_sources.get(source_id)
+        if source is None:
+            raise ValueError(f"{pack['id']} references unknown source {source_id}")
+        if not source.get("release_allowed"):
+            raise ValueError(f"{pack['id']} source {source_id} is not approved for release")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("input", type=Path, help="approved pack-input JSON")
@@ -80,12 +102,15 @@ def main() -> None:
     parser.add_argument("--release-base", required=True,
                         help="final GitHub Release asset URL prefix")
     parser.add_argument("--openssl", default="openssl")
+    parser.add_argument("--broadcast-ledger", type=Path, default=DEFAULT_BROADCAST_LEDGER)
     args = parser.parse_args()
 
     spec = json.loads(args.input.read_text(encoding="utf-8"))
     if spec.get("schema") != "catalog-input-v1":
         raise ValueError("expected catalog-input-v1")
     packs = spec.get("packs", [])
+    source_rows = json.loads(args.broadcast_ledger.read_text(encoding="utf-8")).get("sources", [])
+    allowed_sources = {row.get("id"): row for row in source_rows if isinstance(row, dict) and row.get("id")}
     ids = [pack.get("id") for pack in packs]
     if (not ids or len(set(ids)) != len(ids) or
             any(pack_id not in PACK_IDS and not is_p25_pack(pack_id) for pack_id in ids) or
@@ -115,6 +140,11 @@ def main() -> None:
             if pack["runtime_destination"] != expected_destination or not pack.get("title"):
                 raise ValueError(f"{pack['id']} requires title and runtime_destination {expected_destination}")
             catalog_pack["title"] = pack["title"]
+        elif pack["id"] in BROADCAST_DESTINATIONS:
+            validate_broadcast_sources(pack, allowed_sources)
+            expected_destination = BROADCAST_DESTINATIONS[pack["id"]]
+            if pack["runtime_destination"] != expected_destination:
+                raise ValueError(f"{pack['id']} requires runtime_destination {expected_destination}")
         catalog_packs.append(catalog_pack)
     catalog = {"schema": "catalog-v1", "generated_at": spec["generated_at"],
                "minimum_firmware": spec["minimum_firmware"], "packs": catalog_packs}

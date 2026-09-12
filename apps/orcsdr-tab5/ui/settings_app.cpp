@@ -27,6 +27,7 @@ constexpr int kRailRowH = 64;
 constexpr uint8_t kSettingsMinTextSize = 2;
 constexpr uint16_t kRanges[] = {10, 25, 50, 100};
 constexpr uint16_t kTimeouts[] = {0, 30, 60, 120, 300};
+constexpr uint8_t kCatalogRows = 4;
 constexpr const char* kLabels[] = {
     "CONNECTIVITY", "FIRMWARE & UPDATES", "LOCATION & ADS-B", "DATA & MAPS", "DISPLAY & AUDIO",
     "RADIO DEFAULTS", "STORAGE", "COMPANION", "SYSTEM"};
@@ -57,6 +58,7 @@ bool g_location_edit = false;
 bool g_location_request_pending = false;
 char g_location_query[64]{};
 int8_t g_catalog_remove_armed = -1;
+uint8_t g_catalog_page = 0;
 
 bool hit(int x, int y, int bx, int by, int bw, int bh) {
   return x >= bx && x < bx + bw && y >= by && y < by + bh;
@@ -261,9 +263,13 @@ void draw_data_maps() {
   button(g_state.catalog_busy ? "WORKING..." : "CHECK FOR UPDATES", 940, 126, 278, 48,
          g_state.catalog_busy ? TFT_DARKGREY : TFT_DARKCYAN);
   if (g_state.catalog_message[0]) text(g_state.catalog_message, 330, 180, kMuted, 2);
-  for (uint8_t i = 0; i < 5; ++i) {
+  const uint8_t page_count = (std::size(g_state.catalog_packs) + kCatalogRows - 1) / kCatalogRows;
+  g_catalog_page = std::min<uint8_t>(g_catalog_page, page_count - 1);
+  const uint8_t first = g_catalog_page * kCatalogRows;
+  for (uint8_t row = 0; row < kCatalogRows && first + row < std::size(g_state.catalog_packs); ++row) {
+    const uint8_t i = first + row;
     const auto& pack = g_state.catalog_packs[i];
-    const int y = 185 + i * 96;
+    const int y = 185 + row * 104;
     M5.Display.fillRoundRect(330, y, 888, 88, 8, kPanel);
     M5.Display.drawRoundRect(330, y, 888, 88, 8, kBlue);
     text(pack.title[0] ? pack.title : "DATA PACK", 350, y + 24, kBlue, 3);
@@ -280,6 +286,12 @@ void draw_data_maps() {
     button(g_catalog_remove_armed == i ? "CONFIRM" : "REMOVE", 1072, y + 14, 126, 42,
            pack.installed && !g_state.catalog_busy ? TFT_MAROON : TFT_DARKGREY);
   }
+  char page[24];
+  snprintf(page, sizeof(page), "PAGE %u / %u", g_catalog_page + 1, page_count);
+  text(page, 665, 640, kMuted, 2);
+  button("PREV", 930, 620, 132, 42, g_catalog_page ? TFT_DARKCYAN : TFT_DARKGREY);
+  button("NEXT", 1072, 620, 126, 42,
+         g_catalog_page + 1 < page_count ? TFT_DARKCYAN : TFT_DARKGREY);
   text("Manual only. Downloads keep reception active.", 330, 688, TFT_LIGHTGREY, 1);
 }
 
@@ -780,8 +792,21 @@ Action handle_touch(int32_t x, int32_t y) {
   } else if (g_section == Section::data_maps) {
     if (hit(x, y, 940, 126, 278, 48) && !g_state.catalog_busy)
       return {ActionKind::catalog_check, 0};
-    for (uint8_t i = 0; i < 5; ++i) {
-      const int row_y = 185 + i * 96;
+    const uint8_t page_count = (std::size(g_state.catalog_packs) + kCatalogRows - 1) / kCatalogRows;
+    if (hit(x, y, 930, 620, 132, 42) && g_catalog_page) {
+      --g_catalog_page;
+      draw_content();
+      return {};
+    }
+    if (hit(x, y, 1072, 620, 126, 42) && g_catalog_page + 1 < page_count) {
+      ++g_catalog_page;
+      draw_content();
+      return {};
+    }
+    const uint8_t first = g_catalog_page * kCatalogRows;
+    for (uint8_t row = 0; row < kCatalogRows && first + row < std::size(g_state.catalog_packs); ++row) {
+      const uint8_t i = first + row;
+      const int row_y = 185 + row * 104;
       if (hit(x, y, 930, row_y + 14, 132, 42) && g_state.catalog_ready && !g_state.catalog_busy)
         return {ActionKind::catalog_install, i};
       if (hit(x, y, 1072, row_y + 14, 126, 42) && g_state.catalog_packs[i].installed && !g_state.catalog_busy) {

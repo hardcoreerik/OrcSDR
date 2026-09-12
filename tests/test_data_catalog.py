@@ -11,11 +11,56 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILDER = ROOT / "tools" / "data_catalog" / "build_catalog.py"
+BROADCAST_BUILDER = ROOT / "tools" / "data_catalog" / "build_broadcast_index.py"
+BROADCAST_SAMPLE = ROOT / "tools" / "data_catalog" / "broadcast-stations.example.ndjson"
+
+
+def openssl_path():
+    fallback = Path(r"C:\Program Files\Git\usr\bin\openssl.exe")
+    return shutil.which("openssl") or (str(fallback) if fallback.is_file() else None)
 
 
 class P25CatalogTest(unittest.TestCase):
+    def test_broadcast_pack_requires_index_and_destination(self):
+        openssl = openssl_path()
+        self.assertIsNotNone(openssl)
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            runtime = work / "broadcast.idx"
+            subprocess.run([sys.executable, str(BROADCAST_BUILDER), "build", "--input",
+                            str(BROADCAST_SAMPLE), "--out", str(runtime), "--source-date",
+                            "2026-09-10"], check=True, capture_output=True, text=True)
+            archive = work / "source.zip"
+            with zipfile.ZipFile(archive, "w") as bundle:
+                bundle.writestr("SOURCE.txt", "test provenance")
+            key, public = work / "key.pem", work / "public.pem"
+            subprocess.run([openssl, "ecparam", "-name", "prime256v1", "-genkey", "-noout",
+                            "-out", key], check=True, capture_output=True)
+            subprocess.run([openssl, "ec", "-in", key, "-pubout", "-out", public],
+                           check=True, capture_output=True)
+            spec = {"schema": "catalog-input-v1", "generated_at": "2026-09-10",
+                    "minimum_firmware": "0.2.0", "packs": [{
+                        "id": "fcc_broadcast", "version": "2026-09-10",
+                        "source_date": "2026-09-10", "source_url": "https://example.invalid/source",
+                        "redistribution": "test only", "source_ids": ["fcc_lms"], "runtime": str(runtime),
+                        "archive": str(archive), "runtime_destination": "/orcsdr/data/fcc_broadcast.idx",
+                        "archive_destination": "/orcsdr/data/fcc_broadcast_source.zip"}]}
+            source = work / "input.json"
+            source.write_text(json.dumps(spec), encoding="utf-8")
+            command = [sys.executable, str(BUILDER), str(source), "--out", str(work / "out"),
+                       "--private-key", str(key), "--verify-public-key", str(public),
+                       "--release-base", "https://example.invalid/release", "--openssl", openssl]
+            subprocess.run(command, check=True, capture_output=True, text=True)
+            spec["packs"][0]["source_ids"] = ["hfcc"]
+            source.write_text(json.dumps(spec), encoding="utf-8")
+            self.assertNotEqual(subprocess.run(command, capture_output=True, text=True).returncode, 0)
+            spec["packs"][0]["source_ids"] = ["fcc_lms"]
+            spec["packs"][0]["runtime_destination"] = "/orcsdr/data/wrong.idx"
+            source.write_text(json.dumps(spec), encoding="utf-8")
+            self.assertNotEqual(subprocess.run(command, capture_output=True, text=True).returncode, 0)
+
     def test_signed_p25_pack_and_destination_gate(self):
-        openssl = shutil.which("openssl")
+        openssl = openssl_path()
         self.assertIsNotNone(openssl)
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
