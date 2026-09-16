@@ -1,5 +1,8 @@
 # M5Tab5 validation report
 
+> **Historical Evidence.** This dated report applies only to the named build,
+> board, and test setup. It is not the current project-status document.
+
 Date: 2026-07-18
 
 Target: M5Stack Tab5 on COM17

@@ -33,6 +33,12 @@ struct Snapshot {
   bool graphics_enabled = true;
   bool recording = false;
   bool preset_scanning = false;
+  bool gain_auto = true;
+  bool gain_auto_selecting = false;
+  float clipping_percent = 0.0f;
+  int gain_tenth_db = 0;
+  int gain_steps_tenth_db[32]{};
+  uint8_t gain_step_count = 0;
   uint8_t volume = 0;
   uint8_t preset_index = 0;
   uint8_t preset_count = 0;
@@ -61,6 +67,8 @@ enum class ActionKind : uint8_t {
   volume_up,
   graphics_toggle,
   recording_toggle,
+  gain_auto,
+  gain_tenth_db,
   scan_presets,
   open_device_settings,
   exit_to_browse,
@@ -77,6 +85,7 @@ void draw();
 void update(const Snapshot& snapshot);
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, float floor);
 Action handle_touch(int32_t x, int32_t y);
+Action handle_gain_drag(int32_t x, int32_t y);
 bool active();
 bool spectrum_active();
 View view();

@@ -58,7 +58,7 @@ class LovyanGFX {
   void clearClipRect(){}
 };
 }}
-struct HostM5 {lgfx::LovyanGFX Display;};
+struct HostM5 {lgfx::LovyanGFX Display; struct { int getBatteryLevel() const { return 100; } } Power;};
 inline HostM5 M5;
 class M5Canvas:public lgfx::LovyanGFX {
  lgfx::LovyanGFX* parent;

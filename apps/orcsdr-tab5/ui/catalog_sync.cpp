@@ -7,6 +7,7 @@
 #include <esp_http_client.h>
 #include <esp_heap_caps.h>
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <mbedtls/base64.h>
 #include <mbedtls/pk.h>
 #include <mbedtls/sha256.h>
@@ -28,7 +29,8 @@ constexpr char kDataRoot[] = "/orcsdr/data";
 constexpr size_t kManifestLimit = 16 * 1024;
 constexpr size_t kSignatureLimit = 512;
 constexpr size_t kChunkBytes = 4096;
-constexpr size_t kWriteBatchBytes = kChunkBytes;
+constexpr size_t kTransferBatchBytes = 16 * 1024;
+constexpr size_t kProgressLogBytes = 1024 * 1024;
 constexpr size_t kYieldBytes = 64 * 1024;
 constexpr uint8_t kMaxRedirects = 4;
 constexpr char kUserAgent[] = "OrcSDR/0.2 (+https://github.com/hardcoreerik/OrcSDR)";
@@ -159,11 +161,13 @@ void set_busy(Operation operation, uint8_t progress) {
 
 void refresh_installed() {
   if (g_fs == nullptr) return;
-  Pack packs[kPackCount]{};
+  auto* packs = static_cast<Pack*>(
+      heap_caps_malloc(sizeof(Pack) * kPackCount, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!packs) return;
   bool installed[kPackCount]{};
   bool update_available[kPackCount]{};
   portENTER_CRITICAL(&g_lock);
-  memcpy(packs, g_packs, sizeof(packs));
+  std::copy(g_packs, g_packs + kPackCount, packs);
   portEXIT_CRITICAL(&g_lock);
   for (uint8_t i = 0; i < kPackCount; ++i) {
     const auto& pack = packs[i];
@@ -197,6 +201,7 @@ void refresh_installed() {
     if (!view.installed && packs[i].available) strlcpy(view.status, "AVAILABLE", sizeof(view.status));
   }
   portEXIT_CRITICAL(&g_lock);
+  heap_caps_free(packs);
 }
 
 bool open_get(esp_http_client_handle_t client, int64_t* declared, int* status,
@@ -310,8 +315,21 @@ bool parse_manifest(const uint8_t* data, size_t size) {
         !safe_text(date, catalog_date, sizeof(catalog_date)) || !cJSON_IsString(minimum) ||
         !firmware_supports(minimum->valuestring) || pack_count < 1 ||
         pack_count > kPackCount) break;
-    Pack parsed[kPackCount]{};
-    PackView views[kPackCount]{};
+    struct ManifestBuffers {
+      Pack* parsed = nullptr;
+      PackView* views = nullptr;
+      ~ManifestBuffers() {
+        if (parsed) heap_caps_free(parsed);
+        if (views) heap_caps_free(views);
+      }
+    } buffers;
+    buffers.parsed = static_cast<Pack*>(
+        heap_caps_calloc(kPackCount, sizeof(Pack), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    buffers.views = static_cast<PackView*>(
+        heap_caps_calloc(kPackCount, sizeof(PackView), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!buffers.parsed || !buffers.views) break;
+    Pack* parsed = buffers.parsed;
+    PackView* views = buffers.views;
     bool seen[kPackCount]{};
     uint8_t next_dynamic = kBuiltInPackCount;
     for (uint8_t index = 0; index < kBuiltInPackCount; ++index) {
@@ -356,8 +374,8 @@ bool parse_manifest(const uint8_t* data, size_t size) {
     }
     if (ok) {
       portENTER_CRITICAL(&g_lock);
-      memcpy(g_packs, parsed, sizeof(g_packs));
-      memcpy(g_state.packs, views, sizeof(views));
+      std::copy(parsed, parsed + kPackCount, g_packs);
+      std::copy(views, views + kPackCount, g_state.packs);
       strlcpy(g_state.catalog_date, catalog_date, sizeof(g_state.catalog_date));
       g_state.ready = true;
       portEXIT_CRITICAL(&g_lock);
@@ -389,6 +407,7 @@ bool download_artifact(const Artifact& artifact, uint8_t pack_index,
   esp_http_client_config_t config{};
   config.url = artifact.url;
   config.timeout_ms = 20000;
+  config.buffer_size = kTransferBatchBytes;
   config.buffer_size_tx = 2048;
   config.crt_bundle_attach = esp_crt_bundle_attach;
   config.user_agent = kUserAgent;
@@ -400,21 +419,28 @@ bool download_artifact(const Artifact& artifact, uint8_t pack_index,
   if (!ok || (declared > 0 && declared != artifact.bytes) || status != 200) ok = false;
   ESP_LOGI(kTag, "download stage=http_open ok=%d status=%d declared=%lld", ok ? 1 : 0,
            status, static_cast<long long>(declared));
-  uint8_t* write_batch = static_cast<uint8_t*>(heap_caps_malloc(kWriteBatchBytes, MALLOC_CAP_SPIRAM));
+  uint8_t* write_batch = static_cast<uint8_t*>(
+      heap_caps_malloc(kTransferBatchBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   mbedtls_sha256_context sha;
   mbedtls_sha256_init(&sha);
   if (ok && (!write_batch || mbedtls_sha256_starts(&sha, 0) != 0)) ok = false;
   uint32_t total = 0;
   uint32_t next_yield = kYieldBytes;
+  uint32_t next_progress_log = kProgressLogBytes;
+  const int64_t started_us = esp_timer_get_time();
+  uint64_t network_us = 0;
+  uint64_t sd_write_us = 0;
   size_t batch_used = 0;
   uint8_t header[8]{};
   size_t header_size = 0;
   while (ok && total < artifact.bytes) {
-    const size_t room = kWriteBatchBytes - batch_used;
+    const size_t room = kTransferBatchBytes - batch_used;
     uint8_t* const target = write_batch + batch_used;
+    const int64_t read_started_us = esp_timer_get_time();
     const int got = esp_http_client_read(
         client, reinterpret_cast<char*>(target),
         std::min<size_t>(room, static_cast<size_t>(artifact.bytes - total)));
+    network_us += static_cast<uint64_t>(esp_timer_get_time() - read_started_us);
     if (got <= 0) { ESP_LOGE(kTag, "download stage=http_read_failed got=%d", got); ok = false; break; }
     batch_used += static_cast<size_t>(got);
     const size_t header_take = std::min(sizeof(header) - header_size, static_cast<size_t>(got));
@@ -424,15 +450,32 @@ bool download_artifact(const Artifact& artifact, uint8_t pack_index,
     }
     if (mbedtls_sha256_update(&sha, target, static_cast<size_t>(got)) != 0) { ESP_LOGE(kTag, "download stage=hash_failed"); ok = false; break; }
     total += static_cast<uint32_t>(got);
-    if (batch_used == kWriteBatchBytes || total == artifact.bytes) {
+    if (batch_used == kTransferBatchBytes || total == artifact.bytes) {
+      const int64_t write_started_us = esp_timer_get_time();
       const size_t wrote = file.write(write_batch, batch_used);
+      sd_write_us += static_cast<uint64_t>(esp_timer_get_time() - write_started_us);
       if (wrote != batch_used) { ESP_LOGE(kTag, "download stage=sd_write_failed wrote=%u expected=%u", static_cast<unsigned>(wrote), static_cast<unsigned>(batch_used)); ok = false; break; }
       batch_used = 0;
     }
-    if (total == static_cast<uint32_t>(got) || total == artifact.bytes) {
-      ESP_LOGI(kTag, "download stage=sd_write_progress bytes=%u", static_cast<unsigned>(total));
+    const uint8_t progress = progress_base + static_cast<uint8_t>(
+        (static_cast<uint64_t>(total) * progress_span) / artifact.bytes);
+    set_busy(g_requested, progress);
+    if (total >= next_progress_log || total == artifact.bytes) {
+      const uint64_t elapsed_us = static_cast<uint64_t>(esp_timer_get_time() - started_us);
+      const uint32_t average_kib_s = elapsed_us == 0 ? 0 : static_cast<uint32_t>(
+          (static_cast<uint64_t>(total) * 1000000ULL) / (elapsed_us * 1024ULL));
+      ESP_LOGI(kTag,
+               "download stage=sd_write_progress bytes=%u progress=%u elapsed_ms=%llu "
+               "average_kib_s=%u network_ms=%llu sd_write_ms=%llu",
+               static_cast<unsigned>(total), static_cast<unsigned>(progress),
+               static_cast<unsigned long long>(elapsed_us / 1000ULL),
+               static_cast<unsigned>(average_kib_s),
+               static_cast<unsigned long long>(network_us / 1000ULL),
+               static_cast<unsigned long long>(sd_write_us / 1000ULL));
+      while (next_progress_log <= total &&
+             next_progress_log <= UINT32_MAX - kProgressLogBytes)
+        next_progress_log += kProgressLogBytes;
     }
-    set_busy(g_requested, progress_base + static_cast<uint8_t>((static_cast<uint64_t>(total) * progress_span) / artifact.bytes));
     if (total >= next_yield) {
       vTaskDelay(1);
       next_yield += kYieldBytes;
@@ -676,7 +719,7 @@ bool request(Operation operation, uint8_t pack_index, bool needs_wifi) {
   g_requested_pack = pack_index;
   set_busy(operation, 0);
   set_message(operation == Operation::check ? "Catalog check queued" : "Data operation queued");
-  if (xTaskCreatePinnedToCoreWithCaps(worker, "catalog_sync", 12288, nullptr, 3,
+  if (xTaskCreatePinnedToCoreWithCaps(worker, "catalog_sync", 32768, nullptr, 3,
                                       &g_worker, 1,
                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     g_requested = Operation::none;

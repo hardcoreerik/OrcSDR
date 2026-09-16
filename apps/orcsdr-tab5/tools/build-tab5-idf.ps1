@@ -36,6 +36,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 # reconfigure, not before, so a fresh checkout/worktree has something to patch
 # and a stale patch can't be silently dropped by re-resolution.
 & (Join-Path $PSScriptRoot 'apply-m5gfx-tab5-pageflip.ps1')
+& (Join-Path $PSScriptRoot 'apply-esp-hosted-trampoline-fix.ps1')
 
 $required = @(
   'CONFIG_ESP32P4_TAB5_C6_BOARD=y',

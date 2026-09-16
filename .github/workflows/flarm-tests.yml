@@ -3,6 +3,10 @@ on:
   pull_request:
     paths:
       - 'apps/orcsdr-tab5/ui/flarm_*'
+      - 'apps/orcsdr-tab5/ui/main.cpp'
+      - 'apps/orcsdr-tab5/main/CMakeLists.txt'
+      - 'apps/orcsdr-tab5/ui/dashboard_audio_control.*'
+      - 'apps/orcsdr-tab5/ui/home_dashboard.*'
       - 'apps/orcsdr-tab5/ui/adsb_dashboard.*'
       - 'apps/orcsdr-tab5/ui/radio_session.*'
       - 'apps/orcsdr-tab5/ui/screen_controller.*'

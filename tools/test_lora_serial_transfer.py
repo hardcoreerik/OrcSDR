@@ -11,20 +11,27 @@ import decode_orciq
 class FakeIqSerial:
     payload = b"abcdef"
 
-    def __init__(self, timeout_first_read=False):
+    def __init__(self, timeout_first_read=False, bad_first_digest=True):
         self.stream = bytearray()
         self.attempt = 0
         self.chunk = 0
         self.aborts = 0
         self.released = False
         self.timeout_first_read = timeout_first_read
+        self.bad_first_digest = bad_first_digest
         self.timed_out = False
+        self.max_chunk_requests_per_write = 0
 
     def _line(self, value: str):
         self.stream.extend(value.encode("ascii") + b"\n")
 
     def write(self, value: bytes):
-        for command in value.decode("ascii").splitlines():
+        commands = value.decode("ascii").splitlines()
+        self.max_chunk_requests_per_write = max(
+            self.max_chunk_requests_per_write,
+            commands.count("RTL_IQ_GET_CHUNK"),
+        )
+        for command in commands:
             if command == "RTL_IQ_RETRIEVE_BEGIN":
                 self._line(
                     "RTL_IQ_RETRIEVE_READY storage=psram bytes=6 rate=250000 "
@@ -41,7 +48,11 @@ class FakeIqSerial:
                 self._line(f"RTL_IQ_GET_DATA bytes={len(data)}")
                 self.stream.extend(data)
                 if self.chunk == 2:
-                    digest = "0" * 64 if self.attempt == 1 else hashlib.sha256(self.payload).hexdigest()
+                    digest = (
+                        "0" * 64
+                        if self.bad_first_digest and self.attempt == 1
+                        else hashlib.sha256(self.payload).hexdigest()
+                    )
                     self._line(f"RTL_IQ_GET_DONE bytes=6 sha256={digest}")
             elif command == "RTL_IQ_GET_ABORT":
                 self.aborts += 1
@@ -121,12 +132,13 @@ class SerialTransferTests(unittest.TestCase):
         self.assertEqual(decoded["encryption"], "pki")
         self.assertEqual(decoded["payload"], b"PKI direct test")
 
-    def test_timeout_aborts_and_retries_from_byte_zero(self):
-        connection = FakeIqSerial(timeout_first_read=True)
+    def test_transient_empty_read_keeps_one_chunk_request_outstanding(self):
+        connection = FakeIqSerial(timeout_first_read=True, bad_first_digest=False)
         _, capture = decode_orciq._retrieve_latest_iq(connection)
 
-        self.assertEqual(connection.aborts, 1)
-        self.assertEqual(connection.attempt, 2)
+        self.assertEqual(connection.aborts, 0)
+        self.assertEqual(connection.attempt, 1)
+        self.assertEqual(connection.max_chunk_requests_per_write, 1)
         self.assertEqual(capture[decode_orciq.HEADER.size :], connection.payload)
 
 

@@ -1,0 +1,2319 @@
+{
+  "schema_version": 2,
+  "baseline": "frozen collective lower-alternate recovery",
+  "new": "lowest-ratio single lower-alternate recovery",
+  "acceptance": "no loss of a previously demonstrated host-valid native pass",
+  "summary": {
+    "host-invalid/inconclusive": 4,
+    "native-only observation": 2,
+    "newly FIXED": 3,
+    "newly REGRESSED": 2,
+    "unchanged PASS": 19
+  },
+  "decision": "REJECT single-symbol replacement: two host-valid baseline passes regressed",
+  "limitations": [
+    "Host-invalid rows are native-only observations and are not scored as fixes.",
+    "FEC correction is inferred only from exact CRC-valid packet identity after downstream decode; per-bit FEC decisions are not separately instrumented."
+  ],
+  "changed_row_audits": [
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "seed": 90500,
+      "impairment_db": -21.0,
+      "classification": "newly REGRESSED",
+      "case": "C - multi-symbol recovery genuinely required",
+      "primary_symbol_error_indices": [
+        7,
+        61,
+        76,
+        88,
+        94,
+        95,
+        104,
+        107,
+        109,
+        111,
+        112,
+        114
+      ],
+      "primary_errors_all_adjacent_bin": true,
+      "individual_alternates_tested": 11,
+      "identity_restoring_substitutions": [],
+      "baseline_collective_modified_indices": [
+        61,
+        76,
+        88,
+        94,
+        95,
+        104,
+        107,
+        109,
+        111,
+        112,
+        114
+      ],
+      "baseline_collective_actual_errors_modified": [
+        61,
+        76,
+        88,
+        94,
+        95,
+        104,
+        107,
+        109,
+        111,
+        112,
+        114
+      ],
+      "baseline_collective_actual_errors_left_for_fec": [
+        7
+      ],
+      "baseline_collective_collateral_indices": [],
+      "baseline_collective_result": "PASS",
+      "new_selected": [
+        {
+          "index": 88,
+          "symbol": 1330
+        }
+      ],
+      "new_selected_was_primary_error": true,
+      "new_result": "FAIL"
+    },
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "seed": 90500,
+      "impairment_db": -22.0,
+      "classification": "newly REGRESSED",
+      "case": "C - multi-symbol recovery genuinely required",
+      "primary_symbol_error_indices": [
+        7,
+        61,
+        76,
+        84,
+        88,
+        94,
+        95,
+        104,
+        109,
+        111,
+        112,
+        114
+      ],
+      "primary_errors_all_adjacent_bin": true,
+      "individual_alternates_tested": 12,
+      "identity_restoring_substitutions": [],
+      "baseline_collective_modified_indices": [
+        61,
+        76,
+        84,
+        88,
+        94,
+        95,
+        104,
+        107,
+        109,
+        111,
+        112,
+        114
+      ],
+      "baseline_collective_actual_errors_modified": [
+        61,
+        76,
+        84,
+        88,
+        94,
+        95,
+        104,
+        109,
+        111,
+        112,
+        114
+      ],
+      "baseline_collective_actual_errors_left_for_fec": [
+        7
+      ],
+      "baseline_collective_collateral_indices": [
+        107
+      ],
+      "baseline_collective_result": "PASS",
+      "new_selected": [
+        {
+          "index": 84,
+          "symbol": 618
+        }
+      ],
+      "new_selected_was_primary_error": true,
+      "new_result": "FAIL"
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "seed": 90501,
+      "impairment_db": -21.0,
+      "classification": "newly FIXED",
+      "case": "A - one-symbol ambiguity",
+      "primary_symbol_error_indices": [
+        89
+      ],
+      "primary_errors_all_adjacent_bin": true,
+      "individual_alternates_tested": 11,
+      "identity_restoring_substitutions": [
+        {
+          "index": 89,
+          "symbol": 864,
+          "ratio": 1.0,
+          "ratio_rank": 1,
+          "magnitude_difference": 0.030000000000001137,
+          "margin_rank": 1,
+          "normalized_margin": 0.0004211176462331186,
+          "packet_id": 3969934819
+        }
+      ],
+      "baseline_collective_modified_indices": [
+        9,
+        12,
+        16,
+        27,
+        29,
+        48,
+        57,
+        63,
+        66,
+        89,
+        97
+      ],
+      "baseline_collective_actual_errors_modified": [
+        89
+      ],
+      "baseline_collective_actual_errors_left_for_fec": [],
+      "baseline_collective_collateral_indices": [
+        9,
+        12,
+        16,
+        27,
+        29,
+        48,
+        57,
+        63,
+        66,
+        97
+      ],
+      "baseline_collective_result": "FAIL",
+      "new_selected": [
+        {
+          "index": 89,
+          "symbol": 864
+        }
+      ],
+      "new_selected_was_primary_error": true,
+      "new_result": "PASS"
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "seed": 90501,
+      "impairment_db": -22.0,
+      "classification": "native-only observation",
+      "case": "host-invalid native-only observation",
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "individual_alternates_tested": 13,
+      "identity_restoring_substitutions": [
+        {
+          "index": 89,
+          "symbol": 864,
+          "ratio": 1.015,
+          "ratio_rank": 1,
+          "magnitude_difference": 1.0400000000000063,
+          "margin_rank": 1,
+          "normalized_margin": 0.014446250225722747,
+          "packet_id": 3969934819
+        }
+      ],
+      "baseline_collective_modified_indices": [
+        9,
+        12,
+        16,
+        27,
+        29,
+        40,
+        48,
+        57,
+        63,
+        65,
+        66,
+        89,
+        97
+      ],
+      "baseline_collective_actual_errors_modified": [],
+      "baseline_collective_actual_errors_left_for_fec": [],
+      "baseline_collective_collateral_indices": [
+        9,
+        12,
+        16,
+        27,
+        29,
+        40,
+        48,
+        57,
+        63,
+        65,
+        66,
+        89,
+        97
+      ],
+      "baseline_collective_result": "FAIL",
+      "new_selected": [
+        {
+          "index": 89,
+          "symbol": 864
+        }
+      ],
+      "new_selected_was_primary_error": false,
+      "new_result": "PASS"
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "seed": 90504,
+      "impairment_db": -22.0,
+      "classification": "newly FIXED",
+      "case": "A - one-symbol ambiguity",
+      "primary_symbol_error_indices": [
+        103
+      ],
+      "primary_errors_all_adjacent_bin": true,
+      "individual_alternates_tested": 12,
+      "identity_restoring_substitutions": [
+        {
+          "index": 103,
+          "symbol": 138,
+          "ratio": 1.016,
+          "ratio_rank": 1,
+          "magnitude_difference": 1.2399999999999949,
+          "margin_rank": 1,
+          "normalized_margin": 0.015591208570135228,
+          "packet_id": 3969934819
+        }
+      ],
+      "baseline_collective_modified_indices": [
+        16,
+        27,
+        29,
+        31,
+        34,
+        35,
+        38,
+        48,
+        63,
+        72,
+        96,
+        103
+      ],
+      "baseline_collective_actual_errors_modified": [
+        103
+      ],
+      "baseline_collective_actual_errors_left_for_fec": [],
+      "baseline_collective_collateral_indices": [
+        16,
+        27,
+        29,
+        31,
+        34,
+        35,
+        38,
+        48,
+        63,
+        72,
+        96
+      ],
+      "baseline_collective_result": "FAIL",
+      "new_selected": [
+        {
+          "index": 103,
+          "symbol": 138
+        }
+      ],
+      "new_selected_was_primary_error": true,
+      "new_result": "PASS"
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "seed": 90501,
+      "impairment_db": -23.0,
+      "classification": "native-only observation",
+      "case": "host-invalid native-only observation",
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "individual_alternates_tested": 16,
+      "identity_restoring_substitutions": [
+        {
+          "index": 89,
+          "symbol": 864,
+          "ratio": 1.025,
+          "ratio_rank": 1,
+          "magnitude_difference": 1.7690000000000055,
+          "margin_rank": 1,
+          "normalized_margin": 0.02453298570180434,
+          "packet_id": 3969934819
+        }
+      ],
+      "baseline_collective_modified_indices": [
+        9,
+        12,
+        16,
+        27,
+        29,
+        40,
+        43,
+        45,
+        48,
+        57,
+        58,
+        63,
+        65,
+        66,
+        89,
+        97
+      ],
+      "baseline_collective_actual_errors_modified": [],
+      "baseline_collective_actual_errors_left_for_fec": [],
+      "baseline_collective_collateral_indices": [
+        9,
+        12,
+        16,
+        27,
+        29,
+        40,
+        43,
+        45,
+        48,
+        57,
+        58,
+        63,
+        65,
+        66,
+        89,
+        97
+      ],
+      "baseline_collective_result": "FAIL",
+      "new_selected": [
+        {
+          "index": 89,
+          "symbol": 864
+        }
+      ],
+      "new_selected_was_primary_error": false,
+      "new_result": "PASS"
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "seed": 90504,
+      "impairment_db": -23.0,
+      "classification": "newly FIXED",
+      "case": "A - one-symbol ambiguity",
+      "primary_symbol_error_indices": [
+        103
+      ],
+      "primary_errors_all_adjacent_bin": true,
+      "individual_alternates_tested": 14,
+      "identity_restoring_substitutions": [
+        {
+          "index": 103,
+          "symbol": 138,
+          "ratio": 1.033,
+          "ratio_rank": 1,
+          "magnitude_difference": 2.646000000000001,
+          "margin_rank": 1,
+          "normalized_margin": 0.03232229456531035,
+          "packet_id": 3969934819
+        }
+      ],
+      "baseline_collective_modified_indices": [
+        16,
+        22,
+        27,
+        29,
+        31,
+        34,
+        35,
+        38,
+        48,
+        63,
+        72,
+        96,
+        103,
+        113
+      ],
+      "baseline_collective_actual_errors_modified": [
+        103
+      ],
+      "baseline_collective_actual_errors_left_for_fec": [],
+      "baseline_collective_collateral_indices": [
+        16,
+        22,
+        27,
+        29,
+        31,
+        34,
+        35,
+        38,
+        48,
+        63,
+        72,
+        96,
+        113
+      ],
+      "baseline_collective_result": "FAIL",
+      "new_selected": [
+        {
+          "index": 103,
+          "symbol": 138
+        }
+      ],
+      "new_selected_was_primary_error": true,
+      "new_result": "PASS"
+    }
+  ],
+  "rows": [
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "source": "mla30_power/p15_iq_serial_1789268834898_906875000_sf11_bw250000.orciq",
+      "antenna": "MLA-30+",
+      "seed": 90500,
+      "impairment_db": -21.0,
+      "classification": "newly REGRESSED",
+      "host_valid": true,
+      "host_packet_id": 4219089354,
+      "expected_packet_id": 4219089354,
+      "primary_symbol_error_count": 12,
+      "primary_symbol_error_indices": [
+        7,
+        61,
+        76,
+        88,
+        94,
+        95,
+        104,
+        107,
+        109,
+        111,
+        112,
+        114
+      ],
+      "primary_errors_all_adjacent_bin": true,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 61,
+            "symbol": 1834
+          },
+          {
+            "index": 76,
+            "symbol": 1690
+          },
+          {
+            "index": 88,
+            "symbol": 1330
+          },
+          {
+            "index": 94,
+            "symbol": 105
+          },
+          {
+            "index": 95,
+            "symbol": 1816
+          },
+          {
+            "index": 104,
+            "symbol": 2044
+          },
+          {
+            "index": 107,
+            "symbol": 330
+          },
+          {
+            "index": 109,
+            "symbol": 1742
+          },
+          {
+            "index": 111,
+            "symbol": 248
+          },
+          {
+            "index": 112,
+            "symbol": 198
+          },
+          {
+            "index": 114,
+            "symbol": 1508
+          }
+        ],
+        "modified_symbol_count": 11,
+        "recovery_result": "PASS",
+        "runtime_ms": 12983,
+        "fft_count": 480,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "FAIL",
+        "exact_packet_identity": false,
+        "packet_id": null,
+        "primary_crc": "fail",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 88,
+            "symbol": 1330
+          }
+        ],
+        "modified_symbol_count": 1,
+        "recovery_result": "FAIL",
+        "runtime_ms": 13080,
+        "fft_count": 480,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "source": "mla30_power/p15_iq_serial_1789268834898_906875000_sf11_bw250000.orciq",
+      "antenna": "MLA-30+",
+      "seed": 90501,
+      "impairment_db": -21.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 4219089354,
+      "expected_packet_id": 4219089354,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 12966,
+        "fft_count": 480,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13026,
+        "fft_count": 480,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "source": "mla30_power/p15_iq_serial_1789268834898_906875000_sf11_bw250000.orciq",
+      "antenna": "MLA-30+",
+      "seed": 90502,
+      "impairment_db": -21.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 4219089354,
+      "expected_packet_id": 4219089354,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 12994,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13035,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "source": "mla30_power/p15_iq_serial_1789268834898_906875000_sf11_bw250000.orciq",
+      "antenna": "MLA-30+",
+      "seed": 90503,
+      "impairment_db": -21.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 4219089354,
+      "expected_packet_id": 4219089354,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 12987,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13033,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "source": "mla30_power/p15_iq_serial_1789268834898_906875000_sf11_bw250000.orciq",
+      "antenna": "MLA-30+",
+      "seed": 90504,
+      "impairment_db": -21.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 4219089354,
+      "expected_packet_id": 4219089354,
+      "primary_symbol_error_count": 1,
+      "primary_symbol_error_indices": [
+        0
+      ],
+      "primary_errors_all_adjacent_bin": true,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 12974,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13040,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "source": "mla30_power/p15_iq_serial_1789268834898_906875000_sf11_bw250000.orciq",
+      "antenna": "MLA-30+",
+      "seed": 90500,
+      "impairment_db": -22.0,
+      "classification": "newly REGRESSED",
+      "host_valid": true,
+      "host_packet_id": 4219089354,
+      "expected_packet_id": 4219089354,
+      "primary_symbol_error_count": 12,
+      "primary_symbol_error_indices": [
+        7,
+        61,
+        76,
+        84,
+        88,
+        94,
+        95,
+        104,
+        109,
+        111,
+        112,
+        114
+      ],
+      "primary_errors_all_adjacent_bin": true,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 61,
+            "symbol": 1834
+          },
+          {
+            "index": 76,
+            "symbol": 1690
+          },
+          {
+            "index": 84,
+            "symbol": 618
+          },
+          {
+            "index": 88,
+            "symbol": 1330
+          },
+          {
+            "index": 94,
+            "symbol": 105
+          },
+          {
+            "index": 95,
+            "symbol": 1816
+          },
+          {
+            "index": 104,
+            "symbol": 2044
+          },
+          {
+            "index": 107,
+            "symbol": 330
+          },
+          {
+            "index": 109,
+            "symbol": 1742
+          },
+          {
+            "index": 111,
+            "symbol": 248
+          },
+          {
+            "index": 112,
+            "symbol": 198
+          },
+          {
+            "index": 114,
+            "symbol": 1508
+          }
+        ],
+        "modified_symbol_count": 12,
+        "recovery_result": "PASS",
+        "runtime_ms": 12969,
+        "fft_count": 480,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "FAIL",
+        "exact_packet_identity": false,
+        "packet_id": null,
+        "primary_crc": "fail",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 84,
+            "symbol": 618
+          }
+        ],
+        "modified_symbol_count": 1,
+        "recovery_result": "FAIL",
+        "runtime_ms": 13028,
+        "fft_count": 480,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "source": "mla30_power/p15_iq_serial_1789268834898_906875000_sf11_bw250000.orciq",
+      "antenna": "MLA-30+",
+      "seed": 90501,
+      "impairment_db": -22.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 4219089354,
+      "expected_packet_id": 4219089354,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 12952,
+        "fft_count": 480,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13023,
+        "fft_count": 480,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "source": "mla30_power/p15_iq_serial_1789268834898_906875000_sf11_bw250000.orciq",
+      "antenna": "MLA-30+",
+      "seed": 90502,
+      "impairment_db": -22.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 4219089354,
+      "expected_packet_id": 4219089354,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 12991,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13034,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "source": "mla30_power/p15_iq_serial_1789268834898_906875000_sf11_bw250000.orciq",
+      "antenna": "MLA-30+",
+      "seed": 90503,
+      "impairment_db": -22.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 4219089354,
+      "expected_packet_id": 4219089354,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13001,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13034,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "source": "mla30_power/p15_iq_serial_1789268834898_906875000_sf11_bw250000.orciq",
+      "antenna": "MLA-30+",
+      "seed": 90504,
+      "impairment_db": -22.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 4219089354,
+      "expected_packet_id": 4219089354,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 12974,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13040,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "source": "mla30_power/p15_iq_serial_1789268834898_906875000_sf11_bw250000.orciq",
+      "antenna": "MLA-30+",
+      "seed": 90500,
+      "impairment_db": -23.0,
+      "classification": "host-invalid/inconclusive",
+      "host_valid": false,
+      "host_packet_id": null,
+      "expected_packet_id": 4219089354,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "FAIL",
+        "exact_packet_identity": false,
+        "packet_id": null,
+        "primary_crc": "fail",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 39,
+            "symbol": 837
+          },
+          {
+            "index": 61,
+            "symbol": 1834
+          },
+          {
+            "index": 76,
+            "symbol": 1690
+          },
+          {
+            "index": 84,
+            "symbol": 618
+          },
+          {
+            "index": 88,
+            "symbol": 1330
+          },
+          {
+            "index": 94,
+            "symbol": 105
+          },
+          {
+            "index": 95,
+            "symbol": 1816
+          },
+          {
+            "index": 104,
+            "symbol": 2044
+          },
+          {
+            "index": 107,
+            "symbol": 330
+          },
+          {
+            "index": 109,
+            "symbol": 1742
+          },
+          {
+            "index": 111,
+            "symbol": 248
+          },
+          {
+            "index": 112,
+            "symbol": 198
+          },
+          {
+            "index": 114,
+            "symbol": 1508
+          }
+        ],
+        "modified_symbol_count": 13,
+        "recovery_result": "FAIL",
+        "runtime_ms": 12982,
+        "fft_count": 480,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "FAIL",
+        "exact_packet_identity": false,
+        "packet_id": null,
+        "primary_crc": "fail",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 88,
+            "symbol": 1330
+          }
+        ],
+        "modified_symbol_count": 1,
+        "recovery_result": "FAIL",
+        "runtime_ms": 13020,
+        "fft_count": 480,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "source": "mla30_power/p15_iq_serial_1789268834898_906875000_sf11_bw250000.orciq",
+      "antenna": "MLA-30+",
+      "seed": 90501,
+      "impairment_db": -23.0,
+      "classification": "host-invalid/inconclusive",
+      "host_valid": false,
+      "host_packet_id": null,
+      "expected_packet_id": 4219089354,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 12965,
+        "fft_count": 480,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13016,
+        "fft_count": 480,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "source": "mla30_power/p15_iq_serial_1789268834898_906875000_sf11_bw250000.orciq",
+      "antenna": "MLA-30+",
+      "seed": 90502,
+      "impairment_db": -23.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 4219089354,
+      "expected_packet_id": 4219089354,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13005,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13041,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "source": "mla30_power/p15_iq_serial_1789268834898_906875000_sf11_bw250000.orciq",
+      "antenna": "MLA-30+",
+      "seed": 90503,
+      "impairment_db": -23.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 4219089354,
+      "expected_packet_id": 4219089354,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 12984,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13033,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-0f4812e88b88bd75",
+      "source": "mla30_power/p15_iq_serial_1789268834898_906875000_sf11_bw250000.orciq",
+      "antenna": "MLA-30+",
+      "seed": 90504,
+      "impairment_db": -23.0,
+      "classification": "host-invalid/inconclusive",
+      "host_valid": false,
+      "host_packet_id": null,
+      "expected_packet_id": 4219089354,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 12989,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 4219089354,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13040,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "source": "whip915_power/p15_iq_serial_1789269399248_906875000_sf11_bw250000.orciq",
+      "antenna": "915 MHz whip",
+      "seed": 90500,
+      "impairment_db": -21.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 3969934819,
+      "expected_packet_id": 3969934819,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 12994,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13051,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "source": "whip915_power/p15_iq_serial_1789269399248_906875000_sf11_bw250000.orciq",
+      "antenna": "915 MHz whip",
+      "seed": 90501,
+      "impairment_db": -21.0,
+      "classification": "newly FIXED",
+      "host_valid": true,
+      "host_packet_id": 3969934819,
+      "expected_packet_id": 3969934819,
+      "primary_symbol_error_count": 1,
+      "primary_symbol_error_indices": [
+        89
+      ],
+      "primary_errors_all_adjacent_bin": true,
+      "baseline": {
+        "native_result": "FAIL",
+        "exact_packet_identity": false,
+        "packet_id": null,
+        "primary_crc": "fail",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 9,
+            "symbol": 1404
+          },
+          {
+            "index": 12,
+            "symbol": 968
+          },
+          {
+            "index": 16,
+            "symbol": 1207
+          },
+          {
+            "index": 27,
+            "symbol": 1015
+          },
+          {
+            "index": 29,
+            "symbol": 1001
+          },
+          {
+            "index": 48,
+            "symbol": 884
+          },
+          {
+            "index": 57,
+            "symbol": 925
+          },
+          {
+            "index": 63,
+            "symbol": 974
+          },
+          {
+            "index": 66,
+            "symbol": 1297
+          },
+          {
+            "index": 89,
+            "symbol": 864
+          },
+          {
+            "index": 97,
+            "symbol": 1115
+          }
+        ],
+        "modified_symbol_count": 11,
+        "recovery_result": "FAIL",
+        "runtime_ms": 13001,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 89,
+            "symbol": 864
+          }
+        ],
+        "modified_symbol_count": 1,
+        "recovery_result": "PASS",
+        "runtime_ms": 13051,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "source": "whip915_power/p15_iq_serial_1789269399248_906875000_sf11_bw250000.orciq",
+      "antenna": "915 MHz whip",
+      "seed": 90502,
+      "impairment_db": -21.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 3969934819,
+      "expected_packet_id": 3969934819,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13007,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13050,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "source": "whip915_power/p15_iq_serial_1789269399248_906875000_sf11_bw250000.orciq",
+      "antenna": "915 MHz whip",
+      "seed": 90503,
+      "impairment_db": -21.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 3969934819,
+      "expected_packet_id": 3969934819,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13010,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13051,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "source": "whip915_power/p15_iq_serial_1789269399248_906875000_sf11_bw250000.orciq",
+      "antenna": "915 MHz whip",
+      "seed": 90504,
+      "impairment_db": -21.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 3969934819,
+      "expected_packet_id": 3969934819,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13013,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13051,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "source": "whip915_power/p15_iq_serial_1789269399248_906875000_sf11_bw250000.orciq",
+      "antenna": "915 MHz whip",
+      "seed": 90500,
+      "impairment_db": -22.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 3969934819,
+      "expected_packet_id": 3969934819,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 12971,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13050,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "source": "whip915_power/p15_iq_serial_1789269399248_906875000_sf11_bw250000.orciq",
+      "antenna": "915 MHz whip",
+      "seed": 90501,
+      "impairment_db": -22.0,
+      "classification": "native-only observation",
+      "host_valid": false,
+      "host_packet_id": null,
+      "expected_packet_id": 3969934819,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "FAIL",
+        "exact_packet_identity": false,
+        "packet_id": null,
+        "primary_crc": "fail",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 9,
+            "symbol": 1404
+          },
+          {
+            "index": 12,
+            "symbol": 968
+          },
+          {
+            "index": 16,
+            "symbol": 1207
+          },
+          {
+            "index": 27,
+            "symbol": 1015
+          },
+          {
+            "index": 29,
+            "symbol": 1001
+          },
+          {
+            "index": 40,
+            "symbol": 265
+          },
+          {
+            "index": 48,
+            "symbol": 884
+          },
+          {
+            "index": 57,
+            "symbol": 925
+          },
+          {
+            "index": 63,
+            "symbol": 974
+          },
+          {
+            "index": 65,
+            "symbol": 659
+          },
+          {
+            "index": 66,
+            "symbol": 1297
+          },
+          {
+            "index": 89,
+            "symbol": 864
+          },
+          {
+            "index": 97,
+            "symbol": 1115
+          }
+        ],
+        "modified_symbol_count": 13,
+        "recovery_result": "FAIL",
+        "runtime_ms": 13000,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 89,
+            "symbol": 864
+          }
+        ],
+        "modified_symbol_count": 1,
+        "recovery_result": "PASS",
+        "runtime_ms": 13051,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "source": "whip915_power/p15_iq_serial_1789269399248_906875000_sf11_bw250000.orciq",
+      "antenna": "915 MHz whip",
+      "seed": 90502,
+      "impairment_db": -22.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 3969934819,
+      "expected_packet_id": 3969934819,
+      "primary_symbol_error_count": 1,
+      "primary_symbol_error_indices": [
+        119
+      ],
+      "primary_errors_all_adjacent_bin": true,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13005,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13053,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "source": "whip915_power/p15_iq_serial_1789269399248_906875000_sf11_bw250000.orciq",
+      "antenna": "915 MHz whip",
+      "seed": 90503,
+      "impairment_db": -22.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 3969934819,
+      "expected_packet_id": 3969934819,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13013,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13050,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "source": "whip915_power/p15_iq_serial_1789269399248_906875000_sf11_bw250000.orciq",
+      "antenna": "915 MHz whip",
+      "seed": 90504,
+      "impairment_db": -22.0,
+      "classification": "newly FIXED",
+      "host_valid": true,
+      "host_packet_id": 3969934819,
+      "expected_packet_id": 3969934819,
+      "primary_symbol_error_count": 1,
+      "primary_symbol_error_indices": [
+        103
+      ],
+      "primary_errors_all_adjacent_bin": true,
+      "baseline": {
+        "native_result": "FAIL",
+        "exact_packet_identity": false,
+        "packet_id": null,
+        "primary_crc": "fail",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 16,
+            "symbol": 1207
+          },
+          {
+            "index": 27,
+            "symbol": 1015
+          },
+          {
+            "index": 29,
+            "symbol": 1001
+          },
+          {
+            "index": 31,
+            "symbol": 525
+          },
+          {
+            "index": 34,
+            "symbol": 1235
+          },
+          {
+            "index": 35,
+            "symbol": 562
+          },
+          {
+            "index": 38,
+            "symbol": 419
+          },
+          {
+            "index": 48,
+            "symbol": 884
+          },
+          {
+            "index": 63,
+            "symbol": 974
+          },
+          {
+            "index": 72,
+            "symbol": 814
+          },
+          {
+            "index": 96,
+            "symbol": 1248
+          },
+          {
+            "index": 103,
+            "symbol": 138
+          }
+        ],
+        "modified_symbol_count": 12,
+        "recovery_result": "FAIL",
+        "runtime_ms": 13018,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 103,
+            "symbol": 138
+          }
+        ],
+        "modified_symbol_count": 1,
+        "recovery_result": "PASS",
+        "runtime_ms": 13048,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "source": "whip915_power/p15_iq_serial_1789269399248_906875000_sf11_bw250000.orciq",
+      "antenna": "915 MHz whip",
+      "seed": 90500,
+      "impairment_db": -23.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 3969934819,
+      "expected_packet_id": 3969934819,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13032,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13048,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "source": "whip915_power/p15_iq_serial_1789269399248_906875000_sf11_bw250000.orciq",
+      "antenna": "915 MHz whip",
+      "seed": 90501,
+      "impairment_db": -23.0,
+      "classification": "native-only observation",
+      "host_valid": false,
+      "host_packet_id": null,
+      "expected_packet_id": 3969934819,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "FAIL",
+        "exact_packet_identity": false,
+        "packet_id": null,
+        "primary_crc": "fail",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 9,
+            "symbol": 1404
+          },
+          {
+            "index": 12,
+            "symbol": 968
+          },
+          {
+            "index": 16,
+            "symbol": 1207
+          },
+          {
+            "index": 27,
+            "symbol": 1015
+          },
+          {
+            "index": 29,
+            "symbol": 1001
+          },
+          {
+            "index": 40,
+            "symbol": 265
+          },
+          {
+            "index": 43,
+            "symbol": 1580
+          },
+          {
+            "index": 45,
+            "symbol": 639
+          },
+          {
+            "index": 48,
+            "symbol": 884
+          },
+          {
+            "index": 57,
+            "symbol": 925
+          },
+          {
+            "index": 58,
+            "symbol": 1427
+          },
+          {
+            "index": 63,
+            "symbol": 974
+          },
+          {
+            "index": 65,
+            "symbol": 659
+          },
+          {
+            "index": 66,
+            "symbol": 1297
+          },
+          {
+            "index": 89,
+            "symbol": 864
+          },
+          {
+            "index": 97,
+            "symbol": 1115
+          }
+        ],
+        "modified_symbol_count": 16,
+        "recovery_result": "FAIL",
+        "runtime_ms": 12998,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 89,
+            "symbol": 864
+          }
+        ],
+        "modified_symbol_count": 1,
+        "recovery_result": "PASS",
+        "runtime_ms": 13050,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "source": "whip915_power/p15_iq_serial_1789269399248_906875000_sf11_bw250000.orciq",
+      "antenna": "915 MHz whip",
+      "seed": 90502,
+      "impairment_db": -23.0,
+      "classification": "host-invalid/inconclusive",
+      "host_valid": false,
+      "host_packet_id": null,
+      "expected_packet_id": 3969934819,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "FAIL",
+        "exact_packet_identity": false,
+        "packet_id": null,
+        "primary_crc": "fail",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 8,
+            "symbol": 1177
+          },
+          {
+            "index": 12,
+            "symbol": 968
+          },
+          {
+            "index": 16,
+            "symbol": 1207
+          },
+          {
+            "index": 17,
+            "symbol": 1385
+          },
+          {
+            "index": 22,
+            "symbol": 604
+          },
+          {
+            "index": 29,
+            "symbol": 1001
+          },
+          {
+            "index": 30,
+            "symbol": 137
+          },
+          {
+            "index": 45,
+            "symbol": 639
+          },
+          {
+            "index": 48,
+            "symbol": 884
+          },
+          {
+            "index": 57,
+            "symbol": 925
+          },
+          {
+            "index": 63,
+            "symbol": 974
+          },
+          {
+            "index": 66,
+            "symbol": 1297
+          },
+          {
+            "index": 72,
+            "symbol": 814
+          },
+          {
+            "index": 74,
+            "symbol": 834
+          },
+          {
+            "index": 95,
+            "symbol": 580
+          },
+          {
+            "index": 97,
+            "symbol": 1115
+          },
+          {
+            "index": 100,
+            "symbol": 1257
+          },
+          {
+            "index": 106,
+            "symbol": 1110
+          },
+          {
+            "index": 112,
+            "symbol": 1007
+          },
+          {
+            "index": 119,
+            "symbol": 1492
+          },
+          {
+            "index": 122,
+            "symbol": 912
+          }
+        ],
+        "modified_symbol_count": 21,
+        "recovery_result": "FAIL",
+        "runtime_ms": 13001,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "FAIL",
+        "exact_packet_identity": false,
+        "packet_id": null,
+        "primary_crc": "fail",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 119,
+            "symbol": 1492
+          }
+        ],
+        "modified_symbol_count": 1,
+        "recovery_result": "FAIL",
+        "runtime_ms": 13049,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "source": "whip915_power/p15_iq_serial_1789269399248_906875000_sf11_bw250000.orciq",
+      "antenna": "915 MHz whip",
+      "seed": 90503,
+      "impairment_db": -23.0,
+      "classification": "unchanged PASS",
+      "host_valid": true,
+      "host_packet_id": 3969934819,
+      "expected_packet_id": 3969934819,
+      "primary_symbol_error_count": 0,
+      "primary_symbol_error_indices": [],
+      "primary_errors_all_adjacent_bin": false,
+      "baseline": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13025,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": false,
+        "selected_recovery_symbols": [],
+        "modified_symbol_count": 0,
+        "recovery_result": "NOT_INVOKED",
+        "runtime_ms": 13051,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    },
+    {
+      "capture": "orciq-d9f355473ea17c15",
+      "source": "whip915_power/p15_iq_serial_1789269399248_906875000_sf11_bw250000.orciq",
+      "antenna": "915 MHz whip",
+      "seed": 90504,
+      "impairment_db": -23.0,
+      "classification": "newly FIXED",
+      "host_valid": true,
+      "host_packet_id": 3969934819,
+      "expected_packet_id": 3969934819,
+      "primary_symbol_error_count": 1,
+      "primary_symbol_error_indices": [
+        103
+      ],
+      "primary_errors_all_adjacent_bin": true,
+      "baseline": {
+        "native_result": "FAIL",
+        "exact_packet_identity": false,
+        "packet_id": null,
+        "primary_crc": "fail",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 16,
+            "symbol": 1207
+          },
+          {
+            "index": 22,
+            "symbol": 604
+          },
+          {
+            "index": 27,
+            "symbol": 1015
+          },
+          {
+            "index": 29,
+            "symbol": 1001
+          },
+          {
+            "index": 31,
+            "symbol": 525
+          },
+          {
+            "index": 34,
+            "symbol": 1235
+          },
+          {
+            "index": 35,
+            "symbol": 562
+          },
+          {
+            "index": 38,
+            "symbol": 419
+          },
+          {
+            "index": 48,
+            "symbol": 884
+          },
+          {
+            "index": 63,
+            "symbol": 974
+          },
+          {
+            "index": 72,
+            "symbol": 814
+          },
+          {
+            "index": 96,
+            "symbol": 1248
+          },
+          {
+            "index": 103,
+            "symbol": 138
+          },
+          {
+            "index": 113,
+            "symbol": 1180
+          }
+        ],
+        "modified_symbol_count": 14,
+        "recovery_result": "FAIL",
+        "runtime_ms": 13027,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      },
+      "new": {
+        "native_result": "PASS",
+        "exact_packet_identity": true,
+        "packet_id": 3969934819,
+        "primary_crc": "pass",
+        "recovery_invoked": true,
+        "selected_recovery_symbols": [
+          {
+            "index": 103,
+            "symbol": 138
+          }
+        ],
+        "modified_symbol_count": 1,
+        "recovery_result": "PASS",
+        "runtime_ms": 13053,
+        "fft_count": 481,
+        "clock_hypotheses": 1,
+        "cfo_hypotheses": 1
+      }
+    }
+  ]
+}

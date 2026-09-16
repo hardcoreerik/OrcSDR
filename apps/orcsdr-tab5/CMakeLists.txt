@@ -10,7 +10,7 @@ execute_process(
     OUTPUT_VARIABLE ORCSDR_GIT_VERSION
     OUTPUT_STRIP_TRAILING_WHITESPACE
     ERROR_QUIET)
-string(REGEX REPLACE "^(v[0-9]+\\.[0-9]+\\.[0-9]+(-alpha\\.[0-9]+)?).*$" "\\1"
+string(REGEX REPLACE "^(v[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta|rc)\\.?[0-9]+)?).*$" "\\1"
        PROJECT_VER "${ORCSDR_GIT_VERSION}")
 if (NOT PROJECT_VER MATCHES "^v[0-9]+\\.[0-9]+\\.[0-9]+")
     set(PROJECT_VER "v0.0.0-alpha.0")

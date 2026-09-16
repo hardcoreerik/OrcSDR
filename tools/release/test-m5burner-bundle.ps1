@@ -38,13 +38,16 @@ $manifestPath = Join-Path $bundle 'm5burner-upload.json'
 $sumPath = Join-Path $bundle 'SHA256SUMS.txt'
 $coverPath = Join-Path $bundle 'OrcSDR-Main.png'
 $readmePath = Join-Path $bundle 'README.txt'
-foreach ($path in @($manifestPath, $sumPath, $coverPath, $readmePath)) {
+$releaseNotesPath = Join-Path $bundle 'RELEASE_NOTES.txt'
+$requiredPaths = @($manifestPath, $sumPath, $coverPath, $readmePath)
+if (-not $Bridge) { $requiredPaths += $releaseNotesPath }
+foreach ($path in $requiredPaths) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing bundle file: $path" }
 }
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 if (-not $Version) { $Version = "v$($manifest.version)" }
-if ($Version -notmatch '^v\d+\.\d+\.\d+(-(alpha|beta)\.\d+)?(-candidate\.\d+)?$') { throw "Invalid version: $Version" }
+if ($Version -notmatch '^v\d+\.\d+\.\d+(-(alpha|beta|rc)\.?\d+)?(-(candidate\.\d+|multidongle-rc\d+))?$') { throw "Invalid version: $Version" }
 if ($manifest.version -ne $Version.TrimStart('v')) { throw 'Manifest version does not match the expected release.' }
 if ($Bridge) {
   if ($manifest.name -ne 'OrcSDR Hosted 3.0.6 Bridge' -or -not $manifest.temporary) { throw 'Manifest is not the temporary Hosted bridge.' }
@@ -90,15 +93,21 @@ if (-not $Bridge) {
   finally { $sha.Dispose() }
   if ($embeddedHash -ne $provenance.sha256) { throw 'Embedded C6 hash does not match provenance.' }
 }
-$sumLine = (Get-Content -LiteralPath $sumPath -Raw).Trim()
-if ($sumLine -notmatch '^([0-9a-fA-F]{64}) \*(.+)$') { throw 'SHA256SUMS.txt must contain one SHA-256 entry.' }
-if ($Matches[2] -ne $manifest.firmware) { throw 'SHA256SUMS filename does not match the manifest.' }
+$firmwareName = [regex]::Escape($manifest.firmware)
+$sumLine = @(Get-Content -LiteralPath $sumPath |
+  Where-Object { $_ -match "^[0-9a-fA-F]{64} \*$firmwareName$" })
+if ($sumLine.Count -ne 1 -or $sumLine[0] -notmatch '^([0-9a-fA-F]{64}) \*(.+)$') {
+  throw 'SHA256SUMS.txt must contain exactly one entry for the declared firmware.'
+}
 $actualHash = Get-Sha256 $imagePath
 if ($Matches[1].ToLowerInvariant() -ne $actualHash -or $manifest.sha256 -ne $actualHash) {
   throw 'Firmware SHA-256 does not match the manifest and checksum file.'
 }
 if (-not $Bridge -and (Get-Content -LiteralPath $readmePath -Raw) -notmatch 'Firmware & Updates') {
   throw 'Bundle README is missing the in-app C6 update guidance.'
+}
+if (-not $Bridge -and [string]::IsNullOrWhiteSpace((Get-Content -LiteralPath $releaseNotesPath -Raw))) {
+  throw 'Bundle release notes are empty.'
 }
 
 $zip = Get-ChildItem -LiteralPath $bundle -Filter '*local-m5burner.zip' | Select-Object -First 1
@@ -107,13 +116,28 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [IO.Compression.ZipFile]::OpenRead($zip.FullName)
 try {
   $names = @($archive.Entries | ForEach-Object FullName)
-  foreach ($entry in @('m5burner.json', 'firmware/bootloader_0x2000.bin', 'firmware/partition-table_0x8000.bin')) {
+  foreach ($entry in @('m5burner.json', 'firmware/bootloader_0x2000.bin', 'firmware/partition-table_0x8000.bin', 'firmware/flash.sh')) {
     if ($names -notcontains $entry) { throw "M5Burner zip missing $entry" }
+  }
+  $flashEntry = $archive.Entries | Where-Object FullName -eq 'firmware/flash.sh'
+  $flashReader = [IO.BinaryReader]::new($flashEntry.Open())
+  try { $flashBytes = $flashReader.ReadBytes([int]$flashEntry.Length) }
+  finally { $flashReader.Dispose() }
+  $utf8 = [Text.UTF8Encoding]::new($false, $true)
+  try { $flashText = $utf8.GetString($flashBytes) }
+  catch [Text.DecoderFallbackException] {
+    throw 'M5Burner ZIP flash.sh must use valid UTF-8 without BOM and Linux LF line endings.'
+  }
+  if (($flashBytes.Length -ge 3 -and $flashBytes[0] -eq 0xef -and $flashBytes[1] -eq 0xbb -and $flashBytes[2] -eq 0xbf) -or
+      $flashBytes -contains [byte]13 -or
+      -not $flashText.StartsWith("#!/bin/bash`n")) {
+    throw 'M5Burner ZIP flash.sh must use UTF-8 without BOM and Linux LF line endings.'
   }
   $appEntry = if ($Bridge) { 'firmware/orcsdr_c6_bridge_0x10000.bin' } else { 'firmware/orcsdr_tab5_0x10000.bin' }
   if ($names -notcontains $appEntry) { throw "M5Burner zip missing $appEntry" }
   if (-not $Bridge) {
     if ($names -notcontains 'c6-provenance.json') { throw 'M5Burner zip is missing C6 provenance.' }
+    if ($names -notcontains 'RELEASE_NOTES.txt') { throw 'M5Burner zip is missing release notes.' }
     $provenanceReader = [IO.StreamReader]::new(($archive.Entries | Where-Object FullName -eq 'c6-provenance.json').Open())
     try { $zipProvenance = $provenanceReader.ReadToEnd() | ConvertFrom-Json }
     finally { $provenanceReader.Dispose() }

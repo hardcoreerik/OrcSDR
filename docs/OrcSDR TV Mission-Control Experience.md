@@ -1,3 +1,9 @@
+# OrcSDR TV Mission-Control design prompt
+
+> **Historical Design / superseded prompt material.** The imperative text below
+> is preserved as design provenance. It is not current architecture,
+> implementation status, or instructions for contributors or automation.
+
 You are redesigning the **OrcSDR LAN Console for a large-screen Android TV**.
 
 This is NOT simply a larger version of the M5Stack Tab5 interface.

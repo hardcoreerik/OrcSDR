@@ -4,6 +4,10 @@
 
 Use seek for station discovery, step for known channel spacing, or the keypad for direct entry. Relative level and stereo meters are receiver-relative measurements, not calibrated dBm.
 
+The RF gain control appears on Listen, Spectrum, and Settings. **Auto** walks
+the receiver's supported gain steps and keeps the lowest one that reaches a
+usable level; dragging the slider selects a manual hardware gain step.
+
 ## Spectrum
 
 The center marker is the tuned frequency. The outer markers show DSP filter bandwidth. Tap inside the spectrum or waterfall to propose a nearby tune point; span controls change how much spectrum is visible.

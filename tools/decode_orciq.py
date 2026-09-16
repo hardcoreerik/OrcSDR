@@ -67,6 +67,8 @@ def read_capture(path: Path):
     magic, header_bytes, rate, freq, data_bytes, fmt, sf, _, bw, flags = HEADER.unpack_from(raw)
     if magic != MAGIC or header_bytes != HEADER.size or fmt != 1 or flags != 0:
         raise ValueError("unsupported ORCIQ header")
+    if rate == 0 or not 7 <= sf <= 12 or bw == 0 or bw > rate:
+        raise ValueError("invalid LoRa parameters in ORCIQ header")
     iq = raw[header_bytes:]
     if len(iq) != data_bytes or data_bytes % 2:
         raise ValueError(f"IQ length mismatch: header={data_bytes}, file={len(iq)}")
@@ -440,17 +442,19 @@ def _wait_line(connection, prefixes: tuple[str, ...], timeout: float = 20) -> st
     raise TimeoutError("timed out waiting for " + " or ".join(prefixes))
 
 
-def _read_exact(connection, count: int) -> bytes:
+def _read_exact(connection, count: int, timeout: float = 5) -> bytes:
     data = bytearray()
-    while len(data) < count:
+    deadline = time.monotonic() + timeout
+    while len(data) < count and time.monotonic() < deadline:
         chunk = connection.read(count - len(data))
-        if not chunk:
-            raise TimeoutError("serial IQ transfer ended early")
-        data.extend(chunk)
+        if chunk:
+            data.extend(chunk)
+    if len(data) != count:
+        raise TimeoutError("serial IQ transfer ended early")
     return bytes(data)
 
 
-def _download_psram_iq(connection, fields: dict[str, int], batch_size: int) -> bytes:
+def _download_psram_iq(connection, fields: dict[str, int]) -> bytes:
     connection.write(b"RTL_IQ_GET_BEGIN\n")
     ready = _wait_line(connection, ("RTL_IQ_GET_READY", "RTL_IQ_GET_ERROR"))
     if ready.startswith("RTL_IQ_GET_ERROR"):
@@ -462,17 +466,14 @@ def _download_psram_iq(connection, fields: dict[str, int], batch_size: int) -> b
     expected = fields["bytes"]
     capture = bytearray()
     while len(capture) < expected:
-        remaining_chunks = (expected - len(capture) + chunk_bytes - 1) // chunk_bytes
-        batch = min(batch_size, remaining_chunks)
-        connection.write(b"RTL_IQ_GET_CHUNK\n" * batch)
-        for _ in range(batch):
-            data_line = _wait_line(connection, ("RTL_IQ_GET_DATA", "RTL_IQ_GET_ERROR"))
-            if data_line.startswith("RTL_IQ_GET_ERROR"):
-                raise RuntimeError(data_line)
-            count_match = re.fullmatch(r"RTL_IQ_GET_DATA bytes=(\d+)", data_line)
-            if not count_match:
-                raise RuntimeError("invalid RTL_IQ_GET_DATA response: " + data_line)
-            capture.extend(_read_exact(connection, int(count_match.group(1))))
+        connection.write(b"RTL_IQ_GET_CHUNK\n")
+        data_line = _wait_line(connection, ("RTL_IQ_GET_DATA", "RTL_IQ_GET_ERROR"))
+        if data_line.startswith("RTL_IQ_GET_ERROR"):
+            raise RuntimeError(data_line)
+        count_match = re.fullmatch(r"RTL_IQ_GET_DATA bytes=(\d+)", data_line)
+        if not count_match:
+            raise RuntimeError("invalid RTL_IQ_GET_DATA response: " + data_line)
+        capture.extend(_read_exact(connection, int(count_match.group(1))))
     done = _wait_line(connection, ("RTL_IQ_GET_DONE", "RTL_IQ_GET_ERROR"), 30)
     if done.startswith("RTL_IQ_GET_ERROR"):
         raise RuntimeError(done)
@@ -515,9 +516,9 @@ def _retrieve_latest_iq(connection, retry_callback=None) -> tuple[str, bytes]:
             raise RuntimeError("invalid PSRAM retrieve response: " + state)
         failures = []
         capture = None
-        for attempt, batch_size in enumerate((4, 1, 1), start=1):
+        for attempt in range(1, 4):
             try:
-                capture = _download_psram_iq(connection, fields, batch_size)
+                capture = _download_psram_iq(connection, fields)
                 break
             except (OSError, RuntimeError, TimeoutError) as error:
                 failures.append(f"attempt {attempt}: {error}")

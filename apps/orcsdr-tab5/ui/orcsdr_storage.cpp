@@ -130,7 +130,8 @@ bool mount_tab5_sd() {
   slot.d3 = GPIO_NUM_42;
   const esp_err_t mount_result = esp_vfs_fat_sdmmc_mount("/sd", &host, &slot, &mount, &g_card);
   g_mounted = mount_result == ESP_OK;
-  if (!g_mounted) ESP_LOGE("orcsdr_storage", "SDMMC Slot0 mount failed: %s", esp_err_to_name(mount_result));
+  if (g_mounted) sdmmc_card_print_info(stdout, g_card);
+  else ESP_LOGE("orcsdr_storage", "SDMMC Slot0 mount failed: %s", esp_err_to_name(mount_result));
   return g_mounted;
 }
 

@@ -1,6 +1,6 @@
 dependencies:
   esp_rtl_sdr:
-    component_hash: 6aae50446fc97072cddf67171f48c0fe9e6b90c8c1bb4ee115b024ba5ea0350d
+    component_hash: b2093231379ebb27a10e5913b86565559164bf8275d54480c9f49c376c5cfd3e
     dependencies:
     - name: idf
       version: '>=5.5.0'
@@ -10,7 +10,7 @@ dependencies:
       type: git
     targets:
     - esp32p4
-    version: 69e61848008ed0fce5a823ad370aee5cb81d65da
+    version: 52edd9b6e591fbd5f3985af4dc51e9da60e04cad
   espressif/eppp_link:
     component_hash: c1369b37f2b0b427b198ae14e07e7547d3da92b95fe4dc7f949e5de560b35f21
     dependencies:
@@ -88,7 +88,7 @@ dependencies:
       type: service
     version: 1.6.4
   espressif/mdns:
-    component_hash: 3ba256ac95e07c274be53cbd73f06cb846c403b61e8fbdf1be57bdb79db7a63e
+    component_hash: b679eafd0acae2066e2645bd91d073e33ca5be515e2545cd3c4e55a3e3bce3cb
     dependencies:
     - name: idf
       require: private
@@ -96,7 +96,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 1.12.0
+    version: 1.13.1
   espressif/wifi_remote_over_eppp:
     component_hash: 1fd6968af20f0b19e421f6b519b0a8caf81d689afc3783b564c28559e45f66ef
     dependencies:
@@ -142,6 +142,6 @@ direct_dependencies:
 - idf
 - m5stack/m5gfx
 - m5stack/m5unified
-manifest_hash: 4323b745690c774037c05160a94f7e466b6a040ee24f2852f5c3653628f7045a
+manifest_hash: ebd6c6e45b131867599b73560d2e71d3a216686c31f950090784a498e2d37f60
 target: esp32p4
 version: 2.0.0

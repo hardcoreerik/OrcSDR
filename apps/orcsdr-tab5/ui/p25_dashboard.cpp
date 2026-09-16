@@ -88,10 +88,7 @@ void draw_radio_icon(int cx, int cy, uint16_t color) {
 void draw_header() {
   M5.Display.fillRect(0, 0, 1280, kHeaderH, kBg);
   M5.Display.drawFastHLine(8, kHeaderH - 1, 1264, kCyan);
-  if (!badge::draw(18, 13, 104))
-    M5.Display.drawRoundRect(18, 13, 104, 104, 18, kGreen);
-  text("OrcSDR", 142, 38, TFT_WHITE, 4, middle_left);
-  text("P25 Trunking", 142, 82, kCyan, 2, middle_left);
+  audio_header::draw_brand("P25 TRUNKING");
   M5.Display.drawFastVLine(365, 25, 82, kCyan);
   draw_radio_icon(456, 70, kCyan);
   text("P25 Trunking", 530, 66, TFT_WHITE, 4, middle_left);
@@ -656,20 +653,6 @@ Action handle_touch(int32_t x, int32_t y) {
     return {};
   }
   if (!g_active) return {};
-  const auto audio_action = audio_header::handle_touch(g_audio_control, x, y, millis());
-  if (audio_action != audio_header::Action::none) {
-    if (audio_action == audio_header::Action::opened ||
-        audio_action == audio_header::Action::closed) {
-      audio_header::draw(g_audio_control, g_snapshot.volume, g_snapshot.sound_enabled,
-                         g_snapshot.battery_percent);
-      return {};
-    }
-    if (audio_action == audio_header::Action::volume_down)
-      return {ActionKind::volume_down};
-    if (audio_action == audio_header::Action::sound_toggle)
-      return {ActionKind::sound_toggle};
-    return {ActionKind::volume_up};
-  }
   if (audio_header::settings_hit(x, y)) return {ActionKind::open_device_settings};
   if (y >= kTabsY) {
     const uint8_t next = std::min<uint8_t>(x / kTabW, static_cast<uint8_t>(View::count) - 1);

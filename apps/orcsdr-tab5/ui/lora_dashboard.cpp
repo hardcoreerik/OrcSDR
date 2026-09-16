@@ -3,6 +3,7 @@
 #include "dashboard_audio_control.hpp"
 #include "offline_map.hpp"
 #include "orc_badge.hpp"
+#include "lora_channel_control.hpp"
 
 #include <M5Unified.h>
 
@@ -31,19 +32,33 @@ constexpr int kPlotH = 124;
 constexpr int kWaterfallY = 402;
 constexpr int kWaterfallH = 126;
 constexpr uint32_t kDynamicRefreshIntervalMs = 1000;
-constexpr uint32_t kSpectrumRefreshIntervalMs = 250;
+constexpr uint32_t kSpectrumRefreshIntervalMs = 50;
+constexpr float kSpectrumRangeDb = 42.0f;
+constexpr int kWaterfallRowsPerFrame = 1;
+constexpr size_t kSpectrumTraceCapacity = 256;
+constexpr size_t kTrafficRows = 5;
 
 Snapshot g_snapshot{};
 View g_view = View::overview;
 bool g_active = false;
+bool g_channels_open = false;
 bool g_follow_node = false;
+bool g_node_details = false;
+bool g_traffic_details = false;
 bool g_map_center_set = false;
 int32_t g_map_center_lat_e7 = INT32_MAX;
 int32_t g_map_center_lon_e7 = INT32_MAX;
-uint8_t g_filter = 0;
+uint8_t g_node_filter = 0;
+uint8_t g_traffic_filter = 0;
+size_t g_traffic_offset = 0;
 uint32_t g_last_dynamic_ms = 0;
 uint32_t g_last_spectrum_ms = 0;
 uint16_t g_waterfall_row[kPlotW]{};
+int16_t g_previous_spectrum_y[kSpectrumTraceCapacity]{};
+size_t g_previous_spectrum_bins = 0;
+View g_previous_spectrum_view = View::count;
+float g_waterfall_floor = -120.0f;
+bool g_waterfall_floor_valid = false;
 
 bool hit(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
   return x >= bx && x < bx + bw && y >= by && y < by + bh;
@@ -51,6 +66,97 @@ bool hit(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
 
 bool has_position(const Node& node) {
   return node.latitude_e7 != INT32_MAX && node.longitude_e7 != INT32_MAX;
+}
+
+bool supported_event(const Event& event) {
+  return event.port == 1 || event.port == 3 || event.port == 4 || event.port == 5 ||
+         event.port == 7 || event.port == 67;
+}
+
+float estimate_noise_floor(const float* levels, size_t first_bin, size_t visible_bins) {
+  float minimum = levels[first_bin];
+  for (size_t i = 1; i < visible_bins; ++i)
+    minimum = std::min(minimum, levels[first_bin + i]);
+  float sum = 0.0f;
+  size_t count = 0;
+  for (size_t i = 0; i < visible_bins; ++i) {
+    const float level = levels[first_bin + i];
+    if (level <= minimum + 12.0f) {
+      sum += level;
+      ++count;
+    }
+  }
+  return (count ? sum / static_cast<float>(count) : minimum) - 3.0f;
+}
+
+uint16_t waterfall_color(float level) {
+  const float v = std::clamp(level, 0.0f, 1.0f);
+  uint8_t r = 0, g = 0, b = 0;
+  if (v < 0.20f) {
+    b = static_cast<uint8_t>(20.0f + v * 400.0f);
+  } else if (v < 0.50f) {
+    const float t = (v - 0.20f) / 0.30f;
+    g = static_cast<uint8_t>(180.0f * t);
+    b = static_cast<uint8_t>(100.0f + 155.0f * t);
+  } else if (v < 0.75f) {
+    const float t = (v - 0.50f) / 0.25f;
+    r = static_cast<uint8_t>(255.0f * t);
+    g = static_cast<uint8_t>(180.0f + 75.0f * t);
+    b = static_cast<uint8_t>(255.0f * (1.0f - t));
+  } else if (v < 0.90f) {
+    const float t = (v - 0.75f) / 0.15f;
+    r = 255;
+    g = static_cast<uint8_t>(255.0f * (1.0f - t));
+  } else {
+    const uint8_t hot = static_cast<uint8_t>(255.0f * (v - 0.90f) / 0.10f);
+    r = 255;
+    g = hot;
+    b = hot;
+  }
+  return M5.Display.color565(r, g, b);
+}
+
+void draw_lora_channel_markers() {
+  if (g_snapshot.span_hz == 0 || g_snapshot.bandwidth_hz >= g_snapshot.span_hz) return;
+  const int half_width = static_cast<int>(
+      static_cast<uint64_t>(kPlotW) * g_snapshot.bandwidth_hz / g_snapshot.span_hz / 2u);
+  const int center = kPlotX + kPlotW / 2;
+  for (const int edge : {center - half_width, center + half_width}) {
+    M5.Display.drawFastVLine(edge, kPlotY + 1, kPlotH - 2, kYellow);
+    M5.Display.drawFastVLine(edge, kWaterfallY + 1, kWaterfallH - 2, kGrid);
+  }
+  M5.Display.drawFastVLine(center, kPlotY + 1, kPlotH - 2, kGreen);
+}
+
+size_t visible_event_count() {
+  size_t count = 0;
+  for (size_t i = 0; i < g_snapshot.event_count; ++i)
+    if (g_traffic_filter == 0 || supported_event(g_snapshot.events[i])) ++count;
+  return count;
+}
+
+const Event* visible_event_at(size_t row) {
+  for (size_t i = 0, visible = 0; i < g_snapshot.event_count; ++i) {
+    if (g_traffic_filter != 0 && !supported_event(g_snapshot.events[i])) continue;
+    if (visible++ == row) return &g_snapshot.events[i];
+  }
+  return nullptr;
+}
+
+size_t traffic_max_offset() {
+  const size_t count = visible_event_count();
+  return count > kTrafficRows ? count - kTrafficRows : 0;
+}
+
+const Node* visible_node_at(size_t row, size_t* snapshot_index = nullptr) {
+  size_t visible = 0;
+  for (size_t i = 0; i < g_snapshot.node_count; ++i) {
+    if (g_node_filter != 0 && !g_snapshot.nodes[i].favorite) continue;
+    if (visible++ != row) continue;
+    if (snapshot_index) *snapshot_index = i;
+    return &g_snapshot.nodes[i];
+  }
+  return nullptr;
 }
 
 const Node* selected_positioned_node() {
@@ -101,13 +207,17 @@ void draw_radio_icon(int cx, int cy, uint16_t color) {
   M5.Display.drawFastHLine(cx - 19, cy + 35, 38, color);
 }
 
+void draw_star(int cx, int cy, uint16_t color) {
+  const int8_t x[] = {0, 7, -11, 11, -7, 0};
+  const int8_t y[] = {-11, 9, -3, -3, 9, -11};
+  for (size_t i = 1; i < std::size(x); ++i)
+    M5.Display.drawLine(cx + x[i - 1], cy + y[i - 1], cx + x[i], cy + y[i], color);
+}
+
 void draw_header() {
   M5.Display.fillRect(0, 0, 1280, kHeaderH, kBg);
   M5.Display.drawFastHLine(8, kHeaderH - 1, 1264, kCyan);
-  if (!badge::draw(18, 8, 104))
-    M5.Display.drawRoundRect(18, 8, 104, 104, 18, kGreen);
-  text("OrcSDR", 142, 38, TFT_WHITE, 4, middle_left);
-  text("M5STACK TAB5", 142, 81, kCyan, 2, middle_left);
+  audio_header::draw_brand("M5STACK TAB5");
   M5.Display.drawFastVLine(362, 20, 80, kCyan);
   draw_radio_icon(458, 64, kGreen);
   text("LORA MESH", 520, 47, TFT_WHITE, 4, middle_left);
@@ -122,6 +232,7 @@ void draw_header() {
   text(g_snapshot.key_loaded ? "KEY LOADED" : "PUBLIC ONLY", 1050, 73,
        g_snapshot.key_loaded ? kGreen : kMuted, 1, middle_left);
   audio_header::draw_home_button();
+  audio_header::draw_battery(M5.Power.getBatteryLevel());
   audio_header::draw_mute_button(g_snapshot.sound_enabled);
   audio_header::draw_visualizer_button(g_snapshot.running);
   audio_header::draw_settings_button();
@@ -186,6 +297,24 @@ void node_name(const Node& node, char* out, size_t size) {
   else format_id(out, size, node.id);
 }
 
+const Node* find_node(uint32_t id) {
+  for (size_t i = 0; i < g_snapshot.node_count; ++i)
+    if (g_snapshot.nodes[i].id == id) return &g_snapshot.nodes[i];
+  return nullptr;
+}
+
+void event_sender(const Event& event, char* out, size_t size, bool include_id) {
+  const Node* node = find_node(event.sender);
+  if (node != nullptr && node->name[0]) {
+    if (include_id)
+      snprintf(out, size, "%s  !%08lX", node->name, static_cast<unsigned long>(event.sender));
+    else
+      strlcpy(out, node->name, size);
+  } else {
+    format_id(out, size, event.sender);
+  }
+}
+
 void draw_metric(int x, int y, int w, const char* title, const char* value,
                  uint16_t color = TFT_WHITE) {
   card(x, y, w, 88);
@@ -194,7 +323,7 @@ void draw_metric(int x, int y, int w, const char* title, const char* value,
 }
 
 void draw_plot_static() {
-  card(24, 138, 1128, 430);
+  card(24, 138, 1224, 430);
   text("PASSIVE LORA MONITOR", 60, 164, kGreen, 3, middle_left);
   char value[64];
   snprintf(value, sizeof(value), "CENTER %.3f MHz", g_snapshot.frequency_hz / 1000000.0);
@@ -203,16 +332,27 @@ void draw_plot_static() {
            static_cast<unsigned long>(g_snapshot.bandwidth_hz / 1000u));
   text(value, 520, 198, kGreen, 2, middle_left);
   text("RX ONLY", 1020, 164, kGreen, 2, middle_left);
+  const uint32_t half_span = g_snapshot.span_hz / 2u;
+  const uint32_t left_hz = g_snapshot.frequency_hz > half_span
+                               ? g_snapshot.frequency_hz - half_span
+                               : 0;
+  snprintf(value, sizeof(value), "%.3f", left_hz / 1000000.0);
+  text(value, kPlotX, 250, kMuted, 1, middle_left);
+  snprintf(value, sizeof(value), "%.3f MHz", g_snapshot.frequency_hz / 1000000.0);
+  text(value, kPlotX + kPlotW / 2, 250, kCyan, 1);
+  snprintf(value, sizeof(value), "%.3f", (g_snapshot.frequency_hz + half_span) / 1000000.0);
+  text(value, kPlotX + kPlotW, 250, kMuted, 1, middle_right);
   M5.Display.fillRect(kPlotX, kPlotY, kPlotW, kPlotH, kBg);
   M5.Display.drawRect(kPlotX, kPlotY, kPlotW, kPlotH, kGrid);
   for (int i = 1; i < 5; ++i) {
     M5.Display.drawFastHLine(kPlotX, kPlotY + i * kPlotH / 5, kPlotW, kGrid);
     M5.Display.drawFastVLine(kPlotX + i * kPlotW / 5, kPlotY, kPlotH, kGrid);
   }
+  draw_lora_channel_markers();
   M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kCyan);
   M5.Display.setScrollRect(kPlotX + 1, kWaterfallY + 1, kPlotW - 2, kWaterfallH - 2,
                            kBg);
-  card(846, 270, 280, 258);
+  card(846, 270, 382, 258);
   text("RECENT", 868, 294, kCyan, 2, middle_left);
   button(34, 578, 250, 48, "SCAN BAND", kCyan, g_snapshot.survey_active);
   button(300, 578, 250, 48, "RECORD IQ", kCyan);
@@ -226,25 +366,18 @@ void draw_overview_static() { draw_plot_static(); }
 void draw_nodes_static() {
   text("RECENTLY SEEN NODES", 40, 154, kCyan, 2, middle_left);
   card(32, 175, 770, 414);
-  card(822, 175, 426, 190);
+  card(822, 175, 426, 414);
   text("SELECTED NODE", 844, 199, kCyan, 2, middle_left);
-  card(822, 382, 426, 207);
-  text("VERIFIED LINKS", 844, 406, kCyan, 2, middle_left);
-  button(32, 604, 228, 42, "FILTER", kCyan);
-  button(278, 604, 228, 42, "FAVORITE", kCyan);
-  button(524, 604, 228, 42, "VIEW DETAILS", kCyan);
-  button(770, 604, 228, 42, "EXPORT LOG", kCyan);
 }
 
 void draw_traffic_static() {
-  card(28, 144, 335, 464);
-  text("SOURCES", 52, 170, kGreen, 2, middle_left);
-  card(386, 144, 862, 464);
-  text("DECODED TRAFFIC", 412, 170, kGreen, 2, middle_left);
-  button(386, 616, 202, 42, "VIEW RAW", kCyan);
-  button(604, 616, 202, 42, "SAVE LOG", kCyan);
-  button(822, 616, 202, 42, "FILTER TYPE", kCyan);
-  button(1040, 616, 202, 42, "CLEAR EVENTS", kCyan);
+  card(28, 144, 1220, 464);
+  text("DECODED TRAFFIC", 52, 170, kGreen, 2, middle_left);
+  button(50, 188, 270, 44, g_traffic_details ? "MESSAGES" : "PACKET DETAILS",
+         kCyan, g_traffic_details);
+  button(334, 188, 270, 44, "SAVE LOG", kCyan);
+  button(618, 188, 270, 44, "FILTER TYPE", kCyan);
+  button(902, 188, 270, 44, "CLEAR EVENTS", kCyan);
 }
 
 void draw_map_static() {
@@ -277,91 +410,255 @@ void draw_health_static() {
   button(804, 578, 242, 48, "CLEAR EVENTS", kCyan);
 }
 
-void draw_event_row(const Event& event, int x, int y, int w, bool detailed) {
-  M5.Display.fillRoundRect(x, y, w, detailed ? 66 : 58, 8, kPanel);
-  M5.Display.drawRoundRect(x, y, w, detailed ? 66 : 58, 8, event.verified ? kGrid : kYellow);
-  char sender[16];
-  format_id(sender, sizeof(sender), event.sender);
+void split_message(const char* value, size_t line_chars, char* first, char* second) {
+  const size_t length = strlen(value);
+  size_t split = std::min(length, line_chars);
+  if (split < length) {
+    for (size_t i = split; i > line_chars / 2; --i) {
+      if (value[i - 1] == ' ' || value[i - 1] == ',') {
+        split = value[i - 1] == ' ' ? i - 1 : i;
+        break;
+      }
+    }
+  }
+  memcpy(first, value, split);
+  first[split] = '\0';
+  const char* remainder = value + split;
+  while (*remainder == ' ') ++remainder;
+  strlcpy(second, remainder, line_chars + 1);
+  if (strlen(remainder) > line_chars) memcpy(second + line_chars - 3, "...", 4);
+}
+
+void format_event_time(char* output, size_t output_size, const Event& event,
+                       uint32_t now_ms, bool include_age = true) {
+  const uint32_t age = event.sender == 0 ? 0 : (now_ms - event.received_ms) / 1000u;
+  if (event.received_utc == 0) {
+    if (include_age)
+      snprintf(output, output_size, "TIME NOT SET | %lus", static_cast<unsigned long>(age));
+    else
+      strlcpy(output, "TIME NOT SET", output_size);
+    return;
+  }
+  const uint32_t day_seconds = event.received_utc % 86400u;
+  if (include_age)
+    snprintf(output, output_size, "%02lu:%02lu:%02luZ | %lus",
+             static_cast<unsigned long>(day_seconds / 3600u),
+             static_cast<unsigned long>((day_seconds / 60u) % 60u),
+             static_cast<unsigned long>(day_seconds % 60u),
+             static_cast<unsigned long>(age));
+  else
+    snprintf(output, output_size, "%02lu:%02lu:%02luZ",
+             static_cast<unsigned long>(day_seconds / 3600u),
+             static_cast<unsigned long>((day_seconds / 60u) % 60u),
+             static_cast<unsigned long>(day_seconds % 60u));
+}
+
+void format_event_details(char* output, size_t output_size, const Event& event) {
+  char destination[12]{};
+  char signal[12] = "—";
+  char snr[12] = "—";
+  format_id(destination, sizeof(destination), event.destination);
+  if (event.signal_tenths != INT16_MAX)
+    snprintf(signal, sizeof(signal), "%.1f", event.signal_tenths / 10.0);
+  if (event.snr_tenths != INT16_MAX)
+    snprintf(snr, sizeof(snr), "%.1f", event.snr_tenths / 10.0);
+  snprintf(output, output_size, "TO %s  ID %08lX  PORT %u  RSSI %s  SNR %s",
+           destination, static_cast<unsigned long>(event.packet_id), event.port,
+           signal, snr);
+}
+
+void draw_event_row(const Event& event, int x, int y, int w) {
+  M5.Display.fillRoundRect(x, y, w, 66, 8, kPanel);
+  M5.Display.drawRoundRect(x, y, w, 66, 8, event.verified ? kGrid : kYellow);
+  char sender[48];
+  event_sender(event, sender, w >= 500 ? sizeof(sender) : 18, w >= 500);
   text(sender, x + 16, y + 19, event.verified ? kGreen : kYellow, 2, middle_left);
-  text(event.text[0] ? event.text : (event.encrypted ? "ENCRYPTED FRAME" : "WAITING"),
-       x + 16, y + (detailed ? 45 : 40), TFT_WHITE, detailed ? 2 : 1, middle_left);
-  char age[20];
-  const uint32_t seconds = event.sender == 0 ? 0 : (millis() - event.received_ms) / 1000u;
-  snprintf(age, sizeof(age), "%lus", static_cast<unsigned long>(seconds));
-  text(age, x + w - 16, y + 19, kMuted, 1, middle_right);
+  if (g_traffic_details) {
+    char details[96]{};
+    format_event_details(details, sizeof(details), event);
+    text(details, x + 16, y + 46, TFT_WHITE, 2, middle_left);
+  } else {
+    const char* message = event.text[0] ? event.text
+                                        : (event.encrypted ? "ENCRYPTED FRAME" : "WAITING");
+    const size_t line_chars = std::min<size_t>(62, static_cast<size_t>((w - 32) / 18));
+    char first[66]{}, second[66]{};
+    split_message(message, line_chars, first, second);
+    if (second[0] && strlen(first) <= sizeof(first) - 4) strcat(first, "...");
+    text(first, x + 16, y + 46, TFT_WHITE, 3, middle_left);
+  }
+  char received[32];
+  format_event_time(received, sizeof(received), event, millis(),
+                    g_view != View::traffic || g_traffic_details);
+  text(received, x + w - 16, y + 19,
+       event.received_utc ? kMuted : kYellow, 2, middle_right);
+}
+
+void draw_large_event_row(const Event& event, int x, int y, int w) {
+  M5.Display.fillRoundRect(x, y, w, 94, 8, kPanel);
+  M5.Display.drawRoundRect(x, y, w, 94, 8, event.verified ? kGrid : kYellow);
+  char sender[18];
+  event_sender(event, sender, sizeof(sender), false);
+  text(sender, x + 16, y + 18, event.verified ? kGreen : kYellow, 2, middle_left);
+  char received[32];
+  format_event_time(received, sizeof(received), event, millis());
+  text(received, x + w - 16, y + 18,
+       event.received_utc ? kMuted : kYellow, 1, middle_right);
+  const char* message = event.text[0] ? event.text
+                                      : (event.encrypted ? "ENCRYPTED FRAME" : "WAITING");
+  char first[18]{}, second[18]{};
+  split_message(message, 17, first, second);
+  text(first, x + 16, y + 48, TFT_WHITE, 3, middle_left);
+  if (second[0]) text(second, x + 16, y + 76, TFT_WHITE, 3, middle_left);
 }
 
 void draw_overview_dynamic() {
-  M5.Display.fillRect(854, 310, 260, 205, kPanel);
-  for (size_t i = 0; i < 3 && i < g_snapshot.event_count; ++i)
-    draw_event_row(g_snapshot.events[i], 862, 318 + static_cast<int>(i) * 62, 244, false);
-  if (g_snapshot.event_count == 0)
-    text("WAITING FOR VERIFIED TRAFFIC", 980, 410, kMuted, 1);
+  char value[48];
+  M5.Display.fillRect(850, 184, 370, 36, kPanel);
+  snprintf(value, sizeof(value), "SIGNAL %.1f dBFS", g_snapshot.relative_dbfs);
+  text(value, 1204, 202, kGreen, 2, middle_right);
+  M5.Display.fillRect(854, 286, 366, 229, kPanel);
+  if (g_snapshot.survey_result_count) {
+    text("SCAN RESULTS", 868, 300, kCyan, 2, middle_left);
+    text("RELATIVE ENERGY", 1204, 300, kMuted, 1, middle_right);
+    for (size_t i = 0; i < g_snapshot.survey_result_count; ++i) {
+      const auto& result = g_snapshot.survey_results[i];
+      snprintf(value, sizeof(value), "%u  %.3f MHz", static_cast<unsigned>(i + 1),
+               result.frequency_hz / 1000000.0);
+      text(value, 868, 342 + static_cast<int>(i) * 52, TFT_WHITE, 2, middle_left);
+      snprintf(value, sizeof(value), "%.1f dBFS", result.level_dbfs);
+      text(value, 1204, 342 + static_cast<int>(i) * 52, kGreen, 2, middle_right);
+    }
+  } else {
+    text("RECENT", 868, 300, kCyan, 2, middle_left);
+    for (size_t i = 0; i < 2 && i < g_snapshot.event_count; ++i)
+      draw_large_event_row(g_snapshot.events[i], 862, 316 + static_cast<int>(i) * 99, 350);
+    if (g_snapshot.event_count == 0)
+      text("WAITING FOR VERIFIED TRAFFIC", 1037, 410, kMuted, 1);
+  }
 }
 
 void draw_nodes_dynamic() {
   M5.Display.fillRect(42, 195, 748, 380, kPanel);
-  text("NAME", 62, 210, kCyan, 1, middle_left);
-  text("HOPS", 380, 210, kCyan, 1, middle_left);
-  text("BATTERY", 480, 210, kCyan, 1, middle_left);
-  text("LAST HEARD", 600, 210, kCyan, 1, middle_left);
-  text("RSSI / SNR", 700, 210, kCyan, 1, middle_left);
-  for (size_t i = 0; i < g_snapshot.node_count && i < 6; ++i) {
-    const Node& node = g_snapshot.nodes[i];
-    const int y = 236 + static_cast<int>(i) * 54;
-    const bool selected = i == g_snapshot.selected_node;
+  text("NAME", 62, 210, kCyan, 2, middle_left);
+  text("HOPS", 356, 210, kCyan, 2, middle_left);
+  text("BATTERY", 438, 210, kCyan, 2, middle_left);
+  text("AGE", 568, 210, kCyan, 2, middle_left);
+  text("SIGNAL", 678, 210, kCyan, 2, middle_left);
+  size_t shown = 0;
+  for (; shown < 6; ++shown) {
+    size_t snapshot_index = 0;
+    const Node* node_ptr = visible_node_at(shown, &snapshot_index);
+    if (!node_ptr) break;
+    const Node& node = *node_ptr;
+    const int y = 236 + static_cast<int>(shown) * 54;
+    const bool selected = snapshot_index == g_snapshot.selected_node;
     M5.Display.fillRoundRect(48, y, 736, 46, 7, selected ? 0x1264 : kBg);
     M5.Display.drawRoundRect(48, y, 736, 46, 7, selected ? kGreen : kGrid);
-    char value[48];
-    node_name(node, value, sizeof(value));
-    text(value, 70, y + 23, selected ? kGreen : TFT_WHITE, 2, middle_left);
+    char value[32];
+    node_name(node, value, 22);
+    if (node.favorite) draw_star(63, y + 23, kYellow);
+    text(value, node.favorite ? 82 : 62, y + 23, selected ? kGreen : TFT_WHITE, 2,
+         middle_left);
     snprintf(value, sizeof(value), "%s", node.hops == UINT8_MAX ? "—" : "HOPS");
     if (node.hops != UINT8_MAX) snprintf(value, sizeof(value), "%u", node.hops);
-    text(value, 380, y + 23, TFT_WHITE, 2, middle_left);
+    text(value, 356, y + 23, TFT_WHITE, 2, middle_left);
     if (node.battery_percent == UINT8_MAX) strlcpy(value, "—", sizeof(value));
     else snprintf(value, sizeof(value), "%u%%", node.battery_percent);
-    text(value, 480, y + 23, node.battery_percent == UINT8_MAX ? kMuted : kGreen, 2, middle_left);
+    text(value, 450, y + 23, node.battery_percent == UINT8_MAX ? kMuted : kGreen, 2,
+         middle_left);
     snprintf(value, sizeof(value), "%lus", static_cast<unsigned long>(
         node.id == 0 ? 0 : (millis() - node.seen_ms) / 1000u));
-    text(value, 600, y + 23, kMuted, 1, middle_left);
+    text(value, 568, y + 23, kMuted, 2, middle_left);
     if (node.signal_tenths == INT16_MAX) strlcpy(value, "—", sizeof(value));
-    else snprintf(value, sizeof(value), "%.0f / %.1f", node.signal_tenths / 10.0,
-                  node.snr_tenths == INT16_MAX ? 0.0 : node.snr_tenths / 10.0);
-    text(value, 700, y + 23, TFT_WHITE, 1, middle_left);
+    else if (node.snr_tenths == INT16_MAX)
+      snprintf(value, sizeof(value), "%d", static_cast<int>(node.signal_tenths / 10));
+    else
+      snprintf(value, sizeof(value), "%d/%d", static_cast<int>(node.signal_tenths / 10),
+               static_cast<int>(node.snr_tenths / 10));
+    text(value, 678, y + 23, TFT_WHITE, 2, middle_left);
   }
-  if (g_snapshot.node_count == 0) text("NO VERIFIED NODES", 416, 400, kMuted, 2);
-  M5.Display.fillRect(842, 218, 388, 132, kPanel);
+  if (shown == 0)
+    text(g_node_filter == 0 ? "NO VERIFIED NODES" : "NO FAVORITE NODES", 416, 400,
+         kMuted, 2);
+  M5.Display.fillRect(842, 218, 388, 358, kPanel);
   const Node* node = g_snapshot.node_count ? &g_snapshot.nodes[
       std::min<size_t>(g_snapshot.selected_node, g_snapshot.node_count - 1)] : nullptr;
   char value[64];
-  if (node) node_name(*node, value, sizeof(value));
+  if (node) node_name(*node, value, node->favorite ? 29 : 31);
   else strlcpy(value, "—", sizeof(value));
-  text(value, 854, 236, node ? kGreen : kMuted, 3, middle_left);
+  if (node && node->favorite) draw_star(856, 236, kYellow);
+  text(value, node && node->favorite ? 876 : 854, 236, node ? kGreen : kMuted, 2,
+       middle_left);
   if (node) {
-    format_id(value, sizeof(value), node->id); text(value, 854, 268, TFT_WHITE, 1, middle_left);
-    format_coord(value, sizeof(value), node->latitude_e7); text(value, 854, 302, kCyan, 1, middle_left);
+    format_id(value, sizeof(value), node->id);
+    text(value, 854, 268, TFT_WHITE, 2, middle_left);
+    if (g_node_details) {
+      snprintf(value, sizeof(value), "LAST %lus", static_cast<unsigned long>(
+          node->id == 0 ? 0 : (millis() - node->seen_ms) / 1000u));
+      text(value, 854, 302, kCyan, 2, middle_left);
+      format_coord(value, sizeof(value), node->latitude_e7);
+      text(value, 854, 334, TFT_WHITE, 2, middle_left);
+      format_coord(value, sizeof(value), node->longitude_e7);
+      text(value, 854, 366, TFT_WHITE, 2, middle_left);
+      if (node->signal_tenths == INT16_MAX && node->snr_tenths == INT16_MAX)
+        strlcpy(value, "RSSI —   SNR —", sizeof(value));
+      else if (node->signal_tenths == INT16_MAX)
+        snprintf(value, sizeof(value), "RSSI —   SNR %.1f", node->snr_tenths / 10.0);
+      else if (node->snr_tenths == INT16_MAX)
+        snprintf(value, sizeof(value), "RSSI %d   SNR —", node->signal_tenths / 10);
+      else
+        snprintf(value, sizeof(value), "RSSI %d   SNR %.1f", node->signal_tenths / 10,
+                 node->snr_tenths / 10.0);
+      text(value, 854, 398, kCyan, 2, middle_left);
+      if (node->battery_percent == UINT8_MAX && node->hops == UINT8_MAX)
+        strlcpy(value, "BAT —   HOPS —", sizeof(value));
+      else if (node->battery_percent == UINT8_MAX)
+        snprintf(value, sizeof(value), "BAT —   HOPS %u", node->hops);
+      else if (node->hops == UINT8_MAX)
+        snprintf(value, sizeof(value), "BAT %u%%   HOPS —", node->battery_percent);
+      else
+        snprintf(value, sizeof(value), "BAT %u%%   HOPS %u", node->battery_percent,
+                 node->hops);
+      text(value, 854, 430, TFT_WHITE, 2, middle_left);
+    } else {
+      text("PRESS VIEW DETAILS", 854, 334, kMuted, 2, middle_left);
+    }
   }
-  M5.Display.fillRect(842, 426, 388, 146, kPanel);
-  text("NO INFERRED LINKS", 1036, 486, kMuted, 2);
-  text("Links appear only when verified", 1036, 518, kMuted, 1);
+  text(g_snapshot.log_status[0] ? g_snapshot.log_status : "EXPORTS RECENT EVENTS",
+       1036, 460, kMuted, 2);
+  button(840, 478, 190, 44, g_node_filter == 0 ? "FILTER: ALL" : "FAVORITES", kCyan,
+         g_node_filter != 0);
+  button(1040, 478, 190, 44, "FAVORITE", node && node->favorite ? kYellow : kCyan,
+         node && node->favorite);
+  button(840, 532, 190, 44, g_node_details ? "HIDE DETAILS" : "VIEW DETAILS", kCyan,
+         g_node_details);
+  button(1040, 532, 190, 44, "EXPORT LOG", kCyan);
 }
 
 void draw_traffic_dynamic() {
-  M5.Display.fillRect(42, 192, 307, 400, kPanel);
-  M5.Display.fillRect(400, 192, 834, 400, kPanel);
-  for (size_t i = 0; i < std::min<size_t>(5, g_snapshot.event_count); ++i) {
-    const Event& event = g_snapshot.events[i];
-    draw_event_row(event, 408, 204 + static_cast<int>(i) * 72, 814, true);
-    char sender[16]; format_id(sender, sizeof(sender), event.sender);
-    text(sender, 62, 215 + static_cast<int>(i) * 72, event.verified ? kGreen : kYellow,
-         2, middle_left);
-    text(event.text[0] ? event.text : (event.encrypted ? "ENCRYPTED" : "—"),
-         62, 241 + static_cast<int>(i) * 72, TFT_WHITE, 1, middle_left);
+  M5.Display.fillRect(42, 240, 1192, 360, kPanel);
+  const size_t event_count = visible_event_count();
+  g_traffic_offset = std::min(g_traffic_offset, traffic_max_offset());
+  const size_t visible = std::min(kTrafficRows, event_count - g_traffic_offset);
+  for (size_t i = 0; i < visible; ++i) {
+    const Event* event = visible_event_at(g_traffic_offset + i);
+    if (event) draw_event_row(*event, 50, 246 + static_cast<int>(i) * 72, 1118);
   }
-  if (g_snapshot.event_count == 0) text("WAITING FOR DECODED TRAFFIC", 820, 390, kMuted, 2);
+  if (event_count == 0) text("WAITING FOR DECODED TRAFFIC", 820, 390, kMuted, 2);
   char value[48];
-  snprintf(value, sizeof(value), "FILTER: %s", g_filter == 0 ? "ALL" : "SUPPORTED");
+  snprintf(value, sizeof(value), "FILTER: %s", g_traffic_filter == 0 ? "ALL" : "SUPPORTED");
   text(value, 1150, 170, kCyan, 1, middle_right);
+  const bool can_scroll_up = g_traffic_offset > 0;
+  const bool can_scroll_down = g_traffic_offset < traffic_max_offset();
+  button(1188, 248, 36, 44, "^", can_scroll_up ? kCyan : kMuted);
+  button(1188, 548, 36, 44, "v", can_scroll_down ? kCyan : kMuted);
+  if (event_count) {
+    snprintf(value, sizeof(value), "%u-%u / %u",
+             static_cast<unsigned>(g_traffic_offset + 1),
+             static_cast<unsigned>(g_traffic_offset + visible),
+             static_cast<unsigned>(event_count));
+    text(value, 1206, 526, kMuted, 1);
+  }
 }
 
 void draw_map_dynamic() {
@@ -399,7 +696,7 @@ void draw_map_dynamic() {
   } else text("NO NODE SELECTED", 1095, 320, kMuted, 2);
   text(g_follow_node ? "FOLLOWING" : "CENTERED", 970, 350,
        g_follow_node ? kGreen : kCyan, 2, middle_left);
-  text("OFFLINE LANE COUNTY", 970, 390, kMuted, 1, middle_left);
+  text("OFFLINE MAP", 970, 390, kMuted, 1, middle_left);
   text(offline_map::available() ? "SD VECTOR MAP" : "MAP PACK NOT INSTALLED", 970, 420, kMuted, 1, middle_left);
 }
 
@@ -407,7 +704,7 @@ void draw_health_dynamic() {
   char value[48];
   snprintf(value, sizeof(value), "%.3f MHz", g_snapshot.frequency_hz / 1000000.0);
   text(value, 139, 196, TFT_WHITE, 2);
-  text(g_snapshot.region[0] ? g_snapshot.region : "US 902-928", 358, 196, TFT_WHITE, 2);
+  text(g_snapshot.region[0] ? g_snapshot.region : "US", 358, 196, TFT_WHITE, 2);
   text(g_snapshot.running ? "PASSIVE RX" : "STOPPED", 596, 196,
        g_snapshot.running ? kGreen : kMuted, 2);
   snprintf(value, sizeof(value), "%lu", static_cast<unsigned long>(g_snapshot.encrypted_frames));
@@ -416,8 +713,8 @@ void draw_health_dynamic() {
   text("RX ONLY", 1200, 196, kGreen, 2);
   M5.Display.fillRect(40, 290, 780, 240, kPanel);
   M5.Display.fillRect(870, 290, 360, 240, kPanel);
-  draw_event_row(g_snapshot.events[0], 880, 306, 340, true);
-  draw_event_row(g_snapshot.events[1], 880, 382, 340, true);
+  draw_event_row(g_snapshot.events[0], 880, 306, 340);
+  draw_event_row(g_snapshot.events[1], 880, 382, 340);
   snprintf(value, sizeof(value), "RATE %.3f MSPS", g_snapshot.effective_sps / 1000000.0);
   text(value, 60, 548, kGreen, 1, middle_left);
   snprintf(value, sizeof(value), "USB %lu  DROP %lu  CRC %lu",
@@ -433,6 +730,52 @@ void draw_dynamic() {
   else if (g_view == View::traffic) draw_traffic_dynamic();
   else if (g_view == View::map) draw_map_dynamic();
   else draw_health_dynamic();
+  if (g_view == View::overview || g_view == View::rf_health) {
+    char scan_label[24] = "SCAN BAND";
+    if (g_snapshot.survey_active) {
+      snprintf(scan_label, sizeof(scan_label), "SCANNING %lu/%u",
+               static_cast<unsigned long>(g_snapshot.survey_progress),
+               static_cast<unsigned>(lora_channel::survey_span_count()));
+    }
+    const int scan_x = g_view == View::overview ? 34 : 24;
+    const int record_x = g_view == View::overview ? 300 : 284;
+    const int width = g_view == View::overview ? 250 : 242;
+    button(scan_x, 578, width, 48, scan_label,
+           g_snapshot.survey_active ? kGreen : kCyan, g_snapshot.survey_active);
+    const char* record_label = g_snapshot.iq_recording ? "CAPTURING IQ"
+                               : g_snapshot.iq_busy ? "DECODING IQ"
+                               : g_snapshot.iq_ready ? "SAVE IQ"
+                                                     : "RECORD IQ";
+    button(record_x, 578, width, 48, record_label,
+           g_snapshot.iq_recording ? kGreen : kCyan, g_snapshot.iq_recording);
+  }
+}
+
+void draw_channels_overlay() {
+  constexpr int x = 220, y = 170, w = 840, h = 360;
+  M5.Display.fillRoundRect(x, y, w, h, 14, kBg);
+  M5.Display.drawRoundRect(x, y, w, h, 14, kCyan);
+  text("MESHTASTIC LONGFAST", x + 28, y + 34, kCyan, 2, middle_left);
+  text("CLOSE", x + w - 70, y + 34, kYellow, 2);
+
+  char value[64];
+  text("REGION", x + 100, y + 116, kMuted, 1);
+  text("<", x + 220, y + 116, kCyan, 4);
+  text(g_snapshot.region[0] ? g_snapshot.region : "US", x + w / 2, y + 116,
+       kGreen, 3);
+  text(">", x + w - 220, y + 116, kCyan, 4);
+
+  text("SLOT", x + 100, y + 220, kMuted, 1);
+  text("<", x + 220, y + 220, kCyan, 4);
+  snprintf(value, sizeof(value), "%u / %u", g_snapshot.channel_slot,
+           g_snapshot.channel_count);
+  text(value, x + w / 2, y + 220, TFT_WHITE, 3);
+  text(">", x + w - 220, y + 220, kCyan, 4);
+
+  snprintf(value, sizeof(value), "%.3f MHz   DEFAULT SLOT %u",
+           g_snapshot.frequency_hz / 1000000.0, g_snapshot.default_slot);
+  text(value, x + w / 2, y + 300,
+       g_snapshot.channel_slot == g_snapshot.default_slot ? kGreen : kMuted, 2);
 }
 
 void draw_static() {
@@ -445,6 +788,7 @@ void draw_static() {
   else draw_health_static();
   draw_tabs();
   draw_dynamic();
+  if (g_channels_open && g_view == View::overview) draw_channels_overlay();
 }
 
 }  // namespace
@@ -452,13 +796,18 @@ void draw_static() {
 void enter(const Snapshot& snapshot) {
   g_snapshot = snapshot;
   g_active = true;
+  g_channels_open = false;
   g_map_center_set = false;
   g_last_dynamic_ms = 0;
   g_last_spectrum_ms = 0;
+  g_previous_spectrum_bins = 0;
+  g_previous_spectrum_view = View::count;
+  g_waterfall_floor_valid = false;
   draw_static();
 }
 
 void leave() {
+  g_channels_open = false;
   if (!g_active) return;
   M5.Display.clearScrollRect();
   g_active = false;
@@ -474,14 +823,17 @@ void update(const Snapshot& snapshot) {
   const bool content_changed = snapshot.revision != g_snapshot.revision;
   g_snapshot = snapshot;
   const uint32_t now = millis();
-  if (!content_changed && now - g_last_dynamic_ms < kDynamicRefreshIntervalMs) return;
+  const bool needs_age_refresh = g_view != View::traffic || g_traffic_details;
+  if (!content_changed &&
+      (!needs_age_refresh || now - g_last_dynamic_ms < kDynamicRefreshIntervalMs)) return;
   g_last_dynamic_ms = now;
   M5.Display.startWrite();
   draw_dynamic();
+  if (g_channels_open && g_view == View::overview) draw_channels_overlay();
   M5.Display.endWrite();
 }
 
-void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, float floor) {
+void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, float /*floor*/) {
   if (!spectrum_active() || levels == nullptr || visible_bins < 2) return;
   const uint32_t now = millis();
   if (now - g_last_spectrum_ms < kSpectrumRefreshIntervalMs) return;
@@ -490,40 +842,88 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
   const int y = g_view == View::rf_health ? 300 : kPlotY;
   const int w = g_view == View::rf_health ? 770 : kPlotW;
   const int h = g_view == View::rf_health ? 130 : kPlotH;
+  const int trace_x = x + 1;
+  const int trace_w = w - 2;
+  visible_bins = std::min(visible_bins, kSpectrumTraceCapacity);
+  const float target_floor = estimate_noise_floor(levels, first_bin, visible_bins);
+  g_waterfall_floor = g_waterfall_floor_valid
+                          ? 0.97f * g_waterfall_floor + 0.03f * target_floor
+                          : target_floor;
+  g_waterfall_floor_valid = true;
+  const float display_floor = g_waterfall_floor;
   M5.Display.startWrite();
-  M5.Display.fillRect(x + 1, y + 1, w - 2, h - 2, kBg);
+  const bool erase_previous = g_previous_spectrum_bins == visible_bins &&
+                              g_previous_spectrum_view == g_view;
+  if (erase_previous) {
+    int previous_x = trace_x;
+    int previous_y = g_previous_spectrum_y[0];
+    for (size_t i = 1; i < visible_bins; ++i) {
+      const int next_x = trace_x + static_cast<int>(i * static_cast<size_t>(trace_w - 1) /
+                                              (visible_bins - 1));
+      M5.Display.drawLine(previous_x, previous_y, next_x,
+                          g_previous_spectrum_y[i], kBg);
+      previous_x = next_x;
+      previous_y = g_previous_spectrum_y[i];
+    }
+  } else {
+    M5.Display.fillRect(x + 1, y + 1, w - 2, h - 2, kBg);
+  }
   for (int i = 1; i < 5; ++i) {
     M5.Display.drawFastHLine(x, y + i * h / 5, w, kGrid);
     M5.Display.drawFastVLine(x + i * w / 5, y, h, kGrid);
   }
-  int px = x;
-  int py = y + h - 2;
-  for (int i = 0; i < w; ++i) {
-    const size_t source = first_bin + std::min<size_t>(visible_bins - 1,
-        static_cast<size_t>(i) * visible_bins / static_cast<size_t>(w));
-    const float normalized = std::clamp((levels[source] - floor) / 70.0f, 0.0f, 1.0f);
+  int px = trace_x;
+  int py = y + h - 2 - static_cast<int>(
+      std::clamp((levels[first_bin] - display_floor) / kSpectrumRangeDb, 0.0f, 1.0f) *
+      (h - 4));
+  g_previous_spectrum_y[0] = static_cast<int16_t>(py);
+  for (size_t i = 1; i < visible_bins; ++i) {
+    const size_t source = first_bin + i;
+    const int next_x = trace_x + static_cast<int>(i * static_cast<size_t>(trace_w - 1) /
+                                            (visible_bins - 1));
+    const float normalized = std::clamp(
+        (levels[source] - display_floor) / kSpectrumRangeDb, 0.0f, 1.0f);
     const int next_y = y + h - 2 - static_cast<int>(normalized * (h - 4));
-    M5.Display.drawLine(px, py, x + i, next_y, kGreen);
-    px = x + i; py = next_y;
+    M5.Display.drawLine(px, py, next_x, next_y, kGreen);
+    g_previous_spectrum_y[i] = static_cast<int16_t>(next_y);
+    px = next_x;
+    py = next_y;
   }
+  g_previous_spectrum_bins = visible_bins;
+  g_previous_spectrum_view = g_view;
   if (g_view == View::overview) {
     for (int i = 0; i < kPlotW; ++i) {
       const size_t source = first_bin + std::min<size_t>(visible_bins - 1,
           static_cast<size_t>(i) * visible_bins / kPlotW);
-      const float level = std::clamp((levels[source] - floor) / 70.0f, 0.0f, 1.0f);
-      const uint8_t r = static_cast<uint8_t>(std::clamp(level * 300.0f, 0.0f, 255.0f));
-      const uint8_t g = static_cast<uint8_t>(std::clamp(level * 255.0f, 0.0f, 255.0f));
-      const uint8_t b = static_cast<uint8_t>(std::clamp(180.0f - level * 180.0f, 0.0f, 255.0f));
-      g_waterfall_row[i] = M5.Display.color565(r, g, b);
+      const float normalized = (levels[source] - display_floor) / kSpectrumRangeDb;
+      g_waterfall_row[i] = waterfall_color(normalized);
     }
-    M5.Display.scroll(0, -1);
-    M5.Display.pushImage(kPlotX, kWaterfallY + kWaterfallH - 2, kPlotW, 1, g_waterfall_row);
+    M5.Display.scroll(0, -kWaterfallRowsPerFrame);
+    for (int row = 0; row < kWaterfallRowsPerFrame; ++row)
+      M5.Display.pushImage(kPlotX, kWaterfallY + kWaterfallH - 3 + row,
+                           kPlotW, 1, g_waterfall_row);
+    draw_lora_channel_markers();
   }
   M5.Display.endWrite();
 }
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
+  if (g_channels_open && g_view == View::overview) {
+    if (hit(x, y, 940, 180, 110, 48)) {
+      g_channels_open = false;
+      draw_static();
+      return {};
+    }
+    if (hit(x, y, 380, 238, 120, 100)) return {ActionKind::region_previous};
+    if (hit(x, y, 780, 238, 120, 100)) return {ActionKind::region_next};
+    if (hit(x, y, 380, 342, 120, 100)) return {ActionKind::channel_previous};
+    if (hit(x, y, 780, 342, 120, 100)) return {ActionKind::channel_next};
+    if (hit(x, y, 220, 170, 840, 360)) return {};
+    g_channels_open = false;
+    draw_static();
+    return {};
+  }
   if (audio_header::home_hit(x, y)) return {ActionKind::exit_home};
   if (audio_header::settings_hit(x, y)) return {ActionKind::open_settings};
   if (hit(x, y, 0, kTabsY, 1280, 80))
@@ -535,14 +935,33 @@ Action handle_touch(int32_t x, int32_t y) {
     if (hit(x, y, 832, 578, 294, 48)) return {ActionKind::logging_toggle};
   } else if (g_view == View::nodes) {
     if (hit(x, y, 48, 236, 736, 324)) return {ActionKind::select_node,
-        static_cast<uint32_t>((y - 236) / 54)};
-    if (hit(x, y, 32, 604, 228, 42)) return {ActionKind::filter_next};
-    if (hit(x, y, 278, 604, 228, 42)) return {ActionKind::toggle_favorite};
-    if (hit(x, y, 770, 604, 228, 42)) return {ActionKind::export_log};
+        [&]() {
+          size_t index = 0;
+          return visible_node_at(static_cast<size_t>((y - 236) / 54), &index)
+                     ? static_cast<uint32_t>(index)
+                     : UINT32_MAX;
+        }()};
+    if (hit(x, y, 840, 478, 190, 44)) return {ActionKind::filter_next};
+    if (hit(x, y, 1040, 478, 190, 44)) return {ActionKind::toggle_favorite};
+    if (hit(x, y, 840, 532, 190, 44)) {
+      g_node_details = !g_node_details;
+      return {ActionKind::refresh};
+    }
+    if (hit(x, y, 1040, 532, 190, 44)) return {ActionKind::export_log};
   } else if (g_view == View::traffic) {
-    if (hit(x, y, 604, 616, 202, 42)) return {ActionKind::export_log};
-    if (hit(x, y, 822, 616, 202, 42)) return {ActionKind::filter_next};
-    if (hit(x, y, 1040, 616, 202, 42)) return {ActionKind::clear_events};
+    if (hit(x, y, 1188, 248, 36, 44) && g_traffic_offset > 0) {
+      --g_traffic_offset;
+      return {ActionKind::refresh};
+    }
+    if (hit(x, y, 1188, 548, 36, 44) &&
+        g_traffic_offset < traffic_max_offset()) {
+      ++g_traffic_offset;
+      return {ActionKind::refresh};
+    }
+    if (hit(x, y, 50, 188, 270, 44)) return {ActionKind::toggle_packet_details};
+    if (hit(x, y, 334, 188, 270, 44)) return {ActionKind::export_log};
+    if (hit(x, y, 618, 188, 270, 44)) return {ActionKind::filter_next};
+    if (hit(x, y, 902, 188, 270, 44)) return {ActionKind::clear_events};
   } else if (g_view == View::map) {
     if (hit(x, y, 26, 604, 210, 42)) return {ActionKind::center_map};
     if (hit(x, y, 252, 604, 210, 42)) return {ActionKind::follow_node};
@@ -556,8 +975,18 @@ Action handle_touch(int32_t x, int32_t y) {
 }
 
 bool active() { return g_active; }
-bool spectrum_active() { return g_active && (g_view == View::overview || g_view == View::rf_health); }
+bool spectrum_active() {
+  return !g_channels_open && g_active &&
+         (g_view == View::overview || g_view == View::rf_health);
+}
 View view() { return g_view; }
+
+void open_channel_picker() {
+  if (!g_active) return;
+  g_view = View::overview;
+  g_channels_open = true;
+  draw_static();
+}
 
 void show_documentation_view(View view_value, const Snapshot& snapshot) {
   g_view = view_value;
@@ -565,7 +994,14 @@ void show_documentation_view(View view_value, const Snapshot& snapshot) {
 }
 
 void toggle_filter() {
-  g_filter = (g_filter + 1) % 2;
+  uint8_t& filter = g_view == View::traffic ? g_traffic_filter : g_node_filter;
+  filter = (filter + 1) % 2;
+  g_traffic_offset = 0;
+  if (g_active) draw_static();
+}
+
+void toggle_packet_details() {
+  g_traffic_details = !g_traffic_details;
   if (g_active) draw_static();
 }
 
@@ -588,16 +1024,96 @@ bool self_check() {
   snapshot.bandwidth_hz = 250000;
   snapshot.node_count = 1;
   snapshot.nodes[0].id = 0xA1B2C3D4;
+  snapshot.nodes[0].favorite = true;
   snapshot.nodes[0].latitude_e7 = 440500000;
   snapshot.nodes[0].longitude_e7 = -1230900000;
   snapshot.event_count = 1;
   snapshot.events[0].sender = snapshot.nodes[0].id;
+  snapshot.events[0].received_ms = 1000;
+  snapshot.events[0].received_utc = 52328;
   if (static_cast<uint8_t>(View::count) != 5 || kTabW * 5 != 1280 ||
       !has_position(snapshot.nodes[0])) return false;
+  const float scope_levels[] = {-50.0f, -49.0f, -48.0f, -10.0f};
+  if (fabsf(estimate_noise_floor(scope_levels, 0, 4) + 52.0f) > 0.01f ||
+      kSpectrumRefreshIntervalMs != 50 || kWaterfallRowsPerFrame != 1 ||
+      kSpectrumTraceCapacity != 256) return false;
   char value[16];
   format_id(value, sizeof(value), snapshot.nodes[0].id);
   if (strcmp(value, "!A1B2C3D4") != 0) return false;
-  return audio_header::self_check();
+  char first[18]{}, second[18]{};
+  split_message("GPS 44.05641, -123.02418", 17, first, second);
+  if (strcmp(first, "GPS 44.05641,") != 0 || strcmp(second, "-123.02418") != 0) return false;
+  char received[32];
+  format_event_time(received, sizeof(received), snapshot.events[0], 13000);
+  if (strcmp(received, "14:32:08Z | 12s") != 0) return false;
+  format_event_time(received, sizeof(received), snapshot.events[0], 13000, false);
+  if (strcmp(received, "14:32:08Z") != 0) return false;
+  snapshot.events[0].received_utc = 0;
+  format_event_time(received, sizeof(received), snapshot.events[0], 13000);
+  if (strcmp(received, "TIME NOT SET | 12s") != 0) return false;
+  format_event_time(received, sizeof(received), snapshot.events[0], 13000, false);
+  if (strcmp(received, "TIME NOT SET") != 0) return false;
+  snapshot.events[0].destination = 0xFFFFFFFF;
+  snapshot.events[0].packet_id = 0x10203040;
+  snapshot.events[0].port = 1;
+  snapshot.events[0].signal_tenths = -720;
+  snapshot.events[0].snr_tenths = 94;
+  char details[96]{};
+  format_event_details(details, sizeof(details), snapshot.events[0]);
+  if (strcmp(details, "TO !FFFFFFFF  ID 10203040  PORT 1  RSSI -72.0  SNR 9.4") != 0)
+    return false;
+  const Snapshot saved_snapshot = g_snapshot;
+  const uint8_t saved_node_filter = g_node_filter;
+  const uint8_t saved_traffic_filter = g_traffic_filter;
+  const View saved_view = g_view;
+  const bool saved_active = g_active;
+  const bool saved_details = g_node_details;
+  const bool saved_traffic_details = g_traffic_details;
+  const size_t saved_traffic_offset = g_traffic_offset;
+  g_snapshot = snapshot;
+  g_node_filter = 1;
+  g_traffic_filter = 0;
+  g_view = View::nodes;
+  g_active = true;
+  g_node_details = false;
+  size_t index = 99;
+  const bool filter_ok = visible_node_at(0, &index) == &g_snapshot.nodes[0] && index == 0 &&
+                         visible_node_at(1) == nullptr;
+  const bool controls_ok =
+      handle_touch(60, 240).kind == ActionKind::select_node &&
+      handle_touch(850, 490).kind == ActionKind::filter_next &&
+      handle_touch(1050, 490).kind == ActionKind::toggle_favorite &&
+      handle_touch(850, 540).kind == ActionKind::refresh && g_node_details &&
+      handle_touch(1050, 540).kind == ActionKind::export_log && 576 < kTabsY;
+  g_view = View::traffic;
+  g_snapshot.event_count = 8;
+  g_traffic_offset = 0;
+  const bool traffic_scroll_ok = traffic_max_offset() == 3 &&
+                                 handle_touch(1200, 560).kind == ActionKind::refresh &&
+                                 g_traffic_offset == 1 &&
+                                 handle_touch(1200, 260).kind == ActionKind::refresh &&
+                                 g_traffic_offset == 0;
+  const bool traffic_controls_ok =
+      handle_touch(100, 210).kind == ActionKind::toggle_packet_details &&
+      handle_touch(400, 210).kind == ActionKind::export_log &&
+      handle_touch(680, 210).kind == ActionKind::filter_next &&
+      handle_touch(960, 210).kind == ActionKind::clear_events;
+  g_snapshot.events[1].port = 99;
+  g_traffic_filter = 1;
+  const bool traffic_filter_ok = visible_event_count() == 1 &&
+                                 visible_event_at(0) == &g_snapshot.events[0] &&
+                                 visible_event_at(1) == nullptr;
+  g_snapshot = saved_snapshot;
+  g_node_filter = saved_node_filter;
+  g_traffic_filter = saved_traffic_filter;
+  g_view = saved_view;
+  g_active = saved_active;
+  g_node_details = saved_details;
+  g_traffic_details = saved_traffic_details;
+  g_traffic_offset = saved_traffic_offset;
+  if (!filter_ok || !controls_ok || !traffic_scroll_ok || !traffic_controls_ok ||
+      !traffic_filter_ok) return false;
+  return audio_header::self_check() && lora_channel::self_check();
 }
 
 }  // namespace orcsdr::lora

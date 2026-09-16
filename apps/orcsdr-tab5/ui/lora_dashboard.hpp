@@ -7,6 +7,7 @@ namespace orcsdr::lora {
 
 constexpr size_t kNodeCapacity = 16;
 constexpr size_t kEventCapacity = 16;
+constexpr size_t kSurveyResultCapacity = 3;
 
 enum class View : uint8_t { overview, nodes, traffic, map, rf_health, count };
 
@@ -30,6 +31,7 @@ struct Event {
   uint32_t destination = 0;
   uint32_t packet_id = 0;
   uint32_t received_ms = 0;
+  uint32_t received_utc = 0;
   int32_t latitude_e7 = INT32_MAX;
   int32_t longitude_e7 = INT32_MAX;
   int16_t signal_tenths = INT16_MAX;
@@ -38,6 +40,11 @@ struct Event {
   bool encrypted = false;
   bool verified = false;
   char text[112]{};
+};
+
+struct SurveyReading {
+  uint32_t frequency_hz = 0;
+  float level_dbfs = -120.0f;
 };
 
 struct Snapshot {
@@ -55,6 +62,11 @@ struct Snapshot {
   uint32_t uptime_seconds = 0;
   uint32_t survey_progress = 0;
   uint8_t sf = 11;
+  uint8_t region_index = 0;
+  uint8_t region_count = 0;
+  uint16_t channel_slot = 0;
+  uint16_t channel_count = 0;
+  uint16_t default_slot = 0;
   uint32_t bandwidth_hz = 250000;
   int32_t battery_percent = -1;
   float noise_dbfs = -90.0f;
@@ -66,22 +78,30 @@ struct Snapshot {
   bool sound_enabled = true;
   bool sd_logging = false;
   bool survey_active = false;
+  bool iq_recording = false;
+  bool iq_ready = false;
+  bool iq_busy = false;
   bool native_decoder_ready = false;
   bool key_loaded = false;
   char profile[24]{};
   char region[24]{};
+  char log_status[48]{};
+  SurveyReading survey_results[kSurveyResultCapacity]{};
   Node nodes[kNodeCapacity]{};
   Event events[kEventCapacity]{};
   uint8_t node_count = 0;
   uint8_t event_count = 0;
   uint8_t selected_node = 0;
+  uint8_t survey_result_count = 0;
 };
 
 enum class ActionKind : uint8_t {
   none,
+  refresh,
   select_view,
   select_node,
   toggle_favorite,
+  toggle_packet_details,
   filter_next,
   scan_toggle,
   record_iq_toggle,
@@ -93,6 +113,12 @@ enum class ActionKind : uint8_t {
   mark_point,
   save_snapshot,
   open_channels,
+  region_previous,
+  region_next,
+  region_select,
+  channel_previous,
+  channel_next,
+  channel_select,
   open_settings,
   exit_home,
 };
@@ -110,9 +136,11 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
 Action handle_touch(int32_t x, int32_t y);
 bool active();
 bool spectrum_active();
+void open_channel_picker();
 View view();
 void show_documentation_view(View view, const Snapshot& snapshot);
 void toggle_filter();
+void toggle_packet_details();
 void center_on_selected();
 void toggle_follow_node();
 bool self_check();

@@ -12,6 +12,10 @@ struct Settings {
   int32_t longitude_e7 = 0;
   uint16_t radar_range_nm = 25;
   uint32_t atc_frequency_hz = 0;
+  int16_t gain_tenth_db = 0;
+  bool gain_supported = false;
+  bool gain_auto_supported = false;
+  bool gain_auto = true;
   char atc_label[32]{};
 };
 
@@ -66,6 +70,8 @@ struct Snapshot {
 enum class Action : uint8_t {
   none,
   settings_changed,
+  gain_auto,
+  gain_tenth_db,
   open_data_settings,
   atc_listen,
   atc_resume,
@@ -82,6 +88,7 @@ void set_atc_listening(bool listening, uint32_t frequency_hz);
 uint32_t atc_frequency_hz();
 Action handle_touch(int32_t x, int32_t y);
 const Settings& settings();
+int gain_tenth_db();
 bool active();
 void show_documentation_view(uint8_t view, const Settings& settings);
 uint8_t view();

@@ -17,7 +17,7 @@ param(
   [int]$Seed = 0,
   [string]$LogPath,
   [switch]$SelfCheck,
-  [switch]$Driver079,
+  [switch]$Driver080Rc3,
   [switch]$ResetDevice,
   [switch]$WifiOnly,
   [switch]$WifiCoexistence,
@@ -25,7 +25,31 @@ param(
   [switch]$DataOnly,
   [switch]$C6Update,
   [switch]$RadioScan,
+  [switch]$AmBroadcast,
+  [switch]$GainSweep,
+  [switch]$IqDiagnostic,
+  [switch]$IqHotTune,
+  [ValidatePattern('^[A-Za-z0-9_-]{1,31}$')]
+  [string]$IqTransition = 'manual',
+  [ValidateSet('FM', 'AM', 'BROWSE')]
+  [string]$IqBand = 'FM',
+  [ValidateRange(24000, 1766000000)]
+  [uint32]$IqFrequency = 99100000,
+  [ValidateRange(0, 496)]
+  [Nullable[int]]$IqGainTenthDb,
+  [string]$IqOutputPath,
+  [string]$IqAntenna,
+  [string]$IqAntennaSuitability,
+  [ValidateSet('FM', 'BROWSE', 'LORA')]
+  [string]$GainSweepBand = 'FM',
+  [ValidateRange(24000000, 1766000000)]
+  [uint32]$GainSweepFrequency = 99100000,
+  [ValidateRange(0, 496)]
+  [int[]]$GainSweepGains,
+  [ValidateRange(100, 30000)]
+  [int]$GainSweepDwellMs = 500,
   [switch]$InstallLaneMap,
+  [switch]$InstallFaaAircraft,
   [string]$LocationQuery = '97401',
   [switch]$RequireWifiConnection,
   [switch]$TestBiasTee
@@ -35,6 +59,7 @@ $ErrorActionPreference = 'Stop'
 $script:serial = $null
 $script:linesSeen = 0
 $script:soakLogPath = $null
+$script:lastV3cRfState = $null
 
 if ($Profile) {
   $Soak = $true
@@ -86,6 +111,7 @@ function Read-MatchingLine([string]$Pattern, [int]$Seconds = $TimeoutSeconds) {
       if (!$line) { continue }
       $script:linesSeen++
       Write-SoakLine $line
+      if ($line -match 'V3C_RF_STATE ') { $script:lastV3cRfState = $line }
       if (Test-FatalLine $line) { throw "Device crash/reset detected: $line" }
       if ($line -match $Pattern) { return $line }
     } catch [System.TimeoutException] {}
@@ -96,6 +122,42 @@ function Read-MatchingLine([string]$Pattern, [int]$Seconds = $TimeoutSeconds) {
 function Send-And-Wait([string]$Command, [string]$Pattern, [int]$Seconds = $TimeoutSeconds) {
   $script:serial.WriteLine($Command)
   return Read-MatchingLine $Pattern $Seconds
+}
+
+function Read-BinaryProtocolLine($Stream, [int]$Seconds = $TimeoutSeconds) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+  $bytes = [Collections.Generic.List[byte]]::new()
+  while ([DateTime]::UtcNow -lt $deadline) {
+    try {
+      $value = $Stream.ReadByte()
+      if ($value -lt 0) { continue }
+      if ($value -eq 10) { return [Text.Encoding]::ASCII.GetString($bytes.ToArray()) }
+      if ($value -ne 13) { $bytes.Add([byte]$value) }
+      if ($bytes.Count -gt 4096) { throw 'Binary protocol line exceeded 4096 bytes.' }
+    } catch [System.TimeoutException] {}
+  }
+  throw 'Timed out waiting for binary protocol line.'
+}
+
+function Read-BinaryMatchingLine([string]$Pattern, [int]$Seconds = $TimeoutSeconds) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+  while ([DateTime]::UtcNow -lt $deadline) {
+    $remaining = [Math]::Max(1, [int][Math]::Ceiling(($deadline - [DateTime]::UtcNow).TotalSeconds))
+    $line = (Read-BinaryProtocolLine $script:serial $remaining).Trim()
+    if (!$line) { continue }
+    $script:linesSeen++
+    if ($line -notmatch '^RTL_IQ_GET_DATA bytes=') { Write-SoakLine $line }
+    if ($line -match 'V3C_RF_STATE ') { $script:lastV3cRfState = $line }
+    if (Test-FatalLine $line) { throw "Device crash/reset detected: $line" }
+    if ($line -match $Pattern) { return $line }
+  }
+  throw "Timed out waiting for binary device response: $Pattern"
+}
+
+function Send-And-WaitBinary([string]$Command, [string]$Pattern,
+                            [int]$Seconds = $TimeoutSeconds) {
+  $script:serial.WriteLine($Command)
+  return Read-BinaryMatchingLine $Pattern $Seconds
 }
 
 function Wait-DeviceReady([int]$Seconds = 60, [int]$MinimumUptimeMs = 0) {
@@ -169,34 +231,32 @@ function Connect-Authenticated {
 
 function Get-UiState {
   $line = Send-And-Wait 'RTL_UI STATUS' '^RTL_UI_STATUS '
-  if ($line -notmatch 'screen=(\S+) band=(\S+) frequency_hz=(\d+) settings=([01]) fm=([01]) p25=([01]) adsb=([01]) lora=([01]) rf24=([01]) home_font=([01]) graphics=([01])') {
+  if ($line -notmatch 'screen=(\S+) band=(\S+) frequency_hz=(\d+) settings=([01]) fm=([01]) am=([01]) p25=([01]) adsb=([01]) lora=([01]) rf24=([01]) home_font=([01]) graphics=([01])') {
     throw "Malformed UI status: $line"
   }
   return [pscustomobject]@{
     Screen = $Matches[1].ToUpperInvariant()
     Band = $Matches[2].ToUpperInvariant()
     Frequency = [uint32]$Matches[3]
-    Active = @([int]$Matches[4], [int]$Matches[5], [int]$Matches[6], [int]$Matches[7], [int]$Matches[8], [int]$Matches[9])
-    HomeFont = [int]$Matches[10]
-    Graphics = [int]$Matches[11]
+    Active = @([int]$Matches[4], [int]$Matches[5], [int]$Matches[6], [int]$Matches[7], [int]$Matches[8], [int]$Matches[9], [int]$Matches[10])
+    HomeFont = [int]$Matches[11]
+    Graphics = [int]$Matches[12]
   }
 }
 
 function Test-ExclusiveScreen($State, [string]$Screen) {
-  # RF24 is an overlay: FM remains active so the receiver/audio stream continues.
+  # Wi-Fi Analysis owns the display while the prior radio stream continues in the background.
   if ($Screen -eq 'WIFI_ANALYSIS') {
-    return $State.Active[0] -eq 0 -and $State.Active[1] -eq 1 -and
-           $State.Active[2] -eq 0 -and
-           $State.Active[3] -eq 0 -and $State.Active[4] -eq 0 -and
-           $State.Active[5] -eq 1
+    return $State.Active[0] -eq 0 -and $State.Active[6] -eq 1
   }
   $expected = switch ($Screen) {
-    'FM' { @(0,1,0,0,0,0) }
-    'P25' { @(0,0,1,0,0,0) }
-    'ADSB' { @(0,0,0,1,0,0) }
-    'LORA' { @(0,0,0,0,1,0) }
-    'SETTINGS' { @(1,0,0,0,0,0) }
-    'HOME' { @(0,0,0,0,0,0) }
+    'FM' { @(0,1,0,0,0,0,0) }
+    'AM' { @(0,0,1,0,0,0,0) }
+    'P25' { @(0,0,0,1,0,0,0) }
+    'ADSB' { @(0,0,0,0,1,0,0) }
+    'LORA' { @(0,0,0,0,0,1,0) }
+    'SETTINGS' { @(1,0,0,0,0,0,0) }
+    'HOME' { @(0,0,0,0,0,0,0) }
     default { return $true }
   }
   return ($State.Active -join ',') -eq ($expected -join ',')
@@ -234,6 +294,29 @@ function Watch-Responsive([int]$Seconds, [string]$Screen, [string]$Band) {
 function Get-AudioStatus {
   $line = Send-And-Wait 'RTL_AUDIO_TEST STATUS' '^\{"type":"rtl_audio_test"'
   try { return $line | ConvertFrom-Json } catch { throw "Malformed audio status: $line" }
+}
+
+function ConvertFrom-SignalStatus([string]$Line) {
+  if ($line -notmatch '^RTL_SIGNAL_STATUS band=(\S+) frequency_hz=(\d+) signal_dbfs_tenths=(-?\d+) .*filter_hz=(\d+) lo_nudge=(-?\d+)$') {
+    throw "Malformed signal status: $line"
+  }
+  return [pscustomobject]@{
+    Band = $Matches[1]
+    Frequency = [uint32]$Matches[2]
+    SignalTenths = [int]$Matches[3]
+    FilterHz = [uint32]$Matches[4]
+    Line = $line
+  }
+}
+
+function Get-SignalStatus {
+  for ($attempt = 0; $attempt -lt 3; $attempt++) {
+    $line = Send-And-Wait 'RTL_SIGNAL' '^RTL_SIGNAL_STATUS '
+    try { return ConvertFrom-SignalStatus $line } catch {
+      if ($attempt -eq 2) { throw }
+      Start-Sleep -Milliseconds 100
+    }
+  }
 }
 
 function Assert-FmAudioProgress {
@@ -445,7 +528,7 @@ function Assert-WifiCoexistence($initialUi) {
         [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
       } elseif ($initialWifi.Connected -eq 1 -and $currentWifi.Connected -eq 0) {
         Connect-Authenticated
-        $restored = Wait-WifiConnectOutcome 'live'
+        $restored = Wait-WifiConnectOutcome
         if ($restored -notmatch 'event=connect_complete ') { throw "Could not restore Wi-Fi: $restored" }
       }
       try {
@@ -457,8 +540,8 @@ function Assert-WifiCoexistence($initialUi) {
   }
 }
 
-function Wait-WifiConnectOutcome([string]$Mode) {
-  [void](Send-And-Wait "RTL_WIFI_CONNECT_SAVED$($(if ($Mode -eq 'pause') { ' PAUSE' } else { '' }))" "^RTL_WIFI_CONNECT_QUEUED saved_profile=0 mode=$Mode$" 10)
+function Wait-WifiConnectOutcome {
+  [void](Send-And-Wait 'RTL_WIFI_CONNECT_SAVED PAUSE' '^RTL_WIFI_CONNECT_QUEUED saved_profile=0 mode=pause$' 10)
   return Read-MatchingLine '^RTL_WIFI_COEX event=connect_(?:complete|failed|start_failed) ' 45
 }
 
@@ -477,7 +560,7 @@ function Assert-WifiCoexistenceDiagnostic($initialUi) {
       [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
     }
     $dropBaseline = (Get-WifiCoexStatus).AudioDrops
-    $paused = Wait-WifiConnectOutcome 'pause'
+    $paused = Wait-WifiConnectOutcome
     if ($paused -notmatch 'event=connect_complete ') {
       throw "Paused Wi-Fi comparison did not connect: $paused"
     }
@@ -489,11 +572,13 @@ function Assert-WifiCoexistenceDiagnostic($initialUi) {
     Connect-Authenticated
     [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
     $dropBaseline = (Get-WifiCoexStatus).AudioDrops
-    $live = Wait-WifiConnectOutcome 'live'
-    $livePass = [int]($live -match 'event=connect_complete ')
-    if ($livePass) { Assert-WifiCoexAudio 'live_connect' $dropBaseline }
+    $reconnected = Wait-WifiConnectOutcome
+    if ($reconnected -notmatch 'event=connect_complete ') {
+      throw "Second paused Wi-Fi connection did not connect: $reconnected"
+    }
+    Assert-WifiCoexAudio 'second_paused_connect' $dropBaseline
     Assert-Health
-    Write-SoakLine "RTL_WIFI_COEX_DIAGNOSTIC_RESULT pass=1 fm_hz=96100000 live_connect=$livePass paused_connect=1 scan=1"
+    Write-SoakLine 'RTL_WIFI_COEX_DIAGNOSTIC_RESULT pass=1 fm_hz=96100000 paused_connects=2 scan=1'
   } finally {
     try {
       Connect-Authenticated
@@ -501,7 +586,7 @@ function Assert-WifiCoexistenceDiagnostic($initialUi) {
       if ($initialWifi.Connected -eq 0 -and $currentWifi.Connected -eq 1) {
         [void](Send-And-Wait 'RTL_WIFI_DISCONNECT' '^RTL_WIFI_DISCONNECT_OK$')
       } elseif ($initialWifi.Connected -eq 1 -and $currentWifi.Connected -eq 0) {
-        $restored = Wait-WifiConnectOutcome 'live'
+        $restored = Wait-WifiConnectOutcome
         if ($restored -notmatch 'event=connect_complete ') { throw "Could not restore Wi-Fi: $restored" }
       }
       [void](Send-And-Wait "RTL_TUNE $($initialUi.Band) $initialFrequency" "^RTL_TUNE_OK band=$($initialUi.Band) ")
@@ -594,14 +679,42 @@ function Assert-WifiCli($initialUi) {
   }
 }
 
-function Wait-CatalogIdle([int]$Seconds) {
+function Wait-CatalogIdle([int]$Seconds, [switch]$RequireProgress) {
   $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+  $lastProgress = -1
+  $sawIntermediateProgress = $false
   do {
     Start-Sleep -Seconds 1
     $status = Send-And-Wait 'RTL_CATALOG_STATUS' '^RTL_CATALOG_STATUS ' 10
-    if ($status -match 'busy=0') { return $status }
+    if ($status -notmatch 'busy=([01]) operation=\d+ progress=(\d+)') {
+      throw "Malformed catalog status: $status"
+    }
+    $busy = [int]$Matches[1]
+    $progress = [int]$Matches[2]
+    if ($busy -eq 1) {
+      if ($lastProgress -ge 0 -and $progress -lt $lastProgress) {
+        throw "Catalog progress moved backwards: $lastProgress -> $progress"
+      }
+      if ($progress -gt 0 -and $progress -lt 100) { $sawIntermediateProgress = $true }
+      $lastProgress = $progress
+    } else {
+      if ($RequireProgress -and !$sawIntermediateProgress) {
+        throw "Catalog operation completed without observable progress: $status"
+      }
+      return $status
+    }
   } while ([DateTime]::UtcNow -lt $deadline)
   throw "Catalog operation timed out: $status"
+}
+
+function Wait-DriverStreaming([int]$Seconds = 30) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+  do {
+    $driver = Get-DriverStatus
+    if ($driver.State -eq 'STREAMING' -and $driver.Bytes -gt 0) { return $driver }
+    Start-Sleep -Milliseconds 500
+  } while ([DateTime]::UtcNow -lt $deadline)
+  throw "Radio did not resume streaming: state=$($driver.State) bytes=$($driver.Bytes)"
 }
 
 function Assert-DataServices {
@@ -638,6 +751,25 @@ function Assert-DataServices {
       throw "Lane County map was not activated: $pack"
     }
   }
+  if ($InstallFaaAircraft) {
+    Connect-Authenticated
+    [void](Open-Ui 'FM' 'FM')
+    $before = Wait-DriverStreaming 30
+    [void](Send-And-Wait 'RTL_CATALOG_INSTALL faa_aircraft' '^RTL_CATALOG_INSTALL_QUEUED$')
+    $catalog = Wait-CatalogIdle 900 -RequireProgress
+    if ($catalog -notmatch 'message="Pack installed and verified"') {
+      throw "FAA aircraft install failed: $catalog"
+    }
+    $pack = Send-And-Wait 'RTL_CATALOG_LIST' '^RTL_CATALOG_PACK id=faa_aircraft ' 10
+    if ($pack -notmatch 'installed=1 update=0 status="INSTALLED"') {
+      throw "FAA aircraft pack was not activated: $pack"
+    }
+    $after = Wait-DriverStreaming 30
+    if ($after.Overruns -gt $before.Overruns -or $after.Drops -gt $before.Drops) {
+      throw "Radio resumed with new transport loss: overruns=$($before.Overruns)->$($after.Overruns) drops=$($before.Drops)->$($after.Drops)"
+    }
+    Write-SoakLine "RTL_CATALOG_FAA_RESULT pass=1 bytes_before=$($before.Bytes) bytes_after=$($after.Bytes)"
+  }
 
   if ($LocationQuery -notmatch '^[\x20-\x7E]{1,63}$') {
     throw 'LocationQuery must contain 1-63 printable ASCII characters.'
@@ -654,7 +786,7 @@ function Assert-DataServices {
     throw "Location lookup failed: $location"
   }
   Assert-Health
-  Write-SoakLine "RTL_DATA_SERVICES_RESULT pass=1 catalog=verified lane_map_installed=$([int][bool]$InstallLaneMap) location_query=$LocationQuery"
+  Write-SoakLine "RTL_DATA_SERVICES_RESULT pass=1 catalog=verified lane_map_installed=$([int][bool]$InstallLaneMap) faa_aircraft_installed=$([int][bool]$InstallFaaAircraft) location_query=$LocationQuery"
 }
 
 function Capture-ResetEvidence {
@@ -686,31 +818,97 @@ function Capture-ResetEvidence {
   Write-SoakLine 'RTL_UI_SOAK_RECOVERY device_responsive=0 reset_evidence=unavailable'
 }
 
+function ConvertFrom-DriverStatus([string]$Line) {
+  $pattern = 'version=(\S+) state=(\S+) profile=(\d+) profile_name="([^"]+)" provisional=([01]) device_caps=(0x[0-9a-fA-F]+) library_caps=(0x[0-9a-fA-F]+).*gain_auto_cap=([01]) rtl_agc_cap=([01]) gain_cap=([01]) bias_cap=([01]) mode=(AUTO|MANUAL) gain_tenth_db=(\d+) rtl_agc=([01]) bias=([01]) bytes=(\d+) blocks=(\d+) effective_sps=(\d+) overruns=(\d+) drops=(\d+) shadow_ok=([01]) metrics_ok=([01]) frequency_hz=(\d+) frequency_ok=([01]) route=(\S+)'
+  if ($Line -notmatch $pattern) { throw "Malformed driver status: $Line" }
+  [pscustomobject]@{
+    Version = $Matches[1]; State = $Matches[2]; Profile = [int]$Matches[3]
+    ProfileName = $Matches[4]; Provisional = [int]$Matches[5]
+    DeviceCaps = [Convert]::ToUInt32($Matches[6].Substring(2), 16)
+    LibraryCaps = [Convert]::ToUInt32($Matches[7].Substring(2), 16)
+    GainAutoCap = [int]$Matches[8]; RtlAgcCap = [int]$Matches[9]
+    GainCap = [int]$Matches[10]; BiasCap = [int]$Matches[11]
+    Mode = $Matches[12]; Gain = [int]$Matches[13]; RtlAgc = [int]$Matches[14]
+    Bias = [int]$Matches[15]; Bytes = [uint64]$Matches[16]; Blocks = [uint64]$Matches[17]
+    EffectiveSps = [uint32]$Matches[18]; Overruns = [uint32]$Matches[19]
+    Drops = [uint32]$Matches[20]; ShadowOk = [int]$Matches[21]; MetricsOk = [int]$Matches[22]
+    Frequency = [uint32]$Matches[23]; FrequencyOk = [int]$Matches[24]; Route = $Matches[25]
+  }
+}
+
+function ConvertFrom-IqDiagnosticStart([string]$Line) {
+  if ($Line -notmatch '^RTL_IQ_DIAG_START transition="([A-Za-z0-9_-]{1,31})" sequence=(\d+) bytes=(\d+) rate=(\d+) frequency_hz=(\d+) started_ms=(\d+)$') {
+    throw "Malformed IQ diagnostic start: $Line"
+  }
+  [pscustomobject]@{
+    Transition = $Matches[1]
+    Sequence = [uint32]$Matches[2]
+    Bytes = [uint32]$Matches[3]
+    Rate = [uint32]$Matches[4]
+    Frequency = [uint32]$Matches[5]
+    StartedMs = [uint32]$Matches[6]
+  }
+}
+
+function ConvertFrom-V3cRfState([string]$Line) {
+  $pattern = '^(?:I \(\d+\) esp_rtl_sdr: )?V3C_RF_STATE profile=(\S+) rf=(\d+) rate=(\d+) mode=(\S+) direct=(ON|OFF) pll_if=(\d+) demod_if=(\d+) nco=(\S+) input=(\S+) gain_mode=(AUTO|MANUAL) gain_tenth_db=(-?\d+) rtl_agc=([01]) short_transfers=(\d+) transition=(\S+)$'
+  if ($Line -notmatch $pattern) { throw "Malformed V3c RF state: $Line" }
+  [pscustomobject]@{
+    Profile = $Matches[1]; Frequency = [uint32]$Matches[2]; Rate = [uint32]$Matches[3]
+    Mode = $Matches[4]; Direct = $Matches[5] -eq 'ON'; PllIf = [uint32]$Matches[6]
+    DemodIf = [uint32]$Matches[7]; Nco = $Matches[8]; Input = $Matches[9]
+    GainMode = $Matches[10]; Gain = [int]$Matches[11]; RtlAgc = [int]$Matches[12]
+    ShortTransfers = [uint32]$Matches[13]; Transition = $Matches[14]
+  }
+}
+
+function Test-IqDriverReady($Before, $Current, [uint64]$ExpectedFrequency,
+                             [bool]$RestartObserved, [bool]$HotTune = $false) {
+  if ($Current.State -ne 'STREAMING' -or $Current.Frequency -ne $ExpectedFrequency -or
+      $Current.Bytes -le 0) { return $false }
+  if ($HotTune) {
+    return $Before.Frequency -ne $ExpectedFrequency -and $Current.Bytes -gt $Before.Bytes
+  }
+  return $RestartObserved -or $Before.State -ne 'STREAMING' -or
+         $Current.Bytes -lt $Before.Bytes
+}
+
+function Test-IqGainApplied($Driver, [int]$ExpectedGain) {
+  return $Driver.State -eq 'STREAMING' -and $Driver.Mode -eq 'MANUAL' -and
+         $Driver.Gain -eq $ExpectedGain
+}
+
 function Invoke-SelfCheck {
   if (-not (Test-FatalLine 'Guru Meditation Error: Core 1 panic')) { throw 'Fatal parser missed panic.' }
   if (-not (Test-FatalLine 'ESP-ROM:esp32p4-eco2-20240710')) { throw 'Fatal parser missed reset.' }
   if (Test-FatalLine 'RTL_UI_STATUS screen=home band=FM frequency_hz=96144000') {
     throw 'Fatal parser rejected healthy telemetry.'
   }
-  $audio = '{"type":"rtl_audio_test","speaker_enabled":1,"speaker_running":1,"audio_chunks":42}' | ConvertFrom-Json
-  if ($audio.speaker_running -ne 1 -or $audio.audio_chunks -ne 42) { throw 'Audio parser failed.' }
+  $audio = '{"type":"rtl_audio_test","speaker_enabled":1,"speaker_running":1,"headphone_connected":1,"internal_speaker_muted":1,"audio_chunks":42}' | ConvertFrom-Json
+  if ($audio.speaker_running -ne 1 -or $audio.audio_chunks -ne 42 -or
+      $audio.headphone_connected -ne 1 -or $audio.internal_speaker_muted -ne 1) {
+    throw 'Audio parser failed.'
+  }
   $coex = 'RTL_WIFI_COEX_STATUS station=1 scanning=0 connecting=0 connected=1 connect_pause=0 rtl_ready=1 capture_state=3 capture_requested=0 band=FM frequency_hz=96100000 audio_enabled=1 speaker_running=1 audio_chunks=42 audio_drops=0'
   if ($coex -notmatch 'connect_pause=0.*rtl_ready=1.*capture_state=3.*band=FM.*speaker_running=1') { throw 'Coexistence parser failed.' }
   $c6 = 'RTL_WIFI_C6_STATUS host=3.0.6 coprocessor=2.12.6 transport=1 embedded=1 state=ready percent=0 stage=version match=0'
   if ($c6 -notmatch '^RTL_WIFI_C6_STATUS host=\S+ coprocessor=\S+ transport=1 embedded=1 state=ready percent=0 stage=\S+ match=0$') {
     throw 'C6 update parser failed.'
   }
-  if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,0,0,1,0,0) }) 'ADSB')) {
+  if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,0,0,0,1,0,0) }) 'ADSB')) {
     throw 'Exclusive dashboard check rejected valid ADS-B state.'
   }
-  if (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,1,0,1,0,0) }) 'ADSB') {
+  if (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,1,0,0,1,0,0) }) 'ADSB') {
     throw 'Exclusive dashboard check accepted stale FM state.'
   }
-  if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,1,0,0,0,1) }) 'WIFI_ANALYSIS')) {
-    throw 'RF24 overlay check rejected active FM.'
+  if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,0,0,0,0,0,1) }) 'WIFI_ANALYSIS')) {
+    throw 'Wi-Fi Analysis check rejected exclusive ownership.'
   }
-  if (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,1,1,0,0,1) }) 'WIFI_ANALYSIS') {
-    throw 'RF24 overlay check accepted an active P25 dashboard.'
+  if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,1,0,0,0,0,1) }) 'WIFI_ANALYSIS')) {
+    throw 'Wi-Fi Analysis check rejected a background FM stream.'
+  }
+  if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,0,1,0,0,0,0) }) 'AM')) {
+    throw 'Exclusive dashboard check rejected valid AM state.'
   }
   $health = ConvertFrom-HealthStatus 'RTL_HEALTH_STATUS uptime_ms=123 free_heap=456 min_free_heap=400 dma_free=300 dma_min=250 dma_largest=200 tasks=12 main_stack_hwm=2048 reset_reason=1'
   Assert-HealthStatus $health
@@ -727,12 +925,61 @@ function Invoke-SelfCheck {
       $frequency.Mode -ne 'P25 C4FM') {
     throw 'Radio frequency parser failed.'
   }
+  $signal = ConvertFrom-SignalStatus 'RTL_SIGNAL_STATUS band=AM frequency_hz=590000 signal_dbfs_tenths=-321 stereo_locked=0 left_dbfs_tenths=-400 right_dbfs_tenths=-400 rds_carrier=0 rds_signal_tenths=-900 pilot_env_thou=0 filter_hz=6000 lo_nudge=0'
+  if ($signal.Band -ne 'AM' -or $signal.Frequency -ne 590000 -or
+      $signal.SignalTenths -ne -321 -or $signal.FilterHz -ne 6000) {
+    throw 'AM signal parser failed.'
+  }
+  $driver = ConvertFrom-DriverStatus 'RTL_DRIVER_STATUS installed=1 version=0.8.0-rc3 state=STREAMING profile=2 profile_name="blog_v3_r820t2" provisional=1 device_caps=0x0001fbd9 library_caps=0x000fffff delivery=callback gain_auto_cap=0 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=297 rtl_agc=0 bias=0 bytes=123456 blocks=42 effective_sps=959488 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=23999999 frequency_ok=1 route=DIRECT_Q'
+  if ($driver.Version -ne '0.8.0-rc3' -or $driver.Profile -ne 2 -or
+      $driver.Frequency -ne 23999999 -or $driver.FrequencyOk -ne 1 -or
+      $driver.Route -ne 'DIRECT_Q') {
+    throw 'Driver acceptance parser failed.'
+  }
+  $iqDiag = ConvertFrom-IqDiagnosticStart 'RTL_IQ_DIAG_START transition="cold_fm" sequence=7 bytes=4800000 rate=2400000 frequency_hz=99100000 started_ms=1234'
+  if ($iqDiag.Transition -ne 'cold_fm' -or $iqDiag.Sequence -ne 7 -or
+      $iqDiag.Bytes -ne 4800000 -or $iqDiag.Rate -ne 2400000 -or
+      $iqDiag.Frequency -ne 99100000 -or $iqDiag.StartedMs -ne 1234) {
+    throw 'IQ diagnostic metadata parser failed.'
+  }
+  $rfState = ConvertFrom-V3cRfState 'I (1234) esp_rtl_sdr: V3C_RF_STATE profile=blog_v3_r820t2 rf=99113000 rate=2400000 mode=NORMAL_TUNER direct=OFF pll_if=3570000 demod_if=3570000 nco=none input=COMPLEX_IQ gain_mode=MANUAL gain_tenth_db=14 rtl_agc=0 short_transfers=0 transition=COLD_INIT'
+  if ($rfState.PllIf -ne 3570000 -or $rfState.DemodIf -ne 3570000 -or
+      $rfState.Mode -ne 'NORMAL_TUNER' -or $rfState.Transition -ne 'COLD_INIT') {
+    throw 'V3c RF state parser failed.'
+  }
+  $beforeTune = [pscustomobject]@{ State = 'STREAMING'; Frequency = 99113000; Bytes = 500000000 }
+  $staleTune = [pscustomobject]@{ State = 'STREAMING'; Frequency = 99113000; Bytes = 500100000 }
+  $freshTune = [pscustomobject]@{ State = 'STREAMING'; Frequency = 99113000; Bytes = 1000000 }
+  if ((Test-IqDriverReady $beforeTune $staleTune 99113000 $false) -or
+      !(Test-IqDriverReady $beforeTune $freshTune 99113000 $false)) {
+    throw 'IQ post-tune restart guard failed.'
+  }
+  $hotBefore = [pscustomobject]@{ State = 'STREAMING'; Frequency = 23900000; Bytes = 1000000 }
+  $hotAfter = [pscustomobject]@{ State = 'STREAMING'; Frequency = 24100000; Bytes = 1100000 }
+  if (!(Test-IqDriverReady $hotBefore $hotAfter 24100000 $false $true)) {
+    throw 'IQ hot-tune guard failed.'
+  }
+  $gainReady = [pscustomobject]@{ State = 'STREAMING'; Mode = 'MANUAL'; Gain = 229 }
+  if (!(Test-IqGainApplied $gainReady 229) -or (Test-IqGainApplied $gainReady 280)) {
+    throw 'IQ explicit-gain guard failed.'
+  }
+  $lineBytes = [Text.Encoding]::ASCII.GetBytes("RTL_IQ_GET_DATA bytes=4`r`n")
+  $protocolBytes = [byte[]]($lineBytes + [byte[]](13, 10, 255, 0))
+  $protocolStream = [IO.MemoryStream]::new($protocolBytes)
+  if ((Read-BinaryProtocolLine $protocolStream 1) -ne 'RTL_IQ_GET_DATA bytes=4' -or
+      $protocolStream.ReadByte() -ne 13) {
+    throw 'Binary protocol line reader consumed payload bytes.'
+  }
   Write-SoakLine 'RTL_UI_SOAK_SELF_CHECK pass=1'
 }
 
 if ($SelfCheck) { Invoke-SelfCheck; exit 0 }
-if (@($Run, $Soak, $Driver079, $WifiOnly, $WifiCoexistence, $WifiCoexistenceDiagnostic, $DataOnly, $C6Update, $RadioScan).Where({ $_ }).Count -gt 1) {
-  throw 'Choose only one of -Run, -Soak, -Driver079, -WifiOnly, -WifiCoexistence, -WifiCoexistenceDiagnostic, -DataOnly, -C6Update, or -RadioScan.'
+if (($InstallLaneMap -or $InstallFaaAircraft) -and !$DataOnly) {
+  throw '-InstallLaneMap and -InstallFaaAircraft require -DataOnly.'
+}
+if ($IqHotTune -and !$IqDiagnostic) { throw '-IqHotTune requires -IqDiagnostic.' }
+if (@($Run, $Soak, $Driver080Rc2, $WifiOnly, $WifiCoexistence, $WifiCoexistenceDiagnostic, $DataOnly, $C6Update, $RadioScan, $AmBroadcast, $GainSweep, $IqDiagnostic).Where({ $_ }).Count -gt 1) {
+  throw 'Choose only one primary test mode, including -IqDiagnostic.'
 }
 
 function Get-C6UpdateStatus {
@@ -769,27 +1016,531 @@ function Invoke-C6UpdateTest {
 }
 
 function Get-DriverStatus {
-  $pattern = 'version=(\S+) state=(\S+).*gain_auto_cap=([01]) rtl_agc_cap=([01]) gain_cap=([01]) bias_cap=([01]) mode=(AUTO|MANUAL) gain_tenth_db=(\d+) rtl_agc=([01]) bias=([01]) bytes=(\d+) blocks=(\d+) effective_sps=(\d+) overruns=(\d+) drops=(\d+) shadow_ok=([01]) metrics_ok=([01])'
   for ($attempt = 0; $attempt -lt 3; $attempt++) {
     $line = Send-And-Wait 'RTL_DRIVER STATUS' '^RTL_DRIVER_STATUS '
-    if ($line -match $pattern) { break }
+    try { return ConvertFrom-DriverStatus $line } catch { }
   }
-  if ($line -notmatch $pattern) { throw "Malformed driver status: $line" }
-  [pscustomobject]@{
-    Version = $Matches[1]; State = $Matches[2]; GainAutoCap = [int]$Matches[3]
-    RtlAgcCap = [int]$Matches[4]; GainCap = [int]$Matches[5]; BiasCap = [int]$Matches[6]
-    Mode = $Matches[7]; Gain = [int]$Matches[8]; RtlAgc = [int]$Matches[9]
-    Bias = [int]$Matches[10]; Bytes = [uint64]$Matches[11]; Blocks = [uint64]$Matches[12]
-    EffectiveSps = [uint32]$Matches[13]; Overruns = [uint32]$Matches[14]
-    Drops = [uint32]$Matches[15]; ShadowOk = [int]$Matches[16]; MetricsOk = [int]$Matches[17]
+  throw "Malformed driver status: $line"
+}
+
+function Read-ExactSerialBytes([IO.Stream]$Output, [Security.Cryptography.IncrementalHash]$Hash, [int]$Count) {
+  $buffer = [byte[]]::new([Math]::Min(4096, $Count))
+  $remaining = $Count
+  $deadline = [DateTime]::UtcNow.AddSeconds(10)
+  while ($remaining -gt 0) {
+    try {
+      $read = $script:serial.Read($buffer, 0, [Math]::Min($buffer.Length, $remaining))
+      if ($read -le 0) { continue }
+      $Output.Write($buffer, 0, $read)
+      $Hash.AppendData($buffer, 0, $read)
+      $remaining -= $read
+      $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    } catch [System.TimeoutException] {
+      if ([DateTime]::UtcNow -ge $deadline) {
+        throw "Timed out with $remaining raw IQ bytes remaining in chunk."
+      }
+    }
   }
 }
 
-function Invoke-Driver079Test {
+function Invoke-IqDiagnosticCapture {
+  if (!$IqAntenna -or !$IqAntennaSuitability) {
+    throw '-IqDiagnostic requires -IqAntenna and -IqAntennaSuitability.'
+  }
+  Wait-DeviceReady 60 11000
+  Connect-Authenticated
+  $staleCapture = Send-And-Wait 'RTL_IQ_DIAG_STATUS' '^RTL_IQ_DIAG_STATUS ' 10
+  if ($staleCapture -match ' active=1 ') { throw 'An IQ diagnostic capture is already active.' }
+  if ($staleCapture -match ' ready=1 ') {
+    [void](Send-And-Wait 'RTL_IQ_RETRIEVE_END' '^RTL_IQ_RETRIEVE_(?:DONE|RESUMING)$' 10)
+  }
+  $beforeTune = Get-DriverStatus
+  if ($IqHotTune) {
+    $current = Get-RadioFrequency
+    if ($current.Band -ne $IqBand) {
+      throw "Hot IQ tune requires current band $IqBand; device is $($current.Band)."
+    }
+    $script:lastV3cRfState = $null
+    [void](Send-And-Wait "RTL_FREQ $IqFrequency" '^RTL_FREQ_OK ' 20)
+  } else {
+    [void](Send-And-Wait "RTL_TUNE $IqBand $IqFrequency" '^RTL_TUNE_OK ' 20)
+  }
+  $expectedDriverFrequency = $IqFrequency
+  $restartObserved = $beforeTune.State -ne 'STREAMING'
+  $deadline = [DateTime]::UtcNow.AddSeconds(30)
+  do {
+    $driver = Get-DriverStatus
+    if ($driver.State -ne 'STREAMING') { $restartObserved = $true }
+    if (Test-IqDriverReady $beforeTune $driver $expectedDriverFrequency $restartObserved $IqHotTune) { break }
+    Start-Sleep -Milliseconds 250
+  } while ([DateTime]::UtcNow -lt $deadline)
+  if (!(Test-IqDriverReady $beforeTune $driver $expectedDriverFrequency $restartObserved $IqHotTune)) {
+    throw "Requested IQ state did not stabilize: state=$($driver.State) display_hz=$IqFrequency driver_lo_hz=$($driver.Frequency) expected_lo_hz=$expectedDriverFrequency"
+  }
+  if ($null -ne $IqGainTenthDb) {
+    [void](Send-And-Wait "RTL_DRIVER GAIN $IqGainTenthDb" '^RTL_DRIVER_RESULT .*accepted=1 result=ESP_OK$' 10)
+    $gainDeadline = [DateTime]::UtcNow.AddSeconds(5)
+    do {
+      $driver = Get-DriverStatus
+      if (Test-IqGainApplied $driver $IqGainTenthDb) { break }
+      Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $gainDeadline)
+    if (!(Test-IqGainApplied $driver $IqGainTenthDb)) {
+      throw "Requested IQ gain did not apply: mode=$($driver.Mode) gain_tenth_db=$($driver.Gain) expected=$IqGainTenthDb"
+    }
+  }
+
+  $healthBefore = Get-HealthStatus
+  $startLine = Send-And-Wait "RTL_IQ_DIAG_START $IqTransition" '^RTL_IQ_DIAG_(?:START|ERROR) ' 10
+  if ($startLine -notmatch '^RTL_IQ_DIAG_START ') { throw "IQ capture rejected: $startLine" }
+  $start = ConvertFrom-IqDiagnosticStart $startLine
+  $doneLine = Read-MatchingLine '^RTL_IQ_DONE storage=psram source=diagnostic ' 15
+  $driverAfterCapture = Get-DriverStatus
+  $healthAfterCapture = Get-HealthStatus
+  [void](Send-And-Wait 'RTL_STOP' '^RTL_STOP_RESULT ' 10)
+
+  $output = if ($IqOutputPath) {
+    [IO.Path]::GetFullPath($IqOutputPath)
+  } else {
+    $directory = Join-Path $PSScriptRoot '..\..\..\artifacts\v3c-iq-investigation'
+    [void](New-Item -ItemType Directory -Force $directory)
+    Join-Path ([IO.Path]::GetFullPath($directory)) ((Get-Date -Format 'yyyyMMdd-HHmmss') + "-$IqTransition.cu8")
+  }
+  $parent = Split-Path -Parent $output
+  if ($parent) { [void](New-Item -ItemType Directory -Force $parent) }
+  if (Test-Path -LiteralPath $output) { throw "IQ output already exists: $output" }
+  $partial = "$output.partial"
+
+  $ready = Send-And-Wait 'RTL_IQ_GET_BEGIN' '^RTL_IQ_GET_(?:READY|ERROR) ' 10
+  if ($ready -notmatch '^RTL_IQ_GET_READY chunk=(\d+) bytes=(\d+)$') {
+    throw "IQ retrieval could not begin: $ready"
+  }
+  $chunkBytes = [int]$Matches[1]
+  $totalBytes = [int]$Matches[2]
+  if ($totalBytes -ne $start.Bytes) {
+    throw "IQ byte count changed: start=$($start.Bytes) retrieve=$totalBytes"
+  }
+
+  $hash = [Security.Cryptography.IncrementalHash]::CreateHash(
+      [Security.Cryptography.HashAlgorithmName]::SHA256)
+  $stream = [IO.File]::Open($partial, [IO.FileMode]::Create,
+                            [IO.FileAccess]::Write, [IO.FileShare]::None)
+  try {
+    $remaining = $totalBytes
+    while ($remaining -gt 0) {
+      $line = Send-And-WaitBinary 'RTL_IQ_GET_CHUNK' '^RTL_IQ_GET_(?:DATA|ERROR) ' 10
+      if ($line -notmatch '^RTL_IQ_GET_DATA bytes=(\d+)$') {
+        throw "IQ retrieval failed: $line"
+      }
+      $count = [int]$Matches[1]
+      if ($count -le 0 -or $count -gt $chunkBytes -or $count -gt $remaining) {
+        throw "Invalid IQ chunk size: $count"
+      }
+      Read-ExactSerialBytes $stream $hash $count
+      $remaining -= $count
+    }
+  } finally {
+    $stream.Dispose()
+  }
+  $localSha = [Convert]::ToHexString($hash.GetHashAndReset()).ToLowerInvariant()
+  $hash.Dispose()
+  $finish = Read-BinaryMatchingLine '^RTL_IQ_GET_DONE ' 10
+  if ($finish -notmatch '^RTL_IQ_GET_DONE bytes=(\d+) sha256=([0-9a-fA-F]{64})$' -or
+      [int]$Matches[1] -ne $totalBytes -or $Matches[2].ToLowerInvariant() -ne $localSha) {
+    throw "IQ retrieval hash mismatch: local=$localSha device='$finish'"
+  }
+  Move-Item -LiteralPath $partial -Destination $output
+  [void](Send-And-Wait 'RTL_IQ_RETRIEVE_END' '^RTL_IQ_RETRIEVE_(?:DONE|RESUMING)$' 10)
+
+  $driverAfterRetrieval = Get-DriverStatus
+  $healthAfterRetrieval = Get-HealthStatus
+  $rfState = if ($script:lastV3cRfState) {
+    ConvertFrom-V3cRfState $script:lastV3cRfState
+  } else { $null }
+  $metadata = [ordered]@{
+    timestamp_utc = [DateTime]::UtcNow.ToString('o')
+    capture_path = $output
+    transition = $start.Transition
+    tune_method = if ($IqHotTune) { 'hot' } else { 'restart' }
+    sequence = $start.Sequence
+    capture_started_ms = $start.StartedMs
+    dongle_profile = $driverAfterCapture.ProfileName
+    driver_version = $driverAfterCapture.Version
+    driver_base_commit = 'e1ca40e04f8140245d56837cd149bf901f771441'
+    driver_instrumentation_commit = '94ecd187070b39f370c5d7f0dc55a56762dd6c86'
+    requested_display_rf_hz = $IqFrequency
+    reported_driver_lo_hz = $driverAfterCapture.Frequency
+    expected_driver_lo_hz = $expectedDriverFrequency
+    sample_rate_sps = $start.Rate
+    tuner_mode = $driverAfterCapture.Route
+    direct_sampling = $driverAfterCapture.Route -eq 'DIRECT_Q'
+    driver_rf_state = $script:lastV3cRfState
+    pll_if_hz = if ($rfState) { $rfState.PllIf } else { $null }
+    demod_if_hz = if ($rfState) { $rfState.DemodIf } else { $null }
+    demod_nco = if ($rfState) { $rfState.Nco } else { $null }
+    rtl_input = if ($rfState) { $rfState.Input } else { $null }
+    gain_mode = $driverAfterCapture.Mode
+    gain_tenth_db = $driverAfterCapture.Gain
+    rtl_agc = $driverAfterCapture.RtlAgc
+    usb_overruns_before = $driver.Overruns
+    usb_overruns_after = $driverAfterCapture.Overruns
+    consumer_drops_before = $driver.Drops
+    consumer_drops_after = $driverAfterCapture.Drops
+    short_transfers = if ($rfState) { $rfState.ShortTransfers } else { $null }
+    short_transfers_note = if ($rfState) { 'driver counter at most recent RF transition' } else { 'not exposed for this profile' }
+    capture_bytes = $totalBytes
+    capture_sha256 = $localSha
+    antenna = $IqAntenna
+    antenna_band_suitability = $IqAntennaSuitability
+    health_before = $healthBefore
+    health_after_capture = $healthAfterCapture
+    driver_after_retrieval = $driverAfterRetrieval
+    health_after_retrieval = $healthAfterRetrieval
+    capture_done_line = $doneLine
+    orcsdr_commit = (& git -C (Join-Path $PSScriptRoot '..\..\..') rev-parse HEAD).Trim()
+  }
+  $metadataPath = [IO.Path]::ChangeExtension($output, '.json')
+  $metadata | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $metadataPath -Encoding utf8
+  & python (Join-Path $PSScriptRoot 'analyze_rtl_iq.py') $output --rate $start.Rate --csv
+  if ($LASTEXITCODE -ne 0) { throw "IQ analyzer failed with exit code $LASTEXITCODE" }
+  [void](Send-And-Wait "RTL_TUNE $IqBand $IqFrequency" '^RTL_TUNE_OK ' 20)
+  Write-SoakLine "RTL_IQ_DIAGNOSTIC_RESULT pass=1 transition=$($start.Transition) bytes=$totalBytes sha256=$localSha capture=\"$output\" metadata=\"$metadataPath\""
+}
+
+function Invoke-GainSweepTest {
+  Wait-DeviceReady 60 11000
+  Connect-Authenticated
+  $initial = $null
+  $initialSignal = $null
+  $initialDriver = $null
+  $initialSoftwareAuto = $false
+  $initialVerbosity = $null
+  try {
+    $verbosity = Send-And-Wait 'RTL_SERIAL VERBOSITY' '^RTL_SERIAL_VERBOSITY mode=(QUIET|NORMAL|DEBUG|TRACE)$'
+    $initialVerbosity = $verbosity.Split('=')[-1]
+    [void](Send-And-Wait 'RTL_SERIAL VERBOSITY QUIET' '^RTL_SERIAL_VERBOSITY_OK mode=QUIET$')
+    $initial = Get-UiState
+    $initialSignal = Get-SignalStatus
+    $initialDriver = Get-DriverStatus
+    if ($initial.Band -in @('FM', 'AM')) {
+      $initialSoftwareAuto = (Send-And-Wait "RTL_$($initial.Band)_GAIN STATUS" "^RTL_$($initial.Band)_GAIN_STATUS ").Contains('mode=AUTO')
+    }
+    if ($GainSweepBand -eq 'FM') {
+      if ($GainSweepFrequency -lt 76000000 -or $GainSweepFrequency -gt 108000000) {
+        throw '-GainSweepBand FM requires -GainSweepFrequency between 76000000 and 108000000.'
+      }
+      [void](Open-Ui 'FM' 'FM')
+      [void](Send-And-Wait "RTL_UI ACTION FM TUNE $GainSweepFrequency" '^RTL_UI_ACTION_OK$')
+    } else {
+      [void](Send-And-Wait "RTL_TUNE $GainSweepBand $GainSweepFrequency" '^RTL_TUNE_OK ')
+    }
+
+    $deadline = [DateTime]::UtcNow.AddSeconds(30)
+    do {
+      $driver = Get-DriverStatus
+      $signal = Get-SignalStatus
+      if ($driver.State -eq 'STREAMING' -and $driver.Bytes -gt 0 -and
+          $signal.Band -eq $GainSweepBand -and $signal.Frequency -eq $GainSweepFrequency) { break }
+      Start-Sleep -Milliseconds 500
+    } while ([DateTime]::UtcNow -lt $deadline)
+    if ($driver.State -ne 'STREAMING' -or $driver.Bytes -eq 0 -or $driver.Profile -ne 2 -or $driver.GainCap -ne 1 -or
+        $signal.Band -ne $GainSweepBand -or $signal.Frequency -ne $GainSweepFrequency) {
+      throw "V3 gain sweep requires the requested band streaming with manual gain; state=$($driver.State) band=$($signal.Band) frequency=$($signal.Frequency) profile=$($driver.Profile) gain_cap=$($driver.GainCap) bytes=$($driver.Bytes)"
+    }
+
+    if ($GainSweepBand -eq 'FM') {
+      [void](Send-And-Wait 'RTL_UI ACTION FM GAIN_AUTO' '^RTL_UI_ACTION_OK$')
+      Start-Sleep -Milliseconds 300
+      $auto = Send-And-Wait 'RTL_FM_GAIN STATUS' '^RTL_FM_GAIN_STATUS '
+      if ($auto -notmatch 'mode=AUTO selecting=[01] gain_tenth_db=\d+ target_dbfs=-24\.0') {
+        throw "FM bounded auto gain failed: $auto"
+      }
+    }
+
+    $gains = if ($GainSweepGains.Count) { $GainSweepGains } else {
+      @(0, 9, 14, 27, 37, 77, 87, 125, 144, 157, 166, 197, 207, 229, 254, 280, 297, 328, 338, 364, 372, 386, 402, 421, 434, 439, 445, 480, 496)
+    }
+    foreach ($gain in $gains) {
+      $command = if ($GainSweepBand -eq 'FM') { "RTL_UI ACTION FM GAIN $gain" } else { "RTL_DRIVER GAIN $gain" }
+      $pattern = if ($GainSweepBand -eq 'FM') { '^RTL_UI_ACTION_OK$' } else { '^RTL_DRIVER_RESULT .*accepted=1 result=ESP_OK$' }
+      [void](Send-And-Wait $command $pattern)
+      $deadline = [DateTime]::UtcNow.AddSeconds(5)
+      do {
+        $driver = Get-DriverStatus
+        if ($driver.State -eq 'STREAMING' -and $driver.Bytes -gt 0 -and
+            $driver.Mode -eq 'MANUAL' -and $driver.Gain -eq $gain) { break }
+        Start-Sleep -Milliseconds 100
+      } while ([DateTime]::UtcNow -lt $deadline)
+      $maxSignalTenths = -900
+      $sampleDeadline = [DateTime]::UtcNow.AddMilliseconds($GainSweepDwellMs)
+      do {
+        $signal = Get-SignalStatus
+        $maxSignalTenths = [Math]::Max($maxSignalTenths, $signal.SignalTenths)
+        Start-Sleep -Milliseconds 100
+      } while ([DateTime]::UtcNow -lt $sampleDeadline)
+      $driver = Get-DriverStatus
+      if ($driver.State -ne 'STREAMING' -or $driver.Mode -ne 'MANUAL' -or $driver.Gain -ne $gain -or $driver.Bytes -eq 0 -or
+          $signal.Band -ne $GainSweepBand -or $signal.Frequency -ne $GainSweepFrequency) {
+        throw "Gain sweep sample failed: requested=$gain state=$($driver.State) mode=$($driver.Mode) gain=$($driver.Gain) bytes=$($driver.Bytes) signal=$($signal.Line)"
+      }
+      Write-SoakLine "RTL_GAIN_SWEEP_SAMPLE band=$GainSweepBand frequency_hz=$GainSweepFrequency gain_tenth_db=$gain signal_dbfs_tenths=$($signal.SignalTenths) max_signal_dbfs_tenths=$maxSignalTenths bytes=$($driver.Bytes)"
+    }
+    Assert-Health
+    Write-SoakLine "RTL_GAIN_SWEEP_RESULT pass=1 profile=2 band=$GainSweepBand frequency_hz=$GainSweepFrequency samples=$($gains.Count)"
+  } finally {
+    try {
+      if ($null -ne $initial -and $null -ne $initialSignal -and
+          $initial.Band -in @('FM','AM','WX','CB','LORA','BROWSE','ADSB','P25')) {
+        [void](Send-And-Wait "RTL_TUNE $($initial.Band) $($initialSignal.Frequency)" '^RTL_TUNE_(?:OK|UNAVAILABLE|INVALID)')
+      }
+      if ($null -ne $initialDriver) {
+        if ($initialSoftwareAuto) {
+          [void](Send-And-Wait "RTL_UI ACTION $($initial.Band) GAIN_AUTO" '^RTL_UI_ACTION_OK$')
+        } elseif ($initialDriver.Mode -eq 'AUTO' -and $initialDriver.GainAutoCap -eq 1) {
+          [void](Send-And-Wait 'RTL_DRIVER GAINMODE AUTO' '^RTL_DRIVER_RESULT .*accepted=1 result=ESP_OK$')
+        } else {
+          [void](Send-And-Wait "RTL_DRIVER GAIN $($initialDriver.Gain)" '^RTL_DRIVER_RESULT .*accepted=1 result=ESP_OK$')
+        }
+      }
+      if ($null -ne $initial) {
+        [void](Send-And-Wait "RTL_UI OPEN $($initial.Screen)" '^RTL_UI_OPEN_(?:OK|INVALID)')
+      }
+      if ($null -ne $initialVerbosity) {
+        [void](Send-And-Wait "RTL_SERIAL VERBOSITY $initialVerbosity" "^RTL_SERIAL_VERBOSITY_OK mode=$initialVerbosity$")
+      }
+    } catch {
+      Write-Warning "Could not restore initial gain sweep state: $($_.Exception.Message)"
+    }
+  }
+}
+
+function Set-AmFilter([uint32]$TargetHz) {
+  [void](Send-And-Wait "RTL_UI ACTION AM FILTER $TargetHz" '^RTL_UI_ACTION_OK$')
+  Start-Sleep -Milliseconds 150
+  $signal = Get-SignalStatus
+  if ($signal.Band -eq 'AM' -and $signal.FilterHz -eq $TargetHz) { return $signal }
+  throw "AM filter did not reach $TargetHz Hz: $($signal.Line)"
+}
+
+function Get-AmScanStatus {
+  $line = Send-And-Wait 'RTL_AM_SCAN STATUS' '^RTL_AM_SCAN_STATUS '
+  if ($line -notmatch '^RTL_AM_SCAN_STATUS active=([01]) step=(\d+) total=(\d+) found=(\d+) frequency_hz=(\d+) prompt=([01])$') {
+    throw "Malformed AM scan status: $line"
+  }
+  [pscustomobject]@{
+    Active = [int]$Matches[1]; Step = [int]$Matches[2]; Total = [int]$Matches[3]
+    Found = [int]$Matches[4]; Frequency = [uint32]$Matches[5]; Prompt = [int]$Matches[6]
+  }
+}
+
+function Invoke-AmBroadcastTest {
+  Wait-DeviceReady 60 11000
+  Connect-Authenticated
+  $initial = $null
+  $initialSignal = $null
+  $initialDriver = $null
+  $initialAmGainAuto = $null
+  $initialVerbosity = $null
+  $soundWasEnabled = $null
+  try {
+    $verbosity = Send-And-Wait 'RTL_SERIAL VERBOSITY' '^RTL_SERIAL_VERBOSITY mode=(QUIET|NORMAL|DEBUG|TRACE)$'
+    $initialVerbosity = $verbosity.Split('=')[-1]
+    [void](Send-And-Wait 'RTL_SERIAL VERBOSITY QUIET' '^RTL_SERIAL_VERBOSITY_OK mode=QUIET$')
+    $soundWasEnabled = (Send-And-Wait 'RTL_SOUND' '^RTL_SOUND_STATUS enabled=[01]$').EndsWith('1')
+    if (-not $soundWasEnabled) { [void](Send-And-Wait 'RTL_SOUND ON' '^RTL_SOUND_OK enabled=1$') }
+    Drain-SerialOutput
+    $initial = Get-UiState
+    $initialSignal = Get-SignalStatus
+    [void](Open-Ui 'AM' 'AM')
+    $routeDeadline = [DateTime]::UtcNow.AddSeconds(3)
+    do {
+      $audio = Get-AudioStatus
+      if ($audio.headphone_connected -ne 1 -or $audio.internal_speaker_muted -eq 1) { break }
+      Start-Sleep -Milliseconds 250
+    } while ([DateTime]::UtcNow -lt $routeDeadline)
+    if ($audio.headphone_connected -eq 1 -and $audio.internal_speaker_muted -ne 1) {
+      throw 'Headphones detected but internal speaker is not muted.'
+    }
+    $streamDeadline = [DateTime]::UtcNow.AddSeconds(30)
+    do {
+      $driver = Get-DriverStatus
+      if ($driver.State -eq 'STREAMING' -and $driver.Bytes -gt 0) { break }
+      Start-Sleep -Milliseconds 500
+    } while ([DateTime]::UtcNow -lt $streamDeadline)
+    $initialDriver = $driver
+    $initialAmGainAuto = (Send-And-Wait 'RTL_AM_GAIN STATUS' '^RTL_AM_GAIN_STATUS mode=(AUTO|MANUAL) ').Contains('mode=AUTO')
+    if ($driver.State -ne 'STREAMING' -or $driver.Bytes -eq 0) {
+      throw "AM test requires active IQ streaming; state=$($driver.State) bytes=$($driver.Bytes)"
+    }
+    $lastBytes = $driver.Bytes
+    foreach ($frequency in @(590000, 1120000, 1280000)) {
+      [void](Send-And-Wait "RTL_UI ACTION AM TUNE $frequency" '^RTL_UI_ACTION_OK$')
+      foreach ($filter in @(3000, 6000, 10000, 30000)) {
+        [void](Set-AmFilter $filter)
+        Start-Sleep -Seconds $DwellSeconds
+        $signal = Get-SignalStatus
+        if ($signal.Band -ne 'AM' -or $signal.Frequency -ne $frequency -or
+            $signal.FilterHz -ne $filter) {
+          throw "AM state mismatch: $($signal.Line)"
+        }
+        $driver = Get-DriverStatus
+        if ($driver.State -ne 'STREAMING' -or $driver.Bytes -le $lastBytes -or
+            $driver.EffectiveSps -eq 0) {
+          throw "AM IQ did not progress at frequency=$frequency filter=$filter state=$($driver.State) bytes=$($driver.Bytes) effective_sps=$($driver.EffectiveSps)"
+        }
+        $lastBytes = $driver.Bytes
+        Write-SoakLine "RTL_AM_REGRESSION_SAMPLE pass=1 frequency_hz=$frequency filter_hz=$filter signal_dbfs_tenths=$($signal.SignalTenths) bytes=$($driver.Bytes) effective_sps=$($driver.EffectiveSps) overruns=$($driver.Overruns) drops=$($driver.Drops)"
+      }
+      Assert-Health
+    }
+    [void](Open-Ui 'HOME' 'AM')
+    [void](Open-Ui 'AM' 'AM')
+    $signal = Get-SignalStatus
+    if ($signal.Frequency -ne 1280000) {
+      throw "AM dashboard entry changed the current station: $($signal.Line)"
+    }
+    Write-SoakLine 'RTL_AM_ENTRY_REGRESSION pass=1 preserved_frequency_hz=1280000'
+    [void](Send-And-Wait 'RTL_UI ACTION AM GAIN_AUTO' '^RTL_UI_ACTION_OK$')
+    Start-Sleep -Milliseconds 300
+    $driver = Get-DriverStatus
+    $auto = Send-And-Wait 'RTL_AM_GAIN STATUS' '^RTL_AM_GAIN_STATUS '
+    if ($driver.Mode -ne 'MANUAL' -or
+        $auto -notmatch 'mode=AUTO selecting=1 gain_tenth_db=0 target_dbfs=-24\.0') {
+      throw "AM bounded auto gain failed: driver_mode=$($driver.Mode) status=$auto"
+    }
+    foreach ($gain in @(0, 496)) {
+      [void](Send-And-Wait "RTL_UI ACTION AM GAIN $gain" '^RTL_UI_ACTION_OK$')
+      Start-Sleep -Milliseconds 300
+      $driver = Get-DriverStatus
+      if ($driver.Mode -ne 'MANUAL' -or $driver.Gain -ne $gain) {
+        throw "AM manual gain action failed: requested=$gain mode=$($driver.Mode) gain=$($driver.Gain)"
+      }
+    }
+    Write-SoakLine 'RTL_AM_GAIN_REGRESSION pass=1 auto=lowest_usable manual_range_tenth_db=0-496'
+    [void](Open-Ui 'HOME' 'AM')
+    [void](Open-Ui 'FM' 'FM')
+    $fmDeadline = [DateTime]::UtcNow.AddSeconds(30)
+    do {
+      $fmDriver = Get-DriverStatus
+      if ($fmDriver.State -eq 'STREAMING' -and $fmDriver.Bytes -gt 0) { break }
+      Start-Sleep -Milliseconds 500
+    } while ([DateTime]::UtcNow -lt $fmDeadline)
+    if ($fmDriver.State -ne 'STREAMING' -or $fmDriver.Bytes -eq 0 -or $fmDriver.Mode -ne 'MANUAL') {
+      throw "AM to FM transition did not restore FM tuner state: state=$($fmDriver.State) bytes=$($fmDriver.Bytes) mode=$($fmDriver.Mode)"
+    }
+    [void](Send-And-Wait 'RTL_UI ACTION FM GAIN_AUTO' '^RTL_UI_ACTION_OK$')
+    Start-Sleep -Milliseconds 300
+    $fmAuto = Send-And-Wait 'RTL_FM_GAIN STATUS' '^RTL_FM_GAIN_STATUS '
+    if ($fmAuto -notmatch 'mode=AUTO selecting=1 gain_tenth_db=0 target_dbfs=-24\.0') {
+      throw "FM bounded auto gain failed: $fmAuto"
+    }
+    foreach ($gain in @(0, 496)) {
+      [void](Send-And-Wait "RTL_UI ACTION FM GAIN $gain" '^RTL_UI_ACTION_OK$')
+      Start-Sleep -Milliseconds 300
+      $fmDriver = Get-DriverStatus
+      if ($fmDriver.Mode -ne 'MANUAL' -or $fmDriver.Gain -ne $gain) {
+        throw "FM manual gain action failed: requested=$gain mode=$($fmDriver.Mode) gain=$($fmDriver.Gain)"
+      }
+    }
+    Write-SoakLine 'RTL_FM_GAIN_REGRESSION pass=1 auto=lowest_usable manual_range_tenth_db=0-496'
+    [void](Open-Ui 'AM' 'AM')
+    Write-SoakLine 'RTL_AM_FM_TRANSITION_REGRESSION pass=1 software_auto_gain_mode=MANUAL'
+    $audioBeforeScan = Get-AudioStatus
+    [void](Send-And-Wait 'RTL_UI ACTION AM SCAN' '^RTL_UI_ACTION_OK$')
+    $scanDeadline = [DateTime]::UtcNow.AddSeconds(3)
+    do {
+      $scan = Get-AmScanStatus
+      if ($scan.Active -eq 1) { break }
+      Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $scanDeadline)
+    if ($scan.Active -ne 1 -or $scan.Total -lt 100) {
+      throw "AM scan did not start: $($scan | ConvertTo-Json -Compress)"
+    }
+    $streamDeadline = [DateTime]::UtcNow.AddSeconds(12)
+    do {
+      $driver = Get-DriverStatus
+      if ($driver.State -eq 'STREAMING' -and
+          $driver.EffectiveSps -gt 0 -and $driver.EffectiveSps -lt 2200000) { break }
+      Start-Sleep -Milliseconds 250
+    } while ([DateTime]::UtcNow -lt $streamDeadline)
+    if ($driver.State -ne 'STREAMING' -or
+        $driver.EffectiveSps -eq 0 -or $driver.EffectiveSps -ge 2200000) {
+      throw "AM scan did not preserve the normal stream: state=$($driver.State) effective_sps=$($driver.EffectiveSps)"
+    }
+    $scanDeadline = [DateTime]::UtcNow.AddSeconds(60)
+    do {
+      $scan = Get-AmScanStatus
+      if ($scan.Active -eq 0) { break }
+      Start-Sleep -Milliseconds 250
+    } while ([DateTime]::UtcNow -lt $scanDeadline)
+    if ($scan.Active -ne 0 -or $scan.Step -ne $scan.Total -or $scan.Found -gt 6 -or
+        $scan.Prompt -ne 1) {
+      throw "AM scan did not finish with a valid candidate count: $($scan | ConvertTo-Json -Compress)"
+    }
+    [void](Send-And-Wait 'RTL_UI ACTION AM SCAN_DISCARD' '^RTL_UI_ACTION_OK$')
+    $scan = Get-AmScanStatus
+    if ($scan.Prompt -ne 0) { throw 'AM scan result popup did not close after DISCARD.' }
+    $restoreDeadline = [DateTime]::UtcNow.AddSeconds(30)
+    do {
+      $restoredDriver = Get-DriverStatus
+      $restoredSignal = Get-SignalStatus
+      $restoredAudio = Get-AudioStatus
+      if ($restoredDriver.State -eq 'STREAMING' -and
+          $restoredDriver.EffectiveSps -gt 0 -and $restoredDriver.EffectiveSps -lt 2200000 -and
+          $restoredSignal.Band -eq 'AM' -and $restoredSignal.Frequency -eq 1280000 -and
+          $restoredAudio.speaker_running -eq 1 -and
+          [uint64]$restoredAudio.audio_chunks -gt [uint64]$audioBeforeScan.audio_chunks) { break }
+      Start-Sleep -Milliseconds 500
+    } while ([DateTime]::UtcNow -lt $restoreDeadline)
+    if ($restoredDriver.State -ne 'STREAMING' -or
+        $restoredDriver.EffectiveSps -eq 0 -or $restoredDriver.EffectiveSps -ge 2200000 -or
+        $restoredSignal.Band -ne 'AM' -or $restoredSignal.Frequency -ne 1280000 -or
+        $restoredAudio.speaker_running -ne 1 -or
+        [uint64]$restoredAudio.audio_chunks -le [uint64]$audioBeforeScan.audio_chunks) {
+      throw "AM radio did not recover after scan: driver=$($restoredDriver | ConvertTo-Json -Compress) signal=$($restoredSignal.Line) audio=$($restoredAudio | ConvertTo-Json -Compress)"
+    }
+    Write-SoakLine "RTL_AM_SCAN_REGRESSION pass=1 action=retune+populate channels=$($scan.Total) found=$($scan.Found) capacity=6 effective_sps=$($driver.EffectiveSps)"
+    Write-SoakLine "RTL_AM_SCAN_RESTORE pass=1 popup=discard band=AM frequency_hz=1280000 effective_sps=$($restoredDriver.EffectiveSps) audio_chunks=$($restoredAudio.audio_chunks)"
+    Write-SoakLine 'RTL_AM_REGRESSION_RESULT pass=1 frequencies=3 filters=4 samples=12'
+  } finally {
+    try {
+      if ($null -ne $initial -and
+          $initial.Band -in @('FM','AM','WX','CB','LORA','BROWSE','ADSB','P25')) {
+        [void](Send-And-Wait "RTL_TUNE $($initial.Band) $($initial.Frequency)" '^RTL_TUNE_(?:OK|UNAVAILABLE|INVALID)')
+      }
+      if ($null -ne $initial -and $null -ne $initialSignal -and
+          $initial.Band -eq 'AM' -and $initialSignal.FilterHz -ge 3000 -and
+          $initialSignal.FilterHz -le 30000) {
+        [void](Open-Ui 'AM' 'AM')
+        [void](Set-AmFilter $initialSignal.FilterHz)
+      }
+      if ($null -ne $initialDriver -and $null -ne $initialAmGainAuto) {
+        if ($initialAmGainAuto) {
+          [void](Send-And-Wait 'RTL_UI ACTION AM GAIN_AUTO' '^RTL_UI_ACTION_OK$')
+        } else {
+          [void](Send-And-Wait "RTL_UI ACTION AM GAIN $($initialDriver.Gain)" '^RTL_UI_ACTION_OK$')
+        }
+      }
+      if ($null -ne $initial) {
+        [void](Send-And-Wait "RTL_UI OPEN $($initial.Screen)" '^RTL_UI_OPEN_(?:OK|INVALID)')
+      }
+      if ($null -ne $initialVerbosity) {
+        [void](Send-And-Wait "RTL_SERIAL VERBOSITY $initialVerbosity" "^RTL_SERIAL_VERBOSITY_OK mode=$initialVerbosity$")
+      }
+      if ($soundWasEnabled -eq $false) {
+        [void](Send-And-Wait 'RTL_SOUND OFF' '^RTL_SOUND_OK enabled=0$')
+      }
+    } catch {
+      Write-Warning "Could not restore initial AM test state: $($_.Exception.Message)"
+    }
+  }
+}
+
+function Invoke-Driver080Rc3Test {
   Wait-DeviceReady
   Connect-Authenticated
   $selfCheck = Send-And-Wait 'RTL_DRIVER SELF_CHECK' '^RTL_DRIVER_SELF_CHECK '
-  if ($selfCheck -notmatch 'pass=1 version=0\.7\.9 ') { throw "Driver self-check failed: $selfCheck" }
+  if ($selfCheck -notmatch 'pass=1 version=0\.8\.0-rc3 profile=(1|2) ') { throw "Driver self-check failed: $selfCheck" }
   $deadline = [DateTime]::UtcNow.AddSeconds(30)
   do {
     $initial = Get-DriverStatus
@@ -799,10 +1550,19 @@ function Invoke-Driver079Test {
   if ($initial.State -ne 'STREAMING' -or $initial.Bytes -eq 0) {
     throw "Driver test requires active IQ streaming; state=$($initial.State) bytes=$($initial.Bytes)"
   }
-  if ($initial.GainAutoCap -ne 1 -or $initial.RtlAgcCap -ne 1 -or
-      $initial.GainCap -ne 1 -or $initial.BiasCap -ne 1 -or
-      $initial.ShadowOk -ne 1 -or $initial.MetricsOk -ne 1) {
-    throw 'Required v0.7.9 capability or status getter is unavailable.'
+  $isV4 = $initial.Profile -eq 1
+  $isV3 = $initial.Profile -eq 2
+  $hasDirectSampling = ($initial.DeviceCaps -band 0x40) -ne 0
+  $hasFrequencyCorrection = ($initial.DeviceCaps -band 0x100) -ne 0
+  if ((!$isV4 -and !$isV3) -or !$hasFrequencyCorrection -or
+      $initial.ShadowOk -ne 1 -or $initial.MetricsOk -ne 1 -or $initial.FrequencyOk -ne 1 -or
+      ($isV4 -and ($initial.Provisional -ne 0 -or $initial.GainAutoCap -ne 1 -or
+                   $initial.RtlAgcCap -ne 1 -or $initial.GainCap -ne 1 -or
+                   $initial.BiasCap -ne 1)) -or
+      ($isV3 -and ($initial.Provisional -ne 1 -or !$hasDirectSampling -or
+                   $initial.GainCap -ne 1 -or $initial.GainAutoCap -ne 0 -or
+                   $initial.RtlAgcCap -ne 0 -or $initial.BiasCap -ne 0))) {
+    throw 'Required Blog V4/V3c v0.8.0-rc3 profile, capabilities, or status getter is unavailable.'
   }
 
   $last = $initial
@@ -819,29 +1579,63 @@ function Invoke-Driver079Test {
     if ($next.Overruns -gt $initial.Overruns + 16 -or $next.Drops -gt $initial.Drops + 16) {
       throw "Drop counters grew excessively after $Command"
     }
-    Write-SoakLine "RTL_DRIVER_079_STEP command=$($Command.Replace(' ', '_')) pass=1 bytes=$($next.Bytes) effective_sps=$($next.EffectiveSps) overruns=$($next.Overruns) drops=$($next.Drops)"
+    Write-SoakLine "RTL_DRIVER_080_RC2_STEP command=$($Command.Replace(' ', '_')) pass=1 bytes=$($next.Bytes) effective_sps=$($next.EffectiveSps) overruns=$($next.Overruns) drops=$($next.Drops)"
+    $script:last = $next
+  }
+
+  function Test-Frequency([uint32]$Frequency, [string]$Route) {
+    $reply = Send-And-Wait "RTL_DRIVER TUNE $Frequency" '^RTL_DRIVER_RESULT '
+    if ($reply -notmatch 'accepted=1 result=ESP_OK') { throw "Driver tune rejected: $reply" }
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    do {
+      Start-Sleep -Milliseconds 250
+      $next = Get-DriverStatus
+      if ($next.Frequency -eq $Frequency -and $next.FrequencyOk -eq 1 -and
+          $next.Route -eq $Route -and $next.Bytes -gt $script:last.Bytes) { break }
+    } while ([DateTime]::UtcNow -lt $deadline)
+    if ($next.Frequency -ne $Frequency -or $next.FrequencyOk -ne 1 -or $next.Route -ne $Route) {
+      throw "Exact-frequency mismatch after $Frequency Hz: $($next | ConvertTo-Json -Compress)"
+    }
+    if ($next.Bytes -le $script:last.Bytes) { throw "IQ stopped after $Frequency Hz" }
+    if ($next.Overruns -gt $script:last.Overruns + 16 -or $next.Drops -gt $script:last.Drops + 16) {
+      throw "Drop counters grew excessively after $Frequency Hz"
+    }
+    Write-SoakLine "RTL_DRIVER_080_RC2_FREQ pass=1 requested_hz=$Frequency reported_hz=$($next.Frequency) route=$($next.Route) bytes=$($next.Bytes) effective_sps=$($next.EffectiveSps) overruns=$($next.Overruns) drops=$($next.Drops)"
     $script:last = $next
   }
 
   $script:last = $last
   try {
-    Test-Transition 'RTL_DRIVER GAINMODE MANUAL' 'MANUAL' -1 -1
-    Test-Transition 'RTL_DRIVER GAIN 297' 'MANUAL' 297 -1
-    Test-Transition 'RTL_DRIVER GAINMODE AUTO' 'AUTO' 297 -1
-    Test-Transition 'RTL_DRIVER RTLAGC ON' 'AUTO' 297 1
-    Test-Transition 'RTL_DRIVER RTLAGC OFF' 'AUTO' 297 0
-    if ($TestBiasTee) {
-      $target = 1 - $initial.Bias
-      Test-Transition "RTL_DRIVER BIAS $(if ($target) { 'ON' } else { 'OFF' })" 'AUTO' 297 0
+    foreach ($frequency in @(24000, 1000000, 10000000, 23999999, 24000000, 24000001,
+                              28799999, 28800000, 28800001, 96100000, 162400000,
+                              433000000, 1090000000, 1766000000)) {
+      $route = if ($isV3 -and $frequency -lt 24000000) { 'DIRECT_Q' }
+               elseif ($isV4 -and $frequency -lt 28800000) { 'HF_UPCONVERTER' }
+               else { 'TUNER' }
+      Test-Frequency $frequency $route
     }
-    Write-SoakLine "RTL_DRIVER_079_RESULT pass=1 version=$($initial.Version) bias_tested=$([int][bool]$TestBiasTee) evidence=request_acceptance+shadow+iq_continuity"
+    if ($isV4) {
+      Test-Transition 'RTL_DRIVER GAINMODE MANUAL' 'MANUAL' -1 -1
+      Test-Transition 'RTL_DRIVER GAIN 297' 'MANUAL' 297 -1
+      Test-Transition 'RTL_DRIVER GAINMODE AUTO' 'AUTO' 297 -1
+      Test-Transition 'RTL_DRIVER RTLAGC ON' 'AUTO' 297 1
+      Test-Transition 'RTL_DRIVER RTLAGC OFF' 'AUTO' 297 0
+      if ($TestBiasTee) {
+        $target = 1 - $initial.Bias
+        Test-Transition "RTL_DRIVER BIAS $(if ($target) { 'ON' } else { 'OFF' })" 'AUTO' 297 0
+      }
+    }
+    Write-SoakLine "RTL_DRIVER_080_RC2_RESULT pass=1 version=$($initial.Version) profile=$($initial.ProfileName) bias_tested=$([int]($isV4 -and [bool]$TestBiasTee)) evidence=capabilities+exact_frequency+route+iq_continuity"
   } finally {
     try {
-      [void](Send-And-Wait "RTL_DRIVER GAIN $($initial.Gain)" '^RTL_DRIVER_RESULT ')
-      [void](Send-And-Wait "RTL_DRIVER GAINMODE $($initial.Mode)" '^RTL_DRIVER_RESULT ')
-      [void](Send-And-Wait "RTL_DRIVER RTLAGC $(if ($initial.RtlAgc) { 'ON' } else { 'OFF' })" '^RTL_DRIVER_RESULT ')
-      if ($TestBiasTee) {
-        [void](Send-And-Wait "RTL_DRIVER BIAS $(if ($initial.Bias) { 'ON' } else { 'OFF' })" '^RTL_DRIVER_RESULT ')
+      [void](Send-And-Wait "RTL_DRIVER TUNE $($initial.Frequency)" '^RTL_DRIVER_RESULT ')
+      if ($isV4) {
+        [void](Send-And-Wait "RTL_DRIVER GAIN $($initial.Gain)" '^RTL_DRIVER_RESULT ')
+        [void](Send-And-Wait "RTL_DRIVER GAINMODE $($initial.Mode)" '^RTL_DRIVER_RESULT ')
+        [void](Send-And-Wait "RTL_DRIVER RTLAGC $(if ($initial.RtlAgc) { 'ON' } else { 'OFF' })" '^RTL_DRIVER_RESULT ')
+        if ($TestBiasTee) {
+          [void](Send-And-Wait "RTL_DRIVER BIAS $(if ($initial.Bias) { 'ON' } else { 'OFF' })" '^RTL_DRIVER_RESULT ')
+        }
       }
     } catch { Write-Warning "Could not restore driver shadow state: $($_.Exception.Message)" }
   }
@@ -923,7 +1717,7 @@ try {
 
   if ($ResetDevice) { Reset-DeviceBaseline }
 
-  if ($Driver079) { Invoke-Driver079Test; exit 0 }
+  if ($Driver080Rc3) { Invoke-Driver080Rc3Test; exit 0 }
   if ($WifiOnly) {
     Wait-DeviceReady 60 11000
     $initialUi = Get-UiState
@@ -951,8 +1745,11 @@ try {
     Assert-DataServices
     exit 0
   }
+  if ($IqDiagnostic) { Invoke-IqDiagnosticCapture; exit 0 }
   if ($C6Update) { Invoke-C6UpdateTest; exit 0 }
   if ($RadioScan) { Invoke-RadioScanTest; exit 0 }
+  if ($AmBroadcast) { Invoke-AmBroadcastTest; exit 0 }
+  if ($GainSweep) { Invoke-GainSweepTest; exit 0 }
 
   if ($Profile) {
     $commit = (& git -C (Join-Path $PSScriptRoot '..\..\..') rev-parse --short HEAD 2>$null)

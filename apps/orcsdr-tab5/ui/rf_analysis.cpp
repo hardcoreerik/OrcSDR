@@ -18,6 +18,9 @@ namespace {
 constexpr size_t kIqBytes = 16384;
 constexpr size_t kAudioFrames = 2048;
 constexpr size_t kMaxFft = 8192;
+// The native LoRa decoder shares ESP-DSP's global FFT table and needs 32768
+// points for SF12. Keep analysis buffers capped at 8192; only the table grows.
+constexpr size_t kSharedFftTableSize = 32768;
 constexpr float kPi = 3.14159265358979323846f;
 
 SemaphoreHandle_t g_iq_mutex = nullptr;
@@ -46,6 +49,10 @@ int fit_fft_size(int requested, size_t available) {
   requested = std::min<int>(requested, static_cast<int>(kMaxFft));
   while (requested > static_cast<int>(available)) requested >>= 1;
   return requested >= 256 ? requested : 0;
+}
+
+int fit_iq_fft_size(int requested, size_t bytes) {
+  return fit_fft_size(requested, std::min(bytes / 2, kMaxIqPoints));
 }
 
 size_t append_audio_window(int16_t* destination, size_t capacity, size_t used,
@@ -186,7 +193,7 @@ void analyze_audio(Snapshot* next, float* work, int16_t* local_audio,
 bool analyze_iq(const uint8_t* iq, size_t bytes, Snapshot* next, float* work,
                 float* scratch, const Config& config) {
   if (!iq || !next || !work || !scratch || bytes < 512) return false;
-  const int n = fit_fft_size(config.fft_size, bytes / 2);
+  const int n = fit_iq_fft_size(config.fft_size, bytes);
   if (!n) return false;
   const size_t iq_points = std::min<size_t>(kMaxIqPoints, bytes / 2);
   float sum_i = 0, sum_q = 0, sum_i2 = 0, sum_q2 = 0;
@@ -219,8 +226,8 @@ bool analyze_iq(const uint8_t* iq, size_t bytes, Snapshot* next, float* work,
   for (int i = 0; i < n; ++i) {
     const float window = 0.5f - 0.5f * cosf(2.0f * kPi * i / (n - 1));
     coherent_sum += window;
-    work[i * 2] = ((static_cast<int>(iq[i * 2]) - 127.5f) / 127.5f) * window;
-    work[i * 2 + 1] = ((static_cast<int>(iq[i * 2 + 1]) - 127.5f) / 127.5f) * window;
+    work[i * 2] = next->iq_i[i] * window;
+    work[i * 2 + 1] = next->iq_q[i] * window;
   }
   if (dsps_fft2r_fc32_ansi(work, n) != ESP_OK ||
       dsps_bit_rev_fc32_ansi(work, n) != ESP_OK)
@@ -363,7 +370,7 @@ void worker(void*) {
 bool initialize_fft() {
   if (g_fft_ready.load(std::memory_order_acquire)) return true;
   // ponytail: boot initialization is serialized; add a mutex only if callers become concurrent.
-  if (dsps_fft2r_init_fc32(nullptr, kMaxFft) != ESP_OK) return false;
+  if (dsps_fft2r_init_fc32(nullptr, kSharedFftTableSize) != ESP_OK) return false;
   g_fft_ready.store(true, std::memory_order_release);
   return true;
 }
@@ -385,9 +392,8 @@ bool initialize() {
   for (float& level : g_snapshot->average) level = -160;
   for (float& level : g_snapshot->peak) level = -160;
   if (!initialize_fft()) return false;
-  // Analysis is best-effort display work. Sharing the idle priority guarantees
-  // Core 1's watched idle task can run while continuous radio DSP is active.
-  if (xTaskCreatePinnedToCoreWithCaps(worker, "rf_analysis", 8192, nullptr, tskIDLE_PRIORITY,
+  // Interval throttling leaves idle time; priority 1 prevents high-rate IQ from starving analysis.
+  if (xTaskCreatePinnedToCoreWithCaps(worker, "rf_analysis", 8192, nullptr, tskIDLE_PRIORITY + 1,
                                       &g_task, 1,
                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS)
     return false;
@@ -476,7 +482,7 @@ void clear_average() {
 
 bool self_check() {
   if (fit_fft_size(1024, 372) != 256 || fit_fft_size(2048, 1024) != 1024 ||
-      fit_fft_size(256, 128) != 0)
+      fit_fft_size(256, 128) != 0 || fit_iq_fft_size(8192, kIqBytes) != 1024)
     return false;
   int16_t audio_window[4] = {1, 2, 3, 4};
   const int16_t audio_tail[3] = {5, 6, 7};
@@ -502,8 +508,8 @@ bool self_check() {
   }
   for (size_t i = 0; i < samples; ++i) {
     const float phase = 2.0f * kPi * 32.0f * i / samples;
-    iq[i * 2] = static_cast<uint8_t>(lroundf(127.5f + 80.0f * cosf(phase)));
-    iq[i * 2 + 1] = static_cast<uint8_t>(lroundf(127.5f + 80.0f * sinf(phase)));
+    iq[i * 2] = static_cast<uint8_t>(lroundf(227.5f + 20.0f * cosf(phase)));
+    iq[i * 2 + 1] = static_cast<uint8_t>(lroundf(227.5f + 20.0f * sinf(phase)));
     snapshot->average[i] = -160;
     snapshot->peak[i] = -160;
   }
@@ -516,7 +522,7 @@ bool self_check() {
   const bool analyzed = analyze_iq(iq, samples * 2, snapshot, work, scratch, config);
   const bool valid = analyzed && snapshot->bins == samples &&
                      fabsf(snapshot->strongest_offset_hz - 120000.0f) < 8000.0f &&
-                     snapshot->strongest > -8.0f && snapshot->strongest < 0.0f &&
+                     snapshot->strongest > -20.0f && snapshot->strongest < -12.0f &&
                      snapshot->clipping_percent == 0.0f &&
                      fabsf(snapshot->iq_imbalance_db) < 0.5f &&
                      snapshot->occupied_bandwidth_hz > 0 &&

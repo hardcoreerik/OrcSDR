@@ -25,7 +25,7 @@ function Get-Sha256([string]$Path) {
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $repo
 if (-not $Version) { $Version = (git describe --tags --exact-match).Trim() }
-if ($Version -notmatch '^v\d+\.\d+\.\d+(-(alpha|beta)\.\d+)?(-candidate\.\d+)?$') {
+if ($Version -notmatch '^v\d+\.\d+\.\d+(-(alpha|beta|rc)\.?\d+)?(-(candidate\.\d+|multidongle-rc\d+))?$') {
   throw "Use an exact OrcSDR release tag or candidate label, not '$Version'."
 }
 $exactTag = (git describe --tags --exact-match 2>$null)
@@ -43,6 +43,10 @@ $build = 'build-native-hosted3'
 $appBuild = Join-Path $app $build
 $dist = Join-Path $repo "dist\OrcSDR-Tab5-$Version"
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
+$releaseNotesSource = Join-Path $repo "docs\releases\$Version.md"
+if (-not (Test-Path -LiteralPath $releaseNotesSource -PathType Leaf)) {
+  throw "Missing release notes: $releaseNotesSource"
+}
 $c6Dir = Join-Path $dist 'c6'
 & (Join-Path $PSScriptRoot 'build-hosted-c6.ps1') -OutputDirectory $c6Dir -IdfPath $IdfPath
 if ($LASTEXITCODE) { throw "ESP-Hosted C6 build failed ($LASTEXITCODE)." }
@@ -98,6 +102,8 @@ $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dist 'm5burner
   'Normal upgrades: do not erase; this preserves OrcSDR settings and saved Wi-Fi profiles.',
   "SHA-256: $hash"
 ) | Set-Content -LiteralPath (Join-Path $dist 'README.txt')
+Copy-Item -LiteralPath $releaseNotesSource `
+  -Destination (Join-Path $dist 'RELEASE_NOTES.txt') -Force
 Copy-Item -LiteralPath (Join-Path $repo 'docs\images\OrcSDR-Main.png') `
   -Destination (Join-Path $dist 'OrcSDR-Main.png') -Force
 
@@ -112,6 +118,8 @@ Copy-Item -LiteralPath (Join-Path $appBuild 'orcsdr_tab5.bin') `
   -Destination (Join-Path $localFirmware 'orcsdr_tab5_0x10000.bin') -Force
 Copy-Item -LiteralPath (Join-Path $c6Dir 'c6-provenance.json') `
   -Destination (Join-Path $localRoot 'c6-provenance.json') -Force
+Copy-Item -LiteralPath $releaseNotesSource `
+  -Destination (Join-Path $localRoot 'RELEASE_NOTES.txt') -Force
 $localManifest = [ordered]@{
   name = "OrcSDR $Version"
   description = 'OrcSDR P4 application for private Tab5 testing. Do not erase for normal upgrades.'
@@ -132,14 +140,20 @@ $localManifest = [ordered]@{
   }
 }
 $localManifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $localRoot 'm5burner.json')
-@'
+$flashScript = @'
 #!/bin/bash
 esptool.py --chip esp32p4 --port /dev/${port} --baud 921600 --before default_reset --after hard_reset write_flash -z \
 --flash_mode dio --flash_freq 80m --flash_size 16MB \
 0x2000 bootloader_0x2000.bin \
 0x8000 partition-table_0x8000.bin \
 0x10000 orcsdr_tab5_0x10000.bin
-'@ | Set-Content -LiteralPath (Join-Path $localFirmware 'flash.sh') -NoNewline
+'@
+$flashScript = $flashScript.Replace("`r", '')
+[IO.File]::WriteAllText(
+  (Join-Path $localFirmware 'flash.sh'),
+  $flashScript,
+  [Text.UTF8Encoding]::new($false)
+)
 $localZip = Join-Path $dist "OrcSDR-Tab5-$Version-local-m5burner.zip"
 Compress-Archive -Path (Join-Path $localRoot '*') -DestinationPath $localZip -Force
 

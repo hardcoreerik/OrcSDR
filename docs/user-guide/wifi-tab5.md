@@ -70,17 +70,16 @@ TLS, mDNS, and large application allocations in PSRAM.
 
 ## Startup order
 
-1. Start M5Unified/Tab5 board support. This enables the C6 power rail.
-2. Cycle `WLAN_PWR_EN` once to clear a C6 left hung by a prior P4 crash.
-3. Explicitly start ESP-Hosted on Slot 1. Do not enable Hosted auto-init before
-   `app_main`.
-4. Load settings and mount the removable card independently on Slot 0.
-5. Start the Wi-Fi station only after the Hosted handshake succeeds.
-6. Start USB RTL-SDR/audio after the network action is finished, or pause it
-   before a scan, join, or large catalog transfer and resume it afterwards.
+1. Start M5Unified/Tab5 board support and mount the removable card on Slot 0.
+2. Start the UI and USB RTL-SDR/audio without initializing ESP-Hosted.
+3. On a scan, manual connection, or delayed boot connection, pause active SDR.
+4. Cycle `WLAN_PWR_EN` once, then explicitly start ESP-Hosted on Slot 1. Do not
+   enable Hosted auto-init before `app_main`.
+5. Start the Wi-Fi station after the Hosted handshake, then scan or join.
+6. Resume SDR after the network action succeeds, fails, or times out.
 
-This order prevents boot-time SDIO contention while ensuring each P4 boot starts
-with a known C6 state.
+Slot initialization remains sequential because both slots share one SDMMC host.
+Deferring Hosted avoids the issue #66 boot panic while keeping Slot 0 mounted.
 
 ## User-facing behavior
 

@@ -22,7 +22,7 @@ constexpr uint16_t kGreen = 0x6fe8;
 constexpr uint16_t kYellow = 0xffe0;
 constexpr uint16_t kRed = 0xf800;
 constexpr uint16_t kMuted = 0x9cf3;
-constexpr int kHeaderH = 76;
+constexpr int kHeaderH = 100;
 constexpr int kTabsY = 646;
 constexpr int kTabW = 256;
 // Content area between the header and tab bar, with a 12px top margin and a
@@ -162,14 +162,14 @@ void tab_icon(int index, int x, int y, uint16_t color) {
 // entry and on every live update (~1/s) without touching the Home/Settings
 // buttons either side of it.
 void draw_header_live_values() {
-  M5.Display.fillRect(340, 12, 460, 52, kBg);
+  M5.Display.fillRect(370, 12, 430, 52, kBg);
   M5.Display.fillRect(750, 12, 200, 52, kBg);
   const Snapshot& snapshot = live_snapshot();
   char freq[24];
   const uint32_t display_hz = snapshot.scanning ? snapshot.scan_frequency_hz :
       snapshot.frequency_hz ? snapshot.frequency_hz : g_settings.frequency_hz;
   snprintf(freq, sizeof(freq), "%.4f MHz", display_hz / 1000000.0);
-  text(freq, 360, 36, TFT_WHITE, 2, middle_left);
+  text(freq, 390, 36, TFT_WHITE, 2, middle_left);
   if (snapshot.scanning) {
     M5.Display.fillRoundRect(580, 18, 150, 40, 8, TFT_DARKGREY);
     char scan_label[16];
@@ -192,17 +192,15 @@ void draw_header_live_values() {
 void draw_header() {
   M5.Display.fillRect(0, 0, 1280, kHeaderH, kBg);
   M5.Display.drawFastHLine(20, kHeaderH - 1, 1240, kBorder);
-  if (!badge::draw(12, 8, 58)) {
-    M5.Display.drawRoundRect(12, 8, 58, 58, 8, kGreen);
-    text("O", 41, 37, kGreen, 2);
-  }
-  text("OrcSDR", 82, 28, kGreen, 2, middle_left);
-  text("POCSAG PAGER MONITOR", 82, 56, kCyan, 1, middle_left);
-  M5.Display.drawFastVLine(340, 12, 52, kBorder);
+  audio_header::draw_brand("POCSAG PAGER MONITOR");
+  M5.Display.drawFastVLine(370, 12, 76, kBorder);
   M5.Display.drawFastVLine(560, 12, 52, kBorder);
   M5.Display.drawFastVLine(750, 12, 52, kBorder);
   draw_header_live_values();
   audio_header::draw_home_button();
+  audio_header::draw_battery(M5.Power.getBatteryLevel());
+  audio_header::draw_mute_button(true);
+  audio_header::draw_visualizer_button(g_live);
   audio_header::draw_settings_button();
 }
 

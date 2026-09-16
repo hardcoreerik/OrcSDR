@@ -28,6 +28,7 @@ struct Snapshot {
   bool receiving = false;
   bool sound_enabled = true;
   char wifi_ip[16]{};
+  char receiver[12] = "RTL-SDR";
   char mode[12]{};
   char clock[12]{};
   char date[20]{};
@@ -38,11 +39,15 @@ enum class ActionKind : uint8_t {
   open_dashboard,
   open_browser,
   close_browser,
+  browser_previous,
+  browser_next,
   tune_frequency,
   span_down,
   span_up,
   step_down,
   step_up,
+  step_size_down,
+  step_size_up,
   sound_toggle,
   volume_down,
   volume_up,
@@ -64,6 +69,7 @@ void update(const Snapshot& snapshot);
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor, bool audio_stressed = false);
 Action handle_touch(int32_t x, int32_t y, bool pressed);
+uint32_t step_span(uint32_t span_hz, int direction);
 bool active();
 bool browser_active();
 bool self_check();

@@ -1,9 +1,17 @@
-# AM, WX, CB, and Browse
+# AM, WX, CB, and shared receiver routes
 
-These bands share three tools:
+The current application has dedicated AM and CB presentation plus a shared
+Radio/Scope/Capture receiver surface. Weather and the dashboard-catalog entries
+for Shortwave, Airband, Marine, and Satellite route into that shared surface;
+they are not separate full decoder applications.
 
-- **Radio** — listen and tune with band-appropriate demodulation.
-- **Scope** — inspect spectrum and waterfall activity.
-- **Capture** — record the post-demodulated audio path for review.
+- **Radio** tunes and listens with the mode currently implemented for the route.
+- **Scope** shows spectrum and waterfall activity.
+- **Capture** records the post-demodulated audio path.
 
-AM uses the broadcast-band step and filter. WX uses narrow FM on a configured NOAA weather channel. CB exposes channel, mode, clarifier, and squelch controls. Browse is the general direct-tuning surface; reception legality and local band plans remain the operator's responsibility.
+AM uses broadcast-band tuning and filtering. WX uses NFM on a configured NOAA
+weather channel. CB exposes its channel-oriented controls. Shortwave, Airband,
+Marine, and Satellite currently use generic Browse/NFM routing, so this UI does
+not establish correct shortwave AM/SSB, aviation AM voice, or a satellite
+decoder. The older standalone Browse navigation entry is retired; the shared
+surface remains the implementation used by these band-entry routes.

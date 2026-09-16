@@ -1,0 +1,28 @@
+diff --git a/managed_components/espressif__esp_hosted/port/os/idf/src/eh_host_port_task.c b/managed_components/espressif__esp_hosted/port/os/idf/src/eh_host_port_task.c
+--- a/managed_components/espressif__esp_hosted/port/os/idf/src/eh_host_port_task.c
++++ b/managed_components/espressif__esp_hosted/port/os/idf/src/eh_host_port_task.c
+@@ -49,9 +49,19 @@ static void trampoline(void *p)
+     } else if (t && t->exit_sem) {
+         xSemaphoreGive(t->exit_sem);
+     }
+-    if (with_caps) {
+-        vTaskDeleteWithCaps(NULL);
+-    } else {
+-        vTaskDelete(NULL);
+-    }
++    /* ORCSDR-TAB5: sidestep vTaskDeleteWithCaps entirely for self-delete.
++     * ESP-IDF v5.5.4's vTaskDeleteWithCaps takes a self-delete path that
++     * spawns a cleanup task at the same priority as the caller and then
++     * calls vTaskSuspend(self); the code assumes the cleanup task
++     * preempts immediately and if vTaskSuspend ever returns it triggers
++     * a "should never reach here" abort() (idf_additions.c:176). That
++     * abort is what killed battery boot in issue #66 (crash was masked
++     * on USB-C boots because timing hid the SMP race).
++     *
++     * vTaskDelete(NULL) queues the current task for termination via the
++     * idle-task cleanup path, which calls vPortFree -> heap_caps_free.
++     * heap_caps_free correctly frees SPIRAM allocations, so the caps
++     * memory for this one-shot detached task is still released. */
++    (void)with_caps;
++    vTaskDelete(NULL);
+ }

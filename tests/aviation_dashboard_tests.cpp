@@ -18,6 +18,8 @@ bool available(){return false;}
 void draw_base(lgfx::LovyanGFX&,const View&,uint16_t,uint16_t,uint16_t,uint16_t){}
 }
 namespace orcsdr::audio_header {
+void draw_brand(const char* subtitle){M5.Display.labels.push_back(subtitle);}
+void draw_battery(int32_t){}
 void draw_home_button(){}void draw_mute_button(bool){}void draw_visualizer_button(bool){}void draw_settings_button(){}
 }
 bool label(const char* s){return std::find(M5.Display.labels.begin(),M5.Display.labels.end(),s)!=M5.Display.labels.end();}
@@ -29,6 +31,7 @@ int main(){
  auto next=session.acquire(radio::Owner::flarm,radio::Band::flarm,868300000,960000);
  assert(!session.retuned(old,1090000000)&&session.owns(next));
  adsb::Settings settings;settings.flarm=true;
+ settings.gain_supported=settings.gain_auto_supported=true;
  adsb::enter(settings);adsb::Snapshot snapshot;snapshot.revision=1;
  snapshot.receiver_running=true;adsb::set_live_snapshot(snapshot);adsb::draw();
  assert(label("NEED UTC TIME"));assert(label("FLARM 868"));save("flarm-waiting");
@@ -47,6 +50,9 @@ int main(){
   if(tab==2){assert(label("AIR V7"));assert(label("868.4 MHz"));assert(label("WGS84 ELLIPSOID"));save("flarm-target");}
   if(tab==3)save("flarm-stats");if(tab==4)save("flarm-settings");
  }
+ // FLARM channel information must not activate the ADS-B gain controls.
+ assert(adsb::handle_touch(80,450)==adsb::Action::none);
+ assert(adsb::handle_touch(300,450)==adsb::Action::none);
  const auto saved_view = adsb::view();
  adsb::leave();adsb::resume(settings);adsb::draw();assert(adsb::view()==saved_view);
  snapshot.aircraft_count=snapshot.visible_count=0;++snapshot.session_id;++snapshot.revision;
@@ -54,6 +60,9 @@ int main(){
  // A protocol switch cannot reuse the previous receiver's aircraft snapshot.
  settings.flarm=false;adsb::enter(settings);
  assert(label("ADS-B 1090"));assert(!label("123456"));
+ adsb::handle_touch(1152,680);
+ assert(adsb::handle_touch(80,450)==adsb::Action::gain_auto);
+ assert(adsb::handle_touch(300,450)==adsb::Action::gain_tenth_db);
  assert(adsb::self_check());
  std::puts("Aviation: FLARM/ADS-B renderer, protocol labels, mode reset, Settings return and tuner ownership passed");
 }

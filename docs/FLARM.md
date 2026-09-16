@@ -86,10 +86,16 @@ Run `bash tools/test-flarm-core.sh`. The optimized and ASan/UBSan runs cover:
 writes SVG render recordings for visual inspection. These use substitute host
 font metrics and board services; they do not replace physical display acceptance.
 
-**Evidence as of 2026-09-08:** host tests and a warning-clean ESP32-P4 GCC compile of the portable decoder core. Full ESP-IDF 5.5.4 firmware
-build and over-the-air Tab5 acceptance remain pending. Local setup attempts
+**Review evidence as of 2026-09-16:** merged upstream `main` at `c231f46`,
+preserving the current sample-rate metadata, AM/shortwave navigation, shared
+header and ADS-B gain controls. Optimized and ASan/UBSan FLARM/receiver/dashboard
+host tests pass, including inert FLARM channel controls and working ADS-B gain
+controls. The portable core also passed a warning-clean ESP32-P4 GCC compile
+on 2026-09-08; that earlier compile is not a full firmware build.
+
+Full ESP-IDF 5.5.4 firmware build and over-the-air Tab5 acceptance remain pending.
+The current Mac has no configured ESP-IDF installation. Earlier setup attempts
 could not fetch all ESP-IDF submodules and Python/toolchain dependencies.
-A P4 compiler download alone does not establish a firmware build.
 
 Before calling this hardware-verified, build with the pinned native toolchain,
 then measure both-channel reception and IQ drops on the Tab5 against a known

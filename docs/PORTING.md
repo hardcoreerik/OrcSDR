@@ -1,5 +1,9 @@
 # Porting `esp_rtl_sdr` to ESP32 devices
 
+> **Current OrcSDR dependency (2026-09-14):** driver 0.8.0-rc2 at immutable
+> pin `7ec9825e31653eaa5692978e3e5d44032d621417`. Older pins below are retained
+> as Historical Evidence for the integration that was actually tested then.
+
 ## Goals
 
 1. **Standalone driver** ([`hardcoreerik/esp-rtl-sdr`](https://github.com/hardcoreerik/esp-rtl-sdr)) usable without OrcSDR UI.
@@ -9,9 +13,29 @@
 ## Existing implementation and evidence
 
 The standalone driver extraction is complete. OrcSDR pins `esp_rtl_sdr`
-v0.7.9; its public C API, USB/tuner implementation, tests, and
-[`p4_serial_smoke` example](https://github.com/hardcoreerik/esp-rtl-sdr/tree/v0.7.9/examples/p4_serial_smoke)
-live in the driver repository. See the [integration contract](API_ESP_RTL_SDR.md).
+directly to reviewed Git commits; its public C API, USB/tuner implementation,
+tests, and `p4_serial_smoke` example live in the driver repository. See the
+[integration contract](API_ESP_RTL_SDR.md).
+
+### Blog V4 HF-routing integration (2026-09-09)
+
+The Tab5 application moved from driver v0.7.14 commit
+`69e61848008ed0fce5a823ad370aee5cb81d65da` to v0.7.15 commit
+`1cd19d1363daea49b013c2d28a25750fcbfcff78` from branch
+`codex/v0.7.15-v4-hf-routing`. The exact commit pin is intentional while the
+driver change awaits release tagging.
+
+The driver change completes the capture-derived Blog V4 HF route: R828D
+Cable-2 selection and RTL2832 GPIO5 upconverter switching are composed with
+VHF/UHF restoration, manual/AUTO gain state, and Bias-T GPIO0. The previous
+driver already translated RF below 28.8 MHz to the tuner frequency; the defect
+was the incomplete physical RF route.
+
+Upstream source evidence reports 372 host assertions passed and a successful
+ESP32-P4 smoke build. OrcSDR's native ESP-IDF 5.5.4 build also passed with the
+new managed component compiled from the exact commit. No firmware was flashed
+for this integration. GPIO5/Bias-T behavior, raw AM and Shortwave RF, AM audio,
+and VHF/UHF restoration remain separate physical acceptance gates.
 
 Waveshare second-board work has already been performed under OrcSDR. The
 driver's [validation provenance](https://github.com/hardcoreerik/esp-rtl-sdr/blob/9bd59129622e0b978b6a4b1fe748cf37fcc2bc37/docs/AI_DEVELOPMENT_DISCLOSURE.md#provenance-honesty-orcsdr--this-repo)

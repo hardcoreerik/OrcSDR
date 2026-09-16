@@ -1988,7 +1988,7 @@ void set_runtime(const Runtime& runtime) {
                                 previous.audio_rate_sps != runtime.audio_rate_sps ||
                                 previous.filter_bandwidth_hz != runtime.filter_bandwidth_hz ||
                                 previous.audio_demod != runtime.audio_demod;
-  if (g_initialized && analysis_changed) configure_analysis();
+  if (g_initialized && active() && analysis_changed) configure_analysis();
 }
 
 void offer_iq(const uint8_t* iq, size_t bytes) {

@@ -12,6 +12,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $IdfPath 'export.ps1'))) {
 
 Write-Host 'Building OrcSDR with native ESP-IDF 5.5.4...'
 & (Join-Path $PSScriptRoot 'build-tab5-idf.ps1') -IdfPath $IdfPath
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Set-Location (Join-Path $PSScriptRoot '..')
 Write-Host "Flashing OrcSDR to $Port. Saved settings and Wi-Fi profiles are preserved."
