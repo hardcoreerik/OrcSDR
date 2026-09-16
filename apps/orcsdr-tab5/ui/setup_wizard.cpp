@@ -9,9 +9,11 @@ namespace {
 // A pack should cover at least what the radar draws, plus a margin so the
 // map does not end exactly at the edge of the range ring.
 constexpr double kKmPerNauticalMile = 1.852;
+constexpr double kKmPerStatuteMile = 1.609344;
 constexpr double kCoverageMargin = 1.25;
 constexpr uint16_t kMinRadiusKm = 25;
-constexpr uint16_t kMaxRadiusKm = 400;
+// A 300 mile travel tier is 483 km, so the ceiling has to clear it.
+constexpr uint16_t kMaxRadiusKm = 800;
 
 void copy_text(char* out, size_t size, const char* text) {
   if (out == nullptr || size == 0) return;
@@ -24,10 +26,9 @@ void copy_text(char* out, size_t size, const char* text) {
 
 // Copies from a fixed-size source field that may not be terminated.
 //
-// A PackCoverage.name is filled in by the UI layer from a manifest on a
-// removable card. If that copy ever fills the field without leaving room for
-// a terminator, treating it as a C string reads past the end of the struct,
-// so the read is bounded by the source's own size rather than trusting it.
+// PackCoverage.name is filled by the UI layer from a manifest on a removable
+// card. If that copy fills the field with no room for a terminator, treating
+// it as a C string reads the struct's following coordinate bytes as text.
 void copy_field(char* out, size_t out_size, const char* src, size_t src_size) {
   if (out == nullptr || out_size == 0) return;
   if (src == nullptr) {
@@ -46,6 +47,29 @@ bool contains(const PackCoverage& pack, int32_t lat_e7, int32_t lon_e7) {
          lon_e7 >= pack.min_lon_e7 && lon_e7 <= pack.max_lon_e7;
 }
 
+uint16_t clamp_radius(double km) {
+  if (km <= static_cast<double>(kMinRadiusKm)) return kMinRadiusKm;
+  if (km >= static_cast<double>(kMaxRadiusKm)) return kMaxRadiusKm;
+  // Round up: a pack that stops just short of the range ring is the one
+  // failure this calculation exists to prevent.
+  return static_cast<uint16_t>(km + 0.999);
+}
+
+// Accepting a location is the same bookkeeping whichever method produced it,
+// and any earlier coverage verdict belongs to the old coordinates.
+void accept_location(State* state, LocationMethod method, int32_t lat_e7,
+                     int32_t lon_e7) {
+  state->latitude_e7 = lat_e7;
+  state->longitude_e7 = lon_e7;
+  state->method = method;
+  state->location_valid = true;
+  state->location_skipped = false;
+  state->coverage_evaluated = false;
+  state->covered = false;
+  state->covering_pack[0] = '\0';
+  state->recommendation = Recommendation{};
+}
+
 }  // namespace
 
 bool coordinates_valid(int32_t latitude_e7, int32_t longitude_e7) {
@@ -53,23 +77,112 @@ bool coordinates_valid(int32_t latitude_e7, int32_t longitude_e7) {
          longitude_e7 >= -kLongitudeLimitE7 && longitude_e7 <= kLongitudeLimitE7;
 }
 
-uint16_t radius_km_for_range_nm(uint16_t range_nm) {
-  const double km = static_cast<double>(range_nm) * kKmPerNauticalMile *
-                    kCoverageMargin;
-  if (km <= static_cast<double>(kMinRadiusKm)) return kMinRadiusKm;
-  if (km >= static_cast<double>(kMaxRadiusKm)) return kMaxRadiusKm;
-  // Round up: a pack that stops just short of the radar range is the one
-  // failure this calculation exists to prevent.
-  return static_cast<uint16_t>(km + 0.999);
+bool LocationMethodNeedsNetwork(LocationMethod method) {
+  switch (method) {
+    case LocationMethod::postal_code:
+    case LocationMethod::city_address:
+    case LocationMethod::network_estimate:
+      return true;
+    case LocationMethod::none:
+    case LocationMethod::map_pin:
+    case LocationMethod::coordinates:
+      return false;
+  }
+  return false;
 }
 
-void Wizard::begin(bool overview_available, uint16_t radar_range_nm) {
+bool LocationMethodAvailable(LocationMethod method, bool network_connected,
+                             bool basemap_available) {
+  switch (method) {
+    case LocationMethod::none:
+      return false;
+    // The pin needs something to drop it on. With the basemap embedded in
+    // firmware this is true on a board with no card and no network.
+    case LocationMethod::map_pin:
+      return basemap_available;
+    // Always possible, and the last resort when nothing else is.
+    case LocationMethod::coordinates:
+      return true;
+    case LocationMethod::postal_code:
+    case LocationMethod::city_address:
+    case LocationMethod::network_estimate:
+      return network_connected;
+  }
+  return false;
+}
+
+uint8_t AvailableLocationMethodCount(bool network_connected,
+                                     bool basemap_available) {
+  const LocationMethod all[] = {
+      LocationMethod::map_pin,     LocationMethod::coordinates,
+      LocationMethod::postal_code, LocationMethod::city_address,
+      LocationMethod::network_estimate};
+  uint8_t count = 0;
+  for (size_t i = 0; i < sizeof(all) / sizeof(all[0]); ++i) {
+    if (LocationMethodAvailable(all[i], network_connected, basemap_available)) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+uint16_t TierRadiusMiles(MapTier tier) {
+  switch (tier) {
+    case MapTier::local:
+      return kLocalRadiusMiles;
+    case MapTier::regional:
+      return kRegionalRadiusMiles;
+    case MapTier::travel:
+      return kTravelRadiusMiles;
+    case MapTier::none:
+      return 0;
+  }
+  return 0;
+}
+
+uint16_t TierRadiusKm(MapTier tier) {
+  const uint16_t miles = TierRadiusMiles(tier);
+  if (miles == 0) return 0;
+  return clamp_radius(static_cast<double>(miles) * kKmPerStatuteMile);
+}
+
+uint16_t radius_km_for_range_nm(uint16_t range_nm) {
+  return clamp_radius(static_cast<double>(range_nm) * kKmPerNauticalMile *
+                      kCoverageMargin);
+}
+
+const char* StepName(Step step) {
+  switch (step) {
+    case Step::welcome:
+      return "Welcome";
+    case Step::network:
+      return "Wi-Fi";
+    case Step::location:
+      return "Location";
+    case Step::maps:
+      return "Maps";
+    case Step::complete:
+      return "Complete";
+  }
+  return "";
+}
+
+void Wizard::set_message(const char* text) {
+  copy_text(state_.message, sizeof(state_.message), text);
+}
+
+void Wizard::begin(const Environment& environment) {
   state_ = State{};
-  state_.overview_available = overview_available;
-  state_.radar_range_nm = radar_range_nm;
-  copy_text(state_.message, sizeof(state_.message),
-            overview_available ? "Offline setup: drop a pin on the map"
-                               : "Offline setup: enter your coordinates");
+  state_.network_connected = environment.network_connected;
+  state_.basemap_available = environment.basemap_available;
+  state_.sd_present = environment.sd_present;
+  state_.radar_range_nm = environment.radar_range_nm;
+  set_message("Let's set up your radio");
+}
+
+void Wizard::set_network_connected(bool connected) {
+  state_.network_connected = connected;
+  if (connected) state_.network_skipped = false;
 }
 
 void Wizard::set_radar_range_nm(uint16_t radar_range_nm) {
@@ -79,43 +192,59 @@ void Wizard::set_radar_range_nm(uint16_t radar_range_nm) {
 
 bool Wizard::set_pin(int32_t latitude_e7, int32_t longitude_e7) {
   if (!coordinates_valid(latitude_e7, longitude_e7)) {
-    copy_text(state_.message, sizeof(state_.message), "Pin is off the map");
+    set_message("Pin is off the map");
     return false;
   }
   // A pin at exactly 0,0 is the viewport's own starting centre, so it means
-  // "never moved" far more often than it means the Gulf of Guinea. Manual
-  // entry can still set it deliberately.
+  // "never moved" far more often than it means the Gulf of Guinea. Typed
+  // coordinates can still set it deliberately.
   if (latitude_e7 == 0 && longitude_e7 == 0) {
-    copy_text(state_.message, sizeof(state_.message), "Move the pin first");
+    set_message("Move the pin first");
     return false;
   }
-  state_.latitude_e7 = latitude_e7;
-  state_.longitude_e7 = longitude_e7;
-  state_.source = LocationSource::map_pin;
-  state_.location_valid = true;
-  // Any earlier verdict belongs to the old location.
-  state_.coverage_evaluated = false;
-  state_.covered = false;
-  state_.covering_pack[0] = '\0';
-  state_.recommendation = Recommendation{};
-  copy_text(state_.message, sizeof(state_.message), "Pin set");
+  accept_location(&state_, LocationMethod::map_pin, latitude_e7, longitude_e7);
+  set_message("Location set from map");
   return true;
 }
 
 bool Wizard::set_manual(int32_t latitude_e7, int32_t longitude_e7) {
   if (!coordinates_valid(latitude_e7, longitude_e7)) {
-    copy_text(state_.message, sizeof(state_.message), "Coordinates out of range");
+    set_message("Coordinates out of range");
     return false;
   }
-  state_.latitude_e7 = latitude_e7;
-  state_.longitude_e7 = longitude_e7;
-  state_.source = LocationSource::manual_entry;
-  state_.location_valid = true;
-  state_.coverage_evaluated = false;
-  state_.covered = false;
-  state_.covering_pack[0] = '\0';
-  state_.recommendation = Recommendation{};
-  copy_text(state_.message, sizeof(state_.message), "Coordinates accepted");
+  accept_location(&state_, LocationMethod::coordinates, latitude_e7,
+                  longitude_e7);
+  set_message("Coordinates accepted");
+  return true;
+}
+
+bool Wizard::set_looked_up(LocationMethod method, int32_t latitude_e7,
+                           int32_t longitude_e7) {
+  // Guard the method as well as the coordinates: a lookup result arriving
+  // while offline means the caller is confused about its own state, and
+  // accepting it would record a provenance that cannot be true.
+  if (!LocationMethodNeedsNetwork(method)) {
+    set_message("Not a lookup method");
+    return false;
+  }
+  if (!state_.network_connected) {
+    set_message("Connect Wi-Fi to look up a location");
+    return false;
+  }
+  if (!coordinates_valid(latitude_e7, longitude_e7)) {
+    set_message("Lookup returned a bad position");
+    return false;
+  }
+  accept_location(&state_, method, latitude_e7, longitude_e7);
+  set_message("Location found");
+  return true;
+}
+
+bool Wizard::select_tier(MapTier tier) {
+  if (tier == MapTier::none) return false;
+  state_.tier = tier;
+  state_.maps_skipped = false;
+  if (state_.coverage_evaluated) recommend();
   return true;
 }
 
@@ -124,7 +253,11 @@ void Wizard::recommend() {
   plan = Recommendation{};
   plan.min_zoom = kRecommendedMinZoom;
   plan.max_zoom = kRecommendedMaxZoom;
-  plan.radius_km = radius_km_for_range_nm(state_.radar_range_nm);
+  // An explicitly chosen tier wins; otherwise size the pack to the radar
+  // range, which is what the receiver will actually draw.
+  plan.radius_km = state_.tier != MapTier::none
+                       ? TierRadiusKm(state_.tier)
+                       : radius_km_for_range_nm(state_.radar_range_nm);
   plan.needed = !state_.covered;
   copy_text(plan.name, sizeof(plan.name), "home");
 }
@@ -135,7 +268,7 @@ void Wizard::evaluate_coverage(const PackCoverage* packs, size_t count) {
   state_.covering_pack[0] = '\0';
   if (!state_.location_valid) {
     recommend();
-    copy_text(state_.message, sizeof(state_.message), "Choose a location first");
+    set_message("Choose a location first");
     return;
   }
 
@@ -143,7 +276,7 @@ void Wizard::evaluate_coverage(const PackCoverage* packs, size_t count) {
     for (size_t i = 0; i < count; ++i) {
       const PackCoverage& pack = packs[i];
       if (!contains(pack, state_.latitude_e7, state_.longitude_e7)) continue;
-      // Geographic containment is not enough. An overview pack contains
+      // Geographic containment is not coverage. A world basemap contains
       // every point and resolves none of them.
       if (pack.max_zoom < kMinDetailZoom) continue;
       state_.covered = true;
@@ -154,46 +287,42 @@ void Wizard::evaluate_coverage(const PackCoverage* packs, size_t count) {
   }
 
   recommend();
-  copy_text(state_.message, sizeof(state_.message),
-            state_.covered ? "Local map found for this location"
-                           : "No local map yet: generate one on a PC");
+  set_message(state_.covered ? "Local map found for this location"
+                             : "No local map yet: add one to continue offline");
 }
 
 Outcome Wizard::advance() {
   switch (state_.step) {
     case Step::welcome:
-      state_.step = Step::pick_location;
-      copy_text(state_.message, sizeof(state_.message),
-                state_.overview_available ? "Drag the map, then confirm"
-                                          : "Enter latitude and longitude");
+      state_.step = Step::network;
+      set_message("Wi-Fi is optional; radio works without it");
       return Outcome::ok;
 
-    case Step::pick_location:
+    case Step::network:
+      state_.step = Step::location;
+      if (AvailableLocationMethodCount(state_.network_connected,
+                                       state_.basemap_available) == 0) {
+        set_message("Enter coordinates, or skip for now");
+      } else {
+        set_message("Where will you usually use OrcSDR?");
+      }
+      return Outcome::ok;
+
+    case Step::location:
       if (!state_.location_valid) {
-        copy_text(state_.message, sizeof(state_.message),
-                  "Set a location to continue");
+        set_message("Set a location, or skip for now");
         return Outcome::blocked;
       }
-      state_.step = Step::confirm_location;
-      copy_text(state_.message, sizeof(state_.message), "Confirm this location");
-      return Outcome::ok;
-
-    case Step::confirm_location:
-      if (!state_.location_valid) return Outcome::blocked;
-      state_.step = Step::map_coverage;
-      // The caller must supply the installed packs; until it does, the
-      // coverage verdict is unknown rather than assumed absent.
+      state_.step = Step::maps;
+      set_message("Choose the map area to keep offline");
+      // Persist the moment the location is accepted, not at the end: losing
+      // power mid-setup should not discard it.
       return Outcome::needs_persist;
 
-    case Step::map_coverage:
-      if (!state_.coverage_evaluated) {
-        copy_text(state_.message, sizeof(state_.message),
-                  "Checking installed map packs");
-        return Outcome::blocked;
-      }
+    case Step::maps:
       state_.step = Step::complete;
-      copy_text(state_.message, sizeof(state_.message),
-                state_.covered ? "Setup complete" : "Setup complete: map pending");
+      set_message(state_.covered ? "Setup complete"
+                                 : "Setup complete: map pending");
       return Outcome::finished;
 
     case Step::complete:
@@ -202,22 +331,65 @@ Outcome Wizard::advance() {
   return Outcome::blocked;
 }
 
+Outcome Wizard::skip() {
+  switch (state_.step) {
+    case Step::welcome:
+      // Nothing to decline on the welcome screen; treat it as advancing.
+      return advance();
+
+    case Step::network:
+      state_.network_skipped = true;
+      state_.step = Step::location;
+      set_message("Continuing offline");
+      return Outcome::ok;
+
+    case Step::location:
+      state_.location_skipped = true;
+      state_.step = Step::maps;
+      set_message("Location not set; you can add it in settings");
+      return Outcome::ok;
+
+    case Step::maps:
+      state_.maps_skipped = true;
+      state_.step = Step::complete;
+      set_message("No map area selected");
+      return Outcome::finished;
+
+    case Step::complete:
+      return Outcome::finished;
+  }
+  return Outcome::blocked;
+}
+
+Outcome Wizard::quick_start() {
+  // The welcome screen's second button. Everything is recorded as declined
+  // rather than silently defaulted, so the app can tell a skipped step from
+  // a completed one and re-offer it.
+  state_.network_skipped = true;
+  state_.location_skipped = true;
+  state_.maps_skipped = true;
+  state_.quick_started = true;
+  state_.step = Step::complete;
+  set_message("Skipped setup; you can finish it in settings");
+  return Outcome::finished;
+}
+
 bool Wizard::back() {
   switch (state_.step) {
     case Step::welcome:
       return false;
-    case Step::pick_location:
+    case Step::network:
       state_.step = Step::welcome;
       return true;
-    case Step::confirm_location:
-      state_.step = Step::pick_location;
+    case Step::location:
+      state_.step = Step::network;
       return true;
-    case Step::map_coverage:
-      state_.step = Step::confirm_location;
+    case Step::maps:
+      state_.step = Step::location;
       return true;
     case Step::complete:
-      // Finished setup is not a screen to reverse out of; the settings app
-      // owns later changes.
+      // Finished setup is not a screen to reverse out of; settings owns
+      // later changes.
       return false;
   }
   return false;
@@ -229,9 +401,11 @@ size_t Wizard::provision_command(char* out, size_t size,
   const char* manifest = (source_manifest != nullptr && source_manifest[0] != '\0')
                              ? source_manifest
                              : "<source>.manifest.json";
-  // Printed on the device so the coordinates cannot be transcribed wrongly
-  // on the way to the PC. Seven decimals is the e7 convention's full
-  // precision.
+  const uint16_t radius = plan.radius_km != 0
+                              ? plan.radius_km
+                              : radius_km_for_range_nm(state_.radar_range_nm);
+  // Shown on the device so the coordinates are not transcribed by hand on
+  // the way to a PC. Seven decimals is the e7 convention's full precision.
   const int written = std::snprintf(
       out, size,
       "python tools/pack-builder/provision_pack.py"
@@ -242,50 +416,79 @@ size_t Wizard::provision_command(char* out, size_t size,
       " --builder-commit $(git rev-parse HEAD)",
       manifest, static_cast<double>(state_.latitude_e7) / 1.0e7,
       static_cast<double>(state_.longitude_e7) / 1.0e7,
-      static_cast<unsigned>(plan.radius_km),
+      static_cast<unsigned>(radius),
       plan.name[0] != '\0' ? plan.name : "home",
-      static_cast<unsigned>(plan.min_zoom), static_cast<unsigned>(plan.max_zoom));
+      static_cast<unsigned>(plan.min_zoom != 0 ? plan.min_zoom
+                                               : kRecommendedMinZoom),
+      static_cast<unsigned>(plan.max_zoom != 0 ? plan.max_zoom
+                                               : kRecommendedMaxZoom));
   return written < 0 ? 0 : static_cast<size_t>(written);
 }
 
 bool Wizard::self_check() {
-  Wizard wizard;
-  wizard.begin(true, 25);
-  if (wizard.state().step != Step::welcome) return false;
-  if (wizard.advance() != Outcome::ok) return false;
+  // The worst realistic first boot: freshly flashed from M5Burner, no card,
+  // no network, but the basemap is in firmware.
+  Environment blank;
+  blank.network_connected = false;
+  blank.basemap_available = true;
+  blank.sd_present = false;
+  blank.radar_range_nm = 25;
 
-  // A pin that was never moved must not be accepted as a location.
+  Wizard wizard;
+  wizard.begin(blank);
+  if (wizard.state().step != Step::welcome) return false;
+
+  // Offline, only the pin and typed coordinates are offered.
+  if (AvailableLocationMethodCount(false, true) != 2) return false;
+  if (LocationMethodAvailable(LocationMethod::postal_code, false, true)) {
+    return false;
+  }
+  if (!LocationMethodAvailable(LocationMethod::map_pin, false, true)) {
+    return false;
+  }
+  // With no basemap and no network, typed coordinates are the only way in.
+  if (AvailableLocationMethodCount(false, false) != 1) return false;
+
+  if (wizard.advance() != Outcome::ok) return false;  // -> network
+  if (wizard.skip() != Outcome::ok) return false;     // decline Wi-Fi
+  if (!wizard.state().network_skipped) return false;
+  if (wizard.state().step != Step::location) return false;
+
+  // A lookup must be refused while offline.
+  if (wizard.set_looked_up(LocationMethod::postal_code, 440521000,
+                           -1230867000)) {
+    return false;
+  }
   if (wizard.set_pin(0, 0)) return false;
   if (wizard.advance() != Outcome::blocked) return false;
-
   if (!wizard.set_pin(440521000, -1230867000)) return false;
-  if (wizard.advance() != Outcome::ok) return false;
   if (wizard.advance() != Outcome::needs_persist) return false;
 
-  // An overview-only card leaves the location uncovered.
-  PackCoverage overview{};
-  copy_text(overview.name, sizeof(overview.name), "world-overview");
-  overview.min_lat_e7 = -850000000;
-  overview.max_lat_e7 = 850000000;
-  overview.min_lon_e7 = -1800000000;
-  overview.max_lon_e7 = 1800000000;
-  overview.min_zoom = 1;
-  overview.max_zoom = 7;
-  wizard.evaluate_coverage(&overview, 1);
-  if (wizard.state().covered) return false;
-  if (!wizard.state().recommendation.needed) return false;
-  if (wizard.state().recommendation.radius_km < kMinRadiusKm) return false;
-
+  if (!wizard.select_tier(MapTier::regional)) return false;
   if (wizard.advance() != Outcome::finished) return false;
   if (!wizard.complete()) return false;
 
+  // Quick start must reach the app from the welcome screen in one action.
+  Wizard quick;
+  quick.begin(blank);
+  if (quick.quick_start() != Outcome::finished) return false;
+  if (!quick.complete() || !quick.state().quick_started) return false;
+  if (!quick.state().location_skipped) return false;
+
   if (radius_km_for_range_nm(0) != kMinRadiusKm) return false;
-  if (radius_km_for_range_nm(65535) != kMaxRadiusKm) return false;
+  if (TierRadiusKm(MapTier::local) != 81) return false;
   if (!coordinates_valid(0, 0)) return false;
   if (coordinates_valid(kLatitudeLimitE7 + 1, 0)) return false;
 
   char command[256]{};
-  if (wizard.provision_command(command, sizeof(command), "oregon.manifest.json") == 0) {
+  Wizard commander;
+  commander.begin(blank);
+  commander.advance();
+  commander.skip();
+  if (!commander.set_pin(440521000, -1230867000)) return false;
+  commander.evaluate_coverage(nullptr, 0);
+  if (commander.provision_command(command, sizeof(command),
+                                  "oregon.manifest.json") == 0) {
     return false;
   }
   return std::strstr(command, "--lat 44.0521000") != nullptr;

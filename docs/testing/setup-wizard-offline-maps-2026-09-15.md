@@ -19,7 +19,65 @@ offline is a gap, and the offline map it then needs is a second gap: the
 current offline map is a single hard-coded file,
 `/orcsdr/data/lane_county_map.idx`, from the ORCMAP1 prototype.
 
+## First-run constraint
+
+The target experience is: 1-click install from M5Burner, power on, wizard
+starts. That sets the worst realistic first boot as the design case -- no SD
+card, no Wi-Fi credentials, no PC -- and the network must never be required.
+
+Measured against that, most location methods are unavailable:
+
+| Method | Offline? | Why |
+| --- | --- | --- |
+| Pin on a basemap | yes | needs only locally stored map data |
+| Typed coordinates | yes | no dependency at all |
+| Postal code | no | `location_estimate.cpp` -> Nominatim |
+| City / address | no | `location_estimate.cpp` -> Nominatim |
+| "Use my location" | no | `location_estimate.cpp` -> `ipwho.is` |
+
+There is also no GNSS receiver on the Tab5 to fall back to: the only `GPS`
+reference in the firmware is an SDR band label at 1575 MHz
+(`ui/main.cpp:706`), not a driver. So a "use my location" option cannot be
+satisfied on-device at any time -- it is a network call.
+
+That leaves the map pin as the primary offline method, which requires a
+basemap present on a device that may have no card.
+
+## Flash headroom for an embedded basemap
+
+`apps/orcsdr-tab5/partitions.csv` allocates a fraction of the 16 MB part:
+
+| | |
+| --- | --- |
+| App binary (measured, `orcsdr_tab5.bin`) | 2.21 MB |
+| `factory` app partition | 4 MB |
+| Allocated total (nvs + phy + app + coredump) | 4.28 MB |
+| **Unallocated** | **11.72 MB** |
+
+Every whole-world Natural Earth overview built so far fits in that unused
+space:
+
+| Zoom range | Size | Pin accuracy at the Tab5's 930 px map width |
+| --- | --- | --- |
+| z1-4 | 0.83 MB | ~10 km/px |
+| z1-5 | 1.42 MB | ~4.9 km/px |
+| z1-6 | 4.61 MB | ~2.4 km/px |
+| z1-7 | 9.29 MB | ~1.2 km/px |
+
+Accuracy figures are at the equator and improve with latitude; they are
+derived from `360 / (256 * 2^z)` degrees per pixel, not measured on hardware.
+
+z1-6 at 4.61 MB is the balance point: a few km of pin accuracy, and an
+M5Burner image around 7 MB rather than 12. **No partition change has been
+made** -- adding a read-only data partition is a firmware-image-size decision
+and is left open.
+
 ## The flow
+
+Steps: Welcome -> Wi-Fi (skippable) -> Location -> Maps -> Complete. Every
+step can be skipped, and "Quick Start" reaches the app from the welcome
+screen in one action with all steps recorded as declined rather than
+silently defaulted.
 
 ```
 pin on a locally stored map            (device, offline)
@@ -114,7 +172,7 @@ build time — is the only budget worth designing around.
 
 | Suite | Result |
 | --- | --- |
-| `tools/test-setup-wizard.sh` (g++ -O2 -Werror) | 23 test groups pass |
+| `tools/test-setup-wizard.sh` (g++ -O2 -Werror) | 35 test groups pass |
 | same, ASan + LSan + UBSan | pass |
 | OrcMaps host suite (incl. 16 `LocationPicker` groups) | 163 functions pass |
 | OrcMaps Python suite (incl. 16 provisioner tests) | 95 pass |
@@ -127,6 +185,14 @@ bash tools/test-setup-wizard.sh
 
 ## What is NOT verified here
 
+- **The basemap is not embedded yet.** The wizard models
+  `basemap_available` and routes correctly either way, but nothing builds a
+  world overview into the firmware image or adds a partition for it. Until
+  that lands, a card-less offline first boot has only typed coordinates.
+- **No device-side pack download.** Fetching detail packs over Wi-Fi is a
+  third provisioning path, separate from the PC provisioner and from
+  prebuilt packs on a card. It needs a hosting and catalog story and is not
+  built.
 - **No hardware run.** Nothing in this record was flashed to a Tab5. The
   wizard core, the picker and the provisioner are all host-verified only.
 - **No on-device UI exists yet.** The wizard core and `LocationPicker` are
