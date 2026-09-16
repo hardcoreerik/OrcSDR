@@ -537,6 +537,226 @@ void test_provision_command_without_a_source_is_still_actionable() {
   CHECK(std::strstr(command, "manifest.json") != nullptr);
 }
 
+// ------------------------------------------- interrupted setup / persistence
+
+void test_blank_device_needs_setup() {
+  using orcsdr::setup_wizard::NeedsSetup;
+  using orcsdr::setup_wizard::SetupRecord;
+  // Nothing stored yet: the default record must send a new device into setup.
+  SetupRecord blank;
+  CHECK(NeedsSetup(blank));
+}
+
+void test_completed_setup_does_not_re_enter() {
+  Wizard wizard = at_maps_step();
+  wizard.evaluate_coverage(nullptr, 0);
+  wizard.advance();
+  CHECK(wizard.complete());
+  const auto saved = wizard.record();
+  CHECK(saved.completed);
+  CHECK(saved.step == Step::complete);
+  CHECK(!orcsdr::setup_wizard::NeedsSetup(saved));
+}
+
+void test_interrupted_setup_resumes_where_it_stopped() {
+  // Power lost after choosing a location but before finishing. The location
+  // must survive and the wizard must not think it completed.
+  Wizard first;
+  first.begin(BlankDevice());
+  first.advance();
+  first.skip();
+  CHECK(first.set_pin(kEugeneLatE7, kEugeneLonE7));
+  first.advance();  // -> maps, which is where persistence happens
+  const auto saved = first.record();
+  CHECK(!saved.completed);
+  CHECK(saved.step == Step::maps);
+  CHECK(saved.location_valid);
+  CHECK(orcsdr::setup_wizard::NeedsSetup(saved));
+
+  Wizard second;
+  CHECK(second.resume(BlankDevice(), saved));
+  CHECK(second.state().step == Step::maps);
+  CHECK(second.state().location_valid);
+  CHECK(second.state().latitude_e7 == kEugeneLatE7);
+  CHECK(second.state().longitude_e7 == kEugeneLonE7);
+  CHECK(second.state().method == LocationMethod::map_pin);
+  CHECK(second.state().network_skipped);
+  // And it can be finished from there.
+  second.evaluate_coverage(nullptr, 0);
+  CHECK(second.advance() == Outcome::finished);
+  CHECK(second.record().completed);
+}
+
+void test_resume_resamples_the_environment() {
+  // A card inserted or Wi-Fi joined since the interrupted run must be
+  // reflected; availability must never come from the stored record.
+  Wizard first;
+  first.begin(BlankDevice());
+  first.advance();
+  first.skip();
+  first.set_pin(kEugeneLatE7, kEugeneLonE7);
+  first.advance();
+  const auto saved = first.record();
+
+  Wizard second;
+  CHECK(second.resume(ConnectedDevice(), saved));
+  CHECK(second.state().network_connected);
+  CHECK(second.state().sd_present);
+  // The stored skip record is still honoured even though Wi-Fi is now up.
+  CHECK(second.state().network_skipped);
+}
+
+void test_resume_does_not_restore_a_stale_coverage_verdict() {
+  // Which packs are installed is a property of the card right now. A restored
+  // "covered" verdict would claim a map that may have been removed.
+  Wizard first = at_maps_step();
+  const PackCoverage packs[] = {eugene_detail()};
+  first.evaluate_coverage(packs, 1);
+  CHECK(first.state().covered);
+  const auto saved = first.record();
+
+  Wizard second;
+  CHECK(second.resume(BlankDevice(), saved));
+  CHECK(!second.state().coverage_evaluated);
+  CHECK(!second.state().covered);
+  CHECK(second.state().covering_pack[0] == 0);
+}
+
+void test_unusable_records_are_rejected() {
+  using orcsdr::setup_wizard::NeedsSetup;
+  using orcsdr::setup_wizard::SetupRecord;
+  using orcsdr::setup_wizard::SetupRecordValid;
+
+  Wizard done = at_maps_step();
+  done.evaluate_coverage(nullptr, 0);
+  done.advance();
+  const auto good = done.record();
+  CHECK(SetupRecordValid(good));
+
+  // Written by a newer firmware: refuse rather than reinterpret.
+  SetupRecord future = good;
+  future.version = static_cast<uint8_t>(good.version + 1);
+  CHECK(!SetupRecordValid(future));
+  CHECK(NeedsSetup(future));
+
+  // Claims completion without reaching the last step.
+  SetupRecord lying = good;
+  lying.step = Step::location;
+  CHECK(!SetupRecordValid(lying));
+
+  // A location that arrived by no method, and a method with no location.
+  SetupRecord orphan = good;
+  orphan.method = LocationMethod::none;
+  CHECK(!SetupRecordValid(orphan));
+  SetupRecord methodless = good;
+  methodless.location_valid = false;
+  CHECK(!SetupRecordValid(methodless));
+
+  // Out-of-range coordinates.
+  SetupRecord impossible = good;
+  impossible.latitude_e7 = orcsdr::setup_wizard::kLatitudeLimitE7 + 1;
+  CHECK(!SetupRecordValid(impossible));
+
+  // A step value no firmware ever wrote.
+  SetupRecord garbage = good;
+  garbage.step = static_cast<Step>(200);
+  CHECK(!SetupRecordValid(garbage));
+
+  // A rejected record must leave a usable, fresh wizard.
+  Wizard wizard;
+  CHECK(!wizard.resume(BlankDevice(), future));
+  CHECK(wizard.state().step == Step::welcome);
+  CHECK(!wizard.state().location_valid);
+}
+
+void test_skip_flags_round_trip() {
+  Wizard wizard;
+  wizard.begin(BlankDevice());
+  wizard.advance();
+  wizard.skip();  // network
+  wizard.skip();  // location
+  wizard.skip();  // maps -> complete
+  CHECK(wizard.complete());
+  const auto saved = wizard.record();
+  CHECK((saved.skips & orcsdr::setup_wizard::kSkipNetwork) != 0);
+  CHECK((saved.skips & orcsdr::setup_wizard::kSkipLocation) != 0);
+  CHECK((saved.skips & orcsdr::setup_wizard::kSkipMaps) != 0);
+
+  Wizard restored;
+  CHECK(restored.resume(BlankDevice(), saved));
+  CHECK(restored.state().network_skipped);
+  CHECK(restored.state().location_skipped);
+  CHECK(restored.state().maps_skipped);
+}
+
+void test_quick_start_round_trips() {
+  Wizard wizard;
+  wizard.begin(BlankDevice());
+  wizard.quick_start();
+  const auto saved = wizard.record();
+  CHECK(saved.completed);
+  CHECK((saved.skips & orcsdr::setup_wizard::kSkipQuickStart) != 0);
+  CHECK(!orcsdr::setup_wizard::NeedsSetup(saved));
+
+  Wizard restored;
+  CHECK(restored.resume(BlankDevice(), saved));
+  CHECK(restored.state().quick_started);
+}
+
+// ------------------------------------------------- re-running from Settings
+
+void test_restart_reopens_setup_without_losing_the_location() {
+  // Invoked from Settings. Re-opening the wizard and backing out of it must
+  // never destroy a working configuration.
+  Wizard wizard = at_maps_step();
+  wizard.evaluate_coverage(nullptr, 0);
+  wizard.advance();
+  CHECK(wizard.complete());
+
+  wizard.restart();
+  CHECK(wizard.state().step == Step::welcome);
+  CHECK(!wizard.complete());
+  CHECK(orcsdr::setup_wizard::NeedsSetup(wizard.record()));
+  // The known location is kept so the picker can open there.
+  CHECK(wizard.state().location_valid);
+  CHECK(wizard.state().latitude_e7 == kEugeneLatE7);
+  CHECK(wizard.state().method == LocationMethod::map_pin);
+  // Progress flags are cleared.
+  CHECK(!wizard.state().network_skipped);
+  CHECK(!wizard.state().maps_skipped);
+  CHECK(!wizard.state().quick_started);
+}
+
+void test_restart_then_abandon_keeps_the_old_location() {
+  Wizard wizard = at_maps_step();
+  wizard.evaluate_coverage(nullptr, 0);
+  wizard.advance();
+  const int32_t original_lat = wizard.state().latitude_e7;
+
+  wizard.restart();
+  // User immediately skips everything rather than choosing again.
+  wizard.advance();
+  wizard.skip();
+  wizard.skip();
+  wizard.skip();
+  CHECK(wizard.complete());
+  CHECK(wizard.state().location_valid);
+  CHECK(wizard.state().latitude_e7 == original_lat);
+  CHECK(wizard.record().location_valid);
+}
+
+void test_restart_preserves_the_environment() {
+  Wizard wizard;
+  wizard.begin(ConnectedDevice());
+  wizard.advance();
+  wizard.advance();
+  wizard.set_pin(kEugeneLatE7, kEugeneLonE7);
+  wizard.restart();
+  CHECK(wizard.state().network_connected);
+  CHECK(wizard.state().sd_present);
+  CHECK(wizard.state().basemap_available);
+}
+
 // ----------------------------------------------------------------- lifecycle
 
 void test_begin_resets_previous_state() {
@@ -627,6 +847,18 @@ int main() {
   test_provision_command_is_usable_before_coverage_is_evaluated();
   test_provision_command_reports_truncation();
   test_provision_command_without_a_source_is_still_actionable();
+
+  test_blank_device_needs_setup();
+  test_completed_setup_does_not_re_enter();
+  test_interrupted_setup_resumes_where_it_stopped();
+  test_resume_resamples_the_environment();
+  test_resume_does_not_restore_a_stale_coverage_verdict();
+  test_unusable_records_are_rejected();
+  test_skip_flags_round_trip();
+  test_quick_start_round_trips();
+  test_restart_reopens_setup_without_losing_the_location();
+  test_restart_then_abandon_keeps_the_old_location();
+  test_restart_preserves_the_environment();
 
   test_begin_resets_previous_state();
   test_messages_are_always_terminated();

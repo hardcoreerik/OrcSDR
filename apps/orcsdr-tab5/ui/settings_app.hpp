@@ -146,6 +146,10 @@ enum class ActionKind : uint8_t {
   ,catalog_remove
   ,web_console_changed
   ,rtl_usb_safe_mode_reset
+  // Re-runs first-run setup. Clears only the completion flag, never the
+  // stored location: re-opening setup and backing out must not destroy a
+  // working configuration.
+  ,run_setup_wizard
 };
 
 struct Action {

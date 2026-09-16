@@ -395,6 +395,103 @@ bool Wizard::back() {
   return false;
 }
 
+bool SetupRecordValid(const SetupRecord& record) {
+  // A record written by a newer firmware may mean anything; refuse it rather
+  // than interpret its fields under this version's assumptions.
+  if (record.version != kSetupRecordVersion) return false;
+  if (static_cast<uint8_t>(record.step) >= kStepCount) return false;
+  if (record.location_valid &&
+      !coordinates_valid(record.latitude_e7, record.longitude_e7)) {
+    return false;
+  }
+  // A location cannot have arrived by no method, and a method cannot have
+  // produced no location.
+  if (record.location_valid == (record.method == LocationMethod::none)) {
+    return false;
+  }
+  // Completion and step must agree. "Finished" that did not reach the last
+  // step, or a wizard sitting on the last step but not marked finished, is a
+  // record written by something confused; treat it as unusable.
+  if (record.completed != (record.step == Step::complete)) return false;
+  return true;
+}
+
+bool NeedsSetup(const SetupRecord& record) {
+  if (!SetupRecordValid(record)) return true;
+  return !record.completed;
+}
+
+SetupRecord Wizard::record() const {
+  SetupRecord out;
+  out.version = kSetupRecordVersion;
+  out.completed = state_.step == Step::complete;
+  out.step = state_.step;
+  out.skips = static_cast<uint8_t>(
+      (state_.network_skipped ? kSkipNetwork : 0) |
+      (state_.location_skipped ? kSkipLocation : 0) |
+      (state_.maps_skipped ? kSkipMaps : 0) |
+      (state_.quick_started ? kSkipQuickStart : 0));
+  out.method = state_.method;
+  out.location_valid = state_.location_valid;
+  out.latitude_e7 = state_.latitude_e7;
+  out.longitude_e7 = state_.longitude_e7;
+  return out;
+}
+
+bool Wizard::resume(const Environment& environment, const SetupRecord& saved) {
+  // Start from a clean wizard in the CURRENT environment, then lay the stored
+  // progress over it. A card inserted or a network joined since the last run
+  // must be reflected, so nothing about availability comes from the record.
+  begin(environment);
+  if (!SetupRecordValid(saved)) return false;
+
+  state_.step = saved.step;
+  state_.network_skipped = (saved.skips & kSkipNetwork) != 0;
+  state_.location_skipped = (saved.skips & kSkipLocation) != 0;
+  state_.maps_skipped = (saved.skips & kSkipMaps) != 0;
+  state_.quick_started = (saved.skips & kSkipQuickStart) != 0;
+  state_.method = saved.method;
+  state_.location_valid = saved.location_valid;
+  state_.latitude_e7 = saved.latitude_e7;
+  state_.longitude_e7 = saved.longitude_e7;
+
+  // Coverage is deliberately NOT restored. Which packs are installed is a
+  // property of the card right now, not of the last run, and a stale verdict
+  // would claim a map that may have been removed.
+  state_.coverage_evaluated = false;
+  state_.covered = false;
+  state_.covering_pack[0] = '\0';
+  state_.recommendation = Recommendation{};
+
+  set_message(saved.completed ? "Setup already complete"
+                              : "Resuming setup where you left off");
+  return true;
+}
+
+void Wizard::restart() {
+  // Invoked from Settings. Keep whatever location is already known so the
+  // picker can open there, but require setup to be finished again.
+  const LocationMethod method = state_.method;
+  const bool had_location = state_.location_valid;
+  const int32_t lat = state_.latitude_e7;
+  const int32_t lon = state_.longitude_e7;
+  const bool network = state_.network_connected;
+  const bool basemap = state_.basemap_available;
+  const bool sd = state_.sd_present;
+  const uint16_t range = state_.radar_range_nm;
+
+  state_ = State{};
+  state_.network_connected = network;
+  state_.basemap_available = basemap;
+  state_.sd_present = sd;
+  state_.radar_range_nm = range;
+  state_.method = method;
+  state_.location_valid = had_location;
+  state_.latitude_e7 = lat;
+  state_.longitude_e7 = lon;
+  set_message("Setup restarted");
+}
+
 size_t Wizard::provision_command(char* out, size_t size,
                                  const char* source_manifest) const {
   const Recommendation& plan = state_.recommendation;

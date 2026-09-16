@@ -127,6 +127,38 @@ struct State {
   char message[kMessageSize]{};
 };
 
+// Persisted progress, so an interrupted setup is recoverable.
+//
+// A user who powers the device off part-way through must not come back to a
+// wizard that thinks it finished, nor to one that has forgotten the location
+// they already chose. The record is written as setup advances, not only at
+// the end, and the app re-enters the wizard at the recorded step while the
+// completion flag is false.
+//
+// The location itself is NOT duplicated here as the authoritative copy: it
+// lives in the app's existing receiver-location settings. These fields carry
+// it only so the wizard can be restored and the map can open where the user
+// left it.
+constexpr uint8_t kSetupRecordVersion = 1;
+
+// Skip flags packed into one byte for storage.
+constexpr uint8_t kSkipNetwork = 1u << 0;
+constexpr uint8_t kSkipLocation = 1u << 1;
+constexpr uint8_t kSkipMaps = 1u << 2;
+constexpr uint8_t kSkipQuickStart = 1u << 3;
+
+struct SetupRecord {
+  uint8_t version = kSetupRecordVersion;
+  bool completed = false;
+  // Furthest step reached, so setup resumes rather than restarting.
+  Step step = Step::welcome;
+  uint8_t skips = 0;
+  LocationMethod method = LocationMethod::none;
+  bool location_valid = false;
+  int32_t latitude_e7 = 0;
+  int32_t longitude_e7 = 0;
+};
+
 enum class Outcome : uint8_t {
   ok,
   blocked,        // the step's precondition is not satisfied yet
@@ -173,6 +205,20 @@ class Wizard {
   State state() const { return state_; }
   bool complete() const { return state_.step == Step::complete; }
 
+  // Restores an interrupted setup. `environment` is re-sampled at boot, so a
+  // card inserted or Wi-Fi joined since last time is reflected; only progress
+  // and the chosen location come from the record. Returns false, leaving a
+  // fresh wizard, if the record cannot be trusted.
+  bool resume(const Environment& environment, const SetupRecord& record);
+
+  // What to persist right now.
+  SetupRecord record() const;
+
+  // Re-run setup from Settings. Progress and completion are cleared, but a
+  // location already chosen is KEPT: re-opening the wizard and backing out of
+  // it must never destroy a working configuration.
+  void restart();
+
   size_t provision_command(char* out, size_t size,
                            const char* source_manifest) const;
 
@@ -208,5 +254,14 @@ uint16_t radius_km_for_range_nm(uint16_t range_nm);
 bool coordinates_valid(int32_t latitude_e7, int32_t longitude_e7);
 
 const char* StepName(Step step);
+
+// Whether a stored record is structurally usable. A record from a future
+// firmware, or one whose fields disagree with each other, is rejected rather
+// than half-trusted.
+bool SetupRecordValid(const SetupRecord& record);
+
+// Whether the app should enter the wizard at boot. True for a blank device,
+// an interrupted setup, and an unreadable record.
+bool NeedsSetup(const SetupRecord& record);
 
 }  // namespace orcsdr::setup_wizard
