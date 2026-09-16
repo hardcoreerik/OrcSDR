@@ -84,6 +84,9 @@
 #include "rf_lab.hpp"
 #include "rf_visualizer.hpp"
 #include "settings_app.hpp"
+#include "setup_map_picker.hpp"
+#include "setup_wizard.hpp"
+#include "setup_wizard_store.hpp"
 #include "time_service.hpp"
 #include "ui_capture.hpp"
 #include "web_console.hpp"
@@ -16655,6 +16658,107 @@ void orcsdr_splash_poll_serial(void) {
   poll_serial();
 }
 
+// First-run setup.
+//
+// Runs before the normal UI when the stored record says setup never finished:
+// a freshly flashed device, or one powered off part-way through. The location
+// step is the only one with a screen at this checkpoint -- the wizard's other
+// steps are advanced headlessly -- because the map picker is the part that has
+// to be proven on hardware. The remaining screens attach to the same state
+// machine without changing it.
+//
+// Nothing here requires the network or an SD card. The basemap comes from the
+// read-only `orcmaps` flash partition, so this works on a board that has only
+// ever been flashed.
+void run_first_run_setup() {
+  using orcsdr::setup_wizard::Outcome;
+  using orcsdr::setup_wizard::Step;
+
+  const auto stored = orcsdr::setup_wizard_store::Load(preferences);
+  if (!orcsdr::setup_wizard::NeedsSetup(stored)) return;
+
+  orcsdr::setup_wizard::Environment environment;
+  environment.network_connected = false;  // Wi-Fi is brought up after setup.
+  environment.basemap_available = orcsdr::setup_map_picker::available();
+  environment.sd_present = g_sd_fs != nullptr;
+  environment.radar_range_nm = adsb_settings.radar_range_nm;
+
+  Serial.printf("RTL_SETUP_START basemap=%d sd=%d stored_step=%u\n",
+                environment.basemap_available ? 1 : 0,
+                environment.sd_present ? 1 : 0,
+                static_cast<unsigned>(stored.step));
+
+  orcsdr::setup_wizard::Wizard wizard;
+  if (!wizard.resume(environment, stored)) {
+    // An unusable record leaves a fresh wizard rather than a half-trusted one.
+    wizard.begin(environment);
+  }
+
+  // Walk to the location step. Wi-Fi is declined here because the radio is
+  // not up yet at this point in boot; the user can join a network later from
+  // Settings, and no location method this checkpoint offers needs it.
+  while (wizard.state().step == Step::welcome ||
+         wizard.state().step == Step::network) {
+    wizard.skip();
+  }
+
+  if (wizard.state().step == Step::location) {
+    if (!environment.basemap_available) {
+      // No embedded map: there is no screen for typed coordinates yet, so
+      // decline rather than trap the user on a step with no way forward.
+      Serial.println("RTL_SETUP_NO_BASEMAP skip_location");
+      wizard.skip();
+    } else {
+      const bool have_stored = stored.location_valid;
+      const auto picked = orcsdr::setup_map_picker::run(
+          M5.Display, stored.latitude_e7, stored.longitude_e7, have_stored);
+      switch (picked.outcome) {
+        case orcsdr::setup_map_picker::Outcome::chosen:
+          if (wizard.set_pin(picked.latitude_e7, picked.longitude_e7)) {
+            wizard.advance();
+          } else {
+            wizard.skip();
+          }
+          break;
+        case orcsdr::setup_map_picker::Outcome::unavailable:
+          Serial.println("RTL_SETUP_MAP_UNAVAILABLE");
+          wizard.skip();
+          break;
+        case orcsdr::setup_map_picker::Outcome::back:
+        case orcsdr::setup_map_picker::Outcome::skipped:
+        default:
+          wizard.skip();
+          break;
+      }
+    }
+  }
+
+  // Finish the remaining steps. The maps step has no screen yet; its coverage
+  // verdict still runs so the record is truthful about whether a local map
+  // exists for the chosen point.
+  while (!wizard.complete()) {
+    if (wizard.state().step == Step::maps) {
+      wizard.evaluate_coverage(nullptr, 0);
+    }
+    if (wizard.advance() == Outcome::blocked) {
+      wizard.skip();
+    }
+  }
+
+  const auto record = wizard.record();
+  if (record.location_valid) {
+    adsb_settings.location_configured = true;
+    adsb_settings.latitude_e7 = record.latitude_e7;
+    adsb_settings.longitude_e7 = record.longitude_e7;
+  }
+  orcsdr::setup_wizard_store::Save(preferences, record);
+  Serial.printf("RTL_SETUP_DONE configured=%d lat_e7=%ld lon_e7=%ld\n",
+                record.location_valid ? 1 : 0,
+                static_cast<long>(record.latitude_e7),
+                static_cast<long>(record.longitude_e7));
+  M5.Display.fillScreen(TFT_BLACK);
+}
+
 void setup() {
   Serial.begin(115200);
   // PSRAM-backed one-time allocation, not plain internal-DRAM globals -- see
@@ -16914,6 +17018,9 @@ void setup() {
     }
   }
   load_state();
+  // First run happens before Wi-Fi so the offline path is the one users meet
+  // on a freshly flashed device; the radio is not needed to choose a location.
+  run_first_run_setup();
   // Issue #66: do not call initialize_wifi() here. If "start Wi-Fi at boot" is on,
   // queue the same saved-connect path Settings uses, after loop() has settled.
   if (settings_wifi_power_enabled && settings_wifi_start_at_boot) {

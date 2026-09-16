@@ -44,6 +44,7 @@ idf_component_register(
         "../ui/scan_engine.cpp"
         "../ui/setup_wizard.cpp"
         "../ui/setup_wizard_store.cpp"
+        "../ui/setup_map_picker.cpp"
         "../ui/fm_dashboard.cpp"
         "../ui/fm_config.cpp"
         "../ui/home_dashboard.cpp"
@@ -79,6 +80,10 @@ idf_component_register(
         "../ui/wifi_service.cpp"
     INCLUDE_DIRS "." "../ui"
     REQUIRES
+        # Resolved by the project CMakeLists. ESP-IDF names a component after
+        # its directory, so this is derived rather than hardcoded and the
+        # OrcMaps checkout may be called anything.
+        $ENV{ORCMAP_COMPONENT}
         m5unified
         m5gfx
         mbelib
