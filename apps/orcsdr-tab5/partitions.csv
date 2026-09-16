@@ -4,3 +4,15 @@ nvs,      data, nvs,     ,        0x6000,
 phy_init, data, phy,     ,        0x1000,
 factory,  app,  factory, ,        4M,
 coredump, data, coredump, ,       256K,
+# Read-only OrcMaps world basemap, appended into flash that was unallocated.
+# Every offset above is unchanged, so NVS stays at 0x9000 and user settings
+# survive a firmware update that rewrites only bootloader/table/app.
+#
+# Immutable asset, NOT user storage: replaced wholesale by a map update and
+# never written at runtime. User data (chosen location, future markers) lives
+# in NVS or on SD, never here.
+#
+# 6 MiB against today's 4.61 MiB z0-z6 Natural Earth overview leaves ~1.39 MiB
+# of growth headroom; a jump to the 9.29 MiB z0-z7 pack would need a larger
+# partition, which the 5.69 MiB still unallocated after this would allow.
+orcmaps,  data, 0x40,    ,        6M,
