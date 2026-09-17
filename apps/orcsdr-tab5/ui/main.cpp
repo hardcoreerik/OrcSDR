@@ -6145,6 +6145,7 @@ void draw_flarm_dashboard(bool static_panel) {
     orcsdr::screens::note_visible_update(orcsdr::screens::Id::flarm);
     orcsdr::adsb::update();
   }
+  if (static_panel) draw_global_header_controls();
 }
 
 void draw_adsb_dashboard(bool static_panel) {
@@ -6676,7 +6677,6 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   }
   if (band == RtlBand::flarm) {
     draw_flarm_dashboard(true);
-    draw_global_settings_gear();
     orcsdr::screens::finish_transition();
     return;
   }
@@ -11253,7 +11253,6 @@ void navigation_restore_screen(orcsdr::screens::Id restore) {
     auto settings = adsb_settings; settings.flarm = true; settings.atc_frequency_hz = 0;
     orcsdr::adsb::resume(settings);
     draw_flarm_dashboard(true);
-    draw_global_settings_gear();
   } else if (restore == orcsdr::screens::Id::adsb) {
     draw_adsb_dashboard(true);
   } else if (restore == orcsdr::screens::Id::fm) {

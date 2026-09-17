@@ -1014,7 +1014,7 @@ Action handle_keypad(int32_t x, int32_t y) {
 
 void enter(const Settings& settings_value) {
   if (g_settings.flarm != settings_value.flarm) {
-    g_live_snapshot = {}; g_live = false; g_aircraft_count = 0;
+    g_live_snapshot = Snapshot{}; g_live = false; g_aircraft_count = 0;
     g_history_count = 0; g_atc_listening = false;
   }
   g_settings = settings_value;
