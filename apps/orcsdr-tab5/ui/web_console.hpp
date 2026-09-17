@@ -66,6 +66,8 @@ struct Command {
 void set_enabled(bool enabled);
 bool enabled();
 bool listening();
+bool origin_allowed(const char* origin, const char* host);
+bool spectrum_demanded();
 void poll(bool wifi_connected);
 void update(const Snapshot& snapshot);
 bool take_command(Command* command);

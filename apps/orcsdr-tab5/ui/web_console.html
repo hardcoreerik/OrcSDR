@@ -106,15 +106,16 @@ background:rgba(4,7,12,.88);z-index:5;transition:opacity .4s}
     <div class="panel cell"><div class="k">USB / SPS</div><div class="v" id="usb">—</div></div>
     <div class="panel cell"><div class="k">NETWORK</div><div class="v" id="net">—</div></div>
     <div class="panel cell"><div class="k">POWER</div><div class="v" id="pwr">—</div></div>
-    <button id="tvsound">TV SOUND</button>
+    <button id="tvsound" aria-pressed="false">LISTEN HERE · OFF</button>
   </div>
 </div>
-<audio id="radio" preload="auto" autoplay playsinline></audio>
+<script src="/web_audio.js"></script>
 <script>
 var S={freq:0,sig:-90,left:-90,right:-90,span:960000,mode:'',recv:false,rtl:false,usb:false,wifi:false,
 sound:true,stereo:false,rdsC:false,rdsL:false,rec:false,vol:0,bw:0,sps:0,batt:-1,ip:'',clk:'',fresh:0,rtt:0};
 var D={freq:0,sig:-90,left:-90,right:-90}, bins=new Float32Array(64), peak=new Float32Array(64);
-var hist=[], lastArrow=0,lastAct=0,lastSound=0,lastQueue=0,audioOn=false,soundTimer=0,linked=false,fallBuf=null;
+var hist=[], lastArrow=0,lastAct=0,lastSound=0,audioOn=false,linked=false,fallBuf=null,specBusy=false;
+var audioContext=null,audioConnection=null,audioAttempt=0;
 function $(id){return document.getElementById(id)}
 function lerp(a,b,t){return a+(b-a)*t}
 function modeName(m){
@@ -271,6 +272,25 @@ function tick(){
   };
   x.open('GET','/api/status',true); x.send();
 }
+function pollSpectrum(){
+  if(specBusy) return;
+  specBusy=true;
+  var x=new XMLHttpRequest();
+  x.timeout=2000;
+  x.responseType='arraybuffer';
+  x.onloadend=function(){ specBusy=false; };
+  x.onreadystatechange=function(){
+    if(x.readyState!==4) return;
+    if(x.status!==200||!x.response) return;
+    var data=new Uint8Array(x.response);
+    for(var i=0;i<Math.min(64,data.length);i++){
+      var v=data[i]/255;
+      bins[i]=bins[i]*.55+v*.45;
+      peak[i]=Math.max(peak[i]*.97,bins[i]);
+    }
+  };
+  x.open('GET','/api/spectrum',true); x.send();
+}
 var lastFall=0,lastUi=0;
 function frame(){
   D.freq=D.freq?lerp(D.freq,S.freq,.18):S.freq;
@@ -283,41 +303,35 @@ function frame(){
   if(now-lastUi>100){ lastUi=now; applyUi(); paintHist(); }
   requestAnimationFrame(frame);
 }
-function setSoundUi(on){
+function setSoundUi(state){
   var b=$('tvsound');
-  b.textContent=on?'TV SOUND ON':'TV SOUND';
-  b.className=on?'on':'';
-}
-function queueClip(){
-  if(!audioOn) return;
-  lastQueue=Date.now();
-  var a=$('radio');
-  a.src='/api/audio.wav?t='+lastQueue;
-  var p=a.play(); if(p&&p.catch) p.catch(function(){});
-}
-function pumpAudio(){
-  if(!audioOn) return;
-  var a=$('radio'), age=Date.now()-lastQueue;
-  if(age<250) return;
-  var nearEnd=false,pos=0,dur=0;
-  try{ pos=a.currentTime||0; dur=a.duration||0; nearEnd=dur>0&&pos>=dur-0.06; }catch(e){}
-  if(!a.src||a.ended||nearEnd){ queueClip(); return; }
-  if(a.paused&&(pos>0||age>900)) queueClip();
+  if(state==='error') audioOn=false;
+  b.textContent='LISTEN HERE · '+state.toUpperCase();
+  b.className=state==='live'?'on':'';
+  b.setAttribute('aria-pressed',audioOn?'true':'false');
 }
 function startTvSound(){
   audioOn=true;
-  try{ localStorage.setItem('orcsdr_tv_sound','1'); }catch(e){}
-  setSoundUi(true); queueClip();
-  if(soundTimer) clearInterval(soundTimer);
-  soundTimer=setInterval(pumpAudio,80);
+  var attempt=++audioAttempt;
+  setSoundUi('connecting');
+  try {
+    if(!audioContext) {
+      var Context=window.AudioContext||window.webkitAudioContext;
+      audioContext=new Context();
+      audioConnection=new OrcAudio.Connection(audioContext,setSoundUi);
+    }
+    audioContext.resume().then(function(){
+      if(!audioOn||attempt!==audioAttempt) return;
+      if(audioContext.state!=='running'){ setSoundUi('error'); return; }
+      audioConnection.start((location.protocol==='https:'?'wss://':'ws://')+location.host+'/api/audio/stream');
+    }).catch(function(){ if(attempt===audioAttempt) setSoundUi('error'); });
+  } catch(e) { setSoundUi('error'); }
 }
 function stopTvSound(){
   audioOn=false;
-  if(soundTimer){ clearInterval(soundTimer); soundTimer=0; }
-  try{ localStorage.setItem('orcsdr_tv_sound','0'); }catch(e){}
-  setSoundUi(false);
-  var a=$('radio'); try{ a.pause(); }catch(e){}
-  a.removeAttribute('src'); try{ a.load(); }catch(e){}
+  ++audioAttempt;
+  if(audioConnection) audioConnection.stop();
+  setSoundUi('off');
 }
 function toggleTvSound(){
   var now=Date.now();
@@ -341,11 +355,9 @@ document.addEventListener('keydown',function(e){
     if(document.activeElement===$('tvsound')){ toggleTvSound(); e.preventDefault(); }
   }
 });
-$('radio').addEventListener('ended',function(){ if(audioOn) queueClip(); });
-$('radio').addEventListener('error',function(){ if(audioOn) setTimeout(queueClip,200); });
-try{ if(localStorage.getItem('orcsdr_tv_sound')==='1') setTimeout(startTvSound,1800); }catch(e){}
+window.addEventListener('pagehide',stopTvSound);
 setTimeout(function(){ if(!linked) $('bootmsg').textContent='SEARCHING FOR TAB5'; },2500);
-tick(); setInterval(tick,1000); requestAnimationFrame(frame);
+tick(); pollSpectrum(); setInterval(tick,1000); setInterval(pollSpectrum,250); requestAnimationFrame(frame);
 </script>
 </body>
 </html>

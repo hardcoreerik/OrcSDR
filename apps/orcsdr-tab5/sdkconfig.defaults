@@ -17,6 +17,8 @@ CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 CONFIG_FATFS_LFN_HEAP=y
 CONFIG_FATFS_MAX_LFN=255
 CONFIG_FREERTOS_HZ=1000
+CONFIG_HTTPD_WS_SUPPORT=y
+# CONFIG_HTTPD_QUEUE_WORK_BLOCKING is not set
 # Dashboard transitions run on app_main; 12 KiB left less than 1 KiB of
 # headroom and overflowed while opening LoRa during the serial smoke test.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384

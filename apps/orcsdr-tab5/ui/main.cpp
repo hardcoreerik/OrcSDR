@@ -89,6 +89,7 @@
 #include "time_service.hpp"
 #include "ui_capture.hpp"
 #include "web_console.hpp"
+#include "web_audio_transport.hpp"
 #include "rf24_dashboard.hpp"
 #include "wifi_service.hpp"
 #include "esp_rtl_sdr.h"
@@ -950,6 +951,9 @@ static uint8_t* rtl_ring_slots[kRtlRingDepth]{};
 static QueueHandle_t rtl_free_q = nullptr;
 static QueueHandle_t rtl_filled_q = nullptr;
 static std::atomic<uint32_t> rtl_iq_pipeline_drops{0};
+static std::atomic<uint64_t> rtl_iq_received_samples{0};
+static std::atomic<uint64_t> rtl_iq_processed_samples{0};
+static std::atomic<uint64_t> rtl_iq_pipeline_drop_samples{0};
 static std::atomic<uint32_t> rtl_iq_sequence{0};
 /* Scratch IQ buffer for demod/spectrum (size >= max bulk transfer). */
 static uint8_t rtl_iq_processing[32768 + 512];
@@ -3237,6 +3241,39 @@ void rtl_audio_test_emit_status() {
       esp_get_free_heap_size());
 }
 
+void web_audio_diag_emit_status() {
+  esp_rtl_sdr_metrics_t metrics{};
+  if (g_rtl != nullptr) (void)esp_rtl_sdr_get_metrics(g_rtl, &metrics);
+  const auto c = orcsdr::web_audio::counters();
+  Serial.printf(
+      "{\"type\":\"web_audio_diag\",\"elapsed_us\":%llu,"
+      "\"producer_samples\":%llu,\"ring_written_samples\":%llu,"
+      "\"ring_read_samples\":%llu,"
+      "\"sent_samples\":%llu,\"sent_frames\":%llu,"
+      "\"contention_samples\":%llu,\"ring_overrun_samples\":%llu,"
+      "\"active_clients\":%u,\"queue_failures\":%u,"
+      "\"send_errors\":%u,\"iq_received_samples\":%llu,"
+      "\"iq_processed_samples\":%llu,\"iq_pipeline_drops\":%u,"
+      "\"iq_pipeline_drop_samples\":%llu,"
+      "\"effective_sdr_sps\":%u,\"usb_overruns\":%u,"
+      "\"rtl_consumer_drops\":%u}\n",
+      static_cast<unsigned long long>(c.elapsed_us),
+      static_cast<unsigned long long>(c.producer_samples),
+      static_cast<unsigned long long>(c.ring_written_samples),
+      static_cast<unsigned long long>(c.ring_read_samples),
+      static_cast<unsigned long long>(c.sent_samples),
+      static_cast<unsigned long long>(c.sent_frames),
+      static_cast<unsigned long long>(c.contention_samples),
+      static_cast<unsigned long long>(c.dropped_samples),
+      c.clients, c.queue_failures, c.send_errors,
+      static_cast<unsigned long long>(rtl_iq_received_samples.load(std::memory_order_relaxed)),
+      static_cast<unsigned long long>(rtl_iq_processed_samples.load(std::memory_order_relaxed)),
+      rtl_iq_pipeline_drops.load(std::memory_order_relaxed),
+      static_cast<unsigned long long>(
+          rtl_iq_pipeline_drop_samples.load(std::memory_order_relaxed)),
+      metrics.effective_sps, metrics.overruns, metrics.consumer_drops);
+}
+
 void rtl_audio_test_start_tone() {
   rtl_audio_test_metrics.store(true, std::memory_order_release);
   rtl_audio_test_tone.store(true, std::memory_order_release);
@@ -4765,7 +4802,8 @@ bool rds_replay(const char* path) {
 void spectrum_offer_iq_snapshot(const uint8_t* iq, size_t bytes) {
   if (iq == nullptr || bytes < kRtlSpectrumBins * 2) return;
   orcsdr::visualizer::offer_iq(iq, bytes);
-  if (!rtl_graphics_enabled.load(std::memory_order_relaxed)) return;
+  if (!rtl_graphics_enabled.load(std::memory_order_relaxed) &&
+      !orcsdr::web_console::spectrum_demanded()) return;
   const size_t need = sizeof(rtl_spectrum_iq_snap);
   const size_t n = bytes < need ? bytes : need;
   portENTER_CRITICAL(&rtl_spectrum_snap_mux);
@@ -6792,13 +6830,14 @@ void draw_band_edges() {
  * Two-window Welch averaging keeps the single render core responsive.
  */
 void draw_spectrum(const uint8_t* iq, size_t bytes) {
-  if (!orcsdr::home::active() && rtl_ui_band == RtlBand::lora &&
+  const bool web_scope = orcsdr::web_console::spectrum_demanded();
+  if (!web_scope && !orcsdr::home::active() && rtl_ui_band == RtlBand::lora &&
       !orcsdr::lora::spectrum_active()) return;
-  if (!orcsdr::home::active() && rtl_ui_band == RtlBand::fm &&
+  if (!web_scope && !orcsdr::home::active() && rtl_ui_band == RtlBand::fm &&
       !orcsdr::fm::spectrum_active()) return;
-  if (!orcsdr::home::active() && rtl_ui_band == RtlBand::shortwave &&
+  if (!web_scope && !orcsdr::home::active() && rtl_ui_band == RtlBand::shortwave &&
       !orcsdr::shortwave::spectrum_active()) return;
-  if (!orcsdr::home::active() && rtl_ui_band == RtlBand::p25 &&
+  if (!web_scope && !orcsdr::home::active() && rtl_ui_band == RtlBand::p25 &&
       !orcsdr::p25::spectrum_active()) return;
   if (!rtl_spectrum_window_ready) {
     constexpr float kPi = 3.14159265358979323846f;
@@ -7148,12 +7187,18 @@ int16_t shape_audio_sample(float demodulated, float base_scale) {
 
 void queue_audio_samples(int16_t* audio, size_t audio_count) {
   if (audio_count == 0) return;
+  orcsdr::web_audio::note_generated(audio_count);
+  orcsdr::web_audio::publish(audio, audio_count);
   orcsdr::visualizer::offer_audio(audio, nullptr, audio_count, 48000);
   /* Capture the post-DSP mono stream before expanding it for the stereo codec. */
   if (g_audio_rec_active.load(std::memory_order_acquire)) {
     audio_rec_append(audio, audio_count);
   }
   /* M5Unified retains playRaw pointers, so fill one owned stereo block at a time. */
+  if (!rtl_audio_enabled.load(std::memory_order_acquire)) {
+    rtl_audio.buffer = (rtl_audio.buffer + 1) % std::size(rtl_audio_buffers);
+    return;
+  }
   for (size_t i = 0; i < audio_count; ++i) {
     if (!rtl_audio_select_writable_block(millis())) break;
     if (rtl_audio_play_count >= kRtlAudioPlayBlockFrames) {
@@ -7201,7 +7246,8 @@ void p25_voice_task(void*) {
       p25_encrypted_voice_pending.store(true, std::memory_order_release);
       continue;
     }
-    if (!rtl_audio_user_enabled.load(std::memory_order_acquire)) continue;
+    if (!rtl_audio_user_enabled.load(std::memory_order_acquire) &&
+        !orcsdr::web_audio::demanded()) continue;
 
     const int64_t started_us = esp_timer_get_time();
     orcsdr::p25voice::Result result{};
@@ -8231,6 +8277,7 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
           iq->bytes <= sizeof(rtl_iq_processing) ? iq->bytes : sizeof(rtl_iq_processing);
       rtl_capture_bytes += n;
       const uint32_t sequence = rtl_iq_sequence.fetch_add(1, std::memory_order_relaxed);
+      rtl_iq_received_samples.fetch_add(n / 2, std::memory_order_relaxed);
       if (orcsdr::am_finder::active() &&
           !rtl_am_scan_callback_logged.exchange(true, std::memory_order_acq_rel))
         Serial.printf("RTL_AM_SCAN first_callback bytes=%u rate_label=%u free_slots=%u filled=%u\n",
@@ -8241,6 +8288,7 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       uint8_t slot = 0;
       if (!rtl_free_q || !rtl_filled_q || xQueueReceive(rtl_free_q, &slot, 0) != pdTRUE) {
         rtl_iq_pipeline_drops.fetch_add(1, std::memory_order_relaxed);
+        rtl_iq_pipeline_drop_samples.fetch_add(n / 2, std::memory_order_relaxed);
         break;
       }
       std::memcpy(rtl_ring_slots[slot], iq->data, n);
@@ -8258,6 +8306,7 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
           active_rate && received_ms > n * 500 / active_rate ? received_ms - n * 500 / active_rate : 0};
       if (xQueueSend(rtl_filled_q, &block, 0) != pdTRUE) {
         rtl_iq_pipeline_drops.fetch_add(1, std::memory_order_relaxed);
+        rtl_iq_pipeline_drop_samples.fetch_add(n / 2, std::memory_order_relaxed);
         (void)xQueueSend(rtl_free_q, &slot, 0);
       }
       break;
@@ -8289,6 +8338,7 @@ static void rtl_dsp_task(void *) {
   RtlIqBlock block{};
   while (true) {
     if (xQueueReceive(rtl_filled_q, &block, portMAX_DELAY) != pdTRUE) continue;
+    rtl_iq_processed_samples.fetch_add(block.bytes / 2, std::memory_order_relaxed);
     const uint32_t dsp_started_us = micros();
     if (orcsdr::am_finder::active()) {
       orcsdr::am_finder::offer_iq(block.data, block.bytes, block.sample_rate_sps);
@@ -8350,7 +8400,8 @@ static void rtl_dsp_task(void *) {
         g_iq_rec_kind.load(std::memory_order_relaxed) == IqCaptureKind::diagnostic)
       iq_rec_append(block.data, block.bytes);
     if ((block.band != RtlBand::adsb && block.band != RtlBand::flarm) || orcsdr::home::active() ||
-        orcsdr::visualizer::active() || lab_active)
+        orcsdr::visualizer::active() || lab_active ||
+        orcsdr::web_console::spectrum_demanded())
       spectrum_offer_iq_snapshot(block.data, block.bytes);
     if (!block.custom_rate && block.band == RtlBand::lora)
       lora_iq_offer(block.data, block.bytes);
@@ -8358,6 +8409,7 @@ static void rtl_dsp_task(void *) {
         block.band != RtlBand::lora && block.band != RtlBand::p25 &&
         block.band != RtlBand::pocsag && block.band != RtlBand::flarm &&
         (rtl_audio_enabled.load(std::memory_order_relaxed) ||
+         orcsdr::web_audio::demanded() ||
          g_audio_rec_active.load(std::memory_order_relaxed)) &&
         !rtl_audio_test_tone.load(std::memory_order_relaxed)) {
       if (block.band == RtlBand::cb) {
@@ -8389,7 +8441,6 @@ static void rtl_dsp_task(void *) {
                previous_max, dsp_elapsed_us, std::memory_order_relaxed)) {
     }
     (void)xQueueSend(rtl_free_q, &block.slot, portMAX_DELAY);
-    vTaskDelay(1);
   }
 }
 
@@ -8724,9 +8775,10 @@ static void rtl_driver_app_task(void *) {
               rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
           }
           const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
-          if (!orcsdr::settings::active() && !orcsdr::home::active() &&
+          const bool web_scope = orcsdr::web_console::spectrum_demanded();
+          if (web_scope || (!orcsdr::settings::active() && !orcsdr::home::active() &&
               g_stream_band != RtlBand::adsb && g_stream_band != RtlBand::flarm && gfx_on &&
-              orc_tool_current() != OrcTool::Capture) {
+              orc_tool_current() != OrcTool::Capture)) {
             const bool sound_on = rtl_audio_enabled.load(std::memory_order_relaxed);
             const bool audio_stressed =
                 sound_on && rtl_audio.dropped_chunks > 0 &&
@@ -8734,7 +8786,7 @@ static void rtl_driver_app_task(void *) {
             const uint32_t normal_visual_interval = g_stream_band == RtlBand::lora
                                                         ? kRtlLoraSpectrumIntervalMs
                                                         : kRtlSpectrumIntervalMs;
-            const uint32_t visual_interval = audio_stressed
+            const uint32_t visual_interval = web_scope ? 250u : audio_stressed
                                                  ? kRtlSpectrumStressedIntervalMs
                                                  : normal_visual_interval;
             if (now - rtl_session_started_ms >= kRtlAudioPrimeMs &&
@@ -15014,6 +15066,7 @@ void process_command(char* command) {
     Serial.println("RTL_WEB                        - query LAN web console");
     Serial.println("RTL_WEB ON|OFF                 - enable LAN read-only console (auth)");
     Serial.println("RTL_WEB_STATUS                 - enabled/listening/url");
+    Serial.println("RTL_WEB_AUDIO_STATUS           - sample-count diagnostics for WebUI audio");
     Serial.println("RTL_CATALOG_STATUS|LIST        - signed catalog and pack state");
     Serial.println("RTL_CATALOG_FETCH              - fetch+verify signed catalog (Wi-Fi required)");
     Serial.println("RTL_CATALOG_INSTALL <id>       - fetch+verify+activate data/map pack");
@@ -15508,6 +15561,10 @@ void process_command(char* command) {
                   orcsdr::web_console::enabled() ? 1 : 0,
                   orcsdr::web_console::listening() ? 1 : 0,
                   url[0] ? url : "offline");
+    return;
+  }
+  if (strcmp(command, "RTL_WEB_AUDIO_STATUS") == 0) {
+    web_audio_diag_emit_status();
     return;
   }
   if ((strcmp(command, "RTL_WEB ON") == 0 || strcmp(command, "RTL_WEB OFF") == 0) &&
@@ -16418,7 +16475,7 @@ void loop() {
   service_rf_lab();
   if (rtl_stream_spectrum_pending.exchange(false, std::memory_order_acq_rel) &&
       !orcsdr::visualizer::active() && !orcsdr::rf_lab::active() &&
-      (fm_ui || am_ui || shortwave_ui || p25_ui ||
+      (orcsdr::web_console::spectrum_demanded() || fm_ui || am_ui || shortwave_ui || p25_ui ||
        (rtl_ui_band == RtlBand::lora && orcsdr::lora::active()))) {
     draw_spectrum(nullptr, 0);
   }

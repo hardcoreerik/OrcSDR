@@ -1,7 +1,8 @@
 set(ORCSDR_EMBED_FILES
     "orc_badge_104.png"
     "orc_badge_104.rgb565"
-    "../ui/web_console.html")
+    "../ui/web_console.html"
+    "../ui/web_audio.js")
 set(ORCSDR_LDFRAGMENTS)
 if(C6_FIRMWARE_BIN)
     get_filename_component(C6_FIRMWARE_BIN "${C6_FIRMWARE_BIN}" ABSOLUTE)
@@ -67,6 +68,7 @@ idf_component_register(
         "../ui/time_service.cpp"
         "../ui/ui_capture.cpp"
         "../ui/web_console.cpp"
+        "../ui/web_audio_transport.cpp"
         "../ui/rf24_dashboard.cpp"
         "../ui/wifi_service.cpp"
     INCLUDE_DIRS "." "../ui"

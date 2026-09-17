@@ -1,4 +1,6 @@
 #include "web_console.hpp"
+#include "web_command.hpp"
+#include "web_audio_transport.hpp"
 
 #include <esp_attr.h>
 #include <esp_heap_caps.h>
@@ -12,6 +14,8 @@
 
 extern const uint8_t web_console_html_start[] asm("_binary_web_console_html_start");
 extern const uint8_t web_console_html_end[] asm("_binary_web_console_html_end");
+extern const uint8_t web_audio_js_start[] asm("_binary_web_audio_js_start");
+extern const uint8_t web_audio_js_end[] asm("_binary_web_audio_js_end");
 extern const uint8_t orc_badge_start[] asm("_binary_orc_badge_104_png_start");
 extern const uint8_t orc_badge_end[] asm("_binary_orc_badge_104_png_end");
 
@@ -24,7 +28,7 @@ bool g_listening = false;
 bool g_mdns_started = false;
 httpd_handle_t g_server = nullptr;
 Snapshot g_snapshot{};
-Command g_pending{};
+CommandSlot g_pending{};
 portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;
 constexpr size_t kAudioRing = 16384;
 constexpr size_t kAudioClip = 4800;
@@ -40,9 +44,9 @@ uint32_t g_wifi_up_ms = 0;
 std::atomic<uint32_t> g_audio_w{0};
 std::atomic<uint32_t> g_audio_r{0};
 std::atomic<int> g_audio_clients{0};
+std::atomic<uint32_t> g_spectrum_requested_ms{0};
 uint8_t g_spec[kSpectrumBins]{};
 uint8_t g_spec_count = 0;
-uint32_t g_last_action_ms = 0;
 
 void json_escape(char* out, size_t out_size, const char* in) {
   if (out_size == 0) return;
@@ -60,19 +64,6 @@ void json_escape(char* out, size_t out_size, const char* in) {
   out[o] = '\0';
 }
 
-CommandKind parse_kind(const char* body) {
-  if (strncmp(body, "volume_down", 11) == 0) return CommandKind::volume_down;
-  if (strncmp(body, "volume_up", 9) == 0) return CommandKind::volume_up;
-  if (strncmp(body, "sound_toggle", 12) == 0) return CommandKind::sound_toggle;
-  if (strncmp(body, "span_down", 9) == 0) return CommandKind::span_down;
-  if (strncmp(body, "span_up", 7) == 0) return CommandKind::span_up;
-  if (strncmp(body, "step_down", 9) == 0) return CommandKind::step_down;
-  if (strncmp(body, "step_up", 7) == 0) return CommandKind::step_up;
-  if (strncmp(body, "tune=", 5) == 0) return CommandKind::tune;
-  if (strncmp(body, "open=", 5) == 0) return CommandKind::open;
-  return CommandKind::none;
-}
-
 esp_err_t handle_root(httpd_req_t* req) {
   const size_t bytes = static_cast<size_t>(web_console_html_end - web_console_html_start);
   httpd_resp_set_type(req, "text/html");
@@ -86,6 +77,13 @@ esp_err_t handle_badge(httpd_req_t* req) {
   httpd_resp_set_type(req, "image/png");
   httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=86400");
   return httpd_resp_send(req, reinterpret_cast<const char*>(orc_badge_start), bytes);
+}
+
+esp_err_t handle_audio_script(httpd_req_t* req) {
+  httpd_resp_set_type(req, "application/javascript");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  return httpd_resp_send(req, reinterpret_cast<const char*>(web_audio_js_start),
+                        web_audio_js_end - web_audio_js_start);
 }
 
 esp_err_t handle_status(httpd_req_t* req) {
@@ -207,6 +205,7 @@ esp_err_t handle_audio(httpd_req_t* req) {
 }
 
 esp_err_t handle_spectrum(httpd_req_t* req) {
+  g_spectrum_requested_ms.store(millis(), std::memory_order_release);
   uint8_t bins[kSpectrumBins];
   const size_t n = copy_spectrum(bins, kSpectrumBins);
   httpd_resp_set_type(req, "application/octet-stream");
@@ -215,30 +214,52 @@ esp_err_t handle_spectrum(httpd_req_t* req) {
 }
 
 esp_err_t handle_action(httpd_req_t* req) {
+  httpd_resp_set_type(req, "text/plain");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  const auto reject_unread = [&](const char* status, const char* message) {
+    httpd_resp_set_status(req, status);
+    httpd_resp_set_hdr(req, "Connection", "close");
+    (void)httpd_resp_send(req, message, HTTPD_RESP_USE_STRLEN);
+    // An error return closes the session, rather than draining an untrusted
+    // oversized/incomplete body in httpd_req_delete on the HTTP server task.
+    return ESP_FAIL;
+  };
+  const size_t origin_size = httpd_req_get_hdr_value_len(req, "Origin");
+  if (origin_size) {
+    char origin[128]{}, host[96]{};
+    if (origin_size >= sizeof(origin) ||
+        httpd_req_get_hdr_value_str(req, "Origin", origin, sizeof(origin)) != ESP_OK ||
+        httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK ||
+        !origin_allowed(origin, host)) {
+      return reject_unread("403 Forbidden", "origin rejected");
+    }
+  }
   char body[48]{};
-  const int got = httpd_req_recv(req, body, sizeof(body) - 1);
-  if (got <= 0) {
-    httpd_resp_set_status(req, "400 Bad Request");
-    return httpd_resp_send(req, "bad", 3);
+  if (!req->content_len || req->content_len >= sizeof(body)) {
+    return reject_unread("400 Bad Request", "invalid length");
+  }
+  size_t received = 0;
+  while (received < req->content_len) {
+    const int got = httpd_req_recv(req, body + received, req->content_len - received);
+    if (got <= 0) {
+      return reject_unread("408 Request Timeout", "incomplete command");
+    }
+    received += static_cast<size_t>(got);
   }
   Command command{};
-  command.kind = parse_kind(body);
-  if (command.kind == CommandKind::tune) command.value = static_cast<uint32_t>(atoi(body + 5));
-  if (command.kind == CommandKind::open) strlcpy(command.id, body + 5, sizeof(command.id));
-  if (command.kind == CommandKind::none) {
+  if (!parse_command(std::string_view(body, received), command)) {
     httpd_resp_set_status(req, "400 Bad Request");
     return httpd_resp_send(req, "unknown", 7);
   }
-  const uint32_t now = millis();
-  if (now - g_last_action_ms < 350) {
-    httpd_resp_set_type(req, "text/plain");
+  portENTER_CRITICAL(&g_mux);
+  const bool accepted = g_pending.submit(command);
+  portEXIT_CRITICAL(&g_mux);
+  if (!accepted) {
+    httpd_resp_set_status(req, "409 Conflict");
     return httpd_resp_send(req, "busy", 4);
   }
-  g_last_action_ms = now;
-  portENTER_CRITICAL(&g_mux);
-  g_pending = command;
-  portEXIT_CRITICAL(&g_mux);
-  httpd_resp_set_type(req, "text/plain");
+  // Accepted for main-loop dispatch, not a claim of successful RF tuning.
+  httpd_resp_set_status(req, "202 Accepted");
   return httpd_resp_send(req, "ok", 2);
 }
 
@@ -272,6 +293,7 @@ void start_mdns() {
 
 void stop_server() {
   if (g_server != nullptr) {
+    orcsdr::web_audio::stop();
     httpd_stop(g_server);
     g_server = nullptr;
   }
@@ -290,7 +312,7 @@ bool start_server() {
   config.server_port = 80;
   // 3 sockets are reserved; 5 leaves two clients (status + audio).
   config.max_open_sockets = 5;
-  config.max_uri_handlers = 8;
+  config.max_uri_handlers = 10;
   config.lru_purge_enable = true;
   config.stack_size = 8192;
   config.core_id = tskNO_AFFINITY;
@@ -334,6 +356,15 @@ bool start_server() {
   httpd_register_uri_handler(g_server, &audio);
   httpd_register_uri_handler(g_server, &audiowav);
   httpd_register_uri_handler(g_server, &spectrum);
+  httpd_uri_t audio_script{};
+  audio_script.uri = "/web_audio.js";
+  audio_script.method = HTTP_GET;
+  audio_script.handler = handle_audio_script;
+  httpd_register_uri_handler(g_server, &audio_script);
+  if (!orcsdr::web_audio::start(g_server)) {
+    stop_server();
+    return false;
+  }
   start_mdns();
   g_listening = true;
   ESP_LOGI(kLogTag, "RTL_WEB_LISTEN port=80");
@@ -347,6 +378,19 @@ void set_enabled(bool enabled) { g_enabled.store(enabled, std::memory_order_rele
 bool enabled() { return g_enabled.load(std::memory_order_acquire); }
 
 bool listening() { return g_listening; }
+
+bool origin_allowed(const char* origin, const char* host) {
+  Snapshot snap;
+  portENTER_CRITICAL(&g_mux);
+  snap = g_snapshot;
+  portEXIT_CRITICAL(&g_mux);
+  return same_origin(origin ? origin : "", host ? host : "", snap.wifi_ip);
+}
+
+bool spectrum_demanded() {
+  const uint32_t requested = g_spectrum_requested_ms.load(std::memory_order_acquire);
+  return g_listening && requested != 0 && millis() - requested < 1000;
+}
 
 void poll(bool wifi_connected) {
   const bool want = g_enabled.load(std::memory_order_acquire) && wifi_connected;
@@ -370,11 +414,7 @@ void update(const Snapshot& snapshot) {
 bool take_command(Command* command) {
   if (command == nullptr) return false;
   portENTER_CRITICAL(&g_mux);
-  const bool have = g_pending.kind != CommandKind::none;
-  if (have) {
-    *command = g_pending;
-    g_pending = {};
-  }
+  const bool have = g_pending.take(*command);
   portEXIT_CRITICAL(&g_mux);
   return have;
 }
