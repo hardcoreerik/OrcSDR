@@ -24,6 +24,15 @@ void draw_home_button(){}void draw_mute_button(bool){}void draw_visualizer_butto
 }
 bool label(const char* s){return std::find(M5.Display.labels.begin(),M5.Display.labels.end(),s)!=M5.Display.labels.end();}
 void save(const char* name){if(const char* path=std::getenv("ORCSDR_UI_OUTPUT")){std::ofstream f(std::string(path)+"/"+name+".svg");f<<"<svg xmlns='http://www.w3.org/2000/svg' width='1280' height='720' viewBox='0 0 1280 720'>"<<M5.Display.svg<<"</svg>";}}
+// Inspect recorded output from the real renderer, including the header fill.
+void status_colors(const char* radar_label, uint16_t text_color, uint16_t button_color) {
+ const auto& svg=M5.Display.svg;
+ assert(svg.find("fill='"+lgfx::LovyanGFX::rgb(text_color)+"'>"+radar_label+"</text>")!=std::string::npos);
+ const auto start=svg.find("<rect x='755' y='14' width='92' height='44'");
+ assert(start!=std::string::npos);
+ const auto end=svg.find("/>",start);
+ assert(svg.substr(start,end-start).find("fill='"+lgfx::LovyanGFX::rgb(button_color)+"'")!=std::string::npos);
+}
 int main(){
  using namespace orcsdr;
  assert(screens::self_check());assert(dashboards::self_check());assert(adsb::self_check());
@@ -35,6 +44,12 @@ int main(){
  adsb::enter(settings);adsb::Snapshot snapshot;snapshot.revision=1;
  snapshot.receiver_running=true;adsb::set_live_snapshot(snapshot);adsb::draw();
  assert(label("NEED UTC TIME"));assert(label("FLARM 868"));save("flarm-waiting");
+ status_colors("NEED UTC TIME",TFT_ORANGE,TFT_DARKGREY);
+ snapshot.time_ready=true;++snapshot.revision;adsb::set_live_snapshot(snapshot);adsb::draw();
+ assert(label("LOC"));status_colors("NEED LOCATION",TFT_ORANGE,TFT_DARKGREY);
+ snapshot.receiver_running=false;++snapshot.revision;adsb::set_live_snapshot(snapshot);adsb::draw();
+ assert(label("STOP"));status_colors("STOPPED",TFT_ORANGE,TFT_DARKGREY);
+ snapshot.receiver_running=true;
  settings.location_configured=true;settings.latitude_e7=460500000;settings.longitude_e7=145000000;
  adsb::enter(settings);snapshot.time_ready=true;snapshot.visible_count=snapshot.aircraft_count=1;
  auto& a=snapshot.aircraft[0];a.icao=0x123456;a.address_type=2;a.protocol_generation=7;a.channel=1;
@@ -43,6 +58,7 @@ int main(){
  a.latitude=46.12f;a.longitude=14.6f;a.altitude_ft=4101;a.speed_kts=78;a.heading_deg=90;a.vertical_rate_fpm=-472;
  snapshot.total_messages=25;snapshot.flarm_v6=10;snapshot.flarm_v7=15;snapshot.message_rate=2;
  snapshot.effective_sps=960000;++snapshot.revision;adsb::set_live_snapshot(snapshot);adsb::draw();save("flarm-radar");
+ assert(label("LIVE"));status_colors("RECEIVING",0x6fe8,TFT_DARKGREEN);
  for(int tab=1;tab<5;++tab){
   adsb::handle_touch(tab*256+128,680);
   for(const auto& text:M5.Display.labels){assert(text.find("FAA")==std::string::npos);if(text.find("MODE-S")!=std::string::npos)std::fprintf(stderr,"Unexpected tab%d label: %s\n",tab,text.c_str());assert(text.find("MODE-S")==std::string::npos);}
@@ -53,6 +69,9 @@ int main(){
  // FLARM channel information must not activate the ADS-B gain controls.
  assert(adsb::handle_touch(80,450)==adsb::Action::none);
  assert(adsb::handle_touch(300,450)==adsb::Action::none);
+ // All four FLARM information cards are passive; ADS-B retains its action.
+ for(int x:{600,1000}) for(int y:{200,450})
+  assert(adsb::handle_touch(x,y)==adsb::Action::none);
  const auto saved_view = adsb::view();
  adsb::leave();adsb::resume(settings);adsb::draw();assert(adsb::view()==saved_view);
  snapshot.aircraft_count=snapshot.visible_count=0;++snapshot.session_id;++snapshot.revision;
@@ -61,6 +80,7 @@ int main(){
  settings.flarm=false;adsb::enter(settings);
  assert(label("ADS-B 1090"));assert(!label("123456"));
  adsb::handle_touch(1152,680);
+ assert(adsb::handle_touch(600,200)==adsb::Action::open_data_settings);
  assert(adsb::handle_touch(80,450)==adsb::Action::gain_auto);
  assert(adsb::handle_touch(300,450)==adsb::Action::gain_tenth_db);
  assert(adsb::self_check());

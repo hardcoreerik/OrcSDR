@@ -297,6 +297,18 @@ void plane(int x, int y, int scale, uint16_t color) {
                           x + scale / 2, y + scale / 2, x, y + scale / 3, color);
 }
 
+bool receiver_ready() {
+  return g_settings.flarm
+      ? g_live_snapshot.receiver_running && g_live_snapshot.time_ready &&
+            g_settings.location_configured
+      : g_live;
+}
+
+uint16_t receiver_button_color() {
+  if (!g_settings.flarm && g_atc_listening) return TFT_DARKCYAN;
+  return receiver_ready() ? TFT_DARKGREEN : TFT_DARKGREY;
+}
+
 const char* receiver_label() {
   if (!g_settings.flarm) return g_atc_listening ? "ATC" : (g_live ? "LIVE" : "WAIT");
   if (!g_live_snapshot.receiver_running) return "STOP";
@@ -309,7 +321,8 @@ void draw_header() {
   M5.Display.drawFastHLine(20, kHeaderH - 1, 1240, kBorder);
   audio_header::draw_brand(g_settings.flarm ? "FLARM 868" : "ADS-B 1090");
   M5.Display.drawFastVLine(370, 12, 76, kBorder);
-  M5.Display.fillCircle(390, 36, 7, kGreen);
+  M5.Display.fillCircle(390, 36, 7,
+                        g_settings.flarm && !receiver_ready() ? kMuted : kGreen);
   char count[24];
   snprintf(count, sizeof(count), "%u AIRCRAFT", static_cast<unsigned>(displayed_aircraft_count()));
   text(count, 409, 36, TFT_WHITE, 2, middle_left);
@@ -319,7 +332,7 @@ void draw_header() {
   snprintf(rate, sizeof(rate), "%.1f/s", displayed_message_rate());
   text(rate, 690, 36, kGreen, 2, middle_left);
   button(receiver_label(), 755, 14, 92, 44,
-         g_atc_listening ? TFT_DARKCYAN : (g_live ? TFT_DARKGREEN : TFT_DARKGREY));
+         receiver_button_color());
   text("USB", 905, 29, TFT_WHITE, 1, middle_left);
   text(g_settings.flarm ? (g_live_snapshot.receiver_running ? "RECEIVING" : "STOPPED") : "CONNECTED", 905, 51, kBlue, 1, middle_left);
   audio_header::draw_home_button();
@@ -339,7 +352,7 @@ void draw_header_live_values() {
   snprintf(value, sizeof(value), "%.1f/s", displayed_message_rate());
   text(value, 690, 36, kGreen, 2, middle_left);
   button(receiver_label(), 755, 14, 92, 44,
-         g_atc_listening ? TFT_DARKCYAN : (g_live ? TFT_DARKGREEN : TFT_DARKGREY));
+         receiver_button_color());
 }
 
 void tab_icon(int index, int x, int y, uint16_t color) {
@@ -445,7 +458,7 @@ void draw_radar() {
   text(g_settings.flarm ? (!g_live_snapshot.receiver_running ? "STOPPED" :
        !g_live_snapshot.time_ready ? "NEED UTC TIME" : !g_settings.location_configured ? "NEED LOCATION" : "RECEIVING") :
        (g_live ? "RECEIVING" : "WAITING"), 54, 166,
-       g_live ? kGreen : TFT_ORANGE, 1, middle_left);
+       receiver_ready() ? kGreen : TFT_ORANGE, 1, middle_left);
   signal_bars(34, 218, g_settings.flarm ? (g_live_snapshot.aircraft_count ? 3 : 0) : (g_live ? 4 : 0));
   text("SIGNAL", 88, 204, TFT_LIGHTGREY, 1, middle_left);
   text(g_settings.flarm ? (g_live_snapshot.aircraft_count ? "RX" : "--") : (g_live ? "GOOD" : "--"), 198, 204,
@@ -1174,7 +1187,7 @@ Action handle_touch(int32_t x, int32_t y) {
     } else if (hit(x, y, 894, 516, 334, 54) &&
                (g_atc_listening || g_settings.atc_frequency_hz)) {
       return g_atc_listening ? Action::atc_resume : Action::atc_listen;
-    } else if (hit(x, y, 496, 108, 752, 496)) {
+    } else if (!g_settings.flarm && hit(x, y, 496, 108, 752, 496)) {
       return Action::open_data_settings;
     }
   }

@@ -16,6 +16,7 @@ on:
       - 'tests/support/aviation/**'
       - 'tests/fixtures/flarm_packets.txt'
       - 'tools/test-flarm-core.sh'
+      - 'tools/generate-flarm-fixtures.py'
       - '.github/workflows/flarm-tests.yml'
   push:
     branches: [main]
@@ -30,3 +31,7 @@ jobs:
         with:
           persist-credentials: false
       - run: bash tools/test-flarm-core.sh
+      - name: Verify independent fixture generation
+        run: |
+          python3 tools/generate-flarm-fixtures.py
+          git diff --exit-code -- tests/fixtures/flarm_packets.txt
