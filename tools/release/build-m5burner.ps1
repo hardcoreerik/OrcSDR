@@ -155,6 +155,13 @@ $flashScript = $flashScript.Replace("`r", '')
   [Text.UTF8Encoding]::new($false)
 )
 $localZip = Join-Path $dist "OrcSDR-Tab5-$Version-local-m5burner.zip"
-Compress-Archive -Path (Join-Path $localRoot '*') -DestinationPath $localZip -Force
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+if (Test-Path -LiteralPath $localZip) { Remove-Item -LiteralPath $localZip -Force }
+[IO.Compression.ZipFile]::CreateFromDirectory(
+  $localRoot,
+  $localZip,
+  [IO.Compression.CompressionLevel]::Optimal,
+  $false
+)
 
 Write-Host "M5Burner bundle ready: $dist"
