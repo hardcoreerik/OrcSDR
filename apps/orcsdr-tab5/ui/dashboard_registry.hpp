@@ -23,6 +23,7 @@ enum class Id : uint8_t {
   wifi_analysis,
   pocsag,
   am,
+  flarm,
   count,
 };
 

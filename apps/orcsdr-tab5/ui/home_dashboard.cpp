@@ -122,7 +122,7 @@ void draw_menu_icon(dashboards::Id id, int x, int y, uint16_t color) {
     M5.Display.drawRect(x - 9, y - 17, 18, 34, color);
     M5.Display.drawFastVLine(x - 3, y - 11, 12, color);
     M5.Display.drawFastVLine(x + 3, y - 11, 12, color);
-  } else if (id == dashboards::Id::adsb) {
+  } else if (id == dashboards::Id::adsb || id == dashboards::Id::flarm) {
     M5.Display.fillTriangle(x - 18, y + 9, x + 18, y - 12, x + 3, y + 14, color);
     M5.Display.drawFastVLine(x - 2, y - 7, 27, color);
   } else if (id == dashboards::Id::shortwave || id == dashboards::Id::airband ||
