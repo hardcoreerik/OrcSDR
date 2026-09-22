@@ -13,7 +13,7 @@ struct Profile {
 };
 
 constexpr Profile kAmBroadcast{520000, 1710000, 1000000, 10000, 10000};
-constexpr Profile kShortwave{1710000, 30000000, 7100000, 1000, 6000};
+constexpr Profile kShortwave{24000, 30000000, 7100000, 1000, 6000};
 
 constexpr bool valid(const Profile& profile) {
   return profile.min_hz <= profile.default_hz && profile.default_hz <= profile.max_hz &&
@@ -22,6 +22,5 @@ constexpr bool valid(const Profile& profile) {
 
 static_assert(valid(kAmBroadcast));
 static_assert(valid(kShortwave));
-static_assert(kAmBroadcast.max_hz <= kShortwave.min_hz);
 
 }  // namespace orcsdr::receiver_bands

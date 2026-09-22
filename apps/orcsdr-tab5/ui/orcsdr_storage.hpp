@@ -21,8 +21,8 @@ class File {
   size_t size() const;
   size_t position() const;
   bool seek(size_t position);
-  void flush();
-  void close();
+  bool flush();
+  bool close();
   bool isDirectory() const;
   const char* name() const;
   uint64_t getLastWrite() const;
@@ -58,5 +58,7 @@ bool mounted();
 FileSystem& filesystem();
 uint64_t total_bytes();
 uint64_t used_bytes();
+bool run_file_semantics_check();
+bool run_write_benchmark(uint32_t file_mib = 32);
 
 }  // namespace orcsdr::storage

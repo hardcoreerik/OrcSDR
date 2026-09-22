@@ -25,6 +25,21 @@ constexpr BroadcastBand kBands[] = {
 
 constexpr uint32_t kSteps[] = {100, 500, 1000, 5000};
 
+constexpr StationCard kStations[] = {
+    {"WWV", "US standard time and frequency", "WWV", "United States", "English",
+     "Fort Collins, Colorado", "Worldwide", "OrcSDR built-in", 5000000, 2500,
+     0, 24 * 60, 0x7f, 1, 0, 0, 10000},
+    {"WWV", "US standard time and frequency", "WWV", "United States", "English",
+     "Fort Collins, Colorado", "Worldwide", "OrcSDR built-in", 10000000, 2500,
+     0, 24 * 60, 0x7f, 1, 0, 0, 10000},
+    {"WWV", "US standard time and frequency", "WWV", "United States", "English",
+     "Fort Collins, Colorado", "Worldwide", "OrcSDR built-in", 15000000, 2500,
+     0, 24 * 60, 0x7f, 1, 0, 0, 10000},
+    {"CHU", "Canada time signal", "CHU", "Canada", "English/French",
+     "Ottawa, Ontario", "Worldwide", "OrcSDR built-in", 7850000, 2500,
+     0, 24 * 60, 0x7f, 1, 0, 0, 3000},
+};
+
 template <size_t Size>
 bool terminated(const char (&value)[Size]) {
   return std::memchr(value, '\0', Size) != nullptr;
@@ -45,7 +60,7 @@ bool text_valid(const LogEntry& entry) {
 }
 
 bool receiver_frequency(uint32_t frequency_hz) {
-  return frequency_hz >= 1710000 && frequency_hz <= 30000000;
+  return frequency_hz >= 24000 && frequency_hz <= 30000000;
 }
 
 bool receiver_bandwidth(uint32_t bandwidth_hz) {
@@ -102,6 +117,74 @@ uint32_t filter_bandwidth(FilterPreset preset) {
   return 6000;
 }
 
+size_t station_count() { return sizeof(kStations) / sizeof(kStations[0]); }
+
+const StationCard* station_at(size_t index) {
+  return index < station_count() ? &kStations[index] : nullptr;
+}
+
+SpectrumRegion region_for(uint32_t frequency_hz) {
+  if (frequency_hz >= 24000 && frequency_hz < 30000) return SpectrumRegion::vlf_edge;
+  if (frequency_hz < 300000) return SpectrumRegion::lf;
+  if (frequency_hz < 3000000) return SpectrumRegion::mf;
+  if (frequency_hz <= 30000000) return SpectrumRegion::hf;
+  return SpectrumRegion::outside;
+}
+
+const char* region_label(SpectrumRegion region) {
+  switch (region) {
+    case SpectrumRegion::vlf_edge: return "VLF EDGE";
+    case SpectrumRegion::lf: return "LF";
+    case SpectrumRegion::mf: return "MF";
+    case SpectrumRegion::hf: return "HF / SHORTWAVE";
+    case SpectrumRegion::outside: return "OUT OF RANGE";
+  }
+  return "OUT OF RANGE";
+}
+
+ModeGuide mode_guide_for(uint32_t frequency_hz) {
+  if ((frequency_hz >= 3900000 && frequency_hz <= 4000000) ||
+      (frequency_hz >= 7200000 && frequency_hz <= 7300000))
+    return {"CHECK", "Broadcast and amateur allocations overlap here. Check the signal and local band plan.", false};
+  if (band_for(frequency_hz) ||
+      (frequency_hz >= 520000 && frequency_hz <= 1710000))
+    return {"AM", "Broadcast band: start with AM and a 6-10 kHz filter.", true};
+
+  if ((frequency_hz >= 1800000 && frequency_hz <= 2000000) ||
+      (frequency_hz >= 3500000 && frequency_hz <= 4000000) ||
+      (frequency_hz >= 7000000 && frequency_hz <= 7300000))
+    return {"LSB", "Amateur voice below 10 MHz usually uses LSB.", false};
+
+  if ((frequency_hz >= 5330500 && frequency_hz <= 5406500) ||
+      (frequency_hz >= 14000000 && frequency_hz <= 14350000) ||
+      (frequency_hz >= 18068000 && frequency_hz <= 18168000) ||
+      (frequency_hz >= 21000000 && frequency_hz <= 21450000) ||
+      (frequency_hz >= 24890000 && frequency_hz <= 24990000) ||
+      (frequency_hz >= 28000000 && frequency_hz <= 29700000))
+    return {"USB", "Amateur voice above 10 MHz usually uses USB; 60 m is an exception.", false};
+
+  return {"CHECK", "Frequency alone cannot identify a signal. Check a band guide or schedule.", false};
+}
+
+bool schedule_matches(const StationCard& card, uint32_t frequency_hz,
+                      uint16_t utc_minute, uint8_t utc_weekday) {
+  if (utc_minute >= 24 * 60 || utc_weekday >= 7 || card.frequency_hz == 0)
+    return false;
+  const uint32_t delta = frequency_hz > card.frequency_hz
+                             ? frequency_hz - card.frequency_hz
+                             : card.frequency_hz - frequency_hz;
+  if (delta > card.tolerance_hz) return false;
+  if (card.days_mask == 0) return false;
+  if (card.start_utc_minute <= card.end_utc_minute)
+    return (card.days_mask & (1u << utc_weekday)) &&
+           utc_minute >= card.start_utc_minute && utc_minute < card.end_utc_minute;
+  if (utc_minute >= card.start_utc_minute)
+    return (card.days_mask & (1u << utc_weekday)) != 0;
+  const uint8_t previous_day = static_cast<uint8_t>((utc_weekday + 6) % 7);
+  return utc_minute < card.end_utc_minute &&
+         (card.days_mask & (1u << previous_day));
+}
+
 bool valid(const Memory& memory) {
   return receiver_frequency(memory.frequency_hz) &&
          receiver_bandwidth(memory.bandwidth_hz) &&
@@ -114,6 +197,86 @@ bool valid(const LogEntry& entry) {
          entry.local_offset_minutes >= -14 * 60 &&
          entry.local_offset_minutes <= 14 * 60 && std::isfinite(entry.signal_dbfs) &&
          text_valid(entry);
+}
+
+RecordResult MemoryTable::upsert(const Memory& memory) {
+  if (!valid(memory)) return RecordResult::invalid;
+  for (size_t i = 0; i < size_; ++i)
+    if (records_[i].frequency_hz == memory.frequency_hz &&
+        strcmp(records_[i].mode, memory.mode) == 0)
+      return RecordResult::duplicate;
+  if (size_ == kCapacity) return RecordResult::full;
+  records_[size_++] = memory;
+  return RecordResult::ok;
+}
+
+RecordResult MemoryTable::insert(size_t index, const Memory& memory) {
+  if (index > size_) return RecordResult::missing;
+  if (!valid(memory)) return RecordResult::invalid;
+  if (size_ == kCapacity) return RecordResult::full;
+  for (size_t i = size_; i > index; --i) records_[i] = records_[i - 1];
+  records_[index] = memory;
+  ++size_;
+  return RecordResult::ok;
+}
+
+RecordResult MemoryTable::replace(size_t index, const Memory& memory) {
+  if (index >= size_) return RecordResult::missing;
+  if (!valid(memory)) return RecordResult::invalid;
+  records_[index] = memory;
+  return RecordResult::ok;
+}
+
+RecordResult MemoryTable::toggle_favorite(size_t index) {
+  if (index >= size_) return RecordResult::missing;
+  records_[index].favorite = !records_[index].favorite;
+  return RecordResult::ok;
+}
+
+RecordResult MemoryTable::erase(size_t index) {
+  if (index >= size_) return RecordResult::missing;
+  for (size_t i = index + 1; i < size_; ++i) records_[i - 1] = records_[i];
+  --size_;
+  return RecordResult::ok;
+}
+
+const Memory* MemoryTable::at(size_t index) const {
+  return index < size_ ? &records_[index] : nullptr;
+}
+
+RecordResult LogTable::append(const LogEntry& entry) {
+  if (!valid(entry)) return RecordResult::invalid;
+  if (size_ == kCapacity) return RecordResult::full;
+  records_[size_++] = entry;
+  return RecordResult::ok;
+}
+
+RecordResult LogTable::insert(size_t index, const LogEntry& entry) {
+  if (index > size_) return RecordResult::missing;
+  if (!valid(entry)) return RecordResult::invalid;
+  if (size_ == kCapacity) return RecordResult::full;
+  for (size_t i = size_; i > index; --i) records_[i] = records_[i - 1];
+  records_[index] = entry;
+  ++size_;
+  return RecordResult::ok;
+}
+
+RecordResult LogTable::replace(size_t index, const LogEntry& entry) {
+  if (index >= size_) return RecordResult::missing;
+  if (!valid(entry)) return RecordResult::invalid;
+  records_[index] = entry;
+  return RecordResult::ok;
+}
+
+RecordResult LogTable::erase(size_t index) {
+  if (index >= size_) return RecordResult::missing;
+  for (size_t i = index + 1; i < size_; ++i) records_[i - 1] = records_[i];
+  --size_;
+  return RecordResult::ok;
+}
+
+const LogEntry* LogTable::at(size_t index) const {
+  return index < size_ ? &records_[index] : nullptr;
 }
 
 bool model_self_check() {
@@ -139,12 +302,19 @@ bool model_self_check() {
       filter_bandwidth(FilterPreset::wide) != 9000)
     return false;
 
+  if (region_for(24000) != SpectrumRegion::vlf_edge ||
+      region_for(30000) != SpectrumRegion::lf ||
+      region_for(300000) != SpectrumRegion::mf ||
+      region_for(3000000) != SpectrumRegion::hf ||
+      strcmp(region_label(SpectrumRegion::hf), "HF / SHORTWAVE") != 0)
+    return false;
+
   Memory memory{};
   memory.frequency_hz = 6010000;
   memory.bandwidth_hz = 6000;
   strcpy(memory.mode, "AM");
   if (!valid(memory)) return false;  // Unidentified stations are valid memories.
-  memory.frequency_hz = 1600000;
+  memory.frequency_hz = 23000;
   if (valid(memory)) return false;
   memory.frequency_hz = 6010000;
   memset(memory.notes, 'x', sizeof(memory.notes));

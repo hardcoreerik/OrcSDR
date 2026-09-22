@@ -29,6 +29,10 @@ param(
   [switch]$GainSweep,
   [switch]$IqDiagnostic,
   [switch]$IqHotTune,
+  [switch]$SdSelfCheck,
+  [switch]$SdBenchmark,
+  [ValidateRange(4, 64)]
+  [int]$SdBenchmarkMiB = 32,
   [ValidatePattern('^[A-Za-z0-9_-]{1,31}$')]
   [string]$IqTransition = 'manual',
   [ValidateSet('FM', 'AM', 'BROWSE')]
@@ -227,6 +231,29 @@ function Connect-Authenticated {
   }
   Write-SoakLine 'RTL_UI_SOAK_AUTH verified=1'
   Drain-SerialOutput
+}
+
+function Test-SdBenchmarkFailureLine([string]$Line) {
+  return $Line -match '^RTL_SD_BENCH_(?:ERROR|INVALID)\b'
+}
+
+function Invoke-SdBenchmark {
+  $script:serial.WriteLine("RTL_SD_BENCH $SdBenchmarkMiB")
+  $deadline = [DateTime]::UtcNow.AddMinutes(5)
+  while ([DateTime]::UtcNow -lt $deadline) {
+    try {
+      $line = $script:serial.ReadLine().Trim()
+      if (!$line) { continue }
+      Write-SoakLine $line
+      if (Test-FatalLine $line) { throw "Device crash/reset detected: $line" }
+      if (Test-SdBenchmarkFailureLine $line) { throw "SD benchmark rejected: $line" }
+      if ($line -match '^RTL_SD_BENCH_DONE pass=([01])$') {
+        if ($Matches[1] -ne '1') { throw 'SD benchmark failed.' }
+        return
+      }
+    } catch [System.TimeoutException] {}
+  }
+  throw 'Timed out waiting for SD benchmark.'
 }
 
 function Get-UiState {
@@ -895,6 +922,11 @@ function Invoke-SelfCheck {
   if ($c6 -notmatch '^RTL_WIFI_C6_STATUS host=\S+ coprocessor=\S+ transport=1 embedded=1 state=ready percent=0 stage=\S+ match=0$') {
     throw 'C6 update parser failed.'
   }
+  if (!(Test-SdBenchmarkFailureLine 'RTL_SD_BENCH_ERROR open_failed') -or
+      !(Test-SdBenchmarkFailureLine 'RTL_SD_BENCH_INVALID size') -or
+      (Test-SdBenchmarkFailureLine 'RTL_SD_BENCH_DONE pass=1')) {
+    throw 'SD benchmark failure parser failed.'
+  }
   if (-not (Test-ExclusiveScreen ([pscustomobject]@{ Active = @(0,0,0,0,1,0,0) }) 'ADSB')) {
     throw 'Exclusive dashboard check rejected valid ADS-B state.'
   }
@@ -973,14 +1005,14 @@ function Invoke-SelfCheck {
   Write-SoakLine 'RTL_UI_SOAK_SELF_CHECK pass=1'
 }
 
-if ($SelfCheck) { Invoke-SelfCheck; exit 0 }
 if (($InstallLaneMap -or $InstallFaaAircraft) -and !$DataOnly) {
   throw '-InstallLaneMap and -InstallFaaAircraft require -DataOnly.'
 }
 if ($IqHotTune -and !$IqDiagnostic) { throw '-IqHotTune requires -IqDiagnostic.' }
-if (@($Run, $Soak, $Driver080Rc2, $WifiOnly, $WifiCoexistence, $WifiCoexistenceDiagnostic, $DataOnly, $C6Update, $RadioScan, $AmBroadcast, $GainSweep, $IqDiagnostic).Where({ $_ }).Count -gt 1) {
-  throw 'Choose only one primary test mode, including -IqDiagnostic.'
+if (@($SelfCheck, $Run, $Soak, $Driver080Rc3, $WifiOnly, $WifiCoexistence, $WifiCoexistenceDiagnostic, $DataOnly, $C6Update, $RadioScan, $AmBroadcast, $GainSweep, $IqDiagnostic, $SdSelfCheck, $SdBenchmark).Where({ $_ }).Count -gt 1) {
+  throw 'Choose only one primary test mode.'
 }
+if ($SelfCheck) { Invoke-SelfCheck; exit 0 }
 
 function Get-C6UpdateStatus {
   $line = Send-And-Wait 'RTL_WIFI_C6_STATUS' '^RTL_WIFI_C6_STATUS '
@@ -1717,6 +1749,21 @@ try {
 
   if ($ResetDevice) { Reset-DeviceBaseline }
 
+  if ($SdSelfCheck) {
+    Wait-DeviceReady 60 11000
+    Connect-Authenticated
+    $result = Send-And-Wait 'RTL_SD_SELF_CHECK' '^RTL_SD_SELF_CHECK_RESULT ' 30
+    if ($result -notmatch ' pass=1$') { throw "SD self-check failed: $result" }
+    exit 0
+  }
+
+  if ($SdBenchmark) {
+    Wait-DeviceReady 60 11000
+    Connect-Authenticated
+    Invoke-SdBenchmark
+    exit 0
+  }
+
   if ($Driver080Rc3) { Invoke-Driver080Rc3Test; exit 0 }
   if ($WifiOnly) {
     Wait-DeviceReady 60 11000
@@ -1758,7 +1805,10 @@ try {
   }
 
   if (-not $Soak) {
-    if ($Run) { Connect-Authenticated }
+    if ($Run) {
+      Wait-DeviceReady 60 11000
+      Connect-Authenticated
+    }
     $command = if ($Run) { 'RTL_UI_REGRESSION RUN' } else { 'RTL_UI_REGRESSION CHECK' }
     $line = Send-And-Wait $command '^RTL_UI_REGRESSION_RESULT '
     if ($line -notmatch ' pass=1 ') { throw "UI regression failed: $line" }
