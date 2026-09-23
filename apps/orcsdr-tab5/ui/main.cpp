@@ -14881,8 +14881,9 @@ void process_command(char* command) {
     if (end == command + 14 || *end || seconds < 946684800ULL || seconds > UINT32_MAX - 2) {
       Serial.println("RTL_FLARM_UTC_ERROR expected_unix_seconds"); return;
     }
-    timeval tv{static_cast<time_t>(seconds), 0};
-    const bool set = settimeofday(&tv, nullptr) == 0;
+    // Keep the authenticated override on the shared RTC/time-service path so
+    // FLARM, the UI, logs, and other consumers observe the same trusted clock.
+    const bool set = orcsdr::time_service::set_utc(static_cast<uint32_t>(seconds));
     if (set) flarm_utc_ready.store(true, std::memory_order_release);
     Serial.println(set ? "RTL_FLARM_UTC_OK" : "RTL_FLARM_UTC_ERROR");
     return;
