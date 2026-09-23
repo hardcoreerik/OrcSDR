@@ -120,3 +120,9 @@ behavior, release-package installation, or long-duration soak behavior.
 | Developer contracts | [`docs/API_ESP_RTL_SDR.md`](docs/API_ESP_RTL_SDR.md), [`docs/TAB5_BUILD_POLICY.md`](docs/TAB5_BUILD_POLICY.md), [`docs/RADIO_CONFIGURATION.md`](docs/RADIO_CONFIGURATION.md) |
 | Future work | [`Roadmap.md`](Roadmap.md) |
 | Exact-version evidence | [`docs/releases/`](docs/releases/v0.2.0-beta.6-multidongle-rc4.md) and dated validation reports |
+
+## Experimental FLARM receiver
+
+EU AIR V6/V7 reception shares the ADS-B dashboard renderer. Packet, synthetic IQ,
+and dashboard host tests pass; full firmware build and live RF acceptance remain
+pending. See [FLARM receiver](docs/FLARM.md) for setup and limitations.

@@ -51,6 +51,7 @@ Owner owner_for_band(Band band) {
     case Band::fm: return Owner::fm;
     case Band::p25: return Owner::p25;
     case Band::adsb: return Owner::adsb;
+    case Band::flarm: return Owner::flarm;
     case Band::lora: return Owner::lora;
     case Band::pocsag: return Owner::pocsag;
     default: return Owner::radio;

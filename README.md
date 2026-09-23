@@ -160,3 +160,9 @@ OrcSDR is licensed under [GNU AGPL-3.0-only](LICENSE), with separate commercial 
 ---
 
 **Hardware:** [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5) · **Receiver driver:** [`esp-rtl-sdr`](https://github.com/hardcoreerik/esp-rtl-sdr) · **Guide:** [OrcSDR User Guide](docs/user-guide/index.md)
+
+## Experimental FLARM receiver
+
+EU AIR V6/V7 reception shares the ADS-B dashboard renderer. Packet, synthetic IQ,
+and dashboard host tests pass; full firmware build and live RF acceptance remain
+pending. See [FLARM receiver](docs/FLARM.md) for setup and limitations.

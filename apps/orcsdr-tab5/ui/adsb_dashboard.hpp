@@ -6,6 +6,7 @@
 namespace orcsdr::adsb {
 
 struct Settings {
+  bool flarm = false; // Shared aviation layout, with protocol-specific labels.
   bool location_configured = false;
   int32_t latitude_e7 = 0;
   int32_t longitude_e7 = 0;
@@ -23,6 +24,10 @@ constexpr uint8_t kDocumentationViewCount = 4;
 
 struct Aircraft {
   uint32_t icao = 0;
+  uint8_t address_type = 0;
+  uint8_t protocol_generation = 0;
+  uint8_t channel = 0;
+  uint32_t age_ms = 0;
   char callsign[9]{};
   char registration[9]{};
   char type[49]{};
@@ -45,6 +50,10 @@ struct Aircraft {
 struct Snapshot {
   Aircraft aircraft[kVisibleAircraft]{};
   uint32_t revision = 0;
+  uint32_t session_id = 0;
+  bool time_ready = false;
+  bool receiver_running = false;
+  uint32_t flarm_v6 = 0, flarm_v7 = 0, flarm_crc_errors = 0;
   uint32_t total_messages = 0;
   float message_rate = 0;
   float strongest_signal_dbfs = 0;
@@ -71,6 +80,7 @@ enum class Action : uint8_t {
 
 void enter(const Settings& settings);
 void leave();
+void resume(const Settings& settings);
 void draw();
 void update();
 void set_live_snapshot(const Snapshot& snapshot);
