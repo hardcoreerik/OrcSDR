@@ -32,6 +32,9 @@ param(
   [switch]$IqHotTune,
   [switch]$SdSelfCheck,
   [switch]$SdBenchmark,
+  # Set the boot splash button gate and exit (Off for reboot-based test runs).
+  [ValidateSet('On', 'Off')]
+  [string]$SetSplashGate,
   [ValidateRange(4, 64)]
   [int]$SdBenchmarkMiB = 32,
   [ValidatePattern('^[A-Za-z0-9_-]{1,31}$')]
@@ -478,9 +481,41 @@ function Get-WifiStatus {
   }
 }
 
+$script:splashGateRestore = $false
+
+# Reboot-based runs must not stall on the boot splash's OrcSDR button.
+# Requires an authenticated session; restored by Restore-SplashGate.
+function Disable-SplashGate {
+  try {
+    $status = Send-And-Wait 'RTL_SPLASH_GATE STATUS' '^RTL_SPLASH_GATE enabled=[01]$' 5
+  } catch {
+    Write-SoakLine 'RTL_UI_SOAK_SPLASH_GATE unsupported=1'
+    return
+  }
+  if ($status.EndsWith('1')) {
+    [void](Send-And-Wait 'RTL_SPLASH_GATE OFF' '^RTL_SPLASH_GATE enabled=0$' 5)
+    $script:splashGateRestore = $true
+  }
+  Write-SoakLine 'RTL_UI_SOAK_SPLASH_GATE enabled=0'
+}
+
+function Restore-SplashGate {
+  if (-not $script:splashGateRestore) { return }
+  try {
+    Wait-DeviceReady 60
+    Connect-Authenticated
+    [void](Send-And-Wait 'RTL_SPLASH_GATE ON' '^RTL_SPLASH_GATE enabled=1$' 5)
+    $script:splashGateRestore = $false
+    Write-SoakLine 'RTL_UI_SOAK_SPLASH_GATE enabled=1 restored=1'
+  } catch {
+    Write-SoakLine "RTL_UI_SOAK_SPLASH_GATE restore_failed=1 hint=send_RTL_SPLASH_GATE_ON error=$($_.Exception.Message)"
+  }
+}
+
 function Reset-DeviceBaseline {
   Wait-DeviceReady 60
   Connect-Authenticated
+  Disable-SplashGate
   [void](Send-And-Wait 'RTL_RESET' '^RTL_RESETTING$')
   Write-SoakLine 'RTL_UI_SOAK_RESET serial=1'
   Start-Sleep -Seconds 1
@@ -1061,6 +1096,7 @@ function Get-C6UpdateStatus {
 function Invoke-C6UpdateTest {
   Wait-DeviceReady 60 11000
   Connect-Authenticated
+  Disable-SplashGate
   $before = Get-C6UpdateStatus
   if ($before.Transport -ne 1 -or $before.Embedded -ne 1 -or $before.State -ne 'ready') {
     throw "C6 update requires a reachable mismatched C6 and embedded release image: $($before | ConvertTo-Json -Compress)"
@@ -1781,6 +1817,15 @@ try {
 
   if ($ResetDevice) { Reset-DeviceBaseline }
 
+  if ($SetSplashGate) {
+    Wait-DeviceReady 60
+    Connect-Authenticated
+    $state = if ($SetSplashGate -eq 'On') { 1 } else { 0 }
+    [void](Send-And-Wait "RTL_SPLASH_GATE $($SetSplashGate.ToUpperInvariant())" "^RTL_SPLASH_GATE enabled=$state`$" 5)
+    Write-SoakLine "RTL_UI_SOAK_SPLASH_GATE enabled=$state"
+    exit 0
+  }
+
   if ($SdSelfCheck) {
     Wait-DeviceReady 60 11000
     Connect-Authenticated
@@ -1933,5 +1978,8 @@ try {
   Capture-ResetEvidence
   throw
 } finally {
-  if ($null -ne $script:serial -and $script:serial.IsOpen) { $script:serial.Close() }
+  if ($null -ne $script:serial -and $script:serial.IsOpen) {
+    Restore-SplashGate
+    $script:serial.Close()
+  }
 }

@@ -15364,6 +15364,21 @@ void process_command(char* command) {
     (void)orcsdr::storage::run_write_benchmark(file_mib);
     return;
   }
+  if (strncmp(command, "RTL_SPLASH_GATE", 15) == 0) {
+    const char* argument = command[15] == ' ' ? command + 16 : command + 15;
+    if (strcmp(argument, "ON") == 0 || strcmp(argument, "OFF") == 0) {
+      if (!authenticated) {
+        Serial.println("RTL_SPLASH_GATE_ERROR auth_required");
+        return;
+      }
+      preferences.putBool("splash_gate", strcmp(argument, "ON") == 0);
+    } else if (argument[0] != '\0' && strcmp(argument, "STATUS") != 0) {
+      Serial.println("RTL_SPLASH_GATE_INVALID use RTL_SPLASH_GATE [ON|OFF|STATUS]");
+      return;
+    }
+    Serial.printf("RTL_SPLASH_GATE enabled=%d\n", preferences.getBool("splash_gate", true) ? 1 : 0);
+    return;
+  }
   if (strcmp(command, "RTL_HELP") == 0) {
     Serial.println("RTL_HELP_BEGIN");
     Serial.println("RTL_STATUS                    - device connection info");
@@ -15374,6 +15389,7 @@ void process_command(char* command) {
     Serial.println("RTL_HEALTH                    - heap, task and reset diagnostics");
     Serial.println("RTL_SD_SELF_CHECK             - authenticated file semantics check");
     Serial.println("RTL_SD_BENCH [4..64]          - authenticated temporary-file SD write benchmark");
+    Serial.println("RTL_SPLASH_GATE [ON|OFF]      - boot splash waits for the OrcSDR button (set: auth)");
     Serial.println("RTL_RESET                     - authenticated software reset");
     Serial.println("RTL_USB_SAFE_MODE_STATUS      - USB crash-guard state");
     Serial.println("RTL_USB_SAFE_MODE_RESET CONFIRM - unplug receiver, then clear guard and restart (auth)");
@@ -16825,7 +16841,13 @@ void setup() {
   /* Unattended reboots (panic, C6 update) still land on Home. Hosted/Wi-Fi
    * bring-up stays deferred to loop(). */
   constexpr uint32_t kSplashAutoEnterMs = 30000;
-  (void)orcsdr_splash_wait_start(kSplashAutoEnterMs);
+  // RTL_SPLASH_GATE OFF (regression runs that reboot the device) skips the
+  // button so each boot reaches Home unattended.
+  if (preferences.getBool("splash_gate", true)) {
+    (void)orcsdr_splash_wait_start(kSplashAutoEnterMs);
+  } else {
+    Serial.println("BOOT_SPLASH_GATE off");
+  }
   orcsdr_splash_end();
   g_suppress_home_paint = false;
   show_home();
