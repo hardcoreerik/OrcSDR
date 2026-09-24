@@ -35,6 +35,8 @@ param(
   # Set the boot splash button gate and exit (Off for reboot-based test runs).
   [ValidateSet('On', 'Off')]
   [string]$SetSplashGate,
+  # Authenticate, send each command, print the first reply line, and exit.
+  [string[]]$SendCommand,
   [ValidateRange(4, 64)]
   [int]$SdBenchmarkMiB = 32,
   [ValidatePattern('^[A-Za-z0-9_-]{1,31}$')]
@@ -1816,6 +1818,17 @@ try {
   $script:serial.DiscardInBuffer()
 
   if ($ResetDevice) { Reset-DeviceBaseline }
+
+  if ($SendCommand) {
+    Wait-DeviceReady 60
+    Connect-Authenticated
+    foreach ($command in $SendCommand) {
+      Write-SoakLine "RTL_UI_SOAK_SEND $command"
+      $script:serial.WriteLine($command)
+      Drain-SerialOutput 800 5000
+    }
+    exit 0
+  }
 
   if ($SetSplashGate) {
     Wait-DeviceReady 60
