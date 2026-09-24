@@ -64,8 +64,8 @@ bool File::available() const {
 size_t File::size() const { return 0; }
 size_t File::position() const { return !state_ || !state_->stream ? 0 : static_cast<size_t>(ftell(state_->stream)); }
 bool File::seek(size_t position) { return state_ && state_->stream && fseek(state_->stream, static_cast<long>(position), SEEK_SET) == 0; }
-void File::flush() { if (state_ && state_->stream) fflush(state_->stream); }
-void File::close() { state_.reset(); }
+bool File::flush() { return !state_ || !state_->stream || fflush(state_->stream) == 0; }
+bool File::close() { state_.reset(); return true; }
 bool File::isDirectory() const { return state_ && state_->directory; }
 const char* File::name() const { return state_ ? state_->path.c_str() : ""; }
 uint64_t File::getLastWrite() const { return 0; }

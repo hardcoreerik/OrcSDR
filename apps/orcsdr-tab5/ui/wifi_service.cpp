@@ -7,6 +7,7 @@ extern "C" {
 #include <esp_event.h>
 #include <esp_hosted.h>
 #include <esp_hosted_ota.h>
+#include <eh_host_event.h>
 #include <esp_hosted_transport_config.h>
 #include <esp_log.h>
 #include <esp_netif.h>
@@ -150,6 +151,22 @@ void on_wifi_event(void*, esp_event_base_t base, int32_t id, void* data) {
   }
 }
 
+// The SDIO link to the C6 can fail after bring-up (every CMD53 times out).
+// Hosted RPCs then block 5 s each, so a link failure must stop all polling.
+std::atomic<bool> g_link_failed{false};
+
+void mark_link_failed(const char* why) {
+  if (g_link_failed.exchange(true, std::memory_order_acq_rel)) return;
+  g_connected.store(false, std::memory_order_release);
+  g_failed.store(true, std::memory_order_release);
+  ESP_LOGE("orcsdr_wifi", "RTL_WIFI_LINK_LOST reason=%s", why);
+}
+
+void on_hosted_event(void*, esp_event_base_t, int32_t id, void*) {
+  if (id == EH_HOST_EVENT_TRANSPORT_FAILURE) mark_link_failed("transport_failure");
+  if (id == EH_HOST_EVENT_TRANSPORT_DOWN) mark_link_failed("transport_down");
+}
+
 void on_ip_event(void*, esp_event_base_t, int32_t, void* data) {
   const auto* event = static_cast<ip_event_got_ip_t*>(data);
   g_ip_addr.store(event->ip_info.ip.addr, std::memory_order_release);
@@ -214,6 +231,7 @@ bool start() {
   const esp_err_t wifi_event = esp_event_handler_register(
       WIFI_EVENT, ESP_EVENT_ANY_ID, on_wifi_event, nullptr);
   if (wifi_event != ESP_OK) { g_failure_stage = "wifi_event"; g_failure_code = wifi_event; return false; }
+  (void)esp_event_handler_register(EH_HOST_EVENT, ESP_EVENT_ANY_ID, on_hosted_event, nullptr);
   const esp_err_t ip_event = esp_event_handler_register(
       IP_EVENT, IP_EVENT_STA_GOT_IP, on_ip_event, nullptr);
   if (ip_event != ESP_OK) { g_failure_stage = "ip_event"; g_failure_code = ip_event; return false; }
@@ -286,7 +304,28 @@ const char* ip() {
   snprintf(snapshot, sizeof(snapshot), IPSTR, IP2STR(&address));
   return snapshot;
 }
-int16_t rssi() { wifi_ap_record_t ap{}; return esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? ap.rssi : 0; }
+int16_t rssi() {
+  // Called from UI refreshes: never issue the RPC over a dead link, and at
+  // most every 5 s. Two consecutive failures while connected mark the link
+  // failed (covers bus faults that do not post a transport event).
+  static int16_t cached = 0;
+  static uint32_t last_ms = 0;
+  static uint8_t failures = 0;
+  if (g_link_failed.load(std::memory_order_acquire) ||
+      !g_connected.load(std::memory_order_acquire)) return 0;
+  const uint32_t now = static_cast<uint32_t>(esp_log_timestamp());
+  if (last_ms != 0 && now - last_ms < 5000) return cached;
+  last_ms = now;
+  wifi_ap_record_t ap{};
+  if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+    failures = 0;
+    cached = ap.rssi;
+  } else if (++failures >= 2) {
+    mark_link_failed("rpc_timeouts");
+  }
+  return cached;
+}
+bool link_failed() { return g_link_failed.load(std::memory_order_acquire); }
 bool hosted_versions_match() { return g_versions_match; }
 const char* hosted_c6_version() { return g_c6_version; }
 bool hosted_transport_ready() { return g_hosted_transport_ready; }

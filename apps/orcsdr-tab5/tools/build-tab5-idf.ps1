@@ -1,6 +1,11 @@
 param(
   [string]$IdfPath = 'C:\Espressif\frameworks\esp-idf-v5.5.4',
-  [string]$C6Firmware
+  # Defaults to the pinned ESP-Hosted image (built once and cached) so
+  # developer builds embed the same C6 update image as releases.
+  [string]$C6Firmware,
+  # Build without an embedded C6 image; Firmware & Updates then reports
+  # the update image as not included.
+  [switch]$WithoutC6
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,6 +14,10 @@ $env:PYTHONIOENCODING = 'utf-8'
 $env:IDF_PYTHON_ENV_PATH = 'C:\Espressif\python_env\idf5.5_py3.14_env'
 $env:PATH = "$env:IDF_PYTHON_ENV_PATH\Scripts;$env:PATH"
 $resolvedC6Firmware = $null
+if ($WithoutC6 -and $C6Firmware) { throw 'Use either -C6Firmware or -WithoutC6, not both.' }
+if (-not $WithoutC6 -and -not $C6Firmware) {
+  $C6Firmware = & (Join-Path $PSScriptRoot 'resolve-hosted-c6.ps1') -IdfPath $IdfPath
+}
 if ($C6Firmware) {
   if (-not (Test-Path -LiteralPath $C6Firmware -PathType Leaf)) {
     throw "C6 firmware does not exist: $C6Firmware"

@@ -697,7 +697,7 @@ void worker(void*) {
   vTaskDelete(nullptr);
 }
 
-bool request(Operation operation, uint8_t pack_index, bool needs_wifi) {
+bool request(Operation operation, uint8_t pack_index) {
   if (g_fs == nullptr) {
     set_message("SD storage unavailable");
     return false;
@@ -706,7 +706,7 @@ bool request(Operation operation, uint8_t pack_index, bool needs_wifi) {
     set_message("Catalog operation already running");
     return false;
   }
-  if (needs_wifi && !orcsdr::wifi::connected()) {
+  if (operation != Operation::remove && !orcsdr::wifi::connected()) {
     set_message("Connect Wi-Fi before downloading");
     return false;
   }
@@ -735,12 +735,42 @@ bool request(Operation operation, uint8_t pack_index, bool needs_wifi) {
 void begin(orcsdr::storage::FileSystem* filesystem, uint64_t free_bytes) {
   g_fs = filesystem;
   g_free_bytes = free_bytes;
+  // Packs already on the card (preloaded or installed earlier) are usable
+  // offline, since their loaders read these fixed paths directly. Report them
+  // as installed without waiting for a network catalog check. Runs before any
+  // catalog worker exists, so it does not race worker file access.
+  static constexpr const char* kOfflinePaths[kBuiltInPackCount][2] = {
+      {"/orcsdr/data/adsb_aircraft.idx", "/orcsdr/adsb_aircraft.idx"},
+      {"/orcsdr/data/faa_aviation.idx", nullptr},
+      {"/orcsdr/data/noaa_weather.idx", nullptr},
+      {"/orcsdr/data/fcc_broadcast.idx", nullptr},
+      {"/orcsdr/data/lane_county_map.idx", nullptr}};
+  bool installed[kBuiltInPackCount]{};
+  char versions[kBuiltInPackCount][sizeof(PackView::version)]{};
+  for (uint8_t i = 0; filesystem != nullptr && g_worker == nullptr && i < kBuiltInPackCount; ++i) {
+    for (const char* path : kOfflinePaths[i]) {
+      if (path == nullptr || !filesystem->exists(path)) continue;
+      installed[i] = true;
+      char version_path[112]{};
+      snprintf(version_path, sizeof(version_path), "%s.ver", path);
+      File version = filesystem->open(version_path, FILE_READ);
+      if (version) {
+        const size_t used = version.readBytesUntil('\n', versions[i], sizeof(versions[i]) - 1);
+        versions[i][used] = '\0';
+        version.close();
+      }
+      break;
+    }
+  }
   portENTER_CRITICAL(&g_lock);
   g_state = {};
   for (uint8_t i = 0; i < kBuiltInPackCount; ++i) {
-    strlcpy(g_state.packs[i].id, kIds[i], sizeof(g_state.packs[i].id));
-    strlcpy(g_state.packs[i].title, kTitles[i], sizeof(g_state.packs[i].title));
-    strlcpy(g_state.packs[i].status, "CHECK CATALOG", sizeof(g_state.packs[i].status));
+    auto& view = g_state.packs[i];
+    strlcpy(view.id, kIds[i], sizeof(view.id));
+    strlcpy(view.title, kTitles[i], sizeof(view.title));
+    view.installed = installed[i];
+    strlcpy(view.version, versions[i], sizeof(view.version));
+    strlcpy(view.status, installed[i] ? "INSTALLED" : "CHECK CATALOG", sizeof(view.status));
   }
   portEXIT_CRITICAL(&g_lock);
 }
@@ -750,9 +780,9 @@ void poll(bool) {
   // the UI loop races the worker's File operations as soon as a manifest is
   // accepted, which can reset the shared SDMMC host.
 }
-bool request_check(bool wifi_connected) { return request(Operation::check, 0, wifi_connected); }
-bool request_install(uint8_t pack_index, bool wifi_connected) { return request(Operation::install, pack_index, wifi_connected); }
-bool request_remove(uint8_t pack_index) { return request(Operation::remove, pack_index, false); }
+bool request_check() { return request(Operation::check, 0); }
+bool request_install(uint8_t pack_index) { return request(Operation::install, pack_index); }
+bool request_remove(uint8_t pack_index) { return request(Operation::remove, pack_index); }
 
 State state() {
   State copy{};

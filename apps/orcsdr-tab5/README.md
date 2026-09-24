@@ -30,17 +30,17 @@ Serial: `RTL_TOOL RADIO|SCOPE|CAPTURE`, `RTL_REC_START|STOP|STATUS|SAVE`.
 
 ### Boot / loading splash
 
-Splash is the **loading screen** while Wi-Fi, RTL-SDR host, and NVS come up:
+The splash is the loading screen while settings, microSD, data packs, and the
+RTL-SDR come up:
 
 | Item | Detail |
 |---|---|
-| Animated | Variant 4 (`D_tviz`), packed as `OrcSDR_Splash_1280x720_60fps_10s.orsplash` on microSD (`/` or `/orcsdr/`) |
-| Decode | ESP32-P4 HW JPEG → RGB565, SD read-ahead + double RGB buffers |
-| Status line | “Loading… / Starting Wi-Fi… / Starting RTL-SDR…” during boot |
-| Start control | **OrcSDR** button appears only when boot reports **ready**; animation keeps looping until tapped |
-| Fallback | Poster JPEG or text if SD/asset/decode fails (same ready/button rules) |
-| Pack selected asset | `python tools/splash_pack.py --frames-dir docs/splash/variants/D_tviz/frames --out <asset> --fps 24 --frame-count 240 --quality 35 --tab5-native` |
-| Docs | [`docs/OrcSDR_Splash_README.md`](../../docs/OrcSDR_Splash_README.md) |
+| Image | `main/orcsdr_splash_1280x720.jpg` (the README hero image), embedded in the firmware; no microSD asset is needed |
+| Status line | Names each boot step: settings, SD card, data packs and maps, RTL-SDR USB power, RTL-SDR detection, audio; then an `SD card / RTL-SDR` summary |
+| Start control | The **OrcSDR** button appears once RTL-SDR detection finishes or times out; tap it to open Home |
+| Unattended boot | Home opens on its own after 30 s; an authenticated serial host or SD transfer ends the splash early |
+| Recovery | A P4 reset does not power-cycle the USB-A rail, so a still-powered dongle can miss detection after a warm reboot. If detection times out, OrcSDR turns the rail off for 1 s and retries once (`BOOT_RTL_RECOVERY power_cycle`); see issue #103 |
+| Regression runs | `RTL_SPLASH_GATE OFF` (authenticated, saved in NVS) skips the button so reboot tests reach Home unattended; `-SetSplashGate Off/On` in `run-tab5-ui-regression.ps1` sets it |
 
 Driver component (portable USB/stream):
 
@@ -68,6 +68,14 @@ cd apps/orcsdr-tab5
 idf.py -B build-native-hosted3 -p <PORT> flash
 ```
 
+Every build embeds the pinned ESP-Hosted 3.0.6 C6 update image
+(`tools/release/hosted-c6-release.json`), the same as release packages, so
+Firmware & Updates can update an older C6. The first build compiles it once
+into `.orcsdr-cache/hosted-c6/` beside the main checkout (shared by all
+worktrees, gitignored) and later builds reuse it after
+checking its revision and SHA-256. Pass `-C6Firmware <path>` to use a specific
+image or `-WithoutC6` to leave it out.
+
 This is a native ESP-IDF 5.5.4 build. M5Unified 0.2.20 and M5GFX 0.2.27 are
 ESP-IDF components; PlatformIO is not a supported OrcSDR build or flash path.
 The current ESP-Hosted 3.0.6 Tab5 migration, pins, and honest hardware status
@@ -85,7 +93,7 @@ device stays in download mode.
 
 The PC-facing USB Serial/JTAG connection remains available for flashing and
 also supports verified file transfer into `/orcsdr/`. A transfer started during
-the splash cleanly stops the animation first. Stop radio/recording, then run:
+the splash ends it first. Stop radio/recording, then run:
 
 `COM17` is only the current bench assignment. The ESP32-P4 connection is native
 USB Serial/JTAG, so the SerialPort baud value is metadata rather than a physical
@@ -95,14 +103,14 @@ verified downloads from the Tab5.
 
 ```powershell
 Set-Location F:\Ai\OrcSDR
-.\tools\copy_to_tab5_sd.ps1 -Path 'F:\path\asset.orsplash' -Port COM17
+.\tools\copy_to_tab5_sd.ps1 -Path 'F:\path\adsb_aircraft.idx' -Port COM17
 ```
 
 The optional second argument selects the card path:
 
 ```powershell
-.\tools\copy_to_tab5_sd.ps1 '.\asset.orsplash' `
-  '/orcsdr/OrcSDR_Splash_1280x720_60fps_10s.orsplash' -Port COM17
+.\tools\copy_to_tab5_sd.ps1 '.\adsb_aircraft.idx' `
+  '/orcsdr/data/adsb_aircraft.idx' -Port COM17
 ```
 
 Transfers use 16 KiB binary chunks, stage to `.part`, verify SHA-256 on the
@@ -112,7 +120,9 @@ This is not a Windows drive letter—the fixed USB Serial/JTAG interface remains
 the flashing/console connection.
 
 The firmware also accepts `SD_REMOVE <ASCII-path-as-hex>` for files below
-`/orcsdr/` and the one legacy root splash filename. Removal is refused while
+`/orcsdr/` and the retired root splash file
+(`/OrcSDR_Splash_1280x720_60fps_10s.orsplash`), so old cards can be cleaned
+up. Removal is refused while
 radio or recording is active.
 
 ## ESP-IDF application

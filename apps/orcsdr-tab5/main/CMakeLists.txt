@@ -1,6 +1,7 @@
 set(ORCSDR_EMBED_FILES
     "orc_badge_104.png"
     "orc_badge_104.rgb565"
+    "orcsdr_splash_1280x720.jpg"
     "../ui/web_console.html"
     "../ui/web_audio.js")
 set(ORCSDR_LDFRAGMENTS)

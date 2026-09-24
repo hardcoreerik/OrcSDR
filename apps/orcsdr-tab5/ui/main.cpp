@@ -1606,9 +1606,17 @@ bool wifi_connecting = false;
 // Power Off remains a separate, conservative path until its freeze is isolated.
 bool wifi_poweroff_radio_paused = false;
 bool wifi_connect_radio_paused = false;
+bool wifi_c6_probe_radio_paused = false;
 bool radio_io_resume_pending = false;
 bool radio_io_speaker_resume_pending = false;
 bool wifi_save_after_connect = false;
+// Auto-connect ("start Wi-Fi at boot") retries a failed boot connect and
+// reconnects after an unexpected drop, with backoff. A user disconnect or
+// Wi-Fi power-off disarms it.
+bool wifi_auto_reconnect_armed = false;
+uint8_t wifi_reconnect_attempts = 0;
+uint32_t wifi_reconnect_due_ms = 0;
+constexpr uint32_t kWifiReconnectBackoffMs[] = {3000, 10000, 30000, 60000, 120000};
 uint32_t wifi_connect_started_ms = 0;
 int wifi_network_count = -1;
 char wifi_ssid[33]{};
@@ -1695,10 +1703,12 @@ enum class BootInitStage : uint8_t {
   idle,
   usb_power_settle,
   rtl_enumerating,
+  rtl_power_recover,
   speaker_settle,
   ready,
 };
 BootInitStage boot_init_stage = BootInitStage::idle;
+bool boot_rtl_power_recovered = false;
 uint32_t boot_init_stage_started_ms = 0;
 bool boot_auto_start_allowed = false;
 uint32_t power_monitor_until_ms = 0;
@@ -5213,6 +5223,7 @@ bool sd_put_path_allowed(const char* path) {
 }
 
 bool sd_remove_path_allowed(const char* path) {
+  // The retired animated splash lived at the card root; keep it removable.
   return sd_put_path_allowed(path) ||
          strcmp(path, "/OrcSDR_Splash_1280x720_60fps_10s.orsplash") == 0;
 }
@@ -9006,6 +9017,32 @@ bool pause_radio_for_catalog();
 void resume_radio_after_catalog();
 bool pause_radio_for_io(bool& paused);
 void resume_radio_after_io(bool& paused);
+void schedule_wifi_reconnect(const char* why);
+// Issue #82: read the C6 version once after boot even when Wi-Fi is off, so
+// Firmware & Updates reports current/update-ready instead of "unknown". This
+// reuses the full Settings/#66 bring-up path (Hosted link + esp_wifi_init);
+// bringing up Hosted alone corrupted the internal heap. When Wi-Fi power is
+// off, the Wi-Fi radio is stopped again right after the version is read.
+void probe_wifi_coprocessor() {
+  if (wifi_station_ready || orcsdr::wifi::hosted_transport_ready()) return;
+  if (!pause_radio_for_io(wifi_c6_probe_radio_paused)) {
+    Serial.println("RTL_WIFI_C6_PROBE_ERROR radio_pause_failed");
+    return;
+  }
+  initialize_wifi();
+  if (wifi_station_ready && !settings_wifi_power_enabled) {
+    orcsdr::wifi::stop();
+    wifi_station_ready = false;
+    strlcpy(wifi_status_message, "Wi-Fi off", sizeof(wifi_status_message));
+  }
+  resume_radio_after_io(wifi_c6_probe_radio_paused);
+  Serial.printf("RTL_WIFI_C6_PROBE transport=%d version=%s match=%d stage=%s wifi_power=%d\n",
+                orcsdr::wifi::hosted_transport_ready() ? 1 : 0, wifi_hosted_c6_version,
+                orcsdr::wifi::hosted_versions_match() ? 1 : 0, wifi_hosted_failure_stage,
+                settings_wifi_power_enabled ? 1 : 0);
+  update_global_settings();
+}
+
 void start_wifi_inventory() {
   if (!settings_wifi_power_enabled) return;
   if (wifi_scan_running) return;
@@ -9042,6 +9079,7 @@ void start_wifi_connection() {
   if (!pause_radio_for_io(wifi_connect_radio_paused)) {
     strlcpy(wifi_status_message, "Radio pause failed", sizeof(wifi_status_message));
     Serial.println("RTL_WIFI_CONNECT_ERROR radio_pause_failed");
+    schedule_wifi_reconnect("radio_pause_failed");
     return;
   }
   // Hosted initialization is part of the connection's exclusive I/O window.
@@ -9076,6 +9114,8 @@ void start_wifi_connection() {
 }
 
 void stop_wifi() {
+  wifi_auto_reconnect_armed = false;
+  wifi_reconnect_due_ms = 0;
   if (!pause_radio_for_io(wifi_poweroff_radio_paused)) {
     strlcpy(wifi_status_message, "Radio pause failed", sizeof(wifi_status_message));
     Serial.println("RTL_WIFI_OFF_ERROR radio_pause_failed");
@@ -9097,6 +9137,8 @@ void stop_wifi() {
 }
 
 bool disconnect_wifi() {
+  wifi_auto_reconnect_armed = false;
+  wifi_reconnect_due_ms = 0;
   wifi_connect_requested.store(false, std::memory_order_release);
   wifi_connecting = false;
   wifi_save_after_connect = false;
@@ -9121,7 +9163,8 @@ bool pause_radio_for_io(bool& paused) {
   if (paused) return true;
   // Overlapping I/O clients share one physical pause. Each keeps its own flag
   // so the final client to finish is the only one that resumes the radio.
-  if (catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused) {
+  if (catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused ||
+      wifi_c6_probe_radio_paused) {
     paused = true;
     return true;
   }
@@ -9163,7 +9206,8 @@ bool pause_radio_for_io(bool& paused) {
 void resume_radio_after_io(bool& paused) {
   if (!paused) return;
   paused = false;
-  if (catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused) return;
+  if (catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused ||
+      wifi_c6_probe_radio_paused) return;
   const bool resume_radio = radio_io_resume_pending;
   const bool resume_speaker = radio_io_speaker_resume_pending;
   radio_io_resume_pending = false;
@@ -9180,11 +9224,37 @@ void resume_radio_after_io(bool& paused) {
 bool pause_radio_for_catalog() { return pause_radio_for_io(catalog_radio_paused); }
 void resume_radio_after_catalog() { resume_radio_after_io(catalog_radio_paused); }
 
+void schedule_wifi_reconnect(const char* why) {
+  if (!settings_wifi_power_enabled || !settings_wifi_start_at_boot || !wifi_profile_count) return;
+  if (wifi_reconnect_attempts >= std::size(kWifiReconnectBackoffMs)) {
+    Serial.printf("RTL_WIFI_RECONNECT_GIVE_UP reason=%s attempts=%u\n", why,
+                  static_cast<unsigned>(wifi_reconnect_attempts));
+    return;
+  }
+  const uint32_t delay_ms = kWifiReconnectBackoffMs[wifi_reconnect_attempts++];
+  wifi_reconnect_due_ms = millis() + delay_ms;
+  if (wifi_reconnect_due_ms == 0) wifi_reconnect_due_ms = 1;
+  Serial.printf("RTL_WIFI_RECONNECT_SCHEDULED reason=%s attempt=%u delay_ms=%lu\n", why,
+                static_cast<unsigned>(wifi_reconnect_attempts),
+                static_cast<unsigned long>(delay_ms));
+}
+
 void poll_wifi() {
   if (!settings_wifi_power_enabled) {
     wifi_scan_requested.store(false, std::memory_order_release);
     wifi_connect_requested.store(false, std::memory_order_release);
     return;
+  }
+  if (wifi_reconnect_due_ms != 0 &&
+      static_cast<int32_t>(millis() - wifi_reconnect_due_ms) >= 0 &&
+      !wifi_connecting && !wifi_connected && !wifi_scan_running) {
+    wifi_reconnect_due_ms = 0;
+    if (settings_wifi_start_at_boot && wifi_profile_count) {
+      if (!wifi_ssid[0]) select_wifi_profile(0);
+      wifi_save_after_connect = false;
+      wifi_connect_requested.store(true, std::memory_order_release);
+      Serial.printf("RTL_WIFI_RECONNECT attempt=%u\n", static_cast<unsigned>(wifi_reconnect_attempts));
+    }
   }
   if (wifi_scan_requested.exchange(false, std::memory_order_acq_rel)) start_wifi_inventory();
   if (wifi_connect_requested.exchange(false, std::memory_order_acq_rel)) {
@@ -9244,6 +9314,9 @@ void poll_wifi() {
   const bool connected = orcsdr::wifi::connected();
   if (wifi_connecting && connected) {
     wifi_connecting = false;
+    wifi_auto_reconnect_armed = settings_wifi_start_at_boot;
+    wifi_reconnect_attempts = 0;
+    wifi_reconnect_due_ms = 0;
     Serial.println("RTL_WIFI_CONNECTED");
     if (wifi_save_after_connect) {
       int existing = -1;
@@ -9286,10 +9359,24 @@ void poll_wifi() {
     }
     strlcpy(wifi_status_message, "Connection failed", sizeof(wifi_status_message));
     log_wifi_coexistence("connect_failed", millis() - wifi_connect_started_ms);
+    schedule_wifi_reconnect("connect_failed");
     resume_radio_after_io(wifi_connect_radio_paused);
     state_changed = true;
   }
-  if (connected != wifi_connected) {
+  if (orcsdr::wifi::link_failed() && (wifi_connected || wifi_connecting)) {
+    // Reconnecting over a dead Hosted link would only block on RPC timeouts.
+    wifi_connecting = false;
+    wifi_reconnect_due_ms = 0;
+    strlcpy(wifi_status_message, "Wi-Fi link lost - restart Wi-Fi", sizeof(wifi_status_message));
+    Serial.println("RTL_WIFI_LINK_LOST");
+    resume_radio_after_io(wifi_connect_radio_paused);
+    wifi_connected = false;
+    state_changed = true;
+  } else if (connected != wifi_connected) {
+    if (wifi_connected && !connected && !wifi_connecting && wifi_auto_reconnect_armed) {
+      strlcpy(wifi_status_message, "Wi-Fi lost - reconnecting", sizeof(wifi_status_message));
+      schedule_wifi_reconnect("link_lost");
+    }
     wifi_connected = connected;
     state_changed = true;
   }
@@ -11997,7 +12084,10 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
         orcsdr::catalog::begin(g_sd_fs, sd_total_bytes() -
             orcsdr::storage::used_bytes());
         (void)orcsdr::offline_map::load(g_sd_fs);
-        if (!pause_radio_for_catalog() || !orcsdr::catalog::request_check(wifi_connected)) {
+        if (!orcsdr::wifi::connected()) {
+          (void)orcsdr::catalog::request_check();
+          Serial.println("ORC_CATALOG_CHECK_REJECTED");
+        } else if (!pause_radio_for_catalog() || !orcsdr::catalog::request_check()) {
           resume_radio_after_catalog();
           Serial.println("ORC_CATALOG_CHECK_REJECTED");
         }
@@ -12016,8 +12106,11 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
     case orcsdr::settings::ActionKind::catalog_install:
       if (orcsdr::catalog::state().busy) {
         Serial.println("ORC_CATALOG_INSTALL_REJECTED");
+      } else if (!orcsdr::wifi::connected()) {
+        (void)orcsdr::catalog::request_install(static_cast<uint8_t>(action.value));
+        Serial.println("ORC_CATALOG_INSTALL_REJECTED");
       } else if (!pause_radio_for_catalog() ||
-          !orcsdr::catalog::request_install(static_cast<uint8_t>(action.value), wifi_connected)) {
+          !orcsdr::catalog::request_install(static_cast<uint8_t>(action.value))) {
         resume_radio_after_catalog();
         Serial.println("ORC_CATALOG_INSTALL_REJECTED");
       }
@@ -12413,8 +12506,17 @@ void load_state() {
         rtl_requested_frequency_hz.store(rtl_ui_frequency_hz, std::memory_order_release);
         rtl_filter_bandwidth_hz.store(rtl_filter_default_hz(stored_band),
                                       std::memory_order_relaxed);
+      } else if (stored_band != RtlBand::fm) {
+        // WX, CB, shortwave, browse and ADS-B would otherwise keep the FM
+        // frequency loaded above, so boot auto-start briefly tuned e.g. WX to
+        // 99.13 MHz before the dashboard corrected it.
+        rtl_ui_frequency_hz = rtl_band_default_frequency(stored_band);
+        rtl_requested_frequency_hz.store(rtl_ui_frequency_hz, std::memory_order_release);
+        rtl_filter_bandwidth_hz.store(rtl_filter_default_hz(stored_band),
+                                      std::memory_order_relaxed);
       }
-      Serial.printf("RTL_BAND_RESTORE band=%s\n", rtl_band_name(stored_band));
+      Serial.printf("RTL_BAND_RESTORE band=%s frequency_hz=%u\n", rtl_band_name(stored_band),
+                    rtl_ui_frequency_hz);
     }
   }
   uint8_t recent[orcsdr::dashboards::kRecentCapacity]{};
@@ -12609,7 +12711,12 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
   rtl_ui_band = band;
   rtl_ui_frequency_hz = frequency_hz;
   rtl_continuous_requested.store(true, std::memory_order_release);
-  if (catalog_radio_paused) {
+  // Any exclusive I/O window (catalog, Wi-Fi connect/scan, power-off, C6
+  // check) defers the start until resume_radio_after_io(). Starting here
+  // anyway put USB streaming on top of a Hosted connect, which then timed
+  // out (boot auto-start during the #66 start-at-boot connect).
+  if (catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused ||
+      wifi_c6_probe_radio_paused) {
     radio_io_resume_pending = true;
   } else {
     const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
@@ -15318,6 +15425,21 @@ void process_command(char* command) {
     (void)orcsdr::storage::run_write_benchmark(file_mib);
     return;
   }
+  if (strncmp(command, "RTL_SPLASH_GATE", 15) == 0) {
+    const char* argument = command[15] == ' ' ? command + 16 : command + 15;
+    if (strcmp(argument, "ON") == 0 || strcmp(argument, "OFF") == 0) {
+      if (!authenticated) {
+        Serial.println("RTL_SPLASH_GATE_ERROR auth_required");
+        return;
+      }
+      preferences.putBool("splash_gate", strcmp(argument, "ON") == 0);
+    } else if (argument[0] != '\0' && strcmp(argument, "STATUS") != 0) {
+      Serial.println("RTL_SPLASH_GATE_INVALID use RTL_SPLASH_GATE [ON|OFF|STATUS]");
+      return;
+    }
+    Serial.printf("RTL_SPLASH_GATE enabled=%d\n", preferences.getBool("splash_gate", true) ? 1 : 0);
+    return;
+  }
   if (strcmp(command, "RTL_HELP") == 0) {
     Serial.println("RTL_HELP_BEGIN");
     Serial.println("RTL_STATUS                    - device connection info");
@@ -15328,6 +15450,7 @@ void process_command(char* command) {
     Serial.println("RTL_HEALTH                    - heap, task and reset diagnostics");
     Serial.println("RTL_SD_SELF_CHECK             - authenticated file semantics check");
     Serial.println("RTL_SD_BENCH [4..64]          - authenticated temporary-file SD write benchmark");
+    Serial.println("RTL_SPLASH_GATE [ON|OFF]      - boot splash waits for the OrcSDR button (set: auth)");
     Serial.println("RTL_RESET                     - authenticated software reset");
     Serial.println("RTL_USB_SAFE_MODE_STATUS      - USB crash-guard state");
     Serial.println("RTL_USB_SAFE_MODE_RESET CONFIRM - unplug receiver, then clear guard and restart (auth)");
@@ -16158,6 +16281,9 @@ void process_command(char* command) {
     print_hex(signature, sizeof(signature));
     Serial.println();
     authenticated = true;
+    // An authenticated host (e.g. the UI regression scripts) takes over from
+    // the boot splash instead of waiting behind the OrcSDR button.
+    if (orcsdr_splash_is_active()) orcsdr_splash_end();
     offline_transition_handled = false;
     last_ping_ms = millis();
     set_online();
@@ -16369,6 +16495,7 @@ const char* boot_init_stage_name(BootInitStage stage) {
   switch (stage) {
     case BootInitStage::usb_power_settle: return "usb_power_settle";
     case BootInitStage::rtl_enumerating: return "rtl_enumerating";
+    case BootInitStage::rtl_power_recover: return "rtl_power_recover";
     case BootInitStage::speaker_settle: return "speaker_settle";
     case BootInitStage::ready: return "ready";
     default: return "idle";
@@ -16409,6 +16536,18 @@ void service_boot_device_staging() {
       if (!rtl_device_ready()) {
         if (elapsed_ms >= 8000) {
           Serial.println("BOOT_RTL_TIMEOUT no_device");
+          // A P4 reset does not reset the IO-expander USB-A rail, so after a
+          // warm reboot the dongle is still powered and may be wedged
+          // mid-stream: enumeration fails or it never attaches. Power-cycle
+          // the rail once and retry detection instead of giving up.
+          if (!boot_rtl_power_recovered) {
+            boot_rtl_power_recovered = true;
+            M5.Power.setExtOutput(false, m5::ext_USB);
+            set_rtl_sdr_status("Boot: power-cycling RTL-SDR");
+            Serial.println("BOOT_RTL_RECOVERY power_cycle off_ms=1000");
+            set_boot_init_stage(BootInitStage::rtl_power_recover);
+            return;
+          }
           boot_auto_start_allowed = true;
           log_dram_budget("usb_timeout");
           set_boot_init_stage(BootInitStage::ready);
@@ -16418,6 +16557,13 @@ void service_boot_device_staging() {
       resume_rtl_speaker();
       log_dram_budget("after_speaker");
       set_boot_init_stage(BootInitStage::speaker_settle);
+      return;
+    case BootInitStage::rtl_power_recover:
+      // 1 s off lets the dongle's supply capacitors discharge fully.
+      if (elapsed_ms < 1000) return;
+      M5.Power.setExtOutput(true, m5::ext_USB);
+      set_rtl_sdr_status("Boot: detecting RTL-SDR");
+      set_boot_init_stage(BootInitStage::rtl_enumerating);
       return;
     case BootInitStage::speaker_settle:
       if (elapsed_ms < 300) return;
@@ -16674,6 +16820,11 @@ void setup() {
   /* The microSD card and Hosted C6 use separate slots on the same SDMMC host.
    * Initialize them sequentially; issue #66 defers Hosted until after boot. */
   g_suppress_home_paint = true;
+  /* Loading splash (embedded image) owns the display for the rest of boot and
+   * names each step as it runs. It also powers and mounts the microSD card,
+   * which ensure_tab5_sd() adopts below. */
+  (void)orcsdr_splash_begin();
+  orcsdr_splash_set_status("Loading settings…");
   uint8_t mac[6];
   esp_read_mac(mac, ESP_MAC_BASE);
   snprintf(node_id, sizeof(node_id), "m5tab5_%02x%02x%02x%02x%02x%02x",
@@ -16710,22 +16861,54 @@ void setup() {
   }
   apply_wifi_antenna();
   if (!settings_wifi_power_enabled) stop_wifi();
+  orcsdr_splash_set_status("Checking SD card…");
   if (ensure_tab5_sd()) {
+    orcsdr_splash_set_status("Loading data packs and maps…");
     (void)orcsdr::rf_lab::initialize(g_sd_fs);
     load_pocsag_scan_list();
     orcsdr::catalog::begin(g_sd_fs, sd_total_bytes() - orcsdr::storage::used_bytes());
     (void)orcsdr::offline_map::load(g_sd_fs);
     refresh_adsb_atc_preset();
   }
-  /* Loading splash owns the display while SD-backed splash assets load. */
-  (void)orcsdr_splash_begin();
-  orcsdr_splash_set_status("Starting RTL-SDR USB host…");
   begin_boot_device_staging();
-  /* Dependencies are up: reveal the gate while the background keeps looping. */
+  /* Bring up the attached RTL-SDR while the splash is showing. The OrcSDR
+   * button appears once enumeration finishes or times out; a serial SD
+   * transfer or authenticated host session ends the splash early and loop()
+   * finishes the staging. */
+  BootInitStage shown_stage = BootInitStage::idle;
+  while (boot_init_stage != BootInitStage::ready && orcsdr_splash_is_active()) {
+    if (boot_init_stage != shown_stage) {
+      shown_stage = boot_init_stage;
+      orcsdr_splash_set_status(
+          shown_stage == BootInitStage::usb_power_settle ? "Powering RTL-SDR USB port…"
+          : shown_stage == BootInitStage::rtl_enumerating
+              ? (boot_rtl_power_recovered ? "Retrying RTL-SDR detection…" : "Detecting RTL-SDR…")
+          : shown_stage == BootInitStage::rtl_power_recover ? "Power-cycling RTL-SDR…"
+          : shown_stage == BootInitStage::speaker_settle ? "Starting audio…"
+                                                          : "Starting…");
+    }
+    service_boot_device_staging();
+    orcsdr_splash_poll_serial();
+    delay(10);
+  }
   orcsdr_splash_set_ready(true);
-  /* Splash ends on its own so reboot lands on Home without a tap. */
-  constexpr bool kSkipSplashGate = true;
-  if (!kSkipSplashGate) (void)orcsdr_splash_wait_start();
+  char boot_summary[80];
+  snprintf(boot_summary, sizeof(boot_summary), "SD card: %s   |   RTL-SDR: %s",
+           g_sd_ready ? "ready" : "not found",
+           rtl_device_ready() ? "ready" : "not detected");
+  orcsdr_splash_set_status(boot_summary);
+  Serial.printf("BOOT_SPLASH_SUMMARY sd=%d rtl=%d\n", g_sd_ready ? 1 : 0,
+                rtl_device_ready() ? 1 : 0);
+  /* Unattended reboots (panic, C6 update) still land on Home. Hosted/Wi-Fi
+   * bring-up stays deferred to loop(). */
+  constexpr uint32_t kSplashAutoEnterMs = 30000;
+  // RTL_SPLASH_GATE OFF (regression runs that reboot the device) skips the
+  // button so each boot reaches Home unattended.
+  if (preferences.getBool("splash_gate", true)) {
+    (void)orcsdr_splash_wait_start(kSplashAutoEnterMs);
+  } else {
+    Serial.println("BOOT_SPLASH_GATE off");
+  }
   orcsdr_splash_end();
   g_suppress_home_paint = false;
   show_home();
@@ -16760,6 +16943,14 @@ void loop() {
     } else {
       Serial.println("RTL_WIFI_BOOT_SKIP_NO_AUTOCONNECT issue66");
     }
+  }
+  static bool c6_probe_done = false;
+  if (!c6_probe_done && !wifi_boot_bringup_pending && millis() >= kWifiBootDeferMs) {
+    c6_probe_done = true;
+    // A queued boot connect brings up the same Hosted link and reads the C6
+    // version; probing first put two radio pauses back to back and the
+    // connect's pause failed while the probe's resume was still restarting.
+    if (!wifi_connect_requested.load(std::memory_order_acquire)) probe_wifi_coprocessor();
   }
   static bool hosted_boot_status_emitted = false;
   if (!hosted_boot_status_emitted && millis() >= 10000u) {

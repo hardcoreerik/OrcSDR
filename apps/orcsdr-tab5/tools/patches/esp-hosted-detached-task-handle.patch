@@ -1,0 +1,40 @@
+diff --git a/managed_components/espressif__esp_hosted/port/os/idf/src/eh_host_port_task.c b/managed_components/espressif__esp_hosted/port/os/idf/src/eh_host_port_task.c
+--- a/managed_components/espressif__esp_hosted/port/os/idf/src/eh_host_port_task.c
++++ b/managed_components/espressif__esp_hosted/port/os/idf/src/eh_host_port_task.c
+@@ -93,16 +93,22 @@ eh_host_port_err_t eh_host_port_task_create(const eh_host_port_task_create_cfg_t
+     uint32_t depth = (uint32_t)(stack_bytes / sizeof(StackType_t));
+ 
+     BaseType_t ok;
++    /* ORCSDR-TAB5: a detached task can run to completion and free `t` in
++     * the trampoline before task creation returns; the create call then
++     * writes the handle into freed memory (heap use-after-free seen as TLSF
++     * asserts during Wi-Fi auto-init, issue #103). Detached tasks are never
++     * joined or cancelled, so they do not need the handle stored. */
++    TaskHandle_t *handle_out = detached ? NULL : &t->handle;
+ #if EH_HOST_PORT_DFLT_TASK_FROM_SPIRAM
+     /* Allocate the task's TCB + stack from external SPIRAM. Such a task
+      * MUST be torn down with vTaskDeleteWithCaps (handled in trampoline
+      * and _cancel). */
+     t->with_caps = 1;
+-    ok = xTaskCreateWithCaps(trampoline, name, depth, t, prio, &t->handle,
++    ok = xTaskCreateWithCaps(trampoline, name, depth, t, prio, handle_out,
+                              MALLOC_CAP_SPIRAM);
+ #else
+     t->with_caps = 0;
+-    ok = xTaskCreate(trampoline, name, depth, t, prio, &t->handle);
++    ok = xTaskCreate(trampoline, name, depth, t, prio, handle_out);
+ #endif
+     if (ok != pdPASS) {
+         /* Task never started, so `t` is still ours to free (it isn't detached-
+@@ -111,8 +117,9 @@ eh_host_port_err_t eh_host_port_task_create(const eh_host_port_task_create_cfg_t
+         free(t);
+         return EH_HOST_PORT_ERR_NOMEM;
+     }
+-    /* Detached task owns `t` on success; it may already be freed. */
+-    if (out) *out = t;
++    /* Detached task owns `t` on success; it may already be freed, so never
++     * hand it back to the caller. */
++    if (out) *out = detached ? NULL : t;
+     return EH_HOST_PORT_OK;
+ }
+ 

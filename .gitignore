@@ -35,6 +35,8 @@ Thumbs.db
 
 # Local / secrets
 .orclink/
+# Shared developer build caches (e.g. the pinned ESP-Hosted C6 image).
+.orcsdr-cache/
 *.key
 *.pem
 tmp/

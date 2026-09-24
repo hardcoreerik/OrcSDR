@@ -65,6 +65,9 @@ constexpr int kGainW = 350;
 
 Snapshot g_snapshot{};
 bool g_active = false;
+// dashboard_self_check() drives the real touch handlers at boot; keep it off
+// the display so the boot sequence does not flash Shortwave tabs.
+bool g_self_check_running = false;
 DashboardState g_state{};
 uint32_t g_saved_frequency = 7100000;
 size_t g_hunt_band = 0;
@@ -527,6 +530,7 @@ void draw_logbook() {
 }
 
 void draw_keypad() {
+  if (g_self_check_running) return;
   M5.Display.clearScrollRect();
   M5.Display.fillRect(0, 93, 1280, 627, TFT_BLACK);
   card(340, 135, 600, 470);
@@ -587,7 +591,7 @@ void leave() {
 }
 
 void draw() {
-  if (!g_active) return;
+  if (!g_active || g_self_check_running) return;
   draw_static();
   if (g_state.modal() == Modal::frequency) {
     draw_keypad();
@@ -1080,6 +1084,7 @@ bool dashboard_self_check() {
   const size_t saved_memory_page = g_memory_page;
   char saved_entry[sizeof(g_entry)];
   memcpy(saved_entry, g_entry, sizeof(g_entry));
+  g_self_check_running = true;
   Snapshot test{};
   test.controls.route = ReceiverRoute::hf_upconverter;
   test.controls.capabilities = {true, true, true, false};
@@ -1230,6 +1235,7 @@ bool dashboard_self_check() {
   g_state.open(saved_modal);
   g_state.select_tab(saved_tab);
   memcpy(g_entry, saved_entry, sizeof(g_entry));
+  g_self_check_running = false;
   return controls_ok && hidden_drawer_ok && filter_drag_ok && tuner_opens &&
           drawer_ok && modal_gestures_ok && direct_q_ok && tuner_closes && geometry_ok &&
           spectrum_layout_ok && peak_pool_ok && touch_tune_bounds_ok &&

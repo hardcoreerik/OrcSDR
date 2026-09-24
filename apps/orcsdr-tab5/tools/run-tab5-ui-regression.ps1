@@ -23,6 +23,7 @@ param(
   [switch]$WifiCoexistence,
   [switch]$WifiCoexistenceDiagnostic,
   [switch]$DataOnly,
+  [switch]$OfflineCatalog,
   [switch]$C6Update,
   [switch]$RadioScan,
   [switch]$AmBroadcast,
@@ -31,6 +32,11 @@ param(
   [switch]$IqHotTune,
   [switch]$SdSelfCheck,
   [switch]$SdBenchmark,
+  # Set the boot splash button gate and exit (Off for reboot-based test runs).
+  [ValidateSet('On', 'Off')]
+  [string]$SetSplashGate,
+  # Authenticate, send each command, print the first reply line, and exit.
+  [string[]]$SendCommand,
   [ValidateRange(4, 64)]
   [int]$SdBenchmarkMiB = 32,
   [ValidatePattern('^[A-Za-z0-9_-]{1,31}$')]
@@ -477,9 +483,41 @@ function Get-WifiStatus {
   }
 }
 
+$script:splashGateRestore = $false
+
+# Reboot-based runs must not stall on the boot splash's OrcSDR button.
+# Requires an authenticated session; restored by Restore-SplashGate.
+function Disable-SplashGate {
+  try {
+    $status = Send-And-Wait 'RTL_SPLASH_GATE STATUS' '^RTL_SPLASH_GATE enabled=[01]$' 5
+  } catch {
+    Write-SoakLine 'RTL_UI_SOAK_SPLASH_GATE unsupported=1'
+    return
+  }
+  if ($status.EndsWith('1')) {
+    [void](Send-And-Wait 'RTL_SPLASH_GATE OFF' '^RTL_SPLASH_GATE enabled=0$' 5)
+    $script:splashGateRestore = $true
+  }
+  Write-SoakLine 'RTL_UI_SOAK_SPLASH_GATE enabled=0'
+}
+
+function Restore-SplashGate {
+  if (-not $script:splashGateRestore) { return }
+  try {
+    Wait-DeviceReady 60
+    Connect-Authenticated
+    [void](Send-And-Wait 'RTL_SPLASH_GATE ON' '^RTL_SPLASH_GATE enabled=1$' 5)
+    $script:splashGateRestore = $false
+    Write-SoakLine 'RTL_UI_SOAK_SPLASH_GATE enabled=1 restored=1'
+  } catch {
+    Write-SoakLine "RTL_UI_SOAK_SPLASH_GATE restore_failed=1 hint=send_RTL_SPLASH_GATE_ON error=$($_.Exception.Message)"
+  }
+}
+
 function Reset-DeviceBaseline {
   Wait-DeviceReady 60
   Connect-Authenticated
+  Disable-SplashGate
   [void](Send-And-Wait 'RTL_RESET' '^RTL_RESETTING$')
   Write-SoakLine 'RTL_UI_SOAK_RESET serial=1'
   Start-Sleep -Seconds 1
@@ -742,6 +780,37 @@ function Wait-DriverStreaming([int]$Seconds = 30) {
     Start-Sleep -Milliseconds 500
   } while ([DateTime]::UtcNow -lt $deadline)
   throw "Radio did not resume streaming: state=$($driver.State) bytes=$($driver.Bytes)"
+}
+
+function Assert-OfflineCatalogGuard {
+  $initialWifi = Get-WifiStatus
+  try {
+    if ($initialWifi.Power -ne 0) {
+      [void](Send-And-Wait 'RTL_UI ACTION SETTINGS WIFI_POWER 0' '^RTL_UI_ACTION_OK$' 20)
+    }
+    $wifi = Get-WifiStatus
+    if ($wifi.Power -ne 0 -or $wifi.Connected -ne 0) {
+      throw "Wi-Fi did not turn off before catalog test: $($wifi.Line)"
+    }
+
+    [void](Open-Ui 'FM' 'FM')
+    $before = Wait-DriverStreaming 30
+    [void](Send-And-Wait 'RTL_CATALOG_CHECK' '^RTL_CATALOG_CHECK_REJECTED$')
+    $catalog = Send-And-Wait 'RTL_CATALOG_STATUS' '^RTL_CATALOG_STATUS '
+    if ($catalog -notmatch 'busy=0 .*message="Connect Wi-Fi before downloading"') {
+      throw "Offline catalog request was not safely rejected: $catalog"
+    }
+    Start-Sleep -Milliseconds 750
+    $after = Get-DriverStatus
+    if ($after.State -ne 'STREAMING' -or $after.Bytes -le $before.Bytes) {
+      throw "Offline catalog request interrupted radio streaming: before=$($before.Bytes) after=$($after.Bytes) state=$($after.State)"
+    }
+    Write-SoakLine "RTL_OFFLINE_CATALOG_RESULT pass=1 message=wifi_required radio_state=$($after.State) bytes_before=$($before.Bytes) bytes_after=$($after.Bytes)"
+  } finally {
+    if ($initialWifi.Power -ne 0) {
+      [void](Send-And-Wait 'RTL_UI ACTION SETTINGS WIFI_POWER 1' '^RTL_UI_ACTION_OK$' 20)
+    }
+  }
 }
 
 function Assert-DataServices {
@@ -1009,7 +1078,7 @@ if (($InstallLaneMap -or $InstallFaaAircraft) -and !$DataOnly) {
   throw '-InstallLaneMap and -InstallFaaAircraft require -DataOnly.'
 }
 if ($IqHotTune -and !$IqDiagnostic) { throw '-IqHotTune requires -IqDiagnostic.' }
-if (@($SelfCheck, $Run, $Soak, $Driver080Rc3, $WifiOnly, $WifiCoexistence, $WifiCoexistenceDiagnostic, $DataOnly, $C6Update, $RadioScan, $AmBroadcast, $GainSweep, $IqDiagnostic, $SdSelfCheck, $SdBenchmark).Where({ $_ }).Count -gt 1) {
+if (@($SelfCheck, $Run, $Soak, $Driver080Rc3, $WifiOnly, $WifiCoexistence, $WifiCoexistenceDiagnostic, $DataOnly, $OfflineCatalog, $C6Update, $RadioScan, $AmBroadcast, $GainSweep, $IqDiagnostic, $SdSelfCheck, $SdBenchmark).Where({ $_ }).Count -gt 1) {
   throw 'Choose only one primary test mode.'
 }
 if ($SelfCheck) { Invoke-SelfCheck; exit 0 }
@@ -1029,6 +1098,7 @@ function Get-C6UpdateStatus {
 function Invoke-C6UpdateTest {
   Wait-DeviceReady 60 11000
   Connect-Authenticated
+  Disable-SplashGate
   $before = Get-C6UpdateStatus
   if ($before.Transport -ne 1 -or $before.Embedded -ne 1 -or $before.State -ne 'ready') {
     throw "C6 update requires a reachable mismatched C6 and embedded release image: $($before | ConvertTo-Json -Compress)"
@@ -1749,6 +1819,26 @@ try {
 
   if ($ResetDevice) { Reset-DeviceBaseline }
 
+  if ($SendCommand) {
+    Wait-DeviceReady 60
+    Connect-Authenticated
+    foreach ($command in $SendCommand) {
+      Write-SoakLine "RTL_UI_SOAK_SEND $command"
+      $script:serial.WriteLine($command)
+      Drain-SerialOutput 800 5000
+    }
+    exit 0
+  }
+
+  if ($SetSplashGate) {
+    Wait-DeviceReady 60
+    Connect-Authenticated
+    $state = if ($SetSplashGate -eq 'On') { 1 } else { 0 }
+    [void](Send-And-Wait "RTL_SPLASH_GATE $($SetSplashGate.ToUpperInvariant())" "^RTL_SPLASH_GATE enabled=$state`$" 5)
+    Write-SoakLine "RTL_UI_SOAK_SPLASH_GATE enabled=$state"
+    exit 0
+  }
+
   if ($SdSelfCheck) {
     Wait-DeviceReady 60 11000
     Connect-Authenticated
@@ -1793,6 +1883,12 @@ try {
     exit 0
   }
   if ($IqDiagnostic) { Invoke-IqDiagnosticCapture; exit 0 }
+  if ($OfflineCatalog) {
+    Wait-DeviceReady 60 11000
+    Connect-Authenticated
+    Assert-OfflineCatalogGuard
+    exit 0
+  }
   if ($C6Update) { Invoke-C6UpdateTest; exit 0 }
   if ($RadioScan) { Invoke-RadioScanTest; exit 0 }
   if ($AmBroadcast) { Invoke-AmBroadcastTest; exit 0 }
@@ -1895,5 +1991,8 @@ try {
   Capture-ResetEvidence
   throw
 } finally {
-  if ($null -ne $script:serial -and $script:serial.IsOpen) { $script:serial.Close() }
+  if ($null -ne $script:serial -and $script:serial.IsOpen) {
+    Restore-SplashGate
+    $script:serial.Close()
+  }
 }
