@@ -9122,6 +9122,7 @@ void start_wifi_connection() {
 void stop_wifi() {
   wifi_auto_reconnect_armed = false;
   wifi_reconnect_due_ms = 0;
+  wifi_link_recovery_due_ms = 0;
   if (!pause_radio_for_io(wifi_poweroff_radio_paused)) {
     strlcpy(wifi_status_message, "Radio pause failed", sizeof(wifi_status_message));
     Serial.println("RTL_WIFI_OFF_ERROR radio_pause_failed");
@@ -9145,6 +9146,7 @@ void stop_wifi() {
 bool disconnect_wifi() {
   wifi_auto_reconnect_armed = false;
   wifi_reconnect_due_ms = 0;
+  wifi_link_recovery_due_ms = 0;
   wifi_connect_requested.store(false, std::memory_order_release);
   wifi_connecting = false;
   wifi_save_after_connect = false;
@@ -9253,7 +9255,12 @@ void recover_wifi_link() {
   }
   ++wifi_link_recoveries;
   Serial.printf("RTL_WIFI_LINK_RECOVERY attempt=%u\n", static_cast<unsigned>(wifi_link_recoveries));
-  orcsdr::wifi::begin_link_recovery();
+  if (!orcsdr::wifi::begin_link_recovery()) {
+    resume_radio_after_io(wifi_connect_radio_paused);
+    Serial.println("RTL_WIFI_LINK_RECOVERY result=deinit_failed");
+    if (wifi_link_recoveries < kWifiLinkRecoveryMax) wifi_link_recovery_due_ms = millis() + 10000;
+    return;
+  }
   wifi_station_ready = false;
   wifi_connected = false;
   wifi_connecting = false;

@@ -28,16 +28,18 @@ diff --git a/managed_components/espressif__esp_hosted/host/mcu/eh_host_mcu_trans
  		buf_cached = avail;
  	}
  
-@@ -874,9 +884,17 @@ static void sdio_tx_aggregate_iter(void)
+@@ -874,9 +884,19 @@ static void sdio_tx_aggregate_iter(void)
  				ESP_LOGE(TAG, "SDIO aggr: no slave credits (%lu consecutive)%s — "
  				         "slave stalled?", (unsigned long)sdio_aggr_credit_timeouts,
  				         has_ctrl ? " [ctrl dropped]" : "");
 +			/* ORCSDR-TAB5 (#106): report a dead link once per outage. */
 +			if (sdio_tx_unresponsive_streak >= 32 && !sdio_tx_unresponsive_reported) {
-+				sdio_tx_unresponsive_reported = true;
 +				ESP_LOGE(TAG, "SDIO aggr: slave unresponsive (%lu bus errors)",
 +				         (unsigned long)sdio_tx_unresponsive_streak);
-+				esp_event_post(EH_HOST_EVENT, (int32_t)EH_HOST_EVENT_TRANSPORT_FAILURE, NULL, 0, 0);
++				/* Mark reported only once posted, so a full event queue retries. */
++				if (esp_event_post(EH_HOST_EVENT, (int32_t)EH_HOST_EVENT_TRANSPORT_FAILURE,
++				                   NULL, 0, 0) == ESP_OK)
++					sdio_tx_unresponsive_reported = true;
 +			}
  			break;                                /* drop this aggregate */
  		}

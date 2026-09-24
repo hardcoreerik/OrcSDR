@@ -1850,8 +1850,14 @@ try {
           $quietUntil = [DateTime]::UtcNow.AddSeconds($SendQuietSeconds)
         } catch [System.TimeoutException] {}
       }
+      # Output quiet for SendQuietSeconds is treated as done; hitting the total
+      # bound while output is still arriving means the capture is incomplete.
+      if ([DateTime]::UtcNow -ge $deadline -and [DateTime]::UtcNow -lt $quietUntil) {
+        Write-SoakLine "RTL_UI_SOAK_SEND_INCOMPLETE command=`"$command`" max_seconds=$SendMaxSeconds"
+        $sendIncomplete = $true
+      }
     }
-    exit 0
+    exit $(if ($sendIncomplete) { 1 } else { 0 })
   }
 
   if ($SetSplashGate) {

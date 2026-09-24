@@ -37,7 +37,7 @@ bool link_failed();
 // Tear down a failed Hosted link so start() can bring it up again (the caller
 // power-cycles the C6 in between); end_link_recovery() re-enables failure
 // detection once start() has returned.
-void begin_link_recovery();
+bool begin_link_recovery();
 void end_link_recovery();
 bool connect_failed();
 const char* ssid();

@@ -154,7 +154,7 @@ void on_wifi_event(void*, esp_event_base_t base, int32_t id, void* data) {
 // The SDIO link to the C6 can fail after bring-up (every CMD53 times out).
 // Hosted RPCs then block 5 s each, so a link failure must stop all polling.
 std::atomic<bool> g_link_failed{false};
-// esp_hosted_deinit() posts TRANSPORT_DOWN; ignore it during a recovery.
+// Ignore stray failure events while a recovery tears down and rebuilds.
 std::atomic<bool> g_link_recovering{false};
 
 void mark_link_failed(const char* why) {
@@ -167,7 +167,8 @@ void mark_link_failed(const char* why) {
 void on_hosted_event(void*, esp_event_base_t, int32_t id, void*) {
   if (g_link_recovering.load(std::memory_order_acquire)) return;
   if (id == EH_HOST_EVENT_TRANSPORT_FAILURE) mark_link_failed("transport_failure");
-  if (id == EH_HOST_EVENT_TRANSPORT_DOWN) mark_link_failed("transport_down");
+  // TRANSPORT_DOWN is posted only by esp_hosted_deinit() (our own recovery),
+  // asynchronously; treating it as a failure could hit the new link.
 }
 
 void on_ip_event(void*, esp_event_base_t, int32_t, void* data) {
@@ -329,11 +330,17 @@ int16_t rssi() {
   return cached;
 }
 bool link_failed() { return g_link_failed.load(std::memory_order_acquire); }
-void begin_link_recovery() {
+bool begin_link_recovery() {
   g_link_recovering.store(true, std::memory_order_release);
   // No esp_wifi_stop()/disconnect(): over a dead link each RPC blocks 5 s.
   const int deinit = esp_hosted_deinit();
   ESP_LOGW("orcsdr_wifi", "link recovery: esp_hosted_deinit=%d", deinit);
+  if (deinit != 0) {
+    // Lifecycle lock timeout/error: teardown did not run, so re-init would
+    // fail on the same lock. Leave the link marked failed and retry later.
+    g_link_recovering.store(false, std::memory_order_release);
+    return false;
+  }
   // Without esp_wifi_stop() the STA netif is still added to lwIP; the next
   // WIFI_EVENT_STA_START would add it again (netif_add assert). Recreate it.
   if (g_sta_netif != nullptr) {
@@ -347,6 +354,7 @@ void begin_link_recovery() {
   g_connected.store(false, std::memory_order_release);
   g_failed.store(false, std::memory_order_release);
   g_link_failed.store(false, std::memory_order_release);
+  return true;
 }
 void end_link_recovery() { g_link_recovering.store(false, std::memory_order_release); }
 bool hosted_versions_match() { return g_versions_match; }
