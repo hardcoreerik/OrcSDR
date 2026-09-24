@@ -24,7 +24,7 @@ is talking on, plays it, waits a short hang time for a reply, then goes back to
 watching the band. CH 9 is the default priority channel and interrupts other
 traffic. Other tabs show the full-band spectrum, an activity log, the channel
 lockout list, and scanner/audio setup. Details are in the
-[CB dashboard notes](../../cb/README.md).
+[CB dashboard notes](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/cb/README.md).
 
 Only one channel is heard at a time. Levels are relative, not calibrated, and
 reception depends mostly on the antenna: a long outdoor wire or a proper
