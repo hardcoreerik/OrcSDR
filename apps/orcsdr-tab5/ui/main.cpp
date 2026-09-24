@@ -1610,6 +1610,13 @@ bool wifi_c6_probe_radio_paused = false;
 bool radio_io_resume_pending = false;
 bool radio_io_speaker_resume_pending = false;
 bool wifi_save_after_connect = false;
+// Auto-connect ("start Wi-Fi at boot") retries a failed boot connect and
+// reconnects after an unexpected drop, with backoff. A user disconnect or
+// Wi-Fi power-off disarms it.
+bool wifi_auto_reconnect_armed = false;
+uint8_t wifi_reconnect_attempts = 0;
+uint32_t wifi_reconnect_due_ms = 0;
+constexpr uint32_t kWifiReconnectBackoffMs[] = {3000, 10000, 30000, 60000, 120000};
 uint32_t wifi_connect_started_ms = 0;
 int wifi_network_count = -1;
 char wifi_ssid[33]{};
@@ -9010,6 +9017,7 @@ bool pause_radio_for_catalog();
 void resume_radio_after_catalog();
 bool pause_radio_for_io(bool& paused);
 void resume_radio_after_io(bool& paused);
+void schedule_wifi_reconnect(const char* why);
 // Issue #82: read the C6 version once after boot even when Wi-Fi is off, so
 // Firmware & Updates reports current/update-ready instead of "unknown". This
 // reuses the full Settings/#66 bring-up path (Hosted link + esp_wifi_init);
@@ -9071,6 +9079,7 @@ void start_wifi_connection() {
   if (!pause_radio_for_io(wifi_connect_radio_paused)) {
     strlcpy(wifi_status_message, "Radio pause failed", sizeof(wifi_status_message));
     Serial.println("RTL_WIFI_CONNECT_ERROR radio_pause_failed");
+    schedule_wifi_reconnect("radio_pause_failed");
     return;
   }
   // Hosted initialization is part of the connection's exclusive I/O window.
@@ -9105,6 +9114,8 @@ void start_wifi_connection() {
 }
 
 void stop_wifi() {
+  wifi_auto_reconnect_armed = false;
+  wifi_reconnect_due_ms = 0;
   if (!pause_radio_for_io(wifi_poweroff_radio_paused)) {
     strlcpy(wifi_status_message, "Radio pause failed", sizeof(wifi_status_message));
     Serial.println("RTL_WIFI_OFF_ERROR radio_pause_failed");
@@ -9126,6 +9137,8 @@ void stop_wifi() {
 }
 
 bool disconnect_wifi() {
+  wifi_auto_reconnect_armed = false;
+  wifi_reconnect_due_ms = 0;
   wifi_connect_requested.store(false, std::memory_order_release);
   wifi_connecting = false;
   wifi_save_after_connect = false;
@@ -9211,11 +9224,37 @@ void resume_radio_after_io(bool& paused) {
 bool pause_radio_for_catalog() { return pause_radio_for_io(catalog_radio_paused); }
 void resume_radio_after_catalog() { resume_radio_after_io(catalog_radio_paused); }
 
+void schedule_wifi_reconnect(const char* why) {
+  if (!settings_wifi_power_enabled || !settings_wifi_start_at_boot || !wifi_profile_count) return;
+  if (wifi_reconnect_attempts >= std::size(kWifiReconnectBackoffMs)) {
+    Serial.printf("RTL_WIFI_RECONNECT_GIVE_UP reason=%s attempts=%u\n", why,
+                  static_cast<unsigned>(wifi_reconnect_attempts));
+    return;
+  }
+  const uint32_t delay_ms = kWifiReconnectBackoffMs[wifi_reconnect_attempts++];
+  wifi_reconnect_due_ms = millis() + delay_ms;
+  if (wifi_reconnect_due_ms == 0) wifi_reconnect_due_ms = 1;
+  Serial.printf("RTL_WIFI_RECONNECT_SCHEDULED reason=%s attempt=%u delay_ms=%lu\n", why,
+                static_cast<unsigned>(wifi_reconnect_attempts),
+                static_cast<unsigned long>(delay_ms));
+}
+
 void poll_wifi() {
   if (!settings_wifi_power_enabled) {
     wifi_scan_requested.store(false, std::memory_order_release);
     wifi_connect_requested.store(false, std::memory_order_release);
     return;
+  }
+  if (wifi_reconnect_due_ms != 0 &&
+      static_cast<int32_t>(millis() - wifi_reconnect_due_ms) >= 0 &&
+      !wifi_connecting && !wifi_connected && !wifi_scan_running) {
+    wifi_reconnect_due_ms = 0;
+    if (settings_wifi_start_at_boot && wifi_profile_count) {
+      if (!wifi_ssid[0]) select_wifi_profile(0);
+      wifi_save_after_connect = false;
+      wifi_connect_requested.store(true, std::memory_order_release);
+      Serial.printf("RTL_WIFI_RECONNECT attempt=%u\n", static_cast<unsigned>(wifi_reconnect_attempts));
+    }
   }
   if (wifi_scan_requested.exchange(false, std::memory_order_acq_rel)) start_wifi_inventory();
   if (wifi_connect_requested.exchange(false, std::memory_order_acq_rel)) {
@@ -9275,6 +9314,9 @@ void poll_wifi() {
   const bool connected = orcsdr::wifi::connected();
   if (wifi_connecting && connected) {
     wifi_connecting = false;
+    wifi_auto_reconnect_armed = settings_wifi_start_at_boot;
+    wifi_reconnect_attempts = 0;
+    wifi_reconnect_due_ms = 0;
     Serial.println("RTL_WIFI_CONNECTED");
     if (wifi_save_after_connect) {
       int existing = -1;
@@ -9317,10 +9359,15 @@ void poll_wifi() {
     }
     strlcpy(wifi_status_message, "Connection failed", sizeof(wifi_status_message));
     log_wifi_coexistence("connect_failed", millis() - wifi_connect_started_ms);
+    schedule_wifi_reconnect("connect_failed");
     resume_radio_after_io(wifi_connect_radio_paused);
     state_changed = true;
   }
   if (connected != wifi_connected) {
+    if (wifi_connected && !connected && !wifi_connecting && wifi_auto_reconnect_armed) {
+      strlcpy(wifi_status_message, "Wi-Fi lost - reconnecting", sizeof(wifi_status_message));
+      schedule_wifi_reconnect("link_lost");
+    }
     wifi_connected = connected;
     state_changed = true;
   }
@@ -12655,7 +12702,12 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
   rtl_ui_band = band;
   rtl_ui_frequency_hz = frequency_hz;
   rtl_continuous_requested.store(true, std::memory_order_release);
-  if (catalog_radio_paused) {
+  // Any exclusive I/O window (catalog, Wi-Fi connect/scan, power-off, C6
+  // check) defers the start until resume_radio_after_io(). Starting here
+  // anyway put USB streaming on top of a Hosted connect, which then timed
+  // out (boot auto-start during the #66 start-at-boot connect).
+  if (catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused ||
+      wifi_c6_probe_radio_paused) {
     radio_io_resume_pending = true;
   } else {
     const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
@@ -16886,7 +16938,10 @@ void loop() {
   static bool c6_probe_done = false;
   if (!c6_probe_done && !wifi_boot_bringup_pending && millis() >= kWifiBootDeferMs) {
     c6_probe_done = true;
-    probe_wifi_coprocessor();
+    // A queued boot connect brings up the same Hosted link and reads the C6
+    // version; probing first put two radio pauses back to back and the
+    // connect's pause failed while the probe's resume was still restarting.
+    if (!wifi_connect_requested.load(std::memory_order_acquire)) probe_wifi_coprocessor();
   }
   static bool hosted_boot_status_emitted = false;
   if (!hosted_boot_status_emitted && millis() >= 10000u) {
