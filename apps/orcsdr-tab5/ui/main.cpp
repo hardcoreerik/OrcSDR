@@ -9363,7 +9363,16 @@ void poll_wifi() {
     resume_radio_after_io(wifi_connect_radio_paused);
     state_changed = true;
   }
-  if (connected != wifi_connected) {
+  if (orcsdr::wifi::link_failed() && (wifi_connected || wifi_connecting)) {
+    // Reconnecting over a dead Hosted link would only block on RPC timeouts.
+    wifi_connecting = false;
+    wifi_reconnect_due_ms = 0;
+    strlcpy(wifi_status_message, "Wi-Fi link lost - restart Wi-Fi", sizeof(wifi_status_message));
+    Serial.println("RTL_WIFI_LINK_LOST");
+    resume_radio_after_io(wifi_connect_radio_paused);
+    wifi_connected = false;
+    state_changed = true;
+  } else if (connected != wifi_connected) {
     if (wifi_connected && !connected && !wifi_connecting && wifi_auto_reconnect_armed) {
       strlcpy(wifi_status_message, "Wi-Fi lost - reconnecting", sizeof(wifi_status_message));
       schedule_wifi_reconnect("link_lost");

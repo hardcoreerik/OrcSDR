@@ -32,6 +32,8 @@ int scan_results(ScanResult* results, size_t capacity);
 bool connect(const char* ssid, const char* password);
 void disconnect();
 bool connected();
+// True once the SDIO link to the C6 has failed; Wi-Fi stays down until restart.
+bool link_failed();
 bool connect_failed();
 const char* ssid();
 const char* ip();
