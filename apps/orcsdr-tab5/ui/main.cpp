@@ -12450,8 +12450,17 @@ void load_state() {
         rtl_requested_frequency_hz.store(rtl_ui_frequency_hz, std::memory_order_release);
         rtl_filter_bandwidth_hz.store(rtl_filter_default_hz(stored_band),
                                       std::memory_order_relaxed);
+      } else if (stored_band != RtlBand::fm) {
+        // WX, CB, shortwave, browse and ADS-B would otherwise keep the FM
+        // frequency loaded above, so boot auto-start briefly tuned e.g. WX to
+        // 99.13 MHz before the dashboard corrected it.
+        rtl_ui_frequency_hz = rtl_band_default_frequency(stored_band);
+        rtl_requested_frequency_hz.store(rtl_ui_frequency_hz, std::memory_order_release);
+        rtl_filter_bandwidth_hz.store(rtl_filter_default_hz(stored_band),
+                                      std::memory_order_relaxed);
       }
-      Serial.printf("RTL_BAND_RESTORE band=%s\n", rtl_band_name(stored_band));
+      Serial.printf("RTL_BAND_RESTORE band=%s frequency_hz=%u\n", rtl_band_name(stored_band),
+                    rtl_ui_frequency_hz);
     }
   }
   uint8_t recent[orcsdr::dashboards::kRecentCapacity]{};
