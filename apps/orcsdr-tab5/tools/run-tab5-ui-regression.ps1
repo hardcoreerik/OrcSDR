@@ -35,8 +35,14 @@ param(
   # Set the boot splash button gate and exit (Off for reboot-based test runs).
   [ValidateSet('On', 'Off')]
   [string]$SetSplashGate,
-  # Authenticate, send each command, print the first reply line, and exit.
+  # Authenticate, send each command, print the device output, and exit.
   [string[]]$SendCommand,
+  # Per-command output window for -SendCommand: stop after this many quiet
+  # seconds or SendMaxSeconds in total (long commands such as RTL_SD_BENCH).
+  [ValidateRange(1, 60)]
+  [int]$SendQuietSeconds = 1,
+  [ValidateRange(1, 600)]
+  [int]$SendMaxSeconds = 5,
   [ValidateRange(4, 64)]
   [int]$SdBenchmarkMiB = 32,
   [ValidatePattern('^[A-Za-z0-9_-]{1,31}$')]
@@ -1825,9 +1831,34 @@ try {
     foreach ($command in $SendCommand) {
       Write-SoakLine "RTL_UI_SOAK_SEND $command"
       $script:serial.WriteLine($command)
-      Drain-SerialOutput 800 5000
+      # Like Drain-SerialOutput, but keeps the authenticated session alive
+      # (PING each second) so long commands do not outlive it.
+      $deadline = [DateTime]::UtcNow.AddSeconds($SendMaxSeconds)
+      $quietUntil = [DateTime]::UtcNow.AddSeconds($SendQuietSeconds)
+      $nextKeepalive = [DateTime]::UtcNow.AddSeconds(1)
+      while ([DateTime]::UtcNow -lt $deadline -and [DateTime]::UtcNow -lt $quietUntil) {
+        if ([DateTime]::UtcNow -ge $nextKeepalive) {
+          $script:serial.WriteLine('PING')
+          $nextKeepalive = [DateTime]::UtcNow.AddSeconds(1)
+        }
+        try {
+          $line = $script:serial.ReadLine().Trim()
+          if (!$line -or $line -match '^PONG') { continue }
+          $script:linesSeen++
+          Write-SoakLine $line
+          if (Test-FatalLine $line) { throw "Device crash/reset detected: $line" }
+          $quietUntil = [DateTime]::UtcNow.AddSeconds($SendQuietSeconds)
+        } catch [System.TimeoutException] {}
+      }
+      # Output quiet for SendQuietSeconds is treated as done; hitting the total
+      # bound while output is still arriving means the capture is incomplete.
+      if ([DateTime]::UtcNow -ge $deadline -and [DateTime]::UtcNow -lt $quietUntil) {
+        Write-SoakLine "RTL_UI_SOAK_SEND_INCOMPLETE command=`"$command`" max_seconds=$SendMaxSeconds"
+        $sendIncomplete = $true
+        break  # later commands would run while this one is still in progress
+      }
     }
-    exit 0
+    exit $(if ($sendIncomplete) { 1 } else { 0 })
   }
 
   if ($SetSplashGate) {

@@ -1,0 +1,50 @@
+diff --git a/managed_components/espressif__esp_hosted/host/mcu/eh_host_mcu_transport/src/eh_host_bus_sdio.c b/managed_components/espressif__esp_hosted/host/mcu/eh_host_mcu_transport/src/eh_host_bus_sdio.c
+--- a/managed_components/espressif__esp_hosted/host/mcu/eh_host_mcu_transport/src/eh_host_bus_sdio.c
++++ b/managed_components/espressif__esp_hosted/host/mcu/eh_host_mcu_transport/src/eh_host_bus_sdio.c
+@@ -681,6 +681,13 @@ static int sdio_is_write_buffer_available(uint32_t buf_needed)
+  * sdio_is_write_buffer_available above nests a 400 us→30 ms retry that would
+  * defeat that granularity under credit starvation). Own cache; SW_AGGR and the
+  * per-packet back-compat path are mutually exclusive at runtime. */
++/* ORCSDR-TAB5 (#106): consecutive bus-error credit probes. A wait that ends
++ * with the slave answering nothing but bus errors means the SDIO link is
++ * dead (e.g. C6 lost power), not credit starvation; the caller then posts
++ * EH_HOST_EVENT_TRANSPORT_FAILURE like the per-packet path does. */
++static uint32_t sdio_tx_unresponsive_streak = 0;
++static bool sdio_tx_unresponsive_reported = false;
++
+ static int sdio_tx_credit_ready(uint32_t buf_needed)
+ {
+ 	static uint32_t buf_cached = 0;
+@@ -688,8 +695,11 @@ static int sdio_tx_credit_ready(uint32_t buf_needed)
+ 	if (buf_cached < buf_needed) {
+ 		uint32_t avail = 0;
+ 		if (sdio_get_tx_buffer_num(&avail, ACQUIRE_LOCK) ==
+-				ESP_HOSTED_SDIO_UNRESPONSIVE_CODE)
++				ESP_HOSTED_SDIO_UNRESPONSIVE_CODE) {
++			sdio_tx_unresponsive_streak++;
+ 			return BUFFER_UNAVAILABLE;      /* transient; outer loop bounds it */
++		}
++		sdio_tx_unresponsive_streak = 0;
+ 		buf_cached = avail;
+ 	}
+ 
+@@ -874,9 +884,19 @@ static void sdio_tx_aggregate_iter(void)
+ 				ESP_LOGE(TAG, "SDIO aggr: no slave credits (%lu consecutive)%s — "
+ 				         "slave stalled?", (unsigned long)sdio_aggr_credit_timeouts,
+ 				         has_ctrl ? " [ctrl dropped]" : "");
++			/* ORCSDR-TAB5 (#106): report a dead link once per outage. */
++			if (sdio_tx_unresponsive_streak >= 32 && !sdio_tx_unresponsive_reported) {
++				ESP_LOGE(TAG, "SDIO aggr: slave unresponsive (%lu bus errors)",
++				         (unsigned long)sdio_tx_unresponsive_streak);
++				/* Mark reported only once posted, so a full event queue retries. */
++				if (esp_event_post(EH_HOST_EVENT, (int32_t)EH_HOST_EVENT_TRANSPORT_FAILURE,
++				                   NULL, 0, 0) == ESP_OK)
++					sdio_tx_unresponsive_reported = true;
++			}
+ 			break;                                /* drop this aggregate */
+ 		}
+ 		sdio_aggr_credit_timeouts = 0;
++		sdio_tx_unresponsive_reported = false;
+ 
+ 		SDIO_DRV_LOCK();
+ 		{

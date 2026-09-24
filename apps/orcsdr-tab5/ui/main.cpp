@@ -1616,6 +1616,12 @@ bool wifi_save_after_connect = false;
 bool wifi_auto_reconnect_armed = false;
 uint8_t wifi_reconnect_attempts = 0;
 uint32_t wifi_reconnect_due_ms = 0;
+// #106: a failed Hosted/C6 link is torn down and brought back (C6 power
+// cycle) a bounded number of times per boot instead of needing a restart.
+uint32_t wifi_link_recovery_due_ms = 0;
+uint8_t wifi_link_recoveries = 0;
+constexpr uint8_t kWifiLinkRecoveryMax = 3;
+uint32_t wifi_connected_since_ms = 0;
 constexpr uint32_t kWifiReconnectBackoffMs[] = {3000, 10000, 30000, 60000, 120000};
 uint32_t wifi_connect_started_ms = 0;
 int wifi_network_count = -1;
@@ -9116,6 +9122,7 @@ void start_wifi_connection() {
 void stop_wifi() {
   wifi_auto_reconnect_armed = false;
   wifi_reconnect_due_ms = 0;
+  wifi_link_recovery_due_ms = 0;
   if (!pause_radio_for_io(wifi_poweroff_radio_paused)) {
     strlcpy(wifi_status_message, "Radio pause failed", sizeof(wifi_status_message));
     Serial.println("RTL_WIFI_OFF_ERROR radio_pause_failed");
@@ -9139,6 +9146,7 @@ void stop_wifi() {
 bool disconnect_wifi() {
   wifi_auto_reconnect_armed = false;
   wifi_reconnect_due_ms = 0;
+  wifi_link_recovery_due_ms = 0;
   wifi_connect_requested.store(false, std::memory_order_release);
   wifi_connecting = false;
   wifi_save_after_connect = false;
@@ -9239,11 +9247,64 @@ void schedule_wifi_reconnect(const char* why) {
                 static_cast<unsigned long>(delay_ms));
 }
 
+void recover_wifi_link() {
+  if (!pause_radio_for_io(wifi_connect_radio_paused)) {
+    wifi_link_recovery_due_ms = millis() + 5000;
+    Serial.println("RTL_WIFI_LINK_RECOVERY deferred=radio_pause_failed");
+    return;
+  }
+  ++wifi_link_recoveries;
+  Serial.printf("RTL_WIFI_LINK_RECOVERY attempt=%u\n", static_cast<unsigned>(wifi_link_recoveries));
+  if (!orcsdr::wifi::begin_link_recovery()) {
+    resume_radio_after_io(wifi_connect_radio_paused);
+    Serial.println("RTL_WIFI_LINK_RECOVERY result=deinit_failed");
+    if (wifi_link_recoveries < kWifiLinkRecoveryMax) {
+      wifi_link_recovery_due_ms = millis() + 10000;
+    } else {
+      strlcpy(wifi_status_message, "Wi-Fi link lost - restart Wi-Fi", sizeof(wifi_status_message));
+      draw_wifi_state();
+    }
+    return;
+  }
+  wifi_station_ready = false;
+  wifi_connected = false;
+  wifi_connecting = false;
+  wifi_scan_running = false;
+  wifi_c6_power_prepared = false;  // force a C6 power cycle before Hosted init
+  initialize_wifi();
+  orcsdr::wifi::end_link_recovery();
+  resume_radio_after_io(wifi_connect_radio_paused);
+  Serial.printf("RTL_WIFI_LINK_RECOVERY result=%s\n", wifi_station_ready ? "ok" : "failed");
+  if (wifi_station_ready) {
+    strlcpy(wifi_status_message, "Wi-Fi link restored", sizeof(wifi_status_message));
+    if (wifi_auto_reconnect_armed) {
+      wifi_reconnect_attempts = 0;
+      schedule_wifi_reconnect("link_recovered");
+    }
+  } else if (wifi_link_recoveries < kWifiLinkRecoveryMax) {
+    wifi_link_recovery_due_ms = millis() + 10000;
+  } else {
+    strlcpy(wifi_status_message, "Wi-Fi link lost - restart Wi-Fi", sizeof(wifi_status_message));
+  }
+  draw_wifi_state();
+}
+
 void poll_wifi() {
   if (!settings_wifi_power_enabled) {
     wifi_scan_requested.store(false, std::memory_order_release);
     wifi_connect_requested.store(false, std::memory_order_release);
     return;
+  }
+  // A link that has stayed up for 5 minutes earns back its recovery budget,
+  // so long-running devices keep recovering while a flapping C6 cannot loop.
+  if (wifi_link_recoveries && wifi_connected && wifi_connected_since_ms &&
+      millis() - wifi_connected_since_ms >= 300000u) {
+    wifi_link_recoveries = 0;
+  }
+  if (wifi_link_recovery_due_ms != 0 &&
+      static_cast<int32_t>(millis() - wifi_link_recovery_due_ms) >= 0) {
+    wifi_link_recovery_due_ms = 0;
+    recover_wifi_link();
   }
   if (wifi_reconnect_due_ms != 0 &&
       static_cast<int32_t>(millis() - wifi_reconnect_due_ms) >= 0 &&
@@ -9317,6 +9378,7 @@ void poll_wifi() {
     wifi_auto_reconnect_armed = settings_wifi_start_at_boot;
     wifi_reconnect_attempts = 0;
     wifi_reconnect_due_ms = 0;
+    wifi_connected_since_ms = millis();
     Serial.println("RTL_WIFI_CONNECTED");
     if (wifi_save_after_connect) {
       int existing = -1;
@@ -9367,9 +9429,14 @@ void poll_wifi() {
     // Reconnecting over a dead Hosted link would only block on RPC timeouts.
     wifi_connecting = false;
     wifi_reconnect_due_ms = 0;
-    strlcpy(wifi_status_message, "Wi-Fi link lost - restart Wi-Fi", sizeof(wifi_status_message));
     Serial.println("RTL_WIFI_LINK_LOST");
     resume_radio_after_io(wifi_connect_radio_paused);
+    if (wifi_link_recoveries < kWifiLinkRecoveryMax) {
+      strlcpy(wifi_status_message, "Wi-Fi link lost - recovering", sizeof(wifi_status_message));
+      wifi_link_recovery_due_ms = millis() + 2000;
+    } else {
+      strlcpy(wifi_status_message, "Wi-Fi link lost - restart Wi-Fi", sizeof(wifi_status_message));
+    }
     wifi_connected = false;
     state_changed = true;
   } else if (connected != wifi_connected) {
@@ -15423,6 +15490,13 @@ void process_command(char* command) {
       return;
     }
     (void)orcsdr::storage::run_write_benchmark(file_mib);
+    return;
+  }
+  if (strcmp(command, "RTL_WIFI_C6_POWER OFF") == 0) {
+    // Test hook (#106): drop the C6 rail to simulate a dead SDIO link.
+    if (!authenticated) { Serial.println("RTL_WIFI_C6_POWER_ERROR auth_required"); return; }
+    M5.getIOExpander(1).digitalWrite(0, false);
+    Serial.println("RTL_WIFI_C6_POWER off");
     return;
   }
   if (strncmp(command, "RTL_SPLASH_GATE", 15) == 0) {
