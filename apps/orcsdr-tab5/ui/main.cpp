@@ -1606,6 +1606,7 @@ bool wifi_connecting = false;
 // Power Off remains a separate, conservative path until its freeze is isolated.
 bool wifi_poweroff_radio_paused = false;
 bool wifi_connect_radio_paused = false;
+bool wifi_c6_probe_radio_paused = false;
 bool radio_io_resume_pending = false;
 bool radio_io_speaker_resume_pending = false;
 bool wifi_save_after_connect = false;
@@ -9006,6 +9007,31 @@ bool pause_radio_for_catalog();
 void resume_radio_after_catalog();
 bool pause_radio_for_io(bool& paused);
 void resume_radio_after_io(bool& paused);
+// Issue #82: read the C6 version once after boot even when Wi-Fi is off, so
+// Firmware & Updates reports current/update-ready instead of "unknown". This
+// reuses the full Settings/#66 bring-up path (Hosted link + esp_wifi_init);
+// bringing up Hosted alone corrupted the internal heap. When Wi-Fi power is
+// off, the Wi-Fi radio is stopped again right after the version is read.
+void probe_wifi_coprocessor() {
+  if (wifi_station_ready || orcsdr::wifi::hosted_transport_ready()) return;
+  if (!pause_radio_for_io(wifi_c6_probe_radio_paused)) {
+    Serial.println("RTL_WIFI_C6_PROBE_ERROR radio_pause_failed");
+    return;
+  }
+  initialize_wifi();
+  if (wifi_station_ready && !settings_wifi_power_enabled) {
+    orcsdr::wifi::stop();
+    wifi_station_ready = false;
+    strlcpy(wifi_status_message, "Wi-Fi off", sizeof(wifi_status_message));
+  }
+  resume_radio_after_io(wifi_c6_probe_radio_paused);
+  Serial.printf("RTL_WIFI_C6_PROBE transport=%d version=%s match=%d stage=%s wifi_power=%d\n",
+                orcsdr::wifi::hosted_transport_ready() ? 1 : 0, wifi_hosted_c6_version,
+                orcsdr::wifi::hosted_versions_match() ? 1 : 0, wifi_hosted_failure_stage,
+                settings_wifi_power_enabled ? 1 : 0);
+  update_global_settings();
+}
+
 void start_wifi_inventory() {
   if (!settings_wifi_power_enabled) return;
   if (wifi_scan_running) return;
@@ -9121,7 +9147,8 @@ bool pause_radio_for_io(bool& paused) {
   if (paused) return true;
   // Overlapping I/O clients share one physical pause. Each keeps its own flag
   // so the final client to finish is the only one that resumes the radio.
-  if (catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused) {
+  if (catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused ||
+      wifi_c6_probe_radio_paused) {
     paused = true;
     return true;
   }
@@ -9163,7 +9190,8 @@ bool pause_radio_for_io(bool& paused) {
 void resume_radio_after_io(bool& paused) {
   if (!paused) return;
   paused = false;
-  if (catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused) return;
+  if (catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused ||
+      wifi_c6_probe_radio_paused) return;
   const bool resume_radio = radio_io_resume_pending;
   const bool resume_speaker = radio_io_speaker_resume_pending;
   radio_io_resume_pending = false;
@@ -16766,6 +16794,11 @@ void loop() {
     } else {
       Serial.println("RTL_WIFI_BOOT_SKIP_NO_AUTOCONNECT issue66");
     }
+  }
+  static bool c6_probe_done = false;
+  if (!c6_probe_done && !wifi_boot_bringup_pending && millis() >= kWifiBootDeferMs) {
+    c6_probe_done = true;
+    probe_wifi_coprocessor();
   }
   static bool hosted_boot_status_emitted = false;
   if (!hosted_boot_status_emitted && millis() >= 10000u) {
