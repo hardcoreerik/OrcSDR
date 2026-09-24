@@ -9258,7 +9258,12 @@ void recover_wifi_link() {
   if (!orcsdr::wifi::begin_link_recovery()) {
     resume_radio_after_io(wifi_connect_radio_paused);
     Serial.println("RTL_WIFI_LINK_RECOVERY result=deinit_failed");
-    if (wifi_link_recoveries < kWifiLinkRecoveryMax) wifi_link_recovery_due_ms = millis() + 10000;
+    if (wifi_link_recoveries < kWifiLinkRecoveryMax) {
+      wifi_link_recovery_due_ms = millis() + 10000;
+    } else {
+      strlcpy(wifi_status_message, "Wi-Fi link lost - restart Wi-Fi", sizeof(wifi_status_message));
+      draw_wifi_state();
+    }
     return;
   }
   wifi_station_ready = false;

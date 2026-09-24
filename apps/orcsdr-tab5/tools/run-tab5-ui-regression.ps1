@@ -1855,6 +1855,7 @@ try {
       if ([DateTime]::UtcNow -ge $deadline -and [DateTime]::UtcNow -lt $quietUntil) {
         Write-SoakLine "RTL_UI_SOAK_SEND_INCOMPLETE command=`"$command`" max_seconds=$SendMaxSeconds"
         $sendIncomplete = $true
+        break  # later commands would run while this one is still in progress
       }
     }
     exit $(if ($sendIncomplete) { 1 } else { 0 })
