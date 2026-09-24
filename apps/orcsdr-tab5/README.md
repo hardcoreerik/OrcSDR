@@ -30,17 +30,16 @@ Serial: `RTL_TOOL RADIO|SCOPE|CAPTURE`, `RTL_REC_START|STOP|STATUS|SAVE`.
 
 ### Boot / loading splash
 
-Splash is the **loading screen** while Wi-Fi, RTL-SDR host, and NVS come up:
+The splash is the loading screen while settings, microSD, data packs, and the
+RTL-SDR come up:
 
 | Item | Detail |
 |---|---|
-| Animated | Variant 4 (`D_tviz`), packed as `OrcSDR_Splash_1280x720_60fps_10s.orsplash` on microSD (`/` or `/orcsdr/`) |
-| Decode | ESP32-P4 HW JPEG → RGB565, SD read-ahead + double RGB buffers |
-| Status line | “Loading… / Starting Wi-Fi… / Starting RTL-SDR…” during boot |
-| Start control | **OrcSDR** button appears only when boot reports **ready**; animation keeps looping until tapped |
-| Fallback | Poster JPEG or text if SD/asset/decode fails (same ready/button rules) |
-| Pack selected asset | `python tools/splash_pack.py --frames-dir docs/splash/variants/D_tviz/frames --out <asset> --fps 24 --frame-count 240 --quality 35 --tab5-native` |
-| Docs | [`docs/OrcSDR_Splash_README.md`](../../docs/OrcSDR_Splash_README.md) |
+| Image | `main/orcsdr_splash_1280x720.jpg` (the README hero image), embedded in the firmware; no microSD asset is needed |
+| Status line | Names each boot step: settings, SD card, data packs and maps, RTL-SDR USB power, RTL-SDR detection, audio; then an `SD card / RTL-SDR` summary |
+| Start control | The **OrcSDR** button appears once RTL-SDR detection finishes or times out; tap it to open Home |
+| Unattended boot | Home opens on its own after 30 s; an authenticated serial host or SD transfer ends the splash early |
+| Recovery | If the RTL-SDR fails to enumerate after a PC-driven reset (flash/RTS), OrcSDR restarts once (`BOOT_RTL_RECOVERY`); see issue #103 |
 
 Driver component (portable USB/stream):
 

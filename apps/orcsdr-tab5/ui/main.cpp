@@ -5214,6 +5214,7 @@ bool sd_put_path_allowed(const char* path) {
 }
 
 bool sd_remove_path_allowed(const char* path) {
+  // The retired animated splash lived at the card root; keep it removable.
   return sd_put_path_allowed(path) ||
          strcmp(path, "/OrcSDR_Splash_1280x720_60fps_10s.orsplash") == 0;
 }
@@ -16192,6 +16193,9 @@ void process_command(char* command) {
     print_hex(signature, sizeof(signature));
     Serial.println();
     authenticated = true;
+    // An authenticated host (e.g. the UI regression scripts) takes over from
+    // the boot splash instead of waiting behind the OrcSDR button.
+    if (orcsdr_splash_is_active()) orcsdr_splash_end();
     offline_transition_handled = false;
     last_ping_ms = millis();
     set_online();
@@ -16443,6 +16447,17 @@ void service_boot_device_staging() {
       if (!rtl_device_ready()) {
         if (elapsed_ms >= 8000) {
           Serial.println("BOOT_RTL_TIMEOUT no_device");
+          // A PC-driven reset (flash/RTS) leaves an attached, still-powered
+          // dongle mid-stream. Its enumeration then fails and leaves the
+          // internal heap corrupted, so the next large allocation (Hosted,
+          // FM) crashes or hangs. A software restart always enumerates
+          // cleanly and reports a different reset reason, so this cannot loop.
+          if (esp_reset_reason() == ESP_RST_USB) {
+            Serial.println("BOOT_RTL_RECOVERY restart reason=usb_reset");
+            orcsdr_splash_set_status("Restarting to recover RTL-SDR…");
+            delay(200);
+            esp_restart();
+          }
           boot_auto_start_allowed = true;
           log_dram_budget("usb_timeout");
           set_boot_init_stage(BootInitStage::ready);
@@ -16708,6 +16723,11 @@ void setup() {
   /* The microSD card and Hosted C6 use separate slots on the same SDMMC host.
    * Initialize them sequentially; issue #66 defers Hosted until after boot. */
   g_suppress_home_paint = true;
+  /* Loading splash (embedded image) owns the display for the rest of boot and
+   * names each step as it runs. It also powers and mounts the microSD card,
+   * which ensure_tab5_sd() adopts below. */
+  (void)orcsdr_splash_begin();
+  orcsdr_splash_set_status("Loading settings…");
   uint8_t mac[6];
   esp_read_mac(mac, ESP_MAC_BASE);
   snprintf(node_id, sizeof(node_id), "m5tab5_%02x%02x%02x%02x%02x%02x",
@@ -16744,22 +16764,46 @@ void setup() {
   }
   apply_wifi_antenna();
   if (!settings_wifi_power_enabled) stop_wifi();
+  orcsdr_splash_set_status("Checking SD card…");
   if (ensure_tab5_sd()) {
+    orcsdr_splash_set_status("Loading data packs and maps…");
     (void)orcsdr::rf_lab::initialize(g_sd_fs);
     load_pocsag_scan_list();
     orcsdr::catalog::begin(g_sd_fs, sd_total_bytes() - orcsdr::storage::used_bytes());
     (void)orcsdr::offline_map::load(g_sd_fs);
     refresh_adsb_atc_preset();
   }
-  /* Loading splash owns the display while SD-backed splash assets load. */
-  (void)orcsdr_splash_begin();
-  orcsdr_splash_set_status("Starting RTL-SDR USB host…");
   begin_boot_device_staging();
-  /* Dependencies are up: reveal the gate while the background keeps looping. */
+  /* Bring up the attached RTL-SDR while the splash is showing. The OrcSDR
+   * button appears once enumeration finishes or times out; a serial SD
+   * transfer or authenticated host session ends the splash early and loop()
+   * finishes the staging. */
+  BootInitStage shown_stage = BootInitStage::idle;
+  while (boot_init_stage != BootInitStage::ready && orcsdr_splash_is_active()) {
+    if (boot_init_stage != shown_stage) {
+      shown_stage = boot_init_stage;
+      orcsdr_splash_set_status(
+          shown_stage == BootInitStage::usb_power_settle ? "Powering RTL-SDR USB port…"
+          : shown_stage == BootInitStage::rtl_enumerating ? "Detecting RTL-SDR…"
+          : shown_stage == BootInitStage::speaker_settle ? "Starting audio…"
+                                                          : "Starting…");
+    }
+    service_boot_device_staging();
+    orcsdr_splash_poll_serial();
+    delay(10);
+  }
   orcsdr_splash_set_ready(true);
-  /* Splash ends on its own so reboot lands on Home without a tap. */
-  constexpr bool kSkipSplashGate = true;
-  if (!kSkipSplashGate) (void)orcsdr_splash_wait_start();
+  char boot_summary[80];
+  snprintf(boot_summary, sizeof(boot_summary), "SD card: %s   |   RTL-SDR: %s",
+           g_sd_ready ? "ready" : "not found",
+           rtl_device_ready() ? "ready" : "not detected");
+  orcsdr_splash_set_status(boot_summary);
+  Serial.printf("BOOT_SPLASH_SUMMARY sd=%d rtl=%d\n", g_sd_ready ? 1 : 0,
+                rtl_device_ready() ? 1 : 0);
+  /* Unattended reboots (panic, C6 update) still land on Home. Hosted/Wi-Fi
+   * bring-up stays deferred to loop(). */
+  constexpr uint32_t kSplashAutoEnterMs = 30000;
+  (void)orcsdr_splash_wait_start(kSplashAutoEnterMs);
   orcsdr_splash_end();
   g_suppress_home_paint = false;
   show_home();

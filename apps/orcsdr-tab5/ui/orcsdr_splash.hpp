@@ -8,25 +8,29 @@ extern "C" {
 #endif
 
 /**
- * Loading splash (ORSPLASH on SD, or static poster / text fallback).
+ * Loading splash: a 1280x720 JPEG embedded in the firmware
+ * (main/orcsdr_splash_1280x720.jpg). No microSD asset is needed.
  *
  * Boot sequence:
- *   1) orcsdr_splash_begin()      — start animation / poster (non-blocking for boot work)
- *   2) initialize Wi-Fi, RTL host, NVS, … while splash runs
- *   3) orcsdr_splash_set_status() — optional status pill at the top of the art
+ *   1) orcsdr_splash_begin()      — draw the image; also powers and mounts microSD
+ *   2) initialize RTL host, NVS, … while the image is shown
+ *   3) orcsdr_splash_set_status() — optional status line at the top of the art
  *   4) orcsdr_splash_set_ready()  — reveal the OrcSDR button
- *   5) orcsdr_splash_wait_start() — keep looping until the button is tapped
- *   6) orcsdr_splash_end()        — stop playback, free buffers, enter home UI
+ *   5) orcsdr_splash_wait_start() — wait for the button (or the auto-enter timeout)
+ *   6) orcsdr_splash_end()        — clear the screen and enter the home UI
  *
  * Call M5.Display.setRotation() to the UI landscape value (1 or 3) before
- * begin() so the animation matches Home/FM.
+ * begin() so the image matches Home/FM.
  */
 bool orcsdr_splash_begin(void);
 void orcsdr_splash_set_status(const char *message);
-/** Reveal or hide the OrcSDR start button. */
+/** Reveal the OrcSDR start button. */
 void orcsdr_splash_set_ready(bool ready);
-/** Block while the animation loops, returning after the ready button is tapped. */
-bool orcsdr_splash_wait_start(void);
+/**
+ * Block until the OrcSDR button is tapped. auto_enter_ms > 0 continues on its
+ * own after that long so an unattended reboot still reaches Home; 0 waits.
+ */
+bool orcsdr_splash_wait_start(uint32_t auto_enter_ms);
 bool orcsdr_splash_is_active(void);
 void orcsdr_splash_end(void);
 
