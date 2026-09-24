@@ -7,7 +7,8 @@ $appRelative = (& git -C $appRoot rev-parse --show-prefix).Trim().TrimEnd('/')
 # manager can re-resolve managed_components/, so this runs after reconfigure.
 $patches = @(
   @{ File = 'esp-hosted-trampoline-null-delete.patch'; Name = 'trampoline null-delete' },
-  @{ File = 'esp-hosted-detached-task-handle.patch'; Name = 'detached task handle (#103)' }
+  @{ File = 'esp-hosted-detached-task-handle.patch'; Name = 'detached task handle (#103)' },
+  @{ File = 'esp-hosted-sdio-unresponsive-failure.patch'; Name = 'SDIO unresponsive failure event (#106)' }
 )
 
 foreach ($entry in $patches) {
