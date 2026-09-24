@@ -1696,10 +1696,12 @@ enum class BootInitStage : uint8_t {
   idle,
   usb_power_settle,
   rtl_enumerating,
+  rtl_power_recover,
   speaker_settle,
   ready,
 };
 BootInitStage boot_init_stage = BootInitStage::idle;
+bool boot_rtl_power_recovered = false;
 uint32_t boot_init_stage_started_ms = 0;
 bool boot_auto_start_allowed = false;
 uint32_t power_monitor_until_ms = 0;
@@ -16407,6 +16409,7 @@ const char* boot_init_stage_name(BootInitStage stage) {
   switch (stage) {
     case BootInitStage::usb_power_settle: return "usb_power_settle";
     case BootInitStage::rtl_enumerating: return "rtl_enumerating";
+    case BootInitStage::rtl_power_recover: return "rtl_power_recover";
     case BootInitStage::speaker_settle: return "speaker_settle";
     case BootInitStage::ready: return "ready";
     default: return "idle";
@@ -16447,16 +16450,17 @@ void service_boot_device_staging() {
       if (!rtl_device_ready()) {
         if (elapsed_ms >= 8000) {
           Serial.println("BOOT_RTL_TIMEOUT no_device");
-          // A PC-driven reset (flash/RTS) leaves an attached, still-powered
-          // dongle mid-stream. Its enumeration then fails and leaves the
-          // internal heap corrupted, so the next large allocation (Hosted,
-          // FM) crashes or hangs. A software restart always enumerates
-          // cleanly and reports a different reset reason, so this cannot loop.
-          if (esp_reset_reason() == ESP_RST_USB) {
-            Serial.println("BOOT_RTL_RECOVERY restart reason=usb_reset");
-            orcsdr_splash_set_status("Restarting to recover RTL-SDR…");
-            delay(200);
-            esp_restart();
+          // A P4 reset does not reset the IO-expander USB-A rail, so after a
+          // warm reboot the dongle is still powered and may be wedged
+          // mid-stream: enumeration fails or it never attaches. Power-cycle
+          // the rail once and retry detection instead of giving up.
+          if (!boot_rtl_power_recovered) {
+            boot_rtl_power_recovered = true;
+            M5.Power.setExtOutput(false, m5::ext_USB);
+            set_rtl_sdr_status("Boot: power-cycling RTL-SDR");
+            Serial.println("BOOT_RTL_RECOVERY power_cycle off_ms=1000");
+            set_boot_init_stage(BootInitStage::rtl_power_recover);
+            return;
           }
           boot_auto_start_allowed = true;
           log_dram_budget("usb_timeout");
@@ -16467,6 +16471,13 @@ void service_boot_device_staging() {
       resume_rtl_speaker();
       log_dram_budget("after_speaker");
       set_boot_init_stage(BootInitStage::speaker_settle);
+      return;
+    case BootInitStage::rtl_power_recover:
+      // 1 s off lets the dongle's supply capacitors discharge fully.
+      if (elapsed_ms < 1000) return;
+      M5.Power.setExtOutput(true, m5::ext_USB);
+      set_rtl_sdr_status("Boot: detecting RTL-SDR");
+      set_boot_init_stage(BootInitStage::rtl_enumerating);
       return;
     case BootInitStage::speaker_settle:
       if (elapsed_ms < 300) return;
@@ -16784,7 +16795,9 @@ void setup() {
       shown_stage = boot_init_stage;
       orcsdr_splash_set_status(
           shown_stage == BootInitStage::usb_power_settle ? "Powering RTL-SDR USB port…"
-          : shown_stage == BootInitStage::rtl_enumerating ? "Detecting RTL-SDR…"
+          : shown_stage == BootInitStage::rtl_enumerating
+              ? (boot_rtl_power_recovered ? "Retrying RTL-SDR detection…" : "Detecting RTL-SDR…")
+          : shown_stage == BootInitStage::rtl_power_recover ? "Power-cycling RTL-SDR…"
           : shown_stage == BootInitStage::speaker_settle ? "Starting audio…"
                                                           : "Starting…");
     }
