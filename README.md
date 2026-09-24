@@ -35,7 +35,7 @@ Current release images include the matching ESP-Hosted C6 firmware used by the T
 - **Weather:** quickly tune the standard NOAA weather-radio channels.
 - **Airband:** opens generic Browse near 121.5 MHz. Proper AM aviation voice reception is not yet implemented.
 - **Marine:** listen across the standard VHF marine channel plan.
-- **CB Radio:** tune the 40-channel Citizens Band service using AM or supported sideband modes.
+- **CB Radio:** scan all 40 Citizens Band channels at once and stop on whoever is talking, with priority channel, lockouts, activity log, full-band spectrum, and AM/USB/LSB listening.
 - **P25 Radio:** monitor trunked P25 control channels and follow supported voice traffic.
 - **ADS-B:** receive 1090 MHz aircraft broadcasts and show decoded aircraft, position, altitude, and flight details.
 - **LoRa:** passively monitor LoRa and Meshtastic traffic with spectrum, packet, node, traffic, map, and RF-health views.

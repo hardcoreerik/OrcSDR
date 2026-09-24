@@ -225,6 +225,23 @@ Never includes decoded message text — only lock/baud/FEC counters.
 every dashboard's functions beyond POCSAG is tracked as follow-up work,
 not yet built.
 
+## CB scanner
+
+Read-only commands need no authentication. The others need authentication and
+the CB band (`RTL_UI OPEN CB`), otherwise they reply
+`RTL_CB_ERROR auth_required` or `RTL_CB_ERROR band_not_cb`.
+
+| Command | Auth | Reply |
+|---|---|---|
+| `RTL_CB STATUS` | no | `RTL_CB_STATUS band_active=0\|1 channel=... frequency_hz=... mode=AM\|USB\|LSB clarifier_hz=... squelch_dbfs=... squelch_open=0\|1 scan=OFF\|SCANNING\|LOCKING\|RECEIVING\|HANG\|HOLD scan_channel=... hang_ms=... stops=... floor_db=... active=... eligible=... lockouts=0x... threshold_db=... hang_setting_ms=... max_hold_s=... priority=0\|1-40 auto_sideband=0\|1 log=...`. Channels are 1-based; `priority=0` means off; `lockouts` bit 0 is CH 1. |
+| `RTL_CB ACTIVITY` | no | One `RTL_CB_CHANNEL channel=... active=... snr_db=... hits=... active_ms=... peak_snr_db=... locked=...` per channel heard since the log was cleared, then one `RTL_CB_HIT index=... channel=... start_ms=... duration_ms=... peak_snr_db=...` per log entry (newest first), then `RTL_CB_ACTIVITY_DONE log=...`. |
+| `RTL_CB SCAN ON` / `RTL_CB SCAN OFF` | yes | Starts or stops the band-wide scanner and persists the choice, then prints `RTL_CB_STATUS`. |
+| `RTL_CB CHANNEL <1-40>` | yes | Tunes a channel (holding the scanner if it is running), then prints `RTL_CB_STATUS`. |
+| `RTL_CB LOCKOUT <1-40> ON\|OFF` | yes | Adds or removes a channel from the scan list, then prints `RTL_CB_STATUS`. |
+
+While scanning, each stop prints `RTL_CB_SCAN stop channel=... snr_db=...`, and
+`RTL_CB_MODE mode=...` is printed when auto sideband changes the mode.
+
 ## FM presets
 
 | Command | Auth | Reply |

@@ -37,6 +37,8 @@ idf_component_register(
         "../ui/adsb_decoder.cpp"
         "../ui/atc_presets.cpp"
         "../ui/catalog_sync.cpp"
+        "../ui/cb_dashboard.cpp"
+        "../ui/cb_scanner.cpp"
         "../ui/dashboard_audio_control.cpp"
         "../ui/dashboard_registry.cpp"
         "../ui/device_status_service.cpp"
