@@ -784,7 +784,9 @@ void draw() {
 void update(const Snapshot& snapshot) {
   if (!g_active) return;
   // Static: two ~2 KB snapshots would otherwise sit on the UI task stack.
-  static Snapshot before;
+  // PSRAM: internal RAM must keep room for the boot-time DMA reserve, and
+  // this copy is always overwritten before it is read.
+  EXT_RAM_BSS_ATTR static Snapshot before;
   before = g_snapshot;
   g_snapshot = snapshot;
   switch (g_tab) {
@@ -838,7 +840,9 @@ void draw_spectrum(const float* bins, size_t bin_count, uint32_t sample_rate_sps
   const double bins_per_hz = static_cast<double>(bin_count) / sample_rate_sps;
   const double hz_per_pixel =
       static_cast<double>(kViewHighHz - kViewLowHz) / static_cast<double>(kSpectrumW - 1);
-  static float column[kSpectrumW];
+  // PSRAM scratch (fully rewritten each frame): keeps ~5 KB out of the
+  // internal RAM the boot-time DMA reserve needs.
+  EXT_RAM_BSS_ATTR static float column[kSpectrumW];
   float maximum = -200.0f;
   for (int x = 0; x < kSpectrumW; ++x) {
     const double hz = kViewLowHz + x * hz_per_pixel;
@@ -907,7 +911,7 @@ bool spectrum_active() { return g_active && g_tab == Tab::spectrum; }
 Tab tab() { return g_tab; }
 
 bool dashboard_self_check() {
-  static Snapshot saved;
+  EXT_RAM_BSS_ATTR static Snapshot saved;  // PSRAM; overwritten before use.
   saved = g_snapshot;
   const bool was_active = g_active;
   const Tab saved_tab = g_tab;
