@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <memory>
 
 // P25 physical-layer/FEC details were independently implemented from the
 // published TIA-102 field layout and cross-checked against GopherTrunk
@@ -659,8 +660,10 @@ class Decoder {
 
   static bool self_check() {
     // Self-check runs on the embedded startup task. Keep its large decoder
-    // scratch objects out of that task's stack and reset them before use.
-    static Decoder decoder;
+    // scratch objects out of that task's stack: heap, freed when the check
+    // ends, rather than static storage that would pin ~14 KB of RAM forever.
+    const auto decoder_storage = std::make_unique<Decoder>();
+    Decoder& decoder = *decoder_storage;
     decoder.now_ms_ = 1000;
     constexpr uint16_t kNac = 0x1F0;
     const uint16_t nid_info = static_cast<uint16_t>((kNac << 4) | 0x7);
@@ -762,15 +765,16 @@ class Decoder {
       VoiceFrame frames[9]{};
       size_t count = 0;
     };
-    static VoiceCheck voice_check;
-    voice_check = {};
+    const auto voice_check_storage = std::make_unique<VoiceCheck>();
+    VoiceCheck& voice_check = *voice_check_storage;
     const auto collect_voice = [](const VoiceFrame& frame, void* context) {
       auto& check = *static_cast<VoiceCheck*>(context);
       if (check.count >= std::size(check.frames)) return false;
       check.frames[check.count++] = frame;
       return true;
     };
-    static Decoder voice_decoder;
+    const auto voice_decoder_storage = std::make_unique<Decoder>();
+    Decoder& voice_decoder = *voice_decoder_storage;
     voice_decoder.reset(0);
     voice_decoder.now_ms_ = 2000;
     voice_decoder.voice_sink_ = collect_voice;
@@ -818,8 +822,9 @@ class Decoder {
 
     const auto check_cqpsk = [&](float echo_gain) {
       // The embedded startup task has a small stack; keep this large scratch
-      // decoder in static storage and reset it for each deterministic check.
-      static Decoder cqpsk;
+      // decoder on the heap and reset it for each deterministic check.
+      const auto cqpsk_storage = std::make_unique<Decoder>();
+      Decoder& cqpsk = *cqpsk_storage;
       cqpsk.reset(0);
       cqpsk.set_sync_tolerance(5);
       float phase = 0.0f;

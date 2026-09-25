@@ -6,6 +6,7 @@
 #include "spectrum_resample.hpp"
 
 #include <M5Unified.h>
+#include <esp_attr.h>
 
 #include <algorithm>
 #include <cmath>
@@ -54,7 +55,7 @@ bool g_keypad = false;
 audio_header::Control g_audio_control{};
 char g_entry[12]{};
 uint32_t g_last_dynamic_ms = 0;
-uint16_t g_waterfall_row[kSpectrumW]{};
+EXT_RAM_BSS_ATTR uint16_t g_waterfall_row[kSpectrumW]{};  // PSRAM, as in the AM dashboard
 
 bool hit(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
   return x >= bx && x < bx + bw && y >= by && y < by + bh;

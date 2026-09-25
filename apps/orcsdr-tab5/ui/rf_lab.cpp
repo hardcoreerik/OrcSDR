@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iterator>
+#include <new>
 
 namespace orcsdr::rf_lab {
 namespace {
@@ -46,7 +47,9 @@ bool g_keep_settings = false;
 bool g_dirty = true;
 uint32_t g_last_draw_ms = 0;
 uint32_t g_last_revision = 0;
-rf_analysis::Snapshot g_snapshot{};
+// PSRAM (~24 KB): a UI copy refreshed from rf_analysis every 100 ms. PSRAM
+// starts zeroed, so enter() restores the defaults (-160 dBFS levels).
+EXT_RAM_BSS_ATTR rf_analysis::Snapshot g_snapshot{};
 M5Canvas g_waterfall(&M5.Display);
 bool g_waterfall_ready = false;
 Action g_actions[kActionCapacity]{};
@@ -896,6 +899,7 @@ bool enter(uint8_t origin_screen_value, uint8_t origin_tab_value) {
     if (!g_waterfall_ready) return false;
     g_waterfall.fillScreen(kBg);
   }
+  new (&g_snapshot) rf_analysis::Snapshot{};  // in place: no 24 KB stack temporary
   g_origin_screen = origin_screen_value;
   g_origin_tab = origin_tab_value;
   g_initial = runtime();

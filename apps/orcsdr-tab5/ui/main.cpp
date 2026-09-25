@@ -1407,7 +1407,7 @@ EXT_RAM_BSS_ATTR float rtl_spectrum_window[kRtlSpectrumBins];
 EXT_RAM_BSS_ATTR float rtl_spectrum_power[kRtlSpectrumBins];
 EXT_RAM_BSS_ATTR int16_t rtl_spectrum_y[kRtlSpectrumBins];
 EXT_RAM_BSS_ATTR int16_t rtl_spectrum_peak_y[kRtlSpectrumBins];
-uint16_t rtl_waterfall_row[kSpectrumWidth];
+EXT_RAM_BSS_ATTR uint16_t rtl_waterfall_row[kSpectrumWidth];  // PSRAM like the spectrum buffers
 bool rtl_spectrum_window_ready = false;
 bool rtl_spectrum_trace_valid = false;
 uint32_t rtl_spectrum_last_ms = 0;
@@ -1596,7 +1596,9 @@ struct LoraReplayPutState {
   mbedtls_sha256_context sha;
 };
 LoraReplayPutState g_lora_replay_put;
-uint8_t g_sd_put_chunk[kSdPutChunkBytes];
+// PSRAM: only the serial SD get/put commands use it, and the serial link,
+// not memory, sets their speed.
+EXT_RAM_BSS_ATTR uint8_t g_sd_put_chunk[kSdPutChunkBytes];
 bool wifi_station_ready = false;
 bool wifi_hosted_versions_match = false;
 bool wifi_hosted_update_required = false;
@@ -1844,7 +1846,8 @@ struct AdsbTrack {
 };
 
 constexpr size_t kAdsbTrackCount = 64;
-AdsbTrack adsb_tracks[kAdsbTrackCount]{};
+// PSRAM: touched per decoded message and by the UI, not per sample.
+EXT_RAM_BSS_ATTR AdsbTrack adsb_tracks[kAdsbTrackCount]{};
 portMUX_TYPE adsb_tracks_mux = portMUX_INITIALIZER_UNLOCKED;
 std::atomic<uint32_t> adsb_track_revision{0};
 std::atomic<uint32_t> adsb_total_messages{0};
@@ -3772,7 +3775,7 @@ bool export_lora_log_snapshot() {
 
 void lora_sd_log_task(void*) {
   File file;
-  static char batch[4096];
+  EXT_RAM_BSS_ATTR static char batch[4096];  // PSRAM: batched SD log text
   static char line[512];
   size_t batch_bytes = 0;
   uint32_t last_flush_ms = millis();
