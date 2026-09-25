@@ -6252,6 +6252,7 @@ orcsdr::screens::Id screen_for_band(RtlBand band) {
     case RtlBand::fm: return orcsdr::screens::Id::fm;
     case RtlBand::am: return orcsdr::screens::Id::am;
     case RtlBand::shortwave: return orcsdr::screens::Id::shortwave;
+    case RtlBand::airband: return orcsdr::screens::Id::airband;
     case RtlBand::cb: return orcsdr::screens::Id::cb;
     case RtlBand::p25: return orcsdr::screens::Id::p25;
     case RtlBand::adsb: return orcsdr::screens::Id::adsb;
@@ -6268,6 +6269,7 @@ void refresh_active_screen() {
     case Id::fm: draw_fm_dashboard(false); break;
     case Id::am: draw_am_dashboard(false); break;
     case Id::shortwave: draw_shortwave_dashboard(false); break;
+    case Id::airband: orcsdr::airband::update(airband_live_state()); break;
     case Id::cb: draw_cb_dashboard(false); break;
     case Id::p25: draw_p25_dashboard(false); break;
     case Id::adsb: draw_adsb_dashboard(false); break;
@@ -6282,6 +6284,7 @@ uint8_t active_dashboard_tab(orcsdr::screens::Id screen) {
   switch (screen) {
     case orcsdr::screens::Id::fm: return static_cast<uint8_t>(orcsdr::fm::view());
     case orcsdr::screens::Id::am: return static_cast<uint8_t>(orcsdr::am::view());
+    case orcsdr::screens::Id::airband: return static_cast<uint8_t>(orcsdr::airband::tab());
     case orcsdr::screens::Id::p25: return static_cast<uint8_t>(orcsdr::p25::view());
     case orcsdr::screens::Id::adsb: return orcsdr::adsb::view();
     case orcsdr::screens::Id::pocsag: return orcsdr::pocsag::view();
@@ -6341,6 +6344,7 @@ void close_visualizer() {
     case orcsdr::screens::Id::fm: orcsdr::fm::draw(); break;
     case orcsdr::screens::Id::am: orcsdr::am::draw(); break;
     case orcsdr::screens::Id::shortwave: orcsdr::shortwave::draw(); break;
+    case orcsdr::screens::Id::airband: orcsdr::airband::update(airband_live_state()); break;
     case orcsdr::screens::Id::cb: orcsdr::cb::draw(); break;
     case orcsdr::screens::Id::p25: orcsdr::p25::draw(); break;
     case orcsdr::screens::Id::adsb: orcsdr::adsb::draw(); break;
@@ -6621,7 +6625,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   // Home is the common receiver workspace until a band has its own dashboard.
   // Do not resurrect the retired generic Browse surface for AM/WX/CB/Airband.
   if (band != RtlBand::fm && band != RtlBand::am && band != RtlBand::shortwave &&
-      band != RtlBand::cb && band != RtlBand::p25 && band != RtlBand::adsb &&
+      band != RtlBand::cb && band != RtlBand::airband && band != RtlBand::p25 && band != RtlBand::adsb &&
       band != RtlBand::pocsag && band != RtlBand::lora) {
     if (adsb_atc_listening) { draw_adsb_dashboard(true); return; }
     show_home();
@@ -6636,6 +6640,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   if (band != RtlBand::fm) orcsdr::fm::leave();
   if (band != RtlBand::am) orcsdr::am::leave();
   if (band != RtlBand::shortwave) orcsdr::shortwave::leave();
+  if (band != RtlBand::airband) orcsdr::airband::leave();
   if (band != RtlBand::cb) {
     orcsdr::cb::leave();
     cb_scanner.stop();
@@ -6672,6 +6677,13 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
     reset_spectrum_renderer();
     resume_rtl_speaker();
     draw_shortwave_dashboard(true);
+    orcsdr::screens::finish_transition();
+    return;
+  }
+  if (band == RtlBand::airband) {
+    reset_spectrum_renderer();
+    resume_rtl_speaker();
+    orcsdr::airband::enter(airband_live_state());
     orcsdr::screens::finish_transition();
     return;
   }
@@ -12852,7 +12864,8 @@ bool point_in_scope(int32_t x, int32_t y) {
   if (rtl_ui_band == RtlBand::adsb) return false;
   // Dashboard modules own their complete touch surfaces, including spectrum views.
   if (rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::am ||
-      rtl_ui_band == RtlBand::shortwave || rtl_ui_band == RtlBand::cb ||
+      rtl_ui_band == RtlBand::shortwave || rtl_ui_band == RtlBand::airband ||
+      rtl_ui_band == RtlBand::cb ||
       (rtl_ui_band == RtlBand::p25 && orcsdr::p25::active())) return false;
   // Spectrum + waterfall hit target for pan/flick (not the control rows).
   return x >= kSpectrumX && x < kSpectrumX + spectrum_draw_width() && y >= kSpectrumY &&
