@@ -48,7 +48,8 @@ bool g_dirty = true;
 uint32_t g_last_draw_ms = 0;
 uint32_t g_last_revision = 0;
 // PSRAM (~24 KB): a UI copy refreshed from rf_analysis every 100 ms. PSRAM
-// starts zeroed, so enter() restores the defaults (-160 dBFS levels).
+// starts zeroed, so initialize() gives it its defaults (-160 dBFS levels)
+// once at boot, before enter() or an RTL_LAB command can read it.
 EXT_RAM_BSS_ATTR rf_analysis::Snapshot g_snapshot{};
 M5Canvas g_waterfall(&M5.Display);
 bool g_waterfall_ready = false;
@@ -852,6 +853,13 @@ bool parse_page(const char* value, Page* output) {
 }  // namespace
 
 bool initialize(storage::FileSystem* filesystem) {
+  // Once only: initialize() runs again when the SD card mounts, possibly
+  // mid-session. In place, so there is no 24 KB stack temporary.
+  static bool snapshot_defaults = false;
+  if (!snapshot_defaults) {
+    new (&g_snapshot) rf_analysis::Snapshot{};
+    snapshot_defaults = true;
+  }
   g_filesystem = filesystem;
   if (!rf_analysis::initialize()) return false;
   if (!g_save_task &&
@@ -899,7 +907,6 @@ bool enter(uint8_t origin_screen_value, uint8_t origin_tab_value) {
     if (!g_waterfall_ready) return false;
     g_waterfall.fillScreen(kBg);
   }
-  new (&g_snapshot) rf_analysis::Snapshot{};  // in place: no 24 KB stack temporary
   g_origin_screen = origin_screen_value;
   g_origin_tab = origin_tab_value;
   g_initial = runtime();

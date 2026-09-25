@@ -4842,8 +4842,10 @@ bool rds_replay(const char* path) {
 void spectrum_offer_iq_snapshot(const uint8_t* iq, size_t bytes) {
   if (iq == nullptr || bytes < kRtlSpectrumBins * 2) return;
   orcsdr::visualizer::offer_iq(iq, bytes);
+  // The CB scanner measures channels from this spectrum, so CB keeps it with
+  // graphics off; draw_spectrum() then skips only the drawing.
   if (!rtl_graphics_enabled.load(std::memory_order_relaxed) &&
-      !orcsdr::web_console::spectrum_demanded()) return;
+      !orcsdr::web_console::spectrum_demanded() && g_stream_band != RtlBand::cb) return;
   const size_t need = sizeof(rtl_spectrum_iq_snap);
   const size_t n = bytes < need ? bytes : need;
   portENTER_CRITICAL(&rtl_spectrum_snap_mux);
@@ -6986,6 +6988,7 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   // runs whichever screen is showing, including Home while CB keeps playing.
   if (rtl_ui_band == RtlBand::cb && !ui_documentation_mode) {
     service_cb_scanner(now);
+    if (!rtl_graphics_enabled.load(std::memory_order_acquire)) return;
     if (orcsdr::screens::owns(orcsdr::screens::Id::cb)) {
       orcsdr::cb::draw_spectrum(rtl_spectrum_levels, kRtlSpectrumBins,
                                 rtl_active_sample_rate_sps.load(std::memory_order_relaxed),
@@ -8744,9 +8747,12 @@ static void rtl_driver_app_task(void *) {
           }
           const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
           const bool web_scope = orcsdr::web_console::spectrum_demanded();
-          if (web_scope || (!orcsdr::settings::active() && !orcsdr::home::active() &&
-              g_stream_band != RtlBand::adsb && gfx_on &&
-              orc_tool_current() != OrcTool::Capture)) {
+          if (web_scope ||
+              (g_stream_band == RtlBand::cb && !orcsdr::settings::active() &&
+               orc_tool_current() != OrcTool::Capture) ||
+              (!orcsdr::settings::active() && !orcsdr::home::active() &&
+               g_stream_band != RtlBand::adsb && gfx_on &&
+               orc_tool_current() != OrcTool::Capture)) {
             const bool sound_on = rtl_audio_enabled.load(std::memory_order_relaxed);
             const bool audio_stressed =
                 sound_on && rtl_audio.dropped_chunks > 0 &&
@@ -17413,6 +17419,8 @@ void loop() {
   if (rtl_stream_spectrum_pending.exchange(false, std::memory_order_acq_rel) &&
       !orcsdr::visualizer::active() && !orcsdr::rf_lab::active() &&
       (orcsdr::web_console::spectrum_demanded() || fm_ui || am_ui || shortwave_ui || cb_ui ||
+       (rtl_ui_band == RtlBand::cb &&
+        rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running) ||
        p25_ui ||
        (rtl_ui_band == RtlBand::lora && orcsdr::lora::active()))) {
     draw_spectrum(nullptr, 0);

@@ -198,6 +198,33 @@ void test_max_hold() {
   CHECK(scanner.skipped(11));
 }
 
+// Max hold is for a stuck carrier: it times one transmission. A conversation
+// of replies separated by hangs must not add up to a skip.
+void test_max_hold_times_each_reply() {
+  Monitor monitor;
+  Scanner scanner;
+  scanner.settings().priority_enabled = false;
+  scanner.settings().max_hold_s = 15;
+  scanner.start(0, 0);
+  observe(monitor, scanner, 0, Band().on(11, -30.0f).on(25, -50.0f));
+  CHECK(scanner.update(0, monitor) == 11);
+  CHECK(scanner.update(400, monitor) == -1 && scanner.state() == State::receiving);
+
+  // First transmission ends; the scanner hangs for a reply.
+  observe(monitor, scanner, 6000, Band().on(11, -30.0f).on(25, -50.0f));
+  observe(monitor, scanner, 6800, Band().on(25, -50.0f));
+  CHECK(scanner.update(6800, monitor) == -1 && scanner.state() == State::hang);
+
+  // The reply resumes reception; max hold now starts at 7500, not at 400.
+  observe(monitor, scanner, 7500, Band().on(11, -30.0f).on(25, -50.0f));
+  CHECK(scanner.update(7500, monitor) == -1 && scanner.state() == State::receiving);
+  observe(monitor, scanner, 22499, Band().on(11, -30.0f).on(25, -50.0f));
+  CHECK(scanner.update(22499, monitor) == -1 && scanner.state() == State::receiving);
+  CHECK(!scanner.skipped(11));
+  CHECK(scanner.update(22500, monitor) == 25);  // 15 s of this one reply.
+  CHECK(scanner.skipped(11));
+}
+
 void test_clock_wrap() {
   Monitor monitor;
   Scanner scanner;
@@ -220,6 +247,7 @@ int main() {
   test_scan_stop_hang_resume();
   test_priority_lockout_skip_hold();
   test_max_hold();
+  test_max_hold_times_each_reply();
   test_clock_wrap();
   CHECK(Scanner::self_check());
   CHECK(std::string_view(state_name(State::hang)) == "HANG");

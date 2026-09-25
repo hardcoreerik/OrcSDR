@@ -283,7 +283,9 @@ int Scanner::update(uint32_t now_ms, const Monitor& monitor) {
 
   if (state_ == State::hang) {
     if (eligible(channel_) && monitor.active(channel_)) {
+      // A reply: max hold times this transmission, not the conversation.
       state_ = State::receiving;
+      rx_started_ms_ = now_ms;
       return -1;
     }
     if (!reached(now_ms, hang_until_ms_) && eligible(channel_)) return -1;
