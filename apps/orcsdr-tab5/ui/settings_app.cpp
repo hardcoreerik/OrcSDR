@@ -244,7 +244,12 @@ void draw_location() {
   snprintf(value, sizeof(value), "%u NM", g_state.radar_range_nm);
   text("RADAR RANGE", 330, 370, kMuted, 2);
   button(value, 820, 344, 398, 54, TFT_DARKCYAN);
-  value_row("MAP PACK", g_state.map_pack[0] ? g_state.map_pack : "NOT INSTALLED", 445);
+  text("MAP PACK", 330, 445, kMuted, 2);
+  text(g_state.map_pack[0] ? g_state.map_pack : "NOT INSTALLED", 800, 445, TFT_WHITE, 2,
+       middle_right);
+  button("CHOOSE ON MAP", 820, 419, 398, 54,
+         g_state.map_picker_available ? TFT_DARKGREEN : TFT_DARKGREY);
+  M5.Display.drawFastHLine(330, 476, 888, 0x2945);
   value_row("RF GAIN", "AUTO (READ ONLY)", 495, kMuted);
   text("INTERNET LOCATION LOOKUP", 330, 550, kBlue, 2);
   button(g_state.ip_location_busy ? "LOOKING UP..." : "ZIP / ADDRESS", 330, 575, 250, 46,
@@ -792,6 +797,8 @@ Action handle_touch(int32_t x, int32_t y) {
       draw_content();
       return {ActionKind::range_changed, g_state.radar_range_nm};
     }
+    else if (hit(x, y, 820, 419, 398, 54) && g_state.map_picker_available)
+      return {ActionKind::location_pick_on_map, 0};
     if (hit(x, y, 330, 575, 250, 46) && !g_state.ip_location_busy) {
       g_location_edit = true;
       text_editor::begin("ZIP CODE OR ADDRESS", g_location_query,

@@ -255,12 +255,14 @@ void DrawCrosshair() {
   M5.Display.fillCircle(kCrossX, kCrossY, 3, kGreen);
 }
 
-void DrawChrome(orcmap::LocationPicker& picker) {
+void DrawChrome(orcmap::LocationPicker& picker, Mode mode) {
   M5.Display.fillRect(0, 0, kScreenW, kHeaderH, TFT_BLACK);
   M5.Display.setTextDatum(middle_left);
   M5.Display.setTextSize(3);
   M5.Display.setTextColor(TFT_WHITE);
-  M5.Display.drawString("Choose your location", 24, kHeaderH / 2);
+  M5.Display.drawString(mode == Mode::settings ? "Change your location"
+                                               : "Choose your location",
+                        24, kHeaderH / 2);
 
   char zoom[16];
   std::snprintf(zoom, sizeof(zoom), "Z%u", picker.Zoom());
@@ -272,7 +274,7 @@ void DrawChrome(orcmap::LocationPicker& picker) {
   Button(kBack, "BACK", TFT_NAVY, true);
   Button(kZoomOut, "-", TFT_DARKCYAN, picker.CanZoomOut());
   Button(kZoomIn, "+", TFT_DARKCYAN, picker.CanZoomIn());
-  Button(kSkip, "SKIP", TFT_NAVY, true);
+  if (mode == Mode::first_run) Button(kSkip, "SKIP", TFT_NAVY, true);
   Button(kSet, "SET LOCATION", TFT_DARKGREEN, true);
 
   const orcmap::LatLon at = picker.Selection();
@@ -299,7 +301,7 @@ bool available() {
 }
 
 Result run(lgfx::v1::LovyanGFX& display, int32_t initial_latitude_e7,
-           int32_t initial_longitude_e7, bool have_initial) {
+           int32_t initial_longitude_e7, bool have_initial, Mode mode) {
   (void)display;  // M5.Display is the same panel; kept for call-site clarity.
   Result result;
 
@@ -312,10 +314,10 @@ Result run(lgfx::v1::LovyanGFX& display, int32_t initial_latitude_e7,
 
   // Every redraw reports its cost inside OrcSDR, which differs from the
   // standalone OrcMaps demo (less free internal RAM, other tasks running).
-  const auto redraw = [&picker](const char* why) {
+  const auto redraw = [&picker, mode](const char* why) {
     const uint32_t started = millis();
     const int tiles = picker.DrawMap();
-    DrawChrome(picker.Camera());
+    DrawChrome(picker.Camera(), mode);
     DrawCrosshair();
     ESP_LOGI(kTag,
              "RTL_SETUP_MAP_FRAME why=%s zoom=%u tiles=%d ms=%lu internal_free=%u "
@@ -366,7 +368,7 @@ Result run(lgfx::v1::LovyanGFX& display, int32_t initial_latitude_e7,
         } else if (Hit(kBack, press_x, press_y)) {
           result.outcome = Outcome::back;
           return result;
-        } else if (Hit(kSkip, press_x, press_y)) {
+        } else if (mode == Mode::first_run && Hit(kSkip, press_x, press_y)) {
           result.outcome = Outcome::skipped;
           return result;
         } else if (Hit(kSet, press_x, press_y)) {
@@ -378,6 +380,11 @@ Result run(lgfx::v1::LovyanGFX& display, int32_t initial_latitude_e7,
           ESP_LOGI(kTag, "ORCSDR_LOCATION_CHOSEN lat=%.7f lon=%.7f zoom=%u",
                    at.lat_deg, at.lon_deg, result.zoom);
           return result;
+        } else if (press_y >= kMapTop && press_y < kMapBottom) {
+          // A tap on the map brings the tapped spot under the crosshair:
+          // the same move as dragging from there to the centre.
+          picker.Camera().DragByGesture(kCrossX - press_x, kCrossY - press_y);
+          redraw("tap");
         }
       }
     }

@@ -15,13 +15,18 @@ namespace lgfx { inline namespace v1 { class LovyanGFX; } }
 //
 // Interaction is a FIXED CENTRE CROSSHAIR: the map moves under a crosshair
 // that never leaves the middle of the map area, and the selection is
-// whatever the crosshair is over. That avoids asking a user to land a finger
-// on a small target, and it means zoom cannot move the selection.
+// whatever the crosshair is over. Dragging pans the map; tapping a spot on
+// the map brings that spot under the crosshair, so "tap where you are, then
+// SET LOCATION" works too. Zoom never moves the selection.
 
 namespace orcsdr::setup_map_picker {
 
 // Which button ended the picker.
 enum class Outcome : uint8_t { chosen, back, skipped, unavailable };
+
+// Where the picker was opened from. First-run setup offers SKIP; Settings
+// only has BACK (leave the stored location unchanged).
+enum class Mode : uint8_t { first_run, settings };
 
 struct Result {
   Outcome outcome = Outcome::unavailable;
@@ -49,6 +54,7 @@ inline constexpr char kPartitionLabel[] = "orcmaps";
 // is still whatever the user confirms; an estimate is a starting camera
 // position, never an accepted answer.
 Result run(lgfx::v1::LovyanGFX& display, int32_t initial_latitude_e7,
-           int32_t initial_longitude_e7, bool have_initial);
+           int32_t initial_longitude_e7, bool have_initial,
+           Mode mode = Mode::first_run);
 
 }  // namespace orcsdr::setup_map_picker

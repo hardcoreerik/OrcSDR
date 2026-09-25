@@ -1669,6 +1669,10 @@ char settings_location_label[40]{};
 char settings_map_pack[40]{};
 bool adsb_atc_listening = false;
 bool catalog_radio_paused = false;
+// The map picker owns the display and main loop while it runs.
+bool map_picker_radio_paused = false;
+// -1 unknown, 0 no embedded world map, 1 available. Probed once.
+int8_t map_picker_available_cache = -1;
 char rtl_sdr_status[96] = "RTL-SDR: waiting for USB-A host";
 char rtl_sdr_serial[48]{};
 char rtl_sdr_speed[8] = "none";
@@ -9175,7 +9179,7 @@ bool pause_radio_for_io(bool& paused) {
   // Overlapping I/O clients share one physical pause. Each keeps its own flag
   // so the final client to finish is the only one that resumes the radio.
   if (catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused ||
-      wifi_c6_probe_radio_paused) {
+      wifi_c6_probe_radio_paused || map_picker_radio_paused) {
     paused = true;
     return true;
   }
@@ -9218,7 +9222,7 @@ void resume_radio_after_io(bool& paused) {
   if (!paused) return;
   paused = false;
   if (catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused ||
-      wifi_c6_probe_radio_paused) return;
+      wifi_c6_probe_radio_paused || map_picker_radio_paused) return;
   const bool resume_radio = radio_io_resume_pending;
   const bool resume_speaker = radio_io_speaker_resume_pending;
   radio_io_resume_pending = false;
@@ -11525,6 +11529,9 @@ const orcsdr::settings::State& global_settings_state() {
   state.radar_range_nm = adsb_settings.radar_range_nm;
   strlcpy(state.location_label, settings_location_label, sizeof(state.location_label));
   strlcpy(state.map_pack, settings_map_pack, sizeof(state.map_pack));
+  if (map_picker_available_cache < 0)
+    map_picker_available_cache = orcsdr::setup_map_picker::available() ? 1 : 0;
+  state.map_picker_available = map_picker_available_cache == 1;
   const auto ip_location = orcsdr::location_estimate::state();
   state.ip_location_busy = ip_location.busy; state.ip_location_ready = ip_location.ready;
   state.ip_latitude_e7 = ip_location.latitude_e7; state.ip_longitude_e7 = ip_location.longitude_e7;
@@ -12092,6 +12099,36 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       refresh_adsb_atc_preset();
       strlcpy(settings_location_label, location.label, sizeof(settings_location_label));
       adsb_settings_persist_pending.store(true, std::memory_order_release);
+      break;
+    }
+    case orcsdr::settings::ActionKind::location_pick_on_map: {
+      if (!pause_radio_for_io(map_picker_radio_paused)) {
+        Serial.println("RTL_MAP_PICK_BLOCKED radio_busy");
+        break;
+      }
+      Serial.println("RTL_MAP_PICK_START source=settings");
+      const auto picked = orcsdr::setup_map_picker::run(
+          M5.Display, adsb_settings.latitude_e7, adsb_settings.longitude_e7,
+          adsb_settings.location_configured, orcsdr::setup_map_picker::Mode::settings);
+      const bool chosen = picked.outcome == orcsdr::setup_map_picker::Outcome::chosen;
+      if (chosen) {
+        adsb_settings.location_configured = true;
+        adsb_settings.latitude_e7 = picked.latitude_e7;
+        adsb_settings.longitude_e7 = picked.longitude_e7;
+        refresh_adsb_atc_preset();
+        strlcpy(settings_location_label, "Chosen on map", sizeof(settings_location_label));
+        adsb_settings_persist_pending.store(true, std::memory_order_release);
+      }
+      Serial.printf("RTL_MAP_PICK_DONE chosen=%d lat_e7=%ld lon_e7=%ld\n", chosen ? 1 : 0,
+                    static_cast<long>(adsb_settings.latitude_e7),
+                    static_cast<long>(adsb_settings.longitude_e7));
+      resume_radio_after_io(map_picker_radio_paused);
+      // The picker painted over the whole panel; rebuild Settings on the
+      // page the user came from.
+      orcsdr::screens::begin_transition(orcsdr::screens::Id::settings, millis());
+      M5.Display.fillScreen(TFT_BLACK);
+      orcsdr::settings::enter(global_settings_state(), orcsdr::settings::Section::location_adsb);
+      orcsdr::screens::finish_transition();
       break;
     }
     case orcsdr::settings::ActionKind::range_changed:
@@ -14684,6 +14721,7 @@ void process_command(char* command) {
       else if (!strcmp(action, "GRAPHICS")) kind=K::graphics_changed; else if (!strcmp(action, "WEB")) kind=K::web_console_changed;
       else if (!strcmp(action, "CATALOG_CHECK")) kind=K::catalog_check; else if (!strcmp(action, "CATALOG_INSTALL")) kind=K::catalog_install;
       else if (!strcmp(action, "CATALOG_REMOVE")) kind=K::catalog_remove; else if (!strcmp(action, "CLOSE")) kind=K::close;
+      else if (!strcmp(action, "MAP_PICK")) kind=K::location_pick_on_map;
       if ((kind == K::wifi_power_changed || kind == K::wifi_start_at_boot_changed ||
            kind == K::wifi_antenna_changed) && value > 1) {
         Serial.println("RTL_UI_ACTION_INVALID value_must_be_0_or_1");

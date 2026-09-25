@@ -73,6 +73,8 @@ struct State {
   uint16_t radar_range_nm = 25;
   char location_label[40]{};
   char map_pack[40]{};
+  // The embedded world map is flashed and readable, so CHOOSE ON MAP works.
+  bool map_picker_available = false;
   bool ip_location_busy = false;
   bool ip_location_ready = false;
   int32_t ip_latitude_e7 = 0;
@@ -150,6 +152,8 @@ enum class ActionKind : uint8_t {
   // stored location: re-opening setup and backing out must not destroy a
   // working configuration.
   ,run_setup_wizard
+  // Opens the map picker on the current location (Location & ADS-B).
+  ,location_pick_on_map
 };
 
 struct Action {
