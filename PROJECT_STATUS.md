@@ -8,8 +8,11 @@ M5Burner package was installed and booted on the owner Tab5 before publication.
 That release evidence does not automatically prove later `main` commits or
 other hardware.
 
-The candidate pins `esp_rtl_sdr` v0.8.0-rc3 at
-`52edd9b6e591fbd5f3985af4dc51e9da60e04cad`.
+The candidate pins `esp_rtl_sdr` at untagged `master`
+`9a987245a0864d9caf4fc357fb6668b95ba5e78b` (after v0.8.0-rc3: multi-receiver
+support, Blog V4L detection, USB stream recovery, and the fix for closing a
+device with a control transfer in flight; the driver still reports
+`0.8.0-rc3`).
 
 This is the authoritative current capability and evidence summary. Release
 notes and validation reports are immutable, dated evidence; they do not
