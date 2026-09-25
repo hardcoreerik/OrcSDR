@@ -54,6 +54,7 @@
 #include "adsb_dashboard.hpp"
 #include "adsb_decoder.hpp"
 #include "atc_presets.hpp"
+#include "airband_runtime.hpp"
 #include "catalog_sync.hpp"
 #include "dashboard_audio_control.hpp"
 #include "dashboard_registry.hpp"
@@ -2714,6 +2715,7 @@ const char* rtl_band_name(RtlBand band) {
   switch (band) {
     case RtlBand::am: return "AM";
     case RtlBand::shortwave: return "SHORTWAVE";
+    case RtlBand::airband: return "AIRBAND";
     case RtlBand::wx: return "WX";
     case RtlBand::cb: return "CB";
     case RtlBand::lora: return "LORA";
@@ -2731,6 +2733,7 @@ bool rtl_band_from_name(const char* name, RtlBand* out_band) {
   if (strcmp(name, "FM") == 0) { *out_band = RtlBand::fm; return true; }
   if (strcmp(name, "AM") == 0) { *out_band = RtlBand::am; return true; }
   if (strcmp(name, "SHORTWAVE") == 0) { *out_band = RtlBand::shortwave; return true; }
+  if (strcmp(name, "AIRBAND") == 0) { *out_band = RtlBand::airband; return true; }
   if (strcmp(name, "WX") == 0) { *out_band = RtlBand::wx; return true; }
   if (strcmp(name, "CB") == 0) { *out_band = RtlBand::cb; return true; }
   if (strcmp(name, "LORA") == 0) { *out_band = RtlBand::lora; return true; }
@@ -2745,6 +2748,7 @@ const char* rtl_mode_name(RtlBand band) {
   switch (band) {
     case RtlBand::am: return "AM";
     case RtlBand::shortwave: return "AM";
+    case RtlBand::airband: return "AM";
     case RtlBand::wx: return "NFM";
     case RtlBand::cb:
       return cb_mode.load(std::memory_order_relaxed) == CbMode::usb ? "USB"
@@ -2766,6 +2770,7 @@ uint32_t rtl_band_default_frequency(RtlBand band) {
   switch (band) {
     case RtlBand::am: return kRtlAmDefaultHz;
     case RtlBand::shortwave: return orcsdr::shortwave::saved_frequency();
+    case RtlBand::airband: return orcsdr::airband::default_frequency();
     case RtlBand::wx: return kRtlWxHz;
     case RtlBand::cb: return cb_saved_hz;
     case RtlBand::lora: return kLoraDefaultHz;
@@ -2780,6 +2785,7 @@ uint32_t rtl_band_default_frequency(RtlBand band) {
 uint32_t rtl_filter_default_hz(RtlBand band) {
   if (band == RtlBand::lora) return lora_bandwidth_hz.load(std::memory_order_relaxed);
   if (band == RtlBand::shortwave) return orcsdr::receiver_bands::kShortwave.default_bandwidth_hz;
+  if (band == RtlBand::airband) return 10000u;
   if (band == RtlBand::cb)
     return cb_mode.load(std::memory_order_relaxed) == CbMode::am ? kCbAmFilterHz
                                                                   : kCbSsbFilterHz;
@@ -2799,7 +2805,7 @@ uint32_t rtl_clamp_filter_hz(RtlBand band, uint32_t bandwidth_hz) {
     return 500000;
   }
   if (band == RtlBand::p25) return kP25StepHz;
-  const bool am = band == RtlBand::am || band == RtlBand::shortwave;
+  const bool am = band == RtlBand::am || band == RtlBand::shortwave || band == RtlBand::airband;
   const uint32_t low = band == RtlBand::cb ? 2400 : am ? 3000 : band == RtlBand::fm ? 50000 : 8000;
   const uint32_t high = band == RtlBand::cb ? 12000 : am ? 30000 : band == RtlBand::fm ? 300000 : 100000;
   return constrain((bandwidth_hz / 1000u) * 1000u, low, high);
@@ -2836,6 +2842,9 @@ uint32_t rtl_clamp_frequency(RtlBand band, uint32_t frequency_hz) {
     case RtlBand::shortwave:
       return constrain(frequency_hz, orcsdr::receiver_bands::kShortwave.min_hz,
                        orcsdr::receiver_bands::kShortwave.max_hz);
+    case RtlBand::airband:
+      return constrain(frequency_hz, orcsdr::airband::kMinFrequencyHz,
+                       orcsdr::airband::kMaxFrequencyHz);
     case RtlBand::wx:
       return kRtlWxHz;
     case RtlBand::adsb:
@@ -2884,6 +2893,8 @@ void persist_fm_presets() {
 
 uint32_t rtl_step_frequency(RtlBand band, uint32_t frequency_hz, int direction) {
   if (band == RtlBand::wx) return kRtlWxHz;
+  if (band == RtlBand::airband)
+    return orcsdr::airband::manual_step(frequency_hz, direction);
   if (band == RtlBand::cb) {
     const uint32_t current = rtl_clamp_frequency(band, frequency_hz);
     size_t channel = 0;
@@ -3123,7 +3134,8 @@ bool rtl_band_has_audio(RtlBand band) {
 bool rtl_wide_dashboard_band(RtlBand band) {
   return band == RtlBand::fm || band == RtlBand::am ||
          band == RtlBand::shortwave || band == RtlBand::wx ||
-         band == RtlBand::cb || band == RtlBand::browse;
+         band == RtlBand::cb || band == RtlBand::browse ||
+         band == RtlBand::airband;
 }
 
 uint32_t rtl_default_sample_rate(RtlBand band) {
