@@ -12640,6 +12640,7 @@ void load_state() {
     if (stored_band == RtlBand::fm || stored_band == RtlBand::am ||
         stored_band == RtlBand::shortwave ||
         stored_band == RtlBand::wx || stored_band == RtlBand::cb ||
+        stored_band == RtlBand::airband ||
         stored_band == RtlBand::lora || stored_band == RtlBand::browse ||
         stored_band == RtlBand::adsb || stored_band == RtlBand::p25) {
       rtl_ui_band = stored_band;
@@ -12887,6 +12888,7 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
     append_journal(band == RtlBand::am       ? "sdr_am"
                    : band == RtlBand::wx     ? "sdr_wx"
                    : band == RtlBand::cb     ? "sdr_cb"
+                   : band == RtlBand::airband ? "sdr_airband"
                    : band == RtlBand::lora   ? "sdr_lora"
                    : band == RtlBand::browse ? "sdr_browse"
                    : band == RtlBand::adsb   ? "sdr_adsb"
@@ -17501,6 +17503,12 @@ void loop() {
   const uint32_t m5_started_ms = millis();
   M5.update();
   service_headphone_speaker_route();
+  if (rtl_ui_band == RtlBand::airband) {
+    const auto live = airband_live_state();
+    orcsdr::airband::service(live);
+    if (orcsdr::airband::active())
+      orcsdr::airband::update(airband_live_state());
+  }
   const uint32_t m5_elapsed_ms = millis() - m5_started_ms;
   if (m5_elapsed_ms >= 500)
     Serial.printf("RTL_MAIN_STALL stage=m5_update elapsed_ms=%u\n", m5_elapsed_ms);
