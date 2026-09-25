@@ -7,6 +7,7 @@
 
 #include "adsb_dashboard.hpp"
 #include "am_dashboard.hpp"
+#include "cb_dashboard.hpp"
 #include "fm_dashboard.hpp"
 #include "lora_dashboard.hpp"
 #include "p25_dashboard.hpp"
@@ -34,6 +35,7 @@ void show_home(bool demo) {
   if (settings::active()) g_hooks.restore_graphics(g_restore_graphics);
   fm::leave();
   am::leave();
+  cb::leave();
   p25::leave();
   pocsag::leave();
   adsb::leave();

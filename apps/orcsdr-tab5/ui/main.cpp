@@ -60,6 +60,7 @@
 #include "device_status_service.hpp"
 #include "screen_controller.hpp"
 #include "scan_engine.hpp"
+#include "cb_dashboard.hpp"
 #include "fm_dashboard.hpp"
 #include "fm_config.hpp"
 #include "home_dashboard.hpp"
@@ -540,11 +541,6 @@ constexpr int kSpectrumX = 64;
 constexpr int kSpectrumY = 96;
 constexpr int kSpectrumWidth = 1152;
 constexpr int kCbSpectrumWidth = 768;
-constexpr int kCbPanelX = kSpectrumX + kCbSpectrumWidth;
-constexpr int kCbPanelY = kSpectrumY;
-constexpr int kCbPanelWidth = 384;
-constexpr int kCbPanelHeight = 470;
-constexpr char kCbDashboardPath[] = "/orcsdr/cb_dashboard_384x470.jpg";
 constexpr int kSpectrumHeight = 200;
 constexpr int kWaterfallY = 316;
 constexpr int kWaterfallHeight = 250;
@@ -654,15 +650,9 @@ constexpr double kRtlIfOffsetHz = 1814972.0;
 constexpr double kRtlXtalHz = 28800000.0;
 
 using RtlBand = orcsdr::radio::Band;
-enum class CbMode : uint8_t { am, usb, lsb };
+using CbMode = orcsdr::cb::Mode;
 
-constexpr uint32_t kCbChannelsHz[] = {
-    26965000, 26975000, 26985000, 27005000, 27015000, 27025000, 27035000,
-    27055000, 27065000, 27075000, 27085000, 27105000, 27115000, 27125000,
-    27135000, 27155000, 27165000, 27175000, 27185000, 27205000, 27215000,
-    27225000, 27255000, 27235000, 27245000, 27265000, 27275000, 27285000,
-    27295000, 27305000, 27315000, 27325000, 27335000, 27345000, 27355000,
-    27365000, 27375000, 27385000, 27395000, 27405000};
+constexpr const auto& kCbChannelsHz = orcsdr::cb::kChannelsHz;
 static_assert(std::size(kCbChannelsHz) == 40);
 constexpr uint32_t kCbDefaultHz = kCbChannelsHz[18];
 constexpr bool cb_channel_plan_valid() {
@@ -1299,6 +1289,23 @@ static std::atomic<CbMode> cb_mode{CbMode::am};
 static std::atomic<int32_t> cb_clarifier_hz{0};
 static std::atomic<int32_t> cb_squelch_dbfs{-75};
 static std::atomic<bool> cb_squelch_open{false};
+// Band-wide CB scanner state. Owned by the UI task (spectrum, touch, serial).
+static orcsdr::cb::Monitor cb_monitor;
+static orcsdr::cb::Scanner cb_scanner;
+static float cb_channel_levels[orcsdr::cb::kChannelCount];
+static uint32_t cb_observe_after_ms = 0;
+static uint32_t cb_dashboard_refresh_ms = 0;
+static uint32_t cb_saved_hz = kCbDefaultHz;
+static bool cb_scan_resume = false;
+constexpr uint32_t kCbRetuneBlankMs = 250;
+constexpr uint32_t kCbDashboardRefreshMs = 150;
+constexpr int32_t kCbClarifierLimitHz = 1500;
+constexpr int32_t kCbClarifierStepHz = 100;
+constexpr int32_t kCbSquelchOpenDbfs = -90;
+constexpr int32_t kCbSquelchMaxDbfs = -35;
+constexpr int32_t kCbSquelchStepDb = 5;
+constexpr uint32_t kCbAmFilterHz = 10000;
+constexpr uint32_t kCbSsbFilterHz = 3000;
 static std::atomic<uint8_t> lora_sf{11};
 static std::atomic<uint32_t> lora_bandwidth_hz{250000};
 static std::atomic<bool> lora_detector_enabled{true};
@@ -2299,7 +2306,10 @@ void draw_spectrum_grid();
 void draw_spectrum_axis();
 void draw_band_edges();
 void draw_cb_dashboard(bool static_panel);
-bool handle_cb_touch(int32_t x, int32_t y);
+const orcsdr::cb::Snapshot& cb_dashboard_snapshot();
+void handle_cb_dashboard_action(const orcsdr::cb::Action& action);
+void service_cb_scanner(uint32_t now);
+void load_cb_settings();
 void draw_adsb_dashboard(bool static_panel);
 void draw_lora_dashboard(bool static_panel);
 void draw_pocsag_dashboard(bool static_panel);
@@ -2773,7 +2783,7 @@ uint32_t rtl_band_default_frequency(RtlBand band) {
     case RtlBand::am: return kRtlAmDefaultHz;
     case RtlBand::shortwave: return orcsdr::shortwave::saved_frequency();
     case RtlBand::wx: return kRtlWxHz;
-    case RtlBand::cb: return kCbDefaultHz;
+    case RtlBand::cb: return cb_saved_hz;
     case RtlBand::lora: return kLoraDefaultHz;
     case RtlBand::browse: return kRtlBrowseDefaultHz;
     case RtlBand::adsb: return kAdsbDefaultHz;
@@ -2786,7 +2796,10 @@ uint32_t rtl_band_default_frequency(RtlBand band) {
 uint32_t rtl_filter_default_hz(RtlBand band) {
   if (band == RtlBand::lora) return lora_bandwidth_hz.load(std::memory_order_relaxed);
   if (band == RtlBand::shortwave) return orcsdr::receiver_bands::kShortwave.default_bandwidth_hz;
-  if (band == RtlBand::am || band == RtlBand::cb) return kRtlAmFilterDefaultHz;
+  if (band == RtlBand::cb)
+    return cb_mode.load(std::memory_order_relaxed) == CbMode::am ? kCbAmFilterHz
+                                                                  : kCbSsbFilterHz;
+  if (band == RtlBand::am) return kRtlAmFilterDefaultHz;
   if (band == RtlBand::p25) return kP25StepHz;
   if (band == RtlBand::wx || band == RtlBand::browse || band == RtlBand::adsb ||
       band == RtlBand::pocsag)
@@ -6100,60 +6113,12 @@ void draw_global_bias_warning() {
 }
 
 void draw_cb_dashboard(bool static_panel) {
-  if (!orcsdr::screens::is_active(orcsdr::screens::Id::radio)) return;
-  if (rtl_ui_band != RtlBand::cb || rtl_nav_open) return;
-  if (static_panel) {
-    const bool image_ok = false;  // Native M5GFX has no POSIX filesystem adapter.
-    if (!image_ok) {
-      M5.Display.fillRoundRect(kCbPanelX, kCbPanelY, kCbPanelWidth,
-                               kCbPanelHeight, 10, 0x632c);
-      M5.Display.drawRoundRect(kCbPanelX, kCbPanelY, kCbPanelWidth,
-                               kCbPanelHeight, 10, TFT_LIGHTGREY);
-      M5.Display.fillRoundRect(kCbPanelX + 80, kCbPanelY + 178, 224, 58,
-                               8, TFT_BLACK);
-      M5.Display.fillCircle(kCbPanelX + 192, kCbPanelY + 311, 62, TFT_DARKGREY);
-    }
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_WHITE);
-    constexpr const char* labels[] = {"CH-", "CH+", "MODE", "CLAR", "SQL-", "SQL+"};
-    for (size_t i = 0; i < std::size(labels); ++i) {
-      M5.Display.drawString(labels[i], kCbPanelX + 51 + static_cast<int>(i) * 56,
-                            kCbPanelY + 410);
-    }
-  }
-
-  const size_t channel = cb_channel_index(rtl_ui_frequency_hz);
-  M5.Display.fillRect(kCbPanelX + 84, kCbPanelY + 183, 216, 45, TFT_BLACK);
-  M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextSize(4);
-  M5.Display.setTextColor(TFT_RED, TFT_BLACK);
-  char text[24];
-  snprintf(text, sizeof(text), "%02u", static_cast<unsigned>(channel + 1));
-  M5.Display.drawString(text, kCbPanelX + 126, kCbPanelY + 202);
-  M5.Display.setTextSize(2);
-  M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-  snprintf(text, sizeof(text), "%.3f", rtl_ui_frequency_hz / 1000000.0);
-  M5.Display.drawString(text, kCbPanelX + 229, kCbPanelY + 198);
-  const CbMode mode = cb_mode.load(std::memory_order_relaxed);
-  const int clarifier = cb_clarifier_hz.load(std::memory_order_relaxed);
-  const int squelch = cb_squelch_dbfs.load(std::memory_order_relaxed);
-  snprintf(text, sizeof(text), "%s %+.1fk SQL%d",
-           mode == CbMode::usb ? "USB" : mode == CbMode::lsb ? "LSB" : "AM",
-           clarifier / 1000.0, squelch);
-  M5.Display.setTextSize(1);
-  M5.Display.setTextColor(cb_squelch_open.load(std::memory_order_relaxed)
-                              ? TFT_GREEN
-                              : TFT_LIGHTGREY,
-                          TFT_BLACK);
-  M5.Display.drawString(text, kCbPanelX + 228, kCbPanelY + 216);
-  float level = (rtl_signal_dbfs_smooth + 70.0f) / 70.0f;
-  level = constrain(level, 0.0f, 1.0f);
-  M5.Display.drawRect(kCbPanelX + 172, kCbPanelY + 223, 112, 4, TFT_DARKGREY);
-  M5.Display.fillRect(kCbPanelX + 173, kCbPanelY + 224, 110, 2, TFT_BLACK);
-  M5.Display.fillRect(kCbPanelX + 173, kCbPanelY + 224,
-                      static_cast<int>(110.0f * level), 2,
-                      level > 0.82f ? TFT_RED : level > 0.62f ? TFT_YELLOW : TFT_GREEN);
+  if (!static_panel && !orcsdr::screens::may_draw(orcsdr::screens::Id::cb)) return;
+  if (!static_panel) orcsdr::screens::note_visible_update(orcsdr::screens::Id::cb);
+  const auto& snapshot = cb_dashboard_snapshot();
+  if (static_panel) orcsdr::cb::enter(snapshot);
+  else if (orcsdr::cb::active()) orcsdr::cb::update(snapshot);
+  if (static_panel) draw_global_header_controls();
 }
 
 void draw_adsb_dashboard(bool static_panel) {
@@ -6289,6 +6254,7 @@ orcsdr::screens::Id screen_for_band(RtlBand band) {
     case RtlBand::fm: return orcsdr::screens::Id::fm;
     case RtlBand::am: return orcsdr::screens::Id::am;
     case RtlBand::shortwave: return orcsdr::screens::Id::shortwave;
+    case RtlBand::cb: return orcsdr::screens::Id::cb;
     case RtlBand::p25: return orcsdr::screens::Id::p25;
     case RtlBand::adsb: return orcsdr::screens::Id::adsb;
     case RtlBand::pocsag: return orcsdr::screens::Id::pocsag;
@@ -6304,6 +6270,7 @@ void refresh_active_screen() {
     case Id::fm: draw_fm_dashboard(false); break;
     case Id::am: draw_am_dashboard(false); break;
     case Id::shortwave: draw_shortwave_dashboard(false); break;
+    case Id::cb: draw_cb_dashboard(false); break;
     case Id::p25: draw_p25_dashboard(false); break;
     case Id::adsb: draw_adsb_dashboard(false); break;
     case Id::pocsag: draw_pocsag_dashboard(false); break;
@@ -6376,6 +6343,7 @@ void close_visualizer() {
     case orcsdr::screens::Id::fm: orcsdr::fm::draw(); break;
     case orcsdr::screens::Id::am: orcsdr::am::draw(); break;
     case orcsdr::screens::Id::shortwave: orcsdr::shortwave::draw(); break;
+    case orcsdr::screens::Id::cb: orcsdr::cb::draw(); break;
     case orcsdr::screens::Id::p25: orcsdr::p25::draw(); break;
     case orcsdr::screens::Id::adsb: orcsdr::adsb::draw(); break;
     case orcsdr::screens::Id::lora: orcsdr::lora::draw(); break;
@@ -6526,6 +6494,7 @@ void close_rf_lab() {
     case orcsdr::screens::Id::fm: orcsdr::fm::draw(); break;
     case orcsdr::screens::Id::am: orcsdr::am::draw(); break;
     case orcsdr::screens::Id::shortwave: orcsdr::shortwave::draw(); break;
+    case orcsdr::screens::Id::cb: orcsdr::cb::draw(); break;
     case orcsdr::screens::Id::p25: orcsdr::p25::draw(); break;
     case orcsdr::screens::Id::adsb: orcsdr::adsb::draw(); break;
     case orcsdr::screens::Id::lora: orcsdr::lora::draw(); break;
@@ -6654,7 +6623,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   // Home is the common receiver workspace until a band has its own dashboard.
   // Do not resurrect the retired generic Browse surface for AM/WX/CB/Airband.
   if (band != RtlBand::fm && band != RtlBand::am && band != RtlBand::shortwave &&
-      band != RtlBand::p25 && band != RtlBand::adsb &&
+      band != RtlBand::cb && band != RtlBand::p25 && band != RtlBand::adsb &&
       band != RtlBand::pocsag && band != RtlBand::lora) {
     if (adsb_atc_listening) { draw_adsb_dashboard(true); return; }
     show_home();
@@ -6669,6 +6638,10 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   if (band != RtlBand::fm) orcsdr::fm::leave();
   if (band != RtlBand::am) orcsdr::am::leave();
   if (band != RtlBand::shortwave) orcsdr::shortwave::leave();
+  if (band != RtlBand::cb) {
+    orcsdr::cb::leave();
+    cb_scanner.stop();
+  }
   if (band != RtlBand::p25) orcsdr::p25::leave();
   if (band != RtlBand::adsb) orcsdr::adsb::leave();
   if (band != RtlBand::pocsag) orcsdr::pocsag::leave();
@@ -6701,6 +6674,15 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
     reset_spectrum_renderer();
     resume_rtl_speaker();
     draw_shortwave_dashboard(true);
+    orcsdr::screens::finish_transition();
+    return;
+  }
+  if (band == RtlBand::cb) {
+    reset_spectrum_renderer();
+    resume_rtl_speaker();
+    if (cb_scan_resume && !cb_scanner.running())
+      cb_scanner.start(millis(), orcsdr::cb::nearest_channel(frequency_hz));
+    draw_cb_dashboard(true);
     orcsdr::screens::finish_transition();
     return;
   }
@@ -7013,6 +6995,20 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
                     rtl_iq_pipeline_drops.load(std::memory_order_relaxed),
                     rtl_audio.dropped_chunks, rtl_audio.queued_chunks, rtl_audio.peak,
                     dsp_load_pct, dsp_blocks, dsp_max_us);
+    }
+  }
+
+  // The CB scanner watches all 40 channels from this full-band spectrum, so it
+  // runs whichever screen is showing, including Home while CB keeps playing.
+  if (rtl_ui_band == RtlBand::cb && !ui_documentation_mode) {
+    service_cb_scanner(now);
+    if (orcsdr::screens::owns(orcsdr::screens::Id::cb)) {
+      orcsdr::cb::draw_spectrum(rtl_spectrum_levels, kRtlSpectrumBins,
+                                rtl_active_sample_rate_sps.load(std::memory_order_relaxed),
+                                rtl_ui_frequency_hz);
+      rtl_spectrum_trace_last_ms = now;
+      rtl_spectrum_trace_valid = true;
+      return;
     }
   }
 
@@ -11872,7 +11868,10 @@ void open_dashboard(orcsdr::dashboards::Id id) {
                       : orcsdr::shortwave::saved_frequency();
       break;
     case Id::weather: band = RtlBand::wx; frequency = kRtlWxHz; break;
-    case Id::cb: band = RtlBand::cb; frequency = kCbDefaultHz; break;
+    case Id::cb:
+      band = RtlBand::cb;
+      frequency = rtl_ui_band == RtlBand::cb ? rtl_ui_frequency_hz : cb_saved_hz;
+      break;
     case Id::lora: band = RtlBand::lora; frequency = kLoraDefaultHz; break;
     case Id::airband: band = RtlBand::browse; frequency = 121500000; break;
     case Id::marine: band = RtlBand::browse; frequency = 156800000; break;
@@ -12597,6 +12596,7 @@ void load_state() {
   adsb_settings.latitude_e7 = preferences.getInt("adsb_lat_e7", 0);
   adsb_settings.longitude_e7 = preferences.getInt("adsb_lon_e7", 0);
   adsb_settings.radar_range_nm = preferences.getUShort("adsb_range", 25);
+  load_cb_settings();
   if (adsb_settings.latitude_e7 < -900000000 || adsb_settings.latitude_e7 > 900000000 ||
       adsb_settings.longitude_e7 < -1800000000 ||
       adsb_settings.longitude_e7 > 1800000000 ||
@@ -12903,73 +12903,311 @@ bool point_in_scope(int32_t x, int32_t y) {
   if (rtl_ui_band == RtlBand::adsb) return false;
   // Dashboard modules own their complete touch surfaces, including spectrum views.
   if (rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::am ||
-      rtl_ui_band == RtlBand::shortwave ||
+      rtl_ui_band == RtlBand::shortwave || rtl_ui_band == RtlBand::cb ||
       (rtl_ui_band == RtlBand::p25 && orcsdr::p25::active())) return false;
   // Spectrum + waterfall hit target for pan/flick (not the control rows).
   return x >= kSpectrumX && x < kSpectrumX + spectrum_draw_width() && y >= kSpectrumY &&
          y < kWaterfallY + kWaterfallHeight;
 }
 
-void tune_cb_channel(size_t channel) {
-  channel %= std::size(kCbChannelsHz);
+const char* cb_mode_name(CbMode mode) { return orcsdr::cb::mode_name(mode); }
+
+void persist_cb_settings() {
+  const auto& settings = cb_scanner.settings();
+  preferences.putUChar("cb_mode", static_cast<uint8_t>(cb_mode.load(std::memory_order_relaxed)));
+  preferences.putInt("cb_clar", cb_clarifier_hz.load(std::memory_order_relaxed));
+  preferences.putInt("cb_sql", cb_squelch_dbfs.load(std::memory_order_relaxed));
+  preferences.putUChar("cb_thresh", static_cast<uint8_t>(lroundf(settings.threshold_db)));
+  preferences.putUShort("cb_hang", settings.hang_ms);
+  preferences.putUShort("cb_maxhold", settings.max_hold_s);
+  preferences.putUChar("cb_pri", settings.priority_enabled
+                                      ? settings.priority_channel
+                                      : static_cast<uint8_t>(0xff));
+  preferences.putBool("cb_autossb", settings.auto_sideband);
+  const uint64_t lockouts = cb_scanner.lockout_mask();
+  preferences.putBytes("cb_lockout", &lockouts, sizeof(lockouts));
+}
+
+void load_cb_settings() {
+  const uint8_t mode = preferences.getUChar("cb_mode", 0);
+  cb_mode.store(mode <= static_cast<uint8_t>(CbMode::lsb) ? static_cast<CbMode>(mode)
+                                                            : CbMode::am,
+                std::memory_order_relaxed);
+  cb_clarifier_hz.store(constrain(preferences.getInt("cb_clar", 0), -kCbClarifierLimitHz,
+                                  kCbClarifierLimitHz),
+                        std::memory_order_relaxed);
+  cb_squelch_dbfs.store(constrain(preferences.getInt("cb_sql", -75), kCbSquelchOpenDbfs,
+                                  kCbSquelchMaxDbfs),
+                        std::memory_order_relaxed);
+  auto& settings = cb_scanner.settings();
+  settings.threshold_db = static_cast<float>(constrain(
+      static_cast<int>(preferences.getUChar("cb_thresh", 10)),
+      static_cast<int>(orcsdr::cb::kThresholdMinDb),
+      static_cast<int>(orcsdr::cb::kThresholdMaxDb)));
+  settings.hang_ms = min(preferences.getUShort("cb_hang", 2000), orcsdr::cb::kHangMaxMs);
+  const uint16_t max_hold = preferences.getUShort("cb_maxhold", 0);
+  settings.max_hold_s = 0;
+  for (uint16_t choice : orcsdr::cb::kMaxHoldChoicesS)
+    if (choice == max_hold) settings.max_hold_s = choice;
+  const uint8_t priority =
+      preferences.getUChar("cb_pri", static_cast<uint8_t>(orcsdr::cb::kEmergencyChannel));
+  settings.priority_enabled = priority < orcsdr::cb::kChannelCount;
+  if (settings.priority_enabled) settings.priority_channel = priority;
+  settings.auto_sideband = preferences.getBool("cb_autossb", true);
+  uint64_t lockouts = 0;
+  if (preferences.getBytes("cb_lockout", &lockouts, sizeof(lockouts)) == sizeof(lockouts))
+    cb_scanner.set_lockout_mask(lockouts);
+  const uint8_t channel = preferences.getUChar(
+      "cb_channel", static_cast<uint8_t>(orcsdr::cb::kHighwayChannel));
+  cb_saved_hz = kCbChannelsHz[channel < orcsdr::cb::kChannelCount
+                                  ? channel
+                                  : orcsdr::cb::kHighwayChannel];
+  cb_scan_resume = preferences.getBool("cb_scan", false);
+}
+
+void apply_cb_mode(CbMode mode, bool persist) {
+  if (cb_mode.load(std::memory_order_relaxed) != mode) {
+    cb_mode.store(mode, std::memory_order_relaxed);
+    cb_clarifier_hz.store(0, std::memory_order_relaxed);
+    rtl_filter_bandwidth_hz.store(mode == CbMode::am ? kCbAmFilterHz : kCbSsbFilterHz,
+                                  std::memory_order_relaxed);
+    rtl_audio_reset_demod_filters();
+    rtl_audio.ssb_cos = 1.0f;
+    rtl_audio.ssb_sin = 0.0f;
+    Serial.printf("RTL_CB_MODE mode=%s\n", cb_mode_name(mode));
+  }
+  if (persist) persist_cb_settings();
+}
+
+// Scanner stops are not persisted: they can happen hundreds of times a day.
+void tune_cb_channel(size_t channel, bool from_scanner = false) {
+  channel %= orcsdr::cb::kChannelCount;
   const uint32_t frequency = kCbChannelsHz[channel];
+  if (cb_scanner.settings().auto_sideband)
+    apply_cb_mode(channel >= orcsdr::cb::kFirstSsbChannel ? CbMode::lsb : CbMode::am, false);
+  if (!from_scanner) {
+    cb_scanner.note_manual_tune(channel);
+    cb_saved_hz = frequency;
+    preferences.putUChar("cb_channel", static_cast<uint8_t>(channel));
+  }
+  cb_observe_after_ms = millis() + kCbRetuneBlankMs;
+  if (frequency != rtl_ui_frequency_hz) reset_spectrum_renderer();
   if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running) {
     request_hot_retune(frequency);
   } else {
-    queue_local_rtl_listen(RtlBand::cb, frequency);
+    queue_local_rtl_listen(RtlBand::cb, frequency, !from_scanner);
   }
   draw_cb_dashboard(false);
-  draw_spectrum_axis();
 }
 
-bool handle_cb_touch(int32_t x, int32_t y) {
-  if (rtl_ui_band != RtlBand::cb || x < kCbPanelX || x >= kCbPanelX + kCbPanelWidth ||
-      y < kCbPanelY || y >= kCbPanelY + kCbPanelHeight) return false;
-  const int knob_x = kCbPanelX + 192;
-  const int knob_y = kCbPanelY + 311;
-  const int dx = x - knob_x;
-  const int dy = y - knob_y;
-  if (dx * dx + dy * dy <= 78 * 78) {
-    constexpr float kPi = 3.14159265358979323846f;
-    const float turn = (atan2f(static_cast<float>(dy), static_cast<float>(dx)) + kPi) /
-                       (2.0f * kPi);
-    tune_cb_channel(min(static_cast<size_t>(turn * 40.0f), size_t{39}));
-    return true;
+void set_cb_scanning(bool enabled) {
+  const size_t channel = orcsdr::cb::nearest_channel(rtl_ui_frequency_hz);
+  if (enabled) cb_scanner.start(millis(), channel);
+  else cb_scanner.stop();
+  cb_scan_resume = enabled;
+  preferences.putBool("cb_scan", enabled);
+  if (!enabled) {
+    cb_saved_hz = kCbChannelsHz[channel];
+    preferences.putUChar("cb_channel", static_cast<uint8_t>(channel));
   }
-  if (y >= kCbPanelY + 380 && y <= kCbPanelY + 442) {
-    const int control = constrain((x - (kCbPanelX + 23)) / 56, 0, 5);
-    if (control == 0 || control == 1) {
-      const size_t current = cb_channel_index(rtl_ui_frequency_hz);
-      tune_cb_channel((current + (control == 0 ? 39 : 1)) % 40);
-    } else if (control == 2) {
-      CbMode mode = cb_mode.load(std::memory_order_relaxed);
-      mode = mode == CbMode::am ? CbMode::usb : mode == CbMode::usb ? CbMode::lsb
-                                                                        : CbMode::am;
-      cb_mode.store(mode, std::memory_order_relaxed);
-      cb_clarifier_hz.store(0, std::memory_order_relaxed);
-      rtl_filter_bandwidth_hz.store(mode == CbMode::am ? 10000 : 3000,
-                                    std::memory_order_relaxed);
-      rtl_audio_reset_demod_filters();
-      Serial.printf("RTL_CB_MODE mode=%s\n", mode == CbMode::usb ? "USB"
-                                              : mode == CbMode::lsb ? "LSB" : "AM");
-    } else if (control == 3) {
-      int clarifier = cb_clarifier_hz.load(std::memory_order_relaxed) + 500;
-      if (clarifier > 1500) clarifier = -1500;
-      cb_clarifier_hz.store(clarifier, std::memory_order_relaxed);
+  Serial.printf("RTL_CB_SCAN %s channel=%u eligible=%u\n", enabled ? "start" : "stop",
+                static_cast<unsigned>(channel + 1),
+                static_cast<unsigned>(cb_scanner.eligible_count()));
+}
+
+void service_cb_scanner(uint32_t now) {
+  if (rtl_ui_band != RtlBand::cb ||
+      rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running)
+    return;
+  // Frames straddling a retune map old IQ onto the new center; skip them.
+  if (static_cast<int32_t>(now - cb_observe_after_ms) < 0) return;
+  orcsdr::cb::channel_levels(rtl_spectrum_levels, kRtlSpectrumBins,
+                             rtl_active_sample_rate_sps.load(std::memory_order_relaxed),
+                             rtl_ui_frequency_hz, cb_channel_levels);
+  cb_monitor.observe(now, cb_channel_levels, orcsdr::cb::noise_floor(cb_channel_levels),
+                     cb_scanner.settings().threshold_db);
+  const size_t tuned = orcsdr::cb::nearest_channel(rtl_ui_frequency_hz);
+  if (cb_scanner.running() && cb_scanner.channel() != tuned &&
+      cb_scanner.state() != orcsdr::cb::State::settling)
+    cb_scanner.note_manual_tune(tuned);  // Retuned elsewhere (serial, restore).
+  const int next = cb_scanner.update(now, cb_monitor);
+  if (next >= 0) {
+    Serial.printf("RTL_CB_SCAN stop channel=%d snr_db=%.1f\n", next + 1,
+                  static_cast<double>(cb_monitor.stats(static_cast<size_t>(next)).snr_db));
+    tune_cb_channel(static_cast<size_t>(next), true);
+  }
+  if (now - cb_dashboard_refresh_ms >= kCbDashboardRefreshMs) {
+    cb_dashboard_refresh_ms = now;
+    draw_cb_dashboard(false);
+  }
+}
+
+const orcsdr::cb::Snapshot& cb_dashboard_snapshot() {
+  static orcsdr::cb::Snapshot snapshot;
+  const uint32_t now = millis();
+  snapshot.now_ms = now;
+  snapshot.frequency_hz = rtl_ui_frequency_hz;
+  snapshot.channel = static_cast<uint8_t>(orcsdr::cb::nearest_channel(rtl_ui_frequency_hz));
+  snapshot.mode = cb_mode.load(std::memory_order_relaxed);
+  snapshot.clarifier_hz = cb_clarifier_hz.load(std::memory_order_relaxed);
+  snapshot.squelch_dbfs = cb_squelch_dbfs.load(std::memory_order_relaxed);
+  snapshot.squelch_open = cb_squelch_open.load(std::memory_order_relaxed);
+  snapshot.signal_dbfs = rtl_signal_dbfs_smooth;
+  snapshot.running =
+      rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
+  snapshot.sound_enabled = rtl_audio_user_enabled.load(std::memory_order_acquire);
+  snapshot.battery_percent = M5.Power.getBatteryLevel();
+  snapshot.scan_state = cb_scanner.state();
+  snapshot.hang_remaining_ms = cb_scanner.hang_remaining_ms(now);
+  snapshot.stops = cb_scanner.stops();
+  snapshot.scan = cb_scanner.settings();
+  snapshot.floor_db = cb_monitor.floor_db();
+  snapshot.active_count = static_cast<uint8_t>(cb_monitor.active_count());
+  for (size_t channel = 0; channel < orcsdr::cb::kChannelCount; ++channel) {
+    const auto& stats = cb_monitor.stats(channel);
+    auto& view = snapshot.channels[channel];
+    view.snr_db = stats.snr_db;
+    view.last_active_ms = stats.last_active_ms;
+    view.hits = stats.hits;
+    view.active = stats.active;
+    view.seen = stats.seen;
+    view.locked = cb_scanner.locked_out(channel);
+    view.skipped = cb_scanner.skipped(channel);
+  }
+  snapshot.log_count = static_cast<uint8_t>(cb_monitor.log_count());
+  for (size_t i = 0; i < cb_monitor.log_count(); ++i) snapshot.log[i] = *cb_monitor.log(i);
+  return snapshot;
+}
+
+void handle_cb_dashboard_action(const orcsdr::cb::Action& action) {
+  using orcsdr::cb::ActionKind;
+  auto& settings = cb_scanner.settings();
+  const size_t current = orcsdr::cb::nearest_channel(rtl_ui_frequency_hz);
+  const uint32_t now = millis();
+  switch (action.kind) {
+    case ActionKind::none: return;
+    case ActionKind::tune_channel:
+      tune_cb_channel(static_cast<size_t>(
+          constrain(action.value, 0, static_cast<int32_t>(orcsdr::cb::kChannelCount - 1))));
+      return;
+    case ActionKind::channel_down:
+      tune_cb_channel((current + orcsdr::cb::kChannelCount - 1) % orcsdr::cb::kChannelCount);
+      return;
+    case ActionKind::channel_up:
+      tune_cb_channel((current + 1) % orcsdr::cb::kChannelCount);
+      return;
+    case ActionKind::mode_cycle: {
+      const CbMode mode = cb_mode.load(std::memory_order_relaxed);
+      apply_cb_mode(mode == CbMode::am ? CbMode::usb
+                    : mode == CbMode::usb ? CbMode::lsb
+                                          : CbMode::am,
+                    true);
+      break;
+    }
+    case ActionKind::clarifier_down:
+    case ActionKind::clarifier_up: {
+      const int32_t step = action.kind == ActionKind::clarifier_up ? kCbClarifierStepHz
+                                                                   : -kCbClarifierStepHz;
+      cb_clarifier_hz.store(
+          constrain(cb_clarifier_hz.load(std::memory_order_relaxed) + step,
+                    -kCbClarifierLimitHz, kCbClarifierLimitHz),
+          std::memory_order_relaxed);
       rtl_audio.ssb_cos = 1.0f;
       rtl_audio.ssb_sin = 0.0f;
-    } else if (control == 4 || control == 5) {
-      int threshold = cb_squelch_dbfs.load(std::memory_order_relaxed);
-      threshold = constrain(threshold + (control == 4 ? -5 : 5), -90, -35);
-      cb_squelch_dbfs.store(threshold, std::memory_order_relaxed);
-      Serial.printf("RTL_CB_SQUELCH dbfs=%d\n", threshold);
-    } else {
-      return true;
+      persist_cb_settings();
+      break;
     }
-    draw_cb_dashboard(false);
-    return true;
+    case ActionKind::squelch_down:
+    case ActionKind::squelch_up: {
+      const int32_t step = action.kind == ActionKind::squelch_up ? kCbSquelchStepDb
+                                                                 : -kCbSquelchStepDb;
+      const int32_t threshold =
+          constrain(cb_squelch_dbfs.load(std::memory_order_relaxed) + step,
+                    kCbSquelchOpenDbfs, kCbSquelchMaxDbfs);
+      cb_squelch_dbfs.store(threshold, std::memory_order_relaxed);
+      Serial.printf("RTL_CB_SQUELCH dbfs=%ld\n", static_cast<long>(threshold));
+      persist_cb_settings();
+      break;
+    }
+    case ActionKind::scan_toggle: set_cb_scanning(!cb_scanner.running()); break;
+    case ActionKind::hold_toggle:
+      if (cb_scanner.state() == orcsdr::cb::State::held) cb_scanner.release(now);
+      else cb_scanner.hold(current);
+      break;
+    case ActionKind::skip: cb_scanner.skip(now); break;
+    case ActionKind::lockout_current:
+    case ActionKind::lockout_toggle: {
+      const size_t channel = action.kind == ActionKind::lockout_current
+                                 ? current
+                                 : static_cast<size_t>(constrain(
+                                       action.value, 0,
+                                       static_cast<int32_t>(orcsdr::cb::kChannelCount - 1)));
+      cb_scanner.set_lockout(channel, !cb_scanner.locked_out(channel));
+      persist_cb_settings();
+      break;
+    }
+    case ActionKind::lockout_clear:
+      cb_scanner.clear_lockouts();
+      persist_cb_settings();
+      break;
+    case ActionKind::lockout_ssb_only: {
+      uint64_t mask = 0;
+      for (size_t channel = 0; channel < orcsdr::cb::kFirstSsbChannel; ++channel)
+        mask |= uint64_t{1} << channel;
+      cb_scanner.set_lockout_mask(mask);
+      persist_cb_settings();
+      break;
+    }
+    case ActionKind::priority_cycle:
+      // OFF -> CH 9 -> CH 19 -> OFF
+      if (!settings.priority_enabled) {
+        settings.priority_enabled = true;
+        settings.priority_channel = orcsdr::cb::kEmergencyChannel;
+      } else if (settings.priority_channel == orcsdr::cb::kEmergencyChannel) {
+        settings.priority_channel = orcsdr::cb::kHighwayChannel;
+      } else {
+        settings.priority_enabled = false;
+      }
+      persist_cb_settings();
+      break;
+    case ActionKind::threshold_down:
+    case ActionKind::threshold_up:
+      settings.threshold_db = constrain(
+          settings.threshold_db + (action.kind == ActionKind::threshold_up ? 1.0f : -1.0f),
+          orcsdr::cb::kThresholdMinDb, orcsdr::cb::kThresholdMaxDb);
+      persist_cb_settings();
+      break;
+    case ActionKind::hang_down:
+      settings.hang_ms = settings.hang_ms >= 500 ? settings.hang_ms - 500 : 0;
+      persist_cb_settings();
+      break;
+    case ActionKind::hang_up:
+      settings.hang_ms = min<uint16_t>(settings.hang_ms + 500, orcsdr::cb::kHangMaxMs);
+      persist_cb_settings();
+      break;
+    case ActionKind::max_hold_cycle: {
+      constexpr size_t count = std::size(orcsdr::cb::kMaxHoldChoicesS);
+      size_t index = 0;
+      while (index < count && orcsdr::cb::kMaxHoldChoicesS[index] != settings.max_hold_s)
+        ++index;
+      settings.max_hold_s = orcsdr::cb::kMaxHoldChoicesS[(index + 1) % count];
+      persist_cb_settings();
+      break;
+    }
+    case ActionKind::auto_sideband_toggle:
+      settings.auto_sideband = !settings.auto_sideband;
+      persist_cb_settings();
+      break;
+    case ActionKind::log_clear: cb_monitor.clear_log(); break;
+    case ActionKind::open_settings:
+      open_global_settings(orcsdr::settings::Section::radio_defaults);
+      return;
+    case ActionKind::exit_home:
+      orcsdr::cb::leave();
+      show_home();
+      return;
   }
-  return true;
+  draw_cb_dashboard(false);
 }
 
 bool handle_lora_touch(int32_t x, int32_t y) {
@@ -13086,6 +13324,13 @@ void poll_sdr_touch(bool from_stream) {
   // The LoRa dashboard owns its plot and controls. Generic SDR scope gestures
   // overlap the channel-picker arrows and must not turn those taps into retunes.
   if (rtl_ui_band == RtlBand::lora && orcsdr::lora::active()) {
+    if (pressed && !was_pressed) handle_sdr_touch(touch.x, touch.y);
+    was_pressed = pressed;
+    return;
+  }
+
+  // The CB dashboard owns its full surface; generic scope gestures overlap it.
+  if (rtl_ui_band == RtlBand::cb && orcsdr::cb::active()) {
     if (pressed && !was_pressed) handle_sdr_touch(touch.x, touch.y);
     was_pressed = pressed;
     return;
@@ -13222,19 +13467,6 @@ void poll_sdr_touch(bool from_stream) {
     pinch_active = false;
     scope_dragging = false;
     was_pressed = pressed;
-    return;
-  }
-
-  if (pressed && !was_pressed && rtl_ui_band == RtlBand::cb &&
-      point_in_scope(touch.x, touch.y)) {
-    const uint32_t span = rtl_scope_span_hz.load(std::memory_order_relaxed);
-    const int64_t offset = (static_cast<int64_t>(touch.x - kSpectrumX) * span) /
-                               scope_width -
-                           static_cast<int64_t>(span / 2);
-    const int64_t selected = static_cast<int64_t>(rtl_ui_frequency_hz) + offset;
-    tune_cb_channel(cb_channel_index(
-        static_cast<uint32_t>(selected < 0 ? 0 : selected)));
-    was_pressed = true;
     return;
   }
 
@@ -13435,6 +13667,10 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     handle_shortwave_dashboard_action(orcsdr::shortwave::handle_touch(x, y));
     return;
   }
+  if (rtl_ui_band == RtlBand::cb && orcsdr::cb::active()) {
+    handle_cb_dashboard_action(orcsdr::cb::handle_touch(x, y));
+    return;
+  }
   if (rtl_ui_band == RtlBand::p25 && orcsdr::p25::active()) {
     handle_p25_dashboard_action(orcsdr::p25::handle_touch(x, y));
     return;
@@ -13444,7 +13680,6 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     return;
   }
   if (handle_tool_tab_touch(x, y)) return;
-  if (handle_cb_touch(x, y)) return;
   const orcsdr::radio_ui::ControlLayout control_layout{
       kSdrEdge, kSdrBandY, kSdrTuneY, kSdrControlsHeight, kSdrGap};
   if (rtl_ui_band == RtlBand::lora) {
@@ -14071,7 +14306,7 @@ bool ui_doc_render(const char* screen_id, bool demo) {
         }
       }
       draw_sdr_screen(entry.band, entry.frequency, rtl_ui_volume);
-      if (demo) {
+      if (demo && entry.band != RtlBand::cb) {
         if (tool == OrcTool::Capture) draw_capture_tool_panel();
         else draw_documentation_spectrum();
       }
@@ -14265,6 +14500,7 @@ bool ui_regression_restore_screen(const UiRegressionSnapshot& before) {
     case orcsdr::screens::Id::fm:
     case orcsdr::screens::Id::am:
     case orcsdr::screens::Id::shortwave:
+    case orcsdr::screens::Id::cb:
     case orcsdr::screens::Id::p25:
     case orcsdr::screens::Id::adsb:
     case orcsdr::screens::Id::lora:
@@ -14291,6 +14527,7 @@ void run_ui_regression(bool workflow) {
                                   before.screen == orcsdr::screens::Id::fm ||
                                   before.screen == orcsdr::screens::Id::am ||
                                   before.screen == orcsdr::screens::Id::shortwave ||
+                                  before.screen == orcsdr::screens::Id::cb ||
                                   before.screen == orcsdr::screens::Id::p25 ||
                                   before.screen == orcsdr::screens::Id::adsb ||
                                   before.screen == orcsdr::screens::Id::lora ||
@@ -14307,6 +14544,7 @@ void run_ui_regression(bool workflow) {
     draw_home_dashboard();
     const bool dashboard_band = before.band == RtlBand::fm || before.band == RtlBand::am ||
                                 before.band == RtlBand::shortwave ||
+                                before.band == RtlBand::cb ||
                                 before.band == RtlBand::p25 ||
                                 before.band == RtlBand::adsb || before.band == RtlBand::lora ||
                                 before.band == RtlBand::pocsag;
@@ -14414,6 +14652,104 @@ const char* ui_touch_route() {
   if (pocsag_ui && orcsdr::screens::owns(orcsdr::screens::Id::pocsag)) return "pocsag";
   if (fm_ui || am_ui || p25_ui || radio_ui) return "sdr";
   return "fallback";
+}
+
+void print_cb_status() {
+  const auto& settings = cb_scanner.settings();
+  const size_t channel = orcsdr::cb::nearest_channel(rtl_ui_frequency_hz);
+  Serial.printf(
+      "RTL_CB_STATUS band_active=%d channel=%u frequency_hz=%lu mode=%s clarifier_hz=%ld "
+      "squelch_dbfs=%ld squelch_open=%d scan=%s scan_channel=%u hang_ms=%lu stops=%lu "
+      "floor_db=%.1f active=%u eligible=%u lockouts=0x%010llx threshold_db=%.0f "
+      "hang_setting_ms=%u max_hold_s=%u priority=%d auto_sideband=%d log=%u\n",
+      rtl_ui_band == RtlBand::cb ? 1 : 0, static_cast<unsigned>(channel + 1),
+      static_cast<unsigned long>(rtl_ui_frequency_hz),
+      cb_mode_name(cb_mode.load(std::memory_order_relaxed)),
+      static_cast<long>(cb_clarifier_hz.load(std::memory_order_relaxed)),
+      static_cast<long>(cb_squelch_dbfs.load(std::memory_order_relaxed)),
+      cb_squelch_open.load(std::memory_order_relaxed) ? 1 : 0,
+      orcsdr::cb::state_name(cb_scanner.state()),
+      static_cast<unsigned>(cb_scanner.channel() + 1),
+      static_cast<unsigned long>(cb_scanner.hang_remaining_ms(millis())),
+      static_cast<unsigned long>(cb_scanner.stops()),
+      static_cast<double>(cb_monitor.floor_db()),
+      static_cast<unsigned>(cb_monitor.active_count()),
+      static_cast<unsigned>(cb_scanner.eligible_count()),
+      static_cast<unsigned long long>(cb_scanner.lockout_mask()),
+      static_cast<double>(settings.threshold_db), static_cast<unsigned>(settings.hang_ms),
+      static_cast<unsigned>(settings.max_hold_s),
+      settings.priority_enabled ? static_cast<int>(settings.priority_channel + 1) : 0,
+      settings.auto_sideband ? 1 : 0, static_cast<unsigned>(cb_monitor.log_count()));
+}
+
+bool parse_cb_channel(const char* text, size_t* channel) {
+  char* end = nullptr;
+  const long value = strtol(text, &end, 10);
+  if (end == text || value < 1 || value > static_cast<long>(orcsdr::cb::kChannelCount))
+    return false;
+  *channel = static_cast<size_t>(value - 1);
+  return *end == '\0' || *end == ' ';
+}
+
+void process_cb_command(const char* command) {
+  if (strcmp(command, "RTL_CB STATUS") == 0 || strcmp(command, "RTL_CB") == 0) {
+    print_cb_status();
+    return;
+  }
+  if (strcmp(command, "RTL_CB ACTIVITY") == 0) {
+    for (size_t channel = 0; channel < orcsdr::cb::kChannelCount; ++channel) {
+      const auto& stats = cb_monitor.stats(channel);
+      if (!stats.active && !stats.hits) continue;
+      Serial.printf("RTL_CB_CHANNEL channel=%u active=%d snr_db=%.1f hits=%u "
+                    "active_ms=%lu peak_snr_db=%.1f locked=%d\n",
+                    static_cast<unsigned>(channel + 1), stats.active ? 1 : 0,
+                    static_cast<double>(stats.snr_db), static_cast<unsigned>(stats.hits),
+                    static_cast<unsigned long>(stats.active_ms),
+                    static_cast<double>(stats.peak_snr_db),
+                    cb_scanner.locked_out(channel) ? 1 : 0);
+    }
+    for (size_t i = 0; i < cb_monitor.log_count(); ++i) {
+      const auto* hit = cb_monitor.log(i);
+      Serial.printf("RTL_CB_HIT index=%u channel=%u start_ms=%lu duration_ms=%lu "
+                    "peak_snr_db=%.1f\n",
+                    static_cast<unsigned>(i), static_cast<unsigned>(hit->channel + 1),
+                    static_cast<unsigned long>(hit->start_ms),
+                    static_cast<unsigned long>(hit->duration_ms),
+                    static_cast<double>(hit->peak_snr_db));
+    }
+    Serial.printf("RTL_CB_ACTIVITY_DONE log=%u\n", static_cast<unsigned>(cb_monitor.log_count()));
+    return;
+  }
+  if (!authenticated) {
+    Serial.println("RTL_CB_ERROR auth_required");
+    return;
+  }
+  if (rtl_ui_band != RtlBand::cb) {
+    Serial.println("RTL_CB_ERROR band_not_cb use RTL_UI OPEN CB");
+    return;
+  }
+  size_t channel = 0;
+  if (strcmp(command, "RTL_CB SCAN ON") == 0 || strcmp(command, "RTL_CB SCAN OFF") == 0) {
+    set_cb_scanning(strcmp(command + 12, "ON") == 0);
+  } else if (strncmp(command, "RTL_CB CHANNEL ", 15) == 0 &&
+             parse_cb_channel(command + 15, &channel)) {
+    tune_cb_channel(channel);
+  } else if (strncmp(command, "RTL_CB LOCKOUT ", 15) == 0 &&
+             parse_cb_channel(command + 15, &channel)) {
+    const char* state = strchr(command + 15, ' ');
+    if (!state || (strcmp(state + 1, "ON") != 0 && strcmp(state + 1, "OFF") != 0)) {
+      Serial.println("RTL_CB_ERROR use RTL_CB LOCKOUT <1-40> ON|OFF");
+      return;
+    }
+    cb_scanner.set_lockout(channel, strcmp(state + 1, "ON") == 0);
+    persist_cb_settings();
+  } else {
+    Serial.println("RTL_CB_ERROR use STATUS|ACTIVITY|SCAN ON|SCAN OFF|CHANNEL <1-40>|"
+                   "LOCKOUT <1-40> ON|OFF");
+    return;
+  }
+  draw_cb_dashboard(false);
+  print_cb_status();
 }
 
 void process_command(char* command) {
@@ -14562,6 +14898,10 @@ void process_command(char* command) {
       return;
     }
   }
+  if (strncmp(command, "RTL_CB", 6) == 0 && (command[6] == '\0' || command[6] == ' ')) {
+    process_cb_command(command);
+    return;
+  }
   if (strcmp(command, "RTL_UI STATUS") == 0) {
     Serial.printf("RTL_UI_STATUS screen=%s band=%s frequency_hz=%u settings=%d fm=%d am=%d p25=%d "
                   "adsb=%d lora=%d rf24=%d home_font=%d graphics=%d radio_ui=%d route=%s\n",
@@ -14623,6 +14963,7 @@ void process_command(char* command) {
     else if (strcmp(name, "FM") == 0) open_dashboard(Id::fm);
     else if (strcmp(name, "AM") == 0) open_dashboard(Id::am);
     else if (strcmp(name, "SHORTWAVE") == 0) open_dashboard(Id::shortwave);
+    else if (strcmp(name, "CB") == 0) open_dashboard(Id::cb);
     else if (strcmp(name, "P25") == 0) open_dashboard(Id::p25);
     else if (strcmp(name, "ADSB") == 0) open_dashboard(Id::adsb);
     else if (strcmp(name, "LORA") == 0) open_dashboard(Id::lora);
@@ -16969,6 +17310,11 @@ void setup() {
     return;
   }
   Serial.println("RTL_SHORTWAVE_DASHBOARD_SELF_CHECK_OK");
+  if (!orcsdr::cb::dashboard_self_check()) {
+    Serial.println("RTL_CB_DASHBOARD_SELF_CHECK_FAIL");
+    return;
+  }
+  Serial.println("RTL_CB_DASHBOARD_SELF_CHECK_OK");
   if (!orcsdr::receiver_controls::self_check()) {
     Serial.println("RTL_RECEIVER_CONTROLS_SELF_CHECK_FAIL");
     return;
@@ -17260,6 +17606,7 @@ void loop() {
   const bool am_ui = rtl_ui_band == RtlBand::am && orcsdr::am::active();
   const bool shortwave_ui =
       rtl_ui_band == RtlBand::shortwave && orcsdr::shortwave::active();
+  const bool cb_ui = rtl_ui_band == RtlBand::cb && orcsdr::cb::active();
   const bool p25_ui = rtl_ui_band == RtlBand::p25 && orcsdr::p25::active();
   const bool visualizer_ui = orcsdr::visualizer::active();
   const bool rf_lab_ui = orcsdr::rf_lab::active();
@@ -17278,7 +17625,8 @@ void loop() {
   service_rf_lab();
   if (rtl_stream_spectrum_pending.exchange(false, std::memory_order_acq_rel) &&
       !orcsdr::visualizer::active() && !orcsdr::rf_lab::active() &&
-      (orcsdr::web_console::spectrum_demanded() || fm_ui || am_ui || shortwave_ui || p25_ui ||
+      (orcsdr::web_console::spectrum_demanded() || fm_ui || am_ui || shortwave_ui || cb_ui ||
+       p25_ui ||
        (rtl_ui_band == RtlBand::lora && orcsdr::lora::active()))) {
     draw_spectrum(nullptr, 0);
   }

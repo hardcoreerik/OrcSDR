@@ -9,7 +9,7 @@ apply to later source snapshots.
 | FM audio, presets, stereo, RDS | **RF-Verified / Regression-Tested** | Verified on RTL-SDR Blog V4 and one V3C with suitable FM setups. |
 | AM broadcast and 119-channel scan | **Hardware-Verified / Experimental** | Exact RC4 package exercised the dashboard and scan; general reception quality remains Experimental. |
 | NOAA Weather Radio | **Implemented** | Current-release RF acceptance is Not Verified. |
-| CB | **Implemented / Runtime-Verified** | Flashed and exercised; operator/RF acceptance remains open. |
+| CB | **Implemented / Runtime-Verified** | The earlier channel panel was flashed and exercised. The band-wide scanner dashboard has host regression tests; Tab5 hardware and RF acceptance remain open. |
 | Shortwave | **Implemented / Experimental** | Generic Browse/NFM workspace only; complete AM/SSB and calibrated HF reception are Not Implemented. |
 | Airband | **Implemented / Experimental** | Generic Browse near 121.5 MHz using NFM; not a complete AM aviation voice receiver. |
 | Marine | **Implemented / Experimental** | Generic NFM routing; no dedicated dashboard/current RF acceptance evidence. |
