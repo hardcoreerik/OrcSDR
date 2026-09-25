@@ -12832,7 +12832,8 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
     if (enabled.load(std::memory_order_relaxed))
       restart.store(true, std::memory_order_release);
   }
-  if (band == RtlBand::shortwave && rtl_tuner_gain_available(frequency_hz) &&
+  if ((band == RtlBand::shortwave || band == RtlBand::airband) &&
+      rtl_tuner_gain_available(frequency_hz) &&
       rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN_AUTO))
     (void)esp_rtl_sdr_set_tuner_gain_mode(g_rtl, ESP_RTL_SDR_GAIN_MODE_AUTO);
 #endif
