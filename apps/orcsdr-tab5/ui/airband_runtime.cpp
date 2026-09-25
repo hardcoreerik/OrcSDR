@@ -47,7 +47,7 @@ void load_settings_once() {
   s.squelch_dbfs =
       static_cast<int16_t>(std::clamp(g_store.get_i32("squelch", -75), -100, -30));
   s.settle_ms =
-      static_cast<uint16_t>(std::clamp<uint32_t>(g_store.get_u16("settle", 55), 20, 250));
+      static_cast<uint16_t>(std::clamp<uint32_t>(g_store.get_u16("settle", 350), 300, 800));
   s.hang_ms =
       static_cast<uint16_t>(std::clamp<uint32_t>(g_store.get_u16("hang", 1500), 0, 5000));
   s.priority_guard = g_store.get_bool("guard", true);
@@ -75,7 +75,8 @@ void save_frequency(uint32_t frequency_hz) {
 }
 
 void rebuild_bank(uint32_t current_frequency_hz) {
-  BankEntry entries[kBankCapacity]{};
+  static BankEntry entries[kBankCapacity];
+  for (auto& entry : entries) entry = {};
   size_t count = g_catalog.make_bank(entries, kBankCapacity);
 
   if (count == 0 && in_band(current_frequency_hz)) {
@@ -159,10 +160,10 @@ bool tune(uint32_t frequency_hz) {
 
 void cycle_settle() {
   auto& value = g_scanner.settings().settle_ms;
-  if (value < 45) value = 55;
-  else if (value < 70) value = 85;
-  else if (value < 105) value = 120;
-  else value = 35;
+  if (value < 325) value = 350;
+  else if (value < 400) value = 450;
+  else if (value < 525) value = 600;
+  else value = 300;
 }
 
 void dispatch(const Action& action, const LiveState& live) {
