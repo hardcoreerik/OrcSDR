@@ -6987,7 +6987,10 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   // The CB scanner watches all 40 channels from this full-band spectrum, so it
   // runs whichever screen is showing, including Home while CB keeps playing.
   if (rtl_ui_band == RtlBand::cb && !ui_documentation_mode) {
-    service_cb_scanner(now);
+    // Measure only a CB stream's spectrum: right after switching to CB, the
+    // previous band's capture can still be stopping and its snapshot is not
+    // CB, so it must not register as channel activity.
+    if (g_stream_band == RtlBand::cb) service_cb_scanner(now);
     if (!rtl_graphics_enabled.load(std::memory_order_acquire)) return;
     if (orcsdr::screens::owns(orcsdr::screens::Id::cb)) {
       orcsdr::cb::draw_spectrum(rtl_spectrum_levels, kRtlSpectrumBins,
