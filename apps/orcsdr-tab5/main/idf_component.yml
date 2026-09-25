@@ -12,6 +12,11 @@ dependencies:
   esp_rtl_sdr:
     git: https://github.com/hardcoreerik/esp-rtl-sdr.git
     version: 52edd9b6e591fbd5f3985af4dc51e9da60e04cad
+  # OrcMaps map engine, pinned to the v0.2.0 release commit. Update by bumping
+  # this SHA to a newer OrcMaps release; see OrcMaps docs/ORCSDR_INTEGRATION.md.
+  orcmaps:
+    git: https://github.com/hardcoreerik/orcmaps.git
+    version: e4180c5dc8a4ed66942caf624f2e8ec22a500cf6
   m5stack/m5unified:
     version: "0.2.20"
   m5stack/m5gfx:

@@ -12,7 +12,8 @@ coredump, data, coredump, ,       256K,
 # never written at runtime. User data (chosen location, future markers) lives
 # in NVS or on SD, never here.
 #
-# 6 MiB against today's 4.61 MiB z0-z6 Natural Earth overview leaves ~1.39 MiB
-# of growth headroom; a jump to the 9.29 MiB z0-z7 pack would need a larger
-# partition, which the 5.69 MiB still unallocated after this would allow.
-orcmaps,  data, 0x40,    ,        6M,
+# Holds the OrcMaps v0.2.0 z0-z4 Natural Earth world pack (871,343 bytes,
+# SHA-256 9aea0877...), enough to pick a town or region at first boot. 1 MiB
+# leaves ~170 KiB of headroom; a bigger world pack needs a bigger partition,
+# and ~10.7 MiB of the 16 MiB part is still unallocated after this one.
+orcmaps,  data, 0x40,    ,        1M,

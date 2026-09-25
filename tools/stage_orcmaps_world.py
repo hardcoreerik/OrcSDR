@@ -25,7 +25,7 @@ import sys
 # reads as garbage on the device.
 PARTITION_NAME = "orcmaps"
 PARTITION_OFFSET = 0x450000
-PARTITION_SIZE = 6 * 1024 * 1024
+PARTITION_SIZE = 1 * 1024 * 1024
 
 CSV_ROW = re.compile(
     r"^\s*(?P<name>[A-Za-z0-9_]+)\s*,\s*(?P<type>\w+)\s*,\s*(?P<subtype>\w+)\s*,"

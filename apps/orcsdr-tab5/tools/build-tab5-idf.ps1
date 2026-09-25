@@ -5,7 +5,13 @@ param(
   [string]$C6Firmware,
   # Build without an embedded C6 image; Firmware & Updates then reports
   # the update image as not included.
-  [switch]$WithoutC6
+  [switch]$WithoutC6,
+  # Defaults to the pinned OrcMaps world pack (see resolve-orcmaps-world.ps1),
+  # flashed into the read-only `orcmaps` partition for the first-run
+  # location picker, so dev builds match release images.
+  [string]$WorldPack,
+  # Build without the world pack; the first-run location step then has no map.
+  [switch]$WithoutWorldPack
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,6 +30,11 @@ if ($C6Firmware) {
   }
   $resolvedC6Firmware = (Resolve-Path -LiteralPath $C6Firmware).Path
 }
+if ($WithoutWorldPack -and $WorldPack) { throw 'Use either -WorldPack or -WithoutWorldPack, not both.' }
+$resolvedWorldPack = ''
+if (-not $WithoutWorldPack) {
+  $resolvedWorldPack = & (Join-Path $PSScriptRoot 'resolve-orcmaps-world.ps1') -WorldPack $WorldPack
+}
 . (Join-Path $IdfPath 'export.ps1')
 Set-Location (Join-Path $PSScriptRoot '..')
 $buildDir = 'build-native-hosted3'
@@ -37,6 +48,9 @@ $configureArgs = @('-B', $buildDir, '-D', "SDKCONFIG=$buildDir/sdkconfig",
 if ($resolvedC6Firmware) {
   $configureArgs += @('-D', "C6_FIRMWARE_BIN=$resolvedC6Firmware")
 }
+# Always passed (empty when opted out) so a previous build's cached path
+# cannot silently keep flashing a map.
+$configureArgs += @('-D', "ORCMAPS_WORLD_BIN=$resolvedWorldPack")
 idf.py @configureArgs reconfigure
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

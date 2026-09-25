@@ -80,10 +80,7 @@ idf_component_register(
         "../ui/wifi_service.cpp"
     INCLUDE_DIRS "." "../ui"
     REQUIRES
-        # Resolved by the project CMakeLists. ESP-IDF names a component after
-        # its directory, so this is derived rather than hardcoded and the
-        # OrcMaps checkout may be called anything.
-        $ENV{ORCMAP_COMPONENT}
+        orcmaps
         m5unified
         m5gfx
         mbelib
@@ -117,6 +114,16 @@ idf_component_register(
     EMBED_TXTFILES
         "catalog_public_key.pem"
 )
+
+# The OrcMaps world pack is written to the read-only `orcmaps` partition by
+# `idf.py flash` and included in `idf.py merge-bin`, so the M5Burner image
+# carries it too. Without it the first-run location picker reports no map.
+if(ORCMAPS_WORLD_BIN)
+    if(NOT EXISTS "${ORCMAPS_WORLD_BIN}")
+        message(FATAL_ERROR "ORCMAPS_WORLD_BIN does not exist: ${ORCMAPS_WORLD_BIN}")
+    endif()
+    esptool_py_flash_to_partition(flash "orcmaps" "${ORCMAPS_WORLD_BIN}")
+endif()
 
 target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)
 target_compile_definitions(${COMPONENT_LIB} PRIVATE

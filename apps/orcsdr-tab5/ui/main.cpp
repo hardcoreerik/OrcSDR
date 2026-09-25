@@ -17018,9 +17018,6 @@ void setup() {
     }
   }
   load_state();
-  // First run happens before Wi-Fi so the offline path is the one users meet
-  // on a freshly flashed device; the radio is not needed to choose a location.
-  run_first_run_setup();
   // Issue #66: do not call initialize_wifi() here. If "start Wi-Fi at boot" is on,
   // queue the same saved-connect path Settings uses, after loop() has settled.
   if (settings_wifi_power_enabled && settings_wifi_start_at_boot) {
@@ -17091,6 +17088,15 @@ void setup() {
     Serial.println("BOOT_SPLASH_GATE off");
   }
   orcsdr_splash_end();
+  // First run happens after the splash (SD mounted, RTL-SDR staged) and before
+  // Home and Wi-Fi, so the offline path is the one a freshly flashed device
+  // meets. Unattended regression runs (splash gate off) skip it so a reboot
+  // test is never left waiting on a touch screen.
+  if (preferences.getBool("splash_gate", true)) {
+    run_first_run_setup();
+  } else {
+    Serial.println("RTL_SETUP_DEFERRED reason=splash_gate_off");
+  }
   g_suppress_home_paint = false;
   show_home();
   if (wifi_hosted_update_required)
