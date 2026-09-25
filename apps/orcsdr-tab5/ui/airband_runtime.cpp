@@ -103,8 +103,9 @@ void load_catalog(const LiveState& live) {
   rebuild_bank(live.frequency_hz);
 }
 
-Snapshot snapshot(const LiveState& live) {
-  Snapshot out{};
+const Snapshot& snapshot(const LiveState& live) {
+  static Snapshot out;
+  out = {};
   out.now_ms = live.now_ms;
   out.frequency_hz = live.frequency_hz;
   out.signal_dbfs = live.signal_dbfs;
