@@ -208,7 +208,7 @@ void dispatch(const Action& action, const LiveState& live) {
         const size_t index = static_cast<size_t>(-action.value - 1);
         if (const Activity* item = g_scanner.activity(index))
           frequency_hz = item->frequency_hz;
-      } else if (tab() == Tab::scan) {
+      } else if (dashboard_tab() == Tab::scan) {
         if (const BankEntry* item = g_scanner.bank(static_cast<size_t>(action.value)))
           frequency_hz = item->frequency_hz;
       } else {
@@ -283,17 +283,17 @@ void enter(const LiveState& live) {
     load_catalog(live);
   else
     rebuild_bank(live.frequency_hz);
-  airband::enter(snapshot(live));
+  dashboard_enter(snapshot(live));
 }
 
 void leave() {
   g_scanner.stop();
-  airband::leave();
+  dashboard_leave();
 }
 
 void update(const LiveState& live) {
-  if (!airband::active()) return;
-  airband::update(snapshot(live));
+  if (!dashboard_active()) return;
+  dashboard_update(snapshot(live));
 }
 
 void service(const LiveState& live) {
@@ -305,12 +305,13 @@ void service(const LiveState& live) {
 }
 
 void handle_touch(int32_t x, int32_t y, const LiveState& live) {
-  if (!airband::active()) return;
-  dispatch(airband::handle_touch(x, y), live);
-  if (airband::active()) airband::update(snapshot(live));
+  if (!dashboard_active()) return;
+  dispatch(dashboard_handle_touch(x, y), live);
+  if (dashboard_active()) dashboard_update(snapshot(live));
 }
 
-bool active() { return airband::active(); }
+bool active() { return dashboard_active(); }
+Tab tab() { return dashboard_tab(); }
 
 bool audio_open(float signal_dbfs) {
   const int16_t threshold = g_audio_squelch_dbfs.load(std::memory_order_acquire);
