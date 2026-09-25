@@ -36,6 +36,7 @@ void service(const LiveState& live);
 void handle_touch(int32_t x, int32_t y, const LiveState& live);
 
 bool active();
+Tab tab();
 bool audio_open(float signal_dbfs);
 uint32_t default_frequency();
 uint32_t manual_step(uint32_t frequency_hz, int direction);
