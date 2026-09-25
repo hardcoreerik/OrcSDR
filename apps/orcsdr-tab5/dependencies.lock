@@ -68,7 +68,7 @@ dependencies:
       type: service
     version: 1.1.2
   espressif/esp_wifi_remote:
-    component_hash: 50d3beaf95c0bc47d0fcf56752beaf3cbaae981fd8c3b74d6890b45d8be689fe
+    component_hash: faa185898a843b9d7d0456e4094a3b5f1491a48ddd57ce0e5179e13ac6243f2c
     dependencies:
     - name: espressif/esp_hosted
       registry_url: https://components.espressif.com
@@ -86,7 +86,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 1.6.4
+    version: 1.6.5
   espressif/mdns:
     component_hash: b679eafd0acae2066e2645bd91d073e33ca5be515e2545cd3c4e55a3e3bce3cb
     dependencies:
@@ -134,7 +134,7 @@ dependencies:
       type: service
     version: 0.2.20
   orcmaps:
-    component_hash: 360b5ab0db4ffdfc965e3b724ec379917c2164b563ff17d83ce2720527e38919
+    component_hash: e4efc26ccabe76ef4becabf62d2fcdbcfd0d3540afda83bdda068989b43d2477
     dependencies:
     - name: idf
       version: '>=5.0'
@@ -142,7 +142,7 @@ dependencies:
       git: https://github.com/hardcoreerik/orcmaps.git
       path: .
       type: git
-    version: e4180c5dc8a4ed66942caf624f2e8ec22a500cf6
+    version: 882093ee6ec133cc66afcfce7de4884e91f5d15f
 direct_dependencies:
 - esp_rtl_sdr
 - espressif/esp-dsp
@@ -153,6 +153,6 @@ direct_dependencies:
 - m5stack/m5gfx
 - m5stack/m5unified
 - orcmaps
-manifest_hash: 14402e9ff993d4aae832b4e72c90fda5bb03dadf3cbb614662c7d5bdccc406b7
+manifest_hash: 26d585f16945e158975a1eb8271573568a23811829598af0a6d6648975405dbd
 target: esp32p4
 version: 2.0.0

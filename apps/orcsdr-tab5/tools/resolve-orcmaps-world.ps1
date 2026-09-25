@@ -16,8 +16,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Pinned to OrcMaps v0.2.0 (e4180c5dc8a4ed66942caf624f2e8ec22a500cf6), the same
-# release main/idf_component.yml pins the engine to.
+# The world pack published with OrcMaps v0.2.0; unchanged in v0.2.1, which
+# main/idf_component.yml pins the engine to.
 $version = '0.2.0'
 $fileName = "orcmaps-world-z4-$version.pmtiles"
 $expectedSha256 = '9aea08772bacf1f024d1da90cc52aa8fcf0b0e37405415dc7c91e75e56596f0f'
