@@ -64,6 +64,7 @@ const char* name(Id id) {
     case Id::settings: return "settings";
     case Id::documentation: return "documentation";
     case Id::cb: return "cb";
+    case Id::airband: return "airband";
     default: return "none";
   }
 }
@@ -79,7 +80,7 @@ bool self_check() {
   bool settings_return = true;
   uint32_t now = 20;
   for (const Id screen :
-       {Id::home, Id::fm, Id::am, Id::shortwave, Id::cb, Id::p25, Id::adsb, Id::lora,
+       {Id::home, Id::fm, Id::am, Id::shortwave, Id::cb, Id::airband, Id::p25, Id::adsb, Id::lora,
         Id::wifi_analysis, Id::pocsag}) {
     begin_transition(screen, now++, false);
     finish_transition();
@@ -101,7 +102,7 @@ bool self_check() {
   begin_transition(Id::rf_lab, now++, false);
   finish_transition();
   const bool rf_lab_owns = owns(Id::rf_lab);
-  const bool restored = g_status.transitions == 35;
+  const bool restored = g_status.transitions == 38;
   g_status = saved;
   g_transitioning = saved_transitioning;
   return entering_blocks_draw && home_owns && settings_return && documentation_owns &&
