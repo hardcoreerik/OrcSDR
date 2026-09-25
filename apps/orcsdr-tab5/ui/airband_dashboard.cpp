@@ -449,16 +449,16 @@ Action setup_touch(int32_t x, int32_t y) {
 
 }  // namespace
 
-void enter(const Snapshot& snapshot) {
+void dashboard_enter(const Snapshot& snapshot) {
   g_snapshot = snapshot;
   g_active = true;
   g_tab = Tab::listen;
-  draw();
+  dashboard_draw();
 }
 
-void leave() { g_active = false; }
+void dashboard_leave() { g_active = false; }
 
-void draw() {
+void dashboard_draw() {
   if (!g_active) return;
   M5.Display.fillScreen(TFT_BLACK);
   draw_header();
@@ -466,7 +466,7 @@ void draw() {
   draw_page();
 }
 
-void update(const Snapshot& snapshot) {
+void dashboard_update(const Snapshot& snapshot) {
   if (!g_active) return;
   const bool header_changed =
       snapshot.sound_enabled != g_snapshot.sound_enabled ||
@@ -493,7 +493,7 @@ void update(const Snapshot& snapshot) {
   }
 }
 
-Action handle_touch(int32_t x, int32_t y) {
+Action dashboard_handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
   if (audio_header::home_hit(x, y)) return {ActionKind::exit_home};
   if (audio_header::settings_hit(x, y)) return {ActionKind::open_settings};
@@ -508,8 +508,8 @@ Action handle_touch(int32_t x, int32_t y) {
   return {};
 }
 
-bool active() { return g_active; }
-Tab tab() { return g_tab; }
+bool dashboard_active() { return g_active; }
+Tab dashboard_tab() { return g_tab; }
 
 bool dashboard_self_check() {
   const bool was_active = g_active;
