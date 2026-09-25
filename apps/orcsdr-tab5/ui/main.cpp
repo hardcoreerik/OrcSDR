@@ -11847,6 +11847,7 @@ orcsdr::dashboards::Id dashboard_for_band(RtlBand band, uint32_t frequency_hz) {
     case RtlBand::lora: return Id::lora;
     case RtlBand::am: return Id::am;
     case RtlBand::shortwave: return Id::shortwave;
+    case RtlBand::airband: return Id::airband;
     case RtlBand::browse:
       if (frequency_hz >= 118000000 && frequency_hz <= 137000000) return Id::airband;
       if (frequency_hz >= 156000000 && frequency_hz <= 162025000) return Id::marine;
@@ -11915,7 +11916,12 @@ void open_dashboard(orcsdr::dashboards::Id id) {
       frequency = rtl_ui_band == RtlBand::cb ? rtl_ui_frequency_hz : cb_saved_hz;
       break;
     case Id::lora: band = RtlBand::lora; frequency = kLoraDefaultHz; break;
-    case Id::airband: band = RtlBand::browse; frequency = 121500000; break;
+    case Id::airband:
+      band = RtlBand::airband;
+      frequency = rtl_ui_band == RtlBand::airband
+                      ? rtl_ui_frequency_hz
+                      : orcsdr::airband::default_frequency();
+      break;
     case Id::marine: band = RtlBand::browse; frequency = 156800000; break;
     case Id::satellite: band = RtlBand::browse; frequency = 137500000; break;
     case Id::utilities: band = RtlBand::browse; break;
