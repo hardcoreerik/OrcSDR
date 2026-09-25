@@ -6,6 +6,7 @@
 #include <iterator>
 
 #include "adsb_dashboard.hpp"
+#include "airband_runtime.hpp"
 #include "am_dashboard.hpp"
 #include "cb_dashboard.hpp"
 #include "fm_dashboard.hpp"
@@ -36,6 +37,7 @@ void show_home(bool demo) {
   fm::leave();
   am::leave();
   cb::leave();
+  airband::leave();
   p25::leave();
   pocsag::leave();
   adsb::leave();
