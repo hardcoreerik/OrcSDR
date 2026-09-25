@@ -13344,8 +13344,13 @@ void poll_sdr_touch(bool from_stream) {
     return;
   }
 
-  // The CB dashboard owns its full surface; generic scope gestures overlap it.
+  // Dedicated scanner dashboards own their full touch surface.
   if (rtl_ui_band == RtlBand::cb && orcsdr::cb::active()) {
+    if (pressed && !was_pressed) handle_sdr_touch(touch.x, touch.y);
+    was_pressed = pressed;
+    return;
+  }
+  if (rtl_ui_band == RtlBand::airband && orcsdr::airband::active()) {
     if (pressed && !was_pressed) handle_sdr_touch(touch.x, touch.y);
     was_pressed = pressed;
     return;
@@ -13680,6 +13685,10 @@ void handle_sdr_touch(int32_t x, int32_t y) {
   }
   if (rtl_ui_band == RtlBand::shortwave && orcsdr::shortwave::active()) {
     handle_shortwave_dashboard_action(orcsdr::shortwave::handle_touch(x, y));
+    return;
+  }
+  if (rtl_ui_band == RtlBand::airband && orcsdr::airband::active()) {
+    orcsdr::airband::handle_touch(x, y, airband_live_state());
     return;
   }
   if (rtl_ui_band == RtlBand::cb && orcsdr::cb::active()) {
