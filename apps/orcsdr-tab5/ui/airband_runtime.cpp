@@ -297,6 +297,10 @@ void update(const LiveState& live) {
   dashboard_update(snapshot(live));
 }
 
+void redraw() {
+  if (dashboard_active()) dashboard_draw();
+}
+
 void service(const LiveState& live) {
   if (!g_scanner.running()) return;
   const uint32_t target =
