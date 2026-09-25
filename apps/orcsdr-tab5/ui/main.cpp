@@ -17215,6 +17215,13 @@ void setup() {
     return;
   }
   Serial.println("RTL_CB_DASHBOARD_SELF_CHECK_OK");
+  if (!orcsdr::airband::Scanner::self_check() ||
+      !orcsdr::airband::Catalog::self_check() ||
+      !orcsdr::airband::dashboard_self_check()) {
+    Serial.println("RTL_AIRBAND_SELF_CHECK_FAIL");
+    return;
+  }
+  Serial.println("RTL_AIRBAND_SELF_CHECK_OK");
   if (!orcsdr::receiver_controls::self_check()) {
     Serial.println("RTL_RECEIVER_CONTROLS_SELF_CHECK_FAIL");
     return;
