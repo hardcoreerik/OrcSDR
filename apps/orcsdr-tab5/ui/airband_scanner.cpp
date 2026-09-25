@@ -52,23 +52,47 @@ bool in_band(uint32_t frequency_hz) {
 
 uint32_t snap_frequency(uint32_t frequency_hz, Spacing spacing) {
   frequency_hz = clamp_band(frequency_hz);
-  const uint32_t step = spacing_hz(spacing);
   const uint64_t offset = static_cast<uint64_t>(frequency_hz - kMinFrequencyHz);
-  const uint64_t index = (offset + step / 2u) / step;
-  const uint64_t snapped = static_cast<uint64_t>(kMinFrequencyHz) + index * step;
-  return clamp_band(static_cast<uint32_t>(
-      std::min<uint64_t>(snapped, static_cast<uint64_t>(kMaxFrequencyHz))));
+  uint64_t index = 0;
+  uint64_t max_index = 0;
+  uint64_t snapped_offset = 0;
+  if (spacing == Spacing::khz833) {
+    // ICAO 8.33 kHz channel raster is exactly 25 kHz / 3. Using a literal
+    // 8333-Hz increment accumulates almost 0.8 kHz of error across the band.
+    index = (offset * 3u + 12500u) / 25000u;
+    max_index = (static_cast<uint64_t>(kMaxFrequencyHz - kMinFrequencyHz) * 3u) /
+                25000u;
+    index = std::min(index, max_index);
+    snapped_offset = (index * 25000u + 1u) / 3u;
+  } else {
+    index = (offset + 12500u) / 25000u;
+    max_index = static_cast<uint64_t>(kMaxFrequencyHz - kMinFrequencyHz) / 25000u;
+    index = std::min(index, max_index);
+    snapped_offset = index * 25000u;
+  }
+  return static_cast<uint32_t>(static_cast<uint64_t>(kMinFrequencyHz) + snapped_offset);
 }
 
 uint32_t step_frequency(uint32_t frequency_hz, int direction, Spacing spacing) {
   const uint32_t current = snap_frequency(frequency_hz, spacing);
-  const uint32_t step = spacing_hz(spacing);
+  const uint64_t offset = static_cast<uint64_t>(current - kMinFrequencyHz);
+  uint64_t index = spacing == Spacing::khz833
+                       ? (offset * 3u + 12500u) / 25000u
+                       : (offset + 12500u) / 25000u;
+  const uint64_t max_index = spacing == Spacing::khz833
+                                 ? (static_cast<uint64_t>(kMaxFrequencyHz - kMinFrequencyHz) * 3u) / 25000u
+                                 : static_cast<uint64_t>(kMaxFrequencyHz - kMinFrequencyHz) / 25000u;
   if (direction < 0) {
-    if (current <= kMinFrequencyHz + step / 2u) return kMinFrequencyHz;
-    return snap_frequency(current - step, spacing);
+    if (index == 0) return kMinFrequencyHz;
+    --index;
+  } else {
+    if (index >= max_index) return kMaxFrequencyHz;
+    ++index;
   }
-  if (current >= kMaxFrequencyHz - step / 2u) return kMaxFrequencyHz;
-  return snap_frequency(current + step, spacing);
+  const uint64_t stepped_offset = spacing == Spacing::khz833
+                                      ? (index * 25000u + 1u) / 3u
+                                      : index * 25000u;
+  return static_cast<uint32_t>(static_cast<uint64_t>(kMinFrequencyHz) + stepped_offset);
 }
 
 void Scanner::reset() {
@@ -306,6 +330,9 @@ bool Scanner::self_check() {
             spacing_hz(Spacing::khz833) == 8333u &&
             snap_frequency(121501000u, Spacing::khz25) == kGuardFrequencyHz &&
             step_frequency(kGuardFrequencyHz, 1, Spacing::khz25) == 121525000u &&
+            step_frequency(kMinFrequencyHz, 1, Spacing::khz833) == 118008333u &&
+            step_frequency(118008333u, 1, Spacing::khz833) == 118016667u &&
+            step_frequency(118016667u, 1, Spacing::khz833) == 118025000u &&
             step_frequency(kMinFrequencyHz, -1, Spacing::khz25) ==
                 kMinFrequencyHz;
 
