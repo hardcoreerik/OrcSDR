@@ -26,8 +26,9 @@ as repeated 8,333 Hz additions. This avoids cumulative frequency error across
 the civil aviation band.
 
 The scanner is receive-only. It supports airport-bank or full-band scanning,
-configurable tuner settle time, measured dBFS squelch, hold/resume/temporary
-skip, configurable reply hang time, optional periodic 121.500 MHz guard checks,
+receiver-safe tuner settle time (300 ms minimum while OrcSDR hot retunes are
+rate-limited), measured dBFS squelch, hold/resume/temporary skip, configurable
+reply hang time, optional periodic 121.500 MHz guard checks,
 and a fixed-size in-memory activity log with no heap allocation in the scanner
 core.
 
@@ -71,6 +72,11 @@ main.cpp only supplies current receiver state, tuning/navigation callbacks,
 receiver-band routing, AM-demod selection, and the UI-loop service call.
 
 ## Validation status
+
+The first implementation intentionally prioritizes airport-bank scanning over
+blind full-band speed. Faster wideband FFT/window-directed discovery is a logical
+follow-up because it can reduce tuner moves without violating the receiver's
+hot-retune safety interval.
 
 The feature branch includes host tests for the channel raster and scanner state
 machine in tests/airband_scanner_tests.cpp, wired into
