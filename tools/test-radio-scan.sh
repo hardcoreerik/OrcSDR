@@ -16,3 +16,11 @@ g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
   "${sources[@]}" -o "$build_dir/radio_scan_tests_sanitized"
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$build_dir/radio_scan_tests_sanitized"
+
+cb_sources=(tests/cb_scanner_tests.cpp apps/orcsdr-tab5/ui/cb_scanner.cpp)
+g++ "${common[@]}" -O2 "${cb_sources[@]}" -o "$build_dir/cb_scanner_tests"
+"$build_dir/cb_scanner_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "${cb_sources[@]}" -o "$build_dir/cb_scanner_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$build_dir/cb_scanner_tests_sanitized"
