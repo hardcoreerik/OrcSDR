@@ -6656,7 +6656,7 @@ void service_headphone_speaker_route() {
 
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   // Home is the common receiver workspace until a band has its own dashboard.
-  // Do not resurrect the retired generic Browse surface for AM/WX/CB/Airband.
+  // Dedicated dashboards (including Airband) never fall through to legacy Browse UI.
   if (band != RtlBand::fm && band != RtlBand::am && band != RtlBand::shortwave &&
       band != RtlBand::cb && band != RtlBand::airband && band != RtlBand::p25 && band != RtlBand::adsb &&
       band != RtlBand::pocsag && band != RtlBand::lora) {
@@ -7810,7 +7810,8 @@ void run_rtl_capture() {
   const float audio_scale = (band == RtlBand::wx || band == RtlBand::browse)
                                 ? 12000.0f
                                 : (band == RtlBand::am || band == RtlBand::shortwave ||
-                                   band == RtlBand::cb) ? 9000.0f : 5500.0f;
+                                   band == RtlBand::airband || band == RtlBand::cb)
+                                      ? 9000.0f : 5500.0f;
   rtl_capture_state.store(RtlCaptureState::running, std::memory_order_release);
   rtl_ui_active.store(true, std::memory_order_release);
   set_rtl_sdr_status(continuous ? "RTL-SDR V4: continuous listening"
@@ -8520,7 +8521,8 @@ static void rtl_driver_app_task(void *) {
       g_stream_audio_scale = (band == RtlBand::wx || band == RtlBand::browse)
                                  ? 12000.0f
                                  : (band == RtlBand::am || band == RtlBand::shortwave ||
-                                    band == RtlBand::cb) ? 9000.0f : 5500.0f;
+                                    band == RtlBand::airband || band == RtlBand::cb)
+                                       ? 9000.0f : 5500.0f;
       rtl_live_volume.store(volume, std::memory_order_release);
       rtl_ui_band = band;
       rtl_ui_frequency_hz = frequency_hz;
@@ -14557,6 +14559,7 @@ void run_ui_regression(bool workflow) {
                                   before.screen == orcsdr::screens::Id::fm ||
                                   before.screen == orcsdr::screens::Id::am ||
                                   before.screen == orcsdr::screens::Id::shortwave ||
+                                  before.screen == orcsdr::screens::Id::airband ||
                                   before.screen == orcsdr::screens::Id::cb ||
                                   before.screen == orcsdr::screens::Id::p25 ||
                                   before.screen == orcsdr::screens::Id::adsb ||
@@ -14574,6 +14577,7 @@ void run_ui_regression(bool workflow) {
     draw_home_dashboard();
     const bool dashboard_band = before.band == RtlBand::fm || before.band == RtlBand::am ||
                                 before.band == RtlBand::shortwave ||
+                                before.band == RtlBand::airband ||
                                 before.band == RtlBand::cb ||
                                 before.band == RtlBand::p25 ||
                                 before.band == RtlBand::adsb || before.band == RtlBand::lora ||
