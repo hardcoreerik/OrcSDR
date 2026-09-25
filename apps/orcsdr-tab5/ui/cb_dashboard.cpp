@@ -576,8 +576,11 @@ void draw_setup() {
   for (int row = 0; row < kSetupRows; ++row) {
     const int y = kSetupY + row * kSetupRowH;
     M5.Display.fillRoundRect(24, y, 1232, kSetupRowH - 7, 8, kPanel);
-    text(kSetupLabels[row], 44, y + 18, TFT_WHITE, 2, middle_left);
-    text(kSetupHelp[row], 44, y + 42, kMuted, 1, middle_left);
+    // Size 3 name over a size 2 description: size 1 was unreadable on the
+    // 5-inch panel. The longest description (57 chars) ends at x=728, clear
+    // of the -/+ buttons at x=760.
+    text(kSetupLabels[row], 44, y + 17, TFT_WHITE, 3, middle_left);
+    text(kSetupHelp[row], 44, y + 43, kMuted, 2, middle_left);
     char value[32];
     setup_value(row, value, sizeof(value));
     const bool cycle = row == 0 || row >= 5;
