@@ -1,6 +1,7 @@
 #include "setup_map_picker.hpp"
 
 #include <M5Unified.h>
+#include <esp_heap_caps.h>
 
 #include <cmath>
 #include <cstdio>
@@ -309,12 +310,23 @@ Result run(lgfx::v1::LovyanGFX& display, int32_t initial_latitude_e7,
   }
   picker.ApplyInitial();
 
-  const uint32_t started = millis();
-  const int tiles = picker.DrawMap();
-  ESP_LOGI(kTag, "first frame: %d tiles in %lu ms",
-           tiles, static_cast<unsigned long>(millis() - started));
-  DrawChrome(picker.Camera());
-  DrawCrosshair();
+  // Every redraw reports its cost inside OrcSDR, which differs from the
+  // standalone OrcMaps demo (less free internal RAM, other tasks running).
+  const auto redraw = [&picker](const char* why) {
+    const uint32_t started = millis();
+    const int tiles = picker.DrawMap();
+    DrawChrome(picker.Camera());
+    DrawCrosshair();
+    ESP_LOGI(kTag,
+             "RTL_SETUP_MAP_FRAME why=%s zoom=%u tiles=%d ms=%lu internal_free=%u "
+             "internal_min=%u psram_free=%u",
+             why, static_cast<unsigned>(picker.Camera().Zoom()), tiles,
+             static_cast<unsigned long>(millis() - started),
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+             static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+  };
+  redraw("first");
 
   bool dragging = false;
   int press_x = 0;
@@ -345,22 +357,12 @@ Result run(lgfx::v1::LovyanGFX& display, int32_t initial_latitude_e7,
       if (was_drag && press_y >= kMapTop && press_y < kMapBottom) {
         // The map follows the finger; the picker handles the sign.
         picker.Camera().DragByGesture(dx, dy);
-        picker.DrawMap();
-        DrawChrome(picker.Camera());
-        DrawCrosshair();
+        redraw("drag");
       } else if (!was_drag) {
         if (Hit(kZoomIn, press_x, press_y)) {
-          if (picker.Camera().ZoomIn()) {
-            picker.DrawMap();
-            DrawChrome(picker.Camera());
-            DrawCrosshair();
-          }
+          if (picker.Camera().ZoomIn()) redraw("zoom_in");
         } else if (Hit(kZoomOut, press_x, press_y)) {
-          if (picker.Camera().ZoomOut()) {
-            picker.DrawMap();
-            DrawChrome(picker.Camera());
-            DrawCrosshair();
-          }
+          if (picker.Camera().ZoomOut()) redraw("zoom_out");
         } else if (Hit(kBack, press_x, press_y)) {
           result.outcome = Outcome::back;
           return result;
