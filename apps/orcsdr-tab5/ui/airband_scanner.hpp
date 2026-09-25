@@ -33,7 +33,8 @@ struct Settings {
   Spacing spacing = Spacing::khz25;
   ScanSource source = ScanSource::airport_bank;
   int16_t squelch_dbfs = -75;
-  uint16_t settle_ms = 55;
+  // OrcSDR currently rate-limits hardware hot retunes to 280 ms.
+  uint16_t settle_ms = 350;
   uint16_t hang_ms = 1500;
   bool priority_guard = true;
   uint8_t priority_every = 20;
