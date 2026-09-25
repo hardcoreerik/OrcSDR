@@ -12708,11 +12708,6 @@ bool point_in_button(int32_t x, int32_t y) {
 
 bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
                             bool persist_navigation) {
-#if RTL_USE_LEGACY_USB
-  if (rtl_sdr_device == nullptr) return false;
-#else
-  if (!g_rtl_device_ready.load(std::memory_order_acquire) || g_rtl == nullptr) return false;
-#endif
   if (band == RtlBand::adsb) frequency_hz = kAdsbDefaultHz;
   if (band == RtlBand::lora) {
     load_lora_config();
@@ -12720,6 +12715,28 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
     if (frequency_hz == kLoraDefaultHz) frequency_hz = lora_config_frequency_hz;
   }
   frequency_hz = rtl_clamp_frequency(band, frequency_hz);
+#if RTL_USE_LEGACY_USB
+  const bool receiver_ready = rtl_sdr_device != nullptr;
+#else
+  const bool receiver_ready =
+      g_rtl_device_ready.load(std::memory_order_acquire) && g_rtl != nullptr;
+#endif
+  if (!receiver_ready) {
+    // No receiver attached, but the caller still shows this band's screen.
+    // Keep the UI state in step with it: the main loop routes touches by
+    // rtl_ui_band and rtl_ui_active (normally set when the stream starts),
+    // and a stale band (FM from boot) or an unset flag strands the dashboard
+    // on the no-screen fallback. The requested band makes a later hotplug
+    // resume this screen.
+    rtl_ui_active.store(true, std::memory_order_release);
+    rtl_ui_band = band;
+    rtl_ui_frequency_hz = frequency_hz;
+    rtl_requested_band.store(band, std::memory_order_release);
+    rtl_requested_frequency_hz.store(frequency_hz, std::memory_order_release);
+    Serial.printf("RTL_OPEN_NO_RECEIVER band=%s frequency_hz=%u\n", rtl_band_name(band),
+                  static_cast<unsigned>(frequency_hz));
+    return false;
+  }
 #if !RTL_USE_LEGACY_USB
   if (!validate_rtl_tune_frequency(frequency_hz)) return false;
 #endif
@@ -14360,6 +14377,27 @@ void print_rtl_driver_status() {
       route);
 }
 
+// Which touch handler the main loop's screen chain would pick right now. It
+// mirrors that chain (visualizer, settings, home, ADS-B, POCSAG, SDR, then the
+// legacy no-screen fallback) so a regression sweep can prove no dashboard is
+// left routing touches to "fallback", e.g. when opened with no receiver.
+const char* ui_touch_route() {
+  const bool adsb_ui = (rtl_ui_band == RtlBand::adsb || adsb_atc_listening) &&
+                       orcsdr::adsb::active();
+  const bool pocsag_ui = rtl_ui_band == RtlBand::pocsag && orcsdr::pocsag::active();
+  const bool radio_ui = rtl_ui_active.load(std::memory_order_acquire);
+  const bool fm_ui = rtl_ui_band == RtlBand::fm && orcsdr::fm::active();
+  const bool am_ui = rtl_ui_band == RtlBand::am && orcsdr::am::active();
+  const bool p25_ui = rtl_ui_band == RtlBand::p25 && orcsdr::p25::active();
+  if (orcsdr::visualizer::active()) return "visualizer";
+  if (orcsdr::settings::active()) return "settings";
+  if (orcsdr::home::active()) return "home";
+  if (adsb_ui && orcsdr::screens::owns(orcsdr::screens::Id::adsb)) return "adsb";
+  if (pocsag_ui && orcsdr::screens::owns(orcsdr::screens::Id::pocsag)) return "pocsag";
+  if (fm_ui || am_ui || p25_ui || radio_ui) return "sdr";
+  return "fallback";
+}
+
 void process_command(char* command) {
   // Any command received from an authenticated host proves the session is alive.
   // This also keeps long-running CLI/soak workflows from expiring while polling status.
@@ -14508,7 +14546,7 @@ void process_command(char* command) {
   }
   if (strcmp(command, "RTL_UI STATUS") == 0) {
     Serial.printf("RTL_UI_STATUS screen=%s band=%s frequency_hz=%u settings=%d fm=%d am=%d p25=%d "
-                  "adsb=%d lora=%d rf24=%d home_font=%d graphics=%d\n",
+                  "adsb=%d lora=%d rf24=%d home_font=%d graphics=%d radio_ui=%d route=%s\n",
                   orcsdr::screens::name(orcsdr::screens::status().active),
                   rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz,
                   orcsdr::settings::active() ? 1 : 0, orcsdr::fm::active() ? 1 : 0,
@@ -14517,7 +14555,8 @@ void process_command(char* command) {
                   orcsdr::lora::active() ? 1 : 0,
                   orcsdr::rf24::active() ? 1 : 0,
                   M5.Display.getFont() == &fonts::Font0 ? 1 : 0,
-                  rtl_graphics_enabled.load(std::memory_order_acquire) ? 1 : 0);
+                  rtl_graphics_enabled.load(std::memory_order_acquire) ? 1 : 0,
+                  rtl_ui_active.load(std::memory_order_acquire) ? 1 : 0, ui_touch_route());
     return;
   }
   if (strcmp(command, "RTL_SERIAL VERBOSITY") == 0) {
@@ -14572,7 +14611,14 @@ void process_command(char* command) {
     else if (strcmp(name, "RF_LAB") == 0) open_dashboard(Id::rf_lab);
     else if (strcmp(name, "WIFI_ANALYSIS") == 0) open_dashboard(Id::wifi_analysis);
     else if (strcmp(name, "SETTINGS") == 0) open_dashboard(Id::settings);
-    else { Serial.println("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|SETTINGS"); return; }
+    else if (strcmp(name, "WEATHER") == 0) open_dashboard(Id::weather);
+    else if (strcmp(name, "CB") == 0) open_dashboard(Id::cb);
+    else if (strcmp(name, "POCSAG") == 0) open_dashboard(Id::pocsag);
+    else if (strcmp(name, "AIRBAND") == 0) open_dashboard(Id::airband);
+    else if (strcmp(name, "MARINE") == 0) open_dashboard(Id::marine);
+    else if (strcmp(name, "SATELLITE") == 0) open_dashboard(Id::satellite);
+    else if (strcmp(name, "UTILITIES") == 0) open_dashboard(Id::utilities);
+    else { Serial.println("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|SETTINGS|WEATHER|CB|POCSAG|AIRBAND|MARINE|SATELLITE|UTILITIES"); return; }
     Serial.printf("RTL_UI_OPEN_OK target=%s\n", name);
     return;
   }
