@@ -32,6 +32,7 @@ void configure(const Hooks& hooks);
 void enter(const LiveState& live);
 void leave();
 void update(const LiveState& live);
+void redraw();
 void service(const LiveState& live);
 void handle_touch(int32_t x, int32_t y, const LiveState& live);
 
