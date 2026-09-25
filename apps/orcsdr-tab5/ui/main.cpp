@@ -13244,7 +13244,10 @@ bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz) {
   if (!validate_rtl_tune_frequency(frequency_hz)) return false;
 #endif
   const uint32_t ui_quant_hz =
-      (rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::shortwave) ? 100u : 1000u;
+      rtl_ui_band == RtlBand::airband
+          ? 1u
+          : (rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::shortwave) ? 100u
+                                                                               : 1000u;
   uint32_t ui_hz = rtl_ui_band == RtlBand::p25
                        ? frequency_hz
                        : (frequency_hz / ui_quant_hz) * ui_quant_hz;
@@ -13265,7 +13268,7 @@ bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz) {
   }
   const uint32_t lo_hz = rtl_ui_band == RtlBand::p25
                              ? frequency_hz
-                             : rtl_ui_band == RtlBand::am
+                             : (rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::airband)
                                    ? ui_hz
                              : rtl_ui_band == RtlBand::fm
                                    ? rtl_fm_command_lo_hz(ui_hz)
