@@ -2290,6 +2290,10 @@ void reset_spectrum_renderer();
 void draw_spectrum_grid();
 void draw_spectrum_axis();
 void draw_band_edges();
+orcsdr::airband::LiveState airband_live_state();
+bool airband_tune_hook(uint32_t frequency_hz);
+void airband_home_hook();
+void airband_settings_hook();
 void draw_cb_dashboard(bool static_panel);
 const orcsdr::cb::Snapshot& cb_dashboard_snapshot();
 void handle_cb_dashboard_action(const orcsdr::cb::Action& action);
@@ -6110,6 +6114,34 @@ void draw_global_bias_warning() {
   M5.Display.drawString("BIAS ON", 1136, 88);
 }
 
+orcsdr::airband::LiveState airband_live_state() {
+  orcsdr::airband::LiveState live{};
+  live.now_ms = millis();
+  live.frequency_hz = rtl_ui_frequency_hz;
+  live.signal_dbfs = rtl_signal_dbfs_smooth;
+  live.receiver_running =
+      rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
+  live.sound_enabled = rtl_audio_user_enabled.load(std::memory_order_acquire);
+  live.battery_percent = M5.Power.getBatteryLevel();
+  live.location_configured = adsb_settings.location_configured;
+  live.latitude_e7 = adsb_settings.latitude_e7;
+  live.longitude_e7 = adsb_settings.longitude_e7;
+  live.filesystem = g_sd_fs;
+  return live;
+}
+
+bool airband_tune_hook(uint32_t frequency_hz) {
+  if (rtl_ui_band == RtlBand::airband &&
+      rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
+    return request_hot_retune(frequency_hz);
+  return queue_local_rtl_listen(RtlBand::airband, frequency_hz, false);
+}
+
+void airband_home_hook() { show_home(); }
+void airband_settings_hook() {
+  open_global_settings(orcsdr::settings::Section::radio_defaults);
+}
+
 void draw_cb_dashboard(bool static_panel) {
   if (!static_panel && !orcsdr::screens::may_draw(orcsdr::screens::Id::cb)) return;
   if (!static_panel) orcsdr::screens::note_visible_update(orcsdr::screens::Id::cb);
@@ -6683,6 +6715,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   if (band == RtlBand::airband) {
     reset_spectrum_renderer();
     resume_rtl_speaker();
+    orcsdr::airband::configure({airband_tune_hook, airband_home_hook, airband_settings_hook});
     orcsdr::airband::enter(airband_live_state());
     orcsdr::screens::finish_transition();
     return;
