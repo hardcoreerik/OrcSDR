@@ -16,7 +16,7 @@ constexpr Descriptor kEntries[] = {
     {Id::cb, "CB RADIO", "40-channel AM/SSB receiver", Category::audio, true},
     {Id::lora, "LORA / MESH", "LoRa and Meshtastic receive tools", Category::digital, true},
     {Id::pocsag, "POCSAG", "Pager receive, CAPCODE IDs, and message archive", Category::digital, true},
-    {Id::airband, "AIRBAND", "VHF aviation voice", Category::aviation, true},
+    {Id::airband, "AIRBAND", "AM aviation scanner and airport channels", Category::aviation, true},
     {Id::marine, "MARINE", "VHF marine receiver", Category::audio, true},
     {Id::satellite, "SATELLITE", "Satellite receive workspace", Category::digital, true},
     {Id::rf_lab, "RF LAB", "Live measurements and driver tests", Category::utility, true},
