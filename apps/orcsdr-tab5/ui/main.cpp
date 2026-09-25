@@ -6397,6 +6397,7 @@ void service_visualizer() {
   runtime.sample_rate_sps = metrics.effective_sps;
   runtime.audio_rate_sps = 48000;
   runtime.audio_demod = rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::shortwave ||
+                                rtl_ui_band == RtlBand::airband ||
                                 (rtl_ui_band == RtlBand::cb &&
                                  cb_mode.load(std::memory_order_relaxed) == CbMode::am)
                             ? orcsdr::visualizer::AudioDemod::am
@@ -7959,9 +7960,14 @@ void run_rtl_capture() {
       } else {
         rtl_audio_play_count = 0;
       }
-    } else if (band == RtlBand::am || band == RtlBand::shortwave) {
-      demodulate_am(rtl_iq_processing, completed_bytes, audio_scale,
-                    kRtlSampleRateSps);
+    } else if (band == RtlBand::am || band == RtlBand::shortwave ||
+               band == RtlBand::airband) {
+      if (band != RtlBand::airband ||
+          orcsdr::airband::audio_open(rtl_signal_dbfs_smooth))
+        demodulate_am(rtl_iq_processing, completed_bytes, audio_scale,
+                      kRtlSampleRateSps);
+      else
+        rtl_audio_play_count = 0;
     } else if (band != RtlBand::lora) {
       demodulate_fm(rtl_iq_processing, completed_bytes, audio_scale,
                     band == RtlBand::fm, kRtlSampleRateSps);
@@ -8457,9 +8463,14 @@ static void rtl_dsp_task(void *) {
         } else {
           rtl_audio_play_count = 0;
         }
-      } else if (block.band == RtlBand::am || block.band == RtlBand::shortwave) {
-        demodulate_am(block.data, block.bytes, block.audio_scale,
-                      block.sample_rate_sps);
+      } else if (block.band == RtlBand::am || block.band == RtlBand::shortwave ||
+                 block.band == RtlBand::airband) {
+        if (block.band != RtlBand::airband ||
+            orcsdr::airband::audio_open(rtl_signal_dbfs_smooth))
+          demodulate_am(block.data, block.bytes, block.audio_scale,
+                        block.sample_rate_sps);
+        else
+          rtl_audio_play_count = 0;
       } else if (block.band != RtlBand::adsb) {
         demodulate_fm(block.data, block.bytes, block.audio_scale,
                       block.band == RtlBand::fm, block.sample_rate_sps);
