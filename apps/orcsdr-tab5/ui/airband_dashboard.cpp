@@ -514,7 +514,8 @@ Tab dashboard_tab() { return g_tab; }
 bool dashboard_self_check() {
   const bool was_active = g_active;
   const Tab saved_tab = g_tab;
-  Snapshot saved = g_snapshot;
+  EXT_RAM_BSS_ATTR static Snapshot saved;
+  saved = g_snapshot;
   g_active = true;
   g_snapshot = {};
   g_snapshot.scan_state = ScanState::scanning;
