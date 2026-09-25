@@ -6376,7 +6376,7 @@ void close_visualizer() {
     case orcsdr::screens::Id::fm: orcsdr::fm::draw(); break;
     case orcsdr::screens::Id::am: orcsdr::am::draw(); break;
     case orcsdr::screens::Id::shortwave: orcsdr::shortwave::draw(); break;
-    case orcsdr::screens::Id::airband: orcsdr::airband::update(airband_live_state()); break;
+    case orcsdr::screens::Id::airband: orcsdr::airband::redraw(); break;
     case orcsdr::screens::Id::cb: orcsdr::cb::draw(); break;
     case orcsdr::screens::Id::p25: orcsdr::p25::draw(); break;
     case orcsdr::screens::Id::adsb: orcsdr::adsb::draw(); break;
@@ -11803,6 +11803,10 @@ void navigation_restore_screen(orcsdr::screens::Id restore) {
   } else if (restore == orcsdr::screens::Id::shortwave) {
     resume_rtl_speaker();
     orcsdr::shortwave::draw();
+    bump_rtl_ui();
+  } else if (restore == orcsdr::screens::Id::airband) {
+    resume_rtl_speaker();
+    orcsdr::airband::redraw();
     bump_rtl_ui();
   } else if (restore == orcsdr::screens::Id::p25) {
     resume_rtl_speaker();
