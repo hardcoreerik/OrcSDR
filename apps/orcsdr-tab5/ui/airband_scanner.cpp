@@ -247,8 +247,9 @@ uint32_t Scanner::next_target(uint32_t current_frequency_hz) {
                             1, settings_.spacing);
     if (target == current_frequency_hz)
       target = step_frequency(target, 1, settings_.spacing);
-    if (target > kMaxFrequencyHz || target <= current_frequency_hz &&
-        current_frequency_hz >= kMaxFrequencyHz - spacing_hz(settings_.spacing))
+    if (target > kMaxFrequencyHz ||
+        (target <= current_frequency_hz &&
+         current_frequency_hz >= kMaxFrequencyHz - spacing_hz(settings_.spacing)))
       target = kMinFrequencyHz;
   }
 
