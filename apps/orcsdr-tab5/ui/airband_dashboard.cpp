@@ -19,7 +19,6 @@ constexpr uint16_t kYellow = 0xff24;
 constexpr uint16_t kAmber = 0xfd20;
 constexpr uint16_t kMuted = 0x8c71;
 constexpr uint16_t kSelected = 0x1264;
-constexpr uint16_t kRedDim = 0x6000;
 
 struct Rect { int x; int y; int w; int h; };
 
