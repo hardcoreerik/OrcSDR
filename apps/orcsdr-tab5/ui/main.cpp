@@ -1675,6 +1675,14 @@ char settings_location_label[40]{};
 char settings_map_pack[40]{};
 bool adsb_atc_listening = false;
 bool catalog_radio_paused = false;
+
+// True while an exclusive I/O client (Wi-Fi connect, probe or power-off,
+// catalog download) holds the radio paused. A hotplug start waits for it;
+// resume_radio_after_io() restarts a radio that was already running.
+bool radio_io_paused() {
+  return catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused ||
+         wifi_c6_probe_radio_paused;
+}
 char rtl_sdr_status[96] = "RTL-SDR: waiting for USB-A host";
 char rtl_sdr_serial[48]{};
 char rtl_sdr_speed[8] = "none";
@@ -1700,6 +1708,10 @@ static inline bool rtl_device_ready() {
 std::atomic<RtlCaptureState> rtl_capture_state{RtlCaptureState::disconnected};
 std::atomic<bool> rtl_capture_requested{false};
 std::atomic<bool> rtl_hotplug_resume_pending{false};
+// Set when setup() finishes. A receiver that becomes ready after this was
+// plugged in, replugged or swapped, and starts receiving straight away;
+// one found during boot is left to the Auto-start reception setting.
+std::atomic<bool> rtl_boot_complete{false};
 // The RTL task may request a screen handoff, but only the UI loop may draw it.
 std::atomic<bool> rtl_screen_transition_requested{false};
 std::atomic<RtlBand> rtl_requested_band{RtlBand::fm};
@@ -8223,6 +8235,10 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       set_radio_session_state(ready ? orcsdr::radio::ReceiverState::ready
                                     : orcsdr::radio::ReceiverState::failed);
       set_rtl_profile_status(ready ? "ready" : "stream unavailable");
+      // Plugging a receiver in (first time, replug or swap) starts it on the
+      // current band and frequency, whatever screen is showing.
+      if (ready && rtl_boot_complete.load(std::memory_order_acquire))
+        rtl_hotplug_resume_pending.store(true, std::memory_order_release);
       Serial.printf("RTL_SDR_PROBE_OK profile=%u profile_name=\"%s\" provisional=%d "
                     "device_caps=0x%08x driver=esp_rtl_sdr v%s ready=%d resume_pending=%d\n",
                     static_cast<unsigned>(profile), esp_rtl_sdr_profile_to_name(profile),
@@ -8427,6 +8443,7 @@ static void rtl_driver_app_task(void *) {
       continue;
     }
     if (g_rtl != nullptr && g_rtl_device_ready.load(std::memory_order_acquire) &&
+        !radio_io_paused() &&
         rtl_hotplug_resume_pending.exchange(false, std::memory_order_acq_rel)) {
       const RtlBand band = rtl_requested_band.load(std::memory_order_acquire);
       const uint32_t frequency_hz = rtl_requested_frequency_hz.load(std::memory_order_acquire);
@@ -12724,7 +12741,8 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
   }
   if (!rtl_band_has_audio(band)) sync_rtl_audio_for_band(band);
   if (band == RtlBand::adsb) {
-    if (!orcsdr::screens::owns(orcsdr::screens::Id::adsb))
+    // Only navigation opens the dashboard; a hotplug resume keeps the screen.
+    if (!orcsdr::screens::owns(orcsdr::screens::Id::adsb) && persist_navigation)
       draw_sdr_screen(band, frequency_hz, rtl_live_volume.load(std::memory_order_acquire));
     else if (!orcsdr::adsb::active())
       orcsdr::adsb::enter(adsb_settings);
@@ -17399,6 +17417,7 @@ void setup() {
                      paired ? TFT_YELLOW : TFT_ORANGE);
   draw_power_state();
 #endif
+  rtl_boot_complete.store(true, std::memory_order_release);
 }
 
 void loop() {
