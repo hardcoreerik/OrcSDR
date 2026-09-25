@@ -18,8 +18,8 @@ bool valid_entry(const CatalogEntry& entry) {
          in_band(entry.frequency_hz) && entry.label[0] != '\0';
 }
 
-bool contains_token(const char* value, const char* token) {
-  if (!value || !token) return false;
+bool contains_word(const char* value, const char* token) {
+  if (!value || !token || !token[0]) return false;
   char upper[64]{};
   size_t i = 0;
   for (; value[i] && i + 1 < sizeof(upper); ++i) {
@@ -27,7 +27,19 @@ bool contains_token(const char* value, const char* token) {
     upper[i] = c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c;
   }
   upper[i] = '\0';
-  return std::strstr(upper, token) != nullptr;
+
+  const size_t token_len = std::strlen(token);
+  const char* cursor = upper;
+  while ((cursor = std::strstr(cursor, token)) != nullptr) {
+    const char before = cursor == upper ? '\0' : cursor[-1];
+    const char after = cursor[token_len];
+    const auto alpha_num = [](char ch) {
+      return (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9');
+    };
+    if (!alpha_num(before) && !alpha_num(after)) return true;
+    ++cursor;
+  }
+  return false;
 }
 
 float distance_nm(int32_t lat_a_e7, int32_t lon_a_e7,
@@ -66,24 +78,24 @@ const char* service_name(Service service) {
 }
 
 Service classify_service(const char* label) {
-  if (contains_token(label, "TOWER") || contains_token(label, "TWR"))
+  if (contains_word(label, "TOWER") || contains_word(label, "TWR"))
     return Service::tower;
-  if (contains_token(label, "GROUND") || contains_token(label, "GND"))
+  if (contains_word(label, "GROUND") || contains_word(label, "GND"))
     return Service::ground;
-  if (contains_token(label, "APPROACH") || contains_token(label, "APP"))
+  if (contains_word(label, "APPROACH") || contains_word(label, "APP"))
     return Service::approach;
-  if (contains_token(label, "DEPARTURE") || contains_token(label, "DEP"))
+  if (contains_word(label, "DEPARTURE") || contains_word(label, "DEP"))
     return Service::departure;
-  if (contains_token(label, "CENTER") || contains_token(label, "ARTCC"))
+  if (contains_word(label, "CENTER") || contains_word(label, "ARTCC"))
     return Service::center;
-  if (contains_token(label, "ATIS")) return Service::atis;
-  if (contains_token(label, "AWOS") || contains_token(label, "ASOS"))
+  if (contains_word(label, "ATIS")) return Service::atis;
+  if (contains_word(label, "AWOS") || contains_word(label, "ASOS"))
     return Service::awos;
-  if (contains_token(label, "CTAF")) return Service::ctaf;
-  if (contains_token(label, "UNICOM")) return Service::unicom;
-  if (contains_token(label, "CLEARANCE") || contains_token(label, "CLNC"))
+  if (contains_word(label, "CTAF")) return Service::ctaf;
+  if (contains_word(label, "UNICOM")) return Service::unicom;
+  if (contains_word(label, "CLEARANCE") || contains_word(label, "CLNC"))
     return Service::clearance;
-  if (contains_token(label, "EMERGENCY") || contains_token(label, "GUARD"))
+  if (contains_word(label, "EMERGENCY") || contains_word(label, "GUARD"))
     return Service::emergency;
   return Service::unknown;
 }
