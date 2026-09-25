@@ -66,13 +66,13 @@ struct Action {
   int32_t value = 0;
 };
 
-void enter(const Snapshot& snapshot);
-void leave();
-void draw();
-void update(const Snapshot& snapshot);
-Action handle_touch(int32_t x, int32_t y);
-bool active();
-Tab tab();
+void dashboard_enter(const Snapshot& snapshot);
+void dashboard_leave();
+void dashboard_draw();
+void dashboard_update(const Snapshot& snapshot);
+Action dashboard_handle_touch(int32_t x, int32_t y);
+bool dashboard_active();
+Tab dashboard_tab();
 bool dashboard_self_check();
 
 }  // namespace orcsdr::airband
