@@ -72,13 +72,14 @@ idf_component_register(
         "../ui/settings_app.cpp"
         "../ui/text_editor.cpp"
         "../ui/freq_keypad.cpp"
+        "../dsp/dsp_stats.cpp"
         "../ui/time_service.cpp"
         "../ui/ui_capture.cpp"
         "../ui/web_console.cpp"
         "../ui/web_audio_transport.cpp"
         "../ui/rf24_dashboard.cpp"
         "../ui/wifi_service.cpp"
-    INCLUDE_DIRS "." "../ui"
+    INCLUDE_DIRS "." "../ui" "../dsp"
     REQUIRES
         m5unified
         m5gfx

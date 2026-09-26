@@ -62,6 +62,7 @@
 #include "scan_engine.hpp"
 #include "cb_dashboard.hpp"
 #include "fm_dashboard.hpp"
+#include "dsp_stats.hpp"
 #include "freq_keypad.hpp"
 #include "text_editor.hpp"
 #include "fm_config.hpp"
@@ -8384,12 +8385,28 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
   }
 }
 
+// If this task never blocks, IDLE1 starves and the task watchdog resets the
+// Tab5 (seen with AM at 2.4 MS/s: CPU1 stuck in demodulate_am). An empty queue
+// means the receive below blocks and IDLE runs; otherwise, after 50 ms of
+// back-to-back blocks, sleep 1 ms so overload shows as IQ drops, not a reset.
+constexpr uint32_t kRtlDspMaxBusyMs = 50;
+
 static void rtl_dsp_task(void *) {
+  namespace dsp_stats = orcsdr::dsp::stats;
   RtlIqBlock block{};
+  uint32_t last_idle_ms = millis();
   while (true) {
+    if (uxQueueMessagesWaiting(rtl_filled_q) == 0) last_idle_ms = millis();
     if (xQueueReceive(rtl_filled_q, &block, portMAX_DELAY) != pdTRUE) continue;
+    const uint32_t queue_depth = uxQueueMessagesWaiting(rtl_filled_q);
     rtl_iq_processed_samples.fetch_add(block.bytes / 2, std::memory_order_relaxed);
     const uint32_t dsp_started_us = micros();
+    uint32_t stage_us = dsp_started_us;
+    const auto mark = [&stage_us](dsp_stats::Stage stage) {
+      const uint32_t now = micros();
+      dsp_stats::add(stage, now - stage_us);
+      stage_us = now;
+    };
     if (orcsdr::am_finder::active()) {
       orcsdr::am_finder::offer_iq(block.data, block.bytes, block.sample_rate_sps);
       const uint32_t elapsed_us = micros() - dsp_started_us;
@@ -8400,8 +8417,11 @@ static void rtl_dsp_task(void *) {
              !rtl_dsp_block_us_max.compare_exchange_weak(
                  previous_max, elapsed_us, std::memory_order_relaxed)) {
       }
+      mark(dsp_stats::Stage::other);
+      dsp_stats::block_done(elapsed_us, block.bytes / 2, queue_depth);
       (void)xQueueSend(rtl_free_q, &block.slot, portMAX_DELAY);
       vTaskDelay(1);
+      last_idle_ms = millis();
       continue;
     }
     const bool lab_active = orcsdr::rf_lab::active();
@@ -8416,7 +8436,9 @@ static void rtl_dsp_task(void *) {
         adsb_iq_drops.fetch_add(1, std::memory_order_relaxed);
       }
     }
+    mark(dsp_stats::Stage::decoders);
     update_signal_level_from_iq(block.data, block.bytes);
+    mark(dsp_stats::Stage::level);
     // POCSAG rides the shared 960 kS/s FM-band stream (no dedicated
     // high-rate queue like ADS-B) -- cheap enough per raw-IQ sample (no
     // transcendental math above its internal 38.4 kS/s decimated rate) to
@@ -8440,17 +8462,21 @@ static void rtl_dsp_task(void *) {
     }
     if (!block.custom_rate && block.band == RtlBand::p25)
       orcsdr::p25decoder::process_cu8(block.data, block.bytes);
+    mark(dsp_stats::Stage::decoders);
     if (!block.custom_rate && block.band == RtlBand::p25 &&
         g_iq_rec_kind.load(std::memory_order_relaxed) == IqCaptureKind::p25)
       iq_rec_append(block.data, block.bytes);
     if (!block.custom_rate &&
         g_iq_rec_kind.load(std::memory_order_relaxed) == IqCaptureKind::diagnostic)
       iq_rec_append(block.data, block.bytes);
+    mark(dsp_stats::Stage::record);
     if (block.band != RtlBand::adsb || orcsdr::home::active() ||
         orcsdr::visualizer::active() || lab_active)
       spectrum_offer_iq_snapshot(block.data, block.bytes);
+    mark(dsp_stats::Stage::spectrum);
     if (!block.custom_rate && block.band == RtlBand::lora)
       lora_iq_offer(block.data, block.bytes);
+    mark(dsp_stats::Stage::decoders);
     if (!block.custom_rate && !orcsdr::visualizer::channel_audio_active() &&
         block.band != RtlBand::lora && block.band != RtlBand::p25 &&
         block.band != RtlBand::pocsag &&
@@ -8478,6 +8504,7 @@ static void rtl_dsp_task(void *) {
                       block.band == RtlBand::fm, block.sample_rate_sps);
       }
     }
+    mark(dsp_stats::Stage::demod);
     const uint32_t dsp_elapsed_us = micros() - dsp_started_us;
     rtl_dsp_window_us.fetch_add(dsp_elapsed_us, std::memory_order_relaxed);
     rtl_dsp_window_blocks.fetch_add(1, std::memory_order_relaxed);
@@ -8486,7 +8513,13 @@ static void rtl_dsp_task(void *) {
            !rtl_dsp_block_us_max.compare_exchange_weak(
                previous_max, dsp_elapsed_us, std::memory_order_relaxed)) {
     }
+    dsp_stats::block_done(dsp_elapsed_us, block.bytes / 2, queue_depth);
     (void)xQueueSend(rtl_free_q, &block.slot, portMAX_DELAY);
+    if (millis() - last_idle_ms >= kRtlDspMaxBusyMs) {
+      dsp_stats::overload_yield();
+      vTaskDelay(1);
+      last_idle_ms = millis();
+    }
   }
 }
 
@@ -16047,6 +16080,21 @@ void process_command(char* command) {
                   orcsdr::home::self_check() ? 1 : 0,
                   orcsdr::shortwave::dashboard_self_check() ? 1 : 0,
                   orcsdr::freq_keypad::self_check() ? 1 : 0, editor ? 1 : 0);
+    return;
+  }
+  if (strcmp(command, "RTL_DSP STATS") == 0) {
+    // Window since the previous RTL_DSP STATS (read-only, resets on read).
+    static uint32_t last_ms = millis();
+    const uint32_t now = millis();
+    char line[512];
+    (void)orcsdr::dsp::stats::format_and_reset(line, sizeof(line), now - last_ms);
+    last_ms = now;
+    Serial.printf("%s band=%s rate=%lu iq_pipeline_drops=%lu\n", line,
+                  rtl_band_name(rtl_ui_band),
+                  static_cast<unsigned long>(
+                      rtl_active_sample_rate_sps.load(std::memory_order_relaxed)),
+                  static_cast<unsigned long>(
+                      rtl_iq_pipeline_drops.load(std::memory_order_relaxed)));
     return;
   }
   if (strcmp(command, "RTL_GAIN STATUS") == 0) {
