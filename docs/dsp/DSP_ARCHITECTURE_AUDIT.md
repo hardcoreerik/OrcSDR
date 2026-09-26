@@ -119,13 +119,17 @@ Side consumers of the same raw IQ (other tasks):
 
 ## 4. Driver assessment (esp-rtl-sdr)
 
-**No change required** for rate flexibility or discontinuities.
+**No change required for rate flexibility.** Discontinuity detection needs
+work on both sides (corrected 2026-09-26, see §11).
 - Transport delivered exact rates with 0 drops up to 3.2 MS/s (§0.4).
-- Every `esp_rtl_sdr_iq_block_t` already carries `sequence`, `sample_rate_sps`,
+- Every `esp_rtl_sdr_iq_block_t` carries `sequence`, `sample_rate_sps`,
   `frequency_hz`, `host_timestamp_us` and `flags` (`OVERRUN`, `SHORT_TRANSFER`).
-  OrcSDR ignores them: it re-numbers blocks with its own counter and never tells
-  the DSP about its own pipeline drops. Discontinuity handling (Phase 13) is an
-  OrcSDR change.
+  OrcSDR drops all of it at the ring: `RtlIqBlock.sequence` is OrcSDR's own
+  `rtl_iq_sequence.fetch_add(1)`, not `iq->sequence`, and its own pipeline drops
+  never reach the DSP.
+- The driver metadata alone is **not** a sufficient continuity signal: a
+  sequence gap or `OVERRUN` says the driver lost data, but not that OrcSDR
+  dropped a block, retuned, or changed rate. See the continuity condition in §11.
 - Candidate later improvement (measure first): `iq_acquire_mode`
   (release_iq_block) is declared but "currently ignored (borrow mode only)".
   Implementing it would remove copy #1 (32 KiB/block, about 6.4 MB/s at 3.2 MS/s).
@@ -248,10 +252,24 @@ the screen out of RF Lab while scanning; RF Lab text too small and it flickers.
 
 ## 11. Required contracts and corrections (added 2026-09-26)
 
-- **OrcSDR must consume the driver's IQ `sequence` number and `OVERRUN` flag.**
-  Today it renumbers blocks with its own counter and ignores both.
-- **OrcSDR's own pipeline drops must propagate a discontinuity marker
-  downstream** (free-slot miss, filled-queue miss, and safety-valve drops).
+- **Correction:** §4 originally said the driver already gives everything needed
+  to detect discontinuities. That was too strong. OrcSDR invents its own block
+  sequence (`rtl_iq_sequence`) instead of carrying `iq->sequence`, and the
+  driver's sequence gaps and `OVERRUN` flag cannot see OrcSDR-side drops or
+  transitions.
+- **`RtlIqBlock` must retain the driver metadata**: driver sequence, flags,
+  host timestamp, plus OrcSDR's own facts: an app-pipeline-drop latch (set on a
+  free-slot or filled-queue miss, cleared by the next block delivered), and a
+  rate/tune transition marker (set by retune, rate change and stream start).
+- **Continuity condition (Stage 4):** a block continues the previous one only if
+  the driver sequence is exactly previous + 1, no `OVERRUN`/`SHORT_TRANSFER`
+  flag is set, the driver loss counters did not move, the OrcSDR drop latch is
+  clear, and no transition is marked. Anything else is a discontinuity, and
+  each module applies its reset/reacquire rule (§13).
+- **Driver-interface follow-up (logged, no driver change now):** confirm the
+  driver's sequence counts every transfer including dropped ones, and expose
+  cumulative loss counters in the block (or a cheap getter) so the consumer can
+  tell a gap from a reorder. Out of scope for this DSP task unless authorized.
 - **Every stateful DSP module must define its reset/reacquire behavior after a
   discontinuity**: FIR histories, resampler phase, FM discriminator previous
   sample, stereo resonators, RDS timing, AGC, squelch and decoder timing.
@@ -271,7 +289,7 @@ the screen out of RF Lab while scanning; RF Lab text too small and it flickers.
   oracle comparison, forced-preemption stress with Wi-Fi/UI/USB active, and a
   soak. Existing `_ansi` calls stay until then.
 
-## 12. Stage 1 results (optimization only; interim)
+## 12. Stage 1 results (optimization only)
 
 Verification: an on-device old-vs-new A/B harness (`ui/dsp_ab_harness.inc`,
 built only with `ORCSDR_DSP_AB=1`). It captures 64 consecutive live IQ blocks
@@ -294,15 +312,16 @@ Changes, all bit-identical:
 2. Clipping counted inside the demodulator pass; power stays a 1-in-16 strided
    pass before demod, because the CB squelch reads it.
 3. RDS front end processed once per block with its state in locals.
-4. A reset generation counter: a reset from another task during a block wins
-   over the end-of-block write-back, so resets keep taking effect.
+4. Resets are block-boundary requests owned by the DSP task (final design,
+   §13). The interim generation counter was replaced because it could not be
+   proven safe: a reset landing mid-write-back could leave mixed state.
 
 Measured cost model: cycle counters show about 1 instruction per cycle; bare
 byte sum = 8 cycles/sample. Interrupts, PSRAM data and XIP code placement made
 no measurable difference for these loops, so cost is instruction count and FP
 latency.
 
-Live DSP load, 2.4 MS/s (before RDS batching):
+Interim live DSP load, 2.4 MS/s (before RDS batching; superseded by §12.1):
 
 | Case | Before | After |
 |---|---|---|
@@ -315,6 +334,184 @@ Signal-level stage: ~0.78 -> ~0.07 ms per block. Queue high-water 0, no new
 steady-state IQ drops, no watchdog resets. RDS alone measured 0.56 ms per FM
 block before batching.
 
-Still to do before the Stage 1 gate: re-measure the release build
-(`ORCSDR_DSP_AB=0`) with RDS batching, including internal SRAM free and
-largest block; A/B for SSB (LSB/USB) and WX/NFM.
+### 12.1 Stage 1 final (release build, 2026-09-26)
+
+Build switches are now explicit. CMake `ORCSDR_DSP_AB` (default 0) and
+`ORCSDR_DSP_STAGE_TIMING` (default 1) are always passed by
+`tools/build-tab5-idf.ps1`; `install-tab5.ps1` forwards `-DspAb` /
+`-NoDspStageTiming`. So a cached value from an earlier test build cannot leak
+into a release build. With A/B off, the harness buffers (~23 MB PSRAM when
+armed), the `RTL_DSP AB ...` / `RTL_RDS_REPLAY_SAMPLE` commands and all hooks
+compile out.
+
+**Correctness (A/B firmware, same saved IQ, old vs new, final code):**
+
+| 64 live blocks | FM | NFM (Weather) | AM | CB AM | CB LSB | CB USB |
+|---|---|---|---|---|---|---|
+| Audio byte diffs | 0 | 0 | 0 | 0 | 0 | 0 |
+| State after every block | identical | identical | identical | identical | identical | identical |
+| Meter / level diffs | 0 | 0 | 0 | 0 | 0 | 0 |
+
+- RDS live A/B: 0 state diffs, 126 200 chips both ways.
+- **RDS replay** (8 s MPX capture from SD): batched feed vs old per-sample feed
+  give the same full-state hash (`1782db85`) and 75 999 chips each. The replay
+  path now converts each 512-sample chunk and calls `rds_process_mpx_block`.
+- **Reset stress during FM:**
+  - 4 000 mixed reset requests (demod, RDS, SSB BFO, 1 in 25 full) from the
+    command task with 0-2 ms gaps: 587 applied at block boundaries (coalesced,
+    one per block), 0 left pending, audio flowing (12 chunks per 500 ms).
+  - 30 real hot retunes via `RTL_UI ACTION FM UP/DOWN`.
+  - RDS relocked with full PS/RT after both. No watchdog or other resets.
+
+**Found during final measurement: inlining cost 20 % on FM.** In the release
+build GCC inlined `demodulate_fm` and `demodulate_ssb` into `rtl_dsp_task`, and
+the FM loop ran 3.73 ms/block instead of 3.00 ms. The A/B build, where the
+harness also calls them, keeps them out of line. Both are now
+`__attribute__((noinline))`. This is a code-layout change only; the release
+build now matches the A/B-verified code generation.
+
+**Performance, release build, 2.40 MS/s** (block = 16 384 samples = 6.83 ms;
+steady 23 s windows; stage timing on):
+
+| Case | Load before | Load after | Block avg / max (ms) | Demod (ms) | RDS (ms) | Level (ms) | Spectrum (ms) |
+|---|---|---|---|---|---|---|---|
+| FM (stereo + RDS) | 68 % | **45 %** | 3.10 / 4.26 | 3.00 (was 3.90) | 0.31 | 0.065 (was 0.77) | 0.03 |
+| AM | 52 % | **35 %** | 2.45 / 4.40 | 2.33 (was 2.79) | - | 0.071 | 0.04 |
+| CB AM | 51 % | **35 %** | 2.42 / 4.05 | 2.31 (was 2.72) | - | 0.069 | 0.03 |
+| CB LSB | n/a | **30 %** | 2.07 / 3.25 | 1.96 | - | 0.069 | 0.03 |
+| RF Lab 2.40 (CB) | 67 % | **45 %** | 3.13 / 7.30 | 2.76 (was 3.42) | - | 0.11 (was 0.95) | 0.25 |
+
+In every steady window:
+- queue high-water 0, backlog blocks 0, overload yields 0;
+- audio dropped chunks 0, audio ring overruns 0, speaker submit failures 0;
+- watchdog resets 0 (every boot in these runs was `reset_reason=11`, the USB
+  reset from flashing).
+
+Other observations:
+- Windows that include a band switch show 1-3 overload yields and max block
+  times of 9-13 ms, which are tune transients.
+- FM showed 2 driver overruns / 2 driver drops / 2 OrcSDR pipeline drops, all
+  at stream start. They are cumulative counters and did not grow in steady
+  state. AM, CB and RF Lab showed 0.
+- `queue_hwm` is the filled-queue depth sampled **right after** a block is
+  dequeued. It counts blocks waiting behind the one being processed, so 0
+  means keeping up.
+
+**Profiler observer effect** (same firmware, `-NoDspStageTiming`):
+
+| Case | Block avg, timing on | Block avg, timing off |
+|---|---|---|
+| FM | 3.102 ms | 3.105 ms |
+| AM | 2.446 ms | 2.446 ms |
+| CB LSB | 2.066 ms | 2.060 ms |
+
+The instrumentation cost is below the measurement noise, so stage timing stays
+on in release builds.
+
+**Memory (release, FM streaming):**
+
+| Pool | Value |
+|---|---|
+| Internal free / min | 151.7 KB / 151.0 KB (182 KB at 4 s after boot, before USB/Wi-Fi) |
+| Largest internal block | 69 632 B |
+| DMA-capable free / largest | 112 KB / 69 632 B |
+| PSRAM free / largest | 24.74 MB / 24.64 MB (24.35 MB with RF Lab open) |
+
+Stage 1 adds no internal SRAM. The only new buffer is the 8 KB MPX block in
+PSRAM.
+
+**Stage 1 gate (FM ≤ ~45 % at 2.4M): met.**
+
+## 13. DSP state ownership and reset contract (Stage 1 final)
+
+`rtl_audio` (all demod, RDS and audio-conditioning state) has a single owner:
+the `rtl_dsp` task.
+- Other tasks never write it. They call `rtl_dsp_request_reset(bits)`, an
+  atomic OR into `rtl_dsp_reset_requests`.
+- At the top of each block, before any processing, the DSP task runs
+  `rtl_dsp_apply_reset_requests()`: it exchanges the mask to 0 and applies it
+  in the fixed order full → demod (includes RDS) → RDS → SSB BFO.
+- A reset therefore always lands between blocks. It cannot interleave with a
+  demodulator's end-of-block write-back, so no stale or partial state is
+  possible and no lock surrounds the DSP loop.
+
+Writers and callers, classified by task:
+
+| Caller | Task | Now |
+|---|---|---|
+| Demodulators, RDS block, `shape_audio_sample`, `queue_audio_samples`, `flush_audio_play_batch`, `rds_publish_state` | rtl_dsp | owner |
+| FM/AM/SW dashboard actions, `scan_retune` (AM presets), driver hot-tune (`rtl_audio_reset_demod_filters`) | UI loop / driver app task | request `demod` |
+| `apply_cb_mode` | UI loop | request `demod` (restarts the BFO too) |
+| CB clarifier step | UI loop | request `ssb_bfo` |
+| Stream start (`rtl_audio = {}` before) | driver app task | request `full` |
+| `rds_replay` | command context | immediate `rtl_rds_reset_now()`; refused while the radio streams |
+| Legacy `run_rtl_capture` (`RTL_USE_LEGACY_USB`, compiled out) | its own task, which also demodulates | immediate `_now()` |
+
+Reset behavior by state class:
+
+| Class | Fields (examples) | Demod reset (retune / mode) | Full reset (stream start) |
+|---|---|---|---|
+| 1. Continuity-critical filter / NCO | IQ LPFs, boxcar sums and phase, discriminator previous sample, channel filter, audio decimator, pilot/sub resonators, de-emphasis, DC, envelope, SSB BFO, RDS band-pass/NCO/LPF/timing tracks | zeroed / nominal | zeroed |
+| 2. Audio conditioning | `agc_gain`, `agc_level`, `fade_in`, `last_out` | kept; `fade_in` clamped to ≤ 48 samples (short fade, no AGC re-acquire) | zeroed |
+| 3. Telemetry / meters | `peak`, `square_sum`, `samples`, chip counts, signal dBFS, clipping, queued/dropped chunks | per-block values recomputed every block; counters kept | cleared |
+| 4. Published UI | RDS PS/RT/PI, stereo lock, RDS carrier | RDS text cleared when the RDS reset is applied | cleared |
+
+Remaining races (documented, accepted):
+- **Old-LO blocks after a retune:** up to the queue depth (2 filled + 1 in
+  flight) of blocks captured before the retune can be processed after the reset
+  is applied. This existed before Stage 1. Only the Stage 4 transition marker in
+  `RtlIqBlock` (§11) can fix it, by resetting on the first block after the LO
+  actually changed.
+- **Deferred application:** a request is applied at the next block, about 7 ms
+  while streaming. With the radio stopped it stays pending until the next
+  stream start, where the full reset supersedes it. The RDS text clear is
+  deferred the same way.
+- **Telemetry readers:** UI tasks read class-3/4 fields without locks. These are
+  aligned 32-bit words on RV32, so there is no tearing, only one-block
+  staleness. The RDS text strings were not re-audited in Stage 1.
+- **`rds_replay`:** it runs only when `rtl_capture_state != running`. A block
+  still in flight during `stopping` could overlap. This is a developer command,
+  and the window was not widened by Stage 1.
+
+## 14. Stage 2 notes (benchmark lab first; no live integration before the gate)
+
+- **Candidate B, exact ratios:** ÷2 ÷2 halfbands, then rational L/M to 240k:
+  2.40 → 600k → **2/5**; 2.56 → 640k → **3/8**; 2.88 → 720k → **1/3**;
+  3.20 → 800k → **3/10**.
+- **Halfbands:** short (7-11 tap) designs that exploit the zero taps and
+  symmetry, and compute only the surviving output (decimate in the filter, never
+  filter then discard). Integer in, int16 out.
+- **The rational polyphase is also the channel filter.** Its prototype sets the
+  240k passband for WFM, so no separate channel FIR runs at 240k.
+- **Keep 240k only for WFM initially.** AM/SSB/NFM move to their own channel
+  rates in later stages.
+- **Spectrum and demod rate domains stay separate.** The spectrum keeps full
+  device-rate IQ; only the demod path is decimated.
+- **PIE SIMD** is a candidate for the halfbands, benchmarked separately from the
+  **hardware-loop (`esp.lp.setup`) risk**: rev 1.3 has reported HWLOOP state loss
+  across context switches (§11). Any PIE kernel is tested with and without
+  HWLOOP, against a scalar oracle, under forced preemption (Wi-Fi/UI/USB), with
+  a soak.
+- **Q15 numeric requirements:**
+  - coefficients quantized with the passband ripple and stopband attenuation
+    re-checked after quantization;
+  - accumulators ≥ 32-bit with no overflow at full-scale CU8 (±127 × Σ|h|);
+  - rounding (not truncation) on output;
+  - measured SNR / spur floor versus a float reference on synthetic tones and
+    saved IQ.
+- **Optional experiment:** a CIC ÷4 (with a short compensator) versus two
+  halfbands, measured for cost versus droop and aliasing.
+- **New modules live in `dsp/`, not `main.cpp`** (layout in §9). Host tests run
+  the same sources.
+- **Stage-2 benchmark gate** (on the Tab5; results reviewed before any frontend
+  is chosen or connected):
+
+| Device rate | Frontend cycles/sample (target) | ms per 16K block | Passband ripple / stopband | vs float oracle (SNR, max err) | Preemption stress + soak |
+|---|---|---|---|---|---|
+| 2.40 MS/s | measure | measure | spec | measure | pass/fail |
+| 2.56 MS/s | measure | measure | spec | measure | pass/fail |
+| 2.88 MS/s | measure | measure | spec | measure | pass/fail |
+| 3.20 MS/s | measure | measure | spec | measure | pass/fail |
+
+Live multirate FM integration, ESP-IDF migration and any esp-rtl-sdr change
+are out of scope until the gate is reviewed and explicitly authorized.

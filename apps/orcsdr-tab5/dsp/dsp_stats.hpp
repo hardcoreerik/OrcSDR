@@ -20,8 +20,10 @@ enum class Stage : uint8_t {
 };
 
 void add(Stage stage, uint32_t elapsed_us);
-// One IQ block finished: total task time, samples, and filled-queue depth seen
-// when the block was taken (depth > 0 means the task is falling behind).
+// One IQ block finished: total task time, samples, and filled-queue depth.
+// queue_depth is sampled right after this block was dequeued, so it counts
+// blocks still waiting behind it (0 = keeping up; the slot being processed is
+// not included). queue_hwm is the max of that, backlog_blocks how often > 0.
 void block_done(uint32_t total_us, uint32_t samples, uint32_t queue_depth);
 void overload_yield();
 

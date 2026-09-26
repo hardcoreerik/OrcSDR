@@ -803,20 +803,30 @@ RtlAudioState rtl_audio;
 
 void rds_clear_text();
 
-/* Demodulators keep their hot state in locals for a whole IQ block and write
- * it back at the end. Resets come from other tasks (dashboard actions, retune,
- * stream start); bumping this generation tells a block in flight not to write
- * back over a reset that happened during it. */
-std::atomic<uint32_t> rtl_audio_reset_generation{0};
-
-struct RtlDemodBlockGuard {
-  const uint32_t generation = rtl_audio_reset_generation.load(std::memory_order_acquire);
-  bool unchanged() const {
-    return generation == rtl_audio_reset_generation.load(std::memory_order_acquire);
-  }
+/* rtl_audio is owned by the DSP task. Demodulators keep their hot state in
+ * locals for a whole IQ block and write it back at the end, so other tasks
+ * (dashboard actions, retune, stream start) never write it directly: they set
+ * a request bit and the DSP task applies it before its next block. A reset
+ * therefore always lands on a block boundary and can never be overwritten by
+ * a block in flight or interleave with one. The *_now() functions do the work
+ * and are only for the DSP task, or for code that runs while it is idle
+ * (RDS replay refuses to run while the radio streams). */
+enum RtlDspResetRequest : uint32_t {
+  kRtlResetRds = 1u << 0,      // RDS front end, timing tracks and decoded text
+  kRtlResetDemod = 1u << 1,    // demod filter memory (implies RDS)
+  kRtlResetSsbBfo = 1u << 2,   // SSB BFO oscillator phase only (clarifier step)
+  kRtlResetFull = 1u << 3,     // whole rtl_audio (stream start)
 };
+std::atomic<uint32_t> rtl_dsp_reset_requests{0};
+#if ORCSDR_DSP_AB
+std::atomic<uint32_t> rtl_dsp_resets_applied{0};  // RTL_DSP AB STORM bookkeeping
+#endif
 
-void rtl_rds_reset() {
+void rtl_dsp_request_reset(uint32_t bits) {
+  rtl_dsp_reset_requests.fetch_or(bits, std::memory_order_acq_rel);
+}
+
+void rtl_rds_reset_now() {
   rtl_audio.rds_bp_y1 = 0;
   rtl_audio.rds_bp_y2 = 0;
   rtl_audio.rds_env = 0;
@@ -858,7 +868,6 @@ void rtl_rds_reset() {
   rtl_audio.rds_had_block_lock = false;
   rtl_audio.rds_diag_chip_count = 0;
   rds_clear_text();
-  rtl_audio_reset_generation.fetch_add(1, std::memory_order_acq_rel);
 }
 
 struct RdsSelection {
@@ -894,7 +903,7 @@ RdsSelection rds_select() {
 
 
 /** Soft reset of FM/NFM filter memory after LO change (keep AGC/fade partially). */
-void rtl_audio_reset_demod_filters() {
+void rtl_audio_reset_demod_filters_now() {
   rtl_audio.i_sum = 0;
   rtl_audio.q_sum = 0;
   rtl_audio.rf_phase = 0;
@@ -926,8 +935,28 @@ void rtl_audio_reset_demod_filters() {
   rtl_audio.deemphasis_r = 0;
   rtl_audio.dc_l = 0;
   rtl_audio.dc_r = 0;
-  rtl_rds_reset();
-  rtl_audio_reset_generation.fetch_add(1, std::memory_order_acq_rel);
+  rtl_rds_reset_now();
+}
+
+void rtl_audio_reset_demod_filters() { rtl_dsp_request_reset(kRtlResetDemod); }
+
+// DSP task only: apply pending resets at a block boundary.
+void rtl_dsp_apply_reset_requests() {
+  const uint32_t bits = rtl_dsp_reset_requests.exchange(0, std::memory_order_acq_rel);
+  if (bits == 0) return;
+#if ORCSDR_DSP_AB
+  rtl_dsp_resets_applied.fetch_add(1, std::memory_order_relaxed);
+#endif
+  if (bits & kRtlResetFull) rtl_audio = {};
+  if (bits & kRtlResetDemod) {
+    rtl_audio_reset_demod_filters_now();
+  } else if (bits & kRtlResetRds) {
+    rtl_rds_reset_now();
+  }
+  if (bits & kRtlResetSsbBfo) {
+    rtl_audio.ssb_cos = 1.0f;
+    rtl_audio.ssb_sin = 0.0f;
+  }
 }
 int16_t rtl_audio_buffers[3][kRtlAudioBufferSamples];
 /* M5Unified queues pointers; never overwrite a block until its audio has played. */
@@ -2368,8 +2397,15 @@ void rds_process_mpx_block(const float* mpx, const float* pilot, size_t n);
 // One IQ block of 240 kS/s MPX for RDS (2.4 MS/s gives ~1640 per block).
 constexpr size_t kRdsMpxBlockMax = 2048;
 EXT_RAM_BSS_ATTR float rds_mpx_block[kRdsMpxBlockMax];
+/* DSP build switches, set by CMake (tools/build-tab5-idf.ps1 -DspAb /
+ * -NoDspStageTiming). ORCSDR_DSP_AB: Stage-1 old-vs-new harness, test builds
+ * only; its buffers, commands and state compile out when 0. Stage timing: the
+ * per-stage split in RTL_DSP STATS (per-block totals are always kept). */
 #ifndef ORCSDR_DSP_AB
-#define ORCSDR_DSP_AB 0  // 1 = Stage-1 old-vs-new DSP harness (test builds only)
+#define ORCSDR_DSP_AB 0
+#endif
+#ifndef ORCSDR_DSP_STAGE_TIMING
+#define ORCSDR_DSP_STAGE_TIMING 1
 #endif
 #if ORCSDR_DSP_AB
 EXT_RAM_BSS_ATTR float rds_pilot_block[kRdsMpxBlockMax];
@@ -4859,6 +4895,10 @@ void rds_capture_status_print() {
       g_sd_ready ? "ready" : (g_sd_tried ? "missing" : "untried"));
 }
 
+#if ORCSDR_DSP_AB
+bool dsp_ab_replay_per_sample = false;  // RTL_RDS_REPLAY_SAMPLE: old per-sample feed
+#endif
+
 bool rds_replay(const char* path) {
   const size_t path_len = path == nullptr ? 0 : strlen(path);
   if (!sd_put_path_allowed(path) || path_len < 4 || strcmp(path + path_len - 4, ".s16") != 0) {
@@ -4880,9 +4920,12 @@ bool rds_replay(const char* path) {
     return false;
   }
 
-  rtl_rds_reset();
+  rtl_dsp_reset_requests.fetch_and(~static_cast<uint32_t>(kRtlResetRds),
+                                   std::memory_order_acq_rel);
+  rtl_rds_reset_now();  // radio is stopped, so the DSP task is not using rtl_audio
   uint32_t samples = 0;
   int16_t chunk[512];
+  float mpx[512];
   while (file.available()) {
     const size_t bytes = file.read(reinterpret_cast<uint8_t*>(chunk), sizeof(chunk));
     if ((bytes & 1u) != 0) {
@@ -4891,13 +4934,30 @@ bool rds_replay(const char* path) {
       return false;
     }
     const size_t count = bytes / sizeof(int16_t);
-    for (size_t index = 0; index < count; ++index) {
-      rds_process_mpx_sample(static_cast<float>(chunk[index]) * kRdsInt16ToMpx);
-    }
+    for (size_t index = 0; index < count; ++index)
+      mpx[index] = static_cast<float>(chunk[index]) * kRdsInt16ToMpx;
+#if ORCSDR_DSP_AB
+    if (dsp_ab_replay_per_sample) {
+      for (size_t index = 0; index < count; ++index) rds_process_mpx_sample(mpx[index]);
+    } else
+#endif
+      rds_process_mpx_block(mpx, nullptr, count);
     samples += static_cast<uint32_t>(count);
   }
   file.close();
   rds_publish_state();
+#if ORCSDR_DSP_AB
+  {
+    // FNV-1a over the whole demod/RDS state: equal hashes => identical decode.
+    uint32_t hash = 2166136261u;
+    const auto* bytes = reinterpret_cast<const uint8_t*>(&rtl_audio);
+    for (size_t k = 0; k < sizeof(rtl_audio); ++k) hash = (hash ^ bytes[k]) * 16777619u;
+    Serial.printf("RTL_RDS_REPLAY_AB feed=%s state_hash=%08lx chips=%lu\n",
+                  dsp_ab_replay_per_sample ? "sample" : "block",
+                  static_cast<unsigned long>(hash),
+                  static_cast<unsigned long>(rtl_audio.rds_diag_chip_count));
+  }
+#endif
   Serial.printf("RTL_RDS_REPLAY_DONE path=\"%s\" samples=%u seconds=%.3f\n", path,
                 samples, static_cast<double>(samples) / static_cast<double>(kRdsMpxRateHz));
   return true;
@@ -7430,7 +7490,6 @@ void rds_process_mpx_block(const float* mpx, const float* pilot, size_t n) {
 #else
   (void)pilot;
 #endif
-  const RtlDemodBlockGuard guard;  // a reset during the block wins over write-back
   float bp_y1 = rtl_audio.rds_bp_y1, bp_y2 = rtl_audio.rds_bp_y2;
   float env = rtl_audio.rds_env;
   float nco_i = rtl_audio.rds_nco_i, nco_q = rtl_audio.rds_nco_q;
@@ -7495,7 +7554,6 @@ void rds_process_mpx_block(const float* mpx, const float* pilot, size_t n) {
       ++rtl_audio.rds_diag_chip_count;
     }
   }
-  if (!guard.unchanged()) return;
   rtl_audio.rds_bp_y1 = bp_y1;
   rtl_audio.rds_bp_y2 = bp_y2;
   rtl_audio.rds_env = env;
@@ -7601,7 +7659,8 @@ void rds_log_status() {
  * wbfm=false: NFM/WX — tighter audio LPF, light de-emphasis only, no stereo.
  * No blanker / heavy post-LPF (those muffled on prior A/B).
  */
-void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm,
+/* noinline: keeps the hot loop out of rtl_dsp_task (see DSP audit, Stage 1). */
+__attribute__((noinline)) void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm,
                    uint32_t sample_rate_sps) {
   int16_t* audio = rtl_audio_buffers[rtl_audio.buffer];
   size_t audio_count = 0;
@@ -7631,20 +7690,25 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
     }
   }
 
-  // Hot state lives in locals for the block (see RtlDemodBlockGuard);
+  // Hot state lives in locals for the block (see rtl_dsp_reset_requests);
   // AGC and RDS state stay in rtl_audio (other functions own them).
-  const RtlDemodBlockGuard guard;
   uint32_t clipped_pairs = 0;
   uint32_t rds_cycles = 0;
   size_t rds_mpx_n = 0;
   const auto rds_flush = [&rds_mpx_n, &rds_cycles]() {
+#if ORCSDR_DSP_STAGE_TIMING
     const uint32_t t0 = esp_cpu_get_cycle_count();
+#endif
 #if ORCSDR_DSP_AB
     rds_process_mpx_block(rds_mpx_block, rds_pilot_block, rds_mpx_n);
 #else
     rds_process_mpx_block(rds_mpx_block, nullptr, rds_mpx_n);
 #endif
+#if ORCSDR_DSP_STAGE_TIMING
     rds_cycles += esp_cpu_get_cycle_count() - t0;
+#else
+    (void)rds_cycles;
+#endif
     rds_mpx_n = 0;
   };
   float iq_i_lpf = rtl_audio.iq_i_lpf;
@@ -7825,7 +7889,7 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
     previous_q = q;
     have_previous = true;
   }
-  if (guard.unchanged()) {
+  {  // write back block state
     rtl_audio.iq_i_lpf = iq_i_lpf;
     rtl_audio.iq_q_lpf = iq_q_lpf;
     rtl_audio.i_sum = i_sum;
@@ -7857,8 +7921,10 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
   rtl_audio.samples = samples;
   if (rds_mpx_n) rds_flush();
   rtl_block_clip.note(clipped_pairs);
+#if ORCSDR_DSP_STAGE_TIMING
   orcsdr::dsp::stats::add(orcsdr::dsp::stats::Stage::rds,
                            rds_cycles / (CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ));
+#endif
   if (capture_mpx) {
     g_rds_capture_write.store(capture_write, std::memory_order_release);
     if (capture_write >= kRdsCaptureSamples) {
@@ -7894,8 +7960,7 @@ void demodulate_am(const uint8_t* iq, size_t bytes, float audio_scale,
   if (!rf_decimation) return;
   const float inv_rf_decim = 1.0f / static_cast<float>(rf_decimation);
   const float iq_lpf_k = rtl_filter_alpha(RtlBand::am, sample_rate_sps);
-  // Hot state lives in locals for the block (see RtlDemodBlockGuard).
-  const RtlDemodBlockGuard guard;
+  // Hot state lives in locals for the block (see rtl_dsp_reset_requests).
   uint32_t clipped_pairs = 0;
   float iq_i_lpf = rtl_audio.iq_i_lpf, iq_q_lpf = rtl_audio.iq_q_lpf;
   float iq_i_lpf2 = rtl_audio.iq_i_lpf2, iq_q_lpf2 = rtl_audio.iq_q_lpf2;
@@ -7943,7 +8008,7 @@ void demodulate_am(const uint8_t* iq, size_t bytes, float audio_scale,
       ++samples;
     }
   }
-  if (guard.unchanged()) {
+  {  // write back block state
     rtl_audio.iq_i_lpf = iq_i_lpf;
     rtl_audio.iq_q_lpf = iq_q_lpf;
     rtl_audio.iq_i_lpf2 = iq_i_lpf2;
@@ -7966,7 +8031,8 @@ void demodulate_am(const uint8_t* iq, size_t bytes, float audio_scale,
   queue_audio_samples(audio, audio_count);
 }
 
-void demodulate_ssb(const uint8_t* iq, size_t bytes, float audio_scale, CbMode mode,
+/* noinline: keeps the hot loop out of rtl_dsp_task (see DSP audit, Stage 1). */
+__attribute__((noinline)) void demodulate_ssb(const uint8_t* iq, size_t bytes, float audio_scale, CbMode mode,
                     uint32_t sample_rate_sps) {
   int16_t* audio = rtl_audio_buffers[rtl_audio.buffer];
   size_t audio_count = 0;
@@ -7980,8 +8046,7 @@ void demodulate_ssb(const uint8_t* iq, size_t bytes, float audio_scale, CbMode m
   const float step = direction * 2.0f * kPi * bfo_hz / kRtlDemodRateSps;
   const float step_cos = cosf(step);
   const float step_sin = sinf(step);
-  // Hot state lives in locals for the block (see RtlDemodBlockGuard).
-  const RtlDemodBlockGuard guard;
+  // Hot state lives in locals for the block (see rtl_dsp_reset_requests).
   uint32_t clipped_pairs = 0;
   float iq_i_lpf = rtl_audio.iq_i_lpf, iq_q_lpf = rtl_audio.iq_q_lpf;
   float i_sum = rtl_audio.i_sum, q_sum = rtl_audio.q_sum;
@@ -8027,7 +8092,7 @@ void demodulate_ssb(const uint8_t* iq, size_t bytes, float audio_scale, CbMode m
     square_sum += static_cast<uint32_t>(sample * sample);
     ++samples;
   }
-  if (guard.unchanged()) {
+  {  // write back block state
     rtl_audio.iq_i_lpf = iq_i_lpf;
     rtl_audio.iq_q_lpf = iq_q_lpf;
     rtl_audio.i_sum = i_sum;
@@ -8253,7 +8318,7 @@ void run_rtl_capture() {
           frequency_hz = next;
           rtl_ui_frequency_hz = next;
           rtl_requested_frequency_hz.store(next, std::memory_order_release);
-          rtl_audio_reset_demod_filters();
+          rtl_audio_reset_demod_filters_now();
           Serial.printf("RTL_HOT_TUNE frequency_hz=%u\n", frequency_hz);
           bump_rtl_ui();
         } else {
@@ -8668,6 +8733,7 @@ static void rtl_dsp_task(void *) {
     if (uxQueueMessagesWaiting(rtl_filled_q) == 0) last_idle_ms = millis();
     if (xQueueReceive(rtl_filled_q, &block, portMAX_DELAY) != pdTRUE) continue;
     const uint32_t queue_depth = uxQueueMessagesWaiting(rtl_filled_q);
+    rtl_dsp_apply_reset_requests();
 #if ORCSDR_DSP_AB
     dsp_ab_on_block(block);
 #endif
@@ -8675,9 +8741,14 @@ static void rtl_dsp_task(void *) {
     const uint32_t dsp_started_us = micros();
     uint32_t stage_us = dsp_started_us;
     const auto mark = [&stage_us](dsp_stats::Stage stage) {
+#if ORCSDR_DSP_STAGE_TIMING
       const uint32_t now = micros();
       dsp_stats::add(stage, now - stage_us);
       stage_us = now;
+#else
+      (void)stage;
+      (void)stage_us;
+#endif
     };
     if (orcsdr::am_finder::active()) {
       orcsdr::am_finder::offer_iq(block.data, block.bytes, block.sample_rate_sps);
@@ -8845,8 +8916,7 @@ static void rtl_driver_app_task(void *) {
       rtl_ui_volume = volume;
       rtl_session_started_ms = millis();
       rtl_capture_bytes = 0;
-      rtl_audio = {};
-      rtl_audio_reset_generation.fetch_add(1, std::memory_order_acq_rel);
+      rtl_dsp_request_reset(kRtlResetFull);
       rtl_dsp_window_us.store(0, std::memory_order_relaxed);
       rtl_dsp_window_blocks.store(0, std::memory_order_relaxed);
       rtl_dsp_block_us_max.store(0, std::memory_order_relaxed);
@@ -13495,9 +13565,7 @@ void apply_cb_mode(CbMode mode, bool persist) {
     cb_clarifier_hz.store(0, std::memory_order_relaxed);
     rtl_filter_bandwidth_hz.store(mode == CbMode::am ? kCbAmFilterHz : kCbSsbFilterHz,
                                   std::memory_order_relaxed);
-    rtl_audio_reset_demod_filters();
-    rtl_audio.ssb_cos = 1.0f;
-    rtl_audio.ssb_sin = 0.0f;
+    rtl_audio_reset_demod_filters();  // also restarts the SSB BFO
     Serial.printf("RTL_CB_MODE mode=%s\n", cb_mode_name(mode));
   }
   if (persist) persist_cb_settings();
@@ -13636,8 +13704,7 @@ void handle_cb_dashboard_action(const orcsdr::cb::Action& action) {
           constrain(cb_clarifier_hz.load(std::memory_order_relaxed) + step,
                     -kCbClarifierLimitHz, kCbClarifierLimitHz),
           std::memory_order_relaxed);
-      rtl_audio.ssb_cos = 1.0f;
-      rtl_audio.ssb_sin = 0.0f;
+      rtl_dsp_request_reset(kRtlResetSsbBfo);
       persist_cb_settings();
       break;
     }
@@ -15245,6 +15312,12 @@ void process_cb_command(const char* command) {
   size_t channel = 0;
   if (strcmp(command, "RTL_CB SCAN ON") == 0 || strcmp(command, "RTL_CB SCAN OFF") == 0) {
     set_cb_scanning(strcmp(command + 12, "ON") == 0);
+  } else if (strcmp(command, "RTL_CB MODE AM") == 0 || strcmp(command, "RTL_CB MODE USB") == 0 ||
+             strcmp(command, "RTL_CB MODE LSB") == 0) {
+    apply_cb_mode(command[12] == 'A'   ? CbMode::am
+                  : command[12] == 'U' ? CbMode::usb
+                                       : CbMode::lsb,
+                  true);
   } else if (strncmp(command, "RTL_CB CHANNEL ", 15) == 0 &&
              parse_cb_channel(command + 15, &channel)) {
     tune_cb_channel(channel);
@@ -15477,14 +15550,20 @@ void process_command(char* command) {
     const uint32_t dma_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
     Serial.printf("RTL_HEALTH_STATUS uptime_ms=%u free_heap=%u min_free_heap=%u "
                   "dma_free=%u dma_min=%u dma_largest=%u tasks=%u main_stack_hwm=%u "
-                  "reset_reason=%d\n",
+                  "reset_reason=%d internal_free=%u internal_min=%u internal_largest=%u "
+                  "psram_free=%u psram_largest=%u\n",
                   millis(), esp_get_free_heap_size(), esp_get_minimum_free_heap_size(),
                   heap_caps_get_free_size(dma_caps),
                   heap_caps_get_minimum_free_size(dma_caps),
                   heap_caps_get_largest_free_block(dma_caps),
                   static_cast<unsigned>(uxTaskGetNumberOfTasks()),
                   static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)),
-                  static_cast<int>(esp_reset_reason()));
+                  static_cast<int>(esp_reset_reason()),
+                  heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                  heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                  heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                  heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                  heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
     return;
   }
   if (strncmp(command, "RTL_UI OPEN ", 12) == 0 && !authenticated) {
@@ -16372,6 +16451,36 @@ void process_command(char* command) {
                   dsp_ab_arm(static_cast<size_t>(blocks)) ? 1 : 0);
     return;
   }
+  // Reset stress: n requests of rotating kinds from this (non-DSP) task with
+  // 0-2 ms gaps while the radio streams. All must be served at block
+  // boundaries (pending mask drains) and audio/RDS must keep running.
+  if (strncmp(command, "RTL_DSP AB STORM ", 17) == 0) {
+    const long n = strtol(command + 17, nullptr, 10);
+    const uint32_t kinds[] = {kRtlResetDemod, kRtlResetRds, kRtlResetSsbBfo,
+                              kRtlResetDemod | kRtlResetSsbBfo, kRtlResetFull};
+    const uint32_t applied0 = rtl_dsp_resets_applied.load(std::memory_order_relaxed);
+    const uint32_t t0 = millis();
+    for (long k = 0; k < n; ++k) {
+      // Full resets are rare in real use (stream start); keep them 1 in 25.
+      const uint32_t kind = (k % 25 == 24) ? kinds[4] : kinds[k % 4];
+      rtl_dsp_request_reset(kind);
+      vTaskDelay(pdMS_TO_TICKS(k % 3));
+    }
+    const uint32_t storm_ms = millis() - t0;
+    vTaskDelay(pdMS_TO_TICKS(50));
+    const uint32_t pending = rtl_dsp_reset_requests.load(std::memory_order_acquire);
+    const uint32_t applied = rtl_dsp_resets_applied.load(std::memory_order_relaxed) - applied0;
+    // Audio must keep flowing after the storm (a full reset zeroes the counter,
+    // so measure a fresh 500 ms window).
+    const uint32_t chunks0 = rtl_audio.queued_chunks;
+    vTaskDelay(pdMS_TO_TICKS(500));
+    Serial.printf("RTL_DSP_AB_STORM requests=%ld ms=%lu applied=%lu pending=%lu "
+                  "audio_chunks_500ms=%lu\n",
+                  n, static_cast<unsigned long>(storm_ms), static_cast<unsigned long>(applied),
+                  static_cast<unsigned long>(pending),
+                  static_cast<unsigned long>(rtl_audio.queued_chunks - chunks0));
+    return;
+  }
   if (strcmp(command, "RTL_DSP AB RUN") == 0) {
     g_dsp_ab.run_requested.store(true, std::memory_order_release);
     Serial.println("RTL_DSP_AB_RUN queued");
@@ -16380,17 +16489,29 @@ void process_command(char* command) {
 #endif
   if (strcmp(command, "RTL_DSP STATS") == 0) {
     // Window since the previous RTL_DSP STATS (read-only, resets on read).
-    static uint32_t last_ms = millis();
+    static uint32_t last_ms = 0;  // first window runs from boot, like the counters
     const uint32_t now = millis();
     char line[512];
     (void)orcsdr::dsp::stats::format_and_reset(line, sizeof(line), now - last_ms);
     last_ms = now;
-    Serial.printf("%s band=%s rate=%lu iq_pipeline_drops=%lu\n", line,
-                  rtl_band_name(rtl_ui_band),
+    // Loss counters are cumulative since stream start (not windowed).
+    esp_rtl_sdr_metrics_t metrics{};
+    if (g_rtl != nullptr) (void)esp_rtl_sdr_get_metrics(g_rtl, &metrics);
+    Serial.printf("%s band=%s rate=%lu iq_pipeline_drops=%lu driver_overruns=%u "
+                  "driver_drops=%u audio_chunks=%lu audio_dropped_chunks=%lu "
+                  "audio_ring_overruns=%lu audio_submit_failures=%lu\n",
+                  line, rtl_band_name(rtl_ui_band),
                   static_cast<unsigned long>(
                       rtl_active_sample_rate_sps.load(std::memory_order_relaxed)),
                   static_cast<unsigned long>(
-                      rtl_iq_pipeline_drops.load(std::memory_order_relaxed)));
+                      rtl_iq_pipeline_drops.load(std::memory_order_relaxed)),
+                  metrics.overruns, metrics.consumer_drops,
+                  static_cast<unsigned long>(rtl_audio.queued_chunks),
+                  static_cast<unsigned long>(rtl_audio.dropped_chunks),
+                  static_cast<unsigned long>(
+                      rtl_audio_ring_overruns.load(std::memory_order_relaxed)),
+                  static_cast<unsigned long>(
+                      rtl_audio_submit_failures.load(std::memory_order_relaxed)));
     return;
   }
   if (strcmp(command, "RTL_GAIN STATUS") == 0) {
@@ -17359,6 +17480,15 @@ void process_command(char* command) {
     (void)rds_replay(command + 15);
     return;
   }
+#if ORCSDR_DSP_AB
+  // Same replay through the old per-sample feed, for A/B against the block feed.
+  if (strncmp(command, "RTL_RDS_REPLAY_SAMPLE ", 22) == 0) {
+    dsp_ab_replay_per_sample = true;
+    (void)rds_replay(command + 22);
+    dsp_ab_replay_per_sample = false;
+    return;
+  }
+#endif
   if (strcmp(command, "RTL_RDS_STATUS") == 0) {
     const RdsSelection selection = rds_select();
     const RdsHypothesis& best = *selection.best;

@@ -2,7 +2,10 @@ param(
   [Parameter(Mandatory = $true)]
   [ValidatePattern('^COM[0-9]+$')]
   [string]$Port,
-  [string]$IdfPath = 'C:\Espressif\frameworks\esp-idf-v5.5.4'
+  [string]$IdfPath = 'C:\Espressif\frameworks\esp-idf-v5.5.4',
+  # Test builds only; see build-tab5-idf.ps1.
+  [switch]$DspAb,
+  [switch]$NoDspStageTiming
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,7 +14,8 @@ if (-not (Test-Path -LiteralPath (Join-Path $IdfPath 'export.ps1'))) {
 }
 
 Write-Host 'Building OrcSDR with native ESP-IDF 5.5.4...'
-& (Join-Path $PSScriptRoot 'build-tab5-idf.ps1') -IdfPath $IdfPath
+& (Join-Path $PSScriptRoot 'build-tab5-idf.ps1') -IdfPath $IdfPath -DspAb:$DspAb `
+  -NoDspStageTiming:$NoDspStageTiming
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Set-Location (Join-Path $PSScriptRoot '..')
