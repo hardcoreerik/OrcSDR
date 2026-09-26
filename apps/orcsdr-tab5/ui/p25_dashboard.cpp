@@ -647,6 +647,7 @@ Action handle_touch(int32_t x, int32_t y) {
     if (result == text_editor::Result::accepted) {
       strlcpy(g_profile_name, text_editor::value(), sizeof(g_profile_name));
       g_profile_name_ready = true;
+      draw();
       return {ActionKind::rename_profile, g_profile_cursor};
     }
     if (result == text_editor::Result::cancelled) draw();

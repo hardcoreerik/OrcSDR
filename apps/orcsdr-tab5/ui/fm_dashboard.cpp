@@ -2,6 +2,7 @@
 
 #include "dashboard_audio_control.hpp"
 #include "fm_config.hpp"
+#include "freq_keypad.hpp"
 #include "orc_badge.hpp"
 #include "spectrum_resample.hpp"
 
@@ -462,20 +463,7 @@ void draw_settings_dynamic() {
 }
 
 void draw_keypad() {
-  M5.Display.fillRect(0, kHeaderH, 1280, kTabsY - kHeaderH, kBg);
-  card(340, 150, 600, 450);
-  label("ENTER FM FREQUENCY (MHz)", 375, 170);
-  char field[24];
-  snprintf(field, sizeof(field), "%s%s", g_entry, g_entry[0] ? " MHz" : "");
-  M5.Display.fillRoundRect(380, 205, 520, 55, 8, TFT_NAVY);
-  text(field[0] ? field : "76.0 – 108.0", 640, 233, TFT_WHITE, 3);
-  static constexpr char keys[] = {'1','2','3','4','5','6','7','8','9','.','0','<'};
-  for (int i = 0; i < 12; ++i) {
-    char key[2] = {keys[i], 0};
-    button(380 + (i % 3) * 174, 275 + (i / 3) * 60, 160, 50, key, kGrid);
-  }
-  button(380, 525, 250, 55, "CANCEL", TFT_RED);
-  button(650, 525, 250, 55, "TUNE", kGreen, true);
+  freq_keypad::draw(kHeaderH, kBg, "ENTER FM FREQUENCY", "76.0 - 108.0", "MHz", g_entry);
 }
 
 void draw_view_static() {
@@ -599,14 +587,15 @@ Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
   if (audio_header::settings_hit(x, y)) return {ActionKind::open_device_settings};
   if (g_keypad) {
-    if (hit(x, y, 380, 525, 250, 55)) {
+    const auto result = freq_keypad::handle_touch(x, y, g_entry, sizeof(g_entry));
+    if (result == freq_keypad::Result::cancelled) {
       g_keypad = false;
       g_entry[0] = '\0';
       draw_view_static();
       draw_dynamic();
       return {};
     }
-    if (hit(x, y, 650, 525, 250, 55)) {
+    if (result == freq_keypad::Result::submitted) {
       char* end = nullptr;
       const double mhz = strtod(g_entry, &end);
       if (end != g_entry && *end == '\0' &&
@@ -617,21 +606,6 @@ Action handle_touch(int32_t x, int32_t y) {
         draw_view_static();
         return {ActionKind::tune_hz, hz};
       }
-      return {};
-    }
-    static constexpr char keys[] = {'1','2','3','4','5','6','7','8','9','.','0','\b'};
-    for (int i = 0; i < 12; ++i) {
-      if (!hit(x, y, 380 + (i % 3) * 174, 275 + (i / 3) * 60, 160, 50)) continue;
-      const size_t n = strlen(g_entry);
-      if (keys[i] == '\b') {
-        if (n) g_entry[n - 1] = '\0';
-      } else if (n + 1 < sizeof(g_entry) &&
-                 (keys[i] != '.' || strchr(g_entry, '.') == nullptr)) {
-        g_entry[n] = keys[i];
-        g_entry[n + 1] = '\0';
-      }
-      draw_keypad();
-      return {};
     }
     return {};
   }

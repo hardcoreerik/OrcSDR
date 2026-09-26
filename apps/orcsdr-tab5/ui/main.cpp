@@ -62,6 +62,8 @@
 #include "scan_engine.hpp"
 #include "cb_dashboard.hpp"
 #include "fm_dashboard.hpp"
+#include "freq_keypad.hpp"
+#include "text_editor.hpp"
 #include "fm_config.hpp"
 #include "home_dashboard.hpp"
 #include "lora_dashboard.hpp"
@@ -1725,6 +1727,10 @@ std::atomic<bool> rtl_audio_enabled{false};
 std::atomic<bool> rtl_speaker_start_allowed{false};
 std::atomic<bool> rtl_speaker_codec_primed{false};
 std::atomic<bool> rtl_headphone_connected{false};
+// RTL_DRIVER HFDIRECT override; UINT32_MAX = automatic (V4L direct on CB only).
+// R828S native tuning floor (the V3c tunes CB directly from here too).
+constexpr uint32_t kRtlV4lDirectMinHz = 24000000u;
+uint32_t rtl_v4l_hf_direct_override_hz = UINT32_MAX;
 std::atomic<bool> rtl_internal_speaker_muted{false};
 enum class BootInitStage : uint8_t {
   idle,
@@ -8557,6 +8563,20 @@ static void rtl_driver_app_task(void *) {
       const uint32_t lab_rate = rtl_rate_override_sps.load(std::memory_order_acquire);
       st.sample_rate_sps = lab_rate ? lab_rate : rtl_default_sample_rate(band);
       rtl_active_sample_rate_sps.store(st.sample_rate_sps, std::memory_order_release);
+      // V4L: CB uses the tuner's direct input like the V3c. Through the 28.8 MHz
+      // upconverter, strong AM stations fold onto 28.8 MHz - f (1600 kHz lands
+      // on channel 20). Other bands keep the upconverter.
+      if (g_rtl_profile.load(std::memory_order_acquire) == ESP_RTL_SDR_PROFILE_BLOG_V4L) {
+        const uint32_t direct_min_hz =
+            rtl_v4l_hf_direct_override_hz != UINT32_MAX ? rtl_v4l_hf_direct_override_hz
+            : band == RtlBand::cb                       ? kRtlV4lDirectMinHz
+                                                        : 0;
+        Serial.printf("RTL_V4L_HF_ROUTE band=%s route=%s min_hz=%lu result=%s\n",
+                      rtl_band_name(band), direct_min_hz ? "DIRECT" : "UPCONVERTER",
+                      static_cast<unsigned long>(direct_min_hz),
+                      esp_rtl_sdr_err_to_name(
+                          esp_rtl_sdr_set_hf_direct_min_hz(g_rtl, direct_min_hz)));
+      }
       esp_err_t err = esp_rtl_sdr_start(g_rtl, &st);
       Serial.printf("RTL_START %s rate=%u display_hz=%u lo_hz=%u\n",
                     esp_rtl_sdr_err_to_name(err), st.sample_rate_sps, frequency_hz,
@@ -15993,6 +16013,15 @@ void process_command(char* command) {
                   orcsdr::am::scan_prompt_active() ? 1 : 0);
     return;
   }
+  if (strcmp(command, "UI_SELF_CHECK") == 0) {
+    const bool editor = orcsdr::text_editor::active() || orcsdr::text_editor::self_check();
+    Serial.printf("UI_SELF_CHECK am=%d fm=%d home=%d shortwave=%d keypad=%d editor=%d\n",
+                  orcsdr::am::self_check() ? 1 : 0, orcsdr::fm::self_check() ? 1 : 0,
+                  orcsdr::home::self_check() ? 1 : 0,
+                  orcsdr::shortwave::dashboard_self_check() ? 1 : 0,
+                  orcsdr::freq_keypad::self_check() ? 1 : 0, editor ? 1 : 0);
+    return;
+  }
   if (strcmp(command, "RTL_GAIN STATUS") == 0) {
     print_rtl_gain_status();
     return;
@@ -16117,6 +16146,25 @@ void process_command(char* command) {
       err = rtl_has_device_capability(ESP_RTL_SDR_CAP_BIAS_TEE)
                 ? esp_rtl_sdr_set_bias_tee(g_rtl, strcmp(action + 5, "ON") == 0)
                 : ESP_RTL_SDR_ERR_UNSUPPORTED;
+    else if (strncmp(action, "HFDIRECT ", 9) == 0) {
+      // V4L route override for the next start: AUTO (CB direct), OFF, or a min Hz.
+      const char* value = action + 9;
+      if (strcmp(value, "AUTO") == 0) rtl_v4l_hf_direct_override_hz = UINT32_MAX;
+      else if (strcmp(value, "OFF") == 0) rtl_v4l_hf_direct_override_hz = 0;
+      else {
+        char* end = nullptr;
+        const unsigned long hz = strtoul(value, &end, 10);
+        if (end == value || *end != '\0' || hz < kRtlV4lDirectMinHz ||
+            hz >= ESP_RTL_SDR_HF_UPCONV_LO_HZ) {
+          Serial.println("RTL_DRIVER_INVALID use HFDIRECT AUTO|OFF|<24000000..28799999>");
+          return;
+        }
+        rtl_v4l_hf_direct_override_hz = static_cast<uint32_t>(hz);
+      }
+      err = rtl_v4l_hf_direct_override_hz == UINT32_MAX
+                ? ESP_OK
+                : esp_rtl_sdr_set_hf_direct_min_hz(g_rtl, rtl_v4l_hf_direct_override_hz);
+    }
     else if (strncmp(action, "BW ", 3) == 0) {
       // Queues the request only; read back with RTL_DRIVER STATUS
       // (bw_requested_hz / bw_applied_hz). 0 = automatic.
@@ -17342,6 +17390,55 @@ void orcsdr_splash_poll_serial(void) {
   poll_serial();
 }
 
+// Boot order on the splash: SD card, then Wi-Fi (when "start Wi-Fi at boot"
+// is on), then the RTL-SDR's USB port. Joining before the dongle is powered
+// keeps the C6 bring-up clear of USB power-on and live SDR traffic. The first
+// join attempt often fails (reason=2) and the reconnect backoff's second try
+// succeeds, so the budget covers two attempts; if it runs out, loop() keeps
+// retrying on the normal schedule and boot carries on.
+constexpr uint32_t kSplashWifiBudgetMs = 25000;
+
+void boot_wifi_on_splash() {
+  if (!orcsdr_splash_is_active() || !wifi_boot_bringup_pending) return;
+  wifi_boot_bringup_pending = false;  // this stage replaces the deferred loop() connect
+  if (!settings_wifi_power_enabled || !settings_wifi_start_at_boot || !wifi_profile_count) {
+    Serial.println("RTL_WIFI_BOOT_SKIP_NO_AUTOCONNECT splash");
+    return;
+  }
+  select_wifi_profile(0);
+  wifi_save_after_connect = false;
+  wifi_connect_requested.store(true, std::memory_order_release);
+  char status[80];
+  snprintf(status, sizeof(status), "Connecting to Wi-Fi \"%s\"…", wifi_ssid);
+  orcsdr_splash_set_status(status);
+  Serial.println("RTL_WIFI_BOOT_CONNECT_QUEUED splash");
+  const uint32_t started_ms = millis();
+  uint8_t shown_attempt = 0;
+  while (orcsdr_splash_is_active() && millis() - started_ms < kSplashWifiBudgetMs) {
+    poll_wifi();
+    if (wifi_connected) break;
+    // Hosted never came up and nothing is scheduled: there is no retry to wait for.
+    if (!wifi_station_ready && !wifi_connecting && wifi_reconnect_due_ms == 0 &&
+        !wifi_connect_requested.load(std::memory_order_acquire))
+      break;
+    if (wifi_reconnect_attempts != shown_attempt) {
+      shown_attempt = wifi_reconnect_attempts;
+      snprintf(status, sizeof(status), "Wi-Fi \"%s\": retrying (attempt %u)…", wifi_ssid,
+               static_cast<unsigned>(shown_attempt + 1));
+      orcsdr_splash_set_status(status);
+    }
+    orcsdr_splash_poll_serial();
+    delay(20);
+  }
+  if (wifi_connected) snprintf(status, sizeof(status), "Wi-Fi connected: %s", orcsdr::wifi::ip());
+  else snprintf(status, sizeof(status), "Wi-Fi not connected yet - will keep retrying");
+  orcsdr_splash_set_status(status);
+  Serial.printf("RTL_WIFI_BOOT_SPLASH connected=%d elapsed_ms=%lu reconnect_attempts=%u "
+                "station=%d\n",
+                wifi_connected ? 1 : 0, static_cast<unsigned long>(millis() - started_ms),
+                static_cast<unsigned>(wifi_reconnect_attempts), wifi_station_ready ? 1 : 0);
+}
+
 void setup() {
   Serial.begin(115200);
   // PSRAM-backed one-time allocation, not plain internal-DRAM globals -- see
@@ -17637,6 +17734,7 @@ void setup() {
     (void)orcsdr::offline_map::load(g_sd_fs);
     refresh_adsb_atc_preset();
   }
+  boot_wifi_on_splash();
   begin_boot_device_staging();
   /* Bring up the attached RTL-SDR while the splash is showing. The OrcSDR
    * button appears once enumeration finishes or times out; a serial SD
@@ -17659,15 +17757,17 @@ void setup() {
     delay(10);
   }
   orcsdr_splash_set_ready(true);
-  char boot_summary[80];
-  snprintf(boot_summary, sizeof(boot_summary), "SD card: %s   |   RTL-SDR: %s",
+  char boot_summary[96];
+  snprintf(boot_summary, sizeof(boot_summary), "SD card: %s   |   Wi-Fi: %s   |   RTL-SDR: %s",
            g_sd_ready ? "ready" : "not found",
+           wifi_connected ? "connected"
+           : settings_wifi_power_enabled && settings_wifi_start_at_boot ? "retrying"
+                                                                        : "off",
            rtl_device_ready() ? "ready" : "not detected");
   orcsdr_splash_set_status(boot_summary);
-  Serial.printf("BOOT_SPLASH_SUMMARY sd=%d rtl=%d\n", g_sd_ready ? 1 : 0,
-                rtl_device_ready() ? 1 : 0);
-  /* Unattended reboots (panic, C6 update) still land on Home. Hosted/Wi-Fi
-   * bring-up stays deferred to loop(). */
+  Serial.printf("BOOT_SPLASH_SUMMARY sd=%d wifi=%d rtl=%d\n", g_sd_ready ? 1 : 0,
+                wifi_connected ? 1 : 0, rtl_device_ready() ? 1 : 0);
+  /* Unattended reboots (panic, C6 update) still land on Home. */
   constexpr uint32_t kSplashAutoEnterMs = 30000;
   // RTL_SPLASH_GATE OFF (regression runs that reboot the device) skips the
   // button so each boot reaches Home unattended.
