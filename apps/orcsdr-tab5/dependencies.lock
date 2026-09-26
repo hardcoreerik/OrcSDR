@@ -1,16 +1,14 @@
 dependencies:
   esp_rtl_sdr:
-    component_hash: fb9a9276285fe81384f16c68bdfbb06e5001831bf5244329a68d8a55b6789f50
     dependencies:
     - name: idf
       version: '>=5.5.0'
     source:
-      git: https://github.com/hardcoreerik/esp-rtl-sdr.git
-      path: .
-      type: git
+      path: C:\Users\hardc\OneDrive\Documents\ChatGPT\esp_rtl_sdr
+      type: local
     targets:
     - esp32p4
-    version: 9a987245a0864d9caf4fc357fb6668b95ba5e78b
+    version: 0.8.0-rc4
   espressif/eppp_link:
     component_hash: c1369b37f2b0b427b198ae14e07e7547d3da92b95fe4dc7f949e5de560b35f21
     dependencies:
@@ -142,6 +140,6 @@ direct_dependencies:
 - idf
 - m5stack/m5gfx
 - m5stack/m5unified
-manifest_hash: 4fe3ef8dc24d6f7a1230a8ca02f49d5c421ddefaffcf2bc09b0bd311ef6d4504
+manifest_hash: a112cb232c3881bad4a9c57c023d85921a79e24db8dcc312ba8a23e6ce460424
 target: esp32p4
 version: 2.0.0

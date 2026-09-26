@@ -9,9 +9,13 @@ dependencies:
     version: "^1.3.4"
   espressif/mdns:
     version: "^1.2.3"
+  # PROVISIONAL, LOCAL ONLY - DO NOT PUSH: builds against the local
+  # esp-rtl-sdr 0.8.0-rc4 checkout (f9c993b), which is not on GitHub yet.
+  # Restore a remote SHA pin before this branch is pushed. Last remote pin:
+  #   git: https://github.com/hardcoreerik/esp-rtl-sdr.git
+  #   version: 9a987245a0864d9caf4fc357fb6668b95ba5e78b
   esp_rtl_sdr:
-    git: https://github.com/hardcoreerik/esp-rtl-sdr.git
-    version: 9a987245a0864d9caf4fc357fb6668b95ba5e78b
+    override_path: "C:/Users/hardc/OneDrive/Documents/ChatGPT/esp_rtl_sdr"
   m5stack/m5unified:
     version: "0.2.20"
   m5stack/m5gfx:

@@ -380,7 +380,8 @@ bool same_calibration_state(const Runtime& a, const Runtime& b) {
   return a.frequency_hz == b.frequency_hz &&
          a.sample_rate_sps == b.sample_rate_sps && a.ppm == b.ppm &&
          a.gain_tenth_db == b.gain_tenth_db && a.gain_mode == b.gain_mode &&
-         a.rtl_agc == b.rtl_agc;
+         a.rtl_agc == b.rtl_agc &&
+         a.tuner_bandwidth_applied_hz == b.tuner_bandwidth_applied_hz;
 }
 
 void invalidate_calibration_if_needed(const Runtime& current) {
@@ -521,6 +522,33 @@ bool has_cap(uint32_t capability) {
   return (runtime().capabilities & capability) != 0;
 }
 
+// The driver's single BlogV3 profile is a generic R820T2 identity: a bias
+// capability does not prove a bias circuit on every such stick.
+bool generic_blog_v3(const Runtime& r) {
+  return (r.capabilities & ESP_RTL_SDR_CAP_DIRECT_SAMPLING) != 0 &&
+         (r.capabilities & ESP_RTL_SDR_CAP_BIAS_TEE) != 0;
+}
+
+bool bandwidth_selectable(const Runtime& r) {
+  return (r.capabilities & ESP_RTL_SDR_CAP_TUNER_BANDWIDTH) != 0 &&
+         r.sample_rate_sps == 2400000 && r.tuner_bandwidth_count > 0;
+}
+
+void bandwidth_label(uint32_t hz, char* out, size_t size) {
+  if (hz == 0) snprintf(out, size, "AUTO");
+  else snprintf(out, size, "%.2f MHz", hz / 1.0e6);
+}
+
+// Cycles through the widths the driver lists for the current route.
+uint32_t next_bandwidth(const Runtime& r) {
+  const uint8_t count = std::min<uint8_t>(r.tuner_bandwidth_count, std::size(r.tuner_bandwidths));
+  for (uint8_t i = 0; i < count; ++i)
+    if (r.tuner_bandwidths[i] == r.tuner_bandwidth_requested_hz)
+      return r.tuner_bandwidths[(i + 1) % count];
+  return count ? r.tuner_bandwidths[0] : 0;
+}
+
+
 const char* page_name(Page value) {
   switch (value) {
     case Page::live: return "LIVE";
@@ -588,9 +616,22 @@ void draw_static_controls() {
   draw_button(700, 154, 120, "-100k", has_cap(ESP_RTL_SDR_CAP_RETUNE) ? kCyan : kMuted);
   draw_button(832, 154, 120, "+100k", has_cap(ESP_RTL_SDR_CAP_RETUNE) ? kCyan : kMuted);
   snprintf(line, sizeof(line), "Sample rate  %.3f MSPS", r.sample_rate_sps / 1.0e6);
-  text(line, 48, 238, TFT_WHITE, 2);
-  draw_button(700, 214, 252, "NEXT RATE",
+  text(line, 48, 232, TFT_WHITE, 2);
+  char requested[16];
+  char applied[16];
+  bandwidth_label(r.tuner_bandwidth_requested_hz, requested, sizeof(requested));
+  bandwidth_label(r.tuner_bandwidth_applied_hz, applied, sizeof(applied));
+  if (!has_cap(ESP_RTL_SDR_CAP_TUNER_BANDWIDTH))
+    snprintf(line, sizeof(line), "Tuner BW  not supported by this receiver");
+  else if (!bandwidth_selectable(r))
+    snprintf(line, sizeof(line), "Tuner BW  %s (needs 2.4 MS/s on a tuner route)", applied);
+  else
+    snprintf(line, sizeof(line), "Tuner BW  requested %s  applied %s%s", requested, applied,
+             r.tuner_bandwidth_requested_hz != r.tuner_bandwidth_applied_hz ? "  PENDING" : "");
+  text(line, 48, 254, kMuted, 1);
+  draw_button(700, 214, 120, "NEXT RATE",
               has_cap(ESP_RTL_SDR_CAP_CONTINUOUS_RATE) ? kCyan : kMuted);
+  draw_button(832, 214, 120, "NEXT BW", bandwidth_selectable(r) ? kCyan : kMuted);
   snprintf(line, sizeof(line), "PPM correction  %+d", r.ppm);
   text(line, 48, 298, TFT_WHITE, 2);
   draw_button(700, 274, 120, "-1", has_cap(ESP_RTL_SDR_CAP_FREQ_CORRECTION) ? kCyan : kMuted);
@@ -617,16 +658,19 @@ void draw_static_controls() {
   draw_button(700, 514, 252, g_keep_settings ? "RESTORE ON EXIT" : "KEEP SETTINGS");
   const bool hf_upconverter = has_cap(ESP_RTL_SDR_CAP_HF_UPCONVERTER);
   const bool direct_sampling = has_cap(ESP_RTL_SDR_CAP_DIRECT_SAMPLING);
-  text(hf_upconverter ? "Automatic hardware: V4 triplexer, HF upconverter and analog filters."
-       : direct_sampling ? "Below 24 MHz: direct sampling (Q branch); no HF upconverter."
-                         : "No HF path: tuning below 24 MHz is unavailable on this receiver.",
+  text(hf_upconverter ? "HF: below 28.8 MHz via the board's upconverter route (RF + 28.8 MHz)."
+       : direct_sampling ? "HF: below 24 MHz via direct sampling (Q branch); no tuner BW there."
+                         : "HF: none; tuning below 24 MHz is unavailable on this receiver.",
        48, 594, kMuted, 1);
-  text("Unavailable: tuner bandwidth. Unsafe: raw EP0, EEPROM, test mode, bias GPIO.",
-       640, 594, kMuted, 1);
-  text(hf_upconverter ? "Not applicable on V4: direct sampling and R828D offset tuning."
-       : direct_sampling ? "Manual gain only: no tuner AGC, RTL AGC or bias-tee."
-                         : "Manual gain only: no tuner AGC, RTL AGC, bias-tee or direct sampling.",
-       48, 616, kMuted, 1);
+  text("Unsafe: raw EP0, EEPROM, test mode, bias GPIO.", 640, 594, kMuted, 1);
+  char caps_line[128];
+  snprintf(caps_line, sizeof(caps_line), "Controls: manual gain %s, tuner AUTO %s, RTL AGC %s, bias-tee %s, tuner BW %s",
+           has_cap(ESP_RTL_SDR_CAP_GAIN) ? "yes" : "no",
+           has_cap(ESP_RTL_SDR_CAP_GAIN_AUTO) ? "yes" : "no",
+           has_cap(ESP_RTL_SDR_CAP_RTL_AGC) ? "yes" : "no",
+           has_cap(ESP_RTL_SDR_CAP_BIAS_TEE) ? "yes" : "no",
+           has_cap(ESP_RTL_SDR_CAP_TUNER_BANDWIDTH) ? "yes" : "no");
+  text(caps_line, 48, 616, kMuted, 1);
 }
 
 void draw_static_measurements() {
@@ -766,7 +810,13 @@ void queue_restore() {
   if (g_initial.gain_mode == GainMode::manual)
     queue(ActionKind::gain_tenth_db, g_initial.gain_tenth_db);
   queue(ActionKind::rtl_agc, g_initial.rtl_agc ? 1 : 0);
-  queue(ActionKind::bias_tee, g_initial.bias_tee ? 1 : 0);
+  // Exit restore may turn bias OFF but never back ON: by exit the attached
+  // receiver or antenna may not be the one bias was enabled for.
+  if (runtime().bias_tee) queue(ActionKind::bias_tee, 0);
+  if ((g_initial.capabilities & ESP_RTL_SDR_CAP_TUNER_BANDWIDTH) &&
+      g_initial.sample_rate_sps == 2400000)
+    queue(ActionKind::tuner_bandwidth_hz,
+          static_cast<int32_t>(g_initial.tuner_bandwidth_requested_hz));
 }
 
 void request_close() {
@@ -830,7 +880,9 @@ void handle_tap(int32_t x, int32_t y) {
   const Runtime r = runtime();
   if (inside(x, y, 700, 154, 120, 48) && has_cap(ESP_RTL_SDR_CAP_RETUNE)) queue(ActionKind::tune_hz, std::max<int32_t>(500000, r.frequency_hz - 100000));
   else if (inside(x, y, 832, 154, 120, 48) && has_cap(ESP_RTL_SDR_CAP_RETUNE)) queue(ActionKind::tune_hz, std::min<int32_t>(1766000000, r.frequency_hz + 100000));
-  else if (inside(x, y, 700, 214, 252, 48) && has_cap(ESP_RTL_SDR_CAP_CONTINUOUS_RATE)) queue(ActionKind::sample_rate_sps, next_rate(r.sample_rate_sps));
+  else if (inside(x, y, 700, 214, 120, 48) && has_cap(ESP_RTL_SDR_CAP_CONTINUOUS_RATE)) queue(ActionKind::sample_rate_sps, next_rate(r.sample_rate_sps));
+  else if (inside(x, y, 832, 214, 120, 48) && bandwidth_selectable(r))
+    queue(ActionKind::tuner_bandwidth_hz, static_cast<int32_t>(next_bandwidth(r)));
   else if (inside(x, y, 700, 274, 120, 48) && has_cap(ESP_RTL_SDR_CAP_FREQ_CORRECTION)) queue(ActionKind::ppm, std::max(-200, r.ppm - 1));
   else if (inside(x, y, 832, 274, 120, 48) && has_cap(ESP_RTL_SDR_CAP_FREQ_CORRECTION)) queue(ActionKind::ppm, std::min(200, r.ppm + 1));
   else if (inside(x, y, 700, 334, 120, 48) &&
@@ -842,7 +894,9 @@ void handle_tap(int32_t x, int32_t y) {
   else if (inside(x, y, 700, 454, 252, 48) && r.bias_tee && has_cap(ESP_RTL_SDR_CAP_BIAS_TEE)) queue(ActionKind::bias_tee, 0);
   else if (inside(x, y, 700, 454, 252, 48) && !r.bias_tee && !g_bias_ack) {
     g_bias_ack = true;
-    message("Disconnect DC-short loads, then HOLD BIAS ON for 2 seconds");
+    message(generic_blog_v3(r)
+                ? "V3/V3c ID is generic: bias circuit not guaranteed. No DC-short loads. HOLD 2 s"
+                : "Disconnect DC-short loads, then HOLD BIAS ON for 2 seconds");
   } else if (inside(x, y, 700, 514, 252, 48)) {
     g_keep_settings = !g_keep_settings;
     g_dirty = true;
@@ -889,8 +943,19 @@ void set_runtime(const Runtime& value) {
                        previous.gain_mode != value.gain_mode ||
                        previous.rtl_agc != value.rtl_agc ||
                        previous.bias_tee != value.bias_tee ||
+                       previous.tuner_bandwidth_requested_hz != value.tuner_bandwidth_requested_hz ||
+                       previous.tuner_bandwidth_applied_hz != value.tuner_bandwidth_applied_hz ||
                        previous.source_available != value.source_available ||
                        strcmp(previous.health, value.health) != 0;
+  // Hotswap safety: a bias acknowledgement belongs to the receiver it was
+  // given for. Any change of receiver (disconnect, different dongle or
+  // profile) cancels it, on screen and over serial.
+  if (previous.source_available != value.source_available ||
+      previous.capabilities != value.capabilities ||
+      strcmp(previous.device, value.device) != 0) {
+    g_bias_ack = false;
+    g_bias_cli_ack_until_ms = 0;
+  }
   portENTER_CRITICAL(&g_runtime_mux);
   g_runtime = value;
   portEXIT_CRITICAL(&g_runtime_mux);
@@ -1097,7 +1162,11 @@ bool process_command(const char* command, char* response, size_t response_size) 
   }
   if (strcmp(command, "RTL_LAB ACTION bias_ack") == 0) {
     g_bias_cli_ack_until_ms = millis() + 30000;
-    strlcpy(response, "RTL_LAB_OK bias_ack=30s warning=disconnect_dc_short_loads",
+    strlcpy(response,
+            generic_blog_v3(runtime())
+                ? "RTL_LAB_OK bias_ack=30s warning=disconnect_dc_short_loads,"
+                  "generic_blog_v3_bias_circuit_not_guaranteed"
+                : "RTL_LAB_OK bias_ack=30s warning=disconnect_dc_short_loads",
             response_size);
     return true;
   }

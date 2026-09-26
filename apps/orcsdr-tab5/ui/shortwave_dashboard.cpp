@@ -158,7 +158,7 @@ void button(const Rect& rect, const char* label, bool selected = false,
 const char* route_name(ReceiverRoute route) {
   switch (route) {
     case ReceiverRoute::direct_q: return "DIRECT Q SAMPLING";
-    case ReceiverRoute::hf_upconverter: return "V4 HF UPCONVERTER";
+    case ReceiverRoute::hf_upconverter: return "HF UPCONVERTER";
     case ReceiverRoute::tuner: return "NORMAL TUNER";
     default: return "ROUTE UNKNOWN";
   }

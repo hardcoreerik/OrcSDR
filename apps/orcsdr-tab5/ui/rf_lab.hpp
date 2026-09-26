@@ -19,11 +19,19 @@ struct Runtime {
   uint32_t effective_sps = 0;
   int ppm = 0;
   int gain_tenth_db = 0;
-  int gain_ladder[28]{};
+  int gain_ladder[32]{};  // V4: 28 steps, V4L/BlogV3: 29
   uint8_t gain_count = 0;
   GainMode gain_mode = GainMode::automatic;
   bool rtl_agc = false;
   bool bias_tee = false;
+  // Tuner (filter/IF) bandwidth, CAP_TUNER_BANDWIDTH at 2.4 MS/s only. The
+  // driver applies a request asynchronously, so requested can lead applied;
+  // 0 means automatic. Widths are those the driver lists for the current
+  // route (none for the V3c direct-Q HF path).
+  uint32_t tuner_bandwidth_requested_hz = 0;
+  uint32_t tuner_bandwidth_applied_hz = 0;
+  uint32_t tuner_bandwidths[16]{};
+  uint8_t tuner_bandwidth_count = 0;
   bool source_available = false;
   bool sound_enabled = true;
   uint8_t volume = 0;
@@ -43,6 +51,7 @@ enum class ActionKind : uint8_t {
   gain_tenth_db,
   rtl_agc,
   bias_tee,
+  tuner_bandwidth_hz,
 };
 
 struct Action {

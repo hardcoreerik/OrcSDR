@@ -6437,6 +6437,16 @@ orcsdr::rf_lab::Runtime rf_lab_runtime() {
                             : orcsdr::rf_lab::GainMode::manual;
   (void)esp_rtl_sdr_get_rtl_agc(g_rtl, &runtime.rtl_agc);
   (void)esp_rtl_sdr_get_bias_tee(g_rtl, &runtime.bias_tee);
+  if (rtl_has_device_capability(ESP_RTL_SDR_CAP_TUNER_BANDWIDTH)) {
+    (void)esp_rtl_sdr_get_tuner_bandwidth_state(g_rtl, &runtime.tuner_bandwidth_requested_hz,
+                                                &runtime.tuner_bandwidth_applied_hz);
+    size_t bandwidth_count = 0;
+    if (esp_rtl_sdr_get_tuner_bandwidths(g_rtl, runtime.tuner_bandwidths,
+                                         std::size(runtime.tuner_bandwidths),
+                                         &bandwidth_count) == ESP_OK)
+      runtime.tuner_bandwidth_count = static_cast<uint8_t>(
+          std::min(bandwidth_count, std::size(runtime.tuner_bandwidths)));
+  }
   esp_rtl_sdr_device_info_t device{};
   if (esp_rtl_sdr_get_device_info(g_rtl, &device) == ESP_OK && device.present)
     snprintf(runtime.device, sizeof(runtime.device), "%.30s %.12s", device.product,
@@ -6571,6 +6581,12 @@ void service_rf_lab() {
     } else if (action.kind == Kind::bias_tee) {
       result = rtl_has_device_capability(ESP_RTL_SDR_CAP_BIAS_TEE)
                    ? esp_rtl_sdr_set_bias_tee(g_rtl, action.value != 0)
+                   : ESP_RTL_SDR_ERR_UNSUPPORTED;
+    } else if (action.kind == Kind::tuner_bandwidth_hz) {
+      // Asynchronous in the driver: ESP_OK means queued. RF Lab displays the
+      // requested/applied shadow, never this result, as the hardware state.
+      result = rtl_has_device_capability(ESP_RTL_SDR_CAP_TUNER_BANDWIDTH)
+                   ? esp_rtl_sdr_set_tuner_bandwidth(g_rtl, static_cast<uint32_t>(action.value))
                    : ESP_RTL_SDR_ERR_UNSUPPORTED;
     }
     Serial.printf("RTL_LAB_ACTION kind=%u value=%ld accepted=%d result=%s\n",
@@ -8268,6 +8284,10 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       rtl_rate_override_sps.store(0, std::memory_order_release);
       set_radio_session_state(orcsdr::radio::ReceiverState::disconnected);
       set_rtl_sdr_status("RTL-SDR: disconnected");
+      // The bias-tee is powered by the dongle, so removal cuts it; the driver
+      // also starts every new attachment with bias OFF, and OrcSDR never
+      // re-enables it on its own (RF Lab exit restore only turns it off).
+      Serial.println("RTL_BIAS_TEE_SAFE_OFF reason=disconnect");
       Serial.printf("RTL_SDR_DISCONNECTED previous=%u resume_pending=%d band=%s frequency_hz=%u\n",
                     static_cast<unsigned>(previous), resume ? 1 : 0,
                     rtl_band_name(rtl_requested_band.load(std::memory_order_acquire)),
@@ -14590,19 +14610,24 @@ void print_rtl_driver_status() {
   const esp_err_t bias_err = esp_rtl_sdr_get_bias_tee(g_rtl, &bias_tee);
   const esp_err_t metrics_err = esp_rtl_sdr_get_metrics(g_rtl, &metrics);
   const esp_err_t frequency_err = esp_rtl_sdr_get_center_freq(g_rtl, &frequency_hz);
-  const char* route = profile == ESP_RTL_SDR_PROFILE_BLOG_V3 &&
-                              frequency_hz < kRtlNoHfMinHz
+  const char* route = (caps & ESP_RTL_SDR_CAP_DIRECT_SAMPLING) && frequency_hz < kRtlNoHfMinHz
                           ? "DIRECT_Q"
-                          : profile == ESP_RTL_SDR_PROFILE_BLOG_V4 &&
+                          : (caps & ESP_RTL_SDR_CAP_HF_UPCONVERTER) &&
                                     frequency_hz < ESP_RTL_SDR_HF_UPCONV_LO_HZ
                                 ? "HF_UPCONVERTER"
                                 : "TUNER";
+  uint32_t bandwidth_requested_hz = 0;
+  uint32_t bandwidth_applied_hz = 0;
+  if (caps & ESP_RTL_SDR_CAP_TUNER_BANDWIDTH)
+    (void)esp_rtl_sdr_get_tuner_bandwidth_state(g_rtl, &bandwidth_requested_hz,
+                                                &bandwidth_applied_hz);
   Serial.printf(
       "RTL_DRIVER_STATUS installed=1 version=%s state=%s profile=%u profile_name=\"%s\" "
       "provisional=%d device_caps=0x%08x library_caps=0x%08x delivery=callback "
       "gain_auto_cap=%d rtl_agc_cap=%d gain_cap=%d bias_cap=%d mode=%s gain_tenth_db=%d "
       "rtl_agc=%d bias=%d bytes=%llu blocks=%u effective_sps=%u overruns=%u drops=%u "
-      "shadow_ok=%d metrics_ok=%d frequency_hz=%u frequency_ok=%d route=%s\n",
+      "shadow_ok=%d metrics_ok=%d frequency_hz=%u frequency_ok=%d route=%s "
+      "bw_requested_hz=%u bw_applied_hz=%u\n",
       esp_rtl_sdr_get_version_string(),
       esp_rtl_sdr_state_to_name(esp_rtl_sdr_get_state(g_rtl)),
       static_cast<unsigned>(profile), esp_rtl_sdr_profile_to_name(profile),
@@ -14621,7 +14646,8 @@ void print_rtl_driver_status() {
       mode_err == ESP_OK && gain_err == ESP_OK && agc_err == ESP_OK && bias_err == ESP_OK,
       metrics_err == ESP_OK, static_cast<unsigned>(frequency_hz),
       frequency_err == ESP_OK && metrics_err == ESP_OK && metrics.frequency_hz == frequency_hz,
-      route);
+      route, static_cast<unsigned>(bandwidth_requested_hz),
+      static_cast<unsigned>(bandwidth_applied_hz));
 }
 
 void print_cb_status() {
@@ -15829,9 +15855,11 @@ void process_command(char* command) {
                   ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC |
                   ESP_RTL_SDR_CAP_BIAS_TEE;
     else if (profile == ESP_RTL_SDR_PROFILE_BLOG_V3)
-      required |= ESP_RTL_SDR_CAP_DIRECT_SAMPLING | ESP_RTL_SDR_CAP_GAIN;
+      required |= ESP_RTL_SDR_CAP_DIRECT_SAMPLING | ESP_RTL_SDR_CAP_GAIN |
+                  ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC;
     else if (profile == ESP_RTL_SDR_PROFILE_BLOG_V4L)
-      required |= ESP_RTL_SDR_CAP_GAIN;  // no HF path, tuner AGC or bias-tee
+      required |= ESP_RTL_SDR_CAP_HF_UPCONVERTER | ESP_RTL_SDR_CAP_GAIN |
+                  ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC;
     const uint32_t caps = rtl_device_capabilities();
     const bool pass = g_rtl != nullptr && ESP_RTL_SDR_VERSION_NUMBER >= 800 &&
                       (profile == ESP_RTL_SDR_PROFILE_BLOG_V4 ||
@@ -15882,6 +15910,19 @@ void process_command(char* command) {
       err = rtl_has_device_capability(ESP_RTL_SDR_CAP_BIAS_TEE)
                 ? esp_rtl_sdr_set_bias_tee(g_rtl, strcmp(action + 5, "ON") == 0)
                 : ESP_RTL_SDR_ERR_UNSUPPORTED;
+    else if (strncmp(action, "BW ", 3) == 0) {
+      // Queues the request only; read back with RTL_DRIVER STATUS
+      // (bw_requested_hz / bw_applied_hz). 0 = automatic.
+      char* end = nullptr;
+      const unsigned long bandwidth_hz = strtoul(action + 3, &end, 10);
+      if (end == action + 3 || *end != '\0') {
+        Serial.println("RTL_DRIVER_INVALID use BW <hz|0>");
+        return;
+      }
+      err = rtl_has_device_capability(ESP_RTL_SDR_CAP_TUNER_BANDWIDTH)
+                ? esp_rtl_sdr_set_tuner_bandwidth(g_rtl, static_cast<uint32_t>(bandwidth_hz))
+                : ESP_RTL_SDR_ERR_UNSUPPORTED;
+    }
     else if (strncmp(action, "TUNE ", 5) == 0) {
       char* end = nullptr;
       const unsigned long frequency_hz = strtoul(action + 5, &end, 10);
