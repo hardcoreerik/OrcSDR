@@ -5,7 +5,11 @@ param(
   [string]$C6Firmware,
   # Build without an embedded C6 image; Firmware & Updates then reports
   # the update image as not included.
-  [switch]$WithoutC6
+  [switch]$WithoutC6,
+  # Test build with the Stage-1 DSP A/B harness (RTL_DSP AB ...). Never ship.
+  [switch]$DspAb,
+  # Compile out per-stage DSP timing (profiler observer-effect runs).
+  [switch]$NoDspStageTiming
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,7 +37,9 @@ $buildDir = 'build-native-hosted3'
 New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
 Copy-Item -LiteralPath 'sdkconfig.defaults' -Destination (Join-Path $buildDir 'sdkconfig') -Force
 $configureArgs = @('-B', $buildDir, '-D', "SDKCONFIG=$buildDir/sdkconfig",
-                   '-D', 'SDKCONFIG_DEFAULTS=sdkconfig.defaults')
+                   '-D', 'SDKCONFIG_DEFAULTS=sdkconfig.defaults',
+                   '-D', "ORCSDR_DSP_AB=$(if ($DspAb) { 1 } else { 0 })",
+                   '-D', "ORCSDR_DSP_STAGE_TIMING=$(if ($NoDspStageTiming) { 0 } else { 1 })")
 if ($resolvedC6Firmware) {
   $configureArgs += @('-D', "C6_FIRMWARE_BIN=$resolvedC6Firmware")
 }
