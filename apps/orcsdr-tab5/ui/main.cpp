@@ -11954,6 +11954,116 @@ void open_dashboard(orcsdr::dashboards::Id id) {
   draw_sdr_screen(band, frequency, rtl_live_volume.load(std::memory_order_acquire));
 }
 
+// Band-aware receiver gain, shared by Home and the RTL_GAIN serial command.
+// FM and AM use OrcSDR SMART gain as their automatic mode (it steps manual
+// tuner gain itself); every other band hands gain to the tuner's own AGC.
+bool rtl_gain_band_uses_smart() {
+  return rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::am;
+}
+
+void rtl_gain_stop_smart() {
+  rtl_fm_gain_auto_enabled.store(false, std::memory_order_relaxed);
+  rtl_fm_gain_auto_selecting.store(false, std::memory_order_relaxed);
+  rtl_fm_gain_auto_restart.store(false, std::memory_order_relaxed);
+  rtl_am_gain_auto_enabled.store(false, std::memory_order_relaxed);
+  rtl_am_gain_auto_selecting.store(false, std::memory_order_relaxed);
+  rtl_am_gain_auto_restart.store(false, std::memory_order_relaxed);
+}
+
+esp_err_t rtl_gain_set_auto(const char* source) {
+  esp_err_t result = ESP_RTL_SDR_ERR_UNSUPPORTED;
+  const bool smart = rtl_gain_band_uses_smart();
+#if !RTL_USE_LEGACY_USB
+  if (g_rtl == nullptr) {
+    result = ESP_ERR_INVALID_STATE;
+  } else if (rtl_tuner_gain_available(rtl_ui_frequency_hz) &&
+             rtl_has_device_capability(smart ? ESP_RTL_SDR_CAP_GAIN
+                                             : ESP_RTL_SDR_CAP_GAIN_AUTO)) {
+    result = esp_rtl_sdr_set_tuner_gain_mode(
+        g_rtl, smart ? ESP_RTL_SDR_GAIN_MODE_MANUAL : ESP_RTL_SDR_GAIN_MODE_AUTO);
+    if (result == ESP_OK && rtl_ui_band == RtlBand::fm) {
+      rtl_fm_gain_auto_enabled.store(true, std::memory_order_relaxed);
+      rtl_fm_gain_auto_restart.store(true, std::memory_order_release);
+    } else if (result == ESP_OK && rtl_ui_band == RtlBand::am) {
+      rtl_am_gain_auto_enabled.store(true, std::memory_order_relaxed);
+      rtl_am_gain_auto_restart.store(true, std::memory_order_release);
+    }
+  }
+#endif
+  Serial.printf("RTL_GAIN_SET source=%s mode=%s band=%s result=%s\n", source,
+                smart ? "SMART" : "TUNER_AGC", rtl_band_name(rtl_ui_band),
+                esp_rtl_sdr_err_to_name(result));
+  return result;
+}
+
+esp_err_t rtl_gain_set_manual(const char* source, int gain_tenth_db) {
+  esp_err_t result = ESP_RTL_SDR_ERR_UNSUPPORTED;
+  rtl_gain_stop_smart();
+#if !RTL_USE_LEGACY_USB
+  if (g_rtl == nullptr) result = ESP_ERR_INVALID_STATE;
+  else if (rtl_tuner_gain_available(rtl_ui_frequency_hz) &&
+           rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN))
+    result = esp_rtl_sdr_set_tuner_gain(g_rtl, gain_tenth_db);  // forces MANUAL
+#endif
+  Serial.printf("RTL_GAIN_SET source=%s mode=MANUAL band=%s gain_tenth_db=%d result=%s\n",
+                source, rtl_band_name(rtl_ui_band), gain_tenth_db,
+                esp_rtl_sdr_err_to_name(result));
+  return result;
+}
+
+esp_err_t rtl_gain_set_rtl_agc(const char* source, bool enabled) {
+  esp_err_t result = ESP_RTL_SDR_ERR_UNSUPPORTED;
+#if !RTL_USE_LEGACY_USB
+  if (g_rtl == nullptr) result = ESP_ERR_INVALID_STATE;
+  else if (rtl_has_device_capability(ESP_RTL_SDR_CAP_RTL_AGC))
+    result = esp_rtl_sdr_set_rtl_agc(g_rtl, enabled);
+#endif
+  Serial.printf("RTL_GAIN_SET source=%s rtl_agc=%d result=%s\n", source, enabled ? 1 : 0,
+                esp_rtl_sdr_err_to_name(result));
+  return result;
+}
+
+void print_rtl_gain_status() {
+  const bool smart = rtl_gain_band_uses_smart();
+  const bool smart_on = rtl_ui_band == RtlBand::fm
+                            ? rtl_fm_gain_auto_enabled.load(std::memory_order_relaxed)
+                            : rtl_ui_band == RtlBand::am &&
+                                  rtl_am_gain_auto_enabled.load(std::memory_order_relaxed);
+  const bool selecting = rtl_fm_gain_auto_selecting.load(std::memory_order_relaxed) ||
+                         rtl_am_gain_auto_selecting.load(std::memory_order_relaxed);
+  bool tuner_agc = false, rtl_agc = false, bias = false;
+  int gain = 0;
+  int gains[32]{};
+  size_t count = 0;
+#if !RTL_USE_LEGACY_USB
+  if (g_rtl != nullptr) {
+    esp_rtl_sdr_gain_mode_t mode = ESP_RTL_SDR_GAIN_MODE_MANUAL;
+    tuner_agc = esp_rtl_sdr_get_tuner_gain_mode(g_rtl, &mode) == ESP_OK &&
+                mode == ESP_RTL_SDR_GAIN_MODE_AUTO;
+    (void)esp_rtl_sdr_get_tuner_gain(g_rtl, &gain);
+    (void)esp_rtl_sdr_get_rtl_agc(g_rtl, &rtl_agc);
+    (void)esp_rtl_sdr_get_bias_tee(g_rtl, &bias);
+    if (esp_rtl_sdr_get_tuner_gains(g_rtl, gains, std::size(gains), &count) != ESP_OK)
+      count = 0;
+  }
+#endif
+  const char* mode = smart_on ? "SMART" : tuner_agc ? "TUNER_AGC" : "MANUAL";
+  Serial.printf("RTL_GAIN_STATUS band=%s receiver=\"%s\" mode=%s auto_kind=%s selecting=%d "
+                "gain_tenth_db=%d rtl_agc=%d bias=%d gain_available=%d cap_auto=%d "
+                "cap_rtl_agc=%d steps=",
+                rtl_band_name(rtl_ui_band),
+                rtl_receiver_label(g_rtl_profile.load(std::memory_order_acquire)), mode,
+                smart ? "SMART" : "TUNER_AGC", smart_on && selecting ? 1 : 0, gain,
+                rtl_agc ? 1 : 0, bias ? 1 : 0,
+                rtl_tuner_gain_available(rtl_ui_frequency_hz) ? 1 : 0,
+                rtl_has_device_capability(smart ? ESP_RTL_SDR_CAP_GAIN
+                                                : ESP_RTL_SDR_CAP_GAIN_AUTO) ? 1 : 0,
+                rtl_has_device_capability(ESP_RTL_SDR_CAP_RTL_AGC) ? 1 : 0);
+  for (size_t i = 0; i < std::min(count, std::size(gains)); ++i)
+    Serial.printf(i ? ",%d" : "%d", gains[i]);
+  Serial.println();
+}
+
 void handle_home_action(const orcsdr::home::Action& action) {
   using orcsdr::home::ActionKind;
   switch (action.kind) {
@@ -12024,51 +12134,11 @@ void handle_home_action(const orcsdr::home::Action& action) {
     case ActionKind::volume_up:
       adjust_rtl_volume(static_cast<int>(kRtlVolumeStep));
       break;
-    case ActionKind::gain_auto:
-#if !RTL_USE_LEGACY_USB
-      if (g_rtl != nullptr && rtl_tuner_gain_available(rtl_ui_frequency_hz)) {
-        const bool smart = rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::am;
-        // SMART drives manual tuner steps itself; other bands hand gain to the tuner AGC.
-        const esp_err_t result = esp_rtl_sdr_set_tuner_gain_mode(
-            g_rtl, smart ? ESP_RTL_SDR_GAIN_MODE_MANUAL : ESP_RTL_SDR_GAIN_MODE_AUTO);
-        if (result == ESP_OK && rtl_ui_band == RtlBand::fm) {
-          rtl_fm_gain_auto_enabled.store(true, std::memory_order_relaxed);
-          rtl_fm_gain_auto_restart.store(true, std::memory_order_release);
-        } else if (result == ESP_OK && rtl_ui_band == RtlBand::am) {
-          rtl_am_gain_auto_enabled.store(true, std::memory_order_relaxed);
-          rtl_am_gain_auto_restart.store(true, std::memory_order_release);
-        }
-        Serial.printf("RTL_HOME_GAIN mode=%s band=%s result=%s\n", smart ? "SMART" : "TUNER_AGC",
-                      rtl_band_name(rtl_ui_band), esp_rtl_sdr_err_to_name(result));
-      }
-#endif
-      break;
+    case ActionKind::gain_auto: (void)rtl_gain_set_auto("HOME"); break;
     case ActionKind::gain_tenth_db:
-#if !RTL_USE_LEGACY_USB
-      if (rtl_ui_band == RtlBand::fm) {
-        rtl_fm_gain_auto_enabled.store(false, std::memory_order_relaxed);
-        rtl_fm_gain_auto_selecting.store(false, std::memory_order_relaxed);
-        rtl_fm_gain_auto_restart.store(false, std::memory_order_relaxed);
-      } else if (rtl_ui_band == RtlBand::am) {
-        rtl_am_gain_auto_enabled.store(false, std::memory_order_relaxed);
-        rtl_am_gain_auto_selecting.store(false, std::memory_order_relaxed);
-        rtl_am_gain_auto_restart.store(false, std::memory_order_relaxed);
-      }
-      if (g_rtl != nullptr && rtl_tuner_gain_available(rtl_ui_frequency_hz))
-        Serial.printf("RTL_HOME_GAIN mode=MANUAL band=%s gain_tenth_db=%lu result=%s\n",
-                      rtl_band_name(rtl_ui_band), static_cast<unsigned long>(action.value),
-                      esp_rtl_sdr_err_to_name(esp_rtl_sdr_set_tuner_gain(
-                          g_rtl, static_cast<int>(action.value))));
-#endif
+      (void)rtl_gain_set_manual("HOME", static_cast<int>(action.value));
       break;
-    case ActionKind::rtl_agc:
-#if !RTL_USE_LEGACY_USB
-      if (g_rtl != nullptr && rtl_has_device_capability(ESP_RTL_SDR_CAP_RTL_AGC))
-        Serial.printf("RTL_HOME_RTL_AGC enabled=%lu result=%s\n",
-                      static_cast<unsigned long>(action.value),
-                      esp_rtl_sdr_err_to_name(esp_rtl_sdr_set_rtl_agc(g_rtl, action.value != 0)));
-#endif
-      break;
+    case ActionKind::rtl_agc: (void)rtl_gain_set_rtl_agc("HOME", action.value != 0); break;
     default: return;
   }
   draw_home_dashboard();
@@ -15923,6 +15993,42 @@ void process_command(char* command) {
                   orcsdr::am::scan_prompt_active() ? 1 : 0);
     return;
   }
+  if (strcmp(command, "RTL_GAIN STATUS") == 0) {
+    print_rtl_gain_status();
+    return;
+  }
+  if (strncmp(command, "RTL_GAIN ", 9) == 0) {
+    // Same paths as the Home gain popup, for the current band.
+    if (!authenticated) {
+      Serial.println("RTL_GAIN_ERROR auth_required");
+      return;
+    }
+    const char* action = command + 9;
+    if (strcmp(action, "AUTO") == 0 || strcmp(action, "SMART") == 0) {
+      (void)rtl_gain_set_auto("SERIAL");
+    } else if (strcmp(action, "MANUAL") == 0 || strncmp(action, "MANUAL ", 7) == 0) {
+      int gain = 0;
+      if (action[6] == ' ') {
+        char* end = nullptr;
+        const long value = strtol(action + 7, &end, 10);
+        if (end == action + 7 || *end != '\0' || value < 0 || value > 496) {
+          Serial.println("RTL_GAIN_INVALID use MANUAL [0..496]");
+          return;
+        }
+        gain = static_cast<int>(value);
+      } else if (g_rtl != nullptr) {
+        (void)esp_rtl_sdr_get_tuner_gain(g_rtl, &gain);  // hold the current gain
+      }
+      (void)rtl_gain_set_manual("SERIAL", gain);
+    } else if (strcmp(action, "RTLAGC ON") == 0 || strcmp(action, "RTLAGC OFF") == 0) {
+      (void)rtl_gain_set_rtl_agc("SERIAL", strcmp(action + 7, "ON") == 0);
+    } else {
+      Serial.println("RTL_GAIN_INVALID use STATUS|AUTO|SMART|MANUAL [0..496]|RTLAGC ON|OFF");
+      return;
+    }
+    bump_rtl_ui();
+    return;
+  }
   if (strcmp(command, "RTL_AM_GAIN STATUS") == 0) {
     int gain = 0;
     if (g_rtl != nullptr) (void)esp_rtl_sdr_get_tuner_gain(g_rtl, &gain);
@@ -15985,11 +16091,11 @@ void process_command(char* command) {
     esp_err_t err = ESP_ERR_INVALID_ARG;
     const char* action = command + 11;
     if (strcmp(action, "GAINMODE AUTO") == 0)
-      err = rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN_AUTO)
+      err = (rtl_gain_stop_smart(), rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN_AUTO))
                 ? esp_rtl_sdr_set_tuner_gain_mode(g_rtl, ESP_RTL_SDR_GAIN_MODE_AUTO)
                 : ESP_RTL_SDR_ERR_UNSUPPORTED;
     else if (strcmp(action, "GAINMODE MANUAL") == 0)
-      err = rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN)
+      err = (rtl_gain_stop_smart(), rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN))
                 ? esp_rtl_sdr_set_tuner_gain_mode(g_rtl, ESP_RTL_SDR_GAIN_MODE_MANUAL)
                 : ESP_RTL_SDR_ERR_UNSUPPORTED;
     else if (strncmp(action, "GAIN ", 5) == 0) {
@@ -15999,6 +16105,7 @@ void process_command(char* command) {
         Serial.println("RTL_DRIVER_INVALID use GAIN <0..496>");
         return;
       }
+      rtl_gain_stop_smart();  // SMART would otherwise step over the raw gain
       err = rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN)
                 ? esp_rtl_sdr_set_tuner_gain(g_rtl, static_cast<int>(gain))
                 : ESP_RTL_SDR_ERR_UNSUPPORTED;
@@ -16034,7 +16141,7 @@ void process_command(char* command) {
       err = esp_rtl_sdr_retune_hz(g_rtl, static_cast<uint32_t>(frequency_hz));
     }
     else {
-      Serial.println("RTL_DRIVER_INVALID use STATUS|SELF_CHECK|TUNE <HZ>|GAINMODE AUTO|MANUAL|GAIN <0..496>|RTLAGC ON|OFF|BIAS ON|OFF");
+      Serial.println("RTL_DRIVER_INVALID use STATUS|SELF_CHECK|TUNE <HZ>|GAINMODE AUTO|MANUAL|GAIN <0..496>|RTLAGC ON|OFF|BIAS ON|OFF|BW <hz|0>");
       return;
     }
     Serial.printf("RTL_DRIVER_RESULT action=\"%s\" accepted=%d result=%s\n", action,

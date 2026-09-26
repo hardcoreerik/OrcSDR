@@ -419,7 +419,7 @@ void draw_footer_bias() {
     return;
   }
   footer_text(current.bias_on ? "BIAS ON" : "BIAS OFF", 778,
-              current.bias_on ? TFT_RED : kGreen);
+              current.bias_on ? TFT_RED : TFT_LIGHTGREY);
 }
 
 void popup_button(int x, int w, const char* label, bool on, bool enabled) {
