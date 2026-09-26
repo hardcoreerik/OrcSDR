@@ -1729,8 +1729,8 @@ std::atomic<bool> rtl_speaker_codec_primed{false};
 std::atomic<bool> rtl_headphone_connected{false};
 // RTL_DRIVER HFDIRECT override; UINT32_MAX = automatic (V4L direct on CB only).
 // R828S native tuning floor (the V3c tunes CB directly from here too).
-constexpr uint32_t kRtlV4lDirectMinHz = 24000000u;
-uint32_t rtl_v4l_hf_direct_override_hz = UINT32_MAX;
+constexpr uint32_t kRtlHfDirectMinHz = 24000000u;
+uint32_t rtl_hf_direct_override_hz = UINT32_MAX;
 std::atomic<bool> rtl_internal_speaker_muted{false};
 enum class BootInitStage : uint8_t {
   idle,
@@ -8563,15 +8563,16 @@ static void rtl_driver_app_task(void *) {
       const uint32_t lab_rate = rtl_rate_override_sps.load(std::memory_order_acquire);
       st.sample_rate_sps = lab_rate ? lab_rate : rtl_default_sample_rate(band);
       rtl_active_sample_rate_sps.store(st.sample_rate_sps, std::memory_order_release);
-      // V4L: CB uses the tuner's direct input like the V3c. Through the 28.8 MHz
-      // upconverter, strong AM stations fold onto 28.8 MHz - f (1600 kHz lands
-      // on channel 20). Other bands keep the upconverter.
-      if (g_rtl_profile.load(std::memory_order_acquire) == ESP_RTL_SDR_PROFILE_BLOG_V4L) {
+      // V4L/V4: CB uses the tuner's direct input like the V3c. Through the
+      // 28.8 MHz upconverter, strong AM stations fold onto 28.8 MHz - f
+      // (1600 kHz lands on channel 20). Other bands keep the upconverter.
+      if (const auto profile = g_rtl_profile.load(std::memory_order_acquire);
+          profile == ESP_RTL_SDR_PROFILE_BLOG_V4L || profile == ESP_RTL_SDR_PROFILE_BLOG_V4) {
         const uint32_t direct_min_hz =
-            rtl_v4l_hf_direct_override_hz != UINT32_MAX ? rtl_v4l_hf_direct_override_hz
-            : band == RtlBand::cb                       ? kRtlV4lDirectMinHz
+            rtl_hf_direct_override_hz != UINT32_MAX ? rtl_hf_direct_override_hz
+            : band == RtlBand::cb                       ? kRtlHfDirectMinHz
                                                         : 0;
-        Serial.printf("RTL_V4L_HF_ROUTE band=%s route=%s min_hz=%lu result=%s\n",
+        Serial.printf("RTL_HF_ROUTE band=%s route=%s min_hz=%lu result=%s\n",
                       rtl_band_name(band), direct_min_hz ? "DIRECT" : "UPCONVERTER",
                       static_cast<unsigned long>(direct_min_hz),
                       esp_rtl_sdr_err_to_name(
@@ -16149,21 +16150,21 @@ void process_command(char* command) {
     else if (strncmp(action, "HFDIRECT ", 9) == 0) {
       // V4L route override for the next start: AUTO (CB direct), OFF, or a min Hz.
       const char* value = action + 9;
-      if (strcmp(value, "AUTO") == 0) rtl_v4l_hf_direct_override_hz = UINT32_MAX;
-      else if (strcmp(value, "OFF") == 0) rtl_v4l_hf_direct_override_hz = 0;
+      if (strcmp(value, "AUTO") == 0) rtl_hf_direct_override_hz = UINT32_MAX;
+      else if (strcmp(value, "OFF") == 0) rtl_hf_direct_override_hz = 0;
       else {
         char* end = nullptr;
         const unsigned long hz = strtoul(value, &end, 10);
-        if (end == value || *end != '\0' || hz < kRtlV4lDirectMinHz ||
+        if (end == value || *end != '\0' || hz < kRtlHfDirectMinHz ||
             hz >= ESP_RTL_SDR_HF_UPCONV_LO_HZ) {
           Serial.println("RTL_DRIVER_INVALID use HFDIRECT AUTO|OFF|<24000000..28799999>");
           return;
         }
-        rtl_v4l_hf_direct_override_hz = static_cast<uint32_t>(hz);
+        rtl_hf_direct_override_hz = static_cast<uint32_t>(hz);
       }
-      err = rtl_v4l_hf_direct_override_hz == UINT32_MAX
+      err = rtl_hf_direct_override_hz == UINT32_MAX
                 ? ESP_OK
-                : esp_rtl_sdr_set_hf_direct_min_hz(g_rtl, rtl_v4l_hf_direct_override_hz);
+                : esp_rtl_sdr_set_hf_direct_min_hz(g_rtl, rtl_hf_direct_override_hz);
     }
     else if (strncmp(action, "BW ", 3) == 0) {
       // Queues the request only; read back with RTL_DRIVER STATUS
