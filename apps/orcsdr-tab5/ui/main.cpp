@@ -2369,7 +2369,7 @@ void rds_process_mpx_block(const float* mpx, const float* pilot, size_t n);
 constexpr size_t kRdsMpxBlockMax = 2048;
 EXT_RAM_BSS_ATTR float rds_mpx_block[kRdsMpxBlockMax];
 #ifndef ORCSDR_DSP_AB
-#define ORCSDR_DSP_AB 1  // 1 = Stage-1 old-vs-new DSP harness (test builds only)
+#define ORCSDR_DSP_AB 0  // 1 = Stage-1 old-vs-new DSP harness (test builds only)
 #endif
 #if ORCSDR_DSP_AB
 EXT_RAM_BSS_ATTR float rds_pilot_block[kRdsMpxBlockMax];

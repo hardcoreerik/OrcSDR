@@ -243,3 +243,78 @@ and receives 48k audio. Its line count must go down.
 
 Also found during the audit (not DSP, tracked separately): the CB scanner kicks
 the screen out of RF Lab while scanning; RF Lab text too small and it flickers.
+
+---
+
+## 11. Required contracts and corrections (added 2026-09-26)
+
+- **OrcSDR must consume the driver's IQ `sequence` number and `OVERRUN` flag.**
+  Today it renumbers blocks with its own counter and ignores both.
+- **OrcSDR's own pipeline drops must propagate a discontinuity marker
+  downstream** (free-slot miss, filled-queue miss, and safety-valve drops).
+- **Every stateful DSP module must define its reset/reacquire behavior after a
+  discontinuity**: FIR histories, resampler phase, FM discriminator previous
+  sample, stereo resonators, RDS timing, AGC, squelch and decoder timing.
+  Stage 4 implements this contract.
+- **2.88 MS/s is currently NOT a working demodulation rate.** An earlier
+  assumption (including in the brief) that 2.88 MS/s produces audio was wrong:
+  any non-default device rate disables demodulation through the `custom_rate`
+  gate, even though `rtl_rf_decimation()` would accept 2.88.
+- **The driver transport was measured stable at 2.40, 2.56, 2.88 and
+  3.20 MS/s with zero IQ drops** during this audit (§0.4).
+- **The CB scanner / RF Lab interaction is a separate UI/state bug.** The
+  scanner closes RF Lab while scanning. It is not a DSP issue and must not be
+  mixed into DSP changes.
+- **P4 silicon revision 1.3** (`"revision":103`). ESP-DSP `_arp4` kernels have
+  reported FIR corruption on rev 1.3 and hardware-loop state loss across
+  context switches. No optimized ESP-DSP kernel ships without an ANSI/scalar
+  oracle comparison, forced-preemption stress with Wi-Fi/UI/USB active, and a
+  soak. Existing `_ansi` calls stay until then.
+
+## 12. Stage 1 results (optimization only; interim)
+
+Verification: an on-device old-vs-new A/B harness (`ui/dsp_ab_harness.inc`,
+built only with `ORCSDR_DSP_AB=1`). It captures 64 consecutive live IQ blocks
+and the exact DSP state, then runs verbatim pre-Stage-1 copies and the new code
+over the same saved input from the same state.
+
+| Check (64 blocks, same saved IQ) | FM | AM | CB (AM) |
+|---|---|---|---|
+| Audio byte differences | 0 | 0 | 0 |
+| FM MPX byte differences (RDS input) | 0 | - | - |
+| State after every block | identical | identical | identical |
+| Meter / level byte differences | 0 | 0 | 0 |
+
+RDS per-sample (old) vs per-block (new), 104 858 MPX samples: 0 byte
+differences in the full state, 124 384 chips both ways; 32.1 -> 24.6 ms.
+
+Changes, all bit-identical:
+1. Demodulator hot state in locals for a block. The AM inner loop went from
+   ~31 instructions with 14 state loads/stores per sample to 19 with none.
+2. Clipping counted inside the demodulator pass; power stays a 1-in-16 strided
+   pass before demod, because the CB squelch reads it.
+3. RDS front end processed once per block with its state in locals.
+4. A reset generation counter: a reset from another task during a block wins
+   over the end-of-block write-back, so resets keep taking effect.
+
+Measured cost model: cycle counters show about 1 instruction per cycle; bare
+byte sum = 8 cycles/sample. Interrupts, PSRAM data and XIP code placement made
+no measurable difference for these loops, so cost is instruction count and FP
+latency.
+
+Live DSP load, 2.4 MS/s (before RDS batching):
+
+| Case | Before | After |
+|---|---|---|
+| FM | 68 % | 50 % |
+| AM | 52 % | 36 % |
+| CB | 51 % | 35 % |
+| RF Lab 2.4 | 67 % | 45 % |
+
+Signal-level stage: ~0.78 -> ~0.07 ms per block. Queue high-water 0, no new
+steady-state IQ drops, no watchdog resets. RDS alone measured 0.56 ms per FM
+block before batching.
+
+Still to do before the Stage 1 gate: re-measure the release build
+(`ORCSDR_DSP_AB=0`) with RDS batching, including internal SRAM free and
+largest block; A/B for SSB (LSB/USB) and WX/NFM.
