@@ -3169,8 +3169,22 @@ void sync_rtl_audio_for_band(RtlBand band) {
   rtl_audio_play_count = 0;
 }
 
+// With no receiver there is nothing to play, but a running codec still drives
+// the 3.5 mm jack (and speaker) with its noise floor, heard as static. Power
+// it down; the next stream start brings it back through resume_rtl_speaker().
+void idle_rtl_speaker(const char* reason) {
+  if (!M5.Speaker.isRunning()) return;
+  M5.Speaker.stop();
+  M5.Speaker.end();
+  Serial.printf("RTL_SPEAKER_IDLE reason=%s\n", reason);
+}
+
 void resume_rtl_speaker() {
   sync_rtl_audio_for_band(rtl_ui_band);
+  if (!rtl_device_ready()) {
+    idle_rtl_speaker("no_receiver");
+    return;
+  }
   if (!rtl_speaker_start_allowed.exchange(true, std::memory_order_acq_rel)) {
     Serial.println("BOOT_STAGE speaker_start");
     begin_power_monitor("speaker_start");
@@ -6601,7 +6615,15 @@ void service_rf_lab() {
   }
 }
 
+// Every loop, on every screen: an unplug or a boot without a dongle leaves
+// the codec running. The disconnect callback runs on the USB task and must
+// not touch the speaker, so the main loop powers it down here.
+void service_rtl_speaker_idle() {
+  if (!rtl_device_ready()) idle_rtl_speaker("no_receiver");
+}
+
 void service_rtl_speaker_watchdog() {
+  if (!rtl_device_ready()) return;
   if (!rtl_ui_active.load(std::memory_order_acquire) ||
       !rtl_audio_enabled.load(std::memory_order_acquire) || !rtl_band_has_audio(rtl_ui_band))
     return;
@@ -7620,7 +7642,11 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
             /* Not locked: mirror mono so L=R, matching the "MONO" UI state. */
             l = r = (rtl_audio.deemphasis - rtl_audio.dc) * scale;
           }
-          const float al = fabsf(fm_soft_limit(l)), ar = fabsf(fm_soft_limit(r));
+          // Meter the programme before AGC and the soft limiter: after them
+          // every block peaks at the 12000 ceiling (-8.7 dBFS), which pinned
+          // the stereo VU in place.
+          const float meter_gain = rtl_audio.agc_gain > 0.0f ? 1.0f / rtl_audio.agc_gain : 1.0f;
+          const float al = fabsf(l) * meter_gain, ar = fabsf(r) * meter_gain;
           if (al > meter_peak_l) meter_peak_l = al;
           if (ar > meter_peak_r) meter_peak_r = ar;
           meter_any = true;
@@ -17881,6 +17907,7 @@ void loop() {
     if (elapsed_ms >= 500)
       Serial.printf("RTL_MAIN_STALL stage=wifi_poll elapsed_ms=%u\n", elapsed_ms);
   }
+  service_rtl_speaker_idle();  // before the full-screen modes' early returns
   if (orcsdr::visualizer::active()) {
     service_rtl_speaker_watchdog();
     const uint32_t now = millis();
