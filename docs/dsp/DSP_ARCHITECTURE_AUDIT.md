@@ -1,8 +1,13 @@
 # OrcSDR DSP architecture audit and multirate plan
 
-Status: **Phase 1-4 report** (investigation and measurement). No DSP behavior
-has been changed yet, except a task-watchdog safety valve and instrumentation
-(see §6). Branch `claude/dsp-multirate`, built on `claude/rc4-controls`.
+Status: **Stage 1 complete and hardware-verified** (optimization only; §12).
+Output is bit-identical to the pre-Stage-1 code on saved live IQ for FM, NFM,
+AM, CB AM and CB LSB/USB, and for RDS (live and SD replay). DSP state is now
+owned by the DSP task (§13). The Stage 2 benchmark lab has **not** started, and
+no multirate frontend is connected. Sections 0-10 are the original Phase 1-4
+audit (investigation and baseline measurements, including the task-watchdog
+safety valve and instrumentation in §6). Branch `claude/dsp-multirate`, built on
+`claude/rc4-controls`.
 Hardware: M5Stack Tab5 (ESP32-P4, 360 MHz, `-O2`), RTL-SDR Blog V4, esp-rtl-sdr
 `f62c5cd` (0.8.0-rc4 line; 0.9.0 pending in hardcoreerik/esp-rtl-sdr#29).
 Measured 2026-09-26.
