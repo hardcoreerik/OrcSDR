@@ -4,6 +4,7 @@
 #include <esp_mac.h>
 #include <esp_intr_alloc.h>
 #include <esp_heap_caps.h>
+#include <esp_cpu.h>
 #include <esp_log.h>
 #include <esp_attr.h>
 #include <esp_app_desc.h>
@@ -802,6 +803,19 @@ RtlAudioState rtl_audio;
 
 void rds_clear_text();
 
+/* Demodulators keep their hot state in locals for a whole IQ block and write
+ * it back at the end. Resets come from other tasks (dashboard actions, retune,
+ * stream start); bumping this generation tells a block in flight not to write
+ * back over a reset that happened during it. */
+std::atomic<uint32_t> rtl_audio_reset_generation{0};
+
+struct RtlDemodBlockGuard {
+  const uint32_t generation = rtl_audio_reset_generation.load(std::memory_order_acquire);
+  bool unchanged() const {
+    return generation == rtl_audio_reset_generation.load(std::memory_order_acquire);
+  }
+};
+
 void rtl_rds_reset() {
   rtl_audio.rds_bp_y1 = 0;
   rtl_audio.rds_bp_y2 = 0;
@@ -844,6 +858,7 @@ void rtl_rds_reset() {
   rtl_audio.rds_had_block_lock = false;
   rtl_audio.rds_diag_chip_count = 0;
   rds_clear_text();
+  rtl_audio_reset_generation.fetch_add(1, std::memory_order_acq_rel);
 }
 
 struct RdsSelection {
@@ -876,6 +891,7 @@ RdsSelection rds_select() {
   }
   return result;
 }
+
 
 /** Soft reset of FM/NFM filter memory after LO change (keep AGC/fade partially). */
 void rtl_audio_reset_demod_filters() {
@@ -911,6 +927,7 @@ void rtl_audio_reset_demod_filters() {
   rtl_audio.dc_l = 0;
   rtl_audio.dc_r = 0;
   rtl_rds_reset();
+  rtl_audio_reset_generation.fetch_add(1, std::memory_order_acq_rel);
 }
 int16_t rtl_audio_buffers[3][kRtlAudioBufferSamples];
 /* M5Unified queues pointers; never overwrite a block until its audio has played. */
@@ -2347,6 +2364,18 @@ void audio_rec_append(const int16_t* samples, size_t count);
 void queue_audio_samples(int16_t* audio, size_t audio_count);
 void audio_rec_status_print();
 void rds_process_mpx_sample(float phase, float pilot_y0 = 0.0f);
+void rds_process_mpx_block(const float* mpx, const float* pilot, size_t n);
+// One IQ block of 240 kS/s MPX for RDS (2.4 MS/s gives ~1640 per block).
+constexpr size_t kRdsMpxBlockMax = 2048;
+EXT_RAM_BSS_ATTR float rds_mpx_block[kRdsMpxBlockMax];
+#ifndef ORCSDR_DSP_AB
+#define ORCSDR_DSP_AB 1  // 1 = Stage-1 old-vs-new DSP harness (test builds only)
+#endif
+#if ORCSDR_DSP_AB
+EXT_RAM_BSS_ATTR float rds_pilot_block[kRdsMpxBlockMax];
+bool dsp_ab_take_audio(const int16_t* audio, size_t count);
+bool dsp_ab_take_mpx(float phase, float pilot);
+#endif
 void rds_publish_state();
 void rds_log_status();
 bool rds_capture_start();
@@ -6018,33 +6047,73 @@ void paint_graphics_paused_banner() {
  * Update relative signal level from CU8 IQ (cheap, call from IQ path).
  * 0 dBFS ≈ full-scale samples; noise floor often ~-40…-70 depending on gain.
  */
-void update_signal_level_from_iq(const uint8_t* iq, size_t bytes) {
-  if (iq == nullptr || bytes < 4) return;
+// Count CU8 pairs where I or Q is at a rail (0 or 255). Four bytes (two
+// pairs) per step: z() sets bit 7 of every zero byte exactly (no borrow
+// false positives), applied to v and ~v for the 0 and 255 rails.
+inline uint32_t rtl_rail_bytes(uint32_t v) {
+  const auto zero_bytes = [](uint32_t x) {
+    return ~(((x & 0x7F7F7F7Fu) + 0x7F7F7F7Fu) | x) & 0x80808080u;
+  };
+  return zero_bytes(v) | zero_bytes(~v);
+}
+
+/* Clipping for one IQ block. Demodulators count rail samples in their own
+ * pass over the block (fused, saving a full-rate walk); other blocks use
+ * count_clipped_pairs(). */
+struct RtlBlockClip {
+  bool counted = false;
+  uint32_t pairs = 0;
+  void reset() { counted = false; pairs = 0; }
+  void note(uint32_t clipped) { counted = true; pairs = clipped; }
+} rtl_block_clip;
+
+uint32_t count_clipped_pairs(const uint8_t* iq, size_t bytes) {
+  uint32_t clipped = 0;
+  size_t i = 0;
+  for (; i + 3 < bytes; i += 4) {
+    uint32_t word;
+    memcpy(&word, iq + i, sizeof(word));  // little-endian: I0 Q0 I1 Q1
+    const uint32_t rails = rtl_rail_bytes(word);
+    clipped += (rails & 0x00008080u) != 0;
+    clipped += (rails & 0x80800000u) != 0;
+  }
+  for (; i + 1 < bytes; i += 2)
+    if (iq[i] == 0 || iq[i] == 255 || iq[i + 1] == 0 || iq[i + 1] == 255) ++clipped;
+  return clipped;
+}
+
+// Strided power -> rtl_signal_dbfs. Runs before demodulation (CB squelch reads it).
+bool update_signal_power_from_iq(const uint8_t* iq, size_t bytes) {
+  if (iq == nullptr || bytes < 4) return false;
   uint64_t sum = 0;
   size_t pairs = 0;
-  size_t clipped = 0;
-  for (size_t i = 0; i + 1 < bytes; i += 2) {
-    if (iq[i] == 0 || iq[i] == 255 || iq[i + 1] == 0 || iq[i + 1] == 255)
-      ++clipped;
-    /* Power remains strided; clipping needs every sample near the 0.1% limit. */
-    if ((i & 31u) != 0) continue;
+  for (size_t i = 0; i + 1 < bytes; i += 32) {
     const int32_t ii = static_cast<int32_t>(iq[i]) - 128;
     const int32_t qq = static_cast<int32_t>(iq[i + 1]) - 128;
     sum += static_cast<uint32_t>(ii * ii + qq * qq);
     ++pairs;
   }
-  if (pairs == 0) return;
+  if (pairs == 0) return false;
   const float power = static_cast<float>(sum) / static_cast<float>(pairs);
   /* Full-scale CU8 complex: 2 * 127.5^2 */
   constexpr float kFullScale = 2.0f * 127.5f * 127.5f;
   const float dbfs = 10.0f * log10f((power / kFullScale) + 1.0e-12f);
   rtl_signal_dbfs.store(dbfs, std::memory_order_relaxed);
   rtl_signal_dbfs_smooth = 0.88f * rtl_signal_dbfs_smooth + 0.12f * dbfs;
+  return true;
+}
+
+void update_clipping_from_count(uint32_t clipped, size_t bytes) {
   const float clipping = 100.0f * static_cast<float>(clipped) /
                          static_cast<float>(bytes / 2u);
   const float previous = rtl_iq_clipping_percent.load(std::memory_order_relaxed);
   rtl_iq_clipping_percent.store(0.98f * previous + 0.02f * clipping,
                                 std::memory_order_relaxed);
+}
+
+void update_signal_level_from_iq(const uint8_t* iq, size_t bytes) {
+  if (update_signal_power_from_iq(iq, bytes))
+    update_clipping_from_count(count_clipped_pairs(iq, bytes), bytes);
 }
 
 void draw_global_header_controls() {
@@ -7230,6 +7299,12 @@ int16_t shape_audio_sample(float demodulated, float base_scale) {
 
 void queue_audio_samples(int16_t* audio, size_t audio_count) {
   if (audio_count == 0) return;
+#if ORCSDR_DSP_AB
+  if (dsp_ab_take_audio(audio, audio_count)) {
+    rtl_audio.buffer = (rtl_audio.buffer + 1) % std::size(rtl_audio_buffers);
+    return;
+  }
+#endif
   orcsdr::web_audio::note_generated(audio_count);
   orcsdr::web_audio::publish(audio, audio_count);
   orcsdr::visualizer::offer_audio(audio, nullptr, audio_count, 48000);
@@ -7342,64 +7417,103 @@ void rds_renorm_nco(float& i, float& q, float& inc_cos, float& inc_sin,
   inc_sin = sinf(omega);
 }
 
-void rds_process_mpx_sample(float phase, float /*pilot_y0*/) {
-  const float rds_bp0 = phase + kRdsBpTwoRCos * rtl_audio.rds_bp_y1 -
-                        kRdsBpR2 * rtl_audio.rds_bp_y2;
-  rtl_audio.rds_bp_y2 = rtl_audio.rds_bp_y1;
-  rtl_audio.rds_bp_y1 = rds_bp0;
-  rtl_audio.rds_env += kRdsEnvK * (fabsf(rds_bp0) - rtl_audio.rds_env);
-
-  rds_renorm_nco(rtl_audio.rds_nco_i, rtl_audio.rds_nco_q,
-                 rtl_audio.rds_nco_inc_cos, rtl_audio.rds_nco_inc_sin,
-                 rtl_audio.rds_nco_omega, rtl_audio.rds_nco_recalc_counter);
-  rtl_audio.rds_i_lpf += kRdsSymLpfK * (phase * rtl_audio.rds_nco_i - rtl_audio.rds_i_lpf);
-  rtl_audio.rds_q_lpf += kRdsSymLpfK * (phase * rtl_audio.rds_nco_q - rtl_audio.rds_q_lpf);
-  rtl_audio.rds_i_lpf2 += kRdsSymLpfK * (rtl_audio.rds_i_lpf - rtl_audio.rds_i_lpf2);
-  rtl_audio.rds_q_lpf2 += kRdsSymLpfK * (rtl_audio.rds_q_lpf - rtl_audio.rds_q_lpf2);
-
-  if (++rtl_audio.rds_slicer_decim < kRdsSlicerDecim) return;
-  rtl_audio.rds_slicer_decim = 0;
-
-  const float vi = rtl_audio.rds_i_lpf2;
-  const float vq = rtl_audio.rds_q_lpf2;
-  bool first_dump = true;
-  for (RdsTimingTrack& timing : rtl_audio.rds_timing) {
-    timing.chip_i_sum += vi;
-    timing.chip_q_sum += vq;
-    timing.chip_phase += kRdsChipInc24;
-    if (timing.chip_phase < 1.0f) continue;
-    timing.chip_phase -= 1.0f;
-    const float chip_i = timing.chip_i_sum;
-    const float chip_q = timing.chip_q_sum;
-    timing.chip_i_sum = 0.0f;
-    timing.chip_q_sum = 0.0f;
-    if (first_dump) {
-      first_dump = false;
-      const float pwr = chip_i * chip_i + chip_q * chip_q + 1.0e-9f;
-      rtl_audio.rds_nco_omega += 1.2e-6f * (chip_i * chip_q) / pwr;
-      if (rtl_audio.rds_nco_omega < kRdsNcoNominal - 0.00035f)
-        rtl_audio.rds_nco_omega = kRdsNcoNominal - 0.00035f;
-      if (rtl_audio.rds_nco_omega > kRdsNcoNominal + 0.00035f)
-        rtl_audio.rds_nco_omega = kRdsNcoNominal + 0.00035f;
-    }
-    if (timing.have_prev_chip) {
-      RdsHypothesis& h = timing.hyp[(timing.chip_index - 1u) & 1u];
-      const float pair_i = chip_i - timing.prev_chip_i;
-      const float pair_q = chip_q - timing.prev_chip_q;
-      if (h.have_prev_pair) {
-        const bool data_bit = pair_i * h.prev_pair_i + pair_q * h.prev_pair_q < 0.0f;
-        rds_hypothesis_feed(h, data_bit);
-      }
-      h.prev_pair_i = pair_i;
-      h.prev_pair_q = pair_q;
-      h.have_prev_pair = true;
-    }
-    timing.prev_chip_i = chip_i;
-    timing.prev_chip_q = chip_q;
-    timing.have_prev_chip = true;
-    ++timing.chip_index;
-    ++rtl_audio.rds_diag_chip_count;
+/* RDS consumes 240 kS/s MPX in blocks (after the FM loop) with its front-end
+ * state in locals. RDS shares no state with the FM demodulator, so this is
+ * identical to feeding it sample by sample, without a call and a round trip
+ * through rtl_audio for every MPX sample. pilot is only used by the A/B harness. */
+void rds_process_mpx_block(const float* mpx, const float* pilot, size_t n) {
+#if ORCSDR_DSP_AB
+  if (n && dsp_ab_take_mpx(mpx[0], pilot ? pilot[0] : 0.0f)) {
+    for (size_t k = 1; k < n; ++k) (void)dsp_ab_take_mpx(mpx[k], pilot ? pilot[k] : 0.0f);
+    return;
   }
+#else
+  (void)pilot;
+#endif
+  const RtlDemodBlockGuard guard;  // a reset during the block wins over write-back
+  float bp_y1 = rtl_audio.rds_bp_y1, bp_y2 = rtl_audio.rds_bp_y2;
+  float env = rtl_audio.rds_env;
+  float nco_i = rtl_audio.rds_nco_i, nco_q = rtl_audio.rds_nco_q;
+  float inc_cos = rtl_audio.rds_nco_inc_cos, inc_sin = rtl_audio.rds_nco_inc_sin;
+  float omega = rtl_audio.rds_nco_omega;
+  auto recalc_counter = rtl_audio.rds_nco_recalc_counter;
+  float i_lpf = rtl_audio.rds_i_lpf, q_lpf = rtl_audio.rds_q_lpf;
+  float i_lpf2 = rtl_audio.rds_i_lpf2, q_lpf2 = rtl_audio.rds_q_lpf2;
+  auto slicer_decim = rtl_audio.rds_slicer_decim;
+  for (size_t k = 0; k < n; ++k) {
+    const float phase = mpx[k];
+    const float rds_bp0 = phase + kRdsBpTwoRCos * bp_y1 - kRdsBpR2 * bp_y2;
+    bp_y2 = bp_y1;
+    bp_y1 = rds_bp0;
+    env += kRdsEnvK * (fabsf(rds_bp0) - env);
+
+    rds_renorm_nco(nco_i, nco_q, inc_cos, inc_sin, omega, recalc_counter);
+    i_lpf += kRdsSymLpfK * (phase * nco_i - i_lpf);
+    q_lpf += kRdsSymLpfK * (phase * nco_q - q_lpf);
+    i_lpf2 += kRdsSymLpfK * (i_lpf - i_lpf2);
+    q_lpf2 += kRdsSymLpfK * (q_lpf - q_lpf2);
+
+    if (++slicer_decim < kRdsSlicerDecim) continue;
+    slicer_decim = 0;
+
+    const float vi = i_lpf2;
+    const float vq = q_lpf2;
+    bool first_dump = true;
+    for (RdsTimingTrack& timing : rtl_audio.rds_timing) {
+      timing.chip_i_sum += vi;
+      timing.chip_q_sum += vq;
+      timing.chip_phase += kRdsChipInc24;
+      if (timing.chip_phase < 1.0f) continue;
+      timing.chip_phase -= 1.0f;
+      const float chip_i = timing.chip_i_sum;
+      const float chip_q = timing.chip_q_sum;
+      timing.chip_i_sum = 0.0f;
+      timing.chip_q_sum = 0.0f;
+      if (first_dump) {
+        first_dump = false;
+        const float pwr = chip_i * chip_i + chip_q * chip_q + 1.0e-9f;
+        omega += 1.2e-6f * (chip_i * chip_q) / pwr;
+        if (omega < kRdsNcoNominal - 0.00035f) omega = kRdsNcoNominal - 0.00035f;
+        if (omega > kRdsNcoNominal + 0.00035f) omega = kRdsNcoNominal + 0.00035f;
+      }
+      if (timing.have_prev_chip) {
+        RdsHypothesis& h = timing.hyp[(timing.chip_index - 1u) & 1u];
+        const float pair_i = chip_i - timing.prev_chip_i;
+        const float pair_q = chip_q - timing.prev_chip_q;
+        if (h.have_prev_pair) {
+          const bool data_bit = pair_i * h.prev_pair_i + pair_q * h.prev_pair_q < 0.0f;
+          rds_hypothesis_feed(h, data_bit);
+        }
+        h.prev_pair_i = pair_i;
+        h.prev_pair_q = pair_q;
+        h.have_prev_pair = true;
+      }
+      timing.prev_chip_i = chip_i;
+      timing.prev_chip_q = chip_q;
+      timing.have_prev_chip = true;
+      ++timing.chip_index;
+      ++rtl_audio.rds_diag_chip_count;
+    }
+  }
+  if (!guard.unchanged()) return;
+  rtl_audio.rds_bp_y1 = bp_y1;
+  rtl_audio.rds_bp_y2 = bp_y2;
+  rtl_audio.rds_env = env;
+  rtl_audio.rds_nco_i = nco_i;
+  rtl_audio.rds_nco_q = nco_q;
+  rtl_audio.rds_nco_inc_cos = inc_cos;
+  rtl_audio.rds_nco_inc_sin = inc_sin;
+  rtl_audio.rds_nco_omega = omega;
+  rtl_audio.rds_nco_recalc_counter = recalc_counter;
+  rtl_audio.rds_i_lpf = i_lpf;
+  rtl_audio.rds_q_lpf = q_lpf;
+  rtl_audio.rds_i_lpf2 = i_lpf2;
+  rtl_audio.rds_q_lpf2 = q_lpf2;
+  rtl_audio.rds_slicer_decim = slicer_decim;
+}
+
+void rds_process_mpx_sample(float phase, float pilot_y0) {
+  rds_process_mpx_block(&phase, &pilot_y0, 1);
 }
 
 void rds_publish_state() {
@@ -7517,25 +7631,74 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
     }
   }
 
+  // Hot state lives in locals for the block (see RtlDemodBlockGuard);
+  // AGC and RDS state stay in rtl_audio (other functions own them).
+  const RtlDemodBlockGuard guard;
+  uint32_t clipped_pairs = 0;
+  uint32_t rds_cycles = 0;
+  size_t rds_mpx_n = 0;
+  const auto rds_flush = [&rds_mpx_n, &rds_cycles]() {
+    const uint32_t t0 = esp_cpu_get_cycle_count();
+#if ORCSDR_DSP_AB
+    rds_process_mpx_block(rds_mpx_block, rds_pilot_block, rds_mpx_n);
+#else
+    rds_process_mpx_block(rds_mpx_block, nullptr, rds_mpx_n);
+#endif
+    rds_cycles += esp_cpu_get_cycle_count() - t0;
+    rds_mpx_n = 0;
+  };
+  float iq_i_lpf = rtl_audio.iq_i_lpf;
+  float iq_q_lpf = rtl_audio.iq_q_lpf;
+  float i_sum = rtl_audio.i_sum;
+  float q_sum = rtl_audio.q_sum;
+  uint8_t rf_phase = rtl_audio.rf_phase;
+  float previous_i = rtl_audio.previous_i;
+  float previous_q = rtl_audio.previous_q;
+  bool have_previous = rtl_audio.have_previous;
+  float pilot_y1 = rtl_audio.pilot_y1;
+  float pilot_y2 = rtl_audio.pilot_y2;
+  float pilot_env = rtl_audio.pilot_env;
+  bool stereo_locked = rtl_audio.stereo_locked;
+  float sub_y1 = rtl_audio.sub_y1;
+  float sub_y2 = rtl_audio.sub_y2;
+  float channel_filter = rtl_audio.channel_filter;
+  float audio_sum = rtl_audio.audio_sum;
+  float channel_filter_diff = rtl_audio.channel_filter_diff;
+  float audio_sum_diff = rtl_audio.audio_sum_diff;
+  uint8_t audio_phase = rtl_audio.audio_phase;
+  float deemphasis = rtl_audio.deemphasis;
+  float dc = rtl_audio.dc;
+  float deemphasis_l = rtl_audio.deemphasis_l;
+  float deemphasis_r = rtl_audio.deemphasis_r;
+  float dc_l = rtl_audio.dc_l;
+  float dc_r = rtl_audio.dc_r;
+  int16_t peak = rtl_audio.peak;
+  uint64_t square_sum = rtl_audio.square_sum;
+  uint64_t samples = rtl_audio.samples;
   for (size_t offset = 0; offset + 1 < bytes; offset += 2) {
     /* Center CU8 and complex channel LPF (pre-demod adjacent-channel relief). */
-    const float i_in = static_cast<float>(static_cast<int32_t>(iq[offset]) - 128);
-    const float q_in = static_cast<float>(static_cast<int32_t>(iq[offset + 1]) - 128);
-    rtl_audio.iq_i_lpf += iq_lpf_k * (i_in - rtl_audio.iq_i_lpf);
-    rtl_audio.iq_q_lpf += iq_lpf_k * (q_in - rtl_audio.iq_q_lpf);
+    const int32_t i_c = static_cast<int32_t>(iq[offset]) - 128;
+    const int32_t q_c = static_cast<int32_t>(iq[offset + 1]) - 128;
+    // Rail check fused into this pass (raw 0 or 255 <=> centered -128 or 127).
+    clipped_pairs += (static_cast<uint32_t>(i_c + 127) > 253u) |
+                     (static_cast<uint32_t>(q_c + 127) > 253u);
+    const float i_in = static_cast<float>(i_c);
+    const float q_in = static_cast<float>(q_c);
+    iq_i_lpf += iq_lpf_k * (i_in - iq_i_lpf);
+    iq_q_lpf += iq_lpf_k * (q_in - iq_q_lpf);
 
-    rtl_audio.i_sum += rtl_audio.iq_i_lpf;
-    rtl_audio.q_sum += rtl_audio.iq_q_lpf;
-    if (++rtl_audio.rf_phase != rf_decimation) continue;
+    i_sum += iq_i_lpf;
+    q_sum += iq_q_lpf;
+    if (++rf_phase != rf_decimation) continue;
 
-    const float i = rtl_audio.i_sum * inv_rf_decim;
-    const float q = rtl_audio.q_sum * inv_rf_decim;
-    rtl_audio.i_sum = 0;
-    rtl_audio.q_sum = 0;
-    rtl_audio.rf_phase = 0;
-    if (rtl_audio.have_previous) {
-      const float phase = fast_phase(rtl_audio.previous_i * q - rtl_audio.previous_q * i,
-                                     rtl_audio.previous_i * i + rtl_audio.previous_q * q);
+    const float i = i_sum * inv_rf_decim;
+    const float q = q_sum * inv_rf_decim;
+    i_sum = 0;
+    q_sum = 0;
+    rf_phase = 0;
+    if (have_previous) {
+      const float phase = fast_phase(previous_i * q - previous_q * i,
+                                     previous_i * i + previous_q * q);
       if (capture_mpx && capture_write < kRdsCaptureSamples) {
         const float scaled = constrain(phase * kRdsMpxToInt16, -32767.0f, 32767.0f);
         g_rds_capture_buf[capture_write++] = static_cast<int16_t>(scaled);
@@ -7550,16 +7713,16 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
       if (wbfm) {
         /* All-pole resonator at 19 kHz: output is the newest y[n] itself. */
         const float pilot_y0 =
-            phase + kPilotTwoRCos * rtl_audio.pilot_y1 - kPilotR2 * rtl_audio.pilot_y2;
-        rtl_audio.pilot_y2 = rtl_audio.pilot_y1;
-        rtl_audio.pilot_y1 = pilot_y0;
+            phase + kPilotTwoRCos * pilot_y1 - kPilotR2 * pilot_y2;
+        pilot_y2 = pilot_y1;
+        pilot_y1 = pilot_y0;
 
         /* Slow rectified envelope for lock hysteresis (~30 ms time constant). */
-        rtl_audio.pilot_env += kStereoEnvK * (fabsf(pilot_y0) - rtl_audio.pilot_env);
-        if (rtl_audio.stereo_locked) {
-          if (rtl_audio.pilot_env < kStereoLockOff) rtl_audio.stereo_locked = false;
+        pilot_env += kStereoEnvK * (fabsf(pilot_y0) - pilot_env);
+        if (stereo_locked) {
+          if (pilot_env < kStereoLockOff) stereo_locked = false;
         } else {
-          if (rtl_audio.pilot_env > kStereoLockOn) rtl_audio.stereo_locked = true;
+          if (pilot_env > kStereoLockOn) stereo_locked = true;
         }
 
         /*
@@ -7571,9 +7734,9 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
          */
         const float pilot_sq = pilot_y0 * pilot_y0;
         const float sub_y0 =
-            pilot_sq + kSubTwoRCos * rtl_audio.sub_y1 - kSubR2 * rtl_audio.sub_y2;
-        rtl_audio.sub_y2 = rtl_audio.sub_y1;
-        rtl_audio.sub_y1 = sub_y0;
+            pilot_sq + kSubTwoRCos * sub_y1 - kSubR2 * sub_y2;
+        sub_y2 = sub_y1;
+        sub_y1 = sub_y0;
 
         /*
          * Normalize the regenerated carrier to ~unit amplitude before using it
@@ -7582,7 +7745,7 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
          * relative to the L+R (mono) path, which is unit-scaled by definition
          * of the discriminator itself.
          */
-        const float carrier_amp = 0.5f * rtl_audio.pilot_env * rtl_audio.pilot_env + 1.0e-6f;
+        const float carrier_amp = 0.5f * pilot_env * pilot_env + 1.0e-6f;
         const float carrier = sub_y0 / carrier_amp;
 
         /*
@@ -7593,35 +7756,39 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
          * elsewhere in the spectrum — both are rejected by the same ~16 kHz
          * LPF that already shapes the mono path below.
          */
-        diff = rtl_audio.stereo_locked ? 2.0f * phase * carrier : 0.0f;
+        diff = stereo_locked ? 2.0f * phase * carrier : 0.0f;
 
-        rds_process_mpx_sample(phase, pilot_y0);
+        rds_mpx_block[rds_mpx_n] = phase;
+#if ORCSDR_DSP_AB
+        rds_pilot_block[rds_mpx_n] = pilot_y0;
+#endif
+        if (++rds_mpx_n == kRdsMpxBlockMax) rds_flush();
       }
 
       /* Post-discriminator mono audio LPF, then boxcar to 48 kHz. */
-      rtl_audio.channel_filter += audio_lpf_k * (phase - rtl_audio.channel_filter);
-      rtl_audio.audio_sum += rtl_audio.channel_filter;
+      channel_filter += audio_lpf_k * (phase - channel_filter);
+      audio_sum += channel_filter;
       if (wbfm) {
-        rtl_audio.channel_filter_diff += audio_lpf_k * (diff - rtl_audio.channel_filter_diff);
-        rtl_audio.audio_sum_diff += rtl_audio.channel_filter_diff;
+        channel_filter_diff += audio_lpf_k * (diff - channel_filter_diff);
+        audio_sum_diff += channel_filter_diff;
       }
-      if (++rtl_audio.audio_phase == kFmAudioDecim) {
-        const float demod_sum = rtl_audio.audio_sum * inv_audio_decim;
-        const float demod_diff = rtl_audio.audio_sum_diff * inv_audio_decim;
-        rtl_audio.audio_sum = 0;
-        rtl_audio.audio_sum_diff = 0;
-        rtl_audio.audio_phase = 0;
+      if (++audio_phase == kFmAudioDecim) {
+        const float demod_sum = audio_sum * inv_audio_decim;
+        const float demod_diff = audio_sum_diff * inv_audio_decim;
+        audio_sum = 0;
+        audio_sum_diff = 0;
+        audio_phase = 0;
 
         /* Mono (L+R) path — this is what actually reaches the speaker. */
-        rtl_audio.deemphasis += deemph_k * (demod_sum - rtl_audio.deemphasis);
-        rtl_audio.dc += 0.0008f * (rtl_audio.deemphasis - rtl_audio.dc);
+        deemphasis += deemph_k * (demod_sum - deemphasis);
+        dc += 0.0008f * (deemphasis - dc);
         const int16_t sample =
-            shape_audio_sample(rtl_audio.deemphasis - rtl_audio.dc, audio_scale);
+            shape_audio_sample(deemphasis - dc, audio_scale);
         audio[audio_count++] = sample;
         const int16_t magnitude = sample < 0 ? -sample : sample;
-        if (magnitude > rtl_audio.peak) rtl_audio.peak = magnitude;
-        rtl_audio.square_sum += static_cast<uint32_t>(sample * sample);
-        ++rtl_audio.samples;
+        if (magnitude > peak) peak = magnitude;
+        square_sum += static_cast<uint32_t>(sample * sample);
+        ++samples;
 
         /*
          * L/R for the dashboard meters only — never touches audio[]/playRaw.
@@ -7632,16 +7799,16 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
         if (wbfm) {
           const float scale = audio_scale * rtl_audio.agc_gain;
           float l, r;
-          if (rtl_audio.stereo_locked) {
-            rtl_audio.deemphasis_l += deemph_k * ((demod_sum + demod_diff) - rtl_audio.deemphasis_l);
-            rtl_audio.deemphasis_r += deemph_k * ((demod_sum - demod_diff) - rtl_audio.deemphasis_r);
-            rtl_audio.dc_l += 0.0008f * (rtl_audio.deemphasis_l - rtl_audio.dc_l);
-            rtl_audio.dc_r += 0.0008f * (rtl_audio.deemphasis_r - rtl_audio.dc_r);
-            l = (rtl_audio.deemphasis_l - rtl_audio.dc_l) * scale;
-            r = (rtl_audio.deemphasis_r - rtl_audio.dc_r) * scale;
+          if (stereo_locked) {
+            deemphasis_l += deemph_k * ((demod_sum + demod_diff) - deemphasis_l);
+            deemphasis_r += deemph_k * ((demod_sum - demod_diff) - deemphasis_r);
+            dc_l += 0.0008f * (deemphasis_l - dc_l);
+            dc_r += 0.0008f * (deemphasis_r - dc_r);
+            l = (deemphasis_l - dc_l) * scale;
+            r = (deemphasis_r - dc_r) * scale;
           } else {
             /* Not locked: mirror mono so L=R, matching the "MONO" UI state. */
-            l = r = (rtl_audio.deemphasis - rtl_audio.dc) * scale;
+            l = r = (deemphasis - dc) * scale;
           }
           // Meter the programme before AGC and the soft limiter: after them
           // every block peaks at the 12000 ceiling (-8.7 dBFS), which pinned
@@ -7654,10 +7821,44 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
         }
       }
     }
-    rtl_audio.previous_i = i;
-    rtl_audio.previous_q = q;
-    rtl_audio.have_previous = true;
+    previous_i = i;
+    previous_q = q;
+    have_previous = true;
   }
+  if (guard.unchanged()) {
+    rtl_audio.iq_i_lpf = iq_i_lpf;
+    rtl_audio.iq_q_lpf = iq_q_lpf;
+    rtl_audio.i_sum = i_sum;
+    rtl_audio.q_sum = q_sum;
+    rtl_audio.rf_phase = rf_phase;
+    rtl_audio.previous_i = previous_i;
+    rtl_audio.previous_q = previous_q;
+    rtl_audio.have_previous = have_previous;
+    rtl_audio.pilot_y1 = pilot_y1;
+    rtl_audio.pilot_y2 = pilot_y2;
+    rtl_audio.pilot_env = pilot_env;
+    rtl_audio.stereo_locked = stereo_locked;
+    rtl_audio.sub_y1 = sub_y1;
+    rtl_audio.sub_y2 = sub_y2;
+    rtl_audio.channel_filter = channel_filter;
+    rtl_audio.audio_sum = audio_sum;
+    rtl_audio.channel_filter_diff = channel_filter_diff;
+    rtl_audio.audio_sum_diff = audio_sum_diff;
+    rtl_audio.audio_phase = audio_phase;
+    rtl_audio.deemphasis = deemphasis;
+    rtl_audio.dc = dc;
+    rtl_audio.deemphasis_l = deemphasis_l;
+    rtl_audio.deemphasis_r = deemphasis_r;
+    rtl_audio.dc_l = dc_l;
+    rtl_audio.dc_r = dc_r;
+  }
+  rtl_audio.peak = peak;
+  rtl_audio.square_sum = square_sum;
+  rtl_audio.samples = samples;
+  if (rds_mpx_n) rds_flush();
+  rtl_block_clip.note(clipped_pairs);
+  orcsdr::dsp::stats::add(orcsdr::dsp::stats::Stage::rds,
+                           rds_cycles / (CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ));
   if (capture_mpx) {
     g_rds_capture_write.store(capture_write, std::memory_order_release);
     if (capture_write >= kRdsCaptureSamples) {
@@ -7693,39 +7894,72 @@ void demodulate_am(const uint8_t* iq, size_t bytes, float audio_scale,
   if (!rf_decimation) return;
   const float inv_rf_decim = 1.0f / static_cast<float>(rf_decimation);
   const float iq_lpf_k = rtl_filter_alpha(RtlBand::am, sample_rate_sps);
+  // Hot state lives in locals for the block (see RtlDemodBlockGuard).
+  const RtlDemodBlockGuard guard;
+  uint32_t clipped_pairs = 0;
+  float iq_i_lpf = rtl_audio.iq_i_lpf, iq_q_lpf = rtl_audio.iq_q_lpf;
+  float iq_i_lpf2 = rtl_audio.iq_i_lpf2, iq_q_lpf2 = rtl_audio.iq_q_lpf2;
+  float i_sum = rtl_audio.i_sum, q_sum = rtl_audio.q_sum;
+  float envelope_filter = rtl_audio.envelope_filter, audio_sum = rtl_audio.audio_sum;
+  float dc = rtl_audio.dc;
+  uint8_t rf_phase = rtl_audio.rf_phase, audio_phase = rtl_audio.audio_phase;
+  int16_t peak = rtl_audio.peak;
+  uint64_t square_sum = rtl_audio.square_sum, samples = rtl_audio.samples;
   for (size_t offset = 0; offset + 1 < bytes; offset += 2) {
-    const float i_in = static_cast<float>(static_cast<int32_t>(iq[offset]) - 128);
-    const float q_in = static_cast<float>(static_cast<int32_t>(iq[offset + 1]) - 128);
-    rtl_audio.iq_i_lpf += iq_lpf_k * (i_in - rtl_audio.iq_i_lpf);
-    rtl_audio.iq_q_lpf += iq_lpf_k * (q_in - rtl_audio.iq_q_lpf);
-    rtl_audio.iq_i_lpf2 += iq_lpf_k * (rtl_audio.iq_i_lpf - rtl_audio.iq_i_lpf2);
-    rtl_audio.iq_q_lpf2 += iq_lpf_k * (rtl_audio.iq_q_lpf - rtl_audio.iq_q_lpf2);
-    rtl_audio.i_sum += rtl_audio.iq_i_lpf2;
-    rtl_audio.q_sum += rtl_audio.iq_q_lpf2;
-    if (++rtl_audio.rf_phase != rf_decimation) continue;
+    const int32_t i_c = static_cast<int32_t>(iq[offset]) - 128;
+    const int32_t q_c = static_cast<int32_t>(iq[offset + 1]) - 128;
+    // Rail check fused into this pass (raw 0 or 255 <=> centered -128 or 127).
+    clipped_pairs += (static_cast<uint32_t>(i_c + 127) > 253u) |
+                     (static_cast<uint32_t>(q_c + 127) > 253u);
+    const float i_in = static_cast<float>(i_c);
+    const float q_in = static_cast<float>(q_c);
+    iq_i_lpf += iq_lpf_k * (i_in - iq_i_lpf);
+    iq_q_lpf += iq_lpf_k * (q_in - iq_q_lpf);
+    iq_i_lpf2 += iq_lpf_k * (iq_i_lpf - iq_i_lpf2);
+    iq_q_lpf2 += iq_lpf_k * (iq_q_lpf - iq_q_lpf2);
+    i_sum += iq_i_lpf2;
+    q_sum += iq_q_lpf2;
+    if (++rf_phase != rf_decimation) continue;
 
-    const float i = rtl_audio.i_sum * inv_rf_decim;
-    const float q = rtl_audio.q_sum * inv_rf_decim;
-    rtl_audio.i_sum = 0;
-    rtl_audio.q_sum = 0;
-    rtl_audio.rf_phase = 0;
+    const float i = i_sum * inv_rf_decim;
+    const float q = q_sum * inv_rf_decim;
+    i_sum = 0;
+    q_sum = 0;
+    rf_phase = 0;
     const float envelope = sqrtf(i * i + q * q);
-    rtl_audio.envelope_filter += 0.35f * (envelope - rtl_audio.envelope_filter);
-    rtl_audio.audio_sum += rtl_audio.envelope_filter;
-    if (++rtl_audio.audio_phase == 5) {
-      const float demodulated = rtl_audio.audio_sum * 0.2f;
-      rtl_audio.audio_sum = 0;
-      rtl_audio.audio_phase = 0;
-      rtl_audio.dc += 0.002f * (demodulated - rtl_audio.dc);
+    envelope_filter += 0.35f * (envelope - envelope_filter);
+    audio_sum += envelope_filter;
+    if (++audio_phase == 5) {
+      const float demodulated = audio_sum * 0.2f;
+      audio_sum = 0;
+      audio_phase = 0;
+      dc += 0.002f * (demodulated - dc);
       const int16_t sample =
-          shape_audio_sample(demodulated - rtl_audio.dc, audio_scale);
+          shape_audio_sample(demodulated - dc, audio_scale);
       audio[audio_count++] = sample;
       const int16_t magnitude = sample < 0 ? -sample : sample;
-      if (magnitude > rtl_audio.peak) rtl_audio.peak = magnitude;
-      rtl_audio.square_sum += static_cast<uint32_t>(sample * sample);
-      ++rtl_audio.samples;
+      if (magnitude > peak) peak = magnitude;
+      square_sum += static_cast<uint32_t>(sample * sample);
+      ++samples;
     }
   }
+  if (guard.unchanged()) {
+    rtl_audio.iq_i_lpf = iq_i_lpf;
+    rtl_audio.iq_q_lpf = iq_q_lpf;
+    rtl_audio.iq_i_lpf2 = iq_i_lpf2;
+    rtl_audio.iq_q_lpf2 = iq_q_lpf2;
+    rtl_audio.i_sum = i_sum;
+    rtl_audio.q_sum = q_sum;
+    rtl_audio.envelope_filter = envelope_filter;
+    rtl_audio.audio_sum = audio_sum;
+    rtl_audio.dc = dc;
+    rtl_audio.rf_phase = rf_phase;
+    rtl_audio.audio_phase = audio_phase;
+  }
+  rtl_audio.peak = peak;
+  rtl_audio.square_sum = square_sum;
+  rtl_audio.samples = samples;
+  rtl_block_clip.note(clipped_pairs);
   if (g_stream_band == RtlBand::shortwave)
     orcsdr::shortwave::audio_dsp::process(audio, audio_count,
                                          rtl_signal_dbfs_smooth);
@@ -7746,38 +7980,69 @@ void demodulate_ssb(const uint8_t* iq, size_t bytes, float audio_scale, CbMode m
   const float step = direction * 2.0f * kPi * bfo_hz / kRtlDemodRateSps;
   const float step_cos = cosf(step);
   const float step_sin = sinf(step);
+  // Hot state lives in locals for the block (see RtlDemodBlockGuard).
+  const RtlDemodBlockGuard guard;
+  uint32_t clipped_pairs = 0;
+  float iq_i_lpf = rtl_audio.iq_i_lpf, iq_q_lpf = rtl_audio.iq_q_lpf;
+  float i_sum = rtl_audio.i_sum, q_sum = rtl_audio.q_sum;
+  float audio_sum = rtl_audio.audio_sum, dc = rtl_audio.dc;
+  float ssb_cos = rtl_audio.ssb_cos, ssb_sin = rtl_audio.ssb_sin;
+  uint8_t rf_phase = rtl_audio.rf_phase, audio_phase = rtl_audio.audio_phase;
+  int16_t peak = rtl_audio.peak;
+  uint64_t square_sum = rtl_audio.square_sum, samples = rtl_audio.samples;
 
   for (size_t offset = 0; offset + 1 < bytes; offset += 2) {
-    const float i_in = static_cast<float>(static_cast<int32_t>(iq[offset]) - 128);
-    const float q_in = static_cast<float>(static_cast<int32_t>(iq[offset + 1]) - 128);
-    rtl_audio.iq_i_lpf += iq_lpf_k * (i_in - rtl_audio.iq_i_lpf);
-    rtl_audio.iq_q_lpf += iq_lpf_k * (q_in - rtl_audio.iq_q_lpf);
-    rtl_audio.i_sum += rtl_audio.iq_i_lpf;
-    rtl_audio.q_sum += rtl_audio.iq_q_lpf;
-    if (++rtl_audio.rf_phase != rf_decimation) continue;
+    const int32_t i_c = static_cast<int32_t>(iq[offset]) - 128;
+    const int32_t q_c = static_cast<int32_t>(iq[offset + 1]) - 128;
+    // Rail check fused into this pass (raw 0 or 255 <=> centered -128 or 127).
+    clipped_pairs += (static_cast<uint32_t>(i_c + 127) > 253u) |
+                     (static_cast<uint32_t>(q_c + 127) > 253u);
+    const float i_in = static_cast<float>(i_c);
+    const float q_in = static_cast<float>(q_c);
+    iq_i_lpf += iq_lpf_k * (i_in - iq_i_lpf);
+    iq_q_lpf += iq_lpf_k * (q_in - iq_q_lpf);
+    i_sum += iq_i_lpf;
+    q_sum += iq_q_lpf;
+    if (++rf_phase != rf_decimation) continue;
 
-    const float i = rtl_audio.i_sum * inv_rf_decim;
-    const float q = rtl_audio.q_sum * inv_rf_decim;
-    rtl_audio.i_sum = 0;
-    rtl_audio.q_sum = 0;
-    rtl_audio.rf_phase = 0;
-    rtl_audio.audio_sum += i * rtl_audio.ssb_cos - q * rtl_audio.ssb_sin;
-    const float next_cos = rtl_audio.ssb_cos * step_cos - rtl_audio.ssb_sin * step_sin;
-    rtl_audio.ssb_sin = rtl_audio.ssb_sin * step_cos + rtl_audio.ssb_cos * step_sin;
-    rtl_audio.ssb_cos = next_cos;
-    if (++rtl_audio.audio_phase != 5) continue;
+    const float i = i_sum * inv_rf_decim;
+    const float q = q_sum * inv_rf_decim;
+    i_sum = 0;
+    q_sum = 0;
+    rf_phase = 0;
+    audio_sum += i * ssb_cos - q * ssb_sin;
+    const float next_cos = ssb_cos * step_cos - ssb_sin * step_sin;
+    ssb_sin = ssb_sin * step_cos + ssb_cos * step_sin;
+    ssb_cos = next_cos;
+    if (++audio_phase != 5) continue;
 
-    const float demodulated = rtl_audio.audio_sum * 0.2f;
-    rtl_audio.audio_sum = 0;
-    rtl_audio.audio_phase = 0;
-    rtl_audio.dc += 0.002f * (demodulated - rtl_audio.dc);
-    const int16_t sample = shape_audio_sample(demodulated - rtl_audio.dc, audio_scale);
+    const float demodulated = audio_sum * 0.2f;
+    audio_sum = 0;
+    audio_phase = 0;
+    dc += 0.002f * (demodulated - dc);
+    const int16_t sample = shape_audio_sample(demodulated - dc, audio_scale);
     audio[audio_count++] = sample;
     const int16_t magnitude = sample < 0 ? -sample : sample;
-    if (magnitude > rtl_audio.peak) rtl_audio.peak = magnitude;
-    rtl_audio.square_sum += static_cast<uint32_t>(sample * sample);
-    ++rtl_audio.samples;
+    if (magnitude > peak) peak = magnitude;
+    square_sum += static_cast<uint32_t>(sample * sample);
+    ++samples;
   }
+  if (guard.unchanged()) {
+    rtl_audio.iq_i_lpf = iq_i_lpf;
+    rtl_audio.iq_q_lpf = iq_q_lpf;
+    rtl_audio.i_sum = i_sum;
+    rtl_audio.q_sum = q_sum;
+    rtl_audio.audio_sum = audio_sum;
+    rtl_audio.dc = dc;
+    rtl_audio.ssb_cos = ssb_cos;
+    rtl_audio.ssb_sin = ssb_sin;
+    rtl_audio.rf_phase = rf_phase;
+    rtl_audio.audio_phase = audio_phase;
+  }
+  rtl_audio.peak = peak;
+  rtl_audio.square_sum = square_sum;
+  rtl_audio.samples = samples;
+  rtl_block_clip.note(clipped_pairs);
   const float norm = sqrtf(rtl_audio.ssb_cos * rtl_audio.ssb_cos +
                            rtl_audio.ssb_sin * rtl_audio.ssb_sin);
   if (norm > 0.5f) {
@@ -7786,6 +8051,10 @@ void demodulate_ssb(const uint8_t* iq, size_t bytes, float audio_scale, CbMode m
   }
   queue_audio_samples(audio, audio_count);
 }
+
+#if ORCSDR_DSP_AB
+#include "dsp_ab_harness.inc"
+#endif
 
 bool cb_audio_gate_open() {
   const int threshold = cb_squelch_dbfs.load(std::memory_order_relaxed);
@@ -8399,6 +8668,9 @@ static void rtl_dsp_task(void *) {
     if (uxQueueMessagesWaiting(rtl_filled_q) == 0) last_idle_ms = millis();
     if (xQueueReceive(rtl_filled_q, &block, portMAX_DELAY) != pdTRUE) continue;
     const uint32_t queue_depth = uxQueueMessagesWaiting(rtl_filled_q);
+#if ORCSDR_DSP_AB
+    dsp_ab_on_block(block);
+#endif
     rtl_iq_processed_samples.fetch_add(block.bytes / 2, std::memory_order_relaxed);
     const uint32_t dsp_started_us = micros();
     uint32_t stage_us = dsp_started_us;
@@ -8437,7 +8709,8 @@ static void rtl_dsp_task(void *) {
       }
     }
     mark(dsp_stats::Stage::decoders);
-    update_signal_level_from_iq(block.data, block.bytes);
+    const bool level_ok = update_signal_power_from_iq(block.data, block.bytes);
+    rtl_block_clip.reset();
     mark(dsp_stats::Stage::level);
     // POCSAG rides the shared 960 kS/s FM-band stream (no dedicated
     // high-rate queue like ADS-B) -- cheap enough per raw-IQ sample (no
@@ -8505,6 +8778,12 @@ static void rtl_dsp_task(void *) {
       }
     }
     mark(dsp_stats::Stage::demod);
+    if (level_ok)
+      update_clipping_from_count(rtl_block_clip.counted
+                                     ? rtl_block_clip.pairs
+                                     : count_clipped_pairs(block.data, block.bytes),
+                                 block.bytes);
+    mark(dsp_stats::Stage::level);
     const uint32_t dsp_elapsed_us = micros() - dsp_started_us;
     rtl_dsp_window_us.fetch_add(dsp_elapsed_us, std::memory_order_relaxed);
     rtl_dsp_window_blocks.fetch_add(1, std::memory_order_relaxed);
@@ -8515,6 +8794,9 @@ static void rtl_dsp_task(void *) {
     }
     dsp_stats::block_done(dsp_elapsed_us, block.bytes / 2, queue_depth);
     (void)xQueueSend(rtl_free_q, &block.slot, portMAX_DELAY);
+#if ORCSDR_DSP_AB
+    dsp_ab_run_if_requested();
+#endif
     if (millis() - last_idle_ms >= kRtlDspMaxBusyMs) {
       dsp_stats::overload_yield();
       vTaskDelay(1);
@@ -8564,6 +8846,7 @@ static void rtl_driver_app_task(void *) {
       rtl_session_started_ms = millis();
       rtl_capture_bytes = 0;
       rtl_audio = {};
+      rtl_audio_reset_generation.fetch_add(1, std::memory_order_acq_rel);
       rtl_dsp_window_us.store(0, std::memory_order_relaxed);
       rtl_dsp_window_blocks.store(0, std::memory_order_relaxed);
       rtl_dsp_block_us_max.store(0, std::memory_order_relaxed);
@@ -16082,6 +16365,19 @@ void process_command(char* command) {
                   orcsdr::freq_keypad::self_check() ? 1 : 0, editor ? 1 : 0);
     return;
   }
+#if ORCSDR_DSP_AB
+  if (strncmp(command, "RTL_DSP AB CAPTURE ", 19) == 0) {
+    const long blocks = strtol(command + 19, nullptr, 10);
+    Serial.printf("RTL_DSP_AB_ARM blocks=%ld ok=%d\n", blocks,
+                  dsp_ab_arm(static_cast<size_t>(blocks)) ? 1 : 0);
+    return;
+  }
+  if (strcmp(command, "RTL_DSP AB RUN") == 0) {
+    g_dsp_ab.run_requested.store(true, std::memory_order_release);
+    Serial.println("RTL_DSP_AB_RUN queued");
+    return;
+  }
+#endif
   if (strcmp(command, "RTL_DSP STATS") == 0) {
     // Window since the previous RTL_DSP STATS (read-only, resets on read).
     static uint32_t last_ms = millis();

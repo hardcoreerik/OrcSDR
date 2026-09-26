@@ -15,6 +15,7 @@ enum class Stage : uint8_t {
   record,    // IQ recording append
   demod,     // FM/AM/SSB demodulation and audio
   other,     // am_finder and anything not attributed above
+  rds,       // RDS decode time, a subset of demod (cycle-counted per call)
   count
 };
 

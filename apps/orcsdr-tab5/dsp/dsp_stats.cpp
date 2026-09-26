@@ -33,6 +33,7 @@ const char* stage_name(Stage stage) {
     case Stage::record: return "record";
     case Stage::demod: return "demod";
     case Stage::other: return "other";
+    case Stage::rds: return "rds_in_demod";
     default: return "?";
   }
 }
