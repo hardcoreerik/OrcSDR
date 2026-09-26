@@ -337,7 +337,7 @@ void draw_radio_defaults() {
     text("Unplug the RTL-SDR before retrying.", 330, 480, TFT_LIGHTGREY, 2);
     button("UNPLUGGED - RETRY", 330, 515, 280, 50, TFT_MAROON);
   } else {
-    value_row("GAIN / BIAS-TEE / CAL", "UNAVAILABLE", 425, kMuted);
+    value_row("GAIN / BIAS-TEE", "HOME, AM, FM / RF LAB", 425, kMuted);
     button("TOGGLE AUTO-START", 330, 500, 260, 50, TFT_DARKCYAN);
     button("TOGGLE GRAPHICS", 620, 500, 240, 50, TFT_DARKCYAN);
   }
@@ -725,8 +725,17 @@ void update(const State& state_value) {
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
-  if (g_location_edit) return handle_location_keyboard(x, y);
-  if (g_wifi_edit != WifiEdit::none) return handle_wifi_keyboard(x, y);
+  // The full-width text editor covers the rail; repaint it once it closes.
+  if (g_location_edit) {
+    const Action action = handle_location_keyboard(x, y);
+    if (!g_location_edit) draw_rail();
+    return action;
+  }
+  if (g_wifi_edit != WifiEdit::none) {
+    const Action action = handle_wifi_keyboard(x, y);
+    if (g_wifi_edit == WifiEdit::none) draw_rail();
+    return action;
+  }
   if (g_edit != EditField::none) return handle_keypad(x, y);
   if (hit(x, y, 720, 13, 126, 46)) {
     g_active = false;

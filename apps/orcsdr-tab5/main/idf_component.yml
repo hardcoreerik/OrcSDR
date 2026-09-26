@@ -11,7 +11,8 @@ dependencies:
     version: "^1.2.3"
   esp_rtl_sdr:
     git: https://github.com/hardcoreerik/esp-rtl-sdr.git
-    version: 52edd9b6e591fbd5f3985af4dc51e9da60e04cad
+    # 0.8.0-rc4 + V4L/V4 direct HF route (branch codex/v4l-am1280-direct-sampling).
+    version: f62c5cdaa73a18f544413e4eca0f1f62abce285e
   m5stack/m5unified:
     version: "0.2.20"
   m5stack/m5gfx:

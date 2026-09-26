@@ -44,12 +44,20 @@ constexpr int kBrowserCardX = 30, kBrowserCardY = 96;
 constexpr int kBrowserCardW = 390, kBrowserCardH = 118;
 constexpr int kBrowserColumnPitch = 410, kBrowserRowPitch = 136;
 constexpr int kBrowserNavY = 650;
+constexpr int kGainX = 1090, kGainY = 564, kGainW = 144, kGainH = 62;
+constexpr int kPopX = 340, kPopY = 150, kPopW = 886, kPopH = 300;
+constexpr int kPopButtonY = 190, kPopButtonH = 50;
+constexpr int kAutoX = 360, kManualX = 584, kRtlAgcX = 808, kCloseX = 1032;
+constexpr int kPopButtonW = 210, kCloseW = 178;
+constexpr int kSliderY = 276, kSliderH = 50;
+constexpr int kMinusX = 360, kBarX = 446, kBarW = 678, kPlusX = 1140, kNudgeW = 70;
 constexpr uint32_t kSpanSteps[] = {
     120000, 240000, 480000, 960000, 1200000, 2400000};
 
 Snapshot current{};
 bool shown = false;
 bool browser = false;
+bool gain_popup = false;
 size_t browser_page = 0;
 int32_t scroll_offset_px = 0;
 uint32_t last_spectrum_ms = 0;
@@ -350,6 +358,168 @@ void footer_text(const char* value, int x, uint16_t color) {
   M5.Display.drawString(value, x, 678);
 }
 
+bool gain_changed(const Snapshot& a, const Snapshot& b) {
+  return a.driver_ready != b.driver_ready || a.gain_available != b.gain_available ||
+         a.gain_auto_available != b.gain_auto_available || a.gain_smart != b.gain_smart ||
+         a.gain_auto != b.gain_auto || a.gain_tenth_db != b.gain_tenth_db ||
+         a.rtl_agc_available != b.rtl_agc_available || a.rtl_agc != b.rtl_agc ||
+         a.bias_available != b.bias_available || a.bias_on != b.bias_on ||
+         a.gain_step_count != b.gain_step_count;
+}
+
+// "SMART" / "AGC" / "33.8" / "N/A"; the color says auto (green) or manual (orange).
+uint16_t gain_label(char* out, size_t size) {
+  if (!current.driver_ready || !current.gain_available) {
+    snprintf(out, size, "N/A");
+    return TFT_LIGHTGREY;
+  }
+  if (current.gain_auto) {
+    snprintf(out, size, current.gain_smart ? "SMART" : "AGC");
+    return kGreen;
+  }
+  snprintf(out, size, "%.1f", current.gain_tenth_db / 10.0);
+  return TFT_ORANGE;
+}
+
+void draw_gain_panel() {
+  panel(kGainX, kGainY, kGainW, kGainH, kCyan, 7);
+  text("GAIN", kGainX + kGainW / 2, 582, kCyan, 2, middle_center);
+  char label[16];
+  const uint16_t color = gain_label(label, sizeof(label));
+  char value[24];
+  if (color == TFT_ORANGE) snprintf(value, sizeof(value), "%s dB", label);
+  else if (color == kGreen && current.gain_smart)
+    snprintf(value, sizeof(value), "%s %.0f", label, current.gain_tenth_db / 10.0);
+  else strlcpy(value, label, sizeof(value));
+  text(value, kGainX + kGainW / 2, 608, color, 2, middle_center);
+}
+
+void draw_gain_chip() {
+  panel(1064, 118, 108, 26, kCyan, 6);
+  char label[16];
+  const uint16_t color = gain_label(label, sizeof(label));
+  char value[24];
+  snprintf(value, sizeof(value), "GAIN %s%s", label, current.rtl_agc ? " +R" : "");
+  text(value, 1118, 131, color, 1, middle_center);
+}
+
+void draw_footer_gain() {
+  M5.Display.fillRect(564, 660, 132, 36, kPanel);
+  char label[16];
+  const uint16_t color = gain_label(label, sizeof(label));
+  char value[24];
+  snprintf(value, sizeof(value), "GAIN %s", label);
+  footer_text(value, 630, color);
+}
+
+void draw_footer_bias() {
+  M5.Display.fillRect(704, 660, 148, 36, kPanel);
+  if (!current.driver_ready || !current.bias_available) {
+    footer_text("BIAS N/A", 778, TFT_LIGHTGREY);
+    return;
+  }
+  footer_text(current.bias_on ? "BIAS ON" : "BIAS OFF", 778,
+              current.bias_on ? TFT_RED : TFT_LIGHTGREY);
+}
+
+void popup_button(int x, int w, const char* label, bool on, bool enabled) {
+  const uint16_t fill = on && enabled ? 0x0320 : kPanel;
+  M5.Display.fillRoundRect(x, kPopButtonY, w, kPopButtonH, 8, fill);
+  M5.Display.drawRoundRect(x, kPopButtonY, w, kPopButtonH, 8,
+                           !enabled ? kDim : on ? kGreen : kCyan);
+  M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextColor(!enabled ? kDim : on ? TFT_WHITE : TFT_LIGHTGREY, fill);
+  M5.Display.setTextSize(2);
+  M5.Display.drawString(label, x + w / 2, kPopButtonY + kPopButtonH / 2);
+}
+
+int gain_step_index() {
+  int best = 0;
+  for (int i = 1; i < current.gain_step_count; ++i)
+    if (std::abs(current.gain_steps_tenth_db[i] - current.gain_tenth_db) <
+        std::abs(current.gain_steps_tenth_db[best] - current.gain_tenth_db))
+      best = i;
+  return best;
+}
+
+void draw_gain_popup() {
+  M5.Display.fillRoundRect(kPopX, kPopY, kPopW, kPopH, 12, TFT_BLACK);
+  M5.Display.drawRoundRect(kPopX, kPopY, kPopW, kPopH, 12, kCyan);
+  M5.Display.drawRoundRect(kPopX + 1, kPopY + 1, kPopW - 2, kPopH - 2, 11, kCyan);
+  text("RECEIVER GAIN", kPopX + 20, kPopY + 20, kCyan, 2);
+  text(current.receiver, kPopX + kPopW - 20, kPopY + 20,
+       current.driver_ready ? kGreen : TFT_ORANGE, 2, middle_right);
+  const bool gain = current.driver_ready && current.gain_available;
+  popup_button(kAutoX, kPopButtonW, current.gain_smart ? "SMART" : "TUNER AGC",
+               current.gain_auto, gain && current.gain_auto_available);
+  popup_button(kManualX, kPopButtonW, "MANUAL", !current.gain_auto, gain);
+  popup_button(kRtlAgcX, kPopButtonW, current.rtl_agc ? "RTL AGC ON" : "RTL AGC OFF",
+               current.rtl_agc, current.driver_ready && current.rtl_agc_available);
+  popup_button(kCloseX, kCloseW, "CLOSE", false, true);
+  if (!gain || current.gain_step_count < 2) {
+    text(current.driver_ready ? "Tuner gain is not available at this frequency."
+                              : "No receiver connected.",
+         kMinusX, kSliderY + kSliderH / 2, TFT_LIGHTGREY, 2);
+  } else {
+    char value[48];
+    snprintf(value, sizeof(value), "%s %.1f dB",
+             current.gain_auto ? "AUTO SELECTED" : "MANUAL GAIN",
+             current.gain_tenth_db / 10.0);
+    text(value, kMinusX, 258, current.gain_auto ? kGreen : TFT_ORANGE, 2);
+    panel(kMinusX, kSliderY, kNudgeW, kSliderH, kCyan, 8);
+    text("-", kMinusX + kNudgeW / 2, kSliderY + kSliderH / 2, TFT_WHITE, 3, middle_center);
+    panel(kPlusX, kSliderY, kNudgeW, kSliderH, kCyan, 8);
+    text("+", kPlusX + kNudgeW / 2, kSliderY + kSliderH / 2, TFT_WHITE, 3, middle_center);
+    M5.Display.drawRect(kBarX, kSliderY, kBarW, kSliderH, kDim);
+    const int count = current.gain_step_count;
+    const int selected = gain_step_index();
+    for (int i = 0; i < count; ++i) {
+      const int x0 = kBarX + 2 + i * (kBarW - 4) / count;
+      const int x1 = kBarX + 2 + (i + 1) * (kBarW - 4) / count;
+      const uint16_t color = i > selected ? kDim : current.gain_auto ? kGreen : TFT_ORANGE;
+      M5.Display.fillRect(x0, kSliderY + 4, std::max(1, x1 - x0 - 2), kSliderH - 8, color);
+    }
+  }
+  text(current.gain_smart ? "SMART: OrcSDR picks the lowest gain that sounds clean."
+                          : "TUNER AGC: the tuner chip sets its own gain.",
+       kPopX + 20, 356, TFT_LIGHTGREY, 2);
+  text("MANUAL: you choose the tuner (RF) gain step; tap the bar.",
+       kPopX + 20, 384, TFT_LIGHTGREY, 2);
+  text("RTL AGC: extra digital gain after the ADC. Normally OFF.",
+       kPopX + 20, 412, TFT_LIGHTGREY, 2);
+}
+
+Action manual_gain_at(int index) {
+  return {ActionKind::gain_tenth_db, dashboards::Id::count,
+          static_cast<uint32_t>(std::max<int>(0, current.gain_steps_tenth_db[index]))};
+}
+
+Action gain_popup_action(int32_t x, int32_t y) {
+  const bool gain = current.driver_ready && current.gain_available;
+  if (inside(x, y, kCloseX, kPopButtonY, kCloseW, kPopButtonH) ||
+      !inside(x, y, kPopX, kPopY, kPopW, kPopH))
+    return {ActionKind::gain_close};
+  if (inside(x, y, kAutoX, kPopButtonY, kPopButtonW, kPopButtonH))
+    return gain && current.gain_auto_available && !current.gain_auto
+               ? Action{ActionKind::gain_auto} : Action{};
+  if (inside(x, y, kManualX, kPopButtonY, kPopButtonW, kPopButtonH))
+    return gain && current.gain_auto && current.gain_step_count
+               ? manual_gain_at(gain_step_index()) : Action{};
+  if (inside(x, y, kRtlAgcX, kPopButtonY, kPopButtonW, kPopButtonH))
+    return current.driver_ready && current.rtl_agc_available
+               ? Action{ActionKind::rtl_agc, dashboards::Id::count, current.rtl_agc ? 0u : 1u}
+               : Action{};
+  if (!gain || current.gain_step_count < 2) return {};
+  const int last = current.gain_step_count - 1;
+  if (inside(x, y, kMinusX, kSliderY, kNudgeW, kSliderH))
+    return manual_gain_at(std::max(0, gain_step_index() - 1));
+  if (inside(x, y, kPlusX, kSliderY, kNudgeW, kSliderH))
+    return manual_gain_at(std::min(last, gain_step_index() + 1));
+  if (inside(x, y, kBarX, kSliderY, kBarW, kSliderH))
+    return manual_gain_at(std::clamp(static_cast<int>((x - kBarX) * current.gain_step_count / kBarW), 0, last));
+  return {};
+}
+
 void draw_footer_receiver() {
   M5.Display.fillRect(30, 660, 136, 36, kPanel);
   footer_text(current.receiver, 98, current.driver_ready ? kGreen : TFT_ORANGE);
@@ -386,8 +556,8 @@ void draw_footer() {
   panel(24, 654, 1224, 48, kCyan, 8);
   for (const int x : {170, 384, 560, 700, 856})
     M5.Display.drawFastVLine(x, 662, 32, kDim);
-  footer_text("GAIN AUTO", 630, kGreen);
-  footer_text("BIAS N/A", 778, TFT_LIGHTGREY);
+  draw_footer_gain();
+  draw_footer_bias();
   draw_footer_receiver();
   draw_footer_sample();
   draw_footer_bandwidth();
@@ -399,8 +569,7 @@ void draw_receiver_chrome() {
   text("SPECTRUM", kPlotX, 130, kCyan, 2);
   text(current.receiving ? "LIVE" : "READY", 1016, 130,
        current.receiving ? kGreen : TFT_ORANGE, 1);
-  panel(1064, 118, 108, 26, kCyan, 6);
-  text("GAIN  AUTO", 1118, 131, kGreen, 1, middle_center);
+  draw_gain_chip();
   M5.Display.fillRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, TFT_BLACK);
   M5.Display.drawRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, kDim);
   for (int i = 1; i < 5; ++i) {
@@ -423,10 +592,9 @@ void draw_receiver_chrome() {
   text("FILTER", 1014, 582, kCyan, 2, middle_center);
   snprintf(value, sizeof(value), "%lu kHz", static_cast<unsigned long>(current.filter_bandwidth_hz / 1000u));
   text(current.filter_bandwidth_hz ? value : "AUTO", 1014, 608, kGreen, 2, middle_center);
-  panel(1090, 564, 144, 62, kCyan, 7);
-  text("SIGNAL", 1162, 582, kCyan, 2, middle_center);
-  snprintf(value, sizeof(value), "%.1f dBFS", static_cast<double>(current.relative_dbfs));
-  text(value, 1162, 608, kGreen, 2, middle_center);
+  // Signal level lives in the footer meter; this corner is the gain control.
+  draw_gain_panel();
+  if (gain_popup) draw_gain_popup();
 }
 
 void draw_browser() {
@@ -509,6 +677,8 @@ Action tap_action(int32_t x, int32_t y) {
     }
     return {};
   }
+  if (gain_popup) return gain_popup_action(x, y);
+  if (inside(x, y, kGainX, kGainY, kGainW, kGainH)) return {ActionKind::gain_open};
   if (inside(x, y, kContrastDownX, kContrastY, kContrastButtonW, kContrastButtonH))
     return {ActionKind::waterfall_contrast_down};
   if (inside(x, y, kContrastUpX, kContrastY, kContrastButtonW, kContrastButtonH))
@@ -555,13 +725,14 @@ void enter(const Snapshot& snapshot) {
   current = snapshot;
   shown = true;
   browser = false;
+  gain_popup = false;
   gesture = {};
   last_spectrum_ms = 0;
   clamp_scroll();
   draw_all();
 }
 
-void leave() { shown = browser = false; gesture = {}; }
+void leave() { shown = browser = gain_popup = false; gesture = {}; }
 
 void draw() {
   if (!shown) return;
@@ -583,6 +754,7 @@ void update(const Snapshot& snapshot) {
                                        snapshot.step_hz != current.step_hz;
   const bool level_changed = static_cast<int>(std::lround(snapshot.relative_dbfs)) !=
                              static_cast<int>(std::lround(current.relative_dbfs));
+  const bool gain_state_changed = gain_changed(snapshot, current);
   current = snapshot;
   M5.Display.startWrite();
   if (tuner_changed) {
@@ -603,12 +775,19 @@ void update(const Snapshot& snapshot) {
   if (sample_changed) draw_footer_sample();
   if (bandwidth_changed) draw_footer_bandwidth();
   if (level_changed) draw_footer_level();
+  if (gain_state_changed || receiver_changed) {
+    draw_gain_panel();
+    draw_gain_chip();
+    draw_footer_gain();
+    draw_footer_bias();
+    if (gain_popup) draw_gain_popup();
+  }
   M5.Display.endWrite();
 }
 
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor, bool audio_stressed) {
-  if (!shown || browser || levels == nullptr || visible_bins < 2) return;
+  if (!shown || browser || gain_popup || levels == nullptr || visible_bins < 2) return;
   const uint32_t now = millis();
   const uint32_t interval = audio_stressed ? 333 : 100;
   if (now - last_spectrum_ms < interval) return;
@@ -687,6 +866,14 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
       browser = true;
       browser_page = 0;
       draw_browser();
+      return {};
+    }
+    if (action.kind == ActionKind::gain_open || action.kind == ActionKind::gain_close) {
+      gain_popup = action.kind == ActionKind::gain_open;
+      M5.Display.startWrite();
+      if (gain_popup) draw_gain_popup();
+      else draw_receiver_chrome();
+      M5.Display.endWrite();
       return {};
     }
     if (action.kind == ActionKind::close_browser) {

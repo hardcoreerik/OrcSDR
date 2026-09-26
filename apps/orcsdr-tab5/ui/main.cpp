@@ -62,6 +62,8 @@
 #include "scan_engine.hpp"
 #include "cb_dashboard.hpp"
 #include "fm_dashboard.hpp"
+#include "freq_keypad.hpp"
+#include "text_editor.hpp"
 #include "fm_config.hpp"
 #include "home_dashboard.hpp"
 #include "lora_dashboard.hpp"
@@ -1675,6 +1677,14 @@ char settings_location_label[40]{};
 char settings_map_pack[40]{};
 bool adsb_atc_listening = false;
 bool catalog_radio_paused = false;
+
+// True while an exclusive I/O client (Wi-Fi connect, probe or power-off,
+// catalog download) holds the radio paused. A hotplug start waits for it;
+// resume_radio_after_io() restarts a radio that was already running.
+bool radio_io_paused() {
+  return catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused ||
+         wifi_c6_probe_radio_paused;
+}
 char rtl_sdr_status[96] = "RTL-SDR: waiting for USB-A host";
 char rtl_sdr_serial[48]{};
 char rtl_sdr_speed[8] = "none";
@@ -1700,6 +1710,10 @@ static inline bool rtl_device_ready() {
 std::atomic<RtlCaptureState> rtl_capture_state{RtlCaptureState::disconnected};
 std::atomic<bool> rtl_capture_requested{false};
 std::atomic<bool> rtl_hotplug_resume_pending{false};
+// Set when setup() finishes. A receiver that becomes ready after this was
+// plugged in, replugged or swapped, and starts receiving straight away;
+// one found during boot is left to the Auto-start reception setting.
+std::atomic<bool> rtl_boot_complete{false};
 // The RTL task may request a screen handoff, but only the UI loop may draw it.
 std::atomic<bool> rtl_screen_transition_requested{false};
 std::atomic<RtlBand> rtl_requested_band{RtlBand::fm};
@@ -1713,6 +1727,10 @@ std::atomic<bool> rtl_audio_enabled{false};
 std::atomic<bool> rtl_speaker_start_allowed{false};
 std::atomic<bool> rtl_speaker_codec_primed{false};
 std::atomic<bool> rtl_headphone_connected{false};
+// RTL_DRIVER HFDIRECT override; UINT32_MAX = automatic (V4L direct on CB only).
+// R828S native tuning floor (the V3c tunes CB directly from here too).
+constexpr uint32_t kRtlHfDirectMinHz = 24000000u;
+uint32_t rtl_hf_direct_override_hz = UINT32_MAX;
 std::atomic<bool> rtl_internal_speaker_muted{false};
 enum class BootInitStage : uint8_t {
   idle,
@@ -2514,14 +2532,16 @@ bool rtl_frequency_supported(uint32_t frequency_hz) {
 }
 
 bool rtl_profile_is_provisional(esp_rtl_sdr_profile_t profile) {
-  return profile == ESP_RTL_SDR_PROFILE_BLOG_V3 ||
-         profile == ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5;
+  // Blog V3/V3c streaming is soak-verified in the pinned driver.
+  return profile == ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5;
 }
 
 const char* rtl_receiver_label(esp_rtl_sdr_profile_t profile) {
   switch (profile) {
     case ESP_RTL_SDR_PROFILE_BLOG_V4: return "RTL V4";
-    case ESP_RTL_SDR_PROFILE_BLOG_V3: return "RTL V3 EXP";
+    case ESP_RTL_SDR_PROFILE_BLOG_V4L: return "RTL V4L";
+    // The driver's single Blog V3 profile covers the V3 and V3c (R820T2).
+    case ESP_RTL_SDR_PROFILE_BLOG_V3: return "RTL V3c";
     case ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5: return "NOO V5 EXP";
     default: return "RTL-SDR";
   }
@@ -3149,8 +3169,22 @@ void sync_rtl_audio_for_band(RtlBand band) {
   rtl_audio_play_count = 0;
 }
 
+// With no receiver there is nothing to play, but a running codec still drives
+// the 3.5 mm jack (and speaker) with its noise floor, heard as static. Power
+// it down; the next stream start brings it back through resume_rtl_speaker().
+void idle_rtl_speaker(const char* reason) {
+  if (!M5.Speaker.isRunning()) return;
+  M5.Speaker.stop();
+  M5.Speaker.end();
+  Serial.printf("RTL_SPEAKER_IDLE reason=%s\n", reason);
+}
+
 void resume_rtl_speaker() {
   sync_rtl_audio_for_band(rtl_ui_band);
+  if (!rtl_device_ready()) {
+    idle_rtl_speaker("no_receiver");
+    return;
+  }
   if (!rtl_speaker_start_allowed.exchange(true, std::memory_order_acq_rel)) {
     Serial.println("BOOT_STAGE speaker_start");
     begin_power_monitor("speaker_start");
@@ -6423,6 +6457,16 @@ orcsdr::rf_lab::Runtime rf_lab_runtime() {
                             : orcsdr::rf_lab::GainMode::manual;
   (void)esp_rtl_sdr_get_rtl_agc(g_rtl, &runtime.rtl_agc);
   (void)esp_rtl_sdr_get_bias_tee(g_rtl, &runtime.bias_tee);
+  if (rtl_has_device_capability(ESP_RTL_SDR_CAP_TUNER_BANDWIDTH)) {
+    (void)esp_rtl_sdr_get_tuner_bandwidth_state(g_rtl, &runtime.tuner_bandwidth_requested_hz,
+                                                &runtime.tuner_bandwidth_applied_hz);
+    size_t bandwidth_count = 0;
+    if (esp_rtl_sdr_get_tuner_bandwidths(g_rtl, runtime.tuner_bandwidths,
+                                         std::size(runtime.tuner_bandwidths),
+                                         &bandwidth_count) == ESP_OK)
+      runtime.tuner_bandwidth_count = static_cast<uint8_t>(
+          std::min(bandwidth_count, std::size(runtime.tuner_bandwidths)));
+  }
   esp_rtl_sdr_device_info_t device{};
   if (esp_rtl_sdr_get_device_info(g_rtl, &device) == ESP_OK && device.present)
     snprintf(runtime.device, sizeof(runtime.device), "%.30s %.12s", device.product,
@@ -6558,6 +6602,12 @@ void service_rf_lab() {
       result = rtl_has_device_capability(ESP_RTL_SDR_CAP_BIAS_TEE)
                    ? esp_rtl_sdr_set_bias_tee(g_rtl, action.value != 0)
                    : ESP_RTL_SDR_ERR_UNSUPPORTED;
+    } else if (action.kind == Kind::tuner_bandwidth_hz) {
+      // Asynchronous in the driver: ESP_OK means queued. RF Lab displays the
+      // requested/applied shadow, never this result, as the hardware state.
+      result = rtl_has_device_capability(ESP_RTL_SDR_CAP_TUNER_BANDWIDTH)
+                   ? esp_rtl_sdr_set_tuner_bandwidth(g_rtl, static_cast<uint32_t>(action.value))
+                   : ESP_RTL_SDR_ERR_UNSUPPORTED;
     }
     Serial.printf("RTL_LAB_ACTION kind=%u value=%ld accepted=%d result=%s\n",
                   static_cast<unsigned>(action.kind), static_cast<long>(action.value),
@@ -6565,7 +6615,15 @@ void service_rf_lab() {
   }
 }
 
+// Every loop, on every screen: an unplug or a boot without a dongle leaves
+// the codec running. The disconnect callback runs on the USB task and must
+// not touch the speaker, so the main loop powers it down here.
+void service_rtl_speaker_idle() {
+  if (!rtl_device_ready()) idle_rtl_speaker("no_receiver");
+}
+
 void service_rtl_speaker_watchdog() {
+  if (!rtl_device_ready()) return;
   if (!rtl_ui_active.load(std::memory_order_acquire) ||
       !rtl_audio_enabled.load(std::memory_order_acquire) || !rtl_band_has_audio(rtl_ui_band))
     return;
@@ -7584,7 +7642,11 @@ void demodulate_fm(const uint8_t* iq, size_t bytes, float audio_scale, bool wbfm
             /* Not locked: mirror mono so L=R, matching the "MONO" UI state. */
             l = r = (rtl_audio.deemphasis - rtl_audio.dc) * scale;
           }
-          const float al = fabsf(fm_soft_limit(l)), ar = fabsf(fm_soft_limit(r));
+          // Meter the programme before AGC and the soft limiter: after them
+          // every block peaks at the 12000 ceiling (-8.7 dBFS), which pinned
+          // the stereo VU in place.
+          const float meter_gain = rtl_audio.agc_gain > 0.0f ? 1.0f / rtl_audio.agc_gain : 1.0f;
+          const float al = fabsf(l) * meter_gain, ar = fabsf(r) * meter_gain;
           if (al > meter_peak_l) meter_peak_l = al;
           if (ar > meter_peak_r) meter_peak_r = ar;
           meter_any = true;
@@ -8223,6 +8285,10 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       set_radio_session_state(ready ? orcsdr::radio::ReceiverState::ready
                                     : orcsdr::radio::ReceiverState::failed);
       set_rtl_profile_status(ready ? "ready" : "stream unavailable");
+      // Plugging a receiver in (first time, replug or swap) starts it on the
+      // current band and frequency, whatever screen is showing.
+      if (ready && rtl_boot_complete.load(std::memory_order_acquire))
+        rtl_hotplug_resume_pending.store(true, std::memory_order_release);
       Serial.printf("RTL_SDR_PROBE_OK profile=%u profile_name=\"%s\" provisional=%d "
                     "device_caps=0x%08x driver=esp_rtl_sdr v%s ready=%d resume_pending=%d\n",
                     static_cast<unsigned>(profile), esp_rtl_sdr_profile_to_name(profile),
@@ -8250,6 +8316,10 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       rtl_rate_override_sps.store(0, std::memory_order_release);
       set_radio_session_state(orcsdr::radio::ReceiverState::disconnected);
       set_rtl_sdr_status("RTL-SDR: disconnected");
+      // The bias-tee is powered by the dongle, so removal cuts it; the driver
+      // also starts every new attachment with bias OFF, and OrcSDR never
+      // re-enables it on its own (RF Lab exit restore only turns it off).
+      Serial.println("RTL_BIAS_TEE_SAFE_OFF reason=disconnect");
       Serial.printf("RTL_SDR_DISCONNECTED previous=%u resume_pending=%d band=%s frequency_hz=%u\n",
                     static_cast<unsigned>(previous), resume ? 1 : 0,
                     rtl_band_name(rtl_requested_band.load(std::memory_order_acquire)),
@@ -8427,6 +8497,7 @@ static void rtl_driver_app_task(void *) {
       continue;
     }
     if (g_rtl != nullptr && g_rtl_device_ready.load(std::memory_order_acquire) &&
+        !radio_io_paused() &&
         rtl_hotplug_resume_pending.exchange(false, std::memory_order_acq_rel)) {
       const RtlBand band = rtl_requested_band.load(std::memory_order_acquire);
       const uint32_t frequency_hz = rtl_requested_frequency_hz.load(std::memory_order_acquire);
@@ -8518,6 +8589,21 @@ static void rtl_driver_app_task(void *) {
       const uint32_t lab_rate = rtl_rate_override_sps.load(std::memory_order_acquire);
       st.sample_rate_sps = lab_rate ? lab_rate : rtl_default_sample_rate(band);
       rtl_active_sample_rate_sps.store(st.sample_rate_sps, std::memory_order_release);
+      // V4L/V4: CB uses the tuner's direct input like the V3c. Through the
+      // 28.8 MHz upconverter, strong AM stations fold onto 28.8 MHz - f
+      // (1600 kHz lands on channel 20). Other bands keep the upconverter.
+      if (const auto profile = g_rtl_profile.load(std::memory_order_acquire);
+          profile == ESP_RTL_SDR_PROFILE_BLOG_V4L || profile == ESP_RTL_SDR_PROFILE_BLOG_V4) {
+        const uint32_t direct_min_hz =
+            rtl_hf_direct_override_hz != UINT32_MAX ? rtl_hf_direct_override_hz
+            : band == RtlBand::cb                       ? kRtlHfDirectMinHz
+                                                        : 0;
+        Serial.printf("RTL_HF_ROUTE band=%s route=%s min_hz=%lu result=%s\n",
+                      rtl_band_name(band), direct_min_hz ? "DIRECT" : "UPCONVERTER",
+                      static_cast<unsigned long>(direct_min_hz),
+                      esp_rtl_sdr_err_to_name(
+                          esp_rtl_sdr_set_hf_direct_min_hz(g_rtl, direct_min_hz)));
+      }
       esp_err_t err = esp_rtl_sdr_start(g_rtl, &st);
       Serial.printf("RTL_START %s rate=%u display_hz=%u lo_hz=%u\n",
                     esp_rtl_sdr_err_to_name(err), st.sample_rate_sps, frequency_hz,
@@ -11660,6 +11746,41 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
     snapshot.effective_sps = metrics.effective_sps;
 #endif
   if (demo) snapshot.effective_sps = 959800;
+  // FM and AM use OrcSDR SMART gain as their automatic mode; every other band
+  // uses the tuner's hardware AGC.
+  snapshot.gain_smart = rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::am;
+  snapshot.gain_available = !demo && rtl_tuner_gain_available(rtl_ui_frequency_hz);
+  snapshot.gain_auto_available =
+      snapshot.gain_available &&
+      rtl_has_device_capability(snapshot.gain_smart ? ESP_RTL_SDR_CAP_GAIN
+                                                    : ESP_RTL_SDR_CAP_GAIN_AUTO);
+  snapshot.rtl_agc_available = !demo && rtl_has_device_capability(ESP_RTL_SDR_CAP_RTL_AGC);
+  snapshot.bias_available = !demo && rtl_has_device_capability(ESP_RTL_SDR_CAP_BIAS_TEE);
+#if !RTL_USE_LEGACY_USB
+  if (!demo && g_rtl != nullptr) {
+    if (rtl_ui_band == RtlBand::fm) {
+      snapshot.gain_auto = rtl_fm_gain_auto_enabled.load(std::memory_order_relaxed);
+    } else if (rtl_ui_band == RtlBand::am) {
+      snapshot.gain_auto = rtl_am_gain_auto_enabled.load(std::memory_order_relaxed);
+    } else {
+      esp_rtl_sdr_gain_mode_t mode = ESP_RTL_SDR_GAIN_MODE_MANUAL;
+      snapshot.gain_auto = esp_rtl_sdr_get_tuner_gain_mode(g_rtl, &mode) == ESP_OK &&
+                           mode == ESP_RTL_SDR_GAIN_MODE_AUTO;
+    }
+    int gain_tenth_db = 0;
+    if (esp_rtl_sdr_get_tuner_gain(g_rtl, &gain_tenth_db) == ESP_OK)
+      snapshot.gain_tenth_db = static_cast<int16_t>(gain_tenth_db);
+    int gains[std::size(snapshot.gain_steps_tenth_db)]{};
+    size_t count = 0;
+    if (esp_rtl_sdr_get_tuner_gains(g_rtl, gains, std::size(gains), &count) == ESP_OK) {
+      snapshot.gain_step_count = static_cast<uint8_t>(std::min(count, std::size(gains)));
+      for (size_t i = 0; i < snapshot.gain_step_count; ++i)
+        snapshot.gain_steps_tenth_db[i] = static_cast<int16_t>(gains[i]);
+    }
+    if (snapshot.rtl_agc_available) (void)esp_rtl_sdr_get_rtl_agc(g_rtl, &snapshot.rtl_agc);
+    if (snapshot.bias_available) (void)esp_rtl_sdr_get_bias_tee(g_rtl, &snapshot.bias_on);
+  }
+#endif
 
   const bool tuner_changed = previous.revision == 0 ||
       snapshot.frequency_hz != previous.frequency_hz ||
@@ -11880,6 +12001,116 @@ void open_dashboard(orcsdr::dashboards::Id id) {
   draw_sdr_screen(band, frequency, rtl_live_volume.load(std::memory_order_acquire));
 }
 
+// Band-aware receiver gain, shared by Home and the RTL_GAIN serial command.
+// FM and AM use OrcSDR SMART gain as their automatic mode (it steps manual
+// tuner gain itself); every other band hands gain to the tuner's own AGC.
+bool rtl_gain_band_uses_smart() {
+  return rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::am;
+}
+
+void rtl_gain_stop_smart() {
+  rtl_fm_gain_auto_enabled.store(false, std::memory_order_relaxed);
+  rtl_fm_gain_auto_selecting.store(false, std::memory_order_relaxed);
+  rtl_fm_gain_auto_restart.store(false, std::memory_order_relaxed);
+  rtl_am_gain_auto_enabled.store(false, std::memory_order_relaxed);
+  rtl_am_gain_auto_selecting.store(false, std::memory_order_relaxed);
+  rtl_am_gain_auto_restart.store(false, std::memory_order_relaxed);
+}
+
+esp_err_t rtl_gain_set_auto(const char* source) {
+  esp_err_t result = ESP_RTL_SDR_ERR_UNSUPPORTED;
+  const bool smart = rtl_gain_band_uses_smart();
+#if !RTL_USE_LEGACY_USB
+  if (g_rtl == nullptr) {
+    result = ESP_ERR_INVALID_STATE;
+  } else if (rtl_tuner_gain_available(rtl_ui_frequency_hz) &&
+             rtl_has_device_capability(smart ? ESP_RTL_SDR_CAP_GAIN
+                                             : ESP_RTL_SDR_CAP_GAIN_AUTO)) {
+    result = esp_rtl_sdr_set_tuner_gain_mode(
+        g_rtl, smart ? ESP_RTL_SDR_GAIN_MODE_MANUAL : ESP_RTL_SDR_GAIN_MODE_AUTO);
+    if (result == ESP_OK && rtl_ui_band == RtlBand::fm) {
+      rtl_fm_gain_auto_enabled.store(true, std::memory_order_relaxed);
+      rtl_fm_gain_auto_restart.store(true, std::memory_order_release);
+    } else if (result == ESP_OK && rtl_ui_band == RtlBand::am) {
+      rtl_am_gain_auto_enabled.store(true, std::memory_order_relaxed);
+      rtl_am_gain_auto_restart.store(true, std::memory_order_release);
+    }
+  }
+#endif
+  Serial.printf("RTL_GAIN_SET source=%s mode=%s band=%s result=%s\n", source,
+                smart ? "SMART" : "TUNER_AGC", rtl_band_name(rtl_ui_band),
+                esp_rtl_sdr_err_to_name(result));
+  return result;
+}
+
+esp_err_t rtl_gain_set_manual(const char* source, int gain_tenth_db) {
+  esp_err_t result = ESP_RTL_SDR_ERR_UNSUPPORTED;
+  rtl_gain_stop_smart();
+#if !RTL_USE_LEGACY_USB
+  if (g_rtl == nullptr) result = ESP_ERR_INVALID_STATE;
+  else if (rtl_tuner_gain_available(rtl_ui_frequency_hz) &&
+           rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN))
+    result = esp_rtl_sdr_set_tuner_gain(g_rtl, gain_tenth_db);  // forces MANUAL
+#endif
+  Serial.printf("RTL_GAIN_SET source=%s mode=MANUAL band=%s gain_tenth_db=%d result=%s\n",
+                source, rtl_band_name(rtl_ui_band), gain_tenth_db,
+                esp_rtl_sdr_err_to_name(result));
+  return result;
+}
+
+esp_err_t rtl_gain_set_rtl_agc(const char* source, bool enabled) {
+  esp_err_t result = ESP_RTL_SDR_ERR_UNSUPPORTED;
+#if !RTL_USE_LEGACY_USB
+  if (g_rtl == nullptr) result = ESP_ERR_INVALID_STATE;
+  else if (rtl_has_device_capability(ESP_RTL_SDR_CAP_RTL_AGC))
+    result = esp_rtl_sdr_set_rtl_agc(g_rtl, enabled);
+#endif
+  Serial.printf("RTL_GAIN_SET source=%s rtl_agc=%d result=%s\n", source, enabled ? 1 : 0,
+                esp_rtl_sdr_err_to_name(result));
+  return result;
+}
+
+void print_rtl_gain_status() {
+  const bool smart = rtl_gain_band_uses_smart();
+  const bool smart_on = rtl_ui_band == RtlBand::fm
+                            ? rtl_fm_gain_auto_enabled.load(std::memory_order_relaxed)
+                            : rtl_ui_band == RtlBand::am &&
+                                  rtl_am_gain_auto_enabled.load(std::memory_order_relaxed);
+  const bool selecting = rtl_fm_gain_auto_selecting.load(std::memory_order_relaxed) ||
+                         rtl_am_gain_auto_selecting.load(std::memory_order_relaxed);
+  bool tuner_agc = false, rtl_agc = false, bias = false;
+  int gain = 0;
+  int gains[32]{};
+  size_t count = 0;
+#if !RTL_USE_LEGACY_USB
+  if (g_rtl != nullptr) {
+    esp_rtl_sdr_gain_mode_t mode = ESP_RTL_SDR_GAIN_MODE_MANUAL;
+    tuner_agc = esp_rtl_sdr_get_tuner_gain_mode(g_rtl, &mode) == ESP_OK &&
+                mode == ESP_RTL_SDR_GAIN_MODE_AUTO;
+    (void)esp_rtl_sdr_get_tuner_gain(g_rtl, &gain);
+    (void)esp_rtl_sdr_get_rtl_agc(g_rtl, &rtl_agc);
+    (void)esp_rtl_sdr_get_bias_tee(g_rtl, &bias);
+    if (esp_rtl_sdr_get_tuner_gains(g_rtl, gains, std::size(gains), &count) != ESP_OK)
+      count = 0;
+  }
+#endif
+  const char* mode = smart_on ? "SMART" : tuner_agc ? "TUNER_AGC" : "MANUAL";
+  Serial.printf("RTL_GAIN_STATUS band=%s receiver=\"%s\" mode=%s auto_kind=%s selecting=%d "
+                "gain_tenth_db=%d rtl_agc=%d bias=%d gain_available=%d cap_auto=%d "
+                "cap_rtl_agc=%d steps=",
+                rtl_band_name(rtl_ui_band),
+                rtl_receiver_label(g_rtl_profile.load(std::memory_order_acquire)), mode,
+                smart ? "SMART" : "TUNER_AGC", smart_on && selecting ? 1 : 0, gain,
+                rtl_agc ? 1 : 0, bias ? 1 : 0,
+                rtl_tuner_gain_available(rtl_ui_frequency_hz) ? 1 : 0,
+                rtl_has_device_capability(smart ? ESP_RTL_SDR_CAP_GAIN
+                                                : ESP_RTL_SDR_CAP_GAIN_AUTO) ? 1 : 0,
+                rtl_has_device_capability(ESP_RTL_SDR_CAP_RTL_AGC) ? 1 : 0);
+  for (size_t i = 0; i < std::min(count, std::size(gains)); ++i)
+    Serial.printf(i ? ",%d" : "%d", gains[i]);
+  Serial.println();
+}
+
 void handle_home_action(const orcsdr::home::Action& action) {
   using orcsdr::home::ActionKind;
   switch (action.kind) {
@@ -11950,6 +12181,11 @@ void handle_home_action(const orcsdr::home::Action& action) {
     case ActionKind::volume_up:
       adjust_rtl_volume(static_cast<int>(kRtlVolumeStep));
       break;
+    case ActionKind::gain_auto: (void)rtl_gain_set_auto("HOME"); break;
+    case ActionKind::gain_tenth_db:
+      (void)rtl_gain_set_manual("HOME", static_cast<int>(action.value));
+      break;
+    case ActionKind::rtl_agc: (void)rtl_gain_set_rtl_agc("HOME", action.value != 0); break;
     default: return;
   }
   draw_home_dashboard();
@@ -12680,11 +12916,6 @@ bool point_in_button(int32_t x, int32_t y) {
 
 bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
                             bool persist_navigation) {
-#if RTL_USE_LEGACY_USB
-  if (rtl_sdr_device == nullptr) return false;
-#else
-  if (!g_rtl_device_ready.load(std::memory_order_acquire) || g_rtl == nullptr) return false;
-#endif
   if (band == RtlBand::adsb) frequency_hz = kAdsbDefaultHz;
   if (band == RtlBand::lora) {
     load_lora_config();
@@ -12692,8 +12923,47 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
     if (frequency_hz == kLoraDefaultHz) frequency_hz = lora_config_frequency_hz;
   }
   frequency_hz = rtl_clamp_frequency(band, frequency_hz);
+#if RTL_USE_LEGACY_USB
+  const bool receiver_ready = rtl_sdr_device != nullptr;
+#else
+  const bool receiver_ready =
+      g_rtl_device_ready.load(std::memory_order_acquire) && g_rtl != nullptr;
+#endif
+  if (!receiver_ready) {
+    // No receiver attached, but the caller still shows this band's screen.
+    // Keep the UI state in step with it: the main loop routes touches by
+    // rtl_ui_band and rtl_ui_active (normally set when the stream starts),
+    // and a stale band (FM from boot) or an unset flag strands the dashboard
+    // on the no-screen fallback. The requested band makes a later hotplug
+    // resume this screen.
+    rtl_ui_active.store(true, std::memory_order_release);
+    rtl_ui_band = band;
+    rtl_ui_frequency_hz = frequency_hz;
+    rtl_requested_band.store(band, std::memory_order_release);
+    rtl_requested_frequency_hz.store(frequency_hz, std::memory_order_release);
+    Serial.printf("RTL_OPEN_NO_RECEIVER band=%s frequency_hz=%u\n", rtl_band_name(band),
+                  static_cast<unsigned>(frequency_hz));
+    return false;
+  }
 #if !RTL_USE_LEGACY_USB
-  if (!validate_rtl_tune_frequency(frequency_hz)) return false;
+  if (!validate_rtl_tune_frequency(frequency_hz)) {
+    // This receiver cannot tune here (e.g. a Blog V4L below 24 MHz), but the
+    // caller still shows this band's dashboard. Show its own frequency rather
+    // than the previous band's, and stop the previous band's stream instead of
+    // playing it underneath. The requested band lets a capable receiver that
+    // is plugged in later resume this dashboard.
+    const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
+    rtl_capture_requested.store(false, std::memory_order_release);
+    rtl_restart_requested.store(false, std::memory_order_release);
+    if (state == RtlCaptureState::running || state == RtlCaptureState::queued)
+      rtl_stop_requested.store(true, std::memory_order_release);
+    rtl_ui_active.store(true, std::memory_order_release);
+    rtl_ui_band = band;
+    rtl_ui_frequency_hz = frequency_hz;
+    rtl_requested_band.store(band, std::memory_order_release);
+    rtl_requested_frequency_hz.store(frequency_hz, std::memory_order_release);
+    return false;
+  }
 #endif
   if (orcsdr::am_finder::active()) {
     orcsdr::am_finder::cancel();
@@ -12707,7 +12977,8 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
   }
   if (!rtl_band_has_audio(band)) sync_rtl_audio_for_band(band);
   if (band == RtlBand::adsb) {
-    if (!orcsdr::screens::owns(orcsdr::screens::Id::adsb))
+    // Only navigation opens the dashboard; a hotplug resume keeps the screen.
+    if (!orcsdr::screens::owns(orcsdr::screens::Id::adsb) && persist_navigation)
       draw_sdr_screen(band, frequency_hz, rtl_live_volume.load(std::memory_order_acquire));
     else if (!orcsdr::adsb::active())
       orcsdr::adsb::enter(adsb_settings);
@@ -13831,6 +14102,7 @@ constexpr UiDocScreen kUiDocScreens[] = {
     {"home", "live,demo"},
     {"nav", "demo"},
     {"settings.connectivity", "demo"},
+    {"settings.firmware-updates", "demo"},
     {"settings.location-adsb", "demo"},
     {"settings.data-maps", "demo"},
     {"settings.display-audio", "demo"},
@@ -14145,8 +14417,12 @@ bool ui_doc_render(const char* screen_id, bool demo) {
   } else if (strncmp(screen_id, "settings.", 9) == 0 ||
              strncmp(screen_id, "overlay.wifi-", 13) == 0 ||
              strcmp(screen_id, "overlay.masked-keyboard") == 0) {
-    static constexpr const char* names[] = {"connectivity", "location-adsb", "data-maps",
-        "display-audio", "radio-defaults", "storage", "companion", "system"};
+    // Same order as orcsdr::settings::Section.
+    static constexpr const char* names[] = {"connectivity", "firmware-updates",
+        "location-adsb", "data-maps", "display-audio", "radio-defaults", "storage",
+        "companion", "system"};
+    static_assert(std::size(names) ==
+                  static_cast<size_t>(orcsdr::settings::Section::count));
     orcsdr::settings::Section section = orcsdr::settings::Section::connectivity;
     const char* suffix = screen_id + 9;
     for (uint8_t i = 0; i < std::size(names); ++i)
@@ -14536,19 +14812,24 @@ void print_rtl_driver_status() {
   const esp_err_t bias_err = esp_rtl_sdr_get_bias_tee(g_rtl, &bias_tee);
   const esp_err_t metrics_err = esp_rtl_sdr_get_metrics(g_rtl, &metrics);
   const esp_err_t frequency_err = esp_rtl_sdr_get_center_freq(g_rtl, &frequency_hz);
-  const char* route = profile == ESP_RTL_SDR_PROFILE_BLOG_V3 &&
-                              frequency_hz < kRtlNoHfMinHz
+  const char* route = (caps & ESP_RTL_SDR_CAP_DIRECT_SAMPLING) && frequency_hz < kRtlNoHfMinHz
                           ? "DIRECT_Q"
-                          : profile == ESP_RTL_SDR_PROFILE_BLOG_V4 &&
+                          : (caps & ESP_RTL_SDR_CAP_HF_UPCONVERTER) &&
                                     frequency_hz < ESP_RTL_SDR_HF_UPCONV_LO_HZ
                                 ? "HF_UPCONVERTER"
                                 : "TUNER";
+  uint32_t bandwidth_requested_hz = 0;
+  uint32_t bandwidth_applied_hz = 0;
+  if (caps & ESP_RTL_SDR_CAP_TUNER_BANDWIDTH)
+    (void)esp_rtl_sdr_get_tuner_bandwidth_state(g_rtl, &bandwidth_requested_hz,
+                                                &bandwidth_applied_hz);
   Serial.printf(
       "RTL_DRIVER_STATUS installed=1 version=%s state=%s profile=%u profile_name=\"%s\" "
       "provisional=%d device_caps=0x%08x library_caps=0x%08x delivery=callback "
       "gain_auto_cap=%d rtl_agc_cap=%d gain_cap=%d bias_cap=%d mode=%s gain_tenth_db=%d "
       "rtl_agc=%d bias=%d bytes=%llu blocks=%u effective_sps=%u overruns=%u drops=%u "
-      "shadow_ok=%d metrics_ok=%d frequency_hz=%u frequency_ok=%d route=%s\n",
+      "shadow_ok=%d metrics_ok=%d frequency_hz=%u frequency_ok=%d route=%s "
+      "bw_requested_hz=%u bw_applied_hz=%u\n",
       esp_rtl_sdr_get_version_string(),
       esp_rtl_sdr_state_to_name(esp_rtl_sdr_get_state(g_rtl)),
       static_cast<unsigned>(profile), esp_rtl_sdr_profile_to_name(profile),
@@ -14567,7 +14848,8 @@ void print_rtl_driver_status() {
       mode_err == ESP_OK && gain_err == ESP_OK && agc_err == ESP_OK && bias_err == ESP_OK,
       metrics_err == ESP_OK, static_cast<unsigned>(frequency_hz),
       frequency_err == ESP_OK && metrics_err == ESP_OK && metrics.frequency_hz == frequency_hz,
-      route);
+      route, static_cast<unsigned>(bandwidth_requested_hz),
+      static_cast<unsigned>(bandwidth_applied_hz));
 }
 
 void print_cb_status() {
@@ -14666,6 +14948,27 @@ void process_cb_command(const char* command) {
   }
   draw_cb_dashboard(false);
   print_cb_status();
+}
+
+// Which touch handler the main loop's screen chain would pick right now. It
+// mirrors that chain (visualizer, settings, home, ADS-B, POCSAG, SDR, then the
+// legacy no-screen fallback) so a regression sweep can prove no dashboard is
+// left routing touches to "fallback", e.g. when opened with no receiver.
+const char* ui_touch_route() {
+  const bool adsb_ui = (rtl_ui_band == RtlBand::adsb || adsb_atc_listening) &&
+                       orcsdr::adsb::active();
+  const bool pocsag_ui = rtl_ui_band == RtlBand::pocsag && orcsdr::pocsag::active();
+  const bool radio_ui = rtl_ui_active.load(std::memory_order_acquire);
+  const bool fm_ui = rtl_ui_band == RtlBand::fm && orcsdr::fm::active();
+  const bool am_ui = rtl_ui_band == RtlBand::am && orcsdr::am::active();
+  const bool p25_ui = rtl_ui_band == RtlBand::p25 && orcsdr::p25::active();
+  if (orcsdr::visualizer::active()) return "visualizer";
+  if (orcsdr::settings::active()) return "settings";
+  if (orcsdr::home::active()) return "home";
+  if (adsb_ui && orcsdr::screens::owns(orcsdr::screens::Id::adsb)) return "adsb";
+  if (pocsag_ui && orcsdr::screens::owns(orcsdr::screens::Id::pocsag)) return "pocsag";
+  if (fm_ui || am_ui || p25_ui || radio_ui || orcsdr::rf24::active()) return "sdr";
+  return "fallback";
 }
 
 void process_command(char* command) {
@@ -14820,7 +15123,7 @@ void process_command(char* command) {
   }
   if (strcmp(command, "RTL_UI STATUS") == 0) {
     Serial.printf("RTL_UI_STATUS screen=%s band=%s frequency_hz=%u settings=%d fm=%d am=%d p25=%d "
-                  "adsb=%d lora=%d rf24=%d home_font=%d graphics=%d\n",
+                  "adsb=%d lora=%d rf24=%d home_font=%d graphics=%d radio_ui=%d route=%s\n",
                   orcsdr::screens::name(orcsdr::screens::status().active),
                   rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz,
                   orcsdr::settings::active() ? 1 : 0, orcsdr::fm::active() ? 1 : 0,
@@ -14829,7 +15132,8 @@ void process_command(char* command) {
                   orcsdr::lora::active() ? 1 : 0,
                   orcsdr::rf24::active() ? 1 : 0,
                   M5.Display.getFont() == &fonts::Font0 ? 1 : 0,
-                  rtl_graphics_enabled.load(std::memory_order_acquire) ? 1 : 0);
+                  rtl_graphics_enabled.load(std::memory_order_acquire) ? 1 : 0,
+                  rtl_ui_active.load(std::memory_order_acquire) ? 1 : 0, ui_touch_route());
     return;
   }
   if (strcmp(command, "RTL_SERIAL VERBOSITY") == 0) {
@@ -14885,7 +15189,14 @@ void process_command(char* command) {
     else if (strcmp(name, "RF_LAB") == 0) open_dashboard(Id::rf_lab);
     else if (strcmp(name, "WIFI_ANALYSIS") == 0) open_dashboard(Id::wifi_analysis);
     else if (strcmp(name, "SETTINGS") == 0) open_dashboard(Id::settings);
-    else { Serial.println("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|SETTINGS"); return; }
+    else if (strcmp(name, "WEATHER") == 0) open_dashboard(Id::weather);
+    else if (strcmp(name, "CB") == 0) open_dashboard(Id::cb);
+    else if (strcmp(name, "POCSAG") == 0) open_dashboard(Id::pocsag);
+    else if (strcmp(name, "AIRBAND") == 0) open_dashboard(Id::airband);
+    else if (strcmp(name, "MARINE") == 0) open_dashboard(Id::marine);
+    else if (strcmp(name, "SATELLITE") == 0) open_dashboard(Id::satellite);
+    else if (strcmp(name, "UTILITIES") == 0) open_dashboard(Id::utilities);
+    else { Serial.println("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|SETTINGS|WEATHER|CB|POCSAG|AIRBAND|MARINE|SATELLITE|UTILITIES"); return; }
     Serial.printf("RTL_UI_OPEN_OK target=%s\n", name);
     return;
   }
@@ -15699,6 +16010,21 @@ void process_command(char* command) {
     print_adsb_status();
     return;
   }
+  if (strcmp(command, "AUDIO_CODEC") == 0) {
+    // ES8388 power/output state: reg4 0x3C = LOUT1/ROUT1 (jack) + LOUT2/ROUT2 on;
+    // reg46-49 are the LOUT1/ROUT1/LOUT2/ROUT2 volumes.
+    static constexpr uint8_t kEs8388 = 0x10;
+    static constexpr uint8_t regs[] = {2, 4, 25, 26, 27, 39, 42, 46, 47, 48, 49};
+    Serial.print("AUDIO_CODEC");
+    for (const uint8_t reg : regs)
+      Serial.printf(" r%u=0x%02x", reg, M5.In_I2C.readRegister8(kEs8388, reg, 400000));
+    auto& audio_io = M5.getIOExpander(0);
+    Serial.printf(" hp_detect=%d amp_pin=%d muted=%d running=%d volume=%u\n",
+                  audio_io.digitalRead(7) ? 1 : 0, audio_io.getWriteValue(1) ? 1 : 0,
+                  rtl_internal_speaker_muted.load(std::memory_order_relaxed) ? 1 : 0,
+                  M5.Speaker.isRunning() ? 1 : 0, M5.Speaker.getVolume());
+    return;
+  }
   if (strcmp(command, "RTL_DRIVER STATUS") == 0) {
     print_rtl_driver_status();
     return;
@@ -15712,6 +16038,51 @@ void process_command(char* command) {
                   static_cast<unsigned>(rtl_am_scan_found.load(std::memory_order_relaxed)),
                   static_cast<unsigned long>(rtl_am_scan_freq_hz.load(std::memory_order_relaxed)),
                   orcsdr::am::scan_prompt_active() ? 1 : 0);
+    return;
+  }
+  if (strcmp(command, "UI_SELF_CHECK") == 0) {
+    const bool editor = orcsdr::text_editor::active() || orcsdr::text_editor::self_check();
+    Serial.printf("UI_SELF_CHECK am=%d fm=%d home=%d shortwave=%d keypad=%d editor=%d\n",
+                  orcsdr::am::self_check() ? 1 : 0, orcsdr::fm::self_check() ? 1 : 0,
+                  orcsdr::home::self_check() ? 1 : 0,
+                  orcsdr::shortwave::dashboard_self_check() ? 1 : 0,
+                  orcsdr::freq_keypad::self_check() ? 1 : 0, editor ? 1 : 0);
+    return;
+  }
+  if (strcmp(command, "RTL_GAIN STATUS") == 0) {
+    print_rtl_gain_status();
+    return;
+  }
+  if (strncmp(command, "RTL_GAIN ", 9) == 0) {
+    // Same paths as the Home gain popup, for the current band.
+    if (!authenticated) {
+      Serial.println("RTL_GAIN_ERROR auth_required");
+      return;
+    }
+    const char* action = command + 9;
+    if (strcmp(action, "AUTO") == 0 || strcmp(action, "SMART") == 0) {
+      (void)rtl_gain_set_auto("SERIAL");
+    } else if (strcmp(action, "MANUAL") == 0 || strncmp(action, "MANUAL ", 7) == 0) {
+      int gain = 0;
+      if (action[6] == ' ') {
+        char* end = nullptr;
+        const long value = strtol(action + 7, &end, 10);
+        if (end == action + 7 || *end != '\0' || value < 0 || value > 496) {
+          Serial.println("RTL_GAIN_INVALID use MANUAL [0..496]");
+          return;
+        }
+        gain = static_cast<int>(value);
+      } else if (g_rtl != nullptr) {
+        (void)esp_rtl_sdr_get_tuner_gain(g_rtl, &gain);  // hold the current gain
+      }
+      (void)rtl_gain_set_manual("SERIAL", gain);
+    } else if (strcmp(action, "RTLAGC ON") == 0 || strcmp(action, "RTLAGC OFF") == 0) {
+      (void)rtl_gain_set_rtl_agc("SERIAL", strcmp(action + 7, "ON") == 0);
+    } else {
+      Serial.println("RTL_GAIN_INVALID use STATUS|AUTO|SMART|MANUAL [0..496]|RTLAGC ON|OFF");
+      return;
+    }
+    bump_rtl_ui();
     return;
   }
   if (strcmp(command, "RTL_AM_GAIN STATUS") == 0) {
@@ -15746,10 +16117,15 @@ void process_command(char* command) {
                   ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC |
                   ESP_RTL_SDR_CAP_BIAS_TEE;
     else if (profile == ESP_RTL_SDR_PROFILE_BLOG_V3)
-      required |= ESP_RTL_SDR_CAP_DIRECT_SAMPLING | ESP_RTL_SDR_CAP_GAIN;
+      required |= ESP_RTL_SDR_CAP_DIRECT_SAMPLING | ESP_RTL_SDR_CAP_GAIN |
+                  ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC;
+    else if (profile == ESP_RTL_SDR_PROFILE_BLOG_V4L)
+      required |= ESP_RTL_SDR_CAP_HF_UPCONVERTER | ESP_RTL_SDR_CAP_GAIN |
+                  ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC;
     const uint32_t caps = rtl_device_capabilities();
     const bool pass = g_rtl != nullptr && ESP_RTL_SDR_VERSION_NUMBER >= 800 &&
                       (profile == ESP_RTL_SDR_PROFILE_BLOG_V4 ||
+                       profile == ESP_RTL_SDR_PROFILE_BLOG_V4L ||
                        profile == ESP_RTL_SDR_PROFILE_BLOG_V3) &&
                       (caps & required) == required;
     Serial.printf("RTL_DRIVER_SELF_CHECK pass=%d version=%s profile=%u "
@@ -15771,11 +16147,11 @@ void process_command(char* command) {
     esp_err_t err = ESP_ERR_INVALID_ARG;
     const char* action = command + 11;
     if (strcmp(action, "GAINMODE AUTO") == 0)
-      err = rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN_AUTO)
+      err = (rtl_gain_stop_smart(), rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN_AUTO))
                 ? esp_rtl_sdr_set_tuner_gain_mode(g_rtl, ESP_RTL_SDR_GAIN_MODE_AUTO)
                 : ESP_RTL_SDR_ERR_UNSUPPORTED;
     else if (strcmp(action, "GAINMODE MANUAL") == 0)
-      err = rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN)
+      err = (rtl_gain_stop_smart(), rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN))
                 ? esp_rtl_sdr_set_tuner_gain_mode(g_rtl, ESP_RTL_SDR_GAIN_MODE_MANUAL)
                 : ESP_RTL_SDR_ERR_UNSUPPORTED;
     else if (strncmp(action, "GAIN ", 5) == 0) {
@@ -15785,6 +16161,7 @@ void process_command(char* command) {
         Serial.println("RTL_DRIVER_INVALID use GAIN <0..496>");
         return;
       }
+      rtl_gain_stop_smart();  // SMART would otherwise step over the raw gain
       err = rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN)
                 ? esp_rtl_sdr_set_tuner_gain(g_rtl, static_cast<int>(gain))
                 : ESP_RTL_SDR_ERR_UNSUPPORTED;
@@ -15796,6 +16173,38 @@ void process_command(char* command) {
       err = rtl_has_device_capability(ESP_RTL_SDR_CAP_BIAS_TEE)
                 ? esp_rtl_sdr_set_bias_tee(g_rtl, strcmp(action + 5, "ON") == 0)
                 : ESP_RTL_SDR_ERR_UNSUPPORTED;
+    else if (strncmp(action, "HFDIRECT ", 9) == 0) {
+      // V4L route override for the next start: AUTO (CB direct), OFF, or a min Hz.
+      const char* value = action + 9;
+      if (strcmp(value, "AUTO") == 0) rtl_hf_direct_override_hz = UINT32_MAX;
+      else if (strcmp(value, "OFF") == 0) rtl_hf_direct_override_hz = 0;
+      else {
+        char* end = nullptr;
+        const unsigned long hz = strtoul(value, &end, 10);
+        if (end == value || *end != '\0' || hz < kRtlHfDirectMinHz ||
+            hz >= ESP_RTL_SDR_HF_UPCONV_LO_HZ) {
+          Serial.println("RTL_DRIVER_INVALID use HFDIRECT AUTO|OFF|<24000000..28799999>");
+          return;
+        }
+        rtl_hf_direct_override_hz = static_cast<uint32_t>(hz);
+      }
+      err = rtl_hf_direct_override_hz == UINT32_MAX
+                ? ESP_OK
+                : esp_rtl_sdr_set_hf_direct_min_hz(g_rtl, rtl_hf_direct_override_hz);
+    }
+    else if (strncmp(action, "BW ", 3) == 0) {
+      // Queues the request only; read back with RTL_DRIVER STATUS
+      // (bw_requested_hz / bw_applied_hz). 0 = automatic.
+      char* end = nullptr;
+      const unsigned long bandwidth_hz = strtoul(action + 3, &end, 10);
+      if (end == action + 3 || *end != '\0') {
+        Serial.println("RTL_DRIVER_INVALID use BW <hz|0>");
+        return;
+      }
+      err = rtl_has_device_capability(ESP_RTL_SDR_CAP_TUNER_BANDWIDTH)
+                ? esp_rtl_sdr_set_tuner_bandwidth(g_rtl, static_cast<uint32_t>(bandwidth_hz))
+                : ESP_RTL_SDR_ERR_UNSUPPORTED;
+    }
     else if (strncmp(action, "TUNE ", 5) == 0) {
       char* end = nullptr;
       const unsigned long frequency_hz = strtoul(action + 5, &end, 10);
@@ -15807,7 +16216,7 @@ void process_command(char* command) {
       err = esp_rtl_sdr_retune_hz(g_rtl, static_cast<uint32_t>(frequency_hz));
     }
     else {
-      Serial.println("RTL_DRIVER_INVALID use STATUS|SELF_CHECK|TUNE <HZ>|GAINMODE AUTO|MANUAL|GAIN <0..496>|RTLAGC ON|OFF|BIAS ON|OFF");
+      Serial.println("RTL_DRIVER_INVALID use STATUS|SELF_CHECK|TUNE <HZ>|GAINMODE AUTO|MANUAL|GAIN <0..496>|RTLAGC ON|OFF|BIAS ON|OFF|BW <hz|0>");
       return;
     }
     Serial.printf("RTL_DRIVER_RESULT action=\"%s\" accepted=%d result=%s\n", action,
@@ -17008,6 +17417,55 @@ void orcsdr_splash_poll_serial(void) {
   poll_serial();
 }
 
+// Boot order on the splash: SD card, then Wi-Fi (when "start Wi-Fi at boot"
+// is on), then the RTL-SDR's USB port. Joining before the dongle is powered
+// keeps the C6 bring-up clear of USB power-on and live SDR traffic. The first
+// join attempt often fails (reason=2) and the reconnect backoff's second try
+// succeeds, so the budget covers two attempts; if it runs out, loop() keeps
+// retrying on the normal schedule and boot carries on.
+constexpr uint32_t kSplashWifiBudgetMs = 25000;
+
+void boot_wifi_on_splash() {
+  if (!orcsdr_splash_is_active() || !wifi_boot_bringup_pending) return;
+  wifi_boot_bringup_pending = false;  // this stage replaces the deferred loop() connect
+  if (!settings_wifi_power_enabled || !settings_wifi_start_at_boot || !wifi_profile_count) {
+    Serial.println("RTL_WIFI_BOOT_SKIP_NO_AUTOCONNECT splash");
+    return;
+  }
+  select_wifi_profile(0);
+  wifi_save_after_connect = false;
+  wifi_connect_requested.store(true, std::memory_order_release);
+  char status[80];
+  snprintf(status, sizeof(status), "Connecting to Wi-Fi \"%s\"…", wifi_ssid);
+  orcsdr_splash_set_status(status);
+  Serial.println("RTL_WIFI_BOOT_CONNECT_QUEUED splash");
+  const uint32_t started_ms = millis();
+  uint8_t shown_attempt = 0;
+  while (orcsdr_splash_is_active() && millis() - started_ms < kSplashWifiBudgetMs) {
+    poll_wifi();
+    if (wifi_connected) break;
+    // Hosted never came up and nothing is scheduled: there is no retry to wait for.
+    if (!wifi_station_ready && !wifi_connecting && wifi_reconnect_due_ms == 0 &&
+        !wifi_connect_requested.load(std::memory_order_acquire))
+      break;
+    if (wifi_reconnect_attempts != shown_attempt) {
+      shown_attempt = wifi_reconnect_attempts;
+      snprintf(status, sizeof(status), "Wi-Fi \"%s\": retrying (attempt %u)…", wifi_ssid,
+               static_cast<unsigned>(shown_attempt + 1));
+      orcsdr_splash_set_status(status);
+    }
+    orcsdr_splash_poll_serial();
+    delay(20);
+  }
+  if (wifi_connected) snprintf(status, sizeof(status), "Wi-Fi connected: %s", orcsdr::wifi::ip());
+  else snprintf(status, sizeof(status), "Wi-Fi not connected yet - will keep retrying");
+  orcsdr_splash_set_status(status);
+  Serial.printf("RTL_WIFI_BOOT_SPLASH connected=%d elapsed_ms=%lu reconnect_attempts=%u "
+                "station=%d\n",
+                wifi_connected ? 1 : 0, static_cast<unsigned long>(millis() - started_ms),
+                static_cast<unsigned>(wifi_reconnect_attempts), wifi_station_ready ? 1 : 0);
+}
+
 void setup() {
   Serial.begin(115200);
   // PSRAM-backed one-time allocation, not plain internal-DRAM globals -- see
@@ -17246,6 +17704,7 @@ void setup() {
   append_journal("lora_test_boot");
   last_ping_ms = millis();
   offline_transition_handled = true;
+  rtl_boot_complete.store(true, std::memory_order_release);
   return;
 #else
 
@@ -17302,6 +17761,7 @@ void setup() {
     (void)orcsdr::offline_map::load(g_sd_fs);
     refresh_adsb_atc_preset();
   }
+  boot_wifi_on_splash();
   begin_boot_device_staging();
   /* Bring up the attached RTL-SDR while the splash is showing. The OrcSDR
    * button appears once enumeration finishes or times out; a serial SD
@@ -17324,15 +17784,17 @@ void setup() {
     delay(10);
   }
   orcsdr_splash_set_ready(true);
-  char boot_summary[80];
-  snprintf(boot_summary, sizeof(boot_summary), "SD card: %s   |   RTL-SDR: %s",
+  char boot_summary[96];
+  snprintf(boot_summary, sizeof(boot_summary), "SD card: %s   |   Wi-Fi: %s   |   RTL-SDR: %s",
            g_sd_ready ? "ready" : "not found",
+           wifi_connected ? "connected"
+           : settings_wifi_power_enabled && settings_wifi_start_at_boot ? "retrying"
+                                                                        : "off",
            rtl_device_ready() ? "ready" : "not detected");
   orcsdr_splash_set_status(boot_summary);
-  Serial.printf("BOOT_SPLASH_SUMMARY sd=%d rtl=%d\n", g_sd_ready ? 1 : 0,
-                rtl_device_ready() ? 1 : 0);
-  /* Unattended reboots (panic, C6 update) still land on Home. Hosted/Wi-Fi
-   * bring-up stays deferred to loop(). */
+  Serial.printf("BOOT_SPLASH_SUMMARY sd=%d wifi=%d rtl=%d\n", g_sd_ready ? 1 : 0,
+                wifi_connected ? 1 : 0, rtl_device_ready() ? 1 : 0);
+  /* Unattended reboots (panic, C6 update) still land on Home. */
   constexpr uint32_t kSplashAutoEnterMs = 30000;
   // RTL_SPLASH_GATE OFF (regression runs that reboot the device) skips the
   // button so each boot reaches Home unattended.
@@ -17353,6 +17815,7 @@ void setup() {
                      paired ? TFT_YELLOW : TFT_ORANGE);
   draw_power_state();
 #endif
+  rtl_boot_complete.store(true, std::memory_order_release);
 }
 
 void loop() {
@@ -17444,6 +17907,7 @@ void loop() {
     if (elapsed_ms >= 500)
       Serial.printf("RTL_MAIN_STALL stage=wifi_poll elapsed_ms=%u\n", elapsed_ms);
   }
+  service_rtl_speaker_idle();  // before the full-screen modes' early returns
   if (orcsdr::visualizer::active()) {
     service_rtl_speaker_watchdog();
     const uint32_t now = millis();
@@ -17763,7 +18227,7 @@ void loop() {
       publish_pocsag_snapshot(millis());
       refresh_active_screen();
     }
-  } else if (fm_ui || am_ui || p25_ui || radio_ui) {
+  } else if (fm_ui || am_ui || p25_ui || radio_ui || orcsdr::rf24::active()) {
     poll_sdr_touch(false);
   } else if (!radio_ui) {
     const auto touch = M5.Touch.getDetail(0);

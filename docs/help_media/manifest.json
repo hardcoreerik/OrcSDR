@@ -23,6 +23,7 @@
     {"id":"home","title":"Home","dashboard":"Shared","tab":"Home","narration":"Home reports device readiness and opens the radio or global Settings."},
     {"id":"nav","title":"Navigation panel","dashboard":"Shared","tab":"NAV","narration":"NAV provides direct tuning, band shortcuts, zoom, filter, step, peak, and center controls."},
     {"id":"settings.connectivity","title":"Connectivity settings","dashboard":"Settings","tab":"Connectivity","narration":"Connectivity manages Wi-Fi power, antenna choice, scanning, saved networks, and connection status."},
+    {"id":"settings.firmware-updates","title":"Firmware update settings","dashboard":"Settings","tab":"Firmware and Updates","narration":"Firmware and Updates shows the P4 hosted and C6 wireless coprocessor versions and the coprocessor update status."},
     {"id":"settings.location-adsb","title":"Location and ADS-B settings","dashboard":"Settings","tab":"Location and ADS-B","narration":"Location and ADS-B stores the receiver position and radar range without requiring a phone."},
     {"id":"settings.data-maps","title":"Data and maps settings","dashboard":"Settings","tab":"Data and Maps","narration":"Data and Maps reports aircraft databases and offline map packs."},
     {"id":"settings.display-audio","title":"Display and audio settings","dashboard":"Settings","tab":"Display and Audio","narration":"Display and Audio controls brightness, timeout, volume, sound defaults, and rotation."},

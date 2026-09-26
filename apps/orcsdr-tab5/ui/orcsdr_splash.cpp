@@ -92,9 +92,9 @@ void draw_ready_button() {
   M5.Display.drawRoundRect(kReadyButtonX, kReadyButtonY, kReadyButtonW, kReadyButtonH, 18,
                            TFT_CYAN);
   M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextSize(3);
+  M5.Display.setTextSize(4);
   M5.Display.setTextColor(TFT_WHITE, TFT_DARKCYAN);
-  M5.Display.drawString("OrcSDR", kReadyButtonX + kReadyButtonW / 2,
+  M5.Display.drawString("Press OK/Enter", kReadyButtonX + kReadyButtonW / 2,
                         kReadyButtonY + kReadyButtonH / 2);
 }
 

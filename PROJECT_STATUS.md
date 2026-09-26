@@ -8,8 +8,11 @@ M5Burner package was installed and booted on the owner Tab5 before publication.
 That release evidence does not automatically prove later `main` commits or
 other hardware.
 
-The candidate pins `esp_rtl_sdr` v0.8.0-rc3 at
-`52edd9b6e591fbd5f3985af4dc51e9da60e04cad`.
+The candidate pins `esp_rtl_sdr` at `f62c5cdaa73a18f544413e4eca0f1f62abce285e` on the driver branch
+`codex/v4l-am1280-direct-sampling` (0.8.0-rc4, not yet merged to `master`):
+master `9a98724` plus PC-measured V4L/V4/V3c gain, AGC, bias and tuner-bandwidth
+controls, the V4L HF upconverter route, and an optional direct HF route that
+OrcSDR uses on CB for the V4L and V4. The driver reports `0.8.0-rc4`.
 
 This is the authoritative current capability and evidence summary. Release
 notes and validation reports are immutable, dated evidence; they do not
@@ -41,7 +44,7 @@ override this document for current state. Future work belongs in
 | ESP-IDF | 5.5.4 |
 | ESP-Hosted host/C6 | 3.0.6 / 3.0.6 over Tab5 SDIO at the qualified 10 MHz clock |
 | M5Unified / M5GFX | 0.2.20 / 0.2.27 |
-| `esp-rtl-sdr` | 0.8.0-rc2, immutable pin `7ec9825e31653eaa5692978e3e5d44032d621417` in the manifest and lock file |
+| `esp-rtl-sdr` | branch `codex/v4l-am1280-direct-sampling`, 0.8.0-rc4 (reports `0.8.0-rc4`), immutable pin `f62c5cdaa73a18f544413e4eca0f1f62abce285e` in the manifest and lock file |
 | USB implementation | Current `esp-rtl-sdr` path; the legacy USB source is compiled out but remains in source. |
 | Radio policy | Receive-only. Transmission is Not Implemented. |
 
