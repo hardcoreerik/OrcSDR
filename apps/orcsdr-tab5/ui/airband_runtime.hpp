@@ -26,6 +26,7 @@ struct Hooks {
   bool (*tune)(uint32_t frequency_hz) = nullptr;
   void (*show_home)() = nullptr;
   void (*open_radio_settings)() = nullptr;
+  void (*open_location_settings)() = nullptr;
 };
 
 void configure(const Hooks& hooks);

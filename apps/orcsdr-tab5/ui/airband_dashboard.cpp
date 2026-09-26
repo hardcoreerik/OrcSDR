@@ -180,7 +180,7 @@ void draw_listen() {
   button(control(0, 2), source_name(g_snapshot.scan.source),
          g_snapshot.scan.source == ScanSource::airport_bank);
   button(control(1, 2), spacing_name(g_snapshot.scan.spacing));
-  button(control(2, 2), g_snapshot.catalog_loaded ? "FAA DATA READY" : "NO FAA DATA",
+  button(control(2, 2), g_snapshot.catalog_loaded ? "AVIATION DATA READY" : "NO AVIATION DATA",
          g_snapshot.catalog_loaded, true, 2);
 
   card(kStatusCard);
@@ -199,10 +199,10 @@ void draw_listen() {
                 g_snapshot.scan.priority_guard ? "ON" : "OFF");
   text(value, 44, 552, kMuted, 2, middle_left);
   if (!g_snapshot.catalog_loaded)
-    text("Tip: install /orcsdr/data/faa_aviation.idx for airport-aware scanning.",
+    text("Tip: install aviation data and set receiver location for airport scanning.",
          44, 586, kAmber, 2, middle_left);
   else
-    text("Airport bank uses the closest available FAA entries from the offline pack.",
+    text("Airport bank uses the closest aviation entries for the shared receiver location.",
          44, 586, kGreen, 2, middle_left);
 }
 
@@ -238,31 +238,38 @@ void draw_scan() {
 
 void draw_airports() {
   page_title("AIRPORT / ATC CHANNELS",
-             "Offline FAA catalog. Rows are nearest-first when receiver location is configured.");
-  button({990, 114, 266, 58}, "RELOAD DATA");
-  char value[112];
+             "Offline aviation catalog. Nearby rows are database context, not RF-decoded identity.");
+  button({990, 114, 266, 58},
+         g_snapshot.location_configured ? "RELOAD DATA" : "SET LOCATION");
+  char value[128];
+  if (!g_snapshot.location_configured) {
+    card({24, 218, 1232, 270});
+    text("RECEIVER LOCATION NOT SET", 640, 286, kAmber, 3);
+    text("Set one OrcSDR receiver location for Airband, ADS-B, and OrcMaps.",
+         640, 342, TFT_WHITE, 2);
+    text("Airport-bank scanning and station labels stay disabled until location is set.",
+         640, 386, kMuted, 2);
+    text("Manual tuning, 121.500 Guard, and full-band scanning still work.",
+         640, 430, kGreen, 2);
+    return;
+  }
   if (!g_snapshot.catalog_loaded || g_snapshot.catalog_count == 0) {
     card({24, 218, 1232, 270});
-    text("FAA AIRBAND DATA NOT LOADED", 640, 294, kAmber, 3);
-    text("Expected file: /orcsdr/data/faa_aviation.idx", 640, 350, TFT_WHITE, 2);
-    text("The dashboard still supports manual tuning and full-band scan.", 640, 396,
+    text("AVIATION DATA NOT LOADED", 640, 294, kAmber, 3);
+    text("Preferred file: /orcsdr/data/aviation.idx", 640, 342, TFT_WHITE, 2);
+    text("Legacy /orcsdr/data/faa_aviation.idx remains supported.", 640, 382,
          kMuted, 2);
-    text("Add the offline pack, then tap RELOAD DATA.", 640, 438, kMuted, 2);
+    text("Manual tuning and full-band scan remain available.", 640, 426, kMuted, 2);
     return;
   }
   const size_t rows = std::min<size_t>(kListRows, g_snapshot.catalog_count);
   for (size_t i = 0; i < rows; ++i) {
     const CatalogEntry& entry = g_snapshot.catalog[i];
-    const char* service = service_name(entry.service);
-    if (g_snapshot.location_configured)
-      std::snprintf(value, sizeof(value),
-                    "%9.3f MHz   %-10s   %5.1f nm   %-45.45s",
-                    mhz(entry.frequency_hz), service,
-                    static_cast<double>(entry.distance_nm), entry.label);
-    else
-      std::snprintf(value, sizeof(value),
-                    "%9.3f MHz   %-10s   %-56.56s",
-                    mhz(entry.frequency_hz), service, entry.label);
+    std::snprintf(value, sizeof(value),
+                  "%9.3f MHz   %-9s   %5.1f nm   %-9s   %-34.34s",
+                  mhz(entry.frequency_hz), service_name(entry.service),
+                  static_cast<double>(entry.distance_nm),
+                  source_class_name(entry.source_class), entry.label);
     button(list_row(static_cast<int>(i)), value,
            entry.frequency_hz == g_snapshot.frequency_hz, true, 2);
   }
@@ -333,7 +340,7 @@ void draw_setup() {
   M5.Display.fillRect(0, 93, 1280, kTabsY - 93, TFT_BLACK);
   static constexpr const char* labels[kSetupRows] = {
       "CHANNEL SPACING", "SCAN SOURCE", "AUDIO / SCAN SQUELCH", "SCAN SETTLE",
-      "REPLY HANG", "121.500 PRIORITY", "OFFLINE FAA DATA"};
+      "REPLY HANG", "121.500 PRIORITY", "OFFLINE AVIATION DATA"};
   static constexpr const char* help[kSetupRows] = {
       "25 kHz or 8.33 kHz tuning plan",
       "Closest airport frequencies or the complete civil voice band",
@@ -341,7 +348,7 @@ void draw_setup() {
       "Time allowed after each tuner move before evaluating activity",
       "Wait this long for a reply before resuming the scan",
       "Periodically check the civil emergency / guard frequency",
-      "Local catalog; never invents airport or controller identity"};
+      "Global/local catalog; database context is never RF identity"};
 
   for (int row = 0; row < kSetupRows; ++row) {
     const int y = kSetupY + row * kSetupRowH;
@@ -403,7 +410,9 @@ Action scan_touch(int32_t x, int32_t y) {
 }
 
 Action airports_touch(int32_t x, int32_t y) {
-  if (hit(x, y, {990, 114, 266, 58})) return {ActionKind::reload_catalog};
+  if (hit(x, y, {990, 114, 266, 58}))
+    return g_snapshot.location_configured ? Action{ActionKind::reload_catalog}
+                                          : Action{ActionKind::open_location_settings};
   const size_t rows = std::min<size_t>(kListRows, g_snapshot.catalog_count);
   for (size_t i = 0; i < rows; ++i)
     if (hit(x, y, list_row(static_cast<int>(i))))

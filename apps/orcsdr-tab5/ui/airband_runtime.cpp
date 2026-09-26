@@ -2,6 +2,8 @@
 
 #include "nvs_store.hpp"
 
+#include <esp_attr.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -12,7 +14,7 @@ namespace orcsdr::airband {
 namespace {
 
 Hooks g_hooks{};
-Catalog g_catalog;
+EXT_RAM_BSS_ATTR Catalog g_catalog;
 Scanner g_scanner;
 NvsStore g_store;
 bool g_store_ready = false;
@@ -105,7 +107,7 @@ void load_catalog(const LiveState& live) {
 }
 
 const Snapshot& snapshot(const LiveState& live) {
-  static Snapshot out;
+  EXT_RAM_BSS_ATTR static Snapshot out;
   out = {};
   out.now_ms = live.now_ms;
   out.frequency_hz = live.frequency_hz;
@@ -262,6 +264,9 @@ void dispatch(const Action& action, const LiveState& live) {
       break;
     case ActionKind::open_settings:
       if (g_hooks.open_radio_settings) g_hooks.open_radio_settings();
+      return;
+    case ActionKind::open_location_settings:
+      if (g_hooks.open_location_settings) g_hooks.open_location_settings();
       return;
     case ActionKind::exit_home:
       leave();

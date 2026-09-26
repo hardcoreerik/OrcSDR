@@ -50,6 +50,7 @@
 #include "shortwave_audio_dsp.hpp"
 #include "shortwave_dashboard.hpp"
 #include "receiver_tuning_controls.hpp"
+#include "receiver_location.hpp"
 #include "am_finder.hpp"
 #include "adsb_dashboard.hpp"
 #include "adsb_decoder.hpp"
@@ -2294,6 +2295,7 @@ orcsdr::airband::LiveState airband_live_state();
 bool airband_tune_hook(uint32_t frequency_hz);
 void airband_home_hook();
 void airband_settings_hook();
+void airband_location_settings_hook();
 void draw_cb_dashboard(bool static_panel);
 const orcsdr::cb::Snapshot& cb_dashboard_snapshot();
 void handle_cb_dashboard_action(const orcsdr::cb::Action& action);
@@ -6123,9 +6125,10 @@ orcsdr::airband::LiveState airband_live_state() {
       rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
   live.sound_enabled = rtl_audio_user_enabled.load(std::memory_order_acquire);
   live.battery_percent = M5.Power.getBatteryLevel();
-  live.location_configured = adsb_settings.location_configured;
-  live.latitude_e7 = adsb_settings.latitude_e7;
-  live.longitude_e7 = adsb_settings.longitude_e7;
+  const auto location = orcsdr::receiver_location::snapshot();
+  live.location_configured = location.configured;
+  live.latitude_e7 = location.latitude_e7;
+  live.longitude_e7 = location.longitude_e7;
   live.filesystem = g_sd_fs;
   return live;
 }
@@ -6140,6 +6143,9 @@ bool airband_tune_hook(uint32_t frequency_hz) {
 void airband_home_hook() { show_home(); }
 void airband_settings_hook() {
   open_global_settings(orcsdr::settings::Section::radio_defaults);
+}
+void airband_location_settings_hook() {
+  open_global_settings(orcsdr::settings::Section::location_adsb);
 }
 
 void draw_cb_dashboard(bool static_panel) {
@@ -6716,7 +6722,9 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   if (band == RtlBand::airband) {
     reset_spectrum_renderer();
     resume_rtl_speaker();
-    orcsdr::airband::configure({airband_tune_hook, airband_home_hook, airband_settings_hook});
+    orcsdr::airband::configure(
+        {airband_tune_hook, airband_home_hook, airband_settings_hook,
+         airband_location_settings_hook});
     orcsdr::airband::enter(airband_live_state());
     orcsdr::screens::finish_transition();
     return;
@@ -11594,12 +11602,13 @@ const orcsdr::settings::State& global_settings_state() {
       }
     }
   }
-  state.location_configured = adsb_settings.location_configured;
-  state.latitude_e7 = adsb_settings.latitude_e7;
-  state.longitude_e7 = adsb_settings.longitude_e7;
+  const auto receiver_location = orcsdr::receiver_location::snapshot();
+  state.location_configured = receiver_location.configured;
+  state.latitude_e7 = receiver_location.latitude_e7;
+  state.longitude_e7 = receiver_location.longitude_e7;
   state.radar_range_nm = adsb_settings.radar_range_nm;
-  strlcpy(state.location_label, settings_location_label, sizeof(state.location_label));
-  strlcpy(state.map_pack, settings_map_pack, sizeof(state.map_pack));
+  strlcpy(state.location_label, receiver_location.label, sizeof(state.location_label));
+  strlcpy(state.map_pack, receiver_location.map_pack, sizeof(state.map_pack));
   const auto ip_location = orcsdr::location_estimate::state();
   state.ip_location_busy = ip_location.busy; state.ip_location_ready = ip_location.ready;
   state.ip_latitude_e7 = ip_location.latitude_e7; state.ip_longitude_e7 = ip_location.longitude_e7;
@@ -12156,6 +12165,9 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       adsb_settings.location_configured = state.location_configured;
       adsb_settings.latitude_e7 = state.latitude_e7;
       adsb_settings.longitude_e7 = state.longitude_e7;
+      orcsdr::receiver_location::set(
+          state.location_configured, state.latitude_e7, state.longitude_e7,
+          state.location_label, state.map_pack);
       refresh_adsb_atc_preset();
       adsb_settings_persist_pending.store(true, std::memory_order_release);
       break;
@@ -12177,8 +12189,11 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       adsb_settings.location_configured = true;
       adsb_settings.latitude_e7 = location.latitude_e7;
       adsb_settings.longitude_e7 = location.longitude_e7;
-      refresh_adsb_atc_preset();
       strlcpy(settings_location_label, location.label, sizeof(settings_location_label));
+      orcsdr::receiver_location::set(
+          true, location.latitude_e7, location.longitude_e7,
+          settings_location_label, settings_map_pack);
+      refresh_adsb_atc_preset();
       adsb_settings_persist_pending.store(true, std::memory_order_release);
       break;
     }
@@ -12640,6 +12655,9 @@ void load_state() {
     adsb_settings = {};
     adsb_settings.radar_range_nm = 25;
   }
+  orcsdr::receiver_location::set(
+      adsb_settings.location_configured, adsb_settings.latitude_e7,
+      adsb_settings.longitude_e7, settings_location_label, settings_map_pack);
   if (preferences.isKey("last_band")) {
     const auto stored_band = static_cast<RtlBand>(
         preferences.getUInt("last_band", static_cast<uint32_t>(RtlBand::fm)));
@@ -15368,6 +15386,9 @@ void process_command(char* command) {
     adsb_settings.location_configured = true;
     adsb_settings.latitude_e7 = static_cast<int32_t>(llround(latitude * 10000000.0));
     adsb_settings.longitude_e7 = static_cast<int32_t>(llround(longitude * 10000000.0));
+    orcsdr::receiver_location::set(
+        true, adsb_settings.latitude_e7, adsb_settings.longitude_e7,
+        settings_location_label, settings_map_pack);
     refresh_adsb_atc_preset();
     preferences.putBool("adsb_loc_set", true);
     preferences.putInt("adsb_lat_e7", adsb_settings.latitude_e7);
@@ -17264,6 +17285,10 @@ void setup() {
     Serial.println("ORC_LOCATION_SELF_CHECK_FAIL");
   }
   Serial.println("ORC_LOCATION_SELF_CHECK_OK");
+  if (!orcsdr::receiver_location::self_check()) {
+    Serial.println("ORC_RECEIVER_LOCATION_SELF_CHECK_FAIL");
+  }
+  Serial.println("ORC_RECEIVER_LOCATION_SELF_CHECK_OK");
   if (!orcsdr::screens::self_check()) {
     Serial.println("ORC_SCREEN_CONTROLLER_SELF_CHECK_FAIL");
   }

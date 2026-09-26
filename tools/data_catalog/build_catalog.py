@@ -16,7 +16,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
-PACK_IDS = ("faa_aircraft", "faa_aviation", "noaa_weather", "fcc_broadcast", "lane_county_map")
+PACK_IDS = ("faa_aircraft", "aviation", "faa_aviation", "noaa_weather", "fcc_broadcast", "lane_county_map")
+
+
+def canonical_pack_id(pack_id: str) -> str:
+    return "aviation" if pack_id == "faa_aviation" else pack_id
 
 
 def is_p25_pack(pack_id: str) -> bool:
@@ -56,6 +60,9 @@ def validate_artifact(pack_id: str, source: Path, archive: bool) -> None:
     elif pack_id == "lane_county_map":
         if prefix != b"ORCMAP1\n":
             raise ValueError(f"{pack_id} runtime index must start with ORCMAP1: {source}")
+    elif canonical_pack_id(pack_id) == "aviation":
+        if prefix not in (b"ORCAIR2\n", b"ORCCAT1\n"):
+            raise ValueError(f"{pack_id} runtime index must start with ORCAIR2 or ORCCAT1: {source}")
     elif prefix != b"ORCCAT1\n":
         raise ValueError(f"{pack_id} runtime index must start with ORCCAT1: {source}")
 
@@ -87,10 +94,11 @@ def main() -> None:
         raise ValueError("expected catalog-input-v1")
     packs = spec.get("packs", [])
     ids = [pack.get("id") for pack in packs]
-    if (not ids or len(set(ids)) != len(ids) or
+    slots = [canonical_pack_id(pack_id) if isinstance(pack_id, str) else pack_id for pack_id in ids]
+    if (not ids or len(set(ids)) != len(ids) or len(set(slots)) != len(slots) or
             any(pack_id not in PACK_IDS and not is_p25_pack(pack_id) for pack_id in ids) or
             len(ids) > 16):
-        raise ValueError("packs must use unique supported IDs")
+        raise ValueError("packs must use unique supported IDs/slots")
     args.out.mkdir(parents=True, exist_ok=True)
     catalog_packs = []
     for pack in packs:

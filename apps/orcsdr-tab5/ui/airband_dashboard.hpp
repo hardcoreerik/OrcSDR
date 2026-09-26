@@ -58,6 +58,7 @@ enum class ActionKind : uint8_t {
   reload_catalog,
   clear_activity,
   open_settings,
+  open_location_settings,
   exit_home,
 };
 

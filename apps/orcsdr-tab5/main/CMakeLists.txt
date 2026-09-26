@@ -56,6 +56,7 @@ idf_component_register(
         "../ui/lora_native_decoder.cpp"
         "../ui/lora_channel_control.cpp"
         "../ui/location_estimate.cpp"
+        "../ui/receiver_location.cpp"
         "../ui/offline_map.cpp"
         "../ui/navigation_service.cpp"
         "../ui/nvs_store.cpp"
