@@ -11699,6 +11699,41 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
     snapshot.effective_sps = metrics.effective_sps;
 #endif
   if (demo) snapshot.effective_sps = 959800;
+  // FM and AM use OrcSDR SMART gain as their automatic mode; every other band
+  // uses the tuner's hardware AGC.
+  snapshot.gain_smart = rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::am;
+  snapshot.gain_available = !demo && rtl_tuner_gain_available(rtl_ui_frequency_hz);
+  snapshot.gain_auto_available =
+      snapshot.gain_available &&
+      rtl_has_device_capability(snapshot.gain_smart ? ESP_RTL_SDR_CAP_GAIN
+                                                    : ESP_RTL_SDR_CAP_GAIN_AUTO);
+  snapshot.rtl_agc_available = !demo && rtl_has_device_capability(ESP_RTL_SDR_CAP_RTL_AGC);
+  snapshot.bias_available = !demo && rtl_has_device_capability(ESP_RTL_SDR_CAP_BIAS_TEE);
+#if !RTL_USE_LEGACY_USB
+  if (!demo && g_rtl != nullptr) {
+    if (rtl_ui_band == RtlBand::fm) {
+      snapshot.gain_auto = rtl_fm_gain_auto_enabled.load(std::memory_order_relaxed);
+    } else if (rtl_ui_band == RtlBand::am) {
+      snapshot.gain_auto = rtl_am_gain_auto_enabled.load(std::memory_order_relaxed);
+    } else {
+      esp_rtl_sdr_gain_mode_t mode = ESP_RTL_SDR_GAIN_MODE_MANUAL;
+      snapshot.gain_auto = esp_rtl_sdr_get_tuner_gain_mode(g_rtl, &mode) == ESP_OK &&
+                           mode == ESP_RTL_SDR_GAIN_MODE_AUTO;
+    }
+    int gain_tenth_db = 0;
+    if (esp_rtl_sdr_get_tuner_gain(g_rtl, &gain_tenth_db) == ESP_OK)
+      snapshot.gain_tenth_db = static_cast<int16_t>(gain_tenth_db);
+    int gains[std::size(snapshot.gain_steps_tenth_db)]{};
+    size_t count = 0;
+    if (esp_rtl_sdr_get_tuner_gains(g_rtl, gains, std::size(gains), &count) == ESP_OK) {
+      snapshot.gain_step_count = static_cast<uint8_t>(std::min(count, std::size(gains)));
+      for (size_t i = 0; i < snapshot.gain_step_count; ++i)
+        snapshot.gain_steps_tenth_db[i] = static_cast<int16_t>(gains[i]);
+    }
+    if (snapshot.rtl_agc_available) (void)esp_rtl_sdr_get_rtl_agc(g_rtl, &snapshot.rtl_agc);
+    if (snapshot.bias_available) (void)esp_rtl_sdr_get_bias_tee(g_rtl, &snapshot.bias_on);
+  }
+#endif
 
   const bool tuner_changed = previous.revision == 0 ||
       snapshot.frequency_hz != previous.frequency_hz ||
@@ -11988,6 +12023,51 @@ void handle_home_action(const orcsdr::home::Action& action) {
       break;
     case ActionKind::volume_up:
       adjust_rtl_volume(static_cast<int>(kRtlVolumeStep));
+      break;
+    case ActionKind::gain_auto:
+#if !RTL_USE_LEGACY_USB
+      if (g_rtl != nullptr && rtl_tuner_gain_available(rtl_ui_frequency_hz)) {
+        const bool smart = rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::am;
+        // SMART drives manual tuner steps itself; other bands hand gain to the tuner AGC.
+        const esp_err_t result = esp_rtl_sdr_set_tuner_gain_mode(
+            g_rtl, smart ? ESP_RTL_SDR_GAIN_MODE_MANUAL : ESP_RTL_SDR_GAIN_MODE_AUTO);
+        if (result == ESP_OK && rtl_ui_band == RtlBand::fm) {
+          rtl_fm_gain_auto_enabled.store(true, std::memory_order_relaxed);
+          rtl_fm_gain_auto_restart.store(true, std::memory_order_release);
+        } else if (result == ESP_OK && rtl_ui_band == RtlBand::am) {
+          rtl_am_gain_auto_enabled.store(true, std::memory_order_relaxed);
+          rtl_am_gain_auto_restart.store(true, std::memory_order_release);
+        }
+        Serial.printf("RTL_HOME_GAIN mode=%s band=%s result=%s\n", smart ? "SMART" : "TUNER_AGC",
+                      rtl_band_name(rtl_ui_band), esp_rtl_sdr_err_to_name(result));
+      }
+#endif
+      break;
+    case ActionKind::gain_tenth_db:
+#if !RTL_USE_LEGACY_USB
+      if (rtl_ui_band == RtlBand::fm) {
+        rtl_fm_gain_auto_enabled.store(false, std::memory_order_relaxed);
+        rtl_fm_gain_auto_selecting.store(false, std::memory_order_relaxed);
+        rtl_fm_gain_auto_restart.store(false, std::memory_order_relaxed);
+      } else if (rtl_ui_band == RtlBand::am) {
+        rtl_am_gain_auto_enabled.store(false, std::memory_order_relaxed);
+        rtl_am_gain_auto_selecting.store(false, std::memory_order_relaxed);
+        rtl_am_gain_auto_restart.store(false, std::memory_order_relaxed);
+      }
+      if (g_rtl != nullptr && rtl_tuner_gain_available(rtl_ui_frequency_hz))
+        Serial.printf("RTL_HOME_GAIN mode=MANUAL band=%s gain_tenth_db=%lu result=%s\n",
+                      rtl_band_name(rtl_ui_band), static_cast<unsigned long>(action.value),
+                      esp_rtl_sdr_err_to_name(esp_rtl_sdr_set_tuner_gain(
+                          g_rtl, static_cast<int>(action.value))));
+#endif
+      break;
+    case ActionKind::rtl_agc:
+#if !RTL_USE_LEGACY_USB
+      if (g_rtl != nullptr && rtl_has_device_capability(ESP_RTL_SDR_CAP_RTL_AGC))
+        Serial.printf("RTL_HOME_RTL_AGC enabled=%lu result=%s\n",
+                      static_cast<unsigned long>(action.value),
+                      esp_rtl_sdr_err_to_name(esp_rtl_sdr_set_rtl_agc(g_rtl, action.value != 0)));
+#endif
       break;
     default: return;
   }
@@ -13905,6 +13985,7 @@ constexpr UiDocScreen kUiDocScreens[] = {
     {"home", "live,demo"},
     {"nav", "demo"},
     {"settings.connectivity", "demo"},
+    {"settings.firmware-updates", "demo"},
     {"settings.location-adsb", "demo"},
     {"settings.data-maps", "demo"},
     {"settings.display-audio", "demo"},
@@ -14219,8 +14300,12 @@ bool ui_doc_render(const char* screen_id, bool demo) {
   } else if (strncmp(screen_id, "settings.", 9) == 0 ||
              strncmp(screen_id, "overlay.wifi-", 13) == 0 ||
              strcmp(screen_id, "overlay.masked-keyboard") == 0) {
-    static constexpr const char* names[] = {"connectivity", "location-adsb", "data-maps",
-        "display-audio", "radio-defaults", "storage", "companion", "system"};
+    // Same order as orcsdr::settings::Section.
+    static constexpr const char* names[] = {"connectivity", "firmware-updates",
+        "location-adsb", "data-maps", "display-audio", "radio-defaults", "storage",
+        "companion", "system"};
+    static_assert(std::size(names) ==
+                  static_cast<size_t>(orcsdr::settings::Section::count));
     orcsdr::settings::Section section = orcsdr::settings::Section::connectivity;
     const char* suffix = screen_id + 9;
     for (uint8_t i = 0; i < std::size(names); ++i)
@@ -15806,6 +15891,21 @@ void process_command(char* command) {
   }
   if (strcmp(command, "RTL_ADSB STATUS") == 0) {
     print_adsb_status();
+    return;
+  }
+  if (strcmp(command, "AUDIO_CODEC") == 0) {
+    // ES8388 power/output state: reg4 0x3C = LOUT1/ROUT1 (jack) + LOUT2/ROUT2 on;
+    // reg46-49 are the LOUT1/ROUT1/LOUT2/ROUT2 volumes.
+    static constexpr uint8_t kEs8388 = 0x10;
+    static constexpr uint8_t regs[] = {2, 4, 25, 26, 27, 39, 42, 46, 47, 48, 49};
+    Serial.print("AUDIO_CODEC");
+    for (const uint8_t reg : regs)
+      Serial.printf(" r%u=0x%02x", reg, M5.In_I2C.readRegister8(kEs8388, reg, 400000));
+    auto& audio_io = M5.getIOExpander(0);
+    Serial.printf(" hp_detect=%d amp_pin=%d muted=%d running=%d volume=%u\n",
+                  audio_io.digitalRead(7) ? 1 : 0, audio_io.getWriteValue(1) ? 1 : 0,
+                  rtl_internal_speaker_muted.load(std::memory_order_relaxed) ? 1 : 0,
+                  M5.Speaker.isRunning() ? 1 : 0, M5.Speaker.getVolume());
     return;
   }
   if (strcmp(command, "RTL_DRIVER STATUS") == 0) {

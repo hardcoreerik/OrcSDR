@@ -27,6 +27,19 @@ struct Snapshot {
   bool driver_ready = false;
   bool receiving = false;
   bool sound_enabled = true;
+  // Receiver gain, all capability-gated by main.cpp. gain_auto means OrcSDR
+  // SMART gain when gain_smart (FM/AM), otherwise the tuner's own AGC.
+  bool gain_available = false;
+  bool gain_auto_available = false;
+  bool gain_smart = false;
+  bool gain_auto = false;
+  bool rtl_agc_available = false;
+  bool rtl_agc = false;
+  bool bias_available = false;
+  bool bias_on = false;
+  int16_t gain_tenth_db = 0;
+  uint8_t gain_step_count = 0;
+  int16_t gain_steps_tenth_db[32]{};
   char wifi_ip[16]{};
   char receiver[12] = "RTL-SDR";
   char mode[12]{};
@@ -54,6 +67,11 @@ enum class ActionKind : uint8_t {
   open_device_settings,
   waterfall_contrast_down,
   waterfall_contrast_up,
+  gain_open,
+  gain_close,
+  gain_auto,
+  gain_tenth_db,
+  rtl_agc,
 };
 
 struct Action {

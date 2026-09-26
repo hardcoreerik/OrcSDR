@@ -1468,7 +1468,8 @@ bool process_command(const char* command, char* response, size_t response_size) 
 }
 
 bool self_check() {
-  if (next_rate(256000) != 960000 || next_rate(2560000) != 256000 ||
+  if (next_rate(256000) != 960000 || next_rate(2560000) != 3200000 ||
+      next_rate(3200000) != 256000 ||
       !inside(20, kFooterY, 20, kFooterY, 304, kFooterH) ||
       !safe_note("bounded note") || safe_note("comma,is_not_csv_safe") ||
       safe_note("quote\"is_not_json_safe")) return false;
