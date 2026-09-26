@@ -272,8 +272,10 @@ void draw_gain_control(bool compact) {
   else
     snprintf(value, sizeof(value), "%.1f dB",
              static_cast<double>(g_snapshot.gain_tenth_db) / 10.0);
-  button(layout.auto_x, layout.auto_y, layout.auto_w, layout.auto_h, "SMART", kGreen,
-         g_snapshot.gain_auto);
+  // SMART <-> MANUAL mode toggle; in MANUAL the slider sets the tuner gain.
+  button(layout.auto_x, layout.auto_y, layout.auto_w, layout.auto_h,
+         g_snapshot.gain_auto ? "SMART" : "MANUAL",
+         g_snapshot.gain_auto ? kGreen : TFT_ORANGE, true);
   text(compact ? "GAIN" : "RF GAIN", layout.slider_x,
        layout.slider_y - (compact ? 15 : 33), kCyan, 2, middle_left);
   text(value, layout.slider_x + layout.slider_w,
@@ -595,6 +597,8 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
   M5.Display.endWrite();
 }
 
+Action gain_mode_toggle();
+
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
   if (g_scan_prompt) {
@@ -620,7 +624,7 @@ Action handle_touch(int32_t x, int32_t y) {
     const GainLayout layout = gain_layout();
     if (g_snapshot.gain_available &&
         hit(x, y, layout.auto_x, layout.auto_y, layout.auto_w, layout.auto_h))
-      return {ActionKind::gain_auto};
+      return gain_mode_toggle();
   }
   if (g_view == View::listen) {
     if (hit(x, y, 24, 398, 160, 76)) return {ActionKind::step_down};
@@ -739,6 +743,15 @@ TouchResult handle_preset_touch(int32_t x, int32_t y, bool pressed, uint32_t now
     return {{}, true};
   }
   return {};
+}
+
+// SMART -> MANUAL holds the gain SMART chose, so the level does not jump;
+// MANUAL -> SMART hands control back to the automatic search.
+Action gain_mode_toggle() {
+  if (g_snapshot.gain_auto)
+    return {ActionKind::gain_tenth_db,
+            static_cast<uint32_t>(std::max(0, static_cast<int>(g_snapshot.gain_tenth_db)))};
+  return {ActionKind::gain_auto};
 }
 
 Action handle_gain_drag(int32_t x, int32_t y) {
