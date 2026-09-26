@@ -2526,14 +2526,16 @@ bool rtl_frequency_supported(uint32_t frequency_hz) {
 }
 
 bool rtl_profile_is_provisional(esp_rtl_sdr_profile_t profile) {
-  return profile == ESP_RTL_SDR_PROFILE_BLOG_V3 ||
-         profile == ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5;
+  // Blog V3/V3c streaming is soak-verified in the pinned driver.
+  return profile == ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5;
 }
 
 const char* rtl_receiver_label(esp_rtl_sdr_profile_t profile) {
   switch (profile) {
     case ESP_RTL_SDR_PROFILE_BLOG_V4: return "RTL V4";
-    case ESP_RTL_SDR_PROFILE_BLOG_V3: return "RTL V3 EXP";
+    case ESP_RTL_SDR_PROFILE_BLOG_V4L: return "RTL V4L";
+    // The driver's single Blog V3 profile covers the V3 and V3c (R820T2).
+    case ESP_RTL_SDR_PROFILE_BLOG_V3: return "RTL V3c";
     case ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5: return "NOO V5 EXP";
     default: return "RTL-SDR";
   }
@@ -12727,7 +12729,24 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
     return false;
   }
 #if !RTL_USE_LEGACY_USB
-  if (!validate_rtl_tune_frequency(frequency_hz)) return false;
+  if (!validate_rtl_tune_frequency(frequency_hz)) {
+    // This receiver cannot tune here (e.g. a Blog V4L below 24 MHz), but the
+    // caller still shows this band's dashboard. Show its own frequency rather
+    // than the previous band's, and stop the previous band's stream instead of
+    // playing it underneath. The requested band lets a capable receiver that
+    // is plugged in later resume this dashboard.
+    const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
+    rtl_capture_requested.store(false, std::memory_order_release);
+    rtl_restart_requested.store(false, std::memory_order_release);
+    if (state == RtlCaptureState::running || state == RtlCaptureState::queued)
+      rtl_stop_requested.store(true, std::memory_order_release);
+    rtl_ui_active.store(true, std::memory_order_release);
+    rtl_ui_band = band;
+    rtl_ui_frequency_hz = frequency_hz;
+    rtl_requested_band.store(band, std::memory_order_release);
+    rtl_requested_frequency_hz.store(frequency_hz, std::memory_order_release);
+    return false;
+  }
 #endif
   if (orcsdr::am_finder::active()) {
     orcsdr::am_finder::cancel();
@@ -14720,7 +14739,7 @@ const char* ui_touch_route() {
   if (orcsdr::home::active()) return "home";
   if (adsb_ui && orcsdr::screens::owns(orcsdr::screens::Id::adsb)) return "adsb";
   if (pocsag_ui && orcsdr::screens::owns(orcsdr::screens::Id::pocsag)) return "pocsag";
-  if (fm_ui || am_ui || p25_ui || radio_ui) return "sdr";
+  if (fm_ui || am_ui || p25_ui || radio_ui || orcsdr::rf24::active()) return "sdr";
   return "fallback";
 }
 
@@ -15811,9 +15830,12 @@ void process_command(char* command) {
                   ESP_RTL_SDR_CAP_BIAS_TEE;
     else if (profile == ESP_RTL_SDR_PROFILE_BLOG_V3)
       required |= ESP_RTL_SDR_CAP_DIRECT_SAMPLING | ESP_RTL_SDR_CAP_GAIN;
+    else if (profile == ESP_RTL_SDR_PROFILE_BLOG_V4L)
+      required |= ESP_RTL_SDR_CAP_GAIN;  // no HF path, tuner AGC or bias-tee
     const uint32_t caps = rtl_device_capabilities();
     const bool pass = g_rtl != nullptr && ESP_RTL_SDR_VERSION_NUMBER >= 800 &&
                       (profile == ESP_RTL_SDR_PROFILE_BLOG_V4 ||
+                       profile == ESP_RTL_SDR_PROFILE_BLOG_V4L ||
                        profile == ESP_RTL_SDR_PROFILE_BLOG_V3) &&
                       (caps & required) == required;
     Serial.printf("RTL_DRIVER_SELF_CHECK pass=%d version=%s profile=%u "
@@ -17310,6 +17332,7 @@ void setup() {
   append_journal("lora_test_boot");
   last_ping_ms = millis();
   offline_transition_handled = true;
+  rtl_boot_complete.store(true, std::memory_order_release);
   return;
 #else
 
@@ -17828,7 +17851,7 @@ void loop() {
       publish_pocsag_snapshot(millis());
       refresh_active_screen();
     }
-  } else if (fm_ui || am_ui || p25_ui || radio_ui) {
+  } else if (fm_ui || am_ui || p25_ui || radio_ui || orcsdr::rf24::active()) {
     poll_sdr_touch(false);
   } else if (!radio_ui) {
     const auto touch = M5.Touch.getDetail(0);

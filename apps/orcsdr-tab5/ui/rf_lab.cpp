@@ -615,12 +615,18 @@ void draw_static_controls() {
   text(g_keep_settings ? "Exit behavior: KEEP SETTINGS" : "Exit behavior: RESTORE ENTRY STATE",
        48, 538, g_keep_settings ? kGreen : kCyan, 2);
   draw_button(700, 514, 252, g_keep_settings ? "RESTORE ON EXIT" : "KEEP SETTINGS");
-  text("Automatic hardware: V4 triplexer, HF upconverter and analog filters.", 48, 594,
-       kMuted, 1);
+  const bool hf_upconverter = has_cap(ESP_RTL_SDR_CAP_HF_UPCONVERTER);
+  const bool direct_sampling = has_cap(ESP_RTL_SDR_CAP_DIRECT_SAMPLING);
+  text(hf_upconverter ? "Automatic hardware: V4 triplexer, HF upconverter and analog filters."
+       : direct_sampling ? "Below 24 MHz: direct sampling (Q branch); no HF upconverter."
+                         : "No HF path: tuning below 24 MHz is unavailable on this receiver.",
+       48, 594, kMuted, 1);
   text("Unavailable: tuner bandwidth. Unsafe: raw EP0, EEPROM, test mode, bias GPIO.",
        640, 594, kMuted, 1);
-  text("Not applicable on V4: direct sampling and R828D offset tuning.", 48, 616,
-       kMuted, 1);
+  text(hf_upconverter ? "Not applicable on V4: direct sampling and R828D offset tuning."
+       : direct_sampling ? "Manual gain only: no tuner AGC, RTL AGC or bias-tee."
+                         : "Manual gain only: no tuner AGC, RTL AGC, bias-tee or direct sampling.",
+       48, 616, kMuted, 1);
 }
 
 void draw_static_measurements() {
@@ -770,7 +776,10 @@ void request_close() {
 }
 
 uint32_t next_rate(uint32_t current) {
-  constexpr uint32_t rates[] = {256000, 960000, 1024000, 1800000, 2048000, 2400000, 2560000};
+  // Through the driver's 3.20 MS/s ceiling. 3.2 is the RTL vendor maximum:
+  // full throughput on the P4, but occasional sample-continuity breaks.
+  constexpr uint32_t rates[] = {256000,  960000,  1024000, 1800000,
+                                2048000, 2400000, 2560000, 3200000};
   for (uint32_t rate : rates)
     if (rate > current) return rate;
   return rates[0];

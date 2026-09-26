@@ -44,7 +44,7 @@ override this document for current state. Future work belongs in
 | ESP-IDF | 5.5.4 |
 | ESP-Hosted host/C6 | 3.0.6 / 3.0.6 over Tab5 SDIO at the qualified 10 MHz clock |
 | M5Unified / M5GFX | 0.2.20 / 0.2.27 |
-| `esp-rtl-sdr` | 0.8.0-rc2, immutable pin `7ec9825e31653eaa5692978e3e5d44032d621417` in the manifest and lock file |
+| `esp-rtl-sdr` | untagged `master` after 0.8.0-rc3 (reports `0.8.0-rc3`), immutable pin `9a987245a0864d9caf4fc357fb6668b95ba5e78b` in the manifest and lock file |
 | USB implementation | Current `esp-rtl-sdr` path; the legacy USB source is compiled out but remains in source. |
 | Radio policy | Receive-only. Transmission is Not Implemented. |
 
