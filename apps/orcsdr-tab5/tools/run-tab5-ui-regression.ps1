@@ -1289,6 +1289,7 @@ function Invoke-DongleGate {
 
     # V3c defaults to 200 kHz then AUTO; V4/V4L run bandwidth stages only when asked.
     $stages = if ($DongleGate -eq 'V3c' -or $script:gateBandwidthsExplicit) { $GateBandwidths } else { @() }
+    $lastStageRolledBack = 0
     foreach ($bandwidth in $stages) {
       $rejectBefore = Get-CtrlRejectCount
       $reply = Send-And-Wait "RTL_DRIVER BW $bandwidth" '^RTL_DRIVER_RESULT '
@@ -1305,6 +1306,7 @@ function Invoke-DongleGate {
       $current = Get-DriverStatus
       $afterAudio = Get-AudioStatus
       Assert-DongleGateSample $before $current $beforeAudio $afterAudio $driver.Frequency $bandwidth ((Get-CtrlRejectCount) - $rejectBefore)
+      $lastStageRolledBack = [int]$script:gateStageRolledBack
       $stageWarning = if ($script:gateStageRolledBack) { ' warning=rolled_back_after_rejected_write' } else { '' }
       if ($script:gateStageRolledBack) { Write-SoakLine "RTL_DONGLE_GATE_WARNING stage=bw_$bandwidth requested_hz=$($current.BwRequested) applied_hz=$($current.BwApplied) reason=rolled_back_after_rejected_write" }
       Write-SoakLine "RTL_DONGLE_GATE_STAGE stage=bw_$bandwidth serial_pass=1 bw_applied_hz=$($current.BwApplied) visual=pending$stageWarning"
@@ -1340,7 +1342,7 @@ function Invoke-DongleGate {
     [void](Send-And-Wait 'RTL_SIGNAL' '^RTL_SIGNAL_STATUS ')
     $current = Get-DriverStatus
     $afterAudio = Get-AudioStatus
-    Assert-DongleGateSample $before $current $beforeAudio $afterAudio $driver.Frequency $(if ($stages.Count -gt 0) { $stages[-1] } else { $initialBw })
+    Assert-DongleGateSample $before $current $beforeAudio $afterAudio $driver.Frequency $(if ($stages.Count -gt 0) { $stages[-1] } else { $initialBw }) $lastStageRolledBack
     if ((Get-RadioFrequency).Frequency -ne $initialFrequency) { throw 'UI frequency did not return after retune.' }
     Assert-Health
     if ($GateIq) { Save-GateIqSnapshot 'retune' }
