@@ -4,7 +4,7 @@
 
 **Turn an M5Stack Tab5 and a compatible RTL-SDR receiver into a portable, touchscreen software-defined radio.** OrcSDR runs its radio processing, dashboards, audio, and controls on the Tab5—no laptop, Raspberry Pi, or desktop SDR application is required after installation.
 
-[Download the latest release](https://github.com/hardcoreerik/OrcSDR/releases/latest) · [Install with M5Burner](docs/user-guide/getting-started.md) · [Read the User Guide](docs/user-guide/index.md) · [Report a bug](https://github.com/hardcoreerik/OrcSDR/issues/new?template=bug_report.md)
+[Download the latest release](https://github.com/hardcoreerik/OrcSDR/releases/latest) · [Install and start](https://github.com/hardcoreerik/OrcSDR/wiki/Getting-Started) · [Read the Wiki](https://github.com/hardcoreerik/OrcSDR/wiki) · [Report a bug](https://github.com/hardcoreerik/OrcSDR/issues/new?template=bug_report.md)
 
 ## Why OrcSDR exists
 
@@ -20,11 +20,11 @@ Read the [RTL-SDR Blog feature](https://www.rtl-sdr.com/orcsdr-running-rtl-sdr-d
 
 ## Get started
 
-1. Open **M5Burner**, search for **OrcSDR**, and burn the current release to an M5Stack Tab5. Note: an M5Burner install resets your saved settings (Wi-Fi profiles, location, rotation), so write them down first; the [Getting Started guide](docs/user-guide/getting-started.md) explains how to keep them.
+1. Follow the [wiki installation guide](https://github.com/hardcoreerik/OrcSDR/wiki/Getting-Started) for the published release. Its Windows installer preserves saved settings; M5Burner resets them on this release.
 2. Restart the Tab5, then connect a supported RTL-SDR receiver to its USB host port.
 3. Connect an antenna suitable for the signals you want to receive and choose a dashboard.
 
-Current release images include the matching ESP-Hosted C6 firmware used by the Tab5. Installation, updating, and recovery instructions are in the [Getting Started guide](docs/user-guide/getting-started.md) and [troubleshooting guide](docs/user-guide/troubleshooting.md).
+Check the installed P4 and C6 versions in Settings after installation. The Windows installer does not write C6 directly. Installation, updating, and recovery instructions are in the [wiki installation guide](https://github.com/hardcoreerik/OrcSDR/wiki/Getting-Started) and [troubleshooting guide](https://github.com/hardcoreerik/OrcSDR/wiki/Troubleshooting).
 
 ## What OrcSDR does
 
@@ -130,13 +130,13 @@ The standalone [`esp-rtl-sdr`](https://github.com/hardcoreerik/esp-rtl-sdr) comp
 
 ## Documentation
 
-- [User Guide](docs/user-guide/index.md)
-- [Downloads and installation](docs/user-guide/downloads.md)
+- [User Guide and device screenshots](https://github.com/hardcoreerik/OrcSDR/wiki)
+- [Downloads and installation](https://github.com/hardcoreerik/OrcSDR/wiki/Getting-Started)
 - [Common controls and workflows](docs/user-guide/shared-controls.md)
 - [Settings and Wi-Fi](docs/user-guide/settings.md)
 - [Troubleshooting](docs/user-guide/troubleshooting.md)
 - [Developer reference](docs/user-guide/reference/developer.md)
-- [GitHub Wiki](https://github.com/hardcoreerik/OrcSDR/wiki)
+- [Older Pages guide and technical reference](docs/user-guide/index.md)
 
 ## For developers
 
@@ -159,4 +159,4 @@ OrcSDR is licensed under [GNU AGPL-3.0-only](LICENSE), with separate commercial 
 
 ---
 
-**Hardware:** [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5) · **Receiver driver:** [`esp-rtl-sdr`](https://github.com/hardcoreerik/esp-rtl-sdr) · **Guide:** [OrcSDR User Guide](docs/user-guide/index.md)
+**Hardware:** [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5) · **Receiver driver:** [`esp-rtl-sdr`](https://github.com/hardcoreerik/esp-rtl-sdr) · **Guide:** [OrcSDR Wiki](https://github.com/hardcoreerik/OrcSDR/wiki)
