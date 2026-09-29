@@ -966,8 +966,17 @@ function ConvertFrom-DriverStatus([string]$Line) {
   }
   return $status
 }
+# Rejected tuner writes the driver logged so far (counted from the soak log; taken at two points, no watcher).
+function Get-CtrlRejectCount {
+  if (-not $script:soakLogPath -or -not (Test-Path -LiteralPath $script:soakLogPath)) { return 0 }
+  return @(Select-String -LiteralPath $script:soakLogPath -Pattern 'ctrl record rejected' -SimpleMatch).Count
+}
+
+# Sets $script:gateStageRolledBack when the requested width was not applied because the driver rolled
+# back after a rejected write (a warning: frequency and streaming are still checked below).
 function Assert-DongleGateSample($Before, $Current, $AudioBefore, $AudioAfter,
-                                 [uint32]$ExpectedFrequency, [int64]$ExpectedBw) {
+                                 [uint32]$ExpectedFrequency, [int64]$ExpectedBw, [int]$RejectedDuring = 0) {
+  $script:gateStageRolledBack = $false
   if ($Current.State -ne 'STREAMING' -or $Current.ShadowOk -ne 1 -or
       $Current.MetricsOk -ne 1 -or $Current.FrequencyOk -ne 1) {
     throw "Driver unhealthy: $($Current.State) shadow=$($Current.ShadowOk) metrics=$($Current.MetricsOk) frequency_ok=$($Current.FrequencyOk)"
@@ -977,6 +986,10 @@ function Assert-DongleGateSample($Before, $Current, $AudioBefore, $AudioAfter,
   }
   if ($ExpectedBw -ge 0 -and $Current.BwRequested -ne $ExpectedBw) {
     throw "Bandwidth request not reflected: expected=$ExpectedBw actual=$($Current.BwRequested)"
+  }
+  if ($ExpectedBw -ge 0 -and $null -ne $Current.BwApplied -and $Current.BwApplied -ne $ExpectedBw) {
+    if ($RejectedDuring -gt 0) { $script:gateStageRolledBack = $true }
+    else { throw "Bandwidth not applied: requested=$ExpectedBw applied=$($Current.BwApplied) with no rejected write logged" }
   }
   if ($Current.Bytes -le $Before.Bytes -or $Current.Drops -gt $Before.Drops -or
       $Current.Overruns -gt $Before.Overruns) {
@@ -1113,6 +1126,16 @@ function Invoke-SelfCheck {
   $caughtGateFailure = $false
   try { Assert-DongleGateSample $gateBefore $badGate $gateAudioBefore $gateAudioAfter 96113000 200000 } catch { $caughtGateFailure = $true }
   if (!$caughtGateFailure) { throw 'Dongle gate missed frequency drift.' }
+  # Applied width differs from the request: fail with no rejected write; warn (not fail) after a rollback.
+  $notApplied = $gateDriver.PSObject.Copy()
+  $notApplied.BwApplied = [uint32]100000
+  $caughtNotApplied = $false
+  try { Assert-DongleGateSample $gateBefore $notApplied $gateAudioBefore $gateAudioAfter 96113000 200000 0 } catch { $caughtNotApplied = $true }
+  if (!$caughtNotApplied) { throw 'Dongle gate missed a bandwidth that was not applied.' }
+  Assert-DongleGateSample $gateBefore $notApplied $gateAudioBefore $gateAudioAfter 96113000 200000 1
+  if (!$script:gateStageRolledBack) { throw 'Dongle gate did not warn about a rollback after a rejected write.' }
+  Assert-DongleGateSample $gateBefore $gateDriver $gateAudioBefore $gateAudioAfter 96113000 200000 0
+  if ($script:gateStageRolledBack) { throw 'Dongle gate warned although the width was applied.' }
   $iqDiag = ConvertFrom-IqDiagnosticStart 'RTL_IQ_DIAG_START transition="cold_fm" sequence=7 bytes=4800000 rate=2400000 frequency_hz=99100000 started_ms=1234'
   if ($iqDiag.Transition -ne 'cold_fm' -or $iqDiag.Sequence -ne 7 -or
       $iqDiag.Bytes -ne 4800000 -or $iqDiag.Rate -ne 2400000 -or
@@ -1267,6 +1290,7 @@ function Invoke-DongleGate {
     # V3c defaults to 200 kHz then AUTO; V4/V4L run bandwidth stages only when asked.
     $stages = if ($DongleGate -eq 'V3c' -or $script:gateBandwidthsExplicit) { $GateBandwidths } else { @() }
     foreach ($bandwidth in $stages) {
+      $rejectBefore = Get-CtrlRejectCount
       $reply = Send-And-Wait "RTL_DRIVER BW $bandwidth" '^RTL_DRIVER_RESULT '
       if ($reply -notmatch 'accepted=1 result=ESP_OK$') { throw "Bandwidth command failed: $reply" }
       Write-SoakLine "RTL_DONGLE_GATE_VISUAL dongle=$DongleGate stage=bw_$bandwidth inspect_spectrum_and_audio=1 seconds=$VisualDwellSeconds"
@@ -1280,8 +1304,10 @@ function Invoke-DongleGate {
       Connect-Authenticated
       $current = Get-DriverStatus
       $afterAudio = Get-AudioStatus
-      Assert-DongleGateSample $before $current $beforeAudio $afterAudio $driver.Frequency $bandwidth
-      Write-SoakLine "RTL_DONGLE_GATE_STAGE stage=bw_$bandwidth serial_pass=1 bw_applied_hz=$($current.BwApplied) visual=pending"
+      Assert-DongleGateSample $before $current $beforeAudio $afterAudio $driver.Frequency $bandwidth ((Get-CtrlRejectCount) - $rejectBefore)
+      $stageWarning = if ($script:gateStageRolledBack) { ' warning=rolled_back_after_rejected_write' } else { '' }
+      if ($script:gateStageRolledBack) { Write-SoakLine "RTL_DONGLE_GATE_WARNING stage=bw_$bandwidth requested_hz=$($current.BwRequested) applied_hz=$($current.BwApplied) reason=rolled_back_after_rejected_write" }
+      Write-SoakLine "RTL_DONGLE_GATE_STAGE stage=bw_$bandwidth serial_pass=1 bw_applied_hz=$($current.BwApplied) visual=pending$stageWarning"
       if ($GateIq) {
         Save-GateIqSnapshot "bw_$bandwidth"
         $current = Get-DriverStatus
