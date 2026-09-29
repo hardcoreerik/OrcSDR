@@ -45,7 +45,7 @@ Check the installed P4 and C6 versions in Settings after installation. The Windo
 - **2.4 GHz Wi-Fi:** survey nearby access points, channels, signal strength, and advertised network security using the Tab5 wireless co-processor.
 - **Settings:** manage audio, display, Wi-Fi, storage, data packs, firmware information, and device updates.
 
-Feature behavior and current limits are maintained in the [feature status](docs/user-guide/feature-status.md) and [dashboard guides](docs/user-guide/dashboards/fm.md).
+Feature behavior and current limits are explained in the [wiki dashboard guides](https://github.com/hardcoreerik/OrcSDR/wiki) and [Documentation and Evidence](https://github.com/hardcoreerik/OrcSDR/wiki/Documentation-and-Evidence).
 
 ## OrcSDR on the Tab5
 
@@ -132,9 +132,9 @@ The standalone [`esp-rtl-sdr`](https://github.com/hardcoreerik/esp-rtl-sdr) comp
 
 - [User Guide and device screenshots](https://github.com/hardcoreerik/OrcSDR/wiki)
 - [Downloads and installation](https://github.com/hardcoreerik/OrcSDR/wiki/Getting-Started)
-- [Common controls and workflows](docs/user-guide/shared-controls.md)
-- [Settings and Wi-Fi](docs/user-guide/settings.md)
-- [Troubleshooting](docs/user-guide/troubleshooting.md)
+- [Gain and shared controls](https://github.com/hardcoreerik/OrcSDR/wiki/Gain-and-Shared-Controls)
+- [Settings and Wi-Fi](https://github.com/hardcoreerik/OrcSDR/wiki/Settings)
+- [Troubleshooting](https://github.com/hardcoreerik/OrcSDR/wiki/Troubleshooting)
 - [Developer reference](docs/user-guide/reference/developer.md)
 - [Older Pages guide and technical reference](docs/user-guide/index.md)
 
