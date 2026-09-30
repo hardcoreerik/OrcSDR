@@ -25,7 +25,7 @@ constexpr int kRailX = 24, kRailY = 112, kRailW = 280, kRailH = 530;
 constexpr int kMainX = 318, kMainY = 80, kMainW = 930, kMainH = 562;
 constexpr int kPlotX = 330, kPlotW = 906;
 constexpr int kSpectrumY = 112, kSpectrumH = 186;
-constexpr int kWaterfallY = 301, kWaterfallH = 199;
+constexpr int kWaterfallY = 301, kWaterfallH = 194;   // ends 7 px above the readout strip so its focus ring (6 px out) stays clear of the scrolling waterfall
 // Readout strip under the graphics: frequency on the left, waterfall contrast, then the mode chip.
 constexpr int kReadoutY = 504, kReadoutH = 52;
 constexpr int kContrastY = kReadoutY + (kReadoutH - 28) / 2;
