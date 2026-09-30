@@ -72,6 +72,7 @@
 #include "tab5_keyboard.hpp"
 #include "focus_nav.hpp"
 #include "waterfall_style.hpp"
+#include "airband_audio_filter.hpp"
 #include "focus_ring.hpp"
 #include "fm_config.hpp"
 #include "home_dashboard.hpp"
@@ -3376,6 +3377,17 @@ void rtl_audio_test_emit_status() {
   if (g_rtl != nullptr) (void)esp_rtl_sdr_get_metrics(g_rtl, &metrics);
   const auto speaker = M5.Speaker.config();
   const uint32_t elapsed = rtl_audio_test_started_ms == 0 ? 0 : millis() - rtl_audio_test_started_ms;
+  // Demodulated-audio level since the previous status call (a racy read is fine for a diagnostic).
+  static uint64_t previous_square_sum = 0, previous_samples = 0;
+  const uint64_t square_sum = rtl_audio.square_sum, samples = rtl_audio.samples;
+  const double rms = samples > previous_samples && square_sum >= previous_square_sum
+                         ? sqrt(static_cast<double>(square_sum - previous_square_sum) /
+                                static_cast<double>(samples - previous_samples))
+                         : 0.0;
+  previous_square_sum = square_sum;
+  previous_samples = samples;
+  const int audio_peak = rtl_audio.peak;
+  rtl_audio.peak = 0;
   Serial.printf(
       "{\"type\":\"rtl_audio_test\",\"mode\":\"%s\",\"elapsed_ms\":%u,"
       "\"speaker_enabled\":%u,\"speaker_running\":%u,\"sample_rate\":%u,"
@@ -3384,7 +3396,8 @@ void rtl_audio_test_emit_status() {
       "\"ring_blocks\":%u,\"ring_overruns\":%u,\"submit_failures\":%u,"
       "\"audio_chunks\":%u,\"audio_drops\":%u,\"effective_sps\":%u,"
       "\"usb_overruns\":%u,\"usb_drops\":%u,\"dsp_block_us_max\":%u,"
-      "\"dsp_gate_us\":13653,\"task_count\":%u,\"task_delta\":%d,\"free_heap\":%u}\n",
+      "\"dsp_gate_us\":13653,\"task_count\":%u,\"task_delta\":%d,\"free_heap\":%u,"
+      "\"audio_rms\":%.1f,\"audio_peak\":%d,\"agc_gain\":%.2f,\"agc_level\":%.0f}\n",
       rtl_audio_test_mode_name(), elapsed, M5.Speaker.isEnabled() ? 1 : 0,
       M5.Speaker.isRunning() ? 1 : 0, static_cast<unsigned>(speaker.sample_rate),
       rtl_headphone_connected.load(std::memory_order_relaxed) ? 1 : 0,
@@ -3397,7 +3410,8 @@ void rtl_audio_test_emit_status() {
       rtl_dsp_block_us_max.load(std::memory_order_relaxed),
       static_cast<unsigned>(uxTaskGetNumberOfTasks()),
       static_cast<int>(uxTaskGetNumberOfTasks()) - static_cast<int>(rtl_audio_test_task_baseline),
-      esp_get_free_heap_size());
+      esp_get_free_heap_size(), rms, audio_peak, static_cast<double>(rtl_audio.agc_gain),
+      static_cast<double>(rtl_audio.agc_level));
 }
 
 void web_audio_diag_emit_status() {
@@ -7885,6 +7899,8 @@ void demodulate_am(const uint8_t* iq, size_t bytes, float audio_scale,
   if (g_stream_band == RtlBand::shortwave)
     orcsdr::shortwave::audio_dsp::process(audio, audio_count,
                                          rtl_signal_dbfs_smooth);
+  // Airband: keep only the voice band (the envelope detector's hiss is wideband).
+  if (g_stream_band == RtlBand::airband) orcsdr::airband_audio::process(audio, audio_count);
   // Airband squelch mutes the output only; the demodulator keeps running because the squelch
   // measures the carrier it tracks.
   if (g_stream_band == RtlBand::airband && !orcsdr::airband::audio_open()) audio_count = 0;
