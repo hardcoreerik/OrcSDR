@@ -46,8 +46,8 @@ constexpr int kRowH = 52, kRowGap = 8, kRowPitch = kRowH + kRowGap;
 constexpr int kVisibleRows = 7;
 constexpr int kAllY = 590;
 constexpr int kTapDragThreshold = 10;
-constexpr int kHeaderStatusX = 420;
-constexpr int kHeaderStatusW = 446;
+constexpr int kHeaderStatusX = audio_header::kStatusBarX;
+constexpr int kHeaderStatusW = audio_header::kStatusBarW;
 constexpr size_t kBrowserColumns = 3;
 constexpr size_t kBrowserRows = 4;
 constexpr size_t kBrowserPageSize = kBrowserColumns * kBrowserRows;
@@ -198,7 +198,7 @@ void draw_menu_icon(dashboards::Id id, int x, int y, uint16_t color) {
 }
 
 // Top edge and height match the Home / sound / settings buttons (y 12..66).
-constexpr int kHeaderStatusY = 12, kHeaderStatusH = 54;
+constexpr int kHeaderStatusY = audio_header::kStatusBarY, kHeaderStatusH = audio_header::kStatusBarH;
 
 void draw_header_status() {
   const int y = kHeaderStatusY;
