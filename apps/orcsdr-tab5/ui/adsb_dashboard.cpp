@@ -292,41 +292,44 @@ void plane(int x, int y, int scale, uint16_t color) {
                           x + scale / 2, y + scale / 2, x, y + scale / 3, color);
 }
 
+// Status pill: same position and size as the Home dashboard's (x 420, y 12, 446 x 54), so the header
+// reads the same on every screen. ADS-B is live as soon as the dashboard is open, so there is no
+// LIVE/WAIT button; ATC shows in the third cell while the radio is listening to the tower.
+constexpr int kStatusX = 420, kStatusY = 12, kStatusW = 446, kStatusH = 54;
+constexpr int kStatusCountX = kStatusX + 14, kStatusRateX = kStatusX + 226, kStatusUsbX = kStatusX + 346;
+
+void draw_header_live_values() {
+  M5.Display.fillRect(kStatusCountX + 20, kStatusY + 6, 170, kStatusH - 12, kBg);
+  M5.Display.fillRect(kStatusRateX, kStatusY + 26, 100, 24, kBg);
+  char value[24];
+  snprintf(value, sizeof(value), "%u AIRCRAFT", static_cast<unsigned>(displayed_aircraft_count()));
+  text(value, kStatusCountX + 22, kStatusY + kStatusH / 2, TFT_WHITE, 2, middle_left);
+  snprintf(value, sizeof(value), "%.1f/s", displayed_message_rate());
+  text(value, kStatusRateX, kStatusY + 38, kGreen, 2, middle_left);
+}
+
 void draw_header() {
+  M5.Display.setFont(nullptr);   // the dashboards' own text() leaves a DejaVu font selected
   M5.Display.fillRect(0, 0, 1280, kHeaderH, kBg);
   M5.Display.drawFastHLine(20, kHeaderH - 1, 1240, kBorder);
   audio_header::draw_brand("ADS-B 1090");
-  M5.Display.drawFastVLine(370, 12, 76, kBorder);
-  M5.Display.fillCircle(390, 36, 7, kGreen);
-  char count[24];
-  snprintf(count, sizeof(count), "%u AIRCRAFT", static_cast<unsigned>(displayed_aircraft_count()));
-  text(count, 409, 36, TFT_WHITE, 2, middle_left);
-  M5.Display.drawFastVLine(570, 12, 76, kBorder);
-  text("MSG RATE", 595, 36, kMuted, 1, middle_left);
-  char rate[20];
-  snprintf(rate, sizeof(rate), "%.1f/s", displayed_message_rate());
-  text(rate, 690, 36, kGreen, 2, middle_left);
-  button(g_atc_listening ? "ATC" : (g_live ? "LIVE" : "WAIT"), 755, 14, 92, 44,
-         g_atc_listening ? TFT_DARKCYAN : (g_live ? TFT_DARKGREEN : TFT_DARKGREY));
-  text("USB", 905, 29, TFT_WHITE, 1, middle_left);
-  text("CONNECTED", 905, 51, kBlue, 1, middle_left);
+  M5.Display.fillRoundRect(kStatusX, kStatusY, kStatusW, kStatusH, 9, kPanel);
+  M5.Display.drawRoundRect(kStatusX, kStatusY, kStatusW, kStatusH, 9, kBlue);
+  M5.Display.fillCircle(kStatusCountX + 4, kStatusY + kStatusH / 2, 7, kGreen);
+  M5.Display.drawFastVLine(kStatusX + 212, kStatusY + 8, kStatusH - 16, kBorder);
+  text("MSG RATE", kStatusRateX, kStatusY + 15, kMuted, 1, middle_left);
+  M5.Display.drawFastVLine(kStatusX + 334, kStatusY + 8, kStatusH - 16, kBorder);
+  text(g_atc_listening ? "ATC" : "USB", kStatusUsbX, kStatusY + 15, TFT_WHITE, 1, middle_left);
+  text(g_atc_listening ? "LISTENING" : "CONNECTED", kStatusUsbX, kStatusY + 38, kBlue, 1,
+       middle_left);
+  draw_header_live_values();
+  // audio_header draws with the built-in font at its own sizes; the text() calls above changed it.
+  M5.Display.setFont(nullptr);
   audio_header::draw_home_button();
   audio_header::draw_battery(M5.Power.getBatteryLevel());
   audio_header::draw_mute_button(g_live_snapshot.sound_enabled);
   audio_header::draw_visualizer_button(g_live_snapshot.effective_sps != 0);
   audio_header::draw_settings_button();
-}
-
-void draw_header_live_values() {
-  M5.Display.fillRect(400, 12, 165, 48, kBg);
-  M5.Display.fillRect(685, 12, 65, 48, kBg);
-  char value[24];
-  snprintf(value, sizeof(value), "%u AIRCRAFT", static_cast<unsigned>(displayed_aircraft_count()));
-  text(value, 409, 36, TFT_WHITE, 2, middle_left);
-  snprintf(value, sizeof(value), "%.1f/s", displayed_message_rate());
-  text(value, 690, 36, kGreen, 2, middle_left);
-  button(g_atc_listening ? "ATC" : (g_live ? "LIVE" : "WAIT"), 755, 14, 92, 44,
-         g_atc_listening ? TFT_DARKCYAN : (g_live ? TFT_DARKGREEN : TFT_DARKGREY));
 }
 
 void tab_icon(int index, int x, int y, uint16_t color) {
