@@ -64,12 +64,13 @@ Operation g_requested = Operation::none;
 uint8_t g_requested_pack = 0;
 
 constexpr const char* kIds[kBuiltInPackCount] = {
-    "faa_aircraft", "faa_aviation", "noaa_weather", "fcc_broadcast", "lane_county_map"};
+    "faa_aircraft", "aviation", "noaa_weather", "fcc_broadcast", "lane_county_map"};
 constexpr const char* kTitles[kBuiltInPackCount] = {
-    "FAA AIRCRAFT", "FAA AVIATION", "NOAA WEATHER", "FCC FM / AM", "LANE COUNTY MAP"};
+    "FAA AIRCRAFT", "AVIATION / ATC", "NOAA WEATHER", "FCC FM / AM", "LANE COUNTY MAP"};
 
 int pack_index(const char* id) {
   if (id == nullptr) return -1;
+  if (strcmp(id, "faa_aviation") == 0) return 1;  // catalog-v1 compatibility alias
   for (uint8_t index = 0; index < kBuiltInPackCount; ++index)
     if (strcmp(id, kIds[index]) == 0) return index;
   return -1;
@@ -493,6 +494,8 @@ bool download_artifact(const Artifact& artifact, uint8_t pack_index,
   bool schema_ok = artifact.archive
       ? (memcmp(header, "PK\003\004", 4) == 0 || memcmp(header, "PK\005\006", 4) == 0)
       : pack_index == 0 ? memcmp(header, "ORCADSB1", 8) == 0
+      : pack_index == 1 ? (memcmp(header, "ORCAIR2\n", 8) == 0 ||
+                           memcmp(header, "ORCCAT1\n", 8) == 0)
       : pack_index == 4 ? memcmp(header, "ORCMAP1\n", 8) == 0
                         : memcmp(header, "ORCCAT1\n", 8) == 0;
   if (!artifact.archive && g_packs[pack_index].p25_profile) {
@@ -739,12 +742,12 @@ void begin(orcsdr::storage::FileSystem* filesystem, uint64_t free_bytes) {
   // offline, since their loaders read these fixed paths directly. Report them
   // as installed without waiting for a network catalog check. Runs before any
   // catalog worker exists, so it does not race worker file access.
-  static constexpr const char* kOfflinePaths[kBuiltInPackCount][2] = {
-      {"/orcsdr/data/adsb_aircraft.idx", "/orcsdr/adsb_aircraft.idx"},
-      {"/orcsdr/data/faa_aviation.idx", nullptr},
-      {"/orcsdr/data/noaa_weather.idx", nullptr},
-      {"/orcsdr/data/fcc_broadcast.idx", nullptr},
-      {"/orcsdr/data/lane_county_map.idx", nullptr}};
+  static constexpr const char* kOfflinePaths[kBuiltInPackCount][3] = {
+      {"/orcsdr/data/adsb_aircraft.idx", "/orcsdr/adsb_aircraft.idx", nullptr},
+      {"/orcsdr/data/aviation.idx", "/orcsdr/data/faa_aviation.idx", nullptr},
+      {"/orcsdr/data/noaa_weather.idx", nullptr, nullptr},
+      {"/orcsdr/data/fcc_broadcast.idx", nullptr, nullptr},
+      {"/orcsdr/data/lane_county_map.idx", nullptr, nullptr}};
   bool installed[kBuiltInPackCount]{};
   char versions[kBuiltInPackCount][sizeof(PackView::version)]{};
   for (uint8_t i = 0; filesystem != nullptr && g_worker == nullptr && i < kBuiltInPackCount; ++i) {

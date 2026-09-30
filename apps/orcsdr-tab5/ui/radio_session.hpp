@@ -5,7 +5,7 @@
 
 namespace orcsdr::radio {
 
-enum class Band : uint8_t { fm, am, wx, cb, lora, browse, adsb, p25, pocsag, shortwave };
+enum class Band : uint8_t { fm, am, wx, cb, lora, browse, adsb, p25, pocsag, shortwave, airband };
 enum class Owner : uint8_t { none, fm, p25, adsb, lora, radio, rf_lab, rf_visualizer, pocsag };
 enum class ReceiverState : uint8_t { disconnected, ready, starting, running, stopping, failed };
 

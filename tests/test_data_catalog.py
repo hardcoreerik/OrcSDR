@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import csv
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -11,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILDER = ROOT / "tools" / "data_catalog" / "build_catalog.py"
+AIRBAND_BUILDER = ROOT / "tools" / "data_catalog" / "build_ourairports_aviation_index.py"
 
 
 class P25CatalogTest(unittest.TestCase):
@@ -80,6 +83,73 @@ class P25CatalogTest(unittest.TestCase):
             rejected = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(rejected.returncode, 0)
 
+
+    def test_global_aviation_schema_and_legacy_alias(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            module_spec = importlib.util.spec_from_file_location("orcsdr_catalog_builder", BUILDER)
+            module = importlib.util.module_from_spec(module_spec)
+            module_spec.loader.exec_module(module)
+            runtime = work / "aviation.idx"
+            runtime.write_text(
+                "ORCAIR2\n"
+                "COM\t135019000\t1039940000\t118600000\tTOWER\tSG\tWSSS\t"
+                "Singapore Changi Airport\t\tCOMMUNITY\tOURAIRPORTS\tWSSS TOWER\n",
+                encoding="ascii",
+            )
+            module.validate_artifact("aviation", runtime, False)
+            module.validate_artifact("faa_aviation", runtime, False)
+            runtime.write_text(
+                "ORCCAT1\nATC 441246000 -1232119000 124150000 KEUG TOWER\n",
+                encoding="ascii",
+            )
+            module.validate_artifact("aviation", runtime, False)
+            runtime.write_text("BADSCHEMA\n", encoding="ascii")
+            with self.assertRaises(ValueError):
+                module.validate_artifact("aviation", runtime, False)
+
+    def test_ourairports_country_normalizer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            airports = work / "airports.csv"
+            frequencies = work / "airport-frequencies.csv"
+            with airports.open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=[
+                    "ident", "name", "latitude_deg", "longitude_deg",
+                    "iso_country", "iso_region"])
+                writer.writeheader()
+                writer.writerows([
+                    {"ident": "KEUG", "name": "Mahlon Sweet Field",
+                     "latitude_deg": "44.1246", "longitude_deg": "-123.2119",
+                     "iso_country": "US", "iso_region": "US-OR"},
+                    {"ident": "WSSS", "name": "Singapore Changi Airport",
+                     "latitude_deg": "1.35019", "longitude_deg": "103.994",
+                     "iso_country": "SG", "iso_region": "SG-01"},
+                ])
+            with frequencies.open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=[
+                    "airport_ident", "type", "description", "frequency_mhz"])
+                writer.writeheader()
+                writer.writerows([
+                    {"airport_ident": "KEUG", "type": "TWR",
+                     "description": "Tower", "frequency_mhz": "124.150"},
+                    {"airport_ident": "WSSS", "type": "GND",
+                     "description": "Ground", "frequency_mhz": "124.300"},
+                    {"airport_ident": "WSSS", "type": "TWR",
+                     "description": "Tower", "frequency_mhz": "118.600"},
+                ])
+            output = work / "aviation.idx"
+            run = subprocess.run(
+                [sys.executable, str(AIRBAND_BUILDER),
+                 "--airports", str(airports), "--frequencies", str(frequencies),
+                 "--country", "SG", "--output", str(output)],
+                check=True, capture_output=True, text=True)
+            self.assertIn("wrote 2 ORCAIR2 records", run.stdout)
+            text_value = output.read_text(encoding="ascii")
+            self.assertTrue(text_value.startswith("ORCAIR2\n"))
+            self.assertIn("\tSG\tWSSS\tSingapore Changi Airport\t", text_value)
+            self.assertIn("\tCOMMUNITY\tOURAIRPORTS\t", text_value)
+            self.assertNotIn("KEUG", text_value)
 
 if __name__ == "__main__":
     unittest.main()
