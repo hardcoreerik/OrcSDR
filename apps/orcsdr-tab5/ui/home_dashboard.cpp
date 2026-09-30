@@ -1,3 +1,4 @@
+#include "focus_nav.hpp"
 #include "home_dashboard.hpp"
 
 #include "dashboard_audio_control.hpp"
@@ -86,6 +87,7 @@ void text(const char* value, int x, int y, uint16_t color, uint8_t size,
 }
 
 void panel(int x, int y, int w, int h, uint16_t color = kCyan, int radius = 10) {
+  orcsdr::focus_nav::note(x, y, w, h);
   M5.Display.fillRoundRect(x, y, w, h, radius, kPanel);
   M5.Display.drawRoundRect(x, y, w, h, radius, color);
 }
@@ -213,6 +215,7 @@ void draw_recent_list() {
                                                    : (entry ? entry->title : "UNKNOWN");
     const int y = kListY + offset + slot * kRowPitch;
     const bool selected = id == dashboards::Id::home;
+    orcsdr::focus_nav::note(kListX + 2, y, kListW - 20, kRowH);
     M5.Display.fillRoundRect(kListX + 2, y, kListW - 20, kRowH, 7,
                              selected ? 0x00A0 : TFT_BLACK);
     M5.Display.drawRoundRect(kListX + 2, y, kListW - 20, kRowH, 7,

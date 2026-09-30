@@ -68,6 +68,8 @@
 #include "freq_keypad.hpp"
 #include "text_editor.hpp"
 #include "tab5_keyboard.hpp"
+#include "focus_nav.hpp"
+#include "focus_ring.hpp"
 #include "fm_config.hpp"
 #include "home_dashboard.hpp"
 #include "lora_dashboard.hpp"
@@ -2468,6 +2470,9 @@ esp_err_t rtl_gain_set_rtl_agc(const char* source, bool enabled);
 orcsdr::p25::Snapshot p25_dashboard_snapshot();
 void handle_p25_dashboard_action(const orcsdr::p25::Action& action);
 void service_keyboard();
+using UiTouchDetail = m5::Touch_Class::touch_detail_t;
+UiTouchDetail ui_touch_detail(int index);
+uint8_t ui_touch_count();
 orcsdr::lora::Snapshot lora_dashboard_snapshot();
 void handle_lora_dashboard_action(const orcsdr::lora::Action& action);
 void service_shared_scan(uint32_t now);
@@ -6547,11 +6552,11 @@ void service_visualizer() {
   orcsdr::visualizer::set_runtime(runtime);
   if (!orcsdr::visualizer::active()) return;
 
-  const auto first = M5.Touch.getDetail(0);
-  const auto second = M5.Touch.getDetail(1);
+  const auto first = ui_touch_detail(0);
+  const auto second = ui_touch_detail(1);
   orcsdr::visualizer::handle_touch(first.x, first.y,
                                    first.isPressed() || first.wasPressed(),
-                                   M5.Touch.getCount(), second.x, second.y, now);
+                                   ui_touch_count(), second.x, second.y, now);
   orcsdr::visualizer::service_ui(now);
   orcsdr::visualizer::Action action{};
   while (orcsdr::visualizer::take_action(&action)) {
@@ -6691,7 +6696,7 @@ void service_rf_lab() {
     last_runtime_ms = now;
     orcsdr::rf_lab::set_runtime(rf_lab_runtime());
   }
-  const auto touch = M5.Touch.getDetail(0);
+  const auto touch = ui_touch_detail(0);
   orcsdr::rf_lab::handle_touch(touch.x, touch.y,
                                touch.isPressed() || touch.wasPressed(), now);
   orcsdr::rf_lab::service_ui(now);
@@ -13923,9 +13928,45 @@ bool request_hot_retune(uint32_t frequency_hz) {
 // --- Tab5 Keyboard (Ext.Port1) -------------------------------------------------------------
 bool g_keyboard_echo = false;  // diagnostic only; reset on boot, never active for masked fields
 
-// The keyboard edits the open text field directly. Enter and Esc reuse the owning screen's own
-// touch path by "pressing" the on-screen Accept/Cancel button, so Wi-Fi, location, P25 and
-// preset-name editors all apply and close exactly as they do for a finger.
+// Virtual tap: Enter on a focused control replays a short touch through the same panel-reading
+// path as a finger, so every screen's existing touch code handles it unchanged.
+struct VirtualTap {
+  bool active = false;
+  int x = 0;
+  int y = 0;
+  uint32_t start_ms = 0;
+} g_tap;
+constexpr uint32_t kTapPressMs = 120;
+constexpr uint32_t kTapReleaseMs = 70;
+
+bool virtual_tap_live() {
+  return g_tap.active && millis() - g_tap.start_ms < kTapPressMs + kTapReleaseMs;
+}
+
+UiTouchDetail ui_touch_detail(int index) {
+  if (g_tap.active) {
+    const uint32_t elapsed = millis() - g_tap.start_ms;
+    if (elapsed >= kTapPressMs + kTapReleaseMs) {
+      g_tap.active = false;
+    } else if (index == 0) {
+      UiTouchDetail detail{};
+      detail.x = static_cast<int16_t>(g_tap.x);
+      detail.y = static_cast<int16_t>(g_tap.y);
+      detail.prev_x = detail.base_x = detail.x;
+      detail.prev_y = detail.base_y = detail.y;
+      detail.state = elapsed < 40 ? m5::touch_state_t::touch_begin
+                     : elapsed < kTapPressMs ? m5::touch_state_t::touch
+                                             : m5::touch_state_t::touch_end;
+      return detail;
+    }
+  }
+  return M5.Touch.getDetail(index);
+}
+
+uint8_t ui_touch_count() { return virtual_tap_live() ? 1 : M5.Touch.getCount(); }
+
+// The editor keys (typing, Enter, Esc) act on the open text field. Enter and Esc reuse the owning
+// screen's own touch path by "pressing" the on-screen Accept/Cancel button.
 void inject_editor_touch(int x, int y) {
   if (orcsdr::visualizer::active()) {
     const uint32_t now = millis();
@@ -13949,15 +13990,310 @@ void handle_editor_key(const orcsdr::keyboard_input::Key& key) {
   inject_editor_touch(x, y);
 }
 
+// Arrow-key focus navigation. Screens report their controls to focus_nav as they draw; the
+// registry is rebuilt by repainting the screen whenever it may be stale, then arrows move focus
+// spatially, the ring follows, and Enter taps the focused control.
+uint32_t g_nav_signature = 0;
+uint32_t g_nav_last_ms = 0;
+bool g_nav_dirty = true;
+bool g_nav_have_last = false;
+int g_nav_last_x = 0;
+int g_nav_last_y = 0;
+
+uint32_t nav_signature() {
+  return (static_cast<uint32_t>(orcsdr::screens::status().active) << 8) |
+         (orcsdr::settings::active() ? 1u : 0u) | (orcsdr::home::active() ? 2u : 0u);
+}
+
+void nav_rebuild() {
+  orcsdr::focus_ring::forget();
+  orcsdr::focus_nav::clear();
+  if (orcsdr::home::active()) orcsdr::home::draw();
+  else if (orcsdr::settings::active()) redraw_global_settings();
+  else navigation_restore_screen(orcsdr::screens::status().active);
+  g_nav_dirty = false;
+  g_nav_signature = nav_signature();
+  if (g_nav_have_last) orcsdr::focus_nav::focus_at(g_nav_last_x, g_nav_last_y);
+}
+
+bool handle_navigation_key(const orcsdr::keyboard_input::Key& key) {
+  using orcsdr::keyboard_input::Special;
+  using orcsdr::focus_nav::Direction;
+  if (key.ctrl || key.alt) return false;
+  if (key.special == Special::escape) return false;
+  const uint32_t now = millis();
+  if (key.special == Special::enter) {
+    orcsdr::focus_nav::Rect rect;
+    if (!orcsdr::focus_nav::focused(&rect) || !orcsdr::focus_ring::visible()) return false;
+    g_nav_last_x = rect.x + rect.w / 2;
+    g_nav_last_y = rect.y + rect.h / 2;
+    g_nav_have_last = true;
+    orcsdr::focus_ring::forget();  // the screen is about to react; what the ring saved is stale
+    g_tap.x = g_nav_last_x;
+    g_tap.y = g_nav_last_y;
+    g_tap.start_ms = now;
+    g_tap.active = true;
+    g_nav_dirty = true;
+    return true;
+  }
+  Direction direction;
+  switch (key.special) {
+    case Special::left: direction = Direction::left; break;
+    case Special::right: direction = Direction::right; break;
+    case Special::up: direction = Direction::up; break;
+    case Special::down: direction = Direction::down; break;
+    default: return false;
+  }
+  if (g_nav_dirty || nav_signature() != g_nav_signature || now - g_nav_last_ms > 4000)
+    nav_rebuild();
+  g_nav_last_ms = now;
+  (void)orcsdr::focus_nav::move(direction);
+  orcsdr::focus_nav::Rect rect;
+  if (orcsdr::focus_nav::focused(&rect)) {
+    orcsdr::focus_ring::show(rect);
+    g_nav_last_x = rect.x + rect.w / 2;
+    g_nav_last_y = rect.y + rect.h / 2;
+    g_nav_have_last = true;
+  }
+  return true;
+}
+
+// --- Context-aware keymap ---------------------------------------------------------------
+// Receiver dashboards follow the habits of SDR#, SDR++ and Gqrx: arrows tune (left/right one
+// step, up/down ten), digits start direct frequency entry, M mutes, +/- change volume. Tab
+// switches to focus mode, where arrows walk the on-screen controls and Enter presses one.
+// Menu pages (Home, Settings, ...) are always in focus mode. Esc backs out.
+bool g_focus_mode = false;
+uint32_t g_focus_mode_signature = 0;
+
+bool radio_dashboard_active() {
+  switch (rtl_ui_band) {
+    case RtlBand::fm: return orcsdr::fm::active();
+    case RtlBand::am: return orcsdr::am::active();
+    case RtlBand::shortwave: return orcsdr::shortwave::active();
+    case RtlBand::cb: return orcsdr::cb::active();
+    default: return false;
+  }
+}
+
+void keyboard_tune(uint32_t frequency_hz) {
+  const uint32_t frequency = rtl_clamp_frequency(rtl_ui_band, frequency_hz);
+  if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
+    request_hot_retune(frequency);
+  else
+    queue_local_rtl_listen(rtl_ui_band, frequency);
+}
+
+void keyboard_step(int direction, int steps) {
+  uint32_t frequency = rtl_ui_frequency_hz;
+  for (int i = 0; i < steps; ++i) frequency = rtl_step_frequency(rtl_ui_band, frequency, direction);
+  keyboard_tune(frequency);
+}
+
+// The direct-entry keypad is a touch overlay with a text buffer; keys feed the buffer and
+// Enter/Esc press its Accept/Cancel buttons through the virtual tap.
+bool keypad_open() { return rtl_nav_open && rtl_frequency_keypad_open; }
+
+void tap_at(int x, int y) {
+  g_tap.x = x;
+  g_tap.y = y;
+  g_tap.start_ms = millis();
+  g_tap.active = true;
+}
+
+void keypad_append(char c) {
+  const size_t length = strlen(rtl_frequency_entry);
+  if (length + 1 >= sizeof(rtl_frequency_entry)) return;
+  if (c == '.' && strchr(rtl_frequency_entry, '.') != nullptr) return;
+  rtl_frequency_entry[length] = c;
+  rtl_frequency_entry[length + 1] = '\0';
+  draw_nav_panel();
+}
+
+// Keypad focus: the overlay draws its keys directly, so its layout is registered here (it is
+// fixed: 3 x 4 keys, then Cancel and Accept) instead of by repainting.
+bool g_keypad_focus = false;
+uint32_t g_keypad_reshow_ms = 0;
+
+void keypad_register_controls() {
+  orcsdr::focus_nav::clear();
+  for (int index = 0; index < 12; ++index)
+    orcsdr::focus_nav::note(780 + (index % 3) * 138, 211 + (index / 3) * 66, 128, 56);
+  orcsdr::focus_nav::note(780, 481, 200, 56);    // Cancel
+  orcsdr::focus_nav::note(996, 481, 200, 56);    // Accept
+}
+
+void keypad_show_focus() {
+  orcsdr::focus_nav::Rect rect;
+  if (orcsdr::focus_nav::focused(&rect)) orcsdr::focus_ring::show(rect);
+}
+
+void keypad_leave_focus() {
+  orcsdr::focus_ring::hide();
+  orcsdr::focus_nav::clear_focus();
+  g_keypad_focus = false;
+}
+
+void handle_keypad_key(const orcsdr::keyboard_input::Key& key) {
+  using orcsdr::keyboard_input::Special;
+  using orcsdr::focus_nav::Direction;
+  const bool ring = g_keypad_focus && orcsdr::focus_ring::visible();
+  Direction direction = Direction::right;
+  bool arrow = true;
+  switch (key.special) {
+    case Special::left: direction = Direction::left; break;
+    case Special::right: direction = Direction::right; break;
+    case Special::up: direction = Direction::up; break;
+    case Special::down: direction = Direction::down; break;
+    default: arrow = false; break;
+  }
+  if (arrow) {
+    if (!g_keypad_focus) {
+      keypad_register_controls();
+      orcsdr::focus_nav::focus_at(780 + 138 + 64, 211 + 66 + 28);   // start on "5"
+      g_keypad_focus = true;
+    } else {
+      (void)orcsdr::focus_nav::move(direction);
+    }
+    keypad_show_focus();
+    return;
+  }
+  if (key.special == Special::enter) {
+    orcsdr::focus_nav::Rect rect;
+    if (ring && orcsdr::focus_nav::focused(&rect)) {
+      // Press the focused key. The overlay repaints after the tap, so put the ring back after.
+      orcsdr::focus_ring::forget();
+      tap_at(rect.x + rect.w / 2, rect.y + rect.h / 2);
+      g_keypad_reshow_ms = millis() + 300;
+    } else {
+      tap_at(996 + 100, 481 + 28);   // Accept
+    }
+  } else if (key.special == Special::escape) {
+    if (ring) keypad_leave_focus();
+    else tap_at(780 + 100, 481 + 28);   // Cancel
+  } else if (key.special == Special::backspace || key.special == Special::delete_key) {
+    const size_t length = strlen(rtl_frequency_entry);
+    if (length > 0) rtl_frequency_entry[length - 1] = '\0';
+    draw_nav_panel();
+    if (g_keypad_focus) g_keypad_reshow_ms = millis() + 50;
+  } else if (key.special == Special::none && !key.ctrl && !key.alt &&
+             ((key.ch >= '0' && key.ch <= '9') || key.ch == '.')) {
+    keypad_append(key.ch);
+    if (g_keypad_focus) g_keypad_reshow_ms = millis() + 50;
+  }
+}
+
+void enter_focus_mode() {
+  g_focus_mode = true;
+  g_focus_mode_signature = nav_signature();
+  nav_rebuild();
+  orcsdr::focus_nav::Rect rect;
+  if (orcsdr::focus_nav::move(orcsdr::focus_nav::Direction::right) &&
+      orcsdr::focus_nav::focused(&rect))
+    orcsdr::focus_ring::show(rect);
+}
+
+void leave_focus_mode() {
+  g_focus_mode = false;
+  orcsdr::focus_ring::hide();
+  orcsdr::focus_nav::clear_focus();
+  g_nav_have_last = false;
+}
+
+void handle_radio_key(const orcsdr::keyboard_input::Key& key) {
+  using orcsdr::keyboard_input::Special;
+  if (key.ctrl || key.alt) return;
+  switch (key.special) {
+    case Special::left: keyboard_step(-1, 1); return;
+    case Special::right: keyboard_step(1, 1); return;
+    case Special::down: keyboard_step(-1, 10); return;
+    case Special::up: keyboard_step(1, 10); return;
+    case Special::tab: enter_focus_mode(); return;
+    case Special::escape: show_home(); return;
+    case Special::none: break;
+    default: return;
+  }
+  const char c = key.ch;
+  if ((c >= '0' && c <= '9') || c == '.') {
+    // Start direct frequency entry with the typed digit already in the field.
+    rtl_nav_open = true;
+    rtl_frequency_keypad_open = true;
+    rtl_frequency_entry[0] = '\0';
+    keypad_append(c);
+  } else if (c == 'm' || c == 'M') {
+    set_rtl_audio_user_enabled(!rtl_audio_user_enabled.load(std::memory_order_acquire));
+  } else if (c == '+' || c == '=') {
+    adjust_rtl_volume(static_cast<int>(kRtlVolumeStep));
+  } else if (c == '-' || c == '_') {
+    adjust_rtl_volume(-static_cast<int>(kRtlVolumeStep));
+  } else if (c == ' ') {
+    // Scan / hold where the dashboard has a scanner.
+    if (rtl_ui_band == RtlBand::fm)
+      handle_fm_dashboard_action({orcsdr::fm::ActionKind::scan_presets, 0});
+    else if (rtl_ui_band == RtlBand::cb)
+      handle_cb_dashboard_action({orcsdr::cb::ActionKind::scan_toggle, 0});
+  }
+}
+
+void route_key(const orcsdr::keyboard_input::Key& key) {
+  using orcsdr::keyboard_input::Special;
+  if (orcsdr::text_editor::active()) {
+    handle_editor_key(key);
+    return;
+  }
+  if (keypad_open()) {
+    handle_keypad_key(key);
+    return;
+  }
+  const bool radio = radio_dashboard_active();
+  if (g_focus_mode && (!radio || nav_signature() != g_focus_mode_signature)) g_focus_mode = false;
+  if (radio && !g_focus_mode) {
+    handle_radio_key(key);
+    return;
+  }
+  // Focus mode (or a menu page).
+  if (key.special == Special::escape) {
+    if (orcsdr::focus_ring::visible()) {
+      leave_focus_mode();                       // first Esc: drop the ring
+    } else if (!orcsdr::home::active()) {
+      leave_focus_mode();
+      show_home();                              // nothing focused: back to Home
+    }
+    return;
+  }
+  if (key.special == Special::tab && radio) {
+    leave_focus_mode();                         // back to tuning
+    return;
+  }
+  (void)handle_navigation_key(key);
+}
+
 void service_keyboard() {
   orcsdr::tab5_keyboard::service(millis());
+  // A finger on the panel takes over: drop the ring and rebuild the control map next time.
+  if (!g_tap.active && M5.Touch.getCount() > 0 && orcsdr::focus_ring::visible()) {
+    orcsdr::focus_ring::hide();
+    g_nav_dirty = true;
+  }
+  if (g_keypad_focus) {
+    if (!keypad_open()) {
+      // Keypad closed (accepted, cancelled, or replaced): forget its ring and map.
+      g_keypad_focus = false;
+      orcsdr::focus_ring::forget();
+      orcsdr::focus_nav::clear();
+      g_nav_dirty = true;
+    } else if (g_keypad_reshow_ms != 0 && millis() >= g_keypad_reshow_ms && !g_tap.active) {
+      g_keypad_reshow_ms = 0;
+      keypad_show_focus();
+    }
+  }
   orcsdr::keyboard_input::Key key;
   while (orcsdr::tab5_keyboard::pop(&key)) {
     if (g_keyboard_echo && !orcsdr::text_editor::masked())
       Serial.printf("RTL_KEYBOARD_KEY special=%u ch=%d ctrl=%d alt=%d\n",
                     static_cast<unsigned>(key.special), static_cast<int>(key.ch),
                     key.ctrl ? 1 : 0, key.alt ? 1 : 0);
-    if (orcsdr::text_editor::active()) handle_editor_key(key);
+    route_key(key);
   }
 }
 
@@ -13985,8 +14321,8 @@ void poll_sdr_touch(bool from_stream) {
     M5.Touch.setFlickThresh(24);
     flick_thresh_set = true;
   }
-  const uint8_t touch_count = M5.Touch.getCount();
-  const auto touch = M5.Touch.getDetail(0);
+  const uint8_t touch_count = ui_touch_count();
+  const auto touch = ui_touch_detail(0);
   const bool pressed = touch.isPressed() || touch.wasPressed();
   const int scope_width = spectrum_draw_width();
 
@@ -14021,7 +14357,7 @@ void poll_sdr_touch(bool from_stream) {
 
   if (rtl_ui_band == RtlBand::shortwave && orcsdr::shortwave::active()) {
     if (touch_count >= 2) {
-      const auto second = M5.Touch.getDetail(1);
+      const auto second = ui_touch_detail(1);
       if (orcsdr::shortwave::spectrum_contains(touch.x, touch.y) &&
           orcsdr::shortwave::spectrum_contains(second.x, second.y)) {
         const float dx = static_cast<float>(touch.x - second.x);
@@ -14112,7 +14448,7 @@ void poll_sdr_touch(bool from_stream) {
   }
 
   if (touch_count >= 2) {
-    const auto second = M5.Touch.getDetail(1);
+    const auto second = ui_touch_detail(1);
     if (point_in_scope(touch.x, touch.y) && point_in_scope(second.x, second.y)) {
       const float dx = static_cast<float>(touch.x - second.x);
       const float dy = static_cast<float>(touch.y - second.y);
@@ -15614,6 +15950,40 @@ void process_command(char* command) {
                   static_cast<unsigned long>(keyboard.bus_errors),
                   static_cast<unsigned long>(keyboard.attach_count), g_keyboard_echo ? 1 : 0,
                   orcsdr::text_editor::active() ? 1 : 0);
+    orcsdr::focus_nav::Rect rect;
+    if (orcsdr::focus_nav::focused(&rect))
+      Serial.printf("RTL_KEYBOARD_FOCUS controls=%u x=%d y=%d w=%d h=%d ring=%d\n",
+                    static_cast<unsigned>(orcsdr::focus_nav::count()), rect.x, rect.y, rect.w,
+                    rect.h, orcsdr::focus_ring::visible() ? 1 : 0);
+    else
+      Serial.printf("RTL_KEYBOARD_FOCUS controls=%u none\n",
+                    static_cast<unsigned>(orcsdr::focus_nav::count()));
+    return;
+  }
+  if (strncmp(command, "RTL_KEYBOARD KEY ", 17) == 0) {
+    if (!authenticated) {
+      Serial.println("RTL_KEYBOARD_ERROR auth_required");
+      return;
+    }
+    using orcsdr::keyboard_input::Special;
+    orcsdr::keyboard_input::Key key;
+    const char* name = command + 17;
+    if (strcmp(name, "UP") == 0) key.special = Special::up;
+    else if (strcmp(name, "DOWN") == 0) key.special = Special::down;
+    else if (strcmp(name, "LEFT") == 0) key.special = Special::left;
+    else if (strcmp(name, "RIGHT") == 0) key.special = Special::right;
+    else if (strcmp(name, "ENTER") == 0) key.special = Special::enter;
+    else if (strcmp(name, "ESC") == 0) key.special = Special::escape;
+    else if (strcmp(name, "BACKSPACE") == 0) key.special = Special::backspace;
+    else if (strcmp(name, "TAB") == 0) key.special = Special::tab;
+    else if (strcmp(name, "SPACE") == 0) key.ch = ' ';
+    else if (name[0] != '\0' && name[1] == '\0') key.ch = name[0];
+    else {
+      Serial.println("RTL_KEYBOARD_INVALID use UP|DOWN|LEFT|RIGHT|ENTER|ESC|TAB|SPACE|BACKSPACE|<char>");
+      return;
+    }
+    route_key(key);
+    Serial.println("RTL_KEYBOARD_KEY_OK");
     return;
   }
   if (strncmp(command, "RTL_KEYBOARD ECHO ", 18) == 0) {
@@ -18816,14 +19186,14 @@ void loop() {
       settings_last_update_ms = millis();
       update_global_settings();
     }
-    const auto touch = M5.Touch.getDetail(0);
+    const auto touch = ui_touch_detail(0);
     const bool pressed = touch.isPressed() || touch.wasPressed();
     if (pressed && (!was_pressed || rtl_header_audio_control.expanded) &&
         !handle_global_header_audio_touch(touch.x, touch.y))
       handle_global_settings_touch(touch.x, touch.y);
     was_pressed = pressed;
   } else if (home_ui) {
-    const auto touch = M5.Touch.getDetail(0);
+    const auto touch = ui_touch_detail(0);
     if ((touch.wasPressed() ||
          (rtl_header_audio_control.expanded && touch.isPressed())) &&
         handle_global_header_audio_touch(touch.x, touch.y)) {
@@ -18844,7 +19214,7 @@ void loop() {
       draw_spectrum(nullptr, 0);
     }
   } else if (adsb_ui && orcsdr::screens::owns(orcsdr::screens::Id::adsb)) {
-    const auto touch = M5.Touch.getDetail(0);
+    const auto touch = ui_touch_detail(0);
     const bool pressed = touch.isPressed() || touch.wasPressed();
     if (pressed && (!was_pressed || rtl_header_audio_control.expanded))
       handle_sdr_touch(touch.x, touch.y);
@@ -18857,7 +19227,7 @@ void loop() {
       refresh_active_screen();
     }
   } else if (pocsag_ui && orcsdr::screens::owns(orcsdr::screens::Id::pocsag)) {
-    const auto touch = M5.Touch.getDetail(0);
+    const auto touch = ui_touch_detail(0);
     const bool pressed = touch.isPressed() || touch.wasPressed();
     if (pressed && (!was_pressed || rtl_header_audio_control.expanded))
       handle_sdr_touch(touch.x, touch.y);
@@ -18869,7 +19239,7 @@ void loop() {
   } else if (fm_ui || am_ui || p25_ui || radio_ui || orcsdr::rf24::active()) {
     poll_sdr_touch(false);
   } else if (!radio_ui) {
-    const auto touch = M5.Touch.getDetail(0);
+    const auto touch = ui_touch_detail(0);
     const bool pressed = touch.isPressed() || touch.wasPressed();
     if (pressed && !was_pressed) {
       if (orcsdr::audio_header::settings_hit(touch.x, touch.y)) {

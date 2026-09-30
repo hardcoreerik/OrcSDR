@@ -1,3 +1,4 @@
+#include "focus_nav.hpp"
 #include "shortwave_dashboard.hpp"
 #include "shortwave_dashboard_state.hpp"
 
@@ -145,6 +146,7 @@ void card(int x, int y, int w, int h) {
 
 void button(int x, int y, int w, int h, const char* label, bool selected = false,
             bool enabled = true) {
+  orcsdr::focus_nav::note(x, y, w, h);
   const uint16_t color = enabled ? (selected ? kGreen : kCyan) : TFT_DARKGREY;
   M5.Display.fillRoundRect(x, y, w, h, 8, selected ? 0x1264 : kPanel);
   M5.Display.drawRoundRect(x, y, w, h, 8, color);

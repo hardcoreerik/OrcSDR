@@ -32,3 +32,11 @@ g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
   "${keyboard_sources[@]}" -o "$build_dir/keyboard_input_tests_sanitized"
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$build_dir/keyboard_input_tests_sanitized"
+
+focus_sources=(tests/focus_nav_tests.cpp apps/orcsdr-tab5/ui/focus_nav.cpp)
+g++ "${common[@]}" -O2 "${focus_sources[@]}" -o "$build_dir/focus_nav_tests"
+"$build_dir/focus_nav_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "${focus_sources[@]}" -o "$build_dir/focus_nav_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$build_dir/focus_nav_tests_sanitized"

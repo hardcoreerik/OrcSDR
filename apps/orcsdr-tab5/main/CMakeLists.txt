@@ -82,6 +82,8 @@ idf_component_register(
         "../ui/text_editor.cpp"
         "../ui/keyboard_input.cpp"
         "../ui/tab5_keyboard.cpp"
+        "../ui/focus_nav.cpp"
+        "../ui/focus_ring.cpp"
         "../ui/freq_keypad.cpp"
         "../dsp/dsp_stats.cpp"
         "../ui/time_service.cpp"

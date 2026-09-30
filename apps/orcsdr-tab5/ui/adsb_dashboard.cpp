@@ -1,3 +1,4 @@
+#include "focus_nav.hpp"
 #include "adsb_dashboard.hpp"
 
 #include "dashboard_audio_control.hpp"
@@ -257,6 +258,7 @@ void card(int x, int y, int w, int h) {
 }
 
 void button(const char* label, int x, int y, int w, int h, uint16_t color) {
+  orcsdr::focus_nav::note(x, y, w, h);
   M5.Display.fillRoundRect(x, y, w, h, 8, color);
   M5.Display.drawRoundRect(x, y, w, h, 8, TFT_LIGHTGREY);
   text(label, x + w / 2, y + h / 2, TFT_WHITE, 2);
