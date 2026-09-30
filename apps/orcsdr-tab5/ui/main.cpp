@@ -15740,6 +15740,12 @@ void process_command(char* command) {
     process_cb_command(command);
     return;
   }
+  if (strcmp(command, "RTL_AIRBAND STATUS") == 0) {
+    char line[640];
+    if (orcsdr::airband::status_line(airband_live_state(), line, sizeof(line)) > 0)
+      Serial.println(line);
+    return;
+  }
   if (strcmp(command, "RTL_UI STATUS") == 0) {
     Serial.printf("RTL_UI_STATUS screen=%s band=%s frequency_hz=%u settings=%d fm=%d am=%d p25=%d "
                   "adsb=%d lora=%d rf24=%d home_font=%d graphics=%d radio_ui=%d route=%s\n",
@@ -15850,7 +15856,13 @@ void process_command(char* command) {
     char domain[12]{}, action[24]{};
     unsigned long value = 0;
     const int fields = sscanf(command + 14, "%11s %23s %lu", domain, action, &value);
-    if (fields < 2) { Serial.println("RTL_UI_ACTION_INVALID usage: RTL_UI ACTION <FM|AM|P25|LORA|SETTINGS> <action> [value]"); return; }
+    if (fields < 2) { Serial.println("RTL_UI_ACTION_INVALID usage: RTL_UI ACTION <FM|AM|AIRBAND|P25|LORA|SETTINGS> <action> [value]"); return; }
+    if (strcmp(domain, "AIRBAND") == 0) {
+      const bool applied = orcsdr::airband::serial_action(
+          action, fields == 3, static_cast<uint32_t>(value), airband_live_state());
+      Serial.println(applied ? "RTL_UI_ACTION_OK" : "RTL_UI_ACTION_INVALID airband_action");
+      return;
+    }
     if (strcmp(domain, "FM") == 0) {
       using K = orcsdr::fm::ActionKind; K kind = K::none;
       if (!strcmp(action, "TUNE")) kind=K::tune_hz; else if (!strcmp(action, "DOWN")) kind=K::step_down;

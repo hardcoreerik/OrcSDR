@@ -3,6 +3,7 @@
 #include "dashboard_audio_control.hpp"
 
 #include <M5Unified.h>
+#include <esp_log.h>
 
 #include <algorithm>
 #include <cmath>
@@ -527,10 +528,13 @@ void dashboard_leave() { g_active = false; }
 
 void dashboard_draw() {
   if (!g_active) return;
+  ESP_LOGI("airband", "TRACE draw begin");
   M5.Display.fillScreen(TFT_BLACK);
   draw_header();
+  ESP_LOGI("airband", "TRACE draw header done");
   draw_tabs();
   draw_page();
+  ESP_LOGI("airband", "TRACE draw end");
 }
 
 void dashboard_update(const Snapshot& snapshot) {
@@ -573,6 +577,12 @@ Action dashboard_handle_touch(int32_t x, int32_t y) {
     case Tab::setup: return setup_touch(x, y);
   }
   return {};
+}
+
+void dashboard_select_tab(Tab tab) {
+  if (!g_active) return;
+  g_tab = tab;
+  dashboard_draw();
 }
 
 bool dashboard_active() { return g_active; }

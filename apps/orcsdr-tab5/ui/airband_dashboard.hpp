@@ -89,6 +89,7 @@ void dashboard_leave();
 void dashboard_draw();
 void dashboard_update(const Snapshot& snapshot);
 Action dashboard_handle_touch(int32_t x, int32_t y);
+void dashboard_select_tab(Tab tab);
 bool dashboard_active();
 Tab dashboard_tab();
 bool dashboard_self_check();

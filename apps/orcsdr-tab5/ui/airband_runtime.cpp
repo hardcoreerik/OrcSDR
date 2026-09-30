@@ -3,6 +3,8 @@
 #include "nvs_store.hpp"
 
 #include <esp_attr.h>
+#include <esp_log.h>
+#define AB_TRACE(msg) ESP_LOGI("airband", "TRACE %s", msg)
 
 #include <algorithm>
 #include <atomic>
@@ -109,11 +111,14 @@ void load_catalog(const LiveState& live) {
   requested.radius_nm = g_scanner.settings().radius_nm;
   g_catalog_location = requested;
   g_catalog_attempted = true;
+  AB_TRACE("load_catalog begin");
   if (live.filesystem != nullptr)
     (void)g_catalog.load(live.filesystem, requested);
   else
     g_catalog.clear();
+  AB_TRACE("load_catalog loaded");
   rebuild_bank(live.frequency_hz);
+  AB_TRACE("load_catalog bank rebuilt");
 }
 
 const Snapshot& snapshot(const LiveState& live) {
@@ -318,19 +323,27 @@ void dispatch(const Action& action, const LiveState& live) {
 }  // namespace
 
 void configure(const Hooks& hooks) {
+  AB_TRACE("configure begin");
   g_hooks = hooks;
   load_settings_once();
+  AB_TRACE("configure end");
 }
 
 void enter(const LiveState& live) {
+  AB_TRACE("enter begin");
   load_settings_once();
+  AB_TRACE("enter settings loaded");
   Location requested{live.location_configured, live.latitude_e7, live.longitude_e7};
   requested.radius_nm = g_scanner.settings().radius_nm;
   if (!g_catalog_attempted || !same_location(requested, g_catalog_location))
     load_catalog(live);
   else
     rebuild_bank(live.frequency_hz);
-  dashboard_enter(snapshot(live));
+  AB_TRACE("enter catalog done");
+  const Snapshot& first = snapshot(live);
+  AB_TRACE("enter snapshot built");
+  dashboard_enter(first);
+  AB_TRACE("enter end");
 }
 
 void leave() {
@@ -359,6 +372,78 @@ void handle_touch(int32_t x, int32_t y, const LiveState& live) {
   if (!dashboard_active()) return;
   dispatch(dashboard_handle_touch(x, y), live);
   if (dashboard_active()) dashboard_update(snapshot(live));
+}
+
+bool serial_action(const char* verb, bool has_value, uint32_t value, const LiveState& live) {
+  if (!dashboard_active() || verb == nullptr) return false;
+  struct Entry { const char* verb; ActionKind kind; };
+  static constexpr Entry kVerbs[] = {
+      {"UP", ActionKind::tune_up},           {"DOWN", ActionKind::tune_down},
+      {"GUARD", ActionKind::tune_guard},     {"SCAN", ActionKind::scan_toggle},
+      {"HOLD", ActionKind::hold_toggle},     {"SKIP", ActionKind::skip},
+      {"SOURCE", ActionKind::source_cycle},  {"SPACING", ActionKind::spacing_cycle},
+      {"RADIUS", ActionKind::radius_cycle},  {"SQUELCH_UP", ActionKind::squelch_up},
+      {"SQUELCH_DOWN", ActionKind::squelch_down}, {"SETTLE", ActionKind::settle_cycle},
+      {"HANG_UP", ActionKind::hang_up},      {"HANG_DOWN", ActionKind::hang_down},
+      {"PRIORITY", ActionKind::priority_toggle}, {"RELOAD", ActionKind::reload_catalog},
+      {"CLEAR", ActionKind::clear_activity}, {"GAIN_UP", ActionKind::gain_up},
+      {"GAIN_DOWN", ActionKind::gain_down},  {"AGC", ActionKind::tuner_agc_toggle},
+      {"RTLAGC", ActionKind::rtl_agc_toggle},
+  };
+  if (std::strcmp(verb, "TUNE") == 0) {
+    if (!has_value || !in_band(value)) return false;
+    g_scanner.stop();
+    return tune(value);
+  }
+  if (std::strcmp(verb, "SQUELCH") == 0) {
+    if (!has_value || value > 100) return false;
+    g_scanner.settings().squelch_dbfs =
+        static_cast<int16_t>(-std::clamp<int32_t>(static_cast<int32_t>(value), 30, 100));
+    save_settings();
+    dashboard_update(snapshot(live));
+    return true;
+  }
+  if (std::strcmp(verb, "TAB") == 0) {
+    if (!has_value || value > 4) return false;
+    dashboard_select_tab(static_cast<Tab>(value));
+    return true;
+  }
+  for (const Entry& entry : kVerbs) {
+    if (std::strcmp(verb, entry.verb) != 0) continue;
+    dispatch(Action{entry.kind, 0}, live);
+    if (dashboard_active()) dashboard_update(snapshot(live));
+    return true;
+  }
+  return false;
+}
+
+size_t status_line(const LiveState& live, char* out, size_t capacity) {
+  if (out == nullptr || capacity == 0) return 0;
+  load_settings_once();
+  const Settings& s = g_scanner.settings();
+  const CatalogEntry* match = g_catalog.match(live.frequency_hz);
+  const int written = std::snprintf(
+      out, capacity,
+      "RTL_AIRBAND_STATUS active=%d tab=%u frequency_hz=%lu scan=%s squelch_open=%d "
+      "signal_dbfs=%.1f sql_dbfs=%d spacing=%s source=%s radius_nm=%u filter_hz=%lu "
+      "stops=%lu checked=%lu bank=%u activity=%u catalog=%u loaded=%d location=%d "
+      "gain_tenth_db=%d tuner_agc=%d rtl_agc=%d running=%d match=%s",
+      dashboard_active() ? 1 : 0, static_cast<unsigned>(dashboard_tab()),
+      static_cast<unsigned long>(live.frequency_hz), state_name(g_scanner.state()),
+      audio_open(live.signal_dbfs) ? 1 : 0, static_cast<double>(live.signal_dbfs),
+      static_cast<int>(s.squelch_dbfs), spacing_name(s.spacing), source_name(s.source),
+      static_cast<unsigned>(s.radius_nm),
+      static_cast<unsigned long>(orcsdr::airband::filter_bandwidth_hz(s.spacing)),
+      static_cast<unsigned long>(g_scanner.stops()),
+      static_cast<unsigned long>(g_scanner.channels_checked()),
+      static_cast<unsigned>(g_scanner.bank_count()),
+      static_cast<unsigned>(g_scanner.activity_count()),
+      static_cast<unsigned>(g_catalog.count()), g_catalog.loaded() ? 1 : 0,
+      live.location_configured ? 1 : 0, static_cast<int>(live.controls.gain_tenth_db),
+      live.controls.tuner_agc ? 1 : 0, live.controls.rtl_agc ? 1 : 0,
+      live.receiver_running ? 1 : 0,
+      match != nullptr ? match->airport_ident : "none");
+  return written < 0 ? 0 : static_cast<size_t>(written);
 }
 
 bool active() { return dashboard_active(); }

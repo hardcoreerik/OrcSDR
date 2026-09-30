@@ -45,6 +45,14 @@ void redraw();
 void service(const LiveState& live);
 void handle_touch(int32_t x, int32_t y, const LiveState& live);
 
+// Serial/test control (RTL_UI ACTION AIRBAND <verb> [value]). Verbs mirror the touch actions:
+// TUNE <hz>, UP, DOWN, GUARD, SCAN, HOLD, SKIP, SOURCE, SPACING, RADIUS, SQUELCH <-dBFS magnitude>,
+// SQUELCH_UP, SQUELCH_DOWN, SETTLE, HANG_UP, HANG_DOWN, PRIORITY, RELOAD, CLEAR, GAIN_UP,
+// GAIN_DOWN, AGC, RTLAGC, TAB <0-4>. Returns false for an unknown or unusable verb.
+bool serial_action(const char* verb, bool has_value, uint32_t value, const LiveState& live);
+// One-line machine-readable status (RTL_AIRBAND_STATUS ...).
+size_t status_line(const LiveState& live, char* out, size_t capacity);
+
 bool active();
 Tab tab();
 bool audio_open(float signal_dbfs);
