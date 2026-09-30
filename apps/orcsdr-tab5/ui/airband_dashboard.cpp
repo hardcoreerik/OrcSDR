@@ -298,12 +298,24 @@ void draw_airports() {
   }
   if (!g_snapshot.catalog_loaded || g_snapshot.catalog_count == 0) {
     card({24, 218, 1232, 270});
-    text("NO AVIATION DATA NEAR THIS LOCATION", 640, 294, kAmber, 3);
-    text("Preferred file: /orcsdr/data/aviation.idx (legacy faa_aviation.idx also works)",
-         640, 342, TFT_WHITE, 2);
-    text("Nothing was found within the radius above, or the file is not installed.",
-         640, 382, kMuted, 2);
-    text("Increase the radius, or use manual tuning / full-band scan.", 640, 426, kMuted, 2);
+    switch (g_snapshot.load_result) {
+      case LoadResult::no_matching_entries:
+        text("NO AVIATION DATA NEAR THIS LOCATION", 640, 294, kAmber, 3);
+        text("Nothing in the catalog is inside the radius shown above.", 640, 350, TFT_WHITE, 2);
+        text("Increase the radius, or use manual tuning / full-band scan.", 640, 396, kMuted, 2);
+        break;
+      case LoadResult::bad_header:
+      case LoadResult::unsupported_rows:
+        text("AVIATION DATA FORMAT NOT SUPPORTED", 640, 294, kAmber, 3);
+        text("The installed file is not an ORCAIR2 airport catalog.", 640, 350, TFT_WHITE, 2);
+        text("Install /orcsdr/data/aviation.idx (see docs/airband/README.md).", 640, 396, kMuted, 2);
+        break;
+      default:
+        text("AVIATION DATA NOT INSTALLED", 640, 294, kAmber, 3);
+        text("Expected file: /orcsdr/data/aviation.idx (ORCAIR2).", 640, 350, TFT_WHITE, 2);
+        text("Manual tuning and full-band scan remain available.", 640, 396, kMuted, 2);
+        break;
+    }
     return;
   }
   const size_t rows = std::min<size_t>(kListRows, g_snapshot.catalog_count);

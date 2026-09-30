@@ -51,10 +51,16 @@ class FileLineSource final : public LineSource {
 bool Catalog::load(storage::FileSystem* filesystem, const Location& location) {
   clear();
   location_configured_ = location.configured;
-  if (!filesystem) return false;
+  if (!filesystem) {
+    result_ = LoadResult::no_source;
+    return false;
+  }
   storage::File file = filesystem->open(kCatalogPath);
   if (!file) file = filesystem->open(kLegacyCatalogPath);
-  if (!file) return false;
+  if (!file) {
+    result_ = LoadResult::no_source;
+    return false;
+  }
   FileLineSource source(file);
   const bool loaded = load_from(source, location);
   file.close();

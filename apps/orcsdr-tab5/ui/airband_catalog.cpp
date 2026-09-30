@@ -14,6 +14,9 @@ namespace {
 constexpr double kEarthRadiusNm = 3440.065;
 constexpr double kPi = 3.14159265358979323846;
 constexpr size_t kLineCapacity = 320;
+// A file whose first rows are all unreadable is a different schema (for example the FAA
+// record-index pack), not a damaged catalog; stop instead of scanning megabytes for nothing.
+constexpr size_t kUnsupportedProbeRows = 64;
 
 bool valid_entry(const CatalogEntry& entry) {
   return entry.latitude_e7 >= -900000000 && entry.latitude_e7 <= 900000000 &&
@@ -165,6 +168,18 @@ float distance_nm(int32_t lat_a_e7, int32_t lon_a_e7,
   return static_cast<float>(2.0 * kEarthRadiusNm * std::asin(std::sqrt(clamped)));
 }
 
+const char* load_result_name(LoadResult result) {
+  switch (result) {
+    case LoadResult::ok: return "ok";
+    case LoadResult::no_source: return "no_source";
+    case LoadResult::bad_header: return "bad_header";
+    case LoadResult::unsupported_rows: return "unsupported_rows";
+    case LoadResult::no_matching_entries: return "no_matching_entries";
+    case LoadResult::not_loaded: break;
+  }
+  return "not_loaded";
+}
+
 const char* service_name(Service service) {
   switch (service) {
     case Service::tower: return "TOWER";
@@ -235,6 +250,7 @@ void Catalog::clear() {
   loaded_ = false;
   location_configured_ = false;
   global_schema_ = false;
+  result_ = LoadResult::not_loaded;
   for (auto& entry : entries_) entry = {};
 }
 
@@ -278,12 +294,20 @@ bool Catalog::load_from(LineSource& source, const Location& location) {
 
   char line[kLineCapacity]{};
   const int header = source.read_line(line, sizeof(line));
-  if (header < 0) return false;
+  if (header < 0) {
+    result_ = LoadResult::bad_header;
+    return false;
+  }
   if (header > 0 && line[header - 1] == '\r') line[header - 1] = '\0';
   const bool v2 = std::strcmp(line, "ORCAIR2") == 0;
   const bool legacy = std::strcmp(line, "ORCCAT1") == 0;
-  if (!v2 && !legacy) return false;
+  if (!v2 && !legacy) {
+    result_ = LoadResult::bad_header;
+    return false;
+  }
   global_schema_ = v2;
+  size_t rows_seen = 0;
+  size_t rows_readable = 0;
 
   while (true) {
     const int size = source.read_line(line, sizeof(line));
@@ -303,7 +327,15 @@ bool Catalog::load_from(LineSource& source, const Location& location) {
       copy_text(entry.source, sizeof(entry.source), "FAA");
       parsed = valid_entry(entry);
     }
-    if (!parsed) continue;
+    ++rows_seen;
+    if (!parsed) {
+      if (rows_readable == 0 && rows_seen >= kUnsupportedProbeRows) {
+        result_ = LoadResult::unsupported_rows;
+        return false;
+      }
+      continue;
+    }
+    ++rows_readable;
     entry.distance_nm = location.configured
                             ? distance_nm(location.latitude_e7, location.longitude_e7,
                                           entry.latitude_e7, entry.longitude_e7)
@@ -315,6 +347,9 @@ bool Catalog::load_from(LineSource& source, const Location& location) {
   }
   sort();
   loaded_ = count_ != 0;
+  result_ = loaded_ ? LoadResult::ok
+            : rows_readable != 0 ? LoadResult::no_matching_entries
+                                 : LoadResult::unsupported_rows;
   return loaded_;
 }
 

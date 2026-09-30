@@ -70,6 +70,16 @@ class LineSource {
   virtual int read_line(char* buffer, size_t capacity) = 0;
 };
 
+enum class LoadResult : uint8_t {
+  not_loaded,
+  ok,
+  no_source,            // no aviation.idx / faa_aviation.idx on the SD card
+  bad_header,           // file present but not ORCAIR2 / ORCCAT1
+  unsupported_rows,     // header ok but rows are not a schema this firmware understands
+  no_matching_entries,  // valid rows, none inside the receiver radius
+};
+const char* load_result_name(LoadResult result);
+
 const char* service_name(Service service);
 Service classify_service(const char* label);
 const char* source_class_name(SourceClass source_class);
@@ -86,6 +96,7 @@ class Catalog {
   bool load_from(LineSource& source, const Location& location);
   void clear();
   bool loaded() const { return loaded_; }
+  LoadResult last_result() const { return result_; }
   bool location_configured() const { return location_configured_; }
   bool global_schema() const { return global_schema_; }
   size_t count() const { return count_; }
@@ -110,6 +121,7 @@ class Catalog {
   bool loaded_ = false;
   bool location_configured_ = false;
   bool global_schema_ = false;
+  LoadResult result_ = LoadResult::not_loaded;
 };
 
 }  // namespace orcsdr::airband

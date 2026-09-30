@@ -29,6 +29,7 @@ struct Snapshot {
   uint32_t channels_checked = 0;
 
   bool catalog_loaded = false;
+  LoadResult load_result = LoadResult::not_loaded;
   bool location_configured = false;
   receiver_controls::State controls{};
   int16_t gain_steps_tenth_db[32]{};

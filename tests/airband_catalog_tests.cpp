@@ -36,6 +36,21 @@ class StringSource final : public orcsdr::airband::LineSource {
   size_t position_ = 0;
 };
 
+// Same as StringSource but counts how many lines were requested.
+class CountingSource final : public orcsdr::airband::LineSource {
+ public:
+  explicit CountingSource(std::string text) : inner_(std::move(text)) {}
+  int read_line(char* buffer, size_t capacity) override {
+    ++lines_;
+    return inner_.read_line(buffer, capacity);
+  }
+  size_t lines_read() const { return lines_; }
+
+ private:
+  StringSource inner_;
+  size_t lines_ = 0;
+};
+
 // ORCAIR2 row: COM lat lon hz service country ident airport callsign source_class source label
 std::string row(int32_t lat_e7, int32_t lon_e7, uint32_t hz, const char* service,
                 const char* country, const char* ident, const char* airport,
@@ -240,6 +255,38 @@ void test_radius_limits_nearby_entries() {
   }
 }
 
+void test_unsupported_schema_bails_early() {
+  using namespace orcsdr::airband;
+  // The installed FAA record-index pack has an ORCCAT1 header but JSON rows without coordinates.
+  std::string text = "ORCCAT1\n{\"schema\":\"orcsdr-record-index-v1\"}\n";
+  for (int i = 0; i < 5000; ++i)
+    text += "[\"00A\",\"TOTAL RF\",\"BENSALEM\",\"PA\",\"122.9\",\"CTAF\",\"\",\"\"]\n";
+  CountingSource source(text);
+  Catalog catalog;
+  CHECK(!catalog.load_from(source, Location{true, kEugLat, kEugLon}));
+  CHECK(catalog.last_result() == LoadResult::unsupported_rows);
+  CHECK(!catalog.loaded());
+  // It must stop after the probe rows instead of reading all 5,000.
+  CHECK(source.lines_read() < 200);
+}
+
+void test_load_results() {
+  using namespace orcsdr::airband;
+  Catalog catalog;
+  StringSource wrong("NOTACATALOG\n");
+  CHECK(!catalog.load_from(wrong, Location{}));
+  CHECK(catalog.last_result() == LoadResult::bad_header);
+  StringSource good("ORCAIR2\n" + row(kEugLat, kEugLon, 118900000, "TOWER", "US", "KEUG", "F", "OFFICIAL", "KEUG TOWER"));
+  CHECK(catalog.load_from(good, Location{true, kEugLat, kEugLon}));
+  CHECK(catalog.last_result() == LoadResult::ok);
+  StringSource far("ORCAIR2\n" + row(kSinLat, kSinLon, 118600000, "TOWER", "SG", "WSSS", "Changi", "COMMUNITY", "WSSS TOWER"));
+  Location near_eugene{true, kEugLat, kEugLon};
+  near_eugene.radius_nm = 25;
+  CHECK(!catalog.load_from(far, near_eugene));
+  CHECK(catalog.last_result() == LoadResult::no_matching_entries);
+  CHECK(std::strcmp(load_result_name(LoadResult::no_source), "no_source") == 0);
+}
+
 void test_duplicates_collapse() {
   using namespace orcsdr::airband;
   std::string text = "ORCAIR2\n";
@@ -262,6 +309,8 @@ int main() {
   test_bad_headers_and_empty_input();
   test_crlf_and_legacy_format();
   test_duplicates_collapse();
+  test_unsupported_schema_bails_early();
+  test_load_results();
   test_radius_limits_nearby_entries();
   CHECK(orcsdr::airband::Catalog::self_check());
   std::puts("airband_catalog_tests: PASS");

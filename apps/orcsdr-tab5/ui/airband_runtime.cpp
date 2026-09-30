@@ -157,6 +157,7 @@ const Snapshot& snapshot(const LiveState& live) {
   out.channels_checked = g_scanner.channels_checked();
 
   out.catalog_loaded = g_catalog.loaded();
+  out.load_result = g_catalog.last_result();
   out.catalog_count = static_cast<uint8_t>(
       std::min<size_t>(g_catalog.count(), Catalog::kCapacity));
   for (size_t i = 0; i < out.catalog_count; ++i)
@@ -431,7 +432,7 @@ size_t status_line(const LiveState& live, char* out, size_t capacity) {
       "RTL_AIRBAND_STATUS active=%d tab=%u frequency_hz=%lu scan=%s squelch_open=%d "
       "signal_dbfs=%.1f sql_dbfs=%d spacing=%s source=%s radius_nm=%u filter_hz=%lu "
       "stops=%lu checked=%lu bank=%u activity=%u catalog=%u loaded=%d location=%d "
-      "gain_tenth_db=%d tuner_agc=%d rtl_agc=%d running=%d match=%s",
+      "gain_tenth_db=%d tuner_agc=%d rtl_agc=%d running=%d load=%s match=%s",
       dashboard_active() ? 1 : 0, static_cast<unsigned>(dashboard_tab()),
       static_cast<unsigned long>(live.frequency_hz), state_name(g_scanner.state()),
       audio_open(live.signal_dbfs) ? 1 : 0, static_cast<double>(live.signal_dbfs),
@@ -445,7 +446,7 @@ size_t status_line(const LiveState& live, char* out, size_t capacity) {
       static_cast<unsigned>(g_catalog.count()), g_catalog.loaded() ? 1 : 0,
       live.location_configured ? 1 : 0, static_cast<int>(live.controls.gain_tenth_db),
       live.controls.tuner_agc ? 1 : 0, live.controls.rtl_agc ? 1 : 0,
-      live.receiver_running ? 1 : 0,
+      live.receiver_running ? 1 : 0, load_result_name(g_catalog.last_result()),
       match != nullptr ? match->airport_ident : "none");
   return written < 0 ? 0 : static_cast<size_t>(written);
 }
