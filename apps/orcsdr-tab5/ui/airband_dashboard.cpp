@@ -59,6 +59,9 @@ EXT_RAM_BSS_ATTR static Snapshot g_snapshot{};
 bool g_active = false;
 Tab g_tab = Tab::listen;
 uint32_t g_last_activity_redraw_ms = 0;
+// What the level meter currently shows, so a slow drift still triggers a repaint.
+float g_meter_snr_db = 0.0f;
+bool g_meter_open = false;
 
 bool hit(int32_t x, int32_t y, const Rect& r) {
   return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
@@ -143,7 +146,12 @@ void page_title(const char* title, const char* subtitle) {
   text(subtitle, 34, 160, kMuted, 2, middle_left);
 }
 
+constexpr Rect kMeterArea{36, 296, 496, 62};
+
 void draw_signal_meter() {
+  g_meter_snr_db = g_snapshot.snr_db;
+  g_meter_open = g_snapshot.squelch_open;
+  M5.Display.fillRect(kMeterArea.x, kMeterArea.y, kMeterArea.w, kMeterArea.h, kPanel);
   const Rect meter{48, 304, 468, 24};
   M5.Display.drawRoundRect(meter.x, meter.y, meter.w, meter.h, 6, kCyan);
   const float level = std::clamp(g_snapshot.snr_db / 30.0f, 0.0f, 1.0f);
@@ -194,11 +202,8 @@ void draw_gain() {
   text("as AM / Shortwave)", 1120, 596, kMuted, 1, middle_left);
 }
 
-void draw_listen() {
-  M5.Display.fillRect(0, 93, 1280, kTabsY - 93, TFT_BLACK);
+void draw_now_card() {
   card(kNowCard, state_color());
-  card(kControlsCard);
-
   char value[80];
   std::snprintf(value, sizeof(value), "%.3f", mhz(g_snapshot.frequency_hz));
   text(value, 48, 166, TFT_WHITE, 7, middle_left);
@@ -209,7 +214,10 @@ void draw_listen() {
                 state_name(g_snapshot.scan_state));
   text(value, 516, 255, state_color(), 2, middle_right);
   draw_signal_meter();
+}
 
+void draw_controls() {
+  card(kControlsCard);
   const bool scanning = g_snapshot.scan_state != ScanState::off;
   const bool held = g_snapshot.scan_state == ScanState::held;
   button(control(0, 0), scanning ? "STOP SCAN" : "START SCAN", scanning);
@@ -223,8 +231,11 @@ void draw_listen() {
   button(control(1, 2), spacing_name(g_snapshot.scan.spacing));
   button(control(2, 2), g_snapshot.catalog_loaded ? "AVIATION DATA READY" : "NO AVIATION DATA",
          g_snapshot.catalog_loaded, true, 2);
+}
 
+void draw_status() {
   card(kStatusCard);
+  char value[112];
   std::snprintf(value, sizeof(value),
                 "%lu stops   %lu checked   bank %u   guard %s   SQL +%d dB   hang %.1fs",
                 static_cast<unsigned long>(g_snapshot.stops),
@@ -243,11 +254,17 @@ void draw_listen() {
   else
     text("Airport bank uses the closest catalog entries (database, not RF-decoded).",
          44, 474, kGreen, 2, middle_left);
+}
+
+void draw_listen() {
+  M5.Display.fillRect(0, 93, 1280, kTabsY - 93, TFT_BLACK);
+  draw_now_card();
+  draw_controls();
+  draw_status();
   draw_gain();
 }
 
-void draw_scan() {
-  page_title("SMART SCAN", "Fast memory-bank scan first; full-band scan remains available.");
+void draw_scan_status() {
   char value[96];
   card({24, 178, 1232, 104}, state_color());
   std::snprintf(value, sizeof(value), "%s   target %.3f MHz",
@@ -261,7 +278,11 @@ void draw_scan() {
   button({958, 194, 278, 66},
          g_snapshot.scan_state == ScanState::off ? "START SCAN" : "STOP SCAN",
          g_snapshot.scan_state != ScanState::off);
+}
 
+void draw_scan_bank() {
+  char value[96];
+  M5.Display.fillRect(0, 300, 1280, kTabsY - 300, TFT_BLACK);
   text("SCAN BANK", 30, 308, kCyan, 2, middle_left);
   const size_t rows = std::min<size_t>(5, g_snapshot.bank_count);
   for (size_t i = 0; i < rows; ++i) {
@@ -274,6 +295,12 @@ void draw_scan() {
   if (rows == 0)
     text("No airport bank loaded. Switch to FULL BAND or reload the FAA data pack.",
          640, 430, kAmber, 2);
+}
+
+void draw_scan() {
+  page_title("SMART SCAN", "Fast memory-bank scan first; full-band scan remains available.");
+  draw_scan_status();
+  draw_scan_bank();
 }
 
 void draw_airports() {
@@ -550,31 +577,95 @@ void dashboard_draw() {
   draw_page();
 }
 
+namespace {
+
+uint32_t g_last_meter_ms = 0;
+uint32_t g_last_status_ms = 0;
+
+bool controls_differ(const receiver_controls::State& a, const receiver_controls::State& b) {
+  return a.tuner_agc != b.tuner_agc || a.rtl_agc != b.rtl_agc ||
+         a.gain_tenth_db != b.gain_tenth_db ||
+         a.capabilities.rf_gain != b.capabilities.rf_gain ||
+         a.capabilities.tuner_agc != b.capabilities.tuner_agc ||
+         a.capabilities.rtl_agc != b.capabilities.rtl_agc;
+}
+
+}  // namespace
+
 void dashboard_update(const Snapshot& snapshot) {
   if (!g_active) return;
+  const Snapshot& old = g_snapshot;
   const bool header_changed =
-      snapshot.sound_enabled != g_snapshot.sound_enabled ||
-      snapshot.battery_percent != g_snapshot.battery_percent ||
-      snapshot.running != g_snapshot.running;
-  const bool page_changed =
-      snapshot.frequency_hz != g_snapshot.frequency_hz ||
-      snapshot.scan_state != g_snapshot.scan_state ||
-      snapshot.squelch_open != g_snapshot.squelch_open ||
-      snapshot.scan.squelch_db != g_snapshot.scan.squelch_db ||
-      snapshot.scan.spacing != g_snapshot.scan.spacing ||
-      snapshot.scan.source != g_snapshot.scan.source ||
-      snapshot.catalog_loaded != g_snapshot.catalog_loaded ||
-      snapshot.catalog_count != g_snapshot.catalog_count ||
-      snapshot.activity_count != g_snapshot.activity_count ||
-      snapshot.stops != g_snapshot.stops ||
-      std::fabs(snapshot.snr_db - g_snapshot.snr_db) >= 1.5f;
+      snapshot.sound_enabled != old.sound_enabled ||
+      snapshot.battery_percent != old.battery_percent ||
+      snapshot.running != old.running;
+  const bool frequency_changed = snapshot.frequency_hz != old.frequency_hz;
+  const bool state_changed = snapshot.scan_state != old.scan_state;
+  const bool settings_changed =
+      snapshot.scan.squelch_db != old.scan.squelch_db ||
+      snapshot.scan.spacing != old.scan.spacing ||
+      snapshot.scan.source != old.scan.source ||
+      snapshot.scan.hang_ms != old.scan.hang_ms ||
+      snapshot.scan.settle_ms != old.scan.settle_ms ||
+      snapshot.scan.priority_guard != old.scan.priority_guard ||
+      snapshot.scan.radius_nm != old.scan.radius_nm;
+  const bool data_changed =
+      snapshot.catalog_loaded != old.catalog_loaded ||
+      snapshot.catalog_count != old.catalog_count ||
+      snapshot.load_result != old.load_result ||
+      snapshot.location_configured != old.location_configured ||
+      snapshot.bank_count != old.bank_count ||
+      snapshot.activity_count != old.activity_count;
+  const bool label_changed =
+      std::strncmp(snapshot.current_label, old.current_label, sizeof(snapshot.current_label)) != 0;
+  const bool gain_changed = controls_differ(snapshot.controls, old.controls);
+  const bool live_changed = snapshot.squelch_open != g_meter_open ||
+                            std::fabs(snapshot.snr_db - g_meter_snr_db) >= 2.0f;
+  const bool counters_changed = snapshot.stops != old.stops ||
+                                snapshot.channels_checked != old.channels_checked;
+  const uint32_t now = snapshot.now_ms;
+  const uint32_t old_stops = old.stops;
   g_snapshot = snapshot;
+
+  M5.Display.startWrite();
   if (header_changed) draw_header();
-  if (page_changed ||
-      (g_tab == Tab::activity && snapshot.now_ms - g_last_activity_redraw_ms >= 5000u)) {
-    draw_page();
-    if (g_tab == Tab::activity) g_last_activity_redraw_ms = snapshot.now_ms;
+  switch (g_tab) {
+    case Tab::listen:
+      // Repaint only the regions whose data changed. The level meter alone is throttled
+      // because it moves constantly on a noisy channel.
+      if (frequency_changed || state_changed || label_changed) {
+        draw_now_card();
+        g_last_meter_ms = now;
+      } else if (live_changed && now - g_last_meter_ms >= 150u) {
+        draw_signal_meter();
+        g_last_meter_ms = now;
+      }
+      if (frequency_changed || state_changed || settings_changed || data_changed)
+        draw_controls();
+      if (settings_changed || data_changed || snapshot.stops != old_stops ||
+          (counters_changed && now - g_last_status_ms >= 1000u)) {
+        draw_status();
+        g_last_status_ms = now;
+      }
+      if (gain_changed) draw_gain();
+      break;
+    case Tab::scan:
+      if (frequency_changed || state_changed || settings_changed) draw_scan_status();
+      if (frequency_changed || data_changed) draw_scan_bank();
+      break;
+    case Tab::activity:
+      if (data_changed || now - g_last_activity_redraw_ms >= 5000u) {
+        draw_page();
+        g_last_activity_redraw_ms = now;
+      }
+      break;
+    case Tab::airports:
+    case Tab::setup:
+      // Static pages repaint only when what they show changes, never for the live level.
+      if (settings_changed || data_changed || frequency_changed) draw_page();
+      break;
   }
+  M5.Display.endWrite();
 }
 
 Action dashboard_handle_touch(int32_t x, int32_t y) {
