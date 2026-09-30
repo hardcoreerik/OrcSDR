@@ -134,6 +134,10 @@ void Scanner::start(uint32_t now_ms, uint32_t current_frequency_hz) {
   skip_once_hz_ = 0;
   since_guard_ = 0;
   episode_open_ = false;
+  // Begin after the entry we are already tuned to so the first scan step moves on
+  // instead of "retuning" to the current channel.
+  for (size_t i = 0; i < bank_count_; ++i)
+    if (bank_[i].frequency_hz == target_frequency_hz_) { bank_cursor_ = i; break; }
 }
 
 void Scanner::stop() {

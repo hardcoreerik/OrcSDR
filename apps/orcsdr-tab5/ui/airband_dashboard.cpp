@@ -525,7 +525,7 @@ bool dashboard_self_check() {
   EXT_RAM_BSS_ATTR static Snapshot saved;
   saved = g_snapshot;
   g_active = true;
-  g_snapshot = {};
+  reset_snapshot(g_snapshot);
   g_snapshot.scan_state = ScanState::scanning;
   g_snapshot.catalog_count = 1;
   g_snapshot.catalog[0].frequency_hz = 124900000u;

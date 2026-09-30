@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <new>
 
 namespace orcsdr::airband {
 
@@ -66,6 +67,12 @@ struct Action {
   ActionKind kind = ActionKind::none;
   int32_t value = 0;
 };
+
+// Re-initialises a static Snapshot in place (it is several KB, so avoid `= {}` temporaries).
+inline void reset_snapshot(Snapshot& snapshot) {
+  snapshot.~Snapshot();
+  new (&snapshot) Snapshot();
+}
 
 void dashboard_enter(const Snapshot& snapshot);
 void dashboard_leave();

@@ -95,16 +95,16 @@ class P25CatalogTest(unittest.TestCase):
                 "ORCAIR2\n"
                 "COM\t135019000\t1039940000\t118600000\tTOWER\tSG\tWSSS\t"
                 "Singapore Changi Airport\t\tCOMMUNITY\tOURAIRPORTS\tWSSS TOWER\n",
-                encoding="ascii",
+                encoding="ascii", newline="\n",
             )
             module.validate_artifact("aviation", runtime, False)
             module.validate_artifact("faa_aviation", runtime, False)
             runtime.write_text(
                 "ORCCAT1\nATC 441246000 -1232119000 124150000 KEUG TOWER\n",
-                encoding="ascii",
+                encoding="ascii", newline="\n",
             )
             module.validate_artifact("aviation", runtime, False)
-            runtime.write_text("BADSCHEMA\n", encoding="ascii")
+            runtime.write_text("BADSCHEMA\n", encoding="ascii", newline="\n")
             with self.assertRaises(ValueError):
                 module.validate_artifact("aviation", runtime, False)
 

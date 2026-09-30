@@ -47,7 +47,7 @@ void load_settings_once() {
   const uint8_t source = g_store.get_u8("source", 0);
   s.source = source == 1 ? ScanSource::full_band : ScanSource::airport_bank;
   s.squelch_dbfs =
-      static_cast<int16_t>(std::clamp(g_store.get_i32("squelch", -75), -100, -30));
+      static_cast<int16_t>(std::clamp<int32_t>(g_store.get_i32("squelch", -75), -100, -30));
   s.settle_ms =
       static_cast<uint16_t>(std::clamp<uint32_t>(g_store.get_u16("settle", 350), 300, 800));
   s.hang_ms =
@@ -108,7 +108,7 @@ void load_catalog(const LiveState& live) {
 
 const Snapshot& snapshot(const LiveState& live) {
   EXT_RAM_BSS_ATTR static Snapshot out;
-  out = {};
+  reset_snapshot(out);
   out.now_ms = live.now_ms;
   out.frequency_hz = live.frequency_hz;
   out.signal_dbfs = live.signal_dbfs;
