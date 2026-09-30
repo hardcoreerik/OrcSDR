@@ -572,14 +572,6 @@ constexpr int kToolTabY = 68;
 constexpr int kToolTabH = 28;
 constexpr int kToolTabW = 150;
 constexpr int kToolTabGap = 10;
-constexpr int kPinchToggleX = 1040;
-constexpr int kPinchToggleY = 66;
-constexpr int kPinchToggleW = 192;
-constexpr int kPinchToggleH = 30;
-constexpr int kNavPanelX = 760;
-constexpr int kNavPanelY = 100;
-constexpr int kNavPanelW = 456;
-constexpr int kNavPanelH = 456;
 constexpr uint8_t kRtlVolumeMin = 0;
 constexpr uint8_t kRtlVolumeMax = 255;
 // The Tab5 amp can trip the rail detector with a full-scale P25 voice burst.
@@ -708,20 +700,12 @@ constexpr RfBandGuide kRfBandGuide[] = {
     {1610600000, 1626500000, 1620000000, RtlBand::browse, "SATCOM", "L-band / mobile satellite", false},
 };
 static_assert(std::size(kRfBandGuide) == 22);
-constexpr const char* kRfQuickLabels[] = {
-    "CB 27", "HAM 10M", "HAM 6M", "FM RADIO", "AIRBAND", "NOAA SAT",
-    "HAM 2M", "NOAA WX", "HAM 70CM", "P25 PHASE I", "LORA 915", "ADS-B 1090",
-    "POCSAG"};
-static_assert(std::size(kRfQuickLabels) == 13);
-
 constexpr bool rf_band_guide_valid() {
-  size_t quick_count = 0;
   for (const auto& entry : kRfBandGuide) {
     if (entry.low_hz < kRtlBrowseMinHz || entry.high_hz > kRtlBrowseMaxHz ||
         entry.low_hz > entry.preset_hz || entry.preset_hz > entry.high_hz) return false;
-    if (entry.quick) ++quick_count;
   }
-  return quick_count == std::size(kRfQuickLabels);
+  return true;
 }
 static_assert(rf_band_guide_valid(), "RF band guide ranges or quick presets are invalid");
 
@@ -1804,17 +1788,12 @@ std::atomic<uint32_t> rtl_audio_settings_persist_due_ms{0};
 std::atomic<bool> rtl_graphics_enabled{true};
 orcsdr::audio_header::Control rtl_header_audio_control{};
 enum class SdrPinchMode : uint8_t { Span, Filter };
-enum class SdrNavDropdown : uint8_t { None, Band, Pinch, Step };
 std::atomic<uint32_t> rtl_scope_span_hz{kRtlScopeSpanMaxHz};
 std::atomic<uint32_t> rtl_filter_bandwidth_hz{kRtlFmFilterDefaultHz};
 SdrPinchMode rtl_pinch_mode = SdrPinchMode::Span;
-SdrNavDropdown rtl_nav_dropdown = SdrNavDropdown::None;
-bool rtl_nav_open = false;
-bool rtl_frequency_keypad_open = false;
 uint32_t rtl_fm_step_hz = kRtlFmStepHz;
 uint32_t rtl_am_step_hz = 1000;
 uint32_t rtl_am_scan_spacing_hz = kRtlAmStepHz;
-char rtl_frequency_entry[16]{};
 std::atomic<bool> rtl_continuous_requested{false};
 std::atomic<bool> rtl_stop_requested{false};
 std::atomic<bool> rtl_restart_requested{false};
@@ -2387,8 +2366,6 @@ void refresh_active_screen();
 orcsdr::shortwave::Snapshot shortwave_dashboard_snapshot();
 void handle_shortwave_dashboard_action(const orcsdr::shortwave::Action& action);
 void adjust_rtl_volume(int delta);
-void draw_nav_panel();
-bool handle_nav_touch(int32_t x, int32_t y);
 void spectrum_offer_iq_snapshot(const uint8_t* iq, size_t bytes);
 bool audio_rec_ensure_buffer();
 bool audio_rec_start();
@@ -5034,7 +5011,7 @@ void set_orc_tool(OrcTool tool) {
 }
 
 void draw_tool_tabs() {
-  if (rtl_ui_band == RtlBand::lora && !rtl_nav_open) return;
+  if (rtl_ui_band == RtlBand::lora) return;
   static const char* kLabels[] = {"RADIO", "SCOPE", "CAPTURE"};
   const OrcTool cur = orc_tool_current();
   M5.Display.fillRect(0, kToolTabY - 2, 1280, kToolTabH + 4, TFT_BLACK);
@@ -5050,19 +5027,7 @@ void draw_tool_tabs() {
     M5.Display.drawString(kLabels[i], x + kToolTabW / 2, kToolTabY + kToolTabH / 2);
     x += kToolTabW + kToolTabGap;
   }
-  const uint32_t toggle_color = rtl_nav_open ? TFT_MAROON : TFT_DARKCYAN;
-  M5.Display.fillRoundRect(kPinchToggleX, kPinchToggleY, kPinchToggleW,
-                           kPinchToggleH, 8, toggle_color);
-  M5.Display.drawRoundRect(kPinchToggleX, kPinchToggleY, kPinchToggleW,
-                           kPinchToggleH, 8, TFT_WHITE);
-  M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextSize(3);
-  M5.Display.setTextColor(TFT_WHITE, toggle_color);
-  M5.Display.drawString(rtl_nav_open ? "CLOSE" : "NAV",
-                        kPinchToggleX + kPinchToggleW / 2,
-                        kPinchToggleY + kPinchToggleH / 2);
   draw_rf_band_guide(rtl_ui_frequency_hz);
-  if (rtl_nav_open) draw_nav_panel();
 }
 
 const RfBandGuide* rf_band_guide_at(uint32_t frequency_hz) {
@@ -5102,21 +5067,6 @@ void draw_rf_band_guide(uint32_t frequency_hz) {
 }
 
 bool handle_tool_tab_touch(int32_t x, int32_t y) {
-  if (x >= kPinchToggleX && x < kPinchToggleX + kPinchToggleW &&
-      y >= kPinchToggleY && y < kPinchToggleY + kPinchToggleH) {
-    rtl_nav_open = !rtl_nav_open;
-    rtl_nav_dropdown = SdrNavDropdown::None;
-    rtl_frequency_keypad_open = false;
-    if (rtl_nav_open) {
-      M5.Display.setScrollRect(kSpectrumX + 1, kWaterfallY + 1,
-                               spectrum_draw_width() - 2, kWaterfallHeight - 2,
-                               TFT_BLACK);
-      draw_spectrum_axis();
-      draw_tool_tabs();
-    }
-    else draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz, rtl_ui_volume);
-    return true;
-  }
   if (y < kToolTabY || y >= kToolTabY + kToolTabH) return false;
   int tab_x = kSdrEdge;
   for (uint8_t i = 0; i < static_cast<uint8_t>(OrcTool::Count); ++i) {
@@ -5127,254 +5077,6 @@ bool handle_tool_tab_touch(int32_t x, int32_t y) {
     tab_x += kToolTabW + kToolTabGap;
   }
   return false;
-}
-
-void draw_nav_panel() {
-  auto button = [](int x, int y, int w, int h, const char* text, uint32_t color,
-                   uint8_t size = 2) {
-    M5.Display.fillRoundRect(x, y, w, h, 8, color);
-    M5.Display.drawRoundRect(x, y, w, h, 8, TFT_WHITE);
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(size);
-    M5.Display.setTextColor(TFT_WHITE, color);
-    M5.Display.drawString(text, x + w / 2, y + h / 2);
-  };
-
-  M5.Display.fillRoundRect(kNavPanelX, kNavPanelY, kNavPanelW, kNavPanelH, 12,
-                           TFT_BLACK);
-  M5.Display.drawRoundRect(kNavPanelX, kNavPanelY, kNavPanelW, kNavPanelH, 12,
-                           TFT_CYAN);
-  M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextSize(3);
-  M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-  M5.Display.drawString(rtl_frequency_keypad_open ? "DIRECT FREQUENCY" : "NAVIGATION",
-                        kNavPanelX + kNavPanelW / 2, kNavPanelY + 25);
-
-  if (rtl_frequency_keypad_open) {
-    char field[32];
-    snprintf(field, sizeof(field), "%s%s", rtl_frequency_entry,
-             rtl_ui_band == RtlBand::am ? " kHz" : " MHz");
-    button(780, 145, 416, 54, field, TFT_NAVY, 3);
-    static const char* keys[] = {"1", "2", "3", "4", "5", "6",
-                                 "7", "8", "9", ".", "0", "<"};
-    for (int index = 0; index < 12; ++index) {
-      const int col = index % 3;
-      const int row = index / 3;
-      button(780 + col * 138, 211 + row * 66, 128, 56, keys[index], TFT_DARKGREY, 3);
-    }
-    button(780, 481, 200, 56, "CANCEL", TFT_MAROON, 3);
-    button(996, 481, 200, 56, "TUNE", TFT_DARKGREEN, 3);
-    return;
-  }
-
-  char label[40];
-  button(780, 145, 416, 48, "DIRECT FREQUENCY", TFT_NAVY, 3);
-  button(780, 205, 416, 48, "US BAND GUIDE  v", TFT_DARKGREEN, 3);
-  if (rtl_nav_dropdown == SdrNavDropdown::Band) {
-    for (size_t index = 0; index < std::size(kRfQuickLabels); ++index) {
-      button(780 + (index % 2) * 216, 265 + (index / 2) * 45, 200, 39,
-             kRfQuickLabels[index], TFT_DARKGREY, 2);
-    }
-    return;
-  }
-  snprintf(label, sizeof(label), "PINCH: %s  v",
-           rtl_pinch_mode == SdrPinchMode::Span ? "SPAN" : "FILTER");
-  button(780, 265, 416, 48, label, TFT_DARKCYAN, 3);
-  const uint32_t step = rtl_ui_band == RtlBand::am
-                            ? rtl_am_step_hz
-                            : rtl_ui_band == RtlBand::shortwave
-                                  ? rtl_shortwave_step_hz
-                                  : rtl_fm_step_hz;
-  snprintf(label, sizeof(label), "STEP: %lu kHz  v",
-           static_cast<unsigned long>(step / 1000u));
-  button(780, 325, 416, 48, label, TFT_DARKCYAN, 3);
-
-  if (rtl_nav_dropdown == SdrNavDropdown::Pinch) {
-    button(780, 385, 200, 58, "SPAN", TFT_NAVY, 3);
-    button(996, 385, 200, 58, "FILTER", TFT_DARKCYAN, 3);
-    return;
-  }
-  if (rtl_nav_dropdown == SdrNavDropdown::Step) {
-    static const uint32_t steps[] = {1000, 5000, 10000, 50000, 100000, 1000000};
-    for (int index = 0; index < 6; ++index) {
-      snprintf(label, sizeof(label), "%lu kHz",
-               static_cast<unsigned long>(steps[index] / 1000u));
-      button(780 + (index % 2) * 216, 385 + (index / 2) * 54, 200, 48, label,
-             TFT_DARKGREY, 3);
-    }
-    return;
-  }
-
-  button(780, 385, 128, 54, "ZOOM IN", TFT_DARKGREY, 2);
-  button(924, 385, 128, 54, "RESET", TFT_DARKGREY, 3);
-  button(1068, 385, 128, 54, "ZOOM OUT", TFT_DARKGREY, 2);
-  button(780, 451, 128, 54, "PEAK", TFT_DARKCYAN, 3);
-  button(924, 451, 128, 54, "AUTO FM", TFT_DARKCYAN, 2);
-  button(1068, 451, 128, 54, "CENTER", TFT_DARKCYAN, 2);
-  button(780, 514, 416, 32, "HOME", TFT_DARKGREEN, 2);
-}
-
-bool handle_nav_touch(int32_t x, int32_t y) {
-  auto hit = [x, y](int bx, int by, int bw, int bh) {
-    return x >= bx && x < bx + bw && y >= by && y < by + bh;
-  };
-  if (!rtl_nav_open || !hit(kNavPanelX, kNavPanelY, kNavPanelW, kNavPanelH)) return false;
-
-  if (rtl_frequency_keypad_open) {
-    if (hit(780, 481, 200, 56)) {
-      rtl_frequency_keypad_open = false;
-      rtl_frequency_entry[0] = '\0';
-      draw_nav_panel();
-      return true;
-    }
-    if (hit(996, 481, 200, 56)) {
-      char* end = nullptr;
-      const double entered = strtod(rtl_frequency_entry, &end);
-      if (end != rtl_frequency_entry && entered > 0.0) {
-        const double scale = rtl_ui_band == RtlBand::am ? 1000.0 : 1000000.0;
-        const double requested_hz = entered * scale;
-        const uint32_t band_max = rtl_ui_band == RtlBand::am
-                                      ? kRtlAmMaxHz
-                                      : rtl_ui_band == RtlBand::shortwave
-                                          ? orcsdr::receiver_bands::kShortwave.max_hz
-                                      : rtl_ui_band == RtlBand::wx ? kRtlWxHz
-                                      : rtl_ui_band == RtlBand::browse
-                                          ? kRtlBrowseMaxHz
-                                          : kRtlFmMaxHz;
-        const uint32_t frequency = rtl_clamp_frequency(
-            rtl_ui_band, requested_hz >= static_cast<double>(band_max)
-                             ? band_max
-                             : static_cast<uint32_t>(requested_hz));
-        rtl_nav_open = false;
-        rtl_frequency_keypad_open = false;
-        const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
-        draw_sdr_screen(rtl_ui_band, frequency, rtl_ui_volume);
-        if (state == RtlCaptureState::running) request_hot_retune(frequency);
-        else queue_local_rtl_listen(rtl_ui_band, frequency);
-      }
-      return true;
-    }
-    static const char keys[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '\b'};
-    for (int index = 0; index < 12; ++index) {
-      if (!hit(780 + (index % 3) * 138, 211 + (index / 3) * 66, 128, 56)) continue;
-      const size_t length = strlen(rtl_frequency_entry);
-      if (keys[index] == '\b') {
-        if (length > 0) rtl_frequency_entry[length - 1] = '\0';
-      } else if (length + 1 < sizeof(rtl_frequency_entry) &&
-                 (keys[index] != '.' || strchr(rtl_frequency_entry, '.') == nullptr)) {
-        rtl_frequency_entry[length] = keys[index];
-        rtl_frequency_entry[length + 1] = '\0';
-      }
-      draw_nav_panel();
-      return true;
-    }
-    return true;
-  }
-
-  if (rtl_nav_dropdown == SdrNavDropdown::Band) {
-    for (size_t index = 0; index < std::size(kRfQuickLabels); ++index) {
-      if (!hit(780 + (index % 2) * 216, 265 + (index / 2) * 45, 200, 39)) continue;
-      const RfBandGuide* entry = rf_quick_band_at(index);
-      if (entry == nullptr) break;
-      rtl_nav_open = false;
-      rtl_nav_dropdown = SdrNavDropdown::None;
-      const uint32_t preset_hz = entry->mode == RtlBand::p25
-                                     ? p25_control_frequency_hz
-                                     : entry->preset_hz;
-      const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
-      if (state == RtlCaptureState::running && rtl_ui_band == entry->mode) {
-        request_hot_retune(preset_hz);
-      } else {
-        queue_local_rtl_listen(entry->mode, preset_hz);
-      }
-      draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz, rtl_ui_volume);
-      return true;
-    }
-    return true;
-  }
-  if (rtl_nav_dropdown == SdrNavDropdown::Pinch) {
-    if (hit(780, 385, 200, 58)) rtl_pinch_mode = SdrPinchMode::Span;
-    else if (hit(996, 385, 200, 58)) rtl_pinch_mode = SdrPinchMode::Filter;
-    rtl_nav_dropdown = SdrNavDropdown::None;
-    draw_nav_panel();
-    return true;
-  }
-  if (rtl_nav_dropdown == SdrNavDropdown::Step) {
-    static const uint32_t steps[] = {1000, 5000, 10000, 50000, 100000, 1000000};
-    for (int index = 0; index < 6; ++index) {
-      if (!hit(780 + (index % 2) * 216, 385 + (index / 2) * 54, 200, 48)) continue;
-      if (rtl_ui_band == RtlBand::am) rtl_am_step_hz = steps[index];
-      else if (rtl_ui_band == RtlBand::shortwave) rtl_shortwave_step_hz = steps[index];
-      else rtl_fm_step_hz = steps[index];
-      break;
-    }
-    rtl_nav_dropdown = SdrNavDropdown::None;
-    draw_nav_panel();
-    return true;
-  }
-  if (hit(780, 514, 416, 32)) {
-    rtl_nav_open = false;
-    show_home();
-    return true;
-  }
-  if (hit(780, 145, 416, 48)) {
-    rtl_frequency_keypad_open = true;
-    rtl_frequency_entry[0] = '\0';
-    draw_nav_panel();
-  } else if (hit(780, 205, 416, 48)) {
-    rtl_nav_dropdown = SdrNavDropdown::Band;
-    draw_nav_panel();
-  } else if (hit(780, 265, 416, 48)) {
-    rtl_nav_dropdown = SdrNavDropdown::Pinch;
-    draw_nav_panel();
-  } else if (hit(780, 325, 416, 48)) {
-    rtl_nav_dropdown = SdrNavDropdown::Step;
-    draw_nav_panel();
-  } else if (hit(780, 385, 128, 54) || hit(924, 385, 128, 54) ||
-             hit(1068, 385, 128, 54)) {
-    const uint32_t current = rtl_scope_span_hz.load(std::memory_order_relaxed);
-    uint32_t next = kRtlScopeSpanMaxHz;
-    if (hit(780, 385, 128, 54)) next = max(kRtlScopeSpanMinHz, current / 2);
-    else if (hit(1068, 385, 128, 54)) next = min(kRtlScopeSpanMaxHz, current * 2);
-    rtl_scope_span_hz.store(next, std::memory_order_relaxed);
-    redraw_spectrum_panel();
-    draw_spectrum_axis();
-    draw_nav_panel();
-  } else if (hit(780, 451, 128, 54)) {
-    if (rtl_ui_band == RtlBand::wx) return true;
-    const int64_t target = static_cast<int64_t>(rtl_ui_frequency_hz) +
-                           rtl_scope_peak_offset_hz.load(std::memory_order_relaxed);
-    const uint32_t frequency = rtl_clamp_frequency(
-        rtl_ui_band, target > 0 ? static_cast<uint32_t>(target) : 0u);
-    rtl_nav_open = false;
-    const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
-    if (state == RtlCaptureState::running) request_hot_retune(frequency);
-    else queue_local_rtl_listen(rtl_ui_band, frequency);
-    draw_sdr_screen(rtl_ui_band, frequency, rtl_ui_volume);
-  } else if (hit(924, 451, 128, 54)) {
-    rtl_nav_open = false;
-    rtl_graphics_enabled.store(true, std::memory_order_release);
-    rtl_auto_fm_requested.store(true, std::memory_order_release);
-    rtl_auto_fm_active.store(true, std::memory_order_release);
-    const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
-    if (rtl_ui_band != RtlBand::fm || state != RtlCaptureState::running) {
-      queue_local_rtl_listen(RtlBand::fm, kRtlFmMinHz + kRtlFmAutoStepHz / 2);
-    } else {
-      draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz, rtl_ui_volume);
-    }
-  } else if (hit(1068, 451, 128, 54)) {
-    if (rtl_ui_band != RtlBand::wx) {
-      const uint32_t step = rtl_ui_band == RtlBand::am ? rtl_am_step_hz : rtl_fm_step_hz;
-      const uint32_t frequency = rtl_clamp_frequency(
-          rtl_ui_band, ((rtl_ui_frequency_hz + step / 2) / step) * step);
-      const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
-      if (state == RtlCaptureState::running) request_hot_retune(frequency);
-      else queue_local_rtl_listen(rtl_ui_band, frequency);
-    }
-    rtl_nav_open = false;
-    draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz, rtl_ui_volume);
-  }
-  return true;
 }
 
 bool sd_put_path_allowed(const char* path) {
@@ -6330,7 +6032,7 @@ void draw_pocsag_dashboard(bool static_panel) {
 }
 
 void draw_lora_dashboard(bool static_panel) {
-  if (rtl_ui_band != RtlBand::lora || rtl_nav_open) return;
+  if (rtl_ui_band != RtlBand::lora) return;
   if (!static_panel && !orcsdr::screens::may_draw(orcsdr::screens::Id::lora)) return;
   if (!static_panel) orcsdr::screens::note_visible_update(orcsdr::screens::Id::lora);
   const auto snapshot = lora_dashboard_snapshot();
@@ -6948,7 +6650,6 @@ void reset_spectrum_renderer() {
 }
 
 int spectrum_draw_width() {
-  if (rtl_nav_open) return kNavPanelX - kSpectrumX - 1;
   return (rtl_ui_band == RtlBand::cb || rtl_ui_band == RtlBand::lora)
              ? kCbSpectrumWidth
              : kSpectrumWidth;
@@ -10461,11 +10162,7 @@ void handle_shortwave_dashboard_action(const orcsdr::shortwave::Action& action) 
   switch (action.kind) {
     case ActionKind::tune_hz: tune(static_cast<uint32_t>(action.value)); break;
     case ActionKind::open_frequency:
-      rtl_nav_open = true;
-      rtl_frequency_keypad_open = true;
-      rtl_frequency_entry[0] = '\0';
-      draw_nav_panel();
-      return;
+      return;  // the Shortwave dashboard opens its own keypad
     case ActionKind::step_down:
       tune(rtl_step_frequency(RtlBand::shortwave, rtl_ui_frequency_hz, -1));
       break;
@@ -12256,10 +11953,7 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   return snapshot;
 }
 
-void navigation_close_overlays() {
-  rtl_nav_open = false;
-  rtl_frequency_keypad_open = false;
-}
+void navigation_close_overlays() {}
 
 void navigation_sync_audio() {
   sync_rtl_audio_for_band(rtl_ui_band);
@@ -14092,94 +13786,106 @@ void keyboard_step(int direction, int steps) {
 
 // The direct-entry keypad is a touch overlay with a text buffer; keys feed the buffer and
 // Enter/Esc press its Accept/Cancel buttons through the virtual tap.
-bool keypad_open() { return rtl_nav_open && rtl_frequency_keypad_open; }
 
-void tap_at(int x, int y) {
+// Taps are queued so a quick run of keystrokes (digits) each get their own press and release.
+struct PendingTap {
+  int x;
+  int y;
+};
+PendingTap g_tap_queue[16];
+size_t g_tap_queue_count = 0;
+
+void start_tap(int x, int y) {
   g_tap.x = x;
   g_tap.y = y;
   g_tap.start_ms = millis();
   g_tap.active = true;
 }
 
-void keypad_append(char c) {
-  const size_t length = strlen(rtl_frequency_entry);
-  if (length + 1 >= sizeof(rtl_frequency_entry)) return;
-  if (c == '.' && strchr(rtl_frequency_entry, '.') != nullptr) return;
-  rtl_frequency_entry[length] = c;
-  rtl_frequency_entry[length + 1] = '\0';
-  draw_nav_panel();
-}
-
-// Keypad focus: the overlay draws its keys directly, so its layout is registered here (it is
-// fixed: 3 x 4 keys, then Cancel and Accept) instead of by repainting.
-bool g_keypad_focus = false;
-uint32_t g_keypad_reshow_ms = 0;
-
-void keypad_register_controls() {
-  orcsdr::focus_nav::clear();
-  for (int index = 0; index < 12; ++index)
-    orcsdr::focus_nav::note(780 + (index % 3) * 138, 211 + (index / 3) * 66, 128, 56);
-  orcsdr::focus_nav::note(780, 481, 200, 56);    // Cancel
-  orcsdr::focus_nav::note(996, 481, 200, 56);    // Accept
-}
-
-void keypad_show_focus() {
-  orcsdr::focus_nav::Rect rect;
-  if (orcsdr::focus_nav::focused(&rect)) orcsdr::focus_ring::show(rect);
-}
-
-void keypad_leave_focus() {
-  orcsdr::focus_ring::hide();
-  orcsdr::focus_nav::clear_focus();
-  g_keypad_focus = false;
-}
-
-void handle_keypad_key(const orcsdr::keyboard_input::Key& key) {
-  using orcsdr::keyboard_input::Special;
-  using orcsdr::focus_nav::Direction;
-  const bool ring = g_keypad_focus && orcsdr::focus_ring::visible();
-  Direction direction = Direction::right;
-  bool arrow = true;
-  switch (key.special) {
-    case Special::left: direction = Direction::left; break;
-    case Special::right: direction = Direction::right; break;
-    case Special::up: direction = Direction::up; break;
-    case Special::down: direction = Direction::down; break;
-    default: arrow = false; break;
-  }
-  if (arrow) {
-    if (!g_keypad_focus) {
-      keypad_register_controls();
-      orcsdr::focus_nav::focus_at(780 + 138 + 64, 211 + 66 + 28);   // start on "5"
-      g_keypad_focus = true;
-    } else {
-      (void)orcsdr::focus_nav::move(direction);
-    }
-    keypad_show_focus();
+void tap_at(int x, int y) {
+  if (g_tap.active || g_tap_queue_count > 0) {
+    if (g_tap_queue_count < 16) g_tap_queue[g_tap_queue_count++] = {x, y};
     return;
   }
-  if (key.special == Special::enter) {
-    orcsdr::focus_nav::Rect rect;
-    if (ring && orcsdr::focus_nav::focused(&rect)) {
-      // Press the focused key. The overlay repaints after the tap, so put the ring back after.
-      orcsdr::focus_ring::forget();
-      tap_at(rect.x + rect.w / 2, rect.y + rect.h / 2);
-      g_keypad_reshow_ms = millis() + 300;
-    } else {
-      tap_at(996 + 100, 481 + 28);   // Accept
+  start_tap(x, y);
+}
+
+void service_tap_queue() {
+  if (g_tap.active || g_tap_queue_count == 0) return;
+  const PendingTap next = g_tap_queue[0];
+  for (size_t i = 1; i < g_tap_queue_count; ++i) g_tap_queue[i - 1] = g_tap_queue[i];
+  --g_tap_queue_count;
+  start_tap(next.x, next.y);
+}
+
+// The FM, AM and Shortwave dashboards show a shared full-screen numpad (freq_keypad). Keys are
+// replayed as taps on its real buttons, so each dashboard's own validation and tuning run
+// unchanged; arrows move focus over the numpad's controls.
+bool shared_keypad_open() {
+  switch (rtl_ui_band) {
+    case RtlBand::fm: return orcsdr::fm::keypad_open();
+    case RtlBand::am: return orcsdr::am::keypad_open();
+    case RtlBand::shortwave: return orcsdr::shortwave::keypad_open();
+    default: return false;
+  }
+}
+
+void tap_keypad_key(char key) {
+  int x = 0;
+  int y = 0;
+  if (orcsdr::freq_keypad::key_point(key, &x, &y)) tap_at(x, y);
+}
+
+void handle_shared_keypad_key(const orcsdr::keyboard_input::Key& key) {
+  using orcsdr::keyboard_input::Special;
+  int x = 0;
+  int y = 0;
+  switch (key.special) {
+    case Special::left:
+    case Special::right:
+    case Special::up:
+    case Special::down:
+      (void)handle_navigation_key(key);
+      return;
+    case Special::enter: {
+      orcsdr::focus_nav::Rect rect;
+      if (orcsdr::focus_ring::visible() && orcsdr::focus_nav::focused(&rect)) {
+        const int cx = rect.x + rect.w / 2;
+        const int cy = rect.y + rect.h / 2;
+        int cancel_x = 0, cancel_y = 0, tune_x = 0, tune_y = 0;
+        orcsdr::freq_keypad::cancel_point(&cancel_x, &cancel_y);
+        orcsdr::freq_keypad::tune_point(&tune_x, &tune_y);
+        if ((cx == cancel_x && cy == cancel_y) || (cx == tune_x && cy == tune_y)) {
+          orcsdr::focus_ring::forget();   // the keypad is about to close and repaint
+          g_nav_dirty = true;
+        }
+        tap_at(cx, cy);
+      } else {
+        orcsdr::freq_keypad::tune_point(&x, &y);
+        tap_at(x, y);
+      }
+      return;
     }
-  } else if (key.special == Special::escape) {
-    if (ring) keypad_leave_focus();
-    else tap_at(780 + 100, 481 + 28);   // Cancel
-  } else if (key.special == Special::backspace || key.special == Special::delete_key) {
-    const size_t length = strlen(rtl_frequency_entry);
-    if (length > 0) rtl_frequency_entry[length - 1] = '\0';
-    draw_nav_panel();
-    if (g_keypad_focus) g_keypad_reshow_ms = millis() + 50;
-  } else if (key.special == Special::none && !key.ctrl && !key.alt &&
-             ((key.ch >= '0' && key.ch <= '9') || key.ch == '.')) {
-    keypad_append(key.ch);
-    if (g_keypad_focus) g_keypad_reshow_ms = millis() + 50;
+    case Special::escape:
+      if (orcsdr::focus_ring::visible()) {
+        orcsdr::focus_ring::hide();
+        orcsdr::focus_nav::clear_focus();
+        g_nav_have_last = false;
+      } else {
+        orcsdr::freq_keypad::cancel_point(&x, &y);
+        tap_at(x, y);
+      }
+      return;
+    case Special::backspace:
+    case Special::delete_key:
+      tap_keypad_key('\b');
+      return;
+    case Special::none:
+      if (!key.ctrl && !key.alt && ((key.ch >= '0' && key.ch <= '9') || key.ch == '.'))
+        tap_keypad_key(key.ch);
+      return;
+    default:
+      return;
   }
 }
 
@@ -14216,10 +13922,14 @@ void handle_radio_key(const orcsdr::keyboard_input::Key& key) {
   const char c = key.ch;
   if ((c >= '0' && c <= '9') || c == '.') {
     // Start direct frequency entry with the typed digit already in the field.
-    rtl_nav_open = true;
-    rtl_frequency_keypad_open = true;
-    rtl_frequency_entry[0] = '\0';
-    keypad_append(c);
+    if (rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::am) {
+      if (rtl_ui_band == RtlBand::fm) orcsdr::fm::begin_frequency_entry();
+      else orcsdr::am::begin_frequency_entry();
+      tap_keypad_key(c);
+    } else if (rtl_ui_band == RtlBand::shortwave) {
+      orcsdr::shortwave::begin_frequency_entry();
+      tap_keypad_key(c);
+    }
   } else if (c == 'm' || c == 'M') {
     set_rtl_audio_user_enabled(!rtl_audio_user_enabled.load(std::memory_order_acquire));
   } else if (c == '+' || c == '=') {
@@ -14241,8 +13951,8 @@ void route_key(const orcsdr::keyboard_input::Key& key) {
     handle_editor_key(key);
     return;
   }
-  if (keypad_open()) {
-    handle_keypad_key(key);
+  if (shared_keypad_open()) {
+    handle_shared_keypad_key(key);
     return;
   }
   const bool radio = radio_dashboard_active();
@@ -14270,22 +13980,11 @@ void route_key(const orcsdr::keyboard_input::Key& key) {
 
 void service_keyboard() {
   orcsdr::tab5_keyboard::service(millis());
+  service_tap_queue();
   // A finger on the panel takes over: drop the ring and rebuild the control map next time.
   if (!g_tap.active && M5.Touch.getCount() > 0 && orcsdr::focus_ring::visible()) {
     orcsdr::focus_ring::hide();
     g_nav_dirty = true;
-  }
-  if (g_keypad_focus) {
-    if (!keypad_open()) {
-      // Keypad closed (accepted, cancelled, or replaced): forget its ring and map.
-      g_keypad_focus = false;
-      orcsdr::focus_ring::forget();
-      orcsdr::focus_nav::clear();
-      g_nav_dirty = true;
-    } else if (g_keypad_reshow_ms != 0 && millis() >= g_keypad_reshow_ms && !g_tap.active) {
-      g_keypad_reshow_ms = 0;
-      keypad_show_focus();
-    }
   }
   orcsdr::keyboard_input::Key key;
   while (orcsdr::tab5_keyboard::pop(&key)) {
@@ -14325,14 +14024,6 @@ void poll_sdr_touch(bool from_stream) {
   const auto touch = ui_touch_detail(0);
   const bool pressed = touch.isPressed() || touch.wasPressed();
   const int scope_width = spectrum_draw_width();
-
-  if (rtl_nav_open) {
-    if (pressed && !was_pressed) {
-      if (!handle_nav_touch(touch.x, touch.y)) handle_tool_tab_touch(touch.x, touch.y);
-    }
-    was_pressed = pressed;
-    return;
-  }
 
   if (rtl_header_audio_control.expanded && pressed) {
     (void)handle_global_header_audio_touch(touch.x, touch.y);
@@ -14911,7 +14602,6 @@ constexpr UiDocScreen kUiDocScreens[] = {
     {"pocsag.activity", "live"},
     {"pocsag.session", "live"},
     {"home", "live,demo"},
-    {"nav", "demo"},
     {"settings.connectivity", "demo"},
     {"settings.firmware-updates", "demo"},
     {"settings.location-adsb", "demo"},
@@ -14953,7 +14643,6 @@ constexpr UiDocScreen kUiDocScreens[] = {
     {"browse.scope", "live,demo"},
     {"browse.capture", "live,demo"},
     {"overlay.volume", "demo"},
-    {"overlay.frequency-keypad", "demo"},
     {"overlay.wifi-scanning", "demo"},
     {"overlay.masked-keyboard", "demo"},
 };
@@ -14965,7 +14654,6 @@ struct UiDocState {
   bool was_settings_active = false;
   bool was_home_active = false;
   bool graphics_enabled = true;
-  bool nav_open = false;
   orcsdr::screens::Id screen = orcsdr::screens::Id::none;
   RtlBand band = RtlBand::fm;
   uint32_t frequency_hz = kRtlFmDefaultHz;
@@ -15195,8 +14883,6 @@ bool ui_doc_view_for_suffix(const char* suffix, orcsdr::p25::View* view) {
 bool ui_doc_render(const char* screen_id, bool demo) {
   if (!ui_doc_screen_exists(screen_id, demo ? "demo" : "live")) return false;
   ui_doc_leave_surfaces();
-  rtl_nav_open = false;
-  rtl_frequency_keypad_open = false;
 
   if (strncmp(screen_id, "pocsag.", 7) == 0) {
     rtl_ui_active.store(true, std::memory_order_release);
@@ -15213,18 +14899,6 @@ bool ui_doc_render(const char* screen_id, bool demo) {
   } else if (strcmp(screen_id, "home") == 0) {
     rtl_ui_active.store(false, std::memory_order_release);
     show_home(demo);
-  } else if (strcmp(screen_id, "nav") == 0 ||
-             strcmp(screen_id, "overlay.frequency-keypad") == 0) {
-    rtl_ui_active.store(true, std::memory_order_release);
-    rtl_ui_band = RtlBand::browse;
-    rtl_ui_frequency_hz = kRtlBrowseDefaultHz;
-    g_orc_tool.store(static_cast<uint8_t>(OrcTool::Radio), std::memory_order_release);
-    draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz, rtl_ui_volume);
-    rtl_nav_open = true;
-    rtl_frequency_keypad_open = strcmp(screen_id, "overlay.frequency-keypad") == 0;
-    if (rtl_frequency_keypad_open)
-      strlcpy(rtl_frequency_entry, "146.520", sizeof(rtl_frequency_entry));
-    draw_tool_tabs();
   } else if (strncmp(screen_id, "settings.", 9) == 0 ||
              strncmp(screen_id, "overlay.wifi-", 13) == 0 ||
              strcmp(screen_id, "overlay.masked-keyboard") == 0) {
@@ -15386,7 +15060,6 @@ void ui_doc_enter() {
   ui_doc.was_home_active = orcsdr::home::active();
   ui_doc.screen = orcsdr::screens::status().active;
   ui_doc.graphics_enabled = rtl_graphics_enabled.exchange(false, std::memory_order_acq_rel);
-  ui_doc.nav_open = rtl_nav_open;
   ui_doc.band = rtl_ui_band;
   ui_doc.frequency_hz = rtl_ui_frequency_hz;
   ui_doc.tool = orc_tool_current();
@@ -15439,7 +15112,6 @@ bool ui_doc_pause_reception() {
   rtl_ui_frequency_hz = ui_doc.frequency_hz;
   g_orc_tool.store(static_cast<uint8_t>(ui_doc.tool), std::memory_order_release);
   rtl_ui_active.store(ui_doc.was_ui_active, std::memory_order_release);
-  rtl_nav_open = ui_doc.nav_open;
   ui_doc_leave_surfaces();
   if (ui_doc.was_home_active) {
     show_home();
@@ -15481,8 +15153,6 @@ struct UiRegressionSnapshot {
   uint32_t frequency_hz = 0;
   uint8_t volume = 0;
   OrcTool tool = OrcTool::Radio;
-  bool nav_open = false;
-  bool keypad_open = false;
   bool ui_active = false;
   bool sound_enabled = false;
   bool graphics_enabled = false;
@@ -15494,8 +15164,6 @@ UiRegressionSnapshot ui_regression_snapshot() {
           rtl_ui_band == RtlBand::p25 ? p25_control_frequency_hz : rtl_ui_frequency_hz,
           rtl_ui_volume,
           orc_tool_current(),
-          rtl_nav_open,
-          rtl_frequency_keypad_open,
           rtl_ui_active.load(std::memory_order_acquire),
           rtl_audio_user_enabled.load(std::memory_order_acquire),
           rtl_graphics_enabled.load(std::memory_order_acquire),
@@ -15508,8 +15176,6 @@ bool ui_regression_restored(const UiRegressionSnapshot& before) {
                                       : rtl_ui_frequency_hz == before.frequency_hz;
   return rtl_ui_band == before.band && frequency_restored &&
          rtl_ui_volume == before.volume && orc_tool_current() == before.tool &&
-         rtl_nav_open == before.nav_open &&
-         rtl_frequency_keypad_open == before.keypad_open &&
          rtl_ui_active.load(std::memory_order_acquire) == before.ui_active &&
          rtl_audio_user_enabled.load(std::memory_order_acquire) == before.sound_enabled &&
          rtl_graphics_enabled.load(std::memory_order_acquire) == before.graphics_enabled &&
@@ -15556,8 +15222,8 @@ void run_ui_regression(bool workflow) {
                                   before.screen == orcsdr::screens::Id::adsb ||
                                   before.screen == orcsdr::screens::Id::lora ||
                                   before.screen == orcsdr::screens::Id::pocsag;
-    if (ui_documentation_mode || orcsdr::settings::active() || before.nav_open ||
-        before.keypad_open || !supported_screen) {
+    if (ui_documentation_mode || orcsdr::settings::active() ||
+        !supported_screen) {
       Serial.printf("RTL_UI_REGRESSION_RESULT mode=RUN pass=0 reason=unsafe_overlay active=%s\n",
                     orcsdr::screens::name(before.screen));
       return;

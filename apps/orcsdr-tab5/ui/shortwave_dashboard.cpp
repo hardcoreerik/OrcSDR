@@ -1042,6 +1042,15 @@ bool spectrum_contains(int32_t x, int32_t y) {
 }
 
 bool active() { return g_active; }
+bool keypad_open() { return g_active && g_state.modal() == Modal::frequency; }
+
+void begin_frequency_entry() {
+  if (!g_active || g_state.modal() != Modal::none) return;
+  g_state.open(Modal::frequency);
+  g_entry[0] = '\0';
+  draw();
+}
+
 bool spectrum_active() { return g_active && g_state.spectrum_allowed(); }
 uint32_t saved_frequency() { return g_saved_frequency; }
 void note_tuned(uint32_t frequency_hz) { g_saved_frequency = frequency_hz; }

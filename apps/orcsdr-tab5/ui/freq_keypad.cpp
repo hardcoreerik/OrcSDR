@@ -2,6 +2,8 @@
 
 #include <M5Unified.h>
 
+#include "focus_nav.hpp"
+
 #include <cstdio>
 #include <cstring>
 
@@ -75,6 +77,30 @@ void draw(int clear_top, uint16_t background, const char* title, const char* hin
   }
   key(kCancelX, kActionY, kActionW, kActionH, "CANCEL", TFT_RED, kCardFill, TFT_RED, 4);
   key(kTuneX, kActionY, kActionW, kActionH, "TUNE", kGreen, kGreen, TFT_BLACK, 4);
+  // Report the controls for keyboard focus navigation.
+  for (int i = 0; i < 12; ++i) focus_nav::note(key_x(i), key_y(i), kKeyW, kKeyH);
+  focus_nav::note(kCancelX, kActionY, kActionW, kActionH);
+  focus_nav::note(kTuneX, kActionY, kActionW, kActionH);
+}
+
+bool key_point(char key, int* x, int* y) {
+  for (int i = 0; i < 12; ++i) {
+    if (kKeys[i] != key) continue;
+    if (x) *x = key_x(i) + kKeyW / 2;
+    if (y) *y = key_y(i) + kKeyH / 2;
+    return true;
+  }
+  return false;
+}
+
+void cancel_point(int* x, int* y) {
+  if (x) *x = kCancelX + kActionW / 2;
+  if (y) *y = kActionY + kActionH / 2;
+}
+
+void tune_point(int* x, int* y) {
+  if (x) *x = kTuneX + kActionW / 2;
+  if (y) *y = kActionY + kActionH / 2;
 }
 
 Result handle_touch(int32_t x, int32_t y, char* entry, size_t entry_size) {

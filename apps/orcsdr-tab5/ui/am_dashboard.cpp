@@ -844,6 +844,15 @@ Action handle_bandwidth_drag(int32_t x, int32_t y) {
 }
 
 bool active() { return g_active; }
+bool keypad_open() { return g_active && g_keypad; }
+
+void begin_frequency_entry() {
+  if (!g_active || g_keypad || g_view != View::listen) return;
+  g_keypad = true;
+  g_entry[0] = '\0';
+  draw();
+}
+
 bool spectrum_active() { return g_active && !g_keypad && g_view == View::spectrum; }
 View view() { return g_view; }
 

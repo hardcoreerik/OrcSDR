@@ -21,7 +21,6 @@
   },
   "screens": [
     {"id":"home","title":"Home","dashboard":"Shared","tab":"Home","narration":"Home reports device readiness and opens the radio or global Settings."},
-    {"id":"nav","title":"Navigation panel","dashboard":"Shared","tab":"NAV","narration":"NAV provides direct tuning, band shortcuts, zoom, filter, step, peak, and center controls."},
     {"id":"settings.connectivity","title":"Connectivity settings","dashboard":"Settings","tab":"Connectivity","narration":"Connectivity manages Wi-Fi power, antenna choice, scanning, saved networks, and connection status."},
     {"id":"settings.firmware-updates","title":"Firmware update settings","dashboard":"Settings","tab":"Firmware and Updates","narration":"Firmware and Updates shows the P4 hosted and C6 wireless coprocessor versions and the coprocessor update status."},
     {"id":"settings.location-adsb","title":"Location and ADS-B settings","dashboard":"Settings","tab":"Location and ADS-B","narration":"Location and ADS-B stores the receiver position and radar range without requiring a phone."},
@@ -63,7 +62,6 @@
     {"id":"browse.scope","title":"Browse Scope","dashboard":"Browse","tab":"Scope","narration":"Browse Scope is the general-purpose spectrum and waterfall view."},
     {"id":"browse.capture","title":"Browse Capture","dashboard":"Browse","tab":"Capture","narration":"Browse Capture records the active demodulated audio path."},
     {"id":"overlay.volume","title":"Volume controls","dashboard":"Shared","tab":"Volume","narration":"Tap the speaker indicator to open volume down, mute, and volume up without repainting the dashboard."},
-    {"id":"overlay.frequency-keypad","title":"Direct-frequency keypad","dashboard":"Shared","tab":"Frequency keypad","narration":"The direct-frequency keypad accepts a band-appropriate frequency and provides cancel and tune actions."},
     {"id":"overlay.wifi-results","title":"Wi-Fi scan results","dashboard":"Settings","tab":"Wi-Fi results","narration":"Scan results show sanitized network names, security, signal strength, and saved status."},
     {"id":"overlay.masked-keyboard","title":"Masked Wi-Fi keyboard","dashboard":"Settings","tab":"Wi-Fi keyboard","narration":"The on-screen keyboard masks the demonstration password and never captures a saved credential."}
   ]
