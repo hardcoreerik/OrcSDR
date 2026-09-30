@@ -77,7 +77,6 @@ EXT_RAM_BSS_ATTR float spectrum_levels[512]{};
 uint8_t waterfall_contrast = 5;
 uint8_t waterfall_palette = 0;
 uint8_t waterfall_speed = 0;   // index into kSpeedNames
-uint8_t waterfall_frame = 0;
 
 struct Gesture {
   bool down = false;
@@ -287,9 +286,10 @@ constexpr PaletteStop kPlasmaPalette[] = {
 constexpr PaletteStop kGrayPalette[] = {{0.0f, 0, 0, 0}, {1.0f, 255, 255, 255}};
 constexpr const char* kPaletteNames[] = {"CLASSIC", "FM", "FIRE", "ICE", "PLASMA", "GRAY"};
 constexpr uint8_t kPaletteCount = 6;
-// Waterfall speed: rows added per spectrum frame (2 or 1), or one row every 2 / 4 frames.
-constexpr const char* kSpeedNames[] = {"FAST", "NORMAL", "SLOW", "SLOWER"};
-constexpr uint8_t kSpeedCount = 4;
+// Waterfall speed: rows added per spectrum frame.
+constexpr const char* kSpeedNames[] = {"NORMAL", "FAST", "FASTER"};
+constexpr int kSpeedRows[] = {2, 3, 4};
+constexpr uint8_t kSpeedCount = 3;
 
 uint16_t waterfall_color(float value) {
   value = std::clamp(value, 0.0f, 1.0f);
@@ -993,14 +993,7 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   }
   M5.Display.clearClipRect();
   draw_spectrum_axis();
-  // Speed: FAST adds 2 rows per frame, NORMAL 1, SLOW/SLOWER one row every 2 / 4 frames.
-  const int rows = waterfall_speed == 0 ? 2 : 1;
-  const uint8_t every = waterfall_speed == 2 ? 2 : waterfall_speed == 3 ? 4 : 1;
-  if (++waterfall_frame < every) {
-    M5.Display.endWrite();
-    return;
-  }
-  waterfall_frame = 0;
+  const int rows = kSpeedRows[waterfall_speed % kSpeedCount];
   M5.Display.setScrollRect(kPlotX + 1, kWaterfallY + 1, kPlotW - 2,
                            kWaterfallH - 2, TFT_BLACK);
   M5.Display.scroll(0, -rows);
