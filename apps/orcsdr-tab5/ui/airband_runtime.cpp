@@ -5,7 +5,6 @@
 #include <esp_attr.h>
 #include <esp_log.h>
 #include <esp_timer.h>
-#define AB_TRACE(msg) ESP_LOGI("airband", "TRACE %s", msg)
 
 #include <algorithm>
 #include <atomic>
@@ -123,7 +122,6 @@ void load_catalog(const LiveState& live) {
            static_cast<unsigned>(g_catalog.count()), g_catalog.loaded() ? 1 : 0,
            static_cast<unsigned>(requested.radius_nm));
   rebuild_bank(live.frequency_hz);
-  AB_TRACE("load_catalog bank rebuilt");
 }
 
 const Snapshot& snapshot(const LiveState& live) {
@@ -335,29 +333,22 @@ void dispatch(const Action& action, const LiveState& live) {
 }  // namespace
 
 void configure(const Hooks& hooks) {
-  AB_TRACE("configure begin");
   g_hooks = hooks;
   load_settings_once();
-  AB_TRACE("configure end");
 }
 
 void enter(const LiveState& live) {
-  AB_TRACE("enter begin");
   load_settings_once();
   g_squelch.reset();
   publish_audio_squelch();
-  AB_TRACE("enter settings loaded");
   Location requested{live.location_configured, live.latitude_e7, live.longitude_e7};
   requested.radius_nm = g_scanner.settings().radius_nm;
   if (!g_catalog_attempted || !same_location(requested, g_catalog_location))
     load_catalog(live);
   else
     rebuild_bank(live.frequency_hz);
-  AB_TRACE("enter catalog done");
   const Snapshot& first = snapshot(live);
-  AB_TRACE("enter snapshot built");
   dashboard_enter(first);
-  AB_TRACE("enter end");
 }
 
 void leave() {
