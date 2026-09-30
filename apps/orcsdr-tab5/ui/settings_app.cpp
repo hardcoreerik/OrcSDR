@@ -1,3 +1,4 @@
+#include "focus_nav.hpp"
 #include "settings_app.hpp"
 
 #include "dashboard_audio_control.hpp"
@@ -71,6 +72,7 @@ void text(const char* value, int x, int y, uint16_t color, uint8_t size = 2,
 }
 
 void button(const char* label, int x, int y, int w, int h, uint16_t fill) {
+  orcsdr::focus_nav::note(x, y, w, h);
   M5.Display.fillRoundRect(x, y, w, h, 8, fill);
   M5.Display.drawRoundRect(x, y, w, h, 8, TFT_LIGHTGREY);
   M5.Display.setTextDatum(middle_center);

@@ -1,9 +1,11 @@
+#include "focus_nav.hpp"
 #include "lora_dashboard.hpp"
 
 #include "dashboard_audio_control.hpp"
 #include "offline_map.hpp"
 #include "orc_badge.hpp"
 #include "lora_channel_control.hpp"
+#include "waterfall_style.hpp"
 
 #include <M5Unified.h>
 #include <esp_attr.h>
@@ -35,7 +37,6 @@ constexpr int kWaterfallH = 126;
 constexpr uint32_t kDynamicRefreshIntervalMs = 1000;
 constexpr uint32_t kSpectrumRefreshIntervalMs = 50;
 constexpr float kSpectrumRangeDb = 42.0f;
-constexpr int kWaterfallRowsPerFrame = 1;
 constexpr size_t kSpectrumTraceCapacity = 256;
 constexpr size_t kTrafficRows = 5;
 
@@ -91,30 +92,7 @@ float estimate_noise_floor(const float* levels, size_t first_bin, size_t visible
 }
 
 uint16_t waterfall_color(float level) {
-  const float v = std::clamp(level, 0.0f, 1.0f);
-  uint8_t r = 0, g = 0, b = 0;
-  if (v < 0.20f) {
-    b = static_cast<uint8_t>(20.0f + v * 400.0f);
-  } else if (v < 0.50f) {
-    const float t = (v - 0.20f) / 0.30f;
-    g = static_cast<uint8_t>(180.0f * t);
-    b = static_cast<uint8_t>(100.0f + 155.0f * t);
-  } else if (v < 0.75f) {
-    const float t = (v - 0.50f) / 0.25f;
-    r = static_cast<uint8_t>(255.0f * t);
-    g = static_cast<uint8_t>(180.0f + 75.0f * t);
-    b = static_cast<uint8_t>(255.0f * (1.0f - t));
-  } else if (v < 0.90f) {
-    const float t = (v - 0.75f) / 0.15f;
-    r = 255;
-    g = static_cast<uint8_t>(255.0f * (1.0f - t));
-  } else {
-    const uint8_t hot = static_cast<uint8_t>(255.0f * (v - 0.90f) / 0.10f);
-    r = 255;
-    g = hot;
-    b = hot;
-  }
-  return M5.Display.color565(r, g, b);
+  return waterfall_style::color565(waterfall_style::Screen::lora, level);
 }
 
 void draw_lora_channel_markers() {
@@ -194,6 +172,7 @@ void card(int x, int y, int w, int h, uint16_t border = kCyan) {
 
 void button(int x, int y, int w, int h, const char* title, uint16_t color = kCyan,
             bool selected = false) {
+  orcsdr::focus_nav::note(x, y, w, h);
   M5.Display.fillRoundRect(x, y, w, h, 9, selected ? 0x1264 : kPanel);
   M5.Display.drawRoundRect(x, y, w, h, 9, color);
   text(title, x + w / 2, y + h / 2, selected ? color : TFT_WHITE, 2);
@@ -323,6 +302,25 @@ void draw_metric(int x, int y, int w, const char* title, const char* value,
   text(value, x + 16, y + 56, color, 3, middle_left);
 }
 
+constexpr int kStyleChipY = 146, kStyleChipH = 44, kStyleChipW = 118;
+constexpr int kPaletteChipX = 760, kSpeedChipX = 888;
+
+void draw_style_chip(int x, const char* title, const char* value) {
+  orcsdr::focus_nav::note(x, kStyleChipY, kStyleChipW, kStyleChipH);
+  M5.Display.fillRoundRect(x, kStyleChipY, kStyleChipW, kStyleChipH, 8, kPanel);
+  M5.Display.drawRoundRect(x, kStyleChipY, kStyleChipW, kStyleChipH, 8, kCyan);
+  text(title, x + kStyleChipW / 2, kStyleChipY + 13, kCyan, 1);
+  text(value, x + kStyleChipW / 2, kStyleChipY + 31, kGreen, 2);
+}
+
+void draw_style_chips() {
+  using waterfall_style::Screen;
+  draw_style_chip(kPaletteChipX, "PALETTE",
+                  waterfall_style::palette_name(waterfall_style::palette(Screen::lora)));
+  draw_style_chip(kSpeedChipX, "SPEED",
+                  waterfall_style::speed_name(waterfall_style::speed(Screen::lora)));
+}
+
 void draw_plot_static() {
   card(24, 138, 1224, 430);
   text("PASSIVE LORA MONITOR", 60, 164, kGreen, 3, middle_left);
@@ -333,6 +331,7 @@ void draw_plot_static() {
            static_cast<unsigned long>(g_snapshot.bandwidth_hz / 1000u));
   text(value, 520, 198, kGreen, 2, middle_left);
   text("RX ONLY", 1020, 164, kGreen, 2, middle_left);
+  draw_style_chips();
   const uint32_t half_span = g_snapshot.span_hz / 2u;
   const uint32_t left_hz = g_snapshot.frequency_hz > half_span
                                ? g_snapshot.frequency_hz - half_span
@@ -899,9 +898,10 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
       const float normalized = (levels[source] - display_floor) / kSpectrumRangeDb;
       g_waterfall_row[i] = waterfall_color(normalized);
     }
-    M5.Display.scroll(0, -kWaterfallRowsPerFrame);
-    for (int row = 0; row < kWaterfallRowsPerFrame; ++row)
-      M5.Display.pushImage(kPlotX, kWaterfallY + kWaterfallH - 3 + row,
+    const int rows = waterfall_style::rows_per_frame(waterfall_style::Screen::lora);
+    M5.Display.scroll(0, -rows);
+    for (int row = 0; row < rows; ++row)
+      M5.Display.pushImage(kPlotX, kWaterfallY + kWaterfallH - 2 - rows + row,
                            kPlotW, 1, g_waterfall_row);
     draw_lora_channel_markers();
   }
@@ -930,6 +930,20 @@ Action handle_touch(int32_t x, int32_t y) {
   if (hit(x, y, 0, kTabsY, 1280, 80))
     return {ActionKind::select_view, static_cast<uint32_t>(x / kTabW)};
   if (g_view == View::overview) {
+    if (hit(x, y, kPaletteChipX, kStyleChipY, kStyleChipW, kStyleChipH)) {
+      waterfall_style::next_palette(waterfall_style::Screen::lora);
+      M5.Display.startWrite();
+      draw_style_chips();
+      M5.Display.endWrite();
+      return {};
+    }
+    if (hit(x, y, kSpeedChipX, kStyleChipY, kStyleChipW, kStyleChipH)) {
+      waterfall_style::next_speed(waterfall_style::Screen::lora);
+      M5.Display.startWrite();
+      draw_style_chips();
+      M5.Display.endWrite();
+      return {};
+    }
     if (hit(x, y, 34, 578, 250, 48)) return {ActionKind::scan_toggle};
     if (hit(x, y, 300, 578, 250, 48)) return {ActionKind::record_iq_toggle};
     if (hit(x, y, 566, 578, 250, 48)) return {ActionKind::open_channels};
@@ -1036,7 +1050,7 @@ bool self_check() {
       !has_position(snapshot.nodes[0])) return false;
   const float scope_levels[] = {-50.0f, -49.0f, -48.0f, -10.0f};
   if (fabsf(estimate_noise_floor(scope_levels, 0, 4) + 52.0f) > 0.01f ||
-      kSpectrumRefreshIntervalMs != 50 || kWaterfallRowsPerFrame != 1 ||
+      kSpectrumRefreshIntervalMs != 50 ||
       kSpectrumTraceCapacity != 256) return false;
   char value[16];
   format_id(value, sizeof(value), snapshot.nodes[0].id);

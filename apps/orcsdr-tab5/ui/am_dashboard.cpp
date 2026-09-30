@@ -1,3 +1,4 @@
+#include "focus_nav.hpp"
 #include "am_dashboard.hpp"
 
 #include "dashboard_audio_control.hpp"
@@ -210,6 +211,7 @@ void card(int x, int y, int w, int h) {
 
 void button(int x, int y, int w, int h, const char* title, uint16_t color = kCyan,
             bool selected = false) {
+  orcsdr::focus_nav::note(x, y, w, h);
   M5.Display.fillRoundRect(x, y, w, h, 10, selected ? 0x1264 : kPanel);
   M5.Display.drawRoundRect(x, y, w, h, 10, color);
   text(title, x + w / 2, y + h / 2, selected ? color : TFT_WHITE, 2);
@@ -842,6 +844,15 @@ Action handle_bandwidth_drag(int32_t x, int32_t y) {
 }
 
 bool active() { return g_active; }
+bool keypad_open() { return g_active && g_keypad; }
+
+void begin_frequency_entry() {
+  if (!g_active || g_keypad || g_view != View::listen) return;
+  g_keypad = true;
+  g_entry[0] = '\0';
+  draw();
+}
+
 bool spectrum_active() { return g_active && !g_keypad && g_view == View::spectrum; }
 View view() { return g_view; }
 

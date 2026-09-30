@@ -1,3 +1,4 @@
+#include "focus_nav.hpp"
 #include "adsb_dashboard.hpp"
 
 #include "dashboard_audio_control.hpp"
@@ -249,6 +250,9 @@ void text(const char* value, int x, int y, uint16_t color = TFT_WHITE,
   M5.Display.setTextSize(1);
   M5.Display.setTextColor(color);
   M5.Display.drawString(value, x, y);
+  // Put the built-in font back: the shared header helpers (battery, buttons) draw with it, and a
+  // leaked DejaVu font made the battery readout oversized right after navigating here.
+  M5.Display.setFont(nullptr);
 }
 
 void card(int x, int y, int w, int h) {
@@ -257,6 +261,7 @@ void card(int x, int y, int w, int h) {
 }
 
 void button(const char* label, int x, int y, int w, int h, uint16_t color) {
+  orcsdr::focus_nav::note(x, y, w, h);
   M5.Display.fillRoundRect(x, y, w, h, 8, color);
   M5.Display.drawRoundRect(x, y, w, h, 8, TFT_LIGHTGREY);
   text(label, x + w / 2, y + h / 2, TFT_WHITE, 2);
@@ -290,41 +295,18 @@ void plane(int x, int y, int scale, uint16_t color) {
                           x + scale / 2, y + scale / 2, x, y + scale / 3, color);
 }
 
+// Dashboards leave the header's status-bar area (audio_header::kStatusBar*) empty: that space belongs to
+// the shared status bar, and the aircraft count and message rate are already in the STATS and radar cards.
 void draw_header() {
+  M5.Display.setFont(nullptr);   // the dashboards' own text() leaves a DejaVu font selected
   M5.Display.fillRect(0, 0, 1280, kHeaderH, kBg);
   M5.Display.drawFastHLine(20, kHeaderH - 1, 1240, kBorder);
   audio_header::draw_brand("ADS-B 1090");
-  M5.Display.drawFastVLine(370, 12, 76, kBorder);
-  M5.Display.fillCircle(390, 36, 7, kGreen);
-  char count[24];
-  snprintf(count, sizeof(count), "%u AIRCRAFT", static_cast<unsigned>(displayed_aircraft_count()));
-  text(count, 409, 36, TFT_WHITE, 2, middle_left);
-  M5.Display.drawFastVLine(570, 12, 76, kBorder);
-  text("MSG RATE", 595, 36, kMuted, 1, middle_left);
-  char rate[20];
-  snprintf(rate, sizeof(rate), "%.1f/s", displayed_message_rate());
-  text(rate, 690, 36, kGreen, 2, middle_left);
-  button(g_atc_listening ? "ATC" : (g_live ? "LIVE" : "WAIT"), 755, 14, 92, 44,
-         g_atc_listening ? TFT_DARKCYAN : (g_live ? TFT_DARKGREEN : TFT_DARKGREY));
-  text("USB", 905, 29, TFT_WHITE, 1, middle_left);
-  text("CONNECTED", 905, 51, kBlue, 1, middle_left);
   audio_header::draw_home_button();
   audio_header::draw_battery(M5.Power.getBatteryLevel());
   audio_header::draw_mute_button(g_live_snapshot.sound_enabled);
   audio_header::draw_visualizer_button(g_live_snapshot.effective_sps != 0);
   audio_header::draw_settings_button();
-}
-
-void draw_header_live_values() {
-  M5.Display.fillRect(400, 12, 165, 48, kBg);
-  M5.Display.fillRect(685, 12, 65, 48, kBg);
-  char value[24];
-  snprintf(value, sizeof(value), "%u AIRCRAFT", static_cast<unsigned>(displayed_aircraft_count()));
-  text(value, 409, 36, TFT_WHITE, 2, middle_left);
-  snprintf(value, sizeof(value), "%.1f/s", displayed_message_rate());
-  text(value, 690, 36, kGreen, 2, middle_left);
-  button(g_atc_listening ? "ATC" : (g_live ? "LIVE" : "WAIT"), 755, 14, 92, 44,
-         g_atc_listening ? TFT_DARKCYAN : (g_live ? TFT_DARKGREEN : TFT_DARKGREY));
 }
 
 void tab_icon(int index, int x, int y, uint16_t color) {
@@ -964,7 +946,6 @@ void update() {
   last_draw_ms = millis();
   apply_live_snapshot();
   g_drawn_revision = g_live_snapshot.revision;
-  draw_header_live_values();
   // Live repaint deliberately skips redraw_content()'s full black clear.
   switch (g_view) {
     case View::radar: draw_radar(); break;

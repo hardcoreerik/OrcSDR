@@ -90,6 +90,8 @@ TouchResult handle_preset_touch(int32_t x, int32_t y, bool pressed, uint32_t now
 Action handle_gain_drag(int32_t x, int32_t y);
 Action handle_bandwidth_drag(int32_t x, int32_t y);
 bool active();
+bool keypad_open();
+void begin_frequency_entry();
 bool spectrum_active();
 View view();
 void load(NvsStore& store);
