@@ -82,6 +82,10 @@ float spectrum_ceiling = 0.0f;
 bool spectrum_ceiling_valid = false;
 constexpr float kSpectrumHeadroomDb = 5.0f;
 constexpr float kSpectrumMinRangeDb = 30.0f;
+// The frequency labels occupy the bottom 24 px of the plot, so the trace baseline sits above them,
+// and the floor is lowered a little so the noise floor is drawn off the baseline, not hidden on it.
+constexpr int kSpectrumAxisBandPx = 26;
+constexpr float kSpectrumFloorMarginDb = 4.0f;
 uint8_t waterfall_speed = 0;   // index into kSpeedNames
 
 struct Gesture {
@@ -980,6 +984,7 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
     M5.Display.drawFastHLine(kPlotX, kSpectrumY + i * kSpectrumH / 5, kPlotW, kDim);
     M5.Display.drawFastVLine(kPlotX + i * kPlotW / 5, kSpectrumY, kSpectrumH, kDim);
   }
+  floor -= kSpectrumFloorMarginDb;
   float strongest = floor;
   for (size_t i = 0; i < samples; ++i) strongest = std::max(strongest, spectrum_levels[i]);
   spectrum_ceiling = (!spectrum_ceiling_valid || strongest > spectrum_ceiling)
@@ -988,11 +993,13 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   spectrum_ceiling_valid = true;
   const float range_db =
       std::max(kSpectrumMinRangeDb, spectrum_ceiling + kSpectrumHeadroomDb - floor);
-  int px = kPlotX, py = kSpectrumY + kSpectrumH - 2;
+  const int trace_base = kSpectrumY + kSpectrumH - kSpectrumAxisBandPx;
+  const int trace_height = kSpectrumH - kSpectrumAxisBandPx - 4;
+  int px = kPlotX, py = trace_base;
   for (size_t i = 0; i < samples; ++i) {
     const float normalized = std::clamp((spectrum_levels[i] - floor) / range_db, 0.0f, 1.0f);
     const int x = kPlotX + static_cast<int>(i * (kPlotW - 1) / (samples - 1));
-    const int y = kSpectrumY + kSpectrumH - 2 - static_cast<int>(normalized * (kSpectrumH - 4));
+    const int y = trace_base - static_cast<int>(normalized * trace_height);
     if (i) M5.Display.drawLine(px, py, x, y, kGreen);
     px = x; py = y;
   }
