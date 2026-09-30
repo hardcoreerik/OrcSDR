@@ -11828,8 +11828,11 @@ orcsdr::filter_standards::Kind home_filter_kind() {
     case RtlBand::shortwave: return Kind::am_shortwave;
     case RtlBand::cb:
       return cb_mode.load(std::memory_order_relaxed) == CbMode::am ? Kind::cb_am : Kind::cb_ssb;
-    case RtlBand::wx:
-    case RtlBand::browse: return Kind::nfm;
+    case RtlBand::wx: return Kind::nfm;
+    case RtlBand::browse:   // the Airband dashboard is the browse band inside 118-137 MHz
+      return rtl_ui_frequency_hz >= 118000000 && rtl_ui_frequency_hz <= 137000000
+                 ? Kind::airband_am
+                 : Kind::nfm;
     default: return Kind::fixed;   // P25, LoRa, ADS-B, POCSAG set their own width
   }
 }
@@ -13763,6 +13766,10 @@ uint32_t nav_signature() {
   signature |= static_cast<uint32_t>(active_dashboard_tab(screen)) << 16;
   if (orcsdr::settings::active())
     signature |= static_cast<uint32_t>(orcsdr::settings::section()) << 24;
+  // Scrolling the Last-used list moves its rows, so the focus map must be rebuilt (stale rows would
+  // make Enter open the wrong dashboard).
+  if (orcsdr::home::active())
+    signature = signature * 31u + static_cast<uint32_t>(orcsdr::home::list_scroll_px());
   return signature;
 }
 
@@ -14009,6 +14016,8 @@ void handle_radio_key(const orcsdr::keyboard_input::Key& key) {
       handle_fm_dashboard_action({orcsdr::fm::ActionKind::scan_presets, 0});
     else if (rtl_ui_band == RtlBand::cb)
       handle_cb_dashboard_action({orcsdr::cb::ActionKind::scan_toggle, 0});
+    else if (rtl_ui_band == RtlBand::am)
+      handle_am_dashboard_action({orcsdr::am::ActionKind::scan_toggle, 0});
   }
 }
 

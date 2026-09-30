@@ -108,10 +108,17 @@ void text(const char* value, int x, int y, uint16_t color, uint8_t size,
   M5.Display.drawString(value, x, y);
 }
 
-void panel(int x, int y, int w, int h, uint16_t color = kCyan, int radius = 10) {
-  orcsdr::focus_nav::note(x, y, w, h);
+// A panel that draws but is not a keyboard focus stop: chrome, read-only chips and the body that
+// surrounds a control's own buttons.
+void frame(int x, int y, int w, int h, uint16_t color = kCyan, int radius = 10) {
   M5.Display.fillRoundRect(x, y, w, h, radius, kPanel);
   M5.Display.drawRoundRect(x, y, w, h, radius, color);
+}
+
+// A panel that is itself a control: the keyboard can focus it and Enter taps its centre.
+void panel(int x, int y, int w, int h, uint16_t color = kCyan, int radius = 10) {
+  orcsdr::focus_nav::note(x, y, w, h);
+  frame(x, y, w, h, color, radius);
 }
 
 int recent_content_rows() {
@@ -196,7 +203,7 @@ constexpr int kHeaderStatusY = 12, kHeaderStatusH = 54;
 void draw_header_status() {
   const int y = kHeaderStatusY;
   M5.Display.fillRect(kHeaderStatusX, y, kHeaderStatusW, kHeaderStatusH, TFT_BLACK);
-  panel(kHeaderStatusX, y, kHeaderStatusW, kHeaderStatusH, kCyan, 9);
+  frame(kHeaderStatusX, y, kHeaderStatusW, kHeaderStatusH, kCyan, 9);
   draw_wifi_icon(kHeaderStatusX + 26, y + 32, current.wifi_connected ? kCyan : kDim);
   text("Wi-Fi", kHeaderStatusX + 54, y + 17, TFT_WHITE, 2);
   text(current.wifi_connected && current.wifi_ip[0] ? current.wifi_ip : "OFFLINE",
@@ -265,7 +272,7 @@ void draw_recent_list() {
 }
 
 void draw_rail() {
-  panel(kRailX, kRailY, kRailW, kRailH, kCyan, 12);
+  frame(kRailX, kRailY, kRailW, kRailH, kCyan, 12);
   text("LAST USED", 34, 132, kCyan, 2);
   M5.Display.drawFastHLine(132, 132, 110, kCyan);
   draw_recent_list();
@@ -317,7 +324,7 @@ float home_spectrum_floor(const float* levels, size_t count, float pipeline_floo
 
 void draw_mode_chip(const char* mode) {
   M5.Display.fillRect(kModeX, kReadoutY, kModeW, kReadoutH, TFT_BLACK);
-  panel(kModeX, kReadoutY, kModeW, kReadoutH, kCyan, 8);
+  frame(kModeX, kReadoutY, kModeW, kReadoutH, kCyan, 8);
   text("MODE", kModeX + kModeW / 2, kReadoutY + 15, kCyan, 2, middle_center);
   text(mode, kModeX + kModeW / 2, kReadoutY + 38, kGreen, 2, middle_center);
 }
@@ -363,7 +370,7 @@ void draw_spectrum_axis() {
 
 // One "< LABEL value >" group in the control row; the arrows are the touch targets.
 void draw_stepper(int x, const char* label, const char* value) {
-  panel(x, kControlY, kStepperW, kControlH, kCyan, 9);
+  frame(x, kControlY, kStepperW, kControlH, kCyan, 9);
   panel(x + kStepperArrowInset, kControlY + 7, kStepperArrowW, kStepperArrowH, kDim, 5);
   text("<", x + kStepperArrowInset + kStepperArrowW / 2, kControlY + 31, kGreen, 3, middle_center);
   panel(x + kStepperW - kStepperArrowInset - kStepperArrowW, kControlY + 7, kStepperArrowW,
@@ -442,7 +449,7 @@ void draw_gain_panel() {
 }
 
 void draw_gain_chip() {
-  panel(1064, 86, 108, 26, kCyan, 6);
+  frame(1064, 86, 108, 26, kCyan, 6);
   char label[16];
   const uint16_t color = gain_label(label, sizeof(label));
   char value[24];
@@ -683,7 +690,7 @@ void draw_footer_level() {
 }
 
 void draw_footer() {
-  panel(24, 654, 1224, 48, kCyan, 8);
+  frame(24, 654, 1224, 48, kCyan, 8);
   for (const int x : {170, 384, 560, 700, 856})
     M5.Display.drawFastVLine(x, 662, 32, kDim);
   draw_footer_gain();
@@ -695,7 +702,7 @@ void draw_footer() {
 }
 
 void draw_receiver_chrome() {
-  panel(kMainX, kMainY, kMainW, kMainH, kCyan, 12);
+  frame(kMainX, kMainY, kMainW, kMainH, kCyan, 12);
   text("SPECTRUM", kPlotX, 98, kCyan, 2);
   text(current.receiving ? "LIVE" : "READY", 1016, 98,
        current.receiving ? kGreen : TFT_ORANGE, 1);
@@ -1081,6 +1088,7 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
 
 bool active() { return shown; }
 bool popup_open() { return shown && !browser && (gain_popup || filter_popup); }
+int32_t list_scroll_px() { return scroll_offset_px; }
 void close_popup() {
   if (!popup_open()) return;
   gain_popup = filter_popup = false;
