@@ -13688,15 +13688,31 @@ void handle_editor_key(const orcsdr::keyboard_input::Key& key) {
 // registry is rebuilt by repainting the screen whenever it may be stale, then arrows move focus
 // spatially, the ring follows, and Enter taps the focused control.
 uint32_t g_nav_signature = 0;
-uint32_t g_nav_last_ms = 0;
 bool g_nav_dirty = true;
+// After Enter the ring is put back once the screen has reacted (it may have repainted).
+uint32_t g_ring_reshow_ms = 0;
+orcsdr::focus_nav::Rect g_ring_rect;
+constexpr uint32_t kRingReshowDelayMs = 250;
 bool g_nav_have_last = false;
 int g_nav_last_x = 0;
 int g_nav_last_y = 0;
 
+bool shared_keypad_open();
+void tap_at(int x, int y);
+
+// What decides whether the registered controls are still the ones on screen: the screen, its
+// tab or settings section, and whether the numpad is showing. Nothing time-based: repainting a
+// live screen (the Home waterfall) to refresh the map is visible, so it only happens on a real
+// change.
 uint32_t nav_signature() {
-  return (static_cast<uint32_t>(orcsdr::screens::status().active) << 8) |
-         (orcsdr::settings::active() ? 1u : 0u) | (orcsdr::home::active() ? 2u : 0u);
+  const auto screen = orcsdr::screens::status().active;
+  uint32_t signature = (static_cast<uint32_t>(screen) << 8) |
+                       (orcsdr::settings::active() ? 1u : 0u) |
+                       (orcsdr::home::active() ? 2u : 0u) | (shared_keypad_open() ? 4u : 0u);
+  signature |= static_cast<uint32_t>(active_dashboard_tab(screen)) << 16;
+  if (orcsdr::settings::active())
+    signature |= static_cast<uint32_t>(orcsdr::settings::section()) << 24;
+  return signature;
 }
 
 void nav_rebuild() {
@@ -13718,16 +13734,16 @@ bool handle_navigation_key(const orcsdr::keyboard_input::Key& key) {
   const uint32_t now = millis();
   if (key.special == Special::enter) {
     orcsdr::focus_nav::Rect rect;
-    if (!orcsdr::focus_nav::focused(&rect) || !orcsdr::focus_ring::visible()) return false;
+    if (!orcsdr::focus_nav::focused(&rect)) return false;
     g_nav_last_x = rect.x + rect.w / 2;
     g_nav_last_y = rect.y + rect.h / 2;
     g_nav_have_last = true;
-    orcsdr::focus_ring::forget();  // the screen is about to react; what the ring saved is stale
-    g_tap.x = g_nav_last_x;
-    g_tap.y = g_nav_last_y;
-    g_tap.start_ms = now;
-    g_tap.active = true;
-    g_nav_dirty = true;
+    // Take the ring off (restoring the pixels), press, and put it back once the screen has
+    // reacted. Focus stays on the control, so Enter can be pressed again and again (tuning).
+    orcsdr::focus_ring::hide();
+    g_ring_rect = rect;
+    g_ring_reshow_ms = now + kRingReshowDelayMs;
+    tap_at(g_nav_last_x, g_nav_last_y);
     return true;
   }
   Direction direction;
@@ -13738,9 +13754,9 @@ bool handle_navigation_key(const orcsdr::keyboard_input::Key& key) {
     case Special::down: direction = Direction::down; break;
     default: return false;
   }
-  if (g_nav_dirty || nav_signature() != g_nav_signature || now - g_nav_last_ms > 4000)
+  if (g_nav_dirty || orcsdr::focus_nav::count() == 0 || nav_signature() != g_nav_signature)
     nav_rebuild();
-  g_nav_last_ms = now;
+  g_ring_reshow_ms = 0;
   (void)orcsdr::focus_nav::move(direction);
   orcsdr::focus_nav::Rect rect;
   if (orcsdr::focus_nav::focused(&rect)) {
@@ -13985,6 +14001,16 @@ void service_keyboard() {
   if (!g_tap.active && M5.Touch.getCount() > 0 && orcsdr::focus_ring::visible()) {
     orcsdr::focus_ring::hide();
     g_nav_dirty = true;
+  }
+  if (g_ring_reshow_ms != 0 && millis() >= g_ring_reshow_ms && !g_tap.active) {
+    g_ring_reshow_ms = 0;
+    if (nav_signature() == g_nav_signature) {
+      orcsdr::focus_ring::show(g_ring_rect);
+    } else {
+      // The press changed the screen: drop the old map and focus, rebuild on the next arrow.
+      orcsdr::focus_nav::clear_focus();
+      g_nav_dirty = true;
+    }
   }
   orcsdr::keyboard_input::Key key;
   while (orcsdr::tab5_keyboard::pop(&key)) {

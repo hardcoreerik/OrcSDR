@@ -335,7 +335,7 @@ void draw_tuning_controls() {
   text(value, 470, 606, kGreen, 2, middle_center);
   panel(548, 571, 60, 48, kCyan, 7); text(">", 578, 595, kGreen, 3, middle_center);
   panel(640, 571, 60, 48, kCyan, 7); text("<", 670, 595, kGreen, 3, middle_center);
-  text("STEP", 780, 578, kCyan, 2, middle_center);
+  text("TUNE", 780, 578, kCyan, 2, middle_center);
   snprintf(value, sizeof(value), "%.1f kHz", current.step_hz / 1000.0);
   text(value, 780, 606, kGreen, 2, middle_center);
   panel(864, 571, 60, 48, kCyan, 7); text(">", 894, 595, kGreen, 3, middle_center);
@@ -343,15 +343,15 @@ void draw_tuning_controls() {
 
 void draw_step_size_controls() {
   M5.Display.fillRect(998, 468, 236, 72, TFT_BLACK);
-  panel(998, 468, 70, 72, kCyan, 8);
-  text("<", 1033, 504, kGreen, 4, middle_center);
-  panel(1076, 468, 80, 72, kCyan, 8);
-  text("STEP", 1116, 486, kCyan, 2, middle_center);
+  panel(998, 468, 58, 72, kCyan, 8);
+  text("<", 1027, 504, kGreen, 4, middle_center);
+  panel(1062, 468, 112, 72, kCyan, 8);
+  text("STEP SIZE", 1118, 486, kCyan, 2, middle_center);
   char value[16];
   snprintf(value, sizeof(value), "%.1f k", current.step_hz / 1000.0);
-  text(value, 1116, 515, kGreen, 2, middle_center);
-  panel(1164, 468, 70, 72, kCyan, 8);
-  text(">", 1199, 504, kGreen, 4, middle_center);
+  text(value, 1118, 515, kGreen, 2, middle_center);
+  panel(1180, 468, 54, 72, kCyan, 8);
+  text(">", 1207, 504, kGreen, 4, middle_center);
 }
 
 void footer_text(const char* value, int x, uint16_t color) {
@@ -586,7 +586,7 @@ void draw_receiver_chrome() {
   text("MODE", 816, 484, kCyan, 2, middle_center);
   text(current.mode[0] ? current.mode : "--", 816, 516, kGreen, 2, middle_center);
   panel(874, 468, 112, 72, kCyan, 8);
-  text("STEP", 930, 484, kCyan, 2, middle_center);
+  text("STEP SIZE", 930, 484, kCyan, 2, middle_center);
   char value[24]; snprintf(value, sizeof(value), "%.1f kHz", current.step_hz / 1000.0);
   text(value, 930, 516, kGreen, 2, middle_center);
   draw_step_size_controls();
@@ -706,8 +706,8 @@ Action tap_action(int32_t x, int32_t y) {
   if (inside(x, y, 548, 571, 60, 48)) return {ActionKind::span_up};
   if (inside(x, y, 640, 571, 60, 48)) return {ActionKind::step_down};
   if (inside(x, y, 864, 571, 60, 48)) return {ActionKind::step_up};
-  if (inside(x, y, 998, 468, 70, 72)) return {ActionKind::step_size_down};
-  if (inside(x, y, 1164, 468, 70, 72)) return {ActionKind::step_size_up};
+  if (inside(x, y, 998, 468, 58, 72)) return {ActionKind::step_size_down};
+  if (inside(x, y, 1180, 468, 54, 72)) return {ActionKind::step_size_up};
   return {};
 }
 
@@ -768,7 +768,7 @@ void update(const Snapshot& snapshot) {
     text(current.mode, 816, 516, kGreen, 2, middle_center);
     panel(874, 468, 112, 72, kCyan, 8);
     char value[24]; snprintf(value, sizeof(value), "%.1f kHz", current.step_hz / 1000.0);
-    text("STEP", 930, 484, kCyan, 2, middle_center);
+    text("STEP SIZE", 930, 484, kCyan, 2, middle_center);
     text(value, 930, 516, kGreen, 2, middle_center);
   }
   if (audio_changed || tuning_controls_changed) draw_step_size_controls();
