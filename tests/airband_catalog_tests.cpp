@@ -197,6 +197,49 @@ void test_crlf_and_legacy_format() {
   CHECK(old_catalog.entry(0)->service == Service::tower);
 }
 
+void test_radius_limits_nearby_entries() {
+  using namespace orcsdr::airband;
+  std::string text = "ORCAIR2\n";
+  text += row(kEugLat, kEugLon, 118900000, "TOWER", "US", "KEUG", "Field", "OFFICIAL", "KEUG TOWER");
+  text += row(kPdxLat, kPdxLon, 118700000, "TOWER", "US", "KPDX", "Portland", "OFFICIAL", "KPDX TOWER");
+  text += row(kSinLat, kSinLon, 118600000, "TOWER", "SG", "WSSS", "Changi", "COMMUNITY", "WSSS TOWER");
+  {
+    StringSource source(text);
+    Catalog catalog;
+    Location near{true, kEugLat, kEugLon};
+    near.radius_nm = 50;   // Portland (~91 nm) and Singapore are outside
+    CHECK(catalog.load_from(source, near));
+    CHECK(catalog.count() == 1);
+    CHECK(std::strcmp(catalog.entry(0)->airport_ident, "KEUG") == 0);
+  }
+  {
+    StringSource source(text);
+    Catalog catalog;
+    Location wider{true, kEugLat, kEugLon};
+    wider.radius_nm = 100;
+    CHECK(catalog.load_from(source, wider));
+    CHECK(catalog.count() == 2);
+  }
+  {
+    StringSource source(text);
+    Catalog catalog;
+    Location any{true, kEugLat, kEugLon};
+    any.radius_nm = 0;     // no limit
+    CHECK(catalog.load_from(source, any));
+    CHECK(catalog.count() == 3);
+  }
+  {
+    // Nothing inside the radius: not loaded, and no bank is offered.
+    StringSource source(text);
+    Catalog catalog;
+    Location remote{true, 0, 0};
+    remote.radius_nm = 25;
+    CHECK(!catalog.load_from(source, remote));
+    BankEntry bank[4]{};
+    CHECK(catalog.make_bank(bank, 4) == 0);
+  }
+}
+
 void test_duplicates_collapse() {
   using namespace orcsdr::airband;
   std::string text = "ORCAIR2\n";
@@ -219,6 +262,7 @@ int main() {
   test_bad_headers_and_empty_input();
   test_crlf_and_legacy_format();
   test_duplicates_collapse();
+  test_radius_limits_nearby_entries();
   CHECK(orcsdr::airband::Catalog::self_check());
   std::puts("airband_catalog_tests: PASS");
   return 0;

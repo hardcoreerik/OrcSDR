@@ -22,6 +22,7 @@ bool g_loaded = false;
 std::atomic<int16_t> g_audio_squelch_dbfs{-75};
 uint32_t g_saved_frequency_hz = kGuardFrequencyHz;
 Location g_catalog_location{};
+bool g_catalog_attempted = false;
 
 bool open_store() {
   if (g_store_ready) return true;
@@ -53,6 +54,11 @@ void load_settings_once() {
   s.hang_ms =
       static_cast<uint16_t>(std::clamp<uint32_t>(g_store.get_u16("hang", 1500), 0, 5000));
   s.priority_guard = g_store.get_bool("guard", true);
+  const uint16_t radius = g_store.get_u16("radius", 100);
+  s.radius_nm = (radius == 0 || radius == 25 || radius == 50 || radius == 100 ||
+                 radius == 250 || radius == 500)
+                    ? radius
+                    : 100;
   const uint32_t saved = g_store.get_u32("last_hz", kGuardFrequencyHz);
   g_saved_frequency_hz = in_band(saved) ? saved : kGuardFrequencyHz;
   publish_audio_squelch();
@@ -68,6 +74,7 @@ void save_settings() {
   (void)g_store.put_u16("settle", s.settle_ms);
   (void)g_store.put_u16("hang", s.hang_ms);
   (void)g_store.put_bool("guard", s.priority_guard);
+  (void)g_store.put_u16("radius", s.radius_nm);
 }
 
 void save_frequency(uint32_t frequency_hz) {
@@ -93,12 +100,15 @@ void rebuild_bank(uint32_t current_frequency_hz) {
 bool same_location(const Location& a, const Location& b) {
   return a.configured == b.configured &&
          (!a.configured ||
-          (a.latitude_e7 == b.latitude_e7 && a.longitude_e7 == b.longitude_e7));
+          (a.latitude_e7 == b.latitude_e7 && a.longitude_e7 == b.longitude_e7 &&
+           a.radius_nm == b.radius_nm));
 }
 
 void load_catalog(const LiveState& live) {
-  const Location requested{live.location_configured, live.latitude_e7, live.longitude_e7};
+  Location requested{live.location_configured, live.latitude_e7, live.longitude_e7};
+  requested.radius_nm = g_scanner.settings().radius_nm;
   g_catalog_location = requested;
+  g_catalog_attempted = true;
   if (live.filesystem != nullptr)
     (void)g_catalog.load(live.filesystem, requested);
   else
@@ -234,6 +244,7 @@ void dispatch(const Action& action, const LiveState& live) {
     case ActionKind::spacing_cycle:
       s.spacing = s.spacing == Spacing::khz25 ? Spacing::khz833 : Spacing::khz25;
       save_settings();
+      if (g_hooks.apply_filter) g_hooks.apply_filter(orcsdr::airband::filter_bandwidth_hz(s.spacing));
       break;
     case ActionKind::gain_down:
     case ActionKind::gain_up: {
@@ -254,6 +265,11 @@ void dispatch(const Action& action, const LiveState& live) {
       if (g_hooks.apply_gain)
         (void)g_hooks.apply_gain(receiver_controls::action(
             receiver_controls::Control::rtl_agc, live.controls));
+      break;
+    case ActionKind::radius_cycle:
+      s.radius_nm = next_radius_nm(s.radius_nm);
+      save_settings();
+      load_catalog(live);
       break;
     case ActionKind::squelch_down:
       s.squelch_dbfs = static_cast<int16_t>(std::max<int>(-100, s.squelch_dbfs - 3));
@@ -308,9 +324,9 @@ void configure(const Hooks& hooks) {
 
 void enter(const LiveState& live) {
   load_settings_once();
-  const Location requested{live.location_configured, live.latitude_e7,
-                           live.longitude_e7};
-  if (!g_catalog.loaded() || !same_location(requested, g_catalog_location))
+  Location requested{live.location_configured, live.latitude_e7, live.longitude_e7};
+  requested.radius_nm = g_scanner.settings().radius_nm;
+  if (!g_catalog_attempted || !same_location(requested, g_catalog_location))
     load_catalog(live);
   else
     rebuild_bank(live.frequency_hz);
@@ -356,6 +372,11 @@ bool audio_open(float signal_dbfs) {
 uint32_t default_frequency() {
   load_settings_once();
   return g_saved_frequency_hz;
+}
+
+uint32_t filter_bandwidth_hz() {
+  load_settings_once();
+  return orcsdr::airband::filter_bandwidth_hz(g_scanner.settings().spacing);
 }
 
 uint32_t manual_step(uint32_t frequency_hz, int direction) {

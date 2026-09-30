@@ -55,6 +55,7 @@ enum class ActionKind : uint8_t {
   tune_catalog,
   source_cycle,
   spacing_cycle,
+  radius_cycle,
   gain_down,
   gain_up,
   tuner_agc_toggle,

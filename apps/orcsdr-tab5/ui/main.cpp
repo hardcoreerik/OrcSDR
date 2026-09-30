@@ -2363,6 +2363,7 @@ void airband_home_hook();
 void airband_settings_hook();
 void airband_location_settings_hook();
 bool airband_gain_hook(const orcsdr::receiver_controls::Action& action);
+void airband_filter_hook(uint32_t bandwidth_hz);
 void draw_cb_dashboard(bool static_panel);
 const orcsdr::cb::Snapshot& cb_dashboard_snapshot();
 void handle_cb_dashboard_action(const orcsdr::cb::Action& action);
@@ -2890,7 +2891,7 @@ uint32_t rtl_band_default_frequency(RtlBand band) {
 uint32_t rtl_filter_default_hz(RtlBand band) {
   if (band == RtlBand::lora) return lora_bandwidth_hz.load(std::memory_order_relaxed);
   if (band == RtlBand::shortwave) return orcsdr::receiver_bands::kShortwave.default_bandwidth_hz;
-  if (band == RtlBand::airband) return 10000u;
+  if (band == RtlBand::airband) return orcsdr::airband::filter_bandwidth_hz();
   if (band == RtlBand::cb)
     return cb_mode.load(std::memory_order_relaxed) == CbMode::am ? kCbAmFilterHz
                                                                   : kCbSsbFilterHz;
@@ -6337,6 +6338,13 @@ orcsdr::airband::LiveState airband_live_state() {
   return live;
 }
 
+void airband_filter_hook(uint32_t bandwidth_hz) {
+  rtl_filter_bandwidth_hz.store(rtl_clamp_filter_hz(RtlBand::airband, bandwidth_hz),
+                                std::memory_order_relaxed);
+  rtl_audio_reset_demod_filters();
+  reset_spectrum_renderer();
+}
+
 bool airband_gain_hook(const orcsdr::receiver_controls::Action& action) {
 #if !RTL_USE_LEGACY_USB
   using Kind = orcsdr::receiver_controls::ActionKind;
@@ -6980,7 +6988,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
     resume_rtl_speaker();
     orcsdr::airband::configure(
         {airband_tune_hook, airband_home_hook, airband_settings_hook,
-         airband_location_settings_hook, airband_gain_hook});
+         airband_location_settings_hook, airband_gain_hook, airband_filter_hook});
     orcsdr::airband::enter(airband_live_state());
     orcsdr::screens::finish_transition();
     return;
@@ -14409,6 +14417,9 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     const orcsdr::adsb::Action action = orcsdr::adsb::handle_touch(x, y);
     if (action == orcsdr::adsb::Action::settings_changed) {
       adsb_settings = orcsdr::adsb::settings();
+      orcsdr::receiver_location::set(
+          adsb_settings.location_configured, adsb_settings.latitude_e7,
+          adsb_settings.longitude_e7, settings_location_label, settings_map_pack);
       adsb_settings_persist_pending.store(true, std::memory_order_release);
     } else if (action == orcsdr::adsb::Action::gain_auto) {
       const esp_err_t result =

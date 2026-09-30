@@ -1,11 +1,14 @@
 #include "receiver_location.hpp"
 
+#include <freertos/FreeRTOS.h>
+
 #include <cstring>
 
 namespace orcsdr::receiver_location {
 namespace {
 
 Snapshot g_location{};
+portMUX_TYPE g_lock = portMUX_INITIALIZER_UNLOCKED;
 
 void copy_text(char* destination, size_t size, const char* value) {
   if (size == 0) return;
@@ -36,12 +39,16 @@ void set(bool configured, int32_t latitude_e7, int32_t longitude_e7,
     latitude_e7 = 0;
     longitude_e7 = 0;
   }
+  portENTER_CRITICAL(&g_lock);
   const bool changed = g_location.configured != configured ||
                        g_location.latitude_e7 != latitude_e7 ||
                        g_location.longitude_e7 != longitude_e7 ||
                        !text_equal(g_location.label, label) ||
                        !text_equal(g_location.map_pack, map_pack);
-  if (!changed) return;
+  if (!changed) {
+    portEXIT_CRITICAL(&g_lock);
+    return;
+  }
   g_location.configured = configured;
   g_location.latitude_e7 = latitude_e7;
   g_location.longitude_e7 = longitude_e7;
@@ -49,9 +56,15 @@ void set(bool configured, int32_t latitude_e7, int32_t longitude_e7,
   copy_text(g_location.map_pack, sizeof(g_location.map_pack), map_pack);
   ++g_location.revision;
   if (g_location.revision == 0) g_location.revision = 1;
+  portEXIT_CRITICAL(&g_lock);
 }
 
-Snapshot snapshot() { return g_location; }
+Snapshot snapshot() {
+  portENTER_CRITICAL(&g_lock);
+  const Snapshot copy = g_location;
+  portEXIT_CRITICAL(&g_lock);
+  return copy;
+}
 
 bool self_check() {
   const Snapshot saved = g_location;

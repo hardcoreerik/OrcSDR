@@ -276,6 +276,13 @@ void draw_airports() {
              "Offline aviation catalog. Nearby rows are database context, not RF-decoded identity.");
   button({990, 114, 266, 58},
          g_snapshot.location_configured ? "RELOAD DATA" : "SET LOCATION");
+  char radius_label[32];
+  if (g_snapshot.scan.radius_nm == 0)
+    std::snprintf(radius_label, sizeof(radius_label), "RADIUS: ANY");
+  else
+    std::snprintf(radius_label, sizeof(radius_label), "RADIUS: %u nm",
+                  static_cast<unsigned>(g_snapshot.scan.radius_nm));
+  button({700, 114, 274, 58}, radius_label, false, g_snapshot.location_configured);
   char value[128];
   if (!g_snapshot.location_configured) {
     card({24, 218, 1232, 270});
@@ -290,11 +297,12 @@ void draw_airports() {
   }
   if (!g_snapshot.catalog_loaded || g_snapshot.catalog_count == 0) {
     card({24, 218, 1232, 270});
-    text("AVIATION DATA NOT LOADED", 640, 294, kAmber, 3);
-    text("Preferred file: /orcsdr/data/aviation.idx", 640, 342, TFT_WHITE, 2);
-    text("Legacy /orcsdr/data/faa_aviation.idx remains supported.", 640, 382,
-         kMuted, 2);
-    text("Manual tuning and full-band scan remain available.", 640, 426, kMuted, 2);
+    text("NO AVIATION DATA NEAR THIS LOCATION", 640, 294, kAmber, 3);
+    text("Preferred file: /orcsdr/data/aviation.idx (legacy faa_aviation.idx also works)",
+         640, 342, TFT_WHITE, 2);
+    text("Nothing was found within the radius above, or the file is not installed.",
+         640, 382, kMuted, 2);
+    text("Increase the radius, or use manual tuning / full-band scan.", 640, 426, kMuted, 2);
     return;
   }
   const size_t rows = std::min<size_t>(kListRows, g_snapshot.catalog_count);
@@ -459,6 +467,8 @@ Action scan_touch(int32_t x, int32_t y) {
 }
 
 Action airports_touch(int32_t x, int32_t y) {
+  if (hit(x, y, {700, 114, 274, 58}) && g_snapshot.location_configured)
+    return {ActionKind::radius_cycle};
   if (hit(x, y, {990, 114, 266, 58}))
     return g_snapshot.location_configured ? Action{ActionKind::reload_catalog}
                                           : Action{ActionKind::open_location_settings};

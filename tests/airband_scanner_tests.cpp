@@ -87,6 +87,22 @@ void test_guard_and_controls() {
   CHECK(scanner.state() == ScanState::off);
 }
 
+void test_filter_bandwidth() {
+  using namespace orcsdr::airband;
+  CHECK(filter_bandwidth_hz(Spacing::khz25) == 10000u);
+  CHECK(filter_bandwidth_hz(Spacing::khz833) == 6000u);
+  CHECK(filter_bandwidth_hz(Spacing::khz833) < spacing_hz(Spacing::khz25));
+}
+
+void test_radius_choices() {
+  using namespace orcsdr::airband;
+  CHECK(next_radius_nm(25) == 50);
+  CHECK(next_radius_nm(100) == 250);
+  CHECK(next_radius_nm(500) == 0);   // then "any"
+  CHECK(next_radius_nm(0) == 25);    // and back around
+  CHECK(next_radius_nm(77) == 100);  // unknown values fall back to the default
+}
+
 void test_gain_steps() {
   using namespace orcsdr::airband;
   const int16_t steps[] = {0, 9, 14, 27, 37, 77, 87, 125, 144, 157, 166, 197, 207, 229, 254, 280, 297, 328, 338, 364, 372, 386, 402, 421, 434, 445, 480, 496};
@@ -102,6 +118,8 @@ void test_gain_steps() {
 }  // namespace
 
 int main() {
+  test_filter_bandwidth();
+  test_radius_choices();
   test_gain_steps();
   test_channel_rasters();
   test_airport_bank_scan();

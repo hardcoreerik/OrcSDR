@@ -55,6 +55,7 @@ struct Location {
   bool configured = false;
   int32_t latitude_e7 = 0;
   int32_t longitude_e7 = 0;
+  uint16_t radius_nm = 0;  // 0 = no distance limit
 };
 
 // Great-circle distance between two E7 lat/lon points, in nautical miles.

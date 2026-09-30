@@ -38,10 +38,19 @@ struct Settings {
   uint16_t hang_ms = 1500;
   bool priority_guard = true;
   uint8_t priority_every = 20;
+  // Nearby-airport radius in nautical miles for catalog lookup; 0 means no limit.
+  uint16_t radius_nm = 100;
 };
 
 // Next tuner gain step (tenth-dB) above/below `current`; clamps at the ends of the table.
 int16_t step_gain(const int16_t* steps, size_t count, int16_t current, int direction);
+
+// Radius choices cycled by the UI: 25, 50, 100, 250, 500 nm, then no limit (0).
+uint16_t next_radius_nm(uint16_t current_nm);
+
+// AM channel filter for the raster: 10 kHz for 25 kHz channels, 6 kHz for 8.33 kHz channels
+// (adjacent 8.33 kHz channels overlap a wider filter).
+uint32_t filter_bandwidth_hz(Spacing spacing);
 
 uint32_t spacing_hz(Spacing spacing);
 const char* spacing_name(Spacing spacing);

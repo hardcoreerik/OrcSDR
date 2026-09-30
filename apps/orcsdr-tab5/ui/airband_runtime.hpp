@@ -33,6 +33,8 @@ struct Hooks {
   void (*open_location_settings)() = nullptr;
   // Applies a shared receiver-control action (RF gain, tuner AGC, RTL AGC) to the driver.
   bool (*apply_gain)(const receiver_controls::Action& action) = nullptr;
+  // Applies the AM channel filter bandwidth (Hz) to the live receiver.
+  void (*apply_filter)(uint32_t bandwidth_hz) = nullptr;
 };
 
 void configure(const Hooks& hooks);
@@ -47,6 +49,7 @@ bool active();
 Tab tab();
 bool audio_open(float signal_dbfs);
 uint32_t default_frequency();
+uint32_t filter_bandwidth_hz();
 uint32_t manual_step(uint32_t frequency_hz, int direction);
 const Settings& settings();
 

@@ -308,6 +308,9 @@ bool Catalog::load_from(LineSource& source, const Location& location) {
                             ? distance_nm(location.latitude_e7, location.longitude_e7,
                                           entry.latitude_e7, entry.longitude_e7)
                             : static_cast<float>(count_);
+    if (location.configured && location.radius_nm != 0 &&
+        entry.distance_nm > static_cast<float>(location.radius_nm))
+      continue;
     consider(entry, location.configured);
   }
   sort();

@@ -330,6 +330,18 @@ uint32_t Scanner::service(uint32_t now_ms, uint32_t current_frequency_hz,
   return 0;
 }
 
+uint16_t next_radius_nm(uint16_t current_nm) {
+  static constexpr uint16_t kChoices[] = {25, 50, 100, 250, 500, 0};
+  for (size_t i = 0; i < sizeof(kChoices) / sizeof(kChoices[0]); ++i)
+    if (kChoices[i] == current_nm)
+      return kChoices[(i + 1) % (sizeof(kChoices) / sizeof(kChoices[0]))];
+  return 100;
+}
+
+uint32_t filter_bandwidth_hz(Spacing spacing) {
+  return spacing == Spacing::khz833 ? 6000u : 10000u;
+}
+
 int16_t step_gain(const int16_t* steps, size_t count, int16_t current, int direction) {
   if (steps == nullptr || count == 0) return current;
   size_t nearest = 0;
