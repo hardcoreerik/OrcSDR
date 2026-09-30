@@ -34,8 +34,8 @@ constexpr int kContrastUpX = 952;
 constexpr int kModeX = 1144, kModeW = 92;
 // Control row: SPAN / TUNE / STEP SIZE steppers, then FILTER and GAIN.
 constexpr int kControlY = 564, kControlH = 62;
-constexpr int kStepperW = 198, kStepperSpan = 330, kStepperTune = 535, kStepperSize = 740;
-constexpr int kStepperArrowW = 44, kStepperArrowH = 48;
+constexpr int kStepperW = 208, kStepperSpan = 330, kStepperTune = 544, kStepperSize = 758;
+constexpr int kStepperArrowW = 34, kStepperArrowH = 48, kStepperArrowInset = 4;
 constexpr int kContrastButtonW = 36;
 constexpr int kContrastButtonH = 28;
 constexpr int kListX = 30, kListY = 158, kListW = 242, kListH = 420;
@@ -52,7 +52,7 @@ constexpr int kBrowserCardX = 30, kBrowserCardY = 96;
 constexpr int kBrowserCardW = 390, kBrowserCardH = 118;
 constexpr int kBrowserColumnPitch = 410, kBrowserRowPitch = 136;
 constexpr int kBrowserNavY = 650;
-constexpr int kGainX = 1090, kGainY = 564, kGainW = 144, kGainH = 62;
+constexpr int kGainX = 1124, kGainY = 564, kGainW = 112, kGainH = 62;
 constexpr int kPopX = 340, kPopY = 150, kPopW = 886, kPopH = 300;
 constexpr int kPopButtonY = 190, kPopButtonH = 50;
 constexpr int kAutoX = 360, kManualX = 584, kRtlAgcX = 808, kCloseX = 1032;
@@ -344,10 +344,12 @@ void draw_spectrum_axis() {
 // One "< LABEL value >" group in the control row; the arrows are the touch targets.
 void draw_stepper(int x, const char* label, const char* value) {
   panel(x, kControlY, kStepperW, kControlH, kCyan, 9);
-  panel(x + 6, kControlY + 7, kStepperArrowW, kStepperArrowH, kCyan, 7);
-  text("<", x + 6 + kStepperArrowW / 2, kControlY + 31, kGreen, 3, middle_center);
-  panel(x + kStepperW - 6 - kStepperArrowW, kControlY + 7, kStepperArrowW, kStepperArrowH, kCyan, 7);
-  text(">", x + kStepperW - 6 - kStepperArrowW / 2, kControlY + 31, kGreen, 3, middle_center);
+  panel(x + kStepperArrowInset, kControlY + 7, kStepperArrowW, kStepperArrowH, kDim, 5);
+  text("<", x + kStepperArrowInset + kStepperArrowW / 2, kControlY + 31, kGreen, 3, middle_center);
+  panel(x + kStepperW - kStepperArrowInset - kStepperArrowW, kControlY + 7, kStepperArrowW,
+        kStepperArrowH, kDim, 5);
+  text(">", x + kStepperW - kStepperArrowInset - kStepperArrowW / 2, kControlY + 31, kGreen, 3,
+       middle_center);
   text(label, x + kStepperW / 2, kControlY + 15, kCyan, 2, middle_center);
   text(value, x + kStepperW / 2, kControlY + 43, kGreen, 2, middle_center);
 }
@@ -522,7 +524,7 @@ Action manual_gain_at(int index) {
 }
 
 // ---- Receiver filter popup -----------------------------------------------------------------
-constexpr int kFilterPanelX = 950, kFilterPanelY = 564, kFilterPanelW = 128, kFilterPanelH = 62;
+constexpr int kFilterPanelX = 976, kFilterPanelY = 564, kFilterPanelW = 138, kFilterPanelH = 62;
 constexpr int kFilterRow2Y = 262;
 constexpr int kStandardX = 360, kStandardW = 250, kEdgesX = 622, kEdgesW = 250;
 
@@ -806,9 +808,9 @@ Action tap_action(int32_t x, int32_t y) {
       {kStepperTune, ActionKind::step_down, ActionKind::step_up},
       {kStepperSize, ActionKind::step_size_down, ActionKind::step_size_up}};
   for (const auto& group : steppers) {
-    if (inside(x, y, group.x + 6, kControlY + 7, kStepperArrowW, kStepperArrowH))
+    if (inside(x, y, group.x + kStepperArrowInset, kControlY + 7, kStepperArrowW, kStepperArrowH))
       return {group.down};
-    if (inside(x, y, group.x + kStepperW - 6 - kStepperArrowW, kControlY + 7, kStepperArrowW,
+    if (inside(x, y, group.x + kStepperW - kStepperArrowInset - kStepperArrowW, kControlY + 7, kStepperArrowW,
                kStepperArrowH))
       return {group.up};
   }
@@ -1075,9 +1077,9 @@ bool self_check() {
              ActionKind::waterfall_contrast_down &&
          tap_action(kContrastUpX + 1, kContrastY + 1).kind ==
              ActionKind::waterfall_contrast_up &&
-         tap_action(kStepperSpan + 7, kControlY + 8).kind == ActionKind::span_down &&
-         tap_action(kStepperTune + kStepperW - 7, kControlY + 8).kind == ActionKind::step_up &&
-         tap_action(kStepperSize + 7, kControlY + 8).kind == ActionKind::step_size_down &&
+         tap_action(kStepperSpan + 5, kControlY + 8).kind == ActionKind::span_down &&
+         tap_action(kStepperTune + kStepperW - 5, kControlY + 8).kind == ActionKind::step_up &&
+         tap_action(kStepperSize + 5, kControlY + 8).kind == ActionKind::step_size_down &&
          tap_action(1223, 13).kind == ActionKind::open_device_settings &&
          tap_action(1100, 13).kind == ActionKind::sound_toggle &&
          std::abs(home_spectrum_floor(levels, std::size(levels), 10.0f) - 62.0f) < 0.01f;
