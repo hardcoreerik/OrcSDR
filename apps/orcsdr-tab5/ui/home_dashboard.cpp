@@ -59,6 +59,8 @@ Snapshot current{};
 bool shown = false;
 bool browser = false;
 bool gain_popup = false;
+bool filter_popup = false;
+bool filter_edges = false;   // draw the receive-filter edges on the spectrum
 size_t browser_page = 0;
 int32_t scroll_offset_px = 0;
 uint32_t last_spectrum_ms = 0;
@@ -425,15 +427,17 @@ void draw_footer_bias() {
               current.bias_on ? TFT_RED : TFT_LIGHTGREY);
 }
 
-void popup_button(int x, int w, const char* label, bool on, bool enabled) {
+void popup_button(int x, int w, const char* label, bool on, bool enabled,
+                  int y = kPopButtonY) {
+  if (enabled) focus_nav::note(x, y, w, kPopButtonH);
   const uint16_t fill = on && enabled ? 0x0320 : kPanel;
-  M5.Display.fillRoundRect(x, kPopButtonY, w, kPopButtonH, 8, fill);
-  M5.Display.drawRoundRect(x, kPopButtonY, w, kPopButtonH, 8,
+  M5.Display.fillRoundRect(x, y, w, kPopButtonH, 8, fill);
+  M5.Display.drawRoundRect(x, y, w, kPopButtonH, 8,
                            !enabled ? kDim : on ? kGreen : kCyan);
   M5.Display.setTextDatum(middle_center);
   M5.Display.setTextColor(!enabled ? kDim : on ? TFT_WHITE : TFT_LIGHTGREY, fill);
   M5.Display.setTextSize(2);
-  M5.Display.drawString(label, x + w / 2, kPopButtonY + kPopButtonH / 2);
+  M5.Display.drawString(label, x + w / 2, y + kPopButtonH / 2);
 }
 
 int gain_step_index() {
@@ -495,6 +499,87 @@ void draw_gain_popup() {
 Action manual_gain_at(int index) {
   return {ActionKind::gain_tenth_db, dashboards::Id::count,
           static_cast<uint32_t>(std::max<int>(0, current.gain_steps_tenth_db[index]))};
+}
+
+// ---- Receiver filter popup -----------------------------------------------------------------
+constexpr int kFilterPanelX = 950, kFilterPanelY = 564, kFilterPanelW = 128, kFilterPanelH = 62;
+constexpr int kFilterRow2Y = 262;
+constexpr int kStandardX = 360, kStandardW = 250, kEdgesX = 622, kEdgesW = 250;
+
+void format_bandwidth(char* out, size_t size, uint32_t hz) {
+  if (hz == 0) snprintf(out, size, "AUTO");
+  else if (hz % 1000u == 0) snprintf(out, size, "%lu kHz", static_cast<unsigned long>(hz / 1000u));
+  else snprintf(out, size, "%.1f kHz", hz / 1000.0);
+}
+
+void draw_filter_panel() {
+  panel(kFilterPanelX, kFilterPanelY, kFilterPanelW, kFilterPanelH, kCyan, 7);
+  text("FILTER", kFilterPanelX + kFilterPanelW / 2, 582, kCyan, 2, middle_center);
+  char value[24];
+  format_bandwidth(value, sizeof(value), current.filter_bandwidth_hz);
+  text(value, kFilterPanelX + kFilterPanelW / 2, 608, kGreen, 2, middle_center);
+}
+
+// Preset button i of n across the popup's button row.
+void filter_preset_rect(int i, int n, int* x, int* w) {
+  const int span = kPopX + kPopW - 20 - kAutoX;
+  const int width = (span - (n - 1) * 10) / n;
+  *w = width;
+  *x = kAutoX + i * (width + 10);
+}
+
+void draw_filter_popup() {
+  const auto& standards = filter_standards::standards(current.filter_kind);
+  M5.Display.fillRoundRect(kPopX, kPopY, kPopW, kPopH, 12, TFT_BLACK);
+  M5.Display.drawRoundRect(kPopX, kPopY, kPopW, kPopH, 12, kCyan);
+  M5.Display.drawRoundRect(kPopX + 1, kPopY + 1, kPopW - 2, kPopH - 2, 11, kCyan);
+  text("RECEIVER FILTER", kPopX + 20, kPopY + 20, kCyan, 2);
+  text(current.mode[0] ? current.mode : "--", kPopX + kPopW - 20, kPopY + 20, kGreen, 2,
+       middle_right);
+  if (standards.count == 0) {
+    text("This mode sets its own filter width.", kPopX + 20, kPopY + 60, TFT_LIGHTGREY, 2);
+  }
+  for (int i = 0; i < standards.count; ++i) {
+    int x = 0, w = 0;
+    filter_preset_rect(i, standards.count, &x, &w);
+    char label[16];
+    format_bandwidth(label, sizeof(label), standards.presets_hz[i]);
+    popup_button(x, w, label, standards.presets_hz[i] == current.filter_bandwidth_hz, true);
+    if (standards.presets_hz[i] == standards.standard_hz)
+      text("STD", x + w - 6, kPopButtonY + 8, kGreen, 1, middle_right);
+  }
+  popup_button(kStandardX, kStandardW, "STANDARD", false, standards.count != 0, kFilterRow2Y);
+  popup_button(kEdgesX, kEdgesW, filter_edges ? "EDGES ON" : "EDGES OFF", filter_edges,
+               current.filter_bandwidth_hz != 0, kFilterRow2Y);
+  popup_button(kCloseX, kCloseW, "CLOSE", false, true, kFilterRow2Y);
+  char line[64], width[16];
+  format_bandwidth(width, sizeof(width), current.filter_bandwidth_hz);
+  snprintf(line, sizeof(line), "BAND: %s", standards.name);
+  text(line, kPopX + 20, 344, TFT_WHITE, 2);
+  snprintf(line, sizeof(line), "CURRENT WIDTH: %s", width);
+  text(line, kPopX + 20, 372, TFT_LIGHTGREY, 2);
+  text("STD marks the standard width for this band. STANDARD applies it.", kPopX + 20, 400,
+       TFT_LIGHTGREY, 2);
+  text("EDGES draws the receive filter as two lines on the spectrum.", kPopX + 20, 428,
+       TFT_LIGHTGREY, 2);
+}
+
+Action filter_popup_action(int32_t x, int32_t y) {
+  const auto& standards = filter_standards::standards(current.filter_kind);
+  if (inside(x, y, kCloseX, kFilterRow2Y, kCloseW, kPopButtonH) ||
+      !inside(x, y, kPopX, kPopY, kPopW, kPopH))
+    return {ActionKind::filter_close};
+  if (inside(x, y, kStandardX, kFilterRow2Y, kStandardW, kPopButtonH))
+    return standards.count ? Action{ActionKind::filter_standard} : Action{};
+  if (inside(x, y, kEdgesX, kFilterRow2Y, kEdgesW, kPopButtonH))
+    return current.filter_bandwidth_hz ? Action{ActionKind::filter_edges} : Action{};
+  for (int i = 0; i < standards.count; ++i) {
+    int px = 0, pw = 0;
+    filter_preset_rect(i, standards.count, &px, &pw);
+    if (inside(x, y, px, kPopButtonY, pw, kPopButtonH))
+      return {ActionKind::filter_set, dashboards::Id::count, standards.presets_hz[i]};
+  }
+  return {};
 }
 
 Action gain_popup_action(int32_t x, int32_t y) {
@@ -591,13 +676,11 @@ void draw_receiver_chrome() {
   text(value, 930, 516, kGreen, 2, middle_center);
   draw_step_size_controls();
   draw_tuning_controls();
-  panel(950, 564, 128, 62, kCyan, 7);
-  text("FILTER", 1014, 582, kCyan, 2, middle_center);
-  snprintf(value, sizeof(value), "%lu kHz", static_cast<unsigned long>(current.filter_bandwidth_hz / 1000u));
-  text(current.filter_bandwidth_hz ? value : "AUTO", 1014, 608, kGreen, 2, middle_center);
+  draw_filter_panel();
   // Signal level lives in the footer meter; this corner is the gain control.
   draw_gain_panel();
   if (gain_popup) draw_gain_popup();
+  if (filter_popup) draw_filter_popup();
 }
 
 void draw_browser() {
@@ -681,7 +764,10 @@ Action tap_action(int32_t x, int32_t y) {
     return {};
   }
   if (gain_popup) return gain_popup_action(x, y);
+  if (filter_popup) return filter_popup_action(x, y);
   if (inside(x, y, kGainX, kGainY, kGainW, kGainH)) return {ActionKind::gain_open};
+  if (inside(x, y, kFilterPanelX, kFilterPanelY, kFilterPanelW, kFilterPanelH))
+    return {ActionKind::filter_open};
   if (inside(x, y, kContrastDownX, kContrastY, kContrastButtonW, kContrastButtonH))
     return {ActionKind::waterfall_contrast_down};
   if (inside(x, y, kContrastUpX, kContrastY, kContrastButtonW, kContrastButtonH))
@@ -729,13 +815,14 @@ void enter(const Snapshot& snapshot) {
   shown = true;
   browser = false;
   gain_popup = false;
+  filter_popup = false;
   gesture = {};
   last_spectrum_ms = 0;
   clamp_scroll();
   draw_all();
 }
 
-void leave() { shown = browser = gain_popup = false; gesture = {}; }
+void leave() { shown = browser = gain_popup = filter_popup = false; gesture = {}; }
 
 void draw() {
   if (!shown) return;
@@ -776,7 +863,11 @@ void update(const Snapshot& snapshot) {
   if (status_changed) draw_header_status();
   if (receiver_changed) draw_footer_receiver();
   if (sample_changed) draw_footer_sample();
-  if (bandwidth_changed) draw_footer_bandwidth();
+  if (bandwidth_changed) {
+    draw_footer_bandwidth();
+    if (!gain_popup && !filter_popup && !browser) draw_filter_panel();
+    if (filter_popup) draw_filter_popup();
+  }
   if (level_changed) draw_footer_level();
   if (gain_state_changed || receiver_changed) {
     draw_gain_panel();
@@ -784,13 +875,14 @@ void update(const Snapshot& snapshot) {
     draw_footer_gain();
     draw_footer_bias();
     if (gain_popup) draw_gain_popup();
+    if (filter_popup) draw_filter_popup();
   }
   M5.Display.endWrite();
 }
 
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor, bool audio_stressed) {
-  if (!shown || browser || gain_popup || levels == nullptr || visible_bins < 2) return;
+  if (!shown || browser || gain_popup || filter_popup || levels == nullptr || visible_bins < 2) return;
   const uint32_t now = millis();
   const uint32_t interval = audio_stressed ? 333 : 100;
   if (now - last_spectrum_ms < interval) return;
@@ -818,6 +910,15 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
     px = x; py = y;
   }
   M5.Display.drawFastVLine(kPlotX + kPlotW / 2, kSpectrumY, kSpectrumH, kGreen);
+  if (filter_edges && current.filter_bandwidth_hz > 0 && current.span_hz > 0) {
+    // The receive filter as two lines either side of the tuned frequency.
+    const int half = std::clamp<int>(
+        static_cast<int>((static_cast<int64_t>(current.filter_bandwidth_hz) * kPlotW) /
+                         (2 * static_cast<int64_t>(current.span_hz))),
+        2, kPlotW / 2 - 2);
+    M5.Display.drawFastVLine(kPlotX + kPlotW / 2 - half, kSpectrumY, kSpectrumH, TFT_YELLOW);
+    M5.Display.drawFastVLine(kPlotX + kPlotW / 2 + half, kSpectrumY, kSpectrumH, TFT_YELLOW);
+  }
   M5.Display.clearClipRect();
   draw_spectrum_axis();
   M5.Display.setScrollRect(kPlotX + 1, kWaterfallY + 1, kPlotW - 2,
@@ -879,6 +980,19 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
       M5.Display.endWrite();
       return {};
     }
+    if (action.kind == ActionKind::filter_open || action.kind == ActionKind::filter_close) {
+      filter_popup = action.kind == ActionKind::filter_open;
+      M5.Display.startWrite();
+      if (filter_popup) draw_filter_popup();
+      else draw_receiver_chrome();
+      M5.Display.endWrite();
+      return {};
+    }
+    if (action.kind == ActionKind::filter_edges) {
+      filter_edges = !filter_edges;
+      draw_filter_popup();
+      return {};
+    }
     if (action.kind == ActionKind::close_browser) {
       browser = false;
       draw_all();
@@ -906,6 +1020,14 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
 }
 
 bool active() { return shown; }
+bool popup_open() { return shown && !browser && (gain_popup || filter_popup); }
+void close_popup() {
+  if (!popup_open()) return;
+  gain_popup = filter_popup = false;
+  M5.Display.startWrite();
+  draw_receiver_chrome();
+  M5.Display.endWrite();
+}
 bool browser_active() { return shown && browser; }
 
 bool self_check() {

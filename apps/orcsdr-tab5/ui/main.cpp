@@ -11813,6 +11813,21 @@ const orcsdr::settings::State& global_settings_state() {
   return state;
 }
 
+// Which family of filter widths applies to the band on Home (see filter_standards.hpp).
+orcsdr::filter_standards::Kind home_filter_kind() {
+  using Kind = orcsdr::filter_standards::Kind;
+  switch (rtl_ui_band) {
+    case RtlBand::fm: return Kind::wfm;
+    case RtlBand::am: return Kind::am_broadcast;
+    case RtlBand::shortwave: return Kind::am_shortwave;
+    case RtlBand::cb:
+      return cb_mode.load(std::memory_order_relaxed) == CbMode::am ? Kind::cb_am : Kind::cb_ssb;
+    case RtlBand::wx:
+    case RtlBand::browse: return Kind::nfm;
+    default: return Kind::fixed;   // P25, LoRa, ADS-B, POCSAG set their own width
+  }
+}
+
 orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   static orcsdr::home::Snapshot previous{};
   orcsdr::home::Snapshot snapshot{};
@@ -11828,6 +11843,7 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
                                      ? 200000
                                      : rtl_filter_bandwidth_hz.load(
                                            std::memory_order_relaxed);
+  snapshot.filter_kind = demo ? orcsdr::filter_standards::Kind::wfm : home_filter_kind();
   snapshot.step_hz = rtl_ui_band == RtlBand::fm          ? rtl_fm_step_hz
                      : rtl_ui_band == RtlBand::am        ? rtl_am_step_hz
                      : rtl_ui_band == RtlBand::shortwave ? rtl_shortwave_step_hz
@@ -11924,6 +11940,7 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
       snapshot.requested_frequency_hz != previous.requested_frequency_hz ||
       snapshot.span_hz != previous.span_hz || snapshot.step_hz != previous.step_hz ||
       snapshot.filter_bandwidth_hz != previous.filter_bandwidth_hz ||
+      snapshot.filter_kind != previous.filter_kind ||
       strcmp(snapshot.mode, previous.mode) != 0;
   const bool audio_changed = previous.revision == 0 ||
                              snapshot.sound_enabled != previous.sound_enabled ||
@@ -12325,6 +12342,18 @@ void handle_home_action(const orcsdr::home::Action& action) {
       (void)rtl_gain_set_manual("HOME", static_cast<int>(action.value));
       break;
     case ActionKind::rtl_agc: (void)rtl_gain_set_rtl_agc("HOME", action.value != 0); break;
+    case ActionKind::filter_set:
+    case ActionKind::filter_standard: {
+      const uint32_t width =
+          action.kind == ActionKind::filter_standard
+              ? orcsdr::filter_standards::standards(home_filter_kind()).standard_hz
+              : action.value;
+      if (width == 0) return;   // this mode has no adjustable filter
+      rtl_filter_bandwidth_hz.store(rtl_clamp_filter_hz(rtl_ui_band, width),
+                                    std::memory_order_relaxed);
+      rtl_audio_reset_demod_filters();
+      break;
+    }
     default: return;
   }
   draw_home_dashboard();
@@ -13708,7 +13737,8 @@ uint32_t nav_signature() {
   const auto screen = orcsdr::screens::status().active;
   uint32_t signature = (static_cast<uint32_t>(screen) << 8) |
                        (orcsdr::settings::active() ? 1u : 0u) |
-                       (orcsdr::home::active() ? 2u : 0u) | (shared_keypad_open() ? 4u : 0u);
+                       (orcsdr::home::active() ? 2u : 0u) | (shared_keypad_open() ? 4u : 0u) |
+                       (orcsdr::home::popup_open() ? 8u : 0u);
   signature |= static_cast<uint32_t>(active_dashboard_tab(screen)) << 16;
   if (orcsdr::settings::active())
     signature |= static_cast<uint32_t>(orcsdr::settings::section()) << 24;
@@ -13979,7 +14009,11 @@ void route_key(const orcsdr::keyboard_input::Key& key) {
   }
   // Focus mode (or a menu page).
   if (key.special == Special::escape) {
-    if (orcsdr::focus_ring::visible()) {
+    if (orcsdr::home::popup_open()) {
+      leave_focus_mode();
+      orcsdr::home::close_popup();              // gain / filter popup
+      g_nav_dirty = true;
+    } else if (orcsdr::focus_ring::visible()) {
       leave_focus_mode();                       // first Esc: drop the ring
     } else if (!orcsdr::home::active()) {
       leave_focus_mode();

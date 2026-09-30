@@ -40,3 +40,11 @@ g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
   "${focus_sources[@]}" -o "$build_dir/focus_nav_tests_sanitized"
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$build_dir/focus_nav_tests_sanitized"
+
+filter_standard_sources=(tests/filter_standards_tests.cpp apps/orcsdr-tab5/ui/filter_standards.cpp)
+g++ "${common[@]}" -O2 "${filter_standard_sources[@]}" -o "$build_dir/filter_standards_tests"
+"$build_dir/filter_standards_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "${filter_standard_sources[@]}" -o "$build_dir/filter_standards_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$build_dir/filter_standards_tests_sanitized"
