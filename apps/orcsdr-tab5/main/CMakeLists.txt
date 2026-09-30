@@ -86,6 +86,12 @@ idf_component_register(
         "../ui/rf_visualizer_controls.cpp"
         "../ui/settings_app.cpp"
         "../ui/text_editor.cpp"
+        "../ui/keyboard_input.cpp"
+        "../ui/tab5_keyboard.cpp"
+        "../ui/focus_nav.cpp"
+        "../ui/focus_ring.cpp"
+        "../ui/filter_standards.cpp"
+        "../ui/waterfall_style.cpp"
         "../ui/freq_keypad.cpp"
         "../dsp/dsp_stats.cpp"
         "../ui/time_service.cpp"
@@ -102,6 +108,8 @@ idf_component_register(
         nvs_flash
         esp_rtl_sdr
         esp_driver_usb_serial_jtag
+        esp_driver_i2c
+        esp_driver_gpio
         esp_driver_jpeg
         fatfs
         esp_hosted

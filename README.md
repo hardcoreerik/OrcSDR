@@ -114,7 +114,7 @@ Antenna choice affects what can be received. Useful test reports include the rec
 | IQ transport | Callback-only IQ delivery using three 32 KiB USB transfers, with stream and consumer-drop diagnostics. |
 | Signal processing | Native on-device demodulation, spectrum and waterfall generation, RF measurements, and protocol decoders. |
 | Audio | 48 kHz stereo processing and playback through the Tab5 speaker path. |
-| Wireless | The onboard ESP32-C6 provides Wi-Fi over SDIO through ESP-Hosted 3.0.6. Matching C6 firmware is embedded in release images. |
+| Wireless | The onboard ESP32-C6 provides Wi-Fi over SDIO through ESP-Hosted. The C6 may run 3.0.6 or the M5 factory 2.12.6 (which keeps M5 Launcher's Wi-Fi/OTA working); a 3.0.6 image is embedded for an optional update. |
 | Storage | Internal flash and NVS for firmware and settings, plus optional microSD storage for maps, data packs, logs, and IQ captures. |
 | Build system | Native ESP-IDF 5.5.4 with locked component versions and repository build/install scripts. |
 

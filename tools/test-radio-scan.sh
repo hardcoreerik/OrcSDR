@@ -40,3 +40,33 @@ g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
   "${airband_catalog_sources[@]}" -o "$build_dir/airband_catalog_tests_sanitized"
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$build_dir/airband_catalog_tests_sanitized"
+
+keyboard_sources=(tests/keyboard_input_tests.cpp apps/orcsdr-tab5/ui/keyboard_input.cpp)
+g++ "${common[@]}" -O2 "${keyboard_sources[@]}" -o "$build_dir/keyboard_input_tests"
+"$build_dir/keyboard_input_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "${keyboard_sources[@]}" -o "$build_dir/keyboard_input_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$build_dir/keyboard_input_tests_sanitized"
+
+focus_sources=(tests/focus_nav_tests.cpp apps/orcsdr-tab5/ui/focus_nav.cpp)
+g++ "${common[@]}" -O2 "${focus_sources[@]}" -o "$build_dir/focus_nav_tests"
+"$build_dir/focus_nav_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "${focus_sources[@]}" -o "$build_dir/focus_nav_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$build_dir/focus_nav_tests_sanitized"
+
+filter_standard_sources=(tests/filter_standards_tests.cpp apps/orcsdr-tab5/ui/filter_standards.cpp)
+g++ "${common[@]}" -O2 "${filter_standard_sources[@]}" -o "$build_dir/filter_standards_tests"
+"$build_dir/filter_standards_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "${filter_standard_sources[@]}" -o "$build_dir/filter_standards_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$build_dir/filter_standards_tests_sanitized"
+
+waterfall_style_sources=(tests/waterfall_style_tests.cpp apps/orcsdr-tab5/ui/waterfall_style.cpp)
+g++ "${common[@]}" -O2 "${waterfall_style_sources[@]}" -o "$build_dir/waterfall_style_tests"
+"$build_dir/waterfall_style_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer   "${waterfall_style_sources[@]}" -o "$build_dir/waterfall_style_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1   "$build_dir/waterfall_style_tests_sanitized"

@@ -1,3 +1,4 @@
+#include "focus_nav.hpp"
 #include "settings_app.hpp"
 
 #include "dashboard_audio_control.hpp"
@@ -71,6 +72,7 @@ void text(const char* value, int x, int y, uint16_t color, uint8_t size = 2,
 }
 
 void button(const char* label, int x, int y, int w, int h, uint16_t fill) {
+  orcsdr::focus_nav::note(x, y, w, h);
   M5.Display.fillRoundRect(x, y, w, h, 8, fill);
   M5.Display.drawRoundRect(x, y, w, h, 8, TFT_LIGHTGREY);
   M5.Display.setTextDatum(middle_center);
@@ -125,9 +127,9 @@ void draw_connectivity() {
   if (g_state.wifi_hosted_update_required) {
     M5.Display.fillRoundRect(330, 145, 888, 448, 12, 0x3104);
     M5.Display.drawRoundRect(330, 145, 888, 448, 12, TFT_ORANGE);
-    text("WIRELESS COPROCESSOR UPDATE REQUIRED", 370, 195, TFT_ORANGE, 3);
+    text("WIRELESS COPROCESSOR NEEDS ATTENTION", 370, 195, TFT_ORANGE, 3);
     text("OrcSDR radio reception remains available.", 370, 242, TFT_WHITE, 2);
-    text("Wi-Fi is disabled until the Tab5 C6 matches the P4.", 370, 278, kMuted, 2);
+    text("Wi-Fi could not start with this C6 firmware. Tested: 2.12.6 and 3.0.6.", 370, 278, kMuted, 2);
     char versions[80];
     snprintf(versions, sizeof(versions), "P4: %s     C6: %s",
              g_state.wifi_hosted_host_version, g_state.wifi_hosted_c6_version);
@@ -198,9 +200,10 @@ void draw_firmware_updates() {
   char versions[96];
   snprintf(versions, sizeof(versions), "P4 HOST: %s", g_state.wifi_hosted_host_version);
   value_row("HOSTED HOST", versions, 165);
-  snprintf(versions, sizeof(versions), "C6: %s   TARGET: 3.0.6", g_state.wifi_hosted_c6_version);
+  snprintf(versions, sizeof(versions), "C6: %s   TESTED: 2.12.6, 3.0.6", g_state.wifi_hosted_c6_version);
   value_row("WIRELESS COPROCESSOR", versions, 220,
-            strcmp(g_state.wifi_c6_update_state, "current") == 0 ? kGreen : TFT_ORANGE);
+            (strcmp(g_state.wifi_c6_update_state, "current") == 0 ||
+             strcmp(g_state.wifi_c6_update_state, "optional") == 0) ? kGreen : TFT_ORANGE);
   value_row("UPDATE IMAGE", g_state.wifi_c6_image_embedded ? "EMBEDDED IN THIS ORCSDR BUILD" : "NOT INCLUDED", 275,
             g_state.wifi_c6_image_embedded ? kGreen : TFT_ORANGE);
   char status[96];
@@ -217,8 +220,14 @@ void draw_firmware_updates() {
     button("UPDATE C6 TO 3.0.6", 330, 445, 360, 58, TFT_DARKGREEN);
     text("This sends the embedded image over the internal SDIO link and restarts OrcSDR.",
          330, 545, kMuted, 1);
+  } else if (strcmp(g_state.wifi_c6_update_state, "optional") == 0) {
+    text("No update is needed. Updating to 3.0.6 is optional.", 330, 385, kGreen, 2);
+    text("M5 Launcher's Wi-Fi and OTA need a 2.x C6. Update only if you do not use Launcher.", 330, 412, TFT_ORANGE, 2);
+    button("UPDATE C6 TO 3.0.6 (OPTIONAL)", 330, 445, 440, 58, TFT_DARKGREEN);
+    text("This sends the embedded image over the internal SDIO link and restarts OrcSDR.",
+         330, 545, kMuted, 1);
   } else if (strcmp(g_state.wifi_c6_update_state, "current") == 0) {
-    text("C6 firmware already matches. No update is needed.", 330, 410, kGreen, 2);
+    text("C6 firmware is supported. No update is needed.", 330, 410, kGreen, 2);
   } else if (strcmp(g_state.wifi_c6_update_state, "unreachable") == 0) {
     text("The C6 cannot establish Hosted transport.", 330, 405, TFT_ORANGE, 2);
     text("Use the documented recovery procedure; do not retry automatically.", 330, 450, kMuted, 2);
@@ -882,7 +891,8 @@ Action handle_touch(int32_t x, int32_t y) {
       return {ActionKind::web_console_changed, g_state.web_console_enabled ? 0 : 1};
   }
   if (g_section == Section::firmware_updates) {
-    if (strcmp(g_state.wifi_c6_update_state, "ready") == 0 &&
+    if ((strcmp(g_state.wifi_c6_update_state, "ready") == 0 ||
+         strcmp(g_state.wifi_c6_update_state, "optional") == 0) &&
         hit(x, y, 330, 445, 360, 58)) return {ActionKind::c6_update_confirm, 0};
     return {};
   }
@@ -978,6 +988,8 @@ bool self_check() {
   g_section = Section::firmware_updates;
   strlcpy(g_state.wifi_c6_update_state, "ready", sizeof(g_state.wifi_c6_update_state));
   const bool c6_ready_routes = handle_touch(331, 446).kind == ActionKind::c6_update_confirm;
+  strlcpy(g_state.wifi_c6_update_state, "optional", sizeof(g_state.wifi_c6_update_state));
+  const bool c6_optional_routes = handle_touch(331, 446).kind == ActionKind::c6_update_confirm;
   strlcpy(g_state.wifi_c6_update_state, "current", sizeof(g_state.wifi_c6_update_state));
   const bool c6_current_blocks = handle_touch(331, 446).kind == ActionKind::none;
   g_section = Section::radio_defaults;
@@ -988,7 +1000,7 @@ bool self_check() {
   g_section = saved_section;
   g_active = saved_active;
   if (!symbols_ok || !credentials_ok || !empty_location_ok || !location_ok ||
-      !c6_ready_routes || !c6_current_blocks || !usb_recovery_routes) return false;
+      !c6_ready_routes || !c6_optional_routes || !c6_current_blocks || !usb_recovery_routes) return false;
   return true;
 }
 

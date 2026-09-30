@@ -37,7 +37,7 @@ def validate_manifest(data: dict) -> None:
         assert sum(screen_id.startswith(prefix) for screen_id in ids) == count, prefix
     for band in ("am", "wx", "cb", "browse"):
         assert {f"{band}.radio", f"{band}.scope", f"{band}.capture"} <= set(ids)
-    assert {"home", "nav", "overlay.volume", "overlay.frequency-keypad",
+    assert {"home", "overlay.volume",
             "overlay.wifi-results", "overlay.masked-keyboard"} <= set(ids)
     for screen in screens:
         for key in ("id", "title", "dashboard", "tab", "source", "redactions",

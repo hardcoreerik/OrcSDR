@@ -1,3 +1,4 @@
+#include "focus_nav.hpp"
 #include "airband_dashboard.hpp"
 
 #include "dashboard_audio_control.hpp"
@@ -85,6 +86,7 @@ void card(const Rect& r, uint16_t border = kCyan) {
 
 void button(const Rect& r, const char* label, bool selected = false,
             bool enabled = true, int size = 2) {
+  if (enabled) focus_nav::note(r.x, r.y, r.w, r.h);   // keyboard focus stop
   const uint16_t border = enabled ? (selected ? kGreen : kCyan) : TFT_DARKGREY;
   M5.Display.fillRoundRect(r.x, r.y, r.w, r.h, 8, selected ? kSelected : kPanel);
   M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 8, border);

@@ -1,12 +1,8 @@
-# Home, NAV, and shared controls
+# Home and shared controls
 
 ## Home
 
 Home reports receiver readiness, power, host connection state, and access to global Settings. It is safe to use OrcSDR without an authenticated host.
-
-## NAV
-
-The NAV panel supplies direct-frequency entry, a US band guide, span/filter pinch behavior, step size, peak tuning, automatic FM selection, and spectrum centering. NAV changes the active receiver only after an explicit selection.
 
 ## Volume
 

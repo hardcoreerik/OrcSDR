@@ -1,3 +1,4 @@
+#include "focus_nav.hpp"
 #include "p25_dashboard.hpp"
 
 #include "dashboard_audio_control.hpp"
@@ -72,6 +73,7 @@ void label(const char* value, int x, int y) {
 
 void button(int x, int y, int w, int h, const char* title, uint16_t color = kCyan,
             bool selected = false) {
+  orcsdr::focus_nav::note(x, y, w, h);
   M5.Display.fillRoundRect(x, y, w, h, 9, selected ? 0x1264 : kPanel);
   M5.Display.drawRoundRect(x, y, w, h, 9, color);
   text(title, x + w / 2, y + h / 2, selected ? color : TFT_WHITE, 2);
