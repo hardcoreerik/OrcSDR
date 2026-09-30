@@ -11,7 +11,7 @@ apply to later source snapshots.
 | NOAA Weather Radio | **Implemented** | Current-release RF acceptance is Not Verified. |
 | CB | **Implemented / Runtime-Verified** | The earlier channel panel was flashed and exercised. The band-wide scanner dashboard has host regression tests; Tab5 hardware and RF acceptance remain open. |
 | Shortwave | **Implemented / Experimental** | Generic Browse/NFM workspace only; complete AM/SSB and calibrated HF reception are Not Implemented. |
-| Airband | **Implemented / Experimental** | Generic Browse near 121.5 MHz using NFM; not a complete AM aviation voice receiver. |
+| Airband | **Implemented / Experimental** | Dedicated 118–136.975 MHz AM dashboard, manual 25/8.33 kHz tuning, scanner controls, activity log, and offline aviation-catalog hooks are implemented. Physical Tab5/RF acceptance remains Not Verified. |
 | Marine | **Implemented / Experimental** | Generic NFM routing; no dedicated dashboard/current RF acceptance evidence. |
 | Satellite | **Implemented / Experimental** | Generic routing near 137.5 MHz; no dedicated satellite decoder/dashboard. |
 | P25 Phase I | **RF-Verified / Hardware-Verified / Regression-Tested** | Documented control, follow, clear/encrypted behavior; encrypted audio is not decoded. |

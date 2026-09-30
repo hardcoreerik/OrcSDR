@@ -25,6 +25,22 @@ g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$build_dir/cb_scanner_tests_sanitized"
 
+airband_sources=(tests/airband_scanner_tests.cpp apps/orcsdr-tab5/ui/airband_scanner.cpp)
+g++ "${common[@]}" -O2 "${airband_sources[@]}" -o "$build_dir/airband_scanner_tests"
+"$build_dir/airband_scanner_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "${airband_sources[@]}" -o "$build_dir/airband_scanner_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$build_dir/airband_scanner_tests_sanitized"
+
+airband_catalog_sources=(tests/airband_catalog_tests.cpp apps/orcsdr-tab5/ui/airband_catalog.cpp apps/orcsdr-tab5/ui/airband_scanner.cpp)
+g++ "${common[@]}" -O2 "${airband_catalog_sources[@]}" -o "$build_dir/airband_catalog_tests"
+"$build_dir/airband_catalog_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "${airband_catalog_sources[@]}" -o "$build_dir/airband_catalog_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$build_dir/airband_catalog_tests_sanitized"
+
 keyboard_sources=(tests/keyboard_input_tests.cpp apps/orcsdr-tab5/ui/keyboard_input.cpp)
 g++ "${common[@]}" -O2 "${keyboard_sources[@]}" -o "$build_dir/keyboard_input_tests"
 "$build_dir/keyboard_input_tests"

@@ -1,0 +1,172 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+
+namespace orcsdr::airband {
+
+constexpr uint32_t kMinFrequencyHz = 118000000u;
+constexpr uint32_t kMaxFrequencyHz = 136975000u;
+constexpr uint32_t kGuardFrequencyHz = 121500000u;
+constexpr size_t kBankCapacity = 32;
+constexpr size_t kActivityCapacity = 32;
+
+enum class Spacing : uint8_t { khz25, khz833 };
+enum class ScanSource : uint8_t { airport_bank, full_band };
+enum class ScanState : uint8_t { off, scanning, settling, receiving, hang, held };
+
+struct BankEntry {
+  uint32_t frequency_hz = 0;
+  float distance_nm = 0.0f;
+  char label[40]{};
+};
+
+struct Activity {
+  uint32_t frequency_hz = 0;
+  uint32_t start_ms = 0;
+  uint32_t duration_ms = 0;
+  float peak_snr_db = -120.0f;
+  char label[40]{};
+};
+
+struct Settings {
+  Spacing spacing = Spacing::khz25;
+  ScanSource source = ScanSource::airport_bank;
+  // Open when the in-channel carrier is this many dB above the tracked noise floor; 0 = always open.
+  int16_t squelch_db = 8;
+  // OrcSDR currently rate-limits hardware hot retunes to 280 ms.
+  uint16_t settle_ms = 350;
+  uint16_t hang_ms = 1500;
+  bool priority_guard = true;
+  uint8_t priority_every = 20;
+  // Nearby-airport radius in nautical miles for catalog lookup; 0 means no limit.
+  uint16_t radius_nm = 100;
+};
+
+// Next tuner gain step (tenth-dB) above/below `current`; clamps at the ends of the table.
+int16_t step_gain(const int16_t* steps, size_t count, int16_t current, int direction);
+
+// Radius choices cycled by the UI: 25, 50, 100, 250, 500 nm, then no limit (0).
+uint16_t next_radius_nm(uint16_t current_nm);
+
+// AM channel filter for the raster: 10 kHz for 25 kHz channels, 6 kHz for 8.33 kHz channels
+// (adjacent 8.33 kHz channels overlap a wider filter).
+uint32_t filter_bandwidth_hz(Spacing spacing);
+
+uint32_t spacing_hz(Spacing spacing);
+const char* spacing_name(Spacing spacing);
+const char* source_name(ScanSource source);
+const char* state_name(ScanState state);
+bool in_band(uint32_t frequency_hz);
+uint32_t snap_frequency(uint32_t frequency_hz, Spacing spacing);
+uint32_t step_frequency(uint32_t frequency_hz, int direction, Spacing spacing);
+
+// Carrier-versus-noise-floor squelch. The input is the in-channel carrier level in dBFS (the
+// mean envelope of the channel-filtered IQ), NOT the wideband stream power: wideband power is
+// dominated by noise across the whole 2.4 MS/s capture and is regulated by tuner AGC, so it
+// cannot tell an empty channel from a busy one.
+class ChannelSquelch {
+ public:
+  void set_threshold_db(int16_t threshold_db);
+  // Forget the noise floor and re-learn it. Call after a gain, AGC or channel-filter change.
+  // Retuning does not need it: the floor depends on the analog gain and filter, not on which
+  // channel is tuned, and a carrier on a new channel simply reads as a high SNR.
+  void reset();
+  void update(uint32_t now_ms, float level_db);
+  bool open() const { return open_; }
+  float snr_db() const { return snr_db_; }
+  float floor_db() const { return floor_db_; }
+  bool floor_valid() const { return floor_valid_; }
+
+ private:
+  static constexpr float kFloorFallMs = 150.0f;
+  static constexpr float kFloorRiseMs = 4000.0f;
+  static constexpr float kFloorTrackWindowDb = 6.0f;
+  // A mean envelope under ~0.13 counts means the demodulator has not produced a level yet
+  // (just reset or not streaming); never learn a floor from it.
+  static constexpr float kMinValidDb = -60.0f;
+  static constexpr uint32_t kWarmupMs = 150;
+  int16_t threshold_db_ = 8;
+  bool open_ = false;
+  bool floor_valid_ = false;
+  bool warming_ = true;
+  bool warm_started_ = false;
+  uint32_t warm_start_ms_ = 0;
+  uint32_t last_ms_ = 0;
+  float floor_db_ = -60.0f;
+  float snr_db_ = 0.0f;
+};
+
+// Mean envelope of CU8 IQ counts (0..~180) to dBFS.
+float carrier_level_db(float mean_envelope_counts);
+
+class Scanner {
+ public:
+  void reset();
+  void set_bank(const BankEntry* entries, size_t count);
+  void start(uint32_t now_ms, uint32_t current_frequency_hz);
+  void stop();
+  void hold(uint32_t now_ms, uint32_t current_frequency_hz);
+  void resume(uint32_t now_ms);
+  void skip(uint32_t now_ms, uint32_t current_frequency_hz);
+  void clear_activity();
+
+  // Service the scanner from the UI task. Returns a frequency that should be
+  // tuned, or zero when no retune is requested.
+  uint32_t service(uint32_t now_ms, uint32_t current_frequency_hz, float snr_db);
+  void note_retuned(uint32_t now_ms, uint32_t frequency_hz);
+
+  Settings& settings() { return settings_; }
+  const Settings& settings() const { return settings_; }
+  ScanState state() const { return state_; }
+  bool running() const { return state_ != ScanState::off; }
+  uint32_t target_frequency_hz() const { return target_frequency_hz_; }
+  size_t bank_count() const { return bank_count_; }
+  const BankEntry* bank(size_t index) const {
+    return index < bank_count_ ? &bank_[index] : nullptr;
+  }
+  size_t activity_count() const { return activity_count_; }
+  // Index zero is newest.
+  const Activity* activity(size_t index) const;
+  uint32_t stops() const { return stops_; }
+  uint32_t channels_checked() const { return channels_checked_; }
+  uint32_t hang_remaining_ms(uint32_t now_ms) const;
+  bool squelch_open(float snr_db) const;
+
+  static bool self_check();
+
+ private:
+  uint32_t next_target(uint32_t current_frequency_hz);
+  uint32_t begin_target(uint32_t now_ms, uint32_t current_frequency_hz,
+                        uint32_t target_frequency_hz);
+  void begin_episode(uint32_t now_ms, uint32_t frequency_hz, float snr_db);
+  void update_episode(uint32_t now_ms, float snr_db);
+  void close_episode(uint32_t now_ms);
+  void push_activity(const Activity& activity);
+  const char* label_for(uint32_t frequency_hz) const;
+
+  Settings settings_{};
+  BankEntry bank_[kBankCapacity]{};
+  size_t bank_count_ = 0;
+  size_t bank_cursor_ = 0;
+
+  Activity activity_[kActivityCapacity]{};
+  size_t activity_head_ = 0;
+  size_t activity_count_ = 0;
+
+  ScanState state_ = ScanState::off;
+  uint32_t target_frequency_hz_ = kGuardFrequencyHz;
+  uint32_t settle_until_ms_ = 0;
+  uint32_t hang_until_ms_ = 0;
+  uint32_t last_above_ms_ = 0;
+  uint32_t episode_start_ms_ = 0;
+  float episode_peak_snr_db_ = -120.0f;
+  uint32_t episode_frequency_hz_ = 0;
+  uint32_t skip_once_hz_ = 0;
+  uint32_t stops_ = 0;
+  uint32_t channels_checked_ = 0;
+  uint8_t since_guard_ = 0;
+  bool episode_open_ = false;
+};
+
+}  // namespace orcsdr::airband

@@ -418,7 +418,7 @@ The LoRa Traffic toolbar equivalents are `RTL_UI ACTION LORA DETAILS`,
 `RTL_SIGNAL` reports a smoothed relative dBFS value from the same IQ stream;
 LoRa Overview uses the unsmoothed value for faster visual response.
 
-`RTL_UI OPEN` accepts `HOME`, `FM`, `P25`, `ADSB`, `LORA`, `RF_LAB`,
+`RTL_UI OPEN` accepts `HOME`, `FM`, `AIRBAND`, `P25`, `ADSB`, `LORA`, `RF_LAB`,
 `WIFI_ANALYSIS`, or `SETTINGS`.
 `RTL_UI ACTION` accepts a domain and one of its visible touch actions:
 
@@ -428,6 +428,15 @@ LoRa Overview uses the unsmoothed value for faster visual response.
   `SETTINGS`, `HOME`. `GAIN_AUTO` selects the lowest tuner-gain step that
   reaches the target level; `RTL_FM_GAIN STATUS` reports its progress and
   selected gain.
+- `AIRBAND` (dashboard must be open): `TUNE <hz>`, `UP`, `DOWN`, `GUARD`,
+  `SCAN`, `HOLD`, `SKIP`, `SOURCE`, `SPACING`, `RADIUS`, `SQUELCH <0-30>` (dB
+  above the noise floor, `0` = always open), `SQUELCH_UP`, `SQUELCH_DOWN`,
+  `SETTLE`, `HANG_UP`, `HANG_DOWN`, `PRIORITY`, `RELOAD`, `CLEAR`, `GAIN_UP`,
+  `GAIN_DOWN`, `AGC`, `RTLAGC`, `TAB <0-4>`. `RTL_AIRBAND STATUS` prints one
+  `RTL_AIRBAND_STATUS` line: dashboard/tab, frequency, scan state, squelch
+  (`level_db`, `snr_db`, `floor_db`, `sql_db`), spacing, source, radius,
+  channel filter, scan counters, catalog load result (`load=`) and database
+  match (`match=`), receiver gain and AGC.
 - `P25`: `TUNE`, `PREV`, `NEXT`, `SURVEY`, `HOLD`, `HOLD_TG <id>`, `SKIP`,
   `FOLLOW`, `ENCRYPT_SKIP`, `RELOAD`, `SPAN_DOWN`, `SPAN_UP`, `SOUND`,
   `VOL_DOWN`, `VOL_UP`, `SETTINGS`, `HOME`.
