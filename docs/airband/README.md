@@ -175,8 +175,50 @@ license/provenance used to generate the runtime pack.
 
 ## Validation status
 
-The branch includes host tests for scanner behavior and data-normalizer tests
-for ORCAIR2 generation. Hardware/RF acceptance still requires a physical Tab5
-and supported RTL-SDR with real aviation AM traffic. Validate scan stop/release
-behavior, 25 kHz and 8.33 kHz tuning, 121.500 priority behavior, audio quality,
-USB stability, location changes, and both ORCAIR2 and legacy ORCCAT1 loading.
+**Host tests** (`tools/test-radio-scan.sh`, run under ASan/UBSan and in CI):
+channel raster and 25 kHz / 8.33 kHz stepping, scanner state machine
+(hold/hang/skip/guard priority), carrier-versus-noise-floor squelch, gain-step
+table, radius choices, ORCAIR2 and legacy ORCCAT1 parsing, malformed rows,
+missing/empty/bad-header input, CRLF, duplicates, nearest-N selection,
+radius filtering, no-location behaviour, great-circle distance (including far
+longitudes and the antimeridian), incompatible-schema early exit, and bulk
+far-row rejection. `tests/test_data_catalog.py` covers the ORCAIR2 generator.
+
+**Hardware (M5Stack Tab5, RTL-SDR Blog V4, 2026-09-29/30):**
+
+- Enter Airband from the Serial UI/Home path; dashboard loads, receiver
+  streams, no crash or watchdog.
+- Manual tuning 118.000 to 136.975 MHz, 25 kHz steps, exact 8.33 kHz steps
+  (118.008333, 118.016667, 118.025), band-edge clamping, out-of-band rejection,
+  121.500 guard shortcut. Channel filter follows the spacing (10 / 6 kHz).
+- RF gain +/-, tuner AGC and RTL AGC through the shared controls; results agree
+  with `RTL_GAIN STATUS`.
+- Squelch: an idle channel reads about 0 to 3 dB above the floor and stays
+  closed at +8 and +30 dB; 0 dB is always open.
+- Full-band and airport-bank scanning advance across channels; hold and resume
+  work; skip is accepted; scan stops cleanly. On live RF the scanner stopped
+  and held on 121.875 MHz at 6 to 9 dB SNR.
+- Location: with none configured nothing is read from the SD card and no
+  "nearby" airport or label is shown. With a test location set, the worldwide
+  OurAirports pack (27,758 records, 3.2 MB) yields 32/29/13 entries at 100/50/25
+  nm and 32 with no radius; database matches (e.g. `KEUG`) appear only on
+  catalog frequencies and never on others.
+- Leaving for Home, FM, AM and Shortwave and re-entering Airband releases and
+  reacquires the receiver with no crash; heap and DMA minimums stayed flat.
+
+**Not validated / limitations:**
+
+- Reception of a real voice transmission and audio quality could not be judged
+  by serial: the scanner hold on 121.875 MHz shows the carrier path works, but
+  intelligibility, AM audio level and squelch tail need a listening test with
+  live traffic. Whether +8 dB is the right default in different RF
+  environments needs field data.
+- ATIS/AWOS continuous channels have no dedicated scan policy.
+- Loading a worldwide pack takes about 2.5 to 3 seconds on the UI thread (it
+  runs when Airband is entered with a location, when the radius changes, and
+  on Reload). It is bounded in memory (32 entries) but not yet off-thread.
+- The FAA record-index pack installed by Data & Maps has no coordinates and is
+  reported as an unsupported format; an ORCAIR2 `aviation.idx` is required for
+  nearby-airport features. There is no published ORCAIR2 pack yet.
+- Opening the ADS-B dashboard on the bench can reset the device through the
+  task watchdog; this reproduces on `main` and is tracked in issue 131.

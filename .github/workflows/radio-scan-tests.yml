@@ -7,9 +7,11 @@ on:
       - apps/orcsdr-tab5/ui/scan_engine.*
       - apps/orcsdr-tab5/ui/cb_scanner.*
       - apps/orcsdr-tab5/ui/airband_scanner.*
+      - apps/orcsdr-tab5/ui/airband_catalog.*
       - tests/radio_scan_tests.cpp
       - tests/cb_scanner_tests.cpp
       - tests/airband_scanner_tests.cpp
+      - tests/airband_catalog_tests.cpp
       - tools/test-radio-scan.ps1
       - tools/test-radio-scan.sh
       - .github/workflows/radio-scan-tests.yml
@@ -20,9 +22,11 @@ on:
       - apps/orcsdr-tab5/ui/scan_engine.*
       - apps/orcsdr-tab5/ui/cb_scanner.*
       - apps/orcsdr-tab5/ui/airband_scanner.*
+      - apps/orcsdr-tab5/ui/airband_catalog.*
       - tests/radio_scan_tests.cpp
       - tests/cb_scanner_tests.cpp
       - tests/airband_scanner_tests.cpp
+      - tests/airband_catalog_tests.cpp
       - tools/test-radio-scan.ps1
       - tools/test-radio-scan.sh
       - .github/workflows/radio-scan-tests.yml

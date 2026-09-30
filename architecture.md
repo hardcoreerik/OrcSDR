@@ -48,15 +48,18 @@ screen permission to draw while radio/decoder work continues independently.
 `navigation_service` owns Home/Settings handoff mechanics; feature dashboards
 render snapshots rather than owning receiver state.
 
-ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`.
+ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`, `airband`.
 
 Dashboard IDs: `home`, `fm`, `p25`, `adsb`, `shortwave`, `weather`, `cb`, `lora`, `airband`, `marine`, `satellite`, `utilities`, `settings`, `rf_lab`, `wifi_analysis`, `pocsag`, `am`.
 
 The current screen modules include Home, FM, AM, P25, ADS-B, LoRa, POCSAG, RF
 Lab, RF Visualizer, Wi-Fi analysis, Settings, documentation capture, and the
-shared Radio/Scope/Capture surface. Dashboard catalog entries for Shortwave,
-Airband, Marine, and Satellite route into that shared receiver surface; catalog
-labels do not imply dedicated decoders or complete demodulation modes.
+shared Radio/Scope/Capture surface. Airband has its own dashboard (`airband_*`
+modules: scanner, catalog, runtime, dashboard; see `docs/airband/README.md`) on
+`radio::Band::airband`, using the shared AM demodulator and receiver controls.
+Dashboard catalog entries for Shortwave, Marine, and Satellite route into the
+shared receiver surface; catalog labels do not imply dedicated decoders or
+complete demodulation modes.
 
 ## Receiver and DSP ownership
 
