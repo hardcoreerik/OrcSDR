@@ -24,11 +24,18 @@ constexpr uint16_t kPanel = 0x0021;
 constexpr int kRailX = 24, kRailY = 112, kRailW = 280, kRailH = 530;
 constexpr int kMainX = 318, kMainY = 112, kMainW = 930, kMainH = 530;
 constexpr int kPlotX = 330, kPlotW = 906;
-constexpr int kSpectrumY = 144, kSpectrumH = 151;
-constexpr int kWaterfallY = 298, kWaterfallH = 158;
-constexpr int kContrastY = 462;
-constexpr int kContrastDownX = 462;
-constexpr int kContrastUpX = 724;
+constexpr int kSpectrumY = 144, kSpectrumH = 170;
+constexpr int kWaterfallY = 317, kWaterfallH = 183;
+// Readout strip under the graphics: frequency on the left, waterfall contrast, then the mode chip.
+constexpr int kReadoutY = 504, kReadoutH = 52;
+constexpr int kContrastY = kReadoutY + (kReadoutH - 28) / 2;
+constexpr int kContrastDownX = 690;
+constexpr int kContrastUpX = 952;
+constexpr int kModeX = 1144, kModeW = 92;
+// Control row: SPAN / TUNE / STEP SIZE steppers, then FILTER and GAIN.
+constexpr int kControlY = 564, kControlH = 62;
+constexpr int kStepperW = 198, kStepperSpan = 330, kStepperTune = 535, kStepperSize = 740;
+constexpr int kStepperArrowW = 44, kStepperArrowH = 48;
 constexpr int kContrastButtonW = 36;
 constexpr int kContrastButtonH = 28;
 constexpr int kListX = 30, kListY = 158, kListW = 242, kListH = 420;
@@ -276,7 +283,7 @@ void draw_waterfall_controls() {
        middle_center);
   char value[24];
   snprintf(value, sizeof(value), "WF CONTRAST %u", waterfall_contrast);
-  text(value, 615, kContrastY + 14, kCyan, 2, middle_center);
+  text(value, kContrastDownX + 153, kContrastY + 14, kCyan, 2, middle_center);
   panel(kContrastUpX, kContrastY, kContrastButtonW, kContrastButtonH, kCyan, 5);
   text(">", kContrastUpX + kContrastButtonW / 2, kContrastY + 14, kGreen, 2,
        middle_center);
@@ -288,19 +295,26 @@ float home_spectrum_floor(const float* levels, size_t count, float pipeline_floo
   return std::max(pipeline_floor, sum / static_cast<float>(count) - 4.0f);
 }
 
+void draw_mode_chip(const char* mode) {
+  M5.Display.fillRect(kModeX, kReadoutY, kModeW, kReadoutH, TFT_BLACK);
+  panel(kModeX, kReadoutY, kModeW, kReadoutH, kCyan, 8);
+  text("MODE", kModeX + kModeW / 2, kReadoutY + 15, kCyan, 2, middle_center);
+  text(mode, kModeX + kModeW / 2, kReadoutY + 38, kGreen, 2, middle_center);
+}
+
 void draw_frequency() {
-  M5.Display.fillRect(kPlotX, 458, 430, 88, TFT_BLACK);
-  text("FREQUENCY", kPlotX, 472, kCyan, 2);
+  M5.Display.fillRect(kPlotX, kReadoutY, 350, kReadoutH, TFT_BLACK);
   char value[40];
   snprintf(value, sizeof(value), current.frequency_hz >= 1000000 ? "%.3f" : "%.1f",
            current.frequency_hz >= 1000000 ? current.frequency_hz / 1000000.0
                                            : current.frequency_hz / 1000.0);
-  text(value, kPlotX + 40, 516, kGreen, 4);
-  text(current.frequency_hz >= 1000000 ? "MHz" : "kHz", kPlotX + 350, 526,
+  const int mid = kReadoutY + kReadoutH / 2;
+  text(value, kPlotX + 8, mid, kGreen, 4);
+  text(current.frequency_hz >= 1000000 ? "MHz" : "kHz", kPlotX + 215, mid + 8,
        kGreen, 2);
   if (current.requested_frequency_hz != 0 &&
       current.requested_frequency_hz != current.frequency_hz)
-    text("TUNING", kPlotX + 425, 526, TFT_YELLOW, 1, middle_right);
+    text("TUNING", kPlotX + 330, mid + 8, TFT_YELLOW, 1, middle_right);
   draw_waterfall_controls();
 }
 
@@ -327,33 +341,39 @@ void draw_spectrum_axis() {
        middle_right);
 }
 
-void draw_tuning_controls() {
-  M5.Display.fillRect(kPlotX, 564, 610, 62, TFT_BLACK);
-  panel(kPlotX, 564, 610, 62, kCyan, 9);
-  panel(338, 571, 60, 48, kCyan, 7); text("<", 368, 595, kGreen, 3, middle_center);
-  text("SPAN", 470, 578, kCyan, 2, middle_center);
+// One "< LABEL value >" group in the control row; the arrows are the touch targets.
+void draw_stepper(int x, const char* label, const char* value) {
+  panel(x, kControlY, kStepperW, kControlH, kCyan, 9);
+  panel(x + 6, kControlY + 7, kStepperArrowW, kStepperArrowH, kCyan, 7);
+  text("<", x + 6 + kStepperArrowW / 2, kControlY + 31, kGreen, 3, middle_center);
+  panel(x + kStepperW - 6 - kStepperArrowW, kControlY + 7, kStepperArrowW, kStepperArrowH, kCyan, 7);
+  text(">", x + kStepperW - 6 - kStepperArrowW / 2, kControlY + 31, kGreen, 3, middle_center);
+  text(label, x + kStepperW / 2, kControlY + 15, kCyan, 2, middle_center);
+  text(value, x + kStepperW / 2, kControlY + 43, kGreen, 2, middle_center);
+}
+
+void draw_step_size_controls();
+
+void draw_span_control() {
   char value[24];
   snprintf(value, sizeof(value), "%.0f kHz", current.span_hz / 1000.0);
-  text(value, 470, 606, kGreen, 2, middle_center);
-  panel(548, 571, 60, 48, kCyan, 7); text(">", 578, 595, kGreen, 3, middle_center);
-  panel(640, 571, 60, 48, kCyan, 7); text("<", 670, 595, kGreen, 3, middle_center);
-  text("TUNE", 780, 578, kCyan, 2, middle_center);
+  draw_stepper(kStepperSpan, "SPAN", value);
+}
+
+void draw_tuning_controls() {
+  M5.Display.fillRect(kStepperSpan, kControlY, kStepperSize + kStepperW - kStepperSpan, kControlH,
+                      TFT_BLACK);
+  char value[24];
+  draw_span_control();
   snprintf(value, sizeof(value), "%.1f kHz", current.step_hz / 1000.0);
-  text(value, 780, 606, kGreen, 2, middle_center);
-  panel(864, 571, 60, 48, kCyan, 7); text(">", 894, 595, kGreen, 3, middle_center);
+  draw_stepper(kStepperTune, "TUNE", value);
+  draw_step_size_controls();
 }
 
 void draw_step_size_controls() {
-  M5.Display.fillRect(998, 468, 236, 72, TFT_BLACK);
-  panel(998, 468, 58, 72, kCyan, 8);
-  text("<", 1027, 504, kGreen, 4, middle_center);
-  panel(1062, 468, 112, 72, kCyan, 8);
-  text("STEP SIZE", 1118, 486, kCyan, 2, middle_center);
-  char value[16];
-  snprintf(value, sizeof(value), "%.1f k", current.step_hz / 1000.0);
-  text(value, 1118, 515, kGreen, 2, middle_center);
-  panel(1180, 468, 54, 72, kCyan, 8);
-  text(">", 1207, 504, kGreen, 4, middle_center);
+  char value[24];
+  snprintf(value, sizeof(value), "%.1f kHz", current.step_hz / 1000.0);
+  draw_stepper(kStepperSize, "STEP SIZE", value);
 }
 
 void footer_text(const char* value, int x, uint16_t color) {
@@ -667,10 +687,7 @@ void draw_receiver_chrome() {
   M5.Display.fillRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, TFT_BLACK);
   M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kDim);
   draw_frequency();
-  panel(770, 468, 92, 72, kCyan, 8);
-  text("MODE", 816, 484, kCyan, 2, middle_center);
-  text(current.mode[0] ? current.mode : "--", 816, 516, kGreen, 2, middle_center);
-  draw_step_size_controls();
+  draw_mode_chip(current.mode[0] ? current.mode : "--");
   draw_tuning_controls();
   draw_filter_panel();
   // Signal level lives in the footer meter; this corner is the gain control.
@@ -784,12 +801,17 @@ Action tap_action(int32_t x, int32_t y) {
     return {ActionKind::tune_frequency, dashboards::Id::count,
             requested > 0 ? static_cast<uint32_t>(requested) : 0};
   }
-  if (inside(x, y, 338, 571, 60, 48)) return {ActionKind::span_down};
-  if (inside(x, y, 548, 571, 60, 48)) return {ActionKind::span_up};
-  if (inside(x, y, 640, 571, 60, 48)) return {ActionKind::step_down};
-  if (inside(x, y, 864, 571, 60, 48)) return {ActionKind::step_up};
-  if (inside(x, y, 998, 468, 58, 72)) return {ActionKind::step_size_down};
-  if (inside(x, y, 1180, 468, 54, 72)) return {ActionKind::step_size_up};
+  const struct { int x; ActionKind down, up; } steppers[] = {
+      {kStepperSpan, ActionKind::span_down, ActionKind::span_up},
+      {kStepperTune, ActionKind::step_down, ActionKind::step_up},
+      {kStepperSize, ActionKind::step_size_down, ActionKind::step_size_up}};
+  for (const auto& group : steppers) {
+    if (inside(x, y, group.x + 6, kControlY + 7, kStepperArrowW, kStepperArrowH))
+      return {group.down};
+    if (inside(x, y, group.x + kStepperW - 6 - kStepperArrowW, kControlY + 7, kStepperArrowW,
+               kStepperArrowH))
+      return {group.up};
+  }
   return {};
 }
 
@@ -845,12 +867,9 @@ void update(const Snapshot& snapshot) {
   M5.Display.startWrite();
   if (tuner_changed) {
     draw_frequency();
-    M5.Display.fillRect(770, 468, 92, 72, TFT_BLACK);
-    panel(770, 468, 92, 72, kCyan, 8);
-    text("MODE", 816, 484, kCyan, 2, middle_center);
-    text(current.mode, 816, 516, kGreen, 2, middle_center);
+    draw_mode_chip(current.mode);
   }
-  if (audio_changed || tuning_controls_changed) draw_step_size_controls();
+  if (audio_changed && !tuning_controls_changed) draw_step_size_controls();
   if (tuning_controls_changed) draw_tuning_controls();
   if (status_changed) draw_header_status();
   if (receiver_changed) draw_footer_receiver();
@@ -1056,9 +1075,9 @@ bool self_check() {
              ActionKind::waterfall_contrast_down &&
          tap_action(kContrastUpX + 1, kContrastY + 1).kind ==
              ActionKind::waterfall_contrast_up &&
-         tap_action(339, 572).kind == ActionKind::span_down &&
-         tap_action(865, 572).kind == ActionKind::step_up &&
-         tap_action(999, 469).kind == ActionKind::step_size_down &&
+         tap_action(kStepperSpan + 7, kControlY + 8).kind == ActionKind::span_down &&
+         tap_action(kStepperTune + kStepperW - 7, kControlY + 8).kind == ActionKind::step_up &&
+         tap_action(kStepperSize + 7, kControlY + 8).kind == ActionKind::step_size_down &&
          tap_action(1223, 13).kind == ActionKind::open_device_settings &&
          tap_action(1100, 13).kind == ActionKind::sound_toggle &&
          std::abs(home_spectrum_floor(levels, std::size(levels), 10.0f) - 62.0f) < 0.01f;
