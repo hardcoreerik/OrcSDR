@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -44,20 +45,20 @@ void test_airport_bank_scan() {
   scanner.set_bank(bank, 3);
   scanner.start(0, bank[0].frequency_hz);
 
-  const uint32_t target = scanner.service(0, bank[0].frequency_hz, -100.0f);
+  const uint32_t target = scanner.service(0, bank[0].frequency_hz, 0.0f);
   CHECK(target == bank[1].frequency_hz);
   scanner.note_retuned(0, target);
   CHECK(scanner.state() == ScanState::settling);
-  CHECK(scanner.service(49, target, -60.0f) == 0);
+  CHECK(scanner.service(49, target, 20.0f) == 0);
   CHECK(scanner.state() == ScanState::settling);
-  CHECK(scanner.service(50, target, -60.0f) == 0);
+  CHECK(scanner.service(50, target, 20.0f) == 0);
   CHECK(scanner.state() == ScanState::receiving);
   CHECK(scanner.stops() == 1);
 
   CHECK(scanner.service(200, target, -58.0f) == 0);
-  CHECK(scanner.service(500, target, -100.0f) == 0);
+  CHECK(scanner.service(500, target, 0.0f) == 0);
   CHECK(scanner.state() == ScanState::hang);
-  CHECK(scanner.service(1000, target, -100.0f) == 0);
+  CHECK(scanner.service(1000, target, 0.0f) == 0);
   CHECK(scanner.state() == ScanState::scanning);
   CHECK(scanner.activity_count() == 1);
   CHECK(scanner.activity(0)->frequency_hz == target);
@@ -75,7 +76,7 @@ void test_guard_and_controls() {
   scanner.set_bank(&bank, 1);
   CHECK(scanner.bank_count() == 2);
   scanner.start(0, 124900000);
-  const uint32_t first = scanner.service(0, 124900000, -100.0f);
+  const uint32_t first = scanner.service(0, 124900000, 0.0f);
   CHECK(first == kGuardFrequencyHz || first == 124900000);
   scanner.hold(1, 124900000);
   CHECK(scanner.state() == ScanState::held);
@@ -85,6 +86,69 @@ void test_guard_and_controls() {
   CHECK(scanner.state() == ScanState::scanning);
   scanner.stop();
   CHECK(scanner.state() == ScanState::off);
+}
+
+void test_channel_squelch() {
+  using namespace orcsdr::airband;
+  CHECK(std::fabs(carrier_level_db(127.5f)) < 0.01f);
+  CHECK(std::fabs(carrier_level_db(12.75f) + 20.0f) < 0.01f);
+  CHECK(std::isfinite(carrier_level_db(0.0f)));
+
+  ChannelSquelch sq;
+  sq.set_threshold_db(8);
+  sq.reset();
+  uint32_t now = 0;
+  // Noise with +/-1.5 dB jitter around -38 dBFS never opens the squelch.
+  for (int i = 0; i < 400; ++i, now += 30)
+    sq.update(now, -38.0f + ((i * 7) % 5 - 2) * 0.75f);
+  CHECK(sq.floor_valid());
+  CHECK(!sq.open());
+  CHECK(sq.snr_db() < 4.0f);
+  // A carrier 14 dB above the floor opens it...
+  for (int i = 0; i < 10; ++i, now += 30) sq.update(now, -24.0f);
+  CHECK(sq.open());
+  CHECK(sq.snr_db() > 10.0f);
+  // ...and it stays open through a fade to just above the close point (hysteresis)...
+  for (int i = 0; i < 10; ++i, now += 30) sq.update(now, -38.0f + 7.0f);
+  CHECK(sq.open());
+  // ...and closes when the carrier goes away.
+  for (int i = 0; i < 10; ++i, now += 30) sq.update(now, -38.0f);
+  CHECK(!sq.open());
+  // A long carrier must not drag the floor up and mute itself.
+  for (int i = 0; i < 1000; ++i, now += 30) sq.update(now, -24.0f);
+  CHECK(sq.open());
+  CHECK(sq.floor_db() < -34.0f);
+
+  // Slow upward drift (0.4 dB/s) is followed, so it never falsely opens.
+  ChannelSquelch drift;
+  drift.set_threshold_db(8);
+  drift.reset();
+  now = 0;
+  for (int i = 0; i < 3000; ++i, now += 30)
+    drift.update(now, -45.0f + 0.4f * static_cast<float>(now) / 1000.0f * 0.25f);
+  CHECK(!drift.open());
+
+  // A downward step (AGC pulling gain) lowers the floor at once.
+  ChannelSquelch step;
+  step.set_threshold_db(8);
+  step.reset();
+  now = 0;
+  for (int i = 0; i < 50; ++i, now += 30) step.update(now, -30.0f);
+  for (int i = 0; i < 50; ++i, now += 30) step.update(now, -40.0f);
+  CHECK(step.floor_db() < -37.0f);
+
+  // Threshold 0 means always open; reset clears the floor but keeps that.
+  ChannelSquelch always;
+  always.set_threshold_db(0);
+  always.reset();
+  always.update(0, -60.0f);
+  CHECK(always.open());
+  // Non-finite input is ignored.
+  ChannelSquelch bad;
+  bad.set_threshold_db(8);
+  bad.reset();
+  bad.update(0, NAN);
+  CHECK(!bad.floor_valid());
 }
 
 void test_filter_bandwidth() {
@@ -118,6 +182,7 @@ void test_gain_steps() {
 }  // namespace
 
 int main() {
+  test_channel_squelch();
   test_filter_bandwidth();
   test_radius_choices();
   test_gain_steps();

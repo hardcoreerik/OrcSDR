@@ -15,7 +15,9 @@ enum class Tab : uint8_t { listen, scan, airports, activity, setup };
 struct Snapshot {
   uint32_t now_ms = 0;
   uint32_t frequency_hz = kGuardFrequencyHz;
-  float signal_dbfs = -120.0f;
+  float channel_db = -120.0f;  // in-channel carrier level, dBFS
+  float snr_db = 0.0f;         // carrier above the tracked noise floor
+  float floor_db = -120.0f;
   bool squelch_open = false;
   bool running = false;
   bool sound_enabled = true;

@@ -11,7 +11,8 @@ namespace orcsdr::airband {
 struct LiveState {
   uint32_t now_ms = 0;
   uint32_t frequency_hz = kGuardFrequencyHz;
-  float signal_dbfs = -120.0f;
+  // In-channel carrier level (mean envelope of the channel-filtered IQ) in dBFS.
+  float channel_db = -120.0f;
   bool receiver_running = false;
   bool sound_enabled = true;
   int32_t battery_percent = -1;
@@ -55,7 +56,8 @@ size_t status_line(const LiveState& live, char* out, size_t capacity);
 
 bool active();
 Tab tab();
-bool audio_open(float signal_dbfs);
+// True while the carrier-versus-noise-floor squelch is open. Safe to call from the DSP task.
+bool audio_open();
 uint32_t default_frequency();
 uint32_t filter_bandwidth_hz();
 uint32_t manual_step(uint32_t frequency_hz, int direction);

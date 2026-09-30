@@ -147,14 +147,19 @@ void page_title(const char* title, const char* subtitle) {
 void draw_signal_meter() {
   const Rect meter{48, 304, 468, 24};
   M5.Display.drawRoundRect(meter.x, meter.y, meter.w, meter.h, 6, kCyan);
-  const float level = std::clamp((g_snapshot.signal_dbfs + 110.0f) / 80.0f, 0.0f, 1.0f);
+  const float level = std::clamp(g_snapshot.snr_db / 30.0f, 0.0f, 1.0f);
   const int filled = static_cast<int>((meter.w - 4) * level);
   if (filled > 0)
     M5.Display.fillRect(meter.x + 2, meter.y + 3, filled, meter.h - 6,
                         g_snapshot.squelch_open ? kGreen : kYellow);
   char value[64];
-  std::snprintf(value, sizeof(value), "%.0f dBFS   SQL %s",
-                static_cast<double>(g_snapshot.signal_dbfs),
+  const int threshold_x = meter.x + 2 +
+      static_cast<int>((meter.w - 4) * std::clamp(
+          static_cast<float>(g_snapshot.scan.squelch_db) / 30.0f, 0.0f, 1.0f));
+  M5.Display.drawFastVLine(threshold_x, meter.y - 4, meter.h + 8, kAmber);
+  std::snprintf(value, sizeof(value), "SNR %.0f dB   SQL +%d dB   %s",
+                static_cast<double>(g_snapshot.snr_db),
+                static_cast<int>(g_snapshot.scan.squelch_db),
                 g_snapshot.squelch_open ? "OPEN" : "CLOSED");
   text(value, meter.x, meter.y + 42,
        g_snapshot.squelch_open ? kGreen : kMuted, 2, middle_left);
@@ -222,12 +227,12 @@ void draw_listen() {
 
   card(kStatusCard);
   std::snprintf(value, sizeof(value),
-                "%lu stops   %lu checked   bank %u   guard %s   SQL %d dBFS   hang %.1fs",
+                "%lu stops   %lu checked   bank %u   guard %s   SQL +%d dB   hang %.1fs",
                 static_cast<unsigned long>(g_snapshot.stops),
                 static_cast<unsigned long>(g_snapshot.channels_checked),
                 static_cast<unsigned>(g_snapshot.bank_count),
                 g_snapshot.scan.priority_guard ? "ON" : "OFF",
-                static_cast<int>(g_snapshot.scan.squelch_dbfs),
+                static_cast<int>(g_snapshot.scan.squelch_db),
                 static_cast<double>(g_snapshot.scan.hang_ms) / 1000.0);
   text(value, 44, 434, TFT_WHITE, 2, middle_left);
   if (!g_snapshot.location_configured)
@@ -250,9 +255,9 @@ void draw_scan() {
                 state_name(g_snapshot.scan_state),
                 mhz(g_snapshot.frequency_hz));
   text(value, 44, 208, state_color(), 3, middle_left);
-  std::snprintf(value, sizeof(value), "%s   %s   SQL %d dBFS",
+  std::snprintf(value, sizeof(value), "%s   %s   SQL +%d dB",
                 source_name(g_snapshot.scan.source), spacing_name(g_snapshot.scan.spacing),
-                static_cast<int>(g_snapshot.scan.squelch_dbfs));
+                static_cast<int>(g_snapshot.scan.squelch_db));
   text(value, 44, 252, kMuted, 2, middle_left);
   button({958, 194, 278, 66},
          g_snapshot.scan_state == ScanState::off ? "START SCAN" : "STOP SCAN",
@@ -359,10 +364,10 @@ void draw_activity() {
     char age[20];
     format_age(g_snapshot.now_ms, item, age, sizeof(age));
     std::snprintf(value, sizeof(value),
-                  "%9.3f MHz   %5.1fs   %5.0f dBFS   %-34.34s   %s",
+                  "%9.3f MHz   %5.1fs   +%2.0f dB   %-34.34s   %s",
                   mhz(item.frequency_hz),
                   static_cast<double>(item.duration_ms) / 1000.0,
-                  static_cast<double>(item.peak_dbfs), item.label, age);
+                  static_cast<double>(item.peak_snr_db), item.label, age);
     button(list_row(static_cast<int>(i)), value,
            item.frequency_hz == g_snapshot.frequency_hz, true, 2);
   }
@@ -373,10 +378,10 @@ void setup_value(int row, char* out, size_t size) {
     case 0: std::snprintf(out, size, "%s", spacing_name(g_snapshot.scan.spacing)); break;
     case 1: std::snprintf(out, size, "%s", source_name(g_snapshot.scan.source)); break;
     case 2:
-      if (g_snapshot.scan.squelch_dbfs <= -100)
+      if (g_snapshot.scan.squelch_db == 0)
         std::snprintf(out, size, "OPEN");
       else
-        std::snprintf(out, size, "%d dBFS", static_cast<int>(g_snapshot.scan.squelch_dbfs));
+        std::snprintf(out, size, "+%d dB", static_cast<int>(g_snapshot.scan.squelch_db));
       break;
     case 3: std::snprintf(out, size, "%u ms", static_cast<unsigned>(g_snapshot.scan.settle_ms)); break;
     case 4:
@@ -400,7 +405,7 @@ void draw_setup() {
   static constexpr const char* help[kSetupRows] = {
       "25 kHz or 8.33 kHz tuning plan",
       "Closest airport frequencies or the complete civil voice band",
-      "Mute audio and stop scan only above this measured receiver level",
+      "Open audio and stop scan when the carrier is this far above the noise floor",
       "Time allowed after each tuner move before evaluating activity",
       "Wait this long for a reply before resuming the scan",
       "Periodically check the civil emergency / guard frequency",
@@ -559,14 +564,14 @@ void dashboard_update(const Snapshot& snapshot) {
       snapshot.frequency_hz != g_snapshot.frequency_hz ||
       snapshot.scan_state != g_snapshot.scan_state ||
       snapshot.squelch_open != g_snapshot.squelch_open ||
-      snapshot.scan.squelch_dbfs != g_snapshot.scan.squelch_dbfs ||
+      snapshot.scan.squelch_db != g_snapshot.scan.squelch_db ||
       snapshot.scan.spacing != g_snapshot.scan.spacing ||
       snapshot.scan.source != g_snapshot.scan.source ||
       snapshot.catalog_loaded != g_snapshot.catalog_loaded ||
       snapshot.catalog_count != g_snapshot.catalog_count ||
       snapshot.activity_count != g_snapshot.activity_count ||
       snapshot.stops != g_snapshot.stops ||
-      std::fabs(snapshot.signal_dbfs - g_snapshot.signal_dbfs) >= 2.0f;
+      std::fabs(snapshot.snr_db - g_snapshot.snr_db) >= 1.5f;
   g_snapshot = snapshot;
   if (header_changed) draw_header();
   if (page_changed ||

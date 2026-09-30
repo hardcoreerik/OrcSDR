@@ -92,12 +92,14 @@ void test_parse_and_no_location() {
   text += row(kSinLat, kSinLon, 118600000, "TOWER", "SG", "WSSS", "Changi", "COMMUNITY", "WSSS TOWER");
   StringSource source(text);
   Catalog catalog;
-  CHECK(catalog.load_from(source, Location{}));
-  CHECK(catalog.loaded());
-  CHECK(catalog.global_schema());
+  // Without a receiver location the file is not even read, and nothing is called "nearby".
+  CountingSource counting(text);
+  CHECK(!catalog.load_from(counting, Location{}));
+  CHECK(!catalog.loaded());
+  CHECK(catalog.last_result() == LoadResult::no_location);
   CHECK(!catalog.location_configured());
-  CHECK(catalog.count() == 2);
-  // Without a receiver location nothing is presented as "nearby" and no identity is claimed.
+  CHECK(catalog.count() == 0);
+  CHECK(counting.lines_read() == 0);
   BankEntry bank[8]{};
   CHECK(catalog.make_bank(bank, 8) == 0);
   CHECK(catalog.match(118900000) == nullptr);
@@ -172,10 +174,10 @@ void test_bad_headers_and_empty_input() {
   using namespace orcsdr::airband;
   Catalog catalog;
   StringSource empty("");
-  CHECK(!catalog.load_from(empty, Location{}));
+  CHECK(!catalog.load_from(empty, Location{true, kEugLat, kEugLon}));
   CHECK(!catalog.loaded());
   StringSource wrong("NOTACATALOG\nCOM\t1\n");
-  CHECK(!catalog.load_from(wrong, Location{}));
+  CHECK(!catalog.load_from(wrong, Location{true, kEugLat, kEugLon}));
   CHECK(!catalog.loaded());
   CHECK(catalog.count() == 0);
   StringSource header_only("ORCAIR2\n");
@@ -274,7 +276,7 @@ void test_load_results() {
   using namespace orcsdr::airband;
   Catalog catalog;
   StringSource wrong("NOTACATALOG\n");
-  CHECK(!catalog.load_from(wrong, Location{}));
+  CHECK(!catalog.load_from(wrong, Location{true, kEugLat, kEugLon}));
   CHECK(catalog.last_result() == LoadResult::bad_header);
   StringSource good("ORCAIR2\n" + row(kEugLat, kEugLon, 118900000, "TOWER", "US", "KEUG", "F", "OFFICIAL", "KEUG TOWER"));
   CHECK(catalog.load_from(good, Location{true, kEugLat, kEugLon}));

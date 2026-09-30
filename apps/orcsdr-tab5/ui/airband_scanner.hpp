@@ -25,14 +25,15 @@ struct Activity {
   uint32_t frequency_hz = 0;
   uint32_t start_ms = 0;
   uint32_t duration_ms = 0;
-  float peak_dbfs = -120.0f;
+  float peak_snr_db = -120.0f;
   char label[40]{};
 };
 
 struct Settings {
   Spacing spacing = Spacing::khz25;
   ScanSource source = ScanSource::airport_bank;
-  int16_t squelch_dbfs = -75;
+  // Open when the in-channel carrier is this many dB above the tracked noise floor; 0 = always open.
+  int16_t squelch_db = 8;
   // OrcSDR currently rate-limits hardware hot retunes to 280 ms.
   uint16_t settle_ms = 350;
   uint16_t hang_ms = 1500;
@@ -60,6 +61,36 @@ bool in_band(uint32_t frequency_hz);
 uint32_t snap_frequency(uint32_t frequency_hz, Spacing spacing);
 uint32_t step_frequency(uint32_t frequency_hz, int direction, Spacing spacing);
 
+// Carrier-versus-noise-floor squelch. The input is the in-channel carrier level in dBFS (the
+// mean envelope of the channel-filtered IQ), NOT the wideband stream power: wideband power is
+// dominated by noise across the whole 2.4 MS/s capture and is regulated by tuner AGC, so it
+// cannot tell an empty channel from a busy one.
+class ChannelSquelch {
+ public:
+  void set_threshold_db(int16_t threshold_db);
+  // Forget the noise floor (call after every retune or gain change).
+  void reset();
+  void update(uint32_t now_ms, float level_db);
+  bool open() const { return open_; }
+  float snr_db() const { return snr_db_; }
+  float floor_db() const { return floor_db_; }
+  bool floor_valid() const { return floor_valid_; }
+
+ private:
+  static constexpr float kFloorFallMs = 150.0f;
+  static constexpr float kFloorRiseMs = 4000.0f;
+  static constexpr float kFloorTrackWindowDb = 6.0f;
+  int16_t threshold_db_ = 8;
+  bool open_ = false;
+  bool floor_valid_ = false;
+  uint32_t last_ms_ = 0;
+  float floor_db_ = -60.0f;
+  float snr_db_ = 0.0f;
+};
+
+// Mean envelope of CU8 IQ counts (0..~180) to dBFS.
+float carrier_level_db(float mean_envelope_counts);
+
 class Scanner {
  public:
   void reset();
@@ -73,7 +104,7 @@ class Scanner {
 
   // Service the scanner from the UI task. Returns a frequency that should be
   // tuned, or zero when no retune is requested.
-  uint32_t service(uint32_t now_ms, uint32_t current_frequency_hz, float signal_dbfs);
+  uint32_t service(uint32_t now_ms, uint32_t current_frequency_hz, float snr_db);
   void note_retuned(uint32_t now_ms, uint32_t frequency_hz);
 
   Settings& settings() { return settings_; }
@@ -91,7 +122,7 @@ class Scanner {
   uint32_t stops() const { return stops_; }
   uint32_t channels_checked() const { return channels_checked_; }
   uint32_t hang_remaining_ms(uint32_t now_ms) const;
-  bool squelch_open(float signal_dbfs) const;
+  bool squelch_open(float snr_db) const;
 
   static bool self_check();
 
@@ -99,8 +130,8 @@ class Scanner {
   uint32_t next_target(uint32_t current_frequency_hz);
   uint32_t begin_target(uint32_t now_ms, uint32_t current_frequency_hz,
                         uint32_t target_frequency_hz);
-  void begin_episode(uint32_t now_ms, uint32_t frequency_hz, float signal_dbfs);
-  void update_episode(uint32_t now_ms, float signal_dbfs);
+  void begin_episode(uint32_t now_ms, uint32_t frequency_hz, float snr_db);
+  void update_episode(uint32_t now_ms, float snr_db);
   void close_episode(uint32_t now_ms);
   void push_activity(const Activity& activity);
   const char* label_for(uint32_t frequency_hz) const;
@@ -120,7 +151,7 @@ class Scanner {
   uint32_t hang_until_ms_ = 0;
   uint32_t last_above_ms_ = 0;
   uint32_t episode_start_ms_ = 0;
-  float episode_peak_dbfs_ = -120.0f;
+  float episode_peak_snr_db_ = -120.0f;
   uint32_t episode_frequency_hz_ = 0;
   uint32_t skip_once_hz_ = 0;
   uint32_t stops_ = 0;

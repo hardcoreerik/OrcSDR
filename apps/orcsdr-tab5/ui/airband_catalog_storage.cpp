@@ -51,6 +51,10 @@ class FileLineSource final : public LineSource {
 bool Catalog::load(storage::FileSystem* filesystem, const Location& location) {
   clear();
   location_configured_ = location.configured;
+  if (!location.configured) {
+    result_ = LoadResult::no_location;
+    return false;
+  }
   if (!filesystem) {
     result_ = LoadResult::no_source;
     return false;

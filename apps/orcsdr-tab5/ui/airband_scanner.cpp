@@ -8,7 +8,7 @@
 namespace orcsdr::airband {
 namespace {
 
-constexpr float kSquelchHysteresisDb = 3.0f;
+constexpr float kSquelchHysteresisDb = 2.0f;
 constexpr uint32_t kReleaseMs = 260u;
 constexpr uint32_t kMinActivityMs = 180u;
 
@@ -182,9 +182,9 @@ uint32_t Scanner::hang_remaining_ms(uint32_t now_ms) const {
   return hang_until_ms_ - now_ms;
 }
 
-bool Scanner::squelch_open(float signal_dbfs) const {
-  return settings_.squelch_dbfs <= -100 ||
-         signal_dbfs >= static_cast<float>(settings_.squelch_dbfs);
+bool Scanner::squelch_open(float snr_db) const {
+  return settings_.squelch_db == 0 ||
+         snr_db >= static_cast<float>(settings_.squelch_db);
 }
 
 const char* Scanner::label_for(uint32_t frequency_hz) const {
@@ -196,17 +196,17 @@ const char* Scanner::label_for(uint32_t frequency_hz) const {
 }
 
 void Scanner::begin_episode(uint32_t now_ms, uint32_t frequency_hz,
-                            float signal_dbfs) {
+                            float snr_db) {
   episode_open_ = true;
   episode_start_ms_ = now_ms;
   last_above_ms_ = now_ms;
   episode_frequency_hz_ = frequency_hz;
-  episode_peak_dbfs_ = signal_dbfs;
+  episode_peak_snr_db_ = snr_db;
 }
 
-void Scanner::update_episode(uint32_t now_ms, float signal_dbfs) {
+void Scanner::update_episode(uint32_t now_ms, float snr_db) {
   last_above_ms_ = now_ms;
-  episode_peak_dbfs_ = std::max(episode_peak_dbfs_, signal_dbfs);
+  episode_peak_snr_db_ = std::max(episode_peak_snr_db_, snr_db);
 }
 
 void Scanner::push_activity(const Activity& value) {
@@ -223,7 +223,7 @@ void Scanner::close_episode(uint32_t now_ms) {
     item.frequency_hz = episode_frequency_hz_;
     item.start_ms = episode_start_ms_;
     item.duration_ms = duration_ms;
-    item.peak_dbfs = episode_peak_dbfs_;
+    item.peak_snr_db = episode_peak_snr_db_;
     std::strncpy(item.label, label_for(item.frequency_hz), sizeof(item.label) - 1);
     push_activity(item);
   }
@@ -283,7 +283,7 @@ void Scanner::note_retuned(uint32_t now_ms, uint32_t frequency_hz) {
 }
 
 uint32_t Scanner::service(uint32_t now_ms, uint32_t current_frequency_hz,
-                          float signal_dbfs) {
+                          float snr_db) {
   if (state_ == ScanState::off || state_ == ScanState::held) return 0;
 
   if (state_ == ScanState::scanning) {
@@ -293,9 +293,9 @@ uint32_t Scanner::service(uint32_t now_ms, uint32_t current_frequency_hz,
 
   if (state_ == ScanState::settling) {
     if (!reached(now_ms, settle_until_ms_)) return 0;
-    if (squelch_open(signal_dbfs)) {
+    if (squelch_open(snr_db)) {
       ++stops_;
-      begin_episode(now_ms, current_frequency_hz, signal_dbfs);
+      begin_episode(now_ms, current_frequency_hz, snr_db);
       state_ = ScanState::receiving;
       return 0;
     }
@@ -304,10 +304,10 @@ uint32_t Scanner::service(uint32_t now_ms, uint32_t current_frequency_hz,
   }
 
   const float close_level =
-      static_cast<float>(settings_.squelch_dbfs) - kSquelchHysteresisDb;
+      static_cast<float>(settings_.squelch_db) - kSquelchHysteresisDb;
   if (state_ == ScanState::receiving) {
-    if (settings_.squelch_dbfs <= -100 || signal_dbfs >= close_level) {
-      update_episode(now_ms, signal_dbfs);
+    if (settings_.squelch_db == 0 || snr_db >= close_level) {
+      update_episode(now_ms, snr_db);
       return 0;
     }
     if (now_ms - last_above_ms_ < kReleaseMs) return 0;
@@ -317,8 +317,8 @@ uint32_t Scanner::service(uint32_t now_ms, uint32_t current_frequency_hz,
   }
 
   if (state_ == ScanState::hang) {
-    if (settings_.squelch_dbfs <= -100 || signal_dbfs >= close_level) {
-      update_episode(now_ms, signal_dbfs);
+    if (settings_.squelch_db == 0 || snr_db >= close_level) {
+      update_episode(now_ms, snr_db);
       state_ = ScanState::receiving;
       return 0;
     }
@@ -355,6 +355,50 @@ int16_t step_gain(const int16_t* steps, size_t count, int16_t current, int direc
   return steps[nearest];
 }
 
+void ChannelSquelch::set_threshold_db(int16_t threshold_db) {
+  threshold_db_ = threshold_db < 0 ? 0 : threshold_db;
+  if (threshold_db_ == 0) open_ = true;
+}
+
+void ChannelSquelch::reset() {
+  floor_valid_ = false;
+  open_ = threshold_db_ == 0;
+  snr_db_ = 0.0f;
+}
+
+void ChannelSquelch::update(uint32_t now_ms, float level_db) {
+  if (!std::isfinite(level_db)) return;
+  const uint32_t elapsed_ms = floor_valid_ ? now_ms - last_ms_ : 0u;
+  last_ms_ = now_ms;
+  if (!floor_valid_) {
+    floor_db_ = level_db;
+    floor_valid_ = true;
+  } else {
+    const float dt = static_cast<float>(elapsed_ms > 1000u ? 1000u : elapsed_ms);
+    if (level_db < floor_db_) {
+      // The floor can only be at or below the measured level: follow drops quickly.
+      floor_db_ += (level_db - floor_db_) * (1.0f - std::exp(-dt / kFloorFallMs));
+    } else if (!open_ && level_db - floor_db_ < kFloorTrackWindowDb) {
+      // Follow slow upward drift (AGC, temperature) but never chase a real carrier.
+      floor_db_ += (level_db - floor_db_) * (1.0f - std::exp(-dt / kFloorRiseMs));
+    }
+  }
+  snr_db_ = level_db - floor_db_;
+  if (threshold_db_ == 0) {
+    open_ = true;
+  } else if (!open_ && snr_db_ >= static_cast<float>(threshold_db_)) {
+    open_ = true;
+  } else if (open_ && snr_db_ < static_cast<float>(threshold_db_) - kSquelchHysteresisDb) {
+    open_ = false;
+  }
+}
+
+float carrier_level_db(float mean_envelope_counts) {
+  // CU8 samples are centered on 127.5; a full-scale carrier has amplitude ~127.5.
+  const float clamped = mean_envelope_counts < 0.05f ? 0.05f : mean_envelope_counts;
+  return 20.0f * std::log10(clamped / 127.5f);
+}
+
 bool Scanner::self_check() {
   bool ok = spacing_hz(Spacing::khz25) == 25000u &&
             spacing_hz(Spacing::khz833) == 8333u &&
@@ -377,18 +421,18 @@ bool Scanner::self_check() {
   scanner.settings().priority_guard = false;
   scanner.set_bank(bank, 2);
   scanner.start(0, bank[0].frequency_hz);
-  const uint32_t next = scanner.service(0, bank[0].frequency_hz, -100.0f);
+  const uint32_t next = scanner.service(0, bank[0].frequency_hz, 0.0f);
   ok = ok && next == bank[1].frequency_hz &&
        scanner.state() == ScanState::settling;
   scanner.note_retuned(0, next);
-  (void)scanner.service(scanner.settings().settle_ms, next, -60.0f);
+  (void)scanner.service(scanner.settings().settle_ms, next, 20.0f);
   ok = ok && scanner.state() == ScanState::receiving && scanner.stops() == 1;
   (void)scanner.service(scanner.settings().settle_ms + kReleaseMs + 1u, next,
-                        -100.0f);
+                        0.0f);
   ok = ok && scanner.state() == ScanState::hang;
   (void)scanner.service(scanner.settings().settle_ms + kReleaseMs + 1u +
                             scanner.settings().hang_ms,
-                        next, -100.0f);
+                        next, 0.0f);
   ok = ok && scanner.state() == ScanState::scanning &&
        scanner.activity_count() == 1 &&
        scanner.activity(0)->frequency_hz == next;

@@ -6300,7 +6300,7 @@ orcsdr::airband::LiveState airband_live_state() {
   orcsdr::airband::LiveState live{};
   live.now_ms = millis();
   live.frequency_hz = rtl_ui_frequency_hz;
-  live.signal_dbfs = rtl_signal_dbfs_smooth;
+  live.channel_db = orcsdr::airband::carrier_level_db(rtl_audio.dc);
   live.receiver_running =
       rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
   live.sound_enabled = rtl_audio_user_enabled.load(std::memory_order_acquire);
@@ -8447,7 +8447,7 @@ void run_rtl_capture() {
     } else if (band == RtlBand::am || band == RtlBand::shortwave ||
                band == RtlBand::airband) {
       if (band != RtlBand::airband ||
-          orcsdr::airband::audio_open(rtl_signal_dbfs_smooth))
+          orcsdr::airband::audio_open())
         demodulate_am(rtl_iq_processing, completed_bytes, audio_scale,
                       kRtlSampleRateSps);
       else
@@ -9004,7 +9004,7 @@ static void rtl_dsp_task(void *) {
       } else if (block.band == RtlBand::am || block.band == RtlBand::shortwave ||
                  block.band == RtlBand::airband) {
         if (block.band != RtlBand::airband ||
-            orcsdr::airband::audio_open(rtl_signal_dbfs_smooth))
+            orcsdr::airband::audio_open())
           demodulate_am(block.data, block.bytes, block.audio_scale,
                         block.sample_rate_sps);
         else

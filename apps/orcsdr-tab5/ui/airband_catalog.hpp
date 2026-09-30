@@ -73,6 +73,7 @@ class LineSource {
 enum class LoadResult : uint8_t {
   not_loaded,
   ok,
+  no_location,          // no receiver location: nothing is read, nothing is called "nearby"
   no_source,            // no aviation.idx / faa_aviation.idx on the SD card
   bad_header,           // file present but not ORCAIR2 / ORCCAT1
   unsupported_rows,     // header ok but rows are not a schema this firmware understands

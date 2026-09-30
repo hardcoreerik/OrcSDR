@@ -22,7 +22,8 @@ Scanner g_scanner;
 NvsStore g_store;
 bool g_store_ready = false;
 bool g_loaded = false;
-std::atomic<int16_t> g_audio_squelch_dbfs{-75};
+std::atomic<bool> g_audio_open{true};
+ChannelSquelch g_squelch;
 uint32_t g_saved_frequency_hz = kGuardFrequencyHz;
 Location g_catalog_location{};
 bool g_catalog_attempted = false;
@@ -34,8 +35,8 @@ bool open_store() {
 }
 
 void publish_audio_squelch() {
-  g_audio_squelch_dbfs.store(g_scanner.settings().squelch_dbfs,
-                             std::memory_order_release);
+  g_squelch.set_threshold_db(g_scanner.settings().squelch_db);
+  g_audio_open.store(g_squelch.open(), std::memory_order_release);
 }
 
 void load_settings_once() {
@@ -50,8 +51,8 @@ void load_settings_once() {
   s.spacing = spacing == 1 ? Spacing::khz833 : Spacing::khz25;
   const uint8_t source = g_store.get_u8("source", 0);
   s.source = source == 1 ? ScanSource::full_band : ScanSource::airport_bank;
-  s.squelch_dbfs =
-      static_cast<int16_t>(std::clamp<int32_t>(g_store.get_i32("squelch", -75), -100, -30));
+  s.squelch_db =
+      static_cast<int16_t>(std::clamp<int32_t>(g_store.get_i32("sql_db", 8), 0, 30));
   s.settle_ms =
       static_cast<uint16_t>(std::clamp<uint32_t>(g_store.get_u16("settle", 350), 300, 800));
   s.hang_ms =
@@ -73,7 +74,7 @@ void save_settings() {
   const auto& s = g_scanner.settings();
   (void)g_store.put_u8("spacing", s.spacing == Spacing::khz833 ? 1 : 0);
   (void)g_store.put_u8("source", s.source == ScanSource::full_band ? 1 : 0);
-  (void)g_store.put_i32("squelch", s.squelch_dbfs);
+  (void)g_store.put_i32("sql_db", s.squelch_db);
   (void)g_store.put_u16("settle", s.settle_ms);
   (void)g_store.put_u16("hang", s.hang_ms);
   (void)g_store.put_bool("guard", s.priority_guard);
@@ -130,8 +131,10 @@ const Snapshot& snapshot(const LiveState& live) {
   reset_snapshot(out);
   out.now_ms = live.now_ms;
   out.frequency_hz = live.frequency_hz;
-  out.signal_dbfs = live.signal_dbfs;
-  out.squelch_open = audio_open(live.signal_dbfs);
+  out.channel_db = live.channel_db;
+  out.snr_db = g_squelch.snr_db();
+  out.floor_db = g_squelch.floor_db();
+  out.squelch_open = g_squelch.open();
   out.running = live.receiver_running;
   out.sound_enabled = live.sound_enabled;
   out.battery_percent = live.battery_percent;
@@ -180,6 +183,8 @@ bool tune(uint32_t frequency_hz) {
   if (!g_hooks.tune) return false;
   frequency_hz = std::clamp(frequency_hz, kMinFrequencyHz, kMaxFrequencyHz);
   if (!g_hooks.tune(frequency_hz)) return false;
+  g_squelch.reset();
+  g_audio_open.store(g_squelch.open(), std::memory_order_release);
   save_frequency(frequency_hz);
   return true;
 }
@@ -255,6 +260,7 @@ void dispatch(const Action& action, const LiveState& live) {
       s.spacing = s.spacing == Spacing::khz25 ? Spacing::khz833 : Spacing::khz25;
       save_settings();
       if (g_hooks.apply_filter) g_hooks.apply_filter(orcsdr::airband::filter_bandwidth_hz(s.spacing));
+      g_squelch.reset();
       break;
     case ActionKind::gain_down:
     case ActionKind::gain_up: {
@@ -264,17 +270,20 @@ void dispatch(const Action& action, const LiveState& live) {
                                      action.kind == ActionKind::gain_up ? 1 : -1);
       (void)g_hooks.apply_gain(receiver_controls::action(
           receiver_controls::Control::rf_gain, live.controls, next));
+      g_squelch.reset();
       break;
     }
     case ActionKind::tuner_agc_toggle:
       if (g_hooks.apply_gain)
         (void)g_hooks.apply_gain(receiver_controls::action(
             receiver_controls::Control::tuner_agc, live.controls));
+      g_squelch.reset();
       break;
     case ActionKind::rtl_agc_toggle:
       if (g_hooks.apply_gain)
         (void)g_hooks.apply_gain(receiver_controls::action(
             receiver_controls::Control::rtl_agc, live.controls));
+      g_squelch.reset();
       break;
     case ActionKind::radius_cycle:
       s.radius_nm = next_radius_nm(s.radius_nm);
@@ -282,11 +291,11 @@ void dispatch(const Action& action, const LiveState& live) {
       load_catalog(live);
       break;
     case ActionKind::squelch_down:
-      s.squelch_dbfs = static_cast<int16_t>(std::max<int>(-100, s.squelch_dbfs - 3));
+      s.squelch_db = static_cast<int16_t>(std::max<int>(0, s.squelch_db - 1));
       save_settings();
       break;
     case ActionKind::squelch_up:
-      s.squelch_dbfs = static_cast<int16_t>(std::min<int>(-30, s.squelch_dbfs + 3));
+      s.squelch_db = static_cast<int16_t>(std::min<int>(30, s.squelch_db + 1));
       save_settings();
       break;
     case ActionKind::settle_cycle:
@@ -337,6 +346,8 @@ void configure(const Hooks& hooks) {
 void enter(const LiveState& live) {
   AB_TRACE("enter begin");
   load_settings_once();
+  g_squelch.reset();
+  publish_audio_squelch();
   AB_TRACE("enter settings loaded");
   Location requested{live.location_configured, live.latitude_e7, live.longitude_e7};
   requested.radius_nm = g_scanner.settings().radius_nm;
@@ -366,9 +377,13 @@ void redraw() {
 }
 
 void service(const LiveState& live) {
+  if (live.receiver_running) {
+    g_squelch.update(live.now_ms, live.channel_db);
+    g_audio_open.store(g_squelch.open(), std::memory_order_release);
+  }
   if (!g_scanner.running()) return;
   const uint32_t target =
-      g_scanner.service(live.now_ms, live.frequency_hz, live.signal_dbfs);
+      g_scanner.service(live.now_ms, live.frequency_hz, g_squelch.snr_db());
   if (target != 0 && target != live.frequency_hz && tune(target))
     g_scanner.note_retuned(live.now_ms, target);
 }
@@ -401,9 +416,8 @@ bool serial_action(const char* verb, bool has_value, uint32_t value, const LiveS
     return tune(value);
   }
   if (std::strcmp(verb, "SQUELCH") == 0) {
-    if (!has_value || value > 100) return false;
-    g_scanner.settings().squelch_dbfs =
-        static_cast<int16_t>(-std::clamp<int32_t>(static_cast<int32_t>(value), 30, 100));
+    if (!has_value || value > 30) return false;
+    g_scanner.settings().squelch_db = static_cast<int16_t>(value);
     save_settings();
     dashboard_update(snapshot(live));
     return true;
@@ -430,13 +444,14 @@ size_t status_line(const LiveState& live, char* out, size_t capacity) {
   const int written = std::snprintf(
       out, capacity,
       "RTL_AIRBAND_STATUS active=%d tab=%u frequency_hz=%lu scan=%s squelch_open=%d "
-      "signal_dbfs=%.1f sql_dbfs=%d spacing=%s source=%s radius_nm=%u filter_hz=%lu "
+      "level_db=%.1f snr_db=%.1f floor_db=%.1f sql_db=%d spacing=%s source=%s radius_nm=%u filter_hz=%lu "
       "stops=%lu checked=%lu bank=%u activity=%u catalog=%u loaded=%d location=%d "
       "gain_tenth_db=%d tuner_agc=%d rtl_agc=%d running=%d load=%s match=%s",
       dashboard_active() ? 1 : 0, static_cast<unsigned>(dashboard_tab()),
       static_cast<unsigned long>(live.frequency_hz), state_name(g_scanner.state()),
-      audio_open(live.signal_dbfs) ? 1 : 0, static_cast<double>(live.signal_dbfs),
-      static_cast<int>(s.squelch_dbfs), spacing_name(s.spacing), source_name(s.source),
+      g_squelch.open() ? 1 : 0, static_cast<double>(live.channel_db),
+      static_cast<double>(g_squelch.snr_db()), static_cast<double>(g_squelch.floor_db()),
+      static_cast<int>(s.squelch_db), spacing_name(s.spacing), source_name(s.source),
       static_cast<unsigned>(s.radius_nm),
       static_cast<unsigned long>(orcsdr::airband::filter_bandwidth_hz(s.spacing)),
       static_cast<unsigned long>(g_scanner.stops()),
@@ -454,10 +469,7 @@ size_t status_line(const LiveState& live, char* out, size_t capacity) {
 bool active() { return dashboard_active(); }
 Tab tab() { return dashboard_tab(); }
 
-bool audio_open(float signal_dbfs) {
-  const int16_t threshold = g_audio_squelch_dbfs.load(std::memory_order_acquire);
-  return threshold <= -100 || signal_dbfs >= static_cast<float>(threshold);
-}
+bool audio_open() { return g_audio_open.load(std::memory_order_acquire); }
 
 uint32_t default_frequency() {
   load_settings_once();

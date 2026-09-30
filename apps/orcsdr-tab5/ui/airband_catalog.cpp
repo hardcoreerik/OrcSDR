@@ -171,6 +171,7 @@ float distance_nm(int32_t lat_a_e7, int32_t lon_a_e7,
 const char* load_result_name(LoadResult result) {
   switch (result) {
     case LoadResult::ok: return "ok";
+    case LoadResult::no_location: return "no_location";
     case LoadResult::no_source: return "no_source";
     case LoadResult::bad_header: return "bad_header";
     case LoadResult::unsupported_rows: return "unsupported_rows";
@@ -291,6 +292,10 @@ void Catalog::sort() {
 bool Catalog::load_from(LineSource& source, const Location& location) {
   clear();
   location_configured_ = location.configured;
+  if (!location.configured) {
+    result_ = LoadResult::no_location;
+    return false;
+  }
 
   char line[kLineCapacity]{};
   const int header = source.read_line(line, sizeof(line));
