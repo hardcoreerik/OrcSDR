@@ -76,6 +76,12 @@ uint32_t last_spectrum_ms = 0;
 EXT_RAM_BSS_ATTR float spectrum_levels[512]{};
 uint8_t waterfall_contrast = 5;
 uint8_t waterfall_palette = 0;
+// Spectrum ceiling (dB): jumps up to the strongest bin at once, falls back slowly, so a strong
+// station is never drawn flat against the top edge and the scale does not pump.
+float spectrum_ceiling = 0.0f;
+bool spectrum_ceiling_valid = false;
+constexpr float kSpectrumHeadroomDb = 5.0f;
+constexpr float kSpectrumMinRangeDb = 30.0f;
 uint8_t waterfall_speed = 0;   // index into kSpeedNames
 
 struct Gesture {
@@ -892,6 +898,7 @@ uint32_t step_span(uint32_t span_hz, int direction) {
 void enter(const Snapshot& snapshot) {
   current = snapshot;
   shown = true;
+  spectrum_ceiling_valid = false;
   browser = false;
   gain_popup = false;
   filter_popup = false;
@@ -973,9 +980,17 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
     M5.Display.drawFastHLine(kPlotX, kSpectrumY + i * kSpectrumH / 5, kPlotW, kDim);
     M5.Display.drawFastVLine(kPlotX + i * kPlotW / 5, kSpectrumY, kSpectrumH, kDim);
   }
+  float strongest = floor;
+  for (size_t i = 0; i < samples; ++i) strongest = std::max(strongest, spectrum_levels[i]);
+  spectrum_ceiling = (!spectrum_ceiling_valid || strongest > spectrum_ceiling)
+                         ? strongest
+                         : spectrum_ceiling + (strongest - spectrum_ceiling) * 0.04f;
+  spectrum_ceiling_valid = true;
+  const float range_db =
+      std::max(kSpectrumMinRangeDb, spectrum_ceiling + kSpectrumHeadroomDb - floor);
   int px = kPlotX, py = kSpectrumY + kSpectrumH - 2;
   for (size_t i = 0; i < samples; ++i) {
-    const float normalized = std::clamp((spectrum_levels[i] - floor) / 24.0f, 0.0f, 1.0f);
+    const float normalized = std::clamp((spectrum_levels[i] - floor) / range_db, 0.0f, 1.0f);
     const int x = kPlotX + static_cast<int>(i * (kPlotW - 1) / (samples - 1));
     const int y = kSpectrumY + kSpectrumH - 2 - static_cast<int>(normalized * (kSpectrumH - 4));
     if (i) M5.Display.drawLine(px, py, x, y, kGreen);
