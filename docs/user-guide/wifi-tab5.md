@@ -11,7 +11,7 @@ PlatformIO recipe.
 | --- | --- |
 | P4 app | native ESP-IDF application, ESP-IDF 5.5.4 |
 | ESP-Hosted host dependency | 3.0.6 |
-| C6 ESP-Hosted firmware | 3.0.6, matching the host |
+| C6 ESP-Hosted firmware | 3.0.6 (matching) or 2.12.6 (keeps M5 Launcher Wi-Fi/OTA working) |
 | Wi-Fi transport | SDIO Slot 1, 4-bit |
 | Operational SDIO clock | 10 MHz |
 | Display/board library | M5Unified 0.2.20 and M5GFX 0.2.27 as IDF components |

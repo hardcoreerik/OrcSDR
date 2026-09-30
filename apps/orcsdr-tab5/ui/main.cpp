@@ -9189,17 +9189,18 @@ void initialize_wifi() {
   wifi_hosted_versions_match = wifi_station_ready && orcsdr::wifi::hosted_versions_match();
   if (!wifi_station_ready) {
     wifi_hosted_update_required =
-        strcmp(orcsdr::wifi::hosted_failure_stage(), "version") == 0;
+        strcmp(orcsdr::wifi::hosted_failure_stage(), "version") == 0 ||
+        (orcsdr::wifi::hosted_transport_ready() && !orcsdr::wifi::hosted_versions_match());
     strlcpy(wifi_hosted_c6_version, orcsdr::wifi::hosted_c6_version(),
             sizeof(wifi_hosted_c6_version));
-    strlcpy(wifi_status_message, "ESP-Hosted 3.0.6 unavailable", sizeof(wifi_status_message));
+    strlcpy(wifi_status_message, "ESP-Hosted C6 unavailable", sizeof(wifi_status_message));
     Serial.println("RTL_WIFI_BLOCKED hosted_init_or_version");
   } else {
     wifi_hosted_update_required = false;
     strlcpy(wifi_hosted_c6_version, orcsdr::wifi::hosted_c6_version(),
             sizeof(wifi_hosted_c6_version));
     Serial.println("I OrcSDR: ESP32-C6 detected");
-    Serial.println("I OrcSDR: ESP-Hosted C6 FW: 3.0.6");
+    Serial.printf("I OrcSDR: ESP-Hosted C6 FW: %s\n", orcsdr::wifi::hosted_c6_version());
     Serial.println("I OrcSDR: ESP-Hosted transport: SDIO");
   }
   Serial.printf("RTL_WIFI_INIT station=%d core=%d\n", wifi_station_ready ? 1 : 0,

@@ -218,16 +218,22 @@ bool start() {
              static_cast<unsigned long>(cp.patch1));
   else
     strlcpy(g_c6_version, "unavailable", sizeof(g_c6_version));
-  g_versions_match = version == ESP_OK &&
-                     cp.major1 == 3 && cp.minor1 == 0 && cp.patch1 == 6;
-  if (!g_versions_match) {
+  if (version != ESP_OK) {
     g_failure_stage = "version"; g_failure_code = version;
-    set_update_status(version == ESP_OK && ORCSDR_HAS_EMBEDDED_C6_FIRMWARE
-                          ? C6UpdateState::ready : C6UpdateState::unavailable,
-                      0, version == ESP_OK ? "confirm_required" : "version_query");
+    set_update_status(C6UpdateState::unavailable, 0, "version_query");
     return false;
   }
-  set_update_status(C6UpdateState::current, 100, "current");
+  // Tested pairings with this P4 host: 3.0.6 (matched) and 2.12.6 (keeps M5 Launcher's Wi-Fi/OTA working).
+  // Any other version is attempted anyway; a failure below reports its own stage instead of blocking up front.
+  const bool is_306 = cp.major1 == 3 && cp.minor1 == 0 && cp.patch1 == 6;
+  const bool is_2126 = cp.major1 == 2 && cp.minor1 == 12 && cp.patch1 == 6;
+  g_versions_match = is_306 || is_2126;
+  if (!g_versions_match)
+    ESP_LOGW("orcsdr_wifi", "RTL_WIFI_C6_UNTESTED version=%s attempting Wi-Fi start", g_c6_version);
+  if (is_306 || !ORCSDR_HAS_EMBEDDED_C6_FIRMWARE)
+    set_update_status(C6UpdateState::current, 100, "current");
+  else
+    set_update_status(C6UpdateState::optional, 100, "optional");
   wifi_init_config_t wifi_cfg = WIFI_INIT_CONFIG_DEFAULT();
   const esp_err_t wifi_init = esp_wifi_init(&wifi_cfg);
   if (wifi_init != ESP_OK && wifi_init != ESP_ERR_WIFI_INIT_STATE) {
@@ -374,6 +380,7 @@ const char* c6_update_state_name(C6UpdateState state) {
   switch (state) {
     case C6UpdateState::unreachable: return "unreachable";
     case C6UpdateState::current: return "current";
+    case C6UpdateState::optional: return "optional";
     case C6UpdateState::ready: return "ready";
     case C6UpdateState::updating: return "updating";
     case C6UpdateState::failed: return "failed";
@@ -383,7 +390,8 @@ const char* c6_update_state_name(C6UpdateState state) {
 }
 bool begin_c6_update() {
   const C6UpdateStatus status = c6_update_status();
-  if (!g_hosted_transport_ready || !status.image_embedded || status.state != C6UpdateState::ready)
+  if (!g_hosted_transport_ready || !status.image_embedded ||
+      (status.state != C6UpdateState::ready && status.state != C6UpdateState::optional))
     return false;
   set_update_status(C6UpdateState::updating, 0, "starting");
   if (xTaskCreate(c6_update_task, "c6_ota", 4096, nullptr, 4, nullptr) != pdPASS) {
