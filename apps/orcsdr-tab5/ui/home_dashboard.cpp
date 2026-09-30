@@ -670,10 +670,6 @@ void draw_receiver_chrome() {
   panel(770, 468, 92, 72, kCyan, 8);
   text("MODE", 816, 484, kCyan, 2, middle_center);
   text(current.mode[0] ? current.mode : "--", 816, 516, kGreen, 2, middle_center);
-  panel(874, 468, 112, 72, kCyan, 8);
-  text("STEP SIZE", 930, 484, kCyan, 2, middle_center);
-  char value[24]; snprintf(value, sizeof(value), "%.1f kHz", current.step_hz / 1000.0);
-  text(value, 930, 516, kGreen, 2, middle_center);
   draw_step_size_controls();
   draw_tuning_controls();
   draw_filter_panel();
@@ -849,14 +845,10 @@ void update(const Snapshot& snapshot) {
   M5.Display.startWrite();
   if (tuner_changed) {
     draw_frequency();
-    M5.Display.fillRect(770, 468, 216, 72, TFT_BLACK);
+    M5.Display.fillRect(770, 468, 92, 72, TFT_BLACK);
     panel(770, 468, 92, 72, kCyan, 8);
     text("MODE", 816, 484, kCyan, 2, middle_center);
     text(current.mode, 816, 516, kGreen, 2, middle_center);
-    panel(874, 468, 112, 72, kCyan, 8);
-    char value[24]; snprintf(value, sizeof(value), "%.1f kHz", current.step_hz / 1000.0);
-    text("STEP SIZE", 930, 484, kCyan, 2, middle_center);
-    text(value, 930, 516, kGreen, 2, middle_center);
   }
   if (audio_changed || tuning_controls_changed) draw_step_size_controls();
   if (tuning_controls_changed) draw_tuning_controls();
