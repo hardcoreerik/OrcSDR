@@ -40,6 +40,9 @@ struct Settings {
   uint8_t priority_every = 20;
 };
 
+// Next tuner gain step (tenth-dB) above/below `current`; clamps at the ends of the table.
+int16_t step_gain(const int16_t* steps, size_t count, int16_t current, int direction);
+
 uint32_t spacing_hz(Spacing spacing);
 const char* spacing_name(Spacing spacing);
 const char* source_name(ScanSource source);

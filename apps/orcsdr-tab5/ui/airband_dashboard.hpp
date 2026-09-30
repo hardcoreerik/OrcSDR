@@ -2,6 +2,7 @@
 
 #include "airband_catalog.hpp"
 #include "airband_scanner.hpp"
+#include "receiver_tuning_controls.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -29,6 +30,10 @@ struct Snapshot {
 
   bool catalog_loaded = false;
   bool location_configured = false;
+  receiver_controls::State controls{};
+  int16_t gain_steps_tenth_db[32]{};
+  uint8_t gain_step_count = 0;
+
   uint8_t catalog_count = 0;
   CatalogEntry catalog[Catalog::kCapacity]{};
 
@@ -50,6 +55,10 @@ enum class ActionKind : uint8_t {
   tune_catalog,
   source_cycle,
   spacing_cycle,
+  gain_down,
+  gain_up,
+  tuner_agc_toggle,
+  rtl_agc_toggle,
   squelch_down,
   squelch_up,
   settle_cycle,

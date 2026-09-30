@@ -87,9 +87,22 @@ void test_guard_and_controls() {
   CHECK(scanner.state() == ScanState::off);
 }
 
+void test_gain_steps() {
+  using namespace orcsdr::airband;
+  const int16_t steps[] = {0, 9, 14, 27, 37, 77, 87, 125, 144, 157, 166, 197, 207, 229, 254, 280, 297, 328, 338, 364, 372, 386, 402, 421, 434, 445, 480, 496};
+  const size_t count = sizeof(steps) / sizeof(steps[0]);
+  CHECK(step_gain(steps, count, 297, 1) == 328);
+  CHECK(step_gain(steps, count, 297, -1) == 280);
+  CHECK(step_gain(steps, count, 300, 1) == 328);   // snaps to nearest step first
+  CHECK(step_gain(steps, count, 0, -1) == 0);      // clamps at the bottom
+  CHECK(step_gain(steps, count, 496, 1) == 496);   // clamps at the top
+  CHECK(step_gain(nullptr, 0, 123, 1) == 123);     // no table: unchanged
+}
+
 }  // namespace
 
 int main() {
+  test_gain_steps();
   test_channel_rasters();
   test_airport_bank_scan();
   test_guard_and_controls();

@@ -47,6 +47,7 @@ idf_component_register(
         "../ui/atc_presets.cpp"
         "../ui/airband_scanner.cpp"
         "../ui/airband_catalog.cpp"
+        "../ui/airband_catalog_storage.cpp"
         "../ui/airband_dashboard.cpp"
         "../ui/airband_runtime.cpp"
         "../ui/catalog_sync.cpp"

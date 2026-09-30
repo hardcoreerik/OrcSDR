@@ -28,7 +28,13 @@ constexpr int kTabCount = 5;
 
 constexpr Rect kNowCard{24, 108, 520, 286};
 constexpr Rect kControlsCard{556, 108, 700, 286};
-constexpr Rect kStatusCard{24, 410, 1232, 200};
+constexpr Rect kStatusCard{24, 404, 1232, 112};
+constexpr Rect kGainCard{24, 524, 1232, 96};
+constexpr Rect kGainAuto{44, 540, 270, 64};
+constexpr Rect kGainDown{330, 540, 120, 64};
+constexpr Rect kGainValue{460, 540, 230, 64};
+constexpr Rect kGainUp{700, 540, 120, 64};
+constexpr Rect kRtlAgc{850, 540, 250, 64};
 constexpr int kControlX = 574;
 constexpr int kControlY = 126;
 constexpr int kControlW = 208;
@@ -153,6 +159,36 @@ void draw_signal_meter() {
        g_snapshot.squelch_open ? kGreen : kMuted, 2, middle_left);
 }
 
+void draw_gain() {
+  using receiver_controls::Availability;
+  using receiver_controls::Control;
+  card(kGainCard);
+  const auto agc = receiver_controls::item(Control::tuner_agc, g_snapshot.controls);
+  const auto gain = receiver_controls::item(Control::rf_gain, g_snapshot.controls);
+  const auto rtl = receiver_controls::item(Control::rtl_agc, g_snapshot.controls);
+  const bool agc_ok = agc.availability == Availability::enabled;
+  const bool gain_ok = gain.availability == Availability::enabled;
+  const bool rtl_ok = rtl.availability == Availability::enabled;
+  button(kGainAuto, !agc_ok ? "TUNER AGC N/A" : agc.active ? "TUNER AGC ON" : "TUNER AGC OFF",
+         agc_ok && agc.active, agc_ok);
+  button(kGainDown, "GAIN -", false, gain_ok);
+  char value[32];
+  if (!gain_ok)
+    std::snprintf(value, sizeof(value), "RF GAIN N/A");
+  else if (agc_ok && agc.active)
+    std::snprintf(value, sizeof(value), "GAIN AUTO");
+  else
+    std::snprintf(value, sizeof(value), "%.1f dB", static_cast<double>(gain.value) / 10.0);
+  M5.Display.drawRoundRect(kGainValue.x, kGainValue.y, kGainValue.w, kGainValue.h, 8, kMuted);
+  text(value, cx(kGainValue), cy(kGainValue), gain_ok ? TFT_WHITE : kMuted, 2);
+  button(kGainUp, "GAIN +", false, gain_ok);
+  button(kRtlAgc, !rtl_ok ? "RTL AGC N/A" : rtl.active ? "RTL AGC ON" : "RTL AGC OFF",
+         rtl_ok && rtl.active, rtl_ok);
+  text("Shared receiver gain", 1120, 560, kMuted, 1, middle_left);
+  text("(same driver controls", 1120, 578, kMuted, 1, middle_left);
+  text("as AM / Shortwave)", 1120, 596, kMuted, 1, middle_left);
+}
+
 void draw_listen() {
   M5.Display.fillRect(0, 93, 1280, kTabsY - 93, TFT_BLACK);
   card(kNowCard, state_color());
@@ -184,26 +220,25 @@ void draw_listen() {
          g_snapshot.catalog_loaded, true, 2);
 
   card(kStatusCard);
-  text("AIRBAND STATUS", 44, 438, kCyan, 2, middle_left);
-  std::snprintf(value, sizeof(value), "%lu scan stops   %lu channels checked",
+  std::snprintf(value, sizeof(value),
+                "%lu stops   %lu checked   bank %u   guard %s   SQL %d dBFS   hang %.1fs",
                 static_cast<unsigned long>(g_snapshot.stops),
-                static_cast<unsigned long>(g_snapshot.channels_checked));
-  text(value, 44, 480, TFT_WHITE, 2, middle_left);
-  std::snprintf(value, sizeof(value), "Squelch %d dBFS   hang %.1fs   settle %ums",
-                static_cast<int>(g_snapshot.scan.squelch_dbfs),
-                static_cast<double>(g_snapshot.scan.hang_ms) / 1000.0,
-                static_cast<unsigned>(g_snapshot.scan.settle_ms));
-  text(value, 44, 516, kMuted, 2, middle_left);
-  std::snprintf(value, sizeof(value), "Bank %u channels   Guard priority %s",
+                static_cast<unsigned long>(g_snapshot.channels_checked),
                 static_cast<unsigned>(g_snapshot.bank_count),
-                g_snapshot.scan.priority_guard ? "ON" : "OFF");
-  text(value, 44, 552, kMuted, 2, middle_left);
-  if (!g_snapshot.catalog_loaded)
-    text("Tip: install aviation data and set receiver location for airport scanning.",
-         44, 586, kAmber, 2, middle_left);
+                g_snapshot.scan.priority_guard ? "ON" : "OFF",
+                static_cast<int>(g_snapshot.scan.squelch_dbfs),
+                static_cast<double>(g_snapshot.scan.hang_ms) / 1000.0);
+  text(value, 44, 434, TFT_WHITE, 2, middle_left);
+  if (!g_snapshot.location_configured)
+    text("Receiver location not set: airport labels and airport-bank scanning are off.",
+         44, 474, kAmber, 2, middle_left);
+  else if (!g_snapshot.catalog_loaded)
+    text("Aviation data not loaded: manual tuning and full-band scan still work.",
+         44, 474, kAmber, 2, middle_left);
   else
-    text("Airport bank uses the closest aviation entries for the shared receiver location.",
-         44, 586, kGreen, 2, middle_left);
+    text("Airport bank uses the closest catalog entries (database, not RF-decoded).",
+         44, 474, kGreen, 2, middle_left);
+  draw_gain();
 }
 
 void draw_scan() {
@@ -396,6 +431,20 @@ Action listen_touch(int32_t x, int32_t y) {
   if (hit(x, y, control(0, 2))) return {ActionKind::source_cycle};
   if (hit(x, y, control(1, 2))) return {ActionKind::spacing_cycle};
   if (hit(x, y, control(2, 2))) return {ActionKind::reload_catalog};
+  using receiver_controls::Availability;
+  using receiver_controls::Control;
+  const bool gain_ok = receiver_controls::item(Control::rf_gain, g_snapshot.controls)
+                           .availability == Availability::enabled;
+  if (hit(x, y, kGainDown) && gain_ok) return {ActionKind::gain_down};
+  if (hit(x, y, kGainUp) && gain_ok) return {ActionKind::gain_up};
+  if (hit(x, y, kGainAuto) &&
+      receiver_controls::item(Control::tuner_agc, g_snapshot.controls).availability ==
+          Availability::enabled)
+    return {ActionKind::tuner_agc_toggle};
+  if (hit(x, y, kRtlAgc) &&
+      receiver_controls::item(Control::rtl_agc, g_snapshot.controls).availability ==
+          Availability::enabled)
+    return {ActionKind::rtl_agc_toggle};
   return {};
 }
 
@@ -541,6 +590,9 @@ bool dashboard_self_check() {
             setup_touch(cx(setup_rect(kValueBase, 0)),
                         cy(setup_rect(kValueBase, 0))).kind ==
                 ActionKind::spacing_cycle &&
+            listen_touch(cx(kGainUp), cy(kGainUp)).kind == ActionKind::none &&
+            kGainCard.y + kGainCard.h <= kTabsY &&
+            kStatusCard.y + kStatusCard.h <= kGainCard.y &&
             kTabsY + 90 <= 720 &&
             kStatusCard.y + kStatusCard.h <= kTabsY;
 

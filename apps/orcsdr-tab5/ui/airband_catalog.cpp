@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 
 namespace orcsdr::airband {
 namespace {
@@ -52,21 +53,6 @@ bool contains_word(const char* value, const char* token) {
     ++cursor;
   }
   return false;
-}
-
-float distance_nm(int32_t lat_a_e7, int32_t lon_a_e7,
-                  int32_t lat_b_e7, int32_t lon_b_e7) {
-  const double lat1 = static_cast<double>(lat_a_e7) / 10000000.0 * kPi / 180.0;
-  const double lat2 = static_cast<double>(lat_b_e7) / 10000000.0 * kPi / 180.0;
-  const double dlat = lat2 - lat1;
-  const double dlon =
-      (static_cast<double>(lon_b_e7 - lon_a_e7) / 10000000.0) * kPi / 180.0;
-  const double sin_lat = std::sin(dlat / 2.0);
-  const double sin_lon = std::sin(dlon / 2.0);
-  const double a = sin_lat * sin_lat +
-                   std::cos(lat1) * std::cos(lat2) * sin_lon * sin_lon;
-  const double clamped = std::min(1.0, std::max(0.0, a));
-  return static_cast<float>(2.0 * kEarthRadiusNm * std::asin(std::sqrt(clamped)));
 }
 
 Service parse_service(const char* value) {
@@ -163,6 +149,21 @@ bool parse_v2(char* line, CatalogEntry* output) {
 }
 
 }  // namespace
+
+float distance_nm(int32_t lat_a_e7, int32_t lon_a_e7,
+                  int32_t lat_b_e7, int32_t lon_b_e7) {
+  const double lat1 = static_cast<double>(lat_a_e7) / 10000000.0 * kPi / 180.0;
+  const double lat2 = static_cast<double>(lat_b_e7) / 10000000.0 * kPi / 180.0;
+  const double dlat = lat2 - lat1;
+  const double dlon =
+      ((static_cast<double>(lon_b_e7) - static_cast<double>(lon_a_e7)) / 10000000.0) * kPi / 180.0;
+  const double sin_lat = std::sin(dlat / 2.0);
+  const double sin_lon = std::sin(dlon / 2.0);
+  const double a = sin_lat * sin_lat +
+                   std::cos(lat1) * std::cos(lat2) * sin_lon * sin_lon;
+  const double clamped = std::min(1.0, std::max(0.0, a));
+  return static_cast<float>(2.0 * kEarthRadiusNm * std::asin(std::sqrt(clamped)));
+}
 
 const char* service_name(Service service) {
   switch (service) {
@@ -271,30 +272,24 @@ void Catalog::sort() {
   });
 }
 
-bool Catalog::load(storage::FileSystem* filesystem, const Location& location) {
+bool Catalog::load_from(LineSource& source, const Location& location) {
   clear();
   location_configured_ = location.configured;
-  if (!filesystem) return false;
-  storage::File file = filesystem->open(kCatalogPath);
-  if (!file) file = filesystem->open(kLegacyCatalogPath);
-  if (!file) return false;
 
   char line[kLineCapacity]{};
-  const size_t header_size = file.readBytesUntil('\n', line, sizeof(line) - 1);
-  line[header_size] = '\0';
+  const int header = source.read_line(line, sizeof(line));
+  if (header < 0) return false;
+  if (header > 0 && line[header - 1] == '\r') line[header - 1] = '\0';
   const bool v2 = std::strcmp(line, "ORCAIR2") == 0;
   const bool legacy = std::strcmp(line, "ORCCAT1") == 0;
-  if (!v2 && !legacy) {
-    file.close();
-    return false;
-  }
+  if (!v2 && !legacy) return false;
   global_schema_ = v2;
 
   while (true) {
-    const size_t size = file.readBytesUntil('\n', line, sizeof(line) - 1);
-    if (size == 0) break;
-    line[size] = '\0';
-    if (size > 0 && line[size - 1] == '\r') line[size - 1] = '\0';
+    const int size = source.read_line(line, sizeof(line));
+    if (size < 0) break;
+    if (size == 0) continue;
+    if (line[size - 1] == '\r') line[size - 1] = '\0';
 
     CatalogEntry entry{};
     bool parsed = false;
@@ -315,7 +310,6 @@ bool Catalog::load(storage::FileSystem* filesystem, const Location& location) {
                             : static_cast<float>(count_);
     consider(entry, location.configured);
   }
-  file.close();
   sort();
   loaded_ = count_ != 0;
   return loaded_;

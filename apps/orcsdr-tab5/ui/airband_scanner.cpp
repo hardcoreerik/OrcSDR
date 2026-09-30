@@ -330,6 +330,19 @@ uint32_t Scanner::service(uint32_t now_ms, uint32_t current_frequency_hz,
   return 0;
 }
 
+int16_t step_gain(const int16_t* steps, size_t count, int16_t current, int direction) {
+  if (steps == nullptr || count == 0) return current;
+  size_t nearest = 0;
+  int best = std::abs(static_cast<int>(steps[0]) - current);
+  for (size_t i = 1; i < count; ++i) {
+    const int distance = std::abs(static_cast<int>(steps[i]) - current);
+    if (distance < best) { best = distance; nearest = i; }
+  }
+  if (direction > 0 && nearest + 1 < count) ++nearest;
+  else if (direction < 0 && nearest > 0) --nearest;
+  return steps[nearest];
+}
+
 bool Scanner::self_check() {
   bool ok = spacing_hz(Spacing::khz25) == 25000u &&
             spacing_hz(Spacing::khz833) == 8333u &&

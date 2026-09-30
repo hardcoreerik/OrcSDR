@@ -2,6 +2,7 @@
 
 #include "airband_catalog.hpp"
 #include "airband_dashboard.hpp"
+#include "receiver_tuning_controls.hpp"
 
 #include <cstdint>
 
@@ -17,6 +18,9 @@ struct LiveState {
   bool location_configured = false;
   int32_t latitude_e7 = 0;
   int32_t longitude_e7 = 0;
+  receiver_controls::State controls{};
+  int16_t gain_steps_tenth_db[32]{};
+  uint8_t gain_step_count = 0;
   storage::FileSystem* filesystem = nullptr;
 };
 
@@ -27,6 +31,8 @@ struct Hooks {
   void (*show_home)() = nullptr;
   void (*open_radio_settings)() = nullptr;
   void (*open_location_settings)() = nullptr;
+  // Applies a shared receiver-control action (RF gain, tuner AGC, RTL AGC) to the driver.
+  bool (*apply_gain)(const receiver_controls::Action& action) = nullptr;
 };
 
 void configure(const Hooks& hooks);

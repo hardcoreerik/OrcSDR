@@ -117,6 +117,10 @@ const Snapshot& snapshot(const LiveState& live) {
   out.sound_enabled = live.sound_enabled;
   out.battery_percent = live.battery_percent;
   out.location_configured = live.location_configured;
+  out.controls = live.controls;
+  out.gain_step_count = std::min<uint8_t>(live.gain_step_count, 32);
+  for (uint8_t i = 0; i < out.gain_step_count; ++i)
+    out.gain_steps_tenth_db[i] = live.gain_steps_tenth_db[i];
 
   if (live.frequency_hz == kGuardFrequencyHz) {
     std::strncpy(out.current_label, "121.500 EMERGENCY / GUARD",
@@ -230,6 +234,26 @@ void dispatch(const Action& action, const LiveState& live) {
     case ActionKind::spacing_cycle:
       s.spacing = s.spacing == Spacing::khz25 ? Spacing::khz833 : Spacing::khz25;
       save_settings();
+      break;
+    case ActionKind::gain_down:
+    case ActionKind::gain_up: {
+      if (!g_hooks.apply_gain) return;
+      const int16_t next = step_gain(live.gain_steps_tenth_db, live.gain_step_count,
+                                     live.controls.gain_tenth_db,
+                                     action.kind == ActionKind::gain_up ? 1 : -1);
+      (void)g_hooks.apply_gain(receiver_controls::action(
+          receiver_controls::Control::rf_gain, live.controls, next));
+      break;
+    }
+    case ActionKind::tuner_agc_toggle:
+      if (g_hooks.apply_gain)
+        (void)g_hooks.apply_gain(receiver_controls::action(
+            receiver_controls::Control::tuner_agc, live.controls));
+      break;
+    case ActionKind::rtl_agc_toggle:
+      if (g_hooks.apply_gain)
+        (void)g_hooks.apply_gain(receiver_controls::action(
+            receiver_controls::Control::rtl_agc, live.controls));
       break;
     case ActionKind::squelch_down:
       s.squelch_dbfs = static_cast<int16_t>(std::max<int>(-100, s.squelch_dbfs - 3));

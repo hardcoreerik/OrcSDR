@@ -1,10 +1,11 @@
 #pragma once
 
 #include "airband_scanner.hpp"
-#include "orcsdr_storage.hpp"
 
 #include <cstddef>
 #include <cstdint>
+
+namespace orcsdr::storage { class FileSystem; }
 
 namespace orcsdr::airband {
 
@@ -56,6 +57,18 @@ struct Location {
   int32_t longitude_e7 = 0;
 };
 
+// Great-circle distance between two E7 lat/lon points, in nautical miles.
+float distance_nm(int32_t lat_a_e7, int32_t lon_a_e7, int32_t lat_b_e7, int32_t lon_b_e7);
+
+// Line-oriented input so catalog parsing does not depend on the SD stack (and is host-testable).
+class LineSource {
+ public:
+  virtual ~LineSource() = default;
+  // Reads one line without its terminator. Returns the length (0 for an empty line),
+  // or -1 at end of input. Longer lines are truncated to capacity - 1.
+  virtual int read_line(char* buffer, size_t capacity) = 0;
+};
+
 const char* service_name(Service service);
 Service classify_service(const char* label);
 const char* source_class_name(SourceClass source_class);
@@ -65,7 +78,11 @@ class Catalog {
  public:
   static constexpr size_t kCapacity = 32;
 
+  // Streams /orcsdr/data/aviation.idx (or the legacy FAA index) from the SD card.
   bool load(storage::FileSystem* filesystem, const Location& location);
+  // Parses an ORCAIR2 / legacy ORCCAT1 stream, keeping at most kCapacity entries
+  // (nearest to the location when one is configured). Never loads the full file.
+  bool load_from(LineSource& source, const Location& location);
   void clear();
   bool loaded() const { return loaded_; }
   bool location_configured() const { return location_configured_; }

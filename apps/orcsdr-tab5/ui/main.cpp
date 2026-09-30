@@ -2362,6 +2362,7 @@ bool airband_tune_hook(uint32_t frequency_hz);
 void airband_home_hook();
 void airband_settings_hook();
 void airband_location_settings_hook();
+bool airband_gain_hook(const orcsdr::receiver_controls::Action& action);
 void draw_cb_dashboard(bool static_panel);
 const orcsdr::cb::Snapshot& cb_dashboard_snapshot();
 void handle_cb_dashboard_action(const orcsdr::cb::Action& action);
@@ -6308,7 +6309,60 @@ orcsdr::airband::LiveState airband_live_state() {
   live.latitude_e7 = location.latitude_e7;
   live.longitude_e7 = location.longitude_e7;
   live.filesystem = g_sd_fs;
+#if !RTL_USE_LEGACY_USB
+  auto& controls = live.controls;
+  controls.route = orcsdr::shortwave::ReceiverRoute::tuner;
+  const bool tuner_gain = rtl_tuner_gain_available(live.frequency_hz);
+  controls.capabilities.rf_gain = tuner_gain;
+  controls.capabilities.tuner_agc =
+      tuner_gain && rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN_AUTO);
+  controls.capabilities.rtl_agc = rtl_has_device_capability(ESP_RTL_SDR_CAP_RTL_AGC);
+  if (g_rtl != nullptr) {
+    esp_rtl_sdr_gain_mode_t mode = ESP_RTL_SDR_GAIN_MODE_AUTO;
+    if (esp_rtl_sdr_get_tuner_gain_mode(g_rtl, &mode) == ESP_OK)
+      controls.tuner_agc = mode == ESP_RTL_SDR_GAIN_MODE_AUTO;
+    (void)esp_rtl_sdr_get_rtl_agc(g_rtl, &controls.rtl_agc);
+    int gain_tenth_db = 0;
+    if (esp_rtl_sdr_get_tuner_gain(g_rtl, &gain_tenth_db) == ESP_OK)
+      controls.gain_tenth_db = static_cast<int16_t>(gain_tenth_db);
+    int steps[32]{};
+    size_t count = 0;
+    if (esp_rtl_sdr_get_tuner_gains(g_rtl, steps, std::size(steps), &count) == ESP_OK) {
+      live.gain_step_count = static_cast<uint8_t>(std::min(count, std::size(steps)));
+      for (uint8_t i = 0; i < live.gain_step_count; ++i)
+        live.gain_steps_tenth_db[i] = static_cast<int16_t>(steps[i]);
+    }
+  }
+#endif
   return live;
+}
+
+bool airband_gain_hook(const orcsdr::receiver_controls::Action& action) {
+#if !RTL_USE_LEGACY_USB
+  using Kind = orcsdr::receiver_controls::ActionKind;
+  if (g_rtl == nullptr) return false;
+  esp_err_t result = ESP_ERR_INVALID_ARG;
+  switch (action.kind) {
+    case Kind::gain_tenth_db:
+      (void)esp_rtl_sdr_set_tuner_gain_mode(g_rtl, ESP_RTL_SDR_GAIN_MODE_MANUAL);
+      result = esp_rtl_sdr_set_tuner_gain(g_rtl, static_cast<int>(action.value));
+      break;
+    case Kind::tuner_agc:
+      result = esp_rtl_sdr_set_tuner_gain_mode(
+          g_rtl, action.value != 0 ? ESP_RTL_SDR_GAIN_MODE_AUTO : ESP_RTL_SDR_GAIN_MODE_MANUAL);
+      break;
+    case Kind::rtl_agc:
+      result = esp_rtl_sdr_set_rtl_agc(g_rtl, action.value != 0);
+      break;
+    default: return false;
+  }
+  Serial.printf("RTL_AIRBAND_GAIN kind=%d value=%ld result=%s\n", static_cast<int>(action.kind),
+                static_cast<long>(action.value), esp_rtl_sdr_err_to_name(result));
+  return result == ESP_OK;
+#else
+  (void)action;
+  return false;
+#endif
 }
 
 bool airband_tune_hook(uint32_t frequency_hz) {
@@ -6926,7 +6980,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
     resume_rtl_speaker();
     orcsdr::airband::configure(
         {airband_tune_hook, airband_home_hook, airband_settings_hook,
-         airband_location_settings_hook});
+         airband_location_settings_hook, airband_gain_hook});
     orcsdr::airband::enter(airband_live_state());
     orcsdr::screens::finish_transition();
     return;
