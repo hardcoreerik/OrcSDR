@@ -32,7 +32,38 @@ an arbitrary frequency record as if it were local RF identity.
 
 Airband is a first-class `radio::Band::airband`; it no longer routes through
 the generic Browse/NFM path. Voice audio uses the existing OrcSDR AM
-demodulator with a 10 kHz default receive filter.
+demodulator. The channel filter follows the channel spacing: 10 kHz for 25 kHz
+channels and 6 kHz for 8.33 kHz channels (adjacent 8.33 kHz channels would
+overlap a wider filter).
+
+### Squelch: carrier versus noise floor
+
+Airband squelch does **not** use the absolute wideband IQ power. That number is
+the power of the whole 2.4 MS/s capture, is dominated by noise, and is held
+roughly constant by the tuner AGC, so it cannot tell an empty channel from a
+busy one (an earlier design pinned the scanner on the first channel for exactly
+this reason). Instead the runtime tracks the in-channel carrier level (the mean
+envelope of the channel-filtered IQ that the AM demodulator already computes)
+and a noise floor (fast to follow drops, slow to follow drift, never chasing a
+real carrier). The squelch opens when the carrier is the configured number of
+dB above that floor (default +8 dB, `0` = always open) and closes 2 dB lower.
+The floor is re-learned after every retune, gain change, and channel-width
+change. Displayed levels are therefore "SNR in dB", not dBFS.
+
+### Gain
+
+The LISTEN tab exposes RF gain +/-, tuner AGC, and RTL AGC through the shared
+`receiver_controls` model, the same driver calls the Shortwave and AM
+dashboards use. Controls that a receiver does not support are shown as
+unavailable, not hidden. Airband adds no gain logic of its own.
+
+### Nearby airports and radius
+
+Nearby lookup is bounded by a radius (25, 50, 100, 250, 500 nm, or any;
+default 100 nm) set on the AIRPORTS tab. Entries outside the radius are dropped
+while the catalog streams, so a worldwide file never has to fit in memory: at
+most 32 of the nearest records are kept. With no receiver location the file is
+not read at all.
 
 The 8.33 kHz tuning raster is calculated as exact thirds of 25 kHz rather than
 as repeated 8,333 Hz additions. This avoids cumulative frequency error across
@@ -112,8 +143,10 @@ Airband feature logic lives outside `main.cpp`:
 
 - `airband_scanner.*` — channel raster, scan state machine, squelch/hold/hang,
   guard priority, and activity history.
-- `airband_catalog.*` — ORCAIR2/ORCCAT1 parsing, service/provenance metadata,
-  distance ordering, and scan-bank construction.
+- `airband_catalog.*` — ORCAIR2/ORCCAT1 parsing over a `LineSource`,
+  service/provenance metadata, distance/radius filtering, and scan-bank
+  construction. `airband_catalog_storage.cpp` is the only part that touches the
+  SD card (chunked reads); everything else is host-testable.
 - `airband_dashboard.*` — 1280×720 M5GFX layout and touch controls.
 - `airband_runtime.*` — settings persistence and the narrow adapter between the
   dashboard/scanner and OrcSDR receiver callbacks.

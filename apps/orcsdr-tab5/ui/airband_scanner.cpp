@@ -362,12 +362,23 @@ void ChannelSquelch::set_threshold_db(int16_t threshold_db) {
 
 void ChannelSquelch::reset() {
   floor_valid_ = false;
+  warming_ = true;
+  warm_started_ = false;
   open_ = threshold_db_ == 0;
   snr_db_ = 0.0f;
 }
 
 void ChannelSquelch::update(uint32_t now_ms, float level_db) {
-  if (!std::isfinite(level_db)) return;
+  if (!std::isfinite(level_db) || level_db < kMinValidDb) return;
+  if (warming_) {
+    if (!warm_started_) {
+      warm_started_ = true;
+      warm_start_ms_ = now_ms;
+      return;
+    }
+    if (now_ms - warm_start_ms_ < kWarmupMs) return;
+    warming_ = false;
+  }
   const uint32_t elapsed_ms = floor_valid_ ? now_ms - last_ms_ : 0u;
   last_ms_ = now_ms;
   if (!floor_valid_) {

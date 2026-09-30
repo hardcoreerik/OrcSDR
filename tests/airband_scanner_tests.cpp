@@ -143,6 +143,26 @@ void test_channel_squelch() {
   always.reset();
   always.update(0, -60.0f);
   CHECK(always.open());
+  // A demodulator that has not produced a level yet (envelope ~0 => about -68 dB) must never
+  // become the noise floor, or every real signal would look 40 dB strong.
+  ChannelSquelch dead;
+  dead.set_threshold_db(8);
+  dead.reset();
+  now = 0;
+  for (int i = 0; i < 40; ++i, now += 30) dead.update(now, -68.1f);
+  CHECK(!dead.floor_valid());
+  for (int i = 0; i < 40; ++i, now += 30) dead.update(now, -36.0f);
+  CHECK(dead.floor_valid());
+  CHECK(std::fabs(dead.floor_db() + 36.0f) < 0.5f);
+  CHECK(!dead.open());
+  // After a reset the floor is re-learned only after a short warm-up.
+  dead.reset();
+  now += 30;
+  dead.update(now, -36.0f);            // starts the warm-up window
+  CHECK(!dead.floor_valid());
+  now += 200;
+  dead.update(now, -36.0f);
+  CHECK(dead.floor_valid());
   // Non-finite input is ignored.
   ChannelSquelch bad;
   bad.set_threshold_db(8);

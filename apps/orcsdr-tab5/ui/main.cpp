@@ -8172,6 +8172,9 @@ void demodulate_am(const uint8_t* iq, size_t bytes, float audio_scale,
   if (g_stream_band == RtlBand::shortwave)
     orcsdr::shortwave::audio_dsp::process(audio, audio_count,
                                          rtl_signal_dbfs_smooth);
+  // Airband squelch mutes the output only; the demodulator keeps running because the squelch
+  // measures the carrier it tracks.
+  if (g_stream_band == RtlBand::airband && !orcsdr::airband::audio_open()) audio_count = 0;
   queue_audio_samples(audio, audio_count);
 }
 
@@ -8446,12 +8449,8 @@ void run_rtl_capture() {
       }
     } else if (band == RtlBand::am || band == RtlBand::shortwave ||
                band == RtlBand::airband) {
-      if (band != RtlBand::airband ||
-          orcsdr::airband::audio_open())
-        demodulate_am(rtl_iq_processing, completed_bytes, audio_scale,
-                      kRtlSampleRateSps);
-      else
-        rtl_audio_play_count = 0;
+      demodulate_am(rtl_iq_processing, completed_bytes, audio_scale,
+                    kRtlSampleRateSps);
     } else if (band != RtlBand::lora) {
       demodulate_fm(rtl_iq_processing, completed_bytes, audio_scale,
                     band == RtlBand::fm, kRtlSampleRateSps);
@@ -9003,12 +9002,8 @@ static void rtl_dsp_task(void *) {
         }
       } else if (block.band == RtlBand::am || block.band == RtlBand::shortwave ||
                  block.band == RtlBand::airband) {
-        if (block.band != RtlBand::airband ||
-            orcsdr::airband::audio_open())
-          demodulate_am(block.data, block.bytes, block.audio_scale,
-                        block.sample_rate_sps);
-        else
-          rtl_audio_play_count = 0;
+        demodulate_am(block.data, block.bytes, block.audio_scale,
+                      block.sample_rate_sps);
       } else if (block.band != RtlBand::adsb) {
         demodulate_fm(block.data, block.bytes, block.audio_scale,
                       block.band == RtlBand::fm, block.sample_rate_sps);

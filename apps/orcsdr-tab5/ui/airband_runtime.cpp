@@ -183,8 +183,6 @@ bool tune(uint32_t frequency_hz) {
   if (!g_hooks.tune) return false;
   frequency_hz = std::clamp(frequency_hz, kMinFrequencyHz, kMaxFrequencyHz);
   if (!g_hooks.tune(frequency_hz)) return false;
-  g_squelch.reset();
-  g_audio_open.store(g_squelch.open(), std::memory_order_release);
   save_frequency(frequency_hz);
   return true;
 }

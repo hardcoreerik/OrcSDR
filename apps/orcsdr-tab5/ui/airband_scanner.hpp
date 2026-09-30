@@ -68,7 +68,9 @@ uint32_t step_frequency(uint32_t frequency_hz, int direction, Spacing spacing);
 class ChannelSquelch {
  public:
   void set_threshold_db(int16_t threshold_db);
-  // Forget the noise floor (call after every retune or gain change).
+  // Forget the noise floor and re-learn it. Call after a gain, AGC or channel-filter change.
+  // Retuning does not need it: the floor depends on the analog gain and filter, not on which
+  // channel is tuned, and a carrier on a new channel simply reads as a high SNR.
   void reset();
   void update(uint32_t now_ms, float level_db);
   bool open() const { return open_; }
@@ -80,9 +82,16 @@ class ChannelSquelch {
   static constexpr float kFloorFallMs = 150.0f;
   static constexpr float kFloorRiseMs = 4000.0f;
   static constexpr float kFloorTrackWindowDb = 6.0f;
+  // A mean envelope under ~0.13 counts means the demodulator has not produced a level yet
+  // (just reset or not streaming); never learn a floor from it.
+  static constexpr float kMinValidDb = -60.0f;
+  static constexpr uint32_t kWarmupMs = 150;
   int16_t threshold_db_ = 8;
   bool open_ = false;
   bool floor_valid_ = false;
+  bool warming_ = true;
+  bool warm_started_ = false;
+  uint32_t warm_start_ms_ = 0;
   uint32_t last_ms_ = 0;
   float floor_db_ = -60.0f;
   float snr_db_ = 0.0f;
