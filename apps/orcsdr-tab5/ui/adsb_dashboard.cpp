@@ -250,6 +250,9 @@ void text(const char* value, int x, int y, uint16_t color = TFT_WHITE,
   M5.Display.setTextSize(1);
   M5.Display.setTextColor(color);
   M5.Display.drawString(value, x, y);
+  // Put the built-in font back: the shared header helpers (battery, buttons) draw with it, and a
+  // leaked DejaVu font made the battery readout oversized right after navigating here.
+  M5.Display.setFont(nullptr);
 }
 
 void card(int x, int y, int w, int h) {
