@@ -11,13 +11,11 @@
 #     tools\grok-review.ps1 -Mode full -Branch claude/tab5-keyboard
 #     tools\grok-review.ps1 -Mode adversary -Branch claude/tab5-keyboard -Claims "what the change claims"
 #     tools\grok-review.ps1 -Mode full -PR 131 -DryRun          # scope and prompt only, no tokens
-param([Parameter(ValueFromRemainingArguments = $true)]$Forward)
-
 $skillScript = Join-Path $env:USERPROFILE '.claude\skills\grok-review\grok-review.ps1'
 if (-not (Test-Path $skillScript)) {
     Write-Host "The global grok-review skill is not installed at $skillScript." -ForegroundColor Red
     Write-Host 'Install it (or copy it from a machine that has it), then re-run.' -ForegroundColor Red
     exit 5
 }
-& $skillScript @Forward
+& $skillScript @args
 exit $LASTEXITCODE
