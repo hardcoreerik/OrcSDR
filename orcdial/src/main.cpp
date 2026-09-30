@@ -29,10 +29,27 @@ static orc::TuneStyle style_for(orc::Dashboard id) {
     default: return orc::TuneStyle::split;
   }
 }
+static void preview_band(orc::Dashboard id) {
+  switch (id) {
+    case orc::Dashboard::fm: local.frequency_hz=98700000; local.step_hz=100000; local.mode=3; break;
+    case orc::Dashboard::am: local.frequency_hz=1010000; local.step_hz=10000; local.mode=2; break;
+    case orc::Dashboard::weather: local.frequency_hz=162550000; local.step_hz=25000; local.mode=1; break;
+    case orc::Dashboard::airband: local.frequency_hz=121500000; local.step_hz=25000; local.mode=2; break;
+    case orc::Dashboard::marine: local.frequency_hz=156800000; local.step_hz=25000; local.mode=1; break;
+    case orc::Dashboard::cb: local.frequency_hz=27185000; local.step_hz=5000; local.mode=2; break;
+    case orc::Dashboard::adsb: local.frequency_hz=1090000000; local.step_hz=100000; local.mode=1; break;
+    case orc::Dashboard::satellite: local.frequency_hz=437100000; local.step_hz=100000; local.mode=1; break;
+    case orc::Dashboard::lora: local.frequency_hz=433920000; local.step_hz=1000; local.mode=1; break;
+    case orc::Dashboard::p25: local.frequency_hz=154000000; local.step_hz=12500; local.mode=1; break;
+    case orc::Dashboard::shortwave: local.frequency_hz=7200000; local.step_hz=1000; local.mode=2; break;
+    case orc::Dashboard::pocsag: local.frequency_hz=152480000; local.step_hz=5000; local.mode=1; break;
+    default: break;
+  }
+}
 
 static void select_dashboard(const orc::RadioState& state, bool online) {
   const auto target = orc::carousel[selected_index];
-  if (!online) local.dashboard = target;
+  if (!online) { local.dashboard = target; preview_band(target); }
   else if (target != state.dashboard && !radio_link.command(orc::Type::set_dashboard, uint8_t(target))) return;
   focus = orc::Focus::vfo;
   tune_style = style_for(target);

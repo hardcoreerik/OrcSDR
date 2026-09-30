@@ -16,6 +16,117 @@ static void frequency(lgfx::LGFXBase& d, uint32_t hz, int y, int size, uint32_t 
   d.setTextColor(color, bg); d.setTextSize(size); d.drawString(text, 120, y);
 }
 
+// Small, code-drawn illustrations stay sharp on the Dial's 240-pixel round screen.
+// None of these marks represents received RF data.
+static void artwork(lgfx::LGFXBase& d, Dashboard id, uint32_t c) {
+  switch (id) {
+    case Dashboard::fm: { // broadcast dial and stereo waves
+      for (int x=35; x<=205; x+=10) d.drawFastVLine(x, 78, x%20 ? 5 : 10, c);
+      d.drawLine(72, 151, 80, 144, c); d.drawLine(80, 144, 88, 151, c);
+      d.drawLine(152, 151, 160, 144, c); d.drawLine(160, 144, 168, 151, c);
+      d.drawCircle(120, 151, 5, c); break;
+    }
+    case Dashboard::am: { // medium-wave ruler
+      d.drawFastHLine(35, 82, 170, c);
+      for (int x=40; x<=200; x+=10) d.drawFastVLine(x, 82, x%20 ? 5 : 10, c);
+      for (int x=55; x<185; x+=22) {
+        d.drawLine(x, 152, x+6, 145, c); d.drawLine(x+6, 145, x+12, 152, c);
+      }
+      break;
+    }
+    case Dashboard::weather: { // cloud and radio alert
+      d.drawCircle(92, 77, 7, c); d.drawCircle(104, 72, 10, c);
+      d.drawCircle(116, 77, 7, c); d.drawFastHLine(88, 84, 33, c);
+      d.drawLine(164, 151, 164, 139, c); d.drawLine(157, 151, 164, 139, c);
+      d.drawLine(164, 139, 171, 151, c); d.drawArc(164, 143, 16, 15, 210, 330, c);
+      break;
+    }
+    case Dashboard::airband: { // aircraft over runway
+      d.fillTriangle(120, 69, 114, 86, 126, 86, c);
+      d.drawLine(95, 82, 145, 82, c); d.drawLine(112, 89, 128, 89, c);
+      d.drawFastHLine(52, 151, 136, c);
+      for (int x=63; x<185; x+=24) d.drawFastHLine(x, 155, 12, c);
+      break;
+    }
+    case Dashboard::marine: { // ship and sea
+      d.drawLine(91, 77, 149, 77, c); d.drawLine(91, 77, 100, 87, c);
+      d.drawLine(149, 77, 140, 87, c); d.drawFastHLine(100, 87, 40, c);
+      d.drawFastVLine(120, 67, 10, c); d.drawFastHLine(113, 69, 14, c);
+      for (int x=55; x<180; x+=28) {
+        d.drawArc(x, 151, 15, 6, 0, 180, c);
+      }
+      break;
+    }
+    case Dashboard::cb: { // channel badge and S-meter ticks
+      d.drawRoundRect(97, 68, 46, 20, 5, c);
+      d.setTextColor(c, bg); d.setTextSize(1); d.drawString("CB", 120, 78);
+      for (int x=60; x<=180; x+=12) d.drawFastVLine(x, 148, x>144 ? 9 : 5, c);
+      break;
+    }
+    case Dashboard::satellite: { // orbital pass
+      d.drawArc(120, 119, 91, 60, 195, 345, c);
+      d.fillRect(177, 73, 12, 7, c); d.fillRect(163, 73, 8, 7, c);
+      d.drawLine(171, 76, 177, 76, c);
+      d.drawArc(120, 177, 64, 30, 190, 350, c); break;
+    }
+    case Dashboard::rf_lab: { // graticule only; no synthetic spectrum
+      for (int x=45; x<=195; x+=25) d.drawFastVLine(x, 76, 75, 0x254d48);
+      for (int y=78; y<=153; y+=25) d.drawFastHLine(45, y, 150, 0x254d48);
+      d.drawFastVLine(120, 75, 80, c); break;
+    }
+    case Dashboard::p25: { // trunked-radio motif
+      d.drawRoundRect(102, 68, 36, 21, 4, c);
+      d.drawFastVLine(120, 62, 7, c);
+      for (int x=59; x<=181; x+=18) d.drawFastVLine(x, 150, x%36 ? 5 : 10, c);
+      break;
+    }
+    case Dashboard::shortwave: { // latitude lines and HF wave
+      d.drawArc(120, 102, 72, 28, 190, 350, c);
+      d.drawArc(120, 102, 54, 20, 190, 350, c);
+      for (int x=52; x<180; x+=20) {
+        d.drawLine(x, 151, x+5, 145, c); d.drawLine(x+5, 145, x+10, 151, c);
+      }
+      break;
+    }
+    case Dashboard::pocsag: { // pager enclosure and message lines
+      d.drawRoundRect(97, 66, 46, 25, 4, c);
+      d.drawFastHLine(104, 75, 32, c); d.drawFastHLine(104, 81, 24, c);
+      d.drawFastHLine(66, 149, 108, c); d.drawFastHLine(78, 154, 84, c);
+      break;
+    }
+    case Dashboard::adsb: { // radar with aircraft, no target count
+      for (int r=28; r<=72; r+=22) d.drawCircle(120, 117, r, c);
+      d.drawFastHLine(48, 117, 144, c); d.drawFastVLine(120, 45, 144, c);
+      d.fillTriangle(120, 99, 115, 122, 125, 122, ink);
+      d.drawLine(103, 117, 137, 117, ink); break;
+    }
+    case Dashboard::lora: { // mesh graph, no synthetic nodes
+      constexpr int x[] = {73, 115, 160, 94, 149};
+      constexpr int y[] = {96, 74, 102, 147, 148};
+      constexpr uint8_t edge[][2] = {{0,1},{1,2},{0,3},{1,3},{2,4},{3,4}};
+      for (auto& e: edge) d.drawLine(x[e[0]], y[e[0]], x[e[1]], y[e[1]], c);
+      for (int i=0; i<5; ++i) d.fillCircle(x[i], y[i], 5, ink);
+      break;
+    }
+    case Dashboard::wifi_analysis: { // access-point scan icon, no invented networks
+      d.drawArc(120, 151, 70, 70, 205, 335, c);
+      d.drawArc(120, 151, 50, 50, 210, 330, c);
+      d.drawArc(120, 151, 30, 30, 215, 325, c);
+      d.fillCircle(120, 151, 5, c); break;
+    }
+    case Dashboard::settings: { // gear
+      d.drawCircle(120, 119, 37, c); d.drawCircle(120, 119, 15, c);
+      for (int i=0; i<8; ++i) {
+        const float a = i * 0.78539816f;
+        d.drawLine(120+int(39*cosf(a)), 119+int(39*sinf(a)),
+                   120+int(52*cosf(a)), 119+int(52*sinf(a)), c);
+      }
+      break;
+    }
+    default: break;
+  }
+}
+
 void splash() {
   auto& d = M5Dial.Display;
   const uint32_t started = millis();
@@ -95,13 +206,15 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
   d.setTextColor(connected ? green : amber, bg); d.setTextSize(1);
   d.drawString(pairing ? "PAIRING" : connected ? "LINKED" : demo ? "OFFLINE" : "SEARCHING", 120, 48);
   static const char* modes[] = {"--", "NFM", "AM", "WFM"};
-  d.setTextColor(dim, bg); d.setTextSize(3);
-  d.drawString(modes[state.mode < 4 ? state.mode : 0], 120, 67);
+  if (can_tune) {
+    d.setTextColor(dim, bg); d.setTextSize(1);
+    d.drawString(modes[state.mode < 4 ? state.mode : 0], 120, 64);
+  }
+  artwork(d, dashboard, accent);
   char line[32];
   if (!can_tune) {
-    d.drawArc(120, 122, 93, 89, 30, 330, accent);
-    d.setTextColor(ink, bg); d.setTextSize(3); d.drawString(dashboard_name(dashboard), 120, 115);
-    d.setTextColor(dim, bg); d.setTextSize(2); d.drawString("NO LIVE DATA", 120, 151);
+    d.setTextColor(dim, bg); d.setTextSize(1);
+    d.drawString(dashboard == Dashboard::settings ? "DEVICE SETTINGS" : "NO LIVE DATA", 120, 197);
   } else if (focus == Focus::vfo || focus == Focus::step) {
     switch (style) {
       case TuneStyle::reel: {
@@ -190,7 +303,7 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
   static const char* styles[] = {"REEL", "DIAL", "ODOM", "TAPE", "SPLIT"};
   d.setTextColor(dim, bg); d.setTextSize(2);
   std::snprintf(line, sizeof line, "%s %u/5 >", styles[unsigned(style)], unsigned(style) + 1);
-  d.drawString(can_tune ? line : "HOME     DASHBOARDS >", 120, 218);
+  d.drawString(can_tune ? line : "HOME   DASHBOARDS >", 120, 218);
   present();
 }
 } // namespace orc
