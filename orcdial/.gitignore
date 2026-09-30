@@ -1,0 +1,3 @@
+.pio/
+tests/*.obj
+tests/*.exe
