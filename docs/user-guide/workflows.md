@@ -2,7 +2,7 @@
 
 ## Listen to FM
 
-Open NAV, select FM, seek or enter a frequency, then adjust the shared header volume. Use RF Health if sample rate drops or audio underruns increase.
+Open FM from Home, seek or enter a frequency, then adjust the shared header volume. Use RF Health if sample rate drops or audio underruns increase.
 
 ## Follow P25
 

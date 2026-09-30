@@ -1,3 +1,4 @@
+#include "focus_nav.hpp"
 #include "shortwave_dashboard.hpp"
 #include "shortwave_dashboard_state.hpp"
 
@@ -145,6 +146,7 @@ void card(int x, int y, int w, int h) {
 
 void button(int x, int y, int w, int h, const char* label, bool selected = false,
             bool enabled = true) {
+  orcsdr::focus_nav::note(x, y, w, h);
   const uint16_t color = enabled ? (selected ? kGreen : kCyan) : TFT_DARKGREY;
   M5.Display.fillRoundRect(x, y, w, h, 8, selected ? 0x1264 : kPanel);
   M5.Display.drawRoundRect(x, y, w, h, 8, color);
@@ -1040,6 +1042,15 @@ bool spectrum_contains(int32_t x, int32_t y) {
 }
 
 bool active() { return g_active; }
+bool keypad_open() { return g_active && g_state.modal() == Modal::frequency; }
+
+void begin_frequency_entry() {
+  if (!g_active || g_state.modal() != Modal::none) return;
+  g_state.open(Modal::frequency);
+  g_entry[0] = '\0';
+  draw();
+}
+
 bool spectrum_active() { return g_active && g_state.spectrum_allowed(); }
 uint32_t saved_frequency() { return g_saved_frequency; }
 void note_tuned(uint32_t frequency_hz) { g_saved_frequency = frequency_hz; }

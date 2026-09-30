@@ -1,3 +1,4 @@
+#include "focus_nav.hpp"
 #include "cb_dashboard.hpp"
 
 #include "dashboard_audio_control.hpp"
@@ -117,6 +118,7 @@ void card(const Rect& rect, uint16_t border = kCyan) {
 
 void button(const Rect& rect, const char* label, bool selected = false, bool enabled = true,
             int size = 2) {
+  orcsdr::focus_nav::note(rect.x, rect.y, rect.w, rect.h);
   const uint16_t color = enabled ? (selected ? kGreen : kCyan) : TFT_DARKGREY;
   M5.Display.fillRoundRect(rect.x, rect.y, rect.w, rect.h, 8, selected ? kSelected : kPanel);
   M5.Display.drawRoundRect(rect.x, rect.y, rect.w, rect.h, 8, color);

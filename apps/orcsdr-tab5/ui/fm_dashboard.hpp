@@ -87,6 +87,9 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
 Action handle_touch(int32_t x, int32_t y);
 Action handle_gain_drag(int32_t x, int32_t y);
 bool active();
+// Direct frequency entry (the shared numpad): is it showing, and open it.
+bool keypad_open();
+void begin_frequency_entry();
 bool spectrum_active();
 View view();
 void show_documentation_view(View view, const Snapshot& snapshot,

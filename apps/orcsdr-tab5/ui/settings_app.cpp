@@ -1,3 +1,4 @@
+#include "focus_nav.hpp"
 #include "settings_app.hpp"
 
 #include "dashboard_audio_control.hpp"
@@ -28,7 +29,7 @@ constexpr uint8_t kSettingsMinTextSize = 2;
 constexpr uint16_t kRanges[] = {10, 25, 50, 100};
 constexpr uint16_t kTimeouts[] = {0, 30, 60, 120, 300};
 constexpr const char* kLabels[] = {
-    "CONNECTIVITY", "FIRMWARE & UPDATES", "LOCATION & ADS-B", "DATA & MAPS", "DISPLAY & AUDIO",
+    "CONNECTIVITY", "FIRMWARE & UPDATES", "RECEIVER LOCATION", "DATA & MAPS", "DISPLAY & AUDIO",
     "RADIO DEFAULTS", "STORAGE", "COMPANION", "SYSTEM"};
 
 static_assert(static_cast<uint8_t>(Section::count) == std::size(kLabels));
@@ -71,6 +72,7 @@ void text(const char* value, int x, int y, uint16_t color, uint8_t size = 2,
 }
 
 void button(const char* label, int x, int y, int w, int h, uint16_t fill) {
+  orcsdr::focus_nav::note(x, y, w, h);
   M5.Display.fillRoundRect(x, y, w, h, 8, fill);
   M5.Display.drawRoundRect(x, y, w, h, 8, TFT_LIGHTGREY);
   M5.Display.setTextDatum(middle_center);
@@ -236,7 +238,7 @@ void draw_firmware_updates() {
 }
 
 void draw_location() {
-  text("LOCATION & ADS-B", 330, 115, kBlue, 3);
+  text("RECEIVER LOCATION", 330, 115, kBlue, 3);
   char value[48];
   value_row("PROFILE LABEL", g_state.location_label[0] ? g_state.location_label : "NOT SET",
             165);
@@ -249,7 +251,7 @@ void draw_location() {
   text("RECEIVER LONGITUDE", 330, 300, kMuted, 2);
   button(value, 820, 274, 398, 54, TFT_NAVY);
   snprintf(value, sizeof(value), "%u NM", g_state.radar_range_nm);
-  text("RADAR RANGE", 330, 370, kMuted, 2);
+  text("ADS-B RADAR RANGE", 330, 370, kMuted, 2);
   button(value, 820, 344, 398, 54, TFT_DARKCYAN);
   value_row("MAP PACK", g_state.map_pack[0] ? g_state.map_pack : "NOT INSTALLED", 445);
   value_row("RF GAIN", "AUTO (READ ONLY)", 495, kMuted);

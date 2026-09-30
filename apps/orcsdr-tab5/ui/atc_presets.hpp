@@ -6,7 +6,8 @@
 
 namespace orcsdr::atc {
 
-constexpr const char kRuntimePath[] = "/orcsdr/data/faa_aviation.idx";
+constexpr const char kRuntimePath[] = "/orcsdr/data/aviation.idx";
+constexpr const char kLegacyRuntimePath[] = "/orcsdr/data/faa_aviation.idx";
 
 struct Preset {
   int32_t latitude_e7 = 0;
@@ -15,8 +16,13 @@ struct Preset {
   char label[32]{};
 };
 
-// FAA aviation indexes may optionally contain: ATC <lat_e7> <lon_e7> <hz> <label>.
+// Validate and remember the available aviation runtime pack. Both ORCAIR2 and
+// legacy ORCCAT1 are accepted.
 bool load(orcsdr::storage::FileSystem* filesystem);
+
+// Stream the active pack and return the geographically nearest communication
+// record. This avoids assuming that the first rows of a national/global pack
+// are local to the receiver.
 bool nearest(int32_t latitude_e7, int32_t longitude_e7, Preset* output);
 bool self_check();
 

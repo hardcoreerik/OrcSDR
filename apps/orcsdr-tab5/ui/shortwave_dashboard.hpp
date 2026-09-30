@@ -99,6 +99,8 @@ Action handle_gain_drag(int32_t x, int32_t y);
 Action handle_filter_drag(int32_t x, int32_t y, bool pressed);
 bool spectrum_contains(int32_t x, int32_t y);
 bool active();
+bool keypad_open();
+void begin_frequency_entry();
 bool spectrum_active();
 uint32_t saved_frequency();
 void note_tuned(uint32_t frequency_hz);

@@ -1,3 +1,4 @@
+#include "focus_nav.hpp"
 #include "dashboard_audio_control.hpp"
 
 #include "orc_badge.hpp"
@@ -167,6 +168,7 @@ void restore_volume_background() {
 }
 
 void draw_home_button() {
+  orcsdr::focus_nav::note(kHomeX, kHomeY, kHomeW, kHomeH);
   M5.Display.fillRoundRect(kHomeX, kHomeY, kHomeW, kHomeH, 8, kPanel);
   M5.Display.drawRoundRect(kHomeX, kHomeY, kHomeW, kHomeH, 8, kCyan);
   const int cx = kHomeX + kHomeW / 2;
@@ -180,6 +182,7 @@ bool home_hit(int32_t x, int32_t y) {
 }
 
 void draw_mute_button(bool sound_enabled) {
+  orcsdr::focus_nav::note(kMuteX, kMuteY, kMuteW, kMuteH);
   M5.Display.fillRoundRect(kMuteX, kMuteY, kMuteW, kMuteH, 8, kPanel);
   M5.Display.drawRoundRect(kMuteX, kMuteY, kMuteW, kMuteH, 8,
                            sound_enabled ? kGreen : kMuted);
@@ -192,6 +195,7 @@ bool mute_hit(int32_t x, int32_t y) {
 }
 
 void draw_visualizer_button(bool enabled) {
+  orcsdr::focus_nav::note(kVisualizerX, kVisualizerY, kVisualizerW, kVisualizerH);
   const uint16_t color = enabled ? kCyan : kMuted;
   M5.Display.fillRoundRect(kVisualizerX, kVisualizerY, kVisualizerW, kVisualizerH, 8, kPanel);
   M5.Display.drawRoundRect(kVisualizerX, kVisualizerY, kVisualizerW, kVisualizerH, 8, color);
@@ -204,6 +208,7 @@ bool visualizer_hit(int32_t x, int32_t y) {
 }
 
 void draw_settings_button() {
+  orcsdr::focus_nav::note(kSettingsX, kSettingsY, kSettingsW, kSettingsH);
   constexpr int cx = kSettingsX + kSettingsW / 2;
   constexpr int cy = kSettingsY + kSettingsH / 2;
   M5.Display.fillRoundRect(kSettingsX, kSettingsY, kSettingsW, kSettingsH, 8, kPanel);

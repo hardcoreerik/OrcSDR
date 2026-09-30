@@ -418,7 +418,7 @@ The LoRa Traffic toolbar equivalents are `RTL_UI ACTION LORA DETAILS`,
 `RTL_SIGNAL` reports a smoothed relative dBFS value from the same IQ stream;
 LoRa Overview uses the unsmoothed value for faster visual response.
 
-`RTL_UI OPEN` accepts `HOME`, `FM`, `P25`, `ADSB`, `LORA`, `RF_LAB`,
+`RTL_UI OPEN` accepts `HOME`, `FM`, `AIRBAND`, `P25`, `ADSB`, `LORA`, `RF_LAB`,
 `WIFI_ANALYSIS`, or `SETTINGS`.
 `RTL_UI ACTION` accepts a domain and one of its visible touch actions:
 
@@ -428,6 +428,15 @@ LoRa Overview uses the unsmoothed value for faster visual response.
   `SETTINGS`, `HOME`. `GAIN_AUTO` selects the lowest tuner-gain step that
   reaches the target level; `RTL_FM_GAIN STATUS` reports its progress and
   selected gain.
+- `AIRBAND` (dashboard must be open): `TUNE <hz>`, `UP`, `DOWN`, `GUARD`,
+  `SCAN`, `HOLD`, `SKIP`, `SOURCE`, `SPACING`, `RADIUS`, `SQUELCH <0-30>` (dB
+  above the noise floor, `0` = always open), `SQUELCH_UP`, `SQUELCH_DOWN`,
+  `SETTLE`, `HANG_UP`, `HANG_DOWN`, `PRIORITY`, `RELOAD`, `CLEAR`, `GAIN_UP`,
+  `GAIN_DOWN`, `AGC`, `RTLAGC`, `TAB <0-4>`. `RTL_AIRBAND STATUS` prints one
+  `RTL_AIRBAND_STATUS` line: dashboard/tab, frequency, scan state, squelch
+  (`level_db`, `snr_db`, `floor_db`, `sql_db`), spacing, source, radius,
+  channel filter, scan counters, catalog load result (`load=`) and database
+  match (`match=`), receiver gain and AGC.
 - `P25`: `TUNE`, `PREV`, `NEXT`, `SURVEY`, `HOLD`, `HOLD_TG <id>`, `SKIP`,
   `FOLLOW`, `ENCRYPT_SKIP`, `RELOAD`, `SPAN_DOWN`, `SPAN_UP`, `SOUND`,
   `VOL_DOWN`, `VOL_UP`, `SETTINGS`, `HOME`.
@@ -448,6 +457,25 @@ control channels. Stopping restores the selected control channel. `HOLD`
 holds the displayed grant, or arms a hold for the next grant when none is
 displayed; `HOLD_TG <id>` selects a specific talkgroup. Repeat `HOLD` or
 `HOLD_TG <id>` to release that hold.
+
+## Keyboard
+
+Drives and inspects the M5Stack Tab5 Keyboard (I2C 0x6D on Ext.Port1) without touching it. Covered on the
+[wiki](https://github.com/hardcoreerik/OrcSDR/wiki) and in `docs/user-guide/shared-controls.md` for the key map.
+
+```text
+RTL_KEYBOARD STATUS
+RTL_KEYBOARD ECHO <0|1>
+RTL_KEYBOARD KEY <UP|DOWN|LEFT|RIGHT|ENTER|ESC|TAB|SPACE|BACKSPACE|char>
+```
+
+- `STATUS` (no authentication) prints `RTL_KEYBOARD_STATUS present=… firmware=… mode=… keys=… dropped=…
+  bus_errors=… attaches=…` and `RTL_KEYBOARD_FOCUS controls=<n> x= y= w= h= ring=<0|1>`, the control that
+  currently has the keyboard focus ring.
+- `ECHO 1` (authenticated) logs every decoded key event to serial, for debugging key decoding. `ECHO 0` turns it off.
+- `KEY` (authenticated) injects one key as if it were typed, through the same routing as the real keyboard: focus
+  movement, Enter as a tap, the radio shortcuts (tune, scan, mute, volume), shared number pad and text entry.
+  It replies `RTL_KEYBOARD_KEY_OK`. Because it can change device state it needs the authenticated session.
 
 ## Wi-Fi automation
 
