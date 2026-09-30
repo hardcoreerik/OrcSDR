@@ -115,6 +115,7 @@ class Catalog {
 
  private:
   void consider(const CatalogEntry& entry, bool use_distance);
+  void update_worst();
   void sort();
 
   CatalogEntry entries_[kCapacity]{};
@@ -122,6 +123,7 @@ class Catalog {
   bool loaded_ = false;
   bool location_configured_ = false;
   bool global_schema_ = false;
+  float worst_nm_ = 0.0f;  // farthest kept entry once the table is full
   LoadResult result_ = LoadResult::not_loaded;
 };
 

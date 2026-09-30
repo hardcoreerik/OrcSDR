@@ -289,6 +289,36 @@ void test_load_results() {
   CHECK(std::strcmp(load_result_name(LoadResult::no_source), "no_source") == 0);
 }
 
+void test_far_rows_are_skipped_but_near_rows_found() {
+  using namespace orcsdr::airband;
+  std::string text = "ORCAIR2\n";
+  // 20,000 southern-hemisphere rows (thousands of nm away) around 3 real neighbours.
+  for (int i = 0; i < 20000; ++i)
+    text += row(-600000000 + (i % 100) * 1000, kEugLon + (i % 50) * 100000,
+                118000000 + static_cast<uint32_t>(i % 700) * 25000, "TOWER", "AQ", "ANT", "Far Field", "USER", "FAR TOWER");
+  text += row(kEugLat, kEugLon, 118900000, "TOWER", "US", "KEUG", "Field", "OFFICIAL", "KEUG TOWER");
+  text += row(kEugLat + 5000000, kEugLon, 119100000, "TOWER", "US", "KNEAR", "Field", "OFFICIAL", "NEAR TOWER");
+  text += row(kPdxLat, kPdxLon, 118700000, "TOWER", "US", "KPDX", "Portland", "OFFICIAL", "KPDX TOWER");
+  StringSource source(text);
+  Catalog catalog;
+  Location location{true, kEugLat, kEugLon};
+  location.radius_nm = 100;
+  CHECK(catalog.load_from(source, location));
+  CHECK(catalog.count() == 3);
+  CHECK(std::strcmp(catalog.entry(0)->airport_ident, "KEUG") == 0);
+  CHECK(std::strcmp(catalog.entry(1)->airport_ident, "KNEAR") == 0);
+  CHECK(std::strcmp(catalog.entry(2)->airport_ident, "KPDX") == 0);
+  // With no radius the 32-entry table fills, then only closer rows may replace entries.
+  StringSource again(text);
+  Catalog unlimited;
+  Location any{true, kEugLat, kEugLon};
+  CHECK(unlimited.load_from(again, any));
+  CHECK(unlimited.count() == Catalog::kCapacity);
+  CHECK(std::strcmp(unlimited.entry(0)->airport_ident, "KEUG") == 0);
+  CHECK(unlimited.entry(2)->distance_nm > 80.0f);  // KPDX is the third-nearest
+  CHECK(std::strcmp(unlimited.entry(2)->airport_ident, "KPDX") == 0);
+}
+
 void test_duplicates_collapse() {
   using namespace orcsdr::airband;
   std::string text = "ORCAIR2\n";
@@ -311,6 +341,7 @@ int main() {
   test_bad_headers_and_empty_input();
   test_crlf_and_legacy_format();
   test_duplicates_collapse();
+  test_far_rows_are_skipped_but_near_rows_found();
   test_unsupported_schema_bails_early();
   test_load_results();
   test_radius_limits_nearby_entries();

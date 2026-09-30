@@ -115,7 +115,17 @@ bool parse_u32(const char* value, uint32_t* output) {
   return true;
 }
 
-bool parse_v2(char* line, CatalogEntry* output) {
+// Cheap rejection before any string work: latitude alone bounds the distance from below
+// (one degree is 60 nm), so far-away rows never reach the trigonometry or the text copies.
+struct Prefilter {
+  bool active = false;
+  int32_t latitude_e7 = 0;
+  double limit_nm = 0.0;
+};
+
+enum class Parse : uint8_t { ok, malformed, far };
+
+Parse parse_v2(char* line, CatalogEntry* output, const Prefilter& prefilter) {
   // ORCAIR2 row:
   // COM <lat_e7> <lon_e7> <hz> <service> <country> <ident> <airport_name>
   //     <callsign> <source_class> <source_name> <label>
@@ -123,12 +133,17 @@ bool parse_v2(char* line, CatalogEntry* output) {
   char* fields[12]{};
   if (split_tabs(line, fields, std::size(fields)) != std::size(fields) ||
       std::strcmp(fields[0], "COM") != 0)
-    return false;
+    return Parse::malformed;
   CatalogEntry entry{};
   if (!parse_i32(fields[1], &entry.latitude_e7) ||
       !parse_i32(fields[2], &entry.longitude_e7) ||
       !parse_u32(fields[3], &entry.frequency_hz))
-    return false;
+    return Parse::malformed;
+  if (prefilter.active) {
+    const double dlat_nm = std::fabs(static_cast<double>(entry.latitude_e7) -
+                                     static_cast<double>(prefilter.latitude_e7)) * 6.0e-6;
+    if (dlat_nm > prefilter.limit_nm) return Parse::far;
+  }
   entry.service = parse_service(fields[4]);
   copy_text(entry.country, sizeof(entry.country), fields[5]);
   copy_text(entry.airport_ident, sizeof(entry.airport_ident), fields[6]);
@@ -146,9 +161,9 @@ bool parse_v2(char* line, CatalogEntry* output) {
     }
   }
   if (entry.service == Service::unknown) entry.service = classify_service(entry.label);
-  if (!valid_entry(entry)) return false;
+  if (!valid_entry(entry)) return Parse::malformed;
   *output = entry;
-  return true;
+  return Parse::ok;
 }
 
 }  // namespace
@@ -271,6 +286,7 @@ void Catalog::consider(const CatalogEntry& entry, bool use_distance) {
 
   if (count_ < kCapacity) {
     entries_[count_++] = entry;
+    if (count_ == kCapacity) update_worst();
     return;
   }
 
@@ -278,7 +294,16 @@ void Catalog::consider(const CatalogEntry& entry, bool use_distance) {
   size_t worst = 0;
   for (size_t i = 1; i < count_; ++i)
     if (entries_[i].distance_nm > entries_[worst].distance_nm) worst = i;
-  if (entry.distance_nm < entries_[worst].distance_nm) entries_[worst] = entry;
+  if (entry.distance_nm < entries_[worst].distance_nm) {
+    entries_[worst] = entry;
+    update_worst();
+  }
+}
+
+void Catalog::update_worst() {
+  worst_nm_ = 0.0f;
+  for (size_t i = 0; i < count_; ++i)
+    if (entries_[i].distance_nm > worst_nm_) worst_nm_ = entries_[i].distance_nm;
 }
 
 void Catalog::sort() {
@@ -296,6 +321,7 @@ bool Catalog::load_from(LineSource& source, const Location& location) {
     result_ = LoadResult::no_location;
     return false;
   }
+  worst_nm_ = 0.0f;
 
   char line[kLineCapacity]{};
   const int header = source.read_line(line, sizeof(line));
@@ -322,8 +348,19 @@ bool Catalog::load_from(LineSource& source, const Location& location) {
 
     CatalogEntry entry{};
     bool parsed = false;
+    bool far = false;
     if (v2) {
-      parsed = parse_v2(line, &entry);
+      // Once the table is full a row can only matter if it beats the current worst entry.
+      double limit = location.radius_nm != 0 ? static_cast<double>(location.radius_nm) : 1.0e9;
+      if (count_ >= kCapacity && static_cast<double>(worst_nm_) < limit)
+        limit = static_cast<double>(worst_nm_);
+      Prefilter prefilter;
+      prefilter.active = true;
+      prefilter.latitude_e7 = location.latitude_e7;
+      prefilter.limit_nm = limit;
+      const Parse result = parse_v2(line, &entry, prefilter);
+      parsed = result == Parse::ok;
+      far = result == Parse::far;
     } else if (std::sscanf(line, "ATC %" SCNd32 " %" SCNd32 " %" SCNu32 " %39[^\n]",
                            &entry.latitude_e7, &entry.longitude_e7,
                            &entry.frequency_hz, entry.label) == 4) {
@@ -333,6 +370,10 @@ bool Catalog::load_from(LineSource& source, const Location& location) {
       parsed = valid_entry(entry);
     }
     ++rows_seen;
+    if (far) {
+      ++rows_readable;
+      continue;
+    }
     if (!parsed) {
       if (rows_readable == 0 && rows_seen >= kUnsupportedProbeRows) {
         result_ = LoadResult::unsupported_rows;
