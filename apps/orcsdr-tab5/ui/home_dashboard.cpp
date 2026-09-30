@@ -22,10 +22,10 @@ constexpr uint16_t kGreen = 0x6FE0;
 constexpr uint16_t kDim = 0x4228;
 constexpr uint16_t kPanel = 0x0021;
 constexpr int kRailX = 24, kRailY = 112, kRailW = 280, kRailH = 530;
-constexpr int kMainX = 318, kMainY = 112, kMainW = 930, kMainH = 530;
+constexpr int kMainX = 318, kMainY = 80, kMainW = 930, kMainH = 562;
 constexpr int kPlotX = 330, kPlotW = 906;
-constexpr int kSpectrumY = 144, kSpectrumH = 170;
-constexpr int kWaterfallY = 317, kWaterfallH = 183;
+constexpr int kSpectrumY = 112, kSpectrumH = 186;
+constexpr int kWaterfallY = 301, kWaterfallH = 199;
 // Readout strip under the graphics: frequency on the left, waterfall contrast, then the mode chip.
 constexpr int kReadoutY = 504, kReadoutH = 52;
 constexpr int kContrastY = kReadoutY + (kReadoutH - 28) / 2;
@@ -191,23 +191,27 @@ void draw_menu_icon(dashboards::Id id, int x, int y, uint16_t color) {
   }
 }
 
+// Top edge and height match the Home / sound / settings buttons (y 12..66).
+constexpr int kHeaderStatusY = 12, kHeaderStatusH = 54;
+
 void draw_header_status() {
-  M5.Display.fillRect(kHeaderStatusX, 20, kHeaderStatusW, 72, TFT_BLACK);
-  panel(kHeaderStatusX, 20, kHeaderStatusW, 72, kCyan, 9);
-  draw_wifi_icon(kHeaderStatusX + 26, 55, current.wifi_connected ? kCyan : kDim);
-  text("Wi-Fi", kHeaderStatusX + 54, 42, TFT_WHITE, 2);
+  const int y = kHeaderStatusY;
+  M5.Display.fillRect(kHeaderStatusX, y, kHeaderStatusW, kHeaderStatusH, TFT_BLACK);
+  panel(kHeaderStatusX, y, kHeaderStatusW, kHeaderStatusH, kCyan, 9);
+  draw_wifi_icon(kHeaderStatusX + 26, y + 32, current.wifi_connected ? kCyan : kDim);
+  text("Wi-Fi", kHeaderStatusX + 54, y + 17, TFT_WHITE, 2);
   text(current.wifi_connected && current.wifi_ip[0] ? current.wifi_ip : "OFFLINE",
-       kHeaderStatusX + 54, 66, current.wifi_connected ? kCyan : TFT_ORANGE, 1);
-  M5.Display.drawFastVLine(kHeaderStatusX + 114, 30, 52, kDim);
-  draw_usb_icon(kHeaderStatusX + 135, 54, current.driver_ready ? kCyan : kDim);
-  text("RTL-SDR", kHeaderStatusX + 148, 42, TFT_WHITE, 2);
-  text(current.driver_ready ? "READY" : "NOT READY", kHeaderStatusX + 158, 66,
+       kHeaderStatusX + 54, y + 38, current.wifi_connected ? kCyan : TFT_ORANGE, 1);
+  M5.Display.drawFastVLine(kHeaderStatusX + 114, y + 8, kHeaderStatusH - 16, kDim);
+  draw_usb_icon(kHeaderStatusX + 135, y + 30, current.driver_ready ? kCyan : kDim);
+  text("RTL-SDR", kHeaderStatusX + 148, y + 17, TFT_WHITE, 2);
+  text(current.driver_ready ? "READY" : "NOT READY", kHeaderStatusX + 158, y + 38,
        current.driver_ready ? kCyan : TFT_ORANGE, 1);
-  M5.Display.drawFastVLine(kHeaderStatusX + 238, 30, 52, kDim);
-  text(current.clock[0] ? current.clock : "--:--", kHeaderStatusX + kHeaderStatusW - 12, 42, TFT_WHITE, 2,
-       middle_right);
-  text(current.date[0] ? current.date : "UPTIME", kHeaderStatusX + kHeaderStatusW - 12, 68, kCyan, 2,
-       middle_right);
+  M5.Display.drawFastVLine(kHeaderStatusX + 238, y + 8, kHeaderStatusH - 16, kDim);
+  text(current.clock[0] ? current.clock : "--:--", kHeaderStatusX + kHeaderStatusW - 12, y + 17,
+       TFT_WHITE, 2, middle_right);
+  text(current.date[0] ? current.date : "UPTIME", kHeaderStatusX + kHeaderStatusW - 12, y + 39,
+       kCyan, 2, middle_right);
 }
 
 void draw_header() {
@@ -487,12 +491,12 @@ void draw_gain_panel() {
 }
 
 void draw_gain_chip() {
-  panel(1064, 118, 108, 26, kCyan, 6);
+  panel(1064, 86, 108, 26, kCyan, 6);
   char label[16];
   const uint16_t color = gain_label(label, sizeof(label));
   char value[24];
   snprintf(value, sizeof(value), "GAIN %s%s", label, current.rtl_agc ? " +R" : "");
-  text(value, 1118, 131, color, 1, middle_center);
+  text(value, 1118, 99, color, 1, middle_center);
 }
 
 void draw_footer_gain() {
@@ -741,8 +745,8 @@ void draw_footer() {
 
 void draw_receiver_chrome() {
   panel(kMainX, kMainY, kMainW, kMainH, kCyan, 12);
-  text("SPECTRUM", kPlotX, 130, kCyan, 2);
-  text(current.receiving ? "LIVE" : "READY", 1016, 130,
+  text("SPECTRUM", kPlotX, 98, kCyan, 2);
+  text(current.receiving ? "LIVE" : "READY", 1016, 98,
        current.receiving ? kGreen : TFT_ORANGE, 1);
   draw_gain_chip();
   M5.Display.fillRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, TFT_BLACK);
