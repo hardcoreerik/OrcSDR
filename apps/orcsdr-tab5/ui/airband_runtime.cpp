@@ -4,6 +4,7 @@
 
 #include <esp_attr.h>
 #include <esp_log.h>
+#include <esp_timer.h>
 #define AB_TRACE(msg) ESP_LOGI("airband", "TRACE %s", msg)
 
 #include <algorithm>
@@ -111,12 +112,15 @@ void load_catalog(const LiveState& live) {
   requested.radius_nm = g_scanner.settings().radius_nm;
   g_catalog_location = requested;
   g_catalog_attempted = true;
-  AB_TRACE("load_catalog begin");
+  const int64_t started_us = esp_timer_get_time();
   if (live.filesystem != nullptr)
     (void)g_catalog.load(live.filesystem, requested);
   else
     g_catalog.clear();
-  AB_TRACE("load_catalog loaded");
+  ESP_LOGI("airband", "catalog load elapsed_ms=%lld entries=%u loaded=%d radius_nm=%u",
+           static_cast<long long>((esp_timer_get_time() - started_us) / 1000),
+           static_cast<unsigned>(g_catalog.count()), g_catalog.loaded() ? 1 : 0,
+           static_cast<unsigned>(requested.radius_nm));
   rebuild_bank(live.frequency_hz);
   AB_TRACE("load_catalog bank rebuilt");
 }
