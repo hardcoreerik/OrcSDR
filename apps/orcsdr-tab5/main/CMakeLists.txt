@@ -85,6 +85,7 @@ idf_component_register(
         "../ui/focus_nav.cpp"
         "../ui/focus_ring.cpp"
         "../ui/filter_standards.cpp"
+        "../ui/waterfall_style.cpp"
         "../ui/freq_keypad.cpp"
         "../dsp/dsp_stats.cpp"
         "../ui/time_service.cpp"

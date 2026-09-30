@@ -69,6 +69,7 @@
 #include "text_editor.hpp"
 #include "tab5_keyboard.hpp"
 #include "focus_nav.hpp"
+#include "waterfall_style.hpp"
 #include "focus_ring.hpp"
 #include "fm_config.hpp"
 #include "home_dashboard.hpp"
@@ -2298,6 +2299,9 @@ void adsb_decoder_task(void*) {
       adsb_decoder.process_cu8(adsb_iq_blocks[index], adsb_iq_sizes[index], on_adsb_frame,
                               nullptr);
       (void)xQueueSend(adsb_iq_free, &index, portMAX_DELAY);
+      // Let the CPU 1 idle task run: when the decoder cannot keep up, the ready queue is never
+      // empty and this loop would otherwise starve IDLE1 and trip the task watchdog (#131).
+      vTaskDelay(1);
     }
   }
 }
@@ -2427,6 +2431,7 @@ bool handle_tool_tab_touch(int32_t x, int32_t y);
 const orcsdr::settings::State& global_settings_state();
 orcsdr::home::Snapshot home_dashboard_snapshot(bool demo = false);
 void show_home(bool demo = false);
+void load_waterfall_styles();
 void draw_home_dashboard();
 void handle_home_action(const orcsdr::home::Action& action);
 void persist_dashboard_open(orcsdr::dashboards::Id id);
@@ -13007,6 +13012,21 @@ void load_state() {
   if (recent_bytes > 0 && recent_bytes <= sizeof(recent))
     preferences.getBytes("dash_recent", recent, recent_bytes);
   orcsdr::dashboards::load_recent(recent, recent_bytes);
+  load_waterfall_styles();
+}
+
+// Waterfall palette/speed: one NVS byte per screen, written whenever the user changes it.
+const char* waterfall_style_key(orcsdr::waterfall_style::Screen screen) {
+  return screen == orcsdr::waterfall_style::Screen::lora ? "wf_lora" : "wf_home";
+}
+
+void load_waterfall_styles() {
+  using orcsdr::waterfall_style::Screen;
+  for (const Screen screen : {Screen::home, Screen::lora})
+    orcsdr::waterfall_style::unpack(screen, preferences.getUChar(waterfall_style_key(screen), 0xFF));
+  orcsdr::waterfall_style::set_persist_hook([](Screen screen, uint8_t packed) {
+    preferences.putUChar(waterfall_style_key(screen), packed);
+  });
 }
 
 uint32_t append_journal(const char* kind, int16_t x = -1, int16_t y = -1) {
@@ -13148,8 +13168,8 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
     // Only navigation opens the dashboard; a hotplug resume keeps the screen.
     if (!orcsdr::screens::owns(orcsdr::screens::Id::adsb) && persist_navigation)
       draw_sdr_screen(band, frequency_hz, rtl_live_volume.load(std::memory_order_acquire));
-    else if (!orcsdr::adsb::active())
-      orcsdr::adsb::enter(adsb_settings);
+    else if (!orcsdr::adsb::active() && orcsdr::screens::owns(orcsdr::screens::Id::adsb))
+      orcsdr::adsb::enter(adsb_settings);   // never paint the dashboard over another screen
     Serial.println("RTL_ADSB_CAPTURE live_rf=true ui_data=live");
   }
   if (band == RtlBand::lora) {

@@ -48,3 +48,9 @@ g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
   "${filter_standard_sources[@]}" -o "$build_dir/filter_standards_tests_sanitized"
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$build_dir/filter_standards_tests_sanitized"
+
+waterfall_style_sources=(tests/waterfall_style_tests.cpp apps/orcsdr-tab5/ui/waterfall_style.cpp)
+g++ "${common[@]}" -O2 "${waterfall_style_sources[@]}" -o "$build_dir/waterfall_style_tests"
+"$build_dir/waterfall_style_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer   "${waterfall_style_sources[@]}" -o "$build_dir/waterfall_style_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1   "$build_dir/waterfall_style_tests_sanitized"
