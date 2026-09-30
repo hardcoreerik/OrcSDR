@@ -30,8 +30,10 @@ constexpr int kWaterfallY = 317, kWaterfallH = 183;
 constexpr int kReadoutY = 504, kReadoutH = 52;
 constexpr int kContrastY = kReadoutY + (kReadoutH - 28) / 2;
 constexpr int kContrastDownX = 690;
-constexpr int kContrastUpX = 952;
+constexpr int kContrastUpX = 854;
 constexpr int kModeX = 1144, kModeW = 92;
+constexpr int kPaletteX = 898, kPaletteW = 120;
+constexpr int kSpeedX = 1026, kSpeedW = 110;
 // Control row: SPAN / TUNE / STEP SIZE steppers, then FILTER and GAIN.
 constexpr int kControlY = 564, kControlH = 62;
 constexpr int kStepperW = 208, kStepperSpan = 330, kStepperTune = 544, kStepperSize = 758;
@@ -73,6 +75,9 @@ int32_t scroll_offset_px = 0;
 uint32_t last_spectrum_ms = 0;
 EXT_RAM_BSS_ATTR float spectrum_levels[512]{};
 uint8_t waterfall_contrast = 5;
+uint8_t waterfall_palette = 0;
+uint8_t waterfall_speed = 0;   // index into kSpeedNames
+uint8_t waterfall_frame = 0;
 
 struct Gesture {
   bool down = false;
@@ -260,8 +265,47 @@ void draw_rail() {
   text("ALL DASHBOARDS", kListX + 65, kAllY + 21, kCyan, 2);
 }
 
+struct PaletteStop { float at; uint8_t r, g, b; };
+
+uint16_t palette_color(const PaletteStop* stops, size_t count, float value) {
+  value = std::clamp(value, 0.0f, 1.0f);
+  size_t i = 1;
+  while (i + 1 < count && value > stops[i].at) ++i;
+  const PaletteStop& a = stops[i - 1];
+  const PaletteStop& b = stops[i];
+  const float t = std::clamp((value - a.at) / (b.at - a.at), 0.0f, 1.0f);
+  const auto mix = [t](uint8_t x, uint8_t y) { return static_cast<uint8_t>(x + (y - x) * t); };
+  return M5.Display.color565(mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b));
+}
+
+constexpr PaletteStop kFirePalette[] = {
+    {0.0f, 0, 0, 0}, {0.3f, 120, 0, 0}, {0.6f, 255, 90, 0}, {0.85f, 255, 220, 0}, {1.0f, 255, 255, 255}};
+constexpr PaletteStop kIcePalette[] = {
+    {0.0f, 0, 0, 20}, {0.4f, 0, 60, 200}, {0.75f, 0, 200, 255}, {1.0f, 255, 255, 255}};
+constexpr PaletteStop kPlasmaPalette[] = {
+    {0.0f, 20, 0, 70}, {0.35f, 120, 0, 160}, {0.65f, 230, 60, 90}, {0.85f, 255, 170, 0}, {1.0f, 255, 250, 140}};
+constexpr PaletteStop kGrayPalette[] = {{0.0f, 0, 0, 0}, {1.0f, 255, 255, 255}};
+constexpr const char* kPaletteNames[] = {"CLASSIC", "FM", "FIRE", "ICE", "PLASMA", "GRAY"};
+constexpr uint8_t kPaletteCount = 6;
+// Waterfall speed: rows added per spectrum frame (2 or 1), or one row every 2 / 4 frames.
+constexpr const char* kSpeedNames[] = {"FAST", "NORMAL", "SLOW", "SLOWER"};
+constexpr uint8_t kSpeedCount = 4;
+
 uint16_t waterfall_color(float value) {
   value = std::clamp(value, 0.0f, 1.0f);
+  switch (waterfall_palette) {
+    case 1: {  // matches the FM dashboard
+      const uint8_t r = value < 0.5f ? 0 : static_cast<uint8_t>((value - 0.5f) * 510);
+      const uint8_t g = value < 0.25f ? 0 : static_cast<uint8_t>(std::min(255.0f, (value - 0.25f) * 510));
+      const uint8_t b = value < 0.65f ? static_cast<uint8_t>((0.65f - value) * 390) : 0;
+      return M5.Display.color565(r, g, b);
+    }
+    case 2: return palette_color(kFirePalette, std::size(kFirePalette), value);
+    case 3: return palette_color(kIcePalette, std::size(kIcePalette), value);
+    case 4: return palette_color(kPlasmaPalette, std::size(kPlasmaPalette), value);
+    case 5: return palette_color(kGrayPalette, std::size(kGrayPalette), value);
+    default: break;
+  }
   const uint8_t r = value > 0.62f
                         ? static_cast<uint8_t>(std::min(255.0f, (value - 0.62f) * 670))
                         : 0;
@@ -277,16 +321,27 @@ uint8_t waterfall_range_db(uint8_t contrast) {
 }
 
 void draw_waterfall_controls() {
-  M5.Display.fillRect(kContrastDownX, kContrastY, 298, kContrastButtonH, TFT_BLACK);
+  M5.Display.fillRect(kContrastDownX, kContrastY, kContrastUpX + kContrastButtonW - kContrastDownX,
+                      kContrastButtonH, TFT_BLACK);
   panel(kContrastDownX, kContrastY, kContrastButtonW, kContrastButtonH, kCyan, 5);
   text("<", kContrastDownX + kContrastButtonW / 2, kContrastY + 14, kGreen, 2,
        middle_center);
   char value[24];
-  snprintf(value, sizeof(value), "WF CONTRAST %u", waterfall_contrast);
-  text(value, kContrastDownX + 153, kContrastY + 14, kCyan, 2, middle_center);
+  snprintf(value, sizeof(value), "CONTRAST %u", waterfall_contrast);
+  text(value, (kContrastDownX + kContrastUpX + kContrastButtonW) / 2, kContrastY + 14, kCyan, 2, middle_center);
   panel(kContrastUpX, kContrastY, kContrastButtonW, kContrastButtonH, kCyan, 5);
   text(">", kContrastUpX + kContrastButtonW / 2, kContrastY + 14, kGreen, 2,
        middle_center);
+  M5.Display.fillRect(kPaletteX, kReadoutY, kPaletteW, kReadoutH, TFT_BLACK);
+  panel(kPaletteX, kReadoutY, kPaletteW, kReadoutH, kCyan, 8);
+  text("PALETTE", kPaletteX + kPaletteW / 2, kReadoutY + 15, kCyan, 2, middle_center);
+  text(kPaletteNames[waterfall_palette % kPaletteCount], kPaletteX + kPaletteW / 2,
+       kReadoutY + 38, kGreen, 2, middle_center);
+  M5.Display.fillRect(kSpeedX, kReadoutY, kSpeedW, kReadoutH, TFT_BLACK);
+  panel(kSpeedX, kReadoutY, kSpeedW, kReadoutH, kCyan, 8);
+  text("SPEED", kSpeedX + kSpeedW / 2, kReadoutY + 15, kCyan, 2, middle_center);
+  text(kSpeedNames[waterfall_speed % kSpeedCount], kSpeedX + kSpeedW / 2, kReadoutY + 38, kGreen,
+       2, middle_center);
 }
 
 float home_spectrum_floor(const float* levels, size_t count, float pipeline_floor) {
@@ -787,6 +842,10 @@ Action tap_action(int32_t x, int32_t y) {
     return {ActionKind::waterfall_contrast_down};
   if (inside(x, y, kContrastUpX, kContrastY, kContrastButtonW, kContrastButtonH))
     return {ActionKind::waterfall_contrast_up};
+  if (inside(x, y, kPaletteX, kReadoutY, kPaletteW, kReadoutH))
+    return {ActionKind::waterfall_palette_next};
+  if (inside(x, y, kSpeedX, kReadoutY, kSpeedW, kReadoutH))
+    return {ActionKind::waterfall_speed_next};
   if (inside(x, y, kListX, kAllY, kListW, 42)) return {ActionKind::open_browser};
   if (inside(x, y, kListX, kListY, kListW, kListH)) {
     const int index = (y - kListY + scroll_offset_px) / kRowPitch;
@@ -934,16 +993,24 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   }
   M5.Display.clearClipRect();
   draw_spectrum_axis();
+  // Speed: FAST adds 2 rows per frame, NORMAL 1, SLOW/SLOWER one row every 2 / 4 frames.
+  const int rows = waterfall_speed == 0 ? 2 : 1;
+  const uint8_t every = waterfall_speed == 2 ? 2 : waterfall_speed == 3 ? 4 : 1;
+  if (++waterfall_frame < every) {
+    M5.Display.endWrite();
+    return;
+  }
+  waterfall_frame = 0;
   M5.Display.setScrollRect(kPlotX + 1, kWaterfallY + 1, kPlotW - 2,
                            kWaterfallH - 2, TFT_BLACK);
-  M5.Display.scroll(0, -2);
+  M5.Display.scroll(0, -rows);
   for (size_t i = 0; i < samples; ++i) {
     const float normalized = std::clamp(
         (spectrum_levels[i] - floor) / waterfall_range_db(waterfall_contrast),
         0.0f, 1.0f);
     const int x = kPlotX + 1 + static_cast<int>(i * (kPlotW - 2) / samples);
     const int x2 = kPlotX + 1 + static_cast<int>((i + 1) * (kPlotW - 2) / samples);
-    M5.Display.fillRect(x, kWaterfallY + kWaterfallH - 3, std::max(1, x2 - x), 2,
+    M5.Display.fillRect(x, kWaterfallY + kWaterfallH - 1 - rows, std::max(1, x2 - x), rows,
                         waterfall_color(normalized));
   }
   M5.Display.endWrite();
@@ -1016,6 +1083,16 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
       if (action.kind == ActionKind::browser_next) ++browser_page;
       else --browser_page;
       draw_browser();
+      return {};
+    }
+    if (action.kind == ActionKind::waterfall_palette_next) {
+      waterfall_palette = static_cast<uint8_t>((waterfall_palette + 1) % kPaletteCount);
+      draw_waterfall_controls();
+      return {};
+    }
+    if (action.kind == ActionKind::waterfall_speed_next) {
+      waterfall_speed = static_cast<uint8_t>((waterfall_speed + 1) % kSpeedCount);
+      draw_waterfall_controls();
       return {};
     }
     if (action.kind == ActionKind::waterfall_contrast_down ||

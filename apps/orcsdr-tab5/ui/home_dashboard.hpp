@@ -69,6 +69,8 @@ enum class ActionKind : uint8_t {
   open_device_settings,
   waterfall_contrast_down,
   waterfall_contrast_up,
+  waterfall_palette_next,
+  waterfall_speed_next,
   gain_open,
   gain_close,
   filter_open,
