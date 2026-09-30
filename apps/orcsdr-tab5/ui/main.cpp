@@ -45,6 +45,7 @@
 #endif
 
 #include "orcsdr_splash.hpp"
+#include "orcsdr_restart.hpp"
 #include "orcsdr_storage.hpp"
 #include "am_dashboard.hpp"
 #include "shortwave_model.hpp"
@@ -12644,8 +12645,7 @@ void reset_rtl_usb_safe_mode_and_restart() {
   const esp_err_t err = esp_rtl_sdr_usb_fault_guard_reset();
   Serial.printf("RTL_USB_SAFE_MODE_RESET result=%s\n", esp_rtl_sdr_err_to_name(err));
   if (err != ESP_OK) return;
-  delay(25);
-  esp_restart();
+  orcsdr_restart_clean();
 }
 
 void handle_global_settings_action(const orcsdr::settings::Action& action) {
@@ -16942,6 +16942,15 @@ void process_command(char* command) {
       return;
     }
     Serial.println("RTL_RESETTING");
+    orcsdr_restart_clean();
+  }
+  if (strcmp(command, "RTL_RESET CPU") == 0) {
+    // Diagnostic: the plain CPU-level restart, to exercise the boot-time normalisation (issue #127).
+    if (!authenticated) {
+      Serial.println("RTL_RESET_ERROR auth_required");
+      return;
+    }
+    Serial.println("RTL_RESETTING cpu");
     delay(25);
     esp_restart();
   }
@@ -18838,6 +18847,7 @@ void loop() {
 }
 
 extern "C" void app_main(void) {
+  orcsdr_normalize_reset_at_boot();  // before the SD card is touched (issue #127)
   esp_err_t result = nvs_flash_init();
   if (result == ESP_ERR_NVS_NO_FREE_PAGES || result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
     ESP_ERROR_CHECK(nvs_flash_erase());

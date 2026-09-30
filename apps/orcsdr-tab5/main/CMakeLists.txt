@@ -30,6 +30,7 @@ idf_component_register(
         ${ORCSDR_LAB_SRCS}
         "../ui/main.cpp"
         "../ui/orcsdr_splash.cpp"
+        "../ui/orcsdr_restart.cpp"
         "../ui/orcsdr_storage.cpp"
         "../ui/am_dashboard.cpp"
         "../ui/am_finder.cpp"

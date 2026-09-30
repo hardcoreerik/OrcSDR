@@ -1,4 +1,5 @@
 #include "wifi_service.hpp"
+#include "orcsdr_restart.hpp"
 
 #include <cstring>
 #include <atomic>
@@ -93,7 +94,7 @@ void c6_update_task(void*) {
   ESP_LOGI("orcsdr_wifi", "RTL_WIFI_C6_UPDATE state=rebooting target=3.0.6 bytes=%u",
            static_cast<unsigned>(size));
   vTaskDelay(pdMS_TO_TICKS(300));
-  esp_restart();
+  orcsdr_restart_clean();
 #else
   update_fail("image_unavailable", ESP_ERR_NOT_SUPPORTED);
 #endif
