@@ -11,7 +11,9 @@ param(
   # Compile out per-stage DSP timing (profiler observer-effect runs).
   [switch]$NoDspStageTiming,
   # Test build with the Stage-2 frontend benchmark lab (RTL_DSP LAB ...). Never ship.
-  [switch]$DspLab
+  [switch]$DspLab,
+  # Test build that starts Wi-Fi even when the C6 is not 3.0.6 (hosted compatibility study). Never ship.
+  [switch]$AllowHostedMismatch
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,7 +44,8 @@ $configureArgs = @('-B', $buildDir, '-D', "SDKCONFIG=$buildDir/sdkconfig",
                    '-D', 'SDKCONFIG_DEFAULTS=sdkconfig.defaults',
                    '-D', "ORCSDR_DSP_AB=$(if ($DspAb) { 1 } else { 0 })",
                    '-D', "ORCSDR_DSP_STAGE_TIMING=$(if ($NoDspStageTiming) { 0 } else { 1 })",
-                   '-D', "ORCSDR_DSP_LAB=$(if ($DspLab) { 1 } else { 0 })")
+                   '-D', "ORCSDR_DSP_LAB=$(if ($DspLab) { 1 } else { 0 })",
+                   '-D', "ORCSDR_TEST_ALLOW_HOSTED_MISMATCH=$(if ($AllowHostedMismatch) { 1 } else { 0 })")
 if ($resolvedC6Firmware) {
   $configureArgs += @('-D', "C6_FIRMWARE_BIN=$resolvedC6Firmware")
 }

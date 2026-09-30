@@ -1,5 +1,9 @@
 #include "wifi_service.hpp"
 
+#ifndef ORCSDR_TEST_ALLOW_HOSTED_MISMATCH
+#define ORCSDR_TEST_ALLOW_HOSTED_MISMATCH 0
+#endif
+
 #include <cstring>
 #include <atomic>
 
@@ -224,9 +228,17 @@ bool start() {
     set_update_status(version == ESP_OK && ORCSDR_HAS_EMBEDDED_C6_FIRMWARE
                           ? C6UpdateState::ready : C6UpdateState::unavailable,
                       0, version == ESP_OK ? "confirm_required" : "version_query");
+#if ORCSDR_TEST_ALLOW_HOSTED_MISMATCH
+    // TEST ONLY (never merged or shipped): keep going so Wi-Fi can be tried against a C6 that is
+    // not 3.0.6. hosted_versions_match() still reports false; only the early exit is bypassed.
+    ESP_LOGW("orcsdr_wifi", "TEST_HOSTED_MISMATCH continuing: C6 %s, host 3.0.6", g_c6_version);
+    g_failure_stage = "none";
+#else
     return false;
+#endif
+  } else {
+    set_update_status(C6UpdateState::current, 100, "current");
   }
-  set_update_status(C6UpdateState::current, 100, "current");
   wifi_init_config_t wifi_cfg = WIFI_INIT_CONFIG_DEFAULT();
   const esp_err_t wifi_init = esp_wifi_init(&wifi_cfg);
   if (wifi_init != ESP_OK && wifi_init != ESP_ERR_WIFI_INIT_STATE) {
