@@ -67,6 +67,7 @@
 #include "dsp_stats.hpp"
 #include "freq_keypad.hpp"
 #include "text_editor.hpp"
+#include "tab5_keyboard.hpp"
 #include "fm_config.hpp"
 #include "home_dashboard.hpp"
 #include "lora_dashboard.hpp"
@@ -2466,6 +2467,7 @@ void handle_am_dashboard_action(const orcsdr::am::Action& action);
 esp_err_t rtl_gain_set_rtl_agc(const char* source, bool enabled);
 orcsdr::p25::Snapshot p25_dashboard_snapshot();
 void handle_p25_dashboard_action(const orcsdr::p25::Action& action);
+void service_keyboard();
 orcsdr::lora::Snapshot lora_dashboard_snapshot();
 void handle_lora_dashboard_action(const orcsdr::lora::Action& action);
 void service_shared_scan(uint32_t now);
@@ -13918,6 +13920,47 @@ bool request_hot_retune(uint32_t frequency_hz) {
 // Capture used to own M5.update() during radio UI because a second update
 // from loop() could glitch the ES8388. FM/P25 now stay on loop() so a
 // stalled stream or Hosted RPC cannot freeze every button.
+// --- Tab5 Keyboard (Ext.Port1) -------------------------------------------------------------
+bool g_keyboard_echo = false;  // diagnostic only; reset on boot, never active for masked fields
+
+// The keyboard edits the open text field directly. Enter and Esc reuse the owning screen's own
+// touch path by "pressing" the on-screen Accept/Cancel button, so Wi-Fi, location, P25 and
+// preset-name editors all apply and close exactly as they do for a finger.
+void inject_editor_touch(int x, int y) {
+  if (orcsdr::visualizer::active()) {
+    const uint32_t now = millis();
+    orcsdr::visualizer::handle_touch(x, y, true, 1, 0, 0, now);
+    orcsdr::visualizer::handle_touch(x, y, false, 0, 0, 0, now + 1);
+  } else if (orcsdr::settings::active()) {
+    handle_global_settings_touch(x, y);
+  } else if (rtl_ui_band == RtlBand::p25 && orcsdr::p25::active()) {
+    handle_p25_dashboard_action(orcsdr::p25::handle_touch(x, y));
+  }
+}
+
+void handle_editor_key(const orcsdr::keyboard_input::Key& key) {
+  using orcsdr::keyboard_input::EditAction;
+  const EditAction action = orcsdr::text_editor::handle_key(key);
+  int x = 0;
+  int y = 0;
+  if (action == EditAction::accept) orcsdr::text_editor::accept_point(&x, &y);
+  else if (action == EditAction::cancel) orcsdr::text_editor::cancel_point(&x, &y);
+  else return;
+  inject_editor_touch(x, y);
+}
+
+void service_keyboard() {
+  orcsdr::tab5_keyboard::service(millis());
+  orcsdr::keyboard_input::Key key;
+  while (orcsdr::tab5_keyboard::pop(&key)) {
+    if (g_keyboard_echo && !orcsdr::text_editor::masked())
+      Serial.printf("RTL_KEYBOARD_KEY special=%u ch=%d ctrl=%d alt=%d\n",
+                    static_cast<unsigned>(key.special), static_cast<int>(key.ch),
+                    key.ctrl ? 1 : 0, key.alt ? 1 : 0);
+    if (orcsdr::text_editor::active()) handle_editor_key(key);
+  }
+}
+
 void poll_sdr_touch(bool from_stream) {
   (void)from_stream;
   if (ui_documentation_mode) return;
@@ -15557,6 +15600,29 @@ void process_command(char* command) {
   }
   if (strncmp(command, "RTL_CB", 6) == 0 && (command[6] == '\0' || command[6] == ' ')) {
     process_cb_command(command);
+    return;
+  }
+  if (strcmp(command, "RTL_KEYBOARD STATUS") == 0) {
+    const auto keyboard = orcsdr::tab5_keyboard::status();
+    Serial.printf("RTL_KEYBOARD_STATUS present=%d firmware=%u mode=%u int_low=%d keys=%lu "
+                  "dropped=%lu undecoded=%lu bus_errors=%lu attaches=%lu echo=%d editor=%d\n",
+                  keyboard.present ? 1 : 0, static_cast<unsigned>(keyboard.firmware),
+                  static_cast<unsigned>(keyboard.mode), keyboard.int_low ? 1 : 0,
+                  static_cast<unsigned long>(keyboard.keys),
+                  static_cast<unsigned long>(keyboard.dropped),
+                  static_cast<unsigned long>(keyboard.undecoded),
+                  static_cast<unsigned long>(keyboard.bus_errors),
+                  static_cast<unsigned long>(keyboard.attach_count), g_keyboard_echo ? 1 : 0,
+                  orcsdr::text_editor::active() ? 1 : 0);
+    return;
+  }
+  if (strncmp(command, "RTL_KEYBOARD ECHO ", 18) == 0) {
+    if (!authenticated) {
+      Serial.println("RTL_KEYBOARD_ERROR auth_required");
+      return;
+    }
+    g_keyboard_echo = command[18] == '1';
+    Serial.printf("RTL_KEYBOARD_ECHO %d\n", g_keyboard_echo ? 1 : 0);
     return;
   }
   if (strcmp(command, "RTL_UI STATUS") == 0) {
@@ -18069,6 +18135,7 @@ void setup() {
 
   auto config = M5.config();
   M5.begin(config);
+  orcsdr::tab5_keyboard::begin();
   // Tab5 codec/amp remains owned by M5Unified. Configure its one worker before first begin.
   auto speaker_config = M5.Speaker.config();
   speaker_config.sample_rate = 48000;
@@ -18447,6 +18514,7 @@ void loop() {
   // The main UI task is the sole M5Unified/touch/display owner.
   const uint32_t m5_started_ms = millis();
   M5.update();
+  service_keyboard();
   service_headphone_speaker_route();
   const uint32_t m5_elapsed_ms = millis() - m5_started_ms;
   if (m5_elapsed_ms >= 500)

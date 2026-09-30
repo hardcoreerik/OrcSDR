@@ -24,3 +24,11 @@ g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
   "${cb_sources[@]}" -o "$build_dir/cb_scanner_tests_sanitized"
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$build_dir/cb_scanner_tests_sanitized"
+
+keyboard_sources=(tests/keyboard_input_tests.cpp apps/orcsdr-tab5/ui/keyboard_input.cpp)
+g++ "${common[@]}" -O2 "${keyboard_sources[@]}" -o "$build_dir/keyboard_input_tests"
+"$build_dir/keyboard_input_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "${keyboard_sources[@]}" -o "$build_dir/keyboard_input_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$build_dir/keyboard_input_tests_sanitized"
