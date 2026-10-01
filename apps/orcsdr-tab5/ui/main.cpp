@@ -6924,7 +6924,8 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   const uint32_t spectrum_interval =
       rtl_ui_band == RtlBand::lora ||
               (rtl_ui_band == RtlBand::airband && orcsdr::airband::spectrum_active()) ||
-              (rtl_ui_band == RtlBand::fm && orcsdr::fm::spectrum_active())
+              (rtl_ui_band == RtlBand::fm && orcsdr::fm::spectrum_active()) ||
+              (rtl_ui_band == RtlBand::shortwave && orcsdr::shortwave::spectrum_active())
           ? kRtlLoraSpectrumIntervalMs
           : kRtlSpectrumIntervalMs;
   if (rtl_spectrum_last_ms != 0 &&
@@ -9183,14 +9184,16 @@ static void rtl_driver_app_task(void *) {
             const uint32_t normal_visual_interval =
                 g_stream_band == RtlBand::lora ||
                         (g_stream_band == RtlBand::airband && orcsdr::airband::spectrum_active()) ||
-                        (g_stream_band == RtlBand::fm && orcsdr::fm::spectrum_active())
+                        (g_stream_band == RtlBand::fm && orcsdr::fm::spectrum_active()) ||
+                        (g_stream_band == RtlBand::shortwave && orcsdr::shortwave::spectrum_active())
                     ? kRtlLoraSpectrumIntervalMs
                     : kRtlSpectrumIntervalMs;
             // A browser watching the web console limits the trace to 250 ms, but not when the Airband
             // scope is on the device's own screen: that one should stay lively.
             const bool local_scope_wins =
                 (g_stream_band == RtlBand::airband && orcsdr::airband::spectrum_active()) ||
-                (g_stream_band == RtlBand::fm && orcsdr::fm::spectrum_active());
+                (g_stream_band == RtlBand::fm && orcsdr::fm::spectrum_active()) ||
+                (g_stream_band == RtlBand::shortwave && orcsdr::shortwave::spectrum_active());
             const uint32_t visual_interval = (web_scope && !local_scope_wins) ? 250u : audio_stressed
                                                  ? kRtlSpectrumStressedIntervalMs
                                                  : normal_visual_interval;

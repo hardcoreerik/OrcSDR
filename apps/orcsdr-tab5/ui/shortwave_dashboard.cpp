@@ -670,32 +670,54 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor) {
   if (!spectrum_active() || !levels || visible_bins < 2) return;
   const int width = spectrum_width();
-  M5.Display.startWrite();
-  M5.Display.fillRect(kSpectrumX + 1, kSpectrumY + 1, width - 2,
-                      kSpectrumPlotH - 1, TFT_BLACK);
-  int last_x = kSpectrumX;
-  int last_y = kSpectrumY + kSpectrumPlotH - 2;
+  // The trace is drawn off-screen and pushed in one go: erasing and redrawing the screen area every frame
+  // flickered and cost time. The sprite follows the width, which changes when the tuner drawer opens.
+  const int cw = width - 2;
+  const int ch = kSpectrumPlotH - 1;
+  static M5Canvas* canvas = nullptr;
+  static int canvas_w = 0;
+  if (canvas != nullptr && canvas_w != cw) {
+    delete canvas;
+    canvas = nullptr;
+  }
+  if (canvas == nullptr) {
+    canvas = new M5Canvas(&M5.Display);
+    canvas->setPsram(true);
+    canvas->setColorDepth(16);
+    if (!canvas->createSprite(cw, ch)) {
+      delete canvas;
+      canvas = nullptr;
+    }
+    canvas_w = cw;
+  }
+  if (canvas != nullptr) canvas->fillSprite(TFT_BLACK);
+  int last_x = 0;
+  int last_y = ch - 2;
   for (size_t i = 0; i < static_cast<size_t>(width); ++i) {
     const float level = spectrum::peak_for_pixel(
         levels, first_bin, visible_bins, i, width);
     const float normalized = std::clamp((level - floor) / 48.0f,
                                         0.0f, 1.0f);
-    const int x = kSpectrumX + static_cast<int>(i);
-    const int y = kSpectrumY + kSpectrumPlotH - 2 -
-                  static_cast<int>(normalized * (kSpectrumPlotH - 4));
-    if (i) M5.Display.drawLine(last_x, last_y, x, y, kGreen);
+    const int x = static_cast<int>(i) - 1;
+    const int y = ch - 2 - static_cast<int>(normalized * (kSpectrumPlotH - 4));
+    if (canvas != nullptr && i && x >= 0 && x < cw) canvas->drawLine(last_x, last_y, x, y, kGreen);
     last_x = x;
     last_y = y;
     g_waterfall_row[i] = waterfall_color(normalized);
   }
-  const int center = kSpectrumX + width / 2;
-  const int half_filter = filter_half_width();
-  M5.Display.drawFastVLine(center, kSpectrumY, kSpectrumPlotH, kCyan);
-  M5.Display.drawFastVLine(center - half_filter, kSpectrumY, kSpectrumPlotH, kYellow);
-  M5.Display.drawFastVLine(center + half_filter, kSpectrumY, kSpectrumPlotH, kYellow);
-  M5.Display.scroll(0, -1);
-  M5.Display.pushImage(kSpectrumX, kWaterfallY + kWaterfallH - 2, width, 1,
-                       g_waterfall_row);
+  if (canvas != nullptr) {
+    const int center = cw / 2;
+    const int half_filter = filter_half_width();
+    canvas->drawFastVLine(center, 0, ch, kCyan);
+    canvas->drawFastVLine(center - half_filter, 0, ch, kYellow);
+    canvas->drawFastVLine(center + half_filter, 0, ch, kYellow);
+    canvas->pushSprite(kSpectrumX + 1, kSpectrumY + 1);
+  }
+  // Two waterfall rows per frame at the livelier frame rate keeps it flowing.
+  M5.Display.startWrite();
+  M5.Display.scroll(0, -2);
+  M5.Display.pushImage(kSpectrumX, kWaterfallY + kWaterfallH - 3, width, 1, g_waterfall_row);
+  M5.Display.pushImage(kSpectrumX, kWaterfallY + kWaterfallH - 2, width, 1, g_waterfall_row);
   M5.Display.endWrite();
 }
 
