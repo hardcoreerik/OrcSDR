@@ -36,6 +36,10 @@ struct Hooks {
   bool (*apply_gain)(const receiver_controls::Action& action) = nullptr;
   // Applies the AM channel filter bandwidth (Hz) to the live receiver.
   void (*apply_filter)(uint32_t bandwidth_hz) = nullptr;
+  // Steps the shared spectrum span (direction -1 narrower, +1 wider).
+  void (*scope_span_step)(int direction) = nullptr;
+  // Sets the shared spectrum span for the scope; 0 restores whatever it was before.
+  void (*scope_span_set)(uint32_t hz) = nullptr;
 };
 
 void configure(const Hooks& hooks);
@@ -55,6 +59,12 @@ bool serial_action(const char* verb, bool has_value, uint32_t value, const LiveS
 size_t status_line(const LiveState& live, char* out, size_t capacity);
 
 bool active();
+// The SCOPE tab: live spectrum and waterfall from the shared spectrum pipeline.
+bool spectrum_active();
+// Dragging the scope's two filter lines changes the channel filter width.
+bool scope_edge_hit(int32_t x, int32_t y);
+void scope_drag_filter(int32_t x, const LiveState& live);
+void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, uint32_t span_hz);
 Tab tab();
 // True while the carrier-versus-noise-floor squelch is open. Safe to call from the DSP task.
 bool audio_open();

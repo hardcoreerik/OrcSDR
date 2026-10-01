@@ -35,6 +35,13 @@ bool g_catalog_attempted = false;
 constexpr int16_t kDefaultManualGainTenthDb = 400;
 bool g_gain_pending = true;
 
+// Channel filter width: standard for the raster spacing unless the scope's filter lines were dragged.
+uint32_t g_custom_filter_hz = 0;   // 0 = standard
+
+uint32_t effective_filter_hz(Spacing spacing) {
+  return g_custom_filter_hz != 0 ? g_custom_filter_hz : orcsdr::airband::filter_bandwidth_hz(spacing);
+}
+
 int16_t nearest_gain_step(const LiveState& live, int16_t wanted) {
   if (live.gain_step_count == 0) return wanted;
   int16_t best = live.gain_steps_tenth_db[0];
@@ -86,6 +93,8 @@ void load_settings_once() {
                  radius == 250 || radius == 500)
                     ? radius
                     : 100;
+  g_custom_filter_hz = std::clamp<uint32_t>(g_store.get_u32("filter_hz", 0), 0u, 30000u);
+  if (g_custom_filter_hz != 0 && g_custom_filter_hz < 3000u) g_custom_filter_hz = 0;
   const uint32_t saved = g_store.get_u32("last_hz", kGuardFrequencyHz);
   g_saved_frequency_hz = in_band(saved) ? saved : kGuardFrequencyHz;
   publish_audio_squelch();
@@ -156,6 +165,7 @@ const Snapshot& snapshot(const LiveState& live) {
   out.channel_db = live.channel_db;
   out.snr_db = g_squelch.snr_db();
   out.floor_db = g_squelch.floor_db();
+  out.filter_hz = effective_filter_hz(g_scanner.settings().spacing);
   out.squelch_open = g_squelch.open();
   out.running = live.receiver_running;
   out.sound_enabled = live.sound_enabled;
@@ -234,6 +244,32 @@ void dispatch(const Action& action, const LiveState& live) {
       g_scanner.stop();
       (void)tune(kGuardFrequencyHz);
       break;
+    case ActionKind::filter_down:
+    case ActionKind::filter_up: {
+      const uint32_t current = effective_filter_hz(s.spacing);
+      const uint32_t next = action.kind == ActionKind::filter_up ? current + 1000u
+                                                                : (current > 3000u ? current - 1000u : 3000u);
+      dispatch({ActionKind::filter_set, static_cast<int32_t>(std::clamp<uint32_t>(next, 3000u, 30000u))}, live);
+      break;
+    }
+    case ActionKind::filter_set:
+      if (action.value >= 3000) {
+        g_custom_filter_hz = std::min<uint32_t>(static_cast<uint32_t>(action.value), 30000u);
+        if (open_store()) (void)g_store.put_u32("filter_hz", g_custom_filter_hz);
+        if (g_hooks.apply_filter) g_hooks.apply_filter(g_custom_filter_hz);
+      }
+      break;
+    case ActionKind::span_down:
+    case ActionKind::span_up:
+      if (g_hooks.scope_span_step)
+        g_hooks.scope_span_step(action.kind == ActionKind::span_up ? 1 : -1);
+      break;
+    case ActionKind::tune_to:
+      if (action.value > 0) {
+        g_scanner.stop();
+        (void)tune(snap_frequency(static_cast<uint32_t>(action.value), s.spacing));
+      }
+      break;
     case ActionKind::scan_toggle:
       if (g_scanner.running()) {
         g_scanner.stop();
@@ -279,6 +315,8 @@ void dispatch(const Action& action, const LiveState& live) {
     case ActionKind::spacing_cycle:
       s.spacing = s.spacing == Spacing::khz25 ? Spacing::khz833 : Spacing::khz25;
       save_settings();
+      g_custom_filter_hz = 0;
+      if (open_store()) (void)g_store.put_u32("filter_hz", 0);
       if (g_hooks.apply_filter) g_hooks.apply_filter(orcsdr::airband::filter_bandwidth_hz(s.spacing));
       g_squelch.reset();
       break;
@@ -361,6 +399,7 @@ void dispatch(const Action& action, const LiveState& live) {
 
 void configure(const Hooks& hooks) {
   g_hooks = hooks;
+  dashboard_set_scope_span_hook(hooks.scope_span_set);
   load_settings_once();
 }
 
@@ -447,11 +486,25 @@ bool serial_action(const char* verb, bool has_value, uint32_t value, const LiveS
       {"CLEAR", ActionKind::clear_activity}, {"GAIN_UP", ActionKind::gain_up},
       {"GAIN_DOWN", ActionKind::gain_down},  {"AGC", ActionKind::tuner_agc_toggle},
       {"RTLAGC", ActionKind::rtl_agc_toggle},
+      {"SPAN_UP", ActionKind::span_up},       {"SPAN_DOWN", ActionKind::span_down},
+      {"FILTER_UP", ActionKind::filter_up},   {"FILTER_DOWN", ActionKind::filter_down},
   };
   if (std::strcmp(verb, "TUNE") == 0) {
     if (!has_value || !in_band(value)) return false;
     g_scanner.stop();
     return tune(value);
+  }
+  if (std::strcmp(verb, "FILTER") == 0) {   // channel filter width in Hz (3000-30000); 0 = standard
+    if (!has_value || (value != 0 && (value < 3000 || value > 30000))) return false;
+    if (value == 0) {
+      g_custom_filter_hz = 0;
+      if (open_store()) (void)g_store.put_u32("filter_hz", 0);
+      if (g_hooks.apply_filter) g_hooks.apply_filter(orcsdr::airband::filter_bandwidth_hz(g_scanner.settings().spacing));
+    } else {
+      dispatch({ActionKind::filter_set, static_cast<int32_t>(value)}, live);
+    }
+    dashboard_update(snapshot(live));
+    return true;
   }
   if (std::strcmp(verb, "SQUELCH") == 0) {
     if (!has_value || value > 30) return false;
@@ -461,7 +514,7 @@ bool serial_action(const char* verb, bool has_value, uint32_t value, const LiveS
     return true;
   }
   if (std::strcmp(verb, "TAB") == 0) {
-    if (!has_value || value > 4) return false;
+    if (!has_value || value > 5) return false;
     dashboard_select_tab(static_cast<Tab>(value));
     return true;
   }
@@ -484,14 +537,14 @@ size_t status_line(const LiveState& live, char* out, size_t capacity) {
       "RTL_AIRBAND_STATUS active=%d tab=%u frequency_hz=%lu scan=%s squelch_open=%d "
       "level_db=%.1f snr_db=%.1f floor_db=%.1f sql_db=%d spacing=%s source=%s radius_nm=%u filter_hz=%lu "
       "stops=%lu checked=%lu bank=%u activity=%u catalog=%u loaded=%d location=%d "
-      "gain_tenth_db=%d tuner_agc=%d rtl_agc=%d running=%d load=%s match=%s",
+      "gain_tenth_db=%d tuner_agc=%d rtl_agc=%d running=%d load=%s match=%s scope_fps=%lu scope_ms=%lu",
       dashboard_active() ? 1 : 0, static_cast<unsigned>(dashboard_tab()),
       static_cast<unsigned long>(live.frequency_hz), state_name(g_scanner.state()),
       g_squelch.open() ? 1 : 0, static_cast<double>(live.channel_db),
       static_cast<double>(g_squelch.snr_db()), static_cast<double>(g_squelch.floor_db()),
       static_cast<int>(s.squelch_db), spacing_name(s.spacing), source_name(s.source),
       static_cast<unsigned>(s.radius_nm),
-      static_cast<unsigned long>(orcsdr::airband::filter_bandwidth_hz(s.spacing)),
+      static_cast<unsigned long>(effective_filter_hz(s.spacing)),
       static_cast<unsigned long>(g_scanner.stops()),
       static_cast<unsigned long>(g_scanner.channels_checked()),
       static_cast<unsigned>(g_scanner.bank_count()),
@@ -500,11 +553,17 @@ size_t status_line(const LiveState& live, char* out, size_t capacity) {
       live.location_configured ? 1 : 0, static_cast<int>(live.controls.gain_tenth_db),
       live.controls.tuner_agc ? 1 : 0, live.controls.rtl_agc ? 1 : 0,
       live.receiver_running ? 1 : 0, load_result_name(g_catalog.last_result()),
-      match != nullptr ? match->airport_ident : "none");
+      match != nullptr ? match->airport_ident : "none",
+      static_cast<unsigned long>(dashboard_scope_fps()),
+      static_cast<unsigned long>(dashboard_scope_draw_ms()));
   return written < 0 ? 0 : static_cast<size_t>(written);
 }
 
 bool active() { return dashboard_active(); }
+bool spectrum_active() { return dashboard_spectrum_active(); }
+void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, uint32_t span_hz) {
+  dashboard_draw_spectrum(levels, first_bin, visible_bins, span_hz);
+}
 Tab tab() { return dashboard_tab(); }
 
 bool audio_open() { return g_audio_open.load(std::memory_order_acquire); }
@@ -516,7 +575,16 @@ uint32_t default_frequency() {
 
 uint32_t filter_bandwidth_hz() {
   load_settings_once();
-  return orcsdr::airband::filter_bandwidth_hz(g_scanner.settings().spacing);
+  return effective_filter_hz(g_scanner.settings().spacing);
+}
+
+bool scope_edge_hit(int32_t x, int32_t y) { return dashboard_scope_edge_hit(x, y); }
+
+void scope_drag_filter(int32_t x, const LiveState& live) {
+  const uint32_t hz = dashboard_scope_filter_from_x(x);
+  if (hz == 0) return;
+  dispatch({ActionKind::filter_set, static_cast<int32_t>(hz)}, live);
+  if (dashboard_active()) dashboard_update(snapshot(live));
 }
 
 uint32_t manual_step(uint32_t frequency_hz, int direction) {

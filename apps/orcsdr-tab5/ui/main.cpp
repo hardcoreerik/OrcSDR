@@ -2351,6 +2351,8 @@ void airband_settings_hook();
 void airband_location_settings_hook();
 bool airband_gain_hook(const orcsdr::receiver_controls::Action& action);
 void airband_filter_hook(uint32_t bandwidth_hz);
+void airband_scope_span_hook(int direction);
+void airband_scope_span_set_hook(uint32_t hz);
 void draw_cb_dashboard(bool static_panel);
 const orcsdr::cb::Snapshot& cb_dashboard_snapshot();
 void handle_cb_dashboard_action(const orcsdr::cb::Action& action);
@@ -6073,6 +6075,35 @@ void airband_filter_hook(uint32_t bandwidth_hz) {
   reset_spectrum_renderer();
 }
 
+// The scope opens on a narrower span than the 2.4 MHz capture so individual 25 kHz channels are
+// visible; the previous shared span is restored when the scope is left (hz == 0).
+void airband_scope_span_set_hook(uint32_t hz) {
+  static uint32_t saved_hz = 0;
+  if (hz == 0) {
+    if (saved_hz != 0) {
+      rtl_scope_span_hz.store(saved_hz, std::memory_order_relaxed);
+      saved_hz = 0;
+      reset_spectrum_renderer();
+    }
+    return;
+  }
+  if (saved_hz == 0) saved_hz = rtl_scope_span_hz.load(std::memory_order_relaxed);
+  rtl_scope_span_hz.store(std::min(hz, kRtlScopeSpanMaxHz), std::memory_order_relaxed);
+  reset_spectrum_renderer();
+}
+
+// Steps the shared spectrum span used by the Airband SCOPE tab.
+void airband_scope_span_hook(int direction) {
+  static constexpr uint32_t kSteps[] = {240000, 480000, 960000, 1200000, 2400000};
+  const uint32_t current = rtl_scope_span_hz.load(std::memory_order_relaxed);
+  size_t index = 0;
+  while (index + 1 < std::size(kSteps) && kSteps[index] < current) ++index;
+  if (direction > 0 && index + 1 < std::size(kSteps) && kSteps[index] <= current) ++index;
+  else if (direction < 0 && index > 0) --index;
+  rtl_scope_span_hz.store(std::min(kSteps[index], kRtlScopeSpanMaxHz), std::memory_order_relaxed);
+  reset_spectrum_renderer();
+}
+
 bool airband_gain_hook(const orcsdr::receiver_controls::Action& action) {
 #if !RTL_USE_LEGACY_USB
   using Kind = orcsdr::receiver_controls::ActionKind;
@@ -6716,7 +6747,8 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
     resume_rtl_speaker();
     orcsdr::airband::configure(
         {airband_tune_hook, airband_home_hook, airband_settings_hook,
-         airband_location_settings_hook, airband_gain_hook, airband_filter_hook});
+         airband_location_settings_hook, airband_gain_hook, airband_filter_hook,
+         airband_scope_span_hook, airband_scope_span_set_hook});
     orcsdr::airband::enter(airband_live_state());
     orcsdr::screens::finish_transition();
     return;
@@ -6856,6 +6888,8 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   const bool web_scope = orcsdr::web_console::spectrum_demanded();
   if (!web_scope && !orcsdr::home::active() && rtl_ui_band == RtlBand::lora &&
       !orcsdr::lora::spectrum_active()) return;
+  if (!web_scope && !orcsdr::home::active() && rtl_ui_band == RtlBand::airband &&
+      !orcsdr::airband::spectrum_active()) return;
   if (!web_scope && !orcsdr::home::active() && rtl_ui_band == RtlBand::fm &&
       !orcsdr::fm::spectrum_active()) return;
   if (!web_scope && !orcsdr::home::active() && rtl_ui_band == RtlBand::shortwave &&
@@ -6886,9 +6920,12 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   }
 
   const uint32_t now = millis();
-  const uint32_t spectrum_interval = rtl_ui_band == RtlBand::lora
-                                         ? kRtlLoraSpectrumIntervalMs
-                                         : kRtlSpectrumIntervalMs;
+  // LoRa and the Airband scope want a livelier trace than the 100 ms default.
+  const uint32_t spectrum_interval =
+      rtl_ui_band == RtlBand::lora ||
+              (rtl_ui_band == RtlBand::airband && orcsdr::airband::spectrum_active())
+          ? kRtlLoraSpectrumIntervalMs
+          : kRtlSpectrumIntervalMs;
   if (rtl_spectrum_last_ms != 0 &&
       now - rtl_spectrum_last_ms < spectrum_interval) {
     return;
@@ -7087,6 +7124,16 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   }
   if (rtl_ui_band == RtlBand::am && orcsdr::screens::owns(orcsdr::screens::Id::am)) {
     orcsdr::am::draw_spectrum(rtl_spectrum_levels, first_bin, visible_bins, floor);
+    rtl_spectrum_trace_last_ms = now;
+    rtl_spectrum_trace_valid = true;
+    return;
+  }
+  if (rtl_ui_band == RtlBand::airband && orcsdr::screens::owns(orcsdr::screens::Id::airband)) {
+    // The scope labels its axis from the span the visible bins actually cover.
+    const uint32_t span_hz = static_cast<uint32_t>(
+        (static_cast<uint64_t>(visible_bins) *
+         rtl_active_sample_rate_sps.load(std::memory_order_relaxed)) / kRtlSpectrumBins);
+    orcsdr::airband::draw_spectrum(rtl_spectrum_levels, first_bin, visible_bins, span_hz);
     rtl_spectrum_trace_last_ms = now;
     rtl_spectrum_trace_valid = true;
     return;
@@ -9132,10 +9179,16 @@ static void rtl_driver_app_task(void *) {
             const bool audio_stressed =
                 sound_on && rtl_audio.dropped_chunks > 0 &&
                 rtl_audio.dropped_chunks * 2u > rtl_audio.queued_chunks + 2u;
-            const uint32_t normal_visual_interval = g_stream_band == RtlBand::lora
-                                                        ? kRtlLoraSpectrumIntervalMs
-                                                        : kRtlSpectrumIntervalMs;
-            const uint32_t visual_interval = web_scope ? 250u : audio_stressed
+            const uint32_t normal_visual_interval =
+                g_stream_band == RtlBand::lora ||
+                        (g_stream_band == RtlBand::airband && orcsdr::airband::spectrum_active())
+                    ? kRtlLoraSpectrumIntervalMs
+                    : kRtlSpectrumIntervalMs;
+            // A browser watching the web console limits the trace to 250 ms, but not when the Airband
+            // scope is on the device's own screen: that one should stay lively.
+            const bool local_scope_wins =
+                g_stream_band == RtlBand::airband && orcsdr::airband::spectrum_active();
+            const uint32_t visual_interval = (web_scope && !local_scope_wins) ? 250u : audio_stressed
                                                  ? kRtlSpectrumStressedIntervalMs
                                                  : normal_visual_interval;
             if (now - rtl_session_started_ms >= kRtlAudioPrimeMs &&
@@ -13192,12 +13245,16 @@ void load_state() {
 
 // Waterfall palette/speed: one NVS byte per screen, written whenever the user changes it.
 const char* waterfall_style_key(orcsdr::waterfall_style::Screen screen) {
-  return screen == orcsdr::waterfall_style::Screen::lora ? "wf_lora" : "wf_home";
+  switch (screen) {
+    case orcsdr::waterfall_style::Screen::lora: return "wf_lora";
+    case orcsdr::waterfall_style::Screen::airband: return "wf_air";
+    default: return "wf_home";
+  }
 }
 
 void load_waterfall_styles() {
   using orcsdr::waterfall_style::Screen;
-  for (const Screen screen : {Screen::home, Screen::lora})
+  for (const Screen screen : {Screen::home, Screen::lora, Screen::airband})
     orcsdr::waterfall_style::unpack(screen, preferences.getUChar(waterfall_style_key(screen), 0xFF));
   orcsdr::waterfall_style::set_persist_hook([](Screen screen, uint8_t packed) {
     preferences.putUChar(waterfall_style_key(screen), packed);
@@ -14314,7 +14371,55 @@ void poll_sdr_touch(bool from_stream) {
     return;
   }
   if (rtl_ui_band == RtlBand::airband && orcsdr::airband::active()) {
-    if (pressed && !was_pressed) handle_sdr_touch(touch.x, touch.y);
+    // Scope tab: two fingers pinch the span (spread = zoom in, pinch = zoom out), one step each time
+    // the finger distance changes by about a quarter. Taps are ignored until every finger lifts so a
+    // pinch never retunes the radio.
+    static bool pinch_active = false;
+    static bool suppress_tap = false;
+    static bool filter_drag = false;
+    static uint32_t last_filter_drag_ms = 0;
+    static float pinch_anchor = 0.0f;
+    static uint32_t last_pinch_step_ms = 0;
+    if (orcsdr::airband::spectrum_active() && touch_count >= 2) {
+      const auto second = ui_touch_detail(1);
+      const float dx = static_cast<float>(touch.x - second.x);
+      const float dy = static_cast<float>(touch.y - second.y);
+      const float distance = sqrtf(dx * dx + dy * dy);
+      suppress_tap = true;
+      if (!pinch_active || pinch_anchor < 1.0f) {
+        pinch_active = true;
+        pinch_anchor = distance;
+      } else if (now - last_pinch_step_ms >= 200) {
+        const float ratio = distance / pinch_anchor;
+        if (ratio >= 1.25f || ratio <= 0.8f) {
+          airband_scope_span_hook(ratio >= 1.25f ? -1 : 1);
+          pinch_anchor = distance;
+          last_pinch_step_ms = now;
+        }
+      }
+      was_pressed = true;
+      return;
+    }
+    if (touch_count < 2) pinch_active = false;
+    // A touch that starts on one of the scope's two yellow filter lines drags the filter width.
+    if (orcsdr::airband::spectrum_active() && touch_count == 1) {
+      if (touch.wasPressed() && orcsdr::airband::scope_edge_hit(touch.x, touch.y)) filter_drag = true;
+      if (filter_drag) {
+        if (touch.isPressed()) {
+          if (now - last_filter_drag_ms >= 80) {
+            last_filter_drag_ms = now;
+            orcsdr::airband::scope_drag_filter(touch.x, airband_live_state());
+          }
+        } else {
+          orcsdr::airband::scope_drag_filter(touch.x, airband_live_state());
+          filter_drag = false;
+        }
+        was_pressed = pressed;
+        return;
+      }
+    }
+    if (!pressed) suppress_tap = false;
+    if (pressed && !was_pressed && !suppress_tap) handle_sdr_touch(touch.x, touch.y);
     was_pressed = pressed;
     return;
   }
@@ -18876,6 +18981,7 @@ void loop() {
        (rtl_ui_band == RtlBand::cb &&
         rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running) ||
        p25_ui ||
+       (rtl_ui_band == RtlBand::airband && orcsdr::airband::spectrum_active()) ||
        (rtl_ui_band == RtlBand::lora && orcsdr::lora::active()))) {
     draw_spectrum(nullptr, 0);
   }
