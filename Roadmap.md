@@ -51,8 +51,48 @@ label Phase II voice complete before those gates pass.
 - Satellite: define a specific receive/decoder target before adding a dedicated UI.
 - CB: complete operator and RF acceptance with a suitable antenna/source.
 
-Generic Browse routing is already implemented and is not a substitute for these
-band-specific outcomes.
+Home's tune-anywhere routing (the GENERAL band, which replaced Browse) is a
+general receiver, not a substitute for these band-specific outcomes.
+
+### Make tuning content- and context-aware
+
+Goal: tapping a spike on the spectrum, stepping, or typing a frequency should
+leave the radio in the right mode, filter width and step, and say what the
+signal probably is, without the operator needing to know the band plan. None of
+this is a current capability beyond Home choosing wide FM, AM or narrow FM by
+frequency.
+
+1. **Band plan.** One table of frequency ranges with mode (AM, wide/narrow FM,
+   USB, LSB, CW), default filter width, step size and a display name. Include
+   the amateur conventions (LSB below 10 MHz, USB from 10 MHz up and on 60 m,
+   CW at the band edges, FM on the 2 m/70 cm repeater segments), airband AM,
+   broadcast AM/FM, CB, marine, FRS/GMRS, weather, ADS-B. Auto-mode is the default
+   and a manual mode choice locks until the next band change (decide the lock
+   behavior before building). Host-test the lookup like `band_plan`.
+2. **Tap to snap.** On a spectrum tap, find the nearest peak, centre on it and
+   estimate its occupied width (a ~200 kHz block is broadcast FM, a narrow carrier
+   is AM/NFM, a carrier-less narrow signal is SSB) to confirm or override the
+   table's choice.
+3. **Context labels.** Show what the frequency is: airport and service from the
+   aviation catalog, NOAA, marine and FRS/GMRS channels, ham band names. Decide
+   where the label sits on Home and how it interacts with the existing mode chip.
+4. **Real SSB.** USB/LSB demodulation (and CW) in the general path. Sideband
+   demodulation exists only in the CB path today; this needs a proper channel
+   and sideband filter (see the DSP-rates item above) and RF evidence.
+
+### Support an external VFO (M5Dial)
+
+Each Airband SCOPE control is a single dashboard action with a serial verb, so
+a rotary controller needs only to send detent counts for the selected control.
+Still to define: the transport (serial, ESP-NOW or Bluetooth), pairing/auth for
+the controller, which controls it selects and cycles through, and how the
+selected control is shown on screen. Extend the same action set to Home.
+
+### Validate additional receivers
+
+The Nooelec NESDR SMArt v5 has only a provisional driver profile with no gain
+control and a frequency offset (issue 145). Needs a validated profile in the
+driver (capabilities, IF/crystal), then RF acceptance against the Blog V4.
 
 ### Add POCSAG persistence deliberately
 
