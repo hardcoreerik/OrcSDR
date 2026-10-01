@@ -115,6 +115,9 @@ if (-not $zip) { throw 'Missing local M5Burner package zip.' }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [IO.Compression.ZipFile]::OpenRead($zip.FullName)
 try {
+  if ($archive.Entries.FullName -match '\\') {
+    throw 'M5Burner ZIP entries must use forward slashes.'
+  }
   $names = @($archive.Entries | ForEach-Object FullName)
   foreach ($entry in @('m5burner.json', 'firmware/bootloader_0x2000.bin', 'firmware/partition-table_0x8000.bin', 'firmware/flash.sh')) {
     if ($names -notcontains $entry) { throw "M5Burner zip missing $entry" }
