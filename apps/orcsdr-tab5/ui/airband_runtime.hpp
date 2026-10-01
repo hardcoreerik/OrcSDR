@@ -36,6 +36,10 @@ struct Hooks {
   bool (*apply_gain)(const receiver_controls::Action& action) = nullptr;
   // Applies the AM channel filter bandwidth (Hz) to the live receiver.
   void (*apply_filter)(uint32_t bandwidth_hz) = nullptr;
+  // Steps the shared spectrum span (direction -1 narrower, +1 wider).
+  void (*scope_span_step)(int direction) = nullptr;
+  // Sets the shared spectrum span for the scope; 0 restores whatever it was before.
+  void (*scope_span_set)(uint32_t hz) = nullptr;
 };
 
 void configure(const Hooks& hooks);

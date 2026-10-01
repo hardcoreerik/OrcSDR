@@ -75,6 +75,8 @@ enum class ActionKind : uint8_t {
   open_location_settings,
   exit_home,
   tune_to,   // value = frequency in Hz (tap on the scope)
+  span_down,
+  span_up,
 };
 
 struct Action {
@@ -97,6 +99,9 @@ void dashboard_select_tab(Tab tab);
 bool dashboard_active();
 // The SCOPE tab draws a live spectrum and waterfall from the shared spectrum pipeline.
 bool dashboard_spectrum_active();
+void dashboard_set_scope_span_hook(void (*hook)(uint32_t hz));
+uint32_t dashboard_scope_fps();       // spectrum frames drawn in the last second
+uint32_t dashboard_scope_draw_ms();   // time the last frame took to draw
 void dashboard_draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                              uint32_t span_hz);
 Tab dashboard_tab();

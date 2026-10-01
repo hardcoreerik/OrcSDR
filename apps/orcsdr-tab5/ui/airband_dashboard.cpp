@@ -34,7 +34,13 @@ constexpr int kTabW = 1280 / kTabCount;
 constexpr int kScopeX = 24, kScopeW = 1232;
 constexpr int kScopeSpecY = 168, kScopeSpecH = 190;
 constexpr int kScopeAxisY = 358, kScopeAxisH = 20;
-constexpr int kScopeWfY = 380, kScopeWfH = 212;
+constexpr int kScopeWfY = 380, kScopeWfH = 170;
+// Control row under the waterfall: span, gain and tuner AGC, like the FM spectrum view's controls.
+constexpr Rect kScopeSpanDown{24, 560, 70, 56};
+constexpr Rect kScopeSpanUp{300, 560, 70, 56};
+constexpr Rect kScopeGainDown{404, 560, 70, 56};
+constexpr Rect kScopeGainUp{690, 560, 70, 56};
+constexpr Rect kScopeAgc{790, 560, 230, 56};
 constexpr Rect kScopePaletteChip{900, 100, 170, 52};
 constexpr Rect kScopeSpeedChip{1086, 100, 170, 52};
 constexpr float kScopeMinRangeDb = 24.0f;
@@ -76,6 +82,24 @@ Tab g_tab = Tab::listen;
 EXT_RAM_BSS_ATTR uint16_t g_scope_row[kScopeW]{};
 EXT_RAM_BSS_ATTR float g_scope_levels[kScopeW]{};
 uint32_t g_scope_span_hz = 0;
+void (*g_scope_span_hook)(uint32_t hz) = nullptr;
+constexpr uint32_t kScopeDefaultSpanHz = 480000;
+bool g_scope_levels_valid = false;
+constexpr float kScopeSmoothing = 0.45f;   // weight of the new frame (the FM trace uses 0.22)
+
+// Entering the scope narrows the shared span; leaving it restores the previous one.
+void set_tab(Tab next) {
+  if (g_tab == Tab::scope && next != Tab::scope) {
+    M5.Display.clearScrollRect();
+    if (g_scope_span_hook) g_scope_span_hook(0);
+  } else if (g_tab != Tab::scope && next == Tab::scope) {
+    g_scope_span_hz = 0;
+    g_scope_levels_valid = false;
+    if (g_scope_span_hook) g_scope_span_hook(kScopeDefaultSpanHz);
+  }
+  g_tab = next;
+}
+uint32_t g_scope_fps = 0, g_scope_frames = 0, g_scope_window_ms = 0, g_scope_draw_ms = 0;
 float g_scope_ceiling = 0.0f;
 bool g_scope_ceiling_valid = false;
 uint32_t g_last_activity_redraw_ms = 0;
@@ -193,28 +217,64 @@ void draw_scope_axis() {
 }
 
 void draw_scope_status() {
-  M5.Display.fillRect(kScopeX, 598, kScopeW, 28, TFT_BLACK);
+  M5.Display.fillRect(kScopeX, 140, 860, 22, TFT_BLACK);
   char value[96];
-  std::snprintf(value, sizeof(value), "%.3f MHz   SNR %.0f dB   SQL +%d dB   %s   SPAN %lu kHz",
-                static_cast<double>(g_snapshot.frequency_hz) / 1e6,
+  std::snprintf(value, sizeof(value), "SNR %.0f dB   SQL +%d dB   %s   tap the scope to tune",
                 static_cast<double>(g_snapshot.snr_db), static_cast<int>(g_snapshot.scan.squelch_db),
-                g_snapshot.squelch_open ? "OPEN" : "CLOSED",
-                static_cast<unsigned long>(g_scope_span_hz / 1000u));
-  text(value, kScopeX + kScopeW / 2, 612, g_snapshot.squelch_open ? kGreen : kMuted, 2);
+                g_snapshot.squelch_open ? "OPEN" : "CLOSED");
+  text(value, 34, 152, g_snapshot.squelch_open ? kGreen : kMuted, 1, middle_left);
+}
+
+void draw_scope_controls() {
+  using receiver_controls::Availability;
+  using receiver_controls::Control;
+  M5.Display.fillRect(kScopeX, 556, kScopeW, 64, TFT_BLACK);
+  char value[40];
+  button(kScopeSpanDown, "-", false, true, 3);
+  button(kScopeSpanUp, "+", false, true, 3);
+  text("SPAN", 112, 575, kCyan, 1, middle_left);
+  if (g_scope_span_hz)
+    std::snprintf(value, sizeof(value), "%lu kHz", static_cast<unsigned long>(g_scope_span_hz / 1000u));
+  else
+    std::snprintf(value, sizeof(value), "--");
+  text(value, 197, 598, kGreen, 2);
+
+  const auto agc = receiver_controls::item(Control::tuner_agc, g_snapshot.controls);
+  const auto gain = receiver_controls::item(Control::rf_gain, g_snapshot.controls);
+  const bool gain_ok = gain.availability == Availability::enabled;
+  const bool agc_ok = agc.availability == Availability::enabled;
+  button(kScopeGainDown, "-", false, gain_ok, 3);
+  button(kScopeGainUp, "+", false, gain_ok, 3);
+  text("GAIN", 482, 575, kCyan, 1, middle_left);
+  if (!gain_ok)
+    std::snprintf(value, sizeof(value), "N/A");
+  else if (agc_ok && agc.active)
+    std::snprintf(value, sizeof(value), "AUTO");
+  else
+    std::snprintf(value, sizeof(value), "%.1f dB", static_cast<double>(gain.value) / 10.0);
+  text(value, 580, 598, gain_ok ? kGreen : kMuted, 2);
+  button(kScopeAgc, !agc_ok ? "TUNER AGC N/A" : agc.active ? "TUNER AGC ON" : "TUNER AGC OFF",
+         agc_ok && agc.active, agc_ok, 2);
+}
+
+// The tuned frequency is the scope's heading; it must follow every retune (tap, scanner, keys).
+void draw_scope_title() {
+  M5.Display.fillRect(kScopeX, 100, 860, 36, TFT_BLACK);
+  char value[48];
+  std::snprintf(value, sizeof(value), "%.3f MHz  AM", static_cast<double>(g_snapshot.frequency_hz) / 1e6);
+  text(value, 32, 118, TFT_WHITE, 3, middle_left);
 }
 
 void draw_scope() {
   M5.Display.fillRect(0, 93, 1280, kTabsY - 93, TFT_BLACK);
-  char value[48];
-  std::snprintf(value, sizeof(value), "%.3f MHz  AM", static_cast<double>(g_snapshot.frequency_hz) / 1e6);
-  text(value, 32, 126, TFT_WHITE, 3, middle_left);
-  text("Tap the scope to tune", 34, 154, kMuted, 1, middle_left);
+  draw_scope_title();
   draw_scope_chips();
   M5.Display.drawRect(kScopeX, kScopeSpecY, kScopeW, kScopeSpecH, kCyan);
   M5.Display.drawRect(kScopeX, kScopeWfY, kScopeW, kScopeWfH, kCyan);
   g_scope_ceiling_valid = false;
   draw_scope_axis();
   draw_scope_status();
+  draw_scope_controls();
   M5.Display.setScrollRect(kScopeX + 1, kScopeWfY + 1, kScopeW - 2, kScopeWfH - 2, TFT_BLACK);
 }
 
@@ -543,7 +603,7 @@ void draw_page() {
 }
 
 Action tab_touch(int32_t x) {
-  g_tab = static_cast<Tab>(std::clamp<int32_t>(x / kTabW, 0, kTabCount - 1));
+  set_tab(static_cast<Tab>(std::clamp<int32_t>(x / kTabW, 0, kTabCount - 1)));
   draw_tabs();
   draw_page();
   return {};
@@ -551,6 +611,11 @@ Action tab_touch(int32_t x) {
 
 Action scope_touch(int32_t x, int32_t y) {
   using waterfall_style::Screen;
+  if (hit(x, y, kScopeSpanDown)) return {ActionKind::span_down};
+  if (hit(x, y, kScopeSpanUp)) return {ActionKind::span_up};
+  if (hit(x, y, kScopeGainDown)) return {ActionKind::gain_down};
+  if (hit(x, y, kScopeGainUp)) return {ActionKind::gain_up};
+  if (hit(x, y, kScopeAgc)) return {ActionKind::tuner_agc_toggle};
   if (hit(x, y, kScopePaletteChip)) {
     waterfall_style::next_palette(Screen::airband);
     draw_scope_chips();
@@ -663,11 +728,14 @@ Action setup_touch(int32_t x, int32_t y) {
 void dashboard_enter(const Snapshot& snapshot) {
   g_snapshot = snapshot;
   g_active = true;
-  g_tab = Tab::listen;
+  set_tab(Tab::listen);
   dashboard_draw();
 }
 
-void dashboard_leave() { g_active = false; }
+void dashboard_leave() {
+  if (g_active) set_tab(Tab::listen);   // restores the shared span if the scope was showing
+  g_active = false;
+}
 
 void dashboard_draw() {
   if (!g_active) return;
@@ -767,6 +835,7 @@ void dashboard_update(const Snapshot& snapshot) {
     case Tab::scope:
       if (frequency_changed) {
         g_scope_ceiling_valid = false;
+        draw_scope_title();
         draw_scope_axis();
       }
       if (frequency_changed || (live_changed && now - g_last_meter_ms >= 250u) ||
@@ -774,6 +843,7 @@ void dashboard_update(const Snapshot& snapshot) {
         draw_scope_status();
         g_last_meter_ms = now;
       }
+      if (gain_changed) draw_scope_controls();
       break;
   }
   M5.Display.endWrite();
@@ -797,13 +867,13 @@ Action dashboard_handle_touch(int32_t x, int32_t y) {
 
 void dashboard_select_tab(Tab tab) {
   if (!g_active) return;
-  if (g_tab == Tab::scope && tab != Tab::scope) M5.Display.clearScrollRect();
-  g_tab = tab;
+  set_tab(tab);
   dashboard_draw();
 }
 
 bool dashboard_active() { return g_active; }
 bool dashboard_spectrum_active() { return g_active && g_tab == Tab::scope; }
+void dashboard_set_scope_span_hook(void (*hook)(uint32_t hz)) { g_scope_span_hook = hook; }
 
 void dashboard_draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                              uint32_t span_hz) {
@@ -811,19 +881,25 @@ void dashboard_draw_spectrum(const float* levels, size_t first_bin, size_t visib
   using waterfall_style::Screen;
   constexpr int w = kScopeW - 2;
   const int x0 = kScopeX + 1;
+  const uint32_t frame_started_ms = millis();
   if (span_hz != g_scope_span_hz) {
     g_scope_span_hz = span_hz;
     draw_scope_axis();
     draw_scope_status();
+    draw_scope_controls();
   }
   float sum = 0.0f, strongest = -200.0f;
   for (int i = 0; i < w; ++i) {
     const float level = spectrum::peak_for_pixel(levels, first_bin, visible_bins,
                                                  static_cast<size_t>(i), static_cast<size_t>(w));
-    g_scope_levels[i] = level;
-    sum += level;
-    strongest = std::max(strongest, level);
+    // Light frame-to-frame smoothing so the trace is steady like the FM and Home scopes.
+    g_scope_levels[i] = g_scope_levels_valid
+                            ? kScopeSmoothing * level + (1.0f - kScopeSmoothing) * g_scope_levels[i]
+                            : level;
+    sum += g_scope_levels[i];
+    strongest = std::max(strongest, g_scope_levels[i]);
   }
+  g_scope_levels_valid = true;
   // Floor tracks the average (mostly noise); the ceiling follows the strongest bin quickly and falls
   // slowly so a transmission does not clip and the scale does not pump.
   const float floor_db = sum / static_cast<float>(w) - 3.0f;
@@ -871,7 +947,16 @@ void dashboard_draw_spectrum(const float* levels, size_t first_bin, size_t visib
   for (int row = 0; row < rows; ++row)
     M5.Display.pushImage(x0, kScopeWfY + kScopeWfH - 1 - rows + row, w, 1, g_scope_row);
   M5.Display.endWrite();
+  g_scope_draw_ms = millis() - frame_started_ms;
+  ++g_scope_frames;
+  if (frame_started_ms - g_scope_window_ms >= 1000u) {
+    g_scope_fps = g_scope_frames;
+    g_scope_frames = 0;
+    g_scope_window_ms = frame_started_ms;
+  }
 }
+uint32_t dashboard_scope_fps() { return g_scope_fps; }
+uint32_t dashboard_scope_draw_ms() { return g_scope_draw_ms; }
 Tab dashboard_tab() { return g_tab; }
 
 bool dashboard_self_check() {
@@ -901,7 +986,7 @@ bool dashboard_self_check() {
             kStatusCard.y + kStatusCard.h <= kGainCard.y &&
             kTabsY + 90 <= 720 &&
             kStatusCard.y + kStatusCard.h <= kTabsY &&
-            kScopeWfY + kScopeWfH <= 598 && kScopeAxisY + kScopeAxisH <= kScopeWfY &&
+            kScopeWfY + kScopeWfH <= 556 && kScopeAgc.y + kScopeAgc.h <= kTabsY && kScopeAxisY + kScopeAxisH <= kScopeWfY &&
             kTabW * kTabCount <= 1280;
 
   g_snapshot = saved;

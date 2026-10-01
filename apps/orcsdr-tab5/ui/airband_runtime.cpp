@@ -234,6 +234,11 @@ void dispatch(const Action& action, const LiveState& live) {
       g_scanner.stop();
       (void)tune(kGuardFrequencyHz);
       break;
+    case ActionKind::span_down:
+    case ActionKind::span_up:
+      if (g_hooks.scope_span_step)
+        g_hooks.scope_span_step(action.kind == ActionKind::span_up ? 1 : -1);
+      break;
     case ActionKind::tune_to:
       if (action.value > 0) {
         g_scanner.stop();
@@ -367,6 +372,7 @@ void dispatch(const Action& action, const LiveState& live) {
 
 void configure(const Hooks& hooks) {
   g_hooks = hooks;
+  dashboard_set_scope_span_hook(hooks.scope_span_set);
   load_settings_once();
 }
 
@@ -490,7 +496,7 @@ size_t status_line(const LiveState& live, char* out, size_t capacity) {
       "RTL_AIRBAND_STATUS active=%d tab=%u frequency_hz=%lu scan=%s squelch_open=%d "
       "level_db=%.1f snr_db=%.1f floor_db=%.1f sql_db=%d spacing=%s source=%s radius_nm=%u filter_hz=%lu "
       "stops=%lu checked=%lu bank=%u activity=%u catalog=%u loaded=%d location=%d "
-      "gain_tenth_db=%d tuner_agc=%d rtl_agc=%d running=%d load=%s match=%s",
+      "gain_tenth_db=%d tuner_agc=%d rtl_agc=%d running=%d load=%s match=%s scope_fps=%lu scope_ms=%lu",
       dashboard_active() ? 1 : 0, static_cast<unsigned>(dashboard_tab()),
       static_cast<unsigned long>(live.frequency_hz), state_name(g_scanner.state()),
       g_squelch.open() ? 1 : 0, static_cast<double>(live.channel_db),
@@ -506,7 +512,9 @@ size_t status_line(const LiveState& live, char* out, size_t capacity) {
       live.location_configured ? 1 : 0, static_cast<int>(live.controls.gain_tenth_db),
       live.controls.tuner_agc ? 1 : 0, live.controls.rtl_agc ? 1 : 0,
       live.receiver_running ? 1 : 0, load_result_name(g_catalog.last_result()),
-      match != nullptr ? match->airport_ident : "none");
+      match != nullptr ? match->airport_ident : "none",
+      static_cast<unsigned long>(dashboard_scope_fps()),
+      static_cast<unsigned long>(dashboard_scope_draw_ms()));
   return written < 0 ? 0 : static_cast<size_t>(written);
 }
 
