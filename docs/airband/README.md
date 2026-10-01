@@ -46,11 +46,20 @@ this reason). Instead the runtime tracks the in-channel carrier level (the mean
 envelope of the channel-filtered IQ that the AM demodulator already computes)
 and a noise floor (fast to follow drops, slow to follow drift, never chasing a
 real carrier). The squelch opens when the carrier is the configured number of
-dB above that floor (default +8 dB, `0` = always open) and closes 2 dB lower.
+dB above that floor (default +4 dB, `0` = always open) and closes 2 dB lower.
 The floor is re-learned after every retune, gain change, and channel-width
 change. Displayed levels are therefore "SNR in dB", not dBFS.
 
 ### Gain
+
+**Gain is kept across reboots.** A boot turns the tuner AGC back on, and in AGC mode the driver chose a
+gain that raised the in-channel noise floor about 8 dB (about -29 dBFS against -37.5 dBFS at a fixed
+40.2 dB on the bench), burying weak transmissions. Airband therefore saves the gain mode and value you
+choose and re-applies it as soon as the receiver is running; with nothing saved it uses a fixed manual
+gain of about 40 dB. Pick **TUNER AGC ON** to opt back in; that choice is remembered too.
+
+**Audio filter.** The demodulated audio passes a voice band-pass (about 300 Hz to 3.2 kHz) because the AM
+detector's hiss is wideband while speech is not.
 
 The LISTEN tab exposes RF gain +/-, tuner AGC, and RTL AGC through the shared
 `receiver_controls` model, the same driver calls the Shortwave and AM
@@ -205,6 +214,15 @@ far-row rejection. `tests/test_data_catalog.py` covers the ORCAIR2 generator.
   catalog frequencies and never on others.
 - Leaving for Home, FM, AM and Shortwave and re-entering Airband releases and
   reacquires the receiver with no crash; heap and DMA minimums stayed flat.
+
+**Live voice, 2026-09-30 (M5Stack Tab5, RTL-SDR Blog V4 and V3c/V4L spot checks, passive GA-800 loop,
+Eugene OR, about 9 nm from KEUG):** transmissions on 119.600 MHz (Cascade Approach/Departure) were received
+and played from the device speaker, confirmed by ear against the LiveATC stream of the same frequency.
+Evidence: at 17:52:03 the in-channel level rose about 8 dB for about 5 s (SNR to 9.6 dB) exactly when the
+operator heard traffic on the stream; the NOAA weather channel at 162.400 MHz measured +14 dB over empty
+spectrum as a VHF reference; a speaker tone test confirmed the output path. Two things hid the signal until
+they were found: the tuner AGC (see Gain above) and an over-strict squelch. Real signals were only 6 to 9 dB
+over the noise, so antenna placement still matters.
 
 **Not validated / limitations:**
 
