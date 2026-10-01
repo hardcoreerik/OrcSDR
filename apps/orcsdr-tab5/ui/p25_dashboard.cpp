@@ -5,6 +5,7 @@
 #include "orc_badge.hpp"
 #include "text_editor.hpp"
 
+#include "scope_canvas.hpp"
 #include <M5Unified.h>
 #include <esp_attr.h>
 
@@ -608,21 +609,29 @@ void update(const Snapshot& snapshot) {
       controls_changed) draw_dynamic();
 }
 
+scope::FrameStats g_scope_stats;
+
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, float floor) {
   if (!spectrum_active() || levels == nullptr || visible_bins < 2) return;
-  M5.Display.startWrite();
-  M5.Display.fillRect(kSpectrumX + 1, kSpectrumY + 1, kSpectrumW - 2, kSpectrumH - 2, kBg);
-  for (int i = 1; i < 4; ++i) {
-    M5.Display.drawFastVLine(kSpectrumX + i * kSpectrumW / 4, kSpectrumY, kSpectrumH, kGrid);
-    M5.Display.drawFastHLine(kSpectrumX, kSpectrumY + i * kSpectrumH / 4, kSpectrumW, kGrid);
+  const uint32_t frame_started_ms = millis();
+  // Drawn off-screen and pushed in one go; see scope_canvas.hpp. Coordinates are relative to the plot.
+  constexpr int w = kSpectrumW - 2;
+  constexpr int h = kSpectrumH - 2;
+  static scope::Trace trace;
+  M5Canvas* canvas = trace.begin(w, h, kBg);
+  if (canvas != nullptr) {
+    for (int i = 1; i < 4; ++i) {
+      canvas->drawFastVLine(i * kSpectrumW / 4 - 1, 0, h, kGrid);
+      canvas->drawFastHLine(0, i * kSpectrumH / 4 - 1, w, kGrid);
+    }
   }
-  int px = kSpectrumX;
-  int py = kSpectrumY + kSpectrumH - 2;
+  int px = 0;
+  int py = h - 2;
   for (size_t i = 0; i < visible_bins; ++i) {
     const float normalized = std::clamp((levels[first_bin + i] - floor) / 48.0f, 0.0f, 1.0f);
-    const int x = kSpectrumX + static_cast<int>(i * (kSpectrumW - 1) / (visible_bins - 1));
-    const int y = kSpectrumY + kSpectrumH - 2 - static_cast<int>(normalized * (kSpectrumH - 4));
-    if (i) M5.Display.drawLine(px, py, x, y, kGreen);
+    const int x = static_cast<int>(i * (kSpectrumW - 1) / (visible_bins - 1)) - 1;
+    const int y = h - 2 - static_cast<int>(normalized * (kSpectrumH - 4));
+    if (canvas != nullptr && i && x >= 0 && x < w) canvas->drawLine(px, py, x, y, kGreen);
     px = x;
     py = y;
     const int x0 = static_cast<int>(i * kSpectrumW / visible_bins);
@@ -631,17 +640,21 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
     for (int p = x0; p < x1; ++p) g_waterfall_row[p] = color;
   }
   const int center = kSpectrumX + kSpectrumW / 2;
-  const int half_filter = std::max(3, static_cast<int>(12500ull * kSpectrumW /
-                                                       (2ull * std::max<uint32_t>(1, g_snapshot.span_hz))));
-  M5.Display.drawFastVLine(center, kSpectrumY, kSpectrumH, kCyan);
-  M5.Display.drawFastVLine(center - half_filter, kSpectrumY, kSpectrumH, kCyan);
-  M5.Display.drawFastVLine(center + half_filter, kSpectrumY, kSpectrumH, kCyan);
-  M5.Display.scroll(0, -1);
-  M5.Display.pushImage(kSpectrumX, kWaterfallY + kWaterfallH - 2, kSpectrumW, 1,
-                       g_waterfall_row);
+  if (canvas != nullptr) {
+    const int half_filter = std::max(3, static_cast<int>(12500ull * kSpectrumW /
+                                                         (2ull * std::max<uint32_t>(1, g_snapshot.span_hz))));
+    canvas->drawFastVLine(w / 2, 0, h, kCyan);
+    canvas->drawFastVLine(w / 2 - half_filter, 0, h, kCyan);
+    canvas->drawFastVLine(w / 2 + half_filter, 0, h, kCyan);
+    canvas->pushSprite(kSpectrumX + 1, kSpectrumY + 1);
+  }
+  scope::scroll_waterfall(kSpectrumX, kWaterfallY + kWaterfallH - 2, kSpectrumW, g_waterfall_row);
   M5.Display.drawFastVLine(center, kWaterfallY, kWaterfallH, kCyan);
-  M5.Display.endWrite();
+  g_scope_stats.frame_done(frame_started_ms);
 }
+
+uint32_t spectrum_fps() { return g_scope_stats.fps(); }
+uint32_t spectrum_draw_ms() { return g_scope_stats.draw_ms(); }
 
 Action handle_touch(int32_t x, int32_t y) {
   if (text_editor::active()) {

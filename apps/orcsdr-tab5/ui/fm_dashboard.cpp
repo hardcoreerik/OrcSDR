@@ -6,6 +6,7 @@
 #include "freq_keypad.hpp"
 #include "redraw_guard.hpp"
 #include "orc_badge.hpp"
+#include "scope_canvas.hpp"
 #include "spectrum_resample.hpp"
 
 #include <M5Unified.h>
@@ -772,7 +773,8 @@ void update(const Snapshot& snapshot) {
   draw_dynamic();
 }
 
-uint32_t g_scope_fps = 0, g_scope_frames = 0, g_scope_window_ms = 0, g_scope_draw_ms = 0;
+scope::FrameStats g_scope_stats;
+scope::Trace g_scope_trace;
 // Slow-falling peak-hold trace behind the live one: shows where signals have been, not just now. It is kept
 // in dB, not as a fraction of the screen: the display floor follows the loudest bin every frame, so a stored
 // fraction would drift to the wrong height whenever that bin changed. Reset when the tuned frequency or span
@@ -789,19 +791,9 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
   // frame made the trace and its lines flicker and cost time on every frame.
   constexpr int w = kSpectrumW - 2;
   constexpr int h = kSpectrumH - 2;
-  static M5Canvas* canvas = nullptr;
-  if (canvas == nullptr) {
-    canvas = new M5Canvas(&M5.Display);
-    canvas->setPsram(true);
-    canvas->setColorDepth(16);
-    if (!canvas->createSprite(w, h)) {
-      delete canvas;
-      canvas = nullptr;
-    }
-  }
+  M5Canvas* canvas = g_scope_trace.begin(w, h, kBg);
   const int trace_x0 = kSpectrumX + 1;
   if (canvas != nullptr) {
-    canvas->fillSprite(kBg);
     for (int i = 1; i < 4; ++i) {
       canvas->drawFastVLine(i * kSpectrumW / 4 - 1, 0, h, kGrid);
       canvas->drawFastHLine(0, i * kSpectrumH / 4 - 1, w, kGrid);
@@ -846,23 +838,12 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
     canvas->drawFastVLine(center + half_filter, 0, h, kCyan);
     canvas->pushSprite(trace_x0, kSpectrumY + 1);
   }
-  // Two waterfall rows per frame at the livelier frame rate keeps it flowing.
-  M5.Display.startWrite();
-  M5.Display.scroll(0, -2);
-  M5.Display.pushImage(kSpectrumX, kWaterfallY + kWaterfallH - 3, kSpectrumW, 1, g_waterfall_row);
-  M5.Display.pushImage(kSpectrumX, kWaterfallY + kWaterfallH - 2, kSpectrumW, 1, g_waterfall_row);
-  M5.Display.endWrite();
-  g_scope_draw_ms = millis() - frame_started_ms;
-  ++g_scope_frames;
-  if (frame_started_ms - g_scope_window_ms >= 1000u) {
-    g_scope_fps = g_scope_frames;
-    g_scope_frames = 0;
-    g_scope_window_ms = frame_started_ms;
-  }
+  scope::scroll_waterfall(kSpectrumX, kWaterfallY + kWaterfallH - 2, kSpectrumW, g_waterfall_row);
+  g_scope_stats.frame_done(frame_started_ms);
 }
 
-uint32_t spectrum_fps() { return g_scope_fps; }
-uint32_t spectrum_draw_ms() { return g_scope_draw_ms; }
+uint32_t spectrum_fps() { return g_scope_stats.fps(); }
+uint32_t spectrum_draw_ms() { return g_scope_stats.draw_ms(); }
 
 Action gain_mode_toggle();
 

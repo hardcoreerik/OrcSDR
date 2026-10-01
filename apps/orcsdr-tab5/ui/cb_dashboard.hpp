@@ -91,6 +91,8 @@ void draw_spectrum(const float* bins, size_t bin_count, uint32_t sample_rate_sps
 Action handle_touch(int32_t x, int32_t y);
 bool active();
 bool spectrum_active();
+uint32_t spectrum_fps();       // scope frames drawn in the last second
+uint32_t spectrum_draw_ms();   // time the last scope frame took
 Tab tab();
 bool dashboard_self_check();
 

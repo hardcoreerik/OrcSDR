@@ -5,6 +5,7 @@
 #include "dashboard_audio_control.hpp"
 #include "freq_keypad.hpp"
 #include "shortwave_model.hpp"
+#include "scope_canvas.hpp"
 #include "spectrum_resample.hpp"
 #include "text_editor.hpp"
 
@@ -674,23 +675,8 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   // flickered and cost time. The sprite follows the width, which changes when the tuner drawer opens.
   const int cw = width - 2;
   const int ch = kSpectrumPlotH - 1;
-  static M5Canvas* canvas = nullptr;
-  static int canvas_w = 0;
-  if (canvas != nullptr && canvas_w != cw) {
-    delete canvas;
-    canvas = nullptr;
-  }
-  if (canvas == nullptr) {
-    canvas = new M5Canvas(&M5.Display);
-    canvas->setPsram(true);
-    canvas->setColorDepth(16);
-    if (!canvas->createSprite(cw, ch)) {
-      delete canvas;
-      canvas = nullptr;
-    }
-    canvas_w = cw;
-  }
-  if (canvas != nullptr) canvas->fillSprite(TFT_BLACK);
+  static scope::Trace trace;
+  M5Canvas* canvas = trace.begin(cw, ch, TFT_BLACK);
   int last_x = 0;
   int last_y = ch - 2;
   for (size_t i = 0; i < static_cast<size_t>(width); ++i) {
@@ -713,12 +699,7 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
     canvas->drawFastVLine(center + half_filter, 0, ch, kYellow);
     canvas->pushSprite(kSpectrumX + 1, kSpectrumY + 1);
   }
-  // Two waterfall rows per frame at the livelier frame rate keeps it flowing.
-  M5.Display.startWrite();
-  M5.Display.scroll(0, -2);
-  M5.Display.pushImage(kSpectrumX, kWaterfallY + kWaterfallH - 3, width, 1, g_waterfall_row);
-  M5.Display.pushImage(kSpectrumX, kWaterfallY + kWaterfallH - 2, width, 1, g_waterfall_row);
-  M5.Display.endWrite();
+  scope::scroll_waterfall(kSpectrumX, kWaterfallY + kWaterfallH - 2, width, g_waterfall_row);
 }
 
 Action handle_touch(int32_t x, int32_t y) {
