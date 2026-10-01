@@ -207,8 +207,9 @@ void draw_tabs() {
   }
 }
 
-void draw_segment_meter(int x, int y, int w, float dbfs, int segments = 18, int h = 32) {
-  const float normalized = std::clamp((dbfs + 40.0f) / 40.0f, 0.0f, 1.0f);
+void draw_segment_meter(int x, int y, int w, float dbfs, int segments = 18, int h = 32,
+                        float floor_db = -40.0f, float top_db = 0.0f) {
+  const float normalized = std::clamp((dbfs - floor_db) / (top_db - floor_db), 0.0f, 1.0f);
   const int lit = static_cast<int>(normalized * segments);
   const int gap = 3;
   const int sw = (w - (segments - 1) * gap) / segments;
@@ -471,17 +472,30 @@ void iq_badge(int x, int y, int w, int h, float dbfs, bool clipping) {
 // Status badges and separate left and right audio meters, each on its own row, large enough to read at a
 // glance and kept entirely above the spectrum plot (which starts at y 246). STEREO and RDS light when
 // locked; the IQ pill shows the IQ level and turns red when the IQ is overloading.
-// Instant attack, smooth release (3 dB per 150 ms refresh, 20 dB a second like the listen page's VU), so
-// a peak between two refreshes is not simply dropped.
-float meter_release(float shown_db, float level_db) {
-  return std::max(level_db, shown_db - 3.0f);
+// The meters follow the sampled level up at once and fall back at 20 dB a second (like the listen page's VU),
+// timed from the clock rather than counted per paint because paints are only a minimum of 150 ms apart.
+// The audio levels are pre-AGC programme levels (typically +11 to +15, peaks to +29), so they use the VU
+// range, not the -40..0 dBFS range of the IQ level. This sees one sampled value per paint, so a peak that
+// falls between two samples can still be missed.
+constexpr float kMeterReleaseDbPerS = 20.0f;
+
+float meter_release(float shown_db, float level_db, float elapsed_s) {
+  return std::max(level_db, shown_db - kMeterReleaseDbPerS * elapsed_s);
 }
 
 void draw_signal_panel() {
   static float shown_iq_db = -90.0f, shown_left_db = -90.0f, shown_right_db = -90.0f;
-  shown_iq_db = meter_release(shown_iq_db, g_snapshot.relative_dbfs);
-  shown_left_db = meter_release(shown_left_db, g_snapshot.left_dbfs);
-  shown_right_db = meter_release(shown_right_db, g_snapshot.right_dbfs);
+  static uint32_t last_paint_ms = 0, shown_frequency_hz = 0;
+  const uint32_t now = millis();
+  if (shown_frequency_hz != g_snapshot.frequency_hz) {   // a new station must not inherit the old bars
+    shown_frequency_hz = g_snapshot.frequency_hz;
+    shown_iq_db = shown_left_db = shown_right_db = -90.0f;
+  }
+  const float elapsed_s = last_paint_ms == 0 ? 0.0f : std::min(0.5f, (now - last_paint_ms) / 1000.0f);
+  last_paint_ms = now;
+  shown_iq_db = meter_release(shown_iq_db, g_snapshot.relative_dbfs, elapsed_s);
+  shown_left_db = meter_release(shown_left_db, g_snapshot.left_dbfs, elapsed_s);
+  shown_right_db = meter_release(shown_right_db, g_snapshot.right_dbfs, elapsed_s);
   constexpr int kPanelX = 908, kPanelY = 146, kPanelW = 332, kPanelH = 96;
   M5.Display.fillRect(kPanelX, kPanelY, kPanelW, kPanelH, kPanel);
   const bool clipping = g_snapshot.clipping_percent > 0.1f;
@@ -490,9 +504,9 @@ void draw_signal_panel() {
                g_snapshot.rds_locked, kCyan);
   iq_badge(1136, 148, 100, 30, shown_iq_db, clipping);
   text("L", 920, 196, TFT_WHITE, 2, middle_left);
-  draw_segment_meter(944, 184, 292, shown_left_db, 22, 24);
+  draw_segment_meter(944, 184, 292, shown_left_db, 22, 24, kVuFloorDb, kVuTopDb);
   text("R", 920, 226, TFT_WHITE, 2, middle_left);
-  draw_segment_meter(944, 214, 292, shown_right_db, 22, 24);
+  draw_segment_meter(944, 214, 292, shown_right_db, 22, 24, kVuFloorDb, kVuTopDb);
 }
 
 void draw_spectrum_dynamic() {
@@ -763,7 +777,7 @@ uint32_t g_scope_fps = 0, g_scope_frames = 0, g_scope_window_ms = 0, g_scope_dra
 constexpr float kPeakHoldFallDbPerFrame = 0.25f;   // about 5 dB a second at 20 frames a second
 constexpr float kPeakHoldEmptyDb = -200.0f;
 EXT_RAM_BSS_ATTR float g_peak_hold_db[kSpectrumW]{};
-uint32_t g_peak_frequency_hz = 0, g_peak_span_hz = 0;
+uint32_t g_peak_frequency_hz = 0, g_peak_span_hz = 0, g_last_spectrum_frame_ms = 0;
 
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, float floor) {
   if (!spectrum_active() || levels == nullptr || visible_bins < 2) return;
@@ -790,7 +804,10 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
       canvas->drawFastHLine(0, i * kSpectrumH / 4 - 1, w, kGrid);
     }
   }
-  if (g_peak_frequency_hz != g_snapshot.frequency_hz || g_peak_span_hz != g_snapshot.span_hz) {
+  // The held peaks only fall while this view is drawing, so after time away they are stale: start over.
+  const bool resumed = g_last_spectrum_frame_ms != 0 && frame_started_ms - g_last_spectrum_frame_ms > 1000u;
+  g_last_spectrum_frame_ms = frame_started_ms;
+  if (resumed || g_peak_frequency_hz != g_snapshot.frequency_hz || g_peak_span_hz != g_snapshot.span_hz) {
     g_peak_frequency_hz = g_snapshot.frequency_hz;
     g_peak_span_hz = g_snapshot.span_hz;
     for (size_t i = 0; i < kSpectrumW; ++i) g_peak_hold_db[i] = kPeakHoldEmptyDb;
