@@ -159,7 +159,7 @@ packet age/order, and establishing the clock does not backfill old packet times.
 
 | Command | Auth | Reply | Notes |
 |---|---|---|---|
-| `RTL_TUNE <BAND> <HZ>` | yes | `RTL_TUNE_OK band=... frequency_hz=...` | `BAND` = `FM\|AM\|WX\|CB\|P25|LORA|GENERAL` (`GENERAL` is the Home screen's tune-anywhere band, 24 kHz to 1.766 GHz; `BROWSE`, its old name, is still accepted)\|LORA\|BROWSE`. Full retune (stops/restarts the capture path as needed). |
+| `RTL_TUNE <BAND> <HZ>` | yes | `RTL_TUNE_OK band=... frequency_hz=...` | `BAND` = `FM\|AM\|WX\|CB\|P25\|LORA\|GENERAL`. `GENERAL` is the Home screen's tune-anywhere band (24 kHz to 1.766 GHz); `BROWSE`, its old name, is still accepted. Full retune (stops/restarts the capture path as needed). |
 | `RTL_FREQ` | no | `RTL_FREQ_STATUS band=... frequency_hz=... mode=...` | Query only. |
 | `RTL_FREQ <HZ>` | yes | `RTL_FREQ_OK band=... frequency_hz=...` | Hot retune *within* the current band — cheaper than `RTL_TUNE`, use for stepping/scanning. |
 | `RTL_CAPTURE` / `RTL_LISTEN <BAND>` | yes | `RTL_CAPTURE_QUEUED ...` or `RTL_CAPTURE_BUSY_OR_UNAVAILABLE` | Older, band-limited entry point (`FM`/`KZEL`/`NOAA`/`WX`/`AM`/`LORA` only, no `CB`/`GENERAL`, no arbitrary frequency). `RTL_LISTEN` is continuous, bare `RTL_CAPTURE` is one-shot. Prefer `RTL_TUNE` for new work — this exists for compatibility with older tooling. |
