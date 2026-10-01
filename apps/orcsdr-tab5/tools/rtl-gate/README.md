@@ -16,6 +16,12 @@ gain sweep, per-band sensitivity table (`band_snr.py`), optional interactive unp
 it before and after and pass the first `results.json` as `-CompareTo`. The device resets during smoke and
 soak. The script drives the board only through `run-tab5-ui-regression.ps1`.
 
+**PC reference receiver for ADS-B (`-PcReferenceGain <dB>`).** A dongle in the PC records raw IQ with `rtl_sdr.exe` at
+exactly **2.048 MS/s** (the Tab5 decoder's bit timing is built for that rate and fails the CRC at any other, e.g. 2.0 MS/s)
+and `pc_adsb_capture.py` decodes it with OrcSDR's own decoder (`adsb_decode_cu8.cpp`, built under WSL into `~/.orcsdr`),
+so the PC and the Tab5 differ only in dongle, antenna and site. `--rtl-adsb` falls back to the stock `rtl_adsb`, which allows
+five bit errors per frame and hears less. Self-tests: `python test_pc_adsb_capture.py`, `python test_band_snr.py`.
+
 ## Tab5 gate (run on the Tab5 over COM17)
 
     pwsh apps/orcsdr-tab5/tools/run-tab5-ui-regression.ps1 -Port COM17 -DongleGate V3c -GateIq `
