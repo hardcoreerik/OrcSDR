@@ -428,6 +428,9 @@ LoRa Overview uses the unsmoothed value for faster visual response.
   `SETTINGS`, `HOME`. `GAIN_AUTO` selects the lowest tuner-gain step that
   reaches the target level; `RTL_FM_GAIN STATUS` reports its progress and
   selected gain.
+  `RTL_FM_SCOPE` (no authentication) prints `RTL_FM_SCOPE_STATUS active=<0|1> fps=<n>
+  draw_ms=<n>`, the frame rate and last draw time of the FM spectrum view (`active=0` when it is not showing).
+  The view draws off-screen at a 50 ms update interval and is not slowed by a browser on the web console.
 - `AIRBAND` (dashboard must be open): `TUNE <hz>`, `UP`, `DOWN`, `GUARD`,
   `SCAN`, `HOLD`, `SKIP`, `SOURCE`, `SPACING`, `RADIUS`, `SQUELCH <0-30>` (dB
   above the noise floor, `0` = always open), `SQUELCH_UP`, `SQUELCH_DOWN`,

@@ -6923,7 +6923,8 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   // LoRa and the Airband scope want a livelier trace than the 100 ms default.
   const uint32_t spectrum_interval =
       rtl_ui_band == RtlBand::lora ||
-              (rtl_ui_band == RtlBand::airband && orcsdr::airband::spectrum_active())
+              (rtl_ui_band == RtlBand::airband && orcsdr::airband::spectrum_active()) ||
+              (rtl_ui_band == RtlBand::fm && orcsdr::fm::spectrum_active())
           ? kRtlLoraSpectrumIntervalMs
           : kRtlSpectrumIntervalMs;
   if (rtl_spectrum_last_ms != 0 &&
@@ -9181,13 +9182,15 @@ static void rtl_driver_app_task(void *) {
                 rtl_audio.dropped_chunks * 2u > rtl_audio.queued_chunks + 2u;
             const uint32_t normal_visual_interval =
                 g_stream_band == RtlBand::lora ||
-                        (g_stream_band == RtlBand::airband && orcsdr::airband::spectrum_active())
+                        (g_stream_band == RtlBand::airband && orcsdr::airband::spectrum_active()) ||
+                        (g_stream_band == RtlBand::fm && orcsdr::fm::spectrum_active())
                     ? kRtlLoraSpectrumIntervalMs
                     : kRtlSpectrumIntervalMs;
             // A browser watching the web console limits the trace to 250 ms, but not when the Airband
             // scope is on the device's own screen: that one should stay lively.
             const bool local_scope_wins =
-                g_stream_band == RtlBand::airband && orcsdr::airband::spectrum_active();
+                (g_stream_band == RtlBand::airband && orcsdr::airband::spectrum_active()) ||
+                (g_stream_band == RtlBand::fm && orcsdr::fm::spectrum_active());
             const uint32_t visual_interval = (web_scope && !local_scope_wins) ? 250u : audio_stressed
                                                  ? kRtlSpectrumStressedIntervalMs
                                                  : normal_visual_interval;
@@ -15989,6 +15992,13 @@ void process_command(char* command) {
   }
   if (strncmp(command, "RTL_CB", 6) == 0 && (command[6] == '\0' || command[6] == ' ')) {
     process_cb_command(command);
+    return;
+  }
+  if (strcmp(command, "RTL_FM_SCOPE") == 0) {   // frame rate of the FM spectrum view (0 when not showing)
+    Serial.printf("RTL_FM_SCOPE_STATUS active=%d fps=%lu draw_ms=%lu\n",
+                  orcsdr::fm::spectrum_active() ? 1 : 0,
+                  static_cast<unsigned long>(orcsdr::fm::spectrum_fps()),
+                  static_cast<unsigned long>(orcsdr::fm::spectrum_draw_ms()));
     return;
   }
   if (strcmp(command, "RTL_AIRBAND STATUS") == 0) {
