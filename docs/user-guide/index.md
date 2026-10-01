@@ -1,5 +1,7 @@
 # OrcSDR User Guide
 
+**Current installation and operating guide:** [OrcSDR GitHub Wiki](https://github.com/hardcoreerik/OrcSDR/wiki). This Pages guide is retained for technical reference and may describe older releases. Use the wiki and the [published release](https://github.com/hardcoreerik/OrcSDR/releases/latest) for current device steps.
+
 OrcSDR turns an M5Stack Tab5 and RTL-SDR Blog V4 into a portable, touch-first radio workspace. This public guide starts with the physical setup, then explains each dashboard, common workflow, limitation, and diagnostic.
 
 The labels used throughout the guide are deliberate:
