@@ -6856,6 +6856,8 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   const bool web_scope = orcsdr::web_console::spectrum_demanded();
   if (!web_scope && !orcsdr::home::active() && rtl_ui_band == RtlBand::lora &&
       !orcsdr::lora::spectrum_active()) return;
+  if (!web_scope && !orcsdr::home::active() && rtl_ui_band == RtlBand::airband &&
+      !orcsdr::airband::spectrum_active()) return;
   if (!web_scope && !orcsdr::home::active() && rtl_ui_band == RtlBand::fm &&
       !orcsdr::fm::spectrum_active()) return;
   if (!web_scope && !orcsdr::home::active() && rtl_ui_band == RtlBand::shortwave &&
@@ -7087,6 +7089,16 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   }
   if (rtl_ui_band == RtlBand::am && orcsdr::screens::owns(orcsdr::screens::Id::am)) {
     orcsdr::am::draw_spectrum(rtl_spectrum_levels, first_bin, visible_bins, floor);
+    rtl_spectrum_trace_last_ms = now;
+    rtl_spectrum_trace_valid = true;
+    return;
+  }
+  if (rtl_ui_band == RtlBand::airband && orcsdr::screens::owns(orcsdr::screens::Id::airband)) {
+    // The scope labels its axis from the span the visible bins actually cover.
+    const uint32_t span_hz = static_cast<uint32_t>(
+        (static_cast<uint64_t>(visible_bins) *
+         rtl_active_sample_rate_sps.load(std::memory_order_relaxed)) / kRtlSpectrumBins);
+    orcsdr::airband::draw_spectrum(rtl_spectrum_levels, first_bin, visible_bins, span_hz);
     rtl_spectrum_trace_last_ms = now;
     rtl_spectrum_trace_valid = true;
     return;
@@ -13192,12 +13204,16 @@ void load_state() {
 
 // Waterfall palette/speed: one NVS byte per screen, written whenever the user changes it.
 const char* waterfall_style_key(orcsdr::waterfall_style::Screen screen) {
-  return screen == orcsdr::waterfall_style::Screen::lora ? "wf_lora" : "wf_home";
+  switch (screen) {
+    case orcsdr::waterfall_style::Screen::lora: return "wf_lora";
+    case orcsdr::waterfall_style::Screen::airband: return "wf_air";
+    default: return "wf_home";
+  }
 }
 
 void load_waterfall_styles() {
   using orcsdr::waterfall_style::Screen;
-  for (const Screen screen : {Screen::home, Screen::lora})
+  for (const Screen screen : {Screen::home, Screen::lora, Screen::airband})
     orcsdr::waterfall_style::unpack(screen, preferences.getUChar(waterfall_style_key(screen), 0xFF));
   orcsdr::waterfall_style::set_persist_hook([](Screen screen, uint8_t packed) {
     preferences.putUChar(waterfall_style_key(screen), packed);

@@ -10,7 +10,7 @@
 
 namespace orcsdr::airband {
 
-enum class Tab : uint8_t { listen, scan, airports, activity, setup };
+enum class Tab : uint8_t { listen, scan, airports, activity, setup, scope };
 
 struct Snapshot {
   uint32_t now_ms = 0;
@@ -74,6 +74,7 @@ enum class ActionKind : uint8_t {
   open_settings,
   open_location_settings,
   exit_home,
+  tune_to,   // value = frequency in Hz (tap on the scope)
 };
 
 struct Action {
@@ -94,6 +95,10 @@ void dashboard_update(const Snapshot& snapshot);
 Action dashboard_handle_touch(int32_t x, int32_t y);
 void dashboard_select_tab(Tab tab);
 bool dashboard_active();
+// The SCOPE tab draws a live spectrum and waterfall from the shared spectrum pipeline.
+bool dashboard_spectrum_active();
+void dashboard_draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
+                             uint32_t span_hz);
 Tab dashboard_tab();
 bool dashboard_self_check();
 

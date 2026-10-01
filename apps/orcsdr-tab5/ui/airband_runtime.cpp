@@ -234,6 +234,12 @@ void dispatch(const Action& action, const LiveState& live) {
       g_scanner.stop();
       (void)tune(kGuardFrequencyHz);
       break;
+    case ActionKind::tune_to:
+      if (action.value > 0) {
+        g_scanner.stop();
+        (void)tune(snap_frequency(static_cast<uint32_t>(action.value), s.spacing));
+      }
+      break;
     case ActionKind::scan_toggle:
       if (g_scanner.running()) {
         g_scanner.stop();
@@ -461,7 +467,7 @@ bool serial_action(const char* verb, bool has_value, uint32_t value, const LiveS
     return true;
   }
   if (std::strcmp(verb, "TAB") == 0) {
-    if (!has_value || value > 4) return false;
+    if (!has_value || value > 5) return false;
     dashboard_select_tab(static_cast<Tab>(value));
     return true;
   }
@@ -505,6 +511,10 @@ size_t status_line(const LiveState& live, char* out, size_t capacity) {
 }
 
 bool active() { return dashboard_active(); }
+bool spectrum_active() { return dashboard_spectrum_active(); }
+void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, uint32_t span_hz) {
+  dashboard_draw_spectrum(levels, first_bin, visible_bins, span_hz);
+}
 Tab tab() { return dashboard_tab(); }
 
 bool audio_open() { return g_audio_open.load(std::memory_order_acquire); }

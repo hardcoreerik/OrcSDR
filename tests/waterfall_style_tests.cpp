@@ -29,6 +29,9 @@ void test_defaults_keep_each_screens_look() {
   CHECK(palette(Screen::lora) == 6 && speed(Screen::lora) == 0);
   CHECK(rows_per_frame(Screen::home) == 2);   // Home's existing 2 rows per frame
   CHECK(rows_per_frame(Screen::lora) == 1);   // LoRa's existing 1 row per frame
+  unpack(Screen::airband, 0xFF);
+  CHECK(palette(Screen::airband) == 0 && speed(Screen::airband) == 0);
+  CHECK(rows_per_frame(Screen::airband) == 2);   // Airband scope matches Home's pace
 }
 
 void test_speed_adds_rows() {

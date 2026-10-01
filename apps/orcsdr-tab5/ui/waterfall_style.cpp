@@ -15,11 +15,11 @@ struct State {
   uint8_t speed;
 };
 
-State g_state[kScreens] = {{kClassic, 0}, {kTurbo, 0}};
+State g_state[kScreens] = {{kClassic, 0}, {kTurbo, 0}, {kClassic, 0}};
 PersistHook g_hook = nullptr;
 
 // Rows per frame at speed 0 (Normal): Home's frames come at 10/s, LoRa's at up to 20/s.
-constexpr int kBaseRows[kScreens] = {2, 1};
+constexpr int kBaseRows[kScreens] = {2, 1, 2};
 
 constexpr const char* kPaletteNames[kPaletteCount] = {"CLASSIC", "FM",   "FIRE", "ICE",
                                                       "PLASMA",  "GRAY", "TURBO"};
