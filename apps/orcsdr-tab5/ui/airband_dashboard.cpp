@@ -845,6 +845,9 @@ void dashboard_update(const Snapshot& snapshot) {
                                 snapshot.channels_checked != old.channels_checked;
   const uint32_t now = snapshot.now_ms;
   const uint32_t old_stops = old.stops;
+  // Compared here, before g_snapshot (which `old` refers to) is overwritten with the new snapshot.
+  const bool filter_changed = snapshot.filter_hz != old.filter_hz;
+  const bool squelch_state_changed = snapshot.squelch_open != old.squelch_open;
   g_snapshot = snapshot;
 
   M5.Display.startWrite();
@@ -896,7 +899,7 @@ void dashboard_update(const Snapshot& snapshot) {
         g_last_meter_ms = now;
       }
       if (gain_changed || frequency_changed || settings_changed || state_changed ||
-          snapshot.filter_hz != old.filter_hz || snapshot.squelch_open != old.squelch_open)
+          filter_changed || squelch_state_changed)
         draw_scope_controls();
       break;
   }
