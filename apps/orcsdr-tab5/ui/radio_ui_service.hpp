@@ -41,7 +41,7 @@ enum class ControlAction : uint8_t {
   wx,
   cb,
   lora,
-  browse,
+  general,
   toggle_audio_record,
   toggle_iq_record,
   toggle_capture,

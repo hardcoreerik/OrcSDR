@@ -76,3 +76,9 @@ g++ "${common[@]}" -O2 "${airband_audio_sources[@]}" -o "$build_dir/airband_audi
 "$build_dir/airband_audio_filter_tests"
 g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer   "${airband_audio_sources[@]}" -o "$build_dir/airband_audio_filter_tests_sanitized"
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1   "$build_dir/airband_audio_filter_tests_sanitized"
+
+band_plan_sources=(tests/band_plan_tests.cpp apps/orcsdr-tab5/ui/band_plan.cpp)
+g++ "${common[@]}" -O2 "${band_plan_sources[@]}" -o "$build_dir/band_plan_tests"
+"$build_dir/band_plan_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer   "${band_plan_sources[@]}" -o "$build_dir/band_plan_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1   "$build_dir/band_plan_tests_sanitized"

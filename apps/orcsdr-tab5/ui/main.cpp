@@ -611,11 +611,11 @@ constexpr uint32_t kRtlAmMaxHz = orcsdr::receiver_bands::kAmBroadcast.max_hz;
 constexpr uint32_t kRtlAmStepHz = orcsdr::receiver_bands::kAmBroadcast.default_step_hz;
 constexpr uint32_t kRtlAmDefaultHz = orcsdr::receiver_bands::kAmBroadcast.default_hz;
 constexpr uint32_t kRtlWxHz = 162400000;
-constexpr uint32_t kRtlBrowseMinHz = ESP_RTL_SDR_FREQ_MIN_HZ;
-constexpr uint32_t kRtlBrowseMaxHz = ESP_RTL_SDR_FREQ_MAX_HZ;
-constexpr uint32_t kRtlBrowseDefaultHz = 146520000;
-constexpr uint32_t kLoraMinHz = kRtlBrowseMinHz;
-constexpr uint32_t kLoraMaxHz = kRtlBrowseMaxHz;
+constexpr uint32_t kRtlGeneralMinHz = ESP_RTL_SDR_FREQ_MIN_HZ;
+constexpr uint32_t kRtlGeneralMaxHz = ESP_RTL_SDR_FREQ_MAX_HZ;
+constexpr uint32_t kRtlGeneralDefaultHz = 146520000;
+constexpr uint32_t kLoraMinHz = kRtlGeneralMinHz;
+constexpr uint32_t kLoraMaxHz = kRtlGeneralMaxHz;
 constexpr uint32_t kLoraDefaultHz = 906875000;  // Meshtastic US LongFast default slot
 constexpr uint32_t kAdsbDefaultHz = 1090000000;
 // Frequency, baud, and polarity are a user-edited profile, not a hardcoded
@@ -681,32 +681,32 @@ struct RfBandGuide {
 /* US receive guide. Allocations overlap; this is identification help, not authority to transmit. */
 constexpr RfBandGuide kRfBandGuide[] = {
     {26965000, 27405000, kCbDefaultHz, RtlBand::cb, "CB RADIO", "HF / 40-channel citizens band", true},
-    {28000000, 29700000, 28400000, RtlBand::browse, "HAM RADIO", "HF / 10 m amateur", true},
-    {50000000, 54000000, 52525000, RtlBand::browse, "HAM RADIO", "VHF / 6 m amateur", true},
+    {28000000, 29700000, 28400000, RtlBand::general, "HAM RADIO", "HF / 10 m amateur", true},
+    {50000000, 54000000, 52525000, RtlBand::general, "HAM RADIO", "VHF / 6 m amateur", true},
     {kRtlFmMinHz, kRtlFmMaxHz, kRtlFmDefaultHz, RtlBand::fm, "FM BROADCAST", "VHF / music and talk", true},
-    {108000000, 118000000, 113000000, RtlBand::browse, "AIR NAV", "VHF / aircraft navigation", false},
-    {118000000, 137000000, 121500000, RtlBand::browse, "AIRBAND", "VHF / aircraft voice/emergency", true},
-    {137000000, 138000000, 137500000, RtlBand::browse, "NOAA SATELLITE", "VHF / weather downlinks", true},
-    {144000000, 148000000, 146520000, RtlBand::browse, "HAM RADIO", "VHF / 2 m amateur", true},
-    {156000000, 162025000, 156800000, RtlBand::browse, "MARINE RADIO", "VHF / marine voice/safety", false},
+    {108000000, 118000000, 113000000, RtlBand::general, "AIR NAV", "VHF / aircraft navigation", false},
+    {118000000, 137000000, 121500000, RtlBand::general, "AIRBAND", "VHF / aircraft voice/emergency", true},
+    {137000000, 138000000, 137500000, RtlBand::general, "NOAA SATELLITE", "VHF / weather downlinks", true},
+    {144000000, 148000000, 146520000, RtlBand::general, "HAM RADIO", "VHF / 2 m amateur", true},
+    {156000000, 162025000, 156800000, RtlBand::general, "MARINE RADIO", "VHF / marine voice/safety", false},
     {162400000, 162550000, kRtlWxHz, RtlBand::wx, "NOAA WEATHER", "VHF / forecasts and alerts", true},
-    {222000000, 225000000, 223500000, RtlBand::browse, "HAM RADIO", "VHF / 1.25 m amateur", false},
-    {406000000, 406100000, 406050000, RtlBand::browse, "DISTRESS SAT", "UHF / emergency beacons", false},
-    {420000000, 450000000, 446000000, RtlBand::browse, "HAM RADIO", "UHF / 70 cm amateur", true},
+    {222000000, 225000000, 223500000, RtlBand::general, "HAM RADIO", "VHF / 1.25 m amateur", false},
+    {406000000, 406100000, 406050000, RtlBand::general, "DISTRESS SAT", "UHF / emergency beacons", false},
+    {420000000, 450000000, 446000000, RtlBand::general, "HAM RADIO", "UHF / 70 cm amateur", true},
     {136000000, 941000000, kP25DefaultHz, RtlBand::p25, "P25 PHASE I", "VHF, UHF, 700, 800 and 900 MHz", true},
-    {462550000, 467725000, 462562500, RtlBand::browse, "FRS / GMRS", "UHF / personal two-way", false},
+    {462550000, 467725000, 462562500, RtlBand::general, "FRS / GMRS", "UHF / personal two-way", false},
     {kLoraMinHz, kLoraMaxHz, kLoraDefaultHz, RtlBand::lora, "LORA / ISM", "UHF / LoRa CSS and mesh data", true},
-    {977900000, 978100000, 978000000, RtlBand::browse, "ADS-B UAT", "UHF / aircraft position", false},
+    {977900000, 978100000, 978000000, RtlBand::general, "ADS-B UAT", "UHF / aircraft position", false},
     {1089900000, 1090100000, kAdsbDefaultHz, RtlBand::adsb, "ADS-B / MODE S", "L-band / aircraft tracking", true},
     {152000000, 152030000, kPocsagFallbackHz, RtlBand::pocsag, "POCSAG PAGER", "VHF / receive-only pager monitor", true},
-    {1525000000, 1559000000, 1545000000, RtlBand::browse, "SATCOM", "L-band / satellite downlinks", false},
-    {1575000000, 1576000000, 1575420000, RtlBand::browse, "GNSS / GPS", "L-band / navigation", false},
-    {1610600000, 1626500000, 1620000000, RtlBand::browse, "SATCOM", "L-band / mobile satellite", false},
+    {1525000000, 1559000000, 1545000000, RtlBand::general, "SATCOM", "L-band / satellite downlinks", false},
+    {1575000000, 1576000000, 1575420000, RtlBand::general, "GNSS / GPS", "L-band / navigation", false},
+    {1610600000, 1626500000, 1620000000, RtlBand::general, "SATCOM", "L-band / mobile satellite", false},
 };
 static_assert(std::size(kRfBandGuide) == 22);
 constexpr bool rf_band_guide_valid() {
   for (const auto& entry : kRfBandGuide) {
-    if (entry.low_hz < kRtlBrowseMinHz || entry.high_hz > kRtlBrowseMaxHz ||
+    if (entry.low_hz < kRtlGeneralMinHz || entry.high_hz > kRtlGeneralMaxHz ||
         entry.low_hz > entry.preset_hz || entry.preset_hz > entry.high_hz) return false;
   }
   return true;
@@ -2817,7 +2817,7 @@ const char* rtl_band_name(RtlBand band) {
     case RtlBand::wx: return "WX";
     case RtlBand::cb: return "CB";
     case RtlBand::lora: return "LORA";
-    case RtlBand::browse: return "BROWSE";
+    case RtlBand::general: return "GENERAL";
     case RtlBand::adsb: return "ADSB";
     case RtlBand::p25: return "P25";
     case RtlBand::pocsag: return "POCSAG";
@@ -2835,7 +2835,11 @@ bool rtl_band_from_name(const char* name, RtlBand* out_band) {
   if (strcmp(name, "WX") == 0) { *out_band = RtlBand::wx; return true; }
   if (strcmp(name, "CB") == 0) { *out_band = RtlBand::cb; return true; }
   if (strcmp(name, "LORA") == 0) { *out_band = RtlBand::lora; return true; }
-  if (strcmp(name, "BROWSE") == 0) { *out_band = RtlBand::browse; return true; }
+  // BROWSE was this band's old name; keep accepting it so saved settings and scripts still work.
+  if (strcmp(name, "GENERAL") == 0 || strcmp(name, "BROWSE") == 0) {
+    *out_band = RtlBand::general;
+    return true;
+  }
   if (strcmp(name, "ADSB") == 0) { *out_band = RtlBand::adsb; return true; }
   if (strcmp(name, "P25") == 0) { *out_band = RtlBand::p25; return true; }
   if (strcmp(name, "POCSAG") == 0) { *out_band = RtlBand::pocsag; return true; }
@@ -2853,7 +2857,7 @@ const char* rtl_mode_name(RtlBand band) {
              : cb_mode.load(std::memory_order_relaxed) == CbMode::lsb ? "LSB"
                                                                       : "AM";
     case RtlBand::lora: return "CSS";
-    case RtlBand::browse: return "NFM";
+    case RtlBand::general: return "NFM";
     case RtlBand::adsb: return "1090";
     case RtlBand::p25: return "P25 C4FM";
     case RtlBand::pocsag:
@@ -2872,7 +2876,7 @@ uint32_t rtl_band_default_frequency(RtlBand band) {
     case RtlBand::wx: return kRtlWxHz;
     case RtlBand::cb: return cb_saved_hz;
     case RtlBand::lora: return kLoraDefaultHz;
-    case RtlBand::browse: return kRtlBrowseDefaultHz;
+    case RtlBand::general: return kRtlGeneralDefaultHz;
     case RtlBand::adsb: return kAdsbDefaultHz;
     case RtlBand::p25: return p25_control_frequency_hz;
     case RtlBand::pocsag: return pocsag_config_frequency_hz;
@@ -2889,7 +2893,7 @@ uint32_t rtl_filter_default_hz(RtlBand band) {
                                                                   : kCbSsbFilterHz;
   if (band == RtlBand::am) return kRtlAmFilterDefaultHz;
   if (band == RtlBand::p25) return kP25StepHz;
-  if (band == RtlBand::wx || band == RtlBand::browse || band == RtlBand::adsb ||
+  if (band == RtlBand::wx || band == RtlBand::general || band == RtlBand::adsb ||
       band == RtlBand::pocsag)
     return kRtlWxFilterDefaultHz;
   return kRtlFmFilterDefaultHz;
@@ -2950,12 +2954,12 @@ uint32_t rtl_clamp_frequency(RtlBand band, uint32_t frequency_hz) {
     case RtlBand::p25:
       return constrain(frequency_hz, kP25MinHz, kP25MaxHz);
     case RtlBand::pocsag:
-      // POCSAG rides the general RTL-SDR receive range, same as BROWSE --
+      // POCSAG rides the general RTL-SDR receive range, same as the GENERAL band --
       // there is no fixed band; the user's saved profile decides the
       // frequency, this clamp only guards against an out-of-range value.
-      return constrain(frequency_hz, kRtlBrowseMinHz, kRtlBrowseMaxHz);
-    case RtlBand::browse:
-      return constrain(frequency_hz, kRtlBrowseMinHz, kRtlBrowseMaxHz);
+      return constrain(frequency_hz, kRtlGeneralMinHz, kRtlGeneralMaxHz);
+    case RtlBand::general:
+      return constrain(frequency_hz, kRtlGeneralMinHz, kRtlGeneralMaxHz);
     default:
       if (frequency_hz < kRtlFmMinHz) return kRtlFmMinHz;
       if (frequency_hz > kRtlFmMaxHz) return kRtlFmMaxHz;
@@ -3232,7 +3236,7 @@ bool rtl_band_has_audio(RtlBand band) {
 bool rtl_wide_dashboard_band(RtlBand band) {
   return band == RtlBand::fm || band == RtlBand::am ||
          band == RtlBand::shortwave || band == RtlBand::wx ||
-         band == RtlBand::cb || band == RtlBand::browse ||
+         band == RtlBand::cb || band == RtlBand::general ||
          band == RtlBand::airband;
 }
 
@@ -5821,8 +5825,8 @@ void draw_sdr_controls(RtlBand band, bool running) {
        static_cast<uint32_t>(band == RtlBand::cb ? TFT_DARKGREEN : TFT_DARKGREY)},
       {140, "LORA",
        static_cast<uint32_t>(band == RtlBand::lora ? TFT_DARKGREEN : TFT_DARKGREY)},
-      {160, "BROWSE",
-       static_cast<uint32_t>(band == RtlBand::browse ? TFT_DARKGREEN : TFT_DARKGREY)},
+      {160, "GENERAL",
+       static_cast<uint32_t>(band == RtlBand::general ? TFT_DARKGREEN : TFT_DARKGREY)},
       {170, rec_on ? "REC*" : "REC",
        static_cast<uint32_t>(rec_on ? TFT_MAROON : TFT_DARKGREY)},
       {200, running ? "STOP" : "START",
@@ -6407,7 +6411,7 @@ void service_visualizer() {
                                  cb_mode.load(std::memory_order_relaxed) == CbMode::am)
                             ? orcsdr::visualizer::AudioDemod::am
                             : (rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::wx ||
-                               rtl_ui_band == RtlBand::browse)
+                               rtl_ui_band == RtlBand::general)
                                   ? orcsdr::visualizer::AudioDemod::fm
                                   : orcsdr::visualizer::AudioDemod::none;
   runtime.usb_overruns = metrics.overruns;
@@ -6585,7 +6589,7 @@ void service_rf_lab() {
       if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
         request_hot_retune(static_cast<uint32_t>(action.value));
       else
-        queue_local_rtl_listen(RtlBand::browse, static_cast<uint32_t>(action.value), false);
+        queue_local_rtl_listen(RtlBand::general, static_cast<uint32_t>(action.value), false);
     } else if (action.kind == Kind::sample_rate_sps) {
       const uint32_t rate = static_cast<uint32_t>(action.value);
       if (!esp_rtl_sdr_is_rate_supported(rate)) result = ESP_ERR_INVALID_ARG;
@@ -6685,7 +6689,7 @@ void service_headphone_speaker_route() {
 
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   // Home is the common receiver workspace until a band has its own dashboard.
-  // Dedicated dashboards (including Airband) never fall through to legacy Browse UI.
+  // Dedicated dashboards (including Airband) never fall through to a legacy tool UI.
   if (band != RtlBand::fm && band != RtlBand::am && band != RtlBand::shortwave &&
       band != RtlBand::cb && band != RtlBand::airband && band != RtlBand::p25 && band != RtlBand::adsb &&
       band != RtlBand::pocsag && band != RtlBand::lora) {
@@ -8069,7 +8073,7 @@ void run_rtl_capture() {
   rtl_ui_frequency_hz = frequency_hz;
   rtl_ui_volume = volume;
   // Base scale is modest; shape_audio_sample AGC + soft limiter set loudness.
-  const float audio_scale = (band == RtlBand::wx || band == RtlBand::browse)
+  const float audio_scale = (band == RtlBand::wx || band == RtlBand::general)
                                 ? 12000.0f
                                 : (band == RtlBand::am || band == RtlBand::shortwave ||
                                    band == RtlBand::airband || band == RtlBand::cb)
@@ -8852,7 +8856,7 @@ static void rtl_driver_app_task(void *) {
       }
       const uint8_t volume = rtl_requested_volume.load(std::memory_order_acquire);
       g_stream_band = band;
-      g_stream_audio_scale = (band == RtlBand::wx || band == RtlBand::browse)
+      g_stream_audio_scale = (band == RtlBand::wx || band == RtlBand::general)
                                  ? 12000.0f
                                  : (band == RtlBand::am || band == RtlBand::shortwave ||
                                     band == RtlBand::airband || band == RtlBand::cb)
@@ -9032,7 +9036,7 @@ static void rtl_driver_app_task(void *) {
             auto_fm_best_level = -120.0f;
             rtl_scope_span_hz.store(kRtlScopeSpanMaxHz, std::memory_order_relaxed);
             // FM owns its Settings/Spectrum surfaces.  Reset the shared
-            // renderer for the scan, but never repaint legacy Browse chrome.
+            // renderer for the scan, but never repaint legacy tool chrome.
             reset_spectrum_renderer();
             request_hot_retune(auto_fm_frequency_hz);
             auto_fm_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
@@ -12034,7 +12038,7 @@ orcsdr::filter_standards::Kind home_filter_kind() {
     case RtlBand::cb:
       return cb_mode.load(std::memory_order_relaxed) == CbMode::am ? Kind::cb_am : Kind::cb_ssb;
     case RtlBand::wx: return Kind::nfm;
-    case RtlBand::browse:   // the Airband dashboard is the browse band inside 118-137 MHz
+    case RtlBand::general:   // the Airband dashboard is the general band inside 118-137 MHz
       return rtl_ui_frequency_hz >= 118000000 && rtl_ui_frequency_hz <= 137000000
                  ? Kind::airband_am
                  : Kind::nfm;
@@ -12286,7 +12290,7 @@ orcsdr::dashboards::Id dashboard_for_band(RtlBand band, uint32_t frequency_hz) {
     case RtlBand::am: return Id::am;
     case RtlBand::shortwave: return Id::shortwave;
     case RtlBand::airband: return Id::airband;
-    case RtlBand::browse:
+    case RtlBand::general:
       if (frequency_hz >= 118000000 && frequency_hz <= 137000000) return Id::airband;
       if (frequency_hz >= 156000000 && frequency_hz <= 162025000) return Id::marine;
       if (frequency_hz >= 1000000 && frequency_hz <= 30000000) return Id::shortwave;
@@ -12329,7 +12333,7 @@ void open_dashboard(orcsdr::dashboards::Id id) {
     return;
   }
   rtl_rate_override_sps.store(0, std::memory_order_release);
-  RtlBand band = RtlBand::browse;
+  RtlBand band = RtlBand::general;
   uint32_t frequency = rtl_ui_frequency_hz;
   switch (id) {
     case Id::fm: band = RtlBand::fm; frequency = rtl_saved_fm_hz; break;
@@ -12360,9 +12364,9 @@ void open_dashboard(orcsdr::dashboards::Id id) {
                       ? rtl_ui_frequency_hz
                       : orcsdr::airband::default_frequency();
       break;
-    case Id::marine: band = RtlBand::browse; frequency = 156800000; break;
-    case Id::satellite: band = RtlBand::browse; frequency = 137500000; break;
-    case Id::utilities: band = RtlBand::browse; break;
+    case Id::marine: band = RtlBand::general; frequency = 156800000; break;
+    case Id::satellite: band = RtlBand::general; frequency = 137500000; break;
+    case Id::utilities: band = RtlBand::general; break;
     case Id::settings:
       persist_dashboard_open(id);
       open_global_settings(orcsdr::settings::Section::connectivity);
@@ -13203,7 +13207,7 @@ void load_state() {
         stored_band == RtlBand::shortwave ||
         stored_band == RtlBand::wx || stored_band == RtlBand::cb ||
         stored_band == RtlBand::airband ||
-        stored_band == RtlBand::lora || stored_band == RtlBand::browse ||
+        stored_band == RtlBand::lora || stored_band == RtlBand::general ||
         stored_band == RtlBand::adsb || stored_band == RtlBand::p25) {
       rtl_ui_band = stored_band;
       rtl_requested_band.store(stored_band, std::memory_order_release);
@@ -13223,7 +13227,7 @@ void load_state() {
         rtl_filter_bandwidth_hz.store(rtl_filter_default_hz(stored_band),
                                       std::memory_order_relaxed);
       } else if (stored_band != RtlBand::fm) {
-        // WX, CB, shortwave, browse and ADS-B would otherwise keep the FM
+        // WX, CB, shortwave, general and ADS-B would otherwise keep the FM
         // frequency loaded above, so boot auto-start briefly tuned e.g. WX to
         // 99.13 MHz before the dashboard corrected it.
         rtl_ui_frequency_hz = rtl_band_default_frequency(stored_band);
@@ -13507,7 +13511,7 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
                    : band == RtlBand::cb     ? "sdr_cb"
                    : band == RtlBand::airband ? "sdr_airband"
                    : band == RtlBand::lora   ? "sdr_lora"
-                   : band == RtlBand::browse ? "sdr_browse"
+                   : band == RtlBand::general ? "sdr_browse"
                    : band == RtlBand::adsb   ? "sdr_adsb"
                    : band == RtlBand::p25    ? "sdr_p25"
                                              : "sdr_fm");
@@ -14721,7 +14725,7 @@ void handle_sdr_touch(int32_t x, int32_t y) {
       if (frequency_hz == 0) return;
       adsb_atc_listening = true;
       orcsdr::adsb::set_atc_listening(true, frequency_hz);
-      queue_local_rtl_listen(RtlBand::browse, frequency_hz, false);
+      queue_local_rtl_listen(RtlBand::general, frequency_hz, false);
     } else if (action == orcsdr::adsb::Action::atc_resume) {
       adsb_atc_listening = false;
       orcsdr::adsb::set_atc_listening(false, orcsdr::adsb::atc_frequency_hz());
@@ -14834,12 +14838,12 @@ void handle_sdr_touch(int32_t x, int32_t y) {
       queue_local_rtl_listen(RtlBand::lora, rtl_ui_band == RtlBand::lora
                                                 ? rtl_ui_frequency_hz
                                                 : kLoraDefaultHz);
-  } else if (action == orcsdr::radio_ui::ControlAction::browse) {
-      queue_local_rtl_listen(RtlBand::browse,
-                             rtl_ui_band == RtlBand::browse
+  } else if (action == orcsdr::radio_ui::ControlAction::general) {
+      queue_local_rtl_listen(RtlBand::general,
+                             rtl_ui_band == RtlBand::general
                                  ? rtl_ui_frequency_hz
                                  : constrain(rtl_ui_frequency_hz,
-                                             kRtlBrowseMinHz, kRtlBrowseMaxHz));
+                                             kRtlGeneralMinHz, kRtlGeneralMaxHz));
   } else if (action == orcsdr::radio_ui::ControlAction::toggle_audio_record) {
       /* REC toggle — Capture tool records post-demod PCM for offline analysis. */
       if (g_audio_rec_active.load(std::memory_order_acquire)) {
@@ -15366,7 +15370,7 @@ bool ui_doc_render(const char* screen_id, bool demo) {
     struct GenericBand { const char* name; RtlBand band; uint32_t frequency; };
     static constexpr GenericBand bands[] = {{"am.", RtlBand::am, kRtlAmDefaultHz},
         {"wx.", RtlBand::wx, kRtlWxHz}, {"cb.", RtlBand::cb, kCbDefaultHz},
-        {"browse.", RtlBand::browse, kRtlBrowseDefaultHz}};
+        {"browse.", RtlBand::general, kRtlGeneralDefaultHz}};
     bool found = false;
     for (const auto& entry : bands) {
       const size_t prefix = strlen(entry.name);
@@ -15426,7 +15430,7 @@ bool ui_doc_live_band(const char* screen_id, RtlBand* band, uint32_t* frequency_
   struct Entry { const char* prefix; RtlBand band; uint32_t frequency; };
   static constexpr Entry entries[] = {{"am.", RtlBand::am, kRtlAmDefaultHz},
       {"wx.", RtlBand::wx, kRtlWxHz}, {"cb.", RtlBand::cb, kCbDefaultHz},
-      {"browse.", RtlBand::browse, kRtlBrowseDefaultHz}};
+      {"browse.", RtlBand::general, kRtlGeneralDefaultHz}};
   for (const auto& entry : entries)
     if (strncmp(screen_id, entry.prefix, strlen(entry.prefix)) == 0) {
       *band = entry.band; *frequency_hz = entry.frequency; return true;
@@ -15534,7 +15538,7 @@ bool ui_doc_pause_reception() {
 }
 
 struct UiRegressionSnapshot {
-  RtlBand band = RtlBand::browse;
+  RtlBand band = RtlBand::general;
   uint32_t frequency_hz = 0;
   uint8_t volume = 0;
   OrcTool tool = OrcTool::Radio;
@@ -17359,7 +17363,7 @@ void process_command(char* command) {
     Serial.println("RTL_WIFI_C6_UPDATE CONFIRM - authenticated explicit in-app C6 update");
     Serial.println("RTL_WIFI_CONNECT_SAVED [PAUSE]|DISCONNECT - connect profile 0 with a temporary SDR pause");
     Serial.println("SET_WIFI <ssid_hex> <pass_hex> <hmac> - signed slot-0 provisioning (auth)");
-    Serial.println("RTL_TUNE <BAND> <HZ>           - tune band+freq (auth) BAND=FM|AM|WX|CB|LORA|BROWSE|ADSB|P25");
+    Serial.println("RTL_TUNE <BAND> <HZ>           - tune band+freq (auth) BAND=FM|AM|WX|CB|LORA|GENERAL|ADSB|P25 (BROWSE = GENERAL)");
     Serial.println("RTL_FREQ                       - query current band/frequency/mode");
     Serial.println("RTL_FREQ <HZ>                  - hot-retune within current band (auth)");
     Serial.println("RTL_VOLUME                     - query current volume");
@@ -17846,7 +17850,7 @@ void process_command(char* command) {
     }
     RtlBand band;
     if (!rtl_band_from_name(band_name, &band)) {
-      Serial.println("RTL_TUNE_INVALID unknown band (FM|AM|WX|CB|LORA|BROWSE|ADSB|P25)");
+      Serial.println("RTL_TUNE_INVALID unknown band (FM|AM|WX|CB|LORA|GENERAL|ADSB|P25)");
       return;
     }
     if (!rtl_device_ready()) {

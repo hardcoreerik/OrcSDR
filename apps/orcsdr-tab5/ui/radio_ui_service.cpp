@@ -147,7 +147,7 @@ ControlAction control_action(const ControlLayout& layout, bool lora, int touch_x
     case 2: return ControlAction::wx;
     case 3: return ControlAction::cb;
     case 4: return ControlAction::lora;
-    case 5: return ControlAction::browse;
+    case 5: return ControlAction::general;
     case 6: return ControlAction::toggle_audio_record;
     case 7: return ControlAction::toggle_capture;
     default: return ControlAction::none;

@@ -93,6 +93,7 @@ idf_component_register(
         "../ui/filter_standards.cpp"
         "../ui/waterfall_style.cpp"
         "../ui/airband_audio_filter.cpp"
+        "../ui/band_plan.cpp"
         "../ui/freq_keypad.cpp"
         "../dsp/dsp_stats.cpp"
         "../ui/time_service.cpp"
