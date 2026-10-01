@@ -3,6 +3,19 @@
 Used for the V3c live tuner-bandwidth work (see
 `docs/testing/v3c-tuner-bandwidth-transition-2026-09-28.md`). Python needs numpy and matplotlib.
 
+## One-command regression for whichever dongle is plugged in
+
+    pwsh apps/orcsdr-tab5/tools/run-dongle-regression.ps1 -Label v4 -Level Standard
+    pwsh apps/orcsdr-tab5/tools/run-dongle-regression.ps1 -Label v4 -Level Full -SoakMinutes 15 -HotplugCycles 5
+
+Stages: preflight (identify dongle, driver version and pinned commit, recover a faulted driver), smoke,
+band-switch stress (FM, airband, WX, UHF, 915, 1090, HF direct-Q, AM; the driver must never reach FAULT),
+gain sweep, per-band sensitivity table (`band_snr.py`), optional interactive unplug/replug capture
+(`serial_capture.py`, survives board resets), and the soak. Levels: Quick, Standard, Full. Output:
+`artifacts/dongle-regression/<stamp>-<label>/report.md` and `results.json`. To judge a driver change, run
+it before and after and pass the first `results.json` as `-CompareTo`. The device resets during smoke and
+soak. The script drives the board only through `run-tab5-ui-regression.ps1`.
+
 ## Tab5 gate (run on the Tab5 over COM17)
 
     pwsh apps/orcsdr-tab5/tools/run-tab5-ui-regression.ps1 -Port COM17 -DongleGate V3c -GateIq `
