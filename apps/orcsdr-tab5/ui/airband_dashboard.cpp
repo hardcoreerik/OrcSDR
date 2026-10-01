@@ -211,19 +211,19 @@ void draw_scope_axis() {
   format_mhz(mid, sizeof(mid), centre);
   format_mhz(high, sizeof(high), centre + half);
   const int y = kScopeAxisY + kScopeAxisH / 2;
-  text(low, kScopeX + 4, y, kMuted, 1, middle_left);
-  text(mid, kScopeX + kScopeW / 2, y, kCyan, 1, middle_center);
-  text(high, kScopeX + kScopeW - 4, y, kMuted, 1, middle_right);
+  text(low, kScopeX + 4, y, TFT_LIGHTGREY, 2, middle_left);
+  text(mid, kScopeX + kScopeW / 2, y, kCyan, 2, middle_center);
+  text(high, kScopeX + kScopeW - 4, y, TFT_LIGHTGREY, 2, middle_right);
 }
 
 void draw_scope_status() {
-  M5.Display.fillRect(kScopeX, 140, 860, 22, TFT_BLACK);
+  M5.Display.fillRect(kScopeX, 138, 860, 26, TFT_BLACK);
   char value[96];
-  std::snprintf(value, sizeof(value), "SNR %.0f dB   SQL +%d dB   %s   FILTER %.0f kHz   tap to tune, drag the yellow lines",
+  std::snprintf(value, sizeof(value), "SNR %.0f dB   SQL +%d   %s   FILTER %.0f kHz",
                 static_cast<double>(g_snapshot.snr_db), static_cast<int>(g_snapshot.scan.squelch_db),
                 g_snapshot.squelch_open ? "OPEN" : "CLOSED",
                 static_cast<double>(g_snapshot.filter_hz) / 1000.0);
-  text(value, 34, 152, g_snapshot.squelch_open ? kGreen : kMuted, 1, middle_left);
+  text(value, 34, 151, g_snapshot.squelch_open ? kGreen : TFT_LIGHTGREY, 2, middle_left);
 }
 
 void draw_scope_controls() {
