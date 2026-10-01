@@ -207,8 +207,9 @@ void draw_tabs() {
   }
 }
 
-void draw_segment_meter(int x, int y, int w, float dbfs, int segments = 18, int h = 32) {
-  const float normalized = std::clamp((dbfs + 40.0f) / 40.0f, 0.0f, 1.0f);
+void draw_segment_meter(int x, int y, int w, float dbfs, int segments = 18, int h = 32,
+                        float floor_db = -40.0f, float top_db = 0.0f) {
+  const float normalized = std::clamp((dbfs - floor_db) / (top_db - floor_db), 0.0f, 1.0f);
   const int lit = static_cast<int>(normalized * segments);
   const int gap = 3;
   const int sw = (w - (segments - 1) * gap) / segments;
@@ -434,8 +435,7 @@ void draw_spectrum_static() {
   card(24, 140, 1232, 470);
   label("CENTER FREQUENCY", 46, 158);
   label("DSP FILTER BW", 548, 158);
-  label("IQ ACTIVITY", 922, 158);
-  for (int i = 0; i <= 4; ++i) {
+    for (int i = 0; i <= 4; ++i) {
     M5.Display.drawFastVLine(kSpectrumX + i * kSpectrumW / 4, kSpectrumY,
                              kSpectrumH, kGrid);
     if (i > 0) M5.Display.drawFastHLine(kSpectrumX, kSpectrumY + i * kSpectrumH / 4,
@@ -450,6 +450,68 @@ void draw_spectrum_static() {
   text("TAP SPECTRUM TO TUNE", 650, 585, TFT_WHITE, 2);
 }
 
+// Status pills for the tuned station: lit when the condition holds, dim otherwise.
+void status_badge(int x, int y, int w, int h, const char* label_text, bool on, uint16_t color) {
+  M5.Display.fillRoundRect(x, y, w, h, 8, on ? color : kGrid);
+  M5.Display.drawRoundRect(x, y, w, h, 8, on ? color : kMuted);
+  text(label_text, x + w / 2, y + h / 2, on ? TFT_BLACK : kMuted, 2, middle_center);
+}
+
+// The IQ level as a filled pill: green fill that grows with the level, red and labelled CLIP when the IQ
+// is overloading.
+void iq_badge(int x, int y, int w, int h, float dbfs, bool clipping) {
+  const uint16_t color = clipping ? TFT_RED : kGreen;
+  const float level = std::clamp((dbfs + 40.0f) / 40.0f, 0.0f, 1.0f);
+  const int fill = clipping ? w - 2 : static_cast<int>((w - 2) * level);
+  M5.Display.fillRoundRect(x, y, w, h, 8, kGrid);
+  if (fill > 0) M5.Display.fillRoundRect(x + 1, y + 1, fill, h - 2, 7, color);
+  M5.Display.drawRoundRect(x, y, w, h, 8, clipping ? TFT_RED : kMuted);
+  text(clipping ? "CLIP" : "IQ", x + w / 2, y + h / 2, TFT_WHITE, 2, middle_center);
+}
+
+// Status badges and separate left and right audio meters, each on its own row, large enough to read at a
+// glance and kept entirely above the spectrum plot (which starts at y 246). STEREO and RDS light when
+// locked; the IQ pill shows the IQ level and turns red when the IQ is overloading.
+// The meters follow the sampled level up at once and fall back at 20 dB a second (like the listen page's VU),
+// timed from the clock rather than counted per paint because paints are only a minimum of 150 ms apart.
+// The audio levels are pre-AGC programme levels (typically +11 to +15, peaks to +29), so they use the VU
+// range, not the -40..0 dBFS range of the IQ level. This sees one sampled value per paint, so a peak that
+// falls between two samples can still be missed.
+constexpr float kMeterReleaseDbPerS = 20.0f;
+
+float meter_release(float shown_db, float level_db, float elapsed_s) {
+  return std::max(level_db, shown_db - kMeterReleaseDbPerS * elapsed_s);
+}
+
+void draw_signal_panel() {
+  static float shown_iq_db = -90.0f, shown_left_db = -90.0f, shown_right_db = -90.0f;
+  static uint32_t last_paint_ms = 0, shown_frequency_hz = 0;
+  const uint32_t now = millis();
+  // A new station, or coming back after more than a second away from this view, must not inherit the old
+  // bars: the release below is capped per paint, so a stale high level would linger.
+  const bool stale = last_paint_ms != 0 && now - last_paint_ms > 1000u;
+  if (shown_frequency_hz != g_snapshot.frequency_hz || stale) {
+    shown_frequency_hz = g_snapshot.frequency_hz;
+    shown_iq_db = shown_left_db = shown_right_db = -90.0f;
+  }
+  const float elapsed_s = last_paint_ms == 0 ? 0.0f : std::min(1.0f, (now - last_paint_ms) / 1000.0f);
+  last_paint_ms = now;
+  shown_iq_db = meter_release(shown_iq_db, g_snapshot.relative_dbfs, elapsed_s);
+  shown_left_db = meter_release(shown_left_db, g_snapshot.left_dbfs, elapsed_s);
+  shown_right_db = meter_release(shown_right_db, g_snapshot.right_dbfs, elapsed_s);
+  constexpr int kPanelX = 908, kPanelY = 146, kPanelW = 332, kPanelH = 96;
+  M5.Display.fillRect(kPanelX, kPanelY, kPanelW, kPanelH, kPanel);
+  const bool clipping = g_snapshot.clipping_percent > 0.1f;
+  status_badge(912, 148, 104, 30, g_snapshot.stereo ? "STEREO" : "MONO", g_snapshot.stereo, kGreen);
+  status_badge(1024, 148, 104, 30, g_snapshot.rds_locked ? "RDS" : g_snapshot.rds_carrier ? "RDS..." : "NO RDS",
+               g_snapshot.rds_locked, kCyan);
+  iq_badge(1136, 148, 100, 30, shown_iq_db, clipping);
+  text("L", 920, 196, TFT_WHITE, 2, middle_left);
+  draw_segment_meter(944, 184, 292, shown_left_db, 22, 24, kVuFloorDb, kVuTopDb);
+  text("R", 920, 226, TFT_WHITE, 2, middle_left);
+  draw_segment_meter(944, 214, 292, shown_right_db, 22, 24, kVuFloorDb, kVuTopDb);
+}
+
 void draw_spectrum_dynamic() {
   char value[32];
   M5.Display.fillRect(45, 185, 390, 58, kPanel);
@@ -459,11 +521,7 @@ void draw_spectrum_dynamic() {
   snprintf(value, sizeof(value), "%lu kHz",
            static_cast<unsigned long>(g_snapshot.filter_bandwidth_hz / 1000));
   text(value, 655, 215, kGreen, 4);
-  M5.Display.fillRect(920, 185, 300, 58, kPanel);
-  text("L", 930, 201, TFT_WHITE, 2, middle_left);
-  draw_segment_meter(960, 188, 245, g_snapshot.left_dbfs, 14);
-  text("R", 930, 233, TFT_WHITE, 2, middle_left);
-  draw_segment_meter(960, 220, 245, g_snapshot.right_dbfs, 14);
+  draw_signal_panel();
   snprintf(value, sizeof(value), "%.1f MHz", g_snapshot.span_hz / 1000000.0);
   M5.Display.fillRect(125, 565, 210, 42, kPanel);
   text(value, 220, 585, TFT_WHITE, 3);
@@ -715,6 +773,14 @@ void update(const Snapshot& snapshot) {
 }
 
 uint32_t g_scope_fps = 0, g_scope_frames = 0, g_scope_window_ms = 0, g_scope_draw_ms = 0;
+// Slow-falling peak-hold trace behind the live one: shows where signals have been, not just now. It is kept
+// in dB, not as a fraction of the screen: the display floor follows the loudest bin every frame, so a stored
+// fraction would drift to the wrong height whenever that bin changed. Reset when the tuned frequency or span
+// changes, because the bins no longer mean the same thing.
+constexpr float kPeakHoldFallDbPerFrame = 0.25f;   // about 5 dB a second at 20 frames a second
+constexpr float kPeakHoldEmptyDb = -200.0f;
+EXT_RAM_BSS_ATTR float g_peak_hold_db[kSpectrumW]{};
+uint32_t g_peak_frequency_hz = 0, g_peak_span_hz = 0, g_last_spectrum_frame_ms = 0;
 
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, float floor) {
   if (!spectrum_active() || levels == nullptr || visible_bins < 2) return;
@@ -741,6 +807,14 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
       canvas->drawFastHLine(0, i * kSpectrumH / 4 - 1, w, kGrid);
     }
   }
+  // The held peaks only fall while this view is drawing, so after time away they are stale: start over.
+  const bool resumed = g_last_spectrum_frame_ms != 0 && frame_started_ms - g_last_spectrum_frame_ms > 1000u;
+  g_last_spectrum_frame_ms = frame_started_ms;
+  if (resumed || g_peak_frequency_hz != g_snapshot.frequency_hz || g_peak_span_hz != g_snapshot.span_hz) {
+    g_peak_frequency_hz = g_snapshot.frequency_hz;
+    g_peak_span_hz = g_snapshot.span_hz;
+    for (size_t i = 0; i < kSpectrumW; ++i) g_peak_hold_db[i] = kPeakHoldEmptyDb;
+  }
   int px = 0;
   int py = h - 3;
   for (size_t i = 0; i < kSpectrumW; ++i) {
@@ -749,6 +823,12 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
     const float normalized = std::clamp((level - floor) / 48.0f, 0.0f, 1.0f);
     const int x = static_cast<int>(i) - 1;
     const int y = h - 3 - static_cast<int>(normalized * (kSpectrumH - 4));
+    g_peak_hold_db[i] = std::max(level, g_peak_hold_db[i] - kPeakHoldFallDbPerFrame);
+    if (canvas != nullptr && x >= 0 && x < w) {
+      // Peak hold first so the live trace draws over it, scaled with this frame's floor.
+      const float held = std::clamp((g_peak_hold_db[i] - floor) / 48.0f, 0.0f, 1.0f);
+      canvas->drawPixel(x, h - 3 - static_cast<int>(held * (kSpectrumH - 4)), 0xFD20);
+    }
     if (canvas != nullptr && i && x >= 0 && x < w) {
       canvas->drawLine(px, py, x, y, kGreen);
     }
