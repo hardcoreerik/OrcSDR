@@ -1,6 +1,6 @@
 dependencies:
   esp_rtl_sdr:
-    component_hash: 2e77597c1025dbdc3d76fb5b5ff6bd3bc087b505ad625544a81922aadb7b6a5d
+    component_hash: 69631a18f1df3d078b5016d2a7cb0e5949987dd9d2e612f8305922fbd6869f9e
     dependencies:
     - name: idf
       version: '>=5.5.0'
@@ -10,7 +10,7 @@ dependencies:
       type: git
     targets:
     - esp32p4
-    version: 139d70a9989185c48513f4c58d21ad08ea431c96
+    version: cb06229bfce54bb85f942b427bfdcf7c75c52b89
   espressif/eppp_link:
     component_hash: c1369b37f2b0b427b198ae14e07e7547d3da92b95fe4dc7f949e5de560b35f21
     dependencies:
@@ -142,6 +142,6 @@ direct_dependencies:
 - idf
 - m5stack/m5gfx
 - m5stack/m5unified
-manifest_hash: 89fc46da99826b7c300c06669ab0008978abb00c2d304054809a84be980003c5
+manifest_hash: eb6fef5af0c83c2c88c0df70324d553e6b184136717a660a6ced3be3273c6dd0
 target: esp32p4
 version: 2.0.0

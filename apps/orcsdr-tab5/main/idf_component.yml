@@ -11,8 +11,8 @@ dependencies:
     version: "^1.2.3"
   esp_rtl_sdr:
     git: https://github.com/hardcoreerik/esp-rtl-sdr.git
-    # esp_rtl_sdr v0.9.2 (tag v0.9.2; Nooelec SMArt v5 profile)
-    version: 139d70a9989185c48513f4c58d21ad08ea431c96
+    # esp_rtl_sdr v0.9.2 + Nooelec restart fix (esp-rtl-sdr PR 44, issue 42); re-pin to the merge commit
+    version: cb06229bfce54bb85f942b427bfdcf7c75c52b89
   m5stack/m5unified:
     version: "0.2.20"
   m5stack/m5gfx:
