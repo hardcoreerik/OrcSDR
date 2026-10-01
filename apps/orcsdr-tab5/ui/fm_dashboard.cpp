@@ -494,7 +494,7 @@ void draw_signal_panel() {
     shown_frequency_hz = g_snapshot.frequency_hz;
     shown_iq_db = shown_left_db = shown_right_db = -90.0f;
   }
-  const float elapsed_s = last_paint_ms == 0 ? 0.0f : std::min(0.5f, (now - last_paint_ms) / 1000.0f);
+  const float elapsed_s = last_paint_ms == 0 ? 0.0f : std::min(1.0f, (now - last_paint_ms) / 1000.0f);
   last_paint_ms = now;
   shown_iq_db = meter_release(shown_iq_db, g_snapshot.relative_dbfs, elapsed_s);
   shown_left_db = meter_release(shown_left_db, g_snapshot.left_dbfs, elapsed_s);

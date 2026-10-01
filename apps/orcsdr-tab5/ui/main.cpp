@@ -15147,8 +15147,8 @@ orcsdr::fm::Snapshot ui_doc_fm_snapshot(bool demo) {
   snapshot.audio_ring_pressure_percent = 42;
   snapshot.battery_percent = 76;
   snapshot.relative_dbfs = -31.5f;
-  snapshot.left_dbfs = -8.0f;
-  snapshot.right_dbfs = -8.7f;
+  snapshot.left_dbfs = 12.0f;
+  snapshot.right_dbfs = 11.0f;
   snapshot.running = snapshot.driver_ready = snapshot.stereo = true;
   snapshot.rds_carrier = snapshot.rds_locked = snapshot.wifi_connected = true;
   snapshot.sound_enabled = snapshot.graphics_enabled = true;
