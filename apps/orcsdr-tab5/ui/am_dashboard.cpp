@@ -654,9 +654,6 @@ Action gain_button_action(const Snapshot& snapshot) {
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
-  if (spectrum_active() &&
-      scope::style_chip_tap(x, y, kSpectrumX + 1, kSpectrumY + 1, kSpectrumW - 2, waterfall_style::Screen::am))
-    return {};
   if (g_scan_prompt) {
     if (hit(x, y, 280, 425, 220, 70)) reset_scan_results();
     else if (hit(x, y, 530, 425, 220, 70)) {
@@ -667,6 +664,9 @@ Action handle_touch(int32_t x, int32_t y) {
     draw();
     return {};
   }
+  if (spectrum_active() &&
+      scope::style_chip_tap(x, y, kSpectrumX + 1, kSpectrumY + 1, kSpectrumW - 2, waterfall_style::Screen::am))
+    return {};
   if (audio_header::settings_hit(x, y)) return {ActionKind::open_device_settings};
   if (g_keypad) {
     const auto result = freq_keypad::handle_touch(x, y, g_entry, sizeof(g_entry));
