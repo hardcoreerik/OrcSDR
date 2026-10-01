@@ -72,6 +72,7 @@
 #include "tab5_keyboard.hpp"
 #include "focus_nav.hpp"
 #include "waterfall_style.hpp"
+#include "band_plan.hpp"
 #include "airband_audio_filter.hpp"
 #include "focus_ring.hpp"
 #include "fm_config.hpp"
@@ -1796,6 +1797,7 @@ std::atomic<uint32_t> rtl_scope_span_hz{kRtlScopeSpanMaxHz};
 std::atomic<uint32_t> rtl_filter_bandwidth_hz{kRtlFmFilterDefaultHz};
 SdrPinchMode rtl_pinch_mode = SdrPinchMode::Span;
 uint32_t rtl_fm_step_hz = kRtlFmStepHz;
+uint32_t rtl_general_step_hz = orcsdr::band_plan::kDefaultStepHz;
 uint32_t rtl_am_step_hz = 1000;
 uint32_t rtl_am_scan_spacing_hz = kRtlAmStepHz;
 std::atomic<bool> rtl_continuous_requested{false};
@@ -1807,6 +1809,11 @@ std::atomic<uint32_t> rtl_ui_revision{0};
 uint32_t drawn_rtl_ui_revision = 0;
 RtlBand rtl_ui_band = RtlBand::fm;
 uint32_t rtl_ui_frequency_hz = kRtlFmDefaultHz;
+// The GENERAL band (what Home tunes when a frequency is outside the dedicated bands) picks its
+// demodulator from the frequency.
+bool rtl_general_demod_is(RtlBand band, orcsdr::band_plan::Demod demod) {
+  return band == RtlBand::general && orcsdr::band_plan::demod_for(rtl_ui_frequency_hz) == demod;
+}
 // Last good FM LO; seeded from NVS (or kRtlFmDefaultHz) and rewritten on retune.
 uint32_t rtl_saved_fm_hz = kRtlFmDefaultHz;
 uint8_t rtl_ui_volume = kRtlVolumeDefault;
@@ -2908,8 +2915,9 @@ uint32_t rtl_clamp_filter_hz(RtlBand band, uint32_t bandwidth_hz) {
   }
   if (band == RtlBand::p25) return kP25StepHz;
   const bool am = band == RtlBand::am || band == RtlBand::shortwave || band == RtlBand::airband;
-  const uint32_t low = band == RtlBand::cb ? 2400 : am ? 3000 : band == RtlBand::fm ? 50000 : 8000;
-  const uint32_t high = band == RtlBand::cb ? 12000 : am ? 30000 : band == RtlBand::fm ? 300000 : 100000;
+  const bool general = band == RtlBand::general;   // wide FM at one end, AM voice at the other
+  const uint32_t low = band == RtlBand::cb ? 2400 : (am || general) ? 3000 : band == RtlBand::fm ? 50000 : 8000;
+  const uint32_t high = band == RtlBand::cb ? 12000 : am ? 30000 : (band == RtlBand::fm || general) ? 300000 : 100000;
   return constrain((bandwidth_hz / 1000u) * 1000u, low, high);
 }
 
@@ -3019,6 +3027,8 @@ uint32_t rtl_step_frequency(RtlBand band, uint32_t frequency_hz, int direction) 
                  : rtl_clamp_frequency(band, frequency_hz - kP25StepHz);
     return rtl_clamp_frequency(band, frequency_hz + kP25StepHz);
   }
+  if (band == RtlBand::general)
+    return orcsdr::band_plan::step_frequency(frequency_hz, rtl_general_step_hz, direction);
   const uint32_t step = band == RtlBand::am
                             ? rtl_am_step_hz
                             : band == RtlBand::shortwave ? rtl_shortwave_step_hz
@@ -8228,12 +8238,15 @@ void run_rtl_capture() {
         rtl_audio_play_count = 0;
       }
     } else if (band == RtlBand::am || band == RtlBand::shortwave ||
-               band == RtlBand::airband) {
+               band == RtlBand::airband ||
+               rtl_general_demod_is(band, orcsdr::band_plan::Demod::am)) {
       demodulate_am(rtl_iq_processing, completed_bytes, audio_scale,
                     kRtlSampleRateSps);
     } else if (band != RtlBand::lora) {
       demodulate_fm(rtl_iq_processing, completed_bytes, audio_scale,
-                    band == RtlBand::fm, kRtlSampleRateSps);
+                    band == RtlBand::fm ||
+                        rtl_general_demod_is(band, orcsdr::band_plan::Demod::wfm),
+                    kRtlSampleRateSps);
     }
 
     // CRITICAL: never issue EP0 PLL writes while a bulk URB is outstanding.
@@ -8781,12 +8794,15 @@ static void rtl_dsp_task(void *) {
           rtl_audio_play_count = 0;
         }
       } else if (block.band == RtlBand::am || block.band == RtlBand::shortwave ||
-                 block.band == RtlBand::airband) {
+                 block.band == RtlBand::airband ||
+                 rtl_general_demod_is(block.band, orcsdr::band_plan::Demod::am)) {
         demodulate_am(block.data, block.bytes, block.audio_scale,
                       block.sample_rate_sps);
       } else if (block.band != RtlBand::adsb) {
         demodulate_fm(block.data, block.bytes, block.audio_scale,
-                      block.band == RtlBand::fm, block.sample_rate_sps);
+                      block.band == RtlBand::fm ||
+                          rtl_general_demod_is(block.band, orcsdr::band_plan::Demod::wfm),
+                      block.sample_rate_sps);
       }
     }
     mark(dsp_stats::Stage::demod);
@@ -12038,10 +12054,13 @@ orcsdr::filter_standards::Kind home_filter_kind() {
     case RtlBand::cb:
       return cb_mode.load(std::memory_order_relaxed) == CbMode::am ? Kind::cb_am : Kind::cb_ssb;
     case RtlBand::wx: return Kind::nfm;
-    case RtlBand::general:   // the Airband dashboard is the general band inside 118-137 MHz
-      return rtl_ui_frequency_hz >= 118000000 && rtl_ui_frequency_hz <= 137000000
-                 ? Kind::airband_am
-                 : Kind::nfm;
+    case RtlBand::general:   // follows the demodulator the frequency calls for
+      switch (orcsdr::band_plan::demod_for(rtl_ui_frequency_hz)) {
+        case orcsdr::band_plan::Demod::wfm: return Kind::wfm;
+        case orcsdr::band_plan::Demod::am:
+          return rtl_ui_frequency_hz >= 118000000 ? Kind::airband_am : Kind::am_shortwave;
+        default: return Kind::nfm;
+      }
     default: return Kind::fixed;   // P25, LoRa, ADS-B, POCSAG set their own width
   }
 }
@@ -12065,11 +12084,16 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   snapshot.step_hz = rtl_ui_band == RtlBand::fm          ? rtl_fm_step_hz
                      : rtl_ui_band == RtlBand::am        ? rtl_am_step_hz
                      : rtl_ui_band == RtlBand::shortwave ? rtl_shortwave_step_hz
+                     : rtl_ui_band == RtlBand::general   ? rtl_general_step_hz
                      : rtl_ui_band == RtlBand::p25       ? kP25StepHz
                      : rtl_ui_band == RtlBand::cb        ? 10000
                      : rtl_ui_band == RtlBand::lora      ? 125000
                                                           : 12500;
-  strlcpy(snapshot.mode, demo ? "FM" : rtl_band_name(rtl_ui_band),
+  strlcpy(snapshot.mode,
+          demo ? "FM"
+               : rtl_ui_band == RtlBand::general
+                     ? orcsdr::band_plan::demod_name(orcsdr::band_plan::demod_for(rtl_ui_frequency_hz))
+                     : rtl_band_name(rtl_ui_band),
           sizeof(snapshot.mode));
 #if !RTL_USE_LEGACY_USB
   strlcpy(snapshot.receiver,
@@ -12495,6 +12519,80 @@ void print_rtl_gain_status() {
   Serial.println();
 }
 
+// The limits of the dedicated bands Home can tune within. Anything outside the current band moves to
+// the GENERAL band, which covers everything the receiver can tune.
+bool rtl_band_limits(RtlBand band, uint32_t* low, uint32_t* high) {
+  switch (band) {
+    case RtlBand::fm: *low = kRtlFmMinHz; *high = kRtlFmMaxHz; return true;
+    case RtlBand::am: *low = kRtlAmMinHz; *high = kRtlAmMaxHz; return true;
+    case RtlBand::shortwave:
+      *low = orcsdr::receiver_bands::kShortwave.min_hz;
+      *high = orcsdr::receiver_bands::kShortwave.max_hz;
+      return true;
+    case RtlBand::airband:
+      *low = orcsdr::airband::kMinFrequencyHz;
+      *high = orcsdr::airband::kMaxFrequencyHz;
+      return true;
+    case RtlBand::general:
+      *low = orcsdr::band_plan::kMinHz;
+      *high = orcsdr::band_plan::kMaxHz;
+      return true;
+    default: return false;   // CB, WX, LoRa, P25, ADS-B and POCSAG are fixed-purpose
+  }
+}
+
+// The step Home uses in the current band, before any band change.
+uint32_t home_step_hz() {
+  switch (rtl_ui_band) {
+    case RtlBand::fm: return rtl_fm_step_hz;
+    case RtlBand::am: return rtl_am_step_hz;
+    case RtlBand::shortwave: return rtl_shortwave_step_hz;
+    case RtlBand::airband: return 25000;
+    default: return rtl_general_step_hz;
+  }
+}
+
+// Where one step of the TUNE buttons lands. It is not clamped to the band, so stepping past the edge
+// of FM (or AM, shortwave, airband) carries on into the next band.
+uint32_t home_step_target(int direction) {
+  const uint64_t step = home_step_hz();
+  const uint64_t base = rtl_ui_frequency_hz;
+  if (direction < 0) return base > step ? static_cast<uint32_t>(base - step) : 0u;
+  return static_cast<uint32_t>(std::min<uint64_t>(base + step, UINT32_MAX));
+}
+
+// Home tunes anywhere the receiver can. Inside the current dedicated band it retunes in place; anywhere
+// else it moves to the GENERAL band, picking the demodulator and the standard filter for the frequency.
+void home_retune(uint32_t requested_hz) {
+  const uint32_t hz = orcsdr::band_plan::clamp(requested_hz);
+  uint32_t low = 0, high = 0;
+  const bool stays = rtl_band_limits(rtl_ui_band, &low, &high) && hz >= low && hz <= high;
+  const auto previous = orcsdr::band_plan::demod_for(rtl_ui_frequency_hz);
+  const bool was_general = rtl_ui_band == RtlBand::general;
+  const bool running = rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
+  if (stays) {
+    if (rtl_ui_band == RtlBand::am) orcsdr::am::note_tuned(hz);
+    if (running) request_hot_retune(hz);
+    else queue_local_rtl_listen(rtl_ui_band, hz, false);
+  } else if (was_general && running) {
+    request_hot_retune(hz);
+  } else {
+    queue_local_rtl_listen(RtlBand::general, hz, false);
+  }
+  // Crossing between wide FM, AM and narrow FM changes which channel width is sensible.
+  const auto target = orcsdr::band_plan::demod_for(hz);
+  if ((!stays || was_general) && target != previous) {
+    uint32_t standard = 0;
+    switch (target) {
+      case orcsdr::band_plan::Demod::wfm: standard = 260000; break;
+      case orcsdr::band_plan::Demod::am: standard = hz >= 118000000 ? 10000 : 6000; break;
+      default: standard = 25000; break;
+    }
+    rtl_filter_bandwidth_hz.store(rtl_clamp_filter_hz(RtlBand::general, standard), std::memory_order_relaxed);
+    rtl_audio_reset_demod_filters();
+  }
+}
+
 void handle_home_action(const orcsdr::home::Action& action) {
   using orcsdr::home::ActionKind;
   switch (action.kind) {
@@ -12503,14 +12601,12 @@ void handle_home_action(const orcsdr::home::Action& action) {
       open_global_settings(orcsdr::settings::Section::connectivity);
       return;
     case ActionKind::tune_frequency:
-      if (rtl_ui_band == RtlBand::am) orcsdr::am::note_tuned(action.value);
       if (rtl_ui_band == RtlBand::p25) {
         cancel_p25_survey();
         tune_p25_control(action.value);
-      } else if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
-        request_hot_retune(action.value);
-      else
-        queue_local_rtl_listen(rtl_ui_band, action.value, false);
+      } else {
+        home_retune(action.value);
+      }
       break;
     case ActionKind::span_down:
     case ActionKind::span_up: {
@@ -12523,17 +12619,9 @@ void handle_home_action(const orcsdr::home::Action& action) {
       break;
     }
     case ActionKind::step_down:
-    case ActionKind::step_up: {
-      const uint32_t next = rtl_step_frequency(
-          rtl_ui_band, rtl_ui_frequency_hz,
-          action.kind == ActionKind::step_down ? -1 : 1);
-      if (rtl_ui_band == RtlBand::am) orcsdr::am::note_tuned(next);
-      if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
-        request_hot_retune(next);
-      else
-        queue_local_rtl_listen(rtl_ui_band, next, false);
+    case ActionKind::step_up:
+      home_retune(home_step_target(action.kind == ActionKind::step_down ? -1 : 1));
       break;
-    }
     case ActionKind::step_size_down:
     case ActionKind::step_size_up: {
       const bool up = action.kind == ActionKind::step_size_up;
@@ -12547,6 +12635,8 @@ void handle_home_action(const orcsdr::home::Action& action) {
         const size_t turns = up ? 1 : 5;
         for (size_t i = 0; i < turns; ++i)
           rtl_am_step_hz = orcsdr::am::cycle_tune_step();
+      } else if (rtl_ui_band == RtlBand::general) {
+        rtl_general_step_hz = orcsdr::band_plan::cycle_step(rtl_general_step_hz, up ? 1 : -1);
       } else if (rtl_ui_band == RtlBand::shortwave) {
         const size_t turns = up ? 1 : 3;
         for (size_t i = 0; i < turns; ++i)
@@ -13864,7 +13954,7 @@ bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz) {
   if (!validate_rtl_tune_frequency(frequency_hz)) return false;
 #endif
   const uint32_t ui_quant_hz =
-      rtl_ui_band == RtlBand::airband
+      (rtl_ui_band == RtlBand::airband || rtl_ui_band == RtlBand::general)
           ? 1u
           : (rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::shortwave) ? 100u
                                                                                : 1000u;
@@ -13886,7 +13976,8 @@ bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz) {
   }
   const uint32_t lo_hz = rtl_ui_band == RtlBand::p25
                              ? frequency_hz
-                             : (rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::airband)
+                             : (rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::airband ||
+                                rtl_ui_band == RtlBand::general)
                                    ? ui_hz
                              : rtl_ui_band == RtlBand::fm
                                    ? rtl_fm_command_lo_hz(ui_hz)
@@ -14135,6 +14226,7 @@ void service_tap_queue() {
 // replayed as taps on its real buttons, so each dashboard's own validation and tuning run
 // unchanged; arrows move focus over the numpad's controls.
 bool shared_keypad_open() {
+  if (orcsdr::home::keypad_open()) return true;   // Home's own direct-tune numpad
   switch (rtl_ui_band) {
     case RtlBand::fm: return orcsdr::fm::keypad_open();
     case RtlBand::am: return orcsdr::am::keypad_open();
@@ -14268,6 +14360,14 @@ void route_key(const orcsdr::keyboard_input::Key& key) {
   }
   if (shared_keypad_open()) {
     handle_shared_keypad_key(key);
+    return;
+  }
+  // Typing a digit on Home opens the direct-tune numpad, for any frequency the receiver can tune.
+  if (orcsdr::home::active() && !orcsdr::home::popup_open() && key.special == Special::none &&
+      !key.ctrl && !key.alt && ((key.ch >= '0' && key.ch <= '9') || key.ch == '.')) {
+    orcsdr::home::begin_frequency_entry();
+    g_nav_dirty = true;
+    tap_keypad_key(key.ch);
     return;
   }
   const bool radio = radio_dashboard_active();

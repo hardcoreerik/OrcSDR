@@ -71,6 +71,7 @@ enum class ActionKind : uint8_t {
   waterfall_contrast_up,
   waterfall_palette_next,
   waterfall_speed_next,
+  open_frequency_entry,   // tapping the big frequency
   gain_open,
   gain_close,
   filter_open,
@@ -100,6 +101,9 @@ uint32_t step_span(uint32_t span_hz, int direction);
 bool active();
 // A gain or filter popup is showing; close_popup() dismisses it.
 bool popup_open();
+// Direct frequency entry: the shared numpad over Home, accepting any frequency the receiver can tune.
+bool keypad_open();
+void begin_frequency_entry();
 // Scroll position of the "Last used" list; the keyboard focus map depends on it.
 int32_t list_scroll_px();
 void close_popup();

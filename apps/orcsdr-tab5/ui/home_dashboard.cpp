@@ -1,4 +1,6 @@
 #include "focus_nav.hpp"
+#include "band_plan.hpp"
+#include "freq_keypad.hpp"
 #include "waterfall_style.hpp"
 #include "home_dashboard.hpp"
 
@@ -70,6 +72,8 @@ bool shown = false;
 bool browser = false;
 bool gain_popup = false;
 bool filter_popup = false;
+bool keypad = false;
+char entry[12]{};
 bool filter_edges = false;   // draw the receive-filter edges on the spectrum
 size_t browser_page = 0;
 int32_t scroll_offset_px = 0;
@@ -777,6 +781,10 @@ void draw_all() {
   M5.Display.drawRoundRect(10, 10, 1260, 700, 14, kCyan);
 }
 
+void draw_keypad() {
+  freq_keypad::draw(80, TFT_BLACK, "ENTER FREQUENCY", "0.024 - 1766", "MHz", entry);
+}
+
 Action tap_action(int32_t x, int32_t y) {
   if (audio_header::settings_hit(x, y))
     return {ActionKind::open_device_settings};
@@ -814,6 +822,7 @@ Action tap_action(int32_t x, int32_t y) {
     return {ActionKind::waterfall_contrast_down};
   if (inside(x, y, kContrastUpX, kContrastY, kContrastButtonW, kContrastButtonH))
     return {ActionKind::waterfall_contrast_up};
+  if (inside(x, y, kPlotX, kReadoutY, 350, kReadoutH)) return {ActionKind::open_frequency_entry};
   if (inside(x, y, kPaletteX, kReadoutY, kPaletteW, kReadoutH))
     return {ActionKind::waterfall_palette_next};
   if (inside(x, y, kSpeedX, kReadoutY, kSpeedW, kReadoutH))
@@ -874,16 +883,30 @@ void enter(const Snapshot& snapshot) {
   draw_all();
 }
 
-void leave() { shown = browser = gain_popup = filter_popup = false; gesture = {}; }
+void leave() {
+  shown = browser = gain_popup = filter_popup = keypad = false;
+  entry[0] = '\0';
+  gesture = {};
+}
+
+bool keypad_open() { return shown && keypad; }
+
+void begin_frequency_entry() {
+  if (!shown || browser || gain_popup || filter_popup || keypad) return;
+  keypad = true;
+  entry[0] = '\0';
+  draw_keypad();
+}
 
 void draw() {
   if (!shown) return;
   if (browser) draw_browser();
+  else if (keypad) draw_keypad();
   else draw_all();
 }
 
 void update(const Snapshot& snapshot) {
-  if (!shown || browser || snapshot.revision == current.revision) return;
+  if (!shown || browser || keypad || snapshot.revision == current.revision) return;
   const bool tuner_changed = snapshot.tuner_revision != current.tuner_revision;
   const bool audio_changed = snapshot.audio_revision != current.audio_revision;
   const bool status_changed = snapshot.status_revision != current.status_revision;
@@ -927,7 +950,9 @@ void update(const Snapshot& snapshot) {
 
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor, bool audio_stressed) {
-  if (!shown || browser || gain_popup || filter_popup || levels == nullptr || visible_bins < 2) return;
+  if (!shown || browser || gain_popup || filter_popup || keypad || levels == nullptr ||
+      visible_bins < 2)
+    return;
   const uint32_t now = millis();
   const uint32_t interval = audio_stressed ? 333 : 100;
   if (now - last_spectrum_ms < interval) return;
@@ -993,8 +1018,43 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   M5.Display.endWrite();
 }
 
+void close_keypad() {
+  keypad = false;
+  entry[0] = '\0';
+  draw_all();
+}
+
+Action keypad_tap(int32_t x, int32_t y) {
+  const auto result = freq_keypad::handle_touch(x, y, entry, sizeof(entry));
+  if (result == freq_keypad::Result::cancelled) {
+    close_keypad();
+    return {};
+  }
+  if (result == freq_keypad::Result::submitted) {
+    const uint32_t hz = band_plan::parse_mhz(entry);
+    if (hz != 0) {
+      close_keypad();
+      return {ActionKind::tune_frequency, dashboards::Id::count, hz};
+    }
+  }
+  return {};
+}
+
 Action handle_touch(int32_t x, int32_t y, bool pressed) {
   if (!shown) return {};
+  if (keypad) {   // the numpad owns the whole screen until it is dismissed
+    if (pressed && !gesture.down) {
+      gesture = {true, false, false, x, y, scroll_offset_px};
+      return {};
+    }
+    if (pressed) return {};
+    if (gesture.down) {
+      const int32_t tap_x = gesture.start_x, tap_y = gesture.start_y;
+      gesture = {};
+      return keypad_tap(tap_x, tap_y);
+    }
+    return {};
+  }
   if (pressed && !gesture.down) {
     gesture = {true, false, false, x, y, scroll_offset_px};
     if (!browser && inside(x, y, kListX + kListW - 18, kListY, 18, kListH) &&
@@ -1023,6 +1083,10 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
     gesture = {};
     if (was_scroll) return {};
     const Action action = tap_action(tap_x, tap_y);
+    if (action.kind == ActionKind::open_frequency_entry) {
+      begin_frequency_entry();
+      return {};
+    }
     if (action.kind == ActionKind::open_browser) {
       browser = true;
       browser_page = 0;
