@@ -41,8 +41,15 @@ previously in use is restored when you leave the tab.
 - **Filter:** the two yellow lines are the channel filter. Touch near one and drag sideways to set the width from
   3 to 20 kHz in 1 kHz steps; the width is saved. Changing the raster spacing in SETUP goes back to its standard
   width (10 kHz at 25 kHz spacing, 6 kHz at 8.33 kHz).
-- **Gain:** GAIN -/+ and TUNER AGC, the same controls and the same saved setting as on LISTEN.
+- **Controls:** two rows under the waterfall hold every adjustable aspect of tuning airband, each with a
+  large readout: **CHANNEL** (-/+ steps one raster channel), **SPAN**, **GAIN**, **SQUELCH**, **FILTER**
+  (-/+ is 1 kHz, 3 to 20 kHz), and the **AGC**, **SCAN/STOP** and **121.5** guard buttons. GAIN and AGC are
+  the same controls and the same saved setting as on LISTEN.
 - **Palette and speed:** PALETTE and SPEED chips (shared palettes, saved for this screen).
+- **External VFO (planned M5Dial):** each control above is one dashboard action, and every one has a serial
+  verb (`UP`/`DOWN`, `SPAN_UP`/`SPAN_DOWN`, `GAIN_UP`/`GAIN_DOWN`, `SQUELCH_UP`/`SQUELCH_DOWN`,
+  `FILTER_UP`/`FILTER_DOWN`, `SCAN`, `GUARD`, `TUNE <hz>`, `FILTER <hz>`), so a rotary controller only has to
+  send detent counts for whichever control it has selected.
 - The trace is drawn off-screen and pushed in one go, so it does not flicker; the waterfall uses the display's
   hardware scroll. `RTL_AIRBAND STATUS` reports `scope_fps` and `scope_ms` (time to draw the last frame).
 

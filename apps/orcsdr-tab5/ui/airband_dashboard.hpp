@@ -78,6 +78,8 @@ enum class ActionKind : uint8_t {
   tune_to,   // value = frequency in Hz (tap on the scope)
   span_down,
   span_up,
+  filter_down,   // channel filter 1 kHz narrower
+  filter_up,     // channel filter 1 kHz wider
   filter_set,   // value = channel filter width in Hz (dragging the scope's filter lines)
 };
 

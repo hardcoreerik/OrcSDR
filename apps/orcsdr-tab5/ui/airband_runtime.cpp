@@ -244,6 +244,14 @@ void dispatch(const Action& action, const LiveState& live) {
       g_scanner.stop();
       (void)tune(kGuardFrequencyHz);
       break;
+    case ActionKind::filter_down:
+    case ActionKind::filter_up: {
+      const uint32_t current = effective_filter_hz(s.spacing);
+      const uint32_t next = action.kind == ActionKind::filter_up ? current + 1000u
+                                                                : (current > 3000u ? current - 1000u : 3000u);
+      dispatch({ActionKind::filter_set, static_cast<int32_t>(std::clamp<uint32_t>(next, 3000u, 20000u))}, live);
+      break;
+    }
     case ActionKind::filter_set:
       if (action.value >= 3000) {
         g_custom_filter_hz = std::min<uint32_t>(static_cast<uint32_t>(action.value), 20000u);
@@ -478,6 +486,8 @@ bool serial_action(const char* verb, bool has_value, uint32_t value, const LiveS
       {"CLEAR", ActionKind::clear_activity}, {"GAIN_UP", ActionKind::gain_up},
       {"GAIN_DOWN", ActionKind::gain_down},  {"AGC", ActionKind::tuner_agc_toggle},
       {"RTLAGC", ActionKind::rtl_agc_toggle},
+      {"SPAN_UP", ActionKind::span_up},       {"SPAN_DOWN", ActionKind::span_down},
+      {"FILTER_UP", ActionKind::filter_up},   {"FILTER_DOWN", ActionKind::filter_down},
   };
   if (std::strcmp(verb, "TUNE") == 0) {
     if (!has_value || !in_band(value)) return false;

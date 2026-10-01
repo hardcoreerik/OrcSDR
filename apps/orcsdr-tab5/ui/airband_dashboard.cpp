@@ -32,15 +32,26 @@ constexpr int kTabW = 1280 / kTabCount;
 
 // SCOPE tab: spectrum on top, frequency axis, waterfall below, status line at the bottom.
 constexpr int kScopeX = 24, kScopeW = 1232;
-constexpr int kScopeSpecY = 168, kScopeSpecH = 190;
-constexpr int kScopeAxisY = 358, kScopeAxisH = 20;
-constexpr int kScopeWfY = 380, kScopeWfH = 170;
-// Control row under the waterfall: span, gain and tuner AGC, like the FM spectrum view's controls.
-constexpr Rect kScopeSpanDown{24, 560, 70, 56};
-constexpr Rect kScopeSpanUp{300, 560, 70, 56};
-constexpr Rect kScopeGainDown{404, 560, 70, 56};
-constexpr Rect kScopeGainUp{690, 560, 70, 56};
-constexpr Rect kScopeAgc{790, 560, 230, 56};
+constexpr int kScopeSpecY = 168, kScopeSpecH = 150;
+constexpr int kScopeAxisY = 318, kScopeAxisH = 20;
+constexpr int kScopeWfY = 340, kScopeWfH = 150;
+// Control rows under the waterfall. Every adjustable aspect of tuning airband is here: channel, span,
+// gain, squelch, filter, tuner AGC, scan and the 121.5 guard channel. Each maps to one dashboard action
+// (the same ones the serial verbs use), so an external VFO such as the M5Dial can drive the same set.
+constexpr int kScopeRowAY = 498, kScopeRowBY = 558, kScopeRowH = 52;
+constexpr int kScopeGroupX[3] = {24, 428, 832};
+constexpr int kScopeStepW = 64, kScopeValueW = 240, kScopeGap = 4;
+Rect scope_minus(int group, int row_y) { return {kScopeGroupX[group], row_y, kScopeStepW, kScopeRowH}; }
+Rect scope_value(int group, int row_y) {
+  return {kScopeGroupX[group] + kScopeStepW + kScopeGap, row_y, kScopeValueW, kScopeRowH};
+}
+Rect scope_plus(int group, int row_y) {
+  return {kScopeGroupX[group] + kScopeStepW + kScopeGap + kScopeValueW + kScopeGap, row_y, kScopeStepW,
+          kScopeRowH};
+}
+constexpr Rect kScopeAgc{832, 558, 160, 52};
+constexpr Rect kScopeScan{998, 558, 110, 52};
+constexpr Rect kScopeGuard{1114, 558, 94, 52};
 constexpr Rect kScopePaletteChip{900, 100, 170, 52};
 constexpr Rect kScopeSpeedChip{1086, 100, 170, 52};
 constexpr float kScopeMinRangeDb = 24.0f;
@@ -226,36 +237,67 @@ void draw_scope_status() {
   text(value, 34, 151, g_snapshot.squelch_open ? kGreen : TFT_LIGHTGREY, 2, middle_left);
 }
 
+void scope_value_cell(const Rect& r, const char* label, const char* value, uint16_t colour) {
+  M5.Display.fillRoundRect(r.x, r.y, r.w, r.h, 8, kPanel);
+  M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 8, kMuted);
+  text(label, cx(r), r.y + 11, kCyan, 1);
+  text(value, cx(r), r.y + 33, colour, 3);
+}
+
 void draw_scope_controls() {
   using receiver_controls::Availability;
   using receiver_controls::Control;
-  M5.Display.fillRect(kScopeX, 556, kScopeW, 64, TFT_BLACK);
+  M5.Display.fillRect(kScopeX, kScopeRowAY - 4, kScopeW, 2 * kScopeRowH + 16, TFT_BLACK);
   char value[40];
-  button(kScopeSpanDown, "-", false, true, 3);
-  button(kScopeSpanUp, "+", false, true, 3);
-  text("SPAN", 112, 575, kCyan, 1, middle_left);
+  const int a = kScopeRowAY, b = kScopeRowBY;
+
+  // Row A: channel, span, gain.
+  button(scope_minus(0, a), "-", false, true, 3);
+  button(scope_plus(0, a), "+", false, true, 3);
+  std::snprintf(value, sizeof(value), "%.3f", static_cast<double>(g_snapshot.frequency_hz) / 1e6);
+  scope_value_cell(scope_value(0, a), "CHANNEL MHz", value, TFT_WHITE);
+
+  button(scope_minus(1, a), "-", false, true, 3);
+  button(scope_plus(1, a), "+", false, true, 3);
   if (g_scope_span_hz)
     std::snprintf(value, sizeof(value), "%lu kHz", static_cast<unsigned long>(g_scope_span_hz / 1000u));
   else
     std::snprintf(value, sizeof(value), "--");
-  text(value, 197, 598, kGreen, 2);
+  scope_value_cell(scope_value(1, a), "SPAN", value, kGreen);
 
   const auto agc = receiver_controls::item(Control::tuner_agc, g_snapshot.controls);
   const auto gain = receiver_controls::item(Control::rf_gain, g_snapshot.controls);
   const bool gain_ok = gain.availability == Availability::enabled;
   const bool agc_ok = agc.availability == Availability::enabled;
-  button(kScopeGainDown, "-", false, gain_ok, 3);
-  button(kScopeGainUp, "+", false, gain_ok, 3);
-  text("GAIN", 482, 575, kCyan, 1, middle_left);
+  button(scope_minus(2, a), "-", false, gain_ok, 3);
+  button(scope_plus(2, a), "+", false, gain_ok, 3);
   if (!gain_ok)
     std::snprintf(value, sizeof(value), "N/A");
   else if (agc_ok && agc.active)
     std::snprintf(value, sizeof(value), "AUTO");
   else
     std::snprintf(value, sizeof(value), "%.1f dB", static_cast<double>(gain.value) / 10.0);
-  text(value, 580, 598, gain_ok ? kGreen : kMuted, 2);
-  button(kScopeAgc, !agc_ok ? "TUNER AGC N/A" : agc.active ? "TUNER AGC ON" : "TUNER AGC OFF",
-         agc_ok && agc.active, agc_ok, 2);
+  scope_value_cell(scope_value(2, a), "GAIN", value, gain_ok ? kGreen : kMuted);
+
+  // Row B: squelch, filter, tuner AGC / scan / guard.
+  button(scope_minus(0, b), "-", false, true, 3);
+  button(scope_plus(0, b), "+", false, true, 3);
+  if (g_snapshot.scan.squelch_db == 0)
+    std::snprintf(value, sizeof(value), "OPEN");
+  else
+    std::snprintf(value, sizeof(value), "+%d dB", static_cast<int>(g_snapshot.scan.squelch_db));
+  scope_value_cell(scope_value(0, b), g_snapshot.squelch_open ? "SQUELCH  (open)" : "SQUELCH", value,
+                   g_snapshot.squelch_open ? kGreen : TFT_WHITE);
+
+  button(scope_minus(1, b), "-", false, true, 3);
+  button(scope_plus(1, b), "+", false, true, 3);
+  std::snprintf(value, sizeof(value), "%.0f kHz", static_cast<double>(g_snapshot.filter_hz) / 1000.0);
+  scope_value_cell(scope_value(1, b), "FILTER", value, kYellow);
+
+  button(kScopeAgc, !agc_ok ? "AGC N/A" : agc.active ? "AGC ON" : "AGC OFF", agc_ok && agc.active, agc_ok, 2);
+  const bool scanning = g_snapshot.scan_state != ScanState::off;
+  button(kScopeScan, scanning ? "STOP" : "SCAN", scanning, true, 2);
+  button(kScopeGuard, "121.5", g_snapshot.frequency_hz == kGuardFrequencyHz, true, 2);
 }
 
 // The tuned frequency is the scope's heading; it must follow every retune (tap, scanner, keys).
@@ -612,11 +654,20 @@ Action tab_touch(int32_t x) {
 
 Action scope_touch(int32_t x, int32_t y) {
   using waterfall_style::Screen;
-  if (hit(x, y, kScopeSpanDown)) return {ActionKind::span_down};
-  if (hit(x, y, kScopeSpanUp)) return {ActionKind::span_up};
-  if (hit(x, y, kScopeGainDown)) return {ActionKind::gain_down};
-  if (hit(x, y, kScopeGainUp)) return {ActionKind::gain_up};
+  const int a = kScopeRowAY, b = kScopeRowBY;
+  if (hit(x, y, scope_minus(0, a))) return {ActionKind::tune_down};
+  if (hit(x, y, scope_plus(0, a))) return {ActionKind::tune_up};
+  if (hit(x, y, scope_minus(1, a))) return {ActionKind::span_down};
+  if (hit(x, y, scope_plus(1, a))) return {ActionKind::span_up};
+  if (hit(x, y, scope_minus(2, a))) return {ActionKind::gain_down};
+  if (hit(x, y, scope_plus(2, a))) return {ActionKind::gain_up};
+  if (hit(x, y, scope_minus(0, b))) return {ActionKind::squelch_down};
+  if (hit(x, y, scope_plus(0, b))) return {ActionKind::squelch_up};
+  if (hit(x, y, scope_minus(1, b))) return {ActionKind::filter_down};
+  if (hit(x, y, scope_plus(1, b))) return {ActionKind::filter_up};
   if (hit(x, y, kScopeAgc)) return {ActionKind::tuner_agc_toggle};
+  if (hit(x, y, kScopeScan)) return {ActionKind::scan_toggle};
+  if (hit(x, y, kScopeGuard)) return {ActionKind::tune_guard};
   if (hit(x, y, kScopePaletteChip)) {
     waterfall_style::next_palette(Screen::airband);
     draw_scope_chips();
@@ -844,7 +895,9 @@ void dashboard_update(const Snapshot& snapshot) {
         draw_scope_status();
         g_last_meter_ms = now;
       }
-      if (gain_changed) draw_scope_controls();
+      if (gain_changed || frequency_changed || settings_changed || state_changed ||
+          snapshot.filter_hz != old.filter_hz || snapshot.squelch_open != old.squelch_open)
+        draw_scope_controls();
       break;
   }
   M5.Display.endWrite();
@@ -1024,7 +1077,7 @@ bool dashboard_self_check() {
             kStatusCard.y + kStatusCard.h <= kGainCard.y &&
             kTabsY + 90 <= 720 &&
             kStatusCard.y + kStatusCard.h <= kTabsY &&
-            kScopeWfY + kScopeWfH <= 556 && kScopeAgc.y + kScopeAgc.h <= kTabsY && kScopeAxisY + kScopeAxisH <= kScopeWfY &&
+            kScopeWfY + kScopeWfH <= kScopeRowAY - 4 && kScopeRowBY + kScopeRowH <= kTabsY && kScopeAxisY + kScopeAxisH <= kScopeWfY &&
             kTabW * kTabCount <= 1280;
 
   g_snapshot = saved;

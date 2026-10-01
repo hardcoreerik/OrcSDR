@@ -434,7 +434,7 @@ LoRa Overview uses the unsmoothed value for faster visual response.
   `SETTLE`, `HANG_UP`, `HANG_DOWN`, `PRIORITY`, `RELOAD`, `CLEAR`, `GAIN_UP`,
   `GAIN_DOWN`, `AGC`, `RTLAGC`, `TAB <0-5>` (`5` is the SCOPE tab),
   `FILTER <3000-20000>` (channel filter width in Hz; `0` returns to the standard width for the raster
-  spacing). `RTL_AIRBAND STATUS` prints one
+  spacing), `FILTER_UP`, `FILTER_DOWN` (1 kHz steps), `SPAN_UP`, `SPAN_DOWN` (the SCOPE tab's spectrum span). `RTL_AIRBAND STATUS` prints one
   `RTL_AIRBAND_STATUS` line: dashboard/tab, frequency, scan state, squelch
   (`level_db`, `snr_db`, `floor_db`, `sql_db`), spacing, source, radius,
   channel filter, scan counters, catalog load result (`load=`) and database
