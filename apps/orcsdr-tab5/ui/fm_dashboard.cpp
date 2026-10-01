@@ -471,18 +471,28 @@ void iq_badge(int x, int y, int w, int h, float dbfs, bool clipping) {
 // Status badges and separate left and right audio meters, each on its own row, large enough to read at a
 // glance and kept entirely above the spectrum plot (which starts at y 246). STEREO and RDS light when
 // locked; the IQ pill shows the IQ level and turns red when the IQ is overloading.
+// Instant attack, smooth release (3 dB per 150 ms refresh, 20 dB a second like the listen page's VU), so
+// a peak between two refreshes is not simply dropped.
+float meter_release(float shown_db, float level_db) {
+  return std::max(level_db, shown_db - 3.0f);
+}
+
 void draw_signal_panel() {
+  static float shown_iq_db = -90.0f, shown_left_db = -90.0f, shown_right_db = -90.0f;
+  shown_iq_db = meter_release(shown_iq_db, g_snapshot.relative_dbfs);
+  shown_left_db = meter_release(shown_left_db, g_snapshot.left_dbfs);
+  shown_right_db = meter_release(shown_right_db, g_snapshot.right_dbfs);
   constexpr int kPanelX = 908, kPanelY = 146, kPanelW = 332, kPanelH = 96;
   M5.Display.fillRect(kPanelX, kPanelY, kPanelW, kPanelH, kPanel);
   const bool clipping = g_snapshot.clipping_percent > 0.1f;
   status_badge(912, 148, 104, 30, g_snapshot.stereo ? "STEREO" : "MONO", g_snapshot.stereo, kGreen);
   status_badge(1024, 148, 104, 30, g_snapshot.rds_locked ? "RDS" : g_snapshot.rds_carrier ? "RDS..." : "NO RDS",
                g_snapshot.rds_locked, kCyan);
-  iq_badge(1136, 148, 100, 30, g_snapshot.relative_dbfs, clipping);
+  iq_badge(1136, 148, 100, 30, shown_iq_db, clipping);
   text("L", 920, 196, TFT_WHITE, 2, middle_left);
-  draw_segment_meter(944, 184, 292, g_snapshot.left_dbfs, 22, 24);
+  draw_segment_meter(944, 184, 292, shown_left_db, 22, 24);
   text("R", 920, 226, TFT_WHITE, 2, middle_left);
-  draw_segment_meter(944, 214, 292, g_snapshot.right_dbfs, 22, 24);
+  draw_segment_meter(944, 214, 292, shown_right_db, 22, 24);
 }
 
 void draw_spectrum_dynamic() {
@@ -746,9 +756,13 @@ void update(const Snapshot& snapshot) {
 }
 
 uint32_t g_scope_fps = 0, g_scope_frames = 0, g_scope_window_ms = 0, g_scope_draw_ms = 0;
-// Slow-falling peak-hold trace behind the live one: shows where signals have been, not just now. Reset
-// when the tuned frequency or span changes, because the bins no longer mean the same thing.
-EXT_RAM_BSS_ATTR float g_peak_hold[kSpectrumW]{};
+// Slow-falling peak-hold trace behind the live one: shows where signals have been, not just now. It is kept
+// in dB, not as a fraction of the screen: the display floor follows the loudest bin every frame, so a stored
+// fraction would drift to the wrong height whenever that bin changed. Reset when the tuned frequency or span
+// changes, because the bins no longer mean the same thing.
+constexpr float kPeakHoldFallDbPerFrame = 0.25f;   // about 5 dB a second at 20 frames a second
+constexpr float kPeakHoldEmptyDb = -200.0f;
+EXT_RAM_BSS_ATTR float g_peak_hold_db[kSpectrumW]{};
 uint32_t g_peak_frequency_hz = 0, g_peak_span_hz = 0;
 
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, float floor) {
@@ -779,7 +793,7 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
   if (g_peak_frequency_hz != g_snapshot.frequency_hz || g_peak_span_hz != g_snapshot.span_hz) {
     g_peak_frequency_hz = g_snapshot.frequency_hz;
     g_peak_span_hz = g_snapshot.span_hz;
-    for (size_t i = 0; i < kSpectrumW; ++i) g_peak_hold[i] = 0.0f;
+    for (size_t i = 0; i < kSpectrumW; ++i) g_peak_hold_db[i] = kPeakHoldEmptyDb;
   }
   int px = 0;
   int py = h - 3;
@@ -789,10 +803,11 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
     const float normalized = std::clamp((level - floor) / 48.0f, 0.0f, 1.0f);
     const int x = static_cast<int>(i) - 1;
     const int y = h - 3 - static_cast<int>(normalized * (kSpectrumH - 4));
-    g_peak_hold[i] = std::max(normalized, g_peak_hold[i] - 0.004f);
+    g_peak_hold_db[i] = std::max(level, g_peak_hold_db[i] - kPeakHoldFallDbPerFrame);
     if (canvas != nullptr && x >= 0 && x < w) {
-      // Peak hold first so the live trace draws over it.
-      canvas->drawPixel(x, h - 3 - static_cast<int>(g_peak_hold[i] * (kSpectrumH - 4)), 0xFD20);
+      // Peak hold first so the live trace draws over it, scaled with this frame's floor.
+      const float held = std::clamp((g_peak_hold_db[i] - floor) / 48.0f, 0.0f, 1.0f);
+      canvas->drawPixel(x, h - 3 - static_cast<int>(held * (kSpectrumH - 4)), 0xFD20);
     }
     if (canvas != nullptr && i && x >= 0 && x < w) {
       canvas->drawLine(px, py, x, y, kGreen);
