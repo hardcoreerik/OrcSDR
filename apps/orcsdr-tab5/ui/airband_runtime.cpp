@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace orcsdr::airband {
@@ -27,10 +28,33 @@ uint32_t g_saved_frequency_hz = kGuardFrequencyHz;
 Location g_catalog_location{};
 bool g_catalog_attempted = false;
 
+// Airband gain. A boot (or anything else that resets the driver) brings the tuner AGC back on, which
+// raised the noise floor about 8 dB on the bench and hid weak transmissions. The chosen gain is kept
+// in NVS and re-applied once the receiver is running; with nothing saved the default is a fixed
+// manual gain that gave the best weak-signal SNR in testing.
+constexpr int16_t kDefaultManualGainTenthDb = 400;
+bool g_gain_pending = true;
+
+int16_t nearest_gain_step(const LiveState& live, int16_t wanted) {
+  if (live.gain_step_count == 0) return wanted;
+  int16_t best = live.gain_steps_tenth_db[0];
+  for (uint8_t i = 1; i < live.gain_step_count; ++i) {
+    const int16_t step = live.gain_steps_tenth_db[i];
+    if (std::abs(step - wanted) < std::abs(best - wanted)) best = step;
+  }
+  return best;
+}
+
 bool open_store() {
   if (g_store_ready) return true;
   g_store_ready = g_store.begin("airband", false);
   return g_store_ready;
+}
+
+void save_gain(bool automatic, int16_t gain_tenth_db) {
+  if (!open_store()) return;
+  (void)g_store.put_u8("gain_auto", automatic ? 1 : 0);
+  (void)g_store.put_i32("gain_db10", gain_tenth_db);
 }
 
 void publish_audio_squelch() {
@@ -51,7 +75,7 @@ void load_settings_once() {
   const uint8_t source = g_store.get_u8("source", 0);
   s.source = source == 1 ? ScanSource::full_band : ScanSource::airport_bank;
   s.squelch_db =
-      static_cast<int16_t>(std::clamp<int32_t>(g_store.get_i32("sql_db", 8), 0, 30));
+      static_cast<int16_t>(std::clamp<int32_t>(g_store.get_i32("sql_db", 4), 0, 30));
   s.settle_ms =
       static_cast<uint16_t>(std::clamp<uint32_t>(g_store.get_u16("settle", 350), 300, 800));
   s.hang_ms =
@@ -266,6 +290,7 @@ void dispatch(const Action& action, const LiveState& live) {
                                      action.kind == ActionKind::gain_up ? 1 : -1);
       (void)g_hooks.apply_gain(receiver_controls::action(
           receiver_controls::Control::rf_gain, live.controls, next));
+      save_gain(false, next);
       g_squelch.reset();
       break;
     }
@@ -273,6 +298,8 @@ void dispatch(const Action& action, const LiveState& live) {
       if (g_hooks.apply_gain)
         (void)g_hooks.apply_gain(receiver_controls::action(
             receiver_controls::Control::tuner_agc, live.controls));
+      // The toggle flips the mode; remember the new one (and the gain it will use if manual).
+      save_gain(!live.controls.tuner_agc, live.controls.gain_tenth_db);
       g_squelch.reset();
       break;
     case ActionKind::rtl_agc_toggle:
@@ -337,7 +364,28 @@ void configure(const Hooks& hooks) {
   load_settings_once();
 }
 
+// Applies the saved (or default) Airband gain once the driver is up. Returns true when done.
+bool apply_saved_gain(const LiveState& live) {
+  if (!g_hooks.apply_gain || !live.receiver_running || !live.controls.capabilities.rf_gain)
+    return false;
+  const bool saved_auto = open_store() && g_store.get_u8("gain_auto", 0) == 1;
+  const int32_t saved_gain =
+      open_store() ? g_store.get_i32("gain_db10", kDefaultManualGainTenthDb) : kDefaultManualGainTenthDb;
+  if (saved_auto) {
+    if (!live.controls.tuner_agc)
+      (void)g_hooks.apply_gain(receiver_controls::action(receiver_controls::Control::tuner_agc,
+                                                         live.controls));
+    return true;
+  }
+  const int16_t gain = nearest_gain_step(live, static_cast<int16_t>(saved_gain));
+  (void)g_hooks.apply_gain(
+      receiver_controls::action(receiver_controls::Control::rf_gain, live.controls, gain));
+  g_squelch.reset();
+  return true;
+}
+
 void enter(const LiveState& live) {
+  g_gain_pending = true;
   load_settings_once();
   g_squelch.reset();
   publish_audio_squelch();
@@ -366,6 +414,7 @@ void redraw() {
 }
 
 void service(const LiveState& live) {
+  if (g_gain_pending && apply_saved_gain(live)) g_gain_pending = false;
   if (live.receiver_running) {
     g_squelch.update(live.now_ms, live.channel_db);
     g_audio_open.store(g_squelch.open(), std::memory_order_release);

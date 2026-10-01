@@ -70,3 +70,9 @@ g++ "${common[@]}" -O2 "${waterfall_style_sources[@]}" -o "$build_dir/waterfall_
 "$build_dir/waterfall_style_tests"
 g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer   "${waterfall_style_sources[@]}" -o "$build_dir/waterfall_style_tests_sanitized"
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1   "$build_dir/waterfall_style_tests_sanitized"
+
+airband_audio_sources=(tests/airband_audio_filter_tests.cpp apps/orcsdr-tab5/ui/airband_audio_filter.cpp)
+g++ "${common[@]}" -O2 "${airband_audio_sources[@]}" -o "$build_dir/airband_audio_filter_tests"
+"$build_dir/airband_audio_filter_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer   "${airband_audio_sources[@]}" -o "$build_dir/airband_audio_filter_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1   "$build_dir/airband_audio_filter_tests_sanitized"
