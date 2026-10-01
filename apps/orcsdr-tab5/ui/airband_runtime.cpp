@@ -93,7 +93,7 @@ void load_settings_once() {
                  radius == 250 || radius == 500)
                     ? radius
                     : 100;
-  g_custom_filter_hz = std::clamp<uint32_t>(g_store.get_u32("filter_hz", 0), 0u, 20000u);
+  g_custom_filter_hz = std::clamp<uint32_t>(g_store.get_u32("filter_hz", 0), 0u, 30000u);
   if (g_custom_filter_hz != 0 && g_custom_filter_hz < 3000u) g_custom_filter_hz = 0;
   const uint32_t saved = g_store.get_u32("last_hz", kGuardFrequencyHz);
   g_saved_frequency_hz = in_band(saved) ? saved : kGuardFrequencyHz;
@@ -249,12 +249,12 @@ void dispatch(const Action& action, const LiveState& live) {
       const uint32_t current = effective_filter_hz(s.spacing);
       const uint32_t next = action.kind == ActionKind::filter_up ? current + 1000u
                                                                 : (current > 3000u ? current - 1000u : 3000u);
-      dispatch({ActionKind::filter_set, static_cast<int32_t>(std::clamp<uint32_t>(next, 3000u, 20000u))}, live);
+      dispatch({ActionKind::filter_set, static_cast<int32_t>(std::clamp<uint32_t>(next, 3000u, 30000u))}, live);
       break;
     }
     case ActionKind::filter_set:
       if (action.value >= 3000) {
-        g_custom_filter_hz = std::min<uint32_t>(static_cast<uint32_t>(action.value), 20000u);
+        g_custom_filter_hz = std::min<uint32_t>(static_cast<uint32_t>(action.value), 30000u);
         if (open_store()) (void)g_store.put_u32("filter_hz", g_custom_filter_hz);
         if (g_hooks.apply_filter) g_hooks.apply_filter(g_custom_filter_hz);
       }
@@ -494,8 +494,8 @@ bool serial_action(const char* verb, bool has_value, uint32_t value, const LiveS
     g_scanner.stop();
     return tune(value);
   }
-  if (std::strcmp(verb, "FILTER") == 0) {   // channel filter width in Hz (3000-20000); 0 = standard
-    if (!has_value || (value != 0 && (value < 3000 || value > 20000))) return false;
+  if (std::strcmp(verb, "FILTER") == 0) {   // channel filter width in Hz (3000-30000); 0 = standard
+    if (!has_value || (value != 0 && (value < 3000 || value > 30000))) return false;
     if (value == 0) {
       g_custom_filter_hz = 0;
       if (open_store()) (void)g_store.put_u32("filter_hz", 0);

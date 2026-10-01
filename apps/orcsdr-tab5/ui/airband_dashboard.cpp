@@ -952,7 +952,7 @@ uint32_t dashboard_scope_filter_from_x(int32_t x) {
   const int centre = kScopeX + kScopeW / 2;
   const int64_t width = 2ll * std::abs(x - centre) * static_cast<int64_t>(g_scope_span_hz) / kScopeW;
   const int64_t rounded = (width + 500) / 1000 * 1000;
-  return static_cast<uint32_t>(std::clamp<int64_t>(rounded, 3000, 20000));
+  return static_cast<uint32_t>(std::clamp<int64_t>(rounded, 3000, 30000));
 }
 void dashboard_set_scope_span_hook(void (*hook)(uint32_t hz)) { g_scope_span_hook = hook; }
 

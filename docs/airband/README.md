@@ -39,11 +39,11 @@ previously in use is restored when you leave the tab.
 - **Zoom:** spread two fingers to zoom in, pinch to zoom out (one span step per quarter change in finger
   distance: 240, 480, 960, 1200, 2400 kHz), or use SPAN -/+. Taps are ignored until all fingers lift after a pinch.
 - **Filter:** the two yellow lines are the channel filter. Touch near one and drag sideways to set the width from
-  3 to 20 kHz in 1 kHz steps; the width is saved. Changing the raster spacing in SETUP goes back to its standard
+  3 to 30 kHz in 1 kHz steps; the width is saved. Changing the raster spacing in SETUP goes back to its standard
   width (10 kHz at 25 kHz spacing, 6 kHz at 8.33 kHz).
 - **Controls:** two rows under the waterfall hold every adjustable aspect of tuning airband, each with a
   large readout: **CHANNEL** (-/+ steps one raster channel), **SPAN**, **GAIN**, **SQUELCH**, **FILTER**
-  (-/+ is 1 kHz, 3 to 20 kHz), and the **AGC**, **SCAN/STOP** and **121.5** guard buttons. GAIN and AGC are
+  (-/+ is 1 kHz, 3 to 30 kHz), and the **AGC**, **SCAN/STOP** and **121.5** guard buttons. GAIN and AGC are
   the same controls and the same saved setting as on LISTEN.
 - **Palette and speed:** PALETTE and SPEED chips (shared palettes, saved for this screen).
 - **External VFO (planned M5Dial):** each control above is one dashboard action, and every one has a serial
