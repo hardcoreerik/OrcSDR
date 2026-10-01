@@ -487,7 +487,10 @@ void draw_signal_panel() {
   static float shown_iq_db = -90.0f, shown_left_db = -90.0f, shown_right_db = -90.0f;
   static uint32_t last_paint_ms = 0, shown_frequency_hz = 0;
   const uint32_t now = millis();
-  if (shown_frequency_hz != g_snapshot.frequency_hz) {   // a new station must not inherit the old bars
+  // A new station, or coming back after more than a second away from this view, must not inherit the old
+  // bars: the release below is capped per paint, so a stale high level would linger.
+  const bool stale = last_paint_ms != 0 && now - last_paint_ms > 1000u;
+  if (shown_frequency_hz != g_snapshot.frequency_hz || stale) {
     shown_frequency_hz = g_snapshot.frequency_hz;
     shown_iq_db = shown_left_db = shown_right_db = -90.0f;
   }
