@@ -6,6 +6,7 @@
 #include "freq_keypad.hpp"
 #include "shortwave_model.hpp"
 #include "scope_canvas.hpp"
+#include "waterfall_style.hpp"
 #include "spectrum_resample.hpp"
 #include "text_editor.hpp"
 
@@ -540,12 +541,7 @@ void draw_keypad() {
 }
 
 uint16_t waterfall_color(float level) {
-  level = std::clamp(level, 0.0f, 1.0f);
-  const uint8_t r = level < 0.55f ? 0 : static_cast<uint8_t>((level - 0.55f) * 566);
-  const uint8_t g = level < 0.2f ? 0 : static_cast<uint8_t>(
-      std::min(255.0f, (level - 0.2f) * 510));
-  const uint8_t b = level < 0.65f ? static_cast<uint8_t>((0.65f - level) * 390) : 0;
-  return M5.Display.color565(r, g, b);
+  return waterfall_style::color565(waterfall_style::Screen::shortwave, level);
 }
 
 }  // namespace
@@ -697,13 +693,18 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
     canvas->drawFastVLine(center, 0, ch, kCyan);
     canvas->drawFastVLine(center - half_filter, 0, ch, kYellow);
     canvas->drawFastVLine(center + half_filter, 0, ch, kYellow);
+    scope::draw_style_chips(canvas, cw, waterfall_style::Screen::shortwave);
     canvas->pushSprite(kSpectrumX + 1, kSpectrumY + 1);
   }
-  scope::scroll_waterfall(kSpectrumX, kWaterfallY + kWaterfallH - 2, width, g_waterfall_row);
+  scope::scroll_waterfall(kSpectrumX, kWaterfallY + kWaterfallH - 2, width, g_waterfall_row,
+                          waterfall_style::rows_per_frame(waterfall_style::Screen::shortwave));
 }
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
+  if (spectrum_active() &&
+      scope::style_chip_tap(x, y, kSpectrumX + 1, kSpectrumY + 1, spectrum_width() - 2, waterfall_style::Screen::shortwave))
+    return {};
   if (g_state.modal() != Modal::none && g_state.modal() != Modal::frequency) {
     const Modal modal = g_state.modal();
     const auto result = text_editor::handle_touch(x, y);
@@ -1134,7 +1135,7 @@ bool dashboard_self_check() {
           ActionKind::gain_auto &&
       handle_gain_drag(kGainX + kGainW, kGainY).value == 496 &&
       handle_touch(kDrawer.x + 8, kSpectrumY + 20).kind == ActionKind::none &&
-       handle_touch(kSpectrumX + kSpectrumOpenW - 8, kSpectrumY + 20).kind ==
+       handle_touch(kSpectrumX + kSpectrumOpenW - 8, kSpectrumY + 60).kind ==
            ActionKind::tune_hz;
   g_state.open(Modal::frequency);
   const bool modal_gestures_ok =

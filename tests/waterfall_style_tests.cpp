@@ -3,6 +3,8 @@
 
 #include "waterfall_style.hpp"
 
+#include <initializer_list>
+
 namespace {
 
 [[noreturn]] void fail(const char* expression, int line) {
@@ -32,6 +34,12 @@ void test_defaults_keep_each_screens_look() {
   unpack(Screen::airband, 0xFF);
   CHECK(palette(Screen::airband) == 0 && speed(Screen::airband) == 0);
   CHECK(rows_per_frame(Screen::airband) == 2);   // Airband scope matches Home's pace
+  for (const Screen screen : {Screen::fm, Screen::shortwave, Screen::am, Screen::cb, Screen::p25}) {
+    unpack(screen, 0xFF);
+    CHECK(speed(screen) == 0 && rows_per_frame(screen) == 2);   // the 50 ms scopes
+  }
+  CHECK(palette(Screen::fm) == 1 && palette(Screen::p25) == 1);   // their original colours
+  CHECK(palette(Screen::shortwave) == 0 && palette(Screen::am) == 0 && palette(Screen::cb) == 0);
 }
 
 void test_speed_adds_rows() {

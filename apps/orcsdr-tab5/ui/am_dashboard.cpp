@@ -9,6 +9,7 @@
 #include "spectrum_resample.hpp"
 
 #include "scope_canvas.hpp"
+#include "waterfall_style.hpp"
 #include <M5Unified.h>
 
 #include <algorithm>
@@ -542,11 +543,7 @@ void draw_dynamic() {
 }
 
 uint16_t waterfall_color(float level) {
-  level = std::clamp(level, 0.0f, 1.0f);
-  const uint8_t r = level < 0.55f ? 0 : static_cast<uint8_t>((level - 0.55f) * 566);
-  const uint8_t g = level < 0.2f ? 0 : static_cast<uint8_t>(std::min(255.0f, (level - 0.2f) * 510));
-  const uint8_t b = level < 0.65f ? static_cast<uint8_t>((0.65f - level) * 390) : 0;
-  return M5.Display.color565(r, g, b);
+  return waterfall_style::color565(waterfall_style::Screen::am, level);
 }
 
 }  // namespace
@@ -632,9 +629,11 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
     canvas->drawFastVLine(center, 0, h, kCyan);
     canvas->drawFastVLine(center - half_filter, 0, h, kYellow);
     canvas->drawFastVLine(center + half_filter, 0, h, kYellow);
+    scope::draw_style_chips(canvas, w, waterfall_style::Screen::am);
     canvas->pushSprite(kSpectrumX + 1, kSpectrumY + 1);
   }
-  scope::scroll_waterfall(kSpectrumX, kWaterfallY + kWaterfallH - 2, kSpectrumW, g_waterfall_row);
+  scope::scroll_waterfall(kSpectrumX, kWaterfallY + kWaterfallH - 2, kSpectrumW, g_waterfall_row,
+                          waterfall_style::rows_per_frame(waterfall_style::Screen::am));
   g_scope_stats.frame_done(frame_started_ms);
 }
 
@@ -655,6 +654,9 @@ Action gain_button_action(const Snapshot& snapshot) {
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
+  if (spectrum_active() &&
+      scope::style_chip_tap(x, y, kSpectrumX + 1, kSpectrumY + 1, kSpectrumW - 2, waterfall_style::Screen::am))
+    return {};
   if (g_scan_prompt) {
     if (hit(x, y, 280, 425, 220, 70)) reset_scan_results();
     else if (hit(x, y, 530, 425, 220, 70)) {

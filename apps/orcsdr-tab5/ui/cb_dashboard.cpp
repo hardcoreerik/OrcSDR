@@ -4,6 +4,7 @@
 #include "dashboard_audio_control.hpp"
 
 #include "scope_canvas.hpp"
+#include "waterfall_style.hpp"
 #include <M5Unified.h>
 
 #include <algorithm>
@@ -417,11 +418,7 @@ void draw_spectrum_static() {
 }
 
 uint16_t waterfall_color(float level) {
-  level = std::clamp(level, 0.0f, 1.0f);
-  const uint8_t r = level < 0.55f ? 0 : static_cast<uint8_t>((level - 0.55f) * 566);
-  const uint8_t g = level < 0.2f ? 0 : static_cast<uint8_t>(std::min(255.0f, (level - 0.2f) * 510));
-  const uint8_t b = level < 0.65f ? static_cast<uint8_t>((0.65f - level) * 390) : 0;
-  return M5.Display.color565(r, g, b);
+  return waterfall_style::color565(waterfall_style::Screen::cb, level);
 }
 
 // ------------------------------------------------------------- ACTIVITY
@@ -686,6 +683,8 @@ Action listen_touch(int32_t x, int32_t y) {
 }
 
 Action spectrum_touch(int32_t x, int32_t y) {
+  if (scope::style_chip_tap(x, y, kSpectrumX + 1, kSpectrumY + 1, kSpectrumW - 2, waterfall_style::Screen::cb))
+    return {};
   if (!hit(x, y, {kSpectrumX, kSpectrumY, kSpectrumW, kWaterfallY + kWaterfallH - kSpectrumY}))
     return {};
   const uint32_t hz = kViewLowHz + static_cast<uint32_t>(
@@ -910,9 +909,11 @@ void draw_spectrum(const float* bins, size_t bin_count, uint32_t sample_rate_sps
   }
   if (canvas != nullptr) {
     canvas->drawFastVLine(x_for_hz(kChannelsHz[g_snapshot.channel]) - kOriginX, 0, kPlotH, kCyan);
+    scope::draw_style_chips(canvas, kPlotW, waterfall_style::Screen::cb);
     canvas->pushSprite(kOriginX, kSpectrumY + 1);
   }
-  scope::scroll_waterfall(kSpectrumX + 1, kWaterfallY + kWaterfallH - 2, kSpectrumW - 2, g_waterfall_row + 1);
+  scope::scroll_waterfall(kSpectrumX + 1, kWaterfallY + kWaterfallH - 2, kSpectrumW - 2, g_waterfall_row + 1,
+                          waterfall_style::rows_per_frame(waterfall_style::Screen::cb));
   g_scope_stats.frame_done(frame_started_ms);
 }
 
