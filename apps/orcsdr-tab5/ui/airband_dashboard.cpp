@@ -219,9 +219,10 @@ void draw_scope_axis() {
 void draw_scope_status() {
   M5.Display.fillRect(kScopeX, 140, 860, 22, TFT_BLACK);
   char value[96];
-  std::snprintf(value, sizeof(value), "SNR %.0f dB   SQL +%d dB   %s   tap the scope to tune",
+  std::snprintf(value, sizeof(value), "SNR %.0f dB   SQL +%d dB   %s   FILTER %.0f kHz   tap to tune, drag the yellow lines",
                 static_cast<double>(g_snapshot.snr_db), static_cast<int>(g_snapshot.scan.squelch_db),
-                g_snapshot.squelch_open ? "OPEN" : "CLOSED");
+                g_snapshot.squelch_open ? "OPEN" : "CLOSED",
+                static_cast<double>(g_snapshot.filter_hz) / 1000.0);
   text(value, 34, 152, g_snapshot.squelch_open ? kGreen : kMuted, 1, middle_left);
 }
 
@@ -873,6 +874,33 @@ void dashboard_select_tab(Tab tab) {
 
 bool dashboard_active() { return g_active; }
 bool dashboard_spectrum_active() { return g_active && g_tab == Tab::scope; }
+
+namespace {
+// Half the filter width in pixels on the scope, for the current span.
+int scope_half_filter_px() {
+  if (g_scope_span_hz == 0) return 0;
+  return std::clamp(static_cast<int>(static_cast<int64_t>(g_snapshot.filter_hz) * kScopeW /
+                                     (2 * static_cast<int64_t>(g_scope_span_hz))),
+                    2, kScopeW / 2 - 2);
+}
+}  // namespace
+
+bool dashboard_scope_edge_hit(int32_t x, int32_t y) {
+  if (!dashboard_spectrum_active() || g_scope_span_hz == 0) return false;
+  if (y < kScopeSpecY || y >= kScopeWfY + kScopeWfH) return false;
+  const int centre = kScopeX + kScopeW / 2;
+  const int half = scope_half_filter_px();
+  constexpr int kGrab = 26;   // generous: a fingertip is much wider than a one-pixel line
+  return std::abs(x - (centre - half)) <= kGrab || std::abs(x - (centre + half)) <= kGrab;
+}
+
+uint32_t dashboard_scope_filter_from_x(int32_t x) {
+  if (g_scope_span_hz == 0) return 0;
+  const int centre = kScopeX + kScopeW / 2;
+  const int64_t width = 2ll * std::abs(x - centre) * static_cast<int64_t>(g_scope_span_hz) / kScopeW;
+  const int64_t rounded = (width + 500) / 1000 * 1000;
+  return static_cast<uint32_t>(std::clamp<int64_t>(rounded, 3000, 20000));
+}
 void dashboard_set_scope_span_hook(void (*hook)(uint32_t hz)) { g_scope_span_hook = hook; }
 
 void dashboard_draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
@@ -909,34 +937,44 @@ void dashboard_draw_spectrum(const float* levels, size_t first_bin, size_t visib
   g_scope_ceiling_valid = true;
   const float range_db = std::max(kScopeMinRangeDb, g_scope_ceiling + kScopeHeadroomDb - floor_db);
 
-  M5.Display.startWrite();
-  M5.Display.setClipRect(x0, kScopeSpecY + 1, w, kScopeSpecH - 2);
-  M5.Display.fillRect(x0, kScopeSpecY + 1, w, kScopeSpecH - 2, TFT_BLACK);
-  for (int i = 1; i < 5; ++i)
-    M5.Display.drawFastHLine(kScopeX, kScopeSpecY + i * kScopeSpecH / 5, kScopeW, kGrid);
-  for (int i = 1; i < 8; ++i)
-    M5.Display.drawFastVLine(kScopeX + i * kScopeW / 8, kScopeSpecY, kScopeSpecH, kGrid);
-  const int base = kScopeSpecY + kScopeSpecH - 4;
-  const int height = kScopeSpecH - 8;
-  int px = x0, py = base;
-  for (int i = 0; i < w; ++i) {
-    const float normalized = std::clamp((g_scope_levels[i] - floor_db) / range_db, 0.0f, 1.0f);
-    const int x = x0 + i;
-    const int y = base - static_cast<int>(normalized * height);
-    if (i) M5.Display.drawLine(px, py, x, y, kGreen);
-    px = x;
-    py = y;
+  // Draw the spectrum off-screen and push it in one go. Erasing and redrawing the screen area every
+  // frame made the trace and the filter lines flicker.
+  static M5Canvas* canvas = nullptr;
+  constexpr int canvas_h = kScopeSpecH - 2;
+  if (canvas == nullptr) {
+    canvas = new M5Canvas(&M5.Display);
+    canvas->setPsram(true);
+    canvas->setColorDepth(16);
+    if (!canvas->createSprite(w, canvas_h)) {
+      delete canvas;
+      canvas = nullptr;
+    }
   }
-  const int centre = kScopeX + kScopeW / 2;
-  const int half_filter = std::clamp(
-      static_cast<int>(static_cast<int64_t>(orcsdr::airband::filter_bandwidth_hz(g_snapshot.scan.spacing)) *
-                       kScopeW / (2 * static_cast<int64_t>(span_hz))),
-      2, kScopeW / 2 - 2);
-  M5.Display.drawFastVLine(centre, kScopeSpecY, kScopeSpecH, kCyan);
-  M5.Display.drawFastVLine(centre - half_filter, kScopeSpecY, kScopeSpecH, kYellow);
-  M5.Display.drawFastVLine(centre + half_filter, kScopeSpecY, kScopeSpecH, kYellow);
-  M5.Display.clearClipRect();
+  if (canvas != nullptr) {
+    canvas->fillSprite(TFT_BLACK);
+    for (int k = 1; k < 5; ++k) canvas->drawFastHLine(0, k * kScopeSpecH / 5 - 1, w, kGrid);
+    for (int k = 1; k < 8; ++k) canvas->drawFastVLine(k * kScopeW / 8 - 1, 0, canvas_h, kGrid);
+    const int base = canvas_h - 3;
+    const int height = canvas_h - 7;
+    int px = 0, py = base;
+    for (int k = 0; k < w; ++k) {
+      const float normalized = std::clamp((g_scope_levels[k] - floor_db) / range_db, 0.0f, 1.0f);
+      const int y = base - static_cast<int>(normalized * height);
+      if (k) canvas->drawLine(px, py, k, y, kGreen);
+      px = k;
+      py = y;
+    }
+    const int centre = kScopeW / 2 - 1;
+    const int half_filter = scope_half_filter_px();
+    canvas->drawFastVLine(centre, 0, canvas_h, kCyan);
+    canvas->drawFastVLine(centre - half_filter, 0, canvas_h, kYellow);
+    canvas->drawFastVLine(centre + half_filter, 0, canvas_h, kYellow);
+    canvas->drawFastVLine(centre - half_filter - 1, 0, canvas_h, kYellow);   // 2 px wide: easier to see
+    canvas->drawFastVLine(centre + half_filter + 1, 0, canvas_h, kYellow);
+    canvas->pushSprite(x0, kScopeSpecY + 1);
+  }
 
+  M5.Display.startWrite();
   const int rows = waterfall_style::rows_per_frame(Screen::airband);
   M5.Display.setScrollRect(x0, kScopeWfY + 1, w, kScopeWfH - 2, TFT_BLACK);
   M5.Display.scroll(0, -rows);

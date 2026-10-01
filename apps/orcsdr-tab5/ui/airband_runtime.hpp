@@ -61,6 +61,9 @@ size_t status_line(const LiveState& live, char* out, size_t capacity);
 bool active();
 // The SCOPE tab: live spectrum and waterfall from the shared spectrum pipeline.
 bool spectrum_active();
+// Dragging the scope's two filter lines changes the channel filter width.
+bool scope_edge_hit(int32_t x, int32_t y);
+void scope_drag_filter(int32_t x, const LiveState& live);
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, uint32_t span_hz);
 Tab tab();
 // True while the carrier-versus-noise-floor squelch is open. Safe to call from the DSP task.

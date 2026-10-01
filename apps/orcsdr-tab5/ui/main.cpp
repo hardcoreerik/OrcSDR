@@ -14376,6 +14376,8 @@ void poll_sdr_touch(bool from_stream) {
     // pinch never retunes the radio.
     static bool pinch_active = false;
     static bool suppress_tap = false;
+    static bool filter_drag = false;
+    static uint32_t last_filter_drag_ms = 0;
     static float pinch_anchor = 0.0f;
     static uint32_t last_pinch_step_ms = 0;
     if (orcsdr::airband::spectrum_active() && touch_count >= 2) {
@@ -14399,6 +14401,23 @@ void poll_sdr_touch(bool from_stream) {
       return;
     }
     if (touch_count < 2) pinch_active = false;
+    // A touch that starts on one of the scope's two yellow filter lines drags the filter width.
+    if (orcsdr::airband::spectrum_active() && touch_count == 1) {
+      if (touch.wasPressed() && orcsdr::airband::scope_edge_hit(touch.x, touch.y)) filter_drag = true;
+      if (filter_drag) {
+        if (touch.isPressed()) {
+          if (now - last_filter_drag_ms >= 80) {
+            last_filter_drag_ms = now;
+            orcsdr::airband::scope_drag_filter(touch.x, airband_live_state());
+          }
+        } else {
+          orcsdr::airband::scope_drag_filter(touch.x, airband_live_state());
+          filter_drag = false;
+        }
+        was_pressed = pressed;
+        return;
+      }
+    }
     if (!pressed) suppress_tap = false;
     if (pressed && !was_pressed && !suppress_tap) handle_sdr_touch(touch.x, touch.y);
     was_pressed = pressed;

@@ -27,6 +27,24 @@ an arbitrary frequency record as if it were local RF identity.
 | **AIRPORTS** | Lists nearby catalog entries with frequency, service class, distance, provenance class, and database label. |
 | **ACTIVITY** | Bounded local history of transmissions that opened the scanner, including frequency, duration, peak measured dBFS, and catalog label when known. |
 | **SETUP** | 25 kHz / 8.33 kHz raster selection, scan source, squelch threshold, tuner settle time, reply hang time, 121.500 priority watch, and offline-data status. |
+| **SCOPE** | Live spectrum and scrolling waterfall of the tuned airband (see below). |
+
+### SCOPE tab
+
+The scope draws the shared spectrum pipeline, about 16 frames per second, and only while the tab is showing (the
+FFT is not run for the other tabs). It opens on a 480 kHz span so individual 25 kHz channels are visible; the span
+previously in use is restored when you leave the tab.
+
+- **Tune:** tap the spectrum or waterfall. The tap is snapped to the channel raster.
+- **Zoom:** spread two fingers to zoom in, pinch to zoom out (one span step per quarter change in finger
+  distance: 240, 480, 960, 1200, 2400 kHz), or use SPAN -/+. Taps are ignored until all fingers lift after a pinch.
+- **Filter:** the two yellow lines are the channel filter. Touch near one and drag sideways to set the width from
+  3 to 20 kHz in 1 kHz steps; the width is saved. Changing the raster spacing in SETUP goes back to its standard
+  width (10 kHz at 25 kHz spacing, 6 kHz at 8.33 kHz).
+- **Gain:** GAIN -/+ and TUNER AGC, the same controls and the same saved setting as on LISTEN.
+- **Palette and speed:** PALETTE and SPEED chips (shared palettes, saved for this screen).
+- The trace is drawn off-screen and pushed in one go, so it does not flicker; the waterfall uses the display's
+  hardware scroll. `RTL_AIRBAND STATUS` reports `scope_fps` and `scope_ms` (time to draw the last frame).
 
 ## Receiver behavior
 
