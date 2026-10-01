@@ -89,6 +89,8 @@ Action handle_gain_drag(int32_t x, int32_t y);
 bool active();
 // Direct frequency entry (the shared numpad): is it showing, and open it.
 bool keypad_open();
+uint32_t spectrum_fps();       // spectrum frames drawn in the last second
+uint32_t spectrum_draw_ms();   // time the last frame took to draw
 void begin_frequency_entry();
 bool spectrum_active();
 View view();
