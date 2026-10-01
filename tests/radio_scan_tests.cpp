@@ -93,7 +93,7 @@ void test_radio_session() {
   CHECK(owner_for_band(Band::am) == Owner::radio);
   CHECK(owner_for_band(Band::wx) == Owner::radio);
   CHECK(owner_for_band(Band::cb) == Owner::radio);
-  CHECK(owner_for_band(Band::browse) == Owner::radio);
+  CHECK(owner_for_band(Band::general) == Owner::radio);
   CHECK(owner_for_band(Band::airband) == Owner::radio);
   CHECK(Session::self_check());
 }
