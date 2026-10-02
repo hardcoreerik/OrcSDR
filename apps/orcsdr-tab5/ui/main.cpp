@@ -3152,6 +3152,21 @@ SemaphoreHandle_t speaker_begin_mutex() {
   return mutex;
 }
 
+// Stop and tear down the speaker under the same mutex that guards begin(). When the dongle is unplugged the main
+// task idles the speaker while the DSP task is still draining audio and restarts it; an unguarded end() racing
+// begin() deleted the same I2S channel twice (heap assert "block already marked as free", seen on a V4 unplug test).
+// Returns false, doing nothing, if the lock cannot be taken: the caller's next pass retries.
+bool end_rtl_speaker() {
+  SemaphoreHandle_t mutex = speaker_begin_mutex();
+  if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(500)) != pdTRUE) return false;
+  if (M5.Speaker.isRunning()) {
+    M5.Speaker.stop();
+    M5.Speaker.end();
+  }
+  xSemaphoreGive(mutex);
+  return true;
+}
+
 bool restart_rtl_speaker_i2s(uint8_t volume) {
   const uint32_t now = millis();
   if (speaker_backoff_active(now)) return false;
@@ -3205,7 +3220,7 @@ bool ensure_speaker_running(uint8_t volume) {
   if (!rtl_speaker_codec_primed.load(std::memory_order_acquire)) {
     if (!M5.Speaker.isRunning() && !restart_rtl_speaker_i2s(volume)) return false;
     delay(10);
-    M5.Speaker.end();
+    if (!end_rtl_speaker()) return false;
     delay(10);
     g_speaker_retry_ms = 0;
     if (!restart_rtl_speaker_i2s(volume)) return false;
@@ -3264,8 +3279,7 @@ void sync_rtl_audio_for_band(RtlBand band) {
 // it down; the next stream start brings it back through resume_rtl_speaker().
 void idle_rtl_speaker(const char* reason) {
   if (!M5.Speaker.isRunning()) return;
-  M5.Speaker.stop();
-  M5.Speaker.end();
+  if (!end_rtl_speaker()) return;
   Serial.printf("RTL_SPEAKER_IDLE reason=%s\n", reason);
 }
 
@@ -3329,7 +3343,9 @@ void flush_audio_play_batch(bool force) {
     apply_speaker_volume(rtl_live_volume.load(std::memory_order_acquire));
   }
   if (!M5.Speaker.isRunning()) {
-    if (!ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire))) {
+    // No receiver (unplugged): the speaker was idled on purpose and resumes with the next stream start.
+    if (!rtl_device_ready() ||
+        !ensure_speaker_running(rtl_live_volume.load(std::memory_order_acquire))) {
       rtl_audio_play_count = 0;
       return;
     }
@@ -9641,9 +9657,7 @@ bool pause_radio_for_io(bool& paused) {
     radio_io_resume_pending = true;
   }
   if (M5.Speaker.isRunning()) {
-    M5.Speaker.stop();
-    M5.Speaker.end();
-    radio_io_speaker_resume_pending = true;
+    if (end_rtl_speaker()) radio_io_speaker_resume_pending = true;
   }
   return true;
 }
