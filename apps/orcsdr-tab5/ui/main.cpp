@@ -1705,7 +1705,10 @@ uint32_t wifi_last_scan_completed_ms = 0;
 uint16_t wifi_last_scan_duration_ms = 0;
 uint32_t wifi_scan_revision = 0;
 uint8_t settings_brightness = 180;
-uint8_t settings_rotation = 1;
+// Shipped default orientation. Rotation 1 is the panel's native landscape
+// mapping; a clean unit needs the 180-degree flip (rotation 3) or the display
+// is upside down until the operator changes it in Settings.
+uint8_t settings_rotation = 3;
 uint16_t settings_screen_timeout_sec = 0;
 bool settings_sound_default = true;
 bool settings_auto_start_reception = true;
@@ -13150,8 +13153,8 @@ void load_state() {
   }
   settings_brightness = preferences.getUChar("set_bright", 180);
   if (settings_brightness < 16) settings_brightness = 16;
-  settings_rotation = preferences.getUChar("set_rotation", 1);
-  if (settings_rotation != 1 && settings_rotation != 3) settings_rotation = 1;
+  settings_rotation = preferences.getUChar("set_rotation", 3);
+  if (settings_rotation != 1 && settings_rotation != 3) settings_rotation = 3;
   settings_screen_timeout_sec = preferences.getUShort("set_timeout", 0);
   settings_wifi_power_enabled = preferences.getBool("set_wifi_power", true);
   settings_wifi_start_at_boot = preferences.getBool("set_wifi_boot", false);
@@ -18632,10 +18635,10 @@ void setup() {
   {
     orcsdr::NvsStore rot_prefs;
     if (rot_prefs.begin("orclink", true)) {
-      settings_rotation = rot_prefs.getUChar("set_rotation", 1);
+      settings_rotation = rot_prefs.getUChar("set_rotation", 3);
       rot_prefs.end();
     }
-    if (settings_rotation != 1 && settings_rotation != 3) settings_rotation = 1;
+    if (settings_rotation != 1 && settings_rotation != 3) settings_rotation = 3;
   }
   M5.Display.setRotation(settings_rotation);
   M5.Display.setBrightness(180);
