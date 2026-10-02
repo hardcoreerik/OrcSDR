@@ -857,7 +857,14 @@ void process_channel_audio(const uint8_t* iq, size_t bytes) {
   int16_t pcm[512];
   size_t pcm_count = 0;
   const uint32_t decim = std::max<uint32_t>(1, runtime.sample_rate_sps / 48000u);
-  for (size_t channel = 0; channel < channels; ++channel) {
+  // Only the selected channel can emit audio; the per-tile meters are rendered
+  // from the FFT slice in draw_channelizer(), not from g_channels[].level. So
+  // running the NCO/IIR for every channel at full rate here was pure waste
+  // (N channels x full rate on Core 1) and starved the reception DSP task.
+  // NOTE: the sample_rate_sps / 48000u truncation is left for the
+  // decimate-first channelizer rewrite (Phase 1, item 3).
+  {
+    const size_t channel = g_selected_channel;
     auto& state = g_channels[channel];
     const bool contiguous = value("channelizer.plan") == 0;
     const float offset = contiguous
@@ -897,8 +904,7 @@ void process_channel_audio(const uint8_t* iq, size_t bytes) {
       state.dc += 0.002f * (demod - state.dc);
       const float scale = state.demod == 4 ? 3600.0f :
                           state.demod == 0 ? 7000.0f : 12000.0f;
-      if (channel == g_selected_channel && !state.muted && state.level >= state.squelch &&
-          pcm_count < std::size(pcm))
+      if (!state.muted && state.level >= state.squelch && pcm_count < std::size(pcm))
         pcm[pcm_count++] = static_cast<int16_t>(std::clamp((demod - state.dc) * scale,
                                                            -15000.0f, 15000.0f));
     }
