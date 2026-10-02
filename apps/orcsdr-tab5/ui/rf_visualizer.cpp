@@ -1115,6 +1115,39 @@ void draw_audio_spectrogram(const SpectrumFrame& frame) {
 static uint16_t s_col_color[kPlotH];
 static uint8_t s_col_key[kPlotH];
 
+// Raw-store plot writes for the calibrated DSI geometry.
+//
+// M5GFX's Panel_FrameBufferBase::writeFillRectPreclipped() transforms a logical
+// rect as: y' = raw_h - (y + h); x' = raw_w - (x + w); then swap(x,y), swap(w,h)
+// for odd rotations. For a logical column (w = 1) at rotation 3 that yields
+// row = raw_h - 1 - x and a span of h pixels starting at raw_w - y - h, which
+// runs *backwards* with respect to the logical row index. A logical column is
+// therefore one contiguous run along a physical row, so a plot can be written
+// with raw stores instead of per-row pushImage/fillRect calls: a logical row is
+// one pixel per physical row (a cache line each), and each call costs ~1.9 us
+// of overhead for a couple of cache lines of payload.
+struct DirectPlot {
+  uint16_t* fb = nullptr;
+  int stride = 0;   // framebuffer pixels per physical row
+  size_t span = 0;  // offset of the plot's first pixel inside its physical row
+
+  // First plot pixel of logical column x; successive pixels run down the column.
+  uint16_t* column(int x) const {
+    return fb + static_cast<size_t>(g_dsi_height - 1 - x) * static_cast<size_t>(stride) + span;
+  }
+};
+
+DirectPlot direct_plot() {
+  DirectPlot direct;
+  if (g_canvas.getRotation() != 3 || g_dsi_width != 720 || g_dsi_height != 1280) return direct;
+  auto* fb = static_cast<uint16_t*>(g_canvas.getBuffer());
+  if (!fb) return direct;
+  direct.fb = fb;
+  direct.stride = g_dsi_width;
+  direct.span = static_cast<size_t>(g_dsi_width - kPlotY - kPlotH);
+  return direct;
+}
+
 void draw_phosphor_view() {
   if (!g_density || !g_density_snapshot || !g_density_rows || !g_phosphor_row) return;
   if (!g_history_mutex || xSemaphoreTake(g_history_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
@@ -1139,27 +1172,13 @@ void draw_phosphor_view() {
     level_color[i] = colors[level];
     level_key[i] = static_cast<uint8_t>(level >> 4);  // 16 colour bands
   }
-  // When we can rely on the calibrated DSI geometry we bypass M5GFX entirely for
-  // the plot: a whole column is one contiguous framebuffer span, so raw stores
-  // replace the run of fillRect calls it used to take (each costing ~1.9 us of
-  // call overhead for a couple of cache lines of payload).
-  // M5GFX's Panel_FrameBufferBase::writeFillRectPreclipped() transforms a logical
-  // rect as: y' = raw_h - (y + h); x' = raw_w - (x + w); then swap(x,y), swap(w,h)
-  // for odd rotations. For a logical column (w = 1) at rotation 3 that yields
-  // row = raw_h - 1 - x and a span of h pixels starting at raw_w - y - h, which
-  // runs *backwards* with respect to the logical row index.
-  const int raw_w = g_dsi_width;   // 720: framebuffer row stride in pixels
-  const int raw_h = g_dsi_height;  // 1280: framebuffer rows
-  const int log_w = raw_h;         // logical width after the rotation swap
-  const int log_h = raw_w;
-  const bool direct_ok = g_canvas.getRotation() == 3 && raw_w == 720 && raw_h == 1280 &&
-                         g_canvas.getBuffer() != nullptr;
-  uint16_t* fb = direct_ok ? static_cast<uint16_t*>(g_canvas.getBuffer()) : nullptr;
-  const size_t span_col = static_cast<size_t>(log_h - kPlotY - kPlotH);
+  // When the calibrated DSI geometry is available the plot is written straight
+  // into the framebuffer instead of through a run of fillRect calls.
+  const DirectPlot direct = direct_plot();
   static_assert(kPlotH % 2 == 0, "direct column writes assume even row count");
   // The direct path writes every pixel of every column, so the background clear
   // would be pure overdraw; only the fallback (fillRect runs) needs it.
-  if (!direct_ok) g_canvas.fillRect(kPlotX, kPlotY, kPlotW, kPlotH, kBg);
+  if (!direct.fb) g_canvas.fillRect(kPlotX, kPlotY, kPlotW, kPlotH, kBg);
   for (int x = 0; x < kPlotW; ++x) {
     const size_t sx0 = std::min(kBins - 1, static_cast<size_t>(x) * kBins / kPlotW);
     const size_t sx_end = std::max(sx0 + 1,
