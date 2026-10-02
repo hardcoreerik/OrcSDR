@@ -127,6 +127,7 @@ SpectrumFrame* g_ui_frame = nullptr;
 SpectrumFrame* g_observer_frame = nullptr;
 bool g_initialized = false;
 uint32_t g_drawn_revision = 0;
+uint32_t g_accumulated_revision = 0;
 uint8_t* g_history = nullptr;
 bool g_history_audio = false;
 size_t g_history_rows = 0;
@@ -668,7 +669,12 @@ void add_density(const SpectrumFrame& frame) {
       const int row = static_cast<int>(y) + offset;
       if (row < 0 || row >= static_cast<int>(g_density_rows)) continue;
       const uint8_t stroke = offset == 0 ? sample : static_cast<uint8_t>(sample / 3);
-      uint8_t& cell = g_density[static_cast<size_t>(row) * kBins + x];
+      // Density storage is transposed (bin-major): one bin's column is
+      // contiguous. That is what lets draw_phosphor_view() scan a screen column
+      // sequentially instead of with a kBins-byte stride, which measured ~381 ms
+      // per frame in wasted cache-line fetches. Writes here are ~3 contiguous
+      // bytes per bin, striding by g_density_rows between bins.
+      uint8_t& cell = g_density[static_cast<size_t>(x) * g_density_rows + row];
       cell = density_accumulate(cell, stroke, accumulation);
     }
   }
@@ -830,15 +836,11 @@ void analysis_observer(const rf_analysis::Snapshot& snapshot, const uint8_t* iq,
     *g_frame = *g_observer_frame;
     xSemaphoreGive(g_frame_mutex);
   }
+  // This runs on the analysis task (Core 1), which shares its core with the
+  // reception DSP and audio pipeline. Keep it to a plain copy: the per-view
+  // history / density / occupancy accumulation was moved to the UI task
+  // (accumulate_pending_frame) so heavy views cannot starve Core 1.
   const View current = static_cast<View>(g_view.load(std::memory_order_acquire));
-  if (!value("visual.freeze")) {
-    if (current == View::phosphor) add_density(*g_observer_frame);
-    else if (current == View::waterfall || current == View::spectrum3d || current == View::doppler)
-      add_history_row(*g_observer_frame, false);
-    else if (current == View::audio_spectrogram)
-      add_history_row(*g_observer_frame, true);
-    if (current == View::occupancy) update_occupancy(*g_observer_frame);
-  }
   if (current == View::channelizer) process_channel_audio(iq, bytes);
   ++g_analysis_frames;
 }
@@ -1108,6 +1110,11 @@ void draw_audio_spectrogram(const SpectrumFrame& frame) {
   g_waterfall_canvas_synced = !direct;
 }
 
+// Per-column staging for the phosphor renderer: one colour and one colour-band
+// key per density row, built by the scan pass and consumed by the emit pass.
+static uint16_t s_col_color[kPlotH];
+static uint8_t s_col_key[kPlotH];
+
 void draw_phosphor_view() {
   if (!g_density || !g_density_snapshot || !g_density_rows || !g_phosphor_row) return;
   if (!g_history_mutex || xSemaphoreTake(g_history_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
@@ -1122,24 +1129,89 @@ void draw_phosphor_view() {
   uint16_t colors[256];
   for (size_t i = 0; i < std::size(colors); ++i)
     colors[i] = heat_color(static_cast<uint8_t>(i), palette);
-  g_canvas.fillRect(kPlotX, kPlotY, kPlotW, kPlotH, kBg);
-  for (size_t sy = 0; sy < g_density_rows; ++sy) {
-    for (int x = 0; x < kPlotW; x += 2) {
-      const size_t sx0 = static_cast<size_t>(x) * kBins / kPlotW;
-      const size_t sx1 = std::max(sx0 + 1,
-          std::min(kBins, static_cast<size_t>(x + 2) * kBins / kPlotW));
-      uint8_t intensity = 0;
-      for (size_t sx = sx0; sx < sx1; ++sx)
-        intensity = std::max(intensity, g_density_snapshot[sy * kBins + sx]);
-      const uint16_t color = colors[density_display_intensity(intensity, exposure)];
-      g_phosphor_row[x] = color;
-      if (x + 1 < kPlotW) g_phosphor_row[x + 1] = color;
+  // Fold the exposure mapping into a 256-entry lookup table so the scan below
+  // does a table lookup per row instead of calling density_display_intensity()
+  // (float math plus a libm lroundf) once per row per column.
+  uint16_t level_color[256];
+  uint8_t level_key[256];
+  for (size_t i = 0; i < 256; ++i) {
+    const uint8_t level = density_display_intensity(static_cast<uint8_t>(i), exposure);
+    level_color[i] = colors[level];
+    level_key[i] = static_cast<uint8_t>(level >> 4);  // 16 colour bands
+  }
+  // When we can rely on the calibrated DSI geometry we bypass M5GFX entirely for
+  // the plot: a whole column is one contiguous framebuffer span, so raw stores
+  // replace the run of fillRect calls it used to take (each costing ~1.9 us of
+  // call overhead for a couple of cache lines of payload).
+  // M5GFX's Panel_FrameBufferBase::writeFillRectPreclipped() transforms a logical
+  // rect as: y' = raw_h - (y + h); x' = raw_w - (x + w); then swap(x,y), swap(w,h)
+  // for odd rotations. For a logical column (w = 1) at rotation 3 that yields
+  // row = raw_h - 1 - x and a span of h pixels starting at raw_w - y - h, which
+  // runs *backwards* with respect to the logical row index.
+  const int raw_w = g_dsi_width;   // 720: framebuffer row stride in pixels
+  const int raw_h = g_dsi_height;  // 1280: framebuffer rows
+  const int log_w = raw_h;         // logical width after the rotation swap
+  const int log_h = raw_w;
+  const bool direct_ok = g_canvas.getRotation() == 3 && raw_w == 720 && raw_h == 1280 &&
+                         g_canvas.getBuffer() != nullptr;
+  uint16_t* fb = direct_ok ? static_cast<uint16_t*>(g_canvas.getBuffer()) : nullptr;
+  const size_t span_col = static_cast<size_t>(log_h - kPlotY - kPlotH);
+  static_assert(kPlotH % 2 == 0, "direct column writes assume even row count");
+  // The direct path writes every pixel of every column, so the background clear
+  // would be pure overdraw; only the fallback (fillRect runs) needs it.
+  if (!direct_ok) g_canvas.fillRect(kPlotX, kPlotY, kPlotW, kPlotH, kBg);
+  for (int x = 0; x < kPlotW; ++x) {
+    const size_t sx0 = std::min(kBins - 1, static_cast<size_t>(x) * kBins / kPlotW);
+    const size_t sx_end = std::max(sx0 + 1,
+        std::min(kBins, static_cast<size_t>(x + 1) * kBins / kPlotW));
+    for (size_t sy = 0; sy < g_density_rows; ++sy) {
+      // Bin-major storage: this bin's column is a contiguous run of
+      // g_density_rows bytes, so the whole scan is sequential. Walking it
+      // row-major instead meant one cache-line fetch per byte, which measured
+      // ~381 ms per frame.
+      const uint8_t* column = &g_density_snapshot[sx0 * g_density_rows];
+      uint8_t intensity = column[sy];
+      for (size_t sx = sx0 + 1; sx < sx_end; ++sx)
+        intensity = std::max(intensity, g_density_snapshot[sx * g_density_rows + sy]);
+      if (!direct_ok) s_col_key[sy] = level_key[intensity];
+      s_col_color[sy] = level_color[intensity];
     }
-    const int y = kPlotY + static_cast<int>(sy) * 2;
-    memcpy(g_phosphor_row + kPlotW, g_phosphor_row,
-           kPlotW * sizeof(uint16_t));
-    g_canvas.pushImage(kPlotX, y, kPlotW,
-                       std::min(2, kPlotY + kPlotH - y), g_phosphor_row);
+    if (direct_ok) {
+      // Two adjacent pixels in the span always share a density row (each row is
+      // duplicated vertically), so write them as one 32-bit word. Framebuffer
+      // stores measure ~16 cycles each regardless of width, so halving the
+      // store count halves this loop.
+      uint32_t* dst = reinterpret_cast<uint32_t*>(
+          fb + static_cast<size_t>(log_w - 1 - (kPlotX + x)) * raw_w + span_col);
+      for (int k = 0; k < kPlotH / 2; ++k) {
+        const uint16_t c = s_col_color[(kPlotH / 2 - 1) - k];
+        dst[k] = static_cast<uint32_t>(c) | (static_cast<uint32_t>(c) << 16);
+      }
+    } else {
+      int run_y = 0;
+      int run_h = 0;
+      uint8_t run_key = 0;
+      uint16_t run_color = 0;
+      for (size_t sy = 0; sy < g_density_rows; ++sy) {
+        const uint8_t key = s_col_key[sy];
+        if (run_h > 0 && key == run_key) {
+          run_h += 2;
+          continue;
+        }
+        if (run_h > 0) {
+          const int h = std::min(run_h, kPlotH - run_y);
+          if (h > 0) g_canvas.fillRect(kPlotX + x, kPlotY + run_y, 1, h, run_color);
+        }
+        run_key = key;
+        run_color = s_col_color[sy];
+        run_y = static_cast<int>(sy) * 2;
+        run_h = 2;
+      }
+      if (run_h > 0) {
+        const int h = std::min(run_h, kPlotH - run_y);
+        if (h > 0) g_canvas.fillRect(kPlotX + x, kPlotY + run_y, 1, h, run_color);
+      }
+    }
   }
   g_canvas.drawRect(kPlotX, kPlotY, kPlotW, kPlotH, kGrid);
   text("PERSIST", 1243, kPlotY + 14, kMuted, 1);
@@ -2050,8 +2122,31 @@ uint8_t origin_screen() { return g_origin_screen; }
 uint8_t origin_tab() { return g_origin_tab; }
 View view() { return static_cast<View>(g_view.load(std::memory_order_acquire)); }
 
+// Fold the newest analysis frame into the per-view accumulators. This runs on
+// the UI task so the analysis task (Core 1, shared with the reception DSP and
+// audio pipeline) stays copy-only; heavy views such as phosphor and doppler
+// previously starved Core 1 from inside analysis_observer.
+static void accumulate_pending_frame(const SpectrumFrame& frame) {
+  if (frame.revision == g_accumulated_revision) return;
+  g_accumulated_revision = frame.revision;
+  if (value("visual.freeze")) return;
+  const View current = static_cast<View>(g_view.load(std::memory_order_acquire));
+  if (current == View::phosphor) add_density(frame);
+  else if (current == View::waterfall || current == View::spectrum3d || current == View::doppler)
+    add_history_row(frame, false);
+  else if (current == View::audio_spectrogram)
+    add_history_row(frame, true);
+  if (current == View::occupancy) update_occupancy(frame);
+}
+
 void service_ui(uint32_t now) {
   if (!active()) return;
+  // Snapshot and accumulate before the page-flip early returns so the
+  // accumulation cadence follows analysis frames, not presentation frames.
+  if (xSemaphoreTake(g_frame_mutex, pdMS_TO_TICKS(2)) != pdTRUE) return;
+  *g_ui_frame = *g_frame;
+  xSemaphoreGive(g_frame_mutex);
+  accumulate_pending_frame(*g_ui_frame);
   const bool full_repaint = is_full_repaint_view(view());
   if (full_repaint) {
     enable_page_flip();
@@ -2070,9 +2165,6 @@ void service_ui(uint32_t now) {
     g_inspect = false;
     draw_frame_chrome();
   }
-  if (xSemaphoreTake(g_frame_mutex, pdMS_TO_TICKS(2)) != pdTRUE) return;
-  *g_ui_frame = *g_frame;
-  xSemaphoreGive(g_frame_mutex);
   const SpectrumFrame& frame = *g_ui_frame;
   const bool direct_history =
       (view() == View::waterfall || view() == View::audio_spectrogram) &&
