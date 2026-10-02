@@ -987,6 +987,12 @@ static uint8_t rtl_iq_processing[32768 + 512];
 /* Relative RF level from IQ power (dBFS-ish, 0 = full-scale CU8). */
 static std::atomic<float> rtl_signal_dbfs{-90.0f};
 static std::atomic<float> rtl_iq_clipping_percent{0.0f};
+/* Set by SMART gain once a new gain step has had time to land: the next clipping sample replaces the running
+ * average instead of blending into it, so clipping from before the step cannot decide the next one. */
+static std::atomic<bool> rtl_clipping_reseed{false};
+/* Set when a dongle attaches or detaches or a stream starts: the spectrum renderer drops its peak-hold, which sets
+ * the waterfall scale and otherwise fades over about ten seconds. */
+static std::atomic<bool> rtl_spectrum_reset_pending{false};
 /** WBFM stereo: fresh-per-callback dBFS (same granularity as rtl_signal_dbfs);
  * dashboard snapshots apply their own EMA at redraw cadence. */
 static std::atomic<float> rtl_audio_left_dbfs{-90.0f};
@@ -5945,6 +5951,10 @@ void update_clipping_from_count(uint32_t clipped, size_t bytes) {
   const float clipping = 100.0f * static_cast<float>(clipped) /
                          static_cast<float>(bytes / 2u);
   const float previous = rtl_iq_clipping_percent.load(std::memory_order_relaxed);
+  if (rtl_clipping_reseed.exchange(false, std::memory_order_acq_rel)) {
+    rtl_iq_clipping_percent.store(clipping, std::memory_order_relaxed);
+    return;
+  }
   rtl_iq_clipping_percent.store(0.98f * previous + 0.02f * clipping,
                                 std::memory_order_relaxed);
 }
@@ -7033,6 +7043,7 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   const size_t first_bin = (kRtlSpectrumBins - visible_bins) / 2;
   const size_t last_bin = first_bin + visible_bins;
   const int draw_width = spectrum_draw_width();
+  if (rtl_spectrum_reset_pending.exchange(false, std::memory_order_acq_rel)) reset_spectrum_renderer();
   float maximum = -120.0f;
   float strongest = -120.0f;
   size_t strongest_bin = kRtlSpectrumBins / 2;
@@ -8601,6 +8612,10 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       // also starts every new attachment with bias OFF, and OrcSDR never
       // re-enables it on its own (RF Lab exit restore only turns it off).
       Serial.println("RTL_BIAS_TEE_SAFE_OFF reason=disconnect");
+      /* Nothing is streaming now: show no signal instead of the last level, and drop the spectrum peak-hold. */
+      rtl_signal_dbfs.store(-90.0f, std::memory_order_relaxed);
+      rtl_iq_clipping_percent.store(0.0f, std::memory_order_relaxed);
+      rtl_spectrum_reset_pending.store(true, std::memory_order_release);
       Serial.printf("RTL_SDR_DISCONNECTED previous=%u resume_pending=%d band=%s frequency_hz=%u\n",
                     static_cast<unsigned>(previous), resume ? 1 : 0,
                     rtl_band_name(rtl_requested_band.load(std::memory_order_acquire)),
@@ -8896,6 +8911,7 @@ static void rtl_driver_app_task(void *) {
       rtl_audio_submit_failures.store(0, std::memory_order_relaxed);
       rtl_signal_dbfs.store(-90.0f, std::memory_order_relaxed);
       rtl_iq_clipping_percent.store(0.0f, std::memory_order_relaxed);
+      rtl_spectrum_reset_pending.store(true, std::memory_order_release);
       if (band == RtlBand::p25) {
         orcsdr::p25decoder::suspend_voice();
         p25_voice_session.fetch_add(1, std::memory_order_acq_rel);
@@ -11701,6 +11717,8 @@ void service_audio_auto_gain(uint32_t now) {
 #if !RTL_USE_LEGACY_USB
   static uint8_t steps[2]{};
   static uint32_t sample_at_ms[2]{};
+  static uint32_t reseed_at_ms[2]{};
+  static uint32_t low_since_ms[2]{};
   const bool fm = g_stream_band == RtlBand::fm;
   const bool am = g_stream_band == RtlBand::am;
   if ((!fm && !am) || g_rtl == nullptr ||
@@ -11725,22 +11743,49 @@ void service_audio_auto_gain(uint32_t now) {
     step = 0;
     selecting.store(true, std::memory_order_relaxed);
     (void)esp_rtl_sdr_set_tuner_gain(g_rtl, gains[step]);
-    sample_at_ms[state] = now + 500;
+    /* The dongle runs at its default gain until this first step lands, which clips on a strong antenna and leaves
+     * the running clipping average high. Replace that average with a fresh sample once the step has applied, and
+     * look at it only after that, so the transient cannot end selection at step 0. */
+    reseed_at_ms[state] = now + 600;
+    sample_at_ms[state] = now + 1100;
+    low_since_ms[state] = 0;
     Serial.printf("RTL_%s_AUTO_GAIN start gain_tenth_db=%d target_dbfs=%.1f\n",
                   label, gains[step], static_cast<double>(orcsdr::am::kAutoGainTargetDbfs));
     return;
+  }
+  if (reseed_at_ms[state] != 0 && static_cast<int32_t>(now - reseed_at_ms[state]) >= 0) {
+    rtl_clipping_reseed.store(true, std::memory_order_release);
+    reseed_at_ms[state] = 0;
   }
   if (static_cast<int32_t>(now - sample_at_ms[state]) < 0) return;
 
   const float level = rtl_signal_dbfs.load(std::memory_order_relaxed);
   const float clipping = rtl_iq_clipping_percent.load(std::memory_order_relaxed);
   if (!selecting.load(std::memory_order_relaxed)) {
-    if (!orcsdr::am::auto_gain_should_reduce(clipping, step)) return;
-    --step;
-    (void)esp_rtl_sdr_set_tuner_gain(g_rtl, gains[step]);
-    sample_at_ms[state] = now + 500;
-    Serial.printf("RTL_%s_SMART_GAIN reduce gain_tenth_db=%d clipping_percent=%.3f\n",
-                  label, gains[step], static_cast<double>(clipping));
+    if (orcsdr::am::auto_gain_should_reduce(clipping, step)) {
+      --step;
+      (void)esp_rtl_sdr_set_tuner_gain(g_rtl, gains[step]);
+      sample_at_ms[state] = now + 500;
+      low_since_ms[state] = 0;
+      Serial.printf("RTL_%s_SMART_GAIN reduce gain_tenth_db=%d clipping_percent=%.3f\n",
+                    label, gains[step], static_cast<double>(clipping));
+      return;
+    }
+    /* A settled gain is only lowered by clipping, so a signal that fades would leave the receiver stuck low. */
+    if (level < orcsdr::am::kAutoGainTargetDbfs - orcsdr::am::kSmartGainLowMarginDb &&
+        clipping <= orcsdr::am::kSmartGainClippingLimitPercent) {
+      if (low_since_ms[state] == 0) low_since_ms[state] = now;
+    } else {
+      low_since_ms[state] = 0;
+    }
+    const uint32_t low_for_ms = low_since_ms[state] == 0 ? 0 : now - low_since_ms[state];
+    if (orcsdr::am::auto_gain_should_resume(level, clipping, low_for_ms, step, count)) {
+      selecting.store(true, std::memory_order_relaxed);
+      low_since_ms[state] = 0;
+      sample_at_ms[state] = now + 500;
+      Serial.printf("RTL_%s_SMART_GAIN resume gain_tenth_db=%d level_dbfs=%.1f\n",
+                    label, gains[step], static_cast<double>(level));
+    }
     return;
   }
   if (orcsdr::am::auto_gain_should_advance(level, clipping, step, count)) {

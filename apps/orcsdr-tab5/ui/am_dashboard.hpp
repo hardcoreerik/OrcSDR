@@ -113,9 +113,14 @@ void clear_scan_results();
 bool scan_prompt_active();
 constexpr float kAutoGainTargetDbfs = -24.0f;
 constexpr float kSmartGainClippingLimitPercent = 0.1f;
+// Below target by this much, for this long, with no clipping: the settled gain is too low, so resume selecting.
+constexpr float kSmartGainLowMarginDb = 12.0f;
+constexpr uint32_t kSmartGainLowHoldMs = 3000;
 bool auto_gain_should_advance(float level_dbfs, float clipping_percent,
                               size_t step, size_t step_count);
 bool auto_gain_should_reduce(float clipping_percent, size_t step);
+bool auto_gain_should_resume(float level_dbfs, float clipping_percent, uint32_t low_for_ms,
+                             size_t step, size_t step_count);
 void populate_presets(Snapshot& snapshot);
 bool self_check();
 

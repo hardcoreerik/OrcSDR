@@ -993,6 +993,16 @@ bool auto_gain_should_reduce(float clipping_percent, size_t step) {
   return step > 0 && clipping_percent > kSmartGainClippingLimitPercent;
 }
 
+// A settled gain is only ever lowered by clipping, so a signal that fades (antenna removed, a quieter station, a
+// replug) would leave the receiver stuck low. Once the level has stayed well below the target without clipping for
+// kSmartGainLowHoldMs, selection resumes from the current step and climbs again.
+bool auto_gain_should_resume(float level_dbfs, float clipping_percent, uint32_t low_for_ms,
+                             size_t step, size_t step_count) {
+  return clipping_percent <= kSmartGainClippingLimitPercent && step + 1 < step_count &&
+         level_dbfs < kAutoGainTargetDbfs - kSmartGainLowMarginDb &&
+         low_for_ms >= kSmartGainLowHoldMs;
+}
+
 void populate_presets(Snapshot& snapshot) {
   snapshot.preset_count = g_preset_count;
   g_preset_page = std::min<uint8_t>(g_preset_page, preset_pages() - 1);
@@ -1042,6 +1052,11 @@ bool self_check() {
           auto_gain_should_reduce(0.2f, 1) &&
           !auto_gain_should_reduce(0.1f, 1) &&
           !auto_gain_should_reduce(0.2f, 0) &&
+          auto_gain_should_resume(-45.0f, 0.0f, kSmartGainLowHoldMs, 3, 8) &&
+          !auto_gain_should_resume(-45.0f, 0.0f, kSmartGainLowHoldMs - 1, 3, 8) &&
+          !auto_gain_should_resume(kAutoGainTargetDbfs - 5.0f, 0.0f, kSmartGainLowHoldMs, 3, 8) &&
+          !auto_gain_should_resume(-45.0f, 0.2f, kSmartGainLowHoldMs, 3, 8) &&
+          !auto_gain_should_resume(-45.0f, 0.0f, kSmartGainLowHoldMs, 7, 8) &&
           bandwidth_for_x(kBandwidthSliderX) == 3000 &&
           freq_keypad::self_check() &&
           kWaterfallY + kWaterfallH < kBandwidthSliderY - 13 &&
