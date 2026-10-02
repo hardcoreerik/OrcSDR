@@ -50,3 +50,7 @@ artifacts/pocsag-validation/
 artifacts/lora_validation/
 artifacts/release-readiness/
 docs/user-guide/assets/screenshots/raw/
+
+# Local tooling caches and raw visualizer captures
+.serena/
+artifacts/visualizer-captures/raw/
