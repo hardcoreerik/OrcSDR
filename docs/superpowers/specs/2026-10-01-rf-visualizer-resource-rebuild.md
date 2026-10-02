@@ -108,9 +108,10 @@ always increments the control (`adjust_control(c, x < 795 ? -1 : x > 1065 ? 1 : 
    Consequence: phosphor and doppler each push ~295 logical rows per frame —
    ~90 MB of scattered traffic per frame → 1–3 fps. IQ scope, grid H-lines,
    and trace segments pay a 2–100× amplification.
-2. **Per-frame full-buffer memcpy.** `enable_page_flip()` copies the entire
-   1.84 MB front→back buffer on every `service_ui`, even when nothing changed
-   (~7 ms/frame of pure CPU).
+2. ~~**Per-frame full-buffer memcpy.**~~ *(Corrected 2026-10-02.)*
+   `enable_page_flip()` copies 1.84 MB front→back **once per page-flip
+   activation** (it early-returns when already active), not per frame. This is
+   amortized and negligible in steady state — there is no per-frame copy here.
 3. **Per-frame chrome redraw.** `draw_frame_chrome()` + `draw_grid()` refill
    the whole 1280×720 surface (~8 ms of sequential fill + scattered grid
    lines) every full-repaint frame, including when only the plot changed.
@@ -139,11 +140,16 @@ always increments the control (`adjust_control(c, x < 795 ? -1 : x > 1065 ? 1 : 
   non-blocking queued transactions. Output buffers in PSRAM must be cache-line
   aligned (128 B). SRM bilinear softens edges (good for ambient scenes, wrong
   for text — HUD stays full-res).
-- **DMA2D / GDMA async memcpy**: M5GFX 0.2.27 already creates the DSI-DPI
-  panel with `use_dma2d = true`, so `esp_lcd_panel_draw_bitmap` — already used
-  by `present_canvas()` — is hardware-accelerated today. M5GFX's own drawing
-  is pure CPU writes (verified: zero `ppa_`/`dma2d` hits in the vendored tree;
-  `initDMA/waitDMA/dmaBusy` are empty).
+- **DMA2D / GDMA async memcpy**: M5GFX 0.2.27 creates the DSI-DPI panel with
+  `use_dma2d = true`, but verified in IDF 5.5.4 `esp_lcd_panel_dpi.c`
+  `dpi_panel_draw_bitmap()`: when the draw buffer is one of the panel's own
+  framebuffers (our case), the driver performs **no copy** — it only
+  `esp_cache_msync()`s the updated rows and switches `cur_fb_index` (a
+  zero-copy pointer swap). DMA2D is used only for external source buffers.
+  So `present_canvas()` is already zero-copy; its per-present cost is the
+  full-frame cache writeback (~1.84 MB), inherent to a cached framebuffer.
+  M5GFX's own drawing remains pure CPU writes (verified: zero `ppa_`/`dma2d`
+  hits in the vendored tree; `initDMA/waitDMA/dmaBusy` are empty).
 - M5GFX `M5Canvas` (LGFX_Sprite) supports **indexed 8-bit palette sprites**
   (`createPalette(const uint16_t*, count)`): 1 B/pixel. `pushRotateZoom` /
   `pushAffine` are CPU per-pixel — never at frame rate; PPA replaces them.
@@ -156,7 +162,8 @@ always increments the control (`adjust_control(c, x < 795 ? -1 : x > 1065 ? 1 : 
 | Phosphor / Doppler | ~90 MB scattered PSRAM traffic/frame → 1–3 fps | ~1.4 MB row-sequential → 30–60 fps | ~60× traffic reduction |
 | Spectrum-family views | 10–25 fps | 30–60 fps | grid scatter + chrome removal, row-span traces |
 | 3D history | 5–15 fps (CPU line loop) | 30–60 fps + softer look | low-res sprite + PPA 4× upscale |
-| Page-flip copy | +7 ms/frame, always | 0 | dirty-flag |
+| Page-flip copy | ~~+7 ms/frame~~ *(none — corrected)* | unchanged | zero-copy already |
+| Present commit (cache writeback) | ~4.6 ms/frame, inherent | unchanged | not optimizable in place |
 | Chrome redraw | +8 ms/frame | amortized (only on HUD change) | partial redraw |
 | Channelizer solo audio | ≈1.3 cores on Core 1 | ≤0.1 core | decimate-first / selected-channel |
 | View-switch allocations | fragmentation → crash class | zero runtime allocation | preallocate at `initialize()` |
@@ -219,8 +226,9 @@ fast path applies:
   full-resolution and sharp.
 - **PPA blend** composites HUD/overlays and performs screensaver cross-fades;
   **PPA fill** replaces big clears.
-- Present keeps `esp_lcd_panel_draw_bitmap` (already DMA2D); the CPU
-  front→back copy in `enable_page_flip()` is replaced by dirty tracking.
+- Present keeps `esp_lcd_panel_draw_bitmap` (verified zero-copy pointer swap
+  when drawing into panel framebuffers); `enable_page_flip()`'s one-time seed
+  copy is left as-is.
 
 A thin `vis_blit` module owns PPA clients, 128-byte-aligned PSRAM buffers,
 and a fallback CPU path (self-check requires both).
@@ -304,8 +312,9 @@ pixel changes.
 3. [ ] Replace full-rate channelizer NCO with decimate-first processing
       (channel filter at 240k or selected-channel-only at 48k); solo audio
       output must remain bit-compatible with today's demod/squelch behavior.
-4. [ ] Remove the unconditional `enable_page_flip()` full-buffer memcpy;
-      dirty-flag the copy so it runs only when the front buffer changed.
+4. [x] ~~Remove the per-frame page-flip memcpy~~ — **struck (2026-10-02):**
+      verified the copy runs once per page-flip activation, not per frame.
+      No change needed.
 5. [ ] Keep `g_frame`/`g_history` mutexes; re-check lock-hold durations via
       the HUD's drop counters.
 
