@@ -867,11 +867,18 @@ void draw_spectrum(const float* bins, size_t bin_count, uint32_t sample_rate_sps
   // a quiet band put its noise high on the plot. The median of the columns is the noise floor; the scale
   // starts 6 dB below it and is smoothed so the trace does not jump as the band changes.
   EXT_RAM_BSS_ATTR static float sorted[kSpectrumW];
-  std::copy(column, column + kSpectrumW, sorted);
-  std::nth_element(sorted, sorted + kSpectrumW / 2, sorted + kSpectrumW);
+  // Columns outside the captured bandwidth have no level (kNoLevel) and are not noise: counting them would pull the
+  // median, and so the whole scale, down whenever the view is partly empty.
+  size_t valid = 0;
+  for (int x = 0; x < kSpectrumW; ++x)
+    if (column[x] > kNoLevel) sorted[valid++] = column[x];
   static float smoothed_floor = 0.0f;
   static bool floor_ready = false;
-  const float target_floor = sorted[kSpectrumW / 2] - 6.0f;
+  float target_floor = floor_ready ? smoothed_floor : 0.0f;  // nothing to measure: keep the last floor
+  if (valid > 0) {
+    std::nth_element(sorted, sorted + valid / 2, sorted + valid);
+    target_floor = sorted[valid / 2] - 6.0f;
+  }
   smoothed_floor = floor_ready ? smoothed_floor + 0.2f * (target_floor - smoothed_floor) : target_floor;
   floor_ready = true;
   const float floor = smoothed_floor;
