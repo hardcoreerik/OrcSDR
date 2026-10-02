@@ -10,7 +10,7 @@ dependencies:
       type: git
     targets:
     - esp32p4
-    version: 105caa56b9b5ce395a7b4910c6f703c14b83b5d9
+    version: 31a159df4f006a837d5041029bc6d1bc63520234
   espressif/eppp_link:
     component_hash: c1369b37f2b0b427b198ae14e07e7547d3da92b95fe4dc7f949e5de560b35f21
     dependencies:

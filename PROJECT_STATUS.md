@@ -1,22 +1,22 @@
 # OrcSDR current project status
 
-Current source snapshot: **2026-09-28**, on branch `codex/release-v0.3.0-beta.1`
-(release preparation for `v0.3.0-beta.1`).
+Current source snapshot: **2026-10-02**, on branch `claude/beta2-prep`
+(release preparation for `v0.3.0-beta.2`).
 
-Current release candidate: **`v0.3.0-beta.1`**. It is published only after the exact-tag hardware gate in
+Current release candidate: **`v0.3.0-beta.2`**. It is published only after the exact-tag hardware gate in
 [`docs/M5BURNER_HARDWARE_GATE.md`](docs/M5BURNER_HARDWARE_GATE.md) passes; the release page records the
 result. The previous release, `v0.2.0-beta7`, had its exact M5Burner package installed and booted on the
 owner Tab5 before publication. That evidence does not automatically prove later `main` commits or other
 hardware. Version numbers follow [`docs/VERSIONING.md`](docs/VERSIONING.md); release notes are in
-[`docs/releases/v0.3.0-beta.1.md`](docs/releases/v0.3.0-beta.1.md).
+[`docs/releases/v0.3.0-beta.2.md`](docs/releases/v0.3.0-beta.2.md).
 
 This release carries the Stage-1 optimized production DSP path (formerly the development branch
 `claude/dsp-multirate`, PR #114). Stage-2 D/D2/D3 frontends are **Experimental**, compiled only with
 `ORCSDR_DSP_LAB=1`, and are not WFM audio integrations. The dated
 [DSP closeout](docs/validation/dsp-stage1-stage2-closeout-2026-09-27.md) records their evidence.
 
-The release pins `esp_rtl_sdr` at `105caa56b9b5ce395a7b4910c6f703c14b83b5d9`, the commit of the published driver release
-**`v0.9.1`** (the driver reports `0.9.1`). It contains the PC-measured V4L/V4/V3c gain, AGC, bias and
+The release pins `esp_rtl_sdr` at `31a159df4f006a837d5041029bc6d1bc63520234`, the commit of the published driver release
+**`v0.9.3`** (the driver reports `0.9.3`). It contains the PC-measured V4L/V4/V3c gain, AGC, bias and
 tuner-bandwidth controls, the V4L HF upconverter route, an optional direct HF route that OrcSDR uses on CB
 for the V4L and V4, and the live tuner-bandwidth fixes documented in
 [`docs/testing/v3c-tuner-bandwidth-transition-2026-09-28.md`](docs/testing/v3c-tuner-bandwidth-transition-2026-09-28.md).
@@ -50,7 +50,7 @@ override this document for current state. Future work belongs in
 | ESP-IDF | 5.5.4 |
 | ESP-Hosted host/C6 | 3.0.6 / 3.0.6 over Tab5 SDIO at the qualified 10 MHz clock |
 | M5Unified / M5GFX | 0.2.20 / 0.2.27 |
-| `esp-rtl-sdr` | published release `v0.9.1` (reports `0.9.1`), immutable pin `105caa56b9b5ce395a7b4910c6f703c14b83b5d9` in the manifest and lock file |
+| `esp-rtl-sdr` | published release `v0.9.3` (reports `0.9.3`), immutable pin `31a159df4f006a837d5041029bc6d1bc63520234` in the manifest and lock file |
 | USB implementation | Current `esp-rtl-sdr` path; the legacy USB source is compiled out but remains in source. |
 | Radio policy | Receive-only. Transmission is Not Implemented. |
 
