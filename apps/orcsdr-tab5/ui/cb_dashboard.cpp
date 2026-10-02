@@ -890,6 +890,8 @@ void draw_spectrum(const float* bins, size_t bin_count, uint32_t sample_rate_sps
   constexpr int kOriginX = kSpectrumX + 1;
   static scope::Trace trace;
   M5Canvas* canvas = trace.begin(kPlotW, kPlotH, TFT_BLACK);
+  // No memory for the trace sprite: leave the frame alone rather than scroll the waterfall under a stale spectrum.
+  if (canvas == nullptr) return;
   if (canvas != nullptr) {
     for (int i = 1; i < 4; ++i)
       canvas->drawFastHLine(0, i * kSpectrumH / 4 - 1, kPlotW, kGrid);

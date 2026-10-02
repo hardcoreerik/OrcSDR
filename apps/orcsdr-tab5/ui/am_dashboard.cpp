@@ -608,6 +608,8 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
   constexpr int h = kSpectrumH - 2;
   static scope::Trace trace;
   M5Canvas* canvas = trace.begin(w, h, kBg);
+  // No memory for the trace sprite: leave the frame alone rather than scroll the waterfall under a stale spectrum.
+  if (canvas == nullptr) return;
   int px = 0;
   int py = h - 2;
   for (size_t i = 0; i < kSpectrumW; ++i) {
