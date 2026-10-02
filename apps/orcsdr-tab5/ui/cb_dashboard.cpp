@@ -3,6 +3,8 @@
 
 #include "dashboard_audio_control.hpp"
 
+#include "scope_canvas.hpp"
+#include "waterfall_style.hpp"
 #include <M5Unified.h>
 
 #include <algorithm>
@@ -416,11 +418,7 @@ void draw_spectrum_static() {
 }
 
 uint16_t waterfall_color(float level) {
-  level = std::clamp(level, 0.0f, 1.0f);
-  const uint8_t r = level < 0.55f ? 0 : static_cast<uint8_t>((level - 0.55f) * 566);
-  const uint8_t g = level < 0.2f ? 0 : static_cast<uint8_t>(std::min(255.0f, (level - 0.2f) * 510));
-  const uint8_t b = level < 0.65f ? static_cast<uint8_t>((0.65f - level) * 390) : 0;
-  return M5.Display.color565(r, g, b);
+  return waterfall_style::color565(waterfall_style::Screen::cb, level);
 }
 
 // ------------------------------------------------------------- ACTIVITY
@@ -685,6 +683,8 @@ Action listen_touch(int32_t x, int32_t y) {
 }
 
 Action spectrum_touch(int32_t x, int32_t y) {
+  if (scope::style_chip_tap(x, y, kSpectrumX + 1, kSpectrumY + 1, kSpectrumW - 2, waterfall_style::Screen::cb))
+    return {};
   if (!hit(x, y, {kSpectrumX, kSpectrumY, kSpectrumW, kWaterfallY + kWaterfallH - kSpectrumY}))
     return {};
   const uint32_t hz = kViewLowHz + static_cast<uint32_t>(
@@ -839,6 +839,8 @@ void update(const Snapshot& snapshot) {
   }
 }
 
+scope::FrameStats g_scope_stats;
+
 void draw_spectrum(const float* bins, size_t bin_count, uint32_t sample_rate_sps,
                    uint32_t center_hz) {
   if (!spectrum_active() || !bins || bin_count < 16 || sample_rate_sps == 0) return;
@@ -861,40 +863,71 @@ void draw_spectrum(const float* bins, size_t bin_count, uint32_t sample_rate_sps
     column[x] = peak;
     maximum = std::max(maximum, peak);
   }
-  const float floor = maximum - 48.0f;
-  constexpr int kPlotH = kSpectrumH - 2;
-  M5.Display.startWrite();
-  M5.Display.fillRect(kSpectrumX + 1, kSpectrumY + 1, kSpectrumW - 2, kPlotH, TFT_BLACK);
-  for (int i = 1; i < 4; ++i)
-    M5.Display.drawFastHLine(kSpectrumX + 1, kSpectrumY + i * kSpectrumH / 4, kSpectrumW - 2,
-                             kGrid);
-  for (size_t channel = 0; channel < kChannelCount; ++channel) {
-    const ChannelView& view = g_snapshot.channels[channel];
-    if (!view.active && channel != g_snapshot.channel) continue;
-    const int left = x_for_hz(kChannelsHz[channel] - kChannelHalfWidthHz);
-    const int right = x_for_hz(kChannelsHz[channel] + kChannelHalfWidthHz);
-    M5.Display.fillRect(left, kSpectrumY + 1, std::max(1, right - left), kPlotH,
-                        channel == g_snapshot.channel ? kSelected : 0x0220);
+  // Anchor the scale to the noise floor, not the loudest bin: with the top of the scale following the peak,
+  // a quiet band put its noise high on the plot. The median of the columns is the noise floor; the scale
+  // starts 6 dB below it and is smoothed so the trace does not jump as the band changes.
+  EXT_RAM_BSS_ATTR static float sorted[kSpectrumW];
+  // Columns outside the captured bandwidth have no level (kNoLevel) and are not noise: counting them would pull the
+  // median, and so the whole scale, down whenever the view is partly empty.
+  size_t valid = 0;
+  for (int x = 0; x < kSpectrumW; ++x)
+    if (column[x] > kNoLevel) sorted[valid++] = column[x];
+  static float smoothed_floor = 0.0f;
+  static bool floor_ready = false;
+  float target_floor = floor_ready ? smoothed_floor : 0.0f;  // nothing to measure: keep the last floor
+  if (valid > 0) {
+    std::nth_element(sorted, sorted + valid / 2, sorted + valid);
+    target_floor = sorted[valid / 2] - 6.0f;
   }
-  int last_x = kSpectrumX;
-  int last_y = kSpectrumY + kPlotH;
+  smoothed_floor = floor_ready ? smoothed_floor + 0.2f * (target_floor - smoothed_floor) : target_floor;
+  floor_ready = true;
+  const float floor = smoothed_floor;
+  (void)maximum;
+  constexpr int kPlotH = kSpectrumH - 2;
+  const uint32_t frame_started_ms = millis();
+  // Drawn off-screen and pushed in one go; see scope_canvas.hpp. Sprite x is screen x minus (kSpectrumX + 1).
+  constexpr int kPlotW = kSpectrumW - 2;
+  constexpr int kOriginX = kSpectrumX + 1;
+  static scope::Trace trace;
+  M5Canvas* canvas = trace.begin(kPlotW, kPlotH, TFT_BLACK);
+  // No memory for the trace sprite: leave the frame alone rather than scroll the waterfall under a stale spectrum.
+  if (canvas == nullptr) return;
+  if (canvas != nullptr) {
+    for (int i = 1; i < 4; ++i)
+      canvas->drawFastHLine(0, i * kSpectrumH / 4 - 1, kPlotW, kGrid);
+    for (size_t channel = 0; channel < kChannelCount; ++channel) {
+      const ChannelView& view = g_snapshot.channels[channel];
+      if (!view.active && channel != g_snapshot.channel) continue;
+      const int left = x_for_hz(kChannelsHz[channel] - kChannelHalfWidthHz) - kOriginX;
+      const int right = x_for_hz(kChannelsHz[channel] + kChannelHalfWidthHz) - kOriginX;
+      canvas->fillRect(left, 0, std::max(1, right - left), kPlotH,
+                       channel == g_snapshot.channel ? kSelected : 0x0220);
+    }
+  }
+  int last_x = 0;
+  int last_y = kPlotH - 1;
   for (int x = 0; x < kSpectrumW; ++x) {
     const float normalized =
         column[x] <= kNoLevel ? 0.0f : std::clamp((column[x] - floor) / 48.0f, 0.0f, 1.0f);
-    const int px = kSpectrumX + x;
-    const int py = kSpectrumY + kPlotH - static_cast<int>(normalized * (kPlotH - 4));
-    if (x) M5.Display.drawLine(last_x, last_y, px, py, kGreen);
+    const int px = x - 1;
+    const int py = kPlotH - 1 - static_cast<int>(normalized * (kPlotH - 4));
+    if (canvas != nullptr && x && px >= 0 && px < kPlotW) canvas->drawLine(last_x, last_y, px, py, kGreen);
     last_x = px;
     last_y = py;
     g_waterfall_row[x] = waterfall_color(normalized);
   }
-  const int tuned_x = x_for_hz(kChannelsHz[g_snapshot.channel]);
-  M5.Display.drawFastVLine(tuned_x, kSpectrumY + 1, kPlotH, kCyan);
-  M5.Display.scroll(0, -1);
-  M5.Display.pushImage(kSpectrumX + 1, kWaterfallY + kWaterfallH - 2, kSpectrumW - 2, 1,
-                       g_waterfall_row + 1);
-  M5.Display.endWrite();
+  if (canvas != nullptr) {
+    canvas->drawFastVLine(x_for_hz(kChannelsHz[g_snapshot.channel]) - kOriginX, 0, kPlotH, kCyan);
+    scope::draw_style_chips(canvas, kPlotW, waterfall_style::Screen::cb);
+    canvas->pushSprite(kOriginX, kSpectrumY + 1);
+  }
+  scope::scroll_waterfall(kSpectrumX + 1, kWaterfallY + kWaterfallH - 2, kSpectrumW - 2, g_waterfall_row + 1,
+                          waterfall_style::rows_per_frame(waterfall_style::Screen::cb));
+  g_scope_stats.frame_done(frame_started_ms);
 }
+
+uint32_t spectrum_fps() { return g_scope_stats.fps(); }
+uint32_t spectrum_draw_ms() { return g_scope_stats.draw_ms(); }
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};

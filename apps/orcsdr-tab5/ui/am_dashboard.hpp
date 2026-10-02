@@ -93,6 +93,8 @@ bool active();
 bool keypad_open();
 void begin_frequency_entry();
 bool spectrum_active();
+uint32_t spectrum_fps();       // scope frames drawn in the last second
+uint32_t spectrum_draw_ms();   // time the last scope frame took
 View view();
 void load(NvsStore& store);
 uint32_t saved_frequency();

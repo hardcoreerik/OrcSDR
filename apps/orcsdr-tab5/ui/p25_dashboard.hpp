@@ -89,6 +89,8 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
 Action handle_touch(int32_t x, int32_t y);
 bool active();
 bool spectrum_active();
+uint32_t spectrum_fps();       // scope frames drawn in the last second
+uint32_t spectrum_draw_ms();   // time the last scope frame took
 View view();
 bool take_profile_name(char* value, size_t size);
 void show_documentation_view(View view, const Snapshot& snapshot,

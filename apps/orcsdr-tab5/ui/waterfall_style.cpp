@@ -8,6 +8,7 @@ namespace {
 
 constexpr size_t kScreens = static_cast<size_t>(Screen::count);
 constexpr uint8_t kClassic = 0;
+constexpr uint8_t kFm = 1;
 constexpr uint8_t kTurbo = 6;
 
 struct State {
@@ -15,11 +16,13 @@ struct State {
   uint8_t speed;
 };
 
-State g_state[kScreens] = {{kClassic, 0}, {kTurbo, 0}, {kClassic, 0}};
+State g_state[kScreens] = {{kClassic, 0}, {kTurbo, 0}, {kClassic, 0}, {kFm, 0},
+                           {kClassic, 0}, {kClassic, 0}, {kClassic, 0}, {kFm, 0}};
 PersistHook g_hook = nullptr;
 
 // Rows per frame at speed 0 (Normal): Home's frames come at 10/s, LoRa's at up to 20/s.
-constexpr int kBaseRows[kScreens] = {2, 1, 2};
+// The scopes at the 50 ms refresh (Airband, FM, Shortwave, AM, CB, P25) add 2.
+constexpr int kBaseRows[kScreens] = {2, 1, 2, 2, 2, 2, 2, 2};
 
 constexpr const char* kPaletteNames[kPaletteCount] = {"CLASSIC", "FM",   "FIRE", "ICE",
                                                       "PLASMA",  "GRAY", "TURBO"};
@@ -81,7 +84,14 @@ void notify(Screen screen) {
 
 }  // namespace
 
-uint8_t default_palette(Screen screen) { return screen == Screen::lora ? kTurbo : kClassic; }
+uint8_t default_palette(Screen screen) {
+  switch (screen) {
+    case Screen::lora: return kTurbo;
+    case Screen::fm:
+    case Screen::p25: return kFm;   // their original waterfall colours
+    default: return kClassic;
+  }
+}
 
 uint8_t palette(Screen screen) { return valid(screen) ? g_state[static_cast<size_t>(screen)].palette : 0; }
 uint8_t speed(Screen screen) { return valid(screen) ? g_state[static_cast<size_t>(screen)].speed : 0; }

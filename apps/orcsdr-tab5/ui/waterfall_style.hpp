@@ -8,7 +8,7 @@
 // Pure C++: no display or ESP-IDF headers, so it is host-tested.
 namespace orcsdr::waterfall_style {
 
-enum class Screen : uint8_t { home = 0, lora, airband, count };
+enum class Screen : uint8_t { home = 0, lora, airband, fm, shortwave, am, cb, p25, count };
 
 constexpr uint8_t kPaletteCount = 7;
 constexpr uint8_t kSpeedCount = 3;

@@ -6,6 +6,8 @@
 #include "freq_keypad.hpp"
 #include "redraw_guard.hpp"
 #include "orc_badge.hpp"
+#include "scope_canvas.hpp"
+#include "waterfall_style.hpp"
 #include "spectrum_resample.hpp"
 
 #include <M5Unified.h>
@@ -724,11 +726,7 @@ void draw_dynamic() {
 }
 
 uint16_t waterfall_color(float level) {
-  level = std::clamp(level, 0.0f, 1.0f);
-  const uint8_t r = level < 0.5f ? 0 : static_cast<uint8_t>((level - 0.5f) * 510);
-  const uint8_t g = level < 0.25f ? 0 : static_cast<uint8_t>(std::min(255.0f, (level - 0.25f) * 510));
-  const uint8_t b = level < 0.65f ? static_cast<uint8_t>((0.65f - level) * 390) : 0;
-  return M5.Display.color565(r, g, b);
+  return waterfall_style::color565(waterfall_style::Screen::fm, level);
 }
 
 }  // namespace
@@ -772,7 +770,8 @@ void update(const Snapshot& snapshot) {
   draw_dynamic();
 }
 
-uint32_t g_scope_fps = 0, g_scope_frames = 0, g_scope_window_ms = 0, g_scope_draw_ms = 0;
+scope::FrameStats g_scope_stats;
+scope::Trace g_scope_trace;
 // Slow-falling peak-hold trace behind the live one: shows where signals have been, not just now. It is kept
 // in dB, not as a fraction of the screen: the display floor follows the loudest bin every frame, so a stored
 // fraction would drift to the wrong height whenever that bin changed. Reset when the tuned frequency or span
@@ -789,19 +788,11 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
   // frame made the trace and its lines flicker and cost time on every frame.
   constexpr int w = kSpectrumW - 2;
   constexpr int h = kSpectrumH - 2;
-  static M5Canvas* canvas = nullptr;
-  if (canvas == nullptr) {
-    canvas = new M5Canvas(&M5.Display);
-    canvas->setPsram(true);
-    canvas->setColorDepth(16);
-    if (!canvas->createSprite(w, h)) {
-      delete canvas;
-      canvas = nullptr;
-    }
-  }
+  M5Canvas* canvas = g_scope_trace.begin(w, h, kBg);
+  // No memory for the trace sprite: leave the frame alone rather than scroll the waterfall under a stale spectrum.
+  if (canvas == nullptr) return;
   const int trace_x0 = kSpectrumX + 1;
   if (canvas != nullptr) {
-    canvas->fillSprite(kBg);
     for (int i = 1; i < 4; ++i) {
       canvas->drawFastVLine(i * kSpectrumW / 4 - 1, 0, h, kGrid);
       canvas->drawFastHLine(0, i * kSpectrumH / 4 - 1, w, kGrid);
@@ -844,30 +835,24 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
     canvas->drawFastVLine(center, 0, h, kCyan);
     canvas->drawFastVLine(center - half_filter, 0, h, kCyan);
     canvas->drawFastVLine(center + half_filter, 0, h, kCyan);
+    scope::draw_style_chips(canvas, w, waterfall_style::Screen::fm);
     canvas->pushSprite(trace_x0, kSpectrumY + 1);
   }
-  // Two waterfall rows per frame at the livelier frame rate keeps it flowing.
-  M5.Display.startWrite();
-  M5.Display.scroll(0, -2);
-  M5.Display.pushImage(kSpectrumX, kWaterfallY + kWaterfallH - 3, kSpectrumW, 1, g_waterfall_row);
-  M5.Display.pushImage(kSpectrumX, kWaterfallY + kWaterfallH - 2, kSpectrumW, 1, g_waterfall_row);
-  M5.Display.endWrite();
-  g_scope_draw_ms = millis() - frame_started_ms;
-  ++g_scope_frames;
-  if (frame_started_ms - g_scope_window_ms >= 1000u) {
-    g_scope_fps = g_scope_frames;
-    g_scope_frames = 0;
-    g_scope_window_ms = frame_started_ms;
-  }
+  scope::scroll_waterfall(kSpectrumX, kWaterfallY + kWaterfallH - 2, kSpectrumW, g_waterfall_row,
+                          waterfall_style::rows_per_frame(waterfall_style::Screen::fm));
+  g_scope_stats.frame_done(frame_started_ms);
 }
 
-uint32_t spectrum_fps() { return g_scope_fps; }
-uint32_t spectrum_draw_ms() { return g_scope_draw_ms; }
+uint32_t spectrum_fps() { return g_scope_stats.fps(); }
+uint32_t spectrum_draw_ms() { return g_scope_stats.draw_ms(); }
 
 Action gain_mode_toggle();
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
+  if (spectrum_active() &&
+      scope::style_chip_tap(x, y, kSpectrumX + 1, kSpectrumY + 1, kSpectrumW - 2, waterfall_style::Screen::fm))
+    return {};
   if (audio_header::settings_hit(x, y)) return {ActionKind::open_device_settings};
   if (g_keypad) {
     const auto result = freq_keypad::handle_touch(x, y, g_entry, sizeof(g_entry));

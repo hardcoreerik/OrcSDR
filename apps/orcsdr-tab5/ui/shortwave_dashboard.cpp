@@ -5,6 +5,8 @@
 #include "dashboard_audio_control.hpp"
 #include "freq_keypad.hpp"
 #include "shortwave_model.hpp"
+#include "scope_canvas.hpp"
+#include "waterfall_style.hpp"
 #include "spectrum_resample.hpp"
 #include "text_editor.hpp"
 
@@ -539,12 +541,7 @@ void draw_keypad() {
 }
 
 uint16_t waterfall_color(float level) {
-  level = std::clamp(level, 0.0f, 1.0f);
-  const uint8_t r = level < 0.55f ? 0 : static_cast<uint8_t>((level - 0.55f) * 566);
-  const uint8_t g = level < 0.2f ? 0 : static_cast<uint8_t>(
-      std::min(255.0f, (level - 0.2f) * 510));
-  const uint8_t b = level < 0.65f ? static_cast<uint8_t>((0.65f - level) * 390) : 0;
-  return M5.Display.color565(r, g, b);
+  return waterfall_style::color565(waterfall_style::Screen::shortwave, level);
 }
 
 }  // namespace
@@ -670,37 +667,46 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor) {
   if (!spectrum_active() || !levels || visible_bins < 2) return;
   const int width = spectrum_width();
-  M5.Display.startWrite();
-  M5.Display.fillRect(kSpectrumX + 1, kSpectrumY + 1, width - 2,
-                      kSpectrumPlotH - 1, TFT_BLACK);
-  int last_x = kSpectrumX;
-  int last_y = kSpectrumY + kSpectrumPlotH - 2;
+  // The trace is drawn off-screen and pushed in one go: erasing and redrawing the screen area every frame
+  // flickered and cost time. The sprite follows the width, which changes when the tuner drawer opens.
+  const int cw = width - 2;
+  const int ch = kSpectrumPlotH - 1;
+  static scope::Trace trace;
+  M5Canvas* canvas = trace.begin(cw, ch, TFT_BLACK);
+  // No memory for the trace sprite: leave the frame alone rather than scroll the waterfall under a stale spectrum.
+  if (canvas == nullptr) return;
+  int last_x = 0;
+  int last_y = ch - 2;
   for (size_t i = 0; i < static_cast<size_t>(width); ++i) {
     const float level = spectrum::peak_for_pixel(
         levels, first_bin, visible_bins, i, width);
     const float normalized = std::clamp((level - floor) / 48.0f,
                                         0.0f, 1.0f);
-    const int x = kSpectrumX + static_cast<int>(i);
-    const int y = kSpectrumY + kSpectrumPlotH - 2 -
-                  static_cast<int>(normalized * (kSpectrumPlotH - 4));
-    if (i) M5.Display.drawLine(last_x, last_y, x, y, kGreen);
+    const int x = static_cast<int>(i) - 1;
+    const int y = ch - 2 - static_cast<int>(normalized * (kSpectrumPlotH - 4));
+    if (canvas != nullptr && i && x >= 0 && x < cw) canvas->drawLine(last_x, last_y, x, y, kGreen);
     last_x = x;
     last_y = y;
     g_waterfall_row[i] = waterfall_color(normalized);
   }
-  const int center = kSpectrumX + width / 2;
-  const int half_filter = filter_half_width();
-  M5.Display.drawFastVLine(center, kSpectrumY, kSpectrumPlotH, kCyan);
-  M5.Display.drawFastVLine(center - half_filter, kSpectrumY, kSpectrumPlotH, kYellow);
-  M5.Display.drawFastVLine(center + half_filter, kSpectrumY, kSpectrumPlotH, kYellow);
-  M5.Display.scroll(0, -1);
-  M5.Display.pushImage(kSpectrumX, kWaterfallY + kWaterfallH - 2, width, 1,
-                       g_waterfall_row);
-  M5.Display.endWrite();
+  if (canvas != nullptr) {
+    const int center = cw / 2;
+    const int half_filter = filter_half_width();
+    canvas->drawFastVLine(center, 0, ch, kCyan);
+    canvas->drawFastVLine(center - half_filter, 0, ch, kYellow);
+    canvas->drawFastVLine(center + half_filter, 0, ch, kYellow);
+    scope::draw_style_chips(canvas, cw, waterfall_style::Screen::shortwave);
+    canvas->pushSprite(kSpectrumX + 1, kSpectrumY + 1);
+  }
+  scope::scroll_waterfall(kSpectrumX, kWaterfallY + kWaterfallH - 2, width, g_waterfall_row,
+                          waterfall_style::rows_per_frame(waterfall_style::Screen::shortwave));
 }
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
+  if (spectrum_active() &&
+      scope::style_chip_tap(x, y, kSpectrumX + 1, kSpectrumY + 1, spectrum_width() - 2, waterfall_style::Screen::shortwave))
+    return {};
   if (g_state.modal() != Modal::none && g_state.modal() != Modal::frequency) {
     const Modal modal = g_state.modal();
     const auto result = text_editor::handle_touch(x, y);
@@ -1131,7 +1137,7 @@ bool dashboard_self_check() {
           ActionKind::gain_auto &&
       handle_gain_drag(kGainX + kGainW, kGainY).value == 496 &&
       handle_touch(kDrawer.x + 8, kSpectrumY + 20).kind == ActionKind::none &&
-       handle_touch(kSpectrumX + kSpectrumOpenW - 8, kSpectrumY + 20).kind ==
+       handle_touch(kSpectrumX + kSpectrumOpenW - 8, kSpectrumY + 60).kind ==
            ActionKind::tune_hz;
   g_state.open(Modal::frequency);
   const bool modal_gestures_ok =
