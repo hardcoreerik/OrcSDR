@@ -14006,6 +14006,7 @@ QueueHandle_t orcdial_inbox = nullptr;
 uint8_t orcdial_peer[6]{};
 uint32_t orcdial_sender = 0;
 uint32_t orcdial_tx_sequence = 1;
+esp_err_t orcdial_last_tx_result = ESP_ERR_INVALID_STATE;
 uint32_t orcdial_rx_sender = 0;
 uint32_t orcdial_rx_sequence = 0;
 uint32_t orcdial_last_state_ms = 0;
@@ -14027,8 +14028,9 @@ bool orcdial_send(const uint8_t* mac, orc::Packet& packet) {
   packet.sender = orcdial_sender;
   packet.sequence = orcdial_tx_sequence++;
   orc::encode(packet, frame.wire);
-  return eh_host_peer_data_send(kOrcDialToC6,
-                                reinterpret_cast<const uint8_t*>(&frame), sizeof(frame)) == ESP_OK;
+  orcdial_last_tx_result = eh_host_peer_data_send(kOrcDialToC6,
+                                reinterpret_cast<const uint8_t*>(&frame), sizeof(frame));
+  return orcdial_last_tx_result == ESP_OK;
 }
 
 orc::Dashboard orcdial_active_dashboard() {
@@ -16482,6 +16484,18 @@ void process_command(char* command) {
     return;
   }
 #if ORCSDR_ORCDIAL
+  if (strcmp(command, "RTL_ORCDIAL_PROBE") == 0) {
+    if (!orcdial_transport_ready) {
+      Serial.println("RTL_ORCDIAL_PROBE_ERROR bridge_unavailable"); return;
+    }
+    orc::Packet probe{};
+    probe.type = orc::Type::hello;
+    (void)orcdial_send(orcdial_broadcast, probe);
+    // The RPC result does not confirm an over-air transmission or a Dial reply.
+    Serial.printf("RTL_ORCDIAL_PROBE result=%s scope=relay_request\n",
+                  esp_err_to_name(orcdial_last_tx_result));
+    return;
+  }
   if (strcmp(command, "RTL_ORCDIAL_STATUS") == 0) {
     Serial.printf("RTL_ORCDIAL_STATUS bridge=%d paired=%d pairing=%d dashboard=%u\n",
                   orcdial_transport_ready ? 1 : 0, orcdial_has_peer ? 1 : 0,
@@ -17742,6 +17756,7 @@ void process_command(char* command) {
     Serial.println("RTL_UI ACTION <domain> <action> [value] - mirror FM/AM/CB/P25/LoRa/Settings touch action (auth)");
 #if ORCSDR_ORCDIAL
     Serial.println("RTL_ORCDIAL_STATUS|RTL_ORCDIAL_PAIR START|STOP - accessory pairing over local USB");
+    Serial.println("RTL_ORCDIAL_PROBE - send a discovery packet and report the C6 relay RPC result");
     Serial.println("RTL_ORCDIAL_C6_UPDATE CONFIRM - install paired accessory C6 image (auth)");
 #endif
     Serial.println("RTL_UI ACTION LORA DETAILS|FILTER|EXPORT|CLEAR - Traffic toolbar actions (auth)");

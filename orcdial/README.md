@@ -25,6 +25,8 @@ The accessory must work without requiring a C6 firmware update. The existing exp
 
 Local USB automation: send `RTL_WIFI_CHANNEL` and `RTL_ORCDIAL_PAIR START` to the Tab5, then `ORCDIAL_PAIR START` to the Dial. Query the Dial with `ORCDIAL_STATUS` (link, pairing, channel, frequency). `RTL_ORCDIAL_PAIR STOP` closes the Tab5 window. Other authenticated Tab5 controls remain protected. Run `python orcdial/tests/serial_smoke.py --port COM14` for the Dial command and overflow checks; it starts discovery but never tunes.
 
+Run `python orcdial/tests/host_probe.py --port COM17` to check the Tab5 commands and send a discovery packet through the experimental relay. `RTL_ORCDIAL_PROBE` reports the C6 relay RPC result; even `ESP_OK` does not prove over-air transmission or pairing. Neither script updates firmware.
+
 ## Controls and state
 
 From Home, turn or press to open the dashboard carousel; turn to choose and press to open. On tuners, rotation emits frequency deltas in the dashboard's configured step, with acceleration only for frequency. A short press cycles the available frequency, step, gain, and volume focus. On channel and content dashboards, rotation emits semantic channel, radar range, candidate, slot, target, message, AP, or setting actions, never a generic RF tune. The Tab5 acknowledges only actions backed by a real handler; an unsupported action returns `ERROR`. The Dial keeps its center readout on the last authoritative Tab5 state while a command is pending.
@@ -35,6 +37,6 @@ The Dial labels disconnected state `OFFLINE` and never treats its offline previe
 
 ## Pairing and current validation
 
-On the Tab5, open Settings → Connectivity → **CONNECT ORCDIAL** to open a 60-second pairing window. The authenticated serial equivalent is `RTL_ORCDIAL_PAIR START`; `RTL_ORCDIAL_STATUS` is read-only. On the M5Dial Home/Settings screen, hold the encoder for four seconds or use its Connect touch screen. Both sides save the paired MAC. This prototype is MAC-gated but **not encrypted or cryptographically authenticated**; do not treat it as a production trust boundary.
+On the Tab5, open Settings → Connectivity → **CONNECT ORCDIAL** to open a 60-second pairing window. The local USB serial equivalent is `RTL_ORCDIAL_PAIR START`; `RTL_ORCDIAL_STATUS` is read-only. On the M5Dial Home/Settings screen, hold the encoder for four seconds or use its Connect touch screen. Both sides save the paired MAC. This prototype is MAC-gated but **not encrypted or cryptographically authenticated**; do not treat it as a production trust boundary.
 
 The M5Dial and receiver PlatformIO builds, C6 ESP-IDF build, and earlier P4 builds succeeded locally. Host protocol/controller assertions passed earlier. The current Dial UI was flashed on COM14 and the user confirmed it looks good. The single-build packaging path and Tab5/C6 radio link still need verification. Pairing, channel changes, reconnect, dashboard sync, radio action results, Wi-Fi coexistence, and recovery still need hardware acceptance. See [PROTOCOL.md](PROTOCOL.md) and [ORCSDR_ESPNOW_INTEGRATION_PLAN.md](ORCSDR_ESPNOW_INTEGRATION_PLAN.md).
