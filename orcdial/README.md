@@ -27,6 +27,8 @@ Local USB automation: send `RTL_WIFI_CHANNEL` and `RTL_ORCDIAL_PAIR START` to th
 
 Run `python orcdial/tests/host_probe.py --port COM17` to check the Tab5 commands and send a discovery packet through the experimental relay. `RTL_ORCDIAL_PROBE` reports the C6 relay RPC result; even `ESP_OK` does not prove over-air transmission or pairing. Neither script updates firmware.
 
+For connected-device control tests, `ORCDIAL_ROTATE <delta>` accepts nonzero detents from -20 to 20 and uses the same dashboard/focus mapping as the physical encoder, without acceleration. `ORCDIAL_FOCUS NEXT` cycles the same focus choices as a short encoder press on a tuner. Both refuse offline control. A queued response is not proof of application: verify the acknowledgment and returned state in `ORCDIAL_STATUS`, then compare the Tab5 state. Status includes dashboard, focus, step, volume, last acknowledgment, and pending-command state.
+
 ## Controls and state
 
 From Home, turn or press to open the dashboard carousel; turn to choose and press to open. On tuners, rotation emits frequency deltas in the dashboard's configured step, with acceleration only for frequency. A short press cycles the available frequency, step, gain, and volume focus. On channel and content dashboards, rotation emits semantic channel, radar range, candidate, slot, target, message, AP, or setting actions, never a generic RF tune. The Tab5 acknowledges only actions backed by a real handler; an unsupported action returns `ERROR`. The Dial keeps its center readout on the last authoritative Tab5 state while a command is pending.

@@ -24,9 +24,14 @@ with port:
                 return line
         raise AssertionError('No response: ' + expected)
 
-    command('ORCDIAL_STATUS', 'ORCDIAL_STATUS link=')
+    initial = command('ORCDIAL_STATUS', 'ORCDIAL_STATUS link=')
+    if 'link=OFFLINE' in initial:
+        command('ORCDIAL_ROTATE 1', 'ORCDIAL_CONTROL_ERROR offline')
+        command('ORCDIAL_FOCUS NEXT', 'ORCDIAL_CONTROL_ERROR offline')
     command('x' * 80, 'ORCDIAL_COMMAND_ERROR too_long')
     command('ORCDIAL_NOT_A_COMMAND', 'ORCDIAL_COMMAND_ERROR unknown')
+    command('ORCDIAL_ROTATE 999', 'ORCDIAL_CONTROL_ERROR invalid_delta')
+    command('ORCDIAL_ROTATE 1junk', 'ORCDIAL_CONTROL_ERROR invalid_delta')
     command('ORCDIAL_PAIR START', 'ORCDIAL_PAIR_SEARCH_STARTED')
     status = command('ORCDIAL_STATUS', 'ORCDIAL_STATUS link=')
     assert 'pairing=1' in status or 'link=LINKED' in status, status

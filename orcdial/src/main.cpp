@@ -122,16 +122,38 @@ static void poll_serial_commands() {
         radio_link.start_pairing();
         Serial.println("ORCDIAL_PAIR_SEARCH_STARTED");
       }
+    } else if (!std::strcmp(command, "ORCDIAL_FOCUS NEXT")) {
+      if (!radio_link.connected()) Serial.println("ORCDIAL_CONTROL_ERROR offline");
+      else {
+        focus = orc::next_focus(radio_link.state().dashboard, focus);
+        Serial.printf("ORCDIAL_FOCUS value=%u\n", unsigned(focus));
+      }
+    } else if (!std::strncmp(command, "ORCDIAL_ROTATE ", 15)) {
+      char* end = nullptr;
+      const long detents = std::strtol(command + 15, &end, 10);
+      if (end == command + 15 || *end || !detents || detents < -20 || detents > 20)
+        Serial.println("ORCDIAL_CONTROL_ERROR invalid_delta");
+      else if (!radio_link.connected()) Serial.println("ORCDIAL_CONTROL_ERROR offline");
+      else {
+        const auto& state = radio_link.state();
+        const auto action = orc::rotate(state.dashboard, state.view, focus, int(detents), 1, state.step_hz);
+        if (action.kind == orc::ActionKind::none) Serial.println("ORCDIAL_CONTROL_ERROR unsupported");
+        else if (!radio_link.command_action(action)) Serial.println("ORCDIAL_CONTROL_ERROR busy");
+        else Serial.printf("ORCDIAL_CONTROL_QUEUED action=%u value=%ld\n", unsigned(action.kind), long(action.value));
+      }
     } else if (!std::strcmp(command, "ORCDIAL_STATUS")) {
       uint8_t channel = 0;
       wifi_second_chan_t secondary;
       const bool channel_valid = esp_wifi_get_channel(&channel, &secondary) == ESP_OK;
-      Serial.printf("ORCDIAL_STATUS link=%s pairing=%d channel=%u channel_valid=%d freq=%lu\n",
+      const auto& state = radio_link.connected() ? radio_link.state() : local;
+      Serial.printf("ORCDIAL_STATUS link=%s pairing=%d channel=%u channel_valid=%d freq=%lu dashboard=%u focus=%u step=%lu volume=%u ack=%lu pending=%d\n",
                     radio_link.connected() ? "LINKED" : "OFFLINE", radio_link.pairing() ? 1 : 0,
                     unsigned(channel), channel_valid ? 1 : 0,
-                    (unsigned long)(radio_link.connected() ? radio_link.state().frequency_hz : local.frequency_hz));
+                    (unsigned long)state.frequency_hz, unsigned(state.dashboard), unsigned(focus),
+                    (unsigned long)state.step_hz, unsigned(state.volume),
+                    (unsigned long)radio_link.last_ack(), radio_link.pending() ? 1 : 0);
     } else if (!std::strcmp(command, "ORCDIAL_HELP")) {
-      Serial.println("ORCDIAL_STATUS | ORCDIAL_PAIR START");
+      Serial.println("ORCDIAL_STATUS | ORCDIAL_PAIR START | ORCDIAL_FOCUS NEXT | ORCDIAL_ROTATE <-20..20, nonzero>");
     } else if (length) Serial.println("ORCDIAL_COMMAND_ERROR unknown");
     length = 0;
     overflow = false;
