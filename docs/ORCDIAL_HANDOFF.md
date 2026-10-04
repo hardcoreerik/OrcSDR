@@ -10,14 +10,16 @@ OrcDial is an optional accessory. The standard OrcSDR build includes its support
 - Successful command: `C:\Users\hardc\.platformio\penv\Scripts\python.exe -m platformio run -d orcdial -e dial -t upload --upload-port COM14`.
 - A subsequent serial read reported `ORCDIAL_STATUS link=OFFLINE`. This confirms firmware execution, not pairing.
 - The user accepted the illustrated dashboard selector before the latest FM layout. The newest FM layout and ADS-B/Airband icons have been flashed but have no recorded physical acceptance yet.
-- No Tab5 flash was performed in this chat. COM17 was identified as the Tab5 port; verify device identity and get authorization before writing it.
+- On October 3, 2026, with user authorization, the merged P4 app was flashed to COM17 using `idf.py -B build-native-hosted3 -p COM17 app-flash`. The device identified as ESP32-P4, MAC `30:ed:a0:e2:e6:95`; the app upload hash was verified. Bootloader, partitions, and NVS were preserved.
+- The no-reset IDF monitor observed `SPLASH_BOOT done`, `ORCDIAL_BRIDGE_READY`, `hosted_match=1`, and `RTL_START ESP_OK`. These prove P4 startup and bridge registration, not the C6 ESP-NOW endpoint or pairing.
+- The Dial was reflashed on COM14 with the merged branch's firmware; upload hashes were verified. Subsequent serial output remained `ORCDIAL_STATUS link=OFFLINE`.
 - After merging current main on October 3, 2026, the Dial build passed with `C:\Users\hardc\.platformio\penv\Scripts\python.exe -m platformio run -d orcdial -e dial`. A missing local `intelhex` packaging dependency was restored first.
-- The merged P4 build passed with `idf.py -B build-native-hosted3 build` after the standard `apps/orcsdr-tab5/tools/build-tab5-idf.ps1` configuration. It embeds the source/hash-verified cached OrcDial C6 image. The C6 image was reused, not freshly rebuilt. No hardware was flashed during the merge.
+- The merged P4 build passed with `idf.py -B build-native-hosted3 build` after the standard `apps/orcsdr-tab5/tools/build-tab5-idf.ps1` configuration. It embeds the source/hash-verified cached OrcDial C6 image. The C6 image was reused, not freshly rebuilt. No hardware was flashed during the merge itself.
 
 ## Next checks
 
 1. Inspect the merged P4 host bridge, C6 endpoint, peer-data configuration, pairing controls, and release build integration.
 2. Deploy matching P4 and C6 firmware with authorization, then validate discovery, pairing, state updates, acknowledgments, disconnect/reconnect, and normal OrcSDR startup without a Dial.
-3. Confirm FM frequency, step, and volume commands reach the existing FM handlers. Backward FM step selection now uses an explicit previous-step action; the Tab5 source compiled but has not been flashed or device-tested.
+3. Confirm FM frequency, step, and volume commands reach the existing FM handlers. Backward FM step selection now uses an explicit previous-step action; it compiled and was flashed but has not been verified through a paired Dial.
 
 The FM screen currently exposes Tune, Step, and Volume. Gain is omitted because the host bridge does not implement it. Seek, RDS, stereo, and relative signal data are not exposed on the Dial yet. See `ORCDIAL_CONTROL_MATRIX.md` for the broader mapping and `orcdial/PROTOCOL.md` for the packet format. Neither a successful build nor a Dial flash proves the P4/C6/Dial connection.
