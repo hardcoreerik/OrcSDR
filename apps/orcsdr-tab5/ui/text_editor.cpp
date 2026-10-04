@@ -76,6 +76,13 @@ const char* row(int index) {
       "!@#$%^&*()", "-_=+[]{}\\|", ";:'\",.<>?/`~", ""};
   return g.symbols ? symbols[index] : g.shift ? shift[index] : normal[index];
 }
+
+void draw_field() {
+  char shown[64]{};
+  if (g.masked && !g.reveal) memset(shown, '*', strlen(g.value));
+  else strlcpy(shown, g.value, sizeof(shown));
+  button(shown[0] ? shown : " ", kLeft, kFieldY, kWidth, kFieldH, TFT_NAVY, 3);
+}
 }  // namespace
 
 void begin(const char* title, const char* initial, size_t maximum_length,
@@ -103,10 +110,7 @@ void draw() {
   M5.Display.setTextColor(cyan, bg);
   M5.Display.setTextSize(3);
   M5.Display.drawString(g.title, kLeft, kTitleY);
-  char shown[64]{};
-  if (g.masked && !g.reveal) memset(shown, '*', strlen(g.value));
-  else strlcpy(shown, g.value, sizeof(shown));
-  button(shown[0] ? shown : " ", kLeft, kFieldY, kWidth, kFieldH, TFT_NAVY, 3);
+  draw_field();
   for (int r = 0; r < 4; ++r) {
     const char* keys = row(r);
     const int count = static_cast<int>(strlen(keys));
@@ -154,6 +158,31 @@ Result handle_touch(int x, int y) {
     }
   }
   return Result::none;
+}
+
+keyboard_input::EditAction handle_key(const keyboard_input::Key& key) {
+  using keyboard_input::EditAction;
+  if (!g.open) return EditAction::none;
+  const EditAction action =
+      keyboard_input::apply_edit(g.value, sizeof(g.value), g.maximum, key);
+  if (action == EditAction::edited) {
+    draw_field();
+  } else if (action == EditAction::toggle_reveal) {
+    if (!g.masked) return EditAction::none;
+    g.reveal = !g.reveal;
+    draw();
+  }
+  return action;
+}
+
+bool masked() { return g.open && g.masked; }
+void accept_point(int* x, int* y) {
+  if (x) *x = kAccept.x + kAccept.w / 2;
+  if (y) *y = kAccept.y + kAccept.h / 2;
+}
+void cancel_point(int* x, int* y) {
+  if (x) *x = kCancel.x + kCancel.w / 2;
+  if (y) *y = kCancel.y + kCancel.h / 2;
 }
 
 bool self_check() {

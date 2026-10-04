@@ -33,7 +33,7 @@ Current release images include the matching ESP-Hosted C6 firmware used by the T
 - **AM Radio:** receive broadcast AM with region-aware channel steps, presets, automatic tuning, and a full-band station scan.
 - **Shortwave:** enter the generic Browse/NFM workspace for experimental HF exploration; calibrated HF and complete AM/SSB modes are not yet available.
 - **Weather:** quickly tune the standard NOAA weather-radio channels.
-- **Airband:** opens generic Browse near 121.5 MHz. Proper AM aviation voice reception is not yet implemented.
+- **Airband:** dedicated receive-only 118–136.975 MHz AM aviation dashboard with 25/8.33 kHz tuning, scan/hold/skip controls, 121.500 guard access, activity history, and offline airport/channel data support. Hardware/RF acceptance remains experimental.
 - **Marine:** listen across the standard VHF marine channel plan.
 - **CB Radio:** scan all 40 Citizens Band channels at once and stop on whoever is talking, with priority channel, lockouts, activity log, full-band spectrum, and AM/USB/LSB listening.
 - **P25 Radio:** monitor trunked P25 control channels and follow supported voice traffic.
@@ -114,7 +114,7 @@ Antenna choice affects what can be received. Useful test reports include the rec
 | IQ transport | Callback-only IQ delivery using three 32 KiB USB transfers, with stream and consumer-drop diagnostics. |
 | Signal processing | Native on-device demodulation, spectrum and waterfall generation, RF measurements, and protocol decoders. |
 | Audio | 48 kHz stereo processing and playback through the Tab5 speaker path. |
-| Wireless | The onboard ESP32-C6 provides Wi-Fi over SDIO through ESP-Hosted 3.0.6. Matching C6 firmware is embedded in release images. |
+| Wireless | The onboard ESP32-C6 provides Wi-Fi over SDIO through ESP-Hosted. The C6 may run 3.0.6 or the M5 factory 2.12.6 (which keeps M5 Launcher's Wi-Fi/OTA working); a 3.0.6 image is embedded for an optional update. |
 | Storage | Internal flash and NVS for firmware and settings, plus optional microSD storage for maps, data packs, logs, and IQ captures. |
 | Build system | Native ESP-IDF 5.5.4 with locked component versions and repository build/install scripts. |
 

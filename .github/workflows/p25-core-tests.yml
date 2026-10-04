@@ -13,6 +13,7 @@ on:
       - tests/p25_config_tests.cpp
       - tests/test_data_catalog.py
       - tools/data_catalog/build_catalog.py
+      - tools/data_catalog/build_ourairports_aviation_index.py
       - tools/test-p25-core.*
       - .github/workflows/p25-core-tests.yml
   push:
@@ -28,6 +29,7 @@ on:
       - tests/p25_config_tests.cpp
       - tests/test_data_catalog.py
       - tools/data_catalog/build_catalog.py
+      - tools/data_catalog/build_ourairports_aviation_index.py
       - tools/test-p25-core.*
       - .github/workflows/p25-core-tests.yml
   workflow_dispatch:

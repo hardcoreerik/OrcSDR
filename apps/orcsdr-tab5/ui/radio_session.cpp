@@ -64,7 +64,8 @@ bool Session::self_check() {
   const Token p25 = session.acquire(Owner::p25, Band::p25, 453812500, 960000);
   return !session.owns(fm) && session.owns(p25) &&
          !session.retuned(fm, 102300000) &&
-         session.snapshot().frequency_hz == 453812500;
+         session.snapshot().frequency_hz == 453812500 &&
+         owner_for_band(Band::airband) == Owner::radio;
 }
 
 }  // namespace orcsdr::radio

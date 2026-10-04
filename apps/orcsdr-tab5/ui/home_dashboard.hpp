@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "dashboard_registry.hpp"
+#include "filter_standards.hpp"
 
 namespace orcsdr::home {
 
@@ -17,6 +18,7 @@ struct Snapshot {
   uint32_t span_hz = 960000;
   uint32_t step_hz = 12500;
   uint32_t filter_bandwidth_hz = 0;
+  filter_standards::Kind filter_kind = filter_standards::Kind::fixed;
   uint32_t effective_sps = 0;
   int32_t battery_percent = -1;
   int32_t vbus_mv = 0;
@@ -67,8 +69,15 @@ enum class ActionKind : uint8_t {
   open_device_settings,
   waterfall_contrast_down,
   waterfall_contrast_up,
+  waterfall_palette_next,
+  waterfall_speed_next,
   gain_open,
   gain_close,
+  filter_open,
+  filter_close,
+  filter_set,        // value = bandwidth in Hz
+  filter_standard,   // the standard width for the band on screen
+  filter_edges,      // show/hide the two filter lines on the spectrum
   gain_auto,
   gain_tenth_db,
   rtl_agc,
@@ -89,6 +98,11 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
 Action handle_touch(int32_t x, int32_t y, bool pressed);
 uint32_t step_span(uint32_t span_hz, int direction);
 bool active();
+// A gain or filter popup is showing; close_popup() dismisses it.
+bool popup_open();
+// Scroll position of the "Last used" list; the keyboard focus map depends on it.
+int32_t list_scroll_px();
+void close_popup();
 bool browser_active();
 bool self_check();
 

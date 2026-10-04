@@ -16,7 +16,7 @@ struct ScanResult {
   bool secure = false;
 };
 
-enum class C6UpdateState : uint8_t { unavailable, unreachable, current, ready, updating, failed, rebooting };
+enum class C6UpdateState : uint8_t { unavailable, unreachable, current, optional, ready, updating, failed, rebooting };
 
 struct C6UpdateStatus {
   C6UpdateState state = C6UpdateState::unavailable;
@@ -43,7 +43,7 @@ bool connect_failed();
 const char* ssid();
 const char* ip();
 int16_t rssi();
-bool hosted_versions_match();
+bool hosted_versions_match();  // C6 firmware is on the tested list (2.12.6 or 3.0.6)
 const char* hosted_c6_version();
 bool hosted_transport_ready();
 const char* hosted_failure_stage();

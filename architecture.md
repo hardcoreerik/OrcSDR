@@ -17,8 +17,8 @@ ESP32-P4. The onboard ESP32-C6 runs matching ESP-Hosted 3.0.6 firmware and uses
 historical and unsupported.
 
 The portable receiver boundary is the external `esp-rtl-sdr` component,
-published release `v0.9.1` (it reports `0.9.1`), pinned immutably at
-`105caa56b9b5ce395a7b4910c6f703c14b83b5d9` by
+published release `v0.9.3` (it reports `0.9.3`), pinned immutably at
+`31a159df4f006a837d5041029bc6d1bc63520234` by
 `apps/orcsdr-tab5/main/idf_component.yml` and
 `apps/orcsdr-tab5/dependencies.lock`. OrcSDR uses callback delivery and owns
 DSP, UI, storage, and product behavior above that driver. The old local USB
@@ -48,15 +48,18 @@ screen permission to draw while radio/decoder work continues independently.
 `navigation_service` owns Home/Settings handoff mechanics; feature dashboards
 render snapshots rather than owning receiver state.
 
-ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`.
+ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`, `airband`.
 
 Dashboard IDs: `home`, `fm`, `p25`, `adsb`, `shortwave`, `weather`, `cb`, `lora`, `airband`, `marine`, `satellite`, `utilities`, `settings`, `rf_lab`, `wifi_analysis`, `pocsag`, `am`.
 
 The current screen modules include Home, FM, AM, P25, ADS-B, LoRa, POCSAG, RF
 Lab, RF Visualizer, Wi-Fi analysis, Settings, documentation capture, and the
-shared Radio/Scope/Capture surface. Dashboard catalog entries for Shortwave,
-Airband, Marine, and Satellite route into that shared receiver surface; catalog
-labels do not imply dedicated decoders or complete demodulation modes.
+shared Radio/Scope/Capture surface. Airband has its own dashboard (`airband_*`
+modules: scanner, catalog, runtime, dashboard; see `docs/airband/README.md`) on
+`radio::Band::airband`, using the shared AM demodulator and receiver controls.
+Dashboard catalog entries for Shortwave, Marine, and Satellite route into the
+shared receiver surface; catalog labels do not imply dedicated decoders or
+complete demodulation modes.
 
 ## Receiver and DSP ownership
 

@@ -71,6 +71,7 @@ The driver's own release comes first: a release cannot pin a driver release that
 
 | OrcSDR | Pinned driver release | Driver reports |
 |---|---|---|
+| `v0.3.0-beta.2` | `esp_rtl_sdr v0.9.3` | `0.9.3` |
 | `v0.3.0-beta.1` | `esp_rtl_sdr v0.9.1` | `0.9.1` |
 | `v0.2.0-beta7` and earlier | untagged driver commits / branches | see that release's notes |
 

@@ -32,15 +32,18 @@ The P4 application pins `espressif/esp_hosted` to **3.0.6** in
 `apps/orcsdr-tab5/main/idf_component.yml`. Commit the generated
 `apps/orcsdr-tab5/dependencies.lock` with every dependency change.
 
-The Tab5 C6 must run the matching **3.0.6** ESP-Hosted firmware. OrcSDR's
-M5Burner package embeds a matching C6 image. With reachable Hosted transport
-and an eligible older C6, Firmware & Updates offers an explicitly confirmed
-in-app update. Source builds need `-C6Firmware` to embed that image; the
+The Tab5 C6 may run ESP-Hosted **3.0.6** (matched with the host) or **2.12.6**
+(the M5 factory version, which keeps M5 Launcher's Wi-Fi/OTA working). Both are
+tested pairings with this 3.0.6 host; any other version is attempted with a
+warning. A 2.x host paired with a 3.0.6 C6 fails, which is why Launcher loses
+Wi-Fi after a C6 update to 3.0.6. OrcSDR's M5Burner package embeds the 3.0.6 C6
+image. With reachable Hosted transport, Firmware & Updates offers an optional,
+explicitly confirmed in-app update to 3.0.6 and warns about Launcher. Source builds need `-C6Firmware` to embed that image; the
 default helper invocation does not supply it. An unreachable C6 needs the
 [documented recovery path](M5BURNER_RELEASE.md), not repeated in-app retries.
 Never downgrade the C6 to accommodate an old P4 host library.
 
-At boot the P4 logs both versions. Wi-Fi is blocked unless it reports:
+At boot the P4 logs the C6 version. Wi-Fi is only blocked if the version cannot be read; a healthy 3.0.6 pair reports:
 
 ```text
 I OrcSDR: ESP32-C6 detected

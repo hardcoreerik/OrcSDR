@@ -72,6 +72,7 @@ enum class ActionKind : uint8_t {
   scan_presets,
   open_device_settings,
   exit_to_browse,
+  step_cycle_previous,
 };
 
 struct Action {
@@ -87,6 +88,11 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
 Action handle_touch(int32_t x, int32_t y);
 Action handle_gain_drag(int32_t x, int32_t y);
 bool active();
+// Direct frequency entry (the shared numpad): is it showing, and open it.
+bool keypad_open();
+uint32_t spectrum_fps();       // spectrum frames drawn in the last second
+uint32_t spectrum_draw_ms();   // time the last frame took to draw
+void begin_frequency_entry();
 bool spectrum_active();
 View view();
 void show_documentation_view(View view, const Snapshot& snapshot,

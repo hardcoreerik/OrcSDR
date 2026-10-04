@@ -125,6 +125,15 @@ The firmware also accepts `SD_REMOVE <ASCII-path-as-hex>` for files below
 up. Removal is refused while
 radio or recording is active.
 
+## Dashboard header layout
+
+Every dashboard shares one header: the OrcSDR brand at the left, then the battery, Home, sound, visualizer and
+settings controls at the right. The area between them (x 420, y 12, 446 x 54, constants in
+`ui/dashboard_audio_control.hpp`) is the **status bar area**. Home draws the Wi-Fi / RTL-SDR / clock bar there;
+**no other dashboard may put content there**. Live values such as counts and rates belong in the dashboard's own
+cards. Dashboards that draw their own text must also reset the font (`M5.Display.setFont(nullptr)`) before calling
+the shared header helpers, which assume the built-in font.
+
 ## ESP-IDF application
 
 The `main/` component builds the complete Tab5 radio/UI application under

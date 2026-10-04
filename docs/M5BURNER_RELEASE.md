@@ -9,8 +9,8 @@ is reachable.
 
 1. Install **OrcSDR** through M5Burner. **This resets saved settings** (see below).
 2. Open **Settings → Firmware & Updates**.
-3. If the reachable C6 differs from 3.0.6, explicitly confirm **UPDATE C6 TO 3.0.6**.
-4. After restart, verify `host=3.0.6 coprocessor=3.0.6 match=1`.
+3. The C6 may stay on 2.12.6 (Wi-Fi works, and M5 Launcher keeps its Wi-Fi/OTA) or be updated with the optional **UPDATE C6 TO 3.0.6**. Updating to 3.0.6 stops Launcher's Wi-Fi/OTA from working.
+4. Verify `RTL_WIFI_C6_STATUS` shows `match=1` (coprocessor 2.12.6 or 3.0.6).
 
 ## Saved settings and M5Burner
 

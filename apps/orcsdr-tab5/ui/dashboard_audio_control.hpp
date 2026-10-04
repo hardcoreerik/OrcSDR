@@ -4,6 +4,14 @@
 
 namespace orcsdr::audio_header {
 
+// The header's status-bar area, between the brand and the battery/buttons. Home draws the Wi-Fi /
+// RTL-SDR / clock bar here; every other dashboard leaves it empty (a design constraint so the shared
+// status bar can appear on any screen without colliding with dashboard content).
+constexpr int kStatusBarX = 420;
+constexpr int kStatusBarY = 12;
+constexpr int kStatusBarW = 446;
+constexpr int kStatusBarH = 54;
+
 enum class Action : uint8_t {
   none,
   opened,
