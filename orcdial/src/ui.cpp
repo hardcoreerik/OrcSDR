@@ -1,19 +1,119 @@
 #include "ui.hpp"
+#include "controller.hpp"
+#include <cmath>
 #include <cstdio>
 
 namespace orc {
 extern const uint8_t badge_start[] asm("_binary_assets_orc_badge_104_png_start");
 extern const uint8_t badge_end[] asm("_binary_assets_orc_badge_104_png_end");
-static constexpr uint32_t ink = 0xe8eee9, dim = 0x74918b, green = 0x43f0b2;
-static constexpr uint32_t bg = 0x07100f, amber = 0xffbc66;
+#define DECLARE_DASHBOARD_IMAGE(name) \
+  extern const uint8_t name##_start[] asm("_binary_assets_dashboard_" #name "_png_start"); \
+  extern const uint8_t name##_end[] asm("_binary_assets_dashboard_" #name "_png_end");
+DECLARE_DASHBOARD_IMAGE(fm)
+DECLARE_DASHBOARD_IMAGE(am)
+DECLARE_DASHBOARD_IMAGE(weather)
+DECLARE_DASHBOARD_IMAGE(airband)
+DECLARE_DASHBOARD_IMAGE(marine)
+DECLARE_DASHBOARD_IMAGE(cb)
+DECLARE_DASHBOARD_IMAGE(adsb)
+DECLARE_DASHBOARD_IMAGE(satellite)
+DECLARE_DASHBOARD_IMAGE(lora)
+DECLARE_DASHBOARD_IMAGE(rf_lab)
+DECLARE_DASHBOARD_IMAGE(p25)
+DECLARE_DASHBOARD_IMAGE(shortwave)
+DECLARE_DASHBOARD_IMAGE(pocsag)
+DECLARE_DASHBOARD_IMAGE(wifi_analysis)
+DECLARE_DASHBOARD_IMAGE(settings)
+#undef DECLARE_DASHBOARD_IMAGE
+struct DashboardImage { const uint8_t* start; const uint8_t* end; };
+static const DashboardImage dashboard_images[] = {
+  {badge_start, badge_end}, {fm_start, fm_end}, {p25_start, p25_end},
+  {adsb_start, adsb_end}, {shortwave_start, shortwave_end},
+  {weather_start, weather_end}, {cb_start, cb_end}, {lora_start, lora_end},
+  {airband_start, airband_end}, {marine_start, marine_end},
+  {satellite_start, satellite_end}, {nullptr, nullptr},
+  {settings_start, settings_end}, {rf_lab_start, rf_lab_end},
+  {wifi_analysis_start, wifi_analysis_end}, {pocsag_start, pocsag_end},
+  {am_start, am_end}
+};
+static_assert(sizeof(dashboard_images) / sizeof(dashboard_images[0]) ==
+              static_cast<unsigned>(Dashboard::am) + 1);
+static constexpr uint32_t ink = 0xe8f5f6, dim = 0x88a4ad, green = 0x70f847;
+static constexpr uint32_t bg = 0x050f16, cyan = 0x38d9ff, blue = 0x319bff;
+static constexpr uint32_t panel = 0x0c202b, trace = 0x163747, trace_bright = 0x286174;
 static M5Canvas frame(&M5Dial.Display);
 static bool frame_attempted = false, frame_ready = false;
 static void present() { if (frame_ready) frame.pushSprite(0, 0); }
+static uint32_t accent_for(Dashboard id, bool connected) {
+  if (!connected) return cyan;
+  if (id == Dashboard::am || id == Dashboard::cb || id == Dashboard::satellite) return blue;
+  if (id == Dashboard::weather || id == Dashboard::airband || id == Dashboard::marine) return cyan;
+  return green;
+}
+// Decorative motion only: these traces do not represent RF samples or network activity.
+static void ambient(lgfx::LGFXBase& d, Dashboard id, uint32_t now) {
+  const int phase = (now / 90 + uint8_t(id) * 19) % 330;
+  d.drawCircle(120, 120, 96, trace);
+  d.drawCircle(120, 120, 103, trace);
+  d.drawArc(120, 120, 106, 104, phase, phase + 26, trace_bright);
+  const float a = phase * 0.017453293f;
+  d.fillCircle(120 + int(100 * cosf(a)), 120 + int(100 * sinf(a)), 2, trace_bright);
+}
 static void frequency(lgfx::LGFXBase& d, uint32_t hz, int y, int size, uint32_t color) {
   char text[20];
   std::snprintf(text, sizeof text, "%lu.%06lu", (unsigned long)(hz / 1000000),
                 (unsigned long)(hz % 1000000));
   d.setTextColor(color, bg); d.setTextSize(size); d.drawString(text, 120, y);
+}
+
+static void fm_screen(lgfx::LGFXBase& d, const RadioState& state, Focus focus,
+                      bool connected, bool pairing, bool demo, bool pending,
+                      int32_t reel_position) {
+  d.drawCircle(120, 120, 115, green);
+  d.drawCircle(120, 120, 108, trace_bright);
+  for (int i = 0; i < 24; ++i) {
+    const float a = i * 6.2831853f / 24 - 1.5707963f;
+    const int inner = i % 3 ? 100 : 96;
+    d.drawLine(120 + int(inner * cosf(a)), 120 + int(inner * sinf(a)),
+               120 + int(105 * cosf(a)), 120 + int(105 * sinf(a)),
+               i == (reel_position % 24 + 24) % 24 ? green : trace_bright);
+  }
+  d.setTextColor(cyan, bg); d.setTextSize(2); d.drawString("FM", 120, 28);
+  d.setTextColor(connected ? green : dim, bg); d.setTextSize(1);
+  d.drawString(pairing ? "PAIRING" : connected ? "LINKED" : demo ? "DEMO" : "OFFLINE", 120, 48);
+
+  char line[32];
+  if (state.step_hz >= 1000 && state.frequency_hz % 1000 == 0)
+    std::snprintf(line, sizeof line, "%lu.%03lu", (unsigned long)(state.frequency_hz / 1000000),
+                  (unsigned long)(state.frequency_hz / 1000 % 1000));
+  else
+    std::snprintf(line, sizeof line, "%lu.%06lu", (unsigned long)(state.frequency_hz / 1000000),
+                  (unsigned long)(state.frequency_hz % 1000000));
+  d.setTextColor(ink, bg); d.setTextSize(4);
+  if (d.textWidth(line) > 190) d.setTextSize(3);
+  d.drawString(line, 120, 106);
+  d.setTextColor(cyan, bg); d.setTextSize(2); d.drawString("MHz", 120, 136);
+
+  const char* names[] = {"TUNE", "STEP", "VOL"};
+  const Focus choices[] = {Focus::vfo, Focus::step, Focus::volume};
+  for (int i = 0; i < 3; ++i) {
+    const int x = 31 + i * 61;
+    const bool active = focus == choices[i];
+    d.fillRoundRect(x, 157, 56, 24, 5, active ? panel : bg);
+    d.drawRoundRect(x, 157, 56, 24, 5, active ? green : trace_bright);
+    d.setTextColor(active ? green : dim, active ? panel : bg);
+    d.setTextSize(1); d.drawString(names[i], x + 28, 169);
+  }
+  d.setTextColor(dim, bg); d.setTextSize(1);
+  if (state.step_hz % 1000 == 0)
+    std::snprintf(line, sizeof line, "STEP %lu kHz", (unsigned long)(state.step_hz / 1000));
+  else
+    std::snprintf(line, sizeof line, "STEP %lu Hz", (unsigned long)state.step_hz);
+  d.drawString(line, 77, 199);
+  std::snprintf(line, sizeof line, "VOL %u", unsigned(state.volume));
+  d.drawString(line, 169, 199);
+  d.setTextColor(pending ? cyan : dim, bg); d.setTextSize(1);
+  d.drawString(pending ? "TUNING..." : "PRESS: NEXT  /  HOLD: HOME", 120, 220);
 }
 
 // Small, code-drawn illustrations stay sharp on the Dial's 240-pixel round screen.
@@ -126,6 +226,33 @@ static void artwork(lgfx::LGFXBase& d, Dashboard id, uint32_t c) {
     default: break;
   }
 }
+static void selector_icon(lgfx::LGFXBase& d, Dashboard id, int x, int y,
+                          bool small = false) {
+  const unsigned index = static_cast<unsigned>(id);
+  if (index >= sizeof(dashboard_images) / sizeof(dashboard_images[0])) return;
+  const auto& image = dashboard_images[index];
+  if (!image.start) return;
+  const int size = small ? 30 : 64;
+  const float scale = size / (id == Dashboard::home ? 104.0f : 64.0f);
+  d.drawPng(image.start, image.end - image.start, x - size / 2, y - size / 2,
+            0, 0, 0, 0, scale);
+}
+static const char* content_view(Dashboard id, uint8_t view) {
+  static const char* adsb[] = {"RADAR", "AIRCRAFT", "TARGET", "STATS", "SETTINGS"};
+  static const char* lora[] = {"OVERVIEW", "NODES", "TRAFFIC", "MAP", "RF HEALTH"};
+  static const char* p25[] = {"MONITOR", "SPECTRUM", "TALKGROUPS", "PROGRAM", "RF HEALTH"};
+  static const char* pocsag[] = {"LIVE", "IDS", "SIGNAL", "ACTIVITY", "ARCHIVE"};
+  static const char* wifi[] = {"OVERVIEW", "CHANNELS", "DEVICES", "CSI", "SETTINGS"};
+  if (view >= 5) return "VIEW --";
+  switch (id) {
+    case Dashboard::adsb: return adsb[view];
+    case Dashboard::lora: return lora[view];
+    case Dashboard::p25: return p25[view];
+    case Dashboard::pocsag: return pocsag[view];
+    case Dashboard::wifi_analysis: return wifi[view];
+    default: return "";
+  }
+}
 
 void splash() {
   auto& d = M5Dial.Display;
@@ -155,8 +282,10 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
   lgfx::LGFXBase& d = frame_ready ? static_cast<lgfx::LGFXBase&>(frame)
                                   : static_cast<lgfx::LGFXBase&>(M5Dial.Display);
   d.fillScreen(bg); d.setTextDatum(middle_center);
+  const uint32_t now = millis();
+  ambient(d, view == View::carousel ? selected : state.dashboard, now);
   if (view == View::connection) {
-    d.drawCircle(120, 120, 112, amber);
+    d.drawCircle(120, 120, 112, cyan);
     d.setTextColor(green, bg); d.setTextSize(3); d.drawString("ORCDIAL", 120, 56);
     d.setTextColor(ink, bg); d.setTextSize(3); d.drawString(connected ? "CONNECTED" : "CONNECT", 120, 104);
     d.setTextSize(2); d.drawString(pairing ? "SEARCHING" : "TAP TO PAIR", 120, 145);
@@ -166,11 +295,11 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
   }
   if (view == View::home) {
     d.drawCircle(120, 120, 115, green);
-    d.drawCircle(120, 120, 110, 0x245047);
+    d.drawCircle(120, 120, 110, 0x1b4e60);
     d.drawPng(badge_start, badge_end - badge_start, 68, 29);
     d.setTextColor(ink, bg); d.setTextSize(3); d.drawString("OrcSDR", 120, 151);
-    d.setTextColor(connected ? green : amber, bg); d.setTextSize(2);
-    d.drawString(connected ? dashboard_name(state.dashboard) : "OFFLINE", 120, 181);
+    d.setTextColor(connected ? green : cyan, bg); d.setTextSize(2);
+    d.drawString(connected ? dashboard_name(state.dashboard) : demo ? "DEMO" : "OFFLINE", 120, 181);
     d.setTextColor(dim, bg); d.setTextSize(1);
     d.drawString("PRESS OR TAP: DASHBOARDS", 120, 209);
     present(); return;
@@ -179,42 +308,74 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
     const int index = carousel_index(selected);
     const auto prev = carousel[(index + carousel_count - 1) % carousel_count];
     const auto next = carousel[(index + 1) % carousel_count];
-    d.drawCircle(120, 120, 115, green);
-    d.setTextColor(dim, bg); d.setTextSize(2); d.drawString("DASHBOARDS", 120, 35);
-    d.drawRoundRect(56, 76, 128, 92, 15, green);
-    d.drawRoundRect(2, 91, 48, 62, 8, dim);
-    d.drawRoundRect(190, 91, 48, 62, 8, dim);
-    d.setTextColor(ink, bg); d.setTextSize(2); d.drawString(dashboard_name(selected), 120, 120);
-    d.setTextColor(dim, bg); d.setTextSize(1);
-    char side[5]; std::snprintf(side, sizeof side, "%.4s", dashboard_name(prev)); d.drawString(side, 26, 121);
-    std::snprintf(side, sizeof side, "%.4s", dashboard_name(next)); d.drawString(side, 214, 121);
+    const uint32_t accent = accent_for(selected, connected);
+    d.drawCircle(120, 120, 115, accent);
+    for (int i = 0; i < 12; ++i) {
+      const float a = (i * 30 - 90) * 0.017453293f;
+      d.drawLine(120 + int(108 * cosf(a)), 120 + int(108 * sinf(a)),
+                 120 + int(113 * cosf(a)), 120 + int(113 * sinf(a)), trace_bright);
+    }
+    d.setTextColor(ink, bg); d.setTextSize(2); d.drawString("DASHBOARDS", 120, 32);
+    d.fillRoundRect(43, 61, 154, 119, 16, panel);
+    d.drawRoundRect(43, 61, 154, 119, 16, accent);
+    d.fillRoundRect(3, 91, 38, 64, 8, panel);
+    d.fillRoundRect(199, 91, 38, 64, 8, panel);
+    d.drawRoundRect(3, 91, 38, 64, 8, trace_bright);
+    d.drawRoundRect(199, 91, 38, 64, 8, trace_bright);
+    selector_icon(d, selected, 120, 103);
+    selector_icon(d, prev, 22, 120, true);
+    selector_icon(d, next, 218, 120, true);
+    d.setTextColor(ink, panel);
+    d.setTextSize(3);
+    if (d.textWidth(dashboard_name(selected)) > 146) d.setTextSize(2);
+    d.drawString(dashboard_name(selected), 120, 151);
+    d.setTextColor(dim, panel); d.setTextSize(1);
+    d.drawString("<", 22, 145); d.drawString(">", 218, 145);
+    for (int i = -2; i <= 2; ++i)
+      d.fillRoundRect(93 + (i + 2) * 12, 184, 8, 3, 1, i == 0 ? accent : trace_bright);
     char count[20]; std::snprintf(count, sizeof count, "%d / %d", index + 1, carousel_count);
-    d.drawString(count, 120, 190);
-    d.drawString(connected ? "PRESS TO OPEN" : "OFFLINE PREVIEW", 120, 214);
+    d.setTextColor(dim, bg); d.setTextSize(2); d.drawString(count, 120, 202);
+    d.setTextSize(1);
+    d.drawString(connected ? "PRESS TO OPEN" : demo ? "DEMO PREVIEW" : "OFFLINE PREVIEW", 120, 222);
+    present(); return;
+  }
+  if (state.dashboard == Dashboard::fm) {
+    fm_screen(d, state, focus, connected, pairing, demo, pending_delta, reel_position);
     present(); return;
   }
   const auto dashboard = state.dashboard;
   const bool can_tune = tunable(dashboard);
-  const uint32_t accent = !connected ? amber :
-    dashboard == Dashboard::am || dashboard == Dashboard::cb || dashboard == Dashboard::satellite ? 0xffb34e :
-    dashboard == Dashboard::lora ? 0x55e997 :
-    dashboard == Dashboard::weather || dashboard == Dashboard::airband || dashboard == Dashboard::marine ? 0x54d4ff : green;
+  const uint32_t accent = accent_for(dashboard, connected);
   d.drawCircle(120, 120, 116, accent);
-  d.drawCircle(120, 120, 112, 0x245047);
+  d.drawCircle(120, 120, 112, 0x1b4e60);
   d.setTextColor(accent, bg); d.setTextSize(2);
   d.drawString(dashboard_name(dashboard), 120, 27);
-  d.setTextColor(connected ? green : amber, bg); d.setTextSize(1);
-  d.drawString(pairing ? "PAIRING" : connected ? "LINKED" : demo ? "OFFLINE" : "SEARCHING", 120, 48);
+  d.setTextColor(connected ? green : cyan, bg); d.setTextSize(1);
+  d.drawString(pairing ? "PAIRING" : connected ? "LINKED" : demo ? "DEMO" : "OFFLINE", 120, 48);
   static const char* modes[] = {"--", "NFM", "AM", "WFM"};
-  if (can_tune) {
+  if (can_tune || channel_dashboard(dashboard)) {
     d.setTextColor(dim, bg); d.setTextSize(1);
     d.drawString(modes[state.mode < 4 ? state.mode : 0], 120, 64);
   }
   artwork(d, dashboard, accent);
   char line[32];
-  if (!can_tune) {
+  if (channel_dashboard(dashboard)) {
+    d.setTextColor(ink, bg); d.setTextSize(4);
+    if (connected && state.selected > 0) std::snprintf(line, sizeof line, "CH %ld", long(state.selected));
+    else std::snprintf(line, sizeof line, "CH --");
+    d.drawString(line, 120, 113);
+    frequency(d, state.frequency_hz, 140, 2, dim);
     d.setTextColor(dim, bg); d.setTextSize(1);
-    d.drawString(dashboard == Dashboard::settings ? "DEVICE SETTINGS" : "NO LIVE DATA", 120, 197);
+    d.drawString(connected && state.selected > 0 ? "CHANNEL" : "CHANNEL DATA --", 120, 195);
+  } else if (!can_tune) {
+    d.setTextColor(dim, bg); d.setTextSize(2);
+    d.drawString(content_view(dashboard, state.view), 120, 176);
+    if (dashboard == Dashboard::adsb && connected && state.selected > 0 && state.view == 0)
+      std::snprintf(line, sizeof line, "RANGE %ld NM", long(state.selected));
+    else if (dashboard == Dashboard::p25 && connected && state.item_count)
+      std::snprintf(line, sizeof line, "CANDIDATE %ld/%lu", long(state.selected), (unsigned long)state.item_count);
+    else std::snprintf(line, sizeof line, "%s", dashboard == Dashboard::settings ? "DEVICE SETTINGS" : "NO LIVE DATA");
+    d.setTextSize(1); d.drawString(line, 120, 198);
   } else if (focus == Focus::vfo || focus == Focus::step) {
     switch (style) {
       case TuneStyle::reel: {
@@ -299,11 +460,12 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
     std::snprintf(line, sizeof line, "STEP %lu Hz", (unsigned long)state.step_hz);
     d.setTextColor(focus == Focus::step ? green : ink, bg); d.setTextSize(2); d.drawString(line, 120, 188);
   }
-  if (pending_delta) { d.setTextColor(amber, bg); d.setTextSize(1); d.drawString("TUNING...", 120, 205); }
+  if (pending_delta) { d.setTextColor(cyan, bg); d.setTextSize(1); d.drawString("TUNING...", 120, 205); }
   static const char* styles[] = {"REEL", "DIAL", "ODOM", "TAPE", "SPLIT"};
   d.setTextColor(dim, bg); d.setTextSize(2);
   std::snprintf(line, sizeof line, "%s %u/5 >", styles[unsigned(style)], unsigned(style) + 1);
-  d.drawString(can_tune ? line : "HOME   DASHBOARDS >", 120, 218);
+  d.drawString(can_tune ? line : channel_dashboard(dashboard) ? "CH  VOL   HOME >" :
+               "HOME   DASHBOARDS >", 120, 218);
   present();
 }
 } // namespace orc

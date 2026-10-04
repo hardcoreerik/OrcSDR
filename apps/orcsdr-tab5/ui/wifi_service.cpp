@@ -381,9 +381,14 @@ const char* c6_update_state_name(C6UpdateState state) {
     default: return "unavailable";
   }
 }
-bool begin_c6_update() {
+bool begin_c6_update(bool allow_current_for_orcdial) {
   const C6UpdateStatus status = c6_update_status();
-  if (!g_hosted_transport_ready || !status.image_embedded || status.state != C6UpdateState::ready)
+  const bool eligible = status.state == C6UpdateState::ready
+#if ORCSDR_ORCDIAL
+      || (allow_current_for_orcdial && status.state == C6UpdateState::current)
+#endif
+      ;
+  if (!g_hosted_transport_ready || !status.image_embedded || !eligible)
     return false;
   set_update_status(C6UpdateState::updating, 0, "starting");
   if (xTaskCreate(c6_update_task, "c6_ota", 4096, nullptr, 4, nullptr) != pdPASS) {

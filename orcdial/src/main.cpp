@@ -71,6 +71,33 @@ static void change(orc::Type type, int32_t value) {
     pending_delta += value;
   }
 }
+static void act(orc::Action action, bool online) {
+  using K = orc::ActionKind;
+  if (action.kind == K::none) return;
+  if (online) {
+    if (!radio_link.command_action(action) && action.kind == K::tune &&
+        !radio_link.pending()) pending_delta += action.value;
+    return;
+  }
+  switch (action.kind) {
+    case K::tune: local.frequency_hz = orc::clamp_frequency(int64_t(local.frequency_hz) + action.value); break;
+    case K::step:
+      if (local.dashboard == orc::Dashboard::fm) {
+        static constexpr uint32_t fm_steps[] = {50000, 100000, 200000, 500000, 1000000};
+        int i = 0;
+        while (i < 5 && fm_steps[i] != local.step_hz) ++i;
+        local.step_hz = fm_steps[(i + action.value % 5 + 5) % 5];
+      } else {
+        local.step_hz = orc::steps[constrain(orc::step_index(local.step_hz) + action.value, 0, orc::step_count-1)];
+      }
+      break;
+    case K::gain: local.gain_tenth_db = constrain(int(local.gain_tenth_db) + action.value*10, 0, 500); break;
+    case K::squelch: local.squelch = constrain(int(local.squelch) + action.value, 0, 100); break;
+    case K::volume: local.volume = constrain(int(local.volume) + action.value*2, 0, 100); break;
+    case K::view: local.view = (local.view + (action.value > 0 ? 1 : 4)) % 5; break;
+    default: break; // No synthetic channels, aircraft, nodes, messages or APs.
+  }
+}
 void setup() {
   Serial.begin(115200); Serial.println("ORCDIAL_BOOT");
   auto cfg = M5.config(); M5Dial.begin(cfg, true, false);
@@ -86,6 +113,7 @@ void loop() {
   if (online) local = state;
   static orc::Dashboard last_dashboard = orc::Dashboard::home;
   if (online && state.dashboard != last_dashboard) {
+    pending_delta = 0;
     tune_style = style_for(state.dashboard);
     if (view != orc::View::carousel && view != orc::View::connection)
       view = state.dashboard == orc::Dashboard::home ? orc::View::home : orc::View::dashboard;
@@ -93,7 +121,7 @@ void loop() {
   }
   if (online && view == orc::View::dashboard && state.dashboard == orc::Dashboard::home && !radio_link.pending())
     view = orc::View::home;
-  if (online && pending_delta && radio_link.command(orc::Type::tune_relative, pending_delta)) pending_delta = 0;
+  if (online && pending_delta && radio_link.command_action({orc::ActionKind::tune, pending_delta})) pending_delta = 0;
   const int32_t detent = M5Dial.Encoder.read() / 4;
   int32_t movement = detent - last_detent;
   if (movement) {
@@ -101,35 +129,28 @@ void loop() {
     if (view == orc::View::home) { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
     if (view == orc::View::carousel) {
       selected_index = (selected_index + movement % orc::carousel_count + orc::carousel_count) % orc::carousel_count;
-    } else if (view == orc::View::dashboard && orc::tunable(state.dashboard)) {
-    reel_position += movement;
-    const uint32_t now = millis(), elapsed = now - last_turn_ms;
-    last_turn_ms = now;
-    const int boost = elapsed < 40 ? 5 : elapsed < 90 ? 2 : 1;
-    const int32_t adjusted = movement * boost;
-    if (focus == orc::Focus::vfo) {
-      const int64_t hz = int64_t(adjusted) * state.step_hz;
-      change(orc::Type::tune_relative, hz > 1000000000 ? 1000000000 : hz < -1000000000 ? -1000000000 : int32_t(hz));
-    }
-    if (focus == orc::Focus::step) {
-      int index = orc::step_index(state.step_hz) + (adjusted > 0 ? 1 : -1);
-      index = constrain(index, 0, orc::step_count - 1);
-      change(orc::Type::set_step, orc::steps[index]);
-    }
-    if (focus == orc::Focus::gain) change(orc::Type::set_gain, constrain(int(state.gain_tenth_db) + adjusted * 10, 0, 500));
-    if (focus == orc::Focus::squelch) change(orc::Type::set_squelch, constrain(int(state.squelch) + adjusted, 0, 100));
-    if (focus == orc::Focus::volume) change(orc::Type::set_volume, constrain(int(state.volume) + adjusted * 2, 0, 100));
+    } else if (view == orc::View::dashboard) {
+      reel_position += movement;
+      const uint32_t now = millis(), elapsed = now - last_turn_ms;
+      last_turn_ms = now;
+      const int boost = elapsed < 40 ? 5 : elapsed < 90 ? 2 : 1;
+      act(orc::rotate(state.dashboard, state.view, focus, movement, boost, state.step_hz), online);
     }
   }
   if (M5Dial.BtnA.wasPressed()) press_ms = millis();
   if (M5Dial.BtnA.wasReleased()) {
     const uint32_t duration = millis() - press_ms;
-    if (duration >= 4000 && !ORCDIAL_DEMO) { view = orc::View::connection; radio_link.start_pairing(); }
+    if (duration >= 4000 && !ORCDIAL_DEMO &&
+        (view == orc::View::home || state.dashboard == orc::Dashboard::settings)) {
+      view = orc::View::connection; radio_link.start_pairing();
+    }
     else if (duration >= 900) view = orc::View::home;
     else if (view == orc::View::home) { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
     else if (view == orc::View::carousel) select_dashboard(state, online);
     else if (view == orc::View::connection) view = orc::View::home;
-    else focus = orc::Focus((uint8_t(focus) + 1) % 5);
+    else if (orc::tunable(state.dashboard) || orc::channel_dashboard(state.dashboard))
+      focus = orc::next_focus(state.dashboard, focus);
+    else act(orc::press(state.dashboard, state.view), online);
   }
   const bool touching = M5Dial.Touch.getCount() > 0;
   if (touching && !touch_down) {
@@ -147,19 +168,22 @@ void loop() {
       else select_dashboard(state, online);
     } else if (t.y < 76) {
       if (t.x > 120 || !online) view = orc::View::connection;
-      else change(orc::Type::set_mode, state.mode >= 3 ? 1 : state.mode + 1);
-    } else if (t.x > 170 && t.y < 170) {
+      else if (orc::tunable(state.dashboard)) change(orc::Type::set_mode, state.mode >= 3 ? 1 : state.mode + 1);
+      else act({orc::ActionKind::view, 1}, online);
+    } else if (state.dashboard == orc::Dashboard::fm && t.y >= 150 && t.y < 183) {
+      focus = t.x < 86 ? orc::Focus::vfo : t.x < 154 ? orc::Focus::step : orc::Focus::volume;
+    } else if (t.x > 170 && t.y < 170 && orc::tunable(state.dashboard) && state.dashboard != orc::Dashboard::fm) {
       tune_style = orc::TuneStyle((uint8_t(tune_style) + 1) % uint8_t(orc::TuneStyle::count));
       focus = orc::Focus::vfo;
     } else if (t.y > 170 && t.x < 85) view = orc::View::home;
     else if (t.y > 170 && t.x > 155) { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
-    else if (t.y > 170) focus = orc::Focus::step;
+    else if (t.y > 170) focus = orc::next_focus(state.dashboard, focus);
     else focus = orc::Focus::vfo;
   }
   touch_down = touching;
   if (millis() - last_draw_ms > 75) {
     orc::draw(state, focus, online, !ORCDIAL_DEMO && radio_link.pairing(),
-              ORCDIAL_DEMO || !online, view, orc::carousel[selected_index], pending_delta || radio_link.pending(),
+              ORCDIAL_DEMO, view, orc::carousel[selected_index], pending_delta || radio_link.pending(),
               millis() - last_turn_ms < 700, reel_position, tune_style);
     last_draw_ms = millis();
   }

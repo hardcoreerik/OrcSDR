@@ -1,54 +1,38 @@
-# OrcDial phase 1
+# OrcDial accessory
 
-Standalone M5Dial V1.1 physical VFO prototype for OrcSDR. The Tab5 firmware is unchanged. The Dial can run offline; its display says `OFFLINE` and signal reads `-- dB` until an actual receiver supplies state. The included receiver sketch simulates a radio for link testing only.
-The boot splash embeds the exact `orc_badge_104.png` used by the Tab5, copied from `apps/orcsdr-tab5/main/`.
-The badge splash stays visible for five seconds before Home. Home shows the Orc badge and `OrcSDR`.
+OrcDial is an **optional** M5Dial controller for OrcSDR. The standard OrcSDR build includes the dormant Dial bridge and its ESP-NOW-capable ESP-Hosted C6 image. No separate OrcSDR download is needed. The normal Tab5 radio, Wi-Fi, and dashboard paths remain authoritative when no Dial is paired.
+
+The Dial shows the Orc badge for five seconds, then OrcSDR Home and a side carousel of current dashboard destinations. The selector embeds illustrated dashboard pictures, while the full dashboard views retain their code-drawn artwork. Tuner views offer Reel, Dial, Odometer, Tape, and Split frequency graphics. The renderer uses a small buffered canvas; the user confirmed the selector pictures are readable and rotation stays smooth.
 
 ## Build
 
-Board: M5Dial V1.1 (Stamp-S3A / ESP32-S3), using PlatformIO `m5stack-stamps3` and Arduino ESP32 framework. Dependencies and versions are pinned in `platformio.ini`: `espressif32@6.12.0`, M5Dial 1.0.3, M5Unified 0.2.24, M5GFX 0.2.31. M5Dial's current Arduino guide recommends its board package 3.2.2 or later; actual V1.1 compatibility with this PlatformIO package needs a physical check.
+Build the M5Dial with PlatformIO, and optionally the ESP32 receiver stub for bench tests:
 
 ```powershell
 cd F:\AI\OrcSDR-TEMP\m5dial-vfo\orcdial
-$env:PYTHONIOENCODING='utf-8'
-$orcdialPio = 'C:\Users\hardc\.platformio\penv\Scripts\pio.exe' # Python 3.11 PlatformIO environment on this PC
-& $orcdialPio run -e dial
-& $orcdialPio run -e receiver
+& 'C:\Users\hardc\.platformio\penv\Scripts\pio.exe' run -e dial
+& 'C:\Users\hardc\.platformio\penv\Scripts\pio.exe' run -e receiver
 ```
 
-To update the Dial on COM14:
+Build the standard Tab5 image with its embedded OrcDial-capable C6 image:
 
 ```powershell
-& $orcdialPio run -e dial -t upload --upload-port COM14
-& $orcdialPio device monitor -p COM14 -b 115200
+cd F:\AI\OrcSDR-TEMP\m5dial-vfo
+./apps/orcsdr-tab5/tools/build-tab5-idf.ps1
 ```
 
-The optional receiver uses a second ESP32 DevKit (`esp32dev`); replace its board ID if the physical test board differs. Use its own port in the upload and monitor commands. Both devices must share a 2.4 GHz channel. The receiver stub uses channel 1 and prints `ORCDIAL_RECEIVER_READY`.
+The build resolver caches the pinned C6 image by a hash of the local OrcDial C6 sources. After installing OrcSDR on a Tab5 with older C6 firmware, open Settings → Firmware & Updates → **INSTALL ORCDIAL SUPPORT** once. The authenticated `RTL_ORCDIAL_C6_UPDATE CONFIRM` command offers the same explicit C6 update. This is a separate device-write step; a Tab5 with no Dial works normally before it.
 
-## Controls
+## Controls and state
 
-- Home: press, tap, or turn to open the dashboard carousel. Turn to move through Home and the 15 current Tab5 dashboard destinations. Tap a side card to move one item, or press/tap the center card to open it. Tap the bottom to return Home.
-- Each dashboard displays its own title and color; tunable dashboards choose a default tuning graphic. The five existing graphics can still be cycled on the active frequency view. ADS-B, LoRa, Wi-Fi Analysis, and Settings show `NO LIVE DATA` rather than invented measurements. Offline dashboard choices are local previews; a linked receiver must acknowledge `SET_DASHBOARD` and return `RADIO_STATE` before the selected state becomes authoritative.
-- All 15 destinations have distinct code-drawn artwork inspired by the concept sheet: FM/AM scales, weather cloud and alert tower, airband runway, marine vessel, CB meter, ADS-B radar, satellite orbit, LoRa mesh, RF Lab graticule, P25 radio, shortwave globe, POCSAG pager, Wi-Fi arcs, and settings gear. Offline radio screens begin at representative preview frequencies and modes; these are labeled `OFFLINE` and are not RF readings.
-- Rotate: tune by the selected step. Rapid detents get a modest 2x or 5x acceleration.
-- While turning VFO, a short-lived frequency reel shows the neighboring steps above and below the authoritative center frequency, with a marker following the encoder. During a pending radio command the actual center stays unchanged until state returns.
-- Five tuning graphics are available: **Reel** (original), **Dial** (needle and scale), **Odometer** (MHz/kHz/Hz windows), **Tape** (horizontal tuning ruler), and **Split** (large MHz and fractional readout). Tap the right side of the frequency view to cycle styles; the bottom label shows the active style. The chosen style affects only display graphics, never tuning commands or radio state.
-- Short press on a dashboard: VFO → step → gain → squelch → volume → VFO. On Home it opens the carousel; on the carousel it opens the selected dashboard.
-- Hold 0.9–4 s: return Home.
-- Hold at least 4 s: start pairing/discovery. This is deliberately separate from tuning.
-- Touch upper left on a dashboard: cycle mode when connected. Touch upper right: open the manual **Connect** screen. On that screen, touch center to start pairing and bottom to return Home. On a dashboard, bottom left returns Home and bottom right opens the carousel.
-- Offline: these controls update local display state. Connected: the Dial waits for `RADIO_STATE` from the receiver; the receiver owns the displayed radio state.
+From Home, turn or press to open the dashboard carousel; turn to choose and press to open. On tuners, rotation emits frequency deltas in the dashboard's configured step, with acceleration only for frequency. A short press cycles the available frequency, step, gain, and volume focus. On channel and content dashboards, rotation emits semantic channel, radar range, candidate, slot, target, message, AP, or setting actions, never a generic RF tune. The Tab5 acknowledges only actions backed by a real handler; an unsupported action returns `ERROR`. The Dial keeps its center readout on the last authoritative Tab5 state while a command is pending.
 
-To test pairing with the receiver stub, type `p` in its serial monitor. This opens a 30-second pairing window. Hold the Dial button for at least 4 seconds. Both devices save the peer MAC; subsequent boots scan for the known peer. The stub is a test target and its simulated frequency is not RF measurement. It always marks signal data invalid.
+The current Tab5 bridge handles dashboard open, FM/AM and generic Browse tuning, FM/AM step, CB channel, P25 candidate, LoRa slot, ADS-B range, and shared volume. Weather and Marine channel plans, content selection for aircraft/nodes/messages/APs, RF Lab parameters, and full Settings navigation are still pending. Their controls must not imply a successful action or display invented results. `docs/ORCDIAL_CONTROL_MATRIX.md` is the behavioral contract.
 
-Compile-time demo display: add `-DORCDIAL_DEMO=1` to the Dial environment's `build_flags`. This disables ESP-NOW and labels the UI `DEMO / OFFLINE`.
-The initial step is 5 kHz. Set `-DORCDIAL_DEFAULT_STEP_HZ=12500` (or another listed step) in both build environments to change the startup default.
+The Dial labels disconnected state `OFFLINE` and never treats its offline preview frequencies as live RF measurements. `ORCDIAL_DEMO=1` builds are explicitly labeled `DEMO` and do not start ESP-NOW. The Tab5 publishes a v3 state packet periodically and after accepted commands; its `signal_valid` bit remains clear because the available dBFS reading is not calibrated dBm.
 
-## Verification levels
+## Pairing and current validation
 
-- **Code reviewed:** packet layout, CRC, control flow, pairing and state transitions inspected.
-- **Host tested:** `tests/protocol_test.cpp` compiled and ran with Visual Studio `cl /std:c++17`; exit code 0. Covers round trip, CRC rejection, sequence ordering and frequency bounds.
-- **Build verified:** `& $orcdialPio run -e dial` and `& $orcdialPio run -e receiver` both succeeded.
-- **Hardware verified (partial):** the Dial on COM14 was flashed with esptool hash verification. Serial `ORCDIAL_BOOT`, `ESPNOW_INIT_OK`, and repeated `ORCDIAL_STATUS link=OFFLINE freq=146520000` were observed. The user confirmed the buffered display no longer flickers, the larger text reads well, and the new OrcSDR Home and side carousel look good. Dashboard views and five-second splash timing still need visual confirmation; pairing, ACKs, reconnect, and Wi-Fi coexistence still need physical checks. No Tab5 ESP-NOW support is claimed.
+On the Tab5, open Settings → Connectivity → **CONNECT ORCDIAL** to open a 60-second pairing window. The authenticated serial equivalent is `RTL_ORCDIAL_PAIR START`; `RTL_ORCDIAL_STATUS` is read-only. On the M5Dial Home/Settings screen, hold the encoder for four seconds or use its Connect touch screen. Both sides save the paired MAC. This prototype is MAC-gated but **not encrypted or cryptographically authenticated**; do not treat it as a production trust boundary.
 
-The protocol is described in [PROTOCOL.md](PROTOCOL.md). Tab5 integration and open feasibility gates are in [ORCSDR_ESPNOW_INTEGRATION_PLAN.md](ORCSDR_ESPNOW_INTEGRATION_PLAN.md).
+The M5Dial and receiver PlatformIO builds, C6 ESP-IDF build, and earlier P4 builds succeeded locally. Host protocol/controller assertions passed earlier. The current Dial UI was flashed on COM14 and the user confirmed it looks good. The single-build packaging path and Tab5/C6 radio link still need verification. Pairing, channel changes, reconnect, dashboard sync, radio action results, Wi-Fi coexistence, and recovery still need hardware acceptance. See [PROTOCOL.md](PROTOCOL.md) and [ORCSDR_ESPNOW_INTEGRATION_PLAN.md](ORCSDR_ESPNOW_INTEGRATION_PLAN.md).

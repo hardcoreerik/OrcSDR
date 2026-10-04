@@ -38,8 +38,8 @@ inline const char* dashboard_name(Dashboard id) {
   }
 }
 inline bool tunable(Dashboard id) {
-  return id != Dashboard::home && id != Dashboard::adsb && id != Dashboard::lora &&
-         id != Dashboard::wifi_analysis && id != Dashboard::settings;
+  return id == Dashboard::fm || id == Dashboard::am || id == Dashboard::shortwave ||
+         id == Dashboard::airband || id == Dashboard::satellite || id == Dashboard::rf_lab;
 }
 inline int carousel_index(Dashboard id) {
   for (int i=0; i<carousel_count; ++i) if (carousel[i] == id) return i;

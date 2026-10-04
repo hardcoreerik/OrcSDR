@@ -44,13 +44,14 @@ void Link::peer(const uint8_t* mac) {
   esp_now_add_peer(&info);
   has_peer_ = true;
 }
-bool Link::send(Type type, int32_t value, uint32_t sequence) {
+bool Link::send(Type type, int32_t value, uint32_t sequence, ActionKind action) {
   Packet p;
   p.type = type; p.role = Role::dial; p.sender = device_id_;
   p.sequence = sequence ? sequence : next_sequence_++;
   p.value = value;
   p.frequency_hz = state_.frequency_hz; p.step_hz = state_.step_hz;
   p.dashboard = uint8_t(state_.dashboard);
+  p.action = uint8_t(action); p.view = state_.view;
   uint8_t data[packet_size]; encode(p, data);
   const uint8_t* dest = (type == Type::hello) ? broadcast : peer_mac_;
   const bool sent = esp_now_send(dest, data, packet_size) == ESP_OK;
@@ -69,6 +70,10 @@ bool Link::command(Type type, int32_t value) {
   if (!connected_ || pending_sequence_) return false;
   return send(type, value);
 }
+bool Link::command_action(Action action) {
+  if (!connected_ || pending_sequence_ || action.kind == ActionKind::none) return false;
+  return send(Type::semantic_action, action.value, 0, action.kind);
+}
 void Link::handle(const Incoming& incoming) {
   Packet p;
   if (!decode(incoming.data, incoming.size, p) || p.role != Role::receiver) return;
@@ -82,6 +87,7 @@ void Link::handle(const Incoming& incoming) {
     Preferences saved; saved.begin("orcdial", false);
     saved.putBytes("peer", peer_mac_, 6); saved.end();
     pairing_ = false; connected_ = false; last_rx_ms_ = millis();
+    last_sender_ = 0; last_state_sequence_ = 0;
     Serial.println("PAIR_OK");
     send(Type::request_state); return;
   }
@@ -90,14 +96,23 @@ void Link::handle(const Incoming& incoming) {
   last_rx_ms_ = millis();
   if (p.type == Type::radio_state) {
     if (p.frequency_hz < 24000 || p.frequency_hz > 1766000000 || !valid_dashboard(p.dashboard)) return;
+    if (p.sender != last_sender_) { last_sender_ = p.sender; last_state_sequence_ = 0; }
+    if (!newer_sequence(p.sequence, last_state_sequence_)) return;
+    last_state_sequence_ = p.sequence;
     connected_ = true;
     state_.frequency_hz = p.frequency_hz; state_.step_hz = p.step_hz;
     state_.gain_tenth_db = p.gain_tenth_db; state_.squelch = p.squelch;
     state_.signal_dbm = p.signal_dbm; state_.signal_valid = p.flags & 1;
     state_.mode = p.mode; state_.volume = p.volume;
     state_.dashboard = Dashboard(p.dashboard);
+    state_.view = p.view; state_.revision = p.revision;
+    state_.selected = p.selected; state_.item_count = p.item_count;
+    state_.capabilities = p.capabilities;
     if (p.ack == pending_sequence_) { last_ack_ = p.ack; pending_sequence_ = 0; }
     Serial.printf("RX seq=%lu type=RADIO_STATE freq=%lu\n", (unsigned long)p.sequence, (unsigned long)p.frequency_hz);
+  } else if (p.type == Type::error && p.ack == pending_sequence_) {
+    Serial.printf("ACTION_REJECTED seq=%lu reason=%ld\n", (unsigned long)p.ack, long(p.value));
+    pending_sequence_ = 0;
   }
 }
 void Link::poll() {

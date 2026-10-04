@@ -166,6 +166,12 @@ void draw_connectivity() {
          g_state.wifi_external_antenna ? TFT_DARKGREEN : TFT_NAVY);
 
   text("SAVED NETWORKS (PRIORITY ORDER)", 330, 374, kBlue, 2);
+#if ORCSDR_ORCDIAL
+  button(g_state.orcdial_pairing ? "PAIRING 60s" :
+         g_state.orcdial_paired ? "RE-PAIR ORCDIAL" : "CONNECT ORCDIAL",
+         930, 360, 288, 28,
+         g_state.orcdial_bridge_ready ? TFT_DARKCYAN : TFT_NAVY);
+#endif
   for (uint8_t i = 0; i < g_state.saved_network_count && i < 4; ++i) {
     const int y = 394 + i * 44;
     snprintf(value, sizeof(value), "%u  %.24s%s", i + 1, g_state.profiles[i].ssid,
@@ -218,7 +224,9 @@ void draw_firmware_updates() {
     text("This sends the embedded image over the internal SDIO link and restarts OrcSDR.",
          330, 545, kMuted, 1);
   } else if (strcmp(g_state.wifi_c6_update_state, "current") == 0) {
-    text("C6 firmware already matches. No update is needed.", 330, 410, kGreen, 2);
+    text("C6 version matches. For OrcDial, install wireless support once.", 330, 410, kGreen, 2);
+    if (g_state.wifi_c6_image_embedded)
+      button("INSTALL ORCDIAL SUPPORT", 330, 445, 390, 58, TFT_DARKGREEN);
   } else if (strcmp(g_state.wifi_c6_update_state, "unreachable") == 0) {
     text("The C6 cannot establish Hosted transport.", 330, 405, TFT_ORANGE, 2);
     text("Use the documented recovery procedure; do not retry automatically.", 330, 450, kMuted, 2);
@@ -752,6 +760,10 @@ Action handle_touch(int32_t x, int32_t y) {
   }
   if (g_section == Section::connectivity) {
     if (g_state.wifi_hosted_update_required) return {};
+#if ORCSDR_ORCDIAL
+    if (hit(x, y, 930, 360, 288, 28))
+      return {ActionKind::orcdial_pair, 0};
+#endif
     if (hit(x, y, 938, 198, 280, 48))
       return {ActionKind::wifi_power_changed, g_state.wifi_power_enabled ? 0 : 1};
     if (hit(x, y, 930, 250, 288, 48))
@@ -884,6 +896,9 @@ Action handle_touch(int32_t x, int32_t y) {
   if (g_section == Section::firmware_updates) {
     if (strcmp(g_state.wifi_c6_update_state, "ready") == 0 &&
         hit(x, y, 330, 445, 360, 58)) return {ActionKind::c6_update_confirm, 0};
+    if (strcmp(g_state.wifi_c6_update_state, "current") == 0 &&
+        g_state.wifi_c6_image_embedded && hit(x, y, 330, 445, 390, 58))
+      return {ActionKind::orcdial_c6_update, 0};
     return {};
   }
   return {};
@@ -979,7 +994,8 @@ bool self_check() {
   strlcpy(g_state.wifi_c6_update_state, "ready", sizeof(g_state.wifi_c6_update_state));
   const bool c6_ready_routes = handle_touch(331, 446).kind == ActionKind::c6_update_confirm;
   strlcpy(g_state.wifi_c6_update_state, "current", sizeof(g_state.wifi_c6_update_state));
-  const bool c6_current_blocks = handle_touch(331, 446).kind == ActionKind::none;
+  g_state.wifi_c6_image_embedded = true;
+  const bool c6_current_routes = handle_touch(331, 446).kind == ActionKind::orcdial_c6_update;
   g_section = Section::radio_defaults;
   g_state.rtl_usb_safe_mode = true;
   const bool usb_recovery_routes =
@@ -988,7 +1004,7 @@ bool self_check() {
   g_section = saved_section;
   g_active = saved_active;
   if (!symbols_ok || !credentials_ok || !empty_location_ok || !location_ok ||
-      !c6_ready_routes || !c6_current_blocks || !usb_recovery_routes) return false;
+      !c6_ready_routes || !c6_current_routes || !usb_recovery_routes) return false;
   return true;
 }
 

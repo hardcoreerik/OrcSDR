@@ -1,5 +1,6 @@
 #include "control/protocol.hpp"
 #include "state.hpp"
+#include "controller.hpp"
 #include <Arduino.h>
 #include <Preferences.h>
 #include <WiFi.h>
@@ -32,14 +33,17 @@ void add_peer(const uint8_t* mac) {
   peer.ifidx = WIFI_IF_STA; peer.channel = 0; esp_now_add_peer(&peer);
   paired = true;
 }
-void reply(orc::Type type, const uint8_t* mac, uint32_t ack = 0) {
+void reply(orc::Type type, const uint8_t* mac, uint32_t ack = 0, int32_t value = 0) {
   orc::Packet p;
   p.role = orc::Role::receiver; p.type = type; p.sequence = next_sequence++;
   p.sender = device_id;
-  p.ack = ack; p.frequency_hz = state.frequency_hz; p.step_hz = state.step_hz;
+  p.ack = ack; p.value = value; p.frequency_hz = state.frequency_hz; p.step_hz = state.step_hz;
   p.mode = state.mode; p.gain_tenth_db = state.gain_tenth_db;
   p.squelch = state.squelch; p.volume = state.volume; p.flags = 0;
   p.dashboard = uint8_t(state.dashboard);
+  p.view = state.view; p.revision = state.revision;
+  p.selected = state.selected; p.item_count = state.item_count;
+  p.capabilities = state.capabilities;
   uint8_t wire[orc::packet_size]; orc::encode(p, wire);
   esp_now_send(mac, wire, sizeof wire);
 }
@@ -67,6 +71,7 @@ void handle(const Incoming& item) {
   if (!orc::newer_sequence(p.sequence, last_sequence)) {
     reply(orc::Type::radio_state, dial_mac, p.sequence); return;
   }
+  bool applied = true;
   switch (p.type) {
     case orc::Type::tune_relative:
       state.frequency_hz = orc::clamp_frequency(int64_t(state.frequency_hz) + p.value); break;
@@ -78,10 +83,38 @@ void handle(const Incoming& item) {
     case orc::Type::set_squelch: state.squelch = constrain(p.value, 0, 100); break;
     case orc::Type::set_dashboard:
       if (p.value < 0 || p.value > 16 || !orc::valid_dashboard(uint8_t(p.value))) return;
-      state.dashboard = orc::Dashboard(p.value); break;
+      state.dashboard = orc::Dashboard(p.value); state.view = 0;
+      state.selected = 0; state.item_count = 0; break;
+    case orc::Type::semantic_action: {
+      using K = orc::ActionKind;
+      const K action = K(p.action);
+      const auto id = state.dashboard;
+      const bool receiver_tuner = id == orc::Dashboard::fm || id == orc::Dashboard::am ||
+        id == orc::Dashboard::shortwave || id == orc::Dashboard::airband ||
+        id == orc::Dashboard::satellite || id == orc::Dashboard::rf_lab;
+      if (action == K::tune && receiver_tuner)
+        state.frequency_hz = orc::clamp_frequency(int64_t(state.frequency_hz) + p.value);
+      else if (action == K::step && receiver_tuner) {
+        const int index = constrain(orc::step_index(state.step_hz) + p.value, 0, orc::step_count-1);
+        state.step_hz = orc::steps[index];
+      } else if (action == K::volume) state.volume = constrain(int(state.volume) + p.value, 0, 100);
+      else if (action == K::gain) state.gain_tenth_db = constrain(int(state.gain_tenth_db) + p.value*10, 0, 500);
+      else if (action == K::squelch) state.squelch = constrain(int(state.squelch) + p.value, 0, 100);
+      else if (action == K::radar_range && id == orc::Dashboard::adsb) {
+        constexpr int ranges[] = {10,25,50,100};
+        int index = 1;
+        for (int i=0;i<4;++i) if (state.selected == ranges[i]) index=i;
+        index = constrain(index + p.value, 0, 3);
+        state.selected = ranges[index]; state.item_count = 4;
+      } else if (action == K::view) state.view = (state.view + (p.value>0 ? 1 : 4)) % 5;
+      else applied = false; // no fabricated channel, aircraft, node, AP, or message list
+      break;
+    }
     default: return;
   }
   last_sequence = p.sequence;
+  if (!applied) { reply(orc::Type::error, dial_mac, p.sequence, 1); return; }
+  ++state.revision;
   Serial.printf("RX seq=%lu type=%u value=%ld freq=%lu\n",
                 (unsigned long)p.sequence, unsigned(p.type), long(p.value),
                 (unsigned long)state.frequency_hz);
@@ -105,8 +138,17 @@ void setup() {
   Serial.println("ORCDIAL_RECEIVER_READY channel=1; type p to pair");
 }
 void loop() {
-  if (Serial.available() && Serial.read() == 'p') {
-    pairing_until = millis() + 30000; Serial.println("PAIR_WINDOW_OPEN");
+  if (Serial.available()) {
+    const int input = Serial.read();
+    if (input == 'p') {
+      pairing_until = millis() + 30000; Serial.println("PAIR_WINDOW_OPEN");
+    } else if (input == 'n' && paired) {
+      const int next = (orc::carousel_index(state.dashboard) + 1) % orc::carousel_count;
+      state.dashboard = orc::carousel[next]; state.view = 0;
+      state.selected = 0; state.item_count = 0; ++state.revision;
+      reply(orc::Type::radio_state, dial_mac);
+      Serial.printf("LOCAL_DASHBOARD_CHANGE id=%u\n", unsigned(state.dashboard));
+    }
   }
   Incoming item;
   while (inbox && xQueueReceive(inbox, &item, 0) == pdTRUE) handle(item);

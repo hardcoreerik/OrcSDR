@@ -50,6 +50,6 @@ const char* hosted_failure_stage();
 int32_t hosted_failure_code();
 C6UpdateStatus c6_update_status();
 const char* c6_update_state_name(C6UpdateState state);
-bool begin_c6_update();
+bool begin_c6_update(bool allow_current_for_orcdial = false);
 
 }  // namespace orcsdr::wifi

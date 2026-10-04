@@ -392,6 +392,16 @@ RTL_CATALOG_INSTALL faa_aircraft
 
 ## Dashboard control
 
+### OrcDial bridge
+
+| Command | Authentication | Result | Invalid state / handler |
+|---|---|---|---|
+| `RTL_ORCDIAL_STATUS` | no | `RTL_ORCDIAL_STATUS bridge=<0|1> paired=<0|1> pairing=<0|1> dashboard=<id>` | Read-only P4/ESP-Hosted bridge status. `bridge=0` means the C6 peer-data transport is unavailable. |
+| `RTL_ORCDIAL_PAIR START` | yes | `RTL_ORCDIAL_PAIR_WINDOW_OPEN seconds=60` | `RTL_ORCDIAL_PAIR_ERROR auth_required` without host authentication; `RTL_ORCDIAL_PAIR_ERROR bridge_unavailable` until ESP-Hosted is ready. Opens a 60-second window for a Dial pair request; it does not open a dashboard or tune. |
+| `RTL_ORCDIAL_C6_UPDATE CONFIRM` | yes | `RTL_ORCDIAL_C6_UPDATE_QUEUED` | `RTL_ORCDIAL_C6_UPDATE_ERROR auth_required` or `RTL_ORCDIAL_C6_UPDATE_ERROR not_ready`. Invokes the existing C6 OTA task with the standard OrcSDR build's embedded image even when the C6 reports version 3.0.6; this installs ESP-NOW support and restarts the Tab5. Settings → Firmware & Updates offers the same action. |
+
+OrcDial v3 binary actions are received over ESP-NOW by the C6, forwarded through ESP-Hosted peer data, and validated on the P4. The P4 accepts only the saved Dial MAC outside the pairing window. Settings → Connectivity **CONNECT ORCDIAL** opens the same 60-second window. `SET_DASHBOARD` calls `show_home` or `open_dashboard`. Accepted semantic actions call the existing FM/AM tune and step handlers, CB channel handler, P25 candidate handler, LoRa slot handler, Settings radar-range handler, or shared radio retune/volume functions. A mismatched dashboard, malformed packet, out-of-range value, or action without a real Tab5 handler returns a protocol `ERROR` (reason 1); no touchscreen coordinates are generated. Additional dashboard actions and hardware verification are still pending. The MAC gate is not cryptographic authentication.
+
 `RTL_UI` gives a serial agent the same semantic action handlers used by the
 FM, P25, LoRa, and Settings touch views. It is authenticated because every
 action can change device state. Credentials continue to use signed `SET_WIFI`;
@@ -431,6 +441,12 @@ LoRa Overview uses the unsmoothed value for faster visual response.
 - `P25`: `TUNE`, `PREV`, `NEXT`, `SURVEY`, `HOLD`, `HOLD_TG <id>`, `SKIP`,
   `FOLLOW`, `ENCRYPT_SKIP`, `RELOAD`, `SPAN_DOWN`, `SPAN_UP`, `SOUND`,
   `VOL_DOWN`, `VOL_UP`, `SETTINGS`, `HOME`.
+- `CB`: `PREV`, `NEXT`, `SCAN`, `HOLD`, `SKIP`, `MODE`. Requires authentication
+  and the CB dashboard to be active; otherwise returns
+  `RTL_UI_ACTION_ERROR auth_required` or
+  `RTL_UI_ACTION_INVALID cb_dashboard_inactive`. Successful commands return
+  `RTL_UI_ACTION_OK` after invoking the same `cb::ActionKind` handler as touch.
+  `RTL_CB STATUS` reports the resulting channel and scanner state.
 - `LORA`: `VIEW <0-5>`, `NODE <index>`, `DETAILS`, `FAVORITE`, `FILTER`, `SCAN`, `IQ`,
   `LOG`, `CLEAR`, `EXPORT`, `FOLLOW`, `CHANNELS`, `SETTINGS`, `HOME`.
 - `SETTINGS`: `WIFI_POWER <0|1>`, `WIFI_BOOT <0|1>`, `ANTENNA <0|1>`, `SCAN`,

@@ -16,6 +16,11 @@ struct RadioState {
   uint8_t volume = 50;
   bool signal_valid = false;
   Dashboard dashboard = Dashboard::home;
+  uint8_t view = 0;
+  uint32_t revision = 0;
+  int32_t selected = 0;
+  uint32_t item_count = 0;
+  uint32_t capabilities = 0;
 };
 enum class Focus : uint8_t { vfo, step, gain, squelch, volume };
 constexpr uint32_t steps[] = {1, 10, 100, 1000, 2500, 5000, 10000, 12500, 25000, 100000, 1000000};
