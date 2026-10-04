@@ -397,7 +397,8 @@ RTL_CATALOG_INSTALL faa_aircraft
 | Command | Authentication | Result | Invalid state / handler |
 |---|---|---|---|
 | `RTL_ORCDIAL_STATUS` | no | `RTL_ORCDIAL_STATUS bridge=<0|1> paired=<0|1> pairing=<0|1> dashboard=<id>` | Read-only P4/ESP-Hosted bridge status. `bridge=0` means the C6 peer-data transport is unavailable. |
-| `RTL_ORCDIAL_PAIR START` | yes | `RTL_ORCDIAL_PAIR_WINDOW_OPEN seconds=60` | `RTL_ORCDIAL_PAIR_ERROR auth_required` without host authentication; `RTL_ORCDIAL_PAIR_ERROR bridge_unavailable` until ESP-Hosted is ready. Opens a 60-second window for a Dial pair request; it does not open a dashboard or tune. |
+| `RTL_ORCDIAL_PAIR START` | no (local USB) | `RTL_ORCDIAL_PAIR_WINDOW_OPEN seconds=60` | `RTL_ORCDIAL_PAIR_ERROR bridge_unavailable` until ESP-Hosted is ready. Opens a 60-second accessory pairing window, equivalent to the on-screen button. |
+| `RTL_ORCDIAL_PAIR STOP` | no (local USB) | `RTL_ORCDIAL_PAIR_WINDOW_CLOSED` | Closes the pairing window without removing a saved peer. |
 | `RTL_ORCDIAL_C6_UPDATE CONFIRM` | yes | `RTL_ORCDIAL_C6_UPDATE_QUEUED` | `RTL_ORCDIAL_C6_UPDATE_ERROR auth_required` or `RTL_ORCDIAL_C6_UPDATE_ERROR not_ready`. Invokes the existing C6 OTA task with the standard OrcSDR build's embedded image even when the C6 reports version 3.0.6; this installs ESP-NOW support and restarts the Tab5. Settings → Firmware & Updates offers the same action. |
 
 OrcDial v3 binary actions are received over ESP-NOW by the C6, forwarded through ESP-Hosted peer data, and validated on the P4. The P4 accepts only the saved Dial MAC outside the pairing window. Settings → Connectivity **CONNECT ORCDIAL** opens the same 60-second window. `SET_DASHBOARD` calls `show_home` or `open_dashboard`. Accepted semantic actions call the existing FM/AM tune and step handlers, CB channel handler, P25 candidate handler, LoRa slot handler, Settings radar-range handler, or shared radio retune/volume functions. A mismatched dashboard, malformed packet, out-of-range value, or action without a real Tab5 handler returns a protocol `ERROR` (reason 1); no touchscreen coordinates are generated. Additional dashboard actions and hardware verification are still pending. The MAC gate is not cryptographic authentication.
@@ -507,6 +508,7 @@ cannot forge serial records. Passwords are never returned.
 | Command | Auth | Reply / behavior |
 |---|---|---|
 | `RTL_WIFI_STATUS` | no | Station/Hosted state, scan/connect state, profile/AP counts, power, auto-connect, and antenna. |
+| `RTL_WIFI_CHANNEL` | no | Actual C6 primary/secondary channel, connection state, associated SSID as hex, and AP primary channel. Returns `RTL_WIFI_CHANNEL_ERROR` if the channel query fails. |
 | `RTL_WIFI_SCAN` | no | Queues one scan; wait for `RTL_WIFI_SCAN_RESULTS count=N` and `RTL_WIFI_COEX event=scan_complete`. |
 | `RTL_WIFI_RESULTS` | no | Bounded `RTL_WIFI_AP` rows with `ssid_hex`, BSSID, RSSI, channel, and security flag. |
 | `RTL_WIFI_PROFILES` | no | Priority-ordered SSID-only profile list; never returns passwords. |

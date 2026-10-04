@@ -2,6 +2,8 @@
 #include "ui.hpp"
 #include <M5Dial.h>
 #include <cstdlib>
+#include <cstring>
+#include <esp_wifi.h>
 
 // Set to 1 for a labeled local-only display during bench demonstrations.
 #ifndef ORCDIAL_DEMO
@@ -98,6 +100,43 @@ static void act(orc::Action action, bool online) {
     default: break; // No synthetic channels, aircraft, nodes, messages or APs.
   }
 }
+static void poll_serial_commands() {
+  static char command[64];
+  static unsigned length = 0;
+  static bool overflow = false;
+  while (Serial.available()) {
+    const char c = char(Serial.read());
+    if (c == '\r') continue;
+    if (c != '\n') {
+      if (length < sizeof(command) - 1) command[length++] = c;
+      else overflow = true;
+      continue;
+    }
+    command[length] = '\0';
+    if (overflow) Serial.println("ORCDIAL_COMMAND_ERROR too_long");
+    else if (!std::strcmp(command, "ORCDIAL_PAIR START")) {
+      if (ORCDIAL_DEMO) Serial.println("ORCDIAL_PAIR_ERROR demo_mode");
+      else {
+        pending_delta = 0;
+        view = orc::View::connection;
+        radio_link.start_pairing();
+        Serial.println("ORCDIAL_PAIR_SEARCH_STARTED");
+      }
+    } else if (!std::strcmp(command, "ORCDIAL_STATUS")) {
+      uint8_t channel = 0;
+      wifi_second_chan_t secondary;
+      const bool channel_valid = esp_wifi_get_channel(&channel, &secondary) == ESP_OK;
+      Serial.printf("ORCDIAL_STATUS link=%s pairing=%d channel=%u channel_valid=%d freq=%lu\n",
+                    radio_link.connected() ? "LINKED" : "OFFLINE", radio_link.pairing() ? 1 : 0,
+                    unsigned(channel), channel_valid ? 1 : 0,
+                    (unsigned long)(radio_link.connected() ? radio_link.state().frequency_hz : local.frequency_hz));
+    } else if (!std::strcmp(command, "ORCDIAL_HELP")) {
+      Serial.println("ORCDIAL_STATUS | ORCDIAL_PAIR START");
+    } else if (length) Serial.println("ORCDIAL_COMMAND_ERROR unknown");
+    length = 0;
+    overflow = false;
+  }
+}
 void setup() {
   Serial.begin(115200); Serial.println("ORCDIAL_BOOT");
   auto cfg = M5.config(); M5Dial.begin(cfg, true, false);
@@ -107,6 +146,7 @@ void setup() {
 }
 void loop() {
   M5Dial.update();
+  poll_serial_commands();
   if (!ORCDIAL_DEMO) radio_link.poll();
   const bool online = !ORCDIAL_DEMO && radio_link.connected();
   const orc::RadioState& state = online ? radio_link.state() : local;

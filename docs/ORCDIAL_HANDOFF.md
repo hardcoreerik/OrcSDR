@@ -2,7 +2,7 @@
 
 Branch: `codex/m5dial-vfo`. The original baseline was `11cc19e`. On October 3, 2026, `origin/main` at `be72a1f` was merged into this branch, retaining the current Airband dashboard and optional C6 update behavior alongside OrcDial support. Connection testing is still required, especially the P4/C6 peer-data bridge and hosted-C6 build integration.
 
-OrcDial is an optional accessory. The standard OrcSDR build includes its support; users should not need a separate Tab5 download. Normal communication is ESP-NOW through the Tab5 C6 and ESP-Hosted peer-data bridge.
+OrcDial is an optional accessory. The standard OrcSDR build includes its support; users should not need a separate Tab5 download. ESP-NOW is the requested transport. The existing experimental implementation uses the Tab5 C6 and ESP-Hosted peer-data bridge, but pairing is not verified. The user requires the installed C6 firmware to remain unchanged; a C6 update must not be a prerequisite.
 
 ## Verified evidence
 
@@ -18,8 +18,14 @@ OrcDial is an optional accessory. The standard OrcSDR build includes its support
 
 ## Next checks
 
+### Serial automation verification, October 4, 2026
+
+The incremental P4 build and COM17 app-only flash passed, including upload hash verification. The Dial build and COM14 flash passed with hashes verified. `python orcdial/tests/serial_smoke.py --port COM14` passed the status, oversized/unknown command, and pairing-start checks.
+
+`RTL_WIFI_CHANNEL` returned `primary=11 secondary=0 connected=1 ssid_hex=68617264636f726577696669 ap_primary=11`: the associated `hardcorewifi` network uses channel 11. `RTL_WIFI_C6_STATUS` reported host 3.0.6, coprocessor 2.12.6, `state=optional match=1`. The C6 was not updated. Local USB `RTL_ORCDIAL_PAIR START` opened the 60-second window; the Dial's `ORCDIAL_PAIR START` began searching. Initial status remained unpaired. A local bridge-ready flag alone does not establish that the remote ESP-NOW endpoint exists.
+
 1. Inspect the merged P4 host bridge, C6 endpoint, peer-data configuration, pairing controls, and release build integration.
-2. Deploy matching P4 and C6 firmware with authorization, then validate discovery, pairing, state updates, acknowledgments, disconnect/reconnect, and normal OrcSDR startup without a Dial.
+2. Preserve the installed C6 2.12.6 firmware, whose ordinary Wi-Fi connectivity is verified. Query `RTL_WIFI_CHANNEL` and use local USB `RTL_ORCDIAL_PAIR START` on the Tab5 and `ORCDIAL_PAIR START` on the Dial. Investigate the installed firmware's accessory transport interfaces before claiming ESP-NOW compatibility or an update requirement.
 3. Confirm FM frequency, step, and volume commands reach the existing FM handlers. Backward FM step selection now uses an explicit previous-step action; it compiled and was flashed but has not been verified through a paired Dial.
 
 The FM screen currently exposes Tune, Step, and Volume. Gain is omitted because the host bridge does not implement it. Seek, RDS, stereo, and relative signal data are not exposed on the Dial yet. See `ORCDIAL_CONTROL_MATRIX.md` for the broader mapping and `orcdial/PROTOCOL.md` for the packet format. Neither a successful build nor a Dial flash proves the P4/C6/Dial connection.

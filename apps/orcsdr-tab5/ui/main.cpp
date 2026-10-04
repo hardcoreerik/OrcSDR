@@ -9,6 +9,7 @@
 #include <esp_attr.h>
 #include <esp_app_desc.h>
 #include <esp_system.h>
+#include <esp_wifi.h>
 #if ORCSDR_ORCDIAL
 #include <esp_random.h>
 #endif
@@ -16489,13 +16490,19 @@ void process_command(char* command) {
     return;
   }
   if (strcmp(command, "RTL_ORCDIAL_PAIR START") == 0) {
-    if (!authenticated) { Serial.println("RTL_ORCDIAL_PAIR_ERROR auth_required"); return; }
+    // This parser is called only from local USB Serial. Opening accessory
+    // pairing is equivalent to the on-screen button, not general authentication.
     if (!orcdial_transport_ready) { initialize_wifi(); orcdial_poll(); }
     if (!orcdial_transport_ready) {
       Serial.println("RTL_ORCDIAL_PAIR_ERROR bridge_unavailable"); return;
     }
     orcdial_pair_until = millis() + 60000;
     Serial.println("RTL_ORCDIAL_PAIR_WINDOW_OPEN seconds=60");
+    return;
+  }
+  if (strcmp(command, "RTL_ORCDIAL_PAIR STOP") == 0) {
+    orcdial_pair_until = 0;
+    Serial.println("RTL_ORCDIAL_PAIR_WINDOW_CLOSED");
     return;
   }
   if (strcmp(command, "RTL_ORCDIAL_C6_UPDATE CONFIRM") == 0) {
@@ -16745,6 +16752,22 @@ void process_command(char* command) {
                   settings_wifi_start_at_boot ? 1 : 0,
                   settings_wifi_external_antenna ? "external" : "internal",
                   static_cast<unsigned>(wifi_scan_result_count));
+    return;
+  }
+  if (strcmp(command, "RTL_WIFI_CHANNEL") == 0) {
+    uint8_t primary = 0;
+    wifi_second_chan_t secondary = WIFI_SECOND_CHAN_NONE;
+    const esp_err_t result = esp_wifi_get_channel(&primary, &secondary);
+    if (result != ESP_OK) {
+      Serial.printf("RTL_WIFI_CHANNEL_ERROR %s\n", esp_err_to_name(result));
+      return;
+    }
+    wifi_ap_record_t ap{};
+    const bool has_ap = wifi_connected && esp_wifi_sta_get_ap_info(&ap) == ESP_OK;
+    Serial.printf("RTL_WIFI_CHANNEL primary=%u secondary=%u connected=%d ssid_hex=",
+                  unsigned(primary), unsigned(secondary), wifi_connected ? 1 : 0);
+    if (has_ap) print_hex(ap.ssid, strnlen(reinterpret_cast<const char*>(ap.ssid), sizeof(ap.ssid)));
+    Serial.printf(" ap_primary=%u\n", has_ap ? unsigned(ap.primary) : 0);
     return;
   }
   if (strcmp(command, "RTL_WIFI_C6_STATUS") == 0) {
@@ -17718,11 +17741,12 @@ void process_command(char* command) {
     Serial.println("RTL_LAB REFERENCE|SNAPSHOT|RUN|RECIPE|RECORDS - RF Lab evidence workflow (mutations auth)");
     Serial.println("RTL_UI ACTION <domain> <action> [value] - mirror FM/AM/CB/P25/LoRa/Settings touch action (auth)");
 #if ORCSDR_ORCDIAL
-    Serial.println("RTL_ORCDIAL_STATUS|RTL_ORCDIAL_PAIR START - Dial bridge status/pairing (pair auth)");
+    Serial.println("RTL_ORCDIAL_STATUS|RTL_ORCDIAL_PAIR START|STOP - accessory pairing over local USB");
     Serial.println("RTL_ORCDIAL_C6_UPDATE CONFIRM - install paired accessory C6 image (auth)");
 #endif
     Serial.println("RTL_UI ACTION LORA DETAILS|FILTER|EXPORT|CLEAR - Traffic toolbar actions (auth)");
     Serial.println("RTL_WIFI_STATUS|C6_STATUS|COEX_STATUS|SCAN|RESULTS|PROFILES - Wi-Fi and radio coexistence state");
+    Serial.println("RTL_WIFI_CHANNEL - actual C6 primary channel and associated network");
     Serial.println("RTL_WIFI_C6_UPDATE CONFIRM - authenticated explicit in-app C6 update");
     Serial.println("RTL_WIFI_CONNECT_SAVED [PAUSE]|DISCONNECT - connect profile 0 with a temporary SDR pause");
     Serial.println("SET_WIFI <ssid_hex> <pass_hex> <hmac> - signed slot-0 provisioning (auth)");

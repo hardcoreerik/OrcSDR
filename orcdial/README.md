@@ -21,7 +21,9 @@ cd F:\AI\OrcSDR-TEMP\m5dial-vfo
 ./apps/orcsdr-tab5/tools/build-tab5-idf.ps1
 ```
 
-The build resolver caches the pinned C6 image by a hash of the local OrcDial C6 sources. After installing OrcSDR on a Tab5 with older C6 firmware, open Settings → Firmware & Updates → **INSTALL ORCDIAL SUPPORT** once. The authenticated `RTL_ORCDIAL_C6_UPDATE CONFIRM` command offers the same explicit C6 update. This is a separate device-write step; a Tab5 with no Dial works normally before it.
+The accessory must work without requiring a C6 firmware update. The existing experimental bridge uses a custom C6 relay; that approach is under review against the no-update requirement. Keep the user's installed C6 firmware intact while investigating its supported interfaces and verifying channel alignment. The build resolver currently caches the experimental image by a hash of the local C6 sources; embedding it does not install it on the device.
+
+Local USB automation: send `RTL_WIFI_CHANNEL` and `RTL_ORCDIAL_PAIR START` to the Tab5, then `ORCDIAL_PAIR START` to the Dial. Query the Dial with `ORCDIAL_STATUS` (link, pairing, channel, frequency). `RTL_ORCDIAL_PAIR STOP` closes the Tab5 window. Other authenticated Tab5 controls remain protected. Run `python orcdial/tests/serial_smoke.py --port COM14` for the Dial command and overflow checks; it starts discovery but never tunes.
 
 ## Controls and state
 
