@@ -4,7 +4,7 @@
 
 **Turn an M5Stack Tab5 and a compatible RTL-SDR receiver into a portable, touchscreen software-defined radio.** OrcSDR runs its radio processing, dashboards, audio, and controls on the Tab5—no laptop, Raspberry Pi, or desktop SDR application is required after installation.
 
-[Download the latest release](https://github.com/hardcoreerik/OrcSDR/releases/latest) · [Install with M5Burner](docs/user-guide/getting-started.md) · [Read the User Guide](docs/user-guide/index.md) · [Report a bug](https://github.com/hardcoreerik/OrcSDR/issues/new?template=bug_report.md)
+[Download the latest release](https://github.com/hardcoreerik/OrcSDR/releases/latest) · [Install in your browser](https://burner.m5stack.com/share/firmware/JXFU4H) · [Installation guide](docs/user-guide/getting-started.md) · [Read the User Guide](docs/user-guide/index.md) · [Report a bug](https://github.com/hardcoreerik/OrcSDR/issues/new?template=bug_report.md)
 
 ## Why OrcSDR exists
 
@@ -20,7 +20,7 @@ Read the [RTL-SDR Blog feature](https://www.rtl-sdr.com/orcsdr-running-rtl-sdr-d
 
 ## Get started
 
-1. Open **M5Burner**, search for **OrcSDR**, and burn the current release to an M5Stack Tab5. Note: an M5Burner install resets your saved settings (Wi-Fi profiles, location, rotation), so write them down first; the [Getting Started guide](docs/user-guide/getting-started.md) explains how to keep them.
+1. Open the [OrcSDR web flasher](https://burner.m5stack.com/share/firmware/JXFU4H) in **Chrome or Edge**, connect your Tab5 by USB, and click **Burn to device**. Select the Tab5 serial port and follow the instructions. You can also use the M5Burner desktop application. An M5Burner install resets saved settings (Wi-Fi profiles, location, rotation); the [Getting Started guide](docs/user-guide/getting-started.md) explains how to keep them.
 2. Restart the Tab5, then connect a supported RTL-SDR receiver to its USB host port.
 3. Connect an antenna suitable for the signals you want to receive and choose a dashboard.
 

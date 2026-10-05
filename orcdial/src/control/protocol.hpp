@@ -6,7 +6,8 @@
 
 namespace orc {
 
-constexpr uint8_t version = 3;
+// Control payload codec: accepted only inside a version-4 encrypted session.
+constexpr uint8_t version = 4;
 constexpr size_t packet_size = 64;
 constexpr uint32_t magic = 0x4c44524f; // ORDL in little-endian bytes
 

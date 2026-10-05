@@ -30,7 +30,7 @@ constexpr uint16_t kRanges[] = {10, 25, 50, 100};
 constexpr uint16_t kTimeouts[] = {0, 30, 60, 120, 300};
 constexpr const char* kLabels[] = {
     "CONNECTIVITY", "FIRMWARE & UPDATES", "RECEIVER LOCATION", "DATA & MAPS", "DISPLAY & AUDIO",
-    "RADIO DEFAULTS", "STORAGE", "COMPANION", "SYSTEM"};
+    "RADIO DEFAULTS", "STORAGE", "ACCESSORIES & COMPANION", "SYSTEM"};
 
 static_assert(static_cast<uint8_t>(Section::count) == std::size(kLabels));
 static_assert(std::size(kRanges) == 4 && kRanges[0] == 10 && kRanges[3] == 100);
@@ -369,8 +369,9 @@ void draw_storage() {
        330, 470, TFT_LIGHTGREY, 2);
 }
 
+static bool accessory_forget_confirmation=false;
 void draw_companion() {
-  text("COMPANION", 330, 115, kBlue, 3);
+  text("ACCESSORIES & COMPANION", 330, 115, kBlue, 3);
   value_row("WEB CONSOLE", g_state.web_console_enabled ? "ON" : "OFF", 175,
             g_state.web_console_enabled ? kGreen : kMuted);
   button(g_state.web_console_enabled ? "DISABLE" : "ENABLE", 960, 150, 170, 48,
@@ -383,20 +384,34 @@ void draw_companion() {
   value_row("LOCAL DISCOVERY",
             g_state.web_console_listening ? "orcsdr.local" : "NOT ENABLED", 275,
             g_state.web_console_listening ? kGreen : kMuted);
-  value_row("PHONE CONNECTION", "OPTIONAL", 325, kGreen);
+  text("LAN console is read-only; no passwords, location, or device control.",330,315,kMuted,2);
   value_row("BLUETOOTH", g_state.companion_supported ? "AVAILABLE" : "FEASIBILITY PENDING",
             375, kMuted);
 #if ORCSDR_ORCDIAL
-  text("ORCDIAL ACCESSORY", 330, 425, kBlue, 3);
-  button(g_state.orcdial_pairing ? "PAIRING 60s" :
-         g_state.orcdial_paired ? "RE-PAIR ORCDIAL" : "CONNECT ORCDIAL",
-         930, 402, 288, 48,
-         g_state.orcdial_bridge_ready ? TFT_DARKCYAN : TFT_NAVY);
+  text("ORCDIAL ACCESSORY",330,420,kBlue,3);
+  char info[96];snprintf(info,sizeof info,"OrcDial  %s  |  %s",g_state.orcdial_identity,g_state.orcdial_upgrade?"PAIRING UPGRADE REQUIRED":g_state.orcdial_paired?"TRUSTED":"NOT PAIRED");
+  text(info,330,460,g_state.orcdial_paired?kGreen:TFT_LIGHTGREY,2);
+  if(accessory_forget_confirmation) {
+    text("Forget this Dial and require new pairing?",330,505,TFT_LIGHTGREY,2);
+    button("CANCEL",330,540,280,48,TFT_DARKCYAN);
+    button("FORGET & RE-PAIR",640,540,330,48,TFT_MAROON);
+  }else if(g_state.orcdial_verifying) {
+    snprintf(info,sizeof info,"COMPARE ON BOTH DEVICES: %06lu",(unsigned long)g_state.orcdial_code);
+    text(info,330,502,kBlue,3);
+    button("CODES MATCH",330,540,280,48,TFT_DARKGREEN);
+    button("CANCEL PAIRING",640,540,330,48,TFT_MAROON);
+  }else {
+    snprintf(info,sizeof info,"Connection: %s",g_state.orcdial_connection);text(info,330,505,TFT_LIGHTGREY,2);
+    button(!strcmp(g_state.orcdial_failure,"Storage failed")?"RETRY FORGET":g_state.orcdial_pairing?"CANCEL PAIRING":g_state.orcdial_connected?"DISCONNECT":g_state.orcdial_paired?"CONNECT":"PAIR",330,540,280,48,TFT_DARKCYAN);
+    if(g_state.orcdial_paired || !strcmp(g_state.orcdial_failure,"Storage failed"))button("FORGET & RE-PAIR",640,540,330,48,TFT_MAROON);
+  }
+  if(strcmp(g_state.orcdial_failure,"None")) {
+    text(!strcmp(g_state.orcdial_failure,"Storage failed")?"STORAGE FAILED: trust may return after restart. Retry Forget.":g_state.orcdial_failure,330,660,TFT_RED,2);
+  }
+  if(g_state.orcdial_paired)button(g_state.orcdial_boot_connect?"BOOT CONNECT: ON":"BOOT CONNECT: OFF",640,606,330,48,TFT_DARKCYAN);
+  text("Pair once; trust survives updates. Confirm the same code on both devices.",330,690,TFT_LIGHTGREY,2);
 #endif
-  text("LAN read-only page for Android TV. No passwords, location, or control.",
-       330, 470, TFT_LIGHTGREY, 2);
-  text("OrcSDR remains fully usable with no phone, BLE, GPS, or HIVE.", 330, 510,
-       TFT_LIGHTGREY, 2);
+
 }
 
 void draw_system_power() {
@@ -645,6 +660,7 @@ void enter(const State& state_value, Section section) {
 }
 
 void leave() {
+  accessory_forget_confirmation=false;
   g_active = false;
   g_edit = EditField::none;
   g_wifi_edit = WifiEdit::none;
@@ -724,6 +740,13 @@ void update(const State& state_value) {
        g_state.web_console_listening != state_value.web_console_listening ||
        strcmp(g_state.web_console_url, state_value.web_console_url) != 0 ||
        g_state.orcdial_pairing != state_value.orcdial_pairing ||
+       g_state.orcdial_connected != state_value.orcdial_connected ||
+       g_state.orcdial_verifying != state_value.orcdial_verifying ||
+       g_state.orcdial_boot_connect != state_value.orcdial_boot_connect ||
+       g_state.orcdial_upgrade != state_value.orcdial_upgrade ||
+       g_state.orcdial_code != state_value.orcdial_code ||
+       strcmp(g_state.orcdial_connection,state_value.orcdial_connection) ||
+       strcmp(g_state.orcdial_failure,state_value.orcdial_failure) ||
        g_state.orcdial_paired != state_value.orcdial_paired ||
        g_state.orcdial_bridge_ready != state_value.orcdial_bridge_ready);
   g_state = state_value;
@@ -772,8 +795,20 @@ Action handle_touch(int32_t x, int32_t y) {
     return {};
   }
 #if ORCSDR_ORCDIAL
-  if (g_section == Section::companion && hit(x, y, 930, 402, 288, 48))
-    return {ActionKind::orcdial_pair, 0};
+  if(g_section==Section::companion) {
+    if(hit(x,y,330,540,280,48)) {
+      if(accessory_forget_confirmation){accessory_forget_confirmation=false;draw_content();return {};}
+      if(g_state.orcdial_verifying)return {ActionKind::orcdial_confirm,int32_t(g_state.orcdial_code)};
+      if(!strcmp(g_state.orcdial_failure,"Storage failed"))return {ActionKind::orcdial_forget,0};
+      return {g_state.orcdial_pairing?ActionKind::orcdial_cancel:g_state.orcdial_connected?ActionKind::orcdial_disconnect:g_state.orcdial_paired?ActionKind::orcdial_connect:ActionKind::orcdial_pair,0};
+    }
+    if(hit(x,y,640,540,330,48)) {
+      if(accessory_forget_confirmation){accessory_forget_confirmation=false;return {ActionKind::orcdial_forget,1};}
+      if(g_state.orcdial_verifying)return {ActionKind::orcdial_cancel,0};
+      if(g_state.orcdial_paired || !strcmp(g_state.orcdial_failure,"Storage failed")){accessory_forget_confirmation=true;draw_content();}return {};
+    }
+    if(g_state.orcdial_paired&&hit(x,y,640,606,330,48))return {ActionKind::orcdial_boot,g_state.orcdial_boot_connect?0:1};
+  }
 #endif
   if (g_section == Section::connectivity) {
     if (g_state.wifi_hosted_update_required) return {};
@@ -1014,7 +1049,7 @@ bool self_check() {
   const bool c6_current_routes = handle_touch(331, 446).kind == ActionKind::orcdial_c6_update;
   g_section = Section::companion;
 #if ORCSDR_ORCDIAL
-  const bool accessory_routes = handle_touch(950, 425).kind == ActionKind::orcdial_pair;
+  const bool accessory_routes = handle_touch(450, 560).kind == ActionKind::orcdial_pair;
 #else
   const bool accessory_routes = handle_touch(950, 425).kind == ActionKind::none;
 #endif

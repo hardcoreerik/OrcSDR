@@ -396,13 +396,19 @@ RTL_CATALOG_INSTALL faa_aircraft
 
 | Command | Authentication | Result | Invalid state / handler |
 |---|---|---|---|
-| `RTL_ORCDIAL_STATUS` | no | `RTL_ORCDIAL_STATUS bridge=<0|1> paired=<0|1> pairing=<0|1> dashboard=<id>` | Read-only P4/ESP-Hosted bridge status. `bridge=0` means the C6 peer-data transport is unavailable. |
-| `RTL_ORCDIAL_PAIR START` | no (local USB) | `RTL_ORCDIAL_PAIR_WINDOW_OPEN seconds=60` | `RTL_ORCDIAL_PAIR_ERROR bridge_unavailable` until ESP-Hosted is ready. Opens a 60-second accessory pairing window, equivalent to the on-screen button. |
-| `RTL_ORCDIAL_PAIR STOP` | no (local USB) | `RTL_ORCDIAL_PAIR_WINDOW_CLOSED` | Closes the pairing window without removing a saved peer. |
-| `RTL_ORCDIAL_PROBE` | no (local USB) | `RTL_ORCDIAL_PROBE queued=<0/1> last_rpc=<esp_err_name> scope=relay_request` | Queues discovery without blocking DSP. last_rpc describes the preceding completed request. Neither value proves over-air transmission or pairing. Reports `RTL_ORCDIAL_PROBE_ERROR bridge_unavailable` if the local bridge is unavailable. |
-| `RTL_ORCDIAL_C6_UPDATE CONFIRM` | yes | `RTL_ORCDIAL_C6_UPDATE_QUEUED` | `RTL_ORCDIAL_C6_UPDATE_ERROR auth_required` or `RTL_ORCDIAL_C6_UPDATE_ERROR not_ready`. Invokes the existing C6 OTA task with the standard OrcSDR build's embedded image even when the C6 reports version 3.0.6; this installs ESP-NOW support and restarts the Tab5. Settings → Firmware & Updates offers the same action. |
+| `RTL_ORCDIAL_STATUS` | no | `RTL_ORCDIAL_STATUS bridge=<0|1> trust=<0|1> connection=<state> boot=<0|1> failure=<reason> protocol=4` | Read-only. During verification, an authenticated session additionally receives `RTL_ORCDIAL_PAIR_CODE <six digits>`. Secrets are never printed. |
+| `RTL_ORCDIAL_PROBE` | no | Same as STATUS | Read-only alias; does not discover or pair. |
+| `RTL_ORCDIAL_PAIR START` | yes | Queues a local 60-second pairing window | Both devices must enter Pair and approve the matching code. Existing trust must be forgotten first. |
+| `RTL_ORCDIAL_PAIR CANCEL` | yes | Queues pairing cancellation | Does not delete established trust. |
+| `RTL_ORCDIAL_PAIR CONFIRM <six-digit-code>` | yes | Queues local numeric-comparison approval | Only the active matching code is accepted. Mutual approval and key confirmation are required. |
+| `RTL_ORCDIAL_CONNECT` | yes | Queues authenticated session establishment | Requires stored version-4 trust; never opens pairing. |
+| `RTL_ORCDIAL_DISCONNECT` | yes | Queues an authenticated disconnect | Preserves trust and suppresses automatic retries for this boot. |
+| `RTL_ORCDIAL_FORGET` | yes | Queues local trust deletion | Works without the peer. A storage error blocks control and must be retried; old trust can return after restart if deletion could not be committed. |
+| `RTL_ORCDIAL_C6_UPDATE CONFIRM` | yes | `RTL_ORCDIAL_C6_UPDATE_QUEUED` | Existing explicit C6 recovery/update operation; not part of version-4 pairing. |
 
-OrcDial v3 binary actions are received over ESP-NOW by the C6, forwarded through ESP-Hosted peer data, and validated on the P4. The P4 accepts only the saved Dial MAC outside the pairing window. Settings → Connectivity **CONNECT ORCDIAL** opens the same 60-second window. `SET_DASHBOARD` calls `show_home` or `open_dashboard`. Accepted semantic actions call the existing FM/AM tune and step handlers, CB channel handler, P25 candidate handler, LoRa slot handler, Settings radar-range handler, or shared radio retune/volume functions. A mismatched dashboard, malformed packet, out-of-range value, or action without a real Tab5 handler returns a protocol `ERROR` (reason 1); no touchscreen coordinates are generated. Additional dashboard actions and hardware verification are still pending. The MAC gate is not cryptographic authentication.
+State-changing commands require the existing serial `PAIR`/`AUTH` session. Without it they report `RTL_ORCDIAL_ERROR auth_required`; the C6 update retains its existing command-specific error. Commands are asynchronous: inspect STATUS for completion, timeout, or storage failure. A full action queue reports `RTL_ORCDIAL_ERROR action_queue_full`.
+
+Settings / **Accessories & Companion** separates Pair, Connect, Disconnect, Forget & Re-pair, and boot connection. Version-4 ESP-NOW frames are relayed opaquely by the existing C6. The P4 verifies pairing, fresh session challenges, authenticated encryption, and replay counters before applying controls. MAC-only legacy records cannot authorize version-4 controls. Hardware acceptance remains pending.
 
 `RTL_UI` gives a serial agent the same semantic action handlers used by the
 FM, P25, LoRa, and Settings touch views. It is authenticated because every

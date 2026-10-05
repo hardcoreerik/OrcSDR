@@ -103,6 +103,8 @@ idf_component_register(
         "../ui/wifi_service.cpp"
     INCLUDE_DIRS "." "../ui" "../dsp"
     REQUIRES
+        bootloader_support
+        mbedtls
         m5unified
         m5gfx
         mbelib
