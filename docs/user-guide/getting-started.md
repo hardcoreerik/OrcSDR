@@ -1,5 +1,7 @@
 # Getting started
 
+**Current instructions:** [Getting Started in the OrcSDR wiki](https://github.com/hardcoreerik/OrcSDR/wiki/Getting-Started). The instructions below describe an older RC4 package and are retained as historical reference. For the published beta.1 package, use the wiki's Windows installer path to preserve saved settings; M5Burner resets them.
+
 ## Hardware
 
 1. Seat the Tab5 securely and connect an accepted receiver. RTL-SDR Blog V4 is

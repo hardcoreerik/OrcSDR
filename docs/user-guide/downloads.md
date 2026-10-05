@@ -1,6 +1,8 @@
 # Downloads and releases
 
-For ordinary installation, use the published
+**Current download instructions:** [Getting Started in the OrcSDR wiki](https://github.com/hardcoreerik/OrcSDR/wiki/Getting-Started) and the [latest GitHub release](https://github.com/hardcoreerik/OrcSDR/releases/latest). The RC4 package described below is an older release, retained for historical reference.
+
+For the historical RC4 installation, use the published
 [`v0.2.0-beta.6-multidongle-rc4`](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.2.0-beta.6-multidongle-rc4)
 M5Burner package. It contains the native ESP-IDF 5.5.4 P4 application and the
 matching ESP-Hosted 3.0.6 C6 firmware; the exact merged package was installed
