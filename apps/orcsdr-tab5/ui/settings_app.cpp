@@ -159,44 +159,38 @@ void draw_connectivity() {
   button("ADD HIDDEN", 634, 198, 280, 48, TFT_NAVY);
   button(g_state.wifi_power_enabled ? "POWER OFF" : "POWER ON", 938, 198, 280, 48,
          g_state.wifi_power_enabled ? TFT_MAROON : TFT_DARKGREEN);
-  text("CONNECT ON BOOT", 330, 274, kMuted, 3);
-  button(g_state.wifi_start_at_boot ? "ON" : "OFF", 930, 250, 288, 48,
+  text("CONNECT ON BOOT", 330, 286, kMuted, 3);
+  button(g_state.wifi_start_at_boot ? "ON" : "OFF", 930, 262, 288, 48,
          g_state.wifi_start_at_boot ? TFT_DARKGREEN : TFT_DARKGREY);
-  text("WI-FI ANTENNA", 330, 332, kMuted, 3);
+  text("WI-FI ANTENNA", 330, 350, kMuted, 3);
   button(g_state.wifi_external_antenna ? "EXTERNAL (MMCX)" : "INTERNAL",
-         930, 308, 288, 48,
+         930, 326, 288, 48,
          g_state.wifi_external_antenna ? TFT_DARKGREEN : TFT_NAVY);
 
-  text("SAVED NETWORKS (PRIORITY ORDER)", 330, 374, kBlue, 2);
-#if ORCSDR_ORCDIAL
-  button(g_state.orcdial_pairing ? "PAIRING 60s" :
-         g_state.orcdial_paired ? "RE-PAIR ORCDIAL" : "CONNECT ORCDIAL",
-         930, 360, 288, 28,
-         g_state.orcdial_bridge_ready ? TFT_DARKCYAN : TFT_NAVY);
-#endif
+  text("SAVED NETWORKS (PRIORITY ORDER)", 330, 390, kBlue, 2);
   for (uint8_t i = 0; i < g_state.saved_network_count && i < 4; ++i) {
-    const int y = 394 + i * 44;
+    const int y = 410 + i * 44;
     snprintf(value, sizeof(value), "%u  %.24s%s", i + 1, g_state.profiles[i].ssid,
              g_state.profiles[i].connected ? "  CONNECTED" : "");
     text(value, 340, y + 20, g_state.profiles[i].connected ? kGreen : TFT_WHITE, 2);
-    button("CONNECT", 674, y, 144, 40, TFT_DARKCYAN);
-    button("UP", 830, y, 88, 40, i ? TFT_NAVY : TFT_DARKGREY);
-    button("DOWN", 930, y, 106, 40,
+    button("CONNECT", 674, y, 144, 36, TFT_DARKCYAN);
+    button("UP", 830, y, 88, 36, i ? TFT_NAVY : TFT_DARKGREY);
+    button("DOWN", 930, y, 106, 36,
            i + 1 < g_state.saved_network_count ? TFT_NAVY : TFT_DARKGREY);
-    button("FORGET", 1048, y, 170, 40, TFT_MAROON);
+    button("FORGET", 1048, y, 170, 36, TFT_MAROON);
   }
   if (g_state.saved_network_count == 0)
     text("NO SAVED NETWORKS", 340, 414, kMuted, 2);
 
-  text("AVAILABLE NETWORKS", 330, 582, kBlue, 2);
+  text("AVAILABLE NETWORKS", 330, 602, kBlue, 2);
   const uint8_t shown = std::min<uint8_t>(g_state.network_count, 6);
   for (uint8_t i = 0; i < shown; ++i) {
     const int x = 330 + (i % 2) * 428;
-    const int y = 604 + (i / 2) * 34;
+    const int y = 624 + (i / 2) * 30;
     snprintf(value, sizeof(value), "%.18s  %d%s%s", g_state.networks[i].ssid,
              g_state.networks[i].rssi, g_state.networks[i].secure ? "  LOCK" : "  OPEN",
              g_state.networks[i].saved ? "  SAVED" : "");
-    button(value, x, y, 418, 32,
+    button(value, x, y, 418, 28,
            g_state.networks[i].saved ? 0x2945 : TFT_DARKCYAN);
   }
 }
@@ -392,6 +386,13 @@ void draw_companion() {
   value_row("PHONE CONNECTION", "OPTIONAL", 325, kGreen);
   value_row("BLUETOOTH", g_state.companion_supported ? "AVAILABLE" : "FEASIBILITY PENDING",
             375, kMuted);
+#if ORCSDR_ORCDIAL
+  text("ORCDIAL ACCESSORY", 330, 425, kBlue, 3);
+  button(g_state.orcdial_pairing ? "PAIRING 60s" :
+         g_state.orcdial_paired ? "RE-PAIR ORCDIAL" : "CONNECT ORCDIAL",
+         930, 402, 288, 48,
+         g_state.orcdial_bridge_ready ? TFT_DARKCYAN : TFT_NAVY);
+#endif
   text("LAN read-only page for Android TV. No passwords, location, or control.",
        330, 470, TFT_LIGHTGREY, 2);
   text("OrcSDR remains fully usable with no phone, BLE, GPS, or HIVE.", 330, 510,
@@ -721,7 +722,10 @@ void update(const State& state_value) {
   const bool companion_changed = g_section == Section::companion &&
       (g_state.web_console_enabled != state_value.web_console_enabled ||
        g_state.web_console_listening != state_value.web_console_listening ||
-       strcmp(g_state.web_console_url, state_value.web_console_url) != 0);
+       strcmp(g_state.web_console_url, state_value.web_console_url) != 0 ||
+       g_state.orcdial_pairing != state_value.orcdial_pairing ||
+       g_state.orcdial_paired != state_value.orcdial_paired ||
+       g_state.orcdial_bridge_ready != state_value.orcdial_bridge_ready);
   g_state = state_value;
   if (header_changed) draw_header();
   if (page_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none && !g_location_edit)
@@ -767,17 +771,17 @@ Action handle_touch(int32_t x, int32_t y) {
     }
     return {};
   }
+#if ORCSDR_ORCDIAL
+  if (g_section == Section::companion && hit(x, y, 930, 402, 288, 48))
+    return {ActionKind::orcdial_pair, 0};
+#endif
   if (g_section == Section::connectivity) {
     if (g_state.wifi_hosted_update_required) return {};
-#if ORCSDR_ORCDIAL
-    if (hit(x, y, 930, 360, 288, 28))
-      return {ActionKind::orcdial_pair, 0};
-#endif
     if (hit(x, y, 938, 198, 280, 48))
       return {ActionKind::wifi_power_changed, g_state.wifi_power_enabled ? 0 : 1};
-    if (hit(x, y, 930, 250, 288, 48))
+    if (hit(x, y, 930, 262, 288, 48))
       return {ActionKind::wifi_start_at_boot_changed, g_state.wifi_start_at_boot ? 0 : 1};
-    if (hit(x, y, 930, 308, 288, 48))
+    if (hit(x, y, 930, 326, 288, 48))
       return {ActionKind::wifi_antenna_changed, g_state.wifi_external_antenna ? 0 : 1};
     if (!g_state.wifi_power_enabled) return {};
     if (hit(x, y, 330, 198, 280, 48) && !g_state.wifi_scanning)
@@ -788,20 +792,20 @@ Action handle_touch(int32_t x, int32_t y) {
       return {};
     }
     for (uint8_t i = 0; i < g_state.saved_network_count && i < 4; ++i) {
-      const int row_y = 394 + i * 44;
-      if (hit(x, y, 674, row_y, 144, 40))
+      const int row_y = 410 + i * 44;
+      if (hit(x, y, 674, row_y, 144, 36))
         return {ActionKind::connect_saved_wifi, i};
-      if (i && hit(x, y, 830, row_y, 88, 40))
+      if (i && hit(x, y, 830, row_y, 88, 36))
         return {ActionKind::move_wifi_up, i};
-      if (i + 1 < g_state.saved_network_count && hit(x, y, 930, row_y, 106, 40))
+      if (i + 1 < g_state.saved_network_count && hit(x, y, 930, row_y, 106, 36))
         return {ActionKind::move_wifi_down, i};
-      if (hit(x, y, 1048, row_y, 170, 40))
+      if (hit(x, y, 1048, row_y, 170, 36))
         return {ActionKind::forget_wifi, i};
     }
     for (uint8_t i = 0; i < std::min<uint8_t>(g_state.network_count, 6); ++i) {
       const int row_x = 330 + (i % 2) * 428;
-      const int row_y = 604 + (i / 2) * 34;
-      if (!hit(x, y, row_x, row_y, 418, 32)) continue;
+      const int row_y = 624 + (i / 2) * 30;
+      if (!hit(x, y, row_x, row_y, 418, 28)) continue;
       if (g_state.networks[i].saved) {
         for (uint8_t saved = 0; saved < g_state.saved_network_count; ++saved)
           if (strcmp(g_state.networks[i].ssid, g_state.profiles[saved].ssid) == 0)
@@ -1008,6 +1012,17 @@ bool self_check() {
   strlcpy(g_state.wifi_c6_update_state, "current", sizeof(g_state.wifi_c6_update_state));
   g_state.wifi_c6_image_embedded = true;
   const bool c6_current_routes = handle_touch(331, 446).kind == ActionKind::orcdial_c6_update;
+  g_section = Section::companion;
+#if ORCSDR_ORCDIAL
+  const bool accessory_routes = handle_touch(950, 425).kind == ActionKind::orcdial_pair;
+#else
+  const bool accessory_routes = handle_touch(950, 425).kind == ActionKind::none;
+#endif
+  g_section = Section::connectivity;
+  g_state.wifi_hosted_update_required = false;
+  const bool wifi_boot_routes = handle_touch(950, 286).kind == ActionKind::wifi_start_at_boot_changed;
+  const bool wifi_antenna_routes = handle_touch(950, 350).kind == ActionKind::wifi_antenna_changed;
+  const bool wifi_gap_clear = handle_touch(950, 318).kind == ActionKind::none;
   g_section = Section::radio_defaults;
   g_state.rtl_usb_safe_mode = true;
   const bool usb_recovery_routes =
@@ -1016,7 +1031,8 @@ bool self_check() {
   g_section = saved_section;
   g_active = saved_active;
   if (!symbols_ok || !credentials_ok || !empty_location_ok || !location_ok ||
-      !c6_ready_routes || !c6_optional_routes || !c6_current_routes || !usb_recovery_routes) return false;
+      !c6_ready_routes || !c6_optional_routes || !c6_current_routes || !usb_recovery_routes ||
+      !accessory_routes || !wifi_boot_routes || !wifi_antenna_routes || !wifi_gap_clear) return false;
   return true;
 }
 

@@ -27,8 +27,8 @@ with port:
     channel = command('RTL_WIFI_CHANNEL', 'RTL_WIFI_CHANNEL primary=')
     assert re.search(r'primary=\d+ secondary=\d+ connected=[01] ssid_hex=[0-9a-fA-F]* ap_primary=\d+', channel), channel
     command('RTL_ORCDIAL_PAIR START', 'RTL_ORCDIAL_PAIR_WINDOW_OPEN seconds=60')
-    result = command('RTL_ORCDIAL_PROBE', 'RTL_ORCDIAL_PROBE result=')
-    assert re.search(r'result=[A-Z0-9_]+ scope=relay_request$', result), result
+    result = command('RTL_ORCDIAL_PROBE', 'RTL_ORCDIAL_PROBE queued=')
+    assert re.search(r'queued=1 last_rpc=[A-Z0-9_]+ scope=relay_request$', result), result
     status = command('RTL_ORCDIAL_STATUS', 'RTL_ORCDIAL_STATUS ')
     assert 'pairing=1' in status or 'paired=1' in status, status
 print('Host command smoke check passed; relay result above does not prove pairing')

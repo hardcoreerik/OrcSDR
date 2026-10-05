@@ -13,7 +13,7 @@ port.rts = False
 port.open()
 with port:
     def command(text, expected):
-        port.write((text + '\n').encode())
+        port.write(('\n' + text + '\n').encode())
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
             line = port.readline().decode(errors='replace').strip()
@@ -28,7 +28,7 @@ with port:
     if 'link=OFFLINE' in initial:
         command('ORCDIAL_ROTATE 1', 'ORCDIAL_CONTROL_ERROR offline')
         command('ORCDIAL_FOCUS NEXT', 'ORCDIAL_CONTROL_ERROR offline')
-    command('x' * 80, 'ORCDIAL_COMMAND_ERROR too_long')
+    command('x' * 160, 'ORCDIAL_COMMAND_ERROR too_long')
     command('ORCDIAL_NOT_A_COMMAND', 'ORCDIAL_COMMAND_ERROR unknown')
     command('ORCDIAL_ROTATE 999', 'ORCDIAL_CONTROL_ERROR invalid_delta')
     command('ORCDIAL_ROTATE 1junk', 'ORCDIAL_CONTROL_ERROR invalid_delta')

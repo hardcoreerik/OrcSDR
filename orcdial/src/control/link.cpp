@@ -55,6 +55,7 @@ bool Link::send(Type type, int32_t value, uint32_t sequence, ActionKind action) 
   uint8_t data[packet_size]; encode(p, data);
   const uint8_t* dest = (type == Type::hello) ? broadcast : peer_mac_;
   const bool sent = esp_now_send(dest, data, packet_size) == ESP_OK;
+  if (sent) last_tx_ms_ = millis();
   if (sent &&
       type != Type::hello && type != Type::heartbeat && type != Type::pair_request) {
     pending_ = p; pending_sequence_ = p.sequence; pending_ms_ = millis(); retries_ = 0;
@@ -108,9 +109,9 @@ void Link::handle(const Incoming& incoming) {
     state_.view = p.view; state_.revision = p.revision;
     state_.selected = p.selected; state_.item_count = p.item_count;
     state_.capabilities = p.capabilities;
-    if (p.ack == pending_sequence_) { last_ack_ = p.ack; pending_sequence_ = 0; }
+    if (pending_sequence_ && p.ack == pending_sequence_) { last_ack_ = p.ack; pending_sequence_ = 0; }
     Serial.printf("RX seq=%lu type=RADIO_STATE freq=%lu\n", (unsigned long)p.sequence, (unsigned long)p.frequency_hz);
-  } else if (p.type == Type::error && p.ack == pending_sequence_) {
+  } else if (p.type == Type::error && pending_sequence_ && p.ack == pending_sequence_) {
     Serial.printf("ACTION_REJECTED seq=%lu reason=%ld\n", (unsigned long)p.ack, long(p.value));
     pending_sequence_ = 0;
   }

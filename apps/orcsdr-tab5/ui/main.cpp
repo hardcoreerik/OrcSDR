@@ -14003,13 +14003,16 @@ constexpr uint32_t kOrcDialToC6 = 0x4f444c01u;
 constexpr uint32_t kOrcDialFromC6 = 0x4f444c02u;
 struct OrcDialFrame { uint8_t mac[6]; uint8_t wire[orc::packet_size]; };
 QueueHandle_t orcdial_inbox = nullptr;
+QueueHandle_t orcdial_outbox = nullptr;
+TaskHandle_t orcdial_tx_task = nullptr;
 uint8_t orcdial_peer[6]{};
 uint32_t orcdial_sender = 0;
 uint32_t orcdial_tx_sequence = 1;
-esp_err_t orcdial_last_tx_result = ESP_ERR_INVALID_STATE;
+std::atomic<esp_err_t> orcdial_last_tx_result{ESP_ERR_INVALID_STATE};
 uint32_t orcdial_rx_sender = 0;
 uint32_t orcdial_rx_sequence = 0;
 uint32_t orcdial_last_state_ms = 0;
+uint32_t orcdial_last_peer_rx_ms = 0;
 uint32_t orcdial_revision = 0;
 const uint8_t orcdial_broadcast[6] = {255,255,255,255,255,255};
 
@@ -14020,17 +14023,30 @@ void orcdial_receive(uint32_t, const uint8_t* data, size_t size, void*) {
   (void)xQueueSend(orcdial_inbox, &frame, 0);
 }
 
+void orcdial_transmit(void*) {
+  OrcDialFrame frame{};
+  for (;;) {
+    if (xQueueReceive(orcdial_outbox, &frame, portMAX_DELAY) != pdTRUE) continue;
+    const esp_err_t result = eh_host_peer_data_send(kOrcDialToC6,
+        reinterpret_cast<const uint8_t*>(&frame), sizeof(frame));
+    orcdial_last_tx_result.store(result, std::memory_order_relaxed);
+    // Failed Hosted requests can take seconds; discard stale replies rather
+    // than replaying an old backlog after transport recovery.
+    if (result != ESP_OK) xQueueReset(orcdial_outbox);
+  }
+}
+
 bool orcdial_send(const uint8_t* mac, orc::Packet& packet) {
-  if (!orcdial_transport_ready) return false;
+  if (!orcdial_transport_ready || !orcdial_outbox) return false;
   OrcDialFrame frame{};
   memcpy(frame.mac, mac, 6);
   packet.role = orc::Role::receiver;
   packet.sender = orcdial_sender;
   packet.sequence = orcdial_tx_sequence++;
   orc::encode(packet, frame.wire);
-  orcdial_last_tx_result = eh_host_peer_data_send(kOrcDialToC6,
-                                reinterpret_cast<const uint8_t*>(&frame), sizeof(frame));
-  return orcdial_last_tx_result == ESP_OK;
+  // Never wait for Hosted RPCs on the dashboard/DSP loop. The Dial retries
+  // commands that do not receive an authoritative acknowledgment.
+  return xQueueSend(orcdial_outbox, &frame, 0) == pdTRUE;
 }
 
 orc::Dashboard orcdial_active_dashboard() {
@@ -14158,6 +14174,15 @@ bool orcdial_apply(const orc::Packet& p) {
 }
 
 void orcdial_poll() {
+  // No accessory RPCs during splash, router association, or initial radio bring-up.
+  // An unavailable router must not permanently disable offline ESP-NOW.
+  static uint32_t ready_since_ms = 0;
+  if (!rtl_boot_complete.load(std::memory_order_acquire) || orcsdr_splash_is_active()) return;
+  if (!ready_since_ms) ready_since_ms = millis();
+  if (millis() - ready_since_ms < 3000 || wifi_connecting ||
+      wifi_connect_requested.load(std::memory_order_acquire)) return;
+  if (!wifi_station_ready && (orcdial_pair_until || preferences.getBytesLength("dial_mac") == 6))
+    initialize_wifi();
   if (orcdial_pair_until && static_cast<int32_t>(millis() - orcdial_pair_until) >= 0) {
     orcdial_pair_until = 0;
     if (!orcdial_has_peer && !settings_wifi_power_enabled && wifi_station_ready) {
@@ -14171,13 +14196,21 @@ void orcdial_poll() {
   }
   if (!orcdial_transport_ready && orcsdr::wifi::hosted_transport_ready()) {
     if (!orcdial_inbox) orcdial_inbox = xQueueCreate(8, sizeof(OrcDialFrame));
-    if (orcdial_inbox && eh_host_feat_peer_data_init() == ESP_OK &&
+    if (!orcdial_outbox) orcdial_outbox = xQueueCreate(4, sizeof(OrcDialFrame));
+    if (orcdial_outbox && !orcdial_tx_task &&
+        xTaskCreatePinnedToCore(orcdial_transmit, "orcdial_tx", 4096, nullptr, 2,
+                              &orcdial_tx_task, 0) != pdPASS) {
+      orcdial_tx_task = nullptr;
+    }
+    if (orcdial_inbox && orcdial_tx_task && eh_host_feat_peer_data_init() == ESP_OK &&
         eh_host_peer_data_register(kOrcDialFromC6, orcdial_receive, nullptr) == ESP_OK) {
       orcdial_transport_ready = true;
       orcdial_sender = esp_random();
       orcdial_has_peer = preferences.getBytesLength("dial_mac") == 6 &&
                          preferences.getBytes("dial_mac", orcdial_peer, 6) == 6;
       Serial.println("ORCDIAL_BRIDGE_READY");
+      // Release C6 discovery forwarding only after host startup has settled.
+      orcdial_reply(orc::Type::hello, orcdial_broadcast);
     }
   }
   if (!orcdial_transport_ready) return;
@@ -14186,6 +14219,7 @@ void orcdial_poll() {
     orc::Packet p{};
     if (!orc::decode(frame.wire, sizeof(frame.wire), p) || p.role != orc::Role::dial) continue;
     const bool known = orcdial_has_peer && memcmp(frame.mac, orcdial_peer, 6) == 0;
+    if (known) orcdial_last_peer_rx_ms = millis();
     const bool window = static_cast<int32_t>(orcdial_pair_until - millis()) > 0;
     if (p.type == orc::Type::hello) {
       if (known || window) orcdial_reply(orc::Type::hello, known ? orcdial_peer : orcdial_broadcast);
@@ -14196,6 +14230,7 @@ void orcdial_poll() {
       orcdial_has_peer = preferences.putBytes("dial_mac", orcdial_peer, 6);
       if (!orcdial_has_peer) continue;
       orcdial_pair_until = 0;
+      orcdial_last_peer_rx_ms = millis();
       orcdial_rx_sender = p.sender;
       orcdial_rx_sequence = 0;
       orcdial_reply(orc::Type::pair_ack, orcdial_peer, p.sequence);
@@ -14217,7 +14252,9 @@ void orcdial_poll() {
     orcdial_reply(applied ? orc::Type::radio_state : orc::Type::error,
                   orcdial_peer, p.sequence, applied ? 0 : 1);
   }
-  if (orcdial_has_peer && millis() - orcdial_last_state_ms >= 900) {
+  // A saved MAC does not mean the accessory is online; avoid idle Hosted RPC timeouts.
+  if (orcdial_has_peer && orcdial_last_peer_rx_ms &&
+      millis() - orcdial_last_peer_rx_ms <= 3000 && millis() - orcdial_last_state_ms >= 900) {
     orcdial_reply(orc::Type::radio_state, orcdial_peer);
     orcdial_last_state_ms = millis();
   }
@@ -15585,28 +15622,11 @@ bool ui_doc_view_for_suffix(const char* suffix, orcsdr::p25::View* view) {
   return false;
 }
 
-bool ui_doc_render(const char* screen_id, bool demo) {
+// Keep the Settings capture path out of the multi-dashboard renderer's large
+// stack frame. It uses the same production Settings drawing and touch layout.
+[[gnu::noinline]] bool ui_doc_render_settings(const char* screen_id, bool demo) {
   if (!ui_doc_screen_exists(screen_id, demo ? "demo" : "live")) return false;
   ui_doc_leave_surfaces();
-
-  if (strncmp(screen_id, "pocsag.", 7) == 0) {
-    rtl_ui_active.store(true, std::memory_order_release);
-    rtl_ui_band = RtlBand::pocsag;
-    pocsag_dashboard_settings.frequency_hz = pocsag_config_frequency_hz;
-    pocsag_dashboard_settings.baud_bps = pocsag_baud_bps.load(std::memory_order_relaxed);
-    pocsag_dashboard_settings.polarity_mode = pocsag_polarity_mode.load(std::memory_order_relaxed);
-    publish_pocsag_snapshot(millis());
-    orcsdr::pocsag::enter(pocsag_dashboard_settings);
-    static constexpr const char* names[] = {"live", "ids", "signal", "activity", "session"};
-    for (size_t i = 0; i < std::size(names); ++i)
-      if (strcmp(screen_id + 7, names[i]) == 0)
-        (void)orcsdr::pocsag::handle_touch(i * 256 + 128, 680);
-  } else if (strcmp(screen_id, "home") == 0) {
-    rtl_ui_active.store(false, std::memory_order_release);
-    show_home(demo);
-  } else if (strncmp(screen_id, "settings.", 9) == 0 ||
-             strncmp(screen_id, "overlay.wifi-", 13) == 0 ||
-             strcmp(screen_id, "overlay.masked-keyboard") == 0) {
     // Same order as orcsdr::settings::Section.
     static constexpr const char* names[] = {"connectivity", "firmware-updates",
         "location-adsb", "data-maps", "display-audio", "radio-defaults", "storage",
@@ -15631,6 +15651,37 @@ bool ui_doc_render(const char* screen_id, bool demo) {
         orcsdr::settings::Section::connectivity, state, keyboard);
     if (strncmp(screen_id, "settings.", 9) == 0)
       orcsdr::settings::show_documentation_section(section, state);
+  if (demo) ui_doc_badge();
+  orcsdr::screens::begin_transition(orcsdr::screens::Id::documentation, millis());
+  orcsdr::screens::finish_transition();
+  strlcpy(ui_doc.current_screen, screen_id, sizeof(ui_doc.current_screen));
+  ui_doc.current_demo = demo;
+  return true;
+}
+
+bool ui_doc_render(const char* screen_id, bool demo) {
+  if (!ui_doc_screen_exists(screen_id, demo ? "demo" : "live")) return false;
+  ui_doc_leave_surfaces();
+
+  if (strncmp(screen_id, "pocsag.", 7) == 0) {
+    rtl_ui_active.store(true, std::memory_order_release);
+    rtl_ui_band = RtlBand::pocsag;
+    pocsag_dashboard_settings.frequency_hz = pocsag_config_frequency_hz;
+    pocsag_dashboard_settings.baud_bps = pocsag_baud_bps.load(std::memory_order_relaxed);
+    pocsag_dashboard_settings.polarity_mode = pocsag_polarity_mode.load(std::memory_order_relaxed);
+    publish_pocsag_snapshot(millis());
+    orcsdr::pocsag::enter(pocsag_dashboard_settings);
+    static constexpr const char* names[] = {"live", "ids", "signal", "activity", "session"};
+    for (size_t i = 0; i < std::size(names); ++i)
+      if (strcmp(screen_id + 7, names[i]) == 0)
+        (void)orcsdr::pocsag::handle_touch(i * 256 + 128, 680);
+  } else if (strcmp(screen_id, "home") == 0) {
+    rtl_ui_active.store(false, std::memory_order_release);
+    show_home(demo);
+  } else if (strncmp(screen_id, "settings.", 9) == 0 ||
+             strncmp(screen_id, "overlay.wifi-", 13) == 0 ||
+             strcmp(screen_id, "overlay.masked-keyboard") == 0) {
+    return ui_doc_render_settings(screen_id, demo);
   } else if (strncmp(screen_id, "fm.", 3) == 0 ||
              strcmp(screen_id, "overlay.volume") == 0) {
     orcsdr::fm::View view = orcsdr::fm::View::listen;
@@ -16256,7 +16307,13 @@ void process_command(char* command) {
              rtl_ui_band != band || rtl_ui_frequency_hz != frequency_hz))
           queue_local_rtl_listen(band, frequency_hz, false);
       }
-      if (!ui_doc_render(screen, strcmp(mode, "demo") == 0)) {
+      const bool settings_screen = strncmp(screen, "settings.", 9) == 0 ||
+          strncmp(screen, "overlay.wifi-", 13) == 0 ||
+          strcmp(screen, "overlay.masked-keyboard") == 0;
+      const bool rendered = settings_screen
+          ? ui_doc_render_settings(screen, strcmp(mode, "demo") == 0)
+          : ui_doc_render(screen, strcmp(mode, "demo") == 0);
+      if (!rendered) {
         Serial.println("UI_DOC_ERROR unknown_screen_or_mode");
         return;
       }
@@ -16490,10 +16547,10 @@ void process_command(char* command) {
     }
     orc::Packet probe{};
     probe.type = orc::Type::hello;
-    (void)orcdial_send(orcdial_broadcast, probe);
-    // The RPC result does not confirm an over-air transmission or a Dial reply.
-    Serial.printf("RTL_ORCDIAL_PROBE result=%s scope=relay_request\n",
-                  esp_err_to_name(orcdial_last_tx_result));
+    const bool queued = orcdial_send(orcdial_broadcast, probe);
+    // Queue acceptance and the preceding RPC result do not confirm RF delivery.
+    Serial.printf("RTL_ORCDIAL_PROBE queued=%d last_rpc=%s scope=relay_request\n", queued ? 1 : 0,
+                  esp_err_to_name(orcdial_last_tx_result.load(std::memory_order_relaxed)));
     return;
   }
   if (strcmp(command, "RTL_ORCDIAL_STATUS") == 0) {
@@ -18909,11 +18966,7 @@ void boot_wifi_on_splash() {
   if (!orcsdr_splash_is_active() || !wifi_boot_bringup_pending) return;
   wifi_boot_bringup_pending = false;  // this stage replaces the deferred loop() connect
 #if ORCSDR_ORCDIAL
-  if (!wifi_station_ready && preferences.getBytesLength("dial_mac") == 6) {
-    orcsdr_splash_set_status("Starting OrcDial wireless accessory...");
-    initialize_wifi();
-    orcdial_poll();
-  }
+  // Accessory startup is deferred until the application and radio have settled.
 #endif
   if (!settings_wifi_power_enabled || !settings_wifi_start_at_boot || !wifi_profile_count) {
     Serial.println("RTL_WIFI_BOOT_SKIP_NO_AUTOCONNECT splash");

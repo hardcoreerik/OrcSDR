@@ -17,6 +17,7 @@ class Link {
   bool connected() const { return connected_; }
   bool pairing() const { return pairing_; }
   bool pending() const { return pending_sequence_ != 0; }
+  uint32_t pending_sequence() const { return pending_sequence_; }
   const RadioState& state() const { return state_; }
   uint32_t last_ack() const { return last_ack_; }
  private:

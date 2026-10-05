@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // OrcDial ESP-NOW radio endpoint for the Tab5's ESP-Hosted C6.
 #include <string.h>
+#include <stdatomic.h>
 #include "esp_check.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -23,9 +24,13 @@ typedef struct { uint8_t bytes[ORCDIAL_PEER_FRAME_SIZE]; } peer_frame_t;
 static QueueHandle_t received;
 static QueueHandle_t outbound;
 static bool now_ready;
+static atomic_bool host_ready;
 
 static void receive_now(const esp_now_recv_info_t *info, const uint8_t *data, int size) {
-    if (!received || !info || !info->src_addr || !data || size != ORCDIAL_PACKET_SIZE) return;
+    // Discovery can arrive while Hosted is still bringing up Wi-Fi. Do not
+    // inject accessory RPC events until the P4 explicitly announces readiness.
+    if (!atomic_load_explicit(&host_ready, memory_order_acquire) ||
+        !received || !info || !info->src_addr || !data || size != ORCDIAL_PACKET_SIZE) return;
     peer_frame_t frame;
     memcpy(frame.bytes, info->src_addr, 6);
     memcpy(frame.bytes + 6, data, ORCDIAL_PACKET_SIZE);
@@ -35,6 +40,7 @@ static void receive_now(const esp_now_recv_info_t *info, const uint8_t *data, in
 static void from_host(uint32_t id, const uint8_t *data, size_t size, void *ctx) {
     (void)id; (void)ctx;
     if (!outbound || !data || size != ORCDIAL_PEER_FRAME_SIZE) return;
+    atomic_store_explicit(&host_ready, true, memory_order_release);
     peer_frame_t frame;
     memcpy(frame.bytes, data, sizeof(frame.bytes));
     (void)xQueueSend(outbound, &frame, 0); // RPC callback must not block on Wi-Fi
@@ -42,6 +48,12 @@ static void from_host(uint32_t id, const uint8_t *data, size_t size, void *ctx) 
 
 static void wifi_event(void *ctx, esp_event_base_t base, int32_t id, void *event) {
     (void)ctx; (void)base; (void)event;
+    if (id == WIFI_EVENT_STA_STOP) {
+        atomic_store_explicit(&host_ready, false, memory_order_release);
+        if (now_ready) esp_now_deinit();
+        now_ready = false;
+        return;
+    }
     if (id != WIFI_EVENT_STA_START || now_ready) return;
     if (esp_now_init() != ESP_OK) { ESP_LOGE(TAG, "ESP-NOW init failed"); return; }
     if (esp_now_register_recv_cb(receive_now) != ESP_OK) {
@@ -59,8 +71,8 @@ static void forward_to_host(void *ctx) {
     (void)ctx;
     peer_frame_t frame;
     while (true) {
-        if (xQueueReceive(received, &frame, portMAX_DELAY) == pdTRUE)
-            (void)eh_cp_feat_peer_data_send(ORCDIAL_C6_TO_HOST, frame.bytes, sizeof(frame.bytes));
+        if (xQueueReceive(received, &frame, portMAX_DELAY) != pdTRUE) continue;
+        (void)eh_cp_feat_peer_data_send(ORCDIAL_C6_TO_HOST, frame.bytes, sizeof(frame.bytes));
     }
 }
 
@@ -92,7 +104,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(received && outbound ? ESP_OK : ESP_ERR_NO_MEM);
     ESP_ERROR_CHECK(eh_cp_feat_peer_data_init());
     ESP_ERROR_CHECK(eh_cp_feat_peer_data_register_callback(ORCDIAL_HOST_TO_C6, from_host, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_START, wifi_event, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event, NULL));
     BaseType_t started = xTaskCreate(forward_to_host, "orcdial_peer", 4096, NULL, 5, NULL);
     ESP_ERROR_CHECK(started == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
     started = xTaskCreate(forward_to_dial, "orcdial_now", 4096, NULL, 5, NULL);
