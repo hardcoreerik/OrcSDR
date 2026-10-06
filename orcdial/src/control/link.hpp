@@ -68,9 +68,11 @@ class Link {
   static Link* active_;
   static volatile uint8_t channel_;
   static volatile uint32_t last_unicast_ok_ms_;
+  static volatile uint8_t last_tx_channel_, last_ok_channel_;  // channel of the latest send, and of the latest acknowledged one
   static volatile uint32_t set_channel_errors_;
   uint8_t saved_channel_ = 0;
   uint32_t connected_at_ = 0;
+  uint32_t pref_retry_ms_ = 0;  // earliest time to retry a failed saved-channel write
   static volatile uint8_t trace_mode_;
   static RfEvent ring_[rf_ring_size];
   static volatile uint32_t ring_head_, ring_tail_;

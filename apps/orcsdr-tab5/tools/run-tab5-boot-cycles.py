@@ -9,7 +9,7 @@ Safety:
   * Serial ports are opened with DTR/RTS deasserted; nothing is flashed.
   * The pairing key is read locally and never printed or logged.
   * The splash button gate is turned OFF for the run and restored ON at the end.
-  * WIFI_BOOT is left enabled afterwards (it is a requested "at boot" item).
+  * WIFI_BOOT, WIFI_POWER and AUTO_START are left enabled afterwards (they are the "at boot" items under test).
   * Trust is never changed. Only RTL_RESET and settings toggles are sent.
 
 Usage:
@@ -20,7 +20,6 @@ import argparse
 import hashlib
 import hmac
 import json
-import os
 import random
 import re
 import secrets
@@ -37,7 +36,7 @@ except ImportError:  # selftest does not need pyserial
 
 FATAL = re.compile(
     r"Guru Meditation|panic|assert failed|abort\(|task watchdog|interrupt wdt|"
-    r"brownout detector|0x107|link_failed=1|SDIO.*timeout", re.I)
+    r"brownout detector|0x107|link_failed=1|SDIO.*timeout", re.I)  # link_failed=1 is deliberate: a failed link must fail the cycle
 KV = re.compile(r"(\w+)=(\S+)")
 DEFAULT_KEY = Path(r"F:\Ai\OrcSDR\.orclink\ui-doc.key")
 
@@ -386,7 +385,10 @@ def recovery_probe(p4, key_hex, events, n, wait=30.0):
     out = {"self": None, "explicit": None}
     t0 = time.monotonic()
     while time.monotonic() - t0 < wait:
-        polled = poll_status(p4)
+        try:
+            polled = poll_status(p4)
+        except RuntimeError:
+            polled = None  # the port can disappear across a reboot
         if polled and polled[2].get("connection") == "Connected":
             out["self"] = round(time.monotonic() - t0, 1)
             events(f"CYCLE {n} RECOVERED_BY_ITSELF after {out['self']}s")
@@ -396,7 +398,10 @@ def recovery_probe(p4, key_hex, events, n, wait=30.0):
     command(p4, "RTL_ORCDIAL_CONNECT", r"^RTL_ORCDIAL_", 5)
     t1 = time.monotonic()
     while time.monotonic() - t1 < wait:
-        polled = poll_status(p4)
+        try:
+            polled = poll_status(p4)
+        except RuntimeError:
+            polled = None
         if polled and polled[2].get("connection") == "Connected":
             out["explicit"] = round(time.monotonic() - t1, 1)
             events(f"CYCLE {n} RECOVERED_BY_EXPLICIT_CONNECT after {out['explicit']}s")
@@ -461,8 +466,8 @@ def main():
     ap.add_argument("--seed", type=int, default=None, help="seed for random dwell (printed so a run can be replayed)")
     ap.add_argument("--mode", choices=("p4", "c6pulse", "c6off_reset", "c6rts", "dial"), default="p4",
                     help="p4: RTL_RESET; c6pulse: cut the C6 rail only; c6off_reset: cut the C6 rail then RTL_RESET "
-                         "(those two need the -C6FaultTest build); c6rts: reset the C6 through the downloader EN line, then "
-                         "RTL_RESET (needs the adapter attached); dial: restart only the Dial (ORCDIAL_RESTART)")
+                         "(those two need the -C6FaultTest build); c6rts: reset the P4, then pulse the C6 EN line through the downloader about 1 s later "
+                         "(needs the adapter attached); dial: restart only the Dial (ORCDIAL_RESTART)")
     ap.add_argument("--c6-off-ms", type=int, default=1500, help="how long the C6 rail stays off in the C6 modes")
     ap.add_argument("--recover", action="store_true",
                     help="after a failed OrcDial connect, watch for self-recovery then try an explicit CONNECT")
