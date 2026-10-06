@@ -9,6 +9,7 @@ Link* Link::active_ = nullptr;
 volatile uint8_t Link::channel_ = 1;
 volatile uint8_t Link::trace_mode_ = 0;
 volatile uint32_t Link::last_unicast_ok_ms_ = 0;
+volatile uint8_t Link::last_tx_channel_ = 0, Link::last_ok_channel_ = 0;
 volatile uint32_t Link::set_channel_errors_ = 0;
 Link::RfEvent Link::ring_[Link::rf_ring_size];
 volatile uint32_t Link::ring_head_ = 0, Link::ring_tail_ = 0;
@@ -19,7 +20,8 @@ static const uint8_t broadcast[6] = {255,255,255,255,255,255};
 static const char* const rf_names[] = {"", "tx", "tx_refused", "cb_ok", "cb_fail", "rx", "scan"};
 
 void Link::note(RfKind kind) {
-  const uint8_t ch = channel_ < 14 ? channel_ : 0;
+  const uint8_t cur = channel_;  // read once: another task may change it
+  const uint8_t ch = cur < 14 ? cur : 0;
   portENTER_CRITICAL(&ring_lock_);
   ring_[ring_head_ % rf_ring_size] = {millis(), uint8_t(kind), ch};
   ++ring_head_;
@@ -30,12 +32,14 @@ void Link::sent(const uint8_t* mac, esp_now_send_status_t status) {
   if (status == ESP_NOW_SEND_SUCCESS) {
     ++cb_ok_; note(rf_cb_ok);
     // Broadcast "success" only means the frame left the radio; a unicast ACK means the peer heard it.
-    if (mac && std::memcmp(mac, broadcast, 6) != 0) last_unicast_ok_ms_ = millis() | 1u;
+    // Attribute the ACK to the channel the frame was sent on, not wherever the radio is now.
+    if (mac && std::memcmp(mac, broadcast, 6) != 0) { last_ok_channel_ = last_tx_channel_; last_unicast_ok_ms_ = millis() | 1u; }
   } else { ++cb_fail_; note(rf_cb_fail); }
 }
 bool Link::evidence() {
   const uint32_t ok = last_unicast_ok_ms_;
-  return ok != 0 && uint32_t(millis() - ok) < 4000;
+  // An ACK only vouches for the channel it was sent on, so it must match the channel we are on now.
+  return ok != 0 && uint32_t(millis() - ok) < 4000 && last_ok_channel_ == channel_;
 }
 void Link::rf_reset() {
   tx_accepted_ = tx_refused_ = cb_ok_ = cb_fail_ = rx_frames_ = 0;
@@ -71,7 +75,8 @@ bool Link::begin() {
 }
 void Link::receive(const uint8_t* mac,const uint8_t* data,int size) {
   if(active_ && size==64) {
-    ++rx_frames_;if(channel_<14)++rx_by_channel_[channel_];note(rf_rx);
+    const uint8_t ch=channel_;  // single read: the index must stay inside the 14-entry arrays
+    ++rx_frames_;if(ch<14)++rx_by_channel_[ch];note(rf_rx);
     active_->secure_.receive(mac,data,64);
   }
 }
@@ -80,14 +85,15 @@ bool Link::transmit(const uint8_t* mac,const uint8_t* wire) {
     esp_now_peer_info_t info{};std::memcpy(info.peer_addr,mac,6);info.ifidx=WIFI_IF_STA;
     if(esp_now_add_peer(&info)!=ESP_OK)return false;
   }
+  const uint8_t ch=channel_;last_tx_channel_=ch;
   const bool accepted=esp_now_send(mac,wire,64)==ESP_OK;
-  if(accepted){++tx_accepted_;if(channel_<14)++tx_by_channel_[channel_];note(rf_tx_accepted);}
+  if(accepted){++tx_accepted_;if(ch<14)++tx_by_channel_[ch];note(rf_tx_accepted);}
   else{++tx_refused_;note(rf_tx_refused);}
   return accepted;
 }
 void Link::scan(uint8_t channel){
   // Trust the radio, not the request: record the channel it actually reports after the change.
-  if(esp_wifi_set_channel(channel,WIFI_SECOND_CHAN_NONE)!=ESP_OK)++set_channel_errors_;
+  if(esp_wifi_set_channel(channel,WIFI_SECOND_CHAN_NONE)!=ESP_OK){++set_channel_errors_;return;}  // the radio did not move: keep the real channel
   uint8_t actual=channel;wifi_second_chan_t secondary;
   channel_=esp_wifi_get_channel(&actual,&secondary)==ESP_OK?actual:channel;
   note(rf_scan);
@@ -162,10 +168,15 @@ void Link::poll() {
   if(status.state!=secure::State::connected){connected_=false;pending_sequence_=0;last_state_sequence_=0;connected_at_=0;return;}
   // Remember the channel a working connection used, so the next boot looks there first.
   if(!connected_at_)connected_at_=millis()|1u;
-  else if(channel_>=1 && channel_<=11 && channel_!=saved_channel_ && uint32_t(millis()-connected_at_)>5000) {
-    Preferences saved;saved.begin("orcdial",false);saved.putUChar("pref_ch",channel_);saved.end();
-    saved_channel_=channel_;secure_.preferred_channel(channel_);
-    Serial.printf("ORCDIAL_PREF_CHANNEL saved=%u\n",unsigned(channel_));
+  else if(channel_>=1 && channel_<=11 && channel_!=saved_channel_ && uint32_t(millis()-connected_at_)>5000 &&
+          int32_t(millis()-pref_retry_ms_)>=0) {
+    secure_.preferred_channel(channel_);  // use it for the rest of this boot even if storage fails
+    Preferences saved;
+    const bool opened=saved.begin("orcdial",false);
+    const bool wrote=opened && saved.putUChar("pref_ch",channel_)==1;
+    if(opened)saved.end();
+    if(wrote){saved_channel_=channel_;Serial.printf("ORCDIAL_PREF_CHANNEL saved=%u\n",unsigned(channel_));}
+    else{pref_retry_ms_=millis()+60000;Serial.println("ORCDIAL_PREF_CHANNEL_SAVE_FAILED");}  // retry later, not every loop
   }
   secure::Runtime::Control c{};
   while(secure_.take(c)){if(c.size!=packet_size)continue;Incoming in{};in.size=c.size;std::memcpy(in.data,c.data,c.size);handle(in);}

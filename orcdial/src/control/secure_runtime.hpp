@@ -137,7 +137,8 @@ class Runtime {
       // Network input cannot fill or starve the local Disconnect/Forget queue.
       if(xQueueReceive(actions_,&e,0)==pdTRUE || xQueueReceive(input_,&e,pdMS_TO_TICKS(20))==pdTRUE) {
         if(e.kind==1) {
-          // Only Connect (and boot-connect) express intent to be connected; every other action stops retries.
+          // Connect expresses intent to be connected. Boot and Confirm leave the intent as it is; every other
+          // action (Pair, Cancel, Disconnect, Forget) clears it so nothing is retried against the user.
           if(e.action!=Action::boot && e.action!=Action::confirm)retry.intent(e.action==Action::connect);
           switch(e.action){case Action::pair:session.pair(time);break;case Action::cancel:session.cancel();break;
             case Action::confirm:session.confirm(e.value,time);break;case Action::connect:session.connect(true,time);break;
@@ -160,8 +161,11 @@ class Runtime {
       if(current.state!=previous && current.state!=State::connected){generation_.fetch_add(1,std::memory_order_release);xQueueReset(output_);}
       previous=current.state;
       portENTER_CRITICAL(&lock_);status_=current;portEXIT_CRITICAL(&lock_);
-      if(retry.step(current.state==State::connected,current.state==State::failed && current.failure==Failure::timeout && current.trusted,time))
-        session.connect(false,time);
+      // No retry while the transport is disabled; clear stale fragments so a new attempt starts clean.
+      if(enabled_.load(std::memory_order_relaxed) &&
+         retry.step(current.state==State::connected,current.state==State::failed && current.failure==Failure::timeout && current.trusted,time)) {
+        assembly.reset();session.connect(false,time);
+      }
       const bool passive_listen=current.trusted && (current.state==State::offline || current.state==State::paused || current.state==State::failed);
       const bool locked=lock.locked(current.channel_locked,time,evidence_);
       if(scan_ && !locked && (passive_listen || current.state==State::searching || current.state==State::connecting) && uint32_t(time-scan_at)>dwell) {

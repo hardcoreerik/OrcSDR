@@ -10,8 +10,8 @@ measured on one Tab5, one OrcDial and one router (channel 11), with all boot ite
 `apps/orcsdr-tab5/tools/run-tab5-boot-cycles.py` sends an authenticated `RTL_RESET` (or another trigger),
 then polls Wi-Fi, Hosted link, capture, OrcDial and audio until all are back or a timeout passes. It logs
 the Tab5, the OrcDial and the ESP32-C6 UART side by side. Modes: `p4` (restart the P4 only), `c6pulse`
-and `c6off_reset` (cut the WLAN rail; need a `-C6FaultTest` build), `c6rts` (reset the C6 through the
-downloader's EN line, then the P4) and `dial` (restart only the OrcDial). Random dwell between cycles
+and `c6off_reset` (cut the WLAN rail; need a `-C6FaultTest` build), `c6rts` (reset the P4, then pulse the C6
+EN line through the downloader about 1 s later, while the P4 is still booting) and `dial` (restart only the OrcDial). Random dwell between cycles
 (`--dwell-range`, seeded) varies the phase between the Tab5 and the OrcDial channel sweep.
 
 ## Findings
