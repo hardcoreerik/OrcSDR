@@ -147,9 +147,11 @@ target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)
 # cached by an earlier build can never leak into this one).
 set(ORCSDR_DSP_AB 0 CACHE STRING "1 = Stage-1 old-vs-new DSP A/B harness (test builds only)")
 set(ORCSDR_DSP_STAGE_TIMING 1 CACHE STRING "1 = per-stage DSP timing in RTL_DSP STATS")
+option(ORCSDR_C6_FAULT_TEST "Enable authenticated C6 power interruption diagnostics; never ship" OFF)
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     ORCSDR_HAS_EMBEDDED_C6_FIRMWARE=$<BOOL:${C6_FIRMWARE_BIN}>
     ORCSDR_DSP_AB=$<BOOL:${ORCSDR_DSP_AB}>
+    ORCSDR_C6_FAULT_TEST=$<BOOL:${ORCSDR_C6_FAULT_TEST}>
     ORCSDR_DSP_STAGE_TIMING=$<BOOL:${ORCSDR_DSP_STAGE_TIMING}>
     ORCSDR_DSP_LAB=$<BOOL:${ORCSDR_DSP_LAB}>)
 target_compile_options(${COMPONENT_LIB} PRIVATE

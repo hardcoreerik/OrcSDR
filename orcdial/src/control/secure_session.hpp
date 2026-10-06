@@ -71,9 +71,9 @@ class Session {
     if(status_.state==State::connected) {
       capture_notice_=true;const uint8_t command=1;send_data(&command,1,now);notice=cached_notice_;
     }
-    clear(notice.size!=0);paused_=true;status_.state=State::paused;notice_is_forget_=false;
+    clear(notice.size!=0 || notice_is_forget_);paused_=true;status_.state=State::paused;
     // Retry the already encrypted final notice, retaining no session keys.
-    if(notice.size){cached_notice_=notice;notice_retries_=2;notice_at_=now;}
+    if(notice.size){cached_notice_=notice;notice_retries_=2;notice_at_=now;notice_is_forget_=false;}
   }
   bool forget(uint32_t now) {
     Message notice{};

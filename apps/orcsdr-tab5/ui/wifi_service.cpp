@@ -366,7 +366,7 @@ bool begin_link_recovery() {
 void end_link_recovery() { g_link_recovering.store(false, std::memory_order_release); }
 bool hosted_versions_match() { return g_versions_match; }
 const char* hosted_c6_version() { return g_c6_version; }
-bool hosted_transport_ready() { return g_hosted_transport_ready; }
+bool hosted_transport_ready() { return g_hosted_transport_ready && !link_failed(); }
 const char* hosted_failure_stage() { return g_failure_stage; }
 int32_t hosted_failure_code() { return g_failure_code; }
 C6UpdateStatus c6_update_status() {

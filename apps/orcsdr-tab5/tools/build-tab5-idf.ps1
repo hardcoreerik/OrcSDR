@@ -11,7 +11,9 @@ param(
   # Compile out per-stage DSP timing (profiler observer-effect runs).
   [switch]$NoDspStageTiming,
   # Test build with the Stage-2 frontend benchmark lab (RTL_DSP LAB ...). Never ship.
-  [switch]$DspLab
+  [switch]$DspLab,
+  # Enables authenticated C6-only power fault injection. Never ship.
+  [switch]$C6FaultTest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,7 +44,8 @@ $configureArgs = @('-B', $buildDir, '-D', "SDKCONFIG=$buildDir/sdkconfig",
                    '-D', 'SDKCONFIG_DEFAULTS=sdkconfig.defaults',
                    '-D', "ORCSDR_DSP_AB=$(if ($DspAb) { 1 } else { 0 })",
                    '-D', "ORCSDR_DSP_STAGE_TIMING=$(if ($NoDspStageTiming) { 0 } else { 1 })",
-                   '-D', "ORCSDR_DSP_LAB=$(if ($DspLab) { 1 } else { 0 })")
+                   '-D', "ORCSDR_DSP_LAB=$(if ($DspLab) { 1 } else { 0 })",
+                   '-D', "ORCSDR_C6_FAULT_TEST=$(if ($C6FaultTest) { 1 } else { 0 })")
 if ($resolvedC6Firmware) {
   $configureArgs += @('-D', "C6_FIRMWARE_BIN=$resolvedC6Firmware")
 }

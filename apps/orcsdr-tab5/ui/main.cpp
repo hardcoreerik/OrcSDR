@@ -8540,6 +8540,7 @@ void usb_host_task(void*) {
   }
 }
 
+
 void initialize_rtl_sdr_host() {
   M5.Power.setExtOutput(false, m5::ext_USB);
   delay(100);
@@ -9424,16 +9425,31 @@ void apply_wifi_antenna() {
                 settings_wifi_external_antenna ? "external_mmcx" : "internal");
 }
 
+void log_radio_power_registers(const char* reason) {
+  uint8_t direction = 0, output = 0, input = 0;
+  const bool direction_ok = M5.In_I2C.readRegister(0x44, 0x03, &direction, 1, 400000);
+  const bool output_ok = M5.In_I2C.readRegister(0x44, 0x05, &output, 1, 400000);
+  const bool input_ok = M5.In_I2C.readRegister(0x44, 0x0f, &input, 1, 400000);
+  // These are acknowledged register reads, not measurements of either rail.
+  Serial.printf("RTL_RADIO_POWER reason=%s direction_ok=%d output_ok=%d input_ok=%d direction=0x%02x output=0x%02x input=0x%02x wlan_latch=%d usb_latch=%d\n",
+                reason, direction_ok, output_ok, input_ok, direction, output,
+                input, output_ok ? int(output & 1) : -1,
+                output_ok ? int((output >> 3) & 1) : -1);
+}
+
+
 void prepare_wifi_coprocessor() {
   if (wifi_c6_power_prepared) return;
   // Tab5 IO expander #2 (0x44), P0 is WLAN_PWR_EN.  Cycle the rail once
   // before Hosted init so a timed-out C6 cannot survive a P4 app restart.
-  M5.getIOExpander(1).digitalWrite(0, false);
+  const bool off_ok = M5.In_I2C.bitOff(0x44, 0x05, 1, 400000);
+  log_radio_power_registers("wlan_off");
   delay(100);
-  M5.getIOExpander(1).digitalWrite(0, true);
+  const bool on_ok = M5.In_I2C.bitOn(0x44, 0x05, 1, 400000);
+  log_radio_power_registers("wlan_on");
   delay(200);
   wifi_c6_power_prepared = true;
-  Serial.println("RTL_WIFI_C6_POWER_CYCLE ok");
+  Serial.printf("RTL_WIFI_C6_POWER_CYCLE off_ok=%d on_ok=%d\n", off_ok, on_ok);
 }
 
 void initialize_wifi() {
@@ -9572,6 +9588,9 @@ void start_wifi_inventory() {
 void start_wifi_connection() {
   if (!settings_wifi_power_enabled) return;
   if (!wifi_ssid[0]) return;
+  // Boot preference only decides whether to initiate a connection at startup.
+  // Once a connection is requested, bounded retries belong to that session.
+  wifi_auto_reconnect_armed = true;
   if (!pause_radio_for_io(wifi_connect_radio_paused)) {
     strlcpy(wifi_status_message, "Radio pause failed", sizeof(wifi_status_message));
     Serial.println("RTL_WIFI_CONNECT_ERROR radio_pause_failed");
@@ -9733,7 +9752,7 @@ bool pause_radio_for_catalog() { return pause_radio_for_io(catalog_radio_paused)
 void resume_radio_after_catalog() { resume_radio_after_io(catalog_radio_paused); }
 
 void schedule_wifi_reconnect(const char* why) {
-  if (!settings_wifi_power_enabled || !settings_wifi_start_at_boot || !wifi_profile_count) return;
+  if (!settings_wifi_power_enabled || !wifi_auto_reconnect_armed || !wifi_profile_count) return;
   if (wifi_reconnect_attempts >= std::size(kWifiReconnectBackoffMs)) {
     Serial.printf("RTL_WIFI_RECONNECT_GIVE_UP reason=%s attempts=%u\n", why,
                   static_cast<unsigned>(wifi_reconnect_attempts));
@@ -9790,10 +9809,31 @@ void recover_wifi_link() {
 }
 
 void poll_wifi() {
+  static bool link_failure_handled = false;
   if (!settings_wifi_power_enabled) {
     wifi_scan_requested.store(false, std::memory_order_release);
     wifi_connect_requested.store(false, std::memory_order_release);
     return;
+  }
+  // Detect transport failure even when no station operation is active. Handle
+  // it once before ordinary RPCs; repeated polling must not postpone recovery.
+  if (orcsdr::wifi::link_failed() && !link_failure_handled) {
+    link_failure_handled = true;
+    wifi_station_ready = false;
+    wifi_connected = false;
+    wifi_connecting = false;
+    wifi_scan_running = false;
+    wifi_reconnect_due_ms = 0;
+    Serial.println("RTL_WIFI_LINK_LOST");
+    resume_radio_after_io(wifi_connect_radio_paused);
+    if (wifi_link_recoveries < kWifiLinkRecoveryMax) {
+      strlcpy(wifi_status_message, "Wi-Fi link lost - recovering", sizeof(wifi_status_message));
+      wifi_link_recovery_due_ms = millis() + 2000;
+    } else {
+      strlcpy(wifi_status_message, "Wi-Fi link lost - restart Wi-Fi", sizeof(wifi_status_message));
+    }
+    ++wifi_scan_revision;
+    draw_wifi_state();
   }
   // A link that has stayed up for 5 minutes earns back its recovery budget,
   // so long-running devices keep recovering while a flapping C6 cannot loop.
@@ -9806,11 +9846,13 @@ void poll_wifi() {
     wifi_link_recovery_due_ms = 0;
     recover_wifi_link();
   }
+  if (orcsdr::wifi::link_failed() || wifi_link_recovery_due_ms != 0) return;
+  link_failure_handled = false;
   if (wifi_reconnect_due_ms != 0 &&
       static_cast<int32_t>(millis() - wifi_reconnect_due_ms) >= 0 &&
       !wifi_connecting && !wifi_connected && !wifi_scan_running) {
     wifi_reconnect_due_ms = 0;
-    if (settings_wifi_start_at_boot && wifi_profile_count) {
+    if (wifi_auto_reconnect_armed && wifi_profile_count) {
       if (!wifi_ssid[0]) select_wifi_profile(0);
       wifi_save_after_connect = false;
       wifi_connect_requested.store(true, std::memory_order_release);
@@ -9875,7 +9917,7 @@ void poll_wifi() {
   const bool connected = orcsdr::wifi::connected();
   if (wifi_connecting && connected) {
     wifi_connecting = false;
-    wifi_auto_reconnect_armed = settings_wifi_start_at_boot;
+    wifi_auto_reconnect_armed = true;
     wifi_reconnect_attempts = 0;
     wifi_reconnect_due_ms = 0;
     wifi_connected_since_ms = millis();
@@ -9925,21 +9967,7 @@ void poll_wifi() {
     resume_radio_after_io(wifi_connect_radio_paused);
     state_changed = true;
   }
-  if (orcsdr::wifi::link_failed() && (wifi_connected || wifi_connecting)) {
-    // Reconnecting over a dead Hosted link would only block on RPC timeouts.
-    wifi_connecting = false;
-    wifi_reconnect_due_ms = 0;
-    Serial.println("RTL_WIFI_LINK_LOST");
-    resume_radio_after_io(wifi_connect_radio_paused);
-    if (wifi_link_recoveries < kWifiLinkRecoveryMax) {
-      strlcpy(wifi_status_message, "Wi-Fi link lost - recovering", sizeof(wifi_status_message));
-      wifi_link_recovery_due_ms = millis() + 2000;
-    } else {
-      strlcpy(wifi_status_message, "Wi-Fi link lost - restart Wi-Fi", sizeof(wifi_status_message));
-    }
-    wifi_connected = false;
-    state_changed = true;
-  } else if (connected != wifi_connected) {
+  if (connected != wifi_connected) {
     if (wifi_connected && !connected && !wifi_connecting && wifi_auto_reconnect_armed) {
       strlcpy(wifi_status_message, "Wi-Fi lost - reconnecting", sizeof(wifi_status_message));
       schedule_wifi_reconnect("link_lost");
@@ -14202,8 +14230,21 @@ void orcdial_poll() {
           !memcmp(record,"ODT4",4) && record[74]==1 && record[75]==1;
       nvs_close(handle);orc::secure::wipe(record,sizeof record);
     }store_checked=true;}
-  if(!wifi_station_ready && (boot_trust||action_pending))initialize_wifi();
   if(orcdial_transport_ready&&!orcsdr::wifi::hosted_transport_ready()){orcdial_transport_ready=false;orcdial_secure.enabled(false);(void)eh_host_feat_peer_data_deinit();}
+  static uint32_t radio_retry_ms=0;
+  if(!wifi_station_ready && !orcsdr::wifi::link_failed() && !wifi_link_recovery_due_ms &&
+      (boot_trust||action_pending) &&
+      (!radio_retry_ms || static_cast<int32_t>(millis()-radio_retry_ms)>=0)) {
+    // Accessory-only startup needs the same exclusive I/O window as Settings
+    // scan/connect. With boot Wi-Fi off, SDR URBs can already be live here.
+    radio_retry_ms=millis()+5000;
+    if(!pause_radio_for_io(wifi_c6_probe_radio_paused)) {
+      Serial.println("RTL_ORCDIAL_RADIO_START deferred=radio_pause_failed");
+    } else {
+      initialize_wifi();
+      resume_radio_after_io(wifi_c6_probe_radio_paused);
+    }
+  }
   static uint32_t initialization_retry_ms=0;
   if(!orcdial_secure_started && initialization_retry_ms && static_cast<int32_t>(millis()-initialization_retry_ms)<0)return;
   if(!orcdial_transport_ready&&orcsdr::wifi::hosted_transport_ready()) {
@@ -16783,6 +16824,33 @@ void process_command(char* command) {
     }
     Serial.println(disconnect_wifi() ? "RTL_WIFI_DISCONNECT_OK"
                                      : "RTL_WIFI_DISCONNECT_ERROR radio_pause_failed");
+    return;
+  }
+#if ORCSDR_C6_FAULT_TEST
+  if (strcmp(command, "RTL_WIFI_TEST_C6_POWER OFF CONFIRM") == 0 ||
+      strcmp(command, "RTL_WIFI_TEST_C6_POWER ON CONFIRM") == 0) {
+    if (!authenticated) {
+      Serial.println("RTL_WIFI_TEST_C6_POWER_ERROR auth_required");
+      return;
+    }
+    const bool enable = strcmp(command, "RTL_WIFI_TEST_C6_POWER ON CONFIRM") == 0;
+    // Only WLAN P0 changes. USB power P3 remains untouched. This lab command
+    // deliberately bypasses the normal receiver pause to exercise failure.
+    const bool ok = enable ? M5.In_I2C.bitOn(0x44, 0x05, 1, 400000)
+                           : M5.In_I2C.bitOff(0x44, 0x05, 1, 400000);
+    log_radio_power_registers(enable ? "test_wlan_on" : "test_wlan_off");
+    Serial.printf("RTL_WIFI_TEST_C6_POWER_RESULT enabled=%d write_ok=%d\n", enable, ok);
+    return;
+  }
+#endif
+  if (strcmp(command, "RTL_WIFI_BUS_STATUS") == 0) {
+    log_radio_power_registers("serial_status");
+    // Local reads only: this remains usable when a Hosted RPC cannot reply.
+    Serial.printf("RTL_WIFI_BUS_STATUS wlan_enable=%d wlan_input=%d hosted_ready=%d link_failed=%d capture_state=%u\n",
+                  M5.getIOExpander(1).getWriteValue(0),
+                  M5.getIOExpander(1).digitalRead(0),
+                  orcsdr::wifi::hosted_transport_ready(), orcsdr::wifi::link_failed(),
+                  unsigned(rtl_capture_state.load(std::memory_order_acquire)));
     return;
   }
   if (strcmp(command, "RTL_WIFI_STATUS") == 0) {
