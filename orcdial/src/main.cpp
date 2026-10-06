@@ -3,6 +3,7 @@
 #include <M5Dial.h>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 #include <esp_wifi.h>
 
 // Set to 1 for a labeled local-only display during bench demonstrations.
@@ -20,8 +21,30 @@ static uint32_t last_turn_ms = 0, press_ms = 0, last_draw_ms = 0;
 static uint32_t last_status_ms = 0;
 static int32_t reel_position = 0;
 static bool touch_down = false;
+#ifdef ORCDIAL_DOC_CAPTURE
+static bool documentation_active = false;
+#endif
 static orc::View view = orc::View::home;
 static int selected_index = 0;
+static int device_selection=0;
+static bool forget_confirmation=false;
+static void device_activate() {
+  const auto status=radio_link.security_status();
+  pending_delta=0;
+  if(forget_confirmation) {
+    if(device_selection==1){radio_link.forget();radio_link.start_pairing();}
+    forget_confirmation=false;device_selection=0;return;
+  }
+  if(status.state==orc::secure::State::verify) {
+    if(device_selection==0)radio_link.confirm_pairing(status.code);else radio_link.cancel_pairing();
+  }else if(device_selection==0) {
+    if(radio_link.pairing())radio_link.cancel_pairing();
+    else if(status.state==orc::secure::State::connected)radio_link.disconnect();
+    else if(status.trusted)radio_link.connect();else radio_link.start_pairing();
+  }else if(device_selection==1) {
+    if(status.trusted){forget_confirmation=true;device_selection=0;}else view=orc::View::home;
+  }else if(status.trusted)radio_link.boot_connect(!status.boot_connect);
+}
 static orc::TuneStyle style_for(orc::Dashboard id) {
   switch (id) {
     case orc::Dashboard::fm: case orc::Dashboard::am: return orc::TuneStyle::dial;
@@ -51,6 +74,7 @@ static void preview_band(orc::Dashboard id) {
 
 static void select_dashboard(const orc::RadioState& state, bool online) {
   const auto target = orc::carousel[selected_index];
+  if(target==orc::devices_entry){view=orc::View::connection;device_selection=0;return;}
   if (!online) { local.dashboard = target; preview_band(target); }
   else if (target != state.dashboard && !radio_link.command(orc::Type::set_dashboard, uint8_t(target))) return;
   focus = orc::Focus::vfo;
@@ -77,8 +101,9 @@ static void act(orc::Action action, bool online) {
   using K = orc::ActionKind;
   if (action.kind == K::none) return;
   if (online) {
-    if (!radio_link.command_action(action) && action.kind == K::tune &&
-        !radio_link.pending()) pending_delta += action.value;
+    // Keep detents that arrive while a command is pending; the flush in loop() sends the sum once it is acknowledged.
+    if (!radio_link.command_action(action) && action.kind == K::tune)
+      pending_delta += action.value;
     return;
   }
   switch (action.kind) {
@@ -114,6 +139,46 @@ static void poll_serial_commands() {
     }
     command[length] = '\0';
     if (overflow) Serial.println("ORCDIAL_COMMAND_ERROR too_long");
+    #ifdef ORCDIAL_DOC_CAPTURE
+    else if (!std::strcmp(command, "ORCDIAL_DOC_BOOT")) {
+      documentation_active = true;
+      orc::capture_splash();
+    } else if (!std::strncmp(command,"ORCDIAL_DOC_DEVICE ",19)) {
+      unsigned state,selection;char trailing;
+      if(std::sscanf(command+19,"%u %u %c",&state,&selection,&trailing)!=2 || state>8 || selection>2)Serial.println("ORCDIAL_DOC_ERROR invalid_device_state");
+      else {
+        documentation_active=true;orc::secure::Status status{};
+        status.identity[0]=0xab;status.identity[1]=0xcd;status.identity[14]=0x12;status.identity[15]=0x34;
+        std::memcpy(status.peer_identity,status.identity,16);status.trusted=state>=2 && state!=7;status.boot_connect=true;
+        status.state=state==1?orc::secure::State::searching:state==3?orc::secure::State::connected:state==4?orc::secure::State::paused:state==5?orc::secure::State::verify:state==8?orc::secure::State::failed:orc::secure::State::offline;
+        status.code=123456;status.upgrade=state==7;status.failure=state==8?orc::secure::Failure::timeout:orc::secure::Failure::none;
+        orc::devices_state(status,selection,state==6);
+        orc::draw(local,focus,false,state==1,true,orc::View::connection,local.dashboard,false,false,0,tune_style);orc::capture_frame(false);
+      }
+    } else if (!std::strncmp(command, "ORCDIAL_DOC_SHOW ", 17)) {
+      unsigned v, id, style, f, content, pairing, demo, pending;
+      char trailing;
+      if (std::sscanf(command + 17, "%u %u %u %u %u %u %u %u %c",
+                      &v, &id, &style, &f, &content, &pairing, &demo, &pending, &trailing) != 8 ||
+          v > 3 || !orc::valid_dashboard(id) || style >= unsigned(orc::TuneStyle::count) ||
+          f > unsigned(orc::Focus::volume) || content > 4 || pairing > 1 || demo > 1 || pending > 1) {
+        Serial.println("ORCDIAL_DOC_ERROR invalid_arguments");
+      } else {
+        documentation_active = true;
+        local = orc::RadioState{};
+        local.dashboard = orc::Dashboard(id);
+        preview_band(local.dashboard);
+        local.view = content;
+        orc::draw(local, orc::Focus(f), false, pairing, demo, orc::View(v), local.dashboard,
+                  pending, false, 0, orc::TuneStyle(style));
+        orc::capture_frame(false);
+      }
+    } else if (!std::strcmp(command, "ORCDIAL_DOC_EXIT")) {
+      documentation_active = false;
+      view = orc::View::home;
+      Serial.println("ORCDIAL_DOC_EXIT_DONE");
+    }
+    #endif
     else if (!std::strcmp(command, "ORCDIAL_RESTART")) {
       Serial.println("ORCDIAL_RESTARTING"); Serial.flush(); ESP.restart();
     } else if (!std::strcmp(command, "ORCDIAL_PAIR START")) {
@@ -124,6 +189,14 @@ static void poll_serial_commands() {
         radio_link.start_pairing();
         Serial.println("ORCDIAL_PAIR_SEARCH_STARTED");
       }
+    } else if (!std::strcmp(command,"ORCDIAL_PAIR CANCEL")) {radio_link.cancel_pairing();
+    } else if (!std::strncmp(command,"ORCDIAL_PAIR CONFIRM ",21)) {
+      char* end=nullptr;const long code=std::strtol(command+21,&end,10);
+      if(end!=command+21 && !*end && code>=0 && code<1000000)radio_link.confirm_pairing(uint32_t(code));
+    } else if (!std::strcmp(command,"ORCDIAL_CONNECT")) {radio_link.connect();
+    } else if (!std::strcmp(command,"ORCDIAL_FORGET")) {radio_link.forget();
+    } else if (!std::strcmp(command, "ORCDIAL_DISCONNECT")) {
+      radio_link.disconnect(); pending_delta = 0; view = orc::View::connection;
     } else if (!std::strncmp(command, "ORCDIAL_DASHBOARD ", 18)) {
       char* end = nullptr;
       const long id = std::strtol(command + 18, &end, 10);
@@ -156,7 +229,16 @@ static void poll_serial_commands() {
         else if (!radio_link.command_action(action)) Serial.println("ORCDIAL_CONTROL_ERROR busy");
         else Serial.printf("ORCDIAL_CONTROL_QUEUED action=%u value=%ld seq=%lu\n", unsigned(action.kind), long(action.value), (unsigned long)radio_link.pending_sequence());
       }
+    } else if (!std::strcmp(command, "ORCDIAL_RF")) {
+      radio_link.rf_report();
+    } else if (!std::strcmp(command, "ORCDIAL_RF RESET")) {
+      radio_link.rf_reset(); Serial.println("ORCDIAL_RF_RESET_OK");
+    } else if (!std::strncmp(command, "ORCDIAL_RF TRACE ", 17) && (command[17]=='0'||command[17]=='1'||command[17]=='2') && !command[18]) {
+      radio_link.rf_trace(uint8_t(command[17]-'0')); Serial.println("ORCDIAL_RF_TRACE_OK");
     } else if (!std::strcmp(command, "ORCDIAL_STATUS")) {
+      const auto security=radio_link.security_status();
+      Serial.printf("ORCDIAL_SECURITY trust=%d connection=%s boot=%d failure=%s code=%06lu protocol=4\n",security.trusted,orc::secure::state_name(security.state),security.boot_connect,orc::secure::failure_name(security.failure),(unsigned long)security.code);
+      Serial.printf("ORCDIAL_LINK paused=%d\n", radio_link.paused() ? 1 : 0);
       uint8_t channel = 0;
       wifi_second_chan_t secondary;
       const bool channel_valid = esp_wifi_get_channel(&channel, &secondary) == ESP_OK;
@@ -169,7 +251,7 @@ static void poll_serial_commands() {
                     (unsigned long)radio_link.last_ack(), radio_link.pending() ? 1 : 0,
                     "ESPNOW");
     } else if (!std::strcmp(command, "ORCDIAL_HELP")) {
-      Serial.println("ORCDIAL_STATUS | ORCDIAL_PAIR START | ORCDIAL_FOCUS NEXT | ORCDIAL_ROTATE <-20..20, nonzero>");
+      Serial.println("ORCDIAL_STATUS | ORCDIAL_PAIR START/CANCEL/CONFIRM <code> | ORCDIAL_CONNECT | ORCDIAL_DISCONNECT | ORCDIAL_FORGET | ORCDIAL_FOCUS NEXT | ORCDIAL_ROTATE <-20..20, nonzero>");
     } else if (length) Serial.println("ORCDIAL_COMMAND_ERROR unknown");
     length = 0;
     overflow = false;
@@ -185,6 +267,9 @@ void setup() {
 void loop() {
   M5Dial.update();
   poll_serial_commands();
+#ifdef ORCDIAL_DOC_CAPTURE
+  if (documentation_active) { delay(5); return; }
+#endif
   if (!ORCDIAL_DEMO) radio_link.poll();
   const bool online = !ORCDIAL_DEMO && radio_link.connected();
   const orc::RadioState& state = online ? radio_link.state() : local;
@@ -192,6 +277,7 @@ void loop() {
   static orc::Dashboard last_dashboard = orc::Dashboard::home;
   if (online && state.dashboard != last_dashboard) {
     pending_delta = 0;
+    focus = orc::Focus::vfo;
     tune_style = style_for(state.dashboard);
     if (view != orc::View::carousel && view != orc::View::connection)
       view = state.dashboard == orc::Dashboard::home ? orc::View::home : orc::View::dashboard;
@@ -207,6 +293,10 @@ void loop() {
     if (view == orc::View::home) { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
     if (view == orc::View::carousel) {
       selected_index = (selected_index + movement % orc::carousel_count + orc::carousel_count) % orc::carousel_count;
+    } else if(view==orc::View::connection) {
+      const auto status=radio_link.security_status();
+      const int count=forget_confirmation||status.state==orc::secure::State::verify||!status.trusted?2:3;
+      device_selection=(device_selection+movement%count+count)%count;
     } else if (view == orc::View::dashboard) {
       reel_position += movement;
       const uint32_t now = millis(), elapsed = now - last_turn_ms;
@@ -220,12 +310,12 @@ void loop() {
     const uint32_t duration = millis() - press_ms;
     if (duration >= 4000 && !ORCDIAL_DEMO &&
         (view == orc::View::home || state.dashboard == orc::Dashboard::settings)) {
-      view = orc::View::connection; radio_link.start_pairing();
+      view = orc::View::connection; device_selection=0;
     }
-    else if (duration >= 900) view = orc::View::home;
+    else if (duration >= 900) {if(forget_confirmation){forget_confirmation=false;device_selection=0;}else view=orc::View::home;}
     else if (view == orc::View::home) { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
     else if (view == orc::View::carousel) select_dashboard(state, online);
-    else if (view == orc::View::connection) view = orc::View::home;
+    else if (view == orc::View::connection) device_activate();
     else if (orc::tunable(state.dashboard) || orc::channel_dashboard(state.dashboard))
       focus = orc::next_focus(state.dashboard, focus);
     else act(orc::press(state.dashboard, state.view), online);
@@ -234,8 +324,8 @@ void loop() {
   if (touching && !touch_down) {
     const auto t = M5Dial.Touch.getDetail();
     if (view == orc::View::connection) {
-      if (t.y > 170) view = orc::View::home;
-      else if (t.y >= 76 && !ORCDIAL_DEMO) radio_link.start_pairing();
+      if(t.y>=130 && t.y<212){device_selection=(t.y-132)/27;if(device_selection>2)device_selection=2;device_activate();}
+      else if(t.y>=212){forget_confirmation=false;view=orc::View::home;}
     } else if (view == orc::View::home) {
       if (t.y < 70 && t.x > 150) view = orc::View::connection;
       else { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
@@ -260,14 +350,18 @@ void loop() {
   }
   touch_down = touching;
   if (millis() - last_draw_ms > 75) {
+    orc::devices_state(radio_link.security_status(),device_selection,forget_confirmation);
     orc::draw(state, focus, online, !ORCDIAL_DEMO && radio_link.pairing(),
               ORCDIAL_DEMO, view, orc::carousel[selected_index], pending_delta || radio_link.pending(),
               millis() - last_turn_ms < 700, reel_position, tune_style);
     last_draw_ms = millis();
   }
   if (millis() - last_status_ms >= 5000) {
-    Serial.printf("ORCDIAL_STATUS link=%s freq=%lu\n", online ? "LINKED" : "OFFLINE",
-                  (unsigned long)state.frequency_hz);
+    const auto security = radio_link.security_status();
+    Serial.printf("ORCDIAL_STATUS link=%s freq=%lu sec=%s failure=%s locked=%d ch=%u\n", online ? "LINKED" : "OFFLINE",
+                  (unsigned long)state.frequency_hz, orc::secure::state_name(security.state),
+                  orc::secure::failure_name(security.failure), security.channel_locked ? 1 : 0,
+                  unsigned(radio_link.channel()));
     last_status_ms = millis();
   }
   delay(5);

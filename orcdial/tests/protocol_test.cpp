@@ -16,7 +16,8 @@ int main() {
   assert(decoded.dashboard == uint8_t(orc::Dashboard::weather));
   assert(decoded.action == 7 && decoded.view == 2 && decoded.revision == 49);
   assert(decoded.selected == -2 && decoded.item_count == 17);
-  assert(orc::carousel_count == 16 && orc::carousel_index(orc::Dashboard::weather) == 3);
+  assert(orc::carousel_count == 17 && orc::carousel_index(orc::Dashboard::weather) == 3);
+  assert(!orc::valid_dashboard(uint8_t(orc::devices_entry)));
   assert(!orc::valid_dashboard(11) && !orc::valid_dashboard(17));
   wire[20] ^= 1;
   assert(!orc::decode(wire, sizeof wire, decoded));
@@ -27,4 +28,8 @@ int main() {
   assert(orc::newer_sequence(1, 0xffffffffu));
   assert(orc::clamp_frequency(-1) == 24000);
   assert(orc::clamp_frequency(2000000000) == 1766000000);
+  p.type = orc::Type::semantic_action; p.value = 0;
+  orc::encode(p, wire);
+  assert(orc::decode(wire, sizeof wire, decoded) && decoded.type == orc::Type::semantic_action);
+  assert(!orc::valid_type(uint8_t(orc::Type::semantic_action) + 1));
 }

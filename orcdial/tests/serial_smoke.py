@@ -1,4 +1,4 @@
-"""Exercise the real Dial USB command parser; opens pairing but never tunes."""
+"""Exercise the version-4 Dial USB parser without pairing, tuning or changing trust."""
 import argparse
 import time
 import serial
@@ -24,6 +24,8 @@ with port:
                 return line
         raise AssertionError('No response: ' + expected)
 
+    security = command('ORCDIAL_STATUS', 'ORCDIAL_SECURITY ' )
+    assert 'protocol=4' in security and 'trust=' in security and 'failure=' in security, security
     initial = command('ORCDIAL_STATUS', 'ORCDIAL_STATUS link=')
     if 'link=OFFLINE' in initial:
         command('ORCDIAL_ROTATE 1', 'ORCDIAL_CONTROL_ERROR offline')
@@ -32,7 +34,4 @@ with port:
     command('ORCDIAL_NOT_A_COMMAND', 'ORCDIAL_COMMAND_ERROR unknown')
     command('ORCDIAL_ROTATE 999', 'ORCDIAL_CONTROL_ERROR invalid_delta')
     command('ORCDIAL_ROTATE 1junk', 'ORCDIAL_CONTROL_ERROR invalid_delta')
-    command('ORCDIAL_PAIR START', 'ORCDIAL_PAIR_SEARCH_STARTED')
-    status = command('ORCDIAL_STATUS', 'ORCDIAL_STATUS link=')
-    assert 'pairing=1' in status or 'link=LINKED' in status, status
-print('Dial serial smoke check passed')
+print('Dial version-4 read-only/parser smoke check passed')

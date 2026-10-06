@@ -6,18 +6,17 @@ The Dial shows the Orc badge for five seconds, then OrcSDR Home and a side carou
 
 ## Build
 
-Build the M5Dial with PlatformIO, and optionally the ESP32 receiver stub for bench tests:
+Build the M5Dial with PlatformIO:
 
 ```powershell
-cd F:\AI\OrcSDR-TEMP\m5dial-vfo\orcdial
-& 'C:\Users\hardc\.platformio\penv\Scripts\pio.exe' run -e dial
-& 'C:\Users\hardc\.platformio\penv\Scripts\pio.exe' run -e receiver
+cd orcdial
+pio run -e dial
 ```
 
 Build the standard Tab5 image with its embedded OrcDial-capable C6 image:
 
 ```powershell
-cd F:\AI\OrcSDR-TEMP\m5dial-vfo
+cd <repository root>
 ./apps/orcsdr-tab5/tools/build-tab5-idf.ps1
 ```
 

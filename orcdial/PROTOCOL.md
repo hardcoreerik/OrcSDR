@@ -1,15 +1,20 @@
-# OrcControl v3
+# OrcControl v4 encrypted payload
 
-All integers are little endian. Every ESP-NOW packet is exactly 64 bytes. CRC-32/IEEE covers bytes 0–59, with the result at bytes 60–63. Transport integrity and application CRC reject corruption; neither authenticates the sender. Earlier receivers reject version 3 packets.
+This table describes the 64-byte CONTROL PAYLOAD inside an authenticated
+version-4 session, not a raw ESP-NOW frame. Integers here are little endian.
+CRC-32/IEEE covers bytes 0–59; it detects codec corruption and is not security.
+Raw version-3/ORDL frames are rejected. [Secure pairing](docs/SECURE_PAIRING.md)
+describes the outer fragments, trust exchange and AES-GCM session envelope.
+
 
 | Offset | Bytes | Field |
 |---:|---:|---|
 | 0 | 4 | magic `ORDL` |
-| 4 | 1 | version, currently 3 |
+| 4 | 1 | version, currently 4 |
 | 5 | 1 | message type |
 | 6 | 1 | role: Dial 1, receiver 2 |
 | 7 | 1 | reserved |
-| 8 | 4 | sender boot-session ID (MAC is the paired identity) |
+| 8 | 4 | sender boot-session ID (inside authenticated session) |
 | 12 | 4 | sequence |
 | 16 | 4 | acknowledged sequence |
 | 20 | 4 | signed command value |
@@ -34,4 +39,14 @@ Types: 1 HELLO, 2 PAIR_REQUEST, 3 PAIR_ACK, 4 HEARTBEAT, 5 TUNE_RELATIVE, 6 TUNE
 
 The compact state fields at offsets 43–59 have meanings only within the named dashboard. They are a temporary common envelope; production dashboard-specific payloads and capability bits must be specified alongside the Tab5 bridge before those fields can represent aircraft, nodes, messages, presets, or settings. The stand-alone test receiver supplies no such lists and returns `ERROR` for unsupported selection actions.
 
-The Dial sends one command at a time, retries twice at 650 ms, and marks the link lost after three seconds without receiver traffic. It displays actual received state. Pairing and normal traffic are unencrypted in phase 1. The receiver stub accepts commands only from its saved MAC and only allows replacing that MAC during an explicit pairing window. MAC filtering and CRC are not cryptographic security. Production integration should use ESP-NOW encrypted unicast peers with provisioned keys, or an authenticated pairing exchange, before accepting radio commands.
+The Dial sends one command at a time and retries twice at 650 ms using the
+same application sequence inside fresh encrypted messages. Session liveness
+uses authenticated traffic and a five-second timeout, followed by a bounded
+reconnect attempt. Disconnect retains trust, clears session keys and pauses
+retries for the current boot. A cached encrypted final notice is retried twice
+without retaining keys. Only an explicitly requested, freshly authenticated
+Connect can override a peer's manual stop.
+
+The older receiver stub under `examples` is historical prototype code and is
+not a version-4 secure receiver. Do not use its raw packet handling as integration
+guidance. The production receiver is the OrcSDR Tab5 secure worker/bridge.

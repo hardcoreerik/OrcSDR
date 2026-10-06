@@ -401,7 +401,7 @@ bool begin_c6_update(bool allow_current_for_orcdial) {
       || (allow_current_for_orcdial && status.state == C6UpdateState::current)
 #endif
       ;
-  if (!g_hosted_transport_ready || !status.image_embedded || !eligible)
+  if (!hosted_transport_ready() || !status.image_embedded || !eligible)
     return false;
   set_update_status(C6UpdateState::updating, 0, "starting");
   if (xTaskCreate(c6_update_task, "c6_ota", 4096, nullptr, 4, nullptr) != pdPASS) {

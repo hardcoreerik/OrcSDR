@@ -396,7 +396,7 @@ RTL_CATALOG_INSTALL faa_aircraft
 
 | Command | Authentication | Result | Invalid state / handler |
 |---|---|---|---|
-| `RTL_ORCDIAL_STATUS` | no | `RTL_ORCDIAL_STATUS bridge=<0|1> trust=<0|1> connection=<state> boot=<0|1> failure=<reason> protocol=4` | Read-only. During verification, an authenticated session additionally receives `RTL_ORCDIAL_PAIR_CODE <six digits>`. Secrets are never printed. |
+| `RTL_ORCDIAL_STATUS` | no | `RTL_ORCDIAL_STATUS bridge=<0\|1> trust=<0\|1> connection=<state> boot=<0\|1> failure=<reason> protocol=4` | Read-only. During verification, an authenticated session additionally receives `RTL_ORCDIAL_PAIR_CODE <six digits>`. Secrets are never printed. |
 | `RTL_ORCDIAL_PROBE` | no | Same as STATUS | Read-only alias; does not discover or pair. |
 | `RTL_ORCDIAL_PAIR START` | yes | Queues a local 60-second pairing window | Both devices must enter Pair and approve the matching code. Existing trust must be forgotten first. |
 | `RTL_ORCDIAL_PAIR CANCEL` | yes | Queues pairing cancellation | Does not delete established trust. |

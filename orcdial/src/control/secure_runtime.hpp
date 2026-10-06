@@ -129,7 +129,7 @@ class Runtime {
     RetryScheduler retry;
     if(initial_.trusted && initial_.boot_connect){session.connect(false,now());retry.intent(true);}
     wipe(&initial_,sizeof initial_);
-    Reassembly assembly;uint8_t assembly_mac[6]{};uint32_t scan_at=0,dwell=ChannelPlanner::kSweepDwellMs;State previous=State::offline;
+    Reassembly assembly;uint8_t assembly_mac[6]{};uint32_t scan_at=0,dwell=ChannelPlanner::kSweepDwellMs;State previous=State::offline;bool was_trusted=session.status().trusted;
     ChannelPlanner planner;LockJudge lock;
     for(;;) {
       const uint32_t time=now();Event e{};
@@ -155,6 +155,8 @@ class Runtime {
       }
       if(enabled_.load(std::memory_order_relaxed))session.tick(time);
       const Status current=session.status();
+      if(current.trusted && !was_trusted)retry.intent(true); // pairing just completed: its first connect may also time out
+      was_trusted=current.trusted;
       if(current.state!=previous && current.state!=State::connected){generation_.fetch_add(1,std::memory_order_release);xQueueReset(output_);}
       previous=current.state;
       portENTER_CRITICAL(&lock_);status_=current;portEXIT_CRITICAL(&lock_);
