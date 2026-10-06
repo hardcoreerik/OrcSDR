@@ -1,0 +1,35 @@
+diff --git a/managed_components/espressif__esp_hosted/host/mcu/eh_host_mcu_transport/src/eh_host_bus_sdio.c b/managed_components/espressif__esp_hosted/host/mcu/eh_host_mcu_transport/src/eh_host_bus_sdio.c
+--- a/managed_components/espressif__esp_hosted/host/mcu/eh_host_mcu_transport/src/eh_host_bus_sdio.c
++++ b/managed_components/espressif__esp_hosted/host/mcu/eh_host_mcu_transport/src/eh_host_bus_sdio.c
+@@ -41,6 +41,7 @@
+ 
+ #include "esp_err.h"
+ #include "esp_log.h"
++#include "esp_timer.h"
+ 
+ #include "eh_host_port_err.h"
+ #include "eh_host_port_dma.h"
+@@ -867,8 +868,11 @@
+ 		 * (full-duplex). Holding it across the whole ms bound would freeze RX.
+ 		 * fg polls every 10-20us inside the bound; the non-blocking probe keeps
+ 		 * each step ~20us (the blocking variant nests a 400us→30ms backoff). */
+-		for (uint32_t waited_us = 0; waited_us <= (uint32_t)wait_ms * 1000u;
+-		     waited_us += 20u) {
++		/* ORCSDR-TAB5: include probe/logging time in the deadline. A single
++		 * synchronous probe cannot be interrupted here, but no further probes
++		 * run after expiry or the existing dead-link threshold. */
++		const int64_t credit_wait_started_us = esp_timer_get_time();
++		for (;;) {
+ 			SDIO_DRV_LOCK();
+ 			int r = sdio_tx_credit_ready(buf_needed);
+ 			SDIO_DRV_UNLOCK();
+@@ -876,6 +880,9 @@
+ 				got = BUFFER_AVAILABLE;
+ 				break;
+ 			}
++			if (sdio_tx_unresponsive_streak >= 32 ||
++			    esp_timer_get_time() - credit_wait_started_us >= (int64_t)wait_ms * 1000)
++				break;
+ 			eh_host_port_task_delay_us(20);
+ 		}
+ 		if (got != BUFFER_AVAILABLE) {

@@ -17,31 +17,50 @@ function Get-Sha256([string]$Path) {
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $lock = Get-Content (Join-Path $PSScriptRoot 'hosted-c6-release.json') -Raw | ConvertFrom-Json
+$project = Join-Path $repo $lock.source_project
+$localSources = @('CMakeLists.txt', 'main\CMakeLists.txt', 'main\main.c',
+                  'sdkconfig.defaults', 'partitions_eh_cp_ota_4m.csv')
+$localHashes = ($localSources | ForEach-Object {
+  "$_=$((Get-Sha256 (Join-Path $project $_)))"
+}) -join "`n"
+$localSha = [Security.Cryptography.SHA256]::Create()
+try {
+  $localSourceSha256 = [BitConverter]::ToString(
+    $localSha.ComputeHash([Text.Encoding]::UTF8.GetBytes($localHashes))).Replace('-', '').ToLowerInvariant()
+} finally { $localSha.Dispose() }
 if (-not (Test-Path (Join-Path $IdfPath 'export.ps1'))) { throw "ESP-IDF 5.5.4 is required at $IdfPath." }
 
 if (-not (Test-Path (Join-Path $SourceDirectory '.git'))) {
   git clone $lock.source_repository $SourceDirectory
   if ($LASTEXITCODE) { throw 'Could not clone the pinned Espressif ESP-Hosted source.' }
 }
-git -C $SourceDirectory fetch origin $lock.source_revision
-if ($LASTEXITCODE) { throw 'Could not fetch the pinned ESP-Hosted revision.' }
-git -C $SourceDirectory checkout --detach $lock.source_revision
-if ($LASTEXITCODE) { throw 'Could not check out the pinned ESP-Hosted revision.' }
+if ((git -C $SourceDirectory status --porcelain --untracked-files=no) -ne $null) {
+  throw 'Pinned ESP-Hosted source has tracked changes; refusing to overwrite them.'
+}
+if ((git -C $SourceDirectory rev-parse HEAD).Trim() -ne $lock.source_revision) {
+  git -C $SourceDirectory fetch origin $lock.source_revision
+  if ($LASTEXITCODE) { throw 'Could not fetch the pinned ESP-Hosted revision.' }
+  git -C $SourceDirectory checkout --detach $lock.source_revision
+  if ($LASTEXITCODE) { throw 'Could not check out the pinned ESP-Hosted revision.' }
+}
 if ((git -C $SourceDirectory rev-parse HEAD).Trim() -ne $lock.source_revision) { throw 'ESP-Hosted revision mismatch.' }
 git -C $SourceDirectory submodule update --init --recursive
 if ($LASTEXITCODE) { throw 'Could not initialize the pinned ESP-Hosted submodules.' }
 
-$project = Join-Path $SourceDirectory $lock.source_project
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
-$build = 'build-orcsdr-tab5-c6'
+$build = 'build'
 $componentRoot = Join-Path $SourceDirectory '.orcsdr-components'
 $componentLink = Join-Path $componentRoot 'esp_hosted'
 if (Test-Path $componentLink) {
-  if (-not ((Get-Item -LiteralPath $componentLink).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Refusing to remove non-link component path: $componentLink" }
-  [IO.Directory]::Delete($componentLink)
+  $item = Get-Item -LiteralPath $componentLink
+  if (-not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+      [IO.Path]::GetFullPath($item.Target) -ne [IO.Path]::GetFullPath($SourceDirectory)) {
+    throw "Refusing to replace component path: $componentLink"
+  }
+} else {
+  New-Item -ItemType Directory -Force -Path $componentRoot | Out-Null
+  New-Item -ItemType Junction -Path $componentLink -Target $SourceDirectory | Out-Null
 }
-New-Item -ItemType Directory -Force -Path $componentRoot | Out-Null
-New-Item -ItemType Junction -Path $componentLink -Target $SourceDirectory | Out-Null
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
 $env:IDF_PYTHON_ENV_PATH = 'C:\Espressif\python_env\idf5.5_py3.14_env'
@@ -53,7 +72,7 @@ try {
   if ($LASTEXITCODE) { throw 'ESP-Hosted C6 target configuration failed.' }
   idf.py -B $build -D "EXTRA_COMPONENT_DIRS=$componentRoot" build
   if ($LASTEXITCODE) { throw 'ESP-Hosted C6 build failed.' }
-  $sourceImage = Join-Path $project "$build\eh_cp_wifi_scan.bin"
+  $sourceImage = Join-Path $project "$build\orcdial_hosted_c6.bin"
   if (-not (Test-Path $sourceImage)) { throw "Missing C6 application image: $sourceImage" }
   New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
   $image = Join-Path $OutputDirectory $lock.output_name
@@ -66,6 +85,7 @@ $hash = Get-Sha256 $image
   source_repository = $lock.source_repository
   source_revision = $lock.source_revision
   source_project = $lock.source_project
+  local_source_sha256 = $localSourceSha256
   target = $lock.target
   transport = $lock.transport
   board_configuration = 'M5Stack Tab5 internal ESP32-C6; P4 host uses ESP32P4_TAB5_C6_BOARD and qualified 4-bit SDIO at 10 MHz'

@@ -1,0 +1,9 @@
+.pio/
+tests/*.obj
+tests/*.exe
+c6/build/
+c6/build-orcsdr-tab5-c6/
+c6/sdkconfig
+c6/sdkconfig.old
+c6/managed_components/
+c6/dependencies.lock

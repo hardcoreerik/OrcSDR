@@ -392,6 +392,24 @@ RTL_CATALOG_INSTALL faa_aircraft
 
 ## Dashboard control
 
+### OrcDial bridge
+
+| Command | Authentication | Result | Invalid state / handler |
+|---|---|---|---|
+| `RTL_ORCDIAL_STATUS` | no | `RTL_ORCDIAL_STATUS bridge=<0\|1> trust=<0\|1> connection=<state> boot=<0\|1> failure=<reason> protocol=4` | Read-only. During verification, an authenticated session additionally receives `RTL_ORCDIAL_PAIR_CODE <six digits>`. Secrets are never printed. |
+| `RTL_ORCDIAL_PROBE` | no | Same as STATUS | Read-only alias; does not discover or pair. |
+| `RTL_ORCDIAL_PAIR START` | yes | Queues a local 60-second pairing window | Both devices must enter Pair and approve the matching code. Existing trust must be forgotten first. |
+| `RTL_ORCDIAL_PAIR CANCEL` | yes | Queues pairing cancellation | Does not delete established trust. |
+| `RTL_ORCDIAL_PAIR CONFIRM <six-digit-code>` | yes | Queues local numeric-comparison approval | Only the active matching code is accepted. Mutual approval and key confirmation are required. |
+| `RTL_ORCDIAL_CONNECT` | yes | Queues authenticated session establishment | Requires stored version-4 trust; never opens pairing. |
+| `RTL_ORCDIAL_DISCONNECT` | yes | Queues an authenticated disconnect | Preserves trust and suppresses automatic retries for this boot. |
+| `RTL_ORCDIAL_FORGET` | yes | Queues local trust deletion | Works without the peer. A storage error blocks control and must be retried; old trust can return after restart if deletion could not be committed. |
+| `RTL_ORCDIAL_C6_UPDATE CONFIRM` | yes | `RTL_ORCDIAL_C6_UPDATE_QUEUED` | Existing explicit C6 recovery/update operation; not part of version-4 pairing. |
+
+State-changing commands require the existing serial `PAIR`/`AUTH` session. Without it they report `RTL_ORCDIAL_ERROR auth_required`; the C6 update retains its existing command-specific error. Commands are asynchronous: inspect STATUS for completion, timeout, or storage failure. A full action queue reports `RTL_ORCDIAL_ERROR action_queue_full`.
+
+Settings / **Accessories & Companion** separates Pair, Connect, Disconnect, Forget & Re-pair, and boot connection. Version-4 ESP-NOW frames are relayed opaquely by the existing C6. The P4 verifies pairing, fresh session challenges, authenticated encryption, and replay counters before applying controls. MAC-only legacy records cannot authorize version-4 controls. Hardware acceptance remains pending.
+
 `RTL_UI` gives a serial agent the same semantic action handlers used by the
 FM, P25, LoRa, and Settings touch views. It is authenticated because every
 action can change device state. Credentials continue to use signed `SET_WIFI`;
@@ -445,6 +463,12 @@ LoRa Overview uses the unsmoothed value for faster visual response.
 - `P25`: `TUNE`, `PREV`, `NEXT`, `SURVEY`, `HOLD`, `HOLD_TG <id>`, `SKIP`,
   `FOLLOW`, `ENCRYPT_SKIP`, `RELOAD`, `SPAN_DOWN`, `SPAN_UP`, `SOUND`,
   `VOL_DOWN`, `VOL_UP`, `SETTINGS`, `HOME`.
+- `CB`: `PREV`, `NEXT`, `SCAN`, `HOLD`, `SKIP`, `MODE`. Requires authentication
+  and the CB dashboard to be active; otherwise returns
+  `RTL_UI_ACTION_ERROR auth_required` or
+  `RTL_UI_ACTION_INVALID cb_dashboard_inactive`. Successful commands return
+  `RTL_UI_ACTION_OK` after invoking the same `cb::ActionKind` handler as touch.
+  `RTL_CB STATUS` reports the resulting channel and scanner state.
 - `LORA`: `VIEW <0-5>`, `NODE <index>`, `DETAILS`, `FAVORITE`, `FILTER`, `SCAN`, `IQ`,
   `LOG`, `CLEAR`, `EXPORT`, `FOLLOW`, `CHANNELS`, `SETTINGS`, `HOME`.
 - `SETTINGS`: `WIFI_POWER <0|1>`, `WIFI_BOOT <0|1>`, `ANTENNA <0|1>`, `SCAN`,
@@ -491,6 +515,7 @@ cannot forge serial records. Passwords are never returned.
 | Command | Auth | Reply / behavior |
 |---|---|---|
 | `RTL_WIFI_STATUS` | no | Station/Hosted state, scan/connect state, profile/AP counts, power, auto-connect, and antenna. |
+| `RTL_WIFI_CHANNEL` | no | Actual C6 primary/secondary channel, connection state, associated SSID as hex, and AP primary channel. Returns `RTL_WIFI_CHANNEL_ERROR` if the channel query fails. |
 | `RTL_WIFI_SCAN` | no | Queues one scan; wait for `RTL_WIFI_SCAN_RESULTS count=N` and `RTL_WIFI_COEX event=scan_complete`. |
 | `RTL_WIFI_RESULTS` | no | Bounded `RTL_WIFI_AP` rows with `ssid_hex`, BSSID, RSSI, channel, and security flag. |
 | `RTL_WIFI_PROFILES` | no | Priority-ordered SSID-only profile list; never returns passwords. |

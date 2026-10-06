@@ -9,6 +9,10 @@
 #include <esp_attr.h>
 #include <esp_app_desc.h>
 #include <esp_system.h>
+#include <esp_wifi.h>
+#if ORCSDR_ORCDIAL
+#include <esp_random.h>
+#endif
 #include <esp_chip_info.h>
 #include <esp_flash.h>
 #include <esp_psram.h>
@@ -21,6 +25,9 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
+#if ORCSDR_ORCDIAL
+#include <eh_host_feat_peer_data.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -104,6 +111,11 @@
 #include "rf24_dashboard.hpp"
 #include "wifi_service.hpp"
 #include "esp_rtl_sdr.h"
+#if ORCSDR_ORCDIAL
+#include "../../../orcdial/src/control/protocol.hpp"
+#include "../../../orcdial/src/control/secure_runtime.hpp"
+#include "../../../orcdial/src/controller.hpp"
+#endif
 
 #if ESP_RTL_SDR_VERSION_NUMBER < 800
 #error "OrcSDR requires esp_rtl_sdr v0.8.0-rc2 or newer"
@@ -1643,6 +1655,15 @@ EXT_RAM_BSS_ATTR uint8_t g_sd_put_chunk[kSdPutChunkBytes];
 bool wifi_station_ready = false;
 bool wifi_hosted_versions_match = false;
 bool wifi_hosted_update_required = false;
+#if ORCSDR_ORCDIAL
+bool orcdial_transport_ready = false;
+bool orcdial_has_peer = false;
+uint32_t orcdial_pair_until = 0;
+orc::secure::Runtime orcdial_secure;
+bool orcdial_secure_started=false;
+struct OrcDialAction {orc::secure::Action kind;uint32_t value;};
+QueueHandle_t orcdial_pending_actions=nullptr;
+#endif
 bool wifi_c6_power_prepared = false;
 bool wifi_scan_running = false;
 std::atomic<bool> wifi_scan_requested{false};
@@ -2469,6 +2490,10 @@ UiTouchDetail ui_touch_detail(int index);
 uint8_t ui_touch_count();
 orcsdr::lora::Snapshot lora_dashboard_snapshot();
 void handle_lora_dashboard_action(const orcsdr::lora::Action& action);
+#if ORCSDR_ORCDIAL
+void orcdial_poll();
+void orcdial_action(orc::secure::Action action,uint32_t value=0);
+#endif
 void service_shared_scan(uint32_t now);
 void service_audio_auto_gain(uint32_t now);
 void service_p25_entry_probe(uint32_t now);
@@ -8515,6 +8540,7 @@ void usb_host_task(void*) {
   }
 }
 
+
 void initialize_rtl_sdr_host() {
   M5.Power.setExtOutput(false, m5::ext_USB);
   delay(100);
@@ -9399,16 +9425,31 @@ void apply_wifi_antenna() {
                 settings_wifi_external_antenna ? "external_mmcx" : "internal");
 }
 
+void log_radio_power_registers(const char* reason) {
+  uint8_t direction = 0, output = 0, input = 0;
+  const bool direction_ok = M5.In_I2C.readRegister(0x44, 0x03, &direction, 1, 400000);
+  const bool output_ok = M5.In_I2C.readRegister(0x44, 0x05, &output, 1, 400000);
+  const bool input_ok = M5.In_I2C.readRegister(0x44, 0x0f, &input, 1, 400000);
+  // These are acknowledged register reads, not measurements of either rail.
+  Serial.printf("RTL_RADIO_POWER reason=%s direction_ok=%d output_ok=%d input_ok=%d direction=0x%02x output=0x%02x input=0x%02x wlan_latch=%d usb_latch=%d\n",
+                reason, direction_ok, output_ok, input_ok, direction, output,
+                input, output_ok ? int(output & 1) : -1,
+                output_ok ? int((output >> 3) & 1) : -1);
+}
+
+
 void prepare_wifi_coprocessor() {
   if (wifi_c6_power_prepared) return;
   // Tab5 IO expander #2 (0x44), P0 is WLAN_PWR_EN.  Cycle the rail once
   // before Hosted init so a timed-out C6 cannot survive a P4 app restart.
-  M5.getIOExpander(1).digitalWrite(0, false);
+  const bool off_ok = M5.In_I2C.bitOff(0x44, 0x05, 1, 400000);
+  log_radio_power_registers("wlan_off");
   delay(100);
-  M5.getIOExpander(1).digitalWrite(0, true);
+  const bool on_ok = M5.In_I2C.bitOn(0x44, 0x05, 1, 400000);
+  log_radio_power_registers("wlan_on");
   delay(200);
   wifi_c6_power_prepared = true;
-  Serial.println("RTL_WIFI_C6_POWER_CYCLE ok");
+  Serial.printf("RTL_WIFI_C6_POWER_CYCLE off_ok=%d on_ok=%d\n", off_ok, on_ok);
 }
 
 void initialize_wifi() {
@@ -9434,7 +9475,10 @@ void initialize_wifi() {
     strlcpy(wifi_hosted_c6_version, orcsdr::wifi::hosted_c6_version(),
             sizeof(wifi_hosted_c6_version));
     strlcpy(wifi_status_message, "ESP-Hosted C6 unavailable", sizeof(wifi_status_message));
-    Serial.println("RTL_WIFI_BLOCKED hosted_init_or_version");
+    Serial.printf("RTL_WIFI_BLOCKED hosted_init_or_version stage=%s code=0x%x\n",
+                  orcsdr::wifi::hosted_failure_stage(),
+                  static_cast<unsigned>(orcsdr::wifi::hosted_failure_code()));
+    orcsdr::wifi::note_start_failure();
   } else {
     wifi_hosted_update_required = false;
     strlcpy(wifi_hosted_c6_version, orcsdr::wifi::hosted_c6_version(),
@@ -9547,6 +9591,9 @@ void start_wifi_inventory() {
 void start_wifi_connection() {
   if (!settings_wifi_power_enabled) return;
   if (!wifi_ssid[0]) return;
+  // Boot preference only decides whether to initiate a connection at startup.
+  // Once a connection is requested, bounded retries belong to that session.
+  wifi_auto_reconnect_armed = true;
   if (!pause_radio_for_io(wifi_connect_radio_paused)) {
     strlcpy(wifi_status_message, "Radio pause failed", sizeof(wifi_status_message));
     Serial.println("RTL_WIFI_CONNECT_ERROR radio_pause_failed");
@@ -9588,6 +9635,18 @@ void stop_wifi() {
   wifi_auto_reconnect_armed = false;
   wifi_reconnect_due_ms = 0;
   wifi_link_recovery_due_ms = 0;
+#if ORCSDR_ORCDIAL
+  // A paired accessory still needs the C6 radio even when network Wi-Fi is off.
+  if (orcdial_has_peer || static_cast<int32_t>(orcdial_pair_until - millis()) > 0) {
+    if (wifi_connected) orcsdr::wifi::disconnect();
+    wifi_connected = false;
+    wifi_connecting = false;
+    wifi_scan_running = false;
+    strlcpy(wifi_status_message, "Wi-Fi network off; OrcDial available", sizeof(wifi_status_message));
+    Serial.println("RTL_WIFI_NETWORK_OFF ORCDIAL_RADIO_ON");
+    return;
+  }
+#endif
   if (!pause_radio_for_io(wifi_poweroff_radio_paused)) {
     strlcpy(wifi_status_message, "Radio pause failed", sizeof(wifi_status_message));
     Serial.println("RTL_WIFI_OFF_ERROR radio_pause_failed");
@@ -9696,7 +9755,7 @@ bool pause_radio_for_catalog() { return pause_radio_for_io(catalog_radio_paused)
 void resume_radio_after_catalog() { resume_radio_after_io(catalog_radio_paused); }
 
 void schedule_wifi_reconnect(const char* why) {
-  if (!settings_wifi_power_enabled || !settings_wifi_start_at_boot || !wifi_profile_count) return;
+  if (!settings_wifi_power_enabled || !wifi_auto_reconnect_armed || !wifi_profile_count) return;
   if (wifi_reconnect_attempts >= std::size(kWifiReconnectBackoffMs)) {
     Serial.printf("RTL_WIFI_RECONNECT_GIVE_UP reason=%s attempts=%u\n", why,
                   static_cast<unsigned>(wifi_reconnect_attempts));
@@ -9753,10 +9812,31 @@ void recover_wifi_link() {
 }
 
 void poll_wifi() {
+  static bool link_failure_handled = false;
   if (!settings_wifi_power_enabled) {
     wifi_scan_requested.store(false, std::memory_order_release);
     wifi_connect_requested.store(false, std::memory_order_release);
     return;
+  }
+  // Detect transport failure even when no station operation is active. Handle
+  // it once before ordinary RPCs; repeated polling must not postpone recovery.
+  if (orcsdr::wifi::link_failed() && !link_failure_handled) {
+    link_failure_handled = true;
+    wifi_station_ready = false;
+    wifi_connected = false;
+    wifi_connecting = false;
+    wifi_scan_running = false;
+    wifi_reconnect_due_ms = 0;
+    Serial.println("RTL_WIFI_LINK_LOST");
+    resume_radio_after_io(wifi_connect_radio_paused);
+    if (wifi_link_recoveries < kWifiLinkRecoveryMax) {
+      strlcpy(wifi_status_message, "Wi-Fi link lost - recovering", sizeof(wifi_status_message));
+      wifi_link_recovery_due_ms = millis() + 2000;
+    } else {
+      strlcpy(wifi_status_message, "Wi-Fi link lost - restart Wi-Fi", sizeof(wifi_status_message));
+    }
+    ++wifi_scan_revision;
+    draw_wifi_state();
   }
   // A link that has stayed up for 5 minutes earns back its recovery budget,
   // so long-running devices keep recovering while a flapping C6 cannot loop.
@@ -9769,11 +9849,13 @@ void poll_wifi() {
     wifi_link_recovery_due_ms = 0;
     recover_wifi_link();
   }
+  if (orcsdr::wifi::link_failed() || wifi_link_recovery_due_ms != 0) return;
+  link_failure_handled = false;
   if (wifi_reconnect_due_ms != 0 &&
       static_cast<int32_t>(millis() - wifi_reconnect_due_ms) >= 0 &&
       !wifi_connecting && !wifi_connected && !wifi_scan_running) {
     wifi_reconnect_due_ms = 0;
-    if (settings_wifi_start_at_boot && wifi_profile_count) {
+    if (wifi_auto_reconnect_armed && wifi_profile_count) {
       if (!wifi_ssid[0]) select_wifi_profile(0);
       wifi_save_after_connect = false;
       wifi_connect_requested.store(true, std::memory_order_release);
@@ -9838,7 +9920,7 @@ void poll_wifi() {
   const bool connected = orcsdr::wifi::connected();
   if (wifi_connecting && connected) {
     wifi_connecting = false;
-    wifi_auto_reconnect_armed = settings_wifi_start_at_boot;
+    wifi_auto_reconnect_armed = true;
     wifi_reconnect_attempts = 0;
     wifi_reconnect_due_ms = 0;
     wifi_connected_since_ms = millis();
@@ -9888,21 +9970,7 @@ void poll_wifi() {
     resume_radio_after_io(wifi_connect_radio_paused);
     state_changed = true;
   }
-  if (orcsdr::wifi::link_failed() && (wifi_connected || wifi_connecting)) {
-    // Reconnecting over a dead Hosted link would only block on RPC timeouts.
-    wifi_connecting = false;
-    wifi_reconnect_due_ms = 0;
-    Serial.println("RTL_WIFI_LINK_LOST");
-    resume_radio_after_io(wifi_connect_radio_paused);
-    if (wifi_link_recoveries < kWifiLinkRecoveryMax) {
-      strlcpy(wifi_status_message, "Wi-Fi link lost - recovering", sizeof(wifi_status_message));
-      wifi_link_recovery_due_ms = millis() + 2000;
-    } else {
-      strlcpy(wifi_status_message, "Wi-Fi link lost - restart Wi-Fi", sizeof(wifi_status_message));
-    }
-    wifi_connected = false;
-    state_changed = true;
-  } else if (connected != wifi_connected) {
+  if (connected != wifi_connected) {
     if (wifi_connected && !connected && !wifi_connecting && wifi_auto_reconnect_armed) {
       strlcpy(wifi_status_message, "Wi-Fi lost - reconnecting", sizeof(wifi_status_message));
       schedule_wifi_reconnect("link_lost");
@@ -10040,11 +10108,12 @@ void handle_fm_dashboard_action(const orcsdr::fm::Action& action) {
       fm_preset_offer(rtl_ui_frequency_hz, rtl_signal_dbfs_smooth);
       persist_fm_presets();
       break;
-    case ActionKind::step_cycle: {
+    case ActionKind::step_cycle:
+    case ActionKind::step_cycle_previous: {
       static constexpr uint32_t steps[] = {50000, 100000, 200000, 500000, 1000000};
       size_t i = 0;
       while (i < std::size(steps) && steps[i] != rtl_fm_step_hz) ++i;
-      rtl_fm_step_hz = steps[(i + 1) % std::size(steps)];
+      rtl_fm_step_hz = steps[(i + (action.kind == ActionKind::step_cycle_previous ? std::size(steps) - 1 : 1)) % std::size(steps)];
       break;
     }
     case ActionKind::filter_down:
@@ -11954,6 +12023,19 @@ const orcsdr::settings::State& global_settings_state() {
   strlcpy(state.wifi_message, wifi_status_message, sizeof(state.wifi_message));
   state.wifi_hosted_update_required = wifi_hosted_update_required;
   state.wifi_hosted_transport_ready = orcsdr::wifi::hosted_transport_ready();
+#if ORCSDR_ORCDIAL
+  state.orcdial_bridge_ready = orcdial_transport_ready;
+  const auto accessory=orcdial_secure.status();
+  state.orcdial_paired=accessory.trusted;
+  state.orcdial_pairing=accessory.state==orc::secure::State::searching || accessory.state==orc::secure::State::exchanging;
+  state.orcdial_verifying=accessory.state==orc::secure::State::verify;
+  state.orcdial_connected=accessory.state==orc::secure::State::connected;
+  state.orcdial_boot_connect=accessory.boot_connect;state.orcdial_upgrade=accessory.upgrade;
+  state.orcdial_code=accessory.code;
+  snprintf(state.orcdial_identity,sizeof state.orcdial_identity,"%02X%02X-%02X%02X",accessory.peer_identity[0],accessory.peer_identity[1],accessory.peer_identity[14],accessory.peer_identity[15]);
+  strlcpy(state.orcdial_connection,orc::secure::state_name(accessory.state),sizeof state.orcdial_connection);
+  strlcpy(state.orcdial_failure,orc::secure::failure_name(accessory.failure),sizeof state.orcdial_failure);
+#endif
   state.wifi_c6_image_embedded = c6_update.image_embedded;
   state.wifi_c6_update_percent = c6_update.progress_percent;
   strlcpy(state.wifi_hosted_host_version, wifi_hosted_host_version,
@@ -12655,6 +12737,22 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
         strlcpy(wifi_status_message, "C6 update is not ready", sizeof(wifi_status_message));
       update_global_settings();
       break;
+#if ORCSDR_ORCDIAL
+    case orcsdr::settings::ActionKind::orcdial_c6_update:
+      if (orcsdr::wifi::begin_c6_update(true))
+        strlcpy(wifi_status_message, "Installing OrcDial wireless support", sizeof(wifi_status_message));
+      else
+        strlcpy(wifi_status_message, "OrcDial C6 update is not ready", sizeof(wifi_status_message));
+      update_global_settings();
+      break;
+    case orcsdr::settings::ActionKind::orcdial_pair: orcdial_action(orc::secure::Action::pair);break;
+    case orcsdr::settings::ActionKind::orcdial_cancel: orcdial_action(orc::secure::Action::cancel);break;
+    case orcsdr::settings::ActionKind::orcdial_confirm: orcdial_action(orc::secure::Action::confirm,uint32_t(action.value));break;
+    case orcsdr::settings::ActionKind::orcdial_connect: orcdial_action(orc::secure::Action::connect);break;
+    case orcsdr::settings::ActionKind::orcdial_disconnect: orcdial_action(orc::secure::Action::disconnect);break;
+    case orcsdr::settings::ActionKind::orcdial_forget: orcdial_action(action.value?orc::secure::Action::forget_repair:orc::secure::Action::forget);break;
+    case orcsdr::settings::ActionKind::orcdial_boot: orcdial_action(orc::secure::Action::boot,uint32_t(action.value));break;
+#endif
     case orcsdr::settings::ActionKind::wifi_antenna_changed:
       settings_wifi_external_antenna = action.value != 0;
       preferences.putBool("set_wifi_ext_ant", settings_wifi_external_antenna);
@@ -13938,6 +14036,266 @@ bool request_hot_retune(uint32_t frequency_hz) {
   const auto session = radio_session.snapshot();
   return request_hot_retune_for({session.owner, session.generation}, frequency_hz);
 }
+
+// The C6 only relays bytes. Pairing, packet validation, and dashboard authority
+// live on the P4, on the same loop that owns the existing dashboard handlers.
+#if ORCSDR_ORCDIAL
+constexpr uint32_t kOrcDialToC6 = 0x4f444c01u;
+constexpr uint32_t kOrcDialFromC6 = 0x4f444c02u;
+struct OrcDialFrame { uint8_t mac[6]; uint8_t wire[orc::packet_size]; };
+QueueHandle_t orcdial_inbox = nullptr;
+QueueHandle_t orcdial_outbox = nullptr;
+TaskHandle_t orcdial_tx_task = nullptr;
+uint8_t orcdial_peer[6]{};
+uint32_t orcdial_sender = 0;
+uint32_t orcdial_tx_sequence = 1;
+std::atomic<esp_err_t> orcdial_last_tx_result{ESP_ERR_INVALID_STATE};
+uint32_t orcdial_rx_sender = 0;
+uint32_t orcdial_rx_sequence = 0;
+uint32_t orcdial_last_state_ms = 0;
+uint32_t orcdial_last_peer_rx_ms = 0;
+uint32_t orcdial_revision = 0;
+const uint8_t orcdial_broadcast[6] = {255,255,255,255,255,255};
+
+void orcdial_receive(uint32_t, const uint8_t* data, size_t size, void*) {
+  if (!orcdial_inbox || !data || size != sizeof(OrcDialFrame)) return;
+  OrcDialFrame frame{};
+  memcpy(&frame, data, sizeof(frame));
+  (void)xQueueSend(orcdial_inbox, &frame, 0);
+}
+
+void orcdial_transmit(void*) {
+  OrcDialFrame frame{};
+  for (;;) {
+    if (xQueueReceive(orcdial_outbox, &frame, portMAX_DELAY) != pdTRUE) continue;
+    const esp_err_t result = eh_host_peer_data_send(kOrcDialToC6,
+        reinterpret_cast<const uint8_t*>(&frame), sizeof(frame));
+    orcdial_last_tx_result.store(result, std::memory_order_relaxed);
+    // Failed Hosted requests can take seconds; discard stale replies rather
+    // than replaying an old backlog after transport recovery.
+    if (result != ESP_OK) xQueueReset(orcdial_outbox);
+  }
+}
+
+bool orcdial_raw_transmit(const uint8_t* mac,const uint8_t* wire) {
+  if(!orcdial_outbox)return false;
+  OrcDialFrame frame{};memcpy(frame.mac,mac,6);memcpy(frame.wire,wire,64);
+  return xQueueSend(orcdial_outbox,&frame,0)==pdTRUE;
+}
+bool orcdial_send(const uint8_t*,orc::Packet& packet) {
+  if(!orcdial_transport_ready || orcdial_secure.status().state!=orc::secure::State::connected)return false;
+  packet.role=orc::Role::receiver;packet.sender=orcdial_sender;packet.sequence=orcdial_tx_sequence++;
+  uint8_t wire[64];orc::encode(packet,wire);return orcdial_secure.send(wire,64);
+}
+
+orc::Dashboard orcdial_active_dashboard() {
+  using Screen = orcsdr::screens::Id;
+  const auto screen = orcsdr::screens::status().active;
+  if (screen == Screen::home) return orc::Dashboard::home;
+  if (screen == Screen::settings) return orc::Dashboard::settings;
+  if (screen == Screen::rf_lab) return orc::Dashboard::rf_lab;
+  if (screen == Screen::wifi_analysis) return orc::Dashboard::wifi_analysis;
+  if (rtl_ui_band == RtlBand::browse && screen == Screen::radio &&
+      rtl_ui_frequency_hz > 137000000 && rtl_ui_frequency_hz < 138000000)
+    return orc::Dashboard::satellite;
+  const auto id = dashboard_for_band(rtl_ui_band, rtl_ui_frequency_hz);
+  return id == orcsdr::dashboards::Id::utilities ? orc::Dashboard::home
+                               : orc::Dashboard(static_cast<uint8_t>(id));
+}
+
+void orcdial_fill_state(orc::Packet& p) {
+  const auto id = orcdial_active_dashboard();
+  p.dashboard = static_cast<uint8_t>(id);
+  p.frequency_hz = rtl_ui_frequency_hz;
+  p.step_hz = rtl_ui_band == RtlBand::fm ? rtl_fm_step_hz
+              : rtl_ui_band == RtlBand::am ? rtl_am_step_hz
+              : rtl_ui_band == RtlBand::shortwave ? rtl_shortwave_step_hz : 5000;
+  p.volume = rtl_live_volume.load(std::memory_order_acquire);
+  p.mode = rtl_ui_band == RtlBand::fm ? 3 :
+           rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::shortwave ? 2 : 1;
+  p.revision = ++orcdial_revision;
+  if (id == orc::Dashboard::cb) {
+    p.selected = static_cast<int32_t>(orcsdr::cb::nearest_channel(rtl_ui_frequency_hz) + 1);
+    p.item_count = orcsdr::cb::kChannelCount;
+  } else if (id == orc::Dashboard::p25) {
+    p.selected = p25_candidate_index + 1;
+    p.item_count = p25_config.control_channel_count;
+  } else if (id == orc::Dashboard::lora) {
+    const auto& slot = orcsdr::lora_channel::selection();
+    p.selected = slot.slot;
+    p.item_count = orcsdr::lora_channel::slot_count(slot.region_index);
+  } else if (id == orc::Dashboard::adsb) {
+    p.selected = adsb_settings.radar_range_nm;
+    p.item_count = 4; // supported range choices, not a fabricated aircraft count
+  }
+  // rtl_signal_dbfs_smooth is relative dBFS, not a calibrated dBm reading.
+  p.flags = 0;
+}
+
+void orcdial_reply(orc::Type type, const uint8_t* mac, uint32_t ack = 0, int32_t reason = 0) {
+  orc::Packet out{};
+  out.type = type;
+  out.ack = ack;
+  out.value = reason;
+  orcdial_fill_state(out);
+  (void)orcdial_send(mac, out);
+}
+
+bool orcdial_apply(const orc::Packet& p) {
+  using Kind = orc::ActionKind;
+  using Dash = orc::Dashboard;
+  const Dash active = orcdial_active_dashboard();
+  if (p.type == orc::Type::set_dashboard) {
+    if (p.value < 0 || p.value > 16 || !orc::valid_dashboard(static_cast<uint8_t>(p.value))) return false;
+    if (p.value == 0) show_home();
+    else open_dashboard(orcsdr::dashboards::Id(p.value));
+    return true;
+  }
+  if (p.type != orc::Type::semantic_action || p.dashboard != static_cast<uint8_t>(active) ||
+      p.action > static_cast<uint8_t>(Kind::activate) || p.value < -1000000000 ||
+      p.value > 1000000000) return false;
+  const Kind kind = Kind(p.action);
+  if (kind == Kind::tune && orc::tunable(active)) {
+    const int64_t wanted = int64_t(rtl_ui_frequency_hz) + p.value;
+    if (wanted < 24000 || wanted > 1766000000 ||
+        rtl_clamp_frequency(rtl_ui_band, static_cast<uint32_t>(wanted)) != wanted ||
+        !validate_rtl_tune_frequency(static_cast<uint32_t>(wanted))) return false;
+    const uint32_t hz = static_cast<uint32_t>(wanted);
+    if (active == Dash::fm) handle_fm_dashboard_action({orcsdr::fm::ActionKind::tune_hz, hz});
+    else if (active == Dash::am) handle_am_dashboard_action({orcsdr::am::ActionKind::tune_hz, hz});
+    else if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
+      return request_hot_retune(hz);
+    else return queue_local_rtl_listen(rtl_ui_band, hz);
+    return true;
+  }
+  if (kind == Kind::step && p.value >= -4 && p.value <= 4) {
+    for (int i = 0; i < abs(p.value); ++i) {
+      if (active == Dash::fm) handle_fm_dashboard_action({p.value < 0 ? orcsdr::fm::ActionKind::step_cycle_previous
+                                                                   : orcsdr::fm::ActionKind::step_cycle, 0});
+      else if (active == Dash::am) handle_am_dashboard_action({orcsdr::am::ActionKind::step_cycle, 0});
+      else return false;
+    }
+    return true;
+  }
+  if (kind == Kind::volume && p.value >= -10 && p.value <= 10) {
+    adjust_rtl_volume(p.value * static_cast<int>(kRtlVolumeStep));
+    return true;
+  }
+  if (kind == Kind::channel && active == Dash::cb && p.value >= -8 && p.value <= 8) {
+    const int current = orcsdr::cb::nearest_channel(rtl_ui_frequency_hz);
+    const int count = orcsdr::cb::kChannelCount;
+    handle_cb_dashboard_action({orcsdr::cb::ActionKind::tune_channel,
+                                (current + p.value % count + count) % count});
+    return true;
+  }
+  if (kind == Kind::p25_candidate && active == Dash::p25 &&
+      p.value >= -8 && p.value <= 8 && p25_config.control_channel_count) {
+    for (int i = 0; i < abs(p.value); ++i)
+      handle_p25_dashboard_action({p.value < 0 ? orcsdr::p25::ActionKind::previous_candidate
+                                                 : orcsdr::p25::ActionKind::next_candidate, 0});
+    return true;
+  }
+  if (kind == Kind::lora_slot && active == Dash::lora && p.value >= -8 && p.value <= 8) {
+    for (int i = 0; i < abs(p.value); ++i)
+      handle_lora_dashboard_action({p.value < 0 ? orcsdr::lora::ActionKind::channel_previous
+                                                 : orcsdr::lora::ActionKind::channel_next, 0});
+    return true;
+  }
+  if (kind == Kind::radar_range && active == Dash::adsb && p.value >= -4 && p.value <= 4) {
+    constexpr uint16_t ranges[] = {10,25,50,100};
+    int index = 1;
+    for (int i = 0; i < 4; ++i) if (adsb_settings.radar_range_nm == ranges[i]) index = i;
+    index = std::clamp(index + static_cast<int>(p.value), 0, 3);
+    handle_global_settings_action({orcsdr::settings::ActionKind::range_changed, ranges[index]});
+    return true;
+  }
+  return false; // No invented channel plan, target list, message, AP, or settings action.
+}
+
+void orcdial_action(orc::secure::Action action,uint32_t value) {
+  // Keep local requests ordered while splash/Wi-Fi staging delays the worker.
+  if(!orcdial_pending_actions)orcdial_pending_actions=xQueueCreate(8,sizeof(OrcDialAction));
+  const OrcDialAction request{action,value};
+  if(!orcdial_pending_actions || xQueueSend(orcdial_pending_actions,&request,0)!=pdTRUE)
+    Serial.println("RTL_ORCDIAL_ERROR action_queue_full");
+}
+void orcdial_poll() {
+  static uint32_t ready_since_ms=0;
+  if(!rtl_boot_complete.load(std::memory_order_acquire)||orcsdr_splash_is_active())return;
+  if(!ready_since_ms)ready_since_ms=millis();
+  const uint32_t elapsed=millis()-ready_since_ms;
+  if(elapsed<3000 || (elapsed<20000 && (wifi_connecting||wifi_connect_requested.load(std::memory_order_acquire))))return;
+  const bool action_pending=orcdial_pending_actions && uxQueueMessagesWaiting(orcdial_pending_actions)>0;
+  static bool store_checked=false,boot_trust=false;
+  if(!store_checked){nvs_handle_t handle;uint8_t record[76]{};size_t length=sizeof record;
+    if(nvs_open("orcdial4",NVS_READONLY,&handle)==ESP_OK){
+      boot_trust=nvs_get_blob(handle,"trust",record,&length)==ESP_OK && length==sizeof record &&
+          !memcmp(record,"ODT4",4) && record[74]==1 && record[75]==1;
+      nvs_close(handle);orc::secure::wipe(record,sizeof record);
+    }store_checked=true;}
+  if(orcdial_transport_ready&&!orcsdr::wifi::hosted_transport_ready()){orcdial_transport_ready=false;orcdial_secure.enabled(false);(void)eh_host_feat_peer_data_deinit();}
+  static uint32_t radio_retry_ms=0;
+  if(!wifi_station_ready && !orcsdr::wifi::link_failed() && !wifi_link_recovery_due_ms &&
+      (boot_trust||action_pending) &&
+      (!radio_retry_ms || static_cast<int32_t>(millis()-radio_retry_ms)>=0)) {
+    // Accessory-only startup needs the same exclusive I/O window as Settings
+    // scan/connect. With boot Wi-Fi off, SDR URBs can already be live here.
+    radio_retry_ms=millis()+5000;
+    if(!pause_radio_for_io(wifi_c6_probe_radio_paused)) {
+      Serial.println("RTL_ORCDIAL_RADIO_START deferred=radio_pause_failed");
+    } else {
+      initialize_wifi();
+      resume_radio_after_io(wifi_c6_probe_radio_paused);
+    }
+  }
+  static uint32_t initialization_retry_ms=0;
+  if(!orcdial_secure_started && initialization_retry_ms && static_cast<int32_t>(millis()-initialization_retry_ms)<0)return;
+  if(!orcdial_transport_ready&&orcsdr::wifi::hosted_transport_ready()) {
+    if(!orcdial_inbox)orcdial_inbox=xQueueCreate(20,sizeof(OrcDialFrame));
+    if(!orcdial_outbox)orcdial_outbox=xQueueCreate(16,sizeof(OrcDialFrame));
+    if(orcdial_outbox&&!orcdial_tx_task && xTaskCreatePinnedToCore(orcdial_transmit,"orcdial_tx",4096,nullptr,2,&orcdial_tx_task,0)!=pdPASS)orcdial_tx_task=nullptr;
+    if(orcdial_inbox&&orcdial_tx_task&&eh_host_feat_peer_data_init()==ESP_OK && eh_host_peer_data_register(kOrcDialFromC6,orcdial_receive,nullptr)==ESP_OK) {
+      uint8_t mac[6];
+      if(esp_wifi_get_mac(WIFI_IF_STA,mac)!=ESP_OK)return;
+      if(!orcdial_secure_started)orcdial_secure_started=orcdial_secure.begin(2,mac,preferences.getBytesLength("dial_mac")==6,orcdial_raw_transmit);
+      if(!orcdial_secure_started){initialization_retry_ms=millis()+5000;return;}
+      orcdial_sender=esp_random();orcdial_transport_ready=true;orcdial_secure.enabled(true);Serial.println("ORCDIAL_V4_BRIDGE_READY");
+      // The existing C6 gates RX until the P4 sends its first relay request.
+      // This invalid frame only enables that relay gate; no endpoint accepts
+      // it as discovery, pairing, authentication or a control command.
+      uint8_t relay_ready[64]{};orcdial_raw_transmit(orcdial_broadcast,relay_ready);
+    }
+  }
+  if(!orcdial_transport_ready)return;
+  OrcDialAction queued{};
+  while(orcdial_pending_actions && xQueuePeek(orcdial_pending_actions,&queued,0)==pdTRUE) {
+    if(!orcdial_secure.action(queued.kind,queued.value))break;
+    xQueueReceive(orcdial_pending_actions,&queued,0);
+  }
+  OrcDialFrame frame{};while(xQueueReceive(orcdial_inbox,&frame,0)==pdTRUE)orcdial_secure.receive(frame.mac,frame.wire,64);
+  const auto status=orcdial_secure.status();orcdial_has_peer=status.trusted;boot_trust=status.trusted && status.boot_connect;
+  orcdial_pair_until=(status.state==orc::secure::State::searching||status.state==orc::secure::State::exchanging||status.state==orc::secure::State::verify)?millis()+1000:0;
+  static uint32_t accessory_idle_ms=0;
+  const bool pairing_active=status.state==orc::secure::State::searching || status.state==orc::secure::State::exchanging || status.state==orc::secure::State::verify;
+  if(!settings_wifi_power_enabled && !status.trusted && !pairing_active && !action_pending) {
+    if(!accessory_idle_ms)accessory_idle_ms=millis();
+    // Let the worker retry its encrypted final notice before stopping the radio.
+    if(wifi_station_ready && millis()-accessory_idle_ms>=1200){stop_wifi();orcdial_secure.enabled(false);}
+  }else accessory_idle_ms=0;
+  if(status.state!=orc::secure::State::connected){orcdial_rx_sender=0;orcdial_rx_sequence=0;return;}
+  orc::secure::Runtime::Control c{};
+  while(orcdial_secure.take(c)) {
+    orc::Packet p{};if(!orc::decode(c.data,c.size,p)||p.role!=orc::Role::dial)continue;
+    if(p.type==orc::Type::heartbeat||p.type==orc::Type::request_state){orcdial_reply(orc::Type::radio_state,nullptr,p.sequence);continue;}
+    if(p.sender!=orcdial_rx_sender){orcdial_rx_sender=p.sender;orcdial_rx_sequence=0;}
+    if(!orc::newer_sequence(p.sequence,orcdial_rx_sequence)){orcdial_reply(orc::Type::radio_state,nullptr,p.sequence);continue;}
+    orcdial_rx_sequence=p.sequence;const bool applied=orcdial_apply(p);
+    orcdial_reply(applied?orc::Type::radio_state:orc::Type::error,nullptr,p.sequence,applied?0:1);
+  }
+  if(millis()-orcdial_last_state_ms>=900){orcdial_reply(orc::Type::radio_state,nullptr);orcdial_last_state_ms=millis();}
+}
+
+#endif // ORCSDR_ORCDIAL
 
 // Capture used to own M5.update() during radio UI because a second update
 // from loop() could glitch the ES8388. FM/P25 now stay on loop() so a
@@ -15300,28 +15658,11 @@ bool ui_doc_view_for_suffix(const char* suffix, orcsdr::p25::View* view) {
   return false;
 }
 
-bool ui_doc_render(const char* screen_id, bool demo) {
+// Keep the Settings capture path out of the multi-dashboard renderer's large
+// stack frame. It uses the same production Settings drawing and touch layout.
+[[gnu::noinline]] bool ui_doc_render_settings(const char* screen_id, bool demo) {
   if (!ui_doc_screen_exists(screen_id, demo ? "demo" : "live")) return false;
   ui_doc_leave_surfaces();
-
-  if (strncmp(screen_id, "pocsag.", 7) == 0) {
-    rtl_ui_active.store(true, std::memory_order_release);
-    rtl_ui_band = RtlBand::pocsag;
-    pocsag_dashboard_settings.frequency_hz = pocsag_config_frequency_hz;
-    pocsag_dashboard_settings.baud_bps = pocsag_baud_bps.load(std::memory_order_relaxed);
-    pocsag_dashboard_settings.polarity_mode = pocsag_polarity_mode.load(std::memory_order_relaxed);
-    publish_pocsag_snapshot(millis());
-    orcsdr::pocsag::enter(pocsag_dashboard_settings);
-    static constexpr const char* names[] = {"live", "ids", "signal", "activity", "session"};
-    for (size_t i = 0; i < std::size(names); ++i)
-      if (strcmp(screen_id + 7, names[i]) == 0)
-        (void)orcsdr::pocsag::handle_touch(i * 256 + 128, 680);
-  } else if (strcmp(screen_id, "home") == 0) {
-    rtl_ui_active.store(false, std::memory_order_release);
-    show_home(demo);
-  } else if (strncmp(screen_id, "settings.", 9) == 0 ||
-             strncmp(screen_id, "overlay.wifi-", 13) == 0 ||
-             strcmp(screen_id, "overlay.masked-keyboard") == 0) {
     // Same order as orcsdr::settings::Section.
     static constexpr const char* names[] = {"connectivity", "firmware-updates",
         "location-adsb", "data-maps", "display-audio", "radio-defaults", "storage",
@@ -15346,6 +15687,37 @@ bool ui_doc_render(const char* screen_id, bool demo) {
         orcsdr::settings::Section::connectivity, state, keyboard);
     if (strncmp(screen_id, "settings.", 9) == 0)
       orcsdr::settings::show_documentation_section(section, state);
+  if (demo) ui_doc_badge();
+  orcsdr::screens::begin_transition(orcsdr::screens::Id::documentation, millis());
+  orcsdr::screens::finish_transition();
+  strlcpy(ui_doc.current_screen, screen_id, sizeof(ui_doc.current_screen));
+  ui_doc.current_demo = demo;
+  return true;
+}
+
+bool ui_doc_render(const char* screen_id, bool demo) {
+  if (!ui_doc_screen_exists(screen_id, demo ? "demo" : "live")) return false;
+  ui_doc_leave_surfaces();
+
+  if (strncmp(screen_id, "pocsag.", 7) == 0) {
+    rtl_ui_active.store(true, std::memory_order_release);
+    rtl_ui_band = RtlBand::pocsag;
+    pocsag_dashboard_settings.frequency_hz = pocsag_config_frequency_hz;
+    pocsag_dashboard_settings.baud_bps = pocsag_baud_bps.load(std::memory_order_relaxed);
+    pocsag_dashboard_settings.polarity_mode = pocsag_polarity_mode.load(std::memory_order_relaxed);
+    publish_pocsag_snapshot(millis());
+    orcsdr::pocsag::enter(pocsag_dashboard_settings);
+    static constexpr const char* names[] = {"live", "ids", "signal", "activity", "session"};
+    for (size_t i = 0; i < std::size(names); ++i)
+      if (strcmp(screen_id + 7, names[i]) == 0)
+        (void)orcsdr::pocsag::handle_touch(i * 256 + 128, 680);
+  } else if (strcmp(screen_id, "home") == 0) {
+    rtl_ui_active.store(false, std::memory_order_release);
+    show_home(demo);
+  } else if (strncmp(screen_id, "settings.", 9) == 0 ||
+             strncmp(screen_id, "overlay.wifi-", 13) == 0 ||
+             strcmp(screen_id, "overlay.masked-keyboard") == 0) {
+    return ui_doc_render_settings(screen_id, demo);
   } else if (strncmp(screen_id, "fm.", 3) == 0 ||
              strcmp(screen_id, "overlay.volume") == 0) {
     orcsdr::fm::View view = orcsdr::fm::View::listen;
@@ -15971,7 +16343,13 @@ void process_command(char* command) {
              rtl_ui_band != band || rtl_ui_frequency_hz != frequency_hz))
           queue_local_rtl_listen(band, frequency_hz, false);
       }
-      if (!ui_doc_render(screen, strcmp(mode, "demo") == 0)) {
+      const bool settings_screen = strncmp(screen, "settings.", 9) == 0 ||
+          strncmp(screen, "overlay.wifi-", 13) == 0 ||
+          strcmp(screen, "overlay.masked-keyboard") == 0;
+      const bool rendered = settings_screen
+          ? ui_doc_render_settings(screen, strcmp(mode, "demo") == 0)
+          : ui_doc_render(screen, strcmp(mode, "demo") == 0);
+      if (!rendered) {
         Serial.println("UI_DOC_ERROR unknown_screen_or_mode");
         return;
       }
@@ -16198,6 +16576,31 @@ void process_command(char* command) {
     Serial.printf("RTL_RF24_PAGE_OK page=%u\n", page);
     return;
   }
+#if ORCSDR_ORCDIAL
+  if(!strcmp(command,"RTL_ORCDIAL_STATUS")||!strcmp(command,"RTL_ORCDIAL_PROBE")) {
+    const auto state=orcdial_secure.status();
+    Serial.printf("RTL_ORCDIAL_STATUS bridge=%d trust=%d connection=%s boot=%d failure=%s protocol=4\n",orcdial_transport_ready,state.trusted,orc::secure::state_name(state.state),state.boot_connect,orc::secure::failure_name(state.failure));
+    if(authenticated && state.state==orc::secure::State::verify)Serial.printf("RTL_ORCDIAL_PAIR_CODE %06lu\n",(unsigned long)state.code);
+    return;
+  }
+  if(!strcmp(command,"RTL_ORCDIAL_PAIR START")){if(!authenticated){Serial.println("RTL_ORCDIAL_ERROR auth_required");return;}orcdial_action(orc::secure::Action::pair);return;}
+  if(!strcmp(command,"RTL_ORCDIAL_PAIR CANCEL")){if(!authenticated){Serial.println("RTL_ORCDIAL_ERROR auth_required");return;}orcdial_action(orc::secure::Action::cancel);return;}
+  if(!strncmp(command,"RTL_ORCDIAL_PAIR CONFIRM ",25)) {if(!authenticated){Serial.println("RTL_ORCDIAL_ERROR auth_required");return;}
+    char* end=nullptr;const long code=strtol(command+25,&end,10);
+    if(end!=command+25 && !*end && code>=0 && code<1000000)orcdial_action(orc::secure::Action::confirm,uint32_t(code));
+    return;
+  }
+  if(!strcmp(command,"RTL_ORCDIAL_CONNECT")){if(!authenticated){Serial.println("RTL_ORCDIAL_ERROR auth_required");return;}orcdial_action(orc::secure::Action::connect);return;}
+  if(!strcmp(command,"RTL_ORCDIAL_DISCONNECT")){if(!authenticated){Serial.println("RTL_ORCDIAL_ERROR auth_required");return;}orcdial_action(orc::secure::Action::disconnect);return;}
+  if(!strcmp(command,"RTL_ORCDIAL_FORGET")){if(!authenticated){Serial.println("RTL_ORCDIAL_ERROR auth_required");return;}orcdial_action(orc::secure::Action::forget);return;}
+  if (strcmp(command, "RTL_ORCDIAL_C6_UPDATE CONFIRM") == 0) {
+    if (!authenticated) { Serial.println("RTL_ORCDIAL_C6_UPDATE_ERROR auth_required"); return; }
+    Serial.println(orcsdr::wifi::begin_c6_update(true)
+                       ? "RTL_ORCDIAL_C6_UPDATE_QUEUED"
+                       : "RTL_ORCDIAL_C6_UPDATE_ERROR not_ready");
+    return;
+  }
+#endif
   if (strncmp(command, "RTL_UI ACTION ", 14) == 0 && !authenticated) {
     Serial.println("RTL_UI_ACTION_ERROR auth_required");
     return;
@@ -16206,7 +16609,7 @@ void process_command(char* command) {
     char domain[12]{}, action[24]{};
     unsigned long value = 0;
     const int fields = sscanf(command + 14, "%11s %23s %lu", domain, action, &value);
-    if (fields < 2) { Serial.println("RTL_UI_ACTION_INVALID usage: RTL_UI ACTION <FM|AM|AIRBAND|P25|LORA|SETTINGS> <action> [value]"); return; }
+    if (fields < 2) { Serial.println("RTL_UI_ACTION_INVALID usage: RTL_UI ACTION <FM|AM|AIRBAND|CB|P25|LORA|SETTINGS> <action> [value]"); return; }
     if (strcmp(domain, "AIRBAND") == 0) {
       const bool applied = orcsdr::airband::serial_action(
           action, fields == 3, static_cast<uint32_t>(value), airband_live_state());
@@ -16283,6 +16686,19 @@ void process_command(char* command) {
         Serial.println("RTL_UI_ACTION_OK");
         return;
       }
+    } else if (strcmp(domain, "CB") == 0) {
+      if (rtl_ui_band != RtlBand::cb) {
+        Serial.println("RTL_UI_ACTION_INVALID cb_dashboard_inactive");
+        return;
+      }
+      using K = orcsdr::cb::ActionKind; K kind = K::none;
+      if (!strcmp(action, "PREV")) kind=K::channel_down;
+      else if (!strcmp(action, "NEXT")) kind=K::channel_up;
+      else if (!strcmp(action, "SCAN")) kind=K::scan_toggle;
+      else if (!strcmp(action, "HOLD")) kind=K::hold_toggle;
+      else if (!strcmp(action, "SKIP")) kind=K::skip;
+      else if (!strcmp(action, "MODE")) kind=K::mode_cycle;
+      if (kind != K::none) { handle_cb_dashboard_action({kind}); Serial.println("RTL_UI_ACTION_OK"); return; }
     } else if (strcmp(domain, "P25") == 0) {
       using K = orcsdr::p25::ActionKind; K kind = K::none;
       if (!strcmp(action, "TUNE")) kind=K::tune_hz; else if (!strcmp(action, "PREV")) kind=K::previous_candidate;
@@ -16413,6 +16829,33 @@ void process_command(char* command) {
                                      : "RTL_WIFI_DISCONNECT_ERROR radio_pause_failed");
     return;
   }
+#if ORCSDR_C6_FAULT_TEST
+  if (strcmp(command, "RTL_WIFI_TEST_C6_POWER OFF CONFIRM") == 0 ||
+      strcmp(command, "RTL_WIFI_TEST_C6_POWER ON CONFIRM") == 0) {
+    if (!authenticated) {
+      Serial.println("RTL_WIFI_TEST_C6_POWER_ERROR auth_required");
+      return;
+    }
+    const bool enable = strcmp(command, "RTL_WIFI_TEST_C6_POWER ON CONFIRM") == 0;
+    // Only WLAN P0 changes. USB power P3 remains untouched. This lab command
+    // deliberately bypasses the normal receiver pause to exercise failure.
+    const bool ok = enable ? M5.In_I2C.bitOn(0x44, 0x05, 1, 400000)
+                           : M5.In_I2C.bitOff(0x44, 0x05, 1, 400000);
+    log_radio_power_registers(enable ? "test_wlan_on" : "test_wlan_off");
+    Serial.printf("RTL_WIFI_TEST_C6_POWER_RESULT enabled=%d write_ok=%d\n", enable, ok);
+    return;
+  }
+#endif
+  if (strcmp(command, "RTL_WIFI_BUS_STATUS") == 0) {
+    log_radio_power_registers("serial_status");
+    // Local reads only: this remains usable when a Hosted RPC cannot reply.
+    Serial.printf("RTL_WIFI_BUS_STATUS wlan_enable=%d wlan_input=%d hosted_ready=%d link_failed=%d capture_state=%u\n",
+                  M5.getIOExpander(1).getWriteValue(0),
+                  M5.getIOExpander(1).digitalRead(0),
+                  orcsdr::wifi::hosted_transport_ready(), orcsdr::wifi::link_failed(),
+                  unsigned(rtl_capture_state.load(std::memory_order_acquire)));
+    return;
+  }
   if (strcmp(command, "RTL_WIFI_STATUS") == 0) {
     Serial.printf("RTL_WIFI_STATUS station=%d hosted_match=%d scanning=%d connecting=%d "
                   "connected=%d saved_profiles=%u power=%d auto_connect=%d antenna=%s "
@@ -16424,6 +16867,22 @@ void process_command(char* command) {
                   settings_wifi_start_at_boot ? 1 : 0,
                   settings_wifi_external_antenna ? "external" : "internal",
                   static_cast<unsigned>(wifi_scan_result_count));
+    return;
+  }
+  if (strcmp(command, "RTL_WIFI_CHANNEL") == 0) {
+    uint8_t primary = 0;
+    wifi_second_chan_t secondary = WIFI_SECOND_CHAN_NONE;
+    const esp_err_t result = esp_wifi_get_channel(&primary, &secondary);
+    if (result != ESP_OK) {
+      Serial.printf("RTL_WIFI_CHANNEL_ERROR %s\n", esp_err_to_name(result));
+      return;
+    }
+    wifi_ap_record_t ap{};
+    const bool has_ap = wifi_connected && esp_wifi_sta_get_ap_info(&ap) == ESP_OK;
+    Serial.printf("RTL_WIFI_CHANNEL primary=%u secondary=%u connected=%d ssid_hex=",
+                  unsigned(primary), unsigned(secondary), wifi_connected ? 1 : 0);
+    if (has_ap) print_hex(ap.ssid, strnlen(reinterpret_cast<const char*>(ap.ssid), sizeof(ap.ssid)));
+    Serial.printf(" ap_primary=%u\n", has_ap ? unsigned(ap.primary) : 0);
     return;
   }
   if (strcmp(command, "RTL_WIFI_C6_STATUS") == 0) {
@@ -17395,9 +17854,15 @@ void process_command(char* command) {
     Serial.println("RTL_UI OPEN <HOME|FM|AM|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|SETTINGS> - open dashboard (auth)");
     Serial.println("RTL_LAB OPEN|CLOSE|STATUS|PAGE|GET|SET|ACTION|SELF_CHECK - RF Lab UI/control");
     Serial.println("RTL_LAB REFERENCE|SNAPSHOT|RUN|RECIPE|RECORDS - RF Lab evidence workflow (mutations auth)");
-    Serial.println("RTL_UI ACTION <domain> <action> [value] - mirror FM/AM/P25/LoRa/Settings touch action (auth)");
+    Serial.println("RTL_UI ACTION <domain> <action> [value] - mirror FM/AM/CB/P25/LoRa/Settings touch action (auth)");
+#if ORCSDR_ORCDIAL
+    Serial.println("RTL_ORCDIAL_STATUS | RTL_ORCDIAL_PAIR START/CANCEL/CONFIRM <code> | RTL_ORCDIAL_CONNECT | RTL_ORCDIAL_DISCONNECT | RTL_ORCDIAL_FORGET");
+    Serial.println("RTL_ORCDIAL_PROBE - alias for read-only OrcDial status");
+    Serial.println("RTL_ORCDIAL_C6_UPDATE CONFIRM - install paired accessory C6 image (auth)");
+#endif
     Serial.println("RTL_UI ACTION LORA DETAILS|FILTER|EXPORT|CLEAR - Traffic toolbar actions (auth)");
     Serial.println("RTL_WIFI_STATUS|C6_STATUS|COEX_STATUS|SCAN|RESULTS|PROFILES - Wi-Fi and radio coexistence state");
+    Serial.println("RTL_WIFI_CHANNEL - actual C6 primary channel and associated network");
     Serial.println("RTL_WIFI_C6_UPDATE CONFIRM - authenticated explicit in-app C6 update");
     Serial.println("RTL_WIFI_CONNECT_SAVED [PAUSE]|DISCONNECT - connect profile 0 with a temporary SDR pause");
     Serial.println("SET_WIFI <ssid_hex> <pass_hex> <hmac> - signed slot-0 provisioning (auth)");
@@ -18544,6 +19009,9 @@ constexpr uint32_t kSplashWifiBudgetMs = 25000;
 void boot_wifi_on_splash() {
   if (!orcsdr_splash_is_active() || !wifi_boot_bringup_pending) return;
   wifi_boot_bringup_pending = false;  // this stage replaces the deferred loop() connect
+#if ORCSDR_ORCDIAL
+  // Accessory startup is deferred until the application and radio have settled.
+#endif
   if (!settings_wifi_power_enabled || !settings_wifi_start_at_boot || !wifi_profile_count) {
     Serial.println("RTL_WIFI_BOOT_SKIP_NO_AUTOCONNECT splash");
     return;
@@ -18583,6 +19051,10 @@ void boot_wifi_on_splash() {
 }
 
 void setup() {
+#if ORCSDR_ORCDIAL
+  // Seed before any ADC/audio initialization; P4's radio is on the remote C6.
+  if(!orcdial_secure.prepare_entropy())Serial.println("ORCDIAL_ENTROPY_INIT_FAILED");
+#endif
   Serial.begin(115200);
   // PSRAM-backed one-time allocation, not plain internal-DRAM globals -- see
   // allocate_pocsag_state()'s own comment for why (a prior revision's plain
@@ -18953,6 +19425,9 @@ void loop() {
     Serial.printf("RTL_MAIN_STALL stage=loop_gap elapsed_ms=%u\n",
                   loop_started_ms - previous_loop_ms);
   previous_loop_ms = loop_started_ms;
+#if ORCSDR_ORCDIAL
+  orcdial_poll();
+#endif
   // Issue #66: mirror Settings connect_saved — queue only; poll_wifi() calls
   // start_wifi_connection() then initialize_wifi() on the normal loop path.
   if (wifi_boot_bringup_pending &&

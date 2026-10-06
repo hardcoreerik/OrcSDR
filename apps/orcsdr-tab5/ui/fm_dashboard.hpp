@@ -72,6 +72,7 @@ enum class ActionKind : uint8_t {
   scan_presets,
   open_device_settings,
   exit_to_browse,
+  step_cycle_previous,
 };
 
 struct Action {

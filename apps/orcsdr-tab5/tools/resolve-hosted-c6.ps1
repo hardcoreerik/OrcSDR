@@ -15,13 +15,26 @@ $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $releaseTools = Join-Path $repo 'tools\release'
 $lock = Get-Content (Join-Path $releaseTools 'hosted-c6-release.json') -Raw | ConvertFrom-Json
+$localProject = Join-Path $repo $lock.source_project
+$localSources = @('CMakeLists.txt', 'main\CMakeLists.txt', 'main\main.c',
+                  'sdkconfig.defaults', 'partitions_eh_cp_ota_4m.csv')
+$localHashes = ($localSources | ForEach-Object {
+  "$_=$((Get-FileHash -LiteralPath (Join-Path $localProject $_) -Algorithm SHA256).Hash.ToLowerInvariant())"
+}) -join "`n"
+$localSha = [Security.Cryptography.SHA256]::Create()
+try {
+  $localSourceSha256 = [BitConverter]::ToString(
+    $localSha.ComputeHash([Text.Encoding]::UTF8.GetBytes($localHashes))).Replace('-', '').ToLowerInvariant()
+} finally { $localSha.Dispose() }
 # Cache beside the main checkout's .git so every worktree shares one build.
 # Not %LOCALAPPDATA%: packaged apps can redirect it, and CMake then sees two
 # different paths for the same tree. Keep the path short for Windows MAX_PATH.
 $commonGitDir = (git -C $repo rev-parse --path-format=absolute --git-common-dir).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $commonGitDir) { throw "Could not locate the git directory for $repo." }
 $cacheRoot = Join-Path (Split-Path $commonGitDir -Parent) '.orcsdr-cache\hosted-c6'
-$cacheDir = Join-Path $cacheRoot ("{0}-{1}" -f $lock.hosted_version, $lock.source_revision.Substring(0, 12))
+$cacheDir = Join-Path $cacheRoot ("{0}-{1}-orcdial-{2}" -f $lock.hosted_version,
+                                      $lock.source_revision.Substring(0, 12),
+                                      $localSourceSha256.Substring(0, 12))
 $image = Join-Path $cacheDir $lock.output_name
 $provenancePath = Join-Path $cacheDir 'c6-provenance.json'
 
@@ -31,6 +44,7 @@ function Test-CachedImage {
   $provenance = Get-Content -LiteralPath $provenancePath -Raw | ConvertFrom-Json
   $hash = (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant()
   return $provenance.source_revision -eq $lock.source_revision -and
+         $provenance.local_source_sha256 -eq $localSourceSha256 -and
          $provenance.hosted_version -eq $lock.hosted_version -and
          $provenance.sha256 -eq $hash
 }

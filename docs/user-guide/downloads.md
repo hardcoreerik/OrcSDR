@@ -1,10 +1,15 @@
 # Downloads and releases
 
-For ordinary installation, use the published
-[`v0.2.0-beta.6-multidongle-rc4`](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.2.0-beta.6-multidongle-rc4)
-M5Burner package. It contains the native ESP-IDF 5.5.4 P4 application and the
-matching ESP-Hosted 3.0.6 C6 firmware; the exact merged package was installed
-and booted on the owner Tab5 before publication.
+For ordinary installation, open the
+[OrcSDR M5Burner web flasher](https://burner.m5stack.com/share/firmware/JXFU4H)
+in **Chrome or Edge**, connect the Tab5 by USB, and click **Burn to device**.
+Check the version shown on the page before flashing. The M5Burner desktop
+application is another option. See [Getting started](getting-started.md) for the steps.
+
+**M5Burner installation resets saved settings**, including Wi-Fi profiles,
+location, and screen rotation. The Windows settings-preserving installer from
+[GitHub Releases](https://github.com/hardcoreerik/OrcSDR/releases/latest) leaves
+saved settings and existing C6 firmware untouched.
 
 Use GitHub Releases for immutable notes, assets, hashes, and tags. Verify the
 published SHA-256 before trusting firmware or optional SD data packs. The

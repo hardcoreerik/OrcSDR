@@ -52,6 +52,12 @@ struct State {
   bool wifi_connecting = false;
   bool wifi_hosted_update_required = false;
   bool wifi_hosted_transport_ready = false;
+  bool orcdial_bridge_ready = false;
+  bool orcdial_paired = false;
+  bool orcdial_pairing = false;
+  bool orcdial_connected=false,orcdial_verifying=false,orcdial_boot_connect=false,orcdial_upgrade=false;
+  uint32_t orcdial_code=0;
+  char orcdial_identity[16]{},orcdial_connection[32]{},orcdial_failure[32]{};
   bool wifi_c6_image_embedded = false;
   uint8_t wifi_c6_update_percent = 0;
   char wifi_ssid[33]{};
@@ -123,6 +129,9 @@ enum class ActionKind : uint8_t {
   wifi_start_at_boot_changed,
   wifi_antenna_changed,
   c6_update_confirm,
+  orcdial_c6_update,
+  orcdial_pair,
+  orcdial_cancel,orcdial_confirm,orcdial_connect,orcdial_disconnect,orcdial_forget,orcdial_boot,
   scan_wifi,
   connect_wifi,
   connect_saved_wifi,

@@ -30,7 +30,7 @@ constexpr uint16_t kRanges[] = {10, 25, 50, 100};
 constexpr uint16_t kTimeouts[] = {0, 30, 60, 120, 300};
 constexpr const char* kLabels[] = {
     "CONNECTIVITY", "FIRMWARE & UPDATES", "RECEIVER LOCATION", "DATA & MAPS", "DISPLAY & AUDIO",
-    "RADIO DEFAULTS", "STORAGE", "COMPANION", "SYSTEM"};
+    "RADIO DEFAULTS", "STORAGE", "ACCESSORIES & COMPANION", "SYSTEM"};
 
 static_assert(static_cast<uint8_t>(Section::count) == std::size(kLabels));
 static_assert(std::size(kRanges) == 4 && kRanges[0] == 10 && kRanges[3] == 100);
@@ -159,38 +159,38 @@ void draw_connectivity() {
   button("ADD HIDDEN", 634, 198, 280, 48, TFT_NAVY);
   button(g_state.wifi_power_enabled ? "POWER OFF" : "POWER ON", 938, 198, 280, 48,
          g_state.wifi_power_enabled ? TFT_MAROON : TFT_DARKGREEN);
-  text("CONNECT ON BOOT", 330, 274, kMuted, 3);
-  button(g_state.wifi_start_at_boot ? "ON" : "OFF", 930, 250, 288, 48,
+  text("CONNECT ON BOOT", 330, 286, kMuted, 3);
+  button(g_state.wifi_start_at_boot ? "ON" : "OFF", 930, 262, 288, 48,
          g_state.wifi_start_at_boot ? TFT_DARKGREEN : TFT_DARKGREY);
-  text("WI-FI ANTENNA", 330, 332, kMuted, 3);
+  text("WI-FI ANTENNA", 330, 350, kMuted, 3);
   button(g_state.wifi_external_antenna ? "EXTERNAL (MMCX)" : "INTERNAL",
-         930, 308, 288, 48,
+         930, 326, 288, 48,
          g_state.wifi_external_antenna ? TFT_DARKGREEN : TFT_NAVY);
 
-  text("SAVED NETWORKS (PRIORITY ORDER)", 330, 374, kBlue, 2);
+  text("SAVED NETWORKS (PRIORITY ORDER)", 330, 390, kBlue, 2);
   for (uint8_t i = 0; i < g_state.saved_network_count && i < 4; ++i) {
-    const int y = 394 + i * 44;
+    const int y = 410 + i * 44;
     snprintf(value, sizeof(value), "%u  %.24s%s", i + 1, g_state.profiles[i].ssid,
              g_state.profiles[i].connected ? "  CONNECTED" : "");
     text(value, 340, y + 20, g_state.profiles[i].connected ? kGreen : TFT_WHITE, 2);
-    button("CONNECT", 674, y, 144, 40, TFT_DARKCYAN);
-    button("UP", 830, y, 88, 40, i ? TFT_NAVY : TFT_DARKGREY);
-    button("DOWN", 930, y, 106, 40,
+    button("CONNECT", 674, y, 144, 36, TFT_DARKCYAN);
+    button("UP", 830, y, 88, 36, i ? TFT_NAVY : TFT_DARKGREY);
+    button("DOWN", 930, y, 106, 36,
            i + 1 < g_state.saved_network_count ? TFT_NAVY : TFT_DARKGREY);
-    button("FORGET", 1048, y, 170, 40, TFT_MAROON);
+    button("FORGET", 1048, y, 170, 36, TFT_MAROON);
   }
   if (g_state.saved_network_count == 0)
     text("NO SAVED NETWORKS", 340, 414, kMuted, 2);
 
-  text("AVAILABLE NETWORKS", 330, 582, kBlue, 2);
+  text("AVAILABLE NETWORKS", 330, 602, kBlue, 2);
   const uint8_t shown = std::min<uint8_t>(g_state.network_count, 6);
   for (uint8_t i = 0; i < shown; ++i) {
     const int x = 330 + (i % 2) * 428;
-    const int y = 604 + (i / 2) * 34;
+    const int y = 624 + (i / 2) * 30;
     snprintf(value, sizeof(value), "%.18s  %d%s%s", g_state.networks[i].ssid,
              g_state.networks[i].rssi, g_state.networks[i].secure ? "  LOCK" : "  OPEN",
              g_state.networks[i].saved ? "  SAVED" : "");
-    button(value, x, y, 418, 32,
+    button(value, x, y, 418, 28,
            g_state.networks[i].saved ? 0x2945 : TFT_DARKCYAN);
   }
 }
@@ -227,7 +227,9 @@ void draw_firmware_updates() {
     text("This sends the embedded image over the internal SDIO link and restarts OrcSDR.",
          330, 545, kMuted, 1);
   } else if (strcmp(g_state.wifi_c6_update_state, "current") == 0) {
-    text("C6 firmware is supported. No update is needed.", 330, 410, kGreen, 2);
+    text("C6 firmware is supported. OrcDial wireless support can be installed here.", 330, 410, kGreen, 2);
+    if (g_state.wifi_c6_image_embedded)
+      button("INSTALL ORCDIAL SUPPORT", 330, 445, 390, 58, TFT_DARKGREEN);
   } else if (strcmp(g_state.wifi_c6_update_state, "unreachable") == 0) {
     text("The C6 cannot establish Hosted transport.", 330, 405, TFT_ORANGE, 2);
     text("Use the documented recovery procedure; do not retry automatically.", 330, 450, kMuted, 2);
@@ -367,8 +369,9 @@ void draw_storage() {
        330, 470, TFT_LIGHTGREY, 2);
 }
 
+static bool accessory_forget_confirmation=false;
 void draw_companion() {
-  text("COMPANION", 330, 115, kBlue, 3);
+  text("ACCESSORIES & COMPANION", 330, 115, kBlue, 3);
   value_row("WEB CONSOLE", g_state.web_console_enabled ? "ON" : "OFF", 175,
             g_state.web_console_enabled ? kGreen : kMuted);
   button(g_state.web_console_enabled ? "DISABLE" : "ENABLE", 960, 150, 170, 48,
@@ -381,13 +384,34 @@ void draw_companion() {
   value_row("LOCAL DISCOVERY",
             g_state.web_console_listening ? "orcsdr.local" : "NOT ENABLED", 275,
             g_state.web_console_listening ? kGreen : kMuted);
-  value_row("PHONE CONNECTION", "OPTIONAL", 325, kGreen);
+  text("LAN console is read-only; no passwords, location, or device control.",330,315,kMuted,2);
   value_row("BLUETOOTH", g_state.companion_supported ? "AVAILABLE" : "FEASIBILITY PENDING",
             375, kMuted);
-  text("LAN read-only page for Android TV. No passwords, location, or control.",
-       330, 470, TFT_LIGHTGREY, 2);
-  text("OrcSDR remains fully usable with no phone, BLE, GPS, or HIVE.", 330, 510,
-       TFT_LIGHTGREY, 2);
+#if ORCSDR_ORCDIAL
+  text("ORCDIAL ACCESSORY",330,420,kBlue,3);
+  char info[96];snprintf(info,sizeof info,"OrcDial  %s  |  %s",g_state.orcdial_identity,g_state.orcdial_upgrade?"PAIRING UPGRADE REQUIRED":g_state.orcdial_paired?"TRUSTED":"NOT PAIRED");
+  text(info,330,460,g_state.orcdial_paired?kGreen:TFT_LIGHTGREY,2);
+  if(accessory_forget_confirmation) {
+    text("Forget this Dial and require new pairing?",330,505,TFT_LIGHTGREY,2);
+    button("CANCEL",330,540,280,48,TFT_DARKCYAN);
+    button("FORGET & RE-PAIR",640,540,330,48,TFT_MAROON);
+  }else if(g_state.orcdial_verifying) {
+    snprintf(info,sizeof info,"COMPARE ON BOTH DEVICES: %06lu",(unsigned long)g_state.orcdial_code);
+    text(info,330,502,kBlue,3);
+    button("CODES MATCH",330,540,280,48,TFT_DARKGREEN);
+    button("CANCEL PAIRING",640,540,330,48,TFT_MAROON);
+  }else {
+    snprintf(info,sizeof info,"Connection: %s",g_state.orcdial_connection);text(info,330,505,TFT_LIGHTGREY,2);
+    button(!strcmp(g_state.orcdial_failure,"Storage failed")?"RETRY FORGET":g_state.orcdial_pairing?"CANCEL PAIRING":g_state.orcdial_connected?"DISCONNECT":g_state.orcdial_paired?"CONNECT":"PAIR",330,540,280,48,TFT_DARKCYAN);
+    if(g_state.orcdial_paired || !strcmp(g_state.orcdial_failure,"Storage failed"))button("FORGET & RE-PAIR",640,540,330,48,TFT_MAROON);
+  }
+  if(strcmp(g_state.orcdial_failure,"None")) {
+    text(!strcmp(g_state.orcdial_failure,"Storage failed")?"STORAGE FAILED: trust may return after restart. Retry Forget.":g_state.orcdial_failure,330,660,TFT_RED,2);
+  }
+  if(g_state.orcdial_paired)button(g_state.orcdial_boot_connect?"BOOT CONNECT: ON":"BOOT CONNECT: OFF",640,606,330,48,TFT_DARKCYAN);
+  text("Pair once; trust survives updates. Confirm the same code on both devices.",330,690,TFT_LIGHTGREY,2);
+#endif
+
 }
 
 void draw_system_power() {
@@ -636,6 +660,7 @@ void enter(const State& state_value, Section section) {
 }
 
 void leave() {
+  accessory_forget_confirmation=false;
   g_active = false;
   g_edit = EditField::none;
   g_wifi_edit = WifiEdit::none;
@@ -713,7 +738,17 @@ void update(const State& state_value) {
   const bool companion_changed = g_section == Section::companion &&
       (g_state.web_console_enabled != state_value.web_console_enabled ||
        g_state.web_console_listening != state_value.web_console_listening ||
-       strcmp(g_state.web_console_url, state_value.web_console_url) != 0);
+       strcmp(g_state.web_console_url, state_value.web_console_url) != 0 ||
+       g_state.orcdial_pairing != state_value.orcdial_pairing ||
+       g_state.orcdial_connected != state_value.orcdial_connected ||
+       g_state.orcdial_verifying != state_value.orcdial_verifying ||
+       g_state.orcdial_boot_connect != state_value.orcdial_boot_connect ||
+       g_state.orcdial_upgrade != state_value.orcdial_upgrade ||
+       g_state.orcdial_code != state_value.orcdial_code ||
+       strcmp(g_state.orcdial_connection,state_value.orcdial_connection) ||
+       strcmp(g_state.orcdial_failure,state_value.orcdial_failure) ||
+       g_state.orcdial_paired != state_value.orcdial_paired ||
+       g_state.orcdial_bridge_ready != state_value.orcdial_bridge_ready);
   g_state = state_value;
   if (header_changed) draw_header();
   if (page_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none && !g_location_edit)
@@ -759,13 +794,29 @@ Action handle_touch(int32_t x, int32_t y) {
     }
     return {};
   }
+#if ORCSDR_ORCDIAL
+  if(g_section==Section::companion) {
+    if(hit(x,y,330,540,280,48)) {
+      if(accessory_forget_confirmation){accessory_forget_confirmation=false;draw_content();return {};}
+      if(g_state.orcdial_verifying)return {ActionKind::orcdial_confirm,int32_t(g_state.orcdial_code)};
+      if(!strcmp(g_state.orcdial_failure,"Storage failed"))return {ActionKind::orcdial_forget,0};
+      return {g_state.orcdial_pairing?ActionKind::orcdial_cancel:g_state.orcdial_connected?ActionKind::orcdial_disconnect:g_state.orcdial_paired?ActionKind::orcdial_connect:ActionKind::orcdial_pair,0};
+    }
+    if(hit(x,y,640,540,330,48)) {
+      if(accessory_forget_confirmation){accessory_forget_confirmation=false;return {ActionKind::orcdial_forget,1};}
+      if(g_state.orcdial_verifying)return {ActionKind::orcdial_cancel,0};
+      if(g_state.orcdial_paired || !strcmp(g_state.orcdial_failure,"Storage failed")){accessory_forget_confirmation=true;draw_content();}return {};
+    }
+    if(g_state.orcdial_paired&&hit(x,y,640,606,330,48))return {ActionKind::orcdial_boot,g_state.orcdial_boot_connect?0:1};
+  }
+#endif
   if (g_section == Section::connectivity) {
     if (g_state.wifi_hosted_update_required) return {};
     if (hit(x, y, 938, 198, 280, 48))
       return {ActionKind::wifi_power_changed, g_state.wifi_power_enabled ? 0 : 1};
-    if (hit(x, y, 930, 250, 288, 48))
+    if (hit(x, y, 930, 262, 288, 48))
       return {ActionKind::wifi_start_at_boot_changed, g_state.wifi_start_at_boot ? 0 : 1};
-    if (hit(x, y, 930, 308, 288, 48))
+    if (hit(x, y, 930, 326, 288, 48))
       return {ActionKind::wifi_antenna_changed, g_state.wifi_external_antenna ? 0 : 1};
     if (!g_state.wifi_power_enabled) return {};
     if (hit(x, y, 330, 198, 280, 48) && !g_state.wifi_scanning)
@@ -776,20 +827,20 @@ Action handle_touch(int32_t x, int32_t y) {
       return {};
     }
     for (uint8_t i = 0; i < g_state.saved_network_count && i < 4; ++i) {
-      const int row_y = 394 + i * 44;
-      if (hit(x, y, 674, row_y, 144, 40))
+      const int row_y = 410 + i * 44;
+      if (hit(x, y, 674, row_y, 144, 36))
         return {ActionKind::connect_saved_wifi, i};
-      if (i && hit(x, y, 830, row_y, 88, 40))
+      if (i && hit(x, y, 830, row_y, 88, 36))
         return {ActionKind::move_wifi_up, i};
-      if (i + 1 < g_state.saved_network_count && hit(x, y, 930, row_y, 106, 40))
+      if (i + 1 < g_state.saved_network_count && hit(x, y, 930, row_y, 106, 36))
         return {ActionKind::move_wifi_down, i};
-      if (hit(x, y, 1048, row_y, 170, 40))
+      if (hit(x, y, 1048, row_y, 170, 36))
         return {ActionKind::forget_wifi, i};
     }
     for (uint8_t i = 0; i < std::min<uint8_t>(g_state.network_count, 6); ++i) {
       const int row_x = 330 + (i % 2) * 428;
-      const int row_y = 604 + (i / 2) * 34;
-      if (!hit(x, y, row_x, row_y, 418, 32)) continue;
+      const int row_y = 624 + (i / 2) * 30;
+      if (!hit(x, y, row_x, row_y, 418, 28)) continue;
       if (g_state.networks[i].saved) {
         for (uint8_t saved = 0; saved < g_state.saved_network_count; ++saved)
           if (strcmp(g_state.networks[i].ssid, g_state.profiles[saved].ssid) == 0)
@@ -894,6 +945,9 @@ Action handle_touch(int32_t x, int32_t y) {
     if ((strcmp(g_state.wifi_c6_update_state, "ready") == 0 ||
          strcmp(g_state.wifi_c6_update_state, "optional") == 0) &&
         hit(x, y, 330, 445, 360, 58)) return {ActionKind::c6_update_confirm, 0};
+    if (strcmp(g_state.wifi_c6_update_state, "current") == 0 &&
+        g_state.wifi_c6_image_embedded && hit(x, y, 330, 445, 390, 58))
+      return {ActionKind::orcdial_c6_update, 0};
     return {};
   }
   return {};
@@ -991,7 +1045,19 @@ bool self_check() {
   strlcpy(g_state.wifi_c6_update_state, "optional", sizeof(g_state.wifi_c6_update_state));
   const bool c6_optional_routes = handle_touch(331, 446).kind == ActionKind::c6_update_confirm;
   strlcpy(g_state.wifi_c6_update_state, "current", sizeof(g_state.wifi_c6_update_state));
-  const bool c6_current_blocks = handle_touch(331, 446).kind == ActionKind::none;
+  g_state.wifi_c6_image_embedded = true;
+  const bool c6_current_routes = handle_touch(331, 446).kind == ActionKind::orcdial_c6_update;
+  g_section = Section::companion;
+#if ORCSDR_ORCDIAL
+  const bool accessory_routes = handle_touch(450, 560).kind == ActionKind::orcdial_pair;
+#else
+  const bool accessory_routes = handle_touch(950, 425).kind == ActionKind::none;
+#endif
+  g_section = Section::connectivity;
+  g_state.wifi_hosted_update_required = false;
+  const bool wifi_boot_routes = handle_touch(950, 286).kind == ActionKind::wifi_start_at_boot_changed;
+  const bool wifi_antenna_routes = handle_touch(950, 350).kind == ActionKind::wifi_antenna_changed;
+  const bool wifi_gap_clear = handle_touch(950, 318).kind == ActionKind::none;
   g_section = Section::radio_defaults;
   g_state.rtl_usb_safe_mode = true;
   const bool usb_recovery_routes =
@@ -1000,7 +1066,8 @@ bool self_check() {
   g_section = saved_section;
   g_active = saved_active;
   if (!symbols_ok || !credentials_ok || !empty_location_ok || !location_ok ||
-      !c6_ready_routes || !c6_optional_routes || !c6_current_blocks || !usb_recovery_routes) return false;
+      !c6_ready_routes || !c6_optional_routes || !c6_current_routes || !usb_recovery_routes ||
+      !accessory_routes || !wifi_boot_routes || !wifi_antenna_routes || !wifi_gap_clear) return false;
   return true;
 }
 

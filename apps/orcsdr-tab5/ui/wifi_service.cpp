@@ -337,6 +337,11 @@ int16_t rssi() {
   return cached;
 }
 bool link_failed() { return g_link_failed.load(std::memory_order_acquire); }
+void note_start_failure() {
+  if (strcmp(g_failure_stage, "hosted_init") == 0 || strcmp(g_failure_stage, "hosted_connect") == 0 ||
+      strcmp(g_failure_stage, "version") == 0)
+    mark_link_failed(g_failure_stage);
+}
 bool begin_link_recovery() {
   g_link_recovering.store(true, std::memory_order_release);
   // No esp_wifi_stop()/disconnect(): over a dead link each RPC blocks 5 s.
@@ -366,7 +371,7 @@ bool begin_link_recovery() {
 void end_link_recovery() { g_link_recovering.store(false, std::memory_order_release); }
 bool hosted_versions_match() { return g_versions_match; }
 const char* hosted_c6_version() { return g_c6_version; }
-bool hosted_transport_ready() { return g_hosted_transport_ready; }
+bool hosted_transport_ready() { return g_hosted_transport_ready && !link_failed(); }
 const char* hosted_failure_stage() { return g_failure_stage; }
 int32_t hosted_failure_code() { return g_failure_code; }
 C6UpdateStatus c6_update_status() {
@@ -388,10 +393,15 @@ const char* c6_update_state_name(C6UpdateState state) {
     default: return "unavailable";
   }
 }
-bool begin_c6_update() {
+bool begin_c6_update(bool allow_current_for_orcdial) {
   const C6UpdateStatus status = c6_update_status();
-  if (!g_hosted_transport_ready || !status.image_embedded ||
-      (status.state != C6UpdateState::ready && status.state != C6UpdateState::optional))
+  const bool eligible = status.state == C6UpdateState::ready
+      || status.state == C6UpdateState::optional
+#if ORCSDR_ORCDIAL
+      || (allow_current_for_orcdial && status.state == C6UpdateState::current)
+#endif
+      ;
+  if (!hosted_transport_ready() || !status.image_embedded || !eligible)
     return false;
   set_update_status(C6UpdateState::updating, 0, "starting");
   if (xTaskCreate(c6_update_task, "c6_ota", 4096, nullptr, 4, nullptr) != pdPASS) {

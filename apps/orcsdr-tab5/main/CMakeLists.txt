@@ -103,6 +103,8 @@ idf_component_register(
         "../ui/wifi_service.cpp"
     INCLUDE_DIRS "." "../ui" "../dsp"
     REQUIRES
+        bootloader_support
+        mbedtls
         m5unified
         m5gfx
         mbelib
@@ -138,15 +140,18 @@ idf_component_register(
     EMBED_TXTFILES
         "catalog_public_key.pem"
 )
+target_compile_definitions(${COMPONENT_LIB} PRIVATE ORCSDR_ORCDIAL=1)
 
 target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)
 # DSP build switches (tools/build-tab5-idf.ps1 always passes all of them, so a value
 # cached by an earlier build can never leak into this one).
 set(ORCSDR_DSP_AB 0 CACHE STRING "1 = Stage-1 old-vs-new DSP A/B harness (test builds only)")
 set(ORCSDR_DSP_STAGE_TIMING 1 CACHE STRING "1 = per-stage DSP timing in RTL_DSP STATS")
+option(ORCSDR_C6_FAULT_TEST "Enable authenticated C6 power interruption diagnostics; never ship" OFF)
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     ORCSDR_HAS_EMBEDDED_C6_FIRMWARE=$<BOOL:${C6_FIRMWARE_BIN}>
     ORCSDR_DSP_AB=$<BOOL:${ORCSDR_DSP_AB}>
+    ORCSDR_C6_FAULT_TEST=$<BOOL:${ORCSDR_C6_FAULT_TEST}>
     ORCSDR_DSP_STAGE_TIMING=$<BOOL:${ORCSDR_DSP_STAGE_TIMING}>
     ORCSDR_DSP_LAB=$<BOOL:${ORCSDR_DSP_LAB}>)
 target_compile_options(${COMPONENT_LIB} PRIVATE

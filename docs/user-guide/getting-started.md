@@ -10,21 +10,35 @@
 4. Use stable power. After installation, disconnect the PC USB Serial/JTAG
    cable; on the tested bench it can contribute to brownout under Wi-Fi plus RTL load.
 
-## Install with M5Burner
+## Install in your browser
 
-The current release is
-[`v0.3.0-beta.1`](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.3.0-beta.1).
-Open M5Burner, select the OrcSDR Tab5 package, and burn it. **An M5Burner install resets your saved
-settings** (Wi-Fi profiles, location, screen rotation), so write them down first and expect to re-enter
-them. The package carries matching ESP-Hosted 3.0.6 firmware for the onboard C6.
+1. Open the [OrcSDR M5Burner web flasher](https://burner.m5stack.com/share/firmware/JXFU4H)
+   in **Chrome or Edge** on your computer. The page uses WebSerial.
+2. Connect the **M5Stack Tab5** by USB. Close any serial monitor using its port.
+3. Check the version shown on the page, click **Burn to device**, and select the
+   Tab5 serial port when the browser asks for access.
+4. Follow the flasher instructions and keep the USB cable connected until flashing
+   completes. Restart the Tab5 afterward.
 
-To keep your settings, use the settings-safe installer zip from the release page instead: unzip it, plug in
-the Tab5 and double-click `install.bat`. It writes only the program, never your saved settings. Details are in
+**An M5Burner install resets saved settings** (Wi-Fi profiles, location, screen
+rotation), so write them down first and expect to re-enter them.
+
+## Other installation methods
+
+You can also use the **M5Burner desktop application**: search for OrcSDR, select
+the Tab5 package, and burn it. The same settings-reset notice applies.
+
+To keep your settings, use the Windows settings-preserving installer zip from
+[the latest release page](https://github.com/hardcoreerik/OrcSDR/releases/latest):
+unzip it, plug in the Tab5, and double-click `install.bat`. It writes the bootloader,
+partition table, and OrcSDR application while leaving saved settings and the
+existing C6 firmware untouched. Details are in
 [`docs/M5BURNER_RELEASE.md`](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/M5BURNER_RELEASE.md).
 
-Current M5Burner search visibility was not independently reverified during the
-documentation audit. If the entry is not visible, use the exact release page
-above rather than an older 2.12.6 installer path.
+For supported ordinary Wi-Fi operation, C6 2.12.6 and 3.0.6 are both accepted;
+their version numbers do not need to match the host. The included C6 3.0.6
+update is optional. Keep C6 2.12.6 if you need M5Launcher Wi-Fi/OTA; applying the
+3.0.6 update stops those M5Launcher functions.
 
 ## First boot
 
