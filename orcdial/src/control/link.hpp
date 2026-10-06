@@ -13,6 +13,7 @@ class Link {
   bool begin();
   void poll();
   void start_pairing();
+  void forget_and_pair();  // pairs only if the forget succeeded (a failed revocation blocks replacement pairing)
   void cancel_pairing() { secure_.action(secure::Action::cancel); }
   void confirm_pairing(uint32_t code) { secure_.action(secure::Action::confirm,code); }
   void connect() { secure_.action(secure::Action::connect); }

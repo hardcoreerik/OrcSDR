@@ -32,7 +32,7 @@ static void device_activate() {
   const auto status=radio_link.security_status();
   pending_delta=0;
   if(forget_confirmation) {
-    if(device_selection==1){radio_link.forget();radio_link.start_pairing();}
+    if(device_selection==1)radio_link.forget_and_pair();
     forget_confirmation=false;device_selection=0;return;
   }
   if(status.state==orc::secure::State::verify) {

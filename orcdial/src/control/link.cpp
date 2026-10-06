@@ -62,7 +62,11 @@ bool Link::begin() {
   if(esp_wifi_get_channel(&first_channel,&secondary)==ESP_OK)channel_=first_channel;
   active_=this;esp_now_register_recv_cb(receive);esp_now_register_send_cb(sent);
   secure_.preferred_channel(saved_channel_);
-  if(!secure_.begin(1,mac,legacy,transmit,scan,evidence))return false;
+  if(!secure_.begin(1,mac,legacy,transmit,scan,evidence)) {
+    // Do not leave ESP-NOW initialized with live callbacks around a runtime that failed to start.
+    esp_now_unregister_recv_cb();esp_now_unregister_send_cb();esp_now_deinit();active_=nullptr;
+    return false;
+  }
   secure_.enabled(true);Serial.println("ESPNOW_V4_INIT_OK");return true;
 }
 void Link::receive(const uint8_t* mac,const uint8_t* data,int size) {
@@ -107,6 +111,7 @@ bool Link::send(Type type, int32_t value, uint32_t sequence, ActionKind action) 
   return sent;
 }
 void Link::start_pairing() {secure_.action(secure::Action::pair);pending_sequence_=0;}
+void Link::forget_and_pair() {secure_.action(secure::Action::forget_repair);pending_sequence_=0;}
 void Link::disconnect(bool) {secure_.action(secure::Action::disconnect);pending_sequence_=0;connected_=false;}
 bool Link::command(Type type, int32_t value) {
   if (!connected() || pending_sequence_) return false;
