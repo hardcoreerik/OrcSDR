@@ -9475,7 +9475,10 @@ void initialize_wifi() {
     strlcpy(wifi_hosted_c6_version, orcsdr::wifi::hosted_c6_version(),
             sizeof(wifi_hosted_c6_version));
     strlcpy(wifi_status_message, "ESP-Hosted C6 unavailable", sizeof(wifi_status_message));
-    Serial.println("RTL_WIFI_BLOCKED hosted_init_or_version");
+    Serial.printf("RTL_WIFI_BLOCKED hosted_init_or_version stage=%s code=0x%x\n",
+                  orcsdr::wifi::hosted_failure_stage(),
+                  static_cast<unsigned>(orcsdr::wifi::hosted_failure_code()));
+    orcsdr::wifi::note_start_failure();
   } else {
     wifi_hosted_update_required = false;
     strlcpy(wifi_hosted_c6_version, orcsdr::wifi::hosted_c6_version(),

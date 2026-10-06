@@ -34,6 +34,9 @@ void disconnect();
 bool connected();
 // True once the SDIO link to the C6 has failed; Wi-Fi stays down until restart.
 bool link_failed();
+// A transport-level start() failure (Hosted init, connect or version query) is treated like a lost link,
+// so the bounded recovery runs instead of leaving Wi-Fi blocked until the next reboot.
+void note_start_failure();
 // Tear down a failed Hosted link so start() can bring it up again (the caller
 // power-cycles the C6 in between); end_link_recovery() re-enables failure
 // detection once start() has returned.

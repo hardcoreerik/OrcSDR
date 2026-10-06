@@ -1,5 +1,6 @@
 #pragma once
 #include "secure_session.hpp"
+#include "link_policy.hpp"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
@@ -18,6 +19,7 @@ class Runtime {
  public:
   using Transmit=bool (*)(const uint8_t*,const uint8_t*);
   using Scan=void (*)(uint8_t);
+  using Evidence=bool (*)(); // true while the peer acknowledges our unicast frames
   // P4 has no local Wi-Fi RF entropy source. Call this before M5/ADC/audio
   // initialization, seed a DRBG while SAR entropy is enabled, then release it.
   bool prepare_entropy() {
@@ -38,14 +40,14 @@ class Runtime {
     if(!entropy_ready_)mbedtls_ctr_drbg_free(&drbg_);
     return entropy_ready_;
   }
-  bool begin(uint8_t role,const uint8_t mac[6],bool legacy,Transmit transmit,Scan scan=nullptr) {
+  bool begin(uint8_t role,const uint8_t mac[6],bool legacy,Transmit transmit,Scan scan=nullptr,Evidence evidence=nullptr) {
     if(task_)return true;
 #if CONFIG_IDF_TARGET_ESP32P4
     if(!entropy_ready_)return initialization_failed(Failure::authentication);
 #else
     if(!prepare_entropy())return initialization_failed(Failure::authentication); // S3 Wi-Fi is already enabled by Link.
 #endif
-    role_=role;transmit_=transmit;scan_=scan;std::memcpy(mac_,mac,6);
+    role_=role;transmit_=transmit;scan_=scan;evidence_=evidence;std::memcpy(mac_,mac,6);
     input_=xQueueCreate(20,sizeof(Event));actions_=xQueueCreate(8,sizeof(Event));output_=xQueueCreate(8,sizeof(Control));
     if(!input_||!actions_||!output_)return initialization_failed(Failure::transport);
     if(nvs_open("orcdial4",NVS_READWRITE,&store_)!=ESP_OK)return initialization_failed(Failure::storage);
@@ -67,6 +69,8 @@ class Runtime {
     return true;
   }
   void enabled(bool on) {enabled_.store(on,std::memory_order_relaxed);}
+  // Channel the listener tries first and holds longest (last channel a connection worked on).
+  void preferred_channel(uint8_t channel) {preferred_.store(channel,std::memory_order_relaxed);}
   bool receive(const uint8_t* mac,const uint8_t* wire,size_t n) {
     if(!input_||n!=64 || !mac || !wire)return false;
     Event e{};e.kind=0;
@@ -122,15 +126,19 @@ class Runtime {
     // Constructor deferred until transport staging permits a fresh boot challenge.
     while(!enabled_.load(std::memory_order_relaxed))vTaskDelay(pdMS_TO_TICKS(20));
     Hooks hooks{this,random,transmit,save,deliver};Session session(role_,mac_,initial_,hooks);
-    if(initial_.trusted && initial_.boot_connect)session.connect(false,now());
+    RetryScheduler retry;
+    if(initial_.trusted && initial_.boot_connect){session.connect(false,now());retry.intent(true);}
     wipe(&initial_,sizeof initial_);
-    Reassembly assembly;uint8_t assembly_mac[6]{};uint32_t scan_at=0;uint8_t channel=1;State previous=State::offline;
+    Reassembly assembly;uint8_t assembly_mac[6]{};uint32_t scan_at=0,dwell=ChannelPlanner::kSweepDwellMs;State previous=State::offline;
+    ChannelPlanner planner;LockJudge lock;
     for(;;) {
       const uint32_t time=now();Event e{};
       assembly.expire(time);
       // Network input cannot fill or starve the local Disconnect/Forget queue.
       if(xQueueReceive(actions_,&e,0)==pdTRUE || xQueueReceive(input_,&e,pdMS_TO_TICKS(20))==pdTRUE) {
         if(e.kind==1) {
+          // Only Connect (and boot-connect) express intent to be connected; every other action stops retries.
+          if(e.action!=Action::boot && e.action!=Action::confirm)retry.intent(e.action==Action::connect);
           switch(e.action){case Action::pair:session.pair(time);break;case Action::cancel:session.cancel();break;
             case Action::confirm:session.confirm(e.value,time);break;case Action::connect:session.connect(true,time);break;
             case Action::disconnect:session.disconnect(time);break;case Action::forget:session.forget(time);break;
@@ -150,13 +158,18 @@ class Runtime {
       if(current.state!=previous && current.state!=State::connected){generation_.fetch_add(1,std::memory_order_release);xQueueReset(output_);}
       previous=current.state;
       portENTER_CRITICAL(&lock_);status_=current;portEXIT_CRITICAL(&lock_);
+      if(retry.step(current.state==State::connected,current.state==State::failed && current.failure==Failure::timeout && current.trusted,time))
+        session.connect(false,time);
       const bool passive_listen=current.trusted && (current.state==State::offline || current.state==State::paused || current.state==State::failed);
-      if(scan_ && !current.channel_locked && (passive_listen || current.state==State::searching || current.state==State::connecting) && uint32_t(time-scan_at)>350) {
-        scan_(channel);channel=channel==11?1:channel+1;scan_at=time;
+      const bool locked=lock.locked(current.channel_locked,time,evidence_);
+      if(scan_ && !locked && (passive_listen || current.state==State::searching || current.state==State::connecting) && uint32_t(time-scan_at)>dwell) {
+        planner.preferred(preferred_.load(std::memory_order_relaxed));
+        scan_(planner.next(dwell));scan_at=time;
       }
     }
   }
-  uint8_t role_=0,mac_[6]{};Transmit transmit_=nullptr;Scan scan_=nullptr;Trust initial_{};
+  uint8_t role_=0,mac_[6]{};Transmit transmit_=nullptr;Scan scan_=nullptr;Evidence evidence_=nullptr;Trust initial_{};
+  std::atomic<uint8_t> preferred_{0};
   nvs_handle_t store_=0;QueueHandle_t input_=nullptr,actions_=nullptr,output_=nullptr;TaskHandle_t task_=nullptr;
   std::atomic<bool> enabled_{false};std::atomic<uint32_t> generation_{0};
   mutable portMUX_TYPE lock_=portMUX_INITIALIZER_UNLOCKED;Status status_{};

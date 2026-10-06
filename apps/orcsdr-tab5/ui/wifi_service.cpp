@@ -337,6 +337,11 @@ int16_t rssi() {
   return cached;
 }
 bool link_failed() { return g_link_failed.load(std::memory_order_acquire); }
+void note_start_failure() {
+  if (strcmp(g_failure_stage, "hosted_init") == 0 || strcmp(g_failure_stage, "hosted_connect") == 0 ||
+      strcmp(g_failure_stage, "version") == 0)
+    mark_link_failed(g_failure_stage);
+}
 bool begin_link_recovery() {
   g_link_recovering.store(true, std::memory_order_release);
   // No esp_wifi_stop()/disconnect(): over a dead link each RPC blocks 5 s.
