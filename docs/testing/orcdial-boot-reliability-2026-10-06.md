@@ -63,11 +63,24 @@ The unplugged result is the real product configuration. The two early SDIO `0x10
 happen while the C6 is powering up after the boot-time rail pulse and are not faults; the harness counts
 them separately.
 
+## Startup order, long absence and cold start
+
+Run after the fixes above, on the same hardware, with the downloader adapter wired to GND and the C6 TX line only. Times are
+the Tab5's own uptime or the time since a device appeared, so how long a person takes to press a button does not matter.
+
+| Test | Setup | Result |
+|---|---|---|
+| Long Dial absence | Dial unplugged, tablet reset | 7 attempts (first plus 6 retries) at about 3.5, 4.6, 9.4, 19, 30 and 30 s gaps, then stays Failed; Wi-Fi, capture and audio unaffected (`audio_drops=0`) |
+| Dial returns after the retries are used up | Dial plugged in again | Reconnected on its own 5.8 s later, no explicit Connect |
+| Dial first | Dial on, Tab5 powered off then on | Connected at Tab5 uptime 11.9 s, two C6 ROM banners |
+| Tab5 first | Tab5 on, Dial unplugged about 40 s then plugged in | Reconnected 5.8 s after the plug |
+| Cold start | Both fully off, then both powered on together | Hosted 3.9 s, Wi-Fi 8.5 s, Connected at Tab5 uptime 12.5 s, two C6 ROM banners |
+
+Note for the bench: on this Tab5 a **long press of the power button enters download mode**; power it off with a double press.
+
 ## Not yet covered
 
-- Recovery after a deliberate mid-run C6 power cut takes 25 to 35 s or more and restarts capture several
-  times. It is a fault-injection case, not the boot path, and has not been optimised.
-- A true cold start (battery and USB removed) and the Tab5-first / OrcDial-first start order still need a
-  run with the downloader unplugged.
+- Recovery after a deliberate mid-run C6 power cut takes 25 to 35 s or more and restarts capture several times. It is a
+  fault-injection case, not the boot path, and has not been optimised.
 - One router, one channel, one OrcDial. Other channels and crowded RF environments are untested.
 - The C6 firmware is unchanged (Hosted 3.0.6).
