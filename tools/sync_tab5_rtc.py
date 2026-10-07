@@ -21,9 +21,21 @@ def rtc_set_command(epoch: int) -> str:
     return f"ORC_RTC_SET {epoch}"
 
 
+MIN_OFFSET_MINUTES = -12 * 60
+MAX_OFFSET_MINUTES = 14 * 60
+
+
+def tz_set_command(minutes: int) -> str:
+    if not MIN_OFFSET_MINUTES <= minutes <= MAX_OFFSET_MINUTES:
+        raise ValueError("UTC offset must be between -720 and 840 minutes")
+    return f"ORC_TZ_SET {minutes}"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("port", help="Tab5 USB serial port, for example COM17")
+    parser.add_argument("--utc-offset-minutes", type=int,
+                        help="also store the local UTC offset in minutes east of UTC, e.g. -420 for UTC-07:00")
     parser.add_argument("--pairing-key", type=Path, default=Path(".orclink/ui-doc.key"))
     args = parser.parse_args()
 
@@ -35,6 +47,12 @@ def main() -> None:
         if not reply.startswith("ORC_RTC_SET_OK"):
             raise RuntimeError(reply)
         print(reply)
+        if args.utc_offset_minutes is not None:
+            tab5.send(tz_set_command(args.utc_offset_minutes))
+            reply = tab5.wait(("ORC_TZ_SET_OK", "ORC_TZ_SET_ERROR"))
+            if not reply.startswith("ORC_TZ_SET_OK"):
+                raise RuntimeError(reply)
+            print(reply)
     finally:
         tab5.close()
 

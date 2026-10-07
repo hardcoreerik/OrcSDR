@@ -105,6 +105,8 @@
 #include "rf_lab.hpp"
 #include "rf_visualizer.hpp"
 #include "settings_app.hpp"
+#include "clock_settings.hpp"
+#include "ntp_sync.hpp"
 #include "time_service.hpp"
 #include "ui_capture.hpp"
 #include "web_console.hpp"
@@ -12335,8 +12337,13 @@ const orcsdr::settings::State& global_settings_state() {
   state.uptime_seconds = millis() / 1000;
   const auto clock = orcsdr::time_service::now();
   state.rtc_valid = clock.wallclock_valid;
-  if (state.rtc_valid)
+  if (state.rtc_valid) {
     orcsdr::time_service::format_utc(state.rtc_utc, sizeof(state.rtc_utc), clock.utc);
+    orcsdr::time_service::format_local(state.rtc_local, sizeof(state.rtc_local), clock.utc);
+    state.rtc_epoch = clock.utc;
+  }
+  state.utc_offset_minutes = static_cast<int16_t>(orcsdr::time_service::utc_offset_minutes());
+  state.ntp_state = static_cast<uint8_t>(orcsdr::ntp_sync::state());
   return state;
 }
 
@@ -12427,12 +12434,16 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   } else {
     strlcpy(snapshot.wifi_ip, device.wifi_ip, sizeof(snapshot.wifi_ip));
     const auto clock = orcsdr::time_service::now();
-    char utc[24]{};
+    char local[24]{};
     if (clock.wallclock_valid &&
-        orcsdr::time_service::format_utc(utc, sizeof(utc), clock.utc)) {
-      memcpy(snapshot.clock, utc + 11, 8);
+        orcsdr::time_service::format_local(local, sizeof(local), clock.utc)) {
+      memcpy(snapshot.clock, local + 11, 8);
       snapshot.clock[8] = '\0';
-      snprintf(snapshot.date, sizeof(snapshot.date), "%.10s UTC", utc);
+      char zone[12];
+      orcsdr::clock_settings::format_offset_short(zone, sizeof(zone),
+                                                   orcsdr::time_service::utc_offset_minutes());
+      // The date field holds 19 characters: the date, a space, and up to 8 of the zone ("UTC-7", "UTC+5:30").
+      snprintf(snapshot.date, sizeof(snapshot.date), "%.10s %.8s", local, zone);
     } else {
       const uint32_t seconds = clock.uptime_ms / 1000u;
       snprintf(snapshot.clock, sizeof(snapshot.clock), "%02lu:%02lu:%02lu",
@@ -13134,6 +13145,24 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
     case orcsdr::settings::ActionKind::rtl_usb_safe_mode_reset:
       reset_rtl_usb_safe_mode_and_restart();
       break;
+    case orcsdr::settings::ActionKind::clock_offset_changed:
+      orcsdr::time_service::set_utc_offset_minutes(action.value);
+      if (!orcsdr::time_service::save_config(preferences)) Serial.println("ORC_TZ_ERROR persistence_failed");
+      bump_rtl_ui();
+      break;
+    case orcsdr::settings::ActionKind::clock_set_utc:
+      if (orcsdr::time_service::set_utc(static_cast<uint32_t>(action.value)) &&
+          preferences.putBool("rtc_est", true)) {
+        Serial.printf("ORC_RTC_SET_OK utc=%lu source=touch\n", static_cast<unsigned long>(static_cast<uint32_t>(action.value)));
+      } else {
+        Serial.println("ORC_RTC_SET_ERROR touch_set_failed");
+      }
+      update_global_settings();
+      bump_rtl_ui();
+      break;
+    case orcsdr::settings::ActionKind::clock_ntp_sync:
+      if (wifi_connected && orcsdr::ntp_sync::start()) Serial.println("ORC_NTP_START");
+      break;
     case orcsdr::settings::ActionKind::web_console_changed:
       settings_web_console_enabled = action.value != 0;
       preferences.putBool("set_web_console", settings_web_console_enabled);
@@ -13190,6 +13219,17 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       break;
     default: break;
   }
+}
+
+// Runs an optional network sync to its end and records that the RTC is now established. Called every UI loop.
+void service_clock() {
+  orcsdr::ntp_sync::poll();
+  bool ok = false;
+  if (!orcsdr::ntp_sync::take_result(&ok)) return;
+  if (ok && !preferences.putBool("rtc_est", true)) ok = false;
+  Serial.printf("ORC_NTP_%s\n", ok ? "OK" : "FAILED");
+  update_global_settings();
+  bump_rtl_ui();
 }
 
 void update_global_settings() {
@@ -13413,6 +13453,7 @@ void persist_workflow() {
 void load_state() {
   preferences.begin("orclink", false);
   orcsdr::time_service::initialize(preferences.getBool("rtc_est", false));
+  orcsdr::time_service::load_config(preferences);
   orcsdr::am::load(preferences);
   rtl_am_step_hz = orcsdr::am::tune_step();
   band_step_load();
@@ -18219,16 +18260,38 @@ void process_command(char* command) {
     Serial.println("RTL_LOCATION STATUS|IP|LOOKUP <zip/address>|CONFIRM - resolve and save receiver location");
     Serial.println("ORC_RTC_STATUS                 - trusted hardware UTC clock status");
     Serial.println("ORC_RTC_SET <unix_utc>         - establish hardware UTC clock (auth)");
+    Serial.println("ORC_TZ_SET <minutes>           - UTC offset in minutes east of UTC, -720..840 (auth)");
     Serial.println("SD_LIST/SD_GET_*/SD_PUT_*      - SD card file transfer (see copy_to_tab5_sd.ps1)");
     Serial.println("RTL_HELP_END");
     return;
   }
   if (strcmp(command, "ORC_RTC_STATUS") == 0) {
     const auto clock = orcsdr::time_service::now();
-    Serial.printf("ORC_RTC_STATUS valid=%d utc=%lu source=%s\n",
+    Serial.printf("ORC_RTC_STATUS valid=%d utc=%lu source=%s offset_min=%ld\n",
                   clock.wallclock_valid ? 1 : 0,
                   static_cast<unsigned long>(clock.utc),
-                  M5.Rtc.isEnabled() ? "hardware" : "unavailable");
+                  M5.Rtc.isEnabled() ? "hardware" : "unavailable",
+                  static_cast<long>(orcsdr::time_service::utc_offset_minutes()));
+    return;
+  }
+  if (strncmp(command, "ORC_TZ_SET ", 11) == 0) {
+    if (!authenticated) {
+      Serial.println("ORC_TZ_SET_ERROR auth_required");
+      return;
+    }
+    char* end = nullptr;
+    const long minutes = strtol(command + 11, &end, 10);
+    if (end == command + 11 || *end != '\0' || !orcsdr::time_service::set_utc_offset_minutes(minutes)) {
+      Serial.println("ORC_TZ_SET_ERROR out_of_range");
+      return;
+    }
+    if (!orcsdr::time_service::save_config(preferences)) {
+      Serial.println("ORC_TZ_SET_ERROR persistence_failed");
+      return;
+    }
+    Serial.printf("ORC_TZ_SET_OK offset_min=%ld\n", minutes);
+    update_global_settings();
+    bump_rtl_ui();
     return;
   }
   if (strncmp(command, "ORC_RTC_SET ", 12) == 0) {
@@ -19815,6 +19878,7 @@ void loop() {
     if (elapsed_ms >= 500)
       Serial.printf("RTL_MAIN_STALL stage=serial_dispatch elapsed_ms=%u\n", elapsed_ms);
   }
+  service_clock();
   // Keep connection success/failure/timeout and radio resume progressing even
   // when a full-screen mode returns early from the rest of the UI loop.
   if (boot_auto_start_allowed) {

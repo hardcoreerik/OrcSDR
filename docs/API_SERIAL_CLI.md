@@ -138,19 +138,31 @@ proper pairing client, not something to hand-roll casually.
 
 ## Hardware clock
 
-The Tab5 hardware RTC is trusted only after OrcSDR has established it and
-successfully read the value back. Finding the RTC chip alone does not make its
-calendar trustworthy. The offline helper authenticates and copies UTC from the
-connected computer; it does not use an internet or AI service:
+The Tab5 hardware RTC (an RX8130CE; M5Unified addresses it at I2C 0x32 and it keeps a two-digit
+year, so it covers 2000 to 2099 and OrcSDR accepts 2024 to 2099) is trusted only after OrcSDR has
+established it and successfully read the value back. Finding the RTC chip alone does not make its
+calendar trustworthy. The RTC always holds UTC. The local time shown on Home and in Settings is that UTC
+plus a stored **UTC offset** in minutes east of UTC (for example -420 for UTC-07:00); daylight saving is
+a manual offset change.
+
+**On the device:** Settings > System > **SET CLOCK** edits the local date and time with the touchscreen
+and the UTC offset in 15-minute steps, then writes UTC to the RTC and saves the offset. When Wi-Fi is
+already connected, **SYNC NTP** can set the clock from `pool.ntp.org` instead; nothing contacts the
+network unless that button is pressed, and the clock never requires Internet access.
+
+**From a computer:** the offline helper authenticates and copies UTC from the connected computer; it
+does not use an internet or AI service. Add `--utc-offset-minutes` to store the zone in the same run:
 
 ```powershell
 python tools/sync_tab5_rtc.py COM17
+python tools/sync_tab5_rtc.py COM17 --utc-offset-minutes -420
 ```
 
 | Command | Auth | Reply | Notes |
 |---|---|---|---|
-| `ORC_RTC_STATUS` | no | `ORC_RTC_STATUS valid=0\|1 utc=<epoch-or-0> source=hardware\|unavailable` | Reports trusted wall-clock state. |
+| `ORC_RTC_STATUS` | no | `ORC_RTC_STATUS valid=0\|1 utc=<epoch-or-0> source=hardware\|unavailable offset_min=<minutes>` | Reports trusted wall-clock state and the stored UTC offset. |
 | `ORC_RTC_SET <unix_utc>` | yes | `ORC_RTC_SET_OK utc=...` or `ORC_RTC_SET_ERROR ...` | Writes UTC to the hardware RTC, verifies readback, then persists the established marker. |
+| `ORC_TZ_SET <minutes>` | yes | `ORC_TZ_SET_OK offset_min=...` or `ORC_TZ_SET_ERROR ...` | Stores the UTC offset (minutes east of UTC, -720 to 840). It changes how local time is shown, never the RTC. |
 
 RTC time augments monotonic uptime. It never replaces `received_ms` or changes
 packet age/order, and establishing the clock does not backfill old packet times.

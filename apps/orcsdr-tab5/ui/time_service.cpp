@@ -2,6 +2,9 @@
 
 #include <M5Unified.h>
 
+#include "clock_settings.hpp"
+#include "nvs_store.hpp"
+
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -14,6 +17,8 @@ namespace {
 constexpr time_t kMinUtc = 1704067200;  // 2024-01-01
 constexpr time_t kMaxUtc = 4102444800;  // 2100-01-01
 std::atomic<bool> g_wallclock_valid{false};
+std::atomic<int32_t> g_offset_minutes{0};
+constexpr const char* kOffsetKey = "tz_off_min";
 
 bool valid_epoch(time_t value) { return value >= kMinUtc && value < kMaxUtc; }
 
@@ -64,6 +69,26 @@ bool set_utc(uint32_t epoch) {
   return valid;
 }
 
+int32_t utc_offset_minutes() { return g_offset_minutes.load(std::memory_order_acquire); }
+
+bool set_utc_offset_minutes(int32_t minutes) {
+  const int32_t clamped = clock_settings::clamp_offset(minutes);
+  g_offset_minutes.store(clamped, std::memory_order_release);
+  return clamped == minutes;
+}
+
+void load_config(NvsStore& store) {
+  g_offset_minutes.store(clock_settings::clamp_offset(store.get_i32(kOffsetKey, 0)), std::memory_order_release);
+}
+
+bool save_config(NvsStore& store) {
+  return store.put_i32(kOffsetKey, g_offset_minutes.load(std::memory_order_acquire));
+}
+
+bool format_local(char* output, size_t output_size, uint32_t epoch) {
+  return clock_settings::format_local(output, output_size, epoch, utc_offset_minutes());
+}
+
 bool format_utc(char* output, size_t output_size, uint32_t epoch) {
   if (output == nullptr || output_size < 21 || !valid_epoch(epoch)) return false;
   const time_t raw = static_cast<time_t>(epoch);
@@ -78,7 +103,7 @@ bool self_check() {
   char value[24]{};
   return format_utc(value, sizeof(value), 1704067200) &&
          strcmp(value, "2024-01-01 00:00:00Z") == 0 &&
-         !format_utc(value, sizeof(value), 0);
+         !format_utc(value, sizeof(value), 0) && clock_settings::self_check();
 }
 
 }  // namespace orcsdr::time_service
