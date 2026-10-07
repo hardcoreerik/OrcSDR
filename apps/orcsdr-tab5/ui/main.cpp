@@ -12333,7 +12333,13 @@ const orcsdr::settings::State& global_settings_state() {
   state.battery_current_ma = device.battery_current_ma;
   state.vbus_mv = device.vbus_mv;
   strlcpy(state.charging_state, charging_state(), sizeof(state.charging_state));
-  snprintf(state.build_identity, sizeof(state.build_identity), "%s %s", __DATE__, __TIME__);
+#ifndef ORCSDR_BUILD_ID
+#define ORCSDR_BUILD_ID ""
+#endif
+  if (ORCSDR_BUILD_ID[0] != '\0')  // CI builds: "nightly <sha7> <date>" identifies the exact commit
+    strlcpy(state.build_identity, ORCSDR_BUILD_ID, sizeof(state.build_identity));
+  else
+    snprintf(state.build_identity, sizeof(state.build_identity), "%s %s", __DATE__, __TIME__);
   state.uptime_seconds = millis() / 1000;
   const auto clock = orcsdr::time_service::now();
   state.rtc_valid = clock.wallclock_valid;

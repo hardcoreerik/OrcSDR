@@ -1,0 +1,190 @@
+name: Firmware nightly
+
+# Builds main for the M5Stack Tab5 when it changed since the last nightly and the host tests pass,
+# publishes it to the rolling `nightly` prerelease (merged .bin, ELF, SHA256SUMS, build-info.json),
+# then tells theorc.dev (repository_dispatch; theorc-site also polls hourly). Never touches
+# release tags. Linux port of the Windows build: tools/ci/build-hosted-c6.sh, tools/ci/build-tab5.sh.
+on:
+  schedule:
+    - cron: '23 10 * * *'   # 03:23 PDT / 02:23 PST
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Build and publish even if main has not changed'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-nightly
+  cancel-in-progress: false
+
+env:
+  NIGHTLY_TAG: nightly
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.g.outputs.build }}
+      sha: ${{ steps.g.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - id: g
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          base=$(git describe --tags --match 'v[0-9]*' --abbrev=0 HEAD)
+          ahead=$(git rev-list --count "$base..HEAD")
+          last=""
+          if gh release download "$NIGHTLY_TAG" -R "$GITHUB_REPOSITORY" -p build-info.json -O "$RUNNER_TEMP/bi.json" 2>/dev/null; then
+            last=$(jq -r '.commit // ""' "$RUNNER_TEMP/bi.json")
+          fi
+          build=true; why="main changed"
+          if [ "$ahead" = 0 ]; then build=false; why="main is exactly $base (theorc.dev shows 'same as release')"; fi
+          if [ "$sha" = "$last" ]; then build=false; why="main unchanged since the last nightly"; fi
+          if [ "$FORCE" = true ]; then build=true; why="forced"; fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "main ${sha:0:7}, last nightly ${last:0:7}, $ahead commits since $base: build=$build ($why)" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  tests:
+    needs: gate
+    if: needs.gate.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+      - name: Radio scan core tests
+        run: bash tools/test-radio-scan.sh
+      - name: P25 core tests
+        run: bash tools/test-p25-core.sh
+
+  build:
+    needs: [gate, tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      image: espressif/idf:v5.5.4@sha256:b9f2d6ea1c19e0c9f7959bdb74a9e3c775642f9d0f3b841937c5fa3363db892b
+    defaults:
+      run:
+        # GitHub replaces the image entrypoint, so ESP-IDF's export.sh is never sourced on its own.
+        shell: bash
+    outputs:
+      short: ${{ steps.meta.outputs.short }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare container
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          command -v jq >/dev/null || (apt-get update -qq && apt-get install -y -qq jq >/dev/null)
+      - id: meta
+        run: |
+          short=$(git rev-parse --short=7 HEAD)
+          echo "short=$short" >> "$GITHUB_OUTPUT"
+          echo "build_id=nightly $short $(TZ=America/Los_Angeles date +%F)" >> "$GITHUB_OUTPUT"
+      - name: Restore ESP-Hosted C6 image
+        id: c6cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .ci-cache/hosted-c6
+          key: hosted-c6-v1-${{ hashFiles('tools/release/hosted-c6-release.json', 'orcdial/c6/CMakeLists.txt', 'orcdial/c6/main/CMakeLists.txt', 'orcdial/c6/main/main.c', 'orcdial/c6/sdkconfig.defaults', 'orcdial/c6/partitions_eh_cp_ota_4m.csv', 'tools/ci/build-hosted-c6.sh') }}
+      - name: Build ESP-Hosted C6 image
+        if: steps.c6cache.outputs.cache-hit != 'true'
+        run: . "$IDF_PATH/export.sh" >/dev/null && bash tools/ci/build-hosted-c6.sh --patch-idf .ci-cache/hosted-c6 "$RUNNER_TEMP/esp-hosted"
+      - name: Build Tab5 firmware
+        run: . "$IDF_PATH/export.sh" >/dev/null && bash tools/ci/build-tab5.sh --c6 .ci-cache/hosted-c6/esp_hosted_tab5_c6.bin --out out --build-id "${{ steps.meta.outputs.build_id }}"
+      - name: Package
+        env:
+          SHORT: ${{ steps.meta.outputs.short }}
+          BUILD_ID: ${{ steps.meta.outputs.build_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          bin="OrcSDR-Tab5-nightly-$SHORT.bin"
+          elfzip="OrcSDR-Tab5-nightly-$SHORT.elf.zip"
+          cp out/merged-binary.bin "dist/$bin"
+          python3 -c "import sys,zipfile; z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED,compresslevel=9); z.write(sys.argv[2],'orcsdr_tab5.elf'); z.close()" "dist/$elfzip" out/orcsdr_tab5.elf
+          (cd dist && sha256sum "$bin" "$elfzip" | sed 's/  / */' > SHA256SUMS.txt)
+          python3 tools/ci/write-build-info.py --channel nightly --build-id "$BUILD_ID" --asset "dist/$bin" \
+            --c6-provenance .ci-cache/hosted-c6/c6-provenance.json --run-url "$RUN_URL" \
+            --json dist/build-info.json --notes dist/notes.md
+          ls -l dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nightly
+          path: dist/
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    needs: [gate, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SHA: ${{ needs.gate.outputs.sha }}
+      SHORT: ${{ needs.build.outputs.short }}
+      HAS_DISPATCH: ${{ secrets.SITE_DISPATCH_TOKEN != '' }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: nightly
+          path: dist
+      - name: Point the rolling tag at this commit
+        run: |
+          set -euo pipefail
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$NIGHTLY_TAG" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$NIGHTLY_TAG" -f sha="$SHA" -F force=true >/dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$NIGHTLY_TAG" -f sha="$SHA" >/dev/null
+          fi
+          if ! gh release view "$NIGHTLY_TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$NIGHTLY_TAG" -R "$GITHUB_REPOSITORY" --verify-tag --prerelease --latest=false \
+              --title "OrcSDR nightly (main)" --notes "Rolling build of main. Install: https://theorc.dev/sdr/nightly/"
+          fi
+      - name: Upload assets, drop stale ones, then the build-info.json marker
+        run: |
+          set -euo pipefail
+          cd dist
+          bin="OrcSDR-Tab5-nightly-$SHORT.bin"; elfzip="OrcSDR-Tab5-nightly-$SHORT.elf.zip"
+          gh release upload "$NIGHTLY_TAG" -R "$GITHUB_REPOSITORY" --clobber "$bin" "$elfzip" SHA256SUMS.txt
+          gh release edit "$NIGHTLY_TAG" -R "$GITHUB_REPOSITORY" --prerelease --latest=false \
+            --title "OrcSDR nightly $SHORT ($(TZ=America/Los_Angeles date +%F))" --notes-file notes.md
+          keep=" $bin $elfzip SHA256SUMS.txt build-info.json "
+          gh release view "$NIGHTLY_TAG" -R "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' | while read -r a; do
+            case "$keep" in *" $a "*) ;; *) gh release delete-asset "$NIGHTLY_TAG" "$a" -R "$GITHUB_REPOSITORY" -y ;; esac
+          done
+          # The marker goes last: the gate skips a SHA once build-info.json names it, so it must only
+          # appear after every other asset change (incl. stale-asset cleanup) succeeded.
+          gh release upload "$NIGHTLY_TAG" -R "$GITHUB_REPOSITORY" --clobber build-info.json
+          echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/$NIGHTLY_TAG ($bin)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Notify theorc.dev
+        if: env.HAS_DISPATCH == 'true'
+        env:
+          SITE_DISPATCH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $SITE_DISPATCH_TOKEN" -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/hardcoreerik/theorc-site/dispatches \
+            -d "{\"event_type\":\"orcsdr-nightly\",\"client_payload\":{\"commit\":\"$SHA\"}}")
+          if [ "$code" != 204 ]; then
+            echo "::warning::theorc-site dispatch failed (HTTP $code); its hourly sync will pick the build up. Token expired?"
+          fi

@@ -145,6 +145,7 @@ idf_component_register(
         "catalog_public_key.pem"
 )
 target_compile_definitions(${COMPONENT_LIB} PRIVATE ORCSDR_ORCDIAL=1)
+target_compile_definitions(${COMPONENT_LIB} PRIVATE "ORCSDR_BUILD_ID=\"${ORCSDR_BUILD_ID}\"")
 
 target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)
 # DSP build switches (tools/build-tab5-idf.ps1 always passes all of them, so a value
