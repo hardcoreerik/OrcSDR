@@ -477,3 +477,25 @@ start/base tone and the final rendered message text to match.
 This is the first end-to-end synthetic FT8 **receive decode** through the
 current clean-room pipeline. It is still a host fixture, not RF or Tab5
 hardware verification, and the test waveform generator is not firmware code.
+
+
+### Slice 10 focused validation correction
+
+Focused review of commit `29805d36db68f581b96e6821e82b875e7330a67c`
+found a test-fixture scope error: the rewritten spectral test was missing one
+closing brace after converting the previous bit-array assertion into the full
+message-pipeline assertion. The production decoder modules were not affected.
+
+The test syntax was corrected in commit
+`354baea7e49bfc8ced2580fa60ae41f1aef4e00a`.
+
+A focused sandbox build then exercised the new plausibility gate with the real
+standard-message parser:
+- optimized C++17 build: PASS;
+- ASan/UBSan build: PASS;
+- `CQ K1ABC FN42`: accepted and rendered exactly;
+- same structural payload with unsupported i3=4: rejected.
+
+This focused test stubs earlier sync/FEC stages to isolate the newly added
+message acceptance logic. It complements, but does not replace, the pending
+full branch regression run on the newest head.

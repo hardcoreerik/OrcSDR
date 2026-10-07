@@ -131,3 +131,11 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Replaced the synthetic random-payload PCM test with a complete standard FT8 message fixture: `CQ K1ABC FN42`.
 - The end-to-end host test now spans PCM -> spectral analysis -> sync -> soft demod -> NMS LDPC -> CRC -> standard message text.
 - This remains host-side synthetic receive validation; it is not Tab5/RF hardware verification and adds no transmit capability.
+
+
+## 2026-10-07 — Slice 10 focused review correction
+
+- Fixed one missing closing brace in the rewritten full-decode spectral test fixture; decoder production modules were unaffected.
+- Ran a focused optimized + ASan/UBSan sandbox test of the new pipeline plausibility gate.
+- Verified `CQ K1ABC FN42` is accepted/rendered and an unsupported CRC-valid i3 family is rejected.
+- Kept the distinction between focused sandbox validation and a full newest-head branch regression run explicit.
