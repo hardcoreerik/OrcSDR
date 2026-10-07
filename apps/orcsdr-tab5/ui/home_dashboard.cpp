@@ -455,15 +455,6 @@ void draw_gain_panel() {
   text(value, kGainX + kGainW / 2, 608, color, 2, middle_center);
 }
 
-void draw_gain_chip() {
-  frame(1064, 86, 108, 26, kCyan, 6);
-  char label[16];
-  const uint16_t color = gain_label(label, sizeof(label));
-  char value[24];
-  snprintf(value, sizeof(value), "GAIN %s%s", label, current.rtl_agc ? " +R" : "");
-  text(value, 1118, 99, color, 1, middle_center);
-}
-
 void draw_footer_gain() {
   M5.Display.fillRect(564, 660, 132, 36, kPanel);
   char label[16];
@@ -783,10 +774,9 @@ void draw_footer() {
 
 // keep_graphics: repaint after a popup closes without wiping the live spectrum and waterfall. Only the part the popup
 // covered is cleared; the spectrum redraws on its next frame and the waterfall refills as it scrolls.
-// Zoom and edge chips along the top of the spectrum: tapping them never tunes.
-constexpr int kChipY = kSpectrumY + 6, kChipH = 30, kChipW = 44;
-constexpr int kZoomInX = kPlotX + kPlotW - 8 - kChipW, kZoomOutX = kZoomInX - 8 - kChipW;
-constexpr int kEdgesChipW = 84, kEdgesChipX = kZoomOutX - 8 - kEdgesChipW;
+// The EDGES chip at the top right of the spectrum: tapping it never tunes. (Zoom is the SPAN stepper below.)
+constexpr int kChipY = kSpectrumY + 6, kChipH = 30;
+constexpr int kEdgesChipW = 84, kEdgesChipX = kPlotX + kPlotW - 8 - kEdgesChipW;
 
 void draw_chip(int x, int w, const char* label, bool on) {
   M5.Display.fillRoundRect(x, kChipY, w, kChipH, 6, TFT_BLACK);
@@ -799,8 +789,6 @@ void draw_chip(int x, int w, const char* label, bool on) {
 
 void draw_spectrum_chips() {
   draw_chip(kEdgesChipX, kEdgesChipW, "EDGES", filter_edges || current.edges_hint);
-  draw_chip(kZoomOutX, kChipW, "-", false);
-  draw_chip(kZoomInX, kChipW, "+", false);
 }
 
 // The band in plain words (FM RADIO, 70 CM HAM, AIR BAND...), centered above the spectrum.
@@ -831,7 +819,6 @@ void draw_receiver_chrome(bool keep_graphics = false) {
     M5.Display.fillRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, TFT_BLACK);
     M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kDim);
   }
-  draw_gain_chip();
   draw_spectrum_chips();
   draw_frequency();
   draw_mode_chip(current.mode[0] ? current.mode : "--");
@@ -949,8 +936,6 @@ Action tap_action(int32_t x, int32_t y) {
     return {};
   }
   if (inside(x, y, kEdgesChipX, kChipY, kEdgesChipW, kChipH)) return {ActionKind::edges_toggle};
-  if (inside(x, y, kZoomOutX, kChipY, kChipW, kChipH)) return {ActionKind::span_up};     // zoom out
-  if (inside(x, y, kZoomInX, kChipY, kChipW, kChipH)) return {ActionKind::span_down};    // zoom in
   if (inside(x, y, kPlotX, kSpectrumY, kPlotW,
              kWaterfallY + kWaterfallH - kSpectrumY)) {
     const int64_t offset = (static_cast<int64_t>(x - kPlotX) * current.span_hz) /
@@ -1058,8 +1043,7 @@ void update(const Snapshot& snapshot) {
   if (level_changed) draw_footer_level();
   if (gain_state_changed || receiver_changed) {
     draw_gain_panel();
-    draw_gain_chip();
-    draw_footer_gain();
+      draw_footer_gain();
     draw_footer_bias();
   }
   M5.Display.endWrite();
