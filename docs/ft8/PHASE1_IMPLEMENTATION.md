@@ -384,3 +384,8 @@ No redistribution-safe, authoritative JS8 receive corpus has been identified yet
 - external JS8Call interoperability tests;
 - owner-recorded receive audio/IQ;
 - later clean-room synthetic fixtures only after the JS8 frame/FEC definition is independently established.
+
+
+## Current validation status
+
+Spectral-reference checkpoint `73fbd9d32d8af69445776fc43241410e613ca0c2` is committed and pushed. PR CI for that low-level ref update did not enqueue immediately, so this documentation update is being made through GitHub's contents API to force a normal branch synchronization event. The spectral slice must not be described as CI-verified until the resulting checks pass.
