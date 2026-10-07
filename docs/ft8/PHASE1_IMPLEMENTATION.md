@@ -499,3 +499,33 @@ standard-message parser:
 This focused test stubs earlier sync/FEC stages to isolate the newly added
 message acceptance logic. It complements, but does not replace, the pending
 full branch regression run on the newest head.
+
+
+## Host real-WAV benchmark runner
+
+Added a host-only benchmark runner for real receive recordings:
+
+```bash
+bash tools/benchmark-ft8-wav.sh <12k-mono-i16.wav> [rows_per_symbol] [bins_per_tone]
+```
+
+It accepts only RIFF PCM mono 12 kHz 16-bit WAV input and runs the actual
+native receive stages:
+
+```text
+WAV PCM -> exact spectral reference -> sync -> soft demod -> NMS LDPC
+        -> CRC -> standard-message plausibility
+```
+
+Defaults are 2 time rows/symbol and 1 frequency bin/tone (80 ms / 6.25 Hz
+search spacing). Optional `4 2` increases search resolution to 40 ms /
+3.125 Hz at substantially higher host CPU cost.
+
+The runner prints start position within the WAV, audio base frequency,
+dimensionless sync/contrast metrics, LDPC iterations and plausibility-gated
+message text. It deliberately does **not** label either contrast metric as SNR.
+
+The official WSJT-X `210703_133430.wav` is the first target external
+benchmark. This sandbox has confirmed the sample identity and SHA-256 but has
+not yet been able to materialize the binary through the available SourceForge
+download path, so no real-WAV decode result is claimed yet.

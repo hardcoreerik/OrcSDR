@@ -139,3 +139,12 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Ran a focused optimized + ASan/UBSan sandbox test of the new pipeline plausibility gate.
 - Verified `CQ K1ABC FN42` is accepted/rendered and an unsupported CRC-valid i3 family is rejected.
 - Kept the distinction between focused sandbox validation and a full newest-head branch regression run explicit.
+
+
+## 2026-10-07 — host real-WAV benchmark runner
+
+- Added `tools/ft8-wav-benchmark.cpp` and `tools/benchmark-ft8-wav.sh`.
+- The host runner accepts 12 kHz mono i16 PCM WAVs and drives the actual native receive pipeline through plausibility-gated text.
+- Search resolution is configurable without changing decoder code.
+- Output keeps sync/contrast metrics dimensionless; no uncalibrated SNR claim is made.
+- The official WSJT-X busy-band WAV remains an external benchmark target; no decode result is claimed until the exact file is successfully run.
