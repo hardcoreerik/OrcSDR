@@ -19,3 +19,13 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Cross-checked the independent implementation against the QEX authors' explicitly public-domain helper resources: 100 CRC vectors, 100 callsign-hash vectors, and 100 standard-callsign encodings; 300/300 matched.
 - Added `docs/ft8/PHASE1_IMPLEMENTATION.md` as the implementation/provenance notebook.
 - This slice is not wired into the Tab5 firmware build, changes no receiver DSP, adds no transmit path, and makes no hardware-verification claim.
+
+
+## 2026-10-07 — Phase 1 slice 2: LDPC definition and correctness
+
+- Added a pure C++ FT8 LDPC(174,91) systematic encoder and sparse parity/syndrome checker.
+- Stored compact protocol constants generated from the QEX authors' explicitly public-domain `generator.dat` and `parity.dat` resources.
+- Cross-checked the generator matrix against the independently supplied parity-check matrix using all 91 message basis vectors and 1,000 deterministic pseudo-random messages.
+- Verified every one of the 174 single-bit codeword corruptions produces a nonzero syndrome of weight three, matching the published column weight.
+- Added a fixed public-matrix-derived parity vector and extended optimized + ASan/UBSan host CI.
+- No soft LDPC decoder, RF/DSP integration, firmware build integration, transmit path, or hardware-validation claim is included in this slice.

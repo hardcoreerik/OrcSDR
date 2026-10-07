@@ -7,14 +7,21 @@ build_dir="$(mktemp -d)"
 trap 'rm -rf "$build_dir"' EXIT
 
 common=(-std=c++17 -Wall -Wextra -Werror -pedantic -Iapps/orcsdr-tab5/ui)
-sources=(tests/ft8_codec_tests.cpp apps/orcsdr-tab5/ui/ft8_codec.cpp)
+codec_sources=(tests/ft8_codec_tests.cpp apps/orcsdr-tab5/ui/ft8_codec.cpp)
+ldpc_sources=(tests/ft8_ldpc_tests.cpp apps/orcsdr-tab5/ui/ft8_codec.cpp apps/orcsdr-tab5/ui/ft8_ldpc.cpp)
 
-g++ "${common[@]}" -O2 "${sources[@]}" -o "$build_dir/ft8_codec_tests"
-"$build_dir/ft8_codec_tests"
+run_suite() {
+  local name="$1"; shift
+  local -a sources=("$@")
+  g++ "${common[@]}" -O2 "${sources[@]}" -o "$build_dir/$name"
+  "$build_dir/$name"
+  g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+    "${sources[@]}" -o "$build_dir/${name}_sanitized"
+  ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+    "$build_dir/${name}_sanitized"
+}
 
-g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
-  "${sources[@]}" -o "$build_dir/ft8_codec_tests_sanitized"
-ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
-  "$build_dir/ft8_codec_tests_sanitized"
+run_suite ft8_codec_tests "${codec_sources[@]}"
+run_suite ft8_ldpc_tests "${ldpc_sources[@]}"
 
-echo "FT8 native codec host tests: PASS"
+echo "FT8 native codec + LDPC correctness host tests: PASS"

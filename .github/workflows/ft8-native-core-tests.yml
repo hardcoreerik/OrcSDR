@@ -4,7 +4,9 @@ on:
   pull_request:
     paths:
       - apps/orcsdr-tab5/ui/ft8_codec.*
+      - apps/orcsdr-tab5/ui/ft8_ldpc.*
       - tests/ft8_codec_tests.cpp
+      - tests/ft8_ldpc_tests.cpp
       - tools/test-ft8.sh
       - tools/test-ft8.ps1
       - docs/ft8/**
@@ -14,7 +16,9 @@ on:
       - main
     paths:
       - apps/orcsdr-tab5/ui/ft8_codec.*
+      - apps/orcsdr-tab5/ui/ft8_ldpc.*
       - tests/ft8_codec_tests.cpp
+      - tests/ft8_ldpc_tests.cpp
       - tools/test-ft8.sh
       - tools/test-ft8.ps1
       - docs/ft8/**

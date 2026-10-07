@@ -67,7 +67,7 @@ The committed regression suite also contains fixed public-domain-derived vectors
 
 ### Host validation
 
-Run on Linux/WSL:
+Run on Linux/WSC:
 
 ```bash
 bash tools/test-ft8.sh
@@ -90,9 +90,37 @@ The public `std_call_to_c28` helper illustrates the mixed-radix field encoding, 
 
 The test-side encoder remains protocol infrastructure only. Nothing in this slice is wired into the Tab5 firmware build or any RF/transmit path.
 
+## Slice 2 — LDPC definition and correctness
+
+Implemented after Slice 1 passed both FT8-core CI and Documentation Truth:
+
+- Added `ft8_ldpc.hpp/.cpp` with a systematic 91-to-174 encoder and sparse syndrome checker.
+- Packed the public-domain 83x91 generator matrix into 996 bytes of protocol constants.
+- Stored the public-domain sparse parity-check graph as 174 columns x 3 zero-based check indices (522 bytes).
+- Verified all 91 message basis vectors encode to zero-syndrome codewords.
+- Verified all 174 single-bit corruptions produce nonzero syndrome with exactly three failed checks, matching the published column weight.
+- Verified 1,000 deterministic pseudo-random 91-bit messages encode to zero-syndrome codewords.
+- Added a fixed matrix-derived parity vector based on the public CRC example.
+- Host optimized + ASan/UBSan tests pass.
+
+No soft decoder exists yet; this slice proves only the code definition/encoding/parity layer.
+
+### Slice 2 provenance
+
+`generator.dat` and `parity.dat` are protocol resources from the same QEX authors' explicitly public-domain `ft4_ft8_protocols.tgz` bundle. The repository stores a compact generated representation, not code from an existing decoder. Generator-based encoding is cross-checked against the independently supplied parity-check matrix in every regression run.
+
 ## Next slice
 
-The next isolated slice is the FT8 LDPC definition and correctness layer:
+The next isolated slice is the independently designed normalized-min-sum soft decoder:
+
+1. build static edge/check adjacency from the public parity graph;
+2. define LLR sign/scale conventions with deterministic BPSK-style LDPC channel tests;
+3. implement normalized min-sum with fixed iteration cap and early syndrome termination;
+4. report iterations and unsatisfied checks without dynamic allocation;
+5. sweep deterministic AWGN at the codeword level before FT8 tone demodulation exists;
+6. only then connect soft FEC to FT8 demodulation.
+
+The completed LDPC correctness slice followed the original plan:
 
 1. import the public-domain `generator.dat` and `parity.dat` values as provenance-tracked protocol constants (not decoder code).
 2. implement systematic 91->174 encoding;
