@@ -173,3 +173,12 @@ The outer ring continues to indicate OrcDial link state. Green/cyan/amber meanin
 - Physical short press never transmits.
 - Long press continues to return Home.
 - Existing dashboard control mappings remain unchanged.
+
+
+## Sandbox validation - 2026-10-07
+
+The semantic controller tests passed in GitHub Actions in both optimized and AddressSanitizer/UndefinedBehaviorSanitizer builds.
+
+A full PlatformIO `dial` firmware build also passed with the FT8 screen, controller additions, and touch routing compiled against the pinned OrcDial M5Stack dependencies. The validation build reported 48,948 bytes RAM used of 327,680 bytes (14.9%) and 1,093,857 bytes flash used of 3,342,336 bytes (32.7%).
+
+This proves build compatibility only. It does not prove the physical Tab5-to-OrcDial transport or FT8 runtime actions until the Tab5 FT8 dashboard is registered and those semantics are routed on hardware.
