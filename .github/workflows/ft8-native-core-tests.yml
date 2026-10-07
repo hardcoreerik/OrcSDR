@@ -8,6 +8,7 @@ on:
       - apps/orcsdr-tab5/ui/ft8_demod.*
       - apps/orcsdr-tab5/ui/ft8_spectral.*
       - apps/orcsdr-tab5/ui/ft8_pipeline.*
+      - apps/orcsdr-tab5/ui/ft8_message.*
       - apps/orcsdr-tab5/ui/ft8_codec.*
       - apps/orcsdr-tab5/ui/ft8_ldpc.*
       - apps/orcsdr-tab5/ui/ft8_ldpc_graph.hpp
@@ -17,6 +18,7 @@ on:
       - tests/ft8_demod_tests.cpp
       - tests/ft8_spectral_tests.cpp
       - tests/ft8_pipeline_tests.cpp
+      - tests/ft8_message_tests.cpp
       - tests/ft8_codec_tests.cpp
       - tests/ft8_ldpc_tests.cpp
       - tests/ft8_ldpc_decode_tests.cpp
@@ -35,6 +37,7 @@ on:
       - apps/orcsdr-tab5/ui/ft8_demod.*
       - apps/orcsdr-tab5/ui/ft8_spectral.*
       - apps/orcsdr-tab5/ui/ft8_pipeline.*
+      - apps/orcsdr-tab5/ui/ft8_message.*
       - apps/orcsdr-tab5/ui/ft8_codec.*
       - apps/orcsdr-tab5/ui/ft8_ldpc.*
       - apps/orcsdr-tab5/ui/ft8_ldpc_graph.hpp
@@ -44,6 +47,7 @@ on:
       - tests/ft8_demod_tests.cpp
       - tests/ft8_spectral_tests.cpp
       - tests/ft8_pipeline_tests.cpp
+      - tests/ft8_message_tests.cpp
       - tests/ft8_codec_tests.cpp
       - tests/ft8_ldpc_tests.cpp
       - tests/ft8_ldpc_decode_tests.cpp

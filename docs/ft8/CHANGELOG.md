@@ -111,3 +111,13 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Kept UI Decode output blocked until source-message unpack and plausibility validation exist.
 - FT4 remains intentionally blocked at the final frame gate until payload XOR restoration is implemented and tested.
 - No firmware binding, existing audio/DSP change, PTT, CAT or transmit functionality was added.
+
+
+## 2026-10-07 — Phase 1 slice 9: standard message unpacking
+
+- Added conservative QEX Type 1/2 source-message unpacking.
+- Added inverse c28 decoding with canonical round-trip validation.
+- Added g15 grid/report/acknowledgement decoding and standard text rendering.
+- Recognized but did not invent text for unresolved 22-bit hashes.
+- Unsupported CQ modifiers and other i3 message families remain rejected until independently implemented.
+- Added optimized + sanitizer host-test coverage through the FT8 test runner.

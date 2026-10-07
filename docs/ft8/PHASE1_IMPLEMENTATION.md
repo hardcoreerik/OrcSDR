@@ -425,3 +425,21 @@ Properties:
 - FT4 is intentionally refused at this layer until the protocol-defined FT4 payload XOR is restored and tested after FEC.
 
 This creates a clean truth boundary: sync score, demod confidence, and LDPC convergence are intermediate evidence; CRC is necessary but still not sufficient for a user-visible decode.
+
+
+## Slice 9 — conservative standard FT8 message unpacker
+
+Added pure C++ `ft8_message.hpp/.cpp` for the dominant QEX standard-message families.
+
+Implemented from the published QEX field layout:
+- i3=1 standard message with optional `/R` callsign suffix flags;
+- i3=2 parallel standard family with optional `/P` suffix flags;
+- c28 decoding for DE, QRZ, plain CQ, 22-bit hash recognition, and canonical standard callsigns;
+- g15 decoding for 4-character Maidenhead grids, -30..+99 reports, blank, RRR, RR73 and 73;
+- R1 rendering for acknowledged reports such as `R-07`.
+
+The parser deliberately rejects modified/directed CQ token ranges it has not independently implemented. 22-bit hashes are recognized structurally but leave `fully_renderable=false` until a separate callsign-hash cache resolves them.
+
+Canonical standard callsigns are validated by inverse mixed-radix decoding followed by a round-trip through the independently written c28 encoder.
+
+This is the first source-message plausibility layer. Unsupported i3 message families are rejected rather than displayed as guessed text.
