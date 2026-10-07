@@ -9,6 +9,8 @@ on:
       - orcdial/src/controller.hpp
       - orcdial/src/dashboard.hpp
       - orcdial/src/ft8_control.hpp
+      - orcdial/src/ui.cpp
+      - orcdial/src/main.cpp
       - orcdial/tests/controller_test.cpp
       - tests/ft8_model_tests.cpp
       - tests/ft8_hunter_tests.cpp
@@ -24,6 +26,8 @@ on:
       - orcdial/src/controller.hpp
       - orcdial/src/dashboard.hpp
       - orcdial/src/ft8_control.hpp
+      - orcdial/src/ui.cpp
+      - orcdial/src/main.cpp
       - orcdial/tests/controller_test.cpp
       - tests/ft8_model_tests.cpp
       - tests/ft8_hunter_tests.cpp
@@ -42,3 +46,12 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Optimized and sanitizer tests
         run: bash tools/test-ft8.sh
+
+  dial-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install PlatformIO
+        run: python3 -m pip install --user platformio
+      - name: Build OrcDial firmware
+        run: python3 -m platformio run -d orcdial -e dial
