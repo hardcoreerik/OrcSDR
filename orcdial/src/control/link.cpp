@@ -46,6 +46,14 @@ void Link::rf_reset() {
   for (auto& n : tx_by_channel_) n = 0;
   for (auto& n : rx_by_channel_) n = 0;
 }
+LinkDiagnostics Link::diagnostics() const {
+  LinkDiagnostics d;
+  d.tx_accepted = tx_accepted_; d.tx_refused = tx_refused_; d.ack_ok = cb_ok_; d.ack_failed = cb_fail_;
+  d.rx_frames = rx_frames_; d.channel = channel_;
+  d.last_rx_age_ms = last_rx_ms_ ? millis() - last_rx_ms_ : UINT32_MAX;
+  return d;
+}
+
 void Link::rf_report() const {
   Serial.printf("ORCDIAL_RF ch=%u tx=%lu tx_refused=%lu cb_ok=%lu cb_fail=%lu rx=%lu\n", unsigned(channel_),
                 (unsigned long)tx_accepted_, (unsigned long)tx_refused_, (unsigned long)cb_ok_,

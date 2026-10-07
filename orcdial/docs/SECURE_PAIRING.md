@@ -1,6 +1,7 @@
 # Devices and secure pairing (unreleased)
 
-Open **Devices** in the Dial carousel and **Settings → Accessories & Companion**
+Open **Dial Settings → Pairing** on the Dial (the last stop of its carousel, or hold the knob for four
+seconds on Home) and **Settings → Accessories & Companion**
 on the Tab5. Pair on both within 60 seconds. Compare all six digits and confirm
 on both devices. Cancel if they differ. Each device trusts one peer.
 

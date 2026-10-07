@@ -187,6 +187,99 @@ static void keypad_screen(lgfx::LGFXBase& d, bool connected) {
   if (keypad_out_of_range) { d.setTextColor(red); d.setTextSize(1); draw_text(d, "24 - 1766 MHz", 120, 222); }
 }
 
+// ---- Dial Settings --------------------------------------------------------------------------
+static SettingsView settings_view;
+void settings_state(const SettingsView& view) { settings_view = view; }
+
+static void settings_row(lgfx::LGFXBase& d, int y, const char* label, const char* value, bool focused) {
+  if (focused) d.fillRoundRect(22, y - 15, 196, 30, 8, panel);
+  d.setTextSize(1.5f);
+  d.setTextDatum(middle_left); d.setTextColor(focused ? cyan : dim); d.drawString(label, 34, y);
+  d.setTextDatum(middle_right); d.setTextColor(focused ? ink : dim); d.drawString(value, 206, y);
+  d.setTextDatum(middle_center);
+}
+
+static void settings_menu_screen(lgfx::LGFXBase& d, bool connected) {
+  const auto& v = settings_view;
+  d.drawCircle(120, 120, 115, link_color(connected));
+  d.setTextColor(dim); d.setTextSize(1); draw_text(d, "DIAL SETTINGS", 120, 24);
+  const int previous = (v.menu + page_count - 1) % page_count, next = (v.menu + 1) % page_count;
+  d.setTextColor(dim); d.setTextSize(2);
+  draw_text(d, page_names[previous], 120, 66); draw_text(d, page_names[next], 120, 176);
+  d.fillRoundRect(30, 92, 180, 56, 12, panel); d.drawRoundRect(30, 92, 180, 56, 12, cyan);
+  d.setTextColor(ink); d.setTextSize(3); draw_text(d, page_names[v.menu], 120, 120, 164);
+  for (int i = 0; i < page_count; ++i) d.fillCircle(213, 70 + i * 20, 3, i == v.menu ? cyan : trace_bright);
+  d.setTextColor(dim); d.setTextSize(1); draw_text(d, "PRESS: OPEN   HOLD: BACK", 120, 208);
+}
+
+static void settings_page_screen(lgfx::LGFXBase& d, bool connected) {
+  const auto& v = settings_view;
+  char a[40], b[40];
+  d.drawCircle(120, 120, 115, link_color(connected));
+  d.setTextColor(cyan); d.setTextSize(2); draw_text(d, page_names[int(v.page)], 120, 28);
+  d.setTextSize(1.5f);
+  auto line = [&](int y, uint32_t color, const char* text) { d.setTextColor(color); draw_text(d, text, 120, y); };
+  switch (v.page) {
+    case Page::link: {
+      const auto& l = v.link;
+      line(58, v.linked ? green : red, v.linked ? "LINKED" : "OFFLINE");
+      std::snprintf(a, sizeof a, "CHANNEL %u  %s", unsigned(l.channel), v.security.channel_locked ? "LOCKED" : "SCANNING");
+      line(82, ink, a);
+      if (l.last_rx_age_ms == UINT32_MAX) std::snprintf(b, sizeof b, "NEVER");
+      else if (l.last_rx_age_ms < 1000) std::snprintf(b, sizeof b, "%lu ms ago", (unsigned long)l.last_rx_age_ms);
+      else if (l.last_rx_age_ms < 60000) std::snprintf(b, sizeof b, "%.1f s ago", l.last_rx_age_ms / 1000.0);
+      else std::snprintf(b, sizeof b, "over a minute ago");
+      std::snprintf(a, sizeof a, "HEARD %s", b);
+      line(104, ink, a);
+      std::snprintf(a, sizeof a, "SENT %lu  ACKED %lu", (unsigned long)l.tx_accepted, (unsigned long)l.ack_ok);
+      line(126, dim, a);
+      std::snprintf(a, sizeof a, "FAILED %lu  REFUSED %lu", (unsigned long)l.ack_failed, (unsigned long)l.tx_refused);
+      line(146, dim, a);
+      std::snprintf(a, sizeof a, "RECEIVED %lu", (unsigned long)l.rx_frames);
+      line(166, dim, a);
+      line(194, cyan, v.linked ? "PRESS: DISCONNECT" : v.security.trusted ? "PRESS: RECONNECT" : "PRESS: PAIR");
+      break;
+    }
+    case Page::display: {
+      std::snprintf(a, sizeof a, "%u%%", unsigned(v.settings.brightness * 100 / 255));
+      settings_row(d, 88, "BRIGHTNESS", a, v.row == 0);
+      settings_row(d, 128, "SLEEP", sleep_names[v.settings.sleep % 4], v.row == 1);
+      line(176, dim, "TURN: CHANGE   PRESS: NEXT");
+      break;
+    }
+    case Page::knob: {
+      settings_row(d, 78, "ACCELERATION", accel_names[v.settings.accel % 3], v.row == 0);
+      settings_row(d, 112, "REVERSE", v.settings.invert ? "ON" : "OFF", v.row == 1);
+      settings_row(d, 146, "CLICK", v.settings.click ? "ON" : "OFF", v.row == 2);
+      line(184, dim, "TURN: CHANGE   PRESS: NEXT");
+      break;
+    }
+    case Page::about: {
+      line(56, ink, "OrcDial for OrcSDR");
+      std::snprintf(a, sizeof a, "BUILD %s", __DATE__);
+      line(78, dim, a);
+      line(98, dim, "PROTOCOL 4 (ENCRYPTED)");
+      std::snprintf(a, sizeof a, "THIS DIAL %s", v.mac[0] ? v.mac : "--");
+      line(120, dim, a);
+      const uint8_t* peer = v.security.peer_identity;
+      if (v.security.trusted) std::snprintf(a, sizeof a, "TAB5 ID %02X%02X-%02X%02X", peer[0], peer[1], peer[14], peer[15]);
+      else std::snprintf(a, sizeof a, "NO TAB5 PAIRED");
+      line(142, dim, a);
+      line(166, cyan, "theorc.dev");
+      break;
+    }
+    case Page::reset: {
+      line(70, red, "ERASE THE PAIRING");
+      line(90, red, "AND DIAL SETTINGS");
+      line(130, dim, "THE TAB5 WILL FORGET THIS DIAL");
+      line(176, v.reset_armed ? red : cyan, v.reset_armed ? "PRESS AGAIN TO ERASE" : "PRESS TO ARM");
+      break;
+    }
+    default: break;
+  }
+  d.setTextColor(dim); d.setTextSize(1); draw_text(d, "HOLD: BACK", 120, 218);
+}
+
 static void fm_screen(lgfx::LGFXBase& d, const RadioState& state, Focus focus,
                       bool connected, bool pairing, bool demo, bool pending,
                       int32_t reel_position) {
@@ -457,7 +550,7 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
   ambient(d, view == View::carousel ? selected : state.dashboard, now);
   if (view == View::connection) {
     const auto& s=device_status;
-    d.drawCircle(120,120,112,link_color(connected));d.setTextColor(ink,bg);d.setTextSize(3);draw_text(d,"DEVICES",120,37);
+    d.drawCircle(120,120,112,link_color(connected));d.setTextColor(ink,bg);d.setTextSize(3);draw_text(d,"PAIRING",120,37);
     d.setTextSize(2);draw_text(d,s.trusted?"OrcSDR Tab5":"No trusted tablet",120,62);
     char id[32];const auto* fingerprint=s.trusted?s.peer_identity:s.identity;
     std::snprintf(id,sizeof id,"ID %02X%02X-%02X%02X",fingerprint[0],fingerprint[1],fingerprint[14],fingerprint[15]);
@@ -491,6 +584,14 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
   }
   if (view == View::keypad) {
     keypad_screen(d, connected);
+    present(); return;
+  }
+  if (view == View::settings_menu) {
+    settings_menu_screen(d, connected);
+    present(); return;
+  }
+  if (view == View::page) {
+    settings_page_screen(d, connected);
     present(); return;
   }
   if (view == View::home && connected && state.dashboard == Dashboard::home) {

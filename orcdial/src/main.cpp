@@ -28,6 +28,22 @@ static orc::View view = orc::View::home;
 static int selected_index = 0;
 static int device_selection=0;
 static bool forget_confirmation=false;
+// Dial Settings.
+static orc::DialSettings dial_settings;
+static orc::Page current_page = orc::Page::link;
+static int menu_index = 0, page_row = 0;
+static bool reset_armed = false, display_asleep = false, press_swallow = false, touch_swallow = false;
+static uint32_t reset_armed_ms = 0, last_activity_ms = 0;
+static void apply_display() { M5Dial.Display.setBrightness(display_asleep ? 0 : dial_settings.brightness); }
+static void note_activity() {
+  last_activity_ms = millis();
+  if (display_asleep) { display_asleep = false; apply_display(); }
+}
+static void open_settings_menu() { forget_confirmation = false; reset_armed = false; view = orc::View::settings_menu; }
+static void open_page(orc::Page page) {
+  if (page == orc::Page::pairing) { device_selection = 0; forget_confirmation = false; view = orc::View::connection; return; }
+  current_page = page; page_row = 0; reset_armed = false; view = orc::View::page;
+}
 // Direct-tuning keypad, opened by a long press on the Home frequency.
 static char keypad_entry[12];
 static bool keypad_out_of_range = false;
@@ -63,7 +79,7 @@ static void device_activate() {
     else if(status.state==orc::secure::State::connected)radio_link.disconnect();
     else if(status.trusted)radio_link.connect();else radio_link.start_pairing();
   }else if(device_selection==1) {
-    if(status.trusted){forget_confirmation=true;device_selection=0;}else view=orc::View::home;
+    if(status.trusted){forget_confirmation=true;device_selection=0;}else open_settings_menu();
   }else if(status.trusted)radio_link.boot_connect(!status.boot_connect);
 }
 static orc::TuneStyle style_for(orc::Dashboard id) {
@@ -95,7 +111,7 @@ static void preview_band(orc::Dashboard id) {
 
 static void select_dashboard(const orc::RadioState& state, bool online) {
   const auto target = orc::carousel[selected_index];
-  if(target==orc::devices_entry){view=orc::View::connection;device_selection=0;return;}
+  if(target==orc::devices_entry){open_settings_menu();return;}
   if (!online) { local.dashboard = target; preview_band(target); }
   else if (target != state.dashboard && !radio_link.command(orc::Type::set_dashboard, uint8_t(target))) return;
   focus = orc::Focus::vfo;
@@ -144,6 +160,48 @@ static void act(orc::Action action, bool online) {
     case K::volume: local.volume = constrain(int(local.volume) + action.value*2, 0, 100); break;
     case K::view: local.view = (local.view + (action.value > 0 ? 1 : 4)) % 5; break;
     default: break; // No synthetic channels, aircraft, nodes, messages or APs.
+  }
+}
+static void settings_adjust(int delta) {
+  auto& s = dial_settings;
+  if (current_page == orc::Page::display) {
+    if (page_row == 0) { s.brightness = uint8_t(constrain(int(s.brightness) + delta * 15, 15, 255)); apply_display(); }
+    else s.sleep = uint8_t((s.sleep + delta + 4) % 4);
+  } else if (current_page == orc::Page::knob) {
+    if (page_row == 0) s.accel = uint8_t(constrain(int(s.accel) + delta, 0, 2));
+    else if (page_row == 1) s.invert = !s.invert;
+    else s.click = !s.click;
+  } else return;
+  orc::save_settings(s);
+}
+static void settings_press(bool online) {
+  const auto status = radio_link.security_status();
+  switch (current_page) {
+    case orc::Page::link:
+      if (online) radio_link.disconnect();
+      else if (status.trusted) radio_link.connect();
+      else open_page(orc::Page::pairing);
+      break;
+    case orc::Page::display: case orc::Page::knob:
+      page_row = (page_row + 1) % orc::page_rows(current_page);
+      break;
+    case orc::Page::reset:
+      if (!reset_armed) { reset_armed = true; reset_armed_ms = millis(); break; }
+      reset_armed = false;
+      radio_link.forget();
+      orc::erase_settings();
+      dial_settings = orc::DialSettings();
+      apply_display();
+      view = orc::View::home;
+      break;
+    default: break;
+  }
+}
+static int knob_boost(uint32_t elapsed) {
+  switch (dial_settings.accel) {
+    case 0: return 1;
+    case 2: return elapsed < 40 ? 10 : elapsed < 90 ? 4 : elapsed < 160 ? 2 : 1;
+    default: return elapsed < 40 ? 5 : elapsed < 90 ? 2 : 1;
   }
 }
 static void poll_serial_commands() {
@@ -281,6 +339,8 @@ static void poll_serial_commands() {
 void setup() {
   Serial.begin(115200); Serial.println("ORCDIAL_BOOT");
   auto cfg = M5.config(); M5Dial.begin(cfg, true, false);
+  orc::load_settings(dial_settings);
+  apply_display();
   orc::splash();
   if (!ORCDIAL_DEMO && !radio_link.begin()) Serial.println("ESPNOW_INIT_FAILED");
   last_detent = M5Dial.Encoder.read() / 4;
@@ -300,7 +360,8 @@ void loop() {
     pending_delta = 0;
     focus = orc::Focus::vfo;
     tune_style = style_for(state.dashboard);
-    if (view != orc::View::carousel && view != orc::View::connection)
+    if (view != orc::View::carousel && view != orc::View::connection && view != orc::View::settings_menu &&
+        view != orc::View::page)
       view = state.dashboard == orc::Dashboard::home ? orc::View::home : orc::View::dashboard;
     last_dashboard = state.dashboard;
   }
@@ -309,10 +370,18 @@ void loop() {
   // Online with Home on screen, Home is a full-range VFO; otherwise it stays the launcher.
   const bool home_tune = online && state.dashboard == orc::Dashboard::home;
   if (online && pending_delta && radio_link.command_action({orc::ActionKind::tune, pending_delta})) pending_delta = 0;
+  if (reset_armed && millis() - reset_armed_ms > 4000) reset_armed = false;
+  if (!display_asleep && dial_settings.sleep && millis() - last_activity_ms > orc::sleep_ms[dial_settings.sleep % 4]) {
+    display_asleep = true;
+    apply_display();
+  }
   const int32_t detent = M5Dial.Encoder.read() / 4;
   int32_t movement = detent - last_detent;
   if (movement) {
     last_detent = detent;
+    note_activity();
+    if (dial_settings.invert) movement = -movement;
+    if (dial_settings.click) M5Dial.Speaker.tone(3200, 6);
     if (view == orc::View::home && !home_tune) { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
     if (view == orc::View::carousel) {
       selected_index = (selected_index + movement % orc::carousel_count + orc::carousel_count) % orc::carousel_count;
@@ -320,23 +389,30 @@ void loop() {
       const auto status=radio_link.security_status();
       const int count=forget_confirmation||status.state==orc::secure::State::verify||!status.trusted?2:3;
       device_selection=(device_selection+movement%count+count)%count;
+    } else if (view == orc::View::settings_menu) {
+      menu_index = (menu_index + movement % orc::page_count + orc::page_count) % orc::page_count;
+    } else if (view == orc::View::page) {
+      settings_adjust(movement > 0 ? 1 : -1);
     } else if (view == orc::View::dashboard || (view == orc::View::home && home_tune)) {
       reel_position += movement;
       const uint32_t now = millis(), elapsed = now - last_turn_ms;
       last_turn_ms = now;
-      const int boost = elapsed < 40 ? 5 : elapsed < 90 ? 2 : 1;
+      const int boost = knob_boost(elapsed);
       act(orc::rotate(state.dashboard, state.view, focus, movement, boost, state.step_hz), online);
     }
   }
-  if (M5Dial.BtnA.wasPressed()) press_ms = millis();
+  if (M5Dial.BtnA.wasPressed()) { press_swallow = display_asleep; press_ms = millis(); note_activity(); }
   if (M5Dial.BtnA.wasReleased()) {
     const uint32_t duration = millis() - press_ms;
-    if (duration >= 4000 && !ORCDIAL_DEMO &&
+    if (press_swallow) press_swallow = false;
+    else if (duration >= 4000 && !ORCDIAL_DEMO &&
         (view == orc::View::home || state.dashboard == orc::Dashboard::settings)) {
-      view = orc::View::connection; device_selection=0;
+      open_settings_menu();
     }
     else if (duration >= 900) {
       if(forget_confirmation){forget_confirmation=false;device_selection=0;}
+      else if (view == orc::View::connection || view == orc::View::page) open_settings_menu();
+      else if (view == orc::View::settings_menu) view = orc::View::home;
       else if (view == orc::View::home && home_tune) { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
       else view=orc::View::home;
     }
@@ -347,12 +423,15 @@ void loop() {
     }
     else if (view == orc::View::carousel) select_dashboard(state, online);
     else if (view == orc::View::connection) device_activate();
+    else if (view == orc::View::settings_menu) open_page(orc::Page(menu_index));
+    else if (view == orc::View::page) settings_press(online);
     else if (orc::tunable(state.dashboard) || orc::channel_dashboard(state.dashboard))
       focus = orc::next_focus(state.dashboard, focus);
     else act(orc::press(state.dashboard, state.view), online);
   }
   const bool touching = M5Dial.Touch.getCount() > 0;
-  if (touching && !touch_down) {
+  if (touching && !touch_down) { touch_swallow = display_asleep; note_activity(); }
+  if (touching && !touch_down && !touch_swallow) {
     const auto t = M5Dial.Touch.getDetail();
     if (view == orc::View::keypad) {
       const char key = orc::keypad_hit(t.x, t.y);
@@ -361,10 +440,21 @@ void loop() {
       else if (key) keypad_key(key);
     } else if (view == orc::View::connection) {
       if(t.y>=130 && t.y<212){device_selection=(t.y-132)/27;if(device_selection>2)device_selection=2;device_activate();}
-      else if(t.y>=212){forget_confirmation=false;view=orc::View::home;}
+      else if(t.y>=212){forget_confirmation=false;open_settings_menu();}
+    } else if (view == orc::View::settings_menu) {
+      if (t.y < 88) menu_index = (menu_index + orc::page_count - 1) % orc::page_count;
+      else if (t.y > 152) menu_index = (menu_index + 1) % orc::page_count;
+      else open_page(orc::Page(menu_index));
+    } else if (view == orc::View::page) {
+      if (t.y >= 214) open_settings_menu();
+      else if (current_page == orc::Page::display || current_page == orc::Page::knob) {
+        const int rows = orc::page_rows(current_page);
+        const int first = current_page == orc::Page::display ? 88 : 78, pitch = current_page == orc::Page::display ? 40 : 34;
+        const int row = (t.y - (first - pitch / 2)) / pitch;
+        if (row >= 0 && row < rows) { page_row = row; settings_adjust(1); }
+      } else settings_press(online);
     } else if (view == orc::View::home) {
-      if (t.y < 70 && t.x > 150) view = orc::View::connection;
-      else if (home_tune && t.y >= 40 && t.y < 70) change(orc::Type::set_mode, state.mode >= 5 ? 1 : state.mode + 1);
+      if (home_tune && t.y >= 40 && t.y < 70) change(orc::Type::set_mode, state.mode >= 5 ? 1 : state.mode + 1);
       else if (home_tune && t.y >= 88 && t.y < 142) { hold_armed = true; hold_start_ms = millis(); }
       else if (home_tune && t.y <= 175) focus = orc::next_focus(state.dashboard, focus);
       else { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
@@ -374,8 +464,7 @@ void loop() {
       else if (t.x > 170) selected_index = (selected_index + 1) % orc::carousel_count;
       else select_dashboard(state, online);
     } else if (t.y < 76) {
-      if (t.x > 120 || !online) view = orc::View::connection;
-      else if (orc::tunable(state.dashboard)) change(orc::Type::set_mode, state.mode >= 3 ? 1 : state.mode + 1);
+      if (orc::tunable(state.dashboard)) change(orc::Type::set_mode, state.mode >= 3 ? 1 : state.mode + 1);
       else act({orc::ActionKind::view, 1}, online);
     } else if (state.dashboard == orc::Dashboard::fm && t.y >= 150 && t.y < 183) {
       focus = t.x < 86 ? orc::Focus::vfo : t.x < 154 ? orc::Focus::step : orc::Focus::volume;
@@ -387,6 +476,7 @@ void loop() {
     else if (t.y > 170) focus = orc::next_focus(state.dashboard, focus);
     else focus = orc::Focus::vfo;
   }
+  if (!touching) touch_swallow = false;
   touch_down = touching;
   // A long press on the Home frequency opens the keypad; a short tap there still moves focus.
   if (hold_armed) {
@@ -397,6 +487,15 @@ void loop() {
   if (millis() - last_draw_ms > 75) {
     orc::devices_state(radio_link.security_status(),device_selection,forget_confirmation);
     orc::keypad_state(keypad_entry, keypad_out_of_range);
+    if (view == orc::View::settings_menu || view == orc::View::page) {
+      orc::SettingsView v;
+      v.menu = menu_index; v.page = current_page; v.row = page_row; v.reset_armed = reset_armed;
+      v.linked = online; v.settings = dial_settings; v.link = radio_link.diagnostics(); v.security = radio_link.security_status();
+      uint8_t mac[6]{};
+      if (esp_wifi_get_mac(WIFI_IF_STA, mac) == ESP_OK)
+        snprintf(v.mac, sizeof v.mac, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+      orc::settings_state(v);
+    }
     orc::draw(state, focus, online, !ORCDIAL_DEMO && radio_link.pairing(),
               ORCDIAL_DEMO, view, orc::carousel[selected_index], pending_delta || radio_link.pending(),
               millis() - last_turn_ms < 700, reel_position, tune_style);
