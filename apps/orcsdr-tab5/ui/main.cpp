@@ -1239,7 +1239,7 @@ static orcsdr::radio::Token weather_radio_token{};
 static std::atomic<bool> weather_scan_requested{false};
 static std::atomic<bool> weather_scan_cancel_requested{false};
 static std::atomic<bool> weather_stop_after_scan_cancel{false};
-static bool weather_release_pending = false;
+static std::atomic<bool> weather_release_pending{false};
 static uint8_t weather_report_count = 0;
 static uint32_t weather_report_sequence = 0;
 static char weather_report_status[64]{};
@@ -11711,7 +11711,7 @@ void scan_finished(orcsdr::scan::Finish reason, void*) {
       (void)request_hot_retune_for(scan_radio_token, command.frequency_hz);
     if (weather_stop_after_scan_cancel.exchange(false, std::memory_order_acq_rel)) {
       rtl_stop_requested.store(true, std::memory_order_release);
-      weather_release_pending = true;
+      weather_release_pending.store(true, std::memory_order_release);
     }
     rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
     Serial.printf("RTL_WEATHER_SCAN %s strongest_hz=%lu\n",
@@ -12801,23 +12801,24 @@ bool execute_weather_receiver_command(const orcsdr::weather::ReceiverCommand& co
            request_hot_retune_for(weather_radio_token, command.frequency_hz);
   if (command.kind == Kind::stop_owned && radio_session.owns(weather_radio_token)) {
     rtl_stop_requested.store(true, std::memory_order_release);
-    weather_release_pending = true;
+    weather_release_pending.store(true, std::memory_order_release);
     return true;
   }
   return command.kind == Kind::stop_owned;
 }
 
 void service_weather_release() {
-  if (!weather_release_pending || !radio_session.owns(weather_radio_token)) {
-    if (weather_release_pending && !radio_session.owns(weather_radio_token))
-      weather_release_pending = false;
+  const bool pending = weather_release_pending.load(std::memory_order_acquire);
+  if (!pending || !radio_session.owns(weather_radio_token)) {
+    if (pending && !radio_session.owns(weather_radio_token))
+      weather_release_pending.store(false, std::memory_order_release);
     return;
   }
   const auto state = rtl_capture_state.load(std::memory_order_acquire);
   if (state == RtlCaptureState::running || state == RtlCaptureState::queued) return;
   if (radio_session.release(weather_radio_token)) {
     weather_radio_token = {};
-    weather_release_pending = false;
+    weather_release_pending.store(false, std::memory_order_release);
   }
 }
 
