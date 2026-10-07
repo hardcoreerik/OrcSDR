@@ -4,6 +4,7 @@
 
 namespace orcsdr::weather::noaa {
 constexpr size_t kChannelCount = 7;
+const uint32_t* channels();
 uint32_t channel_hz(size_t index);
 int channel_index(uint32_t frequency_hz);
 uint32_t nearest_channel_hz(uint32_t frequency_hz);
