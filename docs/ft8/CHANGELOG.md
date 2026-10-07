@@ -94,3 +94,11 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - This is not yet a user-visible FT8 message decode; message unpack/plausibility remains mandatory.
 - Documented future conducted RF verification using an external Pluto-compatible signal source over coax/attenuation while OrcSDR itself remains RX-only.
 - No firmware audio tap, UI-owned file, existing receive DSP, PTT, CAT, or transmit path was added.
+
+
+## 2026-10-07 — external receive-validation plan
+
+- Documented official WSJT-X FT8/FT4 receive WAVs as external benchmark inputs.
+- Defined a three-layer owner-controlled corpus: raw RTL CU8 IQ, 12 kHz analysis PCM, and decoder result logs.
+- Defined conducted Pluto-compatible RF replay over coax/attenuation as the preferred full-chain hardware test while OrcSDR remains strictly RX-only.
+- Third-party WAVs remain external unless redistribution rights are explicit; committed real recordings should be owner-controlled.

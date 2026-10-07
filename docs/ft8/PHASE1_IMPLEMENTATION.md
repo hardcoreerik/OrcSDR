@@ -316,3 +316,71 @@ The owner has a Pluto-compatible SDR that may be used later as an external labor
 Any over-the-air amateur transmission test is outside the OrcSDR firmware and must follow the operator's licensing/band-plan requirements. Conducted/coax injection is the default recommendation because it is reproducible and does not radiate test traffic.
 
 The next optimization slice should benchmark a power-of-two FFT/esp-dsp-compatible coarse frontend against this exact-correlation reference rather than replacing the oracle.
+
+
+## External receive-validation corpus
+
+The decoder should be validated in increasing realism without adding any transmit capability to OrcSDR.
+
+### Official WSJT-X receive samples
+
+WSJT-X publishes downloadable receive WAV files specifically for offline decoder testing. Current documented examples include:
+
+- FT8: `210703_133430.wav`
+- FT4: `200514_182053.wav` in the tutorial; the public SourceForge FT4 sample directory also carries current sample WAVs.
+
+These files are excellent **external test inputs** because their expected WSJT-X behavior can be measured independently.
+
+Repository policy:
+- use them locally/external unless redistribution permission for the individual recording is clear;
+- do not commit the WAV bytes merely because they are publicly downloadable;
+- record filename, SHA-256, source URL, reference decoder version, and expected decodes in benchmark notes.
+
+### Owner-controlled captures
+
+Preferred committed real-world corpus is owner-recorded OrcSDR/RTL receive data because provenance and redistribution rights are unambiguous.
+
+Capture layers worth retaining:
+
+1. raw CU8 IQ before the proposed weak-signal audio tap;
+2. 12 kHz USB analysis PCM at the DecoderBackend boundary;
+3. decoder result log.
+
+Keeping paired IQ + PCM lets us distinguish frontend failures from decoder failures.
+
+### Pluto-compatible conducted replay
+
+The owner's Pluto-compatible SDR can serve as an **external lab signal generator** while OrcSDR remains strictly receive-only.
+
+Preferred topology:
+
+```text
+known fixture / generated complex IQ
+          |
+          v
+external Pluto-compatible SDR
+          |
+      RF coax
+          |
+   fixed attenuation
+          |
+          v
+RTL-SDR -> OrcSDR RX chain -> 12 kHz tap -> decoder
+```
+
+Use sufficient fixed attenuation and verify levels before connecting hardware. The exact attenuation/power plan should be measured for the specific Pluto clone and RTL-SDR rather than guessed.
+
+This conducted path is preferred to over-the-air test traffic because it is reproducible, contained, and can exercise offsets, drift, collisions, and weak-signal levels deterministically.
+
+### Over-the-air traffic
+
+Over-the-air amateur transmissions are not required to validate the decoder. If the operator later chooses to transmit a real test message using external amateur-radio equipment/software, that activity is outside OrcSDR firmware and must follow the operator's license, band plan, station identification, power, and local rules.
+
+OrcSDR itself gains no TX/PTT/CAT functionality from this test plan.
+
+### JS8 fixtures
+
+No redistribution-safe, authoritative JS8 receive corpus has been identified yet. Until one is found or the owner records one, JS8 verification should use:
+- external JS8Call interoperability tests;
+- owner-recorded receive audio/IQ;
+- later clean-room synthetic fixtures only after the JS8 frame/FEC definition is independently established.
