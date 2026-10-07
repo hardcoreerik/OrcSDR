@@ -1,10 +1,12 @@
 # OrcSDR Native FT8 Decoder — Phase 1 Implementation Notebook
 
-Status: **IN PROGRESS**
+Status: **FROZEN — expanded FT8/FT4/JS8 Phase 0 review pending**
 
 Branch: `codex/ft8-native-decoder-research`
 
-Owner approval to proceed from Phase 0 was received on 2026-10-07. This notebook records implementation decisions, provenance, validation, and measurements as the native decoder is built. It does not claim hardwar verification unless a named Tab5 run is recorded.
+Integration base: `claude/ft8-ui` at `804268c71af127490364c325a76e61383042f137`
+
+Owner approval to proceed from the original FT8-only Phase 0 was received on 2026-10-07, and the three slices below were completed before the scope expanded. The decoder branch has since been rebased onto the FT8 UI baseline and the existing slices are preserved. **Do not begin the next implementation slice until the expanded FT8/FT4/JS8 mode-profile, decoder-seam, and audio-tap proposals are approved.** This notebook does not claim hardware verification unless a named Tab5 run is recorded.
 
 ## Ground rules
 
@@ -181,3 +183,17 @@ Optimized and ASan/UBSan regression tests cover clean iteration-0 exit, determin
 ### Next slice
 
 Build the 77-bit source-message pack/unpack + CRC acceptance layer before spectral/demod work. This gives the FEC pipeline the required truth gate: parity convergence alone is never user-visible.
+
+
+## Expanded-scope freeze
+
+The later product scope adds FT4 and JS8Call plus a strict requirement for an independent 12 kHz USB analysis tap that cannot alter existing audio.
+
+The following documents now form the active review gate:
+
+- `docs/ft8/DECODER_RESEARCH.md`, Sections 26-32;
+- `docs/ft8/MODE_PROFILE_DESIGN.md`;
+- `docs/ft8/DECODER_SEAM_PROPOSALS.md`;
+- `docs/ft8/AUDIO_TAP_PROPOSAL.md`.
+
+The existing FT8 codec, LDPC definition, and normalized-min-sum decoder remain valid checkpoint work. No sync/demod, FT4, JS8, audio-tap, or firmware binding is added while this gate is active.

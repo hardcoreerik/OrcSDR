@@ -6,11 +6,13 @@ Research date: 2026-10-07
 
 Research branch: **codex/ft8-native-decoder-research**
 
-Base: OrcSDR main at **0b8be74ecfa58a315d07210f953f0fd5626943e2**
+Current integration base: **claude/ft8-ui at 804268c71af127490364c325a76e61383042f137**
 
-Scope: receive-only FT8 decoding on the M5Stack Tab5 / ESP32-P4 under ESP-IDF 5.5.4.
+Pre-rebase decoder checkpoint preserved at `codex/ft8-native-decoder-pre-ui-rebase`.
 
-No decoder code is introduced by this phase.
+Scope: receive-only FT8, FT4, and JS8 decoding on the M5Stack Tab5 / ESP32-P4 under ESP-IDF 5.5.4.
+
+The earlier FT8-only Phase 1 checkpoint (codec + LDPC correctness + normalized-min-sum soft decoder) is preserved on this branch. **Further decoder expansion is frozen while this broadened Phase 0 is reviewed.** No audio-tap, FT4, JS8, firmware-backend, or seam implementation is introduced by this expanded research pass.
 
 ---
 
@@ -885,7 +887,7 @@ A formal two-person clean-room process would require one researcher to produce a
 
 ---
 
-## 23. Decisions required from the owner before Phase 1
+## 23. Prior FT8-only owner decisions (historical checkpoint)
 
 Please approve or change these decisions:
 
@@ -1005,6 +1007,248 @@ https://www.gnu.org/licenses/agpl-3.0.html
 
 ---
 
-## 25. Phase 0 stop gate
+## 25. Prior FT8-only Phase 0 stop gate
 
-**Satisfied 2026-10-07.** The owner approved the recommended workflow after Documentation Truth passed on draft PR #172. Phase 1 implementation is tracked in `docs/ft8/PHASE1_IMPLEMENTATION.md` and remains branch-only; `main` is read-only.
+**Satisfied 2026-10-07 for the original FT8-only scope.** The owner approved that workflow and the branch produced three host-tested decoder slices. The later scope expansion to FT4, JS8, a multi-mode seam, and a separate USB analysis tap creates a new review gate documented below. The existing slices remain branch-only and are frozen while the expanded proposals are reviewed.
+
+
+---
+
+## 26. Expanded Phase 0 — one framework, three mode families
+
+The owner expanded the decoder scope after the original FT8-only Phase 0. This section supersedes any earlier implication that implementation may continue without another architecture review.
+
+The new target is one receive framework supporting:
+
+1. **FT8** first;
+2. **FT4** as a second profile on the same FTX codec/FEC family;
+3. **JS8** as an FT8-family waveform/search problem with its own FEC/frame/message layer.
+
+The shared/core boundary is documented in [MODE_PROFILE_DESIGN.md](MODE_PROFILE_DESIGN.md). Proposed UI/backend changes are documented in [DECODER_SEAM_PROPOSALS.md](DECODER_SEAM_PROPOSALS.md). The required independent USB-analysis frontend is documented in [AUDIO_TAP_PROPOSAL.md](AUDIO_TAP_PROPOSAL.md).
+
+### 26.1 FT4 — verified protocol facts
+
+Primary authorities are the Franke/Somerville/Taylor QEX paper and the current WSJT-X protocol specification.
+
+Verified:
+
+- T/R period: **7.5 s**.
+- Source payload: **77 bits**.
+- CRC: **CRC-14**.
+- FEC: **LDPC(174,91)**, shared with FT8.
+- Modulation: **4-GFSK**.
+- Symbol samples at 12 kHz: **576**.
+- Symbol duration: **0.048 s**.
+- Keying rate and orthogonal tone spacing: **20.833333... baud / 20.833333... Hz**.
+- Four distinct **4-symbol Costas arrays**.
+- **87 data symbols** (2 coded bits each) + **16 sync symbols** + **2 ramp symbols** = **105 channel symbols**.
+- Transmitted waveform duration: **5.04 s**.
+- Nominal occupied bandwidth: **83.3 Hz**, not the approximate 90 Hz remembered in the planning prompt.
+- The 77-bit FT4 payload is XOR-whitened by the protocol-defined sequence **before CRC/FEC**, then XORed again after a successful receive decode.
+
+Implementation consequence: FT4 can reuse OrcSDR's 77-bit message parser, CRC-14, LDPC(174,91), candidate machinery, and NMS decoder. It needs a distinct frame profile, 2-bit/tone demapper, sync definition, ramps, and FT4 payload transform.
+
+### 26.2 JS8 — verified facts and unstable edges
+
+Primary public documentation for current behavior is the JS8Call user guide. The JS8Call project explicitly says technical details remain under active development and the source is the source of truth where documentation has not stabilized.
+
+For protocol/framing research only, the GPL-3.0 `js8call/js8call` source was inspected. **No JS8Call source code, lookup-table implementation, or control flow may be copied into OrcSDR.**
+
+Verified stable profile behavior:
+
+| JS8 profile | Slot | 12 kHz symbol samples | Baud/spacing | Nominal bandwidth | 79-symbol TX |
+|---|---:|---:|---:|---:|---:|
+| Slow | 30 s | 3840 | 3.125 | 25 Hz | 25.28 s |
+| Normal | 15 s | 1920 | 6.25 | 50 Hz | 12.64 s |
+| Fast | 10 s | 1200 | 10 | 80 Hz | 7.90 s |
+| JS8 40 | 6 s | 600 | 20 | 160 Hz | 3.95 s |
+
+Current source also defines an Ultra / JS8 60 profile at a 4 s period and 384 samples/symbol (31.25 baud, 250 Hz). The current public guide labels JS8 60 **experimental** and says its specifications may change. OrcSDR should therefore define it only as an experimental/disabled profile until a stable interoperability target exists.
+
+Current JS8 framing differs materially from FT8:
+
+- 8 tones / 79 symbols remain the common waveform scale.
+- Normal uses the original three FT8-family 7-symbol Costas blocks.
+- stable faster/slower modes use modified distinct Costas blocks.
+- current JS8 framing uses **75 message bits + CRC-12 = 87 information bits**, with an **N=174** codeword.
+- therefore JS8 is **not** the FT8/FT4 LDPC(174,91) code family.
+- protocol frames include heartbeat, compound-callsign forms, directed command, and compressed data frame types.
+- frame-level first/last state supports transmissions spanning multiple RF frames.
+- receiving useful JS8 text therefore requires a bounded stateful assembler above the RF frame decoder.
+
+### 26.3 What remains UNVERIFIED for JS8
+
+The following must not be frozen into production constants from memory:
+
+- long-term stability of the JS8 60/Ultra profile;
+- exact modified Costas tone arrays until independently documented and cross-checked;
+- the complete current LDPC(174,87) generator/parity definition under the clean-room provenance rule;
+- current compression/dictionary/varicode tables and interoperability rules;
+- maximum practical conversation/message assembly lengths;
+- whether all current JS8Call network-layer extensions are appropriate for an RX-only embedded implementation.
+
+These are Phase 4 research/test-vector tasks. The first production milestone remains FT8.
+
+### 26.4 Updated clean-room rule for JS8
+
+JS8Call itself is GPL-3.0. OrcSDR is AGPL-3.0, but legal license compatibility does not change the in-house decoder provenance rule.
+
+Allowed:
+- published JS8 user/protocol documentation;
+- observed external reference behavior;
+- protocol facts recorded in a prose design notebook;
+- generic coding/DSP literature;
+- independently generated interoperability vectors.
+
+Research-only:
+- JS8Call source used to identify facts that the project's documentation explicitly says are source-defined.
+
+Forbidden for OrcSDR implementation:
+- copying/translating JS8Call functions;
+- copying control flow;
+- importing source tables simply because they are constants;
+- mechanically converting Fortran/C++ arrays into OrcSDR source without an independently documented protocol/test-vector basis.
+
+Where a JS8 numeric table is only available from GPL source, mark it **UNVERIFIED / implementation blocked** until the project has an acceptable independent derivation or the owner explicitly changes the provenance policy.
+
+## 27. Mode-profile recommendation
+
+Do not build three separate decoder stacks.
+
+Use a data-driven ModeProfile for:
+
+- slot period;
+- 12 kHz symbol length;
+- symbol count;
+- tone count/spacing;
+- sync block positions and sequences;
+- payload transform;
+- FEC family;
+- experimental/stable status.
+
+Shared:
+- incremental analysis;
+- Costas/matched synchronization;
+- local-noise normalization;
+- fine DT/frequency/drift refinement;
+- N-tone energy extraction;
+- candidate ranking/deadlines.
+
+FT8/FT4 share:
+- 77-bit message family;
+- CRC-14;
+- LDPC(174,91).
+
+JS8 gets:
+- 75-bit + CRC-12 frame family;
+- its own N=174/K=87 code definition;
+- frame parser;
+- multi-frame assembler.
+
+See `MODE_PROFILE_DESIGN.md` for the proposed representation.
+
+## 28. Backend seam findings
+
+The current five-function DecoderBackend is intentionally retained as the required compatibility baseline.
+
+Expanded scope needs:
+- optional mode selection;
+- millisecond slot epoch because FT4 starts can fall on .5-second boundaries;
+- mode/provenance tagging in Decode;
+- later a separate bounded JS8 assembled-message output.
+
+Recommendation:
+- add optional tail callbacks rather than changing/removing existing callbacks;
+- preserve `backend_valid()` semantics;
+- default old backends to FT8;
+- keep pure decoder Mode independent from UI DigitalMode and translate in the backend adapter.
+
+See `DECODER_SEAM_PROPOSALS.md`.
+
+## 29. Audio-path audit and proposal
+
+Repository inspection of the actual `claude/ft8-ui` baseline found:
+
+1. `ft8_select_band()` tunes via `RtlBand::shortwave`.
+2. shortwave's current default demodulator is AM.
+3. normal wide-band acquisition is 2.4 MS/s and the shared demod intermediate rate is 240 kS/s.
+4. `demodulate_am()` produces post-envelope, post-filter 48 kHz speaker audio.
+5. `demodulate_ssb()` exists for CB/Home but is voice-oriented, uses a 1500 Hz BFO, shares `rtl_audio` state, and ultimately uses the dynamic speaker audio shaper.
+6. `queue_audio_samples()` publishes post-DSP 48 kHz audio and normal demodulation can be skipped entirely if speaker/web/recording audio is not demanded.
+
+Conclusion: **the decoder must not consume existing post-speaker audio, and simply selecting the current voice USB path is not the promised 12 kHz analysis contract.**
+
+Recommended frontend:
+- independent sidecar reads immutable raw CU8 blocks;
+- own state/buffers only;
+- narrow complex USB sideband channelization;
+- fixed/scaled 12 kHz int16 PCM with no dynamic speaker AGC/limiter;
+- bounded PCM ring to low-priority decoder task;
+- explicit discontinuity metrics;
+- off-state bit-identity gate.
+
+No existing DSP/demod/filter/sound function is modified.
+
+See `AUDIO_TAP_PROPOSAL.md`.
+
+## 30. Updated benchmark plan
+
+In addition to the original FT8 plan, every profile must report:
+
+- sync recall versus DT/frequency/drift;
+- valid frames found / injected;
+- false accepts with confidence bound;
+- mode misclassification (for example JS8 vs nearby FT8-like energy);
+- host CPU by stage;
+- Tab5 CPU by stage;
+- peak internal RAM and PSRAM;
+- PCM-ring discontinuities;
+- RTL USB/audio drops;
+- post-frame latency relative to the next profile slot.
+
+Multi-mode scheduling must not decode every profile at maximum depth blindly. When simultaneous JS8 speed detection is added, profile search depth must be budgeted and candidate evidence should suppress unnecessary FEC work.
+
+## 31. Expanded decisions required from the owner
+
+The original FT8 core decisions were approved and the existing three decoder slices remain preserved. Before further implementation, approve/change these expanded decisions:
+
+1. **ModeProfile architecture:** one shared spectral/sync/demod framework; FT8 and FT4 share the 77/CRC14/174,91 codec family; JS8 uses a separate 75/CRC12/174,87 frame family.  
+   **Recommendation: APPROVE.**
+
+2. **FT4 profile:** use exact 7.5 s / 576-sample / 105-symbol / 83.3 Hz protocol values plus the FT4 payload XOR transform.  
+   **Recommendation: APPROVE.**
+
+3. **JS8 stable profiles:** support Slow, Normal, Fast, and JS8 40 eventually; define JS8 60 only as experimental/disabled.  
+   **Recommendation: APPROVE.**
+
+4. **JS8 provenance:** JS8Call GPL source may be read only to understand/document protocol facts where its guide says source is authoritative; no source/table/control-flow transfer into OrcSDR.  
+   **Recommendation: APPROVE.**
+
+5. **Seam:** preserve existing required DecoderBackend callbacks and add only optional mode/high-resolution-timing extensions.  
+   **Recommendation: APPROVE.**
+
+6. **Timing:** add optional `begin_slot_ms(uint64_t)` rather than redefining `begin_slot(uint32_t)`.  
+   **Recommendation: APPROVE.**
+
+7. **Decode provenance:** request an additive mode tag plus flags (assisted/hash-resolved/multi-frame) from the UI owner.  
+   **Recommendation: APPROVE.**
+
+8. **JS8 output:** use a separate bounded multi-frame Message record/assembler, not `Decode.message[48]`.  
+   **Recommendation: APPROVE.**
+
+9. **Audio tap:** approve a raw-CU8 sidecar producing independent 12 kHz USB analysis PCM; do not reuse post-speaker audio or mutate existing demod state.  
+   **Recommendation: APPROVE.**
+
+10. **Audio invariance gate:** when the tap is disabled, existing recorded speaker PCM must be bit-identical to baseline on deterministic input; when enabled it must add no receiver/audio drops in the named on-device test.  
+    **Recommendation: APPROVE.**
+
+11. **Frontend implementation choice:** benchmark several multistage sideband/decimation layouts before freezing coefficients/architecture.  
+    **Recommendation: APPROVE.**
+
+12. **Phase sequencing:** freeze the existing FT8 Phase 1 checkpoint here; after expanded approval, resume FT8 core first, then firmware binding, FT4, then JS8.  
+    **Recommendation: APPROVE.**
+
+## 32. Expanded stop gate
+
+**ACTIVE.** The existing FT8 codec/LDPC/NMS checkpoint is retained and tested, but no new sync/demod/audio-tap/FT4/JS8 implementation should proceed until the owner reviews Sections 26–31 and the three linked proposal documents.
+

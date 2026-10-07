@@ -39,3 +39,17 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Added a reproducible BPSK/AWGN normalization sweep; alpha 0.80 is the provisional synthetic-channel baseline, subject to re-test with real FT8 tone-derived LLRs.
 - Documented that LDPC convergence is not a valid FT8 decode; CRC and legal message plausibility remain mandatory downstream gates.
 - Host workspace measured 4,872 bytes; no Tab5/P4 performance or hardware-verification claim is made.
+
+
+## 2026-10-07 — expanded Phase 0: FT8 / FT4 / JS8 and integrated UI baseline
+
+- Preserved the pre-rebase decoder checkpoint at `codex/ft8-native-decoder-pre-ui-rebase`.
+- Rebased/reconstructed the decoder workstream on `claude/ft8-ui` and retargeted draft PR #172 to that branch; `main` remains untouched.
+- Merged the UI branch's FT8 model/Hunter/OrcDial host tests with the native codec/LDPC/NMS regression runner. Documentation Truth, FT8 Native Decoder Core, and FT8 RX core CI all passed on the integrated checkpoint.
+- Expanded research from FT8-only to a ModeProfile framework for FT8, FT4, and JS8.
+- Verified FT4's 7.5 s period, 576 samples/symbol at 12 kHz, 20.8333 baud/tone spacing, 105-symbol framing, 83.3 Hz nominal bandwidth, shared LDPC(174,91)/CRC-14 family, four Costas arrays, and FT4 payload XOR transform from primary WSJT-X/QEX sources.
+- Recorded stable JS8 Slow/Normal/Fast/JS8 40 profile timing and framing behavior from the current JS8Call guide, with source-only protocol research confirming the 75-bit + CRC-12 / N=174,K=87 frame family. JS8 60 remains experimental/disabled.
+- Added a backwards-compatible decoder seam proposal: optional mode selection, millisecond slot timing, mode/provenance tags, and later bounded JS8 message assembly output.
+- Audited the current receive/audio path and proposed an independent raw-CU8-to-12-kHz USB analysis sidecar. Existing AM/SSB/speaker audio is not reused as the decoder signal.
+- Added a tap-off bit-identity requirement and on-device CPU/drop A/B gates. No existing DSP, demodulation, filter, sound, dashboard, Hunter, OrcDial, or main.cpp glue was changed.
+- Froze further Phase 1 implementation until the owner reviews the expanded research and proposals.
