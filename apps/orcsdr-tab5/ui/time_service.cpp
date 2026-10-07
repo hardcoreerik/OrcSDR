@@ -78,7 +78,9 @@ bool set_utc_offset_minutes(int32_t minutes) {
 }
 
 void load_config(NvsStore& store) {
-  g_offset_minutes.store(clock_settings::clamp_offset(store.get_i32(kOffsetKey, 0)), std::memory_order_release);
+  const int32_t stored = store.get_i32(kOffsetKey, 0);
+  // An out-of-range stored value is ignored (UTC), not shown as a legal zone.
+  g_offset_minutes.store(clock_settings::valid_offset(stored) ? stored : 0, std::memory_order_release);
 }
 
 bool save_config(NvsStore& store) {
@@ -86,11 +88,10 @@ bool save_config(NvsStore& store) {
 }
 
 bool store_utc_offset_minutes(NvsStore& store, int32_t minutes) {
-  const int32_t previous = utc_offset_minutes();
-  if (!set_utc_offset_minutes(minutes)) return false;
-  if (save_config(store)) return true;
-  g_offset_minutes.store(previous, std::memory_order_release);
-  return false;
+  if (!clock_settings::valid_offset(minutes)) return false;
+  if (!store.put_i32(kOffsetKey, minutes)) return false;   // memory only changes once the save succeeded
+  g_offset_minutes.store(minutes, std::memory_order_release);
+  return true;
 }
 
 bool format_local(char* output, size_t output_size, uint32_t epoch) {

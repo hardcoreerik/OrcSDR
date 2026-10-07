@@ -111,7 +111,7 @@ LocalTime adjust(const LocalTime& local, Field field, int delta) {
     case Field::month: result.month = wrap(result.month - 1 + delta, 12) + 1; break;
     case Field::day: {
       const int count = days_in_month(result.year, result.month);
-      result.day = wrap(result.day - 1 + delta, count) + 1;
+      if (count > 0) result.day = wrap(result.day - 1 + delta, count) + 1;
       break;
     }
     case Field::hour: result.hour = wrap(result.hour + delta, 24); break;

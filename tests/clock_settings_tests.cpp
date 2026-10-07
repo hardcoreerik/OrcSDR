@@ -90,6 +90,7 @@ void test_offset_steps() {
   CHECK(step_offset(7, 1) == 15 && step_offset(7, -1) == 0);          // an off-grid value lands on the grid
   CHECK(step_offset(-7, 1) == 0 && step_offset(-7, -1) == -15);
   CHECK(step_offset(60, 0) == 60);
+  { LocalTime zero{}; zero.month = 0; (void)adjust(zero, Field::day, 1); }   // no division by zero
   CHECK(valid_offset(-720) && valid_offset(840) && !valid_offset(-721) && !valid_offset(841));
 }
 

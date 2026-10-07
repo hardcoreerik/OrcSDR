@@ -46,20 +46,29 @@ def main() -> None:
     parser.add_argument("--pairing-key", type=Path, default=Path(".orclink/ui-doc.key"))
     args = parser.parse_args()
 
+    # Build both commands first so a bad offset cannot leave the clock half-set.
+    rtc_command = rtc_set_command(int(time.time()))
+    tz_command = tz_set_command(args.utc_offset_minutes) if args.utc_offset_minutes is not None else None
+
     tab5 = Tab5(args.port, args.pairing_key)
     try:
         tab5.authenticate()
-        tab5.send(rtc_set_command(int(time.time())))
+        tab5.send(rtc_command)
         reply = tab5.wait(("ORC_RTC_SET_OK", "ORC_RTC_SET_ERROR"))
         if not reply.startswith("ORC_RTC_SET_OK"):
             raise RuntimeError(reply)
         print(reply)
-        if args.utc_offset_minutes is not None:
-            tab5.send(tz_set_command(args.utc_offset_minutes))
+        if tz_command is not None:
+            tab5.send(tz_command)
             reply = tab5.wait(("ORC_TZ_SET_OK", "ORC_TZ_SET_ERROR"))
             if not reply.startswith("ORC_TZ_SET_OK"):
                 raise RuntimeError(reply)
             print(reply)
+            tab5.send("ORC_RTC_STATUS")
+            status = tab5.wait(("ORC_RTC_STATUS",))
+            if status_offset_minutes(status) != args.utc_offset_minutes:
+                raise RuntimeError(f"offset was not stored: {status}")
+            print(status)
     finally:
         tab5.close()
 
