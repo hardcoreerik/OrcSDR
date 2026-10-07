@@ -93,6 +93,29 @@ void test_radio_session() {
   CHECK(owner_for_band(Band::am) == Owner::radio);
   CHECK(owner_for_band(Band::wx) == Owner::radio);
   CHECK(owner_for_band(Band::cb) == Owner::radio);
+
+  CHECK(session.set_state(p25, ReceiverState::running));
+  const Token blocked_weather =
+      session.try_acquire(Owner::weather, Band::wx, 162400000, 960000);
+  CHECK(blocked_weather.owner == Owner::none);
+  CHECK(session.owns(p25));
+
+  const Token weather =
+      session.acquire(Owner::weather, Band::wx, 162425000, 960000);
+  CHECK(session.owns(weather));
+  CHECK(!session.owns(p25));
+  CHECK(session.set_state(weather, ReceiverState::ready));
+  CHECK(session.release(weather));
+  CHECK(session.snapshot().owner == Owner::none);
+  CHECK(session.snapshot().state == ReceiverState::ready);
+
+  const Token idle_weather =
+      session.try_acquire(Owner::weather, Band::wx, 162450000, 960000);
+  CHECK(session.owns(idle_weather));
+  CHECK(session.snapshot().frequency_hz == 162450000);
+  const Token newer = session.acquire(Owner::fm, Band::fm, 101700000, 960000);
+  CHECK(!session.release(idle_weather));
+  CHECK(session.owns(newer));
   CHECK(owner_for_band(Band::browse) == Owner::radio);
   CHECK(owner_for_band(Band::airband) == Owner::radio);
   CHECK(Session::self_check());

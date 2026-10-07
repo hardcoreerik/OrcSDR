@@ -2,47 +2,95 @@
 
 namespace orcsdr::radio {
 
+void Session::lock() const {
+  while (guard_.test_and_set(std::memory_order_acquire)) {}
+}
+
+void Session::unlock() const { guard_.clear(std::memory_order_release); }
+
+bool Session::owns_locked(Token token) const {
+  return token.owner != Owner::none && token.owner == owner_ && token.generation == generation_;
+}
+
+Token Session::acquire_locked(Owner owner, Band band, uint32_t frequency_hz,
+                              uint32_t sample_rate_sps) {
+  if (owner == Owner::none || frequency_hz == 0 || sample_rate_sps == 0) return {};
+  ++generation_;
+  if (generation_ == 0) generation_ = 1;
+  owner_ = owner;
+  band_ = band;
+  frequency_hz_ = frequency_hz;
+  sample_rate_sps_ = sample_rate_sps;
+  return {owner_, generation_};
+}
+
 Token Session::acquire(Owner owner, Band band, uint32_t frequency_hz,
                        uint32_t sample_rate_sps) {
-  if (owner == Owner::none) return {};
-  uint32_t generation = generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
-  if (generation == 0) {
-    generation_.store(1, std::memory_order_release);
-    generation = 1;
+  lock();
+  const Token token = acquire_locked(owner, band, frequency_hz, sample_rate_sps);
+  unlock();
+  return token;
+}
+
+Token Session::try_acquire(Owner owner, Band band, uint32_t frequency_hz,
+                           uint32_t sample_rate_sps) {
+  lock();
+  const bool idle = owner_ == Owner::none &&
+                    (receiver_state_ == ReceiverState::disconnected ||
+                     receiver_state_ == ReceiverState::ready ||
+                     receiver_state_ == ReceiverState::failed);
+  const Token token = idle ? acquire_locked(owner, band, frequency_hz, sample_rate_sps) : Token{};
+  unlock();
+  return token;
+}
+
+bool Session::release(Token token) {
+  lock();
+  if (!owns_locked(token)) {
+    unlock();
+    return false;
   }
-  band_.store(band, std::memory_order_relaxed);
-  frequency_hz_.store(frequency_hz, std::memory_order_relaxed);
-  sample_rate_sps_.store(sample_rate_sps, std::memory_order_relaxed);
-  owner_.store(owner, std::memory_order_release);
-  return {owner, generation};
+  owner_ = Owner::none;
+  frequency_hz_ = 0;
+  sample_rate_sps_ = 0;
+  unlock();
+  return true;
 }
 
 bool Session::owns(Token token) const {
-  return token.owner != Owner::none &&
-         token.owner == owner_.load(std::memory_order_acquire) &&
-         token.generation == generation_.load(std::memory_order_acquire);
+  lock();
+  const bool result = owns_locked(token);
+  unlock();
+  return result;
 }
 
 bool Session::retuned(Token token, uint32_t frequency_hz) {
-  if (!owns(token) || frequency_hz == 0) return false;
-  frequency_hz_.store(frequency_hz, std::memory_order_release);
+  lock();
+  if (!owns_locked(token) || frequency_hz == 0) {
+    unlock();
+    return false;
+  }
+  frequency_hz_ = frequency_hz;
+  unlock();
   return true;
 }
 
 bool Session::set_state(Token token, ReceiverState state) {
-  if (!owns(token)) return false;
-  receiver_state_.store(state, std::memory_order_release);
+  lock();
+  if (!owns_locked(token)) {
+    unlock();
+    return false;
+  }
+  receiver_state_ = state;
+  unlock();
   return true;
 }
 
 Snapshot Session::snapshot() const {
-  Snapshot snapshot;
-  snapshot.owner = owner_.load(std::memory_order_acquire);
-  snapshot.band = band_.load(std::memory_order_relaxed);
-  snapshot.state = receiver_state_.load(std::memory_order_relaxed);
-  snapshot.frequency_hz = frequency_hz_.load(std::memory_order_relaxed);
-  snapshot.sample_rate_sps = sample_rate_sps_.load(std::memory_order_relaxed);
-  snapshot.generation = generation_.load(std::memory_order_acquire);
+  lock();
+  const Snapshot snapshot{
+      owner_, band_, receiver_state_, frequency_hz_, sample_rate_sps_, generation_};
+  unlock();
   return snapshot;
 }
 
@@ -60,12 +108,16 @@ Owner owner_for_band(Band band) {
 bool Session::self_check() {
   Session session;
   const Token fm = session.acquire(Owner::fm, Band::fm, 96100000, 960000);
-  if (!session.owns(fm) || !session.retuned(fm, 101700000)) return false;
-  const Token p25 = session.acquire(Owner::p25, Band::p25, 453812500, 960000);
-  return !session.owns(fm) && session.owns(p25) &&
-         !session.retuned(fm, 102300000) &&
-         session.snapshot().frequency_hz == 453812500 &&
-         owner_for_band(Band::airband) == Owner::radio;
+  if (!session.owns(fm) || !session.set_state(fm, ReceiverState::running)) return false;
+  if (session.try_acquire(Owner::weather, Band::wx, 162400000, 960000).owner !=
+      Owner::none)
+    return false;
+  const Token wx = session.acquire(Owner::weather, Band::wx, 162425000, 960000);
+  if (session.owns(fm) || !session.owns(wx) ||
+      !session.set_state(wx, ReceiverState::ready))
+    return false;
+  if (!session.release(wx) || session.snapshot().owner != Owner::none) return false;
+  return owner_for_band(Band::wx) == Owner::radio;
 }
 
 }  // namespace orcsdr::radio
