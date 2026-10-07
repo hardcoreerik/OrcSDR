@@ -44,7 +44,7 @@ Energy alone is never presented as FT8. A locator is never presented as a measur
 
 ## Host validation
 
-Run the FT8 model and Hunter regression suite with:
+Run the FT8 model, Hunter, and OrcDial semantic-control regression suite with:
 
 ```bash
 bash tools/test-ft8.sh
@@ -56,7 +56,7 @@ On the project's normal Windows + WSL development environment:
 .\tools\test-ft8.ps1
 ```
 
-The suite builds optimized binaries and AddressSanitizer/UndefinedBehaviorSanitizer variants for the pure FT8 model and Hunter state machine. Device-level M5GFX and RF/DSP validation remain separate gates.
+The suite builds optimized binaries and AddressSanitizer/UndefinedBehaviorSanitizer variants for the pure FT8 model, Hunter state machine, and OrcDial FT8 semantic controller. Device-level M5GFX, physical OrcDial transport, and RF/DSP validation remain separate gates.
 
 ## Related design documents
 
