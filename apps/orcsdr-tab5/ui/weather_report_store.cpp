@@ -125,12 +125,17 @@ bool save_snapshot(storage::FileSystem& fs, const SaveRequest& request,
   char text[1536]{};
   bool ok = true;
 
+  char location_html[256]{};
+  if (!report::escape_html(request.location, location_html, sizeof(location_html))) {
+    set_error(error, error_capacity, "Weather location label is too long");
+    return false;
+  }
   std::snprintf(text, sizeof(text),
       "<!doctype html><meta charset=\"utf-8\"><title>OrcSDR Weather snapshot</title>"
-      "<h1>OrcSDR Weather snapshot</h1><p>Session: %s</p><p>Location: %.40s</p>"
+      "<h1>OrcSDR Weather snapshot</h1><p>Session: %s</p><p>Location: %s</p>"
       "<p>NOAA RF state: %u; selected channel: %u; strongest Hz: %lu.</p>"
       "<p>Source classes and ages are preserved in observations.csv. This report does not claim hardware verification.</p>",
-      request.session.id, request.location, static_cast<unsigned>(request.rf.rf_state),
+      request.session.id, location_html, static_cast<unsigned>(request.rf.rf_state),
       static_cast<unsigned>(request.rf.selected_channel + 1),
       static_cast<unsigned long>(request.rf.strongest_frequency_hz));
   std::snprintf(path, sizeof(path), "%s/%s", staged_dir, hashes[0].name);

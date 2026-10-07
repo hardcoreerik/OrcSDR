@@ -17,6 +17,33 @@ bool csv_field(const char* input, char* output, size_t capacity, size_t* used){
 }
 const char* online_policy_key(OnlinePolicy p){ switch(p){case OnlinePolicy::disabled:return "disabled";case OnlinePolicy::manual:return "manual";case OnlinePolicy::automatic:return "automatic";}return "disabled"; }
 
+bool escape_html(const char* input, char* output, size_t capacity) {
+  if (!input || !output || capacity == 0) return false;
+  size_t used = 0;
+  for (const char* p = input; *p; ++p) {
+    const char* replacement = nullptr;
+    switch (*p) {
+      case '&': replacement = "&amp;"; break;
+      case '<': replacement = "&lt;"; break;
+      case '>': replacement = "&gt;"; break;
+      case '"': replacement = "&quot;"; break;
+      case '\'': replacement = "&apos;"; break;
+      default: break;
+    }
+    if (replacement) {
+      const size_t length = std::strlen(replacement);
+      if (used + length >= capacity) return false;
+      std::memcpy(output + used, replacement, length);
+      used += length;
+    } else {
+      if (used + 1 >= capacity) return false;
+      output[used++] = *p;
+    }
+  }
+  output[used] = '\0';
+  return true;
+}
+
 bool encode_observation_csv(const Observation& o, char* out, size_t cap){
   if(!out||cap==0||!o.valid) return false;
   char prefix[192]{};

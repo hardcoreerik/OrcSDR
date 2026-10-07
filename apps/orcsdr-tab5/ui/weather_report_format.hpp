@@ -15,5 +15,5 @@ struct Session {
 bool encode_observation_csv(const Observation& observation, char* output, size_t capacity);
 bool encode_session_json(const Session& session, char* output, size_t capacity);
 bool encode_history_jsonl(const Session& session, const char* type, char* output, size_t capacity);
-const char* online_policy_key(OnlinePolicy policy);
+const char* online_policy_key(OnlinePolicy policy);\nbool escape_html(const char* input, char* output, size_t capacity);
 }  // namespace orcsdr::weather::report

@@ -39,5 +39,11 @@ int main(){
   CHECK(history[std::strlen(history)-1] == '\n');
   CHECK(std::strstr(history, "hardware_verified") == nullptr);
 
+  char html[160]{};
+  CHECK(report::escape_html("Springfield & <WX> \"A'\"", html, sizeof(html)));
+  CHECK(std::strcmp(html, "Springfield &amp; &lt;WX&gt; &quot;A&apos;&quot;") == 0);
+  char tiny[8]{};
+  CHECK(!report::escape_html("&<>\\\"'", tiny, sizeof(tiny)));
+
   std::puts("weather_report_format_tests: PASS");
 }
