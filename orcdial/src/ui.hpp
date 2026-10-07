@@ -10,7 +10,7 @@ enum class View : uint8_t { home, carousel, dashboard, connection, keypad, setti
 void splash();
 // Direct-tuning keypad (long press on the Home frequency): the entry text, whether to flag it as out of range, and
 // which key a touch landed on ('0'-'9', '.', '\b', 'C' cancel, 'T' tune, 0 for none).
-void keypad_state(const char* entry, bool out_of_range);
+void keypad_state(const char* entry, bool out_of_range, const char* range_text);
 // Dial Settings (the vertical menu and its pages).
 void settings_state(const SettingsView& view);
 char keypad_hit(int x, int y);

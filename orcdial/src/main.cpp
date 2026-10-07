@@ -50,7 +50,23 @@ static char keypad_entry[12];
 static bool keypad_out_of_range = false;
 static bool hold_armed = false;
 static uint32_t hold_start_ms = 0;
-static void keypad_open() { keypad_entry[0] = 0; keypad_out_of_range = false; view = orc::View::keypad; }
+static orc::View keypad_return = orc::View::home;
+static orc::Dashboard keypad_dashboard = orc::Dashboard::home;
+// What the Tab5 will accept for each dashboard; it validates again.
+static void keypad_range(orc::Dashboard d, double& lo, double& hi, const char*& text) {
+  switch (d) {
+    case orc::Dashboard::fm: lo = 76.0; hi = 108.0; text = "76 - 108 MHz"; break;
+    case orc::Dashboard::am: lo = 0.5; hi = 1.7; text = "0.5 - 1.7 MHz"; break;
+    case orc::Dashboard::home: lo = 24.0; hi = 1766.0; text = "24 - 1766 MHz"; break;
+    default: lo = 0.1; hi = 1766.0; text = "0.1 - 1766 MHz"; break;
+  }
+}
+static void keypad_open(orc::Dashboard dashboard) {
+  keypad_entry[0] = 0; keypad_out_of_range = false;
+  keypad_dashboard = dashboard;
+  keypad_return = dashboard == orc::Dashboard::home ? orc::View::home : orc::View::dashboard;
+  view = orc::View::keypad;
+}
 static void keypad_key(char key) {
   const size_t length = strlen(keypad_entry);
   keypad_out_of_range = false;
@@ -62,9 +78,11 @@ static void keypad_key(char key) {
 static void keypad_tune(bool online) {
   char* end = nullptr;
   const double mhz = strtod(keypad_entry, &end);
-  if (end == keypad_entry || *end || mhz < 24.0 || mhz > 1766.0) { keypad_out_of_range = true; return; }
+  double lo, hi; const char* range_text;
+  keypad_range(keypad_dashboard, lo, hi, range_text);
+  if (end == keypad_entry || *end || mhz < lo || mhz > hi) { keypad_out_of_range = true; return; }
   if (online) (void)radio_link.command(orc::Type::tune_absolute, int32_t(mhz * 1000000.0 + 0.5));
-  view = orc::View::home;
+  view = keypad_return;
 }
 static void device_activate() {
   const auto status=radio_link.security_status();
@@ -441,7 +459,7 @@ void loop() {
     const auto t = M5Dial.Touch.getDetail();
     if (view == orc::View::keypad) {
       const char key = orc::keypad_hit(t.x, t.y);
-      if (key == 'C') view = orc::View::home;
+      if (key == 'C') view = keypad_return;
       else if (key == 'T') keypad_tune(online);
       else if (key) keypad_key(key);
     } else if (view == orc::View::connection) {
@@ -469,30 +487,33 @@ void loop() {
       else if (t.x < 70) selected_index = (selected_index + orc::carousel_count - 1) % orc::carousel_count;
       else if (t.x > 170) selected_index = (selected_index + 1) % orc::carousel_count;
       else select_dashboard(state, online);
+    } else if (t.y >= 200) {
+      view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard);   // BACK
     } else if (t.y < 76) {
       if (orc::tunable(state.dashboard)) change(orc::Type::set_mode, state.mode >= 3 ? 1 : state.mode + 1);
       else act({orc::ActionKind::view, 1}, online);
     } else if (state.dashboard == orc::Dashboard::fm && t.y >= 150 && t.y < 183) {
       focus = t.x < 86 ? orc::Focus::vfo : t.x < 154 ? orc::Focus::step : orc::Focus::volume;
+    } else if (online && orc::tunable(state.dashboard) && t.y >= 80 && t.y < 148 && t.x <= 170) {
+      hold_armed = true; hold_start_ms = millis();   // a long press here opens the keypad; a tap focuses the frequency
     } else if (t.x > 170 && t.y < 170 && orc::tunable(state.dashboard) && state.dashboard != orc::Dashboard::fm) {
       tune_style = orc::TuneStyle((uint8_t(tune_style) + 1) % uint8_t(orc::TuneStyle::count));
       focus = orc::Focus::vfo;
-    } else if (t.y > 170 && t.x < 85) view = orc::View::home;
-    else if (t.y > 170 && t.x > 155) { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
-    else if (t.y > 170) focus = orc::next_focus(state.dashboard, focus);
+    } else if (t.y > 170) focus = orc::next_focus(state.dashboard, focus);
     else focus = orc::Focus::vfo;
   }
   if (!touching) touch_swallow = false;
   touch_down = touching;
   // A long press on the Home frequency opens the keypad; a short tap there still moves focus.
   if (hold_armed) {
-    if (view != orc::View::home) hold_armed = false;
-    else if (!touching) { hold_armed = false; focus = orc::next_focus(state.dashboard, focus); }
-    else if (millis() - hold_start_ms >= 700) { hold_armed = false; keypad_open(); }
+    if (view != orc::View::home && view != orc::View::dashboard) hold_armed = false;
+    else if (!touching) { hold_armed = false; focus = view == orc::View::home ? orc::next_focus(state.dashboard, focus) : orc::Focus::vfo; }
+    else if (millis() - hold_start_ms >= 700) { hold_armed = false; keypad_open(state.dashboard); }
   }
   if (millis() - last_draw_ms > 75) {
     orc::devices_state(radio_link.security_status(),device_selection,forget_confirmation);
-    orc::keypad_state(keypad_entry, keypad_out_of_range);
+    { double lo, hi; const char* range_text = ""; keypad_range(keypad_dashboard, lo, hi, range_text);
+      orc::keypad_state(keypad_entry, keypad_out_of_range, range_text); }
     if (view == orc::View::settings_menu || view == orc::View::page) {
       orc::SettingsView v;
       v.menu = menu_index; v.page = current_page; v.row = page_row; v.reset_armed = reset_armed;

@@ -14394,8 +14394,24 @@ bool orcdial_apply(const orc::Packet& p) {
     return true;
   }
   if (p.type == orc::Type::tune_absolute) {
-    if (active != Dash::home || p.value < 24000000 || p.value > 1766000000) return false;
-    return home_tune_to(static_cast<uint32_t>(p.value), true);
+    // The Dial's keypad: any frequency on Home, or one inside the band of the dashboard on screen.
+    if (p.value < 24000 || p.value > 1766000000) return false;
+    const uint32_t hz = static_cast<uint32_t>(p.value);
+    if (active == Dash::home) return p.value >= 24000000 && home_tune_to(hz, true);
+    if (active == Dash::fm) {
+      if (hz < kRtlFmMinHz || hz > kRtlFmMaxHz) return false;
+      handle_fm_dashboard_action({orcsdr::fm::ActionKind::tune_hz, hz});
+      return true;
+    }
+    if (active == Dash::am) {
+      if (hz < kRtlAmMinHz || hz > kRtlAmMaxHz) return false;
+      handle_am_dashboard_action({orcsdr::am::ActionKind::tune_hz, hz});
+      return true;
+    }
+    if (!orc::tunable(active) || rtl_clamp_frequency(rtl_ui_band, hz) != hz ||
+        !validate_rtl_tune_frequency(hz)) return false;
+    if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running) return request_hot_retune(hz);
+    return queue_local_rtl_listen(rtl_ui_band, hz);
   }
   if (p.type == orc::Type::set_mode) {
     if (active != Dash::home || !home_full_range() || p.value < 1 || p.value > 5) return false;

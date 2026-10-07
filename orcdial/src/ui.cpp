@@ -149,9 +149,11 @@ static constexpr int kp_x0 = 42, kp_y0 = 54, kp_w = 50, kp_h = 30, kp_px = 54, k
 static constexpr int kp_cancel_x = 50, kp_tune_x = 122, kp_button_y = 192, kp_button_w = 68, kp_button_h = 22;
 static char keypad_entry[12];
 static bool keypad_out_of_range = false;
-void keypad_state(const char* entry, bool out_of_range) {
+static char keypad_range_text[20] = "";
+void keypad_state(const char* entry, bool out_of_range, const char* range_text) {
   std::snprintf(keypad_entry, sizeof keypad_entry, "%s", entry ? entry : "");
   keypad_out_of_range = out_of_range;
+  std::snprintf(keypad_range_text, sizeof keypad_range_text, "%s", range_text ? range_text : "");
 }
 static bool kp_inside(int x, int y, int bx, int by, int bw, int bh) {
   return x >= bx - 2 && x < bx + bw + 2 && y >= by - 2 && y < by + bh + 2;
@@ -183,7 +185,7 @@ static void keypad_screen(lgfx::LGFXBase& d, bool connected) {
   d.setTextColor(red); d.setTextSize(1); d.drawString("CANCEL", kp_cancel_x + kp_button_w / 2, kp_button_y + kp_button_h / 2);
   d.fillRoundRect(kp_tune_x, kp_button_y, kp_button_w, kp_button_h, 6, green);
   d.setTextColor(bg); d.setTextSize(1); d.drawString("TUNE", kp_tune_x + kp_button_w / 2, kp_button_y + kp_button_h / 2);
-  if (keypad_out_of_range) { d.setTextColor(red); d.setTextSize(1); draw_text(d, "24 - 1766 MHz", 120, 222); }
+  if (keypad_out_of_range) { d.setTextColor(red); d.setTextSize(1); draw_text(d, keypad_range_text, 120, 222); }
 }
 
 // ---- Dial Settings --------------------------------------------------------------------------
@@ -280,6 +282,12 @@ static void settings_page_screen(lgfx::LGFXBase& d, bool connected) {
   d.setTextColor(cyan); d.setTextSize(2); d.drawString("BACK", 120, 211);
 }
 
+// The way back to the dashboards carousel, at the bottom of every dashboard screen (tap it, or hold the knob for Home).
+static void back_button(lgfx::LGFXBase& d) {
+  d.fillRoundRect(80, 203, 80, 22, 8, panel); d.drawRoundRect(80, 203, 80, 22, 8, cyan);
+  d.setTextColor(cyan); d.setTextSize(2); d.drawString("BACK", 120, 214);
+}
+
 static void fm_screen(lgfx::LGFXBase& d, const RadioState& state, Focus focus,
                       bool connected, bool pairing, bool demo, bool pending,
                       int32_t reel_position) {
@@ -323,12 +331,11 @@ static void fm_screen(lgfx::LGFXBase& d, const RadioState& state, Focus focus,
     std::snprintf(line, sizeof line, "STEP %lu kHz", (unsigned long)(state.step_hz / 1000));
   else
     std::snprintf(line, sizeof line, "STEP %lu Hz", (unsigned long)state.step_hz);
-  draw_text(d, line, 80, 193);
+  draw_text(d, line, 80, 191);
   std::snprintf(line, sizeof line, "VOL %u", unsigned(state.volume));
-  draw_text(d, line, 160, 193);
-  d.setTextColor(pending ? cyan : dim, bg); d.setTextSize(1);
-  draw_text(d, pending ? "TUNING..." : "PRESS: NEXT", 120, 211);
-  if (!pending) draw_text(d, "HOLD: HOME", 120, 221);
+  draw_text(d, line, 160, 191);
+  if (pending) d.fillCircle(206, 106, 3, cyan);
+  back_button(d);
 }
 
 // Small, code-drawn illustrations stay sharp on the Dial's 240-pixel round screen.
@@ -658,9 +665,13 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
   d.setTextColor(connected ? green : cyan, bg); d.setTextSize(1);
   draw_text(d, pairing ? "PAIRING" : connected ? "LINKED" : demo ? "DEMO" : "OFFLINE", 120, 48);
   static const char* modes[] = {"--", "NFM", "AM", "WFM"};
+  static const char* styles[] = {"REEL", "DIAL", "ODOM", "TAPE", "SPLIT"};
   if (can_tune || channel_dashboard(dashboard)) {
+    char tag[32];
+    if (can_tune) std::snprintf(tag, sizeof tag, "%s   %s", modes[state.mode < 4 ? state.mode : 0], styles[unsigned(style)]);
+    else std::snprintf(tag, sizeof tag, "%s", modes[state.mode < 4 ? state.mode : 0]);
     d.setTextColor(dim, bg); d.setTextSize(1);
-    draw_text(d, modes[state.mode < 4 ? state.mode : 0], 120, 64);
+    draw_text(d, tag, 120, 64);
   }
   artwork(d, dashboard, accent);
   char line[32];
@@ -671,7 +682,7 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
     draw_text(d, line, 120, 113);
     frequency(d, state.frequency_hz, 140, 2, dim);
     d.setTextColor(dim, bg); d.setTextSize(1);
-    draw_text(d, connected && state.selected > 0 ? "CHANNEL" : "CHANNEL DATA --", 120, 195);
+    draw_text(d, connected && state.selected > 0 ? "CHANNEL" : "CHANNEL DATA --", 120, 190);
   } else if (!can_tune) {
     d.setTextColor(dim, bg); d.setTextSize(2);
     draw_text(d, content_view(dashboard, state.view), 120, 176);
@@ -680,7 +691,7 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
     else if (dashboard == Dashboard::p25 && connected && state.item_count)
       std::snprintf(line, sizeof line, "CANDIDATE %ld/%lu", long(state.selected), (unsigned long)state.item_count);
     else std::snprintf(line, sizeof line, "%s", dashboard == Dashboard::settings ? "DEVICE SETTINGS" : "NO LIVE DATA");
-    d.setTextSize(1); draw_text(d, line, 120, 198);
+    d.setTextSize(1); draw_text(d, line, 120, 192);
   } else if (focus == Focus::vfo || focus == Focus::step) {
     switch (style) {
       case TuneStyle::reel: {
@@ -768,12 +779,8 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
       std::snprintf(line, sizeof line, "STEP %lu Hz", (unsigned long)state.step_hz);
     d.setTextColor(focus == Focus::step ? green : ink, bg); d.setTextSize(2); draw_text(d, line, 120, 188);
   }
-  if (pending_delta) { d.setTextColor(cyan, bg); d.setTextSize(1); draw_text(d, "TUNING...", 120, 205); }
-  static const char* styles[] = {"REEL", "DIAL", "ODOM", "TAPE", "SPLIT"};
-  d.setTextColor(dim, bg); d.setTextSize(1.5f);
-  std::snprintf(line, sizeof line, "%s %u/5 >", styles[unsigned(style)], unsigned(style) + 1);
-  draw_text(d, can_tune ? line : channel_dashboard(dashboard) ? "CH  VOL  HOME >" :
-               "HOME / DASHBOARDS", 120, 210);
+  if (pending_delta) d.fillCircle(206, 110, 3, cyan);
+  back_button(d);
   present();
 }
 } // namespace orc
