@@ -1039,7 +1039,9 @@ void dashboard_draw_spectrum(const float* levels, size_t first_bin, size_t visib
         Screen::airband,
         std::clamp((g_scope_levels[i] - floor_db) / kScopeWaterfallRangeDb, 0.0f, 1.0f));
   for (int row = 0; row < rows; ++row)
-    M5.Display.pushImage(x0, kScopeWfY + kScopeWfH - 1 - rows + row, w, 1, g_scope_row);
+    // Native RGB565 row: push it as rgb565_t (a uint16_t* image is read as big-endian and shows wrong hues).
+    M5.Display.pushImage(x0, kScopeWfY + kScopeWfH - 1 - rows + row, w, 1,
+                         reinterpret_cast<const lgfx::rgb565_t*>(g_scope_row));
   M5.Display.endWrite();
   g_scope_draw_ms = millis() - frame_started_ms;
   ++g_scope_frames;

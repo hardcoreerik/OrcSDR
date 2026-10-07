@@ -7038,7 +7038,7 @@ void draw_documentation_spectrum() {
                     0.0f, 1.0f));
     }
     M5.Display.pushImage(kSpectrumX + 1, kWaterfallY + row, width, 1,
-                         rtl_waterfall_row);
+                         reinterpret_cast<const lgfx::rgb565_t*>(rtl_waterfall_row));   // native RGB565, see scope_canvas.hpp
   }
   M5.Display.drawFastVLine(kSpectrumX + width / 2, kSpectrumY + 1,
                            kSpectrumHeight - 2, TFT_GREEN);
@@ -7438,8 +7438,8 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   }
   /* Capture tool owns waterfall panel — skip scrolling paint there. */
   if (tool != OrcTool::Capture) {
-    M5.Display.pushImage(kSpectrumX + 1, kWaterfallY + kWaterfallHeight - 2,
-                         waterfall_width, 1, rtl_waterfall_row);
+    M5.Display.pushImage(kSpectrumX + 1, kWaterfallY + kWaterfallHeight - 2, waterfall_width, 1,
+                         reinterpret_cast<const lgfx::rgb565_t*>(rtl_waterfall_row));   // native RGB565, see scope_canvas.hpp
   }
   if (redraw_trace) {
     M5.Display.drawFastVLine(kSpectrumX + draw_width / 2, kSpectrumY + 1,
