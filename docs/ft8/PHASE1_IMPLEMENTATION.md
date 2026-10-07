@@ -388,4 +388,14 @@ No redistribution-safe, authoritative JS8 receive corpus has been identified yet
 
 ## Current validation status
 
-Spectral-reference checkpoint `73fbd9d32d8af69445776fc43241410e613ca0c2` is committed and pushed. PR CI for that low-level ref update did not enqueue immediately, so this documentation update is being made through GitHub's contents API to force a normal branch synchronization event. The spectral slice must not be described as CI-verified until the resulting checks pass.
+Spectral-reference checkpoint `73fbd9d32d8af69445776fc43241410e613ca0c2` is committed and pushed. PR CI did not enqueue on the newest GitHub-App updates, so the new spectral module was also reconstructed and compiled directly in the cloud sandbox with g++ 14.2.
+
+Focused sandbox validation passed in both optimized and ASan/UBSan builds:
+- streamed 12 kHz FT8-sized symbol window in irregular chunks;
+- injected tone: 1018.75 Hz;
+- grid: 975 Hz start, 6.25 Hz spacing;
+- recovered peak: bin 7 (1018.75 Hz);
+- peak linear power: 3.6e7;
+- adjacent bins were at floating-point numerical-noise scale (~7e-21).
+
+This proves the new incremental exact-correlation frontend compiles cleanly and its basic frequency geometry works. The complete branch-level `tools/test-ft8.sh` run on this newest head is still pending/retrigger-needed and must not be conflated with the focused sandbox test.
