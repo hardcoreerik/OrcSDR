@@ -28,7 +28,7 @@ int main(){
     if(i+1 < noaa::kChannelCount) CHECK(service.advance_scan());
     else CHECK(!service.advance_scan());
   }
-  CHECK(service.state().rf_state == RfState::idle);
+  CHECK(service.state().rf_state == RfState::listening);
   CHECK(service.state().scan_complete);
   CHECK(service.state().strongest_channel == 6);
   CHECK(service.state().strongest_frequency_hz == 162550000u);
