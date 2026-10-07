@@ -770,7 +770,42 @@ void draw_traffic_dynamic() {
   }
 }
 
+// Everything the map screen shows, folded into one number. The periodic refresh repaints the map only when this changes,
+// so an idle map does not flash.
+uint32_t g_map_signature = 0;
+bool g_map_signature_valid = false;
+
+void mix(uint32_t* hash, const void* data, size_t size) {
+  const uint8_t* bytes = static_cast<const uint8_t*>(data);
+  for (size_t i = 0; i < size; ++i) *hash = (*hash ^ bytes[i]) * 16777619u;
+}
+template <typename T>
+void mix(uint32_t* hash, const T& value) { mix(hash, &value, sizeof(value)); }
+
+uint32_t map_signature() {
+  uint32_t hash = 2166136261u;
+  float lat = 0, lon = 0;
+  const bool located = map_center(&lat, &lon);
+  mix(&hash, located); mix(&hash, lat); mix(&hash, lon);
+  mix(&hash, g_map_range_index); mix(&hash, g_follow_node);
+  mix(&hash, g_snapshot.selected_node); mix(&hash, g_snapshot.node_count);
+  mix(&hash, g_snapshot.receiver_located); mix(&hash, g_snapshot.receiver_latitude_e7);
+  mix(&hash, g_snapshot.receiver_longitude_e7);
+  const char* label = offline_map::available() ? offline_map::source_label() : "";
+  mix(&hash, label, std::strlen(label));
+  for (size_t i = 0; i < g_snapshot.node_count && i < kNodeCapacity; ++i) {
+    const Node& node = g_snapshot.nodes[i];
+    mix(&hash, node.latitude_e7); mix(&hash, node.longitude_e7);
+    char name[32];
+    node_name(node, name, sizeof(name));
+    mix(&hash, name, std::strlen(name));
+  }
+  return hash;
+}
+
 void draw_map_dynamic() {
+  const uint32_t signature = map_signature();
+  if (!g_map_dragging && g_map_signature_valid && signature == g_map_signature) return;   // nothing changed: do not repaint
   if (!g_map_dragging) M5.Display.fillRect(50, 182, 842, 330, kBg);   // a drag preview repaints only what it exposes
   const Node* center = g_snapshot.node_count ? &g_snapshot.nodes[
       std::min<size_t>(g_snapshot.selected_node, g_snapshot.node_count - 1)] : nullptr;
@@ -848,6 +883,8 @@ void draw_map_dynamic() {
        g_follow_node ? kGreen : kCyan, 2, middle_left);
   text("OFFLINE MAP", 970, 390, kMuted, 1, middle_left);
   text(offline_map::available() ? offline_map::source_label() : "MAP PACK NOT INSTALLED", 970, 420, kMuted, 1, middle_left);
+  g_map_signature = signature;
+  g_map_signature_valid = true;
 }
 
 void draw_health_dynamic() {
@@ -929,6 +966,7 @@ void draw_channels_overlay() {
 }
 
 void draw_static() {
+  g_map_signature_valid = false;   // the screen was cleared: the map must be drawn again
   M5.Display.fillScreen(kBg);
   draw_header();
   if (g_view == View::overview) draw_overview_static();
