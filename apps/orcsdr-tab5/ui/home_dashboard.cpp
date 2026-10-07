@@ -1034,11 +1034,9 @@ void update(const Snapshot& snapshot) {
   M5.Display.endWrite();
 }
 
-// The trace and its axis are drawn off-screen and pushed in one go, and the new waterfall row is pushed as one
-// image, the same way the FM, AM, CB and P25 scopes do (scope_canvas.hpp). Erasing and redrawing the plot on the
-// display every frame, then filling the waterfall row column by column, is what made Home flicker.
+// The trace and its axis are drawn off-screen and pushed in one go, the way the FM, AM, CB and P25 scopes do
+// (scope_canvas.hpp). Erasing and redrawing the plot on the display every frame is what made Home flicker.
 scope::Trace g_trace;
-uint16_t g_waterfall_row[kPlotW]{};
 
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor, bool audio_stressed) {
@@ -1097,21 +1095,24 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   canvas->pushSprite(origin_x, origin_y);
   M5.Display.endWrite();
 
-  // Waterfall: one colour row per frame, scrolled up by hardware and written as a single image. With a popup
-  // docked at the bottom it scrolls only the part above it.
+  // Waterfall: unchanged from before the trace moved off-screen (scrolled by hardware, then the new row is
+  // filled column by column). With a popup docked at the bottom it scrolls only the part above it.
   const int rows = waterfall_style::rows_per_frame(waterfall_style::Screen::home);
   const bool popup_over = gain_popup || filter_popup || mode_popup;
   const int waterfall_h = popup_over ? kPopY - 2 - (kWaterfallY + 1) : kWaterfallH - 2;
-  M5.Display.setScrollRect(origin_x, kWaterfallY + 1, w, waterfall_h, TFT_BLACK);
-  const float waterfall_range = waterfall_range_db(waterfall_contrast);
+  M5.Display.startWrite();
+  M5.Display.setScrollRect(kPlotX + 1, kWaterfallY + 1, kPlotW - 2, waterfall_h, TFT_BLACK);
+  M5.Display.scroll(0, -rows);
   for (size_t i = 0; i < samples; ++i) {
-    const float normalized = std::clamp((spectrum_levels[i] - floor) / waterfall_range, 0.0f, 1.0f);
-    const uint16_t color = waterfall_color(normalized);
-    const int x0 = static_cast<int>(i * w / samples);
-    const int x1 = std::max(x0 + 1, static_cast<int>((i + 1) * w / samples));
-    for (int x = x0; x < x1 && x < w; ++x) g_waterfall_row[x] = color;
+    const float normalized = std::clamp(
+        (spectrum_levels[i] - floor) / waterfall_range_db(waterfall_contrast),
+        0.0f, 1.0f);
+    const int x = kPlotX + 1 + static_cast<int>(i * (kPlotW - 2) / samples);
+    const int x2 = kPlotX + 1 + static_cast<int>((i + 1) * (kPlotW - 2) / samples);
+    M5.Display.fillRect(x, kWaterfallY + 1 + waterfall_h - rows, std::max(1, x2 - x), rows,
+                        waterfall_color(normalized));
   }
-  scope::scroll_waterfall(origin_x, kWaterfallY + waterfall_h, w, g_waterfall_row, rows);
+  M5.Display.endWrite();
 }
 
 Action handle_touch(int32_t x, int32_t y, bool pressed) {
