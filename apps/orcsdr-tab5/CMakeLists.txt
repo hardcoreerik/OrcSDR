@@ -15,5 +15,16 @@ string(REGEX REPLACE "^(v[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta|rc)\\.?[0-9]+)?).
 if (NOT PROJECT_VER MATCHES "^v[0-9]+\\.[0-9]+\\.[0-9]+")
     set(PROJECT_VER "v0.0.0-alpha.0")
 endif()
+# Exact build identity for Settings > System > BUILD (e.g. "nightly a914882 2026-10-07").
+# CI passes -D ORCSDR_BUILD_ID=...; empty keeps the old compile-date display. PROJECT_VER
+# above stays the base release tag because the catalog compatibility gate parses it.
+set(ORCSDR_BUILD_ID "" CACHE STRING "Build identity shown on Settings > System (<=39 chars)")
+if (NOT ORCSDR_BUILD_ID MATCHES "^[A-Za-z0-9 ._:+/-]*$")
+    message(FATAL_ERROR "ORCSDR_BUILD_ID has unsupported characters: ${ORCSDR_BUILD_ID}")
+endif()
+string(LENGTH "${ORCSDR_BUILD_ID}" ORCSDR_BUILD_ID_LEN)
+if (ORCSDR_BUILD_ID_LEN GREATER 39)
+    message(FATAL_ERROR "ORCSDR_BUILD_ID is longer than 39 characters: ${ORCSDR_BUILD_ID}")
+endif()
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(orcsdr_tab5)

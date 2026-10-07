@@ -1,0 +1,30 @@
+name: Notify theorc.dev of a release
+
+# A published OrcSDR release updates theorc.dev's stable installer right away (theorc-site also
+# polls hourly). The rolling `nightly` prerelease is published with GITHUB_TOKEN, which never
+# triggers this workflow; the tag check below is belt and braces.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    if: github.event.release.tag_name != 'nightly' && !startsWith(github.event.release.tag_name, 'preview-')
+    runs-on: ubuntu-latest
+    env:
+      HAS_DISPATCH: ${{ secrets.SITE_DISPATCH_TOKEN != '' }}
+    steps:
+      - name: Dispatch orcsdr-release to theorc-site
+        if: env.HAS_DISPATCH == 'true'
+        env:
+          SITE_DISPATCH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          body=$(jq -nc --arg tag "$TAG" '{event_type:"orcsdr-release",client_payload:{tag:$tag}}')
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $SITE_DISPATCH_TOKEN" -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/hardcoreerik/theorc-site/dispatches -d "$body")
+          [ "$code" = 204 ] || { echo "::warning::dispatch failed (HTTP $code); theorc-site's hourly sync will catch up"; exit 0; }
