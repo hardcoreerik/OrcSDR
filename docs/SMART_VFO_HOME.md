@@ -34,35 +34,6 @@ per-dongle check), P25, LoRa, ADS-B and pager onto Home's full range; independen
 band files on the SD card with a cache on the Dial; regions other than the US; custom gesture mapping; memories and
 band stack; a setup-wizard step for region, location and clock.
 
-## As built
-
-Built and verified by host tests and on hardware (Tab5 with OrcDial):
-
-- **Band profiles** (`ui/band_profile.hpp/.cpp`, host-tested): pure data resolving a frequency to a band with its
-  usual mode, step list, channel raster (the FM raster starts at 88.1 MHz), filter kind, control style and owner
-  dashboard. 78 labelled US bands from 160 m through L-band, named in plain words (FM RADIO, AIR BAND, 70 CM HAM,
-  MARINE, AM RADIO...). `Region` is a parameter from the start; only the US plan has data.
-- **Per-band steps:** every band has a step list, the chosen step is remembered per band in NVS, and channelized or
-  fixed bands show FIXED instead of a dead stepper. BROWSE no longer borrows FM's 100 kHz step.
-- **Mode and band are separate:** Home picks the demodulator (NFM, AM, WFM, USB, LSB) while Home is on screen,
-  on the general receive, FM, airband, weather and CB bands. AUTO applies each band's usual mode on entering the band;
-  a manual choice is pinned per band and remembered. The mode popup explains each mode in plain language.
-- **Home controls:** direct frequency entry on a keypad, the band name centered above the spectrum, popups docked at the
-  bottom so the spectrum and most of the waterfall stay live, a smoother spectrum (per-pixel trace, display-only
-  smoothing, peak-hold dots) that does not touch the receive pipeline, and corrected waterfall hues on every scope.
-- **OrcDial Home:** a full-range VFO driven by step counts (the Tab5 owns the step and raster), band name, mode,
-  step, span, filter and volume on the round display, a long-press keypad, mode cycling, zoom (span) and filter width
-  from the knob with the edge lines shown on the Tab5, a BACK button, and a Dial Settings menu. The band id rides in
-  reserved packet byte 7, so the wire version is unchanged.
-- **Clock and time zone** (Discussion #126): Settings > System > SET CLOCK, with an optional network sync; see
-  `docs/API_SERIAL_CLI.md` ("Hardware clock").
-
-Still open: removing the internal `BROWSE` band value and its console command; Home volume and mute; the Auto-mode undo
-note and an AUTO or pinned marker on the mode chip; folding MW, shortwave (the dongle's HF path, so it needs a
-per-dongle check), P25, LoRa, ADS-B and pager onto Home's full range; independent filter edges (a DSP change);
-band files on the SD card with a cache on the Dial; regions other than the US; custom gesture mapping; memories and
-band stack; a setup-wizard step for region, location and clock.
-
 ## Goal
 
 Home becomes a general-purpose **Smart VFO** that is band-aware, on both the Tab5 and the OrcDial:

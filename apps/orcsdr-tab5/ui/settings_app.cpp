@@ -61,6 +61,7 @@ bool g_clock_edit = false;
 bool g_clock_dirty = false;                 // a date or time field was touched, so re-derive nothing from the RTC
 clock_settings::LocalTime g_clock_local;
 int32_t g_clock_offset = 0;
+int32_t g_clock_original_offset = 0;       // the saved offset when the editor opened, restored by CANCEL
 bool g_location_request_pending = false;
 char g_location_query[64]{};
 int8_t g_catalog_remove_armed = -1;
@@ -526,6 +527,7 @@ void start_clock_edit() {
   g_clock_edit = true;
   g_clock_dirty = false;
   clock_load_fields();
+  g_clock_original_offset = g_clock_offset;
   draw_clock_editor();
 }
 
@@ -561,8 +563,11 @@ Action handle_clock_editor(int x, int y) {
     return g_state.wifi_connected && g_state.ntp_state != 1 ? Action{ActionKind::clock_ntp_sync, 0} : Action{};
   if (hit(x, y, kCancelX, kClockActionY, kClockActionW, kClockActionH)) {
     g_clock_edit = false;
+    // The offset is saved as it is tapped, so CANCEL puts the saved value back.
+    const bool restore = g_clock_offset != g_clock_original_offset;
+    if (restore) g_state.utc_offset_minutes = static_cast<int16_t>(g_clock_original_offset);
     draw_content();
-    return {};
+    return restore ? Action{ActionKind::clock_offset_changed, g_clock_original_offset} : Action{};
   }
   if (hit(x, y, kSaveX, kClockActionY, kClockActionW, kClockActionH)) {
     if (!g_clock_dirty && g_state.rtc_valid) {   // only the zone changed; the RTC is already right
@@ -890,7 +895,7 @@ void update(const State& state_value) {
   if (g_clock_edit) {
     // Keep the editor live: a finished NTP sync or a newly valid RTC refreshes untouched fields.
     if (!g_clock_dirty && ((ntp_changed && g_state.ntp_state == 2) || rtc_flipped)) clock_load_fields();
-    if (ntp_changed || rtc_flipped || g_state.wifi_connected != state_value.wifi_connected) draw_clock_editor();
+    if (ntp_changed || rtc_flipped || header_changed) draw_clock_editor();   // header_changed includes a Wi-Fi change
     if (header_changed) draw_header();
     return;
   }

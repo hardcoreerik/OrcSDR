@@ -48,6 +48,7 @@ static void open_page(orc::Page page) {
 // Direct-tuning keypad, opened by a long press on the Home frequency.
 static char keypad_entry[12];
 static bool keypad_out_of_range = false;
+static bool keypad_busy = false;   // the Tab5 link refused the tune (another command pending): the entry is kept
 static bool hold_armed = false;
 static uint32_t hold_start_ms = 0;
 static orc::View keypad_return = orc::View::home;
@@ -62,14 +63,14 @@ static void keypad_range(orc::Dashboard d, double& lo, double& hi, const char*& 
   }
 }
 static void keypad_open(orc::Dashboard dashboard) {
-  keypad_entry[0] = 0; keypad_out_of_range = false;
+  keypad_entry[0] = 0; keypad_out_of_range = false; keypad_busy = false;
   keypad_dashboard = dashboard;
   keypad_return = dashboard == orc::Dashboard::home ? orc::View::home : orc::View::dashboard;
   view = orc::View::keypad;
 }
 static void keypad_key(char key) {
   const size_t length = strlen(keypad_entry);
-  keypad_out_of_range = false;
+  keypad_out_of_range = false; keypad_busy = false;
   if (key == '\b') { if (length) keypad_entry[length - 1] = 0; }
   else if (key == '.') { if (length && length < 8 && !strchr(keypad_entry, '.')) { keypad_entry[length] = '.'; keypad_entry[length + 1] = 0; } }
   else if (key >= '0' && key <= '9') { if (length < 8) { keypad_entry[length] = key; keypad_entry[length + 1] = 0; } }
@@ -81,7 +82,11 @@ static void keypad_tune(bool online) {
   double lo, hi; const char* range_text;
   keypad_range(keypad_dashboard, lo, hi, range_text);
   if (end == keypad_entry || *end || mhz < lo || mhz > hi) { keypad_out_of_range = true; return; }
-  if (online) (void)radio_link.command(orc::Type::tune_absolute, int32_t(mhz * 1000000.0 + 0.5));
+  // A command can be refused while another is pending: keep the keypad open and say so instead of losing the entry.
+  if (online && !radio_link.command(orc::Type::tune_absolute, int32_t(mhz * 1000000.0 + 0.5))) {
+    keypad_busy = true; keypad_out_of_range = true;
+    return;
+  }
   view = keypad_return;
 }
 static void device_activate() {
@@ -527,7 +532,7 @@ void loop() {
   if (millis() - last_draw_ms > 75) {
     orc::devices_state(radio_link.security_status(),device_selection,forget_confirmation);
     { double lo, hi; const char* range_text = ""; keypad_range(keypad_dashboard, lo, hi, range_text);
-      orc::keypad_state(keypad_entry, keypad_out_of_range, range_text); }
+      orc::keypad_state(keypad_entry, keypad_out_of_range, keypad_busy ? "BUSY - TRY AGAIN" : range_text); }
     if (view == orc::View::settings_menu || view == orc::View::page) {
       orc::SettingsView v;
       v.menu = menu_index; v.page = current_page; v.row = page_row; v.reset_armed = reset_armed;

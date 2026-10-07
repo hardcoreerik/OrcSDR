@@ -76,6 +76,7 @@ bool browser = false;
 bool gain_popup = false;
 bool keypad = false;
 bool mode_popup = false;
+bool keypad_error = false;   // the last entry was out of range
 char keypad_entry[12]{};
 bool filter_popup = false;
 bool filter_edges = false;   // draw the receive-filter edges on the spectrum
@@ -582,7 +583,8 @@ void filter_preset_rect(int i, int n, int* x, int* w) {
 
 // Direct tuning in MHz across the dongle's whole range; the Tab5 validates again before it tunes.
 void draw_keypad() {
-  freq_keypad::draw(kSpectrumY, TFT_BLACK, "ENTER FREQUENCY", "24.0 - 1766.0", "MHz", keypad_entry);
+  freq_keypad::draw(kSpectrumY, TFT_BLACK, keypad_error ? "OUT OF RANGE: 24 - 1766 MHZ" : "ENTER FREQUENCY",
+                    "24.0 - 1766.0", "MHz", keypad_entry);
 }
 
 // ---- Mode popup: pick the demodulation for the band on screen, with a plain-language note on each mode ------
@@ -1145,6 +1147,7 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
     const auto result = freq_keypad::handle_touch(tap_x, tap_y, keypad_entry, sizeof(keypad_entry));
     if (result == freq_keypad::Result::cancelled) {
       keypad = false;
+      keypad_error = false;
       keypad_entry[0] = '\0';
       draw_all();
     } else if (result == freq_keypad::Result::submitted) {
@@ -1152,11 +1155,18 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
       const double mhz = strtod(keypad_entry, &end);
       if (end != keypad_entry && *end == '\0' && mhz >= 24.0 && mhz <= 1766.0) {
         keypad = false;
+        keypad_error = false;
         keypad_entry[0] = '\0';
         draw_all();
         return {ActionKind::tune_frequency, dashboards::Id::count,
                 static_cast<uint32_t>(std::llround(mhz * 1000000.0))};
       }
+      // Out of range: say so, and clear the entry so the next try starts clean.
+      keypad_error = true;
+      keypad_entry[0] = '\0';
+      draw_keypad();
+    } else if (result == freq_keypad::Result::changed) {
+      keypad_error = false;
     }
     return {};
   }
@@ -1196,6 +1206,7 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
     }
     if (action.kind == ActionKind::keypad_open) {
       keypad = true;
+      keypad_error = false;
       keypad_entry[0] = '\0';
       draw_keypad();
       return {};
