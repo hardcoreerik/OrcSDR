@@ -63,3 +63,4 @@ The suite builds optimized binaries and AddressSanitizer/UndefinedBehaviorSaniti
 - [FT8 dashboard vision](FT8_DASHBOARD_VISION.md)
 - [FT8 RX architecture](FT8_RX_ARCHITECTURE.md)
 - [FT8 implementation plan](FT8_IMPLEMENTATION_PLAN.md)
+- [FT8 OrcDial design](FT8_ORCDIAL_DESIGN.md)
