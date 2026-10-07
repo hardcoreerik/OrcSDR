@@ -24,4 +24,13 @@ g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$build_dir/ft8_hunter_tests_sanitized"
 
-echo "FT8 model and Hunter host tests: PASS"
+orcdial_common=(-std=c++17 -Wall -Wextra -Werror -pedantic -Iorcdial/src)
+orcdial_sources=(orcdial/tests/controller_test.cpp)
+g++ "${orcdial_common[@]}" -O2 "${orcdial_sources[@]}" -o "$build_dir/orcdial_ft8_controller_tests"
+"$build_dir/orcdial_ft8_controller_tests"
+g++ "${orcdial_common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "${orcdial_sources[@]}" -o "$build_dir/orcdial_ft8_controller_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$build_dir/orcdial_ft8_controller_tests_sanitized"
+
+echo "FT8 model, Hunter, and OrcDial semantic controller host tests: PASS"
