@@ -42,6 +42,7 @@ static void note_activity() {
 static void open_settings_menu() { forget_confirmation = false; reset_armed = false; view = orc::View::settings_menu; }
 static void open_page(orc::Page page) {
   if (page == orc::Page::pairing) { device_selection = 0; forget_confirmation = false; view = orc::View::connection; return; }
+  if (page == orc::Page::back) { view = orc::View::home; return; }
   current_page = page; page_row = 0; reset_armed = false; view = orc::View::page;
 }
 // Direct-tuning keypad, opened by a long press on the Home frequency.
@@ -371,6 +372,11 @@ void loop() {
   const bool home_tune = online && state.dashboard == orc::Dashboard::home;
   if (online && pending_delta && radio_link.command_action({orc::ActionKind::tune, pending_delta})) pending_delta = 0;
   if (reset_armed && millis() - reset_armed_ms > 4000) reset_armed = false;
+  // Never leave the Dial parked in a settings screen: go back to Home after a minute without input (not while pairing).
+  if ((view == orc::View::settings_menu || view == orc::View::page || view == orc::View::connection || view == orc::View::keypad) &&
+      !radio_link.pairing() && millis() - last_activity_ms > orc::settings_idle_ms) {
+    view = orc::View::home; forget_confirmation = false; reset_armed = false;
+  }
   if (!display_asleep && dial_settings.sleep && millis() - last_activity_ms > orc::sleep_ms[dial_settings.sleep % 4]) {
     display_asleep = true;
     apply_display();
@@ -440,13 +446,13 @@ void loop() {
       else if (key) keypad_key(key);
     } else if (view == orc::View::connection) {
       if(t.y>=130 && t.y<212){device_selection=(t.y-132)/27;if(device_selection>2)device_selection=2;device_activate();}
-      else if(t.y>=212){forget_confirmation=false;open_settings_menu();}
+      else if(t.y>=204){forget_confirmation=false;open_settings_menu();}
     } else if (view == orc::View::settings_menu) {
       if (t.y < 88) menu_index = (menu_index + orc::page_count - 1) % orc::page_count;
       else if (t.y > 152) menu_index = (menu_index + 1) % orc::page_count;
       else open_page(orc::Page(menu_index));
     } else if (view == orc::View::page) {
-      if (t.y >= 214) open_settings_menu();
+      if (t.y >= 194) open_settings_menu();
       else if (current_page == orc::Page::display || current_page == orc::Page::knob) {
         const int rows = orc::page_rows(current_page);
         const int first = current_page == orc::Page::display ? 88 : 78, pitch = current_page == orc::Page::display ? 40 : 34;

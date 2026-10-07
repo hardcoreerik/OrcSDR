@@ -208,8 +208,8 @@ static void settings_menu_screen(lgfx::LGFXBase& d, bool connected) {
   draw_text(d, page_names[previous], 120, 66); draw_text(d, page_names[next], 120, 176);
   d.fillRoundRect(30, 92, 180, 56, 12, panel); d.drawRoundRect(30, 92, 180, 56, 12, cyan);
   d.setTextColor(ink); d.setTextSize(3); draw_text(d, page_names[v.menu], 120, 120, 164);
-  for (int i = 0; i < page_count; ++i) d.fillCircle(213, 70 + i * 20, 3, i == v.menu ? cyan : trace_bright);
-  d.setTextColor(dim); d.setTextSize(1); draw_text(d, "PRESS: OPEN   HOLD: BACK", 120, 208);
+  for (int i = 0; i < page_count; ++i) d.fillCircle(214, 78 + i * 14, 3, i == v.menu ? cyan : trace_bright);
+  d.setTextColor(dim); d.setTextSize(1); draw_text(d, v.menu == page_count - 1 ? "PRESS: BACK TO HOME" : "PRESS: OPEN   HOLD: BACK", 120, 208);
 }
 
 static void settings_page_screen(lgfx::LGFXBase& d, bool connected) {
@@ -237,21 +237,21 @@ static void settings_page_screen(lgfx::LGFXBase& d, bool connected) {
       line(146, dim, a);
       std::snprintf(a, sizeof a, "RECEIVED %lu", (unsigned long)l.rx_frames);
       line(166, dim, a);
-      line(194, cyan, v.linked ? "PRESS: DISCONNECT" : v.security.trusted ? "PRESS: RECONNECT" : "PRESS: PAIR");
+      line(184, cyan, v.linked ? "PRESS: DISCONNECT" : v.security.trusted ? "PRESS: RECONNECT" : "PRESS: PAIR");
       break;
     }
     case Page::display: {
       std::snprintf(a, sizeof a, "%u%%", unsigned(v.settings.brightness * 100 / 255));
       settings_row(d, 88, "BRIGHTNESS", a, v.row == 0);
       settings_row(d, 128, "SLEEP", sleep_names[v.settings.sleep % 4], v.row == 1);
-      line(176, dim, "TURN: CHANGE   PRESS: NEXT");
+      line(170, dim, "TURN: CHANGE   PRESS: NEXT");
       break;
     }
     case Page::knob: {
       settings_row(d, 78, "ACCELERATION", accel_names[v.settings.accel % 3], v.row == 0);
       settings_row(d, 112, "REVERSE", v.settings.invert ? "ON" : "OFF", v.row == 1);
       settings_row(d, 146, "CLICK", v.settings.click ? "ON" : "OFF", v.row == 2);
-      line(184, dim, "TURN: CHANGE   PRESS: NEXT");
+      line(176, dim, "TURN: CHANGE   PRESS: NEXT");
       break;
     }
     case Page::about: {
@@ -272,12 +272,14 @@ static void settings_page_screen(lgfx::LGFXBase& d, bool connected) {
       line(70, red, "ERASE THE PAIRING");
       line(90, red, "AND DIAL SETTINGS");
       line(130, dim, "THE TAB5 WILL FORGET THIS DIAL");
-      line(176, v.reset_armed ? red : cyan, v.reset_armed ? "PRESS AGAIN TO ERASE" : "PRESS TO ARM");
+      line(168, v.reset_armed ? red : cyan, v.reset_armed ? "PRESS AGAIN TO ERASE" : "PRESS TO ARM");
       break;
     }
     default: break;
   }
-  d.setTextColor(dim); d.setTextSize(1); draw_text(d, "HOLD: BACK", 120, 218);
+  // A real button: tap it, or hold the knob, to go back to the menu.
+  d.fillRoundRect(75, 198, 90, 24, 8, panel); d.drawRoundRect(75, 198, 90, 24, 8, cyan);
+  d.setTextColor(cyan); d.setTextSize(1.5f); d.drawString("< BACK", 120, 210);
 }
 
 static void fm_screen(lgfx::LGFXBase& d, const RadioState& state, Focus focus,
@@ -566,7 +568,7 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
     }else {
       d.setTextColor(s.trusted?green:cyan,bg);d.setTextSize(1.5);
       draw_text(d,s.upgrade?"Pairing upgrade required":s.trusted?"TRUSTED":"NOT PAIRED",120,101);
-      d.setTextColor(ink,bg);draw_text(d,secure::state_name(s.state),120,119);
+      d.setTextColor(s.failure!=secure::Failure::none?red:ink,bg);draw_text(d,s.failure!=secure::Failure::none?secure::failure_name(s.failure):secure::state_name(s.state),120,119);
       labels[0]=pairing?"CANCEL PAIRING":s.state==secure::State::connected?"DISCONNECT":s.trusted?"CONNECT":"PAIR";
       labels[1]=s.trusted?"FORGET & RE-PAIR":"BACK";
       labels[2]=s.trusted?(s.boot_connect?"BOOT CONNECT: ON":"BOOT CONNECT: OFF"):nullptr;
@@ -577,7 +579,7 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
       d.setTextColor(i==device_selection?cyan:dim,bg);d.setTextSize(2);draw_text(d,labels[i],120,y);
     }
     d.setTextColor(dim,bg);d.setTextSize(1);
-    draw_text(d,s.failure!=secure::Failure::none?secure::failure_name(s.failure):"HOLD: BACK",120,demo?213:220);
+    d.setTextColor(cyan,bg);draw_text(d,"TAP HERE OR HOLD: BACK",120,demo?213:221);
     if(demo){d.setTextColor(cyan,bg);draw_text(d,"DEMO",120,222);}
     present();
     return;

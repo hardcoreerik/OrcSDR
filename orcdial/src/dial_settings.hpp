@@ -47,9 +47,11 @@ inline void erase_settings() {
 }
 
 // The vertical menu. PAIRING opens the existing pairing screen; the rest are pages.
-enum class Page : uint8_t { pairing, link, display, knob, about, reset };
-constexpr int page_count = 6;
-constexpr const char* page_names[page_count] = {"PAIRING", "LINK", "DISPLAY", "KNOB", "ABOUT", "RESET"};
+enum class Page : uint8_t { pairing, link, display, knob, about, reset, back };
+constexpr int page_count = 7;
+constexpr const char* page_names[page_count] = {"PAIRING", "LINK", "DISPLAY", "KNOB", "ABOUT", "RESET", "BACK"};
+// Settings screens return to Home after this long without input.
+constexpr uint32_t settings_idle_ms = 60000;
 inline int page_rows(Page page) { return page == Page::display ? 2 : page == Page::knob ? 3 : 0; }
 
 struct SettingsView {
