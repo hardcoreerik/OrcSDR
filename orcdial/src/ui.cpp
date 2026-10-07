@@ -141,7 +141,6 @@ static void home_screen(lgfx::LGFXBase& d, const RadioState& state, Focus focus,
   const uint32_t bar = focus == Focus::volume ? green : trace_bright;
   d.drawRoundRect(70, 176, 100, 9, 3, bar);
   d.fillRoundRect(72, 178, std::min<int>(state.volume, 100) * 96 / 100, 5, 2, bar);
-  d.setTextColor(dim); d.setTextSize(1); draw_text(d, "PRESS: NEXT   HOLD: DASHBOARDS", 120, 206);
 }
 
 // Keypad geometry for the 240 px round screen: every key sits inside the circle.
@@ -209,7 +208,6 @@ static void settings_menu_screen(lgfx::LGFXBase& d, bool connected) {
   d.fillRoundRect(30, 92, 180, 56, 12, panel); d.drawRoundRect(30, 92, 180, 56, 12, cyan);
   d.setTextColor(ink); d.setTextSize(3); draw_text(d, page_names[v.menu], 120, 120, 164);
   for (int i = 0; i < page_count; ++i) d.fillCircle(214, 78 + i * 14, 3, i == v.menu ? cyan : trace_bright);
-  d.setTextColor(dim); d.setTextSize(1); draw_text(d, v.menu == page_count - 1 ? "PRESS: BACK TO HOME" : "PRESS: OPEN   HOLD: BACK", 120, 208);
 }
 
 static void settings_page_screen(lgfx::LGFXBase& d, bool connected) {
@@ -278,8 +276,8 @@ static void settings_page_screen(lgfx::LGFXBase& d, bool connected) {
     default: break;
   }
   // A real button: tap it, or hold the knob, to go back to the menu.
-  d.fillRoundRect(75, 198, 90, 24, 8, panel); d.drawRoundRect(75, 198, 90, 24, 8, cyan);
-  d.setTextColor(cyan); d.setTextSize(1.5f); d.drawString("< BACK", 120, 210);
+  d.fillRoundRect(72, 198, 96, 26, 8, panel); d.drawRoundRect(72, 198, 96, 26, 8, cyan);
+  d.setTextColor(cyan); d.setTextSize(2); d.drawString("BACK", 120, 211);
 }
 
 static void fm_screen(lgfx::LGFXBase& d, const RadioState& state, Focus focus,
@@ -574,13 +572,13 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
       labels[2]=s.trusted?(s.boot_connect?"BOOT CONNECT: ON":"BOOT CONNECT: OFF"):nullptr;
     }
     for(int i=0;i<3;++i)if(labels[i]) {
-      const int y=145+i*27;
+      const int y=141+i*24;
       if(i==device_selection)d.fillRoundRect(30,y-11,180,24,6,panel);
       d.setTextColor(i==device_selection?cyan:dim,bg);d.setTextSize(2);draw_text(d,labels[i],120,y);
     }
-    d.setTextColor(dim,bg);d.setTextSize(1);
-    d.setTextColor(cyan,bg);draw_text(d,"TAP HERE OR HOLD: BACK",120,demo?213:221);
-    if(demo){d.setTextColor(cyan,bg);draw_text(d,"DEMO",120,222);}
+    d.fillRoundRect(80,202,80,22,8,panel);d.drawRoundRect(80,202,80,22,8,cyan);
+    d.setTextColor(cyan,panel);d.setTextSize(2);d.drawString("BACK",120,213);
+    if(demo){d.setTextColor(cyan,bg);d.setTextSize(1);draw_text(d,"DEMO",120,196);}
     present();
     return;
   }

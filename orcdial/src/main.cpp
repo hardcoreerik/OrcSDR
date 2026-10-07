@@ -445,8 +445,8 @@ void loop() {
       else if (key == 'T') keypad_tune(online);
       else if (key) keypad_key(key);
     } else if (view == orc::View::connection) {
-      if(t.y>=130 && t.y<212){device_selection=(t.y-132)/27;if(device_selection>2)device_selection=2;device_activate();}
-      else if(t.y>=204){forget_confirmation=false;open_settings_menu();}
+      if(t.y>=130 && t.y<202){device_selection=(t.y-129)/24;if(device_selection>2)device_selection=2;device_activate();}
+      else if(t.y>=202){forget_confirmation=false;open_settings_menu();}
     } else if (view == orc::View::settings_menu) {
       if (t.y < 88) menu_index = (menu_index + orc::page_count - 1) % orc::page_count;
       else if (t.y > 152) menu_index = (menu_index + 1) % orc::page_count;
