@@ -67,5 +67,22 @@ remains the catalog archive; this record file is the device runtime subset.
 Additional signed IDs beginning with `p25_` are permitted after the source and
 redistribution gate above. None are bundled by this change.
 
-Maps are imported and validated separately. HF schedules and LoRa regional
-profiles require a separate rights and format review.
+## Map packs (OrcMaps)
+
+Map packs are OrcMaps PMTiles packs, published by OrcMaps as its own GitHub release assets (for example the
+`world-overview-1` release). The signed catalog does not copy them; it pins each one by HTTPS URL, size and SHA-256, so
+the device downloads straight from the OrcMaps release and refuses anything that differs. A map pack is two files in
+the flat `/orcmaps` folder of the SD card, which is the folder the map engine scans:
+
+| ID | Files | Notes |
+| --- | --- | --- |
+| `orcmaps_<name>` (under 20 characters) | `/orcmaps/<id>.pmtiles` and `/orcmaps/<id>.manifest.json` | `runtime` is the PMTiles archive (must start with `PMTiles`), `archive` is its manifest (a JSON object, at most 64 KB) |
+
+A catalog input entry names the local copies (used to compute the size and hash), the release URLs (`runtime_url`,
+`archive_url`), a `title`, and the two fixed destinations; `build_catalog.py` rejects anything else. See the
+`orcmaps_world_z7` entry in `catalog-input.example.json`. Settings > Data & Maps lists what the catalog offers, with
+DOWNLOAD / REMOVE, and also lists every valid pack found on the card (copied by hand or downloaded) with a RESCAN
+button. The Lane County prototype map is no longer listed there.
+
+Maps for ADS-B and LoRa follow the receiver location; HF schedules and LoRa regional profiles require a separate
+rights and format review.

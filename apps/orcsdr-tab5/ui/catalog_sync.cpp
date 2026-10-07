@@ -52,6 +52,7 @@ struct Pack {
   char version[16]{};
   bool available = false;
   bool p25_profile = false;
+  bool map_pack = false;   // an OrcMaps PMTiles pack: runtime = .pmtiles, archive = its manifest.json, under /orcmaps
 };
 
 EXT_RAM_BSS_ATTR State g_state;
@@ -88,6 +89,23 @@ bool valid_p25_destination(const char* id, const char* value) {
            orcsdr::p25config::kProfilesRoot, id);
   return value != nullptr && strcmp(value, expected) == 0;
 }
+
+// Map packs (OrcMaps PMTiles) are distributed as GitHub release assets through the same signed catalog. A pack is two
+// files in the flat /orcmaps folder the map engine scans: <id>.pmtiles and <id>.manifest.json.
+bool valid_map_pack_id(const char* id) {
+  if (id == nullptr || strncmp(id, "orcmaps_", 8) != 0 || strlen(id) >= sizeof(PackView::id)) return false;
+  for (const char* c = id; *c; ++c)
+    if (!(isalnum(static_cast<unsigned char>(*c)) || *c == '_' || *c == '-')) return false;
+  return true;
+}
+
+bool valid_map_destination(const char* id, bool manifest, const char* value) {
+  char expected[96]{};
+  snprintf(expected, sizeof(expected), "/orcmaps/%s%s", id, manifest ? ".manifest.json" : ".pmtiles");
+  return value != nullptr && strcmp(value, expected) == 0;
+}
+
+constexpr uint32_t kMapManifestMaxBytes = 65536;
 
 bool safe_text(const cJSON* item, char* output, size_t output_size) {
   if (!cJSON_IsString(item) || item->valuestring == nullptr) return false;
@@ -283,7 +301,7 @@ bool verify_signature(const uint8_t* manifest, size_t manifest_size,
   return verify == 0;
 }
 
-bool parse_artifact(const cJSON* object, bool archive, bool p25_profile,
+bool parse_artifact(const cJSON* object, bool archive, bool p25_profile, bool map_pack,
                     const char* pack_id, Artifact* output) {
   if (!cJSON_IsObject(object) || output == nullptr) return false;
   Artifact artifact{};
@@ -293,8 +311,10 @@ bool parse_artifact(const cJSON* object, bool archive, bool p25_profile,
   const cJSON* bytes = cJSON_GetObjectItemCaseSensitive(object, "bytes");
   if (!cJSON_IsNumber(bytes) || bytes->valuedouble <= 0 || bytes->valuedouble > UINT32_MAX ||
       strncmp(artifact.url, "https://", 8) != 0 || !valid_hash(artifact.sha256) ||
-      !(p25_profile && !archive ? valid_p25_destination(pack_id, artifact.destination)
-                               : valid_destination(artifact.destination))) return false;
+      (map_pack && archive && bytes->valuedouble > kMapManifestMaxBytes) ||
+      !(map_pack ? valid_map_destination(pack_id, archive, artifact.destination)
+                 : p25_profile && !archive ? valid_p25_destination(pack_id, artifact.destination)
+                                           : valid_destination(artifact.destination))) return false;
   artifact.bytes = static_cast<uint32_t>(bytes->valuedouble);
   artifact.archive = archive;
   *output = artifact;
@@ -345,12 +365,13 @@ bool parse_manifest(const uint8_t* data, size_t size) {
       const cJSON* artifacts = cJSON_GetObjectItemCaseSensitive(node, "artifacts");
       int index = cJSON_IsString(id) ? pack_index(id->valuestring) : -1;
       const bool p25_profile = cJSON_IsString(id) && valid_p25_pack_id(id->valuestring);
-      if (index < 0 && p25_profile) index = next_dynamic++;
+      const bool map_pack = cJSON_IsString(id) && valid_map_pack_id(id->valuestring);
+      if (index < 0 && (p25_profile || map_pack)) index = next_dynamic++;
       if (index < 0 || index >= kPackCount || seen[index] || !cJSON_IsObject(artifacts)) break;
       for (int prior = 0; prior < index; ++prior)
         if (views[prior].id[0] && strcmp(views[prior].id, id->valuestring) == 0) index = -1;
       if (index < 0) break;
-      if (p25_profile) {
+      if (p25_profile || map_pack) {
         strlcpy(views[index].id, id->valuestring, sizeof(views[index].id));
         const cJSON* title = cJSON_GetObjectItemCaseSensitive(node, "title");
         if (!safe_text(title, views[index].title, sizeof(views[index].title)))
@@ -358,14 +379,15 @@ bool parse_manifest(const uint8_t* data, size_t size) {
       }
       const cJSON* runtime = cJSON_GetObjectItemCaseSensitive(artifacts, "runtime");
       const cJSON* archive = cJSON_GetObjectItemCaseSensitive(artifacts, "archive");
-      if (!parse_artifact(runtime, false, p25_profile, id->valuestring, &parsed[index].runtime) ||
-          !parse_artifact(archive, true, p25_profile, id->valuestring, &parsed[index].archive) ||
+      if (!parse_artifact(runtime, false, p25_profile, map_pack, id->valuestring, &parsed[index].runtime) ||
+          !parse_artifact(archive, true, p25_profile, map_pack, id->valuestring, &parsed[index].archive) ||
           !safe_text(cJSON_GetObjectItemCaseSensitive(node, "version"), views[index].version,
                      sizeof(views[index].version)) ||
           !safe_text(cJSON_GetObjectItemCaseSensitive(node, "source_date"), views[index].source_date,
                      sizeof(views[index].source_date))) break;
       parsed[index].available = true;
       parsed[index].p25_profile = p25_profile;
+      parsed[index].map_pack = map_pack;
       strlcpy(parsed[index].version, views[index].version, sizeof(parsed[index].version));
       seen[index] = true;
       views[index].runtime_bytes = parsed[index].runtime.bytes;
@@ -491,7 +513,9 @@ bool download_artifact(const Artifact& artifact, uint8_t pack_index,
   file.close();
   if (!ok) { g_fs->remove(temporary); set_message("Download hash or network failure"); return false; }
 
-  bool schema_ok = artifact.archive
+  bool schema_ok = g_packs[pack_index].map_pack
+      ? (artifact.archive ? header[0] == '{' : memcmp(header, "PMTiles", 7) == 0)
+      : artifact.archive
       ? (memcmp(header, "PK\003\004", 4) == 0 || memcmp(header, "PK\005\006", 4) == 0)
       : pack_index == 0 ? memcmp(header, "ORCADSB1", 8) == 0
       : pack_index == 1 ? (memcmp(header, "ORCAIR2\n", 8) == 0 ||
@@ -621,6 +645,7 @@ void worker(void*) {
       set_message("Not enough SD space for pack");
     } else {
       bool directories_ready = true;
+      if (pack.map_pack) directories_ready = g_fs->exists("/orcmaps") || g_fs->mkdir("/orcmaps");
       if (pack.p25_profile) {
         char directory[80]{};
         char version_path[112]{};
@@ -648,10 +673,16 @@ void worker(void*) {
              g_fs->mkdir(orcsdr::p25config::kProfilesRoot)) &&
             (g_fs->exists(directory) || g_fs->mkdir(directory));
       }
-      set_message(directories_ready ? "Downloading runtime index"
-                                    : "P25 profile slot or ID unavailable");
-      ok = directories_ready && download_artifact(pack.runtime, pack_index, 0, 45);
-      if (ok) { set_message("Downloading source archive"); ok = download_artifact(pack.archive, pack_index, 45, 55); }
+      set_message(!directories_ready ? (pack.map_pack ? "Could not create /orcmaps on the SD card"
+                                                       : "P25 profile slot or ID unavailable")
+                    : pack.map_pack ? "Downloading map pack" : "Downloading runtime index");
+      // A map pack is one large file plus a tiny manifest: spend the progress bar on the file.
+      const uint8_t runtime_share = pack.map_pack ? 96 : 45;
+      ok = directories_ready && download_artifact(pack.runtime, pack_index, 0, runtime_share);
+      if (ok) {
+        set_message(pack.map_pack ? "Downloading map manifest" : "Downloading source archive");
+        ok = download_artifact(pack.archive, pack_index, runtime_share, 100 - runtime_share);
+      }
       if (ok) ok = activate_pack(pack);
       if (!ok) {
         discard_staged(pack.runtime);
@@ -687,6 +718,15 @@ void worker(void*) {
       if (catalog_owned && g_fs->exists(version_path)) ok &= g_fs->remove(version_path);
     } else if (g_fs && g_fs->exists(pack.runtime.destination)) {
       ok &= g_fs->remove(pack.runtime.destination);
+    }
+    if (g_fs && pack.map_pack) {
+      char extra[112]{};
+      snprintf(extra, sizeof(extra), "%s.ver", pack.runtime.destination);
+      if (g_fs->exists(extra)) ok &= g_fs->remove(extra);
+      snprintf(extra, sizeof(extra), "%s.bak", pack.runtime.destination);
+      if (g_fs->exists(extra)) (void)g_fs->remove(extra);
+      snprintf(extra, sizeof(extra), "%s.bak", pack.archive.destination);
+      if (g_fs->exists(extra)) (void)g_fs->remove(extra);
     }
     if (g_fs && g_fs->exists(pack.archive.destination)) ok &= g_fs->remove(pack.archive.destination);
     set_message(ok ? "Pack removed" : "Could not remove pack");

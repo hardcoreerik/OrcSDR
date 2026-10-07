@@ -16,3 +16,7 @@ g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
   "${sources[@]}" -o "$build_dir/setup_wizard_tests_sanitized"
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$build_dir/setup_wizard_tests_sanitized"
+
+# Map-pack helpers (size formatting, world-coverage rule). The OrcMaps-backed scan itself runs on the device only.
+g++ "${common[@]}" -DORCSDR_MAP_PACKS_HOST_TEST -O2 tests/map_packs_tests.cpp apps/orcsdr-tab5/ui/map_packs.cpp   -o "$build_dir/map_packs_tests"
+"$build_dir/map_packs_tests"

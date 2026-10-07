@@ -20,11 +20,11 @@ $ErrorActionPreference = 'Stop'
 # The release asset URL below is where it is meant to be published; until it is, the pack is taken from a local OrcMaps
 # checkout's build output. Only these exact bytes are ever accepted. (The earlier z0-z4 pack was too coarse to place a
 # pin; z5 adds one zoom level for 0.62 MB.)
-$version = '0.2.1'
-$fileName = "orcmaps-world-z5-$version.pmtiles"
+$version = 'world-overview-1'   # the OrcMaps release tag
+$fileName = 'orcmaps-world-overview-z0-z5.pmtiles'
 $expectedSha256 = '6f5c37f6cb505315e4c8a1d74efcf634fdb547b59128422ebf71c8ecf99addcc'
 $expectedBytes = 1492862
-$releaseUrl = "https://github.com/hardcoreerik/orcmaps/releases/download/v$version/$fileName"
+$releaseUrl = "https://github.com/hardcoreerik/orcmaps/releases/download/$version/$fileName"
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $commonGitDir = (git -C $repo rev-parse --path-format=absolute --git-common-dir).Trim()

@@ -28,6 +28,15 @@ def is_p25_pack(pack_id: str) -> bool:
             all(character.isalnum() or character in "-_" for character in pack_id))
 
 
+def is_map_pack(pack_id: str) -> bool:
+    """An OrcMaps PMTiles pack (orcmaps_*): <id>.pmtiles plus <id>.manifest.json under /orcmaps on the SD card."""
+    return (isinstance(pack_id, str) and pack_id.startswith("orcmaps_") and len(pack_id) < 20 and
+            all(character.isalnum() or character in "-_" for character in pack_id))
+
+
+MAP_MANIFEST_MAX_BYTES = 65536
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -39,7 +48,15 @@ def sha256(path: Path) -> str:
 def validate_artifact(pack_id: str, source: Path, archive: bool) -> None:
     with source.open("rb") as stream:
         prefix = stream.read(8)
-    if archive:
+    if is_map_pack(pack_id):
+        if archive:
+            if source.stat().st_size > MAP_MANIFEST_MAX_BYTES:
+                raise ValueError(f"{pack_id} manifest is larger than {MAP_MANIFEST_MAX_BYTES} bytes: {source}")
+            if not isinstance(json.loads(source.read_text(encoding="utf-8")), dict):
+                raise ValueError(f"{pack_id} manifest must be a JSON object: {source}")
+        elif prefix[:7] != b"PMTiles":
+            raise ValueError(f"{pack_id} runtime must be a PMTiles archive: {source}")
+    elif archive:
         if prefix[:4] not in (b"PK\x03\x04", b"PK\x05\x06"):
             raise ValueError(f"{pack_id} source archive must be a ZIP: {source}")
     elif is_p25_pack(pack_id):
@@ -96,7 +113,8 @@ def main() -> None:
     ids = [pack.get("id") for pack in packs]
     slots = [canonical_pack_id(pack_id) if isinstance(pack_id, str) else pack_id for pack_id in ids]
     if (not ids or len(set(ids)) != len(ids) or len(set(slots)) != len(slots) or
-            any(pack_id not in PACK_IDS and not is_p25_pack(pack_id) for pack_id in ids) or
+            any(pack_id not in PACK_IDS and not is_p25_pack(pack_id) and not is_map_pack(pack_id)
+                for pack_id in ids) or
             len(ids) > 16):
         raise ValueError("packs must use unique supported IDs/slots")
     args.out.mkdir(parents=True, exist_ok=True)
@@ -106,10 +124,21 @@ def main() -> None:
         archive_source = Path(pack["archive"])
         validate_artifact(pack["id"], runtime_source, False)
         validate_artifact(pack["id"], archive_source, True)
-        runtime = copy_artifact(runtime_source, args.out, args.release_base,
-                                f"{pack['id']}-runtime{runtime_source.suffix}")
-        archive = copy_artifact(archive_source, args.out, args.release_base,
-                                f"{pack['id']}-source{archive_source.suffix}")
+        if is_map_pack(pack["id"]):
+            # Map packs are published by OrcMaps as its own release assets; the catalog only pins them. The local
+            # files are used to compute the exact size and SHA-256 that the device will check.
+            for key in ("runtime_url", "archive_url"):
+                if not str(pack.get(key, "")).startswith("https://"):
+                    raise ValueError(f"{pack['id']} requires an https {key}")
+            runtime = {"url": pack["runtime_url"], "bytes": runtime_source.stat().st_size,
+                       "sha256": sha256(runtime_source)}
+            archive = {"url": pack["archive_url"], "bytes": archive_source.stat().st_size,
+                       "sha256": sha256(archive_source)}
+        else:
+            runtime = copy_artifact(runtime_source, args.out, args.release_base,
+                                    f"{pack['id']}-runtime{runtime_source.suffix}")
+            archive = copy_artifact(archive_source, args.out, args.release_base,
+                                    f"{pack['id']}-source{archive_source.suffix}")
         runtime["destination"] = pack["runtime_destination"]
         archive["destination"] = pack["archive_destination"]
         catalog_pack = {
@@ -122,6 +151,11 @@ def main() -> None:
             expected_destination = f"/orcsdr/p25/{pack['id']}/profile.cfg"
             if pack["runtime_destination"] != expected_destination or not pack.get("title"):
                 raise ValueError(f"{pack['id']} requires title and runtime_destination {expected_destination}")
+            catalog_pack["title"] = pack["title"]
+        if is_map_pack(pack["id"]):
+            expected = (f"/orcmaps/{pack['id']}.pmtiles", f"/orcmaps/{pack['id']}.manifest.json")
+            if (pack["runtime_destination"], pack["archive_destination"]) != expected or not pack.get("title"):
+                raise ValueError(f"{pack['id']} requires a title and destinations {expected[0]} and {expected[1]}")
             catalog_pack["title"] = pack["title"]
         catalog_packs.append(catalog_pack)
     catalog = {"schema": "catalog-v1", "generated_at": spec["generated_at"],

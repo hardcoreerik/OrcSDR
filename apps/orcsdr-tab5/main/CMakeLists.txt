@@ -72,6 +72,7 @@ idf_component_register(
         "../ui/device_status_service.cpp"
         "../ui/screen_controller.cpp"
         "../ui/scan_engine.cpp"
+        "../ui/map_packs.cpp"
         "../ui/setup_wizard.cpp"
         "../ui/setup_wizard_store.cpp"
         "../ui/setup_map_picker.cpp"

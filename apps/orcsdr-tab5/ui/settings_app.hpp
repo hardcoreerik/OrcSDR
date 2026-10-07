@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "map_packs.hpp"
+
 namespace orcsdr::settings {
 
 enum class Section : uint8_t {
@@ -108,6 +110,12 @@ struct State {
   char catalog_message[80]{};
   char catalog_date[16]{};
   CatalogPackView catalog_packs[5]{};
+  // Map packs the signed catalog offers (GitHub release assets); catalog_map_slot[i] is the slot to install or remove.
+  static constexpr uint8_t kCatalogMapMax = 4;
+  CatalogPackView catalog_maps[kCatalogMapMax]{};
+  uint8_t catalog_map_slot[kCatalogMapMax]{};
+  uint8_t catalog_map_count = 0;
+  map_packs::Summary map_packs;   // map packs found on the SD card (Data & Maps)
   bool companion_supported = false;
   bool web_console_enabled = false;
   bool web_console_listening = false;
@@ -164,6 +172,8 @@ enum class ActionKind : uint8_t {
   ,rtl_usb_safe_mode_reset
   // Opens the map picker on the current location (Location & ADS-B).
   ,location_pick_on_map
+  // Re-scan the SD card's /orcmaps folder for map packs.
+  ,map_packs_rescan
   ,clock_set_utc          // utc = UTC seconds, value = UTC offset in minutes: write the RTC and store the offset
   ,clock_offset_changed   // value = UTC offset in minutes: store it (the time itself was already right)
   ,clock_ntp_sync         // optional: set the RTC from the network (Wi-Fi must already be connected)
@@ -180,6 +190,11 @@ void leave();
 void draw();
 void update(const State& state);
 Action handle_touch(int32_t x, int32_t y);
+// Pages with a scrollable list (Data & Maps) take the touch as a gesture: a drag scrolls, a tap acts on release.
+// The caller feeds every touch sample (pressed or not) to handle_gesture while wants_gesture() is true; other pages
+// keep the immediate handle_touch.
+bool wants_gesture();
+Action handle_gesture(int32_t x, int32_t y, bool pressed);
 bool active();
 const State& state();
 Section section();

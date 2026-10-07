@@ -3,6 +3,7 @@
 
 #include "clock_settings.hpp"
 #include "dashboard_audio_control.hpp"
+#include "map_packs.hpp"
 #include "text_editor.hpp"
 
 #include <M5Unified.h>
@@ -279,6 +280,188 @@ void draw_location() {
   text("Address search data (c) OpenStreetMap contributors", 330, 682, kMuted, 1);
 }
 
+// ---- Data & Maps: a scrollable list. Catalog data packs, then map packs: what the catalog offers from OrcMaps (GitHub
+// releases) and what is on the SD card.
+constexpr int kListX = 330, kListY = 196, kListW = 900, kListH = 504;
+// The catalog data packs shown here. The Lane County prototype map (catalog slot 4) is deliberately not listed: it is a
+// single-county demo, not a shipped map. Maps come from OrcMaps packs below.
+constexpr uint8_t kShownDataPacks = 4;
+constexpr int kPackRowH = 96, kPackRowsH = kShownDataPacks * kPackRowH;
+constexpr int kMapHeaderH = 56, kSubHeaderH = 40, kMapRowH = 84;
+constexpr int kTapDragThreshold = 10;
+M5Canvas g_list(&M5.Display);
+bool g_list_ready = false;
+int g_list_scroll = 0;
+struct Gesture {
+  bool down = false;
+  bool scrolling = false;
+  bool in_list = false;
+  int32_t x = 0;
+  int32_t y = 0;
+  int scroll = 0;
+} g_gesture;
+
+// Where each group of the list starts, from the current state. One place, used by drawing, hit tests and scrolling.
+struct ListLayout {
+  int map_header_y, embedded_y, download_header_y, download_rows_y, download_rows_h, sd_header_y, sd_rows_y,
+      sd_rows_h, total;
+};
+
+ListLayout list_layout() {
+  ListLayout l{};
+  l.map_header_y = kPackRowsH + 8;
+  l.embedded_y = l.map_header_y + kMapHeaderH;
+  l.download_header_y = l.embedded_y + kMapRowH;
+  l.download_rows_y = l.download_header_y + kSubHeaderH;
+  l.download_rows_h = g_state.catalog_map_count ? g_state.catalog_map_count * kMapRowH : 64;
+  l.sd_header_y = l.download_rows_y + l.download_rows_h;
+  l.sd_rows_y = l.sd_header_y + kSubHeaderH;
+  const int sd_rows = g_state.map_packs.shown;
+  l.sd_rows_h = sd_rows ? sd_rows * kMapRowH : 96;
+  l.total = l.sd_rows_y + l.sd_rows_h + (g_state.map_packs.pack_count + g_state.map_packs.rejected_count >
+                                                 g_state.map_packs.shown ? 40 : 0) + 24;
+  return l;
+}
+
+int list_max_scroll() { return std::max(0, list_layout().total - kListH); }
+
+void clamp_list_scroll() { g_list_scroll = std::clamp(g_list_scroll, 0, list_max_scroll()); }
+
+void ctext(const char* value, int x, int y, uint16_t color, uint8_t size, textdatum_t datum = middle_left) {
+  g_list.setTextDatum(datum);
+  g_list.setTextSize(std::max(size, kSettingsMinTextSize));
+  g_list.setTextColor(color);
+  g_list.drawString(value, x, y);
+}
+
+void cbutton(const char* label, int x, int y, int w, int h, uint16_t fill) {
+  g_list.fillRoundRect(x, y, w, h, 8, fill);
+  g_list.drawRoundRect(x, y, w, h, 8, TFT_LIGHTGREY);
+  g_list.setTextDatum(middle_center);
+  g_list.setTextSize(label && std::strlen(label) * 18 <= static_cast<size_t>(w - 16) ? 3 : 2);
+  g_list.setTextColor(TFT_WHITE, fill);
+  g_list.drawString(label, x + w / 2, y + h / 2);
+}
+
+void draw_data_list() {
+  if (!g_list_ready) {
+    g_list.setPsram(true);
+    g_list.setColorDepth(16);
+    g_list_ready = g_list.createSprite(kListW, kListH) != nullptr;
+  }
+  if (!g_list_ready) return;
+  clamp_list_scroll();
+  const int scroll = g_list_scroll;
+  const ListLayout lay = list_layout();
+  g_list.fillSprite(kBg);
+  auto visible = [&](int top, int height) { return top + height > scroll && top < scroll + kListH; };
+
+  for (uint8_t i = 0; i < kShownDataPacks; ++i) {
+    const int top = i * kPackRowH;
+    if (!visible(top, 88)) continue;
+    const auto& pack = g_state.catalog_packs[i];
+    const int y = top - scroll;
+    g_list.fillRoundRect(0, y, 888, 88, 8, kPanel);
+    g_list.drawRoundRect(0, y, 888, 88, 8, kBlue);
+    ctext(pack.title[0] ? pack.title : "DATA PACK", 20, y + 24, kBlue, 3);
+    char detail[96];
+    snprintf(detail, sizeof(detail), "v%s  source %s  %.1f + %.1f MB", pack.version[0] ? pack.version : "--",
+             pack.source_date[0] ? pack.source_date : "--", pack.runtime_bytes / 1048576.0,
+             pack.archive_bytes / 1048576.0);
+    ctext(detail, 20, y + 47, TFT_WHITE, 1);
+    ctext(pack.status[0] ? pack.status : "CHECK CATALOG", 20, y + 70, pack.installed ? kGreen : kMuted, 1);
+    const char* install = pack.installed ? (pack.update_available ? "UPDATE" : "REINSTALL") : "INSTALL";
+    cbutton(install, 600, y + 14, 132, 42, g_state.catalog_busy || !g_state.catalog_ready ? TFT_DARKGREY : TFT_DARKCYAN);
+    cbutton(g_catalog_remove_armed == i ? "CONFIRM" : "REMOVE", 742, y + 14, 126, 42,
+            pack.installed && !g_state.catalog_busy ? TFT_MAROON : TFT_DARKGREY);
+  }
+
+  if (visible(lay.map_header_y, kMapHeaderH)) {
+    const int y = lay.map_header_y - scroll;
+    ctext("MAP PACKS", 0, y + 18, kBlue, 3);
+    ctext("OrcMaps packs: download them here or copy them to /orcmaps on the SD card", 0, y + 44, kMuted, 1);
+    cbutton("RESCAN", 700, y + 4, 188, 46, TFT_DARKCYAN);
+  }
+  auto map_row = [&](int top, const char* name, const char* detail, const char* status, uint16_t status_color) {
+    if (!visible(top, kMapRowH - 6)) return;
+    const int y = top - scroll;
+    g_list.fillRoundRect(0, y, 888, kMapRowH - 6, 8, kPanel);
+    g_list.drawRoundRect(0, y, 888, kMapRowH - 6, 8, kBlue);
+    ctext(name, 20, y + 22, TFT_WHITE, 3);
+    ctext(detail, 20, y + 46, kMuted, 2);
+    ctext(status, 868, y + 22, status_color, 2, middle_right);
+  };
+  map_row(lay.embedded_y, "WORLD OVERVIEW", "z0-5   built into the firmware   1.4 MB", "BUILT IN", kGreen);
+
+  // Downloadable from OrcMaps (the signed catalog lists GitHub release assets).
+  if (visible(lay.download_header_y, kSubHeaderH))
+    ctext("AVAILABLE FROM ORCMAPS (GITHUB)", 0, lay.download_header_y - scroll + 20, kBlue, 2);
+  if (g_state.catalog_map_count == 0) {
+    if (visible(lay.download_rows_y, 64))
+      ctext(g_state.catalog_ready ? "The catalog lists no map packs yet." : "Press CHECK FOR UPDATES above to list map packs.",
+            0, lay.download_rows_y - scroll + 24, kMuted, 2);
+  }
+  for (uint8_t i = 0; i < g_state.catalog_map_count; ++i) {
+    const int top = lay.download_rows_y + i * kMapRowH;
+    if (!visible(top, kMapRowH - 6)) continue;
+    const auto& pack = g_state.catalog_maps[i];
+    const int y = top - scroll;
+    g_list.fillRoundRect(0, y, 888, kMapRowH - 6, 8, kPanel);
+    g_list.drawRoundRect(0, y, 888, kMapRowH - 6, 8, kBlue);
+    ctext(pack.title[0] ? pack.title : pack.id, 20, y + 22, TFT_WHITE, 3);
+    char detail[96], size[16];
+    map_packs::format_size(size, sizeof(size), pack.runtime_bytes / 1024u);
+    snprintf(detail, sizeof(detail), "v%s   %s   %s", pack.version[0] ? pack.version : "--", size,
+             pack.installed ? (pack.update_available ? "update available" : "installed") : "not installed");
+    ctext(detail, 20, y + 46, pack.installed ? kGreen : kMuted, 2);
+    const char* install = pack.installed ? (pack.update_available ? "UPDATE" : "REDOWNLOAD") : "DOWNLOAD";
+    cbutton(install, 600, y + 12, 160, 46, g_state.catalog_busy || !g_state.catalog_ready ? TFT_DARKGREY : TFT_DARKCYAN);
+    cbutton(g_catalog_remove_armed == g_state.catalog_map_slot[i] ? "CONFIRM" : "REMOVE", 770, y + 12, 108, 46,
+            pack.installed && !g_state.catalog_busy ? TFT_MAROON : TFT_DARKGREY);
+  }
+
+  // On the SD card (downloaded here or copied by hand).
+  if (visible(lay.sd_header_y, kSubHeaderH)) ctext("ON THE SD CARD (/orcmaps)", 0, lay.sd_header_y - scroll + 20, kBlue, 2);
+  const auto& maps = g_state.map_packs;
+  if (maps.shown == 0) {
+    if (visible(lay.sd_rows_y, 96)) {
+      const int y = lay.sd_rows_y - scroll;
+      ctext(maps.scanned ? (maps.directory_listed ? "NO MAP PACKS IN /orcmaps" : "NO /orcmaps FOLDER OR NO SD CARD")
+                         : "SCANNING...",
+            0, y + 24, kMuted, 2);
+      ctext("Copy a pack's .pmtiles and .manifest.json files into /orcmaps, then press RESCAN.", 0, y + 56, kMuted, 1);
+    }
+  }
+  for (uint8_t i = 0; i < maps.shown; ++i) {
+    const auto& entry = maps.entries[i];
+    char detail[96], size[16];
+    if (entry.valid) {
+      map_packs::format_size(size, sizeof(size), entry.size_kib);
+      snprintf(detail, sizeof(detail), "%s   z%u-%u   %s", entry.region[0] ? entry.region : "--", entry.min_zoom,
+               entry.max_zoom, size);
+    } else {
+      snprintf(detail, sizeof(detail), "not usable: see the reason on the right");
+    }
+    map_row(lay.sd_rows_y + i * kMapRowH, entry.name, detail,
+            entry.valid ? (entry.world ? "WORLD  READY" : "READY") : entry.note, entry.valid ? kGreen : TFT_ORANGE);
+  }
+  if (maps.pack_count + maps.rejected_count > maps.shown && visible(lay.sd_rows_y + lay.sd_rows_h, 40)) {
+    char more[48];
+    snprintf(more, sizeof(more), "+ %u MORE NOT SHOWN",
+             static_cast<unsigned>(maps.pack_count + maps.rejected_count - maps.shown));
+    ctext(more, 0, lay.sd_rows_y + lay.sd_rows_h - scroll + 16, kMuted, 2);
+  }
+  // Scrollbar.
+  if (list_max_scroll() > 0) {
+    const int track = kListH - 8;
+    const int thumb = std::max(40, track * kListH / lay.total);
+    const int thumb_y = 4 + (track - thumb) * scroll / list_max_scroll();
+    g_list.fillRoundRect(kListW - 8, 4, 6, track, 3, 0x2945);
+    g_list.fillRoundRect(kListW - 8, thumb_y, 6, thumb, 3, kBlue);
+  }
+  g_list.pushSprite(kListX, kListY);
+}
+
 void draw_data_maps() {
   text("DATA & MAPS", 330, 115, kBlue, 3);
   char catalog[112], catalog_action[32];
@@ -290,26 +473,7 @@ void draw_data_maps() {
   button(catalog_action, 940, 126, 278, 48,
          g_state.catalog_busy ? TFT_DARKGREY : TFT_DARKCYAN);
   if (g_state.catalog_message[0]) text(g_state.catalog_message, 330, 180, kMuted, 2);
-  for (uint8_t i = 0; i < 5; ++i) {
-    const auto& pack = g_state.catalog_packs[i];
-    const int y = 185 + i * 96;
-    M5.Display.fillRoundRect(330, y, 888, 88, 8, kPanel);
-    M5.Display.drawRoundRect(330, y, 888, 88, 8, kBlue);
-    text(pack.title[0] ? pack.title : "DATA PACK", 350, y + 24, kBlue, 3);
-    char detail[96];
-    snprintf(detail, sizeof(detail), "v%s  source %s  %.1f + %.1f MB",
-             pack.version[0] ? pack.version : "--", pack.source_date[0] ? pack.source_date : "--",
-             pack.runtime_bytes / 1048576.0, pack.archive_bytes / 1048576.0);
-    text(detail, 350, y + 47, TFT_WHITE, 1);
-    text(pack.status[0] ? pack.status : "CHECK CATALOG", 350, y + 70,
-         pack.installed ? kGreen : kMuted, 1);
-    const char* install = pack.installed ? (pack.update_available ? "UPDATE" : "REINSTALL") : "INSTALL";
-    button(install, 930, y + 14, 132, 42,
-           g_state.catalog_busy || !g_state.catalog_ready ? TFT_DARKGREY : TFT_DARKCYAN);
-    button(g_catalog_remove_armed == i ? "CONFIRM" : "REMOVE", 1072, y + 14, 126, 42,
-           pack.installed && !g_state.catalog_busy ? TFT_MAROON : TFT_DARKGREY);
-  }
-  text("Manual only. Reception pauses and resumes after downloads.", 330, 688, TFT_LIGHTGREY, 1);
+  draw_data_list();   // scrollable: catalog packs, then the map packs on the SD card
 }
 
 void draw_display_audio() {
@@ -796,6 +960,8 @@ void enter(const State& state_value, Section section) {
   g_location_edit = false;
   g_clock_edit = false;
   g_catalog_remove_armed = -1;
+  g_list_scroll = 0;
+  g_gesture = {};
   g_active = true;
   g_latitude_set = state_value.location_configured;
   g_longitude_set = state_value.location_configured;
@@ -876,7 +1042,14 @@ void update(const State& state_value) {
        g_state.catalog_progress_percent != state_value.catalog_progress_percent ||
        strcmp(g_state.catalog_message, state_value.catalog_message) != 0 ||
        strcmp(g_state.catalog_date, state_value.catalog_date) != 0 ||
-       memcmp(g_state.catalog_packs, state_value.catalog_packs, sizeof(g_state.catalog_packs)) != 0);
+       memcmp(g_state.catalog_packs, state_value.catalog_packs, sizeof(g_state.catalog_packs)) != 0 ||
+       g_state.catalog_map_count != state_value.catalog_map_count ||
+       memcmp(g_state.catalog_maps, state_value.catalog_maps, sizeof(g_state.catalog_maps)) != 0 ||
+       g_state.map_packs.scanned != state_value.map_packs.scanned ||
+       g_state.map_packs.shown != state_value.map_packs.shown ||
+       g_state.map_packs.pack_count != state_value.map_packs.pack_count ||
+       g_state.map_packs.rejected_count != state_value.map_packs.rejected_count ||
+       memcmp(g_state.map_packs.entries, state_value.map_packs.entries, sizeof(g_state.map_packs.entries)) != 0);
   const bool location_changed = g_section == Section::location_adsb &&
       (g_state.ip_location_busy != state_value.ip_location_busy ||
        g_state.ip_location_ready != state_value.ip_location_ready ||
@@ -923,6 +1096,39 @@ void update(const State& state_value) {
     draw_content();
 }
 
+bool wants_gesture() {
+  return g_active && g_section == Section::data_maps && g_edit == EditField::none && !g_location_edit &&
+         g_wifi_edit == WifiEdit::none && !g_clock_edit;
+}
+
+Action handle_gesture(int32_t x, int32_t y, bool pressed) {
+  if (!wants_gesture()) {
+    g_gesture = {};
+    return {};
+  }
+  const bool in_list = x >= kListX && x < kListX + kListW && y >= kListY && y < kListY + kListH;
+  if (pressed) {
+    if (!g_gesture.down) {
+      g_gesture = {true, false, in_list, x, y, g_list_scroll};   // the tap is decided on release
+      return {};
+    }
+    if (!g_gesture.scrolling && g_gesture.in_list && std::abs(y - g_gesture.y) >= kTapDragThreshold)
+      g_gesture.scrolling = true;
+    if (g_gesture.scrolling) {
+      const int previous = g_list_scroll;
+      g_list_scroll = g_gesture.scroll - (y - g_gesture.y);
+      clamp_list_scroll();
+      if (g_list_scroll != previous) draw_data_list();
+    }
+    return {};
+  }
+  if (!g_gesture.down) return {};
+  const Gesture finished = g_gesture;
+  g_gesture = {};
+  if (finished.scrolling) return {};
+  return handle_touch(finished.x, finished.y);
+}
+
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
   // The full-width text editor covers the rail; repaint it once it closes.
@@ -954,6 +1160,7 @@ Action handle_touch(int32_t x, int32_t y) {
     const int index = (y - kRailY) / kRailRowH;
     if (index >= 0 && index < static_cast<int>(Section::count)) {
       g_section = static_cast<Section>(index);
+      g_list_scroll = 0;
       draw_rail();
       draw_content();
     }
@@ -1051,18 +1258,39 @@ Action handle_touch(int32_t x, int32_t y) {
   } else if (g_section == Section::data_maps) {
     if (hit(x, y, 940, 126, 278, 48) && !g_state.catalog_busy)
       return {ActionKind::catalog_check, 0};
-    for (uint8_t i = 0; i < 5; ++i) {
-      const int row_y = 185 + i * 96;
-      if (hit(x, y, 930, row_y + 14, 132, 42) && g_state.catalog_ready && !g_state.catalog_busy)
-        return {ActionKind::catalog_install, i};
-      if (hit(x, y, 1072, row_y + 14, 126, 42) && g_state.catalog_packs[i].installed && !g_state.catalog_busy) {
-        if (g_catalog_remove_armed == i) {
-          g_catalog_remove_armed = -1;
-          return {ActionKind::catalog_remove, i};
+    if (x >= kListX && x < kListX + kListW && y >= kListY && y < kListY + kListH) {
+      const int lx = x - kListX;
+      const int ly = y - kListY + g_list_scroll;   // position inside the whole list, scroll included
+      for (uint8_t i = 0; i < kShownDataPacks; ++i) {
+        const int row_y = i * kPackRowH;
+        if (hit(lx, ly, 600, row_y + 14, 132, 42) && g_state.catalog_ready && !g_state.catalog_busy)
+          return {ActionKind::catalog_install, i};
+        if (hit(lx, ly, 742, row_y + 14, 126, 42) && g_state.catalog_packs[i].installed && !g_state.catalog_busy) {
+          if (g_catalog_remove_armed == i) {
+            g_catalog_remove_armed = -1;
+            return {ActionKind::catalog_remove, i};
+          }
+          g_catalog_remove_armed = i;
+          draw_content();
+          return {};
         }
-        g_catalog_remove_armed = i;
-        draw_content();
-        return {};
+      }
+      const ListLayout lay = list_layout();
+      if (hit(lx, ly, 700, lay.map_header_y + 4, 188, 46)) return {ActionKind::map_packs_rescan, 0};
+      for (uint8_t i = 0; i < g_state.catalog_map_count; ++i) {
+        const int row_y = lay.download_rows_y + i * kMapRowH;
+        const uint8_t slot = g_state.catalog_map_slot[i];
+        if (hit(lx, ly, 600, row_y + 12, 160, 46) && g_state.catalog_ready && !g_state.catalog_busy)
+          return {ActionKind::catalog_install, slot};
+        if (hit(lx, ly, 770, row_y + 12, 108, 46) && g_state.catalog_maps[i].installed && !g_state.catalog_busy) {
+          if (g_catalog_remove_armed == static_cast<int8_t>(slot)) {
+            g_catalog_remove_armed = -1;
+            return {ActionKind::catalog_remove, slot};
+          }
+          g_catalog_remove_armed = static_cast<int8_t>(slot);
+          draw_content();
+          return {};
+        }
       }
     }
   } else if (g_section == Section::display_audio) {

@@ -35,11 +35,11 @@ cd "$app"
 
 # The OrcMaps world basemap embedded in the firmware (setup map picker): the pinned z0-z5 pack, accepted only if its
 # size and SHA-256 match (the same pin as apps/orcsdr-tab5/tools/resolve-orcmaps-world.ps1).
-world_version=0.2.1
+world_version=world-overview-1   # the OrcMaps release tag
 world_sha=6f5c37f6cb505315e4c8a1d74efcf634fdb547b59128422ebf71c8ecf99addcc
 world_bytes=1492862
 world="$out/orcmaps_world.pmtiles"
-curl -fsSL "https://github.com/hardcoreerik/orcmaps/releases/download/v${world_version}/orcmaps-world-z5-${world_version}.pmtiles" -o "$world"
+curl -fsSL "https://github.com/hardcoreerik/orcmaps/releases/download/${world_version}/orcmaps-world-overview-z0-z5.pmtiles" -o "$world"
 [ "$(stat -c %s "$world")" = "$world_bytes" ] && echo "$world_sha  $world" | sha256sum -c - >/dev/null   || { echo "OrcMaps world pack does not match the pinned release" >&2; exit 1; }
 
 # sdkconfig.defaults is the source; regenerate the per-build cache (same as the .ps1).

@@ -106,6 +106,7 @@
 #include "rf_lab.hpp"
 #include "rf_visualizer.hpp"
 #include "settings_app.hpp"
+#include "map_packs.hpp"
 #include "setup_map_picker.hpp"
 #include "setup_wizard.hpp"
 #include "setup_wizard_store.hpp"
@@ -12265,6 +12266,8 @@ const orcsdr::settings::State& global_settings_state() {
   strlcpy(state.location_label, receiver_location.label, sizeof(state.location_label));
   strlcpy(state.map_pack, receiver_location.map_pack, sizeof(state.map_pack));
   state.map_picker_available = orcsdr::setup_map_picker::available();
+  orcsdr::map_packs::scan_if_needed();   // once; RESCAN in Data & Maps repeats it
+  state.map_packs = orcsdr::map_packs::summary();
   const auto ip_location = orcsdr::location_estimate::state();
   state.ip_location_busy = ip_location.busy; state.ip_location_ready = ip_location.ready;
   state.ip_latitude_e7 = ip_location.latitude_e7; state.ip_longitude_e7 = ip_location.longitude_e7;
@@ -12302,6 +12305,30 @@ const orcsdr::settings::State& global_settings_state() {
     target.archive_bytes = source.archive_bytes;
     target.installed = source.installed;
     target.update_available = source.update_available;
+  }
+  // Map packs the catalog offers sit in the dynamic slots after the built-in packs.
+  state.catalog_map_count = 0;
+  for (uint8_t slot = orcsdr::catalog::kBuiltInPackCount;
+       slot < orcsdr::catalog::kPackCount && state.catalog_map_count < state.kCatalogMapMax; ++slot) {
+    const auto& source = catalog_state.packs[slot];
+    if (strncmp(source.id, "orcmaps_", 8) != 0) continue;
+    auto& target = state.catalog_maps[state.catalog_map_count];
+    strlcpy(target.id, source.id, sizeof(target.id));
+    strlcpy(target.title, source.title, sizeof(target.title));
+    strlcpy(target.version, source.version, sizeof(target.version));
+    strlcpy(target.source_date, source.source_date, sizeof(target.source_date));
+    strlcpy(target.status, source.status, sizeof(target.status));
+    target.runtime_bytes = source.runtime_bytes;
+    target.archive_bytes = source.archive_bytes;
+    target.installed = source.installed;
+    target.update_available = source.update_available;
+    state.catalog_map_slot[state.catalog_map_count++] = slot;
+  }
+  {
+    // A finished download or removal changes what is on the card: look again.
+    static bool was_busy = false;
+    if (was_busy && !catalog_state.busy) orcsdr::map_packs::scan();
+    was_busy = catalog_state.busy;
   }
   state.companion_supported = false;
   state.web_console_enabled = settings_web_console_enabled;
@@ -13120,6 +13147,10 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       orcsdr::screens::finish_transition();
       break;
     }
+    case orcsdr::settings::ActionKind::map_packs_rescan:
+      orcsdr::map_packs::scan();
+      update_global_settings();
+      break;
     case orcsdr::settings::ActionKind::range_changed:
       adsb_settings.radar_range_nm = static_cast<uint16_t>(action.value);
       adsb_settings_persist_pending.store(true, std::memory_order_release);
@@ -20263,9 +20294,19 @@ void loop() {
     }
     const auto touch = ui_touch_detail(0);
     const bool pressed = touch.isPressed() || touch.wasPressed();
-    if (pressed && (!was_pressed || rtl_header_audio_control.expanded) &&
-        !handle_global_header_audio_touch(touch.x, touch.y))
-      handle_global_settings_touch(touch.x, touch.y);
+    static bool gesture_blocked = false;   // the header audio control took this press
+    if (orcsdr::settings::wants_gesture()) {
+      // A scrollable page (Data & Maps): a drag scrolls and a tap acts when the finger lifts.
+      if (pressed && !was_pressed && handle_global_header_audio_touch(touch.x, touch.y)) gesture_blocked = true;
+      if (!gesture_blocked || !pressed)
+        handle_global_settings_action(orcsdr::settings::handle_gesture(touch.x, touch.y, pressed && !gesture_blocked));
+      if (!pressed) gesture_blocked = false;
+    } else {
+      gesture_blocked = false;
+      if (pressed && (!was_pressed || rtl_header_audio_control.expanded) &&
+          !handle_global_header_audio_touch(touch.x, touch.y))
+        handle_global_settings_touch(touch.x, touch.y);
+    }
     was_pressed = pressed;
   } else if (home_ui) {
     const auto touch = ui_touch_detail(0);
