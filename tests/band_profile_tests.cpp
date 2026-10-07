@@ -1,4 +1,5 @@
 #include "band_profile.hpp"
+#include "band_names.hpp"  // orcdial/src, added with -I
 
 #include <cstdio>
 #include <cstring>
@@ -17,6 +18,13 @@ int main() {
   constexpr uint32_t kMin = 24000000, kMax = 1766000000;
 
   CHECK(self_check());
+
+  // The OrcDial shows band names from its own table; they must match the profiles, in id order.
+  static_assert(orc::band_name_count == static_cast<int>(kProfileCount), "OrcDial band names out of date");
+  for (size_t i = 0; i < kProfileCount; ++i)
+    CHECK(std::strcmp(profile(us, static_cast<Id>(i)).name, orc::band_name(static_cast<uint8_t>(i + 1))) == 0);
+  CHECK(std::strcmp(orc::band_name(0), "RADIO") == 0);   // an older Tab5 sends 0
+  CHECK(std::strcmp(orc::band_name(200), "RADIO") == 0);
 
   // Resolution: named bands, their edges, and the general fallbacks.
   CHECK(resolve(us, 96100000).id == Id::fm_broadcast);

@@ -17,6 +17,7 @@ struct RadioState {
   bool signal_valid = false;
   Dashboard dashboard = Dashboard::home;
   uint8_t view = 0;
+  uint8_t band = 0; // see Packet::band
   uint32_t revision = 0;
   int32_t selected = 0;
   uint32_t item_count = 0;

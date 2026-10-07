@@ -142,7 +142,7 @@ void Link::handle(const Incoming& incoming) {
     state_.signal_dbm = p.signal_dbm; state_.signal_valid = p.flags & 1;
     state_.mode = p.mode; state_.volume = p.volume;
     state_.dashboard = Dashboard(p.dashboard);
-    state_.view = p.view; state_.revision = p.revision;
+    state_.view = p.view; state_.band = p.band; state_.revision = p.revision;
     state_.selected = p.selected; state_.item_count = p.item_count;
     state_.capabilities = p.capabilities;
     if (pending_sequence_ && p.ack == pending_sequence_) { last_ack_ = p.ack; pending_sequence_ = 0; }

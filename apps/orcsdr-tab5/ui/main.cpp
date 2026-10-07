@@ -3086,6 +3086,53 @@ uint32_t rtl_step_frequency(RtlBand band, uint32_t frequency_hz, int direction) 
   return rtl_clamp_frequency(band, frequency_hz + step);
 }
 
+// Home tunes the whole range: the band, and with it the demodulator, follows the frequency. FM broadcast and
+// airband have their own pipelines; everything else uses the general receive path until the mode/band split.
+RtlBand home_band_for(const orcsdr::band_profile::Profile& profile) {
+  if (profile.id == orcsdr::band_profile::Id::fm_broadcast) return RtlBand::fm;
+  if (profile.id == orcsdr::band_profile::Id::airband) return RtlBand::airband;
+  return RtlBand::browse;
+}
+
+// Home is a full-range VFO on these bands. The MW and shortwave bands (below the dongle's normal range), CB, P25,
+// LoRa, ADS-B and pager keep their own band-locked tuning until they are folded in.
+bool home_full_range() {
+  return rtl_ui_band == RtlBand::browse || rtl_ui_band == RtlBand::fm ||
+         rtl_ui_band == RtlBand::airband || rtl_ui_band == RtlBand::wx;
+}
+
+bool home_tune_to(uint32_t frequency_hz) {
+  if (!home_full_range()) {
+    const uint32_t clamped = rtl_clamp_frequency(rtl_ui_band, frequency_hz);
+    if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
+      return request_hot_retune(clamped);
+    return queue_local_rtl_listen(rtl_ui_band, clamped, false);
+  }
+  const uint32_t hz = constrain(frequency_hz, kRtlBrowseMinHz, kRtlBrowseMaxHz);
+  if (!validate_rtl_tune_frequency(hz)) return false;
+  const RtlBand band = home_band_for(orcsdr::band_profile::resolve(kBandRegion, hz));
+  if (band == rtl_ui_band &&
+      rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
+    return request_hot_retune(hz);
+  return queue_local_rtl_listen(band, hz, false);
+}
+
+// `count` steps from `from_hz`, each by the step of the band it starts in, so a spin across a band edge changes
+// step and snaps to the next band's raster.
+uint32_t home_step_by(uint32_t from_hz, int count) {
+  uint32_t hz = from_hz;
+  for (int i = 0; i < abs(count); ++i) {
+    if (!home_full_range()) {
+      hz = rtl_step_frequency(rtl_ui_band, hz, count < 0 ? -1 : 1);
+      continue;
+    }
+    const auto& profile = orcsdr::band_profile::resolve(kBandRegion, hz);
+    hz = orcsdr::band_profile::step_frequency(profile, hz, band_step_hz(profile), count < 0 ? -1 : 1,
+                                              kRtlBrowseMinHz, kRtlBrowseMaxHz);
+  }
+  return hz;
+}
+
 size_t cb_channel_index(uint32_t frequency_hz) {
   const uint32_t snapped = rtl_clamp_frequency(RtlBand::cb, frequency_hz);
   for (size_t channel = 0; channel < std::size(kCbChannelsHz); ++channel) {
@@ -12205,7 +12252,7 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
                                            std::memory_order_relaxed);
   snapshot.filter_kind = demo ? orcsdr::filter_standards::Kind::wfm : home_filter_kind();
   const auto& step_profile = orcsdr::band_profile::resolve(kBandRegion, snapshot.frequency_hz);
-  snapshot.step_hz = rtl_ui_band == RtlBand::fm          ? rtl_fm_step_hz
+  snapshot.step_hz = home_full_range()                   ? band_step_hz(step_profile)
                      : rtl_ui_band == RtlBand::am        ? rtl_am_step_hz
                      : rtl_ui_band == RtlBand::shortwave ? rtl_shortwave_step_hz
                      : rtl_ui_band == RtlBand::p25       ? kP25StepHz
@@ -12213,11 +12260,9 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
                      : rtl_ui_band == RtlBand::lora      ? 125000
                                                           : band_step_hz(step_profile);
   // Only the bands whose step the STEP SIZE control can change; the rest are channels or decoder-owned.
-  snapshot.step_adjustable = rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::am ||
-                             rtl_ui_band == RtlBand::shortwave ||
-                             (rtl_ui_band == RtlBand::browse &&
-                              orcsdr::band_profile::has_step_control(step_profile));
-  strlcpy(snapshot.mode, demo ? "FM" : rtl_band_name(rtl_ui_band),
+  snapshot.step_adjustable = home_full_range() ? orcsdr::band_profile::has_step_control(step_profile)
+                                               : rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::shortwave;
+  strlcpy(snapshot.mode, demo ? "FM" : rtl_mode_name(rtl_ui_band),
           sizeof(snapshot.mode));
 #if !RTL_USE_LEGACY_USB
   strlcpy(snapshot.receiver,
@@ -12672,25 +12717,22 @@ void handle_home_action(const orcsdr::home::Action& action) {
     }
     case ActionKind::step_down:
     case ActionKind::step_up: {
-      const uint32_t next = rtl_step_frequency(
-          rtl_ui_band, rtl_ui_frequency_hz,
-          action.kind == ActionKind::step_down ? -1 : 1);
+      const int direction = action.kind == ActionKind::step_down ? -1 : 1;
+      const uint32_t requested = rtl_requested_frequency_hz.load(std::memory_order_acquire);
+      const uint32_t base = home_full_range() && requested != 0 ? requested : rtl_ui_frequency_hz;
+      const uint32_t next = home_step_by(base, direction);
       if (rtl_ui_band == RtlBand::am) orcsdr::am::note_tuned(next);
-      if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
-        request_hot_retune(next);
-      else
-        queue_local_rtl_listen(rtl_ui_band, next, false);
+      home_tune_to(next);
       break;
     }
     case ActionKind::step_size_down:
     case ActionKind::step_size_up: {
       const bool up = action.kind == ActionKind::step_size_up;
-      if (rtl_ui_band == RtlBand::fm) {
-        static constexpr uint32_t steps[] = {50000, 100000, 200000, 500000, 1000000};
-        size_t i = 0;
-        while (i < std::size(steps) && steps[i] != rtl_fm_step_hz) ++i;
-        if (i == std::size(steps)) i = 0;
-        rtl_fm_step_hz = steps[(i + (up ? 1 : std::size(steps) - 1)) % std::size(steps)];
+      if (home_full_range()) {
+        const auto& profile = orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz);
+        if (orcsdr::band_profile::has_step_control(profile))
+          band_step_remember(profile,
+                             orcsdr::band_profile::cycle_step_hz(profile, band_step_hz(profile), up));
       } else if (rtl_ui_band == RtlBand::am) {
         const size_t turns = up ? 1 : 5;
         for (size_t i = 0; i < turns; ++i)
@@ -12700,11 +12742,6 @@ void handle_home_action(const orcsdr::home::Action& action) {
         for (size_t i = 0; i < turns; ++i)
           rtl_shortwave_step_hz =
               orcsdr::shortwave::next_tuning_step(rtl_shortwave_step_hz);
-      } else if (rtl_ui_band == RtlBand::browse) {
-        const auto& profile = orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz);
-        if (orcsdr::band_profile::has_step_control(profile))
-          band_step_remember(profile,
-                             orcsdr::band_profile::cycle_step_hz(profile, band_step_hz(profile), up));
       }
       break;
     }
@@ -14153,14 +14190,19 @@ orc::Dashboard orcdial_active_dashboard() {
 void orcdial_fill_state(orc::Packet& p) {
   const auto id = orcdial_active_dashboard();
   p.dashboard = static_cast<uint8_t>(id);
+  p.band = static_cast<uint8_t>(
+      static_cast<uint8_t>(orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz).id) + 1);
   p.frequency_hz = rtl_ui_frequency_hz;
-  p.step_hz = rtl_ui_band == RtlBand::fm ? rtl_fm_step_hz
+  p.step_hz = home_full_range() && id == orc::Dashboard::home
+                  ? band_step_hz(orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz))
+              : rtl_ui_band == RtlBand::fm ? rtl_fm_step_hz
               : rtl_ui_band == RtlBand::am ? rtl_am_step_hz
               : rtl_ui_band == RtlBand::shortwave ? rtl_shortwave_step_hz
               : band_step_hz(orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz));
   p.volume = rtl_live_volume.load(std::memory_order_acquire);
   p.mode = rtl_ui_band == RtlBand::fm ? 3 :
-           rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::shortwave ? 2 : 1;
+           rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::shortwave ||
+           rtl_ui_band == RtlBand::airband ? 2 : 1;
   p.revision = ++orcdial_revision;
   if (id == orc::Dashboard::cb) {
     p.selected = static_cast<int32_t>(orcsdr::cb::nearest_channel(rtl_ui_frequency_hz) + 1);
@@ -14203,6 +14245,22 @@ bool orcdial_apply(const orc::Packet& p) {
       p.action > static_cast<uint8_t>(Kind::activate) || p.value < -1000000000 ||
       p.value > 1000000000) return false;
   const Kind kind = Kind(p.action);
+  if (active == Dash::home && kind == Kind::tune) {
+    // On Home the value is a count of steps; the Tab5 applies the step of the band it is in.
+    if (p.value == 0 || p.value < -64 || p.value > 64) return false;
+    const uint32_t requested = rtl_requested_frequency_hz.load(std::memory_order_acquire);
+    return home_tune_to(home_step_by(requested != 0 ? requested : rtl_ui_frequency_hz,
+                                     static_cast<int>(p.value)));
+  }
+  if (active == Dash::home && kind == Kind::step) {
+    const auto& profile = orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz);
+    if (!home_full_range() || p.value == 0 || p.value < -4 || p.value > 4 ||
+        !orcsdr::band_profile::has_step_control(profile))
+      return false;
+    for (int i = 0; i < abs(p.value); ++i)
+      band_step_remember(profile, orcsdr::band_profile::cycle_step_hz(profile, band_step_hz(profile), p.value > 0));
+    return true;
+  }
   if (kind == Kind::tune && orc::tunable(active)) {
     const int64_t wanted = int64_t(rtl_ui_frequency_hz) + p.value;
     if (wanted < 24000 || wanted > 1766000000 ||

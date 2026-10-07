@@ -285,19 +285,21 @@ void loop() {
   }
   if (online && view == orc::View::dashboard && state.dashboard == orc::Dashboard::home && !radio_link.pending())
     view = orc::View::home;
+  // Online with Home on screen, Home is a full-range VFO; otherwise it stays the launcher.
+  const bool home_tune = online && state.dashboard == orc::Dashboard::home;
   if (online && pending_delta && radio_link.command_action({orc::ActionKind::tune, pending_delta})) pending_delta = 0;
   const int32_t detent = M5Dial.Encoder.read() / 4;
   int32_t movement = detent - last_detent;
   if (movement) {
     last_detent = detent;
-    if (view == orc::View::home) { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
+    if (view == orc::View::home && !home_tune) { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
     if (view == orc::View::carousel) {
       selected_index = (selected_index + movement % orc::carousel_count + orc::carousel_count) % orc::carousel_count;
     } else if(view==orc::View::connection) {
       const auto status=radio_link.security_status();
       const int count=forget_confirmation||status.state==orc::secure::State::verify||!status.trusted?2:3;
       device_selection=(device_selection+movement%count+count)%count;
-    } else if (view == orc::View::dashboard) {
+    } else if (view == orc::View::dashboard || (view == orc::View::home && home_tune)) {
       reel_position += movement;
       const uint32_t now = millis(), elapsed = now - last_turn_ms;
       last_turn_ms = now;
@@ -312,8 +314,15 @@ void loop() {
         (view == orc::View::home || state.dashboard == orc::Dashboard::settings)) {
       view = orc::View::connection; device_selection=0;
     }
-    else if (duration >= 900) {if(forget_confirmation){forget_confirmation=false;device_selection=0;}else view=orc::View::home;}
-    else if (view == orc::View::home) { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
+    else if (duration >= 900) {
+      if(forget_confirmation){forget_confirmation=false;device_selection=0;}
+      else if (view == orc::View::home && home_tune) { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
+      else view=orc::View::home;
+    }
+    else if (view == orc::View::home) {
+      if (home_tune) focus = orc::next_focus(state.dashboard, focus);
+      else { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
+    }
     else if (view == orc::View::carousel) select_dashboard(state, online);
     else if (view == orc::View::connection) device_activate();
     else if (orc::tunable(state.dashboard) || orc::channel_dashboard(state.dashboard))
@@ -328,6 +337,7 @@ void loop() {
       else if(t.y>=212){forget_confirmation=false;view=orc::View::home;}
     } else if (view == orc::View::home) {
       if (t.y < 70 && t.x > 150) view = orc::View::connection;
+      else if (home_tune && t.y <= 175) focus = orc::next_focus(state.dashboard, focus);
       else { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
     } else if (view == orc::View::carousel) {
       if (t.y > 177) view = orc::View::home;

@@ -31,4 +31,13 @@ int main() {
   assert(next_focus(Dashboard::fm, Focus::step) == Focus::volume);
   assert(next_focus(Dashboard::fm, Focus::volume) == Focus::vfo);
   assert(next_focus(Dashboard::marine, Focus::vfo) == Focus::volume);
+  // Home tunes by a count of steps (the Tab5 owns the band's step) and cycles vfo, step, volume.
+  assert(turn(Dashboard::home).kind == ActionKind::tune && turn(Dashboard::home).value == 5);
+  assert(rotate(Dashboard::home, 0, Focus::vfo, -2, 2, 12500).value == -4);
+  assert(rotate(Dashboard::home, 0, Focus::step, 1, 5, 12500).kind == ActionKind::step);
+  assert(rotate(Dashboard::home, 0, Focus::volume, 1, 5, 12500).kind == ActionKind::volume);
+  assert(rotate(Dashboard::home, 0, Focus::vfo, 0, 1, 12500).kind == ActionKind::none);
+  assert(next_focus(Dashboard::home, Focus::vfo) == Focus::step);
+  assert(next_focus(Dashboard::home, Focus::step) == Focus::volume);
+  assert(next_focus(Dashboard::home, Focus::volume) == Focus::vfo);
 }

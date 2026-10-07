@@ -16,12 +16,15 @@ inline bool channel_dashboard(Dashboard id) {
 }
 inline Action rotate(Dashboard id, uint8_t view, Focus focus, int detents,
                      int acceleration, uint32_t step_hz) {
-  if (!detents || id == Dashboard::home) return {};
+  if (!detents) return {};
   if (focus == Focus::volume) return {ActionKind::volume, detents};
   if (focus == Focus::gain) return {ActionKind::gain, detents};
   if (focus == Focus::squelch) return {ActionKind::squelch, detents};
   if (focus == Focus::step) return {ActionKind::step, detents};
   switch (id) {
+    // Home tunes the whole range: the value is a count of steps, not Hz. The Tab5 applies the step of the
+    // band it is in, so a spin that crosses a band edge changes step and snaps to the next band's raster.
+    case Dashboard::home: return {ActionKind::tune, detents * acceleration};
     case Dashboard::fm: case Dashboard::am: case Dashboard::shortwave:
     case Dashboard::airband: case Dashboard::satellite: case Dashboard::rf_lab:
       { const int64_t hz = int64_t(detents) * acceleration * step_hz;
@@ -53,6 +56,11 @@ inline Action press(Dashboard id, uint8_t view) {
   return {ActionKind::view, 1};
 }
 inline Focus next_focus(Dashboard id, Focus focus) {
+  if (id == Dashboard::home) {
+    if (focus == Focus::vfo) return Focus::step;
+    if (focus == Focus::step) return Focus::volume;
+    return Focus::vfo;
+  }
   if (channel_dashboard(id)) {
     if (focus == Focus::vfo) return id == Dashboard::cb ? Focus::squelch : Focus::volume;
     return Focus::vfo;

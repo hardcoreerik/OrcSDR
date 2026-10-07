@@ -1,5 +1,6 @@
 #include "ui.hpp"
 #include "controller.hpp"
+#include "band_names.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -94,6 +95,44 @@ static void frequency(lgfx::LGFXBase& d, uint32_t hz, int y, int size, uint32_t 
     std::snprintf(text, sizeof text, "%lu.%06lu", (unsigned long)(hz / 1000000),
                   (unsigned long)(hz % 1000000));
   d.setTextColor(color, bg); d.setTextSize(size); draw_text(d, text, 120, y);
+}
+
+// Home as a general-purpose VFO. The Tab5 resolves the band, mode and step for the frequency; this only shows them.
+static void home_screen(lgfx::LGFXBase& d, const RadioState& state, Focus focus, bool pending, uint32_t now) {
+  d.drawCircle(120, 120, 115, link_color(true));
+  d.drawCircle(120, 120, 110, 0x1b4e60);
+  // Decorative waveform behind the readout; it does not represent the received signal.
+  for (int k = 0; k < 2; ++k) {
+    int previous = 120;
+    for (int x = 24; x <= 216; x += 4) {
+      const float envelope = sinf((x - 24) * 3.14159f / 192.0f);
+      const float phase = x * (k ? 0.13f : 0.09f) + now * (k ? -0.0021f : 0.0016f);
+      const int y = 120 + int(24 * envelope * sinf(phase));
+      if (x > 24) d.drawLine(x - 4, previous, x, y, k ? trace : trace_bright);
+      previous = y;
+    }
+  }
+  static const char* modes[] = {"--", "NFM", "AM", "WFM"};
+  d.setTextColor(cyan); d.setTextSize(2); draw_text(d, band_name(state.band), 120, 32);
+  d.setTextColor(green); d.setTextSize(1);
+  draw_text(d, modes[state.mode < 4 ? state.mode : 0], 120, 52);
+  char line[32];
+  const uint32_t hz = state.frequency_hz;
+  if (hz % 1000 == 0)
+    std::snprintf(line, sizeof line, "%lu.%03lu", (unsigned long)(hz / 1000000), (unsigned long)(hz / 1000 % 1000));
+  else
+    std::snprintf(line, sizeof line, "%lu.%06lu", (unsigned long)(hz / 1000000), (unsigned long)(hz % 1000000));
+  d.setTextColor(ink); d.setTextSize(4); draw_text(d, line, 120, 112);
+  d.setTextColor(dim); d.setTextSize(1); draw_text(d, "MHz", 120, 140);
+  if (focus == Focus::vfo) d.fillRect(52, 131, 136, 2, green);
+  if (pending) d.fillCircle(206, 112, 3, cyan);
+  if (state.step_hz % 1000 == 0) std::snprintf(line, sizeof line, "STEP %lu kHz", (unsigned long)(state.step_hz / 1000));
+  else std::snprintf(line, sizeof line, "STEP %.1f kHz", state.step_hz / 1000.0);
+  d.setTextColor(focus == Focus::step ? green : dim); d.setTextSize(2); draw_text(d, line, 120, 160);
+  const uint32_t bar = focus == Focus::volume ? green : trace_bright;
+  d.drawRoundRect(70, 176, 100, 9, 3, bar);
+  d.fillRoundRect(72, 178, std::min<int>(state.volume, 100) * 96 / 100, 5, 2, bar);
+  d.setTextColor(dim); d.setTextSize(1); draw_text(d, "PRESS: NEXT   HOLD: DASHBOARDS", 120, 206);
 }
 
 static void fm_screen(lgfx::LGFXBase& d, const RadioState& state, Focus focus,
@@ -397,6 +436,10 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
     if(demo){d.setTextColor(cyan,bg);draw_text(d,"DEMO",120,222);}
     present();
     return;
+  }
+  if (view == View::home && connected && state.dashboard == Dashboard::home) {
+    home_screen(d, state, focus, pending_delta, millis());
+    present(); return;
   }
   if (view == View::home) {
     d.drawCircle(120, 120, 115, link_color(connected));
