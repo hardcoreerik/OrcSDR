@@ -97,18 +97,20 @@ static void frequency(lgfx::LGFXBase& d, uint32_t hz, int y, int size, uint32_t 
   d.setTextColor(color, bg); d.setTextSize(size); draw_text(d, text, 120, y);
 }
 
+static void back_button(lgfx::LGFXBase& d);
+
 // Home as a general-purpose VFO. The Tab5 resolves the band, mode and step for the frequency; this only shows them.
 static void home_screen(lgfx::LGFXBase& d, const RadioState& state, Focus focus, bool pending, uint32_t now) {
   d.drawCircle(120, 120, 115, link_color(true));
   d.drawCircle(120, 120, 110, 0x1b4e60);
   // Decorative waveform behind the readout; it does not represent the received signal.
   for (int k = 0; k < 2; ++k) {
-    int previous = 120;
+    int previous = 80;
     for (int x = 24; x <= 216; x += 4) {
       const float envelope = sinf((x - 24) * 3.14159f / 192.0f);
       const float phase = x * (k ? 0.13f : 0.09f) + now * (k ? -0.0021f : 0.0016f);
-      const int y = 120 + int(24 * envelope * sinf(phase));
-      if (x > 24) d.drawLine(x - 4, previous, x, y, k ? trace : trace_bright);
+      const int y = 80 + int(13 * envelope * sinf(phase));
+      if (x > 24) d.drawLine(x - 4, previous, x, y, k ? 0x1b5e78 : 0x2b8fb0);
       previous = y;
     }
   }
@@ -141,6 +143,7 @@ static void home_screen(lgfx::LGFXBase& d, const RadioState& state, Focus focus,
   const uint32_t bar = focus == Focus::volume ? green : trace_bright;
   d.drawRoundRect(70, 176, 100, 9, 3, bar);
   d.fillRoundRect(72, 178, std::min<int>(state.volume, 100) * 96 / 100, 5, 2, bar);
+  back_button(d);
 }
 
 // Keypad geometry for the 240 px round screen: every key sits inside the circle.
@@ -612,8 +615,7 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
     d.setTextColor(ink, bg); d.setTextSize(3); draw_text(d, "OrcSDR", 120, 151);
     d.setTextColor(connected ? green : cyan, bg); d.setTextSize(2);
     draw_text(d, connected ? dashboard_name(state.dashboard) : demo ? "DEMO" : "OFFLINE", 120, 181);
-    d.setTextColor(dim, bg); d.setTextSize(1);
-    draw_text(d, "PRESS: DASHBOARDS", 120, 209);
+    back_button(d);
     present(); return;
   }
   if (view == View::carousel) {
