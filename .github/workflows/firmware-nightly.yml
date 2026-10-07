@@ -77,6 +77,10 @@ jobs:
     timeout-minutes: 90
     container:
       image: espressif/idf:v5.5.4@sha256:b9f2d6ea1c19e0c9f7959bdb74a9e3c775642f9d0f3b841937c5fa3363db892b
+    defaults:
+      run:
+        # GitHub replaces the image entrypoint, so ESP-IDF's export.sh is never sourced on its own.
+        shell: bash
     outputs:
       short: ${{ steps.meta.outputs.short }}
     steps:
@@ -102,9 +106,9 @@ jobs:
           key: hosted-c6-v1-${{ hashFiles('tools/release/hosted-c6-release.json', 'orcdial/c6/CMakeLists.txt', 'orcdial/c6/main/CMakeLists.txt', 'orcdial/c6/main/main.c', 'orcdial/c6/sdkconfig.defaults', 'orcdial/c6/partitions_eh_cp_ota_4m.csv', 'tools/ci/build-hosted-c6.sh') }}
       - name: Build ESP-Hosted C6 image
         if: steps.c6cache.outputs.cache-hit != 'true'
-        run: bash tools/ci/build-hosted-c6.sh --patch-idf .ci-cache/hosted-c6 "$RUNNER_TEMP/esp-hosted"
+        run: . "$IDF_PATH/export.sh" >/dev/null && bash tools/ci/build-hosted-c6.sh --patch-idf .ci-cache/hosted-c6 "$RUNNER_TEMP/esp-hosted"
       - name: Build Tab5 firmware
-        run: bash tools/ci/build-tab5.sh --c6 .ci-cache/hosted-c6/esp_hosted_tab5_c6.bin --out out --build-id "${{ steps.meta.outputs.build_id }}"
+        run: . "$IDF_PATH/export.sh" >/dev/null && bash tools/ci/build-tab5.sh --c6 .ci-cache/hosted-c6/esp_hosted_tab5_c6.bin --out out --build-id "${{ steps.meta.outputs.build_id }}"
       - name: Package
         env:
           SHORT: ${{ steps.meta.outputs.short }}
