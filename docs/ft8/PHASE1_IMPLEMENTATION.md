@@ -226,3 +226,24 @@ The profile captures slot time, 12 kHz symbol length, channel/data/ramp symbol c
 Host tests validate FT8 and FT4 exact frame invariants, JS8 descriptive profiles, invalid-profile rejection, optimized C++17 compilation, and ASan/UBSan.
 
 The next decoder-owned slice is shared synchronization/candidate geometry built against `ModeProfile`. It will start with FT8/FT4 only; JS8 remains disabled until the missing clean-room protocol data is resolved.
+
+
+## Slice 5 — ModeProfile-driven synchronization scorer
+
+Added pure C++ `ft8_sync.hpp/.cpp` as the shared Costas/synchronization geometry layer.
+
+The module intentionally consumes an **abstract non-negative energy grid** rather than FFT samples. This keeps synchronization logic independent of the eventual P4 spectral backend.
+
+Key properties:
+
+- supports time oversampling with `rows_per_symbol`;
+- supports frequency oversampling with `bins_per_tone`;
+- scores only protocol-defined sync symbols from the active `ModeProfile`;
+- uses local competing-tone energy at each sync symbol to normalize the expected Costas tone;
+- returns a bounded contrast score, explicitly **not SNR**;
+- performs bounded heap-free candidate search and local non-maximum suppression;
+- refuses research-pending/experimental profiles, so JS8 cannot accidentally become enabled through shared code.
+
+Host tests cover uniform-energy rejection, exact FT8 candidate recovery, FT4 recovery on a 2x time/frequency oversampled grid, JS8 research-pending rejection, non-finite energy rejection, and optimized + ASan/UBSan builds.
+
+This slice does not perform FFT/channelization and does not claim detection performance on RF. The next slice is candidate-local tone-energy/soft-bit demodulation driven by ModeProfile, initially FT8/FT4 only.

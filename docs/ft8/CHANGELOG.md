@@ -63,3 +63,13 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Added exact FT8 and FT4 timing, tone, frame, Costas, FEC-family and payload-transform metadata.
 - Added optimized + ASan/UBSan host tests and CI coverage.
 - No UI-owned files, existing DSP/demod/audio path, main.cpp glue, transmit path, or firmware binding were changed.
+
+
+## 2026-10-07 — Phase 1 slice 5: shared sync candidate scorer
+
+- Added a pure C++ ModeProfile-driven synchronization scorer over an abstract spectral-energy grid.
+- Added configurable time/frequency oversampling geometry so the search is not tied to one FFT layout.
+- Added local competing-tone normalization, bounded candidate ranking, and non-maximum suppression without heap allocation.
+- The sync score is documented as a dimensionless contrast metric, not SNR.
+- FT8 and FT4 synthetic sync searches pass optimized + ASan/UBSan tests; JS8 research-pending profiles are explicitly refused.
+- No FFT/channelizer, firmware binding, UI-owned file, existing audio path, or transmit code was changed.

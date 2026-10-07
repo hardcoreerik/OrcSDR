@@ -34,6 +34,11 @@ run_suite ft8_mode_tests \
   tests/ft8_mode_tests.cpp \
   apps/orcsdr-tab5/ui/ft8_mode.cpp
 
+run_suite ft8_sync_tests \
+  tests/ft8_sync_tests.cpp \
+  apps/orcsdr-tab5/ui/ft8_mode.cpp \
+  apps/orcsdr-tab5/ui/ft8_sync.cpp
+
 run_suite ft8_codec_tests \
   tests/ft8_codec_tests.cpp \
   apps/orcsdr-tab5/ui/ft8_codec.cpp
@@ -59,4 +64,4 @@ g++ "${orcdial_common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-p
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$build_dir/orcdial_ft8_controller_tests_sanitized"
 
-echo "FT8 UI/model/Hunter + native ModeProfile/codec/LDPC/NMS + OrcDial host tests: PASS"
+echo "FT8 UI/model/Hunter + native ModeProfile/sync/codec/LDPC/NMS + OrcDial host tests: PASS"
