@@ -24,7 +24,9 @@ bool format_utc(char* output, size_t output_size, uint32_t epoch);
 // turns it into the local time people type and read; it is applied by our own code, never through the TZ
 // environment variable, and survives reboots. Daylight saving is a manual offset change.
 int32_t utc_offset_minutes();
-bool set_utc_offset_minutes(int32_t minutes);        // clamped to UTC-12:00..UTC+14:00; in memory only
+bool set_utc_offset_minutes(int32_t minutes);        // in memory only; false (and unchanged) outside UTC-12:00..UTC+14:00
+// Sets and saves the offset together: on a failed save the previous offset is kept, so memory and NVS agree.
+bool store_utc_offset_minutes(NvsStore& store, int32_t minutes);
 void load_config(NvsStore& store);                   // call once after initialize()
 bool save_config(NvsStore& store);
 // "YYYY-MM-DD HH:MM:SS" at the configured offset (output_size >= 20).

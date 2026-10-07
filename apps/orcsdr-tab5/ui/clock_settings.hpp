@@ -36,6 +36,7 @@ bool valid(const LocalTime& local);
 bool valid_calendar(const LocalTime& local);
 
 int32_t clamp_offset(int32_t minutes);
+bool valid_offset(int32_t minutes);   // inside UTC-12:00..UTC+14:00 (no clamping)
 // One 15-minute step in `direction` (+1 or -1), kept inside the supported range.
 int32_t step_offset(int32_t minutes, int direction);
 

@@ -2,6 +2,7 @@
 """Set a Tab5 hardware clock from this computer without internet access."""
 
 import argparse
+import re
 import sys
 import time
 from pathlib import Path
@@ -29,6 +30,12 @@ def tz_set_command(minutes: int) -> str:
     if not MIN_OFFSET_MINUTES <= minutes <= MAX_OFFSET_MINUTES:
         raise ValueError("UTC offset must be between -720 and 840 minutes")
     return f"ORC_TZ_SET {minutes}"
+
+
+def status_offset_minutes(status_line: str):
+    """The offset_min value in an ORC_RTC_STATUS line, or None when absent."""
+    match = re.search(r"offset_min=(-?\d+)", status_line)
+    return int(match.group(1)) if match else None
 
 
 def main() -> None:

@@ -72,9 +72,9 @@ bool set_utc(uint32_t epoch) {
 int32_t utc_offset_minutes() { return g_offset_minutes.load(std::memory_order_acquire); }
 
 bool set_utc_offset_minutes(int32_t minutes) {
-  const int32_t clamped = clock_settings::clamp_offset(minutes);
-  g_offset_minutes.store(clamped, std::memory_order_release);
-  return clamped == minutes;
+  if (clock_settings::clamp_offset(minutes) != minutes) return false;   // reject, never silently clamp
+  g_offset_minutes.store(minutes, std::memory_order_release);
+  return true;
 }
 
 void load_config(NvsStore& store) {
@@ -83,6 +83,14 @@ void load_config(NvsStore& store) {
 
 bool save_config(NvsStore& store) {
   return store.put_i32(kOffsetKey, g_offset_minutes.load(std::memory_order_acquire));
+}
+
+bool store_utc_offset_minutes(NvsStore& store, int32_t minutes) {
+  const int32_t previous = utc_offset_minutes();
+  if (!set_utc_offset_minutes(minutes)) return false;
+  if (save_config(store)) return true;
+  g_offset_minutes.store(previous, std::memory_order_release);
+  return false;
 }
 
 bool format_local(char* output, size_t output_size, uint32_t epoch) {

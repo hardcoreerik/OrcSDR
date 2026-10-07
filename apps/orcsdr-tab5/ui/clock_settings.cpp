@@ -66,6 +66,8 @@ int32_t clamp_offset(int32_t minutes) {
   return minutes < kMinOffsetMinutes ? kMinOffsetMinutes : minutes > kMaxOffsetMinutes ? kMaxOffsetMinutes : minutes;
 }
 
+bool valid_offset(int32_t minutes) { return minutes >= kMinOffsetMinutes && minutes <= kMaxOffsetMinutes; }
+
 int32_t step_offset(int32_t minutes, int direction) {
   const int32_t current = clamp_offset(minutes);
   // Land on the 15-minute grid first, so an offset set by hand (or an older value) still steps cleanly.
