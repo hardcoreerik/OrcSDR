@@ -2,6 +2,7 @@
 #include "waterfall_style.hpp"
 #include "home_dashboard.hpp"
 #include "freq_keypad.hpp"
+#include "scope_canvas.hpp"
 
 #include "dashboard_audio_control.hpp"
 #include "orc_badge.hpp"
@@ -359,7 +360,8 @@ void format_spectrum_frequency(char* output, size_t output_size, uint32_t freque
     snprintf(output, output_size, "%.1f kHz", frequency_hz / 1000.0);
 }
 
-void draw_spectrum_axis() {
+// The frequency axis along the bottom of the plot, drawn into the off-screen trace sprite (`w` x `h`).
+void draw_spectrum_axis(M5Canvas& canvas, int w, int h) {
   const uint32_t half_span = current.span_hz / 2u;
   const uint32_t low = current.frequency_hz > half_span ? current.frequency_hz - half_span : 0u;
   const uint32_t high = current.frequency_hz + half_span;
@@ -367,12 +369,16 @@ void draw_spectrum_axis() {
   format_spectrum_frequency(low_text, sizeof(low_text), low);
   format_spectrum_frequency(center_text, sizeof(center_text), current.frequency_hz);
   format_spectrum_frequency(high_text, sizeof(high_text), high);
-  M5.Display.fillRect(kPlotX + 1, kSpectrumY + kSpectrumH - 23, kPlotW - 2, 22, TFT_BLACK);
-  text(low_text, kPlotX + 5, kSpectrumY + kSpectrumH - 11, TFT_LIGHTGREY, 2);
-  text(center_text, kPlotX + kPlotW / 2, kSpectrumY + kSpectrumH - 11, TFT_LIGHTGREY, 2,
-       middle_center);
-  text(high_text, kPlotX + kPlotW - 5, kSpectrumY + kSpectrumH - 11, TFT_LIGHTGREY, 2,
-       middle_right);
+  canvas.fillRect(0, h - 22, w, 22, TFT_BLACK);
+  canvas.setFont(nullptr);
+  canvas.setTextSize(2);
+  canvas.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  canvas.setTextDatum(middle_left);
+  canvas.drawString(low_text, 4, h - 10);
+  canvas.setTextDatum(middle_center);
+  canvas.drawString(center_text, w / 2, h - 10);
+  canvas.setTextDatum(middle_right);
+  canvas.drawString(high_text, w - 4, h - 10);
 }
 
 // One "< LABEL value >" group in the control row; the arrows are the touch targets.
@@ -787,8 +793,6 @@ void draw_receiver_chrome(bool keep_graphics = false) {
   frame(kMainX, kMainY, kMainW, kMainH, kCyan, 12);
   text("SPECTRUM", kPlotX, 98, kCyan, 2);
   draw_band_label();
-  text(current.receiving ? "LIVE" : "READY", 1016, 98,
-       current.receiving ? kGreen : TFT_ORANGE, 1);
   if (keep_graphics) {
     M5.Display.drawRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, kDim);
     M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kDim);
@@ -1030,6 +1034,12 @@ void update(const Snapshot& snapshot) {
   M5.Display.endWrite();
 }
 
+// The trace and its axis are drawn off-screen and pushed in one go, and the new waterfall row is pushed as one
+// image, the same way the FM, AM, CB and P25 scopes do (scope_canvas.hpp). Erasing and redrawing the plot on the
+// display every frame, then filling the waterfall row column by column, is what made Home flicker.
+scope::Trace g_trace;
+uint16_t g_waterfall_row[kPlotW]{};
+
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor, bool audio_stressed) {
   if (!shown || browser || keypad || levels == nullptr || visible_bins < 2) return;
@@ -1043,13 +1053,15 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
         levels, first_bin, visible_bins, i, samples);
   }
   floor = home_spectrum_floor(spectrum_levels, samples, floor);
-  M5.Display.startWrite();
-  M5.Display.setClipRect(kPlotX + 1, kSpectrumY + 1, kPlotW - 2, kSpectrumH - 2);
-  M5.Display.fillRect(kPlotX + 1, kSpectrumY + 1, kPlotW - 2, kSpectrumH - 2,
-                      TFT_BLACK);
+  constexpr int w = kPlotW - 2;
+  constexpr int h = kSpectrumH - 2;
+  M5Canvas* canvas = g_trace.begin(w, h, TFT_BLACK);
+  // No memory for the sprite: leave the frame alone rather than scroll the waterfall under a stale spectrum.
+  if (canvas == nullptr) return;
+  const int origin_x = kPlotX + 1, origin_y = kSpectrumY + 1;
   for (int i = 1; i < 5; ++i) {
-    M5.Display.drawFastHLine(kPlotX, kSpectrumY + i * kSpectrumH / 5, kPlotW, kDim);
-    M5.Display.drawFastVLine(kPlotX + i * kPlotW / 5, kSpectrumY, kSpectrumH, kDim);
+    canvas->drawFastHLine(0, i * kSpectrumH / 5 - 1, w, kDim);
+    canvas->drawFastVLine(i * kPlotW / 5 - 1, 0, h, kDim);
   }
   floor -= kSpectrumFloorMarginDb;
   float strongest = floor;
@@ -1060,43 +1072,46 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   spectrum_ceiling_valid = true;
   const float range_db =
       std::max(kSpectrumMinRangeDb, spectrum_ceiling + kSpectrumHeadroomDb - floor);
-  const int trace_base = kSpectrumY + kSpectrumH - kSpectrumAxisBandPx;
+  const int trace_base = h - kSpectrumAxisBandPx + 1;
   const int trace_height = kSpectrumH - kSpectrumAxisBandPx - 4;
-  int px = kPlotX, py = trace_base;
+  int px = 0, py = trace_base;
   for (size_t i = 0; i < samples; ++i) {
     const float normalized = std::clamp((spectrum_levels[i] - floor) / range_db, 0.0f, 1.0f);
-    const int x = kPlotX + static_cast<int>(i * (kPlotW - 1) / (samples - 1));
+    const int x = static_cast<int>(i * (kPlotW - 1) / (samples - 1)) - 1;
     const int y = trace_base - static_cast<int>(normalized * trace_height);
-    if (i) M5.Display.drawLine(px, py, x, y, kGreen);
+    if (i) canvas->drawLine(px, py, x, y, kGreen);
     px = x; py = y;
   }
-  M5.Display.drawFastVLine(kPlotX + kPlotW / 2, kSpectrumY, kSpectrumH, kGreen);
+  canvas->drawFastVLine(kPlotW / 2 - 1, 0, h, kGreen);
   if ((filter_edges || current.edges_hint) && current.filter_bandwidth_hz > 0 && current.span_hz > 0) {
     // The receive filter as two lines either side of the tuned frequency.
     const int half = std::clamp<int>(
         static_cast<int>((static_cast<int64_t>(current.filter_bandwidth_hz) * kPlotW) /
                          (2 * static_cast<int64_t>(current.span_hz))),
         2, kPlotW / 2 - 2);
-    M5.Display.drawFastVLine(kPlotX + kPlotW / 2 - half, kSpectrumY, kSpectrumH, TFT_YELLOW);
-    M5.Display.drawFastVLine(kPlotX + kPlotW / 2 + half, kSpectrumY, kSpectrumH, TFT_YELLOW);
+    canvas->drawFastVLine(kPlotW / 2 - half - 1, 0, h, TFT_YELLOW);
+    canvas->drawFastVLine(kPlotW / 2 + half - 1, 0, h, TFT_YELLOW);
   }
-  M5.Display.clearClipRect();
-  draw_spectrum_axis();
+  draw_spectrum_axis(*canvas, w, h);
+  M5.Display.startWrite();
+  canvas->pushSprite(origin_x, origin_y);
+  M5.Display.endWrite();
+
+  // Waterfall: one colour row per frame, scrolled up by hardware and written as a single image. With a popup
+  // docked at the bottom it scrolls only the part above it.
   const int rows = waterfall_style::rows_per_frame(waterfall_style::Screen::home);
   const bool popup_over = gain_popup || filter_popup || mode_popup;
   const int waterfall_h = popup_over ? kPopY - 2 - (kWaterfallY + 1) : kWaterfallH - 2;
-  M5.Display.setScrollRect(kPlotX + 1, kWaterfallY + 1, kPlotW - 2, waterfall_h, TFT_BLACK);
-  M5.Display.scroll(0, -rows);
+  M5.Display.setScrollRect(origin_x, kWaterfallY + 1, w, waterfall_h, TFT_BLACK);
+  const float waterfall_range = waterfall_range_db(waterfall_contrast);
   for (size_t i = 0; i < samples; ++i) {
-    const float normalized = std::clamp(
-        (spectrum_levels[i] - floor) / waterfall_range_db(waterfall_contrast),
-        0.0f, 1.0f);
-    const int x = kPlotX + 1 + static_cast<int>(i * (kPlotW - 2) / samples);
-    const int x2 = kPlotX + 1 + static_cast<int>((i + 1) * (kPlotW - 2) / samples);
-    M5.Display.fillRect(x, kWaterfallY + 1 + waterfall_h - rows, std::max(1, x2 - x), rows,
-                        waterfall_color(normalized));
+    const float normalized = std::clamp((spectrum_levels[i] - floor) / waterfall_range, 0.0f, 1.0f);
+    const uint16_t color = waterfall_color(normalized);
+    const int x0 = static_cast<int>(i * w / samples);
+    const int x1 = std::max(x0 + 1, static_cast<int>((i + 1) * w / samples));
+    for (int x = x0; x < x1 && x < w; ++x) g_waterfall_row[x] = color;
   }
-  M5.Display.endWrite();
+  scope::scroll_waterfall(origin_x, kWaterfallY + waterfall_h, w, g_waterfall_row, rows);
 }
 
 Action handle_touch(int32_t x, int32_t y, bool pressed) {
