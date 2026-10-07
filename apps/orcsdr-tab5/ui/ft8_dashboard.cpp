@@ -127,7 +127,7 @@ void draw_header() {
 
 void draw_tabs() {
   static constexpr const char* labels[kTabCount] = {
-      "LIVE", "DECODES", "MAP", "BANDS", "HEARD", "SETUP"};
+      "LIVE", "DECODES", "MAP", "HUNTER", "HEARD", "SETUP"};
   for (int i = 0; i < kTabCount; ++i)
     button({i * kTabW + 4, kTabsY + 4, kTabW - 8, 82}, labels[i],
            static_cast<int>(g_tab) == i);
@@ -358,28 +358,118 @@ void draw_map() {
   if (row == 0) text("No decoded locators yet", cx(recent), 280, kMuted, 1);
 }
 
-Rect band_rect(size_t index) {
-  const int col = static_cast<int>(index % 4);
-  const int row = static_cast<int>(index / 4);
-  return {34 + col * 302, 162 + row * 124, 286, 106};
+constexpr Rect kHunterFast{34, 144, 206, 52};
+constexpr Rect kHunterDecode{250, 144, 226, 52};
+constexpr Rect kHunterStop{486, 144, 142, 52};
+constexpr Rect kHunterBest{638, 144, 286, 52};
+constexpr Rect kHunterStatus{934, 144, 304, 52};
+
+bool hunter_active() {
+  const HunterPhase phase = g_snapshot.hunter.phase;
+  return phase == HunterPhase::tuning ||
+         phase == HunterPhase::waiting_slot ||
+         phase == HunterPhase::observing ||
+         phase == HunterPhase::decoding;
 }
 
-void draw_bands() {
-  frame(kBody);
-  text("FT8 RECEIVE PRESETS", 42, 126, kCyan, 1, middle_left);
-  text("Tap a band to request its conventional FT8 dial frequency", 1238, 126, kMuted, 1, middle_right);
-  for (size_t i = 0; i < band_count(); ++i) {
-    const BandPreset* p = band(i);
-    if (!p) continue;
-    const Rect r = band_rect(i);
-    button(r, "", i == g_snapshot.selected_band);
-    char freq[32];
-    std::snprintf(freq, sizeof(freq), "%.3f MHz", static_cast<double>(p->dial_hz) / 1e6);
-    text(p->label, cx(r), r.y + 30, i == g_snapshot.selected_band ? kGreen : TFT_WHITE, 3);
-    text(freq, cx(r), r.y + 63, kCyan, 2);
-    text(p->common ? "COMMON" : "REGIONAL / CHECK", cx(r), r.y + 88,
-         p->common ? kGreen : kAmber, 1);
+uint16_t hunter_evidence_color(HunterEvidence evidence) {
+  switch (evidence) {
+    case HunterEvidence::quiet: return kMuted;
+    case HunterEvidence::energy: return kYellow;
+    case HunterEvidence::signature: return kCyan;
+    case HunterEvidence::decoded: return kGreen;
   }
+  return kMuted;
+}
+
+Rect hunter_band_rect(size_t index) {
+  const int col = static_cast<int>(index % 4);
+  const int row = static_cast<int>(index / 4);
+  return {34 + col * 302, 206 + row * 126, 286, 112};
+}
+
+void draw_hunter_band(size_t index) {
+  const BandPreset* preset = band(index);
+  if (!preset) return;
+  const HunterBandResult& result = g_snapshot.hunter.results[index];
+  const Rect r = hunter_band_rect(index);
+  const bool current = g_snapshot.hunter.current_band == index && hunter_active();
+  const bool best = g_snapshot.hunter.best_band == index && result.visited;
+  const bool selected = g_snapshot.selected_band == index;
+
+  uint16_t border = kGrid;
+  if (current) border = kYellow;
+  else if (best) border = kGreen;
+  else if (selected) border = kCyan;
+  else if (result.visited) border = hunter_evidence_color(result.evidence);
+
+  if (!hunter_active()) focus_nav::note(r.x, r.y, r.w, r.h);
+  M5.Display.fillRoundRect(r.x, r.y, r.w, r.h, 9, current ? kSelected : kPanel);
+  M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 9, border);
+
+  char value[48];
+  text(preset->label, r.x + 16, r.y + 24,
+       current || best ? kGreen : TFT_WHITE, 3, middle_left);
+  std::snprintf(value, sizeof(value), "%.3f MHz",
+                static_cast<double>(preset->dial_hz) / 1e6);
+  text(value, r.x + r.w - 14, r.y + 23, kCyan, 1, middle_right);
+
+  if (current) {
+    text(hunter_phase_name(g_snapshot.hunter.phase), r.x + 16, r.y + 58,
+         kYellow, 2, middle_left);
+  } else if (result.visited) {
+    text(hunter_evidence_name(result.evidence), r.x + 16, r.y + 58,
+         hunter_evidence_color(result.evidence), 2, middle_left);
+  } else {
+    text(preset->common ? "NOT CHECKED" : "OPTIONAL", r.x + 16, r.y + 58,
+         kMuted, 2, middle_left);
+  }
+
+  if (result.visited) {
+    std::snprintf(value, sizeof(value), "%u slot%s  %u sync",
+                  result.slots_observed, result.slots_observed == 1 ? "" : "s",
+                  result.sync_candidates);
+    text(value, r.x + 16, r.y + 88, kMuted, 1, middle_left);
+    std::snprintf(value, sizeof(value), "%u decoded", result.valid_decodes);
+    text(value, r.x + r.w - 14, r.y + 88,
+         result.valid_decodes ? kGreen : kMuted, 1, middle_right);
+  } else {
+    text("tap to listen here", r.x + 16, r.y + 88, kMuted, 1, middle_left);
+  }
+
+  if (best) text("BEST", r.x + r.w - 14, r.y + 58, kGreen, 1, middle_right);
+}
+
+void draw_hunter() {
+  frame(kBody);
+  text("FT8 HUNTER", 42, 124, kCyan, 1, middle_left);
+  text("QUIET -> ENERGY -> FT8 SIGNATURE -> VALID DECODE",
+       1238, 124, kMuted, 1, middle_right);
+
+  const bool active = hunter_active();
+  button(kHunterFast, "FAST HUNT",
+         active && g_snapshot.hunter.mode == HunterMode::fast, !active);
+  button(kHunterDecode, "DECODE HUNT",
+         active && g_snapshot.hunter.mode == HunterMode::decode, !active);
+  button(kHunterStop, "STOP", false, active);
+  const bool best_ready = !active && g_snapshot.hunter.best_band < band_count();
+  button(kHunterBest, "LISTEN BEST", best_ready, best_ready);
+
+  frame(kHunterStatus, kGrid);
+  char status[64];
+  if (active && g_snapshot.hunter.current_band < band_count()) {
+    const BandPreset* current = band(g_snapshot.hunter.current_band);
+    std::snprintf(status, sizeof(status), "%s  %s",
+                  current ? current->label : "--",
+                  hunter_phase_name(g_snapshot.hunter.phase));
+  } else {
+    std::snprintf(status, sizeof(status), "%s  %s",
+                  hunter_mode_name(g_snapshot.hunter.mode),
+                  hunter_phase_name(g_snapshot.hunter.phase));
+  }
+  text(status, cx(kHunterStatus), cy(kHunterStatus), active ? kYellow : kGreen, 1);
+
+  for (size_t i = 0; i < band_count(); ++i) draw_hunter_band(i);
 }
 
 void draw_heard() {
@@ -441,7 +531,7 @@ void draw_body() {
     case Tab::live: draw_live(); break;
     case Tab::decodes: draw_decodes(); break;
     case Tab::map: draw_map(); break;
-    case Tab::bands: draw_bands(); break;
+    case Tab::hunter: draw_hunter(); break;
     case Tab::heard: draw_heard(); break;
     case Tab::setup: draw_setup(); break;
     case Tab::count: break;
@@ -488,13 +578,26 @@ Action handle_touch(int32_t x, int32_t y) {
     draw();
     return {};
   }
-  if (g_tab == Tab::bands) {
-    for (size_t i = 0; i < band_count(); ++i) {
-      if (!hit(x, y, band_rect(i))) continue;
-      g_snapshot.selected_band = i;
-      draw();
-      const BandPreset* p = band(i);
-      return p ? Action{ActionKind::tune_band, p->dial_hz} : Action{};
+  if (g_tab == Tab::hunter) {
+    if (hit(x, y, kHunterFast) && !hunter_active())
+      return {ActionKind::start_hunt_fast};
+    if (hit(x, y, kHunterDecode) && !hunter_active())
+      return {ActionKind::start_hunt_decode};
+    if (hit(x, y, kHunterStop) && hunter_active())
+      return {ActionKind::stop_hunt};
+    if (hit(x, y, kHunterBest) && !hunter_active() &&
+        g_snapshot.hunter.best_band < band_count()) {
+      const BandPreset* best = band(g_snapshot.hunter.best_band);
+      return best ? Action{ActionKind::lock_hunter_best, best->dial_hz} : Action{};
+    }
+    if (!hunter_active()) {
+      for (size_t i = 0; i < band_count(); ++i) {
+        if (!hit(x, y, hunter_band_rect(i))) continue;
+        g_snapshot.selected_band = i;
+        draw();
+        const BandPreset* p = band(i);
+        return p ? Action{ActionKind::tune_band, p->dial_hz} : Action{};
+      }
     }
   }
   if (g_tab == Tab::decodes && hit(x, y, kClear))
@@ -509,7 +612,8 @@ const Snapshot& snapshot() { return g_snapshot; }
 
 bool self_check() {
   return static_cast<int>(Tab::count) == kTabCount && band_count() >= 10 &&
-         kAudioLowHz < kAudioHighHz && orcsdr::ft8::self_check();
+         kAudioLowHz < kAudioHighHz && orcsdr::ft8::self_check() &&
+         hunter_self_check();
 }
 
 }  // namespace orcsdr::ft8

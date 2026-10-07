@@ -1,15 +1,25 @@
 #pragma once
 
 #include "ft8_model.hpp"
+#include "ft8_hunter.hpp"
 
 #include <cstddef>
 #include <cstdint>
 
 namespace orcsdr::ft8 {
 
-enum class Tab : uint8_t { live, decodes, map, bands, heard, setup, count };
+enum class Tab : uint8_t { live, decodes, map, hunter, heard, setup, count };
 enum class DecoderState : uint8_t { unbound, armed, listening, decoding, ready, error };
-enum class ActionKind : uint8_t { none, home, tune_band, clear_decodes };
+enum class ActionKind : uint8_t {
+  none,
+  home,
+  tune_band,
+  clear_decodes,
+  start_hunt_fast,
+  start_hunt_decode,
+  stop_hunt,
+  lock_hunter_best
+};
 
 struct Action {
   ActionKind kind = ActionKind::none;
@@ -27,6 +37,7 @@ struct Snapshot {
   uint8_t last_slot_decodes = 0;
   size_t selected_band = 5;  // 20 m
   DecoderState decoder_state = DecoderState::unbound;
+  HunterSnapshot hunter{};
   Decode decodes[kDecodeCapacity]{};
   size_t decode_count = 0;
 };
