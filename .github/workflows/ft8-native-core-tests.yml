@@ -1,0 +1,33 @@
+name: FT8 Native Decoder Core
+
+on:
+  pull_request:
+    paths:
+      - apps/orcsdr-tab5/ui/ft8_codec.*
+      - tests/ft8_codec_tests.cpp
+      - tools/test-ft8.sh
+      - tools/test-ft8.ps1
+      - docs/ft8/**
+      - .github/workflows/ft8-native-core-tests.yml
+  push:
+    branches:
+      - main
+    paths:
+      - apps/orcsdr-tab5/ui/ft8_codec.*
+      - tests/ft8_codec_tests.cpp
+      - tools/test-ft8.sh
+      - tools/test-ft8.ps1
+      - docs/ft8/**
+      - .github/workflows/ft8-native-core-tests.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build and test native FT8 codec
+        run: bash tools/test-ft8.sh

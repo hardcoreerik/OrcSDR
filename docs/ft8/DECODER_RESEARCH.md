@@ -1,6 +1,6 @@
 # OrcSDR Native FT8 Decoder — Phase 0 Research
 
-Status: **PHASE 0 ONLY — implementation is blocked pending owner approval**
+Status: **PHASE 0 APPROVED 2026-10-07 — Phase 1 implementation is in progress on this branch**
 
 Research date: 2026-10-07
 
@@ -922,7 +922,7 @@ Please approve or change these decisions:
 11. **Integration timing:** keep this decoder branch core-only until the separate FT8 UI/backend seam lands on main or an integration branch. Do not cherry-pick UI work here during Phase 0.  
     **Recommendation: APPROVE.**
 
-**Phase 1 remains blocked until these decisions are approved.**
+**Owner approval was received on 2026-10-07. Phase 1 is now proceeding in isolated, host-tested slices; see `docs/ft8/PHASE1_IMPLEMENTATION.md`.**
 
 ---
 
@@ -1007,6 +1007,4 @@ https://www.gnu.org/licenses/agpl-3.0.html
 
 ## 25. Phase 0 stop gate
 
-Phase 0 is complete when this research document is reviewed, documentation-truth CI passes, and the owner approves or changes the decisions in Section 23.
-
-**Do not begin decoder implementation until owner approval.**
+**Satisfied 2026-10-07.** The owner approved the recommended workflow after Documentation Truth passed on draft PR #172. Phase 1 implementation is tracked in `docs/ft8/PHASE1_IMPLEMENTATION.md` and remains branch-only; `main` is read-only.
