@@ -63,12 +63,13 @@ bool Service::advance_scan() {
   if (state_.rf_state != RfState::scanning) return false;
   scan_.advance();
   if (scan_.complete()) {
-    state_.rf_state = RfState::idle;
-    state_.active_frequency_hz = 0;
     state_.scan_complete = true;
     const int strongest = scan_.strongest_index();
     state_.strongest_channel = strongest >= 0 ? static_cast<uint8_t>(strongest) : 0;
     state_.strongest_frequency_hz = scan_.strongest_frequency_hz();
+    state_.selected_channel = state_.strongest_channel;
+    state_.active_frequency_hz = state_.strongest_frequency_hz;
+    state_.rf_state = state_.active_frequency_hz ? RfState::listening : RfState::idle;
     return false;
   }
   state_.active_frequency_hz = scan_.current_frequency_hz();
