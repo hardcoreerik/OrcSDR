@@ -18,23 +18,27 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Install ESP-IDF 5.5.4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.14'
+
+      - name: Install ESP-IDF 5.5.4 deterministically
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $installer = Join-Path $env:RUNNER_TEMP 'esp-idf-tools-setup-online-2.4.1.exe'
-          Invoke-WebRequest -Uri 'https://github.com/espressif/idf-installer/releases/download/online-2.4.1/esp-idf-tools-setup-online-2.4.1.exe' -OutFile $installer
-          $p = Start-Process -FilePath $installer -ArgumentList @(
-            '/VERYSILENT','/SUPPRESSMSGBOXES','/SP-','/NOCANCEL',
-            '/IDFVERSION=v5.5.4','/CHECKPATH=no'
-          ) -PassThru
-          $p.WaitForExit()
-          do {
-            $children = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like 'esp-idf-tools-setup*' })
-            if ($children.Count) { Start-Sleep -Seconds 5 }
-          } while ($children.Count)
-          if (-not (Test-Path 'C:\Espressif\frameworks\esp-idf-v5.5.4\export.ps1')) {
-            throw 'ESP-IDF 5.5.4 installer did not create the expected framework path.'
+          $idf = 'C:\Espressif\frameworks\esp-idf-v5.5.4'
+          New-Item -ItemType Directory -Force -Path 'C:\Espressif\frameworks' | Out-Null
+          if (-not (Test-Path $idf)) {
+            git clone --branch v5.5.4 --depth 1 --recursive https://github.com/espressif/esp-idf.git $idf
+            if ($LASTEXITCODE -ne 0) { throw "ESP-IDF clone failed ($LASTEXITCODE)" }
+          }
+          Push-Location $idf
+          try {
+            & .\install.ps1 esp32p4
+            if ($LASTEXITCODE -ne 0) { throw "ESP-IDF install.ps1 failed ($LASTEXITCODE)" }
+          } finally { Pop-Location }
+          if (-not (Test-Path 'C:\Espressif\python_env\idf5.5_py3.14_env\Scripts\python.exe')) {
+            throw 'ESP-IDF did not create the Python 3.14 environment required by build-tab5-idf.ps1.'
           }
 
       - name: Build main and Weather branch with project PowerShell builder
