@@ -29,3 +29,13 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Verified every one of the 174 single-bit codeword corruptions produces a nonzero syndrome of weight three, matching the published column weight.
 - Added a fixed public-matrix-derived parity vector and extended optimized + ASan/UBSan host CI.
 - No soft LDPC decoder, RF/DSP integration, firmware build integration, transmit path, or hardware-validation claim is included in this slice.
+
+
+## 2026-10-07 — Phase 1 slice 3: normalized-min-sum LDPC decoder
+
+- Added a pure C++ normalized-min-sum LDPC soft decoder with fixed-size caller-owned scratch and early syndrome termination.
+- Refactored the public-domain FT8 sparse parity graph into one shared internal definition; NMS check adjacency is derived at compile time.
+- Added deterministic optimized + ASan/UBSan tests including the 255-iteration wrap guard.
+- Added a reproducible BPSK/AWGN normalization sweep; alpha 0.80 is the provisional synthetic-channel baseline, subject to re-test with real FT8 tone-derived LLRs.
+- Documented that LDPC convergence is not a valid FT8 decode; CRC and legal message plausibility remain mandatory downstream gates.
+- Host workspace measured 4,872 bytes; no Tab5/P4 performance or hardware-verification claim is made.

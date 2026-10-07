@@ -128,3 +128,56 @@ The completed LDPC correctness slice followed the original plan:
 4. generate fixed vectors and single/multi-bit corruption tests;
 5. cross-check the native encoder/checker against the public matrices;
 6. only after that, implement the independently designed normalized-min-sum decoder.
+
+
+## Slice 3 — normalized-min-sum LDPC soft decoder
+
+Implemented after Slice 2 passed both FT8-core CI and Documentation Truth.
+
+- Added `ft8_ldpc_decode.hpp/.cpp`: independently written normalized-min-sum Tanner-graph decoder.
+- LLR convention: positive favors bit 0; negative favors bit 1.
+- Moved the one public-domain FT8 sparse parity graph into `ft8_ldpc_graph.hpp`; both syndrome checking and soft decoding consume that same definition. Decoder check adjacency is derived at compile time rather than duplicated.
+- No heap allocation occurs in `decode()`. Caller-owned `Workspace` is 4,872 bytes on the host build and tests enforce a <=5,000-byte bound.
+- Already-valid hard decisions exit at iteration 0.
+- Every NMS iteration checks the syndrome and exits immediately on parity convergence.
+- A wider loop counter keeps the legal 255-iteration configuration bounded instead of wrapping.
+- NaN/non-finite LLRs and invalid normalization/LLR-limit configuration are rejected.
+
+### Truth boundary
+
+`Result::converged` means **LDPC parity convergence only**. It is not an accepted FT8 decode. A noisy observation can converge to a different valid LDPC codeword. The later pipeline must pass CRC-14 and legal message unpack/plausibility checks before producing an `orcsdr::ft8::Decode`.
+
+### Provisional normalization measurement
+
+A deterministic host BPSK/AWGN benchmark uses the same 2,000 codewords/noise samples for every normalization factor at a given sigma:
+
+| sigma | alpha | converged / 2000 | wrong valid codeword | avg iterations |
+|---:|---:|---:|---:|---:|
+| 0.75 | 0.70 | 1680 | 1 | 7.66 |
+| 0.75 | 0.75 | 1719 | 2 | 7.38 |
+| 0.75 | **0.80** | **1731** | 2 | **7.32** |
+| 0.75 | 0.85 | 1727 | 2 | 7.49 |
+| 0.85 | 0.70 | 763 | 0 | 15.28 |
+| 0.85 | 0.75 | 816 | 0 | 14.94 |
+| 0.85 | **0.80** | **839** | 1 | **14.85** |
+| 0.85 | 0.85 | 826 | 1 | 15.01 |
+| 0.95 | 0.70 | 159 | 0 | 19.15 |
+| 0.95 | 0.75 | 189 | 0 | 19.02 |
+| 0.95 | **0.80** | **194** | 0 | **18.98** |
+| 0.95 | 0.85 | 188 | 0 | 19.03 |
+
+This supports **0.80 as the provisional synthetic-channel baseline**. It is not yet an FT8-optimal claim; tone-derived LLR statistics may move the optimum and must be re-swept after demodulation exists.
+
+The complete 24,000-decode sweep took 1.805 seconds on the current cloud host after the shared-graph refactor. This is a host-only measurement and says nothing about ESP32-P4 latency.
+
+Run it with:
+
+```bash
+bash tools/benchmark-ft8-ldpc.sh
+```
+
+Optimized and ASan/UBSan regression tests cover clean iteration-0 exit, deterministic ten-hard-error recovery, bounded non-convergence, invalid inputs, a 255-iteration no-wrap case, and 100 deterministic messages with six weak wrong hard decisions each.
+
+### Next slice
+
+Build the 77-bit source-message pack/unpack + CRC acceptance layer before spectral/demod work. This gives the FEC pipeline the required truth gate: parity convergence alone is never user-visible.

@@ -5,10 +5,15 @@ on:
     paths:
       - apps/orcsdr-tab5/ui/ft8_codec.*
       - apps/orcsdr-tab5/ui/ft8_ldpc.*
+      - apps/orcsdr-tab5/ui/ft8_ldpc_graph.hpp
+      - apps/orcsdr-tab5/ui/ft8_ldpc_decode.*
       - tests/ft8_codec_tests.cpp
       - tests/ft8_ldpc_tests.cpp
+      - tests/ft8_ldpc_decode_tests.cpp
+      - tests/ft8_ldpc_decode_benchmark.cpp
       - tools/test-ft8.sh
       - tools/test-ft8.ps1
+      - tools/benchmark-ft8-ldpc.sh
       - docs/ft8/**
       - .github/workflows/ft8-native-core-tests.yml
   push:
@@ -17,10 +22,15 @@ on:
     paths:
       - apps/orcsdr-tab5/ui/ft8_codec.*
       - apps/orcsdr-tab5/ui/ft8_ldpc.*
+      - apps/orcsdr-tab5/ui/ft8_ldpc_graph.hpp
+      - apps/orcsdr-tab5/ui/ft8_ldpc_decode.*
       - tests/ft8_codec_tests.cpp
       - tests/ft8_ldpc_tests.cpp
+      - tests/ft8_ldpc_decode_tests.cpp
+      - tests/ft8_ldpc_decode_benchmark.cpp
       - tools/test-ft8.sh
       - tools/test-ft8.ps1
+      - tools/benchmark-ft8-ldpc.sh
       - docs/ft8/**
       - .github/workflows/ft8-native-core-tests.yml
   workflow_dispatch:
