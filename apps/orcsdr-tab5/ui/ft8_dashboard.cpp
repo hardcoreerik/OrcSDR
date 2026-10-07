@@ -1,6 +1,7 @@
 #include "ft8_dashboard.hpp"
 
 #include "dashboard_audio_control.hpp"
+#include "ft8_decoder_backend.hpp"
 #include "focus_nav.hpp"
 
 #include <M5Unified.h>
@@ -68,6 +69,32 @@ void button(const Rect& r, const char* label, bool selected = false, bool enable
   text(label, cx(r), cy(r), enabled ? (selected ? kGreen : TFT_WHITE) : kMuted, size);
 }
 
+// The family name shown in the header and on the tab title.
+const char* family_title(DigitalMode mode) {
+  if (mode == DigitalMode::ft4) return "FT4 RX";
+  return mode_is_js8(mode) ? "JS8 RX" : "FT8 RX";
+}
+const char* family_brand(DigitalMode mode) {   // longer than 10 characters, so the smaller subtitle fits
+  if (mode == DigitalMode::ft4) return "FT4 RECEIVER";
+  return mode_is_js8(mode) ? "JS8 RECEIVER" : "FT8 RECEIVER";
+}
+// Only FT8 has a verified band table so far; the other modes must not show FT8's dial frequencies.
+bool mode_has_band_table(DigitalMode mode) { return mode == DigitalMode::ft8; }
+
+// "15", "7.5", "10", "6", "30", "4"
+void slot_seconds_text(char* out, size_t size, DigitalMode mode) {
+  const uint32_t ms = slot_ms(mode);
+  if (ms % 1000u == 0) std::snprintf(out, size, "%u", static_cast<unsigned>(ms / 1000u));
+  else std::snprintf(out, size, "%.1f", static_cast<double>(ms) / 1000.0);
+}
+
+// A mode can be chosen only when the bound decoder reports it. While no decoder is bound the dashboard stays on its
+// default FT8 and every other mode is unavailable; selecting a mode never makes it operational.
+bool mode_available(DigitalMode mode) {
+  if (g_snapshot.decoder_capabilities == 0) return mode == DigitalMode::ft8;
+  return mode_supported(g_snapshot.decoder_capabilities, mode);
+}
+
 const char* decoder_name() {
   switch (g_snapshot.decoder_state) {
     case DecoderState::unbound: return "UNBOUND";
@@ -116,18 +143,18 @@ void draw_header() {
   // Standard dashboard header: brand, divider, title block, then the shared controls on the right. The header
   // repaints only its own band; the screen is never cleared.
   M5.Display.fillRect(0, 0, 1280, 92, TFT_BLACK);
-  audio_header::draw_brand("FT8 RECEIVER");   // longer than 10 characters: the smaller subtitle fits above the rule
+  audio_header::draw_brand(family_brand(g_snapshot.mode));
   M5.Display.drawFastVLine(365, 18, 66, kCyan);
-  text("FT8 RX", 392, 38, TFT_WHITE, 4, middle_left);
+  text(family_title(g_snapshot.mode), 392, 38, TFT_WHITE, 4, middle_left);
   text("RECEIVE ONLY", 600, 40, kMuted, 1, middle_left);
 
   const BandPreset* preset = band(g_snapshot.selected_band);
   char label[48];
-  if (preset) {
+  if (preset && mode_has_band_table(g_snapshot.mode)) {
     std::snprintf(label, sizeof(label), "%s  %.3f MHz", preset->label,
                   static_cast<double>(preset->dial_hz) / 1e6);
   } else {
-    std::snprintf(label, sizeof(label), "BAND --");
+    std::snprintf(label, sizeof(label), preset ? "BAND TABLE PENDING" : "BAND --");
   }
   text(label, 392, 75, kCyan, 2, middle_left);
 
@@ -191,14 +218,14 @@ size_t cq_count() {
 // clears or repaints anything on screen.
 void draw_slot_dial() {
   constexpr int kW = 150, kH = 134, kCx = 75, kCy = 67, kRadius = 62, kX = 1091 - 75, kY = 279 - 67;
-  const SlotClock slot = slot_clock(g_snapshot.utc_ms);
+  const SlotClock slot = slot_clock(g_snapshot.utc_ms, g_snapshot.mode);
   g_drawn_tenth = g_snapshot.clock_valid ? slot.remaining_ms / 100u : UINT32_MAX - 1;
   if (!g_sprite_ready) return;
   g_dial.fillSprite(kPanel);
   g_dial.drawCircle(kCx, kCy, kRadius, kGrid);
   g_dial.drawCircle(kCx, kCy, kRadius - 1, kGrid);
   if (g_snapshot.clock_valid) {
-    const int progress = static_cast<int>(360u * slot.elapsed_ms / kSlotMs);
+    const int progress = static_cast<int>(360u * slot.elapsed_ms / slot.period_ms);
     g_dial.drawArc(kCx, kCy, kRadius, kRadius - 6, -90, -90 + progress, kGreen);
   }
   char value[16];
@@ -244,10 +271,11 @@ void draw_live_rows() {
 void draw_live() {
   const BandPreset* preset = band(g_snapshot.selected_band);
   char value[48];
-  std::snprintf(value, sizeof(value), preset ? "%.3f MHz" : "--",
-                preset ? preset->dial_hz / 1e6 : 0.0);
+  const bool have_table = preset != nullptr && mode_has_band_table(g_snapshot.mode);
+  std::snprintf(value, sizeof(value), have_table ? "%.3f MHz" : "--", have_table ? preset->dial_hz / 1e6 : 0.0);
   chip({24, 104, 212, 58}, "DIAL", value, TFT_WHITE);
-  chip({246, 104, 150, 58}, "MODE", "USB", TFT_WHITE);
+  chip({246, 104, 150, 58}, "MODE", mode_name(g_snapshot.mode),
+       mode_experimental(g_snapshot.mode) ? kAmber : TFT_WHITE);
   chip({406, 104, 210, 58}, "AUDIO PASS", "200-3000 Hz", TFT_WHITE);
   chip({626, 104, 190, 58}, "CLOCK", g_snapshot.clock_valid ? "LOCKED" : "NEEDED",
        g_snapshot.clock_valid ? kGreen : kAmber);
@@ -258,7 +286,10 @@ void draw_live() {
 
   const Rect wf{24, 176, 884, 294};
   frame(wf);
-  text("CURRENT 15 SECOND SLOT", 42, 194, kCyan, 1, middle_left);
+  char slot_text[16];
+  slot_seconds_text(slot_text, sizeof(slot_text), g_snapshot.mode);
+  std::snprintf(value, sizeof(value), "CURRENT %s SECOND SLOT", slot_text);
+  text(value, 42, 194, kCyan, 1, middle_left);
   M5.Display.fillRect(42, 214, 848, 224, 0x0021);
   for (int hz = 500; hz <= 3000; hz += 500) {
     const int x = 42 + (hz - kAudioLowHz) * 848 / (kAudioHighHz - kAudioLowHz);
@@ -282,7 +313,8 @@ void draw_live() {
 
   const Rect timer{926, 176, 330, 294};
   frame(timer);
-  text("15 SECOND SLOT", cx(timer), 199, kCyan, 1);
+  std::snprintf(value, sizeof(value), "%s SECOND SLOT", slot_text);
+  text(value, cx(timer), 199, kCyan, 1);
   const int center_x = cx(timer);
   draw_slot_dial();
   text(decoder_name(), center_x, 368, decoder_color(), 2);
@@ -535,16 +567,38 @@ void draw_heard() {
   if (out == 0) text("No decoded callsigns yet", 640, 350, kMuted, 2);
 }
 
+Rect mode_rect(size_t index) { return {42 + static_cast<int>(index) * 172, 140, 164, 60}; }
+
+void draw_mode_button(size_t index) {
+  const DigitalMode mode = static_cast<DigitalMode>(index);
+  const Rect r = mode_rect(index);
+  const bool available = mode_available(mode);
+  const bool selected = g_snapshot.mode == mode;
+  if (available) focus_nav::note(r.x, r.y, r.w, r.h);
+  const uint16_t border = !available ? TFT_DARKGREY : selected ? kGreen : kCyan;
+  M5.Display.fillRoundRect(r.x, r.y, r.w, r.h, 8, selected && available ? kSelected : kPanel);
+  M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 8, border);
+  text(mode_name(mode), cx(r), r.y + 22, !available ? kMuted : selected ? kGreen : TFT_WHITE, 2);
+  const char* sub = !available ? "UNAVAILABLE" : mode_experimental(mode) ? "EXPERIMENTAL" : selected ? "SELECTED" : "";
+  text(sub, cx(r), r.y + 46, !available ? kMuted : mode_experimental(mode) ? kAmber : kGreen, 1);
+}
+
 void setup_row(int row, const char* label, const char* value, uint16_t color) {
-  const int y = 150 + row * 68;
-  M5.Display.drawFastHLine(42, y + 48, 1196, kGrid);
-  text(label, 54, y + 22, kMuted, 2, middle_left);
-  text(value, 1226, y + 22, color, 2, middle_right);
+  const int y = 238 + row * 52;
+  M5.Display.drawFastHLine(42, y + 40, 1196, kGrid);
+  text(label, 54, y + 18, kMuted, 2, middle_left);
+  text(value, 1226, y + 18, color, 2, middle_right);
 }
 
 void draw_setup() {
   frame(kBody);
-  text("FT8 RX SETUP", 42, 126, kCyan, 1, middle_left);
+  text("RX SETUP   DECODE MODE", 42, 126, kCyan, 1, middle_left);
+  for (size_t i = 0; i < kDigitalModeCount; ++i) draw_mode_button(i);
+  char slot_text[16], line[96];
+  slot_seconds_text(slot_text, sizeof(slot_text), g_snapshot.mode);
+  std::snprintf(line, sizeof(line), "%s   %s SECOND SLOT   ONLY MODES THE DECODER REPORTS CAN BE SELECTED",
+                mode_name(g_snapshot.mode), slot_text);
+  text(line, 42, 214, kMuted, 1, middle_left);
   setup_row(0, "OPERATING MODE", "RX ONLY", kGreen);
   setup_row(1, "DECODER BINDING", decoder_name(), decoder_color());
   setup_row(2, "UTC SLOT CLOCK", g_snapshot.clock_valid ? "READY" : "NOT ESTABLISHED",
@@ -575,7 +629,8 @@ namespace {
 
 bool same_content(const Snapshot& a, const Snapshot& b) {
   // Everything the body draws, except the running clock (utc_ms), which has its own partial updates.
-  return a.clock_valid == b.clock_valid && a.receiver_running == b.receiver_running && a.gain_auto == b.gain_auto &&
+  return a.mode == b.mode && a.decoder_capabilities == b.decoder_capabilities && a.clock_valid == b.clock_valid &&
+         a.receiver_running == b.receiver_running && a.gain_auto == b.gain_auto &&
          a.gain_tenth_db == b.gain_tenth_db && a.candidate_count == b.candidate_count &&
          a.last_slot_decodes == b.last_slot_decodes && a.selected_band == b.selected_band &&
          a.decoder_state == b.decoder_state && a.decode_count == b.decode_count &&
@@ -611,7 +666,8 @@ void update(const Snapshot& snapshot_value) {
   g_snapshot = snapshot_value;
   g_snapshot.decode_count = std::min(g_snapshot.decode_count, kDecodeCapacity);
   g_snapshot.selected_band = std::min(g_snapshot.selected_band, band_count() - 1);
-  const bool header_changed = previous.selected_band != g_snapshot.selected_band ||
+  const bool header_changed = previous.mode != g_snapshot.mode ||
+                              previous.selected_band != g_snapshot.selected_band ||
                               previous.clock_valid != g_snapshot.clock_valid ||
                               previous.battery_percent != g_snapshot.battery_percent;
   if (!same_content(previous, g_snapshot) || header_changed) {
@@ -621,7 +677,7 @@ void update(const Snapshot& snapshot_value) {
   }
   if (g_snapshot.utc_ms / 1000u != g_drawn_second) draw_utc();
   if (g_tab == Tab::live) {
-    const SlotClock slot = slot_clock(g_snapshot.utc_ms);
+    const SlotClock slot = slot_clock(g_snapshot.utc_ms, g_snapshot.mode);
     const uint32_t tenth = g_snapshot.clock_valid ? slot.remaining_ms / 100u : UINT32_MAX - 1;
     if (tenth != g_drawn_tenth) draw_slot_dial();
   }
@@ -666,6 +722,15 @@ Action handle_touch(int32_t x, int32_t y) {
         const BandPreset* p = band(i);
         return p ? Action{ActionKind::tune_band, p->dial_hz} : Action{};
       }
+    }
+  }
+  if (g_tab == Tab::setup) {
+    for (size_t i = 0; i < kDigitalModeCount; ++i) {
+      if (!hit(x, y, mode_rect(i))) continue;
+      const DigitalMode mode = static_cast<DigitalMode>(i);
+      if (mode_available(mode) && mode != g_snapshot.mode)
+        return {ActionKind::select_mode, static_cast<uint32_t>(i)};
+      return {};   // an unavailable mode does nothing
     }
   }
   if (g_tab == Tab::decodes && hit(x, y, kClear))

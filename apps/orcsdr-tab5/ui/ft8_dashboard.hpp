@@ -17,7 +17,8 @@ enum class ActionKind : uint8_t {
   start_hunt_fast,
   start_hunt_decode,
   stop_hunt,
-  lock_hunter_best
+  lock_hunter_best,
+  select_mode          // value = a DigitalMode the user chose in SETUP
 };
 
 struct Action {
@@ -35,6 +36,8 @@ struct Snapshot {
   uint8_t candidate_count = 0;
   uint8_t last_slot_decodes = 0;
   size_t selected_band = 5;  // 20 m
+  DigitalMode mode = DigitalMode::ft8;
+  uint32_t decoder_capabilities = 0;   // DecoderCapability bits; 0 = no decoder bound
   DecoderState decoder_state = DecoderState::unbound;
   HunterSnapshot hunter{};
   Decode decodes[kDecodeCapacity]{};

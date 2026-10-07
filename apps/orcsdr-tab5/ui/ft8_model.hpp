@@ -11,6 +11,35 @@ constexpr uint16_t kAudioHighHz = 3000;
 constexpr size_t kDecodeCapacity = 64;
 constexpr size_t kVisibleDecodeRows = 8;
 
+// The weak-signal modes the dashboard can present. FT8 is the default and the only mode the existing backend contract
+// implies; the others are selectable only when the bound decoder reports support for them. JS8 60 is experimental: its
+// specification is unpublished, so it is carried only as a clearly marked profile.
+enum class DigitalMode : uint8_t {
+  ft8,
+  ft4,
+  js8_normal,
+  js8_fast,
+  js8_40,
+  js8_slow,
+  js8_60_experimental,
+  count
+};
+constexpr size_t kDigitalModeCount = static_cast<size_t>(DigitalMode::count);
+
+// Provenance a decode can carry. None of these changes what DecodeKind means (CQ / QSO / free text ...).
+enum DecodeFlags : uint16_t {
+  decode_flag_none = 0,
+  decode_flag_assisted = 1u << 0,        // a-priori (AP) assisted: not a plain over-the-air decode
+  decode_flag_hash_resolved = 1u << 1,   // a callsign was resolved from a receiver-side hash table
+  decode_flag_multi_frame = 1u << 2,     // assembled from several frames
+};
+
+uint32_t slot_ms(DigitalMode mode);          // FT8 15000, FT4 7500, JS8 Normal 15000, Fast 10000, 40 6000, Slow 30000, 60 4000
+const char* mode_name(DigitalMode mode);     // at most 10 characters
+bool mode_experimental(DigitalMode mode);
+bool mode_is_js8(DigitalMode mode);
+bool valid_mode(uint8_t value);
+
 struct BandPreset {
   const char* label;
   uint32_t dial_hz;
@@ -22,6 +51,7 @@ struct SlotClock {
   uint32_t elapsed_ms = 0;
   uint32_t remaining_ms = kSlotMs;
   bool first_half_minute = true;
+  uint32_t period_ms = kSlotMs;   // the selected mode's slot length
 };
 
 enum class DecodeKind : uint8_t { cq, qso, free_text, unknown };
@@ -36,6 +66,9 @@ struct Decode {
   char callsign[16]{};
   char grid[9]{};
   DecodeKind kind = DecodeKind::unknown;
+  // Appended after the original fields so existing positional initialisation keeps working.
+  DigitalMode mode = DigitalMode::ft8;
+  uint16_t flags = decode_flag_none;
 };
 
 struct GeoPoint {
@@ -47,7 +80,7 @@ struct GeoPoint {
 size_t band_count();
 const BandPreset* band(size_t index);
 size_t nearest_band(uint32_t dial_hz);
-SlotClock slot_clock(uint64_t utc_ms);
+SlotClock slot_clock(uint64_t utc_ms, DigitalMode mode = DigitalMode::ft8);
 DecodeKind classify_message(const char* message);
 bool maidenhead_valid(const char* locator);
 bool maidenhead_center(const char* locator, GeoPoint* out);

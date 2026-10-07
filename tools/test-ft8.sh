@@ -16,6 +16,14 @@ g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$build_dir/ft8_model_tests_sanitized"
 
+backend_sources=(tests/ft8_backend_tests.cpp apps/orcsdr-tab5/ui/ft8_model.cpp)
+g++ "${common[@]}" -O2 "${backend_sources[@]}" -o "$build_dir/ft8_backend_tests"
+"$build_dir/ft8_backend_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "${backend_sources[@]}" -o "$build_dir/ft8_backend_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$build_dir/ft8_backend_tests_sanitized"
+
 hunter_sources=(tests/ft8_hunter_tests.cpp apps/orcsdr-tab5/ui/ft8_model.cpp apps/orcsdr-tab5/ui/ft8_hunter.cpp)
 g++ "${common[@]}" -O2 "${hunter_sources[@]}" -o "$build_dir/ft8_hunter_tests"
 "$build_dir/ft8_hunter_tests"
@@ -33,4 +41,4 @@ g++ "${orcdial_common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-p
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$build_dir/orcdial_ft8_controller_tests_sanitized"
 
-echo "FT8 model, Hunter, and OrcDial semantic controller host tests: PASS"
+echo "FT8 model, decoder-backend seam, Hunter, and OrcDial semantic controller host tests: PASS"

@@ -56,6 +56,7 @@
 #include "orcsdr_storage.hpp"
 #include "am_dashboard.hpp"
 #include "ft8_dashboard.hpp"
+#include "ft8_decoder_backend.hpp"
 #include "ft8_hunter.hpp"
 #include "ft8_model.hpp"
 #include "shortwave_model.hpp"
@@ -12663,6 +12664,8 @@ orcsdr::ft8::DecodeStore g_ft8_store;
 orcsdr::ft8::Hunter g_ft8_hunter;
 size_t g_ft8_band = SIZE_MAX;       // index into the FT8 band table; resolved on first use
 size_t g_ft8_item = 0;              // one-based selected row for the OrcDial; 0 = none
+orcsdr::ft8::DigitalMode g_ft8_mode = orcsdr::ft8::DigitalMode::ft8;
+uint32_t g_ft8_capabilities = 0;    // DecoderCapability bits of the bound decoder; 0 = none bound
 
 size_t ft8_selected_band() {
   if (g_ft8_band >= orcsdr::ft8::band_count()) g_ft8_band = orcsdr::ft8::nearest_band(14074000);
@@ -12682,6 +12685,8 @@ orcsdr::ft8::Snapshot ft8_dashboard_snapshot() {
   snapshot.battery_percent = M5.Power.getBatteryLevel();
   snapshot.selected_band = ft8_selected_band();
   snapshot.decoder_state = orcsdr::ft8::DecoderState::unbound;
+  snapshot.mode = g_ft8_mode;
+  snapshot.decoder_capabilities = g_ft8_capabilities;
   snapshot.hunter = g_ft8_hunter.snapshot();
 #if !RTL_USE_LEGACY_USB
   if (g_rtl != nullptr && rtl_tuner_gain_available(rtl_ui_frequency_hz)) {
@@ -12732,6 +12737,15 @@ void handle_ft8_dashboard_action(const orcsdr::ft8::Action& action) {
       (void)ft8_select_band(orcsdr::ft8::nearest_band(action.value));
       break;
     case Kind::clear_decodes: g_ft8_store.clear(); g_ft8_item = 0; break;
+    case Kind::select_mode:
+      // A mode is selectable only when the bound decoder reports it; the dashboard already enforces this.
+      if (orcsdr::ft8::valid_mode(static_cast<uint8_t>(action.value)) &&
+          orcsdr::ft8::mode_supported(g_ft8_capabilities,
+                                      static_cast<orcsdr::ft8::DigitalMode>(action.value)))
+        g_ft8_mode = static_cast<orcsdr::ft8::DigitalMode>(action.value);
+      else
+        Serial.println("ORC_FT8_ERROR mode_unavailable");
+      break;
     case Kind::start_hunt_fast: (void)ft8_hunter_refused("hunt_fast"); break;
     case Kind::start_hunt_decode: (void)ft8_hunter_refused("hunt_decode"); break;
     case Kind::stop_hunt: g_ft8_hunter.stop(); break;

@@ -62,11 +62,50 @@ size_t nearest_band(uint32_t dial_hz) {
   return best;
 }
 
-SlotClock slot_clock(uint64_t utc_ms) {
+uint32_t slot_ms(DigitalMode mode) {
+  switch (mode) {
+    case DigitalMode::ft8: return 15000;
+    case DigitalMode::ft4: return 7500;
+    case DigitalMode::js8_normal: return 15000;
+    case DigitalMode::js8_fast: return 10000;
+    case DigitalMode::js8_40: return 6000;
+    case DigitalMode::js8_slow: return 30000;
+    case DigitalMode::js8_60_experimental: return 4000;
+    case DigitalMode::count: break;
+  }
+  return kSlotMs;
+}
+
+const char* mode_name(DigitalMode mode) {
+  switch (mode) {
+    case DigitalMode::ft8: return "FT8";
+    case DigitalMode::ft4: return "FT4";
+    case DigitalMode::js8_normal: return "JS8 NORMAL";
+    case DigitalMode::js8_fast: return "JS8 FAST";
+    case DigitalMode::js8_40: return "JS8 40";
+    case DigitalMode::js8_slow: return "JS8 SLOW";
+    case DigitalMode::js8_60_experimental: return "JS8 60 EXP";
+    case DigitalMode::count: break;
+  }
+  return "FT8";
+}
+
+bool mode_experimental(DigitalMode mode) { return mode == DigitalMode::js8_60_experimental; }
+
+bool mode_is_js8(DigitalMode mode) {
+  return mode == DigitalMode::js8_normal || mode == DigitalMode::js8_fast || mode == DigitalMode::js8_40 ||
+         mode == DigitalMode::js8_slow || mode == DigitalMode::js8_60_experimental;
+}
+
+bool valid_mode(uint8_t value) { return value < static_cast<uint8_t>(DigitalMode::count); }
+
+SlotClock slot_clock(uint64_t utc_ms, DigitalMode mode) {
   SlotClock result{};
-  result.slot_index = static_cast<uint32_t>(utc_ms / kSlotMs);
-  result.elapsed_ms = static_cast<uint32_t>(utc_ms % kSlotMs);
-  result.remaining_ms = kSlotMs - result.elapsed_ms;
+  const uint32_t period = slot_ms(mode);
+  result.period_ms = period;
+  result.slot_index = static_cast<uint32_t>(utc_ms / period);
+  result.elapsed_ms = static_cast<uint32_t>(utc_ms % period);
+  result.remaining_ms = period - result.elapsed_ms;
   const uint32_t second_in_minute = static_cast<uint32_t>((utc_ms / 1000u) % 60u);
   result.first_half_minute = second_in_minute < 30;
   return result;
@@ -242,11 +281,15 @@ bool self_check() {
   const auto first = slot_clock(0);
   const auto boundary = slot_clock(15000);
   const auto late = slot_clock(44999);
+  const auto ft4_a = slot_clock(7499, DigitalMode::ft4);
+  const auto ft4_b = slot_clock(7500, DigitalMode::ft4);
   GeoPoint fn42{};
   char call[16]{}, grid[9]{};
   return band_count() >= 10 && band(5) && band(5)->dial_hz == 14074000 &&
          nearest_band(14074100) == 5 && first.elapsed_ms == 0 &&
          first.remaining_ms == 15000 && boundary.elapsed_ms == 0 &&
+         ft4_a.remaining_ms == 1 && ft4_b.elapsed_ms == 0 && ft4_b.slot_index == 1 &&
+         ft4_b.period_ms == 7500 && slot_ms(DigitalMode::js8_slow) == 30000 &&
          boundary.slot_index == 1 && late.elapsed_ms == 14999 &&
          !late.first_half_minute && maidenhead_center("FN42", &fn42) &&
          fn42.latitude > 41.0f && fn42.latitude < 43.0f &&
