@@ -1,6 +1,7 @@
 #include "focus_nav.hpp"
 #include "waterfall_style.hpp"
 #include "home_dashboard.hpp"
+#include "freq_keypad.hpp"
 
 #include "dashboard_audio_control.hpp"
 #include "orc_badge.hpp"
@@ -69,6 +70,8 @@ Snapshot current{};
 bool shown = false;
 bool browser = false;
 bool gain_popup = false;
+bool keypad = false;
+char keypad_entry[12]{};
 bool filter_popup = false;
 bool filter_edges = false;   // draw the receive-filter edges on the spectrum
 size_t browser_page = 0;
@@ -577,6 +580,11 @@ void filter_preset_rect(int i, int n, int* x, int* w) {
   *x = kAutoX + i * (width + 10);
 }
 
+// Direct tuning in MHz across the dongle's whole range; the Tab5 validates again before it tunes.
+void draw_keypad() {
+  freq_keypad::draw(kSpectrumY, TFT_BLACK, "ENTER FREQUENCY", "24.0 - 1766.0", "MHz", keypad_entry);
+}
+
 void draw_filter_popup() {
   const auto& standards = filter_standards::standards(current.filter_kind);
   M5.Display.fillRoundRect(kPopX, kPopY, kPopW, kPopH, 12, TFT_BLACK);
@@ -701,20 +709,28 @@ void draw_footer() {
   draw_footer_level();
 }
 
-void draw_receiver_chrome() {
+// keep_graphics: repaint after a popup closes without wiping the live spectrum and waterfall. Only the part the popup
+// covered is cleared; the spectrum redraws on its next frame and the waterfall refills as it scrolls.
+void draw_receiver_chrome(bool keep_graphics = false) {
   frame(kMainX, kMainY, kMainW, kMainH, kCyan, 12);
   text("SPECTRUM", kPlotX, 98, kCyan, 2);
   text(current.receiving ? "LIVE" : "READY", 1016, 98,
        current.receiving ? kGreen : TFT_ORANGE, 1);
   draw_gain_chip();
-  M5.Display.fillRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, TFT_BLACK);
-  M5.Display.drawRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, kDim);
-  for (int i = 1; i < 5; ++i) {
-    M5.Display.drawFastHLine(kPlotX, kSpectrumY + i * kSpectrumH / 5, kPlotW, kDim);
-    M5.Display.drawFastVLine(kPlotX + i * kPlotW / 5, kSpectrumY, kSpectrumH, kDim);
+  if (keep_graphics) {
+    M5.Display.fillRect(kPopX, kPopY, kPopW, kPopH, TFT_BLACK);
+    M5.Display.drawRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, kDim);
+    M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kDim);
+  } else {
+    M5.Display.fillRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, TFT_BLACK);
+    M5.Display.drawRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, kDim);
+    for (int i = 1; i < 5; ++i) {
+      M5.Display.drawFastHLine(kPlotX, kSpectrumY + i * kSpectrumH / 5, kPlotW, kDim);
+      M5.Display.drawFastVLine(kPlotX + i * kPlotW / 5, kSpectrumY, kSpectrumH, kDim);
+    }
+    M5.Display.fillRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, TFT_BLACK);
+    M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kDim);
   }
-  M5.Display.fillRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, TFT_BLACK);
-  M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kDim);
   draw_frequency();
   draw_mode_chip(current.mode[0] ? current.mode : "--");
   draw_tuning_controls();
@@ -815,6 +831,7 @@ Action tap_action(int32_t x, int32_t y) {
   if (inside(x, y, kContrastUpX, kContrastY, kContrastButtonW, kContrastButtonH))
     return {ActionKind::waterfall_contrast_up};
   if (inside(x, y, kModeX, kReadoutY, kModeW, kReadoutH)) return {ActionKind::mode_next};
+  if (inside(x, y, kPlotX, kReadoutY, 350, kReadoutH)) return {ActionKind::keypad_open};
   if (inside(x, y, kPaletteX, kReadoutY, kPaletteW, kReadoutH))
     return {ActionKind::waterfall_palette_next};
   if (inside(x, y, kSpeedX, kReadoutY, kSpeedW, kReadoutH))
@@ -869,22 +886,28 @@ void enter(const Snapshot& snapshot) {
   browser = false;
   gain_popup = false;
   filter_popup = false;
+  keypad = false;
   gesture = {};
   last_spectrum_ms = 0;
   clamp_scroll();
   draw_all();
 }
 
-void leave() { shown = browser = gain_popup = filter_popup = false; gesture = {}; }
+void leave() { shown = browser = gain_popup = filter_popup = keypad = false; gesture = {}; }
 
 void draw() {
   if (!shown) return;
   if (browser) draw_browser();
+  else if (keypad) draw_keypad();
   else draw_all();
 }
 
 void update(const Snapshot& snapshot) {
   if (!shown || browser || snapshot.revision == current.revision) return;
+  if (keypad) {   // keep the state current underneath; nothing repaints until the keypad closes
+    current = snapshot;
+    return;
+  }
   const bool tuner_changed = snapshot.tuner_revision != current.tuner_revision;
   const bool audio_changed = snapshot.audio_revision != current.audio_revision;
   const bool status_changed = snapshot.status_revision != current.status_revision;
@@ -929,7 +952,7 @@ void update(const Snapshot& snapshot) {
 
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor, bool audio_stressed) {
-  if (!shown || browser || gain_popup || filter_popup || levels == nullptr || visible_bins < 2) return;
+  if (!shown || browser || keypad || gain_popup || filter_popup || levels == nullptr || visible_bins < 2) return;
   const uint32_t now = millis();
   const uint32_t interval = audio_stressed ? 333 : 100;
   if (now - last_spectrum_ms < interval) return;
@@ -997,6 +1020,29 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
 
 Action handle_touch(int32_t x, int32_t y, bool pressed) {
   if (!shown) return {};
+  if (keypad) {
+    if (pressed && !gesture.down) gesture = {true, false, false, x, y, scroll_offset_px};
+    if (pressed || !gesture.down) return {};
+    const int32_t tap_x = gesture.start_x, tap_y = gesture.start_y;
+    gesture = {};
+    const auto result = freq_keypad::handle_touch(tap_x, tap_y, keypad_entry, sizeof(keypad_entry));
+    if (result == freq_keypad::Result::cancelled) {
+      keypad = false;
+      keypad_entry[0] = '\0';
+      draw_all();
+    } else if (result == freq_keypad::Result::submitted) {
+      char* end = nullptr;
+      const double mhz = strtod(keypad_entry, &end);
+      if (end != keypad_entry && *end == '\0' && mhz >= 24.0 && mhz <= 1766.0) {
+        keypad = false;
+        keypad_entry[0] = '\0';
+        draw_all();
+        return {ActionKind::tune_frequency, dashboards::Id::count,
+                static_cast<uint32_t>(std::llround(mhz * 1000000.0))};
+      }
+    }
+    return {};
+  }
   if (pressed && !gesture.down) {
     gesture = {true, false, false, x, y, scroll_offset_px};
     if (!browser && inside(x, y, kListX + kListW - 18, kListY, 18, kListH) &&
@@ -1031,11 +1077,17 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
       draw_browser();
       return {};
     }
+    if (action.kind == ActionKind::keypad_open) {
+      keypad = true;
+      keypad_entry[0] = '\0';
+      draw_keypad();
+      return {};
+    }
     if (action.kind == ActionKind::gain_open || action.kind == ActionKind::gain_close) {
       gain_popup = action.kind == ActionKind::gain_open;
       M5.Display.startWrite();
       if (gain_popup) draw_gain_popup();
-      else draw_receiver_chrome();
+      else draw_receiver_chrome(true);
       M5.Display.endWrite();
       return {};
     }
@@ -1043,7 +1095,7 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
       filter_popup = action.kind == ActionKind::filter_open;
       M5.Display.startWrite();
       if (filter_popup) draw_filter_popup();
-      else draw_receiver_chrome();
+      else draw_receiver_chrome(true);
       M5.Display.endWrite();
       return {};
     }
@@ -1095,10 +1147,11 @@ void close_popup() {
   if (!popup_open()) return;
   gain_popup = filter_popup = false;
   M5.Display.startWrite();
-  draw_receiver_chrome();
+  draw_receiver_chrome(true);
   M5.Display.endWrite();
 }
 bool browser_active() { return shown && browser; }
+bool keypad_open() { return shown && !browser && keypad; }
 
 bool self_check() {
   const float levels[] = {60.0f, 60.0f, 60.0f, 84.0f};

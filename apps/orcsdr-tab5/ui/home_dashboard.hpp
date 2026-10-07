@@ -83,6 +83,7 @@ enum class ActionKind : uint8_t {
   gain_tenth_db,
   rtl_agc,
   mode_next,         // cycle AUTO, NFM, AM, WFM, USB, LSB for the band on screen
+  keypad_open,       // tap on the frequency readout
 };
 
 struct Action {
@@ -106,6 +107,8 @@ bool popup_open();
 int32_t list_scroll_px();
 void close_popup();
 bool browser_active();
+// The direct-tuning numpad is showing (the shared keyboard handler routes keys to it).
+bool keypad_open();
 bool self_check();
 
 }  // namespace orcsdr::home

@@ -3128,8 +3128,9 @@ bool home_full_range() {
 
 void home_apply_auto(const orcsdr::band_profile::Profile& profile, RtlBand band);
 
-bool home_tune_to(uint32_t frequency_hz) {
-  if (!home_full_range()) {
+// any_band: an explicitly typed frequency moves to whatever band it belongs to, even from MW, shortwave, CB...
+bool home_tune_to(uint32_t frequency_hz, bool any_band = false) {
+  if (!any_band && !home_full_range()) {
     const uint32_t clamped = rtl_clamp_frequency(rtl_ui_band, frequency_hz);
     if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
       return request_hot_retune(clamped);
@@ -12837,10 +12838,9 @@ void handle_home_action(const orcsdr::home::Action& action) {
       if (rtl_ui_band == RtlBand::p25) {
         cancel_p25_survey();
         tune_p25_control(action.value);
-      } else if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
-        request_hot_retune(action.value);
-      else
-        queue_local_rtl_listen(rtl_ui_band, action.value, false);
+      } else {
+        home_tune_to(action.value, true);   // typed: moves to whichever band the frequency belongs to
+      }
       break;
     case ActionKind::span_down:
     case ActionKind::span_up: {
@@ -14382,6 +14382,10 @@ bool orcdial_apply(const orc::Packet& p) {
     else open_dashboard(orcsdr::dashboards::Id(p.value));
     return true;
   }
+  if (p.type == orc::Type::tune_absolute) {
+    if (active != Dash::home || p.value < 24000000 || p.value > 1766000000) return false;
+    return home_tune_to(static_cast<uint32_t>(p.value), true);
+  }
   if (p.type == orc::Type::set_mode) {
     if (active != Dash::home || !home_full_range() || p.value < 1 || p.value > 5) return false;
     home_select_mode(static_cast<HomeDemod>(p.value));
@@ -14776,6 +14780,7 @@ void service_tap_queue() {
 // replayed as taps on its real buttons, so each dashboard's own validation and tuning run
 // unchanged; arrows move focus over the numpad's controls.
 bool shared_keypad_open() {
+  if (orcsdr::home::keypad_open()) return true;
   switch (rtl_ui_band) {
     case RtlBand::fm: return orcsdr::fm::keypad_open();
     case RtlBand::am: return orcsdr::am::keypad_open();

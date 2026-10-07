@@ -28,6 +28,27 @@ static orc::View view = orc::View::home;
 static int selected_index = 0;
 static int device_selection=0;
 static bool forget_confirmation=false;
+// Direct-tuning keypad, opened by a long press on the Home frequency.
+static char keypad_entry[12];
+static bool keypad_out_of_range = false;
+static bool hold_armed = false;
+static uint32_t hold_start_ms = 0;
+static void keypad_open() { keypad_entry[0] = 0; keypad_out_of_range = false; view = orc::View::keypad; }
+static void keypad_key(char key) {
+  const size_t length = strlen(keypad_entry);
+  keypad_out_of_range = false;
+  if (key == '\b') { if (length) keypad_entry[length - 1] = 0; }
+  else if (key == '.') { if (length && length < 8 && !strchr(keypad_entry, '.')) { keypad_entry[length] = '.'; keypad_entry[length + 1] = 0; } }
+  else if (key >= '0' && key <= '9') { if (length < 8) { keypad_entry[length] = key; keypad_entry[length + 1] = 0; } }
+}
+// Tune: MHz across the whole range; the Tab5 validates again and moves to the band the frequency belongs to.
+static void keypad_tune(bool online) {
+  char* end = nullptr;
+  const double mhz = strtod(keypad_entry, &end);
+  if (end == keypad_entry || *end || mhz < 24.0 || mhz > 1766.0) { keypad_out_of_range = true; return; }
+  if (online) (void)radio_link.command(orc::Type::tune_absolute, int32_t(mhz * 1000000.0 + 0.5));
+  view = orc::View::home;
+}
 static void device_activate() {
   const auto status=radio_link.security_status();
   pending_delta=0;
@@ -319,6 +340,7 @@ void loop() {
       else if (view == orc::View::home && home_tune) { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
       else view=orc::View::home;
     }
+    else if (view == orc::View::keypad) keypad_tune(online);
     else if (view == orc::View::home) {
       if (home_tune) focus = orc::next_focus(state.dashboard, focus);
       else { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
@@ -332,12 +354,18 @@ void loop() {
   const bool touching = M5Dial.Touch.getCount() > 0;
   if (touching && !touch_down) {
     const auto t = M5Dial.Touch.getDetail();
-    if (view == orc::View::connection) {
+    if (view == orc::View::keypad) {
+      const char key = orc::keypad_hit(t.x, t.y);
+      if (key == 'C') view = orc::View::home;
+      else if (key == 'T') keypad_tune(online);
+      else if (key) keypad_key(key);
+    } else if (view == orc::View::connection) {
       if(t.y>=130 && t.y<212){device_selection=(t.y-132)/27;if(device_selection>2)device_selection=2;device_activate();}
       else if(t.y>=212){forget_confirmation=false;view=orc::View::home;}
     } else if (view == orc::View::home) {
       if (t.y < 70 && t.x > 150) view = orc::View::connection;
       else if (home_tune && t.y >= 40 && t.y < 70) change(orc::Type::set_mode, state.mode >= 5 ? 1 : state.mode + 1);
+      else if (home_tune && t.y >= 88 && t.y < 142) { hold_armed = true; hold_start_ms = millis(); }
       else if (home_tune && t.y <= 175) focus = orc::next_focus(state.dashboard, focus);
       else { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
     } else if (view == orc::View::carousel) {
@@ -360,8 +388,15 @@ void loop() {
     else focus = orc::Focus::vfo;
   }
   touch_down = touching;
+  // A long press on the Home frequency opens the keypad; a short tap there still moves focus.
+  if (hold_armed) {
+    if (view != orc::View::home) hold_armed = false;
+    else if (!touching) { hold_armed = false; focus = orc::next_focus(state.dashboard, focus); }
+    else if (millis() - hold_start_ms >= 700) { hold_armed = false; keypad_open(); }
+  }
   if (millis() - last_draw_ms > 75) {
     orc::devices_state(radio_link.security_status(),device_selection,forget_confirmation);
+    orc::keypad_state(keypad_entry, keypad_out_of_range);
     orc::draw(state, focus, online, !ORCDIAL_DEMO && radio_link.pairing(),
               ORCDIAL_DEMO, view, orc::carousel[selected_index], pending_delta || radio_link.pending(),
               millis() - last_turn_ms < 700, reel_position, tune_style);

@@ -5,8 +5,12 @@
 
 namespace orc {
 enum class TuneStyle : uint8_t { reel, dial, odometer, tape, split, count };
-enum class View : uint8_t { home, carousel, dashboard, connection };
+enum class View : uint8_t { home, carousel, dashboard, connection, keypad };
 void splash();
+// Direct-tuning keypad (long press on the Home frequency): the entry text, whether to flag it as out of range, and
+// which key a touch landed on ('0'-'9', '.', '\b', 'C' cancel, 'T' tune, 0 for none).
+void keypad_state(const char* entry, bool out_of_range);
+char keypad_hit(int x, int y);
 void devices_state(const secure::Status& status,int selection,bool forget_confirmation);
 #ifdef ORCDIAL_DOC_CAPTURE
 void capture_frame(bool mark_demo = false);
