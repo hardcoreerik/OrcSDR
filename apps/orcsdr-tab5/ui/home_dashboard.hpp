@@ -46,6 +46,11 @@ struct Snapshot {
   char wifi_ip[16]{};
   char receiver[12] = "RTL-SDR";
   char mode[12]{};
+  // Mode popup: the pinned choice (0 = AUTO), the mode in use, the band's usual mode (all 0 AUTO, 1 NFM, 2 AM,
+  // 3 WFM, 4 USB, 5 LSB), whether Home may pick the mode here, and the band's name.
+  uint8_t mode_choice = 0, mode_active = 0, mode_suggested = 0;
+  bool mode_selectable = false;
+  char band[20]{};
   char clock[12]{};
   char date[20]{};
 };
@@ -82,7 +87,9 @@ enum class ActionKind : uint8_t {
   gain_auto,
   gain_tenth_db,
   rtl_agc,
-  mode_next,         // cycle AUTO, NFM, AM, WFM, USB, LSB for the band on screen
+  mode_open,         // tap on the mode chip
+  mode_close,
+  mode_set,          // value = 0 AUTO, 1 NFM, 2 AM, 3 WFM, 4 USB, 5 LSB
   keypad_open,       // tap on the frequency readout
 };
 

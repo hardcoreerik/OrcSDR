@@ -71,6 +71,7 @@ bool shown = false;
 bool browser = false;
 bool gain_popup = false;
 bool keypad = false;
+bool mode_popup = false;
 char keypad_entry[12]{};
 bool filter_popup = false;
 bool filter_edges = false;   // draw the receive-filter edges on the spectrum
@@ -585,6 +586,74 @@ void draw_keypad() {
   freq_keypad::draw(kSpectrumY, TFT_BLACK, "ENTER FREQUENCY", "24.0 - 1766.0", "MHz", keypad_entry);
 }
 
+// ---- Mode popup: pick the demodulation for the band on screen, with a plain-language note on each mode ------
+struct ModeHelp { const char* title; const char* line[3]; };
+constexpr ModeHelp kModeHelp[6] = {
+    {"AUTO", {"Uses the usual mode for the band you are tuned to.",
+              "It changes only when you cross into another band, never inside one.",
+              "Pick a mode yourself and OrcSDR remembers it for this band."}},
+    {"NFM: NARROW FM", {"Most two-way voice: police, fire, ham repeaters, marine, weather.",
+                        "Clear when the signal is centered, hissy when you are off it.",
+                        "If voices are crackly or very quiet, try AM (aircraft use it)."}},
+    {"AM", {"Aircraft voice (118-137 MHz), AM radio, CB and some utility stations.",
+            "The sound rises and falls with the strength of the signal.",
+            "Aircraft channels sit 25 kHz apart, so use the 25 kHz step."}},
+    {"WFM: WIDE FM", {"FM broadcast stations (88-108 MHz): music, talk and news.",
+                      "It needs a wide filter, so it sounds distorted on voice radios.",
+                      "US stations sit on odd tenths: 88.1, 88.3 ... 107.9."}},
+    {"USB: UPPER SIDEBAND", {"Ham voice on 10 m and 6 m, and some utility stations.",
+                             "Sounds like Donald Duck until you tune within about 100 Hz.",
+                             "Use a small step (100 Hz to 1 kHz) and tune slowly."}},
+    {"LSB: LOWER SIDEBAND", {"Ham voice by convention below 10 MHz; rare in this range.",
+                             "Like USB, it sounds garbled until tuned within about 100 Hz.",
+                             "If USB sounds wrong on a ham signal, try LSB."}},
+};
+constexpr const char* kModeLabel[6] = {"AUTO", "NFM", "AM", "WFM", "USB", "LSB"};
+
+void draw_mode_popup() {
+  M5.Display.fillRoundRect(kPopX, kPopY, kPopW, kPopH, 12, TFT_BLACK);
+  M5.Display.drawRoundRect(kPopX, kPopY, kPopW, kPopH, 12, kCyan);
+  M5.Display.drawRoundRect(kPopX + 1, kPopY + 1, kPopW - 2, kPopH - 2, 11, kCyan);
+  text("RECEIVER MODE", kPopX + 20, kPopY + 20, kCyan, 2);
+  text(current.band[0] ? current.band : "--", kPopX + kPopW - 20, kPopY + 20, kGreen, 2, middle_right);
+  for (int i = 0; i < 6; ++i) {
+    int x = 0, w = 0;
+    filter_preset_rect(i, 6, &x, &w);
+    popup_button(x, w, kModeLabel[i], current.mode_choice == i, current.mode_selectable);
+    if (i != 0 && current.mode_suggested == i && current.mode_selectable)
+      text("USUAL", x + w - 6, kPopButtonY + 8, kGreen, 1, middle_right);
+  }
+  popup_button(kCloseX, kCloseW, "CLOSE", false, true, kFilterRow2Y);
+  if (!current.mode_selectable) {
+    text("This band sets its own mode; its dashboard chooses it for you.", kPopX + 20, 288,
+         TFT_LIGHTGREY, 2);
+    return;
+  }
+  text(current.mode_choice == 0 ? "AUTO picks the usual mode here. Tap a mode to pin it."
+                                : "Pinned for this band. Tap AUTO to let OrcSDR choose.",
+       kPopX + 20, 288, TFT_LIGHTGREY, 2);
+  const int shown_mode = std::clamp<int>(current.mode_active ? current.mode_active : current.mode_choice, 1, 5);
+  char title[40];
+  snprintf(title, sizeof(title), current.mode_choice == 0 ? "%s (AUTO)" : "%s", kModeHelp[shown_mode].title);
+  text(title, kPopX + 20, 344, TFT_WHITE, 2);
+  for (int i = 0; i < 3; ++i)
+    text(kModeHelp[shown_mode].line[i], kPopX + 20, 372 + i * 28, TFT_LIGHTGREY, 2);
+}
+
+Action mode_popup_action(int32_t x, int32_t y) {
+  if (inside(x, y, kCloseX, kFilterRow2Y, kCloseW, kPopButtonH) ||
+      !inside(x, y, kPopX, kPopY, kPopW, kPopH))
+    return {ActionKind::mode_close};
+  if (!current.mode_selectable) return {};
+  for (int i = 0; i < 6; ++i) {
+    int px = 0, pw = 0;
+    filter_preset_rect(i, 6, &px, &pw);
+    if (inside(x, y, px, kPopButtonY, pw, kPopButtonH))
+      return {ActionKind::mode_set, dashboards::Id::count, static_cast<uint32_t>(i)};
+  }
+  return {};
+}
+
 void draw_filter_popup() {
   const auto& standards = filter_standards::standards(current.filter_kind);
   M5.Display.fillRoundRect(kPopX, kPopY, kPopW, kPopH, 12, TFT_BLACK);
@@ -739,6 +808,7 @@ void draw_receiver_chrome(bool keep_graphics = false) {
   draw_gain_panel();
   if (gain_popup) draw_gain_popup();
   if (filter_popup) draw_filter_popup();
+  if (mode_popup) draw_mode_popup();
 }
 
 void draw_browser() {
@@ -821,6 +891,7 @@ Action tap_action(int32_t x, int32_t y) {
     }
     return {};
   }
+  if (mode_popup) return mode_popup_action(x, y);
   if (gain_popup) return gain_popup_action(x, y);
   if (filter_popup) return filter_popup_action(x, y);
   if (inside(x, y, kGainX, kGainY, kGainW, kGainH)) return {ActionKind::gain_open};
@@ -830,7 +901,7 @@ Action tap_action(int32_t x, int32_t y) {
     return {ActionKind::waterfall_contrast_down};
   if (inside(x, y, kContrastUpX, kContrastY, kContrastButtonW, kContrastButtonH))
     return {ActionKind::waterfall_contrast_up};
-  if (inside(x, y, kModeX, kReadoutY, kModeW, kReadoutH)) return {ActionKind::mode_next};
+  if (inside(x, y, kModeX, kReadoutY, kModeW, kReadoutH)) return {ActionKind::mode_open};
   if (inside(x, y, kPlotX, kReadoutY, 350, kReadoutH)) return {ActionKind::keypad_open};
   if (inside(x, y, kPaletteX, kReadoutY, kPaletteW, kReadoutH))
     return {ActionKind::waterfall_palette_next};
@@ -886,6 +957,7 @@ void enter(const Snapshot& snapshot) {
   browser = false;
   gain_popup = false;
   filter_popup = false;
+  mode_popup = false;
   keypad = false;
   gesture = {};
   last_spectrum_ms = 0;
@@ -893,7 +965,7 @@ void enter(const Snapshot& snapshot) {
   draw_all();
 }
 
-void leave() { shown = browser = gain_popup = filter_popup = keypad = false; gesture = {}; }
+void leave() { shown = browser = gain_popup = filter_popup = mode_popup = keypad = false; gesture = {}; }
 
 void draw() {
   if (!shown) return;
@@ -927,6 +999,7 @@ void update(const Snapshot& snapshot) {
   if (tuner_changed) {
     draw_frequency();
     draw_mode_chip(current.mode);
+    if (mode_popup) draw_mode_popup();
   }
   if (audio_changed && !tuning_controls_changed) draw_step_size_controls();
   if (tuning_controls_changed) draw_tuning_controls();
@@ -952,7 +1025,7 @@ void update(const Snapshot& snapshot) {
 
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor, bool audio_stressed) {
-  if (!shown || browser || keypad || gain_popup || filter_popup || levels == nullptr || visible_bins < 2) return;
+  if (!shown || browser || keypad || gain_popup || filter_popup || mode_popup || levels == nullptr || visible_bins < 2) return;
   const uint32_t now = millis();
   const uint32_t interval = audio_stressed ? 333 : 100;
   if (now - last_spectrum_ms < interval) return;
@@ -1083,6 +1156,14 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
       draw_keypad();
       return {};
     }
+    if (action.kind == ActionKind::mode_open || action.kind == ActionKind::mode_close) {
+      mode_popup = action.kind == ActionKind::mode_open;
+      M5.Display.startWrite();
+      if (mode_popup) draw_mode_popup();
+      else draw_receiver_chrome(true);
+      M5.Display.endWrite();
+      return {};
+    }
     if (action.kind == ActionKind::gain_open || action.kind == ActionKind::gain_close) {
       gain_popup = action.kind == ActionKind::gain_open;
       M5.Display.startWrite();
@@ -1141,11 +1222,11 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
 }
 
 bool active() { return shown; }
-bool popup_open() { return shown && !browser && (gain_popup || filter_popup); }
+bool popup_open() { return shown && !browser && (gain_popup || filter_popup || mode_popup); }
 int32_t list_scroll_px() { return scroll_offset_px; }
 void close_popup() {
   if (!popup_open()) return;
-  gain_popup = filter_popup = false;
+  gain_popup = filter_popup = mode_popup = false;
   M5.Display.startWrite();
   draw_receiver_chrome(true);
   M5.Display.endWrite();

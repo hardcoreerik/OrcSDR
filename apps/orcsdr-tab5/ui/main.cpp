@@ -3229,12 +3229,6 @@ void home_select_mode(HomeDemod choice) {
   home_set_demod(choice == HomeDemod::by_band ? demod_for_mode(profile.mode) : choice, rtl_ui_band);
 }
 
-void home_mode_next() {
-  const auto& profile = orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz);
-  const uint8_t pin = band_mode_pin[static_cast<size_t>(profile.id)];
-  home_select_mode(static_cast<HomeDemod>((pin + 1) % 6));
-}
-
 void band_mode_load() {
   uint8_t stored[orcsdr::band_profile::kProfileCount] = {};
   if (preferences.getBytesLength("band_modes") != sizeof(stored)) return;
@@ -12395,6 +12389,11 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
                      : rtl_ui_band == RtlBand::lora      ? 125000
                                                           : band_step_hz(step_profile);
   // Only the bands whose step the STEP SIZE control can change; the rest are channels or decoder-owned.
+  snapshot.mode_selectable = home_full_range();
+  snapshot.mode_choice = band_mode_pin[static_cast<size_t>(step_profile.id)];
+  snapshot.mode_active = static_cast<uint8_t>(effective_demod(rtl_ui_band));
+  snapshot.mode_suggested = static_cast<uint8_t>(demod_for_mode(step_profile.mode));
+  strlcpy(snapshot.band, step_profile.name, sizeof(snapshot.band));
   snapshot.step_adjustable = home_full_range() ? orcsdr::band_profile::has_step_control(step_profile)
                                                : rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::shortwave;
   strlcpy(snapshot.mode,
@@ -12489,7 +12488,8 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
       snapshot.span_hz != previous.span_hz || snapshot.step_hz != previous.step_hz ||
       snapshot.filter_bandwidth_hz != previous.filter_bandwidth_hz ||
       snapshot.filter_kind != previous.filter_kind ||
-      strcmp(snapshot.mode, previous.mode) != 0;
+      strcmp(snapshot.mode, previous.mode) != 0 || snapshot.mode_choice != previous.mode_choice ||
+      snapshot.mode_selectable != previous.mode_selectable || strcmp(snapshot.band, previous.band) != 0;
   const bool audio_changed = previous.revision == 0 ||
                              snapshot.sound_enabled != previous.sound_enabled ||
                              snapshot.volume != previous.volume;
@@ -12882,7 +12882,9 @@ void handle_home_action(const orcsdr::home::Action& action) {
       }
       break;
     }
-    case ActionKind::mode_next: home_mode_next(); break;
+    case ActionKind::mode_set:
+      if (action.value <= static_cast<uint32_t>(HomeDemod::lsb)) home_select_mode(static_cast<HomeDemod>(action.value));
+      break;
     case ActionKind::sound_toggle:
       set_rtl_audio_user_enabled(
           !rtl_audio_user_enabled.load(std::memory_order_acquire));
