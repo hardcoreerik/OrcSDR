@@ -88,6 +88,7 @@ uint8_t waterfall_contrast = 5;
 // station is never drawn flat against the top edge and the scale does not pump.
 float spectrum_ceiling = 0.0f;
 bool spectrum_ceiling_valid = false;
+bool g_px_valid = false;   // the per-pixel smoothing and peak-hold state matches the view on screen
 constexpr float kSpectrumHeadroomDb = 5.0f;
 constexpr float kSpectrumMinRangeDb = 30.0f;
 // The frequency labels occupy the bottom 24 px of the plot, so the trace baseline sits above them,
@@ -962,6 +963,7 @@ void enter(const Snapshot& snapshot) {
   current = snapshot;
   shown = true;
   spectrum_ceiling_valid = false;
+  g_px_valid = false;   // old peak-hold dots must not linger from the last visit
   browser = false;
   gain_popup = false;
   filter_popup = false;
@@ -1047,7 +1049,6 @@ constexpr float kPeakFallDb = 0.4f;      // the peak-hold dots fall this much pe
 constexpr uint16_t kPeakColor = 0xFD20;  // orange, as on the FM scope
 EXT_RAM_BSS_ATTR float g_px_smooth[kPlotW]{};
 EXT_RAM_BSS_ATTR float g_px_peak[kPlotW]{};
-bool g_px_valid = false;
 uint32_t g_px_frequency_hz = 0, g_px_span_hz = 0;
 size_t g_px_first_bin = 0, g_px_visible_bins = 0;
 
@@ -1165,8 +1166,9 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
       keypad_error = true;
       keypad_entry[0] = '\0';
       draw_keypad();
-    } else if (result == freq_keypad::Result::changed) {
+    } else if (result == freq_keypad::Result::changed && keypad_error) {
       keypad_error = false;
+      draw_keypad();   // the banner says OUT OF RANGE until it is repainted
     }
     return {};
   }

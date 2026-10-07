@@ -61,7 +61,7 @@ bool g_clock_edit = false;
 bool g_clock_dirty = false;                 // a date or time field was touched, so re-derive nothing from the RTC
 clock_settings::LocalTime g_clock_local;
 int32_t g_clock_offset = 0;
-int32_t g_clock_original_offset = 0;       // the saved offset when the editor opened, restored by CANCEL
+bool g_ntp_tapped = false;                  // SYNC NTP was tapped and the new state has not arrived yet
 bool g_location_request_pending = false;
 char g_location_query[64]{};
 int8_t g_catalog_remove_armed = -1;
@@ -447,8 +447,8 @@ void draw_system() {
   button("SET CLOCK", 1000, 100, 218, 46, TFT_DARKCYAN);
   char value[48];
   draw_system_power();
-  value_row("LOCAL TIME", g_state.rtc_valid && g_state.rtc_local[0] ? g_state.rtc_local : "TIME NOT SET",
-            375, g_state.rtc_valid ? kGreen : TFT_ORANGE);
+  const bool local_known = g_state.rtc_valid && g_state.rtc_local[0];
+  value_row("LOCAL TIME", local_known ? g_state.rtc_local : "TIME NOT SET", 375, local_known ? kGreen : TFT_ORANGE);
   value_row("UTC TIME", g_state.rtc_valid ? g_state.rtc_utc : "TIME NOT SET",
             415, g_state.rtc_valid ? kGreen : TFT_ORANGE);
   clock_settings::format_offset(value, sizeof(value), g_state.utc_offset_minutes);
@@ -517,7 +517,7 @@ void draw_clock_editor() {
                      : g_state.wifi_connected ? "Wi-Fi is connected: SYNC NTP can set the clock (optional)."
                                               : "No Wi-Fi needed: set the time by hand.";
   text(note, 360, 500, g_state.ntp_state == 3 ? TFT_ORANGE : kMuted, 2);
-  const bool ntp_ready = g_state.wifi_connected && g_state.ntp_state != 1;
+  const bool ntp_ready = g_state.wifi_connected && g_state.ntp_state != 1 && !g_ntp_tapped;
   button("SYNC NTP", kNtpX, kClockActionY, kClockActionW, kClockActionH, ntp_ready ? TFT_DARKCYAN : TFT_DARKGREY);
   button("CANCEL", kCancelX, kClockActionY, kClockActionW, kClockActionH, TFT_MAROON);
   button("SAVE", kSaveX, kClockActionY, kClockActionW, kClockActionH, TFT_DARKGREEN);
@@ -527,7 +527,7 @@ void start_clock_edit() {
   g_clock_edit = true;
   g_clock_dirty = false;
   clock_load_fields();
-  g_clock_original_offset = g_clock_offset;
+  g_ntp_tapped = false;
   draw_clock_editor();
 }
 
@@ -550,36 +550,37 @@ Action handle_clock_editor(int x, int y) {
   if (offset_minus || offset_plus) {
     const int32_t next = clock_settings::step_offset(g_clock_offset, offset_plus ? 1 : -1);
     if (next == g_clock_offset) return {};
-    g_clock_offset = next;
-    g_state.utc_offset_minutes = static_cast<int16_t>(next);
+    g_clock_offset = next;   // nothing is stored until SAVE
     // If only the zone is being changed the RTC is already right: show the same instant in the new zone.
     clock_settings::LocalTime local;
     if (!g_clock_dirty && g_state.rtc_valid && clock_settings::utc_to_local(g_state.rtc_epoch, next, &local))
       g_clock_local = local;
     draw_clock_editor();
-    return {ActionKind::clock_offset_changed, next};
+    return {};
   }
   if (hit(x, y, kNtpX, kClockActionY, kClockActionW, kClockActionH))
-    return g_state.wifi_connected && g_state.ntp_state != 1 ? Action{ActionKind::clock_ntp_sync, 0} : Action{};
+  {
+    if (!g_state.wifi_connected || g_state.ntp_state == 1 || g_ntp_tapped) return {};
+    g_ntp_tapped = true;   // one request per tap, even before the new state is reported
+    return {ActionKind::clock_ntp_sync, 0};
+  }
   if (hit(x, y, kCancelX, kClockActionY, kClockActionW, kClockActionH)) {
-    g_clock_edit = false;
-    // The offset is saved as it is tapped, so CANCEL puts the saved value back.
-    const bool restore = g_clock_offset != g_clock_original_offset;
-    if (restore) g_state.utc_offset_minutes = static_cast<int16_t>(g_clock_original_offset);
+    g_clock_edit = false;   // nothing was stored, so there is nothing to undo
     draw_content();
-    return restore ? Action{ActionKind::clock_offset_changed, g_clock_original_offset} : Action{};
+    return {};
   }
   if (hit(x, y, kSaveX, kClockActionY, kClockActionW, kClockActionH)) {
-    if (!g_clock_dirty && g_state.rtc_valid) {   // only the zone changed; the RTC is already right
+    if (!g_clock_dirty && g_state.rtc_valid) {   // only the zone can have changed; the RTC is already right
       g_clock_edit = false;
       draw_content();
-      return {};
+      return g_clock_offset != g_state.utc_offset_minutes ? Action{ActionKind::clock_offset_changed, g_clock_offset}
+                                                           : Action{};
     }
     uint32_t utc = 0;
     if (!clock_settings::local_to_utc(g_clock_local, g_clock_offset, &utc)) return {};
     g_clock_edit = false;
     draw_content();
-    return {ActionKind::clock_set_utc, static_cast<int32_t>(utc)};
+    return {ActionKind::clock_set_utc, g_clock_offset, utc};
   }
   return {};
 }
@@ -863,6 +864,7 @@ void update(const State& state_value) {
                               strcmp(g_state.rtc_local, state_value.rtc_local) != 0 ||
                               g_state.utc_offset_minutes != state_value.utc_offset_minutes);
   const bool ntp_changed = g_state.ntp_state != state_value.ntp_state;
+  if (ntp_changed) g_ntp_tapped = false;
   const bool rtc_flipped = g_state.rtc_valid != state_value.rtc_valid;
   const bool catalog_changed = g_section == Section::data_maps &&
       (g_state.catalog_ready != state_value.catalog_ready || g_state.catalog_busy != state_value.catalog_busy ||
@@ -930,7 +932,15 @@ Action handle_touch(int32_t x, int32_t y) {
     return action;
   }
   if (g_edit != EditField::none) return handle_keypad(x, y);
-  if (g_clock_edit) return handle_clock_editor(x, y);
+  if (g_clock_edit) {
+    if (hit(x, y, 720, 13, 126, 46)) {   // CLOSE
+      g_clock_edit = false;
+      g_active = false;
+      return {ActionKind::close, 0};
+    }
+    if (x < kRailW && y >= kRailY) g_clock_edit = false;   // leaving through the rail abandons the edit
+    else return handle_clock_editor(x, y);
+  }
   if (hit(x, y, 720, 13, 126, 46)) {
     g_active = false;
     return {ActionKind::close, 0};

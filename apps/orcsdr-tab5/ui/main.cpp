@@ -13157,9 +13157,10 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       bump_rtl_ui();
       break;
     case orcsdr::settings::ActionKind::clock_set_utc:
-      if (orcsdr::time_service::set_utc(static_cast<uint32_t>(action.value)) &&
-          preferences.putBool("rtc_est", true)) {
-        Serial.printf("ORC_RTC_SET_OK utc=%lu source=touch\n", static_cast<unsigned long>(static_cast<uint32_t>(action.value)));
+      orcsdr::time_service::set_utc_offset_minutes(action.value);
+      if (!orcsdr::time_service::save_config(preferences)) Serial.println("ORC_TZ_ERROR persistence_failed");
+      if (orcsdr::time_service::set_utc(action.utc) && preferences.putBool("rtc_est", true)) {
+        Serial.printf("ORC_RTC_SET_OK utc=%lu source=touch\n", static_cast<unsigned long>(action.utc));
       } else {
         Serial.println("ORC_RTC_SET_ERROR touch_set_failed");
       }
@@ -13167,7 +13168,7 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       bump_rtl_ui();
       break;
     case orcsdr::settings::ActionKind::clock_ntp_sync:
-      if (wifi_connected && orcsdr::ntp_sync::start()) Serial.println("ORC_NTP_START");
+      if (orcsdr::ntp_sync::start(wifi_connected)) Serial.println("ORC_NTP_START");
       break;
     case orcsdr::settings::ActionKind::web_console_changed:
       settings_web_console_enabled = action.value != 0;

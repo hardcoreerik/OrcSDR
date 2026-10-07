@@ -75,6 +75,10 @@ void test_range_limits() {
   CHECK(!local_to_utc(at(2024, 1, 1, 0, 30), 60, &utc));
   CHECK(local_to_utc(at(2024, 1, 1, 1, 0), 60, &utc) && utc == 1704067200u);
   CHECK(!utc_to_local(0, 0, nullptr) && !local_to_utc(at(2026, 1, 1, 0, 0), 0, nullptr));
+  // The UTC bounds themselves convert for every offset, even when the local year is 2023 or 2100.
+  CHECK(utc_to_local(1704067200u, -15, &local) && local.year == 2023 && local.month == 12 && local.day == 31);
+  CHECK(utc_to_local(4102444799u, 14 * 60, &local) && local.year == 2100 && local.month == 1 && local.day == 1);
+  CHECK(!valid(local) && valid_calendar(local));
 }
 
 void test_offset_steps() {

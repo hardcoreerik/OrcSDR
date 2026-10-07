@@ -32,6 +32,8 @@ int days_in_month(int year, int month);
 
 // A real calendar date and time inside the supported years.
 bool valid(const LocalTime& local);
+// The same without the year limits (a UTC instant at the edge of the range can be 2023 or 2100 locally).
+bool valid_calendar(const LocalTime& local);
 
 int32_t clamp_offset(int32_t minutes);
 // One 15-minute step in `direction` (+1 or -1), kept inside the supported range.

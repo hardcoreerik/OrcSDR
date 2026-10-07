@@ -15,7 +15,7 @@ constexpr Profile kUs[] = {
     // id, name, low, high, mode, confidence, control, origin, step_count, default_step, steps, filter, owner
     {Id::hf_general, "HF", 0, 30000000, Mode::am, Confidence::low, Control::free_tune, 0,
      4, 1, {100, 1000, 5000, 10000}, Kind::am_shortwave, Owner::shortwave},
-    {Id::cb, "CB RADIO", 26965000, 27410000, Mode::am, Confidence::high, Control::channelized, 0,
+    {Id::cb, "CB RADIO", 26965000, 27410000, Mode::am, Confidence::high, Control::channelized, 26965000,
      1, 0, {10000}, Kind::cb_am, Owner::cb},
     {Id::ham_10m, "10 M HAM", 28000000, 29700000, Mode::usb, Confidence::low, Control::free_tune, 0,
      4, 1, {100, 1000, 5000, 10000}, Kind::cb_ssb, Owner::home},

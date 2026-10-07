@@ -52,7 +52,11 @@ int days_in_month(int year, int month) {
 }
 
 bool valid(const LocalTime& local) {
-  return local.year >= kMinYear && local.year <= kMaxYear && local.month >= 1 && local.month <= 12 &&
+  return local.year >= kMinYear && local.year <= kMaxYear && valid_calendar(local);
+}
+
+bool valid_calendar(const LocalTime& local) {
+  return local.month >= 1 && local.month <= 12 &&
          local.day >= 1 && local.day <= days_in_month(local.year, local.month) && local.hour >= 0 &&
          local.hour <= 23 && local.minute >= 0 && local.minute <= 59 && local.second >= 0 &&
          local.second <= 59;
@@ -81,7 +85,7 @@ bool utc_to_local(uint32_t utc, int32_t offset_minutes, LocalTime* local) {
   result.hour = static_cast<int>(seconds / 3600);
   result.minute = static_cast<int>(seconds % 3600 / 60);
   result.second = static_cast<int>(seconds % 60);
-  if (!valid(result)) return false;
+  if (!valid_calendar(result)) return false;
   *local = result;
   return true;
 }
@@ -153,7 +157,11 @@ bool self_check() {
   return utc_to_local(kMinUtc, 0, &local) && local.year == 2024 && local.month == 1 && local.day == 1 &&
          local_to_utc(local, 0, &utc) && utc == kMinUtc && format_local(text, sizeof(text), kMinUtc, 0) &&
          text[0] == '2' && days_in_month(2028, 2) == 29 && days_in_month(2026, 2) == 28 &&
-         step_offset(0, 1) == 15 && step_offset(kMaxOffsetMinutes, 1) == kMaxOffsetMinutes;
+         step_offset(0, 1) == 15 && step_offset(kMaxOffsetMinutes, 1) == kMaxOffsetMinutes &&
+         // a non-zero offset round-trips, and the UTC bounds convert for any offset
+         utc_to_local(1791404100u, -7 * 60, &local) && local.hour == 13 && local.minute == 15 &&
+         local_to_utc(local, -7 * 60, &utc) && utc == 1791404100u && utc_to_local(kMinUtc, -15, &local) &&
+         utc_to_local(kMaxUtc - 1, 15, &local);
 }
 
 }  // namespace orcsdr::clock_settings

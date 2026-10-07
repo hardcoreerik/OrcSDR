@@ -16,6 +16,8 @@ struct Snapshot {
 void initialize(bool previously_established);
 Snapshot now();
 bool set_utc(uint32_t epoch);
+// Puts the system clock back in step with the RTC (after a network sync that could not be written to it).
+void resync_system_from_rtc();
 bool format_utc(char* output, size_t output_size, uint32_t epoch);
 
 // The hardware RTC always holds UTC. The zone is a UTC offset in minutes east of UTC (UTC-07:00 is -420) that

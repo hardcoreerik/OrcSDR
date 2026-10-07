@@ -9,8 +9,9 @@ namespace orcsdr::ntp_sync {
 
 enum class State : uint8_t { idle, syncing, done, failed };
 
-// Starts one sync attempt. False if one is already running.
-bool start();
+// Starts one sync attempt. False if one is already running or the network is not up (`network_ready`, the caller's
+// Wi-Fi state): nothing is contacted unless Wi-Fi is already connected.
+bool start(bool network_ready);
 // Call from the UI loop; finishes the attempt (or times it out after 20 s).
 void poll();
 State state();

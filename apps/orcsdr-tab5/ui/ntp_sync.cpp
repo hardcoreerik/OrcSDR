@@ -22,6 +22,7 @@ bool g_result_ok = false;
 
 void finish(bool ok) {
   esp_sntp_stop();
+  if (!ok) time_service::resync_system_from_rtc();   // SNTP already moved the system clock; put it back in step with the RTC
   g_state = ok ? State::done : State::failed;
   g_result_ok = ok;
   g_result_pending = true;
@@ -29,8 +30,9 @@ void finish(bool ok) {
 
 }  // namespace
 
-bool start() {
-  if (g_state == State::syncing) return false;
+bool start(bool network_ready) {
+  if (g_state == State::syncing || !network_ready) return false;
+  g_result_pending = false;   // a result from an earlier attempt must not be reported for this one
   if (esp_sntp_enabled()) esp_sntp_stop();
   esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
   esp_sntp_setservername(0, kServer);

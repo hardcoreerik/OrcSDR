@@ -160,14 +160,15 @@ enum class ActionKind : uint8_t {
   ,catalog_remove
   ,web_console_changed
   ,rtl_usb_safe_mode_reset
-  ,clock_set_utc          // value = UTC seconds (as int32 bits): write the RTC
-  ,clock_offset_changed   // value = UTC offset in minutes: store it
+  ,clock_set_utc          // utc = UTC seconds, value = UTC offset in minutes: write the RTC and store the offset
+  ,clock_offset_changed   // value = UTC offset in minutes: store it (the time itself was already right)
   ,clock_ntp_sync         // optional: set the RTC from the network (Wi-Fi must already be connected)
 };
 
 struct Action {
   ActionKind kind = ActionKind::none;
   int32_t value = 0;
+  uint32_t utc = 0;   // clock_set_utc: UTC seconds to write (value is then the UTC offset in minutes)
 };
 
 void enter(const State& state, Section section = Section::connectivity);

@@ -89,6 +89,10 @@ bool format_local(char* output, size_t output_size, uint32_t epoch) {
   return clock_settings::format_local(output, output_size, epoch, utc_offset_minutes());
 }
 
+void resync_system_from_rtc() {
+  if (M5.Rtc.isEnabled()) M5.Rtc.setSystemTimeFromRtc();
+}
+
 bool format_utc(char* output, size_t output_size, uint32_t epoch) {
   if (output == nullptr || output_size < 21 || !valid_epoch(epoch)) return false;
   const time_t raw = static_cast<time_t>(epoch);

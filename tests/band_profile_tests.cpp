@@ -119,6 +119,12 @@ int main() {
   CHECK(step_frequency(fm, 96100000, 100000, 1, kMin, kMax) == 96200000);
   CHECK(step_frequency(fm, 96100000, 100000, -1, kMin, kMax) == 96000000);
 
+  // CB channels are 26.965 MHz + n x 10 kHz (not multiples of 10 kHz): stepping must stay on them.
+  const Profile& cb = resolve(us, 27185000);
+  CHECK(step_frequency(cb, 26965000, 10000, 1, kMin, kMax) == 26975000);
+  CHECK(step_frequency(cb, 27185000, 10000, 1, kMin, kMax) == 27195000);
+  CHECK(step_frequency(cb, 27185000, 10000, -1, kMin, kMax) == 27175000);
+
   // Airband 25 kHz steps from an off-grid frequency.
   const Profile& air = resolve(us, 121500000);
   CHECK(step_frequency(air, 121510000, 25000, 1, kMin, kMax) == 121525000);
