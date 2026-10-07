@@ -3,10 +3,12 @@ name: FT8 Native Decoder Core
 on:
   pull_request:
     paths:
+      - apps/orcsdr-tab5/ui/ft8_mode.*
       - apps/orcsdr-tab5/ui/ft8_codec.*
       - apps/orcsdr-tab5/ui/ft8_ldpc.*
       - apps/orcsdr-tab5/ui/ft8_ldpc_graph.hpp
       - apps/orcsdr-tab5/ui/ft8_ldpc_decode.*
+      - tests/ft8_mode_tests.cpp
       - tests/ft8_codec_tests.cpp
       - tests/ft8_ldpc_tests.cpp
       - tests/ft8_ldpc_decode_tests.cpp
@@ -20,10 +22,12 @@ on:
     branches:
       - main
     paths:
+      - apps/orcsdr-tab5/ui/ft8_mode.*
       - apps/orcsdr-tab5/ui/ft8_codec.*
       - apps/orcsdr-tab5/ui/ft8_ldpc.*
       - apps/orcsdr-tab5/ui/ft8_ldpc_graph.hpp
       - apps/orcsdr-tab5/ui/ft8_ldpc_decode.*
+      - tests/ft8_mode_tests.cpp
       - tests/ft8_codec_tests.cpp
       - tests/ft8_ldpc_tests.cpp
       - tests/ft8_ldpc_decode_tests.cpp

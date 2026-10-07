@@ -1,12 +1,12 @@
 # OrcSDR Native FT8 Decoder — Phase 1 Implementation Notebook
 
-Status: **FROZEN — expanded FT8/FT4/JS8 Phase 0 review pending**
+Status: **IN PROGRESS — expanded FT8/FT4/JS8 architecture approved**
 
 Branch: `codex/ft8-native-decoder-research`
 
 Integration base: `claude/ft8-ui` at `804268c71af127490364c325a76e61383042f137`
 
-Owner approval to proceed from the original FT8-only Phase 0 was received on 2026-10-07, and the three slices below were completed before the scope expanded. The decoder branch has since been rebased onto the FT8 UI baseline and the existing slices are preserved. **Do not begin the next implementation slice until the expanded FT8/FT4/JS8 mode-profile, decoder-seam, and audio-tap proposals are approved.** This notebook does not claim hardware verification unless a named Tab5 run is recorded.
+Owner approval to proceed from the original FT8-only Phase 0 was received on 2026-10-07. After the later FT4/JS8 scope expansion, the owner also approved moving forward with the ModeProfile architecture and related decoder plan. The decoder branch is based on the FT8 UI baseline and all implementation remains branch-only. This notebook does not claim hardware verification unless a named Tab5 run is recorded.
 
 ## Ground rules
 
@@ -197,3 +197,32 @@ The following documents now form the active review gate:
 - `docs/ft8/AUDIO_TAP_PROPOSAL.md`.
 
 The existing FT8 codec, LDPC definition, and normalized-min-sum decoder remain valid checkpoint work. No sync/demod, FT4, JS8, audio-tap, or firmware binding is added while this gate is active.
+
+
+## Slice 4 — shared ModeProfile foundation
+
+Owner approved the expanded multi-mode direction and implementation resumed.
+
+Added decoder-owned `ft8_mode.hpp/.cpp` in namespace `orcsdr::ftx` with data-driven profiles for:
+
+- FT8;
+- FT4;
+- JS8 Normal;
+- JS8 Fast;
+- JS8 40;
+- JS8 Slow;
+- JS8 60 / Ultra experimental.
+
+FT8 and FT4 are marked `implementation_ready`. JS8 profiles are intentionally not enabled yet:
+
+- JS8 Normal carries only independently supportable FT8-family timing/Costas facts and is `research_pending`;
+- JS8 Fast/40/Slow carry verified timing/tone facts but leave modified Costas arrays unset;
+- JS8 60 is explicitly `experimental`.
+
+This prevents GPL JS8Call source constants from silently becoming native OrcSDR implementation data while keeping the architecture ready for later independent derivation/interoperability tests.
+
+The profile captures slot time, 12 kHz symbol length, channel/data/ramp symbol counts, tone count/spacing, sync family/blocks, FEC family, payload transform, and readiness.
+
+Host tests validate FT8 and FT4 exact frame invariants, JS8 descriptive profiles, invalid-profile rejection, optimized C++17 compilation, and ASan/UBSan.
+
+The next decoder-owned slice is shared synchronization/candidate geometry built against `ModeProfile`. It will start with FT8/FT4 only; JS8 remains disabled until the missing clean-room protocol data is resolved.

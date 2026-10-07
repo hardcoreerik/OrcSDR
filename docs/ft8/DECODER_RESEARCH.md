@@ -1250,5 +1250,5 @@ The original FT8 core decisions were approved and the existing three decoder sli
 
 ## 32. Expanded stop gate
 
-**ACTIVE.** The existing FT8 codec/LDPC/NMS checkpoint is retained and tested, but no new sync/demod/audio-tap/FT4/JS8 implementation should proceed until the owner reviews Sections 26–31 and the three linked proposal documents.
+**APPROVED 2026-10-07.** The owner approved moving forward with the ModeProfile-based decoder direction. Implementation resumes on the decoder branch only. The audio tap remains subject to its explicit proof/measurement gates; UI-owned seam changes are coordinated with the UI owner rather than edited unilaterally by the decoder workstream.
 

@@ -53,3 +53,13 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Audited the current receive/audio path and proposed an independent raw-CU8-to-12-kHz USB analysis sidecar. Existing AM/SSB/speaker audio is not reused as the decoder signal.
 - Added a tap-off bit-identity requirement and on-device CPU/drop A/B gates. No existing DSP, demodulation, filter, sound, dashboard, Hunter, OrcDial, or main.cpp glue was changed.
 - Froze further Phase 1 implementation until the owner reviews the expanded research and proposals.
+
+
+## 2026-10-07 — Phase 1 slice 4: ModeProfile foundation
+
+- Owner approved moving forward with the expanded FT8/FT4/JS8 decoder architecture.
+- Added pure C++ `orcsdr::ftx::ModeProfile` definitions for FT8, FT4, and descriptive JS8 submodes.
+- Marked FT8 and FT4 implementation-ready; JS8 profiles remain research-pending/experimental until missing clean-room sync/FEC definitions are independently established.
+- Added exact FT8 and FT4 timing, tone, frame, Costas, FEC-family and payload-transform metadata.
+- Added optimized + ASan/UBSan host tests and CI coverage.
+- No UI-owned files, existing DSP/demod/audio path, main.cpp glue, transmit path, or firmware binding were changed.
