@@ -148,3 +148,11 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Search resolution is configurable without changing decoder code.
 - Output keeps sync/contrast metrics dimensionless; no uncalibrated SNR claim is made.
 - The official WSJT-X busy-band WAV remains an external benchmark target; no decode result is claimed until the exact file is successfully run.
+
+
+## 2026-10-07 — full decoder host checkpoint validation
+
+- Temporarily enabled the decoder branch in the native-core workflow push trigger to force validation of the newest GitHub-App commit chain.
+- GitHub Actions run 37683738040 passed `bash tools/test-ft8.sh` at commit `8d03508c`.
+- Confirmed the complete ModeProfile/spectral/sync/demod/pipeline/message/codec/LDPC/NMS + UI/Hunter/OrcDial optimized and ASan/UBSan suite passes.
+- Removed the temporary branch push trigger immediately after validation; normal push scope returns to main.

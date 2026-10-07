@@ -31,7 +31,6 @@ on:
   push:
     branches:
       - main
-      - codex/ft8-native-decoder-research
     paths:
       - apps/orcsdr-tab5/ui/ft8_mode.*
       - apps/orcsdr-tab5/ui/ft8_sync.*

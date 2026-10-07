@@ -529,3 +529,41 @@ The official WSJT-X `210703_133430.wav` is the first target external
 benchmark. This sandbox has confirmed the sample identity and SHA-256 but has
 not yet been able to materialize the binary through the available SourceForge
 download path, so no real-WAV decode result is claimed yet.
+
+
+## Full newest-head host validation
+
+To work around GitHub PR synchronize events not enqueueing on the newer
+GitHub-App commits, the decoder branch was temporarily added to the
+`FT8 Native Decoder Core` push trigger.
+
+Validation commit:
+`8d03508c0e6d9bc5ad72f041092da2b3df2e71e8`
+
+GitHub Actions run:
+`37683738040`
+
+Result: **PASS**.
+
+The workflow executed `bash tools/test-ft8.sh` from the exact decoder branch
+commit and completed the combined optimized + ASan/UBSan suites for:
+
+- FT8 UI model and Hunter baseline;
+- OrcDial semantic controller regression;
+- ModeProfile;
+- synchronization candidate search;
+- candidate-local soft demodulation;
+- incremental spectral reference, including synthetic full-message fixture;
+- CRC + plausibility-gated receive pipeline;
+- standard message parser;
+- codec/CRC/callsign primitives;
+- LDPC definition/syndrome;
+- normalized-min-sum LDPC decoder.
+
+Final workflow log line:
+
+`FT8 UI/model/Hunter + native ModeProfile/spectral/sync/demod/pipeline/message/codec/LDPC/NMS + OrcDial host tests: PASS`
+
+The temporary decoder-branch push trigger is removed immediately after this
+validation. Normal workflow push scope returns to `main`; the draft PR
+remains unmerged.
