@@ -117,3 +117,11 @@ g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$build_dir/weather_service_tests_sanitized"
 
+
+weather_runtime_sources=(tests/weather_runtime_tests.cpp apps/orcsdr-tab5/ui/weather_noaa.cpp apps/orcsdr-tab5/ui/weather_service.cpp apps/orcsdr-tab5/ui/weather_runtime.cpp)
+g++ "${common[@]}" -O2 "${weather_runtime_sources[@]}" -o "$build_dir/weather_runtime_tests"
+"$build_dir/weather_runtime_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "${weather_runtime_sources[@]}" -o "$build_dir/weather_runtime_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$build_dir/weather_runtime_tests_sanitized"
