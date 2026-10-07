@@ -56,10 +56,14 @@ $c6Provenance = Get-Content (Join-Path $c6Dir 'c6-provenance.json') -Raw | Conve
 if ($LASTEXITCODE -ne 0) { throw "Native build failed ($LASTEXITCODE)." }
 $appImage = Join-Path $appBuild 'orcsdr_tab5.bin'
 if (-not (Test-Path -LiteralPath $appImage)) { throw "Missing built P4 image: $appImage" }
-$appPartitionBytes = 0x400000
+# The app partition size comes from the partition table, so this guard cannot drift from it.
+$factoryField = ((Get-Content (Join-Path $app 'partitions.csv') | Where-Object { $_ -match '^\s*factory\s*,' }) -split ',')[4].Trim()
+$appPartitionBytes = if ($factoryField -match '^(\d+)M$') { [int]$Matches[1] * 1MB }
+                     elseif ($factoryField -match '^(\d+)K$') { [int]$Matches[1] * 1KB }
+                     else { [Convert]::ToInt32($factoryField, 0) }
 $releaseReserveBytes = 0x40000
 if ((Get-Item -LiteralPath $appImage).Length -gt ($appPartitionBytes - $releaseReserveBytes)) {
-  throw 'P4 image leaves less than 256 KiB in the app partition; refuse the embedded-C6 release bundle.'
+  throw "P4 image leaves less than 256 KiB in the $($appPartitionBytes / 1MB) MiB app partition; refuse the embedded-C6 release bundle."
 }
 
 $binary = Join-Path $app "$build\merged-binary.bin"

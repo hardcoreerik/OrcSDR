@@ -2,5 +2,5 @@
 # Preserve the ESP-IDF single-app NVS/PHY offsets; use otherwise-idle flash for OrcSDR.
 nvs,      data, nvs,     ,        0x6000,
 phy_init, data, phy,     ,        0x1000,
-factory,  app,  factory, ,        4M,
+factory,  app,  factory, ,        6M,
 coredump, data, coredump, ,       256K,
