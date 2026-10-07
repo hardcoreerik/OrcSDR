@@ -8,6 +8,7 @@ constexpr uint32_t kChannels[kChannelCount] = {
   162500000u, 162525000u, 162550000u
 };
 }
+const uint32_t* channels() { return kChannels; }
 uint32_t channel_hz(size_t index) { return index < kChannelCount ? kChannels[index] : kChannels[0]; }
 int channel_index(uint32_t hz) {
   for (size_t i=0;i<kChannelCount;++i) if (kChannels[i] == hz) return static_cast<int>(i);
