@@ -774,23 +774,6 @@ void draw_footer() {
 
 // keep_graphics: repaint after a popup closes without wiping the live spectrum and waterfall. Only the part the popup
 // covered is cleared; the spectrum redraws on its next frame and the waterfall refills as it scrolls.
-// The EDGES chip at the top right of the spectrum: tapping it never tunes. (Zoom is the SPAN stepper below.)
-constexpr int kChipY = kSpectrumY + 6, kChipH = 30;
-constexpr int kEdgesChipW = 84, kEdgesChipX = kPlotX + kPlotW - 8 - kEdgesChipW;
-
-void draw_chip(int x, int w, const char* label, bool on) {
-  M5.Display.fillRoundRect(x, kChipY, w, kChipH, 6, TFT_BLACK);
-  M5.Display.drawRoundRect(x, kChipY, w, kChipH, 6, on ? kGreen : kCyan);
-  M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextColor(on ? kGreen : TFT_WHITE, TFT_BLACK);
-  M5.Display.setTextSize(2);
-  M5.Display.drawString(label, x + w / 2, kChipY + kChipH / 2);
-}
-
-void draw_spectrum_chips() {
-  draw_chip(kEdgesChipX, kEdgesChipW, "EDGES", filter_edges || current.edges_hint);
-}
-
 // The band in plain words (FM RADIO, 70 CM HAM, AIR BAND...), centered above the spectrum.
 void draw_band_label() {
   M5.Display.fillRect(kPlotX + 150, 84, kPlotW - 300, 28, TFT_BLACK);
@@ -819,7 +802,6 @@ void draw_receiver_chrome(bool keep_graphics = false) {
     M5.Display.fillRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, TFT_BLACK);
     M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kDim);
   }
-  draw_spectrum_chips();
   draw_frequency();
   draw_mode_chip(current.mode[0] ? current.mode : "--");
   draw_tuning_controls();
@@ -935,7 +917,6 @@ Action tap_action(int32_t x, int32_t y) {
       return {ActionKind::open_dashboard, dashboards::recent(index - 1)};
     return {};
   }
-  if (inside(x, y, kEdgesChipX, kChipY, kEdgesChipW, kChipH)) return {ActionKind::edges_toggle};
   if (inside(x, y, kPlotX, kSpectrumY, kPlotW,
              kWaterfallY + kWaterfallH - kSpectrumY)) {
     const int64_t offset = (static_cast<int64_t>(x - kPlotX) * current.span_hz) /
@@ -1100,7 +1081,6 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
     M5.Display.drawFastVLine(kPlotX + kPlotW / 2 + half, kSpectrumY, kSpectrumH, TFT_YELLOW);
   }
   M5.Display.clearClipRect();
-  draw_spectrum_chips();
   draw_spectrum_axis();
   const int rows = waterfall_style::rows_per_frame(waterfall_style::Screen::home);
   const bool popup_over = gain_popup || filter_popup || mode_popup;
@@ -1206,10 +1186,6 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
       if (filter_popup) draw_filter_popup();
       else draw_receiver_chrome(true);
       M5.Display.endWrite();
-      return {};
-    }
-    if (action.kind == ActionKind::edges_toggle) {
-      filter_edges = !filter_edges;
       return {};
     }
     if (action.kind == ActionKind::filter_edges) {

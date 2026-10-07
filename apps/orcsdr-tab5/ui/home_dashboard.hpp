@@ -92,7 +92,6 @@ enum class ActionKind : uint8_t {
   mode_close,
   mode_set,          // value = 0 AUTO, 1 NFM, 2 AM, 3 WFM, 4 USB, 5 LSB
   keypad_open,       // tap on the frequency readout
-  edges_toggle,      // the EDGES chip on the spectrum
 };
 
 struct Action {
