@@ -42,7 +42,7 @@ Token Session::try_acquire(Owner owner, Band band, uint32_t frequency_hz,
                            uint32_t sample_rate_sps) {
   if (owner == Owner::none) return {};
   lock();
-  if (!idle(receiver_state_)) {
+  if (owner_ != Owner::none || !idle(receiver_state_)) {
     unlock();
     return {};
   }
