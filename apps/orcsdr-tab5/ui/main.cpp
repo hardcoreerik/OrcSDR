@@ -55,6 +55,9 @@
 #include "orcsdr_restart.hpp"
 #include "orcsdr_storage.hpp"
 #include "am_dashboard.hpp"
+#include "ft8_dashboard.hpp"
+#include "ft8_hunter.hpp"
+#include "ft8_model.hpp"
 #include "shortwave_model.hpp"
 #include "shortwave_audio_dsp.hpp"
 #include "shortwave_dashboard.hpp"
@@ -2481,6 +2484,7 @@ void draw_global_header_controls();
 bool handle_global_header_audio_touch(int32_t x, int32_t y);
 void navigation_restore_screen(orcsdr::screens::Id restore);
 void draw_global_bias_warning();
+void draw_ft8_dashboard(bool static_panel);
 orcsdr::fm::Snapshot fm_dashboard_snapshot();
 void handle_fm_dashboard_action(const orcsdr::fm::Action& action);
 orcsdr::am::Snapshot am_dashboard_snapshot();
@@ -6523,6 +6527,7 @@ void refresh_active_screen() {
     case Id::pocsag: draw_pocsag_dashboard(false); break;
     case Id::lora: draw_lora_dashboard(false); break;
     case Id::wifi_analysis: draw_rf24_dashboard(false); break;
+    case Id::ft8: draw_ft8_dashboard(false); break;
     default: break;  // Settings, documentation, and no screen own their draws.
   }
 }
@@ -6597,6 +6602,7 @@ void close_visualizer() {
     case orcsdr::screens::Id::adsb: orcsdr::adsb::draw(); break;
     case orcsdr::screens::Id::lora: orcsdr::lora::draw(); break;
     case orcsdr::screens::Id::wifi_analysis: draw_rf24_dashboard(true); break;
+    case orcsdr::screens::Id::ft8: draw_ft8_dashboard(true); break;
     default: show_home(); break;
   }
 }
@@ -6908,6 +6914,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   orcsdr::screens::begin_transition(screen, millis());
   orcsdr::home::leave();
   orcsdr::rf24::leave();
+  orcsdr::ft8::leave();
   orcsdr::settings::leave();
   if (band != RtlBand::fm) orcsdr::fm::leave();
   if (band != RtlBand::am) orcsdr::am::leave();
@@ -12573,6 +12580,8 @@ void navigation_restore_screen(orcsdr::screens::Id restore) {
     orcsdr::pocsag::draw();
   } else if (restore == orcsdr::screens::Id::wifi_analysis) {
     draw_rf24_dashboard(true);
+  } else if (restore == orcsdr::screens::Id::ft8) {
+    draw_ft8_dashboard(true);
   } else {
     draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
                     rtl_live_volume.load(std::memory_order_acquire));
@@ -12648,6 +12657,149 @@ void close_rf24_dashboard() {
   show_home();
 }
 
+// ---- FT8 RX dashboard glue. Opening the screen never retunes the receiver; only a band choice does. The decoder is
+// not bound yet, so Hunter requests are refused and nothing here claims a decode.
+orcsdr::ft8::DecodeStore g_ft8_store;
+orcsdr::ft8::Hunter g_ft8_hunter;
+size_t g_ft8_band = SIZE_MAX;       // index into the FT8 band table; resolved on first use
+size_t g_ft8_item = 0;              // one-based selected row for the OrcDial; 0 = none
+
+size_t ft8_selected_band() {
+  if (g_ft8_band >= orcsdr::ft8::band_count()) g_ft8_band = orcsdr::ft8::nearest_band(14074000);
+  return g_ft8_band;
+}
+
+orcsdr::ft8::Snapshot ft8_dashboard_snapshot() {
+  orcsdr::ft8::Snapshot snapshot{};
+  const auto clock = orcsdr::time_service::now();
+  snapshot.clock_valid = clock.wallclock_valid;
+  if (clock.wallclock_valid) {
+    timeval now{};
+    gettimeofday(&now, nullptr);
+    snapshot.utc_ms = static_cast<uint64_t>(now.tv_sec) * 1000u + static_cast<uint64_t>(now.tv_usec / 1000);
+  }
+  snapshot.receiver_running = rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
+  snapshot.battery_percent = M5.Power.getBatteryLevel();
+  snapshot.selected_band = ft8_selected_band();
+  snapshot.decoder_state = orcsdr::ft8::DecoderState::unbound;
+  snapshot.hunter = g_ft8_hunter.snapshot();
+#if !RTL_USE_LEGACY_USB
+  if (g_rtl != nullptr && rtl_tuner_gain_available(rtl_ui_frequency_hz)) {
+    snapshot.gain_auto = rtl_am_gain_auto_enabled.load(std::memory_order_relaxed);
+    int gain = 0;
+    if (esp_rtl_sdr_get_tuner_gain(g_rtl, &gain) == ESP_OK) snapshot.gain_tenth_db = static_cast<int16_t>(gain);
+  }
+#endif
+  snapshot.decode_count = std::min(g_ft8_store.size(), orcsdr::ft8::kDecodeCapacity);
+  for (size_t i = 0; i < snapshot.decode_count; ++i) {
+    // Oldest first, as the dashboard indexes from the end.
+    if (const auto* decode = g_ft8_store.newest(snapshot.decode_count - 1 - i)) snapshot.decodes[i] = *decode;
+  }
+  return snapshot;
+}
+
+void draw_ft8_dashboard(bool static_panel) {
+  if (!static_panel && !orcsdr::screens::may_draw(orcsdr::screens::Id::ft8)) return;
+  if (!static_panel) orcsdr::screens::note_visible_update(orcsdr::screens::Id::ft8);
+  const auto snapshot = ft8_dashboard_snapshot();
+  if (static_panel || !orcsdr::ft8::active()) orcsdr::ft8::enter(snapshot);
+  else orcsdr::ft8::update(snapshot);
+}
+
+// Choose a band and, when the receiver can take it, listen there (HF dial frequencies use the shortwave path).
+bool ft8_select_band(size_t index) {
+  if (index >= orcsdr::ft8::band_count()) return false;
+  const auto* preset = orcsdr::ft8::band(index);
+  if (preset == nullptr) return false;
+  g_ft8_band = index;
+  if (!validate_rtl_tune_frequency(preset->dial_hz)) return false;
+  if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
+      rtl_ui_band == RtlBand::shortwave)
+    return request_hot_retune(preset->dial_hz);
+  return queue_local_rtl_listen(RtlBand::shortwave, preset->dial_hz);
+}
+
+bool ft8_hunter_refused(const char* what) {
+  Serial.printf("ORC_FT8_ERROR %s decoder_not_bound\n", what);
+  return false;
+}
+
+void handle_ft8_dashboard_action(const orcsdr::ft8::Action& action) {
+  using Kind = orcsdr::ft8::ActionKind;
+  switch (action.kind) {
+    case Kind::home: show_home(); return;
+    case Kind::tune_band:
+      (void)ft8_select_band(orcsdr::ft8::nearest_band(action.value));
+      break;
+    case Kind::clear_decodes: g_ft8_store.clear(); g_ft8_item = 0; break;
+    case Kind::start_hunt_fast: (void)ft8_hunter_refused("hunt_fast"); break;
+    case Kind::start_hunt_decode: (void)ft8_hunter_refused("hunt_decode"); break;
+    case Kind::stop_hunt: g_ft8_hunter.stop(); break;
+    case Kind::lock_hunter_best:
+      (void)ft8_select_band(orcsdr::ft8::nearest_band(action.value));
+      break;
+    case Kind::none: return;
+  }
+  draw_ft8_dashboard(false);
+}
+
+void open_ft8_dashboard() {
+  persist_dashboard_open(orcsdr::dashboards::Id::ft8);
+  orcsdr::home::leave();
+  orcsdr::screens::begin_transition(orcsdr::screens::Id::ft8, millis());
+  draw_ft8_dashboard(true);
+  orcsdr::screens::finish_transition();
+}
+
+// OrcDial semantic actions for the FT8 dashboard; the Tab5 resolves them against its own band table and lists.
+bool orcdial_apply_ft8(uint8_t kind, int32_t value) {
+  using Tab = orcsdr::ft8::Tab;
+  switch (kind) {
+    case static_cast<uint8_t>(orc::ActionKind::view): {
+      const int next = (static_cast<int>(orcsdr::ft8::tab()) + (value < 0 ? -1 : 1) + 6) % 6;
+      orcsdr::ft8::select_tab(static_cast<Tab>(next));
+      return true;
+    }
+    case static_cast<uint8_t>(orc::ActionKind::ft8_band): {
+      if (value == 0 || value < -12 || value > 12) return false;
+      const int count = static_cast<int>(orcsdr::ft8::band_count());
+      const int next = ((static_cast<int>(ft8_selected_band()) + value) % count + count) % count;
+      (void)ft8_select_band(static_cast<size_t>(next));
+      draw_ft8_dashboard(false);
+      return true;
+    }
+    case static_cast<uint8_t>(orc::ActionKind::ft8_item): {
+      const int count = static_cast<int>(g_ft8_store.size());
+      if (value == 0 || value < -12 || value > 12 || count == 0) return false;
+      g_ft8_item = static_cast<size_t>(std::clamp<int>(static_cast<int>(g_ft8_item) + value, 1, count));
+      return true;
+    }
+    case static_cast<uint8_t>(orc::ActionKind::ft8_hunter):
+      switch (value) {
+        case 1: return ft8_hunter_refused("hunt_fast");
+        case 2: return ft8_hunter_refused("hunt_decode");
+        case 3: g_ft8_hunter.stop(); draw_ft8_dashboard(false); return true;
+        default: return false;   // 4 = listen to best: no completed hunt exists yet
+      }
+    default: return false;
+  }
+}
+
+void fill_orcdial_ft8_state(orc::Packet& p) {
+  const auto* preset = orcsdr::ft8::band(ft8_selected_band());
+  p.frequency_hz = preset ? preset->dial_hz : rtl_ui_frequency_hz;
+  p.view = static_cast<uint8_t>(orcsdr::ft8::tab());
+  uint32_t capabilities = 0;   // bit 0 decoder bound: no; bit 2 hunter supported: no until a decoder exists
+  if (orcsdr::time_service::now().wallclock_valid) capabilities |= orc::ft8_control::kClockReady;
+  if (g_ft8_hunter.active()) capabilities |= orc::ft8_control::kHunterActive;
+  p.capabilities = capabilities;
+  const bool band_view = p.view == static_cast<uint8_t>(orc::ft8_control::View::live) ||
+                         p.view == static_cast<uint8_t>(orc::ft8_control::View::hunter);
+  p.selected = band_view ? static_cast<int32_t>(ft8_selected_band() + 1)
+                         : static_cast<int32_t>(g_ft8_item);
+  p.item_count = band_view ? orcsdr::ft8::band_count() : g_ft8_store.size();
+}
+
 void open_dashboard(orcsdr::dashboards::Id id) {
   using Id = orcsdr::dashboards::Id;
   if (id != Id::settings && orcsdr::settings::active()) close_global_settings();
@@ -12659,6 +12811,10 @@ void open_dashboard(orcsdr::dashboards::Id id) {
   }
   if (id == Id::wifi_analysis) {
     open_rf24_dashboard();
+    return;
+  }
+  if (id == Id::ft8) {
+    open_ft8_dashboard();
     return;
   }
   rtl_rate_override_sps.store(0, std::memory_order_release);
@@ -14355,6 +14511,7 @@ orc::Dashboard orcdial_active_dashboard() {
   if (screen == Screen::settings) return orc::Dashboard::settings;
   if (screen == Screen::rf_lab) return orc::Dashboard::rf_lab;
   if (screen == Screen::wifi_analysis) return orc::Dashboard::wifi_analysis;
+  if (screen == Screen::ft8) return orc::Dashboard::ft8;
   if (rtl_ui_band == RtlBand::browse && screen == Screen::radio &&
       rtl_ui_frequency_hz > 137000000 && rtl_ui_frequency_hz < 138000000)
     return orc::Dashboard::satellite;
@@ -14398,6 +14555,8 @@ void orcdial_fill_state(orc::Packet& p) {
   } else if (id == orc::Dashboard::adsb) {
     p.selected = adsb_settings.radar_range_nm;
     p.item_count = 4; // supported range choices, not a fabricated aircraft count
+  } else if (id == orc::Dashboard::ft8) {
+    fill_orcdial_ft8_state(p);
   }
   // rtl_signal_dbfs_smooth is relative dBFS, not a calibrated dBm reading.
   p.flags = 0;
@@ -14417,7 +14576,7 @@ bool orcdial_apply(const orc::Packet& p) {
   using Dash = orc::Dashboard;
   const Dash active = orcdial_active_dashboard();
   if (p.type == orc::Type::set_dashboard) {
-    if (p.value < 0 || p.value > 16 || !orc::valid_dashboard(static_cast<uint8_t>(p.value))) return false;
+    if (p.value < 0 || p.value > 17 || !orc::valid_dashboard(static_cast<uint8_t>(p.value))) return false;
     if (p.value == 0) show_home();
     else open_dashboard(orcsdr::dashboards::Id(p.value));
     return true;
@@ -14448,9 +14607,10 @@ bool orcdial_apply(const orc::Packet& p) {
     return true;
   }
   if (p.type != orc::Type::semantic_action || p.dashboard != static_cast<uint8_t>(active) ||
-      p.action > static_cast<uint8_t>(Kind::filter) || p.value < -1000000000 ||
+      p.action > static_cast<uint8_t>(Kind::ft8_hunter) || p.value < -1000000000 ||
       p.value > 1000000000) return false;
   const Kind kind = Kind(p.action);
+  if (active == Dash::ft8) return orcdial_apply_ft8(p.action, p.value);
   if (active == Dash::home && kind == Kind::tune) {
     // On Home the value is a count of steps; the Tab5 applies the step of the band it is in.
     if (p.value == 0 || p.value < -64 || p.value > 64) return false;
@@ -15384,6 +15544,11 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     return;
   }
 
+  if (orcsdr::ft8::active()) {
+    // FT8 draws its own header (HOME, battery, UTC), so the global audio header does not apply.
+    handle_ft8_dashboard_action(orcsdr::ft8::handle_touch(x, y));
+    return;
+  }
   if (handle_global_header_audio_touch(x, y)) return;
   if (orcsdr::rf24::active()) {
     const auto action = orcsdr::rf24::handle_touch(x, y, rf24_dashboard_snapshot());
@@ -16579,7 +16744,7 @@ const char* ui_touch_route() {
   if (orcsdr::home::active()) return "home";
   if (adsb_ui && orcsdr::screens::owns(orcsdr::screens::Id::adsb)) return "adsb";
   if (pocsag_ui && orcsdr::screens::owns(orcsdr::screens::Id::pocsag)) return "pocsag";
-  if (fm_ui || am_ui || p25_ui || radio_ui || orcsdr::rf24::active()) return "sdr";
+  if (fm_ui || am_ui || p25_ui || radio_ui || orcsdr::rf24::active() || orcsdr::ft8::active()) return "sdr";
   return "fallback";
 }
 
@@ -16883,13 +17048,14 @@ void process_command(char* command) {
     else if (strcmp(name, "LORA") == 0) open_dashboard(Id::lora);
     else if (strcmp(name, "RF_LAB") == 0) open_dashboard(Id::rf_lab);
     else if (strcmp(name, "WIFI_ANALYSIS") == 0) open_dashboard(Id::wifi_analysis);
+    else if (strcmp(name, "FT8") == 0) open_dashboard(Id::ft8);
     else if (strcmp(name, "SETTINGS") == 0) open_dashboard(Id::settings);
     else if (strcmp(name, "WEATHER") == 0) open_dashboard(Id::weather);
     else if (strcmp(name, "POCSAG") == 0) open_dashboard(Id::pocsag);
     else if (strcmp(name, "MARINE") == 0) open_dashboard(Id::marine);
     else if (strcmp(name, "SATELLITE") == 0) open_dashboard(Id::satellite);
     else if (strcmp(name, "UTILITIES") == 0) open_dashboard(Id::utilities);
-    else { Serial.println("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|SETTINGS|WEATHER|CB|POCSAG|AIRBAND|MARINE|SATELLITE|UTILITIES"); return; }
+    else { Serial.println("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|FT8|SETTINGS|WEATHER|CB|POCSAG|AIRBAND|MARINE|SATELLITE|UTILITIES"); return; }
     Serial.printf("RTL_UI_OPEN_OK target=%s\n", name);
     return;
   }
@@ -19606,6 +19772,7 @@ void setup() {
     Serial.println("RF24_DASHBOARD_SELF_CHECK_FAIL");
   }
   Serial.println("RF24_DASHBOARD_SELF_CHECK_OK");
+  Serial.println(orcsdr::ft8::dashboard_self_check() ? "FT8_DASHBOARD_SELF_CHECK_OK" : "FT8_DASHBOARD_SELF_CHECK_FAIL");
   if (!ui_doc_self_check()) {
     Serial.println("UI_DOC_SELF_CHECK_FAIL");
   }
@@ -20117,6 +20284,7 @@ void loop() {
   if (rtl_screen_transition_requested.exchange(false, std::memory_order_acq_rel) &&
       !settings_ui && orcsdr::screens::status().active != orcsdr::screens::Id::documentation &&
       orcsdr::screens::status().active != orcsdr::screens::Id::wifi_analysis &&
+      orcsdr::screens::status().active != orcsdr::screens::Id::ft8 &&
       !orcsdr::screens::owns(screen_for_band(rtl_ui_band)) &&
       !orcsdr::home::active()) {
     draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
@@ -20197,7 +20365,7 @@ void loop() {
       publish_pocsag_snapshot(millis());
       refresh_active_screen();
     }
-  } else if (fm_ui || am_ui || p25_ui || radio_ui || orcsdr::rf24::active()) {
+  } else if (fm_ui || am_ui || p25_ui || radio_ui || orcsdr::rf24::active() || orcsdr::ft8::active()) {
     poll_sdr_touch(false);
   } else if (!radio_ui) {
     const auto touch = ui_touch_detail(0);

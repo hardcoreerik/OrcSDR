@@ -14,7 +14,7 @@ constexpr Dashboard carousel[] = {
   Dashboard::home, Dashboard::fm, Dashboard::am, Dashboard::weather,
   Dashboard::airband, Dashboard::marine, Dashboard::cb, Dashboard::adsb,
   Dashboard::satellite, Dashboard::lora, Dashboard::rf_lab, Dashboard::p25,
-  Dashboard::shortwave, Dashboard::pocsag, Dashboard::wifi_analysis, Dashboard::settings, devices_entry
+  Dashboard::shortwave, Dashboard::ft8, Dashboard::pocsag, Dashboard::wifi_analysis, Dashboard::settings, devices_entry
 };
 constexpr int carousel_count = sizeof(carousel) / sizeof(carousel[0]);
 inline bool valid_dashboard(uint8_t id) { return id <= 17 && id != 11; }

@@ -49,7 +49,8 @@ Action handle_touch(int32_t x, int32_t y);
 void leave();
 bool active();
 Tab tab();
+void select_tab(Tab tab);   // from OrcDial; redraws when the tab changes
 const Snapshot& snapshot();
-bool self_check();
+bool dashboard_self_check();
 
 }  // namespace orcsdr::ft8

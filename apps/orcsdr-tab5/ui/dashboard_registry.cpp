@@ -16,6 +16,7 @@ constexpr Descriptor kEntries[] = {
     {Id::cb, "CB RADIO", "40-channel AM/SSB receiver", Category::audio, true},
     {Id::lora, "LORA / MESH", "LoRa and Meshtastic receive tools", Category::digital, true},
     {Id::pocsag, "POCSAG", "Pager receive, CAPCODE IDs, and message archive", Category::digital, true},
+    {Id::ft8, "FT8 RX", "Receive-only FT8 band hunter and decode history", Category::digital, true},
     {Id::airband, "AIRBAND", "AM aviation scanner and airport channels", Category::aviation, true},
     {Id::marine, "MARINE", "VHF marine receiver", Category::audio, true},
     {Id::satellite, "SATELLITE", "Satellite receive workspace", Category::digital, true},
@@ -102,7 +103,7 @@ bool self_check() {
                      g_recent[1] == Id::fm && !record_open(Id::p25);
   g_recent = saved;
   g_recent_count = saved_count;
-  return loaded && moved && std::size(kEntries) == 15 && find(Id::rf_lab) != nullptr &&
+  return loaded && moved && std::size(kEntries) == 16 && find(Id::ft8) != nullptr && find(Id::rf_lab) != nullptr &&
          find(Id::am) != nullptr &&
          find(Id::wifi_analysis) != nullptr && find(Id::pocsag) != nullptr;
 }

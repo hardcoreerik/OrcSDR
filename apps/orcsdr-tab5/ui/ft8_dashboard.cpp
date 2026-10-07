@@ -97,7 +97,7 @@ void format_utc(char* out, size_t size, uint32_t epoch) {
 }
 
 void draw_header() {
-  audio_header::draw_brand("FT8 RX");
+  audio_header::draw_brand("FT8 RECEIVER");   // longer than 10 characters: the smaller subtitle fits above the rule
   M5.Display.drawFastVLine(350, 18, 58, kCyan);
   text("FT8 RX", 390, 42, TFT_WHITE, 4, middle_left);
   text("RECEIVE ONLY", 390, 70, kMuted, 1, middle_left);
@@ -608,9 +608,16 @@ Action handle_touch(int32_t x, int32_t y) {
 void leave() { g_active = false; }
 bool active() { return g_active; }
 Tab tab() { return g_tab; }
+
+void select_tab(Tab tab) {
+  if (!g_active || tab >= Tab::count || tab == g_tab) return;
+  g_tab = tab;
+  g_decode_page = 0;
+  draw();
+}
 const Snapshot& snapshot() { return g_snapshot; }
 
-bool self_check() {
+bool dashboard_self_check() {
   return static_cast<int>(Tab::count) == kTabCount && band_count() >= 10 &&
          kAudioLowHz < kAudioHighHz && orcsdr::ft8::self_check() &&
          hunter_self_check();
