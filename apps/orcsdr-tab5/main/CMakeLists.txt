@@ -33,6 +33,8 @@ idf_component_register(
         "../ui/orcsdr_restart.cpp"
         "../ui/orcsdr_storage.cpp"
         "../ui/am_dashboard.cpp"
+        "../ui/ft8_model.cpp"
+        "../ui/ft8_dashboard.cpp"
         "../ui/am_finder.cpp"
         "../ui/shortwave_model.cpp"
         "../ui/shortwave_audio_dsp.cpp"
