@@ -175,6 +175,9 @@ int render(const View& view) {
   for (size_t i = 0; i < count; ++i) {
     const map_packs::PackInfo& pack = packs[i];
     if (pack.max_zoom <= base.max_zoom || !contains(pack, view.center_lat, view.center_lon)) continue;
+    // A detail pack only helps once the view is as deep as the base map goes; wider than that the world map is the
+    // right picture, and drawing the pack's coarse low zooms over it would only add cost.
+    if (zoom < static_cast<double>(base.max_zoom)) continue;
     if (sd_world && std::strcmp(pack.path, world_path) == 0) continue;
     Layer layer;
     if (!layer.open_file(pack.path)) continue;
@@ -255,6 +258,14 @@ void draw_base(lgfx::v1::LovyanGFX& display, const View& view, uint16_t, uint16_
   display.setTextColor(road_color);
   display.drawString(g_credit, view.x + 3, view.y + view.height - 2);
   (void)airport_color;
+}
+
+bool draw_shifted(lgfx::v1::LovyanGFX& display, const View& view, int dx, int dy) {
+  if (!g_cache_valid || g_cache.width() != view.width || g_cache.height() != view.height) return false;
+  display.setClipRect(view.x, view.y, view.width, view.height);
+  g_cache.pushSprite(&display, view.x + dx, view.y + dy);
+  display.clearClipRect();
+  return true;
 }
 
 void draw_base(const View& view, uint16_t water_color, uint16_t road_color,

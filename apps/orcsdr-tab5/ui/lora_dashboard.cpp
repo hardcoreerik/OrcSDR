@@ -149,6 +149,114 @@ const Node* selected_positioned_node() {
   return nullptr;
 }
 
+void text(const char* value, int x, int y, uint16_t color, int size, textdatum_t datum);   // defined below
+
+// ---- Map navigation: pan (drag), zoom steps, my location, fit nodes. The map spans wide areas (a mesh can cross states).
+constexpr float kMapRanges[] = {5.0f, 15.0f, 30.0f, 60.0f, 125.0f, 250.0f, 500.0f, 1000.0f, 2000.0f};
+constexpr size_t kMapRangeCount = sizeof(kMapRanges) / sizeof(kMapRanges[0]);
+constexpr int kMapX = 50, kMapY = 182, kMapW = 842, kMapH = 330;
+constexpr int kZoomInX = 846, kZoomOutX = 846, kZoomInY = 190, kZoomOutY = 234, kZoomSize = 40;
+constexpr int kDragThreshold = 10;
+size_t g_map_range_index = 1;   // 15 NM, as before
+bool g_map_dragging = false;
+int g_drag_dx = 0, g_drag_dy = 0;
+
+float map_range_nm() { return kMapRanges[g_map_range_index]; }
+float map_radius_px() { return std::min(kMapW, kMapH) / 2.0f; }
+
+// The map centre: where the user panned or a node's position, else the receiver's own location.
+bool map_center(float* lat, float* lon) {
+  if (g_map_center_set) {
+    *lat = g_map_center_lat_e7 / 10000000.0f;
+    *lon = g_map_center_lon_e7 / 10000000.0f;
+    return true;
+  }
+  if (g_snapshot.receiver_located) {
+    *lat = g_snapshot.receiver_latitude_e7 / 10000000.0f;
+    *lon = g_snapshot.receiver_longitude_e7 / 10000000.0f;
+    return true;
+  }
+  return false;
+}
+
+void set_map_center(double lat, double lon) {
+  lat = std::clamp(lat, -84.0, 84.0);
+  while (lon > 180.0) lon -= 360.0;
+  while (lon < -180.0) lon += 360.0;
+  g_map_center_lat_e7 = static_cast<int32_t>(std::lround(lat * 1e7));
+  g_map_center_lon_e7 = static_cast<int32_t>(std::lround(lon * 1e7));
+  g_map_center_set = true;
+}
+
+// Moves the centre by a drag of (dx, dy) screen pixels: the map follows the finger, so the centre goes the other way.
+void pan_by_pixels(int dx, int dy) {
+  float lat = 0, lon = 0;
+  if (!map_center(&lat, &lon)) return;
+  const double nm_per_px = map_range_nm() / map_radius_px();
+  const double east_nm = -dx * nm_per_px, north_nm = dy * nm_per_px;
+  const double cos_lat = std::fmax(0.1, std::cos(lat * M_PI / 180.0));
+  set_map_center(lat + north_nm / 60.0, lon + east_nm / (60.0 * cos_lat));
+  g_follow_node = false;
+}
+
+void zoom_map(int direction) {
+  const size_t next = std::clamp<int>(static_cast<int>(g_map_range_index) + direction, 0,
+                                      static_cast<int>(kMapRangeCount) - 1);
+  g_map_range_index = next;
+}
+
+// The receiver's own location as the centre.
+void center_on_receiver() {
+  if (!g_snapshot.receiver_located) return;
+  set_map_center(g_snapshot.receiver_latitude_e7 / 1e7, g_snapshot.receiver_longitude_e7 / 1e7);
+  g_follow_node = false;
+}
+
+// Centre on everything with a verified position (and this receiver) and pick the smallest range that shows it all.
+void fit_map_to_nodes() {
+  double min_lat = 90, max_lat = -90, min_lon = 180, max_lon = -180;
+  int points = 0;
+  auto add = [&](double lat, double lon) {
+    min_lat = std::min(min_lat, lat); max_lat = std::max(max_lat, lat);
+    min_lon = std::min(min_lon, lon); max_lon = std::max(max_lon, lon);
+    ++points;
+  };
+  for (size_t i = 0; i < g_snapshot.node_count; ++i)
+    if (has_position(g_snapshot.nodes[i]))
+      add(g_snapshot.nodes[i].latitude_e7 / 1e7, g_snapshot.nodes[i].longitude_e7 / 1e7);
+  if (g_snapshot.receiver_located)
+    add(g_snapshot.receiver_latitude_e7 / 1e7, g_snapshot.receiver_longitude_e7 / 1e7);
+  if (points == 0) return;
+  const double lat = (min_lat + max_lat) / 2.0, lon = (min_lon + max_lon) / 2.0;
+  const double cos_lat = std::fmax(0.1, std::cos(lat * M_PI / 180.0));
+  const double half_north_nm = (max_lat - min_lat) / 2.0 * 60.0;
+  const double half_east_nm = (max_lon - min_lon) / 2.0 * 60.0 * cos_lat;
+  // The view is wider than tall: its half-height is the radius, its half-width is kMapW / kMapH times that.
+  const double needed = std::max(half_north_nm, half_east_nm * kMapH / kMapW) * 1.25;
+  g_map_range_index = kMapRangeCount - 1;
+  for (size_t i = 0; i < kMapRangeCount; ++i)
+    if (kMapRanges[i] >= needed) { g_map_range_index = i; break; }
+  set_map_center(lat, lon);
+  g_follow_node = false;
+}
+
+void draw_scale_bar(const offline_map::View& map) {
+  static const float kNice[] = {0.5f, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000};
+  const float px_per_nm = map.radius_px / map.range_nm;
+  float length_nm = kNice[0];
+  for (float nice : kNice)
+    if (nice * px_per_nm <= 150.0f) length_nm = nice;
+  const int length_px = static_cast<int>(length_nm * px_per_nm);
+  const int x = kMapX + 12, y = kMapY + kMapH - 16;
+  M5.Display.fillRoundRect(x - 6, y - 24, length_px + 80, 34, 6, kBg);
+  M5.Display.drawFastHLine(x, y, length_px, kMuted);
+  M5.Display.drawFastVLine(x, y - 5, 6, kMuted);
+  M5.Display.drawFastVLine(x + length_px, y - 5, 6, kMuted);
+  char label[32];
+  snprintf(label, sizeof(label), "%g NM  %.0f km", length_nm, length_nm * 1.852f);
+  text(label, x, y - 12, kMuted, 1, middle_left);
+}
+
 void follow_selected_position() {
   const Node* node = selected_positioned_node();
   if (!node) return;
@@ -385,10 +493,11 @@ void draw_map_static() {
   text("GEOGRAPHIC MAP", 48, 165, kCyan, 2, middle_left);
   card(942, 138, 306, 452);
   text("SELECTED NODE", 966, 165, kCyan, 2, middle_left);
-  button(26, 604, 210, 42, "CENTER MAP", kCyan);
-  button(252, 604, 210, 42, "FOLLOW NODE", kCyan, g_follow_node);
-  text("VERIFIED POSITIONS ONLY", 590, 625, kMuted, 1);
-  text("15 NM", 870, 625, kMuted, 1);
+  button(26, 604, 200, 42, "CENTER MAP", kCyan);
+  button(236, 604, 200, 42, "FOLLOW NODE", kCyan, g_follow_node);
+  button(446, 604, 200, 42, "MY LOCATION", kCyan);
+  button(656, 604, 200, 42, "FIT NODES", kCyan);
+  text("DRAG TO PAN   + / - TO ZOOM   VERIFIED POSITIONS ONLY", 580, 165, kMuted, 1, middle_center);
 }
 
 void draw_health_static() {
@@ -662,30 +771,71 @@ void draw_traffic_dynamic() {
 }
 
 void draw_map_dynamic() {
-  M5.Display.fillRect(50, 182, 842, 330, kBg);
+  if (!g_map_dragging) M5.Display.fillRect(50, 182, 842, 330, kBg);   // a drag preview repaints only what it exposes
   const Node* center = g_snapshot.node_count ? &g_snapshot.nodes[
       std::min<size_t>(g_snapshot.selected_node, g_snapshot.node_count - 1)] : nullptr;
   if (g_follow_node || !g_map_center_set) follow_selected_position();
-  if (!g_map_center_set) {
+  // Until a node reports a verified position the map centres on the receiver's own location, so the area is visible.
+  const bool from_receiver = !g_map_center_set && g_snapshot.receiver_located;
+  float lat = 0, lon = 0;
+  if (!map_center(&lat, &lon)) {
     text("WAITING FOR VERIFIED POSITION", 470, 350, kMuted, 2);
   } else {
-    const float lat = g_map_center_lat_e7 / 10000000.0f;
-    const float lon = g_map_center_lon_e7 / 10000000.0f;
-    offline_map::View map{lat, lon, 15.0f, 50, 182, 842, 330};
-    offline_map::draw_base(map, 0x0320, kGrid, kMuted, kGrid);
+    offline_map::View map{lat, lon, map_range_nm(), kMapX, kMapY, kMapW, kMapH, map_radius_px()};
+    const int shift_x = g_map_dragging ? g_drag_dx : 0, shift_y = g_map_dragging ? g_drag_dy : 0;
+    // While a finger is dragging, the last picture slides with it; the new area is drawn when it lifts.
+    if (g_map_dragging && offline_map::draw_shifted(M5.Display, map, shift_x, shift_y)) {
+      // The shifted picture covers most of the view; clear the strips it left bare.
+      if (shift_y > 0) M5.Display.fillRect(kMapX, kMapY, kMapW, std::min(shift_y, kMapH), kBg);
+      if (shift_y < 0) M5.Display.fillRect(kMapX, kMapY + std::max(kMapH + shift_y, 0), kMapW, std::min(-shift_y, kMapH), kBg);
+      if (shift_x > 0) M5.Display.fillRect(kMapX, kMapY, std::min(shift_x, kMapW), kMapH, kBg);
+      if (shift_x < 0) M5.Display.fillRect(kMapX + std::max(kMapW + shift_x, 0), kMapY, std::min(-shift_x, kMapW), kMapH, kBg);
+    } else {
+      if (g_map_dragging) M5.Display.fillRect(50, 182, 842, 330, kBg);   // no cached picture to slide yet
+      offline_map::draw_base(map, 0x0320, kGrid, kMuted, kGrid);
+    }
     if (!offline_map::available()) text("OFFLINE MAP PACK NOT INSTALLED", 470, 490, kMuted, 1);
+    M5.Display.setClipRect(kMapX, kMapY, kMapW, kMapH);
+    if (g_snapshot.receiver_located) {
+      // This receiver, so the map always shows where you are.
+      int rx = 0, ry = 0;
+      if (offline_map::project(map, g_snapshot.receiver_latitude_e7 / 10000000.0f,
+                               g_snapshot.receiver_longitude_e7 / 10000000.0f, &rx, &ry)) {
+        rx += shift_x; ry += shift_y;
+        M5.Display.drawFastHLine(rx - 8, ry, 17, kMuted);
+        M5.Display.drawFastVLine(rx, ry - 8, 17, kMuted);
+        text("RX", rx + 12, ry + 10, kMuted, 1, middle_left);
+      }
+    }
+    if (from_receiver) {
+      M5.Display.fillRoundRect(250, 486, 442, 20, 6, kBg);
+      text("NO VERIFIED NODE POSITIONS YET   CENTRED ON YOUR LOCATION", 471, 496, kMuted, 1);
+    }
     for (size_t i = 0; i < g_snapshot.node_count; ++i) {
       const Node& node = g_snapshot.nodes[i];
       if (!has_position(node)) continue;
       int x = 0, y = 0;
-      if (!offline_map::project(map, node.latitude_e7 / 10000000.0f,
+      offline_map::View wide = map;   // nodes slightly outside the picture still belong to the drag preview
+      if (!offline_map::project(wide, node.latitude_e7 / 10000000.0f,
                                 node.longitude_e7 / 10000000.0f, &x, &y)) continue;
+      x += shift_x; y += shift_y;
       const uint16_t color = i == g_snapshot.selected_node ? kGreen : kCyan;
       M5.Display.drawCircle(x, y, i == g_snapshot.selected_node ? 13 : 9, color);
       M5.Display.fillCircle(x, y, 3, color);
       char value[32]; node_name(node, value, sizeof(value));
       text(value, x + 14, y - 6, color, 1, middle_left);
     }
+    M5.Display.clearClipRect();
+    // Zoom buttons and the scale, on top of the map.
+    M5.Display.fillRoundRect(kZoomInX, kZoomInY, kZoomSize, kZoomSize, 6, kPanel);
+    M5.Display.drawRoundRect(kZoomInX, kZoomInY, kZoomSize, kZoomSize, 6, g_map_range_index > 0 ? kCyan : kMuted);
+    text("+", kZoomInX + kZoomSize / 2, kZoomInY + kZoomSize / 2, g_map_range_index > 0 ? TFT_WHITE : kMuted, 3);
+    M5.Display.fillRoundRect(kZoomOutX, kZoomOutY, kZoomSize, kZoomSize, 6, kPanel);
+    M5.Display.drawRoundRect(kZoomOutX, kZoomOutY, kZoomSize, kZoomSize, 6,
+                             g_map_range_index + 1 < kMapRangeCount ? kCyan : kMuted);
+    text("-", kZoomOutX + kZoomSize / 2, kZoomOutY + kZoomSize / 2,
+         g_map_range_index + 1 < kMapRangeCount ? TFT_WHITE : kMuted, 3);
+    draw_scale_bar(map);
   }
   M5.Display.fillRect(960, 190, 270, 370, kPanel);
   char value[64];
@@ -979,8 +1129,10 @@ Action handle_touch(int32_t x, int32_t y) {
     if (hit(x, y, 618, 188, 270, 44)) return {ActionKind::filter_next};
     if (hit(x, y, 902, 188, 270, 44)) return {ActionKind::clear_events};
   } else if (g_view == View::map) {
-    if (hit(x, y, 26, 604, 210, 42)) return {ActionKind::center_map};
-    if (hit(x, y, 252, 604, 210, 42)) return {ActionKind::follow_node};
+    if (hit(x, y, 26, 604, 200, 42)) return {ActionKind::center_map};
+    if (hit(x, y, 236, 604, 200, 42)) return {ActionKind::follow_node};
+    if (hit(x, y, 446, 604, 200, 42)) { center_on_receiver(); draw_map_dynamic(); return {}; }
+    if (hit(x, y, 656, 604, 200, 42)) { fit_map_to_nodes(); draw_map_dynamic(); return {}; }
   } else {
     if (hit(x, y, 24, 578, 242, 48)) return {ActionKind::scan_toggle};
     if (hit(x, y, 284, 578, 242, 48)) return {ActionKind::record_iq_toggle};
@@ -988,6 +1140,48 @@ Action handle_touch(int32_t x, int32_t y) {
     if (hit(x, y, 804, 578, 242, 48)) return {ActionKind::clear_events};
   }
   return {};
+}
+
+bool map_gesture(int32_t x, int32_t y, bool pressed) {
+  static bool tracking = false;
+  static int start_x = 0, start_y = 0;
+  if (!g_active || g_view != View::map || g_channels_open) {
+    tracking = false;
+    g_map_dragging = false;
+    return false;
+  }
+  if (pressed) {
+    if (!tracking) {
+      if (!hit(x, y, kMapX, kMapY, kMapW, kMapH)) return false;   // a button elsewhere: the normal handler takes it
+      tracking = true;
+      start_x = x;
+      start_y = y;
+      g_map_dragging = false;
+      g_drag_dx = g_drag_dy = 0;
+      return true;
+    }
+    const int dx = x - start_x, dy = y - start_y;
+    if (!g_map_dragging && (std::abs(dx) >= kDragThreshold || std::abs(dy) >= kDragThreshold)) g_map_dragging = true;
+    if (g_map_dragging) {
+      g_drag_dx = dx;
+      g_drag_dy = dy;
+      draw_map_dynamic();
+    }
+    return true;
+  }
+  if (!tracking) return false;
+  tracking = false;
+  if (g_map_dragging) {
+    g_map_dragging = false;
+    pan_by_pixels(g_drag_dx, g_drag_dy);
+    g_drag_dx = g_drag_dy = 0;
+    draw_static();
+    return true;
+  }
+  // A tap: the zoom buttons sit on the map.
+  if (hit(start_x, start_y, kZoomInX, kZoomInY, kZoomSize, kZoomSize)) { zoom_map(-1); draw_map_dynamic(); }
+  else if (hit(start_x, start_y, kZoomOutX, kZoomOutY, kZoomSize, kZoomSize)) { zoom_map(+1); draw_map_dynamic(); }
+  return true;
 }
 
 bool active() { return g_active; }

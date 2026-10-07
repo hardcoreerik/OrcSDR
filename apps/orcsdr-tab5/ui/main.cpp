@@ -10992,6 +10992,12 @@ void handle_shortwave_dashboard_action(const orcsdr::shortwave::Action& action) 
 
 orcsdr::lora::Snapshot lora_dashboard_snapshot() {
   orcsdr::lora::Snapshot snapshot{};
+  {
+    const auto receiver = orcsdr::receiver_location::snapshot();
+    snapshot.receiver_located = receiver.configured;
+    snapshot.receiver_latitude_e7 = receiver.latitude_e7;
+    snapshot.receiver_longitude_e7 = receiver.longitude_e7;
+  }
   const auto& channel = orcsdr::lora_channel::selection();
   snapshot.frequency_hz = rtl_ui_frequency_hz;
   snapshot.span_hz = rtl_scope_span_hz.load(std::memory_order_relaxed);
@@ -15155,6 +15161,11 @@ void poll_sdr_touch(bool from_stream) {
   // The LoRa dashboard owns its plot and controls. Generic SDR scope gestures
   // overlap the channel-picker arrows and must not turn those taps into retunes.
   if (rtl_ui_band == RtlBand::lora && orcsdr::lora::active()) {
+    // The map pans with a drag and zooms with its + / - buttons; any other touch is a normal button press.
+    if (orcsdr::lora::map_gesture(touch.x, touch.y, pressed)) {
+      was_pressed = pressed;
+      return;
+    }
     if (pressed && !was_pressed) handle_sdr_touch(touch.x, touch.y);
     was_pressed = pressed;
     return;

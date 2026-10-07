@@ -33,6 +33,9 @@ void draw_base(const View& view, uint16_t water_color, uint16_t road_color,
                uint16_t airport_color, uint16_t border_color);
 void draw_base(lgfx::v1::LovyanGFX& display, const View& view, uint16_t water_color,
                uint16_t road_color, uint16_t airport_color, uint16_t border_color);
+// Draws the last rendered map shifted by (dx, dy) pixels inside the view, for a live preview while the user drags.
+// Returns false when no matching rendered map is cached yet.
+bool draw_shifted(lgfx::v1::LovyanGFX& display, const View& view, int dx, int dy);
 bool project(const View& view, float latitude, float longitude, int* x, int* y);
 bool self_check();
 

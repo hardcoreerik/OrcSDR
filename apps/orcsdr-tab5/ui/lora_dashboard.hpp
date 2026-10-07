@@ -83,6 +83,10 @@ struct Snapshot {
   bool iq_busy = false;
   bool native_decoder_ready = false;
   bool key_loaded = false;
+  // The receiver's own location (Settings / setup): the map centres here until a node reports a verified position.
+  bool receiver_located = false;
+  int32_t receiver_latitude_e7 = 0;
+  int32_t receiver_longitude_e7 = 0;
   char profile[24]{};
   char region[24]{};
   char log_status[48]{};
@@ -134,6 +138,9 @@ void draw();
 void update(const Snapshot& snapshot);
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, float floor);
 Action handle_touch(int32_t x, int32_t y);
+// Map view navigation (drag to pan, zoom buttons). Feed every touch sample while the LoRa map is showing; returns true
+// while the touch belongs to the map, so the caller should not also treat it as a button press.
+bool map_gesture(int32_t x, int32_t y, bool pressed);
 bool active();
 bool spectrum_active();
 void open_channel_picker();
