@@ -86,6 +86,23 @@ float g_rate_history[kHistorySamples]{};
 float g_signal_history[kHistorySamples]{};
 size_t g_history_count = 0;
 M5Canvas g_radar_base(&M5.Display);
+M5Canvas g_radar_frame(&M5.Display);   // the whole radar panel composed off-screen and pushed once: no flicker
+
+// Where each aircraft has been: a short trail of positions, kept per aircraft while it is being heard.
+constexpr size_t kTrailCount = 16;
+constexpr size_t kTrailPoints = 24;
+constexpr float kTrailMinStepNm = 0.04f;        // a new point only after the aircraft moved this far (about 75 m)
+constexpr uint32_t kTrailExpireMs = 90000;      // forgotten after this long unheard
+struct Trail {
+  uint32_t icao = 0;
+  uint8_t count = 0;
+  uint32_t last_seen_ms = 0;
+  float latitude[kTrailPoints]{};
+  float longitude[kTrailPoints]{};
+};
+Trail g_trails[kTrailCount]{};
+
+uint32_t g_status_signature = 0, g_stats_signature = 0, g_signal_signature = 0, g_list_signature = 0;
 int32_t g_radar_cache_latitude_e7 = INT32_MIN;
 int32_t g_radar_cache_longitude_e7 = INT32_MIN;
 uint16_t g_radar_cache_range_nm = 0;
@@ -103,6 +120,14 @@ int gain_from_slider_x(int x) {
   return (position * kGainMaxTenthDb + kGainSliderW / 2) / kGainSliderW;
 }
 
+// The radar's map view, in the radar panel's own pixel coordinates. The map, the range rings and every aircraft use it, so
+// they agree: (radius - 18) px is one full range (the rings are drawn at quarters of it).
+offline_map::View radar_view() {
+  return offline_map::View{g_settings.latitude_e7 / 10000000.0f, g_settings.longitude_e7 / 10000000.0f,
+                           static_cast<float>(g_settings.radar_range_nm), 8, 12, kRadarPanelW - 16,
+                           kRadarPanelH - 16, 162.0f};
+}
+
 void draw_radar_base() {
   constexpr int cx = kRadarPanelW / 2;
   constexpr int cy = kRadarPanelH / 2 + 4;
@@ -117,11 +142,7 @@ void draw_radar_base() {
   g_radar_base.fillSprite(kPanel);
   g_radar_base.drawRoundRect(0, 0, kRadarPanelW, kRadarPanelH, 12, kBorder);
   if (g_settings.location_configured) {
-    offline_map::View map{g_settings.latitude_e7 / 10000000.0f,
-                           g_settings.longitude_e7 / 10000000.0f,
-                           static_cast<float>(g_settings.radar_range_nm),
-                           8, 12, kRadarPanelW - 16, kRadarPanelH - 16,
-                           static_cast<float>(radius - 18)};   // aircraft are plotted at (radius - 18) px per full range
+    const offline_map::View map = radar_view();
     offline_map::draw_base(g_radar_base, map, 0x0320, 0x2945, 0x8c71, 0x2382);
     if (!offline_map::available()) {
       g_radar_base.setTextDatum(middle_center);
@@ -188,6 +209,53 @@ void update_geometry(DisplayAircraft& aircraft) {
            360.0)));
 }
 
+void record_trail(const DisplayAircraft& aircraft) {
+  if (!aircraft.has_position || aircraft.icao == 0) return;
+  const uint32_t now = millis();
+  Trail* trail = nullptr;
+  Trail* free_slot = nullptr;
+  Trail* oldest = &g_trails[0];
+  for (Trail& candidate : g_trails) {
+    if (candidate.icao == aircraft.icao) { trail = &candidate; break; }
+    if (candidate.icao == 0 && free_slot == nullptr) free_slot = &candidate;
+    if (candidate.last_seen_ms < oldest->last_seen_ms) oldest = &candidate;
+  }
+  if (trail == nullptr) {
+    trail = free_slot != nullptr ? free_slot : oldest;
+    *trail = Trail{};
+    trail->icao = aircraft.icao;
+  }
+  trail->last_seen_ms = now;
+  if (trail->count > 0) {
+    const float dlat = (aircraft.latitude - trail->latitude[trail->count - 1]) * 60.0f;
+    const float dlon = (aircraft.longitude - trail->longitude[trail->count - 1]) * 60.0f *
+                       cosf(aircraft.latitude * static_cast<float>(DEG_TO_RAD));
+    if (sqrtf(dlat * dlat + dlon * dlon) < kTrailMinStepNm) return;
+  }
+  if (trail->count == kTrailPoints) {
+    for (size_t i = 1; i < kTrailPoints; ++i) {
+      trail->latitude[i - 1] = trail->latitude[i];
+      trail->longitude[i - 1] = trail->longitude[i];
+    }
+    --trail->count;
+  }
+  trail->latitude[trail->count] = aircraft.latitude;
+  trail->longitude[trail->count] = aircraft.longitude;
+  ++trail->count;
+}
+
+void expire_trails() {
+  const uint32_t now = millis();
+  for (Trail& trail : g_trails)
+    if (trail.icao != 0 && now - trail.last_seen_ms > kTrailExpireMs) trail = Trail{};
+}
+
+const Trail* trail_for(uint32_t icao) {
+  for (const Trail& trail : g_trails)
+    if (trail.icao == icao) return &trail;
+  return nullptr;
+}
+
 void apply_live_snapshot() {
   const uint32_t selected_icao = g_aircraft_count ? g_aircraft[g_selected].icao : 0;
   const DisplayAircraft selected_aircraft = g_aircraft_count ? g_aircraft[g_selected]
@@ -222,7 +290,9 @@ void apply_live_snapshot() {
     target.has_vertical_rate = source.has_vertical_rate;
     target.has_position = source.has_position;
     update_geometry(target);
+    record_trail(target);
   }
+  expire_trails();
   int selected = aircraft_index(selected_icao);
   if (selected < 0 && g_locked && selected_icao) {
     selected = static_cast<int>(std::min(g_aircraft_count, kVisibleAircraft - 1));
@@ -403,33 +473,187 @@ void draw_selected_summary(int x, int y, int w, int h) {
   text("ADS-B 1090", x + 82, y + 491, TFT_LIGHTGREY, 1, middle_left);
 }
 
-void draw_radar() {
-  constexpr int cx = kRadarPanelX + kRadarPanelW / 2;
-  constexpr int cy = kRadarPanelY + kRadarPanelH / 2 + 4;
-  constexpr int radius = 180;
-  card(14, 88, 210, 226);
-  text("STATUS", 32, 113, TFT_WHITE, 2, middle_left);
-  M5.Display.drawFastHLine(30, 137, 178, kBorder);
-  text(g_live ? "RECEIVING" : "WAITING", 54, 166,
-       g_live ? kGreen : TFT_ORANGE, 1, middle_left);
-  signal_bars(34, 218, g_live ? 4 : 0);
-  text("SIGNAL", 88, 204, TFT_LIGHTGREY, 1, middle_left);
-  text(g_live ? "GOOD" : "--", 198, 204,
-       g_live ? kGreen : kMuted, 1, middle_right);
-  text(offline_map::available() ? "MAP READY" : "MAP UNAVAILABLE", 34, 269,
-       offline_map::available() ? kBlue : kMuted, 1, middle_left);
+uint32_t sig_mix(uint32_t hash, const void* data, size_t size) {
+  const uint8_t* bytes = static_cast<const uint8_t*>(data);
+  for (size_t i = 0; i < size; ++i) hash = (hash ^ bytes[i]) * 16777619u;
+  return hash;
+}
+template <typename T>
+uint32_t sig_mix(uint32_t hash, const T& value) { return sig_mix(hash, &value, sizeof(value)); }
 
-  card(14, 324, 210, 300);
-  text("STATS", 32, 349, TFT_WHITE, 2, middle_left);
-  M5.Display.drawFastHLine(30, 373, 178, kBorder);
-  char side[28];
-  const char* side_labels[] = {"AIRCRAFT", "MESSAGES", "MSG / SEC", "RANGE", "DROPS"};
+uint16_t blend565(uint16_t from, uint16_t to, int numerator, int denominator) {
+  auto channel = [&](int shift, int mask) {
+    const int a = (from >> shift) & mask, b = (to >> shift) & mask;
+    return a + (b - a) * numerator / denominator;
+  };
+  return static_cast<uint16_t>((channel(11, 31) << 11) | (channel(5, 63) << 5) | channel(0, 31));
+}
+
+// Text on an off-screen canvas, with the same fonts as text().
+void ctext(M5Canvas& canvas, const char* value, int x, int y, uint16_t color, int size = 2,
+           textdatum_t datum = middle_center) {
+  switch (size) {
+    case 1: canvas.setFont(&fonts::DejaVu18); break;
+    case 2:
+    case 3: canvas.setFont(&fonts::DejaVu24); break;
+    default: canvas.setFont(&fonts::DejaVu40); break;
+  }
+  canvas.setTextDatum(datum);
+  canvas.setTextSize(1);
+  canvas.setTextColor(color);
+  canvas.drawString(value, x, y);
+  canvas.setFont(nullptr);
+}
+
+// An aircraft silhouette pointing along `heading_deg` (clockwise from north).
+void rotated_plane(M5Canvas& canvas, int x, int y, float size, float heading_deg, uint16_t color) {
+  const float angle = heading_deg * static_cast<float>(DEG_TO_RAD);
+  const float ca = cosf(angle), sa = sinf(angle);
+  struct Triangle { float x1, y1, x2, y2, x3, y3; };
+  static const Triangle kShape[] = {
+      {0.0f, -1.0f, -0.16f, 0.75f, 0.16f, 0.75f},   // fuselage
+      {-0.95f, 0.2f, 0.95f, 0.2f, 0.0f, -0.3f},     // wings
+      {-0.42f, 0.9f, 0.42f, 0.9f, 0.0f, 0.5f},      // tail
+  };
+  auto point = [&](float px, float py, int* out_x, int* out_y) {
+    *out_x = x + static_cast<int>(lroundf((px * ca - py * sa) * size));
+    *out_y = y + static_cast<int>(lroundf((px * sa + py * ca) * size));
+  };
+  for (const Triangle& t : kShape) {
+    int ax, ay, bx, by, cx2, cy2;
+    point(t.x1, t.y1, &ax, &ay);
+    point(t.x2, t.y2, &bx, &by);
+    point(t.x3, t.y3, &cx2, &cy2);
+    canvas.fillTriangle(ax, ay, bx, by, cx2, cy2, color);
+  }
+}
+
+void ensure_radar_frame() {
+  if (g_radar_frame.getBuffer() != nullptr) return;
+  g_radar_frame.setPsram(true);
+  g_radar_frame.setColorDepth(16);
+  (void)g_radar_frame.createSprite(kRadarPanelW, kRadarPanelH);
+}
+
+// The radar panel: the map, then each aircraft's trail, heading vector and silhouette, composed off-screen and pushed in
+// one go, so nothing flashes between the map and the aircraft.
+void draw_radar_panel() {
+  constexpr int cx = kRadarPanelW / 2;
+  constexpr int cy = kRadarPanelH / 2 + 4;
+  constexpr float kFullRangePx = 162.0f;
+  draw_radar_base();
+  ensure_radar_frame();
+  if (g_radar_frame.getBuffer() == nullptr) {   // no room for the frame: fall back to drawing straight on the screen
+    if (g_radar_base.getBuffer()) g_radar_base.pushSprite(kRadarPanelX, kRadarPanelY);
+    else card(kRadarPanelX, kRadarPanelY, kRadarPanelW, kRadarPanelH);
+    return;
+  }
+  if (g_radar_base.getBuffer()) g_radar_base.pushSprite(&g_radar_frame, 0, 0);
+  else {
+    g_radar_frame.fillSprite(kPanel);
+    g_radar_frame.drawRoundRect(0, 0, kRadarPanelW, kRadarPanelH, 12, kBorder);
+  }
+  ctext(g_radar_frame, "LIVE TRAFFIC", 22, 26, kGreen, 2, middle_left);
+  char location[72];
+  if (g_settings.location_configured)
+    snprintf(location, sizeof(location), "LAT %.4f   LON %.4f   RANGE %u NM",
+             g_settings.latitude_e7 / 10000000.0, g_settings.longitude_e7 / 10000000.0, g_settings.radar_range_nm);
+  else strlcpy(location, "RECEIVER LOCATION NOT SET", sizeof(location));
+  ctext(g_radar_frame, location, 22, 54, kBlue, 1, middle_left);
+  g_radar_frame.fillCircle(cx, cy, 7, kGreen);
+
+  if (g_settings.location_configured) {
+    const offline_map::View view = radar_view();
+    const float px_per_nm = kFullRangePx / static_cast<float>(g_settings.radar_range_nm);
+    g_radar_frame.setClipRect(8, 12, kRadarPanelW - 16, kRadarPanelH - 16);
+    // Where an aircraft is on the panel, from its own latitude and longitude on the same scale as the map; beyond the range
+    // it is held on the range circle so it stays visible.
+    auto place = [&](float lat, float lon, int* x, int* y, bool clamp) {
+      offline_map::project_unclipped(view, lat, lon, x, y);
+      if (!clamp) return;
+      const float dx = static_cast<float>(*x - cx), dy = static_cast<float>(*y - cy);
+      const float distance = sqrtf(dx * dx + dy * dy);
+      if (distance > kFullRangePx) {
+        *x = cx + static_cast<int>(dx * kFullRangePx / distance);
+        *y = cy + static_cast<int>(dy * kFullRangePx / distance);
+      }
+    };
+    for (size_t i = 0; i < g_aircraft_count; ++i) {
+      const DisplayAircraft& a = g_aircraft[i];
+      if (!a.has_position) continue;
+      const bool selected = i == g_selected;
+      const uint16_t color = selected ? kBlue : kGreen;
+      // Trail: older points are dimmer.
+      if (const Trail* trail = trail_for(a.icao)) {
+        int previous_x = 0, previous_y = 0;
+        for (size_t k = 0; k < trail->count; ++k) {
+          int tx = 0, ty = 0;
+          place(trail->latitude[k], trail->longitude[k], &tx, &ty, false);
+          if (k > 0)
+            g_radar_frame.drawLine(previous_x, previous_y, tx, ty,
+                                   blend565(kBorder, color, static_cast<int>(k), static_cast<int>(trail->count)));
+          previous_x = tx;
+          previous_y = ty;
+        }
+      }
+      int px = 0, py = 0;
+      place(a.latitude, a.longitude, &px, &py, true);
+      // Heading vector: where it will be in one minute.
+      if (a.has_heading && a.has_speed && a.speed_kts > 0) {
+        const float length = std::clamp(a.speed_kts / 60.0f * px_per_nm, 8.0f, 70.0f);
+        const float angle = a.heading_deg * static_cast<float>(DEG_TO_RAD);
+        g_radar_frame.drawLine(px, py, px + static_cast<int>(sinf(angle) * length),
+                               py - static_cast<int>(cosf(angle) * length), color);
+      }
+      if (a.has_heading) rotated_plane(g_radar_frame, px, py, selected ? 14.0f : 10.0f, a.heading_deg, color);
+      else g_radar_frame.fillCircle(px, py, selected ? 7 : 5, color);   // no heading yet: a dot, not a guessed direction
+      if (selected) g_radar_frame.drawCircle(px, py, 19, kBlue);
+      ctext(g_radar_frame, a.callsign, px + 18, py - 5, selected ? TFT_WHITE : TFT_LIGHTGREY, 1, middle_left);
+    }
+    g_radar_frame.clearClipRect();
+  }
+  // The zoom buttons are part of the panel.
+  g_radar_frame.fillRoundRect(830 - kRadarPanelX, 112 - kRadarPanelY, 38, 38, 8, TFT_DARKCYAN);
+  g_radar_frame.drawRoundRect(830 - kRadarPanelX, 112 - kRadarPanelY, 38, 38, 8, TFT_LIGHTGREY);
+  ctext(g_radar_frame, "+", 830 - kRadarPanelX + 19, 112 - kRadarPanelY + 19, TFT_WHITE, 2);
+  g_radar_frame.fillRoundRect(830 - kRadarPanelX, 158 - kRadarPanelY, 38, 38, 8, TFT_DARKCYAN);
+  g_radar_frame.drawRoundRect(830 - kRadarPanelX, 158 - kRadarPanelY, 38, 38, 8, TFT_LIGHTGREY);
+  ctext(g_radar_frame, "-", 830 - kRadarPanelX + 19, 158 - kRadarPanelY + 19, TFT_WHITE, 2);
+  orcsdr::focus_nav::note(830, 112, 38, 38);
+  orcsdr::focus_nav::note(830, 158, 38, 38);
+  g_radar_frame.pushSprite(kRadarPanelX, kRadarPanelY);
+  if (!g_settings.location_configured) button("SET RECEIVER LOCATION", 365, 425, 360, 40, TFT_MAROON);
+}
+
+void draw_radar_status_cards(bool force) {
+  const uint32_t status_sig = sig_mix(sig_mix(2166136261u, g_live), offline_map::available());
+  if (force || status_sig != g_status_signature) {
+    g_status_signature = status_sig;
+    card(14, 88, 210, 226);
+    text("STATUS", 32, 113, TFT_WHITE, 2, middle_left);
+    M5.Display.drawFastHLine(30, 137, 178, kBorder);
+    text(g_live ? "RECEIVING" : "WAITING", 54, 166, g_live ? kGreen : TFT_ORANGE, 1, middle_left);
+    signal_bars(34, 218, g_live ? 4 : 0);
+    text("SIGNAL", 88, 204, TFT_LIGHTGREY, 1, middle_left);
+    text(g_live ? "GOOD" : "--", 198, 204, g_live ? kGreen : kMuted, 1, middle_right);
+    text(offline_map::available() ? "MAP READY" : "MAP UNAVAILABLE", 34, 269,
+         offline_map::available() ? kBlue : kMuted, 1, middle_left);
+  }
+  char side[28], side_messages[28], side_rate[28], side_range[28], side_drops[28];
   snprintf(side, sizeof(side), "%u", static_cast<unsigned>(displayed_aircraft_count()));
-  char side_messages[28], side_rate[28], side_range[28], side_drops[28];
   snprintf(side_messages, sizeof(side_messages), "%lu", static_cast<unsigned long>(displayed_total_messages()));
   snprintf(side_rate, sizeof(side_rate), "%.1f", displayed_message_rate());
   snprintf(side_range, sizeof(side_range), "%u NM", g_settings.radar_range_nm);
   snprintf(side_drops, sizeof(side_drops), "%lu", static_cast<unsigned long>(g_live_snapshot.consumer_drops));
+  uint32_t stats_sig = 2166136261u;
+  for (const char* value : {side, side_messages, side_rate, side_range, side_drops})
+    stats_sig = sig_mix(stats_sig, value, strlen(value));
+  if (!force && stats_sig == g_stats_signature) return;
+  g_stats_signature = stats_sig;
+  card(14, 324, 210, 300);
+  text("STATS", 32, 349, TFT_WHITE, 2, middle_left);
+  M5.Display.drawFastHLine(30, 373, 178, kBorder);
+  const char* side_labels[] = {"AIRCRAFT", "MESSAGES", "MSG / SEC", "RANGE", "DROPS"};
   const char* side_values[] = {side, side_messages, side_rate, side_range, side_drops};
   for (int i = 0; i < 5; ++i) {
     const int yy = 404 + i * 43;
@@ -437,44 +661,11 @@ void draw_radar() {
     text(side_values[i], 198, yy, i == 0 ? kGreen : kBlue, 1, middle_right);
     if (i < 4) M5.Display.drawFastHLine(32, yy + 20, 174, kBorder);
   }
+}
 
-  draw_radar_base();
-  if (g_radar_base.getBuffer()) g_radar_base.pushSprite(kRadarPanelX, kRadarPanelY);
-  else card(kRadarPanelX, kRadarPanelY, kRadarPanelW, kRadarPanelH);
-  text("LIVE TRAFFIC", kRadarPanelX + 22, kRadarPanelY + 26, kGreen, 2, middle_left);
-  char location[72];
-  if (g_settings.location_configured)
-    snprintf(location, sizeof(location), "LAT %.4f   LON %.4f   RANGE %u NM",
-             g_settings.latitude_e7 / 10000000.0, g_settings.longitude_e7 / 10000000.0,
-             g_settings.radar_range_nm);
-  else strlcpy(location, "RECEIVER LOCATION NOT SET", sizeof(location));
-  text(location, kRadarPanelX + 22, kRadarPanelY + 54, kBlue, 1, middle_left);
-  M5.Display.fillCircle(cx, cy, 7, kGreen);
-  for (size_t i = 0; i < g_aircraft_count; ++i) {
-    if (!g_aircraft[i].has_position || !g_settings.location_configured) continue;
-    const float distance = fminf(g_aircraft[i].range_nm / g_settings.radar_range_nm, 1.0f);
-    const float angle = (g_aircraft[i].bearing_deg - 90.0f) * DEG_TO_RAD;
-    const int px = cx + static_cast<int>(cosf(angle) * distance * (radius - 18));
-    const int py = cy + static_cast<int>(sinf(angle) * distance * (radius - 18));
-    plane(px, py, i == g_selected ? 16 : 12, i == g_selected ? kBlue : kGreen);
-    text(g_aircraft[i].callsign, px + 18, py - 5,
-         i == g_selected ? TFT_WHITE : TFT_LIGHTGREY, 1, middle_left);
-  }
-  button("+", 830, 112, 38, 38, TFT_DARKCYAN);
-  button("-", 830, 158, 38, 38, TFT_DARKCYAN);
-
-  card(234, 488, 646, 136);
-  text("SIGNAL LEVEL", 250, 512, TFT_WHITE, 1, middle_left);
+void draw_radar_signal_card(bool force) {
   const float signal = g_live ? g_live_snapshot.strongest_signal_dbfs : -100.0f;
   const int bars = std::clamp(static_cast<int>((signal + 100.0f) / 5.0f), 0, 12);
-  for (int i = 0; i < 12; ++i)
-    M5.Display.fillRect(250 + i * 18, 582 - i * 3, 12, 18 + i * 3,
-                        i < bars ? (i < 7 ? kGreen : kBlue) : TFT_DARKGREY);
-  text("POSITIONS / MIN", 487, 512, TFT_WHITE, 1, middle_left);
-  char rate[18];
-  snprintf(rate, sizeof(rate), "%.0f", displayed_message_rate());
-  text(rate, 487, 551, TFT_WHITE, 3, middle_left);
-  text("ALTITUDE DISTRIBUTION", 655, 512, TFT_WHITE, 1, middle_left);
   uint8_t altitude_bins[kAltitudeBins]{};
   uint8_t max_altitude_bin = 0;
   for (size_t i = 0; i < g_aircraft_count; ++i) {
@@ -482,19 +673,44 @@ void draw_radar() {
     auto& count = altitude_bins[altitude_bin(g_aircraft[i].altitude_ft)];
     max_altitude_bin = std::max(max_altitude_bin, ++count);
   }
+  char rate[18];
+  snprintf(rate, sizeof(rate), "%.0f", displayed_message_rate());
+  uint32_t sig = sig_mix(sig_mix(2166136261u, bars), altitude_bins);
+  sig = sig_mix(sig, rate, strlen(rate));
+  if (!force && sig == g_signal_signature) return;
+  g_signal_signature = sig;
+  card(234, 488, 646, 136);
+  text("SIGNAL LEVEL", 250, 512, TFT_WHITE, 1, middle_left);
+  for (int i = 0; i < 12; ++i)
+    M5.Display.fillRect(250 + i * 18, 582 - i * 3, 12, 18 + i * 3, i < bars ? (i < 7 ? kGreen : kBlue) : TFT_DARKGREY);
+  text("POSITIONS / MIN", 487, 512, TFT_WHITE, 1, middle_left);
+  text(rate, 487, 551, TFT_WHITE, 3, middle_left);
+  text("ALTITUDE DISTRIBUTION", 655, 512, TFT_WHITE, 1, middle_left);
   if (!max_altitude_bin) {
     text("--", 755, 561, kMuted, 2);
   } else {
     for (size_t i = 0; i < kAltitudeBins; ++i) {
-      const int h = altitude_bins[i]
-                        ? 8 + altitude_bins[i] * 38 / max_altitude_bin
-                        : 0;
-      if (h)
-        M5.Display.fillRect(660 + static_cast<int>(i) * 16, 594 - h, 11, h,
-                            kBlue);
+      const int h = altitude_bins[i] ? 8 + altitude_bins[i] * 38 / max_altitude_bin : 0;
+      if (h) M5.Display.fillRect(660 + static_cast<int>(i) * 16, 594 - h, 11, h, kBlue);
     }
   }
+}
 
+void draw_radar_list_card(bool force) {
+  uint32_t sig = sig_mix(2166136261u, g_aircraft_count);
+  sig = sig_mix(sig, g_selected);
+  sig = sig_mix(sig, g_settings.location_configured);
+  for (size_t i = 0; i < g_aircraft_count; ++i) {
+    const DisplayAircraft& a = g_aircraft[i];
+    sig = sig_mix(sig, a.icao);
+    sig = sig_mix(sig, static_cast<int>(a.range_nm));
+    sig = sig_mix(sig, a.altitude_ft / 1000);
+    sig = sig_mix(sig, a.speed_kts);
+    sig = sig_mix(sig, a.callsign, strlen(a.callsign));
+  }
+  sig = sig_mix(sig, displayed_aircraft_count());
+  if (!force && sig == g_list_signature) return;
+  g_list_signature = sig;
   card(890, 88, 376, 536);
   text("AIRCRAFT LIST", 910, 116, TFT_WHITE, 2, middle_left);
   char received[24];
@@ -522,9 +738,15 @@ void draw_radar() {
     text(value, 1238, yy, TFT_WHITE, 1, middle_right);
     M5.Display.drawFastHLine(906, yy + 27, 344, kBorder);
   }
-  if (!g_settings.location_configured) {
-    button("SET RECEIVER LOCATION", 365, 425, 360, 40, TFT_MAROON);
-  }
+}
+
+// `force` repaints every card (entering the view); a live refresh repaints only the parts whose values changed, and the
+// radar panel, which is composed off-screen, in one push.
+void draw_radar(bool force = true) {
+  draw_radar_status_cards(force);
+  draw_radar_panel();
+  draw_radar_signal_card(force);
+  draw_radar_list_card(force);
 }
 
 void draw_list() {
@@ -850,7 +1072,7 @@ void draw_settings() {
 void redraw_content() {
   M5.Display.fillRect(0, kHeaderH, 1280, kTabsY - kHeaderH, kBg);
   switch (g_view) {
-    case View::radar: draw_radar(); break;
+    case View::radar: draw_radar(true); break;
     case View::list: draw_list(); break;
     case View::target: draw_target(); break;
     case View::stats: draw_stats(); break;
@@ -943,13 +1165,13 @@ void draw() { if (g_active) redraw(); }
 void update() {
   if (!g_active || !g_live || g_drawn_revision == g_live_snapshot.revision) return;
   static uint32_t last_draw_ms = 0;
-  if (millis() - last_draw_ms < 1000) return;
+  if (millis() - last_draw_ms < 500) return;
   last_draw_ms = millis();
   apply_live_snapshot();
   g_drawn_revision = g_live_snapshot.revision;
   // Live repaint deliberately skips redraw_content()'s full black clear.
   switch (g_view) {
-    case View::radar: draw_radar(); break;
+    case View::radar: draw_radar(false); break;
     case View::list: draw_list(); break;
     case View::target: draw_target(); break;
     case View::stats: draw_stats(); break;

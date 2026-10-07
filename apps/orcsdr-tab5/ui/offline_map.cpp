@@ -212,13 +212,17 @@ const char* source_label() {
   return available() ? "WORLD" : "NONE";
 }
 
-bool project(const View& view, float latitude, float longitude, int* x, int* y) {
-  if (x == nullptr || y == nullptr || view.range_nm <= 0.0f) return false;
+void project_unclipped(const View& view, float latitude, float longitude, int* x, int* y) {
   double east = 0, north = 0;
   orcsdr::map_view::offset_nm(view.center_lat, view.center_lon, latitude, longitude, &east, &north);
-  const double per_nm = radius_of(view) / view.range_nm;
+  const double per_nm = view.range_nm > 0.0f ? radius_of(view) / view.range_nm : 1.0;
   *x = view.x + view.width / 2 + static_cast<int>(std::lround(east * per_nm));
   *y = view.y + view.height / 2 - static_cast<int>(std::lround(north * per_nm));
+}
+
+bool project(const View& view, float latitude, float longitude, int* x, int* y) {
+  if (x == nullptr || y == nullptr || view.range_nm <= 0.0f) return false;
+  project_unclipped(view, latitude, longitude, x, y);
   return *x >= view.x && *x < view.x + view.width && *y >= view.y && *y < view.y + view.height;
 }
 
