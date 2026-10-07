@@ -1,152 +1,260 @@
 #include "offline_map.hpp"
 
 #include <M5Unified.h>
+#include <esp_heap_caps.h>
+#include <esp_log.h>
+#include <esp_timer.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <memory>
+#include <vector>
+
+#include "map_packs.hpp"
+#include "map_sources.hpp"
+#include "map_view_math.hpp"
+#include "orcmap/esp_idf/file_byte_source.hpp"
+#include "orcmap/experimental/mvt_classify.hpp"
+#include "orcmap/feature.hpp"
+#include "orcmap/m5gfx/display_target.hpp"
+#include "orcmap/mvt_stream.hpp"
+#include "orcmap/pmtiles.hpp"
+#include "orcmap/renderer.hpp"
+#include "orcmap/style.hpp"
+#include "orcmap/viewport.hpp"
 
 namespace orcsdr::offline_map {
 namespace {
 
-constexpr size_t kSegmentCapacity = 640;
-constexpr size_t kLabelCapacity = 32;
-enum class Kind : uint8_t { road, water, airport };
-struct Segment { float lat1, lon1, lat2, lon2; Kind kind; };
-struct Label { float lat, lon; char text[24]; };
-EXT_RAM_BSS_ATTR Segment g_segments[kSegmentCapacity]{};
-EXT_RAM_BSS_ATTR Label g_labels[kLabelCapacity]{};
-size_t g_count = 0;
-size_t g_label_count = 0;
-bool g_available = false;
+constexpr char kTag[] = "offline_map";
 
-bool parse_line(const char* line, Segment* output) {
-  if (!line || !output) return false;
-  char kind = 0;
-  Segment segment{};
-  if (sscanf(line, "%c %f %f %f %f", &kind, &segment.lat1, &segment.lon1,
-             &segment.lat2, &segment.lon2) != 5) return false;
-  if (segment.lat1 < -90 || segment.lat1 > 90 || segment.lat2 < -90 || segment.lat2 > 90 ||
-      segment.lon1 < -180 || segment.lon1 > 180 || segment.lon2 < -180 || segment.lon2 > 180)
-    return false;
-  if (kind == 'R') segment.kind = Kind::road;
-  else if (kind == 'W') segment.kind = Kind::water;
-  else if (kind == 'A') segment.kind = Kind::airport;
-  else return false;
-  *output = segment;
-  return true;
-}
-
-bool parse_label(const char* line, Label* output) {
-  if (!line || !output) return false;
-  Label label{};
-  if (sscanf(line, "L %f %f %23[^\n]", &label.lat, &label.lon, label.text) != 3 ||
-      label.lat < -90 || label.lat > 90 || label.lon < -180 || label.lon > 180 || !label.text[0])
-    return false;
-  *output = label;
-  return true;
-}
-
-void project_unclipped(const View& view, float latitude, float longitude, int* x, int* y) {
-  constexpr float kNmPerDegree = 60.0f;
-  const float lon_scale = std::fmax(0.1f, std::cos(view.center_lat * DEG_TO_RAD));
-  const float east_nm = (longitude - view.center_lon) * lon_scale * kNmPerDegree;
-  const float north_nm = (latitude - view.center_lat) * kNmPerDegree;
-  *x = view.x + view.width / 2 + static_cast<int>(east_nm * (view.width / 2.0f) / view.range_nm);
-  *y = view.y + view.height / 2 - static_cast<int>(north_nm * (view.height / 2.0f) / view.range_nm);
-}
-
-uint8_t clip_code(const View& view, int x, int y) {
-  uint8_t code = 0;
-  if (x < view.x) code |= 1;
-  else if (x >= view.x + view.width) code |= 2;
-  if (y < view.y) code |= 4;
-  else if (y >= view.y + view.height) code |= 8;
-  return code;
-}
-
-bool clip_line(const View& view, int* x1, int* y1, int* x2, int* y2) {
-  if (!x1 || !y1 || !x2 || !y2) return false;
-  const int left = view.x, right = view.x + view.width - 1;
-  const int top = view.y, bottom = view.y + view.height - 1;
-  while (true) {
-    const uint8_t first = clip_code(view, *x1, *y1);
-    const uint8_t second = clip_code(view, *x2, *y2);
-    if (!(first | second)) return true;
-    if (first & second) return false;
-    const uint8_t outside = first ? first : second;
-    int x = 0, y = 0;
-    if (outside & 8) { y = bottom; x = *x1 + (*x2 - *x1) * (bottom - *y1) / (*y2 - *y1); }
-    else if (outside & 4) { y = top; x = *x1 + (*x2 - *x1) * (top - *y1) / (*y2 - *y1); }
-    else if (outside & 2) { x = right; y = *y1 + (*y2 - *y1) * (right - *x1) / (*x2 - *x1); }
-    else { x = left; y = *y1 + (*y2 - *y1) * (left - *x1) / (*x2 - *x1); }
-    if (outside == first) { *x1 = x; *y1 = y; }
-    else { *x2 = x; *y2 = y; }
+// One rendered map is kept, keyed by everything that changes it, so a screen that redraws often (the LoRa map) only
+// pushes the finished picture.
+M5Canvas g_cache(&M5.Display);
+struct CacheKey {
+  float lat = 0, lon = 0, range = 0, radius = 0;
+  int width = 0, height = 0;
+  uint32_t generation = 0;
+  bool operator==(const CacheKey& other) const {
+    return lat == other.lat && lon == other.lon && range == other.range && radius == other.radius &&
+           width == other.width && height == other.height && generation == other.generation;
   }
+} g_key;
+bool g_cache_valid = false;
+char g_label[64] = "";
+char g_credit[64] = "";
+
+float radius_of(const View& view) {
+  return view.radius_px > 0.0f ? view.radius_px : std::min(view.width, view.height) / 2.0f;
+}
+
+struct RenderContext {
+  const orcmap::TilePlacement* placement = nullptr;
+  const orcmap::Viewport* viewport = nullptr;
+  const orcmap::MapStyle* style = nullptr;
+  orcmap::RenderTarget* target = nullptr;
+};
+
+bool IncludeBasemapLayer(const char* name, size_t name_len, void* ctx) {
+  return orcmap::experimental::IncludeNoTextBasemapLayer(name, name_len, ctx);
+}
+
+// One feature at a time: the streaming decoder never materialises a whole tile.
+bool DrawFeature(const orcmap::Feature& feature, void* ctx) {
+  RenderContext& render = *static_cast<RenderContext*>(ctx);
+  orcmap::Feature shaped = feature;
+  orcmap::FeatureKind kind{};
+  if (orcmap::experimental::TryClassifyFeature(shaped, &kind)) {
+    shaped.kind = kind;
+    shaped.kind_assigned = true;
+  }
+  orcmap::RenderFeatureAt(shaped, *render.placement, *render.viewport, *render.style, render.target);
+  return true;
+}
+
+// An open archive and the source it reads. Closed when it goes out of scope.
+struct Layer {
+  std::unique_ptr<orcmap::ByteSource> source;
+  std::unique_ptr<orcmap::PmTilesReader> reader;
+  uint8_t min_zoom = 0;
+  uint8_t max_zoom = 0;
+  bool open = false;
+
+  bool open_embedded() {
+    source = std::make_unique<orcsdr::map_sources::EmbeddedWorldSource>();
+    return finish();
+  }
+  bool open_file(const char* path) {
+    source = std::make_unique<orcmap::esp_idf::FileByteSource>(path);
+    return finish();
+  }
+
+ private:
+  bool finish() {
+    if (!source->Valid()) return false;
+    reader = std::make_unique<orcmap::PmTilesReader>(source.get());
+    if (!reader->Open()) return false;
+    min_zoom = reader->Header().min_zoom;
+    max_zoom = reader->Header().max_zoom;
+    open = true;
+    return true;
+  }
+};
+
+// Draws every visible tile of one archive at the zoom plan that reproduces the wanted scale.
+void draw_layer(Layer& layer, double fractional_zoom, const View& view, orcmap::MvtStreamScratch* scratch,
+                orcmap::RenderTarget* target, const orcmap::MapStyle& style) {
+  const orcsdr::map_view::ZoomPlan plan = orcsdr::map_view::plan_zoom(fractional_zoom, layer.min_zoom, layer.max_zoom);
+  orcmap::Viewport viewport;
+  viewport.center_lat_deg = view.center_lat;
+  viewport.center_lon_deg = view.center_lon;
+  viewport.zoom = plan.zoom;
+  viewport.width_px = view.width;
+  viewport.height_px = view.height;
+  viewport.tile_size_px = plan.tile_size_px;
+  std::vector<orcmap::TilePlacement> placements;
+  orcmap::EnumerateVisibleTilePlacements(viewport, &placements);
+  for (const orcmap::TilePlacement& placement : placements) {
+    if (!layer.reader->TileExists(placement.tile.z, placement.tile.x, placement.tile.y)) continue;
+    RenderContext render;
+    render.placement = &placement;
+    render.viewport = &viewport;
+    render.style = &style;
+    render.target = target;
+    orcmap::MvtStreamOptions options;
+    options.include_layer = &IncludeBasemapLayer;
+    options.feature_sink = &DrawFeature;
+    options.feature_sink_ctx = &render;
+    (void)layer.reader->StreamTile(placement.tile.z, placement.tile.x, placement.tile.y, options, scratch);
+  }
+}
+
+bool contains(const map_packs::PackInfo& pack, float lat, float lon) {
+  return lat >= pack.min_lat && lat <= pack.max_lat && lon >= pack.min_lon && lon <= pack.max_lon;
+}
+
+// Renders the view into the cache canvas (origin 0,0, view-sized). Returns the number of archives drawn.
+int render(const View& view) {
+  orcmap::m5gfx_adapter::DisplayTarget target(g_cache);
+  const orcmap::MapStyle& style = orcmap::styles::OrcSdrDark();
+  const double mpp = orcsdr::map_view::metres_per_pixel(view.range_nm, radius_of(view));
+  const double zoom = orcsdr::map_view::fractional_zoom(view.center_lat, mpp);
+
+  orcmap::Viewport background;
+  background.zoom = 0;
+  background.width_px = view.width;
+  background.height_px = view.height;
+  orcmap::ClearMapBackground(background, style, &target);
+
+  orcmap::MvtStreamScratch scratch;
+  orcmap::ReserveMvtStreamScratch(&scratch, 64u * 1024u);
+  int drawn = 0;
+  g_credit[0] = '\0';
+
+  // Base: the deepest world pack on the card, else the world map built into the firmware.
+  Layer base;
+  char world_path[128]{};
+  uint8_t world_zoom = 0;
+  bool sd_world = map_packs::best_world_archive(world_path, sizeof(world_path), &world_zoom) &&
+                  base.open_file(world_path);
+  if (!sd_world && !base.open_embedded()) {
+    g_label[0] = '\0';
+    return 0;
+  }
+  draw_layer(base, zoom, view, &scratch, &target, style);
+  ++drawn;
+  std::snprintf(g_label, sizeof(g_label), "WORLD z%u", static_cast<unsigned>(base.max_zoom));
+  std::snprintf(g_credit, sizeof(g_credit), "Natural Earth");
+
+  // Detail: any pack on the card that covers the centre and goes deeper than the base, drawn on top of it.
+  map_packs::PackInfo packs[map_packs::kInfoMax];
+  const size_t count = map_packs::valid_packs(packs, map_packs::kInfoMax);
+  int detail = 0;
+  for (size_t i = 0; i < count; ++i) {
+    const map_packs::PackInfo& pack = packs[i];
+    if (pack.max_zoom <= base.max_zoom || !contains(pack, view.center_lat, view.center_lon)) continue;
+    if (sd_world && std::strcmp(pack.path, world_path) == 0) continue;
+    Layer layer;
+    if (!layer.open_file(pack.path)) continue;
+    draw_layer(layer, zoom, view, &scratch, &target, style);
+    ++detail;
+    ++drawn;
+    if (pack.credit[0]) std::snprintf(g_credit, sizeof(g_credit), "%s", pack.credit);
+  }
+  if (detail > 0) {
+    const size_t used = std::strlen(g_label);
+    std::snprintf(g_label + used, sizeof(g_label) - used, " + %d DETAIL", detail);
+  }
+  return drawn;
 }
 
 }  // namespace
 
+bool load(orcsdr::storage::FileSystem*) {
+  map_packs::scan_if_needed();
+  return available();
+}
+
+bool available() {
+  size_t size = 0;
+  if (orcsdr::map_sources::embedded_world(&size) != nullptr && size > 0) return true;
+  char path[8];
+  return map_packs::best_world_archive(path, sizeof(path), nullptr);
+}
+
+const char* source_label() {
+  if (g_label[0] != '\0') return g_label;
+  return available() ? "WORLD" : "NONE";
+}
+
 bool project(const View& view, float latitude, float longitude, int* x, int* y) {
-  if (!x || !y || view.width <= 0 || view.height <= 0 || view.range_nm <= 0.0f) return false;
-  project_unclipped(view, latitude, longitude, x, y);
+  if (x == nullptr || y == nullptr || view.range_nm <= 0.0f) return false;
+  double east = 0, north = 0;
+  orcsdr::map_view::offset_nm(view.center_lat, view.center_lon, latitude, longitude, &east, &north);
+  const double per_nm = radius_of(view) / view.range_nm;
+  *x = view.x + view.width / 2 + static_cast<int>(std::lround(east * per_nm));
+  *y = view.y + view.height / 2 - static_cast<int>(std::lround(north * per_nm));
   return *x >= view.x && *x < view.x + view.width && *y >= view.y && *y < view.y + view.height;
 }
 
-bool load(orcsdr::storage::FileSystem* filesystem) {
-  g_count = 0;
-  g_label_count = 0;
-  g_available = false;
-  if (!filesystem) return false;
-  orcsdr::storage::File file = filesystem->open(kRuntimePath);
-  if (!file) return false;
-  char header[9]{};
-  const bool header_ok = file.readBytesUntil('\n', header, sizeof(header)) == 7 &&
-                         strcmp(header, "ORCMAP1") == 0;
-  char line[96]{};
-  while (header_ok) {
-    const size_t used = file.readBytesUntil('\n', line, sizeof(line) - 1);
-    if (used == 0) break;
-    line[used] = '\0';
-    if (line[0] == 'L' && g_label_count < kLabelCapacity) {
-      Label label{};
-      if (parse_label(line, &label)) g_labels[g_label_count++] = label;
-    } else if (g_count < kSegmentCapacity) {
-      Segment segment{};
-      if (parse_line(line, &segment)) g_segments[g_count++] = segment;
-    }
-  }
-  file.close();
-  g_available = header_ok && g_count > 0;
-  return g_available;
-}
-
-bool available() { return g_available; }
-
-void draw_base(lgfx::v1::LovyanGFX& display, const View& view, uint16_t water_color,
-               uint16_t road_color, uint16_t airport_color, uint16_t border_color) {
+void draw_base(lgfx::v1::LovyanGFX& display, const View& view, uint16_t, uint16_t road_color,
+               uint16_t airport_color, uint16_t border_color) {
   display.drawRect(view.x, view.y, view.width, view.height, border_color);
-  if (!g_available) return;
-  for (size_t i = 0; i < g_count; ++i) {
-    int x1 = 0, y1 = 0, x2 = 0, y2 = 0;
-    project_unclipped(view, g_segments[i].lat1, g_segments[i].lon1, &x1, &y1);
-    project_unclipped(view, g_segments[i].lat2, g_segments[i].lon2, &x2, &y2);
-    if (!clip_line(view, &x1, &y1, &x2, &y2)) continue;
-    const uint16_t color = g_segments[i].kind == Kind::water ? water_color :
-                           g_segments[i].kind == Kind::airport ? airport_color : road_color;
-    display.drawLine(x1, y1, x2, y2, color);
+  if (!available() || view.width <= 8 || view.height <= 8 || view.range_nm <= 0.0f) return;
+
+  CacheKey key;
+  key.lat = view.center_lat;
+  key.lon = view.center_lon;
+  key.range = view.range_nm;
+  key.radius = radius_of(view);
+  key.width = view.width;
+  key.height = view.height;
+  key.generation = map_packs::generation();
+  if (!g_cache_valid || !(key == g_key) || g_cache.width() != view.width || g_cache.height() != view.height) {
+    g_cache.deleteSprite();
+    g_cache.setPsram(true);
+    g_cache.setColorDepth(16);
+    if (g_cache.createSprite(view.width, view.height) == nullptr) {
+      g_cache_valid = false;
+      ESP_LOGW(kTag, "map canvas %dx%d unavailable", view.width, view.height);
+      return;
+    }
+    const int64_t started = esp_timer_get_time();
+    const int drawn = render(view);
+    ESP_LOGI(kTag, "map rendered archives=%d ms=%lld label=%s", drawn,
+             static_cast<long long>((esp_timer_get_time() - started) / 1000), g_label);
+    g_key = key;
+    g_cache_valid = drawn > 0;
   }
-  display.setTextDatum(middle_left);
-  display.setTextSize(1);
-  display.setTextColor(airport_color);
-  for (size_t i = 0; i < g_label_count; ++i) {
-    int x = 0, y = 0;
-    if (project(view, g_labels[i].lat, g_labels[i].lon, &x, &y))
-      display.drawString(g_labels[i].text, x + 3, y);
-  }
+  if (!g_cache_valid) return;
+  g_cache.pushSprite(&display, view.x, view.y);
   display.setTextDatum(bottom_left);
+  display.setTextSize(1);
   display.setTextColor(road_color);
-  display.drawString("OSM contributors", view.x + 3, view.y + view.height - 2);
+  display.drawString(g_credit, view.x + 3, view.y + view.height - 2);
+  (void)airport_color;
 }
 
 void draw_base(const View& view, uint16_t water_color, uint16_t road_color,
@@ -157,10 +265,11 @@ void draw_base(const View& view, uint16_t water_color, uint16_t road_color,
 bool self_check() {
   View view{44.0f, -123.0f, 25.0f, 0, 0, 400, 400};
   int x = 0, y = 0;
-  int x1 = -100, y1 = 200, x2 = 500, y2 = 200;
-  return project(view, 44.0f, -123.0f, &x, &y) && x == 200 && y == 200 &&
-         !project(view, 0.0f, 0.0f, &x, &y) &&
-         clip_line(view, &x1, &y1, &x2, &y2) && x1 == 0 && x2 == 399;
+  const bool centre = project(view, 44.0f, -123.0f, &x, &y) && x == 200 && y == 200;
+  const bool outside = !project(view, 0.0f, 0.0f, &x, &y);
+  // 25 NM is the radius: a point 25 NM north is 200 px above the centre.
+  const bool north = project(view, 44.0f + 25.0f / 60.0f, -123.0f, &x, &y) && x == 200 && y == 0;
+  return centre && outside && north && orcsdr::map_view::self_check();
 }
 
 }  // namespace orcsdr::offline_map

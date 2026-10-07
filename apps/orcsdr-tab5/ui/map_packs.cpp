@@ -17,6 +17,9 @@ namespace {
 Summary g_summary;
 char g_best_path[128]{};
 uint8_t g_best_zoom = 0;
+PackInfo g_infos[kInfoMax]{};
+size_t g_info_count = 0;
+uint32_t g_generation = 0;
 
 void copy(char* out, size_t size, const std::string& value) {
   std::snprintf(out, size, "%s", value.c_str());
@@ -43,6 +46,8 @@ void scan() {
   next.scanned = true;
   g_best_path[0] = '\0';
   g_best_zoom = 0;
+  g_info_count = 0;
+  ++g_generation;
 
   orcmap::esp_idf::PackFileSystem filesystem;
   orcmap::PackCatalog catalog;
@@ -57,6 +62,20 @@ void scan() {
     if (world && pack.max_zoom >= g_best_zoom && !pack.archive_path.empty()) {
       g_best_zoom = pack.max_zoom;
       std::snprintf(g_best_path, sizeof(g_best_path), "%s", pack.archive_path.c_str());
+    }
+    if (g_info_count < kInfoMax && !pack.archive_path.empty()) {
+      PackInfo& info = g_infos[g_info_count++];
+      info = PackInfo{};
+      std::snprintf(info.path, sizeof(info.path), "%s", pack.archive_path.c_str());
+      info.min_zoom = pack.min_zoom;
+      info.max_zoom = pack.max_zoom;
+      info.min_lat = static_cast<float>(pack.bounds.min_lat_deg);
+      info.min_lon = static_cast<float>(pack.bounds.min_lon_deg);
+      info.max_lat = static_cast<float>(pack.bounds.max_lat_deg);
+      info.max_lon = static_cast<float>(pack.bounds.max_lon_deg);
+      info.world = world;
+      if (!pack.attribution.empty())
+        std::snprintf(info.credit, sizeof(info.credit), "%s", pack.attribution[0].text.c_str());
     }
     if (next.shown >= kViewMax) continue;
     Entry& entry = next.entries[next.shown++];
@@ -87,6 +106,15 @@ void scan_if_needed() {
 }
 
 Summary summary() { return g_summary; }
+
+size_t valid_packs(PackInfo* out, size_t capacity) {
+  if (out == nullptr) return 0;
+  const size_t count = g_info_count < capacity ? g_info_count : capacity;
+  for (size_t i = 0; i < count; ++i) out[i] = g_infos[i];
+  return count;
+}
+
+uint32_t generation() { return g_generation; }
 
 bool best_world_archive(char* path, size_t size, uint8_t* max_zoom) {
   if (path == nullptr || size == 0 || g_best_path[0] == '\0') return false;

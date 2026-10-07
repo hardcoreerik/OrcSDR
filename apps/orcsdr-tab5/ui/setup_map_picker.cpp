@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "map_sources.hpp"
 #include "orcmap/byte_source.hpp"
 #include "orcmap/experimental/mvt_classify.hpp"
 #include "orcmap/feature.hpp"
@@ -24,40 +25,14 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#if ORCSDR_HAS_EMBEDDED_WORLD_MAP
-extern const uint8_t orcmaps_world_pmtiles_start[] asm("_binary_orcmaps_world_pmtiles_start");
-extern const uint8_t orcmaps_world_pmtiles_end[] asm("_binary_orcmaps_world_pmtiles_end");
-#endif
-
 namespace orcsdr::setup_map_picker {
 namespace {
 
 constexpr char kTag[] = "setup_map";
 
-// The world basemap is a read-only PMTiles archive linked into the app image (flash-mapped read-only data). It is
-// read in place, never copied to RAM, and goes through the same PmTilesReader and renderer as SD-backed maps.
-class EmbeddedWorldSource final : public orcmap::ByteSource {
- public:
-  EmbeddedWorldSource() {
-#if ORCSDR_HAS_EMBEDDED_WORLD_MAP
-    data_ = orcmaps_world_pmtiles_start;
-    size_ = static_cast<uint64_t>(orcmaps_world_pmtiles_end - orcmaps_world_pmtiles_start);
-#endif
-  }
-  size_t Read(uint64_t offset, void* destination, size_t length) override {
-    if (data_ == nullptr || destination == nullptr || offset >= size_) return 0;
-    const uint64_t available = size_ - offset;
-    const size_t count = length < available ? length : static_cast<size_t>(available);
-    std::memcpy(destination, data_ + offset, count);
-    return count;
-  }
-  uint64_t Size() const override { return size_; }
-  bool Valid() const override { return data_ != nullptr && size_ > 0; }
-
- private:
-  const uint8_t* data_ = nullptr;
-  uint64_t size_ = 0;
-};
+// The world basemap is a read-only PMTiles archive linked into the app image (flash-mapped read-only data), read in
+// place (see map_sources.hpp) through the same PmTilesReader and renderer as SD-backed maps.
+using orcsdr::map_sources::EmbeddedWorldSource;
 
 // 1280x720. The map is the primary element; chrome is kept to a header strip
 // and one row of large touch targets.

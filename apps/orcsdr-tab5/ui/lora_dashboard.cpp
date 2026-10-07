@@ -697,7 +697,7 @@ void draw_map_dynamic() {
   text(g_follow_node ? "FOLLOWING" : "CENTERED", 970, 350,
        g_follow_node ? kGreen : kCyan, 2, middle_left);
   text("OFFLINE MAP", 970, 390, kMuted, 1, middle_left);
-  text(offline_map::available() ? "SD VECTOR MAP" : "MAP PACK NOT INSTALLED", 970, 420, kMuted, 1, middle_left);
+  text(offline_map::available() ? offline_map::source_label() : "MAP PACK NOT INSTALLED", 970, 420, kMuted, 1, middle_left);
 }
 
 void draw_health_dynamic() {

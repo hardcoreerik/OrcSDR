@@ -73,6 +73,7 @@ idf_component_register(
         "../ui/screen_controller.cpp"
         "../ui/scan_engine.cpp"
         "../ui/map_packs.cpp"
+        "../ui/map_sources.cpp"
         "../ui/setup_wizard.cpp"
         "../ui/setup_wizard_store.cpp"
         "../ui/setup_map_picker.cpp"

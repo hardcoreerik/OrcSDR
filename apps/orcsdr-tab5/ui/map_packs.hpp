@@ -32,6 +32,22 @@ struct Summary {
   Entry entries[kViewMax]{};
 };
 
+// What the map drawing code needs to choose and open a pack.
+struct PackInfo {
+  char path[112]{};       // the .pmtiles file (a VFS path)
+  char credit[48]{};      // short attribution to show on the map ("" when none is required)
+  uint8_t min_zoom = 0;
+  uint8_t max_zoom = 0;
+  float min_lat = 0, min_lon = 0, max_lat = 0, max_lon = 0;
+  bool world = false;
+};
+constexpr size_t kInfoMax = 8;
+
+// The valid packs from the last scan (up to kInfoMax); returns how many were copied.
+size_t valid_packs(PackInfo* out, size_t capacity);
+// Increments on every scan, so a cache of rendered maps knows when the installed packs changed.
+uint32_t generation();
+
 // Scans the card now. Blocking and file-system bound: call it from the normal application loop, never from the USB,
 // audio or DSP paths.
 void scan();

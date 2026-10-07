@@ -120,7 +120,8 @@ void draw_radar_base() {
     offline_map::View map{g_settings.latitude_e7 / 10000000.0f,
                            g_settings.longitude_e7 / 10000000.0f,
                            static_cast<float>(g_settings.radar_range_nm),
-                           8, 8, kRadarPanelW - 16, kRadarPanelH - 16};
+                           8, 12, kRadarPanelW - 16, kRadarPanelH - 16,
+                           static_cast<float>(radius - 18)};   // aircraft are plotted at (radius - 18) px per full range
     offline_map::draw_base(g_radar_base, map, 0x0320, 0x2945, 0x8c71, 0x2382);
     if (!offline_map::available()) {
       g_radar_base.setTextDatum(middle_center);
@@ -130,7 +131,7 @@ void draw_radar_base() {
     }
   }
   for (int ring = 1; ring <= 4; ++ring)
-    g_radar_base.drawCircle(cx, cy, radius * ring / 4, 0x2382);
+    g_radar_base.drawCircle(cx, cy, (radius - 18) * ring / 4, 0x2382);   // true quarters of the range
   g_radar_base.drawFastHLine(cx - radius, cy, radius * 2, 0x2382);
   g_radar_base.drawFastVLine(cx, cy - radius, radius * 2, 0x2382);
   g_radar_base.setTextDatum(middle_center);
@@ -731,7 +732,7 @@ void draw_stats() {
   else strlcpy(atc_line, "NO NEARBY PRESET", sizeof(atc_line));
   const DataCard data[] = {{"FAA AIRCRAFT DB", g_live_snapshot.faa_aircraft_installed ? "INSTALLED" : "NOT INSTALLED", "REGISTRATION LOOKUP", g_live_snapshot.faa_aircraft_installed},
                            {"FAA AVIATION DB", g_live_snapshot.faa_aviation_installed ? "INSTALLED" : "NOT INSTALLED", "AIRPORT / ATC DATA", g_live_snapshot.faa_aviation_installed},
-                           {"OFFLINE MAP", offline_map::available() ? "LANE COUNTY READY" : "NOT INSTALLED", "SD VECTOR PACK", offline_map::available()},
+                           {"OFFLINE MAP", offline_map::available() ? offline_map::source_label() : "NOT INSTALLED", "ORCMAPS BASE MAP", offline_map::available()},
                            {"LISTEN TO ATC", atc_line, g_atc_listening ? "ADS-B PAUSED" : "MANUAL START", g_settings.atc_frequency_hz != 0}};
   for (int i = 0; i < 4; ++i) {
     const int x = 14 + i * 313;
@@ -825,7 +826,7 @@ void draw_settings() {
 
     card(496, 340, 360, 264);
     text("OFFLINE MAP", 516, 370, kBlue, 2, middle_left);
-    text(offline_map::available() ? "Lane County vector map" : "Map pack not installed",
+    text(offline_map::available() ? offline_map::source_label() : "Map pack not installed",
          516, 414, TFT_WHITE, 1, middle_left);
     text("SD-backed roads, water and labels", 516, 448, kMuted, 1, middle_left);
     button("MANAGE OFFLINE MAP", 516, 516, 320, 54, TFT_NAVY);
