@@ -82,7 +82,6 @@ bool filter_edges = false;   // draw the receive-filter edges on the spectrum
 size_t browser_page = 0;
 int32_t scroll_offset_px = 0;
 uint32_t last_spectrum_ms = 0;
-EXT_RAM_BSS_ATTR float spectrum_levels[512]{};
 uint8_t waterfall_contrast = 5;
 // Spectrum ceiling (dB): jumps up to the strongest bin at once, falls back slowly, so a strong
 // station is never drawn flat against the top edge and the scale does not pump.
@@ -1038,6 +1037,18 @@ void update(const Snapshot& snapshot) {
 // (scope_canvas.hpp). Erasing and redrawing the plot on the display every frame is what made Home flicker.
 scope::Trace g_trace;
 
+// Display-only smoothing and peak hold, one value per pixel. Nothing here touches the receive pipeline: the levels
+// come in untouched and are averaged for drawing, the way the FM, AM and other scopes show theirs. (Home used to
+// draw the raw levels, so the trace jumped about from frame to frame.)
+constexpr float kSmoothKeep = 0.6f;      // share of the previous value kept per frame (about 100 ms apart)
+constexpr float kPeakFallDb = 0.4f;      // the peak-hold dots fall this much per frame
+constexpr uint16_t kPeakColor = 0xFD20;  // orange, as on the FM scope
+EXT_RAM_BSS_ATTR float g_px_smooth[kPlotW]{};
+EXT_RAM_BSS_ATTR float g_px_peak[kPlotW]{};
+bool g_px_valid = false;
+uint32_t g_px_frequency_hz = 0, g_px_span_hz = 0;
+size_t g_px_first_bin = 0, g_px_visible_bins = 0;
+
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor, bool audio_stressed) {
   if (!shown || browser || keypad || levels == nullptr || visible_bins < 2) return;
@@ -1045,14 +1056,23 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   const uint32_t interval = audio_stressed ? 333 : 100;
   if (now - last_spectrum_ms < interval) return;
   last_spectrum_ms = now;
-  const size_t samples = std::min<size_t>(std::size(spectrum_levels), visible_bins);
-  for (size_t i = 0; i < samples; ++i) {
-    spectrum_levels[i] = spectrum::peak_for_pixel(
-        levels, first_bin, visible_bins, i, samples);
-  }
-  floor = home_spectrum_floor(spectrum_levels, samples, floor);
   constexpr int w = kPlotW - 2;
   constexpr int h = kSpectrumH - 2;
+  // One point per pixel. A new view (retune, zoom, different bin window) starts the smoothing over.
+  const bool same_view = g_px_valid && g_px_frequency_hz == current.frequency_hz &&
+                         g_px_span_hz == current.span_hz && g_px_first_bin == first_bin &&
+                         g_px_visible_bins == visible_bins;
+  g_px_valid = true;
+  g_px_frequency_hz = current.frequency_hz;
+  g_px_span_hz = current.span_hz;
+  g_px_first_bin = first_bin;
+  g_px_visible_bins = visible_bins;
+  for (int x = 0; x < w; ++x) {
+    const float level = spectrum::peak_for_pixel(levels, first_bin, visible_bins, static_cast<size_t>(x), w);
+    g_px_smooth[x] = same_view ? kSmoothKeep * g_px_smooth[x] + (1.0f - kSmoothKeep) * level : level;
+    g_px_peak[x] = same_view ? std::max(level, g_px_peak[x] - kPeakFallDb) : level;
+  }
+  floor = home_spectrum_floor(g_px_smooth, w, floor);
   M5Canvas* canvas = g_trace.begin(w, h, TFT_BLACK);
   // No memory for the sprite: leave the frame alone rather than scroll the waterfall under a stale spectrum.
   if (canvas == nullptr) return;
@@ -1063,7 +1083,7 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   }
   floor -= kSpectrumFloorMarginDb;
   float strongest = floor;
-  for (size_t i = 0; i < samples; ++i) strongest = std::max(strongest, spectrum_levels[i]);
+  for (int x = 0; x < w; ++x) strongest = std::max(strongest, g_px_smooth[x]);
   spectrum_ceiling = (!spectrum_ceiling_valid || strongest > spectrum_ceiling)
                          ? strongest
                          : spectrum_ceiling + (strongest - spectrum_ceiling) * 0.04f;
@@ -1073,11 +1093,12 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   const int trace_base = h - kSpectrumAxisBandPx + 1;
   const int trace_height = kSpectrumH - kSpectrumAxisBandPx - 4;
   int px = 0, py = trace_base;
-  for (size_t i = 0; i < samples; ++i) {
-    const float normalized = std::clamp((spectrum_levels[i] - floor) / range_db, 0.0f, 1.0f);
-    const int x = static_cast<int>(i * (kPlotW - 1) / (samples - 1)) - 1;
+  for (int x = 0; x < w; ++x) {
+    const float normalized = std::clamp((g_px_smooth[x] - floor) / range_db, 0.0f, 1.0f);
+    const float held = std::clamp((g_px_peak[x] - floor) / range_db, 0.0f, 1.0f);
     const int y = trace_base - static_cast<int>(normalized * trace_height);
-    if (i) canvas->drawLine(px, py, x, y, kGreen);
+    canvas->drawPixel(x, trace_base - static_cast<int>(held * trace_height), kPeakColor);
+    if (x) canvas->drawLine(px, py, x, y, kGreen);
     px = x; py = y;
   }
   canvas->drawFastVLine(kPlotW / 2 - 1, 0, h, kGreen);
@@ -1095,21 +1116,20 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   canvas->pushSprite(origin_x, origin_y);
   M5.Display.endWrite();
 
-  // Waterfall: unchanged from before the trace moved off-screen (scrolled by hardware, then the new row is
-  // filled column by column). With a popup docked at the bottom it scrolls only the part above it.
+  // Waterfall: scrolled by hardware, then the new row is filled two pixels at a time from the smoothed levels.
+  // With a popup docked at the bottom it scrolls only the part above it.
   const int rows = waterfall_style::rows_per_frame(waterfall_style::Screen::home);
   const bool popup_over = gain_popup || filter_popup || mode_popup;
   const int waterfall_h = popup_over ? kPopY - 2 - (kWaterfallY + 1) : kWaterfallH - 2;
   M5.Display.startWrite();
   M5.Display.setScrollRect(kPlotX + 1, kWaterfallY + 1, kPlotW - 2, waterfall_h, TFT_BLACK);
   M5.Display.scroll(0, -rows);
-  for (size_t i = 0; i < samples; ++i) {
-    const float normalized = std::clamp(
-        (spectrum_levels[i] - floor) / waterfall_range_db(waterfall_contrast),
-        0.0f, 1.0f);
-    const int x = kPlotX + 1 + static_cast<int>(i * (kPlotW - 2) / samples);
-    const int x2 = kPlotX + 1 + static_cast<int>((i + 1) * (kPlotW - 2) / samples);
-    M5.Display.fillRect(x, kWaterfallY + 1 + waterfall_h - rows, std::max(1, x2 - x), rows,
+  const float waterfall_range = waterfall_range_db(waterfall_contrast);
+  for (int x0 = 0; x0 < w; x0 += 2) {
+    const int width = std::min(2, w - x0);
+    const float level = width > 1 ? std::max(g_px_smooth[x0], g_px_smooth[x0 + 1]) : g_px_smooth[x0];
+    const float normalized = std::clamp((level - floor) / waterfall_range, 0.0f, 1.0f);
+    M5.Display.fillRect(kPlotX + 1 + x0, kWaterfallY + 1 + waterfall_h - rows, width, rows,
                         waterfall_color(normalized));
   }
   M5.Display.endWrite();
