@@ -30,7 +30,7 @@ class Runtime {
   ReceiverCommand listen();
   ReceiverCommand scan(uint32_t now_ms);
   ReceiverCommand stop();
-  ReceiverCommand service(uint32_t now_ms, float signal_dbfs);
+  void record_scan_sample(float level_dbfs, uint32_t now_ms);\n  ReceiverCommand finish_scan(bool completed);
   const ServiceState& state() const { return service_.state(); }
 
  private:

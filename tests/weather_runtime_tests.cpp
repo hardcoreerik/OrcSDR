@@ -16,21 +16,19 @@ int main() {
   auto command = runtime.listen();
   CHECK(command.kind == ReceiverCommandKind::start_foreground);
   CHECK(command.frequency_hz == 162550000u);
-  command = runtime.stop();
-  CHECK(command.kind == ReceiverCommandKind::stop_owned);
+  CHECK(runtime.stop().kind == ReceiverCommandKind::stop_owned);
 
   CHECK(runtime.select_channel(0));
   command = runtime.scan(1000);
   CHECK(command.kind == ReceiverCommandKind::start_foreground);
   CHECK(command.frequency_hz == 162400000u);
-  for (size_t i = 0; i < noaa::kChannelCount; ++i) {
-    command = runtime.service(1400 + static_cast<uint32_t>(i) * 400,
-                              -80.0f + static_cast<float>(i));
-    CHECK(command.kind == ReceiverCommandKind::retune_owned);
-    CHECK(command.frequency_hz ==
-          (i + 1 < noaa::kChannelCount ? noaa::channel_hz(i + 1) : 162550000u));
-  }
+  for (size_t i = 0; i < noaa::kChannelCount; ++i)
+    runtime.record_scan_sample(-80.0f + static_cast<float>(i),
+                               1400 + static_cast<uint32_t>(i) * 400);
   CHECK(runtime.state().scan_complete);
   CHECK(runtime.state().scan_samples == 7);
+  command = runtime.finish_scan(true);
+  CHECK(command.kind == ReceiverCommandKind::retune_owned);
+  CHECK(command.frequency_hz == 162550000u);
   std::puts("weather_runtime_tests: PASS");
 }

@@ -47,18 +47,20 @@ ReceiverCommand Runtime::stop() {
   return active ? ReceiverCommand{ReceiverCommandKind::stop_owned, 0} : ReceiverCommand{};
 }
 
-ReceiverCommand Runtime::service(uint32_t now_ms, float signal_dbfs) {
-  if (service_.state().rf_state != RfState::scanning || scan_due_ms_ == 0 ||
-      static_cast<int32_t>(now_ms - scan_due_ms_) < 0)
-    return {};
+void Runtime::record_scan_sample(float level_dbfs, uint32_t now_ms) {
+  if (service_.state().rf_state != RfState::scanning) return;
+  service_.record_scan_sample(level_dbfs, now_ms);
+  (void)service_.advance_scan();
+}
 
-  service_.record_scan_sample(signal_dbfs, now_ms);
-  const bool more = service_.advance_scan();
-  scan_due_ms_ = more ? now_ms + kScanDwellMs : 0;
-  const uint32_t next = more ? service_.scan_frequency_hz()
-                             : service_.state().strongest_frequency_hz;
-  return next ? ReceiverCommand{ReceiverCommandKind::retune_owned, next}
-              : ReceiverCommand{};
+ReceiverCommand Runtime::finish_scan(bool completed) {
+  if (!completed) {
+    service_.cancel_scan();
+    return {};
+  }
+  const uint32_t frequency_hz = service_.state().strongest_frequency_hz;
+  return frequency_hz ? ReceiverCommand{ReceiverCommandKind::retune_owned, frequency_hz}
+                      : ReceiverCommand{};
 }
 
 }  // namespace orcsdr::weather
