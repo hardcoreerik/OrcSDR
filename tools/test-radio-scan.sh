@@ -101,3 +101,11 @@ g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$build_dir/weather_report_format_tests_sanitized"
 
+weather_screen_sources=(tests/weather_screen_tests.cpp apps/orcsdr-tab5/ui/screen_controller.cpp)
+g++ "${common[@]}" -O2 "${weather_screen_sources[@]}" -o "$build_dir/weather_screen_tests"
+"$build_dir/weather_screen_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "${weather_screen_sources[@]}" -o "$build_dir/weather_screen_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$build_dir/weather_screen_tests_sanitized"
+

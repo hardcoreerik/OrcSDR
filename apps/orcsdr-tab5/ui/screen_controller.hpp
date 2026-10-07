@@ -4,10 +4,11 @@
 
 namespace orcsdr::screens {
 
-// Exactly one surface may own the framebuffer.  Radio/decoder work is not a
+// Exactly one surface may own the framebuffer. Radio/decoder work is not a
 // surface and continues independently of this state.
 enum class Id : uint8_t {
-  none, home, fm, p25, adsb, lora, radio, visualizer, rf_lab, wifi_analysis, pocsag, settings, am, shortwave, documentation, cb, airband
+  none, home, fm, p25, adsb, lora, radio, visualizer, rf_lab, wifi_analysis,
+  pocsag, settings, am, shortwave, documentation, cb, airband, weather
 };
 
 struct Status {
@@ -19,14 +20,11 @@ struct Status {
   uint32_t last_transition_ms = 0;
 };
 
-// Start a full-frame transition. The caller clears and renders the new static
-// surface once, then calls finish_transition().
 void begin_transition(Id next, uint32_t now_ms, bool remember_return = false);
 void finish_transition();
 bool transitioning();
 Id close_settings(uint32_t now_ms);
 bool owns(Id id);
-// True while id is the selected surface, including its one-time transition draw.
 bool is_active(Id id);
 bool may_draw(Id id);
 void note_visible_update(Id id);
