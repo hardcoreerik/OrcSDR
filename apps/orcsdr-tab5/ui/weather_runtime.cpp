@@ -10,7 +10,6 @@ ReceiverCommand Runtime::enter() {
 ReceiverCommand Runtime::leave() {
   const bool active = service_.state().rf_state != RfState::idle;
   service_.leave();
-  scan_due_ms_ = 0;
   return active ? ReceiverCommand{ReceiverCommandKind::stop_owned, 0} : ReceiverCommand{};
 }
 
@@ -30,20 +29,17 @@ bool Runtime::next_channel() {
 
 ReceiverCommand Runtime::listen() {
   service_.begin_listen();
-  scan_due_ms_ = 0;
   return {ReceiverCommandKind::start_foreground, service_.selected_frequency_hz()};
 }
 
 ReceiverCommand Runtime::scan(uint32_t now_ms) {
   service_.begin_scan(now_ms);
-  scan_due_ms_ = now_ms + kScanDwellMs;
   return {ReceiverCommandKind::start_foreground, service_.scan_frequency_hz()};
 }
 
 ReceiverCommand Runtime::stop() {
   const bool active = service_.state().rf_state != RfState::idle;
   service_.stop_rf();
-  scan_due_ms_ = 0;
   return active ? ReceiverCommand{ReceiverCommandKind::stop_owned, 0} : ReceiverCommand{};
 }
 
