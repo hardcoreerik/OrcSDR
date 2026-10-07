@@ -167,7 +167,7 @@ void test_synthetic_ft8_pcm_to_standard_message_decode() {
   assert(result.message == message);
   assert(result.standard.fully_renderable);
   assert(std::strcmp(result.standard.text, "CQ K1ABC FN42") == 0);
-
+}
 
 }  // namespace
 
