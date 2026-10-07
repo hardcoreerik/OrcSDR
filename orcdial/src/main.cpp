@@ -464,7 +464,7 @@ void loop() {
     else if (view == orc::View::page) settings_press(online);
     else if (orc::tunable(state.dashboard) || orc::channel_dashboard(state.dashboard))
       focus = orc::next_focus(state.dashboard, focus);
-    else act(orc::press(state.dashboard, state.view), online);
+    else act(orc::press(state.dashboard, state.view, state.capabilities), online);
   }
   const bool touching = M5Dial.Touch.getCount() > 0;
   if (touching && !touch_down) { touch_swallow = display_asleep; note_activity(); }
@@ -508,6 +508,8 @@ void loop() {
       else select_dashboard(state, online);
     } else if (t.y >= 200) {
       view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard);   // BACK
+    } else if (state.dashboard == orc::Dashboard::ft8 && t.y < 76) {
+      act({orc::ActionKind::view, 1}, online);
     } else if (t.y < 76) {
       if (orc::tunable(state.dashboard)) change(orc::Type::set_mode, state.mode >= 3 ? 1 : state.mode + 1);
       else act({orc::ActionKind::view, 1}, online);
@@ -518,7 +520,17 @@ void loop() {
     } else if (t.x > 170 && t.y < 170 && orc::tunable(state.dashboard) && state.dashboard != orc::Dashboard::fm) {
       tune_style = orc::TuneStyle((uint8_t(tune_style) + 1) % uint8_t(orc::TuneStyle::count));
       focus = orc::Focus::vfo;
-    } else if (t.y > 170) focus = orc::next_focus(state.dashboard, focus);
+    } else if (state.dashboard == orc::Dashboard::ft8 &&
+               state.view == static_cast<uint8_t>(orc::ft8_control::View::hunter) &&
+               t.y >= 170 && t.y < 197 && t.x >= 70 && t.x <= 170 &&
+               (state.capabilities & orc::ft8_control::kHunterSupported) &&
+               !(state.capabilities & (orc::ft8_control::kHunterActive |
+                                       orc::ft8_control::kHunterComplete))) {
+      act({orc::ActionKind::ft8_hunter,
+           static_cast<int32_t>(orc::ft8_control::HunterCommand::start_decode)}, online);
+    } else if (state.dashboard == orc::Dashboard::ft8 && t.y > 170)
+      act(orc::press(state.dashboard, state.view, state.capabilities), online);
+    else if (t.y > 170) focus = orc::next_focus(state.dashboard, focus);
     else focus = orc::Focus::vfo;
   }
   if (!touching) touch_swallow = false;
