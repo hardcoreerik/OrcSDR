@@ -28,7 +28,7 @@
 
 ## Review Focus
 
-- **Receiver already owned by another dashboard:** Weather must open and browse cached/local data without retuning; an explicit NOAA action reports busy/unavailable instead of preempting. Covered in Task 2 ownership tests and Task 5 runtime tests.
+- **Receiver ownership and user intent:** merely opening Weather never retunes. An explicit user NOAA Listen/Scan action may intentionally take over the tuner through the normal foreground path, while automatic/idle Weather work must fail closed rather than preempt. Covered in Task 2 ownership tests and Task 5 runtime tests.
 - **No RTC / invalid wall clock:** reports and observations retain uptime-relative evidence and never fabricate UTC. Covered in Task 1 model tests and Task 4 report tests.
 - **Missing SD, map pack, or receiver location:** each tab remains usable and shows an explicit state rather than blank content. Covered in Tasks 3 and 4 self-checks.
 - **Partial/interrupted report save:** a `.part` failure must not replace a prior valid history/report entry. Covered in Task 4 storage tests.
@@ -108,7 +108,7 @@
   git commit -m "feat(weather): add offline observation model"
   ```
 
-### Task 2: Make receiver ownership safe for Weather borrowing
+### Task 2: Make receiver ownership safe for explicit Weather jobs and idle borrowing
 
 **Files:**
 - Modify: `apps/orcsdr-tab5/ui/radio_session.hpp`
@@ -116,20 +116,20 @@
 - Modify: `tests/radio_scan_tests.cpp`
 
 **Interfaces:**
-- Consumes: existing `radio::Session`, `Token`, `Band::wx`, current owner/generation state.
-- Produces: `Owner::weather`, non-preemptive `try_acquire(...)`, `release(Token)`, and truthful ownership semantics used by `weather_runtime` and later `weather_rf_scheduler`.
+- Consumes: existing `radio::Session`, `Token`, `Band::wx`, owner/generation/state.
+- Produces: `Owner::weather`, coherent foreground `acquire(...)`, non-preemptive `try_acquire(...)`, and `release(Token)`. The existing `owner_for_band(Band::wx) == Owner::radio` contract remains unchanged for legacy/generic WX callers.
 
-- [ ] **Step 1: Add failing ownership tests**
+- [ ] **Step 1: Add failing ownership tests without changing the legacy WX mapping**
 
-  Add tests that acquire FM, then prove Weather `try_acquire` fails and leaves the FM token/state unchanged. Release FM, prove Weather can acquire `Band::wx`; prove a stale token cannot release a newer owner; prove releasing Weather returns owner to `none`; and assert `owner_for_band(Band::wx) == Owner::weather`.
+  Preserve the existing assertion that `owner_for_band(Band::wx) == Owner::radio`. Add tests that a forced `acquire(Owner::weather, Band::wx, ...)` replaces an older foreground token; `try_acquire(Owner::weather, ...)` refuses a session whose state is `starting`, `running`, or `stopping`; an idle/ready session can be claimed without corrupting its previous token; a stale token cannot release a newer owner; and release returns the session to an unowned idle state.
 
-- [ ] **Step 2: Run `radio_scan_tests` and confirm failure before implementation**
+- [ ] **Step 2: Run `tools/test-radio-scan.sh` and observe the missing API failure**
 
   Expected before implementation: compile failure for `Owner::weather`, `try_acquire`, and `release`.
 
-- [ ] **Step 3: Extend `Session` without breaking existing foreground call sites**
+- [ ] **Step 3: Implement an internally serialized claim/publication path**
 
-  Keep current `acquire(...)` behavior for existing callers. Add:
+  Keep `Session::acquire(...)` as the unconditional foreground takeover used by existing dashboards. Add:
 
   ```cpp
   Token try_acquire(Owner owner, Band band, uint32_t frequency_hz,
@@ -137,17 +137,17 @@
   bool release(Token token);
   ```
 
-  `try_acquire` succeeds only when `owner_ == Owner::none`; it must never overwrite, replace, or reenter a current owner. A Weather workflow that already holds a token retains and retunes that token instead of reacquiring it. `release` uses owner+generation validation and clears owner/state only for the live token. Do not implement a Weather-specific global mutex outside `radio_session`.
+  Session mutation/snapshot publication must be coherent: do not make `owner` visible before band/frequency/sample-rate/generation are valid. Use one short internal guard/critical section (portable C++ in this module) around acquire/try-acquire/release/snapshot rather than a check-then-store sequence across independent atomics. `try_acquire` succeeds only when the receiver state is idle (`disconnected`, `ready`, or `failed`) and must never replace a `starting`/`running`/`stopping` owner. `release` validates owner+generation.
 
-- [ ] **Step 4: Run radio/session regressions**
+- [ ] **Step 4: Run the radio-session and scan stress regressions**
 
-  Run the repository's existing `radio_scan_tests` command plus `Session::self_check()`. Expected: existing owner behavior remains green and the new Weather non-preemption cases pass.
+  Run `tools/test-radio-scan.sh`. Expected: existing scan ownership tests remain green, the legacy WX owner mapping remains `Owner::radio`, and new Weather forced/idle claim/release cases pass.
 
 - [ ] **Step 5: Commit Task 2**
 
   ```bash
   git add apps/orcsdr-tab5/ui/radio_session.* tests/radio_scan_tests.cpp
-  git commit -m "feat(radio): add non-preemptive receiver ownership"
+  git commit -m "feat(radio): add safe Weather receiver claims"
   ```
 
 ### Task 3: Build the dedicated five-tab Weather M5GFX surface
@@ -158,7 +158,6 @@
 - Create: `tests/weather_dashboard_state_tests.cpp`
 - Modify: `apps/orcsdr-tab5/ui/screen_controller.hpp`
 - Modify: `apps/orcsdr-tab5/ui/screen_controller.cpp`
-- Modify: `apps/orcsdr-tab5/ui/dashboard_registry.cpp`
 - Modify: `apps/orcsdr-tab5/main/CMakeLists.txt`
 
 **Interfaces:**
@@ -167,15 +166,15 @@
 
 - [ ] **Step 1: Write state/layout tests before drawing code**
 
-  Cover five tabs, exact 256 px tab widths, footer at y=630, no card overlap with footer, action mapping for every primary RF/report control, no RF action on tab switching, and an unavailable-state snapshot for missing map/SD/location/RTL-SDR.
+  Cover five tabs, exact 256 px tab widths, footer at y=630, no card overlap with footer, action mapping for every primary RF/report control, no RF action on tab switching, and explicit unavailable states for missing map/SD/location/RTL-SDR.
 
-- [ ] **Step 2: Add `screens::Id::weather` and prove screen ownership/self-check behavior**
+- [ ] **Step 2: Add only the missing framebuffer owner**
 
-  Insert a dedicated Weather framebuffer owner without renumbering dashboard wire IDs. Extend `screen_controller::self_check()` so Weather can own, enter Settings, return, and release just like other first-class dashboards.
+  `dashboards::Id::weather` already exists and remains wire ID 5. Add `screens::Id::weather` and `name(Id::weather) == "weather"`; do not renumber or re-add the dashboard registry enum. Extend `screen_controller::self_check()` with Weather Settings-return ownership. Replace the fragile hard-coded transition total (`38` on the reviewed baseline) with a count derived from the exercised transitions, or update it in a way that cannot silently omit Weather.
 
 - [ ] **Step 3: Implement the shared visual frame and five pages**
 
-  Use the approved OrcSDR constants from the spec. NOW shows observation cards with source+age; FORECAST shows offline outlook/cached forecast state plus a Weather Radio shortcut; MAP uses an injected/offline map state and never requires network tiles; RF WEATHER exposes Weather Radio, Local Sensors, Radiosondes, Weather Hunter placeholders/status, and Background Policy; REPORTS displays bounded recent summaries. Dynamic updates repaint only changed regions.
+  Use the approved OrcSDR constants from the spec. NOW shows observation cards with source+age; FORECAST shows offline outlook/cached forecast state plus a Weather Radio shortcut; MAP uses injected/offline map state and never requires network tiles; RF WEATHER exposes Weather Radio, Local Sensors, Radiosondes, Weather Hunter placeholders/status, and Background Policy; REPORTS displays bounded recent summaries. Dynamic updates repaint only changed regions.
 
 - [ ] **Step 4: Add interaction and display self-check coverage**
 
@@ -183,12 +182,12 @@
 
 - [ ] **Step 5: Run focused host/self-checks and native compile**
 
-  Expected: Weather state tests pass, `screen_controller::self_check()` passes, and the Tab5 native build compiles with the dedicated dashboard registered.
+  Expected: Weather state tests pass, `screen_controller::self_check()` passes, and the native Tab5 build compiles with the new framebuffer owner. Dashboard registry count remains unchanged because Weather was already registered.
 
 - [ ] **Step 6: Commit Task 3**
 
   ```bash
-  git add apps/orcsdr-tab5/ui/weather_dashboard.* apps/orcsdr-tab5/ui/screen_controller.* apps/orcsdr-tab5/ui/dashboard_registry.cpp apps/orcsdr-tab5/main/CMakeLists.txt tests/weather_dashboard_state_tests.cpp
+  git add apps/orcsdr-tab5/ui/weather_dashboard.* apps/orcsdr-tab5/ui/screen_controller.* apps/orcsdr-tab5/main/CMakeLists.txt tests/weather_dashboard_state_tests.cpp
   git commit -m "feat(weather): add dedicated five-tab dashboard"
   ```
 
@@ -197,16 +196,18 @@
 **Files:**
 - Create: `apps/orcsdr-tab5/ui/weather_report_store.hpp`
 - Create: `apps/orcsdr-tab5/ui/weather_report_store.cpp`
+- Create: `apps/orcsdr-tab5/ui/weather_report_transaction.hpp`
+- Create: `apps/orcsdr-tab5/ui/weather_report_transaction.cpp`
 - Create: `tests/weather_report_store_tests.cpp`
 - Modify: `apps/orcsdr-tab5/main/CMakeLists.txt`
 
 **Interfaces:**
 - Consumes: `weather_model` observations/report summaries, `storage::FileSystem`, optional 1280x720 RGB565 screen/map captures, valid UTC or uptime-relative timestamps.
-- Produces: bounded `ReportStore`, `SaveRequest`, `SaveResult`, history enumeration, report open/delete/export metadata, and report bundle writer under `/orcsdr/weather/`.
+- Produces: bounded `ReportStore`, `SaveRequest`, `SaveResult`, history enumeration, report open/delete/export metadata, pure serializers, and report bundle writer under `/orcsdr/weather/`. The transaction helper expresses atomic bundle/history commit steps independently of the concrete SD wrapper.
 
-- [ ] **Step 1: Write failing storage/serialization tests with a host fake filesystem**
+- [ ] **Step 1: Write host tests against pure codecs and a callback-driven transaction harness**
 
-  Cover first run, missing SD, valid round-trip, HTML escaping, CSV quoting, JSON source metadata, invalid UTC fallback, bounded history, malformed history row, missing report directory, `.part` interruption, and SHA-256 manifest entries.
+  `storage::FileSystem` is a concrete wrapper, so do not assume it can be replaced by a polymorphic fake. Host tests cover HTML escaping, CSV quoting, JSON source metadata, invalid-UTC fallback, bounded history parsing, malformed rows, manifest hashes, and a pure/callback transaction harness that injects failure at create/write/flush/rename/history-append steps. Assert an interrupted transaction never reports success or replaces the last committed history entry.
 
 - [ ] **Step 2: Define the report bundle contract**
 
@@ -224,22 +225,22 @@
 
   `screen.bmp` and `map.bmp` are optional. Do not emit raw IQ by default.
 
-- [ ] **Step 3: Implement atomic report/history writes**
+- [ ] **Step 3: Implement the concrete SD adapter using the proven repository semantics**
 
-  Reuse the RF Lab pattern of temporary files, flush/close, final rename, and hashes. A failed bundle remains either absent or explicitly incomplete; it must not append a success row to history. Rebuild the bounded in-memory history from valid rows on load.
+  Map the transaction steps to `storage::FileSystem` using the same `.part`/flush/close/rename/backup discipline already used by Shortwave/catalog storage. A failed bundle remains absent or explicitly incomplete and must not append a success row to history. Rebuild the bounded in-memory history from valid rows on load.
 
-- [ ] **Step 4: Run storage tests including failure injection**
+- [ ] **Step 4: Run host failure-injection tests plus on-device file-semantics checks**
 
-  Expected: all recovery/error cases preserve the last valid history/report set and return explicit status.
+  Expected: host transaction tests pass, existing storage file-semantics checks stay green, and device/manual SD acceptance in Task 7 proves the concrete adapter.
 
 - [ ] **Step 5: Commit Task 4**
 
   ```bash
-  git add apps/orcsdr-tab5/ui/weather_report_store.* tests/weather_report_store_tests.cpp apps/orcsdr-tab5/main/CMakeLists.txt
+  git add apps/orcsdr-tab5/ui/weather_report_store.* apps/orcsdr-tab5/ui/weather_report_transaction.* tests/weather_report_store_tests.cpp apps/orcsdr-tab5/main/CMakeLists.txt
   git commit -m "feat(weather): add auditable SD report bundles"
   ```
 
-### Task 5: Add the Weather runtime and on-demand NOAA operations
+### Task 5: Add the Weather runtime and make NOAA's seven WX channels real
 
 **Files:**
 - Create: `apps/orcsdr-tab5/ui/weather_noaa.hpp`
@@ -252,38 +253,50 @@
 - Modify: `apps/orcsdr-tab5/main/CMakeLists.txt`
 
 **Interfaces:**
-- Consumes: Tasks 1-4, current WX/NFM start/retune/stop hooks from `main.cpp`, canonical location/catalog/map/time/storage snapshots, and Task 2 `radio_session` safe ownership.
-- Produces: dedicated Weather lifecycle; foreground `listen_noaa(channel)`, bounded `scan_noaa_channels()`, stop/release; strongest/last NOAA sample state; report snapshot hooks; and a small action bridge in `main.cpp`.
+- Consumes: Tasks 1-4, existing WX/NFM stream, `scan_engine`, `request_hot_retune_for`, canonical location/catalog/map/time/storage snapshots, and Task 2 ownership.
+- Produces: dedicated Weather lifecycle; user-foreground NOAA Listen/Scan takeover; a claimed-token start seam for later automatic jobs; seven-channel WX normalization; Weather-owned stop/release; strongest/last NOAA sample state; report snapshot hooks; and the small main adapter needed to preserve the dedicated framebuffer.
 
-- [ ] **Step 1: Write NOAA plan/runtime tests**
+- [ ] **Step 1: Write failing NOAA/runtime tests for the actual current blockers**
 
-  Test exact seven-channel stepping; strongest result selection by the receiver's existing relative signal metric; scan result age; busy receiver refusal; cancel/release; and the critical invariant that `weather_runtime::enter()` produces zero tune/start calls.
+  Assert all seven NOAA channel centers round-trip through the WX normalization API; nearest/invalid input is handled deterministically; next/previous channel cycles all seven; strongest result uses the existing relative signal metric; `weather_runtime::enter()` performs zero tune/start calls; an explicit user Listen/Scan requests foreground takeover; an automatic claimed start fails if its token is stale; and Home/Stop cannot release a non-Weather token.
 
-- [ ] **Step 2: Implement `weather_noaa` as model/controller logic, not a second DSP path**
+- [ ] **Step 2: Implement `weather_noaa` as the sole NOAA channel authority**
 
-  Keep channel plan, scan sample records, catalog transmitter matching, and display labels here. Use the existing `RtlBand::wx` and filter/audio path for actual listening. A scan is a foreground Weather action and samples channels sequentially; this foundation does not claim SAME monitoring.
+  Put the seven frequencies, index/nearest/next/previous helpers, transmitter-catalog matching, scan sample/result model, and labels here. Change the main WX clamp/step seams to delegate to these helpers so valid requests no longer collapse to the legacy fixed 162.400 MHz value.
 
-- [ ] **Step 3: Implement `weather_runtime` with injected hooks**
+- [ ] **Step 3: Extend the existing receiver start seam instead of creating a parallel receiver**
 
-  Required hooks include receiver availability/try-acquire, start/retune/stop, relative signal snapshot, Home/Settings navigation, canonical location, storage/report access, and optional map/catalog state. `enter()` only builds a dashboard snapshot. `leave()` stops/releases only a Weather-owned foreground job and does not stop a receiver owned by someone else.
+  Refactor the internal `queue_local_rtl_listen(...)` path so existing callers remain source-compatible while Weather can explicitly supply `Owner::weather` and, for future automatic work, an already claimed `radio::Token`. If a valid claimed token is supplied, the start path must use it and must **not** call `radio_session.acquire()` a second time. An explicit user Weather action supplies `Owner::weather` without a claim and is allowed to perform the normal controlled foreground takeover.
 
-- [ ] **Step 4: Replace the generic `Id::weather` open path with the dedicated runtime**
+- [ ] **Step 4: Reuse the shared scan/hot-retune machinery for NOAA scan**
 
-  In `main.cpp`, change `open_dashboard(Id::weather)` so it records the dashboard open, leaves Home, transitions to `screens::Id::weather`, and calls the Weather runtime without setting `RtlBand::wx` or retuning. Keep the bridge limited to hooks/snapshots/action dispatch.
+  Extend `ActiveScan` with a Weather NOAA scan rather than adding another scan loop. Permit `request_hot_retune_for()` on `RtlBand::wx` only when the live token belongs to `Owner::weather` and the target is one of the seven valid NOAA channels. Keep ADS-B's prohibition. Feed scan measurements into `weather_noaa`, cancel through the shared `scan_engine`, and preserve the Weather token across channel retunes.
 
-- [ ] **Step 5: Add serial/test actions for reproducible UI regression**
+- [ ] **Step 5: Route a running WX stream through the dedicated Weather framebuffer**
 
-  Extend authenticated `RTL_UI ACTION WEATHER` with at least `TAB <0-4>`, `NOAA_SCAN`, `NOAA_LISTEN <0-6>`, `STOP`, `REPORT_SNAPSHOT`, and `STATUS`. Unknown/unavailable actions return explicit invalid/busy states; they never silently tune generic Browse.
+  Add the reviewed integration seams explicitly: `screen_for_band(RtlBand::wx) -> screens::Id::weather`; `refresh_active_screen()`; `draw_sdr_screen()`; Weather enter/update/touch service in the main loop; `active_dashboard_tab()`; visualizer return/redraw; and the UI-regression dashboard-band list. WX stream start/refresh must never fall through to Home or the generic Radio surface.
 
-- [ ] **Step 6: Run host, native, and navigation regressions**
+- [ ] **Step 6: Replace the generic `Id::weather` open path without tuning**
 
-  Required checks: Weather open causes no tune; existing FM/AM/CB/Airband ownership tests stay green; NOAA Listen reaches existing WX NFM path; leaving releases Weather ownership; screen-controller/registry self-checks and native Tab5 build pass.
+  `open_dashboard(Id::weather)` records the dashboard open, leaves Home, transitions to `screens::Id::weather`, and calls Weather runtime `enter()` without changing `rtl_ui_band`, frequency, stream state, or current receiver owner. Pressing NOAA Listen/Scan is the point at which the user intentionally takes over the tuner.
 
-- [ ] **Step 7: Commit Task 5**
+- [ ] **Step 7: Make Weather stop/release lifecycle token-correct**
+
+  Runtime retains its Weather token. Stop/Home cancels a Weather scan and requests stream stop only when that token still owns the session. Release occurs after the matching Weather stream reaches its stopped/idle state; do not release early while USB/DSP shutdown is still in progress, and never stop/release a newer non-Weather owner.
+
+- [ ] **Step 8: Add serial/test actions for reproducible regression**
+
+  Extend authenticated `RTL_UI ACTION WEATHER` with at least `TAB <0-4>`, `NOAA_SCAN`, `NOAA_LISTEN <0-6>`, `STOP`, `REPORT_SNAPSHOT`, and `STATUS`. Unknown/unavailable actions return explicit invalid/busy states.
+
+- [ ] **Step 9: Run host, native, navigation, and shared-scan regressions**
+
+  Required checks: Weather open causes no tune; all seven WX centers survive clamp/retune; explicit Listen may take over; a preclaimed automatic start cannot overwrite a newer foreground owner; running WX stays on Weather screen; existing FM/AM/CB/Airband/P25/scan tests remain green; native Tab5 build passes.
+
+- [ ] **Step 10: Commit Task 5**
 
   ```bash
   git add apps/orcsdr-tab5/ui/weather_noaa.* apps/orcsdr-tab5/ui/weather_runtime.* tests/weather_noaa_tests.cpp tests/weather_runtime_tests.cpp apps/orcsdr-tab5/ui/main.cpp apps/orcsdr-tab5/main/CMakeLists.txt
-  git commit -m "feat(weather): wire offline dashboard and NOAA actions"
+  git commit -m "feat(weather): wire dedicated NOAA Weather runtime"
   ```
 
 ### Task 6: Add offline network-policy plumbing, OrcDial semantics, and product documentation
@@ -291,8 +304,6 @@
 **Files:**
 - Modify: `apps/orcsdr-tab5/ui/settings_app.hpp`
 - Modify: `apps/orcsdr-tab5/ui/settings_app.cpp`
-- Modify: `apps/orcsdr-tab5/ui/nvs_store.hpp`
-- Modify: `apps/orcsdr-tab5/ui/nvs_store.cpp`
 - Modify: `orcdial/src/controller.hpp`
 - Modify: `docs/ORCDIAL_CONTROL_MATRIX.md`
 - Modify: `README.md`
@@ -304,12 +315,12 @@
 - Modify: `apps/orcsdr-tab5/tools/run-tab5-ui-regression.ps1`
 
 **Interfaces:**
-- Consumes: Weather runtime/dashboard actions and existing settings/OrcDial bridge.
+- Consumes: Weather runtime/dashboard actions, the existing generic `NvsStore`/preferences instance, and existing OrcDial bridge.
 - Produces: persisted `OnlineWeatherPolicy { disabled, manual, automatic }` with `disabled` default; authoritative Weather Dial actions/state; user/developer docs and repeatable regression entry points.
 
-- [ ] **Step 1: Add a policy persistence regression with disabled as the erased/default value**
+- [ ] **Step 1: Persist policy through the existing NVS abstraction**
 
-  Prove a fresh settings state yields `disabled`; changing to manual/automatic round-trips; disabling again does not power Wi-Fi or schedule a fetch. This task supplies policy only—no Internet provider is implemented.
+  Do not modify `nvs_store.*`: it already provides `getUChar/putUChar`. Add a Weather policy key in the existing settings load/save adapter. Prove a fresh/erased key yields `disabled`; manual/automatic round-trip; disabling again does not power Wi-Fi or schedule a fetch. This task supplies policy only—no Internet provider is implemented.
 
 - [ ] **Step 2: Wire Weather OrcDial actions without changing dashboard ID 5**
 
@@ -317,20 +328,20 @@
 
 - [ ] **Step 3: Extend regression tooling**
 
-  Add Weather open/tab navigation and “open does not retune” checks to the canonical UI regression. Include an explicit Wi-Fi-off Weather smoke path and a NOAA foreground action path gated on an attached RTL-SDR.
+  Add Weather open/tab navigation and “open does not retune” checks to the canonical UI regression. Include all-seven-channel normalization/selection, running-WX-stays-on-Weather, explicit foreground takeover, Wi-Fi-off Weather smoke, and a NOAA action path gated on an attached RTL-SDR.
 
 - [ ] **Step 4: Update user/status/architecture documentation truthfully**
 
-  Replace documentation saying Weather is only the shared WX receiver. Describe the dedicated dashboard as implemented only after the actual runtime exists. Mark Weather Hunter/SAME/sensors/radiosonde/satellite capabilities as planned/not implemented until later phases land.
+  Replace documentation saying Weather is only the shared WX receiver. Update the existing `wx.radio/scope/capture` help-media assumptions so documentation capture does not route through a retired generic Weather surface. Describe the dedicated dashboard as implemented only after the runtime exists. Mark Weather Hunter/SAME/sensors/radiosonde/satellite capabilities planned/not implemented until later phases land.
 
 - [ ] **Step 5: Run documentation truth and final native build**
 
-  Run `python tests/test_documentation_truth.py`, help-doc validation if changed, focused Weather tests, canonical Tab5 native build, and UI regression dry-run/parser checks. Expected: all pass.
+  Run `python tests/test_documentation_truth.py`, help-doc validation, focused Weather/radio-scan tests, canonical Tab5 native build, and UI regression parser/dry-run checks. Expected: all pass.
 
 - [ ] **Step 6: Commit Task 6**
 
   ```bash
-  git add apps/orcsdr-tab5/ui/settings_app.hpp apps/orcsdr-tab5/ui/settings_app.cpp apps/orcsdr-tab5/ui/nvs_store.hpp apps/orcsdr-tab5/ui/nvs_store.cpp orcdial/src/controller.hpp docs/ORCDIAL_CONTROL_MATRIX.md README.md PROJECT_STATUS.md architecture.md docs/user-guide/dashboards/other-bands.md docs/user-guide/dashboards/weather.md docs/help_media/manifest.json apps/orcsdr-tab5/tools/run-tab5-ui-regression.ps1
+  git add apps/orcsdr-tab5/ui/settings_app.hpp apps/orcsdr-tab5/ui/settings_app.cpp orcdial/src/controller.hpp docs/ORCDIAL_CONTROL_MATRIX.md README.md PROJECT_STATUS.md architecture.md docs/user-guide/dashboards/other-bands.md docs/user-guide/dashboards/weather.md docs/help_media/manifest.json apps/orcsdr-tab5/tools/run-tab5-ui-regression.ps1
   git commit -m "docs(weather): integrate dashboard policy and controls"
   ```
 

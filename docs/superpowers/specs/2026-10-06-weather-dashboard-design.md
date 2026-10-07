@@ -39,7 +39,7 @@ modal/full-screen submodes rather than permanent tabs.
 ## Current baseline
 
 At the design baseline (`main` commit
-`a914882e65066363ae9ed64bde8dc1a74c6ce475`), Weather is already present in the
+`8b0a7132a387abfa9fc1be3d1eaf0d7be271eed3`), Weather is already present in the
 dashboard registry and OrcDial wire IDs, but opening it routes to the shared
 `RtlBand::wx` NFM receiver surface at the default NOAA frequency. The existing
 NFM/WX DSP and audio path are retained. This project changes the Weather product
@@ -293,20 +293,28 @@ The project must not rely on every dashboard voluntarily avoiding the tuner.
 
 Priority order:
 
-1. current user foreground receiver/listen action;
-2. explicit Weather tracking/watch mode;
-3. scheduled event explicitly armed by the user;
-4. opportunistic idle-time poll;
-5. discovery work.
+1. the newest explicit user receiver action, including a Weather Listen/Scan/Hunter action;
+2. an already-running explicit Weather tracking/watch mode;
+3. a scheduled event explicitly armed by the user;
+4. opportunistic idle-time polling;
+5. automatic discovery work.
 
 Rules:
 
 - Opening the Weather dashboard by itself **does not retune** the receiver.
-- A Weather foreground action acquires Weather ownership before retuning.
-- Leaving a foreground Weather RF mode stops/releases that Weather job.
+- An explicit Weather Listen/Scan/Hunter action is a user-requested receiver
+  takeover and may replace the prior foreground owner through OrcSDR's normal
+  controlled stop/restart path.
+- Automatic Weather work (scheduled, opportunistic, or discovery) must use a
+  non-preemptive claim and must never replace a foreground owner.
+- A successful automatic claim is handed intact into the receiver-start path;
+  the start path must not discard the claim and call unconditional
+  `Session::acquire()` again.
+- Dedicated Weather jobs use a distinct Weather owner selected explicitly by the
+  adapter. The legacy `owner_for_band(Band::wx) == Owner::radio` mapping remains
+  unchanged for existing generic WX callers.
+- Leaving an explicit foreground Weather RF mode stops/releases that Weather job.
 - Returning Home never leaves a hidden foreground Weather job running.
-- Background Weather work runs only if the shared session reports no conflicting
-  owner and the receiver is safe to borrow.
 - A background job aborts rather than preempting a new foreground request.
 - Results are cached with age; Home/Weather may display cached results without
   owning the tuner.
@@ -314,8 +322,10 @@ Rules:
   retunes except explicit user actions.
 - SAME completeness is never inferred from opportunistic samples.
 
-The session API should gain a compare/try-acquire/release path instead of using
-unconditional `Session::acquire()` for opportunistic work.
+The session API therefore needs atomic non-preemptive claim/release semantics in
+addition to the existing unconditional foreground `Session::acquire()`. The
+claim implementation must publish owner only after band/frequency/rate metadata
+is valid and must prevent a check-then-reacquire TOCTOU window.
 
 ## Alerts
 
@@ -438,7 +448,9 @@ features.
 - source/freshness classification and stale transitions;
 - no zero-as-missing observations;
 - consensus input count/spread/age behavior;
-- exact NOAA seven-channel plan;
+- exact NOAA seven-channel plan, including proof that all seven valid channel
+  centers survive the WX tune-normalization path instead of collapsing to the
+  legacy 162.400 MHz default;
 - regional sensor-band profile selection;
 - report record validation and escaping;
 - SD first-run, round-trip, interrupted-write recovery, malformed history row,
@@ -454,6 +466,9 @@ features.
 - all five tabs fit 1280x720 with no control below/over the footer;
 - every tab is reachable by touch and keyboard focus navigation;
 - Weather opens without retuning;
+- while WX audio is running, `screen_for_band`, `draw_sdr_screen`, active-screen
+  refresh/touch routing, visualizer return, and UI regression all preserve the
+  dedicated Weather framebuffer owner instead of falling back to Home/generic Radio;
 - RF actions show busy/owned/unavailable states truthfully;
 - cached values visibly show age/source;
 - missing map pack, SD, location, Wi-Fi, and RTL-SDR each produce explicit

@@ -31,7 +31,7 @@ Execution is intentionally split so the first usable dashboard does not depend o
 - **Offline is the default.** Direct RF, local/cached data, OrcMaps, and SD history are the primary path.
 - **Online is enrichment.** It is opt-in and must never be required to open or use the core dashboard.
 - **One tuner, one RF job.** Cached values show their age; Weather never pretends that NOAA, ISM sensors, radiosondes, and satellites are monitored simultaneously.
-- **Foreground wins.** Weather background work may borrow only an idle receiver and must abort rather than steal it.
+- **User intent wins.** An explicit Weather Listen/Scan/Hunter action is a foreground receiver request and may intentionally replace the previous RF job. Scheduled/opportunistic Weather work may borrow only an idle receiver and must abort rather than steal it.
 - **Measured data stays distinct from interpretation.** Signal hits are not identities; candidates are not decoded devices; predicted passes are not receptions.
 - **Reports are auditable.** SD bundles keep structured observations, RF events, source provenance, optional screenshots/maps, and file hashes.
 

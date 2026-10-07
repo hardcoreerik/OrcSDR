@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- This plan begins only after Weather Foundation is accepted; scheduler integration assumes the Hunter scheduler API or an equivalent reviewed non-preemptive scheduled-job seam.
+- This plan begins only after Weather Foundation is accepted; scheduler integration assumes the Hunter scheduler API or an equivalent reviewed non-preemptive scheduled-job seam that passes a successful `try_acquire` token intact into the Foundation claimed-start path.
 - Satellite acquisition is event-driven. No generic periodic 137 MHz background polling.
 - Orbital data is cached local data; online TLE/orbital refresh is optional and disabled by default under the same Weather network policy.
 - The target catalog must reflect current operational targets and retain source/retrieval date. Do not hard-code retired NOAA POES APT satellites as active targets.
@@ -119,11 +119,11 @@
 
 - [ ] **Step 1: Write state-machine tests with a fake clock and tuner**
 
-  Cover pre-AOS waiting, AOS acquisition window, busy receiver at AOS, user cancellation, target-frequency selection, bounded Doppler retune cadence, failed retune, LOS stop/release, and no receiver ownership after completion.
+  Cover pre-AOS waiting, AOS acquisition window, busy receiver at AOS, user cancellation, target-frequency selection, a successful idle claim being handed unchanged into receiver start, stale claimed-token rejection, bounded Doppler retune cadence, failed retune, LOS stop/release, and no receiver ownership after completion.
 
 - [ ] **Step 2: Implement scheduled-job integration without preemption**
 
-  An armed pass gets `scheduled_armed` priority but `try_acquire` still fails when another foreground owner exists. Never automatically stop FM/Airband/etc. to catch a pass.
+  An armed pass gets `scheduled_armed` priority but `try_acquire` still fails when another foreground owner exists. On success, pass that exact token to the Foundation claimed-start hook; do not call the generic foreground start path or `Session::acquire()` again. Never automatically stop FM/Airband/etc. to catch a pass.
 
 - [ ] **Step 3: Implement Satellite Hunter UI**
 

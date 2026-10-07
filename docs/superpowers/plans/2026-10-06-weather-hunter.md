@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add truthful, on-demand Weather Hunter discovery across NOAA Weather Radio, supported personal weather sensors, and 400.15–405.99 MHz radiosondes, including explicit SAME watch/decoding and Balloon Hunter tracking, while preserving single-tuner non-preemption.
+**Goal:** Add truthful, on-demand Weather Hunter discovery across NOAA Weather Radio, supported personal weather sensors, and 400.15–405.99 MHz radiosondes, including explicit SAME watch/decoding and Balloon Hunter tracking, while keeping automatic jobs non-preemptive and explicit user Hunter actions as normal foreground receiver takeovers.
 
-**Architecture:** Build a pure RF job scheduler above the non-preemptive `radio_session` API from the Weather Foundation. Weather Hunter executes short sequential jobs only after explicit user request; optional idle polling borrows the tuner only when free. Protocol decoders are independently authored, fixture-driven modules that normalize into the shared Weather observation/report model; Balloon Hunter is a dedicated foreground tracking submode after a supported sonde lock.
+**Architecture:** Build a pure RF job scheduler above the Foundation's explicit-owner and non-preemptive claim APIs. Pressing START/Watch/Balloon Hunter is an explicit foreground action and may intentionally replace the previous receiver job through the reviewed Weather start seam; scheduled/opportunistic/automatic jobs must `try_acquire` only an idle receiver and pass that claimed token intact into the start path. Protocol decoders are independently authored, fixture-driven modules that normalize into the shared Weather observation/report model; Balloon Hunter is a dedicated foreground tracking submode after a supported sonde lock.
 
 **Tech Stack:** C++17, existing RTL-SDR/WX/Browse receive paths, `weather_model`, `weather_runtime`, `weather_report_store`, shared scan/spectrum measurements, M5GFX Weather UI, host fixture tests, and physical RF captures.
 
@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - This plan starts only after the Weather Dashboard Foundation is reviewed and accepted.
-- No background job may preempt a foreground receiver owner. `IDLE ONLY` is the default Weather background policy; `OFF` guarantees no non-user Weather retunes.
+- No scheduled/opportunistic/automatic job may preempt a foreground receiver owner. `IDLE ONLY` is the default Weather background policy; `OFF` guarantees no non-user Weather retunes. Explicit user START/Watch/Balloon actions are foreground requests and may intentionally take over the receiver.
 - Weather Hunter is sequential. It never displays multiple frequency ranges as simultaneously monitored.
 - A short NOAA sample may say `NO ALERT DECODED DURING SAMPLE`; only explicit continuous NOAA RF Watch may claim to monitor SAME alerts.
 - Do not infer owner identity/address from a consumer weather-sensor device ID.
@@ -42,12 +42,12 @@
 - Modify: `apps/orcsdr-tab5/main/CMakeLists.txt`
 
 **Interfaces:**
-- Consumes: Foundation `radio::Session::try_acquire/release`, Weather model time/source state, injected tune/sample/cancel hooks.
+- Consumes: Foundation explicit Weather-owner start seam, `radio::Session::try_acquire/release`, Weather model time/source state, and injected claimed-start/tune/sample/cancel hooks.
 - Produces: fixed-capacity `Job`, `JobKind`, `Priority`, `Policy`, scheduler `submit/cancel/service/snapshot`, and explicit finish reasons used by Weather Hunter and future Satellite jobs.
 
 - [ ] **Step 1: Write deterministic scheduler tests with a fake receiver**
 
-  Cover priority ordering; no conflicting acquisition; foreground request cancelling an opportunistic dwell; `OFF` rejecting background jobs; `IDLE ONLY` waiting for free owner; no starvation loop after repeated busy results; cancel/release exactly once; and leaving Weather cancelling Weather-owned foreground/tracking jobs.
+  Cover priority ordering; an explicit foreground Hunter start being allowed to take over through the foreground Weather start seam; automatic jobs refusing a busy owner; a successful `try_acquire` token being passed unchanged into claimed-start; stale claimed-token rejection; foreground request cancelling an opportunistic dwell; `OFF` rejecting background jobs; `IDLE ONLY` waiting for free owner; no starvation loop after repeated busy results; cancel/release exactly once; and leaving Weather cancelling Weather-owned foreground/tracking jobs.
 
 - [ ] **Step 2: Implement fixed-capacity job state**
 
@@ -55,7 +55,7 @@
 
 - [ ] **Step 3: Integrate with the Foundation runtime through hooks only**
 
-  `weather_runtime` owns high-level requests; scheduler owns dwell/tune progression. `main.cpp` exposes only receiver hook functions and does not contain job state machines.
+  `weather_runtime` owns high-level requests; scheduler owns dwell/tune progression. Explicit user jobs call the foreground Weather start hook. Automatic jobs call `try_acquire`, then pass the returned token directly to the Foundation claimed-start hook; they must never call a generic start path that reacquires ownership. `main.cpp` exposes only receiver hooks and does not contain job state machines.
 
 - [ ] **Step 4: Run race/policy tests and existing radio-session regressions**
 
@@ -81,7 +81,7 @@
 
 - [ ] **Step 1: Write Hunter-plan tests**
 
-  Assert default U.S. plan order is NOAA channels, supported sensor-band jobs, then 400.15–405.99 MHz radiosonde discovery; disabled job classes are skipped; progress counts only completed/active jobs; cancellation preserves completed results; and no satellite dwell appears in the generic Hunter plan.
+  Assert default U.S. plan order is NOAA channels, supported sensor-band jobs, then 400.15–405.99 MHz radiosonde discovery; disabled job classes are skipped; progress counts only completed/active jobs; cancellation preserves completed results; no satellite dwell appears in the generic Hunter plan; and pressing START emits one explicit foreground Weather takeover request before the first dwell rather than attempting an idle-only claim.
 
 - [ ] **Step 2: Implement the Hunter setup popup and progress screen**
 
@@ -253,7 +253,7 @@
 
 - [ ] **Step 1: Add idle-poll integration tests**
 
-  Prove Weather can borrow only an idle receiver, aborts when a foreground owner appears, never calls Wi-Fi, never claims continuous SAME coverage, and caches result ages after release.
+  Prove automatic Weather polling can borrow only an idle receiver, hands the exact claimed token into the Foundation start seam, aborts/releases if that token becomes stale before start, yields when a foreground owner appears, never calls Wi-Fi, never claims continuous SAME coverage, and caches result ages after release.
 
 - [ ] **Step 2: Enable only cheap, bounded default idle jobs**
 
