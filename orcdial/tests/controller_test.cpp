@@ -38,6 +38,11 @@ int main() {
   assert(rotate(Dashboard::home, 0, Focus::volume, 1, 5, 12500).kind == ActionKind::volume);
   assert(rotate(Dashboard::home, 0, Focus::vfo, 0, 1, 12500).kind == ActionKind::none);
   assert(next_focus(Dashboard::home, Focus::vfo) == Focus::step);
-  assert(next_focus(Dashboard::home, Focus::step) == Focus::volume);
+  assert(next_focus(Dashboard::home, Focus::step) == Focus::span);
+  assert(next_focus(Dashboard::home, Focus::span) == Focus::filter);
+  assert(next_focus(Dashboard::home, Focus::filter) == Focus::volume);
   assert(next_focus(Dashboard::home, Focus::volume) == Focus::vfo);
+  assert(rotate(Dashboard::home, 0, Focus::span, 1, 5, 12500).kind == ActionKind::span);
+  assert(rotate(Dashboard::home, 0, Focus::filter, -1, 5, 12500).kind == ActionKind::filter);
+  assert(rotate(Dashboard::home, 0, Focus::filter, -1, 5, 12500).value == -1);
 }

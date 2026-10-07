@@ -23,7 +23,7 @@ struct RadioState {
   uint32_t item_count = 0;
   uint32_t capabilities = 0;
 };
-enum class Focus : uint8_t { vfo, step, gain, squelch, volume };
+enum class Focus : uint8_t { vfo, step, gain, squelch, volume, span, filter };
 constexpr uint32_t steps[] = {1, 10, 100, 1000, 2500, 5000, 10000, 12500, 25000, 100000, 1000000};
 constexpr int step_count = sizeof steps / sizeof steps[0];
 inline int step_index(uint32_t value) {

@@ -49,6 +49,7 @@ struct Snapshot {
   // Mode popup: the pinned choice (0 = AUTO), the mode in use, the band's usual mode (all 0 AUTO, 1 NFM, 2 AM,
   // 3 WFM, 4 USB, 5 LSB), whether Home may pick the mode here, and the band's name.
   uint8_t mode_choice = 0, mode_active = 0, mode_suggested = 0;
+  bool edges_hint = false;   // the OrcDial is adjusting the filter: show the edge lines for a few seconds
   bool mode_selectable = false;
   char band[20]{};
   char clock[12]{};
@@ -91,6 +92,7 @@ enum class ActionKind : uint8_t {
   mode_close,
   mode_set,          // value = 0 AUTO, 1 NFM, 2 AM, 3 WFM, 4 USB, 5 LSB
   keypad_open,       // tap on the frequency readout
+  edges_toggle,      // the EDGES chip on the spectrum
 };
 
 struct Action {

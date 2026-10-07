@@ -3214,6 +3214,9 @@ void home_apply_auto(const orcsdr::band_profile::Profile& profile, RtlBand band)
   home_set_demod(pin ? static_cast<HomeDemod>(pin) : demod_for_mode(profile.mode), band);
 }
 
+// The OrcDial adjusting the filter shows the two edge lines on the spectrum for a few seconds.
+uint32_t home_edges_until_ms = 0;
+
 // Called when Home comes on screen: re-derive the mode for the frequency it is on.
 void home_enter() {
   home_last_band = orcsdr::band_profile::Id::count;
@@ -12391,6 +12394,7 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
                      : rtl_ui_band == RtlBand::lora      ? 125000
                                                           : band_step_hz(step_profile);
   // Only the bands whose step the STEP SIZE control can change; the rest are channels or decoder-owned.
+  snapshot.edges_hint = millis() < home_edges_until_ms;
   snapshot.mode_selectable = home_full_range();
   snapshot.mode_choice = band_mode_pin[static_cast<size_t>(step_profile.id)];
   snapshot.mode_active = static_cast<uint8_t>(effective_demod(rtl_ui_band));
@@ -12491,7 +12495,7 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
       snapshot.filter_bandwidth_hz != previous.filter_bandwidth_hz ||
       snapshot.filter_kind != previous.filter_kind ||
       strcmp(snapshot.mode, previous.mode) != 0 || snapshot.mode_choice != previous.mode_choice ||
-      snapshot.mode_selectable != previous.mode_selectable || strcmp(snapshot.band, previous.band) != 0;
+      snapshot.mode_selectable != previous.mode_selectable || snapshot.edges_hint != previous.edges_hint || strcmp(snapshot.band, previous.band) != 0;
   const bool audio_changed = previous.revision == 0 ||
                              snapshot.sound_enabled != previous.sound_enabled ||
                              snapshot.volume != previous.volume;
@@ -14352,6 +14356,9 @@ void orcdial_fill_state(orc::Packet& p) {
   if (id == orc::Dashboard::cb) {
     p.selected = static_cast<int32_t>(orcsdr::cb::nearest_channel(rtl_ui_frequency_hz) + 1);
     p.item_count = orcsdr::cb::kChannelCount;
+  } else if (id == orc::Dashboard::home) {
+    p.selected = static_cast<int32_t>(rtl_scope_span_hz.load(std::memory_order_relaxed));   // Home: span
+    p.item_count = rtl_filter_bandwidth_hz.load(std::memory_order_relaxed);                // Home: filter width
   } else if (id == orc::Dashboard::p25) {
     p.selected = p25_candidate_index + 1;
     p.item_count = p25_config.control_channel_count;
@@ -14396,7 +14403,7 @@ bool orcdial_apply(const orc::Packet& p) {
     return true;
   }
   if (p.type != orc::Type::semantic_action || p.dashboard != static_cast<uint8_t>(active) ||
-      p.action > static_cast<uint8_t>(Kind::activate) || p.value < -1000000000 ||
+      p.action > static_cast<uint8_t>(Kind::filter) || p.value < -1000000000 ||
       p.value > 1000000000) return false;
   const Kind kind = Kind(p.action);
   if (active == Dash::home && kind == Kind::tune) {
@@ -14405,6 +14412,28 @@ bool orcdial_apply(const orc::Packet& p) {
     const uint32_t requested = rtl_requested_frequency_hz.load(std::memory_order_acquire);
     return home_tune_to(home_step_by(requested != 0 ? requested : rtl_ui_frequency_hz,
                                      static_cast<int>(p.value)));
+  }
+  if (active == Dash::home && kind == Kind::span) {
+    // Clockwise zooms in: a smaller span, one step per detent.
+    if (p.value == 0 || p.value < -4 || p.value > 4) return false;
+    for (int i = 0; i < abs(p.value); ++i)
+      handle_home_action({p.value > 0 ? orcsdr::home::ActionKind::span_down : orcsdr::home::ActionKind::span_up});
+    return true;
+  }
+  if (active == Dash::home && kind == Kind::filter) {
+    // Clockwise widens the filter through the mode's usual widths; the edge lines show while you turn.
+    const auto& standards = orcsdr::filter_standards::standards(home_filter_kind());
+    if (standards.count == 0 || p.value == 0 || p.value < -4 || p.value > 4) return false;
+    const int current = static_cast<int>(rtl_filter_bandwidth_hz.load(std::memory_order_relaxed));
+    int index = 0;
+    for (int i = 1; i < standards.count; ++i)
+      if (abs(static_cast<int>(standards.presets_hz[i]) - current) <
+          abs(static_cast<int>(standards.presets_hz[index]) - current)) index = i;
+    index = std::clamp(index + static_cast<int>(p.value), 0, static_cast<int>(standards.count) - 1);
+    handle_home_action({orcsdr::home::ActionKind::filter_set, orcsdr::dashboards::Id::count,
+                        standards.presets_hz[index]});
+    home_edges_until_ms = millis() + 4000;
+    return true;
   }
   if (active == Dash::home && kind == Kind::step) {
     const auto& profile = orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz);

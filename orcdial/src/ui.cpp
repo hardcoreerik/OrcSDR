@@ -126,9 +126,18 @@ static void home_screen(lgfx::LGFXBase& d, const RadioState& state, Focus focus,
   d.setTextColor(dim); d.setTextSize(1); draw_text(d, "MHz", 120, 140);
   if (focus == Focus::vfo) d.fillRect(52, 131, 136, 2, green);
   if (pending) d.fillCircle(206, 112, 3, cyan);
-  if (state.step_hz % 1000 == 0) std::snprintf(line, sizeof line, "STEP %lu kHz", (unsigned long)(state.step_hz / 1000));
-  else std::snprintf(line, sizeof line, "STEP %.1f kHz", state.step_hz / 1000.0);
-  d.setTextColor(focus == Focus::step ? green : dim); d.setTextSize(2); draw_text(d, line, 120, 160);
+  // One line shows whichever of step, span or filter is focused (step when the frequency or volume is).
+  auto width = [](const char* label, uint32_t hz, char* out, size_t size) {
+    if (!hz) std::snprintf(out, size, "%s --", label);
+    else if (hz >= 1000000) std::snprintf(out, size, "%s %.1f MHz", label, hz / 1000000.0);
+    else if (hz % 1000 == 0) std::snprintf(out, size, "%s %lu kHz", label, (unsigned long)(hz / 1000));
+    else std::snprintf(out, size, "%s %.1f kHz", label, hz / 1000.0);
+  };
+  if (focus == Focus::span) width("SPAN", state.selected > 0 ? uint32_t(state.selected) : 0, line, sizeof line);
+  else if (focus == Focus::filter) width("FILTER", state.item_count, line, sizeof line);
+  else width("STEP", state.step_hz, line, sizeof line);
+  d.setTextColor(focus == Focus::step || focus == Focus::span || focus == Focus::filter ? green : dim);
+  d.setTextSize(2); draw_text(d, line, 120, 160);
   const uint32_t bar = focus == Focus::volume ? green : trace_bright;
   d.drawRoundRect(70, 176, 100, 9, 3, bar);
   d.fillRoundRect(72, 178, std::min<int>(state.volume, 100) * 96 / 100, 5, 2, bar);

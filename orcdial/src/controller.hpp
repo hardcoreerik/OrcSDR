@@ -7,7 +7,8 @@ namespace orc {
 enum class ActionKind : uint8_t {
   none, tune, step, gain, squelch, volume, channel, radar_range,
   aircraft, lora_slot, node, event, p25_candidate, talkgroup,
-  message, identity, wifi_ap, wifi_channel, setting, view, activate
+  message, identity, wifi_ap, wifi_channel, setting, view, activate,
+  span, filter   // Home: zoom the spectrum, widen or narrow the receive filter (appended: values are on the wire)
 };
 struct Action { ActionKind kind = ActionKind::none; int32_t value = 0; };
 inline bool frequency_action(ActionKind kind) { return kind == ActionKind::tune; }
@@ -21,6 +22,9 @@ inline Action rotate(Dashboard id, uint8_t view, Focus focus, int detents,
   if (focus == Focus::gain) return {ActionKind::gain, detents};
   if (focus == Focus::squelch) return {ActionKind::squelch, detents};
   if (focus == Focus::step) return {ActionKind::step, detents};
+  // Clockwise zooms in (a narrower span) and widens the filter.
+  if (focus == Focus::span) return {ActionKind::span, detents};
+  if (focus == Focus::filter) return {ActionKind::filter, detents};
   switch (id) {
     // Home tunes the whole range: the value is a count of steps, not Hz. The Tab5 applies the step of the
     // band it is in, so a spin that crosses a band edge changes step and snaps to the next band's raster.
@@ -58,7 +62,9 @@ inline Action press(Dashboard id, uint8_t view) {
 inline Focus next_focus(Dashboard id, Focus focus) {
   if (id == Dashboard::home) {
     if (focus == Focus::vfo) return Focus::step;
-    if (focus == Focus::step) return Focus::volume;
+    if (focus == Focus::step) return Focus::span;
+    if (focus == Focus::span) return Focus::filter;
+    if (focus == Focus::filter) return Focus::volume;
     return Focus::vfo;
   }
   if (channel_dashboard(id)) {
