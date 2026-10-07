@@ -18,7 +18,7 @@ int main() {
   assert(decoded.selected == -2 && decoded.item_count == 17);
   assert(orc::carousel_count == 17 && orc::carousel_index(orc::Dashboard::weather) == 3);
   assert(!orc::valid_dashboard(uint8_t(orc::devices_entry)));
-  assert(!orc::valid_dashboard(11) && !orc::valid_dashboard(17));
+  assert(!orc::valid_dashboard(11) && orc::valid_dashboard(17) && !orc::valid_dashboard(18));   // 17 is FT8
   wire[20] ^= 1;
   assert(!orc::decode(wire, sizeof wire, decoded));
   assert(!orc::decode(wire, sizeof wire - 1, decoded));

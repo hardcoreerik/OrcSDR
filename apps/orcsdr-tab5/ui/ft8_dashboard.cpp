@@ -572,7 +572,7 @@ Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
   if (hit(x, y, kHome)) return {ActionKind::home};
   if (y >= kTabsY) {
-    const int index = std::clamp(x / kTabW, 0, kTabCount - 1);
+    const int index = std::clamp(static_cast<int>(x / kTabW), 0, kTabCount - 1);
     g_tab = static_cast<Tab>(index);
     g_decode_page = 0;
     draw();
