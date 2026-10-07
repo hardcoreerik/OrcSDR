@@ -120,6 +120,11 @@ struct State {
   uint32_t uptime_seconds = 0;
   bool rtc_valid = false;
   char rtc_utc[24]{};
+  // Clock setup: the hardware RTC holds UTC; the offset (minutes east of UTC) gives the local time.
+  int16_t utc_offset_minutes = 0;
+  uint32_t rtc_epoch = 0;     // UTC seconds, valid when rtc_valid
+  char rtc_local[24]{};       // "YYYY-MM-DD HH:MM:SS" at the offset, when rtc_valid
+  uint8_t ntp_state = 0;      // 0 idle, 1 syncing, 2 done, 3 failed
 };
 
 enum class ActionKind : uint8_t {
@@ -155,11 +160,15 @@ enum class ActionKind : uint8_t {
   ,catalog_remove
   ,web_console_changed
   ,rtl_usb_safe_mode_reset
+  ,clock_set_utc          // utc = UTC seconds, value = UTC offset in minutes: write the RTC and store the offset
+  ,clock_offset_changed   // value = UTC offset in minutes: store it (the time itself was already right)
+  ,clock_ntp_sync         // optional: set the RTC from the network (Wi-Fi must already be connected)
 };
 
 struct Action {
   ActionKind kind = ActionKind::none;
   int32_t value = 0;
+  uint32_t utc = 0;   // clock_set_utc: UTC seconds to write (value is then the UTC offset in minutes)
 };
 
 void enter(const State& state, Section section = Section::connectivity);

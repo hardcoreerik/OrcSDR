@@ -1,5 +1,6 @@
 #pragma once
 #include "protocol.hpp"
+#include "diagnostics.hpp"
 #include "secure_runtime.hpp"
 #include "../state.hpp"
 #include "../controller.hpp"
@@ -35,6 +36,7 @@ class Link {
   // Counters are updated from several tasks without locking; they are for diagnosis only.
   uint8_t channel() const { return channel_; }
   void rf_report() const;
+  LinkDiagnostics diagnostics() const;
   void rf_reset();
   void rf_trace(uint8_t mode) { trace_mode_ = mode; }  // 0 off (default), 1 on, 2 on for the first 60 s after boot
  private:

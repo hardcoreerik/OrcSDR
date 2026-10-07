@@ -46,6 +46,14 @@ void Link::rf_reset() {
   for (auto& n : tx_by_channel_) n = 0;
   for (auto& n : rx_by_channel_) n = 0;
 }
+LinkDiagnostics Link::diagnostics() const {
+  LinkDiagnostics d;
+  d.tx_accepted = tx_accepted_; d.tx_refused = tx_refused_; d.ack_ok = cb_ok_; d.ack_failed = cb_fail_;
+  d.rx_frames = rx_frames_; d.channel = channel_;
+  d.last_rx_age_ms = last_rx_ms_ ? millis() - last_rx_ms_ : UINT32_MAX;
+  return d;
+}
+
 void Link::rf_report() const {
   Serial.printf("ORCDIAL_RF ch=%u tx=%lu tx_refused=%lu cb_ok=%lu cb_fail=%lu rx=%lu\n", unsigned(channel_),
                 (unsigned long)tx_accepted_, (unsigned long)tx_refused_, (unsigned long)cb_ok_,
@@ -142,7 +150,7 @@ void Link::handle(const Incoming& incoming) {
     state_.signal_dbm = p.signal_dbm; state_.signal_valid = p.flags & 1;
     state_.mode = p.mode; state_.volume = p.volume;
     state_.dashboard = Dashboard(p.dashboard);
-    state_.view = p.view; state_.revision = p.revision;
+    state_.view = p.view; state_.band = p.band; state_.revision = p.revision;
     state_.selected = p.selected; state_.item_count = p.item_count;
     state_.capabilities = p.capabilities;
     if (pending_sequence_ && p.ack == pending_sequence_) { last_ack_ = p.ack; pending_sequence_ = 0; }

@@ -1,6 +1,7 @@
 # Devices and secure pairing (unreleased)
 
-Open **Devices** in the Dial carousel and **Settings → Accessories & Companion**
+Open **Dial Settings → Pairing** on the Dial (the last stop of its carousel, or hold the knob for four
+seconds on Home) and **Settings → Accessories & Companion**
 on the Tab5. Pair on both within 60 seconds. Compare all six digits and confirm
 on both devices. Cancel if they differ. Each device trusts one peer.
 
@@ -80,7 +81,7 @@ flights; malformed/reordered fragments; wrong MAC, modified ciphertext, replay,
 stale sessions; manual stop/resume, boot preference and offline revocation.
 Fault injection covers 700 queue/NVS/task initialization failures, failed
 revocation with retry, and lost encrypted Forget notices.
-Actual 240×240 display-only Devices captures are under `docs/screenshots/devices`.
+Actual 240×240 display-only captures of the earlier Devices screen are under `docs/screenshots/devices`; the screen is now Dial Settings > Pairing with a BACK button, and these captures predate that change.
 
 Host tests and firmware builds are not hardware acceptance or a security audit.
 Before a subsequent beta: complete independent security review, both startup

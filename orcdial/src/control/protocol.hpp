@@ -36,6 +36,7 @@ struct Packet {
   uint8_t dashboard = 0;
   uint8_t action = 0; // semantic ActionKind for SEMANTIC_ACTION
   uint8_t view = 0;
+  uint8_t band = 0; // Tab5 band profile id + 1 for the frequency on screen; 0 = unknown (byte 7, was reserved)
   uint32_t revision = 0;
   int32_t selected = 0;
   uint32_t item_count = 0;
@@ -67,7 +68,7 @@ inline bool newer_sequence(uint32_t candidate, uint32_t previous) {
 inline void encode(const Packet& p, uint8_t out[packet_size]) {
   std::memset(out, 0, packet_size);
   put32(out, magic);
-  out[4] = version; out[5] = uint8_t(p.type); out[6] = uint8_t(p.role);
+  out[4] = version; out[5] = uint8_t(p.type); out[6] = uint8_t(p.role); out[7] = p.band;
   put32(out + 8, p.sender); put32(out + 12, p.sequence); put32(out + 16, p.ack);
   put32(out + 20, uint32_t(p.value)); put32(out + 24, p.frequency_hz);
   put32(out + 28, p.step_hz);
@@ -84,7 +85,7 @@ inline bool decode(const uint8_t* in, size_t size, Packet& p) {
   if (!in || size != packet_size || get32(in) != magic || in[4] != version ||
       !valid_type(in[5]) || (in[6] != 1 && in[6] != 2) ||
       get32(in + 60) != crc32(in, 60)) return false;
-  p.type = Type(in[5]); p.role = Role(in[6]);
+  p.type = Type(in[5]); p.role = Role(in[6]); p.band = in[7];
   p.sender = get32(in + 8); p.sequence = get32(in + 12); p.ack = get32(in + 16);
   p.value = int32_t(get32(in + 20)); p.frequency_hz = get32(in + 24);
   p.step_hz = get32(in + 28);

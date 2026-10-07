@@ -51,7 +51,9 @@ inline void scroll_waterfall(int x, int last_row_y, int width, const uint16_t* c
   M5.Display.startWrite();
   M5.Display.scroll(0, -rows);
   for (int r = 0; r < rows; ++r)
-    M5.Display.pushImage(x, last_row_y - rows + 1 + r, width, 1, colors);
+    // M5GFX reads a uint16_t* image as big-endian RGB565, but the waterfall colours are native RGB565 (what fillRect and the sprites use), so push the row through the rgb565_t overload or every hue is wrong.
+    M5.Display.pushImage(x, last_row_y - rows + 1 + r, width, 1,
+                         reinterpret_cast<const lgfx::rgb565_t*>(colors));
   M5.Display.endWrite();
 }
 

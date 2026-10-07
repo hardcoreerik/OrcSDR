@@ -17,6 +17,7 @@ struct Snapshot {
   uint32_t requested_frequency_hz = 0;
   uint32_t span_hz = 960000;
   uint32_t step_hz = 12500;
+  bool step_adjustable = true;  // false on channelized or fixed bands: the STEP SIZE control shows FIXED
   uint32_t filter_bandwidth_hz = 0;
   filter_standards::Kind filter_kind = filter_standards::Kind::fixed;
   uint32_t effective_sps = 0;
@@ -45,6 +46,12 @@ struct Snapshot {
   char wifi_ip[16]{};
   char receiver[12] = "RTL-SDR";
   char mode[12]{};
+  // Mode popup: the pinned choice (0 = AUTO), the mode in use, the band's usual mode (all 0 AUTO, 1 NFM, 2 AM,
+  // 3 WFM, 4 USB, 5 LSB), whether Home may pick the mode here, and the band's name.
+  uint8_t mode_choice = 0, mode_active = 0, mode_suggested = 0;
+  bool edges_hint = false;   // the OrcDial is adjusting the filter: show the edge lines for a few seconds
+  bool mode_selectable = false;
+  char band[20]{};
   char clock[12]{};
   char date[20]{};
 };
@@ -81,6 +88,10 @@ enum class ActionKind : uint8_t {
   gain_auto,
   gain_tenth_db,
   rtl_agc,
+  mode_open,         // tap on the mode chip
+  mode_close,
+  mode_set,          // value = 0 AUTO, 1 NFM, 2 AM, 3 WFM, 4 USB, 5 LSB
+  keypad_open,       // tap on the frequency readout
 };
 
 struct Action {
@@ -104,6 +115,8 @@ bool popup_open();
 int32_t list_scroll_px();
 void close_popup();
 bool browser_active();
+// The direct-tuning numpad is showing (the shared keyboard handler routes keys to it).
+bool keypad_open();
 bool self_check();
 
 }  // namespace orcsdr::home

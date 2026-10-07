@@ -91,11 +91,15 @@ idf_component_register(
         "../ui/focus_nav.cpp"
         "../ui/focus_ring.cpp"
         "../ui/filter_standards.cpp"
+        "../ui/band_profile.cpp"
+        "../ui/home_vfo.cpp"
         "../ui/waterfall_style.cpp"
         "../ui/airband_audio_filter.cpp"
         "../ui/freq_keypad.cpp"
         "../dsp/dsp_stats.cpp"
         "../ui/time_service.cpp"
+        "../ui/clock_settings.cpp"
+        "../ui/ntp_sync.cpp"
         "../ui/ui_capture.cpp"
         "../ui/web_console.cpp"
         "../ui/web_audio_transport.cpp"
@@ -118,6 +122,7 @@ idf_component_register(
         esp_hosted
         esp_event
         esp_netif
+        lwip
         esp_wifi
         esp-dsp
         esp_hw_support

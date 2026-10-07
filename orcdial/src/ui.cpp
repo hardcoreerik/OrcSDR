@@ -1,5 +1,6 @@
 #include "ui.hpp"
 #include "controller.hpp"
+#include "band_names.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -96,6 +97,200 @@ static void frequency(lgfx::LGFXBase& d, uint32_t hz, int y, int size, uint32_t 
   d.setTextColor(color, bg); d.setTextSize(size); draw_text(d, text, 120, y);
 }
 
+static void back_button(lgfx::LGFXBase& d);
+
+// Home as a general-purpose VFO. The Tab5 resolves the band, mode and step for the frequency; this only shows them.
+static void home_screen(lgfx::LGFXBase& d, const RadioState& state, Focus focus, bool pending, uint32_t now) {
+  d.drawCircle(120, 120, 115, link_color(true));
+  d.drawCircle(120, 120, 110, 0x1b4e60);
+  // Decorative waveform behind the readout; it does not represent the received signal.
+  for (int k = 0; k < 2; ++k) {
+    int previous = 80;
+    for (int x = 24; x <= 216; x += 4) {
+      const float envelope = sinf((x - 24) * 3.14159f / 192.0f);
+      const float phase = x * (k ? 0.13f : 0.09f) + now * (k ? -0.0021f : 0.0016f);
+      const int y = 80 + int(13 * envelope * sinf(phase));
+      if (x > 24) d.drawLine(x - 4, previous, x, y, k ? 0x1b5e78 : 0x2b8fb0);
+      previous = y;
+    }
+  }
+  static const char* modes[] = {"--", "NFM", "AM", "WFM", "USB", "LSB"};
+  d.setTextColor(cyan); d.setTextSize(2); draw_text(d, band_name(state.band), 120, 32);
+  d.setTextColor(green); d.setTextSize(2);
+  draw_text(d, modes[state.mode < 6 ? state.mode : 0], 120, 54);
+  char line[32];
+  const uint32_t hz = state.frequency_hz;
+  if (hz % 1000 == 0)
+    std::snprintf(line, sizeof line, "%lu.%03lu", (unsigned long)(hz / 1000000), (unsigned long)(hz / 1000 % 1000));
+  else
+    std::snprintf(line, sizeof line, "%lu.%06lu", (unsigned long)(hz / 1000000), (unsigned long)(hz % 1000000));
+  d.setTextColor(ink); d.setTextSize(4); draw_text(d, line, 120, 112);
+  d.setTextColor(dim); d.setTextSize(1); draw_text(d, "MHz", 120, 140);
+  if (focus == Focus::vfo) d.fillRect(52, 131, 136, 2, green);
+  if (pending) d.fillCircle(206, 112, 3, cyan);
+  // One line shows whichever of step, span or filter is focused (step when the frequency or volume is).
+  auto width = [](const char* label, uint32_t hz, char* out, size_t size) {
+    if (!hz) std::snprintf(out, size, "%s --", label);
+    else if (hz >= 1000000) std::snprintf(out, size, "%s %.1f MHz", label, hz / 1000000.0);
+    else if (hz % 1000 == 0) std::snprintf(out, size, "%s %lu kHz", label, (unsigned long)(hz / 1000));
+    else std::snprintf(out, size, "%s %.1f kHz", label, hz / 1000.0);
+  };
+  if (focus == Focus::span) width("SPAN", state.selected > 0 ? uint32_t(state.selected) : 0, line, sizeof line);
+  else if (focus == Focus::filter) width("FILTER", state.item_count, line, sizeof line);
+  else width("STEP", state.step_hz, line, sizeof line);
+  d.setTextColor(focus == Focus::step || focus == Focus::span || focus == Focus::filter ? green : dim);
+  d.setTextSize(2); draw_text(d, line, 120, 160);
+  const uint32_t bar = focus == Focus::volume ? green : trace_bright;
+  d.drawRoundRect(70, 176, 100, 9, 3, bar);
+  d.fillRoundRect(72, 178, std::min<int>(state.volume, 100) * 96 / 100, 5, 2, bar);
+  back_button(d);
+}
+
+// Keypad geometry for the 240 px round screen: every key sits inside the circle.
+static constexpr char keypad_keys[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '\b'};
+static constexpr int kp_x0 = 42, kp_y0 = 54, kp_w = 50, kp_h = 30, kp_px = 54, kp_py = 34;
+static constexpr int kp_cancel_x = 50, kp_tune_x = 122, kp_button_y = 192, kp_button_w = 68, kp_button_h = 22;
+static char keypad_entry[12];
+static bool keypad_out_of_range = false;
+static char keypad_range_text[20] = "";
+void keypad_state(const char* entry, bool out_of_range, const char* range_text) {
+  std::snprintf(keypad_entry, sizeof keypad_entry, "%s", entry ? entry : "");
+  keypad_out_of_range = out_of_range;
+  std::snprintf(keypad_range_text, sizeof keypad_range_text, "%s", range_text ? range_text : "");
+}
+static bool kp_inside(int x, int y, int bx, int by, int bw, int bh) {
+  return x >= bx - 2 && x < bx + bw + 2 && y >= by - 2 && y < by + bh + 2;
+}
+char keypad_hit(int x, int y) {
+  for (int i = 0; i < 12; ++i)
+    if (kp_inside(x, y, kp_x0 + (i % 3) * kp_px, kp_y0 + (i / 3) * kp_py, kp_w, kp_h)) return keypad_keys[i];
+  if (kp_inside(x, y, kp_cancel_x, kp_button_y, kp_button_w, kp_button_h)) return 'C';
+  if (kp_inside(x, y, kp_tune_x, kp_button_y, kp_button_w, kp_button_h)) return 'T';
+  return 0;
+}
+static void keypad_screen(lgfx::LGFXBase& d, bool connected) {
+  d.drawCircle(120, 120, 115, link_color(connected));
+  d.fillRoundRect(56, 20, 128, 28, 6, panel);
+  d.drawRoundRect(56, 20, 128, 28, 6, keypad_out_of_range ? red : cyan);
+  char line[16];
+  if (keypad_entry[0]) std::snprintf(line, sizeof line, "%s", keypad_entry);
+  else std::snprintf(line, sizeof line, "MHz");
+  d.setTextColor(keypad_entry[0] ? ink : dim); d.setTextSize(2); draw_text(d, line, 120, 34);
+  for (int i = 0; i < 12; ++i) {
+    const int x = kp_x0 + (i % 3) * kp_px, y = kp_y0 + (i / 3) * kp_py;
+    d.fillRoundRect(x, y, kp_w, kp_h, 6, panel);
+    d.drawRoundRect(x, y, kp_w, kp_h, 6, trace_bright);
+    const char label[2] = {keypad_keys[i] == '\b' ? '<' : keypad_keys[i], 0};
+    d.setTextColor(ink); d.setTextSize(2); d.drawString(label, x + kp_w / 2, y + kp_h / 2);
+  }
+  d.fillRoundRect(kp_cancel_x, kp_button_y, kp_button_w, kp_button_h, 6, panel);
+  d.drawRoundRect(kp_cancel_x, kp_button_y, kp_button_w, kp_button_h, 6, red);
+  d.setTextColor(red); d.setTextSize(1); d.drawString("CANCEL", kp_cancel_x + kp_button_w / 2, kp_button_y + kp_button_h / 2);
+  d.fillRoundRect(kp_tune_x, kp_button_y, kp_button_w, kp_button_h, 6, green);
+  d.setTextColor(bg); d.setTextSize(1); d.drawString("TUNE", kp_tune_x + kp_button_w / 2, kp_button_y + kp_button_h / 2);
+  if (keypad_out_of_range) { d.setTextColor(red); d.setTextSize(1); draw_text(d, keypad_range_text, 120, 222); }
+}
+
+// ---- Dial Settings --------------------------------------------------------------------------
+static SettingsView settings_view;
+void settings_state(const SettingsView& view) { settings_view = view; }
+
+static void settings_row(lgfx::LGFXBase& d, int y, const char* label, const char* value, bool focused) {
+  if (focused) d.fillRoundRect(22, y - 15, 196, 30, 8, panel);
+  d.setTextSize(1.5f);
+  d.setTextDatum(middle_left); d.setTextColor(focused ? cyan : dim); d.drawString(label, 34, y);
+  d.setTextDatum(middle_right); d.setTextColor(focused ? ink : dim); d.drawString(value, 206, y);
+  d.setTextDatum(middle_center);
+}
+
+static void settings_menu_screen(lgfx::LGFXBase& d, bool connected) {
+  const auto& v = settings_view;
+  d.drawCircle(120, 120, 115, link_color(connected));
+  d.setTextColor(dim); d.setTextSize(1); draw_text(d, "DIAL SETTINGS", 120, 24);
+  const int previous = (v.menu + page_count - 1) % page_count, next = (v.menu + 1) % page_count;
+  d.setTextColor(dim); d.setTextSize(2);
+  draw_text(d, page_names[previous], 120, 66); draw_text(d, page_names[next], 120, 176);
+  d.fillRoundRect(30, 92, 180, 56, 12, panel); d.drawRoundRect(30, 92, 180, 56, 12, cyan);
+  d.setTextColor(ink); d.setTextSize(3); draw_text(d, page_names[v.menu], 120, 120, 164);
+  for (int i = 0; i < page_count; ++i) d.fillCircle(214, 78 + i * 14, 3, i == v.menu ? cyan : trace_bright);
+}
+
+static void settings_page_screen(lgfx::LGFXBase& d, bool connected) {
+  const auto& v = settings_view;
+  char a[40], b[40];
+  d.drawCircle(120, 120, 115, link_color(connected));
+  d.setTextColor(cyan); d.setTextSize(2); draw_text(d, page_names[int(v.page)], 120, 28);
+  d.setTextSize(1.5f);
+  auto line = [&](int y, uint32_t color, const char* text) { d.setTextColor(color); draw_text(d, text, 120, y); };
+  switch (v.page) {
+    case Page::link: {
+      const auto& l = v.link;
+      line(58, v.linked ? green : red, v.linked ? "LINKED" : "OFFLINE");
+      std::snprintf(a, sizeof a, "CHANNEL %u  %s", unsigned(l.channel), v.security.channel_locked ? "LOCKED" : "SCANNING");
+      line(82, ink, a);
+      if (l.last_rx_age_ms == UINT32_MAX) std::snprintf(b, sizeof b, "NEVER");
+      else if (l.last_rx_age_ms < 1000) std::snprintf(b, sizeof b, "%lu ms ago", (unsigned long)l.last_rx_age_ms);
+      else if (l.last_rx_age_ms < 60000) std::snprintf(b, sizeof b, "%.1f s ago", l.last_rx_age_ms / 1000.0);
+      else std::snprintf(b, sizeof b, "over a minute ago");
+      std::snprintf(a, sizeof a, "HEARD %s", b);
+      line(104, ink, a);
+      std::snprintf(a, sizeof a, "SENT %lu  ACKED %lu", (unsigned long)l.tx_accepted, (unsigned long)l.ack_ok);
+      line(126, dim, a);
+      std::snprintf(a, sizeof a, "FAILED %lu  REFUSED %lu", (unsigned long)l.ack_failed, (unsigned long)l.tx_refused);
+      line(146, dim, a);
+      std::snprintf(a, sizeof a, "RECEIVED %lu", (unsigned long)l.rx_frames);
+      line(166, dim, a);
+      line(184, cyan, v.linked ? "PRESS: DISCONNECT" : v.security.trusted ? "PRESS: RECONNECT" : "PRESS: PAIR");
+      break;
+    }
+    case Page::display: {
+      std::snprintf(a, sizeof a, "%u%%", unsigned(v.settings.brightness * 100 / 255));
+      settings_row(d, 88, "BRIGHTNESS", a, v.row == 0);
+      settings_row(d, 128, "SLEEP", sleep_names[v.settings.sleep % 4], v.row == 1);
+      line(170, dim, "TURN: CHANGE   PRESS: NEXT");
+      break;
+    }
+    case Page::knob: {
+      settings_row(d, 78, "ACCELERATION", accel_names[v.settings.accel % 3], v.row == 0);
+      settings_row(d, 112, "REVERSE", v.settings.invert ? "ON" : "OFF", v.row == 1);
+      settings_row(d, 146, "CLICK", v.settings.click ? "ON" : "OFF", v.row == 2);
+      line(176, dim, "TURN: CHANGE   PRESS: NEXT");
+      break;
+    }
+    case Page::about: {
+      line(56, ink, "OrcDial for OrcSDR");
+      std::snprintf(a, sizeof a, "BUILD %s", __DATE__);
+      line(78, dim, a);
+      line(98, dim, "PROTOCOL 4 (ENCRYPTED)");
+      std::snprintf(a, sizeof a, "THIS DIAL %s", v.mac[0] ? v.mac : "--");
+      line(120, dim, a);
+      const uint8_t* peer = v.security.peer_identity;
+      if (v.security.trusted) std::snprintf(a, sizeof a, "TAB5 ID %02X%02X-%02X%02X", peer[0], peer[1], peer[14], peer[15]);
+      else std::snprintf(a, sizeof a, "NO TAB5 PAIRED");
+      line(142, dim, a);
+      line(166, cyan, "theorc.dev");
+      break;
+    }
+    case Page::reset: {
+      line(70, red, "ERASE THE PAIRING");
+      line(90, red, "AND DIAL SETTINGS");
+      line(130, dim, "THE TAB5 WILL FORGET THIS DIAL");
+      line(168, v.reset_armed ? red : cyan, v.reset_armed ? "PRESS AGAIN TO ERASE" : "PRESS TO ARM");
+      break;
+    }
+    default: break;
+  }
+  // A real button: tap it, or hold the knob, to go back to the menu.
+  d.fillRoundRect(72, 198, 96, 26, 8, panel); d.drawRoundRect(72, 198, 96, 26, 8, cyan);
+  d.setTextColor(cyan); d.setTextSize(2); d.drawString("BACK", 120, 211);
+}
+
+// The way back to the dashboards carousel, at the bottom of every dashboard screen (tap it, or hold the knob for Home).
+static void back_button(lgfx::LGFXBase& d) {
+  d.fillRoundRect(80, 203, 80, 22, 8, panel); d.drawRoundRect(80, 203, 80, 22, 8, cyan);
+  d.setTextColor(cyan); d.setTextSize(2); d.drawString("BACK", 120, 214);
+}
+
 static void fm_screen(lgfx::LGFXBase& d, const RadioState& state, Focus focus,
                       bool connected, bool pairing, bool demo, bool pending,
                       int32_t reel_position) {
@@ -139,12 +334,11 @@ static void fm_screen(lgfx::LGFXBase& d, const RadioState& state, Focus focus,
     std::snprintf(line, sizeof line, "STEP %lu kHz", (unsigned long)(state.step_hz / 1000));
   else
     std::snprintf(line, sizeof line, "STEP %lu Hz", (unsigned long)state.step_hz);
-  draw_text(d, line, 80, 193);
+  draw_text(d, line, 80, 191);
   std::snprintf(line, sizeof line, "VOL %u", unsigned(state.volume));
-  draw_text(d, line, 160, 193);
-  d.setTextColor(pending ? cyan : dim, bg); d.setTextSize(1);
-  draw_text(d, pending ? "TUNING..." : "PRESS: NEXT", 120, 211);
-  if (!pending) draw_text(d, "HOLD: HOME", 120, 221);
+  draw_text(d, line, 160, 191);
+  if (pending) d.fillCircle(206, 106, 3, cyan);
+  back_button(d);
 }
 
 // Small, code-drawn illustrations stay sharp on the Dial's 240-pixel round screen.
@@ -286,13 +480,41 @@ static const char* content_view(Dashboard id, uint8_t view) {
   }
 }
 
+// The OrcSDR wordmark gradient, sampled from the OrcSDR splash art: pale cyan, cyan, mint, green, lime.
+static uint32_t wordmark_color(float t) {
+  static const uint8_t stops[][3] = {{0x77, 0xF4, 0xF8}, {0x0E, 0xF8, 0xFA}, {0x6D, 0xFB, 0x6B}, {0x5E, 0xFB, 0x04}, {0xAD, 0xFA, 0x0F}};
+  constexpr int count = sizeof stops / sizeof stops[0];
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const float position = t * (count - 1);
+  const int index = position >= count - 1 ? count - 2 : int(position);
+  const float u = position - index;
+  auto mix = [&](int channel) { return uint8_t(stops[index][channel] + (stops[index + 1][channel] - stops[index][channel]) * u); };
+  return lgfx::color565(mix(0), mix(1), mix(2));
+}
+
+// Text coloured letter by letter along the wordmark gradient, centred on `cx`.
+static void gradient_text(lgfx::LGFXBase& d, const char* text, int cx, int y, float size) {
+  d.setTextSize(size);
+  d.setTextDatum(middle_left);
+  const int total = d.textWidth(text);
+  int x = cx - total / 2;
+  for (const char* c = text; *c; ++c) {
+    const char glyph[2] = {*c, 0};
+    const int width = d.textWidth(glyph);
+    d.setTextColor(wordmark_color((x - (cx - total / 2) + width / 2) / float(total ? total : 1)), bg);
+    d.drawString(glyph, x, y);
+    x += width;
+  }
+  d.setTextDatum(middle_center);
+}
+
 static void draw_splash(lgfx::LGFXBase& d, bool wait) {
   const uint32_t started = millis();
   d.fillScreen(bg); d.setTextDatum(middle_center);
   d.drawPng(badge_start, badge_end - badge_start, 68, 23);
-  d.setTextColor(ink, bg); d.setTextSize(3); draw_text(d, "ORCDIAL", 120, 153);
+  gradient_text(d, "OrcDial", 120, 153, 4);
   d.setTextSize(1); d.setTextColor(dim, bg);
-  draw_text(d, "ORCSDR WIRELESS CONTROL", 120, 179);
+  draw_text(d, "WIRELESS CONTROL FOR ORCSDR", 120, 181);
   for (int frame = 0; frame < 18; ++frame) {
     d.drawArc(120, 75, 61, 58, -90 + frame * 20, -70 + frame * 20, 0x12332e);
     if (wait) delay(24);
@@ -366,7 +588,7 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
   ambient(d, view == View::carousel ? selected : state.dashboard, now);
   if (view == View::connection) {
     const auto& s=device_status;
-    d.drawCircle(120,120,112,link_color(connected));d.setTextColor(ink,bg);d.setTextSize(3);draw_text(d,"DEVICES",120,37);
+    d.drawCircle(120,120,112,link_color(connected));d.setTextColor(ink,bg);d.setTextSize(3);draw_text(d,"PAIRING",120,37);
     d.setTextSize(2);draw_text(d,s.trusted?"OrcSDR Tab5":"No trusted tablet",120,62);
     char id[32];const auto* fingerprint=s.trusted?s.peer_identity:s.identity;
     std::snprintf(id,sizeof id,"ID %02X%02X-%02X%02X",fingerprint[0],fingerprint[1],fingerprint[14],fingerprint[15]);
@@ -382,31 +604,46 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
     }else {
       d.setTextColor(s.trusted?green:cyan,bg);d.setTextSize(1.5);
       draw_text(d,s.upgrade?"Pairing upgrade required":s.trusted?"TRUSTED":"NOT PAIRED",120,101);
-      d.setTextColor(ink,bg);draw_text(d,secure::state_name(s.state),120,119);
+      d.setTextColor(s.failure!=secure::Failure::none?red:ink,bg);draw_text(d,s.failure!=secure::Failure::none?secure::failure_name(s.failure):secure::state_name(s.state),120,119);
       labels[0]=pairing?"CANCEL PAIRING":s.state==secure::State::connected?"DISCONNECT":s.trusted?"CONNECT":"PAIR";
       labels[1]=s.trusted?"FORGET & RE-PAIR":"BACK";
       labels[2]=s.trusted?(s.boot_connect?"BOOT CONNECT: ON":"BOOT CONNECT: OFF"):nullptr;
     }
     for(int i=0;i<3;++i)if(labels[i]) {
-      const int y=145+i*27;
+      const int y=141+i*24;
       if(i==device_selection)d.fillRoundRect(30,y-11,180,24,6,panel);
       d.setTextColor(i==device_selection?cyan:dim,bg);d.setTextSize(2);draw_text(d,labels[i],120,y);
     }
-    d.setTextColor(dim,bg);d.setTextSize(1);
-    draw_text(d,s.failure!=secure::Failure::none?secure::failure_name(s.failure):"HOLD: BACK",120,demo?213:220);
-    if(demo){d.setTextColor(cyan,bg);draw_text(d,"DEMO",120,222);}
+    d.fillRoundRect(80,202,80,22,8,panel);d.drawRoundRect(80,202,80,22,8,cyan);
+    d.setTextColor(cyan,panel);d.setTextSize(2);d.drawString("BACK",120,213);
+    if(demo){d.setTextColor(cyan,bg);d.setTextSize(1);draw_text(d,"DEMO",120,196);}
     present();
     return;
+  }
+  if (view == View::keypad) {
+    keypad_screen(d, connected);
+    present(); return;
+  }
+  if (view == View::settings_menu) {
+    settings_menu_screen(d, connected);
+    present(); return;
+  }
+  if (view == View::page) {
+    settings_page_screen(d, connected);
+    present(); return;
+  }
+  if (view == View::home && connected && state.dashboard == Dashboard::home) {
+    home_screen(d, state, focus, pending_delta, millis());
+    present(); return;
   }
   if (view == View::home) {
     d.drawCircle(120, 120, 115, link_color(connected));
     d.drawCircle(120, 120, 110, 0x1b4e60);
     d.drawPng(badge_start, badge_end - badge_start, 68, 29);
-    d.setTextColor(ink, bg); d.setTextSize(3); draw_text(d, "OrcSDR", 120, 151);
+    gradient_text(d, "OrcDial", 120, 151, 3);
     d.setTextColor(connected ? green : cyan, bg); d.setTextSize(2);
     draw_text(d, connected ? dashboard_name(state.dashboard) : demo ? "DEMO" : "OFFLINE", 120, 181);
-    d.setTextColor(dim, bg); d.setTextSize(1);
-    draw_text(d, "PRESS: DASHBOARDS", 120, 209);
+    back_button(d);
     present(); return;
   }
   if (view == View::carousel) {
@@ -458,9 +695,13 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
   d.setTextColor(connected ? green : cyan, bg); d.setTextSize(1);
   draw_text(d, pairing ? "PAIRING" : connected ? "LINKED" : demo ? "DEMO" : "OFFLINE", 120, 48);
   static const char* modes[] = {"--", "NFM", "AM", "WFM"};
+  static const char* styles[] = {"REEL", "DIAL", "ODOM", "TAPE", "SPLIT"};
   if (can_tune || channel_dashboard(dashboard)) {
+    char tag[32];
+    if (can_tune) std::snprintf(tag, sizeof tag, "%s   %s", modes[state.mode < 4 ? state.mode : 0], styles[unsigned(style)]);
+    else std::snprintf(tag, sizeof tag, "%s", modes[state.mode < 4 ? state.mode : 0]);
     d.setTextColor(dim, bg); d.setTextSize(1);
-    draw_text(d, modes[state.mode < 4 ? state.mode : 0], 120, 64);
+    draw_text(d, tag, 120, 64);
   }
   artwork(d, dashboard, accent);
   char line[32];
@@ -471,7 +712,7 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
     draw_text(d, line, 120, 113);
     frequency(d, state.frequency_hz, 140, 2, dim);
     d.setTextColor(dim, bg); d.setTextSize(1);
-    draw_text(d, connected && state.selected > 0 ? "CHANNEL" : "CHANNEL DATA --", 120, 195);
+    draw_text(d, connected && state.selected > 0 ? "CHANNEL" : "CHANNEL DATA --", 120, 190);
   } else if (!can_tune) {
     d.setTextColor(dim, bg); d.setTextSize(2);
     draw_text(d, content_view(dashboard, state.view), 120, 176);
@@ -480,7 +721,7 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
     else if (dashboard == Dashboard::p25 && connected && state.item_count)
       std::snprintf(line, sizeof line, "CANDIDATE %ld/%lu", long(state.selected), (unsigned long)state.item_count);
     else std::snprintf(line, sizeof line, "%s", dashboard == Dashboard::settings ? "DEVICE SETTINGS" : "NO LIVE DATA");
-    d.setTextSize(1); draw_text(d, line, 120, 198);
+    d.setTextSize(1); draw_text(d, line, 120, 192);
   } else if (focus == Focus::vfo || focus == Focus::step) {
     switch (style) {
       case TuneStyle::reel: {
@@ -568,12 +809,8 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
       std::snprintf(line, sizeof line, "STEP %lu Hz", (unsigned long)state.step_hz);
     d.setTextColor(focus == Focus::step ? green : ink, bg); d.setTextSize(2); draw_text(d, line, 120, 188);
   }
-  if (pending_delta) { d.setTextColor(cyan, bg); d.setTextSize(1); draw_text(d, "TUNING...", 120, 205); }
-  static const char* styles[] = {"REEL", "DIAL", "ODOM", "TAPE", "SPLIT"};
-  d.setTextColor(dim, bg); d.setTextSize(1.5f);
-  std::snprintf(line, sizeof line, "%s %u/5 >", styles[unsigned(style)], unsigned(style) + 1);
-  draw_text(d, can_tune ? line : channel_dashboard(dashboard) ? "CH  VOL  HOME >" :
-               "HOME / DASHBOARDS", 120, 210);
+  if (pending_delta) d.fillCircle(206, 110, 3, cyan);
+  back_button(d);
   present();
 }
 } // namespace orc

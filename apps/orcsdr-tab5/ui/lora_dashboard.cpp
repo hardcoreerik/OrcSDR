@@ -901,8 +901,9 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
     const int rows = waterfall_style::rows_per_frame(waterfall_style::Screen::lora);
     M5.Display.scroll(0, -rows);
     for (int row = 0; row < rows; ++row)
-      M5.Display.pushImage(kPlotX, kWaterfallY + kWaterfallH - 2 - rows + row,
-                           kPlotW, 1, g_waterfall_row);
+      // Native RGB565 row: push it as rgb565_t (a uint16_t* image is read as big-endian and shows wrong hues).
+      M5.Display.pushImage(kPlotX, kWaterfallY + kWaterfallH - 2 - rows + row, kPlotW, 1,
+                           reinterpret_cast<const lgfx::rgb565_t*>(g_waterfall_row));
     draw_lora_channel_markers();
   }
   M5.Display.endWrite();

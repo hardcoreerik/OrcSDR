@@ -1,6 +1,7 @@
 #include "focus_nav.hpp"
 #include "settings_app.hpp"
 
+#include "clock_settings.hpp"
 #include "dashboard_audio_control.hpp"
 #include "text_editor.hpp"
 
@@ -55,6 +56,12 @@ char g_wifi_request_ssid[33]{};
 char g_wifi_request_password[64]{};
 bool g_wifi_request_pending = false;
 bool g_location_edit = false;
+// The clock editor (Settings > System > SET CLOCK): local date and time fields plus the UTC offset.
+bool g_clock_edit = false;
+bool g_clock_dirty = false;                 // a date or time field was touched, so re-derive nothing from the RTC
+clock_settings::LocalTime g_clock_local;
+int32_t g_clock_offset = 0;
+bool g_ntp_tapped = false;                  // SYNC NTP was tapped and the new state has not arrived yet
 bool g_location_request_pending = false;
 char g_location_query[64]{};
 int8_t g_catalog_remove_armed = -1;
@@ -415,7 +422,7 @@ void draw_companion() {
 }
 
 void draw_system_power() {
-  M5.Display.fillRect(330, 160, 890, 250, kBg);
+  M5.Display.fillRect(330, 160, 890, 200, kBg);
   char value[48];
   if (g_state.battery_mv >= 0) {
     snprintf(value, sizeof(value), "%d mV  /  %ld%%", g_state.battery_mv,
@@ -433,26 +440,156 @@ void draw_system_power() {
   else
     strlcpy(value, "NOT EXPOSED", sizeof(value));
   value_row("USB / VBUS", value, 325, g_state.vbus_mv >= 0 ? kGreen : kMuted);
-  value_row("EXTERNAL 7.4 V", "NO SEPARATE SENSOR", 375, kMuted);
 }
 
 void draw_system() {
   text("SYSTEM", 330, 115, kBlue, 3);
+  button("SET CLOCK", 1000, 100, 218, 46, TFT_DARKCYAN);
   char value[48];
   draw_system_power();
+  const bool local_known = g_state.rtc_valid && g_state.rtc_local[0];
+  value_row("LOCAL TIME", local_known ? g_state.rtc_local : "TIME NOT SET", 375, local_known ? kGreen : TFT_ORANGE);
   value_row("UTC TIME", g_state.rtc_valid ? g_state.rtc_utc : "TIME NOT SET",
-            425, g_state.rtc_valid ? kGreen : TFT_ORANGE);
-  value_row("BUILD", g_state.build_identity, 465);
+            415, g_state.rtc_valid ? kGreen : TFT_ORANGE);
+  clock_settings::format_offset(value, sizeof(value), g_state.utc_offset_minutes);
+  value_row("TIME ZONE", value, 455);
+  value_row("BUILD", g_state.build_identity, 495);
   snprintf(value, sizeof(value), "%lu SEC", static_cast<unsigned long>(g_state.uptime_seconds));
-  value_row("UPTIME", value, 505);
-  value_row("NETWORK", g_state.wifi_connected ? "CONNECTED" : "OFFLINE", 545);
-  value_row("SD", g_state.sd_ready ? "READY" : "UNAVAILABLE", 585);
-  text(g_state.rtc_valid ? "Hardware clock established; LoRa receives use fixed UTC timestamps."
-                         : "USB: python tools/sync_tab5_rtc.py COMx",
-       330, 650, g_state.rtc_valid ? TFT_LIGHTGREY : TFT_ORANGE, 2);
+  value_row("UPTIME", value, 535);
+  value_row("NETWORK", g_state.wifi_connected ? "CONNECTED" : "OFFLINE", 575);
+  value_row("SD", g_state.sd_ready ? "READY" : "UNAVAILABLE", 615);
+  text(g_state.rtc_valid ? "The hardware clock holds UTC; the time zone is only an offset."
+                         : "Tap SET CLOCK, or USB: python tools/sync_tab5_rtc.py COMx",
+       330, 660, g_state.rtc_valid ? TFT_LIGHTGREY : TFT_ORANGE, 2);
+}
+
+void draw_content();
+
+// ---- Clock editor ---------------------------------------------------------------------------------------------
+constexpr int kClockColumnX = 360, kClockColumnPitch = 172, kClockButtonW = 150, kClockButtonH = 54;
+constexpr int kClockPlusY = 178, kClockMinusY = 290;
+constexpr int kOffsetMinusX = 760, kOffsetPlusX = 1100, kOffsetValueX = 985, kOffsetY = 372, kOffsetButtonW = 110,
+              kOffsetButtonH = 56;
+constexpr int kClockActionY = 530, kClockActionW = 260, kClockActionH = 58;
+constexpr int kNtpX = 360, kCancelX = 640, kSaveX = 920;
+
+void clock_load_fields() {
+  g_clock_offset = g_state.utc_offset_minutes;
+  clock_settings::LocalTime local;
+  if (g_state.rtc_valid && clock_settings::utc_to_local(g_state.rtc_epoch, g_clock_offset, &local))
+    g_clock_local = local;
+  else
+    g_clock_local = clock_settings::LocalTime{};
+}
+
+void draw_clock_editor() {
+  M5.Display.fillRect(kRailW, kHeaderH, 1280 - kRailW, 720 - kHeaderH, kBg);
+  text("SET CLOCK", 330, 112, kBlue, 3);
+  static constexpr const char* kNames[] = {"YEAR", "MONTH", "DAY", "HOUR", "MIN"};
+  const int values[] = {g_clock_local.year, g_clock_local.month, g_clock_local.day, g_clock_local.hour,
+                        g_clock_local.minute};
+  char value[40];
+  for (int i = 0; i < 5; ++i) {
+    const int x = kClockColumnX + i * kClockColumnPitch;
+    text(kNames[i], x + kClockButtonW / 2, 160, kMuted, 2, middle_center);
+    button("+", x, kClockPlusY, kClockButtonW, kClockButtonH, TFT_DARKCYAN);
+    snprintf(value, sizeof(value), i == 0 ? "%04d" : "%02d", values[i]);
+    text(value, x + kClockButtonW / 2, 262, TFT_WHITE, 4, middle_center);
+    button("-", x, kClockMinusY, kClockButtonW, kClockButtonH, TFT_DARKGREY);
+  }
+  text("UTC OFFSET (TIME ZONE)", 360, 400, kMuted, 2);
+  button("-", kOffsetMinusX, kOffsetY, kOffsetButtonW, kOffsetButtonH, TFT_DARKGREY);
+  clock_settings::format_offset(value, sizeof(value), g_clock_offset);
+  text(value, kOffsetValueX, 400, kGreen, 3, middle_center);
+  button("+", kOffsetPlusX, kOffsetY, kOffsetButtonW, kOffsetButtonH, TFT_DARKCYAN);
+  uint32_t utc = 0;
+  if (clock_settings::local_to_utc(g_clock_local, g_clock_offset, &utc)) {
+    char stamp[24]{};
+    clock_settings::format_local(stamp, sizeof(stamp), utc, 0);
+    snprintf(value, sizeof(value), "SETS UTC  %sZ", stamp);
+    text(value, 360, 468, TFT_LIGHTGREY, 2);
+  } else {
+    text("OUT OF RANGE (2024 - 2099 UTC)", 360, 468, TFT_ORANGE, 2);
+  }
+  const char* note = g_state.ntp_state == 1 ? "Contacting the time server..."
+                     : g_state.ntp_state == 2 ? "Clock set from the network."
+                     : g_state.ntp_state == 3 ? "Network time failed; set it by hand."
+                     : g_state.wifi_connected ? "Wi-Fi is connected: SYNC NTP can set the clock (optional)."
+                                              : "No Wi-Fi needed: set the time by hand.";
+  text(note, 360, 500, g_state.ntp_state == 3 ? TFT_ORANGE : kMuted, 2);
+  const bool ntp_ready = g_state.wifi_connected && g_state.ntp_state != 1 && !g_ntp_tapped;
+  button("SYNC NTP", kNtpX, kClockActionY, kClockActionW, kClockActionH, ntp_ready ? TFT_DARKCYAN : TFT_DARKGREY);
+  button("CANCEL", kCancelX, kClockActionY, kClockActionW, kClockActionH, TFT_MAROON);
+  button("SAVE", kSaveX, kClockActionY, kClockActionW, kClockActionH, TFT_DARKGREEN);
+}
+
+void start_clock_edit() {
+  g_clock_edit = true;
+  g_clock_dirty = false;
+  clock_load_fields();
+  g_ntp_tapped = false;
+  draw_clock_editor();
+}
+
+Action handle_clock_editor(int x, int y) {
+  using clock_settings::Field;
+  static constexpr Field kFields[] = {Field::year, Field::month, Field::day, Field::hour, Field::minute};
+  for (int i = 0; i < 5; ++i) {
+    const int column = kClockColumnX + i * kClockColumnPitch;
+    const bool plus = hit(x, y, column, kClockPlusY, kClockButtonW, kClockButtonH);
+    const bool minus = hit(x, y, column, kClockMinusY, kClockButtonW, kClockButtonH);
+    if (plus || minus) {
+      g_clock_local = clock_settings::adjust(g_clock_local, kFields[i], plus ? 1 : -1);
+      g_clock_dirty = true;
+      draw_clock_editor();
+      return {};
+    }
+  }
+  const bool offset_minus = hit(x, y, kOffsetMinusX, kOffsetY, kOffsetButtonW, kOffsetButtonH);
+  const bool offset_plus = hit(x, y, kOffsetPlusX, kOffsetY, kOffsetButtonW, kOffsetButtonH);
+  if (offset_minus || offset_plus) {
+    const int32_t next = clock_settings::step_offset(g_clock_offset, offset_plus ? 1 : -1);
+    if (next == g_clock_offset) return {};
+    g_clock_offset = next;   // nothing is stored until SAVE
+    // If only the zone is being changed the RTC is already right: show the same instant in the new zone.
+    clock_settings::LocalTime local;
+    if (!g_clock_dirty && g_state.rtc_valid && clock_settings::utc_to_local(g_state.rtc_epoch, next, &local))
+      g_clock_local = local;
+    draw_clock_editor();
+    return {};
+  }
+  if (hit(x, y, kNtpX, kClockActionY, kClockActionW, kClockActionH))
+  {
+    if (!g_state.wifi_connected || g_state.ntp_state == 1 || g_ntp_tapped) return {};
+    g_ntp_tapped = true;   // one request per tap, even before the new state is reported
+    return {ActionKind::clock_ntp_sync, 0};
+  }
+  if (hit(x, y, kCancelX, kClockActionY, kClockActionW, kClockActionH)) {
+    g_clock_edit = false;   // nothing was stored, so there is nothing to undo
+    draw_content();
+    return {};
+  }
+  if (hit(x, y, kSaveX, kClockActionY, kClockActionW, kClockActionH)) {
+    if (!g_clock_dirty && g_state.rtc_valid) {   // only the zone can have changed; the RTC is already right
+      g_clock_edit = false;
+      draw_content();
+      return g_clock_offset != g_state.utc_offset_minutes ? Action{ActionKind::clock_offset_changed, g_clock_offset}
+                                                           : Action{};
+    }
+    uint32_t utc = 0;
+    if (!clock_settings::local_to_utc(g_clock_local, g_clock_offset, &utc)) return {};
+    g_clock_edit = false;
+    draw_content();
+    return {ActionKind::clock_set_utc, g_clock_offset, utc};
+  }
+  return {};
 }
 
 void draw_content() {
+  if (g_clock_edit) {
+    draw_clock_editor();
+    return;
+  }
   M5.Display.fillRect(kRailW, kHeaderH, 1280 - kRailW, 720 - kHeaderH, kBg);
   switch (g_section) {
     case Section::connectivity: draw_connectivity(); break;
@@ -652,6 +789,7 @@ void enter(const State& state_value, Section section) {
   g_edit = EditField::none;
   g_wifi_edit = WifiEdit::none;
   g_location_edit = false;
+  g_clock_edit = false;
   g_catalog_remove_armed = -1;
   g_active = true;
   g_latitude_set = state_value.location_configured;
@@ -665,6 +803,7 @@ void leave() {
   g_edit = EditField::none;
   g_wifi_edit = WifiEdit::none;
   g_location_edit = false;
+  g_clock_edit = false;
 }
 
 void draw() {
@@ -721,7 +860,12 @@ void update(const State& state_value) {
                               strcmp(g_state.charging_state, state_value.charging_state) != 0);
   const bool clock_changed = g_section == Section::system &&
                              (g_state.rtc_valid != state_value.rtc_valid ||
-                              strcmp(g_state.rtc_utc, state_value.rtc_utc) != 0);
+                              strcmp(g_state.rtc_utc, state_value.rtc_utc) != 0 ||
+                              strcmp(g_state.rtc_local, state_value.rtc_local) != 0 ||
+                              g_state.utc_offset_minutes != state_value.utc_offset_minutes);
+  const bool ntp_changed = g_state.ntp_state != state_value.ntp_state;
+  if (ntp_changed) g_ntp_tapped = false;
+  const bool rtc_flipped = g_state.rtc_valid != state_value.rtc_valid;
   const bool catalog_changed = g_section == Section::data_maps &&
       (g_state.catalog_ready != state_value.catalog_ready || g_state.catalog_busy != state_value.catalog_busy ||
        g_state.catalog_progress_percent != state_value.catalog_progress_percent ||
@@ -750,6 +894,13 @@ void update(const State& state_value) {
        g_state.orcdial_paired != state_value.orcdial_paired ||
        g_state.orcdial_bridge_ready != state_value.orcdial_bridge_ready);
   g_state = state_value;
+  if (g_clock_edit) {
+    // Keep the editor live: a finished NTP sync or a newly valid RTC refreshes untouched fields.
+    if (!g_clock_dirty && ((ntp_changed && g_state.ntp_state == 2) || rtc_flipped)) clock_load_fields();
+    if (ntp_changed || rtc_flipped || header_changed) draw_clock_editor();   // header_changed includes a Wi-Fi change
+    if (header_changed) draw_header();
+    return;
+  }
   if (header_changed) draw_header();
   if (page_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none && !g_location_edit)
     draw_content();
@@ -781,6 +932,15 @@ Action handle_touch(int32_t x, int32_t y) {
     return action;
   }
   if (g_edit != EditField::none) return handle_keypad(x, y);
+  if (g_clock_edit) {
+    if (hit(x, y, 720, 13, 126, 46)) {   // CLOSE
+      g_clock_edit = false;
+      g_active = false;
+      return {ActionKind::close, 0};
+    }
+    if (x < kRailW && y >= kRailY) g_clock_edit = false;   // leaving through the rail abandons the edit
+    else return handle_clock_editor(x, y);
+  }
   if (hit(x, y, 720, 13, 126, 46)) {
     g_active = false;
     return {ActionKind::close, 0};
@@ -792,6 +952,10 @@ Action handle_touch(int32_t x, int32_t y) {
       draw_rail();
       draw_content();
     }
+    return {};
+  }
+  if (g_section == Section::system && hit(x, y, 1000, 100, 218, 46)) {
+    start_clock_edit();
     return {};
   }
 #if ORCSDR_ORCDIAL
@@ -965,6 +1129,7 @@ void show_documentation_section(Section section, const State& state_value,
   g_edit = EditField::none;
   g_wifi_edit = WifiEdit::none;
   g_location_edit = false;
+  g_clock_edit = false;
   g_active = true;
   if (show_wifi_keyboard) {
     begin_wifi_edit(WifiEdit::password, "Demo Network");

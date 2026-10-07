@@ -82,6 +82,8 @@
 #include "airband_audio_filter.hpp"
 #include "focus_ring.hpp"
 #include "fm_config.hpp"
+#include "band_profile.hpp"
+#include "home_vfo.hpp"
 #include "home_dashboard.hpp"
 #include "lora_dashboard.hpp"
 #include "lora_packet_log.hpp"
@@ -104,6 +106,8 @@
 #include "rf_lab.hpp"
 #include "rf_visualizer.hpp"
 #include "settings_app.hpp"
+#include "clock_settings.hpp"
+#include "ntp_sync.hpp"
 #include "time_service.hpp"
 #include "ui_capture.hpp"
 #include "web_console.hpp"
@@ -2920,6 +2924,30 @@ uint32_t rtl_filter_default_hz(RtlBand band) {
   return kRtlFmFilterDefaultHz;
 }
 
+// Demodulation chosen on Home, independent of the band. by_band keeps each band's own demodulator (the dashboards'
+// behaviour). The numbering matches the OrcDial mode codes (1 NFM, 2 AM, 3 WFM, 4 USB, 5 LSB).
+using HomeDemod = orcsdr::home_vfo::Demod;
+std::atomic<uint8_t> rtl_home_demod{static_cast<uint8_t>(HomeDemod::by_band)};
+
+// The bands where Home may choose the demodulator; the others (P25, LoRa, ADS-B, pager, MW, shortwave) keep theirs.
+// CB takes Home's choice while Home is on screen; a CB dashboard keeps its own mode switch.
+bool home_demod_band(RtlBand band) {
+  return band == RtlBand::browse || band == RtlBand::fm || band == RtlBand::airband || band == RtlBand::wx ||
+         band == RtlBand::cb;
+}
+
+HomeDemod band_demod(RtlBand band) {
+  if (band == RtlBand::am || band == RtlBand::shortwave || band == RtlBand::airband) return HomeDemod::am;
+  return band == RtlBand::fm ? HomeDemod::wfm : HomeDemod::nfm;
+}
+
+// Home's choice applies only while Home is on screen; the dashboards keep their own demodulators.
+HomeDemod effective_demod(RtlBand band) {
+  const auto chosen = static_cast<HomeDemod>(rtl_home_demod.load(std::memory_order_relaxed));
+  return chosen != HomeDemod::by_band && home_demod_band(band) && orcsdr::home::active() ? chosen
+                                                                                       : band_demod(band);
+}
+
 uint32_t rtl_clamp_filter_hz(RtlBand band, uint32_t bandwidth_hz) {
   if (band == RtlBand::lora) {
     if (bandwidth_hz <= 93750) return 62500;
@@ -2928,9 +2956,14 @@ uint32_t rtl_clamp_filter_hz(RtlBand band, uint32_t bandwidth_hz) {
     return 500000;
   }
   if (band == RtlBand::p25) return kP25StepHz;
-  const bool am = band == RtlBand::am || band == RtlBand::shortwave || band == RtlBand::airband;
-  const uint32_t low = band == RtlBand::cb ? 2400 : am ? 3000 : band == RtlBand::fm ? 50000 : 8000;
-  const uint32_t high = band == RtlBand::cb ? 12000 : am ? 30000 : band == RtlBand::fm ? 300000 : 100000;
+  const HomeDemod demod = effective_demod(band);
+  const bool am = demod == HomeDemod::am;
+  const bool ssb = demod == HomeDemod::usb || demod == HomeDemod::lsb;
+  const bool wide = demod == HomeDemod::wfm;
+  // The CB dashboard keeps its own width policy; while Home chooses the demodulation, the demodulation decides.
+  const bool cb_policy = band == RtlBand::cb && !orcsdr::home::active();
+  const uint32_t low = cb_policy || ssb ? 2400 : am ? 3000 : wide ? 50000 : 8000;
+  const uint32_t high = cb_policy || ssb ? 12000 : am ? 30000 : wide ? 300000 : 100000;
   return constrain((bandwidth_hz / 1000u) * 1000u, low, high);
 }
 
@@ -3014,8 +3047,35 @@ void persist_fm_presets() {
   Serial.printf("RTL_PRESETS_SAVE count=%d\n", fm_preset_count);
 }
 
+// Tuning step per band profile for BROWSE (and the Home step display): remembered across reboots, 0 = use the
+// profile's default. FM, AM and shortwave keep their own dashboard steps.
+constexpr orcsdr::band_profile::Region kBandRegion = orcsdr::band_profile::Region::us;
+// The remembered steps and pinned modes (logic and tests in home_vfo.cpp); this file only stores them. A stored table
+// whose length differs from the current band list (an older build) is ignored, never misread.
+orcsdr::home_vfo::Memory g_home_memory;
+
+uint32_t band_step_hz(const orcsdr::band_profile::Profile& profile) { return g_home_memory.step_hz(profile); }
+
+void band_step_remember(const orcsdr::band_profile::Profile& profile, uint32_t step_hz) {
+  if (g_home_memory.remember_step(profile, step_hz))
+    preferences.putBytes("band_steps", g_home_memory.steps_data(), orcsdr::home_vfo::Memory::kStepsBytes);
+}
+
+void band_step_load() {
+  uint32_t stored[orcsdr::home_vfo::Memory::kBands] = {};
+  if (preferences.getBytesLength("band_steps") != sizeof(stored)) return;
+  preferences.getBytes("band_steps", stored, sizeof(stored));
+  g_home_memory.load_steps(stored, orcsdr::home_vfo::Memory::kBands);
+}
+
 uint32_t rtl_step_frequency(RtlBand band, uint32_t frequency_hz, int direction) {
   if (band == RtlBand::wx) return kRtlWxHz;
+  if (band == RtlBand::browse) {
+    // The step follows the band the frequency is in, not FM's: 12.5 kHz on 70 cm, 25 kHz on airband, ...
+    const auto& profile = orcsdr::band_profile::resolve(kBandRegion, frequency_hz);
+    return orcsdr::band_profile::step_frequency(profile, frequency_hz, band_step_hz(profile), direction,
+                                                kRtlBrowseMinHz, kRtlBrowseMaxHz);
+  }
   if (band == RtlBand::airband)
     return orcsdr::airband::manual_step(frequency_hz, direction);
   if (band == RtlBand::cb) {
@@ -3049,6 +3109,115 @@ uint32_t rtl_step_frequency(RtlBand band, uint32_t frequency_hz, int direction) 
     return rtl_clamp_frequency(band, frequency_hz - step);
   }
   return rtl_clamp_frequency(band, frequency_hz + step);
+}
+
+// Home tunes the whole range: the band, and with it the demodulator, follows the frequency. FM broadcast and
+// airband have their own pipelines; everything else uses the general receive path until the mode/band split.
+RtlBand home_band_for(const orcsdr::band_profile::Profile& profile) {
+  if (profile.id == orcsdr::band_profile::Id::fm_broadcast) return RtlBand::fm;
+  if (profile.id == orcsdr::band_profile::Id::airband) return RtlBand::airband;
+  return RtlBand::browse;
+}
+
+// Home is a full-range VFO on these bands, CB included (27 MHz carries AM, USB and LSB, and FM in some countries).
+// The MW and shortwave bands (the dongle's HF path), P25, LoRa, ADS-B and pager keep their own band-locked tuning
+// until they are folded in.
+bool home_full_range() {
+  return rtl_ui_band == RtlBand::browse || rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::airband ||
+         rtl_ui_band == RtlBand::wx || rtl_ui_band == RtlBand::cb;
+}
+
+void home_apply_auto(const orcsdr::band_profile::Profile& profile, RtlBand band);
+
+// any_band: an explicitly typed frequency moves to whatever band it belongs to, even from MW, shortwave, CB...
+bool home_tune_to(uint32_t frequency_hz, bool any_band = false) {
+  if (!any_band && !home_full_range()) {
+    const uint32_t clamped = rtl_clamp_frequency(rtl_ui_band, frequency_hz);
+    if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
+      return request_hot_retune(clamped);
+    return queue_local_rtl_listen(rtl_ui_band, clamped, false);
+  }
+  const uint32_t hz = constrain(frequency_hz, kRtlBrowseMinHz, kRtlBrowseMaxHz);
+  if (!validate_rtl_tune_frequency(hz)) return false;
+  const auto& profile = orcsdr::band_profile::resolve(kBandRegion, hz);
+  const RtlBand band = home_band_for(profile);
+  home_apply_auto(profile, band);
+  if (band == rtl_ui_band &&
+      rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running) {
+    const bool retuned = request_hot_retune(hz);
+    if (!retuned) g_home_memory.forget_band();
+    return retuned;
+  }
+  const bool queued = queue_local_rtl_listen(band, hz, false);
+  if (!queued) g_home_memory.forget_band();   // nothing moved: the next tune re-derives the mode
+  return queued;
+}
+
+// `count` steps from `from_hz`, each by the step of the band it starts in, so a spin across a band edge changes
+// step and snaps to the next band's raster.
+uint32_t home_step_by(uint32_t from_hz, int count) {
+  uint32_t hz = from_hz;
+  for (int i = 0; i < abs(count); ++i) {
+    if (!home_full_range()) {
+      hz = rtl_step_frequency(rtl_ui_band, hz, count < 0 ? -1 : 1);
+      continue;
+    }
+    const auto& profile = orcsdr::band_profile::resolve(kBandRegion, hz);
+    hz = orcsdr::band_profile::step_frequency(profile, hz, band_step_hz(profile), count < 0 ? -1 : 1,
+                                              kRtlBrowseMinHz, kRtlBrowseMaxHz);
+  }
+  return hz;
+}
+
+// Auto mode and pinned modes live in home_vfo.cpp (host-tested); these apply the result to the receiver.
+using orcsdr::home_vfo::demod_for_mode;
+
+const char* home_demod_name(HomeDemod demod) { return orcsdr::home_vfo::demod_name(demod); }
+
+// refilter: also reload the mode's standard filter width when the mode itself did not change (a manual choice, or a
+// move to a band whose width policy differs), so a width left over from another band never carries across.
+void home_set_demod(HomeDemod demod, RtlBand band, bool refilter = false) {
+  const bool changed = rtl_home_demod.exchange(static_cast<uint8_t>(demod), std::memory_order_acq_rel) !=
+                       static_cast<uint8_t>(demod);
+  if (!changed && !refilter) return;
+  const auto kind = orcsdr::home_vfo::filter_kind(demod, rtl_ui_frequency_hz);
+  rtl_filter_bandwidth_hz.store(
+      rtl_clamp_filter_hz(band, orcsdr::filter_standards::standards(kind).standard_hz),
+      std::memory_order_relaxed);
+  rtl_audio_reset_demod_filters();
+}
+
+void home_apply_auto(const orcsdr::band_profile::Profile& profile, RtlBand band) {
+  HomeDemod mode = HomeDemod::by_band;
+  if (!g_home_memory.enter_band(profile, &mode)) return;
+  home_set_demod(mode, band, /*refilter=*/band != rtl_ui_band);
+}
+
+// The OrcDial adjusting the filter shows the two edge lines on the spectrum for a few seconds.
+uint32_t home_edges_until_ms = 0;
+
+// Called when Home comes on screen: re-derive the mode for the frequency it is on.
+void home_enter() {
+  g_home_memory.forget_band();
+  if (!home_full_range()) return;
+  home_apply_auto(orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz), rtl_ui_band);
+}
+
+// A manual choice pins the mode for this band (AUTO unpins it) and is remembered across reboots.
+void home_select_mode(HomeDemod choice) {
+  if (!home_full_range()) return;
+  const auto& profile = orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz);
+  if (g_home_memory.set_pin(profile, choice))
+    preferences.putBytes("band_modes", g_home_memory.pins_data(), orcsdr::home_vfo::Memory::kPinsBytes);
+  g_home_memory.note_band(profile);
+  home_set_demod(choice == HomeDemod::by_band ? demod_for_mode(profile.mode) : choice, rtl_ui_band, /*refilter=*/true);
+}
+
+void band_mode_load() {
+  uint8_t stored[orcsdr::home_vfo::Memory::kBands] = {};
+  if (preferences.getBytesLength("band_modes") != sizeof(stored)) return;
+  preferences.getBytes("band_modes", stored, sizeof(stored));
+  g_home_memory.load_pins(stored, orcsdr::home_vfo::Memory::kBands);
 }
 
 size_t cb_channel_index(uint32_t frequency_hz) {
@@ -6847,7 +7016,7 @@ void draw_documentation_spectrum() {
                     0.0f, 1.0f));
     }
     M5.Display.pushImage(kSpectrumX + 1, kWaterfallY + row, width, 1,
-                         rtl_waterfall_row);
+                         reinterpret_cast<const lgfx::rgb565_t*>(rtl_waterfall_row));   // native RGB565, see scope_canvas.hpp
   }
   M5.Display.drawFastVLine(kSpectrumX + width / 2, kSpectrumY + 1,
                            kSpectrumHeight - 2, TFT_GREEN);
@@ -7247,8 +7416,8 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   }
   /* Capture tool owns waterfall panel — skip scrolling paint there. */
   if (tool != OrcTool::Capture) {
-    M5.Display.pushImage(kSpectrumX + 1, kWaterfallY + kWaterfallHeight - 2,
-                         waterfall_width, 1, rtl_waterfall_row);
+    M5.Display.pushImage(kSpectrumX + 1, kWaterfallY + kWaterfallHeight - 2, waterfall_width, 1,
+                         reinterpret_cast<const lgfx::rgb565_t*>(rtl_waterfall_row));   // native RGB565, see scope_canvas.hpp
   }
   if (redraw_trace) {
     M5.Display.drawFastVLine(kSpectrumX + draw_width / 2, kSpectrumY + 1,
@@ -8086,6 +8255,31 @@ __attribute__((noinline)) void demodulate_ssb(const uint8_t* iq, size_t bytes, f
   queue_audio_samples(audio, audio_count);
 }
 
+
+// One demodulator choice for every band. CB follows Home's choice while Home is on screen (its squelch gate is skipped
+// then); a CB dashboard keeps its own mode switch and gate.
+
+void demodulate_home(RtlBand band, const uint8_t* iq, size_t bytes, float audio_scale,
+
+                     uint32_t sample_rate_sps) {
+
+  switch (effective_demod(band)) {
+
+    case HomeDemod::am: demodulate_am(iq, bytes, audio_scale, sample_rate_sps); break;
+
+    case HomeDemod::usb: demodulate_ssb(iq, bytes, audio_scale, CbMode::usb, sample_rate_sps); break;
+
+    case HomeDemod::lsb: demodulate_ssb(iq, bytes, audio_scale, CbMode::lsb, sample_rate_sps); break;
+
+    case HomeDemod::wfm: demodulate_fm(iq, bytes, audio_scale, true, sample_rate_sps); break;
+
+    default: demodulate_fm(iq, bytes, audio_scale, false, sample_rate_sps); break;
+
+  }
+
+}
+
+
 #if ORCSDR_DSP_AB
 #include "dsp_ab_harness.inc"
 #endif
@@ -8257,7 +8451,7 @@ void run_rtl_capture() {
     // The channelizer temporarily owns the speaker route without stopping RF capture.
     if (orcsdr::visualizer::channel_audio_active()) {
       rtl_audio_play_count = 0;
-    } else if (band == RtlBand::cb) {
+    } else if (band == RtlBand::cb && !orcsdr::home::active()) {
       if (cb_audio_gate_open()) {
         const CbMode mode = cb_mode.load(std::memory_order_relaxed);
         if (mode == CbMode::am)
@@ -8269,13 +8463,8 @@ void run_rtl_capture() {
       } else {
         rtl_audio_play_count = 0;
       }
-    } else if (band == RtlBand::am || band == RtlBand::shortwave ||
-               band == RtlBand::airband) {
-      demodulate_am(rtl_iq_processing, completed_bytes, audio_scale,
-                    kRtlSampleRateSps);
     } else if (band != RtlBand::lora) {
-      demodulate_fm(rtl_iq_processing, completed_bytes, audio_scale,
-                    band == RtlBand::fm, kRtlSampleRateSps);
+      demodulate_home(band, rtl_iq_processing, completed_bytes, audio_scale, kRtlSampleRateSps);
     }
 
     // CRITICAL: never issue EP0 PLL writes while a bulk URB is outstanding.
@@ -8811,7 +9000,7 @@ static void rtl_dsp_task(void *) {
          orcsdr::web_audio::demanded() ||
          g_audio_rec_active.load(std::memory_order_relaxed)) &&
         !rtl_audio_test_tone.load(std::memory_order_relaxed)) {
-      if (block.band == RtlBand::cb) {
+      if (block.band == RtlBand::cb && !orcsdr::home::active()) {
         if (cb_audio_gate_open()) {
           const CbMode mode = cb_mode.load(std::memory_order_relaxed);
           if (mode == CbMode::am)
@@ -8823,13 +9012,8 @@ static void rtl_dsp_task(void *) {
         } else {
           rtl_audio_play_count = 0;
         }
-      } else if (block.band == RtlBand::am || block.band == RtlBand::shortwave ||
-                 block.band == RtlBand::airband) {
-        demodulate_am(block.data, block.bytes, block.audio_scale,
-                      block.sample_rate_sps);
       } else if (block.band != RtlBand::adsb) {
-        demodulate_fm(block.data, block.bytes, block.audio_scale,
-                      block.band == RtlBand::fm, block.sample_rate_sps);
+        demodulate_home(block.band, block.data, block.bytes, block.audio_scale, block.sample_rate_sps);
       }
     }
     mark(dsp_stats::Stage::demod);
@@ -12136,14 +12320,20 @@ const orcsdr::settings::State& global_settings_state() {
   state.uptime_seconds = millis() / 1000;
   const auto clock = orcsdr::time_service::now();
   state.rtc_valid = clock.wallclock_valid;
-  if (state.rtc_valid)
+  if (state.rtc_valid) {
     orcsdr::time_service::format_utc(state.rtc_utc, sizeof(state.rtc_utc), clock.utc);
+    orcsdr::time_service::format_local(state.rtc_local, sizeof(state.rtc_local), clock.utc);
+    state.rtc_epoch = clock.utc;
+  }
+  state.utc_offset_minutes = static_cast<int16_t>(orcsdr::time_service::utc_offset_minutes());
+  state.ntp_state = static_cast<uint8_t>(orcsdr::ntp_sync::state());
   return state;
 }
 
 // Which family of filter widths applies to the band on Home (see filter_standards.hpp).
 orcsdr::filter_standards::Kind home_filter_kind() {
   using Kind = orcsdr::filter_standards::Kind;
+  if (home_full_range()) return orcsdr::home_vfo::filter_kind(effective_demod(rtl_ui_band), rtl_ui_frequency_hz);
   switch (rtl_ui_band) {
     case RtlBand::fm: return Kind::wfm;
     case RtlBand::am: return Kind::am_broadcast;
@@ -12175,15 +12365,35 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
                                      : rtl_filter_bandwidth_hz.load(
                                            std::memory_order_relaxed);
   snapshot.filter_kind = demo ? orcsdr::filter_standards::Kind::wfm : home_filter_kind();
-  snapshot.step_hz = rtl_ui_band == RtlBand::fm          ? rtl_fm_step_hz
+  const auto& step_profile = orcsdr::band_profile::resolve(kBandRegion, snapshot.frequency_hz);
+  snapshot.step_hz = home_full_range()                   ? band_step_hz(step_profile)
                      : rtl_ui_band == RtlBand::am        ? rtl_am_step_hz
                      : rtl_ui_band == RtlBand::shortwave ? rtl_shortwave_step_hz
                      : rtl_ui_band == RtlBand::p25       ? kP25StepHz
                      : rtl_ui_band == RtlBand::cb        ? 10000
                      : rtl_ui_band == RtlBand::lora      ? 125000
-                                                          : 12500;
-  strlcpy(snapshot.mode, demo ? "FM" : rtl_band_name(rtl_ui_band),
+                                                          : band_step_hz(step_profile);
+  // Only the bands whose step the STEP SIZE control can change; the rest are channels or decoder-owned.
+  snapshot.edges_hint = millis() < home_edges_until_ms;
+  snapshot.mode_selectable = home_full_range();
+  snapshot.mode_choice = g_home_memory.pin(step_profile);
+  snapshot.mode_active = static_cast<uint8_t>(effective_demod(rtl_ui_band));
+  snapshot.mode_suggested = static_cast<uint8_t>(demod_for_mode(step_profile.mode));
+  strlcpy(snapshot.band, step_profile.name, sizeof(snapshot.band));
+  snapshot.step_adjustable = home_full_range() ? orcsdr::band_profile::has_step_control(step_profile)
+                                               : rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::shortwave;
+  strlcpy(snapshot.mode,
+          home_full_range() ? home_demod_name(effective_demod(rtl_ui_band)) : rtl_mode_name(rtl_ui_band),
           sizeof(snapshot.mode));
+  if (demo) {
+    // The documentation screen is 145.7 MHz on 2 m amateur, so its mode, step and popup follow that, not the live radio.
+    snapshot.step_hz = band_step_hz(step_profile);
+    snapshot.step_adjustable = orcsdr::band_profile::has_step_control(step_profile);
+    snapshot.mode_selectable = true;
+    snapshot.mode_active = static_cast<uint8_t>(HomeDemod::nfm);
+    snapshot.mode_suggested = static_cast<uint8_t>(demod_for_mode(step_profile.mode));
+    strlcpy(snapshot.mode, home_demod_name(HomeDemod::nfm), sizeof(snapshot.mode));
+  }
 #if !RTL_USE_LEGACY_USB
   strlcpy(snapshot.receiver,
           demo ? "RTL V4"
@@ -12205,12 +12415,16 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   } else {
     strlcpy(snapshot.wifi_ip, device.wifi_ip, sizeof(snapshot.wifi_ip));
     const auto clock = orcsdr::time_service::now();
-    char utc[24]{};
+    char local[24]{};
     if (clock.wallclock_valid &&
-        orcsdr::time_service::format_utc(utc, sizeof(utc), clock.utc)) {
-      memcpy(snapshot.clock, utc + 11, 8);
+        orcsdr::time_service::format_local(local, sizeof(local), clock.utc)) {
+      memcpy(snapshot.clock, local + 11, 8);
       snapshot.clock[8] = '\0';
-      snprintf(snapshot.date, sizeof(snapshot.date), "%.10s UTC", utc);
+      char zone[12];
+      orcsdr::clock_settings::format_offset_short(zone, sizeof(zone),
+                                                   orcsdr::time_service::utc_offset_minutes());
+      // The date field holds 19 characters: the date, a space, and up to 8 of the zone ("UTC-7", "UTC+5:30").
+      snprintf(snapshot.date, sizeof(snapshot.date), "%.10s %.8s", local, zone);
     } else {
       const uint32_t seconds = clock.uptime_ms / 1000u;
       snprintf(snapshot.clock, sizeof(snapshot.clock), "%02lu:%02lu:%02lu",
@@ -12272,7 +12486,8 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
       snapshot.span_hz != previous.span_hz || snapshot.step_hz != previous.step_hz ||
       snapshot.filter_bandwidth_hz != previous.filter_bandwidth_hz ||
       snapshot.filter_kind != previous.filter_kind ||
-      strcmp(snapshot.mode, previous.mode) != 0;
+      strcmp(snapshot.mode, previous.mode) != 0 || snapshot.mode_choice != previous.mode_choice ||
+      snapshot.mode_selectable != previous.mode_selectable || snapshot.edges_hint != previous.edges_hint || strcmp(snapshot.band, previous.band) != 0;
   const bool audio_changed = previous.revision == 0 ||
                              snapshot.sound_enabled != previous.sound_enabled ||
                              snapshot.volume != previous.volume;
@@ -12381,6 +12596,7 @@ void configure_navigation_service() {
 }
 
 void show_home(bool demo) {
+  home_enter();
   orcsdr::audio_header::reset(rtl_header_audio_control);
   orcsdr::navigation::show_home(demo);
 }
@@ -12620,10 +12836,9 @@ void handle_home_action(const orcsdr::home::Action& action) {
       if (rtl_ui_band == RtlBand::p25) {
         cancel_p25_survey();
         tune_p25_control(action.value);
-      } else if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
-        request_hot_retune(action.value);
-      else
-        queue_local_rtl_listen(rtl_ui_band, action.value, false);
+      } else {
+        home_tune_to(action.value, true);   // typed: moves to whichever band the frequency belongs to
+      }
       break;
     case ActionKind::span_down:
     case ActionKind::span_up: {
@@ -12637,25 +12852,22 @@ void handle_home_action(const orcsdr::home::Action& action) {
     }
     case ActionKind::step_down:
     case ActionKind::step_up: {
-      const uint32_t next = rtl_step_frequency(
-          rtl_ui_band, rtl_ui_frequency_hz,
-          action.kind == ActionKind::step_down ? -1 : 1);
+      const int direction = action.kind == ActionKind::step_down ? -1 : 1;
+      const uint32_t requested = rtl_requested_frequency_hz.load(std::memory_order_acquire);
+      const uint32_t base = home_full_range() && requested != 0 ? requested : rtl_ui_frequency_hz;
+      const uint32_t next = home_step_by(base, direction);
       if (rtl_ui_band == RtlBand::am) orcsdr::am::note_tuned(next);
-      if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
-        request_hot_retune(next);
-      else
-        queue_local_rtl_listen(rtl_ui_band, next, false);
+      home_tune_to(next);
       break;
     }
     case ActionKind::step_size_down:
     case ActionKind::step_size_up: {
       const bool up = action.kind == ActionKind::step_size_up;
-      if (rtl_ui_band == RtlBand::fm) {
-        static constexpr uint32_t steps[] = {50000, 100000, 200000, 500000, 1000000};
-        size_t i = 0;
-        while (i < std::size(steps) && steps[i] != rtl_fm_step_hz) ++i;
-        if (i == std::size(steps)) i = 0;
-        rtl_fm_step_hz = steps[(i + (up ? 1 : std::size(steps) - 1)) % std::size(steps)];
+      if (home_full_range()) {
+        const auto& profile = orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz);
+        if (orcsdr::band_profile::has_step_control(profile))
+          band_step_remember(profile,
+                             orcsdr::band_profile::cycle_step_hz(profile, band_step_hz(profile), up));
       } else if (rtl_ui_band == RtlBand::am) {
         const size_t turns = up ? 1 : 5;
         for (size_t i = 0; i < turns; ++i)
@@ -12668,6 +12880,9 @@ void handle_home_action(const orcsdr::home::Action& action) {
       }
       break;
     }
+    case ActionKind::mode_set:
+      if (action.value <= static_cast<uint32_t>(HomeDemod::lsb)) home_select_mode(static_cast<HomeDemod>(action.value));
+      break;
     case ActionKind::sound_toggle:
       set_rtl_audio_user_enabled(
           !rtl_audio_user_enabled.load(std::memory_order_acquire));
@@ -12911,6 +13126,31 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
     case orcsdr::settings::ActionKind::rtl_usb_safe_mode_reset:
       reset_rtl_usb_safe_mode_and_restart();
       break;
+    case orcsdr::settings::ActionKind::clock_offset_changed:
+      if (!orcsdr::time_service::store_utc_offset_minutes(preferences, action.value))
+        Serial.println("ORC_TZ_ERROR not_stored");
+      update_global_settings();
+      bump_rtl_ui();
+      break;
+    case orcsdr::settings::ActionKind::clock_set_utc:
+      if (!orcsdr::time_service::store_utc_offset_minutes(preferences, action.value))
+        Serial.println("ORC_TZ_ERROR not_stored");
+      if (orcsdr::time_service::set_utc(action.utc) && preferences.putBool("rtc_est", true)) {
+        Serial.printf("ORC_RTC_SET_OK utc=%lu source=touch\n", static_cast<unsigned long>(action.utc));
+      } else {
+        Serial.println("ORC_RTC_SET_ERROR touch_set_failed");
+      }
+      update_global_settings();
+      bump_rtl_ui();
+      break;
+    case orcsdr::settings::ActionKind::clock_ntp_sync:
+      if (orcsdr::ntp_sync::start(wifi_connected)) {
+        Serial.println("ORC_NTP_START");
+      } else {
+        Serial.println(wifi_connected ? "ORC_NTP_ERROR busy" : "ORC_NTP_ERROR no_wifi");
+      }
+      update_global_settings();
+      break;
     case orcsdr::settings::ActionKind::web_console_changed:
       settings_web_console_enabled = action.value != 0;
       preferences.putBool("set_web_console", settings_web_console_enabled);
@@ -12967,6 +13207,17 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       break;
     default: break;
   }
+}
+
+// Runs an optional network sync to its end and records that the RTC is now established. Called every UI loop.
+void service_clock() {
+  orcsdr::ntp_sync::poll();
+  bool ok = false;
+  if (!orcsdr::ntp_sync::take_result(&ok)) return;
+  if (ok && !preferences.putBool("rtc_est", true)) ok = false;
+  Serial.printf("ORC_NTP_%s\n", ok ? "OK" : "FAILED");
+  update_global_settings();
+  bump_rtl_ui();
 }
 
 void update_global_settings() {
@@ -13190,8 +13441,11 @@ void persist_workflow() {
 void load_state() {
   preferences.begin("orclink", false);
   orcsdr::time_service::initialize(preferences.getBool("rtc_est", false));
+  orcsdr::time_service::load_config(preferences);
   orcsdr::am::load(preferences);
   rtl_am_step_hz = orcsdr::am::tune_step();
+  band_step_load();
+  band_mode_load();
   rtl_am_scan_spacing_hz = orcsdr::am::scan_spacing();
   const auto stored_verbosity = static_cast<SerialVerbosity>(
       std::min<uint8_t>(preferences.getUChar("serial_verb", 1), 3));
@@ -14112,17 +14366,28 @@ orc::Dashboard orcdial_active_dashboard() {
 void orcdial_fill_state(orc::Packet& p) {
   const auto id = orcdial_active_dashboard();
   p.dashboard = static_cast<uint8_t>(id);
+  p.band = static_cast<uint8_t>(
+      static_cast<uint8_t>(orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz).id) + 1);
   p.frequency_hz = rtl_ui_frequency_hz;
-  p.step_hz = rtl_ui_band == RtlBand::fm ? rtl_fm_step_hz
+  p.step_hz = home_full_range() && id == orc::Dashboard::home
+                  ? band_step_hz(orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz))
+              : rtl_ui_band == RtlBand::fm ? rtl_fm_step_hz
               : rtl_ui_band == RtlBand::am ? rtl_am_step_hz
-              : rtl_ui_band == RtlBand::shortwave ? rtl_shortwave_step_hz : 5000;
+              : rtl_ui_band == RtlBand::shortwave ? rtl_shortwave_step_hz
+              : band_step_hz(orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz));
   p.volume = rtl_live_volume.load(std::memory_order_acquire);
-  p.mode = rtl_ui_band == RtlBand::fm ? 3 :
-           rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::shortwave ? 2 : 1;
+  p.mode = id == orc::Dashboard::home && home_full_range()
+               ? static_cast<uint8_t>(effective_demod(rtl_ui_band)) :
+           rtl_ui_band == RtlBand::fm ? 3 :
+           rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::shortwave ||
+           rtl_ui_band == RtlBand::airband ? 2 : 1;
   p.revision = ++orcdial_revision;
   if (id == orc::Dashboard::cb) {
     p.selected = static_cast<int32_t>(orcsdr::cb::nearest_channel(rtl_ui_frequency_hz) + 1);
     p.item_count = orcsdr::cb::kChannelCount;
+  } else if (id == orc::Dashboard::home) {
+    p.selected = static_cast<int32_t>(rtl_scope_span_hz.load(std::memory_order_relaxed));   // Home: span
+    p.item_count = rtl_filter_bandwidth_hz.load(std::memory_order_relaxed);                // Home: filter width
   } else if (id == orc::Dashboard::p25) {
     p.selected = p25_candidate_index + 1;
     p.item_count = p25_config.control_channel_count;
@@ -14157,10 +14422,73 @@ bool orcdial_apply(const orc::Packet& p) {
     else open_dashboard(orcsdr::dashboards::Id(p.value));
     return true;
   }
+  if (p.type == orc::Type::tune_absolute) {
+    // The Dial's keypad: any frequency on Home, or one inside the band of the dashboard on screen.
+    if (p.value < 24000 || p.value > 1766000000) return false;
+    const uint32_t hz = static_cast<uint32_t>(p.value);
+    if (active == Dash::home) return p.value >= 24000000 && home_tune_to(hz, true);
+    if (active == Dash::fm) {
+      if (hz < kRtlFmMinHz || hz > kRtlFmMaxHz) return false;
+      handle_fm_dashboard_action({orcsdr::fm::ActionKind::tune_hz, hz});
+      return true;
+    }
+    if (active == Dash::am) {
+      if (hz < kRtlAmMinHz || hz > kRtlAmMaxHz) return false;
+      handle_am_dashboard_action({orcsdr::am::ActionKind::tune_hz, hz});
+      return true;
+    }
+    if (!orc::tunable(active) || rtl_clamp_frequency(rtl_ui_band, hz) != hz ||
+        !validate_rtl_tune_frequency(hz)) return false;
+    if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running) return request_hot_retune(hz);
+    return queue_local_rtl_listen(rtl_ui_band, hz);
+  }
+  if (p.type == orc::Type::set_mode) {
+    if (active != Dash::home || !home_full_range() || p.value < 1 || p.value > 5) return false;
+    home_select_mode(static_cast<HomeDemod>(p.value));
+    return true;
+  }
   if (p.type != orc::Type::semantic_action || p.dashboard != static_cast<uint8_t>(active) ||
-      p.action > static_cast<uint8_t>(Kind::activate) || p.value < -1000000000 ||
+      p.action > static_cast<uint8_t>(Kind::filter) || p.value < -1000000000 ||
       p.value > 1000000000) return false;
   const Kind kind = Kind(p.action);
+  if (active == Dash::home && kind == Kind::tune) {
+    // On Home the value is a count of steps; the Tab5 applies the step of the band it is in.
+    if (p.value == 0 || p.value < -64 || p.value > 64) return false;
+    const uint32_t requested = rtl_requested_frequency_hz.load(std::memory_order_acquire);
+    return home_tune_to(home_step_by(home_full_range() && requested != 0 ? requested : rtl_ui_frequency_hz,
+                                     static_cast<int>(p.value)));
+  }
+  if (active == Dash::home && kind == Kind::span) {
+    // Clockwise zooms in: a smaller span, one step per detent.
+    if (p.value == 0 || p.value < -4 || p.value > 4) return false;
+    for (int i = 0; i < abs(p.value); ++i)
+      handle_home_action({p.value > 0 ? orcsdr::home::ActionKind::span_down : orcsdr::home::ActionKind::span_up});
+    return true;
+  }
+  if (active == Dash::home && kind == Kind::filter) {
+    // Clockwise widens the filter through the mode's usual widths; the edge lines show while you turn.
+    const auto& standards = orcsdr::filter_standards::standards(home_filter_kind());
+    if (standards.count == 0 || p.value == 0 || p.value < -4 || p.value > 4) return false;
+    const int current = static_cast<int>(rtl_filter_bandwidth_hz.load(std::memory_order_relaxed));
+    int index = 0;
+    for (int i = 1; i < standards.count; ++i)
+      if (abs(static_cast<int>(standards.presets_hz[i]) - current) <
+          abs(static_cast<int>(standards.presets_hz[index]) - current)) index = i;
+    index = std::clamp(index + static_cast<int>(p.value), 0, static_cast<int>(standards.count) - 1);
+    handle_home_action({orcsdr::home::ActionKind::filter_set, orcsdr::dashboards::Id::count,
+                        standards.presets_hz[index]});
+    home_edges_until_ms = millis() + 4000;
+    return true;
+  }
+  if (active == Dash::home && kind == Kind::step) {
+    const auto& profile = orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz);
+    if (!home_full_range() || p.value == 0 || p.value < -4 || p.value > 4 ||
+        !orcsdr::band_profile::has_step_control(profile))
+      return false;
+    for (int i = 0; i < abs(p.value); ++i)
+      band_step_remember(profile, orcsdr::band_profile::cycle_step_hz(profile, band_step_hz(profile), p.value > 0));
+    return true;
+  }
   if (kind == Kind::tune && orc::tunable(active)) {
     const int64_t wanted = int64_t(rtl_ui_frequency_hz) + p.value;
     if (wanted < 24000 || wanted > 1766000000 ||
@@ -14530,6 +14858,7 @@ void service_tap_queue() {
 // replayed as taps on its real buttons, so each dashboard's own validation and tuning run
 // unchanged; arrows move focus over the numpad's controls.
 bool shared_keypad_open() {
+  if (orcsdr::home::keypad_open()) return true;
   switch (rtl_ui_band) {
     case RtlBand::fm: return orcsdr::fm::keypad_open();
     case RtlBand::am: return orcsdr::am::keypad_open();
@@ -17919,16 +18248,39 @@ void process_command(char* command) {
     Serial.println("RTL_LOCATION STATUS|IP|LOOKUP <zip/address>|CONFIRM - resolve and save receiver location");
     Serial.println("ORC_RTC_STATUS                 - trusted hardware UTC clock status");
     Serial.println("ORC_RTC_SET <unix_utc>         - establish hardware UTC clock (auth)");
+    Serial.println("ORC_TZ_SET <minutes>           - UTC offset in minutes east of UTC, -720..840 (auth)");
     Serial.println("SD_LIST/SD_GET_*/SD_PUT_*      - SD card file transfer (see copy_to_tab5_sd.ps1)");
     Serial.println("RTL_HELP_END");
     return;
   }
   if (strcmp(command, "ORC_RTC_STATUS") == 0) {
     const auto clock = orcsdr::time_service::now();
-    Serial.printf("ORC_RTC_STATUS valid=%d utc=%lu source=%s\n",
+    Serial.printf("ORC_RTC_STATUS valid=%d utc=%lu source=%s offset_min=%ld\n",
                   clock.wallclock_valid ? 1 : 0,
                   static_cast<unsigned long>(clock.utc),
-                  M5.Rtc.isEnabled() ? "hardware" : "unavailable");
+                  M5.Rtc.isEnabled() ? "hardware" : "unavailable",
+                  static_cast<long>(orcsdr::time_service::utc_offset_minutes()));
+    return;
+  }
+  if (strncmp(command, "ORC_TZ_SET ", 11) == 0) {
+    if (!authenticated) {
+      Serial.println("ORC_TZ_SET_ERROR auth_required");
+      return;
+    }
+    char* end = nullptr;
+    const long minutes = strtol(command + 11, &end, 10);
+    if (end == command + 11 || *end != '\0' ||
+        !orcsdr::clock_settings::valid_offset(static_cast<int32_t>(minutes))) {
+      Serial.println("ORC_TZ_SET_ERROR out_of_range");
+      return;
+    }
+    if (!orcsdr::time_service::store_utc_offset_minutes(preferences, static_cast<int32_t>(minutes))) {
+      Serial.println("ORC_TZ_SET_ERROR persistence_failed");
+      return;
+    }
+    Serial.printf("ORC_TZ_SET_OK offset_min=%ld\n", minutes);
+    update_global_settings();
+    bump_rtl_ui();
     return;
   }
   if (strncmp(command, "ORC_RTC_SET ", 12) == 0) {
@@ -19515,6 +19867,7 @@ void loop() {
     if (elapsed_ms >= 500)
       Serial.printf("RTL_MAIN_STALL stage=serial_dispatch elapsed_ms=%u\n", elapsed_ms);
   }
+  service_clock();
   // Keep connection success/failure/timeout and radio resume progressing even
   // when a full-screen mode returns early from the rest of the UI loop.
   if (boot_auto_start_allowed) {

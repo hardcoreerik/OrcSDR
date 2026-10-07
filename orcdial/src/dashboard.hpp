@@ -19,7 +19,7 @@ constexpr Dashboard carousel[] = {
 constexpr int carousel_count = sizeof(carousel) / sizeof(carousel[0]);
 inline bool valid_dashboard(uint8_t id) { return id <= 16 && id != 11; }
 inline const char* dashboard_name(Dashboard id) {
-  if (id == devices_entry) return "DEVICES"; // not an enumerator, so it cannot be a case label (-Werror=switch)
+  if (id == devices_entry) return "DIAL SETTINGS"; // not an enumerator, so it cannot be a case label (-Werror=switch)
   switch (id) {
     case Dashboard::home: return "HOME";
     case Dashboard::fm: return "FM RADIO";

@@ -37,7 +37,7 @@ Current release images include the matching ESP-Hosted C6 firmware used by the T
 
 ## What OrcSDR does
 
-- **Home:** tune and listen while viewing the live spectrum, waterfall, signal level, receiver status, and recently used dashboards.
+- **Home:** a full-range VFO. Tune anywhere the receiver reaches with a step that follows the band (FM broadcast, airband, 2 m and 70 cm amateur, marine, CB and more are named in plain words above the spectrum), pick the demodulation (AUTO, NFM, AM, WFM, USB, LSB) from a mode popup with a short explanation of each, type a frequency on a keypad, and watch the live spectrum, waterfall, signal level, receiver status, and recently used dashboards. An optional OrcDial controls the same Home, including span and filter.
 - **FM Radio:** receive broadcast FM with stereo audio, RDS station information, presets, and station tuning tools.
 - **AM Radio:** receive broadcast AM with region-aware channel steps, presets, automatic tuning, and a full-band station scan.
 - **Shortwave:** enter the generic Browse/NFM workspace for experimental HF exploration; calibrated HF and complete AM/SSB modes are not yet available.
@@ -83,7 +83,7 @@ The FM dashboard organizes listening, station information, and diagnostics into 
 - **Spectrum:** shows a live spectrum and waterfall with center frequency, DSP filter bandwidth, audio/IQ activity, RF gain, adjustable span, step controls, and tap-to-tune interaction.
 - **Station / RDS:** expands the currently playing station and decoded RDS fields, including Program Service name, RadioText, PI code, and PTY, alongside stereo, pilot-carrier, and decoder-lock status.
 - **RF Health:** reports effective versus requested sample rate, USB overruns, IQ consumer drops, audio underruns, DSP load, audio-buffer pressure, Wi-Fi state, driver state, and the most recent radio error.
-- **Settings:** controls sound, volume, tuning step, filter bandwidth, automatic or manual RF gain, spectrum graphics, and recording; it also provides preset scanning/rebuilding, device settings, and a return to Home while FM continues playing.
+- **Settings:** controls sound, volume, tuning step, filter bandwidth, automatic or manual RF gain, spectrum graphics, and recording; it also provides preset scanning/rebuilding, device settings (including **System > SET CLOCK**, which sets the date, time and UTC offset on the device, with an optional network sync), and a return to Home while FM continues playing.
 
 ### ADS-B dashboard
 
