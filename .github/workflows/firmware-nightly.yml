@@ -156,7 +156,7 @@ jobs:
             gh release create "$NIGHTLY_TAG" -R "$GITHUB_REPOSITORY" --verify-tag --prerelease --latest=false \
               --title "OrcSDR nightly (main)" --notes "Rolling build of main. Install: https://theorc.dev/sdr/nightly/"
           fi
-      - name: Upload assets (build-info.json last) and drop stale ones
+      - name: Upload assets, drop stale ones, then the build-info.json marker
         run: |
           set -euo pipefail
           cd dist
@@ -164,11 +164,13 @@ jobs:
           gh release upload "$NIGHTLY_TAG" -R "$GITHUB_REPOSITORY" --clobber "$bin" "$elfzip" SHA256SUMS.txt
           gh release edit "$NIGHTLY_TAG" -R "$GITHUB_REPOSITORY" --prerelease --latest=false \
             --title "OrcSDR nightly $SHORT ($(TZ=America/Los_Angeles date +%F))" --notes-file notes.md
-          gh release upload "$NIGHTLY_TAG" -R "$GITHUB_REPOSITORY" --clobber build-info.json
           keep=" $bin $elfzip SHA256SUMS.txt build-info.json "
           gh release view "$NIGHTLY_TAG" -R "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' | while read -r a; do
             case "$keep" in *" $a "*) ;; *) gh release delete-asset "$NIGHTLY_TAG" "$a" -R "$GITHUB_REPOSITORY" -y ;; esac
           done
+          # The marker goes last: the gate skips a SHA once build-info.json names it, so it must only
+          # appear after every other asset change (incl. stale-asset cleanup) succeeded.
+          gh release upload "$NIGHTLY_TAG" -R "$GITHUB_REPOSITORY" --clobber build-info.json
           echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/$NIGHTLY_TAG ($bin)" >> "$GITHUB_STEP_SUMMARY"
       - name: Notify theorc.dev
         if: env.HAS_DISPATCH == 'true'
