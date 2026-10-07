@@ -443,3 +443,37 @@ The parser deliberately rejects modified/directed CQ token ranges it has not ind
 Canonical standard callsigns are validated by inverse mixed-radix decoding followed by a round-trip through the independently written c28 encoder.
 
 This is the first source-message plausibility layer. Unsupported i3 message families are rejected rather than displayed as guessed text.
+
+
+## Slice 10 — first fully renderable synthetic FT8 receive decode
+
+The internal receive pipeline now adds the conservative source-message
+plausibility gate after CRC:
+
+```text
+12 kHz PCM
+  -> exact spectral reference
+  -> Costas sync candidate
+  -> soft tone demodulation
+  -> NMS LDPC
+  -> CRC-14
+  -> standard message unpack/plausibility
+  -> fully renderable internal FrameResult
+```
+
+The pipeline copies the recovered 77 payload bits only after LDPC convergence
+and CRC success, calls the independently implemented standard-message parser,
+and accepts the frame only when the parser can render it without guessing.
+
+Therefore:
+- CRC-valid unsupported i3 families are rejected;
+- unresolved 22-bit-hash messages are not yet surfaced as normal text;
+- FT4 remains blocked at the final gate until its XOR restoration is complete.
+
+The synthetic PCM test fixture was changed from random payload bits to the
+standard message **`CQ K1ABC FN42`**. The test requires the exact frame
+start/base tone and the final rendered message text to match.
+
+This is the first end-to-end synthetic FT8 **receive decode** through the
+current clean-room pipeline. It is still a host fixture, not RF or Tab5
+hardware verification, and the test waveform generator is not firmware code.

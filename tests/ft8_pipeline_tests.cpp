@@ -7,12 +7,53 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 namespace {
 
 using orcsdr::ftx::Mode;
 using orcsdr::ftx::profile;
+
+void put_bits(orcsdr::ft8::codec::PayloadBits* payload, std::size_t offset,
+              std::size_t count, uint32_t value) {
+  for (std::size_t i = 0; i < count; ++i) {
+    const std::size_t shift = count - 1 - i;
+    (*payload)[offset + i] =
+        static_cast<uint8_t>((value >> shift) & 1u);
+  }
+}
+
+uint16_t grid15(const char* text) {
+  assert(std::strlen(text) == 4);
+  return static_cast<uint16_t>(
+      (text[0] - 'A') * 18 * 100 +
+      (text[1] - 'A') * 100 +
+      (text[2] - '0') * 10 +
+      (text[3] - '0'));
+}
+
+orcsdr::ft8::codec::PayloadBits standard_payload(const char* first,
+                                                  const char* second,
+                                                  uint16_t g15,
+                                                  uint8_t type = 1) {
+  uint32_t c1 = 0, c2 = 0;
+  if (std::strcmp(first, "CQ") == 0)
+    c1 = 2;
+  else
+    assert(orcsdr::ft8::codec::encode_standard_callsign(first, &c1));
+  assert(orcsdr::ft8::codec::encode_standard_callsign(second, &c2));
+
+  orcsdr::ft8::codec::PayloadBits payload{};
+  put_bits(&payload, 0, 28, c1);
+  put_bits(&payload, 28, 1, 0);
+  put_bits(&payload, 29, 28, c2);
+  put_bits(&payload, 57, 1, 0);
+  put_bits(&payload, 58, 1, 0);
+  put_bits(&payload, 59, 15, g15);
+  put_bits(&payload, 74, 3, type);
+  return payload;
+}
 
 void inject_frame(const orcsdr::ftx::ModeProfile& p,
                   const orcsdr::ft8::codec::ChannelTones& tones,
@@ -26,20 +67,12 @@ void inject_frame(const orcsdr::ftx::ModeProfile& p,
     const std::size_t bin = base_bin + tones[symbol];
     (*cells)[row * bins + bin] = 30.0f;
   }
-  // Keep the profile argument explicit in this helper so future FT4 fixtures
-  // cannot accidentally reuse FT8 channel geometry.
   assert(p.mode == Mode::ft8);
 }
 
-void test_crc_valid_ft8_frame_is_returned() {
+std::size_t decode_payload(const orcsdr::ft8::codec::PayloadBits& payload,
+                           orcsdr::ftx::pipeline::FrameResult* result) {
   const auto& p = profile(Mode::ft8);
-  orcsdr::ft8::codec::PayloadBits payload{};
-  uint32_t state = 0x5a17c3e1u;
-  for (auto& bit : payload) {
-    state = state * 1664525u + 1013904223u;
-    bit = static_cast<uint8_t>((state >> 31) & 1u);
-  }
-
   const auto message = orcsdr::ft8::codec::append_crc(payload);
   const auto codeword = orcsdr::ft8::ldpc::encode(message);
   orcsdr::ft8::codec::DataTones data{};
@@ -62,15 +95,20 @@ void test_crc_valid_ft8_frame_is_returned() {
   config.search.min_score = 0.70f;
 
   orcsdr::ftx::pipeline::Workspace workspace{};
-  orcsdr::ftx::pipeline::FrameResult result[2]{};
-  const std::size_t count = orcsdr::ftx::pipeline::decode_grid(
+  return orcsdr::ftx::pipeline::decode_grid(
       p, grid, orcsdr::ftx::sync::Geometry{}, config, &workspace,
-      result, 2);
-  assert(count == 1);
-  assert(result[0].mode == Mode::ft8);
-  assert(result[0].candidate.start_row == start_row);
-  assert(result[0].candidate.base_bin == base_bin);
-  assert(result[0].message == message);
+      result, 1);
+}
+
+void test_plausible_standard_ft8_frame_is_returned() {
+  const auto payload = standard_payload("CQ", "K1ABC", grid15("FN42"));
+  orcsdr::ftx::pipeline::FrameResult result{};
+  assert(decode_payload(payload, &result) == 1);
+  assert(result.mode == Mode::ft8);
+  assert(result.candidate.start_row == 2);
+  assert(result.candidate.base_bin == 8);
+  assert(result.standard.fully_renderable);
+  assert(std::strcmp(result.standard.text, "CQ K1ABC FN42") == 0);
 }
 
 void test_crc_corrupt_valid_ldpc_word_is_not_returned() {
@@ -103,6 +141,13 @@ void test_crc_corrupt_valid_ldpc_word_is_not_returned() {
              &result, 1) == 0);
 }
 
+void test_crc_valid_unsupported_message_is_not_returned() {
+  auto payload = standard_payload("CQ", "K1ABC", grid15("FN42"));
+  put_bits(&payload, 74, 3, 4);  // unsupported i3 family
+  orcsdr::ftx::pipeline::FrameResult result{};
+  assert(decode_payload(payload, &result) == 0);
+}
+
 void test_ft4_not_prematurely_accepted() {
   std::array<float, 105 * 16> cells{};
   orcsdr::ftx::sync::EnergyGrid grid{cells.data(), 105, 16, 16};
@@ -117,8 +162,9 @@ void test_ft4_not_prematurely_accepted() {
 
 int main() {
   assert(orcsdr::ftx::pipeline::self_check());
-  test_crc_valid_ft8_frame_is_returned();
+  test_plausible_standard_ft8_frame_is_returned();
   test_crc_corrupt_valid_ldpc_word_is_not_returned();
+  test_crc_valid_unsupported_message_is_not_returned();
   test_ft4_not_prematurely_accepted();
   return 0;
 }

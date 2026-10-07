@@ -3,6 +3,7 @@
 #include "ft8_codec.hpp"
 #include "ft8_demod.hpp"
 #include "ft8_ldpc_decode.hpp"
+#include "ft8_message.hpp"
 #include "ft8_sync.hpp"
 
 #include <array>
@@ -26,6 +27,7 @@ struct FrameResult {
   float mean_symbol_contrast = 0.0f;
   uint8_t ldpc_iterations = 0;
   orcsdr::ft8::codec::MessageBits message{};
+  orcsdr::ft8::message::StandardMessage standard{};
 };
 
 struct Workspace {
@@ -36,11 +38,11 @@ struct Workspace {
 // Runs the already-built receive stages on one spectral grid.
 //
 // Current acceptance gate:
-//   sync candidate -> soft demod -> LDPC parity convergence -> CRC-14.
+//   sync candidate -> soft demod -> LDPC parity convergence -> CRC-14
+//   -> supported source-message unpack -> fully renderable/plausible message.
 //
-// This returns internal CRC-valid frames only. It does NOT produce the UI's
-// orcsdr::ft8::Decode record because full 77-bit message unpack/plausibility
-// is a later mandatory truth gate.
+// This still returns an internal FrameResult rather than the UI's Decode
+// record. Timing/SNR/provenance and backend binding remain separate concerns.
 //
 // FT8 is supported now. FT4 sync/demod are ready, but the pipeline refuses FT4
 // until its payload XOR restoration is implemented and tested.

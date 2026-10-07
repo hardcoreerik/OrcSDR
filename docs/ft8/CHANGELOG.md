@@ -121,3 +121,13 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Recognized but did not invent text for unresolved 22-bit hashes.
 - Unsupported CQ modifiers and other i3 message families remain rejected until independently implemented.
 - Added optimized + sanitizer host-test coverage through the FT8 test runner.
+
+
+## 2026-10-07 — Phase 1 slice 10: first full synthetic FT8 receive decode
+
+- Added source-message plausibility to the pipeline after LDPC and CRC.
+- Only fully renderable supported standard messages leave the current pipeline.
+- Added a CRC-valid but unsupported-i3 negative test.
+- Replaced the synthetic random-payload PCM test with a complete standard FT8 message fixture: `CQ K1ABC FN42`.
+- The end-to-end host test now spans PCM -> spectral analysis -> sync -> soft demod -> NMS LDPC -> CRC -> standard message text.
+- This remains host-side synthetic receive validation; it is not Tab5/RF hardware verification and adds no transmit capability.

@@ -51,6 +51,8 @@ run_suite ft8_spectral_tests \
   apps/orcsdr-tab5/ui/ft8_sync.cpp \
   apps/orcsdr-tab5/ui/ft8_demod.cpp \
   apps/orcsdr-tab5/ui/ft8_spectral.cpp \
+  apps/orcsdr-tab5/ui/ft8_pipeline.cpp \
+  apps/orcsdr-tab5/ui/ft8_message.cpp \
   apps/orcsdr-tab5/ui/ft8_codec.cpp \
   apps/orcsdr-tab5/ui/ft8_ldpc.cpp \
   apps/orcsdr-tab5/ui/ft8_ldpc_decode.cpp
@@ -61,6 +63,7 @@ run_suite ft8_pipeline_tests \
   apps/orcsdr-tab5/ui/ft8_sync.cpp \
   apps/orcsdr-tab5/ui/ft8_demod.cpp \
   apps/orcsdr-tab5/ui/ft8_pipeline.cpp \
+  apps/orcsdr-tab5/ui/ft8_message.cpp \
   apps/orcsdr-tab5/ui/ft8_codec.cpp \
   apps/orcsdr-tab5/ui/ft8_ldpc.cpp \
   apps/orcsdr-tab5/ui/ft8_ldpc_decode.cpp

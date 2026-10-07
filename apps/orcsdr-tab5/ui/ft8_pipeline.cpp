@@ -53,12 +53,20 @@ std::size_t decode_grid(const ModeProfile& profile, const sync::EnergyGrid& grid
         !orcsdr::ft8::codec::crc_valid(decoded.message))
       continue;
 
+    orcsdr::ft8::codec::PayloadBits payload{};
+    std::copy_n(decoded.message.begin(), payload.size(), payload.begin());
+    orcsdr::ft8::message::StandardMessage standard{};
+    if (!orcsdr::ft8::message::unpack_standard(payload, &standard) ||
+        !standard.fully_renderable)
+      continue;
+
     FrameResult frame{};
     frame.mode = profile.mode;
     frame.candidate = workspace->candidates[i];
     frame.mean_symbol_contrast = soft.mean_symbol_contrast;
     frame.ldpc_iterations = decoded.iterations;
     frame.message = decoded.message;
+    frame.standard = standard;
     output[accepted++] = frame;
   }
 

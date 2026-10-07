@@ -1,9 +1,8 @@
 #include "ft8_codec.hpp"
 #include "ft8_demod.hpp"
 #include "ft8_ldpc.hpp"
-#include "ft8_ldpc_decode.hpp"
 #include "ft8_spectral.hpp"
-#include "ft8_sync.hpp"
+#include "ft8_pipeline.hpp"
 
 #include <algorithm>
 #include <array>
@@ -11,6 +10,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 using orcsdr::ftx::Mode;
@@ -37,6 +37,35 @@ std::vector<int16_t> synth_tone(double frequency_hz, std::size_t samples,
 
 void append(std::vector<int16_t>* dst, const std::vector<int16_t>& src) {
   dst->insert(dst->end(), src.begin(), src.end());
+}
+
+void put_bits(orcsdr::ft8::codec::PayloadBits* payload, std::size_t offset,
+              std::size_t count, uint32_t value) {
+  for (std::size_t i = 0; i < count; ++i) {
+    const std::size_t shift = count - 1 - i;
+    (*payload)[offset + i] =
+        static_cast<uint8_t>((value >> shift) & 1u);
+  }
+}
+
+uint16_t grid15(const char* text) {
+  return static_cast<uint16_t>(
+      (text[0] - 'A') * 18 * 100 +
+      (text[1] - 'A') * 100 +
+      (text[2] - '0') * 10 +
+      (text[3] - '0'));
+}
+
+orcsdr::ft8::codec::PayloadBits cq_payload(const char* call,
+                                           const char* grid_text) {
+  uint32_t c28 = 0;
+  assert(orcsdr::ft8::codec::encode_standard_callsign(call, &c28));
+  orcsdr::ft8::codec::PayloadBits payload{};
+  put_bits(&payload, 0, 28, 2);  // CQ
+  put_bits(&payload, 29, 28, c28);
+  put_bits(&payload, 59, 15, grid15(grid_text));
+  put_bits(&payload, 74, 3, 1);
+  return payload;
 }
 
 void test_streaming_single_tone_peak() {
@@ -70,15 +99,10 @@ void test_streaming_single_tone_peak() {
   assert(grid[peak] > grid[8] * 1000.0f);
 }
 
-void test_synthetic_ft8_pcm_to_crc_valid_codeword() {
+void test_synthetic_ft8_pcm_to_standard_message_decode() {
   const auto& p = profile(Mode::ft8);
 
-  orcsdr::ft8::codec::PayloadBits payload{};
-  uint32_t prng = 0x31415926u;
-  for (auto& bit : payload) {
-    prng = prng * 1664525u + 1013904223u;
-    bit = static_cast<uint8_t>((prng >> 31) & 1u);
-  }
+  const auto payload = cq_payload("K1ABC", "FN42");
   const auto message = orcsdr::ft8::codec::append_crc(payload);
   const auto codeword = orcsdr::ft8::ldpc::encode(message);
   assert(orcsdr::ft8::ldpc::valid(codeword));
@@ -107,9 +131,9 @@ void test_synthetic_ft8_pcm_to_crc_valid_codeword() {
   spectral_config.bin_count = bins;
   spectral_config.rows_per_symbol = 1;
 
-  orcsdr::ftx::spectral::ReferenceAccumulator spectral{};
+  orcsdr::ftx::spectral::ReferenceAccumulator spectral_state{};
   assert(orcsdr::ftx::spectral::begin(
-      &spectral, p, spectral_config,
+      &spectral_state, p, spectral_config,
       orcsdr::ftx::spectral::OutputGrid{energies.data(), rows, bins}));
 
   std::size_t offset = 0;
@@ -118,49 +142,38 @@ void test_synthetic_ft8_pcm_to_crc_valid_codeword() {
   while (offset < pcm.size()) {
     const std::size_t take =
         std::min(chunks[chunk_index++ % chunks.size()], pcm.size() - offset);
-    assert(orcsdr::ftx::spectral::offer(&spectral, pcm.data() + offset, take));
+    assert(orcsdr::ftx::spectral::offer(
+        &spectral_state, pcm.data() + offset, take));
     offset += take;
   }
-  assert(orcsdr::ftx::spectral::rows_written(spectral) == rows);
+  assert(orcsdr::ftx::spectral::rows_written(spectral_state) == rows);
 
-  orcsdr::ftx::sync::EnergyGrid grid{
-      energies.data(), rows, bins, bins};
-  orcsdr::ftx::sync::Candidate candidates[4]{};
-  orcsdr::ftx::sync::SearchConfig search{};
-  search.first_start_row = 0;
-  search.last_start_row_exclusive = 3;
-  search.first_base_bin = 4;
-  search.last_base_bin_exclusive = 12;
-  search.min_score = 0.70f;
-  const std::size_t candidate_count =
-      orcsdr::ftx::sync::search(p, grid, orcsdr::ftx::sync::Geometry{},
-                                search, candidates, 4);
-  assert(candidate_count >= 1);
-  assert(candidates[0].start_row == leading_rows);
-  assert(candidates[0].base_bin == base_bin);
-  assert(candidates[0].score > 0.90f);
+  orcsdr::ftx::sync::EnergyGrid grid{energies.data(), rows, bins, bins};
+  orcsdr::ftx::pipeline::Config config{};
+  config.search.first_start_row = 0;
+  config.search.last_start_row_exclusive = 3;
+  config.search.first_base_bin = 4;
+  config.search.last_base_bin_exclusive = 12;
+  config.search.min_score = 0.70f;
 
-  orcsdr::ftx::demod::Result demod{};
-  assert(orcsdr::ftx::demod::soft_demodulate(
-      p, grid, orcsdr::ftx::sync::Geometry{}, candidates[0], &demod));
-  assert(demod.bit_count == 174);
+  orcsdr::ftx::pipeline::Workspace workspace{};
+  orcsdr::ftx::pipeline::FrameResult result{};
+  const std::size_t count = orcsdr::ftx::pipeline::decode_grid(
+      p, grid, orcsdr::ftx::sync::Geometry{}, config, &workspace,
+      &result, 1);
+  assert(count == 1);
+  assert(result.candidate.start_row == leading_rows);
+  assert(result.candidate.base_bin == base_bin);
+  assert(result.message == message);
+  assert(result.standard.fully_renderable);
+  assert(std::strcmp(result.standard.text, "CQ K1ABC FN42") == 0);
 
-  orcsdr::ft8::ldpc_decode::LlrVector llr{};
-  std::copy(demod.llr.begin(), demod.llr.end(), llr.begin());
-  orcsdr::ft8::ldpc_decode::Workspace workspace{};
-  orcsdr::ft8::ldpc_decode::Result decoded{};
-  assert(orcsdr::ft8::ldpc_decode::decode(llr, &workspace, &decoded));
-  assert(decoded.converged);
-  assert(orcsdr::ft8::codec::crc_valid(decoded.message));
-  assert(decoded.message == message);
-  assert(decoded.codeword == codeword);
-}
 
 }  // namespace
 
 int main() {
   assert(orcsdr::ftx::spectral::self_check());
   test_streaming_single_tone_peak();
-  test_synthetic_ft8_pcm_to_crc_valid_codeword();
+  test_synthetic_ft8_pcm_to_standard_message_decode();
   return 0;
 }
