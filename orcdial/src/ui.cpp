@@ -112,10 +112,10 @@ static void home_screen(lgfx::LGFXBase& d, const RadioState& state, Focus focus,
       previous = y;
     }
   }
-  static const char* modes[] = {"--", "NFM", "AM", "WFM"};
+  static const char* modes[] = {"--", "NFM", "AM", "WFM", "USB", "LSB"};
   d.setTextColor(cyan); d.setTextSize(2); draw_text(d, band_name(state.band), 120, 32);
-  d.setTextColor(green); d.setTextSize(1);
-  draw_text(d, modes[state.mode < 4 ? state.mode : 0], 120, 52);
+  d.setTextColor(green); d.setTextSize(2);
+  draw_text(d, modes[state.mode < 6 ? state.mode : 0], 120, 54);
   char line[32];
   const uint32_t hz = state.frequency_hz;
   if (hz % 1000 == 0)

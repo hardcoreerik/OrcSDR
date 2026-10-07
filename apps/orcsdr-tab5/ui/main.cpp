@@ -2921,6 +2921,28 @@ uint32_t rtl_filter_default_hz(RtlBand band) {
   return kRtlFmFilterDefaultHz;
 }
 
+// Demodulation chosen on Home, independent of the band. by_band keeps each band's own demodulator (the dashboards'
+// behaviour). The numbering matches the OrcDial mode codes (1 NFM, 2 AM, 3 WFM, 4 USB, 5 LSB).
+enum class HomeDemod : uint8_t { by_band, nfm, am, wfm, usb, lsb };
+std::atomic<uint8_t> rtl_home_demod{static_cast<uint8_t>(HomeDemod::by_band)};
+
+// The bands where Home may choose the demodulator; the others (CB, P25, LoRa, ADS-B, pager, MW, shortwave) keep theirs.
+bool home_demod_band(RtlBand band) {
+  return band == RtlBand::browse || band == RtlBand::fm || band == RtlBand::airband || band == RtlBand::wx;
+}
+
+HomeDemod band_demod(RtlBand band) {
+  if (band == RtlBand::am || band == RtlBand::shortwave || band == RtlBand::airband) return HomeDemod::am;
+  return band == RtlBand::fm ? HomeDemod::wfm : HomeDemod::nfm;
+}
+
+// Home's choice applies only while Home is on screen; the dashboards keep their own demodulators.
+HomeDemod effective_demod(RtlBand band) {
+  const auto chosen = static_cast<HomeDemod>(rtl_home_demod.load(std::memory_order_relaxed));
+  return chosen != HomeDemod::by_band && home_demod_band(band) && orcsdr::home::active() ? chosen
+                                                                                       : band_demod(band);
+}
+
 uint32_t rtl_clamp_filter_hz(RtlBand band, uint32_t bandwidth_hz) {
   if (band == RtlBand::lora) {
     if (bandwidth_hz <= 93750) return 62500;
@@ -2929,9 +2951,12 @@ uint32_t rtl_clamp_filter_hz(RtlBand band, uint32_t bandwidth_hz) {
     return 500000;
   }
   if (band == RtlBand::p25) return kP25StepHz;
-  const bool am = band == RtlBand::am || band == RtlBand::shortwave || band == RtlBand::airband;
-  const uint32_t low = band == RtlBand::cb ? 2400 : am ? 3000 : band == RtlBand::fm ? 50000 : 8000;
-  const uint32_t high = band == RtlBand::cb ? 12000 : am ? 30000 : band == RtlBand::fm ? 300000 : 100000;
+  const HomeDemod demod = effective_demod(band);
+  const bool am = demod == HomeDemod::am;
+  const bool ssb = demod == HomeDemod::usb || demod == HomeDemod::lsb;
+  const bool wide = demod == HomeDemod::wfm;
+  const uint32_t low = band == RtlBand::cb || ssb ? 2400 : am ? 3000 : wide ? 50000 : 8000;
+  const uint32_t high = band == RtlBand::cb || ssb ? 12000 : am ? 30000 : wide ? 300000 : 100000;
   return constrain((bandwidth_hz / 1000u) * 1000u, low, high);
 }
 
@@ -3101,6 +3126,8 @@ bool home_full_range() {
          rtl_ui_band == RtlBand::airband || rtl_ui_band == RtlBand::wx;
 }
 
+void home_apply_auto(const orcsdr::band_profile::Profile& profile, RtlBand band);
+
 bool home_tune_to(uint32_t frequency_hz) {
   if (!home_full_range()) {
     const uint32_t clamped = rtl_clamp_frequency(rtl_ui_band, frequency_hz);
@@ -3110,7 +3137,9 @@ bool home_tune_to(uint32_t frequency_hz) {
   }
   const uint32_t hz = constrain(frequency_hz, kRtlBrowseMinHz, kRtlBrowseMaxHz);
   if (!validate_rtl_tune_frequency(hz)) return false;
-  const RtlBand band = home_band_for(orcsdr::band_profile::resolve(kBandRegion, hz));
+  const auto& profile = orcsdr::band_profile::resolve(kBandRegion, hz);
+  const RtlBand band = home_band_for(profile);
+  home_apply_auto(profile, band);
   if (band == rtl_ui_band &&
       rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
     return request_hot_retune(hz);
@@ -3131,6 +3160,86 @@ uint32_t home_step_by(uint32_t from_hz, int count) {
                                               kRtlBrowseMinHz, kRtlBrowseMaxHz);
   }
   return hz;
+}
+
+// Auto mode: entering a band applies its suggested mode (or the one you pinned for it); tuning inside a band never
+// changes the mode, so a manual choice sticks and is remembered per band.
+uint8_t band_mode_pin[orcsdr::band_profile::kProfileCount] = {};
+orcsdr::band_profile::Id home_last_band = orcsdr::band_profile::Id::count;
+
+HomeDemod demod_for_mode(orcsdr::band_profile::Mode mode) {
+  using orcsdr::band_profile::Mode;
+  switch (mode) {
+    case Mode::wfm: return HomeDemod::wfm;
+    case Mode::nfm: return HomeDemod::nfm;
+    case Mode::am: return HomeDemod::am;
+    case Mode::usb: return HomeDemod::usb;
+    case Mode::lsb: return HomeDemod::lsb;
+    default: return HomeDemod::by_band;
+  }
+}
+
+const char* home_demod_name(HomeDemod demod) {
+  switch (demod) {
+    case HomeDemod::nfm: return "NFM";
+    case HomeDemod::am: return "AM";
+    case HomeDemod::wfm: return "WFM";
+    case HomeDemod::usb: return "USB";
+    case HomeDemod::lsb: return "LSB";
+    default: return "AUTO";
+  }
+}
+
+void home_set_demod(HomeDemod demod, RtlBand band) {
+  if (rtl_home_demod.exchange(static_cast<uint8_t>(demod), std::memory_order_acq_rel) ==
+      static_cast<uint8_t>(demod)) return;
+  using Kind = orcsdr::filter_standards::Kind;
+  const Kind kind = demod == HomeDemod::wfm ? Kind::wfm
+                    : demod == HomeDemod::am ? Kind::airband_am
+                    : demod == HomeDemod::usb || demod == HomeDemod::lsb ? Kind::cb_ssb
+                                                                         : Kind::nfm;
+  rtl_filter_bandwidth_hz.store(
+      rtl_clamp_filter_hz(band, orcsdr::filter_standards::standards(kind).standard_hz),
+      std::memory_order_relaxed);
+  rtl_audio_reset_demod_filters();
+}
+
+void home_apply_auto(const orcsdr::band_profile::Profile& profile, RtlBand band) {
+  if (profile.id == home_last_band) return;
+  home_last_band = profile.id;
+  const uint8_t pin = band_mode_pin[static_cast<size_t>(profile.id)];
+  home_set_demod(pin ? static_cast<HomeDemod>(pin) : demod_for_mode(profile.mode), band);
+}
+
+// Called when Home comes on screen: re-derive the mode for the frequency it is on.
+void home_enter() {
+  home_last_band = orcsdr::band_profile::Id::count;
+  if (!home_full_range()) return;
+  home_apply_auto(orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz), rtl_ui_band);
+}
+
+// A manual choice pins the mode for this band (AUTO unpins it) and is remembered across reboots.
+void home_select_mode(HomeDemod choice) {
+  if (!home_full_range()) return;
+  const auto& profile = orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz);
+  band_mode_pin[static_cast<size_t>(profile.id)] = static_cast<uint8_t>(choice);
+  preferences.putBytes("band_modes", band_mode_pin, sizeof(band_mode_pin));
+  home_last_band = profile.id;
+  home_set_demod(choice == HomeDemod::by_band ? demod_for_mode(profile.mode) : choice, rtl_ui_band);
+}
+
+void home_mode_next() {
+  const auto& profile = orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz);
+  const uint8_t pin = band_mode_pin[static_cast<size_t>(profile.id)];
+  home_select_mode(static_cast<HomeDemod>((pin + 1) % 6));
+}
+
+void band_mode_load() {
+  uint8_t stored[orcsdr::band_profile::kProfileCount] = {};
+  if (preferences.getBytesLength("band_modes") != sizeof(stored)) return;
+  preferences.getBytes("band_modes", stored, sizeof(stored));
+  for (size_t i = 0; i < orcsdr::band_profile::kProfileCount; ++i)
+    band_mode_pin[i] = stored[i] <= static_cast<uint8_t>(HomeDemod::lsb) ? stored[i] : 0;
 }
 
 size_t cb_channel_index(uint32_t frequency_hz) {
@@ -8168,6 +8277,30 @@ __attribute__((noinline)) void demodulate_ssb(const uint8_t* iq, size_t bytes, f
   queue_audio_samples(audio, audio_count);
 }
 
+
+// One demodulator choice for every band except CB, which keeps its own mode switch.
+
+void demodulate_home(RtlBand band, const uint8_t* iq, size_t bytes, float audio_scale,
+
+                     uint32_t sample_rate_sps) {
+
+  switch (effective_demod(band)) {
+
+    case HomeDemod::am: demodulate_am(iq, bytes, audio_scale, sample_rate_sps); break;
+
+    case HomeDemod::usb: demodulate_ssb(iq, bytes, audio_scale, CbMode::usb, sample_rate_sps); break;
+
+    case HomeDemod::lsb: demodulate_ssb(iq, bytes, audio_scale, CbMode::lsb, sample_rate_sps); break;
+
+    case HomeDemod::wfm: demodulate_fm(iq, bytes, audio_scale, true, sample_rate_sps); break;
+
+    default: demodulate_fm(iq, bytes, audio_scale, false, sample_rate_sps); break;
+
+  }
+
+}
+
+
 #if ORCSDR_DSP_AB
 #include "dsp_ab_harness.inc"
 #endif
@@ -8351,13 +8484,8 @@ void run_rtl_capture() {
       } else {
         rtl_audio_play_count = 0;
       }
-    } else if (band == RtlBand::am || band == RtlBand::shortwave ||
-               band == RtlBand::airband) {
-      demodulate_am(rtl_iq_processing, completed_bytes, audio_scale,
-                    kRtlSampleRateSps);
     } else if (band != RtlBand::lora) {
-      demodulate_fm(rtl_iq_processing, completed_bytes, audio_scale,
-                    band == RtlBand::fm, kRtlSampleRateSps);
+      demodulate_home(band, rtl_iq_processing, completed_bytes, audio_scale, kRtlSampleRateSps);
     }
 
     // CRITICAL: never issue EP0 PLL writes while a bulk URB is outstanding.
@@ -8905,13 +9033,8 @@ static void rtl_dsp_task(void *) {
         } else {
           rtl_audio_play_count = 0;
         }
-      } else if (block.band == RtlBand::am || block.band == RtlBand::shortwave ||
-                 block.band == RtlBand::airband) {
-        demodulate_am(block.data, block.bytes, block.audio_scale,
-                      block.sample_rate_sps);
       } else if (block.band != RtlBand::adsb) {
-        demodulate_fm(block.data, block.bytes, block.audio_scale,
-                      block.band == RtlBand::fm, block.sample_rate_sps);
+        demodulate_home(block.band, block.data, block.bytes, block.audio_scale, block.sample_rate_sps);
       }
     }
     mark(dsp_stats::Stage::demod);
@@ -12220,6 +12343,17 @@ const orcsdr::settings::State& global_settings_state() {
 // Which family of filter widths applies to the band on Home (see filter_standards.hpp).
 orcsdr::filter_standards::Kind home_filter_kind() {
   using Kind = orcsdr::filter_standards::Kind;
+  if (home_full_range()) {
+    switch (effective_demod(rtl_ui_band)) {
+      case HomeDemod::wfm: return Kind::wfm;
+      case HomeDemod::am:
+        return rtl_ui_frequency_hz >= 118000000 && rtl_ui_frequency_hz <= 137000000 ? Kind::airband_am
+                                                                                      : Kind::am_broadcast;
+      case HomeDemod::usb:
+      case HomeDemod::lsb: return Kind::cb_ssb;
+      default: return Kind::nfm;
+    }
+  }
   switch (rtl_ui_band) {
     case RtlBand::fm: return Kind::wfm;
     case RtlBand::am: return Kind::am_broadcast;
@@ -12262,7 +12396,9 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   // Only the bands whose step the STEP SIZE control can change; the rest are channels or decoder-owned.
   snapshot.step_adjustable = home_full_range() ? orcsdr::band_profile::has_step_control(step_profile)
                                                : rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::shortwave;
-  strlcpy(snapshot.mode, demo ? "FM" : rtl_mode_name(rtl_ui_band),
+  strlcpy(snapshot.mode,
+          demo ? "FM" : home_full_range() ? home_demod_name(effective_demod(rtl_ui_band))
+                                          : rtl_mode_name(rtl_ui_band),
           sizeof(snapshot.mode));
 #if !RTL_USE_LEGACY_USB
   strlcpy(snapshot.receiver,
@@ -12461,6 +12597,7 @@ void configure_navigation_service() {
 }
 
 void show_home(bool demo) {
+  home_enter();
   orcsdr::audio_header::reset(rtl_header_audio_control);
   orcsdr::navigation::show_home(demo);
 }
@@ -12745,6 +12882,7 @@ void handle_home_action(const orcsdr::home::Action& action) {
       }
       break;
     }
+    case ActionKind::mode_next: home_mode_next(); break;
     case ActionKind::sound_toggle:
       set_rtl_audio_user_enabled(
           !rtl_audio_user_enabled.load(std::memory_order_acquire));
@@ -13270,6 +13408,7 @@ void load_state() {
   orcsdr::am::load(preferences);
   rtl_am_step_hz = orcsdr::am::tune_step();
   band_step_load();
+  band_mode_load();
   rtl_am_scan_spacing_hz = orcsdr::am::scan_spacing();
   const auto stored_verbosity = static_cast<SerialVerbosity>(
       std::min<uint8_t>(preferences.getUChar("serial_verb", 1), 3));
@@ -14200,7 +14339,9 @@ void orcdial_fill_state(orc::Packet& p) {
               : rtl_ui_band == RtlBand::shortwave ? rtl_shortwave_step_hz
               : band_step_hz(orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz));
   p.volume = rtl_live_volume.load(std::memory_order_acquire);
-  p.mode = rtl_ui_band == RtlBand::fm ? 3 :
+  p.mode = id == orc::Dashboard::home && home_full_range()
+               ? static_cast<uint8_t>(effective_demod(rtl_ui_band)) :
+           rtl_ui_band == RtlBand::fm ? 3 :
            rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::shortwave ||
            rtl_ui_band == RtlBand::airband ? 2 : 1;
   p.revision = ++orcdial_revision;
@@ -14239,6 +14380,11 @@ bool orcdial_apply(const orc::Packet& p) {
     if (p.value < 0 || p.value > 16 || !orc::valid_dashboard(static_cast<uint8_t>(p.value))) return false;
     if (p.value == 0) show_home();
     else open_dashboard(orcsdr::dashboards::Id(p.value));
+    return true;
+  }
+  if (p.type == orc::Type::set_mode) {
+    if (active != Dash::home || !home_full_range() || p.value < 1 || p.value > 5) return false;
+    home_select_mode(static_cast<HomeDemod>(p.value));
     return true;
   }
   if (p.type != orc::Type::semantic_action || p.dashboard != static_cast<uint8_t>(active) ||

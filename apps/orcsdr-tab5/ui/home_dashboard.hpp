@@ -82,6 +82,7 @@ enum class ActionKind : uint8_t {
   gain_auto,
   gain_tenth_db,
   rtl_agc,
+  mode_next,         // cycle AUTO, NFM, AM, WFM, USB, LSB for the band on screen
 };
 
 struct Action {

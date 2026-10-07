@@ -337,6 +337,7 @@ void loop() {
       else if(t.y>=212){forget_confirmation=false;view=orc::View::home;}
     } else if (view == orc::View::home) {
       if (t.y < 70 && t.x > 150) view = orc::View::connection;
+      else if (home_tune && t.y >= 40 && t.y < 70) change(orc::Type::set_mode, state.mode >= 5 ? 1 : state.mode + 1);
       else if (home_tune && t.y <= 175) focus = orc::next_focus(state.dashboard, focus);
       else { view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard); }
     } else if (view == orc::View::carousel) {

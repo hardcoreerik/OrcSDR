@@ -814,6 +814,7 @@ Action tap_action(int32_t x, int32_t y) {
     return {ActionKind::waterfall_contrast_down};
   if (inside(x, y, kContrastUpX, kContrastY, kContrastButtonW, kContrastButtonH))
     return {ActionKind::waterfall_contrast_up};
+  if (inside(x, y, kModeX, kReadoutY, kModeW, kReadoutH)) return {ActionKind::mode_next};
   if (inside(x, y, kPaletteX, kReadoutY, kPaletteW, kReadoutH))
     return {ActionKind::waterfall_palette_next};
   if (inside(x, y, kSpeedX, kReadoutY, kSpeedW, kReadoutH))
