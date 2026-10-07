@@ -30,12 +30,12 @@ class Runtime {
   ReceiverCommand listen();
   ReceiverCommand scan(uint32_t now_ms);
   ReceiverCommand stop();
-  void record_scan_sample(float level_dbfs, uint32_t now_ms);\n  ReceiverCommand finish_scan(bool completed);
+  void record_scan_sample(float level_dbfs, uint32_t now_ms);
+  ReceiverCommand finish_scan(bool completed);
   const ServiceState& state() const { return service_.state(); }
 
  private:
   Service service_{};
-  uint32_t scan_due_ms_ = 0;
 };
 
 }  // namespace orcsdr::weather
