@@ -8,7 +8,7 @@ apply to later source snapshots.
 |---|---|---|
 | FM audio, presets, stereo, RDS | **RF-Verified / Regression-Tested** | Verified on RTL-SDR Blog V4 and one V3C with suitable FM setups. |
 | AM broadcast and 119-channel scan | **Hardware-Verified / Experimental** | Exact RC4 package exercised the dashboard and scan; general reception quality remains Experimental. |
-| NOAA Weather Radio | **Implemented** | Current-release RF acceptance is Not Verified. |
+| NOAA Weather Radio / Weather dashboard | **Implemented / Regression-Tested** | Five-tab offline-first UI and seven-channel NOAA listen/scan path are integrated with host tests. Opening Weather does not intentionally retune; physical Tab5 display/touch and live RF acceptance for this change remain Not Verified. SAME decoding is not part of Foundation. |
 | CB | **Implemented / Runtime-Verified** | The earlier channel panel was flashed and exercised. The band-wide scanner dashboard has host regression tests; Tab5 hardware and RF acceptance remain open. |
 | Shortwave | **Implemented / Experimental** | Generic Browse/NFM workspace only; complete AM/SSB and calibrated HF reception are Not Implemented. |
 | Airband | **Implemented / Experimental** | Dedicated 118–136.975 MHz AM dashboard, manual 25/8.33 kHz tuning, scanner controls, activity log, and offline aviation-catalog hooks are implemented. Physical Tab5/RF acceptance remains Not Verified. |

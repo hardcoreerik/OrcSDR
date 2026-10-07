@@ -1,4 +1,4 @@
-# OrcSDR Weather Dashboard Roadmap
+> **Implementation status (Foundation):** the Phase 1 modules and integration are implemented on the Weather Foundation branch with host regression coverage. Physical Tab5/display/touch and live NOAA RF acceptance are still unverified; Hunter and Satellite remain later phases.\n\n# OrcSDR Weather Dashboard Roadmap
 
 This directory summarizes the implementation split for the offline-first Weather dashboard. The normative product design is:
 
