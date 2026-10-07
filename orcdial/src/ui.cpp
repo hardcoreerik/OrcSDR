@@ -480,13 +480,41 @@ static const char* content_view(Dashboard id, uint8_t view) {
   }
 }
 
+// The OrcSDR wordmark gradient, sampled from the OrcSDR splash art: pale cyan, cyan, mint, green, lime.
+static uint32_t wordmark_color(float t) {
+  static const uint8_t stops[][3] = {{0x77, 0xF4, 0xF8}, {0x0E, 0xF8, 0xFA}, {0x6D, 0xFB, 0x6B}, {0x5E, 0xFB, 0x04}, {0xAD, 0xFA, 0x0F}};
+  constexpr int count = sizeof stops / sizeof stops[0];
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const float position = t * (count - 1);
+  const int index = position >= count - 1 ? count - 2 : int(position);
+  const float u = position - index;
+  auto mix = [&](int channel) { return uint8_t(stops[index][channel] + (stops[index + 1][channel] - stops[index][channel]) * u); };
+  return lgfx::color565(mix(0), mix(1), mix(2));
+}
+
+// Text coloured letter by letter along the wordmark gradient, centred on `cx`.
+static void gradient_text(lgfx::LGFXBase& d, const char* text, int cx, int y, float size) {
+  d.setTextSize(size);
+  d.setTextDatum(middle_left);
+  const int total = d.textWidth(text);
+  int x = cx - total / 2;
+  for (const char* c = text; *c; ++c) {
+    const char glyph[2] = {*c, 0};
+    const int width = d.textWidth(glyph);
+    d.setTextColor(wordmark_color((x - (cx - total / 2) + width / 2) / float(total ? total : 1)), bg);
+    d.drawString(glyph, x, y);
+    x += width;
+  }
+  d.setTextDatum(middle_center);
+}
+
 static void draw_splash(lgfx::LGFXBase& d, bool wait) {
   const uint32_t started = millis();
   d.fillScreen(bg); d.setTextDatum(middle_center);
   d.drawPng(badge_start, badge_end - badge_start, 68, 23);
-  d.setTextColor(ink, bg); d.setTextSize(3); draw_text(d, "ORCDIAL", 120, 153);
+  gradient_text(d, "OrcDial", 120, 153, 4);
   d.setTextSize(1); d.setTextColor(dim, bg);
-  draw_text(d, "ORCSDR WIRELESS CONTROL", 120, 179);
+  draw_text(d, "WIRELESS CONTROL FOR ORCSDR", 120, 181);
   for (int frame = 0; frame < 18; ++frame) {
     d.drawArc(120, 75, 61, 58, -90 + frame * 20, -70 + frame * 20, 0x12332e);
     if (wait) delay(24);
@@ -612,7 +640,7 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
     d.drawCircle(120, 120, 115, link_color(connected));
     d.drawCircle(120, 120, 110, 0x1b4e60);
     d.drawPng(badge_start, badge_end - badge_start, 68, 29);
-    d.setTextColor(ink, bg); d.setTextSize(3); draw_text(d, "OrcSDR", 120, 151);
+    gradient_text(d, "OrcDial", 120, 151, 3);
     d.setTextColor(connected ? green : cyan, bg); d.setTextSize(2);
     draw_text(d, connected ? dashboard_name(state.dashboard) : demo ? "DEMO" : "OFFLINE", 120, 181);
     back_button(d);
