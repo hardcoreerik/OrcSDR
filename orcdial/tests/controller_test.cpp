@@ -42,6 +42,8 @@ int main() {
   assert(next_focus(Dashboard::home, Focus::span) == Focus::filter);
   assert(next_focus(Dashboard::home, Focus::filter) == Focus::volume);
   assert(next_focus(Dashboard::home, Focus::volume) == Focus::vfo);
+  // Appended after `activate`: these values are on the wire and must not move.
+  assert(uint8_t(ActionKind::activate) == 20 && uint8_t(ActionKind::span) == 21 && uint8_t(ActionKind::filter) == 22);
   assert(rotate(Dashboard::home, 0, Focus::span, 1, 5, 12500).kind == ActionKind::span);
   assert(rotate(Dashboard::home, 0, Focus::filter, -1, 5, 12500).kind == ActionKind::filter);
   assert(rotate(Dashboard::home, 0, Focus::filter, -1, 5, 12500).value == -1);

@@ -46,15 +46,6 @@ from 24 MHz to 1.766 GHz, and on FM, AM and the other tunable dashboards a frequ
 (the Tab5 validates again and answers `ERROR` otherwise). In Home's `RADIO_STATE`, `mode` is the demodulation in use
 (1 to 5), `step_hz` the band's step, `selected` the span in Hz and `item_count` the filter width in Hz.
 
-**Home (dashboard 0) is a full-range VFO.** `SEMANTIC_ACTION` `tune` carries a signed count of steps, not Hz; the Tab5 applies
-the step and channel raster of the band it is in and moves to the next band's raster when a spin crosses a band edge.
-`step` cycles the band's step list, `span` (`value > 0` zooms in) changes the spectrum span, and `filter` (`value > 0`
-widens) moves through the mode's usual widths; `span` and `filter` are `ActionKind` values 21 and 22, appended after
-`activate`. `SET_MODE` on Home takes 1 NFM, 2 AM, 3 WFM, 4 USB, 5 LSB. `TUNE_ABSOLUTE.value` is Hz: on Home any frequency
-from 24 MHz to 1.766 GHz, and on FM, AM and the other tunable dashboards a frequency inside that dashboard's band
-(the Tab5 validates again and answers `ERROR` otherwise). In Home's `RADIO_STATE`, `mode` is the demodulation in use
-(1 to 5), `step_hz` the band's step, `selected` the span in Hz and `item_count` the filter width in Hz.
-
 The compact state fields at offsets 43–59 have meanings only within the named dashboard. They are a temporary common envelope; production dashboard-specific payloads and capability bits must be specified alongside the Tab5 bridge before those fields can represent aircraft, nodes, messages, presets, or settings. The stand-alone test receiver supplies no such lists and returns `ERROR` for unsupported selection actions.
 
 The Dial sends one command at a time and retries twice at 650 ms using the

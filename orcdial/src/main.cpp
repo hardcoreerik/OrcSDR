@@ -191,7 +191,7 @@ static void settings_adjust(int delta) {
     else if (page_row == 1) s.invert = !s.invert;
     else s.click = !s.click;
   } else return;
-  orc::save_settings(s);
+  if (!orc::save_settings(s)) Serial.println("ORCDIAL_SETTINGS_ERROR save_failed");
 }
 static void settings_press(bool online) {
   const auto status = radio_link.security_status();
@@ -208,7 +208,7 @@ static void settings_press(bool online) {
       if (!reset_armed) { reset_armed = true; reset_armed_ms = millis(); break; }
       reset_armed = false;
       radio_link.forget();
-      orc::erase_settings();
+      if (!orc::erase_settings()) Serial.println("ORCDIAL_SETTINGS_ERROR erase_failed");
       dial_settings = orc::DialSettings();
       apply_display();
       view = orc::View::home;
@@ -391,9 +391,15 @@ void loop() {
   if (online && pending_delta && radio_link.command_action({orc::ActionKind::tune, pending_delta})) pending_delta = 0;
   if (reset_armed && millis() - reset_armed_ms > 4000) reset_armed = false;
   // Never leave the Dial parked in a settings screen: go back to Home after a minute without input (not while pairing).
-  if ((view == orc::View::settings_menu || view == orc::View::page || view == orc::View::connection || view == orc::View::keypad) &&
-      !radio_link.pairing() && millis() - last_activity_ms > orc::settings_idle_ms) {
-    view = orc::View::home; forget_confirmation = false; reset_armed = false;
+  // While pairing is in progress the screen stays (the minute counts from when it ends); the keypad goes back to the
+  // screen it was opened from, the settings screens to Home.
+  if (radio_link.pairing()) last_activity_ms = millis();
+  else if (millis() - last_activity_ms > orc::settings_idle_ms) {
+    if (view == orc::View::settings_menu || view == orc::View::page || view == orc::View::connection) {
+      view = orc::View::home; forget_confirmation = false; reset_armed = false;
+    } else if (view == orc::View::keypad) {
+      view = keypad_return;
+    }
   }
   if (!display_asleep && dial_settings.sleep && millis() - last_activity_ms > orc::sleep_ms[dial_settings.sleep % 4]) {
     display_asleep = true;
@@ -401,6 +407,8 @@ void loop() {
   }
   const int32_t detent = M5Dial.Encoder.read() / 4;
   int32_t movement = detent - last_detent;
+  // A turn that wakes a sleeping display only wakes it, like a tap or a press does.
+  if (movement && display_asleep) { last_detent = detent; note_activity(); movement = 0; }
   if (movement) {
     last_detent = detent;
     note_activity();
@@ -463,7 +471,13 @@ void loop() {
       else if (key == 'T') keypad_tune(online);
       else if (key) keypad_key(key);
     } else if (view == orc::View::connection) {
-      if(t.y>=130 && t.y<202){device_selection=(t.y-129)/24;if(device_selection>2)device_selection=2;device_activate();}
+      if(t.y>=130 && t.y<202){
+        // Only the rows that are drawn can be tapped (two while comparing codes, forgetting or unpaired, otherwise three).
+        const auto shown=radio_link.security_status();
+        const int rows=forget_confirmation||shown.state==orc::secure::State::verify||!shown.trusted?2:3;
+        const int row=(t.y-129)/24;
+        if(row<rows){device_selection=row;device_activate();}
+      }
       else if(t.y>=202){forget_confirmation=false;open_settings_menu();}
     } else if (view == orc::View::settings_menu) {
       if (t.y < 88) menu_index = (menu_index + orc::page_count - 1) % orc::page_count;

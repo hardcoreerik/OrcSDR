@@ -29,21 +29,24 @@ inline void load_settings(DialSettings& s) {
   s.click = p.getBool("click", s.click);
   p.end();
 }
-inline void save_settings(const DialSettings& s) {
+// False when the storage could not be opened (the change still applies until the next boot).
+inline bool save_settings(const DialSettings& s) {
   Preferences p;
-  if (!p.begin("dialset", false)) return;
+  if (!p.begin("dialset", false)) return false;
   p.putUChar("bright", s.brightness);
   p.putUChar("sleep", s.sleep);
   p.putUChar("accel", s.accel);
   p.putBool("invert", s.invert);
   p.putBool("click", s.click);
   p.end();
+  return true;
 }
-inline void erase_settings() {
+inline bool erase_settings() {
   Preferences p;
-  if (!p.begin("dialset", false)) return;
+  if (!p.begin("dialset", false)) return false;
   p.clear();
   p.end();
+  return true;
 }
 
 // The vertical menu. PAIRING opens the existing pairing screen; the rest are pages.
