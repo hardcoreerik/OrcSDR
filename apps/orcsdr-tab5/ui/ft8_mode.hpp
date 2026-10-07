@@ -46,6 +46,11 @@ struct SyncBlock {
   std::array<uint8_t, 7> tones{};
 };
 
+struct DataBlock {
+  uint16_t first_symbol = 0;
+  uint8_t length = 0;
+};
+
 struct ModeProfile {
   Mode mode = Mode::ft8;
   const char* name = "FT8";
@@ -60,6 +65,10 @@ struct ModeProfile {
   uint8_t tone_count = 8;
   uint8_t bits_per_tone = 3;
   uint32_t tone_spacing_millihz = 6250;
+  std::array<uint8_t, 8> tone_bits{};
+
+  uint8_t data_block_count = 0;
+  std::array<DataBlock, 4> data{};
 
   SyncFamily sync_family = SyncFamily::ft8_costas_7;
   uint8_t sync_block_count = 3;

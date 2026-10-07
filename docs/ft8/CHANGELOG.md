@@ -73,3 +73,13 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - The sync score is documented as a dimensionless contrast metric, not SNR.
 - FT8 and FT4 synthetic sync searches pass optimized + ASan/UBSan tests; JS8 research-pending profiles are explicitly refused.
 - No FFT/channelizer, firmware binding, UI-owned file, existing audio path, or transmit code was changed.
+
+
+## 2026-10-07 — Phase 1 slice 6: shared soft demodulation
+
+- Extended ModeProfile with protocol-defined data blocks and tone-to-bit Gray labels.
+- Added pure C++ candidate-local soft demodulation shared by FT8 and FT4.
+- The demodulator emits exactly 174 dimensionless max-log-style LLRs with the same sign convention as the NMS decoder.
+- Deterministic FT8 and FT4 tests verify all 174 soft-bit signs; equal-tone input produces zero reliability.
+- JS8 remains disabled/research-pending.
+- No FFT/channelizer, firmware binding, UI-owned file, existing audio path, or transmit code was changed.

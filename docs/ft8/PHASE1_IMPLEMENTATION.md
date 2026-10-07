@@ -247,3 +247,28 @@ Key properties:
 Host tests cover uniform-energy rejection, exact FT8 candidate recovery, FT4 recovery on a 2x time/frequency oversampled grid, JS8 research-pending rejection, non-finite energy rejection, and optimized + ASan/UBSan builds.
 
 This slice does not perform FFT/channelization and does not claim detection performance on RF. The next slice is candidate-local tone-energy/soft-bit demodulation driven by ModeProfile, initially FT8/FT4 only.
+
+
+## Slice 6 — shared candidate-local soft demodulation
+
+Extended ModeProfile with explicit data blocks and bidirectional Gray labels per tone. This keeps data-symbol extraction and soft demodulation mode-driven instead of hard-coded per protocol.
+
+FT8 profile now carries:
+- two 29-symbol data blocks at channel positions 7 and 43;
+- tone labels matching QEX Table 3.
+
+FT4 profile now carries:
+- three 29-symbol data blocks at channel positions 5, 38, and 71;
+- the four-tone Gray labels from QEX Table 3.
+
+Added pure C++ `ft8_demod.hpp/.cpp`:
+- reads only candidate-local non-negative tone energies;
+- produces exactly 174 max-log-style soft metrics for FT8 and FT4;
+- positive LLR favors bit 0, matching the existing NMS decoder convention;
+- normalizes each symbol by its mean tone energy and clips to a configured finite bound;
+- reports a separate dimensionless mean symbol contrast, not SNR;
+- refuses JS8 while its profiles remain research-pending.
+
+Deterministic tests synthesize all data symbols for both FT8 and FT4 and verify the sign of all 174 recovered soft bits. Equal-energy tones produce zero reliability. Optimized and ASan/UBSan builds pass.
+
+The next major missing piece is the incremental spectral frontend that turns 12 kHz PCM into the abstract energy grid used by sync and demod. That work remains host-first; the approved raw-CU8 audio tap is a later firmware-binding layer.

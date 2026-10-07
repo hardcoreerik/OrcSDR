@@ -16,6 +16,11 @@ static void test_ft8() {
   assert(p.data_symbols == 58);
   assert(p.tone_count == 8);
   assert(p.tone_spacing_millihz == 6250);
+  const uint8_t ft8_labels[8] = {0, 1, 3, 2, 6, 4, 5, 7};
+  for (int i = 0; i < 8; ++i) assert(p.tone_bits[i] == ft8_labels[i]);
+  assert(p.data_block_count == 2);
+  assert(p.data[0].first_symbol == 7 && p.data[0].length == 29);
+  assert(p.data[1].first_symbol == 43 && p.data[1].length == 29);
   assert(occupied_bandwidth_millihz(p) == 50000);
   assert(p.sync_block_count == 3);
   assert(p.sync[0].first_symbol == 0 && p.sync[1].first_symbol == 36 &&
@@ -40,6 +45,12 @@ static void test_ft4() {
   assert(p.tone_count == 4);
   assert(p.bits_per_tone == 2);
   assert(p.tone_spacing_millihz == 20833);
+  const uint8_t ft4_labels[4] = {0, 1, 3, 2};
+  for (int i = 0; i < 4; ++i) assert(p.tone_bits[i] == ft4_labels[i]);
+  assert(p.data_block_count == 3);
+  assert(p.data[0].first_symbol == 5 && p.data[0].length == 29);
+  assert(p.data[1].first_symbol == 38 && p.data[1].length == 29);
+  assert(p.data[2].first_symbol == 71 && p.data[2].length == 29);
   assert(occupied_bandwidth_millihz(p) == 83332);
   assert(p.sync_block_count == 4);
   assert(p.sync[0].first_symbol == 1);

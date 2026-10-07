@@ -32,6 +32,10 @@ constexpr ModeProfile make_ft8() {
   p.tone_count = 8;
   p.bits_per_tone = 3;
   p.tone_spacing_millihz = 6250;
+  p.tone_bits = {{0, 1, 3, 2, 6, 4, 5, 7}};
+  p.data_block_count = 2;
+  p.data[0] = DataBlock{7, 29};
+  p.data[1] = DataBlock{43, 29};
   p.sync_family = SyncFamily::ft8_costas_7;
   p.sync_block_count = 3;
   p.sync[0] = sync7(0, kFt8Costas);
@@ -56,6 +60,11 @@ constexpr ModeProfile make_ft4() {
   p.tone_count = 4;
   p.bits_per_tone = 2;
   p.tone_spacing_millihz = 20833;
+  p.tone_bits = {{0, 1, 3, 2, 0, 0, 0, 0}};
+  p.data_block_count = 3;
+  p.data[0] = DataBlock{5, 29};
+  p.data[1] = DataBlock{38, 29};
+  p.data[2] = DataBlock{71, 29};
   p.sync_family = SyncFamily::ft4_costas_4;
   p.sync_block_count = 4;
   // FT4 includes one ramp symbol before the first sync and one after the frame.
@@ -135,21 +144,60 @@ bool profile_valid(const ModeProfile& p) {
   if (!is_power_of_two(p.tone_count) || p.tone_count < 2 || p.bits_per_tone == 0) return false;
   if ((1u << p.bits_per_tone) != p.tone_count || p.tone_spacing_millihz == 0) return false;
   if (p.data_symbols >= p.channel_symbols) return false;
-  if (p.sync_block_count > p.sync.size()) return false;
+  if (p.sync_block_count > p.sync.size() || p.data_block_count > p.data.size())
+    return false;
 
-  uint16_t accounted = p.data_symbols + p.ramp_symbols;
+  if (p.readiness == Readiness::implementation_ready) {
+    if (p.sync_block_count == 0 || p.data_block_count == 0) return false;
+    bool labels[8]{};
+    const uint8_t label_limit = static_cast<uint8_t>(1u << p.bits_per_tone);
+    for (uint8_t tone = 0; tone < p.tone_count; ++tone) {
+      const uint8_t label = p.tone_bits[tone];
+      if (label >= label_limit || labels[label]) return false;
+      labels[label] = true;
+    }
+  }
+
+  std::array<bool, 128> occupied{};
+  if (p.channel_symbols > occupied.size()) return false;
+  uint16_t data_count = 0;
+  for (std::size_t i = 0; i < p.data_block_count; ++i) {
+    const auto& block = p.data[i];
+    if (block.length == 0 ||
+        static_cast<uint32_t>(block.first_symbol) + block.length >
+            p.channel_symbols)
+      return false;
+    for (std::size_t k = 0; k < block.length; ++k) {
+      const std::size_t symbol = block.first_symbol + k;
+      if (occupied[symbol]) return false;
+      occupied[symbol] = true;
+      ++data_count;
+    }
+  }
+  if (p.readiness == Readiness::implementation_ready &&
+      data_count != p.data_symbols)
+    return false;
+
+  uint16_t sync_count = 0;
   for (std::size_t i = 0; i < p.sync_block_count; ++i) {
     const auto& block = p.sync[i];
     if (block.length == 0 || block.length > block.tones.size()) return false;
-    if (static_cast<uint32_t>(block.first_symbol) + block.length > p.channel_symbols) return false;
+    if (static_cast<uint32_t>(block.first_symbol) + block.length >
+        p.channel_symbols)
+      return false;
     for (std::size_t t = 0; t < block.length; ++t) {
       if (block.tones[t] >= p.tone_count) return false;
+      const std::size_t symbol = block.first_symbol + t;
+      if (occupied[symbol]) return false;
+      occupied[symbol] = true;
+      ++sync_count;
     }
-    accounted = static_cast<uint16_t>(accounted + block.length);
   }
 
-  if (p.readiness == Readiness::implementation_ready && p.sync_block_count == 0) return false;
-  if (p.sync_block_count != 0 && accounted != p.channel_symbols) return false;
+  if (p.readiness == Readiness::implementation_ready &&
+      static_cast<uint16_t>(data_count + sync_count + p.ramp_symbols) !=
+          p.channel_symbols)
+    return false;
   return true;
 }
 
