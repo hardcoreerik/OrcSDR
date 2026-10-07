@@ -83,3 +83,14 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Deterministic FT8 and FT4 tests verify all 174 soft-bit signs; equal-tone input produces zero reliability.
 - JS8 remains disabled/research-pending.
 - No FFT/channelizer, firmware binding, UI-owned file, existing audio path, or transmit code was changed.
+
+
+## 2026-10-07 — Phase 1 slice 7: incremental spectral reference
+
+- Added a pure C++ streaming 12 kHz exact-correlation spectral reference backend with caller-owned output and fixed workspace.
+- Added irregular-chunk streaming tests and exact-tone peak validation.
+- Added the first end-to-end synthetic FT8 coded-frame recovery test: PCM -> spectral grid -> Costas sync -> soft demod -> NMS LDPC -> CRC.
+- The recovered 91-bit message and 174-bit codeword must exactly match the injected test fixture.
+- This is not yet a user-visible FT8 message decode; message unpack/plausibility remains mandatory.
+- Documented future conducted RF verification using an external Pluto-compatible signal source over coax/attenuation while OrcSDR itself remains RX-only.
+- No firmware audio tap, UI-owned file, existing receive DSP, PTT, CAT, or transmit path was added.

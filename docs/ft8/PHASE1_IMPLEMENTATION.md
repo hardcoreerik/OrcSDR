@@ -272,3 +272,47 @@ Added pure C++ `ft8_demod.hpp/.cpp`:
 Deterministic tests synthesize all data symbols for both FT8 and FT4 and verify the sign of all 174 recovered soft bits. Equal-energy tones produce zero reliability. Optimized and ASan/UBSan builds pass.
 
 The next major missing piece is the incremental spectral frontend that turns 12 kHz PCM into the abstract energy grid used by sync and demod. That work remains host-first; the approved raw-CU8 audio tap is a later firmware-binding layer.
+
+
+## Slice 7 — incremental 12 kHz spectral reference and first PCM-to-FEC recovery
+
+Added pure C++ `ft8_spectral.hpp/.cpp` with a streaming exact-correlation reference analyzer.
+
+The reference backend:
+- accepts int16 mono PCM incrementally;
+- uses the active ModeProfile symbol length and sample rate;
+- supports configurable frequency-bin spacing and overlapping rows;
+- writes linear power into a caller-owned energy grid;
+- uses a fixed 3840-sample workspace and no heap allocation in begin/offer;
+- is intentionally a correctness oracle, not the final P4 implementation.
+
+The implementation uses exact quadrature correlation per requested bin. This is computationally expensive for a full 200–3000 Hz production search, but it gives the later esp-dsp/FFT backend a deterministic output to compare against.
+
+Two important host tests were added:
+
+1. irregularly chunked 12 kHz PCM containing a single exact tone produces the correct spectral peak;
+2. a test-only synthetic FT8 waveform is generated from a deterministic 77-bit payload, CRC-14, the native LDPC encoder, and FT8 channel-tone framing. The PCM is offered in irregular chunks and then passes through:
+   `PCM -> spectral grid -> Costas sync search -> soft demod -> normalized-min-sum LDPC -> CRC`.
+
+The end-to-end test requires:
+- recovery of the exact frame start and base tone;
+- LDPC convergence;
+- CRC-14 validity;
+- exact recovered 91-bit message and 174-bit codeword.
+
+This is **coded-frame recovery, not yet a user-visible FT8 message decode**. Full 77-bit message unpack/plausibility remains a required truth gate before producing `orcsdr::ft8::Decode`.
+
+The test-only waveform generator is not firmware code and has no radio/PTT/CAT path. OrcSDR remains receive-only.
+
+### External RF validation ladder
+
+The owner has a Pluto-compatible SDR that may be used later as an external laboratory signal source. Preferred RF validation is conducted, not over-the-air:
+
+- replay owner-controlled IQ/PCM-derived FT8/FT4/JS8 fixtures from the external signal generator;
+- connect generator RF output to the OrcSDR receiver through coax and appropriate attenuation;
+- keep OrcSDR firmware strictly RX-only;
+- compare decoder results at the 12 kHz backend boundary and through the full RTL receive chain.
+
+Any over-the-air amateur transmission test is outside the OrcSDR firmware and must follow the operator's licensing/band-plan requirements. Conducted/coax injection is the default recommendation because it is reproducible and does not radiate test traffic.
+
+The next optimization slice should benchmark a power-of-two FFT/esp-dsp-compatible coarse frontend against this exact-correlation reference rather than replacing the oracle.
