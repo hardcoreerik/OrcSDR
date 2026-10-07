@@ -1,0 +1,36 @@
+name: FT8 RX core
+
+on:
+  pull_request:
+    paths:
+      - apps/orcsdr-tab5/ui/ft8_model.*
+      - apps/orcsdr-tab5/ui/ft8_hunter.*
+      - apps/orcsdr-tab5/ui/ft8_decoder_backend.*
+      - tests/ft8_model_tests.cpp
+      - tests/ft8_hunter_tests.cpp
+      - tools/test-ft8.ps1
+      - tools/test-ft8.sh
+      - .github/workflows/ft8-core-tests.yml
+  push:
+    branches: [main]
+    paths:
+      - apps/orcsdr-tab5/ui/ft8_model.*
+      - apps/orcsdr-tab5/ui/ft8_hunter.*
+      - apps/orcsdr-tab5/ui/ft8_decoder_backend.*
+      - tests/ft8_model_tests.cpp
+      - tests/ft8_hunter_tests.cpp
+      - tools/test-ft8.ps1
+      - tools/test-ft8.sh
+      - .github/workflows/ft8-core-tests.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Optimized and sanitizer tests
+        run: bash tools/test-ft8.sh
