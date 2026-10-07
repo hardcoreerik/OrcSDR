@@ -28,11 +28,15 @@ constexpr int kTabsY = 630;
 constexpr int kTabCount = 6;
 constexpr int kTabW = 1280 / kTabCount;
 constexpr Rect kBody{24, 104, 1232, 514};
-constexpr Rect kHome{1178, 14, 74, 60};
 constexpr Rect kClear{1088, 556, 144, 46};
 
 Snapshot g_snapshot{};
 bool g_active = false;
+bool g_sprite_ready = false;
+void (*g_header_hook)() = nullptr;
+uint64_t g_drawn_second = UINT64_MAX;     // UTC second the header clock shows
+uint32_t g_drawn_tenth = UINT32_MAX;      // slot-timer tenth the dial shows
+M5Canvas g_dial(&M5.Display);             // the slot dial is composed off-screen and pushed in one go
 Tab g_tab = Tab::live;
 size_t g_decode_page = 0;
 
@@ -96,11 +100,26 @@ void format_utc(char* out, size_t size, uint32_t epoch) {
   std::snprintf(out, size, "%02d:%02d:%02d", value.tm_hour, value.tm_min, value.tm_sec);
 }
 
+void draw_utc() {
+  char utc[24] = "UTC --:--:--";
+  if (g_snapshot.clock_valid && g_snapshot.utc_ms) {
+    char clock[16]{};
+    format_utc(clock, sizeof(clock), static_cast<uint32_t>(g_snapshot.utc_ms / 1000u));
+    std::snprintf(utc, sizeof(utc), "UTC %s", clock);
+  }
+  M5.Display.fillRect(640, 62, 220, 26, TFT_BLACK);
+  text(utc, 640, 75, g_snapshot.clock_valid ? kGreen : kAmber, 2, middle_left);
+  g_drawn_second = g_snapshot.utc_ms / 1000u;
+}
+
 void draw_header() {
+  // Standard dashboard header: brand, divider, title block, then the shared controls on the right. The header
+  // repaints only its own band; the screen is never cleared.
+  M5.Display.fillRect(0, 0, 1280, 92, TFT_BLACK);
   audio_header::draw_brand("FT8 RECEIVER");   // longer than 10 characters: the smaller subtitle fits above the rule
-  M5.Display.drawFastVLine(350, 18, 58, kCyan);
-  text("FT8 RX", 390, 42, TFT_WHITE, 4, middle_left);
-  text("RECEIVE ONLY", 390, 70, kMuted, 1, middle_left);
+  M5.Display.drawFastVLine(365, 18, 66, kCyan);
+  text("FT8 RX", 392, 38, TFT_WHITE, 4, middle_left);
+  text("RECEIVE ONLY", 600, 40, kMuted, 1, middle_left);
 
   const BandPreset* preset = band(g_snapshot.selected_band);
   char label[48];
@@ -110,18 +129,12 @@ void draw_header() {
   } else {
     std::snprintf(label, sizeof(label), "BAND --");
   }
-  text(label, 650, 34, kCyan, 2);
+  text(label, 392, 75, kCyan, 2, middle_left);
 
-  char utc[24] = "UTC --:--:--";
-  if (g_snapshot.clock_valid && g_snapshot.utc_ms) {
-    char clock[16]{};
-    format_utc(clock, sizeof(clock), static_cast<uint32_t>(g_snapshot.utc_ms / 1000u));
-    std::snprintf(utc, sizeof(utc), "UTC %s", clock);
-  }
-  text(utc, 650, 64, g_snapshot.clock_valid ? kGreen : kAmber, 2);
+  draw_utc();
 
-  audio_header::draw_battery(g_snapshot.battery_percent);
-  button(kHome, "HOME");
+  M5.Display.drawFastVLine(865, 18, 66, kCyan);
+  if (g_header_hook != nullptr) g_header_hook();
   M5.Display.drawFastHLine(20, 92, 1240, kGreen);
 }
 
@@ -172,6 +185,34 @@ size_t cq_count() {
   const size_t n = std::min(g_snapshot.decode_count, kDecodeCapacity);
   for (size_t i = 0; i < n; ++i) total += g_snapshot.decodes[i].kind == DecodeKind::cq;
   return total;
+}
+
+// The 15 s slot dial. It is composed in a small off-screen canvas and pushed once, so the 10 Hz countdown never
+// clears or repaints anything on screen.
+void draw_slot_dial() {
+  constexpr int kW = 150, kH = 134, kCx = 75, kCy = 67, kRadius = 62, kX = 1091 - 75, kY = 279 - 67;
+  const SlotClock slot = slot_clock(g_snapshot.utc_ms);
+  g_drawn_tenth = g_snapshot.clock_valid ? slot.remaining_ms / 100u : UINT32_MAX - 1;
+  if (!g_sprite_ready) return;
+  g_dial.fillSprite(kPanel);
+  g_dial.drawCircle(kCx, kCy, kRadius, kGrid);
+  g_dial.drawCircle(kCx, kCy, kRadius - 1, kGrid);
+  if (g_snapshot.clock_valid) {
+    const int progress = static_cast<int>(360u * slot.elapsed_ms / kSlotMs);
+    g_dial.drawArc(kCx, kCy, kRadius, kRadius - 6, -90, -90 + progress, kGreen);
+  }
+  char value[16];
+  std::snprintf(value, sizeof(value), g_snapshot.clock_valid ? "%.1f" : "--.-",
+                g_snapshot.clock_valid ? slot.remaining_ms / 1000.0 : 0.0);
+  g_dial.setTextDatum(middle_center);
+  g_dial.setTextSize(4);
+  g_dial.setTextColor(TFT_WHITE);
+  g_dial.drawString(value, kCx, kCy - 4);
+  g_dial.setTextSize(1);
+  g_dial.setTextColor(kMuted);
+  g_dial.drawString("seconds", kCx, kCy + 34);
+  g_dial.pushSprite(kX, kY);
+  (void)kW; (void)kH;
 }
 
 void draw_live_rows() {
@@ -242,18 +283,8 @@ void draw_live() {
   const Rect timer{926, 176, 330, 294};
   frame(timer);
   text("15 SECOND SLOT", cx(timer), 199, kCyan, 1);
-  const SlotClock slot = slot_clock(g_snapshot.utc_ms);
-  const int center_x = cx(timer), center_y = 279, radius = 62;
-  M5.Display.drawCircle(center_x, center_y, radius, kGrid);
-  M5.Display.drawCircle(center_x, center_y, radius - 1, kGrid);
-  if (g_snapshot.clock_valid) {
-    const int progress = static_cast<int>(360u * slot.elapsed_ms / kSlotMs);
-    M5.Display.drawArc(center_x, center_y, radius, radius - 6, -90, -90 + progress, kGreen);
-  }
-  std::snprintf(value, sizeof(value), g_snapshot.clock_valid ? "%.1f" : "--.-",
-                g_snapshot.clock_valid ? slot.remaining_ms / 1000.0 : 0.0);
-  text(value, center_x, center_y - 4, TFT_WHITE, 4);
-  text("seconds", center_x, center_y + 34, kMuted, 1);
+  const int center_x = cx(timer);
+  draw_slot_dial();
   text(decoder_name(), center_x, 368, decoder_color(), 2);
   std::snprintf(value, sizeof(value), "%u candidates", g_snapshot.candidate_count);
   text(value, center_x, 397, TFT_WHITE, 1);
@@ -540,7 +571,29 @@ void draw_body() {
 
 }  // namespace
 
+namespace {
+
+bool same_content(const Snapshot& a, const Snapshot& b) {
+  // Everything the body draws, except the running clock (utc_ms), which has its own partial updates.
+  return a.clock_valid == b.clock_valid && a.receiver_running == b.receiver_running && a.gain_auto == b.gain_auto &&
+         a.gain_tenth_db == b.gain_tenth_db && a.candidate_count == b.candidate_count &&
+         a.last_slot_decodes == b.last_slot_decodes && a.selected_band == b.selected_band &&
+         a.decoder_state == b.decoder_state && a.decode_count == b.decode_count &&
+         std::memcmp(&a.hunter, &b.hunter, sizeof(a.hunter)) == 0 &&
+         std::memcmp(a.decodes, b.decodes, a.decode_count * sizeof(Decode)) == 0;
+}
+
+void ensure_sprite() {
+  if (g_sprite_ready) return;
+  g_dial.setPsram(true);
+  g_dial.setColorDepth(16);
+  g_sprite_ready = g_dial.createSprite(150, 134) != nullptr;
+}
+
+}  // namespace
+
 void enter(const Snapshot& snapshot_value) {
+  ensure_sprite();
   g_snapshot = snapshot_value;
   g_snapshot.decode_count = std::min(g_snapshot.decode_count, kDecodeCapacity);
   g_snapshot.selected_band = std::min(g_snapshot.selected_band, band_count() - 1);
@@ -550,17 +603,31 @@ void enter(const Snapshot& snapshot_value) {
   draw();
 }
 
+// Incremental: nothing is repainted unless what it shows changed. The clock and the slot dial update in their own
+// small regions, so the screen never flashes.
 void update(const Snapshot& snapshot_value) {
   if (!g_active) return;
-  const Tab previous_tab = g_tab;
+  const Snapshot previous = g_snapshot;
   g_snapshot = snapshot_value;
   g_snapshot.decode_count = std::min(g_snapshot.decode_count, kDecodeCapacity);
   g_snapshot.selected_band = std::min(g_snapshot.selected_band, band_count() - 1);
-  g_tab = previous_tab;
-  draw();
+  const bool header_changed = previous.selected_band != g_snapshot.selected_band ||
+                              previous.clock_valid != g_snapshot.clock_valid ||
+                              previous.battery_percent != g_snapshot.battery_percent;
+  if (!same_content(previous, g_snapshot) || header_changed) {
+    if (header_changed) draw_header();
+    if (!same_content(previous, g_snapshot)) draw_body();
+    return;
+  }
+  if (g_snapshot.utc_ms / 1000u != g_drawn_second) draw_utc();
+  if (g_tab == Tab::live) {
+    const SlotClock slot = slot_clock(g_snapshot.utc_ms);
+    const uint32_t tenth = g_snapshot.clock_valid ? slot.remaining_ms / 100u : UINT32_MAX - 1;
+    if (tenth != g_drawn_tenth) draw_slot_dial();
+  }
 }
 
-void draw() {
+void draw() {   // full repaint: entering the screen only
   if (!g_active) return;
   M5.Display.fillScreen(TFT_BLACK);
   draw_header();
@@ -570,12 +637,12 @@ void draw() {
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
-  if (hit(x, y, kHome)) return {ActionKind::home};
   if (y >= kTabsY) {
     const int index = std::clamp(static_cast<int>(x / kTabW), 0, kTabCount - 1);
     g_tab = static_cast<Tab>(index);
     g_decode_page = 0;
-    draw();
+    draw_body();
+    draw_tabs();
     return {};
   }
   if (g_tab == Tab::hunter) {
@@ -594,7 +661,8 @@ Action handle_touch(int32_t x, int32_t y) {
       for (size_t i = 0; i < band_count(); ++i) {
         if (!hit(x, y, hunter_band_rect(i))) continue;
         g_snapshot.selected_band = i;
-        draw();
+        draw_header();
+        draw_body();
         const BandPreset* p = band(i);
         return p ? Action{ActionKind::tune_band, p->dial_hz} : Action{};
       }
@@ -609,11 +677,14 @@ void leave() { g_active = false; }
 bool active() { return g_active; }
 Tab tab() { return g_tab; }
 
+void set_header_hook(void (*draw_controls)()) { g_header_hook = draw_controls; }
+
 void select_tab(Tab tab) {
   if (!g_active || tab >= Tab::count || tab == g_tab) return;
   g_tab = tab;
   g_decode_page = 0;
-  draw();
+  draw_body();
+  draw_tabs();
 }
 const Snapshot& snapshot() { return g_snapshot; }
 

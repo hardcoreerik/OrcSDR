@@ -12,7 +12,6 @@ enum class Tab : uint8_t { live, decodes, map, hunter, heard, setup, count };
 enum class DecoderState : uint8_t { unbound, armed, listening, decoding, ready, error };
 enum class ActionKind : uint8_t {
   none,
-  home,
   tune_band,
   clear_decodes,
   start_hunt_fast,
@@ -49,6 +48,9 @@ Action handle_touch(int32_t x, int32_t y);
 void leave();
 bool active();
 Tab tab();
+// The shared header controls (Home icon, volume, mute, visualizer, settings, battery) belong to the application; it
+// installs the function that draws them, and the dashboard calls it whenever the header is repainted.
+void set_header_hook(void (*draw_controls)());
 void select_tab(Tab tab);   // from OrcDial; redraws when the tab changes
 const Snapshot& snapshot();
 bool dashboard_self_check();

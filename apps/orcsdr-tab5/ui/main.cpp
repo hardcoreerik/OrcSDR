@@ -12701,6 +12701,7 @@ orcsdr::ft8::Snapshot ft8_dashboard_snapshot() {
 void draw_ft8_dashboard(bool static_panel) {
   if (!static_panel && !orcsdr::screens::may_draw(orcsdr::screens::Id::ft8)) return;
   if (!static_panel) orcsdr::screens::note_visible_update(orcsdr::screens::Id::ft8);
+  orcsdr::ft8::set_header_hook(draw_global_header_controls);
   const auto snapshot = ft8_dashboard_snapshot();
   if (static_panel || !orcsdr::ft8::active()) orcsdr::ft8::enter(snapshot);
   else orcsdr::ft8::update(snapshot);
@@ -12727,7 +12728,6 @@ bool ft8_hunter_refused(const char* what) {
 void handle_ft8_dashboard_action(const orcsdr::ft8::Action& action) {
   using Kind = orcsdr::ft8::ActionKind;
   switch (action.kind) {
-    case Kind::home: show_home(); return;
     case Kind::tune_band:
       (void)ft8_select_band(orcsdr::ft8::nearest_band(action.value));
       break;
@@ -15544,11 +15544,6 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     return;
   }
 
-  if (orcsdr::ft8::active()) {
-    // FT8 draws its own header (HOME, battery, UTC), so the global audio header does not apply.
-    handle_ft8_dashboard_action(orcsdr::ft8::handle_touch(x, y));
-    return;
-  }
   if (handle_global_header_audio_touch(x, y)) return;
   if (orcsdr::rf24::active()) {
     const auto action = orcsdr::rf24::handle_touch(x, y, rf24_dashboard_snapshot());
@@ -15575,11 +15570,16 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     return;
   }
   if (orcsdr::audio_header::settings_hit(x, y)) {
-    open_global_settings(rtl_ui_band == RtlBand::adsb
+    open_global_settings(orcsdr::ft8::active() ? orcsdr::settings::Section::system :
+                         rtl_ui_band == RtlBand::adsb
                              ? orcsdr::settings::Section::location_adsb
                              : (rtl_ui_band == RtlBand::p25 || rtl_ui_band == RtlBand::lora)
                                    ? orcsdr::settings::Section::radio_defaults
                              : orcsdr::settings::Section::connectivity);
+    return;
+  }
+  if (orcsdr::ft8::active()) {
+    handle_ft8_dashboard_action(orcsdr::ft8::handle_touch(x, y));
     return;
   }
   if ((rtl_ui_band == RtlBand::adsb || adsb_atc_listening) && orcsdr::adsb::active()) {
@@ -20366,6 +20366,14 @@ void loop() {
       refresh_active_screen();
     }
   } else if (fm_ui || am_ui || p25_ui || radio_ui || orcsdr::rf24::active() || orcsdr::ft8::active()) {
+    if (orcsdr::ft8::active()) {
+      // The slot dial counts in tenths of a second; update() repaints only what changed.
+      static uint32_t last_ft8_tick_ms = 0;
+      if (millis() - last_ft8_tick_ms >= 100) {
+        last_ft8_tick_ms = millis();
+        draw_ft8_dashboard(false);
+      }
+    }
     poll_sdr_touch(false);
   } else if (!radio_ui) {
     const auto touch = ui_touch_detail(0);
