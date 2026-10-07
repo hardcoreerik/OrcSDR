@@ -79,6 +79,8 @@ struct State {
   uint16_t radar_range_nm = 25;
   char location_label[40]{};
   char map_pack[40]{};
+  // A world map is embedded in this firmware, so CHOOSE ON MAP works.
+  bool map_picker_available = false;
   bool ip_location_busy = false;
   bool ip_location_ready = false;
   int32_t ip_latitude_e7 = 0;
@@ -160,6 +162,8 @@ enum class ActionKind : uint8_t {
   ,catalog_remove
   ,web_console_changed
   ,rtl_usb_safe_mode_reset
+  // Opens the map picker on the current location (Location & ADS-B).
+  ,location_pick_on_map
   ,clock_set_utc          // utc = UTC seconds, value = UTC offset in minutes: write the RTC and store the offset
   ,clock_offset_changed   // value = UTC offset in minutes: store it (the time itself was already right)
   ,clock_ntp_sync         // optional: set the RTC from the network (Wi-Fi must already be connected)

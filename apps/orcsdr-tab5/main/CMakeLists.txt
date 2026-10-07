@@ -5,6 +5,20 @@ set(ORCSDR_EMBED_FILES
     "../ui/web_console.html"
     "../ui/web_audio.js")
 set(ORCSDR_LDFRAGMENTS)
+# The OrcMaps world basemap (setup map picker). Embedded in the app image, so it rides in the same flash regions
+# as the app: M5Burner's merged image, the settings-preserving installer and `idf.py flash` need nothing extra.
+if(ORCMAPS_WORLD_BIN)
+    get_filename_component(ORCMAPS_WORLD_BIN "${ORCMAPS_WORLD_BIN}" ABSOLUTE)
+    if(NOT EXISTS "${ORCMAPS_WORLD_BIN}")
+        message(FATAL_ERROR "ORCMAPS_WORLD_BIN does not exist: ${ORCMAPS_WORLD_BIN}")
+    endif()
+    get_filename_component(ORCMAPS_WORLD_NAME "${ORCMAPS_WORLD_BIN}" NAME)
+    if(NOT ORCMAPS_WORLD_NAME STREQUAL "orcmaps_world.pmtiles")
+        message(FATAL_ERROR "ORCMAPS_WORLD_BIN must be named orcmaps_world.pmtiles for stable embedded symbols.")
+    endif()
+    list(APPEND ORCSDR_EMBED_FILES "${ORCMAPS_WORLD_BIN}")
+endif()
+
 if(C6_FIRMWARE_BIN)
     get_filename_component(C6_FIRMWARE_BIN "${C6_FIRMWARE_BIN}" ABSOLUTE)
     if(NOT EXISTS "${C6_FIRMWARE_BIN}")
@@ -58,6 +72,9 @@ idf_component_register(
         "../ui/device_status_service.cpp"
         "../ui/screen_controller.cpp"
         "../ui/scan_engine.cpp"
+        "../ui/setup_wizard.cpp"
+        "../ui/setup_wizard_store.cpp"
+        "../ui/setup_map_picker.cpp"
         "../ui/fm_dashboard.cpp"
         "../ui/fm_config.cpp"
         "../ui/home_dashboard.cpp"
@@ -107,6 +124,7 @@ idf_component_register(
         "../ui/wifi_service.cpp"
     INCLUDE_DIRS "." "../ui" "../dsp"
     REQUIRES
+        orcmaps
         bootloader_support
         mbedtls
         m5unified
@@ -156,6 +174,7 @@ set(ORCSDR_DSP_STAGE_TIMING 1 CACHE STRING "1 = per-stage DSP timing in RTL_DSP 
 option(ORCSDR_C6_FAULT_TEST "Enable authenticated C6 power interruption diagnostics; never ship" OFF)
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     ORCSDR_HAS_EMBEDDED_C6_FIRMWARE=$<BOOL:${C6_FIRMWARE_BIN}>
+    ORCSDR_HAS_EMBEDDED_WORLD_MAP=$<BOOL:${ORCMAPS_WORLD_BIN}>
     ORCSDR_DSP_AB=$<BOOL:${ORCSDR_DSP_AB}>
     ORCSDR_C6_FAULT_TEST=$<BOOL:${ORCSDR_C6_FAULT_TEST}>
     ORCSDR_DSP_STAGE_TIMING=$<BOOL:${ORCSDR_DSP_STAGE_TIMING}>

@@ -33,12 +33,21 @@ c6=$(readlink -f "$c6")
 mkdir -p "$out"; out=$(readlink -f "$out")
 cd "$app"
 
+# The OrcMaps world basemap embedded in the firmware (setup map picker): the pinned v0.2.0 release pack, accepted only
+# if its size and SHA-256 match (the same pin as tools/resolve-orcmaps-world.ps1).
+world_version=0.2.0
+world_sha=9aea08772bacf1f024d1da90cc52aa8fcf0b0e37405415dc7c91e75e56596f0f
+world_bytes=871343
+world="$out/orcmaps_world.pmtiles"
+curl -fsSL "https://github.com/hardcoreerik/orcmaps/releases/download/v${world_version}/orcmaps-world-z4-${world_version}.pmtiles" -o "$world"
+[ "$(stat -c %s "$world")" = "$world_bytes" ] && echo "$world_sha  $world" | sha256sum -c - >/dev/null   || { echo "OrcMaps world pack does not match the pinned release" >&2; exit 1; }
+
 # sdkconfig.defaults is the source; regenerate the per-build cache (same as the .ps1).
 mkdir -p "$build"
 cp sdkconfig.defaults "$build/sdkconfig"
 idf.py -B "$build" -D "SDKCONFIG=$build/sdkconfig" -D SDKCONFIG_DEFAULTS=sdkconfig.defaults \
   -D ORCSDR_DSP_AB=0 -D ORCSDR_DSP_STAGE_TIMING=1 -D ORCSDR_DSP_LAB=0 -D ORCSDR_C6_FAULT_TEST=0 \
-  -D "C6_FIRMWARE_BIN=$c6" -D "ORCSDR_BUILD_ID=$build_id" reconfigure
+  -D "C6_FIRMWARE_BIN=$c6" -D "ORCMAPS_WORLD_BIN=$world" -D "ORCSDR_BUILD_ID=$build_id" reconfigure
 
 # Patches after reconfigure (component manager may re-resolve managed_components/).
 rel=$(git rev-parse --show-prefix); rel=${rel%/}

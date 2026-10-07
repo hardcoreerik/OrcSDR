@@ -6,6 +6,10 @@ param(
   # Build without an embedded C6 image; Firmware & Updates then reports
   # the update image as not included.
   [switch]$WithoutC6,
+  # Path of the OrcMaps world pack to embed (default: the pinned release pack, downloaded once and cached).
+  [string]$WorldPack,
+  # Build without the embedded world map; the setup map picker then reports no map.
+  [switch]$WithoutWorldPack,
   # Test build with the Stage-1 DSP A/B harness (RTL_DSP AB ...). Never ship.
   [switch]$DspAb,
   # Compile out per-stage DSP timing (profiler observer-effect runs).
@@ -48,6 +52,12 @@ $configureArgs = @('-B', $buildDir, '-D', "SDKCONFIG=$buildDir/sdkconfig",
                    '-D', "ORCSDR_C6_FAULT_TEST=$(if ($C6FaultTest) { 1 } else { 0 })")
 if ($resolvedC6Firmware) {
   $configureArgs += @('-D', "C6_FIRMWARE_BIN=$resolvedC6Firmware")
+}
+if (-not $WithoutWorldPack) {
+  $worldArgs = @{}
+  if ($WorldPack) { $worldArgs.WorldPack = $WorldPack }
+  $world = & (Join-Path $PSScriptRoot 'resolve-orcmaps-world.ps1') @worldArgs
+  $configureArgs += @('-D', "ORCMAPS_WORLD_BIN=$world")
 }
 idf.py @configureArgs reconfigure
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -13,6 +13,11 @@ dependencies:
     git: https://github.com/hardcoreerik/esp-rtl-sdr.git
     # esp_rtl_sdr v0.9.3 (published release)
     version: 31a159df4f006a837d5041029bc6d1bc63520234
+  # OrcMaps map engine, pinned to the v0.2.1 release commit. Update by bumping this SHA to a newer OrcMaps release.
+  # Do not pin v0.2.0: on ESP32 it linked the ROM's miniz and corrupted the heap.
+  orcmaps:
+    git: https://github.com/hardcoreerik/orcmaps.git
+    version: 882093ee6ec133cc66afcfce7de4884e91f5d15f
   m5stack/m5unified:
     version: "0.2.20"
   m5stack/m5gfx:

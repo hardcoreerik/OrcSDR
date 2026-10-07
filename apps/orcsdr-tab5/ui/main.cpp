@@ -106,6 +106,9 @@
 #include "rf_lab.hpp"
 #include "rf_visualizer.hpp"
 #include "settings_app.hpp"
+#include "setup_map_picker.hpp"
+#include "setup_wizard.hpp"
+#include "setup_wizard_store.hpp"
 #include "clock_settings.hpp"
 #include "ntp_sync.hpp"
 #include "time_service.hpp"
@@ -1741,6 +1744,8 @@ char settings_location_label[40]{};
 char settings_map_pack[40]{};
 bool adsb_atc_listening = false;
 bool catalog_radio_paused = false;
+// The map picker owns the display and main loop while it runs.
+bool map_picker_radio_paused = false;
 
 // True while an exclusive I/O client (Wi-Fi connect, probe or power-off,
 // catalog download) holds the radio paused. A hotplug start waits for it;
@@ -9880,7 +9885,7 @@ bool pause_radio_for_io(bool& paused) {
   // Overlapping I/O clients share one physical pause. Each keeps its own flag
   // so the final client to finish is the only one that resumes the radio.
   if (catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused ||
-      wifi_c6_probe_radio_paused) {
+      wifi_c6_probe_radio_paused || map_picker_radio_paused) {
     paused = true;
     return true;
   }
@@ -9921,7 +9926,7 @@ void resume_radio_after_io(bool& paused) {
   if (!paused) return;
   paused = false;
   if (catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused ||
-      wifi_c6_probe_radio_paused) return;
+      wifi_c6_probe_radio_paused || map_picker_radio_paused) return;
   const bool resume_radio = radio_io_resume_pending;
   const bool resume_speaker = radio_io_speaker_resume_pending;
   radio_io_resume_pending = false;
@@ -12259,6 +12264,7 @@ const orcsdr::settings::State& global_settings_state() {
   state.radar_range_nm = adsb_settings.radar_range_nm;
   strlcpy(state.location_label, receiver_location.label, sizeof(state.location_label));
   strlcpy(state.map_pack, receiver_location.map_pack, sizeof(state.map_pack));
+  state.map_picker_available = orcsdr::setup_map_picker::available();
   const auto ip_location = orcsdr::location_estimate::state();
   state.ip_location_busy = ip_location.busy; state.ip_location_ready = ip_location.ready;
   state.ip_latitude_e7 = ip_location.latitude_e7; state.ip_longitude_e7 = ip_location.longitude_e7;
@@ -13081,6 +13087,37 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
           settings_location_label, settings_map_pack);
       refresh_adsb_atc_preset();
       adsb_settings_persist_pending.store(true, std::memory_order_release);
+      break;
+    }
+    case orcsdr::settings::ActionKind::location_pick_on_map: {
+      if (!pause_radio_for_io(map_picker_radio_paused)) {
+        Serial.println("RTL_MAP_PICK_BLOCKED radio_busy");
+        break;
+      }
+      Serial.println("RTL_MAP_PICK_START source=settings");
+      const auto current = orcsdr::receiver_location::snapshot();
+      const auto picked = orcsdr::setup_map_picker::run(M5.Display, current.latitude_e7, current.longitude_e7,
+                                                         current.configured,
+                                                         orcsdr::setup_map_picker::Mode::settings);
+      const bool chosen = picked.outcome == orcsdr::setup_map_picker::Outcome::chosen;
+      if (chosen) {
+        adsb_settings.location_configured = true;
+        adsb_settings.latitude_e7 = picked.latitude_e7;
+        adsb_settings.longitude_e7 = picked.longitude_e7;
+        strlcpy(settings_location_label, "Chosen on map", sizeof(settings_location_label));
+        orcsdr::receiver_location::set(true, picked.latitude_e7, picked.longitude_e7, settings_location_label,
+                                       settings_map_pack);
+        refresh_adsb_atc_preset();
+        adsb_settings_persist_pending.store(true, std::memory_order_release);
+      }
+      Serial.printf("RTL_MAP_PICK_DONE chosen=%d lat_e7=%ld lon_e7=%ld\n", chosen ? 1 : 0,
+                    static_cast<long>(adsb_settings.latitude_e7), static_cast<long>(adsb_settings.longitude_e7));
+      resume_radio_after_io(map_picker_radio_paused);
+      // The picker painted over the whole panel; rebuild Settings on the page the user came from.
+      orcsdr::screens::begin_transition(orcsdr::screens::Id::settings, millis());
+      M5.Display.fillScreen(TFT_BLACK);
+      orcsdr::settings::enter(global_settings_state(), orcsdr::settings::Section::location_adsb);
+      orcsdr::screens::finish_transition();
       break;
     }
     case orcsdr::settings::ActionKind::range_changed:
@@ -17082,6 +17119,7 @@ void process_command(char* command) {
       else if (!strcmp(action, "GRAPHICS")) kind=K::graphics_changed; else if (!strcmp(action, "WEB")) kind=K::web_console_changed;
       else if (!strcmp(action, "CATALOG_CHECK")) kind=K::catalog_check; else if (!strcmp(action, "CATALOG_INSTALL")) kind=K::catalog_install;
       else if (!strcmp(action, "CATALOG_REMOVE")) kind=K::catalog_remove; else if (!strcmp(action, "CLOSE")) kind=K::close;
+      else if (!strcmp(action, "MAP_PICK")) kind=K::location_pick_on_map;
       if ((kind == K::wifi_power_changed || kind == K::wifi_start_at_boot_changed ||
            kind == K::wifi_antenna_changed) && value > 1) {
         Serial.println("RTL_UI_ACTION_INVALID value_must_be_0_or_1");
@@ -19408,6 +19446,74 @@ void boot_wifi_on_splash() {
                 static_cast<unsigned>(wifi_reconnect_attempts), wifi_station_ready ? 1 : 0);
 }
 
+// First-run setup.
+//
+// Runs before the normal UI when the stored record says setup never finished: a freshly flashed device, or one powered
+// off part-way through. Only the location step has a screen so far (the map picker); the other steps are advanced
+// headlessly and recorded as declined, never silently defaulted. Nothing here needs the network or an SD card: the
+// world basemap is embedded in the firmware, so this works on a board that has only ever been flashed.
+void run_first_run_setup() {
+  using orcsdr::setup_wizard::Outcome;
+  using orcsdr::setup_wizard::Step;
+
+  const auto stored = orcsdr::setup_wizard_store::Load(preferences);
+  if (!orcsdr::setup_wizard::NeedsSetup(stored)) return;
+
+  orcsdr::setup_wizard::Environment environment;
+  environment.network_connected = false;  // Wi-Fi is brought up after setup.
+  environment.basemap_available = orcsdr::setup_map_picker::available();
+  environment.sd_present = g_sd_fs != nullptr;
+  environment.radar_range_nm = adsb_settings.radar_range_nm;
+  Serial.printf("RTL_SETUP_START basemap=%d sd=%d stored_step=%u\n", environment.basemap_available ? 1 : 0,
+                environment.sd_present ? 1 : 0, static_cast<unsigned>(stored.step));
+
+  orcsdr::setup_wizard::Wizard wizard;
+  // An unusable record leaves a fresh wizard rather than a half-trusted one.
+  if (!wizard.resume(environment, stored)) wizard.begin(environment);
+  while (wizard.state().step == Step::welcome || wizard.state().step == Step::network) wizard.skip();
+
+  if (wizard.state().step == Step::location) {
+    if (!environment.basemap_available) {
+      Serial.println("RTL_SETUP_NO_BASEMAP skip_location");
+      wizard.skip();
+    } else {
+      const auto picked = orcsdr::setup_map_picker::run(M5.Display, stored.latitude_e7, stored.longitude_e7,
+                                                         stored.location_valid);
+      if (picked.outcome == orcsdr::setup_map_picker::Outcome::chosen &&
+          wizard.set_pin(picked.latitude_e7, picked.longitude_e7)) {
+        wizard.advance();
+      } else {
+        if (picked.outcome == orcsdr::setup_map_picker::Outcome::unavailable)
+          Serial.println("RTL_SETUP_MAP_UNAVAILABLE");
+        wizard.skip();
+      }
+    }
+  }
+
+  // The maps step has no screen yet; its coverage verdict still runs so the record is truthful about whether a local
+  // map exists for the chosen point.
+  while (!wizard.complete()) {
+    if (wizard.state().step == Step::maps) wizard.evaluate_coverage(nullptr, 0);
+    if (wizard.advance() == Outcome::blocked) wizard.skip();
+  }
+
+  const auto record = wizard.record();
+  if (record.location_valid) {
+    adsb_settings.location_configured = true;
+    adsb_settings.latitude_e7 = record.latitude_e7;
+    adsb_settings.longitude_e7 = record.longitude_e7;
+    strlcpy(settings_location_label, "Chosen on map", sizeof(settings_location_label));
+    orcsdr::receiver_location::set(true, record.latitude_e7, record.longitude_e7, settings_location_label,
+                                   settings_map_pack);
+    refresh_adsb_atc_preset();
+    adsb_settings_persist_pending.store(true, std::memory_order_release);
+  }
+  orcsdr::setup_wizard_store::Save(preferences, record);
+  Serial.printf("RTL_SETUP_DONE configured=%d lat_e7=%ld lon_e7=%ld\n", record.location_valid ? 1 : 0,
+                static_cast<long>(record.latitude_e7), static_cast<long>(record.longitude_e7));
+  M5.Display.fillScreen(TFT_BLACK);
+}
+
 void setup() {
 #if ORCSDR_ORCDIAL
   // Seed before any ADC/audio initialization; P4's radio is on the remote C6.
@@ -19762,6 +19868,14 @@ void setup() {
     Serial.println("BOOT_SPLASH_GATE off");
   }
   orcsdr_splash_end();
+  // First run happens after the splash (SD mounted, receiver staged) and before Home and Wi-Fi, so the offline path
+  // is the one a freshly flashed device meets. Unattended regression runs (splash gate off) skip it so a reboot test
+  // is never left waiting on a touch screen.
+  if (preferences.getBool("splash_gate", true)) {
+    run_first_run_setup();
+  } else {
+    Serial.println("RTL_SETUP_DEFERRED reason=splash_gate_off");
+  }
   g_suppress_home_paint = false;
   show_home();
   if (wifi_hosted_update_required)

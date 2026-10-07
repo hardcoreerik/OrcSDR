@@ -1,0 +1,30 @@
+name: Setup wizard core
+
+on:
+  pull_request:
+    paths:
+      - apps/orcsdr-tab5/ui/setup_wizard.*
+      - tests/setup_wizard_tests.cpp
+      - tools/test-setup-wizard.ps1
+      - tools/test-setup-wizard.sh
+      - .github/workflows/setup-wizard-tests.yml
+  push:
+    branches: [main]
+    paths:
+      - apps/orcsdr-tab5/ui/setup_wizard.*
+      - tests/setup_wizard_tests.cpp
+      - tools/test-setup-wizard.ps1
+      - tools/test-setup-wizard.sh
+      - .github/workflows/setup-wizard-tests.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Optimized and sanitizer tests
+        run: bash tools/test-setup-wizard.sh
