@@ -1,20 +1,25 @@
-# AM, WX, CB, and shared receiver routes
+# AM, CB, Weather, and shared receiver routes
 
-The current application has dedicated AM and CB dashboards plus a shared
-Radio/Scope/Capture receiver surface. Weather and the dashboard-catalog entries
-for Shortwave, Airband, Marine, and Satellite route into that shared surface;
-they are not separate full decoder applications.
+The current application has dedicated AM, CB, Airband, and Weather dashboards
+plus a shared Radio/Scope/Capture receiver surface. Shortwave, Marine, and
+Satellite still route into that shared surface; those catalog entries are not
+separate full decoder applications.
 
 - **Radio** tunes and listens with the mode currently implemented for the route.
 - **Scope** shows spectrum and waterfall activity.
 - **Capture** records the post-demodulated audio path.
 
-AM uses broadcast-band tuning and filtering. WX uses NFM on a configured NOAA
-weather channel. Shortwave, Airband,
-Marine, and Satellite currently use generic Browse/NFM routing, so this UI does
-not establish correct shortwave AM/SSB, aviation AM voice, or a satellite
-decoder. The older standalone Browse navigation entry is retired; the shared
-surface remains the implementation used by these band-entry routes.
+AM uses broadcast-band tuning and filtering. Weather has its own five-tab
+surface while continuing to reuse the existing WX/NFM receiver and audio path.
+Opening Weather does not tune the receiver; NOAA Listen and Scan are explicit
+user actions. The scan covers 162.400, 162.425, 162.450, 162.475, 162.500,
+162.525, and 162.550 MHz sequentially with one tuner. See
+[Weather dashboard](weather.md).
+
+Shortwave, Marine, and Satellite currently use generic Browse/NFM routing, so
+those routes do not establish complete shortwave AM/SSB or satellite decode.
+The older standalone Browse navigation entry is retired; the shared surface
+remains the implementation used by those band-entry routes.
 
 ## CB scanner
 

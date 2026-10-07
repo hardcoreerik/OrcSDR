@@ -1,0 +1,73 @@
+name: Weather Foundation native size check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/orcsdr-tab5/**'
+      - 'orcdial/**'
+      - '.github/workflows/weather-foundation-native-build.yml'
+
+jobs:
+  windows-native-build:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.14'
+
+      - name: Install ESP-IDF 5.5.4 deterministically
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $idf = 'C:\Espressif\frameworks\esp-idf-v5.5.4'
+          New-Item -ItemType Directory -Force -Path 'C:\Espressif\frameworks' | Out-Null
+          if (-not (Test-Path $idf)) {
+            git clone --branch v5.5.4 --depth 1 --recursive https://github.com/espressif/esp-idf.git $idf
+            if ($LASTEXITCODE -ne 0) { throw "ESP-IDF clone failed ($LASTEXITCODE)" }
+          }
+          Push-Location $idf
+          try {
+            & .\install.ps1 esp32p4
+            if ($LASTEXITCODE -ne 0) { throw "ESP-IDF install.ps1 failed ($LASTEXITCODE)" }
+          } finally { Pop-Location }
+          if (-not (Test-Path 'C:\Espressif\python_env\idf5.5_py3.14_env\Scripts\python.exe')) {
+            throw 'ESP-IDF did not create the Python 3.14 environment required by build-tab5-idf.ps1.'
+          }
+
+      - name: Build main and Weather branch with project PowerShell builder
+        shell: pwsh
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config core.longpaths true
+
+          function Build-OrcSDR([string]$ref, [string]$label) {
+            git checkout --force $ref
+            git clean -fdx -e .orcsdr-cache/
+            & .\apps\orcsdr-tab5\tools\build-tab5-idf.ps1
+            if ($LASTEXITCODE -ne 0) { throw "$label build failed ($LASTEXITCODE)" }
+            $bin = Get-Item '.\apps\orcsdr-tab5\build-native-hosted3\orcsdr_tab5.bin'
+            $size = [int64]$bin.Length
+            $limit = [int64](0x400000 - 0x40000)
+            $partition = [int64]0x400000
+            $reserve = $partition - $size
+            Write-Host "WEATHER_NATIVE_SIZE label=$label bytes=$size release_limit=$limit partition_remaining=$reserve"
+            return $size
+          }
+
+          $baseSize = Build-OrcSDR $env:BASE_SHA 'main'
+          $headSize = Build-OrcSDR $env:HEAD_SHA 'weather'
+          $delta = $headSize - $baseSize
+          Write-Host "WEATHER_NATIVE_DELTA base=$baseSize weather=$headSize delta=$delta"
+          "base_bytes=$baseSize" >> $env:GITHUB_STEP_SUMMARY
+          "weather_bytes=$headSize" >> $env:GITHUB_STEP_SUMMARY
+          "delta_bytes=$delta" >> $env:GITHUB_STEP_SUMMARY

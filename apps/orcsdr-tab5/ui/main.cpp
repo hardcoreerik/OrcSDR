@@ -114,6 +114,10 @@
 #include "web_audio_transport.hpp"
 #include "rf24_dashboard.hpp"
 #include "wifi_service.hpp"
+#include "weather_dashboard.hpp"
+#include "weather_noaa.hpp"
+#include "weather_report_store.hpp"
+#include "weather_runtime.hpp"
 #include "esp_rtl_sdr.h"
 #if ORCSDR_ORCDIAL
 #include "../../../orcdial/src/control/protocol.hpp"
@@ -1227,7 +1231,20 @@ enum class ActiveScan : uint8_t {
   shortwave_hunt,
   p25_survey,
   pocsag_discovery,
+  weather_noaa,
 };
+static orcsdr::weather::Runtime weather_runtime;
+static portMUX_TYPE weather_runtime_mux = portMUX_INITIALIZER_UNLOCKED;
+static orcsdr::radio::Token weather_radio_token{};
+static std::atomic<bool> weather_scan_requested{false};
+static std::atomic<bool> weather_scan_cancel_requested{false};
+static std::atomic<bool> weather_stop_after_scan_cancel{false};
+static std::atomic<bool> weather_release_pending{false};
+static uint8_t weather_report_count = 0;
+static uint32_t weather_report_sequence = 0;
+static char weather_report_status[64]{};
+static orcsdr::weather::report::OnlinePolicy weather_online_policy =
+    orcsdr::weather::report::OnlinePolicy::disabled;
 orcsdr::radio::Session radio_session;
 orcsdr::scan::Engine scan_engine;
 ActiveScan active_scan = ActiveScan::none;  // Streaming task only.
@@ -2400,8 +2417,10 @@ bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz);
 void set_radio_session_state(orcsdr::radio::ReceiverState state);
 uint32_t rtl_fm_command_lo_hz(uint32_t display_hz);
 uint32_t rtl_fm_sanitize_display_hz(uint32_t frequency_hz);
-bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
-                            bool persist_navigation = true);
+bool queue_local_rtl_listen(
+    RtlBand band, uint32_t frequency_hz, bool persist_navigation = true,
+    orcsdr::radio::Owner owner_override = orcsdr::radio::Owner::none,
+    orcsdr::radio::Token claimed_token = {});
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume);
 void refresh_active_screen();
 orcsdr::shortwave::Snapshot shortwave_dashboard_snapshot();
@@ -2504,6 +2523,12 @@ void service_p25_entry_probe(uint32_t now);
 void cancel_active_scan(bool restore);
 void service_p25_follow(uint32_t now);
 void service_lora_survey(uint32_t now);
+orcsdr::weather::Snapshot weather_dashboard_snapshot();
+void draw_weather_dashboard(bool static_panel);
+void handle_weather_dashboard_action(const orcsdr::weather::Action& action);
+bool execute_weather_receiver_command(const orcsdr::weather::ReceiverCommand& command);
+void service_weather_release();
+void open_weather_dashboard();
 void start_wifi_inventory();
 void stop_wifi();
 void begin_power_monitor(const char* tag, uint32_t duration_ms = 1000);
@@ -3002,7 +3027,7 @@ uint32_t rtl_clamp_frequency(RtlBand band, uint32_t frequency_hz) {
       return constrain(frequency_hz, orcsdr::airband::kMinFrequencyHz,
                        orcsdr::airband::kMaxFrequencyHz);
     case RtlBand::wx:
-      return kRtlWxHz;
+      return orcsdr::weather::noaa::nearest_channel_hz(frequency_hz);
     case RtlBand::adsb:
       return kAdsbDefaultHz;
     case RtlBand::p25:
@@ -3069,7 +3094,9 @@ void band_step_load() {
 }
 
 uint32_t rtl_step_frequency(RtlBand band, uint32_t frequency_hz, int direction) {
-  if (band == RtlBand::wx) return kRtlWxHz;
+  if (band == RtlBand::wx)
+    return direction < 0 ? orcsdr::weather::noaa::previous_channel_hz(frequency_hz)
+                         : orcsdr::weather::noaa::next_channel_hz(frequency_hz);
   if (band == RtlBand::browse) {
     // The step follows the band the frequency is in, not FM's: 12.5 kHz on 70 cm, 25 kHz on airband, ...
     const auto& profile = orcsdr::band_profile::resolve(kBandRegion, frequency_hz);
@@ -6494,9 +6521,49 @@ void draw_p25_dashboard(bool static_panel) {
   if (static_panel) draw_global_header_controls();
 }
 
+orcsdr::weather::Snapshot weather_dashboard_snapshot() {
+  orcsdr::weather::Snapshot snapshot{};
+  snapshot.now_ms = millis();
+  snapshot.battery_percent = M5.Power.getBatteryLevel();
+  snapshot.sound_enabled = rtl_audio_user_enabled.load(std::memory_order_acquire);
+  snapshot.receiver_ready = rtl_device_ready();
+  snapshot.sd_ready = g_sd_ready && g_sd_fs != nullptr;
+  snapshot.map_available = orcsdr::offline_map::available();
+  const auto location = orcsdr::receiver_location::snapshot();
+  snapshot.location_configured = location.configured;
+  snapshot.latitude_e7 = location.latitude_e7;
+  snapshot.longitude_e7 = location.longitude_e7;
+  strlcpy(snapshot.location_label, location.label, sizeof(snapshot.location_label));
+  const auto catalog_state = orcsdr::catalog::state();
+  snapshot.noaa_catalog_busy = catalog_state.busy;
+  for (const auto& pack : catalog_state.packs) {
+    if (strcmp(pack.id, "noaa_weather") == 0) {
+      snapshot.noaa_catalog_installed = pack.installed;
+      break;
+    }
+  }
+  snapshot.online_policy = weather_online_policy;
+  portENTER_CRITICAL(&weather_runtime_mux);
+  snapshot.rf = weather_runtime.state();
+  portEXIT_CRITICAL(&weather_runtime_mux);
+  snapshot.signal_dbfs = rtl_signal_dbfs.load(std::memory_order_relaxed);
+  snapshot.report_count = weather_report_count;
+  strlcpy(snapshot.report_status, weather_report_status, sizeof(snapshot.report_status));
+  return snapshot;
+}
+
+void draw_weather_dashboard(bool static_panel) {
+  if (!static_panel && !orcsdr::screens::may_draw(orcsdr::screens::Id::weather)) return;
+  if (!static_panel) orcsdr::screens::note_visible_update(orcsdr::screens::Id::weather);
+  const auto snapshot = weather_dashboard_snapshot();
+  if (static_panel) orcsdr::weather::enter(snapshot);
+  else if (orcsdr::weather::active()) orcsdr::weather::update(snapshot);
+}
+
 orcsdr::screens::Id screen_for_band(RtlBand band) {
   switch (band) {
     case RtlBand::fm: return orcsdr::screens::Id::fm;
+    case RtlBand::wx: return orcsdr::screens::Id::weather;
     case RtlBand::am: return orcsdr::screens::Id::am;
     case RtlBand::shortwave: return orcsdr::screens::Id::shortwave;
     case RtlBand::airband: return orcsdr::screens::Id::airband;
@@ -6522,6 +6589,7 @@ void refresh_active_screen() {
     case Id::adsb: draw_adsb_dashboard(false); break;
     case Id::pocsag: draw_pocsag_dashboard(false); break;
     case Id::lora: draw_lora_dashboard(false); break;
+    case Id::weather: draw_weather_dashboard(false); break;
     case Id::wifi_analysis: draw_rf24_dashboard(false); break;
     default: break;  // Settings, documentation, and no screen own their draws.
   }
@@ -6536,6 +6604,7 @@ uint8_t active_dashboard_tab(orcsdr::screens::Id screen) {
     case orcsdr::screens::Id::adsb: return orcsdr::adsb::view();
     case orcsdr::screens::Id::pocsag: return orcsdr::pocsag::view();
     case orcsdr::screens::Id::lora: return static_cast<uint8_t>(orcsdr::lora::view());
+    case orcsdr::screens::Id::weather: return static_cast<uint8_t>(orcsdr::weather::tab());
     default: return 0;
   }
 }
@@ -6596,6 +6665,7 @@ void close_visualizer() {
     case orcsdr::screens::Id::p25: orcsdr::p25::draw(); break;
     case orcsdr::screens::Id::adsb: orcsdr::adsb::draw(); break;
     case orcsdr::screens::Id::lora: orcsdr::lora::draw(); break;
+    case orcsdr::screens::Id::weather: orcsdr::weather::draw(); break;
     case orcsdr::screens::Id::wifi_analysis: draw_rf24_dashboard(true); break;
     default: show_home(); break;
   }
@@ -6897,7 +6967,8 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   // Home is the common receiver workspace until a band has its own dashboard.
   // Dedicated dashboards (including Airband) never fall through to legacy Browse UI.
   if (band != RtlBand::fm && band != RtlBand::am && band != RtlBand::shortwave &&
-      band != RtlBand::cb && band != RtlBand::airband && band != RtlBand::p25 && band != RtlBand::adsb &&
+      band != RtlBand::wx && band != RtlBand::cb && band != RtlBand::airband &&
+      band != RtlBand::p25 && band != RtlBand::adsb &&
       band != RtlBand::pocsag && band != RtlBand::lora) {
     if (adsb_atc_listening) { draw_adsb_dashboard(true); return; }
     show_home();
@@ -6912,6 +6983,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   if (band != RtlBand::fm) orcsdr::fm::leave();
   if (band != RtlBand::am) orcsdr::am::leave();
   if (band != RtlBand::shortwave) orcsdr::shortwave::leave();
+  if (band != RtlBand::wx) orcsdr::weather::leave();
   if (band != RtlBand::airband) orcsdr::airband::leave();
   if (band != RtlBand::cb) {
     orcsdr::cb::leave();
@@ -6949,6 +7021,13 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
     reset_spectrum_renderer();
     resume_rtl_speaker();
     draw_shortwave_dashboard(true);
+    orcsdr::screens::finish_transition();
+    return;
+  }
+  if (band == RtlBand::wx) {
+    reset_spectrum_renderer();
+    resume_rtl_speaker();
+    draw_weather_dashboard(true);
     orcsdr::screens::finish_transition();
     return;
   }
@@ -11538,6 +11617,18 @@ bool scan_retune(uint32_t frequency_hz, void*) {
 }
 
 void scan_measure(size_t index, uint32_t frequency_hz, void*) {
+  if (active_scan == ActiveScan::weather_noaa) {
+    const float level = rtl_signal_dbfs.load(std::memory_order_relaxed);
+    portENTER_CRITICAL(&weather_runtime_mux);
+    weather_runtime.record_scan_sample(level, millis());
+    portEXIT_CRITICAL(&weather_runtime_mux);
+    rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+    if (serial_verbosity_at(SerialVerbosity::trace))
+      Serial.printf("RTL_WEATHER_SCAN_SAMPLE index=%u frequency_hz=%lu relative_dbfs=%.1f\n",
+                    static_cast<unsigned>(index), static_cast<unsigned long>(frequency_hz),
+                    static_cast<double>(level));
+    return;
+  }
   if (active_scan == ActiveScan::shortwave_hunt) {
     const float level = rtl_signal_dbfs.load(std::memory_order_relaxed);
     portENTER_CRITICAL(&shortwave_hunt_mux);
@@ -11608,6 +11699,27 @@ void scan_measure(size_t index, uint32_t frequency_hz, void*) {
 void scan_finished(orcsdr::scan::Finish reason, void*) {
   const ActiveScan finished = active_scan;
   active_scan = ActiveScan::none;
+  if (finished == ActiveScan::weather_noaa) {
+    uint32_t strongest_hz = 0;
+    portENTER_CRITICAL(&weather_runtime_mux);
+    const auto command =
+        weather_runtime.finish_scan(reason == orcsdr::scan::Finish::completed);
+    strongest_hz = weather_runtime.state().strongest_frequency_hz;
+    portEXIT_CRITICAL(&weather_runtime_mux);
+    if (command.kind == orcsdr::weather::ReceiverCommandKind::retune_owned &&
+        radio_session.owns(scan_radio_token))
+      (void)request_hot_retune_for(scan_radio_token, command.frequency_hz);
+    if (weather_stop_after_scan_cancel.exchange(false, std::memory_order_acq_rel)) {
+      rtl_stop_requested.store(true, std::memory_order_release);
+      weather_release_pending.store(true, std::memory_order_release);
+    }
+    rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+    Serial.printf("RTL_WEATHER_SCAN %s strongest_hz=%lu\n",
+                  reason == orcsdr::scan::Finish::completed ? "done"
+                  : reason == orcsdr::scan::Finish::cancelled ? "cancelled" : "failed",
+                  static_cast<unsigned long>(strongest_hz));
+    return;
+  }
   if (finished == ActiveScan::fm_presets) {
     rtl_fm_preset_scan_active.store(false, std::memory_order_release);
     rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
@@ -11822,6 +11934,26 @@ void service_shared_scan(uint32_t now) {
   if (shortwave_hunt_cancel_requested.exchange(false, std::memory_order_acq_rel) &&
       active_scan == ActiveScan::shortwave_hunt) {
     scan_engine.cancel(true, callbacks);
+  }
+  if (weather_scan_cancel_requested.exchange(false, std::memory_order_acq_rel) &&
+      active_scan == ActiveScan::weather_noaa) {
+    scan_engine.cancel(false, callbacks);
+  }
+
+  if (!scan_engine.active() && g_stream_band == RtlBand::wx &&
+      weather_scan_requested.exchange(false, std::memory_order_acq_rel)) {
+    const auto session = radio_session.snapshot();
+    if (session.owner == orcsdr::radio::Owner::weather) {
+      scan_radio_token = {session.owner, session.generation};
+      const orcsdr::scan::Plan plan{
+          orcsdr::scan::Mode::channel_list, orcsdr::weather::noaa::channels(),
+          orcsdr::weather::noaa::kChannelCount, 0, 0,
+          orcsdr::weather::Runtime::kScanDwellMs, false};
+      if (scan_engine.start(plan, rtl_ui_frequency_hz, now)) {
+        active_scan = ActiveScan::weather_noaa;
+        Serial.println("RTL_WEATHER_SCAN start channels=7");
+      }
+    }
   }
 
   if (!scan_engine.active() && g_stream_band == RtlBand::shortwave &&
@@ -12571,6 +12703,8 @@ void navigation_restore_screen(orcsdr::screens::Id restore) {
     orcsdr::lora::draw();
   } else if (restore == orcsdr::screens::Id::pocsag) {
     orcsdr::pocsag::draw();
+  } else if (restore == orcsdr::screens::Id::weather) {
+    orcsdr::weather::draw();
   } else if (restore == orcsdr::screens::Id::wifi_analysis) {
     draw_rf24_dashboard(true);
   } else {
@@ -12648,9 +12782,179 @@ void close_rf24_dashboard() {
   show_home();
 }
 
+bool execute_weather_receiver_command(const orcsdr::weather::ReceiverCommand& command) {
+  using Kind = orcsdr::weather::ReceiverCommandKind;
+  if (command.kind == Kind::none) return true;
+  if (command.kind == Kind::start_foreground) {
+    if (radio_session.owns(weather_radio_token) && rtl_ui_band == RtlBand::wx &&
+        rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
+      return request_hot_retune_for(weather_radio_token, command.frequency_hz);
+    const bool queued = queue_local_rtl_listen(
+        RtlBand::wx, command.frequency_hz, false, orcsdr::radio::Owner::weather);
+    const auto session = radio_session.snapshot();
+    if (session.owner == orcsdr::radio::Owner::weather)
+      weather_radio_token = {session.owner, session.generation};
+    return queued && radio_session.owns(weather_radio_token);
+  }
+  if (command.kind == Kind::retune_owned)
+    return radio_session.owns(weather_radio_token) &&
+           request_hot_retune_for(weather_radio_token, command.frequency_hz);
+  if (command.kind == Kind::stop_owned && radio_session.owns(weather_radio_token)) {
+    rtl_stop_requested.store(true, std::memory_order_release);
+    weather_release_pending.store(true, std::memory_order_release);
+    return true;
+  }
+  return command.kind == Kind::stop_owned;
+}
+
+void service_weather_release() {
+  const bool pending = weather_release_pending.load(std::memory_order_acquire);
+  if (!pending || !radio_session.owns(weather_radio_token)) {
+    if (pending && !radio_session.owns(weather_radio_token))
+      weather_release_pending.store(false, std::memory_order_release);
+    return;
+  }
+  const auto state = rtl_capture_state.load(std::memory_order_acquire);
+  if (state == RtlCaptureState::running || state == RtlCaptureState::queued) return;
+  if (radio_session.release(weather_radio_token)) {
+    weather_radio_token = {};
+    weather_release_pending.store(false, std::memory_order_release);
+  }
+}
+
+void handle_weather_dashboard_action(const orcsdr::weather::Action& action) {
+  using Action = orcsdr::weather::ActionKind;
+  if (action.kind == Action::none) return;
+  if (action.kind == Action::exit_home) {
+    bool scanning = false;
+    orcsdr::weather::ReceiverCommand command{};
+    portENTER_CRITICAL(&weather_runtime_mux);
+    scanning = weather_runtime.state().rf_state == orcsdr::weather::RfState::scanning;
+    command = weather_runtime.leave();
+    portEXIT_CRITICAL(&weather_runtime_mux);
+    if (scanning) {
+      weather_stop_after_scan_cancel.store(true, std::memory_order_release);
+      weather_scan_cancel_requested.store(true, std::memory_order_release);
+    } else {
+      (void)execute_weather_receiver_command(command);
+    }
+    orcsdr::weather::leave();
+    show_home();
+    return;
+  }
+  if (action.kind == Action::open_settings) {
+    open_global_settings(orcsdr::settings::Section::data_maps);
+    return;
+  }
+  if (action.kind == Action::sound_toggle) {
+    set_rtl_audio_user_enabled(!rtl_audio_user_enabled.load(std::memory_order_acquire));
+    draw_weather_dashboard(false);
+    return;
+  }
+
+  orcsdr::weather::ReceiverCommand command{};
+  if (action.kind == Action::noaa_channel_previous ||
+      action.kind == Action::noaa_channel_next) {
+    portENTER_CRITICAL(&weather_runtime_mux);
+    const bool scanning = weather_runtime.state().rf_state == orcsdr::weather::RfState::scanning;
+    if (!scanning) {
+      if (action.kind == Action::noaa_channel_previous) (void)weather_runtime.previous_channel();
+      else (void)weather_runtime.next_channel();
+      if (weather_runtime.state().rf_state == orcsdr::weather::RfState::listening)
+        command = {orcsdr::weather::ReceiverCommandKind::retune_owned,
+                   orcsdr::weather::noaa::channel_hz(weather_runtime.state().selected_channel)};
+    }
+    portEXIT_CRITICAL(&weather_runtime_mux);
+    if (command.kind != orcsdr::weather::ReceiverCommandKind::none)
+      (void)execute_weather_receiver_command(command);
+  } else if (action.kind == Action::noaa_listen) {
+    portENTER_CRITICAL(&weather_runtime_mux);
+    if (weather_runtime.state().rf_state != orcsdr::weather::RfState::scanning)
+      command = weather_runtime.listen();
+    portEXIT_CRITICAL(&weather_runtime_mux);
+    if (command.kind != orcsdr::weather::ReceiverCommandKind::none &&
+        !execute_weather_receiver_command(command))
+      strlcpy(weather_report_status, "NOAA receiver unavailable", sizeof(weather_report_status));
+  } else if (action.kind == Action::noaa_scan) {
+    portENTER_CRITICAL(&weather_runtime_mux);
+    if (weather_runtime.state().rf_state != orcsdr::weather::RfState::scanning)
+      command = weather_runtime.scan(millis());
+    portEXIT_CRITICAL(&weather_runtime_mux);
+    if (command.kind != orcsdr::weather::ReceiverCommandKind::none &&
+        execute_weather_receiver_command(command))
+      weather_scan_requested.store(true, std::memory_order_release);
+  } else if (action.kind == Action::noaa_stop) {
+    bool scanning = false;
+    portENTER_CRITICAL(&weather_runtime_mux);
+    scanning = weather_runtime.state().rf_state == orcsdr::weather::RfState::scanning;
+    command = weather_runtime.stop();
+    portEXIT_CRITICAL(&weather_runtime_mux);
+    if (scanning) {
+      weather_stop_after_scan_cancel.store(true, std::memory_order_release);
+      weather_scan_cancel_requested.store(true, std::memory_order_release);
+    } else {
+      (void)execute_weather_receiver_command(command);
+    }
+  } else if (action.kind == Action::save_snapshot) {
+    if (!ensure_tab5_sd() || g_sd_fs == nullptr) {
+      strlcpy(weather_report_status, "SD storage unavailable", sizeof(weather_report_status));
+    } else {
+      orcsdr::weather::report_store::SaveRequest request{};
+      const auto clock = orcsdr::time_service::now();
+      request.session.utc_valid = clock.wallclock_valid;
+      request.session.started_utc =
+          clock.wallclock_valid ? static_cast<uint32_t>(clock.utc) : 0;
+      request.session.started_uptime_ms = millis();
+      request.session.online_policy = weather_online_policy;
+      std::snprintf(request.session.id, sizeof(request.session.id), "wx-%lu-%04lu",
+                    static_cast<unsigned long>(request.session.utc_valid
+                                                   ? request.session.started_utc
+                                                   : request.session.started_uptime_ms),
+                    static_cast<unsigned long>(++weather_report_sequence % 10000u));
+      portENTER_CRITICAL(&weather_runtime_mux);
+      request.rf = weather_runtime.state();
+      portEXIT_CRITICAL(&weather_runtime_mux);
+      const auto location = orcsdr::receiver_location::snapshot();
+      strlcpy(request.location, location.label, sizeof(request.location));
+      orcsdr::weather::report_store::SaveResult result{};
+      char error[64]{};
+      if (orcsdr::weather::report_store::save_snapshot(
+              *g_sd_fs, request, &result, error, sizeof(error))) {
+        weather_report_count = static_cast<uint8_t>(
+            std::min<size_t>(255, orcsdr::weather::report_store::count_history(*g_sd_fs)));
+        strlcpy(weather_report_status, "Weather snapshot saved", sizeof(weather_report_status));
+      } else {
+        strlcpy(weather_report_status, error, sizeof(weather_report_status));
+      }
+    }
+  }
+  draw_weather_dashboard(false);
+}
+
+void open_weather_dashboard() {
+  persist_dashboard_open(orcsdr::dashboards::Id::weather);
+  orcsdr::home::leave();
+  orcsdr::rf24::leave();
+  orcsdr::settings::leave();
+  orcsdr::screens::begin_transition(orcsdr::screens::Id::weather, millis());
+  portENTER_CRITICAL(&weather_runtime_mux);
+  const auto command = weather_runtime.enter();
+  portEXIT_CRITICAL(&weather_runtime_mux);
+  (void)command;  // enter() is host-tested to produce no receiver command.
+  if (g_sd_ready && g_sd_fs != nullptr)
+    weather_report_count = static_cast<uint8_t>(
+        std::min<size_t>(255, orcsdr::weather::report_store::count_history(*g_sd_fs)));
+  draw_weather_dashboard(true);
+  orcsdr::screens::finish_transition();
+}
+
 void open_dashboard(orcsdr::dashboards::Id id) {
   using Id = orcsdr::dashboards::Id;
   if (id != Id::settings && orcsdr::settings::active()) close_global_settings();
+  if (id == Id::weather) {
+    open_weather_dashboard();
+    return;
+  }
   if (id == Id::rf_lab) {
     persist_dashboard_open(id);
     orcsdr::rf24::leave();
@@ -12681,7 +12985,6 @@ void open_dashboard(orcsdr::dashboards::Id id) {
                       ? rtl_ui_frequency_hz
                       : orcsdr::shortwave::saved_frequency();
       break;
-    case Id::weather: band = RtlBand::wx; frequency = kRtlWxHz; break;
     case Id::cb:
       band = RtlBand::cb;
       frequency = rtl_ui_band == RtlBand::cb ? rtl_ui_frequency_hz : cb_saved_hz;
@@ -13470,6 +13773,10 @@ void load_state() {
     workflow.magic = kWorkflowMagic;
     persist_workflow();
   }
+  const uint8_t stored_weather_policy =
+      std::min<uint8_t>(preferences.getUChar("wx_online", 0), 2);
+  weather_online_policy =
+      static_cast<orcsdr::weather::report::OnlinePolicy>(stored_weather_policy);
   const std::string stored_ssid = preferences.isKey("wifi_ssid")
                                  ? preferences.getString("wifi_ssid", "")
                                  : std::string();
@@ -13727,8 +14034,9 @@ bool point_in_button(int32_t x, int32_t y) {
          y >= kButtonY && y < kButtonY + kButtonHeight;
 }
 
-bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
-                            bool persist_navigation) {
+bool queue_local_rtl_listen(
+    RtlBand band, uint32_t frequency_hz, bool persist_navigation,
+    orcsdr::radio::Owner owner_override, orcsdr::radio::Token claimed_token) {
   if (band == RtlBand::adsb) frequency_hz = kAdsbDefaultHz;
   if (band == RtlBand::lora) {
     load_lora_config();
@@ -13861,9 +14169,21 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
   p25_survey_requested.store(false, std::memory_order_release);
   if (orcsdr::lora_channel::survey_active()) (void)orcsdr::lora_channel::cancel_survey();
   const uint32_t rate_override = rtl_rate_override_sps.load(std::memory_order_relaxed);
-  const auto session_token = radio_session.acquire(
-      orcsdr::radio::owner_for_band(band), band, frequency_hz,
-      rate_override ? rate_override : rtl_default_sample_rate(band));
+  const uint32_t requested_rate =
+      rate_override ? rate_override : rtl_default_sample_rate(band);
+  orcsdr::radio::Token session_token = claimed_token;
+  if (claimed_token.owner != orcsdr::radio::Owner::none) {
+    if (!radio_session.owns(claimed_token)) return false;
+    const auto claimed = radio_session.snapshot();
+    if (claimed.band != band || claimed.sample_rate_sps != requested_rate ||
+        !radio_session.retuned(claimed_token, frequency_hz))
+      return false;
+  } else {
+    const auto owner = owner_override != orcsdr::radio::Owner::none
+                           ? owner_override
+                           : orcsdr::radio::owner_for_band(band);
+    session_token = radio_session.acquire(owner, band, frequency_hz, requested_rate);
+  }
   (void)radio_session.set_state(session_token, orcsdr::radio::ReceiverState::starting);
   if (persist_navigation) {
     preferences.putUInt("last_band", static_cast<uint32_t>(band));
@@ -14244,8 +14564,8 @@ uint32_t rtl_fm_command_lo_hz(uint32_t display_hz) {
 }
 
 bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz) {
-  if (!radio_session.owns(token) || rtl_ui_band == RtlBand::wx ||
-      rtl_ui_band == RtlBand::adsb)
+  if (!radio_session.owns(token) || rtl_ui_band == RtlBand::adsb ||
+      (rtl_ui_band == RtlBand::wx && token.owner != orcsdr::radio::Owner::weather))
     return false;
   frequency_hz = rtl_clamp_frequency(rtl_ui_band, frequency_hz);
   if (frequency_hz == 0) return false;
@@ -14358,6 +14678,7 @@ orc::Dashboard orcdial_active_dashboard() {
   if (rtl_ui_band == RtlBand::browse && screen == Screen::radio &&
       rtl_ui_frequency_hz > 137000000 && rtl_ui_frequency_hz < 138000000)
     return orc::Dashboard::satellite;
+  if (screen == Screen::weather) return orc::Dashboard::weather;
   const auto id = dashboard_for_band(rtl_ui_band, rtl_ui_frequency_hz);
   return id == orcsdr::dashboards::Id::utilities ? orc::Dashboard::home
                                : orc::Dashboard(static_cast<uint8_t>(id));
@@ -16324,6 +16645,11 @@ bool ui_regression_restore_screen(const UiRegressionSnapshot& before) {
     case orcsdr::screens::Id::pocsag:
       draw_sdr_screen(before.band, before.frequency_hz, before.volume);
       return true;
+    case orcsdr::screens::Id::weather:
+      orcsdr::screens::begin_transition(orcsdr::screens::Id::weather, millis());
+      orcsdr::weather::draw();
+      orcsdr::screens::finish_transition();
+      return true;
     default:
       return false;
   }
@@ -16349,7 +16675,8 @@ void run_ui_regression(bool workflow) {
                                   before.screen == orcsdr::screens::Id::p25 ||
                                   before.screen == orcsdr::screens::Id::adsb ||
                                   before.screen == orcsdr::screens::Id::lora ||
-                                  before.screen == orcsdr::screens::Id::pocsag;
+                                  before.screen == orcsdr::screens::Id::pocsag ||
+                                  before.screen == orcsdr::screens::Id::weather;
     if (ui_documentation_mode || orcsdr::settings::active() ||
         !supported_screen) {
       Serial.printf("RTL_UI_REGRESSION_RESULT mode=RUN pass=0 reason=unsafe_overlay active=%s\n",
@@ -16366,7 +16693,7 @@ void run_ui_regression(bool workflow) {
                                 before.band == RtlBand::cb ||
                                 before.band == RtlBand::p25 ||
                                 before.band == RtlBand::adsb || before.band == RtlBand::lora ||
-                                before.band == RtlBand::pocsag;
+                                before.band == RtlBand::pocsag || before.band == RtlBand::wx;
     if (before.screen == orcsdr::screens::Id::home && dashboard_band) {
       draw_sdr_screen(before.band, before.frequency_hz, before.volume);
       workflow_ok = orcsdr::screens::status().active == screen_for_band(before.band);
@@ -19822,6 +20149,7 @@ void loop() {
   const bool radio_ui = rtl_ui_active.load(std::memory_order_acquire);
   const bool settings_ui = orcsdr::settings::active();
   const bool home_ui = orcsdr::home::active();
+  const bool weather_ui = orcsdr::weather::active();
   const bool fm_ui = rtl_ui_band == RtlBand::fm && orcsdr::fm::active();
   const bool am_ui = rtl_ui_band == RtlBand::am && orcsdr::am::active();
   const bool shortwave_ui =
@@ -20115,7 +20443,8 @@ void loop() {
 
   // Receive tasks only request this handoff; this UI path is the sole writer.
   if (rtl_screen_transition_requested.exchange(false, std::memory_order_acq_rel) &&
-      !settings_ui && orcsdr::screens::status().active != orcsdr::screens::Id::documentation &&
+      !settings_ui && !orcsdr::weather::active() &&
+      orcsdr::screens::status().active != orcsdr::screens::Id::documentation &&
       orcsdr::screens::status().active != orcsdr::screens::Id::wifi_analysis &&
       !orcsdr::screens::owns(screen_for_band(rtl_ui_band)) &&
       !orcsdr::home::active()) {
@@ -20153,6 +20482,17 @@ void loop() {
         !handle_global_header_audio_touch(touch.x, touch.y))
       handle_global_settings_touch(touch.x, touch.y);
     was_pressed = pressed;
+  } else if (weather_ui && orcsdr::screens::owns(orcsdr::screens::Id::weather)) {
+    const auto touch = ui_touch_detail(0);
+    const bool pressed = touch.isPressed() || touch.wasPressed();
+    if (pressed && !was_pressed)
+      handle_weather_dashboard_action(orcsdr::weather::handle_touch(touch.x, touch.y));
+    was_pressed = pressed;
+    static uint32_t weather_last_update_ms = 0;
+    if (millis() - weather_last_update_ms >= 500) {
+      weather_last_update_ms = millis();
+      draw_weather_dashboard(false);
+    }
   } else if (home_ui) {
     const auto touch = ui_touch_detail(0);
     if ((touch.wasPressed() ||
@@ -20213,6 +20553,7 @@ void loop() {
     was_pressed = pressed;
   }
 
+  service_weather_release();
   const uint32_t now = millis();
   if (!rtl_ui_active.load(std::memory_order_acquire) &&
       now - last_power_draw_ms >= 10000) {

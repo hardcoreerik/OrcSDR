@@ -95,6 +95,23 @@ void test_radio_session() {
   CHECK(owner_for_band(Band::cb) == Owner::radio);
   CHECK(owner_for_band(Band::browse) == Owner::radio);
   CHECK(owner_for_band(Band::airband) == Owner::radio);
+  CHECK(owner_for_band(Band::wx) == Owner::radio);
+
+  const Token weather_blocked = session.try_acquire(Owner::weather, Band::wx, 162400000, 960000);
+  CHECK(weather_blocked.owner == Owner::none);
+  CHECK(session.owns(p25));
+  CHECK(session.set_state(p25, ReceiverState::ready));
+  const Token weather_still_blocked =
+      session.try_acquire(Owner::weather, Band::wx, 162400000, 960000);
+  CHECK(weather_still_blocked.owner == Owner::none);
+  CHECK(session.owns(p25));
+  CHECK(session.release(p25));
+  const Token weather =
+      session.try_acquire(Owner::weather, Band::wx, 162400000, 960000);
+  CHECK(session.owns(weather));
+  CHECK(session.release(weather));
+  CHECK(session.snapshot().owner == Owner::none);
+  CHECK(session.snapshot().state == ReceiverState::ready);
   CHECK(Session::self_check());
 }
 

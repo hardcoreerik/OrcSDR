@@ -71,7 +71,7 @@ override this document for current state. Future work belongs in
 |---|---|---|
 | FM receive, stereo, RDS, presets | **RF-Verified / Regression-Tested** | Verified on Blog V4 and V3C. Results remain bounded to the tested dongle, antenna, band, and setup. |
 | AM broadcast dashboard and 119-channel scan | **Hardware-Verified / Experimental** | The exact RC4 package exercised the dashboard and scan. General reception quality and gain calibration are not established. |
-| NOAA Weather Radio | **Implemented** | Current-release RF acceptance is Not Verified. |
+| NOAA Weather Radio / Weather dashboard | **Implemented / Regression-Tested** | Dedicated five-tab offline-first dashboard, source/freshness model, seven NOAA channel plan, shared-scan integration, and SD report format have host regression coverage. Opening Weather is designed not to retune. Physical Tab5 display/touch, live NOAA audio/scan behavior, and RF acceptance for this change are **Not Verified**. SAME decoding remains a later Weather Hunter phase. |
 | CB | **Implemented / Runtime-Verified** | The earlier channel panel was flashed and exercised. The band-wide scanner dashboard is **Implemented / Regression-Tested** (host scanner tests) and still needs Tab5 hardware and RF acceptance. |
 | Shortwave | **Implemented / Experimental** | Routes to the generic Browse/NFM workspace. A complete calibrated HF AM/SSB experience is Not Implemented. |
 | Airband | **Implemented / Experimental** | Routes to generic Browse near 121.5 MHz using NFM. Proper AM aviation voice is Not Implemented. |

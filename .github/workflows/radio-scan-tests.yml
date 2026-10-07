@@ -8,6 +8,14 @@ on:
       - apps/orcsdr-tab5/ui/cb_scanner.*
       - apps/orcsdr-tab5/ui/airband_scanner.*
       - apps/orcsdr-tab5/ui/airband_catalog.*
+      - apps/orcsdr-tab5/ui/weather_model.*
+      - apps/orcsdr-tab5/ui/weather_noaa.*
+      - apps/orcsdr-tab5/ui/weather_report_format.*
+      - apps/orcsdr-tab5/ui/weather_service.*
+      - tests/weather_model_tests.cpp
+      - tests/weather_noaa_tests.cpp
+      - tests/weather_report_format_tests.cpp
+      - tests/weather_service_tests.cpp
       - tests/radio_scan_tests.cpp
       - tests/cb_scanner_tests.cpp
       - tests/airband_scanner_tests.cpp

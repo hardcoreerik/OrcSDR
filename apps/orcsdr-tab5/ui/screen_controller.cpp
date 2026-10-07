@@ -20,7 +20,6 @@ void begin_transition(Id next, uint32_t now_ms, bool remember_return) {
 }
 
 void finish_transition() { g_transitioning.store(false, std::memory_order_release); }
-
 bool transitioning() { return g_transitioning.load(std::memory_order_acquire); }
 
 Id close_settings(uint32_t now_ms) {
@@ -30,7 +29,6 @@ Id close_settings(uint32_t now_ms) {
 }
 
 bool owns(Id id) { return !transitioning() && g_status.active == id; }
-
 bool is_active(Id id) { return g_status.active == id; }
 
 bool may_draw(Id id) {
@@ -65,6 +63,7 @@ const char* name(Id id) {
     case Id::documentation: return "documentation";
     case Id::cb: return "cb";
     case Id::airband: return "airband";
+    case Id::weather: return "weather";
     default: return "none";
   }
 }
@@ -79,30 +78,38 @@ bool self_check() {
   const bool home_owns = owns(Id::home) && may_draw(Id::home);
   bool settings_return = true;
   uint32_t now = 20;
+  uint32_t expected_transitions = 1;
   for (const Id screen :
-       {Id::home, Id::fm, Id::am, Id::shortwave, Id::cb, Id::airband, Id::p25, Id::adsb, Id::lora,
-        Id::wifi_analysis, Id::pocsag}) {
+       {Id::home, Id::fm, Id::am, Id::shortwave, Id::cb, Id::airband, Id::weather,
+        Id::p25, Id::adsb, Id::lora, Id::wifi_analysis, Id::pocsag}) {
     begin_transition(screen, now++, false);
+    ++expected_transitions;
     finish_transition();
     begin_transition(Id::settings, now++, true);
+    ++expected_transitions;
     finish_transition();
     settings_return = settings_return && close_settings(now++) == screen;
+    ++expected_transitions;
     finish_transition();
     settings_return = settings_return && owns(screen);
   }
   begin_transition(Id::documentation, now++, false);
+  ++expected_transitions;
   finish_transition();
   const bool documentation_owns = owns(Id::documentation);
   begin_transition(Id::home, now++, false);
+  ++expected_transitions;
   finish_transition();
   const bool documentation_restores = owns(Id::home);
   begin_transition(Id::visualizer, now++, false);
+  ++expected_transitions;
   finish_transition();
   const bool visualizer_owns = owns(Id::visualizer);
   begin_transition(Id::rf_lab, now++, false);
+  ++expected_transitions;
   finish_transition();
   const bool rf_lab_owns = owns(Id::rf_lab);
-  const bool restored = g_status.transitions == 38;
+  const bool restored = g_status.transitions == expected_transitions;
   g_status = saved;
   g_transitioning = saved_transitioning;
   return entering_blocks_draw && home_owns && settings_return && documentation_owns &&
