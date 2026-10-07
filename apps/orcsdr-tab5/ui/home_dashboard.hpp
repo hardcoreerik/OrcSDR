@@ -17,6 +17,7 @@ struct Snapshot {
   uint32_t requested_frequency_hz = 0;
   uint32_t span_hz = 960000;
   uint32_t step_hz = 12500;
+  bool step_adjustable = true;  // false on channelized or fixed bands: the STEP SIZE control shows FIXED
   uint32_t filter_bandwidth_hz = 0;
   filter_standards::Kind filter_kind = filter_standards::Kind::fixed;
   uint32_t effective_sps = 0;

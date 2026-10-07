@@ -402,7 +402,7 @@ void draw_tuning_controls() {
 void draw_step_size_controls() {
   char value[24];
   snprintf(value, sizeof(value), "%.1f kHz", current.step_hz / 1000.0);
-  draw_stepper(kStepperSize, "STEP SIZE", value);
+  draw_stepper(kStepperSize, "STEP SIZE", current.step_adjustable ? value : "FIXED");
 }
 
 void footer_text(const char* value, int x, uint16_t color) {
@@ -893,7 +893,8 @@ void update(const Snapshot& snapshot) {
   const bool bandwidth_changed =
       snapshot.filter_bandwidth_hz != current.filter_bandwidth_hz;
   const bool tuning_controls_changed = snapshot.span_hz != current.span_hz ||
-                                       snapshot.step_hz != current.step_hz;
+                                       snapshot.step_hz != current.step_hz ||
+                                       snapshot.step_adjustable != current.step_adjustable;
   const bool level_changed = static_cast<int>(std::lround(snapshot.relative_dbfs)) !=
                              static_cast<int>(std::lround(current.relative_dbfs));
   const bool gain_state_changed = gain_changed(snapshot, current);

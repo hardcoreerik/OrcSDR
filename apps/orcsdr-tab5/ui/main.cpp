@@ -82,6 +82,7 @@
 #include "airband_audio_filter.hpp"
 #include "focus_ring.hpp"
 #include "fm_config.hpp"
+#include "band_profile.hpp"
 #include "home_dashboard.hpp"
 #include "lora_dashboard.hpp"
 #include "lora_packet_log.hpp"
@@ -3014,8 +3015,42 @@ void persist_fm_presets() {
   Serial.printf("RTL_PRESETS_SAVE count=%d\n", fm_preset_count);
 }
 
+// Tuning step per band profile for BROWSE (and the Home step display): remembered across reboots, 0 = use the
+// profile's default. FM, AM and shortwave keep their own dashboard steps.
+constexpr orcsdr::band_profile::Region kBandRegion = orcsdr::band_profile::Region::us;
+uint32_t band_step_memory_hz[orcsdr::band_profile::kProfileCount] = {};
+
+uint32_t band_step_hz(const orcsdr::band_profile::Profile& profile) {
+  return orcsdr::band_profile::valid_step_hz(profile,
+                                             band_step_memory_hz[static_cast<size_t>(profile.id)]);
+}
+
+void band_step_remember(const orcsdr::band_profile::Profile& profile, uint32_t step_hz) {
+  uint32_t& slot = band_step_memory_hz[static_cast<size_t>(profile.id)];
+  if (slot == step_hz) return;
+  slot = step_hz;
+  preferences.putBytes("band_steps", band_step_memory_hz, sizeof(band_step_memory_hz));
+}
+
+void band_step_load() {
+  uint32_t stored[orcsdr::band_profile::kProfileCount] = {};
+  if (preferences.getBytesLength("band_steps") != sizeof(stored)) return;
+  preferences.getBytes("band_steps", stored, sizeof(stored));
+  for (size_t i = 0; i < orcsdr::band_profile::kProfileCount; ++i) {
+    const auto& profile = orcsdr::band_profile::profile(kBandRegion,
+                                                        static_cast<orcsdr::band_profile::Id>(i));
+    band_step_memory_hz[i] = stored[i] == 0 ? 0 : orcsdr::band_profile::valid_step_hz(profile, stored[i]);
+  }
+}
+
 uint32_t rtl_step_frequency(RtlBand band, uint32_t frequency_hz, int direction) {
   if (band == RtlBand::wx) return kRtlWxHz;
+  if (band == RtlBand::browse) {
+    // The step follows the band the frequency is in, not FM's: 12.5 kHz on 70 cm, 25 kHz on airband, ...
+    const auto& profile = orcsdr::band_profile::resolve(kBandRegion, frequency_hz);
+    return orcsdr::band_profile::step_frequency(profile, frequency_hz, band_step_hz(profile), direction,
+                                                kRtlBrowseMinHz, kRtlBrowseMaxHz);
+  }
   if (band == RtlBand::airband)
     return orcsdr::airband::manual_step(frequency_hz, direction);
   if (band == RtlBand::cb) {
@@ -12169,13 +12204,19 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
                                      : rtl_filter_bandwidth_hz.load(
                                            std::memory_order_relaxed);
   snapshot.filter_kind = demo ? orcsdr::filter_standards::Kind::wfm : home_filter_kind();
+  const auto& step_profile = orcsdr::band_profile::resolve(kBandRegion, snapshot.frequency_hz);
   snapshot.step_hz = rtl_ui_band == RtlBand::fm          ? rtl_fm_step_hz
                      : rtl_ui_band == RtlBand::am        ? rtl_am_step_hz
                      : rtl_ui_band == RtlBand::shortwave ? rtl_shortwave_step_hz
                      : rtl_ui_band == RtlBand::p25       ? kP25StepHz
                      : rtl_ui_band == RtlBand::cb        ? 10000
                      : rtl_ui_band == RtlBand::lora      ? 125000
-                                                          : 12500;
+                                                          : band_step_hz(step_profile);
+  // Only the bands whose step the STEP SIZE control can change; the rest are channels or decoder-owned.
+  snapshot.step_adjustable = rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::am ||
+                             rtl_ui_band == RtlBand::shortwave ||
+                             (rtl_ui_band == RtlBand::browse &&
+                              orcsdr::band_profile::has_step_control(step_profile));
   strlcpy(snapshot.mode, demo ? "FM" : rtl_band_name(rtl_ui_band),
           sizeof(snapshot.mode));
 #if !RTL_USE_LEGACY_USB
@@ -12659,6 +12700,11 @@ void handle_home_action(const orcsdr::home::Action& action) {
         for (size_t i = 0; i < turns; ++i)
           rtl_shortwave_step_hz =
               orcsdr::shortwave::next_tuning_step(rtl_shortwave_step_hz);
+      } else if (rtl_ui_band == RtlBand::browse) {
+        const auto& profile = orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz);
+        if (orcsdr::band_profile::has_step_control(profile))
+          band_step_remember(profile,
+                             orcsdr::band_profile::cycle_step_hz(profile, band_step_hz(profile), up));
       }
       break;
     }
@@ -13186,6 +13232,7 @@ void load_state() {
   orcsdr::time_service::initialize(preferences.getBool("rtc_est", false));
   orcsdr::am::load(preferences);
   rtl_am_step_hz = orcsdr::am::tune_step();
+  band_step_load();
   rtl_am_scan_spacing_hz = orcsdr::am::scan_spacing();
   const auto stored_verbosity = static_cast<SerialVerbosity>(
       std::min<uint8_t>(preferences.getUChar("serial_verb", 1), 3));
@@ -14109,7 +14156,8 @@ void orcdial_fill_state(orc::Packet& p) {
   p.frequency_hz = rtl_ui_frequency_hz;
   p.step_hz = rtl_ui_band == RtlBand::fm ? rtl_fm_step_hz
               : rtl_ui_band == RtlBand::am ? rtl_am_step_hz
-              : rtl_ui_band == RtlBand::shortwave ? rtl_shortwave_step_hz : 5000;
+              : rtl_ui_band == RtlBand::shortwave ? rtl_shortwave_step_hz
+              : band_step_hz(orcsdr::band_profile::resolve(kBandRegion, rtl_ui_frequency_hz));
   p.volume = rtl_live_volume.load(std::memory_order_acquire);
   p.mode = rtl_ui_band == RtlBand::fm ? 3 :
            rtl_ui_band == RtlBand::am || rtl_ui_band == RtlBand::shortwave ? 2 : 1;
