@@ -11700,9 +11700,11 @@ void scan_finished(orcsdr::scan::Finish reason, void*) {
   const ActiveScan finished = active_scan;
   active_scan = ActiveScan::none;
   if (finished == ActiveScan::weather_noaa) {
+    uint32_t strongest_hz = 0;
     portENTER_CRITICAL(&weather_runtime_mux);
     const auto command =
         weather_runtime.finish_scan(reason == orcsdr::scan::Finish::completed);
+    strongest_hz = weather_runtime.state().strongest_frequency_hz;
     portEXIT_CRITICAL(&weather_runtime_mux);
     if (command.kind == orcsdr::weather::ReceiverCommandKind::retune_owned &&
         radio_session.owns(scan_radio_token))
@@ -11715,7 +11717,7 @@ void scan_finished(orcsdr::scan::Finish reason, void*) {
     Serial.printf("RTL_WEATHER_SCAN %s strongest_hz=%lu\n",
                   reason == orcsdr::scan::Finish::completed ? "done"
                   : reason == orcsdr::scan::Finish::cancelled ? "cancelled" : "failed",
-                  static_cast<unsigned long>(weather_runtime.state().strongest_frequency_hz));
+                  static_cast<unsigned long>(strongest_hz));
     return;
   }
   if (finished == ActiveScan::fm_presets) {
@@ -11944,7 +11946,7 @@ void service_shared_scan(uint32_t now) {
     if (session.owner == orcsdr::radio::Owner::weather) {
       scan_radio_token = {session.owner, session.generation};
       const orcsdr::scan::Plan plan{
-          orcsdr::scan::Mode::channel_list, orcsdr::weather::noaa::kChannelsHz,
+          orcsdr::scan::Mode::channel_list, orcsdr::weather::noaa::channels(),
           orcsdr::weather::noaa::kChannelCount, 0, 0,
           orcsdr::weather::Runtime::kScanDwellMs, false};
       if (scan_engine.start(plan, rtl_ui_frequency_hz, now)) {
