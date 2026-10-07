@@ -102,3 +102,12 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Defined a three-layer owner-controlled corpus: raw RTL CU8 IQ, 12 kHz analysis PCM, and decoder result logs.
 - Defined conducted Pluto-compatible RF replay over coax/attenuation as the preferred full-chain hardware test while OrcSDR remains strictly RX-only.
 - Third-party WAVs remain external unless redistribution rights are explicit; committed real recordings should be owner-controlled.
+
+
+## 2026-10-07 — Phase 1 slice 8: CRC-gated receive pipeline
+
+- Added a heap-free internal receive pipeline connecting sync search, soft demodulation, NMS LDPC and CRC-14.
+- Added a negative test proving a valid LDPC codeword with invalid CRC is not returned.
+- Kept UI Decode output blocked until source-message unpack and plausibility validation exist.
+- FT4 remains intentionally blocked at the final frame gate until payload XOR restoration is implemented and tested.
+- No firmware binding, existing audio/DSP change, PTT, CAT or transmit functionality was added.

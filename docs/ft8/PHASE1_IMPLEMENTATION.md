@@ -399,3 +399,29 @@ Focused sandbox validation passed in both optimized and ASan/UBSan builds:
 - adjacent bins were at floating-point numerical-noise scale (~7e-21).
 
 This proves the new incremental exact-correlation frontend compiles cleanly and its basic frequency geometry works. The complete branch-level `tools/test-ft8.sh` run on this newest head is still pending/retrigger-needed and must not be conflated with the focused sandbox test.
+
+
+## Slice 8 — CRC-gated receive pipeline wrapper
+
+Added pure C++ `ft8_pipeline.hpp/.cpp` to connect the existing receive stages without introducing UI dependencies.
+
+The pipeline now performs:
+
+```text
+energy grid
+  -> bounded sync candidate search
+  -> candidate-local soft demodulation
+  -> normalized-min-sum LDPC
+  -> CRC-14 gate
+  -> internal FrameResult
+```
+
+Properties:
+- fixed candidate array and caller-owned LDPC workspace;
+- no heap allocation in the pipeline path;
+- only CRC-valid FT8 frames leave the wrapper;
+- a parity-valid but CRC-invalid codeword is explicitly rejected;
+- no `orcsdr::ft8::Decode` is emitted yet because 77-bit unpack/message plausibility is still missing;
+- FT4 is intentionally refused at this layer until the protocol-defined FT4 payload XOR is restored and tested after FEC.
+
+This creates a clean truth boundary: sync score, demod confidence, and LDPC convergence are intermediate evidence; CRC is necessary but still not sufficient for a user-visible decode.
