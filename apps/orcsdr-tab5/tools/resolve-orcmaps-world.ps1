@@ -16,12 +16,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# The world pack published with OrcMaps v0.2.0; unchanged in v0.2.1, which
-# main/idf_component.yml pins the engine to.
-$version = '0.2.0'
-$fileName = "orcmaps-world-z4-$version.pmtiles"
-$expectedSha256 = '9aea08772bacf1f024d1da90cc52aa8fcf0b0e37405415dc7c91e75e56596f0f'
-$expectedBytes = 871343
+# The OrcMaps z0-z5 world overview (Natural Earth 5.1.2, built 2026-09-14 with Planetiler 0.10.2 / go-pmtiles 1.28.2).
+# The release asset URL below is where it is meant to be published; until it is, the pack is taken from a local OrcMaps
+# checkout's build output. Only these exact bytes are ever accepted. (The earlier z0-z4 pack was too coarse to place a
+# pin; z5 adds one zoom level for 0.62 MB.)
+$version = '0.2.1'
+$fileName = "orcmaps-world-z5-$version.pmtiles"
+$expectedSha256 = '6f5c37f6cb505315e4c8a1d74efcf634fdb547b59128422ebf71c8ecf99addcc'
+$expectedBytes = 1492862
 $releaseUrl = "https://github.com/hardcoreerik/orcmaps/releases/download/v$version/$fileName"
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
@@ -62,7 +64,7 @@ if ($WorldPack) {
     # A local OrcMaps checkout beside the main OrcSDR checkout, built with its
     # tools/pack-builder/build_world_overview.py (the release pack reproduces
     # byte-for-byte from it).
-    $local = Join-Path (Split-Path $mainCheckout -Parent) 'OrcMaps\data\local\world-overview\build\world-overview-z4.pmtiles'
+    $local = Join-Path (Split-Path $mainCheckout -Parent) 'OrcMaps\data\local\world-overview\build\world-overview-z5.pmtiles'
     if (Test-WorldPack $local) { Save-ToCache $local; $found = $true }
   }
   if (-not $found) {
