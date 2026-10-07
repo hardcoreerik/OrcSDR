@@ -2928,7 +2928,8 @@ std::atomic<uint8_t> rtl_home_demod{static_cast<uint8_t>(HomeDemod::by_band)};
 
 // The bands where Home may choose the demodulator; the others (CB, P25, LoRa, ADS-B, pager, MW, shortwave) keep theirs.
 bool home_demod_band(RtlBand band) {
-  return band == RtlBand::browse || band == RtlBand::fm || band == RtlBand::airband || band == RtlBand::wx;
+  return band == RtlBand::browse || band == RtlBand::fm || band == RtlBand::airband || band == RtlBand::wx ||
+         band == RtlBand::cb;
 }
 
 HomeDemod band_demod(RtlBand band) {
@@ -3119,11 +3120,12 @@ RtlBand home_band_for(const orcsdr::band_profile::Profile& profile) {
   return RtlBand::browse;
 }
 
-// Home is a full-range VFO on these bands. The MW and shortwave bands (below the dongle's normal range), CB, P25,
-// LoRa, ADS-B and pager keep their own band-locked tuning until they are folded in.
+// Home is a full-range VFO on these bands, CB included (27 MHz carries AM, USB and LSB, and FM in some countries).
+// The MW and shortwave bands (the dongle's HF path), P25, LoRa, ADS-B and pager keep their own band-locked tuning
+// until they are folded in.
 bool home_full_range() {
-  return rtl_ui_band == RtlBand::browse || rtl_ui_band == RtlBand::fm ||
-         rtl_ui_band == RtlBand::airband || rtl_ui_band == RtlBand::wx;
+  return rtl_ui_band == RtlBand::browse || rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::airband ||
+         rtl_ui_band == RtlBand::wx || rtl_ui_band == RtlBand::cb;
 }
 
 void home_apply_auto(const orcsdr::band_profile::Profile& profile, RtlBand band);
@@ -8467,7 +8469,7 @@ void run_rtl_capture() {
     // The channelizer temporarily owns the speaker route without stopping RF capture.
     if (orcsdr::visualizer::channel_audio_active()) {
       rtl_audio_play_count = 0;
-    } else if (band == RtlBand::cb) {
+    } else if (band == RtlBand::cb && !orcsdr::home::active()) {
       if (cb_audio_gate_open()) {
         const CbMode mode = cb_mode.load(std::memory_order_relaxed);
         if (mode == CbMode::am)
@@ -9016,7 +9018,7 @@ static void rtl_dsp_task(void *) {
          orcsdr::web_audio::demanded() ||
          g_audio_rec_active.load(std::memory_order_relaxed)) &&
         !rtl_audio_test_tone.load(std::memory_order_relaxed)) {
-      if (block.band == RtlBand::cb) {
+      if (block.band == RtlBand::cb && !orcsdr::home::active()) {
         if (cb_audio_gate_open()) {
           const CbMode mode = cb_mode.load(std::memory_order_relaxed);
           if (mode == CbMode::am)

@@ -57,11 +57,14 @@ constexpr int kBrowserCardW = 390, kBrowserCardH = 118;
 constexpr int kBrowserColumnPitch = 410, kBrowserRowPitch = 136;
 constexpr int kBrowserNavY = 650;
 constexpr int kGainX = 1124, kGainY = 564, kGainW = 112, kGainH = 62;
-constexpr int kPopX = 340, kPopY = 150, kPopW = 886, kPopH = 300;
-constexpr int kPopButtonY = 190, kPopButtonH = 50;
+// The popups dock at the bottom of the screen (over the readout strip, controls and footer) so the spectrum and most
+// of the waterfall keep running above them. kPopShift moves the original popup layout down.
+constexpr int kPopShift = 258;
+constexpr int kPopX = 340, kPopY = 150 + kPopShift, kPopW = 886, kPopH = 300;
+constexpr int kPopButtonY = 190 + kPopShift, kPopButtonH = 50;
 constexpr int kAutoX = 360, kManualX = 584, kRtlAgcX = 808, kCloseX = 1032;
 constexpr int kPopButtonW = 210, kCloseW = 178;
-constexpr int kSliderY = 276, kSliderH = 50;
+constexpr int kSliderY = 276 + kPopShift, kSliderH = 50;
 constexpr int kMinusX = 360, kBarX = 446, kBarW = 678, kPlusX = 1140, kNudgeW = 70;
 constexpr uint32_t kSpanSteps[] = {
     120000, 240000, 480000, 960000, 1200000, 2400000};
@@ -525,7 +528,7 @@ void draw_gain_popup() {
     snprintf(value, sizeof(value), "%s %.1f dB",
              current.gain_auto ? "AUTO SELECTED" : "MANUAL GAIN",
              current.gain_tenth_db / 10.0);
-    text(value, kMinusX, 258, current.gain_auto ? kGreen : TFT_ORANGE, 2);
+    text(value, kMinusX, 258 + kPopShift, current.gain_auto ? kGreen : TFT_ORANGE, 2);
     panel(kMinusX, kSliderY, kNudgeW, kSliderH, kCyan, 8);
     text("-", kMinusX + kNudgeW / 2, kSliderY + kSliderH / 2, TFT_WHITE, 3, middle_center);
     panel(kPlusX, kSliderY, kNudgeW, kSliderH, kCyan, 8);
@@ -542,11 +545,11 @@ void draw_gain_popup() {
   }
   text(current.gain_smart ? "SMART: OrcSDR picks the lowest gain that sounds clean."
                           : "TUNER AGC: the tuner chip sets its own gain.",
-       kPopX + 20, 356, TFT_LIGHTGREY, 2);
+       kPopX + 20, 356 + kPopShift, TFT_LIGHTGREY, 2);
   text("MANUAL: you choose the tuner (RF) gain step; tap the bar.",
-       kPopX + 20, 384, TFT_LIGHTGREY, 2);
+       kPopX + 20, 384 + kPopShift, TFT_LIGHTGREY, 2);
   text("RTL AGC: extra digital gain after the ADC. Normally OFF.",
-       kPopX + 20, 412, TFT_LIGHTGREY, 2);
+       kPopX + 20, 412 + kPopShift, TFT_LIGHTGREY, 2);
 }
 
 Action manual_gain_at(int index) {
@@ -556,7 +559,7 @@ Action manual_gain_at(int index) {
 
 // ---- Receiver filter popup -----------------------------------------------------------------
 constexpr int kFilterPanelX = 976, kFilterPanelY = 564, kFilterPanelW = 138, kFilterPanelH = 62;
-constexpr int kFilterRow2Y = 262;
+constexpr int kFilterRow2Y = 262 + kPopShift;
 constexpr int kStandardX = 360, kStandardW = 250, kEdgesX = 622, kEdgesW = 250;
 
 void format_bandwidth(char* out, size_t size, uint32_t hz) {
@@ -625,19 +628,19 @@ void draw_mode_popup() {
   }
   popup_button(kCloseX, kCloseW, "CLOSE", false, true, kFilterRow2Y);
   if (!current.mode_selectable) {
-    text("This band sets its own mode; its dashboard chooses it for you.", kPopX + 20, 288,
+    text("This band sets its own mode; its dashboard chooses it for you.", kPopX + 20, 288 + kPopShift,
          TFT_LIGHTGREY, 2);
     return;
   }
   text(current.mode_choice == 0 ? "AUTO picks the usual mode here. Tap a mode to pin it."
                                 : "Pinned for this band. Tap AUTO to let OrcSDR choose.",
-       kPopX + 20, 288, TFT_LIGHTGREY, 2);
+       kPopX + 20, 288 + kPopShift, TFT_LIGHTGREY, 2);
   const int shown_mode = std::clamp<int>(current.mode_active ? current.mode_active : current.mode_choice, 1, 5);
   char title[40];
   snprintf(title, sizeof(title), current.mode_choice == 0 ? "%s (AUTO)" : "%s", kModeHelp[shown_mode].title);
-  text(title, kPopX + 20, 344, TFT_WHITE, 2);
+  text(title, kPopX + 20, 344 + kPopShift, TFT_WHITE, 2);
   for (int i = 0; i < 3; ++i)
-    text(kModeHelp[shown_mode].line[i], kPopX + 20, 372 + i * 28, TFT_LIGHTGREY, 2);
+    text(kModeHelp[shown_mode].line[i], kPopX + 20, 372 + kPopShift + i * 28, TFT_LIGHTGREY, 2);
 }
 
 Action mode_popup_action(int32_t x, int32_t y) {
@@ -681,12 +684,12 @@ void draw_filter_popup() {
   char line[64], width[16];
   format_bandwidth(width, sizeof(width), current.filter_bandwidth_hz);
   snprintf(line, sizeof(line), "BAND: %s", standards.name);
-  text(line, kPopX + 20, 344, TFT_WHITE, 2);
+  text(line, kPopX + 20, 344 + kPopShift, TFT_WHITE, 2);
   snprintf(line, sizeof(line), "CURRENT WIDTH: %s", width);
-  text(line, kPopX + 20, 372, TFT_LIGHTGREY, 2);
-  text("STD marks the standard width for this band. STANDARD applies it.", kPopX + 20, 400,
+  text(line, kPopX + 20, 372 + kPopShift, TFT_LIGHTGREY, 2);
+  text("STD marks the standard width for this band. STANDARD applies it.", kPopX + 20, 400 + kPopShift,
        TFT_LIGHTGREY, 2);
-  text("EDGES draws the receive filter as two lines on the spectrum.", kPopX + 20, 428,
+  text("EDGES draws the receive filter as two lines on the spectrum.", kPopX + 20, 428 + kPopShift,
        TFT_LIGHTGREY, 2);
 }
 
@@ -780,14 +783,22 @@ void draw_footer() {
 
 // keep_graphics: repaint after a popup closes without wiping the live spectrum and waterfall. Only the part the popup
 // covered is cleared; the spectrum redraws on its next frame and the waterfall refills as it scrolls.
+// The band in plain words (FM RADIO, 70 CM HAM, AIR BAND...), centered above the spectrum.
+void draw_band_label() {
+  M5.Display.fillRect(kPlotX + 150, 84, kPlotW - 300, 28, TFT_BLACK);
+  text(current.band[0] ? current.band : "", kPlotX + kPlotW / 2, 98, kGreen, 2, middle_center);
+}
+
+void draw_footer();
+
 void draw_receiver_chrome(bool keep_graphics = false) {
+  if (keep_graphics) M5.Display.fillRect(kPopX, kPopY, kPopW, kPopH, TFT_BLACK);
   frame(kMainX, kMainY, kMainW, kMainH, kCyan, 12);
   text("SPECTRUM", kPlotX, 98, kCyan, 2);
+  draw_band_label();
   text(current.receiving ? "LIVE" : "READY", 1016, 98,
        current.receiving ? kGreen : TFT_ORANGE, 1);
-  draw_gain_chip();
   if (keep_graphics) {
-    M5.Display.fillRect(kPopX, kPopY, kPopW, kPopH, TFT_BLACK);
     M5.Display.drawRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, kDim);
     M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kDim);
   } else {
@@ -800,6 +811,7 @@ void draw_receiver_chrome(bool keep_graphics = false) {
     M5.Display.fillRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, TFT_BLACK);
     M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kDim);
   }
+  draw_gain_chip();
   draw_frequency();
   draw_mode_chip(current.mode[0] ? current.mode : "--");
   draw_tuning_controls();
@@ -809,6 +821,7 @@ void draw_receiver_chrome(bool keep_graphics = false) {
   if (gain_popup) draw_gain_popup();
   if (filter_popup) draw_filter_popup();
   if (mode_popup) draw_mode_popup();
+  if (keep_graphics) draw_footer();   // the popup covered the footer
 }
 
 void draw_browser() {
@@ -995,21 +1008,28 @@ void update(const Snapshot& snapshot) {
                              static_cast<int>(std::lround(current.relative_dbfs));
   const bool gain_state_changed = gain_changed(snapshot, current);
   current = snapshot;
+  const bool covered = gain_popup || filter_popup || mode_popup;   // a popup is over the lower half
   M5.Display.startWrite();
+  if (status_changed) draw_header_status();
+  if (tuner_changed) draw_band_label();
+  if (covered) {
+    if (mode_popup && tuner_changed) draw_mode_popup();
+    if (filter_popup && (bandwidth_changed || tuner_changed)) draw_filter_popup();
+    if (gain_popup && (gain_state_changed || receiver_changed)) draw_gain_popup();
+    M5.Display.endWrite();
+    return;
+  }
   if (tuner_changed) {
     draw_frequency();
     draw_mode_chip(current.mode);
-    if (mode_popup) draw_mode_popup();
   }
   if (audio_changed && !tuning_controls_changed) draw_step_size_controls();
   if (tuning_controls_changed) draw_tuning_controls();
-  if (status_changed) draw_header_status();
   if (receiver_changed) draw_footer_receiver();
   if (sample_changed) draw_footer_sample();
   if (bandwidth_changed) {
     draw_footer_bandwidth();
-    if (!gain_popup && !filter_popup && !browser) draw_filter_panel();
-    if (filter_popup) draw_filter_popup();
+    if (!browser) draw_filter_panel();
   }
   if (level_changed) draw_footer_level();
   if (gain_state_changed || receiver_changed) {
@@ -1017,15 +1037,13 @@ void update(const Snapshot& snapshot) {
     draw_gain_chip();
     draw_footer_gain();
     draw_footer_bias();
-    if (gain_popup) draw_gain_popup();
-    if (filter_popup) draw_filter_popup();
   }
   M5.Display.endWrite();
 }
 
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor, bool audio_stressed) {
-  if (!shown || browser || keypad || gain_popup || filter_popup || mode_popup || levels == nullptr || visible_bins < 2) return;
+  if (!shown || browser || keypad || levels == nullptr || visible_bins < 2) return;
   const uint32_t now = millis();
   const uint32_t interval = audio_stressed ? 333 : 100;
   if (now - last_spectrum_ms < interval) return;
@@ -1076,8 +1094,9 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   M5.Display.clearClipRect();
   draw_spectrum_axis();
   const int rows = waterfall_style::rows_per_frame(waterfall_style::Screen::home);
-  M5.Display.setScrollRect(kPlotX + 1, kWaterfallY + 1, kPlotW - 2,
-                           kWaterfallH - 2, TFT_BLACK);
+  const bool popup_over = gain_popup || filter_popup || mode_popup;
+  const int waterfall_h = popup_over ? kPopY - 2 - (kWaterfallY + 1) : kWaterfallH - 2;
+  M5.Display.setScrollRect(kPlotX + 1, kWaterfallY + 1, kPlotW - 2, waterfall_h, TFT_BLACK);
   M5.Display.scroll(0, -rows);
   for (size_t i = 0; i < samples; ++i) {
     const float normalized = std::clamp(
@@ -1085,7 +1104,7 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
         0.0f, 1.0f);
     const int x = kPlotX + 1 + static_cast<int>(i * (kPlotW - 2) / samples);
     const int x2 = kPlotX + 1 + static_cast<int>((i + 1) * (kPlotW - 2) / samples);
-    M5.Display.fillRect(x, kWaterfallY + kWaterfallH - 1 - rows, std::max(1, x2 - x), rows,
+    M5.Display.fillRect(x, kWaterfallY + 1 + waterfall_h - rows, std::max(1, x2 - x), rows,
                         waterfall_color(normalized));
   }
   M5.Display.endWrite();
