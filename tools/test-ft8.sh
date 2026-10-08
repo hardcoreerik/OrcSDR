@@ -86,6 +86,9 @@ run_suite js8_fec_reconstruct_tests \
 run_suite js8_tone_map_tests \
   tests/js8_tone_map_tests.cpp
 
+run_suite js8_crc_reconstruct_tests \
+  tests/js8_crc_reconstruct_tests.cpp
+
 g++ "${common[@]}" -O2 tools/js8-tone-map.cpp \
   apps/orcsdr-tab5/ui/js8_mode.cpp \
   apps/orcsdr-tab5/ui/js8_frame.cpp \
@@ -97,6 +100,9 @@ g++ "${common[@]}" -Itools -O2 tools/js8-map-codewords.cpp \
   -o "$build_dir/js8-map-codewords"
 
 g++ "${common[@]}" -O2 tools/js8-fec-reconstruct.cpp -o "$build_dir/js8-fec-reconstruct"
+
+g++ "${common[@]}" -Itools -O2 tools/js8-crc-reconstruct.cpp \
+  -o "$build_dir/js8-crc-reconstruct"
 
 g++ "${common[@]}" -Itools -O2 tools/js8-wav-tones.cpp \
   apps/orcsdr-tab5/ui/js8_mode.cpp \

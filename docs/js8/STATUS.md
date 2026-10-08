@@ -118,3 +118,24 @@ Sandbox chain validation:
 `js8-wav-tones` -> `js8-map-codewords` produced one 174-bit word from the
 documented Normal fixture. No claim is made that the identity mapping used in
 that plumbing check is the real JS8 mapping.
+
+
+## CRC-12 reconstruction lab ready
+
+The host reconstruction suite now includes `js8-crc-reconstruct`. Once FEC
+recovery yields 87-bit information words, the tool treats the first 75 bits as
+payload and the trailing 12 bits as the observed check field, then searches all
+12-bit feedback masks in both shift directions and both observed CRC bit
+orientations.
+
+For each hypothesis, the fixed-length affine offset is inferred from the first
+word and must remain identical for every other word. This lets the reconstruction
+validate an equivalent fixed-length CRC checker without guessing init/xor-out
+constants.
+
+Sandbox proof-of-tooling used a synthetic corpus generated with hidden test
+parameters. The tool recovered the intended MSB representation and its
+mathematically equivalent reflected form. That ambiguity is documented rather
+than hidden; real JS8 bit-order evidence must select the canonical form.
+
+No JS8 CRC parameters are claimed yet.

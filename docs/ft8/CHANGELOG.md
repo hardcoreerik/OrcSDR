@@ -402,3 +402,11 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Verified the host reconstruction plumbing on the synthetic Normal fixture: WAV extraction -> 79-tone frame -> explicit mapping -> one 174-bit codeword.
 - No real JS8 tone mapping or FEC result is claimed from the plumbing fixture.
 - No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 CRC reconstruction lab
+
+- Added host-only `js8-crc-reconstruct.*` for the future 87-bit information-word corpus: it searches all non-zero 12-bit feedback masks, MSB/LSB recurrences and direct/reversed observed CRC-bit order while inferring the fixed-length affine offset.
+- Added optimized and ASan/UBSan primitive tests plus a synthetic hidden-parameter corpus. The method recovers the intended test representation and its mathematically equivalent reflected form; that orientation ambiguity is explicitly documented.
+- No JS8 CRC polynomial, initialization, xor-out or bit ordering is claimed yet; those remain reconstruction results to be established from FEC-decoded real/reference frames and held-out validation.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.

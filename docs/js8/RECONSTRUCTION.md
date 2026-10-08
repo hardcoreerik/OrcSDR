@@ -159,3 +159,35 @@ is deliberately only an example; it is not a JS8 protocol claim.
 This separation matters for provenance: the selected mapping, the exact input
 frame hashes, and the resulting 174-bit observations can all be recorded and
 replayed independently.
+
+
+## CRC reconstruction method
+
+After the FEC code is reconstructed and decoded 87-bit information words are
+available, feed one word per line to:
+
+```bash
+js8-crc-reconstruct info87.txt
+```
+
+For fixed 75-bit payload length, a non-zero initial state and xor-out collapse
+into a fixed affine offset for any chosen polynomial/orientation. The tool
+therefore searches:
+
+- all non-zero 12-bit feedback masks;
+- MSB-first and LSB-first recurrences;
+- direct and reversed observed CRC-bit order;
+
+and infers the fixed offset from the first observation. Every additional word
+must reproduce that same offset.
+
+A polynomial and its reflected representation can describe the same code under
+opposite bit orientation. The tool deliberately prints such equivalent
+solutions. Canonical JS8 parameters are accepted only after independent
+bit-order evidence resolves that representation, and then must validate on
+held-out information words.
+
+Synthetic tool validation used a hidden 0x80F test polynomial plus a non-zero
+fixed offset; the search recovered the intended representation and its
+reflected equivalent. This is validation of the reconstruction method only,
+not a JS8 protocol result.
