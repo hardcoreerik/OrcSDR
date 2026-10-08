@@ -376,3 +376,11 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Synthetic host tests recover the injected Normal candidate, reject a flat grid at the test threshold, and refuse Fast while its exact sync pattern remains unverified; optimized and ASan/UBSan runs pass in the sandbox.
 - Sync evidence is not a decode. FEC, CRC and frame acceptance remain unavailable pending reconstruction.
 - No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 exact-correlation spectral oracle
+
+- Added standalone `js8_spectral.*`, an allocation-free single-precision PCM-to-energy-grid reference front end for the JS8 receive module.
+- Added a noisy synthetic Normal-mode test that recovers the injected sync candidate at the exact expected time/frequency bin and a quiet control that produces no candidate; optimized and ASan/UBSan versions pass in the sandbox.
+- Documented this as a correctness oracle rather than the final P4 full-band implementation; an optimized FFT/coarse-search front end must be measured against it before device binding.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.

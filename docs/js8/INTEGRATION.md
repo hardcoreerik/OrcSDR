@@ -71,3 +71,16 @@ The current exact single-tone correlations are a correctness/reference primitive
 `js8_sync.*` consumes a caller-owned non-negative energy grid and returns bounded caller-owned candidates. It allocates no memory and knows only JS8 profile geometry. That keeps future spectral generation replaceable: the P4 backend can reuse an existing FFT primitive without changing JS8 sync logic.
 
 The search result must never be surfaced as a decode. Only the later FEC + CRC + frame parser may create `Decode`.
+
+
+## Spectral reference front end
+
+`js8_spectral.*` establishes the numerical reference for PCM -> energy-grid
+conversion without changing the shared FT8/FT4 spectral code. It uses only
+single-precision arithmetic in the hot correlation loop and writes exclusively
+to caller-owned buffers.
+
+For ESP32-P4 production, do not run a dense 200-3000 Hz exact-correlation grid
+unless measurement proves it fits the slot budget. The preferred integration is
+a bounded FFT/coarse-search implementation, compared against this JS8 oracle on
+identical PCM fixtures before it is accepted.

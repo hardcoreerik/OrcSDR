@@ -60,3 +60,22 @@ The standalone JS8 module now has a heap-free spectral-grid candidate search for
 Synthetic energy-grid tests recover the injected candidate exactly, reject a uniform-noise grid at the test threshold, and refuse Fast because its exact sync permutations have not been independently established.
 
 This is still pre-FEC: a sync candidate is evidence of a JS8-like frame, not a decoded message.
+
+
+## Exact-correlation spectral oracle
+
+The standalone JS8 module now includes `js8_spectral.*`, an allocation-free,
+float-only reference front end that converts caller-owned 12 kHz PCM into a
+caller-owned non-negative energy grid.
+
+A sandbox test starts from noisy synthetic PCM built from the documented
+Normal-mode 79-tone vector and recovers the injected sync candidate at the
+exact expected time row and tone-0 frequency bin. A quiet control produces no
+candidate at the test threshold. Optimized and ASan/UBSan versions of this new
+suite pass in the sandbox.
+
+This implementation is deliberately a correctness oracle. A full 200-3000 Hz
+exact-correlation grid is too expensive to declare as the ESP32-P4 production
+strategy. The later P4 backend should use the existing optimized FFT primitive
+or another measured equivalent while remaining bit/decision-compatible with
+this oracle.
