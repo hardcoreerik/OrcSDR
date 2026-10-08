@@ -100,6 +100,8 @@ struct Refiner {
   const int16_t* x;
   std::size_t count;
   double spacing_hz;
+  int rounds = 1;
+  bool joint = false;
 
   bool in_range(long start) const {
     return start >= 0 &&
@@ -149,8 +151,22 @@ struct Refiner {
         if (s > best) { best = s; best_f = f; }
       }
     };
-    scan_time(time_span, 4);                    // coarse time, +-1 coarse hop in quarter-hop steps
-    scan_freq(freq_span, 4);                    // coarse frequency, +-1 coarse bin in quarter-bin steps
+    if (joint) {
+      const long bt = best_t;
+      const double bf = best_f;
+      for (int ti = -4; ti <= 4; ++ti)
+        for (int fi = -4; fi <= 4; ++fi) {
+          const long t = bt + std::lround(time_span * ti / 4.0);
+          const double f = bf + freq_span * fi / 4.0;
+          if ((ti == 0 && fi == 0) || !in_range(t) || f < 100.0) continue;
+          const double sc = sync_score(t, f);
+          if (sc > best) { best = sc; best_t = t; best_f = f; }
+        }
+    }
+    for (int r = 0; r < (joint ? 0 : rounds); ++r) {
+      scan_time(time_span, 4);                  // coarse time, +-1 coarse hop in quarter-hop steps
+      scan_freq(freq_span, 4);                  // coarse frequency, +-1 coarse bin in quarter-bin steps
+    }
     scan_time(time_span / 4.0, 2);              // fine time
     scan_freq(freq_span / 4.0, 2);              // fine frequency
     *start = best_t;
@@ -179,6 +195,9 @@ int main(int argc, char** argv) {
   bool refine_on = true;
   std::size_t gate = 0;
   bool oracle = false;
+  bool joint = false;
+  int rounds = 1;
+  double watch_hz = -1.0;
   orcsdr::ftx::demod::Config dcfg{};
   uint8_t iters = 20;
   float norm = 0.80f;
@@ -202,6 +221,9 @@ int main(int argc, char** argv) {
     else if (a == "--iters" && i + 1 < argc) iters = static_cast<uint8_t>(std::atoi(argv[++i]));
     else if (a == "--norm" && i + 1 < argc) norm = static_cast<float>(std::atof(argv[++i]));
     else if (a == "--oracle") oracle = true;
+    else if (a == "--joint") joint = true;
+    else if (a == "--rounds" && i + 1 < argc) rounds = std::atoi(argv[++i]);
+    else if (a == "--watch" && i + 1 < argc) watch_hz = std::atof(argv[++i]);
     else if (a == "--no-refine") refine_on = false;
     else return 2;
   }
@@ -250,7 +272,7 @@ int main(int argc, char** argv) {
   pipe.ldpc.normalization = norm;
   orcsdr::ftx::pipeline::Workspace ws{};
   const double step_hz = p.tone_spacing_millihz / 1000.0;
-  Refiner refiner{p, wav.samples.data(), wav.samples.size(), step_hz};
+  Refiner refiner{p, wav.samples.data(), wav.samples.size(), step_hz, rounds, joint};
 
   std::set<std::string> accepted;
   std::size_t attempts = 0, ldpc_conv = 0, crc_pass = 0, skipped_dup = 0, skipped_range = 0;
@@ -275,6 +297,10 @@ int main(int argc, char** argv) {
       start = rs;
       hz = rh;
     }
+    if (watch_hz > 0 && std::fabs(hz - watch_hz) < 12.0)
+      std::printf("WATCH coarse_rank=%zu coarse_sync=%.3f coarse_start_s=%.3f coarse_hz=%.2f -> refined start_s=%.3f hz=%.2f score=%.3f\n", i + 1,
+                  c.score, static_cast<double>(c.start_row) * hop / p.sample_rate_hz,
+                  (kFirstMillihz + static_cast<double>(c.base_bin) * spacing) / 1000.0, start / 12000.0, hz, score);
     refined.push_back({start, hz, score, c.score});
   }
   if (refine_on)

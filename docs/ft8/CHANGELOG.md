@@ -227,3 +227,7 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 ## 2026-10-07 — Fix: standard callsigns whose prefix contains a digit (A92EE)
 
 - `codec::encode_standard_callsign` assumed exactly one digit in the call, so valid calls whose two-character prefix contains a digit (`A92EE`) failed the canonicality round trip and a CRC-valid FT8 decode was discarded. The digit position now follows the packing layout (third character if a digit, else second). Measured alone on the official recording with the refined pipeline (K=64, G=16): FT8 6 to 7 accepted (`A92EE F5PSR -14` added), FT4 unchanged at 3, zero false accepts, zero accepts on 16 noise recordings. Unit tests updated: `K12ABC` is now (correctly) encodable; `AEEE` and `AB123` stay rejected.
+
+## 2026-10-07 — Refinement search shape (host-only)
+
+- `ft8-wav-refine`: added `--joint`, `--rounds`, `--watch`. A joint time-frequency scan recovers `XE2X HA2NP RR73` that sequential coordinate refinement misses (local optimum): FT8 7 to 8 accepted on the official recording at K=64, FT4 unchanged at 3, zero false accepts, zero accepts on 16 noise recordings. Lowering the coarse sync threshold and widening the coarse list (K up to 256) changed nothing. Host-only measurement; no production code changed in this entry.

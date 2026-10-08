@@ -277,3 +277,20 @@ FT8 (13 in recording): 7 accepted at the true position (the search finds 6; the 
 
 Diagnosis: on these recordings, alignment (experiment 2) and ranking (experiment 3) were the recoverable losses. What remains is: one ranking miss, one parser bug, and five genuinely weak FT8 signals that the soft-metric family cannot rescue.
 Recommended next single change: fix the standard-callsign encoder (multi-digit prefixes such as A92EE), measured separately; then evaluate lowering the coarse sync threshold or widening the coarse list for the XE2X-type miss; subtraction (experiment 4 as originally ordered) is only justified if a busier recording shows overlapping signals.
+
+## Task 3, experiment 5: callsign encoder fix, then the coarse-list / refinement-search miss (`XE2X HA2NP RR73`)
+
+Callsign encoder (measured alone): FT8 6 to 7 accepted (`A92EE F5PSR -14` added), FT4 unchanged, zero false accepts, 16 noise recordings still zero accepts.
+
+Coarse threshold and list width (refined pipeline, FT8 / FT4 accepted): `min_score` 0.10 / 0.05 / 0.0 crossed with K=64 / 128 / 256 and G=16 / 32 gives 7 FT8 and 3 FT4 in every cell (refine time grows linearly with K: 0.86 s at K=64, 3.4 s at K=256). Neither the threshold nor the list width recovers `XE2X`.
+
+Diagnosis with `--watch`: `XE2X` is already the coarse candidate ranked 23 (sync 0.63, 2856.25 Hz, start 0.640 s), but the coordinate refinement (time, then frequency) settles in a local optimum (0.680 s, 2854.69 Hz, score 0.168) because the first time scan runs at a frequency 3 Hz off the true tone. A second coordinate round did not help. A joint time-frequency scan around the coarse point reaches the true position (0.700 s, 2853.91 Hz, score 0.232).
+
+| refinement search | K / G | FT8 accepted | FT4 accepted | FT8 refine ms (exact correlation, host) | false accepts |
+|---|---|---:|---:|---:|---:|
+| coordinate (time then frequency) | 32 / 16 | 6 | 3 | 434 | 0 |
+| joint 9x9 coarse scan, then fine | 32 / 16 | 7 | 3 | 1,559 | 0 |
+| coordinate | 64 / 16 | 7 | 3 | 877 | 0 |
+| **joint** | **64 / 16** | **8** | 3 | 3,205 | 0 |
+
+Noise-only with joint search: 16 recordings, zero accepts. The joint scan costs about 3.7 times the coordinate search with exact correlation; with a per-candidate down-converted signal the extra evaluations are cheap, so the shape of the search (joint, not sequential) matters more than the host milliseconds. Remaining FT8 misses (5 of 13 in recording): LDPC fails even at the true position.
