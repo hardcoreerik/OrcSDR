@@ -41,11 +41,12 @@ Findings that changed the design (all measured, not assumed):
   takes the dial offset from the driver's reported centre (`esp_rtl_sdr_get_center_freq`) every 100 ms.
 - The Tab5 wall clock was 2.5 s behind the PC after boot (the hardware RTC has one-second resolution), which shifts every slot. After `settime` it is within
   10 ms. FT8 needs under about half a second; a product fix (align the system clock to the RTC tick, or NTP when Wi-Fi is up) is still to do.
-- HF gain: an earlier note here said gain was the reason nothing decoded. That was wrong. The real cause was the dial offset above. A later sweep
-  (manual gain 0, 10, 15 ... 45 dB, three slots each, 40 m, V4 plus MLA-30+) decoded at every setting (3 to 9 decodes per three slots, roughly flat to
-  rising with gain) and the tap's slot RMS stayed at about 3 counts with no clipping at any setting, so on this route the gain setting does not visibly
-  change the level the tap sees. Whether the gain command reaches the tuner on the HF upconverter route is still to be checked in the driver; until then no
-  gain policy is claimed.
+- HF gain (corrected twice; this is the measured state). Manual gain does change what the tap sees: with the V4 plus MLA-30+ on 40 m the slot level rose
+  3, 20, 104, 265 (0, 15, 25, 34 dB) and then flattened (253 to 303 at 40 to 50 dB) while IQ clipping went 0.04 percent (25 dB), 9 percent (34 dB), 22 to 32 percent
+  (40 dB and up), and decodes kept rising to that knee. But an alternating A/B of the receiver's own AUTO setting against manual 34 dB (4 rounds each, 22 slots each) gave
+  6.55 against 6.64 decodes per slot: the tuner AGC already sits at the knee. So no gain policy is added: leave the receiver in AUTO. (A hill-climbing gain seeker was built
+  and removed after this result. Note that comparing slot level across an AUTO to manual change is invalid: the gain readout under AUTO is not the effective gain.)
+  `FT8 STATUS` reports `iq_dbfs`, `iq_clip_pct` and `gain_tenth_db` so this can be rechecked on other dongles and antennas.
 
 First on-device result (V4 plus MLA-30+, 7.074 MHz, 25 dB manual gain, about 3.5 minutes): 20 decodes, e.g. `CQ VE2LBI FN35`, `W5A W7ZR DM26`,
 `KB3QPL K8OCN EN83`, `CQ KE5ETC EM22`; the same stations the PC capture of the same band produced.
@@ -87,7 +88,7 @@ python tools/tab5_ft8.py --port COM17 decodes 40
 ## Known issues and next steps
 
 - Clock: sub-second alignment at boot (see above).
-- Gain: confirm in the driver whether the manual gain reaches the R828D on the HF route; only then decide on a policy (slot RMS and peak are in `FT8 STATUS`).
+- Gain: re-run the AUTO versus manual comparison on other dongles (V3, V4L) and antennas before assuming AUTO is best everywhere.
 - The tap costs about half of the DSP core's real-time budget at 2.4 MS/s. Requesting 240 kS/s from the driver for the FT8 screen would remove the CIC stage.
 - Bit-identity gate of the proposal (tap off versus baseline audio) is not yet measured; the dispatch is a single `if (active)` before the existing demodulation.
 - Dashboard: band tables for FT4 and a decode-mode indicator; the heard-station Conditions view uses the same decodes.

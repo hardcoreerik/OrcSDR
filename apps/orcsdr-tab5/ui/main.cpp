@@ -12687,6 +12687,12 @@ bool ft8_native_clock_valid() { return orcsdr::time_service::now().wallclock_val
 
 size_t ft8_selected_band();
 
+int ft8_native_current_gain_tenth_db() {
+  int gain = 0;
+  if (g_rtl != nullptr) (void)esp_rtl_sdr_get_tuner_gain(g_rtl, &gain);
+  return gain;
+}
+
 // Dial minus the tuner's actual centre (the driver quantizes tuning), so the tap can find the USB passband.
 float ft8_native_dial_offset_hz() {
   const auto* preset = orcsdr::ft8::band(ft8_selected_band());
@@ -12704,6 +12710,14 @@ void ft8_native_drain_pending() {
   g_ft8_pending_count = 0;
   portEXIT_CRITICAL(&g_ft8_pending_lock);
   for (size_t i = 0; i < n; ++i) g_ft8_store.append(local[i]);
+}
+
+int ft8_native_current_gain_tenth_db();
+
+// Called every loop(): hands decodes from the decoder task to the store, so a headless run keeps the list current.
+void ft8_native_service() {
+  if (!orcsdr::ft8_runtime::active()) return;
+  ft8_native_drain_pending();
 }
 
 size_t ft8_selected_band() {
@@ -16934,7 +16948,7 @@ void process_ft8_command(const char* args) {
     Serial.printf(
         "ORC_FT8_STATUS screen=%d runtime=%s headless=%d mode=%s band=%s dial_hz=%lu clock=%d rx_running=%d tap=%d rate_hz=%lu "
         "blocks=%llu ring=%llu avg_us=%lu max_us=%lu slots=%lu skipped=%lu last_decodes=%lu last_ms=%lu spectral_ms=%lu "
-        "refine_ms=%lu gate_ms=%lu coarse=%u deadline_hit=%d slot_rms=%lu slot_peak=%lu slot_clipped=%lu dial_offset_hz=%d store=%u k=%u gate=%u fine_rows=%u deadline_ms=%lu\n",
+        "refine_ms=%lu gate_ms=%lu coarse=%u deadline_hit=%d slot_rms=%lu slot_peak=%lu slot_clipped=%lu dial_offset_hz=%d iq_dbfs=%.1f iq_clip_pct=%.3f gain_tenth_db=%d store=%u k=%u gate=%u fine_rows=%u deadline_ms=%lu\n",
         orcsdr::ft8::active() ? 1 : 0, ft8_runtime_state_name(rt.state), rt.headless ? 1 : 0, orcsdr::ft8::mode_name(g_ft8_mode),
         preset != nullptr ? preset->label : "-", static_cast<unsigned long>(orcsdr::ft8::mode_dial_hz(ft8_selected_band(), g_ft8_mode)),
         ft8_native_clock_valid() ? 1 : 0,
@@ -16947,7 +16961,8 @@ void process_ft8_command(const char* args) {
         static_cast<unsigned long>(rt.last_refine_ms), static_cast<unsigned long>(rt.last_gate_ms),
         static_cast<unsigned>(rt.last_coarse), rt.last_deadline_hit ? 1 : 0, static_cast<unsigned long>(rt.slot_rms),
         static_cast<unsigned long>(rt.slot_peak), static_cast<unsigned long>(rt.slot_clipped), static_cast<int>(rt.dial_offset_hz),
-        static_cast<unsigned>(g_ft8_store.size()),
+        static_cast<double>(rtl_signal_dbfs_smooth), static_cast<double>(rtl_iq_clipping_percent.load(std::memory_order_relaxed)),
+        ft8_native_current_gain_tenth_db(), static_cast<unsigned>(g_ft8_store.size()),
         static_cast<unsigned>(rt.cfg_k), static_cast<unsigned>(rt.cfg_gate), static_cast<unsigned>(rt.cfg_fine_rows),
         static_cast<unsigned long>(rt.cfg_deadline_ms));
     return;
@@ -20351,6 +20366,7 @@ void loop() {
 #if ORCSDR_ORCDIAL
   orcdial_poll();
 #endif
+  ft8_native_service();
   // Issue #66: mirror Settings connect_saved — queue only; poll_wifi() calls
   // start_wifi_connection() then initialize_wifi() on the normal loop path.
   if (wifi_boot_bringup_pending &&

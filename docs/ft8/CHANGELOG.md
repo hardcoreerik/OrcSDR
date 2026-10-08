@@ -245,3 +245,7 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - `time_service::initialize` waits for the hardware RTC's seconds to tick before taking the system time, so a cold boot lands within milliseconds of the RTC instead of up to a second behind (measured: -14 ms against the PC after a cold boot, was -2.5 s). Costs at most about 1.1 s at boot.
 - `mode_dial_hz()`: FT4 has its own dial frequencies (e.g. 40 m 7.0475 MHz, 20 m 14.080 MHz); changing mode retunes, and the dashboard, serial status and OrcDial packet show the active mode's dial. FT4 runs on the device (7.5 s slots, about 1.5 s decode) but has not yet decoded a live signal.
 - Corrected `NATIVE_BINDING.md`: gain was not the cause of the early no-decode result (a dial-offset bug was); decodes appear at every manual gain from 0 to 45 dB and the tap level does not change, so no gain policy is claimed.
+
+## 2026-10-08 — Gain: no policy needed (measured)
+
+- `FT8 STATUS` gains `iq_dbfs`, `iq_clip_pct`, `gain_tenth_db`. A manual-gain sweep showed the decoder's slot level rising to a knee near 34 dB (with 9 to 30 percent IQ clipping beyond it) and an alternating A/B of the receiver's AUTO setting against manual 34 dB gave 6.55 against 6.64 decodes per slot over 22 slots each: AUTO already sits at the knee, so no FT8 gain policy was added. A hill-climbing gain seeker was built and removed. `ft8_native_service()` (called from `loop()`) now only hands decodes to the store so a headless run stays current.
