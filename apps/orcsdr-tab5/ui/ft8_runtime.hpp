@@ -32,6 +32,7 @@ struct Status {
   uint32_t avg_block_us = 0;
   bool last_deadline_hit = false;
   uint16_t last_coarse = 0;
+  uint16_t last_strong = 0;        // candidates with a clear sync score in the last slot
   orcsdr::ft8::DigitalMode mode = orcsdr::ft8::DigitalMode::ft8;
   bool headless = false;
   uint16_t cfg_k = 0;

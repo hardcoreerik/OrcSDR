@@ -28,7 +28,7 @@ import serial
 
 TERMINATORS = (
     "ORC_FT8_STATUS", "ORC_FT8_BANDS_END", "ORC_FT8_DECODES_END", "ORC_FT8_OPEN_OK", "ORC_FT8_BAND_OK", "ORC_FT8_BAND_FAILED",
-    "ORC_FT8_MODE_OK", "ORC_FT8_CLEAR_OK", "ORC_FT8_RUN_OK", "ORC_FT8_CONFIG_OK", "ORC_FT8_SAVE_OK", "ORC_FT8_ADIF_OK", "ORC_FT8_TAB_OK", "ORC_FT8_SHOT_OK", "ORC_FT8_ERROR",
+    "ORC_FT8_MODE_OK", "ORC_FT8_CLEAR_OK", "ORC_FT8_RUN_OK", "ORC_FT8_CONFIG_OK", "ORC_FT8_SAVE_OK", "ORC_FT8_ADIF_OK", "ORC_FT8_TAB_OK", "ORC_FT8_SHOT_OK", "ORC_FT8_HUNT_OK", "ORC_FT8_HUNT_FAILED", "ORC_FT8_HUNTSTATUS_END", "ORC_FT8_ERROR",
     "ORC_FT8_HELP control", "ORC_FT8_DUMP_END", "ORC_FT8_TIME",
 )
 
@@ -106,7 +106,7 @@ def main():
     a = ap.parse_args()
 
     verb = a.verb.lower()
-    readonly = verb in ("status", "decodes", "bands", "help", "watch", "dump", "time")
+    readonly = verb in ("status", "decodes", "bands", "help", "watch", "dump", "time", "huntstatus")
     dev = Tab5(a.port)
     if not readonly or verb == "raw":
         dev.authenticate(find_key(a.key))
@@ -185,7 +185,7 @@ def main():
     elif verb == "raw":
         dev.send(" ".join(a.args))
         dev.read_until(("zzzz",), 5)
-    elif verb in ("open", "clear", "status", "bands", "help", "decodes", "band", "mode", "run", "config", "save", "adif", "tab", "shot"):
+    elif verb in ("open", "clear", "status", "bands", "help", "decodes", "band", "mode", "run", "config", "save", "adif", "tab", "shot", "hunt", "huntstatus"):
         line = "FT8 " + verb.upper() + ((" " + " ".join(a.args)) if a.args else "")
         dev.command(line)
     else:

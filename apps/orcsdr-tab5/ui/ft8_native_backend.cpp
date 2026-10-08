@@ -230,6 +230,8 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
     if (!duplicate) refined[produced++] = best;
   }
   std::stable_sort(refined, refined + produced, [](const Refined& a, const Refined& b) { return a.score > b.score; });
+  for (size_t i = 0; i < produced; ++i)
+    if (refined[i].score >= 0.45f) ++stats_.strong_candidates;
   const uint32_t t_refine = clock_ms();
   stats_.refine_ms = t_refine - t_search;
 

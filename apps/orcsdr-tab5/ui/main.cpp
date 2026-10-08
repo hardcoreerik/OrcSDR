@@ -8991,7 +8991,7 @@ static void rtl_dsp_task(void *) {
     mark(dsp_stats::Stage::spectrum);
     // Native FT8/FT4 analysis tap: a read-only sidecar on the raw block (own state, own buffers); it runs only while the FT8
     // screen owns the receiver, so every other path is untouched.
-    if (!block.custom_rate && block.band == RtlBand::shortwave && orcsdr::ft8_runtime::active())
+    if (!block.custom_rate && (block.band == RtlBand::shortwave || block.band == RtlBand::browse) && orcsdr::ft8_runtime::active())
       orcsdr::ft8_runtime::offer_iq(block.data, block.bytes, block.sample_rate_sps);
     if (!block.custom_rate && block.band == RtlBand::lora)
       lora_iq_offer(block.data, block.bytes);
@@ -12715,10 +12715,105 @@ void ft8_native_drain_pending() {
 
 int ft8_native_current_gain_tenth_db();
 
+
+// ---- Band hunter: visits each common band and records what the decoder found. Decode mode waits for full decoded slots (a retune
+// skips the slot in progress), so a band costs roughly 40 s per slot observed; fast mode dwells 6 s and reads the waterfall energy.
+struct Ft8HuntRun {
+  bool active = false;
+  bool set_headless = false;
+  uint32_t baseline_slots = 0;
+  uint32_t step_ms = 0;
+};
+Ft8HuntRun g_ft8_hunt;
+
+bool ft8_native_ensure_started();
+bool ft8_select_band(size_t index);
+
+bool ft8_hunt_start(orcsdr::ft8::HunterMode mode) {
+  if (!ft8_native_ensure_started()) return false;
+  g_ft8_hunt = Ft8HuntRun{};
+  if (!orcsdr::ft8_runtime::status().headless) {
+    orcsdr::ft8_runtime::set_headless(true);   // keep the decoder alive for the whole hunt, screen or not
+    g_ft8_hunt.set_headless = true;
+  }
+  if (!g_ft8_hunter.start(mode)) {
+    if (g_ft8_hunt.set_headless) orcsdr::ft8_runtime::set_headless(false);
+    return false;
+  }
+  g_ft8_hunt.active = true;
+  Serial.printf("ORC_FT8_HUNT started mode=%s\n", orcsdr::ft8::hunter_mode_name(mode));
+  return true;
+}
+
+// Mean number of waterfall bins at least about 11 dB above the row median over the newest rows: a cheap "is anything there".
+float ft8_waterfall_activity() {
+  const auto wf = orcsdr::ft8_runtime::waterfall();
+  if (wf.data == nullptr || wf.sequence < 8) return 0.0f;
+  constexpr size_t kRows = 12;
+  uint32_t strong = 0;
+  for (size_t r = 0; r < kRows; ++r) {
+    const uint8_t* row = wf.data + ((wf.sequence - 1 - r) % orcsdr::ft8_runtime::kWaterfallRows) * orcsdr::ft8_runtime::kWaterfallBins;
+    for (size_t b = 0; b < orcsdr::ft8_runtime::kWaterfallBins; ++b) strong += row[b] >= 64 ? 1u : 0u;
+  }
+  return static_cast<float>(strong) / static_cast<float>(kRows);
+}
+
+void ft8_hunt_service(const orcsdr::ft8_runtime::Status& rt) {
+  if (!g_ft8_hunt.active) return;
+  if (!g_ft8_hunter.active()) {   // complete, stopped or failed
+    g_ft8_hunt.active = false;
+    if (g_ft8_hunt.set_headless) orcsdr::ft8_runtime::set_headless(false);
+    const auto& snap = g_ft8_hunter.snapshot();
+    Serial.printf("ORC_FT8_HUNT finished phase=%s best_band=%d\n", orcsdr::ft8::hunter_phase_name(snap.phase),
+                  snap.best_band == SIZE_MAX ? -1 : static_cast<int>(snap.best_band));
+    return;
+  }
+  const uint32_t now = millis();
+  const auto& snap = g_ft8_hunter.snapshot();
+  if (snap.phase == orcsdr::ft8::HunterPhase::tuning) {
+    if (!ft8_select_band(g_ft8_hunter.current_band())) {   // the receiver cannot take this band
+      Serial.printf("ORC_FT8_HUNT tune_failed band=%d\n", static_cast<int>(g_ft8_hunter.current_band()));
+      g_ft8_hunter.stop();
+      return;
+    }
+    g_ft8_hunter.mark_tuned();
+    g_ft8_hunt.baseline_slots = rt.slots_decoded;
+    g_ft8_hunt.step_ms = now;
+    return;
+  }
+  if (snap.phase != orcsdr::ft8::HunterPhase::waiting_slot) return;
+
+  orcsdr::ft8::HunterObservation obs;
+  obs.slot_complete = true;
+  obs.peak_dbfs = rtl_signal_dbfs_smooth;
+  if (snap.mode == orcsdr::ft8::HunterMode::fast) {
+    if (now - g_ft8_hunt.step_ms < 6000u) return;
+    obs.energy_detected = ft8_waterfall_activity() >= 6.0f;
+    g_ft8_hunter.begin_slot();
+    g_ft8_hunter.finish_slot(obs);
+    g_ft8_hunt.step_ms = now;
+    return;
+  }
+  if (rt.slots_decoded > g_ft8_hunt.baseline_slots) {   // a full slot decoded after the retune
+    obs.valid_decodes = static_cast<uint16_t>(rt.last_slot_decodes);
+    obs.sync_candidates = rt.last_strong;
+    obs.energy_detected = rt.last_slot_decodes > 0 || rt.last_strong > 0;
+    g_ft8_hunter.begin_slot();
+    g_ft8_hunter.mark_decoding();
+    g_ft8_hunter.finish_slot(obs);
+    g_ft8_hunt.baseline_slots = rt.slots_decoded;
+    g_ft8_hunt.step_ms = now;
+  } else if (now - g_ft8_hunt.step_ms > 90000u) {
+    Serial.println("ORC_FT8_HUNT no_slot_timeout");
+    g_ft8_hunter.stop();
+  }
+}
+
 // Called every loop(): hands decodes from the decoder task to the store, so a headless run keeps the list current.
 void ft8_native_service() {
   if (!orcsdr::ft8_runtime::active()) return;
   ft8_native_drain_pending();
+  ft8_hunt_service(orcsdr::ft8_runtime::status());
 }
 
 size_t ft8_selected_band() {
@@ -12810,10 +12905,11 @@ bool ft8_select_band(size_t index) {
   g_ft8_band = index;
   orcsdr::ft8_runtime::note_discontinuity();
   if (!validate_rtl_tune_frequency(dial_hz)) return false;
-  if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
-      rtl_ui_band == RtlBand::shortwave)
+  // The shortwave path clamps tuning to 30 MHz, so 6 m and 2 m go through the general VHF/UHF band; the audio tap runs on either.
+  const RtlBand target = dial_hz > 30000000u ? RtlBand::browse : RtlBand::shortwave;
+  if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running && rtl_ui_band == target)
     return request_hot_retune(dial_hz);
-  return queue_local_rtl_listen(RtlBand::shortwave, dial_hz);
+  return queue_local_rtl_listen(target, dial_hz);
 }
 
 bool ft8_hunter_refused(const char* what) {
@@ -12841,8 +12937,8 @@ void handle_ft8_dashboard_action(const orcsdr::ft8::Action& action) {
       else
         Serial.println("ORC_FT8_ERROR mode_unavailable");
       break;
-    case Kind::start_hunt_fast: (void)ft8_hunter_refused("hunt_fast"); break;
-    case Kind::start_hunt_decode: (void)ft8_hunter_refused("hunt_decode"); break;
+    case Kind::start_hunt_fast: (void)ft8_hunt_start(orcsdr::ft8::HunterMode::fast); break;
+    case Kind::start_hunt_decode: (void)ft8_hunt_start(orcsdr::ft8::HunterMode::decode); break;
     case Kind::stop_hunt: g_ft8_hunter.stop(); break;
     case Kind::lock_hunter_best:
       (void)ft8_select_band(orcsdr::ft8::nearest_band(action.value));
@@ -16945,9 +17041,9 @@ void process_ft8_command(const char* args) {
   };
 
   if (verb[0] == '\0' || strcmp(verb, "HELP") == 0) {
-    Serial.println("ORC_FT8_HELP queries: STATUS | DECODES [n] | BANDS | DUMP | TIME | HELP");
+    Serial.println("ORC_FT8_HELP queries: STATUS | DECODES [n] | BANDS | DUMP | TIME | HUNTSTATUS | HELP");
     Serial.println("ORC_FT8_HELP control (authenticated): OPEN | BAND <index|label|dial_hz> | MODE <FT8|FT4> | CLEAR | RUN <0|1> | "
-                   "CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms> | TAB <name> | SHOT <name> | SAVE <name> | ADIF <name>");
+                   "CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms> | HUNT <FAST|DECODE|STOP> | TAB <name> | SHOT <name> | SAVE <name> | ADIF <name>");
     return;
   }
 
@@ -17051,6 +17147,23 @@ void process_ft8_command(const char* args) {
     }
     orcsdr::ft8_runtime::release_slot_audio();
     Serial.println("ORC_FT8_DUMP_END");
+    return;
+  }
+
+  if (strcmp(verb, "HUNTSTATUS") == 0) {
+    const auto& snap = g_ft8_hunter.snapshot();
+    Serial.printf("ORC_FT8_HUNTSTATUS mode=%s phase=%s current=%d best=%d slots_per_band=%u\n", orcsdr::ft8::hunter_mode_name(snap.mode),
+                  orcsdr::ft8::hunter_phase_name(snap.phase), snap.current_band == SIZE_MAX ? -1 : static_cast<int>(snap.current_band),
+                  snap.best_band == SIZE_MAX ? -1 : static_cast<int>(snap.best_band), static_cast<unsigned>(snap.slots_per_band));
+    for (size_t i = 0; i < orcsdr::ft8::band_count(); ++i) {
+      const auto& r = snap.results[i];
+      if (!r.enabled) continue;
+      Serial.printf("ORC_FT8_HUNTBAND index=%u label=%s visited=%d evidence=%s slots=%u decodes=%u strong=%u peak_dbfs=%.1f\n", static_cast<unsigned>(i),
+                    orcsdr::ft8::band(i)->label, r.visited ? 1 : 0, orcsdr::ft8::hunter_evidence_name(r.evidence),
+                    static_cast<unsigned>(r.slots_observed), static_cast<unsigned>(r.valid_decodes), static_cast<unsigned>(r.sync_candidates),
+                    static_cast<double>(r.peak_dbfs));
+    }
+    Serial.println("ORC_FT8_HUNTSTATUS_END");
     return;
   }
 
@@ -17189,6 +17302,21 @@ void process_ft8_command(const char* args) {
       return;
     }
     Serial.printf("ORC_FT8_SHOT_OK path=/orcsdr/screenshots/%s.bmp bytes=%u\n", slug, static_cast<unsigned>(result.bytes));
+    return;
+  }
+
+  if (strcmp(verb, "HUNT") == 0) {
+    if (strcasecmp(rest, "FAST") == 0 || strcasecmp(rest, "DECODE") == 0) {
+      const bool ok = ft8_hunt_start(strcasecmp(rest, "FAST") == 0 ? orcsdr::ft8::HunterMode::fast : orcsdr::ft8::HunterMode::decode);
+      Serial.printf("ORC_FT8_HUNT_%s\n", ok ? "OK" : "FAILED");
+      return;
+    }
+    if (strcasecmp(rest, "STOP") == 0) {
+      g_ft8_hunter.stop();
+      Serial.println("ORC_FT8_HUNT_OK stopped");
+      return;
+    }
+    Serial.println("ORC_FT8_ERROR HUNT invalid use HUNT <FAST|DECODE|STOP>");
     return;
   }
 

@@ -42,6 +42,7 @@ struct Stats {
   uint32_t gate_ms = 0;
   uint32_t total_ms = 0;
   uint16_t coarse_candidates = 0;
+  uint16_t strong_candidates = 0;   // refined candidates with a clear sync score (0.45 or more)
   uint16_t attempted = 0;
   uint16_t accepted = 0;
   bool deadline_hit = false;

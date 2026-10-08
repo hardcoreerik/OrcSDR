@@ -68,6 +68,7 @@ Queries need no authentication; commands that change state need the PAIR/AUTH se
 | `FT8 CLEAR` | yes | clear the decode list |
 | `FT8 RUN <0|1>` | yes | headless: keep the decoder running with no FT8 screen |
 | `FT8 CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms>` | yes | candidates refined (1-64), candidates sent through the FEC gates (1-64), grid resolution, per-slot time limit |
+| `FT8 HUNT <FAST|DECODE|STOP>` | yes | start or stop the band hunter (below); `FT8 HUNTSTATUS` (no auth) prints the phase and a line per band |
 | `FT8 TAB <LIVE|DECODES|MAP|HUNTER|HEARD|SETUP>` | yes | switch the FT8 dashboard tab |
 | `FT8 SHOT <name>` | yes | save the screen as a BMP on the SD card without pausing reception (fetch it with `tools/tab5_ft8_shot.py`, which stops the receiver for the SD transfer, then retunes) |
 | `FT8 SAVE <name>` | yes | write the last slot to `/sd/ft8/<name>.wav` |
@@ -100,6 +101,14 @@ stack and copied, on top of new serial-command buffers. The snapshot is now fill
 LIVE tab: a real waterfall (200-3000 Hz, newest row at the top, 112 rows, 2 pixels per row). A small low-priority task takes the latest 1920 audio samples every 150 ms, runs one FFT,
 and normalises each row to its own median so it adapts to any noise floor (noise stays dark blue; signals are cyan to red, about 8 counts per dB). It is display only and never feeds the
 decoder. The GAIN chip shows just `AUTO` (the driver's gain readout under AUTO is not the effective gain), and the SETUP footer no longer says the decoder is unbound.
+
+## Band hunter
+
+The HUNTER tab and `FT8 HUNT` drive `ft8_hunter` against the decoder. **Decode hunt** visits each common band, waits for two full decoded slots after the retune (a retune skips the slot in progress, so
+about 40 s per slot observed) and records decodes and strong-sync candidates (refined sync score 0.45 or more) per band; evidence is DECODED, FT8 SIG (clear sync, no decode), ENERGY or QUIET. **Fast hunt** dwells 6 s per band and
+reads the waterfall (bins at least about 11 dB over the row median), so it can only say ENERGY or QUIET and its "best band" is just the loudest. First decode hunt on the Tab5 at 03:00 local, V4 plus MLA-30+:
+160 m 2 decodes, 80 m 4, **40 m 12 (best)**, 30 m 2, 20 m to 12 m quiet, 10 m clear sync but no decode.
+The shortwave band path clamps tuning to 30 MHz, so 6 m and 2 m were silently tuned to 30 MHz; bands above 30 MHz now use the general VHF band and the tap runs on either (verified: 6 m exact, 2 m tuned 4 kHz low and corrected by the dial offset).
 
 ## Known issues and next steps
 

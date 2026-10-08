@@ -161,6 +161,7 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
   s.last_gate_ms = st.gate_ms;
   s.last_deadline_hit = st.deadline_hit;
   s.last_coarse = st.coarse_candidates;
+  s.last_strong = st.strong_candidates;
   std::printf("ORC_FT8_RT slot=%llu decodes=%u total_ms=%u spectral=%u search=%u refine=%u gates=%u coarse=%u attempted=%u deadline=%d\n",
               static_cast<unsigned long long>(slot_start_ms / 1000u), static_cast<unsigned>(n), static_cast<unsigned>(st.total_ms),
               static_cast<unsigned>(st.spectral_ms), static_cast<unsigned>(st.search_ms), static_cast<unsigned>(st.refine_ms),

@@ -263,3 +263,9 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 ## 2026-10-08 — Live waterfall on the LIVE tab
 
 - Replaced "WATERFALL INPUT PENDING DSP BINDING" with a live waterfall from the tap audio (`ft8_runtime::waterfall()`, a low-priority task, 1920-point FFT every 150 ms, rows normalised to their own median). The panel takes byte-swapped RGB565 through `pushImage`, so the palette is swapped. Repaints are limited to every 400 ms. The GAIN chip shows `AUTO` only, and the SETUP footer was updated. Verified by screen capture on the device.
+
+## 2026-10-08 — Band hunter bound to the decoder; 6 m and 2 m tuning fixed
+
+- The HUNTER tab and `FT8 HUNT <FAST|DECODE|STOP>` / `FT8 HUNTSTATUS` run `ft8_hunter` against the live decoder (`ft8_hunt_service()` in the loop). Added `strong_candidates` to the decoder stats (clear sync, refined score 0.45 or more) so a band is only called "FT8 SIG" for real sync, not for the 64 weakest-passing candidates.
+- Fixed: bands above 30 MHz (6 m, 2 m) were clamped to 30 MHz by the shortwave path. They now tune through the general VHF band, and the audio tap runs on both paths.
+- Measured: fast hunt visits 10 bands in about 70 s; decode hunt about 10 to 12 minutes; 40 m was best (12 decodes) in the first run.
