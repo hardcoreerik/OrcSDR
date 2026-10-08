@@ -188,6 +188,21 @@ bool callsign_hashes(const char* callsign, CallsignHashes* hashes) {
   return true;
 }
 
+void restore_ft4_payload(PayloadBits* payload) {
+  if (!payload) return;
+  // Franke/Somerville/Taylor, QEX July/August 2020, Appendix A.
+  // The paper prints this protocol-defined 77-bit pseudo-random sequence
+  // explicitly and states that the receiver applies XOR a second time.
+  static constexpr char kFt4Xor[] =
+      "0100101001011110100010"
+      "0110110100101100001000"
+      "1010011110010101010110"
+      "11111000101";
+  static_assert(sizeof(kFt4Xor) - 1 == kPayloadBits);
+  for (std::size_t i = 0; i < payload->size(); ++i)
+    (*payload)[i] ^= static_cast<uint8_t>(kFt4Xor[i] - '0');
+}
+
 uint8_t gray_tone(uint8_t b0, uint8_t b1, uint8_t b2) {
   static constexpr std::array<uint8_t, 8> kMap{{0, 1, 3, 2, 5, 6, 4, 7}};
   const uint8_t bits = static_cast<uint8_t>(((b0 & 1u) << 2u) |
@@ -225,10 +240,17 @@ bool self_check() {
 
   uint32_t c28 = 0;
   CallsignHashes hashes{};
+  PayloadBits ft4_probe{};
+  ft4_probe[0] = 1;
+  const auto original = ft4_probe;
+  restore_ft4_payload(&ft4_probe);
+  restore_ft4_payload(&ft4_probe);
+
   return encode_standard_callsign("K1ABC", &c28) && c28 == 10214965u &&
          callsign_hashes("PJ4/K1ABC", &hashes) && hashes.h10 == 346u &&
          hashes.h12 == 1387u && hashes.h22 == 1420834u &&
-         gray_tone(0, 1, 1) == 2u && gray_tone(1, 0, 0) == 5u;
+         gray_tone(0, 1, 1) == 2u && gray_tone(1, 0, 0) == 5u &&
+         ft4_probe == original;
 }
 
 }  // namespace orcsdr::ft8::codec

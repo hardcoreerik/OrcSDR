@@ -45,6 +45,11 @@ bool encode_standard_callsign(const char* callsign, uint32_t* c28);
 // normalized to uppercase ASCII and padded to 11 characters with spaces.
 bool callsign_hashes(const char* callsign, CallsignHashes* hashes);
 
+// Restores the original FT4 77-bit source payload after LDPC convergence and
+// CRC validation. FT4's XOR sequence is printed in the QEX protocol paper.
+// XOR is symmetric; this helper is intentionally named for the RX operation.
+void restore_ft4_payload(PayloadBits* payload);
+
 // Maps a three-bit FT8 codeword group to an 8-FSK tone using QEX Table 3.
 uint8_t gray_tone(uint8_t b0, uint8_t b1, uint8_t b2);
 

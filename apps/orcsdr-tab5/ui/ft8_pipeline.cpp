@@ -12,10 +12,14 @@ bool config_valid(const Config& config) {
 }
 
 bool supported_profile(const ModeProfile& profile) {
-  return implementation_ready(profile.mode) &&
-         profile.mode == Mode::ft8 &&
-         profile.code_family == CodeFamily::ftx_77_crc14_ldpc174_91 &&
-         profile.payload_transform == PayloadTransform::none;
+  if (!implementation_ready(profile.mode) ||
+      profile.code_family != CodeFamily::ftx_77_crc14_ldpc174_91)
+    return false;
+  if (profile.mode == Mode::ft8)
+    return profile.payload_transform == PayloadTransform::none;
+  if (profile.mode == Mode::ft4)
+    return profile.payload_transform == PayloadTransform::ft4_xor;
+  return false;
 }
 
 }  // namespace
@@ -55,6 +59,9 @@ std::size_t decode_grid(const ModeProfile& profile, const sync::EnergyGrid& grid
 
     orcsdr::ft8::codec::PayloadBits payload{};
     std::copy_n(decoded.message.begin(), payload.size(), payload.begin());
+    if (profile.payload_transform == PayloadTransform::ft4_xor)
+      orcsdr::ft8::codec::restore_ft4_payload(&payload);
+
     orcsdr::ft8::message::StandardMessage standard{};
     if (!orcsdr::ft8::message::unpack_standard(payload, &standard) ||
         !standard.fully_renderable)
@@ -77,7 +84,7 @@ bool self_check() {
   Config config{};
   return config_valid(config) &&
          supported_profile(profile(Mode::ft8)) &&
-         !supported_profile(profile(Mode::ft4)) &&
+         supported_profile(profile(Mode::ft4)) &&
          !supported_profile(profile(Mode::js8_normal));
 }
 

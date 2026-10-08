@@ -44,8 +44,10 @@ struct Workspace {
 // This still returns an internal FrameResult rather than the UI's Decode
 // record. Timing/SNR/provenance and backend binding remain separate concerns.
 //
-// FT8 is supported now. FT4 sync/demod are ready, but the pipeline refuses FT4
-// until its payload XOR restoration is implemented and tested.
+// FT8 and FT4 share the CRC/LDPC/message family. FT4's protocol-defined
+// payload XOR is restored only after CRC validation and before source-message
+// unpacking. JS8 remains outside this pipeline until its separate FEC/frame
+// family is independently implemented.
 std::size_t decode_grid(const ModeProfile& profile, const sync::EnergyGrid& grid,
                         const sync::Geometry& geometry, const Config& config,
                         Workspace* workspace, FrameResult* output,

@@ -165,3 +165,12 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Merged `tools/test-ft8.sh` so the UI backend seam tests and all native decoder tests run together.
 - Recorded the official WSJT-X `210703_133430.wav` baseline: OrcSDR decodes 1 of 11 published reference messages at the default 80 ms / 6.25 Hz search, with zero accepted messages outside the reference list.
 - Added a CI regression floor requiring at least one decode and the known `WM3PEN EA6VQ -09` message before any coverage optimization is accepted.
+
+
+## 2026-10-07 — FT4 receive payload restoration gate
+
+- Added the FT4 receive-side 77-bit XOR restoration using the pseudo-random sequence printed directly in the QEX protocol paper.
+- The transform is applied only after LDPC convergence and CRC-14 validation, before source-message unpacking.
+- Enabled FT4 in the shared CRC/plausibility pipeline for supported standard-message families.
+- Added an end-to-end synthetic FT4 energy-grid test proving sync -> soft demod -> LDPC -> CRC -> un-XOR -> standard message rendering for `CQ K1ABC FN42`.
+- No transmitter, waveform output, PTT, CAT, or firmware binding was added.

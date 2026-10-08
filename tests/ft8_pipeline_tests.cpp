@@ -148,14 +148,64 @@ void test_crc_valid_unsupported_message_is_not_returned() {
   assert(decode_payload(payload, &result) == 0);
 }
 
-void test_ft4_not_prematurely_accepted() {
-  std::array<float, 105 * 16> cells{};
-  orcsdr::ftx::sync::EnergyGrid grid{cells.data(), 105, 16, 16};
+void test_ft4_payload_xor_and_standard_message_accepted() {
+  const auto& p = profile(Mode::ft4);
+  auto payload = standard_payload("CQ", "K1ABC", grid15("FN42"));
+  auto scrambled = payload;
+  orcsdr::ft8::codec::restore_ft4_payload(&scrambled);
+  const auto message = orcsdr::ft8::codec::append_crc(scrambled);
+  const auto codeword = orcsdr::ft8::ldpc::encode(message);
+
+  constexpr std::size_t rows = 108;
+  constexpr std::size_t bins = 20;
+  constexpr std::size_t start_row = 2;
+  constexpr std::size_t base_bin = 7;
+  std::vector<float> cells(rows * bins, 1.0f);
+
+  for (std::size_t b = 0; b < p.sync_block_count; ++b) {
+    const auto& block = p.sync[b];
+    for (std::size_t s = 0; s < block.length; ++s) {
+      const std::size_t row = start_row + block.first_symbol + s;
+      const std::size_t bin = base_bin + block.tones[s];
+      cells[row * bins + bin] = 30.0f;
+    }
+  }
+
+  std::size_t bit_index = 0;
+  for (std::size_t b = 0; b < p.data_block_count; ++b) {
+    const auto& block = p.data[b];
+    for (std::size_t s = 0; s < block.length; ++s) {
+      uint8_t label = 0;
+      for (uint8_t bit = 0; bit < p.bits_per_tone; ++bit)
+        label = static_cast<uint8_t>((label << 1) | codeword[bit_index++]);
+
+      uint8_t tone = 0xff;
+      for (uint8_t candidate = 0; candidate < p.tone_count; ++candidate)
+        if (p.tone_bits[candidate] == label) tone = candidate;
+      assert(tone != 0xff);
+
+      const std::size_t row = start_row + block.first_symbol + s;
+      cells[row * bins + base_bin + tone] = 30.0f;
+    }
+  }
+  assert(bit_index == codeword.size());
+
+  orcsdr::ftx::sync::EnergyGrid grid{cells.data(), rows, bins, bins};
+  orcsdr::ftx::pipeline::Config config{};
+  config.search.first_start_row = 0;
+  config.search.last_start_row_exclusive = 4;
+  config.search.first_base_bin = 4;
+  config.search.last_base_bin_exclusive = 11;
+  config.search.min_score = 0.70f;
+
   orcsdr::ftx::pipeline::Workspace workspace{};
   orcsdr::ftx::pipeline::FrameResult result{};
   assert(orcsdr::ftx::pipeline::decode_grid(
-             profile(Mode::ft4), grid, orcsdr::ftx::sync::Geometry{},
-             orcsdr::ftx::pipeline::Config{}, &workspace, &result, 1) == 0);
+             p, grid, orcsdr::ftx::sync::Geometry{}, config, &workspace,
+             &result, 1) == 1);
+  assert(result.mode == Mode::ft4);
+  assert(result.standard.fully_renderable);
+  assert(std::strcmp(result.standard.text, "CQ K1ABC FN42") == 0);
 }
 
 }  // namespace
@@ -165,6 +215,6 @@ int main() {
   test_plausible_standard_ft8_frame_is_returned();
   test_crc_corrupt_valid_ldpc_word_is_not_returned();
   test_crc_valid_unsupported_message_is_not_returned();
-  test_ft4_not_prematurely_accepted();
+  test_ft4_payload_xor_and_standard_message_accepted();
   return 0;
 }
