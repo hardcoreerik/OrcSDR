@@ -76,3 +76,25 @@ g++ "${common[@]}" -O2 "${airband_audio_sources[@]}" -o "$build_dir/airband_audi
 "$build_dir/airband_audio_filter_tests"
 g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer   "${airband_audio_sources[@]}" -o "$build_dir/airband_audio_filter_tests_sanitized"
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1   "$build_dir/airband_audio_filter_tests_sanitized"
+
+weather_model_sources=(tests/weather_model_tests.cpp apps/orcsdr-tab5/ui/weather_model.cpp)
+g++ "${common[@]}" -O2 "${weather_model_sources[@]}" -o "$build_dir/weather_model_tests"
+"$build_dir/weather_model_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer "${weather_model_sources[@]}" -o "$build_dir/weather_model_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 "$build_dir/weather_model_tests_sanitized"
+
+weather_noaa_sources=(tests/weather_noaa_tests.cpp apps/orcsdr-tab5/ui/weather_model.cpp apps/orcsdr-tab5/ui/weather_noaa.cpp)
+g++ "${common[@]}" -O2 "${weather_noaa_sources[@]}" -o "$build_dir/weather_noaa_tests"
+"$build_dir/weather_noaa_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer "${weather_noaa_sources[@]}" -o "$build_dir/weather_noaa_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 "$build_dir/weather_noaa_tests_sanitized"
+
+weather_report_sources=(tests/weather_report_tests.cpp apps/orcsdr-tab5/ui/weather_model.cpp apps/orcsdr-tab5/ui/weather_report.cpp)
+g++ "${common[@]}" -O2 "${weather_report_sources[@]}" -o "$build_dir/weather_report_tests"
+"$build_dir/weather_report_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer "${weather_report_sources[@]}" -o "$build_dir/weather_report_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 "$build_dir/weather_report_tests_sanitized"
+
+weather_dashboard_sources=(tests/weather_dashboard_state_tests.cpp apps/orcsdr-tab5/ui/weather_model.cpp)
+g++ "${common[@]}" -O2 "${weather_dashboard_sources[@]}" -o "$build_dir/weather_dashboard_state_tests"
+"$build_dir/weather_dashboard_state_tests"

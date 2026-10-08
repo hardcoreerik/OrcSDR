@@ -65,6 +65,7 @@ const char* name(Id id) {
     case Id::documentation: return "documentation";
     case Id::cb: return "cb";
     case Id::airband: return "airband";
+    case Id::weather: return "weather";
     default: return "none";
   }
 }
@@ -79,9 +80,10 @@ bool self_check() {
   const bool home_owns = owns(Id::home) && may_draw(Id::home);
   bool settings_return = true;
   uint32_t now = 20;
-  for (const Id screen :
-       {Id::home, Id::fm, Id::am, Id::shortwave, Id::cb, Id::airband, Id::p25, Id::adsb, Id::lora,
-        Id::wifi_analysis, Id::pocsag}) {
+  constexpr Id return_screens[] = {
+      Id::home, Id::fm, Id::am, Id::shortwave, Id::cb, Id::airband, Id::weather,
+      Id::p25, Id::adsb, Id::lora, Id::wifi_analysis, Id::pocsag};
+  for (const Id screen : return_screens) {
     begin_transition(screen, now++, false);
     finish_transition();
     begin_transition(Id::settings, now++, true);
@@ -102,7 +104,9 @@ bool self_check() {
   begin_transition(Id::rf_lab, now++, false);
   finish_transition();
   const bool rf_lab_owns = owns(Id::rf_lab);
-  const bool restored = g_status.transitions == 38;
+  const uint32_t expected_transitions =
+      1u + 3u * static_cast<uint32_t>(sizeof(return_screens) / sizeof(return_screens[0])) + 4u;
+  const bool restored = g_status.transitions == expected_transitions;
   g_status = saved;
   g_transitioning = saved_transitioning;
   return entering_blocks_draw && home_owns && settings_return && documentation_owns &&
