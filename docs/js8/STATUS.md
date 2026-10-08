@@ -204,3 +204,20 @@ Synthetic tests prove:
 The real JS8 sparse graph is still absent by design. It will be generated only
 from independently reconstructed parity checks and validated on held-out
 frames.
+
+
+## Reconstructed graph generator ready
+
+`js8-fec-graph-gen` converts the sparse-check search output into the exact
+check-major and variable-major adjacency arrays consumed by `js8_fec`.
+
+Safety gate: by default it refuses to emit a graph unless the recovered sparse
+check rank equals the independently measured full parity-space dimension. An
+explicit `--allow-incomplete` option exists only for host experiments.
+
+Sandbox validation used the deliberately incomplete synthetic sparse-search
+result. Default generation failed with:
+`refusing incomplete graph: recovered check rank 1 of 54`.
+The explicit experiment override emitted the expected one-check adjacency.
+
+No production JS8 graph has been generated.

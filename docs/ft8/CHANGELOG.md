@@ -435,3 +435,12 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - FEC convergence is explicitly parity-only and cannot create a JS8 decode without the later CRC + supported frame/plausibility gates.
 - The real JS8 graph remains blocked on independent reconstruction from captured codewords; the decoder algorithm is ready to consume it once derived.
 - No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 reconstructed graph generator
+
+- Added host-only `js8-graph-builder.hpp` and `js8-fec-graph-gen.cpp` to convert recovered sparse parity checks into the immutable bidirectional adjacency arrays consumed by `js8_fec`.
+- The generator refuses production output unless recovered sparse-check rank equals the independently measured parity-space dimension; an explicit `--allow-incomplete` override is host-experiment-only.
+- Optimized and ASan/UBSan graph-builder tests pass. A deliberately incomplete synthetic reconstruction was correctly rejected at rank 1 of 54; the explicit override emitted the expected one-check graph.
+- No real JS8 graph is present or claimed yet.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.

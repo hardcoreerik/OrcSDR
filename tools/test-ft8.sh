@@ -99,6 +99,9 @@ run_suite js8_fec_reconstruct_tests \
 run_suite js8_sparse_parity_tests \
   tests/js8_sparse_parity_tests.cpp
 
+run_suite js8_graph_builder_tests \
+  tests/js8_graph_builder_tests.cpp
+
 run_suite js8_tone_map_tests \
   tests/js8_tone_map_tests.cpp
 
@@ -119,6 +122,9 @@ g++ "${common[@]}" -O2 tools/js8-fec-reconstruct.cpp -o "$build_dir/js8-fec-reco
 
 g++ "${common[@]}" -Itools -O2 tools/js8-fec-sparse-search.cpp \
   -o "$build_dir/js8-fec-sparse-search"
+
+g++ "${common[@]}" -Itools -O2 tools/js8-fec-graph-gen.cpp \
+  -o "$build_dir/js8-fec-graph-gen"
 
 g++ "${common[@]}" -Itools -O2 tools/js8-crc-reconstruct.cpp \
   -o "$build_dir/js8-crc-reconstruct"

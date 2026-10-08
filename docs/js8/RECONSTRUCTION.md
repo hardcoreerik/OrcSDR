@@ -223,3 +223,31 @@ higher weights or obtain better evidence.
 
 A synthetic 120-frame corpus with one hidden six-variable relation recovered
 that relation exactly. This proves the search method, not a JS8 parity result.
+
+
+## Sparse checks to decoder graph
+
+Once the sparse-check search spans the full measured parity dimension:
+
+```bash
+js8-fec-sparse-search codewords.txt > sparse.txt
+js8-fec-graph-gen sparse.txt > js8_fec_graph_generated.hpp
+```
+
+The generator builds both adjacency directions required by normalized min-sum
+decoding and refuses incomplete reconstruction by default. A host-only
+`--allow-incomplete` override exists for debugging experiments but must never
+be used to create a production graph.
+
+This makes the provenance chain explicit:
+
+```
+captured WAV
+ -> measured tones
+ -> selected tone mapping
+ -> 174-bit observed codewords
+ -> measured code/parity dimensions
+ -> independently recovered sparse checks
+ -> full-rank validation
+ -> generated immutable decoder graph
+```
