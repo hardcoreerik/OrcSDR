@@ -360,3 +360,11 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Added deterministic tests for tone-label validation, bit ordering and mapped-rank calculation; optimized and ASan/UBSan runs pass in the sandbox.
 - The tool deliberately does not hard-code a JS8 tone/Gray map or expected FEC rank as a decoding fact. It warns when the corpus is too small to distinguish a suspected 87-dimensional code from arbitrary mappings.
 - No firmware binding, UI, shared FT8/FT4 decoder behavior, transmit path, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 Normal candidate demod primitive
+
+- Added separate `js8_demod.*`: an allocation-free, float-only candidate-local 12 kHz PCM demodulator that evaluates all eight tones for each of 79 Normal symbols and reports raw tones, sync hits, sync contrast and winner margin.
+- Added a host-only synthetic tone fixture based on the public API frame vector. It recovers all 79 tones with deterministic noise and rejects a deliberately wrong base-frequency candidate; optimized and ASan/UBSan tests pass in the sandbox.
+- This is a receiver primitive, not a JS8 message decoder: no whole-band search, FEC, CRC, message acceptance, SNR calibration or firmware binding exists yet.
+- No UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.

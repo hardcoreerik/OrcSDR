@@ -63,6 +63,12 @@ run_suite js8_frame_tests \
   apps/orcsdr-tab5/ui/js8_mode.cpp \
   apps/orcsdr-tab5/ui/js8_frame.cpp
 
+run_suite js8_demod_tests \
+  tests/js8_demod_tests.cpp \
+  apps/orcsdr-tab5/ui/js8_mode.cpp \
+  apps/orcsdr-tab5/ui/js8_frame.cpp \
+  apps/orcsdr-tab5/ui/js8_demod.cpp
+
 run_suite js8_fec_reconstruct_tests \
   tests/js8_fec_reconstruct_tests.cpp
 

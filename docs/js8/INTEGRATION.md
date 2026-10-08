@@ -57,3 +57,10 @@ After reconstruction fixtures arrive:
 - then add the backend lifecycle.
 
 No CMake/firmware source-list change is justified until a real decoder source file needs device compilation.
+
+
+## Candidate demod primitive
+
+`js8_demod.*` is allocation-free and float-only in its hot loop. It evaluates a caller-supplied time/frequency candidate and returns raw tone decisions; it does not search the whole passband or produce `Decode`.
+
+The current exact single-tone correlations are a correctness/reference primitive. Before device binding, a bounded coarse-search front end should produce candidates and this stage, or an optimized equivalent, should refine only those candidates. No ESP32-P4 timing claim is made from the host unit test.

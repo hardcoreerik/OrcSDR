@@ -42,3 +42,12 @@ The host reconstruction lab can now:
 5. pass promising mappings into the GF(2) parity-basis derivation tool.
 
 No tone mapping has been claimed yet. The capture corpus is the next evidence dependency.
+
+
+## Candidate-local PCM demodulator
+
+The standalone module now includes a heap-free Normal-mode candidate demodulator. Given 12 kHz PCM plus a caller-supplied frame start and tone-0 audio frequency, it measures all eight tone energies per symbol, returns the 79 raw tone decisions, and reports sync hits, sync contrast and winner margin.
+
+A deterministic host-only waveform fixture based on the public API tone vector recovers all 79 tones with added noise and rejects a deliberately wrong base-frequency candidate. This validates the receive primitive only; it is not a claim that the synthetic waveform models every JS8 modulation detail.
+
+There is still no whole-passband candidate search, FEC, CRC, message parser, SNR calibration or firmware binding.
