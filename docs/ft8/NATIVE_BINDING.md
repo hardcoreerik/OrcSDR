@@ -39,8 +39,11 @@ Findings that changed the design (all measured, not assumed):
   that is 19 ms for the official FT8 recording, decoding the same messages (6 FT8 at K=32/gate 16, 7 at K=64/gate 32; FT4 3).
 - The tuner does not sit on the dial: the driver quantizes tuning (7.074 MHz was tuned at 7.070 MHz), so the dial is 4 kHz inside the baseband. The tap now
   takes the dial offset from the driver's reported centre (`esp_rtl_sdr_get_center_freq`) every 100 ms.
-- The Tab5 wall clock was 2.5 s behind the PC after boot (the hardware RTC has one-second resolution), which shifts every slot. After `settime` it is within
-  10 ms. FT8 needs under about half a second; a product fix (align the system clock to the RTC tick, or NTP when Wi-Fi is up) is still to do.
+- Clock (corrected): the hardware RTC only has one-second resolution and drifts (about 10 ppm measured, roughly 0.9 s per day), so FT8 slot timing needs a sub-second correction. Three things changed:
+  boot now waits for the RTC's seconds tick before taking the system time; the NTP sync (Settings, `FT8 NTP`, and once automatically per boot when the FT8 screen starts the decoder with Wi-Fi up) now writes the RTC exactly on a whole-second
+  boundary (previously mid-second, which left the RTC off by up to a second); and `FT8 TIME` reports the wall clock so a host can compare. **Do not trust `settime` or the PC clock as a reference**: this PC's clock was measured 0.46 s ahead of true time
+  (`w32tm /stripchart /computer:time.google.com`, source "Local CMOS Clock"), so an earlier "-14 ms against the PC" figure and the constant +0.58 s DT were that PC error, not the decoder. After an NTP sync the Tab5 reads -495 ms against the
+  PC (that is the PC being ahead) and the decoded DT centres on zero: median -100 ms, mean -29 ms over 59 decodes.
 - HF gain (corrected twice; this is the measured state). Manual gain does change what the tap sees: with the V4 plus MLA-30+ on 40 m the slot level rose
   3, 20, 104, 265 (0, 15, 25, 34 dB) and then flattened (253 to 303 at 40 to 50 dB) while IQ clipping went 0.04 percent (25 dB), 9 percent (34 dB), 22 to 32 percent
   (40 dB and up), and decodes kept rising to that knee. But an alternating A/B of the receiver's own AUTO setting against manual 34 dB (4 rounds each, 22 slots each) gave
@@ -61,6 +64,7 @@ Queries need no authentication; commands that change state need the PAIR/AUTH se
 | `FT8 BANDS` | no | the band table (index, label, dial Hz) |
 | `FT8 DECODES [n]` | no | the newest n decodes (default 20) |
 | `FT8 TIME` | no | the wall clock the slot scheduler uses, in ms |
+| `FT8 NTP` | yes | start a network time sync (also run once per boot automatically); the result prints as `ORC_NTP_OK` |
 | `FT8 DUMP` | no | the last decoded slot as base64 PCM16 lines (about 480 KB) |
 | `FT8 OPEN` | yes | open the FT8 dashboard |
 | `FT8 BAND <index|label|dial_hz>` | yes | tune a band (e.g. `40m`) |
@@ -75,13 +79,13 @@ Queries need no authentication; commands that change state need the PAIR/AUTH se
 | `FT8 ADIF <name>` | yes | write the decode list as an ADIF 3.1.4 heard-stations log to `/sd/ft8/<name>.adi` (stations heard, never contacts; no SNR; JS8 omitted) |
 
 `tools/tab5_ft8.py` wraps these: `status`, `bands`, `band`, `mode`, `run`, `config`, `decodes`, `clear`, `save`, `dump <file.wav>` (a 12 kHz WAV on the PC),
-`time` (Tab5 clock minus PC clock), `settime`, `watch <seconds>`, `raw "<any command>"`. It pairs from the key file (`--key`, `ORC_UI_DOC_KEY`, or
+`time` (Tab5 clock minus PC clock; only as good as the PC clock), `ntp`, `settime` (copies the PC clock: prefer `ntp`), `watch <seconds>`, `raw "<any command>"`. It pairs from the key file (`--key`, `ORC_UI_DOC_KEY`, or
 `.orclink/ui-doc.key`), never prints the key, and opens the port without resetting the board.
 
 Typical session:
 
 ```bash
-python tools/tab5_ft8.py --port COM17 settime
+python tools/tab5_ft8.py --port COM17 ntp
 python tools/tab5_ft8.py --port COM17 raw "RTL_GAIN MANUAL 250"
 python tools/tab5_ft8.py --port COM17 band 40m
 python tools/tab5_ft8.py --port COM17 run 1

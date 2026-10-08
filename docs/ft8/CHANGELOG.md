@@ -269,3 +269,9 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - The HUNTER tab and `FT8 HUNT <FAST|DECODE|STOP>` / `FT8 HUNTSTATUS` run `ft8_hunter` against the live decoder (`ft8_hunt_service()` in the loop). Added `strong_candidates` to the decoder stats (clear sync, refined score 0.45 or more) so a band is only called "FT8 SIG" for real sync, not for the 64 weakest-passing candidates.
 - Fixed: bands above 30 MHz (6 m, 2 m) were clamped to 30 MHz by the shortwave path. They now tune through the general VHF band, and the audio tap runs on both paths.
 - Measured: fast hunt visits 10 bands in about 70 s; decode hunt about 10 to 12 minutes; 40 m was best (12 decodes) in the first run.
+
+## 2026-10-08 — 6 MB app partition, NTP aligned to the second, clock finding corrected
+
+- Brought the 6 MB app partition onto this branch (cherry-picked from `claude/app-partition-6m`): the app is 0x3d6410 bytes with 36 percent (2.2 MB) free instead of 4 percent. Verified on the Tab5: it boots on the new table (a one-time full reflash) and still decodes.
+- `ntp_sync` now writes the RTC exactly on a whole-second boundary (it wrote mid-second, leaving the RTC off by up to a second). `FT8 NTP` and one automatic sync per boot when the FT8 decoder starts with Wi-Fi up.
+- Corrected the clock/DT finding: the PC clock used as a reference was 0.46 s ahead of true time, which produced the constant +0.58 s DT. With an NTP-corrected Tab5 clock the decoded DT centres on zero (median -100 ms, mean -29 ms, 59 decodes).

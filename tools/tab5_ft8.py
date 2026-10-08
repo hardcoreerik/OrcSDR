@@ -28,7 +28,7 @@ import serial
 
 TERMINATORS = (
     "ORC_FT8_STATUS", "ORC_FT8_BANDS_END", "ORC_FT8_DECODES_END", "ORC_FT8_OPEN_OK", "ORC_FT8_BAND_OK", "ORC_FT8_BAND_FAILED",
-    "ORC_FT8_MODE_OK", "ORC_FT8_CLEAR_OK", "ORC_FT8_RUN_OK", "ORC_FT8_CONFIG_OK", "ORC_FT8_SAVE_OK", "ORC_FT8_ADIF_OK", "ORC_FT8_TAB_OK", "ORC_FT8_SHOT_OK", "ORC_FT8_HUNT_OK", "ORC_FT8_HUNT_FAILED", "ORC_FT8_HUNTSTATUS_END", "ORC_FT8_ERROR",
+    "ORC_FT8_MODE_OK", "ORC_FT8_CLEAR_OK", "ORC_FT8_RUN_OK", "ORC_FT8_CONFIG_OK", "ORC_FT8_SAVE_OK", "ORC_FT8_ADIF_OK", "ORC_FT8_TAB_OK", "ORC_FT8_SHOT_OK", "ORC_FT8_HUNT_OK", "ORC_FT8_NTP_OK", "ORC_FT8_NTP_FAILED", "ORC_FT8_HUNT_FAILED", "ORC_FT8_HUNTSTATUS_END", "ORC_FT8_ERROR",
     "ORC_FT8_HELP control", "ORC_FT8_DUMP_END", "ORC_FT8_TIME",
 )
 
@@ -174,9 +174,11 @@ def main():
         if not samples:
             raise SystemExit("no reply")
         samples.sort()
+        print("(only as good as this PC clock: verify it against NTP, e.g. w32tm /stripchart /computer:time.google.com)")
         print("ORC_TAB5_CLOCK_OFFSET_MS median=%.0f min=%.0f max=%.0f n=%d (Tab5 minus PC)" % (samples[len(samples) // 2], samples[0], samples[-1], len(samples)))
     elif verb == "settime":
         # Sets the hardware clock from this PC, timed so the new second begins when the device handles the command.
+        # This copies the PC clock's error too (check it with w32tm /stripchart); prefer the 'ntp' verb.
         now = time.time()
         target = int(now) + 2
         time.sleep(max(0.0, target - time.time() - 0.012))
@@ -185,7 +187,7 @@ def main():
     elif verb == "raw":
         dev.send(" ".join(a.args))
         dev.read_until(("zzzz",), 5)
-    elif verb in ("open", "clear", "status", "bands", "help", "decodes", "band", "mode", "run", "config", "save", "adif", "tab", "shot", "hunt", "huntstatus"):
+    elif verb in ("open", "clear", "status", "bands", "help", "decodes", "band", "mode", "run", "config", "save", "adif", "tab", "shot", "hunt", "huntstatus", "ntp"):
         line = "FT8 " + verb.upper() + ((" " + " ".join(a.args)) if a.args else "")
         dev.command(line)
     else:
