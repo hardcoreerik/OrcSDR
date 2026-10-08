@@ -54,6 +54,15 @@ run_suite ft8_mode_tests \
   tests/ft8_mode_tests.cpp \
   apps/orcsdr-tab5/ui/ft8_mode.cpp
 
+run_suite js8_mode_tests \
+  tests/js8_mode_tests.cpp \
+  apps/orcsdr-tab5/ui/js8_mode.cpp
+
+run_suite js8_frame_tests \
+  tests/js8_frame_tests.cpp \
+  apps/orcsdr-tab5/ui/js8_mode.cpp \
+  apps/orcsdr-tab5/ui/js8_frame.cpp
+
 run_suite ft8_sync_tests \
   tests/ft8_sync_tests.cpp \
   apps/orcsdr-tab5/ui/ft8_mode.cpp \

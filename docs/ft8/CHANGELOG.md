@@ -335,3 +335,12 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 ## 2026-10-08 — A completed hunt tunes its best band
 
 - When a band hunt completes the receiver now tunes to the best band it found (it used to stay on the last band visited). Verified: a fast hunt ended on 40 m. A decode hunt at 12:50 UTC on the Tab5 (V4 plus MLA-30+): 40 m best with 8 decodes, 80 m 2 decodes, 10 m FT8-like sync without a decode, 160 m and 30 m through 12 m and 6 m quiet; the HUNTER tab renders these results (screen capture).
+
+
+## 2026-10-08 — JS8 receive reconstruction slice 1
+
+- Added a separate `orcsdr::js8` module with JS8 submode profiles and raw 79-tone frame handling; no FT8/FT4 decoder behavior changed.
+- Established the Normal sync pattern from the public JS8Call API `TX.FRAME` tone vector and added extraction of the two 29-symbol data blocks (58 data tones total).
+- Added `docs/js8/PROTOCOL_FACTS.md`, `RECONSTRUCTION.md`, `INTEGRATION.md`, `STATUS.md`, and fixture provenance scaffolding.
+- Exact tone-bit mapping, FEC, CRC and upper-layer packing remain explicitly blocked pending independent reconstruction from owner/reference captures; the module cannot emit a user-visible JS8 decode yet.
+- Added optimized and ASan/UBSan JS8 host suites to `tools/test-ft8.sh`. No firmware binding, UI, transmit path, PTT, CAT or flashing work was added.
