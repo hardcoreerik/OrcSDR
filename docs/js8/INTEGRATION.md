@@ -119,3 +119,17 @@ not tied to a hard-coded JS8 matrix:
 After the reconstruction corpus yields a complete sparse graph, a generated
 static graph header can bind directly to this engine. CRC and frame parsing
 remain downstream mandatory gates.
+
+
+## JS8 SNR
+
+`js8_snr.*` follows the OrcSDR weak-signal convention: signal-to-noise power
+is normalized to a 2500 Hz reference bandwidth. It consumes the validated raw
+tone sequence plus a spectral grid and uses only single-precision arithmetic in
+the estimator.
+
+The current calibration offset is exactly 0.0 dB because the deterministic
+synthetic plain-FSK sweep shows less than 0.05 dB mean bias from +8 through
+-12 dB. That is a host-fixture result only. Firmware integration must retain an
+SNR-unavailable flag until real JS8 reference pairs establish that the estimator
+is calibrated on actual JS8 waveforms.

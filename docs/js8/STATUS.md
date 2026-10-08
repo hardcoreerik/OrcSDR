@@ -221,3 +221,29 @@ result. Default generation failed with:
 The explicit experiment override emitted the expected one-check adjacency.
 
 No production JS8 graph has been generated.
+
+
+## Synthetic SNR estimator baseline
+
+The standalone JS8 module now includes `js8_snr.*`. It estimates signal
+power from the already-known 79 transmitted tones and a guard-bin noise
+reference, then reports the conventional weak-signal SNR in a 2500 Hz
+bandwidth.
+
+Truth gate: production code must call this only after the future FEC + CRC
+acceptance layer has established the transmitted frame. The estimator itself is
+not a detector and does not turn a raw candidate into a decode.
+
+Synthetic plain-FSK calibration sweep, deterministic AWGN:
+- +8 dB: 20/20 exact 79-tone frames, mean error +0.04 dB
+- +4 dB: 20/20, -0.03 dB
+-  0 dB: 20/20, -0.00 dB
+- -4 dB: 20/20, +0.04 dB
+- -8 dB: 20/20, +0.03 dB
+- -12 dB: 20/20, +0.05 dB
+- -16 dB: 6/20 exact-tone frames, mean error -0.03 dB on those six
+
+The fitted synthetic offset remains 0.0 dB. This is deliberately not called a
+real-JS8 calibration: the waveform fixture is plain continuous-phase FSK, and
+real reference-paired captures must validate or replace the offset before the
+firmware may show JS8 SNR as calibrated.

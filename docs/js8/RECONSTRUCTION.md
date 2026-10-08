@@ -251,3 +251,18 @@ captured WAV
  -> full-rank validation
  -> generated immutable decoder graph
 ```
+
+
+## SNR calibration evidence
+
+The reconstruction lab includes `tools/js8-snr-sweep.cpp`. It synthesizes
+the documented Normal 79-tone frame as continuous-phase plain FSK, mixes
+deterministic white Gaussian noise at a requested 2500 Hz-bandwidth SNR, and
+counts a trial only if the candidate demodulator recovers all 79 expected tone
+decisions.
+
+The synthetic sweep is therefore useful for numerical regression and estimator
+bias, but it is not a substitute for real JS8 modulation/reference pairs.
+Current deterministic results show effectively zero synthetic bias (+/-0.05 dB
+mean from +8 through -12 dB). The production calibration remains provisional
+until owner captures provide reference SNR values from the same RF events.

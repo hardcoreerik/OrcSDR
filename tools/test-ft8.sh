@@ -93,6 +93,12 @@ run_suite js8_demod_tests \
   apps/orcsdr-tab5/ui/js8_frame.cpp \
   apps/orcsdr-tab5/ui/js8_demod.cpp
 
+run_suite js8_snr_tests \
+  tests/js8_snr_tests.cpp \
+  apps/orcsdr-tab5/ui/js8_mode.cpp \
+  apps/orcsdr-tab5/ui/js8_frame.cpp \
+  apps/orcsdr-tab5/ui/js8_snr.cpp
+
 run_suite js8_fec_reconstruct_tests \
   tests/js8_fec_reconstruct_tests.cpp
 
@@ -136,6 +142,16 @@ g++ "${common[@]}" -Itools -O2 tools/js8-wav-tones.cpp \
   apps/orcsdr-tab5/ui/js8_spectral.cpp \
   apps/orcsdr-tab5/ui/js8_demod.cpp \
   -o "$build_dir/js8-wav-tones"
+
+g++ "${common[@]}" -O2 tools/js8-snr-sweep.cpp \
+  apps/orcsdr-tab5/ui/js8_mode.cpp \
+  apps/orcsdr-tab5/ui/js8_frame.cpp \
+  apps/orcsdr-tab5/ui/js8_sync.cpp \
+  apps/orcsdr-tab5/ui/js8_spectral.cpp \
+  apps/orcsdr-tab5/ui/js8_demod.cpp \
+  apps/orcsdr-tab5/ui/js8_snr.cpp \
+  -o "$build_dir/js8-snr-sweep"
+"$build_dir/js8-snr-sweep" --check
 
 run_suite ft8_sync_tests \
   tests/ft8_sync_tests.cpp \

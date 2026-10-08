@@ -444,3 +444,11 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Optimized and ASan/UBSan graph-builder tests pass. A deliberately incomplete synthetic reconstruction was correctly rejected at rank 1 of 54; the explicit override emitted the expected one-check graph.
 - No real JS8 graph is present or claimed yet.
 - No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 synthetic SNR estimator baseline
+
+- Added standalone `js8_snr.*`: signal/noise estimation in the conventional 2500 Hz weak-signal bandwidth from an already-validated 79-tone frame and a caller-owned spectral grid. It is not a detector and must only be used after future FEC + CRC acceptance.
+- Added `tools/js8-snr-sweep.cpp` and optimized/ASan/UBSan estimator tests. The deterministic plain-FSK/AWGN sweep recovered all 79 tones in 120/120 trials from +8 through -12 dB; mean estimator error at each step stayed within 0.05 dB. At -16 dB, 6/20 frames retained all 79 tones and those estimates averaged -0.03 dB error.
+- Synthetic calibration offset stays 0.0 dB. This is not a real-JS8 calibration claim; reference-paired owner captures must validate it before firmware displays JS8 SNR as calibrated.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
