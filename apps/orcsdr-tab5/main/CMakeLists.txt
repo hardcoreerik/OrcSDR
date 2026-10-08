@@ -47,6 +47,7 @@ idf_component_register(
         "../ui/ft8_ldpc_decode.cpp"
         "../ui/ft8_audio_tap.cpp"
         "../ui/ft8_native_backend.cpp"
+        "../ui/ft8_runtime.cpp"
         "../ui/ft8_hunter.cpp"
         "../ui/ft8_dashboard.cpp"
         "../ui/am_finder.cpp"

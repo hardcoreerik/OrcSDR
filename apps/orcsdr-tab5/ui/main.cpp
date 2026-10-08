@@ -59,6 +59,7 @@
 #include "ft8_decoder_backend.hpp"
 #include "ft8_hunter.hpp"
 #include "ft8_model.hpp"
+#include "ft8_runtime.hpp"
 #include "shortwave_model.hpp"
 #include "shortwave_audio_dsp.hpp"
 #include "shortwave_dashboard.hpp"
@@ -8987,6 +8988,10 @@ static void rtl_dsp_task(void *) {
         orcsdr::visualizer::active() || lab_active)
       spectrum_offer_iq_snapshot(block.data, block.bytes);
     mark(dsp_stats::Stage::spectrum);
+    // Native FT8/FT4 analysis tap: a read-only sidecar on the raw block (own state, own buffers); it runs only while the FT8
+    // screen owns the receiver, so every other path is untouched.
+    if (!block.custom_rate && block.band == RtlBand::shortwave && orcsdr::ft8_runtime::active())
+      orcsdr::ft8_runtime::offer_iq(block.data, block.bytes, block.sample_rate_sps);
     if (!block.custom_rate && block.band == RtlBand::lora)
       lora_iq_offer(block.data, block.bytes);
     mark(dsp_stats::Stage::decoders);
@@ -12667,6 +12672,30 @@ size_t g_ft8_item = 0;              // one-based selected row for the OrcDial; 0
 orcsdr::ft8::DigitalMode g_ft8_mode = orcsdr::ft8::DigitalMode::ft8;
 uint32_t g_ft8_capabilities = 0;    // DecoderCapability bits of the bound decoder; 0 = none bound
 
+// Decodes arrive on the decoder task; the UI thread drains them into the store (the store is not thread-safe).
+portMUX_TYPE g_ft8_pending_lock = portMUX_INITIALIZER_UNLOCKED;
+orcsdr::ft8::Decode g_ft8_pending[32];
+size_t g_ft8_pending_count = 0;
+
+void ft8_native_on_decode(const orcsdr::ft8::Decode& decode, void*) {
+  portENTER_CRITICAL(&g_ft8_pending_lock);
+  if (g_ft8_pending_count < sizeof(g_ft8_pending) / sizeof(g_ft8_pending[0])) g_ft8_pending[g_ft8_pending_count++] = decode;
+  portEXIT_CRITICAL(&g_ft8_pending_lock);
+}
+
+bool ft8_native_clock_valid() { return orcsdr::time_service::now().wallclock_valid; }
+
+void ft8_native_drain_pending() {
+  orcsdr::ft8::Decode local[32];
+  size_t n = 0;
+  portENTER_CRITICAL(&g_ft8_pending_lock);
+  n = g_ft8_pending_count;
+  for (size_t i = 0; i < n; ++i) local[i] = g_ft8_pending[i];
+  g_ft8_pending_count = 0;
+  portEXIT_CRITICAL(&g_ft8_pending_lock);
+  for (size_t i = 0; i < n; ++i) g_ft8_store.append(local[i]);
+}
+
 size_t ft8_selected_band() {
   if (g_ft8_band >= orcsdr::ft8::band_count()) g_ft8_band = orcsdr::ft8::nearest_band(14074000);
   return g_ft8_band;
@@ -12684,7 +12713,25 @@ orcsdr::ft8::Snapshot ft8_dashboard_snapshot() {
   snapshot.receiver_running = rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
   snapshot.battery_percent = M5.Power.getBatteryLevel();
   snapshot.selected_band = ft8_selected_band();
-  snapshot.decoder_state = orcsdr::ft8::DecoderState::unbound;
+  orcsdr::ft8_runtime::touch();
+  if (!orcsdr::ft8_runtime::active() &&
+      orcsdr::ft8_runtime::start(g_ft8_mode, ft8_native_on_decode, nullptr, ft8_native_clock_valid))
+    Serial.println("ORC_FT8_NATIVE bound");
+  ft8_native_drain_pending();
+  g_ft8_capabilities = orcsdr::ft8_runtime::active() ? (orcsdr::ft8::decoder_cap_ft8 | orcsdr::ft8::decoder_cap_ft4) : 0u;
+  {
+    const auto rt = orcsdr::ft8_runtime::status();
+    using RS = orcsdr::ft8_runtime::State;
+    using DS = orcsdr::ft8::DecoderState;
+    snapshot.decoder_state = !orcsdr::ft8_runtime::active() ? DS::unbound
+                             : rt.state == RS::listening ? DS::listening
+                             : rt.state == RS::decoding ? DS::decoding
+                             : rt.state == RS::ready ? DS::ready
+                             : rt.state == RS::error ? DS::error
+                                                     : DS::armed;
+    snapshot.last_slot_decodes = static_cast<uint8_t>(std::min<uint32_t>(rt.last_slot_decodes, 255u));
+    snapshot.candidate_count = static_cast<uint8_t>(std::min<uint32_t>(rt.last_coarse, 255u));
+  }
   snapshot.mode = g_ft8_mode;
   snapshot.decoder_capabilities = g_ft8_capabilities;
   snapshot.hunter = g_ft8_hunter.snapshot();
@@ -12726,6 +12773,7 @@ bool ft8_select_band(size_t index) {
   const auto* preset = orcsdr::ft8::band(index);
   if (preset == nullptr) return false;
   g_ft8_band = index;
+  orcsdr::ft8_runtime::note_discontinuity();
   if (!validate_rtl_tune_frequency(preset->dial_hz)) return false;
   if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
       rtl_ui_band == RtlBand::shortwave)
@@ -12750,7 +12798,7 @@ void handle_ft8_dashboard_action(const orcsdr::ft8::Action& action) {
       if (orcsdr::ft8::valid_mode(static_cast<uint8_t>(action.value)) &&
           orcsdr::ft8::mode_supported(g_ft8_capabilities,
                                       static_cast<orcsdr::ft8::DigitalMode>(action.value)))
-        g_ft8_mode = static_cast<orcsdr::ft8::DigitalMode>(action.value);
+        { g_ft8_mode = static_cast<orcsdr::ft8::DigitalMode>(action.value); (void)orcsdr::ft8_runtime::set_mode(g_ft8_mode); }
       else
         Serial.println("ORC_FT8_ERROR mode_unavailable");
       break;

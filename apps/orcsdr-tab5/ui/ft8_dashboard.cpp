@@ -275,7 +275,8 @@ void draw_live_rows() {
     char utc[16] = "--:--:--", value[20];
     format_utc(utc, sizeof(utc), d->utc_epoch);
     text(utc, 42, y, TFT_WHITE, 1, middle_left);
-    std::snprintf(value, sizeof(value), "%+d", d->snr_db);
+    if (d->flags & decode_flag_snr_unavailable) std::snprintf(value, sizeof(value), "--");
+    else std::snprintf(value, sizeof(value), "%+d", d->snr_db);
     text(value, 146, y, TFT_WHITE, 1, middle_left);
     std::snprintf(value, sizeof(value), "%+.1f", d->dt_ms / 1000.0);
     text(value, 220, y, TFT_WHITE, 1, middle_left);
@@ -380,7 +381,8 @@ void draw_decodes() {
     char utc[16] = "--:--:--", item[20];
     format_utc(utc, sizeof(utc), d->utc_epoch);
     text(utc, x[0], y, TFT_WHITE, 1, middle_left);
-    std::snprintf(item, sizeof(item), "%+d", d->snr_db);
+    if (d->flags & decode_flag_snr_unavailable) std::snprintf(item, sizeof(item), "--");
+    else std::snprintf(item, sizeof(item), "%+d", d->snr_db);
     text(item, x[1], y, TFT_WHITE, 1, middle_left);
     std::snprintf(item, sizeof(item), "%+.1f", d->dt_ms / 1000.0);
     text(item, x[2], y, TFT_WHITE, 1, middle_left);
@@ -591,8 +593,10 @@ void draw_heard() {
     text(d->grid[0] ? d->grid : "----", 286, y,
          maidenhead_valid(d->grid) ? kCyan : kMuted, 2, middle_left);
     char info[80];
-    std::snprintf(info, sizeof(info), "last %+d dB   %u Hz   %s", d->snr_db, d->audio_hz,
-                  kind_name(d->kind));
+    if (d->flags & decode_flag_snr_unavailable)
+      std::snprintf(info, sizeof(info), "last %u Hz   %s", d->audio_hz, kind_name(d->kind));
+    else
+      std::snprintf(info, sizeof(info), "last %+d dB   %u Hz   %s", d->snr_db, d->audio_hz, kind_name(d->kind));
     text(info, 454, y, TFT_WHITE, 1, middle_left);
     ++out;
   }
