@@ -15,6 +15,7 @@ struct ReportSnapshot {
   uint32_t noaa_frequency_hz = 0;
   float noaa_dbfs = 0.0f;
   bool noaa_valid = false;
+  uint32_t noaa_age_seconds = 0;
   char location_label[64]{};
 };
 

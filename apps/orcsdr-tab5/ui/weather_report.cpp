@@ -108,7 +108,11 @@ bool encode_report_html(const ReportSnapshot& r, char* output, size_t capacity) 
   if (!w.append("<!doctype html><meta charset=\"utf-8\"><title>OrcSDR Weather Report</title><h1>OrcSDR Weather Report</h1><p>Mode: ")) return false;
   if (!w.append(r.online_policy == OnlinePolicy::disabled ? "OFFLINE" : "ONLINE ENRICHMENT")) return false;
   if (!w.append("</p><p>Location: ") || !append_html(w, r.location_label) || !w.append("</p>")) return false;
-  if (r.noaa_valid && !w.format("<p>NOAA RF: %.3f MHz, relative %.1f dBFS</p>", r.noaa_frequency_hz / 1000000.0, static_cast<double>(r.noaa_dbfs))) return false;
+  if (r.noaa_valid &&
+      !w.format("<p>NOAA RF: %.3f MHz, relative %.1f dBFS, age %u s</p>",
+                r.noaa_frequency_hz / 1000000.0,
+                static_cast<double>(r.noaa_dbfs), r.noaa_age_seconds))
+    return false;
   if (!r.noaa_valid && !w.append("<p>NOAA RF: no current measurement</p>")) return false;
   return w.ok();
 }

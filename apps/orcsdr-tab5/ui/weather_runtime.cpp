@@ -48,9 +48,16 @@ bool runtime_save_snapshot(const Snapshot& snapshot, ReportSaveResult* result) {
   report.created_uptime_ms = now.uptime_ms;
   report.wallclock_valid = now.wallclock_valid;
   report.online_policy = g_policy;
-  report.noaa_frequency_hz = snapshot.current_noaa_hz;
-  report.noaa_dbfs = snapshot.relative_dbfs;
-  report.noaa_valid = snapshot.rf_running || snapshot.noaa_scan.complete;
+  if (snapshot.noaa_scan.complete) {
+    report.noaa_frequency_hz = snapshot.noaa_scan.strongest_frequency_hz;
+    report.noaa_dbfs = snapshot.noaa_scan.strongest_dbfs;
+    report.noaa_valid = true;
+  } else {
+    report.noaa_frequency_hz = snapshot.current_noaa_hz;
+    report.noaa_dbfs = snapshot.relative_dbfs;
+    report.noaa_valid = snapshot.rf_running;
+  }
+  report.noaa_age_seconds = snapshot.rf_age_seconds;
   if (snapshot.location_configured)
     std::snprintf(report.location_label,sizeof(report.location_label),"%s",snapshot.location_label);
   else

@@ -6617,19 +6617,28 @@ void handle_weather_dashboard_action(const orcsdr::weather::Action& action) {
       weather_noaa_scan_requested.store(true, std::memory_order_release);
       weather_noaa_scan_cancel_requested.store(false, std::memory_order_release);
       const auto session = radio_session.snapshot();
+      bool receiver_ready = true;
       if (session.owner == orcsdr::radio::Owner::weather &&
           g_stream_band == RtlBand::wx &&
           rtl_capture_state.load(std::memory_order_acquire) ==
               RtlCaptureState::running) {
-        (void)request_hot_retune_for({session.owner, session.generation},
-                                     orcsdr::weather::noaa_channel_hz(0));
+        receiver_ready =
+            request_hot_retune_for({session.owner, session.generation},
+                                   orcsdr::weather::noaa_channel_hz(0));
       } else {
-        (void)queue_local_rtl_listen(RtlBand::wx,
-                                     orcsdr::weather::noaa_channel_hz(0), false,
-                                     orcsdr::radio::Owner::weather);
+        receiver_ready =
+            queue_local_rtl_listen(RtlBand::wx,
+                                   orcsdr::weather::noaa_channel_hz(0), false,
+                                   orcsdr::radio::Owner::weather);
       }
-      strlcpy(weather_status_text, "NOAA 7-channel sequential scan requested.",
-              sizeof(weather_status_text));
+      if (!receiver_ready) {
+        weather_noaa_scan_requested.store(false, std::memory_order_release);
+        strlcpy(weather_status_text, "NOAA scan unavailable; receiver not ready.",
+                sizeof(weather_status_text));
+      } else {
+        strlcpy(weather_status_text, "NOAA 7-channel sequential scan requested.",
+                sizeof(weather_status_text));
+      }
       break;
     }
     case Kind::stop_rf:
@@ -11808,10 +11817,14 @@ void scan_finished(orcsdr::scan::Finish reason, void*) {
       orcsdr::weather::runtime_set_scan_result(result);
       weather_noaa_frequency_hz.store(result.strongest_frequency_hz,
                                       std::memory_order_release);
-      (void)request_hot_retune_for(scan_radio_token, result.strongest_frequency_hz);
       std::snprintf(weather_status_text, sizeof(weather_status_text),
-                    "NOAA scan complete: %.3f MHz strongest.",
+                    "NOAA scan complete: %.3f MHz strongest. Press LISTEN.",
                     result.strongest_frequency_hz / 1000000.0);
+      // SCAN is a bounded discovery action, not a hidden listener. Stop the
+      // Weather-owned stream after sampling all seven channels; LISTEN is the
+      // explicit continuous action.
+      rtl_restart_requested.store(false, std::memory_order_release);
+      rtl_stop_requested.store(true, std::memory_order_release);
     } else {
       std::snprintf(weather_status_text, sizeof(weather_status_text),
                     "NOAA scan %s.",
