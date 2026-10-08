@@ -410,3 +410,11 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Added optimized and ASan/UBSan primitive tests plus a synthetic hidden-parameter corpus. The method recovers the intended test representation and its mathematically equivalent reflected form; that orientation ambiguity is explicitly documented.
 - No JS8 CRC polynomial, initialization, xor-out or bit ordering is claimed yet; those remain reconstruction results to be established from FEC-decoded real/reference frames and held-out validation.
 - No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 pre-FEC front-end pipeline
+
+- Added standalone `js8_frontend.*`: bounded, allocation-free orchestration from caller-owned spectral grid through Normal sync search and candidate-local PCM demod to raw 79-tone candidate frames.
+- Added an end-to-end synthetic front-half test that recovers the documented Normal frame, exact injected start sample, tone-0 frequency and all 21 sync tones; optimized and ASan/UBSan runs pass in the sandbox.
+- The front end intentionally returns raw candidates only. It cannot create `Decode` or user-visible text until independently reconstructed FEC + CRC + frame parsing succeed.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.

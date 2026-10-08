@@ -69,6 +69,15 @@ run_suite js8_spectral_tests \
   apps/orcsdr-tab5/ui/js8_sync.cpp \
   apps/orcsdr-tab5/ui/js8_spectral.cpp
 
+run_suite js8_frontend_tests \
+  tests/js8_frontend_tests.cpp \
+  apps/orcsdr-tab5/ui/js8_mode.cpp \
+  apps/orcsdr-tab5/ui/js8_frame.cpp \
+  apps/orcsdr-tab5/ui/js8_sync.cpp \
+  apps/orcsdr-tab5/ui/js8_spectral.cpp \
+  apps/orcsdr-tab5/ui/js8_demod.cpp \
+  apps/orcsdr-tab5/ui/js8_frontend.cpp
+
 run_suite js8_frame_tests \
   tests/js8_frame_tests.cpp \
   apps/orcsdr-tab5/ui/js8_mode.cpp \

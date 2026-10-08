@@ -139,3 +139,27 @@ mathematically equivalent reflected form. That ambiguity is documented rather
 than hidden; real JS8 bit-order evidence must select the canonical form.
 
 No JS8 CRC parameters are claimed yet.
+
+
+## Pre-FEC receiver front end complete
+
+The standalone module now has `js8_frontend.*`, a bounded allocation-free
+orchestration layer that consumes caller-owned PCM plus a caller-owned spectral
+grid and performs:
+
+```
+energy grid -> bounded Normal sync search -> candidate time/frequency
+            -> candidate-local PCM demod -> raw 79-tone frame
+```
+
+The output is `RawCandidate`, not `orcsdr::ft8::Decode`. It carries the raw
+frame, candidate geometry and demod confidence only. FEC + CRC remain mandatory
+before any user-visible decode can exist.
+
+Sandbox end-to-end front-half test recovers the documented 79-tone Normal frame,
+its exact synthetic start sample, tone-0 frequency and all 21 sync tones.
+Optimized and ASan/UBSan variants pass.
+
+At this point the receive front half and reconstruction laboratory are ready for
+the PC capture corpus. The next missing decoder stage is no longer plumbing:
+it is the independently reconstructed tone mapping/FEC/CRC evidence.

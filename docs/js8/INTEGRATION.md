@@ -84,3 +84,21 @@ For ESP32-P4 production, do not run a dense 200-3000 Hz exact-correlation grid
 unless measurement proves it fits the slot budget. The preferred integration is
 a bounded FFT/coarse-search implementation, compared against this JS8 oracle on
 identical PCM fixtures before it is accepted.
+
+
+## Front-end orchestration
+
+`js8_frontend.*` is the device-shaped pre-FEC orchestration layer. It owns no
+large buffers and performs no heap allocation. The future backend supplies:
+
+- the slot PCM;
+- a spectral energy grid;
+- a bounded output array.
+
+It returns only raw JS8 candidates. That separation is deliberate: firmware
+must not surface sync/tone evidence as a decoded message.
+
+The eventual native backend should replace the exact-correlation grid builder
+with a measured FFT/coarse-search implementation, then feed its grid into this
+same front-end contract. Once FEC/CRC are reconstructed, the acceptance layer
+can be appended without changing the front-end API.
