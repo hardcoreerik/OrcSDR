@@ -45,3 +45,13 @@ Execution is intentionally split so the first usable dashboard does not depend o
 | Weather satellites | target catalog near 137 MHz | pass-driven only; no blind periodic polling |
 
 The implementation must reuse OrcSDR's existing receiver location, `offline_map`, signed `noaa_weather` catalog, WX/NFM DSP, `radio_session`, `time_service`, and `orcsdr_storage` rather than duplicating those services.
+
+## Foundation implementation status
+
+Phase 1 is implemented on the Weather Foundation branch and tracked in the
+[Weather user guide](../user-guide/dashboards/weather.md). The current evidence
+is recorded in the
+[Foundation test report](../testing/weather-dashboard-foundation-2026-10-07.md).
+No physical Tab5 or RF verification is implied by host/CI results.
+
+See [Weather changelog](CHANGELOG.md) for implementation changes.
