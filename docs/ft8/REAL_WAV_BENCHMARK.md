@@ -200,3 +200,36 @@ then re-evaluate only the top candidates at finer time and frequency offsets and
 an exact-correlation refinement on the host to prove the coverage gain independently of DSP cost, targeting roughly the 4,2 coverage (5 to 6 of 13 on
 FT8) at a small fraction of the 4,2 spectral cost; then design the efficient P4 implementation (per-candidate down-conversion to a low sample rate).
 The callsign-encoder fix, the candidate limit and the FT4 contest-message parser are independent, low-risk items that should be measured separately.
+
+## Task 3, experiment 2: candidate-local time and frequency refinement (host prototype)
+
+Change under test (one change): keep the coarse 2,1 whole-band search, take the top-K sync candidates, and for each run a short coordinate search
+over sample-accurate start time (+-1 coarse hop) and sub-bin frequency (+-1 coarse bin), scoring only the protocol sync symbols with exact
+single-frequency correlation; then build a candidate-local energy grid (one row per channel symbol, one bin per tone) at the refined position and feed it
+to the unchanged `pipeline::try_candidate`. Tool: `tools/ft8-wav-refine.cpp`. Control: the same tool with `--no-refine` (same K, same gates). Exact
+correlation is a measurement vehicle; it is not the P4 implementation. Host wall times, WSL2 g++ -O3, single runs (about 10 percent noise).
+
+| recording | variant | accepted | spectral ms | refine ms | gates ms | total ms | false accepts |
+|---|---|---:|---:|---:|---:|---:|---:|
+| FT8 (14 ref) | 2,1 coarse, K=32, no refine (control) | 1 | 262 | 0 | 65 | 330 | 0 |
+| FT8 | 2,1 coarse, K=32, refine | 5 | 279 | 431 | 66 | 778 | 0 |
+| FT8 | 2,1 coarse, K=64, no refine | 1 | 262 | 0 | 138 | 402 | 0 |
+| FT8 | **2,1 coarse, K=64, refine** | **6** | 270 | 847 | 132 | 1,250 | 0 |
+| FT8 | 2,1 coarse, K=16, refine | 3 | 271 | 219 | 33 | 525 | 0 |
+| FT8 | 4,2 coarse, K=64, no refine (experiment 1 best grid) | 6 | 1,053 | 0 | 134 | 1,197 | 0 |
+| FT4 (19 ref) | 2,1 coarse, K=32, no refine | 2 | 32 | 0 | 14 | 47 | 0 |
+| FT4 | 2,1 coarse, K=32, refine | 3 | 31 | 48 | 14 | 94 | 0 |
+| FT4 | 2,1 coarse, K=64, refine | 3 | 32 | 98 | 28 | 159 | 0 |
+| FT4 | 4,2 coarse, K=64, no refine | 3 | 125 | 0 | 28 | 155 | 0 |
+
+FT8 refined K=64 accepts `K1JT EA3AGB -15`, `K1JT HA0DU KN07`, `N1JFU EA6EE R-07`, `W1DIG SV9CVY -14`, `W1FC F5BZB -08`, `WM3PEN EA6VQ -09`: all six are in the
+WSJT-X reference, and `K1JT EA3AGB -15` (a strong-sync LDPC failure at every geometry of experiment 1) is newly recovered. FT4 refined accepts
+`K4SQC VE3RX RR73`, `N1TRK KB7RUQ RR73`, `WD9IGY KX1X 73`. Noise-only: 16 deterministic Gaussian recordings (8 FT8, 8 FT4), refine on, K=64: zero LDPC convergences, zero CRC passes,
+zero accepts. No synthetic-signal corpus was run through this host tool; the synthetic end-to-end tests exercise the production path, which this experiment did not change.
+
+Findings: refinement from the cheap 2,1 grid matches the best experiment-1 coverage (6 of 14 FT8, 3 of 19 FT4) while the coarse spectral stage stays at the 2,1 cost (about one quarter of
+4,2). Coverage depends on K: K=16 gives 3 FT8, K=32 gives 5, K=64 gives 6, so candidate capacity (experiment 3) interacts with this and refinement is the larger lever. The
+refinement cost shown (about 13 ms per candidate on the host) is exact correlation and is the number the efficient implementation must beat; a per-candidate down-conversion to a few hundred hertz
+of bandwidth is expected to be well over an order of magnitude cheaper, but that is a design expectation, not a measurement.
+
+Recommended next single change: candidate capacity and ranking (experiment 3 as ordered): measure K=96/128 with refinement, and rank by refined sync score instead of coarse score before cutting to the gate budget.

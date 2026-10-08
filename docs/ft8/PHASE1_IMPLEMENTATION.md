@@ -633,3 +633,9 @@ diagnostic tool uses the same code. The tool counts positions scored, positions 
 candidates attempted within the limit and in total, and the LDPC, CRC, unpack and plausibility counts for both, and times spectral analysis, sync and the gates.
 Reference signals are matched one-to-one to candidates (closest first) so a neighbouring signal's decode is never credited to another. Source of the idea: ordinary
 experimental practice (measure the stages before changing them); no external decoder code or control flow was used. WSJT-X remains an external reference executable only.
+
+## Task 3, experiment 2: refinement
+
+Hypothesis from experiment 1: misses with strong sync are grid misalignment. Test: refine position per candidate only, nothing else. The refinement scores the protocol synchronization symbols with exact correlation at
+trial (start sample, base frequency) points, moves to the best, and demodulates a candidate-local grid there. The idea of oversampled local re-estimation is generic receiver practice; the implementation
+here is written from the repository's own spectral definition and no external decoder code or tables were consulted.

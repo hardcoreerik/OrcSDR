@@ -209,3 +209,9 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
   deterministic noise runs. Results and diagnosis are in `REAL_WAV_BENCHMARK.md`.
 - Found and documented (not yet fixed): the standard-callsign encoder rejects callsigns with more than one digit (`A92EE`), and FT4 contest message types are unparsed.
 - No decoder math, regression floor, firmware, UI or audio path changed.
+
+## 2026-10-07 — Task 3 experiment 2: candidate-local time/frequency refinement (host-only measurement)
+
+- Added `tools/ft8-wav-refine.cpp` (host only, exact correlation): coarse 2,1 search, per-candidate sample/sub-bin refinement scored on sync symbols, then the unchanged `pipeline::try_candidate`. Includes a `--no-refine` control.
+- Measured: FT8 official recording 1 to 6 accepted (K=64) versus the unrefined control, equal to the 4,2 grid at about a quarter of its spectral cost; FT4 2 to 3. Zero false accepts on both recordings and on 16 noise recordings.
+- No production decoder code, acceptance rule, firmware, UI or audio path changed. Not an ESP32-P4 timing.
