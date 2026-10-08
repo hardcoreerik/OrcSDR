@@ -71,7 +71,7 @@ override this document for current state. Future work belongs in
 |---|---|---|
 | FM receive, stereo, RDS, presets | **RF-Verified / Regression-Tested** | Verified on Blog V4 and V3C. Results remain bounded to the tested dongle, antenna, band, and setup. |
 | AM broadcast dashboard and 119-channel scan | **Hardware-Verified / Experimental** | The exact RC4 package exercised the dashboard and scan. General reception quality and gain calibration are not established. |
-| NOAA Weather Radio | **Implemented** | Current-release RF acceptance is Not Verified. |
+| Weather dashboard / NOAA Weather Radio | **Implemented / Regression-Tested / Experimental** | Dedicated offline-first five-tab dashboard, source/age provenance, seven-channel NOAA scan, explicit WX/NFM Listen, OrcMaps context, signed `noaa_weather` pack state, and SD report/history paths are implemented. Opening Weather does not retune. Physical Tab5/RF acceptance and SAME decoding remain Not Verified / Not Implemented. |
 | CB | **Implemented / Runtime-Verified** | The earlier channel panel was flashed and exercised. The band-wide scanner dashboard is **Implemented / Regression-Tested** (host scanner tests) and still needs Tab5 hardware and RF acceptance. |
 | Shortwave | **Implemented / Experimental** | Routes to the generic Browse/NFM workspace. A complete calibrated HF AM/SSB experience is Not Implemented. |
 | Airband | **Implemented / Experimental** | Routes to generic Browse near 121.5 MHz using NFM. Proper AM aviation voice is Not Implemented. |

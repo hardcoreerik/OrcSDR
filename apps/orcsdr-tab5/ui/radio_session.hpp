@@ -1,12 +1,12 @@
 #pragma once
 
-#include <cstdint>
 #include <atomic>
+#include <cstdint>
 
 namespace orcsdr::radio {
 
 enum class Band : uint8_t { fm, am, wx, cb, lora, browse, adsb, p25, pocsag, shortwave, airband };
-enum class Owner : uint8_t { none, fm, p25, adsb, lora, radio, rf_lab, rf_visualizer, pocsag };
+enum class Owner : uint8_t { none, fm, p25, adsb, lora, radio, rf_lab, rf_visualizer, pocsag, weather };
 enum class ReceiverState : uint8_t { disconnected, ready, starting, running, stopping, failed };
 
 struct Token {
@@ -26,6 +26,8 @@ struct Snapshot {
 class Session {
  public:
   Token acquire(Owner owner, Band band, uint32_t frequency_hz, uint32_t sample_rate_sps);
+  Token try_acquire(Owner owner, Band band, uint32_t frequency_hz, uint32_t sample_rate_sps);
+  bool release(Token token);
   bool owns(Token token) const;
   bool retuned(Token token, uint32_t frequency_hz);
   bool set_state(Token token, ReceiverState state);
@@ -33,12 +35,18 @@ class Session {
   static bool self_check();
 
  private:
-  std::atomic<Owner> owner_{Owner::none};
-  std::atomic<Band> band_{Band::fm};
-  std::atomic<ReceiverState> receiver_state_{ReceiverState::disconnected};
-  std::atomic<uint32_t> frequency_hz_{0};
-  std::atomic<uint32_t> sample_rate_sps_{0};
-  std::atomic<uint32_t> generation_{0};
+  void lock() const;
+  void unlock() const;
+  bool owns_locked(Token token) const;
+  Token acquire_locked(Owner owner, Band band, uint32_t frequency_hz, uint32_t sample_rate_sps);
+
+  mutable std::atomic_flag guard_ = ATOMIC_FLAG_INIT;
+  Owner owner_ = Owner::none;
+  Band band_ = Band::fm;
+  ReceiverState receiver_state_ = ReceiverState::disconnected;
+  uint32_t frequency_hz_ = 0;
+  uint32_t sample_rate_sps_ = 0;
+  uint32_t generation_ = 0;
 };
 
 Owner owner_for_band(Band band);

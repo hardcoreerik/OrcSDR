@@ -2242,6 +2242,62 @@ try {
       if ($homeAfterSettings.Graphics -ne $graphicsBeforeSettings) {
         throw "Settings navigation did not restore graphics: before=$graphicsBeforeSettings after=$($homeAfterSettings.Graphics)"
       }
+      # Weather is an observation dashboard: opening it must never retune the
+      # active receiver. Exercise the screen and one tab while preserving the
+      # exact underlying band/frequency.
+      $weatherBefore = Get-RadioFrequency
+      [void](Open-Ui 'WEATHER' $weatherBefore.Band)
+      $weatherAfter = Get-RadioFrequency
+      if ($weatherAfter.Band -ne $weatherBefore.Band -or
+          $weatherAfter.Frequency -ne $weatherBefore.Frequency) {
+        throw "Weather open retuned receiver: before=$($weatherBefore.Band)/$($weatherBefore.Frequency) after=$($weatherAfter.Band)/$($weatherAfter.Frequency)"
+      }
+      [void](Send-And-Wait 'RTL_UI ACTION WEATHER TAB 3' '^RTL_UI_ACTION_OK
+      [void](Send-And-Wait 'RTL_LAB SELF_CHECK' '^RTL_LAB_SELF_CHECK pass=1$')
+      [void](Send-And-Wait 'RTL_LAB PAGE CONTROLS' '^RTL_LAB_OK page=CONTROLS$')
+      Watch-Responsive $DwellSeconds 'RF_LAB' $targets[-1].Band
+      [void](Send-And-Wait 'RTL_LAB CLOSE' '^RTL_LAB_OK close=queued$')
+      [void](Wait-UiState 'HOME' $targets[-1].Band)
+      [void](Open-Ui 'FM' 'FM')
+      Assert-FmAudioProgress
+      if ($cycle -eq 1 -or $cycle % 5 -eq 0) { Assert-SoundCycle }
+      if ($Profile -in @('Stress', 'Overnight') -and $cycle % $WifiEvery -eq 0) {
+        Assert-WifiCycle
+        [void](Open-Ui 'FM' 'FM')
+        Assert-FmAudioProgress
+      }
+      Assert-Health
+      Write-SoakLine "RTL_UI_SOAK_CYCLE cycle=$cycle pass=1"
+    }
+    Write-SoakLine "RTL_UI_SOAK_RESULT pass=1 cycles=$Cycles lines=$script:linesSeen"
+  } finally {
+    try {
+      if ($initial.Band -in @('FM','AM','WX','CB','LORA','BROWSE','ADSB','P25')) {
+        [void](Send-And-Wait "RTL_TUNE $($initial.Band) $($initial.Frequency)" '^RTL_TUNE_(?:OK|UNAVAILABLE|INVALID)')
+      }
+      [void](Send-And-Wait "RTL_UI OPEN $($initial.Screen)" '^RTL_UI_OPEN_(?:OK|INVALID)')
+      if ($soundWasEnabled -eq $false) { [void](Send-And-Wait 'RTL_SOUND OFF' '^RTL_SOUND_OK enabled=0$') }
+      if ($null -ne $initialVerbosity) {
+        [void](Send-And-Wait "RTL_SERIAL VERBOSITY $initialVerbosity" "^RTL_SERIAL_VERBOSITY_OK mode=$initialVerbosity$")
+      }
+    } catch {
+      Write-Warning "Could not restore initial device state: $($_.Exception.Message)"
+    }
+  }
+} catch {
+  Write-SoakLine "RTL_UI_SOAK_RESULT pass=0 error=$($_.Exception.Message)"
+  Capture-ResetEvidence
+  throw
+} finally {
+  if ($null -ne $script:serial -and $script:serial.IsOpen) {
+    Restore-SplashGate
+    $script:serial.Close()
+  }
+}
+)
+      [void](Open-Ui 'HOME' $weatherBefore.Band)
+      Write-SoakLine "RTL_WEATHER_OPEN_RESULT pass=1 band=$($weatherBefore.Band) frequency_hz=$($weatherBefore.Frequency) retune=0"
+
       [void](Open-Ui 'RF_LAB' $targets[-1].Band)
       [void](Send-And-Wait 'RTL_LAB SELF_CHECK' '^RTL_LAB_SELF_CHECK pass=1$')
       [void](Send-And-Wait 'RTL_LAB PAGE CONTROLS' '^RTL_LAB_OK page=CONTROLS$')

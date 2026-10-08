@@ -5,7 +5,7 @@ the COM number is not a device identity), 8N1, line-terminated (`\n`). Examples
 use 115200 for compatibility; see the native-USB note below.
 **Firmware:** `apps/orcsdr-tab5/ui/main.cpp`, `process_command()` / `poll_serial()`.
 
-This is the human/AI-facing control surface for the Tab5 radio — everything
+This is the human/AI-facing control surface for the Tab5 radio â€” everything
 needed to tune, scan, monitor telemetry, and pull files off the device
 without touching the touchscreen. It's the same protocol the physical UI
 itself drives internally (touch handlers call the same underlying functions
@@ -15,7 +15,7 @@ is already doing live.
 Send one command per line. Most commands reply with one or more lines
 prefixed by the command's own name (e.g. `RTL_TUNE ...` replies
 `RTL_TUNE_OK ...` or `RTL_TUNE_INVALID ...`). A command that doesn't match
-anything produces no reply at all — there is no error line for "unknown
+anything produces no reply at all â€” there is no error line for "unknown
 command," so typos fail silently. `RTL_HELP` is authoritative for the exact
 command set; this document explains what each one does and how to use them
 together.
@@ -39,7 +39,7 @@ while ($true) { try { $port.ReadLine() } catch { break } }
 $port.Close()
 ```
 
-Any serial library in any language works the same way — this is a plain
+Any serial library in any language works the same way â€” this is a plain
 line protocol, nothing OrcSDR-specific about the transport itself.
 
 ## USB Serial/JTAG: baud, identity, and large transfers
@@ -106,13 +106,13 @@ COM port, unplug the cable, then use the LAN console.
 ## Auth model
 
 Two tiers, and the split is not fully consistent across the codebase (some
-state-changing commands require auth, some don't — documented per-command
+state-changing commands require auth, some don't â€” documented per-command
 below rather than papered over):
 
-- **Unauthenticated** — works immediately over the physical serial
+- **Unauthenticated** â€” works immediately over the physical serial
   connection. Covers all status/query commands and several state-changing
   ones (`RTL_REC_START`, `RTL_TOOL`, `RTL_RDS_STATUS`, `RTL_FREQ` query).
-- **`authenticated`** — gates the rest (`RTL_TUNE`, `RTL_VOLUME <n>`,
+- **`authenticated`** â€” gates the rest (`RTL_TUNE`, `RTL_VOLUME <n>`,
   `RTL_CAPTURE`/`RTL_LISTEN`, `RTL_STOP`, `RTL_PRESET_SCAN`,
   `RTL_PRESET_TUNE`, `RTL_P25_IQ_START`, `RTL_P25_IQ_STOP`, and
   `RTL_P25_REPLAY`, and `ORC_RTC_SET`). Requires the `PAIR`/`AUTH` HMAC
@@ -133,7 +133,7 @@ below rather than papered over):
 The pairing key is stored in NVS after first pair and persists across
 reboots. There is currently no documented out-of-band way to generate a
 compliant nonce/proof pair from a plain script without replicating the
-HMAC-SHA256 handshake — treat the authenticated commands as requiring a
+HMAC-SHA256 handshake â€” treat the authenticated commands as requiring a
 proper pairing client, not something to hand-roll casually.
 
 ## Hardware clock
@@ -173,15 +173,15 @@ packet age/order, and establishing the clock does not backfill old packet times.
 |---|---|---|---|
 | `RTL_TUNE <BAND> <HZ>` | yes | `RTL_TUNE_OK band=... frequency_hz=...` | `BAND` = `FM\|AM\|WX\|CB\|P25\|LORA\|BROWSE`. Full retune (stops/restarts the capture path as needed). |
 | `RTL_FREQ` | no | `RTL_FREQ_STATUS band=... frequency_hz=... mode=...` | Query only. |
-| `RTL_FREQ <HZ>` | yes | `RTL_FREQ_OK band=... frequency_hz=...` | Hot retune *within* the current band — cheaper than `RTL_TUNE`, use for stepping/scanning. |
-| `RTL_CAPTURE` / `RTL_LISTEN <BAND>` | yes | `RTL_CAPTURE_QUEUED ...` or `RTL_CAPTURE_BUSY_OR_UNAVAILABLE` | Older, band-limited entry point (`FM`/`KZEL`/`NOAA`/`WX`/`AM`/`LORA` only, no `CB`/`BROWSE`, no arbitrary frequency). `RTL_LISTEN` is continuous, bare `RTL_CAPTURE` is one-shot. Prefer `RTL_TUNE` for new work — this exists for compatibility with older tooling. |
+| `RTL_FREQ <HZ>` | yes | `RTL_FREQ_OK band=... frequency_hz=...` | Hot retune *within* the current band â€” cheaper than `RTL_TUNE`, use for stepping/scanning. |
+| `RTL_CAPTURE` / `RTL_LISTEN <BAND>` | yes | `RTL_CAPTURE_QUEUED ...` or `RTL_CAPTURE_BUSY_OR_UNAVAILABLE` | Older, band-limited entry point (`FM`/`KZEL`/`NOAA`/`WX`/`AM`/`LORA` only, no `CB`/`BROWSE`, no arbitrary frequency). `RTL_LISTEN` is continuous, bare `RTL_CAPTURE` is one-shot. Prefer `RTL_TUNE` for new work â€” this exists for compatibility with older tooling. |
 | `RTL_STOP` | yes | `RTL_STOPPING` | Stops the active capture/stream. |
 | `RTL_TOOL` | no | `RTL_TOOL_STATUS tool=RADIO\|SCOPE\|CAPTURE` | Query the active tool tab. |
 | `RTL_TOOL <RADIO\|SCOPE\|CAPTURE>` | no | (none) or `RTL_TOOL_INVALID` | Switch tool tab. Case-insensitive value. |
 
 Band default frequencies (used when a command doesn't specify one, e.g.
 `RTL_LISTEN WX`): FM 96.113 MHz (last-tuned FM freq persists in NVS and
-overrides this), AM/WX/CB/LoRa each have their own fixed default — see
+overrides this), AM/WX/CB/LoRa each have their own fixed default â€” see
 `rtl_band_default_frequency()` in `main.cpp` for exact values, they're
 band-plan specific and not usually worth hardcoding in a client.
 
@@ -194,42 +194,42 @@ band-plan specific and not usually worth hardcoding in a client.
 
 ## LAN web console
 
-Off by default. Enable from Settings → Companion or the serial commands
+Off by default. Enable from Settings â†’ Companion or the serial commands
 below. The page is read-only (`GET /` and `GET /api/status`); it does not
 tune, change volume, or return passwords or coordinates.
 
 | Command | Auth | Reply |
 |---|---|---|
-| `RTL_WEB` / `RTL_WEB_STATUS` | no | `RTL_WEB_STATUS enabled=0\|1 listening=0\|1 url=http://…/\|offline` |
-| `RTL_WEB ON\|OFF` | yes | `RTL_WEB_OK enabled=… listening=… url=…` |
+| `RTL_WEB` / `RTL_WEB_STATUS` | no | `RTL_WEB_STATUS enabled=0\|1 listening=0\|1 url=http://â€¦/\|offline` |
+| `RTL_WEB ON\|OFF` | yes | `RTL_WEB_OK enabled=â€¦ listening=â€¦ url=â€¦` |
 
 ## Telemetry
 
 | Command | Auth | Reply |
 |---|---|---|
-| `RTL_STATUS` | no | `RTL_SDR_STATUS connected=... vid=... pid=... speed=... serial="..."` — is the RTL-SDR dongle itself present/enumerated. |
-| `RTL_SIGNAL` | no | `RTL_SIGNAL_STATUS band=... frequency_hz=... signal_dbfs=... stereo_locked=0\|1 left_dbfs=... right_dbfs=... rds_carrier=0\|1 rds_signal=...` — one-shot snapshot of everything the dashboard's meters show. |
-| `RTL_UI STATUS` | no | `RTL_UI_STATUS ... home_font=0\|1 graphics=0\|1` — active dashboard ownership plus the current display font and live spectrum/waterfall state. |
+| `RTL_STATUS` | no | `RTL_SDR_STATUS connected=... vid=... pid=... speed=... serial="..."` â€” is the RTL-SDR dongle itself present/enumerated. |
+| `RTL_SIGNAL` | no | `RTL_SIGNAL_STATUS band=... frequency_hz=... signal_dbfs=... stereo_locked=0\|1 left_dbfs=... right_dbfs=... rds_carrier=0\|1 rds_signal=...` â€” one-shot snapshot of everything the dashboard's meters show. |
+| `RTL_UI STATUS` | no | `RTL_UI_STATUS ... home_font=0\|1 graphics=0\|1` â€” active dashboard ownership plus the current display font and live spectrum/waterfall state. |
 
 `signal_dbfs` is the RF-level meter (matches the SIG bar). `left_dbfs`/
-`right_dbfs` are FM stereo decoder outputs — meaningful only when
+`right_dbfs` are FM stereo decoder outputs â€” meaningful only when
 `stereo_locked=1`; when unlocked they mirror mono and both read the same
 value. `rds_carrier`/`rds_signal` are RDS Stage 1 (carrier presence only,
-see below) — always present on FM band regardless of whether the station
+see below) â€” always present on FM band regardless of whether the station
 actually broadcasts RDS.
 
 ## POCSAG (pager receive)
 
-Never includes decoded message text — only lock/baud/FEC counters.
+Never includes decoded message text â€” only lock/baud/FEC counters.
 
 | Command | Auth | Reply |
 |---|---|---|
 | (periodic, debug verbosity, ~5 s) | no | Same line as `RTL_POCSAG STATUS` below, emitted only while POCSAG is the active band. |
 | `RTL_POCSAG STATUS` | no | `RTL_POCSAG_STATUS lock=... baud=... inverted=0\|1 frequency_hz=... scanning=0\|1 batches=... sync_losses=... codewords=... valid=... corrected=... corrected_bits=... uncorrectable=... parity_failures=... messages=... truncated=...` on demand, at any verbosity, whether or not POCSAG is the active band (`RTL_POCSAG_STATUS_ERROR not_initialized` if the decoder hasn't been allocated yet). |
-| `RTL_POCSAG_SCAN` | yes | `RTL_POCSAG_SCAN_QUEUED` or `RTL_POCSAG_SCAN_INVALID` (not on POCSAG). Dwells 4 s per channel in `/orcsdr/pocsag_scan.cfg` (or the built-in nationwide-US default if that file doesn't exist), looking for a real BCH-valid decode. Serial diagnostics: `RTL_POCSAG_DISCOVERY start candidates=...`, one `RTL_POCSAG_DISCOVERY_SAMPLE index=... frequency_hz=... relative_dbfs=... valid=... corrected=... uncorrectable=... messages=...` per channel, then `RTL_POCSAG_DISCOVERY_DONE found=0\|1 confidence=clean\|weak\|none best_index=... frequency_hz=... valid=... corrected=... messages=...`. `confidence=clean` means at least one genuinely BCH-valid codeword (syndrome 0, not merely corrected) was seen — a much stronger signal than `weak` (corrected-only, the same pattern a false sync lock on noise produces). Retunes to the winner only if `found=1`. |
+| `RTL_POCSAG_SCAN` | yes | `RTL_POCSAG_SCAN_QUEUED` or `RTL_POCSAG_SCAN_INVALID` (not on POCSAG). Dwells 4 s per channel in `/orcsdr/pocsag_scan.cfg` (or the built-in nationwide-US default if that file doesn't exist), looking for a real BCH-valid decode. Serial diagnostics: `RTL_POCSAG_DISCOVERY start candidates=...`, one `RTL_POCSAG_DISCOVERY_SAMPLE index=... frequency_hz=... relative_dbfs=... valid=... corrected=... uncorrectable=... messages=...` per channel, then `RTL_POCSAG_DISCOVERY_DONE found=0\|1 confidence=clean\|weak\|none best_index=... frequency_hz=... valid=... corrected=... messages=...`. `confidence=clean` means at least one genuinely BCH-valid codeword (syndrome 0, not merely corrected) was seen â€” a much stronger signal than `weak` (corrected-only, the same pattern a false sync lock on noise produces). Retunes to the winner only if `found=1`. |
 | `RTL_POCSAG_SCAN_STOP` | yes | `RTL_POCSAG_SCAN_STOP_QUEUED`. Cancels an in-progress scan and restores the frequency the scan started from. |
-| `RTL_POCSAG_TUNE <HZ>` | yes | `RTL_POCSAG_TUNE_OK frequency_hz=...` or `RTL_POCSAG_TUNE_INVALID usage: RTL_POCSAG_TUNE <HZ>`. Clamped to the RTL-SDR's general receive range (same clamp BROWSE uses — POCSAG has no fixed band). Switches into POCSAG if it wasn't already active, and updates the frequency the dashboard header and a future discovery scan will treat as current — unlike the generic `RTL_TUNE POCSAG <HZ>`, which retunes the radio but does not update POCSAG's own frequency-of-record. |
-| `RTL_POCSAG_SET_BAUD <AUTO\|512\|1200\|2400>` | yes | `RTL_POCSAG_SET_BAUD_OK baud=...` or `RTL_POCSAG_SET_BAUD_INVALID use AUTO\|512\|1200\|2400`. Restricts the decoder's parallel search to the given baud only (`AUTO` re-enables all three). Applied on the next IQ block, and resets decoder state exactly as changing baud always does — expect a brief resync. Not persisted across reboot; power-cycling returns to AUTO. |
+| `RTL_POCSAG_TUNE <HZ>` | yes | `RTL_POCSAG_TUNE_OK frequency_hz=...` or `RTL_POCSAG_TUNE_INVALID usage: RTL_POCSAG_TUNE <HZ>`. Clamped to the RTL-SDR's general receive range (same clamp BROWSE uses â€” POCSAG has no fixed band). Switches into POCSAG if it wasn't already active, and updates the frequency the dashboard header and a future discovery scan will treat as current â€” unlike the generic `RTL_TUNE POCSAG <HZ>`, which retunes the radio but does not update POCSAG's own frequency-of-record. |
+| `RTL_POCSAG_SET_BAUD <AUTO\|512\|1200\|2400>` | yes | `RTL_POCSAG_SET_BAUD_OK baud=...` or `RTL_POCSAG_SET_BAUD_INVALID use AUTO\|512\|1200\|2400`. Restricts the decoder's parallel search to the given baud only (`AUTO` re-enables all three). Applied on the next IQ block, and resets decoder state exactly as changing baud always does â€” expect a brief resync. Not persisted across reboot; power-cycling returns to AUTO. |
 | `RTL_POCSAG_SET_POLARITY <AUTO\|NORMAL\|INVERTED>` | yes | `RTL_POCSAG_SET_POLARITY_OK polarity=...` or `RTL_POCSAG_SET_POLARITY_INVALID use AUTO\|NORMAL\|INVERTED`. Same mechanics as baud above. |
 
 `lock` is `orcsdr::pocsag::LockState` (0=no_signal, 1=searching, 2=locked,
@@ -258,13 +258,13 @@ While scanning, each stop prints `RTL_CB_SCAN stop channel=... snr_db=...`, and
 
 | Command | Auth | Reply |
 |---|---|---|
-| `RTL_PRESET_SCAN` | yes | `RTL_PRESET_SCAN_QUEUED` or `RTL_PRESET_SCAN_INVALID` (not on FM). Sweeps 76–108 MHz in ~800 kHz steps and collects up to 10 stations by signal strength. Takes tens of seconds; poll `RTL_PRESET_LIST` afterward. |
-| `RTL_PRESET_LIST` | no | `RTL_PRESET_LIST_BEGIN count=N` then N × `RTL_PRESET <n> frequency_hz=... level=...` then `RTL_PRESET_LIST_END` | Persists across reboots (NVS). |
+| `RTL_PRESET_SCAN` | yes | `RTL_PRESET_SCAN_QUEUED` or `RTL_PRESET_SCAN_INVALID` (not on FM). Sweeps 76â€“108 MHz in ~800 kHz steps and collects up to 10 stations by signal strength. Takes tens of seconds; poll `RTL_PRESET_LIST` afterward. |
+| `RTL_PRESET_LIST` | no | `RTL_PRESET_LIST_BEGIN count=N` then N Ã— `RTL_PRESET <n> frequency_hz=... level=...` then `RTL_PRESET_LIST_END` | Persists across reboots (NVS). |
 | `RTL_PRESET_TUNE <n>` | yes | `RTL_PRESET_TUNE_OK index=... frequency_hz=...` or `RTL_PRESET_TUNE_INVALID` | 1-based index, matching the on-screen list numbering. |
 
 ## RDS (FM band only)
 
-RDS decoding is staged — see `phasing.md` for the current status. Stage 1
+RDS decoding is staged â€” see `phasing.md` for the current status. Stage 1
 (carrier detection) and Stage 2 (bit/block sync) are hardware-verified against
 live 96.1 KZEL and a captured MPX replay. Stage 3 parsing/display of PS, PTY,
 and RadioText remains open.
@@ -287,15 +287,15 @@ RDS_STATUS carrier=0|1 carrier_signal=<dB> block_locked=0|1 bler=<%>
            audio_chunks=<n> audio_drops=<n>
 ```
 
-- `carrier` — Stage 1, whether 57 kHz subcarrier energy is present.
-- `block_locked` / `bler` / `good` / `total` — Stage 2 block-sync status.
+- `carrier` â€” Stage 1, whether 57 kHz subcarrier energy is present.
+- `block_locked` / `bler` / `good` / `total` â€” Stage 2 block-sync status.
   `bler=100%` with `total=0` means block sync has never been achieved since
   tuning to this frequency, not that the signal is bad.
-- `hyp0_streak` / `hyp1_streak` — best streak for each chip-pair polarity
+- `hyp0_streak` / `hyp1_streak` â€” best streak for each chip-pair polarity
   across four fractional timing phases. A streak of 4 correctly-spaced
   offset-word matches declares lock.
-- `A`/`B`/`C`/`D` — last decoded block content (hex). **Not meaningful
-  until `block_locked=1`** — treat as noise otherwise, per the current
+- `A`/`B`/`C`/`D` â€” last decoded block content (hex). **Not meaningful
+  until `block_locked=1`** â€” treat as noise otherwise, per the current
   known-issue in `phasing.md`.
 
 The legacy periodic diagnostic pair is compiled off by default. Use
@@ -350,7 +350,7 @@ RTL_RDS_STATUS
 |---|---|---|
 | `RTL_REC_START` | no | (switches to Capture tool, starts recording) |
 | `RTL_REC_STOP` | no | (stops and exports WAV to SD) |
-| `RTL_REC_STATUS` | no | multi-line status (buffered seconds, sample count, last file path — see `audio_rec_status_print()`) |
+| `RTL_REC_STATUS` | no | multi-line status (buffered seconds, sample count, last file path â€” see `audio_rec_status_print()`) |
 | `RTL_REC_SAVE` | no | re-exports the currently-held PCM buffer, useful after inserting an SD card mid-session |
 
 Capped at `kAudioRecMaxSeconds` (12s) per recording, 48 kHz mono PCM,
@@ -372,10 +372,10 @@ re-implementing the binary framing by hand; they handle chunking and hashing:
 
 `SD_LIST` alone (no chunking needed) returns one `SD_LIST_ENTRY
 bytes=... modified=... pathhex=<hex>` line per file, then
-`SD_LIST_DONE count=N` — safe to call directly for a quick directory dump.
+`SD_LIST_DONE count=N` â€” safe to call directly for a quick directory dump.
 
 All SD writes are refused with `..._ERROR radio_busy` while a capture/
-stream is active — stop the radio (`RTL_STOP`, needs auth) or wait for it
+stream is active â€” stop the radio (`RTL_STOP`, needs auth) or wait for it
 to be idle first.
 
 ## Data Catalog
@@ -448,8 +448,8 @@ The LoRa Traffic toolbar equivalents are `RTL_UI ACTION LORA DETAILS`,
 `RTL_SIGNAL` reports a smoothed relative dBFS value from the same IQ stream;
 LoRa Overview uses the unsmoothed value for faster visual response.
 
-`RTL_UI OPEN` accepts `HOME`, `FM`, `AIRBAND`, `P25`, `ADSB`, `LORA`, `RF_LAB`,
-`WIFI_ANALYSIS`, or `SETTINGS`.
+`RTL_UI OPEN` accepts `HOME`, `FM`, `AM`, `AIRBAND`, `WEATHER`, `CB`, `P25`, `ADSB`, `LORA`, `RF_LAB`,
+`WIFI_ANALYSIS`, or `SETTINGS`. `RTL_UI OPEN WEATHER` is navigation only: it does not retune or take receiver ownership.
 `RTL_UI ACTION` accepts a domain and one of its visible touch actions:
 
 - `FM`: `TUNE`, `DOWN`, `UP`, `SEEK_DOWN`, `SEEK_UP`, `SAVE`, `STEP`,
@@ -481,6 +481,15 @@ LoRa Overview uses the unsmoothed value for faster visual response.
   `RTL_UI_ACTION_INVALID cb_dashboard_inactive`. Successful commands return
   `RTL_UI_ACTION_OK` after invoking the same `cb::ActionKind` handler as touch.
   `RTL_CB STATUS` reports the resulting channel and scanner state.
+- `WEATHER` (Weather dashboard must be open): `TAB <0-4>`, `LISTEN`, `SCAN`,
+  `STOP`, `REPORT`, `POLICY`, `SETTINGS`, `HOME`. `LISTEN` is the explicit
+  continuous NOAA WX/NFM action. `SCAN` sequentially samples the seven standard
+  U.S. NOAA Weather Radio channels, records relative dBFS, selects the strongest
+  cached result, then stops RF; it does not become a hidden monitor. `REPORT`
+  writes the current/cached Weather snapshot to SD only while Weather RF is
+  stopped. `POLICY` cycles the stored disabled/manual/automatic enrichment
+  preference but Foundation has no online weather provider and starts no
+  network request.
 - `LORA`: `VIEW <0-5>`, `NODE <index>`, `DETAILS`, `FAVORITE`, `FILTER`, `SCAN`, `IQ`,
   `LOG`, `CLEAR`, `EXPORT`, `FOLLOW`, `CHANNELS`, `SETTINGS`, `HOME`.
 - `SETTINGS`: `WIFI_POWER <0|1>`, `WIFI_BOOT <0|1>`, `ANTENNA <0|1>`, `SCAN`,
@@ -510,8 +519,8 @@ RTL_KEYBOARD ECHO <0|1>
 RTL_KEYBOARD KEY <UP|DOWN|LEFT|RIGHT|ENTER|ESC|TAB|SPACE|BACKSPACE|char>
 ```
 
-- `STATUS` (no authentication) prints `RTL_KEYBOARD_STATUS present=� firmware=� mode=� keys=� dropped=�
-  bus_errors=� attaches=�` and `RTL_KEYBOARD_FOCUS controls=<n> x= y= w= h= ring=<0|1>`, the control that
+- `STATUS` (no authentication) prints `RTL_KEYBOARD_STATUS present=… firmware=… mode=… keys=… dropped=…
+  bus_errors=… attaches=…` and `RTL_KEYBOARD_FOCUS controls=<n> x= y= w= h= ring=<0|1>`, the control that
   currently has the keyboard focus ring.
 - `ECHO 1` (authenticated) logs every decoded key event to serial, for debugging key decoding. `ECHO 0` turns it off.
 - `KEY` (authenticated) injects one key as if it were typed, through the same routing as the real keyboard: focus
@@ -650,12 +659,12 @@ streaming, otherwise switches into it), `RTL_LORA_PLAN_STATUS`,
 `RTL_UI ACTION LORA SLOT <1-based-slot>`, and
 `RTL_UI ACTION LORA SLOT_PREV|SLOT_NEXT` (selection commands require auth and
 persist region/slot), `LORA_SD_LOG ON|OFF|STATUS`,
-`LORA_MESSAGE_CLEAR` — raw IQ capture and the LoRa/Meshtastic
+`LORA_MESSAGE_CLEAR` â€” raw IQ capture and the LoRa/Meshtastic
 energy-triggered decode pipeline. See
 [docs/lora/README.md](lora/README.md) for the intended workflow (these are
 oriented around the LoRa energy-trigger + host-decode round trip, not
 general-purpose IQ dumping). There is no live serial override for spreading
-factor or bandwidth yet — those load once from `/orcsdr/lora.cfg` at boot;
+factor or bandwidth yet â€” those load once from `/orcsdr/lora.cfg` at boot;
 tracked as follow-up work alongside POCSAG's `SET_BAUD`/`SET_POLARITY`
 precedent.
 
@@ -755,7 +764,7 @@ apps/orcsdr-tab5/tools/run-p25-validation.ps1 `
 
 ## What's not here yet
 
-- No JSON output mode — everything is `key=value` space-separated text.
+- No JSON output mode â€” everything is `key=value` space-separated text.
   Fine for line-oriented parsing, more work for a strict JSON client.
-- `RTL_HELP`'s command list is maintained by hand alongside this doc — if
+- `RTL_HELP`'s command list is maintained by hand alongside this doc â€” if
   you add a command, update both.
