@@ -30,3 +30,15 @@ No firmware binding, UI, transmit path, PTT, CAT, scheduler or flashing work was
 The host-only `js8-fec-reconstruct` tool is now ready for the PC capture corpus. It does not contain an external FEC matrix. It derives the GF(2) code-space rank and parity-check basis from supplied 174-bit observations.
 
 Current blocker remains real/controlled JS8 frames plus an independently established tone-to-bit mapping.
+
+
+## Tone-label search ready
+
+The host reconstruction lab can now:
+1. accept verified Normal 79-tone frames;
+2. extract the 58 data tones;
+3. enumerate all 40,320 tone-label permutations;
+4. rank the resulting 174-bit codeword corpus;
+5. pass promising mappings into the GF(2) parity-basis derivation tool.
+
+No tone mapping has been claimed yet. The capture corpus is the next evidence dependency.

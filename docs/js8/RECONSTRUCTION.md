@@ -105,3 +105,14 @@ The exact tone labeling, FEC and CRC have not yet been independently reconstruct
 The implementation is tested against a known four-dimensional synthetic subspace embedded in the 174-bit container. This validates the linear-algebra machinery only; it does **not** claim that any JS8 FEC definition has been recovered yet.
 
 For real reconstruction, tone-to-bit mapping must be established first. Only then may captured codewords be fed to this tool. The intended acceptance point is rank 87 with a stable 87-dimensional orthogonal complement plus held-out-frame validation; that expected rank is a reconstruction hypothesis until measurements establish it.
+
+
+## Tone-label search checkpoint
+
+`tools/js8-tone-map.cpp` accepts verified Normal-mode 79-tone frames, strips the independently established sync blocks, and evaluates all 8! tone-to-three-bit label permutations.
+
+For each permutation it converts the 58 data tones into a 174-bit observation and measures the GF(2) rank of the resulting corpus. The tool reports the lowest-rank mappings; it does not hard-code an expected JS8 mapping.
+
+Why more than 87 frames matter: with 87 or fewer observations, even a wrong mapping can have rank no greater than the number of rows. The tool warns in that case. A useful reconstruction corpus should exceed the suspected information dimension and contain diverse frames, with a separate withheld set for verification.
+
+This tool is a hypothesis filter, not proof by itself. A selected mapping must also produce a stable parity basis, validate withheld frames, and lead to a consistent CRC/message interpretation.

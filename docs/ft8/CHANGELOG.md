@@ -352,3 +352,11 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Added a deterministic synthetic-subspace test, including rejection of a vector outside the learned code space; optimized and ASan/UBSan runs pass in the sandbox.
 - The tool contains no copied JS8 FEC matrix and makes no claim that JS8's FEC has been recovered yet. Real use is blocked on captured frames and an independently established tone-to-bit mapping.
 - No firmware binding, UI, shared FT8/FT4 decoder behavior, transmit path, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 tone-label reconstruction search
+
+- Added host-only `js8-tone-map`: it consumes verified Normal 79-tone frames, removes the measured sync symbols, tests all 8! tone-to-three-bit label permutations, and ranks each resulting 174-bit corpus over GF(2).
+- Added deterministic tests for tone-label validation, bit ordering and mapped-rank calculation; optimized and ASan/UBSan runs pass in the sandbox.
+- The tool deliberately does not hard-code a JS8 tone/Gray map or expected FEC rank as a decoding fact. It warns when the corpus is too small to distinguish a suspected 87-dimensional code from arbitrary mappings.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, transmit path, PTT, CAT or flashing work changed.
