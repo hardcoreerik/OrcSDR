@@ -10,13 +10,14 @@ https://sourceforge.net/projects/wsjt/files/samples/FT8/210703_133430.wav
 SHA-256:
 `9feb99c275770a6618538026da7decc6b09eb6cf63121e5168fa86dcdf00c2f5`
 
-Reference: WSJT-X/jt9 published decode output for this sample. The WSJT-X user
-guide identifies this file as its FT8 tutorial sample. A WSJT development-list
-example publishes 11 jt9 FT8 decodes for the same file.
+Reference: the WSJT-X `jt9` executable from Ubuntu's
+`wsjtx 2.7.0~rc3+repack-1build2` package, run externally as
+`jt9 -8 -F 200 -f 1500` on the same WAV. No WSJT-X implementation code is
+copied or linked into OrcSDR.
 
-OrcSDR measurement: commit `cc6fafc3f6bf3114da122355cc8b96c62b597756`,
-GitHub Actions run `37684046948`, default benchmark geometry
-`rows_per_symbol=2`, `bins_per_tone=1` (80 ms / 6.25 Hz).
+Reference/OrcSDR comparison run: GitHub Actions `37722089040`,
+decoder commit `f1e788ff0dfa8f80e22efe13eb77df0ce864b352`, default OrcSDR
+geometry `rows_per_symbol=2`, `bins_per_tone=1` (80 ms / 6.25 Hz).
 
 | Reference message | Ref SNR dB | Ref DT s | Ref Hz | OrcSDR | Orc start s | Orc Hz | Orc SNR |
 |---|---:|---:|---:|---|---:|---:|---|
@@ -31,15 +32,18 @@ GitHub Actions run `37684046948`, default benchmark geometry
 | W1DIG SV9CVY -14 | -7 | +0.4 | 2734 | MISSED | — | — | not implemented |
 | K1JT EA3AGB -15 | -16 | +0.1 | 1649 | MISSED | — | — | not implemented |
 | W0RSJ EA3BMU RR73 | -16 | +0.3 | 400 | MISSED | — | — | not implemented |
+| XE2X HA2NP RR73 | -11 | +0.2 | 2853 | MISSED | — | — | not implemented |
+| KD2UGC F6GCP R-23 | -6 | +0.4 | 472 | MISSED | — | — | not implemented |
+| K1BZM EA3CJ JN01 | -7 | +0.2 | 2522 | MISSED | — | — | not implemented |
 
 ## Baseline score
 
-- Reference decodes: **11**
+- Reference decodes: **14**
 - OrcSDR accepted decodes: **1**
-- Coverage: **1/11 = 9.1%**
-- Accepted OrcSDR messages not present in the 11-message reference list: **0**
+- Coverage: **1/14 = 7.1%**
+- Accepted OrcSDR messages not present in the 14-message reference list: **0**
 - Current observed false-decode count on this recording: **0**
-- Host wall time: **4.45 s** on GitHub's Ubuntu runner
+- OrcSDR host wall time: **5.15 s** on that GitHub Ubuntu runner
 - OrcSDR SNR estimator: **not implemented**, so no SNR is fabricated.
 
 The single accepted OrcSDR message is present in the reference output and its
@@ -52,12 +56,12 @@ passes so later improvements have an honest before/after comparison.
 
 ## FT4 status
 
-The official WSJT-X FT4 tutorial sample is `200514_182053.wav`. The current
-native receive pipeline still refuses FT4 at its final acceptance layer because
-the protocol-defined FT4 payload XOR restoration has not yet been implemented
-and tested there. The FT4 real-WAV benchmark is therefore **blocked**, not
-reported as a zero-decode result. The next FT4-specific step is to finish and
-test that transform gate before measuring the official sample.
+The official WSJT-X FT4 tutorial sample is `200514_182053.wav`. The native
+pipeline now contains the QEX-defined receive-side payload XOR restoration and
+a synthetic FT4 end-to-end standard-message regression. The external CI job
+downloads the official sample, runs `jt9 --ft4 -d 3` as the reference, then
+runs the same OrcSDR WAV benchmark in FT4 mode. The measured result is appended
+only after that job completes; no FT4 decode count is guessed here.
 
 ## Regression floor
 

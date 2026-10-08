@@ -107,10 +107,10 @@ bool parse_u8(const char* text, uint8_t* value) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  if (argc < 2 || argc > 4) {
+  if (argc < 2 || argc > 5) {
     std::fprintf(stderr,
                  "usage: %s <12k-mono-i16.wav> [rows_per_symbol=2] "
-                 "[bins_per_tone=1]\n",
+                 "[bins_per_tone=1] [mode=ft8|ft4]\n",
                  argv[0]);
     return 2;
   }
@@ -119,6 +119,18 @@ int main(int argc, char** argv) {
   uint8_t bins_per_tone = 1;
   if (argc >= 3 && !parse_u8(argv[2], &rows_per_symbol)) return 2;
   if (argc >= 4 && !parse_u8(argv[3], &bins_per_tone)) return 2;
+
+  orcsdr::ftx::Mode mode = orcsdr::ftx::Mode::ft8;
+  if (argc >= 5) {
+    if (std::strcmp(argv[4], "ft8") == 0)
+      mode = orcsdr::ftx::Mode::ft8;
+    else if (std::strcmp(argv[4], "ft4") == 0)
+      mode = orcsdr::ftx::Mode::ft4;
+    else {
+      std::fprintf(stderr, "mode must be ft8 or ft4\n");
+      return 2;
+    }
+  }
   if ((rows_per_symbol != 1 && rows_per_symbol != 2 &&
        rows_per_symbol != 4) ||
       (bins_per_tone != 1 && bins_per_tone != 2)) {
@@ -135,11 +147,11 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  const auto& p = orcsdr::ftx::profile(orcsdr::ftx::Mode::ft8);
+  const auto& p = orcsdr::ftx::profile(mode);
   const std::size_t hop =
       p.symbol_samples / static_cast<std::size_t>(rows_per_symbol);
   if (wav.samples.size() < p.symbol_samples) {
-    std::fprintf(stderr, "WAV is shorter than one FT8 symbol\n");
+    std::fprintf(stderr, "WAV is shorter than one %s symbol\n", p.name);
     return 2;
   }
   const std::size_t rows =
@@ -189,9 +201,9 @@ int main(int argc, char** argv) {
       p, grid, geometry, config, &workspace, results.data(), results.size());
 
   std::printf(
-      "FT8_WAV_BENCH file=%s samples=%zu rows=%zu bins=%zu "
+      "FTX_WAV_BENCH mode=%s file=%s samples=%zu rows=%zu bins=%zu "
       "rows_per_symbol=%u bins_per_tone=%u decoded=%zu\n",
-      argv[1], wav.samples.size(), grid.rows, grid.bins,
+      p.name, argv[1], wav.samples.size(), grid.rows, grid.bins,
       rows_per_symbol, bins_per_tone, count);
 
   for (std::size_t i = 0; i < count; ++i) {

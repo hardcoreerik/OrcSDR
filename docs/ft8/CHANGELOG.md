@@ -163,7 +163,7 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Rebased the native decoder workstream onto `claude/ft8-ui` commit `be87fe47edbfe4e06d4c6794ca7c13a1bc7498fe`.
 - Preserved the UI-owned DigitalMode/Decode/backend seam, dashboard/model/Hunter, OrcDial, and main.cpp integration unchanged.
 - Merged `tools/test-ft8.sh` so the UI backend seam tests and all native decoder tests run together.
-- Recorded the official WSJT-X `210703_133430.wav` baseline: OrcSDR decodes 1 of 11 published reference messages at the default 80 ms / 6.25 Hz search, with zero accepted messages outside the reference list.
+- Recorded the official WSJT-X `210703_133430.wav` baseline using the installed `jt9` executable as the external reference: WSJT-X reports 14 messages while OrcSDR accepts 1 at the default 80 ms / 6.25 Hz search, with zero accepted messages outside the reference list.
 - Added a CI regression floor requiring at least one decode and the known `WM3PEN EA6VQ -09` message before any coverage optimization is accepted.
 
 
@@ -174,3 +174,10 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Enabled FT4 in the shared CRC/plausibility pipeline for supported standard-message families.
 - Added an end-to-end synthetic FT4 energy-grid test proving sync -> soft demod -> LDPC -> CRC -> un-XOR -> standard message rendering for `CQ K1ABC FN42`.
 - No transmitter, waveform output, PTT, CAT, or firmware binding was added.
+
+
+## 2026-10-07 — mode-selectable real-WAV benchmark
+
+- Extended the host WAV benchmark to select FT8 or FT4 while using the same shared spectral/sync/demod/pipeline implementation.
+- Extended external CI to download the official WSJT-X FT4 tutorial sample, run `jt9 --ft4 -d 3` as the external reference, and run OrcSDR in FT4 mode on the same recording.
+- No FT4 regression floor is set until the first real measurement establishes an honest baseline.

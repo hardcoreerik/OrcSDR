@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 1 || $# -gt 3 ]]; then
-  echo "usage: $0 <12k-mono-i16.wav> [rows_per_symbol=2] [bins_per_tone=1]" >&2
+if [[ $# -lt 1 || $# -gt 4 ]]; then
+  echo "usage: $0 <12k-mono-i16.wav> [rows_per_symbol=2] [bins_per_tone=1] [mode=ft8|ft4]" >&2
   exit 2
 fi
 
