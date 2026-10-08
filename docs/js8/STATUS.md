@@ -101,3 +101,20 @@ Sandbox fixture result:
 - emitted 79-tone line exactly matched the documented API frame vector.
 
 No real-RF interoperability claim is made from this synthetic run.
+
+
+## Tone frames to 174-bit codewords
+
+The reconstruction toolchain now includes `js8-map-codewords`. Given a
+79-tone frame file and an explicitly selected eight-tone label mapping, it
+strips the verified Normal sync blocks and emits one 174-bit channel word per
+frame.
+
+The label mapping is never silently assumed: it is supplied on the command
+line and validated as a permutation of 0..7. This keeps the derivation step
+separate from the code-space solver.
+
+Sandbox chain validation:
+`js8-wav-tones` -> `js8-map-codewords` produced one 174-bit word from the
+documented Normal fixture. No claim is made that the identity mapping used in
+that plumbing check is the real JS8 mapping.

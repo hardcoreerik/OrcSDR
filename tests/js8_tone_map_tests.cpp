@@ -11,6 +11,11 @@ int main() {
   const ToneLabels duplicate{{0,0,2,3,4,5,6,7}};
   assert(valid_labels(identity));
   assert(!valid_labels(duplicate));
+  ToneLabels parsed{};
+  assert(parse_labels("0,1,2,3,4,5,6,7", &parsed));
+  assert(parsed == identity);
+  assert(!parse_labels("0,1,2,3,4,5,6,6", &parsed));
+  assert(!parse_labels("0,1,2,3,4,5,6", &parsed));
 
   ToneData tones{};
   tones.fill(0);

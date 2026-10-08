@@ -21,6 +21,24 @@ inline bool valid_labels(const ToneLabels& labels) {
   return seen == 0xffu;
 }
 
+inline bool parse_labels(const char* text, ToneLabels* out) {
+  if (text == nullptr || out == nullptr) return false;
+  ToneLabels labels{};
+  const char* p = text;
+  for (size_t i = 0; i < labels.size(); ++i) {
+    if (*p < '0' || *p > '7') return false;
+    labels[i] = static_cast<uint8_t>(*p - '0');
+    ++p;
+    if (i + 1 < labels.size()) {
+      if (*p != ',') return false;
+      ++p;
+    }
+  }
+  if (*p != '\0' || !valid_labels(labels)) return false;
+  *out = labels;
+  return true;
+}
+
 inline bool tones_to_bits(const ToneData& tones, const ToneLabels& labels, Bits174* out) {
   if (out == nullptr || !valid_labels(labels)) return false;
   Bits174 bits{};

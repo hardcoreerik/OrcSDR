@@ -141,3 +141,21 @@ js8-wav-tones capture.wav 1200 1800 0.45 > frames.txt
 The current extractor uses the exact-correlation spectral oracle, so a narrow
 span is preferred during reconstruction work. Full-passband performance from
 this tool is not an ESP32-P4 timing estimate.
+
+
+## Tone mapping to codeword export
+
+After `js8-tone-map` identifies one or more plausible mappings, a candidate
+mapping can be materialized into channel words without editing any data:
+
+```bash
+js8-map-codewords frames.txt 0,1,2,3,4,5,6,7 > codewords.txt
+js8-fec-reconstruct codewords.txt --emit-h
+```
+
+The mapping string is tone-index -> three-bit label value. The example above
+is deliberately only an example; it is not a JS8 protocol claim.
+
+This separation matters for provenance: the selected mapping, the exact input
+frame hashes, and the resulting 174-bit observations can all be recorded and
+replayed independently.

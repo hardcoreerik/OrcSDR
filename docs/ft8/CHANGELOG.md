@@ -393,3 +393,12 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Sandbox validation on a generated noisy fixture recovered one candidate at the injected 0.160 s / 900.000 Hz position with 21/21 sync hits and an exact match to the documented 79-tone API vector.
 - The tool uses the correctness-oracle spectral path and supports narrowing the audio-frequency span; its runtime is not a P4 performance claim.
 - No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 tone frames to codeword export
+
+- Added `js8-map-codewords`: verified Normal 79-tone frames plus an explicit validated tone-label permutation -> 174-bit channel-word lines for `js8-fec-reconstruct`.
+- Added reusable tone-label parsing and negative tests for duplicate/incomplete mappings; optimized and ASan/UBSan tone-map tests pass in the sandbox.
+- Verified the host reconstruction plumbing on the synthetic Normal fixture: WAV extraction -> 79-tone frame -> explicit mapping -> one 174-bit codeword.
+- No real JS8 tone mapping or FEC result is claimed from the plumbing fixture.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.

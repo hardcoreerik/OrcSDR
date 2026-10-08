@@ -91,6 +91,11 @@ g++ "${common[@]}" -O2 tools/js8-tone-map.cpp \
   apps/orcsdr-tab5/ui/js8_frame.cpp \
   -o "$build_dir/js8-tone-map"
 
+g++ "${common[@]}" -Itools -O2 tools/js8-map-codewords.cpp \
+  apps/orcsdr-tab5/ui/js8_mode.cpp \
+  apps/orcsdr-tab5/ui/js8_frame.cpp \
+  -o "$build_dir/js8-map-codewords"
+
 g++ "${common[@]}" -O2 tools/js8-fec-reconstruct.cpp -o "$build_dir/js8-fec-reconstruct"
 
 g++ "${common[@]}" -Itools -O2 tools/js8-wav-tones.cpp \
