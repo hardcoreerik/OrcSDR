@@ -233,3 +233,24 @@ refinement cost shown (about 13 ms per candidate on the host) is exact correlati
 of bandwidth is expected to be well over an order of magnitude cheaper, but that is a design expectation, not a measurement.
 
 Recommended next single change: candidate capacity and ranking (experiment 3 as ordered): measure K=96/128 with refinement, and rank by refined sync score instead of coarse score before cutting to the gate budget.
+
+## Task 3, experiment 3: refine many, gate few (candidate capacity and ranking)
+
+Change under test: refine the top K coarse candidates, then re-rank by the refined sync score and attempt only the best G through demodulation, LDPC and CRC (`--topk K --gate G` in `tools/ft8-wav-refine.cpp`). Host measurements, single runs, 2,1 coarse grid.
+
+| K refined | G gated | FT8 accepted (of 14) | FT4 accepted (of 19) | FT8 refine ms | FT8 total ms | false accepts |
+|---:|---:|---:|---:|---:|---:|---:|
+| 32 | 16 | 5 | 3 | 427 | 732 | 0 |
+| 64 | 8 | 4 | 2 | 852 | 1,137 | 0 |
+| **64** | **16** | **6** | **3** | 849 | 1,151 | 0 |
+| 64 | 32 / all | 6 | 3 | 849 | similar | 0 |
+| 96 | 16 / 32 / all | 6 | 3 | - | - | 0 |
+| 128 | 16 | 6 | 3 | 1,731 | 2,039 | 0 |
+| 192 | 16 / 32 | 6 | 3 | - | - | 0 |
+| 192 | all | 6 (8 LDPC converged) | 3 | - | - | 0 |
+
+Noise-only: 16 recordings, K=64 G=16, zero accepts. Findings: ranking by the refined score concentrates the real signals in the first 16 (K=64 G=16 equals G=all; unrefined 2,1 ranking needed far more than 16). Raising K beyond 64
+adds nothing on these recordings: coverage is saturated at 6 FT8 and 3 FT4, and the remaining reference signals are lost for other reasons (soft-metric weakness, unparsed message types, out-of-band or truncated signals). The gate budget
+(demod, LDPC, CRC) stays at 16 attempts, about 33 ms host; the refinement stage is the cost driver. These are two recordings: the saturation could differ on busier bands, so K should stay a configurable budget, not a tuned constant.
+
+Recommended next single change: experiment 4 as ordered is not yet justified by candidate capacity; the remaining FT8 misses are weak signals with strong sync (soft-metric quality), so next is experiment 3 of the original list, soft metrics (one change: for example improved LLR scaling), measured on the same corpus.

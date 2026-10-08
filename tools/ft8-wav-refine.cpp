@@ -4,6 +4,7 @@
 //     --ref FILE      reference decodes (<audio_hz> <dt_s> <message...>) to score against
 //     --topk N        coarse candidates to refine / attempt (default 32)
 //     --min-score X   coarse sync threshold (default 0.10)
+//     --gate N        attempt only the N best candidates after refinement, ranked by refined sync score (default: all)
 //     --no-refine     attempt the coarse candidates directly (same top-K, same gates): the control
 //
 // Stage 1 is the production coarse search (spectral grid + sync::search). Stage 2 takes the top-K coarse candidates and,
@@ -172,11 +173,13 @@ int main(int argc, char** argv) {
   std::size_t topk = 32;
   float min_score = 0.10f;
   bool refine_on = true;
+  std::size_t gate = 0;
   for (int i = 5; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--ref" && i + 1 < argc) ref_path = argv[++i];
     else if (a == "--topk" && i + 1 < argc) topk = std::strtoul(argv[++i], nullptr, 10);
     else if (a == "--min-score" && i + 1 < argc) min_score = static_cast<float>(std::atof(argv[++i]));
+    else if (a == "--gate" && i + 1 < argc) gate = std::strtoul(argv[++i], nullptr, 10);
     else if (a == "--no-refine") refine_on = false;
     else return 2;
   }
@@ -231,25 +234,39 @@ int main(int argc, char** argv) {
   double refine_ms = 0.0, gates_ms = 0.0;
   std::vector<float> local(static_cast<std::size_t>(p.channel_symbols) * p.tone_count);
 
+  struct Refined { long start; double hz; double score; float coarse; };
+  std::vector<Refined> refined;
   for (std::size_t i = 0; i < n; ++i) {
     const auto& c = ranked[i];
     long start = static_cast<long>(c.start_row) * static_cast<long>(hop);
     double hz = (kFirstMillihz + static_cast<double>(c.base_bin) * spacing) / 1000.0;
+    double score = c.score;
     if (refine_on) {
       const auto t0 = Clock::now();
       long rs = start;
       double rh = hz;
-      refiner.refine(start, hz, static_cast<double>(hop), spacing / 1000.0, &rs, &rh);
+      score = refiner.refine(start, hz, static_cast<double>(hop), spacing / 1000.0, &rs, &rh);
       refine_ms += ms_since(t0);
       start = rs;
       hz = rh;
     }
+    refined.push_back({start, hz, score, c.score});
+  }
+  if (refine_on)
+    std::stable_sort(refined.begin(), refined.end(), [](const Refined& a, const Refined& b) { return a.score > b.score; });
+  std::size_t gated = 0;
+  for (const Refined& rc : refined) {
+    if (gate != 0 && gated >= gate) break;
+    const long start = rc.start;
+    const double hz = rc.hz;
+    const auto& c = rc;
     if (!refiner.in_range(start)) { ++skipped_range; continue; }
     bool dup = false;
     for (const auto& q : tried)
       if (std::labs(q.first - start) < static_cast<long>(p.symbol_samples / 16) && std::fabs(q.second - hz) < step_hz / 8.0) { dup = true; break; }
     if (dup) { ++skipped_dup; continue; }
     tried.emplace_back(start, hz);
+    ++gated;
 
     const auto tg = Clock::now();
     for (std::size_t s = 0; s < p.channel_symbols; ++s)
@@ -258,7 +275,7 @@ int main(int argc, char** argv) {
             tone_energy(wav.samples.data() + start + s * p.symbol_samples, p.symbol_samples, hz + tone * step_hz, p.sample_rate_hz));
     orcsdr::ftx::sync::EnergyGrid lg{local.data(), p.channel_symbols, p.tone_count, p.tone_count};
     orcsdr::ftx::sync::Candidate lc{};
-    lc.score = c.score;
+    lc.score = c.coarse;
     orcsdr::ftx::pipeline::FrameResult frame{};
     orcsdr::ftx::pipeline::CandidateTrace trace{};
     const auto outcome = orcsdr::ftx::pipeline::try_candidate(p, lg, orcsdr::ftx::sync::Geometry{1, 1}, lc, pipe, &ws, &frame, &trace);

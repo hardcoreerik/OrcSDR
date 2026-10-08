@@ -215,3 +215,7 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Added `tools/ft8-wav-refine.cpp` (host only, exact correlation): coarse 2,1 search, per-candidate sample/sub-bin refinement scored on sync symbols, then the unchanged `pipeline::try_candidate`. Includes a `--no-refine` control.
 - Measured: FT8 official recording 1 to 6 accepted (K=64) versus the unrefined control, equal to the 4,2 grid at about a quarter of its spectral cost; FT4 2 to 3. Zero false accepts on both recordings and on 16 noise recordings.
 - No production decoder code, acceptance rule, firmware, UI or audio path changed. Not an ESP32-P4 timing.
+
+## 2026-10-07 — Task 3 experiment 3: candidate capacity and refined re-ranking (host-only)
+
+- `ft8-wav-refine` gained `--gate N`: refine K candidates, rank by refined sync score, attempt the best N. FT8 reaches 6 and FT4 3 with K=64 and only 16 gate attempts; larger K gives no further gain on the official recordings. Zero false accepts, zero accepts on 16 noise recordings. No production code changed.
