@@ -93,6 +93,14 @@ g++ "${common[@]}" -O2 tools/js8-tone-map.cpp \
 
 g++ "${common[@]}" -O2 tools/js8-fec-reconstruct.cpp -o "$build_dir/js8-fec-reconstruct"
 
+g++ "${common[@]}" -Itools -O2 tools/js8-wav-tones.cpp \
+  apps/orcsdr-tab5/ui/js8_mode.cpp \
+  apps/orcsdr-tab5/ui/js8_frame.cpp \
+  apps/orcsdr-tab5/ui/js8_sync.cpp \
+  apps/orcsdr-tab5/ui/js8_spectral.cpp \
+  apps/orcsdr-tab5/ui/js8_demod.cpp \
+  -o "$build_dir/js8-wav-tones"
+
 run_suite ft8_sync_tests \
   tests/ft8_sync_tests.cpp \
   apps/orcsdr-tab5/ui/ft8_mode.cpp \

@@ -79,3 +79,25 @@ exact-correlation grid is too expensive to declare as the ESP32-P4 production
 strategy. The later P4 backend should use the existing optimized FFT primitive
 or another measured equivalent while remaining bit/decision-compatible with
 this oracle.
+
+
+## WAV-to-tone extraction tool
+
+`tools/js8-wav-tones.cpp` now connects the capture corpus to the reconstruction
+lab. It accepts strict 12 kHz mono 16-bit PCM WAV input, performs the standalone
+JS8 Normal spectral search, re-demodulates each candidate, and writes:
+
+- candidate metadata as `#` comment lines;
+- one exact 79-digit tone sequence per accepted raw frame.
+
+Because `js8-tone-map` ignores comment lines, the extractor output can be
+redirected directly into the tone-label search.
+
+Sandbox fixture result:
+- synthetic start: 0.160 s;
+- synthetic tone-0 frequency: 900.000 Hz;
+- recovered candidates: 1;
+- recovered sync: 21/21;
+- emitted 79-tone line exactly matched the documented API frame vector.
+
+No real-RF interoperability claim is made from this synthetic run.

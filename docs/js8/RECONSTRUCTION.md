@@ -116,3 +116,28 @@ For each permutation it converts the 58 data tones into a 174-bit observation an
 Why more than 87 frames matter: with 87 or fewer observations, even a wrong mapping can have rank no greater than the number of rows. The tool warns in that case. A useful reconstruction corpus should exceed the suspected information dimension and contain diverse frames, with a separate withheld set for verification.
 
 This tool is a hypothesis filter, not proof by itself. A selected mapping must also produce a stable parity basis, validate withheld frames, and lead to a consistent CRC/message interpretation.
+
+
+## Capture-to-reconstruction command path
+
+Once a 12 kHz owner/reference WAV exists, the host path is:
+
+```bash
+js8-wav-tones capture.wav > frames.txt
+js8-tone-map frames.txt
+```
+
+`frames.txt` is intentionally both human-readable and machine-readable:
+metadata starts with `#`, and verified candidate frames are plain 79-digit
+tone strings.
+
+For faster investigation when a reference decoder already gives the approximate
+audio frequency, narrow the extractor's frequency span:
+
+```bash
+js8-wav-tones capture.wav 1200 1800 0.45 > frames.txt
+```
+
+The current extractor uses the exact-correlation spectral oracle, so a narrow
+span is preferred during reconstruction work. Full-passband performance from
+this tool is not an ESP32-P4 timing estimate.

@@ -384,3 +384,12 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Added a noisy synthetic Normal-mode test that recovers the injected sync candidate at the exact expected time/frequency bin and a quiet control that produces no candidate; optimized and ASan/UBSan versions pass in the sandbox.
 - Documented this as a correctness oracle rather than the final P4 full-band implementation; an optimized FFT/coarse-search front end must be measured against it before device binding.
 - No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 WAV-to-tone reconstruction bridge
+
+- Added host-only `tools/js8-wav-tones.cpp`: strict 12 kHz mono i16 WAV -> Normal spectral search -> candidate tone demod -> machine-readable 79-tone frame lines.
+- Its output can be redirected directly into `js8-tone-map`; metadata is emitted as comment lines so no manual frame transcription is required.
+- Sandbox validation on a generated noisy fixture recovered one candidate at the injected 0.160 s / 900.000 Hz position with 21/21 sync hits and an exact match to the documented 79-tone API vector.
+- The tool uses the correctness-oracle spectral path and supports narrowing the audio-frequency span; its runtime is not a P4 performance claim.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
