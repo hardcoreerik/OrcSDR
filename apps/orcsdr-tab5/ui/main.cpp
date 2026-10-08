@@ -12707,6 +12707,113 @@ float ft8_native_dial_offset_hz() {
   return static_cast<float>(static_cast<int32_t>(orcsdr::ft8::mode_dial_hz(ft8_selected_band(), g_ft8_mode)) - static_cast<int32_t>(centre));
 }
 
+// Rolling decode log: every decode becomes one CSV row in /ft8/log-YYYYMMDD.csv on the SD card (one file per UTC day). These are
+// stations heard, not contacts: nothing is written as a QSO. On by default; `FT8 LOG OFF` (stored in NVS) turns it off.
+// Rows are staged in PSRAM and written in batches: the SD card needs internal DMA memory (several KB), which the running USB
+// receiver consumes (measured: 36 KB free idle, 2.3 KB with the receiver streaming), so a write is attempted only when that
+// memory is available (receiver stopped, or `FT8 LOG FLUSH` after stopping it). Rows wait in PSRAM until then.
+static bool g_ft8_log_enabled = true;
+static bool g_ft8_log_loaded = false;
+static uint32_t g_ft8_log_rows = 0;      // rows written to the card
+static uint32_t g_ft8_log_dropped = 0;   // rows lost because the staging buffer was full
+static uint32_t g_ft8_log_errors = 0;
+static uint32_t g_ft8_log_last_try_ms = 0;
+static char* g_ft8_log_stage = nullptr;
+static size_t g_ft8_log_stage_len = 0;
+static uint32_t g_ft8_log_stage_rows = 0;
+static uint32_t g_ft8_log_stage_day = 0;   // UTC day number (epoch / 86400) of the first staged row
+constexpr size_t kFt8LogStageBytes = 96u * 1024u;
+constexpr uint32_t kFt8LogMaxFileBytes = 4u * 1024u * 1024u;   // per day; logging for that day stops at the cap
+constexpr uint32_t kFt8LogMinDmaBlock = 12288u;                // largest internal DMA block needed before touching the card
+
+static void ft8_log_load_setting() {
+  if (g_ft8_log_loaded) return;
+  g_ft8_log_loaded = true;
+  g_ft8_log_enabled = preferences.getBool("ft8_log", true);
+}
+
+static void ft8_log_stage_rows(const orcsdr::ft8::Decode* decodes, size_t count) {
+  ft8_log_load_setting();
+  if (!g_ft8_log_enabled || count == 0) return;
+  if (g_ft8_log_stage == nullptr)
+    g_ft8_log_stage = static_cast<char*>(heap_caps_malloc(kFt8LogStageBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (g_ft8_log_stage == nullptr) {
+    g_ft8_log_dropped += static_cast<uint32_t>(count);
+    return;
+  }
+  for (size_t i = 0; i < count; ++i) {
+    const time_t t = static_cast<time_t>(decodes[i].utc_epoch);
+    struct tm tm_i{};
+    gmtime_r(&t, &tm_i);
+    const auto* preset = orcsdr::ft8::band(ft8_selected_band());
+    char message[64]{};
+    size_t m = 0;
+    for (const char* p = decodes[i].message; *p != ' ' && m + 2 < sizeof(message); ++p) {
+      if (*p == '"') message[m++] = '"';
+      message[m++] = *p;
+    }
+    char row[200];
+    const int len = snprintf(row, sizeof(row), "%04d-%02d-%02dT%02d:%02d:%02dZ,%s,%s,%lu,%u,%d,%s,%s,%s,\"%s\"\n",
+                             tm_i.tm_year + 1900, tm_i.tm_mon + 1, tm_i.tm_mday, tm_i.tm_hour, tm_i.tm_min, tm_i.tm_sec,
+                             orcsdr::ft8::mode_name(decodes[i].mode), preset != nullptr ? preset->label : "?",
+                             static_cast<unsigned long>(orcsdr::ft8::mode_dial_hz(ft8_selected_band(), decodes[i].mode)),
+                             static_cast<unsigned>(decodes[i].audio_hz), static_cast<int>(decodes[i].dt_ms), decodes[i].callsign,
+                             decodes[i].grid, orcsdr::ft8::kind_name(decodes[i].kind), message);
+    if (len <= 0 || g_ft8_log_stage_len + static_cast<size_t>(len) > kFt8LogStageBytes) {
+      ++g_ft8_log_dropped;
+      continue;
+    }
+    if (g_ft8_log_stage_rows == 0) g_ft8_log_stage_day = static_cast<uint32_t>(decodes[i].utc_epoch / 86400u);
+    std::memcpy(g_ft8_log_stage + g_ft8_log_stage_len, row, static_cast<size_t>(len));
+    g_ft8_log_stage_len += static_cast<size_t>(len);
+    ++g_ft8_log_stage_rows;
+  }
+}
+
+// Writes the staged rows if the card can be used right now. Returns true when nothing is left staged.
+static bool ft8_log_flush(bool force) {
+  if (g_ft8_log_stage_rows == 0) return true;
+  const uint32_t now = millis();
+  if (!force && now - g_ft8_log_last_try_ms < 20000u) return false;
+  g_ft8_log_last_try_ms = now;
+  if (heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA) < kFt8LogMinDmaBlock) return false;   // receiver is streaming
+  if (!ensure_tab5_sd() || g_sd_fs == nullptr) {
+    ++g_ft8_log_errors;
+    return false;
+  }
+  const time_t day_start = static_cast<time_t>(g_ft8_log_stage_day) * 86400;
+  struct tm tm_utc{};
+  gmtime_r(&day_start, &tm_utc);
+  char path[48];
+  snprintf(path, sizeof(path), "/ft8/log-%04d%02d%02d.csv", tm_utc.tm_year + 1900, tm_utc.tm_mon + 1, tm_utc.tm_mday);
+  (void)g_sd_fs->mkdir("/ft8");
+  const bool existed = g_sd_fs->exists(path);
+  File file = g_sd_fs->open(path, FILE_APPEND, true);
+  if (!file) {
+    ++g_ft8_log_errors;
+    return false;
+  }
+  if (file.size() > kFt8LogMaxFileBytes) {
+    file.close();
+    g_ft8_log_dropped += g_ft8_log_stage_rows;   // day's cap reached: drop, never grow without bound
+    g_ft8_log_stage_len = 0;
+    g_ft8_log_stage_rows = 0;
+    return true;
+  }
+  if (!existed || file.size() == 0) file.print("utc,mode,band,dial_hz,audio_hz,dt_ms,callsign,grid,kind,message\n");
+  const size_t written = file.write(reinterpret_cast<const uint8_t*>(g_ft8_log_stage), g_ft8_log_stage_len);
+  file.close();
+  if (written != g_ft8_log_stage_len) {
+    ++g_ft8_log_errors;
+    return false;
+  }
+  g_ft8_log_rows += g_ft8_log_stage_rows;
+  g_ft8_log_stage_len = 0;
+  g_ft8_log_stage_rows = 0;
+  g_ft8_log_errors = 0;
+  return true;
+}
+
 void ft8_native_drain_pending() {
   static orcsdr::ft8::Decode local[32];   // static: the main task stack is shared with the screen draw (8 KB snapshots)
   size_t n = 0;
@@ -12716,6 +12823,8 @@ void ft8_native_drain_pending() {
   g_ft8_pending_count = 0;
   portEXIT_CRITICAL(&g_ft8_pending_lock);
   for (size_t i = 0; i < n; ++i) g_ft8_store.append(local[i]);
+  ft8_log_stage_rows(local, n);
+  (void)ft8_log_flush(false);
 }
 
 int ft8_native_current_gain_tenth_db();
@@ -17086,7 +17195,7 @@ void process_ft8_command(const char* args) {
   if (verb[0] == '\0' || strcmp(verb, "HELP") == 0) {
     Serial.println("ORC_FT8_HELP queries: STATUS | DECODES [n] | BANDS | DUMP | TIME | HUNTSTATUS | HELP");
     Serial.println("ORC_FT8_HELP control (authenticated): OPEN | BAND <index|label|dial_hz> | MODE <FT8|FT4> | CLEAR | RUN <0|1> | "
-                   "CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms> | INJECT BEGIN|RUN|<offset> <b64> | NTP | HUNT <FAST|DECODE|STOP> | TAB <name> | SHOT <name> | SAVE <name> | ADIF <name>");
+                   "CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms> | INJECT BEGIN|RUN|<offset> <b64> | LOG [ON|OFF|FLUSH] | NTP | HUNT <FAST|DECODE|STOP> | TAB <name> | SHOT <name> | SAVE <name> | ADIF <name>");
     return;
   }
 
@@ -17421,6 +17530,26 @@ void process_ft8_command(const char* args) {
       }
     }
     if (!orcsdr::ft8_runtime::inject_write(offset, chunk, out / 2)) Serial.println("ORC_FT8_INJECT_ERROR write");
+    return;
+  }
+
+  if (strcmp(verb, "LOG") == 0) {
+    // FT8 LOG [ON|OFF]: the rolling decode log on the SD card (stations heard, one CSV per UTC day under /ft8/).
+    ft8_log_load_setting();
+    if (strncasecmp(rest, "ON", 2) == 0 || strncasecmp(rest, "OFF", 3) == 0) {
+      if (need_auth()) return;
+      g_ft8_log_enabled = strncasecmp(rest, "ON", 2) == 0;
+      preferences.putBool("ft8_log", g_ft8_log_enabled);
+    } else if (strncasecmp(rest, "FLUSH", 5) == 0) {
+      if (need_auth()) return;
+      const bool done = ft8_log_flush(true);
+      Serial.printf("ORC_FT8_LOG_FLUSH %s\n", done ? "ok" : "deferred (receiver is using the DMA memory; stop it with RTL_STOP first)");
+    }
+    Serial.printf("ORC_FT8_LOG enabled=%d written=%u staged=%u dropped=%u errors=%u dir=/ft8 dma_largest=%u need=%u\n", g_ft8_log_enabled ? 1 : 0,
+                  static_cast<unsigned>(g_ft8_log_rows), static_cast<unsigned>(g_ft8_log_stage_rows), static_cast<unsigned>(g_ft8_log_dropped),
+                  static_cast<unsigned>(g_ft8_log_errors),
+                  static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
+                  static_cast<unsigned>(kFt8LogMinDmaBlock));
     return;
   }
 

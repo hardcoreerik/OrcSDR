@@ -2,6 +2,12 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 — Decode log staging (flush to SD not yet verified)
+
+- `FT8 LOG [ON|OFF|FLUSH]`: every decode is staged as a CSV row in a 96 KB PSRAM buffer and written to `/ft8/log-YYYYMMDD.csv` (one file per UTC day, 4 MB cap) when the SD card can be used. On by default, stored in NVS. Stations heard, never contacts.
+- Finding: the SD card needs a multi-KB internal DMA block. At boot the largest is 32 KB; once the RTL receiver has run it falls to 0.3-2 KB and stays low after the receiver stops (measured 288-576 bytes). SD access then fails (`sdmmc_read_sectors: not enough mem`, `SD_LIST_ERROR open_failed`), so the first attempt to write the log straight to the card never wrote a row. Staging keeps the rows (84-111 staged, none dropped in testing); writing them out is untested on hardware and will need the internal DMA memory to be recovered or reserved.
+- The Tab5 main loop stopped answering serial/touch twice during this work while the decoder task kept running. Neither command order tried afterwards reproduced it in 3.5 minutes; cause unknown.
+
 ## 2026-10-08 — Smoother Live waterfall, flicker-free MAP, NEW markers
 
 - Live waterfall: the whole 848x224 area was repainted every 400 ms (about 2.5 frames a second). It now scrolls the old picture and draws only the new rows (about 10 ms a paint). The runtime emits one row per 70 ms of audio even when the tap hands audio over in bursts, and the dashboard spends them at a steady pace from the main loop. Measured on the Tab5: 8 rows/s before, 14.3 rows/s after; row computation costs 2 ms.
