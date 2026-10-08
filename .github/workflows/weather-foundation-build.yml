@@ -64,7 +64,7 @@ jobs:
           set -uo pipefail
           . "$IDF_PATH/export.sh" >/dev/null
           set +e
-          bash tools/ci/build-tab5.sh             --c6 "$GITHUB_WORKSPACE/feature/.ci-cache/hosted-c6/esp_hosted_tab5_c6.bin"             --out out-base --build-id "weather-baseline ${{ github.event.pull_request.base.sha }}"             2>&1 | tee "$RUNNER_TEMP/base-build.log"
+          bash tools/ci/build-tab5.sh             --c6 "$GITHUB_WORKSPACE/feature/.ci-cache/hosted-c6/esp_hosted_tab5_c6.bin"             --out out-base --build-id "weather-base"             2>&1 | tee "$RUNNER_TEMP/base-build.log"
           rc=${PIPESTATUS[0]}
           set -e
           bin=apps/orcsdr-tab5/build-native-hosted3/orcsdr_tab5.bin
@@ -83,7 +83,7 @@ jobs:
           set -uo pipefail
           . "$IDF_PATH/export.sh" >/dev/null
           set +e
-          bash tools/ci/build-tab5.sh             --c6 "$GITHUB_WORKSPACE/feature/.ci-cache/hosted-c6/esp_hosted_tab5_c6.bin"             --out out-feature --build-id "weather-foundation ${{ github.event.pull_request.head.sha }}"             2>&1 | tee "$RUNNER_TEMP/feature-build.log"
+          bash tools/ci/build-tab5.sh             --c6 "$GITHUB_WORKSPACE/feature/.ci-cache/hosted-c6/esp_hosted_tab5_c6.bin"             --out out-feature --build-id "weather-foundation"             2>&1 | tee "$RUNNER_TEMP/feature-build.log"
           rc=${PIPESTATUS[0]}
           set -e
           bin=apps/orcsdr-tab5/build-native-hosted3/orcsdr_tab5.bin
