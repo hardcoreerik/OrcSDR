@@ -32,6 +32,7 @@ enum DecodeFlags : uint16_t {
   decode_flag_assisted = 1u << 0,        // a-priori (AP) assisted: not a plain over-the-air decode
   decode_flag_hash_resolved = 1u << 1,   // a callsign was resolved from a receiver-side hash table
   decode_flag_multi_frame = 1u << 2,     // assembled from several frames
+  decode_flag_snr_unavailable = 1u << 3, // the decoder has no calibrated SNR estimate: show a dash, never a number
 };
 
 uint32_t slot_ms(DigitalMode mode);          // FT8 15000, FT4 7500, JS8 Normal 15000, Fast 10000, 40 6000, Slow 30000, 60 4000
