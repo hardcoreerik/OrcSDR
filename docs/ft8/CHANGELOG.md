@@ -279,3 +279,7 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 ## 2026-10-08 — FT8 asks the driver for 240 kS/s
 
 - Selecting an FT8 band now sets the receiver rate override to 240 kS/s (the driver's low band is 225 to 300 kS/s) and restarts the stream if it runs at another rate, instead of 2.4 MS/s. DSP load fell from 67 to 19 percent on the Tab5 and decoding is unchanged. The DSP task lets the tap see these blocks (they are flagged as a non-default rate). Band selection now starts the decoder runtime first, so the rate override is not released before the stream restarts. When the decoder stops the override is cleared and a stream still at 240 kS/s on a dashboard band is restarted at its normal rate (verified: back to 2.4 MS/s).
+
+## 2026-10-08 — MAP tab: receiver marker and fitted view
+
+- The MAP tab marks the receiver (white ring and cross, "YOU") from the saved location and frames the receiver plus the decoded stations with a margin (world view when there is nothing to frame), with grid lines at a step chosen for about six columns. Verified by screen capture on the device.

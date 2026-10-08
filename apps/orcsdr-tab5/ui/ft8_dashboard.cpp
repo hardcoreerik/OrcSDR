@@ -454,26 +454,74 @@ void draw_decodes() {
   button(kClear, "CLEAR");
 }
 
+// The map frames the receiver and the stations that were decoded (with a margin), or the whole world when there is nothing to frame.
+struct MapView {
+  float lon_min = -180.0f, lat_max = 90.0f, lon_span = 360.0f, lat_span = 180.0f;
+};
+MapView g_map_view{};
+
 void map_point(const GeoPoint& p, int* x, int* y) {
   constexpr int left = 50, top = 158, width = 824, height = 420;
-  *x = left + static_cast<int>((p.longitude + 180.0f) / 360.0f * width);
-  *y = top + static_cast<int>((90.0f - p.latitude) / 180.0f * height);
+  *x = left + static_cast<int>((p.longitude - g_map_view.lon_min) / g_map_view.lon_span * width);
+  *y = top + static_cast<int>((g_map_view.lat_max - p.latitude) / g_map_view.lat_span * height);
+}
+
+void fit_map_view() {
+  float lon_lo = 1000.0f, lon_hi = -1000.0f, lat_lo = 1000.0f, lat_hi = -1000.0f;
+  auto add = [&](const GeoPoint& p) {
+    lon_lo = std::min(lon_lo, p.longitude);
+    lon_hi = std::max(lon_hi, p.longitude);
+    lat_lo = std::min(lat_lo, p.latitude);
+    lat_hi = std::max(lat_hi, p.latitude);
+  };
+  if (g_snapshot.station_known) add(GeoPoint{g_snapshot.station_latitude, g_snapshot.station_longitude, 0});
+  const size_t n = std::min(g_snapshot.decode_count, kDecodeCapacity);
+  for (size_t i = 0; i < n; ++i) {
+    GeoPoint point{};
+    if (maidenhead_valid(g_snapshot.decodes[i].grid) && maidenhead_center(g_snapshot.decodes[i].grid, &point)) add(point);
+  }
+  g_map_view = MapView{};
+  if (lon_hi < lon_lo) return;   // nothing to frame: world view
+  float lon_span = std::max(lon_hi - lon_lo, 30.0f) * 1.3f;
+  float lat_span = std::max(lat_hi - lat_lo, 15.0f) * 1.3f;
+  const float aspect = 824.0f / 420.0f;   // pixels per degree match in both directions
+  if (lon_span < lat_span * aspect) lon_span = lat_span * aspect;
+  if (lat_span < lon_span / aspect) lat_span = lon_span / aspect;
+  lon_span = std::min(lon_span, 360.0f);
+  lat_span = std::min(lat_span, 180.0f);
+  const float lon_mid = 0.5f * (lon_lo + lon_hi), lat_mid = 0.5f * (lat_lo + lat_hi);
+  g_map_view.lon_span = lon_span;
+  g_map_view.lat_span = lat_span;
+  g_map_view.lon_min = std::max(-180.0f, std::min(lon_mid - lon_span / 2.0f, 180.0f - lon_span));
+  g_map_view.lat_max = std::max(-90.0f + lat_span, std::min(lat_mid + lat_span / 2.0f, 90.0f));
 }
 
 void draw_map() {
+  fit_map_view();
   const Rect map{24, 104, 884, 514};
   frame(map);
-  text("MAIDENHEAD WORLD GRID", 42, 124, kCyan, 1, middle_left);
-  text("Station-reported locators only", 890, 124, kMuted, 1, middle_right);
+  text("MAIDENHEAD GRID", 42, 124, kCyan, 1, middle_left);
+  {
+    char scale[48];
+    std::snprintf(scale, sizeof(scale), "Station-reported locators only   grid %s", g_map_view.lon_span >= 359.0f ? "world" : "fitted");
+    text(scale, 890, 124, kMuted, 1, middle_right);
+  }
   constexpr int left = 50, top = 158, width = 824, height = 420;
   M5.Display.fillRect(left, top, width, height, 0x0021);
   M5.Display.drawRect(left, top, width, height, kGrid);
-  for (int lon = -150; lon <= 150; lon += 30) {
-    const int x = left + (lon + 180) * width / 360;
+  const float want = g_map_view.lon_span / 6.0f;   // about six grid columns across the view
+  float step = 30.0f;
+  for (float candidate : {1.0f, 2.0f, 5.0f, 10.0f, 15.0f, 20.0f, 30.0f}) {
+    if (candidate >= want) { step = candidate; break; }
+  }
+  for (float lon = std::ceil(g_map_view.lon_min / step) * step; lon < g_map_view.lon_min + g_map_view.lon_span; lon += step) {
+    int x = 0, y = 0;
+    map_point(GeoPoint{0.0f, lon, 0}, &x, &y);
     M5.Display.drawFastVLine(x, top, height, kGrid);
   }
-  for (int lat = -60; lat <= 60; lat += 30) {
-    const int y = top + (90 - lat) * height / 180;
+  for (float lat = std::ceil((g_map_view.lat_max - g_map_view.lat_span) / step) * step; lat < g_map_view.lat_max; lat += step) {
+    int x = 0, y = 0;
+    map_point(GeoPoint{lat, 0.0f, 0}, &x, &y);
     M5.Display.drawFastHLine(left, y, width, kGrid);
   }
   const size_t n = std::min(g_snapshot.decode_count, kDecodeCapacity);
@@ -485,6 +533,14 @@ void draw_map() {
     int x = 0, y = 0;
     map_point(point, &x, &y);
     M5.Display.fillCircle(x, y, 4, d.kind == DecodeKind::cq ? kGreen : kYellow);
+  }
+  if (g_snapshot.station_known) {   // the receiver itself: a white ring with a cross, labelled
+    int x = 0, y = 0;
+    map_point(GeoPoint{g_snapshot.station_latitude, g_snapshot.station_longitude, 0}, &x, &y);
+    M5.Display.drawCircle(x, y, 7, TFT_WHITE);
+    M5.Display.drawFastHLine(x - 11, y, 22, TFT_WHITE);
+    M5.Display.drawFastVLine(x, y - 11, 22, TFT_WHITE);
+    text("YOU", x + 14, y - 12, TFT_WHITE, 1, middle_left);
   }
 
   const Rect recent{926, 104, 330, 514};
