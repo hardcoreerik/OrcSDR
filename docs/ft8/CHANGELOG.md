@@ -197,3 +197,15 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - FT4 `000000_000002.wav`: WSJT-X 19 versus OrcSDR 2, 10.5% coverage, zero observed false accepts, 1.90 s regression-floor host wall time (2.29 s on the prior survey).
 - Added explicit FT8 and FT4 external-WAV CI floors for the currently stable accepted messages.
 - OrcSDR SNR remains unimplemented and is not fabricated in benchmark output.
+
+## 2026-10-07 — Task 3 experiment 1: search-geometry measurement and miss classification
+
+- Instrumented the receive chain without changing what it accepts: `pipeline::try_candidate` (with `Outcome` and `CandidateTrace`) is now the single
+  per-candidate path, and `decode_grid` calls it, so production and diagnostics cannot diverge.
+- Added the host tools `tools/ft8-wav-diagnose.cpp` / `tools/diagnose-ft8-wav.sh` and the WSJT-X reference lists in `tools/ft8-reference/`. Every reference
+  signal is classified (decoded, no sync candidate, suppressed by NMS, ranked beyond the limit, demod/LDPC/CRC failure, unsupported message, out of analysis
+  band, starts before the recording, truncated by the end), with per-stage candidate and LDPC/CRC counts and timings. The shared WAV reader moved to `tools/ft8_wav_common.hpp`.
+- Measured FT8 and FT4 at 2,1 / 4,1 / 4,2 on the official recordings: FT8 1 to 2 to 5 accepted (6 with the limit lifted), FT4 2 to 2 to 3, zero false accepts, and zero accepts on 48
+  deterministic noise runs. Results and diagnosis are in `REAL_WAV_BENCHMARK.md`.
+- Found and documented (not yet fixed): the standard-callsign encoder rejects callsigns with more than one digit (`A92EE`), and FT4 contest message types are unparsed.
+- No decoder math, regression floor, firmware, UI or audio path changed.

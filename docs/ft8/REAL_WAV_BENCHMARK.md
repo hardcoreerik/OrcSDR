@@ -120,3 +120,83 @@ External-WAV CI now requires:
 These are floors, not quality targets. Task 3 should raise them only after
 repeatable before/after measurements establish additional stable decodes
 without increasing false accepts.
+
+## Task 3, experiment 1: search geometry (no decoder math changed)
+
+Purpose: find out where the missed reference signals are lost before changing any algorithm, and measure whether a finer
+spectral search geometry alone recovers more of them. Nothing in the decoder's acceptance rule changed; the tool
+`tools/ft8-wav-diagnose.cpp` (run with `bash tools/diagnose-ft8-wav.sh`) drives the same module functions as the
+production path (`sync::search`, `pipeline::try_candidate`, which `decode_grid` now also uses) and classifies every
+reference signal by where it was lost. Reference lists are in `tools/ft8-reference/`.
+
+Method: the same two official recordings, the same WSJT-X references (14 FT8, 19 FT4), the production candidate limit of 16
+and sync threshold 0.10, only `rows_per_symbol,bins_per_tone` varied. Host measurements: WSL2 g++ -O3 on the project
+workstation, one run each; single-run wall times vary by roughly 10 percent. Nothing here is an ESP32-P4 number.
+
+### FT8 `210703_133430.wav` (14 reference decodes, 13 in scope)
+
+| grid (rows,bins) | spectral ms | sync ms | gate ms (all candidates) | positions >= threshold | after NMS | LDPC attempts cap/all | LDPC converged cap/all | CRC pass cap/all | plausible cap/all | accepted in cap | accepted if cap unlimited | false accepts |
+|---|---:|---:|---:|---:|---:|---|---|---|---|---:|---:|---:|
+| 2,1 (baseline, 80 ms / 6.25 Hz) | 281 | 5.7 | 56.6 | 2,822 | 861 | 16 / 861 | 2 / 4 | 2 / 4 | 1 / 1 | **1** | 1 | 0 |
+| 4,1 (40 ms / 6.25 Hz) | 537 | 11.2 | 63.1 | 5,617 | 1,008 | 16 / 1,008 | 3 / 6 | 3 / 6 | 2 / 2 | **2** | 2 | 0 |
+| 4,2 (40 ms / 3.125 Hz) | 1,063 | 49.2 | 87.3 | 11,230 | 1,024 (saturated) | 16 / 1,024 | 6 / 9 | 6 / 9 | 5 / 6 | **5** | 6 | 0 |
+
+Exact messages: baseline `WM3PEN EA6VQ -09`. 4,1 adds `W1FC F5BZB -08`. 4,2 adds `K1JT HA0DU KN07`, `N1JFU EA6EE R-07` and
+`W1DIG SV9CVY -14`, and one more (`XE2X HA2NP RR73`, ranked 17th, LDPC 15 iterations) that the 16-candidate limit hides.
+Every accepted message is in the WSJT-X reference list. The 4,2 grid's candidate list hit the diagnostic limit of 1,024.
+
+### FT4 `000000_000002.wav` (19 reference decodes, 16 in scope)
+
+| grid | spectral ms | sync ms | gate ms | positions >= threshold | after NMS | LDPC converged cap/all | CRC pass cap/all | plausible cap/all | accepted in cap | accepted if cap unlimited | false accepts |
+|---|---:|---:|---:|---:|---:|---|---|---|---:|---:|---:|
+| 2,1 (baseline) | 33 | 1.6 | 23.8 | 1,457 | 379 | 8 / 16 | 8 / 16 | 2 / 2 | **2** | 2 | 0 |
+| 4,1 | 65 | 3.1 | 26.0 | 2,884 | 427 | 8 / 17 | 8 / 17 | 2 / 3 | **2** | 3 | 0 |
+| 4,2 | 130 | 6.2 | 33.0 | 5,873 | 526 | 9 / 15 | 9 / 15 | 3 / 3 | **3** | 3 | 0 |
+
+4,2 adds `N1TRK KB7RUQ RR73` (rank 14). At 4,1 the same message exists at a rank beyond the 16 limit.
+
+### Noise-only check
+
+Eight deterministic Gaussian-noise recordings per mode (15 s for FT8, 6 s for FT4), each run at all three grids, 48 runs: zero CRC
+passes, zero accepted messages. A few LDPC runs converged to a wrong codeword and were rejected by CRC-14, as the gates intend.
+
+### Where the misses are (classification of every reference signal)
+
+FT8, baseline 2,1 (13 in scope): 1 decoded; 3 sync candidates with strong sync (rank 5 to 8, sync 0.75 to 0.81) whose LDPC
+did not converge; 8 candidates ranked 23 to 554 (sync 0.18 to 0.63) whose LDPC did not converge; 1 candidate (`A92EE F5PSR -14`,
+rank 1) that reached a CRC-valid codeword but could not be unpacked, see below. One more reference signal (`CQ F5RXL IN94`,
+dt -0.8 s) starts 0.3 s before the recording begins and cannot be found as a full frame.
+
+FT8, 4,2: 5 decoded, 1 more beyond the candidate limit, 1 CRC-valid but unpackable (`A92EE`), 3 strong-sync LDPC failures
+(`K1BZM EA3GP -09` rank 11, `N1PJT HB9CQK -10` rank 12, `K1JT EA3AGB -15` rank 15), 3 weaker LDPC failures beyond the limit.
+
+FT4, baseline: 3 reference signals (2995, 3159, 3337 Hz) lie partly or wholly above the 3 kHz analysis band and cannot be found by
+design; 3 are CRC-valid but of message types the parser does not implement; 8 are ranked beyond the limit with LDPC failures;
+2 were suppressed by non-maximum suppression because a stronger signal sits 11 Hz away. At 4,2: 3 decoded, 6 CRC-valid but
+unpackable within the limit plus 2 more beyond it, 3 weak LDPC failures, 2 suppressed neighbours, 3 out of band.
+
+### Findings
+
+1. The dominant loss at the baseline grid is soft-demodulation quality, not sync or ranking. Strong sync candidates exist and LDPC
+   fails; a finer time and, above all, frequency grid recovers four of them. Time resolution alone (4,1) recovers one; adding half-bin
+   frequency resolution (4,2) recovers three more. Misalignment of a signal against the grid (up to a quarter symbol in time and half a tone
+   spacing in frequency) is the most likely cause, and it is exactly what a candidate-local refinement would remove.
+2. The gates are cheap and the spectral stage is not. Attempting all 861 to 1,024 candidates through demod, LDPC and CRC costs
+   56 to 87 ms on the host (about 0.07 ms per candidate); the spectral stage grows 3.8 times from 2,1 to 4,2 (281 to 1,063 ms) and the
+   exact-correlation implementation is a correctness oracle, not the production algorithm.
+3. Candidate-limit pressure is real only at the finer grid: at 2,1 attempting every candidate recovers nothing extra, at 4,2 it recovers one.
+   The cost of a larger limit is about one millisecond.
+4. Two message-layer findings that need no DSP change:
+   - `encode_standard_callsign` rejects any callsign with more than one digit, so valid prefixes such as `A92EE` (`A9` plus area digit `2`) never round-trip
+     and a CRC-valid FT8 decode is thrown away. This is a genuine parser bug.
+   - FT4's contest message types (ARRL RTTY Roundup exchanges such as `N1TRK N4FKH 569 VA` and directed-CQ tokens such as `CQ RU AB5XS EM12`)
+     are not parsed. At 4,2, six CRC-valid FT4 candidates inside the limit and two beyond it are lost only to this, so they are not RF or DSP misses.
+5. No false accepts were observed on either recording or on the noise corpus at any grid.
+
+### Recommended next single decoder improvement
+
+Candidate-local time and frequency refinement before soft demodulation (a two-stage search): keep the cheap coarse whole-band search,
+then re-evaluate only the top candidates at finer time and frequency offsets and demodulate at the best refined position. Measure it first with
+an exact-correlation refinement on the host to prove the coverage gain independently of DSP cost, targeting roughly the 4,2 coverage (5 to 6 of 13 on
+FT8) at a small fraction of the 4,2 spectral cost; then design the efficient P4 implementation (per-candidate down-conversion to a low sample rate).
+The callsign-encoder fix, the candidate limit and the FT4 contest-message parser are independent, low-risk items that should be measured separately.

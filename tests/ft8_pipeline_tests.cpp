@@ -210,11 +210,57 @@ void test_ft4_payload_xor_and_standard_message_accepted() {
 
 }  // namespace
 
+// try_candidate reports where a candidate stopped, using the same gates as decode_grid.
+void test_try_candidate_names_the_stage_that_dropped_a_candidate() {
+  using orcsdr::ftx::pipeline::CandidateTrace;
+  using orcsdr::ftx::pipeline::Outcome;
+  const auto& p = profile(Mode::ft8);
+  constexpr std::size_t rows = 82, bins = 24, start_row = 2, base_bin = 8;
+  auto run = [&](const orcsdr::ft8::codec::MessageBits& message, std::size_t row, CandidateTrace* trace) {
+    const auto codeword = orcsdr::ft8::ldpc::encode(message);
+    orcsdr::ft8::codec::DataTones data{};
+    assert(orcsdr::ft8::codec::codeword_to_data_tones(codeword, &data));
+    const auto tones = orcsdr::ft8::codec::frame_data_tones(data);
+    std::vector<float> cells(rows * bins);
+    inject_frame(p, tones, &cells, rows, bins, start_row, base_bin);
+    orcsdr::ftx::sync::EnergyGrid grid{cells.data(), rows, bins, bins};
+    orcsdr::ftx::sync::Candidate candidate{};
+    candidate.start_row = static_cast<uint16_t>(row);
+    candidate.base_bin = base_bin;
+    orcsdr::ftx::pipeline::Workspace workspace{};
+    orcsdr::ftx::pipeline::FrameResult frame{};
+    return orcsdr::ftx::pipeline::try_candidate(p, grid, orcsdr::ftx::sync::Geometry{}, candidate,
+                                                orcsdr::ftx::pipeline::Config{}, &workspace, &frame, trace);
+  };
+
+  const auto payload = standard_payload("CQ", "K1ABC", grid15("FN42"));
+  CandidateTrace trace{};
+  assert(run(orcsdr::ft8::codec::append_crc(payload), start_row, &trace) == Outcome::accepted);
+  assert(trace.ldpc_converged && trace.crc_ok);
+
+  auto contest = payload;
+  put_bits(&contest, 74, 3, 4);  // an unsupported message family: CRC-valid but not unpacked
+  assert(run(orcsdr::ft8::codec::append_crc(contest), start_row, &trace) == Outcome::unpack_unsupported);
+  assert(trace.ldpc_converged && trace.crc_ok);
+
+  auto bad_crc = orcsdr::ft8::codec::append_crc(payload);
+  bad_crc[bad_crc.size() - 1] ^= 1u;  // a valid LDPC codeword whose CRC-14 is wrong
+  assert(run(bad_crc, start_row, &trace) == Outcome::crc_failed);
+  assert(trace.ldpc_converged && !trace.crc_ok);
+
+  assert(run(orcsdr::ft8::codec::append_crc(payload), 500, &trace) == Outcome::demod_failed);  // outside the grid
+
+  assert(std::strcmp(orcsdr::ftx::pipeline::outcome_name(Outcome::accepted), "accepted") == 0);
+  assert(std::strcmp(orcsdr::ftx::pipeline::outcome_name(Outcome::not_plausible), "not_plausible") == 0);
+  assert(std::strcmp(orcsdr::ftx::pipeline::outcome_name(Outcome::ldpc_failed), "ldpc_failed") == 0);
+}
+
 int main() {
   assert(orcsdr::ftx::pipeline::self_check());
   test_plausible_standard_ft8_frame_is_returned();
   test_crc_corrupt_valid_ldpc_word_is_not_returned();
   test_crc_valid_unsupported_message_is_not_returned();
   test_ft4_payload_xor_and_standard_message_accepted();
+  test_try_candidate_names_the_stage_that_dropped_a_candidate();
   return 0;
 }

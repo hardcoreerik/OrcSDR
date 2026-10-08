@@ -35,6 +35,34 @@ struct Workspace {
   orcsdr::ft8::ldpc_decode::Workspace ldpc{};
 };
 
+// Where one sync candidate ended in the acceptance gates, in order. Only `accepted` produces a message; every other value
+// is a named reason the candidate was dropped (used by the benchmark tools to classify misses, never shown to a user).
+enum class Outcome : uint8_t {
+  demod_failed,         // soft demodulation could not run (candidate outside the grid, non-finite energy)
+  ldpc_failed,          // LDPC did not converge to a codeword
+  crc_failed,           // converged to a codeword whose CRC-14 is wrong
+  unpack_unsupported,   // CRC valid but the message family is not parsed (e.g. contest message types)
+  not_plausible,        // parsed but not a fully renderable, plausible message
+  accepted
+};
+const char* outcome_name(Outcome outcome);
+
+// What the gates saw for one candidate, for diagnostics.
+struct CandidateTrace {
+  float mean_symbol_contrast = 0.0f;
+  uint8_t ldpc_iterations = 0;
+  bool ldpc_converged = false;
+  bool crc_ok = false;
+};
+
+// Runs ONE candidate through soft demod -> LDPC -> CRC -> FT4 payload restoration -> message unpack -> plausibility and
+// reports where it stopped. decode_grid() is this function applied to the ranked candidates; the production acceptance
+// rule is exactly the same.
+Outcome try_candidate(const ModeProfile& profile, const sync::EnergyGrid& grid,
+                      const sync::Geometry& geometry, const sync::Candidate& candidate,
+                      const Config& config, Workspace* workspace, FrameResult* frame,
+                      CandidateTrace* trace = nullptr);
+
 // Runs the already-built receive stages on one spectral grid.
 //
 // Current acceptance gate:

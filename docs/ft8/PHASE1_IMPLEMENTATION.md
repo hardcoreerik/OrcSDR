@@ -624,3 +624,12 @@ Task 1 and Task 2 review gate reached at decoder commit
 `768fc18d0944d0025c3236175ef270c0de08f634`, with external regression run
 `37723100513`. Task 3 coverage optimization is intentionally not started
 until owner review.
+
+## Task 3, experiment 1: instrumentation and search geometry
+
+Implemented only measurement. `pipeline::try_candidate` returns an `Outcome` (demod_failed, ldpc_failed, crc_failed, unpack_unsupported, not_plausible,
+accepted) for one candidate and `decode_grid` is that function applied to the ranked candidates, so the production acceptance rule is unchanged and the
+diagnostic tool uses the same code. The tool counts positions scored, positions above threshold before suppression, candidates after non-maximum suppression,
+candidates attempted within the limit and in total, and the LDPC, CRC, unpack and plausibility counts for both, and times spectral analysis, sync and the gates.
+Reference signals are matched one-to-one to candidates (closest first) so a neighbouring signal's decode is never credited to another. Source of the idea: ordinary
+experimental practice (measure the stages before changing them); no external decoder code or control flow was used. WSJT-X remains an external reference executable only.
