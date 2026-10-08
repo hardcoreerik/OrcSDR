@@ -45,6 +45,7 @@ struct Observation {
 constexpr size_t kNoaaWeatherChannelCount = 7;
 constexpr size_t kInvalidChannel = static_cast<size_t>(-1);
 
+const uint32_t* noaa_channels();
 uint32_t noaa_channel_hz(size_t index);
 size_t noaa_channel_index(uint32_t frequency_hz);
 uint32_t nearest_noaa_channel(uint32_t frequency_hz);

@@ -9,6 +9,8 @@ constexpr uint32_t kChannels[kNoaaWeatherChannelCount] = {
     162500000u, 162525000u, 162550000u};
 }
 
+const uint32_t* noaa_channels() { return kChannels; }
+
 uint32_t noaa_channel_hz(size_t index) {
   return index < kNoaaWeatherChannelCount ? kChannels[index] : 0u;
 }
