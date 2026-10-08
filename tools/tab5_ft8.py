@@ -18,6 +18,7 @@ printed. Opening the port does not reset the board (DTR/RTS are held low). Recei
 """
 import argparse
 import hmac
+import re
 import hashlib
 import os
 import secrets
@@ -184,6 +185,55 @@ def main():
         time.sleep(max(0.0, target - time.time() - 0.012))
         dev.send("ORC_RTC_SET %d" % target)
         dev.read_until(("ORC_RTC_SET_OK", "ORC_RTC_SET_ERROR"), 4)
+    elif verb == "inject":
+        # python tools/tab5_ft8.py --port COM17 inject recording.wav FT8|FT4 : decode a 12 kHz mono WAV with the on-device decoder
+        import base64, wave
+        path, mode = a.args[0], (a.args[1] if len(a.args) > 1 else "FT8").upper()
+        with wave.open(path, "rb") as w:
+            if w.getframerate() != 12000 or w.getnchannels() != 1 or w.getsampwidth() != 2:
+                raise SystemExit("need a 12000 Hz mono 16-bit WAV")
+            pcm = w.readframes(w.getnframes())
+        samples = len(pcm) // 2
+        dev.command("FT8 RUN 1")
+        time.sleep(3.0)
+        dev.authenticate(find_key(a.key))   # starting the decoder can end the authenticated session
+        import zlib
+        want_crc = zlib.crc32(pcm) & 0xFFFFFFFF
+        step = 192   # bytes per line (96 samples); the device line buffer is 384 characters
+        for attempt in range(4):
+            dev.authenticate(find_key(a.key))
+            dev.send("FT8 INJECT BEGIN %d" % samples)
+            dev.read_until(("ORC_FT8_INJECT_BEGIN_OK",), 6, echo=False)
+            for off in range(0, len(pcm), step):
+                dev.send("FT8 INJECT %d %s" % (off // 2, base64.b64encode(pcm[off:off + step]).decode()))
+                if (off // step) % 6 == 5:       # pace the stream: wait for the device to catch up
+                    dev.send("FT8 INJECT PING")
+                    r = dev.read_until(("ORC_FT8_INJECT_ACK",), 4, echo=False)
+                    if not any("ACK" in x for x in r):
+                        # the authenticated session lapsed (5 s device timeout); pair again and resend the lines since the last good ack
+                        for _ in range(6):
+                            try:
+                                dev.authenticate(find_key(a.key)); break
+                            except BaseException:
+                                time.sleep(1.5)
+                        resume = max(0, off - 5 * step)
+                        for back in range(resume, off + step, step):
+                            dev.send("FT8 INJECT %d %s" % (back // 2, base64.b64encode(pcm[back:back + step]).decode()))
+                        dev.send("FT8 INJECT PING")
+                        dev.read_until(("ORC_FT8_INJECT_ACK",), 4, echo=False)
+                        print("  re-paired at %d bytes" % off, flush=True)
+            dev.send("FT8 INJECT PING")
+            ack = " ".join(dev.read_until(("ORC_FT8_INJECT_ACK",), 6, echo=False))
+            got = re.search(r"written=(\d+) crc=([0-9a-f]+)", ack)
+            if got and int(got.group(1)) == samples and int(got.group(2), 16) == want_crc:
+                print("upload verified: %d samples, crc %08x" % (samples, want_crc))
+                break
+            print("upload attempt %d incomplete (%s); retrying" % (attempt + 1, got.group(0) if got else "no ack"))
+        else:
+            raise SystemExit("could not upload the recording intact")
+        dev.authenticate(find_key(a.key))
+        dev.send("FT8 INJECT RUN " + mode)
+        dev.read_until(("ORC_FT8_INJECT_DONE", "ORC_FT8_INJECT_ERROR"), 60)
     elif verb == "raw":
         dev.send(" ".join(a.args))
         dev.read_until(("zzzz",), 5)

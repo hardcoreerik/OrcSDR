@@ -52,6 +52,12 @@ struct Runtime {
   uint8_t cfg_fine_rows = 4;
   uint32_t cfg_deadline_ms = 11000;
   bool have_slot = false;
+  int16_t* inject = nullptr;                  // test recording
+  size_t inject_count = 0;
+  size_t inject_capacity = 0;
+  size_t inject_written = 0;
+  std::atomic<bool> inject_pending{false};
+  orcsdr::ft8::DigitalMode inject_mode = orcsdr::ft8::DigitalMode::ft8;
   int16_t* snapshot = nullptr;                 // stable copy of the last decoded slot (for DUMP / SAVE)
   size_t snapshot_count = 0;
   uint64_t snapshot_slot_ms = 0;
@@ -172,6 +178,30 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
   set_state(State::ready);
 }
 
+
+void run_injection() {
+  const orcsdr::ft8::DigitalMode keep = g.mode;
+  g.backend->set_mode(ftx_mode(g.inject_mode));
+  g.backend->begin_slot(1791446400000ull);
+  size_t pos = 0;
+  while (pos < g.inject_count) {
+    const size_t take = std::min<size_t>(4096, g.inject_count - pos);
+    g.backend->offer_audio(g.inject + pos, take);
+    pos += take;
+  }
+  orcsdr::ft8::Decode out[kDecodeCapacity];
+  const size_t n = g.backend->finish_slot(out, kDecodeCapacity);
+  const auto& st = g.backend->stats();
+  std::printf("ORC_FT8_INJECT_RESULT mode=%d samples=%u decodes=%u total_ms=%u spectral=%u search=%u refine=%u gates=%u coarse=%u strong=%u\n",
+              static_cast<int>(g.inject_mode), static_cast<unsigned>(g.inject_count), static_cast<unsigned>(n), static_cast<unsigned>(st.total_ms),
+              static_cast<unsigned>(st.spectral_ms), static_cast<unsigned>(st.search_ms), static_cast<unsigned>(st.refine_ms),
+              static_cast<unsigned>(st.gate_ms), static_cast<unsigned>(st.coarse_candidates), static_cast<unsigned>(st.strong_candidates));
+  for (size_t i = 0; i < n; ++i)
+    std::printf("ORC_FT8_INJECT_DECODE hz=%u dt_ms=%d msg=[%s]\n", static_cast<unsigned>(out[i].audio_hz), static_cast<int>(out[i].dt_ms), out[i].message);
+  std::printf("ORC_FT8_INJECT_DONE\n");
+  g.backend->set_mode(ftx_mode(keep));
+}
+
 void decoder_task(void*) {
   uint64_t last_slot = UINT64_MAX;
   g.task_alive.store(true, std::memory_order_release);
@@ -186,6 +216,7 @@ void decoder_task(void*) {
       std::printf("ORC_FT8_RT stopped (screen left)\n");
       break;
     }
+    if (g.inject_pending.exchange(false, std::memory_order_acq_rel)) run_injection();
     if (g.config_dirty.exchange(false, std::memory_order_acq_rel)) {
       orcsdr::ftx::native::Config c = g.backend->config();
       c.candidate_k = g.cfg_k;
@@ -414,6 +445,47 @@ void offer_iq(const uint8_t* iq, size_t bytes, uint32_t sample_rate_hz) {
   uint32_t prev = g.max_block_us.load(std::memory_order_relaxed);
   while (us > prev && !g.max_block_us.compare_exchange_weak(prev, us, std::memory_order_relaxed)) {
   }
+}
+
+
+bool inject_begin(size_t samples) {
+  if (!g.active.load(std::memory_order_acquire) || samples == 0 || samples > 12000u * 16u) return false;
+  if (g.inject == nullptr) {
+    g.inject = static_cast<int16_t*>(psram_alloc(12000u * 16u * sizeof(int16_t)));
+    if (g.inject == nullptr) return false;
+    g.inject_capacity = 12000u * 16u;
+  }
+  std::memset(g.inject, 0, g.inject_capacity * sizeof(int16_t));
+  g.inject_count = samples;
+  g.inject_written = 0;
+  return true;
+}
+
+bool inject_write(size_t offset, const int16_t* data, size_t count) {
+  if (g.inject == nullptr || data == nullptr || offset + count > g.inject_count) return false;
+  std::memcpy(g.inject + offset, data, count * sizeof(int16_t));
+  g.inject_written += count;
+  return true;
+}
+
+size_t inject_written() { return g.inject_written; }
+
+uint32_t inject_crc32() {
+  uint32_t crc = 0xFFFFFFFFu;
+  const uint8_t* b = reinterpret_cast<const uint8_t*>(g.inject);
+  for (size_t i = 0; g.inject != nullptr && i < g.inject_count * 2; ++i) {
+    crc ^= b[i];
+    for (int k = 0; k < 8; ++k) crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+  }
+  return ~crc;
+}
+
+bool inject_run(orcsdr::ft8::DigitalMode mode) {
+  if (g.inject == nullptr || g.inject_count == 0 || !g.active.load(std::memory_order_acquire)) return false;
+  if (mode != orcsdr::ft8::DigitalMode::ft8 && mode != orcsdr::ft8::DigitalMode::ft4) return false;
+  g.inject_mode = mode;
+  g.inject_pending.store(true, std::memory_order_release);
+  return true;
 }
 
 void set_headless(bool headless) {

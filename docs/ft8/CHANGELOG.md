@@ -2,6 +2,12 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 — On-device regression by serial injection
+
+- Added `FT8 INJECT BEGIN|PING|RUN|<offset> <b64>` (authenticated) and `tools/tab5_ft8.py inject <wav> FT8|FT4`: a 12 kHz recording is uploaded (CRC-verified, re-pairs when the 5 s session lapses) and decoded by the real backend on the Tab5 as one slot. Test-only; receive-only, no transmit path.
+- USB Serial/JTAG console receive buffer raised from 1 KB to 8 KB; long scripted lines overflowed it.
+- Tab5 result on the official recordings matches the host build: FT8 `210703_133430.wav` 7 of 14 messages in 3.7 s; FT4 `000000_000002.wav` 3 of 19 in 1.1 s; no false accepts.
+
 ## 2026-10-07 â€” Phase 0 research
 
 - Created the native FT8 decoder research branch from current OrcSDR main.

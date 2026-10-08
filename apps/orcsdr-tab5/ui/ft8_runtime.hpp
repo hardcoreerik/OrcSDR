@@ -75,6 +75,15 @@ struct WaterfallView {
 };
 WaterfallView waterfall();
 
+// Test path: load a recording (12 kS/s mono) into a PSRAM buffer, then have the decoder task run it through the real decoder as one slot
+// of the given mode. Results are printed (ORC_FT8_INJECT_*) and not added to the decode list. Needs the runtime running.
+bool inject_begin(size_t samples);
+bool inject_write(size_t offset, const int16_t* data, size_t count);
+bool inject_run(orcsdr::ft8::DigitalMode mode);
+// Samples written since inject_begin() and the CRC-32 of the loaded recording, so a host can confirm every line arrived.
+size_t inject_written();
+uint32_t inject_crc32();
+
 // Runs with no FT8 screen (scripting): the runtime stays alive without touch() calls until set_headless(false).
 void set_headless(bool headless);
 // Decoder tunables, applied from the next slot. `k` = coarse candidates refined, `gate` = candidates sent through the FEC gates, `fine_rows` = fine-grid rows per symbol (4 or 8).

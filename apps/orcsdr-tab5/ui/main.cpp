@@ -174,7 +174,7 @@ class OrcConsole {
     if (usb_serial_jtag_is_driver_installed()) return;
     usb_serial_jtag_driver_config_t config = {
         .tx_buffer_size = 4096,
-        .rx_buffer_size = 1024,
+        .rx_buffer_size = 8192,   // scripted FT8 recording uploads send long lines in bursts
     };
     usb_serial_jtag_driver_install(&config);
   }
@@ -17084,7 +17084,7 @@ void process_ft8_command(const char* args) {
   if (verb[0] == '\0' || strcmp(verb, "HELP") == 0) {
     Serial.println("ORC_FT8_HELP queries: STATUS | DECODES [n] | BANDS | DUMP | TIME | HUNTSTATUS | HELP");
     Serial.println("ORC_FT8_HELP control (authenticated): OPEN | BAND <index|label|dial_hz> | MODE <FT8|FT4> | CLEAR | RUN <0|1> | "
-                   "CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms> | NTP | HUNT <FAST|DECODE|STOP> | TAB <name> | SHOT <name> | SAVE <name> | ADIF <name>");
+                   "CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms> | INJECT BEGIN|RUN|<offset> <b64> | NTP | HUNT <FAST|DECODE|STOP> | TAB <name> | SHOT <name> | SAVE <name> | ADIF <name>");
     return;
   }
 
@@ -17364,6 +17364,61 @@ void process_ft8_command(const char* args) {
   if (strcmp(verb, "NTP") == 0) {
     const bool started = orcsdr::ntp_sync::start(wifi_connected);
     Serial.printf("ORC_FT8_NTP_%s\n", started ? "OK started (see ORC_NTP_OK; then FT8 TIME)" : "FAILED (no Wi-Fi or already running)");
+    return;
+  }
+
+  if (strcmp(verb, "INJECT") == 0) {
+    // FT8 INJECT BEGIN <samples> | FT8 INJECT <offset> <base64 PCM16 little-endian> | FT8 INJECT RUN <FT8|FT4>
+    char sub[16]{};
+    unsigned long number = 0;
+    int consumed = 0;
+    if (sscanf(rest, "%15s %lu%n", sub, &number, &consumed) >= 1 && strcasecmp(sub, "BEGIN") == 0) {
+      const bool ok = orcsdr::ft8_runtime::inject_begin(static_cast<size_t>(number));
+      Serial.printf("ORC_FT8_INJECT_%s\n", ok ? "BEGIN_OK" : "ERROR begin (start the decoder with RUN 1 first; at most 16 s)");
+      return;
+    }
+    if (strncasecmp(rest, "PING", 4) == 0) {
+      Serial.printf("ORC_FT8_INJECT_ACK written=%u crc=%08lx\n", static_cast<unsigned>(orcsdr::ft8_runtime::inject_written()),
+                    static_cast<unsigned long>(orcsdr::ft8_runtime::inject_crc32()));
+      return;
+    }
+    if (strncasecmp(rest, "RUN", 3) == 0) {
+      const char* m = rest + 3;
+      while (*m == ' ') ++m;
+      const bool ok = orcsdr::ft8_runtime::inject_run(strcasecmp(m, "FT4") == 0 ? orcsdr::ft8::DigitalMode::ft4 : orcsdr::ft8::DigitalMode::ft8);
+      Serial.printf("ORC_FT8_INJECT_%s\n", ok ? "RUN_OK" : "ERROR run");
+      return;
+    }
+    // data line: "<offset> <base64>"
+    char* end = nullptr;
+    const unsigned long offset = strtoul(rest, &end, 10);
+    if (end == rest || *end != ' ') {
+      Serial.println("ORC_FT8_INJECT_ERROR usage");
+      return;
+    }
+    const char* b64 = end + 1;
+    static int16_t chunk[256];
+    uint8_t* bytes = reinterpret_cast<uint8_t*>(chunk);
+    size_t out = 0;
+    uint32_t acc = 0;
+    int bits = 0;
+    for (const char* p = b64; *p != '\0' && *p != '='; ++p) {
+      int v;
+      const char c = *p;
+      if (c >= 'A' && c <= 'Z') v = c - 'A';
+      else if (c >= 'a' && c <= 'z') v = c - 'a' + 26;
+      else if (c >= '0' && c <= '9') v = c - '0' + 52;
+      else if (c == '+') v = 62;
+      else if (c == '/') v = 63;
+      else continue;
+      acc = (acc << 6) | static_cast<uint32_t>(v);
+      bits += 6;
+      if (bits >= 8) {
+        bits -= 8;
+        if (out < sizeof(chunk)) bytes[out++] = static_cast<uint8_t>((acc >> bits) & 0xffu);
+      }
+    }
+    if (!orcsdr::ft8_runtime::inject_write(offset, chunk, out / 2)) Serial.println("ORC_FT8_INJECT_ERROR write");
     return;
   }
 
