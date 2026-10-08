@@ -17204,7 +17204,39 @@ void process_command(char* command) {
     char domain[12]{}, action[24]{};
     unsigned long value = 0;
     const int fields = sscanf(command + 14, "%11s %23s %lu", domain, action, &value);
-    if (fields < 2) { Serial.println("RTL_UI_ACTION_INVALID usage: RTL_UI ACTION <FM|AM|AIRBAND|CB|P25|LORA|SETTINGS> <action> [value]"); return; }
+    if (fields < 2) { Serial.println("RTL_UI_ACTION_INVALID usage: RTL_UI ACTION <FM|AM|AIRBAND|CB|P25|LORA|WEATHER|SETTINGS> <action> [value]"); return; }
+    if (strcmp(domain, "WEATHER") == 0) {
+      if (!orcsdr::weather::active() ||
+          !orcsdr::screens::is_active(orcsdr::screens::Id::weather)) {
+        Serial.println("RTL_UI_ACTION_INVALID weather_dashboard_inactive");
+        return;
+      }
+      if (strcmp(action, "TAB") == 0) {
+        if (fields != 3 || value >= static_cast<unsigned long>(orcsdr::weather::Tab::count)) {
+          Serial.println("RTL_UI_ACTION_INVALID weather_tab_use_0_4");
+          return;
+        }
+        orcsdr::weather::select_tab(static_cast<orcsdr::weather::Tab>(value));
+        Serial.println("RTL_UI_ACTION_OK");
+        return;
+      }
+      using WK = orcsdr::weather::ActionKind;
+      WK kind = WK::none;
+      if (strcmp(action, "LISTEN") == 0) kind = WK::listen_noaa;
+      else if (strcmp(action, "SCAN") == 0) kind = WK::scan_noaa;
+      else if (strcmp(action, "STOP") == 0) kind = WK::stop_rf;
+      else if (strcmp(action, "REPORT") == 0) kind = WK::save_snapshot;
+      else if (strcmp(action, "POLICY") == 0) kind = WK::cycle_online_policy;
+      else if (strcmp(action, "SETTINGS") == 0) kind = WK::open_settings;
+      else if (strcmp(action, "HOME") == 0) kind = WK::exit_home;
+      if (kind == WK::none) {
+        Serial.println("RTL_UI_ACTION_INVALID weather_action");
+        return;
+      }
+      handle_weather_dashboard_action({kind, 0});
+      Serial.println("RTL_UI_ACTION_OK");
+      return;
+    }
     if (strcmp(domain, "AIRBAND") == 0) {
       const bool applied = orcsdr::airband::serial_action(
           action, fields == 3, static_cast<uint32_t>(value), airband_live_state());
@@ -18449,7 +18481,7 @@ void process_command(char* command) {
     Serial.println("RTL_UI OPEN <HOME|FM|AM|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|SETTINGS> - open dashboard (auth)");
     Serial.println("RTL_LAB OPEN|CLOSE|STATUS|PAGE|GET|SET|ACTION|SELF_CHECK - RF Lab UI/control");
     Serial.println("RTL_LAB REFERENCE|SNAPSHOT|RUN|RECIPE|RECORDS - RF Lab evidence workflow (mutations auth)");
-    Serial.println("RTL_UI ACTION <domain> <action> [value] - mirror FM/AM/CB/P25/LoRa/Settings touch action (auth)");
+    Serial.println("RTL_UI ACTION <domain> <action> [value] - mirror dashboard touch actions, including WEATHER (auth)");
 #if ORCSDR_ORCDIAL
     Serial.println("RTL_ORCDIAL_STATUS | RTL_ORCDIAL_PAIR START/CANCEL/CONFIRM <code> | RTL_ORCDIAL_CONNECT | RTL_ORCDIAL_DISCONNECT | RTL_ORCDIAL_FORGET");
     Serial.println("RTL_ORCDIAL_PROBE - alias for read-only OrcDial status");
