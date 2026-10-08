@@ -45,6 +45,37 @@ struct Status {
   float dial_offset_hz = 0.0f;     // the offset the tap is applying
 };
 
+// JS8 receive diagnostics (receive only). Raw sync/tone evidence, never a message: the JS8 backend returns no decodes until the
+// FEC, CRC and frame parser are accepted.
+struct Js8Stats {
+  bool attached = false;           // the JS8 backend has been allocated
+  bool active = false;             // the runtime is in a JS8 mode
+  uint32_t slots = 0;              // JS8 slots processed since start
+  uint32_t total_ms = 0;
+  uint32_t spectral_ms = 0;
+  uint32_t search_ms = 0;
+  uint32_t demod_ms = 0;
+  uint16_t grid_rows = 0;
+  uint16_t candidates = 0;
+  uint16_t strong_candidates = 0;
+  uint16_t raw_frames = 0;
+  float best_sync_score = 0.0f;
+  bool deadline_hit = false;
+  uint32_t decodes = 0;            // always 0 for now
+};
+
+struct Js8Raw {
+  float audio_hz = 0.0f;
+  int32_t dt_ms = 0;
+  float sync_score = 0.0f;
+  uint8_t sync_hits = 0;
+  float mean_margin = 0.0f;
+};
+
+Js8Stats js8_stats();
+// Copies up to `capacity` raw frames from the last JS8 slot (strongest sync first); returns how many.
+size_t js8_raw(Js8Raw* out, size_t capacity);
+
 using DecodeCallback = void (*)(const orcsdr::ft8::Decode& decode, void* context);
 
 // Allocates the ring and backend (PSRAM) and starts the decoder task. `on_decode` runs on the decoder task.

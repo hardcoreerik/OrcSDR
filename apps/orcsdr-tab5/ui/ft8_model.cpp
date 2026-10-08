@@ -47,11 +47,17 @@ namespace {
 // FT4 dial frequencies, in the same order as kBands (60 m has no FT4 allocation here and keeps the FT8 dial).
 constexpr uint32_t kFt4DialHz[] = {1840000,  3575000,  5357000,  7047500,  10140000, 14080000,
                                    18104000, 21140000, 24919000, 28180000, 50318000, 144170000};
+// JS8 calling frequencies, one dial for every JS8 submode. 60 m and 2 m keep the FT8 dial until the JS8 frequencies are
+// confirmed against public JS8 documentation (see docs/js8/INTEGRATION.md).
+constexpr uint32_t kJs8DialHz[] = {1842000, 3578000, 5357000, 7078000, 10130000, 14078000,
+                                   18104000, 21078000, 24922000, 28078000, 50318000, 144174000};
+
 static_assert(sizeof(kFt4DialHz) / sizeof(kFt4DialHz[0]) == sizeof(kBands) / sizeof(kBands[0]), "one FT4 dial per band");
 }  // namespace
 
 uint32_t mode_dial_hz(size_t band_index, DigitalMode mode) {
   if (band_index >= band_count()) return 0;
+  if (mode_is_js8(mode)) return kJs8DialHz[band_index];
   return mode == DigitalMode::ft4 ? kFt4DialHz[band_index] : kBands[band_index].dial_hz;
 }
 
@@ -333,7 +339,7 @@ bool self_check() {
   float km = 0.0f, brg = 0.0f;
   const bool dials_ok = mode_dial_hz(3, DigitalMode::ft8) == 7074000 && mode_dial_hz(3, DigitalMode::ft4) == 7047500 &&
                         mode_dial_hz(5, DigitalMode::ft4) == 14080000 && mode_dial_hz(99, DigitalMode::ft8) == 0 &&
-                        mode_dial_hz(5, DigitalMode::js8_normal) == 14074000;
+                        mode_dial_hz(5, DigitalMode::js8_normal) == 14078000 && mode_dial_hz(3, DigitalMode::js8_slow) == 7078000;
   const GeoPoint origin{0.0f, 0.0f, 0}, east{0.0f, 90.0f, 0}, pole{90.0f, 0.0f, 0}, west{0.0f, -90.0f, 0};
   const bool geometry_ok =
       distance_bearing(origin, east, &km, &brg) && std::fabs(km - 10007.5f) < 5.0f && std::fabs(brg - 90.0f) < 0.01f &&

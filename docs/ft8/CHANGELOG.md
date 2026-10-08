@@ -2,6 +2,20 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 - JS8 firmware integration, step 3: runtime hook, serial diagnostics, JS8 dials (raw evidence only)
+
+- `ft8_runtime` hosts the JS8 Normal backend beside the FT8/FT4 one. It is allocated in PSRAM (about 700 KB) the first time a JS8 mode is used and
+  reuses the existing 12 kS/s audio tap and ring (no second IQ front end); FT8/FT4 and JS8 never run at the same time. `set_mode()` and
+  `inject_run()` accept FT8, FT4 and JS8 Normal only; Fast, 40, Slow and 60 are refused and are never mapped to Normal. A JS8 slot logs
+  `ORC_JS8_RT slot=... decodes=0 raw_frames=... candidates=... best_sync=... total_ms=... spectral=... search=... demod=...`.
+- New serial commands (receive only): `JS8 STATUS | STATS | RAW | START | STOP | MODE NORMAL | BAND <label> | INJECT BEGIN|PING|RUN|<offset> <b64>`.
+  `JS8 RAW` prints measured evidence (audio Hz, time offset, sync score, sync hits, margin), never text. `tools/tab5_ft8.py inject <wav> JS8` runs a recording.
+- `mode_dial_hz()` returns the JS8 calling frequencies for every JS8 submode (40 m 7.078, 20 m 14.078 MHz and so on; 60 m and 2 m keep the FT8 dial
+  until confirmed). The model self-check was updated to match.
+- No `Decode` is produced; `finish_slot()` returns 0. The JS8 dashboard buttons stay disabled. No transmit capability.
+- Memory: the JS8 path reuses the FT8 slot chunk buffer instead of adding a second 8 KB static (that second buffer boot-looped the device, see
+  the previous entry). App size 4,072,672 bytes, +14,080 over the build without JS8, in the 6 MB partition.
+
 ## 2026-10-08 - Boot-loop fix (map arrays to PSRAM) and Live decode-list spacing
 
 - The map's 16 KB of projection arrays in `ft8_dashboard.cpp` (`draw_world`) were static internal RAM. They now live in one PSRAM block

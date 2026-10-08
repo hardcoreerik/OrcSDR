@@ -17516,7 +17516,7 @@ void process_ft8_command(const char* args) {
     if (strncasecmp(rest, "RUN", 3) == 0) {
       const char* m = rest + 3;
       while (*m == ' ') ++m;
-      const bool ok = orcsdr::ft8_runtime::inject_run(strcasecmp(m, "FT4") == 0 ? orcsdr::ft8::DigitalMode::ft4 : orcsdr::ft8::DigitalMode::ft8);
+      const bool ok = orcsdr::ft8_runtime::inject_run(strcasecmp(m, "FT4") == 0 ? orcsdr::ft8::DigitalMode::ft4 : strcasecmp(m, "JS8") == 0 ? orcsdr::ft8::DigitalMode::js8_normal : orcsdr::ft8::DigitalMode::ft8);
       Serial.printf("ORC_FT8_INJECT_%s\n", ok ? "RUN_OK" : "ERROR run");
       return;
     }
@@ -17651,7 +17651,111 @@ void process_ft8_command(const char* args) {
   Serial.printf("ORC_FT8_ERROR unknown_command %s (FT8 HELP)\n", verb);
 }
 
+// JS8 receive diagnostics (receive only). JS8 produces raw sync/tone evidence only: no text is ever printed here until FEC, CRC and a
+// supported frame parser are accepted (docs/js8/INTEGRATION.md).
+void process_js8_command(const char* args) {
+  using orcsdr::ft8::DigitalMode;
+  while (*args == ' ') ++args;
+  char verb[16]{};
+  size_t v = 0;
+  while (args[v] != '\0' && args[v] != ' ' && v + 1 < sizeof(verb)) {
+    verb[v] = static_cast<char>(toupper(static_cast<unsigned char>(args[v])));
+    ++v;
+  }
+  const char* rest = args + v;
+  while (*rest == ' ') ++rest;
+  const auto need_auth = [&]() {
+    if (authenticated) return false;
+    Serial.printf("ORC_JS8_ERROR %s auth_required\n", verb);
+    return true;
+  };
+  const auto rt = []() { return orcsdr::ft8_runtime::js8_stats(); };
+
+  if (verb[0] == '\0' || strcmp(verb, "HELP") == 0) {
+    Serial.println("ORC_JS8_HELP STATUS | STATS | RAW | START | STOP | MODE NORMAL | BAND <label> | INJECT BEGIN|PING|RUN|<offset> <b64> (receive only; no text decodes yet)");
+    return;
+  }
+  if (strcmp(verb, "STATUS") == 0) {
+    const auto js = rt();
+    const auto status = orcsdr::ft8_runtime::status();
+    Serial.printf("ORC_JS8_STATUS mode=%s active=%d attached=%d submode=NORMAL supported=NORMAL slot_ms=15000 band=%s dial_hz=%lu slots=%u decodes=%u state=%d clock=%d\n",
+                  orcsdr::ft8::mode_name(g_ft8_mode), js.active ? 1 : 0, js.attached ? 1 : 0,
+                  orcsdr::ft8::band(ft8_selected_band()) ? orcsdr::ft8::band(ft8_selected_band())->label : "?",
+                  static_cast<unsigned long>(orcsdr::ft8::mode_dial_hz(ft8_selected_band(), DigitalMode::js8_normal)),
+                  static_cast<unsigned>(js.slots), static_cast<unsigned>(js.decodes), static_cast<int>(status.state), ft8_native_clock_valid() ? 1 : 0);
+    return;
+  }
+  if (strcmp(verb, "STATS") == 0) {
+    const auto js = rt();
+    Serial.printf("ORC_JS8_STATS slots=%u total_ms=%u spectral_ms=%u search_ms=%u demod_ms=%u rows=%u candidates=%u strong=%u raw_frames=%u best_sync=%.2f deadline=%d decodes=%u\n",
+                  static_cast<unsigned>(js.slots), static_cast<unsigned>(js.total_ms), static_cast<unsigned>(js.spectral_ms),
+                  static_cast<unsigned>(js.search_ms), static_cast<unsigned>(js.demod_ms), static_cast<unsigned>(js.grid_rows),
+                  static_cast<unsigned>(js.candidates), static_cast<unsigned>(js.strong_candidates), static_cast<unsigned>(js.raw_frames),
+                  static_cast<double>(js.best_sync_score), js.deadline_hit ? 1 : 0, static_cast<unsigned>(js.decodes));
+    return;
+  }
+  if (strcmp(verb, "RAW") == 0) {
+    orcsdr::ft8_runtime::Js8Raw raw[16];
+    const size_t n = orcsdr::ft8_runtime::js8_raw(raw, 16);
+    for (size_t i = 0; i < n; ++i)
+      Serial.printf("ORC_JS8_RAW index=%u hz=%.1f dt_ms=%d sync=%.2f hits=%u margin=%.2f\n", static_cast<unsigned>(i), static_cast<double>(raw[i].audio_hz),
+                    static_cast<int>(raw[i].dt_ms), static_cast<double>(raw[i].sync_score), static_cast<unsigned>(raw[i].sync_hits),
+                    static_cast<double>(raw[i].mean_margin));
+    Serial.printf("ORC_JS8_RAW_END count=%u (sync/tone evidence only; no message text)\n", static_cast<unsigned>(n));
+    return;
+  }
+  if (strcmp(verb, "START") == 0 || (strcmp(verb, "MODE") == 0 && strncasecmp(rest, "NORMAL", 6) == 0)) {
+    if (need_auth()) return;
+    g_ft8_mode = DigitalMode::js8_normal;
+    if (!ft8_native_ensure_started()) {
+      Serial.println("ORC_JS8_ERROR START start_failed");
+      return;
+    }
+    (void)orcsdr::ft8_runtime::set_mode(DigitalMode::js8_normal);
+    if (strcmp(verb, "START") == 0) orcsdr::ft8_runtime::set_headless(true);
+    (void)ft8_select_band(ft8_selected_band());   // JS8 has its own dial frequency
+    Serial.printf("ORC_JS8_START_OK submode=NORMAL dial_hz=%lu\n", static_cast<unsigned long>(orcsdr::ft8::mode_dial_hz(ft8_selected_band(), DigitalMode::js8_normal)));
+    return;
+  }
+  if (strcmp(verb, "MODE") == 0) {
+    Serial.printf("ORC_JS8_ERROR MODE %s unavailable: only NORMAL has an established sync pattern (no fallback to Normal)\n", rest);
+    return;
+  }
+  if (strcmp(verb, "STOP") == 0) {
+    if (need_auth()) return;
+    orcsdr::ft8_runtime::set_headless(false);
+    g_ft8_mode = DigitalMode::ft8;
+    (void)orcsdr::ft8_runtime::set_mode(DigitalMode::ft8);
+    (void)ft8_select_band(ft8_selected_band());
+    Serial.println("ORC_JS8_STOP_OK mode=FT8");
+    return;
+  }
+  if (strcmp(verb, "BAND") == 0) {
+    if (need_auth()) return;
+    size_t index = 0;
+    if (!ft8_parse_band_argument(rest, &index) || !ft8_select_band(index)) {
+      Serial.println("ORC_JS8_ERROR BAND invalid use BAND <label|index>");
+      return;
+    }
+    Serial.printf("ORC_JS8_BAND_OK dial_hz=%lu\n", static_cast<unsigned long>(orcsdr::ft8::mode_dial_hz(index, g_ft8_mode)));
+    return;
+  }
+  if (strcmp(verb, "INJECT") == 0) {
+    // Same receive-only recording path as FT8/FT4: a 12 kHz mono WAV is uploaded in lines, then run through the JS8 backend as one slot.
+    char forwarded[400];
+    if (strncasecmp(rest, "RUN", 3) == 0) std::snprintf(forwarded, sizeof(forwarded), "INJECT RUN JS8");
+    else std::snprintf(forwarded, sizeof(forwarded), "INJECT %s", rest);
+    process_ft8_command(forwarded);
+    return;
+  }
+  Serial.printf("ORC_JS8_ERROR unknown_command %s (JS8 HELP)\n", verb);
+}
+
 void process_command(char* command) {
+  if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
+    process_js8_command(command + 3);
+    return;
+  }
   if (strncmp(command, "FT8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_ft8_command(command + 3);
     return;

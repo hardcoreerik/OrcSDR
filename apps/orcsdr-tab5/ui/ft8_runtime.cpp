@@ -1,4 +1,5 @@
 #include "ft8_runtime.hpp"
+#include "js8_native_backend.hpp"
 
 #include "ft8_audio_tap.hpp"
 #include "ft8_native_backend.hpp"
@@ -65,6 +66,10 @@ struct Runtime {
 
   int16_t* ring = nullptr;
   orcsdr::ftx::native::Backend* backend = nullptr;
+  orcsdr::js8::native::Backend* js8 = nullptr;   // allocated on first use of a JS8 mode
+  Js8Stats js8_stats{};
+  Js8Raw js8_raw[16]{};
+  std::atomic<uint8_t> js8_raw_count{0};
   tap_ns::Tap tap{};
   bool tap_ready = false;
   uint32_t input_rate = 0;
@@ -94,10 +99,38 @@ void set_state(State s) { g.state.store(static_cast<uint8_t>(s), std::memory_ord
 
 Mode ftx_mode(orcsdr::ft8::DigitalMode m) { return m == orcsdr::ft8::DigitalMode::ft4 ? Mode::ft4 : Mode::ft8; }
 
+bool is_js8(orcsdr::ft8::DigitalMode m) { return orcsdr::ft8::mode_is_js8(m); }
+// Only Normal has an established sync pattern; every other JS8 submode is refused (never mapped to Normal).
+bool js8_supported(orcsdr::ft8::DigitalMode m) { return m == orcsdr::ft8::DigitalMode::js8_normal; }
+
 void* psram_alloc(size_t bytes) { return heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); }
 void psram_free(void* p) { heap_caps_free(p); }
 
-uint32_t slot_ms_for(orcsdr::ft8::DigitalMode m) { return orcsdr::ftx::profile(ftx_mode(m)).slot_ms; }
+uint32_t slot_ms_for(orcsdr::ft8::DigitalMode m) {
+  if (is_js8(m)) return orcsdr::js8::profile(orcsdr::js8::Submode::normal).slot_ms;
+  return orcsdr::ftx::profile(ftx_mode(m)).slot_ms;
+}
+
+// Allocates and starts the JS8 backend in PSRAM on first use (about 700 KB), so FT8/FT4 users never pay for it.
+bool js8_attach() {
+  if (g.js8 != nullptr) return true;
+  void* memory = psram_alloc(sizeof(orcsdr::js8::native::Backend));
+  if (memory == nullptr) return false;
+  auto* backend = new (memory) orcsdr::js8::native::Backend();
+  orcsdr::js8::native::Config config;
+  config.now_us = now_us_fn;
+  config.deadline_ms = 11000;
+  orcsdr::js8::native::Memory ram;
+  ram.alloc = psram_alloc;
+  ram.release = psram_free;
+  if (!backend->begin(12000, orcsdr::js8::Submode::normal, config, ram)) {
+    backend->~Backend();
+    psram_free(memory);
+    return false;
+  }
+  g.js8 = backend;
+  return true;
+}
 
 void mark_discontinuity() {
   g.cont_ms.store(wall_ms(), std::memory_order_release);
@@ -126,11 +159,84 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
     return;
   }
 
+  static int16_t chunk[4096];   // shared by the FT8/FT4 and JS8 paths: internal RAM is tight, so no second buffer
+  if (is_js8(g.mode)) {
+    // JS8 (receive only): raw sync/tone evidence, never a decode. The JS8 backend returns no Decode records.
+    if (!js8_supported(g.mode) || g.js8 == nullptr) return;
+    set_state(State::decoding);
+    g.js8->begin_slot(slot_start_ms);
+    uint64_t jpos = static_cast<uint64_t>(start_total);
+    uint64_t jremaining = slot_samples;
+    uint64_t jsumsq = 0;
+    uint32_t jpeak = 0, jclipped = 0;
+    while (jremaining > 0) {
+      const size_t take = jremaining > 4096 ? 4096 : static_cast<size_t>(jremaining);
+      for (size_t i = 0; i < take; ++i) {
+        const int16_t v = g.ring[(jpos + i) % kRingSamples];
+        chunk[i] = v;
+        const uint32_t a = static_cast<uint32_t>(v < 0 ? -v : v);
+        jsumsq += static_cast<uint64_t>(a) * a;
+        if (a > jpeak) jpeak = a;
+        if (a >= 32767u) ++jclipped;
+      }
+      g.js8->offer_audio(chunk, take);
+      jpos += take;
+      jremaining -= take;
+    }
+    orcsdr::ft8::Decode none[1];
+    const size_t jn = g.js8->finish_slot(none, 1);
+    const auto& js = g.js8->stats();
+    s.slot_rms = static_cast<uint32_t>(std::sqrt(static_cast<double>(jsumsq) / static_cast<double>(slot_samples)));
+    s.slot_peak = jpeak;
+    s.slot_clipped = jclipped;
+    ++s.slots_decoded;
+    if (!g.snapshot_hold.load(std::memory_order_acquire) && g.snapshot != nullptr) {
+      std::memcpy(g.snapshot, g.js8->slot_audio(), g.js8->buffered() * sizeof(int16_t));
+      g.snapshot_count = g.js8->buffered();
+      g.snapshot_slot_ms = slot_start_ms;
+      g.have_slot = true;
+    }
+    s.last_slot_decodes = static_cast<uint32_t>(jn);
+    s.last_decode_ms = js.total_ms;
+    s.last_spectral_ms = js.spectral_ms;
+    s.last_deadline_hit = js.deadline_hit;
+    s.last_coarse = js.candidates;
+    s.last_strong = js.strong_candidates;
+    Js8Stats& out = g.js8_stats;
+    out.attached = true;
+    out.active = true;
+    ++out.slots;
+    out.total_ms = js.total_ms;
+    out.spectral_ms = js.spectral_ms;
+    out.search_ms = js.search_ms;
+    out.demod_ms = js.demod_ms;
+    out.grid_rows = js.grid_rows;
+    out.candidates = js.candidates;
+    out.strong_candidates = js.strong_candidates;
+    out.raw_frames = js.raw_frames;
+    out.best_sync_score = js.best_sync_score;
+    out.deadline_hit = js.deadline_hit;
+    out.decodes = js.decodes;
+    const size_t keep = std::min<size_t>(g.js8->raw_count(), sizeof(g.js8_raw) / sizeof(g.js8_raw[0]));
+    g.js8_raw_count.store(0, std::memory_order_release);
+    for (size_t i = 0; i < keep; ++i) {
+      const auto* r = g.js8->raw(i);
+      g.js8_raw[i] = Js8Raw{r->audio_hz, r->dt_ms, r->sync_score, r->sync_hits, r->mean_margin};
+    }
+    g.js8_raw_count.store(static_cast<uint8_t>(keep), std::memory_order_release);
+    std::printf("ORC_JS8_RT slot=%llu decodes=%u raw_frames=%u candidates=%u strong=%u best_sync=%.2f total_ms=%u spectral=%u search=%u demod=%u rows=%u deadline=%d\n",
+                static_cast<unsigned long long>(slot_start_ms / 1000u), static_cast<unsigned>(jn), static_cast<unsigned>(js.raw_frames),
+                static_cast<unsigned>(js.candidates), static_cast<unsigned>(js.strong_candidates), static_cast<double>(js.best_sync_score),
+                static_cast<unsigned>(js.total_ms), static_cast<unsigned>(js.spectral_ms), static_cast<unsigned>(js.search_ms),
+                static_cast<unsigned>(js.demod_ms), static_cast<unsigned>(js.grid_rows), js.deadline_hit ? 1 : 0);
+    set_state(State::ready);
+    return;
+  }
+
   set_state(State::decoding);
   g.backend->begin_slot(slot_start_ms);
   uint64_t sumsq = 0;
   uint32_t peak = 0, clipped = 0;
-  static int16_t chunk[4096];
   uint64_t pos = static_cast<uint64_t>(start_total);
   uint64_t remaining = slot_samples;
   while (remaining > 0) {
@@ -179,7 +285,39 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
 }
 
 
+void run_js8_injection() {
+  if (g.js8 == nullptr) {
+    std::printf("ORC_JS8_INJECT_ERROR no_backend\n");
+    return;
+  }
+  g.js8->begin_slot(1791446400000ull);
+  size_t pos = 0;
+  while (pos < g.inject_count) {
+    const size_t take = std::min<size_t>(4096, g.inject_count - pos);
+    g.js8->offer_audio(g.inject + pos, take);
+    pos += take;
+  }
+  orcsdr::ft8::Decode none[1];
+  const size_t n = g.js8->finish_slot(none, 1);
+  const auto& st = g.js8->stats();
+  std::printf("ORC_JS8_INJECT_RESULT submode=normal samples=%u decodes=%u raw_frames=%u candidates=%u strong=%u best_sync=%.2f total_ms=%u spectral=%u search=%u demod=%u rows=%u\n",
+              static_cast<unsigned>(g.inject_count), static_cast<unsigned>(n), static_cast<unsigned>(st.raw_frames), static_cast<unsigned>(st.candidates),
+              static_cast<unsigned>(st.strong_candidates), static_cast<double>(st.best_sync_score), static_cast<unsigned>(st.total_ms),
+              static_cast<unsigned>(st.spectral_ms), static_cast<unsigned>(st.search_ms), static_cast<unsigned>(st.demod_ms),
+              static_cast<unsigned>(st.grid_rows));
+  for (size_t i = 0; i < g.js8->raw_count(); ++i) {
+    const auto* r = g.js8->raw(i);
+    std::printf("ORC_JS8_INJECT_RAW hz=%.1f dt_ms=%d sync=%.2f hits=%u margin=%.2f\n", static_cast<double>(r->audio_hz), static_cast<int>(r->dt_ms),
+                static_cast<double>(r->sync_score), static_cast<unsigned>(r->sync_hits), static_cast<double>(r->mean_margin));
+  }
+  std::printf("ORC_JS8_INJECT_DONE\n");
+}
+
 void run_injection() {
+  if (is_js8(g.inject_mode)) {
+    run_js8_injection();
+    return;
+  }
   const orcsdr::ft8::DigitalMode keep = g.mode;
   g.backend->set_mode(ftx_mode(g.inject_mode));
   g.backend->begin_slot(1791446400000ull);
@@ -226,7 +364,13 @@ void decoder_task(void*) {
       g.backend->set_config(c);
     }
     if (g.mode_changed.exchange(false, std::memory_order_acq_rel)) {
-      g.backend->set_mode(ftx_mode(g.mode));
+      if (is_js8(g.mode)) {
+        if (!js8_attach()) std::printf("ORC_JS8_RT attach_failed\n");
+        else g.js8_stats.attached = true;
+      } else {
+        g.backend->set_mode(ftx_mode(g.mode));
+      }
+      g.js8_stats.active = is_js8(g.mode);
       last_slot = UINT64_MAX;
     }
     if (g.clock_valid != nullptr && !g.clock_valid()) {
@@ -368,6 +512,10 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
     std::printf("ORC_FT8_RT start_failed backend\n");
     return false;
   }
+  if (is_js8(mode) && (!js8_supported(mode) || !js8_attach())) {
+    std::printf("ORC_FT8_RT start_failed js8\n");
+    return false;
+  }
   g.mode = mode;
   g.on_decode = on_decode;
   g.context = context;
@@ -409,7 +557,8 @@ void stop() {
 }
 
 bool set_mode(orcsdr::ft8::DigitalMode mode) {
-  if (mode != orcsdr::ft8::DigitalMode::ft8 && mode != orcsdr::ft8::DigitalMode::ft4) return false;
+  const bool ftx = mode == orcsdr::ft8::DigitalMode::ft8 || mode == orcsdr::ft8::DigitalMode::ft4;
+  if (!ftx && !js8_supported(mode)) return false;   // JS8 Fast/40/Slow/60 stay refused; never mapped to Normal
   g.mode = mode;
   g.mode_changed.store(true, std::memory_order_release);
   g.reset_pending.store(true, std::memory_order_release);
@@ -505,7 +654,8 @@ uint32_t inject_crc32() {
 
 bool inject_run(orcsdr::ft8::DigitalMode mode) {
   if (g.inject == nullptr || g.inject_count == 0 || !g.active.load(std::memory_order_acquire)) return false;
-  if (mode != orcsdr::ft8::DigitalMode::ft8 && mode != orcsdr::ft8::DigitalMode::ft4) return false;
+  if (mode != orcsdr::ft8::DigitalMode::ft8 && mode != orcsdr::ft8::DigitalMode::ft4 && !js8_supported(mode)) return false;
+  if (is_js8(mode) && !js8_attach()) return false;
   g.inject_mode = mode;
   g.inject_pending.store(true, std::memory_order_release);
   return true;
@@ -556,6 +706,20 @@ Status status() {
   const uint32_t n = g.blocks_us_n.load(std::memory_order_relaxed);
   s.avg_block_us = n != 0 ? g.blocks_us_sum.load(std::memory_order_relaxed) / n : 0;
   return s;
+}
+
+Js8Stats js8_stats() {
+  Js8Stats copy = g.js8_stats;
+  copy.attached = g.js8 != nullptr;
+  copy.active = g.active.load(std::memory_order_acquire) && is_js8(g.mode);
+  return copy;
+}
+
+size_t js8_raw(Js8Raw* out, size_t capacity) {
+  if (out == nullptr) return 0;
+  const size_t count = std::min<size_t>(g.js8_raw_count.load(std::memory_order_acquire), capacity);
+  for (size_t i = 0; i < count; ++i) out[i] = g.js8_raw[i];
+  return count;
 }
 
 }  // namespace orcsdr::ft8_runtime

@@ -233,7 +233,7 @@ def main():
             raise SystemExit("could not upload the recording intact")
         dev.authenticate(find_key(a.key))
         dev.send("FT8 INJECT RUN " + mode)
-        dev.read_until(("ORC_FT8_INJECT_DONE", "ORC_FT8_INJECT_ERROR"), 60)
+        dev.read_until(("ORC_FT8_INJECT_DONE", "ORC_FT8_INJECT_ERROR", "ORC_JS8_INJECT_DONE", "ORC_JS8_INJECT_ERROR"), 60)
     elif verb == "raw":
         dev.send(" ".join(a.args))
         dev.read_until(("zzzz",), 5)
