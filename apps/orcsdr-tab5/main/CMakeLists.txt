@@ -42,6 +42,7 @@ idf_component_register(
         "../ui/ft8_demod.cpp"
         "../ui/ft8_spectral_fft.cpp"
         "../ui/ft8_pipeline.cpp"
+        "../ui/ft8_snr.cpp"
         "../ui/ft8_message.cpp"
         "../ui/ft8_codec.cpp"
         "../ui/ft8_ldpc.cpp"

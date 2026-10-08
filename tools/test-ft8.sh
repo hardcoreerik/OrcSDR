@@ -72,6 +72,7 @@ run_suite ft8_spectral_tests \
   apps/orcsdr-tab5/ui/ft8_demod.cpp \
   apps/orcsdr-tab5/ui/ft8_spectral.cpp \
   apps/orcsdr-tab5/ui/ft8_pipeline.cpp \
+  apps/orcsdr-tab5/ui/ft8_snr.cpp \
   apps/orcsdr-tab5/ui/ft8_message.cpp \
   apps/orcsdr-tab5/ui/ft8_codec.cpp \
   apps/orcsdr-tab5/ui/ft8_ldpc.cpp \
@@ -83,6 +84,7 @@ run_suite ft8_pipeline_tests \
   apps/orcsdr-tab5/ui/ft8_sync.cpp \
   apps/orcsdr-tab5/ui/ft8_demod.cpp \
   apps/orcsdr-tab5/ui/ft8_pipeline.cpp \
+  apps/orcsdr-tab5/ui/ft8_snr.cpp \
   apps/orcsdr-tab5/ui/ft8_message.cpp \
   apps/orcsdr-tab5/ui/ft8_codec.cpp \
   apps/orcsdr-tab5/ui/ft8_ldpc.cpp \
@@ -126,11 +128,16 @@ run_suite ft8_native_backend_tests \
   apps/orcsdr-tab5/ui/ft8_sync.cpp \
   apps/orcsdr-tab5/ui/ft8_demod.cpp \
   apps/orcsdr-tab5/ui/ft8_pipeline.cpp \
+  apps/orcsdr-tab5/ui/ft8_snr.cpp \
   apps/orcsdr-tab5/ui/ft8_message.cpp \
   apps/orcsdr-tab5/ui/ft8_codec.cpp \
   apps/orcsdr-tab5/ui/ft8_ldpc.cpp \
   apps/orcsdr-tab5/ui/ft8_ldpc_decode.cpp \
   apps/orcsdr-tab5/ui/ft8_model.cpp
+
+# SNR estimator against synthetic FT8 signals of known strength (fails if the estimate drifts more than 1.5 dB)
+g++ "${common[@]}" -O2 tools/ft8-snr-sweep.cpp   apps/orcsdr-tab5/ui/ft8_native_backend.cpp apps/orcsdr-tab5/ui/ft8_spectral_fft.cpp apps/orcsdr-tab5/ui/ft8_mode.cpp   apps/orcsdr-tab5/ui/ft8_sync.cpp apps/orcsdr-tab5/ui/ft8_demod.cpp apps/orcsdr-tab5/ui/ft8_pipeline.cpp apps/orcsdr-tab5/ui/ft8_snr.cpp   apps/orcsdr-tab5/ui/ft8_message.cpp apps/orcsdr-tab5/ui/ft8_codec.cpp apps/orcsdr-tab5/ui/ft8_ldpc.cpp apps/orcsdr-tab5/ui/ft8_ldpc_decode.cpp   apps/orcsdr-tab5/ui/ft8_model.cpp -o "$build_dir/ft8_snr_sweep"
+"$build_dir/ft8_snr_sweep" --check
 
 orcdial_common=(-std=c++17 -Wall -Wextra -Werror -pedantic -Iorcdial/src)
 orcdial_sources=(orcdial/tests/controller_test.cpp)

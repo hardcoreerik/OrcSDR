@@ -266,7 +266,7 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
     const double start_s = static_cast<double>(r.start_row) * static_cast<double>(fine_hop_) / sample_rate_;
     orcsdr::ft8::Decode d{};
     d.utc_epoch = static_cast<uint32_t>(slot_epoch_ms_ / 1000u);
-    d.snr_db = 0;
+    d.snr_db = frame.snr_valid ? static_cast<int16_t>(std::lround(frame.snr_db)) : 0;
     d.dt_ms = static_cast<int16_t>(std::lround((start_s - 0.5) * 1000.0));
     d.audio_hz = static_cast<uint16_t>(std::lround(hz));
     d.sync_score = static_cast<int16_t>(std::lround(r.score * 100.0f));
@@ -277,7 +277,7 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
       std::snprintf(d.grid, sizeof(d.grid), "%.8s", frame.standard.extra.text);
     d.kind = orcsdr::ft8::classify_message(d.message);
     d.mode = mode_ == Mode::ft4 ? orcsdr::ft8::DigitalMode::ft4 : orcsdr::ft8::DigitalMode::ft8;
-    d.flags = orcsdr::ft8::decode_flag_snr_unavailable;
+    d.flags = frame.snr_valid ? orcsdr::ft8::decode_flag_none : orcsdr::ft8::decode_flag_snr_unavailable;
     output[out_n++] = d;
   }
   stats_.attempted = static_cast<uint16_t>(gated);

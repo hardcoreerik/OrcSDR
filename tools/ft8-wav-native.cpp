@@ -42,6 +42,7 @@ int main(int argc, char** argv) {
   std::printf("NATIVE decodes=%zu total=%ums spectral=%u search=%u refine=%u gates=%u coarse=%u attempted=%u\n", n, s.total_ms, s.spectral_ms,
               s.search_ms, s.refine_ms, s.gate_ms, s.coarse_candidates, s.attempted);
   for (size_t i = 0; i < n; ++i)
-    std::printf("DECODE %-26s %5u Hz  dt %+5d ms  call=%s grid=%s\n", out[i].message, out[i].audio_hz, out[i].dt_ms, out[i].callsign, out[i].grid);
+    std::printf("DECODE %-26s %5u Hz  dt %+5d ms  snr %s%d  call=%s grid=%s\n", out[i].message, out[i].audio_hz, out[i].dt_ms,
+                (out[i].flags & orcsdr::ft8::decode_flag_snr_unavailable) ? "n/a " : "", static_cast<int>(out[i].snr_db), out[i].callsign, out[i].grid);
   return 0;
 }

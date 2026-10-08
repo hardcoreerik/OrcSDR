@@ -57,6 +57,7 @@
 #include "am_dashboard.hpp"
 #include "ft8_dashboard.hpp"
 #include "ft8_adif.hpp"
+#include "ft8_snr.hpp"
 #include "ft8_decoder_backend.hpp"
 #include "ft8_hunter.hpp"
 #include "ft8_model.hpp"
@@ -12754,12 +12755,14 @@ static void ft8_log_stage_rows(const orcsdr::ft8::Decode* decodes, size_t count)
       if (*p == '"') message[m++] = '"';
       message[m++] = *p;
     }
+    char snr_text[8] = "";   // blank when the decoder had no estimate
+    if (!(decodes[i].flags & orcsdr::ft8::decode_flag_snr_unavailable)) snprintf(snr_text, sizeof(snr_text), "%d", static_cast<int>(decodes[i].snr_db));
     char row[200];
-    const int len = snprintf(row, sizeof(row), "%04d-%02d-%02dT%02d:%02d:%02dZ,%s,%s,%lu,%u,%d,%s,%s,%s,\"%s\"\n",
+    const int len = snprintf(row, sizeof(row), "%04d-%02d-%02dT%02d:%02d:%02dZ,%s,%s,%lu,%u,%d,%s,%s,%s,%s,\"%s\"\n",
                              tm_i.tm_year + 1900, tm_i.tm_mon + 1, tm_i.tm_mday, tm_i.tm_hour, tm_i.tm_min, tm_i.tm_sec,
                              orcsdr::ft8::mode_name(decodes[i].mode), preset != nullptr ? preset->label : "?",
                              static_cast<unsigned long>(orcsdr::ft8::mode_dial_hz(ft8_selected_band(), decodes[i].mode)),
-                             static_cast<unsigned>(decodes[i].audio_hz), static_cast<int>(decodes[i].dt_ms), decodes[i].callsign,
+                             static_cast<unsigned>(decodes[i].audio_hz), static_cast<int>(decodes[i].dt_ms), snr_text, decodes[i].callsign,
                              decodes[i].grid, orcsdr::ft8::kind_name(decodes[i].kind), message);
     if (len <= 0 || g_ft8_log_stage_len + static_cast<size_t>(len) > kFt8LogStageBytes) {
       ++g_ft8_log_dropped;
@@ -12806,7 +12809,7 @@ static bool ft8_log_flush(bool force) {
     g_ft8_log_stage_rows = 0;
     return true;
   }
-  if (!existed || file.size() == 0) file.print("utc,mode,band,dial_hz,audio_hz,dt_ms,callsign,grid,kind,message\n");
+  if (!existed || file.size() == 0) file.print("utc,mode,band,dial_hz,audio_hz,dt_ms,snr_db,callsign,grid,kind,message\n");
   const size_t written = file.write(reinterpret_cast<const uint8_t*>(g_ft8_log_stage), g_ft8_log_stage_len);
   file.close();
   if (written != g_ft8_log_stage_len) {
@@ -12981,6 +12984,7 @@ void ft8_dashboard_fill_snapshot(orcsdr::ft8::Snapshot& snapshot) {
   if (!orcsdr::ft8_runtime::active() &&
       orcsdr::ft8_runtime::start(g_ft8_mode, ft8_native_on_decode, nullptr, ft8_native_clock_valid, ft8_native_dial_offset_hz))
     Serial.println("ORC_FT8_NATIVE bound");
+  orcsdr::ftx::snr::set_user_offset_db(static_cast<float>(preferences.getInt("ft8_snr_off10", 0)) / 10.0f);   // stored in tenths of a dB
   ft8_native_drain_pending();
   g_ft8_capabilities = orcsdr::ft8_runtime::active() ? (orcsdr::ft8::decoder_cap_ft8 | orcsdr::ft8::decoder_cap_ft4) : 0u;
   {
@@ -17131,6 +17135,7 @@ bool ft8_native_ensure_started() {
   if (orcsdr::ft8_runtime::active()) return true;
   if (!orcsdr::ft8_runtime::start(g_ft8_mode, ft8_native_on_decode, nullptr, ft8_native_clock_valid, ft8_native_dial_offset_hz)) return false;
   Serial.println("ORC_FT8_NATIVE bound");
+  orcsdr::ftx::snr::set_user_offset_db(static_cast<float>(preferences.getInt("ft8_snr_off10", 0)) / 10.0f);   // stored in tenths of a dB
   // FT8 needs the clock within about half a second and the RTC drifts (about 10 ppm measured): ask for one network sync per boot.
   static bool ntp_requested = false;
   if (!ntp_requested && wifi_connected) {
@@ -17167,9 +17172,11 @@ bool ft8_parse_band_argument(const char* text, size_t* index) {
 }
 
 void ft8_print_decode(const orcsdr::ft8::Decode& d) {
-  Serial.printf("ORC_FT8_DECODE utc=%lu mode=%s hz=%u dt_ms=%d sync=%d kind=%s call=%s grid=%s msg=\"%s\"\n",
+  char snr_text[8] = "-";   // "-" when the decoder had no estimate
+  if (!(d.flags & orcsdr::ft8::decode_flag_snr_unavailable)) snprintf(snr_text, sizeof(snr_text), "%d", static_cast<int>(d.snr_db));
+  Serial.printf("ORC_FT8_DECODE utc=%lu mode=%s hz=%u dt_ms=%d snr=%s sync=%d kind=%s call=%s grid=%s msg=\"%s\"\n",
                 static_cast<unsigned long>(d.utc_epoch), orcsdr::ft8::mode_name(d.mode), static_cast<unsigned>(d.audio_hz),
-                static_cast<int>(d.dt_ms), static_cast<int>(d.sync_score), orcsdr::ft8::kind_name(d.kind), d.callsign,
+                static_cast<int>(d.dt_ms), snr_text, static_cast<int>(d.sync_score), orcsdr::ft8::kind_name(d.kind), d.callsign,
                 d.grid[0] ? d.grid : "-", d.message);
 }
 
@@ -17207,7 +17214,7 @@ void process_ft8_command(const char* args) {
   if (verb[0] == '\0' || strcmp(verb, "HELP") == 0) {
     Serial.println("ORC_FT8_HELP queries: STATUS | DECODES [n] | BANDS | DUMP | TIME | HUNTSTATUS | HELP");
     Serial.println("ORC_FT8_HELP control (authenticated): OPEN | BAND <index|label|dial_hz> | MODE <FT8|FT4> | CLEAR | RUN <0|1> | "
-                   "CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms> | INJECT BEGIN|RUN|<offset> <b64> | LOG [ON|OFF|FLUSH] | NTP | HUNT <FAST|DECODE|STOP> | TAB <name> | SHOT <name> | SAVE <name> | ADIF <name>");
+                   "CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms> | INJECT BEGIN|RUN|<offset> <b64> | LOG [ON|OFF|FLUSH] | SNR [OFFSET <dB>|RESET] | NTP | HUNT <FAST|DECODE|STOP> | TAB <name> | SHOT <name> | SAVE <name> | ADIF <name>");
     return;
   }
 
@@ -17543,6 +17550,28 @@ void process_ft8_command(const char* args) {
       }
     }
     if (!orcsdr::ft8_runtime::inject_write(offset, chunk, out / 2)) Serial.println("ORC_FT8_INJECT_ERROR write");
+    return;
+  }
+
+  if (strcmp(verb, "SNR") == 0) {
+    // FT8 SNR [OFFSET <dB> | RESET]: the advanced trim added to the fitted SNR calibration (stored in NVS). Default 0.
+    if (strncasecmp(rest, "OFFSET", 6) == 0) {
+      if (need_auth()) return;
+      const char* number = rest + 6;
+      char* end = nullptr;
+      const float value = strtof(number, &end);
+      if (end == number) {
+        Serial.println("ORC_FT8_ERROR SNR usage: SNR OFFSET <dB>");
+        return;
+      }
+      orcsdr::ftx::snr::set_user_offset_db(value);
+      preferences.putInt("ft8_snr_off10", static_cast<int32_t>(std::lround(orcsdr::ftx::snr::user_offset_db() * 10.0f)));
+    } else if (strncasecmp(rest, "RESET", 5) == 0) {
+      if (need_auth()) return;
+      orcsdr::ftx::snr::set_user_offset_db(0.0f);
+      preferences.putInt("ft8_snr_off10", 0);
+    }
+    Serial.printf("ORC_FT8_SNR user_offset_db=%.1f\n", static_cast<double>(orcsdr::ftx::snr::user_offset_db()));
     return;
   }
 
