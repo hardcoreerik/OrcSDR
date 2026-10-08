@@ -2,6 +2,12 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 — Live cross-check against PSKReporter
+
+- First live FT4 decode on 20 m (14.080 MHz): `W9DHI KE5YYC R-01`; PSKReporter shows KE5YYC transmitting FT4 at about 14.08148 MHz in the same minute.
+- Frequency accuracy, 20 m FT8 on the Blog V4 + MLA-30+: 11 decodes matched to PSKReporter spots of the same sender within 20 s read a median of +27 Hz (about 2 ppm, mostly +26 to +41 Hz; one pair with only two spots read -10 Hz). The same decoder is within 3 Hz of WSJT-X on the official recording, so the offset belongs to the dongle clock, not the decoder. One FT4 pair read -135 Hz; one sample, not conclusive. No correction applied (setup-specific).
+- PSKReporter's query API rate-limits quickly (about 15 rapid queries); use one bulk query per few minutes.
+
 ## 2026-10-08 — On-device regression by serial injection
 
 - Added `FT8 INJECT BEGIN|PING|RUN|<offset> <b64>` (authenticated) and `tools/tab5_ft8.py inject <wav> FT8|FT4`: a 12 kHz recording is uploaded (CRC-verified, re-pairs when the 5 s session lapses) and decoded by the real backend on the Tab5 as one slot. Test-only; receive-only, no transmit path.
