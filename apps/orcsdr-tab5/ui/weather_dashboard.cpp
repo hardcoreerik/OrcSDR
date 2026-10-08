@@ -110,7 +110,12 @@ void draw_now() {
   source_badge("RF", g_snapshot.rf_age_seconds, 450, 328);
 
   card(848, 154, 408, 202, "ALERTS");
-  text("SAME decode is not in Foundation.", 872, 220, kMuted, 1, middle_left);
+  text(g_snapshot.noaa_catalog_installed ? "NOAA catalog: INSTALLED"
+                                          : "NOAA catalog: NOT INSTALLED",
+       872, 212, g_snapshot.noaa_catalog_installed ? kGreen : kMuted, 1, middle_left);
+  if (g_snapshot.noaa_catalog_date[0])
+    text(g_snapshot.noaa_catalog_date, 872, 238, kMuted, 1, middle_left);
+  text("SAME decode is not in Foundation.", 872, 266, kMuted, 1, middle_left);
   text("No alert claimed unless decoded.", 872, 252, kGreen, 1, middle_left);
   text("Network alerts are not required.", 872, 290, kMuted, 1, middle_left);
 
@@ -182,7 +187,10 @@ void draw_rf() {
   } else {
     text("Scan is sequential; one tuner, one channel.", 48, 456, kMuted, 1, middle_left);
   }
-  text("Voice RX is live; SAME decode is a later phase.", 48, 518, kMuted, 1, middle_left);
+  text(g_snapshot.noaa_catalog_installed
+           ? "Signed NOAA catalog installed • voice RX only in Foundation"
+           : "Install NOAA WEATHER in Data & Maps for local reference data",
+       48, 518, kMuted, 1, middle_left);
 
   card(438, 154, 394, 448, "LOCAL RF WEATHER");
   text("Weather Hunter", 462, 220, kMuted, 2, middle_left);
@@ -256,6 +264,8 @@ Action handle_touch(int32_t x, int32_t y, uint32_t now_ms) {
   if (!g_active) return {};
   if (audio_header::home_hit(x, y)) return {ActionKind::exit_home, 0};
   if (audio_header::settings_hit(x, y)) return {ActionKind::open_settings, 0};
+  if (audio_header::visualizer_hit(x, y))
+    return {ActionKind::open_visualizer, 0};
   const auto aa = audio_header::handle_touch(g_audio, x, y, now_ms, g_snapshot.volume);
   if (aa == audio_header::Action::volume_set) {
     draw_header();

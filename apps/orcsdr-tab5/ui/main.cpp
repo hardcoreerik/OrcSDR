@@ -6515,6 +6515,15 @@ orcsdr::weather::Snapshot weather_dashboard_snapshot() {
   snapshot.rtl_ready = rtl_device_ready();
   snapshot.sd_ready = g_sd_fs != nullptr;
   snapshot.map_ready = orcsdr::offline_map::available();
+  const auto catalog_state = orcsdr::catalog::state();
+  for (const auto& pack : catalog_state.packs) {
+    if (strcmp(pack.id, "noaa_weather") == 0) {
+      snapshot.noaa_catalog_installed = pack.installed;
+      strlcpy(snapshot.noaa_catalog_date, pack.source_date,
+              sizeof(snapshot.noaa_catalog_date));
+      break;
+    }
+  }
   snapshot.sound_enabled = rtl_audio_user_enabled.load(std::memory_order_acquire);
   snapshot.volume = rtl_live_volume.load(std::memory_order_acquire);
   snapshot.battery_percent = M5.Power.getBatteryLevel();
@@ -6570,6 +6579,9 @@ void handle_weather_dashboard_action(const orcsdr::weather::Action& action) {
       return;
     case Kind::open_settings:
       open_global_settings(orcsdr::settings::Section::data_maps);
+      return;
+    case Kind::open_visualizer:
+      open_visualizer();
       return;
     case Kind::volume_set:
       adjust_rtl_volume(
@@ -11692,6 +11704,8 @@ void handle_lora_dashboard_action(const orcsdr::lora::Action& action) {
 }
 
 bool scan_retune(uint32_t frequency_hz, void*) {
+  if (active_scan == ActiveScan::weather_noaa)
+    weather_noaa_frequency_hz.store(frequency_hz, std::memory_order_release);
   if (active_scan == ActiveScan::fm_presets || active_scan == ActiveScan::am_presets ||
       active_scan == ActiveScan::shortwave_hunt)
     reset_spectrum_renderer();

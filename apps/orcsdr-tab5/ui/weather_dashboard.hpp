@@ -13,6 +13,7 @@ enum class ActionKind : uint8_t {
   none,
   exit_home,
   open_settings,
+  open_visualizer,
   volume_set,
   mute_toggle,
   listen_noaa,
@@ -34,6 +35,7 @@ struct Snapshot {
   bool rf_owned_by_weather = false;
   bool sd_ready = false;
   bool map_ready = false;
+  bool noaa_catalog_installed = false;
   bool location_configured = false;
   bool rtc_valid = false;
   bool sound_enabled = true;
@@ -43,6 +45,7 @@ struct Snapshot {
   int32_t longitude_e7 = 0;
   char location_label[40]{};
   char local_time[24]{};
+  char noaa_catalog_date[16]{};
   OnlinePolicy online_policy = OnlinePolicy::disabled;
   uint32_t current_noaa_hz = 162400000u;
   float relative_dbfs = -120.0f;
