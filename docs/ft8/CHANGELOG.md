@@ -2,6 +2,12 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 — Smoother Live waterfall, flicker-free MAP, NEW markers
+
+- Live waterfall: the whole 848x224 area was repainted every 400 ms (about 2.5 frames a second). It now scrolls the old picture and draws only the new rows (about 10 ms a paint). The runtime emits one row per 70 ms of audio even when the tap hands audio over in bursts, and the dashboard spends them at a steady pace from the main loop. Measured on the Tab5: 8 rows/s before, 14.3 rows/s after; row computation costs 2 ms.
+- MAP: composed off-screen and pushed in one go, and a new grid no longer blanks the body first, so it no longer flashes. The map always shows the whole world (owner preference); zoom/pan can be added to the existing view struct.
+- DECODES: a NEW badge marks a callsign's first appearance in the session store (`decode_flag_new_station`, set by `DecodeStore::append`, host-tested); column spacing reworked for the larger text; bearing shown as degrees.
+
 ## 2026-10-08 — MAP basemap restyled to the OrcMaps dark theme
 
 - The MAP outline looked nothing like the OrcMaps maps. It now fills land (slate on navy water, thin borders) with the colours of the OrcMaps `world-orcsdr-dark` render, using an even-odd scanline fill of the Natural Earth 110m polygons. This is a style match only: the FT8 tab still does not use the OrcMaps engine or tiles (that integration lives on `claude/orcmaps-integration` and the app is near the size guard there).

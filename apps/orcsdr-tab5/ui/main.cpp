@@ -12830,6 +12830,8 @@ void ft8_native_service() {
     return;
   }
   ft8_native_drain_pending();
+  if (orcsdr::screens::owns(orcsdr::screens::Id::ft8) && orcsdr::ft8::active())
+    orcsdr::ft8::pump_waterfall(orcsdr::ft8_runtime::waterfall().sequence);
   ft8_hunt_service(orcsdr::ft8_runtime::status());
 }
 

@@ -55,6 +55,8 @@ struct Snapshot {
 
 void enter(const Snapshot& snapshot);
 void update(const Snapshot& snapshot);
+// Scrolls waiting waterfall rows into the Live tab at a steady pace between full updates (no-op on other tabs).
+void pump_waterfall(uint32_t sequence);
 void draw();
 Action handle_touch(int32_t x, int32_t y);
 void leave();

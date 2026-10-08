@@ -250,12 +250,19 @@ void DecodeStore::clear() {
 }
 
 void DecodeStore::append(const Decode& decode) {
+  Decode stored = decode;
+  stored.flags = static_cast<uint16_t>(stored.flags & ~decode_flag_new_station);
+  if (stored.callsign[0]) {
+    bool seen = false;
+    for (size_t i = 0; i < size_ && !seen; ++i) seen = std::strcmp(records_[i].callsign, stored.callsign) == 0;
+    if (!seen) stored.flags = static_cast<uint16_t>(stored.flags | decode_flag_new_station);
+  }
   if (size_ < kDecodeCapacity) {
-    records_[size_++] = decode;
+    records_[size_++] = stored;
     return;
   }
   std::memmove(records_, records_ + 1, sizeof(records_[0]) * (kDecodeCapacity - 1));
-  records_[kDecodeCapacity - 1] = decode;
+  records_[kDecodeCapacity - 1] = stored;
 }
 
 const Decode* DecodeStore::newest(size_t offset) const {

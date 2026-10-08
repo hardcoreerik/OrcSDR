@@ -33,6 +33,7 @@ enum DecodeFlags : uint16_t {
   decode_flag_hash_resolved = 1u << 1,   // a callsign was resolved from a receiver-side hash table
   decode_flag_multi_frame = 1u << 2,     // assembled from several frames
   decode_flag_snr_unavailable = 1u << 3, // the decoder has no calibrated SNR estimate: show a dash, never a number
+  decode_flag_new_station = 1u << 4,     // first time this callsign appears in the session store (set by DecodeStore::append)
 };
 
 uint32_t slot_ms(DigitalMode mode);          // FT8 15000, FT4 7500, JS8 Normal 15000, Fast 10000, 40 6000, Slow 30000, 60 4000

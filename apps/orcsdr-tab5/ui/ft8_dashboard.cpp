@@ -320,6 +320,7 @@ uint16_t waterfall_color(uint8_t v) {
 }
 
 uint32_t g_drawn_waterfall = UINT32_MAX;
+uint32_t g_wf_last_paint_ms = 0;
 
 // Newest row at the top, 2 pixels per row, 848 pixels across the 200-3000 Hz span.
 void draw_waterfall() {
@@ -340,6 +341,56 @@ void draw_waterfall() {
     M5.Display.pushImage(kLeft, kTop + static_cast<int>(r) * kRowPx, kWidth, kRowPx, line);
   }
   g_drawn_waterfall = seq;
+}
+
+// Shift the picture down by the rows produced since the last paint and draw only those rows at the top.
+void scroll_waterfall(size_t max_rows) {
+  constexpr int kLeft = 42, kTop = 214, kWidth = 848, kRowPx = 2;
+  const uint32_t seq = g_snapshot.wf_sequence;
+  const size_t rows = std::min<size_t>(g_snapshot.wf_rows, 112);
+  const size_t bins = g_snapshot.wf_bins;
+  if (g_snapshot.waterfall == nullptr || rows == 0 || bins == 0 || seq == 0) return;
+  if (g_drawn_waterfall == UINT32_MAX || seq < g_drawn_waterfall || seq - g_drawn_waterfall >= 24) {
+    draw_waterfall();   // first paint, a restart, or too far behind: repaint everything
+    return;
+  }
+  const size_t fresh = std::min<size_t>(seq - g_drawn_waterfall, max_rows);
+  const uint32_t target = g_drawn_waterfall + static_cast<uint32_t>(fresh);   // may stop short of seq: catch up at a steady pace
+  {
+    static uint32_t window_start = 0, updates = 0, rows_drawn = 0, worst_ms = 0;   // measured paint rate, logged every 5 s
+    const uint32_t t0 = millis();
+    if (window_start == 0) window_start = t0;
+    ++updates;
+    rows_drawn += static_cast<uint32_t>(fresh);
+    if (t0 - window_start >= 5000u) {
+      std::printf("ORC_FT8_WF updates=%u rows=%u last_paint_ms=%u per_5s\n", static_cast<unsigned>(updates), static_cast<unsigned>(rows_drawn), static_cast<unsigned>(g_wf_last_paint_ms));
+      window_start = t0;
+      updates = rows_drawn = worst_ms = 0;
+    }
+  }
+  const uint32_t paint_start = millis();
+  M5.Display.scroll(0, static_cast<int>(fresh) * kRowPx);
+  static uint16_t line[kWidth];
+  for (size_t k = 0; k < fresh; ++k) {
+    const uint8_t* src = g_snapshot.waterfall + ((target - 1 - k) % rows) * bins;
+    for (int x = 0; x < kWidth; ++x) line[x] = waterfall_color(src[static_cast<size_t>(x) * bins / kWidth]);
+    for (int r = 0; r < kRowPx; ++r)
+      M5.Display.pushImage(kLeft, kTop + static_cast<int>(k) * kRowPx + r, kWidth, 1, line);
+  }
+  g_drawn_waterfall = target;
+  g_wf_last_paint_ms = millis() - paint_start;
+}
+
+// One small scroll every ~55 ms while rows are waiting (a burst of rows is spread out, not painted at once).
+void paced_waterfall_step() {
+  static uint32_t last_ms = 0;
+  const uint32_t now = millis();
+  if (now - last_ms < 55u) return;
+  const uint32_t drawn = g_drawn_waterfall == UINT32_MAX ? 0u : g_drawn_waterfall;
+  const uint32_t backlog = g_snapshot.wf_sequence - drawn;
+  if (g_snapshot.wf_sequence == 0 || (g_drawn_waterfall != UINT32_MAX && backlog == 0)) return;
+  last_ms = now;
+  scroll_waterfall(backlog > 8 ? 4 : (backlog > 3 ? 2 : 1));
 }
 
 void draw_live() {
@@ -365,6 +416,8 @@ void draw_live() {
   std::snprintf(value, sizeof(value), "CURRENT %s SECOND SLOT", slot_text);
   text(value, 42, 194, kCyan, 1, middle_left);
   M5.Display.fillRect(42, 214, 848, 224, 0x0021);
+  M5.Display.setScrollRect(42, 214, 848, 224, 0x0021);   // incremental waterfall updates scroll this rectangle
+  g_drawn_waterfall = UINT32_MAX;
   for (int hz = 500; hz <= 3000; hz += 500) {
     const int x = 42 + (hz - kAudioLowHz) * 848 / (kAudioHighHz - kAudioLowHz);
     M5.Display.drawFastVLine(x, 214, 224, kGrid);
@@ -423,7 +476,7 @@ void draw_decodes() {
 
   const Rect list{24, 176, 1232, 442};
   frame(list);
-  const int x[] = {42, 142, 212, 292, 372, 476, 940, 1030, 1150};
+  const int x[] = {42, 184, 252, 336, 416, 500, 920, 1018, 1150};
   const char* headers[] = {"UTC", "SNR", "DT", "DF", "TYPE", "MESSAGE", "GRID", "DIST", "BRG"};
   for (size_t i = 0; i < 9; ++i) text(headers[i], x[i], 198, kCyan, 1, middle_left);
   M5.Display.drawFastHLine(36, 218, 1208, kGrid);
@@ -447,12 +500,16 @@ void draw_decodes() {
     text(item, x[3], y, TFT_WHITE, 1, middle_left);
     text(kind_name(d->kind), x[4], y, d->kind == DecodeKind::cq ? kGreen : kYellow, 1, middle_left);
     text(d->message, x[5], y, TFT_WHITE, 1, middle_left);
+    if (d->flags & decode_flag_new_station) {   // first time this callsign was heard this session
+      M5.Display.drawRoundRect(846, y - 13, 52, 26, 5, kGreen);
+      text("NEW", 872, y, kGreen, 0);
+    }
     text(d->grid, x[6], y, maidenhead_valid(d->grid) ? kGreen : kMuted, 1, middle_left);
     float km = 0.0f, bearing = 0.0f;
     if (decode_geometry(*d, &km, &bearing)) {
       std::snprintf(item, sizeof(item), "%.0f km", km);
       text(item, x[7], y, TFT_WHITE, 1, middle_left);
-      std::snprintf(item, sizeof(item), "%.0f deg", bearing);
+      std::snprintf(item, sizeof(item), "%.0fÂ°", bearing);
       text(item, x[8], y, TFT_WHITE, 1, middle_left);
     } else {
       text("--", x[7], y, kMuted, 1, middle_left);
@@ -474,43 +531,13 @@ void map_point(const GeoPoint& p, int* x, int* y) {
   *y = top + static_cast<int>((g_map_view.lat_max - p.latitude) / g_map_view.lat_span * height);
 }
 
-void fit_map_view() {
-  float lon_lo = 1000.0f, lon_hi = -1000.0f, lat_lo = 1000.0f, lat_hi = -1000.0f;
-  auto add = [&](const GeoPoint& p) {
-    lon_lo = std::min(lon_lo, p.longitude);
-    lon_hi = std::max(lon_hi, p.longitude);
-    lat_lo = std::min(lat_lo, p.latitude);
-    lat_hi = std::max(lat_hi, p.latitude);
-  };
-  if (g_snapshot.station_known) add(GeoPoint{g_snapshot.station_latitude, g_snapshot.station_longitude, 0});
-  const size_t n = std::min(g_snapshot.decode_count, kDecodeCapacity);
-  size_t located = 0;
-  for (size_t i = 0; i < n; ++i) {
-    GeoPoint point{};
-    if (maidenhead_valid(g_snapshot.decodes[i].grid) && maidenhead_center(g_snapshot.decodes[i].grid, &point)) {
-      add(point);
-      ++located;
-    }
-  }
-  g_map_view = MapView{};
-  if (lon_hi < lon_lo || located == 0) return;   // nothing heard with a grid yet: show the whole world
-  float lon_span = std::max(lon_hi - lon_lo, 60.0f) * 1.3f;
-  float lat_span = std::max(lat_hi - lat_lo, 30.0f) * 1.3f;
-  const float aspect = 824.0f / 420.0f;   // pixels per degree match in both directions
-  if (lon_span < lat_span * aspect) lon_span = lat_span * aspect;
-  if (lat_span < lon_span / aspect) lat_span = lon_span / aspect;
-  lon_span = std::min(lon_span, 360.0f);
-  lat_span = std::min(lat_span, 180.0f);
-  const float lon_mid = 0.5f * (lon_lo + lon_hi), lat_mid = 0.5f * (lat_lo + lat_hi);
-  g_map_view.lon_span = lon_span;
-  g_map_view.lat_span = lat_span;
-  g_map_view.lon_min = std::max(-180.0f, std::min(lon_mid - lon_span / 2.0f, 180.0f - lon_span));
-  g_map_view.lat_max = std::max(-90.0f + lat_span, std::min(lat_mid + lat_span / 2.0f, 90.0f));
-}
+// The MAP tab always shows the whole world (owner's preference); the view stays a variable so zoom/pan can be added later.
+void fit_map_view() { g_map_view = MapView{}; }
 
 // Offline world basemap in the fitted view, styled like the OrcMaps dark theme: slate land on navy water, thin borders.
 // Points are 0.01 degree units. Land is filled with an even-odd scanline pass; polygons never cross the antimeridian.
-void draw_world(int left, int top, int width, int height) {
+// Draws on `d`, whose origin is the screen point (sub_x, sub_y), so the whole map can be composed off-screen.
+void draw_world(lgfx::LovyanGFX& d, int sub_x, int sub_y, int left, int top, int width, int height) {
   constexpr uint16_t kWater = 0x1105, kLand = 0x1082, kCoast = 0x2A2A, kBorder = 0x2124;
   static int16_t sx[4096], sy[4096];   // projected points for this frame
   const size_t points = std::min<size_t>(kWorldPointCount, 4096);
@@ -520,8 +547,8 @@ void draw_world(int left, int top, int width, int height) {
     sx[i] = static_cast<int16_t>(std::max(-30000, std::min(30000, x)));
     sy[i] = static_cast<int16_t>(std::max(-30000, std::min(30000, y)));
   }
-  M5.Display.fillRect(left, top, width, height, kWater);
-  M5.Display.setClipRect(left, top, width, height);
+  d.fillRect(left - sub_x, top - sub_y, width, height, kWater);
+  d.setClipRect(left - sub_x, top - sub_y, width, height);
   for (int y = top; y < top + height; ++y) {
     int xs[96];
     int count = 0;
@@ -544,7 +571,7 @@ void draw_world(int left, int top, int width, int height) {
     }
     for (int i = 0; i + 1 < count; i += 2) {
       const int x0 = std::max(left, xs[i]), x1 = std::min(left + width - 1, xs[i + 1]);
-      if (x1 >= x0) M5.Display.drawFastHLine(x0, y, x1 - x0 + 1, kLand);
+      if (x1 >= x0) d.drawFastHLine(x0 - sub_x, y - sub_y, x1 - x0 + 1, kLand);
     }
   }
   for (size_t s = 0; s < kWorldSegmentCount; ++s) {
@@ -552,11 +579,14 @@ void draw_world(int left, int top, int width, int height) {
     for (uint16_t i = 0; i + 1 < seg.count; ++i) {
       const size_t a = seg.start + i, b = a + 1;
       if (a >= points || b >= points) break;
-      M5.Display.drawLine(sx[a], sy[a], sx[b], sy[b], seg.kind == 0 ? kCoast : kBorder);
+      d.drawLine(sx[a] - sub_x, sy[a] - sub_y, sx[b] - sub_x, sy[b] - sub_y, seg.kind == 0 ? kCoast : kBorder);
     }
   }
-  M5.Display.clearClipRect();
+  d.clearClipRect();
 }
+
+M5Canvas g_map_canvas(&M5.Display);   // the map is composed here and pushed in one go: no blank-then-paint flash on updates
+bool g_map_canvas_ready = false;
 
 void draw_map() {
   fit_map_view();
@@ -569,8 +599,15 @@ void draw_map() {
     text(scale, 890, 124, kMuted, 1, middle_right);
   }
   constexpr int left = 50, top = 158, width = 824, height = 420;
-  draw_world(left, top, width, height);
-  M5.Display.drawRect(left, top, width, height, kGrid);
+  if (!g_map_canvas_ready) {
+    g_map_canvas.setPsram(true);
+    g_map_canvas.setColorDepth(16);
+    g_map_canvas_ready = g_map_canvas.createSprite(width, height) != nullptr;
+  }
+  lgfx::LovyanGFX& d = g_map_canvas_ready ? static_cast<lgfx::LovyanGFX&>(g_map_canvas) : static_cast<lgfx::LovyanGFX&>(M5.Display);
+  const int sub_x = g_map_canvas_ready ? left : 0, sub_y = g_map_canvas_ready ? top : 0;
+  draw_world(d, sub_x, sub_y, left, top, width, height);
+  d.drawRect(left - sub_x, top - sub_y, width, height, kGrid);
   const float want = g_map_view.lon_span / 6.0f;   // about six grid columns across the view
   float step = 30.0f;
   for (float candidate : {1.0f, 2.0f, 5.0f, 10.0f, 15.0f, 20.0f, 30.0f}) {
@@ -579,31 +616,32 @@ void draw_map() {
   for (float lon = std::ceil(g_map_view.lon_min / step) * step; lon < g_map_view.lon_min + g_map_view.lon_span; lon += step) {
     int x = 0, y = 0;
     map_point(GeoPoint{0.0f, lon, 0}, &x, &y);
-    M5.Display.drawFastVLine(x, top, height, kGrid);
+    d.drawFastVLine(x - sub_x, top - sub_y, height, kGrid);
   }
   for (float lat = std::ceil((g_map_view.lat_max - g_map_view.lat_span) / step) * step; lat < g_map_view.lat_max; lat += step) {
     int x = 0, y = 0;
     map_point(GeoPoint{lat, 0.0f, 0}, &x, &y);
-    M5.Display.drawFastHLine(left, y, width, kGrid);
+    d.drawFastHLine(left - sub_x, y - sub_y, width, kGrid);
   }
   const size_t n = std::min(g_snapshot.decode_count, kDecodeCapacity);
   for (size_t i = 0; i < n; ++i) {
-    const Decode& d = g_snapshot.decodes[i];
-    if (!maidenhead_valid(d.grid)) continue;
+    const Decode& dec = g_snapshot.decodes[i];
+    if (!maidenhead_valid(dec.grid)) continue;
     GeoPoint point{};
-    if (!maidenhead_center(d.grid, &point)) continue;
+    if (!maidenhead_center(dec.grid, &point)) continue;
     int x = 0, y = 0;
     map_point(point, &x, &y);
-    M5.Display.fillCircle(x, y, 4, d.kind == DecodeKind::cq ? kGreen : kYellow);
+    d.fillCircle(x - sub_x, y - sub_y, 4, dec.kind == DecodeKind::cq ? kGreen : kYellow);
   }
+  int you_x = 0, you_y = 0;
   if (g_snapshot.station_known) {   // the receiver itself: a white ring with a cross, labelled
-    int x = 0, y = 0;
-    map_point(GeoPoint{g_snapshot.station_latitude, g_snapshot.station_longitude, 0}, &x, &y);
-    M5.Display.drawCircle(x, y, 7, TFT_WHITE);
-    M5.Display.drawFastHLine(x - 11, y, 22, TFT_WHITE);
-    M5.Display.drawFastVLine(x, y - 11, 22, TFT_WHITE);
-    text("YOU", x + 14, y - 12, TFT_WHITE, 1, middle_left);
+    map_point(GeoPoint{g_snapshot.station_latitude, g_snapshot.station_longitude, 0}, &you_x, &you_y);
+    d.drawCircle(you_x - sub_x, you_y - sub_y, 7, TFT_WHITE);
+    d.drawFastHLine(you_x - 11 - sub_x, you_y - sub_y, 22, TFT_WHITE);
+    d.drawFastVLine(you_x - sub_x, you_y - 11 - sub_y, 22, TFT_WHITE);
   }
+  if (g_map_canvas_ready) g_map_canvas.pushSprite(left, top);
+  if (g_snapshot.station_known) text("YOU", you_x + 14, you_y - 12, TFT_WHITE, 1, middle_left);
 
   const Rect recent{926, 104, 330, 514};
   frame(recent, kGrid);
@@ -853,8 +891,8 @@ void draw_setup() {
   text("Times need a locked UTC clock.", 54, 596, kMuted, 1, middle_left);
 }
 
-void draw_body() {
-  M5.Display.fillRect(0, 94, 1280, 532, TFT_BLACK);
+void draw_body(bool repaint_in_place = false) {
+  if (!repaint_in_place) M5.Display.fillRect(0, 94, 1280, 532, TFT_BLACK);   // the map repaints opaque panels, so it skips the blank
   switch (g_tab) {
     case Tab::live: draw_live(); break;
     case Tab::decodes: draw_decodes(); break;
@@ -915,17 +953,13 @@ void update(const Snapshot& snapshot_value) {
                               previous.battery_percent != g_snapshot.battery_percent;
   if (!same_content(previous, g_snapshot) || header_changed) {
     if (header_changed) draw_header();
-    if (!same_content(previous, g_snapshot)) draw_body();
+    if (!same_content(previous, g_snapshot)) draw_body(g_tab == Tab::map && previous.mode == g_snapshot.mode && previous.selected_band == g_snapshot.selected_band);
     return;
   }
   if (g_snapshot.utc_ms / 1000u != g_drawn_second) draw_utc();
   if (g_tab == Tab::live && g_snapshot.wf_sequence != g_drawn_waterfall && g_snapshot.decoder_state != DecoderState::unbound &&
       g_snapshot.clock_valid) {
-    static uint32_t last_waterfall_ms = 0;   // a repaint pushes about 190 KB to the panel, so at most every 400 ms
-    if (millis() - last_waterfall_ms >= 400u) {
-      last_waterfall_ms = millis();
-      draw_waterfall();
-    }
+    paced_waterfall_step();
   }
   if (g_tab == Tab::live) {
     const SlotClock slot = slot_clock(g_snapshot.utc_ms, g_snapshot.mode);
@@ -1008,6 +1042,13 @@ bool dashboard_self_check() {
   return static_cast<int>(Tab::count) == kTabCount && band_count() >= 10 &&
          kAudioLowHz < kAudioHighHz && orcsdr::ft8::self_check() &&
          hunter_self_check();
+}
+
+// Called from the main loop between full updates: new waterfall rows scroll in without waiting for the next snapshot.
+void pump_waterfall(uint32_t sequence) {
+  if (!g_active || g_tab != Tab::live || g_snapshot.decoder_state == DecoderState::unbound || !g_snapshot.clock_valid) return;
+  g_snapshot.wf_sequence = sequence;
+  paced_waterfall_step();
 }
 
 }  // namespace orcsdr::ft8

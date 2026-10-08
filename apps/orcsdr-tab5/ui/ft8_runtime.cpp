@@ -276,13 +276,19 @@ void waterfall_task(void*) {
     ok = orcsdr::ftx::spectral_fft::make_plan(plan, 1920);
   }
   uint64_t last_total = 0;
+  uint32_t wf_ms_sum = 0, wf_rows_timed = 0;
   while (ok && g.active.load(std::memory_order_acquire)) {
-    vTaskDelay(pdMS_TO_TICKS(150));
+    vTaskDelay(pdMS_TO_TICKS(60));   // short period + overlapping 160 ms windows give a smooth scroll
     if (!g.tap_ready) continue;
     const uint64_t total = g.total.load(std::memory_order_acquire);
-    if (total < 1920 || total - last_total < 1500) continue;   // about 125 ms of new audio
-    last_total = total;
-    for (size_t i = 0; i < 1920; ++i) window[i] = g.ring[(total - 1920 + i) % kRingSamples];
+    if (total < 1920) continue;
+    if (last_total == 0 || total - last_total > 840u * 6u) last_total = total - 840u;   // (re)start: one row now, no long catch-up
+    // One row per 70 ms of audio. The tap hands over audio in bursts about every 120 ms, so a burst yields two rows
+    // (windows ending 70 ms apart) and the scroll can run at a steady pace instead of in steps.
+    while (total - last_total >= 840u && g.active.load(std::memory_order_acquire)) {
+    last_total += 840u;
+    const int64_t wf_t0 = esp_timer_get_time();
+    for (size_t i = 0; i < 1920; ++i) window[i] = g.ring[(last_total - 1920 + i) % kRingSamples];
     orcsdr::ftx::spectral_fft::power_bins(*plan, scratch, window, 1920, 32, kWaterfallBins, power);
     std::memcpy(sorted, power, kWaterfallBins * sizeof(float));
     std::nth_element(sorted, sorted + kWaterfallBins / 2, sorted + kWaterfallBins);
@@ -293,6 +299,13 @@ void waterfall_task(void*) {
       row[b] = static_cast<uint8_t>(v < 0.0f ? 0.0f : (v > 255.0f ? 255.0f : v));
     }
     g.wf_sequence.fetch_add(1, std::memory_order_release);
+    wf_ms_sum += static_cast<uint32_t>((esp_timer_get_time() - wf_t0) / 1000);
+    if (++wf_rows_timed == 100) {   // row cost, for tuning the scroll rate
+      std::printf("ORC_FT8_RT wf_row_ms_avg=%u\n", static_cast<unsigned>(wf_ms_sum / 100));
+      wf_ms_sum = 0;
+      wf_rows_timed = 0;
+    }
+    }   // while rows pending
   }
   if (plan) psram_free(plan);
   if (scratch) psram_free(scratch);
