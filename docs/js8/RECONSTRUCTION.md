@@ -191,3 +191,35 @@ Synthetic tool validation used a hidden 0x80F test polynomial plus a non-zero
 fixed offset; the search recovered the intended representation and its
 reflected equivalent. This is validation of the reconstruction method only,
 not a JS8 protocol result.
+
+
+## Sparse parity-graph reconstruction
+
+The dense orthogonal basis emitted by `js8-fec-reconstruct` is sufficient to
+prove membership in the reconstructed linear code, but it is not automatically
+the sparse graph needed for an efficient LDPC decoder.
+
+The next host step is:
+
+```bash
+js8-fec-sparse-search codewords.txt
+```
+
+The first implementation searches weight-6 parity relations with a
+meet-in-the-middle method:
+
+1. reduce the observed codewords to an independent GF(2) basis;
+2. represent each of the 174 bit positions by its column signature over that
+   basis;
+3. enumerate three-column XOR signatures;
+4. equal signatures from disjoint triples imply a six-column parity relation;
+5. validate every proposed relation against the complete derivation corpus;
+6. measure the rank of the recovered sparse checks.
+
+No assumption is made that weight six is the final JS8 check weight. If the
+recovered sparse-check rank is below the independently measured parity-space
+dimension, reconstruction is explicitly incomplete and the search must move to
+higher weights or obtain better evidence.
+
+A synthetic 120-frame corpus with one hidden six-variable relation recovered
+that relation exactly. This proves the search method, not a JS8 parity result.

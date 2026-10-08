@@ -418,3 +418,11 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Added an end-to-end synthetic front-half test that recovers the documented Normal frame, exact injected start sample, tone-0 frequency and all 21 sync tones; optimized and ASan/UBSan runs pass in the sandbox.
 - The front end intentionally returns raw candidates only. It cannot create `Decode` or user-visible text until independently reconstructed FEC + CRC + frame parsing succeed.
 - No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 sparse parity-check reconstruction
+
+- Added host-only `js8-sparse-parity.hpp` and `js8-fec-sparse-search.cpp`: observed 174-bit codewords -> independent column signatures -> meet-in-the-middle weight-6 parity relations -> corpus validation and recovered-check rank.
+- Added optimized and ASan/UBSan unit coverage. A 120-frame synthetic corpus with one hidden six-variable relation recovered exactly that relation and correctly reported that it did not span the entire synthetic parity space.
+- Weight six is a bounded first search, not a claimed JS8 check weight. Real captures must establish the code rank/parity dimension and whether weight-6 relations are sufficient; incomplete rank is reported as incomplete.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.

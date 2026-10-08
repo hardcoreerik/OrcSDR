@@ -92,6 +92,9 @@ run_suite js8_demod_tests \
 run_suite js8_fec_reconstruct_tests \
   tests/js8_fec_reconstruct_tests.cpp
 
+run_suite js8_sparse_parity_tests \
+  tests/js8_sparse_parity_tests.cpp
+
 run_suite js8_tone_map_tests \
   tests/js8_tone_map_tests.cpp
 
@@ -109,6 +112,9 @@ g++ "${common[@]}" -Itools -O2 tools/js8-map-codewords.cpp \
   -o "$build_dir/js8-map-codewords"
 
 g++ "${common[@]}" -O2 tools/js8-fec-reconstruct.cpp -o "$build_dir/js8-fec-reconstruct"
+
+g++ "${common[@]}" -Itools -O2 tools/js8-fec-sparse-search.cpp \
+  -o "$build_dir/js8-fec-sparse-search"
 
 g++ "${common[@]}" -Itools -O2 tools/js8-crc-reconstruct.cpp \
   -o "$build_dir/js8-crc-reconstruct"

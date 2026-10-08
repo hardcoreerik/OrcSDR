@@ -163,3 +163,26 @@ Optimized and ASan/UBSan variants pass.
 At this point the receive front half and reconstruction laboratory are ready for
 the PC capture corpus. The next missing decoder stage is no longer plumbing:
 it is the independently reconstructed tone mapping/FEC/CRC evidence.
+
+
+## Sparse parity-check recovery ready
+
+The reconstruction lab now includes `js8-fec-sparse-search`. The existing
+GF(2) solver identifies the complete parity space, but a row-reduced basis can
+be dense and unsuitable for a small LDPC decoder. The new tool converts the
+observed codeword basis into column signatures and searches for independent
+weight-6 parity relations by matching equal three-column XOR signatures.
+
+Every discovered check is re-validated against every supplied codeword, and
+the tool reports how much of the full parity-space dimension the discovered
+sparse checks actually span. If the span is incomplete it says so explicitly;
+higher-weight search is then required rather than inventing missing checks.
+
+Sandbox validation used 120 synthetic 174-bit observations with one hidden
+six-variable parity relation. The tool recovered exactly the hidden
+`0,1,2,3,4,5` relation, validated it on all 120 observations, and correctly
+reported that one check did not span the synthetic corpus's full parity space.
+
+This tool does not assume that real JS8 parity checks have weight six. Weight
+six is simply the first bounded sparse search implemented; the real corpus
+will determine whether it is sufficient.
