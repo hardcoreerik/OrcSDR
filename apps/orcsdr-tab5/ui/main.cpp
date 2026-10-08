@@ -56,6 +56,7 @@
 #include "orcsdr_storage.hpp"
 #include "am_dashboard.hpp"
 #include "ft8_dashboard.hpp"
+#include "ft8_adif.hpp"
 #include "ft8_decoder_backend.hpp"
 #include "ft8_hunter.hpp"
 #include "ft8_model.hpp"
@@ -16937,7 +16938,7 @@ void process_ft8_command(const char* args) {
   if (verb[0] == '\0' || strcmp(verb, "HELP") == 0) {
     Serial.println("ORC_FT8_HELP queries: STATUS | DECODES [n] | BANDS | DUMP | TIME | HELP");
     Serial.println("ORC_FT8_HELP control (authenticated): OPEN | BAND <index|label|dial_hz> | MODE <FT8|FT4> | CLEAR | RUN <0|1> | "
-                   "CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms> | SAVE <name>");
+                   "CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms> | TAB <name> | SAVE <name> | ADIF <name>");
     return;
   }
 
@@ -17106,6 +17107,58 @@ void process_ft8_command(const char* args) {
       orcsdr::ft8_runtime::set_headless(false);
     }
     Serial.printf("ORC_FT8_RUN_OK headless=%d\n", on ? 1 : 0);
+    return;
+  }
+
+  if (strcmp(verb, "ADIF") == 0) {
+    // Writes the decode list as an ADIF heard-stations log (receive only: stations heard, not contacts) to /sd/ft8/<name>.adi.
+    ft8_native_drain_pending();
+    if (!ensure_tab5_sd() || g_sd_fs == nullptr) {
+      Serial.println("ORC_FT8_ERROR ADIF no_sd_card");
+      return;
+    }
+    char name[40]{};
+    size_t n = 0;
+    for (const char* p = rest; *p != '\0' && n + 1 < sizeof(name); ++p)
+      if (isalnum(static_cast<unsigned char>(*p)) || *p == '_' || *p == '-') name[n++] = *p;
+    if (n == 0) snprintf(name, sizeof(name), "heard");
+    char path[96];
+    (void)g_sd_fs->mkdir("/ft8");
+    snprintf(path, sizeof(path), "/ft8/%s.adi", name);
+    File file = g_sd_fs->open(path, FILE_WRITE, true);
+    if (!file) {
+      Serial.printf("ORC_FT8_ERROR ADIF open_failed path=%s\n", path);
+      return;
+    }
+    char buffer[400];
+    size_t len = orcsdr::ft8::adif_header(buffer, sizeof(buffer));
+    if (len > 0) file.write(reinterpret_cast<const uint8_t*>(buffer), len);
+    unsigned written = 0;
+    for (size_t i = g_ft8_store.size(); i > 0; --i) {   // oldest first
+      const auto* d = g_ft8_store.newest(i - 1);
+      if (d == nullptr) continue;
+      len = orcsdr::ft8::adif_heard_record(*d, orcsdr::ft8::mode_dial_hz(ft8_selected_band(), d->mode), buffer, sizeof(buffer));
+      if (len > 0) {
+        file.write(reinterpret_cast<const uint8_t*>(buffer), len);
+        ++written;
+      }
+    }
+    file.close();
+    Serial.printf("ORC_FT8_ADIF_OK path=/sd%s records=%u\n", path, written);
+    return;
+  }
+
+  if (strcmp(verb, "TAB") == 0) {
+    using orcsdr::ft8::Tab;
+    static const char* const names[] = {"LIVE", "DECODES", "MAP", "HUNTER", "HEARD", "SETUP"};
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+      if (strcasecmp(rest, names[i]) == 0) {
+        orcsdr::ft8::select_tab(static_cast<Tab>(i));
+        Serial.printf("ORC_FT8_TAB_OK tab=%s\n", names[i]);
+        return;
+      }
+    }
+    Serial.println("ORC_FT8_ERROR TAB invalid use TAB <LIVE|DECODES|MAP|HUNTER|HEARD|SETUP>");
     return;
   }
 

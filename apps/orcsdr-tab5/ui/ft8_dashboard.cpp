@@ -1,4 +1,5 @@
 #include "ft8_dashboard.hpp"
+#include "ft8_conditions.hpp"
 
 #include "dashboard_audio_control.hpp"
 #include "ft8_decoder_backend.hpp"
@@ -569,6 +570,47 @@ void draw_hunter() {
   for (size_t i = 0; i < band_count(); ++i) draw_hunter_band(i);
 }
 
+
+// Propagation summary from what was decoded: farthest station, median distance and the compass directions the signals come from.
+void draw_conditions_panel() {
+  const Rect panel{820, 150, 416, 452};
+  M5.Display.fillRect(panel.x, panel.y, panel.w, panel.h, TFT_BLACK);
+  frame(panel);
+  text("CONDITIONS", panel.x + 16, panel.y + 22, kCyan, 1, middle_left);
+  if (!g_snapshot.station_known) {
+    text("Set your location to see", panel.x + panel.w / 2, panel.y + 190, kAmber, 1);
+    text("distance and direction", panel.x + panel.w / 2, panel.y + 212, kAmber, 1);
+    return;
+  }
+  const GeoPoint here{g_snapshot.station_latitude, g_snapshot.station_longitude, 0};
+  Conditions c{};
+  if (!compute_conditions(g_snapshot.decodes, std::min(g_snapshot.decode_count, kDecodeCapacity), here, &c) || c.stations == 0) {
+    text("No stations with a grid yet", panel.x + panel.w / 2, panel.y + 200, kMuted, 1);
+    return;
+  }
+  char line[64];
+  std::snprintf(line, sizeof(line), "%u stations with a grid", static_cast<unsigned>(c.stations));
+  text(line, panel.x + 16, panel.y + 52, TFT_WHITE, 1, middle_left);
+  std::snprintf(line, sizeof(line), "FARTHEST  %.0f km  %s", static_cast<double>(c.farthest_km), c.farthest_call);
+  text(line, panel.x + 16, panel.y + 80, kGreen, 1, middle_left);
+  std::snprintf(line, sizeof(line), "%.0f deg  (%s)", static_cast<double>(c.farthest_bearing_deg), sector_name(bearing_sector(c.farthest_bearing_deg)));
+  text(line, panel.x + 16, panel.y + 100, kMuted, 1, middle_left);
+  std::snprintf(line, sizeof(line), "MEDIAN  %.0f km", static_cast<double>(c.median_km));
+  text(line, panel.x + 16, panel.y + 128, TFT_WHITE, 1, middle_left);
+
+  uint16_t peak = 1;
+  for (size_t s = 0; s < kBearingSectors; ++s) peak = std::max(peak, c.sector_counts[s]);
+  text("DIRECTION OF SIGNALS", panel.x + 16, panel.y + 166, kCyan, 1, middle_left);
+  for (size_t s = 0; s < kBearingSectors; ++s) {
+    const int y = panel.y + 192 + static_cast<int>(s) * 32;
+    text(sector_name(s), panel.x + 16, y + 10, kMuted, 1, middle_left);
+    const int width = static_cast<int>(static_cast<float>(c.sector_counts[s]) / static_cast<float>(peak) * 260.0f);
+    if (width > 0) M5.Display.fillRect(panel.x + 56, y, width, 20, kGreen);
+    std::snprintf(line, sizeof(line), "%u", static_cast<unsigned>(c.sector_counts[s]));
+    text(line, panel.x + 56 + width + 8, y + 10, TFT_WHITE, 1, middle_left);
+  }
+}
+
 void draw_heard() {
   frame(kBody);
   text("UNIQUE STATIONS HEARD", 42, 126, kCyan, 1, middle_left);
@@ -600,7 +642,8 @@ void draw_heard() {
     text(info, 454, y, TFT_WHITE, 1, middle_left);
     ++out;
   }
-  if (out == 0) text("No decoded callsigns yet", 640, 350, kMuted, 2);
+  if (out == 0) text("No decoded callsigns yet", 440, 350, kMuted, 2);
+  draw_conditions_panel();
 }
 
 Rect mode_rect(size_t index) { return {42 + static_cast<int>(index) * 172, 140, 164, 60}; }

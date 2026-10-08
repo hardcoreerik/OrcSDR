@@ -68,7 +68,9 @@ Queries need no authentication; commands that change state need the PAIR/AUTH se
 | `FT8 CLEAR` | yes | clear the decode list |
 | `FT8 RUN <0|1>` | yes | headless: keep the decoder running with no FT8 screen |
 | `FT8 CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms>` | yes | candidates refined (1-64), candidates sent through the FEC gates (1-64), grid resolution, per-slot time limit |
+| `FT8 TAB <LIVE|DECODES|MAP|HUNTER|HEARD|SETUP>` | yes | switch the FT8 dashboard tab |
 | `FT8 SAVE <name>` | yes | write the last slot to `/sd/ft8/<name>.wav` |
+| `FT8 ADIF <name>` | yes | write the decode list as an ADIF 3.1.4 heard-stations log to `/sd/ft8/<name>.adi` (stations heard, never contacts; no SNR; JS8 omitted) |
 
 `tools/tab5_ft8.py` wraps these: `status`, `bands`, `band`, `mode`, `run`, `config`, `decodes`, `clear`, `save`, `dump <file.wav>` (a 12 kHz WAV on the PC),
 `time` (Tab5 clock minus PC clock), `settime`, `watch <seconds>`, `raw "<any command>"`. It pairs from the key file (`--key`, `ORC_UI_DOC_KEY`, or
@@ -91,4 +93,4 @@ python tools/tab5_ft8.py --port COM17 decodes 40
 - Gain: re-run the AUTO versus manual comparison on other dongles (V3, V4L) and antennas before assuming AUTO is best everywhere.
 - The tap costs about half of the DSP core's real-time budget at 2.4 MS/s. Requesting 240 kS/s from the driver for the FT8 screen would remove the CIC stage.
 - Bit-identity gate of the proposal (tap off versus baseline audio) is not yet measured; the dispatch is a single `if (active)` before the existing demodulation.
-- Dashboard: band tables for FT4 and a decode-mode indicator; the heard-station Conditions view uses the same decodes.
+- Dashboard: the HEARD tab now has a CONDITIONS panel (stations with a grid, farthest station and bearing, median distance, decodes per compass sector) computed from the decodes and the saved receiver location; it is host-tested but has not been checked by eye on the device yet.

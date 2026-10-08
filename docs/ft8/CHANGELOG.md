@@ -249,3 +249,8 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 ## 2026-10-08 — Gain: no policy needed (measured)
 
 - `FT8 STATUS` gains `iq_dbfs`, `iq_clip_pct`, `gain_tenth_db`. A manual-gain sweep showed the decoder's slot level rising to a knee near 34 dB (with 9 to 30 percent IQ clipping beyond it) and an alternating A/B of the receiver's AUTO setting against manual 34 dB gave 6.55 against 6.64 decodes per slot over 22 slots each: AUTO already sits at the knee, so no FT8 gain policy was added. A hill-climbing gain seeker was built and removed. `ft8_native_service()` (called from `loop()`) now only hands decodes to the store so a headless run stays current.
+
+## 2026-10-08 — Conditions panel on the HEARD tab; ADIF export; FT8 TAB
+
+- The HEARD tab shows a CONDITIONS panel from the decodes and the saved receiver location (`ft8_conditions`): stations with a grid, farthest station with distance and bearing, median distance and decodes per compass sector; it prompts for a location when none is set.
+- `FT8 ADIF <name>` writes the decode list to `/sd/ft8/<name>.adi` using `ft8_adif` (verified: 64 records written on the device). `FT8 TAB <name>` switches the dashboard tab for scripting.
