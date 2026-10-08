@@ -64,3 +64,10 @@ No CMake/firmware source-list change is justified until a real decoder source fi
 `js8_demod.*` is allocation-free and float-only in its hot loop. It evaluates a caller-supplied time/frequency candidate and returns raw tone decisions; it does not search the whole passband or produce `Decode`.
 
 The current exact single-tone correlations are a correctness/reference primitive. Before device binding, a bounded coarse-search front end should produce candidates and this stage, or an optimized equivalent, should refine only those candidates. No ESP32-P4 timing claim is made from the host unit test.
+
+
+## Sync candidate search
+
+`js8_sync.*` consumes a caller-owned non-negative energy grid and returns bounded caller-owned candidates. It allocates no memory and knows only JS8 profile geometry. That keeps future spectral generation replaceable: the P4 backend can reuse an existing FFT primitive without changing JS8 sync logic.
+
+The search result must never be surfaced as a decode. Only the later FEC + CRC + frame parser may create `Decode`.

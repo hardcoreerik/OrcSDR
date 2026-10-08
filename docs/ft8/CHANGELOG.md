@@ -368,3 +368,11 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Added a host-only synthetic tone fixture based on the public API frame vector. It recovers all 79 tones with deterministic noise and rejects a deliberately wrong base-frequency candidate; optimized and ASan/UBSan tests pass in the sandbox.
 - This is a receiver primitive, not a JS8 message decoder: no whole-band search, FEC, CRC, message acceptance, SNR calibration or firmware binding exists yet.
 - No UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 Normal bounded sync search
+
+- Added standalone `js8_sync.*`: heap-free Normal-mode sync scoring and bounded non-maximum-suppressed candidate search over a caller-provided spectral energy grid.
+- Synthetic host tests recover the injected Normal candidate, reject a flat grid at the test threshold, and refuse Fast while its exact sync pattern remains unverified; optimized and ASan/UBSan runs pass in the sandbox.
+- Sync evidence is not a decode. FEC, CRC and frame acceptance remain unavailable pending reconstruction.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.

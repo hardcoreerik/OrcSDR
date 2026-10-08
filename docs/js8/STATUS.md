@@ -51,3 +51,12 @@ The standalone module now includes a heap-free Normal-mode candidate demodulator
 A deterministic host-only waveform fixture based on the public API tone vector recovers all 79 tones with added noise and rejects a deliberately wrong base-frequency candidate. This validates the receive primitive only; it is not a claim that the synthetic waveform models every JS8 modulation detail.
 
 There is still no whole-passband candidate search, FEC, CRC, message parser, SNR calibration or firmware binding.
+
+
+## Bounded Normal sync search
+
+The standalone JS8 module now has a heap-free spectral-grid candidate search for Normal mode. It scores the three independently established sync blocks, applies bounded non-maximum suppression, and returns caller-owned candidates ranked by sync contrast.
+
+Synthetic energy-grid tests recover the injected candidate exactly, reject a uniform-noise grid at the test threshold, and refuse Fast because its exact sync permutations have not been independently established.
+
+This is still pre-FEC: a sync candidate is evidence of a JS8-like frame, not a decoded message.
