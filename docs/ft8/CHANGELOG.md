@@ -275,3 +275,7 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Brought the 6 MB app partition onto this branch (cherry-picked from `claude/app-partition-6m`): the app is 0x3d6410 bytes with 36 percent (2.2 MB) free instead of 4 percent. Verified on the Tab5: it boots on the new table (a one-time full reflash) and still decodes.
 - `ntp_sync` now writes the RTC exactly on a whole-second boundary (it wrote mid-second, leaving the RTC off by up to a second). `FT8 NTP` and one automatic sync per boot when the FT8 decoder starts with Wi-Fi up.
 - Corrected the clock/DT finding: the PC clock used as a reference was 0.46 s ahead of true time, which produced the constant +0.58 s DT. With an NTP-corrected Tab5 clock the decoded DT centres on zero (median -100 ms, mean -29 ms, 59 decodes).
+
+## 2026-10-08 — FT8 asks the driver for 240 kS/s
+
+- Selecting an FT8 band now sets the receiver rate override to 240 kS/s (the driver's low band is 225 to 300 kS/s) and restarts the stream if it runs at another rate, instead of 2.4 MS/s. DSP load fell from 67 to 19 percent on the Tab5 and decoding is unchanged. The DSP task lets the tap see these blocks (they are flagged as a non-default rate). Band selection now starts the decoder runtime first, so the rate override is not released before the stream restarts. When the decoder stops the override is cleared and a stream still at 240 kS/s on a dashboard band is restarted at its normal rate (verified: back to 2.4 MS/s).

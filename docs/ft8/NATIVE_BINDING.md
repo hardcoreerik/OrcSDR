@@ -117,6 +117,6 @@ The shortwave band path clamps tuning to 30 MHz, so 6 m and 2 m were silently tu
 ## Known issues and next steps
 
 - Gain: re-run the AUTO versus manual comparison on other dongles (V3, V4L) and antennas before assuming AUTO is best everywhere.
-- The tap costs about half of the DSP core's real-time budget at 2.4 MS/s. Requesting 240 kS/s from the driver for the FT8 screen would remove the CIC stage.
+- Receiver rate: while the FT8 decoder is active the receiver is asked for 240 kS/s (the driver supports 225 to 300 kS/s) instead of the dashboard's 2.4 MS/s. Measured on the Tab5: DSP load 67 percent at 2.4 MS/s and 19 percent at 240 kS/s, USB traffic tenfold lower, decoding unchanged. The rate request is released when the decoder stops (screen left or `FT8 RUN 0`), and a receiver still at 240 kS/s on a dashboard band is restarted at its normal rate. The remaining tap cost is the 447-tap channel filter.
 - Bit-identity gate of the proposal (tap off versus baseline audio) is not yet measured; the dispatch is a single `if (active)` before the existing demodulation.
 - Dashboard: the HEARD tab now has a CONDITIONS panel (stations with a grid, farthest station and bearing, median distance, decodes per compass sector) computed from the decodes and the saved receiver location; it is host-tested but has not been checked by eye on the device yet.

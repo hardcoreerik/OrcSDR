@@ -1456,6 +1456,9 @@ static bool rtl_session_continuous = true;
 static uint32_t rtl_session_started_ms = 0;
 static std::atomic<uint32_t> rtl_session_frequency_hz{kRtlFmDefaultHz};
 static std::atomic<uint32_t> rtl_rate_override_sps{0};
+// The FT8 decoder set rtl_rate_override_sps (240 kS/s) and must clear it; the DSP task then treats the non-default rate as its own.
+static std::atomic<bool> g_ft8_rate_owned{false};
+static std::atomic<bool> g_ft8_rate_restart_pending{false};   // the stream is still at the FT8 rate after the decoder let go
 static std::atomic<uint32_t> rtl_active_sample_rate_sps{kRtlSampleRateSps};
 // M5GFX framebuffer writes are single-task only.  The RTL worker requests a
 // repaint; loop() owns the actual draw.
@@ -2404,6 +2407,7 @@ void poll_sdr_touch(bool from_stream);
 bool request_hot_retune(uint32_t frequency_hz);
 bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz);
 void set_radio_session_state(orcsdr::radio::ReceiverState state);
+void ft8_native_release_rate();
 uint32_t rtl_fm_command_lo_hz(uint32_t display_hz);
 uint32_t rtl_fm_sanitize_display_hz(uint32_t frequency_hz);
 bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
@@ -8991,7 +8995,8 @@ static void rtl_dsp_task(void *) {
     mark(dsp_stats::Stage::spectrum);
     // Native FT8/FT4 analysis tap: a read-only sidecar on the raw block (own state, own buffers); it runs only while the FT8
     // screen owns the receiver, so every other path is untouched.
-    if (!block.custom_rate && (block.band == RtlBand::shortwave || block.band == RtlBand::browse) && orcsdr::ft8_runtime::active())
+    if ((!block.custom_rate || g_ft8_rate_owned.load(std::memory_order_relaxed)) &&
+        (block.band == RtlBand::shortwave || block.band == RtlBand::browse) && orcsdr::ft8_runtime::active())
       orcsdr::ft8_runtime::offer_iq(block.data, block.bytes, block.sample_rate_sps);
     if (!block.custom_rate && block.band == RtlBand::lora)
       lora_iq_offer(block.data, block.bytes);
@@ -12811,9 +12816,26 @@ void ft8_hunt_service(const orcsdr::ft8_runtime::Status& rt) {
 
 // Called every loop(): hands decodes from the decoder task to the store, so a headless run keeps the list current.
 void ft8_native_service() {
-  if (!orcsdr::ft8_runtime::active()) return;
+  if (!orcsdr::ft8_runtime::active()) {
+    ft8_native_release_rate();   // the decoder stopped (screen left): later band starts use their normal rate
+    if (g_ft8_rate_restart_pending.exchange(false)) {
+      // A hot retune keeps the stream's rate, so a receiver still running at the FT8 rate on a dashboard band is restarted once.
+      if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
+          rtl_active_sample_rate_sps.load(std::memory_order_acquire) == 240000u &&
+          (rtl_ui_band == RtlBand::shortwave || rtl_ui_band == RtlBand::browse))
+        (void)queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz, false);
+    }
+    return;
+  }
   ft8_native_drain_pending();
   ft8_hunt_service(orcsdr::ft8_runtime::status());
+}
+
+void ft8_native_release_rate() {
+  if (!g_ft8_rate_owned) return;
+  g_ft8_rate_owned = false;
+  rtl_rate_override_sps.store(0, std::memory_order_release);
+  g_ft8_rate_restart_pending = true;
 }
 
 size_t ft8_selected_band() {
@@ -12907,7 +12929,18 @@ bool ft8_select_band(size_t index) {
   if (!validate_rtl_tune_frequency(dial_hz)) return false;
   // The shortwave path clamps tuning to 30 MHz, so 6 m and 2 m go through the general VHF/UHF band; the audio tap runs on either.
   const RtlBand target = dial_hz > 30000000u ? RtlBand::browse : RtlBand::shortwave;
-  if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running && rtl_ui_band == target)
+  // The decoder only needs a few kHz of audio, so ask the driver for 240 kS/s instead of the dashboard's 2.4 MS/s: the audio tap's
+  // high-rate stage disappears (a measured half of one core) and the USB load drops tenfold. A rate change restarts the stream.
+  constexpr uint32_t kFt8LowRate = 240000u;
+  // The decoder runtime must be alive before the rate is requested, or the service would release the override before the stream restarts.
+  (void)ft8_native_ensure_started();
+  orcsdr::ft8_runtime::touch();
+  if (rtl_rate_override_sps.load(std::memory_order_acquire) == 0 && rtl_device_ready() && esp_rtl_sdr_is_rate_supported(kFt8LowRate)) {
+    rtl_rate_override_sps.store(kFt8LowRate, std::memory_order_release);
+    g_ft8_rate_owned = true;
+  }
+  const bool rate_ready = !g_ft8_rate_owned || rtl_active_sample_rate_sps.load(std::memory_order_acquire) == kFt8LowRate;
+  if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running && rtl_ui_band == target && rate_ready)
     return request_hot_retune(dial_hz);
   return queue_local_rtl_listen(target, dial_hz);
 }
