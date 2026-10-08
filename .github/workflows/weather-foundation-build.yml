@@ -1,0 +1,113 @@
+name: Weather Foundation native build
+
+on:
+  pull_request:
+    paths:
+      - apps/orcsdr-tab5/**
+      - tools/ci/**
+      - tools/release/**
+      - .github/workflows/weather-foundation-build.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      image: espressif/idf:v5.5.4@sha256:b9f2d6ea1c19e0c9f7959bdb74a9e3c775642f9d0f3b841937c5fa3363db892b
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout Weather head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          path: feature
+
+      - name: Checkout PR base
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          path: base
+
+      - name: Prepare container
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/feature"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/base"
+
+      - name: Restore ESP-Hosted C6 image
+        id: c6cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: feature/.ci-cache/hosted-c6
+          key: weather-foundation-c6-v1-${{ hashFiles('feature/tools/release/hosted-c6-release.json', 'feature/orcdial/c6/CMakeLists.txt', 'feature/orcdial/c6/main/CMakeLists.txt', 'feature/orcdial/c6/main/main.c', 'feature/orcdial/c6/sdkconfig.defaults', 'feature/orcdial/c6/partitions_eh_cp_ota_4m.csv', 'feature/tools/ci/build-hosted-c6.sh') }}
+
+      - name: Build ESP-Hosted C6 image
+        if: steps.c6cache.outputs.cache-hit != 'true'
+        working-directory: feature
+        run: |
+          . "$IDF_PATH/export.sh" >/dev/null
+          bash tools/ci/build-hosted-c6.sh --patch-idf .ci-cache/hosted-c6 "$RUNNER_TEMP/esp-hosted"
+
+      - name: Build base firmware
+        id: base
+        working-directory: base
+        run: |
+          set -uo pipefail
+          . "$IDF_PATH/export.sh" >/dev/null
+          set +e
+          bash tools/ci/build-tab5.sh             --c6 "$GITHUB_WORKSPACE/feature/.ci-cache/hosted-c6/esp_hosted_tab5_c6.bin"             --out out-base --build-id "weather-baseline ${{ github.event.pull_request.base.sha }}"             2>&1 | tee "$RUNNER_TEMP/base-build.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          bin=apps/orcsdr-tab5/build-native-hosted3/orcsdr_tab5.bin
+          test -f "$bin" || { echo "Base firmware did not compile"; exit "$rc"; }
+          bytes=$(stat -c %s "$bin")
+          echo "bytes=$bytes" >> "$GITHUB_OUTPUT"
+          echo "BASE_APP_BYTES=$bytes script_rc=$rc" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$rc" -ne 0 ] && ! grep -q "leaves less than 256 KiB" "$RUNNER_TEMP/base-build.log"; then
+            exit "$rc"
+          fi
+
+      - name: Build Weather firmware
+        id: feature
+        working-directory: feature
+        run: |
+          set -uo pipefail
+          . "$IDF_PATH/export.sh" >/dev/null
+          set +e
+          bash tools/ci/build-tab5.sh             --c6 "$GITHUB_WORKSPACE/feature/.ci-cache/hosted-c6/esp_hosted_tab5_c6.bin"             --out out-feature --build-id "weather-foundation ${{ github.event.pull_request.head.sha }}"             2>&1 | tee "$RUNNER_TEMP/feature-build.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          bin=apps/orcsdr-tab5/build-native-hosted3/orcsdr_tab5.bin
+          test -f "$bin" || { echo "Weather firmware did not compile"; exit "$rc"; }
+          bytes=$(stat -c %s "$bin")
+          echo "bytes=$bytes" >> "$GITHUB_OUTPUT"
+          echo "WEATHER_APP_BYTES=$bytes script_rc=$rc" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$rc" -ne 0 ] && ! grep -q "leaves less than 256 KiB" "$RUNNER_TEMP/feature-build.log"; then
+            exit "$rc"
+          fi
+
+      - name: Report size delta
+        env:
+          BASE: ${{ steps.base.outputs.bytes }}
+          FEATURE: ${{ steps.feature.outputs.bytes }}
+        run: |
+          delta=$((FEATURE - BASE))
+          limit=$((0x400000 - 0x40000))
+          remaining=$((0x400000 - FEATURE))
+          {
+            echo "### Weather Foundation firmware size"
+            echo ""
+            echo "- Base: **$BASE bytes**"
+            echo "- Weather: **$FEATURE bytes**"
+            echo "- Delta: **$delta bytes**"
+            echo "- 4 MiB app partition free after Weather: **$remaining bytes**"
+            echo "- 256 KiB release guard app-size limit: **$limit bytes**"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
