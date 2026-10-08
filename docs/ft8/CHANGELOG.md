@@ -181,3 +181,10 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Extended the host WAV benchmark to select FT8 or FT4 while using the same shared spectral/sync/demod/pipeline implementation.
 - Extended external CI to download the official WSJT-X FT4 tutorial sample, run `jt9 --ft4 -d 3` as the external reference, and run OrcSDR in FT4 mode on the same recording.
 - No FT4 regression floor is set until the first real measurement establishes an honest baseline.
+
+
+## 2026-10-07 — FT4 external sample correction
+
+- The older user-guide FT4 tutorial filename `200514_182053.wav` currently returns HTTP 404 from the public SourceForge sample path.
+- Switched the reproducible external benchmark to currently published official WSJT Project FT4 sample `190106_000115.wav`.
+- Both WSJT-X `jt9 --ft4 -d 3` and OrcSDR consume the same downloaded WAV; no third-party sample bytes are committed to the repository.

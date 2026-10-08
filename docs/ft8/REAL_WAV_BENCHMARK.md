@@ -56,12 +56,14 @@ passes so later improvements have an honest before/after comparison.
 
 ## FT4 status
 
-The official WSJT-X FT4 tutorial sample is `200514_182053.wav`. The native
-pipeline now contains the QEX-defined receive-side payload XOR restoration and
-a synthetic FT4 end-to-end standard-message regression. The external CI job
-downloads the official sample, runs `jt9 --ft4 -d 3` as the reference, then
-runs the same OrcSDR WAV benchmark in FT4 mode. The measured result is appended
-only after that job completes; no FT4 decode count is guessed here.
+The WSJT-X user guide names tutorial sample `200514_182053.wav`, but that
+filename currently returns HTTP 404 from the public SourceForge sample path.
+Rather than invent another mirror, the benchmark uses the currently published
+WSJT Project FT4 sample `190106_000115.wav` from the official SourceForge
+FT4 directory. The native pipeline contains the QEX-defined receive-side
+payload XOR restoration and a synthetic FT4 end-to-end standard-message
+regression. External CI runs `jt9 --ft4 -d 3` and OrcSDR against the exact
+same downloaded bytes.
 
 ## Regression floor
 
