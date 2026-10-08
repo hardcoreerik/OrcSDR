@@ -12688,6 +12688,14 @@ orcsdr::ft8::Snapshot ft8_dashboard_snapshot() {
   snapshot.mode = g_ft8_mode;
   snapshot.decoder_capabilities = g_ft8_capabilities;
   snapshot.hunter = g_ft8_hunter.snapshot();
+  {
+    const auto here = orcsdr::receiver_location::snapshot();
+    if (here.configured) {
+      snapshot.station_known = true;
+      snapshot.station_latitude = static_cast<float>(here.latitude_e7) / 1.0e7f;
+      snapshot.station_longitude = static_cast<float>(here.longitude_e7) / 1.0e7f;
+    }
+  }
 #if !RTL_USE_LEGACY_USB
   if (g_rtl != nullptr && rtl_tuner_gain_available(rtl_ui_frequency_hz)) {
     snapshot.gain_auto = rtl_am_gain_auto_enabled.load(std::memory_order_relaxed);

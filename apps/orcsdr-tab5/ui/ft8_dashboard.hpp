@@ -40,6 +40,10 @@ struct Snapshot {
   uint32_t decoder_capabilities = 0;   // DecoderCapability bits; 0 = no decoder bound
   DecoderState decoder_state = DecoderState::unbound;
   HunterSnapshot hunter{};
+  // The receiver's own position (from the setup wizard / settings) for DIST and BRG; unknown = those cells show a dash.
+  bool station_known = false;
+  float station_latitude = 0.0f;
+  float station_longitude = 0.0f;
   Decode decodes[kDecodeCapacity]{};
   size_t decode_count = 0;
 };

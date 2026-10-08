@@ -277,6 +277,32 @@ size_t DecodeStore::grid_count() const {
   return count;
 }
 
+bool distance_bearing(const GeoPoint& from, const GeoPoint& to, float* distance_km, float* bearing_deg) {
+  if (distance_km == nullptr || bearing_deg == nullptr) return false;
+  const double values[] = {from.latitude, from.longitude, to.latitude, to.longitude};
+  for (double v : values)
+    if (!std::isfinite(v)) return false;
+  if (std::fabs(from.latitude) > 90.0 || std::fabs(to.latitude) > 90.0 || std::fabs(from.longitude) > 180.0 ||
+      std::fabs(to.longitude) > 180.0)
+    return false;
+  constexpr double kPi = 3.14159265358979323846;
+  constexpr double kRad = kPi / 180.0;
+  constexpr double kEarthKm = 6371.0;
+  const double p1 = from.latitude * kRad, p2 = to.latitude * kRad;
+  const double dl = (to.longitude - from.longitude) * kRad;
+  const double sdp = std::sin((p2 - p1) / 2.0), sdl = std::sin(dl / 2.0);
+  double a = sdp * sdp + std::cos(p1) * std::cos(p2) * sdl * sdl;
+  a = std::min(1.0, std::max(0.0, a));
+  *distance_km = static_cast<float>(2.0 * kEarthKm * std::asin(std::sqrt(a)));
+  const double y = std::sin(dl) * std::cos(p2);
+  const double x = std::cos(p1) * std::sin(p2) - std::sin(p1) * std::cos(p2) * std::cos(dl);
+  double bearing = std::atan2(y, x) / kRad;
+  if (bearing < 0.0) bearing += 360.0;
+  if (bearing >= 360.0) bearing -= 360.0;
+  *bearing_deg = static_cast<float>(bearing);
+  return std::isfinite(*distance_km) && std::isfinite(*bearing_deg);
+}
+
 bool self_check() {
   const auto first = slot_clock(0);
   const auto boundary = slot_clock(15000);
@@ -285,7 +311,15 @@ bool self_check() {
   const auto ft4_b = slot_clock(7500, DigitalMode::ft4);
   GeoPoint fn42{};
   char call[16]{}, grid[9]{};
-  return band_count() >= 10 && band(5) && band(5)->dial_hz == 14074000 &&
+  float km = 0.0f, brg = 0.0f;
+  const GeoPoint origin{0.0f, 0.0f, 0}, east{0.0f, 90.0f, 0}, pole{90.0f, 0.0f, 0}, west{0.0f, -90.0f, 0};
+  const bool geometry_ok =
+      distance_bearing(origin, east, &km, &brg) && std::fabs(km - 10007.5f) < 5.0f && std::fabs(brg - 90.0f) < 0.01f &&
+      distance_bearing(origin, pole, &km, &brg) && std::fabs(km - 10007.5f) < 5.0f && (brg < 0.01f || brg > 359.99f) &&
+      distance_bearing(origin, west, &km, &brg) && std::fabs(brg - 270.0f) < 0.01f &&
+      distance_bearing(origin, origin, &km, &brg) && km == 0.0f &&
+      !distance_bearing(origin, GeoPoint{91.0f, 0.0f, 0}, &km, &brg);
+  return geometry_ok && band_count() >= 10 && band(5) && band(5)->dial_hz == 14074000 &&
          nearest_band(14074100) == 5 && first.elapsed_ms == 0 &&
          first.remaining_ms == 15000 && boundary.elapsed_ms == 0 &&
          ft4_a.remaining_ms == 1 && ft4_b.elapsed_ms == 0 && ft4_b.slot_index == 1 &&

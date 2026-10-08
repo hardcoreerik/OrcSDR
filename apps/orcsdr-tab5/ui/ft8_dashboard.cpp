@@ -200,11 +200,28 @@ size_t unique_calls() {
   return total;
 }
 
-size_t grid_count() {
-  size_t total = 0;
-  const size_t n = std::min(g_snapshot.decode_count, kDecodeCapacity);
-  for (size_t i = 0; i < n; ++i) total += maidenhead_valid(g_snapshot.decodes[i].grid);
-  return total;
+// Distance and bearing from the receiver to a decode's grid centre. False when the receiver position or the grid is unknown.
+bool decode_geometry(const Decode& d, float* km, float* bearing) {
+  if (!g_snapshot.station_known || !maidenhead_valid(d.grid)) return false;
+  GeoPoint there{};
+  if (!maidenhead_center(d.grid, &there)) return false;
+  const GeoPoint here{g_snapshot.station_latitude, g_snapshot.station_longitude, 0};
+  return distance_bearing(here, there, km, bearing);
+}
+
+// The farthest station with a known grid in this session, or false when nothing qualifies.
+bool farthest_heard(float* km, char* call, size_t call_size) {
+  bool found = false;
+  float best = 0.0f;
+  for (size_t i = 0; i < g_snapshot.decode_count; ++i) {
+    float d_km = 0.0f, bearing = 0.0f;
+    if (!decode_geometry(g_snapshot.decodes[i], &d_km, &bearing) || d_km <= best) continue;
+    best = d_km;
+    found = true;
+    std::snprintf(call, call_size, "%s", g_snapshot.decodes[i].callsign);
+  }
+  *km = best;
+  return found;
 }
 
 size_t cq_count() {
@@ -335,17 +352,22 @@ void draw_decodes() {
   chip({224, 104, 190, 58}, "UNIQUE CALLS", value);
   std::snprintf(value, sizeof(value), "%u", static_cast<unsigned>(cq_count()));
   chip({424, 104, 190, 58}, "CQ CALLS", value);
-  std::snprintf(value, sizeof(value), "%u", static_cast<unsigned>(grid_count()));
-  chip({624, 104, 190, 58}, "GRID LOCATORS", value);
+  {
+    float far_km = 0.0f;
+    char far_call[16]{};
+    if (farthest_heard(&far_km, far_call, sizeof(far_call))) std::snprintf(value, sizeof(value), "%.0f km", far_km);
+    else std::snprintf(value, sizeof(value), "%s", g_snapshot.station_known ? "--" : "SET LOCATION");
+    chip({624, 104, 190, 58}, "FARTHEST", value, g_snapshot.station_known ? kGreen : kAmber);
+  }
   chip({824, 104, 204, 58}, "CLOCK", g_snapshot.clock_valid ? "LOCKED" : "NEEDED",
        g_snapshot.clock_valid ? kGreen : kAmber);
   chip({1038, 104, 218, 58}, "DECODER", decoder_name(), decoder_color());
 
   const Rect list{24, 176, 1232, 442};
   frame(list);
-  const int x[] = {42, 142, 212, 292, 372, 476, 1080};
-  const char* headers[] = {"UTC", "SNR", "DT", "DF", "TYPE", "MESSAGE", "GRID"};
-  for (size_t i = 0; i < 7; ++i) text(headers[i], x[i], 198, kCyan, 1, middle_left);
+  const int x[] = {42, 142, 212, 292, 372, 476, 940, 1030, 1150};
+  const char* headers[] = {"UTC", "SNR", "DT", "DF", "TYPE", "MESSAGE", "GRID", "DIST", "BRG"};
+  for (size_t i = 0; i < 9; ++i) text(headers[i], x[i], 198, kCyan, 1, middle_left);
   M5.Display.drawFastHLine(36, 218, 1208, kGrid);
 
   const size_t page_size = 8;
@@ -367,6 +389,16 @@ void draw_decodes() {
     text(kind_name(d->kind), x[4], y, d->kind == DecodeKind::cq ? kGreen : kYellow, 1, middle_left);
     text(d->message, x[5], y, TFT_WHITE, 1, middle_left);
     text(d->grid, x[6], y, maidenhead_valid(d->grid) ? kGreen : kMuted, 1, middle_left);
+    float km = 0.0f, bearing = 0.0f;
+    if (decode_geometry(*d, &km, &bearing)) {
+      std::snprintf(item, sizeof(item), "%.0f km", km);
+      text(item, x[7], y, TFT_WHITE, 1, middle_left);
+      std::snprintf(item, sizeof(item), "%.0f deg", bearing);
+      text(item, x[8], y, TFT_WHITE, 1, middle_left);
+    } else {
+      text("--", x[7], y, kMuted, 1, middle_left);
+      text("--", x[8], y, kMuted, 1, middle_left);
+    }
   }
   button(kClear, "CLEAR");
 }

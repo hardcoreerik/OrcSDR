@@ -84,6 +84,10 @@ SlotClock slot_clock(uint64_t utc_ms, DigitalMode mode = DigitalMode::ft8);
 DecodeKind classify_message(const char* message);
 bool maidenhead_valid(const char* locator);
 bool maidenhead_center(const char* locator, GeoPoint* out);
+// Great-circle distance (km, spherical Earth, R = 6371 km) and initial compass bearing (degrees clockwise from true
+// north, 0-360) from one point to another. Fails on non-finite or out-of-range coordinates. The result is as good as
+// the grid-square centre it is computed from: a 4-character locator is a 2 x 1 degree cell, so roughly +-100 km.
+bool distance_bearing(const GeoPoint& from, const GeoPoint& to, float* distance_km, float* bearing_deg);
 bool parse_cq_fields(const char* message, char* callsign, size_t callsign_size,
                      char* grid, size_t grid_size);
 const char* kind_name(DecodeKind kind);
