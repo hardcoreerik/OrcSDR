@@ -600,7 +600,7 @@ Official WSJT-X `210703_133430.wav`, SHA-256
 
 External `jt9 -8 -F 200 -f 1500`: **14 decodes**.
 OrcSDR default 80 ms / 6.25 Hz grid: **1 decode**, **0 false accepts**,
-latest measured wall time **5.94 s**. Accepted message:
+regression-floor wall time **4.05 s** (prior hosted runs measured 5.15-5.94 s). Accepted message:
 `WM3PEN EA6VQ -09`.
 
 ### FT4
@@ -610,7 +610,7 @@ Official current WSJT Project sample `000000_000002.wav`, SHA-256
 
 External `jt9 --ft4 -d 3`: **19 decodes**.
 OrcSDR default 24 ms / 20.833 Hz grid: **2 decodes**, **0 false accepts**,
-wall time **2.29 s**. Accepted messages:
+regression-floor wall time **1.90 s** (prior survey 2.29 s). Accepted messages:
 - `K4SQC VE3RX RR73`
 - `WD9IGY KX1X 73`
 
@@ -618,3 +618,9 @@ The full tables are in `docs/ft8/REAL_WAV_BENCHMARK.md`.
 
 No SNR is reported for OrcSDR because a calibrated estimator does not exist.
 No task-3 algorithm change has been made against these baselines yet.
+
+
+Task 1 and Task 2 review gate reached at decoder commit
+`768fc18d0944d0025c3236175ef270c0de08f634`, with external regression run
+`37723100513`. Task 3 coverage optimization is intentionally not started
+until owner review.

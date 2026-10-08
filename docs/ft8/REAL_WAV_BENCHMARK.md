@@ -44,8 +44,8 @@ FT8/FT4 survey run is GitHub Actions `37722860388`.
 - Coverage: **1/14 = 7.1%**
 - Accepted OrcSDR messages not present in the 14-message reference list: **0**
 - Current observed false-decode count on this recording: **0**
-- OrcSDR host wall time: **5.94 s** in survey run `37722860388`
-  (an earlier equivalent run measured 5.15 s, showing normal hosted-runner variance)
+- OrcSDR host wall time: **4.05 s** in regression-floor run `37723100513`
+  (earlier equivalent hosted runs measured 5.15 s and 5.94 s, so host timing has normal runner variance)
 - OrcSDR SNR estimator: **not implemented**, so no SNR is fabricated.
 
 The single accepted OrcSDR message is present in the reference output and its
@@ -98,7 +98,7 @@ FT4 baseline:
 - Coverage: **2/19 = 10.5%**
 - Accepted OrcSDR messages not present in the reference list: **0**
 - Current observed false-decode count on this recording: **0**
-- OrcSDR host wall time: **2.29 s**
+- OrcSDR host wall time: **1.90 s** in regression-floor run `37723100513` (the prior survey measured 2.29 s)
 - OrcSDR SNR estimator: **not implemented**.
 
 The other current official FT4 files measured in the same job,

@@ -193,7 +193,7 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 ## 2026-10-07 — frozen real-recording baselines
 
 - Measured the current installed WSJT-X `jt9` executable against the exact same external WAV bytes used by OrcSDR.
-- FT8 `210703_133430.wav`: WSJT-X 14 versus OrcSDR 1, 7.1% coverage, zero observed false accepts, 5.94 s latest host wall time.
-- FT4 `000000_000002.wav`: WSJT-X 19 versus OrcSDR 2, 10.5% coverage, zero observed false accepts, 2.29 s host wall time.
+- FT8 `210703_133430.wav`: WSJT-X 14 versus OrcSDR 1, 7.1% coverage, zero observed false accepts, 4.05 s regression-floor host wall time (5.15-5.94 s on earlier equivalent hosted runs).
+- FT4 `000000_000002.wav`: WSJT-X 19 versus OrcSDR 2, 10.5% coverage, zero observed false accepts, 1.90 s regression-floor host wall time (2.29 s on the prior survey).
 - Added explicit FT8 and FT4 external-WAV CI floors for the currently stable accepted messages.
 - OrcSDR SNR remains unimplemented and is not fabricated in benchmark output.
