@@ -2,6 +2,10 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 — JS8 firmware integration, step 1: sources in the Tab5 build
+
+- The eight device-relevant `js8_*.cpp` files (mode, frame, sync, spectral, demod, frontend, fec, snr) are now in `apps/orcsdr-tab5/main/CMakeLists.txt`. Host-only reconstruction tools stay out of the firmware. The firmware builds (ESP-IDF 5.5.4); the app binary is 4,058,592 bytes both before and after, because nothing references the JS8 code yet and the linker discards it. The real size cost will be measured when the backend lands. Receive-only; no decoder behaviour change; FT8/FT4 untouched.
+
 ## 2026-10-08 — Decode SNR (receive-only estimate, calibrated against signals of known strength)
 
 - Decodes now carry an SNR in the usual weak-signal convention (signal power over noise power in 2500 Hz), shown in the DECODES table, the `ORC_FT8_DECODE` serial line (`snr=`) and a new `snr_db` column in the decode log. It replaces the dash and the `decode_flag_snr_unavailable` flag for accepted decodes. This lifts the earlier "no SNR" rule at the owner's request; no number is shown for a candidate that failed the gates.
