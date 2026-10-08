@@ -13111,6 +13111,10 @@ void open_ft8_dashboard() {
   orcsdr::screens::begin_transition(orcsdr::screens::Id::ft8, millis());
   draw_ft8_dashboard(true);
   orcsdr::screens::finish_transition();
+  // Opening the screen must also put the radio on the selected FT8 band. Without this the receiver stayed on whatever the previous
+  // screen used (for example the FM station from Home at 2.4 MS/s), the audio tap never saw a block, and Live showed "listening" with
+  // no waterfall until a band button was tapped.
+  (void)ft8_select_band(ft8_selected_band());
 }
 
 // OrcDial semantic actions for the FT8 dashboard; the Tab5 resolves them against its own band table and lists.

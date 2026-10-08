@@ -2,6 +2,14 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 - Opening the FT8 dashboard now tunes the radio
+
+- `open_ft8_dashboard()` called nothing that tuned the receiver, so opening FT8 from Home left the radio on the Home station (for example FM at
+  2.4 MS/s). The audio tap saw no block, the decoder sat in "listening" and Live showed no waterfall until a band button was tapped. Serial tests
+  always sent a band command next, which hid the problem. The dashboard now calls `ft8_select_band(ft8_selected_band())` on open, which starts the
+  runtime, tunes the selected band (240 kS/s for the decoder) and applies the mode's dial frequency.
+- Checked on the Tab5: after boot, `FT8 OPEN` alone gives rx_running=1, tap=1, rate_hz=240000, blocks flowing, runtime=decoding, waterfall drawn.
+
 ## 2026-10-08 - JS8 firmware integration, step 3: runtime hook, serial diagnostics, JS8 dials (raw evidence only)
 
 - `ft8_runtime` hosts the JS8 Normal backend beside the FT8/FT4 one. It is allocated in PSRAM (about 700 KB) the first time a JS8 mode is used and
