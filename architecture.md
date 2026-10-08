@@ -1,6 +1,6 @@
 # OrcSDR current architecture
 
-This describes the release branch at `d30a033` on 2026-09-15. Historical plans
+This describes the current source architecture on 2026-10-07. Historical plans
 and validation reports explain how the design arrived here but are not current
 architecture contracts.
 
@@ -34,7 +34,7 @@ Wi-Fi pause/resume orchestration; catalog operations; serial and authenticated
 device commands; SD/IQ/audio transfers; LAN console command dispatch;
 documentation capture; screen transitions; and top-level touch routing.
 
-main.cpp measurement (Git-normalized): 931,416 bytes (~909.6 KiB), 20,269 lines.
+main.cpp measurement (Git-normalized): 946,879 bytes (~924.7 KiB), 20,583 lines.
 
 The measurement uses LF-normalized repository bytes so it is stable across
 Windows and Linux checkouts. The intended modular endpoint—roughly 500 lines of
@@ -48,23 +48,26 @@ screen permission to draw while radio/decoder work continues independently.
 `navigation_service` owns Home/Settings handoff mechanics; feature dashboards
 render snapshots rather than owning receiver state.
 
-ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`, `airband`.
+ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `shortwave`, `documentation`, `cb`, `airband`, `weather`.
 
 Dashboard IDs: `home`, `fm`, `p25`, `adsb`, `shortwave`, `weather`, `cb`, `lora`, `airband`, `marine`, `satellite`, `utilities`, `settings`, `rf_lab`, `wifi_analysis`, `pocsag`, `am`.
 
-The current screen modules include Home, FM, AM, P25, ADS-B, LoRa, POCSAG, RF
-Lab, RF Visualizer, Wi-Fi analysis, Settings, documentation capture, and the
-shared Radio/Scope/Capture surface. Airband has its own dashboard (`airband_*`
-modules: scanner, catalog, runtime, dashboard; see `docs/airband/README.md`) on
-`radio::Band::airband`, using the shared AM demodulator and receiver controls.
-Dashboard catalog entries for Shortwave, Marine, and Satellite route into the
-shared receiver surface; catalog labels do not imply dedicated decoders or
-complete demodulation modes.
+The current screen modules include Home, FM, AM, Weather, P25, ADS-B, LoRa,
+POCSAG, RF Lab, RF Visualizer, Wi-Fi analysis, Settings, documentation capture,
+and the shared Radio/Scope/Capture surface. Weather owns a dedicated five-tab
+presentation/runtime/report layer but reuses the existing WX/NFM receive path;
+opening the Weather screen alone does not tune or take receiver ownership.
+Airband has its own dashboard (`airband_*` modules: scanner, catalog, runtime,
+dashboard; see `docs/airband/README.md`) on `radio::Band::airband`, using the
+shared AM demodulator and receiver controls. Dashboard catalog entries for
+Shortwave, Marine, and Satellite route into shared/experimental receiver
+surfaces; catalog labels do not imply dedicated decoders or complete
+demodulation modes.
 
 ## Receiver and DSP ownership
 
-- `radio_session` serializes receiver ownership and generation changes.
-- `scan_engine` supplies bounded scan behavior shared by supported modes.
+- `radio_session` serializes receiver ownership and generation changes. Explicit Weather RF work uses `Owner::weather`; the legacy `Band::wx` owner mapping remains `Owner::radio` for older callers.
+- `scan_engine` supplies bounded scan behavior shared by supported modes, including the seven-channel Weather Radio scan. A completed Weather scan caches its strongest relative-dBFS observation and stops; continuous listening is a separate explicit action.
 - `fm_dashboard`, `am_dashboard`, `p25_dashboard`, `adsb_dashboard`,
   `lora_dashboard`, and `pocsag_dashboard` own presentation for their modes.
 - Protocol/DSP cores hold host-testable decode logic where already separated.
