@@ -153,8 +153,6 @@ void draw_radar_base() {
   }
   for (int ring = 1; ring <= 4; ++ring)
     g_radar_base.drawCircle(cx, cy, (radius - 18) * ring / 4, 0x2382);   // true quarters of the range
-  g_radar_base.drawFastHLine(cx - radius, cy, radius * 2, 0x2382);
-  g_radar_base.drawFastVLine(cx, cy - radius, radius * 2, 0x2382);
   g_radar_base.setTextDatum(middle_center);
   g_radar_base.setTextSize(2);
   g_radar_base.setTextColor(TFT_WHITE);
