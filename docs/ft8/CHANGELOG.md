@@ -188,3 +188,12 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - The older user-guide FT4 tutorial filename `200514_182053.wav` currently returns HTTP 404 from the public SourceForge sample path.
 - Switched the reproducible external benchmark to currently published official WSJT Project FT4 sample `190106_000115.wav`.
 - Both WSJT-X `jt9 --ft4 -d 3` and OrcSDR consume the same downloaded WAV; no third-party sample bytes are committed to the repository.
+
+
+## 2026-10-07 — frozen real-recording baselines
+
+- Measured the current installed WSJT-X `jt9` executable against the exact same external WAV bytes used by OrcSDR.
+- FT8 `210703_133430.wav`: WSJT-X 14 versus OrcSDR 1, 7.1% coverage, zero observed false accepts, 5.94 s latest host wall time.
+- FT4 `000000_000002.wav`: WSJT-X 19 versus OrcSDR 2, 10.5% coverage, zero observed false accepts, 2.29 s host wall time.
+- Added explicit FT8 and FT4 external-WAV CI floors for the currently stable accepted messages.
+- OrcSDR SNR remains unimplemented and is not fabricated in benchmark output.

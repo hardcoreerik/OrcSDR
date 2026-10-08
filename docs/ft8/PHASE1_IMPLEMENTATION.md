@@ -587,3 +587,34 @@ file was edited by this rebase.
 
 The combined `tools/test-ft8.sh` now runs the UI seam tests and the native
 decoder suites in one optimized + sanitizer run.
+
+
+## Task 2 — measured external reference baseline
+
+The first optimization baseline is frozen before task-3 coverage work.
+
+### FT8
+
+Official WSJT-X `210703_133430.wav`, SHA-256
+`9feb99c275770a6618538026da7decc6b09eb6cf63121e5168fa86dcdf00c2f5`.
+
+External `jt9 -8 -F 200 -f 1500`: **14 decodes**.
+OrcSDR default 80 ms / 6.25 Hz grid: **1 decode**, **0 false accepts**,
+latest measured wall time **5.94 s**. Accepted message:
+`WM3PEN EA6VQ -09`.
+
+### FT4
+
+Official current WSJT Project sample `000000_000002.wav`, SHA-256
+`d9e91fa04ba138a7b9f41b4103823c77ca1c3a9775101f6b14d60935bcd3813b`.
+
+External `jt9 --ft4 -d 3`: **19 decodes**.
+OrcSDR default 24 ms / 20.833 Hz grid: **2 decodes**, **0 false accepts**,
+wall time **2.29 s**. Accepted messages:
+- `K4SQC VE3RX RR73`
+- `WD9IGY KX1X 73`
+
+The full tables are in `docs/ft8/REAL_WAV_BENCHMARK.md`.
+
+No SNR is reported for OrcSDR because a calibrated estimator does not exist.
+No task-3 algorithm change has been made against these baselines yet.
