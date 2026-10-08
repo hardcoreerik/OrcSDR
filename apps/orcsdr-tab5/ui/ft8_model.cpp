@@ -43,6 +43,18 @@ bool is_grid4(const char* value) {
 
 size_t band_count() { return sizeof(kBands) / sizeof(kBands[0]); }
 
+namespace {
+// FT4 dial frequencies, in the same order as kBands (60 m has no FT4 allocation here and keeps the FT8 dial).
+constexpr uint32_t kFt4DialHz[] = {1840000,  3575000,  5357000,  7047500,  10140000, 14080000,
+                                   18104000, 21140000, 24919000, 28180000, 50318000, 144170000};
+static_assert(sizeof(kFt4DialHz) / sizeof(kFt4DialHz[0]) == sizeof(kBands) / sizeof(kBands[0]), "one FT4 dial per band");
+}  // namespace
+
+uint32_t mode_dial_hz(size_t band_index, DigitalMode mode) {
+  if (band_index >= band_count()) return 0;
+  return mode == DigitalMode::ft4 ? kFt4DialHz[band_index] : kBands[band_index].dial_hz;
+}
+
 const BandPreset* band(size_t index) {
   return index < band_count() ? &kBands[index] : nullptr;
 }
@@ -312,6 +324,9 @@ bool self_check() {
   GeoPoint fn42{};
   char call[16]{}, grid[9]{};
   float km = 0.0f, brg = 0.0f;
+  const bool dials_ok = mode_dial_hz(3, DigitalMode::ft8) == 7074000 && mode_dial_hz(3, DigitalMode::ft4) == 7047500 &&
+                        mode_dial_hz(5, DigitalMode::ft4) == 14080000 && mode_dial_hz(99, DigitalMode::ft8) == 0 &&
+                        mode_dial_hz(5, DigitalMode::js8_normal) == 14074000;
   const GeoPoint origin{0.0f, 0.0f, 0}, east{0.0f, 90.0f, 0}, pole{90.0f, 0.0f, 0}, west{0.0f, -90.0f, 0};
   const bool geometry_ok =
       distance_bearing(origin, east, &km, &brg) && std::fabs(km - 10007.5f) < 5.0f && std::fabs(brg - 90.0f) < 0.01f &&
@@ -319,7 +334,7 @@ bool self_check() {
       distance_bearing(origin, west, &km, &brg) && std::fabs(brg - 270.0f) < 0.01f &&
       distance_bearing(origin, origin, &km, &brg) && km == 0.0f &&
       !distance_bearing(origin, GeoPoint{91.0f, 0.0f, 0}, &km, &brg);
-  return geometry_ok && band_count() >= 10 && band(5) && band(5)->dial_hz == 14074000 &&
+  return dials_ok && geometry_ok && band_count() >= 10 && band(5) && band(5)->dial_hz == 14074000 &&
          nearest_band(14074100) == 5 && first.elapsed_ms == 0 &&
          first.remaining_ms == 15000 && boundary.elapsed_ms == 0 &&
          ft4_a.remaining_ms == 1 && ft4_b.elapsed_ms == 0 && ft4_b.slot_index == 1 &&

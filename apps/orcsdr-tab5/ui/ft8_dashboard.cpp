@@ -152,7 +152,7 @@ void draw_header() {
   char label[48];
   if (preset && mode_has_band_table(g_snapshot.mode)) {
     std::snprintf(label, sizeof(label), "%s  %.3f MHz", preset->label,
-                  static_cast<double>(preset->dial_hz) / 1e6);
+                  static_cast<double>(mode_dial_hz(g_snapshot.selected_band, g_snapshot.mode)) / 1e6);
   } else {
     std::snprintf(label, sizeof(label), preset ? "BAND TABLE PENDING" : "BAND --");
   }
@@ -290,7 +290,7 @@ void draw_live() {
   const BandPreset* preset = band(g_snapshot.selected_band);
   char value[48];
   const bool have_table = preset != nullptr && mode_has_band_table(g_snapshot.mode);
-  std::snprintf(value, sizeof(value), have_table ? "%.3f MHz" : "--", have_table ? preset->dial_hz / 1e6 : 0.0);
+  std::snprintf(value, sizeof(value), have_table ? "%.3f MHz" : "--", have_table ? mode_dial_hz(g_snapshot.selected_band, g_snapshot.mode) / 1e6 : 0.0);
   chip({24, 104, 212, 58}, "DIAL", value, TFT_WHITE);
   chip({246, 104, 150, 58}, "MODE", mode_name(g_snapshot.mode),
        mode_experimental(g_snapshot.mode) ? kAmber : TFT_WHITE);

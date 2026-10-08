@@ -28,7 +28,19 @@ void initialize(bool previously_established) {
   m5::rtc_datetime_t value{};
   const bool calendar_valid = M5.Rtc.isEnabled() && M5.Rtc.getDateTime(&value) &&
                               value.date.year >= 2024 && value.date.year <= 2099;
-  if (previously_established && calendar_valid) M5.Rtc.setSystemTimeFromRtc();
+  if (previously_established && calendar_valid) {
+    // The RTC only has one-second resolution, so reading it at a random moment leaves the system clock behind by up to a
+    // second. FT8 needs well under half a second: wait for the RTC's seconds to tick (at most about 1.1 s at boot) and
+    // take the time right then, which puts the system clock within a few milliseconds of the RTC's own tick.
+    m5::rtc_datetime_t tick{};
+    const uint8_t first_second = value.time.seconds;
+    const uint32_t started = millis();
+    while (millis() - started < 1100u) {
+      if (M5.Rtc.getDateTime(&tick) && tick.time.seconds != first_second) break;
+      delay(1);
+    }
+    M5.Rtc.setSystemTimeFromRtc();
+  }
   g_wallclock_valid.store(previously_established && calendar_valid &&
                               valid_epoch(time(nullptr)),
                           std::memory_order_release);

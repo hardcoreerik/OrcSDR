@@ -239,3 +239,9 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Measured on the Tab5: about 3.6 s of decode per 15 s FT8 slot and about 3.4 ms of tap per 6.8 ms IQ block; first real decodes (20 in about 3.5 minutes on 40 m).
   Details, the dial-offset and clock findings, and the gain finding are in `NATIVE_BINDING.md`.
 - No transmit path was added. SNR is not reported (no calibrated estimator).
+
+## 2026-10-08 — Boot clock alignment, per-mode dial frequencies, corrected gain finding
+
+- `time_service::initialize` waits for the hardware RTC's seconds to tick before taking the system time, so a cold boot lands within milliseconds of the RTC instead of up to a second behind (measured: -14 ms against the PC after a cold boot, was -2.5 s). Costs at most about 1.1 s at boot.
+- `mode_dial_hz()`: FT4 has its own dial frequencies (e.g. 40 m 7.0475 MHz, 20 m 14.080 MHz); changing mode retunes, and the dashboard, serial status and OrcDial packet show the active mode's dial. FT4 runs on the device (7.5 s slots, about 1.5 s decode) but has not yet decoded a live signal.
+- Corrected `NATIVE_BINDING.md`: gain was not the cause of the early no-decode result (a dial-offset bug was); decodes appear at every manual gain from 0 to 45 dB and the tap level does not change, so no gain policy is claimed.

@@ -79,6 +79,9 @@ struct GeoPoint {
 };
 
 size_t band_count();
+// The dial (USB) frequency to tune for a band in a given mode: FT4 sits on its own frequencies, FT8 on the band table's. JS8 is
+// disabled, so it falls back to the FT8 dial. Returns 0 for an invalid band.
+uint32_t mode_dial_hz(size_t band_index, DigitalMode mode);
 const BandPreset* band(size_t index);
 size_t nearest_band(uint32_t dial_hz);
 SlotClock slot_clock(uint64_t utc_ms, DigitalMode mode = DigitalMode::ft8);
