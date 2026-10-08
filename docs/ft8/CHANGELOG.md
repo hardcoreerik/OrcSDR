@@ -344,3 +344,11 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Added `docs/js8/PROTOCOL_FACTS.md`, `RECONSTRUCTION.md`, `INTEGRATION.md`, `STATUS.md`, and fixture provenance scaffolding.
 - Exact tone-bit mapping, FEC, CRC and upper-layer packing remain explicitly blocked pending independent reconstruction from owner/reference captures; the module cannot emit a user-visible JS8 decode yet.
 - Added optimized and ASan/UBSan JS8 host suites to `tools/test-ft8.sh`. No firmware binding, UI, transmit path, PTT, CAT or flashing work was added.
+
+
+## 2026-10-08 — JS8 FEC reconstruction tooling
+
+- Added host-only `tools/js8-gf2.hpp` and `tools/js8-fec-reconstruct.cpp` to derive a binary code-space rank and orthogonal parity-check basis from observed 174-bit JS8 channel words.
+- Added a deterministic synthetic-subspace test, including rejection of a vector outside the learned code space; optimized and ASan/UBSan runs pass in the sandbox.
+- The tool contains no copied JS8 FEC matrix and makes no claim that JS8's FEC has been recovered yet. Real use is blocked on captured frames and an independently established tone-to-bit mapping.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, transmit path, PTT, CAT or flashing work changed.

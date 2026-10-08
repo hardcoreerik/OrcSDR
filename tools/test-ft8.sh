@@ -63,6 +63,11 @@ run_suite js8_frame_tests \
   apps/orcsdr-tab5/ui/js8_mode.cpp \
   apps/orcsdr-tab5/ui/js8_frame.cpp
 
+run_suite js8_fec_reconstruct_tests \
+  tests/js8_fec_reconstruct_tests.cpp
+
+g++ "${common[@]}" -O2 tools/js8-fec-reconstruct.cpp -o "$build_dir/js8-fec-reconstruct"
+
 run_suite ft8_sync_tests \
   tests/ft8_sync_tests.cpp \
   apps/orcsdr-tab5/ui/ft8_mode.cpp \

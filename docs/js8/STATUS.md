@@ -23,3 +23,10 @@ Blocked pending owner/reference captures and reconstruction:
 Fast, JS8 40 and Slow timing/bandwidth are recorded from public documentation, but their exact sync patterns remain disabled until independently measured. JS8 60 remains experimental.
 
 No firmware binding, UI, transmit path, PTT, CAT, scheduler or flashing work was added.
+
+
+## Reconstruction tool ready
+
+The host-only `js8-fec-reconstruct` tool is now ready for the PC capture corpus. It does not contain an external FEC matrix. It derives the GF(2) code-space rank and parity-check basis from supplied 174-bit observations.
+
+Current blocker remains real/controlled JS8 frames plus an independently established tone-to-bit mapping.

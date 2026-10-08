@@ -90,3 +90,18 @@ Every report identifies the fixture hashes assigned to each set.
 ## Current blocker
 
 The exact tone labeling, FEC and CRC have not yet been independently reconstructed. The current module intentionally stops at the 58 extracted Normal data tones and cannot output a decoded message.
+
+
+## Reconstruction tooling checkpoint
+
+`tools/js8-fec-reconstruct.cpp` now accepts one observed 174-bit channel word per line and computes:
+- GF(2) rank of the observed codeword space;
+- nullity;
+- an orthogonal parity-check basis;
+- parity validation for every supplied observation.
+
+`--emit-h` prints the independently derived parity basis as 174-bit rows.
+
+The implementation is tested against a known four-dimensional synthetic subspace embedded in the 174-bit container. This validates the linear-algebra machinery only; it does **not** claim that any JS8 FEC definition has been recovered yet.
+
+For real reconstruction, tone-to-bit mapping must be established first. Only then may captured codewords be fed to this tool. The intended acceptance point is rank 87 with a stable 87-dimensional orthogonal complement plus held-out-frame validation; that expected rank is a reconstruction hypothesis until measurements establish it.
