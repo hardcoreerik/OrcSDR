@@ -64,6 +64,12 @@ The suite builds optimized binaries and AddressSanitizer/UndefinedBehaviorSaniti
 - [FT8 RX architecture](FT8_RX_ARCHITECTURE.md)
 - [FT8 implementation plan](FT8_IMPLEMENTATION_PLAN.md)
 - [FT8 OrcDial design](FT8_ORCDIAL_DESIGN.md)
+- [Native decoder research](DECODER_RESEARCH.md)
+- [Multi-mode profile design](MODE_PROFILE_DESIGN.md)
+- [Decoder seam proposals](DECODER_SEAM_PROPOSALS.md)
+- [12 kHz USB analysis tap proposal](AUDIO_TAP_PROPOSAL.md)
+- [Native decoder implementation notebook](PHASE1_IMPLEMENTATION.md)
+- [Real WAV reference benchmark](REAL_WAV_BENCHMARK.md)
 
 ## Multi-mode seam (FT8 / FT4 / JS8Call)
 

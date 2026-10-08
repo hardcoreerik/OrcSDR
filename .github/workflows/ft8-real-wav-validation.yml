@@ -1,0 +1,40 @@
+name: FT8 External WAV Validation
+
+on:
+  push:
+    branches:
+      - codex/ft8-native-decoder-research
+    paths:
+      - tools/ft8-wav-benchmark.cpp
+      - tools/benchmark-ft8-wav.sh
+      - apps/orcsdr-tab5/ui/ft8_*.cpp
+      - apps/orcsdr-tab5/ui/ft8_*.hpp
+      - .github/workflows/ft8-real-wav-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wsjtx-reference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Download official WSJT-X FT8 receive sample
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 4 --retry-delay 2             -o /tmp/210703_133430.wav             https://downloads.sourceforge.net/project/wsjt/samples/FT8/210703_133430.wav
+          echo "9feb99c275770a6618538026da7decc6b09eb6cf63121e5168fa86dcdf00c2f5  /tmp/210703_133430.wav"             | sha256sum -c -
+          file /tmp/210703_133430.wav
+      - name: Run OrcSDR native FT8 receive benchmark
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          /usr/bin/time -f 'FT8_BENCH_WALL_SECONDS=%e' \
+            bash tools/benchmark-ft8-wav.sh /tmp/210703_133430.wav 2 1 \
+            | tee /tmp/orcsdr-ft8-bench.txt
+          decoded="$(sed -n 's/.* decoded=\\([0-9][0-9]*\\).*/\\1/p' /tmp/orcsdr-ft8-bench.txt | head -n1)"
+          test -n "$decoded"
+          test "$decoded" -ge 1
+          grep -F 'text=WM3PEN EA6VQ -09' /tmp/orcsdr-ft8-bench.txt
