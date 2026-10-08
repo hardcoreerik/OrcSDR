@@ -142,6 +142,8 @@ void draw_forecast() {
          g_snapshot.online_policy == OnlinePolicy::disabled ? kGreen : kYellow);
   text("Internet is enrichment only; Weather works without it.",
        48, 500, kGreen, 2, middle_left);
+  text("Foundation stores policy only; no online provider runs yet.",
+       48, 540, kMuted, 1, middle_left);
 }
 void draw_map() {
   card(24, 154, 1232, 448, "ORCMAPS WEATHER CONTEXT");
@@ -215,9 +217,11 @@ void draw_reports() {
   else
     text("No Weather reports saved yet.", 48, 270, kMuted, 2, middle_left);
   button(48, 340, 310, 72, "SAVE SNAPSHOT",
-         g_snapshot.sd_ready ? kCyan : kMuted);
+         g_snapshot.sd_ready && !g_snapshot.rf_running ? kCyan : kMuted);
   text("Saves JSON + CSV + HTML + SHA-256 manifest on SD.", 48, 455, TFT_WHITE, 1, middle_left);
   text("Raw IQ is never included by default.", 48, 490, kGreen, 1, middle_left);
+  if (g_snapshot.rf_running)
+    text("STOP RF before SD report save.", 48, 525, kYellow, 1, middle_left);
 }
 void draw_body() {
   M5.Display.fillRect(0, kHeaderH, 1280, kTabsY - kHeaderH, kBg);

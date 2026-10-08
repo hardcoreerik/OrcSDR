@@ -6646,8 +6646,15 @@ void handle_weather_dashboard_action(const orcsdr::weather::Action& action) {
       strlcpy(weather_status_text, "Weather RF stopped.", sizeof(weather_status_text));
       break;
     case Kind::save_snapshot: {
+      const auto snapshot = weather_dashboard_snapshot();
+      if (snapshot.rf_running) {
+        strlcpy(weather_status_text,
+                "Stop Weather RF before saving an SD report.",
+                sizeof(weather_status_text));
+        break;
+      }
       orcsdr::weather::ReportSaveResult result{};
-      if (orcsdr::weather::runtime_save_snapshot(weather_dashboard_snapshot(), &result))
+      if (orcsdr::weather::runtime_save_snapshot(snapshot, &result))
         std::snprintf(weather_status_text, sizeof(weather_status_text),
                       "Saved %s", result.id);
       else

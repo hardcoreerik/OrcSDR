@@ -129,8 +129,9 @@ bool save_report_bundle(storage::FileSystem& fs, const ReportSnapshot& report,
 
   char id[40]{};
   if (report.wallclock_valid && report.created_utc) {
-    std::snprintf(id, sizeof(id), "weather-%lu",
-                  static_cast<unsigned long>(report.created_utc));
+    std::snprintf(id, sizeof(id), "weather-%lu-%lu",
+                  static_cast<unsigned long>(report.created_utc),
+                  static_cast<unsigned long>(report.created_uptime_ms));
   } else {
     std::snprintf(id, sizeof(id), "weather-up-%lu",
                   static_cast<unsigned long>(report.created_uptime_ms));
