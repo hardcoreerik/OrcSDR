@@ -508,23 +508,51 @@ void fit_map_view() {
   g_map_view.lat_max = std::max(-90.0f + lat_span, std::min(lat_mid + lat_span / 2.0f, 90.0f));
 }
 
-// Offline world outline (coast and country borders) in the fitted view; points are 0.01 degree units.
+// Offline world basemap in the fitted view, styled like the OrcMaps dark theme: slate land on navy water, thin borders.
+// Points are 0.01 degree units. Land is filled with an even-odd scanline pass; polygons never cross the antimeridian.
 void draw_world(int left, int top, int width, int height) {
-  constexpr uint16_t kCoast = 0x4E7F, kBorder = 0x2A6B;
+  constexpr uint16_t kWater = 0x1105, kLand = 0x1082, kCoast = 0x2A2A, kBorder = 0x2124;
+  static int16_t sx[4096], sy[4096];   // projected points for this frame
+  const size_t points = std::min<size_t>(kWorldPointCount, 4096);
+  for (size_t i = 0; i < points; ++i) {
+    int x = 0, y = 0;
+    map_point(GeoPoint{kWorldPoints[2 * i + 1] * 0.01f, kWorldPoints[2 * i] * 0.01f, 0}, &x, &y);
+    sx[i] = static_cast<int16_t>(std::max(-30000, std::min(30000, x)));
+    sy[i] = static_cast<int16_t>(std::max(-30000, std::min(30000, y)));
+  }
+  M5.Display.fillRect(left, top, width, height, kWater);
   M5.Display.setClipRect(left, top, width, height);
+  for (int y = top; y < top + height; ++y) {
+    int xs[96];
+    int count = 0;
+    const int yc = y * 2 + 1;   // sample at the pixel centre in half-pixel units
+    for (size_t s = 0; s < kWorldSegmentCount && count < 94; ++s) {
+      const WorldSegment& seg = kWorldSegments[s];
+      if (seg.kind != 0) continue;
+      for (uint16_t i = 0; i + 1 < seg.count && count < 94; ++i) {
+        const size_t a = seg.start + i, b = a + 1;
+        const int y0 = sy[a] * 2, y1 = sy[b] * 2;
+        if ((y0 <= yc) == (y1 <= yc)) continue;
+        xs[count++] = sx[a] + static_cast<int>(static_cast<int32_t>(sx[b] - sx[a]) * (yc - y0) / (y1 - y0));
+      }
+    }
+    for (int i = 1; i < count; ++i) {   // insertion sort: few crossings per row
+      const int v = xs[i];
+      int j = i - 1;
+      while (j >= 0 && xs[j] > v) { xs[j + 1] = xs[j]; --j; }
+      xs[j + 1] = v;
+    }
+    for (int i = 0; i + 1 < count; i += 2) {
+      const int x0 = std::max(left, xs[i]), x1 = std::min(left + width - 1, xs[i + 1]);
+      if (x1 >= x0) M5.Display.drawFastHLine(x0, y, x1 - x0 + 1, kLand);
+    }
+  }
   for (size_t s = 0; s < kWorldSegmentCount; ++s) {
     const WorldSegment& seg = kWorldSegments[s];
-    int px = 0, py = 0;
-    float prev_lon = 0.0f;
-    for (uint16_t i = 0; i < seg.count; ++i) {
-      const float lon = kWorldPoints[2 * (seg.start + i)] * 0.01f;
-      const float lat = kWorldPoints[2 * (seg.start + i) + 1] * 0.01f;
-      int x = 0, y = 0;
-      map_point(GeoPoint{lat, lon, 0}, &x, &y);
-      if (i > 0 && std::fabs(lon - prev_lon) < 180.0f) M5.Display.drawLine(px, py, x, y, seg.kind == 0 ? kCoast : kBorder);
-      px = x;
-      py = y;
-      prev_lon = lon;
+    for (uint16_t i = 0; i + 1 < seg.count; ++i) {
+      const size_t a = seg.start + i, b = a + 1;
+      if (a >= points || b >= points) break;
+      M5.Display.drawLine(sx[a], sy[a], sx[b], sy[b], seg.kind == 0 ? kCoast : kBorder);
     }
   }
   M5.Display.clearClipRect();
@@ -541,7 +569,7 @@ void draw_map() {
     text(scale, 890, 124, kMuted, 1, middle_right);
   }
   constexpr int left = 50, top = 158, width = 824, height = 420;
-  M5.Display.fillRect(left, top, width, height, 0x0021);
+  draw_world(left, top, width, height);
   M5.Display.drawRect(left, top, width, height, kGrid);
   const float want = g_map_view.lon_span / 6.0f;   // about six grid columns across the view
   float step = 30.0f;
@@ -558,7 +586,6 @@ void draw_map() {
     map_point(GeoPoint{lat, 0.0f, 0}, &x, &y);
     M5.Display.drawFastHLine(left, y, width, kGrid);
   }
-  draw_world(left, top, width, height);
   const size_t n = std::min(g_snapshot.decode_count, kDecodeCapacity);
   for (size_t i = 0; i < n; ++i) {
     const Decode& d = g_snapshot.decodes[i];
@@ -587,9 +614,9 @@ void draw_map() {
     if (!d || !maidenhead_valid(d->grid)) continue;
     const int y = 166 + static_cast<int>(row) * 61;
     M5.Display.drawRoundRect(942, y, 298, 50, 7, kGrid);
-    text(d->grid, 956, y + 17, kGreen, 1, middle_left);
-    text(d->callsign[0] ? d->callsign : "--", 1030, y + 17, TFT_WHITE, 1, middle_left);
-    text(kind_name(d->kind), 956, y + 38, kMuted, 1, middle_left);
+    text(d->grid, 956, y + 15, kGreen, 1, middle_left);
+    text(d->callsign[0] ? d->callsign : "--", 1050, y + 15, TFT_WHITE, 1, middle_left);
+    text(kind_name(d->kind), 956, y + 37, kMuted, 0, middle_left);
     ++row;
   }
   if (row == 0) text("No decoded locators yet", cx(recent), 280, kMuted, 1);
@@ -726,20 +753,20 @@ void draw_conditions_panel() {
     return;
   }
   char line[64];
-  std::snprintf(line, sizeof(line), "%u stations with a grid", static_cast<unsigned>(c.stations));
+  std::snprintf(line, sizeof(line), "%u station%s with a grid", static_cast<unsigned>(c.stations), c.stations == 1 ? "" : "s");
   text(line, panel.x + 16, panel.y + 52, TFT_WHITE, 1, middle_left);
   std::snprintf(line, sizeof(line), "FARTHEST  %.0f km  %s", static_cast<double>(c.farthest_km), c.farthest_call);
   text(line, panel.x + 16, panel.y + 80, kGreen, 1, middle_left);
   std::snprintf(line, sizeof(line), "%.0f deg  (%s)", static_cast<double>(c.farthest_bearing_deg), sector_name(bearing_sector(c.farthest_bearing_deg)));
-  text(line, panel.x + 16, panel.y + 100, kMuted, 1, middle_left);
+  text(line, panel.x + 16, panel.y + 108, kMuted, 0, middle_left);
   std::snprintf(line, sizeof(line), "MEDIAN  %.0f km", static_cast<double>(c.median_km));
-  text(line, panel.x + 16, panel.y + 128, TFT_WHITE, 1, middle_left);
+  text(line, panel.x + 16, panel.y + 138, TFT_WHITE, 1, middle_left);
 
   uint16_t peak = 1;
   for (size_t s = 0; s < kBearingSectors; ++s) peak = std::max(peak, c.sector_counts[s]);
-  text("DIRECTION OF SIGNALS", panel.x + 16, panel.y + 166, kCyan, 1, middle_left);
+  text("DIRECTION OF SIGNALS", panel.x + 16, panel.y + 174, kCyan, 1, middle_left);
   for (size_t s = 0; s < kBearingSectors; ++s) {
-    const int y = panel.y + 192 + static_cast<int>(s) * 32;
+    const int y = panel.y + 198 + static_cast<int>(s) * 31;
     text(sector_name(s), panel.x + 16, y + 10, kMuted, 1, middle_left);
     const int width = static_cast<int>(static_cast<float>(c.sector_counts[s]) / static_cast<float>(peak) * 260.0f);
     if (width > 0) M5.Display.fillRect(panel.x + 56, y, width, 20, kGreen);
