@@ -2,6 +2,14 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 - Boot-loop fix (map arrays to PSRAM) and Live decode-list spacing
+
+- The map's 16 KB of projection arrays in `ft8_dashboard.cpp` (`draw_world`) were static internal RAM. They now live in one PSRAM block
+  allocated on first use. Internal RAM is the scarce resource on the Tab5: the largest internal DMA block after boot rose from about 36 KB
+  to 38 KB with 52 KB free, and an 8 KB static added later by the JS8 runtime hook (see the JS8 entry) boot-looped the device until this
+  headroom existed.
+- The Live tab's "Latest decodes" list drew the UTC time over the SNR value at the larger font; the SNR, DT, DF and message columns moved right.
+
 ## 2026-10-08 — JS8 firmware integration, step 2: native JS8 receive backend (no decodes yet)
 
 - New `js8_native_backend.{hpp,cpp}` (namespace `orcsdr::js8::native`), same lifecycle as the FT8/FT4 backend: `begin(12000, submode, Config, Memory)`, `begin_slot`, `offer_audio`, `finish_slot`, `stats`, `reset`. Large buffers (slot audio 360 KB, energy grid about 330 KB) come from the caller's allocator (PSRAM on the Tab5); no heap use while decoding.

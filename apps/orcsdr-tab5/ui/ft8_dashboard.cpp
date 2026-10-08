@@ -7,6 +7,7 @@
 #include "focus_nav.hpp"
 
 #include <M5Unified.h>
+#include <esp_heap_caps.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -273,10 +274,10 @@ void draw_live_rows() {
   frame(list, kGrid);
   text("LATEST DECODES", 42, 504, kCyan, 1, middle_left);
   text("UTC", 42, 530, kMuted, 1, middle_left);
-  text("SNR", 146, 530, kMuted, 1, middle_left);
-  text("DT", 220, 530, kMuted, 1, middle_left);
-  text("DF", 300, 530, kMuted, 1, middle_left);
-  text("MESSAGE", 395, 530, kMuted, 1, middle_left);
+  text("SNR", 190, 530, kMuted, 1, middle_left);
+  text("DT", 262, 530, kMuted, 1, middle_left);
+  text("DF", 346, 530, kMuted, 1, middle_left);
+  text("MESSAGE", 440, 530, kMuted, 1, middle_left);
   for (size_t row = 0; row < 3; ++row) {
     const Decode* d = decode_newest(row);
     if (!d) break;
@@ -286,12 +287,12 @@ void draw_live_rows() {
     text(utc, 42, y, TFT_WHITE, 1, middle_left);
     if (d->flags & decode_flag_snr_unavailable) std::snprintf(value, sizeof(value), "--");
     else std::snprintf(value, sizeof(value), "%+d", d->snr_db);
-    text(value, 146, y, TFT_WHITE, 1, middle_left);
+    text(value, 190, y, TFT_WHITE, 1, middle_left);
     std::snprintf(value, sizeof(value), "%+.1f", d->dt_ms / 1000.0);
-    text(value, 220, y, TFT_WHITE, 1, middle_left);
+    text(value, 262, y, TFT_WHITE, 1, middle_left);
     std::snprintf(value, sizeof(value), "%u", d->audio_hz);
-    text(value, 300, y, TFT_WHITE, 1, middle_left);
-    text(d->message, 395, y, d->kind == DecodeKind::cq ? kGreen : TFT_WHITE, 1, middle_left);
+    text(value, 346, y, TFT_WHITE, 1, middle_left);
+    text(d->message, 440, y, d->kind == DecodeKind::cq ? kGreen : TFT_WHITE, 1, middle_left);
   }
 }
 
@@ -539,7 +540,11 @@ void fit_map_view() { g_map_view = MapView{}; }
 // Draws on `d`, whose origin is the screen point (sub_x, sub_y), so the whole map can be composed off-screen.
 void draw_world(lgfx::LovyanGFX& d, int sub_x, int sub_y, int left, int top, int width, int height) {
   constexpr uint16_t kWater = 0x1105, kLand = 0x1082, kCoast = 0x2A2A, kBorder = 0x2124;
-  static int16_t sx[4096], sy[4096];   // projected points for this frame
+  // Projected points for this frame, 16 KB: kept in PSRAM (allocated once) because internal RAM is scarce.
+  static int16_t* projected = static_cast<int16_t*>(heap_caps_malloc(2u * 4096u * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (projected == nullptr) return;
+  int16_t* const sx = projected;
+  int16_t* const sy = projected + 4096;
   const size_t points = std::min<size_t>(kWorldPointCount, 4096);
   for (size_t i = 0; i < points; ++i) {
     int x = 0, y = 0;
