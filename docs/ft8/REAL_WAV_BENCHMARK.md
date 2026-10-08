@@ -254,3 +254,26 @@ adds nothing on these recordings: coverage is saturated at 6 FT8 and 3 FT4, and 
 (demod, LDPC, CRC) stays at 16 attempts, about 33 ms host; the refinement stage is the cost driver. These are two recordings: the saturation could differ on busier bands, so K should stay a configurable budget, not a tuned constant.
 
 Recommended next single change: experiment 4 as ordered is not yet justified by candidate capacity; the remaining FT8 misses are weak signals with strong sync (soft-metric quality), so next is experiment 3 of the original list, soft metrics (one change: for example improved LLR scaling), measured on the same corpus.
+
+## Task 3, experiment 4: soft metrics (negative result) and an oracle-position test
+
+Setup: refined 2,1 pipeline, K=64, G=16 (6 FT8 and 3 FT4 accepted, the experiment-3 result). One change at a time, via `demod::Config::metric` (default `linear_symbol`, unchanged production behaviour) and `tools/ft8-wav-refine.cpp`.
+
+| change | FT8 accepted | FT4 accepted | false accepts |
+|---|---:|---:|---:|
+| `linear_symbol` (production), LLR gain 0.5 / 1 / 2 / 4 | 6 | 3 | 0 |
+| `amplitude_symbol` (sqrt of energy), gain 0.5 / 1 / 2 / 4 | 6 | 3 | 0 |
+| `linear_frame` (frame-wide noise scale), any gain | 5 | 3 | 0 |
+| `amplitude_frame`, any gain | 5 | 3 | 0 |
+| `lse_amplitude` (log-sum-exp instead of max-log), gain 0.5 / 2 / 3 / 4 / 6 / 8 | 6 | 3 | 0 |
+| `lse_amplitude`, gain 1 | 5 | 3 | 0 |
+| LDPC iterations 20 / 50 / 100 x normalization 0.7 / 0.8 / 0.9 / 1.0 (12 settings) | 6 | 3 | 0 |
+
+No variant beats the production metric; frame-wide normalization is slightly worse on FT8. LLR gain and LDPC settings do not matter (the normalized min-sum decoder is scale-insensitive). No default was changed.
+
+Oracle-position test (`--oracle`): each WSJT-X reference signal is placed at its reported time and frequency, refined locally, and sent through the unchanged gates. This separates search misses from demodulation/FEC limits.
+FT8 (13 in recording): 7 accepted at the true position (the search finds 6; the extra one, `XE2X HA2NP RR73`, is a search/ranking miss with refined sync 0.24); 1 CRC-valid but unparsed (`A92EE F5PSR -14`, the callsign encoder bug);
+5 fail LDPC at the true position (refined sync 0.42, 0.22, 0.07, -0.12, -0.29), so they are at or below what this noncoherent per-symbol energy demodulator can decode. FT4's oracle is unreliable here (the WSJT-X dt convention for FT4 differs and the search window is +-1 hop), so no FT4 conclusion is drawn from it.
+
+Diagnosis: on these recordings, alignment (experiment 2) and ranking (experiment 3) were the recoverable losses. What remains is: one ranking miss, one parser bug, and five genuinely weak FT8 signals that the soft-metric family cannot rescue.
+Recommended next single change: fix the standard-callsign encoder (multi-digit prefixes such as A92EE), measured separately; then evaluate lowering the coarse sync threshold or widening the coarse list for the XE2X-type miss; subtraction (experiment 4 as originally ordered) is only justified if a busier recording shows overlapping signals.

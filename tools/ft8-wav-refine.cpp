@@ -5,6 +5,10 @@
 //     --topk N        coarse candidates to refine / attempt (default 32)
 //     --min-score X   coarse sync threshold (default 0.10)
 //     --gate N        attempt only the N best candidates after refinement, ranked by refined sync score (default: all)
+//     --metric M      soft metric: linear_symbol (default), amplitude_symbol, linear_frame, amplitude_frame
+//     --gain X        LLR gain (default 1)
+//     --oracle        also try each reference signal at its WSJT-X position (refined locally): separates search misses from
+//                     demodulation/FEC limits
 //     --no-refine     attempt the coarse candidates directly (same top-K, same gates): the control
 //
 // Stage 1 is the production coarse search (spectral grid + sync::search). Stage 2 takes the top-K coarse candidates and,
@@ -174,12 +178,30 @@ int main(int argc, char** argv) {
   float min_score = 0.10f;
   bool refine_on = true;
   std::size_t gate = 0;
+  bool oracle = false;
+  orcsdr::ftx::demod::Config dcfg{};
+  uint8_t iters = 20;
+  float norm = 0.80f;
   for (int i = 5; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--ref" && i + 1 < argc) ref_path = argv[++i];
     else if (a == "--topk" && i + 1 < argc) topk = std::strtoul(argv[++i], nullptr, 10);
     else if (a == "--min-score" && i + 1 < argc) min_score = static_cast<float>(std::atof(argv[++i]));
     else if (a == "--gate" && i + 1 < argc) gate = std::strtoul(argv[++i], nullptr, 10);
+    else if (a == "--metric" && i + 1 < argc) {
+      const std::string m = argv[++i];
+      using M = orcsdr::ftx::demod::Metric;
+      if (m == "linear_symbol") dcfg.metric = M::linear_symbol;
+      else if (m == "amplitude_symbol") dcfg.metric = M::amplitude_symbol;
+      else if (m == "linear_frame") dcfg.metric = M::linear_frame;
+      else if (m == "amplitude_frame") dcfg.metric = M::amplitude_frame;
+      else if (m == "lse_amplitude") dcfg.metric = M::lse_amplitude;
+      else return 2;
+    }
+    else if (a == "--gain" && i + 1 < argc) dcfg.llr_gain = static_cast<float>(std::atof(argv[++i]));
+    else if (a == "--iters" && i + 1 < argc) iters = static_cast<uint8_t>(std::atoi(argv[++i]));
+    else if (a == "--norm" && i + 1 < argc) norm = static_cast<float>(std::atof(argv[++i]));
+    else if (a == "--oracle") oracle = true;
     else if (a == "--no-refine") refine_on = false;
     else return 2;
   }
@@ -223,6 +245,9 @@ int main(int argc, char** argv) {
 
   orcsdr::ftx::pipeline::Config pipe{};
   pipe.search = search;
+  pipe.demod = dcfg;
+  pipe.ldpc.max_iterations = iters;
+  pipe.ldpc.normalization = norm;
   orcsdr::ftx::pipeline::Workspace ws{};
   const double step_hz = p.tone_spacing_millihz / 1000.0;
   Refiner refiner{p, wav.samples.data(), wav.samples.size(), step_hz};
@@ -304,5 +329,39 @@ int main(int argc, char** argv) {
               false_accepts);
   for (const auto& t : accepted)
     std::printf("ACCEPTED %s%s\n", t.c_str(), reference.empty() ? "" : (reference.count(t) ? "  [in reference]" : "  [NOT IN REFERENCE]"));
+
+  if (oracle && ref_path != nullptr) {
+    std::ifstream rf(ref_path);
+    std::string line;
+    std::printf("ORACLE (each reference signal at its WSJT-X position, refined locally, then the unchanged gates)\n");
+    while (std::getline(rf, line)) {
+      const std::size_t hash = line.find('#');
+      if (hash != std::string::npos) line.resize(hash);
+      std::istringstream in(line);
+      double rhz = 0, rdt = 0;
+      if (!(in >> rhz >> rdt)) continue;
+      std::string rest;
+      std::getline(in, rest);
+      rest = normalize(rest);
+      long st = std::lround((rdt + 0.5) * p.sample_rate_hz);
+      double hz2 = rhz;
+      if (!refiner.in_range(st)) { std::printf("  %-26s %7.1f Hz dt %+.1f  OUT_OF_RECORDING\n", rest.c_str(), rhz, rdt); continue; }
+      long rs = st;
+      const double sc = refiner.refine(st, rhz, static_cast<double>(hop), spacing / 1000.0, &rs, &hz2);
+      std::vector<float> lg2(static_cast<std::size_t>(p.channel_symbols) * p.tone_count);
+      for (std::size_t sy = 0; sy < p.channel_symbols; ++sy)
+        for (uint8_t tone = 0; tone < p.tone_count; ++tone)
+          lg2[sy * p.tone_count + tone] = static_cast<float>(
+              tone_energy(wav.samples.data() + rs + sy * p.symbol_samples, p.symbol_samples, hz2 + tone * step_hz, p.sample_rate_hz));
+      orcsdr::ftx::sync::EnergyGrid g2{lg2.data(), p.channel_symbols, p.tone_count, p.tone_count};
+      orcsdr::ftx::sync::Candidate c2{};
+      orcsdr::ftx::pipeline::FrameResult fr{};
+      orcsdr::ftx::pipeline::CandidateTrace tr{};
+      const auto oc = orcsdr::ftx::pipeline::try_candidate(p, g2, orcsdr::ftx::sync::Geometry{1, 1}, c2, pipe, &ws, &fr, &tr);
+      std::printf("  %-26s %7.1f Hz dt %+.1f  refined_sync=%.3f moved %+ld samples %+.2f Hz contrast=%.2f ldpc_iter=%u -> %s\n", rest.c_str(),
+                  rhz, rdt, sc, rs - st, hz2 - rhz, tr.mean_symbol_contrast, static_cast<unsigned>(tr.ldpc_iterations),
+                  orcsdr::ftx::pipeline::outcome_name(oc));
+    }
+  }
   return 0;
 }

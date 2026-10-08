@@ -219,3 +219,7 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 ## 2026-10-07 — Task 3 experiment 3: candidate capacity and refined re-ranking (host-only)
 
 - `ft8-wav-refine` gained `--gate N`: refine K candidates, rank by refined sync score, attempt the best N. FT8 reaches 6 and FT4 3 with K=64 and only 16 gate attempts; larger K gives no further gain on the official recordings. Zero false accepts, zero accepts on 16 noise recordings. No production code changed.
+
+## 2026-10-07 — Task 3 experiment 4: soft metrics measured, no gain
+
+- Added `demod::Metric` (default `linear_symbol`, production behaviour unchanged) and the host options `--metric`, `--gain`, `--iters`, `--norm`, `--oracle` in `ft8-wav-refine`. Amplitude, frame-normalized and log-sum-exp metrics and 12 LDPC settings were measured: none beats the current metric (FT8 6, FT4 3). An oracle-position test shows 7 of 13 FT8 signals decode at their true position, 1 is lost to the callsign encoder bug, 5 are too weak for this demodulator.
