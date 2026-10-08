@@ -2,7 +2,15 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
-## 2026-10-08 — Decode log to the SD card works; internal DMA memory recovered
+## 2026-10-08 â€” Decode SNR (receive-only estimate, calibrated against signals of known strength)
+
+- Decodes now carry an SNR in the usual weak-signal convention (signal power over noise power in 2500 Hz), shown in the DECODES table, the `ORC_FT8_DECODE` serial line (`snr=`) and a new `snr_db` column in the decode log. It replaces the dash and the `decode_flag_snr_unavailable` flag for accepted decodes. This lifts the earlier "no SNR" rule at the owner's request; no number is shown for a candidate that failed the gates.
+- Method (`ft8_snr.{hpp,cpp}`, clean-room): the CRC-valid message is re-encoded, so the transmitted tone of every data symbol is known; signal is the energy at that tone minus noise, noise is a low percentile of guard bins 8 to 14 tone widths outside the occupied band (robust to neighbouring stations), with the grid's own sidelobe leakage removed. Floor -30 dB, never a smaller number.
+- Calibration: `tools/ft8-snr-sweep.cpp` synthesises FT8/FT4 at exactly known SNR in Gaussian noise and runs it through the real backend. Mean error against truth: FT8 within about 1 dB from -16 to +12 dB (sd 0.5-0.9 dB); FT4 within 0.4 dB from -12 to +12 dB. Decode threshold on this white-noise test: FT8 about -18 to -20 dB, FT4 about -12 dB. `tools/test-ft8.sh` now runs a `--check` of the sweep.
+- Against WSJT-X on the official FT8 recording the estimate agrees on one message (W1FC +15 vs +15) and differs by -5 to +8 dB on the others (median about -3 dB). WSJT-X's numbers are its own estimate on real, non-white signals, not ground truth; the synthetic sweep is the calibration. Official FT4 file: -2 to -8 dB low on three messages. These differences are recorded here rather than tuned away.
+- Advanced: `FT8 SNR [OFFSET <dB>|RESET]` adds a user trim (stored in NVS, default 0). A Settings control for it is still to do. Not yet verified live on the Tab5: the RTL-SDR was not detected at boot after the flash.
+
+## 2026-10-08 â€” Decode log to the SD card works; internal DMA memory recovered
 
 - `FT8 LOG [ON|OFF|FLUSH]` and `FT8 MEM [FULL]` (heap budget). Every decode is a CSV row staged in PSRAM and written to `/orcsdr/ft8/log-YYYYMMDD.csv` (one file per UTC day, 4 MB cap) when internal DMA memory allows (4 KB largest block). On by default, stored in NVS. Stations heard, never contacts. Verified on hardware: 34 rows written while the receiver ran, pulled back with `SD_GET`. ADIF and SAVE files moved to `/orcsdr/ft8/` too, because `SD_GET` only serves `/orcsdr/`.
 - Cause of the SD failures, found by logging the heap at each boot stage: the largest internal DMA block falls from 27 KB to 3 KB at `ORCDIAL_V4_BRIDGE_READY`, about 1.5 s after the receiver starts on Home entry. It is not FT8 and not the receiver. The OrcDial bridge start takes about 24 KB of internal RAM: the secure runtime's 12 KB task stack, its three queues (about 5 KB), the bridge's two frame queues and a 4 KB transmit task stack. The bridge and secure-runtime queues now live in PSRAM (`xQueueCreateWithCaps`, internal fallback; `orcdial/src/control/secure_runtime.hpp` change is guarded for the ESP32-P4 only). Largest DMA block after boot is now 10-11 KB (was 3 KB), also with FT8 running.
@@ -10,33 +18,33 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Measurement aids: `RTL_DMA_WATCH` lines (largest DMA block moving 4 KB or more) and `RTL_DRAM_BUDGET` at receiver start and OrcDial bridge steps. An earlier note here blamed the receiver and the FT8 runtime; that was wrong.
 - The Tab5 main loop stopped answering serial/touch twice during this work while the decoder task kept running; it did not recur in about 4 hours of later runs, cause unknown.
 
-## 2026-10-08 — Smoother Live waterfall, flicker-free MAP, NEW markers
+## 2026-10-08 â€” Smoother Live waterfall, flicker-free MAP, NEW markers
 
 - Live waterfall: the whole 848x224 area was repainted every 400 ms (about 2.5 frames a second). It now scrolls the old picture and draws only the new rows (about 10 ms a paint). The runtime emits one row per 70 ms of audio even when the tap hands audio over in bursts, and the dashboard spends them at a steady pace from the main loop. Measured on the Tab5: 8 rows/s before, 14.3 rows/s after; row computation costs 2 ms.
 - MAP: composed off-screen and pushed in one go, and a new grid no longer blanks the body first, so it no longer flashes. The map always shows the whole world (owner preference); zoom/pan can be added to the existing view struct.
 - DECODES: a NEW badge marks a callsign's first appearance in the session store (`decode_flag_new_station`, set by `DecodeStore::append`, host-tested); column spacing reworked for the larger text; bearing shown as degrees.
 
-## 2026-10-08 — MAP basemap restyled to the OrcMaps dark theme
+## 2026-10-08 â€” MAP basemap restyled to the OrcMaps dark theme
 
 - The MAP outline looked nothing like the OrcMaps maps. It now fills land (slate on navy water, thin borders) with the colours of the OrcMaps `world-orcsdr-dark` render, using an even-odd scanline fill of the Natural Earth 110m polygons. This is a style match only: the FT8 tab still does not use the OrcMaps engine or tiles (that integration lives on `claude/orcmaps-integration` and the app is near the size guard there).
 - Recent-grids rows and the Conditions panel were re-spaced for the larger text; singular/plural fixed.
 
-## 2026-10-08 — World outline on MAP, larger text
+## 2026-10-08 â€” World outline on MAP, larger text
 
 - MAP now draws an offline world outline (coasts and country borders from Natural Earth 1:110m, public domain, about 15 KB) generated by `tools/gen_ft8_world.py` into `ft8_world_data.cpp`. It shows the whole world until a decoded station has a grid, then frames the receiver and stations (minimum 60 x 30 degrees).
 - Dashboard labels that were DejaVu18 are now DejaVu24; dense captions (stat-card titles, mode-button sublabels) stay at DejaVu18. Hunter cards drop the slot count to fit. Setup mode buttons and footer no longer overflow. Checked on hardware.
 
-## 2026-10-08 — Larger dashboard text
+## 2026-10-08 â€” Larger dashboard text
 
 - The FT8/FT4 dashboards drew small labels in the 6x8 built-in font, unreadable on the 1280x720 panel. Size-1 text (about 30 labels: hunter cards, table captions, map/heard hints, setup footer) now draws DejaVu18. Checked on hardware on every tab (DECODES, MAP, HUNTER, HEARD, SETUP); nothing overflowed.
 
-## 2026-10-08 — Live cross-check against PSKReporter
+## 2026-10-08 â€” Live cross-check against PSKReporter
 
 - First live FT4 decode on 20 m (14.080 MHz): `W9DHI KE5YYC R-01`; PSKReporter shows KE5YYC transmitting FT4 at about 14.08148 MHz in the same minute.
 - Frequency accuracy, 20 m FT8 on the Blog V4 + MLA-30+: 11 decodes matched to PSKReporter spots of the same sender within 20 s read a median of +27 Hz (about 2 ppm, mostly +26 to +41 Hz; one pair with only two spots read -10 Hz). The same decoder is within 3 Hz of WSJT-X on the official recording, so the offset belongs to the dongle clock, not the decoder. One FT4 pair read -135 Hz; one sample, not conclusive. No correction applied (setup-specific).
 - PSKReporter's query API rate-limits quickly (about 15 rapid queries); use one bulk query per few minutes.
 
-## 2026-10-08 — On-device regression by serial injection
+## 2026-10-08 â€” On-device regression by serial injection
 
 - Added `FT8 INJECT BEGIN|PING|RUN|<offset> <b64>` (authenticated) and `tools/tab5_ft8.py inject <wav> FT8|FT4`: a 12 kHz recording is uploaded (CRC-verified, re-pairs when the 5 s session lapses) and decoded by the real backend on the Tab5 as one slot. Test-only; receive-only, no transmit path.
 - USB Serial/JTAG console receive buffer raised from 1 KB to 8 KB; long scripted lines overflowed it.
