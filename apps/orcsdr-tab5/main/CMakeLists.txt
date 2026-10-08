@@ -35,6 +35,7 @@ idf_component_register(
         "../ui/am_dashboard.cpp"
         "../ui/ft8_model.cpp"
         "../ui/ft8_conditions.cpp"
+        "../ui/ft8_world_data.cpp"
         "../ui/ft8_adif.cpp"
         "../ui/ft8_mode.cpp"
         "../ui/ft8_sync.cpp"

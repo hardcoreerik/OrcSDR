@@ -1,5 +1,6 @@
 #include "ft8_dashboard.hpp"
 #include "ft8_conditions.hpp"
+#include "ft8_world_data.hpp"
 
 #include "dashboard_audio_control.hpp"
 #include "ft8_decoder_backend.hpp"
@@ -51,9 +52,9 @@ int cy(const Rect& r) { return r.y + r.h / 2; }
 void text(const char* value, int x, int y, uint16_t color = TFT_WHITE, int size = 2,
           textdatum_t datum = middle_center) {
   M5.Display.setTextDatum(datum);
-  // Size 1 was the 6x8 built-in font, unreadable on the 1280x720 panel; it now draws DejaVu18.
+  // The 6x8 built-in font is unreadable on the 1280x720 panel: size 1 draws DejaVu24 and size 0 (dense captions) DejaVu18.
   if (size <= 1) {
-    M5.Display.setFont(&fonts::DejaVu18);
+    M5.Display.setFont(size == 1 ? &fonts::DejaVu24 : &fonts::DejaVu18);
     M5.Display.setTextSize(1);
   } else {
     M5.Display.setTextSize(size);
@@ -183,7 +184,7 @@ void draw_tabs() {
 
 void chip(const Rect& r, const char* title, const char* value, uint16_t color = kGreen) {
   frame(r, kGrid);
-  text(title, cx(r), r.y + 16, kCyan, 1);
+  text(title, cx(r), r.y + 16, kCyan, 0);
   text(value, cx(r), r.y + 42, color, 2);
 }
 
@@ -483,14 +484,18 @@ void fit_map_view() {
   };
   if (g_snapshot.station_known) add(GeoPoint{g_snapshot.station_latitude, g_snapshot.station_longitude, 0});
   const size_t n = std::min(g_snapshot.decode_count, kDecodeCapacity);
+  size_t located = 0;
   for (size_t i = 0; i < n; ++i) {
     GeoPoint point{};
-    if (maidenhead_valid(g_snapshot.decodes[i].grid) && maidenhead_center(g_snapshot.decodes[i].grid, &point)) add(point);
+    if (maidenhead_valid(g_snapshot.decodes[i].grid) && maidenhead_center(g_snapshot.decodes[i].grid, &point)) {
+      add(point);
+      ++located;
+    }
   }
   g_map_view = MapView{};
-  if (lon_hi < lon_lo) return;   // nothing to frame: world view
-  float lon_span = std::max(lon_hi - lon_lo, 30.0f) * 1.3f;
-  float lat_span = std::max(lat_hi - lat_lo, 15.0f) * 1.3f;
+  if (lon_hi < lon_lo || located == 0) return;   // nothing heard with a grid yet: show the whole world
+  float lon_span = std::max(lon_hi - lon_lo, 60.0f) * 1.3f;
+  float lat_span = std::max(lat_hi - lat_lo, 30.0f) * 1.3f;
   const float aspect = 824.0f / 420.0f;   // pixels per degree match in both directions
   if (lon_span < lat_span * aspect) lon_span = lat_span * aspect;
   if (lat_span < lon_span / aspect) lat_span = lon_span / aspect;
@@ -501,6 +506,28 @@ void fit_map_view() {
   g_map_view.lat_span = lat_span;
   g_map_view.lon_min = std::max(-180.0f, std::min(lon_mid - lon_span / 2.0f, 180.0f - lon_span));
   g_map_view.lat_max = std::max(-90.0f + lat_span, std::min(lat_mid + lat_span / 2.0f, 90.0f));
+}
+
+// Offline world outline (coast and country borders) in the fitted view; points are 0.01 degree units.
+void draw_world(int left, int top, int width, int height) {
+  constexpr uint16_t kCoast = 0x4E7F, kBorder = 0x2A6B;
+  M5.Display.setClipRect(left, top, width, height);
+  for (size_t s = 0; s < kWorldSegmentCount; ++s) {
+    const WorldSegment& seg = kWorldSegments[s];
+    int px = 0, py = 0;
+    float prev_lon = 0.0f;
+    for (uint16_t i = 0; i < seg.count; ++i) {
+      const float lon = kWorldPoints[2 * (seg.start + i)] * 0.01f;
+      const float lat = kWorldPoints[2 * (seg.start + i) + 1] * 0.01f;
+      int x = 0, y = 0;
+      map_point(GeoPoint{lat, lon, 0}, &x, &y);
+      if (i > 0 && std::fabs(lon - prev_lon) < 180.0f) M5.Display.drawLine(px, py, x, y, seg.kind == 0 ? kCoast : kBorder);
+      px = x;
+      py = y;
+      prev_lon = lon;
+    }
+  }
+  M5.Display.clearClipRect();
 }
 
 void draw_map() {
@@ -531,6 +558,7 @@ void draw_map() {
     map_point(GeoPoint{lat, 0.0f, 0}, &x, &y);
     M5.Display.drawFastHLine(left, y, width, kGrid);
   }
+  draw_world(left, top, width, height);
   const size_t n = std::min(g_snapshot.decode_count, kDecodeCapacity);
   for (size_t i = 0; i < n; ++i) {
     const Decode& d = g_snapshot.decodes[i];
@@ -635,9 +663,7 @@ void draw_hunter_band(size_t index) {
   }
 
   if (result.visited) {
-    std::snprintf(value, sizeof(value), "%u slot%s  %u sync",
-                  result.slots_observed, result.slots_observed == 1 ? "" : "s",
-                  result.sync_candidates);
+    std::snprintf(value, sizeof(value), "%u sync", result.sync_candidates);
     text(value, r.x + 16, r.y + 88, kMuted, 1, middle_left);
     std::snprintf(value, sizeof(value), "%u decoded", result.valid_decodes);
     text(value, r.x + r.w - 14, r.y + 88,
@@ -770,7 +796,7 @@ void draw_mode_button(size_t index) {
   M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 8, border);
   text(mode_name(mode), cx(r), r.y + 22, !available ? kMuted : selected ? kGreen : TFT_WHITE, 2);
   const char* sub = !available ? "UNAVAILABLE" : mode_experimental(mode) ? "EXPERIMENTAL" : selected ? "SELECTED" : "";
-  text(sub, cx(r), r.y + 46, !available ? kMuted : mode_experimental(mode) ? kAmber : kGreen, 1);
+  text(sub, cx(r), r.y + 46, !available ? kMuted : mode_experimental(mode) ? kAmber : kGreen, 0);
 }
 
 void setup_row(int row, const char* label, const char* value, uint16_t color) {
@@ -786,7 +812,7 @@ void draw_setup() {
   for (size_t i = 0; i < kDigitalModeCount; ++i) draw_mode_button(i);
   char slot_text[16], line[96];
   slot_seconds_text(slot_text, sizeof(slot_text), g_snapshot.mode);
-  std::snprintf(line, sizeof(line), "%s   %s SECOND SLOT   ONLY MODES THE DECODER REPORTS CAN BE SELECTED",
+  std::snprintf(line, sizeof(line), "%s   %s SECOND SLOT   ONLY SUPPORTED MODES CAN BE SELECTED",
                 mode_name(g_snapshot.mode), slot_text);
   text(line, 42, 214, kMuted, 1, middle_left);
   setup_row(0, "OPERATING MODE", "RX ONLY", kGreen);
@@ -796,8 +822,8 @@ void draw_setup() {
   setup_row(3, "AUDIO PASSBAND", "200 - 3000 Hz", TFT_WHITE);
   setup_row(4, "MAP SOURCE", "OFFLINE MAIDENHEAD GRID", kGreen);
   setup_row(5, "NETWORK REQUIRED", "NO", kGreen);
-  text("Receive only. The native decoder reports no SNR (there is no calibrated estimator); times need a locked UTC clock.",
-       54, 584, kMuted, 1, middle_left);
+  text("Receive only. The native decoder reports no SNR (no calibrated estimator).", 54, 568, kMuted, 1, middle_left);
+  text("Times need a locked UTC clock.", 54, 596, kMuted, 1, middle_left);
 }
 
 void draw_body() {
