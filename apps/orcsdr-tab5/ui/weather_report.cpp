@@ -89,16 +89,18 @@ bool encode_report_json(const ReportSnapshot& r, char* output, size_t capacity) 
                 r.wallclock_valid ? "true" : "false", r.created_utc, r.created_uptime_ms,
                 online_policy_label(r.online_policy))) return false;
   if (!append_json_string(w, r.location_label)) return false;
-  if (!w.format(",\"noaa\":{\"valid\":%s,\"source\":\"RF\",\"frequency_hz\":%u,\"relative_dbfs\":%.2f}}",
+  if (!w.format(",\"noaa\":{\"valid\":%s,\"source\":\"RF\",\"frequency_hz\":%u,\"relative_dbfs\":%.2f,\"age_seconds\":%u}}",
                 r.noaa_valid ? "true" : "false", r.noaa_frequency_hz,
-                static_cast<double>(r.noaa_dbfs))) return false;
+                static_cast<double>(r.noaa_dbfs), r.noaa_age_seconds)) return false;
   return w.ok();
 }
 
 bool encode_report_csv(const ReportSnapshot& r, char* output, size_t capacity) {
   Writer w(output, capacity);
-  if (!w.append("source,frequency_hz,relative_dbfs,valid,location\r\n")) return false;
-  if (!w.format("RF,%u,%.2f,%d,", r.noaa_frequency_hz, static_cast<double>(r.noaa_dbfs), r.noaa_valid ? 1 : 0)) return false;
+  if (!w.append("source,frequency_hz,relative_dbfs,age_seconds,valid,location\r\n")) return false;
+  if (!w.format("RF,%u,%.2f,%u,%d,", r.noaa_frequency_hz,
+                static_cast<double>(r.noaa_dbfs), r.noaa_age_seconds,
+                r.noaa_valid ? 1 : 0)) return false;
   if (!append_csv(w, r.location_label) || !w.append("\r\n")) return false;
   return w.ok();
 }
