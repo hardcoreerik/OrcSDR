@@ -2502,6 +2502,7 @@ esp_err_t rtl_gain_set_rtl_agc(const char* source, bool enabled);
 orcsdr::p25::Snapshot p25_dashboard_snapshot();
 void handle_p25_dashboard_action(const orcsdr::p25::Action& action);
 void service_keyboard();
+void open_visualizer();
 using UiTouchDetail = m5::Touch_Class::touch_detail_t;
 UiTouchDetail ui_touch_detail(int index);
 uint8_t ui_touch_count();
