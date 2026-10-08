@@ -247,3 +247,16 @@ The fitted synthetic offset remains 0.0 dB. This is deliberately not called a
 real-JS8 calibration: the waveform fixture is plain continuous-phase FSK, and
 real reference-paired captures must validate or replace the offset before the
 firmware may show JS8 SNR as calibrated.
+
+
+## 2026-10-08 - firmware integration (Tab5), receive-only, no text decodes
+
+- JS8 Normal front end bound into the Tab5 firmware through `js8_native_backend` and the existing audio tap/runtime. Raw sync and tone
+  evidence only; `finish_slot()` returns zero `Decode` records. Details, tables and hashes: `docs/js8/INTEGRATION.md` (section
+  "Firmware integration (Tab5) - measured 2026-10-08").
+- Measured on the P4: one Normal slot takes 1271 ms (grid 326, sync 111, demod 834); synthetic frame recovered at the right frequency, noise-only
+  slot gives no raw frame; app +14,080 bytes.
+- Real capture (dataset commit 1705472, `sample-40m-180s-002`): 3 of the 4 standard-decoder frames reach a raw 79-tone frame (635, 486, 838 Hz); the
+  2604 Hz frame does not; controls give 0 raw frames.
+- Still blocked for any text: tone-to-bit mapping, FEC graph, CRC and frame parser (reconstruction workstream). JS8 SNR stays unavailable.
+- The JS8 dashboard buttons remain disabled. No transmit capability was added.

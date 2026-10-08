@@ -94,6 +94,10 @@ class Backend {
   size_t raw_count() const { return raw_count_; }
   const RawResult* raw(size_t index) const { return index < raw_count_ ? &raw_[index] : nullptr; }
 
+  // Every sync candidate of the last finish_slot() (before demodulation), for diagnostics.
+  size_t candidate_count() const { return stats_.candidates; }
+  const sync::Candidate* candidate(size_t index) const { return index < stats_.candidates ? &candidates_[index] : nullptr; }
+
   // The energy grid of the last finish_slot(), so a host test can compare it with the exact-correlation oracle.
   const float* grid() const { return grid_; }
   size_t grid_rows() const { return stats_.grid_rows; }

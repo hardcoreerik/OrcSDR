@@ -133,3 +133,66 @@ synthetic plain-FSK sweep shows less than 0.05 dB mean bias from +8 through
 -12 dB. That is a host-fixture result only. Firmware integration must retain an
 SNR-unavailable flag until real JS8 reference pairs establish that the estimator
 is calibrated on actual JS8 waveforms.
+
+
+## Firmware integration (Tab5) - measured 2026-10-08
+
+Status: the receive-only JS8 Normal front end is bound into the Tab5 firmware. It produces raw sync/tone evidence only. **No
+`Decode` record is ever produced**: the tone-to-bit map, FEC graph, CRC and frame parser are not accepted, and `finish_slot()` returns 0.
+
+### What is bound
+- `js8_native_backend.{hpp,cpp}` (namespace `orcsdr::js8::native`): `begin(12000, submode, Config, Memory)`, `begin_slot`, `offer_audio`,
+  `finish_slot`, `stats`, `reset`, plus read-only diagnostics (`raw()`, `candidate()`, `grid()`). Only Normal is accepted; `begin()` and
+  `set_submode()` refuse Fast, Turbo, Slow and the experimental mode and never fall back to Normal.
+- Spectral stage: one 1920-point FFT per half symbol using the existing mixed-radix FFT primitive, 449 bins on the 6.25 Hz tone spacing
+  (200 to 3000 Hz). It agrees with the exact-correlation oracle `js8_spectral` to 1.65e-5 of the strongest cell on identical PCM
+  (`tests/js8_native_backend_tests.cpp`, also run under ASan/UBSan).
+- Runtime (`ft8_runtime.cpp`): the JS8 backend is allocated lazily in PSRAM the first time a JS8 mode is used (about 700 KB), so FT8/FT4
+  users do not pay for it. It reuses the existing 12 kS/s audio tap and ring; there is no second IQ front end. FT8/FT4 and JS8 are never run
+  at the same time. The runtime refuses every JS8 submode except Normal.
+- JS8 calling frequencies (one dial for every submode): 160 m 1.842, 80 m 3.578, 40 m 7.078, 30 m 10.130, 20 m 14.078, 17 m 18.104,
+  15 m 21.078, 12 m 24.922, 10 m 28.078, 6 m 50.318 MHz. 60 m and 2 m keep the FT8 dial until confirmed against public JS8 documentation.
+- Serial (receive only): `JS8 STATUS | STATS | RAW | START | STOP | MODE NORMAL | BAND <label> | INJECT BEGIN|PING|RUN|<offset> <b64>`.
+  `JS8 RAW` prints measured evidence (audio Hz, time offset, sync score, sync hits, margin) and never text.
+- Injection: `python tools/tab5_ft8.py --port COM17 inject <12 kHz mono wav> JS8` runs a recording through the real backend on the Tab5.
+
+### Tab5 measurements (ESP32-P4, 360 MHz, one 15 s slot, nothing extrapolated from the host)
+Test recordings: synthetic Normal slot, tone 0 at 1012.5 Hz, signal amplitude 6000 counts with uniform noise of 2500 counts, frame 0.5 s
+into the slot, generated with numpy from the Normal sync/data tone sequence used by `tests/js8_demod_tests.cpp`; and a noise-only slot with
+the same noise amplitude. Uploaded over serial with CRC verification, then run with `inject ... JS8`.
+
+| Recording | Raw frames | Decodes | Best sync | Spectral | Sync search | Demod | Total |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Synthetic signal (1012.5 Hz, dt -20 ms, sync hits 21) | 1 | 0 | 0.97 | 326 ms | 111 ms | 834 ms | 1271 ms |
+| Noise only | 0 | 0 | 0.26 | 325 ms | 110 ms | 834 ms | 1269 ms |
+
+JS8 Normal uses about 8.5 percent of a slot (FT8 uses about 3.5 s). Firmware size: the app is 4,072,672 bytes, +14,080 bytes over the
+build without JS8 (4,058,592), in the 6 MB app partition. No dropped analysis blocks were seen; FT8 and FT4 host results are unchanged.
+
+### Memory finding that cost a boot loop
+The first flash of the runtime hook boot-looped (`Could not reserve internal/DMA pool (error 0x101)`, then `abort()`): an 8 KB static
+chunk buffer in `decode_slot` pushed the static internal RAM past what the 40 KB boot-time DMA reserve allows. The JS8 path now shares the
+existing buffer, and the map's 16 KB of projection arrays moved to PSRAM. After the fix the largest internal DMA block after boot is
+38 KB (52 KB free). Rule for later work: do not add static internal RAM without checking `RTL_DRAM_BUDGET`.
+
+### Real-capture front-end evidence (host, same code as the firmware)
+Dataset: `F:\AI\OrcSDR-TEMP\js8-pc-capture` commit `1705472`, `tests/fixtures/js8/corpus/2026-10-08`, verified with
+`tools/js8_capture/verify_dataset.py` (7 IQ/WAV pairs, 870 standard-decoder runs, 5 unique frames).
+Capture `sample-40m-180s-002` (RF dial 7.078 MHz, IQ centre 7.126 MHz, gain 40.2 dB, 180 s): raw IQ SHA-256
+`6eff2c58b939422023fa69c0a7e2b3180f662767dacf451136e72aa834aca83f`, 12 kHz WAV SHA-256
+`93b48bef6a6799e0301d1459ee724759772f5e0ff8e83249337a82747c44a445`. No AGC and no normalisation were applied.
+Method: `tools/js8-wav-front.cpp` slides a 15 s window over the WAV in 1 s steps (166 windows), runs the backend, and marks any raw frame
+within 7 Hz of a frequency the standard decoders reported (JS8Call CLI 2.2.0 and GUI 3.0.3). Results are bound to the hashes and the decoder
+commit in `docs/js8/results/2026-10-08-sample-40m-180s-002-front-end.json`.
+
+| Reference frame (standard decoders) | Audio Hz | Result in OrcSDR front end |
+|---|---:|---|
+| WO7I HEARTBEAT, reference SNR -12 dB | 635 | found in 7 windows, best sync 0.534 at 637.5 Hz |
+| K8IMT HEARTBEAT, -23 dB | 486 | found in 5 windows, best sync 0.519 at 487.5 Hz |
+| K7YXZ HEARTBEAT, -18 dB | 838 | found in 4 windows, best sync 0.292 at 837.5 Hz |
+| KD7WPQ HEARTBEAT, -20 dB | 2604 | not found: sync candidates at 2600-2606 Hz (0.12 to 0.19) fail the demodulator's sync-hit check |
+
+16 raw frames in total, all near a reference frequency (no unexplained extras). Zero-decode controls `sample-20m-180s-001`,
+`sample-40m-180s-001`, `probe-20m-001`, `probe-40m-001` and the Slow capture `probe-20m-002` give 0 raw frames in the front end; the
+reference result for those files is not treated as proof of silence. The first failing stage for the 2604 Hz frame is the sync-candidate
+to demodulation threshold; downstream stages (tone mapping, FEC, text) are the reconstruction workstream's and are not attempted here.

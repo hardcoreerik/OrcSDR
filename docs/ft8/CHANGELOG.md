@@ -2,6 +2,18 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 - JS8 front end on the real over-the-air capture; evidence tool and bound results
+
+- `tools/js8-wav-front.cpp`: runs the same JS8 Normal backend as the firmware over a long 12 kHz WAV with a sliding 15 s window and reports sync
+  candidates and raw 79-tone frames, optionally near reference frequencies; `--json` writes a machine-readable result. No AGC, no normalisation,
+  no injected expected answers. `js8_native_backend` gained read-only `candidate()`/`candidate_count()` for it.
+- Dataset: commit 1705472 of F:\AI\OrcSDR-TEMP\js8-pc-capture, `tests/fixtures/js8/corpus/2026-10-08`, checked with
+  `tools/js8_capture/verify_dataset.py` (7 pairs, 870 standard-decoder runs, 5 unique frames).
+- Result on `sample-40m-180s-002` (166 one-second-step windows): the front end reaches a raw frame for 3 of the 4 standard-decoder frames
+  (635, 486 and 838 Hz); the 2604 Hz frame (reference -20 dB) is not reached because its sync candidates fail the demodulator's sync-hit check.
+  All 16 raw frames sit near a reference frequency. The four zero-decode controls and the Slow capture give 0 raw frames. Saved with the WAV and
+  IQ hashes and the decoder commit in `docs/js8/results/`. Tab5 acceptance is separate and still pending for real captures.
+
 ## 2026-10-08 - Opening the FT8 dashboard now tunes the radio
 
 - `open_ft8_dashboard()` called nothing that tuned the receiver, so opening FT8 from Home left the radio on the Home station (for example FM at
