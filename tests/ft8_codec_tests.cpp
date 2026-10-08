@@ -47,7 +47,11 @@ void test_standard_callsign_public_domain_vectors() {
   assert(value == 157050088u);
   assert(!encode_standard_callsign("PJ4/K1ABC", &value));
   assert(!encode_standard_callsign("NO-DIGIT", &value));
-  assert(!encode_standard_callsign("K12ABC", &value));
+  // The digit position is fixed by the packing layout, so a prefix may contain a digit (real calls such as A92EE).
+  assert(encode_standard_callsign("A92EE", &value));
+  assert(encode_standard_callsign("K12ABC", &value));
+  assert(!encode_standard_callsign("AEEE", &value));      // no digit in position 2 or 3
+  assert(!encode_standard_callsign("AB123", &value));     // suffix must be letters
   assert(!encode_standard_callsign("11ABC", &value));
   assert(!encode_standard_callsign("", &value));
   assert(!encode_standard_callsign("K1ABC", nullptr));

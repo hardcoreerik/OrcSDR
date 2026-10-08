@@ -223,3 +223,7 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 ## 2026-10-07 — Task 3 experiment 4: soft metrics measured, no gain
 
 - Added `demod::Metric` (default `linear_symbol`, production behaviour unchanged) and the host options `--metric`, `--gain`, `--iters`, `--norm`, `--oracle` in `ft8-wav-refine`. Amplitude, frame-normalized and log-sum-exp metrics and 12 LDPC settings were measured: none beats the current metric (FT8 6, FT4 3). An oracle-position test shows 7 of 13 FT8 signals decode at their true position, 1 is lost to the callsign encoder bug, 5 are too weak for this demodulator.
+
+## 2026-10-07 — Fix: standard callsigns whose prefix contains a digit (A92EE)
+
+- `codec::encode_standard_callsign` assumed exactly one digit in the call, so valid calls whose two-character prefix contains a digit (`A92EE`) failed the canonicality round trip and a CRC-valid FT8 decode was discarded. The digit position now follows the packing layout (third character if a digit, else second). Measured alone on the official recording with the refined pipeline (K=64, G=16): FT8 6 to 7 accepted (`A92EE F5PSR -14` added), FT4 unchanged at 3, zero false accepts, zero accepts on 16 noise recordings. Unit tests updated: `K12ABC` is now (correctly) encodable; `AEEE` and `AB123` stay rejected.

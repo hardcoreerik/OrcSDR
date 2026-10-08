@@ -119,15 +119,14 @@ bool encode_standard_callsign(const char* callsign, uint32_t* c28) {
   // character must be a letter), one decimal digit, then one to three
   // letters. The protocol's six mixed-radix positions are [prefix2][digit]
   // [suffix3], with a one-character prefix represented by a blank first
-  // position and a short suffix padded with trailing blanks.
-  std::size_t digit_pos = count;
-  for (std::size_t i = 0; i < count; ++i) {
-    if (raw[i] >= '0' && raw[i] <= '9') {
-      if (digit_pos != count) return false;  // exactly one digit in a standard call
-      digit_pos = i;
-    }
-  }
-  if (digit_pos != 1 && digit_pos != 2) return false;
+  // position and a short suffix padded with trailing blanks. The digit sits at
+  // position 3 of the padded field when the third character is a digit (so a
+  // prefix may itself contain a digit, as in A92EE or 3D2AB); otherwise the
+  // second character must be the digit.
+  std::size_t digit_pos;
+  if (raw[2] >= '0' && raw[2] <= '9') digit_pos = 2;
+  else if (raw[1] >= '0' && raw[1] <= '9') digit_pos = 1;
+  else return false;
   const std::size_t suffix_len = count - digit_pos - 1;
   if (suffix_len < 1 || suffix_len > 3) return false;
 
