@@ -51,9 +51,16 @@ int cy(const Rect& r) { return r.y + r.h / 2; }
 void text(const char* value, int x, int y, uint16_t color = TFT_WHITE, int size = 2,
           textdatum_t datum = middle_center) {
   M5.Display.setTextDatum(datum);
-  M5.Display.setTextSize(size);
+  // Size 1 was the 6x8 built-in font, unreadable on the 1280x720 panel; it now draws DejaVu18.
+  if (size <= 1) {
+    M5.Display.setFont(&fonts::DejaVu18);
+    M5.Display.setTextSize(1);
+  } else {
+    M5.Display.setTextSize(size);
+  }
   M5.Display.setTextColor(color);
   M5.Display.drawString(value, x, y);
+  if (size <= 1) M5.Display.setFont(nullptr);   // the shared header helpers draw with the built-in font
 }
 
 void frame(const Rect& r, uint16_t border = kCyan) {

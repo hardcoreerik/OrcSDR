@@ -2,6 +2,10 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 — Larger dashboard text
+
+- The FT8/FT4 dashboards drew small labels in the 6x8 built-in font, unreadable on the 1280x720 panel. Size-1 text (about 30 labels: hunter cards, table captions, map/heard hints, setup footer) now draws DejaVu18. Checked on hardware on every tab (DECODES, MAP, HUNTER, HEARD, SETUP); nothing overflowed.
+
 ## 2026-10-08 — Live cross-check against PSKReporter
 
 - First live FT4 decode on 20 m (14.080 MHz): `W9DHI KE5YYC R-01`; PSKReporter shows KE5YYC transmitting FT4 at about 14.08148 MHz in the same minute.
