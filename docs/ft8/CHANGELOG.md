@@ -254,3 +254,8 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 
 - The HEARD tab shows a CONDITIONS panel from the decodes and the saved receiver location (`ft8_conditions`): stations with a grid, farthest station with distance and bearing, median distance and decodes per compass sector; it prompts for a location when none is set.
 - `FT8 ADIF <name>` writes the decode list to `/sd/ft8/<name>.adi` using `ft8_adif` (verified: 64 records written on the device). `FT8 TAB <name>` switches the dashboard tab for scripting.
+
+## 2026-10-08 — Stack-fault fix, FT8 SHOT and a screenshot helper
+
+- Fixed a stack protection fault on core 0 when the FT8 screen opened while the decoder ran: the 64-decode dashboard snapshot (about 8 KB) is now filled in place in a static instead of being built on the main task stack and copied, and the serial-command buffers are static. Verified: the screen opens during decoding with no panic and slots keep decoding.
+- `FT8 SHOT <name>` saves the screen to the SD card; `tools/tab5_ft8_shot.py` fetches it (the receiver is stopped for the SD transfer and retuned afterwards). Verified HEARD (Conditions panel) and DECODES (GRID/DIST/BRG columns) on the device.

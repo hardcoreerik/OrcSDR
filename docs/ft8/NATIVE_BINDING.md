@@ -69,6 +69,7 @@ Queries need no authentication; commands that change state need the PAIR/AUTH se
 | `FT8 RUN <0|1>` | yes | headless: keep the decoder running with no FT8 screen |
 | `FT8 CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms>` | yes | candidates refined (1-64), candidates sent through the FEC gates (1-64), grid resolution, per-slot time limit |
 | `FT8 TAB <LIVE|DECODES|MAP|HUNTER|HEARD|SETUP>` | yes | switch the FT8 dashboard tab |
+| `FT8 SHOT <name>` | yes | save the screen as a BMP on the SD card without pausing reception (fetch it with `tools/tab5_ft8_shot.py`, which stops the receiver for the SD transfer, then retunes) |
 | `FT8 SAVE <name>` | yes | write the last slot to `/sd/ft8/<name>.wav` |
 | `FT8 ADIF <name>` | yes | write the decode list as an ADIF 3.1.4 heard-stations log to `/sd/ft8/<name>.adi` (stations heard, never contacts; no SNR; JS8 omitted) |
 
@@ -87,9 +88,17 @@ python tools/tab5_ft8.py --port COM17 watch 120
 python tools/tab5_ft8.py --port COM17 decodes 40
 ```
 
+## Verified on the device (screen captures, 2026-10-08)
+
+HEARD tab: CONDITIONS panel with 20 stations with a grid, farthest JH2AMN 8050 km at 303 degrees (NW), median 2700 km and 14 stations to the east of an Oregon
+receiver. DECODES tab: GRID, DIST and BRG columns filled from the saved location (`CQ K7REH DM43` 1566 km 135 deg; `K2OI KF0MZU DM79` 1574 km 103 deg), SNR shown as a dash,
+FARTHEST 8050 km. DT now varies between about -0.3 and +0.7 s across stations; the constant +0.58 s seen earlier was with a clock that was not yet aligned.
+
+A crash found while capturing: opening the FT8 screen while the decoder ran gave a stack protection fault on core 0, because the 8 KB dashboard snapshot was built on the
+stack and copied, on top of new serial-command buffers. The snapshot is now filled in place in a static, and the command buffers are static.
+
 ## Known issues and next steps
 
-- Clock: sub-second alignment at boot (see above).
 - Gain: re-run the AUTO versus manual comparison on other dongles (V3, V4L) and antennas before assuming AUTO is best everywhere.
 - The tap costs about half of the DSP core's real-time budget at 2.4 MS/s. Requesting 240 kS/s from the driver for the FT8 screen would remove the CIC stage.
 - Bit-identity gate of the proposal (tap off versus baseline audio) is not yet measured; the dispatch is a single `if (active)` before the existing demodulation.

@@ -12703,7 +12703,7 @@ float ft8_native_dial_offset_hz() {
 }
 
 void ft8_native_drain_pending() {
-  orcsdr::ft8::Decode local[32];
+  static orcsdr::ft8::Decode local[32];   // static: the main task stack is shared with the screen draw (8 KB snapshots)
   size_t n = 0;
   portENTER_CRITICAL(&g_ft8_pending_lock);
   n = g_ft8_pending_count;
@@ -12726,8 +12726,10 @@ size_t ft8_selected_band() {
   return g_ft8_band;
 }
 
-orcsdr::ft8::Snapshot ft8_dashboard_snapshot() {
-  orcsdr::ft8::Snapshot snapshot{};
+// Fills the snapshot in place: it holds 64 decodes (about 8 KB), too much to build on the stack and then copy twice on the main task
+// (a stack protection fault was seen when the screen opened while the decoder ran).
+void ft8_dashboard_fill_snapshot(orcsdr::ft8::Snapshot& snapshot) {
+  new (&snapshot) orcsdr::ft8::Snapshot();
   const auto clock = orcsdr::time_service::now();
   snapshot.clock_valid = clock.wallclock_valid;
   if (clock.wallclock_valid) {
@@ -12780,14 +12782,14 @@ orcsdr::ft8::Snapshot ft8_dashboard_snapshot() {
     // Oldest first, as the dashboard indexes from the end.
     if (const auto* decode = g_ft8_store.newest(snapshot.decode_count - 1 - i)) snapshot.decodes[i] = *decode;
   }
-  return snapshot;
 }
 
 void draw_ft8_dashboard(bool static_panel) {
   if (!static_panel && !orcsdr::screens::may_draw(orcsdr::screens::Id::ft8)) return;
   if (!static_panel) orcsdr::screens::note_visible_update(orcsdr::screens::Id::ft8);
   orcsdr::ft8::set_header_hook(draw_global_header_controls);
-  const auto snapshot = ft8_dashboard_snapshot();
+  static orcsdr::ft8::Snapshot snapshot;
+  ft8_dashboard_fill_snapshot(snapshot);
   if (static_panel || !orcsdr::ft8::active()) orcsdr::ft8::enter(snapshot);
   else orcsdr::ft8::update(snapshot);
 }
@@ -16938,7 +16940,7 @@ void process_ft8_command(const char* args) {
   if (verb[0] == '\0' || strcmp(verb, "HELP") == 0) {
     Serial.println("ORC_FT8_HELP queries: STATUS | DECODES [n] | BANDS | DUMP | TIME | HELP");
     Serial.println("ORC_FT8_HELP control (authenticated): OPEN | BAND <index|label|dial_hz> | MODE <FT8|FT4> | CLEAR | RUN <0|1> | "
-                   "CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms> | TAB <name> | SAVE <name> | ADIF <name>");
+                   "CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms> | TAB <name> | SHOT <name> | SAVE <name> | ADIF <name>");
     return;
   }
 
@@ -17018,7 +17020,7 @@ void process_ft8_command(const char* args) {
                   static_cast<unsigned long long>(slot_ms / 1000u));
     const uint8_t* bytes = reinterpret_cast<const uint8_t*>(samples);
     const size_t total = count * 2u;
-    char line[120];
+    static char line[120];
     size_t pos = 0;
     unsigned index = 0;
     while (pos < total) {
@@ -17130,7 +17132,7 @@ void process_ft8_command(const char* args) {
       Serial.printf("ORC_FT8_ERROR ADIF open_failed path=%s\n", path);
       return;
     }
-    char buffer[400];
+    static char buffer[400];
     size_t len = orcsdr::ft8::adif_header(buffer, sizeof(buffer));
     if (len > 0) file.write(reinterpret_cast<const uint8_t*>(buffer), len);
     unsigned written = 0;
@@ -17159,6 +17161,27 @@ void process_ft8_command(const char* args) {
       }
     }
     Serial.println("ORC_FT8_ERROR TAB invalid use TAB <LIVE|DECODES|MAP|HUNTER|HEARD|SETUP>");
+    return;
+  }
+
+  if (strcmp(verb, "SHOT") == 0) {
+    // Saves the screen as a BMP on the SD card without pausing reception (UI_CAPTURE needs documentation mode); fetch it with
+    // SD_GET_BEGIN / tools/tab5_ft8.py shot.
+    char slug[40]{};
+    size_t n = 0;
+    for (const char* p = rest; *p != '\0' && n + 1 < sizeof(slug); ++p)
+      if (isalnum(static_cast<unsigned char>(*p)) || *p == '_' || *p == '-') slug[n++] = *p;
+    if (n == 0) snprintf(slug, sizeof(slug), "ft8_screen");
+    if (!ensure_tab5_sd() || g_sd_fs == nullptr) {
+      Serial.println("ORC_FT8_ERROR SHOT no_sd_card");
+      return;
+    }
+    const auto result = orcsdr::ui_capture::save_bmp(M5.Display, *g_sd_fs, slug);
+    if (!result.ok) {
+      Serial.printf("ORC_FT8_ERROR SHOT %s\n", result.error ? result.error : "capture_failed");
+      return;
+    }
+    Serial.printf("ORC_FT8_SHOT_OK path=/orcsdr/screenshots/%s.bmp bytes=%u\n", slug, static_cast<unsigned>(result.bytes));
     return;
   }
 
