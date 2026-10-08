@@ -31,11 +31,13 @@ jobs:
             | sha256sum -c -
           file /tmp/210703_133430.wav
 
-          curl -L --fail --retry 4 --retry-delay 2 \
-            -o /tmp/190106_000115.wav \
-            https://downloads.sourceforge.net/project/wsjt/samples/FT4/190106_000115.wav
-          sha256sum /tmp/190106_000115.wav
-          file /tmp/190106_000115.wav
+          for sample in 000000_000002.wav 190106_000112.wav 190106_000115.wav; do
+            curl -L --fail --retry 4 --retry-delay 2 \
+              -o "/tmp/$sample" \
+              "https://downloads.sourceforge.net/project/wsjt/samples/FT4/$sample"
+            sha256sum "/tmp/$sample"
+            file "/tmp/$sample"
+          done
       - name: Run WSJT-X command-line reference decoder
         run: |
           set -euo pipefail
@@ -46,9 +48,12 @@ jobs:
           reference_count="$(grep -Ec '^[0-9]{6}[[:space:]]' /tmp/wsjtx-ft8-reference.txt || true)"
           echo "WSJTX_FT8_REFERENCE_DECODE_COUNT=$reference_count"
 
-          jt9 --ft4 -d 3 /tmp/190106_000115.wav | tee /tmp/wsjtx-ft4-reference.txt
-          ft4_reference_count="$(grep -Ec '^[0-9]{6}[[:space:]]' /tmp/wsjtx-ft4-reference.txt || true)"
-          echo "WSJTX_FT4_REFERENCE_DECODE_COUNT=$ft4_reference_count"
+          for sample in 000000_000002.wav 190106_000112.wav 190106_000115.wav; do
+            echo "WSJTX_FT4_REFERENCE_FILE=$sample"
+            jt9 --ft4 -d 3 "/tmp/$sample" | tee "/tmp/wsjtx-ft4-$sample.txt"
+            ft4_reference_count="$(grep -Ec '^[0-9]{6}[[:space:]]' "/tmp/wsjtx-ft4-$sample.txt" || true)"
+            echo "WSJTX_FT4_REFERENCE_DECODE_COUNT=$ft4_reference_count"
+          done
 
       - name: Run OrcSDR native FT8 receive benchmark
         run: |
@@ -60,11 +65,14 @@ jobs:
           grep -Eq 'decoded=[1-9][0-9]*' /tmp/orcsdr-ft8-bench.txt
           grep -F 'text=WM3PEN EA6VQ -09' /tmp/orcsdr-ft8-bench.txt
 
-      - name: Run OrcSDR native FT4 receive benchmark
+      - name: Run OrcSDR native FT4 receive benchmarks
         run: |
           set -euo pipefail
           set -o pipefail
-          /usr/bin/time -f 'FT4_BENCH_WALL_SECONDS=%e' \
-            bash tools/benchmark-ft8-wav.sh /tmp/190106_000115.wav 2 1 ft4 \
-            | tee /tmp/orcsdr-ft4-bench.txt
-          grep -E '^FTX_WAV_BENCH mode=FT4 ' /tmp/orcsdr-ft4-bench.txt
+          for sample in 000000_000002.wav 190106_000112.wav 190106_000115.wav; do
+            echo "ORCSDR_FT4_FILE=$sample"
+            /usr/bin/time -f 'FT4_BENCH_WALL_SECONDS=%e' \
+              bash tools/benchmark-ft8-wav.sh "/tmp/$sample" 2 1 ft4 \
+              | tee "/tmp/orcsdr-ft4-$sample.txt"
+            grep -E '^FTX_WAV_BENCH mode=FT4 ' "/tmp/orcsdr-ft4-$sample.txt"
+          done
