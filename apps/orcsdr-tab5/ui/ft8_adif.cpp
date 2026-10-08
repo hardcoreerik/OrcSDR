@@ -86,8 +86,9 @@ size_t adif_heard_record(const Decode& decode, uint32_t dial_hz, char* out, size
 
   char date[40], time[40], freq[40];
   std::snprintf(date, sizeof(date), "%04d%02u%02u", year, month, day);
-  std::snprintf(time, sizeof(time), "%02u%02u%02u", seconds / 3600u, (seconds / 60u) % 60u, seconds % 60u);
-  std::snprintf(freq, sizeof(freq), "%u.%06u", rf_hz / 1000000u, rf_hz % 1000000u);
+  std::snprintf(time, sizeof(time), "%02u%02u%02u", static_cast<unsigned>(seconds / 3600u), static_cast<unsigned>((seconds / 60u) % 60u),
+                static_cast<unsigned>(seconds % 60u));
+  std::snprintf(freq, sizeof(freq), "%u.%06u", static_cast<unsigned>(rf_hz / 1000000u), static_cast<unsigned>(rf_hz % 1000000u));
 
   size_t used = 0;
   out[0] = '\0';
