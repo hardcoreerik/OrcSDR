@@ -41,7 +41,7 @@ Current release images include the matching ESP-Hosted C6 firmware used by the T
 - **FM Radio:** receive broadcast FM with stereo audio, RDS station information, presets, and station tuning tools.
 - **AM Radio:** receive broadcast AM with region-aware channel steps, presets, automatic tuning, and a full-band station scan.
 - **Shortwave:** enter the generic Browse/NFM workspace for experimental HF exploration; calibrated HF and complete AM/SSB modes are not yet available.
-- **Weather:** quickly tune the standard NOAA weather-radio channels.
+- **Weather:** open a five-tab offline-first field-weather dashboard without retuning the active receiver. NOAA Weather Radio listening and a bounded seven-channel scan are explicit RF actions; OrcMaps context, source/age labels, and SD report history work without an Internet weather service.
 - **Airband:** dedicated receive-only 118–136.975 MHz AM aviation dashboard with 25/8.33 kHz tuning, scan/hold/skip controls, 121.500 guard access, activity history, and offline airport/channel data support. Hardware/RF acceptance remains experimental.
 - **Marine:** listen across the standard VHF marine channel plan.
 - **CB Radio:** scan all 40 Citizens Band channels at once and stop on whoever is talking, with priority channel, lockouts, activity log, full-band spectrum, and AM/USB/LSB listening.
