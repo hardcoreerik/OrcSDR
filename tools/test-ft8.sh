@@ -24,6 +24,12 @@ g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$build_dir/ft8_backend_tests_sanitized"
 
+conditions_sources=(tests/ft8_conditions_tests.cpp apps/orcsdr-tab5/ui/ft8_model.cpp apps/orcsdr-tab5/ui/ft8_conditions.cpp apps/orcsdr-tab5/ui/ft8_adif.cpp)
+g++ "${common[@]}" -O2 "${conditions_sources[@]}" -o "$build_dir/ft8_conditions_tests"
+"$build_dir/ft8_conditions_tests"
+g++ "${common[@]}" -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer   "${conditions_sources[@]}" -o "$build_dir/ft8_conditions_tests_sanitized"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1   "$build_dir/ft8_conditions_tests_sanitized"
+
 hunter_sources=(tests/ft8_hunter_tests.cpp apps/orcsdr-tab5/ui/ft8_model.cpp apps/orcsdr-tab5/ui/ft8_hunter.cpp)
 g++ "${common[@]}" -O2 "${hunter_sources[@]}" -o "$build_dir/ft8_hunter_tests"
 "$build_dir/ft8_hunter_tests"

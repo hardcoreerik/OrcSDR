@@ -34,6 +34,8 @@ idf_component_register(
         "../ui/orcsdr_storage.cpp"
         "../ui/am_dashboard.cpp"
         "../ui/ft8_model.cpp"
+        "../ui/ft8_conditions.cpp"
+        "../ui/ft8_adif.cpp"
         "../ui/ft8_hunter.cpp"
         "../ui/ft8_dashboard.cpp"
         "../ui/am_finder.cpp"
