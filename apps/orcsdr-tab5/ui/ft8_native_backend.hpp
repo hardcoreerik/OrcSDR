@@ -13,8 +13,9 @@
 namespace orcsdr::ftx::native {
 
 // OrcSDR's native receive-only decoder behind the DecoderBackend seam: buffer one slot of 12 kS/s USB audio, then
-//   FFT spectral grid (2 rows per symbol) -> Costas sync search -> per-candidate time/frequency refinement scored on the sync
-//   symbols -> best candidates through soft demod, LDPC, CRC-14, unpack and plausibility (ft8_pipeline::try_candidate).
+//   one FFT pass builds a fine time-frequency grid (4 or 8 rows per symbol, half-bin frequency spacing) -> a decimated copy
+//   (2 rows per symbol, whole bins) feeds the Costas sync search -> each coarse candidate is refined by scoring the fine grid
+//   around it (no per-candidate correlation) -> the best go through soft demod, LDPC, CRC-14, unpack and plausibility.
 // Clean-room: written from this repository's own spectral/sync/pipeline modules and the measurements in
 // docs/ft8/REAL_WAV_BENCHMARK.md. No external decoder code. No SNR is reported (no calibrated estimator exists), and no
 // transmit path exists.
@@ -26,10 +27,10 @@ struct Memory {
 };
 
 struct Config {
-  uint16_t candidate_k = 32;      // coarse candidates refined
-  uint16_t gate = 16;             // refined candidates sent through the FEC gates
+  uint16_t candidate_k = 64;      // coarse candidates refined
+  uint16_t gate = 32;             // refined candidates sent through the FEC gates
   float min_score = 0.10f;        // coarse sync threshold
-  bool joint_search = false;      // joint time x frequency refinement (about 3.7x the cost, recovers local-optimum misses)
+  uint8_t fine_rows = 4;          // fine-grid rows per symbol: 4 (40 ms) or 8 (20 ms); the grid is always half-bin in frequency
   uint32_t deadline_ms = 0;       // stop refining/gating after this long (0 = no limit); needs now_us
   uint64_t (*now_us)() = nullptr;
 };
@@ -63,6 +64,14 @@ class Backend {
   // Decodes the buffered slot. `incomplete` marks a slot whose audio had a discontinuity: it is skipped, not "decoded".
   size_t finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool incomplete = false);
 
+  // Tunables that may change between slots. candidate_k and gate are clamped to kMaxCandidateK.
+  static constexpr uint16_t kMaxCandidateK = 64;
+  void set_config(const Config& config);
+  const Config& config() const { return config_; }
+  // The slot most recently offered (valid until the next begin_slot); for diagnostics such as saving it to storage.
+  const int16_t* slot_audio() const { return samples_; }
+  uint64_t slot_epoch_ms() const { return slot_epoch_ms_; }
+
   const Stats& stats() const { return stats_; }
   Mode mode() const { return mode_; }
   size_t buffered() const { return filled_; }
@@ -88,13 +97,16 @@ class Backend {
   spectral_fft::Plan plan_{};
   spectral_fft::Scratch scratch_{};
   size_t symbol_samples_ = 0;
-  size_t hop_ = 0;
-  size_t first_bin_ = 0;
+  size_t fine_rows_ = 4;            // fine rows per symbol in use
+  size_t fine_hop_ = 0;
+  size_t first_bin_ = 0;            // coarse (whole-bin) grid
   size_t bin_count_ = 0;
+  size_t fine_bin_count_ = 0;
   double bin_hz_ = 0.0;
-  float* grid_ = nullptr;
-  size_t grid_rows_capacity_ = 0;
-  float* local_ = nullptr;          // channel_symbols x tone_count candidate-local energies
+  float* fine_ = nullptr;           // fine grid: rows x fine_bin_count_
+  size_t fine_rows_capacity_ = 0;
+  float* coarse_ = nullptr;         // decimated copy for the coarse search: rows x bin_count_
+  size_t coarse_rows_capacity_ = 0;
   sync::Candidate* candidates_ = nullptr;
   pipeline::Workspace* workspace_ = nullptr;
 

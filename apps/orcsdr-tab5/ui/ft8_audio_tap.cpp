@@ -39,15 +39,15 @@ void design_lowpass(std::array<float, N>* taps, double cutoff, double beta) {
   for (size_t n = 0; n < N; ++n) (*taps)[n] = static_cast<float>(h[n] / sum);
 }
 
-inline void rotate(double* c, double* s, double step_cos, double step_sin) {
-  const double nc = *c * step_cos - *s * step_sin;
+inline void rotate(float* c, float* s, float step_cos, float step_sin) {
+  const float nc = *c * step_cos - *s * step_sin;
   *s = *s * step_cos + *c * step_sin;
   *c = nc;
 }
 
-inline void renormalize(double* c, double* s) {
-  const double n = std::sqrt(*c * *c + *s * *s);
-  if (n > 0.0) {
+inline void renormalize(float* c, float* s) {
+  const float n = std::sqrt(*c * *c + *s * *s);
+  if (n > 0.0f) {
     *c /= n;
     *s /= n;
   }
@@ -75,17 +75,22 @@ bool begin(Tap* tap, uint32_t input_rate_hz) {
   return true;
 }
 
+void set_dial_offset(Tap* tap, float dial_offset_hz) {
+  if (tap != nullptr && std::isfinite(dial_offset_hz) && std::fabs(dial_offset_hz) < 20000.0f) tap->dial_offset_hz = dial_offset_hz;
+}
+
 void reset(Tap* tap) {
   if (tap == nullptr) return;
   std::memset(tap->integ, 0, sizeof(tap->integ));
   std::memset(tap->comb, 0, sizeof(tap->comb));
   tap->cic_phase = 0;
   tap->dc[0] = tap->dc[1] = 0.0f;
-  tap->mix1_cos = 1.0;
-  tap->mix1_sin = 0.0;
-  tap->mix2_cos = 1.0;
-  tap->mix2_sin = 0.0;
-  tap->mix_renorm = 0;
+  tap->mix1_cos = 1.0f;
+  tap->mix1_sin = 0.0f;
+  tap->mix2_cos = 1.0f;
+  tap->mix2_sin = 0.0f;
+  tap->mix1_count = 0;
+  tap->mix2_count = 0;
   for (int ch = 0; ch < 2; ++ch) {
     tap->hist_a[ch].fill(0.0f);
     tap->hist_b[ch].fill(0.0f);
@@ -103,10 +108,11 @@ size_t max_output_samples(const Tap& tap, size_t bytes) {
 
 size_t process_cu8(Tap* tap, const uint8_t* iq, size_t bytes, int16_t* out, size_t capacity) {
   if (tap == nullptr || tap->cic_ratio == 0 || iq == nullptr || out == nullptr) return 0;
-  const double step1 = -2.0 * kPi * kCenterHz / static_cast<double>(kBaseRateHz);
-  const double step2 = 2.0 * kPi * kCenterHz / static_cast<double>(kOutputRateHz);
-  const double c1 = std::cos(step1), s1 = std::sin(step1);
-  const double c2 = std::cos(step2), s2 = std::sin(step2);
+  const double mix1_hz = static_cast<double>(tap->dial_offset_hz) + kCenterHz;   // the USB passband centre in the baseband
+  const float c1 = static_cast<float>(std::cos(-2.0 * kPi * mix1_hz / static_cast<double>(kBaseRateHz)));
+  const float s1 = static_cast<float>(std::sin(-2.0 * kPi * mix1_hz / static_cast<double>(kBaseRateHz)));
+  const float c2 = static_cast<float>(std::cos(2.0 * kPi * kCenterHz / static_cast<double>(kOutputRateHz)));
+  const float s2 = static_cast<float>(std::sin(2.0 * kPi * kCenterHz / static_cast<double>(kOutputRateHz)));
 
   size_t written = 0;
   const size_t pairs = bytes / 2;
@@ -142,48 +148,61 @@ size_t process_cu8(Tap* tap, const uint8_t* iq, size_t bytes, int16_t* out, size
     }
 
     // ---- mix the USB passband centre to 0 Hz
-    const float mc = static_cast<float>(tap->mix1_cos), ms = static_cast<float>(tap->mix1_sin);
-    const float zi = x[0] * mc - x[1] * ms;
-    const float zq = x[0] * ms + x[1] * mc;
+    const float zi = x[0] * tap->mix1_cos - x[1] * tap->mix1_sin;
+    const float zq = x[0] * tap->mix1_sin + x[1] * tap->mix1_cos;
     rotate(&tap->mix1_cos, &tap->mix1_sin, c1, s1);
-    if (++tap->mix_renorm >= 65536u) {
-      tap->mix_renorm = 0;
+    if (++tap->mix1_count >= 2048u) {
+      tap->mix1_count = 0;
       renormalize(&tap->mix1_cos, &tap->mix1_sin);
     }
 
-    // ---- stage A: FIR /5
-    tap->hist_a[0][tap->head_a] = zi;
-    tap->hist_a[1][tap->head_a] = zq;
-    const size_t pos_a = tap->head_a;
-    tap->head_a = (tap->head_a + 1) % kStageATaps;
+    // ---- stage A: FIR /5 (double-length history: the newest sample is at pos + N, older ones at lower addresses)
+    {
+      const size_t p = tap->head_a;
+      tap->hist_a[0][p] = tap->hist_a[0][p + kStageATaps] = zi;
+      tap->hist_a[1][p] = tap->hist_a[1][p + kStageATaps] = zq;
+      tap->head_a = (p + 1 == kStageATaps) ? 0 : p + 1;
+    }
     if (++tap->phase_a < 5) continue;
     tap->phase_a = 0;
     float ai = 0.0f, aq = 0.0f;
-    for (size_t k = 0; k < kStageATaps; ++k) {
-      const size_t idx = (pos_a + kStageATaps - k) % kStageATaps;
-      ai += tap->taps_a[k] * tap->hist_a[0][idx];
-      aq += tap->taps_a[k] * tap->hist_a[1][idx];
+    {
+      const size_t newest = (tap->head_a == 0 ? kStageATaps : tap->head_a) - 1 + kStageATaps;
+      const float* hi = &tap->hist_a[0][newest];
+      const float* hq = &tap->hist_a[1][newest];
+      for (size_t k = 0; k < kStageATaps; ++k) {
+        ai += tap->taps_a[k] * hi[-static_cast<long>(k)];
+        aq += tap->taps_a[k] * hq[-static_cast<long>(k)];
+      }
     }
 
     // ---- stage B: FIR /4
-    tap->hist_b[0][tap->head_b] = ai;
-    tap->hist_b[1][tap->head_b] = aq;
-    const size_t pos_b = tap->head_b;
-    tap->head_b = (tap->head_b + 1) % kStageBTaps;
+    {
+      const size_t p = tap->head_b;
+      tap->hist_b[0][p] = tap->hist_b[0][p + kStageBTaps] = ai;
+      tap->hist_b[1][p] = tap->hist_b[1][p + kStageBTaps] = aq;
+      tap->head_b = (p + 1 == kStageBTaps) ? 0 : p + 1;
+    }
     if (++tap->phase_b < 4) continue;
     tap->phase_b = 0;
     float bi = 0.0f, bq = 0.0f;
-    size_t idx = pos_b;
-    for (size_t k = 0; k < kStageBTaps; ++k) {
-      bi += tap->taps_b[k] * tap->hist_b[0][idx];
-      bq += tap->taps_b[k] * tap->hist_b[1][idx];
-      idx = (idx == 0) ? kStageBTaps - 1 : idx - 1;
+    {
+      const size_t newest = (tap->head_b == 0 ? kStageBTaps : tap->head_b) - 1 + kStageBTaps;
+      const float* hi = &tap->hist_b[0][newest];
+      const float* hq = &tap->hist_b[1][newest];
+      for (size_t k = 0; k < kStageBTaps; ++k) {
+        bi += tap->taps_b[k] * hi[-static_cast<long>(k)];
+        bq += tap->taps_b[k] * hq[-static_cast<long>(k)];
+      }
     }
 
     // ---- mix back up by the centre frequency and take the real part: 12 kS/s USB audio
-    const float uc = static_cast<float>(tap->mix2_cos), us = static_cast<float>(tap->mix2_sin);
-    const float audio = (bi * uc - bq * us) * kOutputScale;
+    const float audio = (bi * tap->mix2_cos - bq * tap->mix2_sin) * kOutputScale;
     rotate(&tap->mix2_cos, &tap->mix2_sin, c2, s2);
+    if (++tap->mix2_count >= 2048u) {
+      tap->mix2_count = 0;
+      renormalize(&tap->mix2_cos, &tap->mix2_sin);
+    }
     float v = audio;
     if (v > 32767.0f) { v = 32767.0f; ++tap->metrics.clipped_outputs; }
     if (v < -32768.0f) { v = -32768.0f; ++tap->metrics.clipped_outputs; }

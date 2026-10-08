@@ -4,6 +4,7 @@
 #include "ft8_native_backend.hpp"
 
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -38,6 +39,17 @@ struct Runtime {
   std::atomic<uint8_t> state{static_cast<uint8_t>(State::stopped)};
   std::atomic<bool> mode_changed{false};
   std::atomic<int64_t> last_touch_us{0};
+  std::atomic<bool> headless{false};
+  std::atomic<bool> config_dirty{false};
+  uint16_t cfg_k = 64;
+  uint16_t cfg_gate = 32;
+  uint8_t cfg_fine_rows = 4;
+  uint32_t cfg_deadline_ms = 11000;
+  bool have_slot = false;
+  int16_t* snapshot = nullptr;                 // stable copy of the last decoded slot (for DUMP / SAVE)
+  size_t snapshot_count = 0;
+  uint64_t snapshot_slot_ms = 0;
+  std::atomic<bool> snapshot_hold{false};
 
   int16_t* ring = nullptr;
   orcsdr::ftx::native::Backend* backend = nullptr;
@@ -49,6 +61,8 @@ struct Runtime {
   DecodeCallback on_decode = nullptr;
   void* context = nullptr;
   ClockValidFn clock_valid = nullptr;
+  DialOffsetFn dial_offset_fn = nullptr;
+  std::atomic<float> dial_offset_hz{0.0f};
   TaskHandle_t task = nullptr;
 
   Status status{};
@@ -102,12 +116,21 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
 
   set_state(State::decoding);
   g.backend->begin_slot(slot_start_ms);
+  uint64_t sumsq = 0;
+  uint32_t peak = 0, clipped = 0;
   static int16_t chunk[4096];
   uint64_t pos = static_cast<uint64_t>(start_total);
   uint64_t remaining = slot_samples;
   while (remaining > 0) {
     const size_t take = remaining > sizeof(chunk) / sizeof(chunk[0]) ? sizeof(chunk) / sizeof(chunk[0]) : static_cast<size_t>(remaining);
     for (size_t i = 0; i < take; ++i) chunk[i] = g.ring[(pos + i) % kRingSamples];
+    for (size_t i = 0; i < take; ++i) {
+      const int32_t v = chunk[i];
+      const uint32_t a = static_cast<uint32_t>(v < 0 ? -v : v);
+      sumsq += static_cast<uint64_t>(a) * a;
+      if (a > peak) peak = a;
+      if (a >= 32767u) ++clipped;
+    }
     g.backend->offer_audio(chunk, take);
     pos += take;
     remaining -= take;
@@ -115,7 +138,16 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
   orcsdr::ft8::Decode out[kDecodeCapacity];
   const size_t n = g.backend->finish_slot(out, kDecodeCapacity);
   const auto& st = g.backend->stats();
+  s.slot_rms = static_cast<uint32_t>(std::sqrt(static_cast<double>(sumsq) / static_cast<double>(slot_samples)));
+  s.slot_peak = peak;
+  s.slot_clipped = clipped;
   ++s.slots_decoded;
+  if (!g.snapshot_hold.load(std::memory_order_acquire) && g.snapshot != nullptr) {
+    std::memcpy(g.snapshot, g.backend->slot_audio(), g.backend->buffered() * sizeof(int16_t));
+    g.snapshot_count = g.backend->buffered();
+    g.snapshot_slot_ms = slot_start_ms;
+    g.have_slot = true;
+  }
   s.last_slot_decodes = static_cast<uint32_t>(n);
   s.last_decode_ms = st.total_ms;
   s.last_spectral_ms = st.spectral_ms;
@@ -138,12 +170,22 @@ void decoder_task(void*) {
   g.task_alive.store(true, std::memory_order_release);
   while (g.active.load(std::memory_order_acquire)) {
     vTaskDelay(pdMS_TO_TICKS(100));
-    if (esp_timer_get_time() - g.last_touch_us.load(std::memory_order_acquire) > 8000000) {
+    if (g.dial_offset_fn != nullptr) g.dial_offset_hz.store(g.dial_offset_fn(), std::memory_order_release);
+    if (!g.headless.load(std::memory_order_acquire) &&
+        esp_timer_get_time() - g.last_touch_us.load(std::memory_order_acquire) > 8000000) {
       g.active.store(false, std::memory_order_release);
       g.tap_ready = false;
       set_state(State::stopped);
       std::printf("ORC_FT8_RT stopped (screen left)\n");
       break;
+    }
+    if (g.config_dirty.exchange(false, std::memory_order_acq_rel)) {
+      orcsdr::ftx::native::Config c = g.backend->config();
+      c.candidate_k = g.cfg_k;
+      c.gate = g.cfg_gate;
+      c.fine_rows = g.cfg_fine_rows;
+      c.deadline_ms = g.cfg_deadline_ms;
+      g.backend->set_config(c);
     }
     if (g.mode_changed.exchange(false, std::memory_order_acq_rel)) {
       g.backend->set_mode(ftx_mode(g.mode));
@@ -185,12 +227,16 @@ void decoder_task(void*) {
 
 bool active() { return g.active.load(std::memory_order_acquire); }
 
-bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* context, ClockValidFn clock_valid) {
+bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* context, ClockValidFn clock_valid, DialOffsetFn dial_offset) {
   if (g.active.load(std::memory_order_acquire)) return true;
   if (g.task_alive.load(std::memory_order_acquire)) return false;  // previous task still exiting
   if (g.ring == nullptr) {
     g.ring = static_cast<int16_t*>(psram_alloc(kRingSamples * sizeof(int16_t)));
     if (g.ring == nullptr) return false;
+  }
+  if (g.snapshot == nullptr) {
+    g.snapshot = static_cast<int16_t*>(psram_alloc((12000u * 16u) * sizeof(int16_t)));
+    if (g.snapshot == nullptr) return false;
   }
   if (g.backend == nullptr) {
     void* mem = psram_alloc(sizeof(orcsdr::ftx::native::Backend));
@@ -198,9 +244,10 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
     g.backend = new (mem) orcsdr::ftx::native::Backend();
   }
   orcsdr::ftx::native::Config config;
-  config.candidate_k = 32;
-  config.gate = 16;
-  config.deadline_ms = 11000;                 // finish inside the slot that follows
+  config.candidate_k = g.cfg_k;
+  config.gate = g.cfg_gate;
+  config.fine_rows = g.cfg_fine_rows;
+  config.deadline_ms = g.cfg_deadline_ms;       // finish inside the slot that follows
   config.now_us = now_us_fn;
   orcsdr::ftx::native::Memory memory;
   memory.alloc = psram_alloc;
@@ -213,6 +260,8 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
   g.on_decode = on_decode;
   g.context = context;
   g.clock_valid = clock_valid;
+  g.dial_offset_fn = dial_offset;
+  g.dial_offset_hz.store(dial_offset != nullptr ? dial_offset() : 0.0f, std::memory_order_release);
   g.tap_ready = false;
   g.input_rate = 0;
   g.total.store(0, std::memory_order_release);
@@ -258,7 +307,9 @@ void note_discontinuity() { g.reset_pending.store(true, std::memory_order_releas
 
 void offer_iq(const uint8_t* iq, size_t bytes, uint32_t sample_rate_hz) {
   if (!g.active.load(std::memory_order_acquire) || g.ring == nullptr) return;
-  if (esp_timer_get_time() - g.last_touch_us.load(std::memory_order_acquire) > 6000000) return;   // screen is gone
+  if (!g.headless.load(std::memory_order_acquire) &&
+      esp_timer_get_time() - g.last_touch_us.load(std::memory_order_acquire) > 6000000)
+    return;   // screen is gone
   if (sample_rate_hz != g.input_rate) {
     g.tap_ready = tap_ns::begin(&g.tap, sample_rate_hz);
     g.input_rate = sample_rate_hz;
@@ -269,6 +320,18 @@ void offer_iq(const uint8_t* iq, size_t bytes, uint32_t sample_rate_hz) {
     mark_discontinuity();
   }
   if (!g.tap_ready) return;
+  {
+    // Follow the tuner: when the dial's position in the baseband moves, shift the passband (a retune is also a discontinuity).
+    const float wanted = g.dial_offset_hz.load(std::memory_order_acquire);
+    const float have = g.tap.dial_offset_hz;
+    if (wanted != have) {
+      tap_ns::set_dial_offset(&g.tap, wanted);
+      if (std::fabs(wanted - have) > 200.0f) {
+        tap_ns::reset(&g.tap);
+        mark_discontinuity();
+      }
+    }
+  }
 
   const int64_t t0 = esp_timer_get_time();
   static int16_t out[512];
@@ -292,8 +355,42 @@ void offer_iq(const uint8_t* iq, size_t bytes, uint32_t sample_rate_hz) {
   }
 }
 
+void set_headless(bool headless) {
+  g.headless.store(headless, std::memory_order_release);
+  if (headless) touch();
+}
+
+bool set_config(uint16_t k, uint16_t gate, uint8_t fine_rows, uint32_t deadline_ms) {
+  if ((fine_rows != 4 && fine_rows != 8) || k < 1 || k > orcsdr::ftx::native::Backend::kMaxCandidateK || gate < 1 || gate > orcsdr::ftx::native::Backend::kMaxCandidateK)
+    return false;
+  g.cfg_k = k;
+  g.cfg_gate = gate;
+  g.cfg_fine_rows = fine_rows;
+  g.cfg_deadline_ms = deadline_ms;
+  g.config_dirty.store(true, std::memory_order_release);
+  return true;
+}
+
+bool last_slot_audio(const int16_t** samples, size_t* count, uint64_t* slot_epoch_ms) {
+  if (g.snapshot == nullptr || !g.have_slot || samples == nullptr || count == nullptr || slot_epoch_ms == nullptr) return false;
+  g.snapshot_hold.store(true, std::memory_order_release);   // keeps the copy still until release_slot_audio()
+  *samples = g.snapshot;
+  *count = g.snapshot_count;
+  *slot_epoch_ms = g.snapshot_slot_ms;
+  return g.snapshot_count > 0;
+}
+
+void release_slot_audio() { g.snapshot_hold.store(false, std::memory_order_release); }
+
 Status status() {
   Status s = g.status;
+  s.mode = g.mode;
+  s.headless = g.headless.load(std::memory_order_acquire);
+  s.cfg_k = g.cfg_k;
+  s.dial_offset_hz = g.tap.dial_offset_hz;
+  s.cfg_gate = g.cfg_gate;
+  s.cfg_fine_rows = g.cfg_fine_rows;
+  s.cfg_deadline_ms = g.cfg_deadline_ms;
   s.state = static_cast<State>(g.state.load(std::memory_order_acquire));
   s.tap_running = g.tap_ready && g.active.load(std::memory_order_acquire);
   s.input_rate_hz = g.input_rate;

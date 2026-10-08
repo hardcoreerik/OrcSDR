@@ -53,15 +53,12 @@ void insert_sorted(Candidate* output, std::size_t* count, std::size_t capacity,
 
 }  // namespace
 
-bool score_candidate(const ModeProfile& profile, const EnergyGrid& grid,
-                     const Geometry& geometry, uint16_t start_row,
-                     uint16_t base_bin, Candidate* result) {
-  if (result == nullptr || !profile_valid(profile) || !grid_valid(grid) ||
-      !geometry_valid(geometry) || profile.sync_block_count == 0 ||
-      profile.tone_count < 2) {
-    return false;
-  }
+namespace {
 
+// The scoring body, with the profile/grid/geometry validated once by the caller. Single-precision throughout: the ESP32-P4
+// FPU is single precision, and a double accumulator here costs about 100 cycles per add on the device.
+bool score_core(const ModeProfile& profile, const EnergyGrid& grid, const Geometry& geometry, uint16_t start_row,
+                uint16_t base_bin, Candidate* result) {
   const std::size_t final_row =
       static_cast<std::size_t>(start_row) +
       static_cast<std::size_t>(profile.channel_symbols - 1) *
@@ -72,8 +69,8 @@ bool score_candidate(const ModeProfile& profile, const EnergyGrid& grid,
           geometry.bins_per_tone;
   if (final_row >= grid.rows || final_bin >= grid.bins) return false;
 
-  double expected_sum = 0.0;
-  double competing_sum = 0.0;
+  float expected_sum = 0.0f;
+  float competing_sum = 0.0f;
   std::size_t observations = 0;
 
   for (std::size_t block_index = 0;
@@ -85,7 +82,7 @@ bool score_candidate(const ModeProfile& profile, const EnergyGrid& grid,
           static_cast<std::size_t>(block.first_symbol + symbol) *
               geometry.rows_per_symbol;
       const uint8_t expected_tone = block.tones[symbol];
-      double other_sum = 0.0;
+      float other_sum = 0.0f;
       for (uint8_t tone = 0; tone < profile.tone_count; ++tone) {
         const std::size_t bin =
             static_cast<std::size_t>(base_bin) +
@@ -98,17 +95,14 @@ bool score_candidate(const ModeProfile& profile, const EnergyGrid& grid,
           other_sum += value;
         }
       }
-      competing_sum += other_sum /
-                       static_cast<double>(profile.tone_count - 1);
+      competing_sum += other_sum / static_cast<float>(profile.tone_count - 1);
       ++observations;
     }
   }
 
   if (observations == 0) return false;
-  const float expected_mean =
-      static_cast<float>(expected_sum / observations);
-  const float competing_mean =
-      static_cast<float>(competing_sum / observations);
+  const float expected_mean = expected_sum / static_cast<float>(observations);
+  const float competing_mean = competing_sum / static_cast<float>(observations);
   constexpr float kEpsilon = 1.0e-12f;
   const float denominator = expected_mean + competing_mean + kEpsilon;
   const float score =
@@ -120,12 +114,25 @@ bool score_candidate(const ModeProfile& profile, const EnergyGrid& grid,
   return true;
 }
 
+}  // namespace
+
+bool score_candidate(const ModeProfile& profile, const EnergyGrid& grid,
+                     const Geometry& geometry, uint16_t start_row,
+                     uint16_t base_bin, Candidate* result) {
+  if (result == nullptr || !profile_valid(profile) || !grid_valid(grid) ||
+      !geometry_valid(geometry) || profile.sync_block_count == 0 ||
+      profile.tone_count < 2) {
+    return false;
+  }
+  return score_core(profile, grid, geometry, start_row, base_bin, result);
+}
+
 std::size_t search(const ModeProfile& profile, const EnergyGrid& grid,
                    const Geometry& geometry, const SearchConfig& config,
                    Candidate* output, std::size_t capacity) {
   if (output == nullptr || capacity == 0 ||
       !implementation_ready(profile.mode) || !profile_valid(profile) ||
-      !grid_valid(grid) || !geometry_valid(geometry) ||
+      !grid_valid(grid) || !geometry_valid(geometry) || profile.sync_block_count == 0 || profile.tone_count < 2 ||
       !std::isfinite(config.min_score) || config.min_score < -1.0f ||
       config.min_score > 1.0f) {
     return 0;
@@ -163,9 +170,7 @@ std::size_t search(const ModeProfile& profile, const EnergyGrid& grid,
   for (std::size_t row = start_begin; row < start_end; ++row) {
     for (std::size_t bin = base_begin; bin < base_end; ++bin) {
       Candidate candidate{};
-      if (!score_candidate(profile, grid, geometry,
-                           static_cast<uint16_t>(row),
-                           static_cast<uint16_t>(bin), &candidate) ||
+      if (!score_core(profile, grid, geometry, static_cast<uint16_t>(row), static_cast<uint16_t>(bin), &candidate) ||
           candidate.score < config.min_score) {
         continue;
       }

@@ -70,6 +70,29 @@ void test_usb_passes_and_lsb_is_rejected(uint32_t rate) {
   }
 }
 
+// The tuner centre is not the dial: a signal 1000 Hz above a dial that sits +4000 Hz above the centre is at +5000 Hz baseband.
+void test_dial_offset() {
+  const uint32_t rate = 240000;
+  Tap tap;
+  assert(begin(&tap, rate));
+  set_dial_offset(&tap, 4000.0f);
+  const auto iq = make_cu8(5000.0, 60.0, rate, 1.5);
+  std::vector<int16_t> out(max_output_samples(tap, iq.size()));
+  out.resize(process_cu8(&tap, iq.data(), iq.size(), out.data(), out.size()));
+  const double got = tone_amplitude(out, 1000.0);
+  assert(got > 60.0 * kOutputScale * 0.89 && got < 60.0 * kOutputScale * 1.12);
+  // The opposite sideband of that dial (1000 Hz below it) is rejected.
+  Tap tap2;
+  assert(begin(&tap2, rate));
+  set_dial_offset(&tap2, 4000.0f);
+  const auto lsb = make_cu8(3000.0, 60.0, rate, 1.5);
+  std::vector<int16_t> out2(max_output_samples(tap2, lsb.size()));
+  out2.resize(process_cu8(&tap2, lsb.data(), lsb.size(), out2.data(), out2.size()));
+  assert(rms_tail(out2) < got * 0.0032);
+  set_dial_offset(&tap2, 99999.0f);   // out-of-range offsets are ignored
+  assert(tap2.dial_offset_hz == 4000.0f);
+}
+
 void test_block_split_matches_one_call() {
   const uint32_t rate = 2400000;
   const auto iq = make_cu8(1234.0, 40.0, rate, 0.5);
@@ -122,6 +145,7 @@ int main() {
   assert(self_check());
   test_usb_passes_and_lsb_is_rejected(240000);
   test_usb_passes_and_lsb_is_rejected(2400000);
+  test_dial_offset();
   test_block_split_matches_one_call();
   test_dc_offset_is_removed();
   test_output_count_and_rate();

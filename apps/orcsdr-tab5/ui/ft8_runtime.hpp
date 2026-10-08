@@ -32,13 +32,26 @@ struct Status {
   uint32_t avg_block_us = 0;
   bool last_deadline_hit = false;
   uint16_t last_coarse = 0;
+  orcsdr::ft8::DigitalMode mode = orcsdr::ft8::DigitalMode::ft8;
+  bool headless = false;
+  uint16_t cfg_k = 0;
+  uint16_t cfg_gate = 0;
+  uint8_t cfg_fine_rows = 4;
+  uint32_t cfg_deadline_ms = 0;
+  uint32_t slot_rms = 0;           // RMS of the last decoded slot's audio (int16 counts)
+  uint32_t slot_peak = 0;
+  uint32_t slot_clipped = 0;       // samples at full scale in that slot
+  float dial_offset_hz = 0.0f;     // the offset the tap is applying
 };
 
 using DecodeCallback = void (*)(const orcsdr::ft8::Decode& decode, void* context);
 
 // Allocates the ring and backend (PSRAM) and starts the decoder task. `on_decode` runs on the decoder task.
 using ClockValidFn = bool (*)();
-bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* context, ClockValidFn clock_valid);
+// Where the dial frequency sits in the baseband, in Hz (dial minus the tuner's actual centre; positive = above it). The tuner
+// steps coarsely, so this is rarely zero; the tap shifts its USB passband by it. Polled by the decoder task.
+using DialOffsetFn = float (*)();
+bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* context, ClockValidFn clock_valid, DialOffsetFn dial_offset);
 void stop();
 // The FT8 screen calls this on every refresh. When it has not been called for several seconds the screen is gone and the
 // runtime stops itself, so leaving the screen never needs an explicit hook.
@@ -50,5 +63,14 @@ void offer_iq(const uint8_t* iq, size_t bytes, uint32_t sample_rate_hz);
 // Call on tune, band, gain or rate changes: the audio is no longer contiguous, so the slot in progress is skipped.
 void note_discontinuity();
 Status status();
+
+// Runs with no FT8 screen (scripting): the runtime stays alive without touch() calls until set_headless(false).
+void set_headless(bool headless);
+// Decoder tunables, applied from the next slot. `k` = coarse candidates refined, `gate` = candidates sent through the FEC gates, `fine_rows` = fine-grid rows per symbol (4 or 8).
+bool set_config(uint16_t k, uint16_t gate, uint8_t fine_rows, uint32_t deadline_ms);
+// The audio of the slot most recently decoded (12 kS/s mono), for saving to storage. False if none yet.
+bool last_slot_audio(const int16_t** samples, size_t* count, uint64_t* slot_epoch_ms);
+// Call when finished with the pointer from last_slot_audio(); until then the copy is not refreshed.
+void release_slot_audio();
 
 }  // namespace orcsdr::ft8_runtime

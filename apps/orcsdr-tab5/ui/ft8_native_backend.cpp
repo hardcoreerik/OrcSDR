@@ -10,107 +10,12 @@
 namespace orcsdr::ftx::native {
 namespace {
 
-constexpr float kPi = 3.14159265358979323846f;
 constexpr float kLowHz = 200.0f;
 constexpr float kHighHz = 3000.0f;
 
-// Goertzel power of one tone over a window, scaled like the spectral grid (|X|^2 / n^2).
-inline float tone_power(const int16_t* x, size_t n, float coeff) {
-  float s1 = 0.0f, s2 = 0.0f;
-  for (size_t i = 0; i < n; ++i) {
-    const float s0 = static_cast<float>(x[i]) + coeff * s1 - s2;
-    s2 = s1;
-    s1 = s0;
-  }
-  const float p = s1 * s1 + s2 * s2 - coeff * s1 * s2;
-  return std::max(0.0f, p) / (static_cast<float>(n) * static_cast<float>(n));
-}
-
-struct Locator {
-  const ModeProfile& p;
-  const int16_t* x;
-  size_t count;
-  double rate;
-  double tone_hz;
-
-  bool in_range(long start) const {
-    return start >= 0 && static_cast<size_t>(start) + static_cast<size_t>(p.channel_symbols) * p.symbol_samples <= count;
-  }
-
-  void coefficients(double base_hz, float* coeff) const {
-    for (uint8_t t = 0; t < p.tone_count; ++t)
-      coeff[t] = 2.0f * std::cos(2.0f * kPi * static_cast<float>((base_hz + t * tone_hz) / rate));
-  }
-
-  // Contrast on the protocol sync symbols only: (expected - competing) / (expected + competing).
-  float sync_score(long start, double base_hz) const {
-    float coeff[8];
-    coefficients(base_hz, coeff);
-    float expected = 0.0f, total = 0.0f;
-    for (size_t b = 0; b < p.sync_block_count; ++b) {
-      const auto& block = p.sync[b];
-      for (size_t k = 0; k < block.length; ++k) {
-        const int16_t* w = x + start + (block.first_symbol + k) * p.symbol_samples;
-        for (uint8_t tone = 0; tone < p.tone_count; ++tone) {
-          const float e = tone_power(w, p.symbol_samples, coeff[tone]);
-          total += e;
-          if (tone == block.tones[k]) expected += e;
-        }
-      }
-    }
-    const float competing = total - expected;
-    return (expected - competing) / (expected + competing + 1.0e-12f);
-  }
-
-  // Coordinate (or joint) search around a coarse position.
-  float refine(long start0, double hz0, double time_span, double freq_span, bool joint, long* start, double* hz) const {
-    long best_t = start0;
-    double best_f = hz0;
-    float best = in_range(best_t) ? sync_score(best_t, best_f) : -2.0f;
-    auto try_point = [&](long t, double f) {
-      if (!in_range(t) || f < 100.0) return;
-      const float s = sync_score(t, f);
-      if (s > best) {
-        best = s;
-        best_t = t;
-        best_f = f;
-      }
-    };
-    if (joint) {
-      const long bt = best_t;
-      const double bf = best_f;
-      for (int ti = -4; ti <= 4; ++ti)
-        for (int fi = -4; fi <= 4; ++fi) {
-          if (ti == 0 && fi == 0) continue;
-          try_point(bt + std::lround(time_span * ti / 4.0), bf + freq_span * fi / 4.0);
-        }
-    } else {
-      for (int pass = 0; pass < 1; ++pass) {
-        const long bt = best_t;
-        for (int i = -4; i <= 4; ++i)
-          if (i != 0) try_point(bt + std::lround(time_span * i / 4.0), best_f);
-        const double bf = best_f;
-        for (int i = -4; i <= 4; ++i)
-          if (i != 0) try_point(best_t, bf + freq_span * i / 4.0);
-      }
-    }
-    {
-      const long bt = best_t;
-      for (int i = -2; i <= 2; ++i)
-        if (i != 0) try_point(bt + std::lround(time_span / 4.0 * i / 2.0), best_f);
-      const double bf = best_f;
-      for (int i = -2; i <= 2; ++i)
-        if (i != 0) try_point(best_t, bf + freq_span / 4.0 * i / 2.0);
-    }
-    *start = best_t;
-    *hz = best_f;
-    return best;
-  }
-};
-
 struct Refined {
-  long start;
-  double hz;
+  uint16_t start_row;   // fine grid row
+  uint16_t base_bin;    // fine grid bin of tone 0
   float score;
   float coarse;
 };
@@ -133,19 +38,20 @@ void Backend::drop(void* pointer) {
 
 void Backend::end() {
   drop(samples_);
-  drop(grid_);
-  drop(local_);
+  drop(fine_);
+  drop(coarse_);
   drop(candidates_);
   if (workspace_ != nullptr) {
     workspace_->~Workspace();
     drop(workspace_);
   }
   samples_ = nullptr;
-  grid_ = nullptr;
-  local_ = nullptr;
+  fine_ = nullptr;
+  coarse_ = nullptr;
   candidates_ = nullptr;
   workspace_ = nullptr;
   capacity_ = filled_ = 0;
+  fine_rows_capacity_ = coarse_rows_capacity_ = 0;
   slot_open_ = false;
 }
 
@@ -153,12 +59,15 @@ bool Backend::configure_mode(Mode mode) {
   if (!implementation_ready(mode)) return false;
   const ModeProfile& p = profile(mode);
   if (p.sample_rate_hz != sample_rate_) return false;
-  if (!spectral_fft::make_plan(&plan_, p.symbol_samples)) return false;
   symbol_samples_ = p.symbol_samples;
-  hop_ = symbol_samples_ / 2;
+  fine_rows_ = config_.fine_rows == 8 ? 8 : 4;
+  fine_hop_ = symbol_samples_ / fine_rows_;
+  // The fine grid is a zero-padded 2n-point transform of each n-sample window: bins every fs / (2n).
+  if (!spectral_fft::make_plan(&plan_, 2 * symbol_samples_)) return false;
   bin_hz_ = static_cast<double>(sample_rate_) / static_cast<double>(symbol_samples_);
   first_bin_ = static_cast<size_t>(std::ceil(kLowHz / bin_hz_));
   bin_count_ = static_cast<size_t>(std::floor(kHighHz / bin_hz_)) - first_bin_ + 1;
+  fine_bin_count_ = 2 * bin_count_ - 1;
 
   const size_t needed_samples = static_cast<size_t>(p.slot_ms) * sample_rate_ / 1000u + sample_rate_ / 2u;
   if (needed_samples > capacity_) {
@@ -167,14 +76,15 @@ bool Backend::configure_mode(Mode mode) {
     capacity_ = samples_ != nullptr ? needed_samples : 0;
     if (samples_ == nullptr) return false;
   }
-  const size_t rows = 1 + (capacity_ - symbol_samples_) / hop_;
-  drop(grid_);
-  grid_ = static_cast<float*>(grab(rows * bin_count_ * sizeof(float)));
-  grid_rows_capacity_ = grid_ != nullptr ? rows : 0;
-  if (grid_ == nullptr) return false;
-  drop(local_);
-  local_ = static_cast<float*>(grab(static_cast<size_t>(p.channel_symbols) * p.tone_count * sizeof(float)));
-  if (local_ == nullptr) return false;
+  const size_t fine_rows = 1 + (capacity_ - symbol_samples_) / fine_hop_;
+  drop(fine_);
+  fine_ = static_cast<float*>(grab(fine_rows * fine_bin_count_ * sizeof(float)));
+  fine_rows_capacity_ = fine_ != nullptr ? fine_rows : 0;
+  const size_t coarse_rows = 1 + (fine_rows - 1) / (fine_rows_ / 2);
+  drop(coarse_);
+  coarse_ = static_cast<float*>(grab(coarse_rows * bin_count_ * sizeof(float)));
+  coarse_rows_capacity_ = coarse_ != nullptr ? coarse_rows : 0;
+  if (fine_ == nullptr || coarse_ == nullptr) return false;
   mode_ = mode;
   return true;
 }
@@ -185,8 +95,9 @@ bool Backend::begin(uint32_t sample_rate_hz, Mode mode, const Config& config, co
   config_ = config;
   memory_ = memory;
   sample_rate_ = sample_rate_hz;
-  if (config_.candidate_k == 0 || config_.gate == 0) return false;
-  candidates_ = static_cast<sync::Candidate*>(grab(sizeof(sync::Candidate) * config_.candidate_k));
+  if (config_.candidate_k == 0 || config_.gate == 0 || config_.candidate_k > kMaxCandidateK || config_.gate > kMaxCandidateK)
+    return false;
+  candidates_ = static_cast<sync::Candidate*>(grab(sizeof(sync::Candidate) * kMaxCandidateK));
   void* ws = grab(sizeof(pipeline::Workspace));
   if (candidates_ == nullptr || ws == nullptr) {
     drop(ws);
@@ -199,6 +110,19 @@ bool Backend::begin(uint32_t sample_rate_hz, Mode mode, const Config& config, co
     return false;
   }
   return true;
+}
+
+void Backend::set_config(const Config& config) {
+  const uint8_t previous_rows = config_.fine_rows;
+  config_ = config;
+  config_.candidate_k = std::min<uint16_t>(std::max<uint16_t>(config_.candidate_k, 1), kMaxCandidateK);
+  config_.gate = std::min<uint16_t>(std::max<uint16_t>(config_.gate, 1), kMaxCandidateK);
+  config_.fine_rows = config_.fine_rows == 8 ? 8 : 4;
+  if (config_.fine_rows != previous_rows && sample_rate_ != 0) {
+    filled_ = 0;
+    slot_open_ = false;
+    (void)configure_mode(mode_);   // reallocates the grids for the new resolution
+  }
 }
 
 bool Backend::set_mode(Mode mode) {
@@ -251,47 +175,65 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
     return 0;
   }
 
-  // ---- spectral grid
-  const size_t rows = spectral_fft::power_rows(plan_, &scratch_, samples_, filled_, hop_, first_bin_, bin_count_, grid_, bin_count_,
-                                               grid_rows_capacity_);
+  // ---- fine grid: one zero-padded FFT per row (half-bin frequency spacing)
+  const size_t fine_rows = spectral_fft::power_rows(plan_, &scratch_, samples_, filled_, symbol_samples_, fine_hop_, 2 * first_bin_,
+                                                    fine_bin_count_, fine_, fine_bin_count_, fine_rows_capacity_);
   const uint32_t t_spectral = clock_ms();
   stats_.spectral_ms = t_spectral - t_begin;
 
-  // ---- coarse search
-  sync::EnergyGrid grid{grid_, rows, bin_count_, bin_count_};
-  const sync::Geometry geometry{2, 1};
+  // ---- coarse view (2 rows per symbol, whole bins) and the sync search
+  const size_t row_step = fine_rows_ / 2;
+  const size_t coarse_rows = fine_rows == 0 ? 0 : 1 + (fine_rows - 1) / row_step;
+  for (size_t r = 0; r < coarse_rows; ++r) {
+    const float* src = fine_ + r * row_step * fine_bin_count_;
+    float* dst = coarse_ + r * bin_count_;
+    for (size_t j = 0; j < bin_count_; ++j) dst[j] = src[2 * j];
+  }
+  sync::EnergyGrid coarse{coarse_, coarse_rows, bin_count_, bin_count_};
   sync::SearchConfig search{};
   search.min_score = config_.min_score;
   search.suppress_time_rows = 2;
   search.suppress_frequency_bins = 1;
-  const size_t n = sync::search(p, grid, geometry, search, candidates_, config_.candidate_k);
+  const size_t n = sync::search(p, coarse, sync::Geometry{2, 1}, search, candidates_, config_.candidate_k);
   const uint32_t t_search = clock_ms();
   stats_.search_ms = t_search - t_spectral;
   stats_.coarse_candidates = static_cast<uint16_t>(n);
 
-  // ---- refinement (host std::vector is avoided: the refined list lives in the workspace-sized local stack array)
-  Refined refined_stack[64];
-  const size_t refine_n = std::min<size_t>(n, 64);
-  const Locator locator{p, samples_, filled_, static_cast<double>(sample_rate_), static_cast<double>(p.tone_spacing_millihz) / 1000.0};
+  // ---- refine each coarse candidate by scoring the fine grid around it (time +-1 coarse row, frequency +-1 coarse bin)
+  const sync::Geometry fine_geometry{static_cast<uint8_t>(fine_rows_), 2};
+  sync::EnergyGrid fine{fine_, fine_rows, fine_bin_count_, fine_bin_count_};
+  Refined refined[kMaxCandidateK];
   size_t produced = 0;
-  for (size_t i = 0; i < refine_n; ++i) {
-    if (over_deadline()) {
-      stats_.deadline_hit = true;
-      break;
-    }
+  const int row_span = static_cast<int>(row_step);
+  for (size_t i = 0; i < n; ++i) {
     const auto& c = candidates_[i];
-    long start = static_cast<long>(c.start_row) * static_cast<long>(hop_);
-    double hz = static_cast<double>(first_bin_ + c.base_bin) * bin_hz_;
-    long rs = start;
-    double rh = hz;
-    const float score = locator.refine(start, hz, static_cast<double>(hop_), bin_hz_, config_.joint_search, &rs, &rh);
-    refined_stack[produced++] = {rs, rh, score, c.score};
+    const int centre_row = static_cast<int>(c.start_row * row_step);
+    const int centre_bin = 2 * static_cast<int>(c.base_bin);
+    Refined best{static_cast<uint16_t>(centre_row), static_cast<uint16_t>(centre_bin), -2.0f, c.score};
+    for (int dr = -row_span; dr <= row_span; ++dr)
+      for (int db = -2; db <= 2; ++db) {
+        const int row = centre_row + dr, bin = centre_bin + db;
+        if (row < 0 || bin < 0) continue;
+        sync::Candidate sc{};
+        if (!sync::score_candidate(p, fine, fine_geometry, static_cast<uint16_t>(row), static_cast<uint16_t>(bin), &sc)) continue;
+        if (sc.score > best.score) best = {static_cast<uint16_t>(row), static_cast<uint16_t>(bin), sc.score, c.score};
+      }
+    if (best.score < -1.5f) continue;
+    bool duplicate = false;
+    for (size_t k = 0; k < produced; ++k)
+      if (std::abs(static_cast<int>(refined[k].start_row) - static_cast<int>(best.start_row)) <= 1 &&
+          std::abs(static_cast<int>(refined[k].base_bin) - static_cast<int>(best.base_bin)) <= 1) {
+        duplicate = true;
+        if (best.score > refined[k].score) refined[k] = best;
+        break;
+      }
+    if (!duplicate) refined[produced++] = best;
   }
-  std::stable_sort(refined_stack, refined_stack + produced, [](const Refined& a, const Refined& b) { return a.score > b.score; });
+  std::stable_sort(refined, refined + produced, [](const Refined& a, const Refined& b) { return a.score > b.score; });
   const uint32_t t_refine = clock_ms();
   stats_.refine_ms = t_refine - t_search;
 
-  // ---- gates on the best candidates
+  // ---- gates on the best candidates, straight on the fine grid
   pipeline::Config pipe{};
   pipe.search = search;
   size_t out_n = 0;
@@ -301,20 +243,14 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
       stats_.deadline_hit = true;
       break;
     }
-    const Refined& r = refined_stack[i];
-    if (!locator.in_range(r.start)) continue;
-    float coeff[8];
-    locator.coefficients(r.hz, coeff);
-    for (size_t s = 0; s < p.channel_symbols; ++s)
-      for (uint8_t tone = 0; tone < p.tone_count; ++tone)
-        local_[s * p.tone_count + tone] = tone_power(samples_ + r.start + s * p.symbol_samples, p.symbol_samples, coeff[tone]);
-    sync::EnergyGrid lg{local_, p.channel_symbols, p.tone_count, p.tone_count};
+    const Refined& r = refined[i];
     sync::Candidate lc{};
-    lc.score = r.coarse;
+    lc.start_row = r.start_row;
+    lc.base_bin = r.base_bin;
+    lc.score = r.score;
     pipeline::FrameResult frame{};
     ++gated;
-    if (pipeline::try_candidate(p, lg, sync::Geometry{1, 1}, lc, pipe, workspace_, &frame, nullptr) != pipeline::Outcome::accepted)
-      continue;
+    if (pipeline::try_candidate(p, fine, fine_geometry, lc, pipe, workspace_, &frame, nullptr) != pipeline::Outcome::accepted) continue;
 
     bool duplicate = false;
     for (size_t k = 0; k < out_n; ++k)
@@ -324,11 +260,13 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
       }
     if (duplicate) continue;
 
+    const double hz = (static_cast<double>(2 * first_bin_ + r.base_bin)) * bin_hz_ / 2.0;
+    const double start_s = static_cast<double>(r.start_row) * static_cast<double>(fine_hop_) / sample_rate_;
     orcsdr::ft8::Decode d{};
     d.utc_epoch = static_cast<uint32_t>(slot_epoch_ms_ / 1000u);
     d.snr_db = 0;
-    d.dt_ms = static_cast<int16_t>(std::lround(static_cast<double>(r.start) * 1000.0 / sample_rate_ - 500.0));
-    d.audio_hz = static_cast<uint16_t>(std::lround(r.hz));
+    d.dt_ms = static_cast<int16_t>(std::lround((start_s - 0.5) * 1000.0));
+    d.audio_hz = static_cast<uint16_t>(std::lround(hz));
     d.sync_score = static_cast<int16_t>(std::lround(r.score * 100.0f));
     std::snprintf(d.message, sizeof(d.message), "%.47s", frame.standard.text);
     std::snprintf(d.callsign, sizeof(d.callsign), "%.15s", frame.standard.second.text);

@@ -52,15 +52,16 @@ bool make_plan(Plan* plan, size_t n) {
   return true;
 }
 
-void power_bins(const Plan& plan, Scratch* scratch, const int16_t* samples, size_t first_bin, size_t bin_count, float* out) {
-  const size_t n = plan.n, n1 = plan.n1, n2 = plan.n2;
+void power_bins(const Plan& plan, Scratch* scratch, const int16_t* samples, size_t input_len, size_t first_bin, size_t bin_count,
+                float* out) {
+  const size_t n1 = plan.n1, n2 = plan.n2;
   float* re = scratch->re.data();
   float* im = scratch->im.data();
 
   // Step 1 and 2: n1-point DFT over a for every b, then the middle twiddle; stored bit-reversed along b.
   for (size_t b = 0; b < n2; ++b) {
     float xs[kMaxN1];
-    for (size_t a = 0; a < n1; ++a) xs[a] = static_cast<float>(samples[n2 * a + b]);
+    for (size_t a = 0; a < n1; ++a) xs[a] = (n2 * a + b) < input_len ? static_cast<float>(samples[n2 * a + b]) : 0.0f;
     const size_t pos = plan.bitrev[b];
     for (size_t c = 0; c < n1; ++c) {
       float yr = 0.0f, yi = 0.0f;
@@ -95,7 +96,7 @@ void power_bins(const Plan& plan, Scratch* scratch, const int16_t* samples, size
     }
   }
 
-  const float inv = 1.0f / (static_cast<float>(n) * static_cast<float>(n));
+  const float inv = 1.0f / (static_cast<float>(input_len) * static_cast<float>(input_len));
   for (size_t j = 0; j < bin_count; ++j) {
     const size_t k = first_bin + j;
     const size_t c = k % n1, d = k / n1;
@@ -104,19 +105,19 @@ void power_bins(const Plan& plan, Scratch* scratch, const int16_t* samples, size
   }
 }
 
-size_t power_rows(const Plan& plan, Scratch* scratch, const int16_t* samples, size_t count, size_t hop, size_t first_bin,
-                  size_t bin_count, float* grid, size_t grid_stride, size_t row_capacity) {
-  if (plan.n == 0 || hop == 0 || count < plan.n || first_bin + bin_count > plan.n / 2) return 0;
+size_t power_rows(const Plan& plan, Scratch* scratch, const int16_t* samples, size_t count, size_t input_len, size_t hop,
+                  size_t first_bin, size_t bin_count, float* grid, size_t grid_stride, size_t row_capacity) {
+  if (plan.n == 0 || hop == 0 || input_len == 0 || input_len > plan.n || count < input_len || first_bin + bin_count > plan.n / 2) return 0;
   size_t rows = 0;
-  for (size_t start = 0; start + plan.n <= count && rows < row_capacity; start += hop, ++rows)
-    power_bins(plan, scratch, samples + start, first_bin, bin_count, grid + rows * grid_stride);
+  for (size_t start = 0; start + input_len <= count && rows < row_capacity; start += hop, ++rows)
+    power_bins(plan, scratch, samples + start, input_len, first_bin, bin_count, grid + rows * grid_stride);
   return rows;
 }
 
 bool self_check() {
   Plan p;
   return make_plan(&p, 1920) && p.n1 == 15 && p.n2 == 128 && make_plan(&p, 576) && p.n1 == 9 && p.n2 == 64 &&
-         !make_plan(&p, 1921) && !make_plan(&p, 0);
+         make_plan(&p, 3840) && p.n1 == 15 && p.n2 == 256 && make_plan(&p, 1152) && !make_plan(&p, 1921) && !make_plan(&p, 0);
 }
 
 }  // namespace orcsdr::ftx::spectral_fft

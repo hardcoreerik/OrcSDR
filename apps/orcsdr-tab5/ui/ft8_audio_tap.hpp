@@ -41,18 +41,21 @@ struct Tap {
   int32_t integ[2][3]{};
   int32_t comb[2][3]{};
   uint32_t cic_phase = 0;
+  float dial_offset_hz = 0.0f;                  // where the dial frequency sits in the baseband (dial minus the tuner centre)
 
   float dc[2]{};
 
-  double mix1_cos = 1.0, mix1_sin = 0.0;        // 240 kS/s mixer state
-  double mix2_cos = 1.0, mix2_sin = 0.0;        // 12 kS/s mixer state
-  uint32_t mix_renorm = 0;
+  float mix1_cos = 1.0f, mix1_sin = 0.0f;       // 240 kS/s mixer state (float: the P4 FPU is single precision)
+  float mix2_cos = 1.0f, mix2_sin = 0.0f;       // 12 kS/s mixer state
+  uint32_t mix1_count = 0;
+  uint32_t mix2_count = 0;
 
-  std::array<float, kStageATaps> hist_a[2]{};
+  // Double-length histories (each sample written twice) so every convolution reads one contiguous run, no modulo.
+  std::array<float, 2 * kStageATaps> hist_a[2]{};
   size_t head_a = 0;
   uint32_t phase_a = 0;
 
-  std::array<float, kStageBTaps> hist_b[2]{};
+  std::array<float, 2 * kStageBTaps> hist_b[2]{};
   size_t head_b = 0;
   uint32_t phase_b = 0;
 
@@ -62,6 +65,9 @@ struct Tap {
 // Rates the tap accepts: a multiple of 240 kS/s (240 k, 480 k, 960 k, 1.2 M, 2.4 M, ...).
 bool rate_supported(uint32_t input_rate_hz);
 bool begin(Tap* tap, uint32_t input_rate_hz);
+// The receiver rarely sits exactly on the dial frequency (the tuner steps coarsely and the app may offset it). The tap needs
+// the dial's position in the baseband: positive when the dial is above the tuner centre. Keeps the filter state.
+void set_dial_offset(Tap* tap, float dial_offset_hz);
 // Clears filter state and counters (use on retune, rate change, a dropped block, or receiver stop).
 void reset(Tap* tap);
 // Upper bound on the output samples produced from `bytes` of CU8 (2 bytes per complex sample).

@@ -1,5 +1,5 @@
 // Host-only: decode a 15 s (FT8) or 7.5 s (FT4) 12 kHz mono recording through the production Backend (the code the firmware runs).
-//   ft8-wav-native <wav> <ft8|ft4> [--k N] [--gate N] [--joint]
+//   ft8-wav-native <wav> <ft8|ft4> [--k N] [--gate N] [--fine 4|8]
 #include "ft8_native_backend.hpp"
 #include "ft8_wav_common.hpp"
 
@@ -17,7 +17,7 @@ uint64_t now_us() {
 
 int main(int argc, char** argv) {
   if (argc < 3) {
-    std::fprintf(stderr, "usage: %s <wav> <ft8|ft4> [--k N] [--gate N] [--joint]\n", argv[0]);
+    std::fprintf(stderr, "usage: %s <wav> <ft8|ft4> [--k N] [--gate N] [--fine 4|8]\n", argv[0]);
     return 2;
   }
   orcsdr::ftx::Mode mode = std::strcmp(argv[2], "ft4") == 0 ? orcsdr::ftx::Mode::ft4 : orcsdr::ftx::Mode::ft8;
@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
     const std::string a = argv[i];
     if (a == "--k" && i + 1 < argc) config.candidate_k = static_cast<uint16_t>(std::atoi(argv[++i]));
     else if (a == "--gate" && i + 1 < argc) config.gate = static_cast<uint16_t>(std::atoi(argv[++i]));
-    else if (a == "--joint") config.joint_search = true;
+    else if (a == "--fine" && i + 1 < argc) config.fine_rows = static_cast<uint8_t>(std::atoi(argv[++i]));
     else return 2;
   }
   ft8_wav_tools::Wav wav{};

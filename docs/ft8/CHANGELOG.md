@@ -231,3 +231,11 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 ## 2026-10-07 — Refinement search shape (host-only)
 
 - `ft8-wav-refine`: added `--joint`, `--rounds`, `--watch`. A joint time-frequency scan recovers `XE2X HA2NP RR73` that sequential coordinate refinement misses (local optimum): FT8 7 to 8 accepted on the official recording at K=64, FT4 unchanged at 3, zero false accepts, zero accepts on 16 noise recordings. Lowering the coarse sync threshold and widening the coarse list (K up to 256) changed nothing. Host-only measurement; no production code changed in this entry.
+
+## 2026-10-08 — Native FT8/FT4 decoder bound to the Tab5 firmware (receive only)
+
+- Added `ft8_audio_tap` (raw-CU8 sidecar to 12 kS/s USB audio), `ft8_spectral_fft` (float mixed-radix FFT matching the exact oracle), `ft8_native_backend`
+  (fine-grid refinement design), `ft8_runtime` (PSRAM ring, UTC slot scheduler, decoder task) and the `FT8 ...` serial command suite with `tools/tab5_ft8.py`.
+- Measured on the Tab5: about 3.6 s of decode per 15 s FT8 slot and about 3.4 ms of tap per 6.8 ms IQ block; first real decodes (20 in about 3.5 minutes on 40 m).
+  Details, the dial-offset and clock findings, and the gain finding are in `NATIVE_BINDING.md`.
+- No transmit path was added. SNR is not reported (no calibrated estimator).
