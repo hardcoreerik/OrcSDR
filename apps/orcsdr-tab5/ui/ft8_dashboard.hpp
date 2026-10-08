@@ -41,6 +41,11 @@ struct Snapshot {
   DecoderState decoder_state = DecoderState::unbound;
   HunterSnapshot hunter{};
   // The receiver's own position (from the setup wizard / settings) for DIST and BRG; unknown = those cells show a dash.
+  // Live waterfall rows (0-255, newest = (wf_sequence - 1) % wf_rows); null until a decoder provides them.
+  const uint8_t* waterfall = nullptr;
+  uint16_t wf_rows = 0;
+  uint16_t wf_bins = 0;
+  uint32_t wf_sequence = 0;
   bool station_known = false;
   float station_latitude = 0.0f;
   float station_longitude = 0.0f;

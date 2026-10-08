@@ -97,6 +97,10 @@ FARTHEST 8050 km. DT now varies between about -0.3 and +0.7 s across stations; t
 A crash found while capturing: opening the FT8 screen while the decoder ran gave a stack protection fault on core 0, because the 8 KB dashboard snapshot was built on the
 stack and copied, on top of new serial-command buffers. The snapshot is now filled in place in a static, and the command buffers are static.
 
+LIVE tab: a real waterfall (200-3000 Hz, newest row at the top, 112 rows, 2 pixels per row). A small low-priority task takes the latest 1920 audio samples every 150 ms, runs one FFT,
+and normalises each row to its own median so it adapts to any noise floor (noise stays dark blue; signals are cyan to red, about 8 counts per dB). It is display only and never feeds the
+decoder. The GAIN chip shows just `AUTO` (the driver's gain readout under AUTO is not the effective gain), and the SETUP footer no longer says the decoder is unbound.
+
 ## Known issues and next steps
 
 - Gain: re-run the AUTO versus manual comparison on other dongles (V3, V4L) and antennas before assuming AUTO is best everywhere.

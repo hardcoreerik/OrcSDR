@@ -64,6 +64,16 @@ void offer_iq(const uint8_t* iq, size_t bytes, uint32_t sample_rate_hz);
 void note_discontinuity();
 Status status();
 
+// A live waterfall of the tap's audio, 200-3000 Hz at 6.25 Hz per bin (one 1920-point FFT every 150 ms, each row normalised to its own
+// median so it adapts to any noise floor). Rows are 0-255 (8 counts per dB above the median plus 3 dB, so noise stays dark). Display only: it never feeds the decoder.
+constexpr size_t kWaterfallRows = 112;
+constexpr size_t kWaterfallBins = 449;
+struct WaterfallView {
+  const uint8_t* data = nullptr;   // kWaterfallRows x kWaterfallBins, circular
+  uint32_t sequence = 0;           // rows produced so far; the newest row is (sequence - 1) % kWaterfallRows
+};
+WaterfallView waterfall();
+
 // Runs with no FT8 screen (scripting): the runtime stays alive without touch() calls until set_headless(false).
 void set_headless(bool headless);
 // Decoder tunables, applied from the next slot. `k` = coarse candidates refined, `gate` = candidates sent through the FEC gates, `fine_rows` = fine-grid rows per symbol (4 or 8).

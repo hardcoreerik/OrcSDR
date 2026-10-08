@@ -12759,6 +12759,13 @@ void ft8_dashboard_fill_snapshot(orcsdr::ft8::Snapshot& snapshot) {
     snapshot.last_slot_decodes = static_cast<uint8_t>(std::min<uint32_t>(rt.last_slot_decodes, 255u));
     snapshot.candidate_count = static_cast<uint8_t>(std::min<uint32_t>(rt.last_coarse, 255u));
   }
+  {
+    const auto wf = orcsdr::ft8_runtime::waterfall();
+    snapshot.waterfall = wf.data;
+    snapshot.wf_rows = static_cast<uint16_t>(orcsdr::ft8_runtime::kWaterfallRows);
+    snapshot.wf_bins = static_cast<uint16_t>(orcsdr::ft8_runtime::kWaterfallBins);
+    snapshot.wf_sequence = wf.sequence;
+  }
   snapshot.mode = g_ft8_mode;
   snapshot.decoder_capabilities = g_ft8_capabilities;
   snapshot.hunter = g_ft8_hunter.snapshot();

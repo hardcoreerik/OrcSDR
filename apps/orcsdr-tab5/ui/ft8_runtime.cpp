@@ -2,7 +2,9 @@
 
 #include "ft8_audio_tap.hpp"
 #include "ft8_native_backend.hpp"
+#include "ft8_spectral_fft.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdio>
@@ -28,6 +30,10 @@ constexpr uint32_t kStartDelayMs = 400;          // ring must hold the last samp
 struct Runtime {
   std::atomic<bool> active{false};
   std::atomic<bool> task_alive{false};
+  std::atomic<bool> wf_alive{false};
+  uint8_t* wf = nullptr;
+  std::atomic<uint32_t> wf_sequence{0};
+  TaskHandle_t wf_task = nullptr;
   std::atomic<bool> reset_pending{false};
   std::atomic<uint64_t> total{0};                // 12 kS/s samples written to the ring
   std::atomic<uint64_t> cont_ms{0};              // wall time of the last discontinuity (tap start / reset)
@@ -223,13 +229,66 @@ void decoder_task(void*) {
   vTaskDelete(nullptr);
 }
 
+
+void waterfall_task(void*) {
+  g.wf_alive.store(true, std::memory_order_release);
+  auto* plan = static_cast<orcsdr::ftx::spectral_fft::Plan*>(psram_alloc(sizeof(orcsdr::ftx::spectral_fft::Plan)));
+  auto* scratch = static_cast<orcsdr::ftx::spectral_fft::Scratch*>(psram_alloc(sizeof(orcsdr::ftx::spectral_fft::Scratch)));
+  auto* window = static_cast<int16_t*>(psram_alloc(1920 * sizeof(int16_t)));
+  auto* power = static_cast<float*>(psram_alloc(kWaterfallBins * sizeof(float)));
+  auto* sorted = static_cast<float*>(psram_alloc(kWaterfallBins * sizeof(float)));
+  bool ok = plan && scratch && window && power && sorted;
+  if (ok) {
+    new (plan) orcsdr::ftx::spectral_fft::Plan();
+    new (scratch) orcsdr::ftx::spectral_fft::Scratch();
+    ok = orcsdr::ftx::spectral_fft::make_plan(plan, 1920);
+  }
+  uint64_t last_total = 0;
+  while (ok && g.active.load(std::memory_order_acquire)) {
+    vTaskDelay(pdMS_TO_TICKS(150));
+    if (!g.tap_ready) continue;
+    const uint64_t total = g.total.load(std::memory_order_acquire);
+    if (total < 1920 || total - last_total < 1500) continue;   // about 125 ms of new audio
+    last_total = total;
+    for (size_t i = 0; i < 1920; ++i) window[i] = g.ring[(total - 1920 + i) % kRingSamples];
+    orcsdr::ftx::spectral_fft::power_bins(*plan, scratch, window, 1920, 32, kWaterfallBins, power);
+    std::memcpy(sorted, power, kWaterfallBins * sizeof(float));
+    std::nth_element(sorted, sorted + kWaterfallBins / 2, sorted + kWaterfallBins);
+    const float floor_db = 10.0f * std::log10(sorted[kWaterfallBins / 2] + 1.0e-9f);
+    uint8_t* row = g.wf + (g.wf_sequence.load(std::memory_order_relaxed) % kWaterfallRows) * kWaterfallBins;
+    for (size_t b = 0; b < kWaterfallBins; ++b) {
+      const float v = (10.0f * std::log10(power[b] + 1.0e-9f) - floor_db - 3.0f) * 8.0f;   // noise stays dark; +10 dB reads about 56, +30 dB about 216
+      row[b] = static_cast<uint8_t>(v < 0.0f ? 0.0f : (v > 255.0f ? 255.0f : v));
+    }
+    g.wf_sequence.fetch_add(1, std::memory_order_release);
+  }
+  if (plan) psram_free(plan);
+  if (scratch) psram_free(scratch);
+  if (window) psram_free(window);
+  if (power) psram_free(power);
+  if (sorted) psram_free(sorted);
+  g.wf_alive.store(false, std::memory_order_release);
+  vTaskDelete(nullptr);
+}
+
 }  // namespace
+
+WaterfallView waterfall() {
+  WaterfallView v;
+  v.data = g.wf;
+  v.sequence = g.wf_sequence.load(std::memory_order_acquire);
+  return v;
+}
 
 bool active() { return g.active.load(std::memory_order_acquire); }
 
 bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* context, ClockValidFn clock_valid, DialOffsetFn dial_offset) {
   if (g.active.load(std::memory_order_acquire)) return true;
-  if (g.task_alive.load(std::memory_order_acquire)) return false;  // previous task still exiting
+  if (g.task_alive.load(std::memory_order_acquire) || g.wf_alive.load(std::memory_order_acquire)) return false;  // previous tasks still exiting
+  if (g.wf == nullptr) {
+    g.wf = static_cast<uint8_t*>(psram_alloc(kWaterfallRows * kWaterfallBins));
+    if (g.wf == nullptr) return false;
+  }
   if (g.ring == nullptr) {
     g.ring = static_cast<int16_t*>(psram_alloc(kRingSamples * sizeof(int16_t)));
     if (g.ring == nullptr) return false;
@@ -283,6 +342,7 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
     std::printf("ORC_FT8_RT start_failed task\n");
     return false;
   }
+  (void)xTaskCreatePinnedToCoreWithCaps(waterfall_task, "ft8_wf", 8192, nullptr, 1, &g.wf_task, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   std::printf("ORC_FT8_RT started mode=%d\n", static_cast<int>(mode));
   return true;
 }

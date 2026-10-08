@@ -287,6 +287,53 @@ void draw_live_rows() {
   }
 }
 
+
+// A 256-entry palette (dark blue -> cyan -> green -> yellow -> red) for the waterfall.
+uint16_t waterfall_color(uint8_t v) {
+  static uint16_t lut[256];
+  static bool ready = false;
+  if (!ready) {
+    for (int i = 0; i < 256; ++i) {
+      const float t = static_cast<float>(i) / 255.0f;
+      float r, g, b;
+      if (t < 0.25f) { r = 0.0f; g = t * 2.0f; b = 0.12f + t * 3.0f; }
+      else if (t < 0.5f) { r = 0.0f; g = 0.5f + (t - 0.25f) * 2.0f; b = 0.87f - (t - 0.25f) * 3.4f; }
+      else if (t < 0.75f) { r = (t - 0.5f) * 4.0f; g = 1.0f; b = 0.0f; }
+      else { r = 1.0f; g = 1.0f - (t - 0.75f) * 4.0f; b = 0.0f; }
+      auto clamp01 = [](float x) { return x < 0.0f ? 0.0f : (x > 1.0f ? 1.0f : x); };
+      const uint16_t R = static_cast<uint16_t>(clamp01(r) * 31.0f), G = static_cast<uint16_t>(clamp01(g) * 63.0f),
+                     B = static_cast<uint16_t>(clamp01(b) * 31.0f);
+      const uint16_t rgb = static_cast<uint16_t>((R << 11) | (G << 5) | B);
+      lut[i] = static_cast<uint16_t>((rgb >> 8) | (rgb << 8));   // pushImage takes byte-swapped RGB565 on this panel
+    }
+    ready = true;
+  }
+  return lut[v];
+}
+
+uint32_t g_drawn_waterfall = UINT32_MAX;
+
+// Newest row at the top, 2 pixels per row, 848 pixels across the 200-3000 Hz span.
+void draw_waterfall() {
+  constexpr int kLeft = 42, kTop = 214, kWidth = 848, kRowPx = 2;
+  const size_t rows = std::min<size_t>(g_snapshot.wf_rows, 112);
+  const size_t bins = g_snapshot.wf_bins;
+  if (g_snapshot.waterfall == nullptr || rows == 0 || bins == 0 || g_snapshot.wf_sequence == 0) return;
+  static uint16_t line[kWidth * kRowPx];
+  const uint32_t seq = g_snapshot.wf_sequence;
+  const size_t visible = std::min<size_t>(rows, seq);
+  for (size_t r = 0; r < visible; ++r) {
+    const uint8_t* src = g_snapshot.waterfall + ((seq - 1 - r) % rows) * bins;
+    for (int x = 0; x < kWidth; ++x) {
+      const uint16_t color = waterfall_color(src[static_cast<size_t>(x) * bins / kWidth]);
+      line[x] = color;
+      line[kWidth + x] = color;
+    }
+    M5.Display.pushImage(kLeft, kTop + static_cast<int>(r) * kRowPx, kWidth, kRowPx, line);
+  }
+  g_drawn_waterfall = seq;
+}
+
 void draw_live() {
   const BandPreset* preset = band(g_snapshot.selected_band);
   char value[48];
@@ -299,8 +346,8 @@ void draw_live() {
   chip({626, 104, 190, 58}, "CLOCK", g_snapshot.clock_valid ? "LOCKED" : "NEEDED",
        g_snapshot.clock_valid ? kGreen : kAmber);
   chip({826, 104, 200, 58}, "DECODER", decoder_name(), decoder_color());
-  std::snprintf(value, sizeof(value), g_snapshot.gain_auto ? "AUTO %.1f dB" : "MAN %.1f dB",
-                g_snapshot.gain_tenth_db / 10.0);
+  if (g_snapshot.gain_auto) std::snprintf(value, sizeof(value), "AUTO");   // the readout under AUTO is not the effective gain
+  else std::snprintf(value, sizeof(value), "MAN %.1f dB", g_snapshot.gain_tenth_db / 10.0);
   chip({1036, 104, 220, 58}, "GAIN", value, TFT_WHITE);
 
   const Rect wf{24, 176, 884, 294};
@@ -327,7 +374,8 @@ void draw_live() {
     text("UTC CLOCK REQUIRED", 466, 305, kAmber, 3);
     text("FT8 receive slots depend on accurate 15 second UTC boundaries.", 466, 340, kMuted, 1);
   } else {
-    text("WATERFALL INPUT PENDING DSP BINDING", 466, 320, kMuted, 2);
+    if (g_snapshot.wf_sequence == 0) text("LISTENING...", 466, 320, kMuted, 2);
+    else draw_waterfall();
   }
 
   const Rect timer{926, 176, 330, 294};
@@ -685,7 +733,7 @@ void draw_setup() {
   setup_row(3, "AUDIO PASSBAND", "200 - 3000 Hz", TFT_WHITE);
   setup_row(4, "MAP SOURCE", "OFFLINE MAIDENHEAD GRID", kGreen);
   setup_row(5, "NETWORK REQUIRED", "NO", kGreen);
-  text("Baseline intentionally does not claim live FT8 decoding until a DSP backend is bound.",
+  text("Receive only. The native decoder reports no SNR (there is no calibrated estimator); times need a locked UTC clock.",
        54, 584, kMuted, 1, middle_left);
 }
 
@@ -755,6 +803,14 @@ void update(const Snapshot& snapshot_value) {
     return;
   }
   if (g_snapshot.utc_ms / 1000u != g_drawn_second) draw_utc();
+  if (g_tab == Tab::live && g_snapshot.wf_sequence != g_drawn_waterfall && g_snapshot.decoder_state != DecoderState::unbound &&
+      g_snapshot.clock_valid) {
+    static uint32_t last_waterfall_ms = 0;   // a repaint pushes about 190 KB to the panel, so at most every 400 ms
+    if (millis() - last_waterfall_ms >= 400u) {
+      last_waterfall_ms = millis();
+      draw_waterfall();
+    }
+  }
   if (g_tab == Tab::live) {
     const SlotClock slot = slot_clock(g_snapshot.utc_ms, g_snapshot.mode);
     const uint32_t tenth = g_snapshot.clock_valid ? slot.remaining_ms / 100u : UINT32_MAX - 1;

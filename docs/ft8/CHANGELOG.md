@@ -259,3 +259,7 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 
 - Fixed a stack protection fault on core 0 when the FT8 screen opened while the decoder ran: the 64-decode dashboard snapshot (about 8 KB) is now filled in place in a static instead of being built on the main task stack and copied, and the serial-command buffers are static. Verified: the screen opens during decoding with no panic and slots keep decoding.
 - `FT8 SHOT <name>` saves the screen to the SD card; `tools/tab5_ft8_shot.py` fetches it (the receiver is stopped for the SD transfer and retuned afterwards). Verified HEARD (Conditions panel) and DECODES (GRID/DIST/BRG columns) on the device.
+
+## 2026-10-08 — Live waterfall on the LIVE tab
+
+- Replaced "WATERFALL INPUT PENDING DSP BINDING" with a live waterfall from the tap audio (`ft8_runtime::waterfall()`, a low-priority task, 1920-point FFT every 150 ms, rows normalised to their own median). The panel takes byte-swapped RGB565 through `pushImage`, so the palette is swapped. Repaints are limited to every 400 ms. The GAIN chip shows `AUTO` only, and the SETUP footer was updated. Verified by screen capture on the device.
