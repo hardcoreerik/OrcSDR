@@ -4,6 +4,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
+#include <esp_heap_caps.h>
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <nvs.h>
@@ -48,7 +49,14 @@ class Runtime {
     if(!prepare_entropy())return initialization_failed(Failure::authentication); // S3 Wi-Fi is already enabled by Link.
 #endif
     role_=role;transmit_=transmit;scan_=scan;evidence_=evidence;std::memcpy(mac_,mac,6);
+#if CONFIG_IDF_TARGET_ESP32P4
+    // On the Tab5 these three queues (about 5 KB) would take internal DMA memory that the SD card and Wi-Fi need; PSRAM is fine for
+    // queues touched only from tasks. Fall back to internal RAM if PSRAM is unavailable.
+    caps_mask_=0;queue_count_=0;
+    input_=queue(20,sizeof(Event));actions_=queue(8,sizeof(Event));output_=queue(8,sizeof(Control));
+#else
     input_=xQueueCreate(20,sizeof(Event));actions_=xQueueCreate(8,sizeof(Event));output_=xQueueCreate(8,sizeof(Control));
+#endif
     if(!input_||!actions_||!output_)return initialization_failed(Failure::transport);
     if(nvs_open("orcdial4",NVS_READWRITE,&store_)!=ESP_OK)return initialization_failed(Failure::storage);
     Trust trust{};uint8_t record[76];size_t n=sizeof record;
@@ -85,10 +93,25 @@ class Runtime {
   bool take(Control& c) {while(output_&&xQueueReceive(output_,&c,0)==pdTRUE)if(c.generation==generation_.load(std::memory_order_acquire))return true;return false;}
   Status status() const {portENTER_CRITICAL(&lock_);Status s=status_;portEXIT_CRITICAL(&lock_);return s;}
  private:
+#if CONFIG_IDF_TARGET_ESP32P4
+  QueueHandle_t queue(UBaseType_t length,UBaseType_t item) {
+    QueueHandle_t q=xQueueCreateWithCaps(length,item,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(q){caps_mask_=uint8_t(caps_mask_|(1u<<queue_count_));}
+    else q=xQueueCreate(length,item);
+    ++queue_count_;
+    return q;
+  }
+  uint8_t caps_mask_=0,queue_count_=0;   // which of the three queues came from PSRAM (they need vQueueDeleteWithCaps)
+  void drop(QueueHandle_t& q,uint8_t index) {
+    if(!q)return;
+    if(caps_mask_&(1u<<index))vQueueDeleteWithCaps(q);else vQueueDelete(q);
+    q=nullptr;
+  }
+#else
+  void drop(QueueHandle_t& q,uint8_t) {if(q){vQueueDelete(q);q=nullptr;}}
+#endif
   bool initialization_failed(Failure reason) {
-    if(input_){vQueueDelete(input_);input_=nullptr;}
-    if(actions_){vQueueDelete(actions_);actions_=nullptr;}
-    if(output_){vQueueDelete(output_);output_=nullptr;}
+    drop(input_,0);drop(actions_,1);drop(output_,2);
     if(store_){nvs_close(store_);store_=0;}
     task_=nullptr;wipe(&initial_,sizeof initial_);
     portENTER_CRITICAL(&lock_);status_={};status_.state=State::failed;status_.failure=reason;portEXIT_CRITICAL(&lock_);

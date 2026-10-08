@@ -327,8 +327,15 @@ WaterfallView waterfall() {
 
 bool active() { return g.active.load(std::memory_order_acquire); }
 
+static void mem_mark(const char* stage) {   // internal DMA-capable heap at each start step (the SD card needs it)
+  std::printf("ORC_FT8_RT mem stage=%s dma_free=%u dma_largest=%u\n", stage,
+              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
+              static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)));
+}
+
 bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* context, ClockValidFn clock_valid, DialOffsetFn dial_offset) {
   if (g.active.load(std::memory_order_acquire)) return true;
+  mem_mark("entry");
   if (g.task_alive.load(std::memory_order_acquire) || g.wf_alive.load(std::memory_order_acquire)) return false;  // previous tasks still exiting
   if (g.wf == nullptr) {
     g.wf = static_cast<uint8_t*>(psram_alloc(kWaterfallRows * kWaterfallBins));
@@ -347,6 +354,7 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
     if (mem == nullptr) return false;
     g.backend = new (mem) orcsdr::ftx::native::Backend();
   }
+  mem_mark("buffers");
   orcsdr::ftx::native::Config config;
   config.candidate_k = g.cfg_k;
   config.gate = g.cfg_gate;
@@ -387,7 +395,9 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
     std::printf("ORC_FT8_RT start_failed task\n");
     return false;
   }
+  mem_mark("backend");
   (void)xTaskCreatePinnedToCoreWithCaps(waterfall_task, "ft8_wf", 8192, nullptr, 1, &g.wf_task, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  mem_mark("tasks");
   std::printf("ORC_FT8_RT started mode=%d\n", static_cast<int>(mode));
   return true;
 }

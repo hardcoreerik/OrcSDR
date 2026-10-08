@@ -2,11 +2,13 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
-## 2026-10-08 — Decode log staging (flush to SD not yet verified)
+## 2026-10-08 — Decode log to the SD card works; internal DMA memory recovered
 
-- `FT8 LOG [ON|OFF|FLUSH]`: every decode is staged as a CSV row in a 96 KB PSRAM buffer and written to `/ft8/log-YYYYMMDD.csv` (one file per UTC day, 4 MB cap) when the SD card can be used. On by default, stored in NVS. Stations heard, never contacts.
-- Finding: the SD card needs a multi-KB internal DMA block. At boot the largest is 32 KB; once the RTL receiver has run it falls to 0.3-2 KB and stays low after the receiver stops (measured 288-576 bytes). SD access then fails (`sdmmc_read_sectors: not enough mem`, `SD_LIST_ERROR open_failed`), so the first attempt to write the log straight to the card never wrote a row. Staging keeps the rows (84-111 staged, none dropped in testing); writing them out is untested on hardware and will need the internal DMA memory to be recovered or reserved.
-- The Tab5 main loop stopped answering serial/touch twice during this work while the decoder task kept running. Neither command order tried afterwards reproduced it in 3.5 minutes; cause unknown.
+- `FT8 LOG [ON|OFF|FLUSH]` and `FT8 MEM [FULL]` (heap budget). Every decode is a CSV row staged in PSRAM and written to `/orcsdr/ft8/log-YYYYMMDD.csv` (one file per UTC day, 4 MB cap) when internal DMA memory allows (4 KB largest block). On by default, stored in NVS. Stations heard, never contacts. Verified on hardware: 34 rows written while the receiver ran, pulled back with `SD_GET`. ADIF and SAVE files moved to `/orcsdr/ft8/` too, because `SD_GET` only serves `/orcsdr/`.
+- Cause of the SD failures, found by logging the heap at each boot stage: the largest internal DMA block falls from 27 KB to 3 KB at `ORCDIAL_V4_BRIDGE_READY`, about 1.5 s after the receiver starts on Home entry. It is not FT8 and not the receiver. The OrcDial bridge start takes about 24 KB of internal RAM: the secure runtime's 12 KB task stack, its three queues (about 5 KB), the bridge's two frame queues and a 4 KB transmit task stack. The bridge and secure-runtime queues now live in PSRAM (`xQueueCreateWithCaps`, internal fallback; `orcdial/src/control/secure_runtime.hpp` change is guarded for the ESP32-P4 only). Largest DMA block after boot is now 10-11 KB (was 3 KB), also with FT8 running.
+- The storage wrapper's `open()` did not support `FILE_APPEND`: an append open was treated as a read of a missing file. It now maps to `"ab"`. (The one live log that used it, LoRa, is affected the same way.)
+- Measurement aids: `RTL_DMA_WATCH` lines (largest DMA block moving 4 KB or more) and `RTL_DRAM_BUDGET` at receiver start and OrcDial bridge steps. An earlier note here blamed the receiver and the FT8 runtime; that was wrong.
+- The Tab5 main loop stopped answering serial/touch twice during this work while the decoder task kept running; it did not recur in about 4 hours of later runs, cause unknown.
 
 ## 2026-10-08 — Smoother Live waterfall, flicker-free MAP, NEW markers
 

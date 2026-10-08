@@ -9187,10 +9187,12 @@ static void rtl_driver_app_task(void *) {
                       esp_rtl_sdr_err_to_name(
                           esp_rtl_sdr_set_hf_direct_min_hz(g_rtl, direct_min_hz)));
       }
+      log_dram_budget("rtl_before_start");
       esp_err_t err = esp_rtl_sdr_start(g_rtl, &st);
       Serial.printf("RTL_START %s rate=%u display_hz=%u lo_hz=%u\n",
                     esp_rtl_sdr_err_to_name(err), st.sample_rate_sps, frequency_hz,
                     st.frequency_hz);
+      log_dram_budget("rtl_after_start");
       begin_power_monitor("rtl_start");
       if (err == ESP_ERR_NO_MEM) {
         vTaskDelay(pdMS_TO_TICKS(500));
@@ -12724,7 +12726,7 @@ static uint32_t g_ft8_log_stage_rows = 0;
 static uint32_t g_ft8_log_stage_day = 0;   // UTC day number (epoch / 86400) of the first staged row
 constexpr size_t kFt8LogStageBytes = 96u * 1024u;
 constexpr uint32_t kFt8LogMaxFileBytes = 4u * 1024u * 1024u;   // per day; logging for that day stops at the cap
-constexpr uint32_t kFt8LogMinDmaBlock = 12288u;                // largest internal DMA block needed before touching the card
+constexpr uint32_t kFt8LogMinDmaBlock = 4096u;                 // largest internal DMA block needed before touching the card (an ADIF write worked at 5.6 KB)
 
 static void ft8_log_load_setting() {
   if (g_ft8_log_loaded) return;
@@ -12779,18 +12781,22 @@ static bool ft8_log_flush(bool force) {
   if (heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA) < kFt8LogMinDmaBlock) return false;   // receiver is streaming
   if (!ensure_tab5_sd() || g_sd_fs == nullptr) {
     ++g_ft8_log_errors;
+    Serial.println("ORC_FT8_LOG_ERR stage=sd_mount");
     return false;
   }
   const time_t day_start = static_cast<time_t>(g_ft8_log_stage_day) * 86400;
   struct tm tm_utc{};
   gmtime_r(&day_start, &tm_utc);
   char path[48];
-  snprintf(path, sizeof(path), "/ft8/log-%04d%02d%02d.csv", tm_utc.tm_year + 1900, tm_utc.tm_mon + 1, tm_utc.tm_mday);
-  (void)g_sd_fs->mkdir("/ft8");
+  snprintf(path, sizeof(path), "/orcsdr/ft8/log-%04d%02d%02d.csv", tm_utc.tm_year + 1900, tm_utc.tm_mon + 1, tm_utc.tm_mday);
+  (void)g_sd_fs->mkdir("/orcsdr");
+  (void)g_sd_fs->mkdir("/orcsdr/ft8");
   const bool existed = g_sd_fs->exists(path);
   File file = g_sd_fs->open(path, FILE_APPEND, true);
   if (!file) {
     ++g_ft8_log_errors;
+    Serial.printf("ORC_FT8_LOG_ERR stage=open path=%s existed=%d dma_largest=%u\n", path, existed ? 1 : 0,
+                  static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)));
     return false;
   }
   if (file.size() > kFt8LogMaxFileBytes) {
@@ -12805,6 +12811,7 @@ static bool ft8_log_flush(bool force) {
   file.close();
   if (written != g_ft8_log_stage_len) {
     ++g_ft8_log_errors;
+    Serial.printf("ORC_FT8_LOG_ERR stage=write wrote=%u of=%u\n", static_cast<unsigned>(written), static_cast<unsigned>(g_ft8_log_stage_len));
     return false;
   }
   g_ft8_log_rows += g_ft8_log_stage_rows;
@@ -15096,13 +15103,17 @@ void orcdial_poll() {
   static uint32_t initialization_retry_ms=0;
   if(!orcdial_secure_started && initialization_retry_ms && static_cast<int32_t>(millis()-initialization_retry_ms)<0)return;
   if(!orcdial_transport_ready&&orcsdr::wifi::hosted_transport_ready()) {
-    if(!orcdial_inbox)orcdial_inbox=xQueueCreate(20,sizeof(OrcDialFrame));
-    if(!orcdial_outbox)orcdial_outbox=xQueueCreate(16,sizeof(OrcDialFrame));
+    // The two frame queues hold 36 frames (about 24 KB). Allocated in internal RAM they took almost all of the internal DMA
+    // memory the SD card and Wi-Fi need (largest DMA block 27 KB -> 3 KB at ORCDIAL_V4_BRIDGE_READY), so keep them in PSRAM.
+    if(!orcdial_inbox){orcdial_inbox=xQueueCreateWithCaps(20,sizeof(OrcDialFrame),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);if(!orcdial_inbox)orcdial_inbox=xQueueCreate(20,sizeof(OrcDialFrame));}
+    if(!orcdial_outbox){orcdial_outbox=xQueueCreateWithCaps(16,sizeof(OrcDialFrame),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);if(!orcdial_outbox)orcdial_outbox=xQueueCreate(16,sizeof(OrcDialFrame));}
     if(orcdial_outbox&&!orcdial_tx_task && xTaskCreatePinnedToCore(orcdial_transmit,"orcdial_tx",4096,nullptr,2,&orcdial_tx_task,0)!=pdPASS)orcdial_tx_task=nullptr;
-    if(orcdial_inbox&&orcdial_tx_task&&eh_host_feat_peer_data_init()==ESP_OK && eh_host_peer_data_register(kOrcDialFromC6,orcdial_receive,nullptr)==ESP_OK) {
+    log_dram_budget("orcdial_queues_task");
+    if(orcdial_inbox&&orcdial_tx_task&&eh_host_feat_peer_data_init()==ESP_OK && (log_dram_budget("orcdial_peer_init"),true) && eh_host_peer_data_register(kOrcDialFromC6,orcdial_receive,nullptr)==ESP_OK) {
+      log_dram_budget("orcdial_peer_register");
       uint8_t mac[6];
       if(esp_wifi_get_mac(WIFI_IF_STA,mac)!=ESP_OK)return;
-      if(!orcdial_secure_started)orcdial_secure_started=orcdial_secure.begin(2,mac,preferences.getBytesLength("dial_mac")==6,orcdial_raw_transmit);
+      if(!orcdial_secure_started){orcdial_secure_started=orcdial_secure.begin(2,mac,preferences.getBytesLength("dial_mac")==6,orcdial_raw_transmit);log_dram_budget("orcdial_secure_begin");}
       if(!orcdial_secure_started){initialization_retry_ms=millis()+5000;return;}
       orcdial_sender=esp_random();orcdial_transport_ready=true;orcdial_secure.enabled(true);Serial.println("ORCDIAL_V4_BRIDGE_READY");
       // The existing C6 gates RX until the P4 sends its first relay request.
@@ -17125,6 +17136,7 @@ bool ft8_native_ensure_started() {
   if (!ntp_requested && wifi_connected) {
     ntp_requested = true;
     if (orcsdr::ntp_sync::start(true)) Serial.println("ORC_FT8_NTP auto sync requested");
+    log_dram_budget("after_ft8_ntp");
   }
   return true;
 }
@@ -17397,8 +17409,9 @@ void process_ft8_command(const char* args) {
       if (isalnum(static_cast<unsigned char>(*p)) || *p == '_' || *p == '-') name[n++] = *p;
     if (n == 0) snprintf(name, sizeof(name), "heard");
     char path[96];
-    (void)g_sd_fs->mkdir("/ft8");
-    snprintf(path, sizeof(path), "/ft8/%s.adi", name);
+    (void)g_sd_fs->mkdir("/orcsdr");
+  (void)g_sd_fs->mkdir("/orcsdr/ft8");
+    snprintf(path, sizeof(path), "/orcsdr/ft8/%s.adi", name);
     File file = g_sd_fs->open(path, FILE_WRITE, true);
     if (!file) {
       Serial.printf("ORC_FT8_ERROR ADIF open_failed path=%s\n", path);
@@ -17533,6 +17546,13 @@ void process_ft8_command(const char* args) {
     return;
   }
 
+  if (strcmp(verb, "MEM") == 0) {
+    // FT8 MEM [FULL]: internal/DMA/PSRAM heap budget (the SD card and Wi-Fi need internal DMA blocks); FULL adds the heap block map.
+    log_dram_budget("ft8_mem");
+    if (strncasecmp(rest, "FULL", 4) == 0) heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
+    return;
+  }
+
   if (strcmp(verb, "LOG") == 0) {
     // FT8 LOG [ON|OFF]: the rolling decode log on the SD card (stations heard, one CSV per UTC day under /ft8/).
     ft8_log_load_setting();
@@ -17543,9 +17563,9 @@ void process_ft8_command(const char* args) {
     } else if (strncasecmp(rest, "FLUSH", 5) == 0) {
       if (need_auth()) return;
       const bool done = ft8_log_flush(true);
-      Serial.printf("ORC_FT8_LOG_FLUSH %s\n", done ? "ok" : "deferred (receiver is using the DMA memory; stop it with RTL_STOP first)");
+      Serial.printf("ORC_FT8_LOG_FLUSH %s\n", done ? "ok" : "deferred (internal DMA memory is too low for the card right now)");
     }
-    Serial.printf("ORC_FT8_LOG enabled=%d written=%u staged=%u dropped=%u errors=%u dir=/ft8 dma_largest=%u need=%u\n", g_ft8_log_enabled ? 1 : 0,
+    Serial.printf("ORC_FT8_LOG enabled=%d written=%u staged=%u dropped=%u errors=%u dir=/orcsdr/ft8 dma_largest=%u need=%u\n", g_ft8_log_enabled ? 1 : 0,
                   static_cast<unsigned>(g_ft8_log_rows), static_cast<unsigned>(g_ft8_log_stage_rows), static_cast<unsigned>(g_ft8_log_dropped),
                   static_cast<unsigned>(g_ft8_log_errors),
                   static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
@@ -17583,8 +17603,9 @@ void process_ft8_command(const char* args) {
       if (isalnum(static_cast<unsigned char>(*p)) || *p == '_' || *p == '-') name[n++] = *p;
     if (n == 0) snprintf(name, sizeof(name), "slot_%llu", static_cast<unsigned long long>(slot_ms / 1000u));
     char path[96];
-    (void)g_sd_fs->mkdir("/ft8");
-    snprintf(path, sizeof(path), "/ft8/%s.wav", name);
+    (void)g_sd_fs->mkdir("/orcsdr");
+  (void)g_sd_fs->mkdir("/orcsdr/ft8");
+    snprintf(path, sizeof(path), "/orcsdr/ft8/%s.wav", name);
     File file = g_sd_fs->open(path, FILE_WRITE, true);
     if (!file) {
       Serial.printf("ORC_FT8_ERROR SAVE open_failed path=%s\n", path);
@@ -20807,6 +20828,18 @@ void loop() {
     Serial.printf("RTL_MAIN_STALL stage=loop_gap elapsed_ms=%u\n",
                   loop_started_ms - previous_loop_ms);
   previous_loop_ms = loop_started_ms;
+  {  // memory watch: report whenever the largest internal DMA block moves by 4 KB or more (the SD card and Wi-Fi need it)
+    static uint32_t last_dma_largest = 0, last_dma_check_ms = 0;
+    if (loop_started_ms - last_dma_check_ms >= 500) {
+      last_dma_check_ms = loop_started_ms;
+      const uint32_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+      if (last_dma_largest != 0 && (largest + 4096u <= last_dma_largest || last_dma_largest + 4096u <= largest))
+        Serial.printf("RTL_DMA_WATCH largest %u -> %u free=%u screen=%d band=%d\n", static_cast<unsigned>(last_dma_largest), static_cast<unsigned>(largest),
+                      static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
+                      static_cast<int>(orcsdr::screens::status().active), static_cast<int>(rtl_ui_band));
+      last_dma_largest = largest;
+    }
+  }
 #if ORCSDR_ORCDIAL
   orcdial_poll();
 #endif

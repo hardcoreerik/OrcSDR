@@ -118,8 +118,9 @@ File FileSystem::open(const char* path, const char* mode, bool) const {
     auto state = std::make_shared<File::State>(); state->directory = opendir(mounted.c_str()); state->path = path; return File{std::move(state)};
   }
   auto state = std::make_shared<File::State>();
-  const bool writing = mode && mode[0] == 'w';
-  state->stream = fopen(mounted.c_str(), writing ? "wb" : "rb");
+  const bool appending = mode && mode[0] == 'a';   // FILE_APPEND: keep the existing content, create the file if missing
+  const bool writing = mode && (mode[0] == 'w' || appending);
+  state->stream = fopen(mounted.c_str(), appending ? "ab" : writing ? "wb" : "rb");
   if (state->stream && writing) {
     state->write_buffer = static_cast<uint8_t*>(heap_caps_malloc(
         kWriteBufferBytes,
