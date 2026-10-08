@@ -283,3 +283,7 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 ## 2026-10-08 — MAP tab: receiver marker and fitted view
 
 - The MAP tab marks the receiver (white ring and cross, "YOU") from the saved location and frames the receiver plus the decoded stations with a margin (world view when there is nothing to frame), with grid lines at a step chosen for about six columns. Verified by screen capture on the device.
+
+## 2026-10-08 — A completed hunt tunes its best band
+
+- When a band hunt completes the receiver now tunes to the best band it found (it used to stay on the last band visited). Verified: a fast hunt ended on 40 m. A decode hunt at 12:50 UTC on the Tab5 (V4 plus MLA-30+): 40 m best with 8 decodes, 80 m 2 decodes, 10 m FT8-like sync without a decode, 160 m and 30 m through 12 m and 6 m quiet; the HUNTER tab renders these results (screen capture).

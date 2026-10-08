@@ -12769,6 +12769,8 @@ void ft8_hunt_service(const orcsdr::ft8_runtime::Status& rt) {
     g_ft8_hunt.active = false;
     if (g_ft8_hunt.set_headless) orcsdr::ft8_runtime::set_headless(false);
     const auto& snap = g_ft8_hunter.snapshot();
+    // A completed hunt leaves the receiver on the best band it found instead of the last band it visited.
+    if (snap.phase == orcsdr::ft8::HunterPhase::complete && snap.best_band != SIZE_MAX) (void)ft8_select_band(snap.best_band);
     Serial.printf("ORC_FT8_HUNT finished phase=%s best_band=%d\n", orcsdr::ft8::hunter_phase_name(snap.phase),
                   snap.best_band == SIZE_MAX ? -1 : static_cast<int>(snap.best_band));
     return;
