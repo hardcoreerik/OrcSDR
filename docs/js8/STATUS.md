@@ -186,3 +186,21 @@ reported that one check did not span the synthetic corpus's full parity space.
 This tool does not assume that real JS8 parity checks have weight six. Weight
 six is simply the first bounded sparse search implemented; the real corpus
 will determine whether it is sufficient.
+
+
+## Graph-driven FEC decoder algorithm ready
+
+The standalone module now contains `js8_fec.*`, a graph-driven normalized
+min-sum decoder that does not embed or assume a JS8 parity graph. The graph is
+supplied explicitly as check-major and variable-major adjacency arrays, and
+the decoder workspace is carved from caller-owned memory.
+
+Synthetic tests prove:
+- clean valid words exit immediately;
+- a weak wrong hard decision can be corrected on a small repetition-chain graph;
+- invalid graphs/configuration/NaN input and undersized workspace are rejected;
+- parity convergence is exposed only as FEC convergence.
+
+The real JS8 sparse graph is still absent by design. It will be generated only
+from independently reconstructed parity checks and validated on held-out
+frames.

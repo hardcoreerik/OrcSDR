@@ -102,3 +102,20 @@ The eventual native backend should replace the exact-correlation grid builder
 with a measured FFT/coarse-search implementation, then feed its grid into this
 same front-end contract. Once FEC/CRC are reconstructed, the acceptance layer
 can be appended without changing the front-end API.
+
+
+## Generic FEC engine
+
+`js8_fec.*` is ready to consume the reconstructed sparse parity graph. It is
+not tied to a hard-coded JS8 matrix:
+
+- graph adjacency is supplied as immutable arrays;
+- workspace size is derived from the graph;
+- workspace storage is caller-owned;
+- the hot loop uses single-precision float;
+- no heap allocation occurs in `decode()`;
+- convergence means parity only, never message acceptance.
+
+After the reconstruction corpus yields a complete sparse graph, a generated
+static graph header can bind directly to this engine. CRC and frame parsing
+remain downstream mandatory gates.

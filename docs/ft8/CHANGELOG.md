@@ -426,3 +426,12 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 - Added optimized and ASan/UBSan unit coverage. A 120-frame synthetic corpus with one hidden six-variable relation recovered exactly that relation and correctly reported that it did not span the entire synthetic parity space.
 - Weight six is a bounded first search, not a claimed JS8 check weight. Real captures must establish the code rank/parity dimension and whether weight-6 relations are sufficient; incomplete rank is reported as incomplete.
 - No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 graph-driven normalized-min-sum FEC engine
+
+- Added standalone `js8_fec.*`: a graph-driven normalized-min-sum soft decoder with caller-supplied sparse adjacency and caller-owned workspace. It contains no guessed or copied JS8 parity graph.
+- Added optimized and ASan/UBSan tests using a small synthetic repetition-chain code: clean early exit, correction of a weak wrong hard decision, graph/config/input validation, and undersized-workspace rejection.
+- FEC convergence is explicitly parity-only and cannot create a JS8 decode without the later CRC + supported frame/plausibility gates.
+- The real JS8 graph remains blocked on independent reconstruction from captured codewords; the decoder algorithm is ready to consume it once derived.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
