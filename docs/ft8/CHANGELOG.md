@@ -2,6 +2,13 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 — JS8 firmware integration, step 2: native JS8 receive backend (no decodes yet)
+
+- New `js8_native_backend.{hpp,cpp}` (namespace `orcsdr::js8::native`), same lifecycle as the FT8/FT4 backend: `begin(12000, submode, Config, Memory)`, `begin_slot`, `offer_audio`, `finish_slot`, `stats`, `reset`. Large buffers (slot audio 360 KB, energy grid about 330 KB) come from the caller's allocator (PSRAM on the Tab5); no heap use while decoding.
+- Pipeline: slot audio -> energy grid by one 1920-point FFT per half symbol (the proven FT8 FFT primitive; bins on the 6.25 Hz tone spacing, 200-3000 Hz) -> bounded JS8 sync search -> candidate-local demodulation to raw 79-tone frames. The FFT grid matches the exact-correlation oracle (`js8_spectral`) to 1.65e-5 of the strongest cell on identical PCM.
+- Truth boundary kept: `finish_slot()` returns zero `Decode` records and `stats().decodes` is always 0. The tone-to-bit map, FEC graph, CRC and frame parser are not accepted yet; the acceptance layer attaches after the raw-frame stage. Only Normal is accepted: `begin()` and `set_submode()` refuse every other submode and never fall back.
+- Tests: `tests/js8_native_backend_tests.cpp` (refusals, incomplete and short slots, noise-only slot gives no raw frame, synthetic frame recovers all 79 tones within 3.2 Hz and 45 ms, grid vs oracle), run under ASan/UBSan by `tools/test-ft8.sh`. Source added to the Tab5 build. Receive only; no UI change; FT8/FT4 untouched.
+
 ## 2026-10-08 — JS8 firmware integration, step 1: sources in the Tab5 build
 
 - The eight device-relevant `js8_*.cpp` files (mode, frame, sync, spectral, demod, frontend, fec, snr) are now in `apps/orcsdr-tab5/main/CMakeLists.txt`. Host-only reconstruction tools stay out of the firmware. The firmware builds (ESP-IDF 5.5.4); the app binary is 4,058,592 bytes both before and after, because nothing references the JS8 code yet and the linker discards it. The real size cost will be measured when the backend lands. Receive-only; no decoder behaviour change; FT8/FT4 untouched.

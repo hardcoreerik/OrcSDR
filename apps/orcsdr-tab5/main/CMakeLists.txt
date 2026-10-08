@@ -51,6 +51,7 @@ idf_component_register(
         "../ui/js8_frontend.cpp"
         "../ui/js8_fec.cpp"
         "../ui/js8_snr.cpp"
+        "../ui/js8_native_backend.cpp"
         "../ui/ft8_message.cpp"
         "../ui/ft8_codec.cpp"
         "../ui/ft8_ldpc.cpp"
