@@ -2,6 +2,7 @@
 
 #include "dashboard_audio_control.hpp"
 #include "focus_nav.hpp"
+#include "offline_map.hpp"
 
 #include <M5Unified.h>
 
@@ -109,7 +110,7 @@ void draw_now() {
   source_badge("RF", g_snapshot.rf_age_seconds, 450, 328);
 
   card(848, 154, 408, 202, "ALERTS");
-  text("SAME decoder: existing receiver path", 872, 220, TFT_WHITE, 1, middle_left);
+  text("SAME decode is not in Foundation.", 872, 220, kMuted, 1, middle_left);
   text("No alert claimed unless decoded.", 872, 252, kGreen, 1, middle_left);
   text("Network alerts are not required.", 872, 290, kMuted, 1, middle_left);
 
@@ -145,12 +146,22 @@ void draw_map() {
     text("Offline map pack not loaded.", 640, 270, kMuted, 2);
     text("Receiver location remains available to RF/report features.", 640, 316, TFT_WHITE, 2);
   } else {
-    text("Offline map data available.", 640, 250, kGreen, 3);
+    const offline_map::View view{
+        static_cast<float>(g_snapshot.latitude_e7) / 1.0e7f,
+        static_cast<float>(g_snapshot.longitude_e7) / 1.0e7f,
+        25.0f, 48, 202, 1184, 326};
+    offline_map::draw_base(M5.Display, view, 0x0186, kGrid, kMuted, kCyan);
+    int mx = 0, my = 0;
+    if (offline_map::project(view, view.center_lat, view.center_lon, &mx, &my)) {
+      M5.Display.fillCircle(mx, my, 7, kGreen);
+      M5.Display.drawCircle(mx, my, 10, TFT_WHITE);
+    }
     char coords[64];
-    std::snprintf(coords, sizeof(coords), "%.5f, %.5f",
+    std::snprintf(coords, sizeof(coords), "YOU  %.5f, %.5f",
                   g_snapshot.latitude_e7 / 1e7, g_snapshot.longitude_e7 / 1e7);
-    text(coords, 640, 310, TFT_WHITE, 2);
-    text("Weather overlays are local/cached only in Foundation.", 640, 360, kMuted, 2);
+    text(coords, 54, 550, TFT_WHITE, 1, middle_left);
+    text("OFFLINE ORCMAPS • Foundation has no live radar layer",
+         1224, 550, kMuted, 1, middle_right);
   }
 }
 void draw_rf() {
@@ -171,7 +182,7 @@ void draw_rf() {
   } else {
     text("Scan is sequential; one tuner, one channel.", 48, 456, kMuted, 1, middle_left);
   }
-  text("SAME continues through the existing WX receive path.", 48, 518, TFT_WHITE, 1, middle_left);
+  text("Voice RX is live; SAME decode is a later phase.", 48, 518, kMuted, 1, middle_left);
 
   card(438, 154, 394, 448, "LOCAL RF WEATHER");
   text("Weather Hunter", 462, 220, kMuted, 2, middle_left);

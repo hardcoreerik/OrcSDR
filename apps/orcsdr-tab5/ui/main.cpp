@@ -6572,9 +6572,9 @@ void handle_weather_dashboard_action(const orcsdr::weather::Action& action) {
       open_global_settings(orcsdr::settings::Section::data_maps);
       return;
     case Kind::volume_set:
-      rtl_live_volume.store(static_cast<uint8_t>(action.value), std::memory_order_release);
-      rtl_requested_volume.store(static_cast<uint8_t>(action.value), std::memory_order_release);
-      apply_speaker_volume(static_cast<uint8_t>(action.value));
+      adjust_rtl_volume(
+          action.value -
+          static_cast<int32_t>(rtl_live_volume.load(std::memory_order_acquire)));
       break;
     case Kind::mute_toggle:
       set_rtl_audio_user_enabled(!rtl_audio_user_enabled.load(std::memory_order_acquire));
@@ -6730,7 +6730,10 @@ void open_visualizer() {
 void close_visualizer() {
   const auto origin = static_cast<orcsdr::screens::Id>(orcsdr::visualizer::origin_screen());
   orcsdr::visualizer::leave();
-  acquire_radio_owner(orcsdr::radio::owner_for_band(rtl_ui_band));
+  acquire_radio_owner(origin == orcsdr::screens::Id::weather &&
+                              rtl_ui_band == RtlBand::wx
+                          ? orcsdr::radio::Owner::weather
+                          : orcsdr::radio::owner_for_band(rtl_ui_band));
   orcsdr::screens::begin_transition(origin, millis());
   orcsdr::screens::finish_transition();
   switch (origin) {
