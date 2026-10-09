@@ -2,6 +2,17 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 - JS8 front end: sub-bin refinement and alias resolution (all four real stations now reach a raw frame)
+
+- Cause analysis on the real 40 m capture (dataset 1705472): the 2604 Hz station's lowest tone is at 2602.5 Hz, between two 6.25 Hz search bins, so the coarse candidate lost most of the
+  energy; the 838 Hz frame was locked one sync period (36 symbols) early because the three Normal sync blocks are identical (two blocks of three still match), and its tail is truncated.
+  The 635 and 486 Hz stations also appeared as 14-16 hit aliases +-36 symbols from the true 21/21 frames.
+- `js8_demod`: `probe_sync()` measures only the 21 sync symbols at one (time, frequency) hypothesis. `js8_frontend`: `refine_candidate()` tries +-2 steps of 1.5625 Hz and 240 samples (20 ms) around each candidate
+  that is below 21/21; `mark_aliases()` drops a weaker candidate at the same frequency whose start differs by whole sync periods (keeps the stronger frame energy). The native backend uses both.
+- Real capture, sample-40m-180s-002 (1 s window step): 635 Hz 21/21, 486.5 Hz 21/21, 838 Hz now at its true alignment (sample 131040, margin 0.69), 2604 Hz now found (18/21 at 2603.1 Hz); 0 raw frames outside the four reference
+  frequencies. Controls (sample-20m-180s-001, sample-40m-180s-001, probe-20m-001, probe-40m-001, probe-20m-002): 0 raw frames at min score 0.05.
+- Tests: off-grid synthetic stations (1013.0, 1015.6, 1017.4 Hz) recovered with refinement; alias resolver unit test.
+
 ## 2026-10-08 - Generic JS8 FEC engine validated against the FT8 code; end-to-end hypothesis harness
 
 - `tests/js8_fec_ft8_vectors_tests.cpp`: builds a `js8::fec::Graph` from the FT8 LDPC(174,91) parity graph and decodes 1500 noisy codewords with both the generic JS8 engine and the FT8

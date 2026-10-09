@@ -105,6 +105,41 @@ bool demodulate_tones(const int16_t* samples, size_t count, Submode submode,
   return measured.sync_hits >= config.min_sync_hits && measured.sync_score >= config.min_sync_score;
 }
 
+bool probe_sync(const int16_t* samples, size_t count, Submode submode, size_t start_sample, float base_hz, SyncProbe* out) {
+  if (samples == nullptr || out == nullptr || base_hz < 0.0f) return false;
+  const Profile& p = profile(submode);
+  if (!physical_layer_ready(submode)) return false;
+  const size_t needed = static_cast<size_t>(p.channel_symbols) * p.symbol_samples;
+  if (start_sample > count || needed > count - start_sample) return false;
+  SyncProbe probe{};
+  float sum = 0.0f;
+  size_t symbols = 0;
+  for (const SyncBlock& block : p.sync) {
+    for (size_t i = 0; i < block.tones.size(); ++i) {
+      const int16_t* window = samples + start_sample + (block.first_symbol + i) * p.symbol_samples;
+      float expected = 0.0f, competitor = 0.0f;
+      uint8_t strongest = 0;
+      float strongest_energy = -1.0f;
+      for (uint8_t tone = 0; tone < p.tone_count; ++tone) {
+        const float hz = base_hz + tone * (static_cast<float>(p.tone_spacing_millihz) / 1000.0f);
+        const float e = tone_power(window, p.symbol_samples, hz, static_cast<float>(p.sample_rate_hz));
+        if (tone == block.tones[i]) expected = e;
+        else competitor = std::max(competitor, e);
+        if (e > strongest_energy) {
+          strongest_energy = e;
+          strongest = tone;
+        }
+      }
+      if (strongest == block.tones[i]) ++probe.hits;
+      sum += (expected - competitor) / (expected + competitor + 1.0e-20f);
+      ++symbols;
+    }
+  }
+  probe.score = symbols ? sum / static_cast<float>(symbols) : 0.0f;
+  *out = probe;
+  return true;
+}
+
 bool self_check_demod() {
   return profile(Submode::normal).symbol_samples == 1920 && physical_layer_ready(Submode::normal);
 }

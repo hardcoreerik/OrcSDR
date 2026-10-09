@@ -2,8 +2,60 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace orcsdr::js8::frontend {
+
+bool refine_candidate(const int16_t* samples, size_t sample_count, Submode submode, const Config& config, size_t* start_sample, float* base_hz) {
+  if (samples == nullptr || start_sample == nullptr || base_hz == nullptr) return false;
+  SyncProbe best{};
+  size_t best_start = *start_sample;
+  float best_hz = *base_hz;
+  if (!probe_sync(samples, sample_count, submode, best_start, best_hz, &best)) return false;
+  if (best.hits >= 21) return false;   // a full sync match needs no refinement
+  for (int dt = -2; dt <= 2; ++dt) {
+    for (int df = -2; df <= 2; ++df) {
+      if (dt == 0 && df == 0) continue;
+      const int64_t start = static_cast<int64_t>(*start_sample) + static_cast<int64_t>(dt) * config.refine_step_samples;
+      const float hz = *base_hz + static_cast<float>(df) * config.refine_step_hz;
+      if (start < 0 || hz < 0.0f) continue;
+      SyncProbe probe{};
+      if (!probe_sync(samples, sample_count, submode, static_cast<size_t>(start), hz, &probe)) continue;
+      if (probe.hits > best.hits || (probe.hits == best.hits && probe.score > best.score)) {
+        best = probe;
+        best_start = static_cast<size_t>(start);
+        best_hz = hz;
+      }
+    }
+  }
+  const bool moved = best_start != *start_sample || best_hz != *base_hz;
+  *start_sample = best_start;
+  *base_hz = best_hz;
+  return moved;
+}
+
+void mark_aliases(const Profile& profile, const AliasItem* items, size_t count, bool* drop) {
+  if (items == nullptr || drop == nullptr) return;
+  const size_t period = static_cast<size_t>(profile.symbol_samples) * 36u;   // distance between Normal sync blocks
+  const size_t tolerance = static_cast<size_t>(profile.symbol_samples);
+  for (size_t i = 0; i < count; ++i) drop[i] = false;
+  for (size_t i = 0; i < count; ++i) {
+    for (size_t j = i + 1; j < count; ++j) {
+      if (std::fabs(items[i].base_hz - items[j].base_hz) > 3.2f) continue;
+      const size_t a = items[i].start_sample, b = items[j].start_sample;
+      const size_t gap = a > b ? a - b : b - a;
+      bool alias = false;
+      for (size_t k = 1; k <= 2; ++k) {
+        const size_t target = period * k;
+        if (gap + tolerance >= target && gap <= target + tolerance) alias = true;
+      }
+      if (!alias) continue;
+      // keep the stronger frame: more of the signal is present in it (margin), then more sync hits
+      const bool i_better = items[i].margin > items[j].margin || (items[i].margin == items[j].margin && items[i].hits >= items[j].hits);
+      drop[i_better ? j : i] = true;
+    }
+  }
+}
 
 size_t extract(const int16_t* samples, size_t sample_count, Submode submode,
                const sync::EnergyGrid& grid, const Config& config,
@@ -42,6 +94,8 @@ size_t extract(const int16_t* samples, size_t sample_count, Submode submode,
         static_cast<float>(candidate.base_bin) * config.bin_spacing_hz;
     demod_config.min_sync_score = config.search.min_score;
 
+    if (config.refine && refine_candidate(samples, sample_count, submode, config, &demod_config.start_sample, &demod_config.base_hz)) ++stats->refined;
+
     RawFrame frame{};
     DemodStats demod_stats{};
     ++stats->candidates_demodulated;
@@ -57,6 +111,24 @@ size_t extract(const int16_t* samples, size_t sample_count, Submode submode,
     result.start_sample = static_cast<uint32_t>(demod_config.start_sample);
     result.base_hz = demod_config.base_hz;
     output[emitted++] = result;
+  }
+
+  if (config.resolve_aliases && emitted > 1) {
+    std::array<AliasItem, kMaxCandidates> items{};
+    std::array<bool, kMaxCandidates> drop{};
+    for (size_t i = 0; i < emitted; ++i)
+      items[i] = AliasItem{output[i].base_hz, output[i].start_sample, output[i].demod.mean_margin, output[i].demod.sync_hits};
+    mark_aliases(p, items.data(), emitted, drop.data());
+    size_t kept = 0;
+    for (size_t i = 0; i < emitted; ++i) {
+      if (drop[i]) {
+        ++stats->aliases_removed;
+        continue;
+      }
+      if (kept != i) output[kept] = output[i];
+      ++kept;
+    }
+    emitted = kept;
   }
 
   stats->frames_emitted = static_cast<uint16_t>(emitted);

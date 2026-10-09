@@ -1,5 +1,7 @@
 #include "js8_native_backend.hpp"
 
+#include "js8_frontend.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -169,16 +171,35 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
     demod.start_sample = static_cast<size_t>(candidates_[i].start_row) * hop_;
     demod.base_hz = first_hz_ + static_cast<float>(candidates_[i].base_bin) * kBinSpacingHz;
     demod.min_sync_score = config_.min_score;
+    if (frontend::refine_candidate(samples_, filled_, submode_, frontend::Config{}, &demod.start_sample, &demod.base_hz)) ++stats_.refined;
     RawFrame frame{};
     DemodStats demod_stats{};
     if (!demodulate_tones(samples_, filled_, submode_, demod, &frame, &demod_stats)) continue;
     RawResult& result = raw_[raw_count_++];
     result.audio_hz = demod.base_hz;
+    result.start_sample = static_cast<uint32_t>(demod.start_sample);
     result.dt_ms = static_cast<int32_t>(std::lround((static_cast<double>(demod.start_sample) / sample_rate_ - 0.5) * 1000.0));
     result.sync_score = demod_stats.sync_score;
     result.sync_hits = demod_stats.sync_hits;
     result.mean_margin = demod_stats.mean_margin;
     result.frame = frame;
+  }
+  // Alias resolution: the three Normal sync blocks are identical, so an alignment one sync period (36 symbols) off scores two blocks of three.
+  if (raw_count_ > 1) {
+    frontend::AliasItem items[kMaxCandidates];
+    bool drop[kMaxCandidates];
+    for (size_t i = 0; i < raw_count_; ++i) items[i] = frontend::AliasItem{raw_[i].audio_hz, raw_[i].start_sample, raw_[i].mean_margin, raw_[i].sync_hits};
+    frontend::mark_aliases(p, items, raw_count_, drop);
+    size_t kept = 0;
+    for (size_t i = 0; i < raw_count_; ++i) {
+      if (drop[i]) {
+        ++stats_.aliases_removed;
+        continue;
+      }
+      if (kept != i) raw_[kept] = raw_[i];
+      ++kept;
+    }
+    raw_count_ = kept;
   }
   stats_.raw_frames = static_cast<uint16_t>(raw_count_);
   const uint32_t t_end = clock_ms();

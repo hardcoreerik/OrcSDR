@@ -47,6 +47,8 @@ struct Stats {
   uint16_t candidates = 0;          // sync candidates above the threshold
   uint16_t strong_candidates = 0;   // sync score of 0.45 or more
   uint16_t raw_frames = 0;          // candidates whose demodulated frame passed the sync-hit checks
+  uint16_t refined = 0;             // candidates whose time/frequency was refined
+  uint16_t aliases_removed = 0;     // weaker alignments one or two sync periods away from a stronger frame
   float best_sync_score = 0.0f;
   bool deadline_hit = false;
   bool slot_too_short = false;
@@ -57,6 +59,7 @@ struct Stats {
 // One raw frame, for diagnostics. Never shown to a user as text.
 struct RawResult {
   float audio_hz = 0.0f;       // tone-0 frequency
+  uint32_t start_sample = 0;   // first sample of the frame in the slot buffer
   int32_t dt_ms = 0;           // frame start relative to the nominal 0.5 s into the slot
   float sync_score = 0.0f;
   uint8_t sync_hits = 0;

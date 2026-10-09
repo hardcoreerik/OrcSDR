@@ -1,4 +1,5 @@
 #include "js8_native_backend.hpp"
+#include "js8_frontend.hpp"
 #include "js8_spectral.hpp"
 
 #include <array>
@@ -105,6 +106,42 @@ int main() {
   for (size_t i = 0; i < oracle.size(); ++i) peak = std::max(peak, oracle[i]);
   for (size_t i = 0; i < oracle.size(); ++i) worst = std::max(worst, std::fabs(oracle[i] - backend.grid()[i]));
   assert(worst <= peak * 1.0e-4f);
+
+  // A station between two 6.25 Hz search bins (real stations sit at arbitrary frequencies; the 2604 Hz station of the real 40 m capture has its
+  // lowest tone at 2602.5 Hz): refinement must still recover every tone. Without refinement the coarse grid point loses most of the energy.
+  for (float off_grid : {1015.6f, 1013.0f, 1017.4f}) {
+    const auto offset_slot = make_slot(off_grid, 6000.0f, 2500.0f, true);
+    assert(backend.begin_slot(1791440220000ull));
+    for (size_t offset = 0; offset < offset_slot.size(); offset += 4096)
+      assert(backend.offer_audio(offset_slot.data() + offset, std::min<size_t>(4096, offset_slot.size() - offset)));
+    assert(backend.finish_slot(out, 4) == 0);
+    assert(backend.raw_count() >= 1);
+    const native::RawResult* r = backend.raw(0);
+    assert(std::fabs(r->audio_hz - off_grid) <= 1.7f);
+    for (size_t i = 0; i < kFrame.size(); ++i) assert(r->frame.tones[i] == kFrame[i]);
+    assert(backend.stats().refined >= 1);
+  }
+
+  // Alias resolution: the three Normal sync blocks are identical, so an alignment one sync period (36 symbols) away from a stronger frame is dropped;
+  // different frequencies and unrelated start times are kept.
+  {
+    const Profile& p = profile(Submode::normal);
+    const size_t period = static_cast<size_t>(p.symbol_samples) * 36u;
+    frontend::AliasItem items[5] = {
+        {637.5f, 112320, 0.56f, 21},               // the real frame
+        {637.5f, 112320 - period, 0.30f, 14},      // one period early (weaker): dropped
+        {637.5f, 112320 + period, 0.35f, 14},      // one period late (weaker): dropped
+        {487.5f, 112800, 0.48f, 21},               // another station: kept
+        {637.5f, 112320 + 50000, 0.40f, 15},       // same frequency, unrelated start: kept
+    };
+    bool drop[5];
+    frontend::mark_aliases(p, items, 5, drop);
+    assert(!drop[0] && drop[1] && drop[2] && !drop[3] && !drop[4]);
+    // a K7YXZ-style pair: equal sync hits, the aliased one has the weaker frame energy
+    frontend::AliasItem pair[2] = {{837.5f, 61920, 0.46f, 14}, {837.5f, 61920 + period, 0.69f, 14}};
+    frontend::mark_aliases(p, pair, 2, drop);
+    assert(drop[0] && !drop[1]);
+  }
 
   std::printf("js8_native_backend_tests: PASS (grid vs oracle worst %.2e of peak, raw frames %u, candidates %u)\n",
               static_cast<double>(worst / peak), static_cast<unsigned>(stats.raw_frames), static_cast<unsigned>(stats.candidates));
