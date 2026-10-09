@@ -82,6 +82,12 @@ int main() {
   js8.caps = decoder_cap_js8;
   assert(mode_supported(js8.caps, DigitalMode::js8_normal) && mode_supported(js8.caps, DigitalMode::js8_60_experimental));
   assert(!mode_supported(js8.caps, DigitalMode::ft8) && !mode_supported(js8.caps, DigitalMode::ft4));
+  // JS8 Normal alone enables only Normal; the other submodes need the all-speeds bit.
+  assert(mode_supported(decoder_cap_js8_normal, DigitalMode::js8_normal));
+  assert(!mode_supported(decoder_cap_js8_normal, DigitalMode::js8_fast) && !mode_supported(decoder_cap_js8_normal, DigitalMode::js8_40) &&
+         !mode_supported(decoder_cap_js8_normal, DigitalMode::js8_slow) && !mode_supported(decoder_cap_js8_normal, DigitalMode::js8_60_experimental));
+  assert(!mode_supported(decoder_cap_js8_normal, DigitalMode::ft8) && !mode_supported(decoder_cap_ft8 | decoder_cap_ft4, DigitalMode::js8_normal));
+  assert(mode_supported(decoder_cap_js8, DigitalMode::js8_fast));
   assert(decoder_cap_ft8 == 1u && decoder_cap_ft4 == 2u && decoder_cap_js8 == 4u &&
          decoder_cap_assisted == 8u && decoder_cap_message_assembly == 16u);   // the decoder workstream's bit values
 

@@ -1,8 +1,8 @@
 # OrcSDR FT8 RX
 
-Status: **design and sandbox development**
+Status: **receive implementation on main** (FT8, FT4 and JS8 Normal).
 
-Branch: `codex/ft8-rx-dashboard-sandbox`
+The original design notes below are retained. Current JS8 frame coverage and evidence limits are in [JS8 status](../js8/STATUS.md); the [review completion](REVIEW_COMPLETION_2026-10-09.md) records the follow-up fixes and hardware acceptance boundary.
 
 FT8 support is receive-only for the initial OrcSDR implementation. The feature is designed as an offline-first, touch-first FT8 receiver for the M5Stack Tab5 and RTL-SDR-class hardware. It must not imply a decode, station identity, location, or protocol classification that the receiver did not actually establish.
 
@@ -70,6 +70,8 @@ The suite builds optimized binaries and AddressSanitizer/UndefinedBehaviorSaniti
 - [12 kHz USB analysis tap proposal](AUDIO_TAP_PROPOSAL.md)
 - [Native decoder implementation notebook](PHASE1_IMPLEMENTATION.md)
 - [Real WAV reference benchmark](REAL_WAV_BENCHMARK.md)
+
+The external WAV validation workflow runs standard WSJT-X `jt9` and the native benchmark on the same downloaded audio. The primary FT8 and FT4 WAV hashes are pinned; each run saves all sample hashes, the reference package version and both decoder outputs. This regression floor does not claim WSJT-X coverage parity or hardware acceptance. The native-core path coverage from PR #172 is folded into the existing FT8 host-test workflow, avoiding a duplicate full-suite job.
 
 ## Multi-mode seam (FT8 / FT4 / JS8Call)
 

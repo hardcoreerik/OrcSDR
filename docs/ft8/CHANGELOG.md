@@ -2,6 +2,161 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 - FT8/FT4/JS8 dashboard: expert tuning, gain control, information popups, stations heard (Tab5 + optional OrcDial)
+
+- **Expert tuning** (Setup checkbox, off by default; Auto keeps the band table): tap the Live DIAL chip for a Tune panel with a 12-key MHz keypad, six step sizes (10 Hz to 100 kHz), -/+ one and ten steps, and AUTO. The receiver's own limits still decide
+  (`validate_rtl_tune_frequency`); a custom dial is dropped on any band or mode change. Pure arithmetic in `ft8_tuning` (host-tested). Touch works alone.
+- **Receiver gain** (Live GAIN chip): AUTO or a manual step over the driver's gain table, with a live input-level and clipping meter and plain advice. Fixes the chip reading only the AM smart-auto flag, which showed MAN on HF while the tuner AGC was in control.
+- **Information popups**: an (i) button in the header opens a plain-language page for Live, Decodes, Map, Hunter, Heard and Setup (text specific to FT8, FT4 or JS8CALL); text lives in `ft8_info_text` and is host-tested for fit and consistency.
+- **Setup**: one FT8 / FT4 / JS8CALL button each (JS8 speeds as chips; only Normal enabled via the new `decoder_cap_js8_normal`), per-standard parameter rows, and the Live MODE chip opens a quick switcher.
+- **Stations heard**: persistent table (`ft8_heard_db`, PSRAM, 40-byte CRC-checked journal replayed at boot from `/orcsdr/ft8/heard.journal`); Decodes rows get a green/blue/gold bar (first time / heard before / worked) and tapping a row shows first and last heard, count, bands, modes, SNR and grid. Nothing leaves the device.
+- **Decodes** are paged (NEWER/OLDER). Repaints are gated per tab and the header ignores battery wobble, so idle screens no longer flicker (the repaint log `ORC_FT8_UI` records each repaint kind).
+- **OrcDial (optional)**: with expert tuning on, a centre tap switches the knob between band selection and fine tuning; the Dial shows a large frequency and the step size while fine tuning. Additive capability bits and an appended `ft8_fine` action; an older Dial keeps working and the Tab5 never needs a Dial.
+- **JS8 decoder speed**: tone energies are measured once per candidate and reused; OSD candidates are screened by CRC linearity first. Results unchanged (four reference stations, 191/200 synthetic, 0 false in 200000 noise-only trials).
+- **Live soak** (40 m, 7.078 MHz, 61 min, V4 + GA-800 indoor antenna): 51 JS8 messages from 7 stations, all seven also spotted on PSK Reporter; per-frame device log and analysis in `docs/js8/results/2026-10-08-soak-40m-60min/`. These spots establish band activity, not exact-message correctness or a zero-false-decode result. The soak lacks a standard-decoder replay of those same RF samples and is not a reference fixture.
+- Not done: JS8 heartbeat/CQ frames (layout unverified), FT4/JS8 hunts, contest message types, P4 timing after the energy-reuse change, the opt-in PSK Reporter upload.
+
+## 2026-10-08 - JS8 Normal soft decoder: all four real stations decoded by our C++ code (milestones A-F on the host)
+
+- New: `js8_codec` (tone LLRs, syndrome, CRC-12, field split), `js8_message` (directed-frame HEARTBEAT SNR rendering), `js8_osd` (bounded ordered-statistics decoding, order <= 2, graph-derived generator),
+  `js8_decoder` (LLR -> hard check -> belief propagation -> OSD; message only with parity AND CRC-12), `js8_ldpc_graph.hpp` generated from `docs/js8/spec/js8_ldpc_174_87.json` by `tools/js8-spec/gen_ldpc_graph.py`.
+  The generic FEC engine edge limit is 8192 (JS8 rows are dense: 3920 edges). `js8_native_backend` now writes verified `Decode` records (no SNR number: the SNR in the message is the sender's report).
+- Real capture sample-40m-180s-002 (WAV SHA-256 93b48bef...), `tools/js8-wav-front --step 1 --log`, 166 windows, no reference positions: WO7I (syndrome 0, hard decision), K8IMT (syndrome 49, BP fails, OSD order 0, 15 corrections),
+  K7YXZ (held out, syndrome 38, BP 2 corrections), KD7WPQ (syndrome 10, BP 2 iterations); texts identical to the JS8Call references; no message from any other raw frame.
+- Gate calibration used synthetic data only: 0 false messages in 200000 noise-only trials with the 0.065 OSD discrepancy gate (4 in 63000 at 0.40); 191/200 synthetic frames decode where 0/200 have a clean raw hard decision.
+- Not done yet: P4 measurement and injection (milestone G), other frame types, multi-frame messages, controls on live noise.
+
+## 2026-10-08 - JS8 front end: sub-bin refinement and alias resolution (all four real stations now reach a raw frame)
+
+- Cause analysis on the real 40 m capture (dataset 1705472): the 2604 Hz station's lowest tone is at 2602.5 Hz, between two 6.25 Hz search bins, so the coarse candidate lost most of the
+  energy; the 838 Hz frame was locked one sync period (36 symbols) early because the three Normal sync blocks are identical (two blocks of three still match), and its tail is truncated.
+  The 635 and 486 Hz stations also appeared as 14-16 hit aliases +-36 symbols from the true 21/21 frames.
+- `js8_demod`: `probe_sync()` measures only the 21 sync symbols at one (time, frequency) hypothesis. `js8_frontend`: `refine_candidate()` tries +-2 steps of 1.5625 Hz and 240 samples (20 ms) around each candidate
+  that is below 21/21; `mark_aliases()` drops a weaker candidate at the same frequency whose start differs by whole sync periods (keeps the stronger frame energy). The native backend uses both.
+- Real capture, sample-40m-180s-002 (1 s window step): 635 Hz 21/21, 486.5 Hz 21/21, 838 Hz now at its true alignment (sample 131040, margin 0.69), 2604 Hz now found (18/21 at 2603.1 Hz); 0 raw frames outside the four reference
+  frequencies. Controls (sample-20m-180s-001, sample-40m-180s-001, probe-20m-001, probe-40m-001, probe-20m-002): 0 raw frames at min score 0.05.
+- Tests: off-grid synthetic stations (1013.0, 1015.6, 1017.4 Hz) recovered with refinement; alias resolver unit test.
+
+## 2026-10-08 - Generic JS8 FEC engine validated against the FT8 code; end-to-end hypothesis harness
+
+- `tests/js8_fec_ft8_vectors_tests.cpp`: builds a `js8::fec::Graph` from the FT8 LDPC(174,91) parity graph and decodes 1500 noisy codewords with both the generic JS8 engine and the FT8
+  engine. The two succeed on exactly the same words at every noise level (sigma 0.5: 300/300 both; 0.7: 290/300; 0.8: 205/300; 0.9: 67/300 both) with zero wrong-codeword convergences,
+  and every converged word satisfies FT8's own syndrome checker. This validates the engine and the graph format only; the FT8 matrix and CRC-14 are NOT used for JS8.
+- `tools/js8-e2e-verify.cpp`: searches all 40320 tone-label permutations and 8 codeword layouts for a candidate parity matrix on saved raw tones; `--selftest` proves it recovers a random labelling on a synthetic sparse code.
+  (Now superseded for JS8 by the verified tone map in the spec; kept as a validation tool.)
+
+## 2026-10-08 - JS8 protocol specification imported from codex/js8-spec (7214ae2)
+
+- Imported, without merging the spec branch: `docs/js8/spec/*.json` (LDPC(174,87) parity rows, tone map, CRC-12, message layouts, WO7I evidence, corpus audit,
+  candidate diagnostics), `docs/js8/PROTOCOL_SPEC.md` and `tools/js8-spec/*.py`. Each constant carries its provenance (documentation or GPL-SOURCE with file, function
+  and blob SHA). Facts only; no GPL code is in the repository.
+- Reproduced independently with the committed verifier: `python tools/js8-spec/verify_real_frames.py docs/js8/spec/js8_ldpc_174_87.json
+  docs/js8/results/2026-10-08-sample-40m-180s-002-front-end.json` gives, for WO7I (637.5 Hz, start sample 112320, 21/21 sync), zero unsatisfied parity checks, CRC-12 pass,
+  inner text `UvnVIpm34Fqg`, directed frame WO7I -> ND7M, command 29 (HEARTBEAT SNR), SNR +11. Hard decisions only; the other three stations need soft decoding.
+- Spec caveats kept visible: the matrix rows are DENSE (about 44 variables per check), so belief propagation on them is weak and ordered-statistics decoding is the natural
+  fit; only command 29 is verified; frame-flag semantics and non-directed frame types are not pinned to a versioned source.
+
+## 2026-10-08 - JS8 front end on the real over-the-air capture; evidence tool and bound results
+
+- `tools/js8-wav-front.cpp`: runs the same JS8 Normal backend as the firmware over a long 12 kHz WAV with a sliding 15 s window and reports sync
+  candidates and raw 79-tone frames, optionally near reference frequencies; `--json` writes a machine-readable result. No AGC, no normalisation,
+  no injected expected answers. `js8_native_backend` gained read-only `candidate()`/`candidate_count()` for it.
+- Dataset: commit 1705472 of F:\AI\OrcSDR-TEMP\js8-pc-capture, `tests/fixtures/js8/corpus/2026-10-08`, checked with
+  `tools/js8_capture/verify_dataset.py` (7 pairs, 870 standard-decoder runs, 5 unique frames).
+- Result on `sample-40m-180s-002` (166 one-second-step windows): the front end reaches a raw frame for 3 of the 4 standard-decoder frames
+  (635, 486 and 838 Hz); the 2604 Hz frame (reference -20 dB) is not reached because its sync candidates fail the demodulator's sync-hit check.
+  All 16 raw frames sit near a reference frequency. The four zero-decode controls and the Slow capture give 0 raw frames. Saved with the WAV and
+  IQ hashes and the decoder commit in `docs/js8/results/`. Tab5 acceptance is separate and still pending for real captures.
+
+## 2026-10-08 - Opening the FT8 dashboard now tunes the radio
+
+- `open_ft8_dashboard()` called nothing that tuned the receiver, so opening FT8 from Home left the radio on the Home station (for example FM at
+  2.4 MS/s). The audio tap saw no block, the decoder sat in "listening" and Live showed no waterfall until a band button was tapped. Serial tests
+  always sent a band command next, which hid the problem. The dashboard now calls `ft8_select_band(ft8_selected_band())` on open, which starts the
+  runtime, tunes the selected band (240 kS/s for the decoder) and applies the mode's dial frequency.
+- Checked on the Tab5: after boot, `FT8 OPEN` alone gives rx_running=1, tap=1, rate_hz=240000, blocks flowing, runtime=decoding, waterfall drawn.
+
+## 2026-10-08 - JS8 firmware integration, step 3: runtime hook, serial diagnostics, JS8 dials (raw evidence only)
+
+- `ft8_runtime` hosts the JS8 Normal backend beside the FT8/FT4 one. It is allocated in PSRAM (about 700 KB) the first time a JS8 mode is used and
+  reuses the existing 12 kS/s audio tap and ring (no second IQ front end); FT8/FT4 and JS8 never run at the same time. `set_mode()` and
+  `inject_run()` accept FT8, FT4 and JS8 Normal only; Fast, 40, Slow and 60 are refused and are never mapped to Normal. A JS8 slot logs
+  `ORC_JS8_RT slot=... decodes=0 raw_frames=... candidates=... best_sync=... total_ms=... spectral=... search=... demod=...`.
+- New serial commands (receive only): `JS8 STATUS | STATS | RAW | START | STOP | MODE NORMAL | BAND <label> | INJECT BEGIN|PING|RUN|<offset> <b64>`.
+  `JS8 RAW` prints measured evidence (audio Hz, time offset, sync score, sync hits, margin), never text. `tools/tab5_ft8.py inject <wav> JS8` runs a recording.
+- `mode_dial_hz()` returns the JS8 calling frequencies for every JS8 submode (40 m 7.078, 20 m 14.078 MHz and so on; 60 m and 2 m keep the FT8 dial
+  until confirmed). The model self-check was updated to match.
+- No `Decode` is produced; `finish_slot()` returns 0. The JS8 dashboard buttons stay disabled. No transmit capability.
+- Memory: the JS8 path reuses the FT8 slot chunk buffer instead of adding a second 8 KB static (that second buffer boot-looped the device, see
+  the previous entry). App size 4,072,672 bytes, +14,080 over the build without JS8, in the 6 MB partition.
+
+## 2026-10-08 - Boot-loop fix (map arrays to PSRAM) and Live decode-list spacing
+
+- The map's 16 KB of projection arrays in `ft8_dashboard.cpp` (`draw_world`) were static internal RAM. They now live in one PSRAM block
+  allocated on first use. Internal RAM is the scarce resource on the Tab5: the largest internal DMA block after boot rose from about 36 KB
+  to 38 KB with 52 KB free, and an 8 KB static added later by the JS8 runtime hook (see the JS8 entry) boot-looped the device until this
+  headroom existed.
+- The Live tab's "Latest decodes" list drew the UTC time over the SNR value at the larger font; the SNR, DT, DF and message columns moved right.
+
+## 2026-10-08 — JS8 firmware integration, step 2: native JS8 receive backend (no decodes yet)
+
+- New `js8_native_backend.{hpp,cpp}` (namespace `orcsdr::js8::native`), same lifecycle as the FT8/FT4 backend: `begin(12000, submode, Config, Memory)`, `begin_slot`, `offer_audio`, `finish_slot`, `stats`, `reset`. Large buffers (slot audio 360 KB, energy grid about 330 KB) come from the caller's allocator (PSRAM on the Tab5); no heap use while decoding.
+- Pipeline: slot audio -> energy grid by one 1920-point FFT per half symbol (the proven FT8 FFT primitive; bins on the 6.25 Hz tone spacing, 200-3000 Hz) -> bounded JS8 sync search -> candidate-local demodulation to raw 79-tone frames. The FFT grid matches the exact-correlation oracle (`js8_spectral`) to 1.65e-5 of the strongest cell on identical PCM.
+- Truth boundary kept: `finish_slot()` returns zero `Decode` records and `stats().decodes` is always 0. The tone-to-bit map, FEC graph, CRC and frame parser are not accepted yet; the acceptance layer attaches after the raw-frame stage. Only Normal is accepted: `begin()` and `set_submode()` refuse every other submode and never fall back.
+- Tests: `tests/js8_native_backend_tests.cpp` (refusals, incomplete and short slots, noise-only slot gives no raw frame, synthetic frame recovers all 79 tones within 3.2 Hz and 45 ms, grid vs oracle), run under ASan/UBSan by `tools/test-ft8.sh`. Source added to the Tab5 build. Receive only; no UI change; FT8/FT4 untouched.
+
+## 2026-10-08 — JS8 firmware integration, step 1: sources in the Tab5 build
+
+- The eight device-relevant `js8_*.cpp` files (mode, frame, sync, spectral, demod, frontend, fec, snr) are now in `apps/orcsdr-tab5/main/CMakeLists.txt`. Host-only reconstruction tools stay out of the firmware. The firmware builds (ESP-IDF 5.5.4); the app binary is 4,058,592 bytes both before and after, because nothing references the JS8 code yet and the linker discards it. The real size cost will be measured when the backend lands. Receive-only; no decoder behaviour change; FT8/FT4 untouched.
+
+## 2026-10-08 — Decode SNR (receive-only estimate, calibrated against signals of known strength)
+
+- Decodes now carry an SNR in the usual weak-signal convention (signal power over noise power in 2500 Hz), shown in the DECODES table, the `ORC_FT8_DECODE` serial line (`snr=`) and a new `snr_db` column in the decode log. It replaces the dash and the `decode_flag_snr_unavailable` flag for accepted decodes. This lifts the earlier "no SNR" rule at the owner's request; no number is shown for a candidate that failed the gates.
+- Method (`ft8_snr.{hpp,cpp}`, clean-room): the CRC-valid message is re-encoded, so the transmitted tone of every data symbol is known; signal is the energy at that tone minus noise, noise is a low percentile of guard bins 8 to 14 tone widths outside the occupied band (robust to neighbouring stations), with the grid's own sidelobe leakage removed. Floor -30 dB, never a smaller number.
+- Calibration: `tools/ft8-snr-sweep.cpp` synthesises FT8/FT4 at exactly known SNR in Gaussian noise and runs it through the real backend. Mean error against truth: FT8 within about 1 dB from -16 to +12 dB (sd 0.5-0.9 dB); FT4 within 0.4 dB from -12 to +12 dB. Decode threshold on this white-noise test: FT8 about -18 to -20 dB, FT4 about -12 dB. `tools/test-ft8.sh` now runs a `--check` of the sweep.
+- Against WSJT-X on the official FT8 recording the estimate agrees on one message (W1FC +15 vs +15) and differs by -5 to +8 dB on the others (median about -3 dB). WSJT-X's numbers are its own estimate on real, non-white signals, not ground truth; the synthetic sweep is the calibration. Official FT4 file: -2 to -8 dB low on three messages. These differences are recorded here rather than tuned away.
+- Advanced: `FT8 SNR [OFFSET <dB>|RESET]` adds a user trim (stored in NVS, default 0). A Settings control for it is still to do. Not yet verified live on the Tab5: the RTL-SDR was not detected at boot after the flash.
+
+## 2026-10-08 — Decode log to the SD card works; internal DMA memory recovered
+
+- `FT8 LOG [ON|OFF|FLUSH]` and `FT8 MEM [FULL]` (heap budget). Every decode is a CSV row staged in PSRAM and written to `/orcsdr/ft8/log-YYYYMMDD.csv` (one file per UTC day, 4 MB cap) when internal DMA memory allows (4 KB largest block). On by default, stored in NVS. Stations heard, never contacts. Verified on hardware: 34 rows written while the receiver ran, pulled back with `SD_GET`. ADIF and SAVE files moved to `/orcsdr/ft8/` too, because `SD_GET` only serves `/orcsdr/`.
+- Cause of the SD failures, found by logging the heap at each boot stage: the largest internal DMA block falls from 27 KB to 3 KB at `ORCDIAL_V4_BRIDGE_READY`, about 1.5 s after the receiver starts on Home entry. It is not FT8 and not the receiver. The OrcDial bridge start takes about 24 KB of internal RAM: the secure runtime's 12 KB task stack, its three queues (about 5 KB), the bridge's two frame queues and a 4 KB transmit task stack. The bridge and secure-runtime queues now live in PSRAM (`xQueueCreateWithCaps`, internal fallback; `orcdial/src/control/secure_runtime.hpp` change is guarded for the ESP32-P4 only). Largest DMA block after boot is now 10-11 KB (was 3 KB), also with FT8 running.
+- The storage wrapper's `open()` did not support `FILE_APPEND`: an append open was treated as a read of a missing file. It now maps to `"ab"`. (The one live log that used it, LoRa, is affected the same way.)
+- Measurement aids: `RTL_DMA_WATCH` lines (largest DMA block moving 4 KB or more) and `RTL_DRAM_BUDGET` at receiver start and OrcDial bridge steps. An earlier note here blamed the receiver and the FT8 runtime; that was wrong.
+- The Tab5 main loop stopped answering serial/touch twice during this work while the decoder task kept running; it did not recur in about 4 hours of later runs, cause unknown.
+
+## 2026-10-08 — Smoother Live waterfall, flicker-free MAP, NEW markers
+
+- Live waterfall: the whole 848x224 area was repainted every 400 ms (about 2.5 frames a second). It now scrolls the old picture and draws only the new rows (about 10 ms a paint). The runtime emits one row per 70 ms of audio even when the tap hands audio over in bursts, and the dashboard spends them at a steady pace from the main loop. Measured on the Tab5: 8 rows/s before, 14.3 rows/s after; row computation costs 2 ms.
+- MAP: composed off-screen and pushed in one go, and a new grid no longer blanks the body first, so it no longer flashes. The map always shows the whole world (owner preference); zoom/pan can be added to the existing view struct.
+- DECODES: a NEW badge marks a callsign's first appearance in the session store (`decode_flag_new_station`, set by `DecodeStore::append`, host-tested); column spacing reworked for the larger text; bearing shown as degrees.
+
+## 2026-10-08 — MAP basemap restyled to the OrcMaps dark theme
+
+- The MAP outline looked nothing like the OrcMaps maps. It now fills land (slate on navy water, thin borders) with the colours of the OrcMaps `world-orcsdr-dark` render, using an even-odd scanline fill of the Natural Earth 110m polygons. This is a style match only: the FT8 tab still does not use the OrcMaps engine or tiles (that integration lives on `claude/orcmaps-integration` and the app is near the size guard there).
+- Recent-grids rows and the Conditions panel were re-spaced for the larger text; singular/plural fixed.
+
+## 2026-10-08 — World outline on MAP, larger text
+
+- MAP now draws an offline world outline (coasts and country borders from Natural Earth 1:110m, public domain, about 15 KB) generated by `tools/gen_ft8_world.py` into `ft8_world_data.cpp`. It shows the whole world until a decoded station has a grid, then frames the receiver and stations (minimum 60 x 30 degrees).
+- Dashboard labels that were DejaVu18 are now DejaVu24; dense captions (stat-card titles, mode-button sublabels) stay at DejaVu18. Hunter cards drop the slot count to fit. Setup mode buttons and footer no longer overflow. Checked on hardware.
+
+## 2026-10-08 — Larger dashboard text
+
+- The FT8/FT4 dashboards drew small labels in the 6x8 built-in font, unreadable on the 1280x720 panel. Size-1 text (about 30 labels: hunter cards, table captions, map/heard hints, setup footer) now draws DejaVu18. Checked on hardware on every tab (DECODES, MAP, HUNTER, HEARD, SETUP); nothing overflowed.
+
+## 2026-10-08 — Live cross-check against PSKReporter
+
+- First live FT4 decode on 20 m (14.080 MHz): `W9DHI KE5YYC R-01`; PSKReporter shows KE5YYC transmitting FT4 at about 14.08148 MHz in the same minute.
+- Frequency accuracy, 20 m FT8 on the Blog V4 + MLA-30+: 11 decodes matched to PSKReporter spots of the same sender within 20 s read a median of +27 Hz (about 2 ppm, mostly +26 to +41 Hz; one pair with only two spots read -10 Hz). The same decoder is within 3 Hz of WSJT-X on the official recording, so the offset belongs to the dongle clock, not the decoder. One FT4 pair read -135 Hz; one sample, not conclusive. No correction applied (setup-specific).
+- PSKReporter's query API rate-limits quickly (about 15 rapid queries); use one bulk query per few minutes.
+
+## 2026-10-08 — On-device regression by serial injection
+
+- Added `FT8 INJECT BEGIN|PING|RUN|<offset> <b64>` (authenticated) and `tools/tab5_ft8.py inject <wav> FT8|FT4`: a 12 kHz recording is uploaded (CRC-verified, re-pairs when the 5 s session lapses) and decoded by the real backend on the Tab5 as one slot. Test-only; receive-only, no transmit path.
+- USB Serial/JTAG console receive buffer raised from 1 KB to 8 KB; long scripted lines overflowed it.
+- Tab5 result on the official recordings matches the host build: FT8 `210703_133430.wav` 7 of 14 messages in 3.7 s; FT4 `000000_000002.wav` 3 of 19 in 1.1 s; no false accepts.
+
 ## 2026-10-07 — Phase 0 research
 
 - Created the native FT8 decoder research branch from current OrcSDR main.
@@ -231,3 +386,176 @@ This file tracks changes made specifically by the native OrcSDR FT8 decoder work
 ## 2026-10-07 — Refinement search shape (host-only)
 
 - `ft8-wav-refine`: added `--joint`, `--rounds`, `--watch`. A joint time-frequency scan recovers `XE2X HA2NP RR73` that sequential coordinate refinement misses (local optimum): FT8 7 to 8 accepted on the official recording at K=64, FT4 unchanged at 3, zero false accepts, zero accepts on 16 noise recordings. Lowering the coarse sync threshold and widening the coarse list (K up to 256) changed nothing. Host-only measurement; no production code changed in this entry.
+
+## 2026-10-08 — Native FT8/FT4 decoder bound to the Tab5 firmware (receive only)
+
+- Added `ft8_audio_tap` (raw-CU8 sidecar to 12 kS/s USB audio), `ft8_spectral_fft` (float mixed-radix FFT matching the exact oracle), `ft8_native_backend`
+  (fine-grid refinement design), `ft8_runtime` (PSRAM ring, UTC slot scheduler, decoder task) and the `FT8 ...` serial command suite with `tools/tab5_ft8.py`.
+- Measured on the Tab5: about 3.6 s of decode per 15 s FT8 slot and about 3.4 ms of tap per 6.8 ms IQ block; first real decodes (20 in about 3.5 minutes on 40 m).
+  Details, the dial-offset and clock findings, and the gain finding are in `NATIVE_BINDING.md`.
+- No transmit path was added. SNR is not reported (no calibrated estimator).
+
+## 2026-10-08 — Boot clock alignment, per-mode dial frequencies, corrected gain finding
+
+- `time_service::initialize` waits for the hardware RTC's seconds to tick before taking the system time, so a cold boot lands within milliseconds of the RTC instead of up to a second behind (measured: -14 ms against the PC after a cold boot, was -2.5 s). Costs at most about 1.1 s at boot.
+- `mode_dial_hz()`: FT4 has its own dial frequencies (e.g. 40 m 7.0475 MHz, 20 m 14.080 MHz); changing mode retunes, and the dashboard, serial status and OrcDial packet show the active mode's dial. FT4 runs on the device (7.5 s slots, about 1.5 s decode) but has not yet decoded a live signal.
+- Corrected `NATIVE_BINDING.md`: gain was not the cause of the early no-decode result (a dial-offset bug was); decodes appear at every manual gain from 0 to 45 dB and the tap level does not change, so no gain policy is claimed.
+
+## 2026-10-08 — Gain: no policy needed (measured)
+
+- `FT8 STATUS` gains `iq_dbfs`, `iq_clip_pct`, `gain_tenth_db`. A manual-gain sweep showed the decoder's slot level rising to a knee near 34 dB (with 9 to 30 percent IQ clipping beyond it) and an alternating A/B of the receiver's AUTO setting against manual 34 dB gave 6.55 against 6.64 decodes per slot over 22 slots each: AUTO already sits at the knee, so no FT8 gain policy was added. A hill-climbing gain seeker was built and removed. `ft8_native_service()` (called from `loop()`) now only hands decodes to the store so a headless run stays current.
+
+## 2026-10-08 — Conditions panel on the HEARD tab; ADIF export; FT8 TAB
+
+- The HEARD tab shows a CONDITIONS panel from the decodes and the saved receiver location (`ft8_conditions`): stations with a grid, farthest station with distance and bearing, median distance and decodes per compass sector; it prompts for a location when none is set.
+- `FT8 ADIF <name>` writes the decode list to `/sd/ft8/<name>.adi` using `ft8_adif` (verified: 64 records written on the device). `FT8 TAB <name>` switches the dashboard tab for scripting.
+
+## 2026-10-08 — Stack-fault fix, FT8 SHOT and a screenshot helper
+
+- Fixed a stack protection fault on core 0 when the FT8 screen opened while the decoder ran: the 64-decode dashboard snapshot (about 8 KB) is now filled in place in a static instead of being built on the main task stack and copied, and the serial-command buffers are static. Verified: the screen opens during decoding with no panic and slots keep decoding.
+- `FT8 SHOT <name>` saves the screen to the SD card; `tools/tab5_ft8_shot.py` fetches it (the receiver is stopped for the SD transfer and retuned afterwards). Verified HEARD (Conditions panel) and DECODES (GRID/DIST/BRG columns) on the device.
+
+## 2026-10-08 — Live waterfall on the LIVE tab
+
+- Replaced "WATERFALL INPUT PENDING DSP BINDING" with a live waterfall from the tap audio (`ft8_runtime::waterfall()`, a low-priority task, 1920-point FFT every 150 ms, rows normalised to their own median). The panel takes byte-swapped RGB565 through `pushImage`, so the palette is swapped. Repaints are limited to every 400 ms. The GAIN chip shows `AUTO` only, and the SETUP footer was updated. Verified by screen capture on the device.
+
+## 2026-10-08 — Band hunter bound to the decoder; 6 m and 2 m tuning fixed
+
+- The HUNTER tab and `FT8 HUNT <FAST|DECODE|STOP>` / `FT8 HUNTSTATUS` run `ft8_hunter` against the live decoder (`ft8_hunt_service()` in the loop). Added `strong_candidates` to the decoder stats (clear sync, refined score 0.45 or more) so a band is only called "FT8 SIG" for real sync, not for the 64 weakest-passing candidates.
+- Fixed: bands above 30 MHz (6 m, 2 m) were clamped to 30 MHz by the shortwave path. They now tune through the general VHF band, and the audio tap runs on both paths.
+- Measured: fast hunt visits 10 bands in about 70 s; decode hunt about 10 to 12 minutes; 40 m was best (12 decodes) in the first run.
+
+## 2026-10-08 — 6 MB app partition, NTP aligned to the second, clock finding corrected
+
+- Brought the 6 MB app partition onto this branch (cherry-picked from `claude/app-partition-6m`): the app is 0x3d6410 bytes with 36 percent (2.2 MB) free instead of 4 percent. Verified on the Tab5: it boots on the new table (a one-time full reflash) and still decodes.
+- `ntp_sync` now writes the RTC exactly on a whole-second boundary (it wrote mid-second, leaving the RTC off by up to a second). `FT8 NTP` and one automatic sync per boot when the FT8 decoder starts with Wi-Fi up.
+- Corrected the clock/DT finding: the PC clock used as a reference was 0.46 s ahead of true time, which produced the constant +0.58 s DT. With an NTP-corrected Tab5 clock the decoded DT centres on zero (median -100 ms, mean -29 ms, 59 decodes).
+
+## 2026-10-08 — FT8 asks the driver for 240 kS/s
+
+- Selecting an FT8 band now sets the receiver rate override to 240 kS/s (the driver's low band is 225 to 300 kS/s) and restarts the stream if it runs at another rate, instead of 2.4 MS/s. DSP load fell from 67 to 19 percent on the Tab5 and decoding is unchanged. The DSP task lets the tap see these blocks (they are flagged as a non-default rate). Band selection now starts the decoder runtime first, so the rate override is not released before the stream restarts. When the decoder stops the override is cleared and a stream still at 240 kS/s on a dashboard band is restarted at its normal rate (verified: back to 2.4 MS/s).
+
+## 2026-10-08 — MAP tab: receiver marker and fitted view
+
+- The MAP tab marks the receiver (white ring and cross, "YOU") from the saved location and frames the receiver plus the decoded stations with a margin (world view when there is nothing to frame), with grid lines at a step chosen for about six columns. Verified by screen capture on the device.
+
+## 2026-10-08 — A completed hunt tunes its best band
+
+- When a band hunt completes the receiver now tunes to the best band it found (it used to stay on the last band visited). Verified: a fast hunt ended on 40 m. A decode hunt at 12:50 UTC on the Tab5 (V4 plus MLA-30+): 40 m best with 8 decodes, 80 m 2 decodes, 10 m FT8-like sync without a decode, 160 m and 30 m through 12 m and 6 m quiet; the HUNTER tab renders these results (screen capture).
+
+
+## 2026-10-08 — JS8 receive reconstruction slice 1
+
+- Added a separate `orcsdr::js8` module with JS8 submode profiles and raw 79-tone frame handling; no FT8/FT4 decoder behavior changed.
+- Established the Normal sync pattern from the public JS8Call API `TX.FRAME` tone vector and added extraction of the two 29-symbol data blocks (58 data tones total).
+- Added `docs/js8/PROTOCOL_FACTS.md`, `RECONSTRUCTION.md`, `INTEGRATION.md`, `STATUS.md`, and fixture provenance scaffolding.
+- Exact tone-bit mapping, FEC, CRC and upper-layer packing remain explicitly blocked pending independent reconstruction from owner/reference captures; the module cannot emit a user-visible JS8 decode yet.
+- Added optimized and ASan/UBSan JS8 host suites to `tools/test-ft8.sh`. No firmware binding, UI, transmit path, PTT, CAT or flashing work was added.
+
+
+## 2026-10-08 — JS8 FEC reconstruction tooling
+
+- Added host-only `tools/js8-gf2.hpp` and `tools/js8-fec-reconstruct.cpp` to derive a binary code-space rank and orthogonal parity-check basis from observed 174-bit JS8 channel words.
+- Added a deterministic synthetic-subspace test, including rejection of a vector outside the learned code space; optimized and ASan/UBSan runs pass in the sandbox.
+- The tool contains no copied JS8 FEC matrix and makes no claim that JS8's FEC has been recovered yet. Real use is blocked on captured frames and an independently established tone-to-bit mapping.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, transmit path, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 tone-label reconstruction search
+
+- Added host-only `js8-tone-map`: it consumes verified Normal 79-tone frames, removes the measured sync symbols, tests all 8! tone-to-three-bit label permutations, and ranks each resulting 174-bit corpus over GF(2).
+- Added deterministic tests for tone-label validation, bit ordering and mapped-rank calculation; optimized and ASan/UBSan runs pass in the sandbox.
+- The tool deliberately does not hard-code a JS8 tone/Gray map or expected FEC rank as a decoding fact. It warns when the corpus is too small to distinguish a suspected 87-dimensional code from arbitrary mappings.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, transmit path, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 Normal candidate demod primitive
+
+- Added separate `js8_demod.*`: an allocation-free, float-only candidate-local 12 kHz PCM demodulator that evaluates all eight tones for each of 79 Normal symbols and reports raw tones, sync hits, sync contrast and winner margin.
+- Added a host-only synthetic tone fixture based on the public API frame vector. It recovers all 79 tones with deterministic noise and rejects a deliberately wrong base-frequency candidate; optimized and ASan/UBSan tests pass in the sandbox.
+- This is a receiver primitive, not a JS8 message decoder: no whole-band search, FEC, CRC, message acceptance, SNR calibration or firmware binding exists yet.
+- No UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 Normal bounded sync search
+
+- Added standalone `js8_sync.*`: heap-free Normal-mode sync scoring and bounded non-maximum-suppressed candidate search over a caller-provided spectral energy grid.
+- Synthetic host tests recover the injected Normal candidate, reject a flat grid at the test threshold, and refuse Fast while its exact sync pattern remains unverified; optimized and ASan/UBSan runs pass in the sandbox.
+- Sync evidence is not a decode. FEC, CRC and frame acceptance remain unavailable pending reconstruction.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 exact-correlation spectral oracle
+
+- Added standalone `js8_spectral.*`, an allocation-free single-precision PCM-to-energy-grid reference front end for the JS8 receive module.
+- Added a noisy synthetic Normal-mode test that recovers the injected sync candidate at the exact expected time/frequency bin and a quiet control that produces no candidate; optimized and ASan/UBSan versions pass in the sandbox.
+- Documented this as a correctness oracle rather than the final P4 full-band implementation; an optimized FFT/coarse-search front end must be measured against it before device binding.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 WAV-to-tone reconstruction bridge
+
+- Added host-only `tools/js8-wav-tones.cpp`: strict 12 kHz mono i16 WAV -> Normal spectral search -> candidate tone demod -> machine-readable 79-tone frame lines.
+- Its output can be redirected directly into `js8-tone-map`; metadata is emitted as comment lines so no manual frame transcription is required.
+- Sandbox validation on a generated noisy fixture recovered one candidate at the injected 0.160 s / 900.000 Hz position with 21/21 sync hits and an exact match to the documented 79-tone API vector.
+- The tool uses the correctness-oracle spectral path and supports narrowing the audio-frequency span; its runtime is not a P4 performance claim.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 tone frames to codeword export
+
+- Added `js8-map-codewords`: verified Normal 79-tone frames plus an explicit validated tone-label permutation -> 174-bit channel-word lines for `js8-fec-reconstruct`.
+- Added reusable tone-label parsing and negative tests for duplicate/incomplete mappings; optimized and ASan/UBSan tone-map tests pass in the sandbox.
+- Verified the host reconstruction plumbing on the synthetic Normal fixture: WAV extraction -> 79-tone frame -> explicit mapping -> one 174-bit codeword.
+- No real JS8 tone mapping or FEC result is claimed from the plumbing fixture.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 CRC reconstruction lab
+
+- Added host-only `js8-crc-reconstruct.*` for the future 87-bit information-word corpus: it searches all non-zero 12-bit feedback masks, MSB/LSB recurrences and direct/reversed observed CRC-bit order while inferring the fixed-length affine offset.
+- Added optimized and ASan/UBSan primitive tests plus a synthetic hidden-parameter corpus. The method recovers the intended test representation and its mathematically equivalent reflected form; that orientation ambiguity is explicitly documented.
+- No JS8 CRC polynomial, initialization, xor-out or bit ordering is claimed yet; those remain reconstruction results to be established from FEC-decoded real/reference frames and held-out validation.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 pre-FEC front-end pipeline
+
+- Added standalone `js8_frontend.*`: bounded, allocation-free orchestration from caller-owned spectral grid through Normal sync search and candidate-local PCM demod to raw 79-tone candidate frames.
+- Added an end-to-end synthetic front-half test that recovers the documented Normal frame, exact injected start sample, tone-0 frequency and all 21 sync tones; optimized and ASan/UBSan runs pass in the sandbox.
+- The front end intentionally returns raw candidates only. It cannot create `Decode` or user-visible text until independently reconstructed FEC + CRC + frame parsing succeed.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 sparse parity-check reconstruction
+
+- Added host-only `js8-sparse-parity.hpp` and `js8-fec-sparse-search.cpp`: observed 174-bit codewords -> independent column signatures -> meet-in-the-middle weight-6 parity relations -> corpus validation and recovered-check rank.
+- Added optimized and ASan/UBSan unit coverage. A 120-frame synthetic corpus with one hidden six-variable relation recovered exactly that relation and correctly reported that it did not span the entire synthetic parity space.
+- Weight six is a bounded first search, not a claimed JS8 check weight. Real captures must establish the code rank/parity dimension and whether weight-6 relations are sufficient; incomplete rank is reported as incomplete.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 graph-driven normalized-min-sum FEC engine
+
+- Added standalone `js8_fec.*`: a graph-driven normalized-min-sum soft decoder with caller-supplied sparse adjacency and caller-owned workspace. It contains no guessed or copied JS8 parity graph.
+- Added optimized and ASan/UBSan tests using a small synthetic repetition-chain code: clean early exit, correction of a weak wrong hard decision, graph/config/input validation, and undersized-workspace rejection.
+- FEC convergence is explicitly parity-only and cannot create a JS8 decode without the later CRC + supported frame/plausibility gates.
+- The real JS8 graph remains blocked on independent reconstruction from captured codewords; the decoder algorithm is ready to consume it once derived.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 reconstructed graph generator
+
+- Added host-only `js8-graph-builder.hpp` and `js8-fec-graph-gen.cpp` to convert recovered sparse parity checks into the immutable bidirectional adjacency arrays consumed by `js8_fec`.
+- The generator refuses production output unless recovered sparse-check rank equals the independently measured parity-space dimension; an explicit `--allow-incomplete` override is host-experiment-only.
+- Optimized and ASan/UBSan graph-builder tests pass. A deliberately incomplete synthetic reconstruction was correctly rejected at rank 1 of 54; the explicit override emitted the expected one-check graph.
+- No real JS8 graph is present or claimed yet.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.
+
+
+## 2026-10-08 — JS8 synthetic SNR estimator baseline
+
+- Added standalone `js8_snr.*`: signal/noise estimation in the conventional 2500 Hz weak-signal bandwidth from an already-validated 79-tone frame and a caller-owned spectral grid. It is not a detector and must only be used after future FEC + CRC acceptance.
+- Added `tools/js8-snr-sweep.cpp` and optimized/ASan/UBSan estimator tests. The deterministic plain-FSK/AWGN sweep recovered all 79 tones in 120/120 trials from +8 through -12 dB; mean estimator error at each step stayed within 0.05 dB. At -16 dB, 6/20 frames retained all 79 tones and those estimates averaged -0.03 dB error.
+- Synthetic calibration offset stays 0.0 dB. This is not a real-JS8 calibration claim; reference-paired owner captures must validate it before firmware displays JS8 SNR as calibrated.
+- No firmware binding, UI, shared FT8/FT4 decoder behavior, PTT, CAT or flashing work changed.

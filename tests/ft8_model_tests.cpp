@@ -77,6 +77,9 @@ int main() {
   assert(store.cq_count() == 3);
   assert(store.grid_count() == 3);
   assert(store.newest() && std::strcmp(store.newest()->callsign, "JA1XYZ") == 0);
+  assert(store.newest()->flags & decode_flag_new_station);        // first JA1XYZ
+  assert(!(store.newest(1)->flags & decode_flag_new_station));    // the repeated K1ABC is not new
+  assert(store.newest(2)->flags & decode_flag_new_station);       // the first K1ABC was
 
   return 0;
 }

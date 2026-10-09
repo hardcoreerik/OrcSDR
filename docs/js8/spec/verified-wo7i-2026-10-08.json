@@ -1,0 +1,46 @@
+{
+  "schema": "orcsdr.js8.real-frame-fec-crc/1",
+  "dataset_commit": "1705472",
+  "input": "docs/js8/results/2026-10-08-sample-40m-180s-002-front-end.json",
+  "source_graph": "docs/js8/spec/js8_ldpc_174_87.json",
+  "source_tonemap": "docs/js8/spec/js8_tone_map.json",
+  "source_crc": "docs/js8/spec/js8_crc12.json",
+  "candidate_count": 16,
+  "zero_syndrome_count": 1,
+  "crc_pass_count": 1,
+  "success": {
+    "ref_index": 0,
+    "reference_station": "WO7I",
+    "hz": 637.5,
+    "start_sample": 112320,
+    "sync_hits": 21,
+    "data_tones": 58,
+    "codeword_bits": 174,
+    "pre_correction_syndrome_weight": 0,
+    "post_correction_syndrome_weight": 0,
+    "bit_errors_corrected": 0,
+    "crc12_pass": true,
+    "frame_type": 3,
+    "inner_payload": "UvnVIpm34Fqg",
+    "rendered_heartbeat": "WO7I: ND7M HEARTBEAT SNR +11",
+    "application_layer_verified": true,
+    "callsign_source": "WO7I",
+    "callsign_destination": "ND7M",
+    "directed_command_number": 29,
+    "snr_payload_number": 11
+  },
+  "held_out": {
+    "reference_station": "K7YXZ",
+    "hz": 837.5,
+    "sync_hits": 14,
+    "zero_syndrome": false,
+    "crc_pass": false
+  },
+  "caveats": [
+    "Stored tone observations are already hard decisions and may contain errors",
+    "Only WO7I verifies without error correction; others need soft FEC",
+    "Source branch main has not been pinned to reference CLI version",
+    "Full message decoder parity not established: only one directed frame has been checked; other message families remain unverified"
+  ],
+  "verifier": "tools/js8-spec/verify_real_frames.py"
+}

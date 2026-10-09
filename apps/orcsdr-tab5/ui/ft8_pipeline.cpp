@@ -76,6 +76,7 @@ Outcome try_candidate(const ModeProfile& profile, const sync::EnergyGrid& grid,
     frame->ldpc_iterations = decoded.iterations;
     frame->message = decoded.message;
     frame->standard = standard;
+    frame->snr_valid = snr::estimate(profile, grid, geometry, candidate, decoded.message, config.snr, &frame->snr_db);
   }
   return Outcome::accepted;
 }

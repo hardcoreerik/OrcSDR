@@ -1,0 +1,191 @@
+{
+ "schema": "orcsdr.js8.front-end-result/1",
+ "stage": "spectral search -> sync candidate -> 79 raw tones (no FEC, CRC or text)",
+ "decoder_base_commit": "12831712df143e3b87e489764ddc742727696a37",
+ "decoder_note": "js8_native_backend + js8_sync/js8_demod from this checkout; the working tree also holds the uncommitted firmware-integration changes",
+ "dataset_commit": "1705472",
+ "capture": "sample-40m-180s-002",
+ "raw_iq_sha256": "6eff2c58b939422023fa69c0a7e2b3180f662767dacf451136e72aa834aca83f",
+ "wav_sha256": "93b48bef6a6799e0301d1459ee724759772f5e0ff8e83249337a82747c44a445",
+ "settings": {
+  "window_s": 15,
+  "step_s": 1.0,
+  "min_sync_score": 0.05,
+  "candidate_limit": 32,
+  "no_agc": true,
+  "no_normalisation": true
+ },
+ "reference_frames_hz": {
+  "635": "WO7I HEARTBEAT (-12 dB)",
+  "486.5": "K8IMT HEARTBEAT (-23 dB)",
+  "838": "K7YXZ HEARTBEAT (-18 dB)",
+  "2604": "KD7WPQ HEARTBEAT (-20 dB)"
+ },
+ "result": {
+  "wav": "/mnt/f/AI/OrcSDR-TEMP/js8-pc-capture/tests/fixtures/js8/corpus/2026-10-08/captures/sample-40m-180s-002/audio.wav",
+  "windows": 166,
+  "step_s": 1.0,
+  "raw_frames": [
+   {
+    "window_start_sample": 24000,
+    "frame_start_sample": 43200,
+    "audio_hz": 637.5,
+    "sync_score": 0.269,
+    "sync_hits": 16,
+    "margin": 0.448,
+    "ref_index": 0,
+    "tones": "2555235462074671277605315675371766424256130204206772122212213562364460714256130"
+   },
+   {
+    "window_start_sample": 36000,
+    "frame_start_sample": 61920,
+    "audio_hz": 837.5,
+    "sync_score": 0.292,
+    "sync_hits": 14,
+    "margin": 0.462,
+    "ref_index": 2,
+    "tones": "7432622457126360723077537062247741644256130505076165032140160045042773124256130"
+   },
+   {
+    "window_start_sample": 36000,
+    "frame_start_sample": 42720,
+    "audio_hz": 637.5,
+    "sync_score": 0.171,
+    "sync_hits": 14,
+    "margin": 0.384,
+    "ref_index": 0,
+    "tones": "7035225632121772277545313075310261424256130204206772122212213562364460714256130"
+   },
+   {
+    "window_start_sample": 36000,
+    "frame_start_sample": 43680,
+    "audio_hz": 487.5,
+    "sync_score": 0.161,
+    "sync_hits": 14,
+    "margin": 0.352,
+    "ref_index": 1,
+    "tones": "5522021716712512277251006775060551704256130157163264405704350477614501034256130"
+   },
+   {
+    "window_start_sample": 48000,
+    "frame_start_sample": 62400,
+    "audio_hz": 837.5,
+    "sync_score": 0.181,
+    "sync_hits": 14,
+    "margin": 0.389,
+    "ref_index": 2,
+    "tones": "7537632756122700727760167062337551624256230605076165032140160045042773124256130"
+   },
+   {
+    "window_start_sample": 60000,
+    "frame_start_sample": 61920,
+    "audio_hz": 837.5,
+    "sync_score": 0.292,
+    "sync_hits": 14,
+    "margin": 0.462,
+    "ref_index": 2,
+    "tones": "7432622457126360723077537062247741644256130505076165032140160045042773124256130"
+   },
+   {
+    "window_start_sample": 96000,
+    "frame_start_sample": 112320,
+    "audio_hz": 637.5,
+    "sync_score": 0.534,
+    "sync_hits": 21,
+    "margin": 0.561,
+    "ref_index": 0,
+    "tones": "4256130204206772122212213562364460714256130367161372263600304176452364764256130"
+   },
+   {
+    "window_start_sample": 96000,
+    "frame_start_sample": 113280,
+    "audio_hz": 487.5,
+    "sync_score": 0.213,
+    "sync_hits": 15,
+    "margin": 0.385,
+    "ref_index": 1,
+    "tones": "4256130044065764605704350477614501034155072075626551262602204176431361344256120"
+   },
+   {
+    "window_start_sample": 108000,
+    "frame_start_sample": 111840,
+    "audio_hz": 637.5,
+    "sync_score": 0.53,
+    "sync_hits": 21,
+    "margin": 0.518,
+    "ref_index": 0,
+    "tones": "4256130204206772122212213562364460714256130367161372263600304166452354764256130"
+   },
+   {
+    "window_start_sample": 108000,
+    "frame_start_sample": 112800,
+    "audio_hz": 487.5,
+    "sync_score": 0.519,
+    "sync_hits": 21,
+    "margin": 0.482,
+    "ref_index": 1,
+    "tones": "4256130157163264405704350477614501034256130077627504362554304176431361344256130"
+   },
+   {
+    "window_start_sample": 108000,
+    "frame_start_sample": 131040,
+    "audio_hz": 837.5,
+    "sync_score": 0.166,
+    "sync_hits": 14,
+    "margin": 0.69,
+    "ref_index": 2,
+    "tones": "4256130505076165032140160045042773124256130375626544563600304176412334460677003"
+   },
+   {
+    "window_start_sample": 156000,
+    "frame_start_sample": 180960,
+    "audio_hz": 637.5,
+    "sync_score": 0.231,
+    "sync_hits": 15,
+    "margin": 0.35,
+    "ref_index": 0,
+    "tones": "4256130367161372263600304166452354764256130253473572607334737043131377727131111"
+   },
+   {
+    "window_start_sample": 156000,
+    "frame_start_sample": 181920,
+    "audio_hz": 487.5,
+    "sync_score": 0.119,
+    "sync_hits": 15,
+    "margin": 0.315,
+    "ref_index": 1,
+    "tones": "4256130077627504362554304176431361344256130377364204741474376770137603112534174"
+   },
+   {
+    "window_start_sample": 168000,
+    "frame_start_sample": 181440,
+    "audio_hz": 637.5,
+    "sync_score": 0.179,
+    "sync_hits": 15,
+    "margin": 0.377,
+    "ref_index": 0,
+    "tones": "4256130367161372263600304176452364764256130563706073107372476363045407521021142"
+   },
+   {
+    "window_start_sample": 180000,
+    "frame_start_sample": 180960,
+    "audio_hz": 637.5,
+    "sync_score": 0.231,
+    "sync_hits": 15,
+    "margin": 0.35,
+    "ref_index": 0,
+    "tones": "4256130367161372263600304166452354764256130253473572607334737043131377727131111"
+   },
+   {
+    "window_start_sample": 180000,
+    "frame_start_sample": 181920,
+    "audio_hz": 487.5,
+    "sync_score": 0.119,
+    "sync_hits": 15,
+    "margin": 0.315,
+    "ref_index": 1,
+    "tones": "4256130077627504362554304176431361344256130377364204741474376770137603112534174"
+   }
+  ]
+ }
+}

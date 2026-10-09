@@ -4,6 +4,7 @@
 #include "ft8_demod.hpp"
 #include "ft8_ldpc_decode.hpp"
 #include "ft8_message.hpp"
+#include "ft8_snr.hpp"
 #include "ft8_sync.hpp"
 
 #include <array>
@@ -18,6 +19,7 @@ struct Config {
   sync::SearchConfig search{};
   demod::Config demod{};
   orcsdr::ft8::ldpc_decode::Config ldpc{};
+  snr::Calibration snr{};
   uint8_t candidate_limit = 8;
 };
 
@@ -28,6 +30,8 @@ struct FrameResult {
   uint8_t ldpc_iterations = 0;
   orcsdr::ft8::codec::MessageBits message{};
   orcsdr::ft8::message::StandardMessage standard{};
+  bool snr_valid = false;   // set for accepted frames when the SNR estimator could run
+  float snr_db = 0.0f;       // 2500 Hz reference bandwidth, see ft8_snr.hpp
 };
 
 struct Workspace {

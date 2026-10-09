@@ -32,6 +32,10 @@ enum DecodeFlags : uint16_t {
   decode_flag_assisted = 1u << 0,        // a-priori (AP) assisted: not a plain over-the-air decode
   decode_flag_hash_resolved = 1u << 1,   // a callsign was resolved from a receiver-side hash table
   decode_flag_multi_frame = 1u << 2,     // assembled from several frames
+  decode_flag_snr_unavailable = 1u << 3, // the decoder has no calibrated SNR estimate: show a dash, never a number
+  decode_flag_heard_before = 1u << 5,    // this callsign is in the persistent stations-heard table from an earlier observation (set by the application)
+  decode_flag_worked = 1u << 6,          // ... and a contact with it has been logged
+  decode_flag_new_station = 1u << 4,     // first time this callsign appears in the session store (set by DecodeStore::append)
 };
 
 uint32_t slot_ms(DigitalMode mode);          // FT8 15000, FT4 7500, JS8 Normal 15000, Fast 10000, 40 6000, Slow 30000, 60 4000
@@ -69,6 +73,9 @@ struct Decode {
   // Appended after the original fields so existing positional initialisation keeps working.
   DigitalMode mode = DigitalMode::ft8;
   uint16_t flags = decode_flag_none;
+  // RF context of the captured slot, frozen before decoding (not the dial when the UI drains results).
+  uint32_t dial_hz = 0;
+  uint8_t band_index = 255;
 };
 
 struct GeoPoint {
@@ -78,12 +85,19 @@ struct GeoPoint {
 };
 
 size_t band_count();
+// The dial (USB) frequency to tune for a band in a given mode: FT4 sits on its own frequencies, FT8 on the band table's. JS8 is
+// disabled, so it falls back to the FT8 dial. Returns 0 for an invalid band.
+uint32_t mode_dial_hz(size_t band_index, DigitalMode mode);
 const BandPreset* band(size_t index);
 size_t nearest_band(uint32_t dial_hz);
 SlotClock slot_clock(uint64_t utc_ms, DigitalMode mode = DigitalMode::ft8);
 DecodeKind classify_message(const char* message);
 bool maidenhead_valid(const char* locator);
 bool maidenhead_center(const char* locator, GeoPoint* out);
+// Great-circle distance (km, spherical Earth, R = 6371 km) and initial compass bearing (degrees clockwise from true
+// north, 0-360) from one point to another. Fails on non-finite or out-of-range coordinates. The result is as good as
+// the grid-square centre it is computed from: a 4-character locator is a 2 x 1 degree cell, so roughly +-100 km.
+bool distance_bearing(const GeoPoint& from, const GeoPoint& to, float* distance_km, float* bearing_deg);
 bool parse_cq_fields(const char* message, char* callsign, size_t callsign_size,
                      char* grid, size_t grid_size);
 const char* kind_name(DecodeKind kind);

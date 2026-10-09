@@ -26,8 +26,16 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  # PR runs: one group per PR, and a new push cancels that PR's older run.
+  # workflow_dispatch (the only event that deploys) keeps the original shared
+  # "pages" group, so Pages deployments stay serialized and are never cancelled
+  # mid-flight. Push-to-main runs get their own group via run_id, so they are
+  # never queued behind or cancelled by another run.
+  group: >-
+    ${{ github.event_name == 'pull_request' && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number)
+    || github.event_name == 'workflow_dispatch' && 'pages'
+    || format('{0}-{1}', github.workflow, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:

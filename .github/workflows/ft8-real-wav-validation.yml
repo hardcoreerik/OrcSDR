@@ -1,9 +1,16 @@
 name: FT8 External WAV Validation
 
 on:
+  pull_request:
+    paths:
+      - tools/ft8-wav-benchmark.cpp
+      - tools/benchmark-ft8-wav.sh
+      - apps/orcsdr-tab5/ui/ft8_*.cpp
+      - apps/orcsdr-tab5/ui/ft8_*.hpp
+      - .github/workflows/ft8-real-wav-validation.yml
   push:
     branches:
-      - codex/ft8-native-decoder-research
+      - main
     paths:
       - tools/ft8-wav-benchmark.cpp
       - tools/benchmark-ft8-wav.sh
@@ -15,12 +22,18 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   wsjtx-reference:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Download official WSJT-X receive samples
         run: |
           set -euo pipefail
@@ -38,15 +51,22 @@ jobs:
             sha256sum "/tmp/$sample"
             file "/tmp/$sample"
           done
+          echo "d9e91fa04ba138a7b9f41b4103823c77ca1c3a9775101f6b14d60935bcd3813b  /tmp/000000_000002.wav" \
+            | sha256sum -c -
+          sha256sum /tmp/210703_133430.wav /tmp/000000_000002.wav /tmp/190106_000112.wav /tmp/190106_000115.wav \
+            > /tmp/ftx-sample-hashes.txt
       - name: Run WSJT-X command-line reference decoder
         run: |
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends wsjtx
+          dpkg-query -W wsjtx > /tmp/wsjtx-version.txt
           command -v jt9
           jt9 -8 -F 200 -f 1500 /tmp/210703_133430.wav | tee /tmp/wsjtx-ft8-reference.txt
           reference_count="$(grep -Ec '^[0-9]{6}[[:space:]]' /tmp/wsjtx-ft8-reference.txt || true)"
           echo "WSJTX_FT8_REFERENCE_DECODE_COUNT=$reference_count"
+          test "$reference_count" -gt 0
+          grep -E 'WM3PEN[[:space:]]+EA6VQ[[:space:]]+-09' /tmp/wsjtx-ft8-reference.txt
 
           for sample in 000000_000002.wav 190106_000112.wav 190106_000115.wav; do
             echo "WSJTX_FT4_REFERENCE_FILE=$sample"
@@ -54,6 +74,8 @@ jobs:
             ft4_reference_count="$(grep -Ec '^[0-9]{6}[[:space:]]' "/tmp/wsjtx-ft4-$sample.txt" || true)"
             echo "WSJTX_FT4_REFERENCE_DECODE_COUNT=$ft4_reference_count"
           done
+          grep -E 'K4SQC[[:space:]]+VE3RX[[:space:]]+RR73' /tmp/wsjtx-ft4-000000_000002.wav.txt
+          grep -E 'WD9IGY[[:space:]]+KX1X[[:space:]]+73' /tmp/wsjtx-ft4-000000_000002.wav.txt
 
       - name: Run OrcSDR native FT8 receive benchmark
         run: |
@@ -81,3 +103,16 @@ jobs:
           grep -Eq 'decoded=([2-9]|[1-9][0-9]+)' "$primary"
           grep -F 'text=K4SQC VE3RX RR73' "$primary"
           grep -F 'text=WD9IGY KX1X 73' "$primary"
+
+      - name: Preserve same-WAV reference evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ftx-wav-reference-evidence
+          path: |
+            /tmp/ftx-sample-hashes.txt
+            /tmp/wsjtx-version.txt
+            /tmp/wsjtx-ft8-reference.txt
+            /tmp/wsjtx-ft4-*.txt
+            /tmp/orcsdr-ft8-bench.txt
+            /tmp/orcsdr-ft4-*.txt

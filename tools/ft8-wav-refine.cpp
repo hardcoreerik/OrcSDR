@@ -334,7 +334,11 @@ int main(int argc, char** argv) {
     ++attempts;
     if (trace.ldpc_converged) ++ldpc_conv;
     if (trace.crc_ok) ++crc_pass;
-    if (outcome == orcsdr::ftx::pipeline::Outcome::accepted) accepted.insert(normalize(frame.standard.text));
+    if (outcome == orcsdr::ftx::pipeline::Outcome::accepted) {
+      if (accepted.insert(normalize(frame.standard.text)).second)
+        std::printf("DETAIL %s | audio_hz=%.1f start_s=%.2f ldpc_iter=%u\n", normalize(frame.standard.text).c_str(), hz,
+                    static_cast<double>(start) / p.sample_rate_hz, static_cast<unsigned>(trace.ldpc_iterations));
+    }
   }
   const double total_ms = ms_since(t_all);
   (void)t_ref;

@@ -10,10 +10,14 @@ enum class ActionKind : uint8_t {
   aircraft, lora_slot, node, event, p25_candidate, talkgroup,
   message, identity, wifi_ap, wifi_channel, setting, view, activate,
   span, filter,   // Home: zoom the spectrum, widen or narrow the receive filter (appended: values are on the wire)
-  ft8_band, ft8_item, ft8_hunter   // FT8 dashboard (appended after span/filter, so no existing value moves)
+  ft8_band, ft8_item, ft8_hunter,  // FT8 dashboard (appended after span/filter, so no existing value moves)
+  ft8_fine                         // FT8 dashboard: centre tap toggles rotation between band selection and fine (Hz) tuning
 };
 struct Action { ActionKind kind = ActionKind::none; int32_t value = 0; };
 inline bool frequency_action(ActionKind kind) { return kind == ActionKind::tune; }
+inline bool coalescible_action(ActionKind kind) {
+  return kind == ActionKind::tune || kind == ActionKind::ft8_band || kind == ActionKind::ft8_item;
+}
 inline bool channel_dashboard(Dashboard id) {
   return id == Dashboard::weather || id == Dashboard::marine || id == Dashboard::cb;
 }

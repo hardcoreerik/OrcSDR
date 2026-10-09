@@ -6,6 +6,10 @@
 #include <esp_timer.h>
 
 #include <ctime>
+#include <sys/time.h>
+
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 namespace orcsdr::ntp_sync {
 namespace {
@@ -46,7 +50,17 @@ bool start(bool network_ready) {
 void poll() {
   if (g_state != State::syncing) return;
   if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
-    const time_t now = time(nullptr);
+    // SNTP has set the system clock to the millisecond, but the hardware RTC only counts whole seconds and restarts its
+    // sub-second counter when it is written. Writing it mid-second would leave the RTC (and every later boot) off by the
+    // fraction of a second, so wait for the next second boundary and write that second then (at most about 1 s once).
+    timeval tv{};
+    gettimeofday(&tv, nullptr);
+    const uint32_t wait_us = 1000000u - static_cast<uint32_t>(tv.tv_usec);
+    if (wait_us > 2000u) vTaskDelay(pdMS_TO_TICKS((wait_us - 2000u) / 1000u));
+    do {
+      gettimeofday(&tv, nullptr);
+    } while (tv.tv_usec > 500000);   // spin the last couple of milliseconds until the second rolls over
+    const time_t now = tv.tv_sec;
     finish(now > 0 && time_service::set_utc(static_cast<uint32_t>(now)));
   } else if (now_ms() - g_started_ms > kTimeoutMs) {
     finish(false);

@@ -12,6 +12,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # One live run per PR: a new push cancels that PR's older run.
+  # Every non-PR run (push to main, schedule, workflow_dispatch) gets its own
+  # group via run_id, so it is never queued behind or cancelled by another run.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
     runs-on: ubuntu-latest

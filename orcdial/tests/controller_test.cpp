@@ -1,9 +1,13 @@
 #include "../src/controller.hpp"
 #include <cassert>
+#include <string>
 
 using namespace orc;
 static Action turn(Dashboard d, uint8_t view=0) { return rotate(d, view, Focus::vfo, 1, 5, 100000); }
 int main() {
+  assert(coalescible_action(ActionKind::ft8_band));
+  assert(coalescible_action(ActionKind::ft8_item));
+  assert(!coalescible_action(ActionKind::ft8_fine));
   assert(turn(Dashboard::fm).kind == ActionKind::tune && turn(Dashboard::fm).value == 500000);
   assert(turn(Dashboard::am).kind == ActionKind::tune);
   assert(turn(Dashboard::rf_lab).kind == ActionKind::tune);
@@ -37,6 +41,27 @@ int main() {
   assert(press(Dashboard::ft8, 0, ft8_control::kHunterSupported).kind == ActionKind::ft8_hunter);
   assert(press(Dashboard::ft8, 0, ft8_control::kHunterSupported).value ==
          static_cast<int32_t>(ft8_control::HunterCommand::start_fast));
+  // Expert-tuning bits ride in the capabilities word without disturbing the hunter bits or the press command.
+  {
+    uint32_t caps = ft8_control::kHunterSupported | ft8_control::kExpertTuning;
+    for (uint8_t step = 0; step < 6; ++step) {
+      const uint32_t with = ft8_control::with_step(caps, step);
+      assert(ft8_control::step_index(with) == step);
+      assert((with & ft8_control::kExpertTuning) != 0 && (with & ft8_control::kHunterSupported) != 0);
+      assert((with & (ft8_control::kHunterActive | ft8_control::kHunterComplete)) == 0);
+      assert(press(Dashboard::ft8, 0, with).value == static_cast<int32_t>(ft8_control::HunterCommand::start_fast));
+    }
+    assert(std::string(ft8_control::step_label(2)) == "1 kHz" && std::string(ft8_control::step_label(7)) == "--");
+    assert(ft8_control::with_step(ft8_control::kExpertTuning, 5) != ft8_control::with_step(ft8_control::kExpertTuning, 1));
+    // The step field has room for 8 values but only 6 are real: an out-of-range index is clamped on write and labelled "--" on read.
+    assert(ft8_control::kStepCount == 6);
+    assert(ft8_control::step_index(ft8_control::with_step(0, 7)) == 5 && ft8_control::step_index(ft8_control::with_step(0, 200)) == 5);
+    assert(std::string(ft8_control::step_label(6)) == "--" && std::string(ft8_control::step_label(7)) == "--");
+    // Enabled (checkbox) and active (fine tuning now) are separate bits that do not overlap the step field or the hunter bits.
+    assert((ft8_control::kExpertEnabled & (ft8_control::kExpertTuning | ft8_control::kStepMask | ft8_control::kHunterSupported |
+                                          ft8_control::kHunterActive | ft8_control::kHunterComplete | ft8_control::kClockReady)) == 0);
+    assert(static_cast<int>(ActionKind::ft8_fine) == static_cast<int>(ActionKind::ft8_hunter) + 1);   // appended: no existing value moved
+  }
   assert(press(Dashboard::ft8, 3, ft8_control::kHunterActive).value ==
          static_cast<int32_t>(ft8_control::HunterCommand::stop));
   assert(press(Dashboard::ft8, 3, ft8_control::kHunterComplete).value ==
