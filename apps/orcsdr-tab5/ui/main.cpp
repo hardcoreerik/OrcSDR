@@ -13175,11 +13175,30 @@ void ft8_dashboard_fill_snapshot(orcsdr::ft8::Snapshot& snapshot) {
       snapshot.station_longitude = static_cast<float>(here.longitude_e7) / 1.0e7f;
     }
   }
+  // Receiver gain: the actual mode (tuner AGC or manual, or the smart auto of FM/AM), the driver's step table and the live input level.
+  // (The old code read only the AM smart-auto flag, so on HF the dashboard showed MAN while the tuner AGC was doing the work.)
+  snapshot.iq_dbfs = rtl_signal_dbfs_smooth;
+  snapshot.iq_clip_pct = rtl_iq_clipping_percent.load(std::memory_order_relaxed);
 #if !RTL_USE_LEGACY_USB
-  if (g_rtl != nullptr && rtl_tuner_gain_available(rtl_ui_frequency_hz)) {
-    snapshot.gain_auto = rtl_am_gain_auto_enabled.load(std::memory_order_relaxed);
+  if (g_rtl != nullptr && rtl_tuner_gain_available(rtl_ui_frequency_hz) && rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN)) {
+    snapshot.gain_available = true;
+    esp_rtl_sdr_gain_mode_t mode = ESP_RTL_SDR_GAIN_MODE_MANUAL;
+    const bool tuner_agc = esp_rtl_sdr_get_tuner_gain_mode(g_rtl, &mode) == ESP_OK && mode == ESP_RTL_SDR_GAIN_MODE_AUTO;
+    snapshot.gain_auto = tuner_agc || rtl_am_gain_auto_enabled.load(std::memory_order_relaxed) || rtl_fm_gain_auto_enabled.load(std::memory_order_relaxed);
     int gain = 0;
     if (esp_rtl_sdr_get_tuner_gain(g_rtl, &gain) == ESP_OK) snapshot.gain_tenth_db = static_cast<int16_t>(gain);
+    static int16_t steps[32];
+    static size_t step_count = 0;
+    if (step_count == 0) {   // the table is fixed per receiver: read it once
+      int raw[32]{};
+      size_t count = 0;
+      if (esp_rtl_sdr_get_tuner_gains(g_rtl, raw, std::size(raw), &count) == ESP_OK) {
+        step_count = std::min<size_t>(count, std::size(raw));
+        for (size_t i = 0; i < step_count; ++i) steps[i] = static_cast<int16_t>(raw[i]);
+      }
+    }
+    snapshot.gain_step_count = static_cast<uint8_t>(step_count);
+    for (size_t i = 0; i < step_count; ++i) snapshot.gain_steps_tenth_db[i] = steps[i];
   }
 #endif
   snapshot.decode_count = std::min(g_ft8_store.size(), orcsdr::ft8::kDecodeCapacity);
@@ -13253,6 +13272,9 @@ bool ft8_hunter_refused(const char* what) {
   return false;
 }
 
+esp_err_t rtl_gain_set_auto(const char* source);
+esp_err_t rtl_gain_set_manual(const char* source, int gain_tenth_db);
+
 void handle_ft8_dashboard_action(const orcsdr::ft8::Action& action) {
   using Kind = orcsdr::ft8::ActionKind;
   switch (action.kind) {
@@ -13260,6 +13282,8 @@ void handle_ft8_dashboard_action(const orcsdr::ft8::Action& action) {
       (void)ft8_select_band_table(orcsdr::ft8::nearest_band(action.value));
       break;
     case Kind::tune_dial: (void)ft8_tune_dial(action.value); break;
+    case Kind::gain_auto: (void)rtl_gain_set_auto("FT8"); break;
+    case Kind::gain_manual: (void)rtl_gain_set_manual("FT8", static_cast<int>(action.value)); break;
     case Kind::tune_auto: (void)ft8_select_band_table(ft8_selected_band()); break;
     case Kind::set_expert:
       g_ft8_expert = action.value != 0;

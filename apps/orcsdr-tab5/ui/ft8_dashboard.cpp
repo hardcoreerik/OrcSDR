@@ -62,6 +62,17 @@ size_t g_info_page = 0;
 bool g_mode_open = false;
 // Station popup: first/last heard etc. for one callsign, from the application's persistent table (HeardLookup).
 bool g_station_open = false;
+// Receiver gain popup (Live GAIN chip): AUTO or a manual tuner step, with a live input-level and clipping meter.
+bool g_gain_open = false;
+constexpr Rect kGainChip{1036, 104, 220, 58};
+constexpr Rect kGainPanel{180, 104, 920, 512};
+constexpr Rect kGainAuto{200, 150, 200, 56};
+constexpr Rect kGainManual{420, 150, 200, 56};
+constexpr Rect kGainClose{880, 150, 200, 56};
+constexpr Rect kGainMinus{200, 262, 70, 64};
+constexpr Rect kGainPlus{1010, 262, 70, 64};
+constexpr Rect kGainBar{290, 262, 710, 64};
+constexpr Rect kGainMeter{200, 392, 880, 34};
 HeardInfo g_station{};
 HeardLookup g_heard_lookup = nullptr;
 constexpr Rect kStationPanel{240, 150, 800, 400};
@@ -75,7 +86,7 @@ constexpr size_t kInfoLinesPerPage = 11;
 constexpr Rect kModeChip{246, 104, 150, 58};
 constexpr Rect kModePanel{246, 168, 540, 132};
 Rect mode_pick_rect(size_t i) { return {262 + static_cast<int>(i) * 172, 218, 164, 64}; }
-bool overlay_open() { return g_tune_open || g_info_open || g_mode_open || g_station_open; }
+bool overlay_open() { return g_tune_open || g_info_open || g_mode_open || g_station_open || g_gain_open; }
 constexpr Rect kDialChip{24, 104, 212, 58};
 constexpr Rect kTunePanel{240, 104, 800, 512};
 constexpr Rect kTuneEntry{260, 168, 300, 46};
@@ -478,7 +489,7 @@ void draw_live() {
   chip({826, 104, 200, 58}, "DECODER", decoder_name(), decoder_color());
   if (g_snapshot.gain_auto) std::snprintf(value, sizeof(value), "AUTO");   // the readout under AUTO is not the effective gain
   else std::snprintf(value, sizeof(value), "MAN %.1f dB", g_snapshot.gain_tenth_db / 10.0);
-  chip({1036, 104, 220, 58}, "GAIN", value, TFT_WHITE);
+  chip(kGainChip, "GAIN - TAP", value, TFT_WHITE);
 
   const Rect wf{24, 176, 884, 294};
   frame(wf);
@@ -1077,7 +1088,7 @@ void draw_live_dynamic(const Snapshot& previous) {
   if (previous.gain_auto != g_snapshot.gain_auto || previous.gain_tenth_db != g_snapshot.gain_tenth_db) {
     if (g_snapshot.gain_auto) std::snprintf(value, sizeof(value), "AUTO");
     else std::snprintf(value, sizeof(value), "MAN %.1f dB", g_snapshot.gain_tenth_db / 10.0);
-    chip({1036, 104, 220, 58}, "GAIN", value, TFT_WHITE);
+    chip(kGainChip, "GAIN - TAP", value, TFT_WHITE);
   }
   const Rect timer{926, 176, 330, 294};
   const int center_x = cx(timer);
@@ -1225,10 +1236,87 @@ void open_station_popup(const char* callsign) {
   draw_station_panel();
 }
 
+// ---- Receiver gain popup ---------------------------------------------------------------------------------------------------------------
+int gain_step_index() {
+  int best = 0;
+  for (int i = 1; i < g_snapshot.gain_step_count; ++i)
+    if (std::abs(g_snapshot.gain_steps_tenth_db[i] - g_snapshot.gain_tenth_db) < std::abs(g_snapshot.gain_steps_tenth_db[best] - g_snapshot.gain_tenth_db)) best = i;
+  return best;
+}
+
+void draw_gain_readout() {
+  // Mode and value line.
+  M5.Display.fillRect(196, 214, 888, 36, kPanel);
+  char line[96];
+  if (!g_snapshot.gain_available) std::snprintf(line, sizeof(line), "Gain control is not available for this receiver or frequency.");
+  else if (g_snapshot.gain_auto) std::snprintf(line, sizeof(line), "AUTO  -  the tuner chip sets its own gain (about %.1f dB now)", static_cast<double>(g_snapshot.gain_tenth_db) / 10.0);
+  else std::snprintf(line, sizeof(line), "MANUAL  %.1f dB", static_cast<double>(g_snapshot.gain_tenth_db) / 10.0);
+  text(line, 200, 232, g_snapshot.gain_auto ? kGreen : kAmber, 1, middle_left);
+
+  // Input level and clipping.
+  M5.Display.fillRect(196, 336, 888, 136, kPanel);
+  const float clip = g_snapshot.iq_clip_pct;
+  const uint16_t level_color = clip >= 1.0f ? TFT_RED : clip >= 0.1f ? kAmber : kGreen;
+  std::snprintf(line, sizeof(line), "INPUT LEVEL  %.1f dBFS      CLIPPING  %.2f %%", static_cast<double>(g_snapshot.iq_dbfs), static_cast<double>(clip));
+  text(line, 200, 362, level_color, 1, middle_left);
+  M5.Display.drawRect(kGainMeter.x, kGainMeter.y, kGainMeter.w, kGainMeter.h, kGrid);
+  const float span = (g_snapshot.iq_dbfs + 40.0f) / 40.0f;   // -40 dBFS .. 0 dBFS across the bar
+  const int fill = static_cast<int>(std::clamp(span, 0.0f, 1.0f) * static_cast<float>(kGainMeter.w - 4));
+  if (fill > 0) M5.Display.fillRect(kGainMeter.x + 2, kGainMeter.y + 2, fill, kGainMeter.h - 4, level_color);
+  const char* advice = clip >= 1.0f ? "OVERLOADED: lower the gain or use AUTO. Clipping hides weak signals."
+                       : clip >= 0.1f ? "Close to overload: do not raise the gain any further."
+                       : g_snapshot.iq_dbfs < -30.0f ? "Level is low: raise the gain to hear weak signals."
+                                                       : "Level looks good.";
+  text(advice, 200, 450, level_color, 1, middle_left);
+}
+
+void draw_gain_panel() {
+  frame(kGainPanel, kCyan);
+  text("RECEIVER GAIN", 200, 126, kCyan, 1, middle_left);
+  const bool usable = g_snapshot.gain_available;
+  button(kGainAuto, "AUTO", g_snapshot.gain_auto, usable, 1);
+  button(kGainManual, "MANUAL", !g_snapshot.gain_auto, usable && g_snapshot.gain_step_count > 1, 1);
+  button(kGainClose, "CLOSE", false, true, 1);
+  if (usable && g_snapshot.gain_step_count > 1) {
+    button(kGainMinus, "-", false, true, 2);
+    button(kGainPlus, "+", false, true, 2);
+    M5.Display.drawRect(kGainBar.x, kGainBar.y, kGainBar.w, kGainBar.h, kGrid);
+    const int count = g_snapshot.gain_step_count;
+    const int selected = gain_step_index();
+    for (int i = 0; i < count; ++i) {
+      const int x0 = kGainBar.x + 2 + i * (kGainBar.w - 4) / count;
+      const int x1 = kGainBar.x + 2 + (i + 1) * (kGainBar.w - 4) / count;
+      const uint16_t color = i > selected ? kGrid : g_snapshot.gain_auto ? kGreen : kAmber;
+      M5.Display.fillRect(x0, kGainBar.y + 4, std::max(1, x1 - x0 - 2), kGainBar.h - 8, color);
+    }
+  }
+  draw_gain_readout();
+  text("AUTO: the tuner chip adjusts its own gain.", 200, 500, kMuted, 0, middle_left);
+  text("MANUAL: tap the bar or - / + to pick a gain. More gain hears weaker signals,", 200, 526, kMuted, 0, middle_left);
+  text("until the input overloads. A quiet band usually needs more; a busy band less.", 200, 552, kMuted, 0, middle_left);
+  text("Gain stays where you put it until you press AUTO.", 200, 578, kMuted, 0, middle_left);
+}
+
+void open_gain_panel() {
+  g_tune_open = false;
+  g_info_open = false;
+  g_mode_open = false;
+  g_station_open = false;
+  g_gain_open = true;
+  draw_gain_panel();
+}
+
+Action manual_gain_at(int index) {
+  const int last = std::max(0, static_cast<int>(g_snapshot.gain_step_count) - 1);
+  index = std::clamp(index, 0, last);
+  return {ActionKind::gain_manual, static_cast<uint32_t>(std::max<int>(0, g_snapshot.gain_steps_tenth_db[index]))};
+}
+
 void draw_body(bool repaint_in_place = false);
 
 void open_info_panel() {
   g_station_open = false;
+  g_gain_open = false;
   g_tune_open = false;
   g_mode_open = false;
   g_info_open = true;
@@ -1240,6 +1328,7 @@ void open_info_panel() {
 void close_overlays() {
   const bool was = overlay_open();
   g_station_open = false;
+  g_gain_open = false;
   g_tune_open = false;
   g_info_open = false;
   g_mode_open = false;
@@ -1260,6 +1349,7 @@ void draw_mode_panel() {
 
 void open_mode_panel() {
   g_station_open = false;
+  g_gain_open = false;
   g_tune_open = false;
   g_info_open = false;
   g_mode_open = true;
@@ -1268,6 +1358,28 @@ void open_mode_panel() {
 
 // Returns true when the touch was handled by the open Info or Mode panel; *out carries any action it asks for.
 bool handle_overlay_touch(int32_t x, int32_t y, Action* out) {
+  if (g_gain_open) {
+    if (hit(x, y, kGainClose) || !hit(x, y, kGainPanel)) {
+      close_overlays();
+      return true;
+    }
+    if (!g_snapshot.gain_available) return true;
+    if (hit(x, y, kGainAuto)) {
+      if (!g_snapshot.gain_auto) *out = {ActionKind::gain_auto, 0};
+    } else if (g_snapshot.gain_step_count > 1) {
+      const int last = g_snapshot.gain_step_count - 1;
+      if (hit(x, y, kGainManual)) {
+        if (g_snapshot.gain_auto) *out = manual_gain_at(gain_step_index());
+      } else if (hit(x, y, kGainMinus)) {
+        *out = manual_gain_at(g_snapshot.gain_auto ? gain_step_index() : gain_step_index() - 1);
+      } else if (hit(x, y, kGainPlus)) {
+        *out = manual_gain_at(g_snapshot.gain_auto ? gain_step_index() : gain_step_index() + 1);
+      } else if (hit(x, y, kGainBar)) {
+        *out = manual_gain_at(std::clamp(static_cast<int>((x - kGainBar.x) * g_snapshot.gain_step_count / kGainBar.w), 0, last));
+      }
+    }
+    return true;
+  }
   if (g_station_open) {
     close_overlays();   // any tap closes the station popup
     return true;
@@ -1479,6 +1591,7 @@ void enter(const Snapshot& snapshot_value) {
   g_info_open = false;
   g_mode_open = false;
   g_station_open = false;
+  g_gain_open = false;
   g_tab = Tab::live;
   g_decode_page = 0;
   draw();
@@ -1506,6 +1619,10 @@ void update(const Snapshot& snapshot_value) {
                               previous.battery_percent != g_snapshot.battery_percent;
   if (tab_content_changed(g_tab, previous, g_snapshot) || header_changed) {
     if (header_changed) draw_header();
+    if (g_gain_open) {   // the gain popup keeps its readout and level meter live
+      draw_gain_readout();
+      return;
+    }
     if (g_info_open || g_mode_open || g_station_open) return;   // a popup covers the body; closing it repaints everything
     if (g_tune_open) {   // the Tune panel covers the body: only its readout follows the receiver
       if (previous.dial_hz != g_snapshot.dial_hz) g_tune_target = g_snapshot.dial_hz;
@@ -1536,6 +1653,14 @@ void update(const Snapshot& snapshot_value) {
     return;
   }
   if (g_snapshot.utc_ms / 1000u != g_drawn_second) draw_utc();
+  if (g_gain_open) {   // level and clipping change constantly: refresh the meter a few times a second
+    static uint32_t last_meter_ms = 0;
+    if (millis() - last_meter_ms >= 400) {
+      last_meter_ms = millis();
+      draw_gain_readout();
+    }
+    return;
+  }
   if (overlay_open()) return;   // never draw the waterfall or dial under a panel
   if (g_tab == Tab::live && g_snapshot.wf_sequence != g_drawn_waterfall && g_snapshot.decoder_state != DecoderState::unbound &&
       g_snapshot.clock_valid) {
@@ -1564,7 +1689,7 @@ Action handle_touch(int32_t x, int32_t y) {
     else open_info_panel();
     return {};
   }
-  if (g_info_open || g_mode_open || g_station_open) {
+  if (g_info_open || g_mode_open || g_station_open || g_gain_open) {
     if (y < kTabsY) {   // the popup owns the body; taps outside it dismiss it
       Action chosen{};
       (void)handle_overlay_touch(x, y, &chosen);
@@ -1573,6 +1698,7 @@ Action handle_touch(int32_t x, int32_t y) {
     g_info_open = false;   // a tab tap closes the popup and switches tabs below
     g_mode_open = false;
     g_station_open = false;
+    g_gain_open = false;
     draw_info_button();
   }
   if (g_tune_open) {
@@ -1582,6 +1708,10 @@ Action handle_touch(int32_t x, int32_t y) {
       return tuned;
     }
     g_tune_open = false;   // a tab tap closes the panel and switches tabs below
+  }
+  if (g_tab == Tab::live && hit(x, y, kGainChip)) {
+    open_gain_panel();
+    return {};
   }
   if (g_tab == Tab::live && hit(x, y, kModeChip)) {
     open_mode_panel();
@@ -1686,6 +1816,7 @@ void leave() {
   g_info_open = false;
   g_mode_open = false;
   g_station_open = false;
+  g_gain_open = false;
 }
 uint32_t tune_step_hz() { return tuning::kStepsHz[g_tune_step]; }
 bool active() { return g_active; }
@@ -1700,6 +1831,7 @@ void select_tab(Tab tab) {
   g_info_open = false;
   g_mode_open = false;
   g_station_open = false;
+  g_gain_open = false;
   g_tab = tab;
   g_decode_page = 0;
   draw_body();

@@ -21,7 +21,9 @@ enum class ActionKind : uint8_t {
   select_mode,         // value = a DigitalMode the user chose in SETUP
   tune_dial,           // value = a dial frequency in Hz typed or stepped in the Tune panel (expert tuning)
   tune_auto,           // back to the band table's dial for the current band
-  set_expert           // value = 1 or 0: expert tuning (Tune panel, OrcDial rotation steps the dial in Hz)
+  set_expert,          // value = 1 or 0: expert tuning (Tune panel, OrcDial rotation steps the dial in Hz)
+  gain_auto,           // receiver gain back to automatic
+  gain_manual          // value = tuner gain in tenths of a dB (one of the receiver's steps)
 };
 
 struct Action {
@@ -35,6 +37,12 @@ struct Snapshot {
   bool receiver_running = false;
   bool gain_auto = true;
   int16_t gain_tenth_db = 0;
+  // Receiver gain control (Live GAIN chip). The step table comes from the driver; the level and clipping are measured on the raw IQ.
+  bool gain_available = false;
+  uint8_t gain_step_count = 0;
+  int16_t gain_steps_tenth_db[32]{};
+  float iq_dbfs = -90.0f;        // smoothed input level, 0 = full scale
+  float iq_clip_pct = 0.0f;      // smoothed share of IQ samples at full scale
   int16_t battery_percent = -1;
   uint8_t candidate_count = 0;
   uint8_t last_slot_decodes = 0;
