@@ -2,6 +2,14 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 - Generic JS8 FEC engine validated against the FT8 code; end-to-end hypothesis harness
+
+- `tests/js8_fec_ft8_vectors_tests.cpp`: builds a `js8::fec::Graph` from the FT8 LDPC(174,91) parity graph and decodes 1500 noisy codewords with both the generic JS8 engine and the FT8
+  engine. The two succeed on exactly the same words at every noise level (sigma 0.5: 300/300 both; 0.7: 290/300; 0.8: 205/300; 0.9: 67/300 both) with zero wrong-codeword convergences,
+  and every converged word satisfies FT8's own syndrome checker. This validates the engine and the graph format only; the FT8 matrix and CRC-14 are NOT used for JS8.
+- `tools/js8-e2e-verify.cpp`: searches all 40320 tone-label permutations and 8 codeword layouts for a candidate parity matrix on saved raw tones; `--selftest` proves it recovers a random labelling on a synthetic sparse code.
+  (Now superseded for JS8 by the verified tone map in the spec; kept as a validation tool.)
+
 ## 2026-10-08 - JS8 protocol specification imported from codex/js8-spec (7214ae2)
 
 - Imported, without merging the spec branch: `docs/js8/spec/*.json` (LDPC(174,87) parity rows, tone map, CRC-12, message layouts, WO7I evidence, corpus audit,

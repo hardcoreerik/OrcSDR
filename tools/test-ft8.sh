@@ -72,12 +72,20 @@ run_suite js8_spectral_tests \
 run_suite js8_native_backend_tests \
   tests/js8_native_backend_tests.cpp \
   apps/orcsdr-tab5/ui/js8_native_backend.cpp \
+  apps/orcsdr-tab5/ui/js8_frontend.cpp \
   apps/orcsdr-tab5/ui/js8_mode.cpp \
   apps/orcsdr-tab5/ui/js8_frame.cpp \
   apps/orcsdr-tab5/ui/js8_sync.cpp \
   apps/orcsdr-tab5/ui/js8_spectral.cpp \
   apps/orcsdr-tab5/ui/js8_demod.cpp \
   apps/orcsdr-tab5/ui/ft8_spectral_fft.cpp
+
+run_suite js8_fec_ft8_vectors_tests \
+  tests/js8_fec_ft8_vectors_tests.cpp \
+  apps/orcsdr-tab5/ui/js8_fec.cpp \
+  apps/orcsdr-tab5/ui/ft8_codec.cpp \
+  apps/orcsdr-tab5/ui/ft8_ldpc.cpp \
+  apps/orcsdr-tab5/ui/ft8_ldpc_decode.cpp
 
 run_suite js8_frontend_tests \
   tests/js8_frontend_tests.cpp \
