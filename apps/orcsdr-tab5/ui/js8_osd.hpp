@@ -14,6 +14,10 @@ namespace orcsdr::js8::osd {
 // re-encode from their hard decisions (order 0) and from every combination of up to `max_order` flips of those bits. Every candidate is a codeword by
 // construction, so only the caller's acceptance test (the CRC) decides. No heap use; fixed work: 1 + 87 + 3741 candidates at order 2.
 //
+// Speed: the 12-bit CRC is affine over GF(2), so the CRC of base ^ row_i ^ row_j is the XOR of precomputed 12-bit values. Every candidate is
+// first tested that way (a few XORs, no bit expansion); only candidates whose CRC holds are expanded and given to the caller's acceptance test.
+// The set of accepted words is identical to testing every candidate in full.
+//
 // False-accept control: with a 12-bit CRC a random codeword passes with probability 1/4096, so the more candidates are tried the more likely a wrong
 // word passes. The search therefore stops at the first order that yields an accepted word, and among the accepted words of that order returns the one
 // closest to the received hard decisions (smallest reliability-weighted disagreement).
@@ -25,6 +29,7 @@ struct Workspace {
   uint64_t rows[kInfo][kWords]{};    // reduced generator rows, original column order
   uint16_t order[kBits]{};           // bit indices, most reliable first
   uint16_t pivot[kInfo]{};           // pivot column of each row
+  uint16_t crc_delta[kInfo]{};       // each reduced row's effect on the CRC check (CRC is linear over GF(2)), for the cheap pre-test
 };
 
 struct Config {

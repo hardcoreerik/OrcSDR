@@ -63,6 +63,8 @@ struct Stats {
   uint16_t by_bp = 0;
   uint16_t by_osd = 0;
   uint32_t decode_ms = 0;
+  uint32_t refine_ms = 0;           // time spent refining candidate time/frequency (inside demod_ms)
+  uint32_t energy_ms = 0;           // time spent measuring the 79x8 tone energies of every candidate (inside demod_ms)
 };
 
 // One raw frame, for diagnostics. Never shown to a user as text.
@@ -74,6 +76,7 @@ struct RawResult {
   uint8_t sync_hits = 0;
   float mean_margin = 0.0f;
   RawFrame frame{};
+  uint8_t energy_index = 0;    // which of the backend's stored 79x8 energy sets belongs to this frame (measured once, reused by the decoder)
   // Soft-decoder log for this frame (valid when attempted).
   bool attempted = false;
   uint16_t initial_syndrome = 0;
@@ -157,6 +160,7 @@ class Backend {
   sync::Candidate* candidates_ = nullptr;
   decoder::Workspace* decoder_ws_ = nullptr;
   float (*energy_)[8] = nullptr;
+  float (*raw_energy_)[kChannelSymbols][8] = nullptr;   // one 79x8 energy set per candidate, kept for the decoder
   RawResult raw_[kMaxCandidates]{};
   size_t raw_count_ = 0;
   Stats stats_{};

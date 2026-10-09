@@ -54,7 +54,8 @@ bool Backend::begin(uint32_t sample_rate_hz, Submode submode, const Config& conf
   candidates_ = static_cast<sync::Candidate*>(grab(sizeof(sync::Candidate) * kMaxCandidates));
   decoder_ws_ = static_cast<decoder::Workspace*>(grab(sizeof(decoder::Workspace)));
   energy_ = reinterpret_cast<float (*)[8]>(grab(sizeof(float) * kChannelSymbols * 8));
-  if (samples_ == nullptr || grid_ == nullptr || candidates_ == nullptr || decoder_ws_ == nullptr || energy_ == nullptr) {
+  raw_energy_ = static_cast<float (*)[kChannelSymbols][8]>(grab(sizeof(float) * kChannelSymbols * 8 * kMaxCandidates));
+  if (samples_ == nullptr || grid_ == nullptr || candidates_ == nullptr || decoder_ws_ == nullptr || raw_energy_ == nullptr) {
     end();
     return false;
   }
@@ -71,6 +72,8 @@ void Backend::end() {
   drop(candidates_);
   drop(decoder_ws_);
   drop(energy_);
+  drop(raw_energy_);
+  raw_energy_ = nullptr;
   decoder_ws_ = nullptr;
   energy_ = nullptr;
   samples_ = nullptr;
@@ -178,10 +181,24 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
     demod.start_sample = static_cast<size_t>(candidates_[i].start_row) * hop_;
     demod.base_hz = first_hz_ + static_cast<float>(candidates_[i].base_bin) * kBinSpacingHz;
     demod.min_sync_score = config_.min_score;
+    const uint32_t t_refine = clock_ms();
     if (frontend::refine_candidate(samples_, filled_, submode_, frontend::Config{}, &demod.start_sample, &demod.base_hz)) ++stats_.refined;
-    RawFrame frame{};
+    stats_.refine_ms += clock_ms() - t_refine;
+    // One energy measurement per candidate: the raw tones, the sync statistics and the soft decoder's input all come from it.
+    const uint32_t t_energy = clock_ms();
     DemodStats demod_stats{};
-    if (!demodulate_tones(samples_, filled_, submode_, demod, &frame, &demod_stats)) continue;
+    float (*energies)[8] = raw_energy_[raw_count_];
+    const bool measured = demodulate_energies(samples_, filled_, submode_, demod.start_sample, demod.base_hz, energies, &demod_stats);
+    stats_.energy_ms += clock_ms() - t_energy;
+    if (!measured || demod_stats.sync_hits < demod.min_sync_hits || demod_stats.sync_score < demod.min_sync_score) continue;
+    RawFrame frame{};
+    frame.submode = submode_;
+    for (size_t symbol = 0; symbol < kChannelSymbols; ++symbol) {
+      uint8_t best = 0;
+      for (uint8_t tone = 1; tone < 8; ++tone)
+        if (energies[symbol][tone] > energies[symbol][best]) best = tone;
+      frame.tones[symbol] = best;
+    }
     RawResult& result = raw_[raw_count_++];
     result.audio_hz = demod.base_hz;
     result.start_sample = static_cast<uint32_t>(demod.start_sample);
@@ -190,6 +207,7 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
     result.sync_hits = demod_stats.sync_hits;
     result.mean_margin = demod_stats.mean_margin;
     result.frame = frame;
+    result.energy_index = static_cast<uint8_t>(raw_count_ - 1);
   }
   // Alias resolution: the three Normal sync blocks are identical, so an alignment one sync period (36 symbols) off scores two blocks of three.
   if (raw_count_ > 1) {
@@ -219,12 +237,10 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
   for (size_t i = 0; i < raw_count_; ++i) {
     RawResult& r = raw_[i];
     if (r.sync_hits < config_.min_decode_sync_hits) continue;
-    DemodStats ds{};
-    if (!demodulate_energies(samples_, filled_, submode_, r.start_sample, r.audio_hz, reinterpret_cast<float (*)[8]>(energy_), &ds)) continue;
     ++stats_.decode_attempts;
     r.attempted = true;
     decoder::Result dr;
-    const bool ok = decoder::decode(reinterpret_cast<const float (*)[8]>(energy_), config_.decoder, decoder_ws_, &dr);
+    const bool ok = decoder::decode(raw_energy_[r.energy_index], config_.decoder, decoder_ws_, &dr);
     r.initial_syndrome = dr.initial_syndrome;
     r.final_syndrome = dr.final_syndrome;
     r.bp_iterations = dr.bp_iterations;

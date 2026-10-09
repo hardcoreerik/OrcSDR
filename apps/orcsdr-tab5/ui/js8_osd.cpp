@@ -1,5 +1,6 @@
 #include "js8_osd.hpp"
 
+#include "js8_codec.hpp"
 #include "js8_ldpc_graph.hpp"
 
 #include <algorithm>
@@ -21,6 +22,16 @@ inline void xor_row(uint64_t* dst, const uint64_t* src) {
 
 void to_bytes(const uint64_t* words, uint8_t* out) {
   for (size_t i = 0; i < kBits; ++i) out[i] = static_cast<uint8_t>((words[i >> 6] >> (i & 63u)) & 1u);
+}
+
+// CRC residue of a packed codeword: 0 when the CRC field matches the CRC of the first 75 information bits. Affine over GF(2).
+uint16_t crc_residue(const uint64_t* words) {
+  uint8_t bytes[kBits];
+  to_bytes(words, bytes);
+  const uint8_t* info = bytes + codec::kParityBits;
+  uint16_t field = 0;
+  for (size_t i = 0; i < 12; ++i) field = static_cast<uint16_t>((field << 1) | (info[75 + i] & 1u));
+  return static_cast<uint16_t>(codec::crc12(info) ^ field);
 }
 
 struct Best {
@@ -81,6 +92,13 @@ bool decode(const float* llr, const Config& config, Workspace* ws, AcceptFn acce
   for (size_t r = 0; r < kInfo; ++r)
     if (llr[ws->pivot[r]] < 0.0f) xor_row(base, ws->rows[r]);
 
+  // CRC linearity: residue(a ^ b) = residue(a) ^ residue(b) ^ K, where K = residue(0). With l(x) = residue(x) ^ K the sum is linear, and a
+  // candidate base ^ rows... has a valid CRC exactly when its l equals K.
+  const uint64_t zero_word[kWords] = {0, 0, 0};
+  const uint16_t k = crc_residue(zero_word);
+  for (size_t r = 0; r < kInfo; ++r) ws->crc_delta[r] = static_cast<uint16_t>(crc_residue(ws->rows[r]) ^ k);
+  const uint16_t l_base = static_cast<uint16_t>(crc_residue(base) ^ k);
+
   float total = 0.0f;
   for (size_t i = 0; i < kBits; ++i) total += magnitude[i];
   uint8_t hard[kBits];
@@ -90,7 +108,6 @@ bool decode(const float* llr, const Config& config, Workspace* ws, AcceptFn acce
   uint8_t bytes[kBits];
   uint32_t tested = 0;
   const auto consider = [&](const uint64_t* words, uint8_t order) {
-    ++tested;
     to_bytes(words, bytes);
     if (!accept(bytes, context)) return;
     float disagree = 0.0f;
@@ -107,9 +124,12 @@ bool decode(const float* llr, const Config& config, Workspace* ws, AcceptFn acce
   };
 
   const uint8_t max_order = std::min<uint8_t>(config.max_order, 3);
-  consider(base, 0);
+  ++tested;
+  if (l_base == k) consider(base, 0);
   if (!best.found && max_order >= 1) {
     for (size_t i = 0; i < kInfo; ++i) {
+      ++tested;
+      if (static_cast<uint16_t>(l_base ^ ws->crc_delta[i]) != k) continue;
       uint64_t w[kWords] = {base[0], base[1], base[2]};
       xor_row(w, ws->rows[i]);
       consider(w, 1);
@@ -119,7 +139,10 @@ bool decode(const float* llr, const Config& config, Workspace* ws, AcceptFn acce
     for (size_t i = 0; i < kInfo; ++i) {
       uint64_t wi[kWords] = {base[0], base[1], base[2]};
       xor_row(wi, ws->rows[i]);
+      const uint16_t li = static_cast<uint16_t>(l_base ^ ws->crc_delta[i]);
       for (size_t j = i + 1; j < kInfo; ++j) {
+        ++tested;
+        if (static_cast<uint16_t>(li ^ ws->crc_delta[j]) != k) continue;
         uint64_t w[kWords] = {wi[0], wi[1], wi[2]};
         xor_row(w, ws->rows[j]);
         consider(w, 2);
@@ -133,9 +156,12 @@ bool decode(const float* llr, const Config& config, Workspace* ws, AcceptFn acce
       for (size_t j = i + 1; j < kInfo; ++j) {
         uint64_t wj[kWords] = {wi[0], wi[1], wi[2]};
         xor_row(wj, ws->rows[j]);
-        for (size_t k = j + 1; k < kInfo; ++k) {
+        const uint16_t lj = static_cast<uint16_t>(l_base ^ ws->crc_delta[i] ^ ws->crc_delta[j]);
+        for (size_t m = j + 1; m < kInfo; ++m) {
+          ++tested;
+          if (static_cast<uint16_t>(lj ^ ws->crc_delta[m]) != k) continue;
           uint64_t w[kWords] = {wj[0], wj[1], wj[2]};
-          xor_row(w, ws->rows[k]);
+          xor_row(w, ws->rows[m]);
           consider(w, 3);
         }
       }
