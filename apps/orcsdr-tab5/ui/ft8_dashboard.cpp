@@ -153,6 +153,7 @@ void draw_utc() {
 }
 
 void draw_header() {
+  std::printf("ORC_FT8_UI header mode=%u band=%u clock=%d\n", static_cast<unsigned>(g_snapshot.mode), static_cast<unsigned>(g_snapshot.selected_band), g_snapshot.clock_valid ? 1 : 0);
   // Standard dashboard header: brand, divider, title block, then the shared controls on the right. The header
   // repaints only its own band; the screen is never cleared.
   M5.Display.fillRect(0, 0, 1280, 92, TFT_BLACK);
@@ -921,6 +922,7 @@ void setup_row(int row, const char* label, const char* value, uint16_t color) {
 
 // The rows whose value follows the decoder or the clock. Repainted alone (row background first) so a status change never repaints the page.
 void draw_setup_status_rows() {
+  std::printf("ORC_FT8_UI setup_rows\n");
   for (int row = 1; row <= 2; ++row) {
     const int y = 238 + row * 52;
     M5.Display.fillRect(46, y, 1188, 41, kPanel);
@@ -963,6 +965,7 @@ bool live_layout_same(const Snapshot& a, const Snapshot& b) {
 }
 
 void draw_live_dynamic(const Snapshot& previous) {
+  std::printf("ORC_FT8_UI live_partial\n");
   char value[48];
   chip({826, 104, 200, 58}, "DECODER", decoder_name(), decoder_color());
   if (previous.gain_auto != g_snapshot.gain_auto || previous.gain_tenth_db != g_snapshot.gain_tenth_db) {
@@ -986,6 +989,7 @@ void draw_live_dynamic(const Snapshot& previous) {
 }
 
 void draw_body(bool repaint_in_place = false) {
+  std::printf("ORC_FT8_UI body tab=%u in_place=%d\n", static_cast<unsigned>(g_tab), repaint_in_place ? 1 : 0);
   if (!repaint_in_place) M5.Display.fillRect(0, 94, 1280, 532, TFT_BLACK);   // the map repaints opaque panels, so it skips the blank
   switch (g_tab) {
     case Tab::live: draw_live(); break;
@@ -1100,6 +1104,7 @@ void update(const Snapshot& snapshot_value) {
 }
 
 void draw() {   // full repaint: entering the screen only
+  std::printf("ORC_FT8_UI FULL_SCREEN tab=%u\n", static_cast<unsigned>(g_tab));
   if (!g_active) return;
   M5.Display.fillScreen(TFT_BLACK);
   draw_header();
