@@ -13209,6 +13209,13 @@ void fill_orcdial_ft8_state(orc::Packet& p) {
   uint32_t capabilities = 0;   // bit 0 decoder bound: no; bit 2 hunter supported: no until a decoder exists
   if (orcsdr::time_service::now().wallclock_valid) capabilities |= orc::ft8_control::kClockReady;
   if (g_ft8_hunter.active()) capabilities |= orc::ft8_control::kHunterActive;
+  if (g_ft8_expert) {   // tell the Dial to show the frequency large, with the Tune panel's current step
+    capabilities |= orc::ft8_control::kExpertTuning;
+    uint8_t step_index = static_cast<uint8_t>(orcsdr::ft8::tuning::kDefaultStepIndex);
+    for (size_t i = 0; i < orcsdr::ft8::tuning::kStepCount; ++i)
+      if (orcsdr::ft8::tuning::kStepsHz[i] == orcsdr::ft8::tune_step_hz()) step_index = static_cast<uint8_t>(i);
+    capabilities = orc::ft8_control::with_step(capabilities, step_index);
+  }
   p.capabilities = capabilities;
   const bool band_view = p.view == static_cast<uint8_t>(orc::ft8_control::View::live) ||
                          p.view == static_cast<uint8_t>(orc::ft8_control::View::hunter);

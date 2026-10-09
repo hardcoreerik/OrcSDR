@@ -1,5 +1,6 @@
 #include "../src/controller.hpp"
 #include <cassert>
+#include <string>
 
 using namespace orc;
 static Action turn(Dashboard d, uint8_t view=0) { return rotate(d, view, Focus::vfo, 1, 5, 100000); }
@@ -37,6 +38,19 @@ int main() {
   assert(press(Dashboard::ft8, 0, ft8_control::kHunterSupported).kind == ActionKind::ft8_hunter);
   assert(press(Dashboard::ft8, 0, ft8_control::kHunterSupported).value ==
          static_cast<int32_t>(ft8_control::HunterCommand::start_fast));
+  // Expert-tuning bits ride in the capabilities word without disturbing the hunter bits or the press command.
+  {
+    uint32_t caps = ft8_control::kHunterSupported | ft8_control::kExpertTuning;
+    for (uint8_t step = 0; step < 6; ++step) {
+      const uint32_t with = ft8_control::with_step(caps, step);
+      assert(ft8_control::step_index(with) == step);
+      assert((with & ft8_control::kExpertTuning) != 0 && (with & ft8_control::kHunterSupported) != 0);
+      assert((with & (ft8_control::kHunterActive | ft8_control::kHunterComplete)) == 0);
+      assert(press(Dashboard::ft8, 0, with).value == static_cast<int32_t>(ft8_control::HunterCommand::start_fast));
+    }
+    assert(std::string(ft8_control::step_label(2)) == "1 kHz" && std::string(ft8_control::step_label(7)) == "--");
+    assert(ft8_control::with_step(ft8_control::kExpertTuning, 5) != ft8_control::with_step(ft8_control::kExpertTuning, 1));
+  }
   assert(press(Dashboard::ft8, 3, ft8_control::kHunterActive).value ==
          static_cast<int32_t>(ft8_control::HunterCommand::stop));
   assert(press(Dashboard::ft8, 3, ft8_control::kHunterComplete).value ==

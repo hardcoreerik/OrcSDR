@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 namespace orc {
 static secure::Status device_status;
@@ -579,7 +580,25 @@ static void ft8_screen(lgfx::LGFXBase& d, const RadioState& state,
   d.setTextColor(clock_ready && decoder_ready ? green : dim, bg); d.setTextSize(1);
   draw_text(d, line, 120, 82);
 
-  if (live_or_hunter) {
+  const bool tuning = (state.capabilities & ft8_control::kExpertTuning) && live_or_hunter;
+  if (tuning) {
+    // Expert tuning: the frequency is the thing being changed, so it is large; the band is only context, so it is small.
+    d.setTextColor(dim, bg); d.setTextSize(2);
+    draw_text(d, connected ? ft8_band_label(state.selected) : "--", 120, 99);
+    if (connected) {
+      char digits[20];
+      const uint32_t hz = state.frequency_hz;
+      if (hz % 1000 == 0) std::snprintf(digits, sizeof digits, "%lu.%03lu", (unsigned long)(hz / 1000000), (unsigned long)(hz / 1000 % 1000));
+      else std::snprintf(digits, sizeof digits, "%lu.%06lu", (unsigned long)(hz / 1000000), (unsigned long)(hz % 1000000));
+      d.setTextColor(cyan, bg); d.setTextSize(std::strlen(digits) <= 8 ? 4 : 3);
+      draw_text(d, digits, 120, 133);
+    } else {
+      d.setTextColor(dim, bg); d.setTextSize(4); draw_text(d, "--.---", 120, 133);
+    }
+    d.setTextColor(dim, bg); d.setTextSize(1); draw_text(d, "MHz", 120, 156);
+    std::snprintf(line, sizeof line, "STEP %s", ft8_control::step_label(ft8_control::step_index(state.capabilities)));
+    d.setTextColor(green, bg); d.setTextSize(1.5f); draw_text(d, line, 120, 172);
+  } else if (live_or_hunter) {
     d.setTextColor(ink, bg); d.setTextSize(4);
     draw_text(d, connected ? ft8_band_label(state.selected) : "--", 120, 108);
     if (connected) frequency(d, state.frequency_hz, 135, 2, cyan);
