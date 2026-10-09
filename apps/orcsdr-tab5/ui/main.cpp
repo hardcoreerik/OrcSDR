@@ -12846,6 +12846,9 @@ static bool g_heard_journal_ok = true;        // false when the journal has an u
 static uint32_t g_heard_journal_bytes = 0;
 static uint32_t g_heard_last_try_ms = 0;
 static uint32_t g_heard_errors = 0;
+static uint8_t g_heard_tail_pad = 0;            // zero bytes to append before the next record when the journal ends in a partial record
+// Threading: the table is touched only from the main task (decodes are drained in ft8_native_drain_pending, the dashboard looks stations up while it draws and
+// handles touch, serial commands run in the same loop), so it needs no lock. Anything that moves these calls to another task must add one.
 constexpr size_t kHeardDbEntries = 16384;       // 16384 x 40 bytes = 640 KB of PSRAM
 constexpr uint32_t kHeardJournalMaxBytes = 8u * 1024u * 1024u;
 constexpr const char* kHeardJournalPath = "/orcsdr/ft8/heard.journal";
@@ -12878,22 +12881,24 @@ static void heard_db_load_from_sd() {
   }
   size_t applied = 0;
   if (size >= orcsdr::ft8::kHeardHeaderBytes) {
-    uint8_t header[orcsdr::ft8::kHeardHeaderBytes];
-    if (file.read(header, sizeof(header)) == sizeof(header)) {
-      uint8_t expected[orcsdr::ft8::kHeardHeaderBytes];
-      orcsdr::ft8::HeardDb::journal_header(expected);
-      if (std::memcmp(header, expected, sizeof(header)) != 0) {
-        g_heard_journal_ok = false;   // not our format or a newer version: leave the file alone
-        Serial.println("ORC_FT8_HEARD journal_unrecognised");
-      } else {
-        size_t got;
-        while ((got = file.read(chunk, kChunk)) > 0) applied += g_heard_db.load(chunk, got - got % orcsdr::ft8::kHeardRecordBytes);
-      }
+    // File::read can return fewer bytes than asked without being at the end of the file; HeardDb::replay copes with that (host-tested).
+    struct FileReader {
+      static size_t read(void* context, uint8_t* out, size_t max_bytes) { return static_cast<File*>(context)->read(out, max_bytes); }
+    };
+    const orcsdr::ft8::HeardDb::ReplayResult replayed = g_heard_db.replay(FileReader::read, &file, chunk, kChunk);
+    applied = replayed.applied;
+    if (!replayed.recognised) {
+      g_heard_journal_ok = false;   // not our format or a newer version: leave the file alone
+      Serial.println("ORC_FT8_HEARD journal_unrecognised");
     }
   }
   file.close();
   heap_caps_free(chunk);
   g_heard_journal_bytes = static_cast<uint32_t>(size);
+  if (size >= orcsdr::ft8::kHeardHeaderBytes) {   // a journal that ends mid-record is realigned before the next append
+    const size_t tail = (size - orcsdr::ft8::kHeardHeaderBytes) % orcsdr::ft8::kHeardRecordBytes;
+    g_heard_tail_pad = static_cast<uint8_t>(tail ? orcsdr::ft8::kHeardRecordBytes - tail : 0);
+  }
   Serial.printf("ORC_FT8_HEARD loaded records=%u stations=%u rejected=%u bytes=%u\n", static_cast<unsigned>(applied),
                 static_cast<unsigned>(g_heard_db.size()), static_cast<unsigned>(g_heard_db.rejected()), static_cast<unsigned>(size));
 }
@@ -12908,6 +12913,8 @@ static void heard_db_observe(orcsdr::ft8::Decode& decode) {
   o.band = static_cast<uint8_t>(g_ft8_band < 16 ? g_ft8_band : 0);
   o.mode = static_cast<uint8_t>(decode.mode);
   o.snr = static_cast<int8_t>(std::clamp<int>(decode.snr_db, -127, 127));
+  // JS8 decodes carry the sender's report, not a measurement, and set decode_flag_snr_unavailable, so they never touch best/last SNR. If a JS8 estimator
+  // is added later it must clear that flag and fill snr_db, or the table will (correctly) keep ignoring it.
   o.snr_known = (decode.flags & orcsdr::ft8::decode_flag_snr_unavailable) == 0;
   const orcsdr::ft8::HeardUpdate u = g_heard_db.observe(o);
   if (!u.stored) return;
@@ -12928,8 +12935,8 @@ static void heard_db_flush() {
   if (heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA) < kFt8LogMinDmaBlock) return;   // receiver is streaming
   if (!ensure_tab5_sd() || g_sd_fs == nullptr) return;
   if (g_heard_journal_bytes >= kHeardJournalMaxBytes) return;   // never grows without bound; the table keeps working in RAM
-  size_t count = g_heard_db.drain_dirty(batch, kBatchRecords);
-  if (count == 0) return;
+  // Nothing is drained until the file is open, and every drained batch is either written in full or handed back with requeue(), so a failed or
+  // short write never loses a save: the entries simply go out with the next flush.
   (void)g_sd_fs->mkdir("/orcsdr");
   (void)g_sd_fs->mkdir("/orcsdr/ft8");
   File file = g_sd_fs->open(kHeardJournalPath, FILE_APPEND, true);
@@ -12940,13 +12947,36 @@ static void heard_db_flush() {
   if (file.size() == 0) {
     uint8_t header[orcsdr::ft8::kHeardHeaderBytes];
     orcsdr::ft8::HeardDb::journal_header(header);
-    file.write(header, sizeof(header));
+    if (file.write(header, sizeof(header)) != sizeof(header)) {
+      ++g_heard_errors;
+      file.close();
+      return;
+    }
+    g_heard_tail_pad = 0;
   }
-  size_t written = 0;
-  while (count > 0) {
-    written += file.write(batch, count * orcsdr::ft8::kHeardRecordBytes);
-    count = g_heard_db.drain_dirty(batch, kBatchRecords);   // keep going until nothing is dirty (bounded by the table size)
-    if (written > 64u * 1024u) break;                       // at most 64 KB per pass so the main task is never held up
+  // A previous torn write (or power loss) can leave a partial record at the end. Records are read at fixed 40-byte offsets, so pad the tail
+  // with zeros to restore alignment; the padded fragment fails its CRC and is skipped when the journal is replayed.
+  if (g_heard_tail_pad > 0) {
+    uint8_t pad[orcsdr::ft8::kHeardRecordBytes] = {0};
+    if (file.write(pad, g_heard_tail_pad) != g_heard_tail_pad) {
+      ++g_heard_errors;
+      file.close();
+      return;
+    }
+    g_heard_tail_pad = 0;
+  }
+  for (int pass = 0; pass < 16; ++pass) {   // at most 16 batches (about 40 KB) per flush so the main task is never held up
+    const size_t count = g_heard_db.drain_dirty(batch, kBatchRecords);
+    if (count == 0) break;
+    const size_t bytes = count * orcsdr::ft8::kHeardRecordBytes;
+    const size_t wrote = file.write(batch, bytes);
+    if (wrote != bytes) {
+      g_heard_db.requeue(batch, count);
+      const size_t partial = wrote % orcsdr::ft8::kHeardRecordBytes;
+      g_heard_tail_pad = static_cast<uint8_t>(partial ? orcsdr::ft8::kHeardRecordBytes - partial : 0);
+      ++g_heard_errors;
+      break;
+    }
   }
   g_heard_journal_bytes = static_cast<uint32_t>(file.size());
   file.close();
@@ -13251,6 +13281,8 @@ bool ft8_select_band_table(size_t index) {
   g_ft8_dial_override_hz = 0;
   return ft8_select_band(index);
 }
+
+static_assert(orcsdr::ft8::tuning::kStepCount == orc::ft8_control::kStepCount, "the Dial's step labels must match the Tune panel's step table");
 
 // Expert tuning: park the receiver on an arbitrary dial. The band index follows the nearest table band so the header and hunter keep a
 // sensible band; the receiver's own limits (validate_rtl_tune_frequency) still decide whether the frequency is allowed.

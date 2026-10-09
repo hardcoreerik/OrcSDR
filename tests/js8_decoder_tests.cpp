@@ -7,6 +7,7 @@
 #include "js8_decoder.hpp"
 #include "js8_ldpc_graph.hpp"
 #include "js8_message.hpp"
+#include "js8_osd.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -132,6 +133,56 @@ int main() {
   }
   std::printf("noise-only: %d valid frames, %d messages in %d trials\n", false_valid, false_messages, noise_trials);
   CHECK(false_messages == 0);
+
+  // The 12-bit CRC is affine over GF(2) (init 0, final XOR constant): crc(x ^ y) = crc(x) ^ crc(y) ^ crc(0). The OSD screens candidates with exactly that identity.
+  {
+    uint8_t zero[75] = {0};
+    const uint16_t crc_zero = codec::crc12(zero);
+    for (int trial = 0; trial < 2000; ++trial) {
+      uint8_t x[75], y[75], z[75];
+      for (int i = 0; i < 75; ++i) {
+        x[i] = static_cast<uint8_t>(rnd() & 1u);
+        y[i] = static_cast<uint8_t>(rnd() & 1u);
+        z[i] = static_cast<uint8_t>(x[i] ^ y[i]);
+      }
+      CHECK(static_cast<uint16_t>(codec::crc12(z) ^ codec::crc12(x) ^ codec::crc12(y)) == crc_zero);
+    }
+  }
+
+  // OSD stops at the first order that yields an accepted word (false-accept control, documented in js8_osd.hpp). A clean frame is found at order 0 with exactly one
+  // candidate tested; a frame whose most reliable bit is wrong is found at order 1 within the first 88 candidates and never reaches order 2.
+  {
+    auto accept_crc = [](const uint8_t* cw, void*) { return codec::crc_valid(cw); };
+    float llr[174];
+    for (int i = 0; i < 174; ++i) llr[i] = wo7i[i] ? -1.0f : 1.0f;
+    osd::Workspace osd_ws;
+    osd::Result osd_result;
+    CHECK(osd::decode(llr, osd::Config{}, &osd_ws, accept_crc, nullptr, &osd_result));
+    CHECK(osd_result.found && osd_result.order == 0 && osd_result.tested == 1 && osd_result.bit_corrections == 0);
+    llr[100] = wo7i[100] ? 5.0f : -5.0f;   // the single most reliable bit, and wrong
+    CHECK(osd::decode(llr, osd::Config{}, &osd_ws, accept_crc, nullptr, &osd_result));
+    CHECK(osd_result.found && osd_result.order == 1 && osd_result.tested <= 88 && osd_result.bit_corrections == 1);
+    CHECK(std::memcmp(osd_result.codeword.data(), wo7i, 174) == 0);
+  }
+
+  // Non-finite LLRs carry no information: they must never become a confident decision. A few of them in an otherwise clean frame still decode;
+  // all of them decode nothing.
+  {
+    float llr[174];
+    for (int i = 0; i < 174; ++i) llr[i] = wo7i[i] ? -6.0f : 6.0f;
+    llr[3] = INFINITY;
+    llr[50] = -INFINITY;
+    llr[101] = NAN;
+    llr[170] = wo7i[170] ? -INFINITY : INFINITY;   // an infinity that agrees with the truth, and one that does not (llr[50] below)
+    llr[50] = wo7i[50] ? INFINITY : -INFINITY;     // the wrong sign: would be a confident wrong bit if taken at face value
+    decoder::Result rr2;
+    CHECK(decoder::decode_llrs(llr, decoder::Config{}, ws.get(), &rr2));
+    CHECK(rr2.crc_valid && rr2.rendered && std::strcmp(rr2.message.text, "WO7I: ND7M HEARTBEAT SNR +11") == 0);
+    float all_bad[174];
+    for (float& v : all_bad) v = NAN;
+    decoder::Result rr3;
+    CHECK(!decoder::decode_llrs(all_bad, decoder::Config{}, ws.get(), &rr3));
+  }
 
   // Garbage energies are handled without a result.
   static float bad_e[79][8];

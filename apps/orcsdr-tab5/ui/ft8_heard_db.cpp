@@ -3,6 +3,13 @@
 #include <cstring>
 
 namespace orcsdr::ft8 {
+
+// The serialised layout is fixed by offsets in serialise/deserialise below: callsign 0..11, grid 12..19, three u32 at 20/24/28, band mask 32..33, mode mask 34,
+// two SNR bytes 35/36, flags 37, CRC-16 38..39. Any change to these constants must change the offsets (and the journal version).
+static_assert(kHeardCallLen == 12 && kHeardGridLen == 8, "callsign and grid fields are 12 and 8 bytes in the journal record");
+static_assert(kHeardRecordBytes == 40 && kHeardHeaderBytes == 16, "journal record and header sizes");
+static_assert(sizeof(HeardEntry) <= 48, "entry size feeds the PSRAM budget in main.cpp");
+
 namespace {
 
 uint32_t fnv1a(const char* s) {
@@ -68,6 +75,26 @@ bool deserialise(const uint8_t in[kHeardRecordBytes], HeardEntry* e) {
   out.flags = in[37] & static_cast<uint8_t>(~heard_flag_dirty);
   *e = out;
   return true;
+}
+
+// Folds a journal record into an entry that already exists. Each journal record is a cumulative snapshot of one station, so replaying them in
+// file order and keeping the last would be enough, but merging makes replay independent of order (a duplicated or older record after a newer one,
+// two journals concatenated) and can only add information: earliest first-heard, latest last-heard, the larger count, the union of bands and
+// modes, the best SNR, and the grid and last SNR from whichever record is newer.
+void merge_entry(HeardEntry& e, const HeardEntry& n) {
+  const bool n_newer = n.last_utc >= e.last_utc;
+  if (n.first_utc != 0 && (e.first_utc == 0 || n.first_utc < e.first_utc)) e.first_utc = n.first_utc;
+  if (n.last_utc > e.last_utc) e.last_utc = n.last_utc;
+  if (n.count > e.count) e.count = n.count;
+  e.band_mask = static_cast<uint16_t>(e.band_mask | n.band_mask);
+  e.mode_mask = static_cast<uint8_t>(e.mode_mask | n.mode_mask);
+  if (n.flags & heard_flag_snr_known) {
+    if (!(e.flags & heard_flag_snr_known) || n.best_snr > e.best_snr) e.best_snr = n.best_snr;
+    if (n_newer || !(e.flags & heard_flag_snr_known)) e.last_snr = n.last_snr;
+    e.flags = static_cast<uint8_t>(e.flags | heard_flag_snr_known);
+  }
+  if (n.grid[0] && (n_newer || !e.grid[0])) std::memcpy(e.grid, n.grid, kHeardGridLen);
+  e.flags = static_cast<uint8_t>(e.flags | (n.flags & heard_flag_worked));
 }
 
 const uint8_t kMagic[8] = {'O', 'R', 'C', 'H', 'E', 'A', 'R', 'D'};
@@ -213,11 +240,59 @@ size_t HeardDb::load(const uint8_t* data, size_t length) {
       ++dropped_;
       continue;
     }
-    if (!found) ++size_;
-    entries_[i] = loaded;   // last record for a callsign wins; not dirty (it came from the journal)
+    if (!found) {
+      ++size_;
+      entries_[i] = loaded;   // first record for this callsign; not dirty (it came from the journal)
+    } else {
+      merge_entry(entries_[i], loaded);
+    }
     ++applied;
   }
   return applied;
+}
+
+size_t HeardDb::requeue(const uint8_t* records, size_t record_count) {
+  if (entries_ == nullptr || records == nullptr) return 0;
+  size_t marked = 0;
+  for (size_t r = 0; r < record_count; ++r) {
+    char callsign[kHeardCallLen];
+    std::memcpy(callsign, records + r * kHeardRecordBytes, kHeardCallLen);
+    callsign[kHeardCallLen - 1] = '\0';
+    if (!valid_callsign(callsign)) continue;
+    bool found = false;
+    const size_t i = find_slot(callsign, &found);
+    if (!found) continue;
+    entries_[i].flags = static_cast<uint8_t>(entries_[i].flags | heard_flag_dirty);
+    ++marked;
+  }
+  return marked;
+}
+
+HeardDb::ReplayResult HeardDb::replay(ReadFn read, void* context, uint8_t* scratch, size_t scratch_bytes) {
+  ReplayResult result;
+  if (entries_ == nullptr || read == nullptr || scratch == nullptr || scratch_bytes < kHeardRecordBytes) return result;
+  uint8_t header[kHeardHeaderBytes];
+  size_t header_got = 0;
+  while (header_got < sizeof(header)) {
+    const size_t n = read(context, header + header_got, sizeof(header) - header_got);
+    if (n == 0) return result;   // shorter than a header
+    header_got += n;
+  }
+  uint8_t expected[kHeardHeaderBytes];
+  journal_header(expected);
+  if (std::memcmp(header, expected, sizeof(header)) != 0) return result;
+  result.recognised = true;
+  size_t held = 0;
+  for (;;) {
+    const size_t got = read(context, scratch + held, scratch_bytes - held);
+    if (got == 0) break;
+    held += got;
+    const size_t whole = held - held % kHeardRecordBytes;
+    result.applied += load(scratch, whole);
+    held -= whole;
+    if (held > 0) std::memmove(scratch, scratch + whole, held);
+  }
+  return result;
 }
 
 bool heard_db_self_check() { return sizeof(HeardEntry) <= 48 && kHeardRecordBytes == 40; }

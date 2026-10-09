@@ -1,6 +1,7 @@
 // Stations-heard table: first/last heard, counts, band/mode masks, SNR, colour-code classes, journal round trip, corruption handling, full table.
 #include "ft8_heard_db.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -91,6 +92,91 @@ int main() {
   CHECK(k != nullptr && k->count == db.find("K8IMT")->count && k->last_utc == 5000 && k->first_utc == 500 && (k->flags & heard_flag_worked));
   CHECK(copy.find("KD7WPQ") != nullptr && std::strcmp(copy.find("KD7WPQ")->grid, "DN15") == 0);
   CHECK(copy.drain_dirty(chunk, 8) == 0);                                // loaded data is not re-written
+
+  // Replay does not depend on record order: an older snapshot after a newer one cannot lose first-heard, bands, modes or the best SNR.
+  {
+    std::vector<HeardEntry> memory5(1024);
+    HeardDb ordered, shuffled;
+    CHECK(ordered.begin(memory5.data(), memory5.size() * sizeof(HeardEntry)));
+    std::vector<HeardEntry> memory6(1024);
+    CHECK(shuffled.begin(memory6.data(), memory6.size() * sizeof(HeardEntry)));
+    HeardDb source;
+    std::vector<HeardEntry> memory7(1024);
+    CHECK(source.begin(memory7.data(), memory7.size() * sizeof(HeardEntry)));
+    uint8_t snap[3][kHeardRecordBytes];
+    source.observe(obs("N7EAL", 1000, 3, 0, -15, "CN87"));
+    CHECK(source.drain_dirty(snap[0], 1) == 1);
+    source.observe(obs("N7EAL", 2000, 5, 2, -4, ""));
+    CHECK(source.drain_dirty(snap[1], 1) == 1);
+    source.observe(obs("N7EAL", 3000, 3, 0, -9, ""));
+    CHECK(source.drain_dirty(snap[2], 1) == 1);
+    for (int i = 0; i < 3; ++i) CHECK(ordered.load(snap[i], kHeardRecordBytes) == 1);
+    for (int i = 2; i >= 0; --i) CHECK(shuffled.load(snap[i], kHeardRecordBytes) == 1);   // newest first, oldest last
+    const HeardEntry* a = ordered.find("N7EAL");
+    const HeardEntry* b = shuffled.find("N7EAL");
+    CHECK(a != nullptr && b != nullptr);
+    CHECK(a->first_utc == b->first_utc && a->first_utc == 1000 && a->last_utc == b->last_utc && a->last_utc == 3000);
+    CHECK(a->count == b->count && a->count == 3 && a->band_mask == b->band_mask && a->band_mask == ((1u << 3) | (1u << 5)));
+    CHECK(a->mode_mask == b->mode_mask && a->best_snr == b->best_snr && a->best_snr == -4);
+    CHECK(a->last_snr == b->last_snr && a->last_snr == -9);                    // last SNR follows the newest snapshot, whatever the order
+    CHECK(std::strcmp(a->grid, "CN87") == 0 && std::strcmp(b->grid, "CN87") == 0);
+  }
+
+  // Replay through a reader that returns short reads (the way a file read can at a sector boundary): every record must still load, whatever the read sizes.
+  {
+    struct Reader {
+      const std::vector<uint8_t>* data;
+      size_t pos = 0;
+      size_t call = 0;
+      static size_t read(void* context, uint8_t* out, size_t max_bytes) {
+        Reader* r = static_cast<Reader*>(context);
+        static const size_t kSizes[] = {1, 7, 13, 32, 40, 41, 3, 512};   // deliberately not multiples of the 40-byte record
+        size_t want = kSizes[r->call++ % (sizeof(kSizes) / sizeof(kSizes[0]))];
+        want = std::min(want, std::min(max_bytes, r->data->size() - r->pos));
+        std::memcpy(out, r->data->data() + r->pos, want);
+        r->pos += want;
+        return want;
+      }
+    };
+    std::vector<HeardEntry> memory8(1024);
+    HeardDb streamed;
+    CHECK(streamed.begin(memory8.data(), memory8.size() * sizeof(HeardEntry)));
+    Reader reader{&journal};
+    uint8_t scratch[200];   // five records: smaller than the reads above can add up to, so the carry path is exercised
+    const HeardDb::ReplayResult result = streamed.replay(Reader::read, &reader, scratch, sizeof(scratch));
+    CHECK(result.recognised && result.applied == 4);                            // the same four records the one-shot load applied
+    CHECK(streamed.size() == 3 && streamed.rejected() == 0);
+    CHECK(streamed.find("K8IMT") != nullptr && streamed.find("K8IMT")->last_utc == 5000 && streamed.find("KD7WPQ") != nullptr);
+    // A journal that does not start with our header is reported, not guessed at.
+    std::vector<uint8_t> foreign(journal);
+    foreign[0] = 'X';
+    std::vector<HeardEntry> memory9(1024);
+    HeardDb refused2;
+    CHECK(refused2.begin(memory9.data(), memory9.size() * sizeof(HeardEntry)));
+    Reader foreign_reader{&foreign};
+    const HeardDb::ReplayResult rejected = refused2.replay(Reader::read, &foreign_reader, scratch, sizeof(scratch));
+    CHECK(!rejected.recognised && rejected.applied == 0 && refused2.size() == 0);
+  }
+
+  // A failed or short write must not lose a save: records handed back with requeue() go out with the next drain.
+  {
+    std::vector<HeardEntry> memory10(1024);
+    HeardDb d;
+    CHECK(d.begin(memory10.data(), memory10.size() * sizeof(HeardEntry)));
+    d.observe(obs("WD5EED", 100, 3, 2, -18, "EM12"));
+    d.observe(obs("KS1DMD", 200, 3, 2, -16, ""));
+    uint8_t batch[4 * kHeardRecordBytes];
+    CHECK(d.drain_dirty(batch, 4) == 2);
+    CHECK(d.drain_dirty(batch, 4) == 0);                                       // the mark is cleared by the copy...
+    CHECK(d.requeue(batch, 2) == 2);                                           // ...and restored when the append did not happen
+    CHECK(d.drain_dirty(batch, 4) == 2);
+    uint8_t garbage[kHeardRecordBytes] = {0};
+    CHECK(d.requeue(garbage, 1) == 0);                                         // a padded or damaged fragment marks nothing
+    uint8_t unknown[kHeardRecordBytes] = {0};
+    std::memcpy(unknown, "ZZ9ZZZ", 6);
+    CHECK(d.requeue(unknown, 1) == 0);                                         // a callsign the table does not hold marks nothing
+    CHECK(d.drain_dirty(batch, 4) == 0);
+  }
 
   // Corruption: a flipped byte rejects that record only; a torn tail is ignored.
   std::vector<uint8_t> damaged = journal;

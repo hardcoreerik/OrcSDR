@@ -597,8 +597,10 @@ void draw_decodes() {
     if (decode_geometry(*d, &km, &bearing)) {
       std::snprintf(item, sizeof(item), "%.0f km", km);
       text(item, x[7], y, TFT_WHITE, 1, middle_left);
-      std::snprintf(item, sizeof(item), "%.0fÂ°", bearing);
+      // The degree sign is drawn as a small ring: the font has no reliable glyph for it, and the old UTF-8 literal was double-encoded.
+      std::snprintf(item, sizeof(item), "%.0f", bearing);
       text(item, x[8], y, TFT_WHITE, 1, middle_left);
+      M5.Display.drawCircle(x[8] + M5.Display.textWidth(item) + 6, y - 8, 3, TFT_WHITE);
     } else {
       text("--", x[7], y, kMuted, 1, middle_left);
       text("--", x[8], y, kMuted, 1, middle_left);
@@ -1778,8 +1780,8 @@ Action handle_touch(int32_t x, int32_t y) {
   }
   if (g_tab == Tab::decodes && g_heard_lookup != nullptr) {   // tap a row to see what the device knows about that station
     for (size_t row = 0; row < kDecodePageSize; ++row) {
-      const Rect r{34, 246 + static_cast<int>(row) * 42 - 21, 1212, 42};
-      if (!hit(x, y, r)) continue;
+      const Rect r{34, 246 + static_cast<int>(row) * 42 - 18, 1212, 36};
+      if (!hit(x, y, r) || hit(x, y, kNewer) || hit(x, y, kOlder) || hit(x, y, kClear)) continue;   // the buttons below win where they overlap
       const Decode* d = decode_newest(g_decode_page * kDecodePageSize + row);
       if (d != nullptr && d->callsign[0]) open_station_popup(d->callsign);
       return {};

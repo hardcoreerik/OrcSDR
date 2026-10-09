@@ -3,6 +3,7 @@
 #include "js8_fec.hpp"
 #include "js8_ldpc_graph.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -47,9 +48,12 @@ void finish(const uint8_t* codeword, const uint8_t* hard, Method method, Result*
 
 }  // namespace
 
-bool decode_llrs(const float llr[codec::kCodewordBits], const Config& config, Workspace* ws, Result* result) {
-  if (llr == nullptr || ws == nullptr || result == nullptr) return false;
+bool decode_llrs(const float llr_in[codec::kCodewordBits], const Config& config, Workspace* ws, Result* result) {
+  if (llr_in == nullptr || ws == nullptr || result == nullptr) return false;
   *result = Result{};
+  // A non-finite LLR carries no information: treat it as 0 (and clamp the rest) so it can never become a confident hard decision or a pivot in the OSD.
+  float llr[codec::kCodewordBits];
+  for (size_t i = 0; i < codec::kCodewordBits; ++i) llr[i] = std::isfinite(llr_in[i]) ? std::max(-1.0e4f, std::min(1.0e4f, llr_in[i])) : 0.0f;
 
   uint8_t hard[codec::kCodewordBits];
   for (size_t i = 0; i < codec::kCodewordBits; ++i) hard[i] = llr[i] < 0.0f ? 1u : 0u;

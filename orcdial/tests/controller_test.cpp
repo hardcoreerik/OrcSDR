@@ -50,6 +50,10 @@ int main() {
     }
     assert(std::string(ft8_control::step_label(2)) == "1 kHz" && std::string(ft8_control::step_label(7)) == "--");
     assert(ft8_control::with_step(ft8_control::kExpertTuning, 5) != ft8_control::with_step(ft8_control::kExpertTuning, 1));
+    // The step field has room for 8 values but only 6 are real: an out-of-range index is clamped on write and labelled "--" on read.
+    assert(ft8_control::kStepCount == 6);
+    assert(ft8_control::step_index(ft8_control::with_step(0, 7)) == 5 && ft8_control::step_index(ft8_control::with_step(0, 200)) == 5);
+    assert(std::string(ft8_control::step_label(6)) == "--" && std::string(ft8_control::step_label(7)) == "--");
     // Enabled (checkbox) and active (fine tuning now) are separate bits that do not overlap the step field or the hunter bits.
     assert((ft8_control::kExpertEnabled & (ft8_control::kExpertTuning | ft8_control::kStepMask | ft8_control::kHunterSupported |
                                           ft8_control::kHunterActive | ft8_control::kHunterComplete | ft8_control::kClockReady)) == 0);

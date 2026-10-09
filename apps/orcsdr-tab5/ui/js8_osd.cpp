@@ -8,6 +8,9 @@
 #include <cstring>
 
 namespace orcsdr::js8::osd {
+
+static_assert(kInfo == codec::kParityBits && kInfo == codec::kInfoBits && kBits == codec::kCodewordBits && kWords * 64 >= kBits, "OSD word geometry must match the JS8 codeword layout");
+
 namespace {
 
 using Word = uint64_t;
