@@ -1,3 +1,5 @@
+> **NEW verified result — 2026-10-08:** The earlier stop gate below applied before the four core specification artifacts existed. The new numeric parity graph, natural-binary tone map, padded CRC-12 and directed-message layout in `docs/js8/spec/` produce **one fully reconstructed real 635 Hz WO7I frame** with 87/87 parity checks satisfied, CRC passing and text `WO7I: ND7M HEARTBEAT SNR +11`. See `verified-wo7i-2026-10-08.json` and `tools/js8-spec/verify_real_frames.py`. This is **not** parity with the four reference decodes. Three remaining station messages and other message families are still unverified. Source constants are pinned to source blobs, not yet to installed CLI binary version.
+
 # JS8 receive protocol specification — verification gate
 
 Status: **INCOMPLETE / NOT APPROVED FOR DECODER IMPLEMENTATION**  
