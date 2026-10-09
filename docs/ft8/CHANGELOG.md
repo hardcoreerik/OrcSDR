@@ -1,5 +1,13 @@
 # FT8 Native Decoder Changelog
 
+## 2026-10-08 - JS8 candidate block-level diagnostic (spec branch only)
+
+- Host-only `tools/js8-spec/candidate_diagnostics.py`, and machine-readable `docs/js8/spec/candidate-diagnostics-summary.json`. No decoder or firmware changes.
+- Tested on owner-provided core kit using `python candidate_diagnostics.py /mnt/data/js8_work/core --output /mnt/data/js8_work/candidate-diagnostics.json`. WAV hash verified as `93b48bef6a6799e0301d1459ee724759772f5e0ff8e83249337a82747c44a445` (dataset commit `1705472`).
+- Recorded: K8IMT 487 Hz: 7 candidates, best sync blocks 7/7/7; WO7I 635 Hz: 5, 7/7/7; held-out K7YXZ 838 Hz: 4, **0/7/7** (first block mismatch); KD7WPQ 2604 Hz: 0 candidates.
+- Candidate association via saved `ref_index` is not independent message verification. FEC, CRC and message text remain untested; these findings are pre-FEC diagnostics only.
+
+
 ## 2026-10-08 - JS8 source provenance gate (spec-only, no decoder changes)
 
 - New `docs/js8/PROTOCOL_SPEC.md` records preliminary documented and GPL-source-derived facts and identifies the verification gap explicitly. Branch `codex/js8-spec` starts from `claude/ft8-native-bind`. No decoding or firmware source was modified.
