@@ -60,6 +60,23 @@ struct Snapshot {
   size_t decode_count = 0;
 };
 
+// What the application's persistent stations-heard table knows about one callsign (first/last heard etc.). The dashboard never owns that table.
+struct HeardInfo {
+  char callsign[12]{};
+  char grid[8]{};
+  uint32_t first_utc = 0;
+  uint32_t last_utc = 0;
+  uint32_t count = 0;
+  uint16_t band_mask = 0;   // bit n = band-table index n
+  uint8_t mode_mask = 0;    // bit n = DigitalMode n
+  int8_t best_snr = 0;
+  int8_t last_snr = 0;
+  bool snr_known = false;
+  bool worked = false;
+};
+using HeardLookup = bool (*)(const char* callsign, HeardInfo* out);
+void set_heard_lookup(HeardLookup lookup);   // optional: without it a tap on a station does nothing
+
 void enter(const Snapshot& snapshot);
 void update(const Snapshot& snapshot);
 // Scrolls waiting waterfall rows into the Live tab at a steady pace between full updates (no-op on other tabs).

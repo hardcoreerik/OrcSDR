@@ -35,7 +35,11 @@ const char* const kDecodes[] = {
     "TYPE    CQ means someone is calling anyone. A ? is not classified.",
     "MESSAGE the text. GRID, DIST and BRG come from the sender's grid",
     "        locator: where they are, how far, and which way.",
-    "NEW     a callsign heard for the first time this session.",
+    "NEW     a callsign heard for the first time (never before).",
+    "BAR     the coloured bar at the left of a row: green = first time",
+    "        heard, blue = heard on an earlier occasion, gold = worked.",
+    "TAP     tap a row to see when that station was first and last heard,",
+    "        how often, and on which bands and modes.",
     "",
     "DIST and BRG need your own location to be set.",
     "NEWER and OLDER page through the list. CLEAR empties this list on",
@@ -82,14 +86,14 @@ const char* const kHunter[] = {
 const char* const kHeard[] = {
     "Each callsign decoded this session, shown once with its grid, last",
     "audio pitch and signal report. It is a who-is-on list, not a log of",
-    "every message.",
+    "every message. Tap a station to see its history on this device.",
     "",
     "CONDITIONS (right) summarises what was decoded: the farthest",
     "station, the typical distance, and which directions the signals",
     "come from. It needs your location and stations that sent a grid.",
     "",
-    "Everything here comes from this device's own decodes. No Internet",
-    "lookups are made.",
+    "Everything here comes from this device's own decodes. The history",
+    "is kept on the SD card. No Internet lookups are made.",
 };
 
 const char* const kSetupFt8[] = {

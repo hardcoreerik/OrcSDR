@@ -261,7 +261,8 @@ void DecodeStore::append(const Decode& decode) {
   if (stored.callsign[0]) {
     bool seen = false;
     for (size_t i = 0; i < size_ && !seen; ++i) seen = std::strcmp(records_[i].callsign, stored.callsign) == 0;
-    if (!seen) stored.flags = static_cast<uint16_t>(stored.flags | decode_flag_new_station);
+    // 'New' means never heard: not earlier this session and, when the persistent table knows the station, not in earlier sessions either.
+    if (!seen && !(stored.flags & decode_flag_heard_before)) stored.flags = static_cast<uint16_t>(stored.flags | decode_flag_new_station);
   }
   if (size_ < kDecodeCapacity) {
     records_[size_++] = stored;

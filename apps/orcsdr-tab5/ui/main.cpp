@@ -57,6 +57,7 @@
 #include "am_dashboard.hpp"
 #include "ft8_dashboard.hpp"
 #include "ft8_tuning.hpp"
+#include "ft8_heard_db.hpp"
 #include "ft8_adif.hpp"
 #include "ft8_snr.hpp"
 #include "ft8_decoder_backend.hpp"
@@ -12834,6 +12835,142 @@ static bool ft8_log_flush(bool force) {
   return true;
 }
 
+// ---- Stations heard (persistent). One entry per callsign decoded on this device: first/last heard, count, bands, modes, SNR, grid.
+// Built only from this device's own decodes; nothing is sent anywhere. The table lives in PSRAM; changes are appended to
+// /orcsdr/ft8/heard.journal (fixed 40-byte records, CRC-checked, last record per callsign wins) and replayed at boot, while internal DMA
+// memory is still free. If the card or the journal is unusable the table still works in RAM for the session.
+static orcsdr::ft8::HeardDb g_heard_db;
+static bool g_heard_ready = false;
+static bool g_heard_init_tried = false;
+static bool g_heard_journal_ok = true;        // false when the journal has an unknown version: never append to it
+static uint32_t g_heard_journal_bytes = 0;
+static uint32_t g_heard_last_try_ms = 0;
+static uint32_t g_heard_errors = 0;
+constexpr size_t kHeardDbEntries = 16384;       // 16384 x 40 bytes = 640 KB of PSRAM
+constexpr uint32_t kHeardJournalMaxBytes = 8u * 1024u * 1024u;
+constexpr const char* kHeardJournalPath = "/orcsdr/ft8/heard.journal";
+
+static bool heard_db_init() {
+  if (g_heard_ready) return true;
+  if (g_heard_init_tried) return false;
+  g_heard_init_tried = true;
+  const size_t bytes = kHeardDbEntries * sizeof(orcsdr::ft8::HeardEntry);
+  void* memory = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (memory == nullptr) {
+    Serial.println("ORC_FT8_HEARD init_failed no_psram");
+    return false;
+  }
+  g_heard_ready = g_heard_db.begin(memory, bytes);
+  return g_heard_ready;
+}
+
+// Replays the journal into the table. Called once at boot with the SD card ready.
+static void heard_db_load_from_sd() {
+  if (!heard_db_init() || g_sd_fs == nullptr || !g_sd_fs->exists(kHeardJournalPath)) return;
+  File file = g_sd_fs->open(kHeardJournalPath, FILE_READ);
+  if (!file) return;
+  const size_t size = file.size();
+  constexpr size_t kChunk = 100 * orcsdr::ft8::kHeardRecordBytes;   // a whole number of records per read
+  uint8_t* chunk = static_cast<uint8_t*>(heap_caps_malloc(kChunk, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (chunk == nullptr) {
+    file.close();
+    return;
+  }
+  size_t applied = 0;
+  if (size >= orcsdr::ft8::kHeardHeaderBytes) {
+    uint8_t header[orcsdr::ft8::kHeardHeaderBytes];
+    if (file.read(header, sizeof(header)) == sizeof(header)) {
+      uint8_t expected[orcsdr::ft8::kHeardHeaderBytes];
+      orcsdr::ft8::HeardDb::journal_header(expected);
+      if (std::memcmp(header, expected, sizeof(header)) != 0) {
+        g_heard_journal_ok = false;   // not our format or a newer version: leave the file alone
+        Serial.println("ORC_FT8_HEARD journal_unrecognised");
+      } else {
+        size_t got;
+        while ((got = file.read(chunk, kChunk)) > 0) applied += g_heard_db.load(chunk, got - got % orcsdr::ft8::kHeardRecordBytes);
+      }
+    }
+  }
+  file.close();
+  heap_caps_free(chunk);
+  g_heard_journal_bytes = static_cast<uint32_t>(size);
+  Serial.printf("ORC_FT8_HEARD loaded records=%u stations=%u rejected=%u bytes=%u\n", static_cast<unsigned>(applied),
+                static_cast<unsigned>(g_heard_db.size()), static_cast<unsigned>(g_heard_db.rejected()), static_cast<unsigned>(size));
+}
+
+// Updates the table from one decode and marks it when the station was already known (the dashboard colours rows by that).
+static void heard_db_observe(orcsdr::ft8::Decode& decode) {
+  if (decode.callsign[0] == '\0' || !heard_db_init()) return;
+  orcsdr::ft8::HeardObservation o;
+  o.callsign = decode.callsign;
+  o.grid = decode.grid;
+  o.utc = decode.utc_epoch;
+  o.band = static_cast<uint8_t>(g_ft8_band < 16 ? g_ft8_band : 0);
+  o.mode = static_cast<uint8_t>(decode.mode);
+  o.snr = static_cast<int8_t>(std::clamp<int>(decode.snr_db, -127, 127));
+  o.snr_known = (decode.flags & orcsdr::ft8::decode_flag_snr_unavailable) == 0;
+  const orcsdr::ft8::HeardUpdate u = g_heard_db.observe(o);
+  if (!u.stored) return;
+  if (u.before != orcsdr::ft8::HeardClass::first_time) decode.flags = static_cast<uint16_t>(decode.flags | orcsdr::ft8::decode_flag_heard_before);
+  if (u.before == orcsdr::ft8::HeardClass::worked) decode.flags = static_cast<uint16_t>(decode.flags | orcsdr::ft8::decode_flag_worked);
+}
+
+// Appends changed entries to the journal when the card can be used right now (same guards as the decode log).
+static void heard_db_flush() {
+  if (!g_heard_ready || !g_heard_journal_ok) return;
+  const uint32_t now = millis();
+  if (now - g_heard_last_try_ms < 20000u) return;
+  g_heard_last_try_ms = now;
+  static uint8_t* batch = nullptr;
+  constexpr size_t kBatchRecords = 64;
+  if (batch == nullptr) batch = static_cast<uint8_t*>(heap_caps_malloc(kBatchRecords * orcsdr::ft8::kHeardRecordBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (batch == nullptr) return;
+  if (heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA) < kFt8LogMinDmaBlock) return;   // receiver is streaming
+  if (!ensure_tab5_sd() || g_sd_fs == nullptr) return;
+  if (g_heard_journal_bytes >= kHeardJournalMaxBytes) return;   // never grows without bound; the table keeps working in RAM
+  size_t count = g_heard_db.drain_dirty(batch, kBatchRecords);
+  if (count == 0) return;
+  (void)g_sd_fs->mkdir("/orcsdr");
+  (void)g_sd_fs->mkdir("/orcsdr/ft8");
+  File file = g_sd_fs->open(kHeardJournalPath, FILE_APPEND, true);
+  if (!file) {
+    ++g_heard_errors;
+    return;
+  }
+  if (file.size() == 0) {
+    uint8_t header[orcsdr::ft8::kHeardHeaderBytes];
+    orcsdr::ft8::HeardDb::journal_header(header);
+    file.write(header, sizeof(header));
+  }
+  size_t written = 0;
+  while (count > 0) {
+    written += file.write(batch, count * orcsdr::ft8::kHeardRecordBytes);
+    count = g_heard_db.drain_dirty(batch, kBatchRecords);   // keep going until nothing is dirty (bounded by the table size)
+    if (written > 64u * 1024u) break;                       // at most 64 KB per pass so the main task is never held up
+  }
+  g_heard_journal_bytes = static_cast<uint32_t>(file.size());
+  file.close();
+}
+
+static bool ft8_heard_lookup(const char* callsign, orcsdr::ft8::HeardInfo* out) {
+  if (!g_heard_ready || out == nullptr) return false;
+  const orcsdr::ft8::HeardEntry* e = g_heard_db.find(callsign);
+  if (e == nullptr) return false;
+  *out = orcsdr::ft8::HeardInfo{};
+  std::memcpy(out->callsign, e->callsign, sizeof(out->callsign));
+  std::memcpy(out->grid, e->grid, sizeof(out->grid));
+  out->first_utc = e->first_utc;
+  out->last_utc = e->last_utc;
+  out->count = e->count;
+  out->band_mask = e->band_mask;
+  out->mode_mask = e->mode_mask;
+  out->best_snr = e->best_snr;
+  out->last_snr = e->last_snr;
+  out->snr_known = (e->flags & orcsdr::ft8::heard_flag_snr_known) != 0;
+  out->worked = (e->flags & orcsdr::ft8::heard_flag_worked) != 0;
+  return true;
+}
+
 void ft8_native_drain_pending() {
   static orcsdr::ft8::Decode local[32];   // static: the main task stack is shared with the screen draw (8 KB snapshots)
   size_t n = 0;
@@ -12842,9 +12979,11 @@ void ft8_native_drain_pending() {
   for (size_t i = 0; i < n; ++i) local[i] = g_ft8_pending[i];
   g_ft8_pending_count = 0;
   portEXIT_CRITICAL(&g_ft8_pending_lock);
+  for (size_t i = 0; i < n; ++i) heard_db_observe(local[i]);   // sets heard-before flags before the row is stored and logged
   for (size_t i = 0; i < n; ++i) g_ft8_store.append(local[i]);
   ft8_log_stage_rows(local, n);
   (void)ft8_log_flush(false);
+  heard_db_flush();
 }
 
 int ft8_native_current_gain_tenth_db();
@@ -13054,6 +13193,7 @@ void draw_ft8_dashboard(bool static_panel) {
   if (!static_panel && !orcsdr::screens::may_draw(orcsdr::screens::Id::ft8)) return;
   if (!static_panel) orcsdr::screens::note_visible_update(orcsdr::screens::Id::ft8);
   orcsdr::ft8::set_header_hook(draw_global_header_controls);
+  orcsdr::ft8::set_heard_lookup(ft8_heard_lookup);
   static orcsdr::ft8::Snapshot snapshot;
   ft8_dashboard_fill_snapshot(snapshot);
   if (static_panel || !orcsdr::ft8::active()) orcsdr::ft8::enter(snapshot);
@@ -20973,6 +21113,7 @@ void setup() {
     orcsdr::catalog::begin(g_sd_fs, sd_total_bytes() - orcsdr::storage::used_bytes());
     (void)orcsdr::offline_map::load(g_sd_fs);
     refresh_adsb_atc_preset();
+    heard_db_load_from_sd();   // stations-heard journal: replayed now, while internal DMA memory is free
   }
   boot_wifi_on_splash();
   begin_boot_device_staging();

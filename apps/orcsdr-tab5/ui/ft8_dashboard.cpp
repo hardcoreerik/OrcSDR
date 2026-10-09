@@ -60,6 +60,12 @@ bool g_tune_invalid = false;     // the last ENTER did not parse or was out of r
 bool g_info_open = false;
 size_t g_info_page = 0;
 bool g_mode_open = false;
+// Station popup: first/last heard etc. for one callsign, from the application's persistent table (HeardLookup).
+bool g_station_open = false;
+HeardInfo g_station{};
+HeardLookup g_heard_lookup = nullptr;
+constexpr Rect kStationPanel{240, 150, 800, 400};
+constexpr Rect kStationClose{800, 490, 220, 46};
 constexpr Rect kInfoBtn{804, 16, 48, 48};
 constexpr Rect kInfoPanel{140, 104, 1000, 512};
 constexpr Rect kInfoPrev{160, 556, 200, 46};
@@ -69,7 +75,7 @@ constexpr size_t kInfoLinesPerPage = 11;
 constexpr Rect kModeChip{246, 104, 150, 58};
 constexpr Rect kModePanel{246, 168, 540, 132};
 Rect mode_pick_rect(size_t i) { return {262 + static_cast<int>(i) * 172, 218, 164, 64}; }
-bool overlay_open() { return g_tune_open || g_info_open || g_mode_open; }
+bool overlay_open() { return g_tune_open || g_info_open || g_mode_open || g_station_open; }
 constexpr Rect kDialChip{24, 104, 212, 58};
 constexpr Rect kTunePanel{240, 104, 800, 512};
 constexpr Rect kTuneEntry{260, 168, 300, 46};
@@ -553,6 +559,10 @@ void draw_decodes() {
     if (!d) break;
     const int y = 246 + static_cast<int>(row) * 42;
     if (row & 1u) M5.Display.fillRect(34, y - 18, 1212, 36, 0x0821);
+    {   // heard-before colour bar: gold = a contact is logged, blue = heard on an earlier occasion, green = first time heard
+      const uint16_t bar = (d->flags & decode_flag_worked) ? kAmber : (d->flags & decode_flag_heard_before) ? 0x041F : (d->flags & decode_flag_new_station) ? kGreen : 0;
+      if (bar != 0) M5.Display.fillRect(34, y - 16, 6, 32, bar);
+    }
     char utc[16] = "--:--:--", item[20];
     format_utc(utc, sizeof(utc), d->utc_epoch);
     text(utc, x[0], y, TFT_WHITE, 1, middle_left);
@@ -1125,9 +1135,100 @@ void draw_info_panel() {
   button(kInfoClose, "CLOSE", false, true, 1);
 }
 
+// The up-to-eight unique callsigns the Heard tab lists, newest first (same walk as draw_heard).
+size_t heard_rows(const Decode* out[8]) {
+  size_t count = 0;
+  const size_t n = std::min(g_snapshot.decode_count, kDecodeCapacity);
+  for (size_t offset = 0; offset < n && count < 8; ++offset) {
+    const Decode* d = decode_newest(offset);
+    if (!d || !d->callsign[0]) continue;
+    bool duplicate = false;
+    for (size_t earlier = 0; earlier < count && !duplicate; ++earlier) duplicate = std::strcmp(out[earlier]->callsign, d->callsign) == 0;
+    if (!duplicate) out[count++] = d;
+  }
+  return count;
+}
+
+void format_utc_stamp(uint32_t epoch, char* out, size_t size) {
+  if (epoch == 0) {
+    std::snprintf(out, size, "--");
+    return;
+  }
+  const time_t t = static_cast<time_t>(epoch);
+  struct tm tm_utc{};
+  gmtime_r(&t, &tm_utc);
+  std::snprintf(out, size, "%04d-%02d-%02d  %02d:%02d UTC", tm_utc.tm_year + 1900, tm_utc.tm_mon + 1, tm_utc.tm_mday, tm_utc.tm_hour, tm_utc.tm_min);
+}
+
+void draw_station_panel() {
+  frame(kStationPanel, kCyan);
+  text(g_station.callsign, kStationPanel.x + 20, kStationPanel.y + 34, kGreen, 3, middle_left);
+  const char* status = g_station.worked ? "WORKED" : g_station.count > 1 ? "HEARD BEFORE" : "FIRST TIME HEARD";
+  text(status, kStationPanel.x + kStationPanel.w - 20, kStationPanel.y + 34, g_station.worked ? kAmber : g_station.count > 1 ? kCyan : kGreen, 1, middle_right);
+  M5.Display.drawFastHLine(kStationPanel.x + 16, kStationPanel.y + 64, kStationPanel.w - 32, kGrid);
+  char line[96], stamp[40];
+  int y = kStationPanel.y + 96;
+  const int x = kStationPanel.x + 24;
+  format_utc_stamp(g_station.first_utc, stamp, sizeof(stamp));
+  std::snprintf(line, sizeof(line), "FIRST HEARD   %s", stamp);
+  text(line, x, y, TFT_WHITE, 1, middle_left);
+  y += 34;
+  format_utc_stamp(g_station.last_utc, stamp, sizeof(stamp));
+  std::snprintf(line, sizeof(line), "LAST HEARD    %s", stamp);
+  text(line, x, y, TFT_WHITE, 1, middle_left);
+  y += 34;
+  std::snprintf(line, sizeof(line), "TIMES HEARD   %u", static_cast<unsigned>(g_station.count));
+  text(line, x, y, TFT_WHITE, 1, middle_left);
+  y += 34;
+  char bands[64] = "";
+  for (size_t i = 0; i < band_count() && i < 16; ++i)
+    if (g_station.band_mask & (1u << i)) {
+      const BandPreset* b = band(i);
+      if (b && std::strlen(bands) + std::strlen(b->label) + 2 < sizeof(bands)) {
+        if (bands[0]) std::strcat(bands, " ");
+        std::strcat(bands, b->label);
+      }
+    }
+  std::snprintf(line, sizeof(line), "BANDS         %s", bands[0] ? bands : "--");
+  text(line, x, y, TFT_WHITE, 1, middle_left);
+  y += 34;
+  char modes[40] = "";
+  for (uint8_t m = 0; m < 8; ++m)
+    if ((g_station.mode_mask & (1u << m)) && valid_mode(m)) {
+      const char* name = m == 0 ? "FT8" : m == 1 ? "FT4" : "JS8";
+      if (!std::strstr(modes, name)) {
+        if (modes[0]) std::strcat(modes, " ");
+        std::strcat(modes, name);
+      }
+    }
+  std::snprintf(line, sizeof(line), "MODES         %s", modes[0] ? modes : "--");
+  text(line, x, y, TFT_WHITE, 1, middle_left);
+  y += 34;
+  if (g_station.snr_known) std::snprintf(line, sizeof(line), "SNR           best %+d dB   last %+d dB", g_station.best_snr, g_station.last_snr);
+  else std::snprintf(line, sizeof(line), "SNR           not available");
+  text(line, x, y, TFT_WHITE, 1, middle_left);
+  y += 34;
+  std::snprintf(line, sizeof(line), "GRID          %s", g_station.grid[0] ? g_station.grid : "--");
+  text(line, x, y, TFT_WHITE, 1, middle_left);
+  button(kStationClose, "CLOSE", false, true, 1);
+}
+
+void open_station_popup(const char* callsign) {
+  if (g_heard_lookup == nullptr || callsign == nullptr || callsign[0] == 0) return;
+  HeardInfo info{};
+  if (!g_heard_lookup(callsign, &info)) return;
+  g_tune_open = false;
+  g_info_open = false;
+  g_mode_open = false;
+  g_station = info;
+  g_station_open = true;
+  draw_station_panel();
+}
+
 void draw_body(bool repaint_in_place = false);
 
 void open_info_panel() {
+  g_station_open = false;
   g_tune_open = false;
   g_mode_open = false;
   g_info_open = true;
@@ -1138,6 +1239,7 @@ void open_info_panel() {
 
 void close_overlays() {
   const bool was = overlay_open();
+  g_station_open = false;
   g_tune_open = false;
   g_info_open = false;
   g_mode_open = false;
@@ -1157,6 +1259,7 @@ void draw_mode_panel() {
 }
 
 void open_mode_panel() {
+  g_station_open = false;
   g_tune_open = false;
   g_info_open = false;
   g_mode_open = true;
@@ -1165,6 +1268,10 @@ void open_mode_panel() {
 
 // Returns true when the touch was handled by the open Info or Mode panel; *out carries any action it asks for.
 bool handle_overlay_touch(int32_t x, int32_t y, Action* out) {
+  if (g_station_open) {
+    close_overlays();   // any tap closes the station popup
+    return true;
+  }
   if (g_info_open) {
     if (hit(x, y, kInfoClose) || !hit(x, y, kInfoPanel)) {
       close_overlays();
@@ -1371,6 +1478,7 @@ void enter(const Snapshot& snapshot_value) {
   g_tune_open = false;
   g_info_open = false;
   g_mode_open = false;
+  g_station_open = false;
   g_tab = Tab::live;
   g_decode_page = 0;
   draw();
@@ -1398,7 +1506,7 @@ void update(const Snapshot& snapshot_value) {
                               previous.battery_percent != g_snapshot.battery_percent;
   if (tab_content_changed(g_tab, previous, g_snapshot) || header_changed) {
     if (header_changed) draw_header();
-    if (g_info_open || g_mode_open) return;   // a popup covers the body; closing it repaints everything
+    if (g_info_open || g_mode_open || g_station_open) return;   // a popup covers the body; closing it repaints everything
     if (g_tune_open) {   // the Tune panel covers the body: only its readout follows the receiver
       if (previous.dial_hz != g_snapshot.dial_hz) g_tune_target = g_snapshot.dial_hz;
       draw_tune_readout();
@@ -1456,7 +1564,7 @@ Action handle_touch(int32_t x, int32_t y) {
     else open_info_panel();
     return {};
   }
-  if (g_info_open || g_mode_open) {
+  if (g_info_open || g_mode_open || g_station_open) {
     if (y < kTabsY) {   // the popup owns the body; taps outside it dismiss it
       Action chosen{};
       (void)handle_overlay_touch(x, y, &chosen);
@@ -1464,6 +1572,7 @@ Action handle_touch(int32_t x, int32_t y) {
     }
     g_info_open = false;   // a tab tap closes the popup and switches tabs below
     g_mode_open = false;
+    g_station_open = false;
     draw_info_button();
   }
   if (g_tune_open) {
@@ -1537,6 +1646,25 @@ Action handle_touch(int32_t x, int32_t y) {
         return {};
       }
   }
+  if (g_tab == Tab::decodes && g_heard_lookup != nullptr) {   // tap a row to see what the device knows about that station
+    for (size_t row = 0; row < kDecodePageSize; ++row) {
+      const Rect r{34, 246 + static_cast<int>(row) * 42 - 21, 1212, 42};
+      if (!hit(x, y, r)) continue;
+      const Decode* d = decode_newest(g_decode_page * kDecodePageSize + row);
+      if (d != nullptr && d->callsign[0]) open_station_popup(d->callsign);
+      return {};
+    }
+  }
+  if (g_tab == Tab::heard && g_heard_lookup != nullptr) {
+    const Decode* rows[8];
+    const size_t count = heard_rows(rows);
+    for (size_t row = 0; row < count; ++row) {
+      const Rect r{34, 174 + static_cast<int>(row) * 52 - 22, 770, 44};
+      if (!hit(x, y, r)) continue;
+      open_station_popup(rows[row]->callsign);
+      return {};
+    }
+  }
   if (g_tab == Tab::decodes && hit(x, y, kNewer) && g_decode_page > 0) {
     --g_decode_page;
     draw_body(true);
@@ -1557,18 +1685,21 @@ void leave() {
   g_tune_open = false;
   g_info_open = false;
   g_mode_open = false;
+  g_station_open = false;
 }
 uint32_t tune_step_hz() { return tuning::kStepsHz[g_tune_step]; }
 bool active() { return g_active; }
 Tab tab() { return g_tab; }
 
 void set_header_hook(void (*draw_controls)()) { g_header_hook = draw_controls; }
+void set_heard_lookup(HeardLookup lookup) { g_heard_lookup = lookup; }
 
 void select_tab(Tab tab) {
   if (!g_active || tab >= Tab::count || tab == g_tab) return;
   g_tune_open = false;
   g_info_open = false;
   g_mode_open = false;
+  g_station_open = false;
   g_tab = tab;
   g_decode_page = 0;
   draw_body();

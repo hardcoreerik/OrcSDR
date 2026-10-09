@@ -33,6 +33,8 @@ enum DecodeFlags : uint16_t {
   decode_flag_hash_resolved = 1u << 1,   // a callsign was resolved from a receiver-side hash table
   decode_flag_multi_frame = 1u << 2,     // assembled from several frames
   decode_flag_snr_unavailable = 1u << 3, // the decoder has no calibrated SNR estimate: show a dash, never a number
+  decode_flag_heard_before = 1u << 5,    // this callsign is in the persistent stations-heard table from an earlier observation (set by the application)
+  decode_flag_worked = 1u << 6,          // ... and a contact with it has been logged
   decode_flag_new_station = 1u << 4,     // first time this callsign appears in the session store (set by DecodeStore::append)
 };
 
