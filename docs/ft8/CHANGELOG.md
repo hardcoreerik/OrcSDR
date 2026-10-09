@@ -1,5 +1,13 @@
 # FT8 Native Decoder Changelog
 
+## 2026-10-08 - JS8 source provenance gate (spec-only, no decoder changes)
+
+- New `docs/js8/PROTOCOL_SPEC.md` records preliminary documented and GPL-source-derived facts and identifies the verification gap explicitly. Branch `codex/js8-spec` starts from `claude/ft8-native-bind`. No decoding or firmware source was modified.
+- Source of real tone candidates: `docs/js8/results/2026-10-08-sample-40m-180s-002-front-end.json`, dataset commit `1705472`. Owner-provided hashes: WAV `93b48bef6a6799e0301d1459ee724759772f5e0ff8e83249337a82747c44a445`, IQ `6eff2c58b939422023fa69c0a7e2b3180f662767dacf451136e72aa834aca83f`. These bytes were not available to rehash locally.
+- Verification commands attempted: `git ls-remote https://github.com/js8call/js8call.git HEAD` FAILED (DNS); repository JSON candidate records were read through the GitHub connector. No local WAV/JS8 reference-CLI execution, parity/CRC check or message reconstruction was possible, so a stop gate was recorded rather than invented results.
+- Provenance: JS8Call public User Guide Technical Implementation; published `JS8.h` Costas array documentation and `JS8.cpp` protocol constants/CRC12. Exact source commit, line ranges, and all machine-readable FEC/message tables remain outstanding.
+
+
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
 ## 2026-10-08 - JS8 front end on the real over-the-air capture; evidence tool and bound results
