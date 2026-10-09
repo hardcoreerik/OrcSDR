@@ -1,0 +1,49 @@
+{
+  "schema": "orcsdr.js8.candidate-audit/1",
+  "dataset_commit": "1705472",
+  "wav_sha256": "93b48bef6a6799e0301d1459ee724759772f5e0ff8e83249337a82747c44a445",
+  "wav_sha256_verified": true,
+  "results": [
+    {
+      "ref": "K8IMT",
+      "hz": 487,
+      "candidates": 7,
+      "sync_blocks": [
+        7,
+        7,
+        7
+      ]
+    },
+    {
+      "ref": "WO7I",
+      "hz": 635,
+      "candidates": 5,
+      "sync_blocks": [
+        7,
+        7,
+        7
+      ]
+    },
+    {
+      "ref": "K7YXZ",
+      "hz": 838,
+      "candidates": 4,
+      "sync_blocks": [
+        0,
+        7,
+        7
+      ],
+      "holdout": true
+    },
+    {
+      "ref": "KD7WPQ",
+      "hz": 2604,
+      "candidates": 0,
+      "sync_blocks": null
+    }
+  ],
+  "fec": "NOT_TESTED",
+  "crc": "NOT_TESTED",
+  "message": "NOT_TESTED",
+  "notes": "Candidate assignments inherited from earlier ref_index classification. Sync findings alone do not establish a CRC-valid JS8 frame."
+}
