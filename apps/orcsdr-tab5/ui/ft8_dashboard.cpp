@@ -33,6 +33,9 @@ constexpr int kTabCount = 6;
 constexpr int kTabW = 1280 / kTabCount;
 constexpr Rect kBody{24, 104, 1232, 514};
 constexpr Rect kClear{1088, 556, 144, 46};
+constexpr Rect kNewer{760, 556, 150, 46};
+constexpr Rect kOlder{922, 556, 150, 46};
+constexpr size_t kDecodePageSize = 8;
 
 Snapshot g_snapshot{};
 bool g_active = false;
@@ -516,6 +519,14 @@ void draw_decodes() {
       text("--", x[7], y, kMuted, 1, middle_left);
       text("--", x[8], y, kMuted, 1, middle_left);
     }
+  }
+  {
+    const size_t pages = (g_snapshot.decode_count + kDecodePageSize - 1) / kDecodePageSize;
+    char page_text[32];
+    std::snprintf(page_text, sizeof(page_text), "PAGE %u/%u", static_cast<unsigned>(g_decode_page + 1), static_cast<unsigned>(pages ? pages : 1));
+    text(page_text, 640, 579, kMuted, 1, middle_center);
+    button(kNewer, "NEWER", false, g_decode_page > 0);
+    button(kOlder, "OLDER", false, (g_decode_page + 1) * kDecodePageSize < g_snapshot.decode_count);
   }
   button(kClear, "CLEAR");
 }
@@ -1002,6 +1013,26 @@ bool same_content(const Snapshot& a, const Snapshot& b) {
          std::memcmp(a.decodes, b.decodes, a.decode_count * sizeof(Decode)) == 0;
 }
 
+// Does the active tab show anything that changed? The slot counters, gain and candidate count change every slot; only the tabs that
+// display them may repaint for them (Live and Setup have their own partial paths).
+bool decodes_differ(const Snapshot& a, const Snapshot& b) {
+  return a.decode_count != b.decode_count || std::memcmp(a.decodes, b.decodes, b.decode_count * sizeof(Decode)) != 0;
+}
+bool station_differs(const Snapshot& a, const Snapshot& b) {
+  return a.station_known != b.station_known || a.station_latitude != b.station_latitude || a.station_longitude != b.station_longitude;
+}
+bool tab_content_changed(Tab tab, const Snapshot& a, const Snapshot& b) {
+  switch (tab) {
+    case Tab::decodes:
+      return decodes_differ(a, b) || station_differs(a, b) || a.clock_valid != b.clock_valid || a.decoder_state != b.decoder_state || a.mode != b.mode;
+    case Tab::map: return decodes_differ(a, b) || station_differs(a, b) || a.mode != b.mode || a.selected_band != b.selected_band;
+    case Tab::hunter:
+      return std::memcmp(&a.hunter, &b.hunter, sizeof(a.hunter)) != 0 || a.mode != b.mode || a.selected_band != b.selected_band;
+    case Tab::heard: return decodes_differ(a, b) || a.mode != b.mode;
+    default: return !same_content(a, b);
+  }
+}
+
 void ensure_sprite() {
   if (g_sprite_ready) return;
   g_dial.setPsram(true);
@@ -1034,7 +1065,7 @@ void update(const Snapshot& snapshot_value) {
                               previous.selected_band != g_snapshot.selected_band ||
                               previous.clock_valid != g_snapshot.clock_valid ||
                               previous.battery_percent != g_snapshot.battery_percent;
-  if (!same_content(previous, g_snapshot) || header_changed) {
+  if (tab_content_changed(g_tab, previous, g_snapshot) || header_changed) {
     if (header_changed) draw_header();
     // Live: status, counters and the latest-decodes list repaint alone; the waterfall and dial are not touched.
     if (g_tab == Tab::live && !same_content(previous, g_snapshot) && live_layout_same(previous, g_snapshot) ) {
@@ -1047,7 +1078,13 @@ void update(const Snapshot& snapshot_value) {
       else draw_body(true);
       return;
     }
-    if (!same_content(previous, g_snapshot)) draw_body((g_tab == Tab::map || g_tab == Tab::hunter || g_tab == Tab::heard) && previous.mode == g_snapshot.mode && previous.selected_band == g_snapshot.selected_band);
+    if (tab_content_changed(g_tab, previous, g_snapshot)) {
+      // Opaque-panel tabs repaint in place (no black blank) unless the mode or band changed under them.
+      const bool in_place = g_tab != Tab::live && g_tab != Tab::setup && previous.mode == g_snapshot.mode && previous.selected_band == g_snapshot.selected_band;
+      const size_t pages = (g_snapshot.decode_count + 7) / 8;
+      if (g_decode_page >= (pages ? pages : 1)) g_decode_page = pages ? pages - 1 : 0;
+      draw_body(in_place);
+    }
     return;
   }
   if (g_snapshot.utc_ms / 1000u != g_drawn_second) draw_utc();
@@ -1125,6 +1162,16 @@ Action handle_touch(int32_t x, int32_t y) {
         if (mode_available(mode) && mode != g_snapshot.mode) return {ActionKind::select_mode, static_cast<uint32_t>(mode)};
         return {};
       }
+  }
+  if (g_tab == Tab::decodes && hit(x, y, kNewer) && g_decode_page > 0) {
+    --g_decode_page;
+    draw_body(true);
+    return {};
+  }
+  if (g_tab == Tab::decodes && hit(x, y, kOlder) && (g_decode_page + 1) * kDecodePageSize < g_snapshot.decode_count) {
+    ++g_decode_page;
+    draw_body(true);
+    return {};
   }
   if (g_tab == Tab::decodes && hit(x, y, kClear))
     return {ActionKind::clear_decodes};
