@@ -2,6 +2,16 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 - JS8 Normal soft decoder: all four real stations decoded by our C++ code (milestones A-F on the host)
+
+- New: `js8_codec` (tone LLRs, syndrome, CRC-12, field split), `js8_message` (directed-frame HEARTBEAT SNR rendering), `js8_osd` (bounded ordered-statistics decoding, order <= 2, graph-derived generator),
+  `js8_decoder` (LLR -> hard check -> belief propagation -> OSD; message only with parity AND CRC-12), `js8_ldpc_graph.hpp` generated from `docs/js8/spec/js8_ldpc_174_87.json` by `tools/js8-spec/gen_ldpc_graph.py`.
+  The generic FEC engine edge limit is 8192 (JS8 rows are dense: 3920 edges). `js8_native_backend` now writes verified `Decode` records (no SNR number: the SNR in the message is the sender's report).
+- Real capture sample-40m-180s-002 (WAV SHA-256 93b48bef...), `tools/js8-wav-front --step 1 --log`, 166 windows, no reference positions: WO7I (syndrome 0, hard decision), K8IMT (syndrome 49, BP fails, OSD order 0, 15 corrections),
+  K7YXZ (held out, syndrome 38, BP 2 corrections), KD7WPQ (syndrome 10, BP 2 iterations); texts identical to the JS8Call references; no message from any other raw frame.
+- Gate calibration used synthetic data only: 0 false messages in 200000 noise-only trials with the 0.065 OSD discrepancy gate (4 in 63000 at 0.40); 191/200 synthetic frames decode where 0/200 have a clean raw hard decision.
+- Not done yet: P4 measurement and injection (milestone G), other frame types, multi-frame messages, controls on live noise.
+
 ## 2026-10-08 - JS8 front end: sub-bin refinement and alias resolution (all four real stations now reach a raw frame)
 
 - Cause analysis on the real 40 m capture (dataset 1705472): the 2604 Hz station's lowest tone is at 2602.5 Hz, between two 6.25 Hz search bins, so the coarse candidate lost most of the

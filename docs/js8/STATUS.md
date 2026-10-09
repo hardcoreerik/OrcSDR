@@ -1,5 +1,21 @@
 # JS8 decoder status
 
+## 2026-10-08 - milestone status (supersedes the older "no messages yet" notes below)
+
+| Milestone | Status | Evidence |
+|---|---|---|
+| A reproduce WO7I independently | DONE | `tools/js8-spec/verify_real_frames.py` (syndrome 0, CRC pass, "WO7I: ND7M HEARTBEAT SNR +11") |
+| B WO7I from our C++ decoder | DONE | `tools/js8-decode-wav`, `tools/js8-wav-front --log`; hard decision, 0 corrections |
+| C K8IMT (soft decisions + FEC) | DONE on host | syndrome 49 -> BP fails -> OSD order 0, 15 bit corrections, discrepancy 0.030 |
+| D K7YXZ (held out) | DONE on host | no threshold was tuned on it; BP, 2 corrections; sync hits 14/21 (the minimum) |
+| E KD7WPQ (acquisition) | DONE on host | found by refinement at 2603.1 Hz, 18/21 sync, BP 2 iterations |
+| F all four, zero false messages | DONE on host | 166 sliding windows, 23 raw frames, 4 distinct messages, no other message; 0 false in 200000 synthetic noise-only trials |
+| G ESP32-P4 injection | NOT DONE | needs build, flash (COM17) and injection of real WAV windows |
+
+Honest limits: one capture, one band, one frame type (directed HEARTBEAT SNR); the spec is from JS8Call source `main`, not proven identical to the reference CLI version; gating thresholds were set from synthetic data
+and checked, not re-fitted, on the real frames; K7YXZ has a truncated tail and decodes at the minimum sync hits.
+
+
 ## 2026-10-08 — slice 1
 
 Branch target: `claude/ft8-native-bind`.
