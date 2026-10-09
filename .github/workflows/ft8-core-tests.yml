@@ -9,6 +9,8 @@ on:
       - tests/js8_*
       - tests/ft8_ui_stubs/**
       - tools/test-ft8-review.sh
+      - tools/test-ft8-diagnostic.sh
+      - tools/ft8-native-diagnose.cpp
       - apps/orcsdr-tab5/ui/ft8_hunter.*
       - apps/orcsdr-tab5/ui/ft8_decoder_backend.*
       - orcdial/src/controller.hpp
@@ -31,6 +33,8 @@ on:
       - tests/js8_*
       - tests/ft8_ui_stubs/**
       - tools/test-ft8-review.sh
+      - tools/test-ft8-diagnostic.sh
+      - tools/ft8-native-diagnose.cpp
       - apps/orcsdr-tab5/ui/ft8_hunter.*
       - apps/orcsdr-tab5/ui/ft8_decoder_backend.*
       - orcdial/src/controller.hpp
@@ -56,6 +60,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Optimized and sanitizer tests
         run: bash tools/test-ft8.sh
+      - name: Production and diagnostic backend regressions
+        run: bash tools/test-ft8-diagnostic.sh
 
   dial-build:
     runs-on: ubuntu-latest

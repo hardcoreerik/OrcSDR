@@ -20,6 +20,10 @@ int main() {
   assert(b.begin_slot(1791440175000ull));
   assert(b.offer_audio(quiet.data(), 1000));
   assert(b.finish_slot(out, 4) == 0 && b.stats().slot_too_short);
+#ifdef ORCSDR_FT8_DIAG
+  assert(b.diag().coarse_count == 0 && b.diag().refined_count == 0);
+  assert(b.diag().buffered_samples == 1000);
+#endif
   // An incomplete slot is skipped, never reported as a quiet decode.
   assert(b.begin_slot(1791440190000ull));
   assert(b.offer_audio(quiet.data(), quiet.size()));

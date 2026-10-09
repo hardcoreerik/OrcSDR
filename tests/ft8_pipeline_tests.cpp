@@ -238,11 +238,17 @@ void test_try_candidate_names_the_stage_that_dropped_a_candidate() {
   assert(run(orcsdr::ft8::codec::append_crc(payload), start_row, &trace) == Outcome::accepted);
   assert(trace.ldpc_converged && trace.crc_ok);
 
+#ifdef ORCSDR_FT8_DIAG
+  assert(trace.message == orcsdr::ft8::codec::append_crc(payload));
+#endif
   auto contest = payload;
   put_bits(&contest, 74, 3, 4);  // an unsupported message family: CRC-valid but not unpacked
   assert(run(orcsdr::ft8::codec::append_crc(contest), start_row, &trace) == Outcome::unpack_unsupported);
   assert(trace.ldpc_converged && trace.crc_ok);
 
+#ifdef ORCSDR_FT8_DIAG
+  assert(trace.message == orcsdr::ft8::codec::append_crc(contest));
+#endif
   auto bad_crc = orcsdr::ft8::codec::append_crc(payload);
   bad_crc[bad_crc.size() - 1] ^= 1u;  // a valid LDPC codeword whose CRC-14 is wrong
   assert(run(bad_crc, start_row, &trace) == Outcome::crc_failed);
