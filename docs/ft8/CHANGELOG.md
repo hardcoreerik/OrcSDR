@@ -2,6 +2,20 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 - FT8/FT4/JS8 dashboard: expert tuning, gain control, information popups, stations heard (Tab5 + optional OrcDial)
+
+- **Expert tuning** (Setup checkbox, off by default; Auto keeps the band table): tap the Live DIAL chip for a Tune panel with a 12-key MHz keypad, six step sizes (10 Hz to 100 kHz), -/+ one and ten steps, and AUTO. The receiver's own limits still decide
+  (`validate_rtl_tune_frequency`); a custom dial is dropped on any band or mode change. Pure arithmetic in `ft8_tuning` (host-tested). Touch works alone.
+- **Receiver gain** (Live GAIN chip): AUTO or a manual step over the driver's gain table, with a live input-level and clipping meter and plain advice. Fixes the chip reading only the AM smart-auto flag, which showed MAN on HF while the tuner AGC was in control.
+- **Information popups**: an (i) button in the header opens a plain-language page for Live, Decodes, Map, Hunter, Heard and Setup (text specific to FT8, FT4 or JS8CALL); text lives in `ft8_info_text` and is host-tested for fit and consistency.
+- **Setup**: one FT8 / FT4 / JS8CALL button each (JS8 speeds as chips; only Normal enabled via the new `decoder_cap_js8_normal`), per-standard parameter rows, and the Live MODE chip opens a quick switcher.
+- **Stations heard**: persistent table (`ft8_heard_db`, PSRAM, 40-byte CRC-checked journal replayed at boot from `/orcsdr/ft8/heard.journal`); Decodes rows get a green/blue/gold bar (first time / heard before / worked) and tapping a row shows first and last heard, count, bands, modes, SNR and grid. Nothing leaves the device.
+- **Decodes** are paged (NEWER/OLDER). Repaints are gated per tab and the header ignores battery wobble, so idle screens no longer flicker (the repaint log `ORC_FT8_UI` records each repaint kind).
+- **OrcDial (optional)**: with expert tuning on, a centre tap switches the knob between band selection and fine tuning; the Dial shows a large frequency and the step size while fine tuning. Additive capability bits and an appended `ft8_fine` action; an older Dial keeps working and the Tab5 never needs a Dial.
+- **JS8 decoder speed**: tone energies are measured once per candidate and reused; OSD candidates are screened by CRC linearity first. Results unchanged (four reference stations, 191/200 synthetic, 0 false in 200000 noise-only trials).
+- **Live soak** (40 m, 7.078 MHz, 61 min, V4 + MLA/GA antenna of the day): 51 JS8 messages from 7 stations, all also spotted on PSK Reporter, no false messages; per-frame device log and analysis in `docs/js8/results/2026-10-08-soak-40m-60min/`.
+- Not done: JS8 heartbeat/CQ frames (layout unverified), FT4/JS8 hunts, contest message types, P4 timing after the energy-reuse change, the opt-in PSK Reporter upload.
+
 ## 2026-10-08 - JS8 Normal soft decoder: all four real stations decoded by our C++ code (milestones A-F on the host)
 
 - New: `js8_codec` (tone LLRs, syndrome, CRC-12, field split), `js8_message` (directed-frame HEARTBEAT SNR rendering), `js8_osd` (bounded ordered-statistics decoding, order <= 2, graph-derived generator),
