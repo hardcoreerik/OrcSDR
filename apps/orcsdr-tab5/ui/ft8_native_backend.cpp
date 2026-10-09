@@ -156,6 +156,10 @@ bool Backend::offer_audio(const int16_t* samples, size_t count) {
 
 size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool incomplete) {
   stats_ = Stats{};
+#ifdef ORCSDR_FT8_DIAG
+  diag_ = Diag{};
+  diag_.buffered_samples = filled_;
+#endif
   if (!slot_open_ || output == nullptr || capacity == 0) return 0;
   slot_open_ = false;
   if (incomplete) return 0;
@@ -271,9 +275,9 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
     lc.score = r.score;
     pipeline::FrameResult frame{};
     ++gated;
+#ifdef ORCSDR_FT8_DIAG
     pipeline::CandidateTrace trace{};
     const pipeline::Outcome outcome = pipeline::try_candidate(p, fine, fine_geometry, lc, pipe, workspace_, &frame, &trace);
-#ifdef ORCSDR_FT8_DIAG
     if (i < diag_.refined_count) {
       DiagRefined& d = diag_.refined[i];
       d.outcome = static_cast<int8_t>(outcome);
@@ -282,6 +286,8 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
       d.crc_ok = trace.crc_ok;
       d.message = trace.message;
     }
+#else
+    const pipeline::Outcome outcome = pipeline::try_candidate(p, fine, fine_geometry, lc, pipe, workspace_, &frame, nullptr);
 #endif
     if (outcome != pipeline::Outcome::accepted) continue;
 

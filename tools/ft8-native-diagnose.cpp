@@ -47,6 +47,16 @@ std::string normalize(const std::string& in) {
   return out;
 }
 
+std::string json_escape(const std::string& in) {
+  std::string out;
+  for (unsigned char c : in) {
+    if (c == '"' || c == '\\') { out += '\\'; out += static_cast<char>(c); }
+    else if (c < 32) { char escaped[7]; std::snprintf(escaped, sizeof(escaped), "\\u%04x", c); out += escaped; }
+    else out += static_cast<char>(c);
+  }
+  return out;
+}
+
 const char* outcome_name(int outcome) {
   switch (outcome) {
     case 0: return "soft demod failed";
@@ -78,6 +88,7 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "usage: %s <wav> <ft8|ft4> --ref FILE [--k N] [--gate N] [--min-score X] [--lead-ms N] [--json]\n", argv[0]);
     return 2;
   }
+  if (std::strcmp(argv[2], "ft8") != 0 && std::strcmp(argv[2], "ft4") != 0) return 2;
   const bool ft4 = std::strcmp(argv[2], "ft4") == 0;
   std::string ref_path;
   int k = 64, gate = 32, lead_ms = 0;
@@ -93,15 +104,17 @@ int main(int argc, char** argv) {
     else if (a == "--json") json = true;
     else return 2;
   }
+  if (ref_path.empty() || k < 1 || k > 64 || gate < 1 || gate > 64 || lead_ms < 0 || lead_ms > 15000 || !std::isfinite(min_score) || min_score < 0 || min_score > 1) return 2;
   std::vector<Reference> refs;
   {
     std::ifstream file(ref_path);
+    if (!file) { std::fprintf(stderr, "cannot open reference file\n"); return 2; }
     std::string line;
     while (std::getline(file, line)) {
       if (line.empty() || line[0] == '#') continue;
       std::istringstream in(line);
       Reference r;
-      in >> r.hz >> r.dt;
+      if (!(in >> r.hz >> r.dt) || !std::isfinite(r.hz) || !std::isfinite(r.dt)) return 2;
       std::getline(in, r.text);
       r.text = normalize(r.text);
       if (!r.text.empty()) refs.push_back(r);
@@ -187,9 +200,9 @@ int main(int argc, char** argv) {
       stage = "window";
       std::snprintf(verdict, sizeof(verdict), "the frame starts %.2f s BEFORE the recording/slot buffer (first %d symbols cut off); the search only considers frames that fit inside the buffer",
                     -frame_start, static_cast<int>(std::ceil(-frame_start / symbol_s)));
-    } else if (frame_start + frame_s > buffered_s + 0.001) {
+    } else if (frame_start + lead_s + frame_s > buffered_s + 0.001) {
       stage = "window";
-      std::snprintf(verdict, sizeof(verdict), "the frame ends %.2f s after the buffer", frame_start + frame_s - buffered_s);
+      std::snprintf(verdict, sizeof(verdict), "the frame ends %.2f s after the buffer", frame_start + lead_s + frame_s - buffered_s);
     } else if (near_coarse == nullptr) {
       stage = "coarse_sync";
       std::snprintf(verdict, sizeof(verdict), "no coarse sync candidate within %.1f Hz / %.2f s", 1.5 * spacing_hz, 2.0 * tol_s);
@@ -208,7 +221,7 @@ int main(int argc, char** argv) {
       std::snprintf(verdict, sizeof(verdict), "refined candidate #%d score %.2f: %s%s", refined_rank + 1, static_cast<double>(near_refined->score), outcome_name(o), extra);
     }
     if (json) {
-      std::printf("%s{\"hz\":%.0f,\"dt\":%.1f,\"message\":\"%s\",\"stage\":\"%s\",\"overlap\":%d,\"detail\":\"%s\"}", first ? "" : ",", ref.hz, ref.dt, ref.text.c_str(), stage, overlap, verdict);
+      std::printf("%s{\"hz\":%.0f,\"dt\":%.1f,\"message\":\"%s\",\"stage\":\"%s\",\"overlap\":%d,\"detail\":\"%s\"}", first ? "" : ",", ref.hz, ref.dt, json_escape(ref.text).c_str(), stage, overlap, json_escape(verdict).c_str());
     } else {
       std::printf("%-8s %6.0f Hz dt %+.1f %-26s %s%s\n", stage, ref.hz, ref.dt, ref.text.c_str(), verdict, overlap ? "  [overlaps another reference]" : "");
     }

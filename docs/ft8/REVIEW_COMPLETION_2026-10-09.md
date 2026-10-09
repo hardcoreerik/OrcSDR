@@ -44,3 +44,9 @@ PSK Reporter establishes band activity only. The earlier live soak is not an exa
 ## PR #172 integration
 
 Most source files are identical; differences in sync scoring, SNR, WAV tools and test runner are later improvements in #176 and must be retained. Carry forward the missing external-WAV validation workflow and research links. Fold native-decoder path coverage into the existing FT8 workflow instead of adding a duplicate full-suite job. Keep the reference and host tests on the same downloaded WAV. No stale decoder branch merge or source rollback is needed.
+
+## Final worktree audit
+
+Claude's parity worktree contained commit `12428c4`, a diagnostic tool not included in the original PR branches. It is now integrated through reopened PR #172, based on current main. The diagnostics and CRC-valid trace payload compile only with `ORCSDR_FT8_DIAG`; production keeps its original candidate call. Skipped/short slots clear diagnostic state, invalid CLI arguments are rejected, and JSON escapes reference strings. `wsl bash tools/test-ft8-diagnostic.sh` checks production, diagnostic and ASan/UBSan paths, accepted and unsupported CRC-valid payload traces, skipped slots, JSON and invalid arguments.
+
+The dirty WAV detail-print change in the decoder worktree is already present on main and remains preserved in that worktree. The owner-captured JS8 corpus stays committed locally at `1705472`, following the owner's local-dataset instruction; it is not part of this firmware merge or uploaded to GitHub.

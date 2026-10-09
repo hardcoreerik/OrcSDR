@@ -57,9 +57,11 @@ struct CandidateTrace {
   uint8_t ldpc_iterations = 0;
   bool ldpc_converged = false;
   bool crc_ok = false;
+#ifdef ORCSDR_FT8_DIAG
   // The CRC-valid 91-bit message as decoded (for FT4, before the payload XOR is undone). Kept even when the message type is not
   // understood, so an unsupported format is never mistaken for an RF failure.
   orcsdr::ft8::codec::MessageBits message{};
+#endif
 };
 
 // Runs ONE candidate through soft demod -> LDPC -> CRC -> FT4 payload restoration -> message unpack -> plausibility and

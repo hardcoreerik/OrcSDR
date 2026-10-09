@@ -58,7 +58,9 @@ Outcome try_candidate(const ModeProfile& profile, const sync::EnergyGrid& grid,
   seen.ldpc_converged = true;
   if (!orcsdr::ft8::codec::crc_valid(decoded.message)) return Outcome::crc_failed;
   seen.crc_ok = true;
+#ifdef ORCSDR_FT8_DIAG
   seen.message = decoded.message;
+#endif
 
   orcsdr::ft8::codec::PayloadBits payload{};
   std::copy_n(decoded.message.begin(), payload.size(), payload.begin());
