@@ -7,6 +7,7 @@
 namespace orcsdr::js8::fec {
 
 constexpr size_t kMaxVariables = 174;
+constexpr size_t kMaxEdges = 8192;   // the JS8 LDPC(174,87) parity rows are dense: 3920 edges
 
 struct Graph {
   uint16_t variable_count = 0;

@@ -65,16 +65,16 @@ bool graph_valid(const Graph& graph) {
     if (graph.variable_offsets[variable] > graph.variable_offsets[variable + 1])
       return false;
 
-  std::array<uint8_t, 1024> seen{};
-  if (graph.edge_count > seen.size()) return false;
+  if (graph.edge_count > kMaxEdges) return false;
+  std::array<uint8_t, kMaxEdges / 8> seen{};   // one bit per edge
 
   for (size_t edge = 0; edge < graph.edge_count; ++edge)
     if (graph.check_variables[edge] >= graph.variable_count) return false;
 
   for (size_t pos = 0; pos < graph.edge_count; ++pos) {
     const uint16_t edge = graph.variable_edges[pos];
-    if (edge >= graph.edge_count || seen[edge] != 0) return false;
-    seen[edge] = 1;
+    if (edge >= graph.edge_count || ((seen[edge >> 3] >> (edge & 7u)) & 1u) != 0) return false;
+    seen[edge >> 3] = static_cast<uint8_t>(seen[edge >> 3] | (1u << (edge & 7u)));
   }
 
   for (size_t variable = 0; variable < graph.variable_count; ++variable) {
