@@ -86,8 +86,9 @@ complete demodulation modes.
   the existing production demodulator.
 
 Receiver profiles are selected inside the single driver API. Blog V4 is the
-tested baseline; Blog V3/V3C and Nooelec profiles exist with experimental
-evidence boundaries. V4L and arbitrary RTL2832 receivers are not accepted by
+tested baseline; Blog V3/V3C profiles exist with experimental evidence
+boundaries, and the Nooelec NESDR SMArt V5 profile is RF-Verified at 24 MHz and
+above (v0.3.0-beta.2). V4L and arbitrary RTL2832 receivers are not accepted by
 inference.
 
 ## Wi-Fi, catalog, and LAN console

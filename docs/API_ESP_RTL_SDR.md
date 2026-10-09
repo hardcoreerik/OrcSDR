@@ -14,7 +14,7 @@ commit `31a159df4f006a837d5041029bc6d1bc63520234`. The same SHA is recorded in
 | RTL-SDR Blog V4 | RF-Verified tested baseline. |
 | RTL-SDR Blog V3C | RF-Verified/Experimental on one RC4 unit for detection, startup, streaming, FM/RDS, retune, hotplug, and USB/battery boot; gain and sensitivity remain provisional. |
 | Earlier Blog V3 variants | Implemented/Experimental; V3C evidence does not establish broad compatibility. |
-| Nooelec NESDR SMArt V5 | Implemented/Experimental; detection/streaming provisional and repeatable RF Not Verified. |
+| Nooelec NESDR SMArt V5 | RF-Verified/tested at 24 MHz and above (v0.3.0-beta.2 band-select and replug tests); no HF route below 24 MHz. |
 | Blog V4L | Not Verified; no explicit acceptance evidence. |
 | Other receivers | Unsupported/Not Verified unless a named profile and evidence are added. |
 
