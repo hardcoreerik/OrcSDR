@@ -50,8 +50,15 @@ jobs:
             last=$(jq -r '.commit // ""' "$RUNNER_TEMP/bi.json")
           fi
           build=true; why="main changed"
-          if [ "$ahead" = 0 ]; then build=false; why="main is exactly $base (theorc.dev shows 'same as release')"; fi
-          if [ "$sha" = "$last" ]; then build=false; why="main unchanged since the last nightly"; fi
+          if [ "$ahead" = 0 ]; then build=false; why="main is exactly $base (theorc.dev shows 'same as release')"
+          elif [ "$sha" = "$last" ]; then build=false; why="main unchanged since the last nightly"
+          elif [ -n "$last" ] && git cat-file -e "$last^{commit}" 2>/dev/null; then
+            # Docs and CI only (*.md, docs/, LICENSE, top-level dotfiles but .gitattributes/.gitmodules, .github/ except this workflow)
+            # don't change the firmware. tools/ci/ and this file still build: they change how the image is made.
+            fw=$(git diff --name-only "$last" "$sha" | awk '!/^docs\// && !/\.md$/ && !/^LICENSE$/ && (!/^\.[^\/]+$/ || /^\.git(attributes|modules)$/) &&
+                 !(/^\.github\// && $0 != ".github/workflows/firmware-nightly.yml")')
+            if [ -z "$fw" ]; then build=false; why="only docs/CI changed since the last nightly ${last:0:7}"; fi
+          fi
           if [ "$FORCE" = true ]; then build=true; why="forced"; fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "build=$build" >> "$GITHUB_OUTPUT"
