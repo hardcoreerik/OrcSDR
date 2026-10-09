@@ -62,8 +62,9 @@ UI. Keep 512/2400 baud at host-tested status until live RF evidence exists.
 
 ### Expand receiver acceptance
 
-Collect repeatable, versioned evidence for earlier Blog V3 variants, Nooelec
-NESDR SMArt V5 RF reception, Blog V4L, and other explicitly selected devices.
+Collect repeatable, versioned evidence for earlier Blog V3 variants, Blog V4L,
+and other explicitly selected devices (the Nooelec NESDR SMArt V5 is tested at
+24 MHz and above as of v0.3.0-beta.2).
 Do not generalize the single V3C result or infer compatibility from detection.
 
 ### Improve Wi-Fi/radio coexistence

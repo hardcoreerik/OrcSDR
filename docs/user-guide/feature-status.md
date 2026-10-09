@@ -21,7 +21,7 @@ apply to later source snapshots.
 | POCSAG | **RF-Verified at 1200 / Regression-Tested** | `TEST`, CAPCODE 1234560, and Flipper cross-check. 512/2400 are host-tested only; persistence/searchable archive is Not Implemented. |
 | RF Lab / RF Visualizer | **Implemented / Regression-Tested** | Integrated self-check/regression tooling; not RF calibration proof. |
 | Wi-Fi analysis | **Implemented / Hardware-Verified / Experimental** | Real AP survey through ESP-Hosted 3.0.6; Wi-Fi and catalog I/O pause active reception. |
-| Receiver profiles | **Evidence varies** | Blog V4 baseline; V3C RF-Verified/Experimental; earlier V3 and Nooelec provisional; V4L and generic receivers Not Verified. |
+| Receiver profiles | **Evidence varies** | Blog V4 baseline; V3C RF-Verified/Experimental; Nooelec NESDR SMArt V5 tested at 24 MHz and above; earlier V3 provisional; V4L and generic receivers Not Verified. |
 | Global Settings | **Implemented / Hardware-Verified** | Wi-Fi, radio defaults, storage, display/audio, catalog, and Companion controls. |
 | LAN console | **Implemented / Experimental** | Opt-in read/write HTTP surface; tune/audio/navigation controls, no TLS or authentication. Trusted LAN only. |
 | Android TV | **Implemented / Experimental** | LAN client; Tab5 remains the receiver. |

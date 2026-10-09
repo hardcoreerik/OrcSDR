@@ -61,7 +61,7 @@ override this document for current state. Future work belongs in
 | RTL-SDR Blog V4 | **RF-Verified / tested baseline** | Primary release receiver. |
 | RTL-SDR Blog V3C | **RF-Verified / Experimental** | One V3C passed RC4 detection, initialization, streaming, FM/RDS, retune, hotplug, and USB/battery boot, and on 2026-09-28 the live tuner-bandwidth cycle (see below). Gain and sensitivity comparisons remain provisional. |
 | Earlier RTL-SDR Blog V3 variants | **Implemented / Experimental** | Profile exists; the V3C result is not a blanket earlier-V3 compatibility claim. |
-| Nooelec NESDR SMArt V5 | **Implemented / Experimental** | Detection and streaming are provisional; repeatable RF reception is Not Verified. |
+| Nooelec NESDR SMArt V5 | **RF-Verified / tested** | Owner-tested on the Tab5 to the same level as the V3c, V4 and V4L; v0.3.0-beta.2 testing on development images built from the driver commits that became esp_rtl_sdr v0.9.3: 453.925 MHz about 46 dB over noise with FM unchanged, five unplug/replug cycles. 24 MHz and above only; no HF/AM below 24 MHz (no direct sampling or upconverter route, and external upconverters such as the Ham It Up are not supported yet). |
 | RTL-SDR Blog V4L | **Hardware-Verified / Experimental** | One V4L was recognised and streamed FM at 96.1 MHz on the owner Tab5 and passed the live tuner-bandwidth cycle (hot-swapped in from a V3c session, and after unplug/replug) on 2026-09-28; on the installed v0.3.0-beta.1 package two V4L cold boots with the dongle attached kept the carrier within 3.7 kHz, except that the first read -6.2 and -7.8 kHz at 200k and 300k (start-up -3.4 kHz); the second cold boot did not repeat it and the cause of the first is not established. Its other behaviour is bounded to the driver's dated evidence and is not otherwise claimed here. |
 | Other receivers | **Unsupported / Not Verified** | Generic RTL2832 compatibility is not claimed. |
 
@@ -115,7 +115,7 @@ behavior, release-package installation, or long-duration soak behavior.
 - Current `main` is source-reviewed at the snapshot above. Hardware evidence applies to the exact
   packages and builds named in each row and in the dated reports, not automatically to later commits.
 - Post-RC4 receiver-recovery behavior, current M5Burner search visibility, V4L
-  behaviour beyond the tuner-bandwidth cycle, broad earlier-V3 support, repeatable Nooelec RF, and long current-main soak are
+  behaviour beyond the tuner-bandwidth cycle, broad earlier-V3 support, Nooelec reception below 24 MHz, and long current-main soak are
   Not Verified from committed public evidence.
 - Shortwave, Airband, Marine, Satellite, and CB do not have broad current-release
   RF acceptance. P25 Phase II voice/audio is Not Implemented.
