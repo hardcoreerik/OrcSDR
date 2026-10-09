@@ -1,5 +1,15 @@
 # FT8 Native Decoder Changelog
 
+## 2026-10-08 — JS8 independent specification: four artifacts and first end-to-end real frame
+
+- Created `docs/js8/spec/js8_ldpc_174_87.json`: full 87-row sparse parity-check graph (174 columns), parity-first codeword order. Source-derived numerical protocol facts from GPLv3 `js8call/js8call:JS8.cpp`, blob `b19aa96c6ad000e26a24074692cd3633317063e8`. Matrix was converted to independent `H=[I|P]` check equations, not copied implementation source.
+- Created `js8_tone_map.json`, `js8_crc12.json`, `js8_message_formats.json` with exact Normal 79-symbol geometry, natural-binary 3-bit tone labels, MSB-first ordering, CRC-12 polynomial `0xC06` augmented over 88 padded bits with final XOR `0x02A`, and 72-bit character/frame-type layout. Directed frame fields further verified with `varicode.cpp` numeric layouts, GPLv3 blob `8205a575993f305142f64a034bf6295b8da47a8f`.
+- Tested 16 saved real tone candidates from `docs/js8/results/2026-10-08-sample-40m-180s-002-front-end.json`, dataset `1705472`, WAV SHA256 `93b48bef6a6799e0301d1459ee724759772f5e0ff8e83249337a82747c44a445`. **Exactly one** candidate has zero LDPC parity-check violations and passing CRC-12: 637.5 Hz, reference index 0, start sample 112320, 21/21 sync; no correction necessary. Others do not pass hard-bit parity/CRC and require genuine FEC correction; 2604 Hz has no raw-tone candidate.
+- Verified the 12-character inner payload `UvnVIpm34Fqg`, frame type 3, source packed 28-bit number 231616421 -> `WO7I`, destination 165681287 -> `ND7M`, command 29 -> `HEARTBEAT SNR`, extra 42 -> `+11`. First independently reconstructed real frame: **WO7I: ND7M HEARTBEAT SNR +11**.
+- Reproduction from repository checkout: `python3 tools/js8-spec/verify_real_frames.py docs/js8/spec/js8_ldpc_174_87.json docs/js8/results/2026-10-08-sample-40m-180s-002-front-end.json`. Explicitly tests known WO7I values; no JS8 GPL algorithm code copied.
+- Limitations: the public current `main` source used for values has not been proven identical to installed 2.2.0/3.0.3 decoder builds. Only one real frame verifies fully. Other frame types, callsign exceptional forms and multiframe reassembly need more independently validated samples. Do not claim four-frame parity.
+
+
 ## 2026-10-08 - JS8 candidate block-level diagnostic (spec branch only)
 
 - Host-only `tools/js8-spec/candidate_diagnostics.py`, and machine-readable `docs/js8/spec/candidate-diagnostics-summary.json`. No decoder or firmware changes.
