@@ -1,0 +1,12 @@
+{
+  "wav_sha256":"93b48bef6a6799e0301d1459ee724759772f5e0ff8e83249337a82747c44a445",
+  "wav_hash_matches":true,
+  "raw_iq_sha256":"6eff2c58b939422023fa69c0a7e2b3180f662767dacf451136e72aa834aca83f",
+  "reference_binary_sha256":"663106a640f931491bda359c0377f81a3b1b4553eb52fcf14ee851f9a56355e8",
+  "candidate_rows":16,
+  "reference_messages":4,
+  "best_candidates":[{"reference":"WO7I","frequency_hz":637.5,"sync_hits":21},{"reference":"K8IMT","frequency_hz":487.5,"sync_hits":21},{"reference":"K7YXZ (held out)","frequency_hz":837.5,"sync_hits":14},{"reference":"KD7WPQ","status":"NO_RAW_TONES"}],
+  "parity":"NOT_TESTED","crc":"NOT_TESTED","text":"NOT_TESTED",
+  "reference_cli_attempt":"FAILED: libicui18n.so.74 missing from packaged runtime",
+  "status":"PHYSICAL_TONE_STAGE_ONLY"
+}
