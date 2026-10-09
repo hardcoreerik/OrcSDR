@@ -22,7 +22,12 @@
     "crc12_pass": true,
     "frame_type": 3,
     "inner_payload": "UvnVIpm34Fqg",
-    "rendered_heartbeat": "NOT_YET_VERIFIED"
+    "rendered_heartbeat": "WO7I: ND7M HEARTBEAT SNR +11",
+    "application_layer_verified": true,
+    "callsign_source": "WO7I",
+    "callsign_destination": "ND7M",
+    "directed_command_number": 29,
+    "snr_payload_number": 11
   },
   "held_out": {
     "reference_station": "K7YXZ",
@@ -34,8 +39,8 @@
   "caveats": [
     "Stored tone observations are already hard decisions and may contain errors",
     "Only WO7I verifies without error correction; others need soft FEC",
-    "No full JS8 application-layer decoding or heartbeat text recovered",
-    "Source branch main has not been pinned to reference CLI version"
+    "Source branch main has not been pinned to reference CLI version",
+    "Full message decoder parity not established: only one directed frame has been checked; other message families remain unverified"
   ],
   "verifier": "tools/js8-spec/verify_real_frames.py"
 }
