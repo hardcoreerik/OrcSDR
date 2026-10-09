@@ -18,12 +18,11 @@ namespace orcsdr::js8::native {
 //
 // What it does today: buffer one slot of 12 kS/s USB audio, build the time/frequency energy grid with the proven mixed-radix
 // FFT (one 1920-point transform per half symbol, bins on the 6.25 Hz tone spacing), run the bounded JS8 sync search, and
-// demodulate each candidate to a raw 79-tone frame. That is where it stops.
+// demodulate each candidate to a raw 79-tone frame, then run parity, CRC-12 and the supported message parser.
 //
 // TRUTH BOUNDARY: a sync candidate or a raw tone frame is evidence of a JS8-like transmission, not a message. The tone-to-bit
-// mapping, the FEC graph, the CRC and the frame parser have not yet been accepted from the real capture corpus, so finish_slot()
-// returns ZERO Decode records. The acceptance layer (FEC -> CRC -> supported frame parser) attaches after the raw-frame stage
-// in finish_slot(); nothing user-visible may be produced before it exists. Receive only: no transmit path of any kind.
+// mapping, FEC, CRC and supported frame parser must all succeed before finish_slot() returns a Decode record. Only directed
+// HEARTBEAT SNR messages are rendered today. Receive only: no transmit path of any kind.
 //
 // Only Normal has an independently established sync pattern. Other submodes are refused by begin() and set_submode(); the
 // backend never falls back from one submode to another.

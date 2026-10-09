@@ -42,6 +42,8 @@ int main() {
   CHECK(joined(Topic::setup_js8).find("LDPC(174,87)") != std::string::npos && joined(Topic::setup_js8).find("12-bit CRC") != std::string::npos);
   CHECK(joined(Topic::setup_js8).find("NORMAL works today") != std::string::npos);
   CHECK(joined(Topic::hunter).find("FT4 and JS8 hunts are not available") != std::string::npos);
+  CHECK(joined(Topic::hunter).find("6 seconds") != std::string::npos);
+  CHECK(joined(Topic::setup_ft4).find("105 symbols including ramps") != std::string::npos);
 
   if (failures == 0) std::printf("ft8_info_text_tests OK (%zu lines)\n", total_lines);
   return failures == 0 ? 0 : 1;

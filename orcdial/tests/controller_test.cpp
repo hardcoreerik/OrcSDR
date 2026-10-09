@@ -5,6 +5,9 @@
 using namespace orc;
 static Action turn(Dashboard d, uint8_t view=0) { return rotate(d, view, Focus::vfo, 1, 5, 100000); }
 int main() {
+  assert(coalescible_action(ActionKind::ft8_band));
+  assert(coalescible_action(ActionKind::ft8_item));
+  assert(!coalescible_action(ActionKind::ft8_fine));
   assert(turn(Dashboard::fm).kind == ActionKind::tune && turn(Dashboard::fm).value == 500000);
   assert(turn(Dashboard::am).kind == ActionKind::tune);
   assert(turn(Dashboard::rf_lab).kind == ActionKind::tune);

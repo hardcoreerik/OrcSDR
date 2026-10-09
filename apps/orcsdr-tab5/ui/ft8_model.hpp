@@ -73,6 +73,9 @@ struct Decode {
   // Appended after the original fields so existing positional initialisation keeps working.
   DigitalMode mode = DigitalMode::ft8;
   uint16_t flags = decode_flag_none;
+  // RF context of the captured slot, frozen before decoding (not the dial when the UI drains results).
+  uint32_t dial_hz = 0;
+  uint8_t band_index = 255;
 };
 
 struct GeoPoint {

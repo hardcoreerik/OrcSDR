@@ -580,7 +580,7 @@ static void ft8_screen(lgfx::LGFXBase& d, const RadioState& state,
   d.setTextColor(clock_ready && decoder_ready ? green : dim, bg); d.setTextSize(1);
   draw_text(d, line, 120, 82);
 
-  const bool tuning = (state.capabilities & ft8_control::kExpertTuning) && live_or_hunter;
+  const bool tuning = (state.capabilities & ft8_control::kExpertTuning) && live_or_hunter && !hunter_view;
   if (tuning) {
     // Expert tuning: the frequency is the thing being changed, so it is large; the band is only context, so it is small.
     d.setTextColor(dim, bg); d.setTextSize(2);
@@ -607,7 +607,7 @@ static void ft8_screen(lgfx::LGFXBase& d, const RadioState& state,
       d.setTextColor(dim, bg); d.setTextSize(2); draw_text(d, "--.---", 120, 135);
     }
     d.setTextColor(dim, bg); d.setTextSize(1); draw_text(d, "MHz", 120, 151);
-    if (connected && (state.capabilities & ft8_control::kExpertEnabled)) {   // expert tuning is on: a centre tap switches to fine tuning
+    if (connected && !hunter_view && (state.capabilities & ft8_control::kExpertEnabled)) {   // expert tuning is on: a centre tap switches to fine tuning
       d.setTextColor(green, bg); d.setTextSize(1); draw_text(d, "TAP: FINE TUNE", 120, 166);
     }
   } else {
@@ -639,7 +639,7 @@ static void ft8_screen(lgfx::LGFXBase& d, const RadioState& state,
 
   // The BACK button owns the bottom of the screen (y >= 200), so the hints stay above it.
   d.setTextSize(1);
-  if (!hunter_view) {
+  if (!hunter_view && !tuning) {
     d.setTextColor(dim, bg);
     if (view == static_cast<uint8_t>(ft8_control::View::live)) draw_text(d, "TURN: BAND", 120, 170);
     else if (view == static_cast<uint8_t>(ft8_control::View::setup)) draw_text(d, "SETUP: TAB5", 120, 170);
@@ -649,7 +649,7 @@ static void ft8_screen(lgfx::LGFXBase& d, const RadioState& state,
       draw_text(d, state.capabilities & ft8_control::kHunterSupported ? "PRESS: HUNT" : "HUNT --", 120, 186);
     else if (view == static_cast<uint8_t>(ft8_control::View::setup)) draw_text(d, "PRESS: --", 120, 186);
     else draw_text(d, "PRESS: OPEN", 120, 186);
-  } else {
+  } else if (hunter_view) {
     d.setTextColor(pending ? cyan : ink, bg);
     draw_text(d, ft8_control::hunter_press_name(state.capabilities), 120, 198);
   }

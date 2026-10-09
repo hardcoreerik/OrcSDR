@@ -3,7 +3,12 @@ name: FT8 RX core
 on:
   pull_request:
     paths:
-      - apps/orcsdr-tab5/ui/ft8_model.*
+      - apps/orcsdr-tab5/ui/ft8_*
+      - apps/orcsdr-tab5/ui/js8_*
+      - tests/ft8_*
+      - tests/js8_*
+      - tests/ft8_ui_stubs/**
+      - tools/test-ft8-review.sh
       - apps/orcsdr-tab5/ui/ft8_hunter.*
       - apps/orcsdr-tab5/ui/ft8_decoder_backend.*
       - orcdial/src/controller.hpp
@@ -20,7 +25,12 @@ on:
   push:
     branches: [main]
     paths:
-      - apps/orcsdr-tab5/ui/ft8_model.*
+      - apps/orcsdr-tab5/ui/ft8_*
+      - apps/orcsdr-tab5/ui/js8_*
+      - tests/ft8_*
+      - tests/js8_*
+      - tests/ft8_ui_stubs/**
+      - tools/test-ft8-review.sh
       - apps/orcsdr-tab5/ui/ft8_hunter.*
       - apps/orcsdr-tab5/ui/ft8_decoder_backend.*
       - orcdial/src/controller.hpp

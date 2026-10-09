@@ -94,6 +94,9 @@ bool set_mode(orcsdr::ft8::DigitalMode mode);
 void offer_iq(const uint8_t* iq, size_t bytes, uint32_t sample_rate_hz);
 // Call on tune, band, gain or rate changes: the audio is no longer contiguous, so the slot in progress is skipped.
 void note_discontinuity();
+// Publish the requested RF context with a retune. The audio task latches it at the next discontinuity.
+void set_radio_context(uint8_t band_index, uint32_t dial_hz);
+uint32_t requested_dial_hz();
 Status status();
 
 // A live waterfall of the tap's audio, 200-3000 Hz at 6.25 Hz per bin (one 1920-point FFT every 150 ms, each row normalised to its own

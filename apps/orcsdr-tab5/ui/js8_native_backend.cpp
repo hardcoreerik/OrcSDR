@@ -153,16 +153,19 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
   stats_.grid_rows = static_cast<uint16_t>(rows);
 
   // ---- bounded sync search over every start that leaves room for a whole frame
-  const size_t frame_rows = static_cast<size_t>(p.channel_symbols) * kRowsPerSymbol;
+  // Rows a whole frame needs: the first and last symbol rows are (channel_symbols - 1) * kRowsPerSymbol apart, plus the row itself. This is the same span
+  // sync::search uses; counting a full extra symbol (channel_symbols * kRowsPerSymbol) skipped the last half-symbol start alignment on every slot and
+  // never searched a capture that was exactly one frame long.
+  const size_t frame_rows = static_cast<size_t>(p.channel_symbols - 1u) * kRowsPerSymbol + 1u;
   sync::EnergyGrid grid{grid_, rows, bin_count_, bin_count_};
   sync::SearchConfig search{};
   search.first_start_row = 0;
-  search.last_start_row_exclusive = static_cast<uint16_t>(rows > frame_rows ? rows - frame_rows + 1 : 0);
+  search.last_start_row_exclusive = static_cast<uint16_t>(rows >= frame_rows ? rows - frame_rows + 1 : 0);
   search.first_base_bin = 0;
   search.last_base_bin_exclusive = static_cast<uint16_t>(bin_count_ - (p.tone_count - 1));
   search.min_score = config_.min_score;
   const sync::Geometry geometry{kRowsPerSymbol, 1};
-  const size_t found = rows > frame_rows ? sync::search(p, grid, geometry, search, candidates_, config_.candidate_limit) : 0;
+  const size_t found = rows >= frame_rows ? sync::search(p, grid, geometry, search, candidates_, config_.candidate_limit) : 0;
   const uint32_t t_search = clock_ms();
   stats_.search_ms = t_search - t_spectral;
   stats_.candidates = static_cast<uint16_t>(found);

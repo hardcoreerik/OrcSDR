@@ -12690,11 +12690,21 @@ uint32_t g_ft8_capabilities = 0;    // DecoderCapability bits of the bound decod
 // Decodes arrive on the decoder task; the UI thread drains them into the store (the store is not thread-safe).
 portMUX_TYPE g_ft8_pending_lock = portMUX_INITIALIZER_UNLOCKED;
 orcsdr::ft8::Decode g_ft8_pending[32];
+uint8_t g_ft8_pending_band[32];    // band-table index and dial in force when each decode arrived (a retune before the next drain must not re-stamp them)
+uint32_t g_ft8_pending_dial[32];
 size_t g_ft8_pending_count = 0;
+size_t ft8_selected_band();
+uint32_t ft8_dial_hz(size_t band_index, orcsdr::ft8::DigitalMode mode);
 
 void ft8_native_on_decode(const orcsdr::ft8::Decode& decode, void*) {
+  const size_t band_index = decode.band_index;
+  const uint32_t dial_hz = decode.dial_hz;
   portENTER_CRITICAL(&g_ft8_pending_lock);
-  if (g_ft8_pending_count < sizeof(g_ft8_pending) / sizeof(g_ft8_pending[0])) g_ft8_pending[g_ft8_pending_count++] = decode;
+  if (g_ft8_pending_count < sizeof(g_ft8_pending) / sizeof(g_ft8_pending[0])) {
+    g_ft8_pending_band[g_ft8_pending_count] = static_cast<uint8_t>(band_index < 255 ? band_index : 255);
+    g_ft8_pending_dial[g_ft8_pending_count] = dial_hz;
+    g_ft8_pending[g_ft8_pending_count++] = decode;
+  }
   portEXIT_CRITICAL(&g_ft8_pending_lock);
 }
 
@@ -12715,10 +12725,10 @@ uint32_t ft8_dial_hz(size_t band_index, orcsdr::ft8::DigitalMode mode) {
 
 // Dial minus the tuner's actual centre (the driver quantizes tuning), so the tap can find the USB passband.
 float ft8_native_dial_offset_hz() {
-  const auto* preset = orcsdr::ft8::band(ft8_selected_band());
+  const uint32_t dial = orcsdr::ft8_runtime::requested_dial_hz();
   uint32_t centre = 0;
-  if (preset == nullptr || g_rtl == nullptr || esp_rtl_sdr_get_center_freq(g_rtl, &centre) != ESP_OK || centre == 0) return 0.0f;
-  return static_cast<float>(static_cast<int32_t>(ft8_dial_hz(ft8_selected_band(), g_ft8_mode)) - static_cast<int32_t>(centre));
+  if (dial == 0 || g_rtl == nullptr || esp_rtl_sdr_get_center_freq(g_rtl, &centre) != ESP_OK || centre == 0) return 0.0f;
+  return static_cast<float>(static_cast<int32_t>(dial) - static_cast<int32_t>(centre));
 }
 
 // Rolling decode log: every decode becomes one CSV row in /ft8/log-YYYYMMDD.csv on the SD card (one file per UTC day). These are
@@ -12746,7 +12756,7 @@ static void ft8_log_load_setting() {
   g_ft8_log_enabled = preferences.getBool("ft8_log", true);
 }
 
-static void ft8_log_stage_rows(const orcsdr::ft8::Decode* decodes, size_t count) {
+static void ft8_log_stage_rows(const orcsdr::ft8::Decode* decodes, const uint8_t* bands, const uint32_t* dials, size_t count) {
   ft8_log_load_setting();
   if (!g_ft8_log_enabled || count == 0) return;
   if (g_ft8_log_stage == nullptr)
@@ -12759,7 +12769,7 @@ static void ft8_log_stage_rows(const orcsdr::ft8::Decode* decodes, size_t count)
     const time_t t = static_cast<time_t>(decodes[i].utc_epoch);
     struct tm tm_i{};
     gmtime_r(&t, &tm_i);
-    const auto* preset = orcsdr::ft8::band(ft8_selected_band());
+    const auto* preset = orcsdr::ft8::band(bands[i]);
     char message[64]{};
     size_t m = 0;
     for (const char* p = decodes[i].message; *p != ' ' && m + 2 < sizeof(message); ++p) {
@@ -12772,7 +12782,7 @@ static void ft8_log_stage_rows(const orcsdr::ft8::Decode* decodes, size_t count)
     const int len = snprintf(row, sizeof(row), "%04d-%02d-%02dT%02d:%02d:%02dZ,%s,%s,%lu,%u,%d,%s,%s,%s,%s,\"%s\"\n",
                              tm_i.tm_year + 1900, tm_i.tm_mon + 1, tm_i.tm_mday, tm_i.tm_hour, tm_i.tm_min, tm_i.tm_sec,
                              orcsdr::ft8::mode_name(decodes[i].mode), preset != nullptr ? preset->label : "?",
-                             static_cast<unsigned long>(orcsdr::ft8::mode_dial_hz(ft8_selected_band(), decodes[i].mode)),
+                             static_cast<unsigned long>(dials[i]),   // the dial actually tuned (a custom expert dial is logged as such)
                              static_cast<unsigned>(decodes[i].audio_hz), static_cast<int>(decodes[i].dt_ms), snr_text, decodes[i].callsign,
                              decodes[i].grid, orcsdr::ft8::kind_name(decodes[i].kind), message);
     if (len <= 0 || g_ft8_log_stage_len + static_cast<size_t>(len) > kFt8LogStageBytes) {
@@ -12846,7 +12856,6 @@ static bool g_heard_journal_ok = true;        // false when the journal has an u
 static uint32_t g_heard_journal_bytes = 0;
 static uint32_t g_heard_last_try_ms = 0;
 static uint32_t g_heard_errors = 0;
-static uint8_t g_heard_tail_pad = 0;            // zero bytes to append before the next record when the journal ends in a partial record
 // Threading: the table is touched only from the main task (decodes are drained in ft8_native_drain_pending, the dashboard looks stations up while it draws and
 // handles touch, serial commands run in the same loop), so it needs no lock. Anything that moves these calls to another task must add one.
 constexpr size_t kHeardDbEntries = 16384;       // 16384 x 40 bytes = 640 KB of PSRAM
@@ -12891,26 +12900,33 @@ static void heard_db_load_from_sd() {
       g_heard_journal_ok = false;   // not our format or a newer version: leave the file alone
       Serial.println("ORC_FT8_HEARD journal_unrecognised");
     }
+  } else if (size != 0) {
+    uint8_t expected[orcsdr::ft8::kHeardHeaderBytes], prefix[orcsdr::ft8::kHeardHeaderBytes];
+    orcsdr::ft8::HeardDb::journal_header(expected);
+    size_t got = 0;
+    while (got < size) {
+      const size_t n = file.read(prefix + got, size - got);
+      if (n == 0) break;
+      got += n;
+    }
+    // Complete only a recognised prefix of our header; leave foreign files untouched.
+    if (got != size || std::memcmp(prefix, expected, size) != 0) g_heard_journal_ok = false;
   }
   file.close();
   heap_caps_free(chunk);
   g_heard_journal_bytes = static_cast<uint32_t>(size);
-  if (size >= orcsdr::ft8::kHeardHeaderBytes) {   // a journal that ends mid-record is realigned before the next append
-    const size_t tail = (size - orcsdr::ft8::kHeardHeaderBytes) % orcsdr::ft8::kHeardRecordBytes;
-    g_heard_tail_pad = static_cast<uint8_t>(tail ? orcsdr::ft8::kHeardRecordBytes - tail : 0);
-  }
   Serial.printf("ORC_FT8_HEARD loaded records=%u stations=%u rejected=%u bytes=%u\n", static_cast<unsigned>(applied),
                 static_cast<unsigned>(g_heard_db.size()), static_cast<unsigned>(g_heard_db.rejected()), static_cast<unsigned>(size));
 }
 
 // Updates the table from one decode and marks it when the station was already known (the dashboard colours rows by that).
-static void heard_db_observe(orcsdr::ft8::Decode& decode) {
+static void heard_db_observe(orcsdr::ft8::Decode& decode, size_t band_index) {
   if (decode.callsign[0] == '\0' || !heard_db_init()) return;
   orcsdr::ft8::HeardObservation o;
   o.callsign = decode.callsign;
   o.grid = decode.grid;
   o.utc = decode.utc_epoch;
-  o.band = static_cast<uint8_t>(g_ft8_band < 16 ? g_ft8_band : 0);
+  o.band = static_cast<uint8_t>(band_index < 16 ? band_index : 15);   // band-table indices fit in the 16-bit mask; anything larger folds into the last bit
   o.mode = static_cast<uint8_t>(decode.mode);
   o.snr = static_cast<int8_t>(std::clamp<int>(decode.snr_db, -127, 127));
   // JS8 decodes carry the sender's report, not a measurement, and set decode_flag_snr_unavailable, so they never touch best/last SNR. If a JS8 estimator
@@ -12944,26 +12960,15 @@ static void heard_db_flush() {
     ++g_heard_errors;
     return;
   }
-  if (file.size() == 0) {
-    uint8_t header[orcsdr::ft8::kHeardHeaderBytes];
-    orcsdr::ft8::HeardDb::journal_header(header);
-    if (file.write(header, sizeof(header)) != sizeof(header)) {
-      ++g_heard_errors;
-      file.close();
-      return;
-    }
-    g_heard_tail_pad = 0;
-  }
-  // A previous torn write (or power loss) can leave a partial record at the end. Records are read at fixed 40-byte offsets, so pad the tail
-  // with zeros to restore alignment; the padded fragment fails its CRC and is skipped when the journal is replayed.
-  if (g_heard_tail_pad > 0) {
-    uint8_t pad[orcsdr::ft8::kHeardRecordBytes] = {0};
-    if (file.write(pad, g_heard_tail_pad) != g_heard_tail_pad) {
-      ++g_heard_errors;
-      file.close();
-      return;
-    }
-    g_heard_tail_pad = 0;
+  // Derive the unfinished header / record padding from actual file length on every retry.
+  // A short padding write must not cause the full original padding to be appended again.
+  uint8_t prefix[orcsdr::ft8::kHeardRecordBytes];
+  const size_t prefix_bytes = orcsdr::ft8::HeardDb::journal_append_prefix(file.size(), prefix);
+  if (prefix_bytes != 0 && file.write(prefix, prefix_bytes) != prefix_bytes) {
+    ++g_heard_errors;
+    g_heard_journal_bytes = static_cast<uint32_t>(file.size());
+    file.close();
+    return;
   }
   for (int pass = 0; pass < 16; ++pass) {   // at most 16 batches (about 40 KB) per flush so the main task is never held up
     const size_t count = g_heard_db.drain_dirty(batch, kBatchRecords);
@@ -12972,8 +12977,6 @@ static void heard_db_flush() {
     const size_t wrote = file.write(batch, bytes);
     if (wrote != bytes) {
       g_heard_db.requeue(batch, count);
-      const size_t partial = wrote % orcsdr::ft8::kHeardRecordBytes;
-      g_heard_tail_pad = static_cast<uint8_t>(partial ? orcsdr::ft8::kHeardRecordBytes - partial : 0);
       ++g_heard_errors;
       break;
     }
@@ -13003,15 +13006,21 @@ static bool ft8_heard_lookup(const char* callsign, orcsdr::ft8::HeardInfo* out) 
 
 void ft8_native_drain_pending() {
   static orcsdr::ft8::Decode local[32];   // static: the main task stack is shared with the screen draw (8 KB snapshots)
+  static uint8_t local_band[32];
+  static uint32_t local_dial[32];
   size_t n = 0;
   portENTER_CRITICAL(&g_ft8_pending_lock);
   n = g_ft8_pending_count;
-  for (size_t i = 0; i < n; ++i) local[i] = g_ft8_pending[i];
+  for (size_t i = 0; i < n; ++i) {
+    local[i] = g_ft8_pending[i];
+    local_band[i] = g_ft8_pending_band[i];
+    local_dial[i] = g_ft8_pending_dial[i];
+  }
   g_ft8_pending_count = 0;
   portEXIT_CRITICAL(&g_ft8_pending_lock);
-  for (size_t i = 0; i < n; ++i) heard_db_observe(local[i]);   // sets heard-before flags before the row is stored and logged
+  for (size_t i = 0; i < n; ++i) heard_db_observe(local[i], local_band[i]);   // sets heard-before flags before the row is stored and logged
   for (size_t i = 0; i < n; ++i) g_ft8_store.append(local[i]);
-  ft8_log_stage_rows(local, n);
+  ft8_log_stage_rows(local, local_band, local_dial, n);
   (void)ft8_log_flush(false);
   heard_db_flush();
 }
@@ -13034,6 +13043,7 @@ bool ft8_select_band(size_t index);
 bool ft8_select_band_table(size_t index);
 
 bool ft8_hunt_start(orcsdr::ft8::HunterMode mode) {
+  if (g_ft8_mode != orcsdr::ft8::DigitalMode::ft8) return false; // only FT8 hunts have been verified
   if (!ft8_native_ensure_started()) return false;
   g_ft8_hunt = Ft8HuntRun{};
   if (!orcsdr::ft8_runtime::status().headless) {
@@ -13255,8 +13265,6 @@ bool ft8_select_band(size_t index) {
   const auto* preset = orcsdr::ft8::band(index);
   if (preset == nullptr) return false;
   const uint32_t dial_hz = ft8_dial_hz(index, g_ft8_mode);
-  g_ft8_band = index;
-  orcsdr::ft8_runtime::note_discontinuity();
   if (!validate_rtl_tune_frequency(dial_hz)) return false;
   // The shortwave path clamps tuning to 30 MHz, so 6 m and 2 m go through the general VHF/UHF band; the audio tap runs on either.
   const RtlBand target = dial_hz > 30000000u ? RtlBand::browse : RtlBand::shortwave;
@@ -13271,15 +13279,22 @@ bool ft8_select_band(size_t index) {
     g_ft8_rate_owned = true;
   }
   const bool rate_ready = !g_ft8_rate_owned || rtl_active_sample_rate_sps.load(std::memory_order_acquire) == kFt8LowRate;
-  if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running && rtl_ui_band == target && rate_ready)
-    return request_hot_retune(dial_hz);
-  return queue_local_rtl_listen(target, dial_hz);
+  const bool accepted = rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running && rtl_ui_band == target && rate_ready
+                            ? request_hot_retune(dial_hz) : queue_local_rtl_listen(target, dial_hz);
+  if (accepted) {
+    g_ft8_band = index;
+    orcsdr::ft8_runtime::set_radio_context(static_cast<uint8_t>(index), dial_hz);
+  }
+  return accepted;
 }
 
 // A band choice from the UI, OrcDial or serial means the standard dial for that band: it drops any expert dial first.
 bool ft8_select_band_table(size_t index) {
+  const uint32_t previous = g_ft8_dial_override_hz;
   g_ft8_dial_override_hz = 0;
-  return ft8_select_band(index);
+  if (ft8_select_band(index)) return true;
+  g_ft8_dial_override_hz = previous;
+  return false;
 }
 
 static_assert(orcsdr::ft8::tuning::kStepCount == orc::ft8_control::kStepCount, "the Dial's step labels must match the Tune panel's step table");
@@ -13293,15 +13308,16 @@ bool ft8_tune_dial(uint32_t hz) {
     return false;
   }
   const size_t nearest = orcsdr::ft8::nearest_band(hz);
+  const uint32_t previous = g_ft8_dial_override_hz;
   g_ft8_dial_override_hz = (orcsdr::ft8::mode_dial_hz(nearest, g_ft8_mode) == hz) ? 0u : hz;
   const bool ok = ft8_select_band(nearest);
+  if (!ok) {
+    g_ft8_dial_override_hz = previous;
+    Serial.println("ORC_FT8_ERROR tune_dial queue_rejected");
+    return false;
+  }
   Serial.printf("ORC_FT8_TUNE_OK dial_hz=%lu custom=%d\n", static_cast<unsigned long>(hz), g_ft8_dial_override_hz != 0 ? 1 : 0);
   return ok;
-}
-
-bool ft8_hunter_refused(const char* what) {
-  Serial.printf("ORC_FT8_ERROR %s decoder_not_bound\n", what);
-  return false;
 }
 
 esp_err_t rtl_gain_set_auto(const char* source);
@@ -13344,7 +13360,7 @@ void handle_ft8_dashboard_action(const orcsdr::ft8::Action& action) {
     case Kind::start_hunt_decode: (void)ft8_hunt_start(orcsdr::ft8::HunterMode::decode); break;
     case Kind::stop_hunt: g_ft8_hunter.stop(); break;
     case Kind::lock_hunter_best:
-      (void)ft8_select_band(orcsdr::ft8::nearest_band(action.value));
+      (void)ft8_select_band_table(orcsdr::ft8::nearest_band(action.value));
       break;
     case Kind::none: return;
   }
@@ -13373,11 +13389,12 @@ bool orcdial_apply_ft8(uint8_t kind, int32_t value) {
       return true;
     }
     case static_cast<uint8_t>(orc::ActionKind::ft8_band): {
-      if (value == 0 || value < -12 || value > 12) return false;
-      if (g_ft8_expert && g_ft8_fine) {   // fine tuning: rotation steps the dial by the Tune panel's step size
-        (void)ft8_tune_dial(orcsdr::ft8::tuning::apply_steps(ft8_dial_hz(ft8_selected_band(), g_ft8_mode), value, orcsdr::ft8::tune_step_hz()));
+      if (value == 0) return false;
+      value = std::clamp<int32_t>(value, -20, 20);
+      if (g_ft8_expert && g_ft8_fine && orcsdr::ft8::tab() == Tab::live) {   // fine tuning on Live; Hunter always rotates through bands
+        const bool ok = ft8_tune_dial(orcsdr::ft8::tuning::apply_steps(ft8_dial_hz(ft8_selected_band(), g_ft8_mode), value, orcsdr::ft8::tune_step_hz()));
         draw_ft8_dashboard(false);
-        return true;
+        return ok;
       }
       const int count = static_cast<int>(orcsdr::ft8::band_count());
       const int next = ((static_cast<int>(ft8_selected_band()) + value) % count + count) % count;
@@ -13387,22 +13404,28 @@ bool orcdial_apply_ft8(uint8_t kind, int32_t value) {
     }
     case static_cast<uint8_t>(orc::ActionKind::ft8_item): {
       const int count = static_cast<int>(g_ft8_store.size());
-      if (value == 0 || value < -12 || value > 12 || count == 0) return false;
+      if (value == 0 || count == 0) return false;
+      value = std::clamp<int32_t>(value, -20, 20);
       g_ft8_item = static_cast<size_t>(std::clamp<int>(static_cast<int>(g_ft8_item) + value, 1, count));
       return true;
     }
     case static_cast<uint8_t>(orc::ActionKind::ft8_fine):
-      if (!g_ft8_expert) return false;   // fine tuning is an opt-in (Setup checkbox); a tap does nothing otherwise
+      if (!g_ft8_expert || orcsdr::ft8::tab() != Tab::live) return false;
       g_ft8_fine = !g_ft8_fine;
       draw_ft8_dashboard(false);
       return true;
     case static_cast<uint8_t>(orc::ActionKind::ft8_hunter):
       switch (value) {
-        case 1: return ft8_hunter_refused("hunt_fast");
-        case 2: return ft8_hunter_refused("hunt_decode");
+        case 1: return ft8_hunt_start(orcsdr::ft8::HunterMode::fast);
+        case 2: return ft8_hunt_start(orcsdr::ft8::HunterMode::decode);
         case 3: g_ft8_hunter.stop(); draw_ft8_dashboard(false); return true;
-        default: return false;   // 4 = listen to best: no completed hunt exists yet
+        case 4:
+          return g_ft8_hunter.snapshot().phase == orcsdr::ft8::HunterPhase::complete &&
+                 g_ft8_hunter.best_band() < orcsdr::ft8::band_count() && ft8_select_band_table(g_ft8_hunter.best_band());
+        default: return false;
       }
+    case static_cast<uint8_t>(orc::ActionKind::activate):
+      return orcsdr::ft8::open_decode_item(g_ft8_item);
     default: return false;
   }
 }
@@ -13411,13 +13434,19 @@ void fill_orcdial_ft8_state(orc::Packet& p) {
   const auto* preset = orcsdr::ft8::band(ft8_selected_band());
   p.frequency_hz = preset ? ft8_dial_hz(ft8_selected_band(), g_ft8_mode) : rtl_ui_frequency_hz;
   p.view = static_cast<uint8_t>(orcsdr::ft8::tab());
-  uint32_t capabilities = 0;   // bit 0 decoder bound: no; bit 2 hunter supported: no until a decoder exists
+  uint32_t capabilities = 0;
+  if (orcsdr::ft8_runtime::active()) {
+    capabilities |= orc::ft8_control::kDecoderReady;
+    if (g_ft8_mode == orcsdr::ft8::DigitalMode::ft8) capabilities |= orc::ft8_control::kHunterSupported;
+  }
   if (orcsdr::time_service::now().wallclock_valid) capabilities |= orc::ft8_control::kClockReady;
   if (g_ft8_hunter.active()) capabilities |= orc::ft8_control::kHunterActive;
+  if (g_ft8_hunter.snapshot().phase == orcsdr::ft8::HunterPhase::complete) capabilities |= orc::ft8_control::kHunterComplete;
+  if (g_ft8_hunter.snapshot().mode == orcsdr::ft8::HunterMode::decode) capabilities |= orc::ft8_control::kHunterDecodeMode;
   if (g_ft8_expert) {   // expert tuning is on: the Dial may offer a centre-tap switch to fine tuning
     capabilities |= orc::ft8_control::kExpertEnabled;
   }
-  if (g_ft8_expert && g_ft8_fine) {   // fine tuning is active: the Dial shows the frequency large, with the Tune panel's current step
+  if (g_ft8_expert && g_ft8_fine && orcsdr::ft8::tab() == orcsdr::ft8::Tab::live) {
     capabilities |= orc::ft8_control::kExpertTuning;
     uint8_t step_index = static_cast<uint8_t>(orcsdr::ft8::tuning::kDefaultStepIndex);
     for (size_t i = 0; i < orcsdr::ft8::tuning::kStepCount; ++i)
@@ -13427,6 +13456,8 @@ void fill_orcdial_ft8_state(orc::Packet& p) {
   p.capabilities = capabilities;
   const bool band_view = p.view == static_cast<uint8_t>(orc::ft8_control::View::live) ||
                          p.view == static_cast<uint8_t>(orc::ft8_control::View::hunter);
+  if (g_ft8_store.size() > 0) g_ft8_item = std::clamp<size_t>(g_ft8_item, 1, g_ft8_store.size());
+  else g_ft8_item = 0;
   p.selected = band_view ? static_cast<int32_t>(ft8_selected_band() + 1)
                          : static_cast<int32_t>(g_ft8_item);
   p.item_count = band_view ? orcsdr::ft8::band_count() : g_ft8_store.size();

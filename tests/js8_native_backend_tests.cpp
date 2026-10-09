@@ -1,12 +1,15 @@
 #include "js8_native_backend.hpp"
 #include "js8_frontend.hpp"
 #include "js8_spectral.hpp"
+#include "js8_codec.hpp"
+#include "js8_ldpc_graph.hpp"
 
 #include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 namespace {
@@ -28,13 +31,13 @@ float noise() {
 }
 
 // 15 s slot with the frame 0.5 s in, tone 0 at base_hz, and uniform noise of the given amplitude.
-std::vector<int16_t> make_slot(float base_hz, float amplitude, float noise_amplitude, bool with_signal) {
+std::vector<int16_t> make_slot(float base_hz, float amplitude, float noise_amplitude, bool with_signal, size_t start = 6000,
+                             const std::array<uint8_t, kChannelSymbols>& frame = kFrame) {
   const Profile& p = profile(Submode::normal);
   std::vector<int16_t> pcm(static_cast<size_t>(p.slot_ms) * 12u, 0);
-  const size_t start = 6000;   // 0.5 s
   float phase = 0.0f;
-  for (size_t symbol = 0; symbol < kFrame.size(); ++symbol) {
-    const float step = 2.0f * kPi * (base_hz + kFrame[symbol] * 6.25f) / 12000.0f;
+  for (size_t symbol = 0; symbol < frame.size(); ++symbol) {
+    const float step = 2.0f * kPi * (base_hz + frame[symbol] * 6.25f) / 12000.0f;
     for (size_t n = 0; n < p.symbol_samples; ++n) {
       float sample = noise_amplitude * noise();
       if (with_signal) sample += amplitude * std::sin(phase);
@@ -141,6 +144,70 @@ int main() {
     frontend::AliasItem pair[2] = {{837.5f, 61920, 0.46f, 14}, {837.5f, 61920 + period, 0.69f, 14}};
     frontend::mark_aliases(p, pair, 2, drop);
     assert(drop[0] && !drop[1]);
+  }
+
+  // The latest start a whole frame can have in a 15 s slot (start row 29 of 186, sample 27840, dt +1820 ms) used to be skipped: the backend counted a full extra symbol of
+  // rows (158) where the sync search needs 157. Such a frame must be found, with its tones intact.
+  {
+    const auto late = make_slot(base_hz, 6000.0f, 2500.0f, true, 27840);
+    assert(late.size() == 180000 && 27840 + kFrame.size() * 1920 <= late.size());
+    assert(backend.begin_slot(1791440220000ull));
+    for (size_t offset = 0; offset < late.size(); offset += 4096)
+      assert(backend.offer_audio(late.data() + offset, std::min<size_t>(4096, late.size() - offset)));
+    assert(backend.finish_slot(out, 4) == 0);
+    assert(backend.raw_count() >= 1);
+    const native::RawResult* last = backend.raw(0);
+    assert(last != nullptr && std::fabs(last->audio_hz - base_hz) <= 3.2f && std::abs(last->dt_ms - 1820) <= 45);
+    for (size_t i = 0; i < kFrame.size(); ++i) assert(last->frame.tones[i] == kFrame[i]);
+  }
+
+  // Exactly one frame produces 157 grid rows; one additional half symbol produces 158.
+  // Both must search row zero, rather than requiring a spare row beyond the frame.
+  for (size_t extra : {size_t{0}, size_t{960}}) {
+    auto exact = make_slot(base_hz, 6000.0f, 0.0f, true, 0);
+    exact.resize(kFrame.size() * 1920 + extra);
+    assert(backend.begin_slot(1791440220000ull));
+    assert(backend.offer_audio(exact.data(), exact.size()));
+    (void)backend.finish_slot(out, 4);
+    assert(backend.grid_rows() == 157 + extra / 960);
+    assert(backend.raw_count() >= 1);
+    const auto* first = backend.raw(0);
+    for (size_t i = 0; i < kFrame.size(); ++i) assert(first->frame.tones[i] == kFrame[i]);
+  }
+
+  // Nine complete, clean, distinct messages in one slot: a busy slot exceeds the old runtime output capacity of eight.
+  {
+    std::vector<int16_t> busy(180000, 0);
+    for (uint8_t report = 1; report <= 9; ++report) {
+      uint8_t info[87]{}, cw[174]{};
+      const char* text = "UvnVIpm34Fqg"; // established WO7I directed frame, with a distinct SNR report below
+      for (size_t c = 0; c < 12; ++c) {
+        size_t value = 0;
+        while (value < 64 && codec::kAlphabet[value] != text[c]) ++value;
+        assert(value < 64);
+        for (size_t b = 0; b < 6; ++b) info[c * 6 + b] = (value >> (5 - b)) & 1u;
+      }
+      for (size_t b = 0; b < 6; ++b) info[66 + b] = (report >> (5 - b)) & 1u;
+      info[73] = info[74] = 1;
+      const uint16_t crc = codec::crc12(info);
+      for (size_t b = 0; b < 12; ++b) info[75 + b] = (crc >> (11 - b)) & 1u;
+      std::copy(info, info + 87, cw + 87);
+      for (size_t check = 0; check < 87; ++check)
+        for (size_t e = ldpc_graph::kCheckOffsets[check]; e < ldpc_graph::kCheckOffsets[check + 1]; ++e) {
+          const size_t v = ldpc_graph::kCheckVariables[e];
+          if (v >= 87) cw[check] ^= cw[v];
+        }
+      auto tones = kFrame;
+      for (size_t s = 0; s < 58; ++s)
+        tones[codec::data_tone_position(s)] = (cw[3*s] << 2) | (cw[3*s+1] << 1) | cw[3*s+2];
+      const auto signal = make_slot(400.0f + report * 125.0f, 1600.0f, 0.0f, true, 6000, tones);
+      for (size_t n = 0; n < busy.size(); ++n) busy[n] = static_cast<int16_t>(busy[n] + signal[n]);
+    }
+    assert(backend.begin_slot(1791440220000ull));
+    assert(backend.offer_audio(busy.data(), busy.size()));
+    orcsdr::ft8::Decode messages[24];
+    assert(backend.finish_slot(messages, 24) == 9);
+    for (size_t n = 0; n < 9; ++n) assert(std::strcmp(messages[n].callsign, "WO7I") == 0);
   }
 
   std::printf("js8_native_backend_tests: PASS (grid vs oracle worst %.2e of peak, raw frames %u, candidates %u)\n",

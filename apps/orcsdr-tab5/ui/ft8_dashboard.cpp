@@ -12,6 +12,7 @@
 #include <esp_heap_caps.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -233,7 +234,7 @@ void draw_header() {
   char label[48];
   if (preset && mode_has_band_table(g_snapshot.mode)) {
     const uint32_t shown = g_snapshot.dial_hz != 0 ? g_snapshot.dial_hz : mode_dial_hz(g_snapshot.selected_band, g_snapshot.mode);
-    std::snprintf(label, sizeof(label), "%s  %.4f MHz", g_snapshot.dial_custom ? "CUSTOM" : preset->label, static_cast<double>(shown) / 1e6);
+    std::snprintf(label, sizeof(label), "%s  %.6f MHz", g_snapshot.dial_custom ? "CUSTOM" : preset->label, static_cast<double>(shown) / 1e6);
   } else {
     std::snprintf(label, sizeof(label), preset ? "BAND TABLE PENDING" : "BAND --");
   }
@@ -394,6 +395,13 @@ uint16_t waterfall_color(uint8_t v) {
 
 uint32_t g_drawn_waterfall = UINT32_MAX;
 uint32_t g_wf_last_paint_ms = 0;
+void draw_waterfall_graticule() {
+  for (int hz = 500; hz <= 3000; hz += 500) {
+    const int x = 42 + (hz - kAudioLowHz) * 848 / (kAudioHighHz - kAudioLowHz);
+    M5.Display.drawFastVLine(x, 214, 224, kGrid);
+  }
+  for (int row = 1; row < 5; ++row) M5.Display.drawFastHLine(42, 214 + row * 44, 848, 0x10a2);
+}
 
 // Newest row at the top, 2 pixels per row, 848 pixels across the 200-3000 Hz span.
 void draw_waterfall() {
@@ -414,6 +422,7 @@ void draw_waterfall() {
     M5.Display.pushImage(kLeft, kTop + static_cast<int>(r) * kRowPx, kWidth, kRowPx, line);
   }
   g_drawn_waterfall = seq;
+  draw_waterfall_graticule();
 }
 
 // Shift the picture down by the rows produced since the last paint and draw only those rows at the top.
@@ -442,6 +451,17 @@ void scroll_waterfall(size_t max_rows) {
     }
   }
   const uint32_t paint_start = millis();
+  // Remove the fixed horizontal lines before scrolling so they cannot leave moving copies in the signal image.
+  if (fresh != 0) {
+    uint16_t restore[kWidth];
+    for (int grid_row = 1; grid_row < 5; ++grid_row) {
+      const size_t r = static_cast<size_t>(grid_row * 44 / kRowPx);
+      if (r >= std::min<size_t>(rows, g_drawn_waterfall)) continue;
+      const uint8_t* src = g_snapshot.waterfall + ((g_drawn_waterfall - 1 - r) % rows) * bins;
+      for (int x = 0; x < kWidth; ++x) restore[x] = waterfall_color(src[static_cast<size_t>(x) * bins / kWidth]);
+      M5.Display.pushImage(kLeft, kTop + grid_row * 44, kWidth, 1, restore);
+    }
+  }
   M5.Display.scroll(0, static_cast<int>(fresh) * kRowPx);
   static uint16_t line[kWidth];
   for (size_t k = 0; k < fresh; ++k) {
@@ -451,6 +471,7 @@ void scroll_waterfall(size_t max_rows) {
       M5.Display.pushImage(kLeft, kTop + static_cast<int>(k) * kRowPx + r, kWidth, 1, line);
   }
   g_drawn_waterfall = target;
+  draw_waterfall_graticule();
   g_wf_last_paint_ms = millis() - paint_start;
 }
 
@@ -469,7 +490,7 @@ void paced_waterfall_step() {
 void draw_dial_chip(bool have_table) {
   char value[32];
   const uint32_t shown = g_snapshot.dial_hz != 0 ? g_snapshot.dial_hz : (have_table ? mode_dial_hz(g_snapshot.selected_band, g_snapshot.mode) : 0u);
-  if (shown != 0) std::snprintf(value, sizeof(value), "%.4f MHz", static_cast<double>(shown) / 1e6);
+  if (shown != 0) std::snprintf(value, sizeof(value), "%.6f MHz", static_cast<double>(shown) / 1e6);
   else std::snprintf(value, sizeof(value), "--");
   chip(kDialChip, g_snapshot.expert_tuning ? "TAP TO TUNE" : "DIAL", value,
        g_snapshot.dial_custom ? kAmber : TFT_WHITE);
@@ -515,7 +536,8 @@ void draw_live() {
     text("UI/model sandbox is live; DSP samples are not being decoded yet.", 466, 340, kMuted, 1);
   } else if (!g_snapshot.clock_valid) {
     text("UTC CLOCK REQUIRED", 466, 305, kAmber, 3);
-    text("FT8 receive slots depend on accurate 15 second UTC boundaries.", 466, 340, kMuted, 1);
+    text(g_snapshot.mode == DigitalMode::ft4 ? "FT4 receive slots need accurate 7.5 second UTC boundaries."
+                                            : "FT8 / JS8 Normal slots need accurate 15 second UTC boundaries.", 466, 340, kMuted, 1);
   } else {
     if (g_snapshot.wf_sequence == 0) text("LISTENING...", 466, 320, kMuted, 2);
     else draw_waterfall();
@@ -815,7 +837,7 @@ void draw_hunter_band(size_t index) {
   text(preset->label, r.x + 16, r.y + 24,
        current || best ? kGreen : TFT_WHITE, 3, middle_left);
   std::snprintf(value, sizeof(value), "%.3f MHz",
-                static_cast<double>(preset->dial_hz) / 1e6);
+                static_cast<double>(mode_dial_hz(index, g_snapshot.mode)) / 1e6);
   text(value, r.x + r.w - 14, r.y + 23, kCyan, 1, middle_right);
 
   if (current) {
@@ -849,10 +871,11 @@ void draw_hunter() {
        1238, 124, kMuted, 1, middle_right);
 
   const bool active = hunter_active();
+  const bool supported = g_snapshot.mode == DigitalMode::ft8;
   button(kHunterFast, "FAST HUNT",
-         active && g_snapshot.hunter.mode == HunterMode::fast, !active);
+         active && g_snapshot.hunter.mode == HunterMode::fast, !active && supported);
   button(kHunterDecode, "DECODE HUNT",
-         active && g_snapshot.hunter.mode == HunterMode::decode, !active);
+         active && g_snapshot.hunter.mode == HunterMode::decode, !active && supported);
   button(kHunterStop, "STOP", false, active);
   const bool best_ready = !active && g_snapshot.hunter.best_band < band_count();
   button(kHunterBest, "LISTEN BEST", best_ready, best_ready);
@@ -1027,7 +1050,7 @@ struct StandardFacts {
 const StandardFacts& standard_facts(DigitalMode mode) {
   static const StandardFacts kFt8{"15 s slot  /  79 symbols  /  8 tones x 6.25 Hz  /  50 Hz wide", "LDPC(174,91) + CRC-14",
                                   "CQ, CALLS, GRIDS, REPORTS (CONTEST TYPES PENDING)", "ESTIMATED FROM THE SIGNAL"};
-  static const StandardFacts kFt4{"7.5 s slot  /  103 symbols  /  4 tones x 20.83 Hz  /  83 Hz wide", "LDPC(174,91) + CRC-14",
+  static const StandardFacts kFt4{"7.5 s slot  /  105 symbols (with ramps)  /  4 tones x 20.83 Hz", "LDPC(174,91) + CRC-14",
                                   "CQ, CALLS, GRIDS, REPORTS (CONTEST TYPES PENDING)", "ESTIMATED FROM THE SIGNAL"};
   static const StandardFacts kJs8{"15 s slot  /  79 symbols  /  8 tones x 6.25 Hz  /  50 Hz wide", "LDPC(174,87) + CRC-12",
                                   "HEARTBEAT SNR REPLIES (OTHER FRAME TYPES PENDING)", "SENT BY THE STATION, NOT MEASURED"};
@@ -1473,7 +1496,9 @@ void open_tune_panel() {
 }
 
 Action tune_step_action(int32_t detents) {
-  g_tune_target = tuning::apply_steps(g_tune_target, detents, tuning::kStepsHz[g_tune_step]);
+  // Step from the receiver's accepted dial. A rejected request must not become the next step's starting point.
+  g_tune_target = tuning::apply_steps(g_snapshot.dial_hz != 0 ? g_snapshot.dial_hz : g_tune_target,
+                                      detents, tuning::kStepsHz[g_tune_step]);
   g_tune_invalid = false;
   return {ActionKind::tune_dial, g_tune_target};
 }
@@ -1568,8 +1593,8 @@ bool tab_content_changed(Tab tab, const Snapshot& a, const Snapshot& b) {
       return decodes_differ(a, b) || station_differs(a, b) || a.clock_valid != b.clock_valid || a.decoder_state != b.decoder_state || a.mode != b.mode;
     case Tab::map: return decodes_differ(a, b) || station_differs(a, b) || a.mode != b.mode || a.selected_band != b.selected_band;
     case Tab::hunter:
-      return std::memcmp(&a.hunter, &b.hunter, sizeof(a.hunter)) != 0 || a.mode != b.mode || a.selected_band != b.selected_band;
-    case Tab::heard: return decodes_differ(a, b) || a.mode != b.mode;
+      return std::memcmp(&a.hunter, &b.hunter, sizeof(a.hunter)) != 0 || a.mode != b.mode || a.selected_band != b.selected_band || a.dial_hz != b.dial_hz;
+    case Tab::heard: return decodes_differ(a, b) || station_differs(a, b) || a.mode != b.mode;
     default: return !same_content(a, b);
   }
 }
@@ -1617,12 +1642,17 @@ void update(const Snapshot& snapshot_value) {
   }
   const bool header_changed = previous.mode != g_snapshot.mode ||
                               previous.selected_band != g_snapshot.selected_band ||
+                              previous.dial_hz != g_snapshot.dial_hz ||
+                              previous.dial_custom != g_snapshot.dial_custom ||
                               previous.clock_valid != g_snapshot.clock_valid ||
                               previous.battery_percent != g_snapshot.battery_percent;
   if (tab_content_changed(g_tab, previous, g_snapshot) || header_changed) {
     if (header_changed) draw_header();
     if (g_gain_open) {   // the gain popup keeps its readout and level meter live
-      draw_gain_readout();
+      if (previous.gain_auto != g_snapshot.gain_auto || previous.gain_tenth_db != g_snapshot.gain_tenth_db ||
+          previous.gain_available != g_snapshot.gain_available || previous.gain_step_count != g_snapshot.gain_step_count)
+        draw_gain_panel();
+      else draw_gain_readout();
       return;
     }
     if (g_info_open || g_mode_open || g_station_open) return;   // a popup covers the body; closing it repaints everything
@@ -1733,16 +1763,16 @@ Action handle_touch(int32_t x, int32_t y) {
     return {};
   }
   if (g_tab == Tab::hunter) {
-    if (hit(x, y, kHunterFast) && !hunter_active())
+    if (hit(x, y, kHunterFast) && !hunter_active() && g_snapshot.mode == DigitalMode::ft8)
       return {ActionKind::start_hunt_fast};
-    if (hit(x, y, kHunterDecode) && !hunter_active())
+    if (hit(x, y, kHunterDecode) && !hunter_active() && g_snapshot.mode == DigitalMode::ft8)
       return {ActionKind::start_hunt_decode};
     if (hit(x, y, kHunterStop) && hunter_active())
       return {ActionKind::stop_hunt};
     if (hit(x, y, kHunterBest) && !hunter_active() &&
         g_snapshot.hunter.best_band < band_count()) {
       const BandPreset* best = band(g_snapshot.hunter.best_band);
-      return best ? Action{ActionKind::lock_hunter_best, best->dial_hz} : Action{};
+      return best ? Action{ActionKind::lock_hunter_best, mode_dial_hz(g_snapshot.hunter.best_band, g_snapshot.mode)} : Action{};
     }
     if (!hunter_active()) {
       for (size_t i = 0; i < band_count(); ++i) {
@@ -1751,7 +1781,7 @@ Action handle_touch(int32_t x, int32_t y) {
         draw_header();
         draw_body();
         const BandPreset* p = band(i);
-        return p ? Action{ActionKind::tune_band, p->dial_hz} : Action{};
+        return p ? Action{ActionKind::tune_band, mode_dial_hz(i, g_snapshot.mode)} : Action{};
       }
     }
   }
@@ -1836,10 +1866,18 @@ void select_tab(Tab tab) {
   g_gain_open = false;
   g_tab = tab;
   g_decode_page = 0;
+  draw_info_button();
   draw_body();
   draw_tabs();
 }
 const Snapshot& snapshot() { return g_snapshot; }
+bool open_decode_item(size_t one_based) {
+  if (!g_active || one_based == 0 || (g_tab != Tab::decodes && g_tab != Tab::map && g_tab != Tab::heard)) return false;
+  const Decode* d = decode_newest(one_based - 1);
+  if (d == nullptr || !d->callsign[0] || g_heard_lookup == nullptr) return false;
+  open_station_popup(d->callsign);
+  return g_station_open;
+}
 
 bool dashboard_self_check() {
   return static_cast<int>(Tab::count) == kTabCount && band_count() >= 10 &&

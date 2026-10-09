@@ -9,3 +9,5 @@ Headless JS8 Normal receive on the Tab5 (V4 dongle, GA-800 indoor antenna), dial
 Result: 73 frames reached the soft decoder, 53 passed parity and CRC, 51 messages from 7 stations, all 7 also spotted on PSK Reporter, no decoded station absent from PSK Reporter.
 76 stations were reported by receivers within 1500 km, so 69 were not decoded; only directed HEARTBEAT SNR frames are rendered so far, and an indoor antenna hears fewer stations than a typical reporting receiver.
 Mean slot time on the P4 was about 8.5 s of 15 s (refinement cost; see the speed-up notes). Stations: K8IMT, KD7WPQ, WD5EED, W7SUA, W7YSB, KS1DMD, WB7TSQ.
+
+Evidence limit: PSK Reporter establishes activity only. Matching a sender does not verify the decoded text or rule out false decodes. This soak did not replay audio derived from its exact raw IQ through standard JS8Call, so it is operational evidence, not a reference-paired reconstruction fixture.

@@ -98,6 +98,7 @@ Tab tab();
 // installs the function that draws them, and the dashboard calls it whenever the header is repainted.
 void set_header_hook(void (*draw_controls)());
 void select_tab(Tab tab);   // from OrcDial; redraws when the tab changes
+bool open_decode_item(size_t one_based); // selected newest-first decode's station history
 const Snapshot& snapshot();
 // The step the Tune panel is set to, in Hz (OrcDial rotation uses the same step while expert tuning is on).
 uint32_t tune_step_hz();

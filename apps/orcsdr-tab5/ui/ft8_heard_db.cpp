@@ -220,6 +220,19 @@ void HeardDb::journal_header(uint8_t out[kHeardHeaderBytes]) {
   out[8] = 1;   // version
 }
 
+size_t HeardDb::journal_append_prefix(size_t file_bytes, uint8_t out[kHeardRecordBytes]) {
+  std::memset(out, 0, kHeardRecordBytes);
+  if (file_bytes < kHeardHeaderBytes) {
+    uint8_t header[kHeardHeaderBytes];
+    journal_header(header);
+    const size_t missing = kHeardHeaderBytes - file_bytes;
+    std::memcpy(out, header + file_bytes, missing);
+    return missing;
+  }
+  const size_t tail = (file_bytes - kHeardHeaderBytes) % kHeardRecordBytes;
+  return tail ? kHeardRecordBytes - tail : 0;
+}
+
 size_t HeardDb::load(const uint8_t* data, size_t length) {
   if (entries_ == nullptr || data == nullptr) return 0;
   size_t pos = 0;

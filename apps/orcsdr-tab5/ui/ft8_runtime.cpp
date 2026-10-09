@@ -76,6 +76,9 @@ struct Runtime {
 
   orcsdr::ft8::DigitalMode mode = orcsdr::ft8::DigitalMode::ft8;
   DecodeCallback on_decode = nullptr;
+  std::atomic<uint64_t> radio_context{uint64_t{255} << 32};
+  std::atomic<uint64_t> captured_radio_context{uint64_t{255} << 32};
+  std::atomic<uint32_t> continuity_sequence{0}; // odd while the audio task publishes a discontinuity
   void* context = nullptr;
   ClockValidFn clock_valid = nullptr;
   DialOffsetFn dial_offset_fn = nullptr;
@@ -134,11 +137,16 @@ bool js8_attach() {
 }
 
 void mark_discontinuity() {
+  g.continuity_sequence.fetch_add(1, std::memory_order_acq_rel);
+  g.captured_radio_context.store(g.radio_context.load(std::memory_order_acquire), std::memory_order_release);
   g.cont_ms.store(wall_ms(), std::memory_order_release);
   g.cont_total.store(g.total.load(std::memory_order_acquire), std::memory_order_release);
+  g.continuity_sequence.fetch_add(1, std::memory_order_release);
 }
 
 void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint64_t total_now) {
+  const uint32_t continuity = g.continuity_sequence.load(std::memory_order_acquire);
+  const uint64_t radio = g.captured_radio_context.load(std::memory_order_acquire);
   const uint64_t ms_since_start = now_ms - slot_start_ms;
   const uint64_t slot_samples = static_cast<uint64_t>(slot_ms) * 12u;
   const int64_t start_total = static_cast<int64_t>(total_now) - static_cast<int64_t>(ms_since_start * 12u);
@@ -146,7 +154,7 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
 
   const uint64_t cont_ms = g.cont_ms.load(std::memory_order_acquire);
   const uint64_t cont_total = g.cont_total.load(std::memory_order_acquire);
-  bool incomplete = false;
+  bool incomplete = (continuity & 1u) != 0 || g.continuity_sequence.load(std::memory_order_acquire) != continuity;
   if (start_total < 0 || slot_start_ms < cont_ms + 100u || total_now - static_cast<uint64_t>(start_total) > kRingSamples - 12000u) {
     incomplete = true;
   } else if (now_ms - cont_ms > 5000u) {
@@ -162,7 +170,7 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
 
   static int16_t chunk[4096];   // shared by the FT8/FT4 and JS8 paths: internal RAM is tight, so no second buffer
   if (is_js8(g.mode)) {
-    // JS8 (receive only): raw sync/tone evidence, never a decode. The JS8 backend returns no Decode records.
+    // JS8 (receive only): the backend returns a Decode only for a frame whose parity and CRC-12 both hold and that renders as a verified message.
     if (!js8_supported(g.mode) || g.js8 == nullptr) return;
     set_state(State::decoding);
     g.js8->begin_slot(slot_start_ms);
@@ -184,7 +192,11 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
       jpos += take;
       jremaining -= take;
     }
-    orcsdr::ft8::Decode jout[8];
+    orcsdr::ft8::Decode jout[kDecodeCapacity];   // same capacity as FT8/FT4: a busy JS8 slot must not drop its ninth verified message
+    if (g.reset_pending.load(std::memory_order_acquire) || g.continuity_sequence.load(std::memory_order_acquire) != continuity) {
+      ++s.slots_skipped_incomplete;
+      return; // retuned while the slot was being copied
+    }
     const size_t jn = g.js8->finish_slot(jout, sizeof(jout) / sizeof(jout[0]));
     const auto& js = g.js8->stats();
     s.slot_rms = static_cast<uint32_t>(std::sqrt(static_cast<double>(jsumsq) / static_cast<double>(slot_samples)));
@@ -232,7 +244,11 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
                 static_cast<unsigned>(js.demod_ms), static_cast<unsigned>(js.grid_rows), js.deadline_hit ? 1 : 0);
     log_js8_frames("ORC_JS8_RT");
     if (g.on_decode != nullptr)
-      for (size_t i = 0; i < jn; ++i) g.on_decode(jout[i], g.context);
+      for (size_t i = 0; i < jn; ++i) {
+        jout[i].band_index = static_cast<uint8_t>(radio >> 32);
+        jout[i].dial_hz = static_cast<uint32_t>(radio);
+        g.on_decode(jout[i], g.context);
+      }
     set_state(State::ready);
     return;
   }
@@ -258,6 +274,10 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
     remaining -= take;
   }
   orcsdr::ft8::Decode out[kDecodeCapacity];
+  if (g.reset_pending.load(std::memory_order_acquire) || g.continuity_sequence.load(std::memory_order_acquire) != continuity) {
+    ++s.slots_skipped_incomplete;
+    return;
+  }
   const size_t n = g.backend->finish_slot(out, kDecodeCapacity);
   const auto& st = g.backend->stats();
   s.slot_rms = static_cast<uint32_t>(std::sqrt(static_cast<double>(sumsq) / static_cast<double>(slot_samples)));
@@ -284,7 +304,11 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
               static_cast<unsigned>(st.gate_ms), static_cast<unsigned>(st.coarse_candidates), static_cast<unsigned>(st.attempted),
               st.deadline_hit ? 1 : 0);
   if (g.on_decode != nullptr)
-    for (size_t i = 0; i < n; ++i) g.on_decode(out[i], g.context);
+    for (size_t i = 0; i < n; ++i) {
+      out[i].band_index = static_cast<uint8_t>(radio >> 32);
+      out[i].dial_hz = static_cast<uint32_t>(radio);
+      g.on_decode(out[i], g.context);
+    }
   set_state(State::ready);
 }
 
@@ -316,7 +340,7 @@ void run_js8_injection() {
     g.js8->offer_audio(g.inject + pos, take);
     pos += take;
   }
-  orcsdr::ft8::Decode jout[8];
+  orcsdr::ft8::Decode jout[kDecodeCapacity];   // same capacity as FT8/FT4: a busy JS8 slot must not drop its ninth verified message
   const size_t n = g.js8->finish_slot(jout, sizeof(jout) / sizeof(jout[0]));
   const auto& st = g.js8->stats();
   std::printf("ORC_JS8_INJECT_RESULT submode=normal samples=%u decodes=%u raw_frames=%u candidates=%u strong=%u best_sync=%.2f total_ms=%u spectral=%u search=%u demod=%u rows=%u\n",
@@ -588,6 +612,11 @@ bool set_mode(orcsdr::ft8::DigitalMode mode) {
 void touch() { g.last_touch_us.store(esp_timer_get_time(), std::memory_order_release); }
 
 void note_discontinuity() { g.reset_pending.store(true, std::memory_order_release); }
+void set_radio_context(uint8_t band_index, uint32_t dial_hz) {
+  g.radio_context.store((uint64_t{band_index} << 32) | dial_hz, std::memory_order_release);
+  note_discontinuity();
+}
+uint32_t requested_dial_hz() { return static_cast<uint32_t>(g.radio_context.load(std::memory_order_acquire)); }
 
 void offer_iq(const uint8_t* iq, size_t bytes, uint32_t sample_rate_hz) {
   if (!g.active.load(std::memory_order_acquire) || g.ring == nullptr) return;

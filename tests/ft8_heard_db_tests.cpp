@@ -188,6 +188,38 @@ int main() {
   CHECK(partial.rejected() == 1);
   CHECK(partial.find("WO7I") != nullptr);
 
+  // Header and padding retries use the actual written length, including repeated short writes.
+  {
+    uint8_t header[kHeardHeaderBytes];
+    HeardDb::journal_header(header);
+    uint8_t prefix[kHeardRecordBytes];
+    for (size_t torn = 0; torn < kHeardHeaderBytes; ++torn) {
+      std::vector<uint8_t> file(header, header + torn);
+      while (file.size() < kHeardHeaderBytes) {
+        const size_t wanted = HeardDb::journal_append_prefix(file.size(), prefix);
+        CHECK(wanted == kHeardHeaderBytes - file.size());
+        const size_t wrote = std::min<size_t>(3, wanted);
+        file.insert(file.end(), prefix, prefix + wrote);
+      }
+      CHECK(std::memcmp(file.data(), header, kHeardHeaderBytes) == 0);
+    }
+    for (size_t torn = 1; torn < kHeardRecordBytes; ++torn) {
+      std::vector<uint8_t> file(journal.begin(), journal.begin() + kHeardHeaderBytes + torn);
+      size_t wanted;
+      while ((wanted = HeardDb::journal_append_prefix(file.size(), prefix)) != 0) {
+        const size_t wrote = std::min<size_t>(4, wanted);
+        file.insert(file.end(), prefix, prefix + wrote);
+      }
+      CHECK(file.size() == kHeardHeaderBytes + kHeardRecordBytes);
+      file.insert(file.end(), journal.begin() + kHeardHeaderBytes, journal.begin() + kHeardHeaderBytes + kHeardRecordBytes);
+      std::vector<HeardEntry> mem(16);
+      HeardDb repaired;
+      CHECK(repaired.begin(mem.data(), mem.size() * sizeof(HeardEntry)));
+      CHECK(repaired.load(file.data(), file.size()) == 1);
+      CHECK(repaired.rejected() == 1 && repaired.size() == 1);
+    }
+  }
+
   // Unknown journal version is refused, not guessed.
   std::vector<uint8_t> future = journal;
   future[8] = 9;

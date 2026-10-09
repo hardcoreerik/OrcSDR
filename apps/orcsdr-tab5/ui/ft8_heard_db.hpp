@@ -75,6 +75,8 @@ class HeardDb {
   // Serialises up to `max` changed entries (40 bytes each) and clears their dirty bit. Returns how many.
   size_t drain_dirty(uint8_t* out, size_t max_records);
   static void journal_header(uint8_t out[kHeardHeaderBytes]);
+  // Bytes to append before records: finish a torn header or pad a torn record. Recompute from actual file size after every short write.
+  static size_t journal_append_prefix(size_t file_bytes, uint8_t out[kHeardRecordBytes]);
   // Marks the entries inside serialised records dirty again. drain_dirty clears the mark as it copies a record out, so a caller whose write then failed
   // (or was short) hands the same records back here and they go out with the next drain instead of waiting for the station to be heard again.
   size_t requeue(const uint8_t* records, size_t record_count);

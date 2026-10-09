@@ -15,6 +15,9 @@ enum class ActionKind : uint8_t {
 };
 struct Action { ActionKind kind = ActionKind::none; int32_t value = 0; };
 inline bool frequency_action(ActionKind kind) { return kind == ActionKind::tune; }
+inline bool coalescible_action(ActionKind kind) {
+  return kind == ActionKind::tune || kind == ActionKind::ft8_band || kind == ActionKind::ft8_item;
+}
 inline bool channel_dashboard(Dashboard id) {
   return id == Dashboard::weather || id == Dashboard::marine || id == Dashboard::cb;
 }
