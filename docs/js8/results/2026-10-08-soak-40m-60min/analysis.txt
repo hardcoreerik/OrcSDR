@@ -1,0 +1,17 @@
+run: F:/AI/OrcSDR-TEMP/js8-soak/run1
+soak window: 61 min (device log 1791514334..1791517980)
+frames that reached the soft decoder: 73; parity+CRC valid: 53
+decoded distinct callsigns: 7  (messages: 51)
+PSK on-air distinct senders (JS8, 7000000-7300000 Hz, in window): 111 from 5199 spots
+PSK 'should hear' (reported by a receiver within 1500 km of CN84): 76
+decoded AND on air: 7  decoded AND should-hear: 7
+decoded but never spotted on PSK in the window: []
+should-hear but not decoded: 69 (first 40: ['AE0YH', 'HP1GDS', 'K4EXA', 'K4HWK', 'K5DCC', 'K7JLJL', 'K7YXZ', 'K9DGY', 'KB5WVK', 'KB7ITU', 'KC1WDO', 'KC2W', 'KC6UCN', 'KD2UWR', 'KD4E', 'KD6FLM', 'KD9KUA', 'KD9SUV', 'KE2DMC', 'KE5NUB', 'KE6UVW', 'KE8OUQ', 'KE8SNO', 'KF8GSO', 'KF8TOZ', 'KG5KBO', 'KG7MRB', 'KI4HDU', 'KI5NIG', 'KI6SSI', 'KI7LIK', 'KI7OXA', 'KJ4HQS', 'KJ5CMF', 'KJ5DRI', 'KJ5MIW', 'KK7JVK', 'KM4PVB', 'KN4HSD', 'KN6OEH'])
+--- decoded stations ---
+  K8IMT      n=16  first=+  73s last=+2950s hz=525,575,625 reported_snr=-14 psk near
+  W7SUA      n=4   first=+  73s last=+ 654s hz=881,927,931 reported_snr=+17 psk near
+  W7YSB      n=3   first=+ 148s last=+3205s hz=573,766,966 reported_snr=+06 psk near
+  KD7WPQ     n=15  first=+ 252s last=+3324s hz=2642,2644,2648 reported_snr=-13 psk near
+  WD5EED     n=9   first=+1150s last=+3100s hz=522,722,772 reported_snr=-18 psk near
+  KS1DMD     n=2   first=+1960s last=+2080s hz=623,773 reported_snr=-16 psk near
+  WB7TSQ     n=2   first=+2920s last=+2950s hz=519,570 reported_snr=-11 psk near

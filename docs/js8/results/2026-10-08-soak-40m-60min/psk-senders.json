@@ -1,0 +1,817 @@
+{
+ "senders": {
+  "9A3SWO": {
+   "best_snr": -8,
+   "locator": "JN76VD",
+   "max_hz": 7080168,
+   "min_hz": 7079349,
+   "spots": 5
+  },
+  "AE0YH": {
+   "best_snr": 5,
+   "locator": "EN41QN",
+   "max_hz": 7109709,
+   "min_hz": 7109098,
+   "spots": 17
+  },
+  "BF2": {
+   "best_snr": -7,
+   "locator": "",
+   "max_hz": 7078250,
+   "min_hz": 7078250,
+   "spots": 1
+  },
+  "DM3ME": {
+   "best_snr": -9,
+   "locator": "JO52td",
+   "max_hz": 7079150,
+   "min_hz": 7078597,
+   "spots": 7
+  },
+  "EA5URB": {
+   "best_snr": 9,
+   "locator": "IM98WN",
+   "max_hz": 7080336,
+   "min_hz": 7079481,
+   "spots": 79
+  },
+  "G0BMH": {
+   "best_snr": -26,
+   "locator": "IO83tr37",
+   "max_hz": 7079499,
+   "min_hz": 7079499,
+   "spots": 1
+  },
+  "HP1GDS": {
+   "best_snr": -1,
+   "locator": "FJ09GB",
+   "max_hz": 7107934,
+   "min_hz": 7078553,
+   "spots": 67
+  },
+  "IU2ITE": {
+   "best_snr": 7,
+   "locator": "JN45MK",
+   "max_hz": 7079313,
+   "min_hz": 7078445,
+   "spots": 23
+  },
+  "JG1APX": {
+   "best_snr": 5,
+   "locator": "PM95ur24",
+   "max_hz": 7079081,
+   "min_hz": 7079057,
+   "spots": 6
+  },
+  "K2DHS": {
+   "best_snr": -10,
+   "locator": "EN35DH",
+   "max_hz": 7111999,
+   "min_hz": 7111999,
+   "spots": 1
+  },
+  "K4EXA": {
+   "best_snr": 12,
+   "locator": "EM63GE",
+   "max_hz": 7107580,
+   "min_hz": 7078593,
+   "spots": 99
+  },
+  "K4HWK": {
+   "best_snr": 11,
+   "locator": "FM18FI",
+   "max_hz": 7078994,
+   "min_hz": 7078496,
+   "spots": 68
+  },
+  "K4KCF": {
+   "best_snr": 0,
+   "locator": "EM65RX",
+   "max_hz": 7078921,
+   "min_hz": 7078895,
+   "spots": 6
+  },
+  "K5DCC": {
+   "best_snr": 14,
+   "locator": "EM36LL",
+   "max_hz": 7107830,
+   "min_hz": 7078491,
+   "spots": 159
+  },
+  "K7JLJL": {
+   "best_snr": 7,
+   "locator": "CN83",
+   "max_hz": 7109076,
+   "min_hz": 7109067,
+   "spots": 15
+  },
+  "K7YXZ": {
+   "best_snr": 17,
+   "locator": "CN85QL",
+   "max_hz": 7107582,
+   "min_hz": 7078443,
+   "spots": 102
+  },
+  "K8IMT": {
+   "best_snr": 12,
+   "locator": "DN18si61",
+   "max_hz": 7107678,
+   "min_hz": 7078470,
+   "spots": 156
+  },
+  "K8JOK": {
+   "best_snr": 5,
+   "locator": "EN14kv08",
+   "max_hz": 7109073,
+   "min_hz": 7080056,
+   "spots": 41
+  },
+  "K9BTR": {
+   "best_snr": -1,
+   "locator": "FM05KA",
+   "max_hz": 7078918,
+   "min_hz": 7078546,
+   "spots": 5
+  },
+  "K9DGY": {
+   "best_snr": 16,
+   "locator": "EM58DS75EN",
+   "max_hz": 7108803,
+   "min_hz": 7108188,
+   "spots": 34
+  },
+  "KB5WVK": {
+   "best_snr": 11,
+   "locator": "EM22MN",
+   "max_hz": 7079445,
+   "min_hz": 7078595,
+   "spots": 67
+  },
+  "KB7ITU": {
+   "best_snr": 15,
+   "locator": "DN43BV",
+   "max_hz": 7107628,
+   "min_hz": 7078497,
+   "spots": 48
+  },
+  "KC1WDO": {
+   "best_snr": 7,
+   "locator": "FN42NW",
+   "max_hz": 7107782,
+   "min_hz": 7078464,
+   "spots": 147
+  },
+  "KC2W": {
+   "best_snr": -1,
+   "locator": "DM33WV",
+   "max_hz": 7079364,
+   "min_hz": 7078698,
+   "spots": 21
+  },
+  "KC3ZNX": {
+   "best_snr": 7,
+   "locator": "FN10XI",
+   "max_hz": 7108057,
+   "min_hz": 7108048,
+   "spots": 9
+  },
+  "KC6UCN": {
+   "best_snr": 0,
+   "locator": "DM86RB",
+   "max_hz": 7107858,
+   "min_hz": 7078422,
+   "spots": 39
+  },
+  "KD2UWR": {
+   "best_snr": 9,
+   "locator": "FN30LR",
+   "max_hz": 7107922,
+   "min_hz": 7078493,
+   "spots": 95
+  },
+  "KD4E": {
+   "best_snr": 17,
+   "locator": "EM92DF",
+   "max_hz": 7107822,
+   "min_hz": 7078456,
+   "spots": 252
+  },
+  "KD6FLM": {
+   "best_snr": 15,
+   "locator": "DM78pw43",
+   "max_hz": 7079417,
+   "min_hz": 7079340,
+   "spots": 24
+  },
+  "KD7WPQ": {
+   "best_snr": 14,
+   "locator": "DN18rh54",
+   "max_hz": 7109596,
+   "min_hz": 7080537,
+   "spots": 128
+  },
+  "KD9DSS": {
+   "best_snr": -15,
+   "locator": "EM68",
+   "max_hz": 7112271,
+   "min_hz": 7112271,
+   "spots": 1
+  },
+  "KD9KUA": {
+   "best_snr": 22,
+   "locator": "EN53VJ",
+   "max_hz": 7109004,
+   "min_hz": 7107496,
+   "spots": 28
+  },
+  "KD9RJT": {
+   "best_snr": 1,
+   "locator": "EN44AW",
+   "max_hz": 7117246,
+   "min_hz": 7117246,
+   "spots": 1
+  },
+  "KD9SUV": {
+   "best_snr": 9,
+   "locator": "EN51TV",
+   "max_hz": 7107884,
+   "min_hz": 7078486,
+   "spots": 111
+  },
+  "KE2DMC": {
+   "best_snr": 12,
+   "locator": "FN32ER",
+   "max_hz": 7107724,
+   "min_hz": 7078456,
+   "spots": 135
+  },
+  "KE5NUB": {
+   "best_snr": 22,
+   "locator": "EM12ru06",
+   "max_hz": 7109315,
+   "min_hz": 7108700,
+   "spots": 38
+  },
+  "KE6UVW": {
+   "best_snr": 12,
+   "locator": "DM04LI",
+   "max_hz": 7107464,
+   "min_hz": 7078484,
+   "spots": 48
+  },
+  "KE8OUQ": {
+   "best_snr": 14,
+   "locator": "EM75WR",
+   "max_hz": 7108423,
+   "min_hz": 7079385,
+   "spots": 76
+  },
+  "KE8SNO": {
+   "best_snr": 11,
+   "locator": "FM09CL",
+   "max_hz": 7107682,
+   "min_hz": 7078503,
+   "spots": 76
+  },
+  "KE8SRV": {
+   "best_snr": 0,
+   "locator": "EN80FC",
+   "max_hz": 7078556,
+   "min_hz": 7078556,
+   "spots": 1
+  },
+  "KF0BSQ": {
+   "best_snr": -2,
+   "locator": "EM28PW",
+   "max_hz": 7109228,
+   "min_hz": 7109218,
+   "spots": 7
+  },
+  "KF8GSO": {
+   "best_snr": 15,
+   "locator": "EN72FD",
+   "max_hz": 7078869,
+   "min_hz": 7078678,
+   "spots": 66
+  },
+  "KF8TOZ": {
+   "best_snr": 8,
+   "locator": "EM79SJ",
+   "max_hz": 7107562,
+   "min_hz": 7078524,
+   "spots": 60
+  },
+  "KG5KBO": {
+   "best_snr": 17,
+   "locator": "EM32QJ",
+   "max_hz": 7109603,
+   "min_hz": 7108989,
+   "spots": 31
+  },
+  "KG6MTM": {
+   "best_snr": -11,
+   "locator": "DM33WU",
+   "max_hz": 7116968,
+   "min_hz": 7116968,
+   "spots": 1
+  },
+  "KG7MRB": {
+   "best_snr": 7,
+   "locator": "CN88WW",
+   "max_hz": 7079016,
+   "min_hz": 7078493,
+   "spots": 28
+  },
+  "KI4HDU": {
+   "best_snr": 21,
+   "locator": "EM85FW39",
+   "max_hz": 7107863,
+   "min_hz": 7078476,
+   "spots": 136
+  },
+  "KI4RXJ": {
+   "best_snr": 7,
+   "locator": "EM28hx95",
+   "max_hz": 7108366,
+   "min_hz": 7079349,
+   "spots": 27
+  },
+  "KI5LVD": {
+   "best_snr": -10,
+   "locator": "EM33QH",
+   "max_hz": 7110288,
+   "min_hz": 7110286,
+   "spots": 4
+  },
+  "KI5NIG": {
+   "best_snr": 0,
+   "locator": "EL09UO",
+   "max_hz": 7079651,
+   "min_hz": 7078650,
+   "spots": 55
+  },
+  "KI6SSI": {
+   "best_snr": 3,
+   "locator": "CM98LP",
+   "max_hz": 7079624,
+   "min_hz": 7078998,
+   "spots": 32
+  },
+  "KI7LIK": {
+   "best_snr": 12,
+   "locator": "DM33vp16",
+   "max_hz": 7107872,
+   "min_hz": 7078195,
+   "spots": 91
+  },
+  "KI7OXA": {
+   "best_snr": -1,
+   "locator": "DM41MW02RQ",
+   "max_hz": 7107932,
+   "min_hz": 7078702,
+   "spots": 32
+  },
+  "KJ4CTD": {
+   "best_snr": -15,
+   "locator": "EM85UB",
+   "max_hz": 7079819,
+   "min_hz": 7079817,
+   "spots": 7
+  },
+  "KJ4HQS": {
+   "best_snr": 2,
+   "locator": "EM78il15",
+   "max_hz": 7108473,
+   "min_hz": 7079436,
+   "spots": 58
+  },
+  "KJ5CMF": {
+   "best_snr": 0,
+   "locator": "EL29GC47",
+   "max_hz": 7080358,
+   "min_hz": 7078609,
+   "spots": 61
+  },
+  "KJ5DRI": {
+   "best_snr": -2,
+   "locator": "EM26AA",
+   "max_hz": 7109553,
+   "min_hz": 7108944,
+   "spots": 10
+  },
+  "KJ5FQT": {
+   "best_snr": 18,
+   "locator": "EL70",
+   "max_hz": 7108622,
+   "min_hz": 7108223,
+   "spots": 12
+  },
+  "KJ5MIW": {
+   "best_snr": 15,
+   "locator": "EM15dj33",
+   "max_hz": 7109215,
+   "min_hz": 7080156,
+   "spots": 89
+  },
+  "KK7JVK": {
+   "best_snr": -12,
+   "locator": "CN85pt",
+   "max_hz": 7079581,
+   "min_hz": 7079280,
+   "spots": 2
+  },
+  "KM4PVB": {
+   "best_snr": 20,
+   "locator": "EM65OW11FR",
+   "max_hz": 7108900,
+   "min_hz": 7078549,
+   "spots": 125
+  },
+  "KN4AM": {
+   "best_snr": 6,
+   "locator": "EL99HC",
+   "max_hz": 7109278,
+   "min_hz": 7080261,
+   "spots": 56
+  },
+  "KN4HSD": {
+   "best_snr": 18,
+   "locator": "EM66hn94",
+   "max_hz": 7107964,
+   "min_hz": 7078907,
+   "spots": 78
+  },
+  "KN6OEH": {
+   "best_snr": 13,
+   "locator": "DM13HV",
+   "max_hz": 7107780,
+   "min_hz": 7078442,
+   "spots": 103
+  },
+  "KQ4DNM": {
+   "best_snr": 16,
+   "locator": "EM93JW",
+   "max_hz": 7107830,
+   "min_hz": 7078491,
+   "spots": 142
+  },
+  "KQ4ODY": {
+   "best_snr": 15,
+   "locator": "EM75wx45",
+   "max_hz": 7107885,
+   "min_hz": 7078848,
+   "spots": 47
+  },
+  "KR4KMP": {
+   "best_snr": 12,
+   "locator": "EM55BB",
+   "max_hz": 7108028,
+   "min_hz": 7078644,
+   "spots": 96
+  },
+  "KS1DMD": {
+   "best_snr": 16,
+   "locator": "EM07PP",
+   "max_hz": 7107929,
+   "min_hz": 7078460,
+   "spots": 182
+  },
+  "KT7RUN": {
+   "best_snr": -1,
+   "locator": "DM33XV",
+   "max_hz": 7079825,
+   "min_hz": 7079777,
+   "spots": 7
+  },
+  "KU4B": {
+   "best_snr": 13,
+   "locator": "EM66SA",
+   "max_hz": 7107928,
+   "min_hz": 7078498,
+   "spots": 95
+  },
+  "M0IQF": {
+   "best_snr": 2,
+   "locator": "IO91SV",
+   "max_hz": 7079259,
+   "min_hz": 7079184,
+   "spots": 20
+  },
+  "M6AQW": {
+   "best_snr": -10,
+   "locator": "IO91RI",
+   "max_hz": 7079408,
+   "min_hz": 7078777,
+   "spots": 15
+  },
+  "M9RIP": {
+   "best_snr": -18,
+   "locator": "IO94EO",
+   "max_hz": 7079791,
+   "min_hz": 7079791,
+   "spots": 1
+  },
+  "N0DDK": {
+   "best_snr": 10,
+   "locator": "EM83CV",
+   "max_hz": 7109538,
+   "min_hz": 7109527,
+   "spots": 12
+  },
+  "N0POO": {
+   "best_snr": 7,
+   "locator": "EN21AG",
+   "max_hz": 7108285,
+   "min_hz": 7079267,
+   "spots": 77
+  },
+  "N3DNA": {
+   "best_snr": 14,
+   "locator": "FN20wb32",
+   "max_hz": 7107731,
+   "min_hz": 7078692,
+   "spots": 156
+  },
+  "N3MEL": {
+   "best_snr": 18,
+   "locator": "FM29DX",
+   "max_hz": 7107875,
+   "min_hz": 7078542,
+   "spots": 203
+  },
+  "N4IRT": {
+   "best_snr": 12,
+   "locator": "FM08lg81ma",
+   "max_hz": 7080413,
+   "min_hz": 7079516,
+   "spots": 72
+  },
+  "N5NDC": {
+   "best_snr": 1,
+   "locator": "EM22OD",
+   "max_hz": 7079484,
+   "min_hz": 7078521,
+   "spots": 78
+  },
+  "N5RML": {
+   "best_snr": 9,
+   "locator": "EM40wa82",
+   "max_hz": 7079494,
+   "min_hz": 7078494,
+   "spots": 85
+  },
+  "N6GRG": {
+   "best_snr": 22,
+   "locator": "CN86SL",
+   "max_hz": 7108635,
+   "min_hz": 7079597,
+   "spots": 73
+  },
+  "N7EAL": {
+   "best_snr": 16,
+   "locator": "DM03uu50",
+   "max_hz": 7107929,
+   "min_hz": 7078498,
+   "spots": 77
+  },
+  "N9CQS": {
+   "best_snr": 13,
+   "locator": "EN50WA",
+   "max_hz": 7107880,
+   "min_hz": 7078483,
+   "spots": 111
+  },
+  "ND7M": {
+   "best_snr": 15,
+   "locator": "DM16XF",
+   "max_hz": 7107975,
+   "min_hz": 7078916,
+   "spots": 163
+  },
+  "NT5DF": {
+   "best_snr": 13,
+   "locator": "EM13TE",
+   "max_hz": 7079282,
+   "min_hz": 7079151,
+   "spots": 50
+  },
+  "OE7DRT": {
+   "best_snr": 1,
+   "locator": "JN57LB",
+   "max_hz": 7079319,
+   "min_hz": 7078501,
+   "spots": 10
+  },
+  "PD5DLB": {
+   "best_snr": -16,
+   "locator": "JO33JD",
+   "max_hz": 7078947,
+   "min_hz": 7078799,
+   "spots": 8
+  },
+  "PE1PUX": {
+   "best_snr": -3,
+   "locator": "JO21WA",
+   "max_hz": 7079493,
+   "min_hz": 7078505,
+   "spots": 39
+  },
+  "SV2BBO/A": {
+   "best_snr": 2,
+   "locator": "KN10VE19PG",
+   "max_hz": 7078956,
+   "min_hz": 7078597,
+   "spots": 15
+  },
+  "VA3NB": {
+   "best_snr": 5,
+   "locator": "EN93UM",
+   "max_hz": 7080103,
+   "min_hz": 7078664,
+   "spots": 32
+  },
+  "VA7FC": {
+   "best_snr": 15,
+   "locator": "CN78SR",
+   "max_hz": 7108952,
+   "min_hz": 7108941,
+   "spots": 28
+  },
+  "VE7NHW": {
+   "best_snr": -9,
+   "locator": "CN89SB",
+   "max_hz": 7078900,
+   "min_hz": 7078900,
+   "spots": 1
+  },
+  "VK1AAH": {
+   "best_snr": 0,
+   "locator": "QF44MS",
+   "max_hz": 7078701,
+   "min_hz": 7078648,
+   "spots": 2
+  },
+  "VK2FAT": {
+   "best_snr": 13,
+   "locator": "QF56IF",
+   "max_hz": 7078848,
+   "min_hz": 7078597,
+   "spots": 7
+  },
+  "VK2XOR": {
+   "best_snr": 6,
+   "locator": "QF56QO",
+   "max_hz": 7078901,
+   "min_hz": 7078499,
+   "spots": 5
+  },
+  "VK3FC": {
+   "best_snr": -8,
+   "locator": "QF22ql",
+   "max_hz": 7080003,
+   "min_hz": 7080000,
+   "spots": 4
+  },
+  "VK3TNU": {
+   "best_snr": -6,
+   "locator": "QF13CH",
+   "max_hz": 7078947,
+   "min_hz": 7078697,
+   "spots": 4
+  },
+  "VK4RV": {
+   "best_snr": -14,
+   "locator": "QG62ku64",
+   "max_hz": 7078658,
+   "min_hz": 7078557,
+   "spots": 3
+  },
+  "W0IFM": {
+   "best_snr": 6,
+   "locator": "EM48QL",
+   "max_hz": 7117001,
+   "min_hz": 7117000,
+   "spots": 2
+  },
+  "W1BUS": {
+   "best_snr": 14,
+   "locator": "CN85un",
+   "max_hz": 7079968,
+   "min_hz": 7079666,
+   "spots": 55
+  },
+  "W4CAT": {
+   "best_snr": 19,
+   "locator": "EM65SL",
+   "max_hz": 7107954,
+   "min_hz": 7078915,
+   "spots": 102
+  },
+  "W4CKA": {
+   "best_snr": 16,
+   "locator": "EM86MK",
+   "max_hz": 7108781,
+   "min_hz": 7078777,
+   "spots": 31
+  },
+  "W6GJB": {
+   "best_snr": 3,
+   "locator": "CM87wa89",
+   "max_hz": 7079596,
+   "min_hz": 7078501,
+   "spots": 43
+  },
+  "W6YJU": {
+   "best_snr": 0,
+   "locator": "DM43CE",
+   "max_hz": 7079041,
+   "min_hz": 7078987,
+   "spots": 23
+  },
+  "W7SUA": {
+   "best_snr": 18,
+   "locator": "DM34RS",
+   "max_hz": 7107781,
+   "min_hz": 7078499,
+   "spots": 39
+  },
+  "W7YSB": {
+   "best_snr": 12,
+   "locator": "DM44XE",
+   "max_hz": 7107921,
+   "min_hz": 7078412,
+   "spots": 167
+  },
+  "W9NFG": {
+   "best_snr": 9,
+   "locator": "EM29SU",
+   "max_hz": 7107806,
+   "min_hz": 7078598,
+   "spots": 85
+  },
+  "WA5KXX": {
+   "best_snr": -22,
+   "locator": "EM13OA",
+   "max_hz": 7078565,
+   "min_hz": 7078518,
+   "spots": 4
+  },
+  "WB7TSQ": {
+   "best_snr": 14,
+   "locator": "DN30XM",
+   "max_hz": 7107923,
+   "min_hz": 7078477,
+   "spots": 148
+  },
+  "WD4U": {
+   "best_snr": 19,
+   "locator": "EM88NI",
+   "max_hz": 7107875,
+   "min_hz": 7078437,
+   "spots": 176
+  },
+  "WD5EED": {
+   "best_snr": 18,
+   "locator": "EM44xt97KB",
+   "max_hz": 7107778,
+   "min_hz": 7078496,
+   "spots": 254
+  },
+  "WD9DUI": {
+   "best_snr": -3,
+   "locator": "DM03ut29",
+   "max_hz": 7079632,
+   "min_hz": 7079625,
+   "spots": 3
+  },
+  "WN7D": {
+   "best_snr": 13,
+   "locator": "DM33SN",
+   "max_hz": 7108757,
+   "min_hz": 7079699,
+   "spots": 71
+  },
+  "WO7I": {
+   "best_snr": 16,
+   "locator": "DN10dx15gd",
+   "max_hz": 7107929,
+   "min_hz": 7078498,
+   "spots": 168
+  },
+  "WR4ITH": {
+   "best_snr": 14,
+   "locator": "EN82",
+   "max_hz": 7107805,
+   "min_hz": 7107795,
+   "spots": 16
+  },
+  "WX5OKE": {
+   "best_snr": -2,
+   "locator": "EM26EJ",
+   "max_hz": 7107950,
+   "min_hz": 7107700,
+   "spots": 9
+  }
+ },
+ "source": "PSK Reporter public query, mode=JS8, 7.000-7.300 MHz, sampled at soak start, every 10 min and end"
+}
