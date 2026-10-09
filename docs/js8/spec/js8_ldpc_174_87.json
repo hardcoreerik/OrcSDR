@@ -1,6 +1,6 @@
 {
   "schema": "orcsdr.js8.ldpc-spec/1",
-  "status": "SOURCE_DERIVED_UNVERIFIED_REAL_RECORDINGS",
+  "status": "SOURCE_DERIVED_VERIFIED_ON_ONE_REAL_FRAME",
   "dimensions": {
     "n": 174,
     "k": 87,
@@ -4119,8 +4119,15 @@
     "note": "Matrix is independently expressed as sparse parity-check equations H=[I|P], extracted as numeric protocol facts; this is not licensed source code."
   },
   "verification": {
-    "row_count": 87,
-    "all_rows_contain_parity_column": true,
-    "real_wav": "NOT_YET_VERIFIED"
+    "real_recording": "sample-40m-180s-002",
+    "dataset_commit": "1705472",
+    "candidate": "WO7I 637.5 Hz start_sample 112320",
+    "parity_syndrome_weight": 0,
+    "crc12_pass": true,
+    "inner_payload": "UvnVIpm34Fqg",
+    "frame_type": 3,
+    "hard_tone_errors_corrected": 0,
+    "comparison": "Verifies physical codeword, not rendered JS8 heartbeat; K8IMT/K7YXZ hard tones do not pass parity/CRC; KD7WPQ missing",
+    "script": "tools/js8-spec/verify_real_frames.py"
   }
 }
