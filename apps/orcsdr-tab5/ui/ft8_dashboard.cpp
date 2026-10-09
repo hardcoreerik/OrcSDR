@@ -67,6 +67,7 @@ constexpr Rect kTuneClose{818, 524, 216, 46};
 constexpr Rect kExpertRow{42, 236, 1196, 58};
 constexpr int kSetupRowsTop = 300;   // the info rows start below the Expert Tuning checkbox bar
 constexpr int kSetupRowStep = 48;
+constexpr int kSetupStatusRow = 4;   // rows 4 and 5 follow the decoder and clock; rows 0-3 describe the selected standard
 Rect tune_key_rect(size_t i) { return {260 + static_cast<int>(i % 3) * 104, 224 + static_cast<int>(i / 3) * 58, 96, 52}; }
 Rect tune_step_rect(size_t i) { return {590 + static_cast<int>(i % 3) * 148, 168 + static_cast<int>(i / 3) * 50, 140, 42}; }
 constexpr char kTuneKeys[12] = {'1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '<'};
@@ -958,13 +959,30 @@ void setup_row(int row, const char* label, const char* value, uint16_t color) {
 // The rows whose value follows the decoder or the clock. Repainted alone (row background first) so a status change never repaints the page.
 void draw_setup_status_rows() {
   std::printf("ORC_FT8_UI setup_rows\n");
-  for (int row = 1; row <= 2; ++row) {
+  for (int row = kSetupStatusRow; row <= kSetupStatusRow + 1; ++row) {
     const int y = kSetupRowsTop + row * kSetupRowStep;
     M5.Display.fillRect(46, y, 1188, 41, kPanel);
   }
-  setup_row(1, "DECODER BINDING", decoder_name(), decoder_color());
-  setup_row(2, "UTC SLOT CLOCK", g_snapshot.clock_valid ? "READY" : "NOT ESTABLISHED",
+  setup_row(kSetupStatusRow, "DECODER BINDING", decoder_name(), decoder_color());
+  setup_row(kSetupStatusRow + 1, "UTC SLOT CLOCK", g_snapshot.clock_valid ? "READY" : "NOT ESTABLISHED",
             g_snapshot.clock_valid ? kGreen : kAmber);
+}
+
+// What the selected standard is, as the decoder implements it. Shown in Setup so each mode's own parameters are visible when it is selected.
+struct StandardFacts {
+  const char* signal;     // slot length, symbol count, tones
+  const char* code;       // forward error correction and CRC
+  const char* messages;   // what the decoder turns into text today
+  const char* snr;        // where the SNR comes from
+};
+const StandardFacts& standard_facts(DigitalMode mode) {
+  static const StandardFacts kFt8{"15 s slot  /  79 symbols  /  8 tones x 6.25 Hz  /  50 Hz wide", "LDPC(174,91) + CRC-14",
+                                  "CQ, CALLS, GRIDS, REPORTS (CONTEST TYPES PENDING)", "ESTIMATED FROM THE SIGNAL"};
+  static const StandardFacts kFt4{"7.5 s slot  /  103 symbols  /  4 tones x 20.83 Hz  /  83 Hz wide", "LDPC(174,91) + CRC-14",
+                                  "CQ, CALLS, GRIDS, REPORTS (CONTEST TYPES PENDING)", "ESTIMATED FROM THE SIGNAL"};
+  static const StandardFacts kJs8{"15 s slot  /  79 symbols  /  8 tones x 6.25 Hz  /  50 Hz wide", "LDPC(174,87) + CRC-12",
+                                  "HEARTBEAT SNR REPLIES (OTHER FRAME TYPES PENDING)", "SENT BY THE STATION, NOT MEASURED"};
+  return mode == DigitalMode::ft8 ? kFt8 : mode == DigitalMode::ft4 ? kFt4 : kJs8;
 }
 
 // A real checkbox in a highlighted bar: unmistakable and large enough for a fingertip. The whole bar is the touch target.
@@ -1002,13 +1020,14 @@ void draw_setup() {
                   mode_name(g_snapshot.mode), slot_text);
     text(line, 42, 214, kMuted, 1, middle_left);
   }
-  setup_row(0, "OPERATING MODE", "RX ONLY", kGreen);
-  setup_row(1, "DECODER BINDING", decoder_name(), decoder_color());
-  setup_row(2, "UTC SLOT CLOCK", g_snapshot.clock_valid ? "READY" : "NOT ESTABLISHED",
+  const StandardFacts& facts = standard_facts(g_snapshot.mode);
+  setup_row(0, "SIGNAL", facts.signal, TFT_WHITE);
+  setup_row(1, "ERROR CORRECTION", facts.code, TFT_WHITE);
+  setup_row(2, "DECODED MESSAGES", facts.messages, TFT_WHITE);
+  setup_row(3, "SNR", facts.snr, g_snapshot.mode == DigitalMode::ft8 || g_snapshot.mode == DigitalMode::ft4 ? kGreen : kAmber);
+  setup_row(kSetupStatusRow, "DECODER BINDING", decoder_name(), decoder_color());
+  setup_row(kSetupStatusRow + 1, "UTC SLOT CLOCK", g_snapshot.clock_valid ? "READY" : "NOT ESTABLISHED",
             g_snapshot.clock_valid ? kGreen : kAmber);
-  setup_row(3, "AUDIO PASSBAND", "200 - 3000 Hz", TFT_WHITE);
-  setup_row(4, "MAP SOURCE", "OFFLINE MAIDENHEAD GRID", kGreen);
-  setup_row(5, "NETWORK REQUIRED", "NO", kGreen);
   draw_expert_checkbox();
 }
 
