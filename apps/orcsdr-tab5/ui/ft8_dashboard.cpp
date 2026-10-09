@@ -64,7 +64,9 @@ constexpr Rect kTunePlus{818, 276, 216, 86};
 constexpr Rect kTuneMinus10{590, 372, 216, 56};
 constexpr Rect kTunePlus10{818, 372, 216, 56};
 constexpr Rect kTuneClose{818, 524, 216, 46};
-constexpr Rect kExpertRow{42, 550, 1196, 40};
+constexpr Rect kExpertRow{42, 236, 1196, 58};
+constexpr int kSetupRowsTop = 300;   // the info rows start below the Expert Tuning checkbox bar
+constexpr int kSetupRowStep = 48;
 Rect tune_key_rect(size_t i) { return {260 + static_cast<int>(i % 3) * 104, 224 + static_cast<int>(i / 3) * 58, 96, 52}; }
 Rect tune_step_rect(size_t i) { return {590 + static_cast<int>(i % 3) * 148, 168 + static_cast<int>(i / 3) * 50, 140, 42}; }
 constexpr char kTuneKeys[12] = {'1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '<'};
@@ -947,7 +949,7 @@ void draw_submode_chip(size_t index) {
 }
 
 void setup_row(int row, const char* label, const char* value, uint16_t color) {
-  const int y = 238 + row * 52;
+  const int y = kSetupRowsTop + row * kSetupRowStep;
   M5.Display.drawFastHLine(42, y + 40, 1196, kGrid);
   text(label, 54, y + 18, kMuted, 2, middle_left);
   text(value, 1226, y + 18, color, 2, middle_right);
@@ -957,12 +959,34 @@ void setup_row(int row, const char* label, const char* value, uint16_t color) {
 void draw_setup_status_rows() {
   std::printf("ORC_FT8_UI setup_rows\n");
   for (int row = 1; row <= 2; ++row) {
-    const int y = 238 + row * 52;
+    const int y = kSetupRowsTop + row * kSetupRowStep;
     M5.Display.fillRect(46, y, 1188, 41, kPanel);
   }
   setup_row(1, "DECODER BINDING", decoder_name(), decoder_color());
   setup_row(2, "UTC SLOT CLOCK", g_snapshot.clock_valid ? "READY" : "NOT ESTABLISHED",
             g_snapshot.clock_valid ? kGreen : kAmber);
+}
+
+// A real checkbox in a highlighted bar: unmistakable and large enough for a fingertip. The whole bar is the touch target.
+void draw_expert_checkbox() {
+  const bool on = g_snapshot.expert_tuning;
+  focus_nav::note(kExpertRow.x, kExpertRow.y, kExpertRow.w, kExpertRow.h);
+  M5.Display.fillRoundRect(kExpertRow.x, kExpertRow.y, kExpertRow.w, kExpertRow.h, 10, on ? kSelected : kPanel);
+  M5.Display.drawRoundRect(kExpertRow.x, kExpertRow.y, kExpertRow.w, kExpertRow.h, 10, on ? kGreen : kCyan);
+  M5.Display.drawRoundRect(kExpertRow.x + 1, kExpertRow.y + 1, kExpertRow.w - 2, kExpertRow.h - 2, 9, on ? kGreen : kCyan);
+  const int bx = kExpertRow.x + 20, by = kExpertRow.y + 9, bs = 40;
+  M5.Display.fillRoundRect(bx, by, bs, bs, 6, on ? kGreen : TFT_BLACK);
+  M5.Display.drawRoundRect(bx, by, bs, bs, 6, on ? kGreen : kCyan);
+  if (on)
+    for (int d = 0; d < 4; ++d) {   // a thick check mark
+      M5.Display.drawLine(bx + 8 + d / 2, by + 21 + d % 2, bx + 17 + d / 2, by + 31 + d % 2, TFT_BLACK);
+      M5.Display.drawLine(bx + 17 + d / 2, by + 31 + d % 2, bx + 33 + d / 2, by + 10 + d % 2, TFT_BLACK);
+    }
+  text("EXPERT TUNING", bx + bs + 20, kExpertRow.y + 20, on ? kGreen : TFT_WHITE, 2, middle_left);
+  text(on ? "ON - tap DIAL on Live to type a frequency or step it. OrcDial turns step the dial in Hz."
+          : "OFF - Auto uses the band table. Check this to type a dial frequency and step it by 10 Hz to 100 kHz.",
+       bx + bs + 20, kExpertRow.y + 44, kMuted, 0, middle_left);
+  text(on ? "ON" : "OFF", kExpertRow.x + kExpertRow.w - 24, kExpertRow.y + kExpertRow.h / 2, on ? kGreen : kMuted, 2, middle_right);
 }
 
 void draw_setup() {
@@ -985,9 +1009,7 @@ void draw_setup() {
   setup_row(3, "AUDIO PASSBAND", "200 - 3000 Hz", TFT_WHITE);
   setup_row(4, "MAP SOURCE", "OFFLINE MAIDENHEAD GRID", kGreen);
   setup_row(5, "NETWORK REQUIRED", "NO", kGreen);
-  setup_row(6, "EXPERT TUNING  (DIAL ENTRY + STEP)", g_snapshot.expert_tuning ? "ON" : "OFF", g_snapshot.expert_tuning ? kGreen : kMuted);
-  if (g_snapshot.expert_tuning) focus_nav::note(kExpertRow.x, kExpertRow.y, kExpertRow.w, kExpertRow.h);
-  text("Receive only. Times need a locked UTC clock. Expert tuning: tap DIAL on Live; OrcDial rotation steps the dial in Hz.", 54, 606, kMuted, 0, middle_left);
+  draw_expert_checkbox();
 }
 
 // Live screen: what a decoder-status, candidate-count or decode change touches. Everything else (dial, mode, waterfall panel) stays as drawn.
@@ -1225,7 +1247,10 @@ void update(const Snapshot& snapshot_value) {
     }
     // Setup: a decoder or clock status change repaints only its two rows; a mode change repaints in place without blanking.
     if (g_tab == Tab::setup && !same_content(previous, g_snapshot)) {
-      if (previous.mode == g_snapshot.mode && previous.decoder_capabilities == g_snapshot.decoder_capabilities) draw_setup_status_rows();
+      if (previous.mode == g_snapshot.mode && previous.decoder_capabilities == g_snapshot.decoder_capabilities) {
+        if (previous.expert_tuning != g_snapshot.expert_tuning) draw_expert_checkbox();   // the checkbox repaints on its own
+        draw_setup_status_rows();
+      }
       else draw_body(true);
       return;
     }
