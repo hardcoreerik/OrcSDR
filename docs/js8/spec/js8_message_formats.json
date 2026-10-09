@@ -1,0 +1,46 @@
+{
+  "schema": "orcsdr.js8.message-layout/1",
+  "status": "PHYSICAL_FRAME_LAYOUT_SOURCE_DERIVED; HIGHER_MESSAGE_TYPES_UNVERIFIED",
+  "codeword_information_bits": 87,
+  "frame": {
+    "text_bits": [
+      0,
+      71
+    ],
+    "frame_type_bits": [
+      72,
+      74
+    ],
+    "crc_bits": [
+      75,
+      86
+    ]
+  },
+  "text_field": {
+    "characters": 12,
+    "bits_per_character": 6,
+    "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-+",
+    "encoding": "12 consecutive 6-bit integers MSB-first, left to right",
+    "raw_text_only": "These twelve alphabet characters are a radio frame's encoded inner text field, NOT necessarily human-readable displayed message; JS8Call varicode/dictionary/frame assembly layer is still required."
+  },
+  "frame_type_flag_semantics": "NOT YET PINNED TO A VERSIONED MESSAGE-PROTOCOL SOURCE",
+  "heartbeat_callsign_snr_encoding": "UNVERIFIED",
+  "directed_commands": "UNVERIFIED",
+  "compound_callsigns": "UNVERIFIED",
+  "huffman_data": "UNVERIFIED",
+  "dictionary_data": "UNVERIFIED",
+  "multi_frame_assembly": "UNVERIFIED",
+  "provenance": {
+    "type": "GPL-SOURCE",
+    "repository": "js8call/js8call",
+    "file": "JS8.cpp",
+    "branch": "main",
+    "blob_sha": "b19aa96c6ad000e26a24074692cd3633317063e8",
+    "note": "The inner 72-bit character field is established; application-layer rendering cannot be inferred from these 12 bytes alone.",
+    "functions": [
+      "encode",
+      "extractmessage174"
+    ]
+  },
+  "verification": "NO_END_TO_END_MESSAGE_RECOVERY"
+}
