@@ -86,7 +86,7 @@ int main() {
   encode("UvnVIpm34Fqg", 3, wo7i);   // the 12 raw characters of the WO7I frame in the real capture
   CHECK(codec::syndrome_weight(wo7i) == 0);
   CHECK(codec::crc_valid(wo7i));
-  CHECK(codec::crc12(reinterpret_cast<const uint8_t*>("\0")) == codec::crc12(reinterpret_cast<const uint8_t*>("\0")));
+  { uint8_t z[75] = {}; CHECK(codec::crc12(z) <= 0xFFFu); }
 
   // A single flipped information bit breaks both parity and CRC.
   uint8_t bad[174];

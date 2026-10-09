@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -51,7 +52,9 @@ bool Backend::begin(uint32_t sample_rate_hz, Submode submode, const Config& conf
   samples_ = static_cast<int16_t*>(grab(capacity_ * sizeof(int16_t)));
   grid_ = static_cast<float*>(grab(grid_row_capacity_ * bin_count_ * sizeof(float)));
   candidates_ = static_cast<sync::Candidate*>(grab(sizeof(sync::Candidate) * kMaxCandidates));
-  if (samples_ == nullptr || grid_ == nullptr || candidates_ == nullptr) {
+  decoder_ws_ = static_cast<decoder::Workspace*>(grab(sizeof(decoder::Workspace)));
+  energy_ = reinterpret_cast<float (*)[8]>(grab(sizeof(float) * kChannelSymbols * 8));
+  if (samples_ == nullptr || grid_ == nullptr || candidates_ == nullptr || decoder_ws_ == nullptr || energy_ == nullptr) {
     end();
     return false;
   }
@@ -66,6 +69,10 @@ void Backend::end() {
   drop(samples_);
   drop(grid_);
   drop(candidates_);
+  drop(decoder_ws_);
+  drop(energy_);
+  decoder_ws_ = nullptr;
+  energy_ = nullptr;
   samples_ = nullptr;
   grid_ = nullptr;
   candidates_ = nullptr;
@@ -206,10 +213,57 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
   stats_.demod_ms = t_end - t_search;
   stats_.total_ms = t_end - t_begin;
 
-  // Acceptance layer goes here once reconstructed: raw frame -> tone-to-bit map -> FEC -> CRC -> supported frame parser.
-  // Until all four are accepted no Decode may be written.
-  stats_.decodes = 0;
-  return 0;
+  // ---- soft decoding of each raw frame: LLR -> BP -> bounded OSD; a message needs parity AND CRC (see js8_decoder.hpp)
+  size_t written = 0;
+  const uint32_t t_decode = clock_ms();
+  for (size_t i = 0; i < raw_count_; ++i) {
+    RawResult& r = raw_[i];
+    if (r.sync_hits < config_.min_decode_sync_hits) continue;
+    DemodStats ds{};
+    if (!demodulate_energies(samples_, filled_, submode_, r.start_sample, r.audio_hz, reinterpret_cast<float (*)[8]>(energy_), &ds)) continue;
+    ++stats_.decode_attempts;
+    r.attempted = true;
+    decoder::Result dr;
+    const bool ok = decoder::decode(reinterpret_cast<const float (*)[8]>(energy_), config_.decoder, decoder_ws_, &dr);
+    r.initial_syndrome = dr.initial_syndrome;
+    r.final_syndrome = dr.final_syndrome;
+    r.bp_iterations = dr.bp_iterations;
+    r.osd_order = dr.osd_order;
+    r.hard_corrections = dr.hard_corrections;
+    r.crc_valid = ok && dr.crc_valid;
+    r.rendered = ok && dr.rendered;
+    r.method = dr.method;
+    if (!ok) continue;
+    std::memcpy(r.payload, dr.fields.text, sizeof(r.payload));
+    r.frame_kind = dr.fields.kind;
+    if (!dr.rendered) {
+      ++stats_.valid_unrendered;
+      continue;
+    }
+    std::memcpy(r.text, dr.message.text, sizeof(r.text));
+    bool duplicate = false;   // the same frame found at two alignments
+    for (size_t k = 0; k < written; ++k)
+      if (std::strcmp(output[k].message, dr.message.text) == 0) duplicate = true;
+    if (duplicate || written >= capacity) continue;
+    orcsdr::ft8::Decode& d = output[written++];
+    d = orcsdr::ft8::Decode{};
+    d.utc_epoch = static_cast<uint32_t>(slot_epoch_ms_ / 1000u);
+    d.dt_ms = static_cast<int16_t>(std::clamp<int32_t>(r.dt_ms, -32768, 32767));
+    d.audio_hz = static_cast<uint16_t>(std::lround(r.audio_hz));
+    d.sync_score = static_cast<int16_t>(std::lround(r.sync_score * 100.0f));
+    d.mode = orcsdr::ft8::DigitalMode::js8_normal;
+    d.kind = orcsdr::ft8::DecodeKind::unknown;
+    d.flags = orcsdr::ft8::decode_flag_snr_unavailable;   // the SNR inside the message is the sender's report, not a measurement
+    std::snprintf(d.message, sizeof(d.message), "%s", dr.message.text);
+    std::snprintf(d.callsign, sizeof(d.callsign), "%s", dr.message.source);
+    if (dr.method == decoder::Method::osd) ++stats_.by_osd;
+    else if (dr.method == decoder::Method::bp) ++stats_.by_bp;
+    else ++stats_.by_hard;
+  }
+  stats_.decode_ms = clock_ms() - t_decode;
+  stats_.total_ms = clock_ms() - t_begin;
+  stats_.decodes = static_cast<uint32_t>(written);
+  return written;
 }
 
 bool self_check() { return kBinCount == 449 && kRowsPerSymbol == 2; }

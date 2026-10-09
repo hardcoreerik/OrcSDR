@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
   }
   double step_s = 2.0, tol = 7.0;
   float min_score = 0.10f;
-  bool json = false, show_candidates = false;
+  bool json = false, show_candidates = false, show_log = false;
   std::vector<double> refs;
   for (int i = 2; i < argc; ++i) {
     const std::string a = argv[i];
@@ -36,6 +36,7 @@ int main(int argc, char** argv) {
     else if (a == "--json") json = true;
     else if (a == "--min-score" && i + 1 < argc) min_score = static_cast<float>(std::atof(argv[++i]));
     else if (a == "--candidates") show_candidates = true;
+    else if (a == "--log") show_log = true;
     else return 2;
   }
   ft8_wav_tools::Wav wav{};
@@ -62,12 +63,27 @@ int main(int argc, char** argv) {
   };
   std::vector<Hit> hits;
   size_t windows = 0;
-  orcsdr::ft8::Decode none[1];
+  orcsdr::ft8::Decode none[16];
+  size_t message_count = 0;
   for (size_t start = 0; start + window <= wav.samples.size(); start += step) {
     backend.begin_slot(0);
     backend.offer_audio(wav.samples.data() + start, window);
-    backend.finish_slot(none, 1);
+    const size_t n_messages = backend.finish_slot(none, 16);
     ++windows;
+    message_count += n_messages;
+    if (show_log)
+      for (size_t i = 0; i < backend.raw_count(); ++i) {
+        const auto* r = backend.raw(i);
+        if (!r->attempted) continue;
+        const unsigned long long abs_start = static_cast<unsigned long long>(start) + r->start_sample;
+        std::printf("frame window=%.1fs start=%llu hz=%.2f dt_ms=%d sync_hits=%u sync=%.3f margin=%.3f initial_syndrome=%u bp_iter=%u osd_order=%u corrections=%u final_syndrome=%u crc=%s ",
+                    static_cast<double>(start) / 12000.0, abs_start, static_cast<double>(r->audio_hz), static_cast<int>(r->dt_ms), r->sync_hits,
+                    static_cast<double>(r->sync_score), static_cast<double>(r->mean_margin), r->initial_syndrome, r->bp_iterations, r->osd_order,
+                    r->hard_corrections, r->final_syndrome, r->crc_valid ? "ok" : "fail");
+        if (r->crc_valid) std::printf("kind=%u payload=%s ", r->frame_kind, r->payload);
+        if (r->rendered) std::printf("text=\"%s\" ", r->text);
+        std::printf("backend_ms=%u\n", backend.stats().total_ms);
+      }
     if (show_candidates)
       for (size_t i = 0; i < backend.candidate_count(); ++i) {
         const auto* c = backend.candidate(i);

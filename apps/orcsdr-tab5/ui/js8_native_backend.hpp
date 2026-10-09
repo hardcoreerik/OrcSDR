@@ -1,5 +1,6 @@
 #pragma once
 
+#include "js8_decoder.hpp"
 #include "js8_demod.hpp"
 #include "js8_frame.hpp"
 #include "js8_mode.hpp"
@@ -34,6 +35,8 @@ struct Memory {
 struct Config {
   uint16_t candidate_limit = 16;   // raw frames kept per slot (at most kMaxCandidates)
   float min_score = 0.10f;         // sync threshold
+  uint8_t min_decode_sync_hits = 14;   // raw frames with fewer sync hits (of 21) are not given to the soft decoder
+  decoder::Config decoder{};
   uint32_t deadline_ms = 0;        // stop demodulating candidates after this long (0 = no limit); needs now_us
   uint64_t (*now_us)() = nullptr;
 };
@@ -53,7 +56,13 @@ struct Stats {
   bool deadline_hit = false;
   bool slot_too_short = false;
   bool incomplete = false;          // the slot had a discontinuity and was skipped
-  uint32_t decodes = 0;             // always 0 until FEC + CRC + a supported frame parser exist
+  uint32_t decodes = 0;             // messages published (parity and CRC verified, renderable)
+  uint16_t decode_attempts = 0;     // raw frames that reached the soft decoder (enough sync hits)
+  uint16_t valid_unrendered = 0;    // parity + CRC held but the frame type is not rendered (counted, never shown)
+  uint16_t by_hard = 0;             // published by hard decision / belief propagation / OSD
+  uint16_t by_bp = 0;
+  uint16_t by_osd = 0;
+  uint32_t decode_ms = 0;
 };
 
 // One raw frame, for diagnostics. Never shown to a user as text.
@@ -65,6 +74,19 @@ struct RawResult {
   uint8_t sync_hits = 0;
   float mean_margin = 0.0f;
   RawFrame frame{};
+  // Soft-decoder log for this frame (valid when attempted).
+  bool attempted = false;
+  uint16_t initial_syndrome = 0;
+  uint16_t final_syndrome = 0;
+  uint8_t bp_iterations = 0;
+  uint8_t osd_order = 0;
+  uint16_t hard_corrections = 0;
+  bool crc_valid = false;
+  bool rendered = false;
+  decoder::Method method = decoder::Method::none;
+  char payload[13]{};
+  uint8_t frame_kind = 0;
+  char text[48]{};
 };
 
 class Backend {
@@ -83,7 +105,7 @@ class Backend {
 
   bool begin_slot(uint64_t slot_epoch_ms);
   bool offer_audio(const int16_t* samples, size_t count);
-  // Runs the front end on the buffered slot. Returns the number of Decode records written: always zero for now.
+  // Runs the front end on the buffered slot. Returns the number of Decode records written (verified messages only).
   size_t finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool incomplete = false);
 
   void set_config(const Config& config);
@@ -133,6 +155,8 @@ class Backend {
   size_t grid_row_capacity_ = 0;
 
   sync::Candidate* candidates_ = nullptr;
+  decoder::Workspace* decoder_ws_ = nullptr;
+  float (*energy_)[8] = nullptr;
   RawResult raw_[kMaxCandidates]{};
   size_t raw_count_ = 0;
   Stats stats_{};
