@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 
@@ -187,7 +188,7 @@ void draw_utc() {
     format_utc(clock, sizeof(clock), static_cast<uint32_t>(g_snapshot.utc_ms / 1000u));
     std::snprintf(utc, sizeof(utc), "UTC %s", clock);
   }
-  M5.Display.fillRect(640, 62, 220, 26, TFT_BLACK);
+  M5.Display.fillRect(640, 62, 156, 26, TFT_BLACK);   // stops short of the (i) button at x 804
   text(utc, 640, 75, g_snapshot.clock_valid ? kGreen : kAmber, 2, middle_left);
   g_drawn_second = g_snapshot.utc_ms / 1000u;
 }
@@ -202,7 +203,7 @@ void draw_info_button() {
 }
 
 void draw_header() {
-  std::printf("ORC_FT8_UI header mode=%u band=%u clock=%d\n", static_cast<unsigned>(g_snapshot.mode), static_cast<unsigned>(g_snapshot.selected_band), g_snapshot.clock_valid ? 1 : 0);
+  std::printf("ORC_FT8_UI header mode=%u band=%u clock=%d battery=%d\n", static_cast<unsigned>(g_snapshot.mode), static_cast<unsigned>(g_snapshot.selected_band), g_snapshot.clock_valid ? 1 : 0, static_cast<int>(g_snapshot.battery_percent));
   // Standard dashboard header: brand, divider, title block, then the shared controls on the right. The header
   // repaints only its own band; the screen is never cleared.
   M5.Display.fillRect(0, 0, 1280, 92, TFT_BLACK);
@@ -1383,6 +1384,14 @@ void update(const Snapshot& snapshot_value) {
   g_snapshot = snapshot_value;
   g_snapshot.decode_count = std::min(g_snapshot.decode_count, kDecodeCapacity);
   g_snapshot.selected_band = std::min(g_snapshot.selected_band, band_count() - 1);
+  // The battery gauge is noisy and can read -1 now and then. Without this the header (and the (i) button in it) repainted several times a
+  // second for a one percent wobble: ignore invalid readings and changes under 2 percent.
+  {
+    int16_t reading = g_snapshot.battery_percent;
+    if (reading < 0 || reading > 100) reading = previous.battery_percent;
+    else if (previous.battery_percent >= 0 && std::abs(reading - previous.battery_percent) < 2) reading = previous.battery_percent;
+    g_snapshot.battery_percent = reading;
+  }
   const bool header_changed = previous.mode != g_snapshot.mode ||
                               previous.selected_band != g_snapshot.selected_band ||
                               previous.clock_valid != g_snapshot.clock_valid ||
