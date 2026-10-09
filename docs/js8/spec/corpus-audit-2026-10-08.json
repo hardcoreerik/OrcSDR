@@ -1,0 +1,23 @@
+{
+  "tests": "host corpus integrity and sync audit",
+  "dataset_commit": "1705472",
+  "capture_count": 7,
+  "all_audio_hashes_match": true,
+  "all_reference_paths_present": true,
+  "raw_candidates": 16,
+  "represented_reference_indices": [
+    0,
+    1,
+    2
+  ],
+  "best_sync_hits": {
+    "0": 21,
+    "1": 21,
+    "2": 14
+  },
+  "primary_iq_hash_matches": true,
+  "cli_binary_hash_matches": true,
+  "fer_crc_message": "NOT_TESTED",
+  "reference_cli_execution": "BLOCKED: libicui18n.so.74 missing; incompatible ICU76 aliases fail unresolved u_strToUpper_74",
+  "source": "run_full_evidence_audit.py using 2026-10-08 uploaded kit"
+}
