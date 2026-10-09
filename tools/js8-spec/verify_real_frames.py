@@ -10,6 +10,19 @@ import json, sys
 from pathlib import Path
 
 ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-+"
+def decode_base_callsign(value):
+    chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ /@"
+    suffix = []
+    for _ in range(3):
+        suffix.append(chars[10+value%27])
+        value //= 27
+    digit = chars[value%10]
+    value //= 10
+    second = chars[value%36]
+    value //= 36
+    first = chars[value]
+    return (first + second + digit + "".join(reversed(suffix))).strip()
+
 def inspect(frame, checks):
     tones = frame["tones"]
     assert len(tones) == 79 and all(c in "01234567" for c in tones)
@@ -30,9 +43,22 @@ def inspect(frame, checks):
         if top:
             remainder ^= 0xC06
     calculated_crc = remainder ^ 0x02A
+    direction = None
+    if syndrome == 0 and expected_crc == calculated_crc and frame_type == 3:
+        payload = info[:72]
+        intval = lambda start, width: int("".join(map(str,payload[start:start+width])),2)
+        value_to_call = lambda v: decode_base_callsign(v)
+        src = value_to_call(intval(3,28))
+        dest = value_to_call(intval(31,28))
+        command_id = intval(59,5)
+        extra = intval(64,8)
+        command_name = {29:"HEARTBEAT SNR",25:"SNR"}.get(command_id,"UNRESOLVED")
+        direction = dict(source=src,destination=dest,command_id=command_id,
+                         command=command_name,extra=extra,
+                         numeric_snr=extra-31 if command_id in (25,29) and extra else None)
     sync = "4256130"
     sync_blocks = [sum(a == b for a,b in zip(tones[p:p+7],sync)) for p in (0,36,72)]
-    return dict(reference_index=frame["ref_index"],audio_hz=frame["audio_hz"],
+    return dict(directed=direction,reference_index=frame["ref_index"],audio_hz=frame["audio_hz"],
                 start_sample=frame["frame_start_sample"],sync_blocks=sync_blocks,
                 pre_correction_syndrome_weight=syndrome,post_correction_syndrome_weight=syndrome,
                 fec_corrections_applied=0,crc_expected=expected_crc,crc_computed=calculated_crc,
@@ -54,6 +80,6 @@ def main():
     assert any(r["reference_index"]==0 and r["start_sample"]==112320
                and r["pre_correction_syndrome_weight"]==0 and r["crc_pass"]
                and r["inner_12_character_payload"]=="UvnVIpm34Fqg"
-               and r["frame_type"]==3 for r in results)
+               and r["frame_type"]==3 and r["directed"]=={"source":"WO7I","destination":"ND7M","command_id":29,"command":"HEARTBEAT SNR","extra":42,"numeric_snr":11} for r in results)
 if __name__=="__main__":
     main()
