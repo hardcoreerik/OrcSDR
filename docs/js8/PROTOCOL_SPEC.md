@@ -55,3 +55,15 @@ Required proof for each reference frame: precise source WAV metadata and hash ->
 6. Are different JS8 60 variants relevant to the releases OrcSDR intends to support?
 
 **STOP GATE:** Do not implement a decoder from this provisional ledger until the parity, CRC and message-layer evidence has been produced.
+
+## 2026-10-08 supplemental kit audit — supersedes the earlier data-access blocker
+
+The owner subsequently provided three zip archives: core dataset, primary IQ, and packaged reference CLI. In a host sandbox, the primary WAV, IQ and CLI executable SHA-256 **all matched** their independently supplied expected hashes. Thus the earlier statement that the corpus is inaccessible is outdated: the corpus is now available in the sandbox. No claim of FEC, CRC, or rendered text verification is justified yet.
+
+A host-only `tools/js8-spec/verify_spec_evidence.py` run against the extracted core kit recorded 16 candidate 79-tone strings, 58 extracted data tones per candidate, and these best observed Normal Costas hit counts: 635/637.5 Hz = **21/21**, 486/487.5 Hz = **21/21**, held-out 838/837.5 Hz = **14/21**. The fourth 2604 Hz reference message lacks a candidate tone sequence. This is a **physical-stage audit**, not a proof of error-corrected channel symbols. The saved machine-readable result is `docs/js8/spec/evidence-2026-10-08.json`.
+
+The CLI executable's hash matched the packaged Ubuntu 2.2.0 reference, but execution failed before decoding: `libicui18n.so.74: cannot open shared object file`. It would be incorrect to report a new black-box decode run. Existing fixture reference records remain evidence collected previously, not rerun here.
+
+Public GitHub connector access to the GPL source repository is now available for source examination; direct `git ls-remote https://github.com/js8call/js8call.git HEAD` in the host sandbox still fails DNS resolution. Current `main` source `JS8.cpp` was retrieved through the connector, but its blob SHA alone is not an exact pinned commit and current source may differ from JS8Call 2.2.0. Version-specific provenance, source line ranges, and tested implementation constants remain unresolved.
+
+**Outstanding gate:** obtain a version-pinned matrix/tone map/CRC specification and execute full 174-bit syndrome + CRC + decoded-payload checks on the actual tone vectors. The held-out 838 Hz frame cannot be labeled verified merely because it contains 14 matching sync symbols.
