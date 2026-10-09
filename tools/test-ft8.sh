@@ -92,6 +92,10 @@ run_suite js8_fec_ft8_vectors_tests \
   apps/orcsdr-tab5/ui/ft8_ldpc.cpp \
   apps/orcsdr-tab5/ui/ft8_ldpc_decode.cpp
 
+run_suite ft8_info_text_tests \
+  tests/ft8_info_text_tests.cpp \
+  apps/orcsdr-tab5/ui/ft8_info_text.cpp
+
 run_suite ft8_tuning_tests \
   tests/ft8_tuning_tests.cpp \
   apps/orcsdr-tab5/ui/ft8_tuning.cpp

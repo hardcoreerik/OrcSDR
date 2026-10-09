@@ -66,6 +66,7 @@ idf_component_register(
         "../ui/ft8_hunter.cpp"
         "../ui/ft8_dashboard.cpp"
         "../ui/ft8_tuning.cpp"
+        "../ui/ft8_info_text.cpp"
         "../ui/am_finder.cpp"
         "../ui/shortwave_model.cpp"
         "../ui/shortwave_audio_dsp.cpp"

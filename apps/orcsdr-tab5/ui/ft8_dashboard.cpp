@@ -5,6 +5,7 @@
 #include "dashboard_audio_control.hpp"
 #include "ft8_decoder_backend.hpp"
 #include "ft8_tuning.hpp"
+#include "ft8_info_text.hpp"
 #include "focus_nav.hpp"
 
 #include <M5Unified.h>
@@ -54,6 +55,20 @@ char g_tune_entry[12] = "";
 size_t g_tune_step = tuning::kDefaultStepIndex;
 uint32_t g_tune_target = 0;      // the dial the panel last asked for; resynced to the receiver's dial when that changes
 bool g_tune_invalid = false;     // the last ENTER did not parse or was out of range
+// Information popup ((i) in the header) and the quick mode switcher (MODE chip on Live). Each is a modal panel over the body.
+bool g_info_open = false;
+size_t g_info_page = 0;
+bool g_mode_open = false;
+constexpr Rect kInfoBtn{804, 16, 48, 48};
+constexpr Rect kInfoPanel{140, 104, 1000, 512};
+constexpr Rect kInfoPrev{160, 556, 200, 46};
+constexpr Rect kInfoNext{380, 556, 200, 46};
+constexpr Rect kInfoClose{900, 556, 220, 46};
+constexpr size_t kInfoLinesPerPage = 11;
+constexpr Rect kModeChip{246, 104, 150, 58};
+constexpr Rect kModePanel{246, 168, 540, 132};
+Rect mode_pick_rect(size_t i) { return {262 + static_cast<int>(i) * 172, 218, 164, 64}; }
+bool overlay_open() { return g_tune_open || g_info_open || g_mode_open; }
 constexpr Rect kDialChip{24, 104, 212, 58};
 constexpr Rect kTunePanel{240, 104, 800, 512};
 constexpr Rect kTuneEntry{260, 168, 300, 46};
@@ -177,6 +192,15 @@ void draw_utc() {
   g_drawn_second = g_snapshot.utc_ms / 1000u;
 }
 
+void draw_info_button() {
+  focus_nav::note(kInfoBtn.x, kInfoBtn.y, kInfoBtn.w, kInfoBtn.h);
+  const int c_x = cx(kInfoBtn), c_y = cy(kInfoBtn);
+  M5.Display.fillCircle(c_x, c_y, 23, g_info_open ? kSelected : kPanel);
+  M5.Display.drawCircle(c_x, c_y, 23, g_info_open ? kGreen : kCyan);
+  M5.Display.drawCircle(c_x, c_y, 22, g_info_open ? kGreen : kCyan);
+  text("i", c_x, c_y, g_info_open ? kGreen : kCyan, 3);
+}
+
 void draw_header() {
   std::printf("ORC_FT8_UI header mode=%u band=%u clock=%d\n", static_cast<unsigned>(g_snapshot.mode), static_cast<unsigned>(g_snapshot.selected_band), g_snapshot.clock_valid ? 1 : 0);
   // Standard dashboard header: brand, divider, title block, then the shared controls on the right. The header
@@ -198,6 +222,7 @@ void draw_header() {
   text(label, 392, 75, kCyan, 2, middle_left);
 
   draw_utc();
+  draw_info_button();
 
   M5.Display.drawFastVLine(865, 18, 66, kCyan);
   if (g_header_hook != nullptr) g_header_hook();
@@ -438,7 +463,7 @@ void draw_live() {
   char value[48];
   const bool have_table = preset != nullptr && mode_has_band_table(g_snapshot.mode);
   draw_dial_chip(have_table);
-  chip({246, 104, 150, 58}, "MODE", mode_name(g_snapshot.mode),
+  chip(kModeChip, "MODE - TAP", mode_name(g_snapshot.mode),
        mode_experimental(g_snapshot.mode) ? kAmber : TFT_WHITE);
   chip({406, 104, 210, 58}, "AUDIO PASS", "200-3000 Hz", TFT_WHITE);
   chip({626, 104, 190, 58}, "CLOCK", g_snapshot.clock_valid ? "LOCKED" : "NEEDED",
@@ -1013,12 +1038,6 @@ void draw_setup() {
   for (size_t i = 0; i < kFamilyCount; ++i) draw_family_button(i);
   if (family_of(g_snapshot.mode) == 2) {
     for (size_t i = 0; i < kJs8SubmodeCount; ++i) draw_submode_chip(i);
-  } else {
-    char slot_text[16], line[96];
-    slot_seconds_text(slot_text, sizeof(slot_text), g_snapshot.mode);
-    std::snprintf(line, sizeof(line), "%s   %s SECOND SLOT   ONLY SUPPORTED MODES CAN BE SELECTED",
-                  mode_name(g_snapshot.mode), slot_text);
-    text(line, 42, 214, kMuted, 1, middle_left);
   }
   const StandardFacts& facts = standard_facts(g_snapshot.mode);
   setup_row(0, "SIGNAL", facts.signal, TFT_WHITE);
@@ -1064,7 +1083,121 @@ void draw_live_dynamic(const Snapshot& previous) {
     draw_live_rows();
 }
 
+// ---- Information popup and quick mode switcher ---------------------------------------------------------------------------------------------
+info::Topic info_topic() {
+  switch (g_tab) {
+    case Tab::live: return info::Topic::live;
+    case Tab::decodes: return info::Topic::decodes;
+    case Tab::map: return info::Topic::map;
+    case Tab::hunter: return info::Topic::hunter;
+    case Tab::heard: return info::Topic::heard;
+    default: break;
+  }
+  const size_t family = family_of(g_snapshot.mode);
+  return family == 0 ? info::Topic::setup_ft8 : family == 1 ? info::Topic::setup_ft4 : info::Topic::setup_js8;
+}
+
+size_t info_page_count() {
+  const info::Page p = info::page(info_topic());
+  return (p.line_count + kInfoLinesPerPage - 1) / kInfoLinesPerPage;
+}
+
+void draw_info_panel() {
+  const info::Page p = info::page(info_topic());
+  const size_t pages = info_page_count();
+  if (g_info_page >= pages) g_info_page = pages ? pages - 1 : 0;
+  frame(kInfoPanel, kCyan);
+  char heading[64];
+  std::snprintf(heading, sizeof(heading), "ABOUT THIS PAGE  -  %s", p.title);
+  text(heading, 162, 128, kCyan, 1, middle_left);
+  M5.Display.drawFastHLine(160, 148, 960, kGrid);
+  for (size_t i = 0; i < kInfoLinesPerPage; ++i) {
+    const size_t index = g_info_page * kInfoLinesPerPage + i;
+    if (index >= p.line_count) break;
+    if (p.lines[index][0]) text(p.lines[index], 162, 172 + static_cast<int>(i) * 30, TFT_WHITE, 1, middle_left);
+  }
+  char page_text[24];
+  std::snprintf(page_text, sizeof(page_text), "PAGE %u/%u", static_cast<unsigned>(g_info_page + 1), static_cast<unsigned>(pages ? pages : 1));
+  text(page_text, 740, 579, kMuted, 1);
+  button(kInfoPrev, "PREV", false, g_info_page > 0, 1);
+  button(kInfoNext, "NEXT", false, g_info_page + 1 < pages, 1);
+  button(kInfoClose, "CLOSE", false, true, 1);
+}
+
 void draw_body(bool repaint_in_place = false);
+
+void open_info_panel() {
+  g_tune_open = false;
+  g_mode_open = false;
+  g_info_open = true;
+  g_info_page = 0;
+  draw_info_button();
+  draw_info_panel();
+}
+
+void close_overlays() {
+  const bool was = overlay_open();
+  g_tune_open = false;
+  g_info_open = false;
+  g_mode_open = false;
+  draw_info_button();
+  if (was) draw_body(false);
+}
+
+void draw_mode_panel() {
+  frame(kModePanel, kCyan);
+  text("SWITCH MODE", kModePanel.x + 16, kModePanel.y + 24, kCyan, 0, middle_left);
+  for (size_t i = 0; i < kFamilyCount; ++i) {
+    const Rect r = mode_pick_rect(i);
+    const bool available = family_available(i);
+    button(r, family_name(i), family_of(g_snapshot.mode) == i, available, 1);
+  }
+  text("JS8 speeds are chosen in Setup", kModePanel.x + 16, kModePanel.y + 114, kMuted, 0, middle_left);
+}
+
+void open_mode_panel() {
+  g_tune_open = false;
+  g_info_open = false;
+  g_mode_open = true;
+  draw_mode_panel();
+}
+
+// Returns true when the touch was handled by the open Info or Mode panel; *out carries any action it asks for.
+bool handle_overlay_touch(int32_t x, int32_t y, Action* out) {
+  if (g_info_open) {
+    if (hit(x, y, kInfoClose) || !hit(x, y, kInfoPanel)) {
+      close_overlays();
+    } else if (hit(x, y, kInfoPrev) && g_info_page > 0) {
+      --g_info_page;
+      draw_info_panel();
+    } else if (hit(x, y, kInfoNext) && g_info_page + 1 < info_page_count()) {
+      ++g_info_page;
+      draw_info_panel();
+    }
+    return true;
+  }
+  if (g_mode_open) {
+    for (size_t i = 0; i < kFamilyCount; ++i) {
+      if (!hit(x, y, mode_pick_rect(i))) continue;
+      if (!family_available(i)) return true;
+      DigitalMode target = family_default(i);
+      if (i == 2)
+        for (size_t k = 0; k < kJs8SubmodeCount; ++k)
+          if (mode_available(submode_mode(k))) {
+            target = submode_mode(k);
+            break;
+          }
+      const bool change = family_of(g_snapshot.mode) != i && mode_available(target);
+      close_overlays();
+      if (change) *out = {ActionKind::select_mode, static_cast<uint32_t>(target)};
+      return true;
+    }
+    if (!hit(x, y, kModePanel)) close_overlays();   // a tap outside dismisses it
+    return true;
+  }
+  return false;
+}
+
 // ---- Tune panel -------------------------------------------------------------------------------------------------------------------------
 void draw_tune_readout() {
   char value[32];
@@ -1235,6 +1368,8 @@ void enter(const Snapshot& snapshot_value) {
   g_snapshot.selected_band = std::min(g_snapshot.selected_band, band_count() - 1);
   g_active = true;
   g_tune_open = false;
+  g_info_open = false;
+  g_mode_open = false;
   g_tab = Tab::live;
   g_decode_page = 0;
   draw();
@@ -1254,6 +1389,7 @@ void update(const Snapshot& snapshot_value) {
                               previous.battery_percent != g_snapshot.battery_percent;
   if (tab_content_changed(g_tab, previous, g_snapshot) || header_changed) {
     if (header_changed) draw_header();
+    if (g_info_open || g_mode_open) return;   // a popup covers the body; closing it repaints everything
     if (g_tune_open) {   // the Tune panel covers the body: only its readout follows the receiver
       if (previous.dial_hz != g_snapshot.dial_hz) g_tune_target = g_snapshot.dial_hz;
       draw_tune_readout();
@@ -1283,7 +1419,7 @@ void update(const Snapshot& snapshot_value) {
     return;
   }
   if (g_snapshot.utc_ms / 1000u != g_drawn_second) draw_utc();
-  if (g_tune_open) return;   // never draw the waterfall or dial under the Tune panel
+  if (overlay_open()) return;   // never draw the waterfall or dial under a panel
   if (g_tab == Tab::live && g_snapshot.wf_sequence != g_drawn_waterfall && g_snapshot.decoder_state != DecoderState::unbound &&
       g_snapshot.clock_valid) {
     paced_waterfall_step();
@@ -1306,6 +1442,21 @@ void draw() {   // full repaint: entering the screen only
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
+  if (hit(x, y, kInfoBtn)) {   // the (i) button works on every tab and toggles the information popup
+    if (g_info_open) close_overlays();
+    else open_info_panel();
+    return {};
+  }
+  if (g_info_open || g_mode_open) {
+    if (y < kTabsY) {   // the popup owns the body; taps outside it dismiss it
+      Action chosen{};
+      (void)handle_overlay_touch(x, y, &chosen);
+      return chosen;
+    }
+    g_info_open = false;   // a tab tap closes the popup and switches tabs below
+    g_mode_open = false;
+    draw_info_button();
+  }
   if (g_tune_open) {
     if (y < kTabsY) {   // the Tune panel owns the body; taps outside it are ignored
       Action tuned{};
@@ -1313,6 +1464,10 @@ Action handle_touch(int32_t x, int32_t y) {
       return tuned;
     }
     g_tune_open = false;   // a tab tap closes the panel and switches tabs below
+  }
+  if (g_tab == Tab::live && hit(x, y, kModeChip)) {
+    open_mode_panel();
+    return {};
   }
   if (g_tab == Tab::live && g_snapshot.expert_tuning && hit(x, y, kDialChip)) {
     open_tune_panel();
@@ -1391,6 +1546,8 @@ Action handle_touch(int32_t x, int32_t y) {
 void leave() {
   g_active = false;
   g_tune_open = false;
+  g_info_open = false;
+  g_mode_open = false;
 }
 uint32_t tune_step_hz() { return tuning::kStepsHz[g_tune_step]; }
 bool active() { return g_active; }
@@ -1401,6 +1558,8 @@ void set_header_hook(void (*draw_controls)()) { g_header_hook = draw_controls; }
 void select_tab(Tab tab) {
   if (!g_active || tab >= Tab::count || tab == g_tab) return;
   g_tune_open = false;
+  g_info_open = false;
+  g_mode_open = false;
   g_tab = tab;
   g_decode_page = 0;
   draw_body();
@@ -1416,7 +1575,7 @@ bool dashboard_self_check() {
 
 // Called from the main loop between full updates: new waterfall rows scroll in without waiting for the next snapshot.
 void pump_waterfall(uint32_t sequence) {
-  if (!g_active || g_tune_open || g_tab != Tab::live || g_snapshot.decoder_state == DecoderState::unbound || !g_snapshot.clock_valid) return;
+  if (!g_active || overlay_open() || g_tab != Tab::live || g_snapshot.decoder_state == DecoderState::unbound || !g_snapshot.clock_valid) return;
   g_snapshot.wf_sequence = sequence;
   paced_waterfall_step();
 }
