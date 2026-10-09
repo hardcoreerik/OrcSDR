@@ -12996,7 +12996,7 @@ void ft8_dashboard_fill_snapshot(orcsdr::ft8::Snapshot& snapshot) {
     Serial.println("ORC_FT8_NATIVE bound");
   orcsdr::ftx::snr::set_user_offset_db(static_cast<float>(preferences.getInt("ft8_snr_off10", 0)) / 10.0f);   // stored in tenths of a dB
   ft8_native_drain_pending();
-  g_ft8_capabilities = orcsdr::ft8_runtime::active() ? (orcsdr::ft8::decoder_cap_ft8 | orcsdr::ft8::decoder_cap_ft4) : 0u;
+  g_ft8_capabilities = orcsdr::ft8_runtime::active() ? (orcsdr::ft8::decoder_cap_ft8 | orcsdr::ft8::decoder_cap_ft4 | orcsdr::ft8::decoder_cap_js8_normal) : 0u;
   {
     const auto rt = orcsdr::ft8_runtime::status();
     using RS = orcsdr::ft8_runtime::State;

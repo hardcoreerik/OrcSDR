@@ -21,6 +21,7 @@ enum DecoderCapability : uint32_t {
   decoder_cap_js8 = 1u << 2,                // JS8 frames (all speeds)
   decoder_cap_assisted = 1u << 3,           // can produce AP-assisted decodes (flagged)
   decoder_cap_message_assembly = 1u << 4,   // JS8 assembled multi-frame messages
+  decoder_cap_js8_normal = 1u << 5,         // JS8 Normal only (the one submode with an established sync pattern); Fast/40/Slow/60 need decoder_cap_js8
 };
 
 struct DecoderBackend {
@@ -58,7 +59,7 @@ inline bool mode_supported(uint32_t capabilities, DigitalMode mode) {
   switch (mode) {
     case DigitalMode::ft8: return (capabilities & decoder_cap_ft8) != 0;
     case DigitalMode::ft4: return (capabilities & decoder_cap_ft4) != 0;
-    case DigitalMode::js8_normal:
+    case DigitalMode::js8_normal: return (capabilities & (decoder_cap_js8 | decoder_cap_js8_normal)) != 0;
     case DigitalMode::js8_fast:
     case DigitalMode::js8_40:
     case DigitalMode::js8_slow:
