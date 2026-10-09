@@ -35,6 +35,11 @@ struct SyncProbe {
 };
 bool probe_sync(const int16_t* samples, size_t count, Submode submode, size_t start_sample, float base_hz, SyncProbe* out);
 
+// Raw tone energies of all 79 channel symbols at one (time, frequency) hypothesis (linear power, 8 tones per symbol), for soft-decision decoding.
+// Also fills the sync statistics (hits on the 21 sync symbols, mean sync margin). No search, no heap.
+bool demodulate_energies(const int16_t* samples, size_t count, Submode submode, size_t start_sample, float base_hz,
+                         float energy[kChannelSymbols][8], DemodStats* stats);
+
 bool self_check_demod();
 
 }  // namespace orcsdr::js8

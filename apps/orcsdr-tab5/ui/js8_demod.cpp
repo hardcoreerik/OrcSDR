@@ -140,6 +140,44 @@ bool probe_sync(const int16_t* samples, size_t count, Submode submode, size_t st
   return true;
 }
 
+bool demodulate_energies(const int16_t* samples, size_t count, Submode submode, size_t start_sample, float base_hz,
+                         float energy[kChannelSymbols][8], DemodStats* stats) {
+  if (samples == nullptr || energy == nullptr || stats == nullptr || base_hz < 0.0f) return false;
+  const Profile& p = profile(submode);
+  if (!physical_layer_ready(submode) || p.channel_symbols != kChannelSymbols || p.tone_count != 8) return false;
+  const size_t needed = static_cast<size_t>(p.channel_symbols) * p.symbol_samples;
+  if (start_sample > count || needed > count - start_sample) return false;
+  DemodStats measured{};
+  float sync_sum = 0.0f, margin_sum = 0.0f;
+  size_t sync_count = 0;
+  for (size_t symbol = 0; symbol < p.channel_symbols; ++symbol) {
+    const int16_t* window = samples + start_sample + symbol * p.symbol_samples;
+    uint8_t best = 0;
+    for (uint8_t tone = 0; tone < 8; ++tone) {
+      const float hz = base_hz + tone * (static_cast<float>(p.tone_spacing_millihz) / 1000.0f);
+      energy[symbol][tone] = tone_power(window, p.symbol_samples, hz, static_cast<float>(p.sample_rate_hz));
+      if (energy[symbol][tone] > energy[symbol][best]) best = tone;
+    }
+    float second = 0.0f;
+    for (uint8_t tone = 0; tone < 8; ++tone)
+      if (tone != best) second = std::max(second, energy[symbol][tone]);
+    margin_sum += (energy[symbol][best] - second) / (energy[symbol][best] + second + 1.0e-20f);
+    uint8_t expected = 0;
+    if (expected_sync_tone(p, symbol, &expected)) {
+      ++sync_count;
+      if (best == expected) ++measured.sync_hits;
+      float competitor = 0.0f;
+      for (uint8_t tone = 0; tone < 8; ++tone)
+        if (tone != expected) competitor = std::max(competitor, energy[symbol][tone]);
+      sync_sum += (energy[symbol][expected] - competitor) / (energy[symbol][expected] + competitor + 1.0e-20f);
+    }
+  }
+  measured.sync_score = sync_count ? sync_sum / static_cast<float>(sync_count) : 0.0f;
+  measured.mean_margin = margin_sum / static_cast<float>(p.channel_symbols);
+  *stats = measured;
+  return true;
+}
+
 bool self_check_demod() {
   return profile(Submode::normal).symbol_samples == 1920 && physical_layer_ready(Submode::normal);
 }
