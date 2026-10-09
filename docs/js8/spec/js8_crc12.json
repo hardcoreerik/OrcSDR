@@ -1,0 +1,39 @@
+{
+  "schema": "orcsdr.js8.crc/1",
+  "status": "SOURCE_DERIVED_UNVERIFIED_REAL_RECORDINGS",
+  "width": 12,
+  "polynomial_hex": "0xC06",
+  "algorithm": "Augmented CRC over eleven bytes, 12-bit width, MSB-first, nonreflected, polynomial 0xC06; XOR final CRC value with decimal 42 (0x02A)",
+  "padding": "87-bit information word held in 11 bytes; CRC input starts with 75 payload+frame-type bits, followed by 13 zero padding bits to complete 88 bits; augmented CRC over 11 zero-padded bytes",
+  "input_layout": {
+    "message_bits": [
+      0,
+      71
+    ],
+    "frame_type_bits": [
+      72,
+      74
+    ],
+    "crc_bits": [
+      75,
+      86
+    ],
+    "unused_padding_bit": 87
+  },
+  "crc_field": "12-bit MSB-first value occupying the last five bits of byte index 9 and first seven bits of byte index 10",
+  "init_reflection": "Canonical augmented-CRC operation as specified by Boost boost::augmented_crc<12,0xC06>; nonreflected. Equivalent bitwise algorithms must be independently cross-tested. No separate init/xorout model proven.",
+  "provenance": {
+    "type": "GPL-SOURCE",
+    "repository": "js8call/js8call",
+    "file": "JS8.cpp",
+    "branch": "main",
+    "blob_sha": "b19aa96c6ad000e26a24074692cd3633317063e8",
+    "note": "Current main, not proven identical to installed v2.2.0 or v3.0.3",
+    "functions": [
+      "CRC12",
+      "checkCRC12",
+      "encode"
+    ]
+  },
+  "verification": "NO_REAL_FRAME_CRC_PASS"
+}
