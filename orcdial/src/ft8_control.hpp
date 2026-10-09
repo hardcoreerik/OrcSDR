@@ -27,7 +27,9 @@ constexpr uint32_t kHunterSupported = 1u << 2;
 constexpr uint32_t kHunterActive = 1u << 3;
 constexpr uint32_t kHunterComplete = 1u << 4;
 constexpr uint32_t kHunterDecodeMode = 1u << 5;
-// Expert tuning (Tab5 FT8 Setup checkbox). While set, the Dial shows the frequency large and the band small, and the step size below it.
+// Expert tuning (Tab5 FT8 Setup checkbox). kExpertEnabled: the checkbox is on, so a centre tap may switch to fine tuning.
+// kExpertTuning: fine tuning is active right now (rotation steps Hz); the Dial shows the frequency large, the band small, and the step below.
+constexpr uint32_t kExpertEnabled = 1u << 10;
 constexpr uint32_t kExpertTuning = 1u << 6;
 constexpr uint32_t kStepShift = 7;                  // bits 7..9: index into the Tune panel's step table
 constexpr uint32_t kStepMask = 0x7u << kStepShift;

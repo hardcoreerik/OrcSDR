@@ -598,6 +598,7 @@ static void ft8_screen(lgfx::LGFXBase& d, const RadioState& state,
     d.setTextColor(dim, bg); d.setTextSize(1); draw_text(d, "MHz", 120, 156);
     std::snprintf(line, sizeof line, "STEP %s", ft8_control::step_label(ft8_control::step_index(state.capabilities)));
     d.setTextColor(green, bg); d.setTextSize(1.5f); draw_text(d, line, 120, 172);
+    d.setTextColor(dim, bg); d.setTextSize(1); draw_text(d, "TAP: BAND", 120, 188);
   } else if (live_or_hunter) {
     d.setTextColor(ink, bg); d.setTextSize(4);
     draw_text(d, connected ? ft8_band_label(state.selected) : "--", 120, 108);
@@ -606,6 +607,9 @@ static void ft8_screen(lgfx::LGFXBase& d, const RadioState& state,
       d.setTextColor(dim, bg); d.setTextSize(2); draw_text(d, "--.---", 120, 135);
     }
     d.setTextColor(dim, bg); d.setTextSize(1); draw_text(d, "MHz", 120, 151);
+    if (connected && (state.capabilities & ft8_control::kExpertEnabled)) {   // expert tuning is on: a centre tap switches to fine tuning
+      d.setTextColor(green, bg); d.setTextSize(1); draw_text(d, "TAP: FINE TUNE", 120, 166);
+    }
   } else {
     if (connected && state.selected > 0 && state.item_count) {
       std::snprintf(line, sizeof line, "%ld / %lu", long(state.selected),

@@ -520,6 +520,12 @@ void loop() {
     } else if (t.x > 170 && t.y < 170 && orc::tunable(state.dashboard) && state.dashboard != orc::Dashboard::fm) {
       tune_style = orc::TuneStyle((uint8_t(tune_style) + 1) % uint8_t(orc::TuneStyle::count));
       focus = orc::Focus::vfo;
+    } else if (state.dashboard == orc::Dashboard::ft8 && online && t.y >= 76 && t.y <= 170 &&
+               (state.view == static_cast<uint8_t>(orc::ft8_control::View::live) ||
+                state.view == static_cast<uint8_t>(orc::ft8_control::View::hunter)) &&
+               (state.capabilities & orc::ft8_control::kExpertEnabled)) {
+      // A tap in the middle switches the knob between band selection and fine (Hz) tuning. Only offered while expert tuning is on.
+      act({orc::ActionKind::ft8_fine, 1}, online);
     } else if (state.dashboard == orc::Dashboard::ft8 &&
                state.view == static_cast<uint8_t>(orc::ft8_control::View::hunter) &&
                t.y >= 170 && t.y < 197 && t.x >= 70 && t.x <= 170 &&

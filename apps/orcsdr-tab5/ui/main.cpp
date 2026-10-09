@@ -12681,7 +12681,8 @@ size_t g_ft8_band = SIZE_MAX;       // index into the FT8 band table; resolved o
 size_t g_ft8_item = 0;              // one-based selected row for the OrcDial; 0 = none
 orcsdr::ft8::DigitalMode g_ft8_mode = orcsdr::ft8::DigitalMode::ft8;
 uint32_t g_ft8_dial_override_hz = 0;   // expert tuning: a typed or stepped dial for the current mode; 0 = the band table's dial (Auto)
-bool g_ft8_expert = false;             // expert tuning enabled (Tune panel; OrcDial rotation steps the dial in Hz)
+bool g_ft8_expert = false;             // expert tuning enabled (Tune panel; OrcDial centre tap may switch its knob to fine tuning)
+bool g_ft8_fine = false;               // OrcDial knob mode: false = band selection, true = fine (Hz) tuning; only meaningful while g_ft8_expert
 bool g_ft8_expert_loaded = false;
 uint32_t g_ft8_capabilities = 0;    // DecoderCapability bits of the bound decoder; 0 = none bound
 
@@ -13123,7 +13124,10 @@ void handle_ft8_dashboard_action(const orcsdr::ft8::Action& action) {
     case Kind::set_expert:
       g_ft8_expert = action.value != 0;
       preferences.putBool("ft8_expert", g_ft8_expert);
-      if (!g_ft8_expert) (void)ft8_select_band_table(ft8_selected_band());   // leaving expert mode returns to the band table
+      if (!g_ft8_expert) {   // leaving expert mode returns to the band table and to band selection on the knob
+        g_ft8_fine = false;
+        (void)ft8_select_band_table(ft8_selected_band());
+      }
       break;
     case Kind::clear_decodes: g_ft8_store.clear(); g_ft8_item = 0; break;
     case Kind::select_mode:
@@ -13174,7 +13178,7 @@ bool orcdial_apply_ft8(uint8_t kind, int32_t value) {
     }
     case static_cast<uint8_t>(orc::ActionKind::ft8_band): {
       if (value == 0 || value < -12 || value > 12) return false;
-      if (g_ft8_expert) {   // expert tuning: rotation steps the dial by the Tune panel's step size
+      if (g_ft8_expert && g_ft8_fine) {   // fine tuning: rotation steps the dial by the Tune panel's step size
         (void)ft8_tune_dial(orcsdr::ft8::tuning::apply_steps(ft8_dial_hz(ft8_selected_band(), g_ft8_mode), value, orcsdr::ft8::tune_step_hz()));
         draw_ft8_dashboard(false);
         return true;
@@ -13191,6 +13195,11 @@ bool orcdial_apply_ft8(uint8_t kind, int32_t value) {
       g_ft8_item = static_cast<size_t>(std::clamp<int>(static_cast<int>(g_ft8_item) + value, 1, count));
       return true;
     }
+    case static_cast<uint8_t>(orc::ActionKind::ft8_fine):
+      if (!g_ft8_expert) return false;   // fine tuning is an opt-in (Setup checkbox); a tap does nothing otherwise
+      g_ft8_fine = !g_ft8_fine;
+      draw_ft8_dashboard(false);
+      return true;
     case static_cast<uint8_t>(orc::ActionKind::ft8_hunter):
       switch (value) {
         case 1: return ft8_hunter_refused("hunt_fast");
@@ -13209,7 +13218,10 @@ void fill_orcdial_ft8_state(orc::Packet& p) {
   uint32_t capabilities = 0;   // bit 0 decoder bound: no; bit 2 hunter supported: no until a decoder exists
   if (orcsdr::time_service::now().wallclock_valid) capabilities |= orc::ft8_control::kClockReady;
   if (g_ft8_hunter.active()) capabilities |= orc::ft8_control::kHunterActive;
-  if (g_ft8_expert) {   // tell the Dial to show the frequency large, with the Tune panel's current step
+  if (g_ft8_expert) {   // expert tuning is on: the Dial may offer a centre-tap switch to fine tuning
+    capabilities |= orc::ft8_control::kExpertEnabled;
+  }
+  if (g_ft8_expert && g_ft8_fine) {   // fine tuning is active: the Dial shows the frequency large, with the Tune panel's current step
     capabilities |= orc::ft8_control::kExpertTuning;
     uint8_t step_index = static_cast<uint8_t>(orcsdr::ft8::tuning::kDefaultStepIndex);
     for (size_t i = 0; i < orcsdr::ft8::tuning::kStepCount; ++i)
@@ -15031,7 +15043,7 @@ bool orcdial_apply(const orc::Packet& p) {
     return true;
   }
   if (p.type != orc::Type::semantic_action || p.dashboard != static_cast<uint8_t>(active) ||
-      p.action > static_cast<uint8_t>(Kind::ft8_hunter) || p.value < -1000000000 ||
+      p.action > static_cast<uint8_t>(Kind::ft8_fine) || p.value < -1000000000 ||
       p.value > 1000000000) return false;
   const Kind kind = Kind(p.action);
   if (active == Dash::ft8) return orcdial_apply_ft8(p.action, p.value);
