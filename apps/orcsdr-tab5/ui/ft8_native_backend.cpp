@@ -198,6 +198,16 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
   const uint32_t t_search = clock_ms();
   stats_.search_ms = t_search - t_spectral;
   stats_.coarse_candidates = static_cast<uint16_t>(n);
+#ifdef ORCSDR_FT8_DIAG
+  diag_ = Diag{};
+  diag_.fine_hop_samples = fine_hop_;
+  diag_.fine_rows_per_symbol = fine_rows_;
+  diag_.first_bin = first_bin_;
+  diag_.bin_hz = bin_hz_;
+  diag_.grid_rows = fine_rows;
+  diag_.buffered_samples = filled_;
+  for (size_t i = 0; i < n && i < Diag::kMax; ++i) diag_.coarse[diag_.coarse_count++] = DiagCoarse{candidates_[i].start_row, candidates_[i].base_bin, candidates_[i].score};
+#endif
 
   // ---- refine each coarse candidate by scoring the fine grid around it (time +-1 coarse row, frequency +-1 coarse bin)
   const sync::Geometry fine_geometry{static_cast<uint8_t>(fine_rows_), 2};
@@ -232,6 +242,15 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
   std::stable_sort(refined, refined + produced, [](const Refined& a, const Refined& b) { return a.score > b.score; });
   for (size_t i = 0; i < produced; ++i)
     if (refined[i].score >= 0.45f) ++stats_.strong_candidates;
+#ifdef ORCSDR_FT8_DIAG
+  for (size_t i = 0; i < produced && i < Diag::kMax; ++i) {
+    DiagRefined& d = diag_.refined[diag_.refined_count++];
+    d.start_row = refined[i].start_row;
+    d.base_bin = refined[i].base_bin;
+    d.score = refined[i].score;
+    d.coarse_score = refined[i].coarse;
+  }
+#endif
   const uint32_t t_refine = clock_ms();
   stats_.refine_ms = t_refine - t_search;
 
@@ -252,7 +271,19 @@ size_t Backend::finish_slot(orcsdr::ft8::Decode* output, size_t capacity, bool i
     lc.score = r.score;
     pipeline::FrameResult frame{};
     ++gated;
-    if (pipeline::try_candidate(p, fine, fine_geometry, lc, pipe, workspace_, &frame, nullptr) != pipeline::Outcome::accepted) continue;
+    pipeline::CandidateTrace trace{};
+    const pipeline::Outcome outcome = pipeline::try_candidate(p, fine, fine_geometry, lc, pipe, workspace_, &frame, &trace);
+#ifdef ORCSDR_FT8_DIAG
+    if (i < diag_.refined_count) {
+      DiagRefined& d = diag_.refined[i];
+      d.outcome = static_cast<int8_t>(outcome);
+      d.ldpc_iterations = trace.ldpc_iterations;
+      d.ldpc_converged = trace.ldpc_converged;
+      d.crc_ok = trace.crc_ok;
+      d.message = trace.message;
+    }
+#endif
+    if (outcome != pipeline::Outcome::accepted) continue;
 
     bool duplicate = false;
     for (size_t k = 0; k < out_n; ++k)

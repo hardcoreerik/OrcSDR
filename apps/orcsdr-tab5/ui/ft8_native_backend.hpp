@@ -7,6 +7,7 @@
 #include "ft8_spectral_fft.hpp"
 #include "ft8_sync.hpp"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -49,6 +50,40 @@ struct Stats {
   bool slot_too_short = false;
 };
 
+#ifdef ORCSDR_FT8_DIAG
+// Diagnostic record of the last slot, compiled in only with -DORCSDR_FT8_DIAG (host benchmarking and failure analysis); production
+// firmware is built without it and pays nothing. It records every stage a candidate passes through.
+struct DiagCoarse {
+  uint16_t start_row = 0;     // coarse rows (2 per symbol)
+  uint16_t base_bin = 0;      // coarse bins (whole tone-spacing bins)
+  float score = 0.0f;
+};
+struct DiagRefined {
+  uint16_t start_row = 0;     // fine rows
+  uint16_t base_bin = 0;      // fine bins (half-bin steps)
+  float score = 0.0f;
+  float coarse_score = 0.0f;
+  int8_t outcome = -1;        // -1 not attempted (pruned by the gate limit), else pipeline::Outcome
+  uint8_t ldpc_iterations = 0;
+  bool ldpc_converged = false;
+  bool crc_ok = false;
+  std::array<uint8_t, 91> message{};   // valid when crc_ok
+};
+struct Diag {
+  static constexpr size_t kMax = 64;
+  std::array<DiagCoarse, kMax> coarse{};
+  size_t coarse_count = 0;
+  std::array<DiagRefined, kMax> refined{};
+  size_t refined_count = 0;
+  size_t fine_hop_samples = 0;
+  size_t fine_rows_per_symbol = 0;
+  size_t first_bin = 0;
+  double bin_hz = 0.0;
+  size_t grid_rows = 0;
+  size_t buffered_samples = 0;
+};
+#endif
+
 class Backend {
  public:
   Backend() = default;
@@ -74,6 +109,9 @@ class Backend {
   uint64_t slot_epoch_ms() const { return slot_epoch_ms_; }
 
   const Stats& stats() const { return stats_; }
+#ifdef ORCSDR_FT8_DIAG
+  const Diag& diag() const { return diag_; }
+#endif
   Mode mode() const { return mode_; }
   size_t buffered() const { return filled_; }
   bool ready() const { return samples_ != nullptr; }
@@ -112,6 +150,9 @@ class Backend {
   pipeline::Workspace* workspace_ = nullptr;
 
   Stats stats_{};
+#ifdef ORCSDR_FT8_DIAG
+  Diag diag_{};
+#endif
 };
 
 // Binds a Backend to the UI seam. `backend` must outlive the returned struct.
