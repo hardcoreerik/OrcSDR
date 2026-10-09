@@ -56,6 +56,7 @@
 #include "orcsdr_storage.hpp"
 #include "am_dashboard.hpp"
 #include "ft8_dashboard.hpp"
+#include "ft8_tuning.hpp"
 #include "ft8_adif.hpp"
 #include "ft8_snr.hpp"
 #include "ft8_decoder_backend.hpp"
@@ -12679,6 +12680,9 @@ orcsdr::ft8::Hunter g_ft8_hunter;
 size_t g_ft8_band = SIZE_MAX;       // index into the FT8 band table; resolved on first use
 size_t g_ft8_item = 0;              // one-based selected row for the OrcDial; 0 = none
 orcsdr::ft8::DigitalMode g_ft8_mode = orcsdr::ft8::DigitalMode::ft8;
+uint32_t g_ft8_dial_override_hz = 0;   // expert tuning: a typed or stepped dial for the current mode; 0 = the band table's dial (Auto)
+bool g_ft8_expert = false;             // expert tuning enabled (Tune panel; OrcDial rotation steps the dial in Hz)
+bool g_ft8_expert_loaded = false;
 uint32_t g_ft8_capabilities = 0;    // DecoderCapability bits of the bound decoder; 0 = none bound
 
 // Decodes arrive on the decoder task; the UI thread drains them into the store (the store is not thread-safe).
@@ -12702,12 +12706,17 @@ int ft8_native_current_gain_tenth_db() {
   return gain;
 }
 
+// The dial the receiver should be on: the expert override when one is set, otherwise the mode's band-table dial.
+uint32_t ft8_dial_hz(size_t band_index, orcsdr::ft8::DigitalMode mode) {
+  return g_ft8_dial_override_hz != 0 ? g_ft8_dial_override_hz : orcsdr::ft8::mode_dial_hz(band_index, mode);
+}
+
 // Dial minus the tuner's actual centre (the driver quantizes tuning), so the tap can find the USB passband.
 float ft8_native_dial_offset_hz() {
   const auto* preset = orcsdr::ft8::band(ft8_selected_band());
   uint32_t centre = 0;
   if (preset == nullptr || g_rtl == nullptr || esp_rtl_sdr_get_center_freq(g_rtl, &centre) != ESP_OK || centre == 0) return 0.0f;
-  return static_cast<float>(static_cast<int32_t>(orcsdr::ft8::mode_dial_hz(ft8_selected_band(), g_ft8_mode)) - static_cast<int32_t>(centre));
+  return static_cast<float>(static_cast<int32_t>(ft8_dial_hz(ft8_selected_band(), g_ft8_mode)) - static_cast<int32_t>(centre));
 }
 
 // Rolling decode log: every decode becomes one CSV row in /ft8/log-YYYYMMDD.csv on the SD card (one file per UTC day). These are
@@ -12852,6 +12861,7 @@ Ft8HuntRun g_ft8_hunt;
 
 bool ft8_native_ensure_started();
 bool ft8_select_band(size_t index);
+bool ft8_select_band_table(size_t index);
 
 bool ft8_hunt_start(orcsdr::ft8::HunterMode mode) {
   if (!ft8_native_ensure_started()) return false;
@@ -12889,7 +12899,7 @@ void ft8_hunt_service(const orcsdr::ft8_runtime::Status& rt) {
     if (g_ft8_hunt.set_headless) orcsdr::ft8_runtime::set_headless(false);
     const auto& snap = g_ft8_hunter.snapshot();
     // A completed hunt leaves the receiver on the best band it found instead of the last band it visited.
-    if (snap.phase == orcsdr::ft8::HunterPhase::complete && snap.best_band != SIZE_MAX) (void)ft8_select_band(snap.best_band);
+    if (snap.phase == orcsdr::ft8::HunterPhase::complete && snap.best_band != SIZE_MAX) (void)ft8_select_band_table(snap.best_band);
     Serial.printf("ORC_FT8_HUNT finished phase=%s best_band=%d\n", orcsdr::ft8::hunter_phase_name(snap.phase),
                   snap.best_band == SIZE_MAX ? -1 : static_cast<int>(snap.best_band));
     return;
@@ -12897,7 +12907,7 @@ void ft8_hunt_service(const orcsdr::ft8_runtime::Status& rt) {
   const uint32_t now = millis();
   const auto& snap = g_ft8_hunter.snapshot();
   if (snap.phase == orcsdr::ft8::HunterPhase::tuning) {
-    if (!ft8_select_band(g_ft8_hunter.current_band())) {   // the receiver cannot take this band
+    if (!ft8_select_band_table(g_ft8_hunter.current_band())) {   // the receiver cannot take this band
       Serial.printf("ORC_FT8_HUNT tune_failed band=%d\n", static_cast<int>(g_ft8_hunter.current_band()));
       g_ft8_hunter.stop();
       return;
@@ -13007,6 +13017,13 @@ void ft8_dashboard_fill_snapshot(orcsdr::ft8::Snapshot& snapshot) {
     snapshot.wf_bins = static_cast<uint16_t>(orcsdr::ft8_runtime::kWaterfallBins);
     snapshot.wf_sequence = wf.sequence;
   }
+  if (!g_ft8_expert_loaded) {   // read once; the preference is only written from the Setup toggle
+    g_ft8_expert = preferences.getBool("ft8_expert", false);
+    g_ft8_expert_loaded = true;
+  }
+  snapshot.expert_tuning = g_ft8_expert;
+  snapshot.dial_custom = g_ft8_dial_override_hz != 0;
+  snapshot.dial_hz = ft8_dial_hz(snapshot.selected_band, g_ft8_mode);
   snapshot.mode = g_ft8_mode;
   snapshot.decoder_capabilities = g_ft8_capabilities;
   snapshot.hunter = g_ft8_hunter.snapshot();
@@ -13047,7 +13064,7 @@ bool ft8_select_band(size_t index) {
   if (index >= orcsdr::ft8::band_count()) return false;
   const auto* preset = orcsdr::ft8::band(index);
   if (preset == nullptr) return false;
-  const uint32_t dial_hz = orcsdr::ft8::mode_dial_hz(index, g_ft8_mode);
+  const uint32_t dial_hz = ft8_dial_hz(index, g_ft8_mode);
   g_ft8_band = index;
   orcsdr::ft8_runtime::note_discontinuity();
   if (!validate_rtl_tune_frequency(dial_hz)) return false;
@@ -13069,6 +13086,27 @@ bool ft8_select_band(size_t index) {
   return queue_local_rtl_listen(target, dial_hz);
 }
 
+// A band choice from the UI, OrcDial or serial means the standard dial for that band: it drops any expert dial first.
+bool ft8_select_band_table(size_t index) {
+  g_ft8_dial_override_hz = 0;
+  return ft8_select_band(index);
+}
+
+// Expert tuning: park the receiver on an arbitrary dial. The band index follows the nearest table band so the header and hunter keep a
+// sensible band; the receiver's own limits (validate_rtl_tune_frequency) still decide whether the frequency is allowed.
+bool ft8_tune_dial(uint32_t hz) {
+  if (hz < orcsdr::ft8::tuning::kMinDialHz || hz > orcsdr::ft8::tuning::kMaxDialHz) return false;
+  if (!validate_rtl_tune_frequency(hz)) {
+    Serial.printf("ORC_FT8_ERROR tune_dial %lu rejected_by_receiver\n", static_cast<unsigned long>(hz));
+    return false;
+  }
+  const size_t nearest = orcsdr::ft8::nearest_band(hz);
+  g_ft8_dial_override_hz = (orcsdr::ft8::mode_dial_hz(nearest, g_ft8_mode) == hz) ? 0u : hz;
+  const bool ok = ft8_select_band(nearest);
+  Serial.printf("ORC_FT8_TUNE_OK dial_hz=%lu custom=%d\n", static_cast<unsigned long>(hz), g_ft8_dial_override_hz != 0 ? 1 : 0);
+  return ok;
+}
+
 bool ft8_hunter_refused(const char* what) {
   Serial.printf("ORC_FT8_ERROR %s decoder_not_bound\n", what);
   return false;
@@ -13078,7 +13116,14 @@ void handle_ft8_dashboard_action(const orcsdr::ft8::Action& action) {
   using Kind = orcsdr::ft8::ActionKind;
   switch (action.kind) {
     case Kind::tune_band:
-      (void)ft8_select_band(orcsdr::ft8::nearest_band(action.value));
+      (void)ft8_select_band_table(orcsdr::ft8::nearest_band(action.value));
+      break;
+    case Kind::tune_dial: (void)ft8_tune_dial(action.value); break;
+    case Kind::tune_auto: (void)ft8_select_band_table(ft8_selected_band()); break;
+    case Kind::set_expert:
+      g_ft8_expert = action.value != 0;
+      preferences.putBool("ft8_expert", g_ft8_expert);
+      if (!g_ft8_expert) (void)ft8_select_band_table(ft8_selected_band());   // leaving expert mode returns to the band table
       break;
     case Kind::clear_decodes: g_ft8_store.clear(); g_ft8_item = 0; break;
     case Kind::select_mode:
@@ -13088,6 +13133,7 @@ void handle_ft8_dashboard_action(const orcsdr::ft8::Action& action) {
                                       static_cast<orcsdr::ft8::DigitalMode>(action.value)))
         {
           g_ft8_mode = static_cast<orcsdr::ft8::DigitalMode>(action.value);
+          g_ft8_dial_override_hz = 0;   // a custom dial belongs to the mode it was set in
           (void)orcsdr::ft8_runtime::set_mode(g_ft8_mode);
           (void)ft8_select_band(ft8_selected_band());   // the new mode has its own dial frequency
         }
@@ -13128,9 +13174,14 @@ bool orcdial_apply_ft8(uint8_t kind, int32_t value) {
     }
     case static_cast<uint8_t>(orc::ActionKind::ft8_band): {
       if (value == 0 || value < -12 || value > 12) return false;
+      if (g_ft8_expert) {   // expert tuning: rotation steps the dial by the Tune panel's step size
+        (void)ft8_tune_dial(orcsdr::ft8::tuning::apply_steps(ft8_dial_hz(ft8_selected_band(), g_ft8_mode), value, orcsdr::ft8::tune_step_hz()));
+        draw_ft8_dashboard(false);
+        return true;
+      }
       const int count = static_cast<int>(orcsdr::ft8::band_count());
       const int next = ((static_cast<int>(ft8_selected_band()) + value) % count + count) % count;
-      (void)ft8_select_band(static_cast<size_t>(next));
+      (void)ft8_select_band_table(static_cast<size_t>(next));
       draw_ft8_dashboard(false);
       return true;
     }
@@ -13153,7 +13204,7 @@ bool orcdial_apply_ft8(uint8_t kind, int32_t value) {
 
 void fill_orcdial_ft8_state(orc::Packet& p) {
   const auto* preset = orcsdr::ft8::band(ft8_selected_band());
-  p.frequency_hz = preset ? orcsdr::ft8::mode_dial_hz(ft8_selected_band(), g_ft8_mode) : rtl_ui_frequency_hz;
+  p.frequency_hz = preset ? ft8_dial_hz(ft8_selected_band(), g_ft8_mode) : rtl_ui_frequency_hz;
   p.view = static_cast<uint8_t>(orcsdr::ft8::tab());
   uint32_t capabilities = 0;   // bit 0 decoder bound: no; bit 2 hunter supported: no until a decoder exists
   if (orcsdr::time_service::now().wallclock_valid) capabilities |= orc::ft8_control::kClockReady;
@@ -17357,7 +17408,7 @@ void process_ft8_command(const char* args) {
       Serial.println("ORC_FT8_ERROR BAND invalid use BAND <index|label|dial_hz> (see FT8 BANDS)");
       return;
     }
-    const bool ok = ft8_select_band(index);
+    const bool ok = ft8_select_band_table(index);
     const auto* preset = orcsdr::ft8::band(index);
     Serial.printf("ORC_FT8_BAND_%s index=%u label=%s dial_hz=%lu\n", ok ? "OK" : "FAILED", static_cast<unsigned>(index),
                   preset != nullptr ? preset->label : "-", static_cast<unsigned long>(orcsdr::ft8::mode_dial_hz(index, g_ft8_mode)));
@@ -17373,6 +17424,7 @@ void process_ft8_command(const char* args) {
       return;
     }
     g_ft8_mode = mode;
+    g_ft8_dial_override_hz = 0;
     (void)orcsdr::ft8_runtime::set_mode(mode);
     (void)ft8_select_band(ft8_selected_band());   // the new mode has its own dial frequency
     Serial.printf("ORC_FT8_MODE_OK mode=%s dial_hz=%lu\n", orcsdr::ft8::mode_name(mode),
@@ -17711,6 +17763,7 @@ void process_js8_command(const char* args) {
   if (strcmp(verb, "START") == 0 || (strcmp(verb, "MODE") == 0 && strncasecmp(rest, "NORMAL", 6) == 0)) {
     if (need_auth()) return;
     g_ft8_mode = DigitalMode::js8_normal;
+    g_ft8_dial_override_hz = 0;
     if (!ft8_native_ensure_started()) {
       Serial.println("ORC_JS8_ERROR START start_failed");
       return;
@@ -17729,6 +17782,7 @@ void process_js8_command(const char* args) {
     if (need_auth()) return;
     orcsdr::ft8_runtime::set_headless(false);
     g_ft8_mode = DigitalMode::ft8;
+    g_ft8_dial_override_hz = 0;
     (void)orcsdr::ft8_runtime::set_mode(DigitalMode::ft8);
     (void)ft8_select_band(ft8_selected_band());
     Serial.println("ORC_JS8_STOP_OK mode=FT8");
@@ -17737,7 +17791,7 @@ void process_js8_command(const char* args) {
   if (strcmp(verb, "BAND") == 0) {
     if (need_auth()) return;
     size_t index = 0;
-    if (!ft8_parse_band_argument(rest, &index) || !ft8_select_band(index)) {
+    if (!ft8_parse_band_argument(rest, &index) || !ft8_select_band_table(index)) {
       Serial.println("ORC_JS8_ERROR BAND invalid use BAND <label|index>");
       return;
     }

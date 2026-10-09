@@ -18,7 +18,10 @@ enum class ActionKind : uint8_t {
   start_hunt_decode,
   stop_hunt,
   lock_hunter_best,
-  select_mode          // value = a DigitalMode the user chose in SETUP
+  select_mode,         // value = a DigitalMode the user chose in SETUP
+  tune_dial,           // value = a dial frequency in Hz typed or stepped in the Tune panel (expert tuning)
+  tune_auto,           // back to the band table's dial for the current band
+  set_expert           // value = 1 or 0: expert tuning (Tune panel, OrcDial rotation steps the dial in Hz)
 };
 
 struct Action {
@@ -46,6 +49,10 @@ struct Snapshot {
   uint16_t wf_rows = 0;
   uint16_t wf_bins = 0;
   uint32_t wf_sequence = 0;
+  // Expert tuning. dial_hz is what the receiver is actually tuned to (band table or custom); dial_custom marks a typed/stepped dial.
+  bool expert_tuning = false;
+  bool dial_custom = false;
+  uint32_t dial_hz = 0;
   bool station_known = false;
   float station_latitude = 0.0f;
   float station_longitude = 0.0f;
@@ -67,6 +74,8 @@ Tab tab();
 void set_header_hook(void (*draw_controls)());
 void select_tab(Tab tab);   // from OrcDial; redraws when the tab changes
 const Snapshot& snapshot();
+// The step the Tune panel is set to, in Hz (OrcDial rotation uses the same step while expert tuning is on).
+uint32_t tune_step_hz();
 bool dashboard_self_check();
 
 }  // namespace orcsdr::ft8

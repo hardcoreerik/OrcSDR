@@ -4,6 +4,7 @@
 
 #include "dashboard_audio_control.hpp"
 #include "ft8_decoder_backend.hpp"
+#include "ft8_tuning.hpp"
 #include "focus_nav.hpp"
 
 #include <M5Unified.h>
@@ -46,6 +47,27 @@ uint32_t g_drawn_tenth = UINT32_MAX;      // slot-timer tenth the dial shows
 M5Canvas g_dial(&M5.Display);             // the slot dial is composed off-screen and pushed in one go
 Tab g_tab = Tab::live;
 size_t g_decode_page = 0;
+
+// Expert tuning panel (opened from the Live DIAL chip while expert tuning is on).
+bool g_tune_open = false;
+char g_tune_entry[12] = "";
+size_t g_tune_step = tuning::kDefaultStepIndex;
+uint32_t g_tune_target = 0;      // the dial the panel last asked for; resynced to the receiver's dial when that changes
+bool g_tune_invalid = false;     // the last ENTER did not parse or was out of range
+constexpr Rect kDialChip{24, 104, 212, 58};
+constexpr Rect kTunePanel{240, 104, 800, 512};
+constexpr Rect kTuneEntry{260, 168, 300, 46};
+constexpr Rect kTuneEnter{260, 462, 300, 52};
+constexpr Rect kTuneAuto{260, 524, 300, 46};
+constexpr Rect kTuneMinus{590, 276, 216, 86};
+constexpr Rect kTunePlus{818, 276, 216, 86};
+constexpr Rect kTuneMinus10{590, 372, 216, 56};
+constexpr Rect kTunePlus10{818, 372, 216, 56};
+constexpr Rect kTuneClose{818, 524, 216, 46};
+constexpr Rect kExpertRow{42, 550, 1196, 40};
+Rect tune_key_rect(size_t i) { return {260 + static_cast<int>(i % 3) * 104, 224 + static_cast<int>(i / 3) * 58, 96, 52}; }
+Rect tune_step_rect(size_t i) { return {590 + static_cast<int>(i % 3) * 148, 168 + static_cast<int>(i / 3) * 50, 140, 42}; }
+constexpr char kTuneKeys[12] = {'1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '<'};
 
 bool hit(int32_t x, int32_t y, const Rect& r) {
   return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
@@ -92,7 +114,7 @@ const char* family_brand(DigitalMode mode) {   // longer than 10 characters, so 
   return mode_is_js8(mode) ? "JS8 RECEIVER" : "FT8 RECEIVER";
 }
 // Only FT8 has a verified band table so far; the other modes must not show FT8's dial frequencies.
-bool mode_has_band_table(DigitalMode mode) { return mode == DigitalMode::ft8; }
+bool mode_has_band_table(DigitalMode mode) { return mode == DigitalMode::ft8 || mode == DigitalMode::ft4 || mode == DigitalMode::js8_normal; }
 
 // "15", "7.5", "10", "6", "30", "4"
 void slot_seconds_text(char* out, size_t size, DigitalMode mode) {
@@ -165,8 +187,8 @@ void draw_header() {
   const BandPreset* preset = band(g_snapshot.selected_band);
   char label[48];
   if (preset && mode_has_band_table(g_snapshot.mode)) {
-    std::snprintf(label, sizeof(label), "%s  %.3f MHz", preset->label,
-                  static_cast<double>(mode_dial_hz(g_snapshot.selected_band, g_snapshot.mode)) / 1e6);
+    const uint32_t shown = g_snapshot.dial_hz != 0 ? g_snapshot.dial_hz : mode_dial_hz(g_snapshot.selected_band, g_snapshot.mode);
+    std::snprintf(label, sizeof(label), "%s  %.4f MHz", g_snapshot.dial_custom ? "CUSTOM" : preset->label, static_cast<double>(shown) / 1e6);
   } else {
     std::snprintf(label, sizeof(label), preset ? "BAND TABLE PENDING" : "BAND --");
   }
@@ -398,12 +420,21 @@ void paced_waterfall_step() {
   scroll_waterfall(backlog > 8 ? 4 : (backlog > 3 ? 2 : 1));
 }
 
+void draw_dial_chip(bool have_table) {
+  char value[32];
+  const uint32_t shown = g_snapshot.dial_hz != 0 ? g_snapshot.dial_hz : (have_table ? mode_dial_hz(g_snapshot.selected_band, g_snapshot.mode) : 0u);
+  if (shown != 0) std::snprintf(value, sizeof(value), "%.4f MHz", static_cast<double>(shown) / 1e6);
+  else std::snprintf(value, sizeof(value), "--");
+  chip(kDialChip, g_snapshot.expert_tuning ? (g_snapshot.dial_custom ? "DIAL  CUSTOM - TAP" : "DIAL  TAP TO TUNE") : "DIAL", value,
+       g_snapshot.dial_custom ? kAmber : TFT_WHITE);
+  if (g_snapshot.expert_tuning) focus_nav::note(kDialChip.x, kDialChip.y, kDialChip.w, kDialChip.h);
+}
+
 void draw_live() {
   const BandPreset* preset = band(g_snapshot.selected_band);
   char value[48];
   const bool have_table = preset != nullptr && mode_has_band_table(g_snapshot.mode);
-  std::snprintf(value, sizeof(value), have_table ? "%.3f MHz" : "--", have_table ? mode_dial_hz(g_snapshot.selected_band, g_snapshot.mode) / 1e6 : 0.0);
-  chip({24, 104, 212, 58}, "DIAL", value, TFT_WHITE);
+  draw_dial_chip(have_table);
   chip({246, 104, 150, 58}, "MODE", mode_name(g_snapshot.mode),
        mode_experimental(g_snapshot.mode) ? kAmber : TFT_WHITE);
   chip({406, 104, 210, 58}, "AUDIO PASS", "200-3000 Hz", TFT_WHITE);
@@ -498,7 +529,7 @@ void draw_decodes() {
     text(utc, x[0], y, TFT_WHITE, 1, middle_left);
     if (d->flags & decode_flag_snr_unavailable) std::snprintf(item, sizeof(item), "--");
     else std::snprintf(item, sizeof(item), "%+d", d->snr_db);
-    text(item, x[1], y, TFT_WHITE, 1, middle_left);
+    if (!((d->flags & decode_flag_snr_unavailable) && (d->flags & decode_flag_new_station))) text(item, x[1], y, TFT_WHITE, 1, middle_left);   // the NEW badge takes this cell
     std::snprintf(item, sizeof(item), "%+.1f", d->dt_ms / 1000.0);
     text(item, x[2], y, TFT_WHITE, 1, middle_left);
     std::snprintf(item, sizeof(item), "%u", d->audio_hz);
@@ -506,8 +537,10 @@ void draw_decodes() {
     text(kind_name(d->kind), x[4], y, d->kind == DecodeKind::cq ? kGreen : kYellow, 1, middle_left);
     text(d->message, x[5], y, TFT_WHITE, 1, middle_left);
     if (d->flags & decode_flag_new_station) {   // first time this callsign was heard this session
-      M5.Display.drawRoundRect(846, y - 13, 52, 26, 5, kGreen);
-      text("NEW", 872, y, kGreen, 0);
+      // The badge sits beside the message in FT8/FT4; JS8 messages are long enough to run under it, so it takes the (unused) SNR cell instead.
+      const int badge_x = (d->flags & decode_flag_snr_unavailable) ? 172 : 846;
+      M5.Display.drawRoundRect(badge_x, y - 13, 52, 26, 5, kGreen);
+      text("NEW", badge_x + 26, y, kGreen, 0);
     }
     text(d->grid, x[6], y, maidenhead_valid(d->grid) ? kGreen : kMuted, 1, middle_left);
     float km = 0.0f, bearing = 0.0f;
@@ -952,8 +985,9 @@ void draw_setup() {
   setup_row(3, "AUDIO PASSBAND", "200 - 3000 Hz", TFT_WHITE);
   setup_row(4, "MAP SOURCE", "OFFLINE MAIDENHEAD GRID", kGreen);
   setup_row(5, "NETWORK REQUIRED", "NO", kGreen);
-  text("Receive only. The native decoder reports no SNR (no calibrated estimator).", 54, 568, kMuted, 1, middle_left);
-  text("Times need a locked UTC clock.", 54, 596, kMuted, 1, middle_left);
+  setup_row(6, "EXPERT TUNING  (DIAL ENTRY + STEP)", g_snapshot.expert_tuning ? "ON" : "OFF", g_snapshot.expert_tuning ? kGreen : kMuted);
+  if (g_snapshot.expert_tuning) focus_nav::note(kExpertRow.x, kExpertRow.y, kExpertRow.w, kExpertRow.h);
+  text("Receive only. Times need a locked UTC clock. Expert tuning: tap DIAL on Live; OrcDial rotation steps the dial in Hz.", 54, 606, kMuted, 0, middle_left);
 }
 
 // Live screen: what a decoder-status, candidate-count or decode change touches. Everything else (dial, mode, waterfall panel) stays as drawn.
@@ -966,6 +1000,7 @@ bool live_layout_same(const Snapshot& a, const Snapshot& b) {
 
 void draw_live_dynamic(const Snapshot& previous) {
   std::printf("ORC_FT8_UI live_partial\n");
+  draw_dial_chip(band(g_snapshot.selected_band) != nullptr && mode_has_band_table(g_snapshot.mode));
   char value[48];
   chip({826, 104, 200, 58}, "DECODER", decoder_name(), decoder_color());
   if (previous.gain_auto != g_snapshot.gain_auto || previous.gain_tenth_db != g_snapshot.gain_tenth_db) {
@@ -988,7 +1023,112 @@ void draw_live_dynamic(const Snapshot& previous) {
     draw_live_rows();
 }
 
-void draw_body(bool repaint_in_place = false) {
+void draw_body(bool repaint_in_place = false);
+// ---- Tune panel -------------------------------------------------------------------------------------------------------------------------
+void draw_tune_readout() {
+  char value[32];
+  const uint32_t shown = g_snapshot.dial_hz != 0 ? g_snapshot.dial_hz : g_tune_target;
+  tuning::format_mhz(shown, value, sizeof(value));
+  M5.Display.fillRect(262, 118, 776, 44, kPanel);
+  text(value, 640, 140, g_snapshot.dial_custom ? kAmber : TFT_WHITE, 3);
+  const bool bad = g_tune_invalid;
+  M5.Display.fillRect(262, 580, 776, 30, kPanel);
+  text(bad ? "ENTRY NOT ACCEPTED - TYPE MHz, e.g. 7.078" : g_snapshot.dial_custom ? "CUSTOM DIAL  (AUTO returns to the band table)" : "AUTO: band table dial", 640, 596, bad ? kAmber : kMuted, 0);
+}
+
+void draw_tune_entry() {
+  M5.Display.fillRoundRect(kTuneEntry.x, kTuneEntry.y, kTuneEntry.w, kTuneEntry.h, 8, TFT_BLACK);
+  M5.Display.drawRoundRect(kTuneEntry.x, kTuneEntry.y, kTuneEntry.w, kTuneEntry.h, 8, kCyan);
+  char shown[24];
+  std::snprintf(shown, sizeof(shown), "%s%s", g_tune_entry[0] ? g_tune_entry : "type MHz", g_tune_entry[0] ? " MHz" : "");
+  text(shown, kTuneEntry.x + 14, cy(kTuneEntry), g_tune_entry[0] ? TFT_WHITE : kMuted, 2, middle_left);
+}
+
+void draw_tune_steps() {
+  for (size_t i = 0; i < tuning::kStepCount; ++i) button(tune_step_rect(i), tuning::step_label(i), i == g_tune_step, true, 1);
+}
+
+void draw_tune_panel() {
+  frame(kTunePanel, kCyan);
+  text("TUNE  (expert)", 262, 126, kCyan, 1, middle_left);
+  draw_tune_readout();
+  draw_tune_entry();
+  for (size_t i = 0; i < 12; ++i) {
+    char label[2] = {kTuneKeys[i] == '<' ? 'X' : kTuneKeys[i], '\0'};
+    button(tune_key_rect(i), kTuneKeys[i] == '<' ? "DEL" : label, false, true, kTuneKeys[i] == '<' ? 1 : 2);
+  }
+  button(kTuneEnter, "TUNE", false, true, 2);
+  button(kTuneAuto, "AUTO (BAND TABLE)", false, g_snapshot.dial_custom, 1);
+  draw_tune_steps();
+  button(kTuneMinus, "- STEP", false, true, 2);
+  button(kTunePlus, "+ STEP", false, true, 2);
+  button(kTuneMinus10, "- 10 STEPS", false, true, 1);
+  button(kTunePlus10, "+ 10 STEPS", false, true, 1);
+  button(kTuneClose, "CLOSE", false, true, 1);
+  text("Typed values are MHz. Steps use the size chosen above.", 590, 488, kMuted, 0, middle_left);
+}
+
+void open_tune_panel() {
+  g_tune_open = true;
+  g_tune_entry[0] = '\0';
+  g_tune_invalid = false;
+  g_tune_target = g_snapshot.dial_hz != 0 ? g_snapshot.dial_hz : mode_dial_hz(g_snapshot.selected_band, g_snapshot.mode);
+  draw_tune_panel();
+}
+
+Action tune_step_action(int32_t detents) {
+  g_tune_target = tuning::apply_steps(g_tune_target, detents, tuning::kStepsHz[g_tune_step]);
+  g_tune_invalid = false;
+  return {ActionKind::tune_dial, g_tune_target};
+}
+
+// Returns true when the touch was inside the panel (handled), with *out set when it asks the application to retune.
+bool handle_tune_touch(int32_t x, int32_t y, Action* out) {
+  if (!hit(x, y, kTunePanel)) return false;
+  for (size_t i = 0; i < 12; ++i)
+    if (hit(x, y, tune_key_rect(i))) {
+      if (tuning::entry_key(g_tune_entry, sizeof(g_tune_entry), kTuneKeys[i])) g_tune_invalid = false;
+      draw_tune_entry();
+      draw_tune_readout();
+      return true;
+    }
+  for (size_t i = 0; i < tuning::kStepCount; ++i)
+    if (hit(x, y, tune_step_rect(i))) {
+      g_tune_step = i;
+      draw_tune_steps();
+      return true;
+    }
+  if (hit(x, y, kTuneEnter)) {
+    uint32_t hz = 0;
+    if (tuning::parse_mhz(g_tune_entry, &hz)) {
+      g_tune_target = hz;
+      g_tune_entry[0] = '\0';
+      g_tune_invalid = false;
+      *out = {ActionKind::tune_dial, hz};
+    } else {
+      g_tune_invalid = true;
+    }
+    draw_tune_entry();
+    draw_tune_readout();
+    return true;
+  }
+  if (hit(x, y, kTuneAuto)) {
+    if (g_snapshot.dial_custom) *out = {ActionKind::tune_auto, 0};
+    return true;
+  }
+  if (hit(x, y, kTuneMinus)) { *out = tune_step_action(-1); return true; }
+  if (hit(x, y, kTunePlus)) { *out = tune_step_action(1); return true; }
+  if (hit(x, y, kTuneMinus10)) { *out = tune_step_action(-10); return true; }
+  if (hit(x, y, kTunePlus10)) { *out = tune_step_action(10); return true; }
+  if (hit(x, y, kTuneClose)) {
+    g_tune_open = false;
+    draw_body(false);
+    return true;
+  }
+  return true;   // a tap on the panel's own background does nothing
+}
+
+void draw_body(bool repaint_in_place) {
   std::printf("ORC_FT8_UI body tab=%u in_place=%d\n", static_cast<unsigned>(g_tab), repaint_in_place ? 1 : 0);
   if (!repaint_in_place) M5.Display.fillRect(0, 94, 1280, 532, TFT_BLACK);   // the map repaints opaque panels, so it skips the blank
   switch (g_tab) {
@@ -1013,6 +1153,7 @@ bool same_content(const Snapshot& a, const Snapshot& b) {
          a.gain_tenth_db == b.gain_tenth_db && a.candidate_count == b.candidate_count &&
          a.last_slot_decodes == b.last_slot_decodes && a.selected_band == b.selected_band &&
          a.decoder_state == b.decoder_state && a.decode_count == b.decode_count &&
+         a.dial_hz == b.dial_hz && a.dial_custom == b.dial_custom && a.expert_tuning == b.expert_tuning &&
          std::memcmp(&a.hunter, &b.hunter, sizeof(a.hunter)) == 0 &&
          std::memcmp(a.decodes, b.decodes, a.decode_count * sizeof(Decode)) == 0;
 }
@@ -1052,6 +1193,7 @@ void enter(const Snapshot& snapshot_value) {
   g_snapshot.decode_count = std::min(g_snapshot.decode_count, kDecodeCapacity);
   g_snapshot.selected_band = std::min(g_snapshot.selected_band, band_count() - 1);
   g_active = true;
+  g_tune_open = false;
   g_tab = Tab::live;
   g_decode_page = 0;
   draw();
@@ -1071,6 +1213,11 @@ void update(const Snapshot& snapshot_value) {
                               previous.battery_percent != g_snapshot.battery_percent;
   if (tab_content_changed(g_tab, previous, g_snapshot) || header_changed) {
     if (header_changed) draw_header();
+    if (g_tune_open) {   // the Tune panel covers the body: only its readout follows the receiver
+      if (previous.dial_hz != g_snapshot.dial_hz) g_tune_target = g_snapshot.dial_hz;
+      draw_tune_readout();
+      return;
+    }
     // Live: status, counters and the latest-decodes list repaint alone; the waterfall and dial are not touched.
     if (g_tab == Tab::live && !same_content(previous, g_snapshot) && live_layout_same(previous, g_snapshot) ) {
       draw_live_dynamic(previous);
@@ -1092,6 +1239,7 @@ void update(const Snapshot& snapshot_value) {
     return;
   }
   if (g_snapshot.utc_ms / 1000u != g_drawn_second) draw_utc();
+  if (g_tune_open) return;   // never draw the waterfall or dial under the Tune panel
   if (g_tab == Tab::live && g_snapshot.wf_sequence != g_drawn_waterfall && g_snapshot.decoder_state != DecoderState::unbound &&
       g_snapshot.clock_valid) {
     paced_waterfall_step();
@@ -1114,6 +1262,19 @@ void draw() {   // full repaint: entering the screen only
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
+  if (g_tune_open) {
+    if (y < kTabsY) {   // the Tune panel owns the body; taps outside it are ignored
+      Action tuned{};
+      (void)handle_tune_touch(x, y, &tuned);
+      return tuned;
+    }
+    g_tune_open = false;   // a tab tap closes the panel and switches tabs below
+  }
+  if (g_tab == Tab::live && g_snapshot.expert_tuning && hit(x, y, kDialChip)) {
+    open_tune_panel();
+    return {};
+  }
+  if (g_tab == Tab::setup && hit(x, y, kExpertRow)) return {ActionKind::set_expert, g_snapshot.expert_tuning ? 0u : 1u};
   if (y >= kTabsY) {
     const int index = std::clamp(static_cast<int>(x / kTabW), 0, kTabCount - 1);
     g_tab = static_cast<Tab>(index);
@@ -1183,7 +1344,11 @@ Action handle_touch(int32_t x, int32_t y) {
   return {};
 }
 
-void leave() { g_active = false; }
+void leave() {
+  g_active = false;
+  g_tune_open = false;
+}
+uint32_t tune_step_hz() { return tuning::kStepsHz[g_tune_step]; }
 bool active() { return g_active; }
 Tab tab() { return g_tab; }
 
@@ -1191,6 +1356,7 @@ void set_header_hook(void (*draw_controls)()) { g_header_hook = draw_controls; }
 
 void select_tab(Tab tab) {
   if (!g_active || tab >= Tab::count || tab == g_tab) return;
+  g_tune_open = false;
   g_tab = tab;
   g_decode_page = 0;
   draw_body();
@@ -1206,7 +1372,7 @@ bool dashboard_self_check() {
 
 // Called from the main loop between full updates: new waterfall rows scroll in without waiting for the next snapshot.
 void pump_waterfall(uint32_t sequence) {
-  if (!g_active || g_tab != Tab::live || g_snapshot.decoder_state == DecoderState::unbound || !g_snapshot.clock_valid) return;
+  if (!g_active || g_tune_open || g_tab != Tab::live || g_snapshot.decoder_state == DecoderState::unbound || !g_snapshot.clock_valid) return;
   g_snapshot.wf_sequence = sequence;
   paced_waterfall_step();
 }
