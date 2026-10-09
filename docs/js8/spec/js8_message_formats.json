@@ -1,0 +1,127 @@
+{
+  "schema": "orcsdr.js8.message-layout/1",
+  "status": "DIRECTED_MESSAGE_BIT_LAYOUT_VERIFIED_WO7I; OTHER_FORMATS_SOURCE_DOCUMENTED_OR_PENDING",
+  "codeword_information_bits": 87,
+  "frame": {
+    "text_bits": [
+      0,
+      71
+    ],
+    "frame_type_bits": [
+      72,
+      74
+    ],
+    "crc_bits": [
+      75,
+      86
+    ]
+  },
+  "text_field": {
+    "characters": 12,
+    "bits_per_character": 6,
+    "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-+",
+    "encoding": "12 consecutive 6-bit integers MSB-first, left to right",
+    "raw_text_only": "These twelve alphabet characters are a radio frame's encoded inner text field, NOT necessarily human-readable displayed message; JS8Call varicode/dictionary/frame assembly layer is still required."
+  },
+  "frame_type_flag_semantics": "NOT YET PINNED TO A VERSIONED MESSAGE-PROTOCOL SOURCE",
+  "heartbeat_callsign_snr_encoding": "UNVERIFIED",
+  "directed_commands": "UNVERIFIED",
+  "compound_callsigns": "UNVERIFIED",
+  "huffman_data": "UNVERIFIED",
+  "dictionary_data": "UNVERIFIED",
+  "multi_frame_assembly": "UNVERIFIED",
+  "provenance": {
+    "type": "GPL-SOURCE",
+    "repository": "js8call/js8call",
+    "file": "JS8.cpp",
+    "branch": "main",
+    "blob_sha": "b19aa96c6ad000e26a24074692cd3633317063e8",
+    "note": "The inner 72-bit character field is established; application-layer rendering cannot be inferred from these 12 bytes alone.",
+    "functions": [
+      "encode",
+      "extractmessage174"
+    ],
+    "message_codec": {
+      "type": "GPL-SOURCE",
+      "repository": "js8call/js8call",
+      "file": "varicode.cpp",
+      "functions": [
+        "unpack72bits",
+        "unpackDirectedMessage",
+        "unpackCallsign"
+      ],
+      "blob_sha": "8205a575993f305142f64a034bf6295b8da47a8f",
+      "note": "Source provenance for numeric bit layout; independent real-recording check on WO7I"
+    }
+  },
+  "verification": {
+    "real_recording": "sample-40m-180s-002",
+    "dataset_commit": "1705472",
+    "candidate": "WO7I 637.5 Hz start_sample 112320",
+    "parity_syndrome_weight": 0,
+    "crc12_pass": true,
+    "inner_payload": "UvnVIpm34Fqg",
+    "frame_type": 3,
+    "hard_tone_errors_corrected": 0,
+    "comparison": "Verifies physical codeword, not rendered JS8 heartbeat; K8IMT/K7YXZ hard tones do not pass parity/CRC; KD7WPQ missing",
+    "script": "tools/js8-spec/verify_real_frames.py"
+  },
+  "frame_types": {
+    "0": "heartbeat",
+    "1": "compound",
+    "2": "compound_directed",
+    "3": "directed",
+    "4-5": "data",
+    "6-7": "compressed_data"
+  },
+  "directed_frame": {
+    "bit_layout": [
+      {
+        "name": "frame_type",
+        "start": 0,
+        "width": 3
+      },
+      {
+        "name": "source_callsign",
+        "start": 3,
+        "width": 28
+      },
+      {
+        "name": "destination_callsign",
+        "start": 31,
+        "width": 28
+      },
+      {
+        "name": "command",
+        "start": 59,
+        "width": 5
+      },
+      {
+        "name": "extra",
+        "start": 64,
+        "width": 8
+      }
+    ],
+    "callsign": "28-bit packed base callsign; right-to-left radix 27 for the final three suffix positions (alphabet A-Z and blank), radix 10 for digit, radix 36 for second prefix position, remaining quotient for first prefix position; portable flags in bits 7 and 6 of extra",
+    "callsign_prefix_alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ /@",
+    "commands_verified": {
+      "29": "HEARTBEAT SNR"
+    },
+    "extra": "When numeric directed SNR is present, lower 6 bits encode signed SNR offset by 31; 0 means numeric absent, valid 1..61 maps -30..+30; verify command-specific rules",
+    "verified_frame": {
+      "reference": "WO7I: ND7M HEARTBEAT SNR +11",
+      "inner_payload": "UvnVIpm34Fqg",
+      "source_callsign_uint28": 231616421,
+      "source": "WO7I",
+      "destination_callsign_uint28": 165681287,
+      "destination": "ND7M",
+      "command_id": 29,
+      "command": "HEARTBEAT SNR",
+      "extra": 42,
+      "snr": 11,
+      "frame_type": 3,
+      "parity_syndrome": 0,
+      "crc_pass": true
+    }
+  }
+}

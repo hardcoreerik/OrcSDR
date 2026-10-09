@@ -2,6 +2,17 @@
 
 This file tracks changes made specifically by the native OrcSDR FT8 decoder workstream. The main branch did not contain a repository-wide CHANGELOG.md when this workstream started.
 
+## 2026-10-08 - JS8 protocol specification imported from codex/js8-spec (7214ae2)
+
+- Imported, without merging the spec branch: `docs/js8/spec/*.json` (LDPC(174,87) parity rows, tone map, CRC-12, message layouts, WO7I evidence, corpus audit,
+  candidate diagnostics), `docs/js8/PROTOCOL_SPEC.md` and `tools/js8-spec/*.py`. Each constant carries its provenance (documentation or GPL-SOURCE with file, function
+  and blob SHA). Facts only; no GPL code is in the repository.
+- Reproduced independently with the committed verifier: `python tools/js8-spec/verify_real_frames.py docs/js8/spec/js8_ldpc_174_87.json
+  docs/js8/results/2026-10-08-sample-40m-180s-002-front-end.json` gives, for WO7I (637.5 Hz, start sample 112320, 21/21 sync), zero unsatisfied parity checks, CRC-12 pass,
+  inner text `UvnVIpm34Fqg`, directed frame WO7I -> ND7M, command 29 (HEARTBEAT SNR), SNR +11. Hard decisions only; the other three stations need soft decoding.
+- Spec caveats kept visible: the matrix rows are DENSE (about 44 variables per check), so belief propagation on them is weak and ordered-statistics decoding is the natural
+  fit; only command 29 is verified; frame-flag semantics and non-directed frame types are not pinned to a versioned source.
+
 ## 2026-10-08 - JS8 front end on the real over-the-air capture; evidence tool and bound results
 
 - `tools/js8-wav-front.cpp`: runs the same JS8 Normal backend as the firmware over a long 12 kHz WAV with a sliding 15 s window and reports sync
