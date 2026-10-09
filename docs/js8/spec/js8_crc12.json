@@ -1,6 +1,6 @@
 {
   "schema": "orcsdr.js8.crc/1",
-  "status": "SOURCE_DERIVED_UNVERIFIED_REAL_RECORDINGS",
+  "status": "SOURCE_DERIVED_VERIFIED_ON_ONE_REAL_FRAME",
   "width": 12,
   "polynomial_hex": "0xC06",
   "algorithm": "Augmented CRC over eleven bytes, 12-bit width, MSB-first, nonreflected, polynomial 0xC06; XOR final CRC value with decimal 42 (0x02A)",
@@ -35,5 +35,16 @@
       "encode"
     ]
   },
-  "verification": "NO_REAL_FRAME_CRC_PASS"
+  "verification": {
+    "real_recording": "sample-40m-180s-002",
+    "dataset_commit": "1705472",
+    "candidate": "WO7I 637.5 Hz start_sample 112320",
+    "parity_syndrome_weight": 0,
+    "crc12_pass": true,
+    "inner_payload": "UvnVIpm34Fqg",
+    "frame_type": 3,
+    "hard_tone_errors_corrected": 0,
+    "comparison": "Verifies physical codeword, not rendered JS8 heartbeat; K8IMT/K7YXZ hard tones do not pass parity/CRC; KD7WPQ missing",
+    "script": "tools/js8-spec/verify_real_frames.py"
+  }
 }
