@@ -908,6 +908,17 @@ void setup_row(int row, const char* label, const char* value, uint16_t color) {
   text(value, 1226, y + 18, color, 2, middle_right);
 }
 
+// The rows whose value follows the decoder or the clock. Repainted alone (row background first) so a status change never repaints the page.
+void draw_setup_status_rows() {
+  for (int row = 1; row <= 2; ++row) {
+    const int y = 238 + row * 52;
+    M5.Display.fillRect(46, y, 1188, 41, kPanel);
+  }
+  setup_row(1, "DECODER BINDING", decoder_name(), decoder_color());
+  setup_row(2, "UTC SLOT CLOCK", g_snapshot.clock_valid ? "READY" : "NOT ESTABLISHED",
+            g_snapshot.clock_valid ? kGreen : kAmber);
+}
+
 void draw_setup() {
   frame(kBody);
   text("RX SETUP   DECODE MODE", 42, 126, kCyan, 1, middle_left);
@@ -930,6 +941,37 @@ void draw_setup() {
   setup_row(5, "NETWORK REQUIRED", "NO", kGreen);
   text("Receive only. The native decoder reports no SNR (no calibrated estimator).", 54, 568, kMuted, 1, middle_left);
   text("Times need a locked UTC clock.", 54, 596, kMuted, 1, middle_left);
+}
+
+// Live screen: what a decoder-status, candidate-count or decode change touches. Everything else (dial, mode, waterfall panel) stays as drawn.
+int waterfall_state(const Snapshot& v) { return v.decoder_state == DecoderState::unbound ? 0 : !v.clock_valid ? 1 : 2; }
+
+bool live_layout_same(const Snapshot& a, const Snapshot& b) {
+  return a.mode == b.mode && a.selected_band == b.selected_band && a.decoder_capabilities == b.decoder_capabilities && a.clock_valid == b.clock_valid &&
+         waterfall_state(a) == waterfall_state(b);
+}
+
+void draw_live_dynamic(const Snapshot& previous) {
+  char value[48];
+  chip({826, 104, 200, 58}, "DECODER", decoder_name(), decoder_color());
+  if (previous.gain_auto != g_snapshot.gain_auto || previous.gain_tenth_db != g_snapshot.gain_tenth_db) {
+    if (g_snapshot.gain_auto) std::snprintf(value, sizeof(value), "AUTO");
+    else std::snprintf(value, sizeof(value), "MAN %.1f dB", g_snapshot.gain_tenth_db / 10.0);
+    chip({1036, 104, 220, 58}, "GAIN", value, TFT_WHITE);
+  }
+  const Rect timer{926, 176, 330, 294};
+  const int center_x = cx(timer);
+  M5.Display.fillRect(934, 356, 314, 108, kPanel);   // only the status block under the dial
+  text(decoder_name(), center_x, 368, decoder_color(), 2);
+  std::snprintf(value, sizeof(value), "%u candidates", g_snapshot.candidate_count);
+  text(value, center_x, 397, TFT_WHITE, 1);
+  M5.Display.drawFastHLine(946, 420, 290, kGrid);
+  text("LAST SLOT", 952, 440, kMuted, 1, middle_left);
+  std::snprintf(value, sizeof(value), "%u decoded", g_snapshot.last_slot_decodes);
+  text(value, 1228, 440, kGreen, 1, middle_right);
+  if (previous.decode_count != g_snapshot.decode_count ||
+      std::memcmp(previous.decodes, g_snapshot.decodes, g_snapshot.decode_count * sizeof(Decode)) != 0)
+    draw_live_rows();
 }
 
 void draw_body(bool repaint_in_place = false) {
@@ -994,7 +1036,18 @@ void update(const Snapshot& snapshot_value) {
                               previous.battery_percent != g_snapshot.battery_percent;
   if (!same_content(previous, g_snapshot) || header_changed) {
     if (header_changed) draw_header();
-    if (!same_content(previous, g_snapshot)) draw_body(g_tab == Tab::map && previous.mode == g_snapshot.mode && previous.selected_band == g_snapshot.selected_band);
+    // Live: status, counters and the latest-decodes list repaint alone; the waterfall and dial are not touched.
+    if (g_tab == Tab::live && !same_content(previous, g_snapshot) && live_layout_same(previous, g_snapshot) ) {
+      draw_live_dynamic(previous);
+      return;
+    }
+    // Setup: a decoder or clock status change repaints only its two rows; a mode change repaints in place without blanking.
+    if (g_tab == Tab::setup && !same_content(previous, g_snapshot)) {
+      if (previous.mode == g_snapshot.mode && previous.decoder_capabilities == g_snapshot.decoder_capabilities) draw_setup_status_rows();
+      else draw_body(true);
+      return;
+    }
+    if (!same_content(previous, g_snapshot)) draw_body((g_tab == Tab::map || g_tab == Tab::hunter || g_tab == Tab::heard) && previous.mode == g_snapshot.mode && previous.selected_band == g_snapshot.selected_band);
     return;
   }
   if (g_snapshot.utc_ms / 1000u != g_drawn_second) draw_utc();
