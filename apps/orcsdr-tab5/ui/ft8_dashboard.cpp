@@ -853,20 +853,52 @@ void draw_heard() {
   draw_conditions_panel();
 }
 
-Rect mode_rect(size_t index) { return {42 + static_cast<int>(index) * 172, 140, 164, 60}; }
+// Mode selection is one button per family (FT8, FT4, JS8). JS8 has five submodes; they live in a chip row under the JS8 button,
+// shown only while JS8 is the selected family, so the top row stays three large targets.
+constexpr size_t kFamilyCount = 3;
+constexpr size_t kJs8SubmodeCount = 5;   // Normal, Fast, 40, Slow, 60 (experimental)
 
-void draw_mode_button(size_t index) {
-  const DigitalMode mode = static_cast<DigitalMode>(index);
-  const Rect r = mode_rect(index);
-  const bool available = mode_available(mode);
-  const bool selected = g_snapshot.mode == mode;
+size_t family_of(DigitalMode mode) { return mode == DigitalMode::ft8 ? 0 : mode == DigitalMode::ft4 ? 1 : 2; }
+DigitalMode family_default(size_t family) { return family == 0 ? DigitalMode::ft8 : family == 1 ? DigitalMode::ft4 : DigitalMode::js8_normal; }
+const char* family_name(size_t family) { return family == 0 ? "FT8" : family == 1 ? "FT4" : "JS8CALL"; }
+Rect family_rect(size_t index) { return {42 + static_cast<int>(index) * 408, 140, 400, 60}; }
+Rect submode_rect(size_t index) { return {42 + static_cast<int>(index) * 240, 206, 232, 30}; }
+DigitalMode submode_mode(size_t index) { return static_cast<DigitalMode>(static_cast<size_t>(DigitalMode::js8_normal) + index); }
+const char* submode_label(size_t index) {
+  static const char* const kNames[kJs8SubmodeCount] = {"NORMAL 15s", "FAST 10s", "40  6s", "SLOW 30s", "60 EXP"};
+  return kNames[index];
+}
+
+bool family_available(size_t family) {
+  if (family != 2) return mode_available(family_default(family));
+  for (size_t i = 0; i < kJs8SubmodeCount; ++i)
+    if (mode_available(submode_mode(i))) return true;
+  return false;
+}
+
+void draw_family_button(size_t family) {
+  const Rect r = family_rect(family);
+  const bool available = family_available(family);
+  const bool selected = family_of(g_snapshot.mode) == family;
   if (available) focus_nav::note(r.x, r.y, r.w, r.h);
   const uint16_t border = !available ? TFT_DARKGREY : selected ? kGreen : kCyan;
   M5.Display.fillRoundRect(r.x, r.y, r.w, r.h, 8, selected && available ? kSelected : kPanel);
   M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 8, border);
-  text(mode_name(mode), cx(r), r.y + 22, !available ? kMuted : selected ? kGreen : TFT_WHITE, 2);
-  const char* sub = !available ? "UNAVAILABLE" : mode_experimental(mode) ? "EXPERIMENTAL" : selected ? "SELECTED" : "";
-  text(sub, cx(r), r.y + 46, !available ? kMuted : mode_experimental(mode) ? kAmber : kGreen, 0);
+  text(family_name(family), cx(r), r.y + 22, !available ? kMuted : selected ? kGreen : TFT_WHITE, 2);
+  const char* sub = !available ? "UNAVAILABLE" : selected ? "SELECTED" : "";
+  text(sub, cx(r), r.y + 46, !available ? kMuted : kGreen, 0);
+}
+
+void draw_submode_chip(size_t index) {
+  const DigitalMode mode = submode_mode(index);
+  const Rect r = submode_rect(index);
+  const bool available = mode_available(mode);
+  const bool selected = g_snapshot.mode == mode;
+  if (available) focus_nav::note(r.x, r.y, r.w, r.h);
+  const uint16_t border = !available ? TFT_DARKGREY : selected ? kGreen : kCyan;
+  M5.Display.fillRoundRect(r.x, r.y, r.w, r.h, 6, selected && available ? kSelected : kPanel);
+  M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 6, border);
+  text(submode_label(index), cx(r), r.y + 15, !available ? kMuted : selected ? kGreen : mode_experimental(mode) ? kAmber : TFT_WHITE, 1);
 }
 
 void setup_row(int row, const char* label, const char* value, uint16_t color) {
@@ -879,12 +911,16 @@ void setup_row(int row, const char* label, const char* value, uint16_t color) {
 void draw_setup() {
   frame(kBody);
   text("RX SETUP   DECODE MODE", 42, 126, kCyan, 1, middle_left);
-  for (size_t i = 0; i < kDigitalModeCount; ++i) draw_mode_button(i);
-  char slot_text[16], line[96];
-  slot_seconds_text(slot_text, sizeof(slot_text), g_snapshot.mode);
-  std::snprintf(line, sizeof(line), "%s   %s SECOND SLOT   ONLY SUPPORTED MODES CAN BE SELECTED",
-                mode_name(g_snapshot.mode), slot_text);
-  text(line, 42, 214, kMuted, 1, middle_left);
+  for (size_t i = 0; i < kFamilyCount; ++i) draw_family_button(i);
+  if (family_of(g_snapshot.mode) == 2) {
+    for (size_t i = 0; i < kJs8SubmodeCount; ++i) draw_submode_chip(i);
+  } else {
+    char slot_text[16], line[96];
+    slot_seconds_text(slot_text, sizeof(slot_text), g_snapshot.mode);
+    std::snprintf(line, sizeof(line), "%s   %s SECOND SLOT   ONLY SUPPORTED MODES CAN BE SELECTED",
+                  mode_name(g_snapshot.mode), slot_text);
+    text(line, 42, 214, kMuted, 1, middle_left);
+  }
   setup_row(0, "OPERATING MODE", "RX ONLY", kGreen);
   setup_row(1, "DECODER BINDING", decoder_name(), decoder_color());
   setup_row(2, "UTC SLOT CLOCK", g_snapshot.clock_valid ? "READY" : "NOT ESTABLISHED",
@@ -1015,13 +1051,27 @@ Action handle_touch(int32_t x, int32_t y) {
     }
   }
   if (g_tab == Tab::setup) {
-    for (size_t i = 0; i < kDigitalModeCount; ++i) {
-      if (!hit(x, y, mode_rect(i))) continue;
-      const DigitalMode mode = static_cast<DigitalMode>(i);
-      if (mode_available(mode) && mode != g_snapshot.mode)
-        return {ActionKind::select_mode, static_cast<uint32_t>(i)};
+    for (size_t i = 0; i < kFamilyCount; ++i) {
+      if (!hit(x, y, family_rect(i))) continue;
+      if (family_of(g_snapshot.mode) == i) return {};   // already in this family
+      // JS8 opens on its first available submode (Normal today).
+      DigitalMode target = family_default(i);
+      if (i == 2)
+        for (size_t k = 0; k < kJs8SubmodeCount; ++k)
+          if (mode_available(submode_mode(k))) {
+            target = submode_mode(k);
+            break;
+          }
+      if (mode_available(target)) return {ActionKind::select_mode, static_cast<uint32_t>(target)};
       return {};   // an unavailable mode does nothing
     }
+    if (family_of(g_snapshot.mode) == 2)
+      for (size_t k = 0; k < kJs8SubmodeCount; ++k) {
+        if (!hit(x, y, submode_rect(k))) continue;
+        const DigitalMode mode = submode_mode(k);
+        if (mode_available(mode) && mode != g_snapshot.mode) return {ActionKind::select_mode, static_cast<uint32_t>(mode)};
+        return {};
+      }
   }
   if (g_tab == Tab::decodes && hit(x, y, kClear))
     return {ActionKind::clear_decodes};
