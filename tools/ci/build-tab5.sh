@@ -72,7 +72,7 @@ idf.py -B "$build" build
 app_bin="$build/orcsdr_tab5.bin"
 size=$(stat -c %s "$app_bin")
 # The app partition size comes from the partition table, so this guard cannot drift from it.
-factory_field=$(awk -F, '/^[[:space:]]*factory[[:space:]]*,/ {gsub(/[[:space:]]/, "", $5); print $5}' apps/orcsdr-tab5/partitions.csv)
+factory_field=$(awk -F, '/^[[:space:]]*factory[[:space:]]*,/ {gsub(/[[:space:]]/, "", $5); print $5}' "$app/partitions.csv")
 case "$factory_field" in
   *M) app_partition=$(( ${factory_field%M} * 1048576 )) ;;
   *K) app_partition=$(( ${factory_field%K} * 1024 )) ;;
