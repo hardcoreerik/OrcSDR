@@ -427,7 +427,7 @@ void draw_dial_chip(bool have_table) {
   const uint32_t shown = g_snapshot.dial_hz != 0 ? g_snapshot.dial_hz : (have_table ? mode_dial_hz(g_snapshot.selected_band, g_snapshot.mode) : 0u);
   if (shown != 0) std::snprintf(value, sizeof(value), "%.4f MHz", static_cast<double>(shown) / 1e6);
   else std::snprintf(value, sizeof(value), "--");
-  chip(kDialChip, g_snapshot.expert_tuning ? (g_snapshot.dial_custom ? "DIAL  CUSTOM - TAP" : "DIAL  TAP TO TUNE") : "DIAL", value,
+  chip(kDialChip, g_snapshot.expert_tuning ? "TAP TO TUNE" : "DIAL", value,
        g_snapshot.dial_custom ? kAmber : TFT_WHITE);
   if (g_snapshot.expert_tuning) focus_nav::note(kDialChip.x, kDialChip.y, kDialChip.w, kDialChip.h);
 }
