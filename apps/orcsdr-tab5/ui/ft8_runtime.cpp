@@ -112,6 +112,7 @@ uint32_t slot_ms_for(orcsdr::ft8::DigitalMode m) {
 }
 
 // Allocates and starts the JS8 backend in PSRAM on first use (about 700 KB), so FT8/FT4 users never pay for it.
+void log_js8_frames(const char* tag);
 bool js8_attach() {
   if (g.js8 != nullptr) return true;
   void* memory = psram_alloc(sizeof(orcsdr::js8::native::Backend));
@@ -183,8 +184,8 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
       jpos += take;
       jremaining -= take;
     }
-    orcsdr::ft8::Decode none[1];
-    const size_t jn = g.js8->finish_slot(none, 1);
+    orcsdr::ft8::Decode jout[8];
+    const size_t jn = g.js8->finish_slot(jout, sizeof(jout) / sizeof(jout[0]));
     const auto& js = g.js8->stats();
     s.slot_rms = static_cast<uint32_t>(std::sqrt(static_cast<double>(jsumsq) / static_cast<double>(slot_samples)));
     s.slot_peak = jpeak;
@@ -229,6 +230,9 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
                 static_cast<unsigned>(js.candidates), static_cast<unsigned>(js.strong_candidates), static_cast<double>(js.best_sync_score),
                 static_cast<unsigned>(js.total_ms), static_cast<unsigned>(js.spectral_ms), static_cast<unsigned>(js.search_ms),
                 static_cast<unsigned>(js.demod_ms), static_cast<unsigned>(js.grid_rows), js.deadline_hit ? 1 : 0);
+    log_js8_frames("ORC_JS8_RT");
+    if (g.on_decode != nullptr)
+      for (size_t i = 0; i < jn; ++i) g.on_decode(jout[i], g.context);
     set_state(State::ready);
     return;
   }
@@ -285,6 +289,21 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
 }
 
 
+// One log line per raw frame that reached the soft decoder (host tool js8-wav-front prints the same fields), plus one per verified message.
+void log_js8_frames(const char* tag) {
+  for (size_t i = 0; i < g.js8->raw_count(); ++i) {
+    const auto* r = g.js8->raw(i);
+    if (!r->attempted) continue;
+    std::printf("%s_FRAME hz=%.2f dt_ms=%d sync_hits=%u sync=%.3f margin=%.3f initial_syndrome=%u bp_iter=%u osd_order=%u corrections=%u final_syndrome=%u crc=%s",
+                tag, static_cast<double>(r->audio_hz), static_cast<int>(r->dt_ms), static_cast<unsigned>(r->sync_hits), static_cast<double>(r->sync_score),
+                static_cast<double>(r->mean_margin), static_cast<unsigned>(r->initial_syndrome), static_cast<unsigned>(r->bp_iterations),
+                static_cast<unsigned>(r->osd_order), static_cast<unsigned>(r->hard_corrections), static_cast<unsigned>(r->final_syndrome), r->crc_valid ? "ok" : "fail");
+    if (r->crc_valid) std::printf(" kind=%u payload=%s", static_cast<unsigned>(r->frame_kind), r->payload);
+    if (r->rendered) std::printf(" text=%s", r->text);
+    std::printf("%s", "\n");
+  }
+}
+
 void run_js8_injection() {
   if (g.js8 == nullptr) {
     std::printf("ORC_JS8_INJECT_ERROR no_backend\n");
@@ -297,8 +316,8 @@ void run_js8_injection() {
     g.js8->offer_audio(g.inject + pos, take);
     pos += take;
   }
-  orcsdr::ft8::Decode none[1];
-  const size_t n = g.js8->finish_slot(none, 1);
+  orcsdr::ft8::Decode jout[8];
+  const size_t n = g.js8->finish_slot(jout, sizeof(jout) / sizeof(jout[0]));
   const auto& st = g.js8->stats();
   std::printf("ORC_JS8_INJECT_RESULT submode=normal samples=%u decodes=%u raw_frames=%u candidates=%u strong=%u best_sync=%.2f total_ms=%u spectral=%u search=%u demod=%u rows=%u\n",
               static_cast<unsigned>(g.inject_count), static_cast<unsigned>(n), static_cast<unsigned>(st.raw_frames), static_cast<unsigned>(st.candidates),
@@ -310,6 +329,7 @@ void run_js8_injection() {
     std::printf("ORC_JS8_INJECT_RAW hz=%.1f dt_ms=%d sync=%.2f hits=%u margin=%.2f\n", static_cast<double>(r->audio_hz), static_cast<int>(r->dt_ms),
                 static_cast<double>(r->sync_score), static_cast<unsigned>(r->sync_hits), static_cast<double>(r->mean_margin));
   }
+  log_js8_frames("ORC_JS8_INJECT");
   std::printf("ORC_JS8_INJECT_DONE\n");
 }
 

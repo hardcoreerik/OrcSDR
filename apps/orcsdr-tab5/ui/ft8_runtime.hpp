@@ -61,7 +61,7 @@ struct Js8Stats {
   uint16_t raw_frames = 0;
   float best_sync_score = 0.0f;
   bool deadline_hit = false;
-  uint32_t decodes = 0;            // always 0 for now
+  uint32_t decodes = 0;            // verified messages (parity + CRC-12) in the last slot
 };
 
 struct Js8Raw {
