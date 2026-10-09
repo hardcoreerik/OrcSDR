@@ -71,8 +71,15 @@ idf.py -B "$build" build
 
 app_bin="$build/orcsdr_tab5.bin"
 size=$(stat -c %s "$app_bin")
-limit=$((0x400000 - 0x40000))
-[ "$size" -le "$limit" ] || { echo "P4 image $size B leaves less than 256 KiB in the 4 MiB app partition" >&2; exit 1; }
+# The app partition size comes from the partition table, so this guard cannot drift from it.
+factory_field=$(awk -F, '/^[[:space:]]*factory[[:space:]]*,/ {gsub(/[[:space:]]/, "", $5); print $5}' apps/orcsdr-tab5/partitions.csv)
+case "$factory_field" in
+  *M) app_partition=$(( ${factory_field%M} * 1048576 )) ;;
+  *K) app_partition=$(( ${factory_field%K} * 1024 )) ;;
+  *) app_partition=$(( factory_field )) ;;
+esac
+limit=$((app_partition - 0x40000))
+[ "$size" -le "$limit" ] || { echo "P4 image $size B leaves less than 256 KiB in the $((app_partition / 1048576)) MiB app partition" >&2; exit 1; }
 idf.py -B "$build" merge-bin --format raw --output merged-binary.bin
 cp "$build/merged-binary.bin" "$out/merged-binary.bin"
 cp "$build/orcsdr_tab5.elf" "$out/orcsdr_tab5.elf"

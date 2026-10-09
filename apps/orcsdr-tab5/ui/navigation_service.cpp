@@ -14,6 +14,7 @@
 #include "p25_dashboard.hpp"
 #include "pocsag_dashboard.hpp"
 #include "rf24_dashboard.hpp"
+#include "ft8_dashboard.hpp"
 
 namespace orcsdr::navigation {
 namespace {
@@ -43,6 +44,7 @@ void show_home(bool demo) {
   adsb::leave();
   lora::leave();
   rf24::leave();
+  ft8::leave();
   settings::leave();
   g_hooks.close_overlays();
   g_hooks.sync_audio();

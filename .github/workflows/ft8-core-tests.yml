@@ -1,0 +1,67 @@
+name: FT8 RX core
+
+on:
+  pull_request:
+    paths:
+      - apps/orcsdr-tab5/ui/ft8_*
+      - apps/orcsdr-tab5/ui/js8_*
+      - tests/ft8_*
+      - tests/js8_*
+      - tests/ft8_ui_stubs/**
+      - tools/test-ft8-review.sh
+      - apps/orcsdr-tab5/ui/ft8_hunter.*
+      - apps/orcsdr-tab5/ui/ft8_decoder_backend.*
+      - orcdial/src/controller.hpp
+      - orcdial/src/dashboard.hpp
+      - orcdial/src/ft8_control.hpp
+      - orcdial/src/ui.cpp
+      - orcdial/src/main.cpp
+      - orcdial/tests/controller_test.cpp
+      - tests/ft8_model_tests.cpp
+      - tests/ft8_hunter_tests.cpp
+      - tools/test-ft8.ps1
+      - tools/test-ft8.sh
+      - .github/workflows/ft8-core-tests.yml
+  push:
+    branches: [main]
+    paths:
+      - apps/orcsdr-tab5/ui/ft8_*
+      - apps/orcsdr-tab5/ui/js8_*
+      - tests/ft8_*
+      - tests/js8_*
+      - tests/ft8_ui_stubs/**
+      - tools/test-ft8-review.sh
+      - apps/orcsdr-tab5/ui/ft8_hunter.*
+      - apps/orcsdr-tab5/ui/ft8_decoder_backend.*
+      - orcdial/src/controller.hpp
+      - orcdial/src/dashboard.hpp
+      - orcdial/src/ft8_control.hpp
+      - orcdial/src/ui.cpp
+      - orcdial/src/main.cpp
+      - orcdial/tests/controller_test.cpp
+      - tests/ft8_model_tests.cpp
+      - tests/ft8_hunter_tests.cpp
+      - tools/test-ft8.ps1
+      - tools/test-ft8.sh
+      - .github/workflows/ft8-core-tests.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Optimized and sanitizer tests
+        run: bash tools/test-ft8.sh
+
+  dial-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install PlatformIO
+        run: python3 -m pip install --user platformio
+      - name: Build OrcDial firmware
+        run: python3 -m platformio run -d orcdial -e dial

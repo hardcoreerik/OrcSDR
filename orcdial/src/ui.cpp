@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 namespace orc {
 static secure::Status device_status;
@@ -42,10 +43,10 @@ static const DashboardImage dashboard_images[] = {
   {satellite_start, satellite_end}, {nullptr, nullptr},
   {settings_start, settings_end}, {rf_lab_start, rf_lab_end},
   {wifi_analysis_start, wifi_analysis_end}, {pocsag_start, pocsag_end},
-  {am_start, am_end}
+  {am_start, am_end}, {nullptr, nullptr}
 };
 static_assert(sizeof(dashboard_images) / sizeof(dashboard_images[0]) ==
-              static_cast<unsigned>(Dashboard::am) + 1);
+              static_cast<unsigned>(Dashboard::ft8) + 1);
 static constexpr uint32_t ink = 0xe8f5f6, dim = 0x88a4ad, green = 0x70f847;
 static constexpr uint32_t bg = 0x050f16, cyan = 0x38d9ff, blue = 0x319bff, red = 0xff4a4a;
 static constexpr uint32_t panel = 0x0c202b, trace = 0x163747, trace_bright = 0x286174;
@@ -448,6 +449,21 @@ static void artwork(lgfx::LGFXBase& d, Dashboard id, uint32_t c) {
       }
       break;
     }
+    case Dashboard::ft8: { // eight FSK tones and three Costas-sync groups; protocol icon only
+      for (int i=0; i<8; ++i) {
+        const int x=72+i*14;
+        const int h=12+((i*11)%5)*5;
+        d.drawFastVLine(x, 91-h/2, h, c);
+      }
+      for (int group=0; group<3; ++group) {
+        const int x=68+group*49;
+        d.drawRoundRect(x, 145, 36, 15, 3, c);
+        d.drawFastVLine(x+9, 149, 7, c);
+        d.drawFastVLine(x+18, 147, 11, c);
+        d.drawFastVLine(x+27, 151, 5, c);
+      }
+      break;
+    }
     default: break;
   }
 }
@@ -457,8 +473,25 @@ static void selector_icon(lgfx::LGFXBase& d, Dashboard id, int x, int y,
   const unsigned index = static_cast<unsigned>(id);
   if (index >= sizeof(dashboard_images) / sizeof(dashboard_images[0])) return;
   const auto& image = dashboard_images[index];
-  if (!image.start) return;
   const int size = small ? 30 : 64;
+  if (!image.start) {
+    if (id != Dashboard::ft8) return;
+    const uint32_t c = green;
+    const int left = x - size / 2;
+    const int top = y - size / 2;
+    d.drawRoundRect(left, top, size, size, small ? 5 : 9, c);
+    const int base = top + size * 2 / 3;
+    for (int i=0; i<8; ++i) {
+      const int bx = left + 4 + i * (size - 8) / 8;
+      const int h = 4 + (i * 7 % 5) * (small ? 1 : 2);
+      d.drawFastVLine(bx, base - h, h, c);
+    }
+    if (!small) {
+      d.setTextColor(ink, bg); d.setTextSize(2);
+      draw_text(d, "FT8", x, top + 19, size - 8);
+    }
+    return;
+  }
   const float scale = size / (id == Dashboard::home ? 104.0f : 64.0f);
   d.drawPng(image.start, image.end - image.start, x - size / 2, y - size / 2,
             0, 0, 0, 0, scale);
@@ -469,6 +502,8 @@ static const char* content_view(Dashboard id, uint8_t view) {
   static const char* p25[] = {"MONITOR", "SPECTRUM", "TALKGROUPS", "PROGRAM", "RF HEALTH"};
   static const char* pocsag[] = {"LIVE", "IDS", "SIGNAL", "ACTIVITY", "ARCHIVE"};
   static const char* wifi[] = {"OVERVIEW", "CHANNELS", "DEVICES", "CSI", "SETTINGS"};
+  static const char* ft8[] = {"LIVE", "DECODES", "MAP", "HUNTER", "HEARD", "SETUP"};
+  if (id == Dashboard::ft8) return view < 6 ? ft8[view] : "VIEW --";
   if (view >= 5) return "VIEW --";
   switch (id) {
     case Dashboard::adsb: return adsb[view];
@@ -506,6 +541,118 @@ static void gradient_text(lgfx::LGFXBase& d, const char* text, int cx, int y, fl
     x += width;
   }
   d.setTextDatum(middle_center);
+}
+
+static const char* ft8_band_label(int32_t selected) {
+  static const char* labels[] = {
+      "160m","80m","60m","40m","30m","20m","17m","15m","12m","10m","6m","2m"};
+  const int index = static_cast<int>(selected) - 1;
+  return index >= 0 && index < static_cast<int>(sizeof(labels)/sizeof(labels[0]))
+             ? labels[index] : "--";
+}
+
+static void ft8_screen(lgfx::LGFXBase& d, const RadioState& state,
+                       bool connected, bool pairing, bool demo, bool pending) {
+  const uint32_t accent = connected ? green : cyan;
+  const uint8_t view = state.view;
+  const bool live_or_hunter =
+      view == static_cast<uint8_t>(ft8_control::View::live) ||
+      view == static_cast<uint8_t>(ft8_control::View::hunter);
+  const bool hunter_view = view == static_cast<uint8_t>(ft8_control::View::hunter);
+
+  d.drawCircle(120, 120, 116, link_color(connected));
+  d.drawCircle(120, 120, 111, trace_bright);
+  d.setTextColor(accent, bg); d.setTextSize(2);
+  draw_text(d, "FT8 RX", 120, 27);
+  d.setTextColor(connected ? green : cyan, bg); d.setTextSize(1);
+  draw_text(d, pairing ? "PAIRING" : connected ? "LINKED" : demo ? "DEMO" : "OFFLINE", 120, 43);
+
+  d.fillRoundRect(71, 51, 98, 22, 5, panel);
+  d.drawRoundRect(71, 51, 98, 22, 5, cyan);
+  d.setTextColor(ink, panel); d.setTextSize(1.5f);
+  draw_text(d, ft8_control::view_name(view), 120, 62, 90);
+
+  char line[40];
+  const bool clock_ready = state.capabilities & ft8_control::kClockReady;
+  const bool decoder_ready = state.capabilities & ft8_control::kDecoderReady;
+  std::snprintf(line, sizeof line, "UTC %s   DEC %s",
+                clock_ready ? "OK" : "--", decoder_ready ? "OK" : "--");
+  d.setTextColor(clock_ready && decoder_ready ? green : dim, bg); d.setTextSize(1);
+  draw_text(d, line, 120, 82);
+
+  const bool tuning = (state.capabilities & ft8_control::kExpertTuning) && live_or_hunter && !hunter_view;
+  if (tuning) {
+    // Expert tuning: the frequency is the thing being changed, so it is large; the band is only context, so it is small.
+    d.setTextColor(dim, bg); d.setTextSize(2);
+    draw_text(d, connected ? ft8_band_label(state.selected) : "--", 120, 99);
+    if (connected) {
+      char digits[20];
+      const uint32_t hz = state.frequency_hz;
+      if (hz % 1000 == 0) std::snprintf(digits, sizeof digits, "%lu.%03lu", (unsigned long)(hz / 1000000), (unsigned long)(hz / 1000 % 1000));
+      else std::snprintf(digits, sizeof digits, "%lu.%06lu", (unsigned long)(hz / 1000000), (unsigned long)(hz % 1000000));
+      d.setTextColor(cyan, bg); d.setTextSize(std::strlen(digits) <= 8 ? 4 : 3);
+      draw_text(d, digits, 120, 133);
+    } else {
+      d.setTextColor(dim, bg); d.setTextSize(4); draw_text(d, "--.---", 120, 133);
+    }
+    d.setTextColor(dim, bg); d.setTextSize(1); draw_text(d, "MHz", 120, 156);
+    std::snprintf(line, sizeof line, "STEP %s", ft8_control::step_label(ft8_control::step_index(state.capabilities)));
+    d.setTextColor(green, bg); d.setTextSize(1.5f); draw_text(d, line, 120, 172);
+    d.setTextColor(dim, bg); d.setTextSize(1); draw_text(d, "TAP: BAND", 120, 188);
+  } else if (live_or_hunter) {
+    d.setTextColor(ink, bg); d.setTextSize(4);
+    draw_text(d, connected ? ft8_band_label(state.selected) : "--", 120, 108);
+    if (connected) frequency(d, state.frequency_hz, 135, 2, cyan);
+    else {
+      d.setTextColor(dim, bg); d.setTextSize(2); draw_text(d, "--.---", 120, 135);
+    }
+    d.setTextColor(dim, bg); d.setTextSize(1); draw_text(d, "MHz", 120, 151);
+    if (connected && !hunter_view && (state.capabilities & ft8_control::kExpertEnabled)) {   // expert tuning is on: a centre tap switches to fine tuning
+      d.setTextColor(green, bg); d.setTextSize(1); draw_text(d, "TAP: FINE TUNE", 120, 166);
+    }
+  } else {
+    if (connected && state.selected > 0 && state.item_count) {
+      std::snprintf(line, sizeof line, "%ld / %lu", long(state.selected),
+                    (unsigned long)state.item_count);
+      d.setTextColor(ink, bg); d.setTextSize(4); draw_text(d, line, 120, 116);
+    } else {
+      d.setTextColor(dim, bg); d.setTextSize(4); draw_text(d, "-- / --", 120, 116);
+    }
+    if (connected) frequency(d, state.frequency_hz, 145, 2, dim);
+  }
+
+  if (hunter_view) {
+    d.setTextColor((state.capabilities & ft8_control::kHunterActive) ? cyan :
+                   (state.capabilities & ft8_control::kHunterComplete) ? green : dim,
+                   bg);
+    d.setTextSize(1.5f);
+    draw_text(d, ft8_control::hunter_state_name(state.capabilities), 120, 166);
+    if ((state.capabilities & ft8_control::kHunterSupported) &&
+        !(state.capabilities & (ft8_control::kHunterActive |
+                               ft8_control::kHunterComplete))) {
+      d.fillRoundRect(70, 174, 100, 20, 5, panel);
+      d.drawRoundRect(70, 174, 100, 20, 5, cyan);
+      d.setTextColor(cyan, panel); d.setTextSize(1);
+      draw_text(d, "TOUCH: DEEP", 120, 184, 92);
+    }
+  }
+
+  // The BACK button owns the bottom of the screen (y >= 200), so the hints stay above it.
+  d.setTextSize(1);
+  if (!hunter_view && !tuning) {
+    d.setTextColor(dim, bg);
+    if (view == static_cast<uint8_t>(ft8_control::View::live)) draw_text(d, "TURN: BAND", 120, 170);
+    else if (view == static_cast<uint8_t>(ft8_control::View::setup)) draw_text(d, "SETUP: TAB5", 120, 170);
+    else draw_text(d, "TURN: SELECT", 120, 170);
+    d.setTextColor(pending ? cyan : ink, bg);
+    if (view == static_cast<uint8_t>(ft8_control::View::live))
+      draw_text(d, state.capabilities & ft8_control::kHunterSupported ? "PRESS: HUNT" : "HUNT --", 120, 186);
+    else if (view == static_cast<uint8_t>(ft8_control::View::setup)) draw_text(d, "PRESS: --", 120, 186);
+    else draw_text(d, "PRESS: OPEN", 120, 186);
+  } else if (hunter_view) {
+    d.setTextColor(pending ? cyan : ink, bg);
+    draw_text(d, ft8_control::hunter_press_name(state.capabilities), 120, 198);
+  }
 }
 
 static void draw_splash(lgfx::LGFXBase& d, bool wait) {
@@ -683,6 +830,10 @@ void draw(const RadioState& state, Focus focus, bool connected, bool pairing,
   }
   if (state.dashboard == Dashboard::fm) {
     fm_screen(d, state, focus, connected, pairing, demo, pending_delta, reel_position);
+    present(); return;
+  }
+  if (state.dashboard == Dashboard::ft8) {
+    ft8_screen(d, state, connected, pairing, demo, pending_delta);
     present(); return;
   }
   const auto dashboard = state.dashboard;

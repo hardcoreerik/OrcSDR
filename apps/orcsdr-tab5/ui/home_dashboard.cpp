@@ -195,6 +195,11 @@ void draw_menu_icon(dashboards::Id id, int x, int y, uint16_t color) {
   } else if (id == dashboards::Id::settings) {
     M5.Display.drawCircle(x, y, 15, color);
     M5.Display.fillCircle(x, y, 5, color);
+  } else if (id == dashboards::Id::ft8) {
+    // Eight FSK tones: the FT8 symbol alphabet.
+    for (int tone = 0; tone < 8; ++tone)
+      M5.Display.drawFastVLine(x - 14 + tone * 4, y + 12 - tone * 3, 4 + tone * 3, color);
+    M5.Display.drawFastHLine(x - 16, y + 14, 34, color);
   } else if (id == dashboards::Id::wifi_analysis) {
     M5.Display.drawCircle(x, y + 7, 3, color);
     M5.Display.drawArc(x, y + 7, 12, 12, 210, 330, color);
@@ -1304,7 +1309,7 @@ bool self_check() {
       tap_action(685, kBrowserNavY + 1).kind == ActionKind::browser_next;
   browser_page = 1;
   const bool second_page_ok =
-      tap_action(kBrowserCardX + 1, kBrowserCardY + 1).dashboard == dashboards::Id::rf_lab &&
+      tap_action(kBrowserCardX + 1, kBrowserCardY + 1).dashboard == dashboards::Id::satellite &&
       tap_action(487, kBrowserNavY + 1).kind == ActionKind::browser_previous;
   browser = saved_browser;
   browser_page = saved_page;

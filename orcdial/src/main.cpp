@@ -16,6 +16,7 @@ static orc::RadioState local;
 static orc::Focus focus = orc::Focus::vfo;
 static orc::TuneStyle tune_style = orc::TuneStyle::reel;
 static int32_t pending_delta = 0;
+static orc::ActionKind pending_kind = orc::ActionKind::tune;
 static int32_t last_detent = 0;
 static uint32_t last_turn_ms = 0, press_ms = 0, last_draw_ms = 0;
 static uint32_t last_status_ms = 0;
@@ -155,6 +156,7 @@ static void change(orc::Type type, int32_t value) {
       default: break;
     }
   } else if (!radio_link.command(type, value) && type == orc::Type::tune_relative) {
+    pending_kind = orc::ActionKind::tune;
     pending_delta += value;
   }
 }
@@ -163,8 +165,13 @@ static void act(orc::Action action, bool online) {
   if (action.kind == K::none) return;
   if (online) {
     // Keep detents that arrive while a command is pending; the flush in loop() sends the sum once it is acknowledged.
-    if (!radio_link.command_action(action) && action.kind == K::tune)
-      pending_delta += action.value;
+    if (!orc::coalescible_action(action.kind)) pending_delta = 0;
+    if (!radio_link.command_action(action) && orc::coalescible_action(action.kind)) {
+      if (pending_kind != action.kind) pending_delta = 0;
+      pending_kind = action.kind;
+      const int64_t sum = int64_t(pending_delta) + action.value;
+      pending_delta = static_cast<int32_t>(sum > 1000000000 ? 1000000000 : sum < -1000000000 ? -1000000000 : sum);
+    }
     return;
   }
   switch (action.kind) {
@@ -393,7 +400,11 @@ void loop() {
     view = orc::View::home;
   // Online with Home on screen, Home is a full-range VFO; otherwise it stays the launcher.
   const bool home_tune = online && state.dashboard == orc::Dashboard::home;
-  if (online && pending_delta && radio_link.command_action({orc::ActionKind::tune, pending_delta})) pending_delta = 0;
+  if (online && pending_delta) {
+    const int32_t send = pending_kind == orc::ActionKind::tune ? pending_delta :
+                           pending_delta > 20 ? 20 : pending_delta < -20 ? -20 : pending_delta;
+    if (radio_link.command_action({pending_kind, send})) pending_delta -= send;
+  }
   if (reset_armed && millis() - reset_armed_ms > 4000) reset_armed = false;
   // Never leave the Dial parked in a settings screen: go back to Home after a minute without input (not while pairing).
   // While pairing is in progress the screen stays (the minute counts from when it ends); the keypad goes back to the
@@ -464,7 +475,7 @@ void loop() {
     else if (view == orc::View::page) settings_press(online);
     else if (orc::tunable(state.dashboard) || orc::channel_dashboard(state.dashboard))
       focus = orc::next_focus(state.dashboard, focus);
-    else act(orc::press(state.dashboard, state.view), online);
+    else act(orc::press(state.dashboard, state.view, state.capabilities), online);
   }
   const bool touching = M5Dial.Touch.getCount() > 0;
   if (touching && !touch_down) { touch_swallow = display_asleep; note_activity(); }
@@ -508,6 +519,8 @@ void loop() {
       else select_dashboard(state, online);
     } else if (t.y >= 200) {
       view = orc::View::carousel; selected_index = orc::carousel_index(state.dashboard);   // BACK
+    } else if (state.dashboard == orc::Dashboard::ft8 && t.y < 76) {
+      act({orc::ActionKind::view, 1}, online);
     } else if (t.y < 76) {
       if (orc::tunable(state.dashboard)) change(orc::Type::set_mode, state.mode >= 3 ? 1 : state.mode + 1);
       else act({orc::ActionKind::view, 1}, online);
@@ -518,7 +531,23 @@ void loop() {
     } else if (t.x > 170 && t.y < 170 && orc::tunable(state.dashboard) && state.dashboard != orc::Dashboard::fm) {
       tune_style = orc::TuneStyle((uint8_t(tune_style) + 1) % uint8_t(orc::TuneStyle::count));
       focus = orc::Focus::vfo;
-    } else if (t.y > 170) focus = orc::next_focus(state.dashboard, focus);
+    } else if (state.dashboard == orc::Dashboard::ft8 && online && t.y >= 76 &&
+               (t.y < 170 || ((state.capabilities & orc::ft8_control::kExpertTuning) && t.y < 197)) &&
+               state.view == static_cast<uint8_t>(orc::ft8_control::View::live) &&
+               (state.capabilities & orc::ft8_control::kExpertEnabled)) {
+      // A tap in the middle switches the knob between band selection and fine (Hz) tuning. Only offered while expert tuning is on.
+      act({orc::ActionKind::ft8_fine, 1}, online);
+    } else if (state.dashboard == orc::Dashboard::ft8 &&
+               state.view == static_cast<uint8_t>(orc::ft8_control::View::hunter) &&
+               t.y >= 170 && t.y < 197 && t.x >= 70 && t.x <= 170 &&
+               (state.capabilities & orc::ft8_control::kHunterSupported) &&
+               !(state.capabilities & (orc::ft8_control::kHunterActive |
+                                       orc::ft8_control::kHunterComplete))) {
+      act({orc::ActionKind::ft8_hunter,
+           static_cast<int32_t>(orc::ft8_control::HunterCommand::start_decode)}, online);
+    } else if (state.dashboard == orc::Dashboard::ft8 && t.y > 170)
+      act(orc::press(state.dashboard, state.view, state.capabilities), online);
+    else if (t.y > 170) focus = orc::next_focus(state.dashboard, focus);
     else focus = orc::Focus::vfo;
   }
   if (!touching) touch_swallow = false;

@@ -1,5 +1,6 @@
 #pragma once
 #include "state.hpp"
+#include "ft8_control.hpp"
 #include <cstdint>
 
 namespace orc {
@@ -8,10 +9,15 @@ enum class ActionKind : uint8_t {
   none, tune, step, gain, squelch, volume, channel, radar_range,
   aircraft, lora_slot, node, event, p25_candidate, talkgroup,
   message, identity, wifi_ap, wifi_channel, setting, view, activate,
-  span, filter   // Home: zoom the spectrum, widen or narrow the receive filter (appended: values are on the wire)
+  span, filter,   // Home: zoom the spectrum, widen or narrow the receive filter (appended: values are on the wire)
+  ft8_band, ft8_item, ft8_hunter,  // FT8 dashboard (appended after span/filter, so no existing value moves)
+  ft8_fine                         // FT8 dashboard: centre tap toggles rotation between band selection and fine (Hz) tuning
 };
 struct Action { ActionKind kind = ActionKind::none; int32_t value = 0; };
 inline bool frequency_action(ActionKind kind) { return kind == ActionKind::tune; }
+inline bool coalescible_action(ActionKind kind) {
+  return kind == ActionKind::tune || kind == ActionKind::ft8_band || kind == ActionKind::ft8_item;
+}
 inline bool channel_dashboard(Dashboard id) {
   return id == Dashboard::weather || id == Dashboard::marine || id == Dashboard::cb;
 }
@@ -50,10 +56,31 @@ inline Action rotate(Dashboard id, uint8_t view, Focus focus, int detents,
     case Dashboard::wifi_analysis:
       return {view == 1 ? ActionKind::wifi_channel : ActionKind::wifi_ap, detents};
     case Dashboard::settings: return {ActionKind::setting, detents};
+    case Dashboard::ft8:
+      if (view == static_cast<uint8_t>(ft8_control::View::live) ||
+          view == static_cast<uint8_t>(ft8_control::View::hunter))
+        return {ActionKind::ft8_band, detents};
+      if (view == static_cast<uint8_t>(ft8_control::View::decodes) ||
+          view == static_cast<uint8_t>(ft8_control::View::map) ||
+          view == static_cast<uint8_t>(ft8_control::View::heard))
+        return {ActionKind::ft8_item, detents};
+      return {};
     default: return {};
   }
 }
-inline Action press(Dashboard id, uint8_t view) {
+inline Action press(Dashboard id, uint8_t view, uint32_t capabilities = 0) {
+  if (id == Dashboard::ft8) {
+    if (view == static_cast<uint8_t>(ft8_control::View::live) ||
+        view == static_cast<uint8_t>(ft8_control::View::hunter)) {
+      const auto command = ft8_control::context_hunter_command(capabilities);
+      return {ActionKind::ft8_hunter, static_cast<int32_t>(command)};
+    }
+    if (view == static_cast<uint8_t>(ft8_control::View::decodes) ||
+        view == static_cast<uint8_t>(ft8_control::View::map) ||
+        view == static_cast<uint8_t>(ft8_control::View::heard))
+      return {ActionKind::activate, 1};
+    return {};
+  }
   if ((id == Dashboard::adsb && (view == 1 || view == 2)) ||
       (id == Dashboard::lora && (view == 1 || view == 2)) ||
       id == Dashboard::settings) return {ActionKind::activate, 1};

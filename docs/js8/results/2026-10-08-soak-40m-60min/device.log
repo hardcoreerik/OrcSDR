@@ -1,0 +1,949 @@
+1791514333.527 HOST authenticated
+1791514343.559 DEV {"type":"hello","message_id":"m5tab5_hello_01","protocol_version":{"major":1,"minor":0},"payload":{"adapter":{"id":"m5tab5.serial","version":"0.8.31"},"features":["telemetry","display","touch","authenticated_session","journal","network_inventory","wifi_provisioning","power_telemetry","usb_host","rtl_sdr_probe","rtl_sdr_radio_ui","rtl_sdr_scope_scroll"],"capability_namespaces":["m5tab5"],"config_schema_version":1}}
+1791514343.559 DEV {"type":"node_snapshot","message_id":"m5tab5_snapshot_408363","protocol_version":{"major":1,"minor":0},"payload":{"node_id":"m5tab5_30eda0e2e695","connection_state":"online","hardware":{"chip":"esp32p4","revision":103,"cores":2,"flash_bytes":16777216,"psram_bytes":33554432,"free_heap_bytes":20532000,"display":{"width":1280,"height":720,"touch_ready":true}},"network":{"transport":"esp_hosted_sdio","station_ready":true,"configured":true,"scan_result":-1,"connected":true,"ip":"192.168.1.75"},"power":{"source":"m5unified","pmic_detected":false,"pmic_type":0,"battery_level":98,"battery_mv":8170,"battery_ma":1,"vbus_mv":-1,"charging":"unknown"},"journal":{"latest_sequence":5188,"acknowledged_sequence":0,"pending":8,"dropped":5180},"offline_workflow":{"id":"status_on_disconnect","config_revision":0,"runs":0,"max_runs":0},"capabilities":["m5tab5.device.info","m5tab5.health.read","m5tab5.display.status","m5tab5.input.touch","m5tab5.event.journal.sync","m5tab5.network.inventory","m5tab5.network.configure","m5tab5.power.read"]}}
+1791514343.559 DEV {"type":"event","message_id":"m5tab5_journal_5181","protocol_version":{"major":1,"minor":0},"payload":{"node_id":"m5tab5_30eda0e2e695","kind":"local_journal","journal_sequence":5181,"event_kind":"session_degraded","x":-1,"y":-1}}
+1791514343.559 DEV {"type":"event","message_id":"m5tab5_journal_5182","protocol_version":{"major":1,"minor":0},"payload":{"node_id":"m5tab5_30eda0e2e695","kind":"local_journal","journal_sequence":5182,"event_kind":"sdr_fm","x":-1,"y":-1}}
+1791514343.559 DEV {"type":"event","message_id":"m5tab5_journal_5183","protocol_version":{"major":1,"minor":0},"payload":{"node_id":"m5tab5_30eda0e2e695","kind":"local_journal","journal_sequence":5183,"event_kind":"boot","x":-1,"y":-1}}
+1791514343.559 DEV {"type":"event","message_id":"m5tab5_journal_5184","protocol_version":{"major":1,"minor":0},"payload":{"node_id":"m5tab5_30eda0e2e695","kind":"local_journal","journal_sequence":5184,"event_kind":"session_degraded","x":-1,"y":-1}}
+1791514343.559 DEV {"type":"event","message_id":"m5tab5_journal_5185","protocol_version":{"major":1,"minor":0},"payload":{"node_id":"m5tab5_30eda0e2e695","kind":"local_journal","journal_sequence":5185,"event_kind":"session_online","x":-1,"y":-1}}
+1791514343.559 DEV {"type":"event","message_id":"m5tab5_journal_5186","protocol_version":{"major":1,"minor":0},"payload":{"node_id":"m5tab5_30eda0e2e695","kind":"local_journal","journal_sequence":5186,"event_kind":"sdr_fm","x":-1,"y":-1}}
+1791514343.559 DEV {"type":"event","message_id":"m5tab5_journal_5187","protocol_version":{"major":1,"minor":0},"payload":{"node_id":"m5tab5_30eda0e2e695","kind":"local_journal","journal_sequence":5187,"event_kind":"session_degraded","x":-1,"y":-1}}
+1791514343.559 DEV {"type":"event","message_id":"m5tab5_journal_5188","protocol_version":{"major":1,"minor":0},"payload":{"node_id":"m5tab5_30eda0e2e695","kind":"local_journal","journal_sequence":5188,"event_kind":"session_online","x":-1,"y":-1}}
+1791514343.559 DEV ORC_FT8_RT mem stage=backend dma_free=22395 dma_largest=21504
+1791514343.559 DEV ORC_FT8_RT mem stage=tasks dma_free=22039 dma_largest=21504
+1791514343.559 DEV ORC_FT8_RT started mode=2
+1791514343.559 DEV ORC_FT8_NATIVE bound
+1791514343.559 DEV ORC_JS8_START_OK submode=NORMAL dial_hz=7078000
+1791514343.559 DEV RTL_STOP_REQUESTED
+1791514343.560 DEV RTL_STOP_RESULT ESP_OK
+1791514343.560 DEV RTL_STOP bytes=217939968
+1791514343.560 DEV I (409918) esp_rtl_sdr: HF direct route min=0 Hz (0 = upconverter)
+1791514343.560 DEV RTL_HF_ROUTE band=SHORTWAVE route=UPCONVERTER min_hz=0 result=ESP_OK
+1791514343.560 DEV RTL_DRAM_BUDGET stage=rtl_before_start dma_free=22095 dma_largest=21504 intern_free=61127 intern_largest=31744 psram_free=19682040 psram_largest=19398656 always_int=8192 reserve_int=40960 hostI ed(_dma_4psra0m=1 9usb_d9ma_p1sram=91 lw)ip_ps ram=e1
+1791514343.560 DEV sp_rtl_sdr: init begin profile=blog_v4_r828d records=515
+1791514343.560 DEV E (410134) USBH: Dev 1 EP 0 STALL
+1791514343.560 DEV E (410137) USBH: Dev 1 EP 0 STALL
+1791514343.560 DEV E (410140) USBH: Dev 1 EP 0 STALL
+1791514343.560 DEV E (410142) USBH: Dev 1 EP 0 STALL
+1791514343.560 DEV E (410145) USBH: Dev 1 EP 0 STALL
+1791514343.560 DEV E (410147) USBH: Dev 1 EP 0 STALL
+1791514343.560 DEV W (410734) httpd_uri: httpd_uri: URI '/api/ft8?n=64' not found
+1791514343.560 DEV W (410734) httpd_txrx: httpd_resp_send_err: 404 Not Found - Nothing matches the given URI
+1791514343.560 DEV I (411006) esp_rtl_sdr: init complete profile=blog_v4_r828d skipped_v4_board=0
+1791514343.560 DEV I (411061) esp_rtl_sdr: [RTL0] rate readback sps=240000 expected=0x0e000000 actual=0x0e000000 match=1
+1791514343.560 DEV I (411066) esp_rtl_sdr: tune rf=7078000 Hz tuner=35878000 Hz ppm=0 hf_upconv=1 r16=c4/a4 r20=07 r21=8e r22=e1 pll_if_hz=1814972
+1791514343.560 DEV I (411110) esp_rtl_sdr: front-end route rf=7078000 band=HF r6=38 r5=a8 gpio=18 bias=0 reg05_low=08
+1791514343.560 DEV I (411111) esp_rtl_sdr: [RTL0] stream start freq=7078000 sps=240000 urbs=3x32768
+1791514343.560 DEV I (411111) esp_rtl_sdr: stream start freq=7078000 exact_rate=240000 urbs=3x32768
+1791514343.560 DEV RTL_START ESP_OK rate=240000 display_hz=7078000 lo_hz=7078000
+1791514343.560 DEV RTL_DRAM_BUDGET stage=rtl_after_start dma_free=21907 dma_largest=21504 intern_free=60939 intern_largest=31744 psram_free=19582380 psram_largest=19398656 always_int=8192 reserve_int=40960 hosted_dma_psram=1 usb_dma_psram=1 lwip_psram=1
+1791514343.560 DEV RTL_SPEAKER_RESUME ok=1 running=1 playing=0 volume=128
+1791514343.560 DEV ORC_FT8_RT slot_skipped_incomplete start_ms=1791514320000
+1791514343.560 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791514353.699 DEV ORC_JS8_ERROR BAND auth_required
+1791514353.699 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791514363.778 DEV ORC_JS8_STATUS mode=JS8 NORMAL active=1 attached=1 submode=NORMAL supported=NORMAL slot_ms=15000 band=40m dial_hz=7078000 slots=0 decodes=0 state=4 clock=1
+1791514363.778 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514363.778 DEV ORC_JS8_RT slot=1791514335 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=9997 spectral=489 search=188 demod=9320 rows=186 deadline=0
+1791514363.778 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514364.070 HOST psk start F:\AI\OrcSDR-TEMP\js8-soak\run1\psk_start_1791514363.xml 1498821
+1791514370.175 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514376.381 DEV ORC_JS8_RT slot=1791514350 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=10226 spectral=491 search=168 demod=9567 rows=186 deadline=0
+1791514377.143 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514384.116 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514391.164 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514391.309 DEV ORC_JS8_RT slot=1791514365 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=10139 spectral=512 search=152 demod=9475 rows=186 deadline=0
+1791514398.166 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514405.187 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514406.891 DEV ORC_JS8_RT slot=1791514380 decodes=2 raw_frames=3 candidates=16 strong=3 best_sync=0.71 total_ms=10679 spectral=490 search=172 demod=9614 rows=186 deadline=0
+1791514406.893 DEV ORC_JS8_RT_FRAME hz=979.69 dt_ms=40 sync_hits=20 sync=0.619 margin=0.566 initial_syndrome=50 bp_iter=25 osd_order=0 corrections=12 final_syndrome=0 crc=ok kind=3 payload=VkNet-zphjqB text=K8IMT: N7EAL HEARTBEAT SNR -20
+1791514406.895 DEV ORC_JS8_RT_FRAME hz=881.25 dt_ms=20 sync_hits=19 sync=0.642 margin=0.740 initial_syndrome=1 bp_iter=1 osd_order=0 corrections=1 final_syndrome=0 crc=ok kind=3 payload=VosUP-zphjqM text=W7SUA: N7EAL HEARTBEAT SNR -09
+1791514406.897 DEV ORC_JS8_RT_FRAME hz=2650.00 dt_ms=60 sync_hits=16 sync=0.140 margin=0.340 initial_syndrome=40 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791514412.150 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514419.176 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514421.308 DEV ORC_JS8_RT slot=1791514395 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.27 total_ms=10144 spectral=490 search=184 demod=9470 rows=186 deadline=0
+1791514424.181 DEV ORC_JS8_STATS slots=5 total_ms=10144 spectral_ms=490 search_ms=184 demod_ms=9470 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.27 deadline=0 decodes=0
+1791514426.155 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514433.158 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514436.420 DEV ORC_JS8_RT slot=1791514410 decodes=0 raw_frames=1 candidates=16 strong=1 best_sync=0.47 total_ms=10223 spectral=494 search=180 demod=9347 rows=186 deadline=0
+1791514436.421 DEV ORC_JS8_RT_FRAME hz=828.12 dt_ms=-100 sync_hits=21 sync=0.599 margin=0.479 initial_syndrome=40 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791514440.214 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514447.171 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514451.005 DEV ORC_JS8_RT slot=1791514425 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=9795 spectral=512 search=152 demod=9131 rows=186 deadline=0
+1791514454.197 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514461.147 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514466.184 DEV ORC_JS8_RT slot=1791514440 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=9990 spectral=486 search=170 demod=9334 rows=186 deadline=0
+1791514468.161 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514475.174 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514481.126 DEV ORC_JS8_RT slot=1791514455 decodes=2 raw_frames=2 candidates=16 strong=1 best_sync=0.91 total_ms=9968 spectral=491 search=177 demod=9019 rows=186 deadline=0
+1791514481.129 DEV ORC_JS8_RT_FRAME hz=981.25 dt_ms=-20 sync_hits=21 sync=0.760 margin=0.817 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=VkNetnMPGlq7 text=K8IMT: KJ4HQS HEARTBEAT SNR -24
+1791514481.131 DEV ORC_JS8_RT_FRAME hz=573.44 dt_ms=-20 sync_hits=15 sync=0.297 margin=0.428 initial_syndrome=43 bp_iter=25 osd_order=2 corrections=23 final_syndrome=0 crc=ok kind=3 payload=Vot0AHMPGlqA text=W7YSB: KJ4HQS HEARTBEAT SNR -21
+1791514482.176 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514484.214 DEV ORC_JS8_STATS slots=9 total_ms=9968 spectral_ms=491 search_ms=177 demod_ms=9019 rows=186 candidates=16 strong=1 raw_frames=2 best_sync=0.91 deadline=0 decodes=2
+1791514489.150 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514496.188 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514496.459 DEV ORC_JS8_RT slot=1791514470 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.29 total_ms=10217 spectral=495 search=150 demod=9572 rows=186 deadline=0
+1791514503.104 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514510.150 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514511.500 DEV ORC_JS8_RT slot=1791514485 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.19 total_ms=10276 spectral=490 search=188 demod=9598 rows=186 deadline=0
+1791514517.105 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514524.159 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514526.467 DEV ORC_JS8_RT slot=1791514500 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=10257 spectral=492 search=166 demod=9599 rows=186 deadline=0
+1791514531.169 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514538.154 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514540.708 DEV ORC_JS8_RT slot=1791514515 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=9571 spectral=486 search=171 demod=8914 rows=186 deadline=0
+1791514544.377 DEV ORC_JS8_STATS slots=13 total_ms=9571 spectral_ms=486 search_ms=171 demod_ms=8914 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.22 deadline=0 decodes=0
+1791514545.159 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514552.153 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514556.219 DEV ORC_JS8_RT slot=1791514530 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.19 total_ms=10042 spectral=504 search=173 demod=9365 rows=186 deadline=0
+1791514559.172 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514566.111 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514570.982 DEV ORC_JS8_RT slot=1791514545 decodes=0 raw_frames=1 candidates=16 strong=1 best_sync=0.90 total_ms=9782 spectral=485 search=174 demod=9045 rows=186 deadline=0
+1791514570.984 DEV ORC_JS8_RT_FRAME hz=681.25 dt_ms=-260 sync_hits=21 sync=0.683 margin=0.717 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=0 payload=2WW3BWfAOpF8
+1791514573.171 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514580.105 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514585.702 DEV ORC_JS8_RT slot=1791514560 decodes=3 raw_frames=3 candidates=16 strong=3 best_sync=0.90 total_ms=9543 spectral=494 search=179 demod=8582 rows=186 deadline=0
+1791514585.704 DEV ORC_JS8_RT_FRAME hz=831.25 dt_ms=-20 sync_hits=21 sync=0.737 margin=0.759 initial_syndrome=41 bp_iter=1 osd_order=0 corrections=1 final_syndrome=0 crc=ok kind=3 payload=VkNetnArdvqe text=K8IMT: KB7ITU HEARTBEAT SNR +09
+1791514585.706 DEV ORC_JS8_RT_FRAME hz=981.25 dt_ms=-20 sync_hits=21 sync=0.677 margin=0.727 initial_syndrome=40 bp_iter=3 osd_order=0 corrections=8 final_syndrome=0 crc=ok kind=3 payload=VosUPnArdvqe text=W7SUA: KB7ITU HEARTBEAT SNR +09
+1791514585.708 DEV ORC_JS8_RT_FRAME hz=2648.44 dt_ms=0 sync_hits=21 sync=0.681 margin=0.526 initial_syndrome=42 bp_iter=25 osd_order=0 corrections=12 final_syndrome=0 crc=ok kind=3 payload=SJUiJHArdvqd text=KD7WPQ: KB7ITU HEARTBEAT SNR +08
+1791514587.149 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514594.145 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514601.188 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514601.434 DEV ORC_JS8_RT slot=1791514575 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=10257 spectral=503 search=178 demod=9576 rows=186 deadline=0
+1791514604.491 DEV ORC_JS8_STATS slots=17 total_ms=10257 spectral_ms=503 search_ms=178 demod_ms=9576 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.20 deadline=0 decodes=0
+1791514608.140 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514615.132 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514616.488 DEV ORC_JS8_RT slot=1791514590 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=10279 spectral=499 search=151 demod=9629 rows=186 deadline=0
+1791514622.188 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514629.168 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514631.148 DEV ORC_JS8_RT slot=1791514605 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.18 total_ms=9960 spectral=480 search=164 demod=9316 rows=186 deadline=0
+1791514636.209 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514643.142 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514646.261 DEV ORC_JS8_RT slot=1791514620 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=10030 spectral=492 search=157 demod=9381 rows=186 deadline=0
+1791514650.197 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514657.125 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514661.308 DEV ORC_JS8_RT slot=1791514635 decodes=2 raw_frames=3 candidates=16 strong=2 best_sync=0.82 total_ms=10137 spectral=492 search=173 demod=9092 rows=186 deadline=0
+1791514661.311 DEV ORC_JS8_RT_FRAME hz=781.25 dt_ms=60 sync_hits=21 sync=0.638 margin=0.662 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=VkNet-zZipq9 text=K8IMT: N5NDC HEARTBEAT SNR -22
+1791514661.313 DEV ORC_JS8_RT_FRAME hz=931.25 dt_ms=0 sync_hits=19 sync=0.594 margin=0.528 initial_syndrome=36 bp_iter=25 osd_order=1 corrections=20 final_syndrome=0 crc=ok kind=3 payload=VosUP-zZipqU text=W7SUA: N5NDC HEARTBEAT SNR -01
+1791514661.315 DEV ORC_JS8_RT_FRAME hz=621.88 dt_ms=0 sync_hits=16 sync=0.222 margin=0.350 initial_syndrome=42 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791514664.154 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514664.609 DEV ORC_JS8_STATS slots=21 total_ms=10137 spectral_ms=492 search_ms=173 demod_ms=9092 rows=186 candidates=16 strong=2 raw_frames=3 best_sync=0.82 deadline=0 decodes=2
+1791514671.109 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514676.441 DEV ORC_JS8_RT slot=1791514650 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=10233 spectral=497 search=162 demod=9574 rows=186 deadline=0
+1791514678.191 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514685.151 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514691.491 DEV ORC_JS8_RT slot=1791514665 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.18 total_ms=10267 spectral=490 search=186 demod=9591 rows=186 deadline=0
+1791514692.141 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514699.162 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514706.169 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514706.339 DEV ORC_JS8_RT slot=1791514680 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=10140 spectral=495 search=150 demod=9495 rows=186 deadline=0
+1791514713.199 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514720.163 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514721.011 DEV ORC_JS8_RT slot=1791514695 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=9799 spectral=498 search=176 demod=9125 rows=186 deadline=0
+1791514724.703 DEV ORC_JS8_STATS slots=25 total_ms=9799 spectral_ms=498 search_ms=176 demod_ms=9125 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.21 deadline=0 decodes=0
+1791514727.194 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514734.177 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514736.504 DEV ORC_JS8_RT slot=1791514710 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.28 total_ms=10282 spectral=489 search=186 demod=9607 rows=186 deadline=0
+1791514741.161 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514748.146 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514751.421 DEV ORC_JS8_RT slot=1791514725 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=10241 spectral=491 search=187 demod=9563 rows=186 deadline=0
+1791514755.150 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514762.148 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514766.504 DEV ORC_JS8_RT slot=1791514740 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=10283 spectral=495 search=182 demod=9606 rows=186 deadline=0
+1791514769.187 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514776.137 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514781.601 DEV ORC_JS8_RT slot=1791514755 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=10426 spectral=539 search=163 demod=9724 rows=186 deadline=0
+1791514783.138 DEV ORC_FT8_RT wf_row_ms_avg=5
+1791514784.813 DEV ORC_JS8_STATS slots=29 total_ms=10426 spectral_ms=539 search_ms=163 demod_ms=9724 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.22 deadline=0 decodes=0
+1791514790.215 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514794.863 DEV ORC_JS8_RT slot=1791514770 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.26 total_ms=8661 spectral=497 search=151 demod=8013 rows=186 deadline=0
+1791514797.435 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514801.066 DEV ORC_FT8_RT slot_skipped_incomplete start_ms=1791514785000
+1791514804.429 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791514811.425 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791514818.442 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791514823.690 DEV ORC_JS8_RT slot=1791514800 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7544 spectral=364 search=128 demod=7052 rows=186 deadline=0
+1791514825.399 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514832.462 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791514838.855 DEV ORC_JS8_RT slot=1791514815 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.27 total_ms=7701 spectral=372 search=127 demod=7202 rows=186 deadline=0
+1791514839.406 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514844.830 DEV ORC_JS8_STATS slots=32 total_ms=7701 spectral_ms=372 search_ms=127 demod_ms=7202 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.27 deadline=0 decodes=0
+1791514846.427 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791514853.393 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514853.398 DEV ORC_JS8_RT slot=1791514830 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=7269 spectral=439 search=113 demod=6717 rows=186 deadline=0
+1791514860.400 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791514867.396 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514868.328 DEV ORC_JS8_RT slot=1791514845 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=7125 spectral=372 search=115 demod=6638 rows=186 deadline=0
+1791514874.427 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791514881.445 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514883.383 DEV ORC_JS8_RT slot=1791514860 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7189 spectral=419 search=116 demod=6654 rows=186 deadline=0
+1791514888.393 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791514895.434 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514898.166 DEV ORC_JS8_RT slot=1791514875 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=6971 spectral=365 search=115 demod=6491 rows=186 deadline=0
+1791514902.402 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791514904.866 DEV ORC_JS8_STATS slots=36 total_ms=6971 spectral_ms=365 search_ms=115 demod_ms=6491 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.23 deadline=0 decodes=0
+1791514909.457 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514913.302 DEV ORC_JS8_RT slot=1791514890 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=7172 spectral=419 search=114 demod=6639 rows=186 deadline=0
+1791514916.417 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514923.429 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791514928.345 DEV ORC_JS8_RT slot=1791514905 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.32 total_ms=7179 spectral=422 search=112 demod=6645 rows=186 deadline=0
+1791514930.419 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514937.461 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791514943.384 DEV ORC_JS8_RT slot=1791514920 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=7178 spectral=416 search=116 demod=6646 rows=186 deadline=0
+1791514944.367 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514951.444 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791514958.181 DEV ORC_JS8_RT slot=1791514935 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=7032 spectral=423 search=115 demod=6494 rows=186 deadline=0
+1791514958.378 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514964.484 HOST psk mid F:\AI\OrcSDR-TEMP\js8-soak\run1\psk_mid_1791514964.xml 1488187
+1791514964.909 DEV ORC_JS8_STATS slots=40 total_ms=7032 spectral_ms=423 search_ms=115 demod_ms=6494 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.23 deadline=0 decodes=0
+1791514965.426 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791514972.471 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791514972.734 DEV ORC_JS8_RT slot=1791514950 decodes=0 raw_frames=1 candidates=16 strong=1 best_sync=0.86 total_ms=6536 spectral=364 search=118 demod=5998 rows=186 deadline=0
+1791514972.735 DEV ORC_JS8_RT_FRAME hz=675.00 dt_ms=-20 sync_hits=21 sync=0.660 margin=0.714 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=0 payload=4270A3kIOqIG
+1791514979.411 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791514986.428 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791514987.967 DEV ORC_JS8_RT slot=1791514965 decodes=3 raw_frames=4 candidates=16 strong=3 best_sync=0.84 total_ms=6769 spectral=429 search=114 demod=5861 rows=186 deadline=0
+1791514987.969 DEV ORC_JS8_RT_FRAME hz=575.00 dt_ms=60 sync_hits=21 sync=0.631 margin=0.673 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=VkNetxd5zBqi text=K8IMT: WO7I HEARTBEAT SNR +13
+1791514987.970 DEV ORC_JS8_RT_FRAME hz=2643.75 dt_ms=60 sync_hits=21 sync=0.519 margin=0.513 initial_syndrome=39 bp_iter=2 osd_order=0 corrections=11 final_syndrome=0 crc=ok kind=3 payload=SJUiJRd5zBqc text=KD7WPQ: WO7I HEARTBEAT SNR +07
+1791514987.972 DEV ORC_JS8_RT_FRAME hz=926.56 dt_ms=0 sync_hits=19 sync=0.375 margin=0.458 initial_syndrome=41 bp_iter=12 osd_order=2 corrections=23 final_syndrome=0 crc=ok kind=3 payload=VosUPxd5zBqm text=W7SUA: WO7I HEARTBEAT SNR +17
+1791514987.973 DEV ORC_JS8_RT_FRAME hz=873.44 dt_ms=-120 sync_hits=16 sync=0.295 margin=0.403 initial_syndrome=45 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791514993.420 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515000.455 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515003.237 DEV ORC_JS8_RT slot=1791514980 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7104 spectral=344 search=115 demod=6645 rows=186 deadline=0
+1791515007.384 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515014.430 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515018.072 DEV ORC_JS8_RT slot=1791514995 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=6872 spectral=341 search=113 demod=6418 rows=186 deadline=0
+1791515021.420 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515024.917 DEV ORC_JS8_STATS slots=44 total_ms=6872 spectral_ms=341 search_ms=113 demod_ms=6418 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.24 deadline=0 decodes=0
+1791515028.435 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515033.143 DEV ORC_JS8_RT slot=1791515010 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7007 spectral=341 search=114 demod=6552 rows=186 deadline=0
+1791515035.413 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515042.446 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515048.200 DEV ORC_JS8_RT slot=1791515025 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.17 total_ms=6997 spectral=338 search=115 demod=6544 rows=186 deadline=0
+1791515049.400 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515056.400 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515062.896 DEV ORC_JS8_RT slot=1791515040 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.28 total_ms=6735 spectral=341 search=114 demod=6280 rows=186 deadline=0
+1791515063.443 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515070.434 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515077.471 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515077.994 DEV ORC_JS8_RT slot=1791515055 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.19 total_ms=6834 spectral=342 search=113 demod=6379 rows=186 deadline=0
+1791515084.424 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515085.051 DEV ORC_JS8_STATS slots=48 total_ms=6834 spectral_ms=342 search_ms=113 demod_ms=6379 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.19 deadline=0 decodes=0
+1791515091.433 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515093.397 DEV ORC_JS8_RT slot=1791515070 decodes=0 raw_frames=1 candidates=16 strong=1 best_sync=0.50 total_ms=7242 spectral=343 search=112 demod=6650 rows=186 deadline=0
+1791515093.399 DEV ORC_JS8_RT_FRAME hz=917.19 dt_ms=-40 sync_hits=16 sync=0.239 margin=0.380 initial_syndrome=36 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791515098.376 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515105.465 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515108.256 DEV ORC_JS8_RT slot=1791515085 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7098 spectral=348 search=113 demod=6637 rows=186 deadline=0
+1791515112.389 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515119.446 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515122.922 DEV ORC_JS8_RT slot=1791515100 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=6802 spectral=343 search=114 demod=6345 rows=186 deadline=0
+1791515126.371 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515133.449 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515138.059 DEV ORC_JS8_RT slot=1791515115 decodes=2 raw_frames=2 candidates=16 strong=2 best_sync=0.92 total_ms=6875 spectral=345 search=115 demod=6278 rows=186 deadline=0
+1791515138.060 DEV ORC_JS8_RT_FRAME hz=725.00 dt_ms=60 sync_hits=21 sync=0.840 margin=0.837 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=VkNet-zbFpqE text=K8IMT: N5RML HEARTBEAT SNR -17
+1791515138.062 DEV ORC_JS8_RT_FRAME hz=2642.19 dt_ms=40 sync_hits=21 sync=0.643 margin=0.620 initial_syndrome=40 bp_iter=25 osd_order=0 corrections=18 final_syndrome=0 crc=ok kind=3 payload=SJUiJUzbFpqC text=KD7WPQ: N5RML HEARTBEAT SNR -19
+1791515140.370 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515145.059 DEV ORC_JS8_STATS slots=52 total_ms=6875 spectral_ms=345 search_ms=115 demod_ms=6278 rows=186 candidates=16 strong=2 raw_frames=2 best_sync=0.92 deadline=0 decodes=2
+1791515147.407 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515152.859 DEV ORC_JS8_RT slot=1791515130 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=6715 spectral=346 search=113 demod=6256 rows=186 deadline=0
+1791515154.463 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515161.405 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515167.990 DEV ORC_JS8_RT slot=1791515145 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=6866 spectral=345 search=115 demod=6406 rows=186 deadline=0
+1791515168.456 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515175.387 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515182.422 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515183.148 DEV ORC_JS8_RT slot=1791515160 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=6995 spectral=335 search=117 demod=6543 rows=186 deadline=0
+1791515189.377 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515196.424 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515198.210 DEV ORC_JS8_RT slot=1791515175 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.32 total_ms=7001 spectral=342 search=114 demod=6545 rows=186 deadline=0
+1791515203.415 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515205.259 DEV ORC_JS8_STATS slots=56 total_ms=7001 spectral_ms=342 search_ms=114 demod_ms=6545 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.32 deadline=0 decodes=0
+1791515210.448 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515213.175 DEV ORC_JS8_RT slot=1791515190 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=7003 spectral=341 search=117 demod=6545 rows=186 deadline=0
+1791515217.409 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515224.395 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515228.141 DEV ORC_JS8_RT slot=1791515205 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7005 spectral=339 search=117 demod=6549 rows=186 deadline=0
+1791515231.405 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515238.411 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515243.056 DEV ORC_JS8_RT slot=1791515220 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=6853 spectral=342 search=115 demod=6396 rows=186 deadline=0
+1791515245.440 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515252.423 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515258.121 DEV ORC_JS8_RT slot=1791515235 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7000 spectral=342 search=116 demod=6542 rows=186 deadline=0
+1791515259.420 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515265.313 DEV ORC_JS8_STATS slots=60 total_ms=7000 spectral_ms=342 search_ms=116 demod_ms=6542 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.21 deadline=0 decodes=0
+1791515266.429 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515273.202 DEV ORC_JS8_RT slot=1791515250 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.19 total_ms=7019 spectral=343 search=117 demod=6559 rows=186 deadline=0
+1791515273.409 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515280.398 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515287.433 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515288.151 DEV ORC_JS8_RT slot=1791515265 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.28 total_ms=6988 spectral=337 search=116 demod=6535 rows=186 deadline=0
+1791515294.384 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515301.445 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515302.951 DEV ORC_JS8_RT slot=1791515280 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.26 total_ms=6737 spectral=339 search=115 demod=6283 rows=186 deadline=0
+1791515308.371 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515315.395 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515318.214 DEV ORC_JS8_RT slot=1791515295 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=7004 spectral=341 search=113 demod=6550 rows=186 deadline=0
+1791515322.362 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515325.430 DEV ORC_JS8_STATS slots=64 total_ms=7004 spectral_ms=341 search_ms=113 demod_ms=6550 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.22 deadline=0 decodes=0
+1791515329.413 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515333.178 DEV ORC_JS8_RT slot=1791515310 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.19 total_ms=7003 spectral=339 search=112 demod=6552 rows=186 deadline=0
+1791515336.476 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515343.434 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515348.269 DEV ORC_JS8_RT slot=1791515325 decodes=0 raw_frames=1 candidates=16 strong=0 best_sync=0.42 total_ms=7126 spectral=342 search=115 demod=6537 rows=186 deadline=0
+1791515348.270 DEV ORC_JS8_RT_FRAME hz=671.88 dt_ms=-100 sync_hits=17 sync=0.391 margin=0.398 initial_syndrome=43 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791515350.463 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515357.381 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515363.142 DEV ORC_JS8_RT slot=1791515340 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7011 spectral=341 search=116 demod=6554 rows=186 deadline=0
+1791515364.457 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515371.393 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515378.058 DEV ORC_JS8_RT slot=1791515355 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=6859 spectral=346 search=115 demod=6398 rows=186 deadline=0
+1791515378.429 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515385.415 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515385.628 DEV ORC_JS8_STATS slots=68 total_ms=6859 spectral_ms=346 search_ms=115 demod_ms=6398 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.20 deadline=0 decodes=0
+1791515392.466 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515393.256 DEV ORC_JS8_RT slot=1791515370 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.26 total_ms=7138 spectral=343 search=116 demod=6679 rows=186 deadline=0
+1791515399.394 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515406.415 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515408.840 DEV ORC_JS8_RT slot=1791515385 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=7717 spectral=384 search=119 demod=7214 rows=186 deadline=0
+1791515413.396 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515420.439 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515423.933 DEV ORC_JS8_RT slot=1791515400 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7733 spectral=368 search=126 demod=7239 rows=186 deadline=0
+1791515427.472 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515434.433 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515438.930 DEV ORC_JS8_RT slot=1791515415 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7725 spectral=379 search=115 demod=7231 rows=186 deadline=0
+1791515441.416 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515445.799 DEV ORC_JS8_STATS slots=72 total_ms=7725 spectral_ms=379 search_ms=115 demod_ms=7231 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.20 deadline=0 decodes=0
+1791515448.389 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515453.785 DEV ORC_JS8_RT slot=1791515430 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=7586 spectral=368 search=127 demod=7091 rows=186 deadline=0
+1791515455.434 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515462.423 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515468.872 DEV ORC_JS8_RT slot=1791515445 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=7720 spectral=382 search=113 demod=7225 rows=186 deadline=0
+1791515469.443 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515476.395 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515483.444 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515483.643 DEV ORC_JS8_RT slot=1791515460 decodes=3 raw_frames=3 candidates=16 strong=2 best_sync=0.83 total_ms=7499 spectral=366 search=127 demod=6712 rows=186 deadline=0
+1791515483.645 DEV ORC_JS8_RT_FRAME hz=2643.75 dt_ms=60 sync_hits=21 sync=0.629 margin=0.688 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=SJUiJHEa0tqK text=KD7WPQ: KE2DMC HEARTBEAT SNR -11
+1791515483.646 DEV ORC_JS8_RT_FRAME hz=973.44 dt_ms=40 sync_hits=19 sync=0.666 margin=0.633 initial_syndrome=40 bp_iter=25 osd_order=1 corrections=14 final_syndrome=0 crc=ok kind=3 payload=VkNetnEa0tqF text=K8IMT: KE2DMC HEARTBEAT SNR -16
+1791515483.648 DEV ORC_JS8_RT_FRAME hz=871.88 dt_ms=-120 sync_hits=17 sync=0.208 margin=0.398 initial_syndrome=43 bp_iter=25 osd_order=2 corrections=17 final_syndrome=0 crc=ok kind=3 payload=UrZz4HEa0tqK text=WD5EED: KE2DMC HEARTBEAT SNR -11
+1791515490.385 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515497.396 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515498.696 DEV ORC_JS8_RT slot=1791515475 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=7582 spectral=373 search=124 demod=7085 rows=186 deadline=0
+1791515504.385 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515505.895 DEV ORC_JS8_STATS slots=76 total_ms=7582 spectral_ms=373 search_ms=124 demod_ms=7085 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.22 deadline=0 decodes=0
+1791515511.409 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515513.731 DEV ORC_JS8_RT slot=1791515490 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=7570 spectral=373 search=127 demod=7070 rows=186 deadline=0
+1791515518.450 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515525.392 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515528.779 DEV ORC_JS8_RT slot=1791515505 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.29 total_ms=7579 spectral=371 search=123 demod=7085 rows=186 deadline=0
+1791515532.470 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515539.418 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515543.465 DEV ORC_JS8_RT slot=1791515520 decodes=3 raw_frames=3 candidates=16 strong=2 best_sync=0.93 total_ms=7322 spectral=373 search=126 demod=6549 rows=186 deadline=0
+1791515543.467 DEV ORC_JS8_RT_FRAME hz=625.00 dt_ms=60 sync_hits=21 sync=0.811 margin=0.815 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=VkNet-zG8zqJ text=K8IMT: N3MEL HEARTBEAT SNR -12
+1791515543.469 DEV ORC_JS8_RT_FRAME hz=2642.19 dt_ms=60 sync_hits=19 sync=0.501 margin=0.653 initial_syndrome=6 bp_iter=2 osd_order=0 corrections=6 final_syndrome=0 crc=ok kind=3 payload=SJUiJUzG8zqO text=KD7WPQ: N3MEL HEARTBEAT SNR -07
+1791515543.470 DEV ORC_JS8_RT_FRAME hz=873.44 dt_ms=-60 sync_hits=16 sync=0.156 margin=0.333 initial_syndrome=40 bp_iter=25 osd_order=2 corrections=32 final_syndrome=0 crc=ok kind=3 payload=UrZz4UzG8zqS text=WD5EED: N3MEL HEARTBEAT SNR -03
+1791515546.457 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515553.432 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515558.720 DEV ORC_JS8_RT slot=1791515535 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=7587 spectral=380 search=120 demod=7087 rows=186 deadline=0
+1791515560.413 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515564.525 HOST psk mid F:\AI\OrcSDR-TEMP\js8-soak\run1\psk_mid_1791515564.xml 1489175
+1791515565.942 DEV ORC_JS8_STATS slots=80 total_ms=7587 spectral_ms=380 search_ms=120 demod_ms=7087 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.23 deadline=0 decodes=0
+1791515567.405 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515573.910 DEV ORC_JS8_RT slot=1791515550 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.26 total_ms=7726 spectral=383 search=117 demod=7226 rows=186 deadline=0
+1791515574.444 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515581.405 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515588.443 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515588.891 DEV ORC_JS8_RT slot=1791515565 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=7715 spectral=387 search=123 demod=7205 rows=186 deadline=0
+1791515595.470 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515602.418 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515603.494 DEV ORC_JS8_RT slot=1791515580 decodes=2 raw_frames=2 candidates=16 strong=2 best_sync=0.95 total_ms=7344 spectral=384 search=129 demod=6703 rows=186 deadline=0
+1791515603.496 DEV ORC_JS8_RT_FRAME hz=525.00 dt_ms=60 sync_hits=21 sync=0.853 margin=0.779 initial_syndrome=6 bp_iter=1 osd_order=0 corrections=6 final_syndrome=0 crc=ok kind=3 payload=VkNet-zphjq7 text=K8IMT: N7EAL HEARTBEAT SNR -24
+1791515603.498 DEV ORC_JS8_RT_FRAME hz=2642.19 dt_ms=100 sync_hits=21 sync=0.759 margin=0.764 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=SJUiJUzphjqG text=KD7WPQ: N7EAL HEARTBEAT SNR -15
+1791515609.443 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515616.429 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515618.992 DEV ORC_JS8_RT slot=1791515595 decodes=1 raw_frames=1 candidates=16 strong=0 best_sync=0.43 total_ms=7825 spectral=381 search=115 demod=7249 rows=186 deadline=0
+1791515618.993 DEV ORC_JS8_RT_FRAME hz=521.88 dt_ms=-80 sync_hits=16 sync=0.289 margin=0.468 initial_syndrome=46 bp_iter=25 osd_order=1 corrections=24 final_syndrome=0 crc=ok kind=3 payload=UrZz4HH3XHqP text=WD5EED: KF8TOZ HEARTBEAT SNR -06
+1791515623.463 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515626.203 DEV ORC_JS8_STATS slots=84 total_ms=7825 spectral_ms=381 search_ms=115 demod_ms=7249 rows=186 candidates=16 strong=0 raw_frames=1 best_sync=0.43 deadline=0 decodes=1
+1791515630.411 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515633.895 DEV ORC_JS8_RT slot=1791515610 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.27 total_ms=7738 spectral=372 search=129 demod=7237 rows=186 deadline=0
+1791515637.429 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515644.391 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515648.564 DEV ORC_JS8_RT slot=1791515625 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7404 spectral=369 search=128 demod=6907 rows=186 deadline=0
+1791515651.443 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515658.424 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515663.846 DEV ORC_JS8_RT slot=1791515640 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.28 total_ms=7720 spectral=380 search=115 demod=7225 rows=186 deadline=0
+1791515665.401 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515672.395 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515678.853 DEV ORC_JS8_RT slot=1791515655 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=7737 spectral=386 search=115 demod=7236 rows=186 deadline=0
+1791515679.449 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515686.298 DEV ORC_JS8_STATS slots=88 total_ms=7737 spectral_ms=386 search_ms=115 demod_ms=7236 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.24 deadline=0 decodes=0
+1791515686.461 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515693.439 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515693.853 DEV ORC_JS8_RT slot=1791515670 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.26 total_ms=7730 spectral=380 search=115 demod=7235 rows=186 deadline=0
+1791515700.449 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515707.413 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515708.672 DEV ORC_JS8_RT slot=1791515685 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.28 total_ms=7553 spectral=382 search=113 demod=7058 rows=186 deadline=0
+1791515714.459 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515721.429 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515723.870 DEV ORC_JS8_RT slot=1791515700 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.19 total_ms=7722 spectral=363 search=126 demod=7233 rows=186 deadline=0
+1791515728.417 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515735.410 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515738.883 DEV ORC_JS8_RT slot=1791515715 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7748 spectral=368 search=127 demod=7253 rows=186 deadline=0
+1791515742.428 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515746.468 DEV ORC_JS8_STATS slots=92 total_ms=7748 spectral_ms=368 search_ms=127 demod_ms=7253 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.21 deadline=0 decodes=0
+1791515749.378 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515753.748 DEV ORC_JS8_RT slot=1791515730 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=7601 spectral=388 search=128 demod=7085 rows=186 deadline=0
+1791515756.415 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515763.398 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515768.845 DEV ORC_JS8_RT slot=1791515745 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=7732 spectral=384 search=113 demod=7235 rows=186 deadline=0
+1791515770.445 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515777.432 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515783.920 DEV ORC_JS8_RT slot=1791515760 decodes=1 raw_frames=1 candidates=16 strong=0 best_sync=0.44 total_ms=7807 spectral=371 search=130 demod=7247 rows=186 deadline=0
+1791515783.922 DEV ORC_JS8_RT_FRAME hz=921.88 dt_ms=-60 sync_hits=19 sync=0.541 margin=0.663 initial_syndrome=50 bp_iter=2 osd_order=0 corrections=6 final_syndrome=0 crc=ok kind=3 payload=UrZz4Eyms5qC text=WD5EED: HP1GDS HEARTBEAT SNR -19
+1791515784.391 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515791.465 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515798.430 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515798.924 DEV ORC_JS8_RT slot=1791515775 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=7737 spectral=383 search=120 demod=7234 rows=186 deadline=0
+1791515805.449 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515806.539 DEV ORC_JS8_STATS slots=96 total_ms=7737 spectral_ms=383 search_ms=120 demod_ms=7234 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.24 deadline=0 decodes=0
+1791515812.418 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515813.618 DEV ORC_JS8_RT slot=1791515790 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7430 spectral=376 search=126 demod=6928 rows=186 deadline=0
+1791515819.407 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515826.377 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515828.771 DEV ORC_JS8_RT slot=1791515805 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=7586 spectral=375 search=119 demod=7092 rows=186 deadline=0
+1791515833.423 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515840.384 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515843.896 DEV ORC_JS8_RT slot=1791515820 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7757 spectral=380 search=130 demod=7247 rows=186 deadline=0
+1791515847.447 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515854.400 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515858.114 DEV ORC_JS8_RT slot=1791515835 decodes=2 raw_frames=2 candidates=16 strong=2 best_sync=0.86 total_ms=6946 spectral=366 search=126 demod=6327 rows=186 deadline=0
+1791515858.116 DEV ORC_JS8_RT_FRAME hz=725.00 dt_ms=60 sync_hits=21 sync=0.700 margin=0.769 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=VkNetnLNJDqA text=K8IMT: KI7LIK HEARTBEAT SNR -21
+1791515858.117 DEV ORC_JS8_RT_FRAME hz=2643.75 dt_ms=60 sync_hits=21 sync=0.484 margin=0.530 initial_syndrome=4 bp_iter=1 osd_order=0 corrections=4 final_syndrome=0 crc=ok kind=3 payload=SJUiJHLNJDqP text=KD7WPQ: KI7LIK HEARTBEAT SNR -06
+1791515861.425 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515866.686 DEV ORC_JS8_STATS slots=100 total_ms=6946 spectral_ms=366 search_ms=126 demod_ms=6327 rows=186 candidates=16 strong=2 raw_frames=2 best_sync=0.86 deadline=0 decodes=2
+1791515868.459 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515873.996 DEV ORC_JS8_RT slot=1791515850 decodes=1 raw_frames=1 candidates=16 strong=0 best_sync=0.33 total_ms=7817 spectral=369 search=129 demod=7239 rows=186 deadline=0
+1791515873.998 DEV ORC_JS8_RT_FRAME hz=871.88 dt_ms=-100 sync_hits=15 sync=0.254 margin=0.557 initial_syndrome=47 bp_iter=25 osd_order=0 corrections=17 final_syndrome=0 crc=ok kind=3 payload=UrZz4HSPjjqJ text=WD5EED: KN4HSD HEARTBEAT SNR -12
+1791515875.444 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515882.431 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515889.038 DEV ORC_JS8_RT slot=1791515865 decodes=0 raw_frames=1 candidates=16 strong=0 best_sync=0.29 total_ms=7875 spectral=369 search=126 demod=7236 rows=186 deadline=0
+1791515889.039 DEV ORC_JS8_RT_FRAME hz=871.88 dt_ms=-60 sync_hits=15 sync=0.187 margin=0.445 initial_syndrome=48 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791515889.431 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515896.458 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515903.379 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515903.842 DEV ORC_JS8_RT slot=1791515880 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7734 spectral=366 search=127 demod=7241 rows=186 deadline=0
+1791515910.449 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515917.389 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515918.681 DEV ORC_JS8_RT slot=1791515895 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=7574 spectral=379 search=117 demod=7078 rows=186 deadline=0
+1791515924.440 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515926.955 DEV ORC_JS8_STATS slots=104 total_ms=7574 spectral_ms=379 search_ms=117 demod_ms=7078 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.25 deadline=0 decodes=0
+1791515931.415 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515933.885 DEV ORC_JS8_RT slot=1791515910 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.26 total_ms=7737 spectral=376 search=116 demod=7245 rows=186 deadline=0
+1791515938.451 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515945.385 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515948.724 DEV ORC_JS8_RT slot=1791515925 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7568 spectral=388 search=127 demod=7053 rows=186 deadline=0
+1791515952.410 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515959.482 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515963.947 DEV ORC_JS8_RT slot=1791515940 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=7750 spectral=377 search=119 demod=7254 rows=186 deadline=0
+1791515966.388 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791515973.422 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515978.835 DEV ORC_JS8_RT slot=1791515955 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=7725 spectral=370 search=131 demod=7224 rows=186 deadline=0
+1791515980.421 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791515987.007 DEV ORC_JS8_STATS slots=108 total_ms=7725 spectral_ms=370 search_ms=131 demod_ms=7224 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.23 deadline=0 decodes=0
+1791515987.479 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791515993.940 DEV ORC_JS8_RT slot=1791515970 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.26 total_ms=7737 spectral=370 search=127 demod=7240 rows=186 deadline=0
+1791515994.386 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516001.459 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516008.379 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516008.533 DEV ORC_JS8_RT slot=1791515985 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=7428 spectral=384 search=130 demod=6914 rows=186 deadline=0
+1791516015.444 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516022.393 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516023.716 DEV ORC_JS8_RT slot=1791516000 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=7508 spectral=371 search=122 demod=7015 rows=186 deadline=0
+1791516029.422 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516036.365 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516038.205 DEV ORC_JS8_RT slot=1791516015 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.19 total_ms=7027 spectral=420 search=116 demod=6491 rows=186 deadline=0
+1791516043.423 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516047.092 DEV ORC_JS8_STATS slots=112 total_ms=7027 spectral_ms=420 search_ms=116 demod_ms=6491 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.19 deadline=0 decodes=0
+1791516050.456 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516053.311 DEV ORC_JS8_RT slot=1791516030 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=7145 spectral=420 search=112 demod=6613 rows=186 deadline=0
+1791516057.431 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516064.423 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516068.123 DEV ORC_JS8_RT slot=1791516045 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=6947 spectral=412 search=115 demod=6420 rows=186 deadline=0
+1791516071.430 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516078.442 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516083.358 DEV ORC_JS8_RT slot=1791516060 decodes=1 raw_frames=1 candidates=16 strong=0 best_sync=0.35 total_ms=7173 spectral=419 search=118 demod=6555 rows=186 deadline=0
+1791516083.360 DEV ORC_JS8_RT_FRAME hz=765.62 dt_ms=20 sync_hits=20 sync=0.378 margin=0.435 initial_syndrome=44 bp_iter=25 osd_order=1 corrections=16 final_syndrome=0 crc=ok kind=3 payload=Vot0AUusqhqH text=W7YSB: K4EXA HEARTBEAT SNR -14
+1791516085.422 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516092.466 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516098.066 DEV ORC_JS8_RT slot=1791516075 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.19 total_ms=6941 spectral=416 search=115 demod=6410 rows=186 deadline=0
+1791516099.408 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516106.412 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516107.293 DEV ORC_JS8_STATS slots=116 total_ms=6941 spectral_ms=416 search_ms=115 demod_ms=6410 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.19 deadline=0 decodes=0
+1791516113.215 DEV ORC_JS8_RT slot=1791516090 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=7087 spectral=424 search=109 demod=6554 rows=186 deadline=0
+1791516113.394 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516120.437 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516127.413 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516128.257 DEV ORC_JS8_RT slot=1791516105 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.26 total_ms=7079 spectral=424 search=114 demod=6541 rows=186 deadline=0
+1791516134.430 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516141.444 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516143.071 DEV ORC_JS8_RT slot=1791516120 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.32 total_ms=6952 spectral=419 search=117 demod=6416 rows=186 deadline=0
+1791516148.438 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516155.472 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516158.231 DEV ORC_JS8_RT slot=1791516135 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.18 total_ms=7098 spectral=424 search=115 demod=6559 rows=186 deadline=0
+1791516162.382 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516164.655 HOST psk mid F:\AI\OrcSDR-TEMP\js8-soak\run1\psk_mid_1791516164.xml 1484266
+1791516167.501 DEV ORC_JS8_STATS slots=120 total_ms=7098 spectral_ms=424 search_ms=115 demod_ms=6559 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.18 deadline=0 decodes=0
+1791516169.436 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516173.138 DEV ORC_JS8_RT slot=1791516150 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=6901 spectral=375 search=112 demod=6414 rows=186 deadline=0
+1791516176.375 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516183.461 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516188.185 DEV ORC_JS8_RT slot=1791516165 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7082 spectral=419 search=117 demod=6546 rows=186 deadline=0
+1791516190.375 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516197.418 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516203.246 DEV ORC_JS8_RT slot=1791516180 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7101 spectral=422 search=113 demod=6566 rows=186 deadline=0
+1791516204.372 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516211.449 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516218.204 DEV ORC_JS8_RT slot=1791516195 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7098 spectral=425 search=113 demod=6560 rows=186 deadline=0
+1791516218.381 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516225.428 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516227.448 DEV ORC_JS8_STATS slots=124 total_ms=7098 spectral_ms=425 search_ms=113 demod_ms=6560 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.20 deadline=0 decodes=0
+1791516232.461 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516233.243 DEV ORC_JS8_RT slot=1791516210 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=7077 spectral=422 search=114 demod=6541 rows=186 deadline=0
+1791516239.420 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516246.428 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516248.047 DEV ORC_JS8_RT slot=1791516225 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=6941 spectral=420 search=116 demod=6405 rows=186 deadline=0
+1791516253.418 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516260.442 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516263.047 DEV ORC_JS8_RT slot=1791516240 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=6939 spectral=420 search=116 demod=6403 rows=186 deadline=0
+1791516267.400 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516274.456 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516278.201 DEV ORC_JS8_RT slot=1791516255 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7093 spectral=425 search=115 demod=6553 rows=186 deadline=0
+1791516281.402 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516287.584 DEV ORC_JS8_STATS slots=128 total_ms=7093 spectral_ms=425 search_ms=115 demod_ms=6553 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.21 deadline=0 decodes=0
+1791516288.421 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516293.533 DEV ORC_JS8_RT slot=1791516270 decodes=2 raw_frames=3 candidates=16 strong=2 best_sync=0.58 total_ms=7371 spectral=421 search=113 demod=6539 rows=186 deadline=0
+1791516293.535 DEV ORC_JS8_RT_FRAME hz=623.44 dt_ms=0 sync_hits=19 sync=0.481 margin=0.470 initial_syndrome=38 bp_iter=25 osd_order=1 corrections=36 final_syndrome=0 crc=ok kind=3 payload=SOs-knL4oTqN text=KS1DMD: KI5NIG HEARTBEAT SNR -08
+1791516293.536 DEV ORC_JS8_RT_FRAME hz=515.62 dt_ms=40 sync_hits=17 sync=0.262 margin=0.352 initial_syndrome=46 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791516293.538 DEV ORC_JS8_RT_FRAME hz=821.88 dt_ms=-100 sync_hits=18 sync=0.370 margin=0.456 initial_syndrome=40 bp_iter=25 osd_order=1 corrections=18 final_syndrome=0 crc=ok kind=3 payload=UrZz4HL4oTqC text=WD5EED: KI5NIG HEARTBEAT SNR -19
+1791516295.410 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516302.454 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516308.178 DEV ORC_JS8_RT slot=1791516285 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.18 total_ms=7077 spectral=420 search=115 demod=6542 rows=186 deadline=0
+1791516309.411 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516316.415 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516323.241 DEV ORC_JS8_RT slot=1791516300 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=7067 spectral=392 search=116 demod=6559 rows=186 deadline=0
+1791516323.463 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516330.388 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516337.429 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516338.045 DEV ORC_JS8_RT slot=1791516315 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.19 total_ms=6942 spectral=421 search=112 demod=6409 rows=186 deadline=0
+1791516344.381 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516347.642 DEV ORC_JS8_STATS slots=132 total_ms=6942 spectral_ms=421 search_ms=112 demod_ms=6409 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.19 deadline=0 decodes=0
+1791516351.435 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516353.193 DEV ORC_JS8_RT slot=1791516330 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=7085 spectral=425 search=113 demod=6547 rows=186 deadline=0
+1791516358.426 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516365.455 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516368.238 DEV ORC_JS8_RT slot=1791516345 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=7086 spectral=428 search=114 demod=6544 rows=186 deadline=0
+1791516372.422 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516379.422 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516382.906 DEV ORC_JS8_RT slot=1791516360 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=6805 spectral=422 search=114 demod=6269 rows=186 deadline=0
+1791516386.410 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516393.428 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516398.109 DEV ORC_JS8_RT slot=1791516375 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=6939 spectral=424 search=117 demod=6398 rows=186 deadline=0
+1791516400.401 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516407.450 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516407.711 DEV ORC_JS8_STATS slots=136 total_ms=6939 spectral_ms=424 search_ms=117 demod_ms=6398 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.22 deadline=0 decodes=0
+1791516413.199 DEV ORC_JS8_RT slot=1791516390 decodes=1 raw_frames=1 candidates=16 strong=0 best_sync=0.33 total_ms=7029 spectral=424 search=115 demod=6408 rows=186 deadline=0
+1791516413.201 DEV ORC_JS8_RT_FRAME hz=773.44 dt_ms=20 sync_hits=14 sync=0.182 margin=0.503 initial_syndrome=46 bp_iter=25 osd_order=0 corrections=20 final_syndrome=0 crc=ok kind=3 payload=SOs-kkyms5qF text=KS1DMD: HP1GDS HEARTBEAT SNR -16
+1791516414.456 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516421.396 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516428.099 DEV ORC_JS8_RT slot=1791516405 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=6937 spectral=421 search=112 demod=6404 rows=186 deadline=0
+1791516428.437 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516435.427 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516442.453 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516442.831 DEV ORC_JS8_RT slot=1791516420 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=6670 spectral=421 search=116 demod=6133 rows=186 deadline=0
+1791516449.391 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516456.453 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516457.976 DEV ORC_JS8_RT slot=1791516435 decodes=3 raw_frames=4 candidates=16 strong=2 best_sync=0.96 total_ms=6784 spectral=423 search=116 demod=5865 rows=186 deadline=0
+1791516457.978 DEV ORC_JS8_RT_FRAME hz=975.00 dt_ms=60 sync_hits=21 sync=0.894 margin=0.895 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=VkNetnWuZTqF text=K8IMT: KQ4DNM HEARTBEAT SNR -16
+1791516457.979 DEV ORC_JS8_RT_FRAME hz=2643.75 dt_ms=60 sync_hits=21 sync=0.498 margin=0.510 initial_syndrome=46 bp_iter=2 osd_order=0 corrections=4 final_syndrome=0 crc=ok kind=3 payload=SJUiJHWuZTqK text=KD7WPQ: KQ4DNM HEARTBEAT SNR -11
+1791516457.981 DEV ORC_JS8_RT_FRAME hz=615.62 dt_ms=80 sync_hits=18 sync=0.284 margin=0.333 initial_syndrome=50 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791516457.983 DEV ORC_JS8_RT_FRAME hz=721.88 dt_ms=-60 sync_hits=14 sync=0.207 margin=0.557 initial_syndrome=48 bp_iter=25 osd_order=2 corrections=12 final_syndrome=0 crc=ok kind=3 payload=UrZz4HWuZTqY text=WD5EED: KQ4DNM HEARTBEAT SNR +03
+1791516463.381 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516467.897 DEV ORC_JS8_STATS slots=140 total_ms=6784 spectral_ms=423 search_ms=116 demod_ms=5865 rows=186 candidates=16 strong=2 raw_frames=4 best_sync=0.96 deadline=0 decodes=3
+1791516470.415 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516473.080 DEV ORC_JS8_RT slot=1791516450 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.28 total_ms=6941 spectral=417 search=112 demod=6412 rows=186 deadline=0
+1791516477.386 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516484.436 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516487.788 DEV ORC_JS8_RT slot=1791516465 decodes=2 raw_frames=4 candidates=16 strong=2 best_sync=0.96 total_ms=6645 spectral=424 search=113 demod=5733 rows=186 deadline=0
+1791516487.790 DEV ORC_JS8_RT_FRAME hz=675.00 dt_ms=60 sync_hits=21 sync=0.900 margin=0.895 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=VkNetpm34FqR text=K8IMT: ND7M HEARTBEAT SNR -04
+1791516487.791 DEV ORC_JS8_RT_FRAME hz=2643.75 dt_ms=60 sync_hits=21 sync=0.747 margin=0.731 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=SJUiJJm34FqW text=KD7WPQ: ND7M HEARTBEAT SNR +01
+1791516487.792 DEV ORC_JS8_RT_FRAME hz=967.19 dt_ms=100 sync_hits=17 sync=0.203 margin=0.371 initial_syndrome=51 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791516487.794 DEV ORC_JS8_RT_FRAME hz=821.88 dt_ms=-60 sync_hits=15 sync=0.152 margin=0.297 initial_syndrome=40 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791516491.425 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516498.446 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516503.237 DEV ORC_JS8_RT slot=1791516480 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7084 spectral=421 search=116 demod=6547 rows=186 deadline=0
+1791516505.430 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516512.416 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516518.181 DEV ORC_JS8_RT slot=1791516495 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=7049 spectral=394 search=113 demod=6542 rows=186 deadline=0
+1791516519.426 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516526.438 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516527.915 DEV ORC_JS8_STATS slots=144 total_ms=7049 spectral_ms=394 search_ms=113 demod_ms=6542 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.25 deadline=0 decodes=0
+1791516533.231 DEV ORC_JS8_RT slot=1791516510 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.26 total_ms=7091 spectral=426 search=115 demod=6550 rows=186 deadline=0
+1791516533.427 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516540.413 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516547.454 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516548.183 DEV ORC_JS8_RT slot=1791516525 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=7092 spectral=424 search=117 demod=6551 rows=186 deadline=0
+1791516554.409 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516561.422 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516563.237 DEV ORC_JS8_RT slot=1791516540 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7094 spectral=424 search=115 demod=6555 rows=186 deadline=0
+1791516568.412 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516575.440 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516578.041 DEV ORC_JS8_RT slot=1791516555 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=6942 spectral=419 search=118 demod=6405 rows=186 deadline=0
+1791516582.463 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516588.002 DEV ORC_JS8_STATS slots=148 total_ms=6942 spectral_ms=419 search_ms=118 demod_ms=6405 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.23 deadline=0 decodes=0
+1791516589.403 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516593.191 DEV ORC_JS8_RT slot=1791516570 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7031 spectral=365 search=112 demod=6554 rows=186 deadline=0
+1791516596.462 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516603.418 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516608.107 DEV ORC_JS8_RT slot=1791516585 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=6954 spectral=423 search=114 demod=6417 rows=186 deadline=0
+1791516610.444 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516617.424 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516623.262 DEV ORC_JS8_RT slot=1791516600 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7090 spectral=420 search=116 demod=6554 rows=186 deadline=0
+1791516624.433 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516631.380 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516638.209 DEV ORC_JS8_RT slot=1791516615 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.18 total_ms=7084 spectral=417 search=118 demod=6549 rows=186 deadline=0
+1791516638.432 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516645.419 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516648.072 DEV ORC_JS8_STATS slots=152 total_ms=7084 spectral_ms=417 search_ms=118 demod_ms=6549 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.18 deadline=0 decodes=0
+1791516652.458 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516653.262 DEV ORC_JS8_RT slot=1791516630 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=7092 spectral=423 search=116 demod=6553 rows=186 deadline=0
+1791516659.415 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516666.415 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516668.201 DEV ORC_JS8_RT slot=1791516645 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7076 spectral=423 search=112 demod=6541 rows=186 deadline=0
+1791516673.464 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516680.433 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516683.247 DEV ORC_JS8_RT slot=1791516660 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=7086 spectral=422 search=114 demod=6550 rows=186 deadline=0
+1791516687.460 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516694.395 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516698.195 DEV ORC_JS8_RT slot=1791516675 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7085 spectral=424 search=116 demod=6545 rows=186 deadline=0
+1791516701.458 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516708.274 DEV ORC_JS8_STATS slots=156 total_ms=7085 spectral_ms=424 search_ms=116 demod_ms=6545 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.21 deadline=0 decodes=0
+1791516708.421 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516713.260 DEV ORC_JS8_RT slot=1791516690 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7101 spectral=424 search=117 demod=6560 rows=186 deadline=0
+1791516715.461 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516722.381 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516728.212 DEV ORC_JS8_RT slot=1791516705 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7089 spectral=423 search=114 demod=6552 rows=186 deadline=0
+1791516729.407 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516736.416 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516743.121 DEV ORC_JS8_RT slot=1791516720 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=6912 spectral=388 search=116 demod=6408 rows=186 deadline=0
+1791516743.455 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516750.383 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516757.432 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516758.271 DEV ORC_JS8_RT slot=1791516735 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=7086 spectral=425 search=116 demod=6545 rows=186 deadline=0
+1791516764.868 HOST psk mid F:\AI\OrcSDR-TEMP\js8-soak\run1\psk_mid_1791516764.xml 1464875
+1791516764.868 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516768.524 DEV ORC_JS8_STATS slots=160 total_ms=7086 spectral_ms=425 search_ms=116 demod_ms=6545 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.22 deadline=0 decodes=0
+1791516771.402 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516773.234 DEV ORC_JS8_RT slot=1791516750 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.19 total_ms=7098 spectral=425 search=118 demod=6555 rows=186 deadline=0
+1791516778.462 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516785.437 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516788.038 DEV ORC_JS8_RT slot=1791516765 decodes=0 raw_frames=1 candidates=16 strong=1 best_sync=0.46 total_ms=6943 spectral=421 search=118 demod=6272 rows=186 deadline=0
+1791516788.039 DEV ORC_JS8_RT_FRAME hz=2260.94 dt_ms=20 sync_hits=16 sync=0.330 margin=0.403 initial_syndrome=44 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791516792.456 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516799.385 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516803.241 DEV ORC_JS8_RT slot=1791516780 decodes=1 raw_frames=2 candidates=16 strong=1 best_sync=0.81 total_ms=7141 spectral=423 search=116 demod=6413 rows=186 deadline=0
+1791516803.243 DEV ORC_JS8_RT_FRAME hz=575.00 dt_ms=20 sync_hits=21 sync=0.941 margin=0.936 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=VkNet-zphjqC text=K8IMT: N7EAL HEARTBEAT SNR -19
+1791516803.244 DEV ORC_JS8_RT_FRAME hz=525.00 dt_ms=20 sync_hits=14 sync=0.191 margin=0.347 initial_syndrome=35 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791516806.449 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516813.404 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516818.318 DEV ORC_JS8_RT slot=1791516795 decodes=0 raw_frames=1 candidates=16 strong=0 best_sync=0.30 total_ms=7214 spectral=417 search=116 demod=6551 rows=186 deadline=0
+1791516818.320 DEV ORC_JS8_RT_FRAME hz=821.88 dt_ms=-40 sync_hits=15 sync=0.278 margin=0.413 initial_syndrome=41 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791516820.447 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516827.371 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516828.679 DEV ORC_JS8_STATS slots=164 total_ms=7214 spectral_ms=417 search_ms=116 demod_ms=6551 rows=186 candidates=16 strong=0 raw_frames=1 best_sync=0.30 deadline=0 decodes=0
+1791516833.272 DEV ORC_JS8_RT slot=1791516810 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=7093 spectral=419 search=116 demod=6558 rows=186 deadline=0
+1791516834.449 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516841.392 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516848.220 DEV ORC_JS8_RT slot=1791516825 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=7087 spectral=423 search=115 demod=6549 rows=186 deadline=0
+1791516848.446 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516855.435 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516862.406 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516863.134 DEV ORC_JS8_RT slot=1791516840 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=6951 spectral=421 search=117 demod=6413 rows=186 deadline=0
+1791516869.427 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516876.430 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516878.187 DEV ORC_JS8_RT slot=1791516855 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.27 total_ms=7093 spectral=427 search=114 demod=6552 rows=186 deadline=0
+1791516883.419 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516888.777 DEV ORC_JS8_STATS slots=168 total_ms=7093 spectral_ms=427 search_ms=114 demod_ms=6552 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.27 deadline=0 decodes=0
+1791516890.402 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516893.091 DEV ORC_JS8_RT slot=1791516870 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.26 total_ms=6900 spectral=375 search=116 demod=6409 rows=186 deadline=0
+1791516897.426 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516904.419 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516908.233 DEV ORC_JS8_RT slot=1791516885 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=7078 spectral=423 search=114 demod=6541 rows=186 deadline=0
+1791516911.415 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516918.383 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516923.102 DEV ORC_JS8_RT slot=1791516900 decodes=2 raw_frames=3 candidates=16 strong=3 best_sync=0.96 total_ms=6964 spectral=374 search=115 demod=6206 rows=186 deadline=0
+1791516923.104 DEV ORC_JS8_RT_FRAME hz=925.00 dt_ms=60 sync_hits=21 sync=0.895 margin=0.842 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=VkNetnSlFhqH text=K8IMT: KN6OEH HEARTBEAT SNR -14
+1791516923.106 DEV ORC_JS8_RT_FRAME hz=520.31 dt_ms=80 sync_hits=18 sync=0.324 margin=0.294 initial_syndrome=39 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791516923.108 DEV ORC_JS8_RT_FRAME hz=2642.19 dt_ms=60 sync_hits=17 sync=0.335 margin=0.606 initial_syndrome=44 bp_iter=25 osd_order=0 corrections=6 final_syndrome=0 crc=ok kind=3 payload=SJUiJHSlFhqI text=KD7WPQ: KN6OEH HEARTBEAT SNR -13
+1791516925.416 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516932.397 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516938.255 DEV ORC_JS8_RT slot=1791516915 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=7088 spectral=425 search=116 demod=6547 rows=186 deadline=0
+1791516939.402 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516946.473 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516948.989 DEV ORC_JS8_STATS slots=172 total_ms=7088 spectral_ms=425 search_ms=116 demod_ms=6547 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.22 deadline=0 decodes=0
+1791516953.208 DEV ORC_JS8_RT slot=1791516930 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.26 total_ms=7091 spectral=421 search=115 demod=6555 rows=186 deadline=0
+1791516953.394 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516960.442 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516967.430 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791516968.264 DEV ORC_JS8_RT slot=1791516945 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7091 spectral=427 search=115 demod=6549 rows=186 deadline=0
+1791516974.448 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516981.385 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516983.086 DEV ORC_JS8_RT slot=1791516960 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=6961 spectral=423 search=115 demod=6423 rows=186 deadline=0
+1791516988.433 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791516995.409 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791516997.944 DEV ORC_JS8_RT slot=1791516975 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=6746 spectral=374 search=115 demod=6257 rows=186 deadline=0
+1791517002.422 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517009.182 DEV ORC_JS8_STATS slots=176 total_ms=6746 spectral_ms=374 search_ms=115 demod_ms=6257 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.22 deadline=0 decodes=0
+1791517009.420 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517013.059 DEV ORC_JS8_RT slot=1791516990 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=6906 spectral=373 search=116 demod=6417 rows=186 deadline=0
+1791517016.419 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517023.370 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517028.211 DEV ORC_JS8_RT slot=1791517005 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.28 total_ms=7093 spectral=419 search=117 demod=6557 rows=186 deadline=0
+1791517030.409 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517037.454 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517043.391 DEV ORC_JS8_RT slot=1791517020 decodes=0 raw_frames=1 candidates=16 strong=0 best_sync=0.34 total_ms=7217 spectral=426 search=117 demod=6546 rows=186 deadline=0
+1791517043.393 DEV ORC_JS8_RT_FRAME hz=721.88 dt_ms=-40 sync_hits=17 sync=0.318 margin=0.452 initial_syndrome=41 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791517044.411 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517051.480 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517058.241 DEV ORC_JS8_RT slot=1791517035 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7089 spectral=422 search=115 demod=6552 rows=186 deadline=0
+1791517058.420 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517065.470 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517069.327 DEV ORC_JS8_STATS slots=180 total_ms=7089 spectral_ms=422 search_ms=115 demod_ms=6552 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.20 deadline=0 decodes=0
+1791517072.382 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517073.045 DEV ORC_JS8_RT slot=1791517050 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=6904 spectral=380 search=115 demod=6409 rows=186 deadline=0
+1791517079.454 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517086.394 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517088.198 DEV ORC_JS8_RT slot=1791517065 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.27 total_ms=7090 spectral=418 search=112 demod=6560 rows=186 deadline=0
+1791517093.449 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517100.426 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517103.261 DEV ORC_JS8_RT slot=1791517080 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=7059 spectral=384 search=113 demod=6562 rows=186 deadline=0
+1791517107.402 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517114.389 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517118.207 DEV ORC_JS8_RT slot=1791517095 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7084 spectral=422 search=115 demod=6547 rows=186 deadline=0
+1791517121.450 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517128.472 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517129.519 DEV ORC_JS8_STATS slots=184 total_ms=7084 spectral_ms=422 search_ms=115 demod_ms=6547 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.20 deadline=0 decodes=0
+1791517133.266 DEV ORC_JS8_RT slot=1791517110 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=7094 spectral=421 search=116 demod=6557 rows=186 deadline=0
+1791517135.396 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517142.435 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517148.214 DEV ORC_JS8_RT slot=1791517125 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=7084 spectral=429 search=113 demod=6542 rows=186 deadline=0
+1791517149.391 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517156.465 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517163.122 DEV ORC_JS8_RT slot=1791517140 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.19 total_ms=6945 spectral=429 search=111 demod=6405 rows=186 deadline=0
+1791517163.387 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517170.435 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517177.419 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517178.182 DEV ORC_JS8_RT slot=1791517155 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=7097 spectral=425 search=115 demod=6557 rows=186 deadline=0
+1791517184.434 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517189.702 DEV ORC_JS8_STATS slots=188 total_ms=7097 spectral_ms=425 search_ms=115 demod_ms=6557 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.22 deadline=0 decodes=0
+1791517191.377 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517193.254 DEV ORC_JS8_RT slot=1791517170 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.28 total_ms=7113 spectral=421 search=118 demod=6574 rows=186 deadline=0
+1791517198.432 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517205.391 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517208.206 DEV ORC_JS8_RT slot=1791517185 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.18 total_ms=7090 spectral=421 search=116 demod=6553 rows=186 deadline=0
+1791517212.420 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517219.479 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517222.670 DEV ORC_JS8_RT slot=1791517200 decodes=2 raw_frames=3 candidates=16 strong=2 best_sync=0.97 total_ms=6501 spectral=420 search=115 demod=5724 rows=186 deadline=0
+1791517222.673 DEV ORC_JS8_RT_FRAME hz=775.00 dt_ms=60 sync_hits=21 sync=0.913 margin=0.924 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=VkNetnAdQ1qC text=K8IMT: KB5WVK HEARTBEAT SNR -19
+1791517222.675 DEV ORC_JS8_RT_FRAME hz=2643.75 dt_ms=60 sync_hits=21 sync=0.648 margin=0.751 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=SJUiJHAdQ1qG text=KD7WPQ: KB5WVK HEARTBEAT SNR -15
+1791517222.676 DEV ORC_JS8_RT_FRAME hz=659.38 dt_ms=1260 sync_hits=16 sync=0.294 margin=0.310 initial_syndrome=48 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791517226.405 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517233.425 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517238.211 DEV ORC_JS8_RT slot=1791517215 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=7078 spectral=420 search=118 demod=6540 rows=186 deadline=0
+1791517240.404 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517247.447 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517249.735 DEV ORC_JS8_STATS slots=192 total_ms=7078 spectral_ms=420 search_ms=118 demod_ms=6540 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.22 deadline=0 decodes=0
+1791517253.178 DEV ORC_JS8_RT slot=1791517230 decodes=1 raw_frames=1 candidates=16 strong=0 best_sync=0.39 total_ms=6964 spectral=378 search=117 demod=6410 rows=186 deadline=0
+1791517253.181 DEV ORC_JS8_RT_FRAME hz=570.31 dt_ms=180 sync_hits=14 sync=0.285 margin=0.630 initial_syndrome=19 bp_iter=2 osd_order=0 corrections=19 final_syndrome=0 crc=ok kind=3 payload=Uqw5eHAdQ1qK text=WB7TSQ: KB5WVK HEARTBEAT SNR -11
+1791517254.391 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517261.463 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517268.237 DEV ORC_JS8_RT slot=1791517245 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=7097 spectral=421 search=118 demod=6558 rows=186 deadline=0
+1791517268.394 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517275.443 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517282.377 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517283.120 DEV ORC_JS8_RT slot=1791517260 decodes=4 raw_frames=4 candidates=16 strong=4 best_sync=0.98 total_ms=6984 spectral=386 search=115 demod=6205 rows=186 deadline=0
+1791517283.122 DEV ORC_JS8_RT_FRAME hz=625.00 dt_ms=60 sync_hits=21 sync=0.963 margin=0.968 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=VkNetnEa0tqH text=K8IMT: KE2DMC HEARTBEAT SNR -14
+1791517283.124 DEV ORC_JS8_RT_FRAME hz=771.88 dt_ms=-80 sync_hits=20 sync=0.543 margin=0.507 initial_syndrome=44 bp_iter=25 osd_order=0 corrections=18 final_syndrome=0 crc=ok kind=3 payload=UrZz4HEa0tqN text=WD5EED: KE2DMC HEARTBEAT SNR -08
+1791517283.127 DEV ORC_JS8_RT_FRAME hz=518.75 dt_ms=140 sync_hits=17 sync=0.187 margin=0.411 initial_syndrome=22 bp_iter=2 osd_order=0 corrections=22 final_syndrome=0 crc=ok kind=3 payload=Uqw5eHEa0tqK text=WB7TSQ: KE2DMC HEARTBEAT SNR -11
+1791517283.129 DEV ORC_JS8_RT_FRAME hz=2642.19 dt_ms=100 sync_hits=16 sync=0.443 margin=0.627 initial_syndrome=30 bp_iter=25 osd_order=0 corrections=8 final_syndrome=0 crc=ok kind=3 payload=SJUiJHEa0tqK text=KD7WPQ: KE2DMC HEARTBEAT SNR -11
+1791517289.453 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517296.402 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517298.174 DEV ORC_JS8_RT slot=1791517275 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=7091 spectral=424 search=112 demod=6555 rows=186 deadline=0
+1791517303.390 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517309.936 DEV ORC_JS8_STATS slots=196 total_ms=7091 spectral_ms=424 search_ms=112 demod_ms=6555 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.24 deadline=0 decodes=0
+1791517310.435 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517313.220 DEV ORC_JS8_RT slot=1791517290 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=7082 spectral=422 search=116 demod=6544 rows=186 deadline=0
+1791517317.405 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517324.464 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517328.158 DEV ORC_JS8_RT slot=1791517305 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7075 spectral=417 search=115 demod=6543 rows=186 deadline=0
+1791517331.402 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517338.426 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517343.078 DEV ORC_JS8_RT slot=1791517320 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=6958 spectral=420 search=116 demod=6422 rows=186 deadline=0
+1791517345.404 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517352.457 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517358.223 DEV ORC_JS8_RT slot=1791517335 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7081 spectral=421 search=113 demod=6547 rows=186 deadline=0
+1791517359.416 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517364.895 HOST psk mid F:\AI\OrcSDR-TEMP\js8-soak\run1\psk_mid_1791517364.xml 1464559
+1791517366.422 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517369.975 DEV ORC_JS8_STATS slots=200 total_ms=7081 spectral_ms=421 search_ms=113 demod_ms=6547 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.21 deadline=0 decodes=0
+1791517373.047 DEV ORC_JS8_RT slot=1791517350 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=6962 spectral=428 search=115 demod=6419 rows=186 deadline=0
+1791517373.405 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517380.453 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517387.432 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517388.212 DEV ORC_JS8_RT slot=1791517365 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=7102 spectral=423 search=115 demod=6564 rows=186 deadline=0
+1791517394.393 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517401.458 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517403.268 DEV ORC_JS8_RT slot=1791517380 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.19 total_ms=7091 spectral=428 search=114 demod=6549 rows=186 deadline=0
+1791517408.393 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517415.420 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517418.073 DEV ORC_JS8_RT slot=1791517395 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=6945 spectral=422 search=117 demod=6406 rows=186 deadline=0
+1791517422.439 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517429.434 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517430.080 DEV ORC_JS8_STATS slots=204 total_ms=6945 spectral_ms=422 search_ms=117 demod_ms=6406 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.25 deadline=0 decodes=0
+1791517433.166 DEV ORC_JS8_RT slot=1791517410 decodes=1 raw_frames=1 candidates=16 strong=1 best_sync=0.47 total_ms=7029 spectral=425 search=109 demod=6422 rows=186 deadline=0
+1791517433.168 DEV ORC_JS8_RT_FRAME hz=823.44 dt_ms=-100 sync_hits=17 sync=0.351 margin=0.520 initial_syndrome=39 bp_iter=14 osd_order=0 corrections=11 final_syndrome=0 crc=ok kind=3 payload=UrZz4HL4oTqD text=WD5EED: KI5NIG HEARTBEAT SNR -18
+1791517436.379 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517443.460 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517448.076 DEV ORC_JS8_RT slot=1791517425 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=6950 spectral=426 search=112 demod=6412 rows=186 deadline=0
+1791517450.428 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517457.407 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517463.223 DEV ORC_JS8_RT slot=1791517440 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.19 total_ms=7038 spectral=366 search=117 demod=6555 rows=186 deadline=0
+1791517464.371 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517471.447 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517478.029 DEV ORC_JS8_RT slot=1791517455 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.30 total_ms=6947 spectral=422 search=115 demod=6410 rows=186 deadline=0
+1791517478.431 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517485.419 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517490.271 DEV ORC_JS8_STATS slots=208 total_ms=6947 spectral_ms=422 search_ms=115 demod_ms=6410 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.30 deadline=0 decodes=0
+1791517492.461 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517493.176 DEV ORC_JS8_RT slot=1791517470 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7086 spectral=424 search=113 demod=6549 rows=186 deadline=0
+1791517499.415 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517506.426 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517508.283 DEV ORC_JS8_RT slot=1791517485 decodes=1 raw_frames=1 candidates=16 strong=1 best_sync=0.73 total_ms=7148 spectral=424 search=111 demod=6556 rows=186 deadline=0
+1791517508.285 DEV ORC_JS8_RT_FRAME hz=2642.19 dt_ms=100 sync_hits=20 sync=0.785 margin=0.839 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=SJUiJVBIIZqF text=KD7WPQ: W6YJU HEARTBEAT SNR -16
+1791517513.422 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517520.450 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517523.361 DEV ORC_JS8_RT slot=1791517500 decodes=0 raw_frames=2 candidates=16 strong=0 best_sync=0.43 total_ms=7217 spectral=423 search=116 demod=6415 rows=186 deadline=0
+1791517523.362 DEV ORC_JS8_RT_FRAME hz=821.88 dt_ms=80 sync_hits=15 sync=0.147 margin=0.251 initial_syndrome=47 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791517523.364 DEV ORC_JS8_RT_FRAME hz=2371.88 dt_ms=-60 sync_hits=16 sync=0.201 margin=0.502 initial_syndrome=45 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791517527.426 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517534.428 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517538.138 DEV ORC_JS8_RT slot=1791517515 decodes=2 raw_frames=2 candidates=16 strong=1 best_sync=0.64 total_ms=7013 spectral=420 search=112 demod=6268 rows=186 deadline=0
+1791517538.139 DEV ORC_JS8_RT_FRAME hz=2642.19 dt_ms=40 sync_hits=17 sync=0.327 margin=0.441 initial_syndrome=40 bp_iter=25 osd_order=2 corrections=34 final_syndrome=0 crc=ok kind=3 payload=SJUiJRMFqHqC text=KD7WPQ: WD5EED HEARTBEAT SNR -19
+1791517538.141 DEV ORC_JS8_RT_FRAME hz=965.62 dt_ms=40 sync_hits=18 sync=0.356 margin=0.431 initial_syndrome=41 bp_iter=25 osd_order=0 corrections=17 final_syndrome=0 crc=ok kind=3 payload=Vot0ARMFqHqb text=W7YSB: WD5EED HEARTBEAT SNR +06
+1791517541.427 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517548.449 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517550.397 DEV ORC_JS8_STATS slots=212 total_ms=7013 spectral_ms=420 search_ms=112 demod_ms=6268 rows=186 candidates=16 strong=1 raw_frames=2 best_sync=0.64 deadline=0 decodes=2
+1791517553.041 DEV ORC_JS8_RT slot=1791517530 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=6888 spectral=368 search=115 demod=6405 rows=186 deadline=0
+1791517555.421 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517562.398 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517567.765 DEV ORC_JS8_RT slot=1791517545 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=6663 spectral=423 search=114 demod=6126 rows=186 deadline=0
+1791517569.457 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517576.408 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517583.209 DEV ORC_JS8_RT slot=1791517560 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7082 spectral=428 search=113 demod=6541 rows=186 deadline=0
+1791517583.461 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517590.393 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517597.425 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517598.259 DEV ORC_JS8_RT slot=1791517575 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7089 spectral=418 search=117 demod=6554 rows=186 deadline=0
+1791517604.386 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517610.441 DEV ORC_JS8_STATS slots=216 total_ms=7089 spectral_ms=418 search_ms=117 demod_ms=6554 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.21 deadline=0 decodes=0
+1791517611.450 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517613.220 DEV ORC_JS8_RT slot=1791517590 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=7058 spectral=382 search=115 demod=6561 rows=186 deadline=0
+1791517618.381 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517625.411 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517628.025 DEV ORC_JS8_RT slot=1791517605 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.19 total_ms=6945 spectral=417 search=116 demod=6412 rows=186 deadline=0
+1791517632.369 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517639.425 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517643.184 DEV ORC_JS8_RT slot=1791517620 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.28 total_ms=7096 spectral=422 search=113 demod=6561 rows=186 deadline=0
+1791517646.364 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517653.443 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517657.948 DEV ORC_JS8_RT slot=1791517635 decodes=1 raw_frames=1 candidates=16 strong=1 best_sync=0.96 total_ms=6802 spectral=423 search=117 demod=6206 rows=186 deadline=0
+1791517657.951 DEV ORC_JS8_RT_FRAME hz=2643.75 dt_ms=60 sync_hits=21 sync=0.885 margin=0.891 initial_syndrome=0 bp_iter=0 osd_order=0 corrections=0 final_syndrome=0 crc=ok kind=3 payload=SJUiJHWyL+qI text=KD7WPQ: KQ4ODY HEARTBEAT SNR -13
+1791517660.467 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517667.395 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517670.493 DEV ORC_JS8_STATS slots=220 total_ms=6802 spectral_ms=423 search_ms=117 demod_ms=6206 rows=186 candidates=16 strong=1 raw_frames=1 best_sync=0.96 deadline=0 decodes=1
+1791517673.201 DEV ORC_JS8_RT slot=1791517650 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7089 spectral=419 search=116 demod=6554 rows=186 deadline=0
+1791517674.472 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517681.417 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517688.249 DEV ORC_JS8_RT slot=1791517665 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=7087 spectral=424 search=116 demod=6547 rows=186 deadline=0
+1791517688.459 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517695.389 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517702.422 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517703.190 DEV ORC_JS8_RT slot=1791517680 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7081 spectral=421 search=111 demod=6549 rows=186 deadline=0
+1791517709.379 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517716.447 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517718.103 DEV ORC_JS8_RT slot=1791517695 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=6950 spectral=424 search=113 demod=6413 rows=186 deadline=0
+1791517723.372 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517730.406 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517730.719 DEV ORC_JS8_STATS slots=224 total_ms=6950 spectral_ms=424 search_ms=113 demod_ms=6413 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.25 deadline=0 decodes=0
+1791517733.251 DEV ORC_JS8_RT slot=1791517710 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=7085 spectral=419 search=116 demod=6550 rows=186 deadline=0
+1791517737.382 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517744.439 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517748.064 DEV ORC_JS8_RT slot=1791517725 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=6951 spectral=421 search=114 demod=6416 rows=186 deadline=0
+1791517751.432 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517758.393 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517763.065 DEV ORC_JS8_RT slot=1791517740 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.18 total_ms=6939 spectral=422 search=112 demod=6405 rows=186 deadline=0
+1791517765.425 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517772.415 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517778.071 DEV ORC_JS8_RT slot=1791517755 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.32 total_ms=6940 spectral=420 search=115 demod=6405 rows=186 deadline=0
+1791517779.434 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517786.445 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517790.800 DEV ORC_JS8_STATS slots=228 total_ms=6940 spectral_ms=420 search_ms=115 demod_ms=6405 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.32 deadline=0 decodes=0
+1791517793.218 DEV ORC_JS8_RT slot=1791517770 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.27 total_ms=7086 spectral=419 search=116 demod=6551 rows=186 deadline=0
+1791517793.435 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517800.422 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517807.468 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517808.027 DEV ORC_JS8_RT slot=1791517785 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.22 total_ms=6947 spectral=422 search=116 demod=6409 rows=186 deadline=0
+1791517814.418 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517821.425 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517823.188 DEV ORC_JS8_RT slot=1791517800 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.24 total_ms=7103 spectral=422 search=117 demod=6564 rows=186 deadline=0
+1791517828.414 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517835.438 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517837.947 DEV ORC_JS8_RT slot=1791517815 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=6746 spectral=367 search=115 demod=6264 rows=186 deadline=0
+1791517842.453 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517849.398 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517850.916 DEV ORC_JS8_STATS slots=232 total_ms=6746 spectral_ms=367 search_ms=115 demod_ms=6264 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.21 deadline=0 decodes=0
+1791517853.074 DEV ORC_JS8_RT slot=1791517830 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=6964 spectral=423 search=118 demod=6423 rows=186 deadline=0
+1791517856.466 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517863.426 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517868.228 DEV ORC_JS8_RT slot=1791517845 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.25 total_ms=7091 spectral=421 search=112 demod=6558 rows=186 deadline=0
+1791517870.466 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517877.385 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517883.173 DEV ORC_JS8_RT slot=1791517860 decodes=0 raw_frames=1 candidates=16 strong=1 best_sync=0.49 total_ms=7082 spectral=420 search=117 demod=6411 rows=186 deadline=0
+1791517883.175 DEV ORC_JS8_RT_FRAME hz=623.44 dt_ms=40 sync_hits=14 sync=0.268 margin=0.388 initial_syndrome=39 bp_iter=25 osd_order=0 corrections=0 final_syndrome=0 crc=fail
+1791517884.460 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517891.416 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517898.241 DEV ORC_JS8_RT slot=1791517875 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.21 total_ms=7105 spectral=425 search=115 demod=6565 rows=186 deadline=0
+1791517898.453 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517905.385 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517911.110 DEV ORC_JS8_STATS slots=236 total_ms=7105 spectral_ms=425 search_ms=115 demod_ms=6565 rows=186 candidates=16 strong=0 raw_frames=0 best_sync=0.21 deadline=0 decodes=0
+1791517912.435 DEV ORC_FT8_RT wf_row_ms_avg=4
+1791517913.056 DEV ORC_JS8_RT slot=1791517890 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.23 total_ms=6955 spectral=422 search=113 demod=6420 rows=186 deadline=0
+1791517919.384 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517926.443 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517928.219 DEV ORC_JS8_RT slot=1791517905 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.18 total_ms=7103 spectral=423 search=114 demod=6566 rows=186 deadline=0
+1791517933.440 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517940.406 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517942.871 DEV ORC_JS8_RT slot=1791517920 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.19 total_ms=6792 spectral=421 search=112 demod=6259 rows=186 deadline=0
+1791517947.421 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517954.418 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517958.073 DEV ORC_JS8_RT slot=1791517935 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.17 total_ms=6938 spectral=421 search=113 demod=6404 rows=186 deadline=0
+1791517961.471 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517964.522 HOST psk end F:\AI\OrcSDR-TEMP\js8-soak\run1\psk_end_1791517964.xml 1461658
+1791517969.648 DEV ORC_JS8_STATUS mode=JS8 NORMAL active=1 attached=1 submode=NORMAL supported=NORMAL slot_ms=15000 band=40m dial_hz=7078000 slots=240 decodes=0 state=5 clock=1
+1791517969.648 DEV ORC_FT8_UI body tab=1 in_place=1
+1791517969.648 DEV ORC_FT8_RT wf_row_ms_avg=2
+1791517979.689 DEV ORC_JS8_ERROR STOP auth_required
+1791517979.689 DEV ORC_JS8_RT slot=1791517950 decodes=0 raw_frames=0 candidates=16 strong=0 best_sync=0.20 total_ms=7094 spectral=419 search=115 demod=6560 rows=186 deadline=0
+1791517979.689 DEV ORC_FT8_UI body tab=1 in_place=1
+1791517979.689 DEV ORC_FT8_RT wf_row_ms_avg=3
+1791517979.690 HOST stopped (receiver returned to FT8 mode)

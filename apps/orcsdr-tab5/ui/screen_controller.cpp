@@ -65,6 +65,7 @@ const char* name(Id id) {
     case Id::documentation: return "documentation";
     case Id::cb: return "cb";
     case Id::airband: return "airband";
+    case Id::ft8: return "ft8";
     default: return "none";
   }
 }
@@ -81,7 +82,7 @@ bool self_check() {
   uint32_t now = 20;
   for (const Id screen :
        {Id::home, Id::fm, Id::am, Id::shortwave, Id::cb, Id::airband, Id::p25, Id::adsb, Id::lora,
-        Id::wifi_analysis, Id::pocsag}) {
+        Id::wifi_analysis, Id::pocsag, Id::ft8}) {
     begin_transition(screen, now++, false);
     finish_transition();
     begin_transition(Id::settings, now++, true);
