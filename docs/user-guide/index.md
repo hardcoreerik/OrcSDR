@@ -11,3 +11,5 @@ The labels used throughout the guide are deliberate:
 - **Deferred** — planned work that is not present in this release.
 
 Start with [Getting started](getting-started.md), then use the searchable [screen catalog](reference/screen-catalog.md) for a control-by-control view.
+
+For digital reception, see [FT8 reception](dashboards/ft8.md).

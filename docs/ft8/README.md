@@ -6,6 +6,8 @@ The original design notes below are retained. Current JS8 frame coverage and evi
 
 FT8 support is receive-only for the initial OrcSDR implementation. The feature is designed as an offline-first, touch-first FT8 receiver for the M5Stack Tab5 and RTL-SDR-class hardware. It must not imply a decode, station identity, location, or protocol classification that the receiver did not actually establish.
 
+For setup and the dated four-receiver reception check, see the [FT8 user guide](../user-guide/dashboards/ft8.md).
+
 ## Product goals
 
 - One-touch FT8 reception for users who do not already know amateur-radio operating conventions.

@@ -14,8 +14,8 @@ commit `31a159df4f006a837d5041029bc6d1bc63520234`. The same SHA is recorded in
 | RTL-SDR Blog V4 | RF-Verified tested baseline. |
 | RTL-SDR Blog V3C | RF-Verified/Experimental on one RC4 unit for detection, startup, streaming, FM/RDS, retune, hotplug, and USB/battery boot; gain and sensitivity remain provisional. |
 | Earlier Blog V3 variants | Implemented/Experimental; V3C evidence does not establish broad compatibility. |
-| Nooelec NESDR SMArt V5 | RF-Verified/tested at 24 MHz and above (v0.3.0-beta.2 band-select and replug tests, run on development images built from the driver commits that became v0.9.3); no HF route below 24 MHz. |
-| Blog V4L | Not Verified; no explicit acceptance evidence. |
+| Nooelec NESDR SMArt V5 | RF-Verified/tested at 24 MHz and above (v0.3.0-beta.2 band-select and replug tests, run on development images built from the driver commits that became v0.9.3); owner also accepted 7.074 MHz FT8 reception on 2026-10-09 with an externally powered MLA-30+; see [FT8 evidence](user-guide/dashboards/ft8.md). |
+| Blog V4L | Owner accepted 40 m FT8 reception on 2026-10-09; bounded setup and evidence in the [FT8 guide](user-guide/dashboards/ft8.md). |
 | Other receivers | Unsupported/Not Verified unless a named profile and evidence are added. |
 
 OrcSDR deliberately selects callback delivery, three 32-KiB USB transfers, and
