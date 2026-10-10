@@ -19489,17 +19489,19 @@ void process_command(char* command) {
       required |= ESP_RTL_SDR_CAP_HF_UPCONVERTER | ESP_RTL_SDR_CAP_GAIN |
                   ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC |
                   ESP_RTL_SDR_CAP_BIAS_TEE;
-    else if (profile == ESP_RTL_SDR_PROFILE_BLOG_V3)
+    else if (profile == ESP_RTL_SDR_PROFILE_BLOG_V3 ||
+             profile == ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5)
       required |= ESP_RTL_SDR_CAP_DIRECT_SAMPLING | ESP_RTL_SDR_CAP_GAIN |
                   ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC;
     else if (profile == ESP_RTL_SDR_PROFILE_BLOG_V4L)
       required |= ESP_RTL_SDR_CAP_HF_UPCONVERTER | ESP_RTL_SDR_CAP_GAIN |
                   ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC;
     const uint32_t caps = rtl_device_capabilities();
-    const bool pass = g_rtl != nullptr && ESP_RTL_SDR_VERSION_NUMBER >= 800 &&
+    const bool pass = g_rtl != nullptr &&
                       (profile == ESP_RTL_SDR_PROFILE_BLOG_V4 ||
                        profile == ESP_RTL_SDR_PROFILE_BLOG_V4L ||
-                       profile == ESP_RTL_SDR_PROFILE_BLOG_V3) &&
+                       profile == ESP_RTL_SDR_PROFILE_BLOG_V3 ||
+                       profile == ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5) &&
                       (caps & required) == required;
     Serial.printf("RTL_DRIVER_SELF_CHECK pass=%d version=%s profile=%u "
                   "device_caps=0x%08x required=0x%08x\n",

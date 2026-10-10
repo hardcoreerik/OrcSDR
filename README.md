@@ -109,7 +109,7 @@ The ADS-B dashboard receives Mode-S and ADS-B broadcasts on 1090 MHz and divides
 | --- | --- | --- |
 | RTL-SDR Blog V4 | Tested baseline | Full OrcSDR receiver path, including the V4 HF upconverter and supported controls. |
 | RTL-SDR Blog V3 | Experimental | Provisional operation at 24 MHz and above. Hardware reports and serial logs are welcome. |
-| Nooelec NESDR SMArt V5 | Tested | Tested at the same level as the Blog V3c, V4 and V4L (v0.3.0-beta.2 testing on development images built from the driver commits that became esp_rtl_sdr v0.9.3: 453.925 MHz about 46 dB over noise with FM unchanged, five unplug/replug cycles). 24 MHz and above only; no HF/AM below 24 MHz (no direct sampling or upconverter route, and external upconverters such as the Ham It Up are not supported yet). |
+| Nooelec NESDR SMArt V5 | Tested | Tested at the same level as the Blog V3c, V4 and V4L (v0.3.0-beta.2 testing on development images built from the driver commits that became esp_rtl_sdr v0.9.3: 453.925 MHz about 46 dB over noise with FM unchanged, five unplug/replug cycles). The earlier check covered 24 MHz and above. On 2026-10-09 the owner also accepted 7.074 MHz FT8 reception using an externally powered MLA-30+; see the [FT8 reception record](docs/user-guide/dashboards/ft8.md). This is not general HF/AM or external-upconverter acceptance. |
 
 Antenna choice affects what can be received. Useful test reports include the receiver model, frequency and band, antenna, gain setting, OrcSDR version, observed behavior, and a serial log when available.
 

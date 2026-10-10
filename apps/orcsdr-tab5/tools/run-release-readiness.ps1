@@ -154,7 +154,7 @@ Invoke-ReleaseStep 'Tab5 serial/UI smoke' $pwsh @(
 ) (Join-Path $ReportDirectory 'tab5-ui-smoke.log')
 Invoke-ReleaseStep 'RTL-SDR driver regression' $pwsh @(
   '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $uiScript,
-  '-Port', $Port, '-PairingKeyPath', $PairingKeyPath, '-Driver080Rc2'
+  '-Port', $Port, '-PairingKeyPath', $PairingKeyPath, '-DriverRegression'
 ) (Join-Path $ReportDirectory 'rtl-sdr-driver.log')
 
 $reportPath = Join-Path $ReportDirectory 'release-readiness.md'
