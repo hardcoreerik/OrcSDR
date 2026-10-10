@@ -1,6 +1,6 @@
 # FT8 reception
 
-FT8 is a receive-only digital mode: the waterfall shows signal activity and the decoder turns valid messages into rows. A bright line is signal energy; it is not itself a successful decode.
+OrcSDR’s FT8 implementation is receive-only: the waterfall shows signal activity and the decoder turns valid messages into rows. A bright line is signal energy; it is not itself a successful decode.
 
 ## Listen on an active band
 

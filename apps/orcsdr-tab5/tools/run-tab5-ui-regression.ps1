@@ -2057,8 +2057,15 @@ function Invoke-DriverRegressionTest {
         Restore-DriverRequest "RTL_DRIVER BIAS $(if ($initial.Bias) { 'ON' } else { 'OFF' })"
       }
       Restore-DriverRequest "RTL_DRIVER TUNE $($initial.Frequency)"
-      Start-Sleep -Milliseconds 500
-      $restored = Get-DriverStatus
+      $restoreDeadline = [DateTime]::UtcNow.AddSeconds(10)
+      do {
+        Start-Sleep -Milliseconds 250
+        $restored = Get-DriverStatus
+        if ($restored.State -eq 'STREAMING' -and $restored.EffectiveSps -gt 0 -and
+            $restored.Frequency -eq $initial.Frequency -and $restored.FrequencyOk -eq 1 -and
+            $restored.Bytes -gt $script:last.Bytes -and
+            (!$initial.GainAutoCap -or $restored.Mode -eq $initial.Mode)) { break }
+      } while ([DateTime]::UtcNow -lt $restoreDeadline)
       Assert-DriverRegressionContinuity $restored $script:last 'restoration'
       if ($restored.Frequency -ne $initial.Frequency -or
           ($initial.GainCap -and $restored.Gain -ne $initial.Gain) -or

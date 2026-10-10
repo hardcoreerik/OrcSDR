@@ -55,7 +55,9 @@ foreach ($profile in 1..4) {
 $release = Get-Content (Join-Path $repo 'apps/orcsdr-tab5/tools/run-release-readiness.ps1') -Raw
 if ($release -notmatch "'-DriverRegression'") { throw 'Release runner does not call the generic driver gate.' }
 $gate = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-DriverRegressionTest' }, $true).Extent.Text
-if ($gate.IndexOf("Send-And-Wait 'RTL_DRIVER SELF_CHECK'") -lt $gate.IndexOf('Driver test requires active IQ streaming')) {
+$selfCheckIndex = $gate.IndexOf("Send-And-Wait 'RTL_DRIVER SELF_CHECK'")
+$streamGuardIndex = $gate.IndexOf('Driver test requires active IQ streaming')
+if ($selfCheckIndex -lt 0 -or $streamGuardIndex -lt 0 -or $selfCheckIndex -lt $streamGuardIndex) {
   throw 'Driver self-check runs before USB streaming is ready.'
 }
 # Exercise the actual gate with deterministic API responses, including restoration rejection.
@@ -66,7 +68,13 @@ function Start-Sleep {}
 function Write-SoakLine([string]$Line) { $script:gateLines.Add($Line) }
 function Get-DriverStatus {
   $script:mockStatus.Bytes += 1000
-  return $script:mockStatus.PSObject.Copy()
+  $result = $script:mockStatus.PSObject.Copy()
+  if ($script:restorePending -gt 0) {
+    $script:restorePending--
+    $result.State = 'STARTING'
+    $result.EffectiveSps = 0
+  }
+  return $result
 }
 function Send-And-Wait([string]$Command, [string]$Pattern) {
   if ($Command -eq 'RTL_DRIVER SELF_CHECK') {
@@ -77,6 +85,7 @@ function Send-And-Wait([string]$Command, [string]$Pattern) {
     if ($script:rejectRestore -and $frequency -eq 94497000) {
       return 'RTL_DRIVER_RESULT accepted=0 result=ESP_RTL_SDR_ERR_NOT_STREAMING'
     }
+    if ($frequency -eq 94497000) { $script:restorePending = 3 }
     $script:mockStatus.Frequency = $frequency
     $script:mockStatus.Route = if ($frequency -lt 24000000) { 'DIRECT_Q' } elseif ($frequency -lt 28800000) { 'HF_UPCONVERTER' } else { 'TUNER' }
   } elseif ($Command -match '^RTL_DRIVER GAINMODE (\S+)$') {
@@ -91,8 +100,9 @@ function Send-And-Wait([string]$Command, [string]$Pattern) {
 $TestBiasTee = $false
 foreach ($reject in @($false, $true)) {
   $script:rejectRestore = $reject
+  $script:restorePending = 0
   $script:gateLines = [Collections.Generic.List[string]]::new()
-  $script:mockStatus = ConvertFrom-DriverStatus 'RTL_DRIVER_STATUS installed=1 version=9.9.9-test state=STREAMING profile=1 profile_name="test" provisional=0 device_caps=0x001fff7f library_caps=0x001fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=1 gain_cap=1 bias_cap=1 mode=MANUAL gain_tenth_db=14 rtl_agc=0 bias=0 bytes=1000 blocks=1 effective_sps=2400000 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=94497000 frequency_ok=1 route=TUNER'
+  $script:mockStatus = ConvertFrom-DriverStatus 'RTL_DRIVER_STATUS installed=1 version=9.9.9-test state=STREAMING profile=1 profile_name="test" provisional=0 device_caps=0x001fff7f library_caps=0x001fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=1 gain_cap=1 bias_cap=1 mode=MANUAL gain_tenth_db=14 rtl_agc=1 bias=0 bytes=1000 blocks=1 effective_sps=2400000 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=94497000 frequency_ok=1 route=TUNER'
   $failed = $false
   try { Invoke-DriverRegressionTest } catch {
     if (!$reject -or $_.Exception.Message -notmatch 'restoration rejected') { throw }
@@ -100,6 +110,6 @@ foreach ($reject in @($false, $true)) {
   }
   $passed = @($script:gateLines | Where-Object { $_ -match '^RTL_DRIVER_REGRESSION_RESULT pass=1' }).Count -eq 1
   if ($reject -and (!$failed -or $passed)) { throw 'Rejected restoration still passes the gate.' }
-  if (!$reject -and (!$passed -or $script:mockStatus.Frequency -ne 94497000 -or $script:mockStatus.Gain -ne 14 -or $script:mockStatus.Mode -ne 'MANUAL')) { throw 'Successful gate did not restore settings.' }
+  if (!$reject -and (!$passed -or $script:mockStatus.Frequency -ne 94497000 -or $script:mockStatus.Gain -ne 14 -or $script:mockStatus.Mode -ne 'MANUAL' -or $script:mockStatus.RtlAgc -ne 1)) { throw 'Successful gate did not restore settings.' }
 }
 Write-Host 'test-driver-regression-runner: PASS'
