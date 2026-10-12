@@ -7,6 +7,7 @@ on:
       - "apps/orcsdr-tab5/ui/sstv_receiver.*"
       - "apps/orcsdr-tab5/ui/sstv_modes.cpp"
       - "apps/orcsdr-tab5/tests/sstv_receiver_smoke.cpp"
+      - "apps/orcsdr-tab5/tests/sstv_wav_replay.cpp"
       - ".github/workflows/sstv-receiver-tests.yml"
   pull_request:
     paths:
@@ -24,5 +25,11 @@ jobs:
             apps/orcsdr-tab5/tests/sstv_receiver_smoke.cpp \
             apps/orcsdr-tab5/ui/sstv_receiver.cpp \
             apps/orcsdr-tab5/ui/sstv_modes.cpp -o /tmp/sstv-smoke
-      - name: Synthesize and decode Robot36
+      - name: Build recorded-WAV replay tool
+        run: |
+          g++ -std=c++17 -O2 -Wall -Wextra -Iapps/orcsdr-tab5/ui \
+            apps/orcsdr-tab5/tests/sstv_wav_replay.cpp \
+            apps/orcsdr-tab5/ui/sstv_receiver.cpp \
+            apps/orcsdr-tab5/ui/sstv_modes.cpp -o /tmp/sstv-wav-replay
+      - name: Synthetic Robot36 and progressive PD120 reception
         run: /tmp/sstv-smoke
