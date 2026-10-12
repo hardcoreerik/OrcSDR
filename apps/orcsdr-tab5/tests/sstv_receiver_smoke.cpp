@@ -76,9 +76,10 @@ int main() {
   tone(1900,50); // drain a possibly delayed stop-bit edge and final scan line
   flush();
   const auto stats = metrics();
-  std::fprintf(stderr,"SSTV debug VIS_OK=%lu VIS_ERR=%lu frames=%lu row=%u status=%s\\n",
+  std::fprintf(stderr,"SSTV debug VIS_OK=%lu VIS_ERR=%lu frames=%lu row=%u phase=%u phase_n=%lu samples=%lu tone=%f peak=%f status=%s\\n",
       (unsigned long)stats.good_vis, (unsigned long)stats.bad_vis,
-      (unsigned long)stats.frames, (unsigned)stats.row, stats.status);
+      (unsigned long)stats.frames, (unsigned)stats.row, (unsigned)stats.vis_phase,
+      (unsigned long)stats.vis_phase_samples,(unsigned long)stats.samples,stats.tone_hz,stats.audio_peak,stats.status);
   require(stats.good_vis>=1,"recognized Robot36 VIS");
   require(archive_count()==1,"completed Robot36 frame");
   const auto image=archived_image(0);
