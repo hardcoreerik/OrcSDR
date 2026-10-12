@@ -11,7 +11,7 @@ constexpr Profile kProfiles[] = {
     {"HF SSTV", 14230000, true, "14.230 MHz USB - general amateur SSTV"},
     {"ISS SSTV", 145800000, false, "ISS event only - verify current ARISS plan"},
     {"OREGON NET", 145290000, false, "Salem-area SSTV repeater - confirm active net"},
-    {"VHF SSTV", 144500000, false, "Experimental / manually verify local activity"}};
+    {"ISS UHF", 437550000, false, "ARISS UHF SSTV when scheduled - verify before reception"}};
 const char* mode_name(Mode mode);
 struct Metrics {
   float tone_hz = 0;
