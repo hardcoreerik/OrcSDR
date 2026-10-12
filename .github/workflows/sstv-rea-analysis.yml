@@ -4,7 +4,9 @@ name: SSTV REA binary investigation
 on:
   push:
     branches: [codex/sstv-native-dashboard]
-    paths: [".github/workflows/sstv-rea-analysis.yml"]
+    paths:
+      - ".github/workflows/sstv-rea-analysis.yml"
+      - "tools/sstv_rea_workbench.py"
   workflow_dispatch:
 permissions:
   contents: read
@@ -49,7 +51,7 @@ jobs:
         run: python3 tools/sstv_rea_workbench.py build --out "$RUNNER_TEMP/sstv-rea-evidence"
       - name: Check provider readiness and retain doctor report
         run: python3 tools/sstv_rea_workbench.py doctor --out "$RUNNER_TEMP/sstv-rea-evidence"
-      - name: REA/Ghidra native binary analysis
+      - name: REA/Ghidra overview and SSTV function dossiers
         run: python3 tools/sstv_rea_workbench.py inspect --out "$RUNNER_TEMP/sstv-rea-evidence"
       - name: Preserve complete evidence and diagnostic logs
         if: always()
