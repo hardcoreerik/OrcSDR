@@ -24,6 +24,7 @@ enum class Id : uint8_t {
   pocsag,
   am,
   ft8,
+  sstv,
   count,
 };
 
