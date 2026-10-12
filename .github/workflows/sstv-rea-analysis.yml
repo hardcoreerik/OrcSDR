@@ -1,0 +1,63 @@
+name: SSTV REA binary investigation
+# REA/Ghidra is a *host-side* analysis tool. Never installed on the Tab5.
+# Trigger only when this workflow changes or through manual dispatch.
+on:
+  push:
+    branches: [codex/sstv-native-dashboard]
+    paths: [".github/workflows/sstv-rea-analysis.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sstv-rea-lab-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Use REA-supported Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.11.1"
+      - name: Install pinned native prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openjdk-21-jdk-headless unzip
+          echo "JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64" >> "$GITHUB_ENV"
+      - name: Download official SHA256-verified Ghidra 12.1.4
+        env:
+          GHIDRA_ARCHIVE: "ghidra_12.1.4_PUBLIC_20260921.zip"
+          GHIDRA_SHA256: "ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db"
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --retry-delay 3 \
+            "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/$GHIDRA_ARCHIVE" \
+            -o "$RUNNER_TEMP/$GHIDRA_ARCHIVE"
+          echo "$GHIDRA_SHA256  $RUNNER_TEMP/$GHIDRA_ARCHIVE" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/$GHIDRA_ARCHIVE" -d "$RUNNER_TEMP"
+          echo "GHIDRA_INSTALL_DIR=$RUNNER_TEMP/ghidra_12.1.4_PUBLIC" >> "$GITHUB_ENV"
+      - name: Install pinned REA CLI
+        run: |
+          npm install --global rea-agents@6.4.0
+          node --version
+          rea --version
+      - name: Compile current OrcSDR native SSTV investigation binary
+        run: python3 tools/sstv_rea_workbench.py build --out "$RUNNER_TEMP/sstv-rea-evidence"
+      - name: Check provider readiness and retain doctor report
+        run: python3 tools/sstv_rea_workbench.py doctor --out "$RUNNER_TEMP/sstv-rea-evidence"
+      - name: REA/Ghidra native binary analysis
+        run: python3 tools/sstv_rea_workbench.py inspect --out "$RUNNER_TEMP/sstv-rea-evidence"
+      - name: Preserve complete evidence and diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sstv-rea-ghidra-evidence
+          path: ${{ runner.temp }}/sstv-rea-evidence/
+          retention-days: 14
+      - name: Summary
+        if: success()
+        run: echo "REA/Ghidra analyzed the branch's compiled native SSTV decoder. Review saved evidence and reproduce any findings with WAV fixture tests." >> "$GITHUB_STEP_SUMMARY"
