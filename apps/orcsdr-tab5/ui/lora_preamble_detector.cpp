@@ -119,7 +119,10 @@ void evaluate(Result* out) {
     ++g.fires;
     out->fired = true;
   }
-  if (ratio > kActivityRatio) g.quiet_samples = 0;
+  // quiet_samples marks the end of a packet. Once a preamble is confirmed, a window that
+  // still clears the detection ratio counts as activity, so a weak packet whose windows sit
+  // between the two ratios is not reported as already over.
+  if (ratio > kActivityRatio || (g.latched && strong)) g.quiet_samples = 0;
 
   const uint32_t elapsed = static_cast<uint32_t>(esp_timer_get_time() - started);
   if (elapsed > g.max_window_us) g.max_window_us = elapsed;

@@ -68,7 +68,11 @@ bool handle_detector(const char* command, bool authenticated, const Hooks& hooks
   }
   if (strcmp(command, "RTL_LORA_DETECTOR RELEARN") == 0) {
     if (denied(hooks, authenticated, "RTL_LORA_DETECTOR")) return true;
-    if (hooks.request_relearn != nullptr) hooks.request_relearn();
+    if (hooks.request_relearn == nullptr) {
+      emit(hooks, "RTL_LORA_DETECTOR_ERROR relearn=unavailable");
+      return true;
+    }
+    hooks.request_relearn();
     emit(hooks, "RTL_LORA_DETECTOR_OK relearn=queued");
     return true;
   }
@@ -81,7 +85,11 @@ bool handle_detector(const char* command, bool authenticated, const Hooks& hooks
       emit(hooks, "RTL_LORA_DETECTOR_ERROR usage=RTL_LORA_DETECTOR MODE PREAMBLE|ENERGY");
       return true;
     }
-    if (hooks.set_preamble_mode != nullptr) hooks.set_preamble_mode(preamble);
+    if (hooks.set_preamble_mode == nullptr) {
+      emit(hooks, "RTL_LORA_DETECTOR_ERROR mode=unavailable");
+      return true;
+    }
+    hooks.set_preamble_mode(preamble);
     emit(hooks, "RTL_LORA_DETECTOR_OK mode=%s", preamble ? "preamble" : "energy");
     return true;
   }
@@ -106,7 +114,7 @@ bool handle_decoder(const char* command, bool authenticated, const Hooks& hooks)
   }
   unsigned padding = 0;
   if (sscanf(args, "SEARCH_PAD %u", &padding) != 1 || (padding != 1 && padding != 4)) {
-    emit(hooks, "RTL_LORA_DECODER_ERROR usage=RTL_LORA_DECODER STATUS|SEARCH_PAD <1|4>");
+    emit(hooks, "RTL_LORA_DECODER_ERROR usage=RTL_LORA_DECODER STATUS|SEARCH_PAD <1|4>|TIMING_BIAS <n>");
     return true;
   }
   lora_native::set_search_padding(padding);
@@ -120,7 +128,11 @@ bool handle_stats(const char* command, bool authenticated, const Hooks& hooks) {
   if (!reset && strcmp(command, "RTL_LORA_STATS") != 0) return false;
   if (reset) {
     if (denied(hooks, authenticated, "RTL_LORA_STATS")) return true;
-    if (hooks.reset_counters != nullptr) hooks.reset_counters();
+    if (hooks.reset_counters == nullptr) {
+      emit(hooks, "RTL_LORA_STATS_ERROR reset=unavailable");
+      return true;
+    }
+    hooks.reset_counters();
     emit(hooks, "RTL_LORA_STATS_OK reset=1");
     return true;
   }
@@ -152,7 +164,7 @@ bool handle_plan(const char* command, bool authenticated, const Hooks& hooks) {
       region_index = static_cast<int>(numeric - 1);
   }
   ChannelSelection chosen{};
-  if (region_index < 0 || hooks.select_channel == nullptr ||
+  if (region_index < 0 || slot > 0xFFFFu || hooks.select_channel == nullptr ||
       !hooks.select_channel(static_cast<size_t>(region_index), static_cast<uint16_t>(slot),
                             &chosen)) {
     emit(hooks, "RTL_LORA_PLAN_ERROR usage=RTL_LORA_PLAN SET <region code|index> [slot]");

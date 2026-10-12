@@ -24,6 +24,7 @@ struct State {
   int ceiling_index = -1;      // lowest index known to clip, avoided until it expires
   uint32_t ceiling_set_ms = 0;
   bool probing = false;
+  bool owns_gain = false;      // the guard wrote a manual step and the tuner AGC is not restored yet
   uint32_t probe_started_ms = 0;
   uint32_t reductions = 0;
   uint32_t probes = 0;
@@ -94,22 +95,33 @@ Status status() {
 
 void note_user_gain_change() {
   g.user_override = true;
+  g.owns_gain = false;  // the user chose this gain; never restore over it
   go_watching();
 }
 
 void release(const Hooks& hooks) {
-  const bool owned = g.index >= 0;
+  // owns_gain outlives go_watching(): a receiver stop clears the ladder cursor but the
+  // dongle keeps the manual step until the tuner AGC is restored.
+  const bool owned = g.index >= 0 || g.owns_gain;
   go_watching();
   g.user_override = false;
   g.ceiling_index = -1;
+  g.owns_gain = false;
   if (owned && hooks.set_tuner_auto != nullptr) hooks.set_tuner_auto();
 }
 
 void tick(uint32_t now_ms, const Hooks& hooks) {
-  if (hooks.lora_receiving == nullptr || hooks.clipping_percent == nullptr) return;
+  if (hooks.lora_receiving == nullptr || hooks.clipping_percent == nullptr ||
+      hooks.set_manual_gain == nullptr)
+    return;
   const bool receiving = hooks.lora_receiving();
-  if (!receiving) g.receiving_since_ms = 0;
-  else if (g.receiving_since_ms == 0) g.receiving_since_ms = now_ms == 0 ? 1 : now_ms;
+  if (!receiving) {
+    g.receiving_since_ms = 0;
+  } else if (g.receiving_since_ms == 0) {
+    g.receiving_since_ms = now_ms == 0 ? 1 : now_ms;
+    // Streaming restarted while a manual step from before the stop may still be set.
+    if (g.owns_gain) release(hooks);
+  }
   if (!g.config.enabled || g.user_override || !receiving) {
     if (g.phase != Phase::watching && !g.user_override) go_watching();
     return;
@@ -135,6 +147,7 @@ void tick(uint32_t now_ms, const Hooks& hooks) {
     if (g.ceiling_index >= 0 && g.index >= g.ceiling_index) g.index = g.ceiling_index - 1;
     if (g.index < 0) g.index = 0;
     if (!hooks.set_manual_gain(g.ladder[g.index])) { g.index = -1; return; }
+    g.owns_gain = true;
     g.phase = Phase::reducing;
     g.last_step_ms = now_ms;
     say(hooks, "RTL_LORA_GAIN_GUARD engage gain_tenth_db=%d clipping_percent=%.2f", g.ladder[g.index],
