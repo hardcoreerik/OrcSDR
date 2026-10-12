@@ -108,6 +108,10 @@ int main() {
   }
   tone(1900,45);
   flush();
+  std::fprintf(stderr,"PD120 line sync: locked=%lu missed=%lu\\n",
+      static_cast<unsigned long>(metrics().sync_locked_lines),
+      static_cast<unsigned long>(metrics().sync_missed_lines));
+  require(metrics().sync_locked_lines>=220,"PD120 sync locked on nearly all lines");
   require(archive_count()==2,"Robot36 and PD120 archived");
   require(archived_image(0).mode==Mode::pd120 &&
           archived_image(0).decoded_rows==496,
