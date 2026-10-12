@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <sys/stat.h>
 #ifdef ESP_PLATFORM
 #include <esp_heap_caps.h>
@@ -390,7 +391,9 @@ bool save_bmp(size_t index, char* out, size_t len) {
     }
     for (uint32_t pad=image.width*3; pad < stride; ++pad) std::fputc(0, f);
   }
-  const bool ok = !std::ferror(f) && std::fclose(f) == 0;
+  const bool written = !std::ferror(f);
+  const bool closed = std::fclose(f) == 0;
+  const bool ok = written && closed;
   if (!ok) { std::remove(out); out[0] = 0; }
   return ok;
 }
