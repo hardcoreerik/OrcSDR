@@ -2962,8 +2962,10 @@ HomeDemod band_demod(RtlBand band) {
 
 // Home's choice applies only while Home is on screen; the dashboards keep their own demodulators.
 HomeDemod effective_demod(RtlBand band) {
-  if (orcsdr::sstv::active() && orcsdr::screens::owns(orcsdr::screens::Id::sstv))
-    return g_sstv_frequency_hz < 30000000u ? HomeDemod::usb : HomeDemod::nfm;
+  // Receiver DSP never reads screen ownership or UI-only frequency state.
+  if (orcsdr::sstv::active() &&
+      (band == RtlBand::shortwave || band == RtlBand::browse))
+    return band == RtlBand::shortwave ? HomeDemod::usb : HomeDemod::nfm;
   const auto chosen = static_cast<HomeDemod>(rtl_home_demod.load(std::memory_order_relaxed));
   return chosen != HomeDemod::by_band && home_demod_band(band) && orcsdr::home::active() ? chosen
                                                                                        : band_demod(band);
@@ -13523,7 +13525,8 @@ void handle_sstv_dashboard_action(const orcsdr::sstv::Action& action) {
       if (!orcsdr::storage::mounted()) (void)orcsdr::storage::mount_tab5_sd();
       char path[128]{};
       if (orcsdr::storage::mounted() &&
-          orcsdr::sstv::save_bmp(static_cast<size_t>(action.value), path, sizeof(path)))
+          orcsdr::sstv::save_bmp(static_cast<size_t>(action.value), path, sizeof(path),
+            orcsdr::time_service::now().wallclock_valid ? orcsdr::time_service::now().utc : 0u))
         orcsdr::sstv::ui_notice(path);
       else orcsdr::sstv::ui_notice("SAVE FAILED / INSERT SD CARD");
       break;
@@ -21428,7 +21431,8 @@ void loop() {
     if (g_sstv_autosave && newest.serial != 0 &&
         newest.serial != g_sstv_last_saved_serial && orcsdr::storage::mounted()) {
       char path[128]{};
-      if (orcsdr::sstv::save_bmp(0, path, sizeof(path)))
+      if (orcsdr::sstv::save_bmp(0, path, sizeof(path),
+            orcsdr::time_service::now().wallclock_valid ? orcsdr::time_service::now().utc : 0u))
         g_sstv_last_saved_serial = newest.serial;
     }
   }
