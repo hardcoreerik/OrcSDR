@@ -1,0 +1,26 @@
+name: SSTV Receiver Host Smoke
+on:
+  push:
+    branches:
+      - codex/sstv-native-dashboard
+    paths:
+      - "apps/orcsdr-tab5/ui/sstv_receiver.*"
+      - "apps/orcsdr-tab5/tests/sstv_receiver_smoke.cpp"
+      - ".github/workflows/sstv-receiver-tests.yml"
+  pull_request:
+    paths:
+      - "apps/orcsdr-tab5/ui/sstv_receiver.*"
+      - "apps/orcsdr-tab5/tests/sstv_receiver_smoke.cpp"
+      - ".github/workflows/sstv-receiver-tests.yml"
+jobs:
+  host-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build host-only SSTV decoder
+        run: |
+          g++ -std=c++17 -O2 -Wall -Wextra -Iapps/orcsdr-tab5/ui \
+            apps/orcsdr-tab5/tests/sstv_receiver_smoke.cpp \
+            apps/orcsdr-tab5/ui/sstv_receiver.cpp -o /tmp/sstv-smoke
+      - name: Synthesize and decode Robot36
+        run: /tmp/sstv-smoke
