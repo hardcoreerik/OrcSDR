@@ -47,7 +47,6 @@ VisStage g_vis_stage=VisStage::lead1;
 uint32_t g_phase_samples=0,g_phase_age=0,g_vis_start=0;
 uint8_t g_vis_byte=0,g_vis_parity=0,g_vis_field=0;
 bool g_vis_stop_good=false;
-float g_clock_error=0;
 
 void* frame_alloc(size_t bytes) {
 #ifdef ESP_PLATFORM
@@ -147,6 +146,7 @@ void commit_line() {
   g_line_origin+=static_cast<double>(g_spec->line_us)*kRate/1000000.;
   g_line_sync=false;
   g_last_pixel[0]=g_last_pixel[1]=-1;
+  std::memset(g_scan,0,sizeof(g_scan));
   if(g_stats.row>=g_live.height)finish_picture();
 }
 double sync_offset_samples(const ModeSpec& m) {
@@ -391,7 +391,7 @@ bool save_bmp(size_t index,char* out,size_t out_len,uint32_t utc) {
   // recover BMPs if power was lost between rename and CSV flush.
   std::FILE* csv=std::fopen("/sd/orcsdr/sstv/index.csv","ab");
   if(!csv){std::remove(final);return false;}
-  const int result=std::fprintf(csv,"%lu,%lu,%lu,%s,%u,%u,%u,%u,%u,%s\\n",
+  const int result=std::fprintf(csv,"%lu,%lu,%lu,%s,%u,%u,%u,%u,%u,%s\n",
     static_cast<unsigned long>(id),static_cast<unsigned long>(utc),
     static_cast<unsigned long>(im.frequency_hz),mode_name(im.mode),
     static_cast<unsigned>(im.width),static_cast<unsigned>(im.height),
