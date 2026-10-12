@@ -89,6 +89,7 @@ int main() {
   // PD120 transmits two luminance rows per 508.480 ms super-line:
   // 20ms sync + 2.08ms porch + 4 x 121.60ms Y/Cr/Cb/Y.
   // Validate progressive presentation BEFORE the whole frame finishes.
+  const auto before_pd = metrics();
   stop();
   start(145800000);
   preamble();
@@ -111,7 +112,10 @@ int main() {
   std::fprintf(stderr,"PD120 line sync: locked=%lu missed=%lu\\n",
       static_cast<unsigned long>(metrics().sync_locked_lines),
       static_cast<unsigned long>(metrics().sync_missed_lines));
-  require(metrics().sync_locked_lines>=220,"PD120 sync locked on nearly all lines");
+  require(metrics().sync_locked_lines-before_pd.sync_locked_lines>=220,
+          "PD120 sync locked on nearly all transmitted pairs");
+  require(metrics().sync_missed_lines-before_pd.sync_missed_lines<=12,
+          "PD120 missed sync count bounded");
   require(archive_count()==2,"Robot36 and PD120 archived");
   require(archived_image(0).mode==Mode::pd120 &&
           archived_image(0).decoded_rows==496,
