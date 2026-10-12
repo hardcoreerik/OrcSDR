@@ -357,12 +357,21 @@ bool save_bmp(size_t index,char* out,size_t out_len,uint32_t utc) {
   if(!im.pixels||im.decoded_rows==0)return false;
   if(::mkdir("/sd/orcsdr",0775)!=0&&errno!=EEXIST)return false;
   if(::mkdir("/sd/orcsdr/sstv",0775)!=0&&errno!=EEXIST)return false;
-  const uint32_t id=++g_file_id;
+  uint32_t id=0;
   const bool partial=im.partial||im.decoded_rows<im.height;
   char final[144],temporary[156];
-  std::snprintf(final,sizeof(final),"/sd/orcsdr/sstv/rx_%lu_%lu_%lu.bmp",
-    static_cast<unsigned long>(utc),static_cast<unsigned long>(g_frequency),
-    static_cast<unsigned long>(id));
+  // Never replace a previous capture when RTC is unset or counter resets
+  // after reboot. Uniqueness is checked on SD, outside the DSP critical path.
+  for(unsigned tries=0;tries<100000u;++tries){
+    id=++g_file_id;
+    std::snprintf(final,sizeof(final),"/sd/orcsdr/sstv/rx_%lu_%lu_%lu.bmp",
+      static_cast<unsigned long>(utc),static_cast<unsigned long>(im.frequency_hz),
+      static_cast<unsigned long>(id));
+    std::FILE* existing=std::fopen(final,"rb");
+    if(!existing)break;
+    std::fclose(existing);
+    if(tries==99999u)return false;
+  }
   std::snprintf(temporary,sizeof(temporary),"%s.part",final);
   std::FILE* fp=std::fopen(temporary,"wb");
   if(!fp)return false;
@@ -391,6 +400,10 @@ bool save_bmp(size_t index,char* out,size_t out_len,uint32_t utc) {
   // recover BMPs if power was lost between rename and CSV flush.
   std::FILE* csv=std::fopen("/sd/orcsdr/sstv/index.csv","ab");
   if(!csv){std::remove(final);return false;}
+  // Text schema for subsequent tools, spreadsheet imports and recovery.
+  if(std::ftell(csv)==0){
+    std::fputs("session_id,utc_epoch,frequency_hz,mode,width,height,decoded_rows,partial,sync_missed,filename\n",csv);
+  }
   const int result=std::fprintf(csv,"%lu,%lu,%lu,%s,%u,%u,%u,%u,%u,%s\n",
     static_cast<unsigned long>(id),static_cast<unsigned long>(utc),
     static_cast<unsigned long>(im.frequency_hz),mode_name(im.mode),
