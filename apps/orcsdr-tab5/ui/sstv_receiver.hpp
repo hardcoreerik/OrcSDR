@@ -25,6 +25,8 @@ struct Metrics {
   uint16_t rows = 0;
   uint16_t width = 0;
   uint8_t vis = 0;
+  uint8_t vis_phase = 0;   // 0=leader 1=break 2=second leader 3=start bit
+  uint32_t vis_phase_samples = 0;
   Mode received_mode = Mode::auto_vis;
   bool receiving = false;
   bool active = false;
