@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
 
 namespace orcsdr::sstv {
 namespace {
@@ -28,7 +29,7 @@ bool hit(int x,int y,int left,int top,int width,int height) {
   return x>=left && x<left+width && y>=top && y<top+height;
 }
 void txt(const char* s,int x,int y,uint16_t color=kWhite,int sz=1,
-         lgfx::textdatum_t datum=middle_left) {
+         textdatum_t datum=middle_left) {
   M5.Display.setTextDatum(datum);
   M5.Display.setTextColor(color,kBg);
   M5.Display.setFont(sz == 1 ? &fonts::DejaVu18 : &fonts::DejaVu24);
