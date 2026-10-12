@@ -125,6 +125,32 @@ int main() {
     if(const auto* p=vis_spec(static_cast<uint8_t>(i)))
       require(p->width>0 && p->pixel_ns>0,"all modes have valid timing");
   }
+  // Scottie S1: unlike PD/Martin, it has an extra 9ms 1200Hz pulse
+  // immediately after VIS.  Its regular sync is mid-line after G/B.
+  stop();
+  start(145800000);
+  preamble();
+  vis(60);
+  tone(1200,9); // pre-sync outside the 256 regular 428.22ms lines
+  for(unsigned row=0;row<256;++row) {
+    tone(1500,1.5); tone(1900,138.24); // G
+    tone(1500,1.5); tone(1900,138.24); // B
+    tone(1200,9);
+    tone(1500,1.5); tone(1900,138.24); // R
+    if(row==4) {
+      flush();
+      const auto img=live_image();
+      require(img.pixels && img.partial && img.mode==Mode::scottie_s1,
+              "Scottie S1 progressive image exists");
+      require(img.decoded_rows>=3 && img.decoded_rows<256,
+              "Scottie extra post-VIS sync does not erase early image");
+    }
+  }
+  tone(1900,45);
+  flush();
+  require(archive_count()==3,"Robot36, PD120 and Scottie S1 archived");
+  require(archived_image(0).decoded_rows==256,
+          "Scottie S1 complete 256-row image");
   clear_gallery();
   stop();
   std::puts("SSTV host smoke: PASS");
