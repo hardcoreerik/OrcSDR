@@ -13492,6 +13492,58 @@ void fill_orcdial_ft8_state(orc::Packet& p) {
   p.item_count = band_view ? orcsdr::ft8::band_count() : g_ft8_store.size();
 }
 
+// SSTV retains OrcSDR's existing RTL driver and demodulators.
+void sstv_tune_profile(size_t index) {
+  if (index >= std::size(orcsdr::sstv::kProfiles)) return;
+  g_sstv_frequency_hz = orcsdr::sstv::kProfiles[index].hz;
+  orcsdr::sstv::set_frequency(g_sstv_frequency_hz);
+  const RtlBand band = g_sstv_frequency_hz < 30000000u ? RtlBand::shortwave : RtlBand::browse;
+  if (rtl_device_ready() && esp_rtl_sdr_is_rate_supported(240000u))
+    rtl_rate_override_sps.store(240000u, std::memory_order_release);
+  (void)queue_local_rtl_listen(band, g_sstv_frequency_hz, false);
+}
+void open_sstv_dashboard() {
+  persist_dashboard_open(orcsdr::dashboards::Id::sstv);
+  orcsdr::home::leave();
+  orcsdr::ft8::leave();
+  orcsdr::sstv::start(g_sstv_frequency_hz);
+  orcsdr::screens::begin_transition(orcsdr::screens::Id::sstv, millis());
+  draw_sstv_dashboard(true);
+  orcsdr::screens::finish_transition();
+  sstv_tune_profile(orcsdr::sstv::ui_profile());
+}
+void handle_sstv_dashboard_action(const orcsdr::sstv::Action& action) {
+  using Kind = orcsdr::sstv::ActionKind;
+  switch (action.kind) {
+    case Kind::exit: show_home(); return;
+    case Kind::tune_profile: sstv_tune_profile(static_cast<size_t>(action.value)); break;
+    case Kind::select_mode: break;
+    case Kind::save_image: {
+      if (!orcsdr::storage::mounted()) (void)orcsdr::storage::mount_tab5_sd();
+      char path[128]{};
+      if (orcsdr::storage::mounted() &&
+          orcsdr::sstv::save_bmp(static_cast<size_t>(action.value), path, sizeof(path)))
+        orcsdr::sstv::ui_notice(path);
+      else orcsdr::sstv::ui_notice("SAVE FAILED / INSERT SD CARD");
+      break;
+    }
+    case Kind::clear_gallery:
+      orcsdr::sstv::clear_gallery();
+      orcsdr::sstv::ui_notice("RAM GALLERY CLEARED");
+      break;
+    case Kind::toggle_autosave:
+      g_sstv_autosave = !g_sstv_autosave;
+      preferences.putBool("sstv_autosave", g_sstv_autosave);
+      orcsdr::sstv::ui_set_autosave(g_sstv_autosave);
+      break;
+    case Kind::abort_rx:
+      orcsdr::sstv::stop();
+      orcsdr::sstv::start(g_sstv_frequency_hz);
+      orcsdr::sstv::ui_notice("IMAGE ABORTED / VIS SEARCH");
+      break;
+    default: break;
+  }
+}
 void open_dashboard(orcsdr::dashboards::Id id) {
   using Id = orcsdr::dashboards::Id;
   if (id != Id::settings && orcsdr::settings::active()) close_global_settings();
@@ -13509,6 +13561,8 @@ void open_dashboard(orcsdr::dashboards::Id id) {
     open_ft8_dashboard();
     return;
   }
+  if (id == Id::sstv) { open_sstv_dashboard(); return; }
+  if (orcsdr::sstv::ui_active()) { orcsdr::sstv::stop(); orcsdr::sstv::ui_leave(); }
   rtl_rate_override_sps.store(0, std::memory_order_release);
   RtlBand band = RtlBand::browse;
   uint32_t frequency = rtl_ui_frequency_hz;
