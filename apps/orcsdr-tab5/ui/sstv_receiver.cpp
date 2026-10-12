@@ -374,6 +374,8 @@ void service(size_t budget) {
   }
   g_read.store(r, std::memory_order_release);
   g_metrics.samples += static_cast<uint32_t>(n);
+  g_metrics.vis_phase = static_cast<uint8_t>(g_vis_phase);
+  g_metrics.vis_phase_samples = g_phase_samples;
   g_metrics.tone_hz = g_tone;
   g_metrics.audio_peak = g_peak;
   g_metrics.signal = g_peak > .015f;
