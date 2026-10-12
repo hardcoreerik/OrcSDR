@@ -99,6 +99,7 @@ idf_component_register(
         "../ui/lora_dashboard.cpp"
         "../ui/lora_packet_log.cpp"
         "../ui/lora_native_decoder.cpp"
+        "../ui/lora_preamble_detector.cpp"
         "../ui/lora_channel_control.cpp"
         "../ui/location_estimate.cpp"
         "../ui/receiver_location.cpp"

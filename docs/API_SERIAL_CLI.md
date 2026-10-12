@@ -664,8 +664,9 @@ without touching the screen):
 
 | Command | Auth | Response | Notes |
 |---|---|---|---|
-| `RTL_LORA_DETECTOR STATUS` | no | `RTL_LORA_DETECTOR_STATUS enabled= armed= level_dbfs= noise_dbfs= trigger_dbfs= ... relearns= events= drops= capture_active= capture_ready= decode_busy=` | The learned noise floor, the trigger (floor plus margin, capped just below clipping), and whether a capture is held or the decoder is busy. |
+| `RTL_LORA_DETECTOR STATUS` | no | `RTL_LORA_DETECTOR_STATUS enabled= armed= level_dbfs= noise_dbfs= trigger_dbfs= ... relearns= events= drops= capture_active= capture_ready= decode_busy= mode= pd_ready= pd_windows= pd_fires= pd_last_bin= pd_last_ratio= pd_run= pd_max_window_us=` | The learned noise floor, the energy trigger (floor plus margin, capped just below clipping), the active trigger mode, the preamble detector's counters, and whether a capture is held or the decoder is busy. |
 | `RTL_LORA_DETECTOR RELEARN` | yes | `RTL_LORA_DETECTOR_OK relearn=queued` | Forces a noise-floor re-learn (for example after moving an antenna or swapping a dongle). The detector also re-learns by itself when the level stays above the trigger for 4 s. |
+| `RTL_LORA_DETECTOR MODE <PREAMBLE\|ENERGY>` | yes | `RTL_LORA_DETECTOR_OK mode=` | `PREAMBLE` (default) starts a capture when the dechirped FFT peak sits on the same bin for six consecutive symbol windows, which is independent of gain, dongle and noise floor and ignores wideband interference. `ENERGY` is the legacy level trigger. |
 | `RTL_LORA_STATS [RESET]` | `RESET` only | `RTL_LORA_STATS events= crc_ok= encrypted= messages= failures= drops= relearns= last_decode_ms=` | Counters for a repeatable "send N packets, count how many decoded" test. |
 | `RTL_LORA_PLAN SET <region code or index> [slot]` | yes | `RTL_LORA_PLAN_OK region= slot= frequency_hz=` | Selects and persists the Meshtastic region and slot, for example `RTL_LORA_PLAN SET EU_868`. |
 | `RTL_LORA_DECODER STATUS` | no | `RTL_LORA_DECODER_STATUS search_padding=` | `1` is the default fast preamble search; `4` is the legacy 4x-padded search. |

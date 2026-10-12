@@ -53,6 +53,13 @@ int32_t g_map_center_lon_e7 = INT32_MAX;
 uint8_t g_node_filter = 0;
 uint8_t g_traffic_filter = 0;
 size_t g_traffic_offset = 0;
+// State the header showed when it was last painted. The header is part of the
+// static draw, so without this it kept "RX STOPPED" (the capture starts just
+// after the screen opens) until the screen was re-entered.
+bool g_header_running = false;
+bool g_header_wifi = false;
+bool g_header_decoder = false;
+bool g_header_key = false;
 uint32_t g_last_dynamic_ms = 0;
 uint32_t g_last_spectrum_ms = 0;
 EXT_RAM_BSS_ATTR uint16_t g_waterfall_row[kPlotW]{};  // PSRAM, as in the AM dashboard
@@ -195,6 +202,10 @@ void draw_star(int cx, int cy, uint16_t color) {
 }
 
 void draw_header() {
+  g_header_running = g_snapshot.running;
+  g_header_wifi = g_snapshot.wifi_connected;
+  g_header_decoder = g_snapshot.native_decoder_ready;
+  g_header_key = g_snapshot.key_loaded;
   M5.Display.fillRect(0, 0, 1280, kHeaderH, kBg);
   M5.Display.drawFastHLine(8, kHeaderH - 1, 1264, kCyan);
   audio_header::draw_brand("M5STACK TAB5");
@@ -822,6 +833,13 @@ void update(const Snapshot& snapshot) {
   if (!g_active) return;
   const bool content_changed = snapshot.revision != g_snapshot.revision;
   g_snapshot = snapshot;
+  if (g_header_running != g_snapshot.running || g_header_wifi != g_snapshot.wifi_connected ||
+      g_header_decoder != g_snapshot.native_decoder_ready ||
+      g_header_key != g_snapshot.key_loaded) {
+    M5.Display.startWrite();
+    draw_header();
+    M5.Display.endWrite();
+  }
   const uint32_t now = millis();
   const bool needs_age_refresh = g_view != View::traffic || g_traffic_details;
   if (!content_changed &&
