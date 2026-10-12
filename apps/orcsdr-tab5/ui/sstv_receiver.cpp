@@ -38,9 +38,9 @@ uint32_t g_clock = 0, g_last_cross = 0;
 float g_ema_period = 0;
 uint16_t g_tone_history[300]{};
 size_t g_history_pos = 0;
-uint32_t g_leader_ms = 0;
-bool g_leader_armed = false;
-uint32_t g_start_ms = 0;
+enum class VisPhase : uint8_t { first_leader, break_tone, second_leader, start_bit };
+VisPhase g_vis_phase = VisPhase::first_leader;
+uint32_t g_phase_samples = 0;
 bool g_vis_active = false;
 uint32_t g_vis_start = 0;
 uint8_t g_vis_bits = 0, g_vis_parity = 0, g_vis_index = 0;
@@ -230,14 +230,6 @@ void consume_tone(float f) {
   }
   const bool leader = f >= 1750.f && f <= 2050.f;
   const bool sync = f >= 1050.f && f <= 1370.f;
-  if (leader) {
-    ++g_leader_ms;
-    if (g_leader_ms > 3200) g_leader_ms = 3200;
-    if (g_leader_ms > 2900) g_leader_armed = true;  // 240 ms @ 12k
-  } else if (!sync && g_leader_ms > 0) {
-    if (g_leader_ms > 480) g_leader_armed = true;
-    g_leader_ms = 0;
-  }
   if (g_vis_active) {
     const uint32_t elapsed = g_clock - g_vis_start;
     while (g_vis_index < 9 && elapsed >= (540 + g_vis_index*360)) {
@@ -258,26 +250,56 @@ void consume_tone(float f) {
       g_metrics.good_vis += valid ? 1 : 0;
       g_metrics.bad_vis += valid ? 0 : 1;
       g_vis_active = false;
-      g_leader_armed = false;
-      g_leader_ms = 0;
+      g_vis_phase = VisPhase::first_leader;
+      g_phase_samples = 0;
       if (valid && decoded != Mode::auto_vis) begin_picture(g_selected == Mode::auto_vis ? decoded : g_selected, g_vis_bits);
       else {
-        std::snprintf(g_metrics.status, sizeof(g_metrics.status), valid ? "UNSUPPORTED VIS %u" : "VIS PARITY/SYNC ERROR", g_vis_bits);
+        if (valid) std::snprintf(g_metrics.status, sizeof(g_metrics.status), "UNSUPPORTED VIS %u", g_vis_bits);
+        else std::snprintf(g_metrics.status, sizeof(g_metrics.status), "VIS PARITY/SYNC ERROR");
       }
     }
     return;
   }
-  if (sync && g_leader_armed) {
-    if (g_start_ms == 0) g_start_ms = g_clock;
-    if (g_clock - g_start_ms >= 90) { // 7.5ms @ 12k; VIS start is 30ms
-      g_vis_active = true;
-      g_vis_start = g_start_ms;
-      g_vis_bits = g_vis_index = g_vis_parity = 0;
-      g_vis_bad = false;
-      std::strncpy(g_metrics.status, "VIS HEADER DETECTED", sizeof(g_metrics.status)-1);
-    }
-  } else {
-    g_start_ms = 0;
+  // Detect two 1900 Hz leaders separated by a ~10 ms 1200 Hz break.
+  // Without two leaders the break would be mistaken for the VIS start.
+  switch (g_vis_phase) {
+    case VisPhase::first_leader:
+      if (leader) {
+        if (++g_phase_samples >= 2880) {
+          g_vis_phase = VisPhase::break_tone; g_phase_samples = 0;
+        }
+      } else g_phase_samples = 0;
+      break;
+    case VisPhase::break_tone:
+      if (sync) ++g_phase_samples;
+      else if (leader && g_phase_samples >= 72 && g_phase_samples <= 240) {
+        g_vis_phase = VisPhase::second_leader; g_phase_samples = 1;
+      } else if (!leader || g_phase_samples > 240) {
+        g_vis_phase = VisPhase::first_leader; g_phase_samples = 0;
+      }
+      break;
+    case VisPhase::second_leader:
+      if (leader) ++g_phase_samples;
+      else if (sync && g_phase_samples >= 3000) {
+        g_vis_phase = VisPhase::start_bit; g_phase_samples = 1;
+      } else {
+        g_vis_phase = VisPhase::first_leader; g_phase_samples = 0;
+      }
+      break;
+    case VisPhase::start_bit:
+      if (sync) {
+        if (++g_phase_samples >= 180) {
+          g_vis_active = true;
+          g_vis_start = g_clock - g_phase_samples + 1;
+          g_vis_bits = g_vis_index = g_vis_parity = 0;
+          g_vis_bad = false;
+          g_vis_phase = VisPhase::first_leader; g_phase_samples = 0;
+          std::snprintf(g_metrics.status, sizeof(g_metrics.status), "VIS HEADER DETECTED");
+        }
+      } else {
+        g_vis_phase = VisPhase::first_leader; g_phase_samples = 0;
+      }
+      break;
   }
 }
 void write_u16(std::FILE* f, uint16_t v) { std::fputc(v & 255, f); std::fputc((v >> 8) & 255, f); }
@@ -296,7 +318,8 @@ const char* mode_name(Mode m) {
 void start(uint32_t hz) {
   g_frequency = hz;
   clear_decoding();
-  g_leader_ms = g_start_ms = g_clock = 0;
+  g_vis_phase = VisPhase::first_leader;
+  g_phase_samples = g_clock = 0;
   g_last_cross = 0; g_ema_period = 0; g_tone = 0;
   g_enabled.store(true, std::memory_order_release);
   g_metrics.active = true;
@@ -311,7 +334,7 @@ void stop() {
 bool active() { return g_enabled.load(std::memory_order_acquire); }
 void set_mode(Mode m) { g_selected = m; }
 Mode selected_mode() { return g_selected; }
-void set_frequency(uint32_t hz) { g_frequency = hz; clear_decoding(); g_leader_ms = 0; g_leader_armed = false; }
+void set_frequency(uint32_t hz) { g_frequency = hz; clear_decoding(); g_phase_samples = 0; g_vis_phase = VisPhase::first_leader; }
 void offer_audio_48k(const int16_t* samples, size_t count) {
   if (!active() || !samples) return;
   uint32_t w = g_write.load(std::memory_order_relaxed);
