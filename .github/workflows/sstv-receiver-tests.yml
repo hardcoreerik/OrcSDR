@@ -7,6 +7,7 @@ on:
       - "apps/orcsdr-tab5/ui/sstv_receiver.*"
       - "apps/orcsdr-tab5/ui/sstv_modes.cpp"
       - "tools/sstv_validate_timings.py"
+      - "tools/sstv_rea_workbench.py"
       - "apps/orcsdr-tab5/tests/sstv_receiver_smoke.cpp"
       - "apps/orcsdr-tab5/tests/sstv_wav_replay.cpp"
       - ".github/workflows/sstv-receiver-tests.yml"
@@ -24,6 +25,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Audit 14 SSTV mode schedules against published wire timings
         run: python3 tools/sstv_validate_timings.py
+      - name: Compile Python investigation harnesses
+        run: python3 -m py_compile tools/sstv_validate_timings.py tools/sstv_rea_workbench.py
+      - name: Build REA native inspection target (no REA provider required)
+        run: python3 tools/sstv_rea_workbench.py build --out "$RUNNER_TEMP/sstv-rea-evidence"
       - name: Build host-only SSTV decoder
         run: |
           g++ -std=c++17 -O2 -Wall -Wextra -Iapps/orcsdr-tab5/ui \
