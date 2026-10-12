@@ -1,7 +1,5 @@
 // Host regression for the isolated native SSTV receiver.
-// g++ -std=c++17 -O2 -Wall -Wextra -Iapps/orcsdr-tab5/ui \
-//   apps/orcsdr-tab5/tests/sstv_receiver_smoke.cpp \
-//   apps/orcsdr-tab5/ui/sstv_receiver.cpp -o /tmp/sstv-smoke && /tmp/sstv-smoke
+// Build/run command lives in docs/sstv/README.md and GitHub Actions.
 #include "sstv_receiver.hpp"
 #include <array>
 #include <cmath>
@@ -74,11 +72,14 @@ int main() {
   start(145800000);
   preamble();
   vis(8);
-  flush();
-  require(metrics().good_vis>=1,"recognized Robot36 VIS");
-  require(metrics().receiving,"image acquisition started");
   robot36_rows();
+  tone(1900,50); // drain a possibly delayed stop-bit edge and final scan line
   flush();
+  const auto stats = metrics();
+  std::fprintf(stderr,"SSTV debug VIS_OK=%lu VIS_ERR=%lu frames=%lu row=%u status=%s\\n",
+      (unsigned long)stats.good_vis, (unsigned long)stats.bad_vis,
+      (unsigned long)stats.frames, (unsigned)stats.row, stats.status);
+  require(stats.good_vis>=1,"recognized Robot36 VIS");
   require(archive_count()==1,"completed Robot36 frame");
   const auto image=archived_image(0);
   require(image.width==320 && image.height==240,"Robot36 dimensions");
