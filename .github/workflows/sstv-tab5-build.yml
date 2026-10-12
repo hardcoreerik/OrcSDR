@@ -35,6 +35,6 @@ jobs:
         if: steps.c6cache.outputs.cache-hit != 'true'
         run: . "$IDF_PATH/export.sh" >/dev/null && bash tools/ci/build-hosted-c6.sh --patch-idf .ci-cache/hosted-c6 "$RUNNER_TEMP/esp-hosted"
       - name: Compile Tab5 image with SSTV
-        run: . "$IDF_PATH/export.sh" >/dev/null && bash tools/ci/build-tab5.sh --c6 .ci-cache/hosted-c6/esp_hosted_tab5_c6.bin --out out --build-id "sstv-branch-${{ github.sha }}"
+        run: . "$IDF_PATH/export.sh" >/dev/null && bash tools/ci/build-tab5.sh --c6 .ci-cache/hosted-c6/esp_hosted_tab5_c6.bin --out out --build-id "sstv-branch"
       - name: Summary
         run: echo "Branch firmware compile succeeded (no release published)." >> "$GITHUB_STEP_SUMMARY"
