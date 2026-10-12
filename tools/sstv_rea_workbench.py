@@ -131,9 +131,48 @@ def cli(base: Path, action: str, provider: str, target: Path | None) -> bool:
     (base / "provenance.json").write_text(json.dumps(record, indent=2) + "\n")
     # Native analysis can consume minutes in Ghidra. Results are stored
     # read-only, with stdout, stderr, and the exact command for auditing.
-    return run([executable, "analyze", str(target.resolve()),
-                "--provider", provider, "--json"],
-               base, "rea-native-overview")
+    overview_ok = run([executable, "analyze", str(target.resolve()),
+                       "--provider", provider, "--json"],
+                      base, "rea-native-overview")
+    if not overview_ok:
+        return False
+    # The repo-owned host binary is intentionally built with symbol names and
+    # DWARF debug info. Rea's Ghidra ELF image is generally based at 0x100000
+    # while nm symbols in a PIE are ELF-relative. Derive the observed base
+    # from Ghidra's overview; never assume a hardcoded function offset.
+    if target.resolve() != (base / "sstv-wav-replay").resolve():
+        return True
+    if not shutil.which("nm"):
+        print("nm unavailable: function-level report skipped", file=sys.stderr)
+        return True
+    try:
+        evidence = json.loads((base / "rea-native-overview.json").read_text())
+        segments = evidence["normalized_result"]["segments"]
+        load_base = int(next(seg["start"] for seg in segments
+                             if seg["name"].startswith("segment_")), 16)
+        symbols = subprocess.check_output(["nm", "-C", str(target)],
+                                          text=True, stderr=subprocess.STDOUT)
+    except (KeyError, ValueError, FileNotFoundError, OSError,
+            subprocess.CalledProcessError, StopIteration) as exc:
+        print(f"Function mapping unavailable: {exc}", file=sys.stderr)
+        return True  # overview evidence is still valid
+    good = True
+    target_symbols = {
+        "rea-dsp-audio-tap": "orcsdr::sstv::offer_audio_48k(short const*, unsigned long)",
+        "rea-decoder-service": "orcsdr::sstv::service(unsigned long)",
+    }
+    for stem, symbol in target_symbols.items():
+        matches = re.findall(r"^([0-9a-f]+) [Tt] " + re.escape(symbol) + r"$",
+                             symbols, re.MULTILINE)
+        if len(matches) != 1:
+            print(f"Missing or ambiguous host symbol: {symbol}", file=sys.stderr)
+            good = False
+            continue
+        address = hex(load_base + int(matches[0], 16))
+        good = run([executable, "function", str(target.resolve()), address,
+                    "--provider", provider, "--json"],
+                   base, stem) and good
+    return good
 
 
 def main() -> int:
