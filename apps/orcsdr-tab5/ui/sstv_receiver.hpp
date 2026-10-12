@@ -4,7 +4,12 @@
 #include <cstddef>
 #include <cstdint>
 namespace orcsdr::sstv {
-enum class Mode : uint8_t { auto_vis, robot36, martin_m1, scottie_s1 };
+// Stable mode ordinals; all listed modes can progressively receive luminance.
+enum class Mode : uint8_t {
+  auto_vis, robot36, robot72, martin_m1, martin_m2,
+  scottie_s1, scottie_s2, scottie_dx,
+  pd50, pd90, pd120, pd160, pd180, pd240, pd290
+};
 enum class Page : uint8_t { receive, gallery, analyzer, frequencies, setup, count };
 struct Profile { const char* name; uint32_t hz; bool usb; const char* description; };
 constexpr Profile kProfiles[] = {
@@ -20,6 +25,9 @@ struct Metrics {
   uint32_t bad_vis = 0;
   uint32_t good_vis = 0;
   uint32_t frames = 0;
+  uint32_t sync_locked_lines = 0;
+  uint32_t sync_missed_lines = 0;
+  float line_error_ms = 0.0f;
   uint32_t samples = 0;
   uint16_t row = 0;
   uint16_t rows = 0;
@@ -40,6 +48,8 @@ struct Image {
   uint32_t serial = 0;
   uint32_t frequency_hz = 0;
   Mode mode = Mode::auto_vis;
+  uint16_t decoded_rows = 0;
+  bool partial = false;
 };
 void start(uint32_t frequency_hz);
 void stop();
@@ -56,7 +66,23 @@ Image live_image();
 Image archived_image(size_t index); // 0 = newest
 size_t archive_count();
 void clear_gallery();
+// Mode descriptors are validated against the slowrx mode table and Dayton paper.
+struct ModeSpec {
+  Mode mode;
+  const char* name;
+  uint8_t vis;
+  uint16_t width, height;
+  uint32_t line_us, sync_us, porch_us, sep_us;
+  uint32_t pixel_ns;
+  uint8_t family; // 0 Robot, 1 Martin, 2 Scottie, 3 PD
+};
+const ModeSpec* mode_spec(Mode mode);
+const ModeSpec* vis_spec(uint8_t code);
+// Last committed line, for bounded on-screen repaint.
+uint32_t image_revision();
 // Save a completed frame as a standard 24-bit BMP under /sd/orcsdr/sstv/.
-bool save_bmp(size_t index, char* out_path, size_t path_len);
+// index == SIZE_MAX captures the in-progress image (marked partial).
+// When utc_epoch==0 the clock is explicitly unverified in the index.
+bool save_bmp(size_t index, char* out_path, size_t path_len, uint32_t utc_epoch = 0);
 bool self_check();
 } // namespace orcsdr::sstv
