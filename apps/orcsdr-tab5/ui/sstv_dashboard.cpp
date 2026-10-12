@@ -89,42 +89,72 @@ void draw_footer() {
     txt(g_notice,348,686,kOrange);
   }
 }
+// The framebuffer lives in PSRAM. This is only a 734-pixel *single-row*
+// viewport buffer.  Copy only newly decoded lines, never repaint a frame
+// on the 300 ms UI timer; the DSP thread never touches M5GFX.
+uint16_t g_preview_line[734]{};
+const uint16_t* g_preview_source=nullptr;
+uint16_t g_painted_screen_rows=0,g_painted_source_rows=0;
+uint32_t g_last_revision=0;
+void paint_image_rows(const Image& original,int x,int y,int w,int h) {
+  const Image image=original.pixels?original:archived_image(0);
+  if(!image.pixels || !image.width || !image.height)return;
+  const int view_w=w-22,view_h=h-22;
+  const float fit=std::min(static_cast<float>(view_w)/image.width,
+                           static_cast<float>(view_h)/image.height);
+  const int dw=std::max(1,std::min(view_w,static_cast<int>(fit*image.width)));
+  const int dh=std::max(1,std::min(view_h,static_cast<int>(fit*image.height)));
+  const int left=x+(w-dw)/2,top=y+(h-dh)/2;
+  const uint16_t rows=image.partial?image.decoded_rows:image.height;
+  if(g_preview_source!=image.pixels || rows<g_painted_source_rows) {
+    M5.Display.fillRect(x+3,y+3,w-6,h-6,0x0840);
+    g_preview_source=image.pixels;
+    g_painted_screen_rows=0;
+  }
+  for(int dy=g_painted_screen_rows;dy<dh;++dy) {
+    const uint16_t sy=static_cast<uint16_t>(static_cast<uint32_t>(dy)*image.height/dh);
+    if(sy>=rows)break;
+    for(int dx=0;dx<dw;++dx) {
+      const uint16_t sx=static_cast<uint16_t>(static_cast<uint32_t>(dx)*image.width/dw);
+      g_preview_line[dx]=image.pixels[static_cast<size_t>(sy)*image.width+sx];
+    }
+    M5.Display.pushImage(left,top+dy,dw,1,g_preview_line);
+    g_painted_screen_rows=dy+1;
+  }
+  g_painted_source_rows=rows;
+}
 void image_area(int x,int y,int w,int h,const Image& im,const char* empty) {
   box(x,y,w,h,kBorder,0x0840);
-  // Exact decoded pixels; never synthesize an image or pretend a signal was received.
-  if(!im.pixels || !im.width || !im.height) {
-    M5.Display.drawRect(x+22,y+20,w-44,h-40,kBorder);
-    for(int i=0;i<7;++i)
-      M5.Display.drawFastHLine(x+30,y+35+i*58,w-60,0x1964);
+  if(!im.pixels && !archived_image(0).pixels) {
     txt(empty,x+w/2,y+h/2,kDim,1,middle_center);
     return;
   }
-  const int px=x+(w-im.width)/2, py=y+(h-im.height)/2;
-  M5.Display.pushImage(px,py,im.width,im.height,im.pixels);
-  M5.Display.drawRect(px-2,py-2,im.width+4,im.height+4,kCyan);
+  paint_image_rows(im,x,y,w,h);
 }
-void draw_receive() {
-  image_area(18,kBodyY,754,kBodyH,live_image(),"WAITING FOR FIRST IMAGE / VIS HEADER");
+void draw_receive_stats() {
   auto m=metrics();
   box(788,kBodyY,475,kBodyH);
   txt("RECEPTION",810,217,kCyan,2);
   M5.Display.drawFastHLine(811,251,425,kBorder);
   char value[80];
-  std::snprintf(value,sizeof(value),"%s",m.receiving?mode_name(m.received_mode):"AUTO DETECT");
+  std::snprintf(value,sizeof(value),"%s",m.receiving?mode_name(m.received_mode):"VIS SEARCH");
   label("DETECTED MODE",value,812,274,m.receiving?kGreen:kWhite);
   std::snprintf(value,sizeof(value),"%u / %u",(unsigned)m.row,(unsigned)m.rows);
   label("IMAGE LINES",value,812,357);
-  const int meter = m.rows ? 400*m.row/m.rows : 0;
+  const int meter=m.rows?400*m.row/m.rows:0;
   M5.Display.fillRoundRect(812,415,400,17,6,kBorder);
-  if(meter) M5.Display.fillRoundRect(812,415,meter,17,6,kGreen);
-  std::snprintf(value,sizeof(value),"%0.0f Hz   /   %0.1f%% peak",
-      m.tone_hz,m.audio_peak*100.f);
+  if(meter)M5.Display.fillRoundRect(812,415,meter,17,6,kGreen);
+  std::snprintf(value,sizeof(value),"%0.0f Hz / %0.1f%% peak",m.tone_hz,m.audio_peak*100.f);
   txt(value,813,465,kDim);
-  std::snprintf(value,sizeof(value),"VIS OK: %lu    ERR: %lu",
-      (unsigned long)m.good_vis,(unsigned long)m.bad_vis);
-  txt(value,813,506,kDim);
+  std::snprintf(value,sizeof(value),"SYNC: %lu / MISS %lu",
+    (unsigned long)m.sync_locked_lines,(unsigned long)m.sync_missed_lines);
+  txt(value,813,504,kDim);
   button(810,554,204,68,"ABORT IMAGE",false);
-  button(1024,554,214,68,"SAVE LATEST",false);
+  button(1024,554,214,68,"CAPTURE IMAGE",false);
+}
+void draw_receive() {
+  image_area(18,kBodyY,754,kBodyH,live_image(),"WAITING FOR FIRST IMAGE / VIS HEADER");
+  draw_receive_stats();
 }
 void thumbnail(const Image& im,int x,int y,int w,int h) {
   box(x,y,w,h,kBorder,0x0840);
@@ -216,26 +246,28 @@ void draw_frequencies() {
 void draw_setup() {
   box(18,kBodyY,720,kBodyH);
   txt("RECEIVE CONFIGURATION",44,224,kCyan,2);
-  txt("DECODING MODE",44,287,kDim);
+  txt("AUTO VIS OR MANUAL MODE",44,271,kDim);
   const Mode chosen=selected_mode();
-  for(int i=0;i<4;++i) {
-    button(42+(i%2)*335,320+(i/2)*87,308,67,
+  for(int i=0;i<15;++i) {
+    const int col=i%3,row=i/3;
+    button(35+col*230,299+row*67,214,58,
            mode_name(static_cast<Mode>(i)),static_cast<int>(chosen)==i);
   }
   box(753,kBodyY,508,kBodyH);
   txt("CAPTURE + STORAGE",778,224,kCyan,2);
-  txt("Completed images remain in PSRAM",779,271,kWhite);
+  txt("Decoded images remain in PSRAM",779,271,kWhite);
   txt("until the session ends or gallery clears.",779,303,kDim);
   button(778,345,460,66,g_ui.autosave?"AUTO-SAVE TO SD: ON":"AUTO-SAVE TO SD: OFF",g_ui.autosave);
-  txt(g_ui.sd_ready?"SD card mounted": "SD card unavailable - gallery remains in RAM",779,452,
+  txt(g_ui.sd_ready?"SD card mounted":"SD unavailable - in-memory gallery",779,452,
       g_ui.sd_ready?kGreen:kOrange);
-  txt("Advanced note:",779,529,kDim);
-  txt("Live decode is experimental; verify",779,561,kDim);
-  txt("images against known SSTV recordings.",779,590,kDim);
+  txt("Capture database:",779,524,kDim);
+  txt("/orcsdr/sstv/index.csv + .bmp",779,562,kWhite);
+  txt("14 modes / progressive mono",779,603,kGreen);
 }
 void draw_all() {
   if(!g_active) return;
   M5.Display.startWrite();
+  g_preview_source=nullptr;g_painted_screen_rows=0;g_painted_source_rows=0;
   M5.Display.fillScreen(kBg);
   draw_header(); draw_tabs();
   switch(g_page) {
@@ -249,6 +281,7 @@ void draw_all() {
   draw_footer();
   M5.Display.endWrite();
   g_last_render_ms=millis();
+  g_last_revision=image_revision();
 }
 } // namespace
 void ui_enter(const UiSnapshot& snapshot) {
@@ -257,13 +290,24 @@ void ui_enter(const UiSnapshot& snapshot) {
 void ui_leave() { g_active=false; }
 bool ui_active() { return g_active; }
 void ui_update(const UiSnapshot& snapshot) {
-  if(!g_active) return;
-  const bool frequency_changed = g_ui.frequency_hz!=snapshot.frequency_hz;
+  if(!g_active)return;
+  const bool retuned=g_ui.frequency_hz!=snapshot.frequency_hz;
   g_ui=snapshot;
-  const auto m=metrics();
-  const uint32_t ms=millis();
-  const uint32_t interval=(g_page==Page::receive && m.receiving)?300u:1000u;
-  if(frequency_changed || ms-g_last_render_ms>=interval) draw_all();
+  if(retuned){draw_all();return;}
+  const uint32_t revision=image_revision();
+  const uint32_t now=millis();
+  if(g_page==Page::receive) {
+    M5.Display.startWrite();
+    if(revision!=g_last_revision) {
+      paint_image_rows(live_image(),18,kBodyY,754,kBodyH);
+      g_last_revision=revision;
+    }
+    if(now-g_last_render_ms>=1000u){
+      draw_receive_stats();draw_header();draw_footer();
+      g_last_render_ms=now;
+    }
+    M5.Display.endWrite();
+  } else if(revision!=g_last_revision || now-g_last_render_ms>=3000u)draw_all();
 }
 Page ui_page() { return g_page; }
 uint8_t ui_profile() { return g_profile; }
@@ -285,7 +329,7 @@ Action ui_touch(int32_t x,int32_t y) {
   }
   if(g_page==Page::receive) {
     if(hit(x,y,810,554,204,68)) return {ActionKind::abort_rx,0};
-    if(hit(x,y,1024,554,214,68)) return {ActionKind::save_image,0};
+    if(hit(x,y,1024,554,214,68)) return {ActionKind::save_image,live_image().decoded_rows>0 ? -1 : 0};
   } else if(g_page==Page::gallery) {
     if(hit(x,y,892,449,352,65)) return {ActionKind::save_image,static_cast<int32_t>(g_gallery_selected)};
     if(hit(x,y,892,542,352,65)) return {ActionKind::clear_gallery,0};
@@ -300,8 +344,8 @@ Action ui_touch(int32_t x,int32_t y) {
     for(int i=0;i<static_cast<int>(std::size(kProfiles));++i)
       if(hit(x,y,42,300+i*80,1194,70)) { g_profile=i;draw_all();return {ActionKind::tune_profile,i}; }
   } else if(g_page==Page::setup) {
-    for(int i=0;i<4;++i)
-      if(hit(x,y,42+(i%2)*335,320+(i/2)*87,308,67)) {
+    for(int i=0;i<15;++i)
+      if(hit(x,y,35+(i%3)*230,299+(i/3)*67,214,58)) {
         set_mode(static_cast<Mode>(i));draw_all();return {ActionKind::select_mode,i};
       }
     if(hit(x,y,778,345,460,66)) return {ActionKind::toggle_autosave,0};
