@@ -222,8 +222,12 @@ void vis_tick(float f) {
       if(valid) {
         g_stats.good_vis++;
         const ModeSpec* spec=vis_spec(vis);
-        if(spec) begin_picture(g_requested==Mode::auto_vis?spec:mode_spec(g_requested),vis);
-        else std::snprintf(g_stats.status,sizeof(g_stats.status),"UNKNOWN VIS %u",vis);
+        if(spec && (g_requested==Mode::auto_vis || g_requested==spec->mode))
+          begin_picture(spec,vis);
+        else if(spec)
+          std::snprintf(g_stats.status,sizeof(g_stats.status),"VIS / MANUAL MODE MISMATCH");
+        else
+          std::snprintf(g_stats.status,sizeof(g_stats.status),"UNKNOWN VIS %u",vis);
       } else {
         g_stats.bad_vis++;
         std::snprintf(g_stats.status,sizeof(g_stats.status),"VIS PARITY/SYNC ERROR");
