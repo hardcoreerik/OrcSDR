@@ -103,7 +103,11 @@ void begin_picture(const ModeSpec* spec,uint8_t vis) {
   g_live.partial=true;
   g_spec=spec;
   g_line_index=0;
-  g_line_origin=static_cast<double>(g_ticks); // immediately after VIS stop bit
+  // Scottie sends an additional 9 ms (1200 Hz) sync *after* VIS.
+  // Its first RGB scan starts after this pre-sync, not at VIS stop;
+  // see F4HWN test/modes.py: "pre=9" for Scottie S1/S2/DX.
+  g_line_origin=static_cast<double>(g_ticks) +
+       (spec->family==2 ? 9.0*kRate/1000.0 : 0.0);
   g_line_sync=false; g_sync_run=0;
   g_last_pixel[0]=g_last_pixel[1]=-1;
   g_stats.width=spec->width;g_stats.rows=spec->height;
