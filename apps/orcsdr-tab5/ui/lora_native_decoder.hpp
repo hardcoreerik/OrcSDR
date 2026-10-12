@@ -73,6 +73,7 @@ struct Stats {
   uint32_t candidate_millis = 0;
   uint32_t decode_millis = 0;
   uint32_t preparation_millis = 0;
+  int8_t align_shift = 0;     // sample shift from the header alignment that passed the CRC
   uint32_t filter_millis = 0;
   uint32_t resample_millis = 0;
   uint32_t preamble_search_millis = 0;
@@ -125,6 +126,10 @@ struct Stats {
 
 // Allocates fixed decoder scratch space once. Call before starting RTL streaming.
 bool initialize();
+void set_search_padding(size_t padding);  // 1 = fast search, 4 = legacy 4x search
+size_t search_padding();
+void set_timing_bias(int samples);  // diagnostic: shift the header timing search centre
+int timing_bias();
 size_t psram_bytes();
 size_t fft_table_bytes();
 size_t recovery_workspace_bytes();
