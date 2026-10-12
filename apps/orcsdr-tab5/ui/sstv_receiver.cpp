@@ -22,7 +22,6 @@ constexpr float kPi = 3.14159265358979323846f;
 std::atomic<uint32_t> g_read{0}, g_write{0}, g_overruns{0};
 std::atomic<bool> g_enabled{false};
 int16_t g_pcm[kQueue]{};
-int16_t g_avg = 0;
 uint8_t g_decim = 0;
 int32_t g_accum = 0;
 Mode g_selected = Mode::auto_vis;
@@ -232,7 +231,7 @@ void consume_tone(float f) {
   const bool sync = f >= 1050.f && f <= 1370.f;
   if (g_vis_active) {
     const uint32_t elapsed = g_clock - g_vis_start;
-    while (g_vis_index < 9 && elapsed >= (540 + g_vis_index*360)) {
+    while (g_vis_index < 9 && elapsed >= (540u + static_cast<uint32_t>(g_vis_index)*360u)) {
       const bool bit_one = f < 1200.f;
       if (g_vis_index < 7) g_vis_bits |= static_cast<uint8_t>(bit_one) << g_vis_index;
       else if (g_vis_index == 7) g_vis_parity = bit_one ? 1 : 0;
@@ -272,7 +271,7 @@ void consume_tone(float f) {
       break;
     case VisPhase::break_tone:
       if (sync) ++g_phase_samples;
-      else if (leader && g_phase_samples >= 72 && g_phase_samples <= 240) {
+      else if (leader && g_phase_samples >= 24 && g_phase_samples <= 240) {
         g_vis_phase = VisPhase::second_leader; g_phase_samples = 1;
       } else if (!leader || g_phase_samples > 240) {
         g_vis_phase = VisPhase::first_leader; g_phase_samples = 0;
