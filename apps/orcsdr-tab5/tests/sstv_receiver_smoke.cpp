@@ -76,7 +76,7 @@ int main() {
   tone(1900,50); // drain a possibly delayed stop-bit edge and final scan line
   flush();
   const auto stats = metrics();
-  std::fprintf(stderr,"SSTV debug VIS_OK=%lu VIS_ERR=%lu frames=%lu row=%u phase=%u phase_n=%lu samples=%lu tone=%f peak=%f status=%s\\n",
+  std::fprintf(stderr,"SSTV debug VIS_OK=%lu VIS_ERR=%lu frames=%lu row=%u phase=%u phase_n=%lu samples=%lu tone=%f peak=%f status=%s\n",
       (unsigned long)stats.good_vis, (unsigned long)stats.bad_vis,
       (unsigned long)stats.frames, (unsigned)stats.row, (unsigned)stats.vis_phase,
       (unsigned long)stats.vis_phase_samples,(unsigned long)stats.samples,stats.tone_hz,stats.audio_peak,stats.status);
@@ -86,6 +86,37 @@ int main() {
   require(image.width==320 && image.height==240,"Robot36 dimensions");
   require(image.pixels!=nullptr,"decoded PSRAM/host image buffer");
   require(metrics().audio_overruns==0,"no audio overruns");
+  // PD120 transmits two luminance rows per 508.480 ms super-line:
+  // 20ms sync + 2.08ms porch + 4 x 121.60ms Y/Cr/Cb/Y.
+  // Validate progressive presentation BEFORE the whole frame finishes.
+  stop();
+  start(145800000);
+  preamble();
+  vis(95);
+  for(unsigned pair=0;pair<248;++pair) {
+    tone(1200,20);
+    tone(1500,2.08);
+    for(unsigned channel=0;channel<4;++channel)tone(1900,121.60);
+    if(pair==5) {
+      flush();
+      const auto partial=live_image();
+      require(partial.pixels && partial.partial,"PD120 live progressive buffer");
+      require(partial.decoded_rows>=8 && partial.decoded_rows<496,
+              "PD120 initial lines appear before frame completion");
+      require(partial.width==640 && partial.height==496,"PD120 native size");
+    }
+  }
+  tone(1900,45);
+  flush();
+  require(archive_count()==2,"Robot36 and PD120 archived");
+  require(archived_image(0).mode==Mode::pd120 &&
+          archived_image(0).decoded_rows==496,
+          "PD120 complete 496-line image");
+  require(metrics().audio_overruns==0,"no ring overruns during PD120");
+  for(unsigned i=0;i<128;++i) {
+    if(const auto* p=vis_spec(static_cast<uint8_t>(i)))
+      require(p->width>0 && p->pixel_ns>0,"all modes have valid timing");
+  }
   clear_gallery();
   stop();
   std::puts("SSTV host smoke: PASS");
