@@ -106,3 +106,22 @@ python tools/lora_lab/corpus_manifest.py `
 
 The manifest is tracked metadata; raw IQ and the generated report remain local
 under the ignored artifact directory.
+
+## Weak-signal bench
+
+`weak_signal/` compares receivers at a controlled low signal level. A remote
+Meshtastic node (reachable over SSH, with `remote_tx.py` copied to it) sends
+numbered texts while a reference node (`ref_listen.py`) and the Tab5 listen:
+
+```powershell
+.\tools\lora_lab\weak_signal\weak_signal_bench.ps1 -Remote laptop -RemotePort COM3 `
+  -RemoteScript C:\lora\remote_tx.py -RefPort COM24 -Tab5Port COM17 `
+  -PairingKeyPath .orclink\ui-doc.key -Label V3C_AUTO
+```
+
+It polls `RTL_LORA_RECENT` during the batch because the Tab5 keeps only the last
+8 packets. Notes from the first bench: keep the transmitter's hop limit at 0 and
+the reference on a non-relaying role; a Heltec V4 cannot transmit below about
++5 dBm, so attenuate physically; a Heltec V4 reference hears less than a T-Beam at
+the margin, so use a second receiver; the Heltec V4 reboots every time its serial
+port opens.
