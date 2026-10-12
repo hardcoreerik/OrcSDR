@@ -31,7 +31,7 @@ bool hit(int x,int y,int left,int top,int width,int height) {
 void txt(const char* s,int x,int y,uint16_t color=kWhite,int sz=1,
          textdatum_t datum=middle_left) {
   M5.Display.setTextDatum(datum);
-  M5.Display.setTextColor(color,kBg);
+  M5.Display.setTextColor(color);
   M5.Display.setFont(sz == 1 ? &fonts::DejaVu18 : &fonts::DejaVu24);
   M5.Display.setTextSize(1);
   M5.Display.drawString(s,x,y);
