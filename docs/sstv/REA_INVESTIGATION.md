@@ -106,3 +106,24 @@ g++ -std=c++17 -O2 -Iapps/orcsdr-tab5/ui \
 ## Known local execution limitation for this ChatGPT sandbox
 
 The current temporary container reports **Node 22.16.0** (below REA's required 22.19), **no Ghidra installation**, and DNS resolution for npm fails. Therefore this ChatGPT session cannot truthfully claim REA binary analysis succeeded. The scripts and branch workflow are prepared so it can be run on a connected supported developer workstation without modifying the ESP32 firmware or making untested assumptions.
+
+## Verified CI result — 2026-10-12
+
+The isolated [REA/Ghidra native binary investigation](https://github.com/hardcoreerik/OrcSDR/actions/runs/38303294261) **completed successfully** on branch commit `1fab1f0a73a64b328a0c80412a9c538907d4db26`.
+
+- REA: **6.4.0**, Ghidra: **12.1.4**, Node: **24.11.1**.
+- Analysis target: Linux `x86_64` ELF host WAV-replay decoder compiled with `g++ -O2 -g`; not the ESP32-P4 firmware.
+- REA produced native overview and full Ghidra function dossiers for `orcsdr::sstv::service(unsigned long)` and `orcsdr::sstv::offer_audio_48k(short const*, unsigned long)`.
+- The host overview identified 108 procedures; the decoder service dossier included 876 assembled instructions covering 4,691 bytes of code (non-contiguous basic blocks); the audio tap had 45 instructions covering 194 bytes.
+- A static opcode count from REA's observed `assembly` arrays found **11 `DIVSD` plus 3 `DIVSS`** in the decoder service and **zero float divisions** in the audio tap.
+- The audio producer dossier had no observed native callees, consistent with its lightweight SPSC design.
+- The decoder service has 5 observed callee entries, including C library allocation, formatting and `vis_spec`. These are associated with branches in the larger function and do not imply that heap allocation runs per sample.
+- Full Evidence JSON, compiler command, SHA256 provenance and diagnostics are stored in artifact `sstv-rea-ghidra-evidence` attached to that run.
+
+**Interpretation:** the audio producer already compiles to a tight scalar loop. In contrast, the decoder still computes pixel/line position with floating-point divisions in its sample-processing path, a plausible P4 hot spot. Static instruction counts are **not** a benchmark; the optimized x86 instruction mix should not be misrepresented as ESP32-P4 instruction counts.
+
+### Next bounded experiment
+
+Replace per-sample floating-point pixel-position division with integer Q16/Q32 incremental scan timestamps **only after** assembling real PD120 and Robot/Scottie fixture comparisons. Keep the pixel start, end, and line correction mathematically equivalent; commit a test that verifies exact row content, VIS detection, sync lock, and slant on both implementations. Use runtime cycle counts on actual P4 hardware to decide whether the change is worthwhile.
+
+A separate independent protocol audit already fixed Robot 36/72 pixel dwells, Martin M2/Scottie S1/DX timings, and Scottie's extra 9 ms post-VIS synchronization. Host CI validates synthesized progressive Robot36, PD120 and Scottie S1 reception. These are real **source-derived protocol corrections**; REA does not claim them as findings inferred solely from the binary.
