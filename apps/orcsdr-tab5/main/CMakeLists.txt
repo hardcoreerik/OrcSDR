@@ -65,6 +65,8 @@ idf_component_register(
         "../ui/ft8_runtime.cpp"
         "../ui/ft8_hunter.cpp"
         "../ui/ft8_dashboard.cpp"
+        "../ui/sstv_receiver.cpp"
+        "../ui/sstv_dashboard.cpp"
         "../ui/ft8_tuning.cpp"
         "../ui/ft8_info_text.cpp"
         "../ui/ft8_heard_db.cpp"
