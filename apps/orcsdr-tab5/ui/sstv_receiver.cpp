@@ -238,7 +238,7 @@ void vis_tick(float f) {
       } else g_phase_samples=0;
       break;
     case VisStage::break1200:
-      if(++g_phase_age>1200u) {reset_vis();break;}
+      if(++g_phase_age>2400u) {reset_vis();break;}
       if(sync) ++g_phase_samples;
       else if(lead&&g_phase_samples>=24u&&g_phase_samples<=280u) {
         g_vis_stage=VisStage::lead2;g_phase_samples=1;g_phase_age=0;
