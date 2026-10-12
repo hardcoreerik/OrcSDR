@@ -56,6 +56,8 @@
 #include "orcsdr_storage.hpp"
 #include "am_dashboard.hpp"
 #include "ft8_dashboard.hpp"
+#include "sstv_dashboard.hpp"
+#include "sstv_receiver.hpp"
 #include "ft8_tuning.hpp"
 #include "ft8_heard_db.hpp"
 #include "ft8_adif.hpp"
@@ -2942,6 +2944,9 @@ uint32_t rtl_filter_default_hz(RtlBand band) {
 // behaviour). The numbering matches the OrcDial mode codes (1 NFM, 2 AM, 3 WFM, 4 USB, 5 LSB).
 using HomeDemod = orcsdr::home_vfo::Demod;
 std::atomic<uint8_t> rtl_home_demod{static_cast<uint8_t>(HomeDemod::by_band)};
+static uint32_t g_sstv_frequency_hz = 145800000u;
+static bool g_sstv_autosave = true;
+static uint32_t g_sstv_last_saved_serial = 0;
 
 // The bands where Home may choose the demodulator; the others (P25, LoRa, ADS-B, pager, MW, shortwave) keep theirs.
 // CB takes Home's choice while Home is on screen; a CB dashboard keeps its own mode switch.
@@ -2957,6 +2962,8 @@ HomeDemod band_demod(RtlBand band) {
 
 // Home's choice applies only while Home is on screen; the dashboards keep their own demodulators.
 HomeDemod effective_demod(RtlBand band) {
+  if (orcsdr::sstv::active() && orcsdr::screens::owns(orcsdr::screens::Id::sstv))
+    return g_sstv_frequency_hz < 30000000u ? HomeDemod::usb : HomeDemod::nfm;
   const auto chosen = static_cast<HomeDemod>(rtl_home_demod.load(std::memory_order_relaxed));
   return chosen != HomeDemod::by_band && home_demod_band(band) && orcsdr::home::active() ? chosen
                                                                                        : band_demod(band);
@@ -6490,6 +6497,18 @@ void draw_am_dashboard(bool static_panel) {
   if (static_panel) draw_global_header_controls();
 }
 
+void draw_sstv_dashboard(bool static_panel) {
+  if (!static_panel && !orcsdr::screens::may_draw(orcsdr::screens::Id::sstv)) return;
+  if (!static_panel) orcsdr::screens::note_visible_update(orcsdr::screens::Id::sstv);
+  orcsdr::sstv::UiSnapshot snapshot{};
+  snapshot.receiver_ready = rtl_device_ready();
+  snapshot.streaming = rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
+  snapshot.sd_ready = orcsdr::storage::mounted();
+  snapshot.autosave = g_sstv_autosave;
+  snapshot.frequency_hz = g_sstv_frequency_hz;
+  if (static_panel || !orcsdr::sstv::ui_active()) orcsdr::sstv::ui_enter(snapshot);
+  else orcsdr::sstv::ui_update(snapshot);
+}
 void draw_shortwave_dashboard(bool static_panel) {
   if (!static_panel && !orcsdr::screens::may_draw(orcsdr::screens::Id::shortwave)) return;
   if (!static_panel) orcsdr::screens::note_visible_update(orcsdr::screens::Id::shortwave);
@@ -6538,6 +6557,7 @@ void refresh_active_screen() {
     case Id::lora: draw_lora_dashboard(false); break;
     case Id::wifi_analysis: draw_rf24_dashboard(false); break;
     case Id::ft8: draw_ft8_dashboard(false); break;
+    case Id::sstv: draw_sstv_dashboard(false); break;
     default: break;  // Settings, documentation, and no screen own their draws.
   }
 }
@@ -6550,6 +6570,7 @@ uint8_t active_dashboard_tab(orcsdr::screens::Id screen) {
     case orcsdr::screens::Id::p25: return static_cast<uint8_t>(orcsdr::p25::view());
     case orcsdr::screens::Id::adsb: return orcsdr::adsb::view();
     case orcsdr::screens::Id::pocsag: return orcsdr::pocsag::view();
+    case orcsdr::screens::Id::sstv: return static_cast<uint8_t>(orcsdr::sstv::ui_page());
     case orcsdr::screens::Id::lora: return static_cast<uint8_t>(orcsdr::lora::view());
     default: return 0;
   }
@@ -6606,6 +6627,7 @@ void close_visualizer() {
     case orcsdr::screens::Id::fm: orcsdr::fm::draw(); break;
     case orcsdr::screens::Id::am: orcsdr::am::draw(); break;
     case orcsdr::screens::Id::shortwave: orcsdr::shortwave::draw(); break;
+    case orcsdr::screens::Id::sstv: draw_sstv_dashboard(true); break;
     case orcsdr::screens::Id::airband: orcsdr::airband::redraw(); break;
     case orcsdr::screens::Id::cb: orcsdr::cb::draw(); break;
     case orcsdr::screens::Id::p25: orcsdr::p25::draw(); break;
@@ -6925,6 +6947,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   orcsdr::home::leave();
   orcsdr::rf24::leave();
   orcsdr::ft8::leave();
+  if (orcsdr::sstv::ui_active()) { orcsdr::sstv::stop(); orcsdr::sstv::ui_leave(); }
   orcsdr::settings::leave();
   if (band != RtlBand::fm) orcsdr::fm::leave();
   if (band != RtlBand::am) orcsdr::am::leave();
@@ -7513,6 +7536,7 @@ void queue_audio_samples(int16_t* audio, size_t audio_count) {
     return;
   }
 #endif
+  orcsdr::sstv::offer_audio_48k(audio, audio_count);
   orcsdr::web_audio::note_generated(audio_count);
   orcsdr::web_audio::publish(audio, audio_count);
   orcsdr::visualizer::offer_audio(audio, nullptr, audio_count, 48000);
@@ -12622,6 +12646,11 @@ void configure_navigation_service() {
 }
 
 void show_home(bool demo) {
+  if (orcsdr::sstv::ui_active()) {
+    orcsdr::sstv::stop();
+    orcsdr::sstv::ui_leave();
+    rtl_rate_override_sps.store(0, std::memory_order_release);
+  }
   home_enter();
   orcsdr::audio_header::reset(rtl_header_audio_control);
   orcsdr::navigation::show_home(demo);
