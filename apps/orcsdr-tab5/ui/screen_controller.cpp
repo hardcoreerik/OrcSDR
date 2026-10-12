@@ -66,6 +66,7 @@ const char* name(Id id) {
     case Id::cb: return "cb";
     case Id::airband: return "airband";
     case Id::ft8: return "ft8";
+    case Id::sstv: return "sstv";
     default: return "none";
   }
 }
