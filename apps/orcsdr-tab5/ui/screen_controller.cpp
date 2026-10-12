@@ -83,7 +83,7 @@ bool self_check() {
   uint32_t now = 20;
   for (const Id screen :
        {Id::home, Id::fm, Id::am, Id::shortwave, Id::cb, Id::airband, Id::p25, Id::adsb, Id::lora,
-        Id::wifi_analysis, Id::pocsag, Id::ft8}) {
+        Id::wifi_analysis, Id::pocsag, Id::ft8, Id::sstv}) {
     begin_transition(screen, now++, false);
     finish_transition();
     begin_transition(Id::settings, now++, true);
