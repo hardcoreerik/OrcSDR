@@ -40,6 +40,7 @@ size_t g_history_pos = 0;
 enum class VisPhase : uint8_t { first_leader, break_tone, second_leader, start_bit };
 VisPhase g_vis_phase = VisPhase::first_leader;
 uint32_t g_phase_samples = 0;
+uint32_t g_phase_age = 0;
 bool g_vis_active = false;
 uint32_t g_vis_start = 0;
 uint8_t g_vis_bits = 0, g_vis_parity = 0, g_vis_index = 0;
@@ -265,24 +266,28 @@ void consume_tone(float f) {
     case VisPhase::first_leader:
       if (leader) {
         if (++g_phase_samples >= 2880) {
-          g_vis_phase = VisPhase::break_tone; g_phase_samples = 0;
+          g_vis_phase = VisPhase::break_tone; g_phase_samples = 0; g_phase_age = 0;
         }
       } else g_phase_samples = 0;
       break;
     case VisPhase::break_tone:
-      if (sync) ++g_phase_samples;
+      // Filtered tone frequency crosses the 1500-1750 Hz gap during
+      // transitions; a single non-leader sample must not reset acquisition.
+      if (++g_phase_age > 1550u) {
+        g_vis_phase = VisPhase::first_leader; g_phase_samples = 0; g_phase_age = 0;
+      } else if (sync) ++g_phase_samples;
       else if (leader && g_phase_samples >= 24 && g_phase_samples <= 240) {
-        g_vis_phase = VisPhase::second_leader; g_phase_samples = 1;
-      } else if (!leader || g_phase_samples > 240) {
-        g_vis_phase = VisPhase::first_leader; g_phase_samples = 0;
+        g_vis_phase = VisPhase::second_leader;
+        g_phase_samples = 1; g_phase_age = 0;
       }
       break;
     case VisPhase::second_leader:
-      if (leader) ++g_phase_samples;
+      if (leader) { ++g_phase_samples; g_phase_age = 0; }
       else if (sync && g_phase_samples >= 3000) {
-        g_vis_phase = VisPhase::start_bit; g_phase_samples = 1;
-      } else {
-        g_vis_phase = VisPhase::first_leader; g_phase_samples = 0;
+        g_vis_phase = VisPhase::start_bit;
+        g_phase_samples = 1; g_phase_age = 0;
+      } else if (g_phase_samples < 3000 || ++g_phase_age > 300) {
+        g_vis_phase = VisPhase::first_leader; g_phase_samples = 0; g_phase_age = 0;
       }
       break;
     case VisPhase::start_bit:
@@ -318,7 +323,7 @@ void start(uint32_t hz) {
   g_frequency = hz;
   clear_decoding();
   g_vis_phase = VisPhase::first_leader;
-  g_phase_samples = g_clock = 0;
+  g_phase_samples = g_clock = g_phase_age = 0;
   g_last_cross = 0; g_ema_period = 0; g_tone = 0;
   g_enabled.store(true, std::memory_order_release);
   g_metrics.active = true;
@@ -333,7 +338,7 @@ void stop() {
 bool active() { return g_enabled.load(std::memory_order_acquire); }
 void set_mode(Mode m) { g_selected = m; }
 Mode selected_mode() { return g_selected; }
-void set_frequency(uint32_t hz) { g_frequency = hz; clear_decoding(); g_phase_samples = 0; g_vis_phase = VisPhase::first_leader; }
+void set_frequency(uint32_t hz) { g_frequency = hz; clear_decoding(); g_phase_samples = g_phase_age = 0; g_vis_phase = VisPhase::first_leader; }
 void offer_audio_48k(const int16_t* samples, size_t count) {
   if (!active() || !samples) return;
   uint32_t w = g_write.load(std::memory_order_relaxed);
