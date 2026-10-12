@@ -13506,6 +13506,7 @@ void open_sstv_dashboard() {
   persist_dashboard_open(orcsdr::dashboards::Id::sstv);
   orcsdr::home::leave();
   orcsdr::ft8::leave();
+  g_sstv_autosave = preferences.getBool("sstv_autosave", true);
   orcsdr::sstv::start(g_sstv_frequency_hz);
   orcsdr::screens::begin_transition(orcsdr::screens::Id::sstv, millis());
   draw_sstv_dashboard(true);
@@ -15988,6 +15989,11 @@ void poll_sdr_touch(bool from_stream) {
   const bool pressed = touch.isPressed() || touch.wasPressed();
   const int scope_width = spectrum_draw_width();
 
+  if (orcsdr::sstv::ui_active() && orcsdr::screens::owns(orcsdr::screens::Id::sstv)) {
+    if (pressed && !was_pressed) handle_sdr_touch(touch.x, touch.y);
+    was_pressed = pressed;
+    return;
+  }
   if (rtl_header_audio_control.expanded && pressed) {
     (void)handle_global_header_audio_touch(touch.x, touch.y);
     was_pressed = pressed;
@@ -16326,6 +16332,10 @@ void handle_sdr_touch(int32_t x, int32_t y) {
                              : (rtl_ui_band == RtlBand::p25 || rtl_ui_band == RtlBand::lora)
                                    ? orcsdr::settings::Section::radio_defaults
                              : orcsdr::settings::Section::connectivity);
+    return;
+  }
+  if (orcsdr::sstv::ui_active() && orcsdr::screens::owns(orcsdr::screens::Id::sstv)) {
+    handle_sstv_dashboard_action(orcsdr::sstv::ui_touch(x, y));
     return;
   }
   if (orcsdr::ft8::active()) {
@@ -17485,6 +17495,7 @@ const char* ui_touch_route() {
   const bool adsb_ui = (rtl_ui_band == RtlBand::adsb || adsb_atc_listening) &&
                        orcsdr::adsb::active();
   const bool pocsag_ui = rtl_ui_band == RtlBand::pocsag && orcsdr::pocsag::active();
+  if (orcsdr::sstv::ui_active() && orcsdr::screens::owns(orcsdr::screens::Id::sstv)) return "sstv";
   const bool radio_ui = rtl_ui_active.load(std::memory_order_acquire);
   const bool fm_ui = rtl_ui_band == RtlBand::fm && orcsdr::fm::active();
   const bool am_ui = rtl_ui_band == RtlBand::am && orcsdr::am::active();
@@ -21411,6 +21422,16 @@ void loop() {
   const bool p25_ui = rtl_ui_band == RtlBand::p25 && orcsdr::p25::active();
   const bool visualizer_ui = orcsdr::visualizer::active();
   const bool rf_lab_ui = orcsdr::rf_lab::active();
+  if (orcsdr::sstv::ui_active()) {
+    orcsdr::sstv::service();
+    const auto newest = orcsdr::sstv::archived_image(0);
+    if (g_sstv_autosave && newest.serial != 0 &&
+        newest.serial != g_sstv_last_saved_serial && orcsdr::storage::mounted()) {
+      char path[128]{};
+      if (orcsdr::sstv::save_bmp(0, path, sizeof(path)))
+        g_sstv_last_saved_serial = newest.serial;
+    }
+  }
   if (rtl_stream_ui_refresh_pending.exchange(false, std::memory_order_acq_rel) &&
       !settings_ui && !home_ui && !visualizer_ui && !rf_lab_ui) {
     refresh_active_screen();
@@ -21699,6 +21720,7 @@ void loop() {
       !settings_ui && orcsdr::screens::status().active != orcsdr::screens::Id::documentation &&
       orcsdr::screens::status().active != orcsdr::screens::Id::wifi_analysis &&
       orcsdr::screens::status().active != orcsdr::screens::Id::ft8 &&
+       orcsdr::screens::status().active != orcsdr::screens::Id::sstv &&
       !orcsdr::screens::owns(screen_for_band(rtl_ui_band)) &&
       !orcsdr::home::active()) {
     draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
@@ -21769,6 +21791,9 @@ void loop() {
       publish_adsb_snapshot(millis());
       refresh_active_screen();
     }
+  } else if (orcsdr::sstv::ui_active() && orcsdr::screens::owns(orcsdr::screens::Id::sstv)) {
+    poll_sdr_touch(false);
+    draw_sstv_dashboard(false);
   } else if (pocsag_ui && orcsdr::screens::owns(orcsdr::screens::Id::pocsag)) {
     const auto touch = ui_touch_detail(0);
     const bool pressed = touch.isPressed() || touch.wasPressed();
