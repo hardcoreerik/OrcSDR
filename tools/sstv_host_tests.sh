@@ -47,6 +47,7 @@ build_and_run() {
 build_and_run autodetect "$TESTS/sstv_auto_detect_test.cpp" "$UI/sstv_auto_detect.cpp" "$UI/sstv_modes.cpp"
 build_and_run smoke      "$TESTS/sstv_receiver_smoke.cpp" "${CORE[@]}"
 build_and_run autostate  "$TESTS/sstv_auto_state_test.cpp" "${CORE[@]}"
+build_and_run archive    "$TESTS/sstv_archive_test.cpp" "$UI/sstv_archive.cpp" "${CORE[@]}" -pthread
 
 if [ -n "${SSTV_FIXTURE_WAV:-}" ]; then
   EXPECT_VIS="${SSTV_EXPECT_VIS:-8}"; EXPECT_ROWS="${SSTV_EXPECT_ROWS:-239}"
