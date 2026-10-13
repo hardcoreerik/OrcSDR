@@ -4,7 +4,7 @@
 **Target:** M5Stack Tab5, ESP32-P4, RTL-SDR (Blog V3C/V4/V4L, Nooelec NESDR SMArt V5)  
 **Audio path:** receiver PCM → bounded audio tap → VIS/sync decoder → RGB565 PSRAM image → native M5GFX UI → background SD archive.
 
-The receiver renders **monochrome** from the luminance scans of all 14 modes. It is **not** a colour receiver and must not be described as one. Host regressions and a full ESP-IDF firmware compile pass; the dashboard, SD archive and timings have **not yet been observed on a physical Tab5** (see *Not yet validated*).
+The receiver decodes **full colour** in all 14 modes: Robot 36/72 (Y with R-Y/B-Y chroma, interlaced in Robot 36), Martin and Scottie (G/B/R) and PD (Y, R-Y, B-Y, Y with chroma shared by a line pair). Host regressions send the colour ORC test pattern through an independent encoder in every mode (correlation 0.89-1.00, flat colours exact). **Hardware status:** a real over-the-air Robot 36 colour frame (Pluto, cabled, 145.500 MHz, RTL-SDR Blog V4L) was decoded on a Tab5 and saved to the SD card (correlation with the source R 0.90 / G 0.92 / B 0.87, at roughly 10 dB over the noise). Every other mode is verified on the host only; see *Not yet validated*.
 
 ## What the user sees
 
@@ -88,24 +88,26 @@ Saving never happens on the UI task, in the PCM callback or in the USB path. `ss
 
 **Index schema v2** (header line is exact): `session_id, utc_epoch, utc_verified, frequency_hz, mode, vis_code, identification, id_score, width, height, decoded_rows, complete, start_unknown, sync_locked, sync_missed, end_reason, content_hash, filename`. `utc_verified=0` and `utc_epoch=0` mean the clock was not verified. `session_id` restarts at 1 on every boot; combine it with `utc_epoch` or the hash. `sync_locked/sync_missed` count that image only.
 
-## Supported modes (monochrome preview)
+## Supported modes (colour)
 
-| Mode | VIS | Frame | Transmitted line | Notes |
+| Mode | VIS | Frame | Transmitted line | Channels (host correlation with the source) |
 | --- | ---: | --- | ---: | --- |
-| Robot 36 | 8 | 320×240 | 150 ms | Y scan |
-| Robot 72 | 12 | 320×240 | 300 ms | Y scan |
-| Martin M1 | 44 | 320×256 | 446.446 ms | G used as monochrome |
-| Martin M2 | 40 | 320×256 | 226.798 ms | G used as monochrome |
-| Scottie S1 | 60 | 320×256 | 428.220 ms | G used, sync mid-line |
-| Scottie S2 | 56 | 320×256 | 277.692 ms | G used, sync mid-line |
-| Scottie DX | 76 | 320×256 | 1050.300 ms | G used, sync mid-line |
-| PD50 | 93 | 320×256 | 388.160 ms | Y0/Y1 pair |
-| PD90 | 99 | 320×256 | 703.040 ms | Y0/Y1 pair |
-| PD120 | 95 | 640×496 | 508.480 ms | Y0/Y1 pair, ISS priority |
-| PD160 | 98 | 512×400 | 804.416 ms | Y0/Y1 pair |
-| PD180 | 96 | 640×496 | 754.240 ms | Y0/Y1 pair |
-| PD240 | 97 | 640×496 | 1000.000 ms | Y0/Y1 pair |
-| PD290 | 94 | 800×616 | 937.280 ms | Y0/Y1 pair |
+| Robot 36 | 8 | 320x240 | 150 ms | Y + interlaced R-Y/B-Y (0.95) - **also received over the air** |
+| Robot 72 | 12 | 320x240 | 300 ms | Y, R-Y, B-Y (0.96) |
+| Martin M1 | 44 | 320x256 | 446.446 ms | G, B, R (0.94) |
+| Martin M2 | 40 | 320x256 | 226.798 ms | G, B, R (0.90) |
+| Scottie S1 | 60 | 320x256 | 428.220 ms | G, B, R; sync mid-line (0.94) |
+| Scottie S2 | 56 | 320x256 | 277.692 ms | G, B, R; sync mid-line (0.91) |
+| Scottie DX | 76 | 320x256 | 1050.300 ms | G, B, R; sync mid-line (1.00) |
+| PD50 | 93 | 320x256 | 388.160 ms | Y0, R-Y, B-Y, Y1 (0.92) |
+| PD90 | 99 | 320x256 | 703.040 ms | Y0, R-Y, B-Y, Y1 (0.96) |
+| PD120 | 95 | 640x496 | 508.480 ms | Y0, R-Y, B-Y, Y1; ISS priority (0.94) |
+| PD160 | 98 | 512x400 | 804.416 ms | Y0, R-Y, B-Y, Y1 (0.96) |
+| PD180 | 96 | 640x496 | 754.240 ms | Y0, R-Y, B-Y, Y1 (0.96) |
+| PD240 | 97 | 640x496 | 1000.000 ms | Y0, R-Y, B-Y, Y1 (0.97) |
+| PD290 | 94 | 800x616 | 937.280 ms | Y0, R-Y, B-Y, Y1 (0.97) |
+
+Colour layout lives in one table (`build_layout` in `ui/sstv_receiver.cpp`); the chroma-to-RGB conversion is slowrx's YUV formula. Sync-pulse latency is calibrated **per mode** (`sync_latency`), by sweeping it on the host against the independent encoder: alignment is very sensitive to it (a 4-sample error costs about 0.1 correlation in Martin M2), and a real receiver adds its own small delay, so confirm each mode with a recording before trusting the figure.
 
 The authoritative constants are in `ui/sstv_modes.cpp` (integer microseconds/nanoseconds, traced to slowrx `modespec.c`, the Rust slowrx port and the sstv.org.uk mode notes). `tools/sstv_validate_timings.py` audits them in CI.
 
@@ -142,13 +144,26 @@ The script builds each suite with `-Wall -Wextra`, runs it, and writes a timesta
 | `sstv_archive_test` | atomic saves, v2 index, partial/sync rows, identical images, missing/full/pulled/slow card, bounded queue, eviction while pending, recovery, v1 migration, auto-save switch |
 | `sstv_status_test` | wording rules, including *VIS CONFIRMED only for a VIS identification* |
 | `sstv_settings_test` | persistence, sanitising, what each strategy does to the receiver |
+| `sstv_noise_test` | white, clipped and filtered noise, DC, silence and hopping tones: no stall, bounded service time (real RF exposed this input class) |
+| `sstv_colour_test` | colour ORC pattern in all 14 modes by an independent encoder (per-channel correlation and error), plus flat R/G/B/C/M/Y/white/black stripes in one mode of each layout |
 
 The 36.91 s Pluto Robot 36 recording (`received-filtered-aligned.wav`, SHA-256 `546906c0c68f5798bcfde405d1db210de3500513ee45c4202c207496fcdaff33`, 48 kHz PCM16 mono, captured with `rtl_fm` at 145.5 MHz; its own metadata records `rf_decode_verified: false`) now decodes to a complete 240-row VIS-identified image with 240 locked and 0 missed syncs, using the explicit end-of-stream flush (`end_of_stream()`), not padded audio.
 
 ## Not yet validated
 
 - **On hardware:** dashboard rendering and touch, SD writes on a real card, P4 CPU/heap/PSRAM and latency, coexistence with FM and USB reception, long unattended runs. The UI code compiles but has not been seen on a Tab5.
-- Over-the-air or cabled RF reception of every mode; Scottie, Martin and PD are validated only with synthetic audio, Robot 36 additionally with the one recording above.
-- Colour (Cr/Cb) reconstruction, Goertzel-based tone validation, weak-signal profiles.
+- Cabled or over-the-air reception of every mode except Robot 36; Martin, Scottie and PD are validated with synthetic audio only.
+- Colour over the air for every mode except Robot 36; chroma smoothing for weak signals (colour speckle is visible at about 10 dB over the noise); Goertzel-based tone validation.
 - Sync-only identification under fading is heuristic; see the Robot 36 / Robot 72 alias above.
 - `session_id` restarts every boot; a paginated SD browser does not exist (the gallery shows the newest four).
+
+
+## Live RF: what it took (2026-10-12)
+
+The on-device self-test injects audio directly into the decoder, which hid three faults that only real radio audio exposed:
+
+1. The radio loop only demodulated at the default sample rate and while the speaker, web audio or recording wanted audio; the 240 kS/s rate SSTV uses was skipped, so `audio_offered` stayed 0. An active SSTV receiver now owns demodulation (`sstv_owns_audio` in `ui/main.cpp`).
+2. At 240 kS/s a 32 KB USB block yields about 3277 audio samples into a 2048-sample buffer and hangs the device; custom-rate blocks are demodulated in 8 KB slices.
+3. `SSTV STATUS` now reports `tone_hz`, `audio_level_milli`, `audio_offered` and `samples`: `audio_offered=0` means the radio path is not delivering audio at all.
+
+`tools/sstv_host_tests.sh` replays recordings too: `SSTV_REPLAY_PPM=out.ppm` makes `sstv_wav_replay` write the decoded colour picture. A dongle comparison matters: the same cabled signal sat about 5 dB over the noise on a Nooelec and about 8-10 dB on an RTL-SDR Blog V4L, which was the difference between no decode and a clean one.
