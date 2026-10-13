@@ -27,5 +27,6 @@ bool handle_command(const char* command, bool authenticated, const Hooks& hooks)
 // Called from the SSTV main-loop tick before the decoder is serviced.
 void tick(uint32_t now_ms);
 bool selftest_running();
+void abort_selftest();
 
 }  // namespace orcsdr::sstv_diag

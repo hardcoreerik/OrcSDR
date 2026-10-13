@@ -57,7 +57,7 @@ void commit_settings() {
 
 bool queue_for_sd(int32_t which) {
   if (!g_hooks.sd_ready || !g_hooks.sd_ready(true)) {
-    notice("NO SD CARD - INSERT ONE AND TRY AGAIN");
+    notice("NO SD CARD - INSERT ONE");
     return false;
   }
   const orcsdr::sstv::Image image = which < 0 ? orcsdr::sstv::snapshot_live()
@@ -68,10 +68,10 @@ bool queue_for_sd(int32_t which) {
   }
   if (!arc::enqueue(image, utc())) {
     orcsdr::sstv::release_image(image);
-    notice("SD QUEUE BUSY - TRY AGAIN IN A MOMENT");
+    notice("SD QUEUE BUSY - TRY AGAIN");
     return false;
   }
-  notice("QUEUED FOR SD - PROGRESS SHOWN ON IMAGES");
+  notice("QUEUED FOR SD - SEE IMAGES TAB");
   return true;
 }
 
@@ -139,6 +139,7 @@ void open() {
 
 void close() {
   if (!orcsdr::sstv::ui_active()) return;
+  orcsdr::sstv_diag::abort_selftest();               // a bench test must not outlive the screen
   orcsdr::sstv::stop();                              // an image in progress becomes a partial entry
   (void)arc::poll(utc());                            // queue it now; the worker keeps running
   orcsdr::sstv::ui_leave();

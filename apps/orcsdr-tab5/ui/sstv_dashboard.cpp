@@ -188,7 +188,7 @@ void paint_image_rows(const Image& original, const Rect& area) {
   if (!image.pixels || !image.width || !image.height) return;
   const int view_w = area.w - 22, view_h = area.h - 22;
   const float fit = std::min(static_cast<float>(view_w) / image.width, static_cast<float>(view_h) / image.height);
-  const int dw = std::max(1, std::min(view_w, static_cast<int>(fit * image.width)));
+  const int dw = std::max(1, std::min({view_w, static_cast<int>(fit * image.width), static_cast<int>(std::size(g_preview_line))}));
   const int dh = std::max(1, std::min(view_h, static_cast<int>(fit * image.height)));
   const int left = area.x + (area.w - dw) / 2, top = area.y + (area.h - dh) / 2;
   const uint16_t rows = image.partial ? image.decoded_rows : image.height;

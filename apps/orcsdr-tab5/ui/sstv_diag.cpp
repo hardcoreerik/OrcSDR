@@ -73,6 +73,7 @@ struct Script {
 Script g_script;
 
 const Hooks* g_hooks = nullptr;
+Hooks g_hooks_copy;   // handle_command's argument is not guaranteed to outlive the call
 
 void say(const char* format, ...) {
   if (!g_hooks || !g_hooks->write_line) return;
@@ -296,6 +297,11 @@ bool denied(const Hooks& hooks, bool authenticated) {
 }  // namespace
 
 bool selftest_running() { return g_script.scenario != Scenario::none && !g_script.done; }
+// Leaving the screen ends a running test: it must not resume mid-pattern later, and live audio must come back.
+void abort_selftest() {
+  g_script.done = true;
+  orcsdr::sstv::set_live_audio_muted(false);
+}
 
 void tick(uint32_t now_ms) {
   orcsdr::sstv::set_live_audio_muted(selftest_running());   // test audio must not be mixed with live noise
@@ -341,7 +347,8 @@ void tick(uint32_t now_ms) {
 
 bool handle_command(const char* command, bool authenticated, const Hooks& hooks) {
   if (!command || std::strncmp(command, "SSTV ", 5) != 0) return false;
-  g_hooks = &hooks;
+  g_hooks_copy = hooks;
+  g_hooks = &g_hooks_copy;
   const char* args = command + 5;
   if (std::strcmp(args, "STATUS") == 0) { print_status(); return true; }
   if (std::strcmp(args, "INDEX") == 0) { print_index_tail(); return true; }
