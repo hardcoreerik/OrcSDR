@@ -1,5 +1,9 @@
 # Developer reference
 
+**Looking to compile and flash OrcSDR?** Start with the
+[build from source quickstart](../build-from-source.md). This reference
+covers advanced testing, firmware capture, and implementation details.
+
 The help pipeline is manifest-driven:
 
 ```powershell
@@ -8,10 +12,11 @@ The help pipeline is manifest-driven:
 
 The first full run creates a Kokoro `am_michael` pronunciation sample and stops for approval. Rerun with `-ApproveVoice` after listening. Firmware capture commands require the existing HMAC-authenticated serial session. Captures are exact 1280×720 BMP frames, retrieved through the existing SHA-256-verified SD protocol, converted to PNG, annotated, and used for guide and video output.
 
-The production firmware remains a native ESP-IDF project. Do not use PlatformIO.
-For the current ESP-IDF 5.5.4 / ESP-Hosted 3.0.6 Tab5 dependency set, pins,
-and non-negotiable hardware acceptance boundary, see
-[`Tab5 ESP-Hosted 3.0.6 migration`](../tab5-esp-hosted-3-migration.md).
+The production Tab5 firmware remains a native ESP-IDF project; do not use
+PlatformIO. The regular build includes the pinned C6 update image but does
+not automatically update the installed C6. The
+[ESP-Hosted migration record](../tab5-esp-hosted-3-migration.md) documents
+low-level hardware and transport decisions, not normal setup.
 
 ## Tab5 real-time UI rule
 
