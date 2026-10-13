@@ -52,6 +52,7 @@ build_and_run archive    "$TESTS/sstv_archive_test.cpp" "$UI/sstv_archive.cpp" "
 build_and_run status     "$TESTS/sstv_status_test.cpp" "$UI/sstv_status.cpp" "${CORE[@]}"
 build_and_run settings   "$TESTS/sstv_settings_test.cpp" "$UI/sstv_settings.cpp" "${CORE[@]}"
 build_and_run noise      "$TESTS/sstv_noise_test.cpp" "${CORE[@]}"
+SSTV_PATTERN_RGB="$ROOT/apps/orcsdr-tab5/main/sstv_testpattern_320x240.rgb" build_and_run colour "$TESTS/sstv_colour_test.cpp" "${CORE[@]}"
 SSTV_PATTERN="$ROOT/apps/orcsdr-tab5/main/sstv_testpattern_320x240.gray" build_and_run pattern "$TESTS/sstv_pattern_test.cpp" "${CORE[@]}"
 
 if [ -n "${SSTV_FIXTURE_WAV:-}" ]; then

@@ -26,6 +26,19 @@ constexpr uint16_t kMaxWidth=800;
 // back by this many 12 kHz samples before it positions the raster. The best value was 37 for
 // Robot 36 and 39 for PD120 (their pixels are 3.3 and 2.3 samples wide); 38 serves both.
 constexpr double kSyncStartLatencySamples=38.0;
+#ifndef SSTV_SHORT_SYNC_LATENCY
+#define SSTV_SHORT_SYNC_LATENCY 38.0
+#endif
+// Where a sync pulse really started, given where the tone estimator first saw it. Short pulses (Martin, 4.9 ms)
+// are not fully settled when the estimator crosses the window, so they get their own figure.
+double sync_latency(const ModeSpec& m){
+#ifdef ORCSDR_SSTV_TESTING
+  // Host calibration sweeps only (SSTV_LATENCY_SWEEP=<samples>); never compiled into the firmware.
+  static const char* sweep=std::getenv("SSTV_LATENCY_SWEEP");
+  if(sweep)return std::atof(sweep);
+#endif
+  return m.sync_us<8000u?SSTV_SHORT_SYNC_LATENCY:kSyncStartLatencySamples;
+}
 constexpr size_t kGallery=4;
 std::atomic<uint32_t> g_read{0},g_write{0},g_drops{0},g_offered{0};
 // Drop bursts are recorded in-band so the decoder can keep its sample clock
@@ -50,9 +63,21 @@ Image g_live{};
 Image g_saved[kGallery]{};
 size_t g_saved_count=0;
 uint32_t g_next_serial=1,g_frequency=145800000,g_revision=0;
-// 1.6 KiB workspace for PD pairs; for other families, scan[0] is luminance.
-uint8_t g_scan[2][kMaxWidth]{};
-int32_t g_last_pixel[2]={-1,-1};
+// Every mode is described by up to four scan segments per transmitted line (see build_layout). The per-line
+// pixel values live in a PSRAM workspace of six rows: slots 0-3 hold the segments of the line being received;
+// slots 3-5 are also the Robot 36 carry-over (previous luma, latest R-Y, latest B-Y).
+enum class Chan:uint8_t{y,ry,by,r,g,b,chroma};   // chroma: Robot 36, R-Y on even lines and B-Y on odd lines
+struct Seg{double start_s,pix_s;uint32_t start_us,dwell_ns;uint16_t px;Chan ch;uint8_t row;};
+struct Layout{
+  Seg seg[4]{};uint8_t count=0;
+  bool yuv=false,interlaced=false;   // yuv: Y/R-Y/B-Y colour; interlaced: Robot 36 chroma sharing
+  double sep_start_s=0,sep_end_s=0;  // Robot 36 separator window that tells R-Y from B-Y
+};
+Layout g_layout{};
+uint8_t* g_work=nullptr;
+uint8_t* scan(int slot){return g_work+static_cast<size_t>(slot)*kMaxWidth;}
+float g_sep_sum=0;uint16_t g_sep_n=0;
+int32_t g_last_pixel[4]={-1,-1,-1,-1};
 // Band-limited crossing estimator.  A light one-pole HP/LP pair rejects out
 // of-band noise before fractional zero-cross interpolation.  No windowed FFT.
 float g_in_prev=0,g_hp=0,g_lp=0,g_prev=0;
@@ -141,6 +166,7 @@ void reset_vis() {
   std::memset(g_vis_votes,0,sizeof(g_vis_votes));
   std::memset(g_vis_ones,0,sizeof(g_vis_ones));
 }
+void clear_pixel_marks();
 void reset_picture() {
   g_spec=nullptr;
   g_stats.receiving=false;
@@ -149,13 +175,88 @@ void reset_picture() {
   g_sync_run=0;
   g_line_sync=false;
   g_consecutive_missed=0;
-  g_last_pixel[0]=g_last_pixel[1]=-1;
+  clear_pixel_marks();
 }
-uint16_t gray(uint8_t v) {
-  return static_cast<uint16_t>(((v&248)<<8)|((v&252)<<3)|(v>>3));
+void clear_pixel_marks(){for(int i=0;i<4;++i)g_last_pixel[i]=-1;g_sep_sum=0;g_sep_n=0;}
+uint16_t rgb565(int r,int g,int b){
+  r=std::clamp(r,0,255);g=std::clamp(g,0,255);b=std::clamp(b,0,255);
+  return static_cast<uint16_t>(((r&248)<<8)|((g&252)<<3)|(b>>3));
+}
+// Y / R-Y / B-Y bytes (tone 1500..2300 Hz mapped to 0..255) to RGB, as in slowrx's YUV path.
+uint16_t yuv565(int y,int cr,int cb){
+  return rgb565((100*y+140*cr-17850)/100,(100*y-71*cr-33*cb+13260)/100,(100*y+178*cb-22695)/100);
 }
 uint8_t tone_luma(float hz) {
   return static_cast<uint8_t>(std::clamp(static_cast<int>((hz-1500.f)*255.f/800.f+.5f),0,255));
+}
+Layout build_layout(const ModeSpec& m){
+  Layout L;
+  const uint32_t w=m.width;
+  const uint32_t chan_us=static_cast<uint32_t>(static_cast<uint64_t>(m.pixel_ns)*w/1000u);
+  auto add=[&](uint32_t start_us,uint16_t px,Chan ch,uint8_t row=0){
+    Seg& g=L.seg[L.count++];
+    g.start_us=start_us;g.dwell_ns=m.pixel_ns;g.px=px;g.ch=ch;g.row=row;
+    g.start_s=static_cast<double>(start_us)*kRate/1.e6;
+    g.pix_s=static_cast<double>(m.pixel_ns)*kRate/1.e9;
+  };
+  switch(m.family){
+    case 0: {  // Robot: sync, porch, then Y; chroma follows a 4.5 ms separator and a 1.5 ms porch
+      const uint32_t first=m.sync_us+m.porch_us;
+      L.yuv=true;
+      add(first,static_cast<uint16_t>(w),Chan::y);
+      if(m.mode==Mode::robot36) {
+        const uint32_t sep=first+chan_us;
+        L.interlaced=true;
+        L.sep_start_s=static_cast<double>(sep+500)*kRate/1.e6;      // middle of the 4.5 ms separator
+        L.sep_end_s=static_cast<double>(sep+4000)*kRate/1.e6;
+        add(sep+6000,static_cast<uint16_t>(w/2),Chan::chroma);
+      } else {                                                       // Robot 72: Y, R-Y, B-Y on every line
+        const uint32_t c1=first+chan_us+6000;
+        add(c1,static_cast<uint16_t>(w/2),Chan::ry);
+        add(c1+chan_us/2+6000,static_cast<uint16_t>(w/2),Chan::by);
+      }
+    } break;
+    case 1: {  // Martin: sync, porch, then G, B, R each followed by a separator
+      const uint32_t g=m.sync_us+m.porch_us,b=g+chan_us+m.sep_us,r=b+chan_us+m.sep_us;
+      add(g,static_cast<uint16_t>(w),Chan::g);add(b,static_cast<uint16_t>(w),Chan::b);add(r,static_cast<uint16_t>(w),Chan::r);
+    } break;
+    case 2: {  // Scottie: separator, G, separator, B, then the sync pulse in mid-line, porch, R
+      const uint32_t g=m.porch_us,b=g+chan_us+m.sep_us,r=b+chan_us+m.sync_us+m.porch_us;
+      add(g,static_cast<uint16_t>(w),Chan::g);add(b,static_cast<uint16_t>(w),Chan::b);add(r,static_cast<uint16_t>(w),Chan::r);
+    } break;
+    default: { // PD: sync, porch, then Y (even row), R-Y, B-Y, Y (odd row); chroma is full width and shared
+      L.yuv=true;
+      const uint32_t first=m.sync_us+m.porch_us;
+      add(first,static_cast<uint16_t>(w),Chan::y,0);
+      add(first+chan_us,static_cast<uint16_t>(w),Chan::ry);
+      add(first+2*chan_us,static_cast<uint16_t>(w),Chan::by);
+      add(first+3*chan_us,static_cast<uint16_t>(w),Chan::y,1);
+    } break;
+  }
+  return L;
+}
+void paint_yuv(uint16_t row,const uint8_t* y,const uint8_t* cr,const uint8_t* cb,uint16_t cw){
+  if(!g_live.pixels||row>=g_live.height||cw==0)return;
+  auto* dst=const_cast<uint16_t*>(g_live.pixels)+static_cast<size_t>(row)*g_live.width;
+  const uint32_t w=g_live.width;
+  for(uint32_t x=0;x<w;++x) {
+    const uint32_t cx=std::min<uint32_t>(x*cw/w,cw-1u);
+    dst[x]=yuv565(y[x],cr[cx],cb[cx]);
+  }
+}
+void paint_rgb(uint16_t row,const uint8_t* r,const uint8_t* g,const uint8_t* b){
+  if(!g_live.pixels||row>=g_live.height)return;
+  auto* dst=const_cast<uint16_t*>(g_live.pixels)+static_cast<size_t>(row)*g_live.width;
+  for(uint16_t x=0;x<g_live.width;++x)dst[x]=rgb565(r[x],g[x],b[x]);
+}
+void clear_line_scans(){
+  // Luma and RGB gaps stay black; chroma gaps stay neutral so a lost stretch fades to gray, not to colour.
+  // Only the slots this mode scans into; Robot 36 keeps slot 3 (the previous line's luma) across lines.
+  for(uint8_t i=0;i<g_layout.count;++i)std::memset(scan(i),0,kMaxWidth);
+  if(g_layout.yuv)
+    for(uint8_t i=0;i<g_layout.count;++i)
+      if(g_layout.seg[i].ch==Chan::ry||g_layout.seg[i].ch==Chan::by||g_layout.seg[i].ch==Chan::chroma)
+        std::memset(scan(i),128,kMaxWidth);
 }
 void finish_picture(bool incomplete,EndReason reason);
 void begin_picture(const ModeSpec* spec,uint8_t vis,
@@ -190,6 +291,9 @@ void begin_picture(const ModeSpec* spec,uint8_t vis,
   g_live.session_id=g_session_id;
   g_live.vis_code=g_session_vis;
   g_spec=spec;
+  g_layout=build_layout(*spec);
+  std::memset(scan(3),0,kMaxWidth);std::memset(scan(4),128,kMaxWidth);std::memset(scan(5),128,kMaxWidth);
+  clear_line_scans();
   g_line_index=0;
   // Scottie sends an additional 9 ms (1200 Hz) sync *after* VIS.
   // Its first RGB scan starts after this pre-sync, not at VIS stop;
@@ -198,7 +302,7 @@ void begin_picture(const ModeSpec* spec,uint8_t vis,
        (spec->family==2 ? 9.0*kRate/1000.0 : 0.0);
   g_line_sync=false; g_sync_run=0;g_consecutive_missed=0;
   auto_detect::reset();
-  g_last_pixel[0]=g_last_pixel[1]=-1;
+  clear_pixel_marks();
   g_stats.width=spec->width;g_stats.rows=spec->height;
   g_stats.row=0;g_stats.vis=vis;g_stats.received_mode=spec->mode;
   g_stats.receiving=true;
@@ -206,7 +310,7 @@ void begin_picture(const ModeSpec* spec,uint8_t vis,
   g_stats.identification_score=confidence;
   g_stats.start_unknown=unknown_start;
   ++g_revision;
-  std::snprintf(g_stats.status,sizeof(g_stats.status),"RECEIVING %s / MONO",spec->name);
+  std::snprintf(g_stats.status,sizeof(g_stats.status),"RECEIVING %s / COLOUR",spec->name);
 }
 void finish_picture(bool incomplete,EndReason reason) {
   g_stats.receiving=false;
@@ -231,7 +335,7 @@ void finish_picture(bool incomplete,EndReason reason) {
   reset_picture();
   ++g_revision;
   std::snprintf(g_stats.status,sizeof(g_stats.status),
-    g_saved[0].partial?"PARTIAL IMAGE SAVED / AUTO SEARCH":"FRAME SAVED IN RAM / MONO");
+    g_saved[0].partial?"PARTIAL IMAGE SAVED / AUTO SEARCH":"FRAME SAVED IN RAM / COLOUR");
 }
 void commit_line() {
   if(!g_spec||!g_live.pixels)return;
@@ -243,14 +347,29 @@ void commit_line() {
       return;
     }
   } else g_consecutive_missed=0;
-  const uint16_t row=static_cast<uint16_t>(g_line_index*(g_spec->family==3?2:1));
-  auto* dst=const_cast<uint16_t*>(g_live.pixels);
   const int count=g_spec->family==3?2:1;
-  for(int channel=0;channel<count;++channel) {
-    if(row+channel>=g_live.height)break;
-    const size_t off=static_cast<size_t>(row+channel)*g_live.width;
-    for(uint16_t x=0;x<g_live.width;++x)
-      dst[off+x]=gray(g_scan[channel][x]);
+  const uint16_t row=static_cast<uint16_t>(g_line_index*count);
+  const uint16_t w=g_live.width;
+  switch(g_spec->family) {
+    case 0:
+      if(g_layout.interlaced) {
+        // Robot 36 sends R-Y on one line and B-Y on the next; each pair of lines shares both. The separator
+        // tone says which this line carries (about 1500 Hz R-Y, 2300 Hz B-Y); line parity is the fallback.
+        const bool is_ry=g_sep_n?(g_sep_sum/g_sep_n<1900.f):(g_line_index%2==0);
+        std::memcpy(scan(is_ry?4:5),scan(1),kMaxWidth);
+        paint_yuv(row,scan(0),scan(4),scan(5),w/2);
+        // A B-Y line completes the pair: repaint the R-Y line above it with the matching chroma.
+        if(!is_ry&&g_line_index>0)paint_yuv(static_cast<uint16_t>(row-1),scan(3),scan(4),scan(5),w/2);
+        std::memcpy(scan(3),scan(0),kMaxWidth);
+      } else paint_yuv(row,scan(0),scan(1),scan(2),w/2);
+      break;
+    case 3:
+      paint_yuv(row,scan(0),scan(1),scan(2),w);
+      paint_yuv(static_cast<uint16_t>(row+1),scan(3),scan(1),scan(2),w);
+      break;
+    default:  // Martin and Scottie send G, B, R
+      paint_rgb(row,scan(2),scan(0),scan(1));
+      break;
   }
   g_stats.row=std::min<uint16_t>(g_live.height,static_cast<uint16_t>(row+count));
   g_live.decoded_rows=g_stats.row;
@@ -258,8 +377,8 @@ void commit_line() {
   ++g_line_index;
   g_line_origin+=static_cast<double>(g_spec->line_us)*kRate/1000000.;
   g_line_sync=false;
-  g_last_pixel[0]=g_last_pixel[1]=-1;
-  std::memset(g_scan,0,sizeof(g_scan));
+  clear_pixel_marks();
+  clear_line_scans();
   if(g_stats.row>=g_live.height)
     finish_picture(g_live.start_unknown||g_consecutive_missed>0,
                    EndReason::complete);
@@ -273,8 +392,12 @@ double sync_offset_samples(const ModeSpec& m) {
 void sync_edge(uint32_t sync_len) {
   if(!g_spec||g_line_sync)return;
   const double need=static_cast<double>(g_spec->sync_us)*kRate/1.e6;
-  if(sync_len<need*.55 || sync_len>need*1.55)return;
-  const double edge=static_cast<double>(g_ticks-sync_len)-kSyncStartLatencySamples;
+  // The tone estimator is slow to enter the 1200 Hz window (about 3 ms), so a short pulse measures much shorter
+  // than it is: Martin's 4.9 ms sync reads about 34 samples against a nominal 58. The floor is relaxed for short
+  // pulses only; the predicted-position check below is what rejects stray 1200 Hz noise.
+  const double shortest=std::max(need*.25,need*.55-20.);
+  if(sync_len<shortest || sync_len>need*1.55)return;
+  const double edge=static_cast<double>(g_ticks-sync_len)-sync_latency(*g_spec);
   const double expected=g_line_origin+sync_offset_samples(*g_spec);
   const double error=edge-expected;
   // Avoid locking onto arbitrary 1200-Hz noise far from the expected line.
@@ -297,23 +420,24 @@ void sample_luma(float hz) {
     if(!g_spec)return;
   }
   const double shifted=static_cast<double>(g_ticks)-g_line_origin;
-  const double pix_s=static_cast<double>(m.pixel_ns)*kRate/1.e9;
-  const double first=(m.family==2 ? m.porch_us : m.sync_us+m.porch_us)*kRate/1.e6;
-  const double second=first+3.*pix_s*m.width;
-  // PD family Y0,Cr,Cb,Y1; no need to buffer Cr/Cb for monotone receive.
-  for(int channel=0;channel<(m.family==3?2:1);++channel) {
-    const double start=channel==0?first:second;
-    const double x=(shifted-start)/pix_s;
-    if(x<0 || x>=m.width)continue;
+  const uint8_t value=tone_luma(hz);
+  for(uint8_t i=0;i<g_layout.count;++i) {
+    const Seg& sg=g_layout.seg[i];
+    const double x=(shifted-sg.start_s)/sg.pix_s;
+    if(x<0 || x>=sg.px)continue;
     const int pixel=static_cast<int>(x);
-    if(pixel!=g_last_pixel[channel]) {
-      g_scan[channel][pixel]=tone_luma(hz);
-      g_last_pixel[channel]=pixel;
+    uint8_t* row=scan(i);
+    if(pixel!=g_last_pixel[i]) {
+      row[pixel]=value;
+      g_last_pixel[i]=pixel;
     } else {
       // A two-tap moving mean is sufficient for 2-6 audio samples / pixel.
-      const unsigned now=tone_luma(hz);
-      g_scan[channel][pixel]=static_cast<uint8_t>((g_scan[channel][pixel]+now+1)/2);
+      row[pixel]=static_cast<uint8_t>((row[pixel]+value+1)/2);
     }
+  }
+  if(g_layout.interlaced&&shifted>=g_layout.sep_start_s&&shifted<g_layout.sep_end_s) {
+    g_sep_sum+=hz;
+    if(g_sep_n<0xffffu)++g_sep_n;
   }
 }
 void vis_tick(float f) {
@@ -353,6 +477,10 @@ void vis_tick(float f) {
       valid=valid && stop_n>=70u && g_vis_ones[8]*10u>=stop_n*7u
             && (parity&1u)==0u;
       reset_vis();
+      // Flat gray stretches of a picture look like a VIS leader, and in a three-channel mode a header-shaped
+      // run of pixel data can even pass parity. While every line is still syncing, the picture is intact and
+      // cannot be interrupted; a genuinely new transmission breaks the line syncs before its header completes.
+      if(valid&&g_stats.receiving&&g_consecutive_missed==0)valid=false;
       if(valid) {
         g_stats.good_vis++;
         const ModeSpec* spec=vis_spec(code);
@@ -495,7 +623,7 @@ void accept_sample(int16_t pcm) {
           begin_picture(m,0,Identification::sync,candidate.score,true);
           // Fallback starts on the NEXT complete line. Scottie's 9ms
           // sync is in the middle of its RGB scan; use its offset.
-          g_line_origin=static_cast<double>(sync_start)-kSyncStartLatencySamples+
+          g_line_origin=static_cast<double>(sync_start)-sync_latency(*m)+
              static_cast<double>(m->line_us)*kRate/1000000.-
              sync_offset_samples(*m);
           ++g_stats.auto_sync_locks;
@@ -550,6 +678,18 @@ void start(uint32_t freq) {
     g_queue=static_cast<int16_t*>(std::calloc(kRingSize,sizeof(int16_t)));
 #endif
     if(!g_queue) {
+      std::snprintf(g_stats.status,sizeof(g_stats.status),"INSUFFICIENT PSRAM");
+      g_stats.active=false;
+      return;
+    }
+  }
+  if(!g_work) {
+#ifdef ESP_PLATFORM
+    g_work=static_cast<uint8_t*>(heap_caps_calloc(6,kMaxWidth,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
+#else
+    g_work=static_cast<uint8_t*>(std::calloc(6,kMaxWidth));
+#endif
+    if(!g_work) {
       std::snprintf(g_stats.status,sizeof(g_stats.status),"INSUFFICIENT PSRAM");
       g_stats.active=false;
       return;
@@ -699,10 +839,10 @@ void end_of_stream(){
   service(~static_cast<size_t>(0)>>1); // drain whatever is still queued
   if(g_stats.receiving&&g_spec&&g_live.pixels) {
     const auto& m=*g_spec;
-    const double pix_s=static_cast<double>(m.pixel_ns)*kRate/1.e9;
-    const double first=(m.family==2?m.porch_us:m.sync_us+m.porch_us)*kRate/1.e6;
-    const double second=first+3.*pix_s*m.width;
-    const double lum_end=(m.family==3?second:first)+pix_s*m.width;
+    (void)m;
+    double lum_end=0;
+    for(uint8_t i=0;i<g_layout.count;++i)
+      lum_end=std::max(lum_end,g_layout.seg[i].start_s+g_layout.seg[i].pix_s*g_layout.seg[i].px);
     const double shifted=static_cast<double>(g_ticks)-g_line_origin;
     // Commit the final line only if its pixel data has fully arrived.
     if(shifted>=lum_end)commit_line();
