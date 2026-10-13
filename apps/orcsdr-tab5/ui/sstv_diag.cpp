@@ -298,6 +298,7 @@ bool denied(const Hooks& hooks, bool authenticated) {
 bool selftest_running() { return g_script.scenario != Scenario::none && !g_script.done; }
 
 void tick(uint32_t now_ms) {
+  orcsdr::sstv::set_live_audio_muted(selftest_running());   // test audio must not be mixed with live noise
   if (!selftest_running()) return;
   Script& s = g_script;
   if (s.last_ms == 0) {                         // first tick after the command: start the clock
@@ -329,7 +330,7 @@ void tick(uint32_t now_ms) {
       filled += take;
       s.remaining -= take;
     }
-    if (filled) orcsdr::sstv::offer_audio_48k(block, filled);
+    if (filled) orcsdr::sstv::offer_injected_48k(block, filled);
     s.total_samples += filled;
     owed -= n;
   }

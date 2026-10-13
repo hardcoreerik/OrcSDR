@@ -122,6 +122,10 @@ void abort_image();
 void end_of_stream();
 // SPSC PCM tap: called from DSP producer at exactly 48000 Hz, *never* draws or blocks.
 void offer_audio_48k(const int16_t* samples, size_t count);
+// The on-device self-test generates its own audio. While it runs the live radio audio is dropped, otherwise the
+// receiver's noise is mixed into the test signal; the test audio itself uses offer_injected_48k.
+void set_live_audio_muted(bool muted);
+void offer_injected_48k(const int16_t* samples, size_t count);
 // UI task only: bounded decoder service and immutable output snapshots.
 void service(size_t budget = 3600);
 Metrics metrics();

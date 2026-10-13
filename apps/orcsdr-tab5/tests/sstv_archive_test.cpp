@@ -36,6 +36,7 @@ struct Fault {
   std::atomic<int> eio_files{0};           // the next N temp files each fail with EIO after 3 block writes
   std::atomic<int> eio_active{0};          // this temp file is one of them
   std::atomic<int> read_failures{0};       // the next N reads fail with EIO (a flaky card)
+  std::atomic<int> short_reads{0};         // the next reads return only N, N-1, ... bytes (partial reads)
 } g;
 std::FILE* g_part_file = nullptr;
 
@@ -74,6 +75,11 @@ size_t f_write(const void* data, size_t size, std::FILE* file) {
 }
 size_t f_read(void* data, size_t size, std::FILE* file) {
   if (g.read_failures.load() > 0) { g.read_failures--; errno = EIO; return 0; }
+  if (g.short_reads.load() > 0) {
+    const size_t part = std::min<size_t>(size, static_cast<size_t>(g.short_reads.load()));
+    g.short_reads--;
+    return std::fread(data, 1, part, file);
+  }
   return std::fread(data, 1, size, file);
 }
 int f_close(std::FILE* file) {
@@ -119,6 +125,7 @@ void reset_world(unsigned retries = 0, uint32_t retry_delay_ms = 20) {
   g.eio_files = 0;
   g.eio_active = 0;
   g.read_failures = 0;
+  g.short_reads = 0;
   std::string cmd = "rm -rf '" + g_root + "' && mkdir -p '" + g_root + "'";
   require(std::system(cmd.c_str()) == 0, "temp dir");
   arc::Config cfg;
@@ -362,6 +369,7 @@ void test_failed_index_read_does_not_rotate_the_index() {
   arc::poll(1700000000u);
   arc::drain(5000);
   require(arc::stats().saved == 1 && index_rows().size() == 1, "index read: first image indexed");
+  arc::init(&kIo, arc::config());    // forget that the index was verified, so the next job reads the header again
   produce(1950);
   g.read_failures = 2;               // the first two reads of the next job fail, the third works
   arc::poll(1700000000u);
@@ -369,7 +377,7 @@ void test_failed_index_read_does_not_rotate_the_index() {
   size_t rotated = 0;
   for (const auto& name : list_names()) rotated += name.rfind("index-v1-", 0) == 0;
   require(rotated == 0, "index read: a transient read error did not move the index aside");
-  require(arc::stats().saved == 2 && index_rows().size() == 2, "index read: both images indexed in the original file");
+  require(arc::stats().saved == 1 && index_rows().size() == 2, "index read: both images indexed in the original file");   // saved counts since the re-init
   // A card that stays unreadable fails the job but still leaves the index alone.
   arc::init(&kIo, arc::config());
   produce(2000);
@@ -382,6 +390,26 @@ void test_failed_index_read_does_not_rotate_the_index() {
   require(rotated == 0 && index_rows().size() == 2, "index read: an unreadable index is never replaced");
   require(arc::stats().failed == 1 && arc::stats().last_error == arc::Error::index_error,
           "index read: the job reports index_error");
+  rx::stop();
+  rx::clear_gallery();
+}
+
+// A partial read of the header is not an old-format index either (found in review).
+void test_partial_index_read_does_not_rotate_the_index() {
+  reset_world();
+  produce(1900);
+  arc::poll(1700000000u);
+  arc::drain(5000);
+  require(arc::stats().saved == 1 && index_rows().size() == 1, "partial read: first image indexed");
+  arc::init(&kIo, arc::config());    // forget that the index was verified, so the next job reads the header again
+  produce(1950);
+  g.short_reads = 2;                 // header reads return 2 bytes, then 1 byte, then the whole header
+  arc::poll(1700000000u);
+  arc::drain(5000);
+  size_t rotated = 0;
+  for (const auto& name : list_names()) rotated += name.rfind("index-v1-", 0) == 0;
+  require(rotated == 0, "partial read: a short header read did not move the index aside");
+  require(arc::stats().saved == 1 && index_rows().size() == 2, "partial read: both images indexed in the original file");   // saved counts since the re-init
   rx::stop();
   rx::clear_gallery();
 }
@@ -554,6 +582,7 @@ int main() {
   test_card_removed_mid_write();
   test_transient_card_errors();
   test_failed_index_read_does_not_rotate_the_index();
+  test_partial_index_read_does_not_rotate_the_index();
   test_queue_is_bounded_and_never_blocks();
   test_eviction_while_pending_keeps_pixels();
   test_slow_card_does_not_disturb_decoding();

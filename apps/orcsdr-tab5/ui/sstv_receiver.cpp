@@ -24,7 +24,8 @@ constexpr uint16_t kMaxWidth=800;
 // ORC test pattern (sstv_pattern_test): every image came out shifted left by 3.0-3.2 ms in both
 // Robot 36 and PD120, i.e. a fixed time lag, not a number of pixels. The pulse start is moved
 // back by this many 12 kHz samples before it positions the raster. The best value was 37 for
-// Robot 36 and 39 for PD120 (their pixels are 3.3 and 2.3 samples wide); 38 serves both.
+// Robot 36 and 39 for PD120 (their pixels are 3.3 and 2.3 samples wide); 38 served both, and modes with a
+// different sync length have their own calibrated figure in sync_latency() below.
 constexpr double kSyncStartLatencySamples=38.0;
 // Chroma noise cleanup (see clean_chroma): taps 0 = none, 3 = 1-2-1 smoothing; core = chroma offset below which colour is removed (ramps to full strength at 2x).
 constexpr int kChromaTaps=3,kChromaCore=12;
@@ -74,7 +75,8 @@ Image g_saved[kGallery]{};
 size_t g_saved_count=0;
 uint32_t g_next_serial=1,g_frequency=145800000,g_revision=0;
 // Every mode is described by up to four scan segments per transmitted line (see build_layout). The per-line
-// pixel values live in a PSRAM workspace of six rows: slots 0-3 hold the segments of the line being received;
+// pixel values live in a PSRAM workspace of eight rows: slots 0-3 hold the segments of the line being received,
+// slots 6-7 hold the cleaned-up chroma while a row is painted;
 // slots 3-5 are also the Robot 36 carry-over (previous luma, latest R-Y, latest B-Y).
 enum class Chan:uint8_t{y,ry,by,r,g,b,chroma};   // chroma: Robot 36, R-Y on even lines and B-Y on odd lines
 struct Seg{double start_s,pix_s;uint32_t start_us,dwell_ns;uint16_t px;Chan ch;uint8_t row;};
@@ -125,7 +127,6 @@ VisStage g_vis_stage=VisStage::lead1;
 uint32_t g_phase_samples=0,g_phase_age=0;
 uint64_t g_vis_start=0;
 uint8_t g_vis_byte=0,g_vis_parity=0,g_vis_field=0;
-bool g_vis_stop_good=false;
 uint16_t g_vis_votes[9]{};
 uint16_t g_vis_ones[9]{};
 
@@ -567,7 +568,7 @@ void vis_tick(float f) {
       if(sync) {
         if(++g_phase_samples>=180u) {
           g_vis_start=g_ticks-g_phase_samples+1;
-          g_vis_field=g_vis_byte=g_vis_parity=0;g_vis_stop_good=false;
+          g_vis_field=g_vis_byte=g_vis_parity=0;
           g_vis_stage=VisStage::bits;
           std::snprintf(g_stats.status,sizeof(g_stats.status),"VIS HEADER");
         }
@@ -765,7 +766,15 @@ void set_frequency(uint32_t hz){
   if(g_stats.receiving)finish_picture(true,EndReason::retune);
   g_frequency=hz;reset_picture();reset_vis();auto_detect::reset();
 }
+std::atomic<bool> g_live_muted{false};
+void offer_core(const int16_t* src,size_t n);
+void set_live_audio_muted(bool muted){g_live_muted.store(muted,std::memory_order_relaxed);}
 void offer_audio_48k(const int16_t* src,size_t n){
+  if(g_live_muted.load(std::memory_order_relaxed))return;
+  offer_core(src,n);
+}
+void offer_injected_48k(const int16_t* src,size_t n){offer_core(src,n);}
+void offer_core(const int16_t* src,size_t n){
   if(!active()||!src)return;
   g_offered.fetch_add(static_cast<uint32_t>(n),std::memory_order_relaxed);
   uint32_t w=g_write.load(std::memory_order_relaxed);
@@ -788,12 +797,11 @@ void offer_audio_48k(const int16_t* src,size_t n){
         g_gap_index[head%kGapMarks]=w;
         g_gap_count[head%kGapMarks]=g_pending_gap;
         g_gap_head.store(head+1,std::memory_order_release);
-      } else {
-        // Marker queue full: fold into the newest marker; the timeline error
-        // is bounded by the burst length and PLL/sync relock absorbs it.
-        g_gap_count[(head-1)%kGapMarks]+=g_pending_gap;
+        g_pending_gap=0;
       }
-      g_pending_gap=0;
+      // Marker queue full: keep accumulating. A published marker belongs to the consumer, which reads its count
+      // once; the lost samples are inserted at the next free marker, a little later than they occurred, and the
+      // line-sync PLL absorbs that bounded error.
     }
     g_queue[w&kMask]=sample;++w;
   }

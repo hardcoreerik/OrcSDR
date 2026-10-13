@@ -147,12 +147,15 @@ void close() {
 
 void tick() {
   if (!orcsdr::sstv::ui_active()) return;
-  // The dongle may not have been ready when the dashboard opened (shortly after a boot, or while it was being
-  // re-enumerated), and the single tune from open() is then lost: the screen is up but nothing streams. Retry
-  // whenever a usable receiver exists and no IQ is flowing.
-  if (g_hooks.receiver_ready && g_hooks.streaming && millis() - g_last_tune_ms > 4000u && g_hooks.receiver_ready() &&
-      !g_hooks.streaming())
-    tune_profile(orcsdr::sstv::ui_profile());
+  // The dongle may not have been ready when the dashboard opened (shortly after a boot or a flash), and the
+  // single tune from open() is then lost: the screen is up but nothing streams. Retune the radio, and only the
+  // radio (never set_frequency, which would end a picture), whenever a usable receiver exists, no IQ flows and
+  // nothing is being received.
+  if (g_hooks.tune && g_hooks.receiver_ready && g_hooks.streaming && millis() - g_last_tune_ms > 4000u &&
+      g_hooks.receiver_ready() && !g_hooks.streaming() && !orcsdr::sstv::metrics().receiving) {
+    g_last_tune_ms = millis();
+    g_hooks.tune(g_frequency_hz);
+  }
   orcsdr::sstv_diag::tick(millis());               // bench self-test audio, when one was requested
   orcsdr::sstv::service();
   (void)arc::poll(utc());

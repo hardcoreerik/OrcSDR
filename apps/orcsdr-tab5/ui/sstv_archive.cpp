@@ -210,24 +210,31 @@ bool ensure_index() {
   char path[96];
   index_path(path, sizeof(path));
   if (io().exists(path)) {
+    constexpr size_t kHeaderLen = sizeof(kIndexHeaderV2) - 1;
     char head[sizeof(kIndexHeaderV2)] = {};
     bool current = false;
-    bool read_ok = false;
-    // A failed read must never be mistaken for an old-format index: that would move a good index aside
-    // and make recover() re-add every image. Try a few times; if the file stays unreadable, do nothing.
-    for (int attempt = 0; attempt < 3 && !read_ok; ++attempt) {
+    bool decided = false;
+    // A failed or short read must never be mistaken for an old-format index: that would move a good index
+    // aside and make recover() re-add every image. Only a full-length read of the header decides. A short
+    // read is believed (the file really is short, so it is not a v2 index) only when two attempts agree on
+    // the same non-zero length; anything else leaves the index alone and fails the job.
+    size_t previous_short = 0;
+    bool short_confirmed = false;
+    for (int attempt = 0; attempt < 3 && !decided && !short_confirmed; ++attempt) {
       if (std::FILE* f = io().open(path, "rb")) {
-        const size_t n = io().read(head, sizeof(kIndexHeaderV2) - 1, f);
+        const size_t n = io().read(head, kHeaderLen, f);
         io().close(f);
-        if (n > 0) {
-          read_ok = true;
-          current = n >= sizeof(kIndexHeaderV2) - 1 &&
-                    std::strncmp(head, kIndexHeaderV2, sizeof(kIndexHeaderV2) - 1) == 0;
+        if (n >= kHeaderLen) {
+          decided = true;
+          current = std::strncmp(head, kIndexHeaderV2, kHeaderLen) == 0;
+        } else if (n > 0) {
+          if (n == previous_short) short_confirmed = true;
+          previous_short = n;
         }
       }
-      if (!read_ok && io().delay_ms) io().delay_ms(100);
+      if (!decided && !short_confirmed && io().delay_ms) io().delay_ms(100);
     }
-    if (!read_ok) return false;            // unreadable now: the job fails with index_error, the index is untouched
+    if (!decided && !short_confirmed) return false;   // unreadable or unstable: the index is untouched
     if (current) { g_index_ready = true; return true; }
     char moved[112];
     std::snprintf(moved, sizeof(moved), "%s/index-v1-%lu.csv", g_config.root,
@@ -316,6 +323,7 @@ struct ChunkWriter {
 Error write_bmp_once(const Image& im, const char* path, uint64_t* hash, uint32_t* bytes) {
   g_last_errno = 0;
   errno = 0;
+  if (im.width == 0 || im.width > 800 || !im.pixels) return Error::write_error;   // the row buffer below is 800 px
   std::FILE* f = io().open(path, "wb");
   if (!f) { g_last_errno = errno; return Error::write_error; }
   const uint32_t stride = (static_cast<uint32_t>(im.width) * 3u + 3u) & ~3u;
@@ -672,6 +680,7 @@ bool start_worker() {
   if (g_run.load()) return true;
   g_run.store(true);
 #ifdef ESP_PLATFORM
+  if (g_worker_alive.load()) return true;   // a worker that was told to stop is still inside a write: let it carry on
   if (xTaskCreate(worker_task, "sstv_arc", 8192, nullptr, tskIDLE_PRIORITY + 1, nullptr) != pdPASS) {
     g_run.store(false);
     return false;
