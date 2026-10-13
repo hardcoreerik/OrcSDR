@@ -251,32 +251,53 @@ void vis_tick(float f) {
   const bool sync=f>=1030.f&&f<=1400.f;
   if(g_vis_stage==VisStage::bits) {
     const uint32_t age=g_ticks-g_vis_start;
-    // Sample 30ms bits at their centers (starting 45ms after start bit).
-    while(g_vis_field<9 && age>=540u+360u*g_vis_field) {
-      if(g_vis_field<7) {
-        const bool one=f<1200.f;
-        g_vis_byte|=static_cast<uint8_t>(one)<<g_vis_field;
-        g_vis_parity+=one?1:0;
-      } else if(g_vis_field==7)g_vis_parity+=f<1200.f?1:0;
-      else g_vis_stop_good=sync;
-      ++g_vis_field;
+    // Majority vote over the middle 20ms of each 30ms VIS symbol. Unlike
+    // the former single-point sampler, a single tone glitch cannot flip
+    // a bit. No dynamic memory and only small integer vote counters.
+    if(age>=480u) {
+      const uint32_t v=age-480u;
+      const unsigned field=v/360u;
+      if(field<9u && v%360u<240u) {
+        if(field==8u) {
+          ++g_vis_votes[field];
+          if(f>=1030.f&&f<=1400.f)++g_vis_ones[field];
+        } else if(f>=1000.f&&f<=1440.f) {
+          ++g_vis_votes[field];
+          if(f<1200.f)++g_vis_ones[field];
+        }
+      }
     }
     if(age>=3600u) {
-      const bool valid=((g_vis_parity&1u)==0)&&g_vis_stop_good;
-      const uint8_t vis=g_vis_byte;
+      bool valid=true;
+      uint8_t code=0,parity=0;
+      for(unsigned i=0;i<8;++i) {
+        const uint16_t n=g_vis_votes[i],ones=g_vis_ones[i];
+        if(n<70u || (ones*100u>35u*n && ones*100u<65u*n)) {
+          valid=false;break;
+        }
+        const bool bit=ones*2u>=n;
+        if(i<7u)code|=static_cast<uint8_t>(bit)<<i;
+        parity+=bit?1u:0u;
+      }
+      const uint16_t stop_n=g_vis_votes[8];
+      valid=valid && stop_n>=70u && g_vis_ones[8]*10u>=stop_n*7u
+            && (parity&1u)==0u;
       reset_vis();
       if(valid) {
         g_stats.good_vis++;
-        const ModeSpec* spec=vis_spec(vis);
+        const ModeSpec* spec=vis_spec(code);
         if(spec && (g_requested==Mode::auto_vis || g_requested==spec->mode))
-          begin_picture(spec,vis);
+          begin_picture(spec,code,Identification::vis,100,false);
         else if(spec)
-          std::snprintf(g_stats.status,sizeof(g_stats.status),"VIS / MANUAL MODE MISMATCH");
+          std::snprintf(g_stats.status,sizeof(g_stats.status),
+                        "VIS / MANUAL MODE MISMATCH");
         else
-          std::snprintf(g_stats.status,sizeof(g_stats.status),"UNKNOWN VIS %u",vis);
+          std::snprintf(g_stats.status,sizeof(g_stats.status),"UNKNOWN VIS %u",code);
       } else {
         g_stats.bad_vis++;
-        std::snprintf(g_stats.status,sizeof(g_stats.status),"VIS PARITY/SYNC ERROR");
+        if(!g_stats.receiving)
+          std::snprintf(g_stats.status,sizeof(g_stats.status),
+                        "VIS PARITY/SYNC ERROR");
       }
     }
     return;
