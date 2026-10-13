@@ -1,4 +1,5 @@
 #include "sstv_receiver.hpp"
+#include "sstv_auto_detect.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -25,6 +26,7 @@ int16_t g_queue[kRingSize]{};
 int32_t g_decim_sum=0;
 uint8_t g_decim_n=0;
 Mode g_requested=Mode::auto_vis;
+AutoStrategy g_auto_strategy=AutoStrategy::vis_sync;
 const ModeSpec* g_spec=nullptr;
 Metrics g_stats{};
 Image g_live{};
@@ -37,7 +39,10 @@ int32_t g_last_pixel[2]={-1,-1};
 // Band-limited crossing estimator.  A light one-pole HP/LP pair rejects out
 // of-band noise before fractional zero-cross interpolation.  No windowed FFT.
 float g_in_prev=0,g_hp=0,g_lp=0,g_prev=0;
-float g_last_edge=0,g_period=0,g_freq=0,g_level=0;
+float g_period=0,g_freq=0,g_level=0;
+uint32_t g_last_edge_tick=0;
+float g_last_edge_frac=0;
+bool g_have_edge=false;
 // Separate high-temporal-resolution luminance estimator: keep the original
 // crossing-based VIS/sync path unchanged while measuring pixels every sample.
 float g_ac_y2=0,g_ac_p=0,g_ac_q=0,g_luma_freq=0;
@@ -47,11 +52,14 @@ uint32_t g_ticks=0,g_sync_run=0;
 double g_line_origin=0;
 uint16_t g_line_index=0;
 bool g_line_sync=false;
+uint8_t g_consecutive_missed=0;
 enum class VisStage:uint8_t { lead1, break1200, lead2, start1200, bits };
 VisStage g_vis_stage=VisStage::lead1;
 uint32_t g_phase_samples=0,g_phase_age=0,g_vis_start=0;
 uint8_t g_vis_byte=0,g_vis_parity=0,g_vis_field=0;
 bool g_vis_stop_good=false;
+uint16_t g_vis_votes[9]{};
+uint16_t g_vis_ones[9]{};
 
 void* frame_alloc(size_t bytes) {
 #ifdef ESP_PLATFORM
@@ -72,6 +80,8 @@ void reset_vis() {
   g_vis_stage=VisStage::lead1;
   g_phase_samples=g_phase_age=0;
   g_vis_byte=g_vis_parity=g_vis_field=0;
+  std::memset(g_vis_votes,0,sizeof(g_vis_votes));
+  std::memset(g_vis_ones,0,sizeof(g_vis_ones));
 }
 void reset_picture() {
   g_spec=nullptr;
@@ -80,6 +90,7 @@ void reset_picture() {
   g_line_index=0;
   g_sync_run=0;
   g_line_sync=false;
+  g_consecutive_missed=0;
   g_last_pixel[0]=g_last_pixel[1]=-1;
 }
 uint16_t gray(uint8_t v) {
@@ -88,8 +99,13 @@ uint16_t gray(uint8_t v) {
 uint8_t tone_luma(float hz) {
   return static_cast<uint8_t>(std::clamp(static_cast<int>((hz-1500.f)*255.f/800.f+.5f),0,255));
 }
-void begin_picture(const ModeSpec* spec,uint8_t vis) {
+void finish_picture(bool incomplete,EndReason reason);
+void begin_picture(const ModeSpec* spec,uint8_t vis,
+                   Identification source=Identification::vis,
+                   uint8_t confidence=100,bool unknown_start=false) {
   if(!spec) return;
+  if(g_live.pixels && g_live.decoded_rows)
+    finish_picture(true,EndReason::new_vis);
   frame_free(g_live.pixels);
   g_live={};
   const size_t n=static_cast<size_t>(spec->width)*spec->height;
@@ -106,6 +122,9 @@ void begin_picture(const ModeSpec* spec,uint8_t vis) {
   g_live.frequency_hz=g_frequency;
   g_live.mode=spec->mode;
   g_live.partial=true;
+  g_live.start_unknown=unknown_start;
+  g_live.identification=source;
+  g_live.identification_score=confidence;
   g_spec=spec;
   g_line_index=0;
   // Scottie sends an additional 9 ms (1200 Hz) sync *after* VIS.
@@ -113,32 +132,48 @@ void begin_picture(const ModeSpec* spec,uint8_t vis) {
   // see F4HWN test/modes.py: "pre=9" for Scottie S1/S2/DX.
   g_line_origin=static_cast<double>(g_ticks) +
        (spec->family==2 ? 9.0*kRate/1000.0 : 0.0);
-  g_line_sync=false; g_sync_run=0;
+  g_line_sync=false; g_sync_run=0;g_consecutive_missed=0;
+  auto_detect::reset();
   g_last_pixel[0]=g_last_pixel[1]=-1;
   g_stats.width=spec->width;g_stats.rows=spec->height;
   g_stats.row=0;g_stats.vis=vis;g_stats.received_mode=spec->mode;
   g_stats.receiving=true;
+  g_stats.identification=source;
+  g_stats.identification_score=confidence;
+  g_stats.start_unknown=unknown_start;
   ++g_revision;
   std::snprintf(g_stats.status,sizeof(g_stats.status),"RECEIVING %s / MONO",spec->name);
 }
-void finish_picture() {
+void finish_picture(bool incomplete,EndReason reason) {
   g_stats.receiving=false;
-  if(!g_live.pixels) return;
+  if(!g_live.pixels)return;
+  if(g_live.decoded_rows==0) {
+    frame_free(g_live.pixels);g_live={};reset_picture();return;
+  }
   g_live.serial=g_next_serial++;
-  g_live.partial=false;
+  g_live.partial=incomplete||g_live.start_unknown;
+  g_live.end_reason=reason;
   frame_free(g_saved[kGallery-1].pixels);
   for(size_t n=kGallery-1;n>0;--n)g_saved[n]=g_saved[n-1];
   g_saved[0]=g_live;
   g_saved_count=std::min(kGallery,g_saved_count+1);
   g_live={};
-  g_stats.frames++;
+  if(g_live.partial)g_stats.partial_frames++;
+  else g_stats.frames++;
   reset_picture();
   ++g_revision;
-  std::snprintf(g_stats.status,sizeof(g_stats.status),"FRAME SAVED IN RAM / MONO");
+  std::snprintf(g_stats.status,sizeof(g_stats.status),
+    incomplete?"PARTIAL IMAGE SAVED / AUTO SEARCH":"FRAME SAVED IN RAM / MONO");
 }
 void commit_line() {
   if(!g_spec||!g_live.pixels)return;
-  if(!g_line_sync)g_stats.sync_missed_lines++;
+  if(!g_line_sync) {
+    g_stats.sync_missed_lines++;
+    if(++g_consecutive_missed>=4) {
+      finish_picture(true,EndReason::sync_lost);
+      return;
+    }
+  } else g_consecutive_missed=0;
   const uint16_t row=static_cast<uint16_t>(g_line_index*(g_spec->family==3?2:1));
   auto* dst=const_cast<uint16_t*>(g_live.pixels);
   const int count=g_spec->family==3?2:1;
@@ -156,7 +191,9 @@ void commit_line() {
   g_line_sync=false;
   g_last_pixel[0]=g_last_pixel[1]=-1;
   std::memset(g_scan,0,sizeof(g_scan));
-  if(g_stats.row>=g_live.height)finish_picture();
+  if(g_stats.row>=g_live.height)
+    finish_picture(g_live.start_unknown||g_consecutive_missed>0,
+                   EndReason::complete);
 }
 double sync_offset_samples(const ModeSpec& m) {
   if(m.family!=2)return 0.;
