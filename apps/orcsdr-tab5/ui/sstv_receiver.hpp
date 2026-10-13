@@ -51,6 +51,8 @@ struct Metrics {
   uint32_t auto_sync_locks = 0;
   uint32_t observed_sync_pulses = 0;
   float sync_pulse_ms = 0.0f;     // width of the most recent 1200 Hz pulse
+  float sync_tone_hz = 0.0f;      // average frequency of the settled part of recent sync pulses (nominal 1200 Hz); 0 = none yet
+  uint16_t sync_tone_pulses = 0;  // how many pulses that average rests on (saturates; reset with each new reception)
   float sync_interval_ms = 0.0f;  // spacing between the two most recent pulse starts
   Identification identification = Identification::none;
   uint8_t identification_score = 0; // heuristic; not a probability
@@ -122,6 +124,9 @@ void abort_image();
 void end_of_stream();
 // SPSC PCM tap: called from DSP producer at exactly 48000 Hz, *never* draws or blocks.
 void offer_audio_48k(const int16_t* samples, size_t count);
+// Called from service() with the decoder-rate (12 kHz) samples it consumes, in batches. Null stops it. The observer
+// must be quick and must not call back into the receiver.
+void set_audio_observer(void (*observer)(const int16_t* samples, size_t count));
 // The on-device self-test generates its own audio. While it runs the live radio audio is dropped, otherwise the
 // receiver's noise is mixed into the test signal; the test audio itself uses offer_injected_48k.
 void set_live_audio_muted(bool muted);

@@ -108,6 +108,11 @@ bool g_ac_lut_ready=false;
 // explicit uint32_t subtraction instead.
 uint64_t g_ticks=0;
 uint32_t g_sync_run=0;
+// Sync-tone measurement: the estimator is slow to settle, so only the middle of a pulse (after the first 40 samples
+// and before the last 10) is averaged. Short pulses (Martin) have no settled part and are not measured.
+constexpr uint32_t kSyncPlateaus=24u;
+float g_plat[kSyncPlateaus]{};uint32_t g_plat_n=0;uint32_t g_sync_pulses=0;uint64_t g_sync_tone_tick=0;
+void (*g_observer)(const int16_t*,size_t)=nullptr;
 uint64_t g_last_sync_start=0;
 bool g_have_sync_start=false;
 double g_line_origin=0;
@@ -588,6 +593,27 @@ void skip_gap(uint32_t count) {
   g_sync_run=0;
   reset_vis();
 }
+// The frequency estimator settles geometrically after the transition into a sync pulse, in steps every few samples, and
+// swings back as the pulse ends. Take the plateaus before that final swing and extrapolate their geometric decay
+// (Aitken) to the tone the pulse really carries. False if the pulse gave too little to measure.
+bool sync_tone_estimate(float& tone) {
+  if(g_plat_n==0)return false;
+  uint32_t m=g_plat_n-1;
+  while(m>0&&g_plat[m]>g_plat[m-1]+0.5f)--m;   // drop the closing swing upward
+  const float x2=g_plat[m];
+  if(m==0){tone=x2;return true;}               // steady from the start: already the tone
+  if(m==1){
+    if(std::fabs(x2-g_plat[0])>3.f)return false;
+    tone=x2;return true;
+  }
+  const float d0=g_plat[m-1]-g_plat[m-2],d1=x2-g_plat[m-1];
+  if(std::fabs(d1)<=3.f){tone=x2;return true;}
+  const float ratio=d0!=0.f?d1/d0:0.f;
+  if(ratio<=0.2f||ratio>=0.95f)return false;   // not a clean geometric settle
+  tone=x2+d1*ratio/(1.f-ratio);
+  return tone>900.f&&tone<1500.f;
+}
+
 void accept_sample(int16_t pcm) {
   ++g_ticks;
   // One pole high-pass (~120 Hz) followed by LP (~2.6 kHz).  Damping is
@@ -643,9 +669,22 @@ void accept_sample(int16_t pcm) {
   // from a coherent pulse train without instantiating parallel decoders.
   const bool is_sync=g_freq>1030.f&&g_freq<1400.f;
   if(is_sync) {
-    if(g_sync_run<60000u)++g_sync_run;
+    if(g_sync_run<60000u) {
+      if(g_sync_run==0)g_plat_n=0;
+      if(g_plat_n==0||std::fabs(g_freq-g_plat[g_plat_n-1])>0.5f) {
+        if(g_plat_n<kSyncPlateaus)g_plat[g_plat_n++]=g_freq;
+      }
+      ++g_sync_run;
+    }
   } else if(g_sync_run) {
     const uint32_t n=g_sync_run;
+    float tone=0;
+    if(sync_tone_estimate(tone)) {
+      g_stats.sync_tone_hz=g_sync_pulses?0.8f*g_stats.sync_tone_hz+0.2f*tone:tone;
+      if(g_sync_pulses<60000u)++g_sync_pulses;
+      g_stats.sync_tone_pulses=static_cast<uint16_t>(g_sync_pulses);
+      g_sync_tone_tick=g_ticks;
+    }
     g_sync_run=0;
     const uint64_t sync_start=g_ticks-n;
     ++g_stats.observed_sync_pulses;
@@ -769,6 +808,7 @@ void set_frequency(uint32_t hz){
 std::atomic<bool> g_live_muted{false};
 void offer_core(const int16_t* src,size_t n);
 void set_live_audio_muted(bool muted){g_live_muted.store(muted,std::memory_order_relaxed);}
+void set_audio_observer(void (*observer)(const int16_t*,size_t)){g_observer=observer;}
 void offer_audio_48k(const int16_t* src,size_t n){
   if(g_live_muted.load(std::memory_order_relaxed))return;
   offer_core(src,n);
@@ -848,6 +888,8 @@ void service(size_t budget){
     if(fill>g_stats.ring_fill_max)g_stats.ring_fill_max=static_cast<uint16_t>(fill>0xffffu?0xffffu:fill);
   }
   size_t n=0;
+  auto* const observer=g_observer;
+  int16_t batch[128];size_t batch_n=0;
   uint32_t tail=g_gap_tail.load(std::memory_order_relaxed);
   const uint32_t head=g_gap_head.load(std::memory_order_acquire);
   while(r!=end&&n<budget){
@@ -855,10 +897,19 @@ void service(size_t budget){
       skip_gap(g_gap_count[tail%kGapMarks]);
       ++tail;
     }
-    accept_sample(g_queue[r&kMask]);++r;++n;
+    const int16_t sample=g_queue[r&kMask];
+    accept_sample(sample);++r;++n;
+    if(observer) {
+      batch[batch_n++]=sample;
+      if(batch_n==sizeof(batch)/sizeof(batch[0])) { observer(batch,batch_n); batch_n=0; }
+    }
   }
+  if(observer&&batch_n)observer(batch,batch_n);
   g_gap_tail.store(tail,std::memory_order_release);
   g_read.store(r,std::memory_order_release);
+  if(g_sync_pulses&&g_ticks-g_sync_tone_tick>5ull*kRate) {   // no sync pulse for 5 s: the reading is stale
+    g_sync_pulses=0;g_stats.sync_tone_hz=0;g_stats.sync_tone_pulses=0;
+  }
   g_stats.samples+=static_cast<uint32_t>(n);
   g_stats.tone_hz=g_freq;g_stats.audio_peak=g_level;
   g_stats.signal=g_level>.01f;

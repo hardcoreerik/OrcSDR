@@ -29,6 +29,7 @@ struct Signal {
   double amplitude = 11000.;
   double time_scale = 1.0;   // >1 stretches every tone (transmitter clock slower)
   double luma_hz = 1900.;    // neutral luminance tone used by the image rows
+  double tone_offset_hz = 0; // added to every tone (a mistuned SSB dial shifts all audio by the same amount)
   // false: audio is offered but the decoder is not serviced, so the 4096
   // sample ring fills and the producer must drop samples (overrun).
   bool service_enabled = true;
@@ -46,7 +47,7 @@ struct Signal {
   }
   void tone(double hz, double ms) {
     const auto samples = static_cast<int>(std::lround(kSampleRate * ms * time_scale / 1000.));
-    const double delta = (2.0 * kPi * hz) / kSampleRate;
+    const double delta = (2.0 * kPi * (hz + tone_offset_hz)) / kSampleRate;
     for (int i = 0; i < samples; ++i) {
       push(static_cast<int16_t>(std::lround(amplitude * std::sin(phase))));
       phase += delta;
@@ -63,7 +64,7 @@ struct Signal {
     const long target = std::lround(exact_ms * kSampleRate / 1000.);
     const long samples = target - exact_emitted;
     exact_emitted = target;
-    const double delta = (2.0 * kPi * hz) / kSampleRate;
+    const double delta = (2.0 * kPi * (hz + tone_offset_hz)) / kSampleRate;
     for (long i = 0; i < samples; ++i) {
       push(static_cast<int16_t>(std::lround(amplitude * std::sin(phase))));
       phase += delta;
