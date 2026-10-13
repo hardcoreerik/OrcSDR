@@ -218,16 +218,21 @@ bool ensure_index() {
     // aside and make recover() re-add every image. Only a full-length read of the header decides. A short
     // read is believed (the file really is short, so it is not a v2 index) only when two attempts agree on
     // the same non-zero length; anything else leaves the index alone and fails the job.
-    size_t previous_short = 0;
+    // A read of 0 bytes with no error is a clean end of file: the index is empty (for example power was lost
+    // between creating it and writing the header), which must not block saving for ever. A read of 0 bytes
+    // with errno set is a card error and leaves the index alone.
+    size_t previous_short = static_cast<size_t>(-1);
     bool short_confirmed = false;
     for (int attempt = 0; attempt < 3 && !decided && !short_confirmed; ++attempt) {
       if (std::FILE* f = io().open(path, "rb")) {
+        errno = 0;
         const size_t n = io().read(head, kHeaderLen, f);
+        const int read_errno = errno;
         io().close(f);
         if (n >= kHeaderLen) {
           decided = true;
           current = std::strncmp(head, kIndexHeaderV2, kHeaderLen) == 0;
-        } else if (n > 0) {
+        } else if (n > 0 || read_errno == 0) {
           if (n == previous_short) short_confirmed = true;
           previous_short = n;
         }
@@ -744,68 +749,100 @@ bool result_for(uint32_t session_id, Result* out) {
 
 // ---------------------------------------------------------------- recovery
 namespace {
-struct Names {
-  char item[128][64];
-  size_t count = 0;
+constexpr size_t kMaxOrphans = 128, kMaxParts = 16, kMaxIndexed = 8192;
+struct Work {
+  char orphan[kMaxOrphans][64];
+  char part[kMaxParts][64];
+  uint32_t indexed[kMaxIndexed];      // FNV-1a of every file name the index already lists
+  size_t orphans = 0, parts = 0, indexed_count = 0;
 };
-void collect(const char* name, void* ctx) {
-  auto* names = static_cast<Names*>(ctx);
-  const size_t len = std::strlen(name);
-  if (len < 5 || len >= 64 || names->count >= 128) return;
-  if (std::strcmp(name + len - 5, ".part") == 0 ||
-      (len > 4 && std::strcmp(name + len - 4, ".bmp") == 0))
-    std::snprintf(names->item[names->count++], 64, "%s", name);
+uint32_t name_hash(const char* s, size_t n) {
+  uint32_t h = 2166136261u;
+  for (size_t i = 0; i < n; ++i) h = (h ^ static_cast<uint8_t>(s[i])) * 16777619u;
+  return h;
 }
-bool index_mentions(const char* name) {
+// One pass over the index: the file name is its last column. False if the index could not be read or lists
+// more files than the table holds (recovery then does nothing rather than guess and duplicate rows).
+bool load_indexed(Work& w) {
   char path[96];
   index_path(path, sizeof(path));
   std::FILE* f = io().open(path, "rb");
   if (!f) return false;
-  const size_t len = std::strlen(name);
-  char window[1100];
-  size_t carry = 0;
-  bool found = false;
-  for (;;) {
-    const size_t got = io().read(window + carry, 1024, f);
-    if (!got) break;
-    const size_t total = carry + got;
-    window[total] = '\0';
-    if (std::strstr(window, name)) { found = true; break; }
-    carry = std::min(total, len > 1 ? len - 1 : size_t{0});
-    std::memmove(window, window + total - carry, carry);
+  char line[256], buf[512];
+  size_t len = 0;
+  bool header = true, ok = true;
+  size_t got;
+  while (ok && (got = io().read(buf, sizeof(buf), f)) > 0) {
+    for (size_t i = 0; i < got && ok; ++i) {
+      if (buf[i] != '\n') {
+        if (len < sizeof(line) - 1) line[len++] = buf[i];
+        continue;
+      }
+      if (!header) {
+        while (len && (line[len - 1] == '\r' || line[len - 1] == ' ')) --len;
+        size_t at = len;
+        while (at > 0 && line[at - 1] != ',') --at;   // start of the last column
+        const char* name = line + at;
+        if (w.indexed_count >= kMaxIndexed) ok = false;
+        else w.indexed[w.indexed_count++] = name_hash(name, static_cast<size_t>(line + len - name));
+      }
+      header = false;
+      len = 0;
+    }
   }
   io().close(f);
-  return found;
+  return ok;
+}
+bool is_indexed(const Work& w, const char* name) {
+  const uint32_t h = name_hash(name, std::strlen(name));
+  for (size_t i = 0; i < w.indexed_count; ++i)
+    if (w.indexed[i] == h) return true;
+  return false;
+}
+void collect(const char* name, void* ctx) {
+  auto* w = static_cast<Work*>(ctx);
+  const size_t len = std::strlen(name);
+  if (len < 5 || len >= 64) return;
+  if (std::strcmp(name + len - 5, ".part") == 0) {
+    if (w->parts < kMaxParts) std::snprintf(w->part[w->parts++], 64, "%s", name);
+  } else if (std::strcmp(name + len - 4, ".bmp") == 0) {
+    // Only files the index does not list count against the limit, so a card full of old pictures does not
+    // hide new orphans.
+    if (!is_indexed(*w, name) && w->orphans < kMaxOrphans) std::snprintf(w->orphan[w->orphans++], 64, "%s", name);
+  }
 }
 }  // namespace
 
 size_t recover() {
   if (!g_io || !io().mounted()) return 0;
   if (!make_dirs(g_config.root) || !ensure_index()) return 0;
-  // 8 KiB of names: allocated for the duration of the scan from PSRAM, never a static (internal RAM)
+  // About 42 KiB of tables: allocated for the duration of the scan from PSRAM, never a static (internal RAM)
   // and never on the worker's small stack.
-  Names* names_ptr = static_cast<Names*>(psram_alloc(sizeof(Names)));
-  if (!names_ptr) return 0;
-  Names& names = *names_ptr;
-  names.count = 0;
-  struct Guard { void* p; ~Guard() { psram_free(p); } } guard{names_ptr};
+  Work* work_ptr = static_cast<Work*>(psram_alloc(sizeof(Work)));
+  if (!work_ptr) return 0;
+  Work& names = *work_ptr;
+  names.orphans = names.parts = names.indexed_count = 0;
+  struct Guard { void* p; ~Guard() { psram_free(p); } } guard{work_ptr};
+  if (!load_indexed(names)) return 0;
   if (!io().list_dir(g_config.root, collect, &names)) return 0;
-  size_t recovered = 0;
-  for (size_t i = 0; i < names.count; ++i) {
+  for (size_t i = 0; i < names.parts; ++i) {                    // torn temp files from an interrupted save
     char path[160];
-    std::snprintf(path, sizeof(path), "%s/%s", g_config.root, names.item[i]);
-    const size_t len = std::strlen(names.item[i]);
-    if (std::strcmp(names.item[i] + len - 5, ".part") == 0) { (void)io().remove(path); continue; }
-    if (index_mentions(names.item[i])) continue;
+    std::snprintf(path, sizeof(path), "%s/%s", g_config.root, names.part[i]);
+    (void)io().remove(path);
+  }
+  size_t recovered = 0;
+  for (size_t i = 0; i < names.orphans; ++i) {
+    char path[160];
+    std::snprintf(path, sizeof(path), "%s/%s", g_config.root, names.orphan[i]);
     Row row;
     unsigned long utc = 0, freq = 0, session = 0;
-    if (std::sscanf(names.item[i], "rx_%lu_%lu_%lu", &utc, &freq, &session) != 3) continue;
+    if (std::sscanf(names.orphan[i], "rx_%lu_%lu_%lu", &utc, &freq, &session) != 3) continue;
     row.session = static_cast<uint32_t>(session);
     row.utc = static_cast<uint32_t>(utc);
     row.utc_verified = utc != 0;
     row.frequency = static_cast<uint32_t>(freq);
     row.end = "recovered";
-    row.file = names.item[i];
+    row.file = names.orphan[i];
     if (std::FILE* f = io().open(path, "rb")) {
       uint8_t header[54] = {};
       if (io().read(header, sizeof(header), f) == sizeof(header) && header[0] == 'B' && header[1] == 'M') {

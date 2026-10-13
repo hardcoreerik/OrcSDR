@@ -114,6 +114,7 @@ def main() -> int:
         note("! dashboard did not become active in 30 s")
         raise SystemExit("SSTV dashboard did not open")
     time.sleep(1.0)
+    saved_before = int(before.get("archive.saved", 0) or 0) + int(before.get("archive.failed", 0) or 0)
     reply = command(f"SSTV SELFTEST {args.scenario} SPEED {args.speed}", ("SSTV_OK selftest", "SSTV_ERROR"))
     if reply.startswith("SSTV_ERROR"):
         raise SystemExit(reply)
@@ -157,7 +158,8 @@ def main() -> int:
         deadline = time.monotonic() + 90
         while time.monotonic() < deadline:
             final = status()
-            if int(final.get("archive.pending", 1) or 0) == 0 and int(final.get("archive.queued", 0) or 0) > 0:
+            saved_now = int(final.get("archive.saved", 0) or 0) + int(final.get("archive.failed", 0) or 0)
+            if int(final.get("archive.pending", 1) or 0) == 0 and saved_now > saved_before:
                 break
             time.sleep(3)
     else:

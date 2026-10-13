@@ -48,7 +48,7 @@ Additional reference: [slowrx](https://github.com/windytan/slowrx), especially `
    python3 tools/sstv_rea_workbench.py inspect
    ```
 
-   The build produces `sstv-rea-evidence/sstv-wav-replay`: a real host executable built from OrcSDR's current `sstv_receiver.cpp`, `sstv_modes.cpp`, and `sstv_wav_replay.cpp` with DWARF debug symbols. The inspect step runs **`rea analyze` on that binary** with Ghidra and saves command lines, evidence JSON, stderr, file hashes and tool versions to the `sstv-rea-evidence/` folder where you ran the command.
+   The build produces `sstv-rea-evidence/sstv-wav-replay`: a real host executable built from OrcSDR's current `sstv_receiver.cpp`, `sstv_modes.cpp`, `sstv_auto_detect.cpp`, and `sstv_wav_replay.cpp` with DWARF debug symbols. The inspect step runs **`rea analyze` on that binary** with Ghidra and saves command lines, evidence JSON, stderr, file hashes and tool versions to the `sstv-rea-evidence/` folder where you ran the command.
 
 5. To investigate another **authorized native binary**:
 
@@ -87,7 +87,7 @@ python3 tools/sstv_validate_timings.py
 g++ -std=c++17 -O2 -Iapps/orcsdr-tab5/ui \
   apps/orcsdr-tab5/tests/sstv_receiver_smoke.cpp \
   apps/orcsdr-tab5/ui/sstv_receiver.cpp \
-  apps/orcsdr-tab5/ui/sstv_modes.cpp -o /tmp/sstv-smoke
+  apps/orcsdr-tab5/ui/sstv_modes.cpp apps/orcsdr-tab5/ui/sstv_auto_detect.cpp -o /tmp/sstv-smoke
 /tmp/sstv-smoke
 ```
 
@@ -97,7 +97,7 @@ For recorded WAVs (no fixture supplied by this commit):
 g++ -std=c++17 -O2 -Iapps/orcsdr-tab5/ui \
   apps/orcsdr-tab5/tests/sstv_wav_replay.cpp \
   apps/orcsdr-tab5/ui/sstv_receiver.cpp \
-  apps/orcsdr-tab5/ui/sstv_modes.cpp -o /tmp/sstv-wav-replay
+  apps/orcsdr-tab5/ui/sstv_modes.cpp apps/orcsdr-tab5/ui/sstv_auto_detect.cpp -o /tmp/sstv-wav-replay
 /tmp/sstv-wav-replay /path/to/received_pd120_48k_mono_pcm16.wav 95 50
 ```
 

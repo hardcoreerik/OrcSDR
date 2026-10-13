@@ -566,7 +566,7 @@ Action ui_touch(int32_t x, int32_t y) {
   }
   if (g_page == Page::receive) {
     if (hit(x, y, kAbort)) return {ActionKind::abort_rx, 0};
-    if (hit(x, y, kCapture)) return {ActionKind::save_image, live_image().decoded_rows > 0 ? -1 : 0};
+    if (hit(x, y, kCapture)) return {ActionKind::save_image, -1};
   } else if (g_page == Page::gallery) {
     if (hit(x, y, kSave)) return {ActionKind::save_image, static_cast<int32_t>(g_gallery_selected)};
     if (hit(x, y, kClearGallery)) return {ActionKind::clear_gallery, 0};

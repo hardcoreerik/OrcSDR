@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 FIELDS = ("session_id", "utc_epoch", "frequency_hz", "mode", "width",
-          "height", "decoded_rows", "partial", "sync_missed", "filename")
+          "height", "decoded_rows", "sync_missed", "filename")
 
 
 def read_index(root: Path) -> list[dict[str, object]]:
@@ -25,6 +25,11 @@ def read_index(root: Path) -> list[dict[str, object]]:
     for n, rec in enumerate(records, start=2):
         if any(k not in rec for k in FIELDS):
             raise ValueError(f"index.csv missing fields on row {n}")
+        # Schema v2 (current firmware) stores `complete`; schema v1 stored `partial`. Show one convention.
+        if "complete" in rec:
+            rec["partial"] = "0" if str(rec["complete"]) == "1" else "1"
+        elif "partial" not in rec:
+            raise ValueError(f"index.csv has neither complete nor partial on row {n}")
         name = Path(str(rec["filename"]))
         if name.is_absolute() or ".." in name.parts or name.suffix.lower() != ".bmp":
             raise ValueError(f"unsafe or invalid BMP path in CSV on row {n}")

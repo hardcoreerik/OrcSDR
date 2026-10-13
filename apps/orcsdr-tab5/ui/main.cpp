@@ -12777,6 +12777,8 @@ void navigation_restore_screen(orcsdr::screens::Id restore) {
     draw_rf24_dashboard(true);
   } else if (restore == orcsdr::screens::Id::ft8) {
     draw_ft8_dashboard(true);
+  } else if (restore == orcsdr::screens::Id::sstv) {
+    orcsdr::sstv_app::draw(true);   // Settings opened from the SSTV header returns here, not to Home
   } else {
     draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
                     rtl_live_volume.load(std::memory_order_acquire));
@@ -13656,7 +13658,15 @@ orcsdr::sstv_app::Hooks sstv_app_hooks() {
       rtl_rate_override_sps.store(240000u, std::memory_order_release);
     (void)queue_local_rtl_listen(hz < 30000000u ? RtlBand::shortwave : RtlBand::browse, hz, false);
   };
-  hooks.release_tuning = [] { rtl_rate_override_sps.store(0, std::memory_order_release); };
+  hooks.release_tuning = [] {
+    rtl_rate_override_sps.store(0, std::memory_order_release);
+    // A hot retune keeps the stream's rate, so a stream still running at SSTV's 240 kS/s on a dashboard band is
+    // restarted once at the normal rate (the same rule the FT8 decoder follows when it gives up its rate).
+    if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
+        rtl_active_sample_rate_sps.load(std::memory_order_acquire) == 240000u &&
+        (rtl_ui_band == RtlBand::shortwave || rtl_ui_band == RtlBand::browse))
+      (void)queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz, false);
+  };
   hooks.header_controls = draw_global_header_controls;
   hooks.utc_epoch = [] {
     const auto clock = orcsdr::time_service::now();

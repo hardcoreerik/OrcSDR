@@ -49,7 +49,7 @@ An independent deliberately difficult 1 ms alternating 1500/2300 Hz stripe on Ro
    g++ -std=c++17 -O2 -Iapps/orcsdr-tab5/ui \
       apps/orcsdr-tab5/tests/sstv_wav_replay.cpp \
       apps/orcsdr-tab5/ui/sstv_receiver.cpp \
-      apps/orcsdr-tab5/ui/sstv_modes.cpp -o sstv-wav-replay
+      apps/orcsdr-tab5/ui/sstv_modes.cpp apps/orcsdr-tab5/ui/sstv_auto_detect.cpp -o sstv-wav-replay
    ```
 
 2. Play the 48 kHz mono PCM WAV through the real host decoder:

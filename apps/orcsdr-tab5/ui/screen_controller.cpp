@@ -104,7 +104,7 @@ bool self_check() {
   begin_transition(Id::rf_lab, now++, false);
   finish_transition();
   const bool rf_lab_owns = owns(Id::rf_lab);
-  const bool restored = g_status.transitions == 38;
+  const bool restored = g_status.transitions == 44;   // 13 screens x 3, plus the four single transitions, plus the SSTV entry
   g_status = saved;
   g_transitioning = saved_transitioning;
   return entering_blocks_draw && home_owns && settings_return && documentation_owns &&

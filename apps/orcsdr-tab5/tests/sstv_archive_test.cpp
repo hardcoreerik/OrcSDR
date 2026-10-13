@@ -414,6 +414,56 @@ void test_partial_index_read_does_not_rotate_the_index() {
   rx::clear_gallery();
 }
 
+// A zero-byte index (power lost between creating it and writing the header) must not block saving for ever.
+void test_empty_index_does_not_block_saving() {
+  reset_world();
+  const std::string dir = g_root + "/sstv";
+  require(std::system(("mkdir -p '" + dir + "'").c_str()) == 0, "empty index: mkdir");
+  std::FILE* f = std::fopen((dir + "/index.csv").c_str(), "wb");
+  std::fclose(f);
+  produce(1900);
+  arc::poll(1700000000u);
+  arc::drain(5000);
+  require(arc::stats().saved == 1 && arc::stats().failed == 0, "empty index: the image was saved");
+  require(index_rows().size() == 1, "empty index: a fresh index holds the row");
+  rx::stop();
+  rx::clear_gallery();
+}
+
+// Recovery must keep working when the card already holds more pictures than one pass can list.
+void test_recovery_with_many_images_on_the_card() {
+  reset_world();
+  const std::string dir = g_root + "/sstv";
+  require(std::system(("mkdir -p '" + dir + "'").c_str()) == 0, "many: mkdir");
+  std::FILE* idx = std::fopen((dir + "/index.csv").c_str(), "wb");
+  std::fprintf(idx, "%s\n", arc::kIndexHeaderV2);
+  for (unsigned i = 1; i <= 170; ++i) {
+    char name[96];
+    std::snprintf(name, sizeof(name), "rx_1700000%03u_145800000_%u.bmp", i, i);
+    if (i <= 150)   // 150 pictures are already indexed, the other 20 are orphans
+      std::fprintf(idx, "%u,1700000%03u,1,145800000,ROBOT 36,8,vis,100,320,240,240,1,0,240,0,complete,0,%s\n", i, i, name);
+    std::FILE* f = std::fopen((dir + "/" + name).c_str(), "wb");
+    unsigned char bmp[54] = {'B', 'M'};
+    std::fwrite(bmp, 1, sizeof(bmp), f);
+    std::fclose(f);
+  }
+  std::fclose(idx);
+  for (unsigned i = 0; i < 40; ++i) {     // more torn temp files than one pass removes
+    char name[96];
+    std::snprintf(name, sizeof(name), "rx_1700001%03u_145800000_9.bmp.part", i);
+    std::FILE* f = std::fopen((dir + "/" + name).c_str(), "wb");
+    std::fputs("torn", f);
+    std::fclose(f);
+  }
+  require(arc::recover() == 20, "many: all 20 orphans were found among 170 pictures");
+  size_t total = 20;
+  for (int pass = 0; pass < 5 && count_suffix(".part") > 0; ++pass) total += arc::recover();
+  require(count_suffix(".part") == 0, "many: every torn temp file was removed over a few passes");
+  require(total == 20 && arc::recover() == 0, "many: nothing is indexed twice");
+  rx::stop();
+  rx::clear_gallery();
+}
+
 void test_queue_is_bounded_and_never_blocks() {
   reset_world();
   for (int k = 0; k < 4; ++k) produce(1600 + 100. * k);
@@ -583,6 +633,8 @@ int main() {
   test_transient_card_errors();
   test_failed_index_read_does_not_rotate_the_index();
   test_partial_index_read_does_not_rotate_the_index();
+  test_empty_index_does_not_block_saving();
+  test_recovery_with_many_images_on_the_card();
   test_queue_is_bounded_and_never_blocks();
   test_eviction_while_pending_keeps_pixels();
   test_slow_card_does_not_disturb_decoding();

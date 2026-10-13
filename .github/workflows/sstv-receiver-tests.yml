@@ -18,11 +18,14 @@ on:
       - "tools/sstv_host_tests.sh"
       - "tools/sstv_validate_timings.py"
       - ".github/workflows/sstv-receiver-tests.yml"
+permissions:
+  contents: read
+
 jobs:
   host-regression:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Audit 14 SSTV mode schedules against published wire timings
         run: python3 tools/sstv_validate_timings.py
       - name: Compile Python investigation harnesses
@@ -40,7 +43,7 @@ jobs:
           bash "$GITHUB_WORKSPACE/tools/sstv_host_tests.sh"
       - name: Upload host regression logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sstv-host-regression-logs
           path: ${{ runner.temp }}/sstv-logs/
@@ -53,7 +56,7 @@ jobs:
           cp apps/orcsdr-tab5/tests/sstv_* /tmp/sstv-analysis-source/tests/
       - name: Publish decoder analysis bundle
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sstv-decoder-analysis-bundle
           path: /tmp/sstv-analysis-source/

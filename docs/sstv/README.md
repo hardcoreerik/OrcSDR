@@ -151,10 +151,11 @@ The 36.91 s Pluto Robot 36 recording (`received-filtered-aligned.wav`, SHA-256 `
 
 ## Not yet validated
 
-- **On hardware:** dashboard rendering and touch, SD writes on a real card, P4 CPU/heap/PSRAM and latency, coexistence with FM and USB reception, long unattended runs. The UI code compiles but has not been seen on a Tab5.
+- **Observed on a Tab5 (2026-10-12):** dashboard rendering and touch, the Robot 36 and PD120 self-tests through the real decoder, display and SD archive, BMP saves of full-size pictures (after the 16 KiB block-write fix), and live reception of two over-the-air colour Robot 36 frames saved to the card.
+- **Not yet observed:** long unattended runs and soaks beyond a handful of images, SD behaviour across many card types or a card pulled mid-write on real hardware (the failure cases are covered on the host only), coexistence with FM and USB reception, and P4 CPU/heap/PSRAM and latency figures beyond the spot readings in `SSTV STATUS`.
 - Cabled or over-the-air reception of every mode except Robot 36; Martin, Scottie and PD are validated with synthetic audio only.
 - Colour over the air for every mode except Robot 36; chroma smoothing for weak signals (colour speckle is visible at about 10 dB over the noise); Goertzel-based tone validation.
-- Sync-only identification under fading is heuristic; see the Robot 36 / Robot 72 alias above.
+- Sync-only identification under fading is heuristic; see the Robot 36 / Robot 72 alias above. Martin's 4.9 ms sync pulse reads shorter than the classifier's floor, so Martin pictures are identified by VIS only.
 - `session_id` restarts every boot; a paginated SD browser does not exist (the gallery shows the newest four).
 
 

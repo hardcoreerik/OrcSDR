@@ -61,7 +61,9 @@ if [ -n "${SSTV_FIXTURE_WAV:-}" ]; then
   if [ -x "$BIN/replay" ]; then
     {
       echo "fixture:  $SSTV_FIXTURE_WAV"
-      echo "sha256:   $(sha256sum "$SSTV_FIXTURE_WAV" | cut -c1-64)"
+      if command -v sha256sum >/dev/null 2>&1; then echo "sha256:   $(sha256sum "$SSTV_FIXTURE_WAV" | cut -c1-64)";
+      elif command -v shasum >/dev/null 2>&1; then echo "sha256:   $(shasum -a 256 "$SSTV_FIXTURE_WAV" | cut -c1-64)";
+      else echo "sha256:   UNAVAILABLE (no sha256sum or shasum)"; status=1; fi
       echo "size:     $(stat -c %s "$SSTV_FIXTURE_WAV" 2>/dev/null || stat -f %z "$SSTV_FIXTURE_WAV") bytes"
       echo "expected: VIS=$EXPECT_VIS rows>=$EXPECT_ROWS"
     } | tee -a "$SUMMARY"

@@ -25,7 +25,9 @@ void reset() {
 unsigned pending_pulses() {return g_count;}
 Candidate observe(uint32_t start,uint16_t length) {
   Candidate out{};
-  // Ignore very short/long noise bursts; real supported syncs are 4.862-20ms.
+  // Ignore very short/long noise bursts. The tone estimator is slow to enter the 1200 Hz window, so pulses read
+  // shorter than they are: a 9 ms sync reads about 80 samples, but Martin's 4.9 ms sync reads about 33, below
+  // this floor. Sync-only identification therefore cannot recognise Martin; those modes are identified by VIS.
   if(length<35 || length>350) return out;
   if(g_count && (start-g_pulses[g_count-1].begin)>kRate*3u)g_count=0;
   if(g_count==kHistory) {

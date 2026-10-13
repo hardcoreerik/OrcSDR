@@ -79,6 +79,7 @@ g++ -std=c++17 -O2 -Wall -Wextra -Iapps/orcsdr-tab5/ui \
   apps/orcsdr-tab5/tests/sstv_receiver_smoke.cpp \
   apps/orcsdr-tab5/ui/sstv_receiver.cpp \
   apps/orcsdr-tab5/ui/sstv_modes.cpp \
+  apps/orcsdr-tab5/ui/sstv_auto_detect.cpp \
   apps/orcsdr-tab5/ui/sstv_auto_detect.cpp -o sstv-smoke
 ./sstv-smoke > sstv-host-test.log 2>&1
 
@@ -86,6 +87,7 @@ g++ -std=c++17 -O2 -Wall -Wextra -Iapps/orcsdr-tab5/ui \
   apps/orcsdr-tab5/tests/sstv_wav_replay.cpp \
   apps/orcsdr-tab5/ui/sstv_receiver.cpp \
   apps/orcsdr-tab5/ui/sstv_modes.cpp \
+  apps/orcsdr-tab5/ui/sstv_auto_detect.cpp \
   apps/orcsdr-tab5/ui/sstv_auto_detect.cpp -o sstv-wav-replay
 ./sstv-wav-replay /path/to/received-filtered-aligned.wav 8 239 \
   > sstv-pluto-replay.log 2>&1
