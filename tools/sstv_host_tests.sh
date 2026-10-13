@@ -23,7 +23,8 @@ status=0
 {
   echo "SSTV host regression  $(date -Is)"
   echo "repo:    $ROOT"
-  echo "commit:  $(git -c safe.directory='*' -C "$ROOT" rev-parse --short HEAD 2>/dev/null) ($(git -c safe.directory='*' -C "$ROOT" branch --show-current 2>/dev/null))"
+  # SSTV_COMMIT lets a caller supply it where git cannot read the worktree (for example WSL on a Windows checkout).
+  echo "commit:  ${SSTV_COMMIT:-$(git -c safe.directory='*' -C "$ROOT" rev-parse --short HEAD 2>/dev/null)} ($(git -c safe.directory='*' -C "$ROOT" branch --show-current 2>/dev/null))"
   echo "compiler: $(g++ --version | head -1)"
   echo "flags:   ${CXXFLAGS[*]}"
 } | tee "$SUMMARY"
