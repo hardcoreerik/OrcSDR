@@ -43,10 +43,10 @@ static const DashboardImage dashboard_images[] = {
   {satellite_start, satellite_end}, {nullptr, nullptr},
   {settings_start, settings_end}, {rf_lab_start, rf_lab_end},
   {wifi_analysis_start, wifi_analysis_end}, {pocsag_start, pocsag_end},
-  {am_start, am_end}, {nullptr, nullptr}
+  {am_start, am_end}, {nullptr, nullptr}, {nullptr, nullptr}
 };
 static_assert(sizeof(dashboard_images) / sizeof(dashboard_images[0]) ==
-              static_cast<unsigned>(Dashboard::ft8) + 1);
+              static_cast<unsigned>(Dashboard::sstv) + 1);
 static constexpr uint32_t ink = 0xe8f5f6, dim = 0x88a4ad, green = 0x70f847;
 static constexpr uint32_t bg = 0x050f16, cyan = 0x38d9ff, blue = 0x319bff, red = 0xff4a4a;
 static constexpr uint32_t panel = 0x0c202b, trace = 0x163747, trace_bright = 0x286174;
@@ -475,6 +475,21 @@ static void selector_icon(lgfx::LGFXBase& d, Dashboard id, int x, int y,
   const auto& image = dashboard_images[index];
   const int size = small ? 30 : 64;
   if (!image.start) {
+    if (id == Dashboard::sstv) {   // a picture frame with scan lines and a sync marker; protocol icon only
+      const int left = x - size / 2, top = y - size / 2;
+      d.drawRoundRect(left, top, size, size, small ? 5 : 9, green);
+      const int lines = small ? 3 : 5;
+      for (int i = 0; i < lines; ++i) {
+        const int ly = top + 5 + i * (size - 10) / lines;
+        d.drawFastHLine(left + 4, ly, size - 8 - (i % 2) * (size / 5), green);
+      }
+      d.fillRect(left + 4, top + 4, small ? 3 : 5, small ? 3 : 5, ink);
+      if (!small) {
+        d.setTextColor(ink, bg); d.setTextSize(2);
+        draw_text(d, "SSTV", x, top + size - 12, size - 8);
+      }
+      return;
+    }
     if (id != Dashboard::ft8) return;
     const uint32_t c = green;
     const int left = x - size / 2;

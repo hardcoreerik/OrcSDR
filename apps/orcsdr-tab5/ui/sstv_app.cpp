@@ -328,6 +328,11 @@ bool nudge(int direction, bool fine) {
   if (!active()) return false;
   return tune_hz(tn::nudge(g_frequency_hz, fine ? tn::step_hz(0) : step_hz(), direction < 0 ? -1 : 1));
 }
+uint32_t next_step_hz(bool larger) {
+  const size_t index = g_tune.step_index;
+  const size_t next = larger ? std::min(index + 1, tn::step_count() - 1) : (index ? index - 1 : 0);
+  return tn::step_hz(next);
+}
 bool set_step(uint32_t step) {
   if (!active()) return false;
   g_tune.step_index = static_cast<uint8_t>(tn::step_index(step));

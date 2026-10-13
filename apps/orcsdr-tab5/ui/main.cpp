@@ -15465,6 +15465,7 @@ orc::Dashboard orcdial_active_dashboard() {
   if (screen == Screen::rf_lab) return orc::Dashboard::rf_lab;
   if (screen == Screen::wifi_analysis) return orc::Dashboard::wifi_analysis;
   if (screen == Screen::ft8) return orc::Dashboard::ft8;
+  if (screen == Screen::sstv) return orc::Dashboard::sstv;
   if (rtl_ui_band == RtlBand::browse && screen == Screen::radio &&
       rtl_ui_frequency_hz > 137000000 && rtl_ui_frequency_hz < 138000000)
     return orc::Dashboard::satellite;
@@ -15510,6 +15511,10 @@ void orcdial_fill_state(orc::Packet& p) {
     p.item_count = 4; // supported range choices, not a fabricated aircraft count
   } else if (id == orc::Dashboard::ft8) {
     fill_orcdial_ft8_state(p);
+  } else if (id == orc::Dashboard::sstv) {
+    p.frequency_hz = orcsdr::sstv_app::frequency_hz();
+    p.step_hz = orcsdr::sstv_app::step_hz();
+    p.mode = static_cast<uint8_t>(effective_demod(rtl_ui_band));
   }
   // rtl_signal_dbfs_smooth is relative dBFS, not a calibrated dBm reading.
   p.flags = 0;
@@ -15529,7 +15534,7 @@ bool orcdial_apply(const orc::Packet& p) {
   using Dash = orc::Dashboard;
   const Dash active = orcdial_active_dashboard();
   if (p.type == orc::Type::set_dashboard) {
-    if (p.value < 0 || p.value > 17 || !orc::valid_dashboard(static_cast<uint8_t>(p.value))) return false;
+    if (p.value < 0 || p.value > 18 || !orc::valid_dashboard(static_cast<uint8_t>(p.value))) return false;
     if (p.value == 0) show_home();
     else open_dashboard(orcsdr::dashboards::Id(p.value));
     return true;
@@ -15538,6 +15543,7 @@ bool orcdial_apply(const orc::Packet& p) {
     // The Dial's keypad: any frequency on Home, or one inside the band of the dashboard on screen.
     if (p.value < 24000 || p.value > 1766000000) return false;
     const uint32_t hz = static_cast<uint32_t>(p.value);
+    if (active == Dash::sstv) return orcsdr::sstv_app::tune_to(hz);   // the SSTV tuner owns its frequency and demodulator
     if (active == Dash::home) return p.value >= 24000000 && home_tune_to(hz, true);
     if (active == Dash::fm) {
       if (hz < kRtlFmMinHz || hz > kRtlFmMaxHz) return false;
@@ -15554,6 +15560,10 @@ bool orcdial_apply(const orc::Packet& p) {
     if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running) return request_hot_retune(hz);
     return queue_local_rtl_listen(rtl_ui_band, hz);
   }
+  if (p.type == orc::Type::set_mode && active == Dash::sstv) {
+    orcsdr::sstv_app::cycle_demod();   // AUTO -> NFM -> USB -> LSB; the Dial's requested value is not used
+    return true;
+  }
   if (p.type == orc::Type::set_mode) {
     if (active != Dash::home || !home_full_range() || p.value < 1 || p.value > 5) return false;
     home_select_mode(static_cast<HomeDemod>(p.value));
@@ -15564,6 +15574,17 @@ bool orcdial_apply(const orc::Packet& p) {
       p.value > 1000000000) return false;
   const Kind kind = Kind(p.action);
   if (active == Dash::ft8) return orcdial_apply_ft8(p.action, p.value);
+  if (active == Dash::sstv) {
+    if (kind == Kind::tune)   // a Hz offset: the Dial multiplies its detents by the step this device reported
+      return orcsdr::sstv_app::tune_to(static_cast<uint32_t>(std::clamp<int64_t>(
+          int64_t(orcsdr::sstv_app::frequency_hz()) + p.value, 0, 2000000000)));
+    if (kind == Kind::step && p.value >= -4 && p.value <= 4 && p.value != 0) {
+      for (int i = 0; i < abs(p.value); ++i)
+        (void)orcsdr::sstv_app::set_step(orcsdr::sstv_app::next_step_hz(p.value > 0));
+      return true;
+    }
+    return false;
+  }
   if (active == Dash::home && kind == Kind::tune) {
     // On Home the value is a count of steps; the Tab5 applies the step of the band it is in.
     if (p.value == 0 || p.value < -64 || p.value > 64) return false;

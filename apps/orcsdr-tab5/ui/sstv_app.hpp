@@ -52,6 +52,7 @@ bool tune_to(uint32_t frequency_hz);          // false when outside the receiver
 bool nudge(int direction, bool fine = false); // one VFO step up (+1) or down (-1); fine uses the smallest step
 uint32_t step_hz();
 bool set_step(uint32_t step_hz);              // snaps to the nearest step on the list
+uint32_t next_step_hz(bool larger);           // the neighbouring step on the list (stays at the ends)
 void cycle_demod();                           // AUTO -> NFM -> USB -> LSB -> AUTO
 const char* demod_label();                    // e.g. "NFM", "USB (AUTO)"
 // RF spectrum for the TUNE tab, called from the UI task each time a spectrum frame exists.

@@ -36,7 +36,7 @@ inline Action rotate(Dashboard id, uint8_t view, Focus focus, int detents,
     // band it is in, so a spin that crosses a band edge changes step and snaps to the next band's raster.
     case Dashboard::home: return {ActionKind::tune, detents * acceleration};
     case Dashboard::fm: case Dashboard::am: case Dashboard::shortwave:
-    case Dashboard::airband: case Dashboard::satellite: case Dashboard::rf_lab:
+    case Dashboard::airband: case Dashboard::satellite: case Dashboard::rf_lab: case Dashboard::sstv:
       { const int64_t hz = int64_t(detents) * acceleration * step_hz;
         return {ActionKind::tune, hz > 1000000000 ? 1000000000 :
                                   hz < -1000000000 ? -1000000000 : int32_t(hz)}; }
@@ -98,6 +98,7 @@ inline Focus next_focus(Dashboard id, Focus focus) {
     if (focus == Focus::vfo) return id == Dashboard::cb ? Focus::squelch : Focus::volume;
     return Focus::vfo;
   }
+  if (id == Dashboard::sstv) return focus == Focus::vfo ? Focus::step : Focus::vfo;   // direct tuning and step only
   if (id == Dashboard::fm) {
     if (focus == Focus::vfo) return Focus::step;
     if (focus == Focus::step) return Focus::volume;

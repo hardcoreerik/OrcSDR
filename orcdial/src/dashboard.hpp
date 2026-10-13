@@ -6,7 +6,7 @@ namespace orc {
 enum class Dashboard : uint8_t {
   home=0, fm=1, p25=2, adsb=3, shortwave=4, weather=5, cb=6,
   lora=7, airband=8, marine=9, satellite=10, utilities=11,
-  settings=12, rf_lab=13, wifi_analysis=14, pocsag=15, am=16, ft8=17
+  settings=12, rf_lab=13, wifi_analysis=14, pocsag=15, am=16, ft8=17, sstv=18
 };
 // Local menu token, never a receiver dashboard ID or valid wire command.
 constexpr Dashboard devices_entry=static_cast<Dashboard>(255);
@@ -14,10 +14,10 @@ constexpr Dashboard carousel[] = {
   Dashboard::home, Dashboard::fm, Dashboard::am, Dashboard::weather,
   Dashboard::airband, Dashboard::marine, Dashboard::cb, Dashboard::adsb,
   Dashboard::satellite, Dashboard::lora, Dashboard::rf_lab, Dashboard::p25,
-  Dashboard::shortwave, Dashboard::ft8, Dashboard::pocsag, Dashboard::wifi_analysis, Dashboard::settings, devices_entry
+  Dashboard::shortwave, Dashboard::ft8, Dashboard::sstv, Dashboard::pocsag, Dashboard::wifi_analysis, Dashboard::settings, devices_entry
 };
 constexpr int carousel_count = sizeof(carousel) / sizeof(carousel[0]);
-inline bool valid_dashboard(uint8_t id) { return id <= 17 && id != 11; }
+inline bool valid_dashboard(uint8_t id) { return id <= 18 && id != 11; }
 inline const char* dashboard_name(Dashboard id) {
   if (id == devices_entry) return "DIAL SETTINGS"; // not an enumerator, so it cannot be a case label (-Werror=switch)
   switch (id) {
@@ -25,6 +25,7 @@ inline const char* dashboard_name(Dashboard id) {
     case Dashboard::fm: return "FM RADIO";
     case Dashboard::am: return "AM RADIO";
     case Dashboard::ft8: return "FT8 RX";
+    case Dashboard::sstv: return "SSTV RX";
     case Dashboard::weather: return "WEATHER";
     case Dashboard::airband: return "AIRBAND";
     case Dashboard::marine: return "MARINE";
@@ -43,7 +44,8 @@ inline const char* dashboard_name(Dashboard id) {
 }
 inline bool tunable(Dashboard id) {
   return id == Dashboard::fm || id == Dashboard::am || id == Dashboard::shortwave ||
-         id == Dashboard::airband || id == Dashboard::satellite || id == Dashboard::rf_lab;
+         id == Dashboard::airband || id == Dashboard::satellite || id == Dashboard::rf_lab ||
+         id == Dashboard::sstv;
 }
 inline int carousel_index(Dashboard id) {
   for (int i=0; i<carousel_count; ++i) if (carousel[i] == id) return i;
