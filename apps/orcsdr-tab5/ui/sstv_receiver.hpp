@@ -25,13 +25,17 @@ const char* mode_name(Mode mode);
 struct Metrics {
   float tone_hz = 0;
   float audio_peak = 0;
-  uint32_t audio_overruns = 0;
+  uint32_t audio_overruns = 0;      // decoder-rate samples dropped because the ring was full
+  uint32_t audio_gaps = 0;          // distinct drop bursts the decoder skipped over in time
+  uint32_t audio_gap_samples = 0;   // decoder-rate samples of timeline re-inserted for those gaps
   uint32_t bad_vis = 0;
   uint32_t good_vis = 0;
   uint32_t frames = 0;
   uint32_t partial_frames = 0;
   uint32_t auto_sync_locks = 0;
   uint32_t observed_sync_pulses = 0;
+  float sync_pulse_ms = 0.0f;     // width of the most recent 1200 Hz pulse
+  float sync_interval_ms = 0.0f;  // spacing between the two most recent pulse starts
   Identification identification = Identification::none;
   uint8_t identification_score = 0; // heuristic; not a probability
   bool start_unknown = false;
@@ -101,4 +105,11 @@ uint32_t image_revision();
 // When utc_epoch==0 the clock is explicitly unverified in the index.
 bool save_bmp(size_t index, char* out_path, size_t path_len, uint32_t utc_epoch = 0);
 bool self_check();
+#ifdef ORCSDR_SSTV_TESTING
+namespace testing {
+// Host tests only: place the decoder's sample clock (for example just before the
+// 32-bit wrap at ~99.4 h). Call after start().
+void set_tick_base(uint64_t ticks);
+} // namespace testing
+#endif
 } // namespace orcsdr::sstv

@@ -21,6 +21,14 @@ constexpr uint32_t kRate=12000, kRingSize=4096, kMask=kRingSize-1;
 constexpr uint16_t kMaxWidth=800;
 constexpr size_t kGallery=4;
 std::atomic<uint32_t> g_read{0},g_write{0},g_drops{0};
+// Drop bursts are recorded in-band so the decoder can keep its sample clock
+// true: a marker says "N samples were lost immediately before ring slot I".
+// Producer writes head, consumer writes tail (single producer, single consumer).
+constexpr uint32_t kGapMarks=8;
+uint32_t g_gap_index[kGapMarks]{};
+uint32_t g_gap_count[kGapMarks]{};
+std::atomic<uint32_t> g_gap_head{0},g_gap_tail{0};
+uint32_t g_pending_gap=0;   // producer-only: dropped since the last stored sample
 std::atomic<bool> g_on{false};
 int16_t g_queue[kRingSize]{};
 int32_t g_decim_sum=0;
@@ -39,7 +47,7 @@ int32_t g_last_pixel[2]={-1,-1};
 // Band-limited crossing estimator.  A light one-pole HP/LP pair rejects out
 // of-band noise before fractional zero-cross interpolation.  No windowed FFT.
 float g_in_prev=0,g_hp=0,g_lp=0,g_prev=0;
-float g_period=0,g_freq=0,g_level=0;
+float g_period=0,g_freq=0,g_level=0,g_env=0;
 uint32_t g_last_edge_tick=0;
 float g_last_edge_frac=0;
 bool g_have_edge=false;
@@ -48,14 +56,22 @@ bool g_have_edge=false;
 float g_ac_y2=0,g_ac_p=0,g_ac_q=0,g_luma_freq=0;
 uint16_t g_ac_freq_lut[513]{};
 bool g_ac_lut_ready=false;
-uint32_t g_ticks=0,g_sync_run=0;
+// 64-bit sample clock: a 32-bit counter at 12 kHz wraps after ~99.4 h, which
+// would invalidate the double raster origin (g_line_origin) mid-image on an
+// unattended receiver. Edge/pulse differences that must stay wrap-safe use
+// explicit uint32_t subtraction instead.
+uint64_t g_ticks=0;
+uint32_t g_sync_run=0;
+uint64_t g_last_sync_start=0;
+bool g_have_sync_start=false;
 double g_line_origin=0;
 uint16_t g_line_index=0;
 bool g_line_sync=false;
 uint8_t g_consecutive_missed=0;
 enum class VisStage:uint8_t { lead1, break1200, lead2, start1200, bits };
 VisStage g_vis_stage=VisStage::lead1;
-uint32_t g_phase_samples=0,g_phase_age=0,g_vis_start=0;
+uint32_t g_phase_samples=0,g_phase_age=0;
+uint64_t g_vis_start=0;
 uint8_t g_vis_byte=0,g_vis_parity=0,g_vis_field=0;
 bool g_vis_stop_good=false;
 uint16_t g_vis_votes[9]{};
@@ -250,7 +266,7 @@ void vis_tick(float f) {
   const bool lead=f>=1740.f&&f<=2070.f;
   const bool sync=f>=1030.f&&f<=1400.f;
   if(g_vis_stage==VisStage::bits) {
-    const uint32_t age=g_ticks-g_vis_start;
+    const uint32_t age=static_cast<uint32_t>(g_ticks-g_vis_start);
     // Majority vote over the middle 20ms of each 30ms VIS symbol. Unlike
     // the former single-point sampler, a single tone glitch cannot flip
     // a bit. No dynamic memory and only small integer vote counters.
@@ -334,6 +350,17 @@ void vis_tick(float f) {
     case VisStage::bits:break;
   }
 }
+// Time the producer could not deliver (ring overrun) still elapsed on the air.
+// Advance the sample clock by the dropped amount so the raster timeline and the
+// line-sync window stay true, and restart anything that spans the gap.
+void skip_gap(uint32_t count) {
+  g_ticks+=count;
+  ++g_stats.audio_gaps;
+  g_stats.audio_gap_samples+=count;
+  g_have_edge=false;
+  g_sync_run=0;
+  reset_vis();
+}
 void accept_sample(int16_t pcm) {
   ++g_ticks;
   // One pole high-pass (~120 Hz) followed by LP (~2.6 kHz).  Damping is
@@ -342,11 +369,20 @@ void accept_sample(int16_t pcm) {
   g_hp=.94f*(g_hp+x-g_in_prev);g_in_prev=x;
   g_lp+=.78f*(g_hp-g_lp);
   g_level=std::max(std::fabs(g_lp)/32768.f,g_level*.9995f);
+  // Fast envelope (sub-ms attack, ~3 ms release at 12 kHz). When the audio
+  // really goes quiet the tone estimate must fall to zero; otherwise the last
+  // tone (for example a 1200 Hz sync) would be held through silence, stretching
+  // pulse widths and letting a stale 1900 Hz leader keep VIS timing alive.
+  {
+    const float a=std::fabs(g_lp)/32768.f;
+    g_env+=(a>g_env?.5f:.15f)*(a-g_env);
+    if(g_env<.002f){g_freq=0.f;g_period=0.f;g_have_edge=false;}
+  }
   if(g_prev<=0.f&&g_lp>0.f&&g_level>.005f) {
     const float frac= -g_prev/(g_lp-g_prev);
     // Use an integer sample clock + fractional crossing; floating-point
     // absolute timestamps lose sub-sample precision after ~23 minutes.
-    const uint32_t tick=g_ticks-1u;
+    const uint32_t tick=static_cast<uint32_t>(g_ticks-1u);
     const float period=static_cast<float>(tick-g_last_edge_tick)
                        +frac-g_last_edge_frac;
     if(g_have_edge&&period>4.4f&&period<13.f) {
@@ -384,14 +420,19 @@ void accept_sample(int16_t pcm) {
   } else if(g_sync_run) {
     const uint32_t n=g_sync_run;
     g_sync_run=0;
-    const uint32_t sync_start=g_ticks-n;
+    const uint64_t sync_start=g_ticks-n;
     ++g_stats.observed_sync_pulses;
+    g_stats.sync_pulse_ms=static_cast<float>(n)*1000.f/kRate;
+    if(g_have_sync_start)
+      g_stats.sync_interval_ms=static_cast<float>(sync_start-g_last_sync_start)*1000.f/kRate;
+    g_last_sync_start=sync_start;g_have_sync_start=true;
     if(g_stats.receiving)sync_edge(n);
     else if(g_auto_strategy==AutoStrategy::vis_sync &&
             g_requested==Mode::auto_vis &&
             g_vis_stage==VisStage::lead1 && n<=65535u) {
+      // The classifier only subtracts pulse times, so the low 32 bits suffice.
       const auto candidate=auto_detect::observe(
-        sync_start,static_cast<uint16_t>(n));
+        static_cast<uint32_t>(sync_start),static_cast<uint16_t>(n));
       if(candidate.locked) {
         const ModeSpec* m=mode_spec(candidate.mode);
         if(m) {
@@ -421,9 +462,11 @@ void start(uint32_t freq) {
   if(g_stats.receiving)finish_picture(true,EndReason::aborted);
   reset_vis();reset_picture();auto_detect::reset();
   g_frequency=freq;g_stats.active=true;
-  g_hp=g_lp=g_in_prev=g_prev=g_period=g_freq=g_level=0.f;
+  g_hp=g_lp=g_in_prev=g_prev=g_period=g_freq=g_level=g_env=0.f;
   g_last_edge_tick=0;g_last_edge_frac=0;g_have_edge=false;
   g_decim_sum=0;g_decim_n=0;
+  g_gap_tail.store(g_gap_head.load(std::memory_order_acquire),std::memory_order_release);
+  g_pending_gap=0;g_have_sync_start=false;
   g_ac_y2=g_ac_p=g_ac_q=g_luma_freq=0.f;
   // Build a 1 KiB inverse-cosine LUT once, outside the real-time audio
   // service.  The sample loop only interpolates adjacent integer entries.
@@ -444,6 +487,8 @@ void stop(){
   if(g_stats.receiving)finish_picture(true,EndReason::aborted);
   reset_vis();reset_picture();auto_detect::reset();g_stats.active=false;
   g_read.store(g_write.load(std::memory_order_acquire),std::memory_order_release);
+  g_gap_tail.store(g_gap_head.load(std::memory_order_acquire),std::memory_order_release);
+  g_pending_gap=0;
 }
 bool active(){return g_on.load(std::memory_order_acquire);}
 void set_mode(Mode m){g_requested=mode_spec(m)?m:Mode::auto_vis;}
@@ -467,7 +512,24 @@ void offer_audio_48k(const int16_t* src,size_t n){
     const int16_t sample=static_cast<int16_t>(g_decim_sum/4);
     g_decim_sum=0;
     if(w-g_read.load(std::memory_order_acquire)>=kRingSize){
-      g_drops.fetch_add(1,std::memory_order_relaxed);continue;
+      g_drops.fetch_add(1,std::memory_order_relaxed);
+      if(g_pending_gap<0xffffffffu)++g_pending_gap;
+      continue;
+    }
+    if(g_pending_gap) {
+      // First stored sample after a drop burst: publish where the gap fell.
+      const uint32_t head=g_gap_head.load(std::memory_order_relaxed);
+      const uint32_t tail=g_gap_tail.load(std::memory_order_acquire);
+      if(head-tail<kGapMarks) {
+        g_gap_index[head%kGapMarks]=w;
+        g_gap_count[head%kGapMarks]=g_pending_gap;
+        g_gap_head.store(head+1,std::memory_order_release);
+      } else {
+        // Marker queue full: fold into the newest marker; the timeline error
+        // is bounded by the burst length and PLL/sync relock absorbs it.
+        g_gap_count[(head-1)%kGapMarks]+=g_pending_gap;
+      }
+      g_pending_gap=0;
     }
     g_queue[w&kMask]=sample;++w;
   }
@@ -478,7 +540,16 @@ void service(size_t budget){
   uint32_t r=g_read.load(std::memory_order_relaxed);
   const uint32_t end=g_write.load(std::memory_order_acquire);
   size_t n=0;
-  while(r!=end&&n<budget){accept_sample(g_queue[r&kMask]);++r;++n;}
+  uint32_t tail=g_gap_tail.load(std::memory_order_relaxed);
+  const uint32_t head=g_gap_head.load(std::memory_order_acquire);
+  while(r!=end&&n<budget){
+    while(tail!=head&&g_gap_index[tail%kGapMarks]==r) {
+      skip_gap(g_gap_count[tail%kGapMarks]);
+      ++tail;
+    }
+    accept_sample(g_queue[r&kMask]);++r;++n;
+  }
+  g_gap_tail.store(tail,std::memory_order_release);
   g_read.store(r,std::memory_order_release);
   g_stats.samples+=static_cast<uint32_t>(n);
   g_stats.tone_hz=g_freq;g_stats.audio_peak=g_level;
@@ -573,4 +644,9 @@ bool self_check(){
     }
   return tone_luma(1500.f)==0&&tone_luma(2300.f)==255;
 }
+#ifdef ORCSDR_SSTV_TESTING
+namespace testing {
+void set_tick_base(uint64_t ticks){g_ticks=static_cast<decltype(g_ticks)>(ticks);}
+} // namespace testing
+#endif
 } // namespace orcsdr::sstv
