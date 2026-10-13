@@ -27,6 +27,8 @@ struct Signal {
   size_t pending = 0;
   double phase = 0;
   double amplitude = 11000.;
+  double time_scale = 1.0;   // >1 stretches every tone (transmitter clock slower)
+  double luma_hz = 1900.;    // neutral luminance tone used by the image rows
   // false: audio is offered but the decoder is not serviced, so the 4096
   // sample ring fills and the producer must drop samples (overrun).
   bool service_enabled = true;
@@ -43,7 +45,7 @@ struct Signal {
     if (pending == pcm.size()) flush();
   }
   void tone(double hz, double ms) {
-    const auto samples = static_cast<int>(std::lround(kSampleRate * ms / 1000.));
+    const auto samples = static_cast<int>(std::lround(kSampleRate * ms * time_scale / 1000.));
     const double delta = (2.0 * kPi * hz) / kSampleRate;
     for (int i = 0; i < samples; ++i) {
       push(static_cast<int16_t>(std::lround(amplitude * std::sin(phase))));
@@ -92,7 +94,7 @@ struct Signal {
       if (row == 100) {
         for (unsigned stripe = 0; stripe < 88; ++stripe) tone((stripe & 1u) ? 2300 : 1500, 1);
       } else {
-        tone(1900, 88);
+        tone(luma_hz, 88);
       }
       tone((row & 1u) ? 2300 : 1500, 4.5);
       tone(1900, 1.5);

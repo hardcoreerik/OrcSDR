@@ -5,6 +5,7 @@
 #include "sstv_receiver.hpp"
 #include "sstv_test_signal.hpp"
 #include <cstdio>
+#include <cstdlib>
 
 using namespace orcsdr::sstv;
 using sstv_test::require;
@@ -103,6 +104,325 @@ void test_silence_between_syncs() {
   clear_gallery();
 }
 
+uint16_t gray565(uint8_t v) {
+  return static_cast<uint16_t>(((v & 248) << 8) | ((v & 252) << 3) | (v >> 3));
+}
+uint8_t luma_of(double hz) {
+  int v = static_cast<int>((hz - 1500.) * 255. / 800. + .5);
+  return static_cast<uint8_t>(v < 0 ? 0 : (v > 255 ? 255 : v));
+}
+
+// Per-reception counters belong to one image, not to the receiver lifetime.
+void test_per_session_counters() {
+  reset_receiver();
+  Signal sig;
+  uint32_t first_session = 0;
+  for (int round = 0; round < 2; ++round) {
+    sig.header(8);
+    sig.robot36_rows();
+    sig.tone(1900, 50);
+    sig.flush();
+    const auto image = archived_image(0);
+    require(image.session_id != 0 && image.session_id != first_session,
+            "session: every reception has a new, non-zero session id");
+    first_session = image.session_id;
+    require(image.vis_code == 8 && image.identification == Identification::vis,
+            "session: VIS-identified image records its VIS code");
+    require(image.sync_locked >= 235 && image.sync_locked <= 241,
+            "session: sync_locked counts this image only (not lifetime)");
+    require(image.sync_missed <= 2, "session: sync_missed counts this image only");
+    sig.silence(500);
+  }
+  require(metrics().sync_locked_lines > 400, "session: lifetime counter keeps accumulating");
+  stop();
+  clear_gallery();
+}
+
+// Robot 36 -> PD120 -> Scottie S1 without any operator action in between.
+void test_multi_mode_sequence() {
+  reset_receiver();
+  const auto overruns_before = metrics().audio_overruns;  // lifetime counter
+  Signal sig;
+  sig.header(8);
+  sig.robot36_rows();
+  sig.tone(1900, 50);
+  sig.silence(2000);
+  sig.header(95);
+  sig.pd120_pairs();
+  sig.tone(1900, 50);
+  sig.silence(2000);
+  sig.header(60);
+  sig.tone(1200, 9);  // Scottie's extra post-VIS sync pulse
+  sig.scottie_s1_rows();
+  sig.tone(1900, 50);
+  sig.silence(500);
+  sig.flush();
+  require(archive_count() == 3, "sequence: three transmissions, three archived images");
+  const Mode expect[3] = {Mode::scottie_s1, Mode::pd120, Mode::robot36};
+  const uint16_t rows[3] = {256, 496, 240};
+  for (size_t i = 0; i < 3; ++i) {
+    const auto image = archived_image(i);
+    require(image.mode == expect[i], "sequence: modes identified in order");
+    require(image.decoded_rows == rows[i] && !image.partial, "sequence: each image complete");
+    require(image.identification == Identification::vis, "sequence: each identified by VIS");
+    if (i + 1 < 3)
+      require(image.session_id > archived_image(i + 1).session_id,
+              "sequence: session ids increase");
+  }
+  require(!metrics().receiving, "sequence: receiver returned to listening");
+  require(metrics().audio_overruns == overruns_before, "sequence: no new ring overruns");
+  stop();
+  clear_gallery();
+}
+
+void test_noise_makes_no_image() {
+  reset_receiver();
+  const auto before = metrics();
+  Signal sig;
+  sig.noise(20000, 8000);
+  sig.noise(5000, 30000);
+  sig.tone(1200, 30000);  // an unrelated, continuous 1200 Hz carrier
+  sig.flush();
+  const auto m = metrics();
+  require(archive_count() == 0 && !m.receiving, "noise: no image from noise or a steady 1200 Hz tone");
+  require(m.good_vis == before.good_vis, "noise: no VIS accepted");
+  require(m.auto_sync_locks == before.auto_sync_locks, "noise: no sync lock");
+  stop();
+  clear_gallery();
+}
+
+// Pulse trains that are irregular, or regular at a period no mode uses, must not lock.
+void test_false_pulse_trains_do_not_lock() {
+  reset_receiver();
+  const auto before = metrics();
+  Signal sig;
+  uint32_t r = 99u;
+  for (unsigned i = 0; i < 60; ++i) {  // irregular spacing 80..700 ms
+    r = r * 1664525u + 1013904223u;
+    sig.tone(1200, 9);
+    sig.tone(1900, 80. + static_cast<double>((r >> 16) % 620u));
+  }
+  for (unsigned i = 0; i < 30; ++i) {  // regular 240 ms: between Robot 36 and Robot 72
+    sig.tone(1200, 9);
+    sig.tone(1900, 231);
+  }
+  for (unsigned i = 0; i < 30; ++i) {  // regular 137 ms: near Robot 36 but 8.7% off
+    sig.tone(1200, 9);
+    sig.tone(1900, 128);
+  }
+  sig.flush();
+  require(metrics().auto_sync_locks == before.auto_sync_locks && archive_count() == 0,
+          "false pulses: irregular or unmatched periods never lock a mode");
+  stop();
+  clear_gallery();
+}
+
+// A damaged VIS must not be trusted; the sync fallback may still identify the
+// mode but must say so, and the image must stay partial.
+void test_damaged_vis_falls_back_honestly() {
+  reset_receiver();
+  const auto before = metrics();
+  Signal sig;
+  sig.preamble();
+  sig.vis(8, /*flip_parity=*/true);
+  sig.robot36_rows();
+  sig.tone(1900, 1000);
+  sig.flush();
+  const auto m = metrics();
+  require(m.good_vis == before.good_vis && m.bad_vis > before.bad_vis,
+          "damaged VIS: parity error counted, header rejected");
+  require(archive_count() == 1, "damaged VIS: sync recovery still produces one image");
+  const auto image = archived_image(0);
+  require(image.mode == Mode::robot36 && image.identification == Identification::sync,
+          "damaged VIS: identified by sync, never labelled VIS");
+  require(image.partial && image.start_unknown && image.vis_code == 0,
+          "damaged VIS: partial, unknown start, no VIS code");
+  stop();
+  clear_gallery();
+}
+
+void test_mid_transmission_join() {
+  reset_receiver();
+  Signal sig;
+  sig.robot36_rows(80, 160);  // tuned in at row 80, no header
+  sig.tone(1900, 1000);
+  sig.flush();
+  require(archive_count() == 1, "join: late-joined transmission preserved");
+  const auto image = archived_image(0);
+  require(image.identification == Identification::sync && image.partial && image.start_unknown,
+          "join: sync-identified, partial, origin unknown");
+  require(image.decoded_rows >= 140 && image.decoded_rows <= 160,
+          "join: roughly the 160 transmitted rows, none invented");
+  stop();
+  clear_gallery();
+}
+
+void test_retune_abort_and_loss() {
+  // Retune keeps the partial image and keeps listening.
+  reset_receiver();
+  Signal sig;
+  sig.header(8);
+  sig.robot36_rows(0, 60);
+  sig.flush();
+  set_frequency(145800000u + 1000u);
+  require(archive_count() == 1 && archived_image(0).end_reason == EndReason::retune &&
+              archived_image(0).partial,
+          "retune: partial image preserved with reason");
+  require(!metrics().receiving && active(), "retune: receiver keeps listening");
+  sig.silence(500);
+  sig.header(8);
+  sig.robot36_rows();
+  sig.tone(1900, 50);
+  sig.flush();
+  require(archive_count() == 2 && !archived_image(0).partial, "retune: next transmission decodes");
+
+  // User abort (stop) preserves the partial image.
+  reset_receiver();
+  Signal b;
+  b.header(8);
+  b.robot36_rows(0, 50);
+  b.flush();
+  stop();
+  require(archive_count() == 1 && archived_image(0).end_reason == EndReason::aborted,
+          "abort: partial preserved with reason aborted");
+  clear_gallery();
+
+  // Prolonged loss of sync archives the partial image and recovers by itself.
+  reset_receiver();
+  Signal c;
+  c.header(8);
+  c.robot36_rows(0, 100);
+  c.silence(3000);
+  c.flush();
+  require(archive_count() == 1 && archived_image(0).end_reason == EndReason::sync_lost &&
+              archived_image(0).partial,
+          "loss: prolonged silence ends the image as sync_lost, partial");
+  require(archived_image(0).decoded_rows >= 100 && archived_image(0).decoded_rows <= 112,
+          "loss: bounded holdover, no invented rows");
+  c.header(8);
+  c.robot36_rows();
+  c.tone(1900, 50);
+  c.flush();
+  require(archive_count() == 2 && archived_image(0).decoded_rows == 240 &&
+              !archived_image(0).partial,
+          "loss: recovers and decodes the next image");
+  stop();
+  clear_gallery();
+}
+
+void test_fade_and_clock_drift() {
+  // A 300 ms fade (two lines) is bridged from the predicted timeline.
+  reset_receiver();
+  Signal sig;
+  sig.header(8);
+  sig.robot36_rows(0, 100);
+  sig.silence(300);
+  sig.robot36_rows(102, 138);
+  sig.tone(1900, 50);
+  sig.flush();
+  require(archive_count() == 1, "fade: image survives a 2-line fade");
+  auto image = archived_image(0);
+  require(image.decoded_rows == 240 && !image.partial, "fade: completes all 240 rows");
+  require(image.sync_missed >= 1 && image.sync_missed <= 3,
+          "fade: the missed lines are recorded for this image");
+  stop();
+  clear_gallery();
+
+  // Transmitter clock error up to +-1 percent.
+  const double scales[3] = {1.003, 0.997, 1.010};
+  for (double scale : scales) {
+    reset_receiver();
+    Signal d;
+    d.header(8);
+    d.time_scale = scale;
+    d.robot36_rows();
+    d.time_scale = 1.0;
+    d.tone(1900, 100);
+    d.flush();
+    require(archive_count() == 1 && archived_image(0).decoded_rows == 240,
+            "drift: Robot 36 completes with clock error");
+    require(archived_image(0).sync_locked >= 230, "drift: line sync keeps locking");
+    stop();
+    clear_gallery();
+  }
+}
+
+// Eviction must never hand out or free an image another entry still owns.
+void test_gallery_ownership() {
+  reset_receiver();
+  Signal sig;
+  const double hz[6] = {1600, 1700, 1800, 1900, 2000, 2100};
+  for (int k = 0; k < 6; ++k) {
+    sig.luma_hz = hz[k];
+    sig.header(8);
+    sig.robot36_rows();
+    sig.tone(1900, 50);
+    sig.silence(300);
+    sig.flush();
+  }
+  require(archive_count() == 4, "gallery: capped at four entries");
+  for (size_t i = 0; i < 4; ++i) {
+    const auto image = archived_image(i);
+    require(image.pixels != nullptr, "gallery: every entry owns pixels");
+    const double expect_hz = hz[5 - i];
+    const uint16_t px = image.pixels[50u * 320u + 160u];
+    const uint16_t want = gray565(luma_of(expect_hz));
+    const int dg = std::abs(static_cast<int>((px >> 5) & 63) - static_cast<int>((want >> 5) & 63));
+    require(dg <= 3, "gallery: entry holds its own image content after eviction");
+    for (size_t j = i + 1; j < 4; ++j)
+      require(image.pixels != archived_image(j).pixels, "gallery: no shared framebuffers");
+  }
+  stop();
+  clear_gallery();
+}
+
+void test_unknown_and_manual_vis() {
+  reset_receiver();
+  Signal sig;
+  sig.header(127);  // valid parity, no such mode
+  sig.silence(500);
+  sig.flush();
+  require(archive_count() == 0 && !metrics().receiving, "unknown VIS: no image");
+  // Manual selection is a VIS match filter: a different mode's header is ignored.
+  set_mode(Mode::pd120);
+  sig.header(8);
+  sig.robot36_rows(0, 40);
+  sig.silence(500);
+  sig.flush();
+  require(archive_count() == 0, "manual: non-matching VIS ignored");
+  sig.header(95);
+  sig.pd120_pairs(0, 12);
+  sig.flush();
+  require(metrics().receiving && metrics().received_mode == Mode::pd120,
+          "manual: matching VIS starts the selected mode");
+  set_mode(Mode::auto_vis);
+  stop();
+  clear_gallery();
+}
+
+// A valid new VIS outranks a speculative sync lock.
+void test_vis_preempts_sync_lock() {
+  reset_receiver();
+  Signal sig;
+  sig.robot36_rows(40, 30);  // join without header: sync lock after ~6 lines
+  sig.flush();
+  require(metrics().receiving && metrics().identification == Identification::sync,
+          "preempt: speculative sync lock active");
+  sig.header(95);
+  sig.pd120_pairs(0, 8);
+  sig.flush();
+  require(archive_count() == 1, "preempt: sync-identified partial archived");
+  const auto old = archived_image(0);
+  require(old.identification == Identification::sync && old.end_reason == EndReason::new_vis &&
+              old.partial,
+          "preempt: speculative image kept as partial, reason new_vis");
+  require(metrics().receiving && metrics().identification == Identification::vis &&
+              metrics().received_mode == Mode::pd120,
+          "preempt: VIS-identified PD120 now receiving");
+  stop();
+  clear_gallery();
+}
+
 }  // namespace
 
 int main() {
@@ -110,6 +430,17 @@ int main() {
   test_tick_rollover();
   test_overrun_keeps_timeline();
   test_silence_between_syncs();
+  test_per_session_counters();
+  test_multi_mode_sequence();
+  test_noise_makes_no_image();
+  test_false_pulse_trains_do_not_lock();
+  test_damaged_vis_falls_back_honestly();
+  test_mid_transmission_join();
+  test_retune_abort_and_loss();
+  test_fade_and_clock_drift();
+  test_gallery_ownership();
+  test_unknown_and_manual_vis();
+  test_vis_preempts_sync_lock();
   std::puts("SSTV auto state: PASS");
   return 0;
 }

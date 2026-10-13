@@ -60,16 +60,23 @@ int main(int argc,char** argv) {
   }
   std::fclose(fp);
   for(unsigned n=0;n<4;++n)orcsdr::sstv::service(4000);
+  // End of file is not end of image on air: close a final line only if its
+  // pixel data fully arrived; nothing is padded to manufacture a full frame.
+  orcsdr::sstv::end_of_stream();
   const auto stats=orcsdr::sstv::metrics();
   const auto completed=orcsdr::sstv::archived_image(0);
-  std::printf("WAV=%s VIS=%u MODE=%s LINES=%u MAX_PROGRESS=%u FRAMES=%lu SYNC=%lu MISS=%lu OVERRUN=%lu\n",
+  std::printf("WAV=%s VIS=%u MODE=%s LINES=%u MAX_PROGRESS=%u FRAMES=%lu SYNC=%lu MISS=%lu OVERRUN=%lu"
+    " PARTIAL=%d ID=%d END=%d SESSION_LOCKED=%u SESSION_MISSED=%u\n",
     argv[1],stats.vis,orcsdr::sstv::mode_name(
       completed.pixels?completed.mode:stats.received_mode),
     completed.pixels?completed.decoded_rows:stats.row,highest_rows,
     static_cast<unsigned long>(stats.frames),
     static_cast<unsigned long>(stats.sync_locked_lines),
     static_cast<unsigned long>(stats.sync_missed_lines),
-    static_cast<unsigned long>(stats.audio_overruns));
+    static_cast<unsigned long>(stats.audio_overruns),
+    completed.pixels?(completed.partial?1:0):-1,static_cast<int>(completed.identification),
+    static_cast<int>(completed.end_reason),
+    static_cast<unsigned>(completed.sync_locked),static_cast<unsigned>(completed.sync_missed));
   int ret=stats.audio_overruns==0?0:1;
   if(argc>=3&&stats.vis!=std::atoi(argv[2]))ret=1;
   if(argc>=4&&std::max<uint32_t>(decoded,completed.decoded_rows)<

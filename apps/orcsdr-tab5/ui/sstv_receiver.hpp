@@ -68,6 +68,11 @@ struct Image {
   Identification identification = Identification::none;
   uint8_t identification_score = 0;
   EndReason end_reason = EndReason::none;
+  // One reception event. Counters cover this image only (not the receiver lifetime).
+  uint32_t session_id = 0;
+  uint8_t vis_code = 0;          // 0 when the mode was not identified from a VIS header
+  uint16_t sync_locked = 0;      // lines whose sync pulse matched the predicted position
+  uint16_t sync_missed = 0;      // lines committed from the predicted timeline without a sync
 };
 void start(uint32_t frequency_hz);
 void stop();
@@ -77,6 +82,12 @@ Mode selected_mode();
 void set_auto_strategy(AutoStrategy strategy);
 AutoStrategy auto_strategy();
 void set_frequency(uint32_t hz);
+// Offline replay only: no further audio will arrive. Drains the ring, closes a
+// line whose luminance scan has already fully elapsed (a recording that stops a
+// few milliseconds early still yields its last row; nothing is padded), then
+// finishes the picture as complete or partial with EndReason::aborted when it
+// was cut short. A live receiver never calls this.
+void end_of_stream();
 // SPSC PCM tap: called from DSP producer at exactly 48000 Hz, *never* draws or blocks.
 void offer_audio_48k(const int16_t* samples, size_t count);
 // UI task only: bounded decoder service and immutable output snapshots.

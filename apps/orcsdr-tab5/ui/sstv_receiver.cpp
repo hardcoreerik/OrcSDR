@@ -66,6 +66,10 @@ uint64_t g_last_sync_start=0;
 bool g_have_sync_start=false;
 double g_line_origin=0;
 uint16_t g_line_index=0;
+// Per-reception counters (one image); the lifetime counters live in g_stats.
+uint32_t g_next_session=1,g_session_id=0;
+uint16_t g_session_locked=0,g_session_missed=0;
+uint8_t g_session_vis=0;
 bool g_line_sync=false;
 uint8_t g_consecutive_missed=0;
 enum class VisStage:uint8_t { lead1, break1200, lead2, start1200, bits };
@@ -141,6 +145,11 @@ void begin_picture(const ModeSpec* spec,uint8_t vis,
   g_live.start_unknown=unknown_start;
   g_live.identification=source;
   g_live.identification_score=confidence;
+  g_session_id=g_next_session++;
+  g_session_locked=g_session_missed=0;
+  g_session_vis=source==Identification::vis?vis:0;
+  g_live.session_id=g_session_id;
+  g_live.vis_code=g_session_vis;
   g_spec=spec;
   g_line_index=0;
   // Scottie sends an additional 9 ms (1200 Hz) sync *after* VIS.
@@ -169,6 +178,8 @@ void finish_picture(bool incomplete,EndReason reason) {
   g_live.serial=g_next_serial++;
   g_live.partial=incomplete||g_live.start_unknown;
   g_live.end_reason=reason;
+  g_live.sync_locked=g_session_locked;
+  g_live.sync_missed=g_session_missed;
   frame_free(g_saved[kGallery-1].pixels);
   for(size_t n=kGallery-1;n>0;--n)g_saved[n]=g_saved[n-1];
   g_saved[0]=g_live;
@@ -185,6 +196,7 @@ void commit_line() {
   if(!g_spec||!g_live.pixels)return;
   if(!g_line_sync) {
     g_stats.sync_missed_lines++;
+    if(g_session_missed<0xffffu)++g_session_missed;
     if(++g_consecutive_missed>=4) {
       finish_picture(true,EndReason::sync_lost);
       return;
@@ -229,6 +241,7 @@ void sync_edge(uint32_t sync_len) {
   if(std::fabs(error)>tolerance)return;
   g_line_sync=true;
   g_stats.sync_locked_lines++;
+  if(g_session_locked<0xffffu)++g_session_locked;
   g_stats.line_error_ms=static_cast<float>(error*1000./kRate);
   // 25% PLL phase correction; line-to-line runout stays bounded.
   g_line_origin+=std::clamp(error,-tolerance,tolerance)*.25;
@@ -557,6 +570,21 @@ void service(size_t budget){
   g_stats.audio_overruns=g_drops.load(std::memory_order_relaxed);
   g_stats.vis_phase=static_cast<uint8_t>(g_vis_stage);
   g_stats.vis_phase_samples=g_phase_samples;
+}
+void end_of_stream(){
+  if(!active())return;
+  service(~static_cast<size_t>(0)>>1); // drain whatever is still queued
+  if(g_stats.receiving&&g_spec&&g_live.pixels) {
+    const auto& m=*g_spec;
+    const double pix_s=static_cast<double>(m.pixel_ns)*kRate/1.e9;
+    const double first=(m.family==2?m.porch_us:m.sync_us+m.porch_us)*kRate/1.e6;
+    const double second=first+3.*pix_s*m.width;
+    const double lum_end=(m.family==3?second:first)+pix_s*m.width;
+    const double shifted=static_cast<double>(g_ticks)-g_line_origin;
+    // Commit the final line only if its pixel data has fully arrived.
+    if(shifted>=lum_end)commit_line();
+  }
+  if(g_stats.receiving)finish_picture(true,EndReason::aborted);
 }
 Metrics metrics(){return g_stats;}
 Image live_image(){return g_live;}
