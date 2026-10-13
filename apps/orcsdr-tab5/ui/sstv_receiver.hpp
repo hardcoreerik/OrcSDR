@@ -10,7 +10,7 @@ enum class Mode : uint8_t {
   scottie_s1, scottie_s2, scottie_dx,
   pd50, pd90, pd120, pd160, pd180, pd240, pd290
 };
-enum class Page : uint8_t { receive, gallery, analyzer, frequencies, setup, count };
+enum class Page : uint8_t { receive, gallery, analyzer, tune, setup, count };
 // VIS is authoritative when valid; sync fallback is always labeled provisional.
 enum class AutoStrategy : uint8_t { vis_only, vis_sync };
 enum class Identification : uint8_t { none, vis, sync, manual };

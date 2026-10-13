@@ -28,6 +28,8 @@ struct Store {
   void (*put_bool)(const char* key, bool value) = nullptr;
   uint8_t (*get_u8)(const char* key, uint8_t fallback) = nullptr;
   void (*put_u8)(const char* key, uint8_t value) = nullptr;
+  uint32_t (*get_u32)(const char* key, uint32_t fallback) = nullptr;
+  void (*put_u32)(const char* key, uint32_t value) = nullptr;
 };
 
 Settings load(const Store& store);                 // invalid stored values fall back to the defaults

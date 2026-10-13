@@ -5,13 +5,17 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <iterator>
 #include "dashboard_audio_control.hpp"
 #include "focus_nav.hpp"
+#include "freq_keypad.hpp"
 #include "sstv_archive.hpp"
+#include "sstv_audio_scope.hpp"
 #include "sstv_auto_detect.hpp"
 #include "sstv_status.hpp"
+#include "sstv_tune.hpp"
 #include "time_service.hpp"
 
 // Standard OrcSDR dashboard layout: shared brand header (badge, title, frequency, shared controls),
@@ -37,7 +41,7 @@ constexpr Rect kBody{24, 104, 1232, 514};
 constexpr int kTabsY = 630;
 constexpr int kTabCount = 5;
 constexpr int kTabW = 1280 / kTabCount;
-constexpr const char* kPages[kTabCount] = {"RECEIVE", "IMAGES", "SIGNAL", "FREQUENCIES", "SETUP"};
+constexpr const char* kPages[kTabCount] = {"RECEIVE", "IMAGES", "SIGNAL", "TUNE", "SETUP"};
 
 // RECEIVE
 constexpr Rect kImagePanel{24, 104, 760, 514};
@@ -53,8 +57,6 @@ Rect tile(int i) { return {42 + (i % 2) * 412, 148 + (i / 2) * 232, 400, 220}; }
 // SIGNAL
 constexpr Rect kMonitorPanel{24, 104, 862, 514};
 constexpr Rect kDecoderPanel{898, 104, 358, 514};
-// FREQUENCIES
-Rect profile_row(int i) { return {42, 160 + i * 90, 1196, 80}; }
 // SETUP
 constexpr Rect kModePanel{24, 104, 724, 514};
 constexpr Rect kDetectPanel{760, 104, 496, 514};
@@ -68,6 +70,7 @@ Page g_page = Page::receive;
 UiSnapshot g_ui{};
 bool g_active = false;
 uint8_t g_profile = 1;
+void draw_all();
 size_t g_gallery_selected = 0;
 char g_notice[84]{};
 uint32_t g_notice_until = 0;
@@ -429,24 +432,333 @@ void draw_analyzer() {
   emit(s.failed ? kAmber : kMuted);
 }
 
-// ---------------------------------------------------------------- FREQUENCIES
-void draw_frequencies() {
-  frame(kBody, kGrid);
-  text("QUICK TUNE / LOCAL + HF", 46, 128, kCyan, 1, middle_left);
-  text("Preset frequencies are starting points, not activity guarantees.", 46, 156, kMuted, 0, middle_left);
-  for (size_t i = 0; i < std::size(kProfiles); ++i) {
-    const Rect r = profile_row(static_cast<int>(i));
-    const bool on = i == g_profile;
-    focus_nav::note(r.x, r.y, r.w, r.h);
-    M5.Display.fillRoundRect(r.x, r.y, r.w, r.h, 8, on ? kSelected : TFT_BLACK);
-    M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 8, on ? kGreen : kGrid);
-    char f[44];
-    std::snprintf(f, sizeof(f), "%0.5f MHz", kProfiles[i].hz / 1e6);
-    text(kProfiles[i].name, r.x + 20, r.y + 26, TFT_WHITE, 1, middle_left);
-    text(f, r.x + 340, r.y + 26, kCyan, 1, middle_left);
-    text(kProfiles[i].usb ? "USB" : "NFM", r.x + 640, r.y + 26, kGreen, 0, middle_left);
-    text(kProfiles[i].description, r.x + 20, r.y + 58, kMuted, 0, middle_left);
+// ---------------------------------------------------------------- TUNE
+// Two panes: the RF spectrum and waterfall (tap to tune; the dongle re-centres on the tap), and the audio "sync comb"
+// the decoder hears, with guide rails at the SSTV tones. Both are composed in PSRAM and pushed as one image, so a
+// refresh never shows a half-drawn trace.
+constexpr int kRfW = 1208, kRfSpecH = 60, kRfWfH = 78, kRfH = kRfSpecH + kRfWfH;
+constexpr int kAuW = 1208, kAuH = 96;
+constexpr Rect kVfo{24, 104, 1232, 88};
+constexpr Rect kFreqBox{36, 110, 404, 76};
+constexpr Rect kDown{452, 114, 76, 68}, kUp{536, 114, 76, 68};
+constexpr Rect kStepChip{624, 114, 150, 68}, kModeChip{782, 114, 130, 68}, kGainChip{920, 114, 160, 68};
+constexpr Rect kGainDown{1088, 114, 76, 68}, kGainUp{1172, 114, 76, 68};
+constexpr Rect kRfPanel{24, 198, 1232, 172};
+constexpr int kRfX = 36, kRfY = 224;
+constexpr Rect kAudioPanel{24, 376, 1232, 146};
+constexpr int kAuX = 36, kAuY = 400;
+Rect preset_chip(int i) { return {24 + i * 248, 528, 240, 40}; }
+constexpr Rect kEnter{24, 574, 300, 44}, kRails{336, 574, 200, 44}, kApply{548, 574, 340, 44};
+constexpr int kStatusX = 904;
+constexpr uint16_t kRailTones[4] = {1200, 1500, 1900, 2300};
+constexpr const char* kRailNames[4] = {"1200 SYNC", "1500 BLACK", "1900 MID", "2300 WHITE"};
+
+uint16_t* g_rf_px = nullptr;        // spectrum on top, waterfall history below
+uint16_t* g_au_px = nullptr;        // audio comb
+uint16_t g_palette[256]{};
+uint8_t g_rf_cols[kRfW]{};
+uint8_t g_au_lo[kAuW]{}, g_au_frac[kAuW]{};
+float g_rf_floor = 0;
+bool g_rf_have = false, g_rf_floor_known = false;
+uint32_t g_au_sequence = 0, g_au_ms = 0, g_tune_bar_ms = 0;
+bool g_keypad = false;
+char g_entry[14]{};
+
+bool tune_visible() { return g_active && g_page == Page::tune && !g_keypad; }
+
+int rail_x(int index) {
+  return (kRailTones[index] - sstv_audio_scope::kLowHz) * kAuW / (sstv_audio_scope::kHighHz - sstv_audio_scope::kLowHz);
+}
+
+bool ensure_tune_buffers() {
+  if (!g_rf_px)
+    g_rf_px = static_cast<uint16_t*>(heap_caps_calloc(static_cast<size_t>(kRfW) * kRfH, sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!g_au_px)
+    g_au_px = static_cast<uint16_t*>(heap_caps_calloc(static_cast<size_t>(kAuW) * kAuH, sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (g_palette[255] == 0)
+    for (int i = 0; i < 256; ++i) g_palette[i] = sstv_tune::palette565(static_cast<uint8_t>(i));
+  // Linear interpolation between audio bins, one lookup per pixel column.
+  const float span = static_cast<float>(sstv_audio_scope::kHighHz - sstv_audio_scope::kLowHz);
+  for (int x = 0; x < kAuW; ++x) {
+    const float f = sstv_audio_scope::kLowHz + (x + 0.5f) * span / kAuW;
+    const float position = std::clamp((f - sstv_audio_scope::kLowHz) / (span / sstv_audio_scope::kBins) - 0.5f, 0.f,
+                                      static_cast<float>(sstv_audio_scope::kBins - 1) - 0.001f);
+    g_au_lo[x] = static_cast<uint8_t>(position);
+    g_au_frac[x] = static_cast<uint8_t>((position - std::floor(position)) * 255.f);
   }
+  return g_rf_px && g_au_px;
+}
+void free_tune_buffers() {
+  if (g_rf_px) heap_caps_free(g_rf_px);
+  if (g_au_px) heap_caps_free(g_au_px);
+  g_rf_px = nullptr; g_au_px = nullptr; g_rf_have = false; g_rf_floor_known = false; g_au_sequence = 0;
+}
+
+sstv_tune::Tint current_tint() {
+  switch (metrics().state) {
+    case SessionState::vis_acquisition: return sstv_tune::Tint::header;
+    case SessionState::receiving: return sstv_tune::Tint::receiving;
+    case SessionState::sync_analysis:
+    case SessionState::provisional_lock:
+    case SessionState::loss_recovery: return sstv_tune::Tint::recovering;
+    default: return sstv_tune::Tint::searching;
+  }
+}
+
+void draw_vfo_bar() {
+  const auto& t = g_ui.tune;
+  M5.Display.fillRoundRect(kVfo.x, kVfo.y, kVfo.w, kVfo.h, 10, kPanel);
+  M5.Display.drawRoundRect(kVfo.x, kVfo.y, kVfo.w, kVfo.h, 10, kGrid);
+  focus_nav::note(kFreqBox.x, kFreqBox.y, kFreqBox.w, kFreqBox.h);
+  char mhz[16];
+  sstv_tune::format_mhz(mhz, sizeof(mhz), g_ui.frequency_hz);
+  text(mhz, kFreqBox.x + 8, cy(kFreqBox) - 6, g_ui.streaming ? TFT_WHITE : kMuted, 6, middle_left);
+  text("MHz   TAP TO TYPE", kFreqBox.x + 8, kFreqBox.y + kFreqBox.h - 8, kMuted, 0, middle_left);
+  button(kDown, "-", false, true, 4);
+  button(kUp, "+", false, true, 4);
+  char label[32];
+  const uint32_t step = sstv_tune::step_hz(t.step_index);
+  if (step >= 1000) std::snprintf(label, sizeof(label), step % 1000 ? "%.1f kHz" : "%.0f kHz", step / 1000.0);
+  else std::snprintf(label, sizeof(label), "%lu Hz", static_cast<unsigned long>(step));
+  button(kStepChip, "", false, true, 2);
+  text("STEP", cx(kStepChip), kStepChip.y + 17, kMuted, 0);
+  text(label, cx(kStepChip), kStepChip.y + 46, TFT_WHITE, 1);
+  button(kModeChip, "", t.demod_auto, true, 2);
+  text(t.demod_auto ? "MODE AUTO" : "MODE", cx(kModeChip), kModeChip.y + 17, kMuted, 0);
+  text(sstv_tune::demod_name(static_cast<sstv_tune::Demod>(t.demod)), cx(kModeChip), kModeChip.y + 46, kGreen, 1);
+  button(kGainChip, "", false, t.gain_available, 2);
+  text(t.gain_auto ? "GAIN" : "GAIN MANUAL", cx(kGainChip), kGainChip.y + 17, kMuted, 0);
+  if (!t.gain_available) std::snprintf(label, sizeof(label), "N/A");
+  else if (t.gain_auto) std::snprintf(label, sizeof(label), "AUTO");
+  else std::snprintf(label, sizeof(label), "%.1f dB", t.gain_tenth_db / 10.0);
+  text(label, cx(kGainChip), kGainChip.y + 46, t.gain_available ? kGreen : kMuted, 1);
+  button(kGainDown, "G-", false, t.gain_available, 2);
+  button(kGainUp, "G+", false, t.gain_available, 2);
+}
+
+void draw_rf_frame() {
+  frame(kRfPanel, kGrid);
+  text("RF SPECTRUM  -  TAP TO TUNE", kRfPanel.x + 14, kRfPanel.y + 13, kCyan, 0, middle_left);
+  char label[48];
+  const uint32_t rate = g_ui.tune.rate_sps ? g_ui.tune.rate_sps : 240000;
+  std::snprintf(label, sizeof(label), "SPAN %lu kHz   %.0f Hz / PIXEL", static_cast<unsigned long>(rate / 1000u),
+                static_cast<double>(rate) / kRfW);
+  text(label, kRfPanel.x + kRfPanel.w - 14, kRfPanel.y + 13, kMuted, 0, middle_right);
+  M5.Display.fillRect(kRfX, kRfY, kRfW, kRfH, TFT_BLACK);
+  focus_nav::note(kRfX, kRfY, kRfW, kRfH);
+}
+// The tuned frequency is the middle of the plot; SSB passbands hang off it on the side of the sideband.
+void draw_rf_overlay() {
+  const int mid = kRfX + kRfW / 2;
+  const auto demod = static_cast<sstv_tune::Demod>(g_ui.tune.demod);
+  const int rate = static_cast<int>(g_ui.tune.rate_sps ? g_ui.tune.rate_sps : 240000);
+  auto px = [&](int hz) { return static_cast<int>(static_cast<int64_t>(hz) * kRfW / rate); };
+  const uint16_t edge_color = kMuted;
+  if (demod == sstv_tune::Demod::nfm) {
+    M5.Display.drawFastVLine(mid - px(6000), kRfY, kRfH, edge_color);
+    M5.Display.drawFastVLine(mid + px(6000), kRfY, kRfH, edge_color);
+  } else {
+    M5.Display.drawFastVLine(demod == sstv_tune::Demod::usb ? mid + px(2700) : mid - px(2700), kRfY, kRfH, edge_color);
+  }
+  M5.Display.drawFastVLine(mid, kRfY, kRfH, kAmber);
+}
+void push_rf() {
+  if (!g_rf_px) return;
+  M5.Display.pushImage(kRfX, kRfY, kRfW, kRfH, reinterpret_cast<const lgfx::rgb565_t*>(g_rf_px));
+  draw_rf_overlay();
+}
+
+void draw_audio_frame() {
+  const auto tint = sstv_tune::tint565(current_tint());
+  frame(kAudioPanel, tint);
+  text("AUDIO  -  WHAT THE DECODER HEARS", kAudioPanel.x + 14, kAudioPanel.y + 13, kCyan, 0, middle_left);
+}
+void draw_audio_labels() {
+  const Metrics m = metrics();
+  const auto tint = sstv_tune::tint565(current_tint());
+  const int label_y = kAuY + kAuH + 14;
+  M5.Display.fillRect(kAudioPanel.x + 4, label_y - 9, kAudioPanel.w - 8, 18, kPanel);
+  for (int i = 0; i < 4; ++i)
+    text(kRailNames[i], kAuX + rail_x(i), label_y, g_ui.tune.rails ? tint : kMuted, 0);
+  // Readout of the sync tone against 1200 Hz, and which way to move the dial.
+  const auto demod = static_cast<sstv_tune::Demod>(g_ui.tune.demod);
+  const auto error = sstv_tune::tuning_error(demod, m.sync_tone_hz, m.sync_tone_pulses);
+  char line[80];
+  uint16_t color = kMuted;
+  if (demod == sstv_tune::Demod::nfm) {
+    std::snprintf(line, sizeof(line), "NFM: CENTRE THE SIGNAL ON THE SPECTRUM");
+  } else if (!error.valid) {
+    std::snprintf(line, sizeof(line), "SYNC TONE  WAITING FOR SYNC PULSES");
+  } else if (std::abs(error.correction_hz) < 10) {
+    std::snprintf(line, sizeof(line), "SYNC %.0f Hz   ON FREQUENCY", static_cast<double>(m.sync_tone_hz));
+    color = kGreen;
+  } else {
+    std::snprintf(line, sizeof(line), "SYNC %.0f Hz   MOVE DIAL %+ld Hz", static_cast<double>(m.sync_tone_hz),
+                  static_cast<long>(error.correction_hz));
+    color = kAmber;
+  }
+  M5.Display.fillRect(kAudioPanel.x + 400, kAudioPanel.y + 3, kAudioPanel.w - 410, 20, kPanel);
+  text(line, kAudioPanel.x + kAudioPanel.w - 14, kAudioPanel.y + 13, color, 0, middle_right);
+}
+void compose_audio() {
+  if (!g_au_px) return;
+  const auto view = sstv_audio_scope::view();
+  const uint16_t tint = sstv_tune::tint565(current_tint());
+  for (int y = 0; y < kAuH; ++y) {
+    uint16_t* row = g_au_px + static_cast<size_t>(y) * kAuW;
+    if (!view.rows || static_cast<uint32_t>(y) >= view.sequence) {
+      std::fill(row, row + kAuW, static_cast<uint16_t>(0));
+      continue;
+    }
+    const uint8_t* bins = view.rows + static_cast<size_t>((view.sequence - 1 - y) % view.row_count) * view.bins;
+    for (int x = 0; x < kAuW; ++x) {
+      const int lo = g_au_lo[x], f = g_au_frac[x];
+      row[x] = g_palette[(bins[lo] * (255 - f) + bins[lo + 1] * f) / 255];
+    }
+  }
+  if (g_ui.tune.rails)
+    for (int i = 0; i < 4; ++i)
+      for (int y = 0; y < kAuH; y += 4) g_au_px[static_cast<size_t>(y) * kAuW + rail_x(i)] = tint;
+  const Metrics m = metrics();
+  if (m.sync_tone_pulses && m.sync_tone_hz > sstv_audio_scope::kLowHz && m.sync_tone_hz < sstv_audio_scope::kHighHz) {
+    const int x = static_cast<int>((m.sync_tone_hz - sstv_audio_scope::kLowHz) * kAuW /
+                                   (sstv_audio_scope::kHighHz - sstv_audio_scope::kLowHz));
+    for (int y = 0; y < 5; ++y)
+      for (int d = -2; d <= 2; ++d)
+        if (x + d >= 0 && x + d < kAuW) g_au_px[static_cast<size_t>(y) * kAuW + x + d] = TFT_WHITE;
+  }
+  g_au_sequence = view.sequence;
+}
+void push_audio() {
+  if (!g_au_px) return;
+  M5.Display.pushImage(kAuX, kAuY, kAuW, kAuH, reinterpret_cast<const lgfx::rgb565_t*>(g_au_px));
+}
+
+void draw_tune_controls() {
+  for (size_t i = 0; i < std::size(kProfiles); ++i) {
+    const Rect r = preset_chip(static_cast<int>(i));
+    const bool on = kProfiles[i].hz == g_ui.frequency_hz;
+    char f[40];
+    std::snprintf(f, sizeof(f), "%s %.3f", kProfiles[i].name, kProfiles[i].hz / 1e6);
+    button(r, f, on, true, 0);
+  }
+  button(kEnter, "ENTER FREQUENCY", false, true, 2);
+  button(kRails, g_ui.tune.rails ? "GUIDE RAILS ON" : "GUIDE RAILS OFF", g_ui.tune.rails, true, 2);
+  const Metrics m = metrics();
+  const auto error = sstv_tune::tuning_error(static_cast<sstv_tune::Demod>(g_ui.tune.demod), m.sync_tone_hz, m.sync_tone_pulses);
+  char label[48];
+  const bool can_apply = error.valid && std::abs(error.correction_hz) >= 5;
+  if (can_apply) std::snprintf(label, sizeof(label), "APPLY CORRECTION %+ld Hz", static_cast<long>(error.correction_hz));
+  else std::snprintf(label, sizeof(label), "APPLY CORRECTION");
+  button(kApply, label, false, can_apply, 2);
+  M5.Display.fillRect(kStatusX, 574, 352, 44, TFT_BLACK);
+  char status[48];
+  std::snprintf(status, sizeof(status), "%s", state_name(m.state));
+  text(status, kStatusX + 8, 586, m.receiving ? kGreen : kCyan, 0, middle_left);
+  std::snprintf(status, sizeof(status), "LEVEL %.0f%%  GAPS %lu", static_cast<double>(m.audio_peak * 100.f),
+                static_cast<unsigned long>(m.audio_gaps));
+  text(status, kStatusX + 8, 608, kMuted, 0, middle_left);
+}
+
+void draw_keypad_screen() {
+  M5.Display.startWrite();
+  M5.Display.fillRect(0, 93, 1280, 627, TFT_BLACK);
+  orcsdr::freq_keypad::draw(93, TFT_BLACK, "ENTER SSTV FREQUENCY", "0.100 - 1700", "MHz", g_entry);
+  M5.Display.endWrite();
+}
+
+void draw_tune() {
+  if (!ensure_tune_buffers()) {
+    frame(kBody, kGrid);
+    text("NOT ENOUGH MEMORY FOR THE TUNING DISPLAY", cx(kBody), cy(kBody), kAmber, 1);
+    return;
+  }
+  draw_vfo_bar();
+  draw_rf_frame();
+  if (g_rf_have) push_rf();
+  else text("WAITING FOR THE RADIO", kRfX + kRfW / 2, kRfY + kRfH / 2, kMuted, 0);
+  draw_audio_frame();
+  compose_audio();
+  push_audio();
+  draw_audio_labels();
+  draw_tune_controls();
+  g_au_ms = g_tune_bar_ms = millis();
+}
+
+// Called on every screen update while the TUNE tab shows: the audio comb refreshes when new rows exist, the bar and
+// readouts a couple of times a second.
+void update_tune(uint32_t now) {
+  if (!g_au_px) return;
+  M5.Display.startWrite();
+  const auto view = sstv_audio_scope::view();
+  if (view.sequence != g_au_sequence && now - g_au_ms >= 120u) {
+    compose_audio();
+    push_audio();
+    g_au_ms = now;
+  }
+  if (now - g_tune_bar_ms >= 500u) {
+    draw_audio_frame();
+    push_audio();
+    draw_audio_labels();
+    draw_vfo_bar();
+    draw_tune_controls();
+    g_tune_bar_ms = now;
+  }
+  M5.Display.endWrite();
+}
+
+// Touch on the TUNE tab. The keypad owns the screen while it is open.
+Action touch_tune(int32_t x, int32_t y) {
+  if (hit(x, y, kFreqBox) || hit(x, y, kEnter)) {
+    g_entry[0] = '\0';
+    g_keypad = true;
+    draw_keypad_screen();
+    return {};
+  }
+  if (hit(x, y, kDown)) return {ActionKind::nudge, -1};
+  if (hit(x, y, kUp)) return {ActionKind::nudge, 1};
+  if (hit(x, y, kStepChip)) return {ActionKind::set_step, static_cast<int32_t>((g_ui.tune.step_index + 1) % sstv_tune::step_count())};
+  if (hit(x, y, kModeChip)) return {ActionKind::cycle_demod, 0};
+  if (g_ui.tune.gain_available) {
+    if (hit(x, y, kGainChip)) return {ActionKind::gain_toggle, 0};
+    if (hit(x, y, kGainDown)) return {ActionKind::gain_step, -1};
+    if (hit(x, y, kGainUp)) return {ActionKind::gain_step, 1};
+  }
+  if (hit(x, y, kRails)) return {ActionKind::toggle_rails, 0};
+  if (hit(x, y, kApply)) {
+    const Metrics m = metrics();
+    const auto error = sstv_tune::tuning_error(static_cast<sstv_tune::Demod>(g_ui.tune.demod), m.sync_tone_hz, m.sync_tone_pulses);
+    if (error.valid && std::abs(error.correction_hz) >= 5) return {ActionKind::apply_correction, error.correction_hz};
+    return {};
+  }
+  if (x >= kRfX && x < kRfX + kRfW && y >= kRfY && y < kRfY + kRfH) {
+    const uint32_t rate = g_ui.tune.rate_sps ? g_ui.tune.rate_sps : 240000;
+    const uint32_t hz = sstv_tune::from_touch(g_ui.frequency_hz, rate, static_cast<int>(x - kRfX), kRfW,
+                                              sstv_tune::step_hz(g_ui.tune.step_index));
+    return {ActionKind::tune_hz, static_cast<int32_t>(hz)};
+  }
+  for (int i = 0; i < static_cast<int>(std::size(kProfiles)); ++i)
+    if (hit(x, y, preset_chip(i))) { g_profile = static_cast<uint8_t>(i); return {ActionKind::tune_profile, i}; }
+  return {};
+}
+Action touch_keypad(int32_t x, int32_t y) {
+  const auto result = orcsdr::freq_keypad::handle_touch(x, y, g_entry, sizeof(g_entry));
+  if (result == orcsdr::freq_keypad::Result::cancelled) {
+    g_keypad = false;
+    g_entry[0] = '\0';
+    draw_all();
+  } else if (result == orcsdr::freq_keypad::Result::submitted) {
+    uint32_t hz = 0;
+    if (sstv_tune::parse_entry(g_entry, &hz)) {
+      g_keypad = false;
+      g_entry[0] = '\0';
+      draw_all();
+      return {ActionKind::tune_hz, static_cast<int32_t>(hz)};
+    }
+    g_entry[0] = '\0';
+    draw_keypad_screen();   // refused (out of range or malformed): start over
+  }
+  return {};
 }
 
 // ---------------------------------------------------------------- SETUP
@@ -490,7 +802,7 @@ void draw_page_body() {
     case Page::receive: draw_receive(); break;
     case Page::gallery: draw_gallery(); break;
     case Page::analyzer: draw_analyzer(); break;
-    case Page::frequencies: draw_frequencies(); break;
+    case Page::tune: if (g_keypad) draw_keypad_screen(); else draw_tune(); break;
     case Page::setup: draw_setup(); break;
     default: break;
   }
@@ -513,17 +825,22 @@ void draw_all() {
 
 void set_header_hook(void (*draw_controls)()) { g_header_hook = draw_controls; }
 void ui_enter(const UiSnapshot& snapshot) {
-  g_ui = snapshot; g_active = true; g_page = Page::receive; draw_all();
+  g_ui = snapshot; g_active = true; g_page = Page::receive; g_keypad = false; draw_all();
 }
-void ui_leave() { g_active = false; }
+void ui_leave() {
+  g_active = false; g_keypad = false;
+  free_tune_buffers();
+}
 bool ui_active() { return g_active; }
 void ui_update(const UiSnapshot& snapshot) {
   if (!g_active) return;
   DrawTimer timer;
   const bool retuned = g_ui.frequency_hz != snapshot.frequency_hz;
   const bool changed = std::memcmp(&g_ui.settings, &snapshot.settings, sizeof(g_ui.settings)) != 0 ||
-                       g_ui.sd_ready != snapshot.sd_ready;
+                       g_ui.sd_ready != snapshot.sd_ready || g_ui.tune != snapshot.tune;
   g_ui = snapshot;
+  if (retuned) g_rf_have = false;   // the waterfall history belongs to the old frequency
+  if (g_keypad) return;             // the keypad owns the screen
   if (retuned || changed) { draw_all(); return; }
   const uint32_t revision = image_revision();
   const uint32_t now = millis();
@@ -539,8 +856,9 @@ void ui_update(const UiSnapshot& snapshot) {
       g_last_render_ms = now;
     }
     M5.Display.endWrite();
-  } else if (g_page == Page::frequencies) {
-    if (now - g_last_render_ms >= 3000u) {
+  } else if (g_page == Page::tune) {
+    update_tune(now);
+    if (now - g_last_render_ms >= 1000u) {
       M5.Display.startWrite();
       draw_header();
       M5.Display.endWrite();
@@ -561,6 +879,49 @@ UiStats ui_stats() { return g_ui_stats; }
 Page ui_page() { return g_page; }
 uint8_t ui_profile() { return g_profile; }
 void ui_set_profile(uint8_t index) { g_profile = index; if (g_active) draw_all(); }
+void ui_set_tune(const TuneView& tune) {
+  if (g_ui.tune == tune) return;
+  g_ui.tune = tune;
+  if (g_active && g_page == Page::tune && !g_keypad) draw_all();
+}
+bool ui_wants_spectrum() { return tune_visible() && g_rf_px != nullptr; }
+// One row of the RF display: the spectrum trace on top and the waterfall history below it. Called from the UI task
+// whenever the application has a fresh spectrum.
+void ui_feed_spectrum(const float* levels, size_t bins, uint32_t rate_sps) {
+  if (!tune_visible() || !g_rf_px || !levels || bins < 64) return;
+  // Column level: the strongest bin under each pixel.
+  auto column_level = [&](int x) {
+    const size_t b0 = static_cast<size_t>(x) * bins / kRfW;
+    const size_t b1 = std::max(b0 + 1, static_cast<size_t>(x + 1) * bins / kRfW);
+    float peak = levels[b0];
+    for (size_t b = b0 + 1; b < b1 && b < bins; ++b) peak = std::max(peak, levels[b]);
+    return peak;
+  };
+  float sum = 0;
+  for (int x = 0; x < kRfW; ++x) sum += column_level(x);
+  // The noise floor follows the average level (a few dB under it); the plot shows 42 dB above that.
+  const float floor_now = sum / kRfW - 3.f;
+  g_rf_floor = g_rf_floor_known ? 0.92f * g_rf_floor + 0.08f * floor_now : floor_now;
+  g_rf_floor_known = true;
+  for (int x = 0; x < kRfW; ++x)
+    g_rf_cols[x] = static_cast<uint8_t>(std::clamp((column_level(x) - g_rf_floor) * (255.f / 42.f), 0.f, 255.f));
+  // Waterfall: history moves down one row, the new row goes on top of it.
+  uint16_t* wf = g_rf_px + static_cast<size_t>(kRfSpecH) * kRfW;
+  std::memmove(wf + kRfW, wf, static_cast<size_t>(kRfW) * (kRfWfH - 1) * sizeof(uint16_t));
+  for (int x = 0; x < kRfW; ++x) wf[x] = g_palette[g_rf_cols[x]];
+  // Spectrum: a filled trace, brighter at its top.
+  std::fill(g_rf_px, g_rf_px + static_cast<size_t>(kRfW) * kRfSpecH, static_cast<uint16_t>(0));
+  for (int x = 0; x < kRfW; ++x) {
+    const int h = g_rf_cols[x] * (kRfSpecH - 2) / 255;
+    for (int k = 0; k < h; ++k) g_rf_px[static_cast<size_t>(kRfSpecH - 1 - k) * kRfW + x] = g_palette[40 + g_rf_cols[x] / 4];
+    if (h) g_rf_px[static_cast<size_t>(kRfSpecH - 1 - h) * kRfW + x] = g_palette[g_rf_cols[x]];
+  }
+  g_rf_have = true;
+  (void)rate_sps;
+  M5.Display.startWrite();
+  push_rf();
+  M5.Display.endWrite();
+}
 void ui_set_settings(const sstv_settings::Settings& settings) { g_ui.settings = settings; draw_all(); }
 void ui_notice(const char* msg) {
   if (!msg) msg = "";
@@ -570,10 +931,12 @@ void ui_notice(const char* msg) {
 }
 Action ui_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
+  if (g_keypad) return touch_keypad(x, y);
   if (y >= kTabsY) {
     for (int i = 0; i < kTabCount; ++i)
       if (hit(x, y, {i * kTabW + 4, kTabsY + 4, kTabW - 8, 82})) {
         g_page = static_cast<Page>(i);
+        g_keypad = false;
         draw_all();
         return {};
       }
@@ -587,9 +950,8 @@ Action ui_touch(int32_t x, int32_t y) {
     if (hit(x, y, kClearGallery)) return {ActionKind::clear_gallery, 0};
     for (int i = 0; i < 4; ++i)
       if (hit(x, y, tile(i))) { g_gallery_selected = i; draw_all(); break; }
-  } else if (g_page == Page::frequencies) {
-    for (int i = 0; i < static_cast<int>(std::size(kProfiles)); ++i)
-      if (hit(x, y, profile_row(i))) { g_profile = i; draw_all(); return {ActionKind::tune_profile, i}; }
+  } else if (g_page == Page::tune) {
+    return touch_tune(x, y);
   } else if (g_page == Page::setup) {
     for (int i = 1; i <= 14; ++i)
       if (hit(x, y, mode_button(i))) return {ActionKind::select_mode, i};

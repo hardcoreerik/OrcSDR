@@ -804,6 +804,7 @@ void abort_image(){
 void set_frequency(uint32_t hz){
   if(g_stats.receiving)finish_picture(true,EndReason::retune);
   g_frequency=hz;reset_picture();reset_vis();auto_detect::reset();
+  g_sync_pulses=0;g_stats.sync_tone_hz=0;g_stats.sync_tone_pulses=0;   // a new frequency starts a new tone reading
 }
 std::atomic<bool> g_live_muted{false};
 void offer_core(const int16_t* src,size_t n);

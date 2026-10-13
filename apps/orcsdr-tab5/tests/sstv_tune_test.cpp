@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 
 using namespace orcsdr;
@@ -145,9 +146,29 @@ void test_audio_scope() {
   as::stop();
   require(!as::active(), "scope: stops");
 }
+
+void test_entry() {
+  uint32_t hz = 0;
+  require(sstv_tune::parse_entry("145.5", &hz) && hz == 145500000, "entry: decimal is MHz");
+  require(sstv_tune::parse_entry("14.230", &hz) && hz == 14230000, "entry: HF in MHz");
+  require(sstv_tune::parse_entry("14230", &hz) && hz == 14230000, "entry: five digits are kHz");
+  require(sstv_tune::parse_entry("145500", &hz) && hz == 145500000, "entry: six digits are kHz");
+  require(sstv_tune::parse_entry("145", &hz) && hz == 145000000, "entry: short whole number is MHz");
+  require(sstv_tune::parse_entry("437.55", &hz) && hz == 437550000, "entry: UHF");
+  require(sstv_tune::parse_entry("0.1", &hz) && hz == 100000, "entry: lowest tunable");
+  require(!sstv_tune::parse_entry("", &hz) && !sstv_tune::parse_entry(".", &hz) && !sstv_tune::parse_entry("1.2.3", &hz), "entry: malformed refused");
+  require(!sstv_tune::parse_entry("0.05", &hz) && !sstv_tune::parse_entry("1800", &hz) && !sstv_tune::parse_entry("2000000", &hz),
+          "entry: out of range refused");
+  char text[16];
+  sstv_tune::format_mhz(text, sizeof(text), 145500000);
+  require(std::strcmp(text, "145.50000") == 0, "entry: readout format");
+  sstv_tune::format_mhz(text, sizeof(text), 14230250);
+  require(std::strcmp(text, "14.23025") == 0, "entry: readout keeps 10 Hz");
+}
 }  // namespace
 
 int main() {
+  test_entry();
   test_vfo();
   test_tuning_error();
   test_palette();

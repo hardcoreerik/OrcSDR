@@ -2,13 +2,18 @@
 
 #include <M5Unified.h>
 
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <iterator>
 
 #include "screen_controller.hpp"
 #include "sstv_archive.hpp"
+#include "sstv_audio_scope.hpp"
 #include "sstv_dashboard.hpp"
 #include "sstv_diag.hpp"
 #include "sstv_receiver.hpp"
+#include "sstv_tune.hpp"
 
 namespace orcsdr::sstv_app {
 namespace {
@@ -28,13 +33,114 @@ void notice(const char* text) { orcsdr::sstv::ui_notice(text); }
 
 uint32_t g_last_tune_ms = 0;
 
+// ---------------------------------------------------------------- tuning state
+namespace tn = orcsdr::sstv_tune;
+struct Tune {
+  uint8_t step_index = 3;     // 1 kHz
+  uint8_t demod_choice = 0;   // 0 = follows the frequency, otherwise 1 + sstv_tune::Demod
+  bool rails = true;
+};
+Tune g_tune;
+uint32_t g_gain_reapply_ms = 0;
+int g_manual_gain_tenth = 0;
+bool g_manual_gain = false;
+constexpr const char* kKeyHz = "sstv_hz";
+constexpr const char* kKeyStep = "sstv_step";
+constexpr const char* kKeyDemod = "sstv_demod";
+constexpr const char* kKeyRails = "sstv_rails";
+
+tn::Demod demod_now() {
+  return g_tune.demod_choice ? static_cast<tn::Demod>(g_tune.demod_choice - 1) : tn::default_demod(g_frequency_hz);
+}
+void apply_demod() {
+  if (g_hooks.set_demod) g_hooks.set_demod(static_cast<uint8_t>(demod_now()));
+}
+void load_tune() {
+  g_tune = Tune{};
+  g_frequency_hz = 145800000u;
+  const auto& st = g_hooks.store;
+  if (st.get_u32) g_frequency_hz = tn::clamp_hz(st.get_u32(kKeyHz, g_frequency_hz));
+  if (st.get_u8) {
+    const uint8_t step = st.get_u8(kKeyStep, 3);
+    g_tune.step_index = step < tn::step_count() ? step : 3;
+    const uint8_t demod = st.get_u8(kKeyDemod, 0);
+    g_tune.demod_choice = demod <= 3 ? demod : 0;
+  }
+  if (st.get_bool) g_tune.rails = st.get_bool(kKeyRails, true);
+}
+void save_tune() {
+  const auto& st = g_hooks.store;
+  if (st.put_u32) st.put_u32(kKeyHz, g_frequency_hz);
+  if (st.put_u8) {
+    st.put_u8(kKeyStep, g_tune.step_index);
+    st.put_u8(kKeyDemod, g_tune.demod_choice);
+  }
+  if (st.put_bool) st.put_bool(kKeyRails, g_tune.rails);
+}
+orcsdr::sstv::TuneView tune_view() {
+  orcsdr::sstv::TuneView v;
+  v.step_index = g_tune.step_index;
+  v.demod = static_cast<uint8_t>(demod_now());
+  v.demod_auto = g_tune.demod_choice == 0;
+  v.rails = g_tune.rails;
+  GainInfo gain;
+  if (g_hooks.gain_info && g_hooks.gain_info(&gain)) {
+    v.gain_available = gain.available;
+    v.gain_auto = gain.is_auto;
+    v.gain_tenth_db = static_cast<int16_t>(gain.tenth_db);
+  }
+  const uint32_t rate = g_hooks.sample_rate ? g_hooks.sample_rate() : 0u;
+  v.rate_sps = rate ? rate : 240000u;
+  return v;
+}
+
+// Point the radio at g_frequency_hz: the receiver forgets the picture in progress, the tuner retunes and the
+// demodulator follows. A fixed manual gain is put back once the stream has settled after the retune.
+void retune() {
+  g_last_tune_ms = millis();
+  orcsdr::sstv::set_frequency(g_frequency_hz);
+  apply_demod();
+  if (g_hooks.tune) g_hooks.tune(g_frequency_hz);
+  if (g_manual_gain) g_gain_reapply_ms = millis() + 1500u;
+  save_tune();
+}
+bool tune_hz(uint32_t hz) {
+  if (hz < tn::kMinHz || hz > tn::kMaxHz) return false;
+  if (hz == g_frequency_hz) return true;
+  g_frequency_hz = hz;
+  retune();
+  return true;
+}
+
 void tune_profile(size_t index) {
   if (index >= std::size(orcsdr::sstv::kProfiles)) return;
-  g_last_tune_ms = millis();
-  g_frequency_hz = orcsdr::sstv::kProfiles[index].hz;
-  orcsdr::sstv::set_frequency(g_frequency_hz);
-  if (g_hooks.tune) g_hooks.tune(g_frequency_hz);
+  (void)tune_hz(orcsdr::sstv::kProfiles[index].hz);
 }
+
+void gain_step(int direction) {
+  GainInfo gain;
+  if (!g_hooks.gain_info || !g_hooks.gain_manual || !g_hooks.gain_info(&gain) || !gain.available || !gain.step_count) return;
+  size_t nearest = 0;
+  for (size_t i = 1; i < gain.step_count; ++i)
+    if (std::abs(gain.steps[i] - gain.tenth_db) < std::abs(gain.steps[nearest] - gain.tenth_db)) nearest = i;
+  const int next = std::clamp(static_cast<int>(nearest) + direction, 0, static_cast<int>(gain.step_count) - 1);
+  g_manual_gain = true;
+  g_manual_gain_tenth = gain.steps[next];
+  g_hooks.gain_manual(g_manual_gain_tenth);
+}
+void gain_toggle() {
+  GainInfo gain;
+  if (!g_hooks.gain_info || !g_hooks.gain_info(&gain) || !gain.available) return;
+  if (gain.is_auto && g_hooks.gain_manual) {
+    g_manual_gain = true;
+    g_manual_gain_tenth = gain.tenth_db;
+    g_hooks.gain_manual(gain.tenth_db);
+  } else if (g_hooks.gain_auto) {
+    g_manual_gain = false;
+    g_hooks.gain_auto();
+  }
+}
+void audio_observer(const int16_t* samples, size_t count) { orcsdr::sstv_audio_scope::push(samples, count); }
 
 orcsdr::sstv::UiSnapshot snapshot() {
   orcsdr::sstv::UiSnapshot s;
@@ -43,6 +149,7 @@ orcsdr::sstv::UiSnapshot snapshot() {
   s.sd_ready = g_hooks.sd_ready && g_hooks.sd_ready(false);
   s.frequency_hz = g_frequency_hz;
   s.settings = g_settings;
+  s.tune = tune_view();
   return s;
 }
 
@@ -80,6 +187,34 @@ void handle(const orcsdr::sstv::Action& action) {
   switch (action.kind) {
     case Kind::tune_profile:
       tune_profile(static_cast<size_t>(action.value));
+      break;
+    case Kind::tune_hz:
+      if (!tune_hz(static_cast<uint32_t>(action.value))) notice("FREQUENCY OUT OF RANGE");
+      break;
+    case Kind::nudge:
+      (void)nudge(action.value < 0 ? -1 : 1);
+      break;
+    case Kind::set_step:
+      if (action.value >= 0 && static_cast<size_t>(action.value) < tn::step_count()) {
+        g_tune.step_index = static_cast<uint8_t>(action.value);
+        save_tune();
+      }
+      break;
+    case Kind::cycle_demod:
+      cycle_demod();
+      break;
+    case Kind::gain_toggle:
+      gain_toggle();
+      break;
+    case Kind::gain_step:
+      gain_step(action.value < 0 ? -1 : 1);
+      break;
+    case Kind::toggle_rails:
+      g_tune.rails = !g_tune.rails;
+      save_tune();
+      break;
+    case Kind::apply_correction:
+      (void)tune_hz(tn::clamp_hz(static_cast<uint32_t>(static_cast<int64_t>(g_frequency_hz) + action.value)));
       break;
     case Kind::set_detection:
       g_settings = orcsdr::sstv_settings::with_detection(g_settings, static_cast<Detection>(action.value));
@@ -120,6 +255,8 @@ void install(const Hooks& hooks) {
 
 void open() {
   g_settings = orcsdr::sstv_settings::load(g_hooks.store);
+  load_tune();
+  g_manual_gain = false;
   orcsdr::sstv_settings::apply(g_settings);          // before start(): the first header is already filtered
   if (!arc::initialised()) {
     arc::Config config;
@@ -131,15 +268,21 @@ void open() {
   }
   arc::request_recover();                            // runs on the worker when it is idle
   orcsdr::sstv::start(g_frequency_hz);
+  (void)orcsdr::sstv_audio_scope::start();
+  orcsdr::sstv::set_audio_observer(audio_observer);
   orcsdr::screens::begin_transition(orcsdr::screens::Id::sstv, millis());
   draw(true);
   orcsdr::screens::finish_transition();
-  tune_profile(orcsdr::sstv::ui_profile());
+  g_last_tune_ms = millis();
+  apply_demod();
+  if (g_hooks.tune) g_hooks.tune(g_frequency_hz);
 }
 
 void close() {
   if (!orcsdr::sstv::ui_active()) return;
   orcsdr::sstv_diag::abort_selftest();               // a bench test must not outlive the screen
+  orcsdr::sstv::set_audio_observer(nullptr);
+  orcsdr::sstv_audio_scope::stop();
   orcsdr::sstv::stop();                              // an image in progress becomes a partial entry
   (void)arc::poll(utc());                            // queue it now; the worker keeps running
   orcsdr::sstv::ui_leave();
@@ -157,6 +300,10 @@ void tick() {
     g_last_tune_ms = millis();
     g_hooks.tune(g_frequency_hz);
   }
+  if (g_gain_reapply_ms && static_cast<int32_t>(millis() - g_gain_reapply_ms) >= 0) {
+    g_gain_reapply_ms = 0;
+    if (g_manual_gain && g_hooks.gain_manual) g_hooks.gain_manual(g_manual_gain_tenth);
+  }
   orcsdr::sstv_diag::tick(millis());               // bench self-test audio, when one was requested
   orcsdr::sstv::service();
   (void)arc::poll(utc());
@@ -172,5 +319,35 @@ void draw(bool static_panel) {
 
 void touch(int32_t x, int32_t y) { handle(orcsdr::sstv::ui_touch(x, y)); }
 bool save_image(int32_t which) { return queue_for_sd(which); }
+
+bool active() { return orcsdr::sstv::ui_active(); }
+uint32_t frequency_hz() { return g_frequency_hz; }
+bool tune_to(uint32_t hz) { return active() && tune_hz(hz); }
+uint32_t step_hz() { return tn::step_hz(g_tune.step_index); }
+bool nudge(int direction, bool fine) {
+  if (!active()) return false;
+  return tune_hz(tn::nudge(g_frequency_hz, fine ? tn::step_hz(0) : step_hz(), direction < 0 ? -1 : 1));
+}
+bool set_step(uint32_t step) {
+  if (!active()) return false;
+  g_tune.step_index = static_cast<uint8_t>(tn::step_index(step));
+  save_tune();
+  return true;
+}
+void cycle_demod() {
+  if (!active()) return;
+  g_tune.demod_choice = static_cast<uint8_t>((g_tune.demod_choice + 1) % 4);
+  apply_demod();
+  save_tune();
+}
+const char* demod_label() {
+  static char label[16];
+  std::snprintf(label, sizeof(label), g_tune.demod_choice ? "%s" : "%s (AUTO)", tn::demod_name(demod_now()));
+  return label;
+}
+bool wants_spectrum() { return orcsdr::sstv::ui_wants_spectrum(); }
+void feed_spectrum(const float* levels_db, size_t bins, uint32_t rate_sps) {
+  orcsdr::sstv::ui_feed_spectrum(levels_db, bins, rate_sps);
+}
 
 }  // namespace orcsdr::sstv_app

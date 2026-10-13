@@ -35,6 +35,12 @@ uint32_t nudge(uint32_t frequency_hz, uint32_t step, int direction);
 uint32_t from_touch(uint32_t center_hz, uint32_t span_hz, int x, int width, uint32_t step);
 int to_x(uint32_t center_hz, uint32_t span_hz, uint32_t frequency_hz, int width);
 
+// Frequency typed on the keypad: "145.5" is MHz, a whole number of five or more digits ("14230", "145500") is kHz,
+// anything shorter ("145") is MHz. False when it is empty, malformed or outside the receiver's range.
+bool parse_entry(const char* text, uint32_t* frequency_hz);
+// "145.50000" (MHz, five decimals) for the big VFO readout.
+void format_mhz(char* out, size_t size, uint32_t frequency_hz);
+
 // Where the SSTV sync pulse should sit in the audio (Hz), and how far off it measures.
 constexpr float kSyncToneHz = 1200.0f;
 struct TuneError {

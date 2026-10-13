@@ -1,6 +1,7 @@
 #include "sstv_tune.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cmath>
 
 namespace orcsdr::sstv_tune {
@@ -98,8 +99,40 @@ uint16_t tint565(Tint tint) {
   }
 }
 
+bool parse_entry(const char* text, uint32_t* frequency_hz) {
+  if (text == nullptr || frequency_hz == nullptr || text[0] == '\0') return false;
+  double value = 0, scale = 0;
+  size_t digits = 0, whole = 0;
+  bool dot = false;
+  for (const char* c = text; *c; ++c) {
+    if (*c == '.') {
+      if (dot) return false;
+      dot = true;
+      scale = 1;
+    } else if (*c >= '0' && *c <= '9') {
+      if (++digits > 12) return false;
+      if (dot) { scale /= 10; value += (*c - '0') * scale; }
+      else { value = value * 10 + (*c - '0'); ++whole; }
+    } else {
+      return false;
+    }
+  }
+  if (digits == 0) return false;
+  const bool khz = !dot && whole >= 5;
+  const double hz = value * (khz ? 1e3 : 1e6);
+  if (hz < kMinHz || hz > kMaxHz) return false;
+  *frequency_hz = static_cast<uint32_t>(hz + 0.5);
+  return true;
+}
+
+void format_mhz(char* out, size_t size, uint32_t frequency_hz) {
+  std::snprintf(out, size, "%lu.%05lu", static_cast<unsigned long>(frequency_hz / 1000000u),
+                static_cast<unsigned long>((frequency_hz % 1000000u) / 10u));
+}
+
 bool self_check() {
-  return default_demod(7171000) == Demod::lsb && default_demod(14230000) == Demod::usb &&
+  uint32_t parsed = 0;
+  return parse_entry("145.5", &parsed) && parsed == 145500000 && default_demod(7171000) == Demod::lsb && default_demod(14230000) == Demod::usb &&
          default_demod(145500000) == Demod::nfm && nudge(14230000, 1000, 1) == 14231000 &&
          nudge(14230500, 1000, 1) == 14231000 && nudge(14230500, 1000, -1) == 14230000 &&
          from_touch(145500000, 240000, 120, 240, 1000) == 145500000 &&

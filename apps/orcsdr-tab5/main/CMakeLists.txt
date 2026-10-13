@@ -71,6 +71,8 @@ idf_component_register(
         "../ui/sstv_auto_detect.cpp"
         "../ui/sstv_archive.cpp"
         "../ui/sstv_status.cpp"
+        "../ui/sstv_tune.cpp"
+        "../ui/sstv_audio_scope.cpp"
         "../ui/sstv_settings.cpp"
         "../ui/sstv_app.cpp"
         "../ui/sstv_diag.cpp"
