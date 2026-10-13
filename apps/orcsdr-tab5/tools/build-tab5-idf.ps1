@@ -1,10 +1,11 @@
 param(
   [string]$IdfPath = 'C:\Espressif\frameworks\esp-idf-v5.5.4',
-  # Defaults to the pinned ESP-Hosted image (built once and cached) so
-  # developer builds embed the same C6 update image as releases.
+  # Opt in to the pinned ESP-Hosted C6 update image, built once and cached.
+  # Normal developer builds only need the Tab5/P4 application.
+  [switch]$IncludeC6Image,
+  # Embed a specifically supplied C6 image instead of building the pinned one.
   [string]$C6Firmware,
-  # Build without an embedded C6 image; Firmware & Updates then reports
-  # the update image as not included.
+  # Backward-compatible explicit switch for P4-only builds (now the default).
   [switch]$WithoutC6,
   # Test build with the Stage-1 DSP A/B harness (RTL_DSP AB ...). Never ship.
   [switch]$DspAb,
@@ -19,11 +20,14 @@ param(
 $ErrorActionPreference = 'Stop'
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
-$env:IDF_PYTHON_ENV_PATH = 'C:\Espressif\python_env\idf5.5_py3.14_env'
-$env:PATH = "$env:IDF_PYTHON_ENV_PATH\Scripts;$env:PATH"
 $resolvedC6Firmware = $null
-if ($WithoutC6 -and $C6Firmware) { throw 'Use either -C6Firmware or -WithoutC6, not both.' }
-if (-not $WithoutC6 -and -not $C6Firmware) {
+if ($WithoutC6 -and ($C6Firmware -or $IncludeC6Image)) {
+  throw 'Use -WithoutC6 or a C6 image option, not both.'
+}
+if ($C6Firmware -and $IncludeC6Image) {
+  throw 'Use -C6Firmware or -IncludeC6Image, not both.'
+}
+if ($IncludeC6Image) {
   $C6Firmware = & (Join-Path $PSScriptRoot 'resolve-hosted-c6.ps1') -IdfPath $IdfPath
 }
 if ($C6Firmware) {
@@ -31,6 +35,9 @@ if ($C6Firmware) {
     throw "C6 firmware does not exist: $C6Firmware"
   }
   $resolvedC6Firmware = (Resolve-Path -LiteralPath $C6Firmware).Path
+}
+if (-not (Test-Path -LiteralPath (Join-Path $IdfPath 'export.ps1'))) {
+  throw "ESP-IDF 5.5.4 is not installed at $IdfPath. Install it or use -IdfPath."
 }
 . (Join-Path $IdfPath 'export.ps1')
 Set-Location (Join-Path $PSScriptRoot '..')
@@ -46,9 +53,9 @@ $configureArgs = @('-B', $buildDir, '-D', "SDKCONFIG=$buildDir/sdkconfig",
                    '-D', "ORCSDR_DSP_STAGE_TIMING=$(if ($NoDspStageTiming) { 0 } else { 1 })",
                    '-D', "ORCSDR_DSP_LAB=$(if ($DspLab) { 1 } else { 0 })",
                    '-D', "ORCSDR_C6_FAULT_TEST=$(if ($C6FaultTest) { 1 } else { 0 })")
-if ($resolvedC6Firmware) {
-  $configureArgs += @('-D', "C6_FIRMWARE_BIN=$resolvedC6Firmware")
-}
+# Always set this cache value: switching from an image-embedded build to
+# an ordinary P4-only build must not silently retain the previous C6 image.
+$configureArgs += @('-D', "C6_FIRMWARE_BIN=$resolvedC6Firmware")
 idf.py @configureArgs reconfigure
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
