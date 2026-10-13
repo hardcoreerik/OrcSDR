@@ -49,7 +49,13 @@ void robot36_rows() {
   for(unsigned row=0;row<240;++row) {
     tone(1200,9);
     tone(1500,3);
-    tone(1900,88); // neutral gray luminance
+    if(row==100) {
+      // 88 one-millisecond alternating 1500/2300Hz stripes total exactly
+      // 88ms: a demanding high-spatial-frequency luma regression that the
+      // old zero-cross-only estimator badly blurred.
+      for(unsigned stripe=0;stripe<88;++stripe)
+        tone((stripe&1u)?2300:1500,1);
+    } else tone(1900,88); // neutral gray luminance
     tone((row&1u)?2300:1500,4.5);
     tone(1900,1.5);
     tone(1900,44); // neutral chroma
@@ -85,6 +91,17 @@ int main() {
   const auto image=archived_image(0);
   require(image.width==320 && image.height==240,"Robot36 dimensions");
   require(image.pixels!=nullptr,"decoded PSRAM/host image buffer");
+  // 320-column luminance reconstruction retains contrast for ~3.6-pixel
+  // stripes. This test previously measured ~982 with the original
+  // zero-cross frequency estimator vs ~5144 for the dual estimator.
+  unsigned edge_energy=0;
+  const uint16_t* bar=image.pixels+100u*320u;
+  for(unsigned x=10;x<309;++x)
+    edge_energy+=static_cast<unsigned>(std::abs(
+      static_cast<int>((bar[x+1]>>5)&63)-
+      static_cast<int>((bar[x]>>5)&63)));
+  require(edge_energy>2500u,
+          "Robot36 1ms luminance stripes preserve fine detail");
   require(metrics().audio_overruns==0,"no audio overruns");
   // PD120 transmits two luminance rows per 508.480 ms super-line:
   // 20ms sync + 2.08ms porch + 4 x 121.60ms Y/Cr/Cb/Y.
