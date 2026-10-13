@@ -755,6 +755,7 @@ struct Work {
   char part[kMaxParts][64];
   uint32_t indexed[kMaxIndexed];      // FNV-1a of every file name the index already lists
   size_t orphans = 0, parts = 0, indexed_count = 0;
+  bool torn_tail = false;              // the index ends in a row with no newline (power lost mid-append)
 };
 uint32_t name_hash(const char* s, size_t n) {
   uint32_t h = 2166136261u;
@@ -770,7 +771,7 @@ bool load_indexed(Work& w) {
   if (!f) return false;
   char line[256], buf[512];
   size_t len = 0;
-  bool header = true, ok = true;
+  bool header = true, ok = true, ends_with_newline = true;
   size_t got;
   // A read of 0 bytes ends the loop; only a clean end of file (errno untouched) means the whole index was seen.
   // After a card error part-way through, the table is incomplete and recovery would add duplicate rows.
@@ -781,6 +782,7 @@ bool load_indexed(Work& w) {
       if (errno != 0) ok = false;
       break;
     }
+    ends_with_newline = buf[got - 1] == '\n';
     for (size_t i = 0; i < got && ok; ++i) {
       if (buf[i] != '\n') {
         if (len < sizeof(line) - 1) line[len++] = buf[i];
@@ -799,6 +801,7 @@ bool load_indexed(Work& w) {
     }
   }
   io().close(f);
+  w.torn_tail = ok && !ends_with_newline;
   return ok;
 }
 bool is_indexed(const Work& w, const char* name) {
@@ -832,6 +835,16 @@ size_t recover() {
   names.orphans = names.parts = names.indexed_count = 0;
   struct Guard { void* p; ~Guard() { psram_free(p); } } guard{work_ptr};
   if (!load_indexed(names)) return 0;
+  if (names.torn_tail) {
+    // A row was cut short by a power loss. Terminate it so recovered rows start on their own line; the torn row
+    // stays as one malformed line (readers skip it) and nothing after it is damaged.
+    char path[96];
+    index_path(path, sizeof(path));
+    std::FILE* f = io().open(path, "ab");
+    if (!f) return 0;
+    const bool wrote = io().write("\n", 1, f) == 1;
+    if (io().close(f) != 0 || !wrote) return 0;
+  }
   if (!io().list_dir(g_config.root, collect, &names)) return 0;
   for (size_t i = 0; i < names.parts; ++i) {                    // torn temp files from an interrupted save
     char path[160];

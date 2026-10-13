@@ -471,6 +471,39 @@ void test_recovery_with_many_images_on_the_card() {
   rx::clear_gallery();
 }
 
+// Power lost in the middle of an index append: the next rows must not be glued onto the torn one.
+void test_torn_index_tail_is_terminated_before_recovery() {
+  reset_world();
+  const std::string dir = g_root + "/sstv";
+  require(std::system(("mkdir -p '" + dir + "'").c_str()) == 0, "torn: mkdir");
+  std::FILE* idx = std::fopen((dir + "/index.csv").c_str(), "wb");
+  std::fprintf(idx, "%s\n", arc::kIndexHeaderV2);
+  std::fputs("1,1700000001,1,145800000,ROBOT 36,8,vis,100,320,240,240,1,0,240,0,complete,0,rx_1700000001_145800000_1.bmp\n", idx);
+  std::fputs("2,1700000002,1,1458", idx);          // cut short, no newline
+  std::fclose(idx);
+  for (unsigned i = 1; i <= 2; ++i) {
+    char name[96];
+    std::snprintf(name, sizeof(name), "%s/rx_170000000%u_145800000_%u.bmp", dir.c_str(), i, i);
+    std::FILE* f = std::fopen(name, "wb");
+    unsigned char bmp[54] = {'B', 'M'};
+    std::fwrite(bmp, 1, sizeof(bmp), f);
+    std::fclose(f);
+  }
+  require(arc::recover() == 1, "torn: the orphan picture was recovered");
+  const auto lines = split(slurp(dir + "/index.csv"), '\n');
+  bool recovered_on_own_line = false, glued = false;
+  for (const auto& line : lines) {
+    if (line.find("recovered") != std::string::npos) {
+      recovered_on_own_line = line.rfind("2,", 0) == 0 && line.find("rx_1700000002_145800000_2.bmp") != std::string::npos &&
+                              line.find("1,1700000002,1,1458") == std::string::npos;
+      glued = line.find("1,1700000002,1,1458") != std::string::npos;
+    }
+  }
+  require(recovered_on_own_line && !glued, "torn: the recovered row starts on its own line, not glued to the torn one");
+  rx::stop();
+  rx::clear_gallery();
+}
+
 void test_queue_is_bounded_and_never_blocks() {
   reset_world();
   for (int k = 0; k < 4; ++k) produce(1600 + 100. * k);
@@ -642,6 +675,7 @@ int main() {
   test_partial_index_read_does_not_rotate_the_index();
   test_empty_index_does_not_block_saving();
   test_recovery_with_many_images_on_the_card();
+  test_torn_index_tail_is_terminated_before_recovery();
   test_queue_is_bounded_and_never_blocks();
   test_eviction_while_pending_keeps_pixels();
   test_slow_card_does_not_disturb_decoding();
