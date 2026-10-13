@@ -30,6 +30,18 @@ web commands, and screen/touch routing behind the modules that already exist.
 The endpoint remains a small application-wiring file. Preserve one receiver
 owner and one framebuffer owner during each extraction.
 
+### Decouple LoRa capture from decode (streaming ring buffer)
+
+LoRa reception currently records one packet at a time into a single capture slot
+and then decodes it (about 2.2 s). A packet that starts less than about 2.5 s
+after the previous one can be missed, which matters on a busy mesh. A streaming
+ring buffer would keep recording while the decoder works and let it pick up the
+queued packet afterwards. It is tabled for now: PSRAM headroom is only about 4 MB
+and a full-rate ring of several seconds does not fit, so it needs its own design
+(a shorter ring, a reduced sample rate or format, and a defined overrun policy
+that drops the oldest packet cleanly) and a bench run on a busy channel before it
+counts as a capability. Not a current capability.
+
 ### Compile the native Tab5 firmware in CI
 
 The repository has P25, radio-scan, user-guide, and Documentation Truth
@@ -87,6 +99,7 @@ rollback, and radio-recovery gates pass.
 - Other Tab5/display revisions beyond the owner ESP32-P4 revision 1.3 unit.
 - Long-duration current-main soak and repeatable receiver recovery.
 - Current-release RF acceptance for Shortwave, Airband, Marine, Satellite, and CB.
+- LoRa receive at the sensitivity edge (about -110 dBm) for the Blog V3C and Nooelec NESDR SMArt V5; the Blog V4 and V4L were measured there and missed packets a T-Beam Supreme still decoded.
 
 ## Follow-up cleanup
 
