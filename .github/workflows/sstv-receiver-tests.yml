@@ -43,3 +43,17 @@ jobs:
             apps/orcsdr-tab5/ui/sstv_modes.cpp -o /tmp/sstv-wav-replay
       - name: Synthetic Robot36 and progressive PD120 reception
         run: /tmp/sstv-smoke
+      - name: Package host replay binary and exact decoder sources
+        if: always()
+        run: |
+          mkdir -p /tmp/sstv-analysis-source/ui /tmp/sstv-analysis-source/tests
+          cp apps/orcsdr-tab5/ui/sstv_receiver.cpp apps/orcsdr-tab5/ui/sstv_receiver.hpp apps/orcsdr-tab5/ui/sstv_modes.cpp /tmp/sstv-analysis-source/ui/
+          cp apps/orcsdr-tab5/tests/sstv_wav_replay.cpp /tmp/sstv-analysis-source/tests/
+          cp /tmp/sstv-wav-replay /tmp/sstv-analysis-source/ || true
+      - name: Publish host decoder analysis bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sstv-decoder-analysis-bundle
+          path: /tmp/sstv-analysis-source/
+          retention-days: 7
