@@ -11,6 +11,10 @@ enum class Mode : uint8_t {
   pd50, pd90, pd120, pd160, pd180, pd240, pd290
 };
 enum class Page : uint8_t { receive, gallery, analyzer, frequencies, setup, count };
+// VIS is authoritative when valid; sync fallback is always labeled provisional.
+enum class AutoStrategy : uint8_t { vis_only, vis_sync };
+enum class Identification : uint8_t { none, vis, sync, manual };
+enum class EndReason : uint8_t { none, complete, sync_lost, new_vis, retune, aborted };
 struct Profile { const char* name; uint32_t hz; bool usb; const char* description; };
 constexpr Profile kProfiles[] = {
     {"HF SSTV", 14230000, true, "14.230 MHz USB - general amateur SSTV"},
@@ -25,6 +29,12 @@ struct Metrics {
   uint32_t bad_vis = 0;
   uint32_t good_vis = 0;
   uint32_t frames = 0;
+  uint32_t partial_frames = 0;
+  uint32_t auto_sync_locks = 0;
+  uint32_t observed_sync_pulses = 0;
+  Identification identification = Identification::none;
+  uint8_t identification_score = 0; // heuristic; not a probability
+  bool start_unknown = false;
   uint32_t sync_locked_lines = 0;
   uint32_t sync_missed_lines = 0;
   float line_error_ms = 0.0f;
@@ -50,12 +60,18 @@ struct Image {
   Mode mode = Mode::auto_vis;
   uint16_t decoded_rows = 0;
   bool partial = false;
+  bool start_unknown = false;
+  Identification identification = Identification::none;
+  uint8_t identification_score = 0;
+  EndReason end_reason = EndReason::none;
 };
 void start(uint32_t frequency_hz);
 void stop();
 bool active();
 void set_mode(Mode mode);
 Mode selected_mode();
+void set_auto_strategy(AutoStrategy strategy);
+AutoStrategy auto_strategy();
 void set_frequency(uint32_t hz);
 // SPSC PCM tap: called from DSP producer at exactly 48000 Hz, *never* draws or blocks.
 void offer_audio_48k(const int16_t* samples, size_t count);
