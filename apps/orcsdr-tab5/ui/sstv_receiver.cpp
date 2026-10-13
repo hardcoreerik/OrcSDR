@@ -38,6 +38,11 @@ int32_t g_last_pixel[2]={-1,-1};
 // of-band noise before fractional zero-cross interpolation.  No windowed FFT.
 float g_in_prev=0,g_hp=0,g_lp=0,g_prev=0;
 float g_last_edge=0,g_period=0,g_freq=0,g_level=0;
+// Separate high-temporal-resolution luminance estimator: keep the original
+// crossing-based VIS/sync path unchanged while measuring pixels every sample.
+float g_ac_y2=0,g_ac_p=0,g_ac_q=0,g_luma_freq=0;
+uint16_t g_ac_freq_lut[513]{};
+bool g_ac_lut_ready=false;
 uint32_t g_ticks=0,g_sync_run=0;
 double g_line_origin=0;
 uint16_t g_line_index=0;
@@ -290,12 +295,29 @@ void accept_sample(int16_t pcm) {
     }
     g_last_edge=cross;
   }
+  // Normalized adjacent-sample autocorrelation: for a sinusoid at f Hz,
+  // P/Q = 2*cos(2*pi*f/kRate). This provides a new tone estimate on every
+  // 12k sample instead of waiting ~5-10 samples for each zero crossing.
+  // F4HWN's open-source SSTV receiver uses the same DSP identity; the
+  // coefficient is tuned here against Pluto-received Robot36 recordings.
+  const float acp=g_prev*(g_lp+g_ac_y2);
+  const float acq=g_prev*g_prev;
+  g_ac_p+=.6f*(acp-g_ac_p);
+  g_ac_q+=.6f*(acq-g_ac_q);
+  g_ac_y2=g_prev;
+  if(g_ac_q>500.f && g_level>.005f) {
+    const float ratio=std::clamp(.5f*g_ac_p/g_ac_q,0.f,1.f)*512.f;
+    const unsigned index=std::min(511u,static_cast<unsigned>(ratio));
+    const float fract=ratio-index;
+    g_luma_freq=g_ac_freq_lut[index]+
+      (g_ac_freq_lut[index+1]-g_ac_freq_lut[index])*fract;
+  } else g_luma_freq=g_freq;
   g_prev=g_lp;
   if(g_stats.receiving) {
     const bool is_sync=g_freq>1030.f&&g_freq<1400.f;
     if(is_sync)++g_sync_run;
     else if(g_sync_run){sync_edge(g_sync_run);g_sync_run=0;}
-    sample_luma(g_freq);
+    sample_luma(g_luma_freq);
   } else vis_tick(g_freq);
 }
 void put16(std::FILE* f,uint16_t v){std::fputc(v&255,f);std::fputc(v>>8,f);}
@@ -306,6 +328,16 @@ void start(uint32_t freq) {
   reset_vis();reset_picture();
   g_frequency=freq;g_stats.active=true;
   g_hp=g_lp=g_in_prev=g_prev=g_last_edge=g_period=g_freq=g_level=0.f;
+  g_ac_y2=g_ac_p=g_ac_q=g_luma_freq=0.f;
+  // Build a 1 KiB inverse-cosine LUT once, outside the real-time audio
+  // service.  The sample loop only interpolates adjacent integer entries.
+  if(!g_ac_lut_ready) {
+    for(int i=0;i<=512;++i)
+      g_ac_freq_lut[i]=static_cast<uint16_t>(
+        std::acos(static_cast<float>(i)/512.f)*
+        (kRate/(2.f*3.14159265358979323846f))+.5f);
+    g_ac_lut_ready=true;
+  }
   g_ticks=0;
   g_read.store(g_write.load(std::memory_order_acquire),std::memory_order_release);
   std::snprintf(g_stats.status,sizeof(g_stats.status),"WAITING FOR VIS");
