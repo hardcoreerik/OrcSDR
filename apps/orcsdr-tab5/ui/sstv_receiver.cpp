@@ -158,12 +158,12 @@ void finish_picture(bool incomplete,EndReason reason) {
   g_saved[0]=g_live;
   g_saved_count=std::min(kGallery,g_saved_count+1);
   g_live={};
-  if(g_live.partial)g_stats.partial_frames++;
+  if(g_saved[0].partial)g_stats.partial_frames++;
   else g_stats.frames++;
   reset_picture();
   ++g_revision;
   std::snprintf(g_stats.status,sizeof(g_stats.status),
-    incomplete?"PARTIAL IMAGE SAVED / AUTO SEARCH":"FRAME SAVED IN RAM / MONO");
+    g_saved[0].partial?"PARTIAL IMAGE SAVED / AUTO SEARCH":"FRAME SAVED IN RAM / MONO");
 }
 void commit_line() {
   if(!g_spec||!g_live.pixels)return;
