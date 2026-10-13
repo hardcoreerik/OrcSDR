@@ -27,7 +27,7 @@ constexpr uint16_t kMaxWidth=800;
 // Robot 36 and 39 for PD120 (their pixels are 3.3 and 2.3 samples wide); 38 serves both.
 constexpr double kSyncStartLatencySamples=38.0;
 constexpr size_t kGallery=4;
-std::atomic<uint32_t> g_read{0},g_write{0},g_drops{0};
+std::atomic<uint32_t> g_read{0},g_write{0},g_drops{0},g_offered{0};
 // Drop bursts are recorded in-band so the decoder can keep its sample clock
 // true: a marker says "N samples were lost immediately before ring slot I".
 // Producer writes head, consumer writes tail (single producer, single consumer).
@@ -585,6 +585,7 @@ void set_frequency(uint32_t hz){
 }
 void offer_audio_48k(const int16_t* src,size_t n){
   if(!active()||!src)return;
+  g_offered.fetch_add(static_cast<uint32_t>(n),std::memory_order_relaxed);
   uint32_t w=g_write.load(std::memory_order_relaxed);
   for(size_t i=0;i<n;++i){
     g_decim_sum+=src[i];
@@ -672,6 +673,7 @@ void service(size_t budget){
   g_stats.tone_hz=g_freq;g_stats.audio_peak=g_level;
   g_stats.signal=g_level>.01f;
   g_stats.audio_overruns=g_drops.load(std::memory_order_relaxed);
+  g_stats.audio_offered=g_offered.load(std::memory_order_relaxed);
   g_stats.vis_phase=static_cast<uint8_t>(g_vis_stage);
   g_stats.vis_phase_samples=g_phase_samples;
   g_stats.state=session_state();

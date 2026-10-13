@@ -54,7 +54,7 @@ Rect tile(int i) { return {42 + (i % 2) * 412, 148 + (i / 2) * 232, 400, 220}; }
 constexpr Rect kMonitorPanel{24, 104, 862, 514};
 constexpr Rect kDecoderPanel{898, 104, 358, 514};
 // FREQUENCIES
-Rect profile_row(int i) { return {42, 160 + i * 112, 1196, 100}; }
+Rect profile_row(int i) { return {42, 160 + i * 90, 1196, 80}; }
 // SETUP
 constexpr Rect kModePanel{24, 104, 724, 514};
 constexpr Rect kDetectPanel{760, 104, 496, 514};
@@ -428,10 +428,10 @@ void draw_frequencies() {
     M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 8, on ? kGreen : kGrid);
     char f[44];
     std::snprintf(f, sizeof(f), "%0.5f MHz", kProfiles[i].hz / 1e6);
-    text(kProfiles[i].name, r.x + 20, r.y + 32, TFT_WHITE, 1, middle_left);
-    text(f, r.x + 340, r.y + 32, kCyan, 1, middle_left);
-    text(kProfiles[i].usb ? "USB" : "NFM", r.x + 640, r.y + 32, kGreen, 0, middle_left);
-    text(kProfiles[i].description, r.x + 20, r.y + 70, kMuted, 0, middle_left);
+    text(kProfiles[i].name, r.x + 20, r.y + 26, TFT_WHITE, 1, middle_left);
+    text(f, r.x + 340, r.y + 26, kCyan, 1, middle_left);
+    text(kProfiles[i].usb ? "USB" : "NFM", r.x + 640, r.y + 26, kGreen, 0, middle_left);
+    text(kProfiles[i].description, r.x + 20, r.y + 58, kMuted, 0, middle_left);
   }
 }
 

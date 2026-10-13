@@ -206,7 +206,7 @@ void print_status() {
   const Metrics m = metrics();
   say("SSTV_STATUS active=%d dashboard=%d state=\"%s\" mode=\"%s\" ident=%d score=%u row=%u/%u receiving=%d "
       "start_unknown=%d vis_ok=%lu vis_bad=%lu sync_locked=%u sync_missed=%u overruns=%lu gaps=%lu "
-      "frames=%lu partial=%lu auto_locks=%lu",
+      "frames=%lu partial=%lu auto_locks=%lu tone_hz=%d audio_level_milli=%d audio_offered=%lu samples=%lu",
       active() ? 1 : 0, ui_active() ? 1 : 0, state_name(m.state),
       m.receiving ? mode_name(m.received_mode) : "-", static_cast<int>(m.identification),
       static_cast<unsigned>(m.identification_score), static_cast<unsigned>(m.row),
@@ -215,7 +215,8 @@ void print_status() {
       static_cast<unsigned>(m.session_sync_locked), static_cast<unsigned>(m.session_sync_missed),
       static_cast<unsigned long>(m.audio_overruns), static_cast<unsigned long>(m.audio_gaps),
       static_cast<unsigned long>(m.frames), static_cast<unsigned long>(m.partial_frames),
-      static_cast<unsigned long>(m.auto_sync_locks));
+      static_cast<unsigned long>(m.auto_sync_locks), static_cast<int>(m.tone_hz), static_cast<int>(m.audio_peak * 1000.0f),
+      static_cast<unsigned long>(m.audio_offered), static_cast<unsigned long>(m.samples));
   const UiStats ui = ui_stats();
   say("SSTV_PERF service_us_last=%lu service_us_max=%lu service_us_avg=%lu service_cpu_pct=%u ring_max=%u/4096 "
       "frames_alive=%lu frame_kb=%lu draw_us_last=%lu draw_us_max=%lu draws=%lu",

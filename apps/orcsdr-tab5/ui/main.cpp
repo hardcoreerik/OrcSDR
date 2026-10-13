@@ -3005,6 +3005,12 @@ HomeDemod band_demod(RtlBand band) {
 }
 
 // Home's choice applies only while Home is on screen; the dashboards keep their own demodulators.
+// The SSTV receiver needs demodulated audio whether or not the speaker is on, and runs the dongle at its own
+// rate, which the DSP loop otherwise treats as another decoder's stream and does not demodulate.
+static bool sstv_owns_audio(RtlBand band) {
+  return orcsdr::sstv::active() && (band == RtlBand::browse || band == RtlBand::shortwave);
+}
+
 HomeDemod effective_demod(RtlBand band) {
   // Receiver DSP never reads screen ownership or UI-only frequency state.
   if (orcsdr::sstv::active() &&
@@ -8446,7 +8452,6 @@ __attribute__((noinline)) void demodulate_ssb(const uint8_t* iq, size_t bytes, f
 void demodulate_home(RtlBand band, const uint8_t* iq, size_t bytes, float audio_scale,
 
                      uint32_t sample_rate_sps) {
-
   switch (effective_demod(band)) {
 
     case HomeDemod::am: demodulate_am(iq, bytes, audio_scale, sample_rate_sps); break;
@@ -9182,10 +9187,10 @@ static void rtl_dsp_task(void *) {
 #if ORCSDR_DSP_LAB
         !lab_exclusive &&
 #endif
-        !block.custom_rate && !orcsdr::visualizer::channel_audio_active() &&
+        (!block.custom_rate || sstv_owns_audio(block.band)) && !orcsdr::visualizer::channel_audio_active() &&
         block.band != RtlBand::lora && block.band != RtlBand::p25 &&
         block.band != RtlBand::pocsag &&
-        (rtl_audio_enabled.load(std::memory_order_relaxed) ||
+        (rtl_audio_enabled.load(std::memory_order_relaxed) || sstv_owns_audio(block.band) ||
          orcsdr::web_audio::demanded() ||
          g_audio_rec_active.load(std::memory_order_relaxed)) &&
         !rtl_audio_test_tone.load(std::memory_order_relaxed)) {
@@ -9202,7 +9207,13 @@ static void rtl_dsp_task(void *) {
           rtl_audio_play_count = 0;
         }
       } else if (block.band != RtlBand::adsb) {
-        demodulate_home(block.band, block.data, block.bytes, block.audio_scale, block.sample_rate_sps);
+        // A block at a non-default rate yields far more audio than one at the default rate, and the audio buffer
+        // is sized for the latter. Demodulator state carries across calls, so slice the block to keep every call
+        // inside the buffer (8192 bytes = 4096 IQ pairs = 819 audio samples at 240 kS/s).
+        const size_t slice_bytes = block.custom_rate ? 8192 : block.bytes;
+        for (size_t offset = 0; offset < block.bytes; offset += slice_bytes)
+          demodulate_home(block.band, block.data + offset, std::min(slice_bytes, block.bytes - offset),
+                          block.audio_scale, block.sample_rate_sps);
       }
     }
     mark(dsp_stats::Stage::demod);

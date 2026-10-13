@@ -33,7 +33,8 @@ constexpr Profile kProfiles[] = {
     {"HF SSTV", 14230000, true, "14.230 MHz USB - general amateur SSTV"},
     {"ISS SSTV", 145800000, false, "ISS event only - verify current ARISS plan"},
     {"OREGON NET", 145290000, false, "Salem-area SSTV repeater - confirm active net"},
-    {"ISS UHF", 437550000, false, "ARISS UHF SSTV when scheduled - verify before reception"}};
+    {"ISS UHF", 437550000, false, "ARISS UHF SSTV when scheduled - verify before reception"},
+    {"LAB 145.500", 145500000, false, "Bench test: cabled Robot36 source at 145.500 MHz"}};
 const char* mode_name(Mode mode);
 struct Metrics {
   float tone_hz = 0;
@@ -61,6 +62,7 @@ struct Metrics {
   uint32_t session_id = 0;            // reception in progress (0 = none)
   float line_error_ms = 0.0f;
   uint32_t samples = 0;
+  uint32_t audio_offered = 0;       // 48 kHz samples handed to the decoder by the radio path (0 = no audio arrives)
   uint16_t row = 0;
   uint16_t rows = 0;
   uint16_t width = 0;
