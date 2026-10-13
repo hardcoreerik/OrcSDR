@@ -7,6 +7,8 @@ firmware toolchain itself).
 
 ## Tab5 firmware (apps/orcsdr-tab5)
 
+**Public step-by-step instructions:** [Build from source](docs/user-guide/build-from-source.md).
+This file records contributor environment details, not first-time installation.
 Native ESP-IDF build; PlatformIO is not a supported build or flash path.
 
 | Requirement | Version / path | Notes |
@@ -49,9 +51,17 @@ cd apps\orcsdr-tab5
 
 ### Flash
 
+On an existing compatible OrcSDR installation, use the application-only
+command, which preserves NVS, bootloader, partition table and installed C6:
+
 ```powershell
-idf.py -B build-native-hosted3 -p <PORT> flash
+idf.py -B build-native-hosted3 -p COM7 app-flash
 ```
+
+Replace `COM7` with the actual Tab5 serial port. For initial installation or
+an unknown partition layout, use the [web flasher](https://theorc.dev/sdr/flash/)
+instead. The regular build **embeds** the optional pinned C6 3.0.6 update image
+but does not install it.
 
 Only after explicit hardware authorization. `<PORT>` is whatever serial
 port the Tab5's native USB Serial/JTAG connection enumerates as on your
