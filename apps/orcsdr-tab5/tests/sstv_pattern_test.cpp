@@ -97,6 +97,7 @@ void run(const char* label, bool pd, const std::vector<uint8_t>& src, double min
   set_mode(Mode::auto_vis);
   set_auto_strategy(AutoStrategy::vis_sync);
   start(145800000);
+  const uint32_t bad_before = metrics().bad_vis;
   Signal sig;
   sig.header(pd ? 95 : 8);
   if (pd) sig.pd120_image(src.data()); else sig.robot36_image(src.data());
@@ -107,6 +108,9 @@ void run(const char* label, bool pd, const std::vector<uint8_t>& src, double min
   require(!image.partial && image.identification == Identification::vis, "pattern: complete, VIS-identified");
   require(image.decoded_rows == image.height, "pattern: every row decoded");
   require(image.sync_missed == 0, "pattern: no missed line syncs");
+  // Flat gray stretches of a picture (neutral chroma is 1900 Hz, like a VIS leader) start false header
+  // attempts. They fail harmlessly but must not be counted or shown as "bad VIS headers".
+  require(metrics().bad_vis == bad_before, "pattern: false header attempts inside an image are not counted as bad VIS");
   const Metrics m = compare(image, src);
   std::fprintf(stderr,
                "pattern %-8s %ux%u  MAE=%.2f  MAE(blur3)=%.2f  correlation=%.4f  fine-detail=%.2f  sync %u/%u\n",

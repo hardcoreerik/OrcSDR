@@ -14,7 +14,7 @@ struct Hooks {
   bool (*sd_ready)(bool mount_if_needed) = nullptr;  // SD card mounted (optionally try to mount)
   void (*tune)(uint32_t frequency_hz) = nullptr;     // point the RTL-SDR at an SSTV frequency
   void (*release_tuning)() = nullptr;                // undo tune() when the dashboard closes
-  void (*go_home)() = nullptr;                       // navigate to the Home screen
+  void (*header_controls)() = nullptr;               // draws the shared header controls (battery, home, ...)
   uint32_t (*utc_epoch)() = nullptr;                 // verified UTC seconds, 0 while unverified
   orcsdr::sstv_settings::Store store;                // persistent preferences
 };

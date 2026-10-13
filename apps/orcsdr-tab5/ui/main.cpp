@@ -13646,7 +13646,7 @@ orcsdr::sstv_app::Hooks sstv_app_hooks() {
     (void)queue_local_rtl_listen(hz < 30000000u ? RtlBand::shortwave : RtlBand::browse, hz, false);
   };
   hooks.release_tuning = [] { rtl_rate_override_sps.store(0, std::memory_order_release); };
-  hooks.go_home = [] { show_home(); };
+  hooks.header_controls = draw_global_header_controls;
   hooks.utc_epoch = [] {
     const auto clock = orcsdr::time_service::now();
     return clock.wallclock_valid ? clock.utc : 0u;

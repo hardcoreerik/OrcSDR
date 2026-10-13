@@ -364,7 +364,9 @@ void vis_tick(float f) {
         else
           std::snprintf(g_stats.status,sizeof(g_stats.status),"UNKNOWN VIS %u",code);
       } else {
-        g_stats.bad_vis++;
+        // Gray stretches inside a picture (neutral chroma is 1900 Hz, like a VIS leader) start header
+        // attempts that always fail; counting them would show a healthy reception as 31 bad headers.
+        if(!g_stats.receiving)g_stats.bad_vis++;
         if(!g_stats.receiving)
           std::snprintf(g_stats.status,sizeof(g_stats.status),
                         "VIS PARITY/SYNC ERROR");

@@ -83,6 +83,13 @@ uint32_t d_now_ms() {
       duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
 #endif
 }
+void d_delay_ms(uint32_t ms) {
+#ifdef ESP_PLATFORM
+  vTaskDelay(pdMS_TO_TICKS(ms));
+#else
+  std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+#endif
+}
 void d_yield() {
 #ifdef ESP_PLATFORM
   vTaskDelay(1);
@@ -114,6 +121,7 @@ Config g_config;
 const Io* g_io = nullptr;
 uint32_t g_last_serial = 0;
 bool g_index_ready = false;
+std::atomic<uint32_t> g_write_retries{0};
 std::atomic<bool> g_run{false};
 std::atomic<bool> g_worker_alive{false};
 std::atomic<bool> g_recover_requested{false};
@@ -159,7 +167,7 @@ const char* end_name(EndReason reason) {
 }
 
 void note_result_locked(uint32_t session, JobState state, Error error, uint32_t duration,
-                        uint32_t bytes, const char* filename) {
+                        uint32_t bytes, const char* filename, int os_error = 0) {
   size_t slot = g_result_count;
   for (size_t i = 0; i < g_result_count; ++i)
     if (g_results[i].session_id == session) { slot = i; break; }
@@ -176,6 +184,7 @@ void note_result_locked(uint32_t session, JobState state, Error error, uint32_t 
   r.error = error;
   r.duration_ms = duration;
   r.bytes = bytes;
+  r.os_error = os_error;
   if (filename) std::snprintf(r.filename, sizeof(r.filename), "%s", filename);
 }
 
@@ -203,12 +212,22 @@ bool ensure_index() {
   if (io().exists(path)) {
     char head[sizeof(kIndexHeaderV2)] = {};
     bool current = false;
-    if (std::FILE* f = io().open(path, "rb")) {
-      const size_t n = io().read(head, sizeof(kIndexHeaderV2) - 1, f);
-      io().close(f);
-      current = n >= sizeof(kIndexHeaderV2) - 1 &&
-                std::strncmp(head, kIndexHeaderV2, sizeof(kIndexHeaderV2) - 1) == 0;
+    bool read_ok = false;
+    // A failed read must never be mistaken for an old-format index: that would move a good index aside
+    // and make recover() re-add every image. Try a few times; if the file stays unreadable, do nothing.
+    for (int attempt = 0; attempt < 3 && !read_ok; ++attempt) {
+      if (std::FILE* f = io().open(path, "rb")) {
+        const size_t n = io().read(head, sizeof(kIndexHeaderV2) - 1, f);
+        io().close(f);
+        if (n > 0) {
+          read_ok = true;
+          current = n >= sizeof(kIndexHeaderV2) - 1 &&
+                    std::strncmp(head, kIndexHeaderV2, sizeof(kIndexHeaderV2) - 1) == 0;
+        }
+      }
+      if (!read_ok && io().delay_ms) io().delay_ms(100);
     }
+    if (!read_ok) return false;            // unreadable now: the job fails with index_error, the index is untouched
     if (current) { g_index_ready = true; return true; }
     char moved[112];
     std::snprintf(moved, sizeof(moved), "%s/index-v1-%lu.csv", g_config.root,
@@ -261,10 +280,44 @@ bool append_index(const Row& r) {
 void put16(uint8_t* p, uint16_t v) { p[0] = static_cast<uint8_t>(v); p[1] = static_cast<uint8_t>(v >> 8); }
 void put32(uint8_t* p, uint32_t v) { put16(p, static_cast<uint16_t>(v)); put16(p + 2, static_cast<uint16_t>(v >> 16)); }
 
-// Writes a 24-bit bottom-up BMP in whole rows. Returns Error::none on success.
-Error write_bmp(const Image& im, const char* path, uint64_t* hash, uint32_t* bytes) {
+int g_last_errno = 0;   // errno at the first failed file operation of the current write
+
+// The card is written in 16 KiB blocks (32 whole 512-byte sectors, always starting at a sector
+// boundary). Small unaligned writes make the card read-modify-write every sector, which on the Tab5's
+// 40 MHz four-bit bus produced intermittent EIO failures on 950 KB files.
+constexpr size_t kChunk = 16384;
+
+struct ChunkWriter {
+  std::FILE* f = nullptr;
+  uint8_t* buf = nullptr;
+  size_t fill = 0;
+  bool ok = true;
+  void flush() {
+    if (!fill || !ok) { fill = 0; return; }
+    errno = 0;
+    if (io().write(buf, fill, f) != fill) {
+      ok = false;
+      if (!g_last_errno) g_last_errno = errno ? errno : -1;   // -1: short write with no errno
+    }
+    fill = 0;
+    if (io().yield) io().yield();                              // let the decoder and USB tasks run
+  }
+  void put(const uint8_t* data, size_t n) {
+    while (ok && n) {
+      const size_t take = n < kChunk - fill ? n : kChunk - fill;
+      std::memcpy(buf + fill, data, take);
+      fill += take; data += take; n -= take;
+      if (fill == kChunk) flush();
+    }
+  }
+};
+
+// One attempt at writing a 24-bit bottom-up BMP.
+Error write_bmp_once(const Image& im, const char* path, uint64_t* hash, uint32_t* bytes) {
+  g_last_errno = 0;
+  errno = 0;
   std::FILE* f = io().open(path, "wb");
-  if (!f) return Error::write_error;
+  if (!f) { g_last_errno = errno; return Error::write_error; }
   const uint32_t stride = (static_cast<uint32_t>(im.width) * 3u + 3u) & ~3u;
   const uint32_t data = stride * im.height;
   uint8_t header[54] = {};
@@ -279,12 +332,16 @@ Error write_bmp(const Image& im, const char* path, uint64_t* hash, uint32_t* byt
   put32(header + 34, data);
   put32(header + 38, 2835);
   put32(header + 42, 2835);
-  bool ok = io().write(header, sizeof(header), f) == sizeof(header);
   uint8_t* row = static_cast<uint8_t*>(psram_alloc(800 * 3 + 4));   // not on the worker's stack
-  if (!row) { io().close(f); return Error::write_error; }
-  struct RowGuard { void* p; ~RowGuard() { psram_free(p); } } row_guard{row};
+  uint8_t* chunk = static_cast<uint8_t*>(psram_alloc(kChunk));
+  struct Guard { void* a; void* b; ~Guard() { psram_free(a); psram_free(b); } } guard{row, chunk};
+  if (!row || !chunk) { io().close(f); return Error::write_error; }
+  ChunkWriter out;
+  out.f = f;
+  out.buf = chunk;
+  out.put(header, sizeof(header));
   uint64_t h = 1469598103934665603ull;  // FNV-1a over the RGB565 words
-  for (int y = im.height - 1; ok && y >= 0; --y) {
+  for (int y = im.height - 1; out.ok && y >= 0; --y) {
     const uint16_t* src = im.pixels + static_cast<size_t>(y) * im.width;
     for (uint16_t x = 0; x < im.width; ++x) {
       const uint16_t c = src[x];
@@ -295,13 +352,31 @@ Error write_bmp(const Image& im, const char* path, uint64_t* hash, uint32_t* byt
       h = (h ^ (c >> 8)) * 1099511628211ull;
     }
     for (uint32_t k = im.width * 3u; k < stride; ++k) row[k] = 0;
-    ok = io().write(row, stride, f) == stride;
-    if ((y & 15) == 0 && io().yield) io().yield();   // let the decoder and USB tasks run
+    out.put(row, stride);
   }
+  out.flush();
+  errno = 0;
   const bool closed = io().close(f) == 0;
+  if (!closed && !g_last_errno) g_last_errno = errno ? errno : -2;     // -2: close failed with no errno
   *hash = h;
   *bytes = data + 54;
-  return ok && closed ? Error::none : Error::write_error;
+  return out.ok && closed ? Error::none : Error::write_error;
+}
+
+// A transient card error (EIO on a marginal bus) is retried a couple of times, rewriting the whole
+// temporary file, before the job is reported as failed. A pulled card is left to the job-level retry.
+constexpr int kWriteAttempts = 3;
+Error write_bmp(const Image& im, const char* path, uint64_t* hash, uint32_t* bytes) {
+  Error error = Error::write_error;
+  for (int attempt = 0; attempt < kWriteAttempts; ++attempt) {
+    error = write_bmp_once(im, path, hash, bytes);
+    if (error == Error::none) return error;
+    (void)io().remove(path);
+    if (!io().mounted()) return error;
+    g_write_retries.fetch_add(1, std::memory_order_relaxed);
+    if (io().delay_ms) io().delay_ms(250);
+  }
+  return error;
 }
 
 enum class Outcome : uint8_t { saved, failed, retry };
@@ -336,6 +411,7 @@ Outcome process(const Job& job, Result* result) {
   uint64_t hash = 0;
   uint32_t bytes = 0;
   if (write_bmp(im, part_path, &hash, &bytes) != Error::none) {
+    result->os_error = g_last_errno;
     (void)io().remove(part_path);
     result->error = io().mounted() ? Error::write_error : Error::no_card;
     return io().mounted() ? Outcome::failed : Outcome::retry;
@@ -454,7 +530,7 @@ const char* state_name(JobState state) {
 const Io& default_io() {
   static const Io io = {d_mounted, d_make_dir, d_open, d_write, d_read, d_close,
                         d_rename,  d_remove,   d_exists, d_free_bytes, d_list_dir,
-                        d_now_ms,  d_yield};
+                        d_now_ms,  d_yield, d_delay_ms};
   return io;
 }
 
@@ -582,7 +658,7 @@ bool step() {
         ++g_stats.failed;
         g_stats.last_error = result.error;
         note_result_locked(job.image.session_id, JobState::failed, result.error, elapsed, 0,
-                           result.filename);
+                           result.filename, result.os_error);
       }
     }
   }
@@ -635,7 +711,9 @@ void drain(uint32_t max_ms) {
 
 Stats stats() {
   std::lock_guard<std::mutex> lock(g_mutex);
-  return g_stats;
+  Stats s = g_stats;
+  s.write_retries = g_write_retries.load(std::memory_order_relaxed);
+  return s;
 }
 
 size_t recent_results(Result* out, size_t capacity) {

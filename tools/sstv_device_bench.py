@@ -102,9 +102,21 @@ def main() -> int:
         return merged
 
     command("SSTV OPEN", ("SSTV_OK dashboard", "SSTV_ERROR"))
-    time.sleep(2.0)                      # first draw, tune, worker start
-    before = status()
-    command(f"SSTV SELFTEST {args.scenario} SPEED {args.speed}", ("SSTV_OK selftest", "SSTV_ERROR"))
+    # Opening the dashboard retunes the radio first, so right after a boot it can take several seconds
+    # before the receiver is really running. Wait for it instead of guessing a delay.
+    before = {}
+    for _ in range(30):
+        time.sleep(1.0)
+        before = status()
+        if before.get("status.dashboard") == "1" and before.get("status.active") == "1":
+            break
+    else:
+        note("! dashboard did not become active in 30 s")
+        raise SystemExit("SSTV dashboard did not open")
+    time.sleep(1.0)
+    reply = command(f"SSTV SELFTEST {args.scenario} SPEED {args.speed}", ("SSTV_OK selftest", "SSTV_ERROR"))
+    if reply.startswith("SSTV_ERROR"):
+        raise SystemExit(reply)
 
     samples, done, started = [], False, time.monotonic()
     worst = {"service_us_max": 0, "draw_us_max": 0, "ring_max": 0, "service_cpu_pct": 0}

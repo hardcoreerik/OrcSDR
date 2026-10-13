@@ -9,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
@@ -32,6 +33,9 @@ struct Fault {
   std::atomic<int> fail_after_writes{-1};  // fail the BMP after this many row writes, then "remove" the card
   std::atomic<int> write_delay_us{0};      // per BMP row write (a slow card)
   std::atomic<int> part_writes{0};
+  std::atomic<int> eio_files{0};           // the next N temp files each fail with EIO after 3 block writes
+  std::atomic<int> eio_active{0};          // this temp file is one of them
+  std::atomic<int> read_failures{0};       // the next N reads fail with EIO (a flaky card)
 } g;
 std::FILE* g_part_file = nullptr;
 
@@ -48,6 +52,8 @@ std::FILE* f_open(const char* path, const char* mode) {
   if (f && n > 5 && std::strcmp(path + n - 5, ".part") == 0) {
     g_part_file = f;
     g.part_writes = 0;
+    g.eio_active = g.eio_files.load() > 0 ? 1 : 0;
+    if (g.eio_active) g.eio_files--;
   }
   return f;
 }
@@ -55,6 +61,7 @@ size_t f_write(const void* data, size_t size, std::FILE* file) {
   if (!g.mounted.load()) return 0;
   if (file == g_part_file) {
     const int writes = ++g.part_writes;
+    if (g.eio_active.load() && writes > 3) { errno = EIO; return 0; }   // a transient card error
     const int limit = g.fail_after_writes.load();
     if (limit >= 0 && writes > limit) {
       g.mounted = false;  // card pulled mid-write
@@ -65,7 +72,10 @@ size_t f_write(const void* data, size_t size, std::FILE* file) {
   }
   return std::fwrite(data, 1, size, file);
 }
-size_t f_read(void* data, size_t size, std::FILE* file) { return std::fread(data, 1, size, file); }
+size_t f_read(void* data, size_t size, std::FILE* file) {
+  if (g.read_failures.load() > 0) { g.read_failures--; errno = EIO; return 0; }
+  return std::fread(data, 1, size, file);
+}
 int f_close(std::FILE* file) {
   if (file == g_part_file) g_part_file = nullptr;
   return std::fclose(file);
@@ -106,6 +116,9 @@ void reset_world(unsigned retries = 0, uint32_t retry_delay_ms = 20) {
   g.free_bytes = ~0ull;
   g.fail_after_writes = -1;
   g.write_delay_us = 0;
+  g.eio_files = 0;
+  g.eio_active = 0;
+  g.read_failures = 0;
   std::string cmd = "rm -rf '" + g_root + "' && mkdir -p '" + g_root + "'";
   require(std::system(cmd.c_str()) == 0, "temp dir");
   arc::Config cfg;
@@ -294,7 +307,7 @@ void test_full_card_fails_cleanly() {
 void test_card_removed_mid_write() {
   reset_world(/*retries=*/3, /*retry_delay_ms=*/20);
   produce(1950);
-  g.fail_after_writes = 100;   // pulled after 100 BMP rows
+  g.fail_after_writes = 5;     // pulled after five 16 KiB blocks
   arc::poll(1700000000u);
   arc::step();                 // first attempt dies mid-write
   require(g.mounted.load() == false, "removed: card was pulled mid-write");
@@ -309,6 +322,66 @@ void test_card_removed_mid_write() {
   arc::Result res;
   arc::recent_results(&res, 1);
   expect_content(g_root + "/sstv/" + res.filename, 1950, "removed: final BMP is complete");
+  rx::stop();
+  rx::clear_gallery();
+}
+
+// A transient card error (EIO) is absorbed by rewriting the temporary file; a persistent one is
+// reported with its error code and leaves nothing behind.
+void test_transient_card_errors() {
+  reset_world();
+  produce(1900);
+  g.eio_files = 2;                   // the first two attempts fail, the third succeeds
+  arc::poll(1700000000u);
+  arc::drain(8000);
+  auto stats = arc::stats();
+  require(stats.saved == 1 && stats.failed == 0, "eio: saved after two transient failures");
+  require(count_suffix(".part") == 0 && count_suffix(".bmp") == 1, "eio: one clean file, no temp leftovers");
+  arc::Result res;
+  arc::recent_results(&res, 1);
+  expect_content(g_root + "/sstv/" + res.filename, 1900, "eio: the file written by the successful attempt is complete");
+  require(res.os_error == 0, "eio: a recovered write reports no error");
+  produce(1950);
+  g.eio_files = 3;                   // every attempt fails
+  arc::poll(1700000000u);
+  arc::drain(8000);
+  stats = arc::stats();
+  require(stats.failed == 1 && stats.last_error == arc::Error::write_error, "eio: persistent errors fail the job");
+  arc::recent_results(&res, 1);
+  require(res.state == arc::JobState::failed && res.os_error == EIO, "eio: the OS error code is reported");
+  require(count_suffix(".part") == 0 && count_suffix(".bmp") == 1, "eio: no half-written file left behind");
+  require(rx::metrics().frames_alive == rx::archive_count(), "eio: pin released after the failure");
+  rx::stop();
+  rx::clear_gallery();
+}
+
+// A read error on the index must not be mistaken for an old-format index.
+void test_failed_index_read_does_not_rotate_the_index() {
+  reset_world();
+  produce(1900);
+  arc::poll(1700000000u);
+  arc::drain(5000);
+  require(arc::stats().saved == 1 && index_rows().size() == 1, "index read: first image indexed");
+  produce(1950);
+  g.read_failures = 2;               // the first two reads of the next job fail, the third works
+  arc::poll(1700000000u);
+  arc::drain(5000);
+  size_t rotated = 0;
+  for (const auto& name : list_names()) rotated += name.rfind("index-v1-", 0) == 0;
+  require(rotated == 0, "index read: a transient read error did not move the index aside");
+  require(arc::stats().saved == 2 && index_rows().size() == 2, "index read: both images indexed in the original file");
+  // A card that stays unreadable fails the job but still leaves the index alone.
+  arc::init(&kIo, arc::config());
+  produce(2000);
+  g.read_failures = 100;
+  arc::poll(1700000000u);
+  arc::drain(5000);
+  g.read_failures = 0;
+  rotated = 0;
+  for (const auto& name : list_names()) rotated += name.rfind("index-v1-", 0) == 0;
+  require(rotated == 0 && index_rows().size() == 2, "index read: an unreadable index is never replaced");
+  require(arc::stats().failed == 1 && arc::stats().last_error == arc::Error::index_error,
+          "index read: the job reports index_error");
   rx::stop();
   rx::clear_gallery();
 }
@@ -357,7 +430,7 @@ void test_eviction_while_pending_keeps_pixels() {
 // A slow card must not slow the decoder, drop audio or block the UI task.
 void test_slow_card_does_not_disturb_decoding() {
   reset_world();
-  g.write_delay_us = 6000;           // 240 rows x 6 ms = ~1.5 s per image
+  g.write_delay_us = 100000;         // 100 ms per 16 KiB block: about 1.5 s per image
   produce(2000);
   arc::poll(1700000000u);
   require(arc::start_worker(), "slow: worker started");
@@ -381,7 +454,7 @@ void test_slow_card_does_not_disturb_decoding() {
   const auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                             std::chrono::steady_clock::now() - start).count();
   std::fprintf(stderr, "slow: decode of a full image took %ld ms (worst 10-row slice %ld us) "
-                       "while the card wrote at 6 ms/row\n", static_cast<long>(total_ms), worst_us);
+                       "while the card wrote at 100 ms per block\n", static_cast<long>(total_ms), worst_us);
   require(arc::stats().saved == 0 || arc::stats().pending <= 1, "slow: decode overlapped the write");
   require(rx::archive_count() == 2 && rx::archived_image(0).decoded_rows == 240,
           "slow: second image decoded completely during the slow write");
@@ -479,6 +552,8 @@ int main() {
   test_missing_card_retries_then_recovers();
   test_full_card_fails_cleanly();
   test_card_removed_mid_write();
+  test_transient_card_errors();
+  test_failed_index_read_does_not_rotate_the_index();
   test_queue_is_bounded_and_never_blocks();
   test_eviction_while_pending_keeps_pixels();
   test_slow_card_does_not_disturb_decoding();

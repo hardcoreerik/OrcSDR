@@ -21,6 +21,11 @@ enum class Scenario : uint8_t { none, robot36, robot36_novis, pd120 };
 constexpr double kPi = 3.14159265358979323846;
 constexpr uint32_t kRate = 48000;
 
+// The ORC SSTV test pattern (320x240, 8-bit gray), embedded from main/sstv_testpattern_320x240.gray.
+// It is the same picture the host fidelity test and the Pluto-side generator use.
+extern const uint8_t kPattern[] asm("_binary_sstv_testpattern_320x240_gray_start");
+constexpr uint32_t kPatternW = 320, kPatternH = 240;
+
 struct Script {
   Scenario scenario = Scenario::none;
   // Position in the transmission: stage 0 leader, 1 VIS, 2 image, 3 tail.
@@ -37,6 +42,9 @@ struct Script {
   uint32_t speed = 1;
   uint32_t last_ms = 0;
   double carry = 0;           // fractional samples owed from pacing
+  double cum_ms = 0;          // exact clock for pixel-level segments: no rounding drift over a line
+  long planned = 0;           // samples planned so far on that clock
+  uint16_t pix = 0;           // pixel index within a scan
   uint32_t started_ms = 0;
   bool done = false;
   uint32_t peak_samples_per_tick = 0;
@@ -62,6 +70,16 @@ void segment(double hz, double ms) {
   g_script.hz = hz;
   g_script.remaining = static_cast<uint32_t>(ms * kRate / 1000.0 + 0.5);
 }
+// Pixel-level segment: boundaries come from a cumulative exact clock, so 320 pixels of 0.275 ms add up to
+// exactly 88 ms instead of accumulating a rounding error that would walk the line sync.
+void exact_segment(double hz, double ms) {
+  g_script.cum_ms += ms;
+  const long target = std::lround(g_script.cum_ms * kRate / 1000.0);
+  g_script.hz = hz;
+  g_script.remaining = static_cast<uint32_t>(target - g_script.planned);
+  g_script.planned = target;
+}
+double luma_hz(uint8_t v) { return 1500.0 + 800.0 * v / 255.0; }
 
 // Next tone of the synthetic transmission; false when it has finished.
 bool next_segment() {
@@ -69,7 +87,7 @@ bool next_segment() {
   const bool pd = s.scenario == Scenario::pd120;
   switch (s.stage) {
     case 0:  // leader, break, leader (omitted for the headerless scenario)
-      if (s.scenario == Scenario::robot36_novis) { s.stage = 2; return next_segment(); }
+      if (s.scenario == Scenario::robot36_novis) { s.stage = 2; s.cum_ms = 0; s.planned = 0; return next_segment(); }
       if (s.part == 0) { segment(1900, 300); s.part = 1; return true; }
       if (s.part == 1) { segment(1200, 10); s.part = 2; return true; }
       segment(1900, 300);
@@ -91,33 +109,43 @@ bool next_segment() {
         return true;
       }
       segment(1200, 30);
-      s.stage = 2; s.part = 0; s.row = 0;
+      s.stage = 2; s.part = 0; s.row = 0; s.pix = 0; s.cum_ms = 0; s.planned = 0;
       return true;
     }
-    case 2: {  // image lines
+    case 2: {  // image lines, painted from the test pattern
       if (pd) {
         if (s.row >= 248) { s.stage = 3; s.part = 0; return next_segment(); }
-        const double luma = 1500.0 + 800.0 * s.row / 247.0;
+        // PD120 pair: sync 20, porch 2.08, Y0 (640 px x 0.19 ms), Cr and Cb neutral (121.6 ms each), Y1.
         switch (s.part) {
-          case 0: segment(1200, 20); break;
-          case 1: segment(1500, 2.08); break;
-          default: segment(luma, 121.6); break;
+          case 0: exact_segment(1200, 20); s.part = 1; return true;
+          case 1: exact_segment(1500, 2.08); s.part = 2; s.pix = 0; return true;
+          case 2:
+          case 5: {
+            const uint32_t row = s.row * 2u + (s.part == 5 ? 1u : 0u);
+            const uint32_t src = row * kPatternH / 496u;
+            exact_segment(luma_hz(kPattern[src * kPatternW + s.pix / 2u]), 0.19);
+            if (++s.pix >= 640) { s.pix = 0; s.part = s.part == 2 ? 3 : 6; }
+            return true;
+          }
+          case 3: exact_segment(1900, 121.6); s.part = 4; return true;
+          case 4: exact_segment(1900, 121.6); s.part = 5; s.pix = 0; return true;
+          default: s.part = 0; ++s.row; return next_segment();
         }
-        if (++s.part >= 6) { s.part = 0; ++s.row; }
-        return true;
       }
       if (s.row >= 240) { s.stage = 3; s.part = 0; return next_segment(); }
-      const double luma = 1500.0 + 800.0 * s.row / 239.0;
+      // Robot 36 line: sync 9, porch 3, Y (320 px x 0.275 ms), chroma separator 4.5, porch 1.5, chroma 44.
       switch (s.part) {
-        case 0: segment(1200, 9); break;
-        case 1: segment(1500, 3); break;
-        case 2: segment(luma, 88); break;
-        case 3: segment((s.row & 1u) ? 2300 : 1500, 4.5); break;
-        case 4: segment(1900, 1.5); break;
-        default: segment(1900, 44); break;
+        case 0: exact_segment(1200, 9); s.part = 1; return true;
+        case 1: exact_segment(1500, 3); s.part = 2; s.pix = 0; return true;
+        case 2:
+          exact_segment(luma_hz(kPattern[s.row * kPatternW + s.pix]), 0.275);
+          if (++s.pix >= 320) { s.pix = 0; s.part = 3; }
+          return true;
+        case 3: exact_segment((s.row & 1u) ? 2300 : 1500, 4.5); s.part = 4; return true;
+        case 4: exact_segment(1900, 1.5); s.part = 5; return true;
+        case 5: exact_segment(1900, 44); s.part = 0; ++s.row; return true;
+        default: return false;
       }
-      if (++s.part >= 6) { s.part = 0; ++s.row; }
-      return true;
     }
     default:   // tail: let the last line finish, then quiet
       if (s.part == 0) { segment(1900, 60); s.part = 1; return true; }
@@ -207,21 +235,21 @@ void print_status() {
 #endif
   const auto a = orcsdr::sstv_archive::stats();
   say("SSTV_ARCHIVE worker=%d enabled=%d queued=%lu saved=%lu failed=%lu skipped=%lu dropped=%lu pending=%lu "
-      "write_last_ms=%lu write_max_ms=%lu last_error=\"%s\"",
+      "write_last_ms=%lu write_max_ms=%lu write_retries=%lu last_error=\"%s\"",
       orcsdr::sstv_archive::worker_running() ? 1 : 0, orcsdr::sstv_archive::enabled() ? 1 : 0,
       static_cast<unsigned long>(a.queued), static_cast<unsigned long>(a.saved),
       static_cast<unsigned long>(a.failed), static_cast<unsigned long>(a.skipped),
       static_cast<unsigned long>(a.dropped_queue_full), static_cast<unsigned long>(a.pending),
       static_cast<unsigned long>(a.last_write_ms), static_cast<unsigned long>(a.max_write_ms),
-      orcsdr::sstv_archive::error_name(a.last_error));
+      static_cast<unsigned long>(a.write_retries), orcsdr::sstv_archive::error_name(a.last_error));
   orcsdr::sstv_archive::Result recent[3];
   const size_t n = orcsdr::sstv_archive::recent_results(recent, 3);
   for (size_t i = 0; i < n; ++i)
-    say("SSTV_RESULT session=%lu state=%s error=\"%s\" bytes=%lu write_ms=%lu file=%s",
+    say("SSTV_RESULT session=%lu state=%s error=\"%s\" bytes=%lu write_ms=%lu errno=%d file=%s",
         static_cast<unsigned long>(recent[i].session_id),
         orcsdr::sstv_archive::state_name(recent[i].state),
         orcsdr::sstv_archive::error_name(recent[i].error), static_cast<unsigned long>(recent[i].bytes),
-        static_cast<unsigned long>(recent[i].duration_ms), recent[i].filename);
+        static_cast<unsigned long>(recent[i].duration_ms), recent[i].os_error, recent[i].filename);
   say("SSTV_SELFTEST running=%d scenario=%s stage=%u row=%u samples=%lu speed=%lu peak_chunk=%lu",
       selftest_running() ? 1 : 0, scenario_name(g_script.scenario), static_cast<unsigned>(g_script.stage),
       static_cast<unsigned>(g_script.row), static_cast<unsigned long>(g_script.total_samples),

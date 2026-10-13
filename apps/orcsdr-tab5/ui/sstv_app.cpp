@@ -75,9 +75,6 @@ bool queue_for_sd(int32_t which) {
 void handle(const orcsdr::sstv::Action& action) {
   using Kind = orcsdr::sstv::ActionKind;
   switch (action.kind) {
-    case Kind::exit:
-      if (g_hooks.go_home) g_hooks.go_home();
-      return;
     case Kind::tune_profile:
       tune_profile(static_cast<size_t>(action.value));
       break;
@@ -115,6 +112,7 @@ void handle(const orcsdr::sstv::Action& action) {
 void install(const Hooks& hooks) {
   g_hooks = hooks;
   orcsdr::sstv::set_utc_source(utc_source);
+  orcsdr::sstv::set_header_hook(hooks.header_controls);
 }
 
 void open() {

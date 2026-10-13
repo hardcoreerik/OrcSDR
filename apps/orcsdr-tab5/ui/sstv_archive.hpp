@@ -35,7 +35,8 @@ struct Io {
   // Calls visit(name, ctx) for every entry in dir; false if the directory is unreadable.
   bool (*list_dir)(const char* dir, void (*visit)(const char* name, void* ctx), void* ctx) = nullptr;
   uint32_t (*now_ms)() = nullptr;
-  void (*yield)() = nullptr;                              // called between BMP rows
+  void (*yield)() = nullptr;                              // called between 16 KiB blocks
+  void (*delay_ms)(uint32_t ms) = nullptr;                // optional pause before a rewrite attempt
 };
 const Io& default_io();  // libc/VFS (device: FatFS under /sd) with the Tab5 mount and free-space checks
 
@@ -60,6 +61,7 @@ struct Result {
   Error error = Error::none;
   uint32_t duration_ms = 0;      // time spent writing (SD latency), 0 until finished
   uint32_t bytes = 0;
+  int os_error = 0;              // errno at the first failed file operation, 0 if none
   char filename[64] = {};
 };
 
@@ -72,6 +74,7 @@ struct Stats {
   uint32_t pending = 0;          // queued or being written right now
   uint32_t last_write_ms = 0;
   uint32_t max_write_ms = 0;
+  uint32_t write_retries = 0;     // whole-file rewrites after a transient card error (card health indicator)
   Error last_error = Error::none;
 };
 

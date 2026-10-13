@@ -9,7 +9,6 @@
 namespace orcsdr::sstv {
 enum class ActionKind : uint8_t {
   none,
-  exit,
   tune_profile,     // value = profile index
   set_detection,    // value = sstv_settings::Detection (automatic or vis_only)
   select_mode,      // value = Mode ordinal; chooses manual detection for that mode
@@ -37,6 +36,9 @@ uint8_t ui_profile();
 void ui_set_profile(uint8_t index);
 void ui_set_settings(const sstv_settings::Settings& settings);   // redraws; nothing is restarted
 void ui_notice(const char* message);
+// The shared battery / home / settings / mute controls, drawn by the application into the header
+// (the same hook every other OrcSDR dashboard uses). Home and Settings touches are handled globally.
+void set_header_hook(void (*draw_controls)());
 // Time spent drawing, measured around every screen update (display latency, bench diagnostics).
 struct UiStats { uint32_t draw_us_last = 0, draw_us_max = 0, draws = 0; };
 UiStats ui_stats();
