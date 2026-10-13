@@ -42,8 +42,10 @@ Wi-Fi after a C6 update to 3.0.6. OrcSDR's standard builds embed the 3.0.6 C6
 update image without installing it. OrcDial currently needs C6 3.0.6 for
 ESP-NOW, but normal Wi-Fi does not. With reachable Hosted transport, Firmware
 & Updates offers an optional,
-explicitly confirmed in-app update to 3.0.6 and warns about Launcher. Source builds need `-C6Firmware` to embed that image; the
-default helper invocation does not supply it. An unreachable C6 needs the
+explicitly confirmed in-app update to 3.0.6 and warns about Launcher. The standard `build-tab5-idf.ps1` helper automatically builds/caches and embeds
+that optional C6 update image. Advanced `-C6Firmware` selects a particular
+image, while `-WithoutC6` is an explicitly requested exception—not the
+standard OrcSDR build. Neither embedding nor flashing the P4 upgrades the C6. An unreachable C6 needs the
 [documented recovery path](M5BURNER_RELEASE.md), not repeated in-app retries.
 Never downgrade the C6 to accommodate an old P4 host library.
 
