@@ -120,8 +120,8 @@ void test_every_view_every_state_obeys_header_rules() {
     if (sc.demo) rig.model->set_demo(true, sc.sc);
     if (!sc.demo) {                                // a populated LIVE store, including a repaired block
       for (int i = 0; i < 20; ++i) {
-        char tail[8];
-        std::snprintf(tail, sizeof(tail), "N%03dLV", i);
+        char tail[16];
+        std::snprintf(tail, sizeof(tail), "N%03uLV", static_cast<unsigned>(i % 1000));
         rig.model->post_message(make_message(tail, "LIVE TEXT", i % 5 == 0), 1000 + i, i % 2 ? 1791900000u + i : 0);
         if (i % 10 == 9) rig.model->service();
       }

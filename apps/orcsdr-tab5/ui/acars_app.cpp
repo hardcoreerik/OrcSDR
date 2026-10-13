@@ -32,7 +32,10 @@ bool ensure_state() {
   return true;
 }
 
+uint32_t g_last_device_sync_ms = 0;
+
 void sync_device_state() {
+  g_last_device_sync_ms = millis();
   g_state->model.set_device_state(M5.Power.getBatteryLevel(),
                                   g_hooks.sound_enabled ? g_hooks.sound_enabled() : true);
 }
@@ -61,7 +64,7 @@ void close() {
 
 void tick() {
   if (!g_state || !acars_dashboard::active()) return;
-  sync_device_state();
+  if (millis() - g_last_device_sync_ms >= 2000u) sync_device_state();   // the power IC is not read every loop
   g_state->model.service();
   if (!screens::owns(screens::Id::acars)) return;
   screens::note_visible_update(screens::Id::acars);
@@ -70,9 +73,9 @@ void tick() {
 
 void draw(bool static_panel) {
   if (!g_state) return;
-  if (!static_panel && !screens::may_draw(screens::Id::acars)) return;
-  if (static_panel || !acars_dashboard::active()) {
-    acars_dashboard::enter();
+  if (!static_panel && (!acars_dashboard::active() || !screens::may_draw(screens::Id::acars))) return;
+  if (static_panel) {
+    acars_dashboard::enter();                         // full redraw after Settings / Visualizer
   } else {
     acars_dashboard::update(millis());
   }

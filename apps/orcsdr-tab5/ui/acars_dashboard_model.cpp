@@ -384,15 +384,17 @@ void Model::service() {
     bump_messages();
   }
 
-  uint32_t s1, s2;
+  // Seqlock read, bounded: if the producer is mid-write (or was preempted mid-write) keep the previous
+  // stats and try again on the next tick instead of spinning.
+  uint32_t s1 = 0, s2 = 1;
   uint32_t words[7];
-  do {
+  for (int attempt = 0; attempt < 4 && (s1 != s2 || (s1 & 1u)); ++attempt) {
     s1 = stats_seq_.load(std::memory_order_acquire);
     for (size_t i = 0; i < 7; ++i) words[i] = stats_words_[i].load(std::memory_order_relaxed);
     std::atomic_thread_fence(std::memory_order_acquire);
     s2 = stats_seq_.load(std::memory_order_relaxed);
-  } while (s1 != s2 || (s1 & 1u));
-  if (s1 != seen_stats_seq_ && s1 != 0) {
+  }
+  if (s1 == s2 && !(s1 & 1u) && s1 != seen_stats_seq_ && s1 != 0) {
     seen_stats_seq_ = s1;
     live_.stats = {words[0], words[1], words[2], words[3], words[4], words[5], words[6]};
     live_.stats_available = true;
