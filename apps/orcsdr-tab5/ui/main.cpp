@@ -60,6 +60,7 @@
 #include "sstv_dashboard.hpp"
 #include "sstv_diag.hpp"
 #include "sstv_receiver.hpp"
+#include "acars_app.hpp"
 #include "ft8_tuning.hpp"
 #include "ft8_heard_db.hpp"
 #include "ft8_adif.hpp"
@@ -6794,6 +6795,7 @@ void refresh_active_screen() {
     case Id::wifi_analysis: draw_rf24_dashboard(false); break;
     case Id::ft8: draw_ft8_dashboard(false); break;
     case Id::sstv: draw_sstv_dashboard(false); break;
+    case Id::acars: orcsdr::acars_app::draw(false); break;
     default: break;  // Settings, documentation, and no screen own their draws.
   }
 }
@@ -6864,6 +6866,7 @@ void close_visualizer() {
     case orcsdr::screens::Id::am: orcsdr::am::draw(); break;
     case orcsdr::screens::Id::shortwave: orcsdr::shortwave::draw(); break;
     case orcsdr::screens::Id::sstv: draw_sstv_dashboard(true); break;
+    case orcsdr::screens::Id::acars: orcsdr::acars_app::draw(true); break;
     case orcsdr::screens::Id::airband: orcsdr::airband::redraw(); break;
     case orcsdr::screens::Id::cb: orcsdr::cb::draw(); break;
     case orcsdr::screens::Id::p25: orcsdr::p25::draw(); break;
@@ -7184,6 +7187,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   orcsdr::rf24::leave();
   orcsdr::ft8::leave();
   orcsdr::sstv_app::close();
+  orcsdr::acars_app::close();
   orcsdr::settings::leave();
   if (band != RtlBand::fm) orcsdr::fm::leave();
   if (band != RtlBand::am) orcsdr::am::leave();
@@ -12873,6 +12877,8 @@ void navigation_restore_screen(orcsdr::screens::Id restore) {
     draw_ft8_dashboard(true);
   } else if (restore == orcsdr::screens::Id::sstv) {
     orcsdr::sstv_app::draw(true);   // Settings opened from the SSTV header returns here, not to Home
+  } else if (restore == orcsdr::screens::Id::acars) {
+    orcsdr::acars_app::draw(true);
   } else {
     draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
                     rtl_live_volume.load(std::memory_order_acquire));
@@ -12897,6 +12903,7 @@ void configure_navigation_service() {
 
 void show_home(bool demo) {
   orcsdr::sstv_app::close();
+  orcsdr::acars_app::close();
   home_enter();
   orcsdr::audio_header::reset(rtl_header_audio_control);
   orcsdr::navigation::show_home(demo);
@@ -13883,6 +13890,27 @@ orcsdr::sstv_app::Hooks sstv_app_hooks() {
   hooks.store.put_u32 = [](const char* key, uint32_t value) { preferences.putUInt(key, value); };
   return hooks;
 }
+// ACARS logic lives in acars_app; these adapters hand it what only this file can reach.
+orcsdr::acars_app::Hooks acars_app_hooks() {
+  orcsdr::acars_app::Hooks hooks;
+  hooks.header_controls = draw_global_header_controls;
+  hooks.sound_enabled = [] { return rtl_audio_user_enabled.load(std::memory_order_acquire); };
+  hooks.store.get_bool = [](const char* key, bool fallback) { return preferences.getBool(key, fallback); };
+  hooks.store.put_bool = [](const char* key, bool value) { preferences.putBool(key, value); };
+  hooks.store.get_u8 = [](const char* key, uint8_t fallback) { return preferences.getUChar(key, fallback); };
+  hooks.store.put_u8 = [](const char* key, uint8_t value) { preferences.putUChar(key, value); };
+  hooks.store.get_u32 = [](const char* key, uint32_t fallback) { return preferences.getUInt(key, fallback); };
+  hooks.store.put_u32 = [](const char* key, uint32_t value) { preferences.putUInt(key, value); };
+  return hooks;
+}
+void open_acars_dashboard() {
+  persist_dashboard_open(orcsdr::dashboards::Id::acars);
+  orcsdr::home::leave();
+  orcsdr::ft8::leave();
+  orcsdr::sstv_app::close();
+  orcsdr::acars_app::install(acars_app_hooks());
+  orcsdr::acars_app::open();
+}
 void open_sstv_dashboard() {
   persist_dashboard_open(orcsdr::dashboards::Id::sstv);
   orcsdr::home::leave();
@@ -13915,7 +13943,9 @@ void open_dashboard(orcsdr::dashboards::Id id) {
     return;
   }
   if (id == Id::sstv) { open_sstv_dashboard(); return; }
+  if (id == Id::acars) { open_acars_dashboard(); return; }
   orcsdr::sstv_app::close();
+  orcsdr::acars_app::close();
   rtl_rate_override_sps.store(0, std::memory_order_release);
   RtlBand band = RtlBand::browse;
   uint32_t frequency = rtl_ui_frequency_hz;
@@ -16426,7 +16456,8 @@ void poll_sdr_touch(bool from_stream) {
   const bool pressed = touch.isPressed() || touch.wasPressed();
   const int scope_width = spectrum_draw_width();
 
-  if (orcsdr::sstv::ui_active() && orcsdr::screens::owns(orcsdr::screens::Id::sstv)) {
+  if ((orcsdr::sstv::ui_active() && orcsdr::screens::owns(orcsdr::screens::Id::sstv)) ||
+      (orcsdr::acars_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::acars))) {
     if (pressed && !was_pressed) handle_sdr_touch(touch.x, touch.y);
     was_pressed = pressed;
     return;
@@ -16763,7 +16794,7 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     return;
   }
   if (orcsdr::audio_header::settings_hit(x, y)) {
-    open_global_settings(orcsdr::ft8::active() ? orcsdr::settings::Section::system :
+    open_global_settings(orcsdr::ft8::active() || orcsdr::acars_app::active() ? orcsdr::settings::Section::system :
                          rtl_ui_band == RtlBand::adsb
                              ? orcsdr::settings::Section::location_adsb
                              : (rtl_ui_band == RtlBand::p25 || rtl_ui_band == RtlBand::lora)
@@ -16773,6 +16804,10 @@ void handle_sdr_touch(int32_t x, int32_t y) {
   }
   if (orcsdr::sstv::ui_active() && orcsdr::screens::owns(orcsdr::screens::Id::sstv)) {
     orcsdr::sstv_app::touch(x, y);
+    return;
+  }
+  if (orcsdr::acars_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::acars)) {
+    orcsdr::acars_app::touch(x, y);
     return;
   }
   if (orcsdr::ft8::active()) {
@@ -17933,6 +17968,7 @@ const char* ui_touch_route() {
                        orcsdr::adsb::active();
   const bool pocsag_ui = rtl_ui_band == RtlBand::pocsag && orcsdr::pocsag::active();
   if (orcsdr::sstv::ui_active() && orcsdr::screens::owns(orcsdr::screens::Id::sstv)) return "sstv";
+  if (orcsdr::acars_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::acars)) return "acars";
   const bool radio_ui = rtl_ui_active.load(std::memory_order_acquire);
   const bool fm_ui = rtl_ui_band == RtlBand::fm && orcsdr::fm::active();
   const bool am_ui = rtl_ui_band == RtlBand::am && orcsdr::am::active();
@@ -19040,6 +19076,7 @@ void process_command(char* command) {
     else if (strcmp(name, "SETTINGS") == 0) open_dashboard(Id::settings);
     else if (strcmp(name, "WEATHER") == 0) open_dashboard(Id::weather);
     else if (strcmp(name, "POCSAG") == 0) open_dashboard(Id::pocsag);
+    else if (strcmp(name, "ACARS") == 0) open_dashboard(Id::acars);
     else if (strcmp(name, "MARINE") == 0) open_dashboard(Id::marine);
     else if (strcmp(name, "SATELLITE") == 0) open_dashboard(Id::satellite);
     else if (strcmp(name, "UTILITIES") == 0) open_dashboard(Id::utilities);
@@ -22047,6 +22084,7 @@ void loop() {
   const bool visualizer_ui = orcsdr::visualizer::active();
   const bool rf_lab_ui = orcsdr::rf_lab::active();
   orcsdr::sstv_app::tick();
+  orcsdr::acars_app::tick();
   if (rtl_stream_ui_refresh_pending.exchange(false, std::memory_order_acq_rel) &&
       !settings_ui && !home_ui && !visualizer_ui && !rf_lab_ui) {
     refresh_active_screen();
@@ -22339,6 +22377,7 @@ void loop() {
       orcsdr::screens::status().active != orcsdr::screens::Id::wifi_analysis &&
       orcsdr::screens::status().active != orcsdr::screens::Id::ft8 &&
        orcsdr::screens::status().active != orcsdr::screens::Id::sstv &&
+      orcsdr::screens::status().active != orcsdr::screens::Id::acars &&
       !orcsdr::screens::owns(screen_for_band(rtl_ui_band)) &&
       !orcsdr::home::active()) {
     draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
@@ -22412,6 +22451,8 @@ void loop() {
   } else if (orcsdr::sstv::ui_active() && orcsdr::screens::owns(orcsdr::screens::Id::sstv)) {
     poll_sdr_touch(false);
     draw_sstv_dashboard(false);
+  } else if (orcsdr::acars_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::acars)) {
+    poll_sdr_touch(false);
   } else if (pocsag_ui && orcsdr::screens::owns(orcsdr::screens::Id::pocsag)) {
     const auto touch = ui_touch_detail(0);
     const bool pressed = touch.isPressed() || touch.wasPressed();

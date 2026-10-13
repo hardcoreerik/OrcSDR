@@ -25,6 +25,7 @@ enum class Id : uint8_t {
   am,
   ft8,
   sstv,
+  acars,
   count,
 };
 
