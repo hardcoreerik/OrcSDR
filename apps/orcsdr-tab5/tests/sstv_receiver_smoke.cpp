@@ -170,6 +170,60 @@ int main() {
           "Scottie S1 complete 256-row image");
   clear_gallery();
   stop();
+
+  // Auto VIS+Sync: infer a mode from repeated line syncs without any VIS
+  // header, and never label a mid-stream recovered slice as complete.
+  set_auto_strategy(AutoStrategy::vis_sync);
+  start(145800000);
+  robot36_rows(); // intentionally omit the VIS header
+  tone(1900,1000); // timeout allows partial archive on lost sync
+  flush();
+  require(archive_count()==1,"missing-VIS Robot36 archived as partial");
+  const auto partial_auto=archived_image(0);
+  require(partial_auto.mode==Mode::robot36 &&
+          partial_auto.identification==Identification::sync &&
+          partial_auto.start_unknown && partial_auto.partial &&
+          partial_auto.end_reason==EndReason::sync_lost,
+          "sync-only result explicitly marks unknown origin and interrupted end");
+  require(partial_auto.decoded_rows>=200 && partial_auto.decoded_rows<240,
+          "sync-only decoder preserves useful rows without inventing full frame");
+  clear_gallery();stop();
+
+  // Disabled fallback must not invent an SSTV mode from raw sync pulses.
+  set_auto_strategy(AutoStrategy::vis_only);
+  start(145800000);
+  for(unsigned row=0;row<15;++row) {
+    tone(1200,9);tone(1500,3);tone(1900,138);
+  }
+  flush();
+  require(archive_count()==0 && !metrics().receiving,
+          "VIS-only strategy rejects headerless line sync");
+  stop();
+  set_auto_strategy(AutoStrategy::vis_sync);
+
+  // A new valid VIS must preserve earlier incomplete image and decode
+  // the next transmitter's mode without operator restart.
+  start(145800000);
+  preamble();vis(95);
+  for(unsigned pair=0;pair<8;++pair) {
+    tone(1200,20);tone(1500,2.08);
+    for(unsigned segment=0;segment<4;++segment)tone(1900,121.60);
+  }
+  flush();
+  require(metrics().receiving && metrics().received_mode==Mode::pd120,
+          "PD120 still active before replacement VIS");
+  preamble();vis(8);
+  robot36_rows();tone(1900,50);flush();
+  require(archive_count()==2,"new VIS creates new frame and retains partial");
+  const auto old=archived_image(1),fresh=archived_image(0);
+  require(old.partial && old.mode==Mode::pd120 &&
+          old.end_reason==EndReason::new_vis,
+          "interrupted PD120 preserved as partial on new VIS");
+  require(!fresh.partial && fresh.mode==Mode::robot36 &&
+          fresh.decoded_rows==240,
+          "new Robot36 fully decoded and archived without manual reset");
+  clear_gallery();
+  stop();
   std::puts("SSTV host smoke: PASS");
   return 0;
 }
