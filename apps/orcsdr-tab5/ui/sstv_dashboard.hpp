@@ -24,7 +24,8 @@ enum class ActionKind : uint8_t {
   gain_toggle,      // automatic <-> manual receiver gain
   gain_step,        // value = +1 / -1: one tuner gain step (switches to manual)
   toggle_rails,     // guide rails on the audio comb
-  apply_correction  // value = Hz to add to the dial, from the measured sync tone
+  apply_correction, // value = Hz to add to the dial, from the measured sync tone
+  cycle_if          // next IF filter width
 };
 struct Action { ActionKind kind = ActionKind::none; int32_t value = 0; };
 // Tuning state the application owns and the TUNE tab shows.
@@ -37,11 +38,12 @@ struct TuneView {
   bool gain_auto = true;
   int16_t gain_tenth_db = 0;
   uint32_t rate_sps = 240000;   // IQ rate behind the RF spectrum
+  uint32_t if_hz = 100000;      // IF filter width ahead of the FM discriminator
 };
 inline bool operator==(const TuneView& a, const TuneView& b) {
   return a.step_index == b.step_index && a.demod == b.demod && a.demod_auto == b.demod_auto && a.rails == b.rails &&
          a.gain_available == b.gain_available && a.gain_auto == b.gain_auto && a.gain_tenth_db == b.gain_tenth_db &&
-         a.rate_sps == b.rate_sps;
+         a.rate_sps == b.rate_sps && a.if_hz == b.if_hz;
 }
 inline bool operator!=(const TuneView& a, const TuneView& b) { return !(a == b); }
 struct UiSnapshot {

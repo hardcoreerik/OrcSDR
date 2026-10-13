@@ -3013,6 +3013,8 @@ static bool sstv_owns_audio(RtlBand band) {
 
 // The TUNE tab's demodulator: 0 = the band's own choice, 1 = NFM, 2 = USB, 3 = LSB.
 static std::atomic<uint8_t> g_sstv_demod{0};
+// The TUNE tab's IF filter width ahead of the FM discriminator in Hz; 0 = the radio's own setting.
+static std::atomic<uint32_t> g_sstv_if_hz{0};
 
 HomeDemod effective_demod(RtlBand band) {
   // Receiver DSP never reads screen ownership or UI-only frequency state.
@@ -3056,8 +3058,11 @@ uint32_t rtl_clamp_filter_hz(RtlBand band, uint32_t bandwidth_hz) {
 
 float rtl_filter_alpha(RtlBand band, uint32_t sample_rate_sps = kRtlSampleRateSps) {
   constexpr float kPi = 3.14159265358979323846f;
+  // The SSTV tuner picks its own IF width: an SSTV signal fits in about 10 kHz, and a wider filter only adds noise.
+  const uint32_t sstv_if = g_sstv_if_hz.load(std::memory_order_relaxed);
   const float bandwidth = static_cast<float>(
-      rtl_clamp_filter_hz(band, rtl_filter_bandwidth_hz.load(std::memory_order_relaxed)));
+      sstv_if != 0 && orcsdr::sstv::active() ? sstv_if
+                                             : rtl_clamp_filter_hz(band, rtl_filter_bandwidth_hz.load(std::memory_order_relaxed)));
   return 1.0f - expf(-kPi * bandwidth / static_cast<float>(sample_rate_sps));
 }
 
@@ -13681,6 +13686,7 @@ orcsdr::sstv_app::Hooks sstv_app_hooks() {
   };
   hooks.set_demod = [](uint8_t demod) { g_sstv_demod.store(static_cast<uint8_t>(demod + 1), std::memory_order_relaxed); };
   hooks.sample_rate = [] { return rtl_active_sample_rate_sps.load(std::memory_order_acquire); };
+  hooks.set_if_bandwidth = [](uint32_t hz) { g_sstv_if_hz.store(hz, std::memory_order_relaxed); };
   hooks.gain_auto = [] { (void)rtl_gain_set_auto("SSTV"); };
   hooks.gain_manual = [](int tenth_db) { (void)rtl_gain_set_manual("SSTV", tenth_db); };
   hooks.gain_info = [](orcsdr::sstv_app::GainInfo* info) {
@@ -13706,6 +13712,7 @@ orcsdr::sstv_app::Hooks sstv_app_hooks() {
   };
   hooks.release_tuning = [] {
     g_sstv_demod.store(0, std::memory_order_relaxed);
+    g_sstv_if_hz.store(0, std::memory_order_relaxed);
     rtl_rate_override_sps.store(0, std::memory_order_release);
     // A hot retune keeps the stream's rate, so a stream still running at SSTV's 240 kS/s on a dashboard band is
     // restarted once at the normal rate (the same rule the FT8 decoder follows when it gives up its rate).

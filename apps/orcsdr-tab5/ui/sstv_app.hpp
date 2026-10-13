@@ -29,6 +29,7 @@ struct Hooks {
   void (*gain_manual)(int tenth_db) = nullptr;       // fixed tuner gain
   void (*set_demod)(uint8_t demod) = nullptr;        // sstv_tune::Demod the receiver should demodulate with
   uint32_t (*sample_rate)() = nullptr;               // IQ sample rate of the running stream (0 = not running)
+  void (*set_if_bandwidth)(uint32_t hz) = nullptr;   // IF filter width ahead of the FM discriminator (0 = the radio default)
   void (*header_controls)() = nullptr;               // draws the shared header controls (battery, home, ...)
   uint32_t (*utc_epoch)() = nullptr;                 // verified UTC seconds, 0 while unverified
   orcsdr::sstv_settings::Store store;                // persistent preferences
@@ -54,6 +55,8 @@ uint32_t step_hz();
 bool set_step(uint32_t step_hz);              // snaps to the nearest step on the list
 uint32_t next_step_hz(bool larger);           // the neighbouring step on the list (stays at the ends)
 void cycle_demod();                           // AUTO -> NFM -> USB -> LSB -> AUTO
+uint32_t if_bandwidth_hz();                  // the IF width in use
+void cycle_if_bandwidth();                    // next width on the list, wrapping
 const char* demod_label();                    // e.g. "NFM", "USB (AUTO)"
 // RF spectrum for the TUNE tab, called from the UI task each time a spectrum frame exists.
 bool wants_spectrum();

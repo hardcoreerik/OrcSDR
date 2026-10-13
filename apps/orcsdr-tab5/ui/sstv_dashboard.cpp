@@ -448,8 +448,8 @@ constexpr int kRfX = 36, kRfY = 224;
 constexpr Rect kAudioPanel{24, 376, 1232, 146};
 constexpr int kAuX = 36, kAuY = 400;
 Rect preset_chip(int i) { return {24 + i * 248, 528, 240, 40}; }
-constexpr Rect kEnter{24, 574, 300, 44}, kRails{336, 574, 200, 44}, kApply{548, 574, 340, 44};
-constexpr int kStatusX = 904;
+constexpr Rect kEnter{24, 574, 300, 44}, kRails{336, 574, 200, 44}, kApply{548, 574, 340, 44}, kIfChip{900, 574, 160, 44};
+constexpr int kStatusX = 1068;
 constexpr uint16_t kRailTones[4] = {1200, 1500, 1900, 2300};
 constexpr const char* kRailNames[4] = {"1200 SYNC", "1500 BLACK", "1900 MID", "2300 WHITE"};
 
@@ -666,10 +666,14 @@ void draw_tune_buttons() {
   if (can_apply) std::snprintf(label, sizeof(label), "APPLY CORRECTION %+ld Hz", static_cast<long>(error.correction_hz));
   else std::snprintf(label, sizeof(label), "APPLY CORRECTION");
   button(kApply, label, false, can_apply, 2);
+  const uint32_t width = g_ui.tune.if_hz;
+  std::snprintf(label, sizeof(label), width >= 1000 ? "IF %lu kHz" : "IF %lu Hz",
+                static_cast<unsigned long>(width >= 1000 ? width / 1000u : width));
+  button(kIfChip, label, width <= 25000, true, 2);
 }
 void draw_tune_status() {
   const Metrics m = metrics();
-  M5.Display.fillRect(kStatusX, 574, 352, 44, TFT_BLACK);
+  M5.Display.fillRect(kStatusX, 574, 188, 44, TFT_BLACK);
   char status[48];
   std::snprintf(status, sizeof(status), "%s", state_name(m.state));
   text(status, kStatusX + 8, 586, m.receiving ? kGreen : kCyan, 0, middle_left);
@@ -702,7 +706,7 @@ uint32_t buttons_signature() {
   const Metrics m = metrics();
   const auto error = sstv_tune::tuning_error(static_cast<sstv_tune::Demod>(g_ui.tune.demod), m.sync_tone_hz, m.sync_tone_pulses);
   uint32_t h = 2166136261u;
-  for (uint32_t v : {g_ui.frequency_hz, static_cast<uint32_t>(g_ui.tune.rails), static_cast<uint32_t>(error.valid),
+  for (uint32_t v : {g_ui.frequency_hz, g_ui.tune.if_hz, static_cast<uint32_t>(g_ui.tune.rails), static_cast<uint32_t>(error.valid),
                      static_cast<uint32_t>(error.valid ? error.correction_hz : 0)})
     h = mix(h, v);
   return h;
@@ -784,6 +788,7 @@ Action touch_tune(int32_t x, int32_t y) {
     if (hit(x, y, kGainUp)) return {ActionKind::gain_step, 1};
   }
   if (hit(x, y, kRails)) return {ActionKind::toggle_rails, 0};
+  if (hit(x, y, kIfChip)) return {ActionKind::cycle_if, 0};
   if (hit(x, y, kApply)) {
     const Metrics m = metrics();
     const auto error = sstv_tune::tuning_error(static_cast<sstv_tune::Demod>(g_ui.tune.demod), m.sync_tone_hz, m.sync_tone_pulses);

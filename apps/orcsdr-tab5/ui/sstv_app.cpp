@@ -39,7 +39,9 @@ struct Tune {
   uint8_t step_index = 3;     // 1 kHz
   uint8_t demod_choice = 0;   // 0 = follows the frequency, otherwise 1 + sstv_tune::Demod
   bool rails = true;
+  uint8_t if_index = 0;       // index into kIfWidths
 };
+constexpr uint32_t kIfWidths[] = {100000, 50000, 25000, 16000, 12000, 8000};
 Tune g_tune;
 uint32_t g_gain_reapply_ms = 0;
 int g_manual_gain_tenth = 0;
@@ -48,12 +50,14 @@ constexpr const char* kKeyHz = "sstv_hz";
 constexpr const char* kKeyStep = "sstv_step";
 constexpr const char* kKeyDemod = "sstv_demod";
 constexpr const char* kKeyRails = "sstv_rails";
+constexpr const char* kKeyIf = "sstv_if";
 
 tn::Demod demod_now() {
   return g_tune.demod_choice ? static_cast<tn::Demod>(g_tune.demod_choice - 1) : tn::default_demod(g_frequency_hz);
 }
 void apply_demod() {
   if (g_hooks.set_demod) g_hooks.set_demod(static_cast<uint8_t>(demod_now()));
+  if (g_hooks.set_if_bandwidth) g_hooks.set_if_bandwidth(kIfWidths[g_tune.if_index]);
 }
 void load_tune() {
   g_tune = Tune{};
@@ -65,6 +69,8 @@ void load_tune() {
     g_tune.step_index = step < tn::step_count() ? step : 3;
     const uint8_t demod = st.get_u8(kKeyDemod, 0);
     g_tune.demod_choice = demod <= 3 ? demod : 0;
+    const uint8_t width = st.get_u8(kKeyIf, 0);
+    g_tune.if_index = width < std::size(kIfWidths) ? width : 0;
   }
   if (st.get_bool) g_tune.rails = st.get_bool(kKeyRails, true);
 }
@@ -74,6 +80,7 @@ void save_tune() {
   if (st.put_u8) {
     st.put_u8(kKeyStep, g_tune.step_index);
     st.put_u8(kKeyDemod, g_tune.demod_choice);
+    st.put_u8(kKeyIf, g_tune.if_index);
   }
   if (st.put_bool) st.put_bool(kKeyRails, g_tune.rails);
 }
@@ -83,6 +90,7 @@ orcsdr::sstv::TuneView tune_view() {
   v.demod = static_cast<uint8_t>(demod_now());
   v.demod_auto = g_tune.demod_choice == 0;
   v.rails = g_tune.rails;
+  v.if_hz = kIfWidths[g_tune.if_index];
   GainInfo gain;
   if (g_hooks.gain_info && g_hooks.gain_info(&gain)) {
     v.gain_available = gain.available;
@@ -208,6 +216,9 @@ void handle(const orcsdr::sstv::Action& action) {
       break;
     case Kind::gain_step:
       gain_step(action.value < 0 ? -1 : 1);
+      break;
+    case Kind::cycle_if:
+      cycle_if_bandwidth();
       break;
     case Kind::toggle_rails:
       g_tune.rails = !g_tune.rails;
@@ -338,6 +349,13 @@ bool set_step(uint32_t step) {
   g_tune.step_index = static_cast<uint8_t>(tn::step_index(step));
   save_tune();
   return true;
+}
+uint32_t if_bandwidth_hz() { return kIfWidths[g_tune.if_index]; }
+void cycle_if_bandwidth() {
+  if (!active()) return;
+  g_tune.if_index = static_cast<uint8_t>((g_tune.if_index + 1) % std::size(kIfWidths));
+  apply_demod();
+  save_tune();
 }
 void cycle_demod() {
   if (!active()) return;
