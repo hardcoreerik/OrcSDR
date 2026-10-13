@@ -56,6 +56,9 @@ struct Metrics {
   bool start_unknown = false;
   uint32_t sync_locked_lines = 0;
   uint32_t sync_missed_lines = 0;
+  uint16_t session_sync_locked = 0;   // this reception only
+  uint16_t session_sync_missed = 0;
+  uint32_t session_id = 0;            // reception in progress (0 = none)
   float line_error_ms = 0.0f;
   uint32_t samples = 0;
   uint16_t row = 0;
@@ -106,6 +109,9 @@ Mode selected_mode();
 void set_auto_strategy(AutoStrategy strategy);
 AutoStrategy auto_strategy();
 void set_frequency(uint32_t hz);
+// Ends the image in progress (kept as a partial gallery entry, EndReason::aborted) and returns to
+// searching. Unlike stop()+start() it keeps the audio stream, counters and settings untouched.
+void abort_image();
 // Offline replay only: no further audio will arrive. Drains the ring, closes a
 // line whose luminance scan has already fully elapsed (a recording that stops a
 // few milliseconds early still yields its last row; nothing is padded), then

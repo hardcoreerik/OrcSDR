@@ -116,6 +116,7 @@ uint32_t g_last_serial = 0;
 bool g_index_ready = false;
 std::atomic<bool> g_run{false};
 std::atomic<bool> g_worker_alive{false};
+std::atomic<bool> g_recover_requested{false};
 #ifndef ESP_PLATFORM
 std::thread g_thread;
 #endif
@@ -530,7 +531,13 @@ bool step() {
       note_result_locked(job.image.session_id, JobState::saving, Error::none, 0, 0, nullptr);
       break;
     }
-    if (slot == kQueue) return false;      // idle, or only waiting out a retry delay
+    if (slot == kQueue) {                  // idle, or only waiting out a retry delay
+      if (!g_recover_requested.exchange(false)) return false;
+    }
+  }
+  if (slot == kQueue) {                    // idle and a recovery was asked for: do it now, off the UI task
+    (void)recover();
+    return false;
   }
   Result result;
   const uint32_t started = io().now_ms();
@@ -592,6 +599,8 @@ void stop_worker() {
 }
 
 bool worker_running() { return g_run.load(); }
+void request_recover() { g_recover_requested.store(true); }
+bool initialised() { return g_io != nullptr; }
 
 void drain(uint32_t max_ms) {
   if (!g_io) return;

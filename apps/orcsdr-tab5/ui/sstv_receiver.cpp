@@ -552,6 +552,10 @@ void set_auto_strategy(AutoStrategy strategy){
   auto_detect::reset();
 }
 AutoStrategy auto_strategy(){return g_auto_strategy;}
+void abort_image(){
+  if(g_stats.receiving)finish_picture(true,EndReason::aborted);
+  reset_vis();reset_picture();auto_detect::reset();
+}
 void set_frequency(uint32_t hz){
   if(g_stats.receiving)finish_picture(true,EndReason::retune);
   g_frequency=hz;reset_picture();reset_vis();auto_detect::reset();
@@ -648,6 +652,9 @@ void service(size_t budget){
   g_stats.vis_phase=static_cast<uint8_t>(g_vis_stage);
   g_stats.vis_phase_samples=g_phase_samples;
   g_stats.state=session_state();
+  g_stats.session_sync_locked=g_session_locked;
+  g_stats.session_sync_missed=g_session_missed;
+  g_stats.session_id=g_stats.receiving?g_session_id:0;
   // Cost of this call, and its share of the time since the previous call.
   const uint64_t finished=now_us();
   const uint32_t us=static_cast<uint32_t>(finished-started);

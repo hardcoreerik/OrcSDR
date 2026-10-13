@@ -104,6 +104,10 @@ bool result_for(uint32_t session_id, Result* out);
 // Power-loss recovery: delete stale .part files and add an index row for every BMP the
 // index does not mention. Returns how many BMPs were re-indexed. Call after mount.
 size_t recover();
+// Ask the worker to run recover() when it is idle (never blocks the caller).
+void request_recover();
+// True after init(); init() abandons queued jobs, so call it once and use set_enabled() afterwards.
+bool initialised();
 
 extern const char kIndexHeaderV2[];
 
