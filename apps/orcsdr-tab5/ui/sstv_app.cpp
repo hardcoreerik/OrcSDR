@@ -26,8 +26,11 @@ uint32_t utc_source() { return utc(); }
 
 void notice(const char* text) { orcsdr::sstv::ui_notice(text); }
 
+uint32_t g_last_tune_ms = 0;
+
 void tune_profile(size_t index) {
   if (index >= std::size(orcsdr::sstv::kProfiles)) return;
+  g_last_tune_ms = millis();
   g_frequency_hz = orcsdr::sstv::kProfiles[index].hz;
   orcsdr::sstv::set_frequency(g_frequency_hz);
   if (g_hooks.tune) g_hooks.tune(g_frequency_hz);
@@ -144,6 +147,12 @@ void close() {
 
 void tick() {
   if (!orcsdr::sstv::ui_active()) return;
+  // The dongle may not have been ready when the dashboard opened (shortly after a boot, or while it was being
+  // re-enumerated), and the single tune from open() is then lost: the screen is up but nothing streams. Retry
+  // whenever a usable receiver exists and no IQ is flowing.
+  if (g_hooks.receiver_ready && g_hooks.streaming && millis() - g_last_tune_ms > 4000u && g_hooks.receiver_ready() &&
+      !g_hooks.streaming())
+    tune_profile(orcsdr::sstv::ui_profile());
   orcsdr::sstv_diag::tick(millis());               // bench self-test audio, when one was requested
   orcsdr::sstv::service();
   (void)arc::poll(utc());

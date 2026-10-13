@@ -4,7 +4,7 @@
 **Target:** M5Stack Tab5, ESP32-P4, RTL-SDR (Blog V3C/V4/V4L, Nooelec NESDR SMArt V5)  
 **Audio path:** receiver PCM → bounded audio tap → VIS/sync decoder → RGB565 PSRAM image → native M5GFX UI → background SD archive.
 
-The receiver decodes **full colour** in all 14 modes: Robot 36/72 (Y with R-Y/B-Y chroma, interlaced in Robot 36), Martin and Scottie (G/B/R) and PD (Y, R-Y, B-Y, Y with chroma shared by a line pair). Host regressions send the colour ORC test pattern through an independent encoder in every mode (correlation 0.89-1.00, flat colours exact). **Hardware status:** a real over-the-air Robot 36 colour frame (Pluto, cabled, 145.500 MHz, RTL-SDR Blog V4L) was decoded on a Tab5 and saved to the SD card (correlation with the source R 0.90 / G 0.92 / B 0.87, at roughly 10 dB over the noise). Every other mode is verified on the host only; see *Not yet validated*.
+The receiver decodes **full colour** in all 14 modes: Robot 36/72 (Y with R-Y/B-Y chroma, interlaced in Robot 36), Martin and Scottie (G/B/R) and PD (Y, R-Y, B-Y, Y with chroma shared by a line pair). Host regressions send the colour ORC test pattern through an independent encoder in every mode (correlation 0.89-1.00, flat colours exact). **Hardware status:** a real over-the-air Robot 36 colour frame (Pluto, cabled, 145.500 MHz, RTL-SDR Blog V4L) was decoded on a Tab5 and saved to the SD card (correlation with the source R 0.90 / G 0.92 / B 0.87, at roughly 10 dB over the noise). A second frame, with the chroma cleanup below, reached R 0.915 / G 0.919 / B 0.905. Every other mode is verified on the host only; see *Not yet validated*.
 
 ## What the user sees
 
@@ -157,6 +157,10 @@ The 36.91 s Pluto Robot 36 recording (`received-filtered-aligned.wav`, SHA-256 `
 - Sync-only identification under fading is heuristic; see the Robot 36 / Robot 72 alias above.
 - `session_id` restarts every boot; a paginated SD browser does not exist (the gallery shows the newest four).
 
+
+## Chroma cleanup (weak signals)
+
+Chroma is noisier than luma, and on a weak signal it shows as coloured speckle on gray areas. `clean_chroma` in `ui/sstv_receiver.cpp` applies a 1-2-1 smoothing across each chroma line, then removes chroma within 12 of neutral, ramping to full strength at 24. Measured on a real over-the-air frame (about 10 dB over the noise) it cut the mean saturation of the gray areas from 41 to 16 (source 19) and raised correlation from 0.90/0.92/0.87 to 0.92/0.92/0.91, while leaving the clean synthetic results unchanged (Robot 36 0.950 against 0.951; flat-colour stripes within 8 of 255). The cost is that a genuinely pale colour (chroma offset below about 24, for example the R-Y of yellow) is attenuated; a stronger floor cleans more but costs more. `kChromaTaps` and `kChromaCore` set it, and the host tests can override them with `SSTV_CHROMA_TAPS` / `SSTV_CHROMA_CORE`. An adaptive or user-selectable level is future work.
 
 ## Live RF: what it took (2026-10-12)
 

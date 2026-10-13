@@ -26,6 +26,8 @@ constexpr uint16_t kMaxWidth=800;
 // back by this many 12 kHz samples before it positions the raster. The best value was 37 for
 // Robot 36 and 39 for PD120 (their pixels are 3.3 and 2.3 samples wide); 38 serves both.
 constexpr double kSyncStartLatencySamples=38.0;
+// Chroma noise cleanup (see clean_chroma): taps 0 = none, 3 = 1-2-1 smoothing; core = chroma offset below which colour is removed (ramps to full strength at 2x).
+constexpr int kChromaTaps=3,kChromaCore=12;
 // Where a sync pulse really started, in samples before the point where the tone estimator first saw it. The
 // estimator's delay depends on the pulse and on what precedes it, so each mode has its own figure, found by
 // sweeping the value on the host against the independent colour encoder (tests/sstv_colour_test.cpp) and
@@ -243,13 +245,45 @@ Layout build_layout(const ModeSpec& m){
   }
   return L;
 }
+// Chroma is noisier than luma (half or less of the bandwidth, and each picture element only sees a few audio
+// samples), and on a weak signal it shows as coloured speckle on gray areas. A 1-2-1 smoothing across the line
+// followed by a ramp around neutral that removes weak chroma and leaves real colours (large offsets) untouched removes most of it.
+#ifdef ORCSDR_SSTV_TESTING
+int g_chroma_taps=-1,g_chroma_core=-1;
+void chroma_env(){
+  if(g_chroma_taps>=0)return;
+  const char* t=std::getenv("SSTV_CHROMA_TAPS");const char* c=std::getenv("SSTV_CHROMA_CORE");
+  g_chroma_taps=t?std::atoi(t):kChromaTaps;g_chroma_core=c?std::atoi(c):kChromaCore;
+}
+#endif
+void clean_chroma(const uint8_t* in,uint8_t* out,uint16_t n){
+#ifdef ORCSDR_SSTV_TESTING
+  chroma_env();const int taps=g_chroma_taps,core=g_chroma_core;
+#else
+  const int taps=kChromaTaps,core=kChromaCore;
+#endif
+  for(uint16_t i=0;i<n;++i) {
+    int v=in[i];
+    if(taps>=3) {
+      const int a=in[i>0?i-1:i],b=in[i+1<n?i+1:i];
+      v=(a+2*in[i]+b+2)/4;
+    }
+    if(core>0) {                       
+      const int d=v-128,m=std::abs(d),top=2*core;     // zero below core, full strength from 2*core up
+      if(m<top)v=128+(m<=core?0:d*(m-core)/(top-core));
+    }
+    out[i]=static_cast<uint8_t>(std::clamp(v,0,255));
+  }
+}
 void paint_yuv(uint16_t row,const uint8_t* y,const uint8_t* cr,const uint8_t* cb,uint16_t cw){
   if(!g_live.pixels||row>=g_live.height||cw==0)return;
   auto* dst=const_cast<uint16_t*>(g_live.pixels)+static_cast<size_t>(row)*g_live.width;
   const uint32_t w=g_live.width;
+  clean_chroma(cr,scan(6),cw);clean_chroma(cb,scan(7),cw);
+  const uint8_t* scr=scan(6);const uint8_t* scb=scan(7);
   for(uint32_t x=0;x<w;++x) {
     const uint32_t cx=std::min<uint32_t>(x*cw/w,cw-1u);
-    dst[x]=yuv565(y[x],cr[cx],cb[cx]);
+    dst[x]=yuv565(y[x],scr[cx],scb[cx]);
   }
 }
 void paint_rgb(uint16_t row,const uint8_t* r,const uint8_t* g,const uint8_t* b){
@@ -693,9 +727,9 @@ void start(uint32_t freq) {
   }
   if(!g_work) {
 #ifdef ESP_PLATFORM
-    g_work=static_cast<uint8_t*>(heap_caps_calloc(6,kMaxWidth,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
+    g_work=static_cast<uint8_t*>(heap_caps_calloc(8,kMaxWidth,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
 #else
-    g_work=static_cast<uint8_t*>(std::calloc(6,kMaxWidth));
+    g_work=static_cast<uint8_t*>(std::calloc(8,kMaxWidth));
 #endif
     if(!g_work) {
       std::snprintf(g_stats.status,sizeof(g_stats.status),"INSUFFICIENT PSRAM");
