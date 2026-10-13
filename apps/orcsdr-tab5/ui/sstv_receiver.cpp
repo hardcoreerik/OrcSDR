@@ -344,14 +344,19 @@ void accept_sample(int16_t pcm) {
   g_level=std::max(std::fabs(g_lp)/32768.f,g_level*.9995f);
   if(g_prev<=0.f&&g_lp>0.f&&g_level>.005f) {
     const float frac= -g_prev/(g_lp-g_prev);
-    const float cross=static_cast<float>(g_ticks-1)+frac;
-    const float period=cross-g_last_edge;
-    if(g_last_edge>0.f&&period>4.4f&&period<13.f) {
+    // Use an integer sample clock + fractional crossing; floating-point
+    // absolute timestamps lose sub-sample precision after ~23 minutes.
+    const uint32_t tick=g_ticks-1u;
+    const float period=static_cast<float>(tick-g_last_edge_tick)
+                       +frac-g_last_edge_frac;
+    if(g_have_edge&&period>4.4f&&period<13.f) {
       if(g_period==0.f)g_period=period;
       else g_period+=.25f*(period-g_period);
       g_freq=kRate/g_period;
     }
-    g_last_edge=cross;
+    g_last_edge_tick=tick;
+    g_last_edge_frac=frac;
+    g_have_edge=true;
   }
   // Normalized adjacent-sample autocorrelation: for a sinusoid at f Hz,
   // P/Q = 2*cos(2*pi*f/kRate). This provides a new tone estimate on every
@@ -371,21 +376,54 @@ void accept_sample(int16_t pcm) {
       (g_ac_freq_lut[index+1]-g_ac_freq_lut[index])*fract;
   } else g_luma_freq=g_freq;
   g_prev=g_lp;
-  if(g_stats.receiving) {
-    const bool is_sync=g_freq>1030.f&&g_freq<1400.f;
-    if(is_sync)++g_sync_run;
-    else if(g_sync_run){sync_edge(g_sync_run);g_sync_run=0;}
-    sample_luma(g_luma_freq);
-  } else vis_tick(g_freq);
+  // Observe sync pulses even while idle. A missing VIS can be recovered
+  // from a coherent pulse train without instantiating parallel decoders.
+  const bool is_sync=g_freq>1030.f&&g_freq<1400.f;
+  if(is_sync) {
+    if(g_sync_run<60000u)++g_sync_run;
+  } else if(g_sync_run) {
+    const uint32_t n=g_sync_run;
+    g_sync_run=0;
+    const uint32_t sync_start=g_ticks-n;
+    ++g_stats.observed_sync_pulses;
+    if(g_stats.receiving)sync_edge(n);
+    else if(g_auto_strategy==AutoStrategy::vis_sync &&
+            g_requested==Mode::auto_vis &&
+            g_vis_stage==VisStage::lead1 && n<=65535u) {
+      const auto candidate=auto_detect::observe(
+        sync_start,static_cast<uint16_t>(n));
+      if(candidate.locked) {
+        const ModeSpec* m=mode_spec(candidate.mode);
+        if(m) {
+          begin_picture(m,0,Identification::sync,candidate.score,true);
+          // Fallback starts on the NEXT complete line. Scottie's 9ms
+          // sync is in the middle of its RGB scan; use its offset.
+          g_line_origin=static_cast<double>(sync_start)+
+             static_cast<double>(m->line_us)*kRate/1000000.-
+             sync_offset_samples(*m);
+          ++g_stats.auto_sync_locks;
+          std::snprintf(g_stats.status,sizeof(g_stats.status),
+                        "SYNC LIKELY %s / PARTIAL",m->name);
+        }
+      }
+    }
+  }
+  // Keep looking for a *new* VIS even when a previous image is active.
+  // A validated new header archives interrupted rows as a partial image.
+  vis_tick(g_freq);
+  if(g_stats.receiving)sample_luma(g_luma_freq);
 }
 void put16(std::FILE* f,uint16_t v){std::fputc(v&255,f);std::fputc(v>>8,f);}
 void put32(std::FILE* f,uint32_t v){put16(f,v&65535);put16(f,v>>16);}
 } // namespace
 void start(uint32_t freq) {
   g_on.store(false,std::memory_order_release);
-  reset_vis();reset_picture();
+  if(g_stats.receiving)finish_picture(true,EndReason::aborted);
+  reset_vis();reset_picture();auto_detect::reset();
   g_frequency=freq;g_stats.active=true;
-  g_hp=g_lp=g_in_prev=g_prev=g_last_edge=g_period=g_freq=g_level=0.f;
+  g_hp=g_lp=g_in_prev=g_prev=g_period=g_freq=g_level=0.f;
+  g_last_edge_tick=0;g_last_edge_frac=0;g_have_edge=false;
+  g_decim_sum=0;g_decim_n=0;
   g_ac_y2=g_ac_p=g_ac_q=g_luma_freq=0.f;
   // Build a 1 KiB inverse-cosine LUT once, outside the real-time audio
   // service.  The sample loop only interpolates adjacent integer entries.
@@ -403,13 +441,22 @@ void start(uint32_t freq) {
 }
 void stop(){
   g_on.store(false,std::memory_order_release);
-  reset_vis();reset_picture();g_stats.active=false;
+  if(g_stats.receiving)finish_picture(true,EndReason::aborted);
+  reset_vis();reset_picture();auto_detect::reset();g_stats.active=false;
   g_read.store(g_write.load(std::memory_order_acquire),std::memory_order_release);
 }
 bool active(){return g_on.load(std::memory_order_acquire);}
 void set_mode(Mode m){g_requested=mode_spec(m)?m:Mode::auto_vis;}
 Mode selected_mode(){return g_requested;}
-void set_frequency(uint32_t hz){g_frequency=hz;reset_picture();reset_vis();}
+void set_auto_strategy(AutoStrategy strategy){
+  g_auto_strategy=strategy;
+  auto_detect::reset();
+}
+AutoStrategy auto_strategy(){return g_auto_strategy;}
+void set_frequency(uint32_t hz){
+  if(g_stats.receiving)finish_picture(true,EndReason::retune);
+  g_frequency=hz;reset_picture();reset_vis();auto_detect::reset();
+}
 void offer_audio_48k(const int16_t* src,size_t n){
   if(!active()||!src)return;
   uint32_t w=g_write.load(std::memory_order_relaxed);
