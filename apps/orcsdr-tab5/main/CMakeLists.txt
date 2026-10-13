@@ -67,6 +67,7 @@ idf_component_register(
         "../ui/ft8_dashboard.cpp"
         "../ui/sstv_receiver.cpp"
         "../ui/sstv_modes.cpp"
+        "../ui/sstv_auto_detect.cpp"
         "../ui/sstv_dashboard.cpp"
         "../ui/ft8_tuning.cpp"
         "../ui/ft8_info_text.cpp"
