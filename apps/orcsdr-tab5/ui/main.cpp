@@ -13737,7 +13737,8 @@ void open_sstv_dashboard() {
 const orcsdr::sstv_diag::Hooks kSstvDiagHooks = {
     [](const char* text) { Serial.print(text); },
     open_sstv_dashboard,
-    [](int32_t which) { return orcsdr::sstv_app::save_image(which); }};
+    [](int32_t which) { return orcsdr::sstv_app::save_image(which); },
+    [](uint32_t hz) { return orcsdr::sstv_app::tune_to(hz); }};
 void open_dashboard(orcsdr::dashboards::Id id) {
   using Id = orcsdr::dashboards::Id;
   if (id != Id::settings && orcsdr::settings::active()) close_global_settings();

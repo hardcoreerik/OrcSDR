@@ -61,12 +61,15 @@ Known weakness: a Robot 36 stream with every other pulse missing looks like Robo
 
 ## Dashboard
 
-Same five native screens (no WebView):
+Five native screens (no WebView):
 
 - **RECEIVE** — headline, mode and native size, VIS code or sync identification, image state (in progress, joined in progress with start row unknown), row progress, per-image sync locked/missed and line error, tone and level, abort and capture buttons.
 - **IMAGES** — gallery tiles with mode, complete/partial, VIS/sync identification, *joined* marker and SD save status; detail panel with frequency, UTC (or "time not verified"), counters and file name.
 - **SIGNAL** — tone monitor; sync pulse width and line interval; top-3 sync candidates with relative scores; missed lines, overruns and gaps; decoder cost, ring high-water, PSRAM; SD write latency.
-- **FREQUENCIES** — presets, unchanged (ISS SSTV 145.800 MHz is for announced ARISS events only).
+- **TUNE** - replaces the old preset list. Top to bottom: a VFO bar (big frequency readout: tap it or ENTER FREQUENCY for the keypad; -/+ step the dial; STEP chip cycles 10 Hz to 25 kHz; MODE chip cycles AUTO, NFM, USB, LSB; GAIN chip toggles automatic and manual tuner gain, G-/G+ step the tuner's gain table), the **RF spectrum and waterfall** (240 kS/s, +-120 kHz, the tuned frequency in the middle; **tap anywhere to tune there**), the **audio sync comb** (what the decoder hears, 700-2700 Hz, with guide rails at 1200 sync, 1500 black, 1900 mid and 2300 white; the rails and frame are tinted by the receiver state, and a white tick marks the measured sync tone), and the preset chips. Frequencies typed as `145.5` are MHz, five or more digits (`14230`) are kHz.
+  - **Tuning error.** In USB or LSB the audio is the offset from the dial, so the 1200 Hz sync tone reads high or low when the dial is off. The readout shows the measured tone (average of recent sync pulses, settled part, extrapolated) and APPLY CORRECTION moves the dial by the right amount in the right direction (USB: raise when the tone reads high; LSB: the opposite). In NFM the tone does not depend on the dial, so centre the signal on the spectrum instead.
+  - AUTO mode picks LSB below 10 MHz, USB from 10 to 30 MHz and NFM above. The choices (frequency, step, mode, rails) are remembered.
+  - **OrcDial.** The Dial has an SSTV dashboard (wire id 18): the knob tunes by the step shown, a centre press switches focus between frequency and step, and the keypad enters any frequency from 0.1 MHz to 1.7 GHz; a mode request cycles AUTO/NFM/USB/LSB. Re-flash the Dial for the new carousel entry.
 - **SETUP** — *Auto (VIS + sync recovery)* (default), *VIS only*, *Manual (VIS filter)* with the 14 modes, auto-save, SD status. Changing settings never restarts the receiver or discards an image.
 
 ## SD archive
@@ -172,3 +175,11 @@ The on-device self-test injects audio directly into the decoder, which hid three
 3. `SSTV STATUS` now reports `tone_hz`, `audio_level_milli`, `audio_offered` and `samples`: `audio_offered=0` means the radio path is not delivering audio at all.
 
 `tools/sstv_host_tests.sh` replays recordings too: `SSTV_REPLAY_PPM=out.ppm` makes `sstv_wav_replay` write the decoded colour picture. A dongle comparison matters: the same cabled signal sat about 5 dB over the noise on a Nooelec and about 8-10 dB on an RTL-SDR Blog V4L, which was the difference between no decode and a clean one.
+
+## Change record: TUNE tab (2026-10-13, branch claude/sstv-tune-tab)
+
+- New TUNE tab replaces FREQUENCIES (see Dashboard). New pure modules `sstv_tune` (steps, tap-to-tune, keypad entry parsing, tuning error, palette) and `sstv_audio_scope` (512-point audio spectrogram), both host-tested (`tune` suite).
+- Decoder: `Metrics.sync_tone_hz` / `sync_tone_pulses` (settled, extrapolated mean of the 1200 Hz sync pulse; expires after 5 s without pulses; `syncmeter` suite, including a 60 Hz mistuned picture that still decodes) and `set_audio_observer()` for the comb.
+- Firmware: LSB/USB/NFM chosen from the tab (`effective_demod`), tuner gain auto/manual with a step table, RF spectrum shown on the tab through the existing spectrum pipeline (one gate in `main.cpp`), persisted frequency/step/mode/rails. `SSTV TUNE <hz>` on the serial console.
+- OrcDial: SSTV dashboard, wire id 18 (carousel entry, direct keypad tune, knob tunes by the step shown). The Dial firmware must be re-flashed to show the new entry; the Tab5 never needs a Dial.
+- Not verified on hardware yet: the TUNE tab on the Tab5 screen, LSB/USB sync-tone correction against a real SSB signal, and the OrcDial entry. Host-only so far.

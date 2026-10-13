@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "sstv_archive.hpp"
@@ -237,7 +238,8 @@ void print_status() {
   const Metrics m = metrics();
   say("SSTV_STATUS active=%d dashboard=%d state=\"%s\" mode=\"%s\" ident=%d score=%u row=%u/%u receiving=%d "
       "start_unknown=%d vis_ok=%lu vis_bad=%lu sync_locked=%u sync_missed=%u overruns=%lu gaps=%lu "
-      "frames=%lu partial=%lu auto_locks=%lu tone_hz=%d audio_level_milli=%d audio_offered=%lu samples=%lu",
+      "frames=%lu partial=%lu auto_locks=%lu tone_hz=%d audio_level_milli=%d audio_offered=%lu samples=%lu "
+      "sync_tone_hz=%d sync_tone_pulses=%u",
       active() ? 1 : 0, ui_active() ? 1 : 0, state_name(m.state),
       m.receiving ? mode_name(m.received_mode) : "-", static_cast<int>(m.identification),
       static_cast<unsigned>(m.identification_score), static_cast<unsigned>(m.row),
@@ -247,7 +249,8 @@ void print_status() {
       static_cast<unsigned long>(m.audio_overruns), static_cast<unsigned long>(m.audio_gaps),
       static_cast<unsigned long>(m.frames), static_cast<unsigned long>(m.partial_frames),
       static_cast<unsigned long>(m.auto_sync_locks), static_cast<int>(m.tone_hz), static_cast<int>(m.audio_peak * 1000.0f),
-      static_cast<unsigned long>(m.audio_offered), static_cast<unsigned long>(m.samples));
+      static_cast<unsigned long>(m.audio_offered), static_cast<unsigned long>(m.samples),
+      static_cast<int>(m.sync_tone_hz + 0.5f), static_cast<unsigned>(m.sync_tone_pulses));
   const UiStats ui = ui_stats();
   say("SSTV_PERF service_us_last=%lu service_us_max=%lu service_us_avg=%lu service_cpu_pct=%u ring_max=%u/4096 "
       "frames_alive=%lu frame_kb=%lu draw_us_last=%lu draw_us_max=%lu draws=%lu",
@@ -385,6 +388,14 @@ bool handle_command(const char* command, bool authenticated, const Hooks& hooks)
     say("SSTV_OK selftest=%s speed=%u", scenario_name(scenario), g_script.speed);
     return true;
   }
+  if (std::strncmp(args, "TUNE ", 5) == 0) {
+    char* end = nullptr;
+    const unsigned long hz = std::strtoul(args + 5, &end, 10);
+    const bool ok = end != args + 5 && *end == 0 && hooks.tune && hooks.tune(static_cast<uint32_t>(hz));
+    if (ok) say("SSTV_OK tuned_hz=%lu", hz);
+    else say("SSTV_ERROR tune refused (dashboard closed or frequency out of range) use=SSTV TUNE <hz>");
+    return true;
+  }
   if (std::strncmp(args, "SAVE ", 5) == 0) {
     const bool live = std::strcmp(args + 5, "LIVE") == 0;
     if (!live && std::strcmp(args + 5, "NEWEST") != 0) {
@@ -395,7 +406,7 @@ bool handle_command(const char* command, bool authenticated, const Hooks& hooks)
     say("SSTV_OK queued=%d", queued ? 1 : 0);
     return true;
   }
-  say("SSTV_ERROR usage=SSTV STATUS|INDEX|OPEN|SELFTEST <scenario> [SPEED n]|SELFTEST STOP|SAVE LIVE|NEWEST");
+  say("SSTV_ERROR usage=SSTV STATUS|INDEX|OPEN|TUNE <hz>|SELFTEST <scenario> [SPEED n]|SELFTEST STOP|SAVE LIVE|NEWEST");
   return true;
 }
 

@@ -8,6 +8,7 @@
 //                                     display and SD archive path, paced at 1x real time by default (auth)
 //   SSTV SELFTEST STOP                abort the running self-test (auth)
 //   SSTV SAVE LIVE|NEWEST             queue the image in progress / the newest gallery image for SD (auth)
+//   SSTV TUNE <hz>                    tune the open dashboard to a frequency in Hz (auth)
 //   SSTV INDEX                        print the last lines of the SD index (no auth)
 //
 // The self-test generates audio inside the firmware (no RF, no transmitter). It feeds the same
@@ -21,6 +22,7 @@ struct Hooks {
   void (*write_line)(const char* text) = nullptr;
   void (*open_dashboard)() = nullptr;
   bool (*save_image)(int32_t which) = nullptr;   // -1 = image in progress, otherwise gallery index
+  bool (*tune)(uint32_t frequency_hz) = nullptr; // false when refused (dashboard closed or out of range)
 };
 
 bool handle_command(const char* command, bool authenticated, const Hooks& hooks);
