@@ -463,6 +463,17 @@ bool g_rf_have = false, g_rf_floor_known = false;
 uint32_t g_au_sequence = 0, g_au_ms = 0, g_tune_bar_ms = 0;
 bool g_keypad = false;
 char g_entry[14]{};
+// What each region of the TUNE tab last drew. A region is repainted only when its signature changes, so a quiet
+// screen never redraws (repainting panels every half second made the whole tab flicker).
+uint32_t g_sig_bar = 0, g_sig_buttons = 0, g_sig_status = 0, g_sig_header = 0, g_sig_header_ms = 0;
+uint16_t g_sig_tint = 0;
+char g_sig_readout[80]{};
+uint32_t mix(uint32_t h, uint32_t v) { return (h ^ v) * 16777619u; }
+void reset_signatures() {
+  g_sig_bar = g_sig_buttons = g_sig_status = g_sig_header = 0;
+  g_sig_tint = 0;
+  g_sig_readout[0] = '\0';
+}
 
 bool tune_visible() { return g_active && g_page == Page::tune && !g_keypad; }
 
@@ -573,13 +584,15 @@ void draw_audio_frame() {
   frame(kAudioPanel, tint);
   text("AUDIO  -  WHAT THE DECODER HEARS", kAudioPanel.x + 14, kAudioPanel.y + 13, kCyan, 0, middle_left);
 }
-void draw_audio_labels() {
+void draw_audio_labels(bool force) {
   const Metrics m = metrics();
   const auto tint = sstv_tune::tint565(current_tint());
   const int label_y = kAuY + kAuH + 14;
-  M5.Display.fillRect(kAudioPanel.x + 4, label_y - 9, kAudioPanel.w - 8, 18, kPanel);
-  for (int i = 0; i < 4; ++i)
-    text(kRailNames[i], kAuX + rail_x(i), label_y, g_ui.tune.rails ? tint : kMuted, 0);
+  if (force) {
+    M5.Display.fillRect(kAudioPanel.x + 4, label_y - 9, kAudioPanel.w - 8, 18, kPanel);
+    for (int i = 0; i < 4; ++i)
+      text(kRailNames[i], kAuX + rail_x(i), label_y, g_ui.tune.rails ? tint : kMuted, 0);
+  }
   // Readout of the sync tone against 1200 Hz, and which way to move the dial.
   const auto demod = static_cast<sstv_tune::Demod>(g_ui.tune.demod);
   const auto error = sstv_tune::tuning_error(demod, m.sync_tone_hz, m.sync_tone_pulses);
@@ -597,6 +610,8 @@ void draw_audio_labels() {
                   static_cast<long>(error.correction_hz));
     color = kAmber;
   }
+  if (!force && std::strcmp(line, g_sig_readout) == 0) return;
+  std::snprintf(g_sig_readout, sizeof(g_sig_readout), "%s", line);
   M5.Display.fillRect(kAudioPanel.x + 400, kAudioPanel.y + 3, kAudioPanel.w - 410, 20, kPanel);
   text(line, kAudioPanel.x + kAudioPanel.w - 14, kAudioPanel.y + 13, color, 0, middle_right);
 }
@@ -634,7 +649,7 @@ void push_audio() {
   M5.Display.pushImage(kAuX, kAuY, kAuW, kAuH, reinterpret_cast<const lgfx::rgb565_t*>(g_au_px));
 }
 
-void draw_tune_controls() {
+void draw_tune_buttons() {
   for (size_t i = 0; i < std::size(kProfiles); ++i) {
     const Rect r = preset_chip(static_cast<int>(i));
     const bool on = kProfiles[i].hz == g_ui.frequency_hz;
@@ -651,6 +666,9 @@ void draw_tune_controls() {
   if (can_apply) std::snprintf(label, sizeof(label), "APPLY CORRECTION %+ld Hz", static_cast<long>(error.correction_hz));
   else std::snprintf(label, sizeof(label), "APPLY CORRECTION");
   button(kApply, label, false, can_apply, 2);
+}
+void draw_tune_status() {
+  const Metrics m = metrics();
   M5.Display.fillRect(kStatusX, 574, 352, 44, TFT_BLACK);
   char status[48];
   std::snprintf(status, sizeof(status), "%s", state_name(m.state));
@@ -659,12 +677,42 @@ void draw_tune_controls() {
                 static_cast<unsigned long>(m.audio_gaps));
   text(status, kStatusX + 8, 608, kMuted, 0, middle_left);
 }
+void draw_tune_controls() {
+  draw_tune_buttons();
+  draw_tune_status();
+}
 
 void draw_keypad_screen() {
   M5.Display.startWrite();
   M5.Display.fillRect(0, 93, 1280, 627, TFT_BLACK);
   orcsdr::freq_keypad::draw(93, TFT_BLACK, "ENTER SSTV FREQUENCY", "0.100 - 1700", "MHz", g_entry);
   M5.Display.endWrite();
+}
+
+uint32_t bar_signature() {
+  const auto& t = g_ui.tune;
+  uint32_t h = 2166136261u;
+  for (uint32_t v : {g_ui.frequency_hz, static_cast<uint32_t>(g_ui.streaming), static_cast<uint32_t>(t.step_index),
+                     static_cast<uint32_t>(t.demod), static_cast<uint32_t>(t.demod_auto), static_cast<uint32_t>(t.gain_available),
+                     static_cast<uint32_t>(t.gain_auto), static_cast<uint32_t>(t.gain_tenth_db), t.rate_sps})
+    h = mix(h, v);
+  return h;
+}
+uint32_t buttons_signature() {
+  const Metrics m = metrics();
+  const auto error = sstv_tune::tuning_error(static_cast<sstv_tune::Demod>(g_ui.tune.demod), m.sync_tone_hz, m.sync_tone_pulses);
+  uint32_t h = 2166136261u;
+  for (uint32_t v : {g_ui.frequency_hz, static_cast<uint32_t>(g_ui.tune.rails), static_cast<uint32_t>(error.valid),
+                     static_cast<uint32_t>(error.valid ? error.correction_hz : 0)})
+    h = mix(h, v);
+  return h;
+}
+uint32_t status_signature() {
+  const Metrics m = metrics();
+  uint32_t h = 2166136261u;
+  for (uint32_t v : {static_cast<uint32_t>(m.state), static_cast<uint32_t>(m.audio_peak * 100.f), static_cast<uint32_t>(m.audio_gaps)})
+    h = mix(h, v);
+  return h;
 }
 
 void draw_tune() {
@@ -680,8 +728,12 @@ void draw_tune() {
   draw_audio_frame();
   compose_audio();
   push_audio();
-  draw_audio_labels();
+  draw_audio_labels(true);
   draw_tune_controls();
+  g_sig_bar = bar_signature();
+  g_sig_buttons = buttons_signature();
+  g_sig_status = status_signature();
+  g_sig_tint = sstv_tune::tint565(current_tint());
   g_au_ms = g_tune_bar_ms = millis();
 }
 
@@ -691,18 +743,25 @@ void update_tune(uint32_t now) {
   if (!g_au_px) return;
   M5.Display.startWrite();
   const auto view = sstv_audio_scope::view();
-  if (view.sequence != g_au_sequence && now - g_au_ms >= 120u) {
+  const uint16_t tint = sstv_tune::tint565(current_tint());
+  if (tint != g_sig_tint) {   // the receiver changed state: recolour the frame and the rail labels
+    g_sig_tint = tint;
+    draw_audio_frame();
+    compose_audio();
+    push_audio();
+    draw_audio_labels(true);
+    g_au_ms = now;
+  } else if (view.sequence != g_au_sequence && now - g_au_ms >= 120u) {
     compose_audio();
     push_audio();
     g_au_ms = now;
   }
   if (now - g_tune_bar_ms >= 500u) {
-    draw_audio_frame();
-    push_audio();
-    draw_audio_labels();
-    draw_vfo_bar();
-    draw_tune_controls();
     g_tune_bar_ms = now;
+    draw_audio_labels(false);
+    if (const uint32_t sig = bar_signature(); sig != g_sig_bar) { g_sig_bar = sig; draw_vfo_bar(); }
+    if (const uint32_t sig = buttons_signature(); sig != g_sig_buttons) { g_sig_buttons = sig; draw_tune_buttons(); }
+    if (const uint32_t sig = status_signature(); sig != g_sig_status) { g_sig_status = sig; draw_tune_status(); }
   }
   M5.Display.endWrite();
 }
@@ -814,6 +873,7 @@ void draw_all() {
   g_preview_source = nullptr; g_painted_screen_rows = 0; g_painted_source_rows = 0;
   M5.Display.fillScreen(TFT_BLACK);
   focus_nav::clear();
+  reset_signatures();
   draw_header();
   draw_page_body();
   draw_tabs();
@@ -841,7 +901,18 @@ void ui_update(const UiSnapshot& snapshot) {
   g_ui = snapshot;
   if (retuned) g_rf_have = false;   // the waterfall history belongs to the old frequency
   if (g_keypad) return;             // the keypad owns the screen
-  if (retuned || changed) { draw_all(); return; }
+  if (retuned || changed) {
+    if (g_page == Page::tune) {   // repaint in place: no full-screen clear
+      M5.Display.startWrite();
+      draw_header();
+      draw_page_body();
+      M5.Display.endWrite();
+      g_last_render_ms = millis();
+      return;
+    }
+    draw_all();
+    return;
+  }
   const uint32_t revision = image_revision();
   const uint32_t now = millis();
   if (g_page == Page::receive) {
@@ -858,12 +929,20 @@ void ui_update(const UiSnapshot& snapshot) {
     M5.Display.endWrite();
   } else if (g_page == Page::tune) {
     update_tune(now);
-    if (now - g_last_render_ms >= 1000u) {
+    // The header repaints when what it shows changes, and otherwise every ten seconds (battery, clock).
+    uint32_t sig = 2166136261u;
+    for (uint32_t v : {g_ui.frequency_hz, static_cast<uint32_t>(metrics().state), static_cast<uint32_t>(g_ui.receiver_ready),
+                       static_cast<uint32_t>(g_ui.sd_ready), static_cast<uint32_t>(g_ui.streaming),
+                       static_cast<uint32_t>(g_notice[0] && millis() < g_notice_until)})
+      sig = mix(sig, v);
+    if (sig != g_sig_header || now - g_sig_header_ms >= 10000u) {
+      g_sig_header = sig;
+      g_sig_header_ms = now;
       M5.Display.startWrite();
       draw_header();
       M5.Display.endWrite();
-      g_last_render_ms = now;
     }
+    g_last_render_ms = now;
   } else if (revision != g_last_revision) {
     draw_all();
   } else if (now - g_last_render_ms >= 1000u) {
