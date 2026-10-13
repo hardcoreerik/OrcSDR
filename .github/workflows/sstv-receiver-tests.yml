@@ -6,6 +6,8 @@ on:
     paths:
       - "apps/orcsdr-tab5/ui/sstv_receiver.*"
       - "apps/orcsdr-tab5/ui/sstv_modes.cpp"
+      - "apps/orcsdr-tab5/ui/sstv_auto_detect.*"
+      - "apps/orcsdr-tab5/tests/sstv_auto_detect_test.cpp"
       - "tools/sstv_validate_timings.py"
       - "tools/sstv_rea_workbench.py"
       - "apps/orcsdr-tab5/tests/sstv_receiver_smoke.cpp"
@@ -15,6 +17,8 @@ on:
     paths:
       - "apps/orcsdr-tab5/ui/sstv_receiver.*"
       - "apps/orcsdr-tab5/ui/sstv_modes.cpp"
+      - "apps/orcsdr-tab5/ui/sstv_auto_detect.*"
+      - "apps/orcsdr-tab5/tests/sstv_auto_detect_test.cpp"
       - "tools/sstv_validate_timings.py"
       - "apps/orcsdr-tab5/tests/sstv_receiver_smoke.cpp"
       - ".github/workflows/sstv-receiver-tests.yml"
@@ -34,20 +38,29 @@ jobs:
           g++ -std=c++17 -O2 -Wall -Wextra -Iapps/orcsdr-tab5/ui \
             apps/orcsdr-tab5/tests/sstv_receiver_smoke.cpp \
             apps/orcsdr-tab5/ui/sstv_receiver.cpp \
-            apps/orcsdr-tab5/ui/sstv_modes.cpp -o /tmp/sstv-smoke
+            apps/orcsdr-tab5/ui/sstv_modes.cpp \
+            apps/orcsdr-tab5/ui/sstv_auto_detect.cpp -o /tmp/sstv-smoke
       - name: Build recorded-WAV replay tool
         run: |
           g++ -std=c++17 -O2 -Wall -Wextra -Iapps/orcsdr-tab5/ui \
             apps/orcsdr-tab5/tests/sstv_wav_replay.cpp \
             apps/orcsdr-tab5/ui/sstv_receiver.cpp \
-            apps/orcsdr-tab5/ui/sstv_modes.cpp -o /tmp/sstv-wav-replay
+            apps/orcsdr-tab5/ui/sstv_modes.cpp \
+            apps/orcsdr-tab5/ui/sstv_auto_detect.cpp -o /tmp/sstv-wav-replay
+      - name: Compile and run sync-only classifier regression
+        run: |
+          g++ -std=c++17 -O2 -Wall -Wextra -Iapps/orcsdr-tab5/ui \
+            apps/orcsdr-tab5/tests/sstv_auto_detect_test.cpp \
+            apps/orcsdr-tab5/ui/sstv_auto_detect.cpp \
+            apps/orcsdr-tab5/ui/sstv_modes.cpp -o /tmp/sstv-auto-test
+          /tmp/sstv-auto-test
       - name: Synthetic Robot36 and progressive PD120 reception
         run: /tmp/sstv-smoke
       - name: Package host replay binary and exact decoder sources
         if: always()
         run: |
           mkdir -p /tmp/sstv-analysis-source/ui /tmp/sstv-analysis-source/tests
-          cp apps/orcsdr-tab5/ui/sstv_receiver.cpp apps/orcsdr-tab5/ui/sstv_receiver.hpp apps/orcsdr-tab5/ui/sstv_modes.cpp /tmp/sstv-analysis-source/ui/
+          cp apps/orcsdr-tab5/ui/sstv_receiver.cpp apps/orcsdr-tab5/ui/sstv_receiver.hpp apps/orcsdr-tab5/ui/sstv_modes.cpp apps/orcsdr-tab5/ui/sstv_auto_detect.cpp apps/orcsdr-tab5/ui/sstv_auto_detect.hpp /tmp/sstv-analysis-source/ui/
           cp apps/orcsdr-tab5/tests/sstv_wav_replay.cpp /tmp/sstv-analysis-source/tests/
           cp /tmp/sstv-wav-replay /tmp/sstv-analysis-source/ || true
       - name: Publish host decoder analysis bundle
