@@ -772,7 +772,15 @@ bool load_indexed(Work& w) {
   size_t len = 0;
   bool header = true, ok = true;
   size_t got;
-  while (ok && (got = io().read(buf, sizeof(buf), f)) > 0) {
+  // A read of 0 bytes ends the loop; only a clean end of file (errno untouched) means the whole index was seen.
+  // After a card error part-way through, the table is incomplete and recovery would add duplicate rows.
+  for (;;) {
+    errno = 0;
+    got = ok ? io().read(buf, sizeof(buf), f) : 0;
+    if (got == 0) {
+      if (errno != 0) ok = false;
+      break;
+    }
     for (size_t i = 0; i < got && ok; ++i) {
       if (buf[i] != '\n') {
         if (len < sizeof(line) - 1) line[len++] = buf[i];

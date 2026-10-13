@@ -36,6 +36,7 @@ struct Fault {
   std::atomic<int> eio_files{0};           // the next N temp files each fail with EIO after 3 block writes
   std::atomic<int> eio_active{0};          // this temp file is one of them
   std::atomic<int> read_failures{0};       // the next N reads fail with EIO (a flaky card)
+  std::atomic<int> read_skip{0};           // let the next N reads succeed before read_failures starts
   std::atomic<int> short_reads{0};         // the next reads return only N, N-1, ... bytes (partial reads)
 } g;
 std::FILE* g_part_file = nullptr;
@@ -74,6 +75,7 @@ size_t f_write(const void* data, size_t size, std::FILE* file) {
   return std::fwrite(data, 1, size, file);
 }
 size_t f_read(void* data, size_t size, std::FILE* file) {
+  if (g.read_skip.load() > 0) { g.read_skip--; return std::fread(data, 1, size, file); }
   if (g.read_failures.load() > 0) { g.read_failures--; errno = EIO; return 0; }
   if (g.short_reads.load() > 0) {
     const size_t part = std::min<size_t>(size, static_cast<size_t>(g.short_reads.load()));
@@ -126,6 +128,7 @@ void reset_world(unsigned retries = 0, uint32_t retry_delay_ms = 20) {
   g.eio_active = 0;
   g.read_failures = 0;
   g.short_reads = 0;
+  g.read_skip = 0;
   std::string cmd = "rm -rf '" + g_root + "' && mkdir -p '" + g_root + "'";
   require(std::system(cmd.c_str()) == 0, "temp dir");
   arc::Config cfg;
@@ -455,6 +458,10 @@ void test_recovery_with_many_images_on_the_card() {
     std::fputs("torn", f);
     std::fclose(f);
   }
+  g.read_skip = 1;                   // the header read succeeds, then the index read fails: not "nothing indexed"
+  g.read_failures = 1;
+  require(arc::recover() == 0 && index_rows().size() == 150, "many: a read error part-way through recovers nothing and duplicates nothing");
+  g.read_failures = 0;
   require(arc::recover() == 20, "many: all 20 orphans were found among 170 pictures");
   size_t total = 20;
   for (int pass = 0; pass < 5 && count_suffix(".part") > 0; ++pass) total += arc::recover();
