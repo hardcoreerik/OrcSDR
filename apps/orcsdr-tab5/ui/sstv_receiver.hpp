@@ -14,7 +14,7 @@ enum class Page : uint8_t { receive, gallery, analyzer, frequencies, setup, coun
 // VIS is authoritative when valid; sync fallback is always labeled provisional.
 enum class AutoStrategy : uint8_t { vis_only, vis_sync };
 enum class Identification : uint8_t { none, vis, sync, manual };
-enum class EndReason : uint8_t { none, complete, sync_lost, new_vis, retune, aborted };
+enum class EndReason : uint8_t { none, complete, sync_lost, new_vis, retune, aborted, captured };
 // The receiver's one lifecycle state, derived from the decoder's own variables so there is
 // no second copy to drift. See session_state() for the exact rules.
 enum class SessionState : uint8_t {
@@ -93,6 +93,7 @@ struct Image {
   EndReason end_reason = EndReason::none;
   // One reception event. Counters cover this image only (not the receiver lifetime).
   uint32_t session_id = 0;
+  uint32_t utc_epoch = 0;        // 0 = clock not verified when the reception ended
   uint8_t vis_code = 0;          // 0 when the mode was not identified from a VIS header
   uint16_t sync_locked = 0;      // lines whose sync pulse matched the predicted position
   uint16_t sync_missed = 0;      // lines committed from the predicted timeline without a sync
@@ -141,10 +142,13 @@ const ModeSpec* mode_spec(Mode mode);
 const ModeSpec* vis_spec(uint8_t code);
 // Last committed line, for bounded on-screen repaint.
 uint32_t image_revision();
-// Save a completed frame as a standard 24-bit BMP under /sd/orcsdr/sstv/.
-// index == SIZE_MAX captures the in-progress image (marked partial).
-// When utc_epoch==0 the clock is explicitly unverified in the index.
-bool save_bmp(size_t index, char* out_path, size_t path_len, uint32_t utc_epoch = 0);
+// Supplies verified UTC seconds (0 while the clock is unverified). Called on the UI task when a
+// reception ends, so images carry an honest timestamp.
+void set_utc_source(uint32_t (*utc_epoch)());
+// Pinned copy of the in-progress image (partial, EndReason::captured) for the manual capture
+// button; empty if nothing has been decoded yet. Hand it to sstv_archive::enqueue() or
+// release_image() it. Saving is always done by the background archive, never on this task.
+Image snapshot_live();
 bool self_check();
 #ifdef ORCSDR_SSTV_TESTING
 namespace testing {

@@ -137,6 +137,7 @@ const char* end_name(EndReason reason) {
     case EndReason::new_vis: return "new_vis";
     case EndReason::retune: return "retune";
     case EndReason::aborted: return "aborted";
+    case EndReason::captured: return "captured";
     default: return "none";
   }
 }
@@ -466,7 +467,7 @@ bool enqueue(const Image& pinned, uint32_t utc_epoch) {
     job = Job{};
     job.used = true;
     job.image = pinned;
-    job.utc = utc_epoch;
+    job.utc = pinned.utc_epoch ? pinned.utc_epoch : utc_epoch;  // the reception's own stamp wins
     job.not_before = io().now_ms();
     ++g_stats.queued;
     ++g_stats.pending;

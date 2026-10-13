@@ -53,5 +53,12 @@ int main() {
     wrap_locked|=c.locked && c.mode==Mode::robot36;
   }
   check(wrap_locked,"wrap-safe pulse time arithmetic");
+  // The Signal page shows the strongest candidates: Robot 36 must lead a Robot 36 pulse train.
+  auto_detect::Ranked top[3];
+  const size_t shown=auto_detect::ranked(top,3);
+  check(shown>=1 && top[0].mode==Mode::robot36 && top[0].score>=75,"ranked candidates lead with the true mode");
+  for(size_t i=1;i<shown;++i)check(top[i-1].score>=top[i].score,"ranked candidates are ordered");
+  auto_detect::reset();
+  check(auto_detect::ranked(top,3)==0 && auto_detect::pending_pulses()==0,"reset clears candidates and pulses");
   std::puts("SSTV AUTO DETECT: PASS (14 modes, noise rejection, counter wrap)");
 }

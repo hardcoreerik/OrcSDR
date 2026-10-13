@@ -469,6 +469,42 @@ void test_service_cost_is_measured() {
   clear_gallery();
 }
 
+uint32_t fake_utc() { return 1700000123u; }
+
+// Timestamps and the manual-capture snapshot of an image still being received.
+void test_timestamp_and_live_snapshot() {
+  reset_receiver();
+  Signal sig;
+  sig.header(8);
+  sig.robot36_rows(0, 40);
+  sig.tone(1900, 5);
+  sig.flush();
+  set_utc_source(fake_utc);
+  const Image snap = snapshot_live();
+  require(snap.pixels != nullptr && snap.frame != nullptr, "snapshot: copy of the live image");
+  require(snap.partial && snap.end_reason == EndReason::captured && snap.serial == 0,
+          "snapshot: marked partial, captured, not a gallery entry");
+  require(snap.decoded_rows >= 36 && snap.decoded_rows <= 41, "snapshot: rows decoded so far");
+  require(snap.utc_epoch == 1700000123u && snap.vis_code == 8, "snapshot: timestamp and VIS code");
+  require(metrics().frames_alive == 2, "snapshot: live frame plus the independent copy");
+  const uint16_t before = snap.pixels[10u * 320u + 100u];
+  sig.robot36_rows(40, 80);   // the live image keeps changing ...
+  sig.flush();
+  require(snap.pixels[10u * 320u + 100u] == before && snap.pixels[100u * 320u + 100u] == 0,
+          "snapshot: ... but the copy is frozen");
+  release_image(snap);
+  sig.robot36_rows(120, 120);
+  sig.tone(1900, 50);
+  sig.flush();
+  require(archive_count() == 1 && archived_image(0).utc_epoch == 1700000123u,
+          "timestamp: a finished reception carries the verified UTC");
+  require(metrics().frames_alive == 1, "snapshot: released copy freed");
+  set_utc_source(nullptr);
+  stop();
+  clear_gallery();
+  require(snapshot_live().pixels == nullptr, "snapshot: nothing to copy when idle");
+}
+
 void test_unknown_and_manual_vis() {
   reset_receiver();
   Signal sig;
@@ -534,6 +570,7 @@ int main() {
   test_gallery_ownership();
   test_pinned_frame_outlives_eviction();
   test_session_state_machine();
+  test_timestamp_and_live_snapshot();
   test_service_cost_is_measured();
   test_unknown_and_manual_vis();
   test_vis_preempts_sync_lock();

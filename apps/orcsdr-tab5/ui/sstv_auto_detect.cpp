@@ -9,6 +9,8 @@ constexpr unsigned kHistory=8;
 struct Pulse {uint32_t begin=0; uint16_t length=0;};
 Pulse g_pulses[kHistory]{};
 unsigned g_count=0;
+Ranked g_ranked[3]{};
+unsigned g_ranked_count=0;
 constexpr Mode kModes[] = {
   Mode::robot36,Mode::robot72,Mode::martin_m1,Mode::martin_m2,
   Mode::scottie_s1,Mode::scottie_s2,Mode::scottie_dx,
@@ -18,6 +20,7 @@ constexpr Mode kModes[] = {
 }
 void reset() {
   g_count=0;
+  g_ranked_count=0;
 }
 unsigned pending_pulses() {return g_count;}
 Candidate observe(uint32_t start,uint16_t length) {
@@ -30,7 +33,8 @@ Candidate observe(uint32_t start,uint16_t length) {
     --g_count;
   }
   g_pulses[g_count++]={start,length};
-  if(g_count<6)return out;
+  if(g_count<6){g_ranked_count=0;return out;}
+  g_ranked_count=0;
 
   float best_quality=-1.f,second_quality=-1.f;
   Mode best_mode=Mode::auto_vis;
@@ -59,6 +63,16 @@ Candidate observe(uint32_t start,uint16_t length) {
     period_err/=static_cast<float>(g_count-1);
     width_err/=static_cast<float>(g_count);
     const float quality=std::clamp(100.f-900.f*period_err-65.f*width_err,0.f,100.f);
+    {  // keep the three strongest valid candidates for the Signal page
+      const uint8_t q=static_cast<uint8_t>(quality+.5f);
+      unsigned at=g_ranked_count<3?g_ranked_count:3;
+      while(at>0 && g_ranked[at-1].score<q) --at;
+      if(at<3) {
+        for(unsigned i=(g_ranked_count<3?g_ranked_count:2);i>at;--i)g_ranked[i]=g_ranked[i-1];
+        g_ranked[at]={mode,q};
+        if(g_ranked_count<3)++g_ranked_count;
+      }
+    }
     if(quality>best_quality) {
       second_quality=best_quality;
       best_quality=quality;
@@ -75,5 +89,10 @@ Candidate observe(uint32_t start,uint16_t length) {
     out.locked=true;
   }
   return out;
+}
+size_t ranked(Ranked* out,size_t capacity) {
+  const size_t n=std::min<size_t>(capacity,g_ranked_count);
+  for(size_t i=0;i<n;++i)out[i]=g_ranked[i];
+  return n;
 }
 } // namespace orcsdr::sstv::auto_detect

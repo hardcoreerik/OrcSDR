@@ -5,9 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <cerrno>
 #include <chrono>
-#include <sys/stat.h>
 #ifdef ESP_PLATFORM
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
@@ -42,7 +40,7 @@ Metrics g_stats{};
 Image g_live{};
 Image g_saved[kGallery]{};
 size_t g_saved_count=0;
-uint32_t g_next_serial=1,g_frequency=145800000,g_revision=0,g_file_id=0;
+uint32_t g_next_serial=1,g_frequency=145800000,g_revision=0;
 // 1.6 KiB workspace for PD pairs; for other families, scan[0] is luminance.
 uint8_t g_scan[2][kMaxWidth]{};
 int32_t g_last_pixel[2]={-1,-1};
@@ -69,6 +67,7 @@ bool g_have_sync_start=false;
 double g_line_origin=0;
 uint16_t g_line_index=0;
 // Per-reception counters (one image); the lifetime counters live in g_stats.
+uint32_t (*g_utc_source)()=nullptr;
 uint64_t g_last_end_tick=0;
 bool g_have_end=false;
 uint64_t g_last_service_us=0;
@@ -211,6 +210,7 @@ void finish_picture(bool incomplete,EndReason reason) {
   g_live.end_reason=reason;
   g_live.sync_locked=g_session_locked;
   g_live.sync_missed=g_session_missed;
+  g_live.utc_epoch=g_utc_source?g_utc_source():0u;
   g_last_end_tick=g_ticks;g_have_end=true;
   frame_release(g_saved[kGallery-1].frame);
   for(size_t n=kGallery-1;n>0;--n)g_saved[n]=g_saved[n-1];
@@ -507,8 +507,6 @@ uint64_t now_us() {
   return static_cast<uint64_t>(duration_cast<microseconds>(steady_clock::now().time_since_epoch()).count());
 #endif
 }
-void put16(std::FILE* f,uint16_t v){std::fputc(v&255,f);std::fputc(v>>8,f);}
-void put32(std::FILE* f,uint32_t v){put16(f,v&65535);put16(f,v>>16);}
 } // namespace
 void start(uint32_t freq) {
   g_on.store(false,std::memory_order_release);
@@ -700,71 +698,23 @@ Image pin_archived(size_t i){
 }
 void release_image(const Image& image){frame_release(image.frame);}
 uint32_t image_revision(){return g_revision;}
-bool save_bmp(size_t index,char* out,size_t out_len,uint32_t utc) {
-  if(!out||out_len<90)return false;
-  Image im=index==SIZE_MAX?g_live:archived_image(index);
-  if(!im.pixels||im.decoded_rows==0)return false;
-  if(::mkdir("/sd/orcsdr",0775)!=0&&errno!=EEXIST)return false;
-  if(::mkdir("/sd/orcsdr/sstv",0775)!=0&&errno!=EEXIST)return false;
-  uint32_t id=0;
-  const bool partial=im.partial||im.decoded_rows<im.height;
-  char final[144],temporary[156];
-  // Never replace a previous capture when RTC is unset or counter resets
-  // after reboot. Uniqueness is checked on SD, outside the DSP critical path.
-  for(unsigned tries=0;tries<100000u;++tries){
-    id=++g_file_id;
-    std::snprintf(final,sizeof(final),"/sd/orcsdr/sstv/rx_%lu_%lu_%lu.bmp",
-      static_cast<unsigned long>(utc),static_cast<unsigned long>(im.frequency_hz),
-      static_cast<unsigned long>(id));
-    std::FILE* existing=std::fopen(final,"rb");
-    if(!existing)break;
-    std::fclose(existing);
-    if(tries==99999u)return false;
-  }
-  std::snprintf(temporary,sizeof(temporary),"%s.part",final);
-  std::FILE* fp=std::fopen(temporary,"wb");
-  if(!fp)return false;
-  const uint32_t stride=(im.width*3u+3u)&~3u;
-  const uint32_t size=stride*im.height;
-  std::fputc('B',fp);std::fputc('M',fp);
-  put32(fp,size+54);put32(fp,0);put32(fp,54);
-  put32(fp,40);put32(fp,im.width);put32(fp,im.height);
-  put16(fp,1);put16(fp,24);put32(fp,0);put32(fp,size);
-  put32(fp,2835);put32(fp,2835);put32(fp,0);put32(fp,0);
-  for(int y=im.height-1;y>=0;--y){
-    for(int x=0;x<im.width;++x){
-      const uint16_t c=im.pixels[static_cast<size_t>(y)*im.width+x];
-      std::fputc((c&31)<<3,fp);
-      std::fputc(((c>>5)&63)<<2,fp);
-      std::fputc(((c>>11)&31)<<3,fp);
-    }
-    for(uint32_t k=im.width*3u;k<stride;++k)std::fputc(0,fp);
-  }
-  const bool written=!std::ferror(fp);
-  const bool closed=std::fclose(fp)==0;
-  if(!written||!closed||std::rename(temporary,final)!=0){
-    std::remove(temporary);return false;
-  }
-  // Append-only index: archive metadata survives reboot and SD scans can
-  // recover BMPs if power was lost between rename and CSV flush.
-  std::FILE* csv=std::fopen("/sd/orcsdr/sstv/index.csv","ab");
-  if(!csv){std::remove(final);return false;}
-  // Text schema for subsequent tools, spreadsheet imports and recovery.
-  if(std::ftell(csv)==0){
-    std::fputs("session_id,utc_epoch,frequency_hz,mode,width,height,decoded_rows,partial,sync_missed,filename\n",csv);
-  }
-  const int result=std::fprintf(csv,"%lu,%lu,%lu,%s,%u,%u,%u,%u,%u,%s\n",
-    static_cast<unsigned long>(id),static_cast<unsigned long>(utc),
-    static_cast<unsigned long>(im.frequency_hz),mode_name(im.mode),
-    static_cast<unsigned>(im.width),static_cast<unsigned>(im.height),
-    static_cast<unsigned>(im.decoded_rows),partial?1u:0u,
-    static_cast<unsigned>(g_stats.sync_missed_lines),
-    final+std::strlen("/sd/orcsdr/sstv/"));
-  const bool logged=result>0&&!std::ferror(csv);
-  const bool csv_closed=std::fclose(csv)==0;
-  if(!logged||!csv_closed)return false; // BMP retained for recovery
-  std::snprintf(out,out_len,"%s",final);
-  return true;
+void set_utc_source(uint32_t (*utc_epoch)()){g_utc_source=utc_epoch;}
+Image snapshot_live(){
+  if(!g_live.pixels||g_live.decoded_rows==0)return Image{};
+  const size_t n=static_cast<size_t>(g_live.width)*g_live.height;
+  Frame* copy=frame_create(n);
+  if(!copy)return Image{};
+  std::memcpy(frame_pixels(copy),g_live.pixels,n*sizeof(uint16_t));
+  Image image=g_live;
+  image.pixels=frame_pixels(copy);
+  image.frame=copy;
+  image.partial=true;
+  image.end_reason=EndReason::captured;
+  image.serial=0;
+  image.sync_locked=g_session_locked;
+  image.sync_missed=g_session_missed;
+  image.utc_epoch=g_utc_source?g_utc_source():0u;
+  return image;
 }
 bool self_check(){
   const ModeSpec* pd=vis_spec(95);
