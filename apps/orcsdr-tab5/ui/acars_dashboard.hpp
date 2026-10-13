@@ -1,0 +1,29 @@
+#pragma once
+// ACARS dashboard renderer (M5GFX). Draws the shared OrcSDR header, a context strip, six views
+// (LIVE, AIRCRAFT, CHANNELS, ACTIVITY, ARCHIVE, SETUP), the message detail page and the tab bar.
+// It owns no data: it reads a Model snapshot and a Controller, and never touches USB, the tuner,
+// the decoder or the SD card. Behaviour lives in acars_dashboard_ui (host-tested).
+#include <cstdint>
+
+#include "acars_dashboard_model.hpp"
+#include "acars_dashboard_ui.hpp"
+
+namespace orcsdr::acars_dashboard {
+
+// The shared battery / home / mute / visualizer / settings controls, drawn by the application after the
+// dashboard's own brand (the same hook every OrcSDR dashboard uses).
+using HeaderHook = void (*)();
+
+void install(acars_ui::Model* model, acars_ui::Controller* controller, HeaderHook header_controls);
+void enter();                 // first draw after the ScreenController transition
+void leave();
+void draw();                  // full redraw (screen restored from Settings / Visualizer)
+// Repaints only what changed since the last draw (UI revision or snapshot revision), at most every
+// 250 ms. Does nothing when nothing changed: no polling load, no animation.
+void update(uint32_t now_ms);
+bool active();
+
+// Explicit UI regression only (never at boot): exercises every tab and checks view state.
+bool interaction_check();
+
+}  // namespace orcsdr::acars_dashboard
