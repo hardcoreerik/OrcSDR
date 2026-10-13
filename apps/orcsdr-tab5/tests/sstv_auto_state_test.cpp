@@ -376,6 +376,43 @@ void test_gallery_ownership() {
   clear_gallery();
 }
 
+// A pinned image (what the SD writer holds) must outlive gallery eviction, and
+// every frame must be freed exactly once.
+void test_pinned_frame_outlives_eviction() {
+  reset_receiver();
+  Signal sig;
+  sig.luma_hz = 2000;
+  sig.header(8);
+  sig.robot36_rows();
+  sig.tone(1900, 50);
+  sig.silence(300);
+  sig.flush();
+  require(archive_count() == 1, "pin: image archived");
+  const Image pinned = pin_archived(0);
+  require(pinned.pixels != nullptr && pinned.frame != nullptr, "pin: pin returns a live image");
+  const uint16_t want = gray565(luma_of(2000));
+  for (int k = 0; k < 5; ++k) {  // five newer images evict the pinned one from the gallery
+    sig.luma_hz = 1600 + 80. * k;
+    sig.header(8);
+    sig.robot36_rows();
+    sig.tone(1900, 50);
+    sig.silence(300);
+    sig.flush();
+  }
+  require(archive_count() == 4, "pin: gallery stays capped");
+  for (size_t i = 0; i < archive_count(); ++i)
+    require(archived_image(i).pixels != pinned.pixels, "pin: evicted image is no longer in the gallery");
+  const uint16_t px = pinned.pixels[50u * 320u + 160u];
+  require(std::abs(static_cast<int>((px >> 5) & 63) - static_cast<int>((want >> 5) & 63)) <= 3,
+          "pin: pinned pixels still hold the original content after eviction");
+  require(metrics().frames_alive == 5, "pin: four gallery frames plus the pinned one");
+  release_image(pinned);
+  require(metrics().frames_alive == 4, "pin: releasing the last reference frees exactly that frame");
+  clear_gallery();
+  require(metrics().frames_alive == 0 && metrics().frame_bytes == 0, "pin: nothing leaks");
+  stop();
+}
+
 void test_unknown_and_manual_vis() {
   reset_receiver();
   Signal sig;
@@ -439,6 +476,7 @@ int main() {
   test_retune_abort_and_loss();
   test_fade_and_clock_drift();
   test_gallery_ownership();
+  test_pinned_frame_outlives_eviction();
   test_unknown_and_manual_vis();
   test_vis_preempts_sync_lock();
   std::puts("SSTV auto state: PASS");

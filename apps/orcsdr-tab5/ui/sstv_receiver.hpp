@@ -25,6 +25,8 @@ const char* mode_name(Mode mode);
 struct Metrics {
   float tone_hz = 0;
   float audio_peak = 0;
+  uint32_t frames_alive = 0;        // live + gallery + pinned image buffers currently allocated
+  uint32_t frame_bytes = 0;         // PSRAM held by those buffers
   uint32_t audio_overruns = 0;      // decoder-rate samples dropped because the ring was full
   uint32_t audio_gaps = 0;          // distinct drop bursts the decoder skipped over in time
   uint32_t audio_gap_samples = 0;   // decoder-rate samples of timeline re-inserted for those gaps
@@ -57,7 +59,8 @@ struct Metrics {
   char status[56] = "WAITING FOR SSTV";
 };
 struct Image {
-  const uint16_t* pixels = nullptr; // RGB565, owned by receiver and valid until cleared
+  const uint16_t* pixels = nullptr; // RGB565; valid while the frame is referenced (see pin_archived)
+  const void* frame = nullptr;      // opaque reference-counted owner of pixels
   uint16_t width = 0, height = 0;
   uint32_t serial = 0;
   uint32_t frequency_hz = 0;
@@ -97,6 +100,12 @@ Image live_image();
 Image archived_image(size_t index); // 0 = newest
 size_t archive_count();
 void clear_gallery();
+// Background writers must not read a gallery image directly: take a reference with
+// pin_archived() (UI task), use the returned Image from any task, then call
+// release_image() exactly once. The pixels stay valid until then even if the
+// gallery evicts or clears the entry. A non-pinned Image copy owns nothing.
+Image pin_archived(size_t index);
+void release_image(const Image& image);
 // Mode descriptors are validated against the slowrx mode table and Dayton paper.
 struct ModeSpec {
   Mode mode;

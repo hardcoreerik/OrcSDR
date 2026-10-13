@@ -81,19 +81,44 @@ bool g_vis_stop_good=false;
 uint16_t g_vis_votes[9]{};
 uint16_t g_vis_ones[9]{};
 
-void* frame_alloc(size_t bytes) {
+// Image frames are reference counted. The gallery and the live image each own one
+// reference; a background writer (SD archive) takes its own with pin_archived().
+// A pinned frame therefore stays valid after gallery eviction, clear_gallery() or
+// the receiver moving on, and is freed by whoever releases the last reference.
+struct Frame {
+  std::atomic<uint32_t> refs;
+  uint32_t bytes;
+};
+std::atomic<uint32_t> g_frames_alive{0},g_frame_bytes{0};
+Frame* frame_create(size_t pixel_count) {
+  const size_t bytes=sizeof(Frame)+pixel_count*sizeof(uint16_t);
 #ifdef ESP_PLATFORM
-  return heap_caps_malloc(bytes,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+  void* raw=heap_caps_malloc(bytes,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
 #else
-  return std::malloc(bytes);
+  void* raw=std::malloc(bytes);
 #endif
+  if(!raw)return nullptr;
+  auto* frame=static_cast<Frame*>(raw);
+  frame->refs.store(1,std::memory_order_relaxed);
+  frame->bytes=static_cast<uint32_t>(bytes);
+  g_frames_alive.fetch_add(1,std::memory_order_relaxed);
+  g_frame_bytes.fetch_add(frame->bytes,std::memory_order_relaxed);
+  return frame;
 }
-void frame_free(const uint16_t* p) {
-  if(!p) return;
+uint16_t* frame_pixels(Frame* frame){return reinterpret_cast<uint16_t*>(frame+1);}
+void frame_retain(const void* handle) {
+  if(handle)static_cast<Frame*>(const_cast<void*>(handle))->refs.fetch_add(1,std::memory_order_relaxed);
+}
+void frame_release(const void* handle) {
+  if(!handle)return;
+  auto* frame=static_cast<Frame*>(const_cast<void*>(handle));
+  if(frame->refs.fetch_sub(1,std::memory_order_acq_rel)!=1)return;
+  g_frames_alive.fetch_sub(1,std::memory_order_relaxed);
+  g_frame_bytes.fetch_sub(frame->bytes,std::memory_order_relaxed);
 #ifdef ESP_PLATFORM
-  heap_caps_free(const_cast<uint16_t*>(p));
+  heap_caps_free(frame);
 #else
-  std::free(const_cast<uint16_t*>(p));
+  std::free(frame);
 #endif
 }
 void reset_vis() {
@@ -126,17 +151,18 @@ void begin_picture(const ModeSpec* spec,uint8_t vis,
   if(!spec) return;
   if(g_live.pixels && g_live.decoded_rows)
     finish_picture(true,EndReason::new_vis);
-  frame_free(g_live.pixels);
+  frame_release(g_live.frame);
   g_live={};
   const size_t n=static_cast<size_t>(spec->width)*spec->height;
-  auto* frame=static_cast<uint16_t*>(frame_alloc(n*sizeof(uint16_t)));
+  Frame* frame=frame_create(n);
   if(!frame) {
     std::snprintf(g_stats.status,sizeof(g_stats.status),"INSUFFICIENT PSRAM");
     reset_picture();
     return;
   }
-  std::memset(frame,0,n*sizeof(uint16_t));
-  g_live.pixels=frame;
+  std::memset(frame_pixels(frame),0,n*sizeof(uint16_t));
+  g_live.pixels=frame_pixels(frame);
+  g_live.frame=frame;
   g_live.width=spec->width;
   g_live.height=spec->height;
   g_live.frequency_hz=g_frequency;
@@ -173,14 +199,14 @@ void finish_picture(bool incomplete,EndReason reason) {
   g_stats.receiving=false;
   if(!g_live.pixels)return;
   if(g_live.decoded_rows==0) {
-    frame_free(g_live.pixels);g_live={};reset_picture();return;
+    frame_release(g_live.frame);g_live={};reset_picture();return;
   }
   g_live.serial=g_next_serial++;
   g_live.partial=incomplete||g_live.start_unknown;
   g_live.end_reason=reason;
   g_live.sync_locked=g_session_locked;
   g_live.sync_missed=g_session_missed;
-  frame_free(g_saved[kGallery-1].pixels);
+  frame_release(g_saved[kGallery-1].frame);
   for(size_t n=kGallery-1;n>0;--n)g_saved[n]=g_saved[n-1];
   g_saved[0]=g_live;
   g_saved_count=std::min(kGallery,g_saved_count+1);
@@ -586,14 +612,25 @@ void end_of_stream(){
   }
   if(g_stats.receiving)finish_picture(true,EndReason::aborted);
 }
-Metrics metrics(){return g_stats;}
+Metrics metrics(){
+  Metrics m=g_stats;
+  m.frames_alive=g_frames_alive.load(std::memory_order_relaxed);
+  m.frame_bytes=g_frame_bytes.load(std::memory_order_relaxed);
+  return m;
+}
 Image live_image(){return g_live;}
 Image archived_image(size_t i){return i<g_saved_count?g_saved[i]:Image{};}
 size_t archive_count(){return g_saved_count;}
 void clear_gallery(){
-  for(auto& a:g_saved){frame_free(a.pixels);a={};}
+  for(auto& a:g_saved){frame_release(a.frame);a={};}
   g_saved_count=0;
 }
+Image pin_archived(size_t i){
+  Image image=archived_image(i);
+  frame_retain(image.frame);
+  return image;
+}
+void release_image(const Image& image){frame_release(image.frame);}
 uint32_t image_revision(){return g_revision;}
 bool save_bmp(size_t index,char* out,size_t out_len,uint32_t utc) {
   if(!out||out_len<90)return false;
