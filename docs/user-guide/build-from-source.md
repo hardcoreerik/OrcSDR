@@ -49,10 +49,14 @@ Set-Location apps/orcsdr-tab5
 .\tools\build-tab5-idf.ps1
 ```
 
-By default this builds **only the Tab5/P4 application**. It does not build,
-embed, or flash an ESP32-C6 update. The helper activates ESP-IDF 5.5.4,
-resolves pinned components, applies the project's display/Hosted patches,
-and compiles the application. It may take a while on a fresh checkout.
+The helper activates ESP-IDF 5.5.4, resolves pinned components, applies the
+project's display/Hosted patches, and compiles the Tab5 application.
+**Every standard build also embeds the pinned ESP-Hosted 3.0.6 C6 update
+image.** The first build generates and caches that image, so it can take
+longer. Embedding it does **not** install or upgrade the C6; the installed
+coprocessor firmware remains untouched when you flash the P4 application.
+This is intentional: users can keep the factory C6 for M5 Launcher while
+OrcDial users can choose the separate C6 update.
 
 If your ESP-IDF framework was installed outside the default path, specify it:
 
@@ -60,9 +64,9 @@ If your ESP-IDF framework was installed outside the default path, specify it:
 .\tools\build-tab5-idf.ps1 -IdfPath 'D:\Espressif\frameworks\esp-idf-v5.5.4'
 ```
 
-**Expected output:** `build-native-hosted3/orcsdr_tab5.bin`. The name of the
-build directory is historical; it does **not** mean you have to replace the
-C6 firmware.
+**Expected output:** `build-native-hosted3/orcsdr_tab5.bin`. The name of
+the build directory and the embedded update image do **not** mean you must
+replace the installed C6 firmware.
 
 ## 3. Flash the P4 application without erasing settings
 
@@ -100,28 +104,26 @@ settings. Prefer the nightly website's settings-preserving upgrade path.
 ESP-Hosted **3.0.6 host library**, but both the Tab5's factory C6 firmware
 **2.12.6** and the OrcSDR C6 **3.0.6** have been tested for ordinary Wi-Fi
 with that host. You do not need matching version numbers just to use SDR or
-Wi-Fi. See the [measured compatibility record](../validation/esp-hosted-c6-compatibility-2026-09-29.md).
+Wi-Fi. See the [measured compatibility record](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/validation/esp-hosted-c6-compatibility-2026-09-29.md).
 
-The separately embedded C6 *update image* is an optional tool for advanced
-OrcDial/M5Dial **ESP-NOW** development and special recovery work; embedding an
-image does not install it. If you specifically need that image in your Tab5
-build, opt in:
+**OrcDial currently requires C6 firmware 3.0.6** for its ESP-NOW bridge
+to work. That is an optional companion feature, **not** a prerequisite
+for ordinary SDR reception, Wi-Fi, or the normal source-build process.
 
-```powershell
-.\tools\build-tab5-idf.ps1 -IncludeC6Image
-```
+Every standard OrcSDR build embeds the pinned 3.0.6 C6 update image
+automatically. The user chooses whether to install it later through
+**Settings → Firmware & Updates → UPDATE C6 TO 3.0.6**, with explicit
+confirmation. Building or flashing the P4 app alone never changes the
+installed C6. Don't upgrade merely because the firmware contains the image.
 
-The image is built from the pinned source once and cached. This option **does
-not** flash the C6. Any C6 firmware update must be a separate, deliberate
-operation. Whether your OrcDial setup actually needs a C6 change depends on
-the accessory/bridge being tested—do not change the coprocessor just because
-you're compiling OrcSDR.
+**Important trade-off:** C6 3.0.6 is currently needed for OrcDial,
+but updating to it has been shown to break **M5 Launcher Wi-Fi and OTA**.
+Factory C6 2.12.6 preserves M5 Launcher Wi-Fi/OTA and supports regular OrcSDR
+Wi-Fi, but does not currently support OrcDial. Do not recommend the upgrade
+as a standard install or build step. M5 Launcher needs a compatible ESP-Hosted
+host to use C6 3.0.6.
 
-**Warning:** updating the C6 to 3.0.6 has been shown to break **M5 Launcher
-Wi-Fi and OTA**, whereas factory 2.12.6 preserves those features. Do not
-recommend upgrading the C6 as a standard install or build step.
-
-For accessory instructions, see the [OrcDial README](../../orcdial/README.md).
+For accessory instructions, see the [OrcDial README](https://github.com/hardcoreerik/OrcSDR/blob/main/orcdial/README.md).
 For the low-level P4/C6 transport and migration history, see the
 [technical record](tab5-esp-hosted-3-migration.md). Neither is a prerequisite
 for the normal source build.
