@@ -11,9 +11,11 @@
 #include <mbedtls/aes.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <iterator>
+#include <numeric>
 
 namespace orcsdr::lora_native {
 namespace {
@@ -64,6 +66,10 @@ constexpr uint32_t kDecodeRate = 500000;
 constexpr uint8_t kMinSf = 7;
 constexpr uint8_t kMaxSf = 12;
 constexpr size_t kFftPadding = 4;
+// The preamble search only needs a peak bin that stays constant from window to
+// window, so it runs a 1x FFT (1/4 the data of the padded one the sync, header and
+// payload stages use for fractional-bin accuracy).
+constexpr size_t kSearchPadding = 1;
 constexpr size_t kMaxFft = (1u << (kMaxSf + 1u)) * kFftPadding;
 constexpr int kTimingSearchSamples = 4;
 constexpr int16_t kPayloadClockPpm[] = {0, -25, 25, -50, 50, -100, 100};
@@ -93,6 +99,8 @@ struct Scratch {
   float* fft = nullptr;
   float* downchirp = nullptr;
   float* twiddle = nullptr;
+  float* twiddle_coarse = nullptr;
+  size_t coarse_fft_size = 0;
   uint8_t* resampled = nullptr;
   size_t resampled_capacity = 0;
   uint8_t sf = 0;
@@ -126,12 +134,14 @@ void free_fixed_scratch(Scratch* scratch) {
   heap_caps_free(scratch->fft);
   heap_caps_free(scratch->downchirp);
   heap_caps_free(scratch->twiddle);
+  heap_caps_free(scratch->twiddle_coarse);
   heap_caps_free(scratch->recovery_alternates);
   heap_caps_free(scratch->trace_alternate_metrics);
   scratch->task = nullptr;
   scratch->fft = nullptr;
   scratch->downchirp = nullptr;
   scratch->twiddle = nullptr;
+  scratch->twiddle_coarse = nullptr;
   scratch->recovery_alternates = nullptr;
   scratch->trace_alternate_metrics = nullptr;
 }
@@ -154,6 +164,12 @@ bool allocate_fixed_scratch(Scratch* scratch, ScratchAllocator allocator) {
   }
   scratch->twiddle = static_cast<float*>(allocator(sizeof(float) * kMaxFft, caps));
   if (scratch->twiddle == nullptr) {
+    free_fixed_scratch(scratch);
+    return false;
+  }
+  scratch->twiddle_coarse = static_cast<float*>(
+      allocator(sizeof(float) * (kMaxFft / kFftPadding) * kSearchPadding, caps));
+  if (scratch->twiddle_coarse == nullptr) {
     free_fixed_scratch(scratch);
     return false;
   }
@@ -548,7 +564,8 @@ bool phy_crc_matches(const uint8_t* data, size_t payload_len, const uint8_t* phy
 
 bool configure_chirp(uint8_t sf, uint32_t bandwidth_hz) {
   if (sf < kMinSf || sf > kMaxSf || bandwidth_hz != 250000 ||
-      g_scratch.downchirp == nullptr || g_scratch.twiddle == nullptr)
+      g_scratch.downchirp == nullptr || g_scratch.twiddle == nullptr ||
+      g_scratch.twiddle_coarse == nullptr)
     return false;
   const size_t symbol_samples = 1u << (sf + 1u);
   const size_t fft_size = symbol_samples * kFftPadding;
@@ -567,6 +584,11 @@ bool configure_chirp(uint8_t sf, uint32_t bandwidth_hz) {
   if (dsps_gen_w_r2_fc32(g_scratch.twiddle, static_cast<int>(fft_size)) != ESP_OK ||
       dsps_bit_rev_fc32_ansi(g_scratch.twiddle, static_cast<int>(fft_size / 2)) != ESP_OK)
     return false;
+  const size_t coarse_size = symbol_samples * kSearchPadding;
+  if (dsps_gen_w_r2_fc32(g_scratch.twiddle_coarse, static_cast<int>(coarse_size)) != ESP_OK ||
+      dsps_bit_rev_fc32_ansi(g_scratch.twiddle_coarse, static_cast<int>(coarse_size / 2)) != ESP_OK)
+    return false;
+  g_scratch.coarse_fft_size = coarse_size;
   g_scratch.sf = sf;
   g_scratch.symbol_samples = symbol_samples;
   g_scratch.fft_size = fft_size;
@@ -575,6 +597,14 @@ bool configure_chirp(uint8_t sf, uint32_t bandwidth_hz) {
 
 void interpolated_iq(const uint8_t* cu8, size_t samples, uint32_t sample_rate, size_t output_index,
                      float* real, float* imaginary) {
+  // The capture is already resampled to kDecodeRate before any dechirp, so the
+  // interpolation ratio is exactly 0 and the result is the sample itself. Skip
+  // the 64-bit multiply, divide and modulo per sample (identical output).
+  if (sample_rate == kDecodeRate) {
+    *real = (static_cast<int>(cu8[output_index * 2]) - 127.5f) / 127.5f;
+    *imaginary = (static_cast<int>(cu8[output_index * 2 + 1]) - 127.5f) / 127.5f;
+    return;
+  }
   // ponytail: linear resampling is the bounded baseline; use ESP-DSP polyphase FIR only if
   // archived-vector or weak-signal acceptance shows it is needed.
   const uint64_t scaled = static_cast<uint64_t>(output_index) * sample_rate;
@@ -603,9 +633,13 @@ bool filter_capture(const uint8_t* cu8, size_t samples, uint32_t sample_rate,
   if (g_scratch.resampled == nullptr) return false;
   float i_state[std::size(kLoraLowpass)][2]{};
   float q_state[std::size(kLoraLowpass)][2]{};
+  constexpr float kInvHalfScale = 1.0f / 127.5f;
   for (size_t index = 0; index < samples; ++index) {
-    float real = (static_cast<int>(cu8[index * 2]) - 127.5f) / 127.5f;
-    float imaginary = (static_cast<int>(cu8[index * 2 + 1]) - 127.5f) / 127.5f;
+    float real = (static_cast<int>(cu8[index * 2]) - 127.5f) * kInvHalfScale;
+    float imaginary = (static_cast<int>(cu8[index * 2 + 1]) - 127.5f) * kInvHalfScale;
+    // Fully unrolled so the five sections' state lives in registers instead of
+    // being reloaded from the stack for every sample.
+#pragma GCC unroll 5
     for (size_t section = 0; section < std::size(kLoraLowpass); ++section) {
       const float* coeffs = kLoraLowpass[section];
       const float filtered_real = coeffs[0] * real + i_state[section][0];
@@ -617,8 +651,12 @@ bool filter_capture(const uint8_t* cu8, size_t samples, uint32_t sample_rate,
       real = filtered_real;
       imaginary = filtered_imaginary;
     }
-    g_scratch.resampled[index * 2] = static_cast<uint8_t>(std::clamp(lroundf(real * 127.5f + 127.5f), 0l, 255l));
-    g_scratch.resampled[index * 2 + 1] = static_cast<uint8_t>(std::clamp(lroundf(imaginary * 127.5f + 127.5f), 0l, 255l));
+    const float scaled_real = real * 127.5f + 127.5f;
+    const float scaled_imaginary = imaginary * 127.5f + 127.5f;
+    g_scratch.resampled[index * 2] = scaled_real <= 0.0f ? 0 : scaled_real >= 255.0f ? 255
+                                         : static_cast<uint8_t>(scaled_real + 0.5f);
+    g_scratch.resampled[index * 2 + 1] = scaled_imaginary <= 0.0f ? 0 : scaled_imaginary >= 255.0f ? 255
+                                         : static_cast<uint8_t>(scaled_imaginary + 0.5f);
     if ((index & 0x3ffffu) == 0) vTaskDelay(1);
   }
   *output = g_scratch.resampled;
@@ -638,17 +676,27 @@ bool linear_resample_capture(const uint8_t* cu8, size_t samples, uint32_t sample
     g_scratch.resampled_capacity = g_scratch.resampled == nullptr ? 0 : needed;
   }
   if (g_scratch.resampled == nullptr) return false;
+  // first/remainder advance incrementally by the reduced ratio instead of a
+  // 64-bit multiply, divide and modulo per output sample (identical values).
+  const uint32_t gcd = std::gcd(sample_rate, kDecodeRate);
+  const uint32_t step_num = sample_rate / gcd;
+  const uint32_t step_den = kDecodeRate / gcd;
+  size_t first = 0;
+  uint32_t reduced_remainder = 0;
   for (size_t index = 0; index < needed; ++index) {
-    const uint64_t scaled = static_cast<uint64_t>(index) * sample_rate;
-    const size_t first = static_cast<size_t>(scaled / kDecodeRate);
     const size_t second = std::min(first + 1, samples - 1);
-    const uint32_t remainder = static_cast<uint32_t>(scaled % kDecodeRate);
+    const uint32_t remainder = reduced_remainder * gcd;
     for (size_t component = 0; component < 2; ++component) {
       const int a = cu8[first * 2 + component];
       const int b = cu8[second * 2 + component];
       g_scratch.resampled[index * 2 + component] = static_cast<uint8_t>(
           (a * static_cast<int>(kDecodeRate - remainder) + b * static_cast<int>(remainder) +
            static_cast<int>(kDecodeRate / 2)) / static_cast<int>(kDecodeRate));
+    }
+    reduced_remainder += step_num;
+    if (reduced_remainder >= step_den) {
+      first += reduced_remainder / step_den;
+      reduced_remainder %= step_den;
     }
     if ((index & 0x3ffffu) == 0) vTaskDelay(1);
   }
@@ -657,11 +705,29 @@ bool linear_resample_capture(const uint8_t* cu8, size_t samples, uint32_t sample
   return true;
 }
 
+// Yield to lower-priority tasks (idle watchdog) on a time basis instead of every
+// 1024 samples, which cost about 3 ms per window in scheduler round trips.
+void yield_if_due() {
+  static int64_t last_us = 0;
+  const int64_t now = esp_timer_get_time();
+  if (now - last_us < 30000) return;
+  last_us = now;
+  vTaskDelay(1);
+}
+
+// 1 = fast 1x preamble search (default), 4 = legacy 4x-padded search. A runtime
+// switch so sensitivity can be compared on the same firmware (serial command).
+std::atomic<size_t> g_search_padding{kSearchPadding};
+// Diagnostic: shifts the centre of the header timing search by this many samples.
+std::atomic<int> g_timing_bias{0};
+
 bool dechirp_peak(const uint8_t* cu8, size_t samples, uint32_t sample_rate, size_t start,
-                  bool input_is_up, uint16_t* peak, float* height, float cfo_hz = 0.0f) {
+                  bool input_is_up, uint16_t* peak, float* height, float cfo_hz = 0.0f,
+                  bool coarse = false) {
   if (peak == nullptr || height == nullptr || g_scratch.fft == nullptr || g_scratch.fft_size == 0)
     return false;
-  const size_t n = g_scratch.fft_size;
+  const size_t n = coarse ? g_scratch.coarse_fft_size : g_scratch.fft_size;
+  float* const twiddle = coarse ? g_scratch.twiddle_coarse : g_scratch.twiddle;
   const size_t symbol_samples = g_scratch.symbol_samples;
   const uint64_t output_samples = static_cast<uint64_t>(samples) * kDecodeRate / sample_rate;
   if (start + symbol_samples > output_samples) return false;
@@ -680,7 +746,7 @@ bool dechirp_peak(const uint8_t* cu8, size_t samples, uint32_t sample_rate, size
   }
   std::memset(g_scratch.fft, 0, sizeof(float) * n * 2);
   for (size_t i = 0; i < symbol_samples; ++i) {
-    if ((i & 0x3ffu) == 0) vTaskDelay(1);
+    if ((i & 0x3ffu) == 0) yield_if_due();
     float real = 0;
     float imaginary = 0;
     interpolated_iq(cu8, samples, sample_rate, start + i, &real, &imaginary);
@@ -698,7 +764,9 @@ bool dechirp_peak(const uint8_t* cu8, size_t samples, uint32_t sample_rate, size
     g_scratch.fft[i * 2] = real * chirp_real - imaginary * chirp_imag;
     g_scratch.fft[i * 2 + 1] = real * chirp_imag + imaginary * chirp_real;
   }
-  if (dsps_fft2r_fc32_ansi_(g_scratch.fft, static_cast<int>(n), g_scratch.twiddle) != ESP_OK ||
+  // arp4 is the ESP32-P4 build of the same radix-2 transform (same twiddle table
+  // and data layout) with hardware loops and fused multiply-add.
+  if (dsps_fft2r_fc32_arp4_(g_scratch.fft, static_cast<int>(n), twiddle) != ESP_OK ||
       dsps_bit_rev_fc32(g_scratch.fft, static_cast<int>(n)) != ESP_OK) return false;
   const size_t bin_count = n / 2;
   float best = -1.0f;
@@ -872,9 +940,9 @@ size_t apply_lower_alternates(uint16_t* symbols, size_t symbol_count,
 
 bool measured_dechirp_peak(const uint8_t* cu8, size_t samples, uint32_t sample_rate, size_t start,
                            bool input_is_up, uint16_t* peak, float* height, float cfo_hz,
-                           Stats* stats) {
+                           Stats* stats, bool coarse = false) {
   if (stats != nullptr) ++stats->fft_calls;
-  return dechirp_peak(cu8, samples, sample_rate, start, input_is_up, peak, height, cfo_hz);
+  return dechirp_peak(cu8, samples, sample_rate, start, input_is_up, peak, height, cfo_hz, coarse);
 }
 
 bool decode_mesh(const uint8_t* data, size_t size, const Config& config, Packet* packet) {
@@ -929,6 +997,19 @@ bool initialize() {
   }
   return true;
 }
+
+void set_search_padding(size_t padding) {
+  g_search_padding.store(padding == kFftPadding ? kFftPadding : kSearchPadding,
+                         std::memory_order_relaxed);
+}
+
+size_t search_padding() { return g_search_padding.load(std::memory_order_relaxed); }
+
+void set_timing_bias(int samples) {
+  g_timing_bias.store(std::clamp(samples, -4, 4), std::memory_order_relaxed);
+}
+
+int timing_bias() { return g_timing_bias.load(std::memory_order_relaxed); }
 
 size_t psram_bytes() {
   return allocated_bytes(g_scratch.task) + allocated_bytes(g_scratch.fft) +
@@ -1007,6 +1088,10 @@ static size_t decode_capture_pass(const uint8_t* cu8, size_t bytes, uint32_t sam
   // Dechirping linearly selects the 500 kS/s CSS grid from the original source.
   const size_t n = g_scratch.symbol_samples;
   const size_t fft_bins = g_scratch.fft_size / 2;
+  const bool coarse_search = g_search_padding.load(std::memory_order_relaxed) != kFftPadding;
+  const int timing_bias_snapshot = g_timing_bias.load(std::memory_order_relaxed);
+  const size_t search_padding = coarse_search ? kSearchPadding : kFftPadding;
+  const size_t search_bins = coarse_search ? g_scratch.coarse_fft_size / 2 : fft_bins;
   const size_t bins = 1u << spreading_factor;
   const uint64_t virtual_samples = static_cast<uint64_t>(samples) * kDecodeRate / decode_rate;
   const size_t preamble = 16;
@@ -1025,9 +1110,10 @@ static size_t decode_capture_pass(const uint8_t* cu8, size_t bytes, uint32_t sam
       float height = 0;
       if (stats != nullptr) ++stats->preamble_windows;
       if (!measured_dechirp_peak(decode_cu8, samples, decode_rate, cursor, true, &peak, &height,
-                                 phase_cfo_hz, stats)) break;
+                                 phase_cfo_hz, stats, coarse_search)) break;
       const uint16_t delta = peak > previous_peak ? peak - previous_peak : previous_peak - peak;
-      if (matching > 0 && std::min<size_t>(delta, fft_bins - delta) <= kFftPadding) {
+      if (matching > 0 &&
+          std::min<size_t>(delta, search_bins - delta) <= search_padding) {
         ++matching;
       } else {
         matching = 1;
@@ -1038,7 +1124,7 @@ static size_t decode_capture_pass(const uint8_t* cu8, size_t bytes, uint32_t sam
         // the following symbol before its coarse timing correction.
         cursor += n;
         const size_t coarse = static_cast<size_t>(lroundf(
-            static_cast<float>(peak) * 2.0f / static_cast<float>(kFftPadding)));
+            static_cast<float>(peak) * 2.0f / static_cast<float>(search_padding)));
         cursor -= std::min(cursor, coarse);
         preamble_found = true;
         break;
@@ -1103,7 +1189,7 @@ static size_t decode_capture_pass(const uint8_t* cu8, size_t bytes, uint32_t sam
     for (int radius = 0; radius <= kTimingSearchSamples && !header_found; ++radius) {
       const int directions = radius == 0 ? 1 : 2;
       for (int direction = 0; direction < directions && !header_found; ++direction) {
-      const int adjustment = direction == 0 ? radius : -radius;
+      const int adjustment = (direction == 0 ? radius : -radius) + timing_bias_snapshot;
       if ((adjustment < 0 && nominal_data_start < static_cast<size_t>(-adjustment)) ||
           (adjustment > 0 && nominal_data_start + static_cast<size_t>(adjustment) >= virtual_samples))
         continue;
@@ -1187,7 +1273,19 @@ static size_t decode_capture_pass(const uint8_t* cu8, size_t bytes, uint32_t sam
     bool crc_ok = false;
     bool recovery_exhausted = false;
     uint32_t recovery_candidates_tested = 0;
+    // The header uses only the top SF-2 bits per symbol, so it validates at a
+    // sample alignment that can be half a chip off, which the payload cannot
+    // tolerate (best and second-best bins nearly tie, about half the symbols
+    // flip). If the payload CRC fails, retry the same header at neighbouring
+    // sample alignments; the CRC decides. Only the baseline hypothesis runs for
+    // the extra alignments so a hopeless packet costs a bounded amount.
+    constexpr int kAlignShifts[5] = {0, 1, -1, 2, -2};
+    for (int align = 0; align < 5 && !crc_ok; ++align) {
+    const int64_t align_start = static_cast<int64_t>(data_start) + kAlignShifts[align];
+    if (align_start < 0) continue;
+    if (align != 0) recovery_exhausted = false;
     for (int phase_retry = 0; phase_retry < 2 && !crc_ok && !recovery_exhausted; ++phase_retry) {
+      if (align != 0 && phase_retry != 0) break;
       if (stats != nullptr) ++stats->cfo_hypotheses;
       const float payload_phase_cfo_hz = phase_cfo_hz + (phase_retry ? correction_cfo_hz : 0.0f);
       uint16_t payload_preamble_peak = preamble_peak;
@@ -1203,6 +1301,7 @@ static size_t decode_capture_pass(const uint8_t* cu8, size_t bytes, uint32_t sam
       }
       for (int16_t payload_clock_ppm : kPayloadClockPpm) {
       if (crc_ok || recovery_exhausted) break;
+      if (align != 0 && payload_clock_ppm != 0) break;
       if (stats != nullptr) {
         ++stats->clock_hypotheses;
         ++stats->payload_candidates;
@@ -1213,7 +1312,7 @@ static size_t decode_capture_pass(const uint8_t* cu8, size_t bytes, uint32_t sam
       bool symbols_ok = true;
       const uint32_t symbols_started = now_millis();
       for (size_t i = 8; i < count; ++i) {
-        const int64_t symbol_start = static_cast<int64_t>(data_start + i * n) +
+        const int64_t symbol_start = align_start + static_cast<int64_t>(i * n) +
             static_cast<int64_t>(lroundf((static_cast<float>(i) - 8.0f) * payload_clock_skew));
         uint16_t peak = 0;
         if (symbol_start < 0 ||
@@ -1224,7 +1323,7 @@ static size_t decode_capture_pass(const uint8_t* cu8, size_t bytes, uint32_t sam
           break;
         }
         symbols[i] = peak_to_symbol(peak, payload_preamble_peak, fft_bins, bins);
-        if (phase_retry == 0 && payload_clock_ppm == 0 &&
+        if (align == 0 && phase_retry == 0 && payload_clock_ppm == 0 &&
             recovery_alternate_count < kRecoveryAlternateCapacity)
           recovery_alternates[recovery_alternate_count++] = find_symbol_alternate(
               static_cast<uint16_t>(i), peak, payload_preamble_peak, fft_bins, bins);
@@ -1245,7 +1344,7 @@ static size_t decode_capture_pass(const uint8_t* cu8, size_t bytes, uint32_t sam
           corrected %= static_cast<int32_t>(bins);
           symbols[i] = static_cast<uint16_t>(corrected < 0 ? corrected + bins : corrected);
         }
-        if (phase_retry == 0 && payload_clock_ppm == 0) {
+        if (align == 0 && phase_retry == 0 && payload_clock_ppm == 0) {
           for (size_t j = 0; j < recovery_alternate_count; ++j) {
             auto& trace = recovery_alternates[j];
             int32_t corrected = static_cast<int32_t>(trace.alternate_symbol) -
@@ -1278,7 +1377,7 @@ static size_t decode_capture_pass(const uint8_t* cu8, size_t bytes, uint32_t sam
       const uint32_t payload_decode_started = now_millis();
       const bool payload_decoded = symbols_ok &&
           decode_symbols(symbols, count, spreading_factor, decoded, &decoded_size, &crc_ok, stats);
-      if (payload_decoded && !crc_ok && phase_retry == 0 && payload_clock_ppm == 0) {
+      if (payload_decoded && !crc_ok && align == 0 && phase_retry == 0 && payload_clock_ppm == 0) {
         if (stats != nullptr) {
           ++stats->recovery_attempted;
           stats->recovery_symbols_considered +=
@@ -1303,6 +1402,7 @@ static size_t decode_capture_pass(const uint8_t* cu8, size_t bytes, uint32_t sam
         if (stats != nullptr) {
           ++stats->crc_ok;
           stats->clock_skew_ppm = payload_clock_ppm;
+          stats->align_shift = static_cast<int8_t>(kAlignShifts[align]);
         }
         Packet packet{};
         const uint32_t mesh_started = now_millis();
@@ -1315,6 +1415,7 @@ static size_t decode_capture_pass(const uint8_t* cu8, size_t bytes, uint32_t sam
       }
       }
     }
+    }  // align
     if (!crc_ok && stats != nullptr) ++stats->crc_failures;
     start = data_start + count * n;
   }

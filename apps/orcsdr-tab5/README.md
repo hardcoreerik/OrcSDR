@@ -62,16 +62,22 @@ calibrated OTA RF or general receiver compatibility from UI/detection alone.
 
 ## Build (native ESP-IDF)
 
+See the [public build from source guide](../../docs/user-guide/build-from-source.md)
+for installation requirements, settings-preserving flashing, and C6 trade-offs.
+
 ```powershell
 cd apps/orcsdr-tab5
 .\tools\build-tab5-idf.ps1
-# After explicit hardware authorization:
-idf.py -B build-native-hosted3 -p <PORT> flash
+# For a compatible existing OrcSDR installation only; replace COM7:
+idf.py -B build-native-hosted3 -p COM7 app-flash
 ```
 
-Every build embeds the pinned ESP-Hosted 3.0.6 C6 update image
+Every standard build embeds the pinned ESP-Hosted 3.0.6 C6 update image
 (`tools/release/hosted-c6-release.json`), the same as release packages, so
-Firmware & Updates can update an older C6. The first build compiles it once
+Firmware & Updates offers an **optional**, explicitly confirmed update.
+Embedding this image does **not** update the installed C6. Ordinary Wi-Fi works
+with factory C6 2.12.6; OrcDial currently requires 3.0.6, but upgrading the C6
+to 3.0.6 breaks M5 Launcher Wi-Fi/OTA. The first build compiles it once
 into `.orcsdr-cache/hosted-c6/` beside the main checkout (shared by all
 worktrees, gitignored) and later builds reuse it after
 checking its revision and SHA-256. Pass `-C6Firmware <path>` to use a specific
@@ -79,8 +85,9 @@ image or `-WithoutC6` to leave it out.
 
 This is a native ESP-IDF 5.5.4 build. M5Unified 0.2.20 and M5GFX 0.2.27 are
 ESP-IDF components; PlatformIO is not a supported OrcSDR build or flash path.
-The current ESP-Hosted 3.0.6 Tab5 migration, pins, and honest hardware status
-are defined in the [Tab5 ESP-Hosted 3 migration](../../docs/user-guide/tab5-esp-hosted-3-migration.md).
+The advanced ESP-Hosted 3.0.6 migration, pins and hardware status are defined
+in the [Tab5 ESP-Hosted 3 migration](../../docs/user-guide/tab5-esp-hosted-3-migration.md);
+it is not required reading for a normal build.
 
 The native application includes the regular splash/home flow, band selection,
 and the LoRa dashboard/decoder capture path. `m5tab5_ui` and

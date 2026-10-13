@@ -1,8 +1,17 @@
 # Tab5 native ESP-Hosted 3.0.6 technical record
 
-This records the M5Stack Tab5 P4/C6 migration and current locked transport. It replaces
-the old 2.12.6 pairing guidance for current development. Historical release
-notes remain historical records, not current installation instructions.
+**Looking to compile OrcSDR?** Follow the [build from source guide](build-from-source.md)
+instead. This is an advanced technical and migration record, **not** the standard
+build/install procedure. Some acceptance results below are historical.
+
+The current P4 application uses ESP-Hosted 3.0.6 as the host library. For the
+installed C6 coprocessor, **both factory 2.12.6 and 3.0.6 work for ordinary
+OrcSDR Wi-Fi**. Standard OrcSDR builds embed the optional 3.0.6 C6 update
+image; flashing the P4 does not install it. **OrcDial currently requires C6
+3.0.6 for ESP-NOW**, but upgrading breaks M5 Launcher Wi-Fi/OTA. The old rule
+requiring matching P4/C6 3.0.6 is obsolete; see the
+[compatibility evidence](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/validation/esp-hosted-c6-compatibility-2026-09-29.md).
+Historical release notes remain historical records, not current instructions.
 
 ## Version set
 
@@ -11,7 +20,7 @@ notes remain historical records, not current installation instructions.
 | P4 application target | ESP32-P4, native ESP-IDF application |
 | ESP-IDF used for the verified build | 5.5.4 |
 | ESP-Hosted host dependency | 3.0.6 |
-| C6 ESP-Hosted firmware | 3.0.6 installed through the temporary P4 bridge |
+| C6 ESP-Hosted firmware | Factory 2.12.6 and optional 3.0.6 accepted for ordinary Wi-Fi; historical migration bench used 3.0.6 |
 | M5Unified | 0.2.20 |
 | M5GFX | 0.2.27 |
 | Wi-Fi transport | SDIO, Slot 1, 4-bit, qualified at 10 MHz |
@@ -36,7 +45,10 @@ pin map for the other.
 `CONFIG_ESP32P4_TAB5_C6_BOARD=y` is required. It is the ESP-Hosted 3.x
 Tab5 board profile; the explicit pins above make a wrong override obvious.
 
-## Build and P4 flash
+## Historical bench build and P4 flash
+
+For straightforward public instructions, use [Build from source](build-from-source.md).
+The following shows the original bench procedure, with bench-specific paths.
 
 Use the installed ESP-IDF 5.5.4 environment. The native wrapper creates an
 isolated `build-native-hosted3/sdkconfig` from `sdkconfig.defaults`, avoiding
@@ -65,7 +77,9 @@ The native 5.5.4 / ESP-Hosted 3.0.6 P4 application builds and has been
 written application-only to the Tab5. The radio path boots, mounts microSD,
 opens the RTL-SDR Blog V4, and starts FM audio.
 
-The P4-to-C6 SDIO link is accepted on the Tab5. Verified boot serial contains:
+The P4-to-C6 SDIO link was accepted on the Tab5 with C6 3.0.6 during this
+migration. This is a historical example, **not** a requirement for every
+installation. Verified boot serial contained:
 
 ```text
 I (1889) eh_init_evt: esp-hosted fw versions: host=3.0.6 coprocessor=3.0.6 (match)
@@ -92,7 +106,7 @@ the upstream recovery path for an actual SDIO enumeration failure.
 
 ## Avoidable blockers
 
-- Do not use PlatformIO, Arduino IDE, or the old 2.12.6 lifecycle patch.
+- Do not use PlatformIO, Arduino IDE, or the old 2.12.6 lifecycle patch. Factory C6 2.12.6 firmware itself remains supported for normal Wi-Fi.
 - Do not flash `COM24`: it is the Heltec LoRa V4 bench device. The Tab5 is
   `COM17` on this bench.
 - Do not let a serial monitor or transfer tool hold `COM17` during a flash.

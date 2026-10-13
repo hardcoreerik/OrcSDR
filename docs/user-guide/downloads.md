@@ -16,10 +16,12 @@ published SHA-256 before trusting firmware or optional SD data packs. The
 release's hardware result is exact-version evidence, not proof of later `main`
 commits, every receiver, or every Tab5 revision.
 
-Developers building from source should follow the
-[developer reference](reference/developer.md) and the
-[ESP-Hosted 3.0.6 technical record](tab5-esp-hosted-3-migration.md). Legacy
-tags retain their original dependency-specific instructions.
+Developers building the latest `main` should follow the
+[build from source quickstart](build-from-source.md). It covers ESP-IDF 5.5.4,
+the usual image-embedded P4 build, and application-only flashing on a compatible
+existing installation. The [ESP-Hosted migration record](tab5-esp-hosted-3-migration.md)
+is advanced reference material, not the normal build guide. Legacy tags retain
+their original dependency-specific instructions.
 
 The Pages site is deployed only from merged `main`. Pull requests validate the
 guide but do not publish it.

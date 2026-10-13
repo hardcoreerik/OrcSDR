@@ -12,7 +12,8 @@ OrcSDR is made by Oregon Radio Company LLC, Oregon. Its home is [theorc.dev](htt
 
 - **Web flasher:** [theorc.dev/sdr/flash](https://theorc.dev/sdr/flash/) installs the latest release onto an M5Stack Tab5 straight from Chrome or Edge over USB (Web Serial). No tools to install, and your saved settings stay put because NVS isn't erased.
 - **Releases:** stable and beta builds are on [GitHub Releases](https://github.com/hardcoreerik/OrcSDR/releases).
-- **Nightly builds:** automatic builds of `main` that haven't been tagged yet. They carry changes headed for the next release that have passed testing but not a full release check, so expect the occasional bug. They're published as the rolling GitHub prerelease `nightly`; a web-flash page for nightlies is coming soon on theorc.dev.
+- **Nightly builds:** automatic builds of `main` that haven't been tagged yet. [Flash the current nightly in your browser](https://theorc.dev/sdr/nightly/) or view the [rolling GitHub prerelease](https://github.com/hardcoreerik/OrcSDR/releases/tag/nightly). Check the build commit before testing; nightlies are development firmware, not fully accepted releases.
+- **Build from source:** [Tab5 build and flash quickstart](docs/user-guide/build-from-source.md). The standard build embeds an optional C6 update image but never automatically installs it.
 - **Contact:** for business inquiries, email [erik@theorc.dev](mailto:erik@theorc.dev).
 
 ## Why OrcSDR exists
@@ -149,7 +150,7 @@ The standalone [`esp-rtl-sdr`](https://github.com/hardcoreerik/esp-rtl-sdr) comp
 
 ## For developers
 
-Source-build requirements and commands live in the [developer reference](docs/user-guide/reference/developer.md). Driver contracts, porting notes, hardware measurements, and architecture decisions live in the repository's [`docs/`](docs/) directory.
+Source-build requirements and commands are in the [build from source guide](docs/user-guide/build-from-source.md). Advanced diagnostics and developer tools are in the [developer reference](docs/user-guide/reference/developer.md). Driver contracts, porting notes, hardware measurements, and architecture decisions live in the repository's [`docs/`](docs/) directory.
 
 Please keep changes focused and preserve the distinction between a successful build, a successful flash, and physical radio testing. When contributing receiver behavior, document the hardware, test setup, and source of any measurements.
 

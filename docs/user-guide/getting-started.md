@@ -46,10 +46,15 @@ Boot lands on Home. Receiver and Wi-Fi startup are staged. Reception does not
 require Wi-Fi; optional Wi-Fi scan/connect/catalog actions temporarily pause an
 active radio session and then attempt to restore it.
 
-## Developer build
+## Build the latest main branch
 
-Source builds use native ESP-IDF 5.5.4 and matching ESP-Hosted 3.0.6. Do not use
-PlatformIO. Follow the [developer reference](reference/developer.md) and
-[migration/acceptance record](tab5-esp-hosted-3-migration.md). A P4-only flash
-does not prove or necessarily replace the C6 image, and a successful build is
-not hardware or RF acceptance.
+To test a fix merged into `main`, use the [build from source quickstart](build-from-source.md).
+It covers ESP-IDF 5.5.4 and updating the P4 application on a compatible existing
+installation. Do not use PlatformIO for Tab5 firmware.
+
+Standard OrcSDR builds embed an ESP-Hosted C6 3.0.6 update image, but never
+install it automatically. Factory C6 2.12.6 supports ordinary OrcSDR Wi-Fi and
+M5 Launcher Wi-Fi/OTA. OrcDial currently needs an explicit C6 3.0.6 upgrade
+for ESP-NOW, which breaks M5 Launcher Wi-Fi/OTA. The upgrade is optional;
+see the [build guide](build-from-source.md#do-i-need-to-update-the-esp32-c6).
+Advanced diagnostics are covered in the [developer reference](reference/developer.md).

@@ -510,8 +510,8 @@ RTL_KEYBOARD ECHO <0|1>
 RTL_KEYBOARD KEY <UP|DOWN|LEFT|RIGHT|ENTER|ESC|TAB|SPACE|BACKSPACE|char>
 ```
 
-- `STATUS` (no authentication) prints `RTL_KEYBOARD_STATUS present=… firmware=… mode=… keys=… dropped=…
-  bus_errors=… attaches=…` and `RTL_KEYBOARD_FOCUS controls=<n> x= y= w= h= ring=<0|1>`, the control that
+- `STATUS` (no authentication) prints `RTL_KEYBOARD_STATUS present=ï¿½ firmware=ï¿½ mode=ï¿½ keys=ï¿½ dropped=ï¿½
+  bus_errors=ï¿½ attaches=ï¿½` and `RTL_KEYBOARD_FOCUS controls=<n> x= y= w= h= ring=<0|1>`, the control that
   currently has the keyboard focus ring.
 - `ECHO 1` (authenticated) logs every decoded key event to serial, for debugging key decoding. `ECHO 0` turns it off.
 - `KEY` (authenticated) injects one key as if it were typed, through the same routing as the real keyboard: focus
@@ -658,6 +658,37 @@ general-purpose IQ dumping). There is no live serial override for spreading
 factor or bandwidth yet â€” those load once from `/orcsdr/lora.cfg` at boot;
 tracked as follow-up work alongside POCSAG's `SET_BAUD`/`SET_POLARITY`
 precedent.
+
+LoRa detector and decoder diagnostics (these make the receive path testable
+without touching the screen):
+
+| Command | Auth | Response | Notes |
+|---|---|---|---|
+| `RTL_LORA_DETECTOR STATUS` | no | `RTL_LORA_DETECTOR_STATUS enabled= armed= level_dbfs= noise_dbfs= trigger_dbfs= ... relearns= events= drops= capture_active= capture_ready= decode_busy= mode= pd_ready= pd_windows= pd_fires= pd_last_bin= pd_last_ratio= pd_run= pd_max_window_us=` | The learned noise floor, the energy trigger (floor plus margin, capped just below clipping), the active trigger mode, the preamble detector's counters, and whether a capture is held or the decoder is busy. |
+| `RTL_LORA_DETECTOR RELEARN` | yes | `RTL_LORA_DETECTOR_OK relearn=queued` | Forces a noise-floor re-learn (for example after moving an antenna or swapping a dongle). The detector also re-learns by itself when the level stays above the trigger for 4 s. |
+| `RTL_LORA_DETECTOR MODE <PREAMBLE\|ENERGY>` | yes | `RTL_LORA_DETECTOR_OK mode=` | `PREAMBLE` (default) starts a capture when the dechirped FFT peak sits on the same bin for six consecutive symbol windows, which is independent of gain, dongle and noise floor and ignores wideband interference. `ENERGY` is the legacy level trigger. |
+| `RTL_LORA_STATS [RESET]` | `RESET` only | `RTL_LORA_STATS events= crc_ok= encrypted= messages= failures= drops= relearns= last_decode_ms=` | Counters for a repeatable "send N packets, count how many decoded" test. |
+| `RTL_LORA_GAIN STATUS` | no | `RTL_LORA_GAIN_STATUS guard= phase= override= gain_tenth_db= clipping_percent= engage_pct= release_pct= reductions= probes=` | The LoRa clipping guard. The tuner runs AUTO; only when clipping stays above the limit for 1.5 s does the guard step the dongle's own gain ladder down until it clears, hold, and probe one step up after 60 s clean. `gain_tenth_db=-1` means the tuner AGC is in charge. |
+| `RTL_LORA_GAIN GUARD ON\|OFF` | yes | `RTL_LORA_GAIN_OK guard=` | `OFF` releases the guard and restores the tuner AGC. Any manual `RTL_GAIN` command, leaving LoRa, or turning the guard off also releases it. |
+| `RTL_LORA_GAIN LIMIT <percent>` | yes | `RTL_LORA_GAIN_OK engage_pct= release_pct=` | Clipping percentage that engages the guard (default 1.0; it releases at one fifth of it). |
+| `RTL_LORA_RECENT` | no | `RTL_LORA_RECENT count=<n>` then one `RTL_LORA_PKT age_ms= sender= id= port= encrypted= snr_db= text="..."` line per stored packet | The most recently decoded packets (up to 8), newest first, so a test can tell its own packets from neighbours' without a terminal attached during the run. |
+| `RTL_LORA_PLAN SET <region code or index> [slot]` | yes | `RTL_LORA_PLAN_OK region= slot= frequency_hz=` | Selects and persists the Meshtastic region and slot, for example `RTL_LORA_PLAN SET EU_868`. |
+| `RTL_LORA_DECODER STATUS` | no | `RTL_LORA_DECODER_STATUS search_padding=` | `1` is the default fast preamble search; `4` is the legacy 4x-padded search. |
+| `RTL_LORA_DECODER SEARCH_PAD <1\|4>` | yes | `RTL_LORA_DECODER_OK search_padding=` | Switches the preamble search width at run time so sensitivity can be compared on identical input. |
+| `RTL_LORA_DECODER TIMING_BIAS <-4..4>` | yes | `RTL_LORA_DECODER_OK timing_bias=` | Diagnostic only: shifts the header timing search by whole samples. Leave at `0`. |
+
+`RTL_IQ_RETRIEVE_END` releases a retained manual capture. Until it is sent
+(or a new manual capture starts), live automatic LoRa detection stays blocked,
+so host tools that retrieve a capture must send it.
+
+`RTL_LORA_NATIVE_DONE` ends with `align_shift=<n>`: `0` normally, or the
+sample shift (+-1, +-2) of the alignment that passed the payload CRC when the
+header's first alignment did not.
+
+Host-side sensitivity tools: `tools/lora_lab/capture_packet.py` records one
+real packet, `tools/lora_lab/crop_orciq.py` crops it, and
+`tools/lora_lab/sensitivity_sweep.py` replays it with added noise at a series
+of SNRs under each search mode and prints success per level.
 
 ## P25 validation and replay
 

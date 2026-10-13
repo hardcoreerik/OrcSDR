@@ -1,7 +1,9 @@
 # Tab5 build and ESP-Hosted policy
 
-> Current migration details, exact pins, and acceptance status live in
-> [Tab5 ESP-Hosted 3 migration](user-guide/tab5-esp-hosted-3-migration.md).
+> **For ordinary building and flashing, use [Build from source](user-guide/build-from-source.md).**
+> This file covers advanced firmware and release engineering policy. The
+> [ESP-Hosted technical record](user-guide/tab5-esp-hosted-3-migration.md)
+> preserves the migration details, pins and dated acceptance results.
 
 OrcSDR's Tab5 firmware is a native ESP-IDF project. Build and flash the P4
 with Espressif `idf.py`; do not use PlatformIO for development, release, or
@@ -36,10 +38,14 @@ The Tab5 C6 may run ESP-Hosted **3.0.6** (matched with the host) or **2.12.6**
 (the M5 factory version, which keeps M5 Launcher's Wi-Fi/OTA working). Both are
 tested pairings with this 3.0.6 host; any other version is attempted with a
 warning. A 2.x host paired with a 3.0.6 C6 fails, which is why Launcher loses
-Wi-Fi after a C6 update to 3.0.6. OrcSDR's M5Burner package embeds the 3.0.6 C6
-image. With reachable Hosted transport, Firmware & Updates offers an optional,
-explicitly confirmed in-app update to 3.0.6 and warns about Launcher. Source builds need `-C6Firmware` to embed that image; the
-default helper invocation does not supply it. An unreachable C6 needs the
+Wi-Fi after a C6 update to 3.0.6. OrcSDR's standard builds embed the 3.0.6 C6
+update image without installing it. OrcDial currently needs C6 3.0.6 for
+ESP-NOW, but normal Wi-Fi does not. With reachable Hosted transport, Firmware
+& Updates offers an optional,
+explicitly confirmed in-app update to 3.0.6 and warns about Launcher. The standard `build-tab5-idf.ps1` helper automatically builds/caches and embeds
+that optional C6 update image. Advanced `-C6Firmware` selects a particular
+image, while `-WithoutC6` is an explicitly requested exception—not the
+standard OrcSDR build. Neither embedding nor flashing the P4 upgrades the C6. An unreachable C6 needs the
 [documented recovery path](M5BURNER_RELEASE.md), not repeated in-app retries.
 Never downgrade the C6 to accommodate an old P4 host library.
 
