@@ -6,6 +6,7 @@
 #include "sstv_receiver.hpp"
 #include "sstv_test_signal.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -491,15 +492,15 @@ void test_torn_index_tail_is_terminated_before_recovery() {
   }
   require(arc::recover() == 1, "torn: the orphan picture was recovered");
   const auto lines = split(slurp(dir + "/index.csv"), '\n');
-  bool recovered_on_own_line = false, glued = false;
+  bool torn_alone = false, recovered_row_ok = false;
   for (const auto& line : lines) {
-    if (line.find("recovered") != std::string::npos) {
-      recovered_on_own_line = line.rfind("2,", 0) == 0 && line.find("rx_1700000002_145800000_2.bmp") != std::string::npos &&
-                              line.find("1,1700000002,1,1458") == std::string::npos;
-      glued = line.find("1,1700000002,1,1458") != std::string::npos;
-    }
+    if (line == "2,1700000002,1,1458") torn_alone = true;                 // the cut-short row stands on its own
+    if (line.find("recovered") != std::string::npos)                       // and the new row is a whole row of its own
+      recovered_row_ok = line.rfind("2,1700000002,", 0) == 0 && line.find("rx_1700000002_145800000_2.bmp") != std::string::npos &&
+                         line.find("1458,") == std::string::npos && line.find("recovered") != std::string::npos &&
+                         static_cast<size_t>(std::count(line.begin(), line.end(), ',')) == 17;
   }
-  require(recovered_on_own_line && !glued, "torn: the recovered row starts on its own line, not glued to the torn one");
+  require(torn_alone && recovered_row_ok, "torn: the recovered row starts on its own line, not glued to the torn one");
   rx::stop();
   rx::clear_gallery();
 }
