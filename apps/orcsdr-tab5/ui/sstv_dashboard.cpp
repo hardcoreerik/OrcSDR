@@ -111,6 +111,19 @@ void frame(const Rect& r, uint16_t border = kCyan) {
   M5.Display.fillRoundRect(r.x, r.y, r.w, r.h, 10, kPanel);
   M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 10, border);
 }
+// Everything a page draws stays inside the body area. A long line (for example the amber "...START ROW UNKNOWN" or a
+// sync line with missed pulses) used to run past the right edge of its panel; panels only repaint inside their own
+// rectangle, so the overflow stayed on the screen until the next page change. The margin beside the body is also
+// cleared so any stale overflow from an earlier draw disappears.
+struct BodyClip {
+  BodyClip() {
+    const int right = kBody.x + kBody.w;
+    M5.Display.fillRect(right, kBody.y, 1280 - right, kBody.h, TFT_BLACK);
+    M5.Display.fillRect(0, kBody.y, kBody.x, kBody.h, TFT_BLACK);
+    M5.Display.setClipRect(kBody.x, kBody.y, kBody.w, kBody.h);
+  }
+  ~BodyClip() { M5.Display.clearClipRect(); }
+};
 void button(const Rect& r, const char* label, bool selected = false, bool enabled = true, int size = 2) {
   if (enabled) focus_nav::note(r.x, r.y, r.w, r.h);
   const uint16_t border = enabled ? (selected ? kGreen : kCyan) : TFT_DARKGREY;
@@ -222,6 +235,7 @@ void image_area(const Rect& area, const Image& im, const char* empty) {
 
 // ---------------------------------------------------------------- RECEIVE
 void draw_receive_stats() {
+  BodyClip clip;
   const auto m = metrics();
   Image last;
   const Image* previous = newest_archived(&last);
@@ -471,6 +485,7 @@ void draw_setup() {
 }
 
 void draw_page_body() {
+  BodyClip clip;
   switch (g_page) {
     case Page::receive: draw_receive(); break;
     case Page::gallery: draw_gallery(); break;
