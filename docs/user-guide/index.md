@@ -12,4 +12,8 @@ The labels used throughout the guide are deliberate:
 
 Start with [Getting started](getting-started.md), then use the searchable [screen catalog](reference/screen-catalog.md) for a control-by-control view.
 
+Want to test the latest merged code? Follow [Build from source](build-from-source.md).
+It explains the P4 build, application-only flash, and why C6 updates are
+optional for normal OrcSDR use.
+
 For digital reception, see [FT8 reception](dashboards/ft8.md).
