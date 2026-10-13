@@ -21,20 +21,23 @@ Cold-boot with stable power and the dongle disconnected, then attach it after th
 
 Confirm Wi-Fi power is enabled and choose the correct internal or external antenna. Scanning should coexist with reception. A crash or restart is a regression; preserve the serial log and reset reason.
 
-The current migration pins ESP-Hosted **3.0.6** on both P4 and C6. The normal
-P4 application image does not update the C6. Current known hardware evidence
-has the radio path working but the C6 SDIO handshake failing before version
-negotiation (`sdmmc_init_ocr` / `send_op_cond 0x107`). Follow
-[`Tab5 ESP-Hosted 3.0.6 migration`](tab5-esp-hosted-3-migration.md) for
-the exact Tab5 pins and acceptance state; do not apply the old 2.12.6 M5Burner
-instructions.
+The P4 host library is pinned to ESP-Hosted **3.0.6**, but the installed C6
+firmware may be the M5 factory **2.12.6** or OrcSDR **3.0.6**. Both have been
+verified for ordinary Wi-Fi; the P4 application flash does not update the C6.
+Do not update the C6 merely to repair a version-number difference. C6 3.0.6
+is currently needed for OrcDial ESP-NOW, but breaks M5 Launcher Wi-Fi/OTA.
+See the [compatibility evidence](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/validation/esp-hosted-c6-compatibility-2026-09-29.md)
+and the [advanced migration record](tab5-esp-hosted-3-migration.md) for actual
+transport errors, pins and earlier bench failures.
 
 ```powershell
 rg "CONFIG_ESP_HOSTED_AUTO_CALL_INIT_BEFORE_APP_MAIN" apps\orcsdr-tab5\sdkconfig
 ```
 
-A healthy pair logs the C6 detected, `3.0.6` firmware, and `SDIO` transport
-lines documented in the migration record. Radio works while Wi-Fi is off.
+A healthy system detects the C6 and establishes SDIO transport with supported
+firmware (2.12.6 or 3.0.6). A 3.0.6 log in the migration record is one
+historical accepted example, not a mandatory version. Radio works with Wi-Fi
+off.
 
 On-chip DMA RAM is split so Wi-Fi and the radio do not steal each other's room: ESP-Hosted (C6 Wi-Fi) and the I2S speaker stay in reserved internal DMA; RTL-SDR USB URBs stay in PSRAM. Boot logs `RTL_DRAM_BUDGET`. After Wi-Fi starts, `dma_largest` should stay above ~20 KiB so I2S can still start. A scan/connect panic with `HS_MP: mempool create failed` or `sdio_mempool_create` means the Hosted slice was gone — keep `CONFIG_ESP_HOSTED_USE_MEMPOOL=n` and do not raise `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL` above 8 KiB.
 
