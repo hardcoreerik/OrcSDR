@@ -19,6 +19,7 @@ constexpr Mode kModes[] = {
 void reset() {
   g_count=0;
 }
+unsigned pending_pulses() {return g_count;}
 Candidate observe(uint32_t start,uint16_t length) {
   Candidate out{};
   // Ignore very short/long noise bursts; real supported syncs are 4.862-20ms.

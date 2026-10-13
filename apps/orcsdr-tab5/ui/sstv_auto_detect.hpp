@@ -14,6 +14,8 @@ struct Candidate {
   bool locked = false;
 };
 void reset();
+// Number of recent pulses currently held (0 while idle); lets the session state show "analysing".
+unsigned pending_pulses();
 // Call on the *end* of each observed 1200 Hz sync pulse.
 // Result is locked only when >=6 pulses are coherent, with a distinctive
 // best candidate. Unknown, noisy and ambiguous signals remain unlocked.

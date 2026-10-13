@@ -413,6 +413,62 @@ void test_pinned_frame_outlives_eviction() {
   stop();
 }
 
+unsigned g_seen = 0;
+void note_state() { g_seen |= 1u << static_cast<unsigned>(session_state()); }
+bool seen(SessionState state) { return (g_seen >> static_cast<unsigned>(state)) & 1u; }
+
+// The lifecycle the dashboard shows, from one source of truth.
+void test_session_state_machine() {
+  // VIS path: searching -> VIS acquisition -> receiving -> loss recovery -> finalizing -> ready -> searching
+  reset_receiver();
+  g_seen = 0;
+  require(session_state() == SessionState::searching, "state: starts searching");
+  Signal sig;
+  sig.preamble();
+  note_state();
+  require(session_state() == SessionState::vis_acquisition, "state: a VIS leader is being validated");
+  sig.vis(8);
+  for (unsigned row = 0; row < 40; ++row) { sig.robot36_rows(row, 1); note_state(); }
+  require(session_state() == SessionState::receiving && metrics().state == SessionState::receiving,
+          "state: VIS-identified image is receiving");
+  sig.silence(400);                     // two lines of fade
+  note_state();
+  require(seen(SessionState::loss_recovery), "state: a fade shows loss recovery");
+  for (unsigned i = 0; i < 80; ++i) { sig.silence(100); note_state(); }
+  require(seen(SessionState::finalizing) && seen(SessionState::ready),
+          "state: an ended image passes through finalizing and ready");
+  require(session_state() == SessionState::searching, "state: returns to searching on its own");
+
+  // Sync-only path: analysis -> provisional lock -> receiving (confirmed by further lines).
+  reset_receiver();
+  g_seen = 0;
+  Signal join;
+  for (unsigned row = 40; row < 100; ++row) { join.robot36_rows(row, 1); note_state(); }
+  require(seen(SessionState::sync_analysis), "state: repeated pulses show sync analysis");
+  require(seen(SessionState::provisional_lock), "state: a sync-only mode choice is provisional first");
+  require(session_state() == SessionState::receiving, "state: confirmed by further locked lines");
+  require(!seen(SessionState::vis_acquisition), "state: no VIS stage without a VIS leader");
+  stop();
+  clear_gallery();
+}
+
+void test_service_cost_is_measured() {
+  reset_receiver();
+  Signal sig;
+  sig.header(8);
+  sig.robot36_rows(0, 60);
+  sig.flush();
+  const auto m = metrics();
+  std::fprintf(stderr, "perf (host, not the P4): service last=%lu us max=%lu us avg=%lu us cpu=%u%% ring max=%u/4096\n",
+               static_cast<unsigned long>(m.service_us_last), static_cast<unsigned long>(m.service_us_max),
+               static_cast<unsigned long>(m.service_us_avg), static_cast<unsigned>(m.service_cpu_pct),
+               static_cast<unsigned>(m.ring_fill_max));
+  require(m.service_us_max > 0 && m.ring_fill_max > 0, "perf: service time and ring fill are measured");
+  require(m.ring_fill_max < 4096, "perf: the PCM ring never filled");
+  stop();
+  clear_gallery();
+}
+
 void test_unknown_and_manual_vis() {
   reset_receiver();
   Signal sig;
@@ -477,6 +533,8 @@ int main() {
   test_fade_and_clock_drift();
   test_gallery_ownership();
   test_pinned_frame_outlives_eviction();
+  test_session_state_machine();
+  test_service_cost_is_measured();
   test_unknown_and_manual_vis();
   test_vis_preempts_sync_lock();
   std::puts("SSTV auto state: PASS");

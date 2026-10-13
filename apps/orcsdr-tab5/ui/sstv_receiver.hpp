@@ -15,6 +15,19 @@ enum class Page : uint8_t { receive, gallery, analyzer, frequencies, setup, coun
 enum class AutoStrategy : uint8_t { vis_only, vis_sync };
 enum class Identification : uint8_t { none, vis, sync, manual };
 enum class EndReason : uint8_t { none, complete, sync_lost, new_vis, retune, aborted };
+// The receiver's one lifecycle state, derived from the decoder's own variables so there is
+// no second copy to drift. See session_state() for the exact rules.
+enum class SessionState : uint8_t {
+  searching,         // listening, nothing recognised yet
+  vis_acquisition,   // a VIS leader/header is being validated
+  sync_analysis,     // repeated 1200 Hz line pulses are being classified (no VIS)
+  provisional_lock,  // mode chosen from sync alone; not yet confirmed by further lines
+  receiving,         // VIS-identified, or a sync lock confirmed by further lines
+  loss_recovery,     // receiving but the last line pulse(s) were missed
+  finalizing,        // an image just ended and is being committed
+  ready              // image committed; waiting for the next transmission
+};
+const char* state_name(SessionState state);
 struct Profile { const char* name; uint32_t hz; bool usb; const char* description; };
 constexpr Profile kProfiles[] = {
     {"HF SSTV", 14230000, true, "14.230 MHz USB - general amateur SSTV"},
@@ -56,6 +69,13 @@ struct Metrics {
   bool active = false;
   bool signal = false;
   bool storage_ok = false;
+  SessionState state = SessionState::searching;
+  // Decoder cost, measured around service(): worst case matters for the 12 kHz real-time budget.
+  uint32_t service_us_last = 0;
+  uint32_t service_us_max = 0;
+  uint32_t service_us_avg = 0;      // smoothed
+  uint8_t service_cpu_pct = 0;      // smoothed share of wall time spent inside service()
+  uint16_t ring_fill_max = 0;       // PCM ring high-water mark (capacity 4096)
   char status[56] = "WAITING FOR SSTV";
 };
 struct Image {
@@ -96,6 +116,7 @@ void offer_audio_48k(const int16_t* samples, size_t count);
 // UI task only: bounded decoder service and immutable output snapshots.
 void service(size_t budget = 3600);
 Metrics metrics();
+SessionState session_state();
 Image live_image();
 Image archived_image(size_t index); // 0 = newest
 size_t archive_count();

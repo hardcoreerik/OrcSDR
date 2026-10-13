@@ -6,9 +6,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <cerrno>
+#include <chrono>
 #include <sys/stat.h>
 #ifdef ESP_PLATFORM
 #include <esp_heap_caps.h>
+#include <esp_timer.h>
 #endif
 
 // Native SSTV: one DSP producer (48k PCM -> 12k ring), one UI-task consumer.
@@ -67,6 +69,9 @@ bool g_have_sync_start=false;
 double g_line_origin=0;
 uint16_t g_line_index=0;
 // Per-reception counters (one image); the lifetime counters live in g_stats.
+uint64_t g_last_end_tick=0;
+bool g_have_end=false;
+uint64_t g_last_service_us=0;
 uint32_t g_next_session=1,g_session_id=0;
 uint16_t g_session_locked=0,g_session_missed=0;
 uint8_t g_session_vis=0;
@@ -206,6 +211,7 @@ void finish_picture(bool incomplete,EndReason reason) {
   g_live.end_reason=reason;
   g_live.sync_locked=g_session_locked;
   g_live.sync_missed=g_session_missed;
+  g_last_end_tick=g_ticks;g_have_end=true;
   frame_release(g_saved[kGallery-1].frame);
   for(size_t n=kGallery-1;n>0;--n)g_saved[n]=g_saved[n-1];
   g_saved[0]=g_live;
@@ -493,6 +499,14 @@ void accept_sample(int16_t pcm) {
   vis_tick(g_freq);
   if(g_stats.receiving)sample_luma(g_luma_freq);
 }
+uint64_t now_us() {
+#ifdef ESP_PLATFORM
+  return static_cast<uint64_t>(esp_timer_get_time());
+#else
+  using namespace std::chrono;
+  return static_cast<uint64_t>(duration_cast<microseconds>(steady_clock::now().time_since_epoch()).count());
+#endif
+}
 void put16(std::FILE* f,uint16_t v){std::fputc(v&255,f);std::fputc(v>>8,f);}
 void put32(std::FILE* f,uint32_t v){put16(f,v&65535);put16(f,v>>16);}
 } // namespace
@@ -505,7 +519,10 @@ void start(uint32_t freq) {
   g_last_edge_tick=0;g_last_edge_frac=0;g_have_edge=false;
   g_decim_sum=0;g_decim_n=0;
   g_gap_tail.store(g_gap_head.load(std::memory_order_acquire),std::memory_order_release);
-  g_pending_gap=0;g_have_sync_start=false;
+  g_pending_gap=0;g_have_sync_start=false;g_have_end=false;g_last_service_us=0;
+  // Performance counters describe the current listening session.
+  g_stats.service_us_last=g_stats.service_us_max=g_stats.service_us_avg=0;
+  g_stats.service_cpu_pct=0;g_stats.ring_fill_max=0;
   g_ac_y2=g_ac_p=g_ac_q=g_luma_freq=0.f;
   // Build a 1 KiB inverse-cosine LUT once, outside the real-time audio
   // service.  The sample loop only interpolates adjacent integer entries.
@@ -574,10 +591,46 @@ void offer_audio_48k(const int16_t* src,size_t n){
   }
   g_write.store(w,std::memory_order_release);
 }
+SessionState session_state(){
+  if(!active())return SessionState::searching;
+  if(g_stats.receiving) {
+    if(g_consecutive_missed>0)return SessionState::loss_recovery;
+    // A sync-only lock stays provisional until further lines confirm the line timing.
+    if(g_stats.identification==Identification::sync && g_session_locked<8)
+      return SessionState::provisional_lock;
+    return SessionState::receiving;
+  }
+  if(g_have_end) {
+    const uint64_t since=g_ticks-g_last_end_tick;
+    if(since<kRate/2)return SessionState::finalizing;
+    if(since<3*kRate)return SessionState::ready;
+  }
+  // Only a full 200 ms leader advances the VIS stage; a short gray image tone does not.
+  if(g_vis_stage!=VisStage::lead1)return SessionState::vis_acquisition;
+  if(auto_detect::pending_pulses()>=2)return SessionState::sync_analysis;
+  return SessionState::searching;
+}
+const char* state_name(SessionState state){
+  switch(state){
+    case SessionState::vis_acquisition:return "VIS ACQUISITION";
+    case SessionState::sync_analysis:return "SYNC ANALYSIS";
+    case SessionState::provisional_lock:return "PROVISIONAL LOCK";
+    case SessionState::receiving:return "RECEIVING";
+    case SessionState::loss_recovery:return "LOSS RECOVERY";
+    case SessionState::finalizing:return "FINALIZING";
+    case SessionState::ready:return "READY";
+    default:return "SEARCHING";
+  }
+}
 void service(size_t budget){
   if(!active())return;
+  const uint64_t started=now_us();
   uint32_t r=g_read.load(std::memory_order_relaxed);
   const uint32_t end=g_write.load(std::memory_order_acquire);
+  {
+    const uint32_t fill=end-r;
+    if(fill>g_stats.ring_fill_max)g_stats.ring_fill_max=static_cast<uint16_t>(fill>0xffffu?0xffffu:fill);
+  }
   size_t n=0;
   uint32_t tail=g_gap_tail.load(std::memory_order_relaxed);
   const uint32_t head=g_gap_head.load(std::memory_order_acquire);
@@ -596,6 +649,20 @@ void service(size_t budget){
   g_stats.audio_overruns=g_drops.load(std::memory_order_relaxed);
   g_stats.vis_phase=static_cast<uint8_t>(g_vis_stage);
   g_stats.vis_phase_samples=g_phase_samples;
+  g_stats.state=session_state();
+  // Cost of this call, and its share of the time since the previous call.
+  const uint64_t finished=now_us();
+  const uint32_t us=static_cast<uint32_t>(finished-started);
+  g_stats.service_us_last=us;
+  if(us>g_stats.service_us_max)g_stats.service_us_max=us;
+  g_stats.service_us_avg+=(static_cast<int32_t>(us)-static_cast<int32_t>(g_stats.service_us_avg))/8;
+  if(g_last_service_us&&started>g_last_service_us) {
+    const uint64_t window=started-g_last_service_us;
+    const uint32_t pct=static_cast<uint32_t>(std::min<uint64_t>(100,(static_cast<uint64_t>(us)*100)/window));
+    g_stats.service_cpu_pct=static_cast<uint8_t>(g_stats.service_cpu_pct+
+        (static_cast<int32_t>(pct)-static_cast<int32_t>(g_stats.service_cpu_pct))/8);
+  }
+  g_last_service_us=started;
 }
 void end_of_stream(){
   if(!active())return;
@@ -614,6 +681,7 @@ void end_of_stream(){
 }
 Metrics metrics(){
   Metrics m=g_stats;
+  m.state=session_state();
   m.frames_alive=g_frames_alive.load(std::memory_order_relaxed);
   m.frame_bytes=g_frame_bytes.load(std::memory_order_relaxed);
   return m;
