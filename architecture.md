@@ -48,9 +48,12 @@ screen permission to draw while radio/decoder work continues independently.
 `navigation_service` owns Home/Settings handoff mechanics; feature dashboards
 render snapshots rather than owning receiver state.
 
-ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`, `airband`, `ft8`, `sstv`.
+ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`, `airband`, `ft8`, `sstv`, `acars`.
 
-Dashboard IDs: `home`, `fm`, `p25`, `adsb`, `shortwave`, `weather`, `cb`, `lora`, `airband`, `marine`, `satellite`, `utilities`, `settings`, `rf_lab`, `wifi_analysis`, `pocsag`, `am`, `ft8`, `sstv`.
+Dashboard IDs: `home`, `fm`, `p25`, `adsb`, `shortwave`, `weather`, `cb`, `lora`, `airband`, `marine`, `satellite`, `utilities`, `settings`, `rf_lab`, `wifi_analysis`, `pocsag`, `am`, `ft8`, `sstv`, `acars`.
+
+The ACARS dashboard (`acars_*` modules, see `docs/acars/DASHBOARD_README.md`) is a presentation-only
+screen: `acars_app` owns its lifecycle, `acars_dashboard_model` holds the bounded snapshot, and no receiver is attached yet.
 
 The current screen modules include Home, FM, AM, P25, ADS-B, LoRa, POCSAG, RF
 Lab, RF Visualizer, Wi-Fi analysis, Settings, documentation capture, and the

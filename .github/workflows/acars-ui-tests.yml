@@ -1,0 +1,40 @@
+name: ACARS dashboard host tests
+on:
+  push:
+    branches:
+      - "claude/acars-**"
+      - "codex/acars-**"
+    paths:
+      - "apps/orcsdr-tab5/ui/acars_*"
+      - "tests/acars_*"
+      - "tests/acars_ui_stubs/**"
+      - "tools/test-acars-*.sh"
+      - ".github/workflows/acars-ui-tests.yml"
+  pull_request:
+    paths:
+      - "apps/orcsdr-tab5/ui/acars_*"
+      - "tests/acars_*"
+      - "tests/acars_ui_stubs/**"
+      - "tools/test-acars-*.sh"
+      - ".github/workflows/acars-ui-tests.yml"
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Decoder smoke gate (unchanged)
+        run: bash tools/test-acars-smoke.sh
+      - name: Dashboard model, controller, layout and renderer host tests (ASan/UBSan included)
+        run: bash tools/test-acars-ui.sh
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: acars-ui-host-logs
+          path: build/acars/*.log
+          retention-days: 14
