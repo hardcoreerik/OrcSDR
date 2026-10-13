@@ -123,6 +123,21 @@ std::thread g_thread;
 
 const Io& io() { return *g_io; }
 
+void* psram_alloc(size_t bytes) {
+#ifdef ESP_PLATFORM
+  return heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
+  return std::malloc(bytes);
+#endif
+}
+void psram_free(void* p) {
+#ifdef ESP_PLATFORM
+  heap_caps_free(p);
+#else
+  std::free(p);
+#endif
+}
+
 const char* ident_name(Identification id) {
   switch (id) {
     case Identification::vis: return "vis";
@@ -265,7 +280,9 @@ Error write_bmp(const Image& im, const char* path, uint64_t* hash, uint32_t* byt
   put32(header + 38, 2835);
   put32(header + 42, 2835);
   bool ok = io().write(header, sizeof(header), f) == sizeof(header);
-  uint8_t row[800 * 3 + 4];
+  uint8_t* row = static_cast<uint8_t*>(psram_alloc(800 * 3 + 4));   // not on the worker's stack
+  if (!row) { io().close(f); return Error::write_error; }
+  struct RowGuard { void* p; ~RowGuard() { psram_free(p); } } row_guard{row};
   uint64_t h = 1469598103934665603ull;  // FNV-1a over the RGB565 words
   for (int y = im.height - 1; ok && y >= 0; --y) {
     const uint16_t* src = im.pixels + static_cast<size_t>(y) * im.width;
@@ -579,7 +596,7 @@ bool start_worker() {
   if (g_run.load()) return true;
   g_run.store(true);
 #ifdef ESP_PLATFORM
-  if (xTaskCreate(worker_task, "sstv_arc", 6144, nullptr, tskIDLE_PRIORITY + 1, nullptr) != pdPASS) {
+  if (xTaskCreate(worker_task, "sstv_arc", 8192, nullptr, tskIDLE_PRIORITY + 1, nullptr) != pdPASS) {
     g_run.store(false);
     return false;
   }
@@ -678,8 +695,13 @@ bool index_mentions(const char* name) {
 size_t recover() {
   if (!g_io || !io().mounted()) return 0;
   if (!make_dirs(g_config.root) || !ensure_index()) return 0;
-  static Names names;                      // static: keeps 8 KiB off the worker's small stack
+  // 8 KiB of names: allocated for the duration of the scan from PSRAM, never a static (internal RAM)
+  // and never on the worker's small stack.
+  Names* names_ptr = static_cast<Names*>(psram_alloc(sizeof(Names)));
+  if (!names_ptr) return 0;
+  Names& names = *names_ptr;
   names.count = 0;
+  struct Guard { void* p; ~Guard() { psram_free(p); } } guard{names_ptr};
   if (!io().list_dir(g_config.root, collect, &names)) return 0;
   size_t recovered = 0;
   for (size_t i = 0; i < names.count; ++i) {

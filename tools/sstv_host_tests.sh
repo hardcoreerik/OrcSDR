@@ -51,6 +51,7 @@ build_and_run autostate  "$TESTS/sstv_auto_state_test.cpp" "${CORE[@]}"
 build_and_run archive    "$TESTS/sstv_archive_test.cpp" "$UI/sstv_archive.cpp" "${CORE[@]}" -pthread
 build_and_run status     "$TESTS/sstv_status_test.cpp" "$UI/sstv_status.cpp" "${CORE[@]}"
 build_and_run settings   "$TESTS/sstv_settings_test.cpp" "$UI/sstv_settings.cpp" "${CORE[@]}"
+SSTV_PATTERN="$ROOT/apps/orcsdr-tab5/main/sstv_testpattern_320x240.gray" build_and_run pattern "$TESTS/sstv_pattern_test.cpp" "${CORE[@]}"
 
 if [ -n "${SSTV_FIXTURE_WAV:-}" ]; then
   EXPECT_VIS="${SSTV_EXPECT_VIS:-8}"; EXPECT_ROWS="${SSTV_EXPECT_ROWS:-239}"

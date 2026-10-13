@@ -7,6 +7,7 @@
 #include "screen_controller.hpp"
 #include "sstv_archive.hpp"
 #include "sstv_dashboard.hpp"
+#include "sstv_diag.hpp"
 #include "sstv_receiver.hpp"
 
 namespace orcsdr::sstv_app {
@@ -51,23 +52,24 @@ void commit_settings() {
   orcsdr::sstv::ui_set_settings(g_settings);
 }
 
-void queue_for_sd(int32_t which) {
+bool queue_for_sd(int32_t which) {
   if (!g_hooks.sd_ready || !g_hooks.sd_ready(true)) {
     notice("NO SD CARD - INSERT ONE AND TRY AGAIN");
-    return;
+    return false;
   }
   const orcsdr::sstv::Image image = which < 0 ? orcsdr::sstv::snapshot_live()
                                               : orcsdr::sstv::pin_archived(static_cast<size_t>(which));
   if (!image.pixels) {
     notice("NOTHING TO SAVE YET");
-    return;
+    return false;
   }
   if (!arc::enqueue(image, utc())) {
     orcsdr::sstv::release_image(image);
     notice("SD QUEUE BUSY - TRY AGAIN IN A MOMENT");
-    return;
+    return false;
   }
   notice("QUEUED FOR SD - PROGRESS SHOWN ON IMAGES");
+  return true;
 }
 
 void handle(const orcsdr::sstv::Action& action) {
@@ -93,7 +95,7 @@ void handle(const orcsdr::sstv::Action& action) {
       commit_settings();
       break;
     case Kind::save_image:
-      queue_for_sd(action.value);
+      (void)queue_for_sd(action.value);
       break;
     case Kind::clear_gallery:
       orcsdr::sstv::clear_gallery();
@@ -144,6 +146,7 @@ void close() {
 
 void tick() {
   if (!orcsdr::sstv::ui_active()) return;
+  orcsdr::sstv_diag::tick(millis());               // bench self-test audio, when one was requested
   orcsdr::sstv::service();
   (void)arc::poll(utc());
 }
@@ -157,5 +160,6 @@ void draw(bool static_panel) {
 }
 
 void touch(int32_t x, int32_t y) { handle(orcsdr::sstv::ui_touch(x, y)); }
+bool save_image(int32_t which) { return queue_for_sd(which); }
 
 }  // namespace orcsdr::sstv_app

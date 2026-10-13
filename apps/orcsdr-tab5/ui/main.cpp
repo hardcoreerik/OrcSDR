@@ -58,6 +58,7 @@
 #include "ft8_dashboard.hpp"
 #include "sstv_app.hpp"
 #include "sstv_dashboard.hpp"
+#include "sstv_diag.hpp"
 #include "sstv_receiver.hpp"
 #include "ft8_tuning.hpp"
 #include "ft8_heard_db.hpp"
@@ -13663,6 +13664,10 @@ void open_sstv_dashboard() {
   orcsdr::sstv_app::install(sstv_app_hooks());
   orcsdr::sstv_app::open();
 }
+const orcsdr::sstv_diag::Hooks kSstvDiagHooks = {
+    [](const char* text) { Serial.print(text); },
+    open_sstv_dashboard,
+    [](int32_t which) { return orcsdr::sstv_app::save_image(which); }};
 void open_dashboard(orcsdr::dashboards::Id id) {
   using Id = orcsdr::dashboards::Id;
   if (id != Id::settings && orcsdr::settings::active()) close_global_settings();
@@ -19361,6 +19366,7 @@ void process_command(char* command) {
     return;
   }
   if (orcsdr::lora_diag::handle_command(command, authenticated, kLoraDiagHooks)) return;
+  if (orcsdr::sstv_diag::handle_command(command, authenticated, kSstvDiagHooks)) return;
   if (orcsdr::lora_gain_guard::handle_command(command, authenticated, kLoraGainHooks)) return;
   if (strcmp(command, "RTL_LORA_REGION_LIST") == 0) {
     for (size_t i = 0; i < orcsdr::lora_channel::region_count(); ++i)

@@ -19,6 +19,13 @@ namespace orcsdr::sstv {
 namespace {
 constexpr uint32_t kRate=12000, kRingSize=4096, kMask=kRingSize-1;
 constexpr uint16_t kMaxWidth=800;
+// The zero-crossing tone estimator needs a few periods to settle on 1200 Hz, so a sync pulse is
+// recognised later than the autocorrelation estimator recognises pixel tones. Measured with the
+// ORC test pattern (sstv_pattern_test): every image came out shifted left by 3.0-3.2 ms in both
+// Robot 36 and PD120, i.e. a fixed time lag, not a number of pixels. The pulse start is moved
+// back by this many 12 kHz samples before it positions the raster. The best value was 37 for
+// Robot 36 and 39 for PD120 (their pixels are 3.3 and 2.3 samples wide); 38 serves both.
+constexpr double kSyncStartLatencySamples=38.0;
 constexpr size_t kGallery=4;
 std::atomic<uint32_t> g_read{0},g_write{0},g_drops{0};
 // Drop bursts are recorded in-band so the decoder can keep its sample clock
@@ -30,7 +37,9 @@ uint32_t g_gap_count[kGapMarks]{};
 std::atomic<uint32_t> g_gap_head{0},g_gap_tail{0};
 uint32_t g_pending_gap=0;   // producer-only: dropped since the last stored sample
 std::atomic<bool> g_on{false};
-int16_t g_queue[kRingSize]{};
+// The 8 KiB audio ring lives in PSRAM, allocated by start(): internal RAM is nearly full on the Tab5
+// (a static here, together with the other SSTV buffers, stopped the firmware from booting).
+int16_t* g_queue=nullptr;
 int32_t g_decim_sum=0;
 uint8_t g_decim_n=0;
 Mode g_requested=Mode::auto_vis;
@@ -265,7 +274,7 @@ void sync_edge(uint32_t sync_len) {
   if(!g_spec||g_line_sync)return;
   const double need=static_cast<double>(g_spec->sync_us)*kRate/1.e6;
   if(sync_len<need*.55 || sync_len>need*1.55)return;
-  const double edge=static_cast<double>(g_ticks-sync_len);
+  const double edge=static_cast<double>(g_ticks-sync_len)-kSyncStartLatencySamples;
   const double expected=g_line_origin+sync_offset_samples(*g_spec);
   const double error=edge-expected;
   // Avoid locking onto arbitrary 1200-Hz noise far from the expected line.
@@ -484,7 +493,7 @@ void accept_sample(int16_t pcm) {
           begin_picture(m,0,Identification::sync,candidate.score,true);
           // Fallback starts on the NEXT complete line. Scottie's 9ms
           // sync is in the middle of its RGB scan; use its offset.
-          g_line_origin=static_cast<double>(sync_start)+
+          g_line_origin=static_cast<double>(sync_start)-kSyncStartLatencySamples+
              static_cast<double>(m->line_us)*kRate/1000000.-
              sync_offset_samples(*m);
           ++g_stats.auto_sync_locks;
@@ -532,6 +541,18 @@ void start(uint32_t freq) {
     g_ac_lut_ready=true;
   }
   g_ticks=0;
+  if(!g_queue) {
+#ifdef ESP_PLATFORM
+    g_queue=static_cast<int16_t*>(heap_caps_calloc(kRingSize,sizeof(int16_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
+#else
+    g_queue=static_cast<int16_t*>(std::calloc(kRingSize,sizeof(int16_t)));
+#endif
+    if(!g_queue) {
+      std::snprintf(g_stats.status,sizeof(g_stats.status),"INSUFFICIENT PSRAM");
+      g_stats.active=false;
+      return;
+    }
+  }
   g_read.store(g_write.load(std::memory_order_acquire),std::memory_order_release);
   std::snprintf(g_stats.status,sizeof(g_stats.status),"WAITING FOR VIS");
   g_on.store(true,std::memory_order_release);

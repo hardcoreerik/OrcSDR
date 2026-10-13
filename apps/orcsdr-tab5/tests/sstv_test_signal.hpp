@@ -53,6 +53,53 @@ struct Signal {
       if (phase >= 2.0 * kPi) phase -= 2.0 * kPi;
     }
   }
+  // Drift-free tone for pixel-level signals: segment boundaries come from a cumulative exact
+  // clock, so 320 pixels of 0.275 ms add up to exactly 88 ms instead of accumulating rounding.
+  double exact_ms = 0;
+  long exact_emitted = 0;
+  void exact_reset() { exact_ms = 0; exact_emitted = 0; }
+  void exact_tone(double hz, double ms) {
+    exact_ms += ms * time_scale;
+    const long target = std::lround(exact_ms * kSampleRate / 1000.);
+    const long samples = target - exact_emitted;
+    exact_emitted = target;
+    const double delta = (2.0 * kPi * hz) / kSampleRate;
+    for (long i = 0; i < samples; ++i) {
+      push(static_cast<int16_t>(std::lround(amplitude * std::sin(phase))));
+      phase += delta;
+      if (phase >= 2.0 * kPi) phase -= 2.0 * kPi;
+    }
+  }
+  static double luma_to_hz(uint8_t v) { return 1500.0 + 800.0 * v / 255.0; }
+  // Robot 36 from a 320x240 grayscale image (luma only; chroma neutral).
+  void robot36_image(const uint8_t* gray) {
+    exact_reset();
+    for (unsigned row = 0; row < 240; ++row) {
+      exact_tone(1200, 9);
+      exact_tone(1500, 3);
+      for (unsigned x = 0; x < 320; ++x) exact_tone(luma_to_hz(gray[row * 320u + x]), 0.275);
+      exact_tone((row & 1u) ? 2300 : 1500, 4.5);
+      exact_tone(1900, 1.5);
+      exact_tone(1900, 44);
+    }
+    tone(1900, 50);
+  }
+  // PD120 (640x496) from the same 320x240 picture, scaled 2x horizontally and to 496 rows.
+  void pd120_image(const uint8_t* gray) {
+    exact_reset();
+    for (unsigned pair = 0; pair < 248; ++pair) {
+      exact_tone(1200, 20);
+      exact_tone(1500, 2.08);
+      for (unsigned part = 0; part < 4; ++part) {
+        const bool luma = part == 0 || part == 3;
+        const unsigned row = pair * 2u + (part == 3 ? 1u : 0u);
+        const unsigned src_row = row * 240u / 496u;
+        for (unsigned x = 0; x < 640; ++x)
+          exact_tone(luma ? luma_to_hz(gray[src_row * 320u + x / 2u]) : 1900.0, 0.19);
+      }
+    }
+    tone(1900, 50);
+  }
   void silence(double ms) {
     const auto samples = static_cast<int>(std::lround(kSampleRate * ms / 1000.));
     for (int i = 0; i < samples; ++i) push(0);

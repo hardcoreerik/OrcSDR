@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <esp_heap_caps.h>
+#include <esp_timer.h>
 #include <iterator>
 #include "sstv_archive.hpp"
 #include "sstv_auto_detect.hpp"
@@ -28,7 +30,19 @@ size_t g_gallery_selected = 0;
 char g_notice[84]{};
 uint32_t g_notice_until = 0;
 uint32_t g_last_render_ms = 0;
-static uint16_t g_thumb[100*76];
+// 15 KiB thumbnail scratch lives in PSRAM (internal RAM is nearly full), allocated on first use.
+uint16_t* g_thumb=nullptr;
+UiStats g_ui_stats{};
+// Measures one screen update. Constructed at the top of every public drawing path.
+struct DrawTimer {
+  int64_t started=esp_timer_get_time();
+  ~DrawTimer() {
+    const uint32_t us=static_cast<uint32_t>(esp_timer_get_time()-started);
+    g_ui_stats.draw_us_last=us;
+    if(us>g_ui_stats.draw_us_max)g_ui_stats.draw_us_max=us;
+    ++g_ui_stats.draws;
+  }
+};
 bool hit(int x,int y,int left,int top,int width,int height) {
   return x>=left && x<left+width && y>=top && y<top+height;
 }
@@ -221,6 +235,9 @@ void draw_receive() {
 void thumbnail(const Image& im,int x,int y,int w,int h) {
   box(x,y,w,h,kBorder,0x0840);
   if(!im.pixels) { txt("EMPTY",x+w/2,y+h/2,kDim,1,middle_center);return; }
+  if(!g_thumb)
+    g_thumb=static_cast<uint16_t*>(heap_caps_malloc(100*76*sizeof(uint16_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
+  if(!g_thumb) { txt("NO MEMORY",x+w/2,y+h/2,kOrange,1,middle_center);return; }
   const int tw=100, th=76;
   for(int yy=0;yy<th;++yy) for(int xx=0;xx<tw;++xx)
     g_thumb[yy*tw+xx]=im.pixels[
@@ -408,6 +425,7 @@ void draw_page_body() {
 }
 void draw_all() {
   if(!g_active) return;
+  DrawTimer timer;
   M5.Display.startWrite();
   g_preview_source=nullptr;g_painted_screen_rows=0;g_painted_source_rows=0;
   M5.Display.fillScreen(kBg);
@@ -426,6 +444,7 @@ void ui_leave() { g_active=false; }
 bool ui_active() { return g_active; }
 void ui_update(const UiSnapshot& snapshot) {
   if(!g_active)return;
+  DrawTimer timer;
   const bool retuned=g_ui.frequency_hz!=snapshot.frequency_hz;
   const bool changed=std::memcmp(&g_ui.settings,&snapshot.settings,sizeof(g_ui.settings))!=0 ||
                      g_ui.sd_ready!=snapshot.sd_ready;
@@ -455,6 +474,7 @@ void ui_update(const UiSnapshot& snapshot) {
     g_last_render_ms=now;
   }
 }
+UiStats ui_stats() { return g_ui_stats; }
 Page ui_page() { return g_page; }
 uint8_t ui_profile() { return g_profile; }
 void ui_set_profile(uint8_t index) { g_profile=index; if(g_active)draw_all(); }

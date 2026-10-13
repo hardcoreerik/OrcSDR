@@ -37,4 +37,7 @@ uint8_t ui_profile();
 void ui_set_profile(uint8_t index);
 void ui_set_settings(const sstv_settings::Settings& settings);   // redraws; nothing is restarted
 void ui_notice(const char* message);
+// Time spent drawing, measured around every screen update (display latency, bench diagnostics).
+struct UiStats { uint32_t draw_us_last = 0, draw_us_max = 0, draws = 0; };
+UiStats ui_stats();
 } // namespace orcsdr::sstv

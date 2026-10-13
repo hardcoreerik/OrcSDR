@@ -25,5 +25,8 @@ void close();                       // dashboard left for any reason; no-op when
 void tick();                        // main loop: decoder service and archive hand-off
 void draw(bool static_panel);       // screen refresh requested by the screen controller
 void touch(int32_t x, int32_t y);   // touch routing
+// Queue an image for the SD archive: -1 = image in progress, otherwise a gallery index. False
+// when nothing could be queued (no card, nothing to save, queue busy); the UI is told why.
+bool save_image(int32_t which);
 
 }  // namespace orcsdr::sstv_app
