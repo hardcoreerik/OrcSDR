@@ -77,6 +77,19 @@ int main(int argc,char** argv) {
     completed.pixels?(completed.partial?1:0):-1,static_cast<int>(completed.identification),
     static_cast<int>(completed.end_reason),
     static_cast<unsigned>(completed.sync_locked),static_cast<unsigned>(completed.sync_missed));
+  // SSTV_REPLAY_PPM=<file> writes the decoded picture (colour) so a recording can be looked at, not just counted.
+  if(const char* ppm=std::getenv("SSTV_REPLAY_PPM")) {
+    if(completed.pixels) if(std::FILE* f=std::fopen(ppm,"wb")) {
+      std::fprintf(f,"P6\n%u %u\n255\n",completed.width,completed.height);
+      for(unsigned i=0;i<static_cast<unsigned>(completed.width)*completed.height;++i) {
+        const uint16_t px=completed.pixels[i];
+        std::fputc(((px>>11)&31)<<3|((px>>11)&31)>>2,f);
+        std::fputc(((px>>5)&63)<<2|((px>>5)&63)>>4,f);
+        std::fputc((px&31)<<3|(px&31)>>2,f);
+      }
+      std::fclose(f);
+    }
+  }
   int ret=stats.audio_overruns==0?0:1;
   if(argc>=3&&stats.vis!=std::atoi(argv[2]))ret=1;
   if(argc>=4&&std::max<uint32_t>(decoded,completed.decoded_rows)<
