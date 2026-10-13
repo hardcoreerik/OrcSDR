@@ -467,7 +467,7 @@ void draw_setup() {
   } else {
     text("/orcsdr/sstv/index.csv (schema v2)", x, 512, kMuted, 0, middle_left);
   }
-  text("14 modes, monochrome preview (colour is not decoded)", x, 540, kMuted, 0, middle_left);
+  text("14 modes, full colour (Robot, Martin, Scottie, PD)", x, 540, kMuted, 0, middle_left);
 }
 
 void draw_page_body() {

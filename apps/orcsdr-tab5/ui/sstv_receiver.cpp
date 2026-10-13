@@ -26,18 +26,26 @@ constexpr uint16_t kMaxWidth=800;
 // back by this many 12 kHz samples before it positions the raster. The best value was 37 for
 // Robot 36 and 39 for PD120 (their pixels are 3.3 and 2.3 samples wide); 38 serves both.
 constexpr double kSyncStartLatencySamples=38.0;
-#ifndef SSTV_SHORT_SYNC_LATENCY
-#define SSTV_SHORT_SYNC_LATENCY 38.0
-#endif
-// Where a sync pulse really started, given where the tone estimator first saw it. Short pulses (Martin, 4.9 ms)
-// are not fully settled when the estimator crosses the window, so they get their own figure.
+// Where a sync pulse really started, in samples before the point where the tone estimator first saw it. The
+// estimator's delay depends on the pulse and on what precedes it, so each mode has its own figure, found by
+// sweeping the value on the host against the independent colour encoder (tests/sstv_colour_test.cpp) and
+// taking the best picture correlation. Real receivers add their own small delay; confirm with a recording.
 double sync_latency(const ModeSpec& m){
 #ifdef ORCSDR_SSTV_TESTING
   // Host calibration sweeps only (SSTV_LATENCY_SWEEP=<samples>); never compiled into the firmware.
   static const char* sweep=std::getenv("SSTV_LATENCY_SWEEP");
   if(sweep)return std::atof(sweep);
 #endif
-  return m.sync_us<8000u?SSTV_SHORT_SYNC_LATENCY:kSyncStartLatencySamples;
+  switch(m.mode) {
+    case Mode::martin_m1:return 36.;
+    case Mode::martin_m2:return 34.;
+    case Mode::scottie_s1:case Mode::scottie_s2:return 40.;
+    case Mode::scottie_dx:return 47.;
+    case Mode::pd50:case Mode::pd120:return 40.;
+    case Mode::pd160:case Mode::pd180:case Mode::pd240:case Mode::pd290:return 42.;
+    case Mode::pd90:return 44.;
+    default:return kSyncStartLatencySamples;   // Robot 36 / 72
+  }
 }
 constexpr size_t kGallery=4;
 std::atomic<uint32_t> g_read{0},g_write{0},g_drops{0},g_offered{0};

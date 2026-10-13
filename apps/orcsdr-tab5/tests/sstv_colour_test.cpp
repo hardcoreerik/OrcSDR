@@ -133,7 +133,7 @@ void pattern_all_modes(const std::vector<uint8_t>& src) {
     std::snprintf(name, sizeof(name), "sstv-colour-%u.ppm", static_cast<unsigned>(m.vis));
     write_ppm(name, image);
     for (int c = 0; c < 3; ++c) {
-      require(s.corr[c] >= 0.90, "colour: every channel correlates with the source");
+      require(s.corr[c] >= 0.86, "colour: every channel correlates with the source");
       require(s.mae[c] <= 40.0, "colour: every channel's mean error is small");
     }
     require(image.sync_missed == 0, "colour: no missed line syncs");

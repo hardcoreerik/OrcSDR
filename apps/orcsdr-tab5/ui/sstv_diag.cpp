@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "sstv_diag.hpp"
 
 #include <cmath>
@@ -21,10 +22,30 @@ enum class Scenario : uint8_t { none, robot36, robot36_novis, pd120 };
 constexpr double kPi = 3.14159265358979323846;
 constexpr uint32_t kRate = 48000;
 
-// The ORC SSTV test pattern (320x240, 8-bit gray), embedded from main/sstv_testpattern_320x240.gray.
-// It is the same picture the host fidelity test and the Pluto-side generator use.
-extern const uint8_t kPattern[] asm("_binary_sstv_testpattern_320x240_gray_start");
+// The ORC SSTV test pattern (320x240, 24-bit RGB), embedded from main/sstv_testpattern_320x240.rgb.
+// It is the same picture the host colour test uses; its gray version drives the host fidelity test.
+extern const uint8_t kPattern[] asm("_binary_sstv_testpattern_320x240_rgb_start");
 constexpr uint32_t kPatternW = 320, kPatternH = 240;
+
+// Y, R-Y and B-Y of the pattern as the receiver's colour decoder expects them (see sstv_receiver.cpp).
+struct Rgb { double r, g, b; };
+Rgb pattern_at(uint32_t x, uint32_t y) {
+  const uint8_t* p = kPattern + (static_cast<size_t>(y) * kPatternW + x) * 3u;
+  return {static_cast<double>(p[0]), static_cast<double>(p[1]), static_cast<double>(p[2])};
+}
+double clamp255(double v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+double luma_of(Rgb c) { return clamp255(0.299 * c.r + 0.587 * c.g + 0.114 * c.b); }
+// Chroma byte (R-Y when `red`, else B-Y) averaged over a block of source pixels.
+double chroma_of(uint32_t x0, uint32_t y0, uint32_t across, uint32_t rows, bool red) {
+  double sum = 0;
+  for (uint32_t dy = 0; dy < rows; ++dy)
+    for (uint32_t dx = 0; dx < across; ++dx) {
+      const Rgb c = pattern_at(std::min(kPatternW - 1u, x0 + dx), std::min(kPatternH - 1u, y0 + dy));
+      const double y = luma_of(c);
+      sum += red ? clamp255((c.r - y) / 1.40 + 128.0) : clamp255((c.b - y) / 1.78 + 128.0);
+    }
+  return sum / (across * rows);
+}
 
 struct Script {
   Scenario scenario = Scenario::none;
@@ -79,7 +100,7 @@ void exact_segment(double hz, double ms) {
   g_script.remaining = static_cast<uint32_t>(target - g_script.planned);
   g_script.planned = target;
 }
-double luma_hz(uint8_t v) { return 1500.0 + 800.0 * v / 255.0; }
+double luma_hz(double v) { return 1500.0 + 800.0 * v / 255.0; }
 
 // Next tone of the synthetic transmission; false when it has finished.
 bool next_segment() {
@@ -123,12 +144,17 @@ bool next_segment() {
           case 5: {
             const uint32_t row = s.row * 2u + (s.part == 5 ? 1u : 0u);
             const uint32_t src = row * kPatternH / 496u;
-            exact_segment(luma_hz(kPattern[src * kPatternW + s.pix / 2u]), 0.19);
+            exact_segment(luma_hz(luma_of(pattern_at(s.pix / 2u, src))), 0.19);
             if (++s.pix >= 640) { s.pix = 0; s.part = s.part == 2 ? 3 : 6; }
             return true;
           }
-          case 3: exact_segment(1900, 121.6); s.part = 4; return true;
-          case 4: exact_segment(1900, 121.6); s.part = 5; s.pix = 0; return true;
+          case 3:
+          case 4: {   // Cr then Cb, full width, shared by the two rows of the pair
+            const uint32_t y0 = std::min(kPatternH - 2u, (s.row * 2u) * kPatternH / 496u);
+            exact_segment(luma_hz(chroma_of(s.pix / 2u, y0, 1, 2, s.part == 3)), 0.19);
+            if (++s.pix >= 640) { s.pix = 0; s.part = s.part == 3 ? 4 : 5; }
+            return true;
+          }
           default: s.part = 0; ++s.row; return next_segment();
         }
       }
@@ -138,12 +164,16 @@ bool next_segment() {
         case 0: exact_segment(1200, 9); s.part = 1; return true;
         case 1: exact_segment(1500, 3); s.part = 2; s.pix = 0; return true;
         case 2:
-          exact_segment(luma_hz(kPattern[s.row * kPatternW + s.pix]), 0.275);
+          exact_segment(luma_hz(luma_of(pattern_at(s.pix, s.row))), 0.275);
           if (++s.pix >= 320) { s.pix = 0; s.part = 3; }
           return true;
         case 3: exact_segment((s.row & 1u) ? 2300 : 1500, 4.5); s.part = 4; return true;
         case 4: exact_segment(1900, 1.5); s.part = 5; return true;
-        case 5: exact_segment(1900, 44); s.part = 0; ++s.row; return true;
+        case 5: {   // chroma: R-Y on even lines, B-Y on odd, averaged over the line pair
+          exact_segment(luma_hz(chroma_of(s.pix * 2u, s.row & ~1u, 2, 2, (s.row & 1u) == 0)), 0.275);
+          if (++s.pix >= 160) { s.pix = 0; s.part = 0; ++s.row; }
+          return true;
+        }
         default: return false;
       }
     }
