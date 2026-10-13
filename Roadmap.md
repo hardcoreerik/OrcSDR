@@ -99,7 +99,7 @@ rollback, and radio-recovery gates pass.
 - Other Tab5/display revisions beyond the owner ESP32-P4 revision 1.3 unit.
 - Long-duration current-main soak and repeatable receiver recovery.
 - Current-release RF acceptance for Shortwave, Airband, Marine, Satellite, and CB.
-- LoRa receive at the sensitivity edge (about -110 dBm) for the Blog V3C and Nooelec NESDR SMArt V5; the Blog V4 and V4L were measured there and missed packets a T-Beam Supreme still decoded.
+- LoRa receive at the sensitivity edge (about -110 dBm) for the Blog V3C and Nooelec NESDR SMArt V5; the Blog V4 and V4L were measured there and decoded none, and a Heltec V4 reference node did not decode them either, while a T-Beam Supreme still decoded some (a few per ten sent).
 
 ## Follow-up cleanup
 
