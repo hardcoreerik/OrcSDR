@@ -10,6 +10,7 @@
 #include "sstv_archive.hpp"
 #include "sstv_dashboard.hpp"
 #include "sstv_receiver.hpp"
+#include "sstv_status.hpp"
 
 #ifdef ESP_PLATFORM
 #include <esp_heap_caps.h>
@@ -251,6 +252,11 @@ void print_status() {
       static_cast<unsigned long>(m.auto_sync_locks), static_cast<int>(m.tone_hz), static_cast<int>(m.audio_peak * 1000.0f),
       static_cast<unsigned long>(m.audio_offered), static_cast<unsigned long>(m.samples),
       static_cast<int>(m.sync_tone_hz + 0.5f), static_cast<unsigned>(m.sync_tone_pulses));
+  if (g_hooks && g_hooks->tune_summary) {
+    char tune[160];
+    g_hooks->tune_summary(tune, sizeof(tune));
+    say("SSTV_TUNE %s", tune);
+  }
   const UiStats ui = ui_stats();
   say("SSTV_PERF service_us_last=%lu service_us_max=%lu service_us_avg=%lu service_cpu_pct=%u ring_max=%u/4096 "
       "frames_alive=%lu frame_kb=%lu draw_us_last=%lu draw_us_max=%lu draws=%lu",
@@ -355,6 +361,19 @@ bool handle_command(const char* command, bool authenticated, const Hooks& hooks)
   const char* args = command + 5;
   if (std::strcmp(args, "STATUS") == 0) { print_status(); return true; }
   if (std::strcmp(args, "INDEX") == 0) { print_index_tail(); return true; }
+  if (std::strcmp(args, "LAST") == 0) {
+    const auto image = orcsdr::sstv::archived_image(0);
+    if (!image.pixels) { say("SSTV_LAST none=1"); return true; }
+    orcsdr::sstv_status::ImageChips chips;
+    orcsdr::sstv_status::image_chips(image, &chips);
+    say("SSTV_LAST serial=%lu mode=\"%s\" rows=%u of=%u partial=%d sync_locked=%u sync_missed=%u start_unknown=%d "
+        "ident=\"%s\" end=\"%s\" frequency_hz=%lu",
+        static_cast<unsigned long>(image.serial), orcsdr::sstv::mode_name(image.mode),
+        static_cast<unsigned>(image.decoded_rows), static_cast<unsigned>(image.height), image.partial ? 1 : 0,
+        static_cast<unsigned>(image.sync_locked), static_cast<unsigned>(image.sync_missed), image.start_unknown ? 1 : 0,
+        chips.identification, chips.ending, static_cast<unsigned long>(image.frequency_hz));
+    return true;
+  }
   if (denied(hooks, authenticated)) return true;
   if (std::strcmp(args, "OPEN") == 0) {
     if (hooks.open_dashboard) hooks.open_dashboard();
@@ -388,6 +407,13 @@ bool handle_command(const char* command, bool authenticated, const Hooks& hooks)
     say("SSTV_OK selftest=%s speed=%u", scenario_name(scenario), g_script.speed);
     return true;
   }
+  if (std::strncmp(args, "MODE ", 5) == 0 || std::strncmp(args, "IFBW ", 5) == 0 || std::strncmp(args, "STEP ", 5) == 0 ||
+      std::strncmp(args, "RAILS ", 6) == 0) {
+    char reply[96] = {};
+    if (hooks.tune_command && hooks.tune_command(args, reply, sizeof(reply))) say("SSTV_OK %s", reply);
+    else say("SSTV_ERROR %s", reply[0] ? reply : "unavailable");
+    return true;
+  }
   if (std::strncmp(args, "TUNE ", 5) == 0) {
     char* end = nullptr;
     const unsigned long hz = std::strtoul(args + 5, &end, 10);
@@ -406,7 +432,7 @@ bool handle_command(const char* command, bool authenticated, const Hooks& hooks)
     say("SSTV_OK queued=%d", queued ? 1 : 0);
     return true;
   }
-  say("SSTV_ERROR usage=SSTV STATUS|INDEX|OPEN|TUNE <hz>|SELFTEST <scenario> [SPEED n]|SELFTEST STOP|SAVE LIVE|NEWEST");
+  say("SSTV_ERROR usage=SSTV STATUS|INDEX|LAST|OPEN|TUNE <hz>|MODE <m>|IFBW <hz>|STEP <hz>|RAILS ON|OFF|SELFTEST <scenario> [SPEED n]|SELFTEST STOP|SAVE LIVE|NEWEST");
   return true;
 }
 

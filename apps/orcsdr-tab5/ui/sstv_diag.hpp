@@ -9,11 +9,14 @@
 //   SSTV SELFTEST STOP                abort the running self-test (auth)
 //   SSTV SAVE LIVE|NEWEST             queue the image in progress / the newest gallery image for SD (auth)
 //   SSTV TUNE <hz>                    tune the open dashboard to a frequency in Hz (auth)
+//   SSTV MODE AUTO|NFM|USB|LSB | IFBW <hz> | STEP <hz> | RAILS ON|OFF   TUNE tab settings (auth)
+//   SSTV LAST                         newest gallery image: mode, rows, sync locked/missed (no auth)
 //   SSTV INDEX                        print the last lines of the SD index (no auth)
 //
 // The self-test generates audio inside the firmware (no RF, no transmitter). It feeds the same
 // offer_audio_48k() tap the demodulator uses, so decoder cost, ring behaviour, drawing and SD
 // writes can be measured without an antenna or a signal source.
+#include <cstddef>
 #include <cstdint>
 
 namespace orcsdr::sstv_diag {
@@ -23,6 +26,8 @@ struct Hooks {
   void (*open_dashboard)() = nullptr;
   bool (*save_image)(int32_t which) = nullptr;   // -1 = image in progress, otherwise gallery index
   bool (*tune)(uint32_t frequency_hz) = nullptr; // false when refused (dashboard closed or out of range)
+  bool (*tune_command)(const char* args, char* reply, size_t size) = nullptr;   // MODE / IFBW / STEP / RAILS
+  void (*tune_summary)(char* out, size_t size) = nullptr;
 };
 
 bool handle_command(const char* command, bool authenticated, const Hooks& hooks);

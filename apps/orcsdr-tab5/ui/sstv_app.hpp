@@ -57,6 +57,10 @@ uint32_t next_step_hz(bool larger);           // the neighbouring step on the li
 void cycle_demod();                           // AUTO -> NFM -> USB -> LSB -> AUTO
 uint32_t if_bandwidth_hz();                  // the IF width in use
 void cycle_if_bandwidth();                    // next width on the list, wrapping
+// Serial control of the TUNE tab's settings ("MODE AUTO|NFM|USB|LSB", "IFBW <hz>", "STEP <hz>", "RAILS ON|OFF"). Writes a
+// short reply (or the reason) and returns false when it was refused.
+bool tune_command(const char* args, char* reply, size_t size);
+void tune_summary(char* out, size_t size);    // "frequency_hz=... demod=... step_hz=... if_hz=... rails=..."
 const char* demod_label();                    // e.g. "NFM", "USB (AUTO)"
 // RF spectrum for the TUNE tab, called from the UI task each time a spectrum frame exists.
 bool wants_spectrum();

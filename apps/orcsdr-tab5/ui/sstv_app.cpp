@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <iterator>
 
 #include "screen_controller.hpp"
@@ -356,6 +357,60 @@ void cycle_if_bandwidth() {
   g_tune.if_index = static_cast<uint8_t>((g_tune.if_index + 1) % std::size(kIfWidths));
   apply_demod();
   save_tune();
+}
+bool tune_command(const char* args, char* reply, size_t size) {
+  if (!active()) { std::snprintf(reply, size, "dashboard_not_open use=SSTV OPEN"); return false; }
+  if (std::strncmp(args, "MODE ", 5) == 0) {
+    const char* v = args + 5;
+    int choice = -1;
+    if (std::strcmp(v, "AUTO") == 0) choice = 0;
+    else if (std::strcmp(v, "NFM") == 0) choice = 1;
+    else if (std::strcmp(v, "USB") == 0) choice = 2;
+    else if (std::strcmp(v, "LSB") == 0) choice = 3;
+    if (choice < 0) { std::snprintf(reply, size, "usage=SSTV MODE AUTO|NFM|USB|LSB"); return false; }
+    g_tune.demod_choice = static_cast<uint8_t>(choice);
+    apply_demod();
+    save_tune();
+    std::snprintf(reply, size, "mode=%s", demod_label());
+    return true;
+  }
+  if (std::strncmp(args, "IFBW ", 5) == 0) {
+    char* end = nullptr;
+    const unsigned long hz = std::strtoul(args + 5, &end, 10);
+    if (end == args + 5 || *end) { std::snprintf(reply, size, "usage=SSTV IFBW <hz> (%lu..%lu)", static_cast<unsigned long>(kIfWidths[std::size(kIfWidths) - 1]), static_cast<unsigned long>(kIfWidths[0])); return false; }
+    size_t best = 0;
+    for (size_t i = 1; i < std::size(kIfWidths); ++i)
+      if (std::labs(static_cast<long>(kIfWidths[i]) - static_cast<long>(hz)) < std::labs(static_cast<long>(kIfWidths[best]) - static_cast<long>(hz))) best = i;
+    g_tune.if_index = static_cast<uint8_t>(best);
+    apply_demod();
+    save_tune();
+    std::snprintf(reply, size, "if_hz=%lu", static_cast<unsigned long>(kIfWidths[best]));
+    return true;
+  }
+  if (std::strncmp(args, "STEP ", 5) == 0) {
+    char* end = nullptr;
+    const unsigned long hz = std::strtoul(args + 5, &end, 10);
+    if (end == args + 5 || *end || !hz) { std::snprintf(reply, size, "usage=SSTV STEP <hz>"); return false; }
+    g_tune.step_index = static_cast<uint8_t>(tn::step_index(static_cast<uint32_t>(hz)));
+    save_tune();
+    std::snprintf(reply, size, "step_hz=%lu", static_cast<unsigned long>(tn::step_hz(g_tune.step_index)));
+    return true;
+  }
+  if (std::strncmp(args, "RAILS ", 6) == 0) {
+    if (std::strcmp(args + 6, "ON") == 0) g_tune.rails = true;
+    else if (std::strcmp(args + 6, "OFF") == 0) g_tune.rails = false;
+    else { std::snprintf(reply, size, "usage=SSTV RAILS ON|OFF"); return false; }
+    save_tune();
+    std::snprintf(reply, size, "rails=%d", g_tune.rails ? 1 : 0);
+    return true;
+  }
+  std::snprintf(reply, size, "unknown");
+  return false;
+}
+void tune_summary(char* out, size_t size) {
+  std::snprintf(out, size, "frequency_hz=%lu demod=\"%s\" step_hz=%lu if_hz=%lu rails=%d", static_cast<unsigned long>(g_frequency_hz),
+                demod_label(), static_cast<unsigned long>(tn::step_hz(g_tune.step_index)),
+                static_cast<unsigned long>(kIfWidths[g_tune.if_index]), g_tune.rails ? 1 : 0);
 }
 void cycle_demod() {
   if (!active()) return;
