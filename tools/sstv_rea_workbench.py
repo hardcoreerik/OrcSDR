@@ -31,6 +31,7 @@ SOURCES = [
     ROOT / "apps/orcsdr-tab5/tests/sstv_wav_replay.cpp",
     ROOT / "apps/orcsdr-tab5/ui/sstv_receiver.cpp",
     ROOT / "apps/orcsdr-tab5/ui/sstv_modes.cpp",
+    ROOT / "apps/orcsdr-tab5/ui/sstv_auto_detect.cpp",
 ]
 EXPECTED_REA = "6.4.0"
 TIMEOUT_S = 480
