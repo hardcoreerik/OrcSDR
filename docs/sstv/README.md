@@ -1,32 +1,102 @@
 # OrcSDR SSTV — native progressive receiver (EXPERIMENTAL)
 
-**Branch:** `codex/sstv-native-dashboard`  
-**Target:** M5Stack Tab5, ESP32-P4, RTL-SDR V4/compatible device  
-**Architecture:** real receiver PCM -> bounded audio tap -> VIS/sync decoder -> RGB565 PSRAM image -> native M5GFX UI -> explicit or optional automatic SD capture.
+**Branch:** `codex/sstv-native-dashboard` (development continues on `claude/sstv-auto-dashboard`)  
+**Target:** M5Stack Tab5, ESP32-P4, RTL-SDR (Blog V3C/V4/V4L, Nooelec NESDR SMArt V5)  
+**Audio path:** receiver PCM → bounded audio tap → VIS/sync decoder → RGB565 PSRAM image → native M5GFX UI → background SD archive.
 
-This receiver currently renders **monochrome** from valid luminance scans in all 14 modes. It is **not** a verified full-color receiver. Color-difference demodulation, exact Scottie edge validation, noise robustness and actual Tab5 firmware validation remain before a production release.
+The receiver renders **monochrome** from the luminance scans of all 14 modes. It is **not** a colour receiver and must not be described as one. Host regressions and a full ESP-IDF firmware compile pass; the dashboard, SD archive and timings have **not yet been observed on a physical Tab5** (see *Not yet validated*).
 
-## Why this design
+## What the user sees
 
-The F4HWN/armel UV-K1 / UV-K5 V3 Labs overlay demonstrates that scanline SSTV is possible with very limited scratch RAM. OrcSDR follows that architectural lesson without copying its code: **no complete PCM frame, no temporary image stack, no display calls inside the DSP producer**.
+Open SSTV and the receiver listens by itself:
 
-UI pages: **Receive**, **Images**, **Signal**, **Frequencies**, **Setup**. The Receive page paints resampled screen scanlines only after the decoder publishes completed luminance rows; images appear before the frame completes. On 640×496 PD120 the UI retains native source resolution while fitting the preview to the 1280×720 screen.
+1. A valid VIS header names the mode at once (`ROBOT 36 - VIS CONFIRMED`).
+2. Without a header, repeated 1200 Hz line-sync pulses are classified. After enough evidence one mode is chosen and the image starts at the next full line (`PD 120 - SYNC LIKELY - PARTIAL`).
+3. Rows appear progressively. Complete and interrupted images go to a four-entry RAM gallery and, if auto-save is on, to the SD card.
+4. The receiver returns to listening on its own, without restarting the RTL-SDR stream, so a following transmission in a different mode needs no action.
 
-Mode detection: validated even-parity VIS preamble (1900 / 1200 / 1900 / 1200 start), then table dispatch. The parser rejects unsupported VIS and parity/sync errors.
+There is never more than one image decoder; the 14 modes are not decoded in parallel.
 
-Raster: sample clocks are double precision in the *UI receiver* and never allocated per line. The signal path uses a one-pole highpass + lowpass and fractional zero-crossing tone estimator. A gated sync pulse detector nudges line origin by 25% of measured offset, avoiding a new frame buffer for slant correction. Its robustness under weak RF remains unproven.
+## How the mode is identified
 
-Workspace: 2×800 8-bit luminance pixels (1600 bytes) plus scalar timing state. The producer-to-consumer audio queue is a separate 4096×16-bit (8 KB) transport buffer with overrun counting. Only the final source image plus a bounded gallery use PSRAM.
+**VIS (authoritative).** A 300 ms / 10 ms / 300 ms leader, a 30 ms start bit and eight 30 ms symbols (seven data bits, even parity, stop bit). Every symbol is a majority vote over its middle 20 ms; ambiguous symbols, a parity error or an unsupported code reject the header. A new valid VIS **always** wins: it archives any image in progress as a partial entry (`EndReason::new_vis`, including a speculative sync-identified one) and starts the new mode.
 
-## Supported monochrome preview mode table
+**Sync recovery (provisional).** Only when no VIS is being received and the strategy is *Auto*. The classifier keeps the last eight 1200 Hz pulse start times and widths and compares them with each mode's line period (±2.5 %) and sync width (±30 %). It locks only with ≥6 coherent pulses, a quality score ≥75 and a best-versus-runner-up margin ≥12. The score is a **relative heuristic, not a probability**. A sync-identified image:
 
-| Mode | VIS decimal | Frame | Transmitted line | Notes |
+- is always flagged `partial` and `start_unknown`: the top rows are unknown and nothing is invented;
+- is shown as `PROVISIONAL LOCK` until eight further line syncs confirm it, and as `SYNC LOCKED - PARTIAL` afterwards. It is **never** shown as `VIS CONFIRMED`;
+- is dropped back to listening after four consecutive predicted lines without a sync pulse (`EndReason::sync_lost`), keeping the rows already decoded.
+
+Known weakness: a Robot 36 stream with every other pulse missing looks like Robot 72 to the classifier (same width, double period). A faded Robot 36 reception can therefore be mislabelled until the next VIS or until sync is lost.
+
+**Manual (a VIS filter, not a forced decode).** *Manual* starts an image only when a valid VIS header names the chosen mode. Decoding a chosen mode without any VIS header is not implemented; the UI says so.
+
+## Session state
+
+`session_state()` derives one state from the decoder's own variables (no second copy): `searching`, `vis_acquisition`, `sync_analysis`, `provisional_lock`, `receiving`, `loss_recovery`, `finalizing` (first 0.5 s after an image ends), `ready` (until 3 s) and back to `searching`.
+
+## Modules
+
+| File | Role |
+| --- | --- |
+| `ui/sstv_receiver.*` | decoder, session state, gallery, reference-counted frames, metrics |
+| `ui/sstv_modes.cpp` | 14-mode timing and VIS tables |
+| `ui/sstv_auto_detect.*` | sync-only classifier and ranked candidates |
+| `ui/sstv_status.*` | status wording (testable without a display) |
+| `ui/sstv_settings.*` | detection strategy, manual mode, auto-save, persistence |
+| `ui/sstv_archive.*` | background SD writer, schema v2 index, recovery |
+| `ui/sstv_app.*` | dashboard lifecycle, user actions, archive hand-off |
+| `ui/sstv_dashboard.*` | the five native screens (drawing and hit-testing only) |
+| `ui/main.cpp` | hook adapters (RTL tuning, SD mount, clock, preferences) and one-line calls only |
+
+## Real-time design
+
+- Producer: 48 kHz PCM from the receiver, averaged ×4 into a 12 kHz, 4096-sample SPSC ring (8 KiB). The producer never draws, allocates or blocks.
+- Decoder (UI task): `service()` handles a bounded number of samples per call. Workspace is two 800-byte luminance rows and a 513-entry (1 KiB) frequency table. Luminance uses a normalised autocorrelation estimator (alpha 0.60); VIS and sync keep the zero-crossing estimator.
+- **64-bit sample clock.** A 32-bit counter at 12 kHz wraps after about 99.4 h, which would stall an unattended receiver; the raster origin is a double. Edge and pulse arithmetic stays wrap-safe.
+- **Dropped audio** (ring full) is recorded in-band and replaced by the same amount of elapsed time, so the next line sync still locks. The tone estimators and VIS state restart across the gap.
+- **Silence.** A fast envelope zeroes the tone estimate in true silence instead of holding the last tone.
+- Frames (up to PD290 ≈ 963 KiB) are PSRAM, **reference counted**: the gallery, the live image and a pending SD write each hold a reference, so eviction can never free pixels under the writer.
+- Metrics: `service_us_*`, `service_cpu_pct`, ring high-water mark, overruns, gaps, PSRAM frames. The host numbers printed by the tests are **not** P4 numbers.
+
+## Dashboard
+
+Same five native screens (no WebView):
+
+- **RECEIVE** — headline, mode and native size, VIS code or sync identification, image state (in progress, joined in progress with start row unknown), row progress, per-image sync locked/missed and line error, tone and level, abort and capture buttons.
+- **IMAGES** — gallery tiles with mode, complete/partial, VIS/sync identification, *joined* marker and SD save status; detail panel with frequency, UTC (or "time not verified"), counters and file name.
+- **SIGNAL** — tone monitor; sync pulse width and line interval; top-3 sync candidates with relative scores; missed lines, overruns and gaps; decoder cost, ring high-water, PSRAM; SD write latency.
+- **FREQUENCIES** — presets, unchanged (ISS SSTV 145.800 MHz is for announced ARISS events only).
+- **SETUP** — *Auto (VIS + sync recovery)* (default), *VIS only*, *Manual (VIS filter)* with the 14 modes, auto-save, SD status. Changing settings never restarts the receiver or discards an image.
+
+## SD archive
+
+Saving never happens on the UI task, in the PCM callback or in the USB path. `sstv_archive` owns a three-slot queue and a low-priority worker (FreeRTOS task, 6 KiB stack, priority idle+1).
+
+```text
+/sd/orcsdr/sstv/
+    index.csv
+    rx_<utc-or-0>_<hz>_<session>[-n].bmp
+```
+
+- Each BMP is written row by row to `<name>.bmp.part` and renamed only when complete. If the card is pulled mid-write the `.part` is never exposed as an image; the retry overwrites it, and `recover()` removes any left over.
+- **One reception event = one file and one row**, even when two images contain identical pixels. A 64-bit FNV-1a content hash is recorded so duplicates can be grouped later; file names are never used for that.
+- Auto-save queues receptions that finish after it was enabled (no back-fill). Receptions with fewer than 8 rows are skipped as noise. The *Capture* button saves a snapshot of the image in progress (`end_reason=captured`).
+- Missing card: bounded retries (2 × 10 s), then `failed(no card)`. Full card (free space < image + 64 KiB): `failed(card full)`. Queue full: the job is dropped and retried at the next poll while the image is still in the gallery.
+- `recover()` (requested on the worker at every dashboard open) deletes stale `.part` files and appends a row, marked `recovered`, for any BMP the index does not mention.
+- An index written by the first release (no header version) is **moved aside** to `index-v1-<ms>.csv`, never edited.
+
+**Index schema v2** (header line is exact): `session_id, utc_epoch, utc_verified, frequency_hz, mode, vis_code, identification, id_score, width, height, decoded_rows, complete, start_unknown, sync_locked, sync_missed, end_reason, content_hash, filename`. `utc_verified=0` and `utc_epoch=0` mean the clock was not verified. `session_id` restarts at 1 on every boot; combine it with `utc_epoch` or the hash. `sync_locked/sync_missed` count that image only.
+
+## Supported modes (monochrome preview)
+
+| Mode | VIS | Frame | Transmitted line | Notes |
 | --- | ---: | --- | ---: | --- |
 | Robot 36 | 8 | 320×240 | 150 ms | Y scan |
 | Robot 72 | 12 | 320×240 | 300 ms | Y scan |
 | Martin M1 | 44 | 320×256 | 446.446 ms | G used as monochrome |
-| Martin M2 | 40 | 320×256 | 226.799 ms | G used as monochrome |
-| Scottie S1 | 60 | 320×256 | 428.380 ms | G used, sync mid-line |
+| Martin M2 | 40 | 320×256 | 226.798 ms | G used as monochrome |
+| Scottie S1 | 60 | 320×256 | 428.220 ms | G used, sync mid-line |
 | Scottie S2 | 56 | 320×256 | 277.692 ms | G used, sync mid-line |
 | Scottie DX | 76 | 320×256 | 1050.300 ms | G used, sync mid-line |
 | PD50 | 93 | 320×256 | 388.160 ms | Y0/Y1 pair |
@@ -37,73 +107,48 @@ Workspace: 2×800 8-bit luminance pixels (1600 bytes) plus scalar timing state. 
 | PD240 | 97 | 640×496 | 1000.000 ms | Y0/Y1 pair |
 | PD290 | 94 | 800×616 | 937.280 ms | Y0/Y1 pair |
 
-The **authoritative implementation constants** are in `apps/orcsdr-tab5/ui/sstv_modes.cpp` in integer microseconds/nanoseconds. Each is traceable to **slowrx modespec.c**, the [Rust slowrx port](https://docs.rs/slowrx/latest/src/slowrx/modespec.rs.html), the [SSTV mode family notes](https://sstv.org.uk/docs/modes/), and the [PD timings](https://sstv.org.uk/docs/modes/pd/). Slowrx is ISC-licensed; mode timing facts and the algorithm have been independently expressed here, without copying decoder code.
+The authoritative constants are in `ui/sstv_modes.cpp` (integer microseconds/nanoseconds, traced to slowrx `modespec.c`, the Rust slowrx port and the sstv.org.uk mode notes). `tools/sstv_validate_timings.py` audits them in CI.
 
-## Capture an SSTV image: on-device receive database
+## Build, flash and test (Windows)
 
-The **Capture Image** button stores the current progress if at least one line has arrived; otherwise it captures the latest completed image. Auto-save (Setup) stores completed images. A reception is **partial** if interrupted and captured before its final line.
+**Firmware** (ESP-IDF 5.5.4, never PlatformIO):
 
-SD layout:
-
-```text
-/orcsdr/sstv/
-    index.csv
-    rx_<utc-or-zero>_<hz>_<session-id>.bmp
+```powershell
+.\apps\orcsdr-tab5\tools\build-tab5-idf.ps1
 ```
 
-- CSV columns: `session_id,utc_epoch,frequency_hz,mode,width,height,decoded_rows,partial,sync_missed,filename`.
-- `utc_epoch = 0` explicitly means the receiver clock was not verified.
-- `partial = 1` records incomplete reception. Unreceived lines are black (no invented samples).
-- The BMP is first written to a `.part` temporary file, then renamed, then the CSV is appended. An interrupted write may leave a `.part` file. If index append fails after rename, a BMP may remain, recoverable by directory scan.
-- File paths are checked to avoid overwriting captures after a reboot.
-- The current **Images** dashboard browses the four-entry RAM gallery. A paginated, indexed SD-gallery browser is not yet built. Export the CSV/BMP files for long-term search and comparison.
+Flash only the Tab5's own port (never auto-detect; other boards may be attached):
 
-**Performance warning:** SD writes currently happen on the UI task, not in the 12 kHz decoder or USB callback. A slow card can stall display and allow the small audio queue to overrun during a new image. Before shipping unattended auto-capture, introduce a low-priority storage worker that owns a stable completed-image snapshot and never blocks the decoder.
+```powershell
+. C:\Espressif\frameworks\esp-idf-v5.5.4\export.ps1
+cd apps\orcsdr-tab5
+idf.py -B build-native-hosted3 -p COM17 flash
+```
 
-## Build, run, and test
+**Host regressions** (Linux, or WSL on Windows — no host compiler is required on Windows itself):
 
-1. Check out `codex/sstv-native-dashboard`. Follow `ENVIRONMENT.md` for the approved native **ESP-IDF 5.5.4** setup; do not use the old PlatformIO build. Build with `tools/build-tab5-idf.ps1` on the qualified workstation.
-2. Run the algorithm smoke test on a Linux desktop:
+```bash
+mkdir -p logs && cd logs
+SSTV_FIXTURE_WAV=/path/to/received-filtered-aligned.wav ../tools/sstv_host_tests.sh
+```
 
-   ```sh
-   g++ -std=c++17 -O2 -Wall -Wextra -Iapps/orcsdr-tab5/ui \
-       apps/orcsdr-tab5/tests/sstv_receiver_smoke.cpp \
-       apps/orcsdr-tab5/ui/sstv_receiver.cpp \
-       apps/orcsdr-tab5/ui/sstv_modes.cpp -o /tmp/sstv-smoke
-   /tmp/sstv-smoke
-   ```
+The script builds each suite with `-Wall -Wextra`, runs it, and writes a timestamped build log and run log per suite plus `sstv-summary-<stamp>.log` (commit, compiler, flags, exit codes and, for the replay, the fixture path, size and SHA-256) **into the directory it was launched from**. Without `SSTV_FIXTURE_WAV` the replay step is skipped and reported as such.
 
-   This test synthesizes Robot36 and PD120 audio, confirms VIS decoding, and checks **PD120 rows are visible before completion**.
+| Suite | Covers |
+| --- | --- |
+| `sstv_auto_detect_test` | all 14 sync signatures, irregular noise, counter wrap, ranked candidates |
+| `sstv_receiver_smoke` | Robot 36, PD120 progressive, Scottie S1, 1 ms stripe regression, missing/disabled sync, new VIS during a reception |
+| `sstv_auto_state_test` | 32-bit clock rollover, dropped audio, silence, per-session counters, Robot 36 → PD120 → Scottie S1 hands-off, noise and false pulse trains, damaged VIS, mid-join, retune/abort/loss and recovery, fade, ±1 % clock drift, gallery ownership, pinned frames, state machine, snapshots, VIS pre-empting a sync lock |
+| `sstv_archive_test` | atomic saves, v2 index, partial/sync rows, identical images, missing/full/pulled/slow card, bounded queue, eviction while pending, recovery, v1 migration, auto-save switch |
+| `sstv_status_test` | wording rules, including *VIS CONFIRMED only for a VIS identification* |
+| `sstv_settings_test` | persistence, sanitising, what each strategy does to the receiver |
 
-3. Compile the real-WAV replay harness (48 kHz, PCM16, mono, **demodulated** SSTV audio):
+The 36.91 s Pluto Robot 36 recording (`received-filtered-aligned.wav`, SHA-256 `546906c0c68f5798bcfde405d1db210de3500513ee45c4202c207496fcdaff33`, 48 kHz PCM16 mono, captured with `rtl_fm` at 145.5 MHz; its own metadata records `rf_decode_verified: false`) now decodes to a complete 240-row VIS-identified image with 240 locked and 0 missed syncs, using the explicit end-of-stream flush (`end_of_stream()`), not padded audio.
 
-   ```sh
-   g++ -std=c++17 -O2 -Wall -Wextra -Iapps/orcsdr-tab5/ui \
-       apps/orcsdr-tab5/tests/sstv_wav_replay.cpp \
-       apps/orcsdr-tab5/ui/sstv_receiver.cpp \
-       apps/orcsdr-tab5/ui/sstv_modes.cpp -o /tmp/sstv-wav-replay
-   /tmp/sstv-wav-replay /path/to/received-pd120.wav 95 100
-   ```
+## Not yet validated
 
-   Arguments `95 100` mean expected VIS 95, at least 100 decoded rows. Use original lossless WAVs where possible; do not substitute an MP3 for signal-performance qualification.
-
-4. Flash the Tab5, choose **SSTV**, select **ISS SSTV** (145.800 MHz FM) only during an announced ISS transmission, or choose **HF SSTV** (14.230 MHz USB). Confirm actual RSSI/PCM and validate with known audio/over-the-air captures.
-5. Check **VIS OK / ERR**, **sync locked/missed**, raster progress, BMP file and CSV index. Repeat with missing SD, noisy audio, missing VIS, late join, interrupted image, no RTL-SDR, retune, manual abort, and alternate modes. Capture serial console logs and fixture file SHA256 in the validation report.
-
-Test harnesses can be run in the repository checkout folder with redirection such as `/tmp/sstv-smoke > sstv-test.log 2>&1` to persist logs in the directory where the test is launched.
-
-## Feature priorities informed by actual community experience
-
-- **PD120 / ISS reception and auto VIS:** [ISS reception discussions](https://www.reddit.com/r/amateursatellites/comments/1wvucfc/iss_sstv/).
-- **Live line-by-line painting:** explicitly praised in the [slowscan.space decoder discussion](https://www.reddit.com/r/amateursatellites/comments/1w1myl0/my_sstv_project_got_a_bit_out_of_hand_here_is_a/).
-- **Replay and corrections:** users exchange WAVs and use separate decoders; see [ISS recording difficulties](https://www.reddit.com/r/amateursatellites/comments/1hpli4u) and [practical SSTV applications](https://github.com/bucknova/Open-SSTV/blob/main/SSTV_App_User_Guide.md).
-- **Capture history:** add a persistent thumbnail index and filters by date, mode, source frequency, partial/complete, and reception quality. Future host-side perceptual hashing can group repeated transmission art while preserving separate reception logs.
-
-These are qualitative, public community signals, not a statistically representative survey or ranking of usage.
-
-## Unresolved
-
-- No verified **ESP-IDF Tab5 firmware build** or live RTL-SDR RF hardware validation.
-- Scottie line-start, all 14 modes, and real noise/slant tolerance need recorded-fixture regression; current automatic smoke validates Robot36 and PD120 only.
-- Full RGB/YUV reconstruction, PD chroma, small Goertzel-based mode/sync tone validation, background SD task, archived gallery reindex, and audio/IQ replay are future work.
-- The current tone front-end is a lightweight band-limited crossing estimator, **not a Goertzel implementation**. Frequency accuracy at near-black tones should be validated against Goertzel and/or quadrature demodulation before production.
+- **On hardware:** dashboard rendering and touch, SD writes on a real card, P4 CPU/heap/PSRAM and latency, coexistence with FM and USB reception, long unattended runs. The UI code compiles but has not been seen on a Tab5.
+- Over-the-air or cabled RF reception of every mode; Scottie, Martin and PD are validated only with synthetic audio, Robot 36 additionally with the one recording above.
+- Colour (Cr/Cb) reconstruction, Goertzel-based tone validation, weak-signal profiles.
+- Sync-only identification under fading is heuristic; see the Robot 36 / Robot 72 alias above.
+- `session_id` restarts every boot; a paginated SD browser does not exist (the gallery shows the newest four).

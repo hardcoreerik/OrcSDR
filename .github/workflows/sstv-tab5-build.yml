@@ -1,7 +1,7 @@
 name: SSTV branch Tab5 compile check
 on:
   push:
-    branches: [codex/sstv-native-dashboard]
+    branches: [codex/sstv-native-dashboard, "claude/sstv-**"]
     paths:
       - "apps/orcsdr-tab5/main/CMakeLists.txt"
       - "apps/orcsdr-tab5/ui/sstv_*"

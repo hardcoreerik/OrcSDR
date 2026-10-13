@@ -48,9 +48,9 @@ screen permission to draw while radio/decoder work continues independently.
 `navigation_service` owns Home/Settings handoff mechanics; feature dashboards
 render snapshots rather than owning receiver state.
 
-ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`, `airband`, `ft8`.
+ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`, `airband`, `ft8`, `sstv`.
 
-Dashboard IDs: `home`, `fm`, `p25`, `adsb`, `shortwave`, `weather`, `cb`, `lora`, `airband`, `marine`, `satellite`, `utilities`, `settings`, `rf_lab`, `wifi_analysis`, `pocsag`, `am`, `ft8`.
+Dashboard IDs: `home`, `fm`, `p25`, `adsb`, `shortwave`, `weather`, `cb`, `lora`, `airband`, `marine`, `satellite`, `utilities`, `settings`, `rf_lab`, `wifi_analysis`, `pocsag`, `am`, `ft8`, `sstv`.
 
 The current screen modules include Home, FM, AM, P25, ADS-B, LoRa, POCSAG, RF
 Lab, RF Visualizer, Wi-Fi analysis, Settings, documentation capture, and the
@@ -67,6 +67,9 @@ complete demodulation modes.
 - `scan_engine` supplies bounded scan behavior shared by supported modes.
 - `fm_dashboard`, `am_dashboard`, `p25_dashboard`, `adsb_dashboard`,
   `lora_dashboard`, and `pocsag_dashboard` own presentation for their modes.
+- `sstv_app` owns the SSTV dashboard lifecycle, settings and hand-off to the background SD archive
+  (`sstv_archive`); `sstv_receiver` is the host-testable decoder. `main.cpp` supplies only tuning, SD,
+  clock and preference adapters (see `docs/sstv/README.md`).
 - Protocol/DSP cores hold host-testable decode logic where already separated.
 - `main.cpp` still adapts IQ callbacks, mode policy, audio, tune changes, and
   snapshots into those modules.

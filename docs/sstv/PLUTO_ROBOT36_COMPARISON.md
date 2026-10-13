@@ -37,6 +37,8 @@ The grayscale horizontal gradient is a rough sharpness indicator, **not** a dist
 
 The host replay starts a 240-line image but the 36.91-second WAV ends immediately before the 240th line is committed. **Adding 4–5 ms of offline audio tail** finalizes the last line; this does not imply live RF reception necessarily drops the last row, because audio continues in live reception. This fix does **not** silently pad truncated captures.
 
+**Update:** the host replay now calls `end_of_stream()`, which closes a final line only when its luminance scan has fully arrived. This recording therefore yields a complete 240-row, VIS-identified image (240 sync locked, 0 missed, 0 overruns) with no padding. The fixture's own capture metadata (`capture.json`, `audio-diagnosis.json`) records `rf_decode_verified: false` and `external_decoder_verified: false`; the MMSSTV comparison above remains an informal visual reference.
+
 An independent deliberately difficult 1 ms alternating 1500/2300 Hz stripe on Robot36 row 100 (88 periods, exactly 88 ms) measured pixel-row edge energy (0–63 grayscale) of approximately **982 before vs 5,144 afterward**. The host smoke test now rejects edge energy <=2,500; it keeps VIS, sync and frame checks for Robot36, PD120, Scottie S1.
 
 ## Reproduce

@@ -4,6 +4,17 @@
 **Primary architecture:** M5Stack Tab5 / ESP32-P4, existing RTL-SDR 48 kHz PCM producer -> 12 kHz SSTV decoder UI service.  
 **Status:** This document describes an *experimental* AUTO decoder implementation and required Claude follow-up. Not a merged firmware release.
 
+## Update 2026-10-12 (second developer pass) — status
+
+The work this handoff asked for is implemented on `claude/sstv-auto-dashboard` (child of this branch) and described in `README.md`. What changed relative to the list below:
+
+- **A. Dashboard integration — done.** Auto / VIS only / Manual strategies, honest identification wording, gallery chips, Signal diagnostics, persisted settings. Manual remains a labelled **VIS filter**; decoding without VIS is not implemented. Logic lives in `sstv_app`, `sstv_settings`, `sstv_status`; `main.cpp` keeps only hook adapters.
+- **B. Background SD capture — done on the host.** `sstv_archive` (queue, worker, `.part` + rename, schema v2, recovery, retries) with reference-counted frames; `save_bmp()` is removed. Fault-injection tests cover missing, full, pulled and slow cards.
+- **C. Robustness — fixed:** 64-bit sample clock (the 99.4 h rollover was real: no line committed after the wrap), dropped-audio gap compensation, silence handling, per-session counters, end-of-stream flush for offline files. Not changed: the 48→12 kHz decimator and the Robot 36 / Robot 72 pulse alias (documented).
+- **D. Hardware budget — measured on the host only.** Counters exist (service time, CPU share, ring high-water, PSRAM frames, SD write latency) and are shown on the Signal page; **no Tab5 measurements have been taken**. Nothing has been flashed.
+
+Open items: on-device validation, P4 timing, long soak, cabled RF tests (never started automatically), colour.
+
 ## What is already implemented and committed
 
 1. `ui/sstv_auto_detect.hpp/.cpp` — standalone, fixed-size eight-pulse 1200 Hz sync history; classifies 14 currently implemented SSTV formats using reference line-period and sync-duration measurements; requires >=6 coherent pulses, >=75 heuristic score, >=12 best-vs-runner-up score margin. No dynamic allocation, full-frame buffering, or parallel decoders. Relative classifier confidence is **not** a calibrated probability.

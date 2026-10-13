@@ -3,27 +3,23 @@ on:
   push:
     branches:
       - codex/sstv-native-dashboard
+      - "claude/sstv-**"
     paths:
-      - "apps/orcsdr-tab5/ui/sstv_receiver.*"
-      - "apps/orcsdr-tab5/ui/sstv_modes.cpp"
-      - "apps/orcsdr-tab5/ui/sstv_auto_detect.*"
-      - "apps/orcsdr-tab5/tests/sstv_auto_detect_test.cpp"
+      - "apps/orcsdr-tab5/ui/sstv_*"
+      - "apps/orcsdr-tab5/tests/sstv_*"
+      - "tools/sstv_host_tests.sh"
       - "tools/sstv_validate_timings.py"
       - "tools/sstv_rea_workbench.py"
-      - "apps/orcsdr-tab5/tests/sstv_receiver_smoke.cpp"
-      - "apps/orcsdr-tab5/tests/sstv_wav_replay.cpp"
       - ".github/workflows/sstv-receiver-tests.yml"
   pull_request:
     paths:
-      - "apps/orcsdr-tab5/ui/sstv_receiver.*"
-      - "apps/orcsdr-tab5/ui/sstv_modes.cpp"
-      - "apps/orcsdr-tab5/ui/sstv_auto_detect.*"
-      - "apps/orcsdr-tab5/tests/sstv_auto_detect_test.cpp"
+      - "apps/orcsdr-tab5/ui/sstv_*"
+      - "apps/orcsdr-tab5/tests/sstv_*"
+      - "tools/sstv_host_tests.sh"
       - "tools/sstv_validate_timings.py"
-      - "apps/orcsdr-tab5/tests/sstv_receiver_smoke.cpp"
       - ".github/workflows/sstv-receiver-tests.yml"
 jobs:
-  host-smoke:
+  host-regression:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,37 +29,29 @@ jobs:
         run: python3 -m py_compile tools/sstv_validate_timings.py tools/sstv_rea_workbench.py
       - name: Build REA native inspection target (no REA provider required)
         run: python3 tools/sstv_rea_workbench.py build --out "$RUNNER_TEMP/sstv-rea-evidence"
-      - name: Build host-only SSTV decoder
+      # Builds and runs every host suite with -Wall -Wextra (warnings are reported in the summary),
+      # writing a timestamped log per build/run plus a summary into the launch directory.
+      # The real-recording replay needs a lab WAV that is not in the repository, so it is skipped
+      # here and run by hand (see docs/sstv/README.md).
+      - name: Run SSTV host regression suites
         run: |
-          g++ -std=c++17 -O2 -Wall -Wextra -Iapps/orcsdr-tab5/ui \
-            apps/orcsdr-tab5/tests/sstv_receiver_smoke.cpp \
-            apps/orcsdr-tab5/ui/sstv_receiver.cpp \
-            apps/orcsdr-tab5/ui/sstv_modes.cpp \
-            apps/orcsdr-tab5/ui/sstv_auto_detect.cpp -o /tmp/sstv-smoke
-      - name: Build recorded-WAV replay tool
-        run: |
-          g++ -std=c++17 -O2 -Wall -Wextra -Iapps/orcsdr-tab5/ui \
-            apps/orcsdr-tab5/tests/sstv_wav_replay.cpp \
-            apps/orcsdr-tab5/ui/sstv_receiver.cpp \
-            apps/orcsdr-tab5/ui/sstv_modes.cpp \
-            apps/orcsdr-tab5/ui/sstv_auto_detect.cpp -o /tmp/sstv-wav-replay
-      - name: Compile and run sync-only classifier regression
-        run: |
-          g++ -std=c++17 -O2 -Wall -Wextra -Iapps/orcsdr-tab5/ui \
-            apps/orcsdr-tab5/tests/sstv_auto_detect_test.cpp \
-            apps/orcsdr-tab5/ui/sstv_auto_detect.cpp \
-            apps/orcsdr-tab5/ui/sstv_modes.cpp -o /tmp/sstv-auto-test
-          /tmp/sstv-auto-test
-      - name: Synthetic Robot36 and progressive PD120 reception
-        run: /tmp/sstv-smoke
-      - name: Package host replay binary and exact decoder sources
+          mkdir -p "$RUNNER_TEMP/sstv-logs"
+          cd "$RUNNER_TEMP/sstv-logs"
+          bash "$GITHUB_WORKSPACE/tools/sstv_host_tests.sh"
+      - name: Upload host regression logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sstv-host-regression-logs
+          path: ${{ runner.temp }}/sstv-logs/
+          retention-days: 14
+      - name: Package decoder sources for offline analysis
         if: always()
         run: |
           mkdir -p /tmp/sstv-analysis-source/ui /tmp/sstv-analysis-source/tests
-          cp apps/orcsdr-tab5/ui/sstv_receiver.cpp apps/orcsdr-tab5/ui/sstv_receiver.hpp apps/orcsdr-tab5/ui/sstv_modes.cpp apps/orcsdr-tab5/ui/sstv_auto_detect.cpp apps/orcsdr-tab5/ui/sstv_auto_detect.hpp /tmp/sstv-analysis-source/ui/
-          cp apps/orcsdr-tab5/tests/sstv_wav_replay.cpp /tmp/sstv-analysis-source/tests/
-          cp /tmp/sstv-wav-replay /tmp/sstv-analysis-source/ || true
-      - name: Publish host decoder analysis bundle
+          cp apps/orcsdr-tab5/ui/sstv_* /tmp/sstv-analysis-source/ui/
+          cp apps/orcsdr-tab5/tests/sstv_* /tmp/sstv-analysis-source/tests/
+      - name: Publish decoder analysis bundle
         if: always()
         uses: actions/upload-artifact@v4
         with:
