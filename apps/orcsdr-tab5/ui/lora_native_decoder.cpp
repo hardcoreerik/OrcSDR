@@ -11,6 +11,7 @@
 #include <mbedtls/aes.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <iterator>
@@ -716,9 +717,9 @@ void yield_if_due() {
 
 // 1 = fast 1x preamble search (default), 4 = legacy 4x-padded search. A runtime
 // switch so sensitivity can be compared on the same firmware (serial command).
-size_t g_search_padding = kSearchPadding;
+std::atomic<size_t> g_search_padding{kSearchPadding};
 // Diagnostic: shifts the centre of the header timing search by this many samples.
-int g_timing_bias = 0;
+std::atomic<int> g_timing_bias{0};
 
 bool dechirp_peak(const uint8_t* cu8, size_t samples, uint32_t sample_rate, size_t start,
                   bool input_is_up, uint16_t* peak, float* height, float cfo_hz = 0.0f,
@@ -998,14 +999,17 @@ bool initialize() {
 }
 
 void set_search_padding(size_t padding) {
-  g_search_padding = padding == kFftPadding ? kFftPadding : kSearchPadding;
+  g_search_padding.store(padding == kFftPadding ? kFftPadding : kSearchPadding,
+                         std::memory_order_relaxed);
 }
 
-size_t search_padding() { return g_search_padding; }
+size_t search_padding() { return g_search_padding.load(std::memory_order_relaxed); }
 
-void set_timing_bias(int samples) { g_timing_bias = std::clamp(samples, -4, 4); }
+void set_timing_bias(int samples) {
+  g_timing_bias.store(std::clamp(samples, -4, 4), std::memory_order_relaxed);
+}
 
-int timing_bias() { return g_timing_bias; }
+int timing_bias() { return g_timing_bias.load(std::memory_order_relaxed); }
 
 size_t psram_bytes() {
   return allocated_bytes(g_scratch.task) + allocated_bytes(g_scratch.fft) +
@@ -1084,7 +1088,8 @@ static size_t decode_capture_pass(const uint8_t* cu8, size_t bytes, uint32_t sam
   // Dechirping linearly selects the 500 kS/s CSS grid from the original source.
   const size_t n = g_scratch.symbol_samples;
   const size_t fft_bins = g_scratch.fft_size / 2;
-  const bool coarse_search = g_search_padding != kFftPadding;
+  const bool coarse_search = g_search_padding.load(std::memory_order_relaxed) != kFftPadding;
+  const int timing_bias_snapshot = g_timing_bias.load(std::memory_order_relaxed);
   const size_t search_padding = coarse_search ? kSearchPadding : kFftPadding;
   const size_t search_bins = coarse_search ? g_scratch.coarse_fft_size / 2 : fft_bins;
   const size_t bins = 1u << spreading_factor;
@@ -1184,7 +1189,7 @@ static size_t decode_capture_pass(const uint8_t* cu8, size_t bytes, uint32_t sam
     for (int radius = 0; radius <= kTimingSearchSamples && !header_found; ++radius) {
       const int directions = radius == 0 ? 1 : 2;
       for (int direction = 0; direction < directions && !header_found; ++direction) {
-      const int adjustment = (direction == 0 ? radius : -radius) + g_timing_bias;
+      const int adjustment = (direction == 0 ? radius : -radius) + timing_bias_snapshot;
       if ((adjustment < 0 && nominal_data_start < static_cast<size_t>(-adjustment)) ||
           (adjustment > 0 && nominal_data_start + static_cast<size_t>(adjustment) >= virtual_samples))
         continue;

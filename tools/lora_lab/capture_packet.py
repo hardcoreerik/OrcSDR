@@ -21,7 +21,7 @@ from help_media import Tab5  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("output", type=Path, help="raw CU8 file to write (960 kS/s)")
+    parser.add_argument("output", type=Path, help="ORCIQ capture file to write (36-byte header + 960 kS/s CU8)")
     parser.add_argument("--orcsdr-port", default="COM17")
     parser.add_argument("--tx-port", required=True, help="Meshtastic node that transmits")
     parser.add_argument("--text", default="OrcSDR sweep")
@@ -31,9 +31,11 @@ def main() -> int:
 
     import meshtastic.serial_interface as serial_interface
     node = serial_interface.SerialInterface(args.tx_port)
-    time.sleep(4)
-    tab5 = Tab5(args.orcsdr_port, args.pairing_key)
+    tab5 = None
+    timer = None
     try:
+        time.sleep(4)
+        tab5 = Tab5(args.orcsdr_port, args.pairing_key)
         tab5.authenticate()
         tab5.send("RTL_IQ_START")
         started = tab5.wait(("RTL_IQ_START", "RTL_IQ_ERROR"), 10)
@@ -51,7 +53,10 @@ def main() -> int:
         tab5.send("RTL_IQ_RETRIEVE_END")
         print(f"CAPTURED bytes={len(capture)} state={state}")
     finally:
-        tab5.close()
+        if timer is not None:
+            timer.cancel()
+        if tab5 is not None:
+            tab5.close()
         node.close()
     return 0
 

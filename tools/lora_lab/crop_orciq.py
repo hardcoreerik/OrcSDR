@@ -18,6 +18,9 @@ def main() -> int:
     args = parser.parse_args()
     rate, frequency_hz, sf, bandwidth_hz, iq = decode_orciq.read_capture(args.capture)
     cropped = iq[int(args.start_s * rate) * 2:int(args.end_s * rate) * 2]
+    if not cropped:
+        raise SystemExit("empty crop: the window is outside the capture "
+                         f"({len(iq) // 2 / rate:.2f} s long)")
     header = decode_orciq.HEADER.pack(decode_orciq.MAGIC, decode_orciq.HEADER.size, rate,
                                       frequency_hz, len(cropped), 1, sf, 0, bandwidth_hz, 0)
     args.output.write_bytes(header + cropped)

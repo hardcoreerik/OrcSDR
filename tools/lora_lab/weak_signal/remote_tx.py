@@ -13,6 +13,7 @@ p.add_argument("--count", type=int, default=8)
 p.add_argument("--gap", type=float, default=10.0)
 p.add_argument("--prefix", nargs="+", default=["rtx"], help="words; joined with spaces so no shell quoting is needed")
 p.add_argument("--power", type=int, help="set lora.tx_power (dBm); never 0, which means region maximum")
+p.add_argument("--hop-limit", type=int, default=0, help="hop limit for every message (0 keeps the bench from being relayed)")
 p.add_argument("--info", action="store_true", help="print region/power and exit")
 p.add_argument("--drain", type=float, default=25.0, help="seconds to wait after the last send so the node can transmit its queue")
 a = p.parse_args()
@@ -43,7 +44,7 @@ def airtime(label):
 airtime("airtime_before")
 for n in range(1, a.count + 1):
     text = f"{' '.join(a.prefix)} {n}"
-    iface.sendText(text)
+    iface.sendText(text, hopLimit=a.hop_limit)
     print(json.dumps({"event": "sent", "n": n, "text": text, "t": round(time.time(), 1)}), flush=True)
     time.sleep(a.gap)
 time.sleep(a.drain)

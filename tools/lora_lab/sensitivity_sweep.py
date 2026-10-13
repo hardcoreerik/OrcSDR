@@ -156,11 +156,16 @@ def main() -> int:
                     }
                     rows.append(row)
                     print(json.dumps(row), flush=True)
-        tab5.send("RTL_LORA_DECODER SEARCH_PAD 1")
-        tab5.wait(("RTL_LORA_DECODER_OK",), 5)
-        tab5.send("RTL_LORA_AUTO ON")
-        tab5.wait(("RTL_LORA_AUTO ON",), 5)
     finally:
+        # Best effort, also after a failed sweep: leave the device as it was found.
+        for command, marker in (("RTL_LORA_DECODER SEARCH_PAD 1", "RTL_LORA_DECODER_OK"),
+                                ("RTL_LORA_DECODER TIMING_BIAS 0", "RTL_LORA_DECODER_OK"),
+                                ("RTL_LORA_AUTO ON", "RTL_LORA_AUTO ON")):
+            try:
+                tab5.send(command)
+                tab5.wait((marker,), 5)
+            except Exception as error:  # noqa: BLE001 - restore must not mask the original error
+                print(f"WARN restore failed for {command!r}: {error}", flush=True)
         tab5.close()
 
     print("SUMMARY inband_snr_db  mode  success/trials")

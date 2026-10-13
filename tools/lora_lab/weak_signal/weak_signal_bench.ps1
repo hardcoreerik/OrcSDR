@@ -30,6 +30,9 @@ New-Item -ItemType Directory -Force $OutDir | Out-Null
 function Send-Tab5([string[]]$Commands, [string]$Name) {
   $log = Join-Path $OutDir "$Label-$Name.log"
   try { & $regression -Port $Tab5Port -TimeoutSeconds 25 -SendCommand $Commands -PairingKeyPath $PairingKeyPath *> $log } catch {}
+  if (-not (Test-Path $log) -or -not (Select-String -Path $log -Pattern 'RTL_UI_SOAK_AUTH verified=1' -Quiet)) {
+    throw "Tab5 command failed or was not authenticated ($Name); see $log"
+  }
   $log
 }
 function Heard-Numbers([string]$Log) {

@@ -5,6 +5,7 @@
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
 
+#include <atomic>
 #include <cmath>
 #include <cstring>
 
@@ -55,6 +56,23 @@ struct State {
 };
 
 State g;
+
+// configure() and reset() are called from other tasks (channel changes, band switches) while
+// feed() runs on the DSP task, so they only post a request; feed() applies it at a block
+// boundary. The first configure, before any buffers exist, runs inline because feed() returns
+// early until ready().
+std::atomic<uint8_t> g_pending_sf{0};
+std::atomic<bool> g_pending_reset{false};
+
+void reset_now() {
+  g.phase = 0;
+  g.acc_re = g.acc_im = 0.0f;
+  g.fill = 0;
+  g.run = 0;
+  g.idle = 0;
+  g.latched = false;
+  g.quiet_samples = 0;
+}
 
 void free_all() {
   heap_caps_free(g.fft);
@@ -130,8 +148,9 @@ void evaluate(Result* out) {
 
 }  // namespace
 
-bool configure(uint8_t spreading_factor) {
-  if (spreading_factor < 7 || spreading_factor > 12) return false;
+namespace {
+
+bool apply_configure(uint8_t spreading_factor) {
   if (g.fft != nullptr && g.sf == spreading_factor) return true;
   constexpr uint32_t caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
   if (g.fft == nullptr) {
@@ -157,24 +176,30 @@ bool configure(uint8_t spreading_factor) {
   }
   g.sf = spreading_factor;
   g.n = n;
-  reset();
+  reset_now();
+  return true;
+}
+
+}  // namespace
+
+bool configure(uint8_t spreading_factor) {
+  if (spreading_factor < 7 || spreading_factor > 12) return false;
+  if (g.fft == nullptr) return apply_configure(spreading_factor);  // feed() is idle until ready()
+  // The caller runs this on every IQ block, so an unchanged SF must stay a no-op (it also
+  // cancels a pending change back to the running SF). Only a different SF is posted.
+  g_pending_sf.store(g.sf == spreading_factor ? 0 : spreading_factor, std::memory_order_release);
   return true;
 }
 
 bool ready() { return g.fft != nullptr && g.n != 0; }
 
-void reset() {
-  g.phase = 0;
-  g.acc_re = g.acc_im = 0.0f;
-  g.fill = 0;
-  g.run = 0;
-  g.idle = 0;
-  g.latched = false;
-  g.quiet_samples = 0;
-}
+void reset() { g_pending_reset.store(true, std::memory_order_release); }
 
 Result feed(const uint8_t* iq, size_t bytes) {
   Result out{};
+  const uint8_t pending_sf = g_pending_sf.exchange(0, std::memory_order_acq_rel);
+  if (pending_sf != 0) (void)apply_configure(pending_sf);
+  if (g_pending_reset.exchange(false, std::memory_order_acq_rel)) reset_now();
   if (!ready() || iq == nullptr) return out;
   const size_t n = g.n;
   for (size_t i = 0; i + 1 < bytes; i += 2) {
