@@ -7,6 +7,7 @@
 #include "dashboard_audio_control.hpp"
 #include "orc_badge.hpp"
 #include "spectrum_resample.hpp"
+#include "signal_id.hpp"
 
 #include <M5Unified.h>
 #include <esp_attr.h>
@@ -35,6 +36,8 @@ constexpr int kContrastY = kReadoutY + (kReadoutH - 28) / 2;
 constexpr int kContrastDownX = 690;
 constexpr int kContrastUpX = 854;
 constexpr int kModeX = 1144, kModeW = 92;
+constexpr int kSignalChipX = kPlotX + kPlotW - 140;
+constexpr int kSignalChipY = 86, kSignalChipW = 136, kSignalChipH = 23;
 constexpr int kPaletteX = 898, kPaletteW = 120;
 constexpr int kSpeedX = 1026, kSpeedW = 110;
 // Control row: SPAN / TUNE / STEP SIZE steppers, then FILTER and GAIN.
@@ -84,6 +87,8 @@ size_t browser_page = 0;
 int32_t scroll_offset_px = 0;
 uint32_t last_spectrum_ms = 0;
 uint8_t waterfall_contrast = 5;
+bool signal_markers_enabled = false; // opt-in, session-only. No trained classifier yet.
+signal_id::Tracker signal_tracker{};
 // Spectrum ceiling (dB): jumps up to the strongest bin at once, falls back slowly, so a strong
 // station is never drawn flat against the top edge and the scale does not pump.
 float spectrum_ceiling = 0.0f;
@@ -787,6 +792,17 @@ void draw_footer() {
 
 // keep_graphics: repaint after a popup closes without wiping the live spectrum and waterfall. Only the part the popup
 // covered is cleared; the spectrum redraws on its next frame and the waterfall refills as it scrolls.
+// Always distinguish visible energy detection from protocol/modulation identification.
+void draw_signal_chip() {
+  M5.Display.fillRoundRect(kSignalChipX, kSignalChipY, kSignalChipW, kSignalChipH,
+                           5, kPanel);
+  M5.Display.drawRoundRect(kSignalChipX, kSignalChipY, kSignalChipW, kSignalChipH,
+                           5, signal_markers_enabled ? kGreen : kDim);
+  text(signal_markers_enabled ? "SIG ID: ON" : "SIG ID: OFF",
+       kSignalChipX + kSignalChipW / 2, kSignalChipY + kSignalChipH / 2,
+       signal_markers_enabled ? kGreen : TFT_LIGHTGREY, 2, middle_center);
+}
+
 // The band in plain words (FM RADIO, 70 CM HAM, AIR BAND...), centered above the spectrum.
 void draw_band_label() {
   M5.Display.fillRect(kPlotX + 150, 84, kPlotW - 300, 28, TFT_BLACK);
@@ -800,6 +816,7 @@ void draw_receiver_chrome(bool keep_graphics = false) {
   frame(kMainX, kMainY, kMainW, kMainH, kCyan, 12);
   text("SPECTRUM", kPlotX, 98, kCyan, 2);
   draw_band_label();
+  draw_signal_chip();
   if (keep_graphics) {
     M5.Display.drawRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, kDim);
     M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kDim);
@@ -908,6 +925,8 @@ Action tap_action(int32_t x, int32_t y) {
   if (mode_popup) return mode_popup_action(x, y);
   if (gain_popup) return gain_popup_action(x, y);
   if (filter_popup) return filter_popup_action(x, y);
+  if (inside(x, y, kSignalChipX, kSignalChipY, kSignalChipW, kSignalChipH))
+    return {ActionKind::signal_id_toggle};
   if (inside(x, y, kGainX, kGainY, kGainW, kGainH)) return {ActionKind::gain_open};
   if (inside(x, y, kFilterPanelX, kFilterPanelY, kFilterPanelW, kFilterPanelH))
     return {ActionKind::filter_open};
@@ -969,6 +988,7 @@ void enter(const Snapshot& snapshot) {
   shown = true;
   spectrum_ceiling_valid = false;
   g_px_valid = false;   // old peak-hold dots must not linger from the last visit
+  signal_tracker.reset();
   browser = false;
   gain_popup = false;
   filter_popup = false;
@@ -980,7 +1000,7 @@ void enter(const Snapshot& snapshot) {
   draw_all();
 }
 
-void leave() { shown = browser = gain_popup = filter_popup = mode_popup = keypad = false; gesture = {}; }
+void leave() { shown = browser = gain_popup = filter_popup = mode_popup = keypad = false; gesture = {}; signal_tracker.reset(); }
 
 void draw() {
   if (!shown) return;
@@ -1070,6 +1090,7 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   const bool same_view = g_px_valid && g_px_frequency_hz == current.frequency_hz &&
                          g_px_span_hz == current.span_hz && g_px_first_bin == first_bin &&
                          g_px_visible_bins == visible_bins;
+  if (!same_view) signal_tracker.reset();
   g_px_valid = true;
   g_px_frequency_hz = current.frequency_hz;
   g_px_span_hz = current.span_hz;
@@ -1081,6 +1102,8 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
     g_px_peak[x] = same_view ? std::max(level, g_px_peak[x] - kPeakFallDb) : level;
   }
   floor = home_spectrum_floor(g_px_smooth, w, floor);
+  if (signal_markers_enabled)
+    signal_tracker.observe(g_px_smooth, w, current.frequency_hz, current.span_hz, now);
   M5Canvas* canvas = g_trace.begin(w, h, TFT_BLACK);
   // No memory for the sprite: leave the frame alone rather than scroll the waterfall under a stale spectrum.
   if (canvas == nullptr) return;
@@ -1120,6 +1143,38 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
     canvas->drawFastVLine(kPlotW / 2 + half - 1, 0, h, TFT_YELLOW);
   }
   draw_spectrum_axis(*canvas, w, h);
+  if (signal_markers_enabled) {
+    signal_id::Signal active[signal_id::kMaxTracks]{};
+    const size_t count = signal_tracker.visible(active, signal_id::kMaxTracks, now);
+    int placed_x[signal_id::kMaxTracks]{};
+    size_t placed = 0;
+    for (size_t i = 0; i < std::min(count, signal_id::kMaxTracks); ++i) {
+      const double fractional = (static_cast<double>(active[i].frequency_hz) -
+                                 static_cast<double>(current.frequency_hz)) /
+                                    static_cast<double>(current.span_hz) + 0.5;
+      const int px = static_cast<int>(std::lround(fractional * (w - 1)));
+      if (px < 0 || px >= w) continue;
+      canvas->drawFastVLine(px, 24, h - 50, kCyan);
+      constexpr int chip_w = 96;
+      const int chip_x = std::clamp(px - chip_w / 2, 0, w - chip_w);
+      bool overlap = false;
+      for (size_t j = 0; j < placed; ++j) {
+        if (std::abs(placed_x[j] - chip_x) < chip_w + 4) { overlap = true; break; }
+      }
+      if (overlap) continue;
+      placed_x[placed++] = chip_x;
+      char tag[24];
+      // Relative spectrum excess is not calibrated power and not ML confidence.
+      std::snprintf(tag, sizeof(tag), "RF +%.0f dB", active[i].above_floor_db);
+      canvas->fillRoundRect(chip_x, 3, chip_w, 19, 3, TFT_BLACK);
+      canvas->drawRoundRect(chip_x, 3, chip_w, 19, 3, kCyan);
+      canvas->setFont(nullptr);
+      canvas->setTextSize(1);
+      canvas->setTextColor(kCyan, TFT_BLACK);
+      canvas->setTextDatum(middle_center);
+      canvas->drawString(tag, chip_x + chip_w / 2, 12);
+    }
+  }
   M5.Display.startWrite();
   canvas->pushSprite(origin_x, origin_y);
   M5.Display.endWrite();
@@ -1205,6 +1260,12 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
     gesture = {};
     if (was_scroll) return {};
     const Action action = tap_action(tap_x, tap_y);
+    if (action.kind == ActionKind::signal_id_toggle) {
+      signal_markers_enabled = !signal_markers_enabled;
+      signal_tracker.reset();
+      draw_signal_chip();
+      return {};
+    }
     if (action.kind == ActionKind::open_browser) {
       browser = true;
       browser_page = 0;
@@ -1326,6 +1387,7 @@ bool self_check() {
          step_span(1200000, -1) == 960000 &&
          step_span(960000, 1) == 1200000 &&
          step_span(120000, 1) == 240000 &&
+         tap_action(kSignalChipX + 5, kSignalChipY + 5).kind == ActionKind::signal_id_toggle &&
          tap_action(kContrastDownX + 1, kContrastY + 1).kind ==
              ActionKind::waterfall_contrast_down &&
          tap_action(kContrastUpX + 1, kContrastY + 1).kind ==
