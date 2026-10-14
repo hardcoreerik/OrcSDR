@@ -1,0 +1,36 @@
+name: RF Analysis linear-power parity
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'apps/orcsdr-tab5/ui/rf_analysis.cpp'
+      - 'tools/esp_dsp_lab/**'
+      - '.github/workflows/esp-dsp-rf-power-cache.yml'
+  push:
+    branches:
+      - codex/esp-dsp-rf-power-cache-lab
+    paths:
+      - 'apps/orcsdr-tab5/ui/rf_analysis.cpp'
+      - 'tools/esp_dsp_lab/**'
+      - '.github/workflows/esp-dsp-rf-power-cache.yml'
+
+jobs:
+  host-math-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile host A/B with strict floating point math
+        run: |
+          cc -std=c11 -O2 -fno-fast-math -ffp-contract=off \
+            -Wall -Wextra -Werror \
+            tools/esp_dsp_lab/rf_power_cache_regression.c -lm -o /tmp/esp_dsp_rf_parity
+      - name: Verify channel power and occupied bandwidth equivalence
+        run: /tmp/esp_dsp_rf_parity | tee rf_power_parity.log
+      - name: Upload host numerical evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp-dsp-rf-power-host-math
+          path: rf_power_parity.log
+          if-no-files-found: warn
