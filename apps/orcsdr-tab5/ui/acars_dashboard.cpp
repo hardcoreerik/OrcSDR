@@ -146,14 +146,19 @@ void paragraph(const char* s, const Rect& r, uint16_t color, int max_lines, Font
 }
 
 // ---- formatting helpers (no allocation)
-void fmt_mhz(char* out, size_t n, uint32_t hz) { std::snprintf(out, n, "%u.%03u", hz / 1000000u, (hz / 1000u) % 1000u); }
+void fmt_mhz(char* out, size_t n, uint32_t hz) {
+  std::snprintf(out, n, "%u.%03u", static_cast<unsigned int>(hz / 1000000u),
+                static_cast<unsigned int>((hz / 1000u) % 1000u));
+}
 
 void fmt_time(char* out, size_t n, bool valid, uint32_t utc, uint32_t uptime_ms) {
   if (valid) {
-    std::snprintf(out, n, "%02u:%02u:%02u", (utc / 3600u) % 24u, (utc / 60u) % 60u, utc % 60u);
+    std::snprintf(out, n, "%02u:%02u:%02u", static_cast<unsigned int>((utc / 3600u) % 24u),
+                  static_cast<unsigned int>((utc / 60u) % 60u), static_cast<unsigned int>(utc % 60u));
   } else {
     const uint32_t s = uptime_ms / 1000u;
-    std::snprintf(out, n, "+%u:%02u", std::min<uint32_t>(s / 60u, 9999u), s % 60u);
+    std::snprintf(out, n, "+%u:%02u", static_cast<unsigned int>(std::min<uint32_t>(s / 60u, 9999u)),
+                  static_cast<unsigned int>(s % 60u));
   }
 }
 
