@@ -60,3 +60,51 @@ jobs:
       - name: Result
         if: success()
         run: echo "Waveshare 4B P4 probe compiled; no hardware flashed, no REA/Ghidra binary run." >> "$GITHUB_STEP_SUMMARY"
+
+  rea-owned-elf:
+    name: REA/Ghidra analysis of own 4B probe ELF
+    needs: native-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: waveshare-4b-native-build-evidence
+          path: research-out/
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24.11.1"
+      - name: Install JDK 21 and verified Ghidra 12.1.4
+        env:
+          GHIDRA_ARCHIVE: ghidra_12.1.4_PUBLIC_20260921.zip
+          GHIDRA_SHA256: ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y openjdk-21-jdk-headless unzip
+          echo "JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64" >> "$GITHUB_ENV"
+          curl --fail --location --retry 3 --retry-delay 3 \
+            "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/$GHIDRA_ARCHIVE" \
+            -o "$RUNNER_TEMP/$GHIDRA_ARCHIVE"
+          echo "$GHIDRA_SHA256  $RUNNER_TEMP/$GHIDRA_ARCHIVE" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/$GHIDRA_ARCHIVE" -d "$RUNNER_TEMP"
+          echo "GHIDRA_INSTALL_DIR=$RUNNER_TEMP/ghidra_12.1.4_PUBLIC" >> "$GITHUB_ENV"
+      - name: Install pinned REA CLI
+        run: |
+          npm install --global rea-agents@6.4.0
+          node --version
+          rea --version
+      - name: Analyze owned Waveshare ELF (never flashes hardware)
+        run: |
+          python3 tools/hardware/rea_graphics_binary.py \
+            --target research-out/4b-probe.elf --out rea-graphics
+      - name: Preserve complete REA/Ghidra evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: waveshare-4b-rea-ghidra-evidence
+          path: rea-graphics/
+          retention-days: 14
