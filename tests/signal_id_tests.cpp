@@ -1,4 +1,4 @@
-#include "../ui/signal_id.hpp"
+#include "signal_id.hpp"
 #include <cassert>
 #include <cmath>
 #include <cstdint>
