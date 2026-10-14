@@ -1029,11 +1029,18 @@ void update(const Snapshot& snapshot) {
   const bool level_changed = static_cast<int>(std::lround(snapshot.relative_dbfs)) !=
                              static_cast<int>(std::lround(current.relative_dbfs));
   const bool gain_state_changed = gain_changed(snapshot, current);
+  const bool source_stopped = (current.receiving && !snapshot.receiving) ||
+                              (current.driver_ready && !snapshot.driver_ready);
   current = snapshot;
+  if (source_stopped) {
+    // A frozen waterfall must not keep stale RF markers after USB/receive stops.
+    signal_tracker.reset();
+  }
   const bool covered = gain_popup || filter_popup || mode_popup;   // a popup is over the lower half
   M5.Display.startWrite();
   if (status_changed) draw_header_status();
   if (tuner_changed) draw_band_label();
+  if (source_stopped) draw_receiver_chrome();  // clears old spectrum and waterfall
   if (covered) {
     if (mode_popup && tuner_changed) draw_mode_popup();
     if (filter_popup && (bandwidth_changed || tuner_changed)) draw_filter_popup();
