@@ -417,9 +417,11 @@ bool handle_command(const char* command, bool authenticated, const Hooks& hooks)
   }
   if (std::strncmp(args, "TUNE ", 5) == 0) {
     char* end = nullptr;
-    const unsigned long hz = std::strtoul(args + 5, &end, 10);
-    const bool ok = end != args + 5 && *end == 0 && hooks.tune && hooks.tune(static_cast<uint32_t>(hz));
-    if (ok) say("SSTV_OK tuned_hz=%lu", hz);
+    const char first = args[5];
+    const unsigned long long hz = (first >= '0' && first <= '9') ? std::strtoull(args + 5, &end, 10) : 0ull;   // digits only: no sign
+    const bool ok = end != nullptr && end != args + 5 && *end == 0 && hz <= 0xFFFFFFFFull && hooks.tune &&
+                    hooks.tune(static_cast<uint32_t>(hz));
+    if (ok) say("SSTV_OK tuned_hz=%llu", hz);
     else say("SSTV_ERROR tune refused (dashboard closed or frequency out of range) use=SSTV TUNE <hz>");
     return true;
   }
@@ -433,7 +435,7 @@ bool handle_command(const char* command, bool authenticated, const Hooks& hooks)
     say("SSTV_OK queued=%d", queued ? 1 : 0);
     return true;
   }
-  say("SSTV_ERROR usage=SSTV STATUS|INDEX|LAST|REC START <s>|SAVE|STATUS|OPEN|TUNE <hz>|MODE <m>|IFBW <hz>|STEP <hz>|RAILS ON|OFF|SELFTEST <scenario> [SPEED n]|SELFTEST STOP|SAVE LIVE|NEWEST");
+  say("SSTV_ERROR usage=SSTV STATUS|INDEX|LAST|OPEN|REC START <s>|TUNE <hz>|MODE <m>|IFBW <hz>|STEP <hz>|RAILS <arg>|SAVE LIVE|SAVE NEWEST|SELFTEST <scenario> [SPEED n]|SELFTEST STOP");
   return true;
 }
 
