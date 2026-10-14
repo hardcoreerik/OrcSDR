@@ -79,6 +79,24 @@ int main() {
       check(lines_needed<=25,"noisy train acquires within about 25 lines");
     }
   }
+  // A transmitter (or sound card) whose line clock is off by 0.5% must still classify: the comb tolerance grows with the slot
+  // number, so a small uniform rate error does not push the older pulses out of their slots. (Larger errors rely on VIS.)
+  for(const double rate:{0.995,1.005}) {
+    for(Mode mode:{Mode::robot36,Mode::robot72,Mode::scottie_s1}) {
+      auto_detect::reset();
+      const auto* spec=mode_spec(mode);
+      const double per=static_cast<double>(spec->line_us)*12000/1000000.*rate;
+      const auto width=static_cast<uint16_t>(std::lround(spec->sync_us*12000./1000000.));
+      bool ok=false;
+      for(unsigned i=0;i<12;++i) {
+        const auto c=auto_detect::observe(10000u+static_cast<uint32_t>(std::lround(per*i)),width);
+        ok|=c.locked&&c.mode==mode;
+      }
+      char why[96];
+      std::snprintf(why,sizeof(why),"%s classifies with a %.1f%% line-clock error",spec->name,(rate-1.)*100.);
+      check(ok,why);
+    }
+  }
   // Integer sample timestamps may wrap during unattended operation.
   auto_detect::reset();
   bool wrap_locked=false;

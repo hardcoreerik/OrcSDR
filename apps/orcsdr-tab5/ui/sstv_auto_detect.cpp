@@ -68,6 +68,13 @@ unsigned pending_pulses() {return g_count;}
 // consistent pulses almost never finds one (about three false pulses per real one at the edge of sensitivity). Instead,
 // for each mode this asks how many of the recent pulses sit on one regular line raster ending at the newest pulse
 // (period, width and slot occupancy), and ignores the pulses that do not.
+// How far a pulse may sit from its comb slot: edge jitter (a fixed part) plus a line-clock error that grows with the slot
+// number (0.2% of the line period per slot). This cannot be widened much: a train 8.7% off Robot 36's period aliases onto
+// the comb at slot 10 with 84 samples of error, so the 0.2% slope is what keeps that false train out (the auto-state suite
+// checks it). A transmitter clock more than about 0.5% off is therefore identified by its VIS code instead.
+static float slot_tolerance(float period,unsigned slot) {
+  return std::max(24.f,period*.02f)+0.002f*static_cast<float>(slot)*period;
+}
 Candidate observe(uint32_t start,uint16_t length) {
   Candidate out{};
   // Ignore very short/long noise bursts. The tone estimator is slow to enter the 1200 Hz window, so pulses read
@@ -108,7 +115,7 @@ Candidate observe(uint32_t start,uint16_t length) {
       const unsigned slot=static_cast<unsigned>(slots+.5f);
       const float error=std::fabs(distance-slot*period);
       // Allow for jitter in where each noisy pulse edge is read, growing slowly with the number of lines (clock error).
-      const float tolerance=std::max(24.f,period*.02f)+0.002f*slot*period;
+      const float tolerance=slot_tolerance(period,slot);
       const bool width_ok=std::fabs(static_cast<float>(g_pulses[i].length)-width)<=std::max(18.f,width*.3f);
       if(slot>=1 && error<=tolerance && width_ok) {
         if(!slot_taken[slot]) { slot_taken[slot]=true; ++h.inliers; }
@@ -132,7 +139,7 @@ Candidate observe(uint32_t start,uint16_t length) {
       if(distance/period>static_cast<float>(oldest_slot)+.5f)break;
       const unsigned slot=static_cast<unsigned>(distance/period+.5f);
       const float error=std::fabs(distance-slot*period);
-      const float tolerance=std::max(24.f,period*.02f)+0.002f*slot*period;
+      const float tolerance=slot_tolerance(period,slot);
       const bool width_ok=std::fabs(static_cast<float>(g_pulses[i].length)-width)<=std::max(18.f,width*.3f);
       if(!(slot>=1 && error<=tolerance && width_ok))++h.extra;
     }
