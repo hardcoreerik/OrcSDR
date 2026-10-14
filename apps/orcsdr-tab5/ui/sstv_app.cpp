@@ -392,6 +392,12 @@ void open() {
 void close() {
   if (!orcsdr::sstv::ui_active()) return;
   orcsdr::sstv_diag::abort_selftest();               // a bench test must not outlive the screen
+  if (g_save.file) {                                 // the save reads the capture buffer that is released below
+    std::fclose(g_save.file);
+    g_save.file = nullptr;
+    g_save.failed = true;
+    g_save.finished = true;
+  }
   orcsdr::sstv::set_audio_observer(nullptr);
   orcsdr::sstv_audio_scope::stop();
   orcsdr::sstv_capture::release();
