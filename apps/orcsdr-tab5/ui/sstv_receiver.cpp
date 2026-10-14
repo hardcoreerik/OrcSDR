@@ -111,6 +111,7 @@ uint32_t g_sync_run=0;
 // Sync-tone measurement: the estimator is slow to settle, so only the middle of a pulse (after the first 40 samples
 // and before the last 10) is averaged. Short pulses (Martin) have no settled part and are not measured.
 constexpr uint32_t kSyncPlateaus=24u;
+constexpr uint32_t kMinToneSamples=48u;   // 4 ms at 12 kHz: shorter than any real sync pulse's settled part
 float g_plat[kSyncPlateaus]{};uint32_t g_plat_n=0;uint32_t g_sync_pulses=0;uint64_t g_sync_tone_tick=0;
 void (*g_observer)(const int16_t*,size_t)=nullptr;
 uint64_t g_last_sync_start=0;
@@ -417,7 +418,7 @@ void commit_line() {
       // The lines committed since the last sync pulse were only predictions; the signal is gone, so they are not kept.
       const uint16_t per_line=g_spec->family==3?2:1;
       const uint16_t tail=static_cast<uint16_t>((g_consecutive_missed-1)*per_line);
-      if(g_live.decoded_rows>tail)g_live.decoded_rows=static_cast<uint16_t>(g_live.decoded_rows-tail);
+      g_live.decoded_rows=g_live.decoded_rows>tail?static_cast<uint16_t>(g_live.decoded_rows-tail):0;   // 0 rows: discarded
       finish_picture(true,EndReason::sync_lost);
       return;
     }
@@ -460,7 +461,7 @@ void commit_line() {
       // so it is an interrupted reception, not a complete one.
       const uint16_t per_line=g_spec->family==3?2:1;
       const uint16_t tail=static_cast<uint16_t>(g_consecutive_missed*per_line);
-      if(g_live.decoded_rows>tail)g_live.decoded_rows=static_cast<uint16_t>(g_live.decoded_rows-tail);
+      g_live.decoded_rows=g_live.decoded_rows>tail?static_cast<uint16_t>(g_live.decoded_rows-tail):0;
       finish_picture(true,EndReason::sync_lost);
     } else {
       finish_picture(g_live.start_unknown,EndReason::complete);
@@ -637,7 +638,10 @@ bool sync_tone_estimate(float& tone) {
   uint32_t m=g_plat_n-1;
   while(m>0&&g_plat[m]>g_plat[m-1]+0.5f)--m;   // drop the closing swing upward
   const float x2=g_plat[m];
-  if(m==0){tone=x2;return true;}               // steady from the start: already the tone
+  if(m==0){
+    if(g_plat_n>1)return false;                // only a rising series: the first sample after the crossing, not a tone
+    tone=x2;return true;                       // steady from the start: already the tone
+  }
   if(m==1){
     if(std::fabs(x2-g_plat[0])>3.f)return false;
     tone=x2;return true;
@@ -781,7 +785,7 @@ void accept_sample(int16_t pcm) {
   } else if(g_sync_run) {
     const uint32_t n=g_sync_run;
     float tone=0;
-    if(sync_tone_estimate(tone)) {
+    if(n>=kMinToneSamples&&sync_tone_estimate(tone)) {   // a noise blip in the band is not a sync pulse to measure
       g_stats.sync_tone_hz=g_sync_pulses?0.8f*g_stats.sync_tone_hz+0.2f*tone:tone;
       if(g_sync_pulses<60000u)++g_sync_pulses;
       g_stats.sync_tone_pulses=static_cast<uint16_t>(g_sync_pulses);
