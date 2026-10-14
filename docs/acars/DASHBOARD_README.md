@@ -1,6 +1,6 @@
 # ACARS dashboard (UI foundation)
 
-Status: **Host-Tested UI foundation; not hardware-verified; no receiver attached.** This dashboard is
+Status: **Host-tested and firmware-build-verified UI foundation; not hardware-verified; no receiver attached.** This dashboard is
 presentation only. The native decoder (`acars_core.*`, separately owned) is not wired to a radio, so the
 default LIVE screen truthfully reads `RECEIVER FEED NOT CONNECTED`. Everything on screen that is not that
 state comes from the explicit DEMO mode (synthetic data) or from host tests.
@@ -150,8 +150,9 @@ python3 tools/check_documentation_truth.py
 
 Firmware: the supported ESP-IDF procedure is `apps/orcsdr-tab5/tools/build-tab5-idf.ps1` (see
 `docs/TAB5_BUILD_POLICY.md` and `apps/orcsdr-tab5/README.md`). The ACARS sources are listed in `apps/orcsdr-tab5/main/CMakeLists.txt`. The
-firmware build was **not run** while this was written (no ESP-IDF toolchain in the authoring environment), so
-`main.cpp` integration is unverified by a compiler.
+initial cloud authoring session did not run a firmware build. The local ESP-IDF 5.5.4 build now passes,
+including `main.cpp` integration; see [the local build record](LOCAL_BUILD_2026-10-13.md) for fixes, sizes and
+unverified hardware gates. No Tab5 flash or physical validation has been performed.
 
 What the host tests cover: capacity and overflow, queue drops, aircraft grouping and eviction, time validity,
 sanitising (including embedded NUL, all byte values, worst-case sizes, cut-off buffers), repaired-frame state,
