@@ -48,10 +48,45 @@ bool d_make_dir(const char* path) {
   }
   return true;
 }
-std::FILE* d_open(const char* path, const char* mode) { return std::fopen(path, mode); }
+// Writable files get a 32 KiB cache-aligned PSRAM stdio buffer, the same way orcsdr_storage does it (docs/TAB5_SD_PERFORMANCE.md).
+// PSRAM buffers that are not cache aligned send ESP-IDF's SDMMC driver down its unaligned fallback, which writes one 512-byte
+// sector at a time (about 0.3 MiB/s instead of 4-6 MiB/s). The buffer must outlive the stream, so it is kept in a small table
+// and freed after fclose. Only the archive worker opens files, but the table is guarded anyway.
+#ifdef ESP_PLATFORM
+constexpr size_t kStdioBufferBytes = 32768;
+struct StdioBuffer { std::FILE* file = nullptr; void* buf = nullptr; };
+StdioBuffer g_stdio_buffers[4];
+std::mutex g_stdio_mutex;
+#endif
+std::FILE* d_open(const char* path, const char* mode) {
+  std::FILE* f = std::fopen(path, mode);
+#ifdef ESP_PLATFORM
+  if (f && mode && (mode[0] == 'w' || mode[0] == 'a')) {
+    void* buf = heap_caps_malloc(kStdioBufferBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT | MALLOC_CAP_CACHE_ALIGNED);
+    if (buf) {
+      bool kept = false;
+      if (std::setvbuf(f, static_cast<char*>(buf), _IOFBF, kStdioBufferBytes) == 0) {
+        std::lock_guard<std::mutex> lock(g_stdio_mutex);
+        for (auto& slot : g_stdio_buffers)
+          if (!slot.file) { slot.file = f; slot.buf = buf; kept = true; break; }
+      }
+      if (!kept) heap_caps_free(buf);   // no setvbuf or no free slot: the stream falls back to its default buffering
+    }
+  }
+#endif
+  return f;
+}
 size_t d_write(const void* data, size_t size, std::FILE* file) { return std::fwrite(data, 1, size, file); }
 size_t d_read(void* data, size_t size, std::FILE* file) { return std::fread(data, 1, size, file); }
-int d_close(std::FILE* file) { return std::fclose(file); }
+int d_close(std::FILE* file) {
+  const int result = std::fclose(file);
+#ifdef ESP_PLATFORM
+  std::lock_guard<std::mutex> lock(g_stdio_mutex);
+  for (auto& slot : g_stdio_buffers)
+    if (slot.file == file) { heap_caps_free(slot.buf); slot.file = nullptr; slot.buf = nullptr; break; }
+#endif
+  return result;
+}
 int d_rename(const char* from, const char* to) { return std::rename(from, to); }
 int d_remove(const char* path) { return std::remove(path); }
 bool d_exists(const char* path) {
@@ -134,6 +169,14 @@ const Io& io() { return *g_io; }
 void* psram_alloc(size_t bytes) {
 #ifdef ESP_PLATFORM
   return heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
+  return std::malloc(bytes);
+#endif
+}
+// Cache-aligned PSRAM for buffers that the SD driver reads by DMA.
+void* psram_alloc_aligned(size_t bytes) {
+#ifdef ESP_PLATFORM
+  return heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT | MALLOC_CAP_CACHE_ALIGNED);
 #else
   return std::malloc(bytes);
 #endif
@@ -346,7 +389,7 @@ Error write_bmp_once(const Image& im, const char* path, uint64_t* hash, uint32_t
   put32(header + 38, 2835);
   put32(header + 42, 2835);
   uint8_t* row = static_cast<uint8_t*>(psram_alloc(800 * 3 + 4));   // not on the worker's stack
-  uint8_t* chunk = static_cast<uint8_t*>(psram_alloc(kChunk));
+  uint8_t* chunk = static_cast<uint8_t*>(psram_alloc_aligned(kChunk));
   struct Guard { void* a; void* b; ~Guard() { psram_free(a); psram_free(b); } } guard{row, chunk};
   if (!row || !chunk) { io().close(f); return Error::write_error; }
   ChunkWriter out;

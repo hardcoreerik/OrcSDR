@@ -92,6 +92,8 @@ the SSTV dashboard closes and is replaced only by a newer one, cleared by CLEAR 
 
 Saving never happens on the UI task, in the PCM callback or in the USB path. `sstv_archive` owns a three-slot queue and a low-priority worker (FreeRTOS task, 6 KiB stack, priority idle+1).
 
+**Write speed (2026-10-14).** Files opened for writing get a 32 KiB cache-aligned PSRAM stdio buffer and the 16 KiB chunk buffer is cache aligned, as in `docs/TAB5_SD_PERFORMANCE.md`. Before this the archive used unaligned PSRAM buffers, which sends the ESP-IDF SDMMC driver down its one-sector-at-a-time fallback: a 952 KB PD120 picture took 3.8 to 5.5 s to save (about 0.2 MiB/s) and one write needed a retry. After: 448 ms for the same picture and 302 ms for a 230 KB Robot 36 picture, no retries (device test with the synthetic self-test). Leaving the dashboard right after a picture finished stalled for up to 5.2 s before; six such legs afterwards took 0.14 to 0.30 s.
+
 ```text
 /sd/orcsdr/sstv/
     index.csv
