@@ -73,4 +73,32 @@ For each run it sets tune, mode, IF width and gain, transmits one frame, polls `
 
 ## Results
 
-(See below; filled in from the harness output.)
+All runs: Robot 36, Pluto TX1 through the 30 dB pad, manual gain 49.6 dB, IF at the radio default (25 kHz), 30 s between
+runs, no firmware change between dongles. Levels are the tinySA-calibrated values above. "Complete" = 232 or more rows with
+some missed lines; "cut" = the transmitter stopped part-way (Pluto TX DMA fault), which is recorded as an edge case, not a
+receiver failure. Counts come from `gambit/ladder_report.py`.
+
+### Full ladder, three dongles (6 runs per level unless noted)
+
+| Dongle | -100 dBm | -102 dBm | -108 dBm | -111 dBm | -113 dBm |
+|---|---|---|---|---|---|
+| V3c | 5 clean, 1 complete (7 missed; first run after a retune) | 6 clean | 6 clean | 8 runs: 5 complete (12-24 missed), 1 partial, 2 cut | 7 runs: 3 partial, 3 no image, 1 cut |
+| V4 | 6 clean | 6 clean | 6 complete (7-10 missed) | 4 complete (44-46 missed), 2 no image | 6 no image |
+| Nooelec (three ranges only) | 6 clean | not run | 4 clean, 2 complete (6-7 missed) | not run | 1 partial (false MARTIN M1 lock), 5 no image |
+
+The V4L was measured earlier on a narrower set: clean pictures down to about -111 dBm (4 of 6 with zero missed lines); at
+-113 dBm the picture appeared but VIS was not recognised and 25-36 lines were missed. That was before the
+Pluto starve-guard fix, so it is not a like-for-like row.
+
+What this says:
+
+- All dongles are clean at -100 dBm. Below about -108 dBm they separate: the V3c holds clean pictures to -108 dBm, the V4
+  and Nooelec lose a few lines there, and the V4 loses 45 at -111 dBm.
+- At -113 dBm nothing decodes a clean picture on any dongle. The V3c still gives distorted partial pictures; the V4 and
+  Nooelec give nothing usable. The goal of zero missed lines at -113 dBm is not met.
+- Pluto TX DMA faults (3 on the V3c ladder, none on the others) cut some transmissions at the lowest levels. The cut
+  picture at -111 dBm was archived as a partial picture with 141 locked lines; the other cuts left no picture because none
+  had started. The next run recovered every time.
+- Lines lost in the first run of a set were harness settling after a retune, not signal level.
+- Whether the Nooelec and V4 apply 49.6 dB exactly is not known: the harness records the commanded gain, not the tuner's
+  applied gain, so part of the dongle difference may be gain steps rather than noise figure.
