@@ -64,13 +64,21 @@ std::FILE* d_open(const char* path, const char* mode) {
   if (f && mode && (mode[0] == 'w' || mode[0] == 'a')) {
     void* buf = heap_caps_malloc(kStdioBufferBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT | MALLOC_CAP_CACHE_ALIGNED);
     if (buf) {
-      bool kept = false;
-      if (std::setvbuf(f, static_cast<char*>(buf), _IOFBF, kStdioBufferBytes) == 0) {
+      // Reserve a slot first: a supplied buffer must stay valid until the stream closes, so it is never attached
+      // to a stream that nothing could free it for.
+      StdioBuffer* reserved = nullptr;
+      {
         std::lock_guard<std::mutex> lock(g_stdio_mutex);
         for (auto& slot : g_stdio_buffers)
-          if (!slot.file) { slot.file = f; slot.buf = buf; kept = true; break; }
+          if (!slot.file) { slot.file = f; slot.buf = buf; reserved = &slot; break; }
       }
-      if (!kept) heap_caps_free(buf);   // no setvbuf or no free slot: the stream falls back to its default buffering
+      if (!reserved || std::setvbuf(f, static_cast<char*>(buf), _IOFBF, kStdioBufferBytes) != 0) {
+        if (reserved) {
+          std::lock_guard<std::mutex> lock(g_stdio_mutex);
+          reserved->file = nullptr; reserved->buf = nullptr;
+        }
+        heap_caps_free(buf);          // the stream keeps its default buffering
+      }
     }
   }
 #endif
