@@ -24,6 +24,14 @@ Do NOT flash until checking the physical ESP32-P4 silicon revision and
 32 MB flash/PSRAM config: factory Waveshare image defaults to rev3.x with
 250 MHz PSRAM and must not be flashed on rev1.x silicon.
 
+For a verified rev1.x chip, use the separate 200 MHz PSRAM profile in a
+fresh build directory. Add the following argument to **both** commands above:
+
+    -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.rev1_x"
+
+This profile selects silicon revisions 1.00–1.99. It does not establish PCB
+identity or prove the installed PSRAM works. Never reuse a rev3.x build for it.
+
 After physical board and revision verification, flash only if explicitly
 approved by the local device owner:
 

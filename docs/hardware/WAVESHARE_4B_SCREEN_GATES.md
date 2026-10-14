@@ -43,3 +43,71 @@ Waveshare remains blocked in hardware/boards.json.
 
 For reproducibility, record actual ESP-IDF lockfile, firmware SHA and serial
 log; keep logs next to scripts run on the bench.
+
+### Local preflight, 2026-10-14 (not flashed)
+
+- Source baseline: `ef117124dc0519f7403e51a0a7f094296b73914e`.
+- Owner corrected the Waveshare programming port to **COM40**. COM39 is a
+  different board and must not be used for this bring-up.
+- COM40 esptool probe: P4 silicon v1.3, MAC `e8:f6:0a:e4:43:02`, flash
+  manufacturer `c8`, device `4019`, detected capacity 32 MB. Probe left the
+  device in bootloader; no flash writes were performed.
+- PCB revision, socket labeling, factory firmware preservation, actual PSRAM
+  initialization and USB Host power routing remain unverified.
+- Existing CI artifact from run `38648107271` is **incompatible with this
+  chip**: its saved configuration selects revisions 3.01–3.99 and 250 MHz
+  PSRAM. Native CI compilation passed; the separate REA/Ghidra job failed.
+- Added `sdkconfig.defaults.rev1_x` selecting revisions 1.00–1.99 and 200 MHz
+  PSRAM, following Waveshare's separate silicon-profile guidance:
+  https://github.com/waveshareteam/ESP32-P4-WIFI6-Touch-LCD-4B/blob/main/docs/board.md
+- Home host test passed via Ubuntu g++ 13.3.0: geometry, tuning and FFT peak
+  bin 160. Log qualification unit tests: 5 passed. These are host evidence,
+  not physical display, touch or reception acceptance.
+- Local SDK: ESP-IDF v5.5.4 at `735507283d5b2f9fb363a1901172dbd9e847945d`,
+  with a pre-existing change in `esp_driver_sdio/src/sdio_slave.c` removing
+  the 4092-byte upper bound in `sdio_slave_send_queue`; preserved unchanged.
+  Python 3.14.3; RISC-V GCC 14.2.0 (`esp-14.2.0_20260121`).
+- Logs are retained beside the commands: repository-root `preflight-com40-flash.log`,
+  `home-host-tests.log`, `home-log-tests.log`; app-directory `idf-set-target.log`
+  and `idf-build.log`. Downloaded CI evidence remains in `ci-build-evidence/`.
+- One fresh local native build **passed** with the rev1.x overlay. Application
+  size 810,688 bytes (`0xc5ec0`), 23% free in the 1 MiB factory partition;
+  bootloader size `0x5d90`, 3% free. Application header confirms v1.0–v1.99.
+  This proves compilation and image revision selection, not PSRAM operation.
+- Generated `build-4b/flasher_args.json`: DIO, 80 MHz, 32 MB; bootloader
+  `0x2000`, partition table `0x8000`, app `0x10000`. Partition table: NVS
+  `0x9000`/24 KiB, PHY `0xf000`/4 KiB, factory `0x10000`/1 MiB. No C6 image.
+  The partition-table SHA matches the CI artifact; bootloader/app differ as
+  expected for a different silicon profile. Byte-for-byte reproduction is
+  not claimed: local SDK is dirty, toolchains differ and the driver component
+  hash in the local lock differs despite the same pinned Git revision. Other
+  resolved dependency entries match the downloaded CI lock.
+- Actual BSP 3.0.1 records upstream commit
+  `69b3e7ba512e3676519196f5d91680445600a101`; its C source SHA-256 is
+  `f5b7c99b6069c91676c164c23f30b41d410921b2aeafed07ac5791b543dc6f6f`.
+  Display start selects rotation zero with triple-partial rendering.
+
+Commands run (host commands from repo root; native commands from the app):
+
+```text
+g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic apps/orcsdr-waveshare-4b/tests/home_host.cpp -o home4b-host
+./home4b-host
+python -m unittest discover -s tools/hardware -p test_4b_home_log.py -v
+idf.py -B build-4b -D SDKCONFIG=build-4b/sdkconfig -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.rev1_x" set-target esp32p4
+idf.py -B build-4b -D SDKCONFIG=build-4b/sdkconfig -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.rev1_x" build
+```
+
+The g++ commands ran through WSL Ubuntu with absolute `/mnt/f/...` paths.
+SHA-256 of the local images:
+
+| Image | SHA-256 |
+|---|---|
+| Application | `b362b7db7cfd0450db132e2a5c6d95178846667e4c95ff07a4193bd81ad4eb3c` |
+| Bootloader | `ef948b1ae6093c7342a06096d3749ee736fb491444ac4c9399a54c62b017a359` |
+| Partition table | `7f00b6c042a89b15b0cac534f82ed988caf29278ff5700b0c511eb1b5bb7c820` |
+
+Build input was baseline `ef117124` plus the rev1.x configuration overlay;
+no application C++ source changed. Generated `image-info.log` and
+`build-sha256.txt` are retained in the app directory. Final physical identity,
+factory preservation and power-routing checks must complete before requesting
+flash approval. Display, touch and five-minute RF gates remain open.
