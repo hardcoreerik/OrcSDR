@@ -68,7 +68,7 @@ closes. Choices: AUTO (the radio's width, 25 kHz), 100, 50, 25, 16, 12, 8 kHz. G
 
 `PlutoSDR/sstv/gambit/auto_threshold.py` drives the Pluto and the Tab5 (serial, authenticated) with no one watching the screen.
 For each run it sets tune, mode, IF width and gain, transmits one frame, polls `SSTV STATUS` during the transmission and reads
-`SSTV LAST` afterwards. One JSON line per run goes to `runs/auto-*/results.jsonl`. Serial controls used: `SSTV OPEN`,
+`SSTV LAST` afterward. One JSON line per run goes to `runs/auto-*/results.jsonl`. Serial controls used: `SSTV OPEN`,
 `SSTV TUNE <hz>`, `SSTV MODE`, `SSTV IFBW <hz>|DEFAULT`, `SSTV LAST`, `SSTV STATUS`, `RTL_GAIN MANUAL <tenth dB>`.
 
 ## Results

@@ -35,10 +35,12 @@ void deallocate(void* p) {
 bool start(uint32_t seconds) {
   if (seconds == 0 || seconds > kMaxSeconds) return false;
   const size_t wanted = static_cast<size_t>(seconds) * kSampleRate;
-  if (g_buffer && g_capacity != wanted) release();
-  if (!g_buffer) {
-    g_buffer = static_cast<int16_t*>(allocate(wanted * sizeof(int16_t)));
-    if (!g_buffer) return false;
+  if (!g_buffer || g_capacity != wanted) {
+    // Allocate the replacement first: a failed request must not destroy the capture that is already held.
+    int16_t* fresh = static_cast<int16_t*>(allocate(wanted * sizeof(int16_t)));
+    if (!fresh) return false;
+    release();
+    g_buffer = fresh;
     g_capacity = wanted;
   }
   g_count = 0;

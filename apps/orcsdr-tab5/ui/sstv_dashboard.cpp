@@ -904,7 +904,10 @@ void ui_update(const UiSnapshot& snapshot) {
   const bool changed = std::memcmp(&g_ui.settings, &snapshot.settings, sizeof(g_ui.settings)) != 0 ||
                        g_ui.sd_ready != snapshot.sd_ready || g_ui.tune != snapshot.tune;
   g_ui = snapshot;
-  if (retuned) g_rf_have = false;   // the waterfall history belongs to the old frequency
+  if (retuned) {                    // the waterfall history belongs to the old frequency
+    g_rf_have = false;
+    if (g_rf_px) std::fill(g_rf_px, g_rf_px + static_cast<size_t>(kRfW) * kRfH, static_cast<uint16_t>(0));
+  }
   if (g_keypad) return;             // the keypad owns the screen
   if (retuned || changed) {
     if (g_page == Page::tune) {   // repaint in place: no full-screen clear

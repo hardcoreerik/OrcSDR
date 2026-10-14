@@ -9,6 +9,7 @@
 // which with 2.5 kHz FM deviation is the level the existing Robot 36 lab frames used.
 #include "sstv_receiver.hpp"
 #include "sstv_test_colour.hpp"
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -51,7 +52,7 @@ int main(int argc, char** argv) {
     sig.silence(500);
     sig.flush();
     std::string name = m.name;
-    for (auto& c : name) c = (c == ' ') ? '_' : static_cast<char>(std::tolower(c));
+    for (auto& c : name) c = (c == ' ') ? '_' : static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     const std::string path = std::string(argv[2]) + "/" + name + ".wav";
     std::FILE* f = std::fopen(path.c_str(), "wb");
     if (!f) { std::fprintf(stderr, "cannot write %s\n", path.c_str()); return 1; }

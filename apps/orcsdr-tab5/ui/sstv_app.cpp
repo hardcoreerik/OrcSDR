@@ -324,7 +324,7 @@ void handle(const orcsdr::sstv::Action& action) {
       save_tune();
       break;
     case Kind::apply_correction:
-      (void)tune_hz(tn::clamp_hz(static_cast<uint32_t>(static_cast<int64_t>(g_frequency_hz) + action.value)));
+      (void)tune_hz(static_cast<uint32_t>(std::clamp<int64_t>(static_cast<int64_t>(g_frequency_hz) + action.value, tn::kMinHz, tn::kMaxHz)));
       break;
     case Kind::set_detection:
       g_settings = orcsdr::sstv_settings::with_detection(g_settings, static_cast<Detection>(action.value));
@@ -474,6 +474,7 @@ bool tune_command(const char* args, char* reply, size_t size) {
     const char* v = args + 4;
     if (std::strncmp(v, "START ", 6) == 0) {
       const unsigned long seconds = std::strtoul(v + 6, nullptr, 10);
+      if (g_save.file) { std::snprintf(reply, size, "rec_start_refused save_in_progress"); return false; }   // the save reads the same buffer
       if (!cap::start(static_cast<uint32_t>(seconds))) { std::snprintf(reply, size, "rec_start_refused seconds=1..%u", static_cast<unsigned>(cap::kMaxSeconds)); return false; }
       std::snprintf(reply, size, "rec=started seconds=%lu rate=%u", seconds, static_cast<unsigned>(cap::kSampleRate));
       return true;
