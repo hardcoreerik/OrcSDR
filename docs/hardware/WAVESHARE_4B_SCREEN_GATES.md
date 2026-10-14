@@ -181,3 +181,19 @@ flash approval. Display, touch and five-minute RF gates remain open.
   Generated `build-4b-hub/flasher_args.json` retains the three original
   offsets, DIO/80 MHz/32 MB settings, and no C6/NVS image. Final flash approval
   is required before installing this hub-enabled image on COM40.
+
+### Approved hub-enabled flash, 2026-10-14
+
+- Owner explicitly approved installation. COM40 re-probe matched P4 v1.3,
+  MAC `e8:f6:0a:e4:43:02`, flash 32 MB. All three new image hashes matched
+  the hub-build record above. Flashed `build-4b-hub/flasher_args.json` through
+  esptool 4.12.0 at 460800 baud; each image reported hash verification success.
+- Used the same serial-before-reset capture procedure, preserving the first
+  flash logs. Logs: `hub-com40-preflash.log`, `hub-com40-flash.log`,
+  `hub-com40-boot.log`; local procedure script `hub_flash_capture.py`.
+- Boot confirms app version `v0.4.0-beta.1-16-g77102cf4-dirt`, ELF prefix
+  `5b9f6d4ea`, PSRAM 200 MHz and memory test OK, GT911 at `0x5D`, and
+  `HOME_4B boot complete - C6 untouched`. No C6/NVS image or full erase.
+- Hub-enabled image installation and Home startup verified. Owner invited
+  to connect powered hub plus dongle while the serial capture runs. Hub and
+  receiver enumeration, actual IQ and sustained RF remain separate open gates.
