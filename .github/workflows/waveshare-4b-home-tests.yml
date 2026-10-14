@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate real-IQ log gate fixtures
+        run: python3 -m unittest discover -s tools/hardware -p 'test_4b_home_log.py' -v
       - name: Verify 720x720 geometry, tune range and FFT known-tone fixture
         run: |
           g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic apps/orcsdr-waveshare-4b/tests/home_host.cpp -o /tmp/orcsdr-home-4b
