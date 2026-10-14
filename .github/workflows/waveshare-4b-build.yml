@@ -49,7 +49,14 @@ jobs:
             2>&1 | tee "$GITHUB_WORKSPACE/research-out/idf-build.log"
           cp dependencies.lock "$GITHUB_WORKSPACE/research-out/dependencies.lock"
           cp build-4b/orcsdr_waveshare_4b_probe.elf "$GITHUB_WORKSPACE/research-out/4b-probe.elf"
-          sha256sum "$GITHUB_WORKSPACE/research-out/4b-probe.elf" > "$GITHUB_WORKSPACE/research-out/elf.sha256"
+          cp build-4b/orcsdr_waveshare_4b_probe.bin "$GITHUB_WORKSPACE/research-out/4b-home-app-0x10000.bin"
+          cp build-4b/bootloader/bootloader.bin "$GITHUB_WORKSPACE/research-out/4b-bootloader-0x2000.bin"
+          cp build-4b/partition_table/partition-table.bin "$GITHUB_WORKSPACE/research-out/4b-partition-table-0x8000.bin"
+          cp build-4b/sdkconfig "$GITHUB_WORKSPACE/research-out/sdkconfig"
+          ( cd "$GITHUB_WORKSPACE/research-out" && sha256sum 4b-*.bin 4b-probe.elf > SHA256SUMS.txt )
+          printf "DEVELOPER-ONLY / WAVESHARE ESP32-P4-WIFI6-TOUCH-LCD-4B\n" > "$GITHUB_WORKSPACE/research-out/DO-NOT-FLASH-BLINDLY.txt"
+          printf "NOT PHYSICALLY VERIFIED. Check the board, flash size and P4 silicon revision before flashing.\n" >> "$GITHUB_WORKSPACE/research-out/DO-NOT-FLASH-BLINDLY.txt"
+          printf "No C6 image included. Do not use M5Stack Tab5 firmware on this board.\n" >> "$GITHUB_WORKSPACE/research-out/DO-NOT-FLASH-BLINDLY.txt"
       - name: Save exact source/build/ELF evidence even on failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
