@@ -151,7 +151,13 @@ struct Frame {
   uint32_t bytes;
 };
 std::atomic<uint32_t> g_frames_alive{0},g_frame_bytes{0};
+#ifdef ORCSDR_SSTV_TESTING
+unsigned g_test_fail_frames=0;   // host tests: make the next N frame allocations fail, as a fragmented PSRAM would
+#endif
 Frame* frame_create(size_t pixel_count) {
+#ifdef ORCSDR_SSTV_TESTING
+  if(g_test_fail_frames) { --g_test_fail_frames; return nullptr; }
+#endif
   const size_t bytes=sizeof(Frame)+pixel_count*sizeof(uint16_t);
 #ifdef ESP_PLATFORM
   void* raw=heap_caps_malloc(bytes,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
@@ -324,7 +330,17 @@ void begin_picture(const ModeSpec* spec,uint8_t vis,
   g_live={};
   const size_t n=static_cast<size_t>(spec->width)*spec->height;
   Frame* frame=frame_create(n);
+  // A valid header must not be lost to a full or fragmented PSRAM: give up the oldest gallery pictures one at a time
+  // (the gallery is a convenience, the reception is the point) and try again. A picture the UI or archive still holds stays
+  // alive until it lets go, so this only frees what nothing else needs.
+  while(!frame && g_saved_count>0) {
+    frame_release(g_saved[g_saved_count-1].frame);
+    g_saved[g_saved_count-1]={};
+    --g_saved_count;
+    frame=frame_create(n);
+  }
   if(!frame) {
+    ++g_stats.frame_alloc_failures;
     std::snprintf(g_stats.status,sizeof(g_stats.status),"INSUFFICIENT PSRAM");
     reset_picture();
     return;
@@ -893,6 +909,9 @@ void abort_image(){
   if(g_stats.receiving)finish_picture(true,EndReason::aborted);
   reset_vis();reset_picture();auto_detect::reset();
 }
+#ifdef ORCSDR_SSTV_TESTING
+void testing_fail_next_frames(unsigned count){g_test_fail_frames=count;}
+#endif
 void set_frequency(uint32_t hz){
   if(g_stats.receiving)finish_picture(true,EndReason::retune);
   g_frequency=hz;reset_picture();reset_vis();auto_detect::reset();

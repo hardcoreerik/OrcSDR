@@ -55,6 +55,7 @@ build_and_run noise      "$TESTS/sstv_noise_test.cpp" "${CORE[@]}"
 build_and_run tune       "$TESTS/sstv_tune_test.cpp" "$UI/sstv_tune.cpp" "$UI/sstv_audio_scope.cpp"
 build_and_run syncmeter  "$TESTS/sstv_syncmeter_test.cpp" "$UI/sstv_tune.cpp" "${CORE[@]}"
 build_and_run capture   "$TESTS/sstv_capture_test.cpp" "$UI/sstv_capture.cpp"
+build_and_run memory    "$TESTS/sstv_memory_test.cpp" "${CORE[@]}"
 SSTV_PATTERN_RGB="$ROOT/apps/orcsdr-tab5/main/sstv_testpattern_320x240.rgb" build_and_run colour "$TESTS/sstv_colour_test.cpp" "${CORE[@]}"
 SSTV_PATTERN="$ROOT/apps/orcsdr-tab5/main/sstv_testpattern_320x240.gray" build_and_run pattern "$TESTS/sstv_pattern_test.cpp" "${CORE[@]}"
 

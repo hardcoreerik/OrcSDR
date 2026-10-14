@@ -240,7 +240,7 @@ void print_status() {
   say("SSTV_STATUS active=%d dashboard=%d state=\"%s\" mode=\"%s\" ident=%d score=%u row=%u/%u receiving=%d "
       "start_unknown=%d vis_ok=%lu vis_bad=%lu sync_locked=%u sync_missed=%u overruns=%lu gaps=%lu "
       "frames=%lu partial=%lu auto_locks=%lu tone_hz=%d audio_level_milli=%d audio_offered=%lu samples=%lu "
-      "sync_tone_hz=%d sync_tone_pulses=%u",
+      "sync_tone_hz=%d sync_tone_pulses=%u status=\"%s\"",
       active() ? 1 : 0, ui_active() ? 1 : 0, state_name(m.state),
       m.receiving ? mode_name(m.received_mode) : "-", static_cast<int>(m.identification),
       static_cast<unsigned>(m.identification_score), static_cast<unsigned>(m.row),
@@ -251,7 +251,7 @@ void print_status() {
       static_cast<unsigned long>(m.frames), static_cast<unsigned long>(m.partial_frames),
       static_cast<unsigned long>(m.auto_sync_locks), static_cast<int>(m.tone_hz), static_cast<int>(m.audio_peak * 1000.0f),
       static_cast<unsigned long>(m.audio_offered), static_cast<unsigned long>(m.samples),
-      static_cast<int>(m.sync_tone_hz + 0.5f), static_cast<unsigned>(m.sync_tone_pulses));
+      static_cast<int>(m.sync_tone_hz + 0.5f), static_cast<unsigned>(m.sync_tone_pulses), m.status);
   if (g_hooks && g_hooks->tune_summary) {
     char tune[160];
     g_hooks->tune_summary(tune, sizeof(tune));
@@ -266,7 +266,8 @@ void print_status() {
       static_cast<unsigned long>(m.frame_bytes / 1024u), static_cast<unsigned long>(ui.draw_us_last),
       static_cast<unsigned long>(ui.draw_us_max), static_cast<unsigned long>(ui.draws));
 #ifdef ESP_PLATFORM
-  say("SSTV_MEM internal_free=%u internal_min=%u internal_largest=%u psram_free=%u psram_min=%u psram_largest=%u",
+  say("SSTV_MEM frame_alloc_failures=%lu internal_free=%u internal_min=%u internal_largest=%u psram_free=%u psram_min=%u psram_largest=%u",
+      static_cast<unsigned long>(m.frame_alloc_failures),
       static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
       static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),
       static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)),
