@@ -1,5 +1,65 @@
 # Waveshare ESP32-P4-WIFI6-Touch-LCD-4B — USB Host/Power investigation
 
+## Cross-validated primary-source finding (2026-10-14)
+
+The power issue is backed by **four different classes of evidence**:
+
+1. **Exact-board main schematic (4B)**:
+   https://files.waveshare.com/wiki/ESP32-P4-WIFI6-Touch-LCD-4B/ESP32-P4-WIFI6-Touch-LCD-4B.pdf
+   shows USB-OTG H2 with `R2/R3=5.1kΩ` CC sink terminations,
+   USB1_5V routed into the 5 V input power circuitry, and P4 HS
+   `USBD_P/USBD_N` data wires. That proves the port has HS USB data
+   but is **not a conventional Type-C source-capable host socket**.
+2. **Espressif's official Type-C implementation guide**:
+   https://docs.espressif.com/projects/esp-iot-solution/en/latest/usb/usb_overview/usb_typec_hardware_guide.html
+   states that fixed 5.1kΩ CC-to-ground resistors are sink `Rd`,
+   sources advertise `Rp`, and two Type-C sinks cannot establish
+   attachment. The guide recommends a CC controller and hardware
+   current-limited VBUS switch for host/DRP designs.
+3. **Manufacturer's explicit statement for *related 4.3-inch P4
+   variant*, NOT the 4B**:
+   https://docs.waveshare.net/ESP32-P4-WIFI6-Touch-LCD-4.3/FAQ/
+   Chinese question `USB-OTG接口如何连接外部设备`; answer says the
+   board's OTG interface **cannot supply external peripherals**, which
+   must therefore be powered separately. This strengthens but does
+   not directly certify the 4B hardware conclusion. The corresponding
+   4B FAQ does not currently answer this question:
+   https://docs.waveshare.com/ESP32-P4-WIFI6-Touch-LCD-4B/FAQ
+4. **Independent user issue on related 4.3 variant**:
+   https://github.com/waveshareteam/ESP32-P4-WIFI6-Touch-LCD-4.3/issues/3
+   reports lack of peripheral power through OTG; a comment describes
+   resolving it by wiring 5 V to the connector. This is an uncontrolled
+   anecdote, **not a safe or approved modification for the 4B**.
+
+**Confidence split**:
+- HIGH: The published 4B schematic has fixed Type-C sink CC resistors.
+- HIGH: The board is therefore not a standard plug-and-play Type-C
+  VBUS-source host as documented.
+- HIGH: 4.3 family variant is explicitly documented by Waveshare as
+  requiring independent peripheral power.
+- MEDIUM-HIGH: User's actual 4B has the same outgoing-VBUS limitation.
+- UNPROVEN: That the 4B enumerates an externally powered RTL-SDR on
+  its HS USB lines with a specific adapter, or that a particular
+  hub/adapter gets around the mismatched Type-C attachment/role.
+- UNPROVEN: Every production PCB revision matches this exact schematic.
+
+**Other potential failure with a powered hub**: Espressif's USB Host
+stack requires hub support in firmware. This branch explicitly sets
+`CONFIG_USB_HOST_HUBS_SUPPORTED=y` in
+`apps/orcsdr-waveshare-4b/sdkconfig.defaults`; verify the actual
+generated `build-4b/sdkconfig` also has it (existing build dirs can
+retain stale settings). Even with hub support, USB-C attachment and
+upstream VBUS sensing still need appropriate hardware.
+
+**Recommended engineering path**: request Waveshare's exact-4B
+factory-supported USB Host wiring/power scheme (including whether
+a separate VBUS supply, powered data-injection adapter, or supported
+hub is required). Verify the board's PCB revision and CC hardware.
+Build a safety-reviewed externally powered HS USB data/power test
+fixture, or use a known-good commercial equivalent. Never bridge VBUS
+rails or inject power directly into the receptacle; do not adopt the
+related-board forum wiring hack without circuit review.
+
 ## 2026-10-14 measured-source update
 
 **Direct hardware observation**: With an inline USB-C power meter, the user

@@ -37,9 +37,17 @@ approved by the local device owner:
 
     idf.py -B build-4b -D SDKCONFIG=build-4b/sdkconfig -p <PORT> flash monitor
 
-Use the separate USB-C OTG path with a powered hub until board-supplied
-5V VBUS is confirmed. NEVER start bsp_usb_host_start: esp-rtl-sdr must
-own USB Host. Connect a supported SDR dongle. Expected serial markers:
+IMPORTANT: On the published 4B schematic the USB-C OTG socket has fixed
+5.1k Type-C SINK CC terminations. It may NOT source 5 V to a USB dongle
+or complete standard USB-C source attachment. A generic powered hub is
+NOT guaranteed to solve the CC and upstream VBUS role mismatch. Before
+attaching an SDR, use a verified, independently powered host-data/SDR
+fixture with correct Type-C roles, VBUS isolation and USB HS support;
+never backfeed 5 V into USB-C, bridge input rails or attempt unreviewed
+PCB modifications. See docs/hardware/WAVESHARE_4B_USB_HOST_POWER.md.
+NEVER start bsp_usb_host_start: esp-rtl-sdr must own USB Host.
+Connect a supported SDR dongle only after power/role tests.
+Expected serial markers:
 HOME_4B, HOME_4B TUNE, HOME_4B RF START, HOME_4B IQ.
 External USB hub support is enabled in the build defaults. Existing build
 directories with a saved sdkconfig must enable `CONFIG_USB_HOST_HUBS_SUPPORTED`
