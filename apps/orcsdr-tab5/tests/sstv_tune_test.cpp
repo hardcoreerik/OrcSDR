@@ -24,6 +24,9 @@ void test_vfo() {
   require(sstv_tune::default_demod(14230000) == Demod::usb && sstv_tune::default_demod(28680000) == Demod::usb, "tune: USB from 10 to 30 MHz");
   require(sstv_tune::default_demod(145500000) == Demod::nfm && sstv_tune::default_demod(437550000) == Demod::nfm, "tune: FM above 30 MHz");
   require(sstv_tune::nudge(14230000, 1000, 1) == 14231000 && sstv_tune::nudge(14230000, 1000, -1) == 14229000, "tune: nudge on the grid");
+  require(sstv_tune::nudge(4294967200u, 100, 1) == sstv_tune::clamp_hz(0xFFFFFFFFu) &&
+          sstv_tune::from_touch(3000000000u, 3000000000u, 999, 1000, 1) == sstv_tune::clamp_hz(0xFFFFFFFFu),
+          "tune: a result above 32 bits saturates at the top of the range instead of wrapping");
   require(sstv_tune::nudge(14230400, 1000, 1) == 14231000 && sstv_tune::nudge(14230400, 1000, -1) == 14230000,
           "tune: nudge from off the grid lands on the next multiple, not past it");
   uint32_t f = 14230400;

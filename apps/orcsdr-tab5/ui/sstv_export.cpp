@@ -32,7 +32,8 @@ void json_escape(char* out, size_t out_size, const char* in) {
   if (in == nullptr) in = "";
   for (size_t i = 0; in[i] != '\0' && o + 2 < out_size; ++i) {
     const char c = in[i];
-    if ((c == '"' || c == '\\') && o + 3 < out_size) {
+    if (c == '"' || c == '\\') {
+      if (o + 3 >= out_size) break;   // no room for the escape and the NUL: stop rather than emit a bare delimiter
       out[o++] = '\\';
       out[o++] = c;
     } else if (static_cast<unsigned char>(c) >= 32) {
@@ -199,12 +200,13 @@ void publish_empty() {
 }
 
 bool published_capture(uint32_t* serial, char* filename, size_t filename_size) {
-  if (!ready()) return false;
+  if (!ready() || !lock()) return false;   // same lock as the httpd readers: the slot is never read while it is rewritten
   const Slot& slot = g_slot[g_front.load(std::memory_order_acquire)];
-  if (!slot.capture) return false;
-  if (serial) *serial = slot.meta.serial;
-  if (filename && filename_size) std::snprintf(filename, filename_size, "%s", slot.meta.filename);
-  return true;
+  const bool have = slot.capture;
+  if (have && serial) *serial = slot.meta.serial;
+  if (have && filename && filename_size) std::snprintf(filename, filename_size, "%s", slot.meta.filename);
+  unlock();
+  return have;
 }
 
 size_t read_json(char* out, size_t capacity) {

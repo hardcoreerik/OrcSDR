@@ -109,6 +109,25 @@ int main() {
           text.find("\"identification\":\"VIS 8\"") != std::string::npos && text.find("\"end\":\"COMPLETE\"") != std::string::npos,
           "export: every field is present");
   require(text.find("he said \\\"hi\\\"\\\\x.bmp") != std::string::npos, "export: strings are escaped");
+  {  // a name that fills the escape buffer must never leave a bare quote or backslash in the document
+    Meta long_name = m;
+    std::string rough(100, '\\');
+    rough += std::string(40, '"');
+    std::snprintf(long_name.filename, sizeof(long_name.filename), "%s", rough.c_str());
+    char big[kJsonCapacity];
+    require(format_json(&long_name, big, sizeof(big)) > 0, "export: a rough name still formats");
+    const std::string doc = big;
+    const size_t key = doc.find("\"filename\":\"");
+    const size_t at = key + 12;
+    const size_t end = doc.find("\",\"preview_width\"");
+    require(key != std::string::npos && end != std::string::npos && end > at, "export: the filename field is closed");
+    bool ok = true;
+    for (size_t i = at; i < end; ++i) {
+      if (doc[i] == '\\') { ++i; if (i >= end) ok = false; }          // every backslash escapes the next character
+      else if (doc[i] == '"') ok = false;                                // no bare quote inside the string
+    }
+    require(ok, "export: escapes inside a truncated field are whole pairs");
+  }
   char tiny[8];
   require(format_json(&m, tiny, sizeof(tiny)) == 0, "export: a buffer that is too small is refused");
 

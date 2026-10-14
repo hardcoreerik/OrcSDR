@@ -29,6 +29,7 @@ Demod default_demod(uint32_t hz) {
 }
 
 uint32_t clamp_hz(uint32_t hz) { return std::clamp(hz, kMinHz, kMaxHz); }
+uint32_t clamp_hz64(uint64_t hz) { return hz > kMaxHz ? kMaxHz : clamp_hz(static_cast<uint32_t>(hz)); }   // saturate, never wrap
 
 size_t step_count() { return sizeof(kSteps) / sizeof(kSteps[0]); }
 uint32_t step_hz(size_t index) { return kSteps[std::min(index, step_count() - 1)]; }
@@ -46,7 +47,7 @@ uint32_t nudge(uint32_t hz, uint32_t step, int direction) {
   if (direction > 0) next = static_cast<int64_t>(grid) + 1;
   else next = (hz % step == 0) ? static_cast<int64_t>(grid) - 1 : static_cast<int64_t>(grid);
   if (next < 0) next = 0;
-  return clamp_hz(static_cast<uint32_t>(next * step));
+  return clamp_hz64(static_cast<uint64_t>(next) * step);
 }
 
 uint32_t from_touch(uint32_t center_hz, uint32_t span_hz, int x, int width, uint32_t step) {
@@ -56,7 +57,7 @@ uint32_t from_touch(uint32_t center_hz, uint32_t span_hz, int x, int width, uint
   int64_t f = static_cast<int64_t>(center_hz) + offset;
   if (f < 0) f = 0;
   if (step > 1) f = ((f + static_cast<int64_t>(step) / 2) / step) * step;
-  return clamp_hz(static_cast<uint32_t>(f));
+  return clamp_hz64(static_cast<uint64_t>(f));
 }
 
 int to_x(uint32_t center_hz, uint32_t span_hz, uint32_t hz, int width) {
