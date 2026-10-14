@@ -10,12 +10,14 @@ trap 'rm -rf "$tmp"' EXIT
   printf 'Signal ID host test (%s)\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   cxx="${CXX:-g++}"
   "${cxx}" -std=c++17 -O2 -Wall -Wextra -Werror \
+    -I"$root/apps/orcsdr-tab5/ui" \
     "$root/tests/signal_id_tests.cpp" \
     "$root/apps/orcsdr-tab5/ui/signal_id.cpp" \
     -o "$tmp/test"
   "$tmp/test"
   echo 'optimized: PASS'
   "${cxx}" -std=c++17 -O1 -g -Wall -Wextra -Werror \
+    -I"$root/apps/orcsdr-tab5/ui" \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
     "$root/tests/signal_id_tests.cpp" \
     "$root/apps/orcsdr-tab5/ui/signal_id.cpp" \
