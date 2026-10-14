@@ -147,3 +147,37 @@ flash approval. Display, touch and five-minute RF gates remain open.
   touch events are verified. Visual display acceptance, full touch coverage,
   OTG power routing, real SDR reception and five-minute qualification remain
   open. No SDR connection requested until initial visual acceptance.
+
+### Home feedback and USB hub preparation, 2026-10-14
+
+- Owner confirms the device booted but rejects this Home UI as an acceptable
+  OrcSDR design; owner explicitly deferred UI changes. Home UI acceptance is
+  **not passed**. Hardware USB investigation continues at the owner's request.
+- During a direct dongle connection, serial continued reporting
+  `device list count=0`; no receiver or IQ stream was observed. Adapter/data
+  path, dongle power and OTG VBUS remain unverified. The owner disconnected it.
+  See app-directory `dongle-connect-com40.log`.
+- Found `CONFIG_USB_HOST_HUBS_SUPPORTED` disabled in the flashed image.
+  This does not explain failure of the direct connection, but prevents the
+  intended externally powered hub test. Enabled it in Waveshare app defaults
+  at the owner's request; the esp-rtl-sdr driver remains the sole USB owner.
+- New build directory `build-4b-hub` preserves the original flashed images.
+  Generated config enables external hubs, including IDF's default multi-level
+  support, while retaining rev1.00–1.99 and 200 MHz PSRAM. No UI/C6 change.
+- One native ESP-IDF 5.5.4 build passed (exit 0), app 830,096 bytes,
+  21% free in its 1 MiB partition; image header confirms revisions 1.0–1.99
+  and valid image hash. `git diff --check` passed. No host tests repeated for
+  this configuration-only change. No flash or physical hub test performed.
+  Build input: `77102cf4` plus the hub-default change, same SDK/toolchain as
+  the first build; app version records `v0.4.0-beta.1-16-g77102cf4-dirt`.
+- Exact command, from the app directory in the exported IDF environment:
+  `idf.py -B build-4b-hub -D IDF_TARGET=esp32p4 -D SDKCONFIG=build-4b-hub/sdkconfig -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.rev1_x" build`.
+  Evidence: `idf-build-hub.log`, `image-info-hub.log`, `build-hub-sha256.txt`.
+- SHA-256: application
+  `61dd15a9371c8ec983c0479880e6b193f7bad2f6d988e58be8f3744e655a12ef`;
+  bootloader `6b880170daa8a536abe5db5a8813a3e062b051b525c94d2666fda0410659d096`;
+  partition table unchanged at
+  `7f00b6c042a89b15b0cac534f82ed988caf29278ff5700b0c511eb1b5bb7c820`.
+  Generated `build-4b-hub/flasher_args.json` retains the three original
+  offsets, DIO/80 MHz/32 MB settings, and no C6/NVS image. Final flash approval
+  is required before installing this hub-enabled image on COM40.

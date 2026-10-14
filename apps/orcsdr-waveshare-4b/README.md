@@ -41,6 +41,9 @@ Use the separate USB-C OTG path with a powered hub until board-supplied
 5V VBUS is confirmed. NEVER start bsp_usb_host_start: esp-rtl-sdr must
 own USB Host. Connect a supported SDR dongle. Expected serial markers:
 HOME_4B, HOME_4B TUNE, HOME_4B RF START, HOME_4B IQ.
+External USB hub support is enabled in the build defaults. Existing build
+directories with a saved sdkconfig must enable `CONFIG_USB_HOST_HUBS_SUPPORTED`
+explicitly or be replaced with a fresh build directory to pick up this default.
 With no SDR, the display must say NO SDR CONNECTED and show no false RF.
 The GUI reports IQ-only and does NOT pretend to be an audio receiver.
 
