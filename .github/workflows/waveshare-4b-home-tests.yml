@@ -1,0 +1,25 @@
+name: Waveshare 4B Home host qualification
+on:
+  push:
+    branches: [codex/waveshare-p4-4b-port]
+    paths:
+      - "apps/orcsdr-waveshare-4b/main/**"
+      - "apps/orcsdr-waveshare-4b/tests/**"
+      - ".github/workflows/waveshare-4b-home-tests.yml"
+  pull_request:
+    paths:
+      - "apps/orcsdr-waveshare-4b/main/**"
+      - "apps/orcsdr-waveshare-4b/tests/**"
+      - ".github/workflows/waveshare-4b-home-tests.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  home-host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Verify 720x720 geometry, tune range and FFT known-tone fixture
+        run: |
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic apps/orcsdr-waveshare-4b/tests/home_host.cpp -o /tmp/orcsdr-home-4b
+          /tmp/orcsdr-home-4b
