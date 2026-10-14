@@ -1,0 +1,62 @@
+name: Waveshare 4B native compile + REA source evidence
+on:
+  push:
+    branches: [codex/waveshare-p4-4b-port]
+    paths:
+      - "apps/orcsdr-waveshare-4b/**"
+      - "tools/hardware/rea_graphics_source_audit.py"
+      - ".github/workflows/waveshare-4b-build.yml"
+  pull_request:
+    paths:
+      - "apps/orcsdr-waveshare-4b/**"
+      - "tools/hardware/rea_graphics_source_audit.py"
+      - ".github/workflows/waveshare-4b-build.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    container:
+      image: espressif/idf:v5.5.4@sha256:b9f2d6ea1c19e0c9f7959bdb74a9e3c775642f9d0f3b841937c5fa3363db892b
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Source-only call-chain evidence from pinned upstream BSP revision
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          mkdir -p "$GITHUB_WORKSPACE/research-out"
+          curl --fail --location --retry 3 --silent --show-error \
+            "https://raw.githubusercontent.com/waveshareteam/Waveshare-ESP32-components/23a6012d5e87d27399cf90fb851cab3689e29159/bsp/esp32_p4_wifi6_touch_lcd_4b/esp32_p4_wifi6_touch_lcd_4b.c" \
+            -o "$GITHUB_WORKSPACE/research-out/waveshare-bsp.c"
+          python3 tools/hardware/rea_graphics_source_audit.py \
+            --bsp "$GITHUB_WORKSPACE/research-out/waveshare-bsp.c" \
+            --tab5-ui apps/orcsdr-tab5/ui --out-dir "$GITHUB_WORKSPACE/research-out"
+      - name: Compile 4B probe on pinned ESP-IDF 5.5.4 (NO flash)
+        run: |
+          set -euo pipefail
+          . "$IDF_PATH/export.sh" >/dev/null
+          cd apps/orcsdr-waveshare-4b
+          idf.py -B build-4b -D SDKCONFIG=build-4b/sdkconfig set-target esp32p4 \
+            2>&1 | tee "$GITHUB_WORKSPACE/research-out/idf-set-target.log"
+          idf.py -B build-4b -D SDKCONFIG=build-4b/sdkconfig build \
+            2>&1 | tee "$GITHUB_WORKSPACE/research-out/idf-build.log"
+          cp dependencies.lock "$GITHUB_WORKSPACE/research-out/dependencies.lock"
+          cp build-4b/orcsdr_waveshare_4b_probe.elf "$GITHUB_WORKSPACE/research-out/4b-probe.elf"
+          sha256sum "$GITHUB_WORKSPACE/research-out/4b-probe.elf" > "$GITHUB_WORKSPACE/research-out/elf.sha256"
+      - name: Save exact source/build/ELF evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: waveshare-4b-native-build-evidence
+          path: research-out/
+          retention-days: 14
+      - name: Result
+        if: success()
+        run: echo "Waveshare 4B P4 probe compiled; no hardware flashed, no REA/Ghidra binary run." >> "$GITHUB_STEP_SUMMARY"
