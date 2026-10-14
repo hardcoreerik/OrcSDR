@@ -1,6 +1,7 @@
 #include "web_console.hpp"
 #include "web_command.hpp"
 #include "web_audio_transport.hpp"
+#include "sstv_export.hpp"
 
 #include <esp_attr.h>
 #include <esp_heap_caps.h>
@@ -213,6 +214,31 @@ esp_err_t handle_spectrum(httpd_req_t* req) {
   return httpd_resp_send(req, reinterpret_cast<const char*>(bins), static_cast<ssize_t>(n));
 }
 
+// GET /api/sstv: the newest finished SSTV picture's details, or {"none":true}. Read-only; it serves the snapshot the SSTV task
+// published and never touches the receiver, the gallery or the SD card.
+esp_err_t handle_sstv(httpd_req_t* req) {
+  char json[orcsdr::sstv_export::kJsonCapacity];
+  const size_t n = orcsdr::sstv_export::read_json(json, sizeof(json));
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  return httpd_resp_send(req, json, static_cast<ssize_t>(n));
+}
+
+// GET /api/sstv/preview: a 64-pixel-wide 24-bit BMP of that picture, or 404 "none". The copy buffer is static (nothing is
+// allocated on the request path); the server task handles one request at a time, so it is never shared.
+EXT_RAM_BSS_ATTR uint8_t g_sstv_preview_copy[orcsdr::sstv_export::kMaxBmpBytes];
+esp_err_t handle_sstv_preview(httpd_req_t* req) {
+  const size_t n = orcsdr::sstv_export::read_bmp(g_sstv_preview_copy, sizeof(g_sstv_preview_copy));
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  if (n == 0) {
+    httpd_resp_set_status(req, "404 Not Found");
+    httpd_resp_set_type(req, "text/plain");
+    return httpd_resp_send(req, "none", 4);
+  }
+  httpd_resp_set_type(req, "image/bmp");
+  return httpd_resp_send(req, reinterpret_cast<const char*>(g_sstv_preview_copy), static_cast<ssize_t>(n));
+}
+
 esp_err_t handle_action(httpd_req_t* req) {
   httpd_resp_set_type(req, "text/plain");
   httpd_resp_set_hdr(req, "Cache-Control", "no-store");
@@ -312,7 +338,7 @@ bool start_server() {
   config.server_port = 80;
   // 3 sockets are reserved; 5 leaves two clients (status + audio).
   config.max_open_sockets = 5;
-  config.max_uri_handlers = 10;
+  config.max_uri_handlers = 12;   // eight routes here, /api/audio/stream, and the two read-only SSTV routes
   config.lru_purge_enable = true;
   config.stack_size = 8192;
   config.core_id = tskNO_AFFINITY;
@@ -356,6 +382,16 @@ bool start_server() {
   httpd_register_uri_handler(g_server, &audio);
   httpd_register_uri_handler(g_server, &audiowav);
   httpd_register_uri_handler(g_server, &spectrum);
+  httpd_uri_t sstv_info{};
+  sstv_info.uri = "/api/sstv";
+  sstv_info.method = HTTP_GET;
+  sstv_info.handler = handle_sstv;
+  httpd_register_uri_handler(g_server, &sstv_info);
+  httpd_uri_t sstv_preview{};
+  sstv_preview.uri = "/api/sstv/preview";
+  sstv_preview.method = HTTP_GET;
+  sstv_preview.handler = handle_sstv_preview;
+  httpd_register_uri_handler(g_server, &sstv_preview);
   httpd_uri_t audio_script{};
   audio_script.uri = "/web_audio.js";
   audio_script.method = HTTP_GET;

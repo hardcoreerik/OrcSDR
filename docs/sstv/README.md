@@ -72,6 +72,22 @@ Five native screens (no WebView):
   - **OrcDial.** The Dial has an SSTV dashboard (wire id 18): the knob tunes by the step shown, a centre press switches focus between frequency and step, and the keypad enters any frequency from 0.1 MHz to 1.7 GHz; a mode request cycles AUTO/NFM/USB/LSB. Re-flash the Dial for the new carousel entry.
 - **SETUP** — *Auto (VIS + sync recovery)* (default), *VIS only*, *Manual (VIS filter)* with the 14 modes, auto-save, SD status. Changing settings never restarts the receiver or discards an image.
 
+## Web export (read-only)
+
+The Tab5's web console (port 80, when the web console is enabled) serves the newest finished SSTV picture to anything that can issue
+an HTTP GET, such as OrcPixels. Both routes are **GET only**, need no authentication, and send `Cache-Control: no-store`. They serve the
+newest picture in the RAM gallery (the one `SSTV LAST` reports): they never read the SD card, never serve a picture still being
+received, and never change the radio, the tuning or the SD card. A snapshot is published by the SSTV task when the newest
+picture, or its archive file name, changes; the web server only reads that snapshot. The last published picture stays available after
+the SSTV dashboard closes and is replaced only by a newer one, cleared by CLEAR RAM GALLERY, or lost at reboot.
+
+- `GET /api/sstv`: always `200`, `application/json`. An empty gallery gives `{"none":true}`. Otherwise `{"none":false,"serial","session_id",
+  "frequency_hz","utc_epoch"` (0 when the clock was not verified)`,"mode","width","height","rows","partial","start_unknown","vis_code",
+  "sync_locked","sync_missed","identification","end","filename"` (the SD name once the save has finished, otherwise an empty string)`,
+  "preview_width":64,"preview_height"}`. The wording of `identification` and `end` is the same as `SSTV LAST`.
+- `GET /api/sstv/preview`: `200` `image/bmp`, a 64-pixel-wide 24-bit bottom-up BMP (Robot 36: 64x48, at most 64x64, always under
+  13 KB) of the decoded rows only; or `404` with the body `none` when the gallery is empty.
+
 ## SD archive
 
 Saving never happens on the UI task, in the PCM callback or in the USB path. `sstv_archive` owns a three-slot queue and a low-priority worker (FreeRTOS task, 6 KiB stack, priority idle+1).

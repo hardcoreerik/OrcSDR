@@ -14,7 +14,9 @@
 #include "sstv_capture.hpp"
 #include "sstv_dashboard.hpp"
 #include "sstv_diag.hpp"
+#include "sstv_export.hpp"
 #include "sstv_receiver.hpp"
+#include "sstv_status.hpp"
 #include "sstv_tune.hpp"
 
 namespace orcsdr::sstv_app {
@@ -152,6 +154,66 @@ void gain_toggle() {
     g_hooks.gain_auto();
   }
 }
+// ---------------------------------------------------------------- read-only export (GET /api/sstv, /api/sstv/preview)
+// The UI task publishes the newest finished picture as a small snapshot; the web server only reads that snapshot. It republishes
+// when the newest gallery serial changes, when the archive filename for it appears or changes, or when the gallery is emptied.
+uint32_t g_export_tried_serial = 0;
+char g_export_tried_name[64]{};
+bool g_export_tried = false;
+void export_service() {
+  namespace ex = orcsdr::sstv_export;
+  if (!ex::ready()) return;
+  uint32_t published_serial = 0;
+  char published_name[64]{};
+  const bool published = ex::published_capture(&published_serial, published_name, sizeof(published_name));
+  if (orcsdr::sstv::archive_count() == 0) {
+    if (published) ex::publish_empty();
+    g_export_tried = false;
+    return;
+  }
+  const orcsdr::sstv::Image newest = orcsdr::sstv::archived_image(0);   // metadata only: nothing is pinned yet
+  char name[64]{};
+  arc::Result saved;
+  if (newest.session_id && arc::result_for(newest.session_id, &saved) && saved.state == arc::JobState::saved)
+    std::snprintf(name, sizeof(name), "%s", saved.filename);
+  if (published && published_serial == newest.serial && std::strcmp(published_name, name) == 0) return;
+  if (g_export_tried && g_export_tried_serial == newest.serial && std::strcmp(g_export_tried_name, name) == 0) return;   // already tried
+  g_export_tried = true;
+  g_export_tried_serial = newest.serial;
+  std::snprintf(g_export_tried_name, sizeof(g_export_tried_name), "%s", name);
+  const orcsdr::sstv::Image pinned = orcsdr::sstv::pin_archived(0);
+  if (!pinned.pixels) return;                       // nothing was pinned, so there is nothing to release
+  uint8_t* back = ex::back_bmp();
+  uint16_t preview_height = 0;
+  const size_t bytes = back ? ex::encode_preview_bmp(pinned.pixels, pinned.width, pinned.height, pinned.decoded_rows, back,
+                                                     ex::kMaxBmpBytes, &preview_height)
+                            : 0;
+  if (bytes) {
+    orcsdr::sstv_status::ImageChips chips;
+    orcsdr::sstv_status::image_chips(pinned, &chips);
+    ex::Meta meta;
+    meta.serial = pinned.serial;
+    meta.session_id = pinned.session_id;
+    meta.frequency_hz = pinned.frequency_hz;
+    meta.utc_epoch = pinned.utc_epoch;
+    meta.width = pinned.width;
+    meta.height = pinned.height;
+    meta.rows = pinned.decoded_rows;
+    meta.preview_height = preview_height;
+    meta.sync_locked = pinned.sync_locked;
+    meta.sync_missed = pinned.sync_missed;
+    meta.vis_code = pinned.vis_code;
+    meta.partial = pinned.partial;
+    meta.start_unknown = pinned.start_unknown;
+    std::snprintf(meta.mode, sizeof(meta.mode), "%s", orcsdr::sstv::mode_name(pinned.mode));
+    std::snprintf(meta.identification, sizeof(meta.identification), "%s", chips.identification);
+    std::snprintf(meta.end, sizeof(meta.end), "%s", chips.ending);
+    std::snprintf(meta.filename, sizeof(meta.filename), "%s", name);
+    (void)ex::publish(meta, bytes);
+  }
+  orcsdr::sstv::release_image(pinned);              // exactly once per successful pin
+}
+
 void audio_observer(const int16_t* samples, size_t count) {
   orcsdr::sstv_audio_scope::push(samples, count);
   orcsdr::sstv_capture::push(samples, count);
@@ -297,6 +359,7 @@ void handle(const orcsdr::sstv::Action& action) {
 
 void install(const Hooks& hooks) {
   g_hooks = hooks;
+  orcsdr::sstv_export::init();
   orcsdr::sstv::set_utc_source(utc_source);
   orcsdr::sstv::set_header_hook(hooks.header_controls);
 }
@@ -334,11 +397,19 @@ void close() {
   orcsdr::sstv_capture::release();
   orcsdr::sstv::stop();                              // an image in progress becomes a partial entry
   (void)arc::poll(utc());                            // queue it now; the worker keeps running
+  export_service();                                  // include that last picture in the web export
   orcsdr::sstv::ui_leave();
   if (g_hooks.release_tuning) g_hooks.release_tuning();
 }
 
 void tick() {
+  {   // runs with the dashboard closed too (the archive filename can arrive after it closes), four times a second
+    static uint32_t last_ms = 0;
+    if (millis() - last_ms >= 250u) {
+      last_ms = millis();
+      export_service();
+    }
+  }
   if (!orcsdr::sstv::ui_active()) return;
   // The dongle may not have been ready when the dashboard opened (shortly after a boot or a flash), and the
   // single tune from open() is then lost: the screen is up but nothing streams. Retune the radio, and only the
