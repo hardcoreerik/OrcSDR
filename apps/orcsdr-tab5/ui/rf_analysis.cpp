@@ -124,11 +124,11 @@ float robust_noise(const Snapshot& frame, uint16_t dc_guard_bins,
   return scratch[used / 2];
 }
 
-uint32_t occupied_bandwidth(const Snapshot& frame, size_t first, size_t last,
-                            float bin_hz) {
+uint32_t occupied_bandwidth(const Snapshot& frame, const float* linear_power,
+                            size_t first, size_t last, float bin_hz) {
   if (last <= first || last > frame.bins) return 0;
   float total = 0;
-  for (size_t i = first; i < last; ++i) total += powf(10.0f, frame.live[i] / 10.0f);
+  for (size_t i = first; i < last; ++i) total += linear_power[i];
   if (total <= 0) return 0;
   const float low_target = total * 0.005f;
   const float high_target = total * 0.995f;
@@ -136,7 +136,7 @@ uint32_t occupied_bandwidth(const Snapshot& frame, size_t first, size_t last,
   size_t low = first, high = last - 1;
   bool low_found = false;
   for (size_t i = first; i < last; ++i) {
-    sum += powf(10.0f, frame.live[i] / 10.0f);
+    sum += linear_power[i];
     if (!low_found && sum >= low_target) {
       low = i;
       low_found = true;
@@ -191,8 +191,8 @@ void analyze_audio(Snapshot* next, float* work, int16_t* local_audio,
 }
 
 bool analyze_iq(const uint8_t* iq, size_t bytes, Snapshot* next, float* work,
-                float* scratch, const Config& config) {
-  if (!iq || !next || !work || !scratch || bytes < 512) return false;
+                float* scratch, float* linear_power, const Config& config) {
+  if (!iq || !next || !work || !scratch || !linear_power || bytes < 512) return false;
   const int n = fit_iq_fft_size(config.fft_size, bytes);
   if (!n) return false;
   const size_t iq_points = std::min<size_t>(kMaxIqPoints, bytes / 2);
@@ -253,6 +253,9 @@ bool analyze_iq(const uint8_t* iq, size_t bytes, Snapshot* next, float* work,
     const float db = 20.0f * log10f(best / std::max(1.0f, coherent_sum) + 1.0e-12f);
     next->live[x] = db;
     const float linear = powf(10.0f, db / 10.0f);
+    // Reuse the same rounded linear power for channel power and 99% OBW.
+    // One work-buffer owner: the RF analysis task, not shared with decoders.
+    linear_power[x] = linear;
     const float old_average = powf(10.0f, next->average[x] / 10.0f);
     next->average[x] = 10.0f * log10f(0.15f * linear + 0.85f * old_average + 1.0e-14f);
     next->peak[x] = std::max(db, next->peak[x] - 0.15f);
@@ -284,9 +287,9 @@ bool analyze_iq(const uint8_t* iq, size_t bytes, Snapshot* next, float* work,
   const size_t last = std::min<size_t>(next->bins, first + measure_bins);
   float channel_power = 0;
   for (size_t i = first; i < last; ++i)
-    channel_power += powf(10.0f, next->live[i] / 10.0f) / 1.5f;
+    channel_power += linear_power[i] / 1.5f;
   next->channel_power_dbfs = 10.0f * log10f(channel_power + 1.0e-14f);
-  next->occupied_bandwidth_hz = occupied_bandwidth(*next, first, last, bin_hz);
+  next->occupied_bandwidth_hz = occupied_bandwidth(*next, linear_power, first, last, bin_hz);
 
   const bool stable = fabsf(next->strongest_offset_hz - g_last_peak_hz) <= 2.0f * bin_hz &&
                       fabsf(next->strongest - g_last_peak_db) <= 1.5f;
@@ -306,6 +309,9 @@ void worker(void*) {
       16, sizeof(float) * kMaxFft * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   float* scratch = static_cast<float*>(
       heap_caps_malloc(sizeof(float) * kMaxBins, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  // A few KB of worker-local PSRAM avoids repeated powf() on hot spectrum bins.
+  float* linear_power = static_cast<float*>(
+      heap_caps_malloc(sizeof(float) * kMaxBins, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   uint8_t* local_iq = static_cast<uint8_t*>(
       heap_caps_malloc(kIqBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   int16_t* local_audio = static_cast<int16_t*>(
@@ -315,7 +321,8 @@ void worker(void*) {
   uint32_t seen_revision = 0;
   uint32_t last_ms = 0;
   while (true) {
-    if (!g_enabled.load(std::memory_order_acquire) || !work || !scratch || !local_iq ||
+    if (!g_enabled.load(std::memory_order_acquire) || !work || !scratch || !linear_power ||
+        !local_iq ||
         !local_audio || !next) {
       vTaskDelay(pdMS_TO_TICKS(50));
       continue;
@@ -347,7 +354,7 @@ void worker(void*) {
     if (xSemaphoreTake(g_snapshot_mutex, pdMS_TO_TICKS(2)) != pdTRUE) continue;
     *next = *g_snapshot;
     xSemaphoreGive(g_snapshot_mutex);
-    if (!analyze_iq(local_iq, bytes, next, work, scratch, config)) continue;
+    if (!analyze_iq(local_iq, bytes, next, work, scratch, linear_power, config)) continue;
     analyze_audio(next, work, local_audio, local_iq, bytes, config);
     next->revision = revision;
     next->analyzed_ms = millis();
