@@ -30,6 +30,7 @@ struct Hooks {
   void (*set_demod)(uint8_t demod) = nullptr;        // sstv_tune::Demod the receiver should demodulate with
   uint32_t (*sample_rate)() = nullptr;               // IQ sample rate of the running stream (0 = not running)
   void (*set_if_bandwidth)(uint32_t hz) = nullptr;   // IF filter width ahead of the FM discriminator (0 = the radio default)
+  uint32_t (*if_bandwidth)() = nullptr;              // the IF width the receiver is applying now (override or default)
   void (*header_controls)() = nullptr;               // draws the shared header controls (battery, home, ...)
   uint32_t (*utc_epoch)() = nullptr;                 // verified UTC seconds, 0 while unverified
   orcsdr::sstv_settings::Store store;                // persistent preferences

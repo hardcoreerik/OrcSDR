@@ -13687,6 +13687,10 @@ orcsdr::sstv_app::Hooks sstv_app_hooks() {
   hooks.set_demod = [](uint8_t demod) { g_sstv_demod.store(static_cast<uint8_t>(demod + 1), std::memory_order_relaxed); };
   hooks.sample_rate = [] { return rtl_active_sample_rate_sps.load(std::memory_order_acquire); };
   hooks.set_if_bandwidth = [](uint32_t hz) { g_sstv_if_hz.store(hz, std::memory_order_relaxed); };
+  hooks.if_bandwidth = [] {
+    const uint32_t override_hz = g_sstv_if_hz.load(std::memory_order_relaxed);
+    return override_hz ? override_hz : rtl_clamp_filter_hz(RtlBand::wx, rtl_filter_bandwidth_hz.load(std::memory_order_relaxed));
+  };
   hooks.gain_auto = [] { (void)rtl_gain_set_auto("SSTV"); };
   hooks.gain_manual = [](int tenth_db) { (void)rtl_gain_set_manual("SSTV", tenth_db); };
   hooks.gain_info = [](orcsdr::sstv_app::GainInfo* info) {

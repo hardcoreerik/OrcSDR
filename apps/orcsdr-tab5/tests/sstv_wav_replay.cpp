@@ -41,19 +41,23 @@ int main(int argc,char** argv) {
       break;
     } else if(std::fseek(fp,n+(n&1u),SEEK_CUR)!=0)break;
   }
-  if(!found_fmt||!found_data||format!=1||channels!=1||bits!=16||rate!=48000){
-    std::fputs("Expected 48 kHz, 16-bit, mono PCM WAV\n",stderr);
+  if(!found_fmt||!found_data||format!=1||channels!=1||bits!=16||(rate!=48000&&rate!=12000)){
+    std::fputs("Expected 48 kHz or 12 kHz, 16-bit, mono PCM WAV\n",stderr);
     std::fclose(fp);return 2;
   }
   orcsdr::sstv::start(145800000);
   std::array<int16_t,512> audio{};
   uint32_t highest_rows=0,decoded=0;
+  const size_t up=rate==12000?4:1;   // a 12 kHz decoder-rate capture: each sample four times, which the decoder averages back
+  std::array<int16_t,512> wide{};
   while(data_left>=2){
-    const size_t want=std::min<size_t>(audio.size(),data_left/2);
+    const size_t want=std::min<size_t>(audio.size()/up,data_left/2);
     const size_t got=std::fread(audio.data(),sizeof(int16_t),want,fp);
     if(!got)break;
     data_left-=static_cast<uint32_t>(got*2);
-    orcsdr::sstv::offer_audio_48k(audio.data(),got);
+    size_t out=got;
+    if(up==4){for(size_t k=0;k<got;++k)for(size_t j=0;j<4;++j)wide[k*4+j]=audio[k];out=got*4;}
+    orcsdr::sstv::offer_audio_48k(up==4?wide.data():audio.data(),out);
     orcsdr::sstv::service(4000);
     highest_rows=std::max<uint32_t>(highest_rows,orcsdr::sstv::live_image().decoded_rows);
     decoded=std::max<uint32_t>(decoded,orcsdr::sstv::metrics().row);

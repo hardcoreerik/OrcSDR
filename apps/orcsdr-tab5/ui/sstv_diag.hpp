@@ -10,6 +10,7 @@
 //   SSTV SAVE LIVE|NEWEST             queue the image in progress / the newest gallery image for SD (auth)
 //   SSTV TUNE <hz>                    tune the open dashboard to a frequency in Hz (auth)
 //   SSTV MODE AUTO|NFM|USB|LSB | IFBW <hz> | STEP <hz> | RAILS ON|OFF   TUNE tab settings (auth)
+//   SSTV REC START <seconds> | SAVE | STATUS   record the decoder's own 12 kHz audio and save it as a WAV on the SD card (auth)
 //   SSTV LAST                         newest gallery image: mode, rows, sync locked/missed (no auth)
 //   SSTV INDEX                        print the last lines of the SD index (no auth)
 //

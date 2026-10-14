@@ -11,6 +11,7 @@
 #include "screen_controller.hpp"
 #include "sstv_archive.hpp"
 #include "sstv_audio_scope.hpp"
+#include "sstv_capture.hpp"
 #include "sstv_dashboard.hpp"
 #include "sstv_diag.hpp"
 #include "sstv_receiver.hpp"
@@ -42,7 +43,8 @@ struct Tune {
   bool rails = true;
   uint8_t if_index = 0;       // index into kIfWidths
 };
-constexpr uint32_t kIfWidths[] = {100000, 50000, 25000, 16000, 12000, 8000};
+// 0 = leave the radio's own width (25 kHz on the Browse path); the others override it for SSTV only.
+constexpr uint32_t kIfWidths[] = {0, 100000, 50000, 25000, 16000, 12000, 8000};
 Tune g_tune;
 uint32_t g_gain_reapply_ms = 0;
 int g_manual_gain_tenth = 0;
@@ -91,7 +93,8 @@ orcsdr::sstv::TuneView tune_view() {
   v.demod = static_cast<uint8_t>(demod_now());
   v.demod_auto = g_tune.demod_choice == 0;
   v.rails = g_tune.rails;
-  v.if_hz = kIfWidths[g_tune.if_index];
+  v.if_hz = g_hooks.if_bandwidth ? g_hooks.if_bandwidth() : kIfWidths[g_tune.if_index];
+  v.if_auto = kIfWidths[g_tune.if_index] == 0;
   GainInfo gain;
   if (g_hooks.gain_info && g_hooks.gain_info(&gain)) {
     v.gain_available = gain.available;
@@ -149,7 +152,13 @@ void gain_toggle() {
     g_hooks.gain_auto();
   }
 }
-void audio_observer(const int16_t* samples, size_t count) { orcsdr::sstv_audio_scope::push(samples, count); }
+void audio_observer(const int16_t* samples, size_t count) {
+  orcsdr::sstv_audio_scope::push(samples, count);
+  orcsdr::sstv_capture::push(samples, count);
+}
+bool write_to_file(void* file, const void* data, size_t size) {
+  return std::fwrite(data, 1, size, static_cast<std::FILE*>(file)) == size;
+}
 
 orcsdr::sstv::UiSnapshot snapshot() {
   orcsdr::sstv::UiSnapshot s;
@@ -295,6 +304,7 @@ void close() {
   orcsdr::sstv_diag::abort_selftest();               // a bench test must not outlive the screen
   orcsdr::sstv::set_audio_observer(nullptr);
   orcsdr::sstv_audio_scope::stop();
+  orcsdr::sstv_capture::release();
   orcsdr::sstv::stop();                              // an image in progress becomes a partial entry
   (void)arc::poll(utc());                            // queue it now; the worker keeps running
   orcsdr::sstv::ui_leave();
@@ -360,6 +370,36 @@ void cycle_if_bandwidth() {
 }
 bool tune_command(const char* args, char* reply, size_t size) {
   if (!active()) { std::snprintf(reply, size, "dashboard_not_open use=SSTV OPEN"); return false; }
+  if (std::strncmp(args, "REC ", 4) == 0) {
+    namespace cap = orcsdr::sstv_capture;
+    const char* v = args + 4;
+    if (std::strncmp(v, "START ", 6) == 0) {
+      const unsigned long seconds = std::strtoul(v + 6, nullptr, 10);
+      if (!cap::start(static_cast<uint32_t>(seconds))) { std::snprintf(reply, size, "rec_start_refused seconds=1..%u", static_cast<unsigned>(cap::kMaxSeconds)); return false; }
+      std::snprintf(reply, size, "rec=started seconds=%lu rate=%u", seconds, static_cast<unsigned>(cap::kSampleRate));
+      return true;
+    }
+    if (std::strcmp(v, "STATUS") == 0) {
+      std::snprintf(reply, size, "rec=%s samples=%lu full=%d", cap::recording() ? "recording" : "idle", static_cast<unsigned long>(cap::samples()), cap::full() ? 1 : 0);
+      return true;
+    }
+    if (std::strcmp(v, "SAVE") == 0) {
+      cap::stop();
+      if (!cap::samples()) { std::snprintf(reply, size, "rec_nothing_recorded"); return false; }
+      if (!g_hooks.sd_ready || !g_hooks.sd_ready(true)) { std::snprintf(reply, size, "no_sd_card"); return false; }
+      char path[96];
+      std::snprintf(path, sizeof(path), "/sd/orcsdr/sstv/cap_%lu.wav", static_cast<unsigned long>(millis() / 1000u));
+      std::FILE* file = std::fopen(path, "wb");
+      if (!file) { std::snprintf(reply, size, "cannot_create_file"); return false; }
+      const bool ok = cap::write_wav(write_to_file, file);
+      std::fclose(file);
+      if (!ok) { std::snprintf(reply, size, "write_failed"); return false; }
+      std::snprintf(reply, size, "rec=saved file=%s samples=%lu", path + 3, static_cast<unsigned long>(cap::samples()));
+      return true;
+    }
+    std::snprintf(reply, size, "usage=SSTV REC START <seconds>|SAVE|STATUS");
+    return false;
+  }
   if (std::strncmp(args, "MODE ", 5) == 0) {
     const char* v = args + 5;
     int choice = -1;
@@ -377,14 +417,15 @@ bool tune_command(const char* args, char* reply, size_t size) {
   if (std::strncmp(args, "IFBW ", 5) == 0) {
     char* end = nullptr;
     const unsigned long hz = std::strtoul(args + 5, &end, 10);
-    if (end == args + 5 || *end) { std::snprintf(reply, size, "usage=SSTV IFBW <hz> (%lu..%lu)", static_cast<unsigned long>(kIfWidths[std::size(kIfWidths) - 1]), static_cast<unsigned long>(kIfWidths[0])); return false; }
-    size_t best = 0;
-    for (size_t i = 1; i < std::size(kIfWidths); ++i)
+    if (std::strcmp(args + 5, "DEFAULT") == 0) { g_tune.if_index = 0; apply_demod(); save_tune(); std::snprintf(reply, size, "if_hz=%lu if_default=1", static_cast<unsigned long>(g_hooks.if_bandwidth ? g_hooks.if_bandwidth() : 0)); return true; }
+    if (end == args + 5 || *end || hz == 0) { std::snprintf(reply, size, "usage=SSTV IFBW <hz 8000..100000>|DEFAULT"); return false; }
+    size_t best = 1;
+    for (size_t i = 2; i < std::size(kIfWidths); ++i)
       if (std::labs(static_cast<long>(kIfWidths[i]) - static_cast<long>(hz)) < std::labs(static_cast<long>(kIfWidths[best]) - static_cast<long>(hz))) best = i;
     g_tune.if_index = static_cast<uint8_t>(best);
     apply_demod();
     save_tune();
-    std::snprintf(reply, size, "if_hz=%lu", static_cast<unsigned long>(kIfWidths[best]));
+    std::snprintf(reply, size, "if_hz=%lu if_default=%d", static_cast<unsigned long>(g_hooks.if_bandwidth ? g_hooks.if_bandwidth() : kIfWidths[best]), kIfWidths[best] == 0 ? 1 : 0);
     return true;
   }
   if (std::strncmp(args, "STEP ", 5) == 0) {
@@ -408,9 +449,9 @@ bool tune_command(const char* args, char* reply, size_t size) {
   return false;
 }
 void tune_summary(char* out, size_t size) {
-  std::snprintf(out, size, "frequency_hz=%lu demod=\"%s\" step_hz=%lu if_hz=%lu rails=%d", static_cast<unsigned long>(g_frequency_hz),
+  std::snprintf(out, size, "frequency_hz=%lu demod=\"%s\" step_hz=%lu if_hz=%lu if_default=%d rails=%d", static_cast<unsigned long>(g_frequency_hz),
                 demod_label(), static_cast<unsigned long>(tn::step_hz(g_tune.step_index)),
-                static_cast<unsigned long>(kIfWidths[g_tune.if_index]), g_tune.rails ? 1 : 0);
+                static_cast<unsigned long>(g_hooks.if_bandwidth ? g_hooks.if_bandwidth() : kIfWidths[g_tune.if_index]), kIfWidths[g_tune.if_index] == 0 ? 1 : 0, g_tune.rails ? 1 : 0);
 }
 void cycle_demod() {
   if (!active()) return;
