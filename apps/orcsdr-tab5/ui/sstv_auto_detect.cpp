@@ -7,6 +7,15 @@ namespace {
 constexpr uint32_t kRate=12000;
 constexpr unsigned kHistory=96;               // pulses kept (noise adds many false ones between the real ones)
 constexpr uint32_t kWindow=kRate*10u;         // only the last ten seconds count
+#ifndef SSTV_AD_MIN_NOISY
+#define SSTV_AD_MIN_NOISY 8        // on-raster pulses needed when other pulses are mixed in
+#endif
+#ifndef SSTV_AD_OCC_NOISY
+#define SSTV_AD_OCC_NOISY .75f     // and the share of the raster slots they must fill
+#endif
+#ifndef SSTV_AD_WIDTH_SPREAD
+#define SSTV_AD_WIDTH_SPREAD 0     // widest allowed spread (samples) between on-raster pulse widths; 0 = not checked
+#endif
 constexpr unsigned kMaxSlots=16;              // furthest line slot from the newest pulse that is considered
 struct Pulse {uint32_t begin=0; uint16_t length=0;};
 Pulse g_pulses[kHistory]{};
@@ -46,6 +55,7 @@ struct Hypothesis {
   unsigned span=0;        // line slots from the oldest inlier to the newest pulse (inclusive)
   unsigned extra=0;       // other pulses inside that span: noise, or the comb of a different mode
   float quality=0;
+  float width_min=1e9f,width_max=0;   // pulse widths on the raster: real sync pulses agree, noise bursts do not
   bool valid=false;
 };
 }
@@ -102,6 +112,8 @@ Candidate observe(uint32_t start,uint16_t length) {
       const bool width_ok=std::fabs(static_cast<float>(g_pulses[i].length)-width)<=std::max(18.f,width*.3f);
       if(slot>=1 && error<=tolerance && width_ok) {
         if(!slot_taken[slot]) { slot_taken[slot]=true; ++h.inliers; }
+        h.width_min=std::min(h.width_min,static_cast<float>(g_pulses[i].length));
+        h.width_max=std::max(h.width_max,static_cast<float>(g_pulses[i].length));
         oldest_slot=std::max(oldest_slot,slot);
       } else if(slot<=oldest_slot || slot<=kMaxSlots) {
         ++extra;
@@ -110,6 +122,8 @@ Candidate observe(uint32_t start,uint16_t length) {
     // The newest pulse counts as slot 0 and an inlier by definition (and must have a believable width itself).
     if(std::fabs(static_cast<float>(length)-width)>std::max(18.f,width*.3f)) { hyp[hyp_count++]=h; continue; }
     h.inliers+=1;
+    h.width_min=std::min(h.width_min,static_cast<float>(length));
+    h.width_max=std::max(h.width_max,static_cast<float>(length));
     h.span=oldest_slot+1;h.oldest_slot=oldest_slot;
     // Only pulses inside the occupied span can contradict the hypothesis.
     h.extra=0;
@@ -127,7 +141,8 @@ Candidate observe(uint32_t start,uint16_t length) {
     // A clean train (nothing else in the span) needs six pulses, as before. With other pulses mixed in, demand more
     // evidence: eight on-raster pulses filling most of their span.
     if(h.extra==0) h.valid=h.inliers>=6 && occupancy>=.99f;
-    else h.valid=h.inliers>=8 && occupancy>=.75f;
+    else h.valid=h.inliers>=SSTV_AD_MIN_NOISY && occupancy>=SSTV_AD_OCC_NOISY;
+    if(SSTV_AD_WIDTH_SPREAD>0 && h.extra>0 && (h.width_max-h.width_min)>static_cast<float>(SSTV_AD_WIDTH_SPREAD))h.valid=false;
     h.quality=std::clamp(50.f+6.f*static_cast<float>(h.inliers)-30.f*(1.f-occupancy)-.5f*static_cast<float>(h.extra),0.f,100.f);
     hyp[hyp_count++]=h;
   }

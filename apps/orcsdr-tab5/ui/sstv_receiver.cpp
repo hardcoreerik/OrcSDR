@@ -127,6 +127,13 @@ uint16_t g_session_locked=0,g_session_missed=0;
 uint8_t g_session_vis=0;
 bool g_line_sync=false;
 uint8_t g_consecutive_missed=0;
+// Lines in a row that may pass without a sync pulse before the picture is given up (sync lost). At the edge of sensitivity misses
+// come in bursts; the line timing is held by the clock between pulses, so a few more lines can safely be predicted. Chosen on 22
+// recordings of Robot 36 at about -113 dBm: 4 split 15 of them into pieces and made 6 junk images; 8 or more gave one image each.
+#ifndef SSTV_MAX_MISSED
+#define SSTV_MAX_MISSED 8
+#endif
+constexpr uint8_t kMaxConsecutiveMissed=SSTV_MAX_MISSED;
 enum class VisStage:uint8_t { lead1, break1200, lead2, start1200, bits };
 VisStage g_vis_stage=VisStage::lead1;
 uint32_t g_phase_samples=0,g_phase_age=0;
@@ -390,7 +397,11 @@ void commit_line() {
   if(!g_line_sync) {
     g_stats.sync_missed_lines++;
     if(g_session_missed<0xffffu)++g_session_missed;
-    if(++g_consecutive_missed>=4) {
+    if(++g_consecutive_missed>=kMaxConsecutiveMissed) {
+      // The lines committed since the last sync pulse were only predictions; the signal is gone, so they are not kept.
+      const uint16_t per_line=g_spec->family==3?2:1;
+      const uint16_t tail=static_cast<uint16_t>((g_consecutive_missed-1)*per_line);
+      if(g_live.decoded_rows>tail)g_live.decoded_rows=static_cast<uint16_t>(g_live.decoded_rows-tail);
       finish_picture(true,EndReason::sync_lost);
       return;
     }
@@ -427,9 +438,18 @@ void commit_line() {
   g_line_sync=false;
   clear_pixel_marks();
   clear_line_scans();
-  if(g_stats.row>=g_live.height)
-    finish_picture(g_live.start_unknown||g_consecutive_missed>0,
-                   EndReason::complete);
+  if(g_stats.row>=g_live.height) {
+    if(g_consecutive_missed>0) {
+      // The picture ran out while the last lines were only predicted (no sync pulse): those rows are not received data,
+      // so it is an interrupted reception, not a complete one.
+      const uint16_t per_line=g_spec->family==3?2:1;
+      const uint16_t tail=static_cast<uint16_t>(g_consecutive_missed*per_line);
+      if(g_live.decoded_rows>tail)g_live.decoded_rows=static_cast<uint16_t>(g_live.decoded_rows-tail);
+      finish_picture(true,EndReason::sync_lost);
+    } else {
+      finish_picture(g_live.start_unknown,EndReason::complete);
+    }
+  }
 }
 double sync_offset_samples(const ModeSpec& m) {
   if(m.family!=2)return 0.;

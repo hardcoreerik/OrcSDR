@@ -156,8 +156,35 @@ void audio_observer(const int16_t* samples, size_t count) {
   orcsdr::sstv_audio_scope::push(samples, count);
   orcsdr::sstv_capture::push(samples, count);
 }
-bool write_to_file(void* file, const void* data, size_t size) {
-  return std::fwrite(data, 1, size, static_cast<std::FILE*>(file)) == size;
+// "SSTV REC SAVE" writes the file a few KB per main-loop tick: one blocking 1 MB SD write would stop decoder service for seconds.
+struct CaptureSave {
+  std::FILE* file = nullptr;
+  size_t offset = 0;
+  bool header_done = false;
+  bool finished = false, failed = false;
+  char path[96]{};
+};
+CaptureSave g_save;
+void capture_save_step() {
+  if (!g_save.file) return;
+  namespace cap = orcsdr::sstv_capture;
+  bool ok = true;
+  if (!g_save.header_done) {
+    uint8_t header[44];
+    cap::header(header);
+    ok = std::fwrite(header, 1, sizeof(header), g_save.file) == sizeof(header);
+    g_save.header_done = true;
+  } else if (g_save.offset < cap::pcm_bytes()) {
+    const size_t chunk = std::min<size_t>(4096, cap::pcm_bytes() - g_save.offset);
+    ok = std::fwrite(cap::pcm() + g_save.offset, 1, chunk, g_save.file) == chunk;
+    g_save.offset += chunk;
+  }
+  if (!ok || (g_save.header_done && g_save.offset >= cap::pcm_bytes())) {
+    std::fclose(g_save.file);
+    g_save.file = nullptr;
+    g_save.failed = !ok;
+    g_save.finished = true;
+  }
 }
 
 orcsdr::sstv::UiSnapshot snapshot() {
@@ -326,6 +353,7 @@ void tick() {
     g_gain_reapply_ms = 0;
     if (g_manual_gain && g_hooks.gain_manual) g_hooks.gain_manual(g_manual_gain_tenth);
   }
+  capture_save_step();                             // a recording being written out, a few KB per tick
   orcsdr::sstv_diag::tick(millis());               // bench self-test audio, when one was requested
   orcsdr::sstv::service();
   (void)arc::poll(utc());
@@ -380,21 +408,21 @@ bool tune_command(const char* args, char* reply, size_t size) {
       return true;
     }
     if (std::strcmp(v, "STATUS") == 0) {
-      std::snprintf(reply, size, "rec=%s samples=%lu full=%d", cap::recording() ? "recording" : "idle", static_cast<unsigned long>(cap::samples()), cap::full() ? 1 : 0);
+      const char* state = cap::recording() ? "recording" : g_save.file ? "saving" : g_save.finished ? (g_save.failed ? "save_failed" : "saved") : "idle";
+      std::snprintf(reply, size, "rec=%s samples=%lu full=%d file=%s", state, static_cast<unsigned long>(cap::samples()), cap::full() ? 1 : 0,
+                    g_save.finished && !g_save.failed ? g_save.path + 3 : "-");
       return true;
     }
     if (std::strcmp(v, "SAVE") == 0) {
       cap::stop();
       if (!cap::samples()) { std::snprintf(reply, size, "rec_nothing_recorded"); return false; }
       if (!g_hooks.sd_ready || !g_hooks.sd_ready(true)) { std::snprintf(reply, size, "no_sd_card"); return false; }
-      char path[96];
-      std::snprintf(path, sizeof(path), "/sd/orcsdr/sstv/cap_%lu.wav", static_cast<unsigned long>(millis() / 1000u));
-      std::FILE* file = std::fopen(path, "wb");
-      if (!file) { std::snprintf(reply, size, "cannot_create_file"); return false; }
-      const bool ok = cap::write_wav(write_to_file, file);
-      std::fclose(file);
-      if (!ok) { std::snprintf(reply, size, "write_failed"); return false; }
-      std::snprintf(reply, size, "rec=saved file=%s samples=%lu", path + 3, static_cast<unsigned long>(cap::samples()));
+      if (g_save.file) { std::snprintf(reply, size, "rec_save_already_running"); return false; }
+      g_save = CaptureSave{};
+      std::snprintf(g_save.path, sizeof(g_save.path), "/sd/orcsdr/sstv/cap_%lu.wav", static_cast<unsigned long>(millis() / 1000u));
+      g_save.file = std::fopen(g_save.path, "wb");
+      if (!g_save.file) { std::snprintf(reply, size, "cannot_create_file"); return false; }
+      std::snprintf(reply, size, "rec=saving file=%s samples=%lu", g_save.path + 3, static_cast<unsigned long>(cap::samples()));
       return true;
     }
     std::snprintf(reply, size, "usage=SSTV REC START <seconds>|SAVE|STATUS");

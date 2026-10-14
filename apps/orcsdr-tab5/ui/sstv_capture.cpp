@@ -58,18 +58,27 @@ void stop() { g_recording = false; }
 size_t samples() { return g_count; }
 bool full() { return g_buffer && g_count >= g_capacity; }
 
+void header(uint8_t out[44]) {
+  const uint32_t bytes = static_cast<uint32_t>(g_count * sizeof(int16_t));
+  const uint8_t base[44] = {'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'A', 'V', 'E', 'f', 'm', 't', ' ', 16, 0, 0, 0, 1, 0, 1, 0};
+  std::memset(out, 0, 44);
+  std::memcpy(out, base, 24);
+  put32(out + 4, 36 + bytes);
+  put32(out + 24, kSampleRate);
+  put32(out + 28, kSampleRate * 2);
+  put16(out + 32, 2);
+  put16(out + 34, 16);
+  std::memcpy(out + 36, "data", 4);
+  put32(out + 40, bytes);
+}
+const uint8_t* pcm() { return reinterpret_cast<const uint8_t*>(g_buffer); }
+size_t pcm_bytes() { return g_count * sizeof(int16_t); }
 bool write_wav(Writer writer, void* context) {
   if (!writer || !g_buffer || g_count == 0) return false;
   const uint32_t bytes = static_cast<uint32_t>(g_count * sizeof(int16_t));
-  uint8_t header[44] = {'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'A', 'V', 'E', 'f', 'm', 't', ' ', 16, 0, 0, 0, 1, 0, 1, 0};
-  put32(header + 4, 36 + bytes);
-  put32(header + 24, kSampleRate);
-  put32(header + 28, kSampleRate * 2);
-  put16(header + 32, 2);
-  put16(header + 34, 16);
-  std::memcpy(header + 36, "data", 4);
-  put32(header + 40, bytes);
-  if (!writer(context, header, sizeof(header))) return false;
+  uint8_t header_bytes[44];
+  header(header_bytes);
+  if (!writer(context, header_bytes, sizeof(header_bytes))) return false;
   // The device is little-endian, so the samples go out as they are in memory.
   size_t done = 0;
   while (done < bytes) {

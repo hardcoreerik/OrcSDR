@@ -226,7 +226,7 @@ void test_damaged_vis_falls_back_honestly() {
   sig.preamble();
   sig.vis(8, /*flip_parity=*/true);
   sig.robot36_rows();
-  sig.tone(1900, 1000);
+  sig.tone(1900, 1700);   // longer than the 8 missed lines (1.2 s of Robot 36) that end a picture
   sig.flush();
   const auto m = metrics();
   require(m.good_vis == before.good_vis && m.bad_vis > before.bad_vis,
@@ -245,7 +245,7 @@ void test_mid_transmission_join() {
   reset_receiver();
   Signal sig;
   sig.robot36_rows(80, 160);  // tuned in at row 80, no header
-  sig.tone(1900, 1000);
+  sig.tone(1900, 1700);   // longer than the 8 missed lines (1.2 s of Robot 36) that end a picture
   sig.flush();
   require(archive_count() == 1, "join: late-joined transmission preserved");
   const auto image = archived_image(0);

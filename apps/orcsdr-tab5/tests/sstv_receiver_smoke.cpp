@@ -176,7 +176,7 @@ int main() {
   set_auto_strategy(AutoStrategy::vis_sync);
   start(145800000);
   robot36_rows(); // intentionally omit the VIS header
-  tone(1900,1000); // timeout allows partial archive on lost sync
+  tone(1900,1700); // longer than the 8 missed lines (1.2 s of Robot 36) that end a picture
   flush();
   require(archive_count()==1,"missing-VIS Robot36 archived as partial");
   const auto partial_auto=archived_image(0);

@@ -248,7 +248,7 @@ void test_partial_sync_image_is_labelled() {
   reset_world();
   Signal sig;
   sig.robot36_rows();           // no header: sync-identified, origin unknown
-  sig.tone(1900, 1000);
+  sig.tone(1900, 1700);   // longer than the 8 missed lines (1.2 s of Robot 36) that end a picture
   sig.silence(300);
   sig.flush();
   require(rx::archive_count() == 1, "partial: image archived by the receiver");

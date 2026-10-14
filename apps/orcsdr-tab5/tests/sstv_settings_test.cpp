@@ -73,7 +73,7 @@ int main() {
   apply(automatic);
   Signal a;
   a.robot36_rows(0, 120);
-  a.tone(1900, 1000);
+  a.tone(1900, 1700);   // longer than the 8 missed lines (1.2 s of Robot 36) that end a picture
   a.flush();
   require(archive_count() == 1 && archived_image(0).identification == Identification::sync,
           "automatic: headerless Robot 36 recovered from sync, labelled sync");
@@ -81,7 +81,7 @@ int main() {
   apply(with_detection(automatic, Detection::vis_only));
   Signal b;
   b.robot36_rows(0, 120);
-  b.tone(1900, 1000);
+  b.tone(1900, 1700);   // longer than the 8 missed lines (1.2 s of Robot 36) that end a picture
   b.flush();
   require(archive_count() == 0, "VIS only: headerless transmission is not decoded");
   restart();
@@ -89,7 +89,7 @@ int main() {
   Signal c;
   c.header(8);
   c.robot36_rows(0, 120);
-  c.tone(1900, 1000);
+  c.tone(1900, 1700);   // longer than the 8 missed lines (1.2 s of Robot 36) that end a picture
   c.flush();
   require(archive_count() == 0, "manual PD 120: a Robot 36 header is ignored");
   c.silence(500);

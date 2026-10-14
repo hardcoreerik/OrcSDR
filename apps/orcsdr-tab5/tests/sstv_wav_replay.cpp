@@ -112,6 +112,12 @@ int main(int argc,char** argv) {
       std::fclose(f);
     }
   }
+  if(std::getenv("SSTV_REPLAY_TRACE")){   // every image the decoder archived, newest first
+    for(size_t k=0;k<orcsdr::sstv::archive_count();++k){
+      const auto im=orcsdr::sstv::archived_image(k);
+      std::fprintf(stderr,"archived[%zu]: rows=%u partial=%d locked=%u missed=%u end=%d start_unknown=%d\n",k,static_cast<unsigned>(im.decoded_rows),im.partial?1:0,static_cast<unsigned>(im.sync_locked),static_cast<unsigned>(im.sync_missed),static_cast<int>(im.end_reason),im.start_unknown?1:0);
+    }
+  }
   int ret=stats.audio_overruns==0?0:1;
   if(argc>=3&&stats.vis!=std::atoi(argv[2]))ret=1;
   if(argc>=4&&std::max<uint32_t>(decoded,completed.decoded_rows)<
