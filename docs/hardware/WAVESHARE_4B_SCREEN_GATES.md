@@ -111,3 +111,39 @@ no application C++ source changed. Generated `image-info.log` and
 `build-sha256.txt` are retained in the app directory. Final physical identity,
 factory preservation and power-routing checks must complete before requesting
 flash approval. Display, touch and five-minute RF gates remain open.
+
+### Approved first flash and boot, 2026-10-14
+
+- Owner photo confirms main-board silkscreen `ESP32-P4-WIFI6-Touch-LCD-4B`
+  and module marking `Flash: 32MB`; no PCB revision marking is legible.
+  Owner confirms PC on `USB TO UART`/COM40 and waives factory backup.
+  Final flash explicitly approved after this identification.
+- Re-probe matched P4 v1.3, MAC `e8:f6:0a:e4:43:02`, 32 MB flash.
+  All three image hashes matched the preflight record above.
+- Flashed the generated `flasher_args.json` files/settings using esptool
+  4.12.0 at 460800 baud. All writes reported hash verification success.
+  Used `--after no_reset`, then opened 115200-baud serial before a controlled
+  UART RTS reset to capture the ROM boot onward. No full erase, NVS write,
+  C6 write, or access to COM39 occurred in this flash operation.
+- Captured 30 seconds of boot/runtime: P4 v1.3, **32 MB PSRAM at 200 MHz**,
+  `SPI SRAM memory test OK`, expected project/version/ELF prefix `d1ce34905`,
+  display initialized, GT911 found at `0x5D`, `HOME_4B screen initialized
+  720x720 / IQ-only`, and `HOME_4B boot complete - C6 untouched`.
+- USB device count remained zero. Physical touches generated frequency
+  changes in 12,500 Hz increments/decrements and preset requests for
+  96.1, 125 and 145.120 MHz. This is partial touch-path evidence; all-button
+  coordinates, STEP cycling and the 50-tap acceptance are not yet verified.
+- No panic/reboot observed during the capture. Warnings retained for bench
+  correlation: LEDC GPIO26 usability/conflict, MIPI DSI frame-buffer-complete
+  callback unavailable, I2C pull-ups advisory, gesture recognition disabled.
+  Their presence alone does not establish a visual or touch failure.
+- Logs retained in the app directory: `approved-com40-preflash.log`,
+  `approved-com40-flash.log`, `approved-com40-boot.log`. Local bench script
+  `approved_flash_capture.py` records the recipe/capture procedure.
+  SHA-256: flash log
+  `3dd3a9dad2db25b13703a3dced7487ba51458d097a1b50ca7ea2ca768c8d737e`;
+  boot log `c676db1502b57cff6921ff7fe7c0bab95281e39fa40d1c0c1f676342cc250866`.
+- Firmware write, PSRAM startup, Home initialization and partial physical
+  touch events are verified. Visual display acceptance, full touch coverage,
+  OTG power routing, real SDR reception and five-minute qualification remain
+  open. No SDR connection requested until initial visual acceptance.
