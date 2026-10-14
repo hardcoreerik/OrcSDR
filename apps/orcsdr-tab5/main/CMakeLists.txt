@@ -106,6 +106,7 @@ idf_component_register(
         "../ui/fm_dashboard.cpp"
         "../ui/fm_config.cpp"
         "../ui/home_dashboard.cpp"
+        "../ui/signal_id.cpp"
         "../ui/lora_dashboard.cpp"
         "../ui/lora_packet_log.cpp"
         "../ui/lora_native_decoder.cpp"
