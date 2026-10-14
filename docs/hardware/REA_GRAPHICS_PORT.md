@@ -92,3 +92,19 @@ each decoder/dashboard and uninterrupted radio/audio during flips.
 **Gates completed**: static vendor/source review and portable C++ tests.
 **Gates NOT completed**: binary REA, native IDF compile, physical rotations,
 RF stream and webflasher release.
+
+
+## Tab5 pinned-library IMU source verification (2026-10-14)
+
+Inspection of M5Unified tag 0.2.20 found the existing BMI270_Class and
+IMU_Class::begin BMI270 probing path. M5Unified::_begin_rtc_imu passes the
+detected Tab5 board and internal I2C bus to M5.Imu.begin. Therefore, the
+older pinned version contains the relevant APIs in source: a library upgrade
+is NOT automatically required just to read acceleration. Runtime detection
+and mounted axes remain physically unverified. M5Stack's newer example pins
+may address additional display-reset changes; do not reinterpret that example
+minimum as proof the older IMU API is absent.
+
+Sources:
+- https://github.com/m5stack/M5Unified/blob/0.2.20/src/M5Unified.cpp
+- https://github.com/m5stack/M5Unified/blob/0.2.20/src/utility/IMU_Class.cpp
