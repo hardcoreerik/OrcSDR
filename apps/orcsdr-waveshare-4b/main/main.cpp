@@ -203,9 +203,24 @@ static void radio_task(void*) {
       applied=0;sps=0;
       if(now-last_scan>1000000){
         last_scan=now;state=1;
-        size_t count=0;
-        if(esp_rtl_sdr_refresh_device_list(sdr)==ESP_OK &&
-           esp_rtl_sdr_get_device_count(sdr,&count)==ESP_OK && count>0){
+        size_t count=0,raw_count=0;
+        const esp_err_t raw_result=esp_rtl_sdr_usb_device_count(&raw_count);
+        const esp_err_t refresh_result=esp_rtl_sdr_refresh_device_list(sdr);
+        const esp_err_t count_result=
+            refresh_result==ESP_OK ? esp_rtl_sdr_get_device_count(sdr,&count)
+                                   : refresh_result;
+        // The raw USB count includes hubs and unsupported devices. An empty
+        // candidate list is NOT evidence that the 4B supplies USB VBUS.
+        // Distinguish absent power/connection from unsupported SDR profiles.
+        static uint32_t scan_count=0;
+        if((++scan_count % 5u)==1u || raw_count || count){
+          ESP_LOGI(TAG,"HOME_4B USB_DIAG raw_devices=%u accepted_sdr=%u raw=%s scan=%s safe_mode=%u",
+                   unsigned(raw_count),unsigned(count),
+                   esp_rtl_sdr_err_to_name(raw_result),
+                   esp_rtl_sdr_err_to_name(count_result),
+                   unsigned(esp_rtl_sdr_usb_safe_mode_active()));
+        }
+        if(refresh_result==ESP_OK && count_result==ESP_OK && count>0){
           esp_rtl_sdr_stream_config_t sc;
           esp_rtl_sdr_stream_config_default(&sc);
           sc.preset=ESP_RTL_SDR_PRESET_CUSTOM_HZ;
