@@ -1,0 +1,33 @@
+name: OrcSDR multi-hardware host tests
+on:
+  pull_request:
+    paths:
+      - "components/orcsdr_ui_layout/**"
+      - "tools/hardware/**"
+      - "hardware/boards.json"
+      - ".github/workflows/ui-hardware-port-tests.yml"
+  push:
+    branches: [codex/waveshare-p4-4b-port]
+    paths:
+      - "components/orcsdr_ui_layout/**"
+      - "tools/hardware/**"
+      - "hardware/boards.json"
+      - ".github/workflows/ui-hardware-port-tests.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate hardware catalog
+        run: python3 tools/hardware/validate_catalog.py
+      - name: Reject unintended flasher exposure
+        run: python3 -m unittest discover -s tools/hardware -p 'test_catalog.py' -v
+      - name: Compile and test C++ UI orientation and responsive layout
+        run: |
+          set -euo pipefail
+          cd components/orcsdr_ui_layout
+          g++ -std=c++17 -Wall -Wextra -Werror -pedantic -I include test/test_layout.cpp -o /tmp/orcsdr-layout-test
+          /tmp/orcsdr-layout-test
