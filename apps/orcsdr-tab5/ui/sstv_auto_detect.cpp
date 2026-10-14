@@ -107,7 +107,6 @@ Candidate observe(uint32_t start,uint16_t length) {
     h.mode=mode;h.period=period;h.width=width;
     bool slot_taken[kMaxSlots+1]{};
     unsigned oldest_slot=0;
-    unsigned extra=0;
     for(unsigned i=g_count-1;i-- >0;) {     // older pulses, newest first
       const float distance=static_cast<float>(start-g_pulses[i].begin);
       const float slots=distance/period;
@@ -122,8 +121,6 @@ Candidate observe(uint32_t start,uint16_t length) {
         h.width_min=std::min(h.width_min,static_cast<float>(g_pulses[i].length));
         h.width_max=std::max(h.width_max,static_cast<float>(g_pulses[i].length));
         oldest_slot=std::max(oldest_slot,slot);
-      } else if(slot<=oldest_slot || slot<=kMaxSlots) {
-        ++extra;
       }
     }
     // The newest pulse counts as slot 0 and an inlier by definition (and must have a believable width itself).
@@ -143,7 +140,6 @@ Candidate observe(uint32_t start,uint16_t length) {
       const bool width_ok=std::fabs(static_cast<float>(g_pulses[i].length)-width)<=std::max(18.f,width*.3f);
       if(!(slot>=1 && error<=tolerance && width_ok))++h.extra;
     }
-    (void)extra;
     const float occupancy=h.span?static_cast<float>(h.inliers)/static_cast<float>(h.span):0.f;
     // A clean train (nothing else in the span) needs six pulses, as before. With other pulses mixed in, demand more
     // evidence: eight on-raster pulses filling most of their span.
