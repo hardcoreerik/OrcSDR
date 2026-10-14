@@ -78,6 +78,7 @@ enum class ActionKind : uint8_t {
   waterfall_contrast_up,
   waterfall_palette_next,
   waterfall_speed_next,
+  signal_id_toggle, // local Home toggle; never retunes or enters main.cpp
   gain_open,
   gain_close,
   filter_open,
