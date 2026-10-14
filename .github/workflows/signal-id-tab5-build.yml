@@ -1,0 +1,40 @@
+name: Signal ID Tab5 Firmware Build
+on:
+  push:
+    branches: [codex/machine-learning]
+    paths:
+      - "apps/orcsdr-tab5/main/CMakeLists.txt"
+      - "apps/orcsdr-tab5/ui/signal_id.*"
+      - "apps/orcsdr-tab5/ui/home_dashboard.*"
+      - ".github/workflows/signal-id-tab5-build.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile-tab5:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      image: espressif/idf:v5.5.4@sha256:b9f2d6ea1c19e0c9f7959bdb74a9e3c775642f9d0f3b841937c5fa3363db892b
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Set safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Restore C6 build cache
+        id: c6cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .ci-cache/hosted-c6
+          key: hosted-c6-v1-${{ hashFiles('tools/release/hosted-c6-release.json', 'orcdial/c6/CMakeLists.txt', 'orcdial/c6/main/CMakeLists.txt', 'orcdial/c6/main/main.c', 'orcdial/c6/sdkconfig.defaults', 'orcdial/c6/partitions_eh_cp_ota_4m.csv', 'tools/ci/build-hosted-c6.sh') }}
+      - name: Build C6 hosted dependency
+        if: steps.c6cache.outputs.cache-hit != 'true'
+        run: . "$IDF_PATH/export.sh" >/dev/null && bash tools/ci/build-hosted-c6.sh --patch-idf .ci-cache/hosted-c6 "$RUNNER_TEMP/esp-hosted"
+      - name: Compile Tab5 image with Signal ID
+        run: . "$IDF_PATH/export.sh" >/dev/null && bash tools/ci/build-tab5.sh --c6 .ci-cache/hosted-c6/esp_hosted_tab5_c6.bin --out out --build-id "signal-id-branch"
+      - name: Summary
+        run: echo "Signal ID branch firmware compile succeeded (no release published)." >> "$GITHUB_STEP_SUMMARY"
