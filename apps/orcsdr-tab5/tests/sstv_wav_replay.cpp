@@ -48,6 +48,8 @@ int main(int argc,char** argv) {
   orcsdr::sstv::start(145800000);
   std::array<int16_t,512> audio{};
   uint32_t highest_rows=0,decoded=0;
+  const bool trace=std::getenv("SSTV_REPLAY_TRACE")!=nullptr;
+  unsigned long long samples_seen=0,next_second=0;
   const size_t up=rate==12000?4:1;   // a 12 kHz decoder-rate capture: each sample four times, which the decoder averages back
   std::array<int16_t,512> wide{};
   while(data_left>=2){
@@ -60,9 +62,25 @@ int main(int argc,char** argv) {
     orcsdr::sstv::offer_audio_48k(up==4?wide.data():audio.data(),out);
     orcsdr::sstv::service(4000);
     highest_rows=std::max<uint32_t>(highest_rows,orcsdr::sstv::live_image().decoded_rows);
+    // SSTV_REPLAY_TRACE=1: once per second of audio, what the decoder is doing (to see when and why it acquires).
+    if(trace){
+      samples_seen+=out;
+      if(samples_seen/48000>next_second){
+        next_second=samples_seen/48000;
+        const auto tm=orcsdr::sstv::metrics();
+        std::fprintf(stderr,"t=%2llus state=%-15s pulses=%4lu row=%3u rec=%d ident=%d score=%u locked=%u missed=%u\n",
+          static_cast<unsigned long long>(next_second),orcsdr::sstv::state_name(tm.state),static_cast<unsigned long>(tm.observed_sync_pulses),
+          tm.row,tm.receiving?1:0,static_cast<int>(tm.identification),static_cast<unsigned>(tm.identification_score),
+          static_cast<unsigned>(tm.session_sync_locked),static_cast<unsigned>(tm.session_sync_missed));
+      }
+    }
     decoded=std::max<uint32_t>(decoded,orcsdr::sstv::metrics().row);
   }
   std::fclose(fp);
+  {  // a real transmission is followed by silence, which lets the last samples flow through the decoder's filters
+    std::array<int16_t,512> quiet{};
+    for(unsigned k=0;k<24;++k){orcsdr::sstv::offer_audio_48k(quiet.data(),quiet.size());orcsdr::sstv::service(4000);}
+  }
   for(unsigned n=0;n<4;++n)orcsdr::sstv::service(4000);
   // End of file is not end of image on air: close a final line only if its
   // pixel data fully arrived; nothing is padded to manufacture a full frame.

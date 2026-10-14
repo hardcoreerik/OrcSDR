@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <initializer_list>
 
 using namespace orcsdr::sstv;
 namespace {
@@ -44,6 +45,40 @@ int main() {
     noise_locked|=auto_detect::observe(t,static_cast<uint16_t>(38+(i*13u)%190u)).locked;
   }
   check(!noise_locked,"irregular noise must not falsely lock");
+  // The weak-signal case: about three false pulses between every real one (noise and picture content crossing the sync band).
+  // A classifier that needs an unbroken chain of consistent pulses almost never finds one; the comb search must.
+  {
+    struct Case {Mode mode; Mode must_not_be;};
+    for(const Case c:{Case{Mode::robot36,Mode::robot72},Case{Mode::robot72,Mode::robot36},Case{Mode::scottie_s1,Mode::robot36}}) {
+      auto_detect::reset();
+      const auto* spec=mode_spec(c.mode);
+      const double per=static_cast<double>(spec->line_us)*12000/1000000.;
+      const auto width=static_cast<uint16_t>(std::lround(spec->sync_us*12000./1000000.));
+      uint32_t lcg=12345u;
+      auto next=[&](){lcg=lcg*1664525u+1013904223u;return lcg>>8;};
+      bool locked=false;Mode got=Mode::auto_vis;unsigned lines_needed=0;
+      for(unsigned line=0;line<40&&!locked;++line) {
+        const uint32_t real=20000u+static_cast<uint32_t>(std::lround(per*line))+static_cast<uint32_t>(next()%25)-12u;   // edge jitter
+        // false pulses scattered through the line, with widths anywhere in the accepted range
+        for(unsigned k=0;k<3;++k) {
+          const uint32_t at=20000u+static_cast<uint32_t>(std::lround(per*line))+static_cast<uint32_t>(next()%static_cast<uint32_t>(per));
+          if(at<real) { auto_detect::observe(at,static_cast<uint16_t>(40+next()%200u)); }
+        }
+        const auto r=auto_detect::observe(real,static_cast<uint16_t>(width+static_cast<int>(next()%9u)-4));
+        if(r.locked){locked=true;got=r.mode;lines_needed=line+1;}
+        for(unsigned k=0;k<3;++k) {   // false pulses after the real one (kept in time order)
+          const uint32_t at=real+1u+static_cast<uint32_t>(next()%static_cast<uint32_t>(per-2));
+          if(at<20000u+static_cast<uint32_t>(std::lround(per*(line+1)))-12u) auto_detect::observe(at,static_cast<uint16_t>(40+next()%200u));
+        }
+      }
+      char why[96];
+      std::snprintf(why,sizeof(why),"noisy train locks %s within 40 lines",spec->name);
+      check(locked,why);
+      std::snprintf(why,sizeof(why),"noisy %s train is classified as %s",spec->name,spec->name);
+      check(got==c.mode && got!=c.must_not_be,why);
+      check(lines_needed<=25,"noisy train acquires within about 25 lines");
+    }
+  }
   // Integer sample timestamps may wrap during unattended operation.
   auto_detect::reset();
   bool wrap_locked=false;
