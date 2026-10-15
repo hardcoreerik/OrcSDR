@@ -545,7 +545,8 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
   if (g.active.load(std::memory_order_acquire)) return true;
   mem_mark("entry");
   g_alloc_fail_bytes.store(0, std::memory_order_relaxed);
-  if (g.task_alive.load(std::memory_order_acquire) || g.wf_alive.load(std::memory_order_acquire)) return false;  // previous tasks still exiting
+  if (g.task_alive.load(std::memory_order_acquire) || g.wf_alive.load(std::memory_order_acquire))
+    return start_failed(StartFailure::backend);   // previous tasks still exiting: counted, and a stale memory report is replaced
   if (g.wf == nullptr) {
     g.wf = static_cast<uint8_t*>(psram_alloc(kWaterfallRows * kWaterfallBins));
     if (g.wf == nullptr) return start_failed(StartFailure::memory);

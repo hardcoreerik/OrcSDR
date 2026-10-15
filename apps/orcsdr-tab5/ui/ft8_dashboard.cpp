@@ -169,6 +169,13 @@ bool mode_available(DigitalMode mode) {
 }
 
 bool has_holders(const Snapshot& v) { return v.mem_holders != nullptr && v.mem_holders[0] != 0; }
+// The NOT ENOUGH MEMORY block prints free and needed memory in tenths of a MB (rounded, as %.1f does), the largest block in whole KB and
+// the holder text. Repaint exactly when one of those printed values changes.
+uint32_t tenths_mb(uint32_t bytes) { return static_cast<uint32_t>((static_cast<uint64_t>(bytes) * 10u + 524288u) >> 20); }
+bool same_memory_text(const Snapshot& a, const Snapshot& b) {
+  return tenths_mb(a.mem_free) == tenths_mb(b.mem_free) && (a.mem_largest >> 10) == (b.mem_largest >> 10) &&
+         tenths_mb(a.mem_needed) == tenths_mb(b.mem_needed) && a.mem_holders_rev == b.mem_holders_rev;
+}
 
 const char* decoder_name() {
   switch (g_snapshot.decoder_state) {
@@ -1129,7 +1136,7 @@ bool live_layout_same(const Snapshot& a, const Snapshot& b) {
   return a.mode == b.mode && a.selected_band == b.selected_band && a.decoder_capabilities == b.decoder_capabilities && a.clock_valid == b.clock_valid &&
          waterfall_state(a) == waterfall_state(b) && (a.decoder_state == DecoderState::no_memory) == (b.decoder_state == DecoderState::no_memory) &&
          has_holders(a) == has_holders(b) && a.mem_holders_rev == b.mem_holders_rev &&
-         (a.decoder_state != DecoderState::no_memory || ((a.mem_free >> 16) == (b.mem_free >> 16) && a.mem_needed == b.mem_needed));
+         (a.decoder_state != DecoderState::no_memory || same_memory_text(a, b));
          // the NO MEMORY message repaints when the holder text, the free-memory figure (in 64 KB steps) or the needed size changes
 }
 
@@ -1602,7 +1609,7 @@ bool same_content(const Snapshot& a, const Snapshot& b) {
          a.gain_tenth_db == b.gain_tenth_db && a.candidate_count == b.candidate_count &&
          a.last_slot_decodes == b.last_slot_decodes && a.selected_band == b.selected_band &&
          a.decoder_state == b.decoder_state && a.decode_count == b.decode_count &&
-         a.mem_holders_rev == b.mem_holders_rev && (a.mem_free >> 16) == (b.mem_free >> 16) &&
+         same_memory_text(a, b) &&
          a.dial_hz == b.dial_hz && a.dial_custom == b.dial_custom && a.expert_tuning == b.expert_tuning &&
          std::memcmp(&a.hunter, &b.hunter, sizeof(a.hunter)) == 0 &&
          std::memcmp(a.decodes, b.decodes, a.decode_count * sizeof(Decode)) == 0;
