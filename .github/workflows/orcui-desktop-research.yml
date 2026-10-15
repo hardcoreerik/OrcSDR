@@ -1,0 +1,56 @@
+name: OrcUI Desktop Research
+on:
+  push:
+    branches:
+      - codex/orcui-adaptive-display-poc
+    paths:
+      - 'experiments/orcui/**'
+      - '.github/workflows/orcui-desktop-research.yml'
+  pull_request:
+    paths:
+      - 'experiments/orcui/**'
+      - '.github/workflows/orcui-desktop-research.yml'
+  workflow_dispatch:
+jobs:
+  geometry:
+    name: Host geometry and raster (Release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build host regressions
+        run: |
+          cmake -S experiments/orcui/tests -B build-orcui-tests -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-orcui-tests --parallel 4
+          ctest --test-dir build-orcui-tests --output-on-failure
+  sdl-linux:
+    name: LVGL 9.3 + SDL2 native simulator (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install desktop toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ pkg-config libsdl2-dev
+      - name: Configure LVGL/SDL simulator
+        run: |
+          cmake -S experiments/orcui/desktop -B build-orcui-desktop \
+            -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+      - name: Build native simulator
+        run: cmake --build build-orcui-desktop --parallel 4
+      - name: SDL smoke tests
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          ctest --test-dir build-orcui-desktop --output-on-failure
+          build-orcui-desktop/orcui_desktop --preset round480 --seconds 2 --cycle-ms 600
+      - name: Store logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orcui-desktop-logs
+          path: |
+            build-orcui-desktop/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
