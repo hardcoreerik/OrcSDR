@@ -26,6 +26,7 @@ foreach(case home_host home_v2_layout_host home_v3_drawer_host fm_4b_layout_host
   add_executable(${case} ../../../apps/orcsdr-waveshare-4b/tests/${case}.cpp)
   target_include_directories(${case} PRIVATE ../../../apps/orcsdr-waveshare-4b/main)
   target_compile_features(${case} PRIVATE cxx_std_17)
-  target_compile_options(${case} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  # These imported regression tests use assert; keep the checks active in Release.
+  target_compile_options(${case} PRIVATE -UNDEBUG -Wall -Wextra -Wpedantic -Werror)
   add_test(NAME ${case} COMMAND ${case})
 endforeach()
