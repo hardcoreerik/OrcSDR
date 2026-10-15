@@ -2,7 +2,7 @@
 
 **Experimental.** This is a native desktop application using the same `home_lvgl.cpp`, `layout.cpp` and `raster.cpp` as the Waveshare 4B experimental firmware. It uses synthetic FFT input, never claims to receive real RF, and never opens an SDR device.
 
-**Native LVGL/SDL desktop compilation has not run in the cloud sandbox**, which cannot download LVGL. The core host layout and raster tests pass. Local Codex should run the installer and report evidence before claiming this PC build is installed.
+**Validation:** GitHub Actions has now compiled and run the native LVGL 9.3/SDL2 Linux simulator successfully. The cloud sandbox itself lacks LVGL sources and SDL dependencies, and no Windows PC installation or physical P4 hardware test has been verified here. Local Codex should complete Windows installation and record evidence.
 
 ## Profiles
 
@@ -48,7 +48,18 @@ ctest --test-dir experiments/orcui/desktop/build --output-on-failure
 experiments/orcui/desktop/build/orcui_desktop --preset waveshare
 ```
 
-For offline testing with an existing LVGL checkout, set `-DORCUI_LVGL_SOURCE=/absolute/path/to/lvgl`. For CI, run `SDL_VIDEODRIVER=dummy orcui_desktop --seconds 2 --cycle-ms 600`.
+For offline testing with an existing LVGL checkout, set `-DORCUI_LVGL_SOURCE=/absolute/path/to/lvgl`. For CI, run `SDL_VIDEODRIVER=dummy orcui_desktop --seconds 4 --cycle-ms 500`.
+
+## Actual SDL screenshot capture
+
+Screenshots are read back from the **real LVGL-rendered SDL surface**, not produced from mockup assets. Use the CLI after building:
+
+```powershell
+.\build\orcui_desktop.exe --preset waveshare --seconds 2 --screenshot waveshare.bmp
+.\build\orcui_desktop.exe --preset tab5 --seconds 2 --screenshot tab5.bmp
+```
+
+On Windows, launch through the UCRT64 environment or set `C:\msys64\ucrt64\bin` on `PATH` so the SDL2 DLL can load. If a display profile uses an SDL zoom factor, screenshot pixel dimensions match the **physical SDL window**, rather than the logical screen coordinates. The GitHub Actions CI stores BMP captures for Waveshare, Tab5, round480 and ultrawide under its run artifacts.
 
 ## Acceptance
 

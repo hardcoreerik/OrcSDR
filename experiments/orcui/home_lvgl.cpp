@@ -40,6 +40,9 @@ void HomeLvgl::destroy(){
   spectrum_canvas_=nullptr; waterfall_canvas_=nullptr;
   parent_=nullptr; menu_=nullptr; spectrum_stride_=waterfall_stride_=0;
   button_count_=0;
+  layout_={};
+  last_frequency_label_[0]=0;
+  last_status_label_[0]=0;
 }
 bool HomeLvgl::allocate_canvas(lv_obj_t* parent,lv_obj_t** canvas,
                                void** pixels,size_t* stride,const Rect& rect){
@@ -207,7 +210,10 @@ bool HomeLvgl::resize(const Display& display){
   if(!parent_)return false;
   const auto sink=sink_;void* ctx=context_;lv_obj_t* parent=parent_;
   const auto options=options_;
-  return create(parent,display,sink,ctx,options);
+  const bool was_open=menu_open_;
+  const bool ok=create(parent,display,sink,ctx,options);
+  if(ok)set_menu_open(was_open);
+  return ok;
 }
 void HomeLvgl::set_visible(bool visible){
   if(!root_)return;
@@ -228,7 +234,10 @@ void HomeLvgl::update(const HomeData& data){
     std::snprintf(buf,sizeof(buf),"%.6f MHz  %s\nSTEP %lu Hz  %s",data.frequency_hz/1000000.0,
                   data.mode?data.mode:"--",static_cast<unsigned long>(data.step_hz),
                   data.palette_name?data.palette_name:"--");
-    lv_label_set_text(frequency_,buf);
+    if(std::strcmp(buf,last_frequency_label_)!=0){
+      lv_label_set_text(frequency_,buf);
+      std::snprintf(last_frequency_label_,sizeof(last_frequency_label_),"%s",buf);
+    }
   }
   if(status_){
     char buf[90];
@@ -236,7 +245,10 @@ void HomeLvgl::update(const HomeData& data){
         data.radio_ready?"IQ ACTIVE":"NO IQ",static_cast<unsigned long>(data.effective_sps/1000),
         static_cast<unsigned long>(data.drops),static_cast<unsigned long>(data.uptime_sec),
         static_cast<unsigned long>(data.applied_hz));
-    lv_label_set_text(status_,buf);
+    if(std::strcmp(buf,last_status_label_)!=0){
+      lv_label_set_text(status_,buf);
+      std::snprintf(last_status_label_,sizeof(last_status_label_),"%s",buf);
+    }
   }
 }
 void HomeLvgl::clear_plots(){
