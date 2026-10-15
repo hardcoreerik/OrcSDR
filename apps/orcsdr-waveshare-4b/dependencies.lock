@@ -231,7 +231,7 @@ dependencies:
       require: private
       version: ^1.2.13
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     version: 1.6.58~2
   espressif/zlib:
@@ -312,9 +312,10 @@ dependencies:
 direct_dependencies:
 - esp_rtl_sdr
 - espressif/esp_lvgl_adapter
+- espressif/libpng
 - idf
 - lvgl/lvgl
 - waveshare/esp32_p4_wifi6_touch_lcd_4b
-manifest_hash: 05293be5dc2c41fb42be07a38ac767fd4f24eb5bd4c1cbd0662c1d7467f8f8e9
+manifest_hash: 362b116529bc711de3dce4f6bb81141af1b3ccc0d7ba2a0d408df090a65d2508
 target: esp32p4
 version: 2.0.0

@@ -6,7 +6,7 @@ Base: `da94e5e76b2424d36903d36e806b7eb54a5857d8` on
 `codex/waveshare-4b-fm-dashboard`. The original app, badge, FFT, radio queue,
 Home v3 and FM IQ-preview sources are retained for the legacy baseline.
 
-The only new board UI code is `main/orcui_4b_adapter.*`. It reads LVGL's actual
+The board UI binding is `main/orcui_4b_adapter.*`; `screen_capture.*` supplies the on-demand serial PNG service. The adapter reads LVGL's actual
 panel dimensions, supplies immutable receiver snapshots and explicitly aligned
 PSRAM canvas allocations, and maps three actions to the existing bounded radio
 queue. `orcui_command_map.hpp` makes those mappings host-testable. Palette colors
@@ -15,7 +15,7 @@ receiver driver source is modified.
 
 `experiments/orcui/layout.cpp` owns adaptive Home geometry, including scrollable
 drawer rows; `home_lvgl.cpp` owns the shared widgets and modal input shield.
-The badge is decoded from the original big-endian RGB565 asset into native
+The badge is decoded from the original little-endian RGB565 asset into native
 pixels. Unsupported routes are visibly unavailable. FM IQ preview remains
 available only in the legacy build pending separate adaptive route qualification.
 Round profiles reach tune, step and palette through the scrolling drawer.
@@ -88,3 +88,14 @@ Physical appearance, 50 owner touches, adaptive five-minute RF continuity,
 DMA reserve under load and A/B render timing remain unqualified until the exact
 built image is flashed and observed. No partition migration, NVS erase, Tab5/C6
 flash, FM audio/RDS or physical round-display support is part of this evidence.
+
+
+## Repeatable device screenshots
+
+See `tools/hardware/WAVESHARE_SCREENSHOTS.md`. After each flash the local agent
+captures Home and drawer itself with the serial helper and inspects the actual
+firmware-rendered PNGs. The PC saves timestamped images and running-ELF provenance
+under `artifacts/screenshots/waveshare-4b/`. This is also available on demand at
+any time; no reboot, SD card or HTTP server is needed. User standing approval
+covers verified Waveshare application flashes for this ongoing goal, with target
+identity/partition/hash checks retained and no erases or Tab5/C6 writes.

@@ -17,6 +17,7 @@
 #include "home_4b_layout.hpp"
 #include "home_fft.hpp"
 #include "home_v3_ui.hpp"
+#include "screen_capture.hpp"
 #include "sdkconfig.h"
 #if CONFIG_ORCUI_ADAPTIVE_HOME
 #include "orcui_4b_adapter.hpp"
@@ -202,6 +203,11 @@ extern "C" void app_main(void) {
   if(!disp||bsp_display_backlight_on()!=ESP_OK||!home_start()){
     ESP_LOGE(TAG,"Display or Home initialization failed");return;
   }
+#if CONFIG_ORCUI_ADAPTIVE_HOME
+  if(!screen_capture::start(adaptive::prepare_capture))ESP_LOGE(TAG,"Screenshot service failed");
+#else
+  if(!screen_capture::start())ESP_LOGE(TAG,"Screenshot service failed");
+#endif
   // Hardware OTG VBUS requires physical validation; powered hub recommended.
   if(xTaskCreatePinnedToCore(radio_task,"4b_radio",8192,nullptr,5,nullptr,1)!=pdPASS){
     state=3;ESP_LOGE(TAG,"Receiver task creation failed");

@@ -55,3 +55,6 @@ docs/user-guide/assets/screenshots/raw/
 experiments/orcui/desktop/build/
 experiments/orcui/desktop/*.log
 experiments/orcui/waveshare4b/build/
+
+# Repeatable hardware screenshot output (PNG plus provenance sidecar).
+/artifacts/screenshots/

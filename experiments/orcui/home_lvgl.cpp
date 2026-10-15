@@ -115,8 +115,8 @@ bool HomeLvgl::create(lv_obj_t* parent,const Display& display,ActionSink sink,vo
   label_style(brand,kWhite,layout_.menu_toggle.w+9,layout_.header.h/2-9);
   lv_obj_set_width(brand,layout_.header.w-layout_.menu_toggle.w-12);
   lv_label_set_long_mode(brand,LV_LABEL_LONG_CLIP);
-  add_button(root_,layout_.menu_toggle,options_.badge_be565?"":"MENU",HomeCommand::open_menu,0);
-  if(options_.badge_be565 && options_.badge_size>0) {
+  add_button(root_,layout_.menu_toggle,options_.badge_le565?"":"MENU",HomeCommand::open_menu,0);
+  if(options_.badge_le565 && options_.badge_size>0) {
     const int n=std::min(layout_.menu_toggle.w,layout_.menu_toggle.h)-4;
     const size_t stride=lv_draw_buf_width_to_stride(n,LV_COLOR_FORMAT_RGB565);
     badge_pixels_=options_.allocate?options_.allocate(stride*n):lv_malloc(stride*n);
@@ -124,7 +124,7 @@ bool HomeLvgl::create(lv_obj_t* parent,const Display& display,ActionSink sink,vo
     for(int y=0;y<n;++y)for(int x=0;x<n;++x){
       const int i=2*((y*options_.badge_size/n)*options_.badge_size+x*options_.badge_size/n);
       auto* row=reinterpret_cast<uint16_t*>(static_cast<uint8_t*>(badge_pixels_)+y*stride);
-      row[x]=uint16_t(options_.badge_be565[i]<<8)|options_.badge_be565[i+1];
+      row[x]=uint16_t(options_.badge_le565[i])|uint16_t(options_.badge_le565[i+1]<<8);
     }
     auto* badge=lv_canvas_create(root_);
     lv_canvas_set_buffer(badge,badge_pixels_,n,n,LV_COLOR_FORMAT_RGB565);

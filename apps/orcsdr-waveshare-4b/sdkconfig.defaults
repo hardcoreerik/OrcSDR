@@ -12,3 +12,6 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=10240
 CONFIG_LV_OS_FREERTOS=y
 CONFIG_LV_DEF_REFR_PERIOD=15
 # Do not apply Tab5 P4 silicon revision overrides.
+
+# On-demand PNG screenshot service; no storage/HTTP dependency.
+CONFIG_LV_USE_SNAPSHOT=y

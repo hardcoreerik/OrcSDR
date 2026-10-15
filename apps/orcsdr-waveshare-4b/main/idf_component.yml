@@ -8,6 +8,8 @@ dependencies:
   lvgl/lvgl:
     version: "9.3.0"
     public: true
+  espressif/libpng:
+    version: "1.6.58~2"
   esp_rtl_sdr:
     git: https://github.com/hardcoreerik/esp-rtl-sdr.git
     version: 31a159df4f006a837d5041029bc6d1bc63520234

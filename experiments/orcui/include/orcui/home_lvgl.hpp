@@ -21,7 +21,7 @@ struct HomeOptions {
   HomeCapabilities capabilities{};
   void* (*allocate)(size_t)=nullptr;
   void (*release)(void*)=nullptr;
-  const uint8_t* badge_be565=nullptr;
+  const uint8_t* badge_le565=nullptr;
   int badge_size=0;
   const uint16_t* palette256=nullptr;
 };

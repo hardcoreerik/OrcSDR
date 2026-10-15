@@ -7,6 +7,7 @@
 #include "esp_timer.h"
 #include <algorithm>
 #include <array>
+#include <cstring>
 namespace orcsdr::waveshare4b::adaptive {
 namespace {
 orcui::HomeLvgl view;
@@ -31,6 +32,12 @@ void action(orcui::HomeCommand c,void*) {
  ESP_LOGI("ORCUI_4B","action=%u drawer=%u",unsigned(c),unsigned(view.menu_open()));
 }
 }
+bool prepare_capture(const char* name){
+ if(std::strcmp(name,"home")==0)view.set_menu_open(false);
+ else if(std::strcmp(name,"drawer")==0)view.set_menu_open(true);
+ else return false;
+ return true;
+}
 bool create(QueueHandle_t queue) {
  commands=queue;palette();
  lv_obj_set_style_bg_color(lv_screen_active(),lv_color_hex(0),0);
@@ -39,7 +46,7 @@ bool create(QueueHandle_t queue) {
  orcui::HomeOptions options{};
  options.capabilities={true,true,true,false}; // FM stays unavailable until separately qualified.
  options.allocate=allocate;options.release=heap_caps_free;
- options.badge_be565=badge;options.badge_size=104;options.palette256=colors.data();
+ options.badge_le565=badge;options.badge_size=104;options.palette256=colors.data();
  const orcui::Display profile{lv_display_get_horizontal_resolution(display),
                             lv_display_get_vertical_resolution(display)};
  ESP_LOGI("ORCUI_4B","adaptive panel=%dx%d PSRAM canvases",profile.width,profile.height);

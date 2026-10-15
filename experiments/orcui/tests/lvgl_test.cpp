@@ -5,6 +5,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <fstream>
+#include <iterator>
 using namespace orcsdr::orcui;
 #define CHECK(x) do {if(!(x)){std::fprintf(stderr,"FAIL line %d: %s\n",__LINE__,#x);std::abort();}}while(0)
 namespace {
@@ -59,7 +61,9 @@ int main(){
  lv_display_set_flush_cb(display,flush);
  auto* input=lv_indev_create();lv_indev_set_type(input,LV_INDEV_TYPE_POINTER);lv_indev_set_read_cb(input,read);
  HomeOptions options{};options.capabilities={true,true,true,false};options.allocate=allocate;options.release=release;
- std::array<uint8_t,8> badge{0x07,0xe0,0x07,0xe0,0x07,0xe0,0x07,0xe0};options.badge_be565=badge.data();options.badge_size=2;
+ std::ifstream badge_file(ORCUI_BADGE_PATH,std::ios::binary);
+ std::vector<uint8_t> badge((std::istreambuf_iterator<char>(badge_file)),{});
+ CHECK(badge.size()==104*104*2);options.badge_le565=badge.data();options.badge_size=104;
  HomeLvgl home;
  for(const Display profile: {Display{1280,720},Display{720,720},Display{480,480,Shape::circle},
       Display{360,360,Shape::circle},Display{480,800},Display{2560,720}}){
@@ -70,7 +74,18 @@ int main(){
   if(profile.width==720&&profile.height==720){
    HomeData sample{};sample.frequency_hz=96100000;sample.applied_hz=96100000;
    sample.radio_ready=true;sample.effective_sps=960000;sample.mode="IQ TEST";
-   home.update(sample);lv_refr_now(display);save_frame("host-synthetic-home.ppm",720,720);
+   home.update(sample);lv_refr_now(display);
+   unsigned green=0,red=0;
+   for(int y=g.menu_toggle.y+2;y<g.menu_toggle.y+48;++y)
+    for(int x=g.menu_toggle.x+2;x<g.menu_toggle.x+48;++x){
+     auto pixel=frame[size_t(y)*720+x];
+     if(((pixel>>5)&63)>32 && ((pixel>>5)&63)>2*((pixel>>11)&31)+6
+        && ((pixel>>5)&63)>2*(pixel&31)+6)++green;
+     if(((pixel>>11)&31)>20&&((pixel>>5)&63)<25)++red;
+    }
+   std::printf("badge green=%u red=%u\n",green,red);
+   CHECK(green>100&&green>red*2);
+   save_frame("host-synthetic-home.ppm",720,720);
   }
   const auto* a=home.spectrum_buffer();const auto* b=home.waterfall_buffer();
   const auto n=allocations;
