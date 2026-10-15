@@ -36,13 +36,16 @@ def validate_png(data, width, height):
     raise ValueError("Missing PNG end")
 
 
-def receive(port, token, timeout):
+def receive(port, token, timeout, telemetry=None):
     deadline = time.monotonic() + timeout
     meta = None
     output = bytearray()
     seq = 0
     while time.monotonic() < deadline:
         line = port.readline().decode("ascii", errors="replace").strip()
+        if telemetry is not None and ("HOME_4B" in line or "ORCUI_4B" in line):
+            telemetry.write(line + "\n")
+            telemetry.flush()
         start = line.find("ORCUI_PNG_")
         if start < 0:
             continue  # Radio/boot logs can coexist with framed screenshot data.
@@ -81,6 +84,7 @@ def main():
     parser.add_argument("--port", required=True, help="Explicit verified port, e.g. COM40")
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--view", choices=("current", "home", "drawer"), default="current")
+    parser.add_argument("--telemetry-log", type=Path, help="Append receiver/UI telemetry during transfer")
     parser.add_argument("--timeout", type=float, default=180)
     parser.add_argument("--output-dir", type=Path,
                         default=Path(__file__).resolve().parents[2] / "artifacts/screenshots/waveshare-4b")
@@ -93,12 +97,18 @@ def main():
     port.rts = False
     port.port = args.port
     port.open()
+    telemetry = None
     try:
+        if args.telemetry_log:
+            args.telemetry_log.parent.mkdir(parents=True, exist_ok=True)
+            telemetry = args.telemetry_log.open("a", encoding="utf-8")
         port.write(f"\nORCUI_SCREENSHOT {token} {args.view}\n".encode("ascii"))
         port.flush()
-        png, meta = receive(port, token, args.timeout)
+        png, meta = receive(port, token, args.timeout, telemetry)
     finally:
         port.close()
+        if telemetry is not None:
+            telemetry.close()
     now = datetime.datetime.now(datetime.timezone.utc)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     dest = args.output_dir / f"{now:%Y%m%dT%H%M%S.%fZ}-{args.port}-{args.view}.png"
