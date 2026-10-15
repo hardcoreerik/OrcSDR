@@ -15939,9 +15939,7 @@ void orcdial_poll() {
       if(esp_wifi_get_mac(WIFI_IF_STA,mac)!=ESP_OK)return;
       if(!orcdial_secure_started){orcdial_secure_started=orcdial_secure.begin(2,mac,preferences.getBytesLength("dial_mac")==6,orcdial_raw_transmit);log_dram_budget("orcdial_secure_begin");}
       if(!orcdial_secure_started){initialization_retry_ms=millis()+5000;return;}
-      orcdial_sender=esp_random();orcdial_transport_ready=true;orcdial_secure.enabled(true);Serial.println("ORCDIAL_V4_BRIDGE_READY");
-      orcdial_bridge_requested.store(false,std::memory_order_release);   // the request has been served; the queued actions run below
-      // The existing C6 gates RX until the P4 sends its first relay request.
+      orcdial_sender=esp_random();orcdial_transport_ready=true;orcdial_secure.enabled(true);Serial.println("ORCDIAL_V4_BRIDGE_READY");      // The existing C6 gates RX until the P4 sends its first relay request.
       // This invalid frame only enables that relay gate; no endpoint accepts
       // it as discovery, pairing, authentication or a control command.
       uint8_t relay_ready[64]{};orcdial_raw_transmit(orcdial_broadcast,relay_ready);
