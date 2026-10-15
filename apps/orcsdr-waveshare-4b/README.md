@@ -160,3 +160,7 @@ Test live reception for 5 minutes at 960 kS/s, >=95% effective SPS, known
 spectral peak movement on tune, bounded USB overruns and correct touch
 alignment. Hardware, RF and display qualification are still pending.
 See docs/hardware/WAVESHARE_4B_SCREEN_GATES.md.
+
+### Combined badge/menu image deployment
+
+Owner-approved correction/cue image is now flashed and booted on COM40. A 45.06-second IQ smoke check passed at zero drops. Correct green badge, MENU cue/state feedback and header-target operation remain pending owner review; see the latest screen-gate entry for logs and initial enumeration recovery.

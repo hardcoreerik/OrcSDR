@@ -412,3 +412,12 @@ flash approval. Display, touch and five-minute RF gates remain open.
 - Not flashed. Final approval, physical green-badge and MENU cue inspection,
   header-tap routing and drawer state feedback remain pending. Existing strict
   RF PASS remains evidence for the earlier flashed image, not this new image.
+
+### Approved badge/menu flash and short check, 2026-10-14
+
+- Owner approved combined correction/cue source `0e5e19f6837fdbf036c1c0bc1224d45a703e4463`. COM40 re-probe matched P4 v1.3, MAC `e8:f6:0a:e4:43:02`, 32 MB flash. All three image hashes matched the preceding build records. Generated P4 recipe flashed with all write hashes verified; no C6/NVS image, full erase or power-fixture change.
+- Local script `flash_home_v3_menu_capture.py` checks image hashes and captures UART before controlled reset. Boot confirms 200 MHz PSRAM memory-test pass, GT911 at `0x5D`, Home v3 and boot complete. App version `v0.4.0-beta.1-35-g7153ac0f-dirt`, ELF prefix `ea941dddb`.
+- Initial USB EP0 short-device-descriptor failure at 2075 ms recovered: raw/accepted counts both 1 at 13315 ms, profile `blog_v4l_r828s`, RF START at 14725 ms. Retain this transient error; it did not prevent receiver startup.
+- Short check: 61 IQ rows over **45.06 seconds**, post-warmup **959,923-960,334 SPS**, zero drops, no NAV events. From app directory, `python ../../tools/hardware/check_4b_home_log.py --log home-v3-menu-com40.log --seconds 45` passed, exit 0. This is a smoke check, not a new five-minute qualification.
+- App-directory evidence: `home-v3-menu-preflash-com40.log`, `home-v3-menu-flash-com40.log`, `home-v3-menu-com40.log`, `home-v3-menu-short-check.log`. Serial SHA-256: `4cf847356a575d3b38e5b6fd5ec6607790be96cb4098029a8da891b75471e6a6`.
+- Owner green-badge/MENU photo confirmation, brand-area touch routing and cue state feedback remain pending. Earlier drawer success was owner-reported for the prior image. Recommendation: **Home not yet verified**, awaiting corrected-image visual acceptance.

@@ -195,3 +195,7 @@ physical touch/USB acceptance.
 - Incremental rebuild passed with the little-endian correction; app remains
   857,376 bytes and valid for P4 v1.0–1.99. New image SHA-256 and preservation
   details are recorded in the screen ledger. Corrected image not flashed yet.
+
+## Combined correction/cue deployment, 2026-10-14
+
+Owner-approved image is now flashed and booted on COM40, with PSRAM memory test passed. The 45.06-second IQ smoke check passed with zero drops after recovery from an initial enumeration error. Correct green badge, MENU indication and new header-target routing still await owner visual/touch confirmation. Full image/log evidence is recorded in the screen-gate ledger.
