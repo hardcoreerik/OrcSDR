@@ -1,0 +1,5 @@
+menu "OrcUI isolated integration"
+config ORCUI_ADAPTIVE_HOME
+    bool "ADAPTIVE_ORCUI_HOME (off selects unchanged LEGACY_HOME_V3)"
+    default n
+endmenu

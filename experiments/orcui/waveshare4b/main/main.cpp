@@ -19,6 +19,7 @@ using orcsdr::orcui::Display;
 using orcsdr::orcui::HomeCommand;
 using orcsdr::orcui::HomeData;
 using orcsdr::orcui::HomeLvgl;
+using orcsdr::orcui::HomeOptions;
 using orcsdr::orcui::Shape;
 constexpr char kTag[] = "OrcUI-4B";
 constexpr unsigned kBins = 256;
@@ -35,7 +36,9 @@ void on_command(HomeCommand command, void*) {
       g_span = g_span > 240000 ? g_span / 2 : 120000; break;
     case HomeCommand::span_up:
       g_span = g_span < 2400000 ? g_span * 2 : 2400000; break;
+    case HomeCommand::tune_down:
     case HomeCommand::step_down: g_state.frequency_hz -= 12500; break;
+    case HomeCommand::tune_up:
     case HomeCommand::step_up: g_state.frequency_hz += 12500; break;
     case HomeCommand::mode: g_state.mode = "IQ SIM"; break;
     case HomeCommand::filter: g_state.mode = "FILTER SIM"; break;
@@ -76,8 +79,10 @@ extern "C" void app_main(void) {
     ESP_LOGE(kTag, "display lock failed");
     return;
   }
+  HomeOptions options{};options.capabilities={true,true,true,false};
   const bool created=g_home.create(lv_screen_active(),
-      Display{720,720,Shape::rectangle},on_command,nullptr);
+      Display{lv_display_get_horizontal_resolution(lv_display_get_default()),
+              lv_display_get_vertical_resolution(lv_display_get_default()),Shape::rectangle},on_command,nullptr,options);
   bsp_display_unlock();
   if (!created) {
     ESP_LOGE(kTag, "OrcUI create failed; inspect display and PSRAM");

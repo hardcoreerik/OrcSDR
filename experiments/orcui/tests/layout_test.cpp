@@ -27,6 +27,7 @@ void check(Display d,Form expected){
    CHECK(within(l.safe,l.controls) && !overlap(l.frequency,l.controls));
    for(int i=0;i<5;++i){
      CHECK(within(l.controls,l.control_buttons[i]));
+     CHECK(l.control_buttons[i].w>=44 && l.control_buttons[i].h>=44);
      for(int j=i+1;j<5;++j)CHECK(!overlap(l.control_buttons[i],l.control_buttons[j]));
    }
  }

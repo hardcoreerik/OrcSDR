@@ -16,6 +16,10 @@ const char* form_name(Form form){
   }
   return "unknown";
 }
+Rect menu_row(const Layout& layout,int index){
+  return {layout.menu_overlay.x+8,layout.menu_overlay.y+34+index*50,
+          layout.menu_overlay.w-16,44};
+}
 Layout plan(const Display& display){
   Layout l{};
   if(display.width<240 || display.height<240)return l;
@@ -37,12 +41,12 @@ Layout plan(const Display& display){
   const bool round=l.form==Form::round;
   const int gap=round?5:clampi(std::min(l.safe.w,l.safe.h)/65,7,14);
   const Rect body=inset(l.safe,round?3:gap);
-  const int header_h=round?42:clampi(body.h/10,48,74);
+  const int header_h=round?48:clampi(body.h/10,48,74);
   const int status_h=round?0:clampi(body.h/16,30,42);
   const int readout_h=round?66:clampi(body.h/9,56,84);
-  const int controls_h=round?0:(l.form==Form::square?100:l.form==Form::compact?88:76);
+  const int controls_h=round?0:(l.form==Form::square?100:l.form==Form::compact?100:76);
   l.header={body.x,body.y,body.w,header_h};
-  l.menu_toggle={l.header.x+2,l.header.y+2,round?40:52,header_h-4};
+  l.menu_toggle={l.header.x+2,l.header.y+2,round?44:52,header_h-4};
   if(status_h)l.status={body.x,body.bottom()-status_h,body.w,status_h};
   const int content_top=l.header.bottom()+gap;
   const int content_bottom=l.status.valid()?l.status.y-gap:body.bottom();
