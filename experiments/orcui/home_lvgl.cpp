@@ -35,6 +35,8 @@ void HomeLvgl::destroy(){
   spectrum_canvas_=nullptr; waterfall_canvas_=nullptr;
   parent_=nullptr; menu_=nullptr; spectrum_stride_=waterfall_stride_=0;
   button_count_=0;
+  last_frequency_label_[0]=0;
+  last_status_label_[0]=0;
 }
 bool HomeLvgl::allocate_canvas(lv_obj_t* parent,lv_obj_t** canvas,
                                void** pixels,size_t* stride,const Rect& rect){
@@ -148,7 +150,10 @@ bool HomeLvgl::create(lv_obj_t* parent,const Display& display,ActionSink sink,vo
 bool HomeLvgl::resize(const Display& display){
   if(!parent_)return false;
   const auto sink=sink_;void* ctx=context_;lv_obj_t* parent=parent_;
-  return create(parent,display,sink,ctx);
+  const bool previously_open=menu_open_;
+  const bool ok=create(parent,display,sink,ctx);
+  if(ok)set_menu_open(previously_open);
+  return ok;
 }
 void HomeLvgl::set_menu_open(bool open){
   menu_open_=open;
@@ -162,13 +167,19 @@ void HomeLvgl::update(const HomeData& data){
     char buf[80];
     std::snprintf(buf,sizeof(buf),"%.3f MHz  %s",data.frequency_hz/1000000.0,
                   data.mode?data.mode:"--");
-    lv_label_set_text(frequency_,buf);
+    if(std::strcmp(buf,last_frequency_label_)!=0){
+      lv_label_set_text(frequency_,buf);
+      std::snprintf(last_frequency_label_,sizeof(last_frequency_label_),"%s",buf);
+    }
   }
   if(status_){
     char buf[90];
     std::snprintf(buf,sizeof(buf),"RTL %s  |  WIFI %s  |  %d%%",
         data.radio_ready?"READY":"OFF",data.wifi_ready?"ON":"OFF",data.battery_percent);
-    lv_label_set_text(status_,buf);
+    if(std::strcmp(buf,last_status_label_)!=0){
+      lv_label_set_text(status_,buf);
+      std::snprintf(last_status_label_,sizeof(last_status_label_),"%s",buf);
+    }
   }
 }
 void HomeLvgl::spectrum(const float* db,size_t count,float floor,float ceiling){
