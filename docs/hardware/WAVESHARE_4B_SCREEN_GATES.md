@@ -421,3 +421,9 @@ flash approval. Display, touch and five-minute RF gates remain open.
 - Short check: 61 IQ rows over **45.06 seconds**, post-warmup **959,923-960,334 SPS**, zero drops, no NAV events. From app directory, `python ../../tools/hardware/check_4b_home_log.py --log home-v3-menu-com40.log --seconds 45` passed, exit 0. This is a smoke check, not a new five-minute qualification.
 - App-directory evidence: `home-v3-menu-preflash-com40.log`, `home-v3-menu-flash-com40.log`, `home-v3-menu-com40.log`, `home-v3-menu-short-check.log`. Serial SHA-256: `4cf847356a575d3b38e5b6fd5ec6607790be96cb4098029a8da891b75471e6a6`.
 - Owner green-badge/MENU photo confirmation, brand-area touch routing and cue state feedback remain pending. Earlier drawer success was owner-reported for the prior image. Recommendation: **Home not yet verified**, awaiting corrected-image visual acceptance.
+
+### Owner confirmation of badge and menu, 2026-10-14
+
+- On the flashed `0e5e19f` source image, owner answers "yes it does" to the combined check: green badge, visible MENU cue, open/close via badge and OrcSDR/HOME text, and state feedback `MENU >` / `MENU <`. These specific visual/touch corrections are **owner-confirmed**.
+- Earlier owner report also says the requested drawer exercise works correctly. This remains physical owner testimony, not an automatically captured 50-event count or memory-leak measurement.
+- Badge/menu correction is accepted by owner. Overall Home qualification still distinguishes the prior 310.11-second strict RF PASS from the corrected image's 45.06-second smoke PASS. Known-station peak/tuning check, complete enabled-button/palette coverage, corrected-image five-minute/nav-under-load measurement and measured memory stability remain open. No blanket Tab5 feature parity or other-dashboard acceptance.

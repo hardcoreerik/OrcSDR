@@ -199,3 +199,7 @@ physical touch/USB acceptance.
 ## Combined correction/cue deployment, 2026-10-14
 
 Owner-approved image is now flashed and booted on COM40, with PSRAM memory test passed. The 45.06-second IQ smoke check passed with zero drops after recovery from an initial enumeration error. Correct green badge, MENU indication and new header-target routing still await owner visual/touch confirmation. Full image/log evidence is recorded in the screen-gate ledger.
+
+### Owner confirmation
+
+Owner now confirms the corrected green badge, visible MENU cue, both badge and OrcSDR/HOME tap targets, and open/closed cue changes on the flashed image. Badge/menu correction accepted; remaining RF/tuning and full Home acceptance boundaries are tracked separately in the screen-gate ledger.

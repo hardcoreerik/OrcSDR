@@ -164,3 +164,5 @@ See docs/hardware/WAVESHARE_4B_SCREEN_GATES.md.
 ### Combined badge/menu image deployment
 
 Owner-approved correction/cue image is now flashed and booted on COM40. A 45.06-second IQ smoke check passed at zero drops. Correct green badge, MENU cue/state feedback and header-target operation remain pending owner review; see the latest screen-gate entry for logs and initial enumeration recovery.
+
+Owner has confirmed the green badge and MENU cue, including both tap targets and open/closed indication, on the flashed correction/cue image. This closes those specific visual/touch findings; remaining full Home qualification is tracked in the screen-gate ledger.
