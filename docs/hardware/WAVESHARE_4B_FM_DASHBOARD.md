@@ -79,3 +79,12 @@ First integrated five-tab FM prototype on commit f1372925f7771a56162168265a85b65
 Compiler output: orcsdr_waveshare_4b_probe.bin 0xD4B60 bytes (871264 decimal), smallest app partition 0x100000 bytes, 0x2B4A0 bytes (177312 decimal, 17%) remaining.
 This proves a compilable IQ-only FM shell, NOT physical FM acceptance. Later commits add range limiting, uptime, honest health N/A and palette interactions; verify their exact SHA/build separately.
 **Capacity risk:** 1 MiB app partition now has only about 17% space left. Before porting full WFM demodulation/RDS/audio, evaluate larger board-safe app partition design and flash/OTA migration implications. Do not erase NVS or write new partitions without explicit approval and backup.
+
+## Final LVGL refinements — native qualification
+
+Final code commit fba3d4516afe8d8f364982fe4e1f3202c899b644 passed both the dedicated host tests and the ESP-IDF 5.5.4 native-build job:
+- Host: https://github.com/hardcoreerik/OrcSDR/actions/runs/38684034835
+- Native: https://github.com/hardcoreerik/OrcSDR/actions/runs/38684034931
+- App bin size 0xD4C90 bytes; smallest app partition 0x100000; 0x2B370 (17%) free.
+- Native build is successful; overall run can still fail in its separately scoped REA/Ghidra stage. Do not conflate analysis status with native firmware compilation.
+Physical 4B rev1.3 UI/touch/RF acceptance has NOT been performed for this FM branch. No flash or merge.
