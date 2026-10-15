@@ -15843,6 +15843,16 @@ void orcdial_action(orc::secure::Action action,uint32_t value) {
   // Keep local requests ordered while splash/Wi-Fi staging delays the worker.
   if(!orcdial_pending_actions)orcdial_pending_actions=xQueueCreate(8,sizeof(OrcDialAction));
   const OrcDialAction request{action,value};
+  if(action==orc::secure::Action::cancel && !orcdial_transport_ready && orcdial_pending_actions) {
+    // Cancel arrived before the bridge exists (for example Pair then Cancel in one serial burst): the pairing it cancels must not start
+    // the bridge. Drop the queued Pair and Forget-and-re-pair requests, keep anything else, and recompute whether a request is left.
+    OrcDialAction keep[8]{};size_t kept=0;OrcDialAction queued{};
+    while(kept<8&&xQueueReceive(orcdial_pending_actions,&queued,0)==pdTRUE)
+      if(queued.kind!=orc::secure::Action::pair&&queued.kind!=orc::secure::Action::forget_repair)keep[kept++]=queued;
+    bool still_requested=false;
+    for(size_t i=0;i<kept;++i){(void)xQueueSend(orcdial_pending_actions,&keep[i],0);if(keep[i].kind==orc::secure::Action::connect)still_requested=true;}
+    orcdial_bridge_requested.store(still_requested,std::memory_order_release);
+  }
   if(!orcdial_pending_actions || xQueueSend(orcdial_pending_actions,&request,0)!=pdTRUE)
     Serial.println("RTL_ORCDIAL_ERROR action_queue_full");
   else if(action==orc::secure::Action::pair||action==orc::secure::Action::connect||action==orc::secure::Action::forget_repair)
