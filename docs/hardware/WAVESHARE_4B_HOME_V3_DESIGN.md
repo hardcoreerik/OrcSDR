@@ -160,3 +160,16 @@ physical touch/USB acceptance.
   partition space free, 200 MHz PSRAM configuration. Image checks and ELF
   badge/shared-palette symbols verified; full hashes and source patch identity
   are recorded in `WAVESHARE_4B_SCREEN_GATES.md`. No physical v3 acceptance.
+
+## First physical v3 boot and RF gate, 2026-10-14
+
+- Owner-approved COM40 flash of the verified image succeeded; serial confirms
+  v3 initialization, 200 MHz PSRAM memory-test pass and GT911 detection.
+- Full startup capture identifies `blog_v4l_r828s`, includes RF START and
+  310.11 seconds of IQ telemetry. Unmodified strict checker passed, exit 0:
+  min post-warmup 959,604 SPS, zero added drops. Original stationary streaming
+  baseline is preserved. Full image/log identities are in the screen ledger.
+- No drawer/tuning/palette touch events in this timed capture. Physical badge
+  colors/typography, closed/open photos, 50 interactions, outside-tap exclusivity,
+  navigation under IQ load and owner visual acceptance remain open. Do not
+  promote this radio result to visual or full Home acceptance.

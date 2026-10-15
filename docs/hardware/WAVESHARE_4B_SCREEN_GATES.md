@@ -312,3 +312,49 @@ flash approval. Display, touch and five-minute RF gates remain open.
   tests passed; final flash approval, v3 photographs, original-color visual
   review, 50 drawer interactions and complete five-minute RF capture remain
   pending. Original firmware/power setup preserved. No new device write yet.
+
+### Home v3 approved flash and receiver startup, 2026-10-14
+
+- Owner explicitly approved COM40. Pre-write re-probe matched P4 v1.3,
+  MAC `e8:f6:0a:e4:43:02`, 32 MB flash. Rechecked all three image SHA-256
+  values against the v3 build record above. Source fixes/evidence commit:
+  `e362266cbb5a848533835d900c3e4f5e8db45e28` (build metadata retains its
+  `fda39842` plus reviewed-patch identity, as documented above).
+- Used generated `build-4b-home-v3/flasher_args.json` via esptool 4.12.0 at
+  460800 baud; all three writes verified their hashes. No full erase, C6
+  image, NVS image, COM39 access or power-fixture change. Local bench script
+  `flash_home_v3_capture.py` checks the approved hashes before writing.
+- Opened UART at 115200 baud before controlled RTS reset and retained the
+  complete ROM boot/receiver sequence in app-directory `home-v3-com40.log`.
+  Flash and preflash logs: `home-v3-flash-com40.log`, `home-v3-preflash-com40.log`.
+- Boot confirms PSRAM 200 MHz, memory test OK, ELF prefix `820278292`,
+  GT911 at `0x5D`, v3 original-badge/palette renderer with 668px plot and
+  `HOME_4B boot complete - C6 untouched` at 1735 ms uptime.
+- USB diagnostics advance to `raw_devices=1 accepted_sdr=1`; actual detected
+  profile is **`blog_v4l_r828s`**. Driver records 960000 SPS readback and
+  6x16384 URBs. `HOME_4B RF START hz=96100000 rate=960000` captured at
+  4875 ms. Unlike the earlier reconnect capture, startup markers are present.
+- Physical photos, owner visual review, 50 drawer interactions, enabled
+  button/palette tests and absence of navigation-induced degradation remain
+  independent acceptance requirements. Driver logs alone do not qualify UI.
+- Complete capture now covers **310.11 seconds**, **413 IQ rows** at
+  96.1 MHz; post-warmup range **959,604–960,169 SPS**, drops **zero throughout**,
+  maximum telemetry gap 780 ms, consumed counter monotonic. Byte-counter
+  delta gives 960,158.09 complex samples/second. Previous 309.18-second
+  zero-drop baseline is preserved for stationary Home v3 streaming under the
+  same owner-established power-passthrough/one-foot-monopole setup.
+- Unmodified strict command, from app directory:
+  `python ../../tools/hardware/check_4b_home_log.py --log home-v3-com40.log`.
+  **Exit 0**: `IQ PASS: 310.1s; min SPS 959604; added drops 0. Screen and touch remain UNVERIFIED.`
+  `home-v3-strict-check.log` and `home-v3-measurement.json` retained beside log.
+- Complete serial-log SHA-256:
+  `44f78fce8daaff43684b90ff34b5d830b3a3f73a58518693653f760e10ae6bf8`.
+- No NAV/TUNE/STEP/PALETTE events occurred during the timed capture. Do not
+  claim a 50-interaction drawer test, palette switching, physical hitbox
+  acceptance, memory-leak measurement or RF stability during drawer activity.
+  No panic, stream-ended or restart observed. Visual appearance, photographs,
+  owner approval and known-station tuning response remain pending.
+- Current recommendation: **Home not yet verified**. Source/host/build,
+  approved flash, boot/PSRAM/touch-controller initialization, actual receiver
+  identification and strict five-minute stream gates passed. Physical UI and
+  touch/navigation acceptance gates have not passed.

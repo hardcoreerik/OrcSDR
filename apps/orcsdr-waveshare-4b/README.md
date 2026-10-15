@@ -22,6 +22,12 @@ Original badge and shared palette symbols are present in the linked ELF.
 This image has not yet been physically qualified; retain the separate build,
 flash, photo, drawer and complete RF-log acceptance gates.
 
+Owner-approved Home v3 flash/boot now passed on COM40/P4 v1.3. The complete
+boot-to-IQ log passed the unmodified strict checker: 310.11 seconds, minimum
+post-warmup 959,604 SPS, zero added drops, profile `blog_v4l_r828s`. Photos,
+owner visual acceptance, 50 drawer interactions and button/palette testing
+remain pending; no touch events occurred during that stationary RF capture.
+
 Home v3 lives in main/home_v3_ui.cpp. The USB/IQ task and standalone
 esp-rtl-sdr v0.9.3 dependency are unchanged. The new renderer reuses the
 original apps/orcsdr-tab5/ui/waterfall_style.cpp directly in the
