@@ -50,3 +50,8 @@ artifacts/pocsag-validation/
 artifacts/lora_validation/
 artifacts/release-readiness/
 docs/user-guide/assets/screenshots/raw/
+
+# OrcUI SDL desktop and Waveshare experimental outputs
+experiments/orcui/desktop/build/
+experiments/orcui/desktop/*.log
+experiments/orcui/waveshare4b/build/
