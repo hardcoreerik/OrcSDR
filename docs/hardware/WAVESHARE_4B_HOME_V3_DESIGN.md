@@ -138,8 +138,9 @@ physical touch/USB acceptance.
 
 - Badge copy is byte-identical to the Tab5 source asset (SHA-256
   `638f26c0242ebc5eda5cb41b987a08d7627ea77a321173150b25ad07aa1d359d`).
-  Renderer converts its big-endian packed pixels to native RGB565, following
-  the original badge byte-swap semantics. Physical color acceptance is open.
+  Initial review incorrectly inferred big-endian storage from the Tab5
+  display-specific byte swap. The asset is little-endian; see the physical
+  correction below. Physical color acceptance is open.
 - Original Tab5 `waterfall_style.cpp` is a direct CMake source, with Home's
   CLASSIC default and all seven source palettes. No new palette implementation.
 - Creation occurs under the BSP LVGL lock; updates run in the LVGL timer.
@@ -173,3 +174,22 @@ physical touch/USB acceptance.
   colors/typography, closed/open photos, 50 interactions, outside-tap exclusivity,
   navigation under IQ load and owner visual acceptance remain open. Do not
   promote this radio result to visual or full Home acceptance.
+
+## Physical badge correction, 2026-10-14
+
+- Owner reports drawer interactions work correctly, but badge colors are
+  wrong. Owner photo shows the pink/red badge, PLASMA waterfall, and live IQ
+  with zero drops. Drawer behavior is owner-reported, not serial-counted;
+  no separate memory-leak measurement is available.
+- Decoding the unchanged original asset as big-endian reproduces that wrong
+  badge; little-endian produces the correct green Orc. The Tab5 display byte
+  swap must not be copied as an LVGL asset-storage rule. Corrected only the
+  badge pixel assembly to little-endian; source asset/palettes remain unchanged.
+- Local inspection renders `badge-big-endian-inspection.png` and
+  `badge-little-endian-inspection.png` are binary-format diagnostics, not new
+  artwork or device screenshots. Rebuild and approved device flash still
+  required to verify the correction physically. **Home requires changes**
+  until the corrected badge is observed and owner-approved.
+- Incremental rebuild passed with the little-endian correction; app remains
+  857,376 bytes and valid for P4 v1.0–1.99. New image SHA-256 and preservation
+  details are recorded in the screen ledger. Corrected image not flashed yet.

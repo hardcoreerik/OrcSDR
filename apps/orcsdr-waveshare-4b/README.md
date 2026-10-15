@@ -28,6 +28,12 @@ post-warmup 959,604 SPS, zero added drops, profile `blog_v4l_r828s`. Photos,
 owner visual acceptance, 50 drawer interactions and button/palette testing
 remain pending; no touch events occurred during that stationary RF capture.
 
+Owner subsequently reports drawer behavior works, but the badge rendered
+pink/red. Asset inspection found little-endian RGB565 was incorrectly decoded
+as big-endian. Badge-only correction rebuilt successfully; approved reflash
+and physical green-badge confirmation remain pending. Shared palettes and
+receiver configuration are unchanged.
+
 Home v3 lives in main/home_v3_ui.cpp. The USB/IQ task and standalone
 esp-rtl-sdr v0.9.3 dependency are unchanged. The new renderer reuses the
 original apps/orcsdr-tab5/ui/waterfall_style.cpp directly in the

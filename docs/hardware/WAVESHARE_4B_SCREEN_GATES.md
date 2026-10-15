@@ -358,3 +358,37 @@ flash approval. Display, touch and five-minute RF gates remain open.
   approved flash, boot/PSRAM/touch-controller initialization, actual receiver
   identification and strict five-minute stream gates passed. Physical UI and
   touch/navigation acceptance gates have not passed.
+
+### Owner visual review and badge defect, 2026-10-14
+
+- Owner reports the requested drawer test "works correctly"; record this as
+  owner-reported interaction success, not a captured count of 50 events or a
+  measured memory-leak result. Strict RF capture preceded these touch tests.
+- Owner photo `codex-clipboard-a87ed2bf-8e3a-4626-a98d-c9c65cdb9e1b.jpg`
+  shows wrong pink/red Orc badge colors while receiving IQ. PLASMA is visibly
+  selected; the pink waterfall is not evidence of an independent color bug.
+- Asset forensic renders identify the cause: original RGB565 bytes are
+  little-endian. Big-endian interpretation reproduces the wrong physical
+  badge; little-endian restores the original green artwork. Earlier static
+  review inferred the wrong storage order from Tab5's display byte swap.
+- Corrected only badge byte assembly in `home_v3_ui.cpp`; no asset, palette,
+  radio or display-wide byte-order change. New build/flash validation pending.
+  Recommendation: **Home requires changes**; owner badge approval remains open.
+- One incremental rebuild passed (exit 0), app unchanged at 857,376 bytes,
+  18% partition free; image revision v1.0–v1.99 and valid image hash verified.
+  Only badge decode and app build metadata differ; bootloader/partition
+  hashes remain unchanged. Earlier flashed binaries/config/ELF preserved in
+  app-directory `home-v3-before-badge-fix/`.
+- New app SHA-256:
+  `20a67189d426e9d4ac4d0ba45509d599c8801483cf48fef1e7530609b204f974`.
+  ELF SHA-256 `20f219e9d97d3a74df95aff406e907d9f9830ff0570a1cbe215f2af4a1d79a84`;
+  version `v0.4.0-beta.1-34-g9ad124cf-dirt`. Source input: `9ad124cf` plus
+  the single badge-byte-order correction. App-directory logs:
+  `idf-build-home-v3-badge-fix.log`, `home-v3-badge-fix-image-info.log`,
+  `home-v3-badge-fix-sha256.txt`. Original asset unchanged. No broad/host suite
+  repeated for this two-byte assembly correction; both endian interpretations
+  were rendered from actual asset bytes and compared with the owner photo.
+- Photo SHA-256:
+  `2c7d8c6fd16fc6c928bef4bd11857c118c8b51ebb4b4728655fccdd9e3bc1f1c`.
+  Flash approval and physical green-badge verification still pending. Earlier
+  strict RF PASS applies to the pre-correction image; no new RF result claimed.

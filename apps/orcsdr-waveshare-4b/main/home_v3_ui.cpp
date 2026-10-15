@@ -90,10 +90,10 @@ void make_badge(lv_obj_t* root){
  if(badge_end-badge_begin==104*104*2)
   badge_data=static_cast<uint16_t*>(heap_caps_malloc(n*n*2,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
  if(badge_data){
-  // Original OrcSDR badge is packed big-endian RGB565; convert to LVGL native.
+  // Asset is little-endian RGB565, matching LVGL native canvas pixels.
   for(int y=0;y<n;++y)for(int x=0;x<n;++x){
    int index=2*((y*104/n)*104+(x*104/n));
-   badge_data[y*n+x]=static_cast<uint16_t>((uint16_t(badge_begin[index])<<8)|badge_begin[index+1]);
+   badge_data[y*n+x]=static_cast<uint16_t>(badge_begin[index]|(uint16_t(badge_begin[index+1])<<8));
   }
   auto* image=lv_canvas_create(root);
   lv_canvas_set_buffer(image,badge_data,n,n,LV_COLOR_FORMAT_RGB565);
