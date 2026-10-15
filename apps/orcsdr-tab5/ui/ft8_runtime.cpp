@@ -586,11 +586,6 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
     std::printf("ORC_FT8_RT start_failed js8\n");
     return start_failed(StartFailure::backend);
   }
-  {   // started: the last failure no longer applies (the failure count stays)
-    const uint32_t failures = g_start_report.failures;
-    g_start_report = StartReport{};
-    g_start_report.failures = failures;
-  }
   g.mode = mode;
   g.on_decode = on_decode;
   g.context = context;
@@ -616,7 +611,13 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
     g.active.store(false, std::memory_order_release);
     set_state(State::error);
     std::printf("ORC_FT8_RT start_failed task\n");
-    return false;
+    g_alloc_fail_bytes.store(20480u, std::memory_order_relaxed);   // the task's stack comes from PSRAM: a failure here is a memory failure
+    return start_failed(StartFailure::memory);
+  }
+  {   // started: the last failure no longer applies (the failure count stays). Cleared only now, after the last step that can fail.
+    const uint32_t failures = g_start_report.failures;
+    g_start_report = StartReport{};
+    g_start_report.failures = failures;
   }
   mem_mark("backend");
   (void)xTaskCreatePinnedToCoreWithCaps(waterfall_task, "ft8_wf", 8192, nullptr, 1, &g.wf_task, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);

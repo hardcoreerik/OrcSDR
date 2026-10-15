@@ -360,7 +360,9 @@ void handle(const orcsdr::sstv::Action& action) {
 // conveniences; the registry may ask for them back when another feature (the FT8 decoder) cannot start for lack of memory.
 // Nothing is released while the SSTV screen is open: the pictures on it are in use.
 size_t memory_held() {
-  return orcsdr::sstv::metrics().frame_bytes + orcsdr::sstv_capture::held_bytes();
+  // Only what memory_release() would give back: nothing while the SSTV screen is open, and not a recording in progress.
+  if (orcsdr::sstv::ui_active()) return 0;
+  return orcsdr::sstv::metrics().frame_bytes + (orcsdr::sstv_capture::recording() ? 0u : orcsdr::sstv_capture::held_bytes());
 }
 size_t memory_release() {
   if (orcsdr::sstv::ui_active()) return 0;

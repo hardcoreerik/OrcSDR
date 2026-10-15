@@ -1573,6 +1573,10 @@ constexpr uint32_t kLoraSustainedHighMs = 4000;
 static uint8_t* g_iq_rec_buf = nullptr;
 static uint8_t* g_lora_decode_buf = nullptr;
 static uint8_t* g_lora_pre_roll_buf = nullptr;
+// Handshake between lora_iq_release_buffers() and the DSP task, which touches the buffers from lora_iq_offer(): the DSP task backs off
+// while a release is pending or done (until lora_iq_ensure_buffers() has allocated them again) and flags when it is inside the call.
+static std::atomic<bool> g_lora_iq_releasing{false};
+static std::atomic<bool> g_lora_iq_in_use{false};
 static std::atomic<size_t> g_iq_rec_write{0};
 static std::atomic<bool> g_iq_rec_active{false};
 static std::atomic<uint32_t> g_iq_rec_last_append_ms{0};
@@ -4349,10 +4353,20 @@ size_t lora_iq_held_bytes() {
 size_t lora_iq_release_buffers() {
   // Never while LoRa is on screen or is still the receiver's band, a capture is running or waiting to be read or exported, or the
   // decoder task is working on one of the buffers.
-  if (orcsdr::screens::owns(orcsdr::screens::Id::lora) || rtl_ui_band == RtlBand::lora ||
-      g_iq_rec_active.load(std::memory_order_acquire) || g_iq_rec_ready.load(std::memory_order_acquire) ||
-      g_iq_rec_export_pending.load(std::memory_order_acquire) || lora_native_decode_busy.load(std::memory_order_acquire))
+  const auto in_use_elsewhere = [] {
+    return orcsdr::screens::owns(orcsdr::screens::Id::lora) || rtl_ui_band == RtlBand::lora ||
+           g_iq_rec_active.load(std::memory_order_acquire) || g_iq_rec_ready.load(std::memory_order_acquire) ||
+           g_iq_rec_export_pending.load(std::memory_order_acquire) || lora_native_decode_busy.load(std::memory_order_acquire) ||
+           g_iq_get.active || g_lora_replay_put.active;   // a serial download or replay upload is reading or filling the buffer
+  };
+  if (in_use_elsewhere()) return 0;
+  // Tell the DSP task to stay out, then wait for a call that is already inside lora_iq_offer() to finish (a few milliseconds).
+  g_lora_iq_releasing.store(true, std::memory_order_seq_cst);
+  for (int i = 0; i < 25 && g_lora_iq_in_use.load(std::memory_order_seq_cst); ++i) vTaskDelay(pdMS_TO_TICKS(2));
+  if (g_lora_iq_in_use.load(std::memory_order_seq_cst) || in_use_elsewhere()) {   // busy, or a capture started meanwhile: leave them alone
+    g_lora_iq_releasing.store(false, std::memory_order_seq_cst);
     return 0;
+  }
   const size_t held = lora_iq_held_bytes();
   uint8_t* capture = g_iq_rec_buf;
   uint8_t* decode = g_lora_decode_buf;
@@ -4379,8 +4393,9 @@ bool lora_iq_ensure_buffers() {
   }
   // Best effort: without the preamble detector the energy trigger still works.
   (void)orcsdr::lora_preamble::configure(lora_sf.load(std::memory_order_relaxed));
-  return g_iq_rec_buf != nullptr && g_lora_decode_buf != nullptr &&
-         g_lora_pre_roll_buf != nullptr;
+  const bool ready = g_iq_rec_buf != nullptr && g_lora_decode_buf != nullptr && g_lora_pre_roll_buf != nullptr;
+  if (ready) g_lora_iq_releasing.store(false, std::memory_order_seq_cst);   // the DSP task may use them again
+  return ready;
 }
 
 void lora_iq_reset_detector() {
@@ -4867,6 +4882,17 @@ bool lora_native_decoder_start() {
 
 void lora_iq_offer(const uint8_t* iq, size_t bytes) {
   if (iq == nullptr || bytes == 0) return;
+  if (g_lora_iq_releasing.load(std::memory_order_seq_cst)) {
+    // The buffers are being, or have been, given back. A block that arrives after the band moved away is stale: drop it. When LoRa
+    // is the band again, allocate them here (the same call this function makes below) and carry on; that also clears the flag.
+    if (rtl_ui_band != RtlBand::lora || !lora_iq_ensure_buffers()) return;
+  }
+  g_lora_iq_in_use.store(true, std::memory_order_seq_cst);
+  if (g_lora_iq_releasing.load(std::memory_order_seq_cst)) {   // a release started between the check and the flag
+    g_lora_iq_in_use.store(false, std::memory_order_seq_cst);
+    return;
+  }
+  struct Leave { ~Leave() { g_lora_iq_in_use.store(false, std::memory_order_seq_cst); } } leave_guard;
   if (orcsdr::lora_channel::survey_active()) return;
   if (lora_detector_relearn_requested.exchange(false, std::memory_order_acq_rel)) {
     g_lora_noise_floor_dbfs = rtl_signal_dbfs.load(std::memory_order_relaxed);

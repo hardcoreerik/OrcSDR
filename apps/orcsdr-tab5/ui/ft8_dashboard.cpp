@@ -1128,7 +1128,9 @@ int waterfall_state(const Snapshot& v) {
 bool live_layout_same(const Snapshot& a, const Snapshot& b) {
   return a.mode == b.mode && a.selected_band == b.selected_band && a.decoder_capabilities == b.decoder_capabilities && a.clock_valid == b.clock_valid &&
          waterfall_state(a) == waterfall_state(b) && (a.decoder_state == DecoderState::no_memory) == (b.decoder_state == DecoderState::no_memory) &&
-         has_holders(a) == has_holders(b);   // the NO MEMORY message and its button repaint when what can be freed changes
+         has_holders(a) == has_holders(b) && a.mem_holders_rev == b.mem_holders_rev &&
+         (a.decoder_state != DecoderState::no_memory || ((a.mem_free >> 16) == (b.mem_free >> 16) && a.mem_needed == b.mem_needed));
+         // the NO MEMORY message repaints when the holder text, the free-memory figure (in 64 KB steps) or the needed size changes
 }
 
 void draw_live_dynamic(const Snapshot& previous) {
