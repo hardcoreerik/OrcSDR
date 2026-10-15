@@ -8,6 +8,8 @@ Supersedes the permanently visible 172 px navigation rail in
 ## Decision
 
 The OrcSDR badge at the top-left of the shared header is the navigation toggle.
+The adjacent OrcSDR/HOME header is also a full 155x67 toggle target and shows
+`MENU >` while closed, `MENU <` while open, making navigation discoverable.
 Start with drawer CLOSED on every boot and screen entry. Badge tap toggles
 OPEN/CLOSED. While open, touch outside the drawer in the covered *content area*
 closes it without passing the tap through to tuning controls; selecting a

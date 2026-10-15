@@ -392,3 +392,23 @@ flash approval. Display, touch and five-minute RF gates remain open.
   `2c7d8c6fd16fc6c928bef4bd11857c118c8b51ebb4b4728655fccdd9e3bc1f1c`.
   Flash approval and physical green-badge verification still pending. Earlier
   strict RF PASS applies to the pre-correction image; no new RF result claimed.
+
+### Discoverable drawer control, 2026-10-14
+
+- Owner requests a visible indication of where to open dashboard navigation.
+  Added cyan `MENU >` beneath the OrcSDR/HOME text, changing to `MENU <` when
+  open. The full adjacent 155x67 brand area now toggles the drawer, in addition
+  to the existing badge. Hint is inside that target; no plot/header resizing.
+- Added the brand target to geometry validation. Existing v3 drawer/layout
+  host compile and test passed with the same strict g++ flags; root logs
+  `menu-cue-host-build.log`, `menu-cue-host-test.log`. `git diff --check` passed.
+- One incremental native build passed, app 857,552 bytes; valid image for
+  P4 v1.0–1.99. App version `v0.4.0-beta.1-35-g7153ac0f-dirt`, source input
+  `7153ac0f` plus menu-cue/hit-target changes. Includes little-endian badge fix.
+  App SHA-256:
+  `6df69ddf6f3ba517836ec4fe381121fe7fdb58a3a535dd4791e7ab745dde03be`.
+  App-directory evidence: `idf-build-menu-cue.log`, `home-v3-menu-image-info.log`.
+  Badge-only app preserved as `badge-fix-before-menu.bin`. No radio changes.
+- Not flashed. Final approval, physical green-badge and MENU cue inspection,
+  header-tap routing and drawer state feedback remain pending. Existing strict
+  RF PASS remains evidence for the earlier flashed image, not this new image.

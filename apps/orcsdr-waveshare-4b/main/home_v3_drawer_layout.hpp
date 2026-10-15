@@ -54,7 +54,7 @@ constexpr Rect kNavFm{27,420,260,49};
 constexpr Rect kNavAdsb{27,478,260,49};
 constexpr Rect kNavAll{27,597,260,56};
 constexpr Rect kBasePanels[]={kSpectrumPanel,kWaterfallPanel,kReadoutPanel,kControlsPanel,kFooter};
-constexpr Rect kControls[]={kBadgeHit,kHeaderHome,kHeaderMute,kHeaderVisualizer,kHeaderSettings,
+constexpr Rect kControls[]={kBadgeHit,kBrand,kHeaderHome,kHeaderMute,kHeaderVisualizer,kHeaderSettings,
  kFrequencyTouch,kMode,kFilter,kSpan,kStep,kTuneDown,kTuneUp,kGain,kBias,kPalette,kMore};
 constexpr Rect kNavItems[]={kNavHome,kNavP25,kNavAm,kNavSettings,kNavRfLab,kNavFm,kNavAdsb,kNavAll};
 constexpr bool valid() {

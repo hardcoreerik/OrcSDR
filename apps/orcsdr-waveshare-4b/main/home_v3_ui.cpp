@@ -19,6 +19,7 @@ extern const uint8_t badge_end[] asm("_binary_orc_badge_104_rgb565_end");
 QueueHandle_t queue=nullptr;
 Navigation nav{};
 lv_obj_t *drawer=nullptr,*shade=nullptr,*scope=nullptr,*waterfall=nullptr;
+lv_obj_t *menu_hint=nullptr;
 lv_obj_t *freq=nullptr,*status=nullptr,*metrics=nullptr,*usb=nullptr,*uptime=nullptr,*step_text=nullptr,*palette_text=nullptr;
 uint16_t *scope_data=nullptr,*waterfall_data=nullptr,*badge_data=nullptr;
 bool had_rf=false;
@@ -43,6 +44,7 @@ lv_obj_t* caption(lv_obj_t* root,Rect r,const char* value,uint16_t c,bool center
 }
 void sync_menu(){
  if(!drawer||!shade)return;
+ lv_label_set_text(menu_hint,nav.open?"MENU <":"MENU >");
  if(nav.open){
   lv_obj_remove_flag(shade,LV_OBJ_FLAG_HIDDEN);
   lv_obj_remove_flag(drawer,LV_OBJ_FLAG_HIDDEN);
@@ -183,7 +185,10 @@ bool create(QueueHandle_t q){
  button(screen,kMore,"MORE (soon)",Command::FM,false);
  status=caption(screen,{24,682,275,20},"NO SDR",CYAN);
  metrics=caption(screen,{307,682,380,20},"0 kS/s  drops 0  IQ ONLY",GREEN,true);
- caption(screen,kBrand,"OrcSDR\nHOME",0xffff);
+ auto* brand=caption(screen,kBrand,"OrcSDR\nHOME",0xffff);
+ lv_obj_add_flag(brand,LV_OBJ_FLAG_CLICKABLE);
+ lv_obj_add_event_cb(brand,on_badge,LV_EVENT_CLICKED,nullptr);
+ menu_hint=caption(brand,{0,42,kBrand.w,22},"MENU >",CYAN);
  frame(screen,kHeaderStatus);
  caption(screen,{254,18,70,47},"Wi-Fi\nOFFLINE",DIM);
  usb=caption(screen,{329,18,90,47},"RTL-SDR\nNO SDR",DIM);

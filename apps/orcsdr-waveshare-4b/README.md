@@ -34,6 +34,11 @@ as big-endian. Badge-only correction rebuilt successfully; approved reflash
 and physical green-badge confirmation remain pending. Shared palettes and
 receiver configuration are unchanged.
 
+Drawer discoverability: the cyan `MENU >` cue beneath OrcSDR/HOME marks the
+navigation control and changes to `MENU <` while open. Tap either the badge
+or the adjacent OrcSDR/HOME area. Host geometry and native compilation passed;
+this cue and corrected badge still require approved flashing and visual review.
+
 Home v3 lives in main/home_v3_ui.cpp. The USB/IQ task and standalone
 esp-rtl-sdr v0.9.3 dependency are unchanged. The new renderer reuses the
 original apps/orcsdr-tab5/ui/waterfall_style.cpp directly in the
