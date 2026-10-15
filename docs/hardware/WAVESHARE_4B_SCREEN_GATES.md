@@ -448,3 +448,7 @@ flash approval. Display, touch and five-minute RF gates remain open.
 - USB reaches raw_devices=1/accepted_sdr=1, identifies `blog_v4l_r828s`, completes initialization despite EP0 STALL messages, and logs RF START at 4834 ms: 96.1 MHz, 960 kS/s, 6x16KiB transfers.
 - Short capture: **45.15 seconds**, 61 IQ rows, post-warmup **959,647-960,132 SPS**, zero added drops, consumed bytes monotonic. `python ../../tools/hardware/check_4b_home_log.py --log home-starter-com40.log --seconds 45` passed, exit 0. This is not a five-minute qualification. No NAV/TUNE events during capture.
 - Serial-log SHA-256 `f1fb04ea78495d7365689c2a6aee86a71988345b56052f4ee23221970c0133b0`. Owner visual review/photo, new hit targets and drawer-under-load behavior remain pending. Earlier layout acceptance and five-minute evidence do not automatically qualify this layout. Recommendation: **Home not yet verified** for the starter layout.
+
+### Owner approves starter layout appearance, 2026-10-14
+
+Owner reports "lay out looks good" for the flashed starter-layout source `dbd5e30` (deployment evidence `980673a`). Record **owner visual layout approval**. The response does not explicitly establish new hamburger/header hit-target behavior, absence of unwanted tuning, a photographed pixel comparison, or five-minute/navigation-under-load stability. Those remain open; the 45.15-second IQ smoke PASS remains the current corrected-layout receiver result. No full Home acceptance claimed.

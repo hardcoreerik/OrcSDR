@@ -239,3 +239,5 @@ The starter-layout native rev1.x build passed: 990,368-byte app, 6% of the exist
 ### Starter layout deployed for owner review
 
 The approved starter-layout image is now flashed and booted on COM40. PSRAM memory test and GT911 initialization passed; V4L IQ smoke check passed over 45.15 seconds with zero drops. Physical appearance, hamburger/header touch behavior and a full five-minute regression on this layout remain open. See the latest screen-gate entry for exact hashes, logs and initialization STALL observations.
+
+Owner has now approved the starter layout's appearance ("lay out looks good"). New hit-target/drawer behavior and the full five-minute RF regression remain separate open gates; visual approval alone does not close them.
