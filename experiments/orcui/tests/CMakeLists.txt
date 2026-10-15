@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.16)
+project(orcui_host_tests LANGUAGES CXX)
+add_executable(orcui_layout_test ../layout.cpp ../raster.cpp layout_test.cpp)
+target_include_directories(orcui_layout_test PRIVATE ../include)
+target_compile_features(orcui_layout_test PRIVATE cxx_std_17)
+target_compile_options(orcui_layout_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+enable_testing()
+add_test(NAME orcui_layout COMMAND orcui_layout_test)
