@@ -197,3 +197,27 @@ flash approval. Display, touch and five-minute RF gates remain open.
 - Hub-enabled image installation and Home startup verified. Owner invited
   to connect powered hub plus dongle while the serial capture runs. Hub and
   receiver enumeration, actual IQ and sustained RF remain separate open gates.
+
+### Owner video: first visible IQ streaming, 2026-10-14
+
+- Owner reports "we got it up" and supplies a 4.3648-second video plus photo.
+  Video frames at 1.0 and 3.2 seconds show `RECEIVING IQ | 960 kS/s | drops 0`
+  at 96.100000 MHz, changing relative spectrum and waterfall data. This is
+  visual evidence of IQ streaming and Home rendering on physical hardware;
+  the displayed rate/counter are not a serial-measured five-minute result.
+- Photo shows an RTL-SDR Blog V4 and an inline meter displaying approximately
+  4.184 V, 0.249 A, 1.040 W. Power margin and actual hub/adapter topology remain
+  to be established; antenna and band suitability are not yet recorded.
+- Serial capture failed at approximately 73.5 seconds uptime with Windows
+  `GetOverlappedResult failed` / access denied. COM40 is absent from the
+  subsequent port inventory, so receiver enumeration/start markers were not
+  captured. Do not classify this PC serial-link loss as an MCU crash.
+- Video `f1019aa9-73d3-4573-88d3-72429e24c8e6.mp4` SHA-256:
+  `24f49f28036e147de8cd05786f59487924cf7088c297e6ce34659389e86d0c78`.
+  Photo `codex-clipboard-ac1e6ef4-9edd-4c52-8eb8-6708ae195992.jpg` SHA-256:
+  `bf6aa9f09f3975a924e6cf4dacddbef8419a1b46ed3982b782258c6ffa4ed4f1`.
+  Originals remain at owner-supplied local paths; not committed as binaries.
+- Open: known-signal peak/tuning response (a center peak alone is not proof),
+  exact USB device/profile logs, physical topology, antenna, power routing,
+  full touch coverage, and five-minute >=95% stream qualification. Home UI
+  design remains rejected/deferred per owner; no redesign performed.
