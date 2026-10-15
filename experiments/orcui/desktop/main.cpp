@@ -185,10 +185,14 @@ int main(int argc,char** argv){
  if(screenshot){
   lv_timer_handler();
   auto* renderer=static_cast<SDL_Renderer*>(lv_sdl_window_get_renderer(display));
+  int physical_w=0,physical_h=0;
+  if(!renderer || SDL_GetRendererOutputSize(renderer,&physical_w,&physical_h)!=0
+     || physical_w<=0 || physical_h<=0){
+    std::fprintf(stderr,"Cannot query SDL renderer size: %s\\n",SDL_GetError());
+    home.destroy();lv_deinit();return 1;
+  }
   SDL_Surface* shot=SDL_CreateRGBSurfaceWithFormat(0,
-      lv_display_get_horizontal_resolution(display),
-      lv_display_get_vertical_resolution(display),
-      32,SDL_PIXELFORMAT_ARGB8888);
+      physical_w,physical_h,32,SDL_PIXELFORMAT_ARGB8888);
   if(!renderer || !shot ||
      SDL_RenderReadPixels(renderer,nullptr,SDL_PIXELFORMAT_ARGB8888,
                           shot->pixels,shot->pitch)!=0 ||
