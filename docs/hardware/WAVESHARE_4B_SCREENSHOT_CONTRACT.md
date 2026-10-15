@@ -6,7 +6,7 @@ The user rejected the first 720-square Waveshare Home UI because it discarded Or
 
 ## Reference provenance
 
-- Public GitHub Wiki: https://github.com/hardcoreerik/OrcSDR/wiki — linked from README, but the Wiki's live rendered pages were not reachable by the current automated review. Do **not** claim the Wiki itself was scraped or pixel-audited. Re-review it manually as soon as reachable.
+- Public GitHub Wiki: https://github.com/hardcoreerik/OrcSDR/wiki — the Home page, actual 1280×720 Home screenshot and Screenshot Catalog are now accessible by following the Wiki link. The [Wiki catalog](https://github.com/hardcoreerik/OrcSDR/wiki/Screenshot-Catalog) inventories **94 captures, 78 public**, beyond the 24 repo-tracked dashboard image files. Screen-by-screen pixel comparison is still pending.
 - **Confirmed, tracked screenshot library:** `docs/images/dashboards/` on `main`, 24 PNG captures covering five groupings below. The exact assets are embedded below as GitHub-renderable image references for human/Codex comparison.
 - Additional larger project screenshots: `docs/images/orcsdr-tab5-live.jpeg`, `docs/images/orcsdr-fm-dashboard.jpg`, `docs/images/orcsdr-adsb-dashboard.jpg`, `docs/images/orcsdr-rf-lab-dashboard.jpg`, `docs/images/orcsdr-visualization-modes.jpg`.
 - Public user guide: `docs/user-guide/` with FM, P25, ADS-B, LoRa, FT8, other-band guides; the automatic `reference/screen-catalog.md` is currently only a placeholder, not a complete screenshot catalog.
@@ -167,7 +167,7 @@ The user rejected the first 720-square Waveshare Home UI because it discarded Or
 - ESP32-P4 v1.3, display, PSRAM and partial GT911 interaction ran on physical board (see `WAVESHARE_4B_SCREEN_GATES.md`).
 - Existing 4B `main.cpp` is a functional IQ-focused prototype and **failed OrcSDR UI parity**. Do not reuse its invented palette/header/button design as the base template.
 - Radio/USB reception remains blocked by unqualified USB-OTG power/attachment path; see `WAVESHARE_4B_USB_HOST_POWER.md`.
-- This document creates a reproducible reference set. It **does not** assert that embedded images were visually decoded in this research session, that the live separate GitHub Wiki rendered, or that the WaveShare port passed a screenshot comparison.
+- This document creates a reproducible reference set. It **does not** assert every source screenshot was pixel-audited, that the Wiki's 94-item catalog was exhaustively reviewed or that the Waveshare port passed a screenshot comparison.
 
 ## Final principle
 
