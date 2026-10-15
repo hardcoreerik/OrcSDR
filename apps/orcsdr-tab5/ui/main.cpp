@@ -15893,6 +15893,9 @@ void orcdial_poll() {
     if(dma_free<kOrcDialOnDemandDmaNeed) {
       xQueueReset(orcdial_pending_actions);
       orcdial_memory_blocked=true;
+      // The request may have brought Wi-Fi up for this accessory-only session (Wi-Fi power setting off); the idle shutdown later in
+      // this function needs a running bridge, so stop it here and restore the configured state.
+      if(!settings_wifi_power_enabled&&wifi_station_ready)stop_wifi();
       Serial.printf("RTL_ORCDIAL_ERROR low_dma_memory free=%u need=%u restart_to_pair\n",(unsigned)dma_free,(unsigned)kOrcDialOnDemandDmaNeed);
       return;
     }
@@ -15925,6 +15928,7 @@ void orcdial_poll() {
   }
   OrcDialFrame frame{};while(xQueueReceive(orcdial_inbox,&frame,0)==pdTRUE)orcdial_secure.receive(frame.mac,frame.wire,64);
   const auto status=orcdial_secure.status();orcdial_has_peer=status.trusted;boot_trust=status.trusted && status.boot_connect;
+  stored_trust=status.trusted;   // follow Pair and Forget while the bridge runs, so a restart after a transport drop uses the current state
   orcdial_pair_until=(status.state==orc::secure::State::searching||status.state==orc::secure::State::exchanging||status.state==orc::secure::State::verify)?millis()+1000:0;
   static uint32_t accessory_idle_ms=0;
   const bool pairing_active=status.state==orc::secure::State::searching || status.state==orc::secure::State::exchanging || status.state==orc::secure::State::verify;
