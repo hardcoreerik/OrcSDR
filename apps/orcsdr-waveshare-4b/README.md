@@ -1,3 +1,76 @@
+# OrcSDR Waveshare ESP32-P4-WIFI6-Touch-LCD-4B
+
+**Home v3 source integrated on the Waveshare development branch. Not yet
+visually accepted on physical hardware. Do not treat the prior IQ-only Home
+v1 photograph as approval of this UI.**
+
+The v3 Home keeps the actual OrcSDR Tab5 RGB565 Orc badge, cyan/green/black
+theme, real Home waterfall palette, and badge-toggled LAST USED navigation.
+The drawer opens over the full-width spectrum/waterfall; no plots are resized
+while it is open. Tune +/-, STEP and PALETTE are available. Other dashboard
+routes and unported controls are visibly disabled. No fake RF, Wi-Fi, audio,
+or decoder functionality is presented as live.
+
+Home v3 lives in main/home_v3_ui.cpp. The USB/IQ task and standalone
+esp-rtl-sdr v0.9.3 dependency are unchanged. The new renderer reuses the
+original apps/orcsdr-tab5/ui/waterfall_style.cpp directly in the
+board-specific native build and embeds the original Orc badge unchanged.
+
+### Local 4B hardware evidence
+
+The owner's exact physical 4B has ESP32-P4 silicon v1.3, 32MB flash, 32MB
+PSRAM at 200MHz. It has successfully run live RTL-SDR Blog V4 IQ through
+an independently powered passthrough adapter: 309.18 seconds of serial
+metrics measured about 960,052 samples/second with 0 reported IQ drops.
+The reconnect-only serial capture did not include the RF START marker,
+so strict complete-boot capture qualification is still open.
+
+### Build for owner's verified silicon v1.3
+
+Use ESP-IDF 5.5.4. From this app directory in an exported IDF shell:
+
+    idf.py -B build-4b-home-v3 -D IDF_TARGET=esp32p4 \
+      -D SDKCONFIG=build-4b-home-v3/sdkconfig \
+      -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.rev1_x" build
+
+For PowerShell run the same command on one line or with PowerShell
+backtick continuation. Do NOT flash CI's default rev3.x artifact to v1.3
+silicon. Verify build-4b-home-v3/sdkconfig's revision/PSRAM settings and
+the generated flasher_args.json. Before flashing, compare actual board,
+COM port and revision with the recorded preflight; obtain final owner
+approval. Do not erase chip, overwrite C6 or affect Tab5.
+
+### Device acceptance required
+
+1. Photograph booted Home. Compare real badge colors, styling, font size,
+   header Wi-Fi/SDR/uptime groups, full-width spectrum and waterfall against
+   the original OrcSDR Wiki screenshot. Test no-SDR state separately.
+2. Touch badge repeatedly: opens drawer; badge/outside tap closes. No
+   underlying tuning action should fire from a drawer-dismissal tap.
+3. Test every enabled button (TUNE +/-, STEP and PALETTE) and confirm
+   serial log plus screen status agree. Disabled actions must not claim
+   navigation to unimplemented dashboards.
+4. With the proven properly powered RTL-SDR V4/USB-C passthrough adapter,
+   verify Home's actual live plot and sustained RF metrics. Capture the
+   complete RF START followed by 5+ minutes of IQ telemetry.
+5. Run the strict test from this app directory, saving the monitor log here:
+
+    python ../../tools/hardware/check_4b_home_log.py --log home-v3-com40.log
+
+   Use local COM40 only after re-confirming the port; COM39 is a different
+   board in previous logs. Keep flash and monitor logs beside commands
+   run, with source SHA, hashes, revision, chip ID, and any exceptions.
+
+No FM or other dashboard is accepted until Home's physical acceptance gates
+pass. Additional architecture/evidence: ../../docs/hardware/
+WAVESHARE_4B_HOME_V3_DESIGN.md,
+WAVESHARE_4B_SCREEN_GATES.md,
+WAVESHARE_4B_USB_HOST_POWER.md.
+
+---
+
+## Historical Home v1 probe notes (retained for context)
+
 # OrcSDR Waveshare ESP32-P4-WIFI6-Touch-LCD-4B — Home v1
 
 First real OrcSDR Home screen on the 720x720 Waveshare. This is an IQ-only
