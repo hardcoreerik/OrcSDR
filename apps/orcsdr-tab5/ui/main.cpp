@@ -1722,6 +1722,14 @@ bool wifi_hosted_update_required = false;
 #if ORCSDR_ORCDIAL
 bool orcdial_transport_ready = false;
 bool orcdial_has_peer = false;
+// A Pair or Connect request that could not start the bridge because internal DMA RAM was too low (see orcdial_poll). Shown as the
+// failure text in Settings and in RTL_ORCDIAL_STATUS until the bridge starts.
+bool orcdial_memory_blocked = false;
+// Internal DMA RAM that must be free to start the bridge on request. The firmware's own budget check (RTL_DRAM_BUDGET) warns below
+// 20 KB; a freshly restarted Tab5 settles at about 20.8 KB free with the bridge off, so this is the lowest limit that still lets a
+// first pairing start after a restart. The bridge itself takes up to about 19 KB (22.5 KB to 3.7 KB measured at boot), so even at this
+// limit Wi-Fi is left tight: shrinking the bridge (stack size, tx task) is the remaining work, and needs a Dial to measure the peak.
+constexpr size_t kOrcDialOnDemandDmaNeed = 20u * 1024u;
 uint32_t orcdial_pair_until = 0;
 orc::secure::Runtime orcdial_secure;
 bool orcdial_secure_started=false;
@@ -12503,7 +12511,7 @@ const orcsdr::settings::State& global_settings_state() {
   state.orcdial_code=accessory.code;
   snprintf(state.orcdial_identity,sizeof state.orcdial_identity,"%02X%02X-%02X%02X",accessory.peer_identity[0],accessory.peer_identity[1],accessory.peer_identity[14],accessory.peer_identity[15]);
   strlcpy(state.orcdial_connection,orc::secure::state_name(accessory.state),sizeof state.orcdial_connection);
-  strlcpy(state.orcdial_failure,orc::secure::failure_name(accessory.failure),sizeof state.orcdial_failure);
+  strlcpy(state.orcdial_failure,orcdial_memory_blocked?"Low memory: restart to pair":orc::secure::failure_name(accessory.failure),sizeof state.orcdial_failure);
 #endif
   state.wifi_c6_image_embedded = c6_update.image_embedded;
   state.wifi_c6_update_percent = c6_update.progress_percent;
@@ -15877,6 +15885,18 @@ void orcdial_poll() {
     Serial.printf("ORCDIAL_BRIDGE_NOT_STARTED reason=no_pairing_and_no_request dma_free=%u dma_largest=%u\n",
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_DMA),(unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_DMA));
   }
+  if(orcdial_transport_ready)orcdial_memory_blocked=false;
+  if(!orcdial_transport_ready&&action_pending&&!stored_trust&&!boot_trust&&orcsdr::wifi::hosted_transport_ready()) {
+    // A request to pair or connect with no stored pairing (so the bridge is not already running from boot): start it only if Wi-Fi and
+    // the C6 link keep enough DMA RAM afterwards. If not, say so and drop the request; restarting OrcSDR restores the memory.
+    const size_t dma_free=heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_DMA);
+    if(dma_free<kOrcDialOnDemandDmaNeed) {
+      xQueueReset(orcdial_pending_actions);
+      orcdial_memory_blocked=true;
+      Serial.printf("RTL_ORCDIAL_ERROR low_dma_memory free=%u need=%u restart_to_pair\n",(unsigned)dma_free,(unsigned)kOrcDialOnDemandDmaNeed);
+      return;
+    }
+  }
   if(!orcdial_transport_ready&&bridge_wanted&&orcsdr::wifi::hosted_transport_ready()) {
     // The two frame queues hold 36 frames (about 24 KB). Allocated in internal RAM they took almost all of the internal DMA
     // memory the SD card and Wi-Fi need (largest DMA block 27 KB -> 3 KB at ORCDIAL_V4_BRIDGE_READY), so keep them in PSRAM.
@@ -19054,7 +19074,7 @@ void process_command(char* command) {
 #if ORCSDR_ORCDIAL
   if(!strcmp(command,"RTL_ORCDIAL_STATUS")||!strcmp(command,"RTL_ORCDIAL_PROBE")) {
     const auto state=orcdial_secure.status();
-    Serial.printf("RTL_ORCDIAL_STATUS bridge=%d trust=%d connection=%s boot=%d failure=%s protocol=4\n",orcdial_transport_ready,state.trusted,orc::secure::state_name(state.state),state.boot_connect,orc::secure::failure_name(state.failure));
+    Serial.printf("RTL_ORCDIAL_STATUS bridge=%d trust=%d connection=%s boot=%d failure=%s protocol=4\n",orcdial_transport_ready,state.trusted,orc::secure::state_name(state.state),state.boot_connect,orcdial_memory_blocked?"low_memory":orc::secure::failure_name(state.failure));
     if(authenticated && state.state==orc::secure::State::verify)Serial.printf("RTL_ORCDIAL_PAIR_CODE %06lu\n",(unsigned long)state.code);
     return;
   }
