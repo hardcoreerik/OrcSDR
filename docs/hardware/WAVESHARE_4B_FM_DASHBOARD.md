@@ -72,3 +72,10 @@ The current Waveshare radio_task only exposes requested/applied Hz, effective SP
 Correct next engineering steps are to extract the tested WFM demodulator, MPX/stereo and RDS/audio paths as reusable core modules, pass truthful state snapshots to the 4B UI, and separately prove USB, CPU/PSRAM and audio-out routing at the required sample rates. Tab5 documentation reports 2.40 MS/s RF acquisition, 240 kS/s FM MPX and 48 kHz audio; the 4B has only qualified a 960 kS/s IQ stream so far. Do not raise RF rate or claim FM audio parity without measurements.
 
 **Branch isolation:** Parent Waveshare Home branch may advance in a local Codex session. Reconcile those changes before integrating this feature branch; do not overwrite local work or merge FM while Home visual acceptance is unresolved.
+
+## Native build evidence and firmware headroom
+
+First integrated five-tab FM prototype on commit f1372925f7771a56162168265a85b653f1bdbd02 passed the ESP-IDF 5.5.4 native-build GitHub Actions job: https://github.com/hardcoreerik/OrcSDR/actions/runs/38683818352 .
+Compiler output: orcsdr_waveshare_4b_probe.bin 0xD4B60 bytes (871264 decimal), smallest app partition 0x100000 bytes, 0x2B4A0 bytes (177312 decimal, 17%) remaining.
+This proves a compilable IQ-only FM shell, NOT physical FM acceptance. Later commits add range limiting, uptime, honest health N/A and palette interactions; verify their exact SHA/build separately.
+**Capacity risk:** 1 MiB app partition now has only about 17% space left. Before porting full WFM demodulation/RDS/audio, evaluate larger board-safe app partition design and flash/OTA migration implications. Do not erase NVS or write new partitions without explicit approval and backup.
