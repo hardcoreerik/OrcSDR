@@ -29,12 +29,20 @@ void HomeLvgl::destroy(){
   // UI thread only. Caller waits for in-flight LVGL flushes before teardown.
   if(root_)lv_obj_delete(root_);
   root_=nullptr;
+  // All child pointers are owned by root_. A shape/profile switch can omit
+  // status or other widgets, so leaving old pointers here is use-after-free.
+  title_=nullptr;
+  status_=nullptr;
+  frequency_=nullptr;
+  spectrum_panel_=nullptr;
+  waterfall_panel_=nullptr;
   if(spectrum_pixels_)lv_free(spectrum_pixels_);
   if(waterfall_pixels_)lv_free(waterfall_pixels_);
   spectrum_pixels_=nullptr; waterfall_pixels_=nullptr;
   spectrum_canvas_=nullptr; waterfall_canvas_=nullptr;
   parent_=nullptr; menu_=nullptr; spectrum_stride_=waterfall_stride_=0;
   button_count_=0;
+  layout_={};
   last_frequency_label_[0]=0;
   last_status_label_[0]=0;
 }
