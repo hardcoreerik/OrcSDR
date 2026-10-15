@@ -40,5 +40,7 @@ endif()
 include(CTest)
 if(BUILD_TESTING)
   add_test(NAME desktop_sdl_smoke COMMAND orcui_desktop --preset waveshare --seconds 2)
-  set_tests_properties(desktop_sdl_smoke PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 15)
+  add_test(NAME desktop_sdl_multi_preset COMMAND orcui_desktop --preset waveshare --seconds 4 --cycle-ms 500)
+  set_tests_properties(desktop_sdl_smoke desktop_sdl_multi_preset PROPERTIES
+    ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 20)
 endif()
