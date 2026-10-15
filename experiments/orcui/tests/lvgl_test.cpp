@@ -76,8 +76,8 @@ int main(){
    HomeData sample{};sample.frequency_hz=96100000;sample.applied_hz=96100000;
    sample.radio_ready=true;sample.effective_sps=960000;sample.mode="IQ TEST";
    home.update(sample);lv_refr_now(display);
-   const int badge_n=std::min(g.menu_toggle.w,g.menu_toggle.h)-4;
-   CHECK(badge_n==96); // Twice the accepted 48px adaptive badge, without clipping.
+   const int badge_n=std::min(72,std::min(g.menu_toggle.w,g.menu_toggle.h)-4);
+   CHECK(badge_n==72);
    const int bx=g.menu_toggle.x+(g.menu_toggle.w-badge_n)/2;
    const int by=g.menu_toggle.y+(g.menu_toggle.h-badge_n)/2;
    unsigned green=0,red=0;

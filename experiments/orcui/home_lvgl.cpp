@@ -117,7 +117,7 @@ bool HomeLvgl::create(lv_obj_t* parent,const Display& display,ActionSink sink,vo
   lv_label_set_long_mode(brand,LV_LABEL_LONG_CLIP);
   add_button(root_,layout_.menu_toggle,options_.badge_le565?"":"MENU",HomeCommand::open_menu,0);
   if(options_.badge_le565 && options_.badge_size>0) {
-    const int n=std::min(layout_.menu_toggle.w,layout_.menu_toggle.h)-4;
+    const int n=std::min(72,std::min(layout_.menu_toggle.w,layout_.menu_toggle.h)-4);
     const size_t stride=lv_draw_buf_width_to_stride(n,LV_COLOR_FORMAT_RGB565);
     badge_pixels_=options_.allocate?options_.allocate(stride*n):lv_malloc(stride*n);
     if(!badge_pixels_){destroy();return false;}
