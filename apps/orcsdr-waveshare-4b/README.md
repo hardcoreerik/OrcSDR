@@ -166,3 +166,21 @@ See docs/hardware/WAVESHARE_4B_SCREEN_GATES.md.
 Owner-approved correction/cue image is now flashed and booted on COM40. A 45.06-second IQ smoke check passed at zero drops. Correct green badge, MENU cue/state feedback and header-target operation remain pending owner review; see the latest screen-gate entry for logs and initial enumeration recovery.
 
 Owner has confirmed the green badge and MENU cue, including both tap targets and open/closed indication, on the flashed correction/cue image. This closes those specific visual/touch findings; remaining full Home qualification is tracked in the screen-gate ledger.
+
+### Starter-layout integration (source, physical validation pending)
+
+The owner's 720 LVGL starter is now used as a visual layout reference: dedicated
+hamburger, larger brand/frequency typography, full-width plots and grouped
+controls. Our working hiding drawer, real badge, exact palettes, IQ renderer
+and controller-owned radio state are retained. Unsupported controls stay disabled;
+no placeholder logo, optimistic radio settings, fake battery or dBFS calibration.
+Both the hamburger and badge/header open the same modal drawer.
+
+Build this revision in a fresh directory so the added font defaults apply:
+
+    idf.py -B build-4b-home-starter -D IDF_TARGET=esp32p4 -D SDKCONFIG=build-4b-home-starter/sdkconfig -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.rev1_x" build
+
+Existing image/device acceptance applies to the preceding layout until this
+new image is separately flashed and physically reviewed.
+
+Local starter-layout rev1.x build passed (990,368 bytes, 6% app-slot space free). Geometry/state and font-width checks passed. Source/firmware evidence is in the screen ledger. This new image is not flashed or physically accepted; retain final flash approval and UI/RF regression gates.

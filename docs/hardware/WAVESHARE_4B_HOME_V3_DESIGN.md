@@ -203,3 +203,35 @@ Owner-approved image is now flashed and booted on COM40, with PSRAM memory test 
 ### Owner confirmation
 
 Owner now confirms the corrected green badge, visible MENU cue, both badge and OrcSDR/HOME tap targets, and open/closed cue changes on the flashed image. Badge/menu correction accepted; remaining RF/tuning and full Home acceptance boundaries are tracked separately in the screen-gate ledger.
+
+## Starter visual layout integration, 2026-10-14
+
+Owner requested integration after reviewing `OrcSDR_Waveshare_720_LVGL9_starter.zip`,
+with the existing hiding dashboard drawer retained. Archive SHA-256:
+`7313f1ee4d5ed1b5bd80019def16c89140638a6040c22accdca8f5051eac9aa9`.
+The supplied C prototype is a visual/geometry reference, not a replacement
+radio controller or an imported component.
+
+- Header: framed 704x83 region, explicit 44x48 hamburger, original green badge,
+  larger OrcSDR title, retained MENU hint and brand/badge tap targets. Home
+  header action dismisses the drawer; audio, VIS and settings stay disabled.
+- Spectrum plot 680x166; waterfall 680x108; both remain full width beneath the
+  modal drawer. Existing IQ canvases, exact source palettes and little-endian
+  badge decoding are retained. Plot headings use the built-in pixel font;
+  frequency uses 40px font, brand 28px and primary values 20px.
+- Large six-decimal MHz readout; grouped IQ-only mode, selected STEP and tune
+  arrows. Lower row groups fixed span, STEP, palette and unavailable filter/gain.
+  Both STEP readouts come from the same radio snapshot and send the same
+  existing command. Tune arrows use clamped controller requests; no UI-owned
+  frequency/mode/gain simulation is copied from the starter.
+- Original drawer model/callbacks retained: closed on boot, full overlay with
+  outside dismissal shield, HOME dismissal, disabled unported routes, no plot
+  relocation/reallocation on menu toggle. New hamburger invokes that same path.
+- Footer uses actual receiver/rate/drop/uptime snapshots, not hardcoded RTL V4,
+  bandwidth, gain or bias claims. No battery percentage without telemetry.
+  Spectrum remains explicitly relative FFT; no fabricated calibrated dBFS axis.
+- Existing native geometry/state test updated for the new rectangles and
+  passed with strict g++ flags. Font-advance checks cover the maximum supported
+  frequency, title and largest STEP. This is not physical screenshot acceptance.
+
+The starter-layout native rev1.x build passed: 990,368-byte app, 6% of the existing app slot free, 200MHz PSRAM configuration, original badge/palette and new font symbols verified. Geometry/state and font-width checks passed. Full image/source hashes are in the screen ledger. Not flashed or visually accepted yet.

@@ -20,6 +20,7 @@ QueueHandle_t queue=nullptr;
 Navigation nav{};
 lv_obj_t *drawer=nullptr,*shade=nullptr,*scope=nullptr,*waterfall=nullptr;
 lv_obj_t *menu_hint=nullptr;
+lv_obj_t *primary_step_text=nullptr,*frequency_title=nullptr;
 lv_obj_t *freq=nullptr,*status=nullptr,*metrics=nullptr,*usb=nullptr,*uptime=nullptr,*step_text=nullptr,*palette_text=nullptr;
 uint16_t *scope_data=nullptr,*waterfall_data=nullptr,*badge_data=nullptr;
 bool had_rf=false;
@@ -34,11 +35,13 @@ lv_obj_t* frame(lv_obj_t* root,Rect r,uint16_t face=PANEL){
  lv_obj_remove_flag(o,LV_OBJ_FLAG_SCROLLABLE);
  return o;
 }
-lv_obj_t* caption(lv_obj_t* root,Rect r,const char* value,uint16_t c,bool center=false){
+lv_obj_t* caption(lv_obj_t* root,Rect r,const char* value,uint16_t c,bool center=false,
+                  const lv_font_t* font=LV_FONT_DEFAULT){
  auto* o=lv_label_create(root);
  lv_obj_set_pos(o,r.x,r.y);lv_obj_set_size(o,r.w,r.h);
  lv_label_set_text(o,value);lv_label_set_long_mode(o,LV_LABEL_LONG_CLIP);
  lv_obj_set_style_text_color(o,lv_color_hex(rgb(c)),0);
+ lv_obj_set_style_text_font(o,font,0);
  if(center)lv_obj_set_style_text_align(o,LV_TEXT_ALIGN_CENTER,0);
  return o;
 }
@@ -75,6 +78,14 @@ lv_obj_t* button(lv_obj_t* root,Rect r,const char* name,Command cmd,bool enabled
  if(enabled)lv_obj_add_event_cb(o,on_command,LV_EVENT_CLICKED,
    reinterpret_cast<void*>(static_cast<intptr_t>(cmd)));
  else lv_obj_add_state(o,LV_STATE_DISABLED);
+ return o;
+}
+lv_obj_t* value_button(lv_obj_t* root,Rect r,const char* title,const char* value,
+                      Command cmd,bool enabled,lv_obj_t** value_text=nullptr){
+ auto* o=button(root,r,title,cmd,enabled);
+ lv_obj_set_y(lv_obj_get_child(o,0),r.h>=65?8:2);
+ auto* v=caption(o,{2,r.h>=65?35:25,r.w-4,22},value,enabled?GREEN:DIM,true,&lv_font_montserrat_20);
+ if(value_text)*value_text=v;
  return o;
 }
 bool make_canvas(lv_obj_t* root,Rect r,lv_obj_t** o,uint16_t** px){
@@ -162,60 +173,78 @@ bool create(QueueHandle_t q){
  auto* screen=lv_screen_active();
  lv_obj_set_style_bg_color(screen,lv_color_hex(0),0);
  lv_obj_remove_flag(screen,LV_OBJ_FLAG_SCROLLABLE);
- frame(screen,kSpectrumPanel);caption(screen,{26,96,590,23},"SPECTRUM / RELATIVE FFT",CYAN);
- frame(screen,kWaterfallPanel);caption(screen,{26,290,590,23},"WATERFALL / LIVE IQ",CYAN);
+ frame(screen,kHeaderPanel);
+ frame(screen,kSpectrumPanel);caption(screen,{20,108,430,24},"SPECTRUM / RELATIVE FFT",CYAN,false,&lv_font_unscii_16);
+ caption(screen,{552,111,146,20},"960 kHz IQ",GREEN,true);
+ frame(screen,kWaterfallPanel);caption(screen,{20,339,430,24},"WATERFALL / LIVE IQ",CYAN,false,&lv_font_unscii_16);
  frame(screen,kReadoutPanel);frame(screen,kControlsPanel);frame(screen,kFooter);
  if(!make_canvas(screen,kSpectrumPlot,&scope,&scope_data)||
     !make_canvas(screen,kWaterfallPlot,&waterfall,&waterfall_data))return false;
- freq=caption(screen,kFrequencyTouch,"96.100 MHz (TARGET)",GREEN);
- button(screen,kMode,"IQ ONLY",Command::FM,false);
- button(screen,kFilter,"FILTER --",Command::FM,false);
- button(screen,kSpan,"SPAN 960K",Command::FM,false);
- auto* step=button(screen,kStep,"STEP",Command::Step,true);
- lv_obj_set_y(lv_obj_get_child(step,0),2);
- step_text=caption(step,{2,25,kStep.w-4,17},"12500 Hz",CYAN,true);
- button(screen,kTuneDown,"TUNE -",Command::Down,true);
- button(screen,kTuneUp,"TUNE +",Command::Up,true);
- button(screen,kGain,"GAIN (soon)",Command::FM,false);
- button(screen,kBias,"BIAS (soon)",Command::FM,false);
- auto* p=frame(screen,kPalette);lv_obj_add_flag(p,LV_OBJ_FLAG_CLICKABLE);
- caption(p,{2,2,kPalette.w-4,18},"PALETTE",CYAN,true);
- palette_text=caption(p,{2,23,kPalette.w-4,19},"CLASSIC",GREEN,true);
+ frequency_title=caption(screen,{20,498,326,22},"FREQUENCY MHz / TARGET",CYAN);
+ freq=caption(screen,kFrequencyTouch,"96.100000",GREEN,false,&lv_font_montserrat_40);
+ value_button(screen,kMode,"MODE","IQ ONLY",Command::FM,false);
+ value_button(screen,kPrimaryStep,"STEP","12500 Hz",Command::Step,true,&primary_step_text);
+ auto* down=button(screen,kTuneDown,"<",Command::Down,true);
+ auto* up=button(screen,kTuneUp,">",Command::Up,true);
+ for(auto* arrow:{down,up}){
+  auto* text=lv_obj_get_child(arrow,0);
+  lv_obj_set_style_text_font(text,&lv_font_montserrat_28,0);
+  lv_obj_set_height(text,34);lv_obj_set_y(text,12);
+ }
+ value_button(screen,kSpan,"SPAN","960 kHz",Command::FM,false);
+ value_button(screen,kStep,"STEP","12500 Hz",Command::Step,true,&step_text);
+ auto* p=value_button(screen,kPalette,"PALETTE","CLASSIC",Command::FM,true,&palette_text);
  lv_obj_add_event_cb(p,on_palette,LV_EVENT_CLICKED,nullptr);
- button(screen,kMore,"MORE (soon)",Command::FM,false);
- status=caption(screen,{24,682,275,20},"NO SDR",CYAN);
- metrics=caption(screen,{307,682,380,20},"0 kS/s  drops 0  IQ ONLY",GREEN,true);
- auto* brand=caption(screen,kBrand,"OrcSDR\nHOME",0xffff);
+ value_button(screen,kFilter,"FILTER","--",Command::FM,false);
+ value_button(screen,kGain,"GAIN","--",Command::FM,false);
+ status=caption(screen,{18,679,154,22},"NO SDR",CYAN);
+ metrics=caption(screen,{176,679,340,22},"0 kS/s  drops 0",GREEN,true);
+ uptime=caption(screen,{526,679,76,22},"UP 0m",CYAN,true,LV_FONT_DEFAULT);
+ caption(screen,{608,679,92,22},"IQ ONLY",DIM,true);
+ auto* brand=frame(screen,kBrand,0);
+ lv_obj_set_style_border_width(brand,0,0);
  lv_obj_add_flag(brand,LV_OBJ_FLAG_CLICKABLE);
  lv_obj_add_event_cb(brand,on_badge,LV_EVENT_CLICKED,nullptr);
- menu_hint=caption(brand,{0,42,kBrand.w,22},"MENU >",CYAN);
+ caption(brand,{0,0,kBrand.w,32},"OrcSDR",0xffff,false,&lv_font_montserrat_28);
+ caption(brand,{0,32,kBrand.w,20},"HOME",CYAN,false,&lv_font_unscii_16);
+ menu_hint=caption(brand,{0,53,kBrand.w,14},"MENU >",CYAN,false,LV_FONT_DEFAULT);
  frame(screen,kHeaderStatus);
- caption(screen,{254,18,70,47},"Wi-Fi\nOFFLINE",DIM);
- usb=caption(screen,{329,18,90,47},"RTL-SDR\nNO SDR",DIM);
- uptime=caption(screen,{425,18,65,47},"UPTIME\n0m",CYAN);
- button(screen,kHeaderHome,"H",Command::FM,false);
- button(screen,kHeaderMute,"M",Command::FM,false);
- button(screen,kHeaderVisualizer,"VIS",Command::FM,false);
- button(screen,kHeaderSettings,"SET",Command::FM,false);
+ caption(screen,{302,27,82,46},"Wi-Fi\nOFFLINE",DIM,false,LV_FONT_DEFAULT);
+ usb=caption(screen,{390,27,82,46},"RTL-SDR\nNO SDR",DIM,false,LV_FONT_DEFAULT);
+ auto* home=button(screen,kHeaderHome,LV_SYMBOL_HOME,Command::FM,true);
+ lv_obj_add_event_cb(home,on_home,LV_EVENT_CLICKED,nullptr);
+ auto* mute=button(screen,kHeaderMute,LV_SYMBOL_VOLUME_MAX,Command::FM,false);
+ auto* vis=button(screen,kHeaderVisualizer,"VIS",Command::FM,false);
+ auto* settings=button(screen,kHeaderSettings,LV_SYMBOL_SETTINGS,Command::FM,false);
+ for(auto* header:{home,mute,vis,settings})
+  lv_obj_set_style_text_font(lv_obj_get_child(header,0),&lv_font_montserrat_20,0);
  make_drawer(screen);make_badge(screen);
- ESP_LOGI(TAG,"HOME_4B v3 original OrcSDR badge/palette, navigation, 668px IQ plot");
+ auto* menu=frame(screen,kMenuHit,0);lv_obj_add_flag(menu,LV_OBJ_FLAG_CLICKABLE);
+ lv_obj_add_event_cb(menu,on_badge,LV_EVENT_CLICKED,nullptr);
+ for(int i=0;i<3;++i){
+  auto* bar=frame(menu,{10,12+i*10,24,3},CYAN);
+  lv_obj_set_style_border_width(bar,0,0);lv_obj_set_style_radius(bar,0,0);
+  lv_obj_remove_flag(bar,LV_OBJ_FLAG_CLICKABLE);
+ }
+ ESP_LOGI(TAG,"HOME_4B starter layout, original badge/palettes, hiding drawer, 680px IQ plot");
  return true;
 }
 void update(const Snapshot& s,const uint8_t* bins,bool fresh){
  char value[100];
  uint32_t hz=s.applied_hz?s.applied_hz:s.requested_hz;
- snprintf(value,sizeof(value),"%u.%06u MHz%s",unsigned(hz/1000000),
-    unsigned(hz%1000000),s.applied_hz?"":" (TARGET)");
+ snprintf(value,sizeof(value),"%u.%06u",unsigned(hz/1000000),unsigned(hz%1000000));
  lv_label_set_text(freq,value);
+ lv_label_set_text(frequency_title,s.applied_hz?"FREQUENCY MHz":"FREQUENCY MHz / TARGET");
  snprintf(value,sizeof(value),"%u Hz",unsigned(s.step_hz));
  lv_label_set_text(step_text,value);
+ lv_label_set_text(primary_step_text,value);
  const char* name=s.receiver_state==2?"RECEIVING IQ":s.receiver_state==1?"SEARCHING USB":
    s.receiver_state==3?"USB ERROR":"NO SDR";
  lv_label_set_text(status,name);
  lv_label_set_text(usb,s.receiver_state==2?"RTL-SDR\nIQ ACTIVE":"RTL-SDR\nNO SDR");
- snprintf(value,sizeof(value),"%u kS/s  drops %u  IQ ONLY",unsigned(s.effective_sps/1000),unsigned(s.drops));
+ snprintf(value,sizeof(value),"%u kS/s  drops %u",unsigned(s.effective_sps/1000),unsigned(s.drops));
  lv_label_set_text(metrics,value);
- snprintf(value,sizeof(value),"UPTIME\n%um",unsigned(s.uptime_sec/60));
+ snprintf(value,sizeof(value),"UP %um",unsigned(s.uptime_sec/60));
  lv_label_set_text(uptime,value);
  if(s.receiver_state!=2){
   if(had_rf){zero_plots();had_rf=false;}

@@ -4,10 +4,13 @@
 using namespace orcsdr::waveshare4b::home_v3;
 int main(){
   static_assert(valid());
-  assert(kSpectrumPlot.w==668 && kWaterfallPlot.w==668);
-  assert(kDrawer.w==286 && kBackdrop.w==406);
+  assert(kSpectrumPlot.w==680 && kWaterfallPlot.w==680);
+  assert(kDrawer.w==286 && kBackdrop.w==418);
   assert(kHeaderHome.disjoint(kDrawer)&&kFooter.disjoint(kDrawer));
   for(const auto& r:kNavItems)assert(kDrawer.contains(r));
+  assert(kHeaderPanel.contains(kMenuHit) && kHeaderPanel.contains(kBadgeHit));
+  assert(kReadoutPanel.contains(kPrimaryStep));
+  assert(kControlsPanel.contains(kPalette));
   Navigation nav{};
   assert(!nav.open && nav.main_content_interactive() && !nav.outside_hit(500,300));
   nav.apply(NavAction::badge_tap);

@@ -17,45 +17,46 @@ struct Rect {
     return px>=x && py>=y && px<x+w && py<y+h;
   }
 };
-constexpr Rect kBadgeHit{14,10,64,67};
-constexpr Rect kBrand{86,10,155,67};
-constexpr Rect kHeaderStatus{246,10,250,67};
-constexpr Rect kHeaderHome{503,18,46,51};
-constexpr Rect kHeaderMute{555,18,46,51};
-constexpr Rect kHeaderVisualizer{607,18,46,51};
-constexpr Rect kHeaderSettings{659,18,47,51};
-constexpr Rect kSpectrumPanel{14,88,692,185};
-constexpr Rect kSpectrumPlot{26,119,668,142};
-constexpr Rect kWaterfallPanel{14,282,692,185};
-constexpr Rect kWaterfallPlot{26,314,668,141};
-constexpr Rect kReadoutPanel{14,476,692,73};
-constexpr Rect kFrequencyTouch{22,496,425,46};
-constexpr Rect kMode{455,498,117,44};
-constexpr Rect kFilter{579,498,118,44};
-constexpr Rect kControlsPanel{14,559,692,107};
-constexpr Rect kSpan{22,565,161,44};
-constexpr Rect kStep{192,565,161,44};
-constexpr Rect kTuneDown{362,565,161,44};
-constexpr Rect kTuneUp{532,565,166,44};
-constexpr Rect kGain{22,615,161,44};
-constexpr Rect kBias{192,615,161,44};
-constexpr Rect kPalette{362,615,161,44};
-constexpr Rect kMore{532,615,166,44};
-constexpr Rect kFooter{14,674,692,37};
+constexpr Rect kHeaderPanel{8,8,704,83};
+constexpr Rect kMenuHit{16,26,44,48};
+constexpr Rect kPrimaryStep{456,501,126,70};
+constexpr Rect kBadgeHit{68,18,64,67};
+constexpr Rect kBrand{140,17,146,67};
+constexpr Rect kHeaderStatus{294,18,184,65};
+constexpr Rect kHeaderHome{486,25,48,51};
+constexpr Rect kHeaderMute{540,25,48,51};
+constexpr Rect kHeaderVisualizer{594,25,48,51};
+constexpr Rect kHeaderSettings{648,25,54,51};
+constexpr Rect kSpectrumPanel{8,101,704,223};
+constexpr Rect kSpectrumPlot{20,143,680,166};
+constexpr Rect kWaterfallPanel{8,332,704,149};
+constexpr Rect kWaterfallPlot{20,364,680,108};
+constexpr Rect kReadoutPanel{8,489,704,95};
+constexpr Rect kFrequencyTouch{20,526,326,50};
+constexpr Rect kMode{354,501,94,70};
+constexpr Rect kFilter{540,600,78,49};
+constexpr Rect kControlsPanel{8,592,704,65};
+constexpr Rect kSpan{16,600,170,49};
+constexpr Rect kStep{194,600,170,49};
+constexpr Rect kTuneDown{590,512,50,58};
+constexpr Rect kTuneUp{648,512,50,58};
+constexpr Rect kGain{626,600,78,49};
+constexpr Rect kPalette{372,600,160,49};
+constexpr Rect kFooter{8,665,704,47};
 // Drawer overlays the radio view; no plot move/re-allocation while open.
-constexpr Rect kDrawer{14,88,286,578};
-constexpr Rect kBackdrop{300,88,406,578};
-constexpr Rect kNavHome{27,130,260,49};
-constexpr Rect kNavP25{27,188,260,49};
-constexpr Rect kNavAm{27,246,260,49};
-constexpr Rect kNavSettings{27,304,260,49};
-constexpr Rect kNavRfLab{27,362,260,49};
-constexpr Rect kNavFm{27,420,260,49};
-constexpr Rect kNavAdsb{27,478,260,49};
-constexpr Rect kNavAll{27,597,260,56};
-constexpr Rect kBasePanels[]={kSpectrumPanel,kWaterfallPanel,kReadoutPanel,kControlsPanel,kFooter};
-constexpr Rect kControls[]={kBadgeHit,kBrand,kHeaderHome,kHeaderMute,kHeaderVisualizer,kHeaderSettings,
- kFrequencyTouch,kMode,kFilter,kSpan,kStep,kTuneDown,kTuneUp,kGain,kBias,kPalette,kMore};
+constexpr Rect kDrawer{8,101,286,556};
+constexpr Rect kBackdrop{294,101,418,556};
+constexpr Rect kNavHome{20,143,262,49};
+constexpr Rect kNavP25{20,201,262,49};
+constexpr Rect kNavAm{20,259,262,49};
+constexpr Rect kNavSettings{20,317,262,49};
+constexpr Rect kNavRfLab{20,375,262,49};
+constexpr Rect kNavFm{20,433,262,49};
+constexpr Rect kNavAdsb{20,491,262,49};
+constexpr Rect kNavAll{20,597,262,52};
+constexpr Rect kBasePanels[]={kHeaderPanel,kSpectrumPanel,kWaterfallPanel,kReadoutPanel,kControlsPanel,kFooter};
+constexpr Rect kControls[]={kMenuHit,kBadgeHit,kBrand,kHeaderHome,kHeaderMute,kHeaderVisualizer,kHeaderSettings,
+ kFrequencyTouch,kMode,kPrimaryStep,kFilter,kSpan,kStep,kTuneDown,kTuneUp,kGain,kPalette};
 constexpr Rect kNavItems[]={kNavHome,kNavP25,kNavAm,kNavSettings,kNavRfLab,kNavFm,kNavAdsb,kNavAll};
 constexpr bool valid() {
   if(!kBrand.inside()||!kHeaderStatus.inside()||!kDrawer.inside()||
@@ -63,9 +64,9 @@ constexpr bool valid() {
   for(auto r:kBasePanels)if(!r.inside())return false;
   if(!kSpectrumPanel.contains(kSpectrumPlot)||!kWaterfallPanel.contains(kWaterfallPlot)||
      !kReadoutPanel.contains(kFrequencyTouch)||!kReadoutPanel.contains(kMode)||
-     !kReadoutPanel.contains(kFilter))return false;
+     !kReadoutPanel.contains(kPrimaryStep)||!kReadoutPanel.contains(kTuneDown)||!kReadoutPanel.contains(kTuneUp))return false;
   for(auto r:kControls)if(!r.inside()||r.w<44||r.h<44)return false;
-  for(auto r:{kSpan,kStep,kTuneDown,kTuneUp,kGain,kBias,kPalette,kMore})
+  for(auto r:{kSpan,kStep,kGain,kFilter,kPalette})
      if(!kControlsPanel.contains(r))return false;
   for(auto r:kNavItems)if(!r.inside()||!kDrawer.contains(r)||r.w<44||r.h<44)return false;
   for(unsigned i=0;i<sizeof(kBasePanels)/sizeof(Rect);++i)
@@ -77,7 +78,7 @@ constexpr bool valid() {
   for(unsigned i=0;i<sizeof(kNavItems)/sizeof(Rect);++i)
     for(unsigned j=i+1;j<sizeof(kNavItems)/sizeof(Rect);++j)
       if(!kNavItems[i].disjoint(kNavItems[j]))return false;
-  return kBadgeHit.disjoint(kDrawer)&&kHeaderStatus.disjoint(kDrawer)&&
+  return kMenuHit.disjoint(kDrawer)&&kBrand.disjoint(kDrawer)&&kBadgeHit.disjoint(kDrawer)&&kHeaderStatus.disjoint(kDrawer)&&
      kHeaderHome.disjoint(kDrawer)&&kHeaderVisualizer.disjoint(kDrawer)&&
      kFooter.disjoint(kDrawer)&&kFooter.disjoint(kBackdrop);
 }
