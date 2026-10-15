@@ -47,6 +47,7 @@ constexpr Rect kSettingsRadio{20,175,330,440};
 constexpr Rect kSettingsAudio{362,175,338,440};
 constexpr uint32_t kMinHz=76000000,kMaxHz=108000000;
 constexpr bool in_fm_band(uint32_t hz){return hz>=kMinHz&&hz<=kMaxHz;}
+constexpr uint32_t clamp_fm_hz(uint32_t hz){return hz<kMinHz?kMinHz:(hz>kMaxHz?kMaxHz:hz);}
 struct Features {
  bool iq=false,demod=false,stereo=false,rds=false,audio=false,record=false,presets=false;
  constexpr bool valid() const {return (!rds||demod)&&(!stereo||demod)&&(!audio||demod)&&(!record||audio);}

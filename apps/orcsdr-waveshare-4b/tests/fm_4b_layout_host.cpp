@@ -20,6 +20,9 @@ int main(){
  assert(!m.can_show_audio()&&!m.can_show_rds()&&!m.can_record());
  assert(!in_fm_band(75100000));assert(in_fm_band(76100000));
  assert(in_fm_band(108000000));assert(!in_fm_band(108100000));
+ assert(clamp_fm_hz(75000000)==kMinHz);
+ assert(clamp_fm_hz(110000000)==kMaxHz);
+ assert(clamp_fm_hz(96100000)==96100000);
  Features incoherent{true,false,false,true,false,false,false};
  assert(!incoherent.valid());
  std::puts("FM_4B_TABS PASS: 5 distinct tabs, geometry, hitboxes, capabilities");

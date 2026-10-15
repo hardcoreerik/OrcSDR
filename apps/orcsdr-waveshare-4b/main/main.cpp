@@ -25,6 +25,7 @@ static constexpr uint32_t kRate=960000;
 static QueueHandle_t queue=nullptr;
 static std::atomic<uint32_t> requested{kDefaultHz},applied{0},sps{0},drops{0},step_idx{2};
 static std::atomic<int> state{0};
+static std::atomic<bool> fm_tune_limit{false};
 static portMUX_TYPE bands_lock=portMUX_INITIALIZER_UNLOCKED;
 static uint8_t bands[kFftSize]{};
 static uint32_t band_seq=0,rendered_seq=0;
@@ -43,13 +44,14 @@ static void ui_timer(lv_timer_t*) {
 }
 static void open_fm_preview() {
  // UI task owns view transition; radio task remains the only tuner owner.
+ fm_tune_limit.store(true);
  fm::open();
  if(!fm::in_fm_band(requested.load())&&queue){
    const home_v3::Command cmd=home_v3::Command::FM;
    (void)xQueueSend(queue,&cmd,0);
  }
 }
-static void return_from_fm() {fm::close();}
+static void return_from_fm() {fm_tune_limit.store(false);fm::close();}
 static bool home_start() {
  if(!bsp_display_lock(3000))return false;
  home_v3::set_fm_open_callback(open_fm_preview);
@@ -89,6 +91,7 @@ static void radio_task(void*) {
         case home_v3::Command::Ham:next=145120000;break;
         default:break;
       }
+      if(fm_tune_limit.load())next=fm::clamp_fm_hz(next);
       requested=next;
       ESP_LOGI(TAG,"HOME_4B TUNE requested_hz=%u streaming=%d",unsigned(next),int(streaming));
       if(streaming){
