@@ -125,6 +125,7 @@ void usage(const char* cmd){
 }
 int main(int argc,char** argv){
  int seconds=0,cycle_ms=0;
+ const char* screenshot=nullptr;
  for(int i=1;i<argc;++i){
   if(!std::strcmp(argv[i],"--help")){usage(argv[0]);return 0;}
   if(!std::strcmp(argv[i],"--preset") && i+1<argc){
@@ -137,6 +138,7 @@ int main(int argc,char** argv){
   }else if(!std::strcmp(argv[i],"--cycle-ms") && i+1<argc){
     cycle_ms=std::atoi(argv[++i]);if(cycle_ms<100)return 2;
   }else if(!std::strcmp(argv[i],"--paused"))paused=true;
+  else if(!std::strcmp(argv[i],"--screenshot") && i+1<argc) screenshot=argv[++i];
   else {usage(argv[0]);return 2;}
  }
  lv_init();
@@ -177,6 +179,26 @@ int main(int argc,char** argv){
   }
   if(seconds>0 && now-start>=std::chrono::seconds(seconds))break;
   std::this_thread::sleep_for(std::chrono::milliseconds(5));
+ }
+ // Optional screenshot of the actual rendered LVGL+SDL window.
+ // SDL captures are read back before destroying display objects.
+ if(screenshot){
+  lv_timer_handler();
+  auto* renderer=static_cast<SDL_Renderer*>(lv_sdl_window_get_renderer(display));
+  SDL_Surface* shot=SDL_CreateRGBSurfaceWithFormat(0,
+      lv_display_get_horizontal_resolution(display),
+      lv_display_get_vertical_resolution(display),
+      32,SDL_PIXELFORMAT_ARGB8888);
+  if(!renderer || !shot ||
+     SDL_RenderReadPixels(renderer,nullptr,SDL_PIXELFORMAT_ARGB8888,
+                          shot->pixels,shot->pitch)!=0 ||
+     SDL_SaveBMP(shot,screenshot)!=0){
+    std::fprintf(stderr,"OrcUI screenshot failed: %s\n",SDL_GetError());
+    if(shot)SDL_FreeSurface(shot);
+    home.destroy();lv_deinit();return 1;
+  }
+  std::printf("orcui_screenshot=%s\n",screenshot);
+  SDL_FreeSurface(shot);
  }
  home.destroy();lv_deinit();return 0;
 }
