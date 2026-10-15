@@ -45,7 +45,24 @@ jobs:
           SDL_AUDIODRIVER: dummy
         run: |
           ctest --test-dir build-orcui-desktop --output-on-failure
-          build-orcui-desktop/orcui_desktop --preset round480 --seconds 2 --cycle-ms 600
+          mkdir -p build-orcui-desktop/screenshots
+          build-orcui-desktop/orcui_desktop --preset waveshare --seconds 2 --screenshot build-orcui-desktop/screenshots/waveshare.bmp
+          build-orcui-desktop/orcui_desktop --preset tab5 --seconds 2 --screenshot build-orcui-desktop/screenshots/tab5.bmp
+          build-orcui-desktop/orcui_desktop --preset round480 --seconds 2 --screenshot build-orcui-desktop/screenshots/round480.bmp
+          build-orcui-desktop/orcui_desktop --preset ultrawide --seconds 2 --screenshot build-orcui-desktop/screenshots/ultrawide.bmp
+          python3 - <<'PY'
+          import pathlib, struct
+          folder = pathlib.Path("build-orcui-desktop/screenshots")
+          expected = {"waveshare": (720,720), "tab5": (1088,612),
+                      "round480":(480,480),"ultrawide":(1280,360)}
+          for profile,(w,h) in expected.items():
+              data=(folder/(profile+".bmp")).read_bytes()
+              assert data[:2] == b"BM", profile
+              actual=struct.unpack_from("<ii",data,18)
+              print(profile, actual, len(data))
+              assert actual == (w,h), (profile,actual)
+              assert len(data) > 2000, profile
+          PY
       - name: Store logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -53,4 +70,5 @@ jobs:
           name: orcui-desktop-logs
           path: |
             build-orcui-desktop/Testing/Temporary/LastTest.log
+            build-orcui-desktop/screenshots/*.bmp
           if-no-files-found: ignore
