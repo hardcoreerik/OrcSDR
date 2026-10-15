@@ -145,7 +145,8 @@ void paint_iq(const uint8_t* bins){
     ((x%84==0||y%32==0)?GRID:0);
  }
  int rows=waterfall_style::rows_per_frame(waterfall_style::Screen::home);
- if(rows<1)rows=1;if(rows>fh)rows=fh;
+ if(rows<1)rows=1;
+ if(rows>fh)rows=fh;
  memmove(waterfall_data+rows*fw,waterfall_data,(fh-rows)*fw*sizeof(uint16_t));
  for(int y=0;y<rows;++y)for(int x=0;x<fw;++x)
   waterfall_data[y*fw+x]=waterfall_style::color565(waterfall_style::Screen::home,

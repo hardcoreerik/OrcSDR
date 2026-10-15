@@ -158,7 +158,7 @@ extern "C" void app_main(void) {
   ESP_LOGI(TAG,"OrcSDR Waveshare 4B Home v1, IQ-only; no audio/C6");
   ESP_LOGI(TAG,"driver=%s psram=%u",esp_rtl_sdr_get_version_string(),
            unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
-  queue=xQueueCreate(12,sizeof(Command));
+  queue=xQueueCreate(12,sizeof(home_v3::Command));
   if(!queue){ESP_LOGE(TAG,"Queue creation failed");return;}
   lv_display_t* disp=bsp_display_start();
   if(!disp||bsp_display_backlight_on()!=ESP_OK||!home_start()){
