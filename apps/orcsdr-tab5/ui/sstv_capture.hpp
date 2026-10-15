@@ -20,6 +20,7 @@ void push(const int16_t* samples, size_t count);
 void stop();
 size_t samples();
 bool full();
+size_t held_bytes();   // PSRAM currently reserved for a recording (0 when released)
 // Writes what was recorded as a WAV. The writer receives the bytes in order; returns false when it refuses any of them.
 // The recording as WAV bytes without copying it: header() fills the 44-byte header, then pcm() / pcm_bytes() are the samples
 // (little-endian, as in memory). Lets the application write the file a few kilobytes at a time instead of blocking the UI task.

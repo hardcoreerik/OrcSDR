@@ -404,6 +404,16 @@ RTL_CATALOG_INSTALL faa_aircraft
 
 ## Dashboard control
 
+### Memory
+
+Features that keep PSRAM after the user leaves them (the SSTV picture gallery and recording buffer) register with `memory_reclaim` so it can be handed back. The FT8 screen shows **NOT ENOUGH MEMORY** with a **FREE MEMORY** button when its decoder cannot start because an allocation failed; the same release is available over serial.
+
+| Command | Authentication | Result | Notes |
+|---|---|---|---|
+| `RTL_MEM STATUS` | no | `RTL_MEM psram_free=<n> psram_largest=<n> internal_free=<n> internal_largest=<n>`, one `RTL_MEM_HOLDER <name> bytes=<n>` per registered holder (largest first), and `RTL_MEM_FT8 active=<0\|1> last_failure=none\|memory\|backend needed=<bytes> failures=<n>` | Read-only. `needed` is the allocation that could not be satisfied. |
+| `RTL_MEM RECLAIM` | yes | `ORC_MEMORY_RECLAIM total=<n>` and one line per holder that gave something back, then `RTL_MEM_OK psram_free=<n> psram_largest=<n>` | Releases every registered holder, then lets the FT8 screen retry at once. Nothing is released from a screen that is open (SSTV keeps its pictures while its screen is showing). |
+| `RTL_MEM HOG <KiB>` | yes | `RTL_MEM_OK held=<n> psram_free=<n> psram_largest=<n>` | Bench aid: allocates PSRAM in 256 KiB blocks until about that many KiB remain, registered as the holder `Test allocation`. `RTL_MEM RECLAIM` or the FREE MEMORY button gives it back. |
+
 ### OrcDial bridge
 
 | Command | Authentication | Result | Invalid state / handler |

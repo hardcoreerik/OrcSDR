@@ -97,6 +97,8 @@ void release() {
   g_capacity = g_count = 0;
 }
 
+size_t held_bytes() { return g_buffer ? g_capacity * sizeof(int16_t) : 0; }
+
 bool self_check() {
   release();
   if (start(0) || start(kMaxSeconds + 1)) return false;

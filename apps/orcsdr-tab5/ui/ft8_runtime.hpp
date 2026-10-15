@@ -15,6 +15,18 @@ namespace orcsdr::ft8_runtime {
 
 enum class State : uint8_t { stopped, waiting_clock, waiting_signal, listening, decoding, ready, error };
 
+// Why the last start() call failed. `memory` means an allocation returned null (the PSRAM is full or too fragmented): the
+// screen says so and offers FREE MEMORY instead of the old, misleading "decoder not bound".
+enum class StartFailure : uint8_t { none, memory, backend };
+struct StartReport {
+  StartFailure failure = StartFailure::none;
+  uint32_t requested_bytes = 0;    // the allocation that could not be satisfied (0 = unknown / not a memory failure)
+  uint32_t psram_free = 0;         // PSRAM state at the moment of the failure
+  uint32_t psram_largest = 0;
+  uint32_t failures = 0;           // failed start() calls since boot
+};
+StartReport last_start_report();
+
 struct Status {
   State state = State::stopped;
   bool tap_running = false;

@@ -9,7 +9,9 @@
 namespace orcsdr::ft8 {
 
 enum class Tab : uint8_t { live, decodes, map, hunter, heard, setup, count };
-enum class DecoderState : uint8_t { unbound, armed, listening, decoding, ready, error };
+// no_memory: the decoder could not be started because an allocation failed (see Snapshot::mem_*), as opposed to unbound,
+// where no decoder exists at all.
+enum class DecoderState : uint8_t { unbound, armed, listening, decoding, ready, error, no_memory };
 enum class ActionKind : uint8_t {
   none,
   tune_band,
@@ -23,7 +25,8 @@ enum class ActionKind : uint8_t {
   tune_auto,           // back to the band table's dial for the current band
   set_expert,          // value = 1 or 0: expert tuning (Tune panel, OrcDial rotation steps the dial in Hz)
   gain_auto,           // receiver gain back to automatic
-  gain_manual          // value = tuner gain in tenths of a dB (one of the receiver's steps)
+  gain_manual,         // value = tuner gain in tenths of a dB (one of the receiver's steps)
+  free_memory          // the NOT ENOUGH MEMORY state's FREE MEMORY button: release what other features hold, then retry
 };
 
 struct Action {
@@ -50,6 +53,13 @@ struct Snapshot {
   DigitalMode mode = DigitalMode::ft8;
   uint32_t decoder_capabilities = 0;   // DecoderCapability bits; 0 = no decoder bound
   DecoderState decoder_state = DecoderState::unbound;
+  // Set with DecoderState::no_memory: what was missing and who holds memory that could be released.
+  uint32_t mem_free = 0;           // PSRAM free now, bytes
+  uint32_t mem_largest = 0;        // largest free PSRAM block, bytes
+  uint32_t mem_needed = 0;         // the allocation that failed, bytes (0 = unknown)
+  // Kept small on purpose: internal RAM has almost no slack at boot, and this struct exists twice. The text lives with the caller.
+  const char* mem_holders = nullptr;   // "SSTV pictures 3.8 MB" or null/empty when nothing can be released
+  uint32_t mem_holders_rev = 0;        // changes whenever the text does, so the screen knows to repaint
   HunterSnapshot hunter{};
   // The receiver's own position (from the setup wizard / settings) for DIST and BRG; unknown = those cells show a dash.
   // Live waterfall rows (0-255, newest = (wf_sequence - 1) % wf_rows); null until a decoder provides them.

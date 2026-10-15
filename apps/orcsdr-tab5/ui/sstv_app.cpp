@@ -10,6 +10,7 @@
 
 #include "screen_controller.hpp"
 #include "sstv_archive.hpp"
+#include "memory_reclaim.hpp"
 #include "sstv_audio_scope.hpp"
 #include "sstv_capture.hpp"
 #include "sstv_dashboard.hpp"
@@ -355,10 +356,26 @@ void handle(const orcsdr::sstv::Action& action) {
   }
 }
 
+// What the SSTV receiver keeps in PSRAM after the user has left its screen: the picture gallery and a recording buffer. Both are
+// conveniences; the registry may ask for them back when another feature (the FT8 decoder) cannot start for lack of memory.
+// Nothing is released while the SSTV screen is open: the pictures on it are in use.
+size_t memory_held() {
+  return orcsdr::sstv::metrics().frame_bytes + orcsdr::sstv_capture::held_bytes();
+}
+size_t memory_release() {
+  if (orcsdr::sstv::ui_active()) return 0;
+  const size_t before = memory_held();
+  orcsdr::sstv::clear_gallery();
+  if (!orcsdr::sstv_capture::recording()) orcsdr::sstv_capture::release();
+  const size_t after = memory_held();
+  return before > after ? before - after : 0;
+}
+
 }  // namespace
 
 void install(const Hooks& hooks) {
   g_hooks = hooks;
+  (void)orcsdr::memory_reclaim::register_holder({"SSTV pictures", memory_held, memory_release});
   orcsdr::sstv_export::init();
   orcsdr::sstv::set_utc_source(utc_source);
   orcsdr::sstv::set_header_hook(hooks.header_controls);

@@ -106,8 +106,26 @@ bool is_js8(orcsdr::ft8::DigitalMode m) { return orcsdr::ft8::mode_is_js8(m); }
 // Only Normal has an established sync pattern; every other JS8 submode is refused (never mapped to Normal).
 bool js8_supported(orcsdr::ft8::DigitalMode m) { return m == orcsdr::ft8::DigitalMode::js8_normal; }
 
-void* psram_alloc(size_t bytes) { return heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); }
+std::atomic<uint32_t> g_alloc_fail_bytes{0};   // size of the most recent PSRAM request that returned null (0 = none since start() began)
+StartReport g_start_report;
+
+void* psram_alloc(size_t bytes) {
+  void* p = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (p == nullptr) g_alloc_fail_bytes.store(static_cast<uint32_t>(bytes), std::memory_order_relaxed);
+  return p;
+}
 void psram_free(void* p) { heap_caps_free(p); }
+
+// Records why start() gave up. An allocation that returned null makes it a memory failure, whatever stage noticed it.
+bool start_failed(StartFailure kind) {
+  const uint32_t requested = g_alloc_fail_bytes.load(std::memory_order_relaxed);
+  g_start_report.failure = (kind == StartFailure::backend && requested != 0) ? StartFailure::memory : kind;
+  g_start_report.requested_bytes = g_start_report.failure == StartFailure::memory ? requested : 0;
+  g_start_report.psram_free = static_cast<uint32_t>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+  g_start_report.psram_largest = static_cast<uint32_t>(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+  ++g_start_report.failures;
+  return false;
+}
 
 uint32_t slot_ms_for(orcsdr::ft8::DigitalMode m) {
   if (is_js8(m)) return orcsdr::js8::profile(orcsdr::js8::Submode::normal).slot_ms;
@@ -521,25 +539,28 @@ static void mem_mark(const char* stage) {   // internal DMA-capable heap at each
               static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)));
 }
 
+StartReport last_start_report() { return g_start_report; }
+
 bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* context, ClockValidFn clock_valid, DialOffsetFn dial_offset) {
   if (g.active.load(std::memory_order_acquire)) return true;
   mem_mark("entry");
+  g_alloc_fail_bytes.store(0, std::memory_order_relaxed);
   if (g.task_alive.load(std::memory_order_acquire) || g.wf_alive.load(std::memory_order_acquire)) return false;  // previous tasks still exiting
   if (g.wf == nullptr) {
     g.wf = static_cast<uint8_t*>(psram_alloc(kWaterfallRows * kWaterfallBins));
-    if (g.wf == nullptr) return false;
+    if (g.wf == nullptr) return start_failed(StartFailure::memory);
   }
   if (g.ring == nullptr) {
     g.ring = static_cast<int16_t*>(psram_alloc(kRingSamples * sizeof(int16_t)));
-    if (g.ring == nullptr) return false;
+    if (g.ring == nullptr) return start_failed(StartFailure::memory);
   }
   if (g.snapshot == nullptr) {
     g.snapshot = static_cast<int16_t*>(psram_alloc((12000u * 16u) * sizeof(int16_t)));
-    if (g.snapshot == nullptr) return false;
+    if (g.snapshot == nullptr) return start_failed(StartFailure::memory);
   }
   if (g.backend == nullptr) {
     void* mem = psram_alloc(sizeof(orcsdr::ftx::native::Backend));
-    if (mem == nullptr) return false;
+    if (mem == nullptr) return start_failed(StartFailure::memory);
     g.backend = new (mem) orcsdr::ftx::native::Backend();
   }
   mem_mark("buffers");
@@ -553,12 +574,22 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
   memory.alloc = psram_alloc;
   memory.release = psram_free;
   if (!g.backend->begin(12000, ftx_mode(mode), config, memory)) {
-    std::printf("ORC_FT8_RT start_failed backend\n");
-    return false;
+    const bool memory = g_alloc_fail_bytes.load(std::memory_order_relaxed) != 0;
+    if (g_start_report.failures % 64u == 0)   // the screen retries; say it once in a while, not on every attempt
+      std::printf("ORC_FT8_RT start_failed backend%s psram_free=%u psram_largest=%u needed=%u\n", memory ? " (out of memory)" : "",
+                  static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),
+                  static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)),
+                  static_cast<unsigned>(g_alloc_fail_bytes.load(std::memory_order_relaxed)));
+    return start_failed(StartFailure::backend);
   }
   if (is_js8(mode) && (!js8_supported(mode) || !js8_attach())) {
     std::printf("ORC_FT8_RT start_failed js8\n");
-    return false;
+    return start_failed(StartFailure::backend);
+  }
+  {   // started: the last failure no longer applies (the failure count stays)
+    const uint32_t failures = g_start_report.failures;
+    g_start_report = StartReport{};
+    g_start_report.failures = failures;
   }
   g.mode = mode;
   g.on_decode = on_decode;

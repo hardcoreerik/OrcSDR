@@ -64,6 +64,7 @@ idf_component_register(
         "../ui/ft8_audio_tap.cpp"
         "../ui/ft8_native_backend.cpp"
         "../ui/ft8_runtime.cpp"
+        "../ui/memory_reclaim.cpp"
         "../ui/ft8_hunter.cpp"
         "../ui/ft8_dashboard.cpp"
         "../ui/sstv_receiver.cpp"

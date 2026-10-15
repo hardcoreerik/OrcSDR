@@ -79,6 +79,7 @@ HeardLookup g_heard_lookup = nullptr;
 constexpr Rect kStationPanel{240, 150, 800, 400};
 constexpr Rect kStationClose{800, 490, 220, 46};
 constexpr Rect kInfoBtn{804, 16, 48, 48};
+constexpr Rect kFreeMemory{326, 410, 280, 56};   // the NOT ENOUGH MEMORY state's button, under its message
 constexpr Rect kInfoPanel{140, 104, 1000, 512};
 constexpr Rect kInfoPrev{160, 556, 200, 46};
 constexpr Rect kInfoNext{380, 556, 200, 46};
@@ -167,6 +168,8 @@ bool mode_available(DigitalMode mode) {
   return mode_supported(g_snapshot.decoder_capabilities, mode);
 }
 
+bool has_holders(const Snapshot& v) { return v.mem_holders != nullptr && v.mem_holders[0] != 0; }
+
 const char* decoder_name() {
   switch (g_snapshot.decoder_state) {
     case DecoderState::unbound: return "UNBOUND";
@@ -175,6 +178,7 @@ const char* decoder_name() {
     case DecoderState::decoding: return "DECODING";
     case DecoderState::ready: return "READY";
     case DecoderState::error: return "ERROR";
+    case DecoderState::no_memory: return "NO MEMORY";
   }
   return "UNBOUND";
 }
@@ -186,6 +190,7 @@ uint16_t decoder_color() {
     case DecoderState::ready: return kGreen;
     case DecoderState::decoding: return kYellow;
     case DecoderState::error: return TFT_RED;
+    case DecoderState::no_memory: return TFT_RED;
     case DecoderState::unbound: return kAmber;
   }
   return kMuted;
@@ -531,7 +536,25 @@ void draw_live() {
   for (int row = 1; row < 5; ++row)
     M5.Display.drawFastHLine(42, 214 + row * 44, 848, 0x10a2);
 
-  if (g_snapshot.decoder_state == DecoderState::unbound) {
+  if (g_snapshot.decoder_state == DecoderState::no_memory) {
+    char line[112];
+    text("NOT ENOUGH MEMORY", 466, 272, TFT_RED, 3);
+    std::snprintf(line, sizeof(line), "Free %.1f MB, largest block %u KB%s", static_cast<double>(g_snapshot.mem_free) / 1048576.0,
+                  static_cast<unsigned>(g_snapshot.mem_largest / 1024u),
+                  g_snapshot.mem_needed ? "" : "; the decoder needs more than is available.");
+    text(line, 466, 316, kMuted, 1);
+    if (g_snapshot.mem_needed) {
+      std::snprintf(line, sizeof(line), "The decoder could not allocate %.1f MB.", static_cast<double>(g_snapshot.mem_needed) / 1048576.0);
+      text(line, 466, 340, kMuted, 1);
+    }
+    if (has_holders(g_snapshot)) {
+      std::snprintf(line, sizeof(line), "Held by other features: %s", g_snapshot.mem_holders);
+      text(line, 466, 364, kAmber, 1);
+    } else {
+      text("Nothing a feature can release is holding it: restart OrcSDR to recover.", 466, 364, kAmber, 1);
+    }
+    button(kFreeMemory, "FREE MEMORY", false, has_holders(g_snapshot));
+  } else if (g_snapshot.decoder_state == DecoderState::unbound) {
     text("DECODER NOT BOUND", 466, 305, kAmber, 3);
     text("UI/model sandbox is live; DSP samples are not being decoded yet.", 466, 340, kMuted, 1);
   } else if (!g_snapshot.clock_valid) {
@@ -1098,11 +1121,14 @@ void draw_setup() {
 }
 
 // Live screen: what a decoder-status, candidate-count or decode change touches. Everything else (dial, mode, waterfall panel) stays as drawn.
-int waterfall_state(const Snapshot& v) { return v.decoder_state == DecoderState::unbound ? 0 : !v.clock_valid ? 1 : 2; }
+int waterfall_state(const Snapshot& v) {
+  return v.decoder_state == DecoderState::unbound || v.decoder_state == DecoderState::no_memory ? 0 : !v.clock_valid ? 1 : 2;
+}
 
 bool live_layout_same(const Snapshot& a, const Snapshot& b) {
   return a.mode == b.mode && a.selected_band == b.selected_band && a.decoder_capabilities == b.decoder_capabilities && a.clock_valid == b.clock_valid &&
-         waterfall_state(a) == waterfall_state(b);
+         waterfall_state(a) == waterfall_state(b) && (a.decoder_state == DecoderState::no_memory) == (b.decoder_state == DecoderState::no_memory) &&
+         has_holders(a) == has_holders(b);   // the NO MEMORY message and its button repaint when what can be freed changes
 }
 
 void draw_live_dynamic(const Snapshot& previous) {
@@ -1574,6 +1600,7 @@ bool same_content(const Snapshot& a, const Snapshot& b) {
          a.gain_tenth_db == b.gain_tenth_db && a.candidate_count == b.candidate_count &&
          a.last_slot_decodes == b.last_slot_decodes && a.selected_band == b.selected_band &&
          a.decoder_state == b.decoder_state && a.decode_count == b.decode_count &&
+         a.mem_holders_rev == b.mem_holders_rev && (a.mem_free >> 16) == (b.mem_free >> 16) &&
          a.dial_hz == b.dial_hz && a.dial_custom == b.dial_custom && a.expert_tuning == b.expert_tuning &&
          std::memcmp(&a.hunter, &b.hunter, sizeof(a.hunter)) == 0 &&
          std::memcmp(a.decodes, b.decodes, a.decode_count * sizeof(Decode)) == 0;
@@ -1694,7 +1721,7 @@ void update(const Snapshot& snapshot_value) {
     return;
   }
   if (overlay_open()) return;   // never draw the waterfall or dial under a panel
-  if (g_tab == Tab::live && g_snapshot.wf_sequence != g_drawn_waterfall && g_snapshot.decoder_state != DecoderState::unbound &&
+  if (g_tab == Tab::live && g_snapshot.wf_sequence != g_drawn_waterfall && g_snapshot.decoder_state != DecoderState::unbound && g_snapshot.decoder_state != DecoderState::no_memory &&
       g_snapshot.clock_valid) {
     paced_waterfall_step();
   }
@@ -1741,6 +1768,8 @@ Action handle_touch(int32_t x, int32_t y) {
     }
     g_tune_open = false;   // a tab tap closes the panel and switches tabs below
   }
+  if (g_tab == Tab::live && g_snapshot.decoder_state == DecoderState::no_memory && has_holders(g_snapshot) && hit(x, y, kFreeMemory))
+    return {ActionKind::free_memory, 0};
   if (g_tab == Tab::live && hit(x, y, kGainChip)) {
     open_gain_panel();
     return {};
@@ -1887,7 +1916,7 @@ bool dashboard_self_check() {
 
 // Called from the main loop between full updates: new waterfall rows scroll in without waiting for the next snapshot.
 void pump_waterfall(uint32_t sequence) {
-  if (!g_active || overlay_open() || g_tab != Tab::live || g_snapshot.decoder_state == DecoderState::unbound || !g_snapshot.clock_valid) return;
+  if (!g_active || overlay_open() || g_tab != Tab::live || g_snapshot.decoder_state == DecoderState::unbound || g_snapshot.decoder_state == DecoderState::no_memory || !g_snapshot.clock_valid) return;
   g_snapshot.wf_sequence = sequence;
   paced_waterfall_step();
 }

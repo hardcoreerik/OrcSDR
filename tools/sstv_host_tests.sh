@@ -57,6 +57,7 @@ build_and_run syncmeter  "$TESTS/sstv_syncmeter_test.cpp" "$UI/sstv_tune.cpp" "$
 build_and_run capture   "$TESTS/sstv_capture_test.cpp" "$UI/sstv_capture.cpp"
 build_and_run memory    "$TESTS/sstv_memory_test.cpp" "${CORE[@]}"
 build_and_run export    "$TESTS/sstv_export_test.cpp" "$UI/sstv_export.cpp"
+build_and_run reclaim   "$TESTS/memory_reclaim_test.cpp" "$UI/memory_reclaim.cpp"
 SSTV_PATTERN_RGB="$ROOT/apps/orcsdr-tab5/main/sstv_testpattern_320x240.rgb" build_and_run colour "$TESTS/sstv_colour_test.cpp" "${CORE[@]}"
 SSTV_PATTERN="$ROOT/apps/orcsdr-tab5/main/sstv_testpattern_320x240.gray" build_and_run pattern "$TESTS/sstv_pattern_test.cpp" "${CORE[@]}"
 
