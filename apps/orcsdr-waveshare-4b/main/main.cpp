@@ -17,6 +17,8 @@
 #include "home_4b_layout.hpp"
 #include "home_fft.hpp"
 #include "home_v3_ui.hpp"
+#include "fm_4b_ui.hpp"
+#include "fm_4b_layout.hpp"
 using namespace orcsdr::waveshare4b;
 static constexpr char TAG[]="ORCSDR_4B_HOME";
 static constexpr uint32_t kRate=960000;
@@ -36,13 +38,26 @@ static void ui_timer(lv_timer_t*) {
  portEXIT_CRITICAL(&bands_lock);
  const home_v3::Snapshot data{requested.load(),applied.load(),sps.load(),
    drops.load(),kSteps[step_idx.load()],uint32_t(esp_timer_get_time()/1000000),state.load()};
- home_v3::update(data,fft,fresh);
+ if(fm::active())fm::update(data,fft,fresh);
+ else home_v3::update(data,fft,fresh);
 }
+static void open_fm_preview() {
+ // UI task owns view transition; radio task remains the only tuner owner.
+ fm::open();
+ if(!fm::in_fm_band(requested.load())&&queue){
+   const home_v3::Command cmd=home_v3::Command::FM;
+   (void)xQueueSend(queue,&cmd,0);
+ }
+}
+static void return_from_fm() {fm::close();}
 static bool home_start() {
  if(!bsp_display_lock(3000))return false;
- const bool ok=home_v3::create(queue);
- if(ok)lv_timer_create(ui_timer,150,nullptr);
- bsp_display_unlock();return ok;
+ home_v3::set_fm_open_callback(open_fm_preview);
+ const bool home_ok=home_v3::create(queue);
+ const bool fm_ok=home_ok && fm::create(queue,return_from_fm);
+ if(fm_ok)lv_timer_create(ui_timer,150,nullptr);
+ bsp_display_unlock();
+ return home_ok&&fm_ok;
 }
 static void radio_task(void*) {
   uint8_t* iq=static_cast<uint8_t*>(heap_caps_malloc(16384,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));

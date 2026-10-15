@@ -1,7 +1,7 @@
 name: Waveshare 4B native compile + REA source evidence
 on:
   push:
-    branches: [codex/waveshare-p4-4b-port]
+    branches: [codex/waveshare-p4-4b-port, codex/waveshare-4b-fm-dashboard]
     paths:
       - "apps/orcsdr-waveshare-4b/**"
       - "tools/hardware/rea_graphics_source_audit.py"

@@ -18,6 +18,7 @@ extern const uint8_t badge_begin[] asm("_binary_orc_badge_104_rgb565_start");
 extern const uint8_t badge_end[] asm("_binary_orc_badge_104_rgb565_end");
 QueueHandle_t queue=nullptr;
 Navigation nav{};
+void(*fm_open_callback)()=nullptr;
 lv_obj_t *drawer=nullptr,*shade=nullptr,*scope=nullptr,*waterfall=nullptr;
 lv_obj_t *freq=nullptr,*status=nullptr,*metrics=nullptr,*usb=nullptr,*uptime=nullptr,*step_text=nullptr,*palette_text=nullptr;
 uint16_t *scope_data=nullptr,*waterfall_data=nullptr,*badge_data=nullptr;
@@ -55,6 +56,11 @@ void sync_menu(){
 void on_badge(lv_event_t*){nav.apply(NavAction::badge_tap);sync_menu();}
 void on_shade(lv_event_t*){nav.apply(NavAction::outside_tap);sync_menu();}
 void on_home(lv_event_t*){nav.apply(NavAction::item_selected);sync_menu();}
+void on_fm(lv_event_t*) {
+ nav.apply(NavAction::item_selected);
+ sync_menu();
+ if(fm_open_callback)fm_open_callback();
+}
 void on_command(lv_event_t* e){
  auto command=static_cast<Command>(reinterpret_cast<intptr_t>(lv_event_get_user_data(e)));
  if(queue&&(command==Command::Down||command==Command::Up||command==Command::Step))
@@ -122,12 +128,14 @@ void make_drawer(lv_obj_t* root){
  const char* titles[]={"HOME","P25 RADIO","AM RADIO","SETTINGS","RF LAB","FM RADIO","ADS-B","ALL DASHBOARDS"};
  for(int i=0;i<8;++i){
   Rect local=kNavItems[i];local.x-=kDrawer.x;local.y-=kDrawer.y;
-  const bool active=i==0;
+  const bool active=i==0||(i==5&&fm_open_callback);
   auto* row=frame(drawer,local);lv_obj_add_flag(row,LV_OBJ_FLAG_CLICKABLE);
   lv_obj_set_style_border_color(row,lv_color_hex(rgb(active?GREEN:DIM)),0);
-  char name[64];snprintf(name,sizeof(name),"%s%s",titles[i],active?"":" (soon)");
+  char name[64];
+ snprintf(name,sizeof(name),"%s%s",titles[i],
+   i==5&&active?" (IQ only)":active?"":" (soon)");
   caption(row,{9,14,local.w-18,20},name,active?GREEN:DIM);
-  if(active)lv_obj_add_event_cb(row,on_home,LV_EVENT_CLICKED,nullptr);
+  if(active)lv_obj_add_event_cb(row,i==5?on_fm:on_home,LV_EVENT_CLICKED,nullptr);
   else lv_obj_add_state(row,LV_STATE_DISABLED);
  }
  lv_obj_add_flag(drawer,LV_OBJ_FLAG_HIDDEN);lv_obj_add_flag(shade,LV_OBJ_FLAG_HIDDEN);
@@ -154,6 +162,7 @@ void paint_iq(const uint8_t* bins){
  lv_obj_invalidate(scope);lv_obj_invalidate(waterfall);
 }
 }
+void set_fm_open_callback(void(*fn)()){fm_open_callback=fn;}
 bool create(QueueHandle_t q){
  queue=q;nav={};had_rf=false;
  auto* screen=lv_screen_active();
