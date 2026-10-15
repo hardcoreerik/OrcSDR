@@ -15433,6 +15433,11 @@ uint8_t orcdial_peer[6]{};
 uint32_t orcdial_sender = 0;
 uint32_t orcdial_tx_sequence = 1;
 std::atomic<esp_err_t> orcdial_last_tx_result{ESP_ERR_INVALID_STATE};
+// Read-only counters for RTL_ORCDIAL_STATUS: what the Hosted peer-data link to the C6 did with the Dial frames.
+std::atomic<uint32_t> orcdial_peer_tx_ok{0};
+std::atomic<uint32_t> orcdial_peer_tx_fail{0};
+std::atomic<uint32_t> orcdial_peer_rx_frames{0};
+std::atomic<uint32_t> orcdial_peer_tx_last_ms{0};   // how long the most recent send took
 uint32_t orcdial_rx_sender = 0;
 uint32_t orcdial_rx_sequence = 0;
 uint32_t orcdial_last_state_ms = 0;
@@ -15442,6 +15447,7 @@ const uint8_t orcdial_broadcast[6] = {255,255,255,255,255,255};
 
 void orcdial_receive(uint32_t, const uint8_t* data, size_t size, void*) {
   if (!orcdial_inbox || !data || size != sizeof(OrcDialFrame)) return;
+  orcdial_peer_rx_frames.fetch_add(1, std::memory_order_relaxed);
   OrcDialFrame frame{};
   memcpy(&frame, data, sizeof(frame));
   (void)xQueueSend(orcdial_inbox, &frame, 0);
@@ -15451,8 +15457,11 @@ void orcdial_transmit(void*) {
   OrcDialFrame frame{};
   for (;;) {
     if (xQueueReceive(orcdial_outbox, &frame, portMAX_DELAY) != pdTRUE) continue;
+    const uint32_t sent_at = static_cast<uint32_t>(millis());
     const esp_err_t result = eh_host_peer_data_send(kOrcDialToC6,
         reinterpret_cast<const uint8_t*>(&frame), sizeof(frame));
+    orcdial_peer_tx_last_ms.store(static_cast<uint32_t>(millis()) - sent_at, std::memory_order_relaxed);
+    (result == ESP_OK ? orcdial_peer_tx_ok : orcdial_peer_tx_fail).fetch_add(1, std::memory_order_relaxed);
     orcdial_last_tx_result.store(result, std::memory_order_relaxed);
     // Failed Hosted requests can take seconds; discard stale replies rather
     // than replaying an old backlog after transport recovery.
@@ -18873,6 +18882,11 @@ void process_command(char* command) {
   if(!strcmp(command,"RTL_ORCDIAL_STATUS")||!strcmp(command,"RTL_ORCDIAL_PROBE")) {
     const auto state=orcdial_secure.status();
     Serial.printf("RTL_ORCDIAL_STATUS bridge=%d trust=%d connection=%s boot=%d failure=%s protocol=4\n",orcdial_transport_ready,state.trusted,orc::secure::state_name(state.state),state.boot_connect,orc::secure::failure_name(state.failure));
+    // A separate line keeps the STATUS line above unchanged for existing parsers.
+    const esp_err_t last_tx_err=orcdial_last_tx_result.load();   // once: the transmit task may store a new result between two loads
+    Serial.printf("RTL_ORCDIAL_BRIDGE peer_tx_ok=%lu peer_tx_fail=%lu peer_rx=%lu last_tx_err=%s(0x%x) last_tx_ms=%lu\n",
+                  (unsigned long)orcdial_peer_tx_ok.load(),(unsigned long)orcdial_peer_tx_fail.load(),(unsigned long)orcdial_peer_rx_frames.load(),
+                  esp_err_to_name(last_tx_err),(unsigned)last_tx_err,(unsigned long)orcdial_peer_tx_last_ms.load());
     if(authenticated && state.state==orc::secure::State::verify)Serial.printf("RTL_ORCDIAL_PAIR_CODE %06lu\n",(unsigned long)state.code);
     return;
   }
