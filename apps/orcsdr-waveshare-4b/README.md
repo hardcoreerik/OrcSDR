@@ -184,3 +184,5 @@ Existing image/device acceptance applies to the preceding layout until this
 new image is separately flashed and physically reviewed.
 
 Local starter-layout rev1.x build passed (990,368 bytes, 6% app-slot space free). Geometry/state and font-width checks passed. Source/firmware evidence is in the screen ledger. This new image is not flashed or physically accepted; retain final flash approval and UI/RF regression gates.
+
+Owner-approved starter-layout image is now flashed on COM40 and booted. A 45.15-second receiver check passed with zero added drops. Visual review/new hit targets and full five-minute regression for this layout remain pending; see the latest screen-gate record.

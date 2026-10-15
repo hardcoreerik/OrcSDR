@@ -235,3 +235,7 @@ radio controller or an imported component.
   frequency, title and largest STEP. This is not physical screenshot acceptance.
 
 The starter-layout native rev1.x build passed: 990,368-byte app, 6% of the existing app slot free, 200MHz PSRAM configuration, original badge/palette and new font symbols verified. Geometry/state and font-width checks passed. Full image/source hashes are in the screen ledger. Not flashed or visually accepted yet.
+
+### Starter layout deployed for owner review
+
+The approved starter-layout image is now flashed and booted on COM40. PSRAM memory test and GT911 initialization passed; V4L IQ smoke check passed over 45.15 seconds with zero drops. Physical appearance, hamburger/header touch behavior and a full five-minute regression on this layout remain open. See the latest screen-gate entry for exact hashes, logs and initialization STALL observations.
