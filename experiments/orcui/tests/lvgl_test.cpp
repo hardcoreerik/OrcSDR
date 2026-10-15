@@ -1,6 +1,7 @@
 #include "orcui/home_lvgl.hpp"
 #include "orcui_command_map.hpp"
 #include <array>
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -75,9 +76,13 @@ int main(){
    HomeData sample{};sample.frequency_hz=96100000;sample.applied_hz=96100000;
    sample.radio_ready=true;sample.effective_sps=960000;sample.mode="IQ TEST";
    home.update(sample);lv_refr_now(display);
+   const int badge_n=std::min(g.menu_toggle.w,g.menu_toggle.h)-4;
+   CHECK(badge_n==96); // Twice the accepted 48px adaptive badge, without clipping.
+   const int bx=g.menu_toggle.x+(g.menu_toggle.w-badge_n)/2;
+   const int by=g.menu_toggle.y+(g.menu_toggle.h-badge_n)/2;
    unsigned green=0,red=0;
-   for(int y=g.menu_toggle.y+2;y<g.menu_toggle.y+48;++y)
-    for(int x=g.menu_toggle.x+2;x<g.menu_toggle.x+48;++x){
+   for(int y=by;y<by+badge_n;++y)
+    for(int x=bx;x<bx+badge_n;++x){
      auto pixel=frame[size_t(y)*720+x];
      if(((pixel>>5)&63)>32 && ((pixel>>5)&63)>2*((pixel>>11)&31)+6
         && ((pixel>>5)&63)>2*(pixel&31)+6)++green;

@@ -128,7 +128,8 @@ bool HomeLvgl::create(lv_obj_t* parent,const Display& display,ActionSink sink,vo
     }
     auto* badge=lv_canvas_create(root_);
     lv_canvas_set_buffer(badge,badge_pixels_,n,n,LV_COLOR_FORMAT_RGB565);
-    lv_obj_set_pos(badge,layout_.menu_toggle.x-layout_.safe.x+2,layout_.menu_toggle.y-layout_.safe.y+2);
+    lv_obj_set_pos(badge,layout_.menu_toggle.x-layout_.safe.x+(layout_.menu_toggle.w-n)/2,
+                     layout_.menu_toggle.y-layout_.safe.y+(layout_.menu_toggle.h-n)/2);
     lv_obj_remove_flag(badge,LV_OBJ_FLAG_CLICKABLE);
   }
   if(layout_.show_sidebar){
