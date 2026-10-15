@@ -15842,11 +15842,12 @@ void orcdial_poll() {
   const uint32_t elapsed=millis()-ready_since_ms;
   if(elapsed<3000 || (elapsed<20000 && (wifi_connecting||wifi_connect_requested.load(std::memory_order_acquire))))return;
   const bool action_pending=orcdial_pending_actions && uxQueueMessagesWaiting(orcdial_pending_actions)>0;
-  static bool store_checked=false,boot_trust=false;
+  static bool store_checked=false,boot_trust=false,stored_trust=false;
   if(!store_checked){nvs_handle_t handle;uint8_t record[76]{};size_t length=sizeof record;
     if(nvs_open("orcdial4",NVS_READONLY,&handle)==ESP_OK){
-      boot_trust=nvs_get_blob(handle,"trust",record,&length)==ESP_OK && length==sizeof record &&
-          !memcmp(record,"ODT4",4) && record[74]==1 && record[75]==1;
+      const bool valid=nvs_get_blob(handle,"trust",record,&length)==ESP_OK && length==sizeof record && !memcmp(record,"ODT4",4);
+      stored_trust=valid && record[74]==1;
+      boot_trust=stored_trust && record[75]==1;
       nvs_close(handle);orc::secure::wipe(record,sizeof record);
     }store_checked=true;}
   if(orcdial_transport_ready&&!orcsdr::wifi::hosted_transport_ready()){orcdial_transport_ready=false;orcdial_secure.enabled(false);(void)eh_host_feat_peer_data_deinit();}
@@ -15866,7 +15867,17 @@ void orcdial_poll() {
   }
   static uint32_t initialization_retry_ms=0;
   if(!orcdial_secure_started && initialization_retry_ms && static_cast<int32_t>(millis()-initialization_retry_ms)<0)return;
-  if(!orcdial_transport_ready&&orcsdr::wifi::hosted_transport_ready()) {
+  // The bridge costs about 19 KB of internal DMA RAM (the 12 KB secure task stack and its peer-data link), which Wi-Fi, the C6 link, USB
+  // and the SD card also need: on a Tab5 with no Dial it left about 3 KB for everything else (issue 194). Start it only when something
+  // asks for it: a stored pairing (the Dial may connect, and Settings shows the pairing), or the user pressing Pair or Connect.
+  static bool bridge_wanted_logged=false;
+  const bool bridge_wanted=stored_trust||boot_trust||action_pending;
+  if(!bridge_wanted&&!orcdial_transport_ready&&!bridge_wanted_logged&&orcsdr::wifi::hosted_transport_ready()){
+    bridge_wanted_logged=true;
+    Serial.printf("ORCDIAL_BRIDGE_NOT_STARTED reason=no_pairing_and_no_request dma_free=%u dma_largest=%u\n",
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_DMA),(unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_DMA));
+  }
+  if(!orcdial_transport_ready&&bridge_wanted&&orcsdr::wifi::hosted_transport_ready()) {
     // The two frame queues hold 36 frames (about 24 KB). Allocated in internal RAM they took almost all of the internal DMA
     // memory the SD card and Wi-Fi need (largest DMA block 27 KB -> 3 KB at ORCDIAL_V4_BRIDGE_READY), so keep them in PSRAM.
     if(!orcdial_inbox){orcdial_inbox=xQueueCreateWithCaps(20,sizeof(OrcDialFrame),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);if(!orcdial_inbox)orcdial_inbox=xQueueCreate(20,sizeof(OrcDialFrame));}
@@ -19008,6 +19019,13 @@ void process_command(char* command) {
     Serial.printf("RTL_MEM psram_free=%u psram_largest=%u internal_free=%u internal_largest=%u\n",
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),(unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM),
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),(unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+    // Internal RAM that DMA can use (Wi-Fi/C6 link, USB host, SD card, I2S) is the scarce one: the figures that predict a Wi-Fi failure.
+    Serial.printf("RTL_MEM_DMA dma_free=%u dma_largest=%u\n",
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_DMA),
+                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_DMA));
+#if ORCSDR_ORCDIAL
+    Serial.printf("RTL_MEM_ORCDIAL bridge=%d secure_stack_free_min=%u\n",orcdial_transport_ready?1:0,(unsigned)orcdial_secure.stack_free_min());
+#endif
     orcsdr::memory_reclaim::Report holders[orcsdr::memory_reclaim::kMaxHolders];
     const size_t n=orcsdr::memory_reclaim::list(holders,orcsdr::memory_reclaim::kMaxHolders);
     for(size_t i=0;i<n;++i)Serial.printf("RTL_MEM_HOLDER %s bytes=%u\n",holders[i].name,(unsigned)holders[i].held);
