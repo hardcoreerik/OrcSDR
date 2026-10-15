@@ -92,7 +92,8 @@ class Runtime {
   struct Control {uint8_t size=0;uint8_t data[128]{};uint32_t generation=0;};
   bool take(Control& c) {while(output_&&xQueueReceive(output_,&c,0)==pdTRUE)if(c.generation==generation_.load(std::memory_order_acquire))return true;return false;}
   Status status() const {portENTER_CRITICAL(&lock_);Status s=status_;portEXIT_CRITICAL(&lock_);return s;}
-  // Smallest amount of the worker's stack that has ever been unused, in bytes (0 before the task exists). Used to size the stack.
+  // Smallest amount of the worker's stack that has ever been unused, in bytes (0 before the task exists). Printed by RTL_MEM STATUS so the
+  // stack can be sized from a measurement; nothing feeds it back automatically.
   uint32_t stack_free_min() const {return task_?uint32_t(uxTaskGetStackHighWaterMark(task_)):0;}
  private:
 #if CONFIG_IDF_TARGET_ESP32P4

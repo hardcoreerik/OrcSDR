@@ -411,6 +411,7 @@ Features that keep PSRAM after the user leaves them (the SSTV picture gallery an
 | Command | Authentication | Result | Notes |
 |---|---|---|---|
 | `RTL_MEM STATUS` | no | `RTL_MEM psram_free=<n> psram_largest=<n> internal_free=<n> internal_largest=<n>`, one `RTL_MEM_HOLDER <name> bytes=<n>` per registered holder (largest first), and `RTL_MEM_FT8 active=<0\|1> last_failure=none\|memory\|backend needed=<bytes> failures=<n>` | Read-only. `needed` is the allocation that could not be satisfied. |
+| `RTL_MEM STATUS` (more lines) | no | `RTL_MEM_DMA dma_free=<n> dma_largest=<n>` (internal RAM that DMA can use: Wi-Fi/C6 link, USB host, SD card, I2S; the firmware warns below 20,480 in `RTL_DRAM_BUDGET`) and, in builds with the OrcDial bridge, `RTL_MEM_ORCDIAL bridge=<0\|1> secure_stack_free_min=<bytes>` (the smallest part of the `orcdial_secure` task's 12,288-byte stack that has been unused; 0 while the bridge is not running) | Read-only. |
 | `RTL_MEM RECLAIM` | yes | `ORC_MEMORY_RECLAIM total=<n>` and one line per holder that gave something back, then `RTL_MEM_OK psram_free=<n> psram_largest=<n>` | Releases every registered holder, then lets the FT8 screen retry at once. Nothing is released from a screen that is open (SSTV keeps its pictures while its screen is showing). |
 | `RTL_MEM HOG <KiB>` | yes | `RTL_MEM_OK held=<n> psram_free=<n> psram_largest=<n>` | Bench aid: allocates PSRAM in 256 KiB blocks until about that many KiB remain, registered as the holder `Test allocation`. `RTL_MEM RECLAIM` or the FREE MEMORY button gives it back. |
 
@@ -427,6 +428,8 @@ Features that keep PSRAM after the user leaves them (the SSTV picture gallery an
 | `RTL_ORCDIAL_DISCONNECT` | yes | Queues an authenticated disconnect | Preserves trust and suppresses automatic retries for this boot. |
 | `RTL_ORCDIAL_FORGET` | yes | Queues local trust deletion | Works without the peer. A storage error blocks control and must be retried; old trust can return after restart if deletion could not be committed. |
 | `RTL_ORCDIAL_C6_UPDATE CONFIRM` | yes | `RTL_ORCDIAL_C6_UPDATE_QUEUED` | Existing explicit C6 recovery/update operation; not part of version-4 pairing. |
+
+**Bridge start (on demand).** The OrcDial bridge costs about 17 to 19 KB of internal DMA RAM, so it starts only when a pairing is stored (`trust=1`) or a Pair, Connect or Forget-and-re-pair request is made. A unit with no pairing and no request logs `RTL_ORCDIAL_BRIDGE_NOT_STARTED reason=no_pairing_and_no_request dma_free=<n> dma_largest=<n>` once and `RTL_ORCDIAL_STATUS` shows `bridge=0`. If such a request arrives with less than 20,480 bytes of free DMA RAM it is dropped: `RTL_ORCDIAL_ERROR low_dma_memory free=<n> need=20480 restart_to_pair` is logged, `RTL_ORCDIAL_STATUS` shows `failure=low_memory` and Settings shows "Low memory: restart to pair" until a request is served. Cancel, Confirm, Disconnect, Forget and the boot toggle do not start the bridge.
 
 State-changing commands require the existing serial `PAIR`/`AUTH` session. Without it they report `RTL_ORCDIAL_ERROR auth_required`; the C6 update retains its existing command-specific error. Commands are asynchronous: inspect STATUS for completion, timeout, or storage failure. A full action queue reports `RTL_ORCDIAL_ERROR action_queue_full`.
 

@@ -1725,6 +1725,9 @@ bool orcdial_has_peer = false;
 // A Pair or Connect request that could not start the bridge because internal DMA RAM was too low (see orcdial_poll). Shown as the
 // failure text in Settings and in RTL_ORCDIAL_STATUS until the bridge starts.
 bool orcdial_memory_blocked = false;
+// Set by orcdial_action() for the requests that need the bridge to exist (Pair, Connect, Forget and re-pair). Cancel, Confirm,
+// Disconnect, Forget and the boot toggle mean nothing when no bridge is running and must not start one.
+std::atomic<bool> orcdial_bridge_requested{false};
 // Internal DMA RAM that must be free to start the bridge on request. The firmware's own budget check (RTL_DRAM_BUDGET) warns below
 // 20 KB; a freshly restarted Tab5 settles at about 20.8 KB free with the bridge off, so this is the lowest limit that still lets a
 // first pairing start after a restart. The bridge itself takes up to about 19 KB (22.5 KB to 3.7 KB measured at boot), so even at this
@@ -15842,6 +15845,8 @@ void orcdial_action(orc::secure::Action action,uint32_t value) {
   const OrcDialAction request{action,value};
   if(!orcdial_pending_actions || xQueueSend(orcdial_pending_actions,&request,0)!=pdTRUE)
     Serial.println("RTL_ORCDIAL_ERROR action_queue_full");
+  else if(action==orc::secure::Action::pair||action==orc::secure::Action::connect||action==orc::secure::Action::forget_repair)
+    orcdial_bridge_requested.store(true,std::memory_order_release);
 }
 void orcdial_poll() {
   static uint32_t ready_since_ms=0;
@@ -15849,15 +15854,23 @@ void orcdial_poll() {
   if(!ready_since_ms)ready_since_ms=millis();
   const uint32_t elapsed=millis()-ready_since_ms;
   if(elapsed<3000 || (elapsed<20000 && (wifi_connecting||wifi_connect_requested.load(std::memory_order_acquire))))return;
-  const bool action_pending=orcdial_pending_actions && uxQueueMessagesWaiting(orcdial_pending_actions)>0;
+  bool action_pending=orcdial_pending_actions && uxQueueMessagesWaiting(orcdial_pending_actions)>0;
   static bool store_checked=false,boot_trust=false,stored_trust=false;
   if(!store_checked){nvs_handle_t handle;uint8_t record[76]{};size_t length=sizeof record;
-    if(nvs_open("orcdial4",NVS_READONLY,&handle)==ESP_OK){
+    const esp_err_t opened=nvs_open("orcdial4",NVS_READONLY,&handle);
+    if(opened==ESP_OK){
       const bool valid=nvs_get_blob(handle,"trust",record,&length)==ESP_OK && length==sizeof record && !memcmp(record,"ODT4",4);
       stored_trust=valid && record[74]==1;
       boot_trust=stored_trust && record[75]==1;
       nvs_close(handle);orc::secure::wipe(record,sizeof record);
-    }store_checked=true;}
+    }
+    // Checked once. A namespace that does not exist yet means "never paired"; any other open error is retried on the next poll.
+    if(opened==ESP_OK||opened==ESP_ERR_NVS_NOT_FOUND)store_checked=true;}
+  // With no bridge, no stored pairing and no request that needs the bridge, queued Cancel/Confirm/Disconnect/Forget/boot actions are
+  // meaningless: drop them so they neither start the bridge nor bring Wi-Fi up.
+  if(!orcdial_transport_ready&&!stored_trust&&!boot_trust&&action_pending&&!orcdial_bridge_requested.load(std::memory_order_acquire)){
+    xQueueReset(orcdial_pending_actions);action_pending=false;
+  }
   if(orcdial_transport_ready&&!orcsdr::wifi::hosted_transport_ready()){orcdial_transport_ready=false;orcdial_secure.enabled(false);(void)eh_host_feat_peer_data_deinit();}
   static uint32_t radio_retry_ms=0;
   if(!wifi_station_ready && !orcsdr::wifi::link_failed() && !wifi_link_recovery_due_ms &&
@@ -15879,19 +15892,22 @@ void orcdial_poll() {
   // and the SD card also need: on a Tab5 with no Dial it left about 3 KB for everything else (issue 194). Start it only when something
   // asks for it: a stored pairing (the Dial may connect, and Settings shows the pairing), or the user pressing Pair or Connect.
   static bool bridge_wanted_logged=false;
-  const bool bridge_wanted=stored_trust||boot_trust||action_pending;
+  const bool bridge_requested=orcdial_bridge_requested.load(std::memory_order_acquire);
+  const bool bridge_wanted=stored_trust||boot_trust||bridge_requested;
   if(!bridge_wanted&&!orcdial_transport_ready&&!bridge_wanted_logged&&orcsdr::wifi::hosted_transport_ready()){
     bridge_wanted_logged=true;
-    Serial.printf("ORCDIAL_BRIDGE_NOT_STARTED reason=no_pairing_and_no_request dma_free=%u dma_largest=%u\n",
+    Serial.printf("RTL_ORCDIAL_BRIDGE_NOT_STARTED reason=no_pairing_and_no_request dma_free=%u dma_largest=%u\n",
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_DMA),(unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_DMA));
   }
   if(orcdial_transport_ready)orcdial_memory_blocked=false;
-  if(!orcdial_transport_ready&&action_pending&&!stored_trust&&!boot_trust&&orcsdr::wifi::hosted_transport_ready()) {
+  if(!orcdial_transport_ready&&bridge_requested&&!stored_trust&&!boot_trust&&orcsdr::wifi::hosted_transport_ready()) {
     // A request to pair or connect with no stored pairing (so the bridge is not already running from boot): start it only if Wi-Fi and
     // the C6 link keep enough DMA RAM afterwards. If not, say so and drop the request; restarting OrcSDR restores the memory.
     const size_t dma_free=heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_DMA);
+    if(dma_free>=kOrcDialOnDemandDmaNeed)orcdial_memory_blocked=false;   // this attempt is not a memory refusal, whatever happens next
     if(dma_free<kOrcDialOnDemandDmaNeed) {
       xQueueReset(orcdial_pending_actions);
+      orcdial_bridge_requested.store(false,std::memory_order_release);
       orcdial_memory_blocked=true;
       // The request may have brought Wi-Fi up for this accessory-only session (Wi-Fi power setting off); the idle shutdown later in
       // this function needs a running bridge, so stop it here and restore the configured state.
@@ -15914,6 +15930,7 @@ void orcdial_poll() {
       if(!orcdial_secure_started){orcdial_secure_started=orcdial_secure.begin(2,mac,preferences.getBytesLength("dial_mac")==6,orcdial_raw_transmit);log_dram_budget("orcdial_secure_begin");}
       if(!orcdial_secure_started){initialization_retry_ms=millis()+5000;return;}
       orcdial_sender=esp_random();orcdial_transport_ready=true;orcdial_secure.enabled(true);Serial.println("ORCDIAL_V4_BRIDGE_READY");
+      orcdial_bridge_requested.store(false,std::memory_order_release);   // the request has been served; the queued actions run below
       // The existing C6 gates RX until the P4 sends its first relay request.
       // This invalid frame only enables that relay gate; no endpoint accepts
       // it as discovery, pairing, authentication or a control command.
@@ -15926,6 +15943,8 @@ void orcdial_poll() {
     if(!orcdial_secure.action(queued.kind,queued.value))break;
     xQueueReceive(orcdial_pending_actions,&queued,0);
   }
+  if(!orcdial_pending_actions||uxQueueMessagesWaiting(orcdial_pending_actions)==0)
+    orcdial_bridge_requested.store(false,std::memory_order_release);   // everything asked for has reached the running bridge
   OrcDialFrame frame{};while(xQueueReceive(orcdial_inbox,&frame,0)==pdTRUE)orcdial_secure.receive(frame.mac,frame.wire,64);
   const auto status=orcdial_secure.status();orcdial_has_peer=status.trusted;boot_trust=status.trusted && status.boot_connect;
   stored_trust=status.trusted;   // follow Pair and Forget while the bridge runs, so a restart after a transport drop uses the current state
