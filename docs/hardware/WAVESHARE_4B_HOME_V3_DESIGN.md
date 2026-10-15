@@ -122,3 +122,14 @@ physical touch/USB acceptance.
 - [ ] Obtain independent radio/USB qualification and sustained capture gate.
 
 **Current deployed Waveshare firmware unchanged by this design proposal.**
+
+## LVGL implementation (2026-10-14)
+
+- The new board-specific renderer in apps/orcsdr-waveshare-4b/main/home_v3_ui.cpp builds actual OrcSDR Home v3 rectangles and toggled navigation. It is NOT yet physically tested or accepted.
+- CMake embeds the ORIGINAL apps/orcsdr-tab5/main/orc_badge_104.rgb565; renderer converts sampled pixels to native LVGL RGB565. Never substitute a generated Orc logo.
+- CMake also compiles the ORIGINAL apps/orcsdr-tab5/ui/waterfall_style.cpp directly. Home uses CLASSIC and cycles the seven source palettes.
+- The main.cpp radio task is retained with the original v0.9.3 driver, 960 kS/s and 6x16KiB transfer settings. Only UI-facing glue is replaced.
+- Live implemented UI actions: badge menu toggle/dismiss, HOME dismiss, frequency STEP, TUNE -/+, PALETTE. Remaining controls and other dashboards are shown as unavailable, not impersonated.
+- No fake IQ plot on device; any retained plot is cleared when receiver leaves state RECEIVING IQ.
+- Independent gates still open: CI/native compile, original badge pixel endianness on screen, touch hitboxes, display render/frame rate, 5-minute RF regression, owner visual acceptance.
+- Do not flash or merge to main without an explicit review of this new firmware build.

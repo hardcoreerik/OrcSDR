@@ -1,6 +1,6 @@
 #pragma once
 // Native 720x720 OrcSDR Home v3 geometry / navigation-drawer design contract.
-// DESIGN ONLY: NOT included by current Waveshare firmware main.cpp.
+// Used by home_v3_ui.cpp; physical verification pending.
 #include <cstdint>
 #include <initializer_list>
 namespace orcsdr::waveshare4b::home_v3 {
