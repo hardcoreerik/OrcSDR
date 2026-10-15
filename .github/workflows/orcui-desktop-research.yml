@@ -32,7 +32,7 @@ jobs:
       - name: Install desktop toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ pkg-config libsdl2-dev gdb
+          sudo apt-get install -y cmake ninja-build g++ pkg-config libsdl2-dev gdb xvfb xauth
       - name: Configure LVGL/SDL simulator
         run: |
           cmake -S experiments/orcui/desktop -B build-orcui-desktop \
@@ -52,10 +52,10 @@ jobs:
             exit 1
           fi
           mkdir -p build-orcui-desktop/screenshots
-          build-orcui-desktop/orcui_desktop --preset waveshare --seconds 2 --screenshot build-orcui-desktop/screenshots/waveshare.bmp
-          build-orcui-desktop/orcui_desktop --preset tab5 --seconds 2 --screenshot build-orcui-desktop/screenshots/tab5.bmp
-          build-orcui-desktop/orcui_desktop --preset round480 --seconds 2 --screenshot build-orcui-desktop/screenshots/round480.bmp
-          build-orcui-desktop/orcui_desktop --preset ultrawide --seconds 2 --screenshot build-orcui-desktop/screenshots/ultrawide.bmp
+          xvfb-run -a -s "-screen 0 1920x1080x24" env SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software build-orcui-desktop/orcui_desktop --preset waveshare --seconds 2 --screenshot build-orcui-desktop/screenshots/waveshare.bmp
+          xvfb-run -a -s "-screen 0 1920x1080x24" env SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software build-orcui-desktop/orcui_desktop --preset tab5 --seconds 2 --screenshot build-orcui-desktop/screenshots/tab5.bmp
+          xvfb-run -a -s "-screen 0 1920x1080x24" env SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software build-orcui-desktop/orcui_desktop --preset round480 --seconds 2 --screenshot build-orcui-desktop/screenshots/round480.bmp
+          xvfb-run -a -s "-screen 0 1920x1080x24" env SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software build-orcui-desktop/orcui_desktop --preset ultrawide --seconds 2 --screenshot build-orcui-desktop/screenshots/ultrawide.bmp
           python3 - <<'PY'
           import pathlib, struct
           folder = pathlib.Path("build-orcui-desktop/screenshots")
