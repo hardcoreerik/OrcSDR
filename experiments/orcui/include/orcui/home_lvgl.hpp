@@ -64,5 +64,7 @@ private:
   ActionSink sink_=nullptr;
   void* context_=nullptr;
   bool menu_open_=false;
+  char last_frequency_label_[80]{};
+  char last_status_label_[90]{};
 };
 }
