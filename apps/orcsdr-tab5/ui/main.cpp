@@ -18883,9 +18883,10 @@ void process_command(char* command) {
     const auto state=orcdial_secure.status();
     Serial.printf("RTL_ORCDIAL_STATUS bridge=%d trust=%d connection=%s boot=%d failure=%s protocol=4\n",orcdial_transport_ready,state.trusted,orc::secure::state_name(state.state),state.boot_connect,orc::secure::failure_name(state.failure));
     // A separate line keeps the STATUS line above unchanged for existing parsers.
+    const esp_err_t last_tx_err=orcdial_last_tx_result.load();   // once: the transmit task may store a new result between two loads
     Serial.printf("RTL_ORCDIAL_BRIDGE peer_tx_ok=%lu peer_tx_fail=%lu peer_rx=%lu last_tx_err=%s(0x%x) last_tx_ms=%lu\n",
                   (unsigned long)orcdial_peer_tx_ok.load(),(unsigned long)orcdial_peer_tx_fail.load(),(unsigned long)orcdial_peer_rx_frames.load(),
-                  esp_err_to_name(orcdial_last_tx_result.load()),(unsigned)orcdial_last_tx_result.load(),(unsigned long)orcdial_peer_tx_last_ms.load());
+                  esp_err_to_name(last_tx_err),(unsigned)last_tx_err,(unsigned long)orcdial_peer_tx_last_ms.load());
     if(authenticated && state.state==orc::secure::State::verify)Serial.printf("RTL_ORCDIAL_PAIR_CODE %06lu\n",(unsigned long)state.code);
     return;
   }

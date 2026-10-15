@@ -58,10 +58,11 @@ OrcDial is different: the Dial's ESP-NOW link ends on the C6, and the Tab5 reach
 peer-data messages (`0x4f444c01` / `0x4f444c02`) handled by the OrcDial C6 image (`orcdial/c6`). On that 1.4.1 unit
 every peer-data send failed (`RTL_ORCDIAL_BRIDGE peer_tx_ok=0 peer_tx_fail=11 peer_rx=0 last_tx_err=ESP_FAIL`, each send
 timing out after 5 s) and pairing timed out on both devices. The same Dial paired with a Tab5 on the 3.0.6 C6 in one
-attempt (codes matched, `Connected`, 616 sends and 0 failures). So the Dial depends on a C6 that runs the OrcDial
-image with the peer-data endpoint, not on a particular version number: ESP-Hosted introduced peer-data transfer in 2.8.1
-(`managed_components/espressif__esp_hosted/CHANGELOG.md`), and a 1.4.1 C6 predates it. This was one unit, one
-Dial and one dongle; the C6 was not changed, so no update was run to prove the cause from the other side.
+attempt (codes matched, `Connected`, 616 sends and 0 failures). The OrcDial requirement therefore stays as stated
+above: C6 3.0.6 for ESP-NOW. The 1.4.1 failure is consistent with a missing peer-data endpoint (ESP-Hosted introduced
+peer-data transfer in 2.8.1, see `managed_components/espressif__esp_hosted/CHANGELOG.md`, and 1.4.1 predates it), but
+this observation does not show that any other C6 version works or fails. It was one unit, one Dial and one dongle; the C6
+was not changed, so no update was run to prove the cause from the other side.
 
 At boot the P4 logs the C6 version. Wi-Fi is only blocked if the version cannot be read; a healthy 3.0.6 pair reports:
 
