@@ -32,3 +32,10 @@ jobs:
             apps/orcsdr-waveshare-4b/tests/home_v2_layout_host.cpp \
             -o /tmp/orcsdr-home-v2-720
           /tmp/orcsdr-home-v2-720
+      - name: Verify v3 badge-toggle drawer layout and state model
+        run: |
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic \
+            -Iapps/orcsdr-waveshare-4b/main \
+            apps/orcsdr-waveshare-4b/tests/home_v3_drawer_host.cpp \
+            -o /tmp/orcsdr-home-v3-drawer
+          /tmp/orcsdr-home-v3-drawer

@@ -1,4 +1,6 @@
-# Home 720×720 v2 — OrcSDR fidelity proposal (review gate)
+# Home 720×720 v2 — superseded always-visible-nav proposal
+
+**SUPERSEDED by [Home v3 Orc badge drawer](WAVESHARE_4B_HOME_V3_DESIGN.md).** This earlier layout retained a permanent navigation rail; the user instead chose a badge-toggled overlay so the spectrum and waterfall can occupy the full width.
 
 **Status: DESIGN PROPOSAL. Not integrated into the Waveshare firmware. Not approved or flashed.**
 This proposal responds to the owner's failed visual-parity review of the original
