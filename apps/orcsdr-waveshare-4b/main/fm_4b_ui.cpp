@@ -22,7 +22,7 @@ QueueHandle_t commands=nullptr;
 void (*go_home)()=nullptr;
 lv_obj_t *root=nullptr,*page=nullptr,*shade=nullptr,*menu=nullptr;
 lv_obj_t *tab_buttons[kTabs]{};
-lv_obj_t *head_status=nullptr,*freq_label=nullptr,*aux_label=nullptr;
+lv_obj_t *head_status=nullptr,*head_uptime=nullptr,*freq_label=nullptr,*aux_label=nullptr;
 lv_obj_t *health_values[8]{};
 lv_obj_t *scope=nullptr,*fall=nullptr;
 uint16_t *scope_data=nullptr,*fall_data=nullptr,*badge_data=nullptr;
@@ -208,9 +208,9 @@ void page_spectrum(){
  btn(actions,{7,1,139,41},"SPAN N/A",false);
  btn(actions,{152,1,142,41},"TUNE -",true,home_v3::Command::Down);
  btn(actions,{300,1,142,41},"TUNE +",true,home_v3::Command::Up);
- auto* pal=btn(actions,{448,1,224,41},"FM PALETTE",false);
- lv_obj_remove_state(pal,LV_STATE_DISABLED);
- lv_obj_set_style_border_color(pal,lv_color_hex(to_rgb(GREEN)),0);
+ auto* pal=box(actions,{448,1,224,41},PANEL,GREEN);
+ txt(pal,{4,10,216,22},"FM PALETTE",GREEN,true);
+ lv_obj_add_flag(pal,LV_OBJ_FLAG_CLICKABLE);
  lv_obj_add_event_cb(pal,palette_tap,LV_EVENT_CLICKED,nullptr);
 }
 void page_station(){
@@ -236,9 +236,9 @@ void page_settings(){
  auto* radio=box(page,local(kSettingsRadio));
  txt(radio,{12,13,305,25},"FM TUNING / SPECTRUM",CYAN);
  btn(radio,{12,70,305,51},"STEP SIZE",true,home_v3::Command::Step);
- auto* pal=btn(radio,{12,134,305,51},"CYCLE FM PALETTE",false);
- lv_obj_remove_state(pal,LV_STATE_DISABLED);
- lv_obj_set_style_border_color(pal,lv_color_hex(to_rgb(GREEN)),0);
+ auto* pal=box(radio,{12,134,305,51},PANEL,GREEN);
+ txt(pal,{4,15,297,22},"CYCLE FM PALETTE",GREEN,true);
+ lv_obj_add_flag(pal,LV_OBJ_FLAG_CLICKABLE);
  lv_obj_add_event_cb(pal,palette_tap,LV_EVENT_CLICKED,nullptr);
  btn(radio,{12,199,305,51},"FILTER BW: NOT PORTED",false);
  btn(radio,{12,264,305,51},"RF GAIN: NOT PORTED",false);
@@ -314,7 +314,8 @@ bool create(QueueHandle_t q,void(*home_cb)()){
  txt(root,kBrand,"OrcSDR\nFM BROADCAST",0xffff);
  box(root,kStatus);
  txt(root,{253,20,80,45},"Wi-Fi\nOFFLINE",MUTED);
- head_status=txt(root,{336,20,155,45},"RTL-SDR\nNO SDR",MUTED);
+ head_status=txt(root,{326,20,98,45},"RTL-SDR\nNO SDR",MUTED);
+ head_uptime=txt(root,{426,20,66,45},"UPTIME\n0m",CYAN);
  auto* home=btn(root,kHome,"H",false);
  lv_obj_remove_state(home,LV_STATE_DISABLED);
  lv_obj_set_style_border_color(home,lv_color_hex(to_rgb(GREEN)),0);
@@ -370,6 +371,8 @@ void update(const home_v3::Snapshot& s,const uint8_t* iq,bool fresh){
     s.receiver_state==3?"USB ERROR":"NO SDR";
  snprintf(buf,sizeof(buf),"RTL-SDR\n%s",condition);
  lv_label_set_text(head_status,buf);
+ snprintf(buf,sizeof(buf),"UPTIME\n%um",unsigned(s.uptime_sec/60));
+ lv_label_set_text(head_uptime,buf);
  if(model.selected==Tab::listen){
   // Directly update the view's card value, never synthetic station metadata.
   auto* frequency_card=lv_obj_get_child(page,0);
@@ -389,10 +392,14 @@ void update(const home_v3::Snapshot& s,const uint8_t* iq,bool fresh){
  }else if(model.selected==Tab::rf_health){
   const char* values[8]={"","","","","N/A","N/A","N/A","v0.9.3 PIN"};
   values[0]=condition;
-  snprintf(buf,sizeof(buf),"%u",unsigned(s.effective_sps));values[1]=buf;
+  if(s.receiver_state==2){
+   snprintf(buf,sizeof(buf),"%u",unsigned(s.effective_sps));values[1]=buf;
+  }else values[1]="N/A";
   char target[32],dropped[32];
   snprintf(target,sizeof(target),"%u",960000u);values[2]=target;
-  snprintf(dropped,sizeof(dropped),"%u",unsigned(s.drops));values[3]=dropped;
+  if(s.receiver_state==2){
+   snprintf(dropped,sizeof(dropped),"%u",unsigned(s.drops));values[3]=dropped;
+  }else values[3]="N/A";
   for(unsigned i=0;i<8;++i)if(health_values[i])lv_label_set_text(health_values[i],values[i]);
  }
  if(s.receiver_state!=2){
