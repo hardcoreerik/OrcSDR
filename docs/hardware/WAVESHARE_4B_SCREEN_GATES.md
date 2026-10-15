@@ -221,3 +221,27 @@ flash approval. Display, touch and five-minute RF gates remain open.
   exact USB device/profile logs, physical topology, antenna, power routing,
   full touch coverage, and five-minute >=95% stream qualification. Home UI
   design remains rejected/deferred per owner; no redesign performed.
+
+### Reconnected serial: five-minute stream measurement, 2026-10-14
+
+- Owner restored COM40. Opened 115200 baud with DTR/RTS false and no reset.
+  Serial confirms Home IQ at 96,100,000 Hz with increasing consumed bytes.
+- Saved app-directory `com40-iq-stability.log`: 412 IQ rows spanning
+  **309.18 seconds**, SPS range **960,009–960,091**, drops **0 throughout**,
+  maximum telemetry gap 780 ms, consumed counter monotonic. Counter delta
+  independently gives 960,052.16 complex samples/second (CU8, two bytes/IQ).
+  These measurements meet the duration/rate/drop thresholds for the observed
+  interval; no stream-ended, panic or starvation messages were captured.
+- Ran `python ../../tools/hardware/check_4b_home_log.py --log com40-iq-stability.log`
+  from the app directory. Strict checker **rejects** this reconnect-only log:
+  `No RF START marker (no proven stream)`. Startup/enumeration occurred before
+  capture. No synthetic marker added and no full qualification PASS claimed.
+- Log SHA-256:
+  `de071c982d9011b4c28f776ec2008214ffa2f2535c6b902eebe10e312b0eb24f`.
+- Owner identifies working setup as V4 powered through a **power passthrough
+  adapter**, with a **one-foot telescopic monopole**. Do not call this proof
+  of external USB hub enumeration. Reception evidence is bounded to this
+  setup at 96.1 MHz; antenna placement, ground plane and a known-station
+  tuning/peak check remain unrecorded. No audio demodulation is implemented.
+- Next qualification needs a complete enumeration/RF START plus >=300-second
+  log and a known-signal tuning check. UI design acceptance remains deferred.
