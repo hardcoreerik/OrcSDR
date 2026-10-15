@@ -78,3 +78,45 @@ jobs:
             build-orcui-desktop/Testing/Temporary/LastTest.log
             build-orcui-desktop/screenshots/*.bmp
           if-no-files-found: ignore
+
+  sdl-windows:
+    name: LVGL 9.3 + SDL2 native simulator (Windows UCRT64)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MSYS2 UCRT64 toolchain and SDL2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-pkgconf
+      - name: Configure native Windows simulator
+        shell: msys2 {0}
+        run: |
+          cmake -S experiments/orcui/desktop -B build-orcui-windows \
+            -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+      - name: Build Windows simulator
+        shell: msys2 {0}
+        run: cmake --build build-orcui-windows --parallel 4
+      - name: Run SDL headless profile-switch tests on Windows
+        shell: msys2 {0}
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          ctest --test-dir build-orcui-windows --output-on-failure
+          ./build-orcui-windows/orcui_desktop.exe --preset round480 --seconds 2
+      - name: Store Windows test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orcui-windows-test-logs
+          path: build-orcui-windows/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
