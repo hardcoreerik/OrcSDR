@@ -11,6 +11,17 @@ while it is open. Tune +/-, STEP and PALETTE are available. Other dashboard
 routes and unported controls are visibly disabled. No fake RF, Wi-Fi, audio,
 or decoder functionality is presented as live.
 
+Local preflight corrected STEP label overlap and preserves six fractional
+MHz digits for exact 12.5 kHz tuning readouts. `HOME_4B STEP` and
+`HOME_4B PALETTE` logs support the physical touch checks. Host geometry,
+tuning/FFT, drawer state and log-validator tests pass; these do not establish
+physical visual acceptance. See the v3 design and screen-gate evidence ledgers.
+
+Local ESP-IDF 5.5.4 rev1.x build also passed (857,376-byte app, 18% free).
+Original badge and shared palette symbols are present in the linked ELF.
+This image has not yet been physically qualified; retain the separate build,
+flash, photo, drawer and complete RF-log acceptance gates.
+
 Home v3 lives in main/home_v3_ui.cpp. The USB/IQ task and standalone
 esp-rtl-sdr v0.9.3 dependency are unchanged. The new renderer reuses the
 original apps/orcsdr-tab5/ui/waterfall_style.cpp directly in the

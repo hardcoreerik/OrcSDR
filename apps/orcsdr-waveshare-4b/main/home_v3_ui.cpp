@@ -62,8 +62,9 @@ void on_command(lv_event_t* e){
 }
 void on_palette(lv_event_t*){
  waterfall_style::next_palette(waterfall_style::Screen::home);
- lv_label_set_text(palette_text,waterfall_style::palette_name(
-  waterfall_style::palette(waterfall_style::Screen::home)));
+ const char* name=waterfall_style::palette_name(waterfall_style::palette(waterfall_style::Screen::home));
+ lv_label_set_text(palette_text,name);
+ ESP_LOGI(TAG,"HOME_4B PALETTE %s",name);
 }
 lv_obj_t* button(lv_obj_t* root,Rect r,const char* name,Command cmd,bool enabled){
  auto* o=frame(root,r);lv_obj_add_flag(o,LV_OBJ_FLAG_CLICKABLE);
@@ -169,6 +170,7 @@ bool create(QueueHandle_t q){
  button(screen,kFilter,"FILTER --",Command::FM,false);
  button(screen,kSpan,"SPAN 960K",Command::FM,false);
  auto* step=button(screen,kStep,"STEP",Command::Step,true);
+ lv_obj_set_y(lv_obj_get_child(step,0),2);
  step_text=caption(step,{2,25,kStep.w-4,17},"12500 Hz",CYAN,true);
  button(screen,kTuneDown,"TUNE -",Command::Down,true);
  button(screen,kTuneUp,"TUNE +",Command::Up,true);
@@ -197,8 +199,8 @@ bool create(QueueHandle_t q){
 void update(const Snapshot& s,const uint8_t* bins,bool fresh){
  char value[100];
  uint32_t hz=s.applied_hz?s.applied_hz:s.requested_hz;
- snprintf(value,sizeof(value),"%u.%03u MHz%s",unsigned(hz/1000000),
-    unsigned((hz%1000000)/1000),s.applied_hz?"":" (TARGET)");
+ snprintf(value,sizeof(value),"%u.%06u MHz%s",unsigned(hz/1000000),
+    unsigned(hz%1000000),s.applied_hz?"":" (TARGET)");
  lv_label_set_text(freq,value);
  snprintf(value,sizeof(value),"%u Hz",unsigned(s.step_hz));
  lv_label_set_text(step_text,value);

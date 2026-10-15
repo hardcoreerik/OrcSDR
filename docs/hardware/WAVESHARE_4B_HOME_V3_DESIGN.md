@@ -1,7 +1,7 @@
 # Waveshare 4B Home v3 — Orc badge toggles navigation
 
-**2026-10-14: design prototype, host-tested geometry only. Not implemented in
-production 4B LVGL UI, not visually accepted on a physical device and not flashed.
+**2026-10-14: Home v3 LVGL source integrated on the development branch, with
+host-tested geometry. Not visually accepted on a physical device or deployed.
 Supersedes the permanently visible 172 px navigation rail in
 `WAVESHARE_4B_HOME_V2_DESIGN.md`.**
 
@@ -121,7 +121,7 @@ physical touch/USB acceptance.
 - [ ] Restore missing original Home popups/actions without fictitious live data.
 - [ ] Obtain independent radio/USB qualification and sustained capture gate.
 
-**Current deployed Waveshare firmware unchanged by this design proposal.**
+**The earlier physical IQ baseline uses Home v1; it does not qualify Home v3.**
 
 ## LVGL implementation (2026-10-14)
 
@@ -133,3 +133,30 @@ physical touch/USB acceptance.
 - No fake IQ plot on device; any retained plot is cleared when receiver leaves state RECEIVING IQ.
 - Independent gates still open: CI/native compile, original badge pixel endianness on screen, touch hitboxes, display render/frame rate, 5-minute RF regression, owner visual acceptance.
 - Do not flash or merge to main without an explicit review of this new firmware build.
+
+## Local preflight of fda39842, 2026-10-14
+
+- Badge copy is byte-identical to the Tab5 source asset (SHA-256
+  `638f26c0242ebc5eda5cb41b987a08d7627ea77a321173150b25ad07aa1d359d`).
+  Renderer converts its big-endian packed pixels to native RGB565, following
+  the original badge byte-swap semantics. Physical color acceptance is open.
+- Original Tab5 `waterfall_style.cpp` is a direct CMake source, with Home's
+  CLASSIC default and all seven source palettes. No new palette implementation.
+- Creation occurs under the BSP LVGL lock; updates run in the LVGL timer.
+  Radio data crosses the existing snapshot/critical-section boundary. Drawer
+  visibility changes allocate no canvases or plots; drawer and dismissal
+  objects are created above content, with the badge hit target accessible.
+  Static review does not prove actual event routing on the touchscreen.
+- Corrected STEP title/value overlap (title y=2..22, value y=25..42), retained
+  all six fractional MHz digits so 12.5 kHz tuning is not truncated, and fixed
+  the stale Home v1 boot label. STEP and PALETTE actions now log their values.
+- Existing Home FFT/tuning, v2 geometry and v3 drawer host tests all passed
+  using g++17 with `-O2 -Wall -Wextra -Werror -pedantic`; five strict-log
+  validator unit tests passed. No physical hitbox or visual approval claimed.
+- COM40 CH343 serial identity `5B91033266` re-probed as P4 v1.3,
+  MAC `e8:f6:0a:e4:43:02`, 32 MB flash. Probe reset back to existing firmware.
+  Original power-passthrough arrangement is to be retained for the RF test.
+- Fresh native ESP-IDF 5.5.4 rev1.x build passed: app 857,376 bytes, 18%
+  partition space free, 200 MHz PSRAM configuration. Image checks and ELF
+  badge/shared-palette symbols verified; full hashes and source patch identity
+  are recorded in `WAVESHARE_4B_SCREEN_GATES.md`. No physical v3 acceptance.

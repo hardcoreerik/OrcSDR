@@ -63,7 +63,11 @@ static void radio_task(void*) {
   for(;;){
     home_v3::Command cmd;
     while(xQueueReceive(queue,&cmd,0)==pdTRUE){
-      if(cmd==home_v3::Command::Step){step_idx=(step_idx.load()+1)%6;continue;}
+      if(cmd==home_v3::Command::Step){
+        step_idx=(step_idx.load()+1)%6;
+        ESP_LOGI(TAG,"HOME_4B STEP hz=%u",unsigned(kSteps[step_idx.load()]));
+        continue;
+      }
       uint32_t next=requested.load();
       switch(cmd){
         case home_v3::Command::Down:next=tune(next,-1,kSteps[step_idx.load()]);break;
@@ -155,7 +159,7 @@ static void radio_task(void*) {
   }
 }
 extern "C" void app_main(void) {
-  ESP_LOGI(TAG,"OrcSDR Waveshare 4B Home v1, IQ-only; no audio/C6");
+  ESP_LOGI(TAG,"OrcSDR Waveshare 4B Home v3, IQ-only; no audio/C6");
   ESP_LOGI(TAG,"driver=%s psram=%u",esp_rtl_sdr_get_version_string(),
            unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
   queue=xQueueCreate(12,sizeof(home_v3::Command));

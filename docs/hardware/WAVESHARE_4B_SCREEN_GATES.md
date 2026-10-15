@@ -245,3 +245,70 @@ flash approval. Display, touch and five-minute RF gates remain open.
   tuning/peak check remain unrecorded. No audio demodulation is implemented.
 - Next qualification needs a complete enumeration/RF START plus >=300-second
   log and a known-signal tuning check. UI design acceptance remains deferred.
+
+### Home v3 local preflight, 2026-10-14
+
+- Isolated checkout of expected source
+  `fda39842a004414fe8da03dac55d067c8fcb725a`, including the earlier evidence
+  commits. Existing checkouts, original images and serial logs preserved.
+- Scoped review covered the v3 LVGL renderer/header/drawer model, main-task
+  glue, CMake, source badge, source waterfall palettes and Home references.
+  Corrected STEP title overlap, retained six fractional MHz digits, corrected
+  the boot version label and added STEP/palette verification logs. No driver,
+  acquisition, Tab5 application or C6 changes.
+- Original badge copies match SHA-256
+  `638f26c0242ebc5eda5cb41b987a08d7627ea77a321173150b25ad07aa1d359d`.
+  Shared Tab5 `waterfall_style.cpp` is compiled directly, Home starts CLASSIC.
+  CMake embeds the fixed-symbol 21,632-byte badge. Physical RGB565 colors and
+  owner visual acceptance remain unverified for v3.
+- COM40 CH343 serial `5B91033266` re-probe: P4 v1.3,
+  MAC `e8:f6:0a:e4:43:02`, 32 MB flash. Read-only esptool flash identification
+  followed by UART hard reset; no firmware write. `preflight-v3-com40.log`
+  saved at checkout root. COM39 not accessed.
+- Host tests passed: `home_host` (known FFT tone at bin 160),
+  `home_v2_layout_host`, `home_v3_drawer_host`; five log-checker unit tests
+  passed. Each C++ test compiled via WSL Ubuntu g++ with
+  `-std=c++17 -O2 -Wall -Wextra -Werror -pedantic -Iapps/orcsdr-waveshare-4b/main`
+  and its `apps/orcsdr-waveshare-4b/tests/<test>.cpp` source, then executed.
+  Per-test `*-build.log`/`*-test.log` and `log-checker-tests.log` retained at
+  checkout root. Python command:
+  `python -m unittest discover -s tools/hardware -p test_4b_home_log.py -v`.
+- Build environment remains ESP-IDF 5.5.4 at
+  `735507283d5b2f9fb363a1901172dbd9e847945d`, with the existing one-line
+  SDIO-slave bounds-check modification preserved; Python 3.14.3, RISC-V GCC
+  14.2.0 (`esp-14.2.0_20260121`). Dependency lock matches the previous working
+  local lock; driver stays pinned to `31a159df4f006a837d5041029bc6d1bc63520234`.
+- Generated config: silicon 1.00–1.99, PSRAM 200 MHz, flash 32 MB,
+  external hubs enabled. No rev3.x CI image will be used on this board.
+- No Home v3 physical display/photo, 50-toggle drawer test, palette/tuning
+  touch validation, full RF-start capture or RF stability acceptance yet.
+  The earlier 309.18-second Home v1 baseline does not qualify this renderer.
+- One fresh native build **passed**, exit 0, using the README's exact
+  `build-4b-home-v3`/rev1.x command. App 857,376 bytes (`0xd1520`), 18% free
+  in 1 MiB factory partition; bootloader 23,952 bytes. Both image headers
+  report silicon v1.0–v1.99 with valid checksum and validation hashes.
+- ELF symbols confirm embedded badge start `0x400b69fc`, end `0x400bbe7c`
+  (21,632 bytes), plus shared `waterfall_style::color565` and `next_palette`.
+- Build input is `fda39842` plus the reviewed local C++ fixes; root
+  `home-v3-source.patch` SHA-256 is
+  `5952c5b12d4637b213eee1e49be4d9fe9d59fee108ea96001f0bf669bf0486b9`.
+  App version `v0.4.0-beta.1-32-gfda39842-dirt`, ELF SHA-256
+  `820278292c1c530928fefd7d1402b87e7f91f751d9ce023637be931c175ab656`.
+  This is a local patched-source build, not a byte-identical CI reproduction.
+- Image SHA-256:
+
+  | Image | SHA-256 |
+  |---|---|
+  | App | `d4ec011e393c7d09c7a426807b8d1d16f87995032e257fb0e507efb761ba7403` |
+  | Bootloader | `e18f9c479933cfebd5f922946c211a1fae509c0d9d399fce6a133babc8bfeafc` |
+  | Partition table | `7f00b6c042a89b15b0cac534f82ed988caf29278ff5700b0c511eb1b5bb7c820` |
+
+- Generated `flasher_args.json`: bootloader `0x2000`, partition table
+  `0x8000`, app `0x10000`, DIO/80 MHz/32 MB. Partition hash matches the
+  earlier working image. No C6/NVS image or full erase in the recipe.
+  App-directory evidence: `idf-build-home-v3.log`, `home-v3-image-info.log`,
+  `home-v3-bootloader-info.log`, `home-v3-sha256.txt`, `dependencies.lock`.
+- Recommendation at this gate: **Home not yet verified**. Build and host
+  tests passed; final flash approval, v3 photographs, original-color visual
+  review, 50 drawer interactions and complete five-minute RF capture remain
+  pending. Original firmware/power setup preserved. No new device write yet.
