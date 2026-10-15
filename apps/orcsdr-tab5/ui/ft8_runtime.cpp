@@ -611,9 +611,19 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     g.active.store(false, std::memory_order_release);
     set_state(State::error);
-    std::printf("ORC_FT8_RT start_failed task\n");
-    g_alloc_fail_bytes.store(20480u, std::memory_order_relaxed);   // the task's stack comes from PSRAM: a failure here is a memory failure
-    return start_failed(StartFailure::memory);
+    // The stack comes from PSRAM but the task control block from internal RAM, so a failure is only a PSRAM shortage when PSRAM really
+    // cannot hold the stack. Otherwise it is reported as a different failure, with the internal figures, and FREE MEMORY is not offered.
+    constexpr size_t kTaskStackBytes = 20480u;
+    if (heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) < kTaskStackBytes + 4096u) {
+      std::printf("ORC_FT8_RT start_failed task (out of PSRAM) needed=%u\n", static_cast<unsigned>(kTaskStackBytes));
+      g_alloc_fail_bytes.store(static_cast<uint32_t>(kTaskStackBytes), std::memory_order_relaxed);
+      return start_failed(StartFailure::memory);
+    }
+    std::printf("ORC_FT8_RT start_failed task (internal) internal_free=%u internal_largest=%u\n",
+                static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+                static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
+    g_alloc_fail_bytes.store(0, std::memory_order_relaxed);
+    return start_failed(StartFailure::backend);
   }
   {   // started: the last failure no longer applies (the failure count stays). Cleared only now, after the last step that can fail.
     const uint32_t failures = g_start_report.failures;
