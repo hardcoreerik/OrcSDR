@@ -4337,7 +4337,37 @@ bool iq_rec_ensure_buffer() {
   return g_iq_rec_buf != nullptr;
 }
 
+// The LoRa receiver keeps two 7.7 MB capture buffers and a pre-roll buffer (15.9 MB of PSRAM) for the rest of the session once the
+// LoRa screen has been opened. Measured on a Tab5: free PSRAM fell from 20.9 MB to 5.0 MB on the first visit and stayed there, which
+// left the FT8 decoder (about 4 MB) unable to start after a long session. They are registered as reclaimable: given back on request
+// (the FT8 screen's FREE MEMORY, RTL_MEM RECLAIM) when nothing is using them, and re-allocated by lora_iq_ensure_buffers() the next
+// time LoRa opens.
+size_t lora_iq_held_bytes() {
+  return (g_iq_rec_buf ? kIqRecMaxBytes : 0u) + (g_lora_decode_buf ? kIqRecMaxBytes : 0u) + (g_lora_pre_roll_buf ? kLoraPreRollBytes : 0u);
+}
+
+size_t lora_iq_release_buffers() {
+  // Never while LoRa is on screen or is still the receiver's band, a capture is running or waiting to be read or exported, or the
+  // decoder task is working on one of the buffers.
+  if (orcsdr::screens::owns(orcsdr::screens::Id::lora) || rtl_ui_band == RtlBand::lora ||
+      g_iq_rec_active.load(std::memory_order_acquire) || g_iq_rec_ready.load(std::memory_order_acquire) ||
+      g_iq_rec_export_pending.load(std::memory_order_acquire) || lora_native_decode_busy.load(std::memory_order_acquire))
+    return 0;
+  const size_t held = lora_iq_held_bytes();
+  uint8_t* capture = g_iq_rec_buf;
+  uint8_t* decode = g_lora_decode_buf;
+  uint8_t* pre_roll = g_lora_pre_roll_buf;
+  g_iq_rec_buf = nullptr;   // clear first: every user of these checks for null and the next LoRa visit allocates them again
+  g_lora_decode_buf = nullptr;
+  g_lora_pre_roll_buf = nullptr;
+  heap_caps_free(capture);
+  heap_caps_free(decode);
+  heap_caps_free(pre_roll);
+  return held;
+}
+
 bool lora_iq_ensure_buffers() {
+  (void)orcsdr::memory_reclaim::register_holder({"LoRa IQ buffers", lora_iq_held_bytes, lora_iq_release_buffers});
   if (!iq_rec_ensure_buffer()) return false;
   if (g_lora_decode_buf == nullptr) {
     g_lora_decode_buf = static_cast<uint8_t*>(
