@@ -40,7 +40,9 @@ void action(HomeCommand cmd,void*){
  switch(cmd){
   case HomeCommand::span_up: span=std::min(2400000u,span*2);break;
   case HomeCommand::span_down:span=std::max(120000u,span/2);break;
+  case HomeCommand::tune_down:
   case HomeCommand::step_down:data.frequency_hz-=12500;break;
+  case HomeCommand::tune_up:
   case HomeCommand::step_up:data.frequency_hz+=12500;break;
   case HomeCommand::mode:data.mode="MODE SIM";break;
   case HomeCommand::filter:data.mode="FILTER SIM";break;
@@ -96,7 +98,8 @@ bool change_preset(int i){
   lv_sdl_window_set_zoom(display,p.zoom);
   lv_sdl_window_set_title(display,p.title);
  }
- const bool ok=home.geometry().valid?home.resize(metrics):home.create(lv_screen_active(),metrics,action,nullptr);
+ HomeOptions options{};options.capabilities={true,true,true,false};
+ const bool ok=home.geometry().valid?home.resize(metrics):home.create(lv_screen_active(),metrics,action,nullptr,options);
  if(ok){
   selected=i;
   data.span_hz=span;
@@ -120,7 +123,7 @@ void synthetic_fft(uint64_t frame){
  }
 }
 void usage(const char* cmd){
- std::printf("Usage: %s [--preset waveshare|tab5|round480|round360|ultrawide|portrait|compact] [--seconds N] [--cycle-ms N] [--paused]\n",cmd);
+ std::printf("Usage: %s [--preset waveshare|tab5|round480|round360|ultrawide|portrait|compact] [--seconds N] [--cycle-ms N] [--paused] [--screenshot out.bmp]\n",cmd);
 }
 }
 int main(int argc,char** argv){

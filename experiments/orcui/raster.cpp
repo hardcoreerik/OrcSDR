@@ -7,6 +7,8 @@ namespace {
 constexpr uint16_t black=0x0000,grid=0x2104,cyan=0x07ff,green=0x07e0,yellow=0xffe0;
 bool valid(Bitmap565 b){
   return b.data && b.width>0 && b.height>0 &&
+    b.stride_bytes%alignof(uint16_t)==0 &&
+    reinterpret_cast<uintptr_t>(b.data)%alignof(uint16_t)==0 &&
     b.stride_bytes>=static_cast<size_t>(b.width)*2 &&
     b.width<20000 && b.height<20000;
 }
@@ -62,13 +64,16 @@ void paint_spectrum(Bitmap565 out,const float* levels,size_t bins,float min_db,f
   }
   for(int y=0;y<out.height;++y)row(out,y)[out.width/2]=cyan;
 }
-void push_waterfall(Bitmap565 out,const float* levels,size_t bins,float min_db,float max_db){
+void push_waterfall(Bitmap565 out,const float* levels,size_t bins,float min_db,float max_db,const uint16_t* palette256){
   if(!valid(out)||!levels||!bins)return;
   uint8_t* bytes=reinterpret_cast<uint8_t*>(out.data);
   if(out.height>1)std::memmove(bytes,bytes+out.stride_bytes,
                              out.stride_bytes*static_cast<size_t>(out.height-1));
   uint16_t* p=row(out,out.height-1);
   for(int x=0;x<out.width;++x)
-    p[x]=palette(normalized(bin_at(levels,bins,x,out.width),min_db,max_db));
+    {
+    const float t=normalized(bin_at(levels,bins,x,out.width),min_db,max_db);
+    p[x]=palette256?palette256[static_cast<unsigned>(t*255)]:palette(t);
+    }
 }
 }

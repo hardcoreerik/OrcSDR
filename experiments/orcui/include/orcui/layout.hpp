@@ -27,5 +27,7 @@ struct Layout {
   bool show_sidebar=false,show_inspector=false,show_controls=false,valid=false;
 };
 Layout plan(const Display& screen);
+// Drawer rows scroll vertically; each target retains a 44px touch height.
+Rect menu_row(const Layout& layout,int index);
 const char* form_name(Form form);
 }
