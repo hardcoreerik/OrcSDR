@@ -32,11 +32,11 @@ jobs:
       - name: Install desktop toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ pkg-config libsdl2-dev
+          sudo apt-get install -y cmake ninja-build g++ pkg-config libsdl2-dev gdb
       - name: Configure LVGL/SDL simulator
         run: |
           cmake -S experiments/orcui/desktop -B build-orcui-desktop \
-            -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+            -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=ON
       - name: Build native simulator
         run: cmake --build build-orcui-desktop --parallel 4
       - name: SDL smoke tests
@@ -44,7 +44,13 @@ jobs:
           SDL_VIDEODRIVER: dummy
           SDL_AUDIODRIVER: dummy
         run: |
-          ctest --test-dir build-orcui-desktop --output-on-failure
+          if ! ctest --test-dir build-orcui-desktop --output-on-failure; then
+            echo "OrcUI SDL test failed; collecting GDB backtrace"
+            gdb -batch -ex "set env SDL_VIDEODRIVER dummy" \
+                -ex "set env SDL_AUDIODRIVER dummy" -ex run -ex "thread apply all bt" \
+                --args build-orcui-desktop/orcui_desktop --preset waveshare --seconds 4 --cycle-ms 500
+            exit 1
+          fi
           mkdir -p build-orcui-desktop/screenshots
           build-orcui-desktop/orcui_desktop --preset waveshare --seconds 2 --screenshot build-orcui-desktop/screenshots/waveshare.bmp
           build-orcui-desktop/orcui_desktop --preset tab5 --seconds 2 --screenshot build-orcui-desktop/screenshots/tab5.bmp
