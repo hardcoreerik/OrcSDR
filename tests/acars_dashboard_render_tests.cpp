@@ -258,32 +258,38 @@ void test_interaction_check_roundtrip() {
 bool g_overlay = false;
 bool overlay_probe() { return g_overlay; }
 
-void test_frames_reach_the_display_in_one_push() {
+// With no pixel buffers (this stand-in models none) every change is a whole-frame change, which the dashboard draws
+// straight onto the display (a whole-sprite push measured 0.8 s on the panel). What is checked here is that repaints
+// happen exactly when something visible changed, never for header-only state, and that a frame starts with the
+// full-area background fill. Partial pushes of changed tiles are covered by acars_dirty_rects_tests and the device.
+void test_repaints_happen_only_for_visible_changes() {
   Rig rig;
   dash::set_overlay_probe(nullptr);
   rig.full_draw();
-  CHECK(host_display::pushes == 1);                // the whole area below the header is one sprite push
-  // A data update: nothing is drawn straight onto the display, exactly one finished frame is pushed.
+  CHECK(host_display::direct_ops > 0);
+  // A data update repaints once.
   rig.model->post_message(make_message("N1", "x"), 5, 0);
   rig.model->service();
   host_display::direct_ops = 0;
-  host_display::pushes = 0;
   dash::update(500000);
-  CHECK(host_display::direct_ops == 0 && host_display::pushes == 1);
-  // A tab change: same, and the header is not redrawn (no header hook call, no blank frame in between).
+  CHECK(host_display::direct_ops > 0);
+  // Nothing changed: nothing is drawn, however often update() runs.
+  host_display::direct_ops = 0;
+  for (uint32_t t = 500100; t < 502000; t += 50) dash::update(t);
+  CHECK(host_display::direct_ops == 0);
+  // A tab change repaints, and the header is not redrawn (no header hook call).
   g_header_calls = 0;
   host_display::direct_ops = 0;
-  host_display::pushes = 0;
   const Rect t = layout::tab(2);
   (void)rig.ui->touch(t.x + 10, t.y + 10, *rig.model);
-  dash::update(500010);
-  CHECK(host_display::direct_ops == 0 && host_display::pushes == 1 && g_header_calls == 0);
+  dash::update(500010 + 2000);
+  CHECK(host_display::direct_ops > 0 && g_header_calls == 0);
   // Battery / mute changes do not repaint anything.
-  host_display::pushes = 0;
+  host_display::direct_ops = 0;
   rig.model->set_device_state(33, false);
   dash::update(600000);
-  CHECK(host_display::pushes == 0);
-  // Every frame is complete: the pushed sprite starts with a full-area background fill, never a partial wipe.
+  CHECK(host_display::direct_ops == 0);
+  // Every frame is complete: it starts with a full-area background fill, never a partial wipe.
   rig.full_draw();
   bool saw_background = false;
   for (const Prim& p : host_display::prims)
@@ -304,7 +310,7 @@ void test_overlay_defers_repaint() {
   CHECK(host_display::pushes == 0 && host_display::direct_ops == 0);   // tray not erased
   g_overlay = false;
   dash::update(700100);
-  CHECK(host_display::pushes == 1);                // the pending change is painted once the tray closes
+  CHECK(host_display::direct_ops > 0);             // the pending change is painted once the tray closes
   dash::set_overlay_probe(nullptr);
 }
 
@@ -432,7 +438,7 @@ int main() {
   test_honest_text();
   test_no_idle_redraw_and_throttle();
   test_interaction_check_roundtrip();
-  test_frames_reach_the_display_in_one_push();
+  test_repaints_happen_only_for_visible_changes();
   test_overlay_defers_repaint();
   test_fallback_without_sprite_still_draws_correctly();
   test_app_lifecycle();

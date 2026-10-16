@@ -398,9 +398,23 @@ void Model::service() {
   }
   if (s1 == s2 && !(s1 & 1u) && s1 != seen_stats_seq_ && s1 != 0) {
     seen_stats_seq_ = s1;
+    const acars::Stats before = live_.stats;
+    const bool was_available = live_.stats_available;
     live_.stats = {words[0], words[1], words[2], words[3], words[4], words[5], words[6]};
     live_.stats_available = true;
-    bump_status();
+    // The demodulated-bit counter moves with every sample block, i.e. several times a second, while nothing else
+    // changes. Bumping the revision for it would repaint whole pages for no visible reason (the flicker the user
+    // saw). A bits-only change patches the snapshot in place; the one view that shows it asks for it separately.
+    const bool only_bits = was_available && before.sync_candidates == live_.stats.sync_candidates &&
+                           before.crc_ok == live_.stats.crc_ok && before.corrected == live_.stats.corrected &&
+                           before.crc_rejected == live_.stats.crc_rejected &&
+                           before.framing_rejected == live_.stats.framing_rejected &&
+                           before.overflows == live_.stats.overflows;
+    if (only_bits) {
+      if (!demo_) snapshot_.stats.bits = live_.stats.bits;
+    } else {
+      bump_status();
+    }
   }
   const ReceiverState rs = static_cast<ReceiverState>(receiver_state_.load(std::memory_order_acquire));
   const uint32_t caps = caps_bits_.load(std::memory_order_acquire);

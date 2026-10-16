@@ -6,8 +6,16 @@
 #include <cstdio>
 #include <cstring>
 #include <new>
+#include <utility>
+
+#if defined(ESP_PLATFORM)
+#include <esp_timer.h>
+#else
+#include <chrono>
+#endif
 
 #include "acars_dashboard_layout.hpp"
+#include "acars_dirty_rects.hpp"
 #include "acars_demo_data.hpp"
 #include "dashboard_audio_control.hpp"
 #include "focus_nav.hpp"
@@ -44,6 +52,7 @@ bool g_active = false;
 uint32_t g_drawn_ui = 0;
 uint32_t g_drawn_snapshot = 0;
 uint32_t g_last_draw_ms = 0;
+uint32_t g_drawn_bits = 0;     // the demodulated-bit counter as last painted (ACTIVITY page only)
 
 // All drawing goes through this shim so the same code can paint the display directly (header, and the
 // fallback if no sprite can be allocated) or an off-screen sprite that holds the whole area below the
@@ -85,26 +94,58 @@ Gfx G;
 // = 1.5 MB in PSRAM, allocated when the screen opens and released when it closes.
 constexpr int kRegionY = layout::kContext.y - 2;
 constexpr int kRegionH = layout::kScreenH - kRegionY;
+// Two sprites: a frame is composed in g_canvas (back) and compared with g_front (what the panel shows). Only the tiles
+// that differ are pushed; pushing the whole 1.5 MB frame is slow on the rotated panel and blocks touch. After a push the
+// two swap roles. Without the second sprite every frame is pushed whole.
 M5Canvas* g_canvas = nullptr;
+M5Canvas* g_front = nullptr;
 bool g_canvas_ok = false;
+bool g_front_valid = false;          // g_front holds exactly what is on the panel below the header
+
+uint32_t now_us() {
+#if defined(ESP_PLATFORM)
+  return static_cast<uint32_t>(esp_timer_get_time());
+#else
+  return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                   std::chrono::steady_clock::now().time_since_epoch()).count());
+#endif
+}
+
+PaintStats g_paint{};
+constexpr size_t kMaxPushRects = 24;
+constexpr int kWholeFramePercent = 55;     // above this share of changed area one whole push is cheaper than many clipped ones
+
+M5Canvas* make_canvas() {
+  M5Canvas* c = new (std::nothrow) M5Canvas(&M5.Display);
+  if (!c) return nullptr;
+  c->setPsram(true);
+  c->setColorDepth(16);
+  if (!c->createSprite(layout::kScreenW, kRegionH)) {
+    delete c;
+    return nullptr;
+  }
+  return c;
+}
 
 bool alloc_canvas() {
   if (g_canvas_ok) return true;
-  if (!g_canvas) g_canvas = new (std::nothrow) M5Canvas(&M5.Display);
-  if (!g_canvas) return false;
-  g_canvas->setPsram(true);
-  g_canvas->setColorDepth(16);
-  g_canvas_ok = g_canvas->createSprite(layout::kScreenW, kRegionH) != nullptr;
-  return g_canvas_ok;                       // false: the screen still works, drawing straight to the display
+  g_canvas = make_canvas();
+  g_canvas_ok = g_canvas != nullptr;        // false: the screen still works, drawing straight to the display
+  if (g_canvas_ok && !g_front) g_front = make_canvas();   // optional: without it frames are pushed whole
+  g_front_valid = false;
+  return g_canvas_ok;
 }
 
 void free_canvas() {
-  if (g_canvas) {
-    g_canvas->deleteSprite();
-    delete g_canvas;
-    g_canvas = nullptr;
+  for (M5Canvas** c : {&g_canvas, &g_front}) {
+    if (*c) {
+      (*c)->deleteSprite();
+      delete *c;
+      *c = nullptr;
+    }
   }
   g_canvas_ok = false;
+  g_front_valid = false;
 }
 
 // Restricts drawing to a rectangle for its lifetime, so no text or shape can leave its card. Nests: the
@@ -858,12 +899,58 @@ void paint_region(const Snapshot& s) {
     G.target_display();
     G.fillRect(0, kRegionY, layout::kScreenW, kRegionH, kBg);
   }
+  const uint32_t t0 = now_us();
   draw_context(s);
   redraw_content(s);
   draw_tabs();
-  if (sprite) {
-    g_canvas->pushSprite(0, kRegionY);
-    G.target_display();
+  const uint32_t t1 = now_us();
+  g_paint.compose_us = t1 - t0;
+  g_paint.compose_us_max = std::max(g_paint.compose_us_max, g_paint.compose_us);
+  ++g_paint.frames;
+  if (!sprite) return;
+  G.target_display();
+  // Which part of the frame changed since the panel last showed one?
+  acars_ui::DirtyRect rects[kMaxPushRects];
+  size_t count = 0;
+  bool whole = true;
+  if (g_front && g_front_valid) {
+    const uint16_t* next = static_cast<const uint16_t*>(g_canvas->getBuffer());
+    const uint16_t* previous = static_cast<const uint16_t*>(g_front->getBuffer());
+    if (next && previous) {
+      bool overflow = false;
+      count = acars_ui::diff_rects(previous, next, layout::kScreenW, kRegionH, rects, kMaxPushRects, &overflow);
+      const int64_t area = acars_ui::rect_area(rects, count);
+      whole = overflow || area * 100 > static_cast<int64_t>(layout::kScreenW) * kRegionH * kWholeFramePercent;
+    }
+  }
+  const uint32_t t2 = now_us();
+  g_paint.diff_us = t2 - t1;
+  g_paint.diff_us_max = std::max(g_paint.diff_us_max, g_paint.diff_us);
+  if (whole) {
+    // Pushing a whole sprite takes about 0.8 s on the rotated panel (measured: ~1.2 M pixel/s). Most of the screen
+    // changing means a deliberate page change, so draw it straight onto the display with the native primitives,
+    // as the dashboard did originally; the composed sprite still becomes the reference for later partial pushes.
+    G.fillRect(0, kRegionY, layout::kScreenW, kRegionH, kBg);
+    draw_context(s);
+    redraw_content(s);
+    draw_tabs();
+    ++g_paint.whole_pushes;
+    g_paint.pixels = static_cast<uint32_t>(layout::kScreenW) * kRegionH;
+  } else {
+    for (size_t i = 0; i < count; ++i) {
+      M5.Display.setClipRect(rects[i].x, kRegionY + rects[i].y, rects[i].w, rects[i].h);
+      g_canvas->pushSprite(0, kRegionY);
+    }
+    M5.Display.clearClipRect();
+    g_paint.partial_pushes += count ? 1u : 0u;
+    g_paint.pixels = static_cast<uint32_t>(acars_ui::rect_area(rects, count));
+  }
+  g_paint.rects = static_cast<uint32_t>(whole ? 1 : count);
+  g_paint.push_us = now_us() - t2;
+  g_paint.push_us_max = std::max(g_paint.push_us_max, g_paint.push_us);
+  if (g_front) {
+    std::swap(g_canvas, g_front);              // the frame just pushed is now the reference
+    g_front_valid = true;
   }
 }
 
@@ -871,9 +958,11 @@ void redraw_all() {
   const Snapshot& s = g_model->snapshot();
   focus_nav::clear();
   G.target_display();
+  g_front_valid = false;                        // the panel may show another screen: push this frame whole
   if (!g_canvas_ok) G.fillScreen(kBg);          // with a sprite the pushed frame replaces the old screen
   draw_header();
   paint_region(s);
+  g_drawn_bits = s.stats.bits;
   g_drawn_ui = g_ui->revision();
   g_drawn_snapshot = s.revision;
 }
@@ -910,7 +999,11 @@ void set_overlay_probe(bool (*overlay_open)()) { g_overlay_open = overlay_open; 
 void update(uint32_t now_ms) {
   if (!g_active || !g_model || !g_ui) return;
   const Snapshot& s = g_model->snapshot();
-  if (g_drawn_ui == g_ui->revision() && g_drawn_snapshot == s.revision) return;
+  // The ACTIVITY page shows the demodulated-bit counter, which moves constantly without bumping the revision.
+  // Refresh it at most once a second; no other page cares.
+  const bool bits_stale = g_ui->view() == View::activity && !g_ui->detail_open() && s.stats_available &&
+                          s.stats.bits != g_drawn_bits && now_ms - g_last_draw_ms >= 1000;
+  if (g_drawn_ui == g_ui->revision() && g_drawn_snapshot == s.revision && !bits_stale) return;
   // A header tray (volume) is drawn over the content by the shared header; repainting now would erase it.
   // Keep the change pending and repaint once it is closed.
   if (g_overlay_open != nullptr && g_overlay_open()) return;
@@ -918,11 +1011,14 @@ void update(uint32_t now_ms) {
   g_last_draw_ms = now_ms;
   if (g_drawn_ui != g_ui->revision()) focus_nav::clear();
   paint_region(s);
+  g_drawn_bits = s.stats.bits;
   g_drawn_ui = g_ui->revision();
   g_drawn_snapshot = s.revision;
 }
 
 bool active() { return g_active; }
+
+PaintStats paint_stats() { return g_paint; }
 
 bool interaction_check() {
   if (!g_active || !g_model || !g_ui) return false;

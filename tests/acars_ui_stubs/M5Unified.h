@@ -115,6 +115,7 @@ class M5Canvas : public lgfx::LovyanGFX {
   explicit M5Canvas(lgfx::LovyanGFX* parent) : parent_(parent) { sink = &local_; is_display = false; }
   void setPsram(bool) {}
   void setColorDepth(int) {}
+  void* getBuffer() { return nullptr; }   // no pixels are modelled: the dashboard then pushes whole frames
   void* createSprite(int w, int h) {
     if (host_display::fail_sprite_alloc) return nullptr;
     w_ = w; h_ = h;

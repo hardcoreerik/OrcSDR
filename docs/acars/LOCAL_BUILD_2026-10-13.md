@@ -69,6 +69,16 @@ On-panel observations from the photos (not a design review): the LIVE list, deta
 
 Observed on the photo only, not checked further: the right-hand column header on the LIVE list reads `INTEGR`, clipped at the panel edge. Flicker cannot be judged from a still.
 
+### Flicker and redraw speed (2026-10-15, COM39)
+
+A video from the user showed the whole content area blanking and redrawing every few hundred milliseconds on a static page. Cause: the decoder reports its demodulated-bit counter about twice a second, and every stats change bumped the snapshot revision, so each page repainted in full for nothing. Three changes, measured on the device with `RTL_ACARS STATUS`:
+
+- A bits-only stats change no longer bumps the revision (only the ACTIVITY page, which shows the counter, refreshes it once a second). Host test: `test_bits_only_stats_do_not_repaint`.
+- Frames are composed off-screen in a PSRAM sprite (the cloud-session commit 23438e3, cherry-picked) and compared with the previous frame (`acars_dirty_rects`); only changed 160x34 tiles are pushed. Measured: 1 to 2 ms per partial push, about 28 ms to compose, about 28 ms to diff.
+- Pushing a whole sprite is slow on this panel: 647 to 818 ms (about 1.2 M pixels/s). The user reported "touch responsive, but redraw slow, right to left". Whole-frame changes (page changes) are therefore drawn straight onto the display with the native primitives: 78 to 89 ms measured.
+
+The user reported on the panel that the flicker is gone. That is the user's observation; no measurement of flicker exists beyond the paint timings above. Not done: pushing only the changed tiles for large changes, and a pixel-modelling host stand-in, so the partial-push path is covered by `acars_dirty_rects_tests` plus the device run, not by the renderer host tests.
+
 ### What the host tests prove about the receive chain (synthetic fixture, not a recording)
 
 A generated AM / 1200-2400 Hz MSK signal at 240 kS/s CU8 decodes once per block at every bit phase tried (0-99 samples), with the carrier +-4 kHz off nominal, with noise (12 of 12 at sigma 0.05, no duplicates), two identical back-to-back blocks both delivered, and two seconds of noise producing nothing. Before the multi-phase decoder change the decoder had fixed bit timing and would have missed most blocks on real signals.

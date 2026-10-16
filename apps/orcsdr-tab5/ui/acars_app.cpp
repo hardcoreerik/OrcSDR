@@ -4,6 +4,7 @@
 #include <esp_heap_caps.h>
 
 #include <cstdio>
+#include <cstring>
 #include <new>
 
 #include "acars_dashboard.hpp"
@@ -119,6 +120,15 @@ void describe(char* out, size_t size) {
                 static_cast<unsigned>(s.messages_held), static_cast<unsigned>(s.messages_total),
                 static_cast<unsigned>(s.corrected_total), static_cast<unsigned>(s.queue_drops),
                 static_cast<unsigned>(s.aircraft_total));
+  const acars_dashboard::PaintStats p = acars_dashboard::paint_stats();
+  const size_t used = std::strlen(out);
+  if (used + 1 < size)
+    std::snprintf(out + used, size - used,
+                  " paint_frames=%u whole=%u partial=%u rects=%u px=%u compose_us=%u/%u diff_us=%u/%u push_us=%u/%u",
+                  static_cast<unsigned>(p.frames), static_cast<unsigned>(p.whole_pushes), static_cast<unsigned>(p.partial_pushes),
+                  static_cast<unsigned>(p.rects), static_cast<unsigned>(p.pixels), static_cast<unsigned>(p.compose_us),
+                  static_cast<unsigned>(p.compose_us_max), static_cast<unsigned>(p.diff_us), static_cast<unsigned>(p.diff_us_max),
+                  static_cast<unsigned>(p.push_us), static_cast<unsigned>(p.push_us_max));
 }
 
 acars_ui::Model* model() { return g_state ? &g_state->model : nullptr; }

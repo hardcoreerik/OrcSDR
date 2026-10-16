@@ -843,6 +843,32 @@ void test_filter_and_raw_toggle_have_effect() {
 
 }  // namespace
 
+// A stats post that changes only the demodulated-bit counter must not bump the revision (that repainted whole pages
+// several times a second and showed as flicker), but the new count must still reach the snapshot.
+void test_bits_only_stats_do_not_repaint() {
+  auto m = new_model();
+  orcsdr::acars::Stats a{};
+  a.bits = 100;
+  a.sync_candidates = 1;
+  Capabilities caps;
+  caps.live_reception = true;
+  m->post_capabilities(caps);
+  m->post_stats(a);
+  m->service();
+  const uint32_t rev = m->snapshot().revision;
+  a.bits = 5000;
+  m->post_stats(a);
+  m->service();
+  CHECK(m->snapshot().revision == rev);
+  CHECK(m->snapshot().stats.bits == 5000);
+  a.crc_ok = 1;
+  m->post_stats(a);
+  m->service();
+  CHECK(m->snapshot().revision != rev);
+  CHECK(m->snapshot().stats.crc_ok == 1);
+  std::puts("  bits-only stats do not repaint");
+}
+
 int main() {
   test_self_checks();
   test_empty_defaults();
@@ -854,6 +880,7 @@ int main() {
   test_corrected_state_and_filter();
   test_scroll_messages();
   test_revisions_stable();
+  test_bits_only_stats_do_not_repaint();
   test_stats_mailbox();
   test_cross_thread_seqlock_and_queue();
   test_demo_isolated_from_live();

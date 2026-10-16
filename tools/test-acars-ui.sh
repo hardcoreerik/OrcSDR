@@ -7,7 +7,7 @@ UI="$ROOT/apps/orcsdr-tab5/ui"
 OUT="$ROOT/build/acars"
 mkdir -p "$OUT"
 FLAGS=(-std=c++17 -O1 -g -Wall -Wextra -Werror -pedantic -pthread)
-MODEL=("$UI/acars_dashboard_model.cpp" "$UI/acars_demo_data.cpp" "$UI/acars_dashboard_layout.cpp" "$UI/acars_dashboard_ui.cpp")
+MODEL=("$UI/acars_dashboard_model.cpp" "$UI/acars_demo_data.cpp" "$UI/acars_dashboard_layout.cpp" "$UI/acars_dashboard_ui.cpp" "$UI/acars_dirty_rects.cpp")
 
 run() {
   local name="$1"; shift
@@ -29,6 +29,8 @@ if [[ "${SANITIZE:-1}" == "1" ]]; then
   run acars_dashboard_render_tests_asan -fsanitize=address,undefined -fno-sanitize-recover=all \
     -I"$ROOT/tests/acars_ui_stubs" -I"$UI" "${RENDER[@]}"
 fi
+DIRTY=("$ROOT/tests/acars_dirty_rects_tests.cpp" "$UI/acars_dirty_rects.cpp")
+run acars_dirty_rects_tests -I"$UI" "${DIRTY[@]}"
 RECEIVER=("$ROOT/tests/acars_receiver_tests.cpp" "$UI/acars_core.cpp" "$UI/acars_receiver.cpp" "${MODEL[@]}")
 run acars_receiver_tests -I"$UI" "${RECEIVER[@]}"
 if [[ "${SANITIZE:-1}" == "1" ]]; then

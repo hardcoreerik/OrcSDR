@@ -26,6 +26,19 @@ void draw();                  // full redraw (screen restored from Settings / Vi
 void update(uint32_t now_ms);
 bool active();
 
+// Cost of the last paints (microseconds on the device; pixels pushed to the panel). Diagnostics only.
+struct PaintStats {
+  uint32_t frames = 0;
+  uint32_t whole_pushes = 0;      // frames pushed whole (first frame after enter/restore, or most of the screen changed)
+  uint32_t partial_pushes = 0;    // frames pushed as changed tiles only
+  uint32_t rects = 0;             // rectangles pushed by the last frame
+  uint32_t pixels = 0;            // pixels pushed by the last frame
+  uint32_t compose_us = 0, compose_us_max = 0;
+  uint32_t diff_us = 0, diff_us_max = 0;
+  uint32_t push_us = 0, push_us_max = 0;
+};
+PaintStats paint_stats();
+
 // Explicit UI regression only (never at boot): exercises every tab and checks view state.
 bool interaction_check();
 

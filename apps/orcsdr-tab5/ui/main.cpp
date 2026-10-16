@@ -19089,7 +19089,7 @@ void process_command(char* command) {
     return;
   }
   if (strcmp(command, "RTL_ACARS STATUS") == 0) {
-    char line[640];
+    char line[900];
     orcsdr::acars_app::describe(line, sizeof(line));
     Serial.println(line);
     orcsdr::acars_receiver::format_status(line, sizeof(line));

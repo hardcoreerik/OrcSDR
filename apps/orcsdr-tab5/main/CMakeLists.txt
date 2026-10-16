@@ -133,6 +133,7 @@ idf_component_register(
         "../ui/acars_core.cpp"
         "../ui/acars_dashboard.cpp"
         "../ui/acars_dashboard_layout.cpp"
+        "../ui/acars_dirty_rects.cpp"
         "../ui/acars_dashboard_model.cpp"
         "../ui/acars_dashboard_ui.cpp"
         "../ui/acars_receiver.cpp"
