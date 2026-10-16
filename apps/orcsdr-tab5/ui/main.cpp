@@ -62,6 +62,7 @@
 #include "sstv_receiver.hpp"
 #include "acars_app.hpp"
 #include "acars_receiver.hpp"
+#include "acars_selftest.hpp"
 #include "ft8_tuning.hpp"
 #include "ft8_heard_db.hpp"
 #include "ft8_adif.hpp"
@@ -19094,6 +19095,20 @@ void process_command(char* command) {
     Serial.println(line);
     orcsdr::acars_receiver::format_status(line, sizeof(line));
     Serial.println(line);
+    return;
+  }
+  // Known-signal check of this build's ACARS decoder, on a private decoder instance (live reception is not touched).
+  if (strcmp(command, "RTL_ACARS SELFTEST") == 0 && !authenticated) {
+    Serial.println("RTL_ACARS_SELFTEST_ERROR auth_required");
+    return;
+  }
+  if (strcmp(command, "RTL_ACARS SELFTEST") == 0) {
+    const auto r = orcsdr::acars_selftest::run([] { return static_cast<uint32_t>(esp_timer_get_time()); });
+    Serial.printf("RTL_ACARS_SELFTEST allocated=%d cases=%u passed=%u missed=%u duplicates=%u samples=%u dsp_us=%u "
+                  "us_per_ksample=%u result=%s\n",
+                  r.allocated ? 1 : 0, r.cases, r.passed, r.missed, r.duplicates, static_cast<unsigned>(r.samples),
+                  static_cast<unsigned>(r.total_us), r.samples ? static_cast<unsigned>(r.total_us / (r.samples / 1000u)) : 0u,
+                  r.allocated && r.passed == r.cases ? "PASS" : "FAIL");
     return;
   }
   // Serial input mimics the screen: RTL_UI TAP x y goes through the same routing as a finger on the panel (full-screen

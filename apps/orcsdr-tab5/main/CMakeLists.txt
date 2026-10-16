@@ -137,6 +137,7 @@ idf_component_register(
         "../ui/acars_dashboard_model.cpp"
         "../ui/acars_dashboard_ui.cpp"
         "../ui/acars_receiver.cpp"
+        "../ui/acars_selftest.cpp"
         "../ui/acars_demo_data.cpp"
         "../ui/pocsag_dashboard.cpp"
         "../ui/pocsag_decoder_core.cpp"

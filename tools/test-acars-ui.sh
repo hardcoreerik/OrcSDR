@@ -31,6 +31,8 @@ if [[ "${SANITIZE:-1}" == "1" ]]; then
 fi
 DIRTY=("$ROOT/tests/acars_dirty_rects_tests.cpp" "$UI/acars_dirty_rects.cpp")
 run acars_dirty_rects_tests -I"$UI" "${DIRTY[@]}"
+SELFTEST=("$ROOT/tests/acars_selftest_tests.cpp" "$UI/acars_core.cpp" "$UI/acars_selftest.cpp")
+run acars_selftest_tests -I"$UI" "${SELFTEST[@]}"
 RECEIVER=("$ROOT/tests/acars_receiver_tests.cpp" "$UI/acars_core.cpp" "$UI/acars_receiver.cpp" "${MODEL[@]}")
 run acars_receiver_tests -I"$UI" "${RECEIVER[@]}"
 if [[ "${SANITIZE:-1}" == "1" ]]; then
