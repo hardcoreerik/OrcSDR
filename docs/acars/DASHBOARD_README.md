@@ -186,7 +186,7 @@ receiver counters; `RTL_UI TAP <x> <y>` (authenticated) injects a touch through 
 
 ## Known limitations
 
-- The live path exists (`acars_receiver.*`) has decoded only two real blocks so far; otherwise the decoder has only seen a synthetic AM/MSK
+- The live path exists (`acars_receiver.*`) and has decoded only two real blocks so far; otherwise the decoder has only seen a synthetic AM/MSK
   fixture. No sensitivity, false-block rate or gain behaviour is measured.
 - One channel at a time; the selected channel is the only one decoded.
 - UTC time is shown only if a producer supplies it; otherwise `+m:ss` since boot, labelled as such.
