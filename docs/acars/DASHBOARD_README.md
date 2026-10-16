@@ -115,6 +115,18 @@ sized for a full 250-byte block). Output is always bounded and NUL-terminated.
 Revisions: `snapshot().revision` changes only when something displayed changes. A stable revision means no
 repaint, and `update()` does nothing, so there is no idle polling load and no animation.
 
+## Flicker rules
+
+Everything below the shared header (context strip, content, tab bar) is composed in one PSRAM sprite
+(1280 x 612 x 16 bit, about 1.5 MB, allocated when the screen opens and released when it closes) and
+pushed to the display once per change, so the screen never shows a cleared or half-drawn frame. If the
+sprite cannot be allocated the screen falls back to clearing and drawing in place (works, can flicker).
+Battery and mute state do not bump the snapshot revision, so they never repaint. Data-only changes repaint at
+most every 250 ms; tab and detail changes repaint at once. While the shared volume tray is open over the
+content, repaints are held back (`overlay_open` hook) so the tray is not erased, and run when it closes.
+Host tests assert one push per change and no direct display drawing in sprite mode; whether it is actually
+flicker-free on the panel (including push time) needs a Tab5.
+
 ## Memory ownership
 
 `acars_app` allocates one `State { Model, Controller }` (about 55.5 KB + 1.5 KB; `Snapshot` 6.2 KB,

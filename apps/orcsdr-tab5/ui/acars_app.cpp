@@ -53,6 +53,7 @@ void open() {
   g_state->ui.reset();
   sync_device_state();
   acars_dashboard::install(&g_state->model, &g_state->ui, g_hooks.header_controls);
+  acars_dashboard::set_overlay_probe(g_hooks.overlay_open);
   screens::begin_transition(screens::Id::acars, millis());
   acars_dashboard::enter();
   screens::finish_transition();

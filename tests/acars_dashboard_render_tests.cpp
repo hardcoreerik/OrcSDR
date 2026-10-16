@@ -252,6 +252,76 @@ void test_interaction_check_roundtrip() {
   CHECK(rig.ui->view() == View::live);
 }
 
+
+// ---------------------------------------------------------------- flicker rules
+
+bool g_overlay = false;
+bool overlay_probe() { return g_overlay; }
+
+void test_frames_reach_the_display_in_one_push() {
+  Rig rig;
+  dash::set_overlay_probe(nullptr);
+  rig.full_draw();
+  CHECK(host_display::pushes == 1);                // the whole area below the header is one sprite push
+  // A data update: nothing is drawn straight onto the display, exactly one finished frame is pushed.
+  rig.model->post_message(make_message("N1", "x"), 5, 0);
+  rig.model->service();
+  host_display::direct_ops = 0;
+  host_display::pushes = 0;
+  dash::update(500000);
+  CHECK(host_display::direct_ops == 0 && host_display::pushes == 1);
+  // A tab change: same, and the header is not redrawn (no header hook call, no blank frame in between).
+  g_header_calls = 0;
+  host_display::direct_ops = 0;
+  host_display::pushes = 0;
+  const Rect t = layout::tab(2);
+  (void)rig.ui->touch(t.x + 10, t.y + 10, *rig.model);
+  dash::update(500010);
+  CHECK(host_display::direct_ops == 0 && host_display::pushes == 1 && g_header_calls == 0);
+  // Battery / mute changes do not repaint anything.
+  host_display::pushes = 0;
+  rig.model->set_device_state(33, false);
+  dash::update(600000);
+  CHECK(host_display::pushes == 0);
+  // Every frame is complete: the pushed sprite starts with a full-area background fill, never a partial wipe.
+  rig.full_draw();
+  bool saw_background = false;
+  for (const Prim& p : host_display::prims)
+    if (p.kind == Prim::fill && p.x == 0 && p.y == 108 && p.w == 1280 && p.h == 612) saw_background = true;
+  CHECK(saw_background);
+}
+
+void test_overlay_defers_repaint() {
+  Rig rig;
+  dash::set_overlay_probe(overlay_probe);
+  rig.full_draw();
+  g_overlay = true;                                // the shared volume tray is open over the content
+  rig.model->post_message(make_message("N9", "tray"), 5, 0);
+  rig.model->service();
+  host_display::direct_ops = 0;
+  host_display::pushes = 0;
+  dash::update(700000);
+  CHECK(host_display::pushes == 0 && host_display::direct_ops == 0);   // tray not erased
+  g_overlay = false;
+  dash::update(700100);
+  CHECK(host_display::pushes == 1);                // the pending change is painted once the tray closes
+  dash::set_overlay_probe(nullptr);
+}
+
+void test_fallback_without_sprite_still_draws_correctly() {
+  Rig rig;
+  dash::set_overlay_probe(nullptr);
+  host_display::fail_sprite_alloc = true;
+  rig.model->set_demo(true, DemoScenario::mixed);
+  for (int v = 0; v < static_cast<int>(View::count); ++v) {
+    rig.ui->select_view(static_cast<View>(v));
+    rig.full_draw();
+    CHECK(host_display::pushes == 0 && host_display::direct_ops > 0);
+    check_prims(static_cast<View>(v), false);      // header rules hold when drawing straight to the display
+  }
+  host_display::fail_sprite_alloc = false;
+}
+
 // ---------------------------------------------------------------- app lifecycle and ScreenController ownership
 
 void test_app_lifecycle() {
@@ -262,6 +332,7 @@ void test_app_lifecycle() {
   acars_app::Hooks hooks;
   hooks.header_controls = header_hook;
   hooks.sound_enabled = [] { return true; };
+  hooks.overlay_open = [] { return false; };
   static uint32_t requested = 0;
   hooks.request_tune = [](uint32_t hz) { requested = hz; };
   acars_app::install(hooks);
@@ -361,6 +432,9 @@ int main() {
   test_honest_text();
   test_no_idle_redraw_and_throttle();
   test_interaction_check_roundtrip();
+  test_frames_reach_the_display_in_one_push();
+  test_overlay_defers_repaint();
+  test_fallback_without_sprite_still_draws_correctly();
   test_app_lifecycle();
   std::puts("acars_dashboard_render_tests: all passed");
   return 0;

@@ -283,11 +283,12 @@ void test_revisions_stable() {
   CHECK(m->snapshot().revision == r0);
   m->service();                                     // nothing arrived
   CHECK(m->snapshot().revision == r0);
-  m->set_device_state(50, true);
-  const uint32_t r1 = m->snapshot().revision;
-  CHECK(r1 > r0);
-  m->set_device_state(50, true);                    // identical
-  CHECK(m->snapshot().revision == r1);
+  // Battery and mute state are not drawn by the dashboard: they update the snapshot without a new revision,
+  // so a wobbling battery percent never repaints the screen.
+  m->set_device_state(50, false);
+  CHECK(m->snapshot().revision == r0);
+  CHECK(m->snapshot().battery_percent == 50 && !m->snapshot().sound_enabled);
+  const uint32_t r1 = r0;
   m->post_message(make_message("N1", "", "H1", "x"), 1, 0);
   m->service();
   CHECK(m->snapshot().revision > r1);

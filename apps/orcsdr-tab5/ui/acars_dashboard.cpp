@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <new>
 
 #include "acars_dashboard_layout.hpp"
 #include "acars_demo_data.hpp"
@@ -38,10 +39,73 @@ enum Font : uint8_t { f18, f24, f40, mono };
 Model* g_model = nullptr;
 Controller* g_ui = nullptr;
 HeaderHook g_header = nullptr;
+bool (*g_overlay_open)() = nullptr;
 bool g_active = false;
 uint32_t g_drawn_ui = 0;
 uint32_t g_drawn_snapshot = 0;
 uint32_t g_last_draw_ms = 0;
+
+// All drawing goes through this shim so the same code can paint the display directly (header, and the
+// fallback if no sprite can be allocated) or an off-screen sprite that holds the whole area below the
+// header. The sprite is composed completely and pushed to the display once, so the screen never shows a
+// half-drawn or blank frame: that is what removes the flicker. Coordinates are always absolute screen
+// coordinates; the shim subtracts the sprite's origin.
+class Gfx {
+ public:
+  void target_display() { t_ = &M5.Display; oy_ = 0; }
+  void target_sprite(lgfx::LovyanGFX* sprite, int origin_y) { t_ = sprite; oy_ = origin_y; }
+  void setFont(const decltype(&fonts::DejaVu18) f) { t_->setFont(f); }
+  void setFont(decltype(nullptr)) { t_->setFont(nullptr); }
+  void setTextSize(float v) { t_->setTextSize(v); }
+  void setTextDatum(textdatum_t d) { t_->setTextDatum(d); }
+  void setTextColor(uint16_t c) { t_->setTextColor(c); }
+  int textWidth(const char* s) { return t_->textWidth(s); }
+  void drawString(const char* s, int x, int y) { t_->drawString(s, x, y - oy_); }
+  void setClipRect(int x, int y, int w, int h) { t_->setClipRect(x, y - oy_, w, h); }
+  void clearClipRect() { t_->clearClipRect(); }
+  void fillScreen(uint16_t c) { t_->fillScreen(c); }
+  void fillRect(int x, int y, int w, int h, uint16_t c) { t_->fillRect(x, y - oy_, w, h, c); }
+  void fillRoundRect(int x, int y, int w, int h, int r, uint16_t c) { t_->fillRoundRect(x, y - oy_, w, h, r, c); }
+  void drawRoundRect(int x, int y, int w, int h, int r, uint16_t c) { t_->drawRoundRect(x, y - oy_, w, h, r, c); }
+  void drawFastHLine(int x, int y, int w, uint16_t c) { t_->drawFastHLine(x, y - oy_, w, c); }
+  void drawFastVLine(int x, int y, int h, uint16_t c) { t_->drawFastVLine(x, y - oy_, h, c); }
+  void drawLine(int x0, int y0, int x1, int y1, uint16_t c) { t_->drawLine(x0, y0 - oy_, x1, y1 - oy_, c); }
+  void drawCircle(int x, int y, int r, uint16_t c) { t_->drawCircle(x, y - oy_, r, c); }
+  void fillTriangle(int x0, int y0, int x1, int y1, int x2, int y2, uint16_t c) {
+    t_->fillTriangle(x0, y0 - oy_, x1, y1 - oy_, x2, y2 - oy_, c);
+  }
+
+ private:
+  lgfx::LovyanGFX* t_ = &M5.Display;
+  int oy_ = 0;
+};
+Gfx G;
+
+// Everything below the shared header (context strip, content, tab bar) is one sprite: 1280 x 612 x 2 bytes
+// = 1.5 MB in PSRAM, allocated when the screen opens and released when it closes.
+constexpr int kRegionY = layout::kContext.y - 2;
+constexpr int kRegionH = layout::kScreenH - kRegionY;
+M5Canvas* g_canvas = nullptr;
+bool g_canvas_ok = false;
+
+bool alloc_canvas() {
+  if (g_canvas_ok) return true;
+  if (!g_canvas) g_canvas = new (std::nothrow) M5Canvas(&M5.Display);
+  if (!g_canvas) return false;
+  g_canvas->setPsram(true);
+  g_canvas->setColorDepth(16);
+  g_canvas_ok = g_canvas->createSprite(layout::kScreenW, kRegionH) != nullptr;
+  return g_canvas_ok;                       // false: the screen still works, drawing straight to the display
+}
+
+void free_canvas() {
+  if (g_canvas) {
+    g_canvas->deleteSprite();
+    delete g_canvas;
+    g_canvas = nullptr;
+  }
+  g_canvas_ok = false;
+}
 
 // Restricts drawing to a rectangle for its lifetime, so no text or shape can leave its card. Nests: the
 // enclosing clip is restored when an inner one ends.
@@ -51,15 +115,15 @@ bool g_clip_outer_valid = false;
 class Clip {
  public:
   explicit Clip(const Rect& r) : saved_(g_clip_outer), saved_valid_(g_clip_outer_valid) {
-    M5.Display.setClipRect(r.x, r.y, r.w, r.h);
+    G.setClipRect(r.x, r.y, r.w, r.h);
     g_clip_outer = r;
     g_clip_outer_valid = true;
   }
   ~Clip() {
     g_clip_outer = saved_;
     g_clip_outer_valid = saved_valid_;
-    if (saved_valid_) M5.Display.setClipRect(saved_.x, saved_.y, saved_.w, saved_.h);
-    else M5.Display.clearClipRect();
+    if (saved_valid_) G.setClipRect(saved_.x, saved_.y, saved_.w, saved_.h);
+    else G.clearClipRect();
   }
   Clip(const Clip&) = delete;
   Clip& operator=(const Clip&) = delete;
@@ -71,20 +135,20 @@ class Clip {
 
 void set_font(Font f) {
   switch (f) {
-    case f18: M5.Display.setFont(&fonts::DejaVu18); break;
-    case f24: M5.Display.setFont(&fonts::DejaVu24); break;
-    case f40: M5.Display.setFont(&fonts::DejaVu40); break;
-    default: M5.Display.setFont(&fonts::FreeMono12pt7b); break;
+    case f18: G.setFont(&fonts::DejaVu18); break;
+    case f24: G.setFont(&fonts::DejaVu24); break;
+    case f40: G.setFont(&fonts::DejaVu40); break;
+    default: G.setFont(&fonts::FreeMono12pt7b); break;
   }
-  M5.Display.setTextSize(1);
+  G.setTextSize(1);
 }
 
 void text(const char* value, int x, int y, uint16_t color, Font f = f18, textdatum_t datum = middle_left) {
   set_font(f);
-  M5.Display.setTextDatum(datum);
-  M5.Display.setTextColor(color);
-  M5.Display.drawString(value, x, y);
-  M5.Display.setFont(nullptr);   // the shared header helpers draw with the built-in font
+  G.setTextDatum(datum);
+  G.setTextColor(color);
+  G.drawString(value, x, y);
+  G.setFont(nullptr);   // the shared header helpers draw with the built-in font
 }
 
 // Draws `value` clipped to `max_w`, ending in "..." when it had to be shortened.
@@ -93,24 +157,24 @@ void fit(const char* value, int x, int y, int max_w, uint16_t color, Font f = f1
   std::snprintf(line, sizeof(line), "%s", value);
   set_font(f);
   size_t n = std::strlen(line);
-  if (M5.Display.textWidth(line) > max_w) {
-    while (n > 0 && M5.Display.textWidth(line) + M5.Display.textWidth("...") > max_w) line[--n] = '\0';
+  if (G.textWidth(line) > max_w) {
+    while (n > 0 && G.textWidth(line) + G.textWidth("...") > max_w) line[--n] = '\0';
     if (n + 4 < sizeof(line)) std::strcat(line, "...");
   }
-  M5.Display.setFont(nullptr);
+  G.setFont(nullptr);
   text(line, x, y, color, f, datum);
 }
 
 void card(const Rect& r, uint16_t border = kBorder) {
-  M5.Display.fillRoundRect(r.x, r.y, r.w, r.h, 12, kPanel);
-  M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 12, border);
+  G.fillRoundRect(r.x, r.y, r.w, r.h, 12, kPanel);
+  G.drawRoundRect(r.x, r.y, r.w, r.h, 12, border);
 }
 
 void button(const Rect& r, const char* label, bool selected = false, bool enabled = true, Font f = f18) {
   if (enabled) focus_nav::note(r.x, r.y, r.w, r.h);
   const uint16_t border = enabled ? (selected ? kGreen : kCyan) : kDim;
-  M5.Display.fillRoundRect(r.x, r.y, r.w, r.h, 8, selected ? kSelected : kPanel);
-  M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 8, border);
+  G.fillRoundRect(r.x, r.y, r.w, r.h, 8, selected ? kSelected : kPanel);
+  G.drawRoundRect(r.x, r.y, r.w, r.h, 8, border);
   Clip clip(r);
   fit(label, r.x + r.w / 2, r.y + r.h / 2, r.w - 12, enabled ? (selected ? kGreen : TFT_WHITE) : kMuted, f, middle_center);
 }
@@ -128,7 +192,7 @@ void paragraph(const char* s, const Rect& r, uint16_t color, int max_lines, Font
       line[take] = s[pos + take];
       line[take + 1] = '\0';
       if (s[pos + take] == ' ') last_space = take;
-      if (M5.Display.textWidth(line) > r.w) {
+      if (G.textWidth(line) > r.w) {
         take = last_space ? last_space : take;
         break;
       }
@@ -136,13 +200,13 @@ void paragraph(const char* s, const Rect& r, uint16_t color, int max_lines, Font
     }
     std::memcpy(line, s + pos, take);
     line[take] = '\0';
-    M5.Display.setFont(nullptr);
+    G.setFont(nullptr);
     text(line, r.x, r.y + row * line_h + line_h / 2, color, f);
     set_font(f);
     pos += take;
     while (pos < len && s[pos] == ' ') ++pos;
   }
-  M5.Display.setFont(nullptr);
+  G.setFont(nullptr);
 }
 
 // ---- formatting helpers (no allocation)
@@ -198,19 +262,18 @@ const char* tune_text(const Snapshot& s) {
 
 // ---- header, context strip, tabs
 void draw_header() {
-  M5.Display.fillRect(0, 0, 1280, layout::kHeaderH, kBg);
+  G.fillRect(0, 0, 1280, layout::kHeaderH, kBg);
   audio_header::draw_brand("ACARS");
   // Nothing is drawn in the shared status-bar reserve (x420..866, y12..66); only the rule below the header.
-  M5.Display.drawFastHLine(20, layout::kHeaderH - 1, 1240, kBorder);
+  G.drawFastHLine(20, layout::kHeaderH - 1, 1240, kBorder);
   if (g_header != nullptr) g_header();
 }
 
 void draw_context(const Snapshot& s) {
   const Rect& r = layout::kContext;
-  M5.Display.fillRect(0, r.y - 2, 1280, r.h + 4, kBg);
   Clip clip(r);
   const bool demo = s.source == SourceKind::demo;
-  M5.Display.fillRoundRect(r.x, r.y + 4, demo ? 150 : 90, 32, 8, demo ? kAmber : kPanel);
+  G.fillRoundRect(r.x, r.y + 4, demo ? 150 : 90, 32, 8, demo ? kAmber : kPanel);
   text(demo ? "DEMO DATA" : "LIVE", r.x + (demo ? 75 : 45), r.y + 20, demo ? kBg : (s.receiver == ReceiverState::running ? kGreen : kMuted), f18, middle_center);
   const int x = r.x + (demo ? 166 : 106);
   fit(demo ? "SYNTHETIC - NOT RF" : receiver_text(s.receiver), x, r.y + 20, 420,
@@ -229,42 +292,42 @@ void draw_context(const Snapshot& s) {
 
 void tab_icon(int i, int x, int y, uint16_t c) {
   switch (i) {
-    case 0: M5.Display.drawCircle(x, y, 13, c); M5.Display.drawCircle(x, y, 4, c); break;
-    case 1: M5.Display.fillTriangle(x - 14, y + 8, x + 14, y, x - 14, y - 8, c); break;
+    case 0: G.drawCircle(x, y, 13, c); G.drawCircle(x, y, 4, c); break;
+    case 1: G.fillTriangle(x - 14, y + 8, x + 14, y, x - 14, y - 8, c); break;
     case 2:
-      for (int k = 0; k < 4; ++k) M5.Display.fillRect(x - 16 + k * 9, y + 12 - (k + 1) * 6, 6, (k + 1) * 6, c);
+      for (int k = 0; k < 4; ++k) G.fillRect(x - 16 + k * 9, y + 12 - (k + 1) * 6, 6, (k + 1) * 6, c);
       break;
     case 3:
-      M5.Display.drawLine(x - 16, y + 6, x - 6, y - 8, c);
-      M5.Display.drawLine(x - 6, y - 8, x + 4, y + 2, c);
-      M5.Display.drawLine(x + 4, y + 2, x + 16, y - 12, c);
+      G.drawLine(x - 16, y + 6, x - 6, y - 8, c);
+      G.drawLine(x - 6, y - 8, x + 4, y + 2, c);
+      G.drawLine(x + 4, y + 2, x + 16, y - 12, c);
       break;
     case 4:
-      M5.Display.drawRoundRect(x - 16, y - 10, 32, 22, 3, c);
-      M5.Display.drawFastHLine(x - 16, y - 2, 32, c);
+      G.drawRoundRect(x - 16, y - 10, 32, 22, 3, c);
+      G.drawFastHLine(x - 16, y - 2, 32, c);
       break;
     default:
-      M5.Display.drawCircle(x, y, 10, c);
-      M5.Display.drawFastHLine(x - 16, y, 32, c);
-      M5.Display.drawFastVLine(x, y - 16, 32, c);
+      G.drawCircle(x, y, 10, c);
+      G.drawFastHLine(x - 16, y, 32, c);
+      G.drawFastVLine(x, y - 16, 32, c);
       break;
   }
 }
 
 void draw_tabs() {
   static constexpr const char* labels[] = {"LIVE", "AIRCRAFT", "CHANNELS", "ACTIVITY", "ARCHIVE", "SETUP"};
-  M5.Display.fillRect(0, layout::kTabsY, 1280, 74, kBg);
-  M5.Display.drawFastHLine(0, layout::kTabsY, 1280, kBorder);
+  G.fillRect(0, layout::kTabsY, 1280, 74, kBg);
+  G.drawFastHLine(0, layout::kTabsY, 1280, kBorder);
   for (int i = 0; i < layout::kTabCount; ++i) {
     const Rect t = layout::tab(i);
     const bool sel = static_cast<int>(g_ui->view()) == i;
     focus_nav::note(t.x, t.y, t.w, t.h);
     Clip clip(t);
     if (sel) {
-      M5.Display.fillRect(t.x, t.y + 1, t.w, 73, kSelected);
-      M5.Display.fillRect(t.x, t.y + 1, t.w, 3, kCyan);
+      G.fillRect(t.x, t.y + 1, t.w, 73, kSelected);
+      G.fillRect(t.x, t.y + 1, t.w, 3, kCyan);
     }
-    if (i) M5.Display.drawFastVLine(t.x, t.y, 74, kBorder);
+    if (i) G.drawFastVLine(t.x, t.y, 74, kBorder);
     const uint16_t c = sel ? kCyan : TFT_LIGHTGREY;
     tab_icon(i, t.x + 34, t.y + 38, c);
     text(labels[i], t.x + 60, t.y + 39, c, f18);
@@ -293,7 +356,7 @@ void draw_live(const Snapshot& s) {
     static constexpr struct { const char* t; int x; } cols[] = {
         {"TIME", 36}, {"TAIL", 126}, {"FLIGHT", 232}, {"LBL", 318}, {"MHz", 366}, {"TEXT", 448}, {"INTEGRITY", 744}};
     for (const auto& c : cols) text(c.t, c.x, list.y + 20, kMuted, f18);
-    M5.Display.drawFastHLine(list.x + 8, list.y + 38, list.w - 16, kBorder);
+    G.drawFastHLine(list.x + 8, list.y + 38, list.w - 16, kBorder);
     if (s.message_count == 0) {
       text(s.source == SourceKind::demo ? "NO MESSAGES IN THIS DEMO SCENARIO" : "NO MESSAGES YET", list.x + list.w / 2,
            list.y + 220, TFT_WHITE, f24, middle_center);
@@ -309,8 +372,8 @@ void draw_live(const Snapshot& s) {
     focus_nav::note(row.x, row.y, row.w, row.h);
     const bool fix = m.integrity == Integrity::crc_corrected && s.prefs.highlight_corrected;
     Clip clip(row);
-    M5.Display.fillRect(row.x, row.y + 1, row.w, row.h - 2, i % 2 ? kPanel : kBg);
-    if (fix) M5.Display.fillRect(row.x, row.y + 2, 4, row.h - 4, kAmber);
+    G.fillRect(row.x, row.y + 1, row.w, row.h - 2, i % 2 ? kPanel : kBg);
+    if (fix) G.fillRect(row.x, row.y + 2, 4, row.h - 4, kAmber);
     char t[16], f[16];
     fmt_time(t, sizeof(t), m.time_valid, m.utc_epoch, m.uptime_ms);
     fmt_mhz(f, sizeof(f), m.frequency_hz);
@@ -481,7 +544,7 @@ void draw_aircraft(const Snapshot& s) {
     static constexpr struct { const char* t; int x; } cols[] = {
         {"TAIL", 44}, {"FLIGHT", 188}, {"MSGS", 298}, {"LAST", 372}, {"SEEN", 440}, {"REPAIRED", 566}};
     for (const auto& c : cols) text(c.t, c.x, list.y + 22, kMuted);
-    M5.Display.drawFastHLine(list.x + 8, list.y + 40, list.w - 16, kBorder);
+    G.drawFastHLine(list.x + 8, list.y + 40, list.w - 16, kBorder);
     if (s.aircraft_count == 0) {
       text("NO AIRCRAFT YET", list.x + list.w / 2, list.y + 220, TFT_WHITE, f24, middle_center);
       text("Aircraft appear after a CRC-verified block carries a tail", list.x + list.w / 2, list.y + 258, kMuted, f18, middle_center);
@@ -494,8 +557,8 @@ void draw_aircraft(const Snapshot& s) {
     focus_nav::note(row.x, row.y, row.w, row.h);
     const bool sel = has_sel && std::strcmp(a.tail, g_ui->selected_tail()) == 0;
     Clip clip(row);
-    M5.Display.fillRoundRect(row.x, row.y + 2, row.w, row.h - 4, 6, sel ? kSelected : (i % 2 ? kPanel : kBg));
-    if (sel) M5.Display.drawRoundRect(row.x, row.y + 2, row.w, row.h - 4, 6, kGreen);
+    G.fillRoundRect(row.x, row.y + 2, row.w, row.h - 4, 6, sel ? kSelected : (i % 2 ? kPanel : kBg));
+    if (sel) G.drawRoundRect(row.x, row.y + 2, row.w, row.h - 4, 6, kGreen);
     const int cy = row.y + row.h / 2;
     char b[24];
     fit(a.tail[0] ? a.tail : "UNKNOWN", 44, cy, 130, a.tail[0] ? kCyan : kMuted, f24);
@@ -539,8 +602,8 @@ void draw_aircraft(const Snapshot& s) {
         const Rect row = layout::ac_msg_row(static_cast<int>(j));
         focus_nav::note(row.x, row.y, row.w, row.h);
         Clip rc(row);
-        M5.Display.fillRect(row.x, row.y + 1, row.w, row.h - 2, j % 2 ? kPanel : kBg);
-        if (m.integrity == Integrity::crc_corrected && s.prefs.highlight_corrected) M5.Display.fillRect(row.x, row.y + 2, 4, row.h - 4, kAmber);
+        G.fillRect(row.x, row.y + 1, row.w, row.h - 2, j % 2 ? kPanel : kBg);
+        if (m.integrity == Integrity::crc_corrected && s.prefs.highlight_corrected) G.fillRect(row.x, row.y + 2, 4, row.h - 4, kAmber);
         char t[16];
         fmt_time(t, sizeof(t), m.time_valid, m.utc_epoch, m.uptime_ms);
         text(t, row.x + 12, row.y + 18, m.time_valid ? TFT_WHITE : kMuted);
@@ -566,8 +629,8 @@ void draw_channels(const Snapshot& s) {
     focus_nav::note(row.x, row.y, row.w, row.h);
     const bool sel = c.selected && !s.custom_active;
     Clip clip(row);
-    M5.Display.fillRoundRect(row.x, row.y + 2, row.w, row.h - 4, 6, sel ? kSelected : kPanel);
-    M5.Display.drawRoundRect(row.x, row.y + 2, row.w, row.h - 4, 6, sel ? kGreen : kBorder);
+    G.fillRoundRect(row.x, row.y + 2, row.w, row.h - 4, 6, sel ? kSelected : kPanel);
+    G.drawRoundRect(row.x, row.y + 2, row.w, row.h - 4, 6, sel ? kGreen : kBorder);
     fit(c.label, row.x + 14, row.y + 20, 360, sel ? kGreen : TFT_WHITE, f24);
     fit(preset(s.prefs.region, i).source, row.x + 14, row.y + 42, 560, kMuted);
     if (sel) text("REQUESTED", row.x + row.w - 14, row.y + 20, kGreen, f18, middle_right);
@@ -691,8 +754,8 @@ void draw_archive(const Snapshot& s) {
     const Rect r = layout::ar_filter(i);
     const bool enabled = demo && i < 2;
     if (enabled) focus_nav::note(r.x, r.y, r.w, r.h);
-    M5.Display.fillRoundRect(r.x, r.y, r.w, r.h, 8, kPanel);
-    M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 8, enabled ? kCyan : kDim);
+    G.fillRoundRect(r.x, r.y, r.w, r.h, 8, kPanel);
+    G.drawRoundRect(r.x, r.y, r.w, r.h, 8, enabled ? kCyan : kDim);
     Clip clip(r);
     text(names[i], r.x + 14, r.y + 18, kMuted);
     const char* v = !enabled ? (demo ? "PLANNED" : "NEEDS ARCHIVE")
@@ -731,7 +794,7 @@ void draw_archive(const Snapshot& s) {
     const Rect row = layout::ar_row(static_cast<int>(i));
     focus_nav::note(row.x, row.y, row.w, row.h);
     Clip clip(row);
-    M5.Display.fillRect(row.x, row.y + 1, row.w, row.h - 2, i % 2 ? kPanel : kBg);
+    G.fillRect(row.x, row.y + 1, row.w, row.h - 2, i % 2 ? kPanel : kBg);
     char t[16];
     fmt_time(t, sizeof(t), m.time_valid, m.utc_epoch, m.uptime_ms);
     text(t, row.x + 12, row.y + 18, m.time_valid ? TFT_WHITE : kMuted);
@@ -748,8 +811,8 @@ void draw_archive(const Snapshot& s) {
 void setting(int item, const char* name, const char* value, const char* hint, bool enabled) {
   const Rect r = layout::setup_item(item / 5, item % 5);
   if (enabled) focus_nav::note(r.x, r.y, r.w, r.h);
-  M5.Display.fillRoundRect(r.x, r.y, r.w, r.h, 10, kPanel);
-  M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 10, enabled ? kCyan : kDim);
+  G.fillRoundRect(r.x, r.y, r.w, r.h, 10, kPanel);
+  G.drawRoundRect(r.x, r.y, r.w, r.h, 10, enabled ? kCyan : kDim);
   Clip clip(r);
   text(name, r.x + 16, r.y + 20, kMuted);
   fit(value, r.x + 16, r.y + 48, 330, enabled ? TFT_WHITE : kDim, f24);
@@ -772,7 +835,6 @@ void draw_setup(const Snapshot& s) {
 }
 
 void redraw_content(const Snapshot& s) {
-  M5.Display.fillRect(0, layout::kContentY - 6, 1280, layout::kTabsY - layout::kContentY + 6, kBg);
   if (g_ui->detail_open()) { draw_detail(s); return; }
   switch (g_ui->view()) {
     case View::live: draw_live(s); break;
@@ -785,14 +847,33 @@ void redraw_content(const Snapshot& s) {
   }
 }
 
-void redraw_all() {
-  const Snapshot& s = g_model->snapshot();
-  focus_nav::clear();
-  M5.Display.fillScreen(kBg);
-  draw_header();
+// Paints context strip, content and tab bar as one frame. With a sprite the display only ever receives the
+// finished frame; without one the region is cleared and drawn in place (works, but can flicker).
+void paint_region(const Snapshot& s) {
+  const bool sprite = g_canvas_ok;
+  if (sprite) {
+    G.target_sprite(g_canvas, kRegionY);
+    g_canvas->fillSprite(kBg);
+  } else {
+    G.target_display();
+    G.fillRect(0, kRegionY, layout::kScreenW, kRegionH, kBg);
+  }
   draw_context(s);
   redraw_content(s);
   draw_tabs();
+  if (sprite) {
+    g_canvas->pushSprite(0, kRegionY);
+    G.target_display();
+  }
+}
+
+void redraw_all() {
+  const Snapshot& s = g_model->snapshot();
+  focus_nav::clear();
+  G.target_display();
+  if (!g_canvas_ok) G.fillScreen(kBg);          // with a sprite the pushed frame replaces the old screen
+  draw_header();
+  paint_region(s);
   g_drawn_ui = g_ui->revision();
   g_drawn_snapshot = s.revision;
 }
@@ -808,30 +889,35 @@ void install(Model* model, Controller* controller, HeaderHook header_controls) {
 void enter() {
   if (!g_model || !g_ui) return;
   g_active = true;
+  (void)alloc_canvas();
   redraw_all();
 }
 
 void leave() {
   g_active = false;
-  M5.Display.setFont(nullptr);
+  G.target_display();
+  G.clearClipRect();
+  G.setFont(nullptr);
+  free_canvas();
 }
 
 void draw() {
   if (g_active) redraw_all();
 }
 
+void set_overlay_probe(bool (*overlay_open)()) { g_overlay_open = overlay_open; }
+
 void update(uint32_t now_ms) {
   if (!g_active || !g_model || !g_ui) return;
   const Snapshot& s = g_model->snapshot();
   if (g_drawn_ui == g_ui->revision() && g_drawn_snapshot == s.revision) return;
+  // A header tray (volume) is drawn over the content by the shared header; repainting now would erase it.
+  // Keep the change pending and repaint once it is closed.
+  if (g_overlay_open != nullptr && g_overlay_open()) return;
   if (g_drawn_ui == g_ui->revision() && now_ms - g_last_draw_ms < 250) return;   // data-only change: throttle
   g_last_draw_ms = now_ms;
-  if (g_drawn_ui != g_ui->revision()) {
-    focus_nav::clear();
-  }
-  draw_context(s);
-  redraw_content(s);
-  draw_tabs();
+  if (g_drawn_ui != g_ui->revision()) focus_nav::clear();
+  paint_region(s);
   g_drawn_ui = g_ui->revision();
   g_drawn_snapshot = s.revision;
 }

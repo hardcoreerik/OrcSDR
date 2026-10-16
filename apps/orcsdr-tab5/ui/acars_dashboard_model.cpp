@@ -361,10 +361,12 @@ void Model::load_preferences() {
 }
 
 void Model::set_device_state(int32_t battery_percent, bool sound_enabled) {
-  if (battery_ == battery_percent && sound_ == sound_enabled) return;
   battery_ = battery_percent;
   sound_ = sound_enabled;
-  bump_status();
+  // Not drawn by the dashboard (the shared header shows them), so they never bump the revision: a battery
+  // percent wobbling would otherwise repaint the whole screen. The snapshot is patched in place.
+  snapshot_.battery_percent = battery_percent;
+  snapshot_.sound_enabled = sound_enabled;
 }
 
 void Model::service() {

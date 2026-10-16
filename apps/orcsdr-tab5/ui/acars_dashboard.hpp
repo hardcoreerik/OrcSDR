@@ -15,6 +15,9 @@ namespace orcsdr::acars_dashboard {
 using HeaderHook = void (*)();
 
 void install(acars_ui::Model* model, acars_ui::Controller* controller, HeaderHook header_controls);
+// Optional: returns true while a shared-header overlay (the volume tray) is open over the content. Repaints
+// are deferred meanwhile so the tray is not erased.
+void set_overlay_probe(bool (*overlay_open)());
 void enter();                 // first draw after the ScreenController transition
 void leave();
 void draw();                  // full redraw (screen restored from Settings / Visualizer)

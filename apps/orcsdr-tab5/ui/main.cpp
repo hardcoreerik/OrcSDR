@@ -13899,6 +13899,7 @@ orcsdr::acars_app::Hooks acars_app_hooks() {
   orcsdr::acars_app::Hooks hooks;
   hooks.header_controls = draw_global_header_controls;
   hooks.sound_enabled = [] { return rtl_audio_user_enabled.load(std::memory_order_acquire); };
+  hooks.overlay_open = [] { return rtl_header_audio_control.expanded; };
   hooks.store.get_bool = [](const char* key, bool fallback) { return preferences.getBool(key, fallback); };
   hooks.store.put_bool = [](const char* key, bool value) { preferences.putBool(key, value); };
   hooks.store.get_u8 = [](const char* key, uint8_t fallback) { return preferences.getUChar(key, fallback); };

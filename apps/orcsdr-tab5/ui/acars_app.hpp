@@ -13,6 +13,7 @@ namespace orcsdr::acars_app {
 struct Hooks {
   void (*header_controls)() = nullptr;               // draws the shared battery / home / mute / viz / settings
   bool (*sound_enabled)() = nullptr;                 // user mute state (shown by the shared header)
+  bool (*overlay_open)() = nullptr;                  // the shared volume tray is open over the content
   // Optional extra observer of a channel choice. The receiver (acars_receiver) is retuned by the app itself.
   void (*request_tune)(uint32_t frequency_hz) = nullptr;
   acars_ui::Store store;                             // persistent UI preferences
