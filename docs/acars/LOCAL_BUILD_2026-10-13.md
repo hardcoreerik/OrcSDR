@@ -37,7 +37,7 @@ Local diagnostics: build/acars/firmware-build.log, firmware-build-fixed.log, fir
 
 ## Physical Tab5 checklist
 
-Every item below is NOT RUN. The user explicitly prohibited flashing pending a new instruction. No physical or live RF validation is claimed.
+Every item below is NOT RUN except the boot smoke note here. 2026-10-15: the rebased build (0d00e4a4) was flashed to the spare Tab5 on COM39 (C6 1.4.1). Serial log only: boot reached BOOT_STAGE ready, SD and Wi-Fi up, RTL-SDR found on the second enumeration attempt after one `no_device` power-cycle recovery. RTL_MEM at idle: dma_free 29199, dma_largest 28672, internal_free 68747, psram_free 23.47 MB (a sample taken before the dongle USB session started read dma_free 52063). Serial `RTL_UI OPEN ACARS` was refused with `auth_required`, so no ACARS screen was opened, and nothing on the display was seen or touched. No physical UI or live RF validation is claimed.
 
 | Check | Result |
 |---|---|
