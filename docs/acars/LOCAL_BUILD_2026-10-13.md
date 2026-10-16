@@ -37,20 +37,30 @@ Local diagnostics: build/acars/firmware-build.log, firmware-build-fixed.log, fir
 
 ## Physical Tab5 checklist
 
-Every item below is NOT RUN except the boot smoke note here. 2026-10-15: the rebased build (0d00e4a4) was flashed to the spare Tab5 on COM39 (C6 1.4.1). Serial log only: boot reached BOOT_STAGE ready, SD and Wi-Fi up, RTL-SDR found on the second enumeration attempt after one `no_device` power-cycle recovery. RTL_MEM at idle: dma_free 29199, dma_largest 28672, internal_free 68747, psram_free 23.47 MB (a sample taken before the dongle USB session started read dma_free 52063). Serial `RTL_UI OPEN ACARS` was refused with `auth_required`, so no ACARS screen was opened, and nothing on the display was seen or touched. No physical UI or live RF validation is claimed.
+**2026-10-15 update.** The rebased branch plus the new receiver adapter (`acars_receiver.*`, `Frontend240k`, ten-phase `Decoder`, `RTL_UI TAP`, `RTL_ACARS STATUS`) was flashed to the spare Tab5 on COM39 (C6 1.4.1, a Blog V3 R820T2 dongle). Everything below marked SERIAL was driven and read over the serial console (`RTL_UI TAP x y` goes through the normal touch routing). **Nobody looked at the display**: layout, fit, overlap, readability, redraw feel and flicker are NOT RUN, and no photo or screenshot exists.
 
 | Check | Result |
 |---|---|
-| Boot, aviation Home tile, touch open, RTL_UI OPEN ACARS | NOT RUN |
-| Shared brand/battery/Home/Mute-volume/Visualizer/Settings header and empty status area | NOT RUN |
+| Boot, `RTL_UI OPEN ACARS` | SERIAL PASS: `screen=acars route=acars`, boot reached ready. Home tile and touch open: NOT RUN |
+| Header controls and status area | Settings button tap opened Settings and `OPEN ACARS` returned (SERIAL PASS). How the header draws: NOT RUN |
 | Header font state after dashboard render | NOT RUN |
-| All six tabs: layout, fit, overlap, arm-length readability and touch | NOT RUN |
-| LIVE receiver-feed-not-connected and no-receiver-feed notice | NOT RUN |
-| DEMO chip, list/detail/paging/raw scroll/aircraft/archive, six scenarios and exit cleanup | NOT RUN |
-| CHANNELS request-only selection and NOT TUNED state | NOT RUN |
-| Preference persistence across reboot; demo remains nonpersistent | NOT RUN |
-| Settings and Visualizer return; Home cleanup | NOT RUN |
-| Redraw latency, touch responsiveness, idle redraw and background RTL streaming stability | NOT RUN |
-| Watchdog, heap warnings, long-run memory, photos/screenshots | NOT RUN |
+| All six tabs | SERIAL PASS for touch routing: tapping each tab gave view=live, aircraft, channels, activity, archive, setup. Layout and readability: NOT RUN |
+| LIVE state | With the receiver running: `receiver=running live_reception=1 tune=tuned`. The "feed not connected" text with no receiver is covered by host tests only |
+| DEMO | SERIAL PASS: Setup toggle gives demo=1; six scenarios cycle in order (mixed, full, empty, disconnected, paused, no clock) with receiver=disconnected and paused where expected; toggling off returns to live. List, detail, paging, raw scroll, aircraft and archive screens: NOT RUN on the panel |
+| CHANNELS | SERIAL PASS: choosing or clearing a channel retunes the radio and `tuned_hz` follows once blocks arrive. A custom 130.000 MHz request was already stored on this unit's NVS (source unknown); Clear removed it |
+| Preference persistence | SERIAL PASS: region changed to Europe, device reset, reopened: channel 131.725 MHz restored. The current view is not persisted (reopens on LIVE). Demo is not persisted |
+| Settings and Visualizer return | Settings round trip SERIAL PASS, receiver kept running across it (block counter kept rising). Visualizer: NOT RUN |
+| Leaving to Home | SERIAL PASS: the receiver stops, the stream returns to 2.4 MS/s (`RTL_DSP STATS rate=2400000`) |
+| Streaming stability | 10 minute run on 131.550 MHz: 8,234 blocks, 0 stream gaps, 0 driver overruns/drops, 0 IQ pipeline drops. DSP cost about 8.0 ms mean (23.6 ms max, includes preemption) per 68 ms block, roughly 12% of one core |
+| Heap / DMA | With ACARS open, `dma_free` 20,635 bytes, `dma_largest` 20,480, `dma_min` 17,359, internal free about 56.7 KB; identical after leaving to Home, so the dashboard and receiver add no measured DMA RAM (receiver and model are PSRAM, about 10 KB plus the model). Stack: `main_stack_hwm` 5,264 to 6,456 words observed. Watchdog: no reset or WDT line seen in the logs read. Long-run (hours) memory: NOT RUN |
+| Photos / screenshots | NOT RUN |
 
-Default LIVE and synthetic DEMO separation passed host checks only. Live RF: NOT RUN; no ACARS receiver adapter exists. Decoder-owner API changes: none proposed from this build. Draft PR remains unmerged.
+### Live RF
+
+**No real ACARS block has been decoded.** Ten minutes on 131.550 MHz produced 0 CRC-verified blocks, 10 sync candidates and 97 CRC rejects (false triggers on noise; all rejected), with the channel level flat near 0.06. Whether that dongle had a usable VHF antenna attached, and whether any aircraft transmitted on that channel in the window, is not known. This says nothing about decoder sensitivity.
+
+### What the host tests prove about the receive chain (synthetic fixture, not a recording)
+
+A generated AM / 1200-2400 Hz MSK signal at 240 kS/s CU8 decodes once per block at every bit phase tried (0-99 samples), with the carrier +-4 kHz off nominal, with noise (12 of 12 at sigma 0.05, no duplicates), two identical back-to-back blocks both delivered, and two seconds of noise producing nothing. Before the multi-phase decoder change the decoder had fixed bit timing and would have missed most blocks on real signals.
+
+Decoder-owner API changes: `Decoder` now runs ten bit-phase hypotheses and `stats()` is aggregated; `Frontend240k` is new; `Model::clear_tune()` is new. Draft PR remains unmerged; nothing is pushed.

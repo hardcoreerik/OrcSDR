@@ -1,7 +1,8 @@
 # What the decoder owner must provide to activate LIVE reception
 
 Audience: whoever owns `acars_core.*` and the receiver runtime. The UI is complete without any of this and
-changes nothing in the decoder. Today LIVE shows `RECEIVER FEED NOT CONNECTED`.
+changes nothing in the decoder. This note is the original seam description; `acars_receiver.*` now implements it for the
+RTL-SDR (see `DASHBOARD_README.md`, "Live reception"). Without a receiver LIVE shows `RECEIVER FEED NOT CONNECTED`.
 
 ## The seam
 

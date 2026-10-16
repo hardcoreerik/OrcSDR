@@ -589,6 +589,13 @@ void Model::report_tuned(uint32_t frequency_hz, bool ok) {
   bump_status();
 }
 
+void Model::clear_tune() {
+  if (tune_ == TuneStatus::unavailable && tuned_hz_ == 0) return;
+  tuned_hz_ = 0;
+  tune_ = TuneStatus::unavailable;
+  bump_status();
+}
+
 bool Model::inject_demo(const MessageRecord& record) {
   if (!demo_) return false;
   MessageRecord r = record;

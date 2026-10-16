@@ -79,16 +79,39 @@ class FrameDecoder {
 // The AM-envelope/MSK chain never processes raw wideband rates.
 // Works in bounded, allocation-free streaming operation. An IQ discontinuity
 // must reset the decoder (it intentionally does not guess missing samples).
+//
+// Bit timing: there is no clock recovery. The ten possible bit boundaries within a 10-sample bit
+// are decoded in parallel, one FrameDecoder each; every CRC-verified block is delivered once (the
+// neighbouring phases that also recover it are suppressed as duplicates). A phase that is off by
+// half a bit simply never produces a verified block.
 class Decoder {
  public:
+  static constexpr int kSamplesPerBit = 10;
+  Decoder() { reset(); }
+  Decoder(const Decoder&) = delete;             // the phase decoders call back into this object
+  Decoder& operator=(const Decoder&) = delete;
   void reset();
-  void set_callback(MessageCallback cb, void* ctx) { frames_.set_callback(cb,ctx); }
-  void set_frequency(uint32_t hz) { frames_.set_frequency(hz); }
+  void set_callback(MessageCallback cb, void* ctx) { callback_ = cb; context_ = ctx; }
+  void set_frequency(uint32_t hz);
   void process_channel_iq(float i, float q);
-  const Stats& stats() const { return frames_.stats(); }
-  FrameDecoder& frame_decoder() { return frames_; }
+  // crc_ok / corrected count unique blocks. The other counters are those of the busiest phase, so
+  // they describe one decoder, not ten.
+  const Stats& stats() const;
  private:
-  FrameDecoder frames_{};
+  static void on_phase_message(void* self, const Message& message);
+  void accept(const Message& message);
+  std::array<FrameDecoder, kSamplesPerBit> frames_{};
+  std::array<float, kSamplesPerBit> accum_{};
+  std::array<bool, kSamplesPerBit> state_{};
+  MessageCallback callback_ = nullptr;
+  void* context_ = nullptr;
+  mutable Stats stats_{};
+  uint32_t unique_ok_ = 0;
+  uint32_t unique_corrected_ = 0;
+  uint32_t sample_index_ = 0;
+  uint32_t last_hash_ = 0;
+  uint32_t last_hash_sample_ = 0;
+  bool have_last_ = false;
   float dc_ = 0.f;
   float i1_ = 0.f, q1_ = 0.f;
   float i2_ = 0.f, q2_ = 0.f;
@@ -96,8 +119,6 @@ class Decoder {
   float mixer_i_ = 1.f, mixer_q_ = 0.f;
   int osc_phase_ = 0;
   int bit_phase_ = 0;
-  float accum_ = 0.f;
-  bool differential_state_ = true;
   bool signal_initialized_ = false;
 };
 
@@ -124,5 +145,31 @@ class Frontend2400k {
   std::array<float,kStage2Len> taps2_{};
   bool taps_ready_=false;
   void design_taps();
+};
+
+// Front end for the 240 kS/s CU8 stream the dashboard asks the dongle for (the same low rate the FT8 and SSTV receivers use:
+// ten times less USB and DSP load than 2.4 MS/s). One channel: the wanted carrier must sit at +60 kHz (= fs/4) from the tuned
+// centre, which keeps it away from the tuner's DC spike and makes the mixer to DC multiplication-free (a rotation by
+// 90 degrees per sample). The FIR then low-passes and decimates by 10 to 24 kS/s.
+// Bounded, allocation-free, one FIR evaluation per output sample, input processed in cache-sized chunks.
+class Frontend240k {
+ public:
+  static constexpr unsigned kInputRate = 240000;
+  static constexpr int32_t kCarrierOffsetHz = 60000;   // carrier position relative to the tuned centre
+  static constexpr int kTaps = 129;
+  static constexpr int kDecimation = 10;
+  static constexpr int kChunk = 480;                   // input samples per pass (a multiple of kDecimation)
+  Frontend240k() { reset(); }
+  void reset();
+  void process_cu8(const uint8_t* iq, size_t complex_count, void(*emit)(void*,float,float), void* ctx);
+ private:
+  void design_taps();
+  std::array<float,kTaps/2+1> taps_{};
+  std::array<float,kTaps-1+kChunk> work_i_{};          // [history of kTaps-1 | chunk], contiguous so the FIR never wraps
+  std::array<float,kTaps-1+kChunk> work_q_{};
+  std::array<float,256> lut_{};                        // CU8 byte -> float in [-1, 1]
+  int phase_ = 0;                                      // inputs since the last output (0..kDecimation-1)
+  int rotation_ = 0;                                   // position in the 4-step mixer cycle
+  bool tables_ready_ = false;
 };
 }

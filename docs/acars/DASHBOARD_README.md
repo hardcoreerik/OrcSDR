@@ -1,9 +1,9 @@
 # ACARS dashboard (UI foundation)
 
-Status: **Host-tested and firmware-build-verified UI foundation; not hardware-verified; no receiver attached.** This dashboard is
-presentation only. The native decoder (`acars_core.*`, separately owned) is not wired to a radio, so the
-default LIVE screen truthfully reads `RECEIVER FEED NOT CONNECTED`. Everything on screen that is not that
-state comes from the explicit DEMO mode (synthetic data) or from host tests.
+Status: **Host-tested; running on a spare Tab5 with a live receiver adapter; no real off-air ACARS block has been decoded yet.**
+The dashboard itself is presentation only. Live data comes from `acars_receiver.*` (see "Live reception" below), which feeds the
+native decoder (`acars_core.*`) from the RTL-SDR and posts into the model. When no receiver is attached (host tests, or a build
+without the hooks) LIVE truthfully reads `RECEIVER FEED NOT CONNECTED`. DEMO mode data is synthetic and labelled as such.
 
 Nothing here has been run on a Tab5. Host tests use a recording stand-in for M5GFX; they prove geometry,
 ownership, state and honesty rules, not how the screen looks or feels to touch.
@@ -86,7 +86,8 @@ traffic. Each preset carries its source in `acars_dashboard_model.cpp`.
 | Asia-Pacific | 131.550, 131.450 (Japan) | SigIDWiki, RadioReference. Sources disagree on 131.475 versus 131.450 for Japan; 131.450 is used |
 
 The CHANNELS list is a set of choices, not simultaneous reception. The decoder is single-channel today.
-Choosing a channel only changes the **request**; the screen then reads `NOT TUNED - NO RECEIVER RUNTIME`.
+Choosing a channel changes the **request**. With the receiver adapter running, the adapter retunes the radio and reports `TUNED` once
+IQ blocks arrive at the expected rate from the requested centre; without a receiver the screen reads `NOT TUNED - NO RECEIVER RUNTIME`.
 Custom frequencies are limited to 118.000 - 137.000 MHz on the 25 kHz grid.
 
 ## Data model (`acars_dashboard_model.*`)
@@ -168,9 +169,26 @@ sizes; font metrics (the host stand-in estimates glyph widths); header controls 
 dashboard (battery, mute tray, visualizer, settings); Home tile and recents; Settings and Visualizer return;
 redraw latency; behaviour with a real RTL-SDR streaming in the background; long-run memory.
 
+## Live reception
+
+`acars_receiver.*` is the receiver adapter. It asks the radio for a 240 kS/s stream on the general VHF (BROWSE) band, centred
+60 kHz below the selected ACARS channel (the carrier then sits at a quarter of the sample rate, so the mixer to DC needs no
+multiplications and the tuner's DC spike stays out of the channel). `Frontend240k` low-passes and decimates to 24 kS/s;
+`Decoder` runs ten bit-phase hypotheses in parallel (there is no clock recovery) and delivers each CRC-verified block once.
+Blocks, decoder counters, the receiver state and the tune result flow into the same model the DEMO data uses, with
+`SourceKind::live`. The wall-clock time is attached only when the Tab5 clock is valid.
+
+Behaviour that matters when reading the screen: opening the dashboard starts the receiver and closing it hands the sample rate
+back; Settings keeps it running; an absent dongle reads `RECEIVER UNAVAILABLE`; a stream at another rate is counted and ignored.
+
+Serial diagnostics (the project convention is that serial mimics the screen): `RTL_ACARS STATUS` prints the dashboard state and the
+receiver counters; `RTL_UI TAP <x> <y>` (authenticated) injects a touch through the normal routing; `RTL_UI OPEN ACARS` opens the screen.
+
 ## Known limitations
 
-- No live data path exists. The producer seam is built and tested, but nothing posts to it in firmware.
+- The live path exists (`acars_receiver.*`) but is untested on real signals: the decoder has only ever seen a synthetic AM/MSK
+  fixture. No sensitivity, false-block rate or gain behaviour is measured.
+- One channel at a time; the selected channel is the only one decoded.
 - UTC time is shown only if a producer supplies it; otherwise `+m:ss` since boot, labelled as such.
 - History is RAM-only (48 messages) and lost at power-off.
 - The aircraft view groups by decoded address only; it does not know ICAO ids, positions or flights beyond

@@ -61,6 +61,7 @@
 #include "sstv_diag.hpp"
 #include "sstv_receiver.hpp"
 #include "acars_app.hpp"
+#include "acars_receiver.hpp"
 #include "ft8_tuning.hpp"
 #include "ft8_heard_db.hpp"
 #include "ft8_adif.hpp"
@@ -9271,6 +9272,9 @@ static void rtl_dsp_task(void *) {
     if ((!block.custom_rate || g_ft8_rate_owned.load(std::memory_order_relaxed)) &&
         (block.band == RtlBand::shortwave || block.band == RtlBand::browse) && orcsdr::ft8_runtime::active())
       orcsdr::ft8_runtime::offer_iq(block.data, block.bytes, block.sample_rate_sps);
+    // ACARS receiver: decodes only the 240 kS/s stream it asked for on the general VHF band (it rejects any other rate).
+    if (block.band == RtlBand::browse && orcsdr::acars_receiver::running())
+      orcsdr::acars_receiver::offer_iq(block.data, block.bytes, block.sample_rate_sps);
     if (!block.custom_rate && block.band == RtlBand::lora)
       lora_iq_offer(block.data, block.bytes);
     mark(dsp_stats::Stage::decoders);
@@ -13903,11 +13907,40 @@ orcsdr::acars_app::Hooks acars_app_hooks() {
   hooks.store.put_u32 = [](const char* key, uint32_t value) { preferences.putUInt(key, value); };
   return hooks;
 }
+// The ACARS receiver asks for a 240 kS/s stream on the general VHF band, like the SSTV receiver; the radio is only reachable here.
+orcsdr::acars_receiver::Hooks acars_receiver_hooks() {
+  constexpr uint32_t kRate = orcsdr::acars_receiver::kStreamRate;
+  orcsdr::acars_receiver::Hooks hooks;
+  hooks.device_ready = [] { return rtl_device_ready(); };
+  hooks.tune = [](uint32_t center_hz) {
+    if (!rtl_device_ready() || !esp_rtl_sdr_is_rate_supported(kRate)) return false;
+    rtl_rate_override_sps.store(kRate, std::memory_order_release);
+    const bool streaming = rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
+                           rtl_ui_band == RtlBand::browse && rtl_active_sample_rate_sps.load(std::memory_order_acquire) == kRate;
+    return streaming ? request_hot_retune(center_hz) : queue_local_rtl_listen(RtlBand::browse, center_hz, false);
+  };
+  hooks.release = [] {
+    rtl_rate_override_sps.store(0, std::memory_order_release);
+    // A hot retune keeps the stream's rate: restart once at the normal rate if the stream is still at ours.
+    if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
+        rtl_active_sample_rate_sps.load(std::memory_order_acquire) == kRate && rtl_ui_band == RtlBand::browse)
+      (void)queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz, false);
+  };
+  hooks.sample_rate = [] { return rtl_active_sample_rate_sps.load(std::memory_order_acquire); };
+  hooks.tuned_center = [] { return rtl_ui_frequency_hz; };
+  hooks.now_ms = [] { return static_cast<uint32_t>(millis()); };
+  hooks.utc_epoch = [] {
+    const auto clock = orcsdr::time_service::now();
+    return clock.wallclock_valid ? static_cast<uint32_t>(clock.utc) : 0u;
+  };
+  return hooks;
+}
 void open_acars_dashboard() {
   persist_dashboard_open(orcsdr::dashboards::Id::acars);
   orcsdr::home::leave();
   orcsdr::ft8::leave();
   orcsdr::sstv_app::close();
+  orcsdr::acars_receiver::install(acars_receiver_hooks());
   orcsdr::acars_app::install(acars_app_hooks());
   orcsdr::acars_app::open();
 }
@@ -19052,6 +19085,30 @@ void process_command(char* command) {
                   heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
                   heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
                   heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+    return;
+  }
+  if (strcmp(command, "RTL_ACARS STATUS") == 0) {
+    char line[640];
+    orcsdr::acars_app::describe(line, sizeof(line));
+    Serial.println(line);
+    orcsdr::acars_receiver::format_status(line, sizeof(line));
+    Serial.println(line);
+    return;
+  }
+  // Serial input mimics the screen: RTL_UI TAP x y goes through the same routing as a finger on the panel (full-screen
+  // coordinates, header included).
+  if (strncmp(command, "RTL_UI TAP ", 11) == 0 && !authenticated) {
+    Serial.println("RTL_UI_TAP_ERROR auth_required");
+    return;
+  }
+  if (strncmp(command, "RTL_UI TAP ", 11) == 0) {
+    int x = 0, y = 0;
+    if (sscanf(command + 11, "%d %d", &x, &y) != 2 || x < 0 || y < 0 || x >= 1280 || y >= 720) {
+      Serial.println("RTL_UI_TAP_INVALID use RTL_UI TAP <x 0-1279> <y 0-719>");
+      return;
+    }
+    handle_sdr_touch(x, y);
+    Serial.printf("RTL_UI_TAP_OK x=%d y=%d\n", x, y);
     return;
   }
   if (strncmp(command, "RTL_UI OPEN ", 12) == 0 && !authenticated) {

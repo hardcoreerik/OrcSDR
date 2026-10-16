@@ -228,6 +228,7 @@ class Model {
   bool archive_cycle_label(char* label_inout) const;
   // A runtime reports what the radio actually did. Until then the request stays "unavailable".
   void report_tuned(uint32_t frequency_hz, bool ok);
+  void clear_tune();                               // the runtime went away: back to "no runtime reports a tune"
 
   const Snapshot& snapshot();                      // rebuilt lazily when something changed
   TextFormat snapshot_prefs_format() const { return prefs_.format; }

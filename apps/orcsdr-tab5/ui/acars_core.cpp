@@ -197,8 +197,42 @@ bool FrameDecoder::emit() {
 }
 
 void Decoder::reset() {
-  frames_.reset();dc_=i1_=q1_=i2_=q2_=pi_=pq_=accum_=0.f;
-  mixer_i_=1.f;mixer_q_=0.f;osc_phase_=bit_phase_=0;differential_state_=true;signal_initialized_=false;
+  for(auto& f:frames_)f.reset();
+  accum_.fill(0.f);state_.fill(true);
+  dc_=i1_=q1_=i2_=q2_=pi_=pq_=0.f;
+  mixer_i_=1.f;mixer_q_=0.f;osc_phase_=bit_phase_=0;signal_initialized_=false;
+  unique_ok_=unique_corrected_=0;sample_index_=0;last_hash_=0;last_hash_sample_=0;have_last_=false;
+  for(auto& f:frames_)f.set_callback(&Decoder::on_phase_message,this);
+}
+void Decoder::set_frequency(uint32_t hz){for(auto& f:frames_)f.set_frequency(hz);}
+void Decoder::on_phase_message(void* self,const Message& message){static_cast<Decoder*>(self)->accept(message);}
+void Decoder::accept(const Message& m){
+  // FNV-1a over everything that identifies a block. The same block recovered by a neighbouring bit phase arrives within
+  // one bit time (10 samples); two genuine blocks are always at least 15 bytes (1200 samples) apart.
+  uint32_t h=2166136261u;
+  auto mix=[&h](uint8_t b){h^=b;h*=16777619u;};
+  mix(uint8_t(m.mode));mix(uint8_t(m.acknowledgement));mix(uint8_t(m.block_id));mix(uint8_t(m.label[0]));mix(uint8_t(m.label[1]));
+  for(int i=0;i<7;++i)mix(uint8_t(m.tail[i]));
+  mix(m.end_marker);
+  for(unsigned i=0;i<m.text_length&&i<kMaxBlockBytes;++i)mix(uint8_t(m.text[i]));
+  if(have_last_&&h==last_hash_&&sample_index_-last_hash_sample_<kSamplesPerBit*2)return;
+  have_last_=true;last_hash_=h;last_hash_sample_=sample_index_;
+  ++unique_ok_;if(m.corrected)++unique_corrected_;
+  if(callback_)callback_(context_,m);
+}
+const Stats& Decoder::stats() const {
+  Stats best{};
+  for(const auto& f:frames_){
+    const Stats& s=f.stats();
+    if(s.sync_candidates>best.sync_candidates)best.sync_candidates=s.sync_candidates;
+    if(s.crc_rejected>best.crc_rejected)best.crc_rejected=s.crc_rejected;
+    if(s.framing_rejected>best.framing_rejected)best.framing_rejected=s.framing_rejected;
+    if(s.overflows>best.overflows)best.overflows=s.overflows;
+  }
+  best.bits=frames_[0].stats().bits;
+  best.crc_ok=unique_ok_;best.corrected=unique_corrected_;
+  stats_=best;
+  return stats_;
 }
 void Decoder::process_channel_iq(float i,float q) {
   // Envelope AM demod. No RF phase tracking required.
@@ -220,18 +254,19 @@ void Decoder::process_channel_iq(float i,float q) {
   float cross=pi_*q2_-pq_*i2_;
   float dot=pi_*i2_+pq_*q2_;
   pi_=i2_;pq_=q2_;
+  ++sample_index_;
   if(!signal_initialized_) {signal_initialized_=true;return;}
   // Cross phase normalized by instantaneous power; atan2 would cost a
   // transcendental per sample, while atan2 sign is enough for two tones.
-  float discriminator=cross/(std::abs(dot)+std::abs(cross)+1.e-12f);
-  accum_+=discriminator;
-  if(++bit_phase_>=10){ // fractional recovery is a later addition
-    bit_phase_=0;
-    bool change=accum_<0.f;
-    differential_state_^=change;
-    frames_.push_bit(differential_state_);
-    accum_=0.f;
-  }
+  const float discriminator=cross/(std::abs(dot)+std::abs(cross)+1.e-12f);
+  for(float& a:accum_)a+=discriminator;
+  // Ten overlapping integrate-and-dump windows, one ending on each sample phase.
+  const int p=bit_phase_;
+  if(++bit_phase_>=kSamplesPerBit)bit_phase_=0;
+  const bool change=accum_[p]<0.f;
+  accum_[p]=0.f;
+  state_[p]=state_[p]^change;
+  frames_[p].push_bit(state_[p]);
 }
 
 static void fir_design(float* h,int n,double cutoff,double sample_rate){
@@ -306,6 +341,59 @@ void Frontend2400k::process_cu8(const uint8_t* iq,size_t n,
     i2+=taps2_[kStage2Len/2]*ring2_[newest].i;
     q2+=taps2_[kStage2Len/2]*ring2_[newest].q;
     emit(ctx,i2,q2);
+  }
+}
+
+void Frontend240k::design_taps(){
+  // 9 kHz cutoff at 240 kS/s: passes the AM carrier with +-3.6 kHz of MSK sidebands plus a few kHz of oscillator error,
+  // and is down by about 50 dB at 15 kHz, where the 24 kS/s output starts to alias.
+  float full[kTaps];
+  fir_design(full,kTaps,9000.,240000.);
+  for(int k=0;k<=kTaps/2;++k)taps_[k]=full[k];
+  for(int v=0;v<256;++v)lut_[v]=(float(v)-127.5f)/127.5f;
+  tables_ready_=true;
+}
+void Frontend240k::reset(){
+  if(!tables_ready_)design_taps();
+  work_i_.fill(0.f);work_q_.fill(0.f);phase_=0;rotation_=0;
+}
+void Frontend240k::process_cu8(const uint8_t* iq,size_t n,void(*emit)(void*,float,float),void* ctx){
+  constexpr int H=kTaps-1;
+  float* wi=work_i_.data()+H;
+  float* wq=work_q_.data()+H;
+  while(n>0){
+    const int chunk=int(n<size_t(kChunk)?n:size_t(kChunk));
+    // Mix to DC: multiply by exp(-j*pi/2*n), i.e. (i,q) -> (i,q), (q,-i), (-i,-q), (-q,i).
+    int r=rotation_;
+    for(int k=0;k<chunk;++k){
+      const float a=lut_[iq[2*k]],b=lut_[iq[2*k+1]];
+      switch(r){
+        case 0: wi[k]=a;  wq[k]=b;  break;
+        case 1: wi[k]=b;  wq[k]=-a; break;
+        case 2: wi[k]=-a; wq[k]=-b; break;
+        default: wi[k]=-b; wq[k]=a; break;
+      }
+      r=(r+1)&3;
+    }
+    rotation_=r;
+    // Outputs land on the sample that completes each group of kDecimation inputs; the window is the kTaps ending there.
+    for(int k=kDecimation-1-phase_;k<chunk;k+=kDecimation){
+      const float* ci=work_i_.data()+k;      // window = work[k .. k+kTaps-1]
+      const float* cq=work_q_.data()+k;
+      float oi=0.f,oq=0.f;
+      for(int t=0;t<kTaps/2;++t){            // symmetric taps: fold the window around its centre
+        oi+=taps_[t]*(ci[t]+ci[kTaps-1-t]);
+        oq+=taps_[t]*(cq[t]+cq[kTaps-1-t]);
+      }
+      oi+=taps_[kTaps/2]*ci[kTaps/2];
+      oq+=taps_[kTaps/2]*cq[kTaps/2];
+      emit(ctx,oi,oq);
+    }
+    phase_=(phase_+chunk)%kDecimation;
+    // Keep the newest kTaps-1 samples as the next chunk's history.
+    for(int t=0;t<H;++t){work_i_[t]=work_i_[chunk+t];work_q_[t]=work_q_[chunk+t];}
+    iq+=2*size_t(chunk);
+    n-=size_t(chunk);
   }
 }
 } // namespace orcsdr::acars
