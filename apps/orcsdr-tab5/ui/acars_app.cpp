@@ -7,6 +7,7 @@
 #include <cstring>
 #include <new>
 
+#include "acars_archive.hpp"
 #include "acars_dashboard.hpp"
 #include "acars_dashboard_ui.hpp"
 #include "acars_receiver.hpp"
@@ -21,6 +22,9 @@ namespace {
 struct State {
   acars_ui::Model model;
   acars_ui::Controller ui;
+  acars_archive::Store archive;             // the newest saved blocks, browsed by the ARCHIVE tab
+  acars_archive::Logger logger{&archive};   // appends every verified block to the SD card
+  bool history_loaded = false;
 };
 
 State* g_state = nullptr;
@@ -36,6 +40,10 @@ bool ensure_state() {
 }
 
 uint32_t g_last_device_sync_ms = 0;
+
+void archive_sink(void* context, const acars_ui::MessageRecord& record) {
+  static_cast<acars_archive::Logger*>(context)->log(record, millis());
+}
 
 void sync_device_state() {
   g_last_device_sync_ms = millis();
@@ -55,9 +63,17 @@ void open() {
   sync_device_state();
   acars_dashboard::install(&g_state->model, &g_state->ui, g_hooks.header_controls);
   acars_dashboard::set_overlay_probe(g_hooks.overlay_open);
+  // Saving: every live verified block is appended to the SD log, and the ARCHIVE tab browses the newest saved blocks.
+  g_state->logger.begin(g_hooks.archive_ops ? *g_hooks.archive_ops : acars_archive::FileOps{}, millis());
+  g_state->model.set_archive(&g_state->archive);
+  g_state->model.set_live_sink(archive_sink, &g_state->logger);
   screens::begin_transition(screens::Id::acars, millis());
   acars_dashboard::enter();
   screens::finish_transition();
+  if (!g_state->history_loaded && g_state->logger.active()) {      // once per boot, after the first frame is on screen
+    g_state->logger.load_history();
+    g_state->history_loaded = true;
+  }
   // Hooks are installed only by the firmware; without them (host tests) the feed stays "not connected".
   (void)acars_receiver::start(&g_state->model);
 }
@@ -65,6 +81,7 @@ void open() {
 void close() {
   if (!acars_dashboard::active()) return;
   acars_receiver::stop();                             // gives the radio's sample rate back
+  if (g_state) g_state->logger.end(millis());         // nothing waits in the buffer when the screen is left
   acars_dashboard::leave();
   if (g_state) g_state->model.set_demo(false);        // synthetic data never outlives the screen
 }
@@ -73,6 +90,7 @@ void tick() {
   if (!g_state || !acars_dashboard::active()) return;
   if (millis() - g_last_device_sync_ms >= 2000u) sync_device_state();   // the power IC is not read every loop
   g_state->model.service();
+  g_state->logger.service(millis());
   acars_receiver::service();
   if (!screens::owns(screens::Id::acars)) return;
   screens::note_visible_update(screens::Id::acars);
@@ -120,6 +138,15 @@ void describe(char* out, size_t size) {
                 static_cast<unsigned>(s.messages_held), static_cast<unsigned>(s.messages_total),
                 static_cast<unsigned>(s.corrected_total), static_cast<unsigned>(s.queue_drops),
                 static_cast<unsigned>(s.aircraft_total));
+  {
+    const acars_archive::LogStats l = g_state->logger.stats();
+    const size_t at = std::strlen(out);
+    if (at + 1 < size)
+      std::snprintf(out + at, size - at, " log=%s written=%u pending=%u dropped=%u loaded=%u skipped=%u removed=%u archive=%u",
+                    acars_archive::log_state_name(l.state), static_cast<unsigned>(l.written), static_cast<unsigned>(l.pending),
+                    static_cast<unsigned>(l.dropped), static_cast<unsigned>(l.loaded), static_cast<unsigned>(l.skipped_lines),
+                    static_cast<unsigned>(l.files_removed), static_cast<unsigned>(g_state->archive.count()));
+  }
   const acars_dashboard::PaintStats p = acars_dashboard::paint_stats();
   const size_t used = std::strlen(out);
   if (used + 1 < size)

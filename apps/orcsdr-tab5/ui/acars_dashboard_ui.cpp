@@ -194,7 +194,7 @@ Action Controller::touch_channels(int32_t x, int32_t y, Model& model) {
 }
 
 Action Controller::touch_archive(int32_t x, int32_t y, Model& model) {
-  if (!model.demo()) return {};                   // no archive provider: every control is disabled
+  if (!model.archive_browsable()) return {};      // no archive source: every control is disabled
   if (in(layout::ar_filter(0), x, y)) {
     model.archive_cycle_tail(query_.tail);
     archive_offset_ = 0;

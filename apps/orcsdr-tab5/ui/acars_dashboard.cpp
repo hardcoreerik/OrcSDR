@@ -785,6 +785,7 @@ void draw_activity(const Snapshot& s) {
 // ---- ARCHIVE
 void draw_archive(const Snapshot& s) {
   const bool demo = s.source == SourceKind::demo;
+  const bool browsable = demo || s.archive_available;      // the synthetic store, or the saved log
   card(layout::kArFilters);
   {
     Clip clip(layout::kArFilters);
@@ -793,30 +794,40 @@ void draw_archive(const Snapshot& s) {
   static constexpr const char* names[] = {"TAIL", "LABEL", "FLIGHT", "FREQUENCY", "TEXT SEARCH"};
   for (int i = 0; i < layout::kArFilterCount; ++i) {
     const Rect r = layout::ar_filter(i);
-    const bool enabled = demo && i < 2;
+    const bool enabled = browsable && i < 2;
     if (enabled) focus_nav::note(r.x, r.y, r.w, r.h);
     G.fillRoundRect(r.x, r.y, r.w, r.h, 8, kPanel);
     G.drawRoundRect(r.x, r.y, r.w, r.h, 8, enabled ? kCyan : kDim);
     Clip clip(r);
     text(names[i], r.x + 14, r.y + 18, kMuted);
-    const char* v = !enabled ? (demo ? "PLANNED" : "NEEDS ARCHIVE")
+    const char* v = !enabled ? (browsable ? "PLANNED" : "NEEDS ARCHIVE")
                     : i == 0 ? (g_ui->archive_query().tail[0] ? g_ui->archive_query().tail : "ANY")
                              : (g_ui->archive_query().label[0] ? g_ui->archive_query().label : "ANY");
     text(v, r.x + 14, r.y + 42, enabled ? TFT_WHITE : kDim, f24);
   }
-  button(layout::kArClear, "CLEAR FILTERS", false, demo && (g_ui->archive_query().tail[0] || g_ui->archive_query().label[0]));
+  button(layout::kArClear, "CLEAR FILTERS", false, browsable && (g_ui->archive_query().tail[0] || g_ui->archive_query().label[0]));
 
   const Rect& list = layout::kArList;
   card(list, demo ? kAmber : kBorder);
   {
     Clip clip(list);
-    text(demo ? "SYNTHETIC DEMO ARCHIVE - NOT STORED" : "ARCHIVE", list.x + 16, list.y + 22, demo ? kAmber : kCyan, f24);
+    if (demo) {
+      text("SYNTHETIC DEMO ARCHIVE - NOT STORED", list.x + 16, list.y + 22, kAmber, f24);
+    } else if (s.archive_available) {
+      char head[64];
+      std::snprintf(head, sizeof(head), "SAVED BLOCKS  %u", static_cast<unsigned int>(s.archive_count));
+      text(head, list.x + 16, list.y + 22, kCyan, f24);
+      const char* status = g_model->archive() ? g_model->archive()->status() : "";
+      const bool saving = std::strcmp(status, "SAVING TO SD") == 0;
+      text(status, list.x + list.w - 190, list.y + 22, saving ? kGreen : kAmber, f18, middle_right);
+    } else {
+      text("ARCHIVE", list.x + 16, list.y + 22, kCyan, f24);
+    }
   }
-  if (!demo) {
+  if (!browsable) {
     Clip clip(list);
     text("ARCHIVE NOT AVAILABLE", list.x + list.w / 2, list.y + 200, TFT_WHITE, f24, middle_center);
-    paragraph("No SD-backed archive provider is connected. Messages are kept in memory only (last 48) and are lost at power-off. "
-              "Browsing, tail / flight / frequency / label filters and text search will appear here when an archive exists.",
+    paragraph("No archive source is attached. Messages are kept in memory only (last 48) and are lost at power-off.",
               {list.x + 80, list.y + 240, list.w - 160, 150}, kMuted, 5);
     return;
   }

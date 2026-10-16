@@ -200,6 +200,23 @@ back; Settings keeps it running; an absent dongle reads `RECEIVER UNAVAILABLE`; 
 Serial diagnostics (the project convention is that serial mimics the screen): `RTL_ACARS STATUS` prints the dashboard state and the
 receiver counters; `RTL_UI TAP <x> <y>` (authenticated) injects a touch through the normal routing; `RTL_UI OPEN ACARS` opens the screen.
 
+## Archive (saved blocks)
+
+Every CRC-verified live block is appended to `/orcsdr/acars/YYYYMMDD.jsonl` on the SD card (UTC day; `undated.jsonl` when the clock
+is not valid). One flat JSON object per line, fixed key order: `v`, `utc`, `up`, `f`, `tail`, `flt`, `lbl`, `mode`, `ack`, `blk`,
+`end`, `cor`, `fix`, `raw`, `n`, `x` (the text as hex, exact), `p` (a printable preview for grep). Lines are buffered and written every
+20 s, when the buffer fills, and when the screen is closed. At most 30 dated files are kept (the oldest are deleted). Nothing is
+uploaded anywhere. Only CRC-verified blocks are saved. DEMO data never reaches the log.
+
+The ARCHIVE tab browses the newest 300 saved blocks: at screen open the newest part of the log (up to 320 KB) is read back once per
+boot, and new blocks are added as they arrive. It shows `SAVING TO SD`, `NO SD CARD` or `SD WRITE ERROR`. Without a card the tab still
+holds this session's blocks. Tail and label filters work; flight, frequency and text search are not built yet. Retention counts
+files, not bytes.
+
+Checks: `acars_archive_tests` (format round trip, hostile bytes, truncated lines, store, logger, retention, failure recovery, history
+load) on the host, and `RTL_ACARS ARCHIVETEST` on the device (writes and reads back 12 records in a scratch folder on the real card,
+then deletes them; it passed on a Tab5 with an SD card). The real log gets its first real entries when an aircraft is decoded.
+
 ## Known limitations
 
 - The live path exists (`acars_receiver.*`) and has decoded only two real blocks so far; otherwise the decoder has only seen a synthetic AM/MSK

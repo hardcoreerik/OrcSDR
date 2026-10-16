@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "acars_archive.hpp"
 #include "acars_dashboard_model.hpp"
 
 namespace orcsdr::acars_app {
@@ -17,6 +18,7 @@ struct Hooks {
   // Optional extra observer of a channel choice. The receiver (acars_receiver) is retuned by the app itself.
   void (*request_tune)(uint32_t frequency_hz) = nullptr;
   acars_ui::Store store;                             // persistent UI preferences
+  const acars_archive::FileOps* archive_ops = nullptr;   // SD file operations; null = no saving (the archive then holds this session only)
 };
 
 void install(const Hooks& hooks);   // call before open(); safe to repeat

@@ -171,10 +171,25 @@ struct Snapshot {
   size_t archive_count = 0;
 };
 
-// Archive browsing. No SD-backed provider exists; only the explicitly synthetic demo store can answer.
+// Archive browsing. The synthetic DEMO store answers in DEMO mode; otherwise an ArchiveSource (acars_archive: the saved log,
+// newest blocks kept in memory) answers when one is attached.
 struct ArchiveQuery {
   char tail[8]{};                  // empty = any
   char label[3]{};                 // empty = any
+};
+
+class ArchiveSource {
+ public:
+  virtual ~ArchiveSource() = default;
+  virtual size_t count() const = 0;
+  // Newest first, filter applied; `total` receives the number of matches. Returned pointers stay valid until the next add.
+  virtual size_t query(const ArchiveQuery& query, size_t offset, const MessageRecord** out, size_t capacity,
+                       size_t* total) const = 0;
+  virtual bool cycle_tail(char* tail_inout) const = 0;     // any -> first -> ... -> last -> any
+  virtual bool cycle_label(char* label_inout) const = 0;
+  virtual const MessageRecord* find(uint32_t seq) const = 0;
+  virtual uint32_t neighbor(uint32_t seq, bool newer) const = 0;   // 0 when there is none
+  virtual const char* status() const = 0;                  // short text for the screen, e.g. "SAVING TO SD"
 };
 
 // Sanitising. All output is NUL-terminated and bounded by `capacity` (>= 1). Returns characters
@@ -225,6 +240,12 @@ class Model {
   size_t archive_query(const ArchiveQuery& query, size_t offset, const MessageRecord** out, size_t capacity,
                        size_t* total) const;
   bool archive_cycle_tail(char* tail_inout) const;     // any -> first -> ... -> last -> any
+  // Attach the saved-log archive (not owned). Live verified blocks are handed to the sink as they are stored.
+  void set_archive(const ArchiveSource* archive);
+  const ArchiveSource* archive() const { return archive_; }
+  using LiveSink = void (*)(void* context, const MessageRecord& record);
+  void set_live_sink(LiveSink sink, void* context);
+  bool archive_browsable() const { return demo_ || archive_ != nullptr; }
   bool archive_cycle_label(char* label_inout) const;
   // A runtime reports what the radio actually did. Until then the request stays "unavailable".
   void report_tuned(uint32_t frequency_hz, bool ok);
@@ -284,6 +305,9 @@ class Model {
   std::atomic<uint8_t> receiver_state_{static_cast<uint8_t>(ReceiverState::disconnected)};
   std::atomic<uint32_t> caps_bits_{0};
 
+  const ArchiveSource* archive_ = nullptr;
+  LiveSink live_sink_ = nullptr;
+  void* live_sink_context_ = nullptr;
   Ring live_{};
   Ring demo_store_{};
   Preferences prefs_{};

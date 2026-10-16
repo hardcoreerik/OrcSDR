@@ -466,6 +466,9 @@ LoRa Overview uses the unsmoothed value for faster visual response.
 `WIFI_ANALYSIS`, `SETTINGS`, or `ACARS` (the full list is printed by `RTL_UI_OPEN_INVALID`).
 `RTL_UI TAP <x> <y>` (authenticated) injects a touch at full-screen coordinates 0-1279 / 0-719
 through the same routing as a finger, header included; it replies `RTL_UI_TAP_OK`.
+`RTL_ACARS ARCHIVETEST` (authenticated) writes 12 records to a scratch folder on the SD card, reads them back through the
+archive loader, compares them, deletes the files and replies `RTL_ACARS_ARCHIVETEST sd=... written=... loaded=... result=PASS|FAIL`;
+the real log is not touched. `RTL_ACARS STATUS` also reports `log=`, `written=`, `pending=`, `dropped=`, `loaded=` and `archive=`.
 `RTL_ACARS SELFTEST` (authenticated) runs a known synthetic ACARS signal through a private
 decoder instance and replies `RTL_ACARS_SELFTEST cases=10 passed=... missed=... duplicates=... result=PASS|FAIL`;
 live reception is not touched. It takes a few seconds and proves nothing about real-signal sensitivity.

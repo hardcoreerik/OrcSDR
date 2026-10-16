@@ -378,6 +378,7 @@ void Model::service() {
     MessageRecord r = make_record(e.message, e.uptime_ms, e.utc_epoch);
     r.channel_index = static_cast<int8_t>(channel_index_for(r.frequency_hz));
     store_record(live_, r);
+    if (live_sink_) live_sink_(live_sink_context_, live_.records[(live_.head + kHistoryCapacity - 1) % kHistoryCapacity]);
     ++tail;
     any = true;
   }
@@ -532,6 +533,7 @@ bool Model::scroll_aircraft(int rows) {
 }
 
 uint32_t Model::neighbor_seq(uint32_t seq, bool newer) const {
+  if (!demo_ && archive_ && seq >= 0x80000000u) return archive_->neighbor(seq, newer);
   const Ring& ring = active();
   uint32_t best = 0;
   for (size_t i = 0; i < ring.held; ++i) {
@@ -546,6 +548,7 @@ uint32_t Model::neighbor_seq(uint32_t seq, bool newer) const {
 size_t Model::archive_query(const ArchiveQuery& q, size_t offset, const MessageRecord** out, size_t capacity,
                             size_t* total) const {
   if (total) *total = 0;
+  if (!demo_ && archive_) return archive_->query(q, offset, out, capacity, total);
   if (!demo_ || !out) return 0;
   size_t matched = 0, written = 0;
   for (size_t k = 0; k < demo_store_.held; ++k) {
@@ -560,6 +563,7 @@ size_t Model::archive_query(const ArchiveQuery& q, size_t offset, const MessageR
 }
 
 bool Model::archive_cycle_tail(char* tail) const {
+  if (!demo_ && archive_) return archive_->cycle_tail(tail);
   if (!demo_ || !tail) return false;
   const Ring& r = demo_store_;
   // Aircraft with no address field cannot be selected by tail; they are skipped (they match "any").
@@ -577,6 +581,7 @@ bool Model::archive_cycle_tail(char* tail) const {
 }
 
 bool Model::archive_cycle_label(char* label) const {
+  if (!demo_ && archive_) return archive_->cycle_label(label);
   if (!demo_ || !label) return false;
   const Ring& r = demo_store_;
   char seen[kHistoryCapacity][3];
@@ -636,7 +641,18 @@ const MessageRecord* Model::find_message(uint32_t seq) const {
   const Ring& ring = active();
   for (size_t i = 0; i < ring.held; ++i)
     if (ring.records[i].seq == seq) return &ring.records[i];
+  if (!demo_ && archive_) return archive_->find(seq);   // a block opened from the ARCHIVE tab
   return nullptr;
+}
+
+void Model::set_archive(const ArchiveSource* archive) {
+  archive_ = archive;
+  bump_status();
+}
+
+void Model::set_live_sink(LiveSink sink, void* context) {
+  live_sink_ = sink;
+  live_sink_context_ = context;
 }
 
 size_t Model::aircraft_messages(const char* tail, const MessageRecord** out, size_t capacity) const {
@@ -674,8 +690,9 @@ void Model::rebuild() {
   s.tune = (demo_ || !s.caps.live_reception) ? TuneStatus::unavailable : tune_ == TuneStatus::unavailable ? TuneStatus::pending : tune_;
   s.battery_percent = battery_;
   s.sound_enabled = sound_;
-  s.archive_available = false;                  // no archive provider exists yet
-  s.archive_count = 0;
+  s.archive_available = !demo_ && archive_ != nullptr;     // a real saved archive; the synthetic DEMO store does not count
+  s.archive_count = s.archive_available ? archive_->count() : 0;
+  if (s.archive_available) s.caps.archive = true;
 
   // Messages: newest first, filter applied.
   s.message_count = 0;

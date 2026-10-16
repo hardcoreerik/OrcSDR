@@ -61,6 +61,7 @@
 #include "sstv_diag.hpp"
 #include "sstv_receiver.hpp"
 #include "acars_app.hpp"
+#include "acars_archive_sd.hpp"
 #include "acars_receiver.hpp"
 #include "acars_selftest.hpp"
 #include "ft8_tuning.hpp"
@@ -13901,6 +13902,7 @@ orcsdr::acars_app::Hooks acars_app_hooks() {
   hooks.header_controls = draw_global_header_controls;
   hooks.sound_enabled = [] { return rtl_audio_user_enabled.load(std::memory_order_acquire); };
   hooks.overlay_open = [] { return rtl_header_audio_control.expanded; };
+  hooks.archive_ops = &orcsdr::acars_archive_sd::file_ops();   // verified blocks are saved to the SD card
   hooks.store.get_bool = [](const char* key, bool fallback) { return preferences.getBool(key, fallback); };
   hooks.store.put_bool = [](const char* key, bool value) { preferences.putBool(key, value); };
   hooks.store.get_u8 = [](const char* key, uint8_t fallback) { return preferences.getUChar(key, fallback); };
@@ -19117,6 +19119,17 @@ void process_command(char* command) {
                   r.allocated ? 1 : 0, r.cases, r.passed, r.missed, r.duplicates, static_cast<unsigned>(r.samples),
                   static_cast<unsigned>(r.total_us), r.samples ? static_cast<unsigned>(r.total_us / (r.samples / 1000u)) : 0u,
                   r.allocated && r.passed == r.cases ? "PASS" : "FAIL");
+    return;
+  }
+  // Archive check against the real SD card, in a scratch folder (the real log is not touched).
+  if (strcmp(command, "RTL_ACARS ARCHIVETEST") == 0 && !authenticated) {
+    Serial.println("RTL_ACARS_ARCHIVETEST_ERROR auth_required");
+    return;
+  }
+  if (strcmp(command, "RTL_ACARS ARCHIVETEST") == 0) {
+    char line[200];
+    (void)orcsdr::acars_archive_sd::self_test(line, sizeof(line));
+    Serial.println(line);
     return;
   }
   // Serial input mimics the screen: RTL_UI TAP x y goes through the same routing as a finger on the panel (full-screen

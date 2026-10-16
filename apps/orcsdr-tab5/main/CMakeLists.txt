@@ -130,6 +130,8 @@ idf_component_register(
         "../ui/p25_decoder_core.cpp"
         "../ui/p25_voice.cpp"
         "../ui/acars_app.cpp"
+        "../ui/acars_archive.cpp"
+        "../ui/acars_archive_sd.cpp"
         "../ui/acars_core.cpp"
         "../ui/acars_dashboard.cpp"
         "../ui/acars_dashboard_layout.cpp"

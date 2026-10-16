@@ -22,12 +22,17 @@ if [[ "${SANITIZE:-1}" == "1" ]]; then
   run acars_dashboard_model_tests_asan -fsanitize=address,undefined -fno-sanitize-recover=all -I"$UI" \
     "$ROOT/tests/acars_dashboard_model_tests.cpp" "${MODEL[@]}"
 fi
-RENDER=("$ROOT/tests/acars_dashboard_render_tests.cpp" "${MODEL[@]}" "$UI/acars_dashboard.cpp" "$UI/acars_app.cpp" "$UI/acars_receiver.cpp" "$UI/acars_core.cpp"
+RENDER=("$ROOT/tests/acars_dashboard_render_tests.cpp" "${MODEL[@]}" "$UI/acars_dashboard.cpp" "$UI/acars_app.cpp" "$UI/acars_archive.cpp" "$UI/acars_receiver.cpp" "$UI/acars_core.cpp"
   "$UI/focus_nav.cpp" "$UI/screen_controller.cpp" "$ROOT/tests/acars_ui_stubs/audio_header_stub.cpp")
 run acars_dashboard_render_tests -I"$ROOT/tests/acars_ui_stubs" -I"$UI" "${RENDER[@]}"
 if [[ "${SANITIZE:-1}" == "1" ]]; then
   run acars_dashboard_render_tests_asan -fsanitize=address,undefined -fno-sanitize-recover=all \
     -I"$ROOT/tests/acars_ui_stubs" -I"$UI" "${RENDER[@]}"
+fi
+ARCHIVE=("$ROOT/tests/acars_archive_tests.cpp" "$UI/acars_archive.cpp" "${MODEL[@]}")
+run acars_archive_tests -I"$UI" "${ARCHIVE[@]}"
+if [[ "${SANITIZE:-1}" == "1" ]]; then
+  run acars_archive_tests_asan -fsanitize=address,undefined -fno-sanitize-recover=all -I"$UI" "${ARCHIVE[@]}"
 fi
 DIRTY=("$ROOT/tests/acars_dirty_rects_tests.cpp" "$UI/acars_dirty_rects.cpp")
 run acars_dirty_rects_tests -I"$UI" "${DIRTY[@]}"
