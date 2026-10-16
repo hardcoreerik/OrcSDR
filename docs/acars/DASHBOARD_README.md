@@ -1,6 +1,6 @@
 # ACARS dashboard (UI foundation)
 
-Status: **Host-tested; running on a spare Tab5 with a live receiver adapter; no real off-air ACARS block has been decoded yet.**
+Status: **Host-tested; running on a spare Tab5 with a live receiver adapter; two real off-air ACARS blocks decoded (2026-10-15, see LOCAL_BUILD_2026-10-13.md).**
 The dashboard itself is presentation only. Live data comes from `acars_receiver.*` (see "Live reception" below), which feeds the
 native decoder (`acars_core.*`) from the RTL-SDR and posts into the model. When no receiver is attached (host tests, or a build
 without the hooks) LIVE truthfully reads `RECEIVER FEED NOT CONNECTED`. DEMO mode data is synthetic and labelled as such.
@@ -186,7 +186,7 @@ receiver counters; `RTL_UI TAP <x> <y>` (authenticated) injects a touch through 
 
 ## Known limitations
 
-- The live path exists (`acars_receiver.*`) but is untested on real signals: the decoder has only ever seen a synthetic AM/MSK
+- The live path exists (`acars_receiver.*`) has decoded only two real blocks so far; otherwise the decoder has only seen a synthetic AM/MSK
   fixture. No sensitivity, false-block rate or gain behaviour is measured.
 - One channel at a time; the selected channel is the only one decoded.
 - UTC time is shown only if a producer supplies it; otherwise `+m:ss` since boot, labelled as such.

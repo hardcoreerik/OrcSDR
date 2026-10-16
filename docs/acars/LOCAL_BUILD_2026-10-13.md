@@ -57,7 +57,11 @@ Local diagnostics: build/acars/firmware-build.log, firmware-build-fixed.log, fir
 
 ### Live RF
 
-**No real ACARS block has been decoded.** Ten minutes on 131.550 MHz produced 0 CRC-verified blocks, 10 sync candidates and 97 CRC rejects (false triggers on noise; all rejected), with the channel level flat near 0.06. Whether that dongle had a usable VHF antenna attached, and whether any aircraft transmitted on that channel in the window, is not known. This says nothing about decoder sensitivity.
+**First real off-air ACARS decoded, 2026-10-15, spare Tab5 on COM39, 131.550 MHz.** After about 16,000 blocks (roughly 18 minutes) of listening the receiver held two CRC-verified blocks, both from tail N37267, flight UA1227, label Q0, text `S31AUA1227`, stamped 04:13:13 and 04:13:23 on the device clock (UTC, shown because the Tab5 clock was valid). Both were verified without bit repair. The two blocks are ten seconds apart with identical content, consistent with a retransmission. Evidence: a photograph of the LIVE tab supplied by the user; the serial counters at the time read `crc_ok=2 corrected=0 crc_rej=161`.
+
+This is two blocks. It establishes that the chain (dongle, front end, decoder, model, screen) works on a real signal. It says nothing about sensitivity, miss rate or false-block rate: no second decoder ran alongside, the antenna on that dongle is not documented, and the ten-minute run just before it (0 blocks) shows how sparse traffic on one channel is.
+
+Observed on the photo only, not checked further: the right-hand column header on the LIVE list reads `INTEGR`, clipped at the panel edge. Flicker cannot be judged from a still.
 
 ### What the host tests prove about the receive chain (synthetic fixture, not a recording)
 
