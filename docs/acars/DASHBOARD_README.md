@@ -168,7 +168,8 @@ Firmware: the supported ESP-IDF procedure is `apps/orcsdr-tab5/tools/build-tab5-
 `docs/TAB5_BUILD_POLICY.md` and `apps/orcsdr-tab5/README.md`). The ACARS sources are listed in `apps/orcsdr-tab5/main/CMakeLists.txt`. The
 initial cloud authoring session did not run a firmware build. The local ESP-IDF 5.5.4 build now passes,
 including `main.cpp` integration; see [the local build record](LOCAL_BUILD_2026-10-13.md) for fixes, sizes and
-unverified hardware gates. No Tab5 flash or physical validation has been performed.
+hardware gates. The firmware has since been flashed to two Tab5 units and decoded live traffic; the checklist in that record
+says which checks were done over serial, which from photos and video, and which were not run.
 
 What the host tests cover: capacity and overflow, queue drops, aircraft grouping and eviction, time validity,
 sanitising (including embedded NUL, all byte values, worst-case sizes, cut-off buffers), repaired-frame state,
