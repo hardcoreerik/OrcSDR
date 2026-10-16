@@ -34,6 +34,7 @@ Rx* g_rx = nullptr;
 acars_ui::Model* g_model = nullptr;
 
 std::atomic<bool> g_running{false};
+std::atomic<bool> g_in_offer{false};      // the DSP task is inside offer_iq (start() must not reset state under it)
 std::atomic<bool> g_apply_pending{false};
 std::atomic<uint32_t> g_channel_hz{0};
 std::atomic<uint32_t> g_center_hz{0};
@@ -51,6 +52,7 @@ std::atomic<uint32_t> g_stat_words[7];
 std::atomic<uint32_t> g_level_milli{0};
 
 // UI-task state.
+uint32_t g_wanted_hz = 0;         // the channel the dashboard asked for (the decoder is only relabelled once the radio accepts it)
 bool g_want_tune = false;        // a channel is wanted and the radio has not accepted it yet
 bool g_owns_rate = false;        // tune() was accepted: release() must be called
 bool g_reported = false;         // the model has been told the outcome of the current request
@@ -104,17 +106,24 @@ bool device_ready() { return g_hooks.device_ready && g_hooks.device_ready(); }
 void try_tune(uint32_t now) {
   g_last_tune_try_ms = now;
   ++g_tune_calls;
-  const uint32_t channel = g_channel_hz.load(std::memory_order_relaxed);
-  const uint32_t center = g_center_hz.load(std::memory_order_relaxed);
+  const uint32_t channel = g_wanted_hz;
+  const uint32_t center = channel - static_cast<uint32_t>(kCarrierOffsetHz);
   // Blocks already in flight belong to the previous centre; the DSP task drops them for a moment, then re-seeds the decoder.
+  // The settle window opens before the request (the radio may retune immediately) and is withdrawn if the request is refused.
+  const uint32_t previous_settle = g_settle_until_ms.load(std::memory_order_relaxed);
   g_settle_until_ms.store(now + kSettleMs, std::memory_order_release);
-  g_apply_pending.store(true, std::memory_order_release);
   const bool accepted = g_hooks.tune && g_hooks.tune(center);
   if (accepted) {
+    // Only now does the decoder get the new label: a refused request leaves the radio on the old centre, and blocks from
+    // there must not be reported under the new channel.
+    g_channel_hz.store(channel, std::memory_order_relaxed);
+    g_center_hz.store(center, std::memory_order_relaxed);
+    g_apply_pending.store(true, std::memory_order_release);
     g_owns_rate = true;
     g_want_tune = false;
     g_reported = false;
   } else {
+    g_settle_until_ms.store(previous_settle, std::memory_order_release);
     ++g_tune_refused;
     g_want_tune = true;           // service() retries while the dongle is absent or busy
     if (g_model && device_ready() && !g_reported) {
@@ -130,12 +139,20 @@ void install(const Hooks& hooks) { g_hooks = hooks; }
 
 bool start(acars_ui::Model* model) {
   if (!model || !g_hooks.device_ready || !g_hooks.tune || !g_hooks.now_ms) return false;
+  // Opening the screen again while it is open must not reset a receiver that is running (it owns the radio's sample rate).
+  if (g_running.load(std::memory_order_acquire) && g_model == model) return true;
   if (!g_rx) {
     void* memory = allocate(sizeof(Rx));
     if (!memory) return false;
     g_rx = new (memory) Rx();
   }
   g_running.store(false, std::memory_order_release);
+  // A block may still be inside offer_iq from a previous session (stop() only clears the flag). Wait for it, bounded.
+  const uint32_t wait_from = g_hooks.now_ms();
+  while (g_in_offer.load(std::memory_order_acquire)) {
+    if (g_hooks.now_ms() - wait_from > 100u) return false;
+  }
+  if (g_owns_rate && g_hooks.release) g_hooks.release();      // never leave a stale rate override behind
   g_model = model;
   g_rx->front.reset();
   g_rx->decoder.reset();
@@ -154,6 +171,7 @@ bool start(acars_ui::Model* model) {
   for (auto& word : g_stat_words) word.store(0);
   g_channel_hz.store(0);
   g_center_hz.store(0);
+  g_wanted_hz = 0;
   g_settle_until_ms.store(0);
   g_apply_pending.store(false);
   g_want_tune = false;
@@ -184,8 +202,7 @@ bool running() { return g_running.load(std::memory_order_acquire); }
 
 bool request_channel(uint32_t frequency_hz) {
   if (!running() || frequency_hz < 118000000u || frequency_hz > 137000000u) return false;
-  g_channel_hz.store(frequency_hz, std::memory_order_relaxed);
-  g_center_hz.store(frequency_hz - static_cast<uint32_t>(kCarrierOffsetHz), std::memory_order_relaxed);
+  g_wanted_hz = frequency_hz;
   g_reported = false;
   try_tune(now_ms());
   return !g_want_tune;
@@ -197,12 +214,12 @@ void service() {
   const bool ready = device_ready();
   // Follow whatever channel the dashboard is asking for (preset, region change, custom frequency).
   const uint32_t requested = g_model->snapshot().requested_hz;
-  if (requested != 0 && requested != g_channel_hz.load(std::memory_order_relaxed) && ready) {
+  if (requested != 0 && requested != g_wanted_hz && ready) {
     (void)request_channel(requested);
-  } else if (g_want_tune && ready && g_channel_hz.load(std::memory_order_relaxed) != 0 &&
+  } else if (g_want_tune && ready && g_wanted_hz != 0 &&
              now - g_last_tune_try_ms >= kRetuneRetryMs) {
     try_tune(now);
-  } else if (g_channel_hz.load(std::memory_order_relaxed) == 0 && requested != 0 && ready) {
+  } else if (g_wanted_hz == 0 && requested != 0 && ready) {
     (void)request_channel(requested);
   }
 
@@ -222,6 +239,13 @@ void service() {
 
 void offer_iq(const uint8_t* cu8, size_t bytes, uint32_t sample_rate) {
   if (!g_running.load(std::memory_order_acquire) || !g_rx || !g_model) return;
+  g_in_offer.store(true);
+  // stop() may have run between the check above and the flag: leave without touching any state.
+  if (!g_running.load()) {
+    g_in_offer.store(false, std::memory_order_release);
+    return;
+  }
+  struct Leave { ~Leave() { g_in_offer.store(false, std::memory_order_release); } } leave_guard;
   if (sample_rate != kStreamRate) {
     g_wrong_rate.fetch_add(1, std::memory_order_relaxed);
     return;
@@ -235,11 +259,11 @@ void offer_iq(const uint8_t* cu8, size_t bytes, uint32_t sample_rate) {
   const uint32_t last = g_last_block_ms.load(std::memory_order_relaxed);
   if (g_apply_pending.exchange(false, std::memory_order_acq_rel)) {
     g_rx->front.reset();
-    g_rx->decoder.reset();
+    g_rx->decoder.reset_stream();
     g_rx->decoder.set_frequency(g_channel_hz.load(std::memory_order_relaxed));
   } else if (last != 0 && now - last > kGapResetMs) {
     g_rx->front.reset();                                    // never bridge missing samples
-    g_rx->decoder.reset();
+    g_rx->decoder.reset_stream();                           // counters keep counting
     g_discontinuities.fetch_add(1, std::memory_order_relaxed);
   }
   g_last_block_ms.store(now, std::memory_order_release);

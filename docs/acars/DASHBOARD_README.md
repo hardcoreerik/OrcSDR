@@ -5,8 +5,9 @@ The dashboard itself is presentation only. Live data comes from `acars_receiver.
 native decoder (`acars_core.*`) from the RTL-SDR and posts into the model. When no receiver is attached (host tests, or a build
 without the hooks) LIVE truthfully reads `RECEIVER FEED NOT CONNECTED`. DEMO mode data is synthetic and labelled as such.
 
-Nothing here has been run on a Tab5. Host tests use a recording stand-in for M5GFX; they prove geometry,
-ownership, state and honesty rules, not how the screen looks or feels to touch.
+The dashboard has run on two Tab5 units with a live receiver (see `LOCAL_BUILD_2026-10-13.md` for what was and was not checked).
+Host tests use a recording stand-in for M5GFX; they prove geometry, ownership, state and honesty rules, not how the screen
+looks or feels to touch.
 
 ## Screen layout (1280 x 720)
 
@@ -65,8 +66,10 @@ Implemented and host-tested: all six views, message detail, aircraft grouping, s
 frequency *requests*, preferences and their persistence, DEMO mode with six scenarios, bounded producer
 queue, honest unavailable states.
 
-Not available (shown as such, never simulated): live reception, any tuned frequency, SNR / RSSI /
-carrier-lock / symbol-timing, channel activity, UTC receive time (until a producer supplies it), multi-channel
+Available with the receiver adapter (`acars_receiver`): live reception, a `TUNED` report once blocks arrive from the requested
+centre, and UTC receive time when the Tab5 clock is valid (otherwise `+m:ss` since boot).
+
+Not available (shown as such, never simulated): SNR / RSSI / carrier-lock / symbol-timing, channel activity, multi-channel
 reception, SD archive, multi-block reassembly, application-message interpretation, aircraft position,
 ADS-B correlation.
 
@@ -109,7 +112,7 @@ references per aircraft, 16 decoder events in the producer queue.
   reassembly, ADS-B correlation) are all false by default. They are advertisements by a runtime, not claims.
 
 Sanitising: preview keeps printable ASCII, turns CR / LF / TAB into spaces and any other byte into `.`;
-the escaped form shows `<CR>`, `<LF>`, `<TAB>` and `<XX>` for other bytes (worst case 4 characters per byte,
+the escaped form shows `<CR>`, `<LF>`, `<TAB>` and `<XX>` for other bytes (worst case 5 characters per byte, `<TAB>`,
 sized for a full 250-byte block). Output is always bounded and NUL-terminated.
 
 Revisions: `snapshot().revision` changes only when something displayed changes. A stable revision means no

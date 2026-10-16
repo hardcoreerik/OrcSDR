@@ -212,6 +212,10 @@ void test_sanitization() {
   // Worst case: 250 NULs expand to 4 characters each and still fit.
   char nuls[250] = {};
   CHECK(escape_text(big, sizeof(big), nuls, sizeof(nuls), &cut) == 1000 && !cut);
+  // The longest escape is <TAB> (5 characters): a full block of tabs must fit too, uncut.
+  char tabs[250];
+  std::memset(tabs, '	', sizeof(tabs));
+  CHECK(escape_text(big, sizeof(big), tabs, sizeof(tabs), &cut) == 1250 && !cut);
   // text_length is authoritative: an embedded NUL does not end the text.
   auto m = new_model();
   orcsdr::acars::Message msg = make_message("N1", "", "H1", "");

@@ -13916,10 +13916,13 @@ orcsdr::acars_receiver::Hooks acars_receiver_hooks() {
   hooks.device_ready = [] { return rtl_device_ready(); };
   hooks.tune = [](uint32_t center_hz) {
     if (!rtl_device_ready() || !esp_rtl_sdr_is_rate_supported(kRate)) return false;
+    const uint32_t previous_override = rtl_rate_override_sps.load(std::memory_order_acquire);
     rtl_rate_override_sps.store(kRate, std::memory_order_release);
     const bool streaming = rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
                            rtl_ui_band == RtlBand::browse && rtl_active_sample_rate_sps.load(std::memory_order_acquire) == kRate;
-    return streaming ? request_hot_retune(center_hz) : queue_local_rtl_listen(RtlBand::browse, center_hz, false);
+    const bool accepted = streaming ? request_hot_retune(center_hz) : queue_local_rtl_listen(RtlBand::browse, center_hz, false);
+    if (!accepted) rtl_rate_override_sps.store(previous_override, std::memory_order_release);   // a refused request must not strand the rate
+    return accepted;
   };
   hooks.release = [] {
     rtl_rate_override_sps.store(0, std::memory_order_release);
@@ -19153,7 +19156,7 @@ void process_command(char* command) {
     else if (strcmp(name, "MARINE") == 0) open_dashboard(Id::marine);
     else if (strcmp(name, "SATELLITE") == 0) open_dashboard(Id::satellite);
     else if (strcmp(name, "UTILITIES") == 0) open_dashboard(Id::utilities);
-    else { Serial.println("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|FT8|SETTINGS|WEATHER|CB|POCSAG|AIRBAND|MARINE|SATELLITE|UTILITIES"); return; }
+    else { Serial.println("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|FT8|SETTINGS|WEATHER|CB|POCSAG|AIRBAND|ACARS|MARINE|SATELLITE|UTILITIES"); return; }
     Serial.printf("RTL_UI_OPEN_OK target=%s\n", name);
     return;
   }

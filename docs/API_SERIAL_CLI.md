@@ -209,6 +209,7 @@ tune, change volume, or return passwords or coordinates.
 |---|---|---|
 | `RTL_STATUS` | no | `RTL_SDR_STATUS connected=... vid=... pid=... speed=... serial="..."` — is the RTL-SDR dongle itself present/enumerated. |
 | `RTL_SIGNAL` | no | `RTL_SIGNAL_STATUS band=... frequency_hz=... signal_dbfs=... stereo_locked=0\|1 left_dbfs=... right_dbfs=... rds_carrier=0\|1 rds_signal=...` — one-shot snapshot of everything the dashboard's meters show. |
+| `RTL_ACARS STATUS` | no | `RTL_ACARS_UI open=... view=... demo=... receiver=... tune=... held=... total=...` then `RTL_ACARS_STATUS running=... channel_hz=... blocks=... gaps=... level=... crc_ok=...` � ACARS dashboard state, receiver counters and paint timings. Read-only. |
 | `RTL_UI STATUS` | no | `RTL_UI_STATUS ... home_font=0\|1 graphics=0\|1` — active dashboard ownership plus the current display font and live spectrum/waterfall state. |
 
 `signal_dbfs` is the RF-level meter (matches the SIG bar). `left_dbfs`/
@@ -462,7 +463,12 @@ The LoRa Traffic toolbar equivalents are `RTL_UI ACTION LORA DETAILS`,
 LoRa Overview uses the unsmoothed value for faster visual response.
 
 `RTL_UI OPEN` accepts `HOME`, `FM`, `AIRBAND`, `P25`, `ADSB`, `LORA`, `RF_LAB`,
-`WIFI_ANALYSIS`, or `SETTINGS`.
+`WIFI_ANALYSIS`, `SETTINGS`, or `ACARS` (the full list is printed by `RTL_UI_OPEN_INVALID`).
+`RTL_UI TAP <x> <y>` (authenticated) injects a touch at full-screen coordinates 0-1279 / 0-719
+through the same routing as a finger, header included; it replies `RTL_UI_TAP_OK`.
+`RTL_ACARS SELFTEST` (authenticated) runs a known synthetic ACARS signal through a private
+decoder instance and replies `RTL_ACARS_SELFTEST cases=10 passed=... missed=... duplicates=... result=PASS|FAIL`;
+live reception is not touched. It takes a few seconds and proves nothing about real-signal sensitivity.
 `RTL_UI ACTION` accepts a domain and one of its visible touch actions:
 
 - `FM`: `TUNE`, `DOWN`, `UP`, `SEEK_DOWN`, `SEEK_UP`, `SAVE`, `STEP`,

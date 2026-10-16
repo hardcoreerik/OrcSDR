@@ -90,7 +90,10 @@ class Decoder {
   Decoder() { reset(); }
   Decoder(const Decoder&) = delete;             // the phase decoders call back into this object
   Decoder& operator=(const Decoder&) = delete;
-  void reset();
+  void reset();                                 // everything, including the unique-block counters
+  // Drops all signal and framing state (a stream gap, a retune) but keeps every counter, so crc_ok, corrected and the
+  // other statistics stay in one reset scope ("since decoder start").
+  void reset_stream();
   void set_callback(MessageCallback cb, void* ctx) { callback_ = cb; context_ = ctx; }
   void set_frequency(uint32_t hz);
   void process_channel_iq(float i, float q);

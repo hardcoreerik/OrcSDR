@@ -314,6 +314,8 @@ void test_adapter() {
     model.service();
     const acars_ui::Snapshot& s2 = model.snapshot();
     assert(s2.messages_total == 2);
+    // Counters are one scope: the gap reset in between must not have zeroed crc_ok.
+    assert(s2.stats.crc_ok == 2);
     assert(!s2.messages[0].time_valid);
   }
 
@@ -323,12 +325,19 @@ void test_adapter() {
   acars_receiver::service();
   assert(g_radio.tune_calls == 2);
   assert(g_radio.center == model.snapshot().requested_hz - 60000u);
+  const uint32_t channel_before_refusal = acars_receiver::status().channel_hz;
   g_radio.accept = false;
   assert(model.set_preset(0));
   acars_receiver::service();
   model.service();
   assert(model.snapshot().tune == acars_ui::TuneStatus::failed);
+  // A refused request must not relabel the decoder: the radio is still on the old centre.
+  assert(acars_receiver::status().channel_hz == channel_before_refusal);
   g_radio.accept = true;
+  // Opening the screen again while it is running must not reset the receiver.
+  const uint32_t blocks_before_reopen = acars_receiver::status().blocks;
+  assert(acars_receiver::start(&model));
+  assert(acars_receiver::status().blocks == blocks_before_reopen && acars_receiver::running());
 
   // Dongle unplugged: unavailable. Closing releases the rate exactly once and drops the feed.
   g_radio.ready = false;

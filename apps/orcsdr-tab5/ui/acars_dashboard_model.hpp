@@ -26,7 +26,7 @@ constexpr size_t kAircraftHistory = 6;         // message references kept per ai
 constexpr size_t kQueueCapacity = 16;          // decoder -> UI events in flight
 constexpr size_t kPreviewChars = 72;
 constexpr size_t kInterpretationChars = 64;
-constexpr size_t kEscapedMaxChars = 4 * acars::kMaxBlockBytes + 1;   // worst case "<XX>" per byte
+constexpr size_t kEscapedMaxChars = 5 * acars::kMaxBlockBytes + 1;   // worst case "<TAB>" per byte (the longest escape)
 
 enum class ReceiverState : uint8_t { disconnected, unavailable, paused, running, error };
 enum class SourceKind : uint8_t { live, demo };

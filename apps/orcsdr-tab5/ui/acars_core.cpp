@@ -196,12 +196,16 @@ bool FrameDecoder::emit() {
   return true;
 }
 
-void Decoder::reset() {
-  for(auto& f:frames_)f.reset();
+void Decoder::reset_stream() {
+  for(auto& f:frames_)f.reset();                // FrameDecoder::reset keeps its counters
   accum_.fill(0.f);state_.fill(true);
   dc_=i1_=q1_=i2_=q2_=pi_=pq_=0.f;
   mixer_i_=1.f;mixer_q_=0.f;osc_phase_=bit_phase_=0;signal_initialized_=false;
-  unique_ok_=unique_corrected_=0;sample_index_=0;last_hash_=0;last_hash_sample_=0;have_last_=false;
+  last_hash_=0;last_hash_sample_=0;have_last_=false;
+}
+void Decoder::reset() {
+  reset_stream();
+  unique_ok_=unique_corrected_=0;sample_index_=0;
   for(auto& f:frames_)f.set_callback(&Decoder::on_phase_message,this);
 }
 void Decoder::set_frequency(uint32_t hz){for(auto& f:frames_)f.set_frequency(hz);}
