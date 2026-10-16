@@ -61,6 +61,12 @@ Local diagnostics: build/acars/firmware-build.log, firmware-build-fixed.log, fir
 
 This is two blocks. It establishes that the chain (dongle, front end, decoder, model, screen) works on a real signal. It says nothing about sensitivity, miss rate or false-block rate: no second decoder ran alongside, the antenna on that dongle is not documented, and the ten-minute run just before it (0 blocks) shows how sparse traffic on one channel is.
 
+**Later photos (same run, ACTIVITY tab and message detail pages).** The device held 8 CRC-verified blocks, 0 repaired. All 8 were from N37267 / UA1227 on 131.550 MHz. Four are label H1, mode 2, block IDs 0, 1, 2, 3, received 04:17:15, 04:17:42, 04:17:49 and 04:17:57 UTC, each ending ETB with 236 raw bytes. The texts begin `D03A`, `D03B`, `D03C`, `D03D` followed by `UA1227#DFB`, i.e. consecutive blocks of one multi-block message, and block 0 carries `HYDN37267 ... KSFOKPDX` (origin and destination airport codes) followed by the aircraft's performance-data text. Block IDs 0 to 3 are consecutive, so none of those four was missed. The 27 s gap between block 0 and block 1 is longer than the roughly 8 s spacing of the later blocks, which suggests some transmissions in between were not decoded. That is an inference, not a measurement. The message ends with ETB, so more blocks may have followed.
+
+The ACTIVITY tab read: sync candidates 29, CRC verified 8, repaired 0, CRC rejected 225, framing rejected 0, buffer overflows 25, bits 3,581,545, "verified per sync candidate 27%". Caveat on those numbers: `Decoder::stats()` reports unique blocks for CRC verified but the busiest single bit phase for the other counters, so the 27% ratio and the reject count are approximate. They are not clean per-attempt rates. The reject count also includes noise-triggered frames.
+
+On-panel observations from the photos (not a design review): the LIVE list, detail page (NEWER, OLDER, UP, DOWN, BACK), tab bar and status panel are legible and consistent with the model; the LIVE column header `INTEGR` and the `DOWN` button label (`DO...`) are clipped, and two ACTIVITY tile captions end in an ellipsis. Whether the list repaints by itself as blocks arrive was not observed: the photos were taken with a detail page open. Flicker and redraw speed: NOT RUN.
+
 Observed on the photo only, not checked further: the right-hand column header on the LIVE list reads `INTEGR`, clipped at the panel edge. Flicker cannot be judged from a still.
 
 ### What the host tests prove about the receive chain (synthetic fixture, not a recording)
