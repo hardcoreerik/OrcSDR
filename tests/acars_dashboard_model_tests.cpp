@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <chrono>
 #include <thread>
 
 #include "acars_dashboard_layout.hpp"
@@ -327,6 +328,7 @@ void test_stats_mailbox() {
 void test_cross_thread_seqlock_and_queue() {
   auto m = new_model();
   std::atomic<bool> stop{false};
+  std::atomic<uint32_t> posted{0};
   std::thread producer([&] {
     uint32_t n = 1;
     while (!stop.load()) {
@@ -337,6 +339,7 @@ void test_cross_thread_seqlock_and_queue() {
       std::snprintf(flight, sizeof(flight), "%06u", n % 1000000u);
       m->post_message(make_message("N1", flight, "H1", "x"), n, 0);
       ++n;
+      posted.store(n);
     }
   });
   uint32_t last_total = 0, last_seq = 0;
@@ -354,6 +357,9 @@ void test_cross_thread_seqlock_and_queue() {
       last_seq = s.messages[0].seq;
     }
   }
+  // The producer thread may not have been scheduled during the loop above on a loaded host; give it
+  // a bounded chance to post once so the final check tests the queue, not the scheduler.
+  for (int i = 0; i < 2000 && posted.load() == 0; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
   stop.store(true);
   producer.join();
   m->service();
