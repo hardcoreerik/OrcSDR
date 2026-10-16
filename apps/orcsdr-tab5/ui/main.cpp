@@ -16437,6 +16437,15 @@ void poll_sdr_touch(bool from_stream) {
     return;
   }
 
+  // The FT8 dashboard owns its whole touch surface. Without this its taps fell through to the generic scope handling below:
+  // on bands above 30 MHz (2 m, 6 m) FT8 runs on the BROWSE band, where point_in_scope() is true over the spectrum area, so the
+  // band buttons were consumed as scope drags that retuned the radio and the band could no longer be changed.
+  if (orcsdr::ft8::active()) {
+    if (pressed && !was_pressed) handle_sdr_touch(touch.x, touch.y);
+    was_pressed = pressed;
+    return;
+  }
+
   // The LoRa dashboard owns its plot and controls. Generic SDR scope gestures
   // overlap the channel-picker arrows and must not turn those taps into retunes.
   if (rtl_ui_band == RtlBand::lora && orcsdr::lora::active()) {
