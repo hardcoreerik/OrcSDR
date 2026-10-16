@@ -17685,11 +17685,16 @@ bool ui_doc_pause_reception() {
     orcsdr::settings::enter(global_settings_state(), ui_doc.settings_section);
     orcsdr::screens::finish_transition();
   } else if (ui_doc.was_ui_active) {
-    if (ui_doc.screen == orcsdr::screens::Id::acars && orcsdr::acars_app::active()) {
-      // ACARS rides the browse band, so the band-based fallback below would close it and show Home: redraw it as it was.
-      orcsdr::screens::begin_transition(orcsdr::screens::Id::acars, millis());
-      orcsdr::acars_app::draw(true);
-      orcsdr::screens::finish_transition();
+    if (ui_doc.screen == orcsdr::screens::Id::acars) {
+      // ACARS rides the browse band, so the band-based fallback below would close it and show Home. The documentation
+      // screen may have closed the app, so reopen it when it is no longer active; otherwise just redraw it as it was.
+      if (orcsdr::acars_app::active()) {
+        orcsdr::screens::begin_transition(orcsdr::screens::Id::acars, millis());
+        orcsdr::acars_app::draw(true);
+        orcsdr::screens::finish_transition();
+      } else {
+        orcsdr::acars_app::open();
+      }
     } else if (ui_doc.band == RtlBand::fm) {
       orcsdr::screens::begin_transition(orcsdr::screens::Id::fm, millis());
       orcsdr::fm::show_documentation_view(ui_doc.fm_view, fm_dashboard_snapshot());

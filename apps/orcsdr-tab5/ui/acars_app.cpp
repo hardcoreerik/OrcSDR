@@ -72,6 +72,7 @@ void open() {
   screens::finish_transition();
   if (!g_state->history_loaded && g_state->logger.active()) {      // once per boot, after the first frame is on screen
     g_state->logger.load_history();
+    g_state->model.set_archive(&g_state->archive);   // the store's count changed after the first snapshot: invalidate it
     g_state->history_loaded = true;
   }
   // Hooks are installed only by the firmware; without them (host tests) the feed stays "not connected".

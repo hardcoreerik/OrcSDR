@@ -397,6 +397,16 @@ bool Logger::flush(uint32_t now_ms) {
   char name[24];
   std::snprintf(name, sizeof(name), "%s.jsonl", buffer_day_);
   join(path, sizeof(path), dir_, name);
+  if (std::strcmp(buffer_day_, "undated") == 0 && ops_.file_size && ops_.remove) {
+    // Blocks without a valid clock all go to one file that retention does not cover: cap it, so an invalid clock cannot fill
+    // the card. Past the cap the file starts again (the oldest undated blocks are dropped, like the dated files' rule).
+    void* probe = ops_.open(path, false);
+    if (probe) {
+      const uint32_t size = ops_.file_size(probe);
+      ops_.close(probe);
+      if (size > kUndatedMaxBytes) { ops_.remove(path); ++stats_.files_removed; }
+    }
+  }
   void* h = ops_.open(path, true);
   bool ok = h != nullptr;
   if (ok) {

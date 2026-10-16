@@ -22,6 +22,7 @@ constexpr size_t kLineMax = 1100;                 // longest line the writer pro
 constexpr size_t kBufferBytes = 4096;             // pending lines before a flush
 constexpr uint32_t kFlushAgeMs = 20000;           // a pending line is written within this long
 constexpr size_t kMaxFiles = 30;                  // dated files kept (oldest removed first)
+constexpr uint32_t kUndatedMaxBytes = 2u * 1024u * 1024u;   // undated.jsonl is restarted when it grows past this
 constexpr size_t kHistoryReadBytes = 320 * 1024;  // newest bytes of the log parsed at open
 constexpr uint32_t kSeqBase = 0x80000000u;        // archive seq values never collide with the live ring's
 

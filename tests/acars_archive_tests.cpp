@@ -291,6 +291,24 @@ void test_retention() {
   CHECK(g_fs.files.count("/orcsdr/acars/undated.jsonl") && g_fs.files.count("/orcsdr/acars/notes.txt"));   // only dated logs are pruned
 }
 
+void test_undated_file_is_capped() {
+  g_fs = Mem{};
+  g_fs.files["/orcsdr/acars/undated.jsonl"] = std::string(kUndatedMaxBytes + 10, 'x');     // already over the cap
+  Store store;
+  Logger log(&store);
+  log.begin(ops(), 0);
+  log.log(make("N1", "A", "H1", "FIRST AFTER CAP", 0, 1), 10);                          // no valid clock: undated
+  log.end(20);
+  const std::string& f = g_fs.files["/orcsdr/acars/undated.jsonl"];
+  CHECK(f.size() < 4096 && f.find("xxxxxxxxxx") == std::string::npos && f.find("FIRST AFTER CAP") != std::string::npos && f.find("\"n\":15") != std::string::npos);
+  CHECK(log.stats().files_removed == 1 && log.stats().written == 1);
+  // Under the cap the file only grows.
+  log.log(make("N1", "A", "H1", "SECOND", 0, 2), 30);
+  log.end(40);
+  CHECK(g_fs.files["/orcsdr/acars/undated.jsonl"].find("\"p\":\"SECOND\"") != std::string::npos);
+  CHECK(std::count(g_fs.files["/orcsdr/acars/undated.jsonl"].begin(), g_fs.files["/orcsdr/acars/undated.jsonl"].end(), '\n') == 2);
+}
+
 void test_history_load() {
   g_fs = Mem{};
   Store writer_store;
@@ -345,6 +363,7 @@ int main() {
   test_logger_flush_and_files();
   test_logger_failures();
   test_retention();
+  test_undated_file_is_capped();
   test_history_load();
   std::puts("acars_archive_tests: all passed");
   return 0;
