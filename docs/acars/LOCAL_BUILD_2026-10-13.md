@@ -81,6 +81,13 @@ A video from the user showed the whole content area blanking and redrawing every
 
 The user reported on the panel that the flicker is gone. That is the user's observation; no measurement of flicker exists beyond the paint timings above. Not done: pushing only the changed tiles for large changes, and a pixel-modelling host stand-in, so the partial-push path is covered by `acars_dirty_rects_tests` plus the device run, not by the renderer host tests.
 
+### Pre-flicker and flicker-fixed builds compared (2026-10-15)
+
+To rule out the flicker work as a cause of quiet periods, the commit before it (`cde4cac6`, plus the self-test) ran on the main Tab5 (COM17) and the flicker-fixed branch on the spare Tab5 (COM39), both tuned to 131.550 MHz. `acars_core.*` and `acars_receiver.*` are byte-identical between the two (checked with `git diff` from the commit before the flicker work).
+
+- `RTL_ACARS SELFTEST` (a known synthetic signal through a private decoder): **10 of 10 cases pass, 0 missed, 0 duplicates, on both builds** (606,480 samples in about 290 ms of DSP time, about 480 microseconds per 1,000 samples, i.e. roughly half real time for this path). The fixture is synthetic; the result says nothing about real-signal sensitivity.
+- Both builds were silent for about 20 minutes with no traffic overhead (level flat, 0 CRC-verified blocks), then both decoded real blocks later the same evening: COM17 held 1 verified block and COM39 held 4, 0 repaired, 0 stream gaps on either. The two units have different antenna placement and channel level (COM17 about 0.13, COM39 about 0.03), so the counts are not a quality comparison.
+
 ### What the host tests prove about the receive chain (synthetic fixture, not a recording)
 
 A generated AM / 1200-2400 Hz MSK signal at 240 kS/s CU8 decodes once per block at every bit phase tried (0-99 samples), with the carrier +-4 kHz off nominal, with noise (12 of 12 at sigma 0.05, no duplicates), two identical back-to-back blocks both delivered, and two seconds of noise producing nothing. Before the multi-phase decoder change the decoder had fixed bit timing and would have missed most blocks on real signals.
