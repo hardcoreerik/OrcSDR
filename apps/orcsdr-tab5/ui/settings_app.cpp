@@ -1240,7 +1240,10 @@ bool self_check() {
   g_location_edit = saved_location_edit;
   g_location_request_pending = saved_location_pending;
   strlcpy(g_location_query, saved_location_query, sizeof(g_location_query));
-  const State saved_state = g_state;
+  // Catalog now exposes all 16 slots. Keep the self-check's full-state
+  // backup in PSRAM, not on the main task's constrained stack.
+  static EXT_RAM_BSS_ATTR State saved_state;
+  saved_state = g_state;
   const Section saved_section = g_section;
   const bool saved_active = g_active;
   g_active = true;
