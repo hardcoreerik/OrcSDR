@@ -21,7 +21,7 @@
 | Weather | PR #173 described maps/location reuse | Verify implementation/merge status before planning conversion |
 | Location picker | Historical `setup_map_picker` on divergent branch | Salvage model; replace blocking framebuffer/touch loop before integration |
 
-Current map is **not** OrcMaps PMTiles: `ui/offline_map.hpp` pins an ORCMAP1 index at `/orcsdr/data/lane_county_map.idx`. OrcMaps uses `/orcmaps/<name>.pmtiles` + `.manifest.json` and optional `.sha256`. Never rename one format to the other or overwrite legacy user data.
+**Important:** the signed `catalog-v1` parser recognizes five built-in IDs and dynamic `p25_*` profiles, but not arbitrary regional PMTiles IDs. Pagination fixes UI visibility of catalog slots, not the separate OrcMaps pack-discovery/download architecture.\n\nCurrent map is **not** OrcMaps PMTiles: `ui/offline_map.hpp` pins an ORCMAP1 index at `/orcsdr/data/lane_county_map.idx`. OrcMaps uses `/orcmaps/<name>.pmtiles` + `.manifest.json` and optional `.sha256`. Never rename one format to the other or overwrite legacy user data.
 
 ## Why Lane County appeared on a fresh device
 
