@@ -66,7 +66,7 @@ uint8_t g_requested_pack = 0;
 constexpr const char* kIds[kBuiltInPackCount] = {
     "faa_aircraft", "aviation", "noaa_weather", "fcc_broadcast", "lane_county_map"};
 constexpr const char* kTitles[kBuiltInPackCount] = {
-    "FAA AIRCRAFT", "AVIATION / ATC", "NOAA WEATHER", "FCC FM / AM", "LANE COUNTY MAP"};
+    "FAA AIRCRAFT", "AVIATION / ATC", "NOAA WEATHER", "FCC FM / AM", "REGIONAL MAP (LEGACY)"};
 
 int pack_index(const char* id) {
   if (id == nullptr) return -1;
