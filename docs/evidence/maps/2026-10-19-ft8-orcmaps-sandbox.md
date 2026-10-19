@@ -49,6 +49,13 @@ Draft PR [#204](https://github.com/hardcoreerik/OrcSDR/pull/204) targets `codex/
 
 The initial PR CI run 39335112666 exposed a dashboard assertion: worker unavailability after a pending label toggle incorrectly displayed `APPLYING LABELS` instead of `LAST MAP FRAME`. Source commit `d0cdb816` corrected the state, and commit `1ad58a8` fixed a worker-publication redraw race; the new optimized/sanitized dashboard tests passed.
 
+## Final FT8 source regression — October 19
+
+- Source head `26abfc312cd637e932e3e57ecdfa71e790634b38` adds a check that the `YOU` caption and its cached cross both retain the old position while the worker is pending, then move together only after the ready frame. The map panel's cached geography is no longer cleared before an asynchronous repaint.
+- [FT8 RX core run 39336414776](https://github.com/hardcoreerik/OrcSDR/actions/runs/39336414776): **test job SUCCESS**. Both `bash tools/test-ft8.sh` (optimized and ASan/UBSan) and `bash tools/test-ft8-diagnostic.sh` completed successfully for this source SHA. Independent OrcDial build step also reports success, although the overall dial-build job had not yet completed cleanup when checked.
+- Corresponding FT8 External WAV Validation run `39336414741`: **SUCCESS**; SD storage regressions `39336414773`: **SUCCESS**; Tab5 cadence/LoRa history `39336414763`: **SUCCESS**. Documentation Truth `39336414766` remains **FAILURE** on the existing `architecture.md` maps ScreenController-ID discrepancy, untouched here.
+- These checkouts run in GitHub's Linux CI, **not on a P4**. The full real OrcMaps firmware compositor has not been native-linked or physically benchmarked; view/render correctness still requires COM17.
+
 ## Remaining risks / COM17 handoff checklist
 
 1. Fetch this branch on the local OrcSDR checkout; **do not merge to main**. Confirm dependency lock matches the existing pinned OrcMaps commit and COM17 serial **`30:ED:A0:E2:E6:95`**. Preserve NVS, SD pack contents, recovery artifacts and C6 firmware; COM39 is reserved for Dead Air.
