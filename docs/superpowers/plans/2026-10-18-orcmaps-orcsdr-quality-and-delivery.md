@@ -35,6 +35,25 @@ not the current state.
 
 Checked items below close only their stated behavior/test scope, not an entire phase.
 
+### FT8 whole-world map migration — sandbox candidate, October 19
+
+- Review branch `codex/ft8-orcmaps` starts at verified shared-label checkpoint
+  `af877ed7189d99f99873f61f5be3995ad893db3b`. This is an isolated
+  review candidate **not merged** into the integration branch or main.
+- FT8 now requests the embedded, offline `firmware-world` through the existing
+  shared asynchronous map service. A local 512-square Mercator-to-equirectangular
+  compositor preserves one full world, 30-degree Maidenhead grid, receiver and
+  decoded station overlay agreement, dateline seam and true polar grid-only caps.
+  No engine or shared-worker changes or interactive pan/zoom. The independent
+  FT8 `LABELS ON/OFF` control uses existing NVS preference; shared city
+  label zoom threshold remains unchanged.
+- Pure projection source host test passes a full 824x420 pixel-centre sweep
+  under ASan/UBSan; added dashboard host tests have not yet been run in this
+  sandbox. Full native/P4 link, source performance, missing-world partition
+  and COM17 physical acceptance remain open. **Do not claim integrated
+  completion from the math test.** See
+  [the exact limited evidence and device checklist](../../evidence/maps/2026-10-19-ft8-orcmaps-sandbox.md).
+
 ### Geographic label controls source checkpoint - October 19
 
 - Picker, LoRa and ADS-B now have independent persisted label controls in source.
