@@ -1,6 +1,8 @@
 #include "ft8_dashboard.hpp"
 #include "ft8_conditions.hpp"
-#include "map_world_compat.hpp"
+#include "ft8_map_source.hpp"
+#include "ft8_world_projection.hpp"
+#include "map_preferences.hpp"
 
 #include "dashboard_audio_control.hpp"
 #include "ft8_decoder_backend.hpp"
@@ -37,6 +39,7 @@ constexpr int kTabCount = 6;
 constexpr int kTabW = 1280 / kTabCount;
 constexpr Rect kBody{24, 104, 1232, 514};
 constexpr Rect kClear{1088, 556, 144, 46};
+constexpr Rect kMapLabels{690, 110, 190, 44};
 constexpr Rect kNewer{760, 556, 150, 46};
 constexpr Rect kOlder{922, 556, 150, 46};
 constexpr size_t kDecodePageSize = 8;
@@ -670,79 +673,129 @@ void draw_decodes() {
 }
 
 
-M5Canvas g_map_canvas(&M5.Display);   // the map is composed here and pushed in one go: no blank-then-paint flash on updates
-bool g_map_canvas_ready = false;
+M5Canvas g_map_canvas(&M5.Display); // FT8's completed, overlay-composited whole-world frame
+M5Canvas g_world_canvas(&M5.Display); // one OrcMaps Mercator world; NEVER sampled while pending
+bool g_map_canvas_ready = false, g_world_canvas_ready = false;
+bool g_map_composed = false, g_map_composed_labels = true;
+uint32_t g_map_revision_seen = 0;
+char g_map_attribution[192]{};
+
+void draw_globe(lgfx::LovyanGFX& d, int sub_x, int sub_y, bool basemap) {
+  constexpr int left=50, top=158, width=824, height=420;
+  d.fillRect(left-sub_x,top-sub_y,width,height,kPanel);
+  if(basemap) {
+    // One geographic revolution: latitude comes from the output row centre,
+    // OrcMaps' Mercator scale from the fixed source square. No invented polar coastlines.
+    for(int row=0;row<height;++row) {
+      int ignored=0,src_y=0;
+      if(!world_map::source_pixel(0,row,width,height,&ignored,&src_y))continue;
+      for(int col=0;col<width;++col) {
+        const int src_x=((2*col+1)*world_map::kMercatorSide)/(2*width);
+        d.drawPixel(left+col-sub_x,top+row-sub_y,g_world_canvas.readPixel(src_x,src_y));
+      }
+    }
+  }
+  d.drawRect(left-sub_x,top-sub_y,width,height,kGrid);
+  for(int lon=-180;lon<180;lon+=30) {
+    int x=0,y=0;
+    if(world_map::project(0,lon,width,height,&x,&y))
+      d.drawFastVLine(left+x-sub_x,top-sub_y,height,kGrid);
+  }
+  for(int lat=-90;lat<=90;lat+=30) {
+    int x=0,y=0;
+    if(world_map::project(lat,0,width,height,&x,&y))
+      d.drawFastHLine(left-sub_x,top+y-sub_y,width,kGrid);
+  }
+  const size_t count=std::min(g_snapshot.decode_count,kDecodeCapacity);
+  for(size_t i=0;i<count;++i) {
+    const Decode& dec=g_snapshot.decodes[i];
+    if(!maidenhead_valid(dec.grid))continue;
+    GeoPoint station{};
+    if(!maidenhead_center(dec.grid,&station))continue;
+    int x=0,y=0;
+    if(!world_map::project(station.latitude,station.longitude,width,height,&x,&y))continue;
+    d.fillCircle(left+x-sub_x,top+y-sub_y,4,dec.kind==DecodeKind::cq?kGreen:kYellow);
+  }
+  if(g_snapshot.station_known) {
+    int x=0,y=0;
+    if(world_map::project(g_snapshot.station_latitude,g_snapshot.station_longitude,width,height,&x,&y)) {
+      x+=left-sub_x;y+=top-sub_y;
+      d.drawCircle(x,y,7,TFT_WHITE);
+      d.drawFastHLine(x-11,y,22,TFT_WHITE);
+      d.drawFastVLine(x,y-11,22,TFT_WHITE);
+    }
+  }
+}
 
 void draw_map() {
-  const Rect map{24, 104, 884, 514};
+  const Rect map{24,104,884,514};
   frame(map);
-  text("MAIDENHEAD GRID", 42, 124, kCyan, 1, middle_left);
-  {
-    char scale[48];
-    std::snprintf(scale, sizeof(scale), "Station-reported locators only   grid %s", "world");
-    text(scale, 890, 124, kMuted, 1, middle_right);
-  }
-  constexpr int left = 50, top = 158, width = 824, height = 420;
-  if (!g_map_canvas_ready) {
+  text("MAIDENHEAD GRID",42,124,kCyan,1,middle_left);
+  text("WHOLE WORLD",664,124,kMuted,0,middle_right);
+  constexpr int left=50,top=158,width=824,height=420;
+  const bool labels=maps::preferences::labels(maps::preferences::Consumer::ft8);
+  if(!g_map_canvas_ready) {
     g_map_canvas.setPsram(true);
     g_map_canvas.setColorDepth(16);
-    g_map_canvas_ready = g_map_canvas.createSprite(width, height) != nullptr;
+    g_map_canvas_ready=g_map_canvas.createSprite(width,height)!=nullptr;
   }
-  lgfx::LovyanGFX& d = g_map_canvas_ready ? static_cast<lgfx::LovyanGFX&>(g_map_canvas) : static_cast<lgfx::LovyanGFX&>(M5.Display);
-  const int sub_x = g_map_canvas_ready ? left : 0, sub_y = g_map_canvas_ready ? top : 0;
-  maps::draw_world_compat(d, sub_x, sub_y, left, top, width, height);
-  d.drawRect(left - sub_x, top - sub_y, width, height, kGrid);
-  const float want = 360.0f / 6.0f;   // about six grid columns across the view
-  float step = 30.0f;
-  for (float candidate : {1.0f, 2.0f, 5.0f, 10.0f, 15.0f, 20.0f, 30.0f}) {
-    if (candidate >= want) { step = candidate; break; }
+  if(!g_world_canvas_ready) {
+    g_world_canvas.setPsram(true);
+    g_world_canvas.setColorDepth(16);
+    g_world_canvas_ready=g_world_canvas.createSprite(world_map::kMercatorSide,world_map::kMercatorSide)!=nullptr;
   }
-  for (float lon = -180.0f; lon < 180.0f; lon += step) {
-    int x = 0, y = 0;
-    maps::world_compat_project(0.0,lon,left,top,width,height,&x,&y);
-    d.drawFastVLine(x - sub_x, top - sub_y, height, kGrid);
-  }
-  for (float lat = -90.0f; lat < 90.0f; lat += step) {
-    int x = 0, y = 0;
-    maps::world_compat_project(lat,0.0,left,top,width,height,&x,&y);
-    d.drawFastHLine(left - sub_x, y - sub_y, width, kGrid);
-  }
-  const size_t n = std::min(g_snapshot.decode_count, kDecodeCapacity);
-  for (size_t i = 0; i < n; ++i) {
-    const Decode& dec = g_snapshot.decodes[i];
-    if (!maidenhead_valid(dec.grid)) continue;
-    GeoPoint point{};
-    if (!maidenhead_center(dec.grid, &point)) continue;
-    int x = 0, y = 0;
-    if(!maps::world_compat_project(point.latitude,point.longitude,left,top,width,height,&x,&y))continue;
-    d.fillCircle(x - sub_x, y - sub_y, 4, dec.kind == DecodeKind::cq ? kGreen : kYellow);
-  }
-  int you_x = 0, you_y = 0;
-  const bool you_valid=g_snapshot.station_known&&maps::world_compat_project(
-      g_snapshot.station_latitude,g_snapshot.station_longitude,left,top,width,height,&you_x,&you_y);
-  if (you_valid) {   // the receiver itself: a white ring with a cross, labelled
-    d.drawCircle(you_x - sub_x, you_y - sub_y, 7, TFT_WHITE);
-    d.drawFastHLine(you_x - 11 - sub_x, you_y - sub_y, 22, TFT_WHITE);
-    d.drawFastVLine(you_x - sub_x, you_y - 11 - sub_y, 22, TFT_WHITE);
-  }
-  if (g_map_canvas_ready) g_map_canvas.pushSprite(left, top);
-  if (you_valid) text("YOU", you_x + 14, you_y - 12, TFT_WHITE, 1, middle_left);
+  map_source::Result result{};
+  if(g_map_canvas_ready&&g_world_canvas_ready)result=map_source::draw(g_world_canvas,labels);
+  result.low_memory|=!g_map_canvas_ready||!g_world_canvas_ready;
+  g_map_revision_seen=map_source::revision();
 
-  const Rect recent{926, 104, 330, 514};
-  frame(recent, kGrid);
-  text("RECENT GRIDS", 946, 127, kCyan, 1, middle_left);
-  size_t row = 0;
-  for (size_t offset = 0; offset < n && row < 7; ++offset) {
-    const Decode* d = decode_newest(offset);
-    if (!d || !maidenhead_valid(d->grid)) continue;
-    const int y = 166 + static_cast<int>(row) * 61;
-    M5.Display.drawRoundRect(942, y, 298, 50, 7, kGrid);
-    text(d->grid, 956, y + 15, kGreen, 1, middle_left);
-    text(d->callsign[0] ? d->callsign : "--", 1050, y + 15, TFT_WHITE, 1, middle_left);
-    text(kind_name(d->kind), 956, y + 37, kMuted, 0, middle_left);
+  const bool ready=result.state==map_source::State::ready && g_map_canvas_ready && g_world_canvas_ready;
+  if(ready) {
+    draw_globe(g_map_canvas,left,top,true);
+    g_map_composed=true;
+    g_map_composed_labels=labels;
+    std::snprintf(g_map_attribution,sizeof(g_map_attribution),"%s",
+                  result.credit[0]?result.credit:"Made with Natural Earth");
+  } else if(!g_map_composed && g_map_canvas_ready) {
+    // A truthful grid-only frame is safe while the worker is busy or unavailable.
+    draw_globe(g_map_canvas,left,top,false);
+  }
+  if(g_map_canvas_ready)g_map_canvas.pushSprite(left,top);
+  else draw_globe(M5.Display,0,0,false); // sprite allocation failure: no stale map/coordinate mismatch
+
+  // The caption describes actual coverage, not a fictional polar basemap.
+  text(g_map_composed?g_map_attribution:"No geography available",54,594,kMuted,0,middle_left);
+  text("Polar caps: grid only",530,594,kMuted,0,middle_center);
+  const char* status=ready ? "ORCMAPS WORLD" :
+      g_map_composed ? (labels==g_map_composed_labels ? "LAST MAP FRAME" : "APPLYING LABELS") :
+      result.low_memory ? "LOW MEMORY - GRID ONLY" :
+      result.state==map_source::State::pending ? "LOADING WORLD" : "NO BASEMAP - GRID ONLY";
+  text(status,888,594,kMuted,0,middle_right);
+  button(kMapLabels,labels?"LABELS ON":"LABELS OFF",labels,true,1);
+
+  // The receiver marker and basemap share world_map::project; the YOU
+  // annotation is display-space only and must not move the marker.
+  if(g_snapshot.station_known) {
+    int x=0,y=0;
+    if(world_map::project(g_snapshot.station_latitude,g_snapshot.station_longitude,width,height,&x,&y))
+      text("YOU",std::min(left+width-34,left+x+14),std::clamp(top+y-12,top+14,top+height-14),TFT_WHITE,1,middle_left);
+  }
+  const size_t n=std::min(g_snapshot.decode_count,kDecodeCapacity);
+  const Rect recent{926,104,330,514};
+  frame(recent,kGrid);
+  text("RECENT GRIDS",946,127,kCyan,1,middle_left);
+  size_t row=0;
+  for(size_t offset=0;offset<n&&row<7;++offset) {
+    const Decode* dec=decode_newest(offset);
+    if(!dec||!maidenhead_valid(dec->grid))continue;
+    const int y=166+static_cast<int>(row)*61;
+    M5.Display.drawRoundRect(942,y,298,50,7,kGrid);
+    text(dec->grid,956,y+15,kGreen,1,middle_left);
+    text(dec->callsign[0]?dec->callsign:"--",1050,y+15,TFT_WHITE,1,middle_left);
+    text(kind_name(dec->kind),956,y+37,kMuted,0,middle_left);
     ++row;
   }
-  if (row == 0) text("No decoded locators yet", cx(recent), 280, kMuted, 1);
+  if(row==0)text("No decoded locators yet",cx(recent),280,kMuted,1);
 }
 
 constexpr Rect kHunterFast{34, 144, 206, 52};
@@ -1613,6 +1666,11 @@ void update(const Snapshot& snapshot_value) {
                               previous.dial_custom != g_snapshot.dial_custom ||
                               previous.clock_valid != g_snapshot.clock_valid ||
                               previous.battery_percent != g_snapshot.battery_percent;
+  if (g_tab==Tab::map && !overlay_open() && !tab_content_changed(g_tab,previous,g_snapshot) &&
+      !header_changed && map_source::revision()!=g_map_revision_seen) {
+    draw_map(); // worker has published a new full frame; never sample pending pixels
+    return;
+  }
   if (tab_content_changed(g_tab, previous, g_snapshot) || header_changed) {
     if (header_changed) draw_header();
     if (g_gain_open) {   // the gain popup keeps its readout and level meter live
@@ -1731,6 +1789,11 @@ Action handle_touch(int32_t x, int32_t y) {
     draw_tabs();
     return {};
   }
+  if (g_tab == Tab::map && hit(x,y,kMapLabels)) {
+    const bool current=maps::preferences::labels(maps::preferences::Consumer::ft8);
+    if(maps::preferences::set_labels(maps::preferences::Consumer::ft8,!current))draw_map();
+    return {}; // failed NVS write leaves both stored and displayed value unchanged
+  }
   if (g_tab == Tab::hunter) {
     if (hit(x, y, kHunterFast) && !hunter_active() && g_snapshot.mode == DigitalMode::ft8)
       return {ActionKind::start_hunt_fast};
@@ -1813,6 +1876,10 @@ Action handle_touch(int32_t x, int32_t y) {
 
 void leave() {
   g_active = false;
+  // FT8 owns both sprites; never retain a map frame across an exit/re-entry.
+  g_map_canvas.deleteSprite();g_world_canvas.deleteSprite();
+  g_map_canvas_ready=false;g_world_canvas_ready=false;g_map_composed=false;
+  g_map_attribution[0]=0;
   g_tune_open = false;
   g_info_open = false;
   g_mode_open = false;
