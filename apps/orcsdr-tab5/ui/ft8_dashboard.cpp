@@ -744,10 +744,12 @@ void draw_map() {
     g_world_canvas.setColorDepth(16);
     g_world_canvas_ready=g_world_canvas.createSprite(world_map::kMercatorSide,world_map::kMercatorSide)!=nullptr;
   }
+  // Observe the worker generation BEFORE draw: a publication racing draw()
+  // must remain visible to the next tick, not be marked as already painted.
+  g_map_revision_seen=map_source::revision();
   map_source::Result result{};
   if(g_map_canvas_ready&&g_world_canvas_ready)result=map_source::draw(g_world_canvas,labels);
   result.low_memory|=!g_map_canvas_ready||!g_world_canvas_ready;
-  g_map_revision_seen=map_source::revision();
 
   const bool ready=result.state==map_source::State::ready && g_map_canvas_ready && g_world_canvas_ready;
   if(ready) {
