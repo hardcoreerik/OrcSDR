@@ -767,7 +767,8 @@ void draw_map() {
   text(g_map_composed?g_map_attribution:"No geography available",54,594,kMuted,0,middle_left);
   text("Polar caps: grid only",530,594,kMuted,0,middle_center);
   const char* status=ready ? "ORCMAPS WORLD" :
-      g_map_composed ? (labels==g_map_composed_labels ? "LAST MAP FRAME" : "APPLYING LABELS") :
+      g_map_composed ? (result.state==map_source::State::pending && labels!=g_map_composed_labels ?
+                        "APPLYING LABELS" : "LAST MAP FRAME") :
       result.low_memory ? "LOW MEMORY - GRID ONLY" :
       result.state==map_source::State::pending ? "LOADING WORLD" : "NO BASEMAP - GRID ONLY";
   text(status,888,594,kMuted,0,middle_right);
