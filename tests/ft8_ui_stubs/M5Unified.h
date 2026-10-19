@@ -12,6 +12,8 @@ namespace lgfx {
 inline namespace v1 {
 struct Paint { std::string text; int x, y; uint16_t color; };
 inline std::vector<Paint> paints;
+inline bool sprite_fail=false;
+inline int sampled_pixels=0, drawn_pixels=0;
 class LovyanGFX {
   uint16_t color_ = 0;
 public:
@@ -25,6 +27,7 @@ public:
   template<class... T> void drawRect(T...) {}
   template<class... T> void fillScreen(T...) {}
   template<class... T> void fillCircle(T...) {}
+  template<class... T> void drawPixel(T...) { ++drawn_pixels; }
   template<class... T> void drawCircle(T...) {}
   template<class... T> void drawFastVLine(T...) {}
   template<class... T> void drawFastHLine(T...) {}
@@ -48,7 +51,9 @@ public:
   template<class... T> void setColorDepth(T...) {}
   template<class... T> void fillSprite(T...) {}
   template<class... T> void pushSprite(T...) {}
-  void* createSprite(int, int) { return this; }
+  void deleteSprite() {}
+  uint32_t readPixel(int,int) {++lgfx::sampled_pixels;return 0x1234;}
+  void* createSprite(int, int) { return lgfx::sprite_fail ? nullptr : this; }
 };
 inline struct M5Stub { lgfx::LovyanGFX Display; } M5;
 inline uint32_t millis() { return 1000; }
