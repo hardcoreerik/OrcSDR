@@ -47,11 +47,14 @@ Checked items below close only their stated behavior/test scope, not an entire p
   No engine or shared-worker changes or interactive pan/zoom. The independent
   FT8 `LABELS ON/OFF` control uses existing NVS preference; shared city
   label zoom threshold remains unchanged.
-- Pure projection source host test passes a full 824x420 pixel-centre sweep
-  under ASan/UBSan; added dashboard host tests have not yet been run in this
-  sandbox. Full native/P4 link, source performance, missing-world partition
-  and COM17 physical acceptance remain open. **Do not claim integrated
-  completion from the math test.** See
+- Pure projection test passes a full 824x420 pixel-centre sweep under
+  ASan/UBSan. Draft PR #204 FT8-core CI run 39335433015 passes both optimized
+  and sanitizer dashboard/projection suites and FT8/FT4 diagnostic integration
+  after a caught/fixed unavailable-frame status assertion and async redraw race.
+  Full native/P4 link, source performance, missing-world partition and COM17
+  physical acceptance remain open; an unrelated existing architecture.md
+  ScreenController-ID mismatch fails Documentation Truth. **This is not
+  integrated device completion.** See
   [the exact limited evidence and device checklist](../../evidence/maps/2026-10-19-ft8-orcmaps-sandbox.md).
 
 ### Geographic label controls source checkpoint - October 19
