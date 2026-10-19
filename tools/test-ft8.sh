@@ -100,10 +100,12 @@ run_suite ft8_info_text_tests \
   tests/ft8_info_text_tests.cpp \
   apps/orcsdr-tab5/ui/ft8_info_text.cpp
 
+run_suite ft8_world_projection_tests \
+  tests/ft8_world_projection_tests.cpp
+
 run_suite ft8_dashboard_tests \
   -Itests/ft8_ui_stubs tests/ft8_dashboard_tests.cpp \
-  apps/orcsdr-tab5/ui/ft8_dashboard.cpp apps/orcsdr-tab5/ui/ft8_world_data.cpp \
-  apps/orcsdr-tab5/ui/map_world_compat.cpp \
+  apps/orcsdr-tab5/ui/ft8_dashboard.cpp \
   apps/orcsdr-tab5/ui/ft8_model.cpp apps/orcsdr-tab5/ui/ft8_conditions.cpp \
   apps/orcsdr-tab5/ui/ft8_hunter.cpp apps/orcsdr-tab5/ui/ft8_tuning.cpp \
   apps/orcsdr-tab5/ui/ft8_info_text.cpp apps/orcsdr-tab5/ui/focus_nav.cpp
