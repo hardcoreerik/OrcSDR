@@ -51,6 +51,8 @@ Checked items below close only their stated behavior/test scope, not an entire p
   ASan/UBSan. Draft PR #204 FT8-core CI run 39335433015 passes both optimized
   and sanitizer dashboard/projection suites and FT8/FT4 diagnostic integration
   after a caught/fixed unavailable-frame status assertion and async redraw race.
+  Final source `26abfc31` adds a retained-frame receiver-caption alignment regression;
+  FT8 core CI run 39336414776 passes both optimized/sanitized and diagnostic checks.
   Full native/P4 link, source performance, missing-world partition and COM17
   physical acceptance remain open; an unrelated existing architecture.md
   ScreenController-ID mismatch fails Documentation Truth. **This is not
