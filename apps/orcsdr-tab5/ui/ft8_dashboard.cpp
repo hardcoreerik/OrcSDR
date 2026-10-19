@@ -679,6 +679,8 @@ bool g_map_canvas_ready = false, g_world_canvas_ready = false;
 bool g_map_composed = false, g_map_composed_labels = true;
 uint32_t g_map_revision_seen = 0;
 char g_map_attribution[192]{};
+bool g_map_you_valid = false;
+int g_map_you_x = 0, g_map_you_y = 0;
 
 void draw_globe(lgfx::LovyanGFX& d, int sub_x, int sub_y, bool basemap) {
   constexpr int left=50, top=158, width=824, height=420;
@@ -716,20 +718,28 @@ void draw_globe(lgfx::LovyanGFX& d, int sub_x, int sub_y, bool basemap) {
     if(!world_map::project(station.latitude,station.longitude,width,height,&x,&y))continue;
     d.fillCircle(left+x-sub_x,top+y-sub_y,4,dec.kind==DecodeKind::cq?kGreen:kYellow);
   }
-  if(g_snapshot.station_known) {
-    int x=0,y=0;
-    if(world_map::project(g_snapshot.station_latitude,g_snapshot.station_longitude,width,height,&x,&y)) {
-      x+=left-sub_x;y+=top-sub_y;
-      d.drawCircle(x,y,7,TFT_WHITE);
-      d.drawFastHLine(x-11,y,22,TFT_WHITE);
-      d.drawFastVLine(x,y-11,22,TFT_WHITE);
-    }
+  // Capture the label anchor with the same snapshot as the composed pixels.
+  // Do not recompute from a newer receiver snapshot over a retained old frame.
+  g_map_you_valid=g_snapshot.station_known &&
+      world_map::project(g_snapshot.station_latitude,g_snapshot.station_longitude,
+                         width,height,&g_map_you_x,&g_map_you_y);
+  if(g_map_you_valid) {
+    const int x=left+g_map_you_x-sub_x,y=top+g_map_you_y-sub_y;
+    d.drawCircle(x,y,7,TFT_WHITE);
+    d.drawFastHLine(x-11,y,22,TFT_WHITE);
+    d.drawFastVLine(x,y-11,22,TFT_WHITE);
   }
 }
 
 void draw_map() {
   const Rect map{24,104,884,514};
-  frame(map);
+  if(g_map_canvas_ready) {
+    // A retained off-screen frame already covers the map rectangle. Redraw
+    // header and footer only; avoid blanking geography before pushSprite.
+    M5.Display.fillRect(map.x,map.y,map.w,54,kPanel);
+    M5.Display.fillRect(map.x,578,map.w,map.y+map.h-578,kPanel);
+    M5.Display.drawRoundRect(map.x,map.y,map.w,map.h,10,kCyan);
+  } else frame(map);
   text("MAIDENHEAD GRID",42,124,kCyan,1,middle_left);
   text("WHOLE WORLD",664,124,kMuted,0,middle_right);
   constexpr int left=50,top=158,width=824,height=420;
@@ -778,11 +788,9 @@ void draw_map() {
 
   // The receiver marker and basemap share world_map::project; the YOU
   // annotation is display-space only and must not move the marker.
-  if(g_snapshot.station_known) {
-    int x=0,y=0;
-    if(world_map::project(g_snapshot.station_latitude,g_snapshot.station_longitude,width,height,&x,&y))
-      text("YOU",std::min(left+width-34,left+x+14),std::clamp(top+y-12,top+14,top+height-14),TFT_WHITE,1,middle_left);
-  }
+  if(g_map_you_valid)
+    text("YOU",std::min(left+width-34,left+g_map_you_x+14),
+         std::clamp(top+g_map_you_y-12,top+14,top+height-14),TFT_WHITE,1,middle_left);
   const size_t n=std::min(g_snapshot.decode_count,kDecodeCapacity);
   const Rect recent{926,104,330,514};
   frame(recent,kGrid);
@@ -1883,6 +1891,7 @@ void leave() {
   g_map_canvas.deleteSprite();g_world_canvas.deleteSprite();
   g_map_canvas_ready=false;g_world_canvas_ready=false;g_map_composed=false;
   g_map_attribution[0]=0;
+  g_map_you_valid=false;
   g_tune_open = false;
   g_info_open = false;
   g_mode_open = false;
