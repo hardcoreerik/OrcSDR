@@ -36,6 +36,10 @@ bool painted(const char* s) {
   for (const auto& p : lgfx::paints) if (p.text.find(s) != std::string::npos) return true;
   return false;
 }
+int painted_x(const char* s) {
+  for (const auto& p : lgfx::paints) if (p.text==s) return p.x;
+  return -1;
+}
 int main() {
   Snapshot s;
   s.mode = DigitalMode::ft4;
@@ -105,6 +109,17 @@ int main() {
   ++test_map_revision;test_frame=map_source::State::ready;
   lgfx::paints.clear();update(s);
   assert(painted("ORCMAPS WORLD") && lgfx::sampled_pixels>0 && lgfx::drawn_pixels>0);
+  const int old_you_x=painted_x("YOU");
+  assert(old_you_x>0);
+  test_frame=map_source::State::pending;
+  s.station_longitude=-45.0f;
+  lgfx::paints.clear();update(s);
+  assert(painted("LAST MAP FRAME") && painted_x("YOU")==old_you_x);
+  // Only when the new complete world frame is ready may the receiver
+  // cross AND its separately painted caption move to the new position.
+  ++test_map_revision;test_frame=map_source::State::ready;
+  lgfx::paints.clear();update(s);
+  assert(painted("ORCMAPS WORLD") && painted_x("YOU")>old_you_x);
   test_save_fail=true;
   (void)handle_touch(770,130);
   assert(test_labels && last_requested_labels); // failed persistence never flips UI or renderer
