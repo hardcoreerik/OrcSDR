@@ -37,6 +37,18 @@ ASAN_OPTIONS=detect_leaks=1 ./ft8_world_projection_tests
 
 Additional regression cases have been **added but not executed here**: dashboard map pending-to-ready, worker unavailable after an old frame, persisted labels toggle and failure, request-label independence from other dashboards, and failed PSRAM sprite allocation (see `tests/ft8_dashboard_tests.cpp`, `tools/test-ft8.sh`). Existing `apps/orcsdr-tab5/tests/maps/map_preferences_tests.cpp` already exercises independent picker/LoRa/ADS-B/FT8 preference keys, failed NVS save and reload; no rerun in this sandbox. Integrated `bash tools/test-ft8.sh`, actual P4 syntax/native link, font render and COM17 visual/performance/SD/radio tests **not run** because full source/dependencies and hardware are unavailable.
 
+## GitHub review CI — source commit `1ad58a815a3c44eea63b27f4e8182852b7302491`
+
+Draft PR [#204](https://github.com/hardcoreerik/OrcSDR/pull/204) targets `codex/maps-integration-completion`, **not main**. GitHub Actions FT8 RX core run [39335433015](https://github.com/hardcoreerik/OrcSDR/actions/runs/39335433015), `test` job **SUCCESS**. The log reports:
+
+- `bash tools/test-ft8.sh` — **PASS** in optimized **and** ASan/UBSan forms for `ft8_world_projection_tests` and `ft8_dashboard_tests` (both printed PASS twice).
+- `bash tools/test-ft8-diagnostic.sh` — **PASS**, `FT8/FT4 diagnostic integration: PASS`. Additional FT8 and JS8 source test runners also completed successfully.
+- FT8 External WAV Validation run 39335432992 — **success**; SD storage regressions 39335433004 — **success**; Tab5 cadence/LoRa history 39335432974 — **success**. These are host/CI results, not physical COM17 or native P4 linkage.
+- Documentation Truth run 39335432991 — **failure**, reporting `architecture.md:1: ScreenController IDs mismatch; missing=['maps']`. No architecture edits were made by this FT8 PR; leave this pre-existing integration documentation defect outside the bounded FT8 migration, for the integration owner to address.
+- The FT8 workflow's independent OrcDial PlatformIO build was still in progress at this checkpoint; do not infer success.
+
+The initial PR CI run 39335112666 exposed a dashboard assertion: worker unavailability after a pending label toggle incorrectly displayed `APPLYING LABELS` instead of `LAST MAP FRAME`. Source commit `d0cdb816` corrected the state, and commit `1ad58a8` fixed a worker-publication redraw race; the new optimized/sanitized dashboard tests passed.
+
 ## Remaining risks / COM17 handoff checklist
 
 1. Fetch this branch on the local OrcSDR checkout; **do not merge to main**. Confirm dependency lock matches the existing pinned OrcMaps commit and COM17 serial **`30:ED:A0:E2:E6:95`**. Preserve NVS, SD pack contents, recovery artifacts and C6 firmware; COM39 is reserved for Dead Air.
