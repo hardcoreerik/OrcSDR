@@ -111,7 +111,7 @@ See [Community Hardware](hardware/community/README.md) for community-designed 3D
 - **[Axeman72's OrcSDR handheld case](hardware/community/Axeman72/README.md):** shared in [GitHub Discussion #202](https://github.com/hardcoreerik/OrcSDR/discussions/202). Design files have been offered, but are not yet hosted here.
 - **[Tab5 Keyboard Clamshell Cyberdeck](hardware/community/pixeltwisters-tab5-clamshell/README.md):** shared by Reddit user u/pixeltwisters, with [STL/3MF downloads and build instructions on MakerWorld](https://makerworld.com/en/models/3405309-tab5-keyboard-clamshell-cyberdeck). The design is externally hosted under its own noncommercial license.
 
-Want to share your own case or accessory? [Start a Discussion](https://github.com/hardcoreerik/OrcSDR/discussions). You do not need repository collaborator access to submit a build. OrcSDR maintainers review and add approved entries with credit to the original designers.
+Want to share your own case or accessory? [Start a Discussion](https://github.com/hardcoreerik/OrcSDR/discussions). You do not need repository collaborator access to submit a build. OrcSDR maintainers review and add selected entries with credit to the original designers.
 
 ## Receiver support
 
