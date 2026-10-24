@@ -598,8 +598,11 @@ void filter_preset_rect(int i, int n, int* x, int* w) {
 
 // Direct tuning in MHz across the dongle's whole range; the Tab5 validates again before it tunes.
 void draw_keypad() {
-  freq_keypad::draw(kSpectrumY, TFT_BLACK, keypad_error ? "OUT OF RANGE: 24 - 1766 MHZ" : "ENTER FREQUENCY",
-                    "24.0 - 1766.0", "MHz", keypad_entry);
+  char banner[48], hint[32];
+  const double lo = current.tune_min_hz / 1e6, hi = current.tune_max_hz / 1e6;
+  snprintf(banner, sizeof(banner), "OUT OF RANGE: %.3f - %.0f MHZ", lo, hi);
+  snprintf(hint, sizeof(hint), "%.3f - %.1f", lo, hi);
+  freq_keypad::draw(kSpectrumY, TFT_BLACK, keypad_error ? banner : "ENTER FREQUENCY", hint, "MHz", keypad_entry);
 }
 
 // ---- Mode popup: pick the demodulation for the band on screen, with a plain-language note on each mode ------
@@ -1199,7 +1202,8 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
     } else if (result == freq_keypad::Result::submitted) {
       char* end = nullptr;
       const double mhz = strtod(keypad_entry, &end);
-      if (end != keypad_entry && *end == '\0' && mhz >= 24.0 && mhz <= 1766.0) {
+      if (end != keypad_entry && *end == '\0' &&
+          mhz >= current.tune_min_hz / 1e6 - 1e-9 && mhz <= current.tune_max_hz / 1e6 + 1e-9) {
         keypad = false;
         keypad_error = false;
         keypad_entry[0] = '\0';

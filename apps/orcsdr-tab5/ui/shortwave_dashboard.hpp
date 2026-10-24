@@ -40,6 +40,9 @@ struct Snapshot {
   bool hunt_active = false;
   uint16_t hunt_step = 0;
   uint16_t hunt_total = 0;
+  char mode[4] = "AM";       // demodulator in force: AM, USB or LSB
+  bool mode_auto = true;     // the mode follows the band plan rather than a pinned choice
+  int16_t clarifier_hz = 0;  // SSB pitch trim
 };
 
 enum class ActionKind : uint8_t {
@@ -81,6 +84,9 @@ enum class ActionKind : uint8_t {
   export_log,
   open_settings,
   exit_home,
+  mode_cycle,
+  clarifier_down,
+  clarifier_up,
 };
 
 struct Action {

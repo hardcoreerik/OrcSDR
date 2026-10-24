@@ -153,7 +153,7 @@ ModeGuide mode_guide_for(uint32_t frequency_hz) {
   if ((frequency_hz >= 1800000 && frequency_hz <= 2000000) ||
       (frequency_hz >= 3500000 && frequency_hz <= 4000000) ||
       (frequency_hz >= 7000000 && frequency_hz <= 7300000))
-    return {"LSB", "Amateur voice below 10 MHz usually uses LSB.", false};
+    return {"LSB", "Amateur voice below 10 MHz usually uses LSB.", true};
 
   if ((frequency_hz >= 5330500 && frequency_hz <= 5406500) ||
       (frequency_hz >= 14000000 && frequency_hz <= 14350000) ||
@@ -161,7 +161,7 @@ ModeGuide mode_guide_for(uint32_t frequency_hz) {
       (frequency_hz >= 21000000 && frequency_hz <= 21450000) ||
       (frequency_hz >= 24890000 && frequency_hz <= 24990000) ||
       (frequency_hz >= 28000000 && frequency_hz <= 29700000))
-    return {"USB", "Amateur voice above 10 MHz usually uses USB; 60 m is an exception.", false};
+    return {"USB", "Amateur voice above 10 MHz usually uses USB; 60 m is an exception.", true};
 
   return {"CHECK", "Frequency alone cannot identify a signal. Check a band guide or schedule.", false};
 }
@@ -185,15 +185,19 @@ bool schedule_matches(const StationCard& card, uint32_t frequency_hz,
          (card.days_mask & (1u << previous_day));
 }
 
+bool mode_valid(const char* mode) {
+  return strcmp(mode, "AM") == 0 || strcmp(mode, "USB") == 0 || strcmp(mode, "LSB") == 0;
+}
+
 bool valid(const Memory& memory) {
   return receiver_frequency(memory.frequency_hz) &&
          receiver_bandwidth(memory.bandwidth_hz) &&
-         strcmp(memory.mode, "AM") == 0 && text_valid(memory);
+         mode_valid(memory.mode) && text_valid(memory);
 }
 
 bool valid(const LogEntry& entry) {
   return entry.timestamp_utc != 0 && receiver_frequency(entry.frequency_hz) &&
-         receiver_bandwidth(entry.bandwidth_hz) && strcmp(entry.mode, "AM") == 0 &&
+         receiver_bandwidth(entry.bandwidth_hz) && mode_valid(entry.mode) &&
          entry.local_offset_minutes >= -14 * 60 &&
          entry.local_offset_minutes <= 14 * 60 && std::isfinite(entry.signal_dbfs) &&
          text_valid(entry);

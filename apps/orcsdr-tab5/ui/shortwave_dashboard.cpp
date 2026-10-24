@@ -49,16 +49,19 @@ constexpr Rect kFrequencyCard{24, 104, 1232, 80};
 constexpr Rect kFrequencyMinus{42, 112, 64, 64};
 constexpr Rect kFrequencyEntry{120, 108, 1040, 72};
 constexpr Rect kFrequencyPlus{1174, 112, 64, 64};
-constexpr Rect kStep{24, 190, 150, 52};
-constexpr Rect kFilterDown{182, 190, 52, 52};
-constexpr Rect kFilterValue{242, 190, 180, 52};
-constexpr Rect kFilterUp{430, 190, 52, 52};
-constexpr Rect kClean{490, 190, 100, 52};
-constexpr Rect kBoost{598, 190, 100, 52};
-constexpr Rect kNoiseReduction{706, 190, 110, 52};
-constexpr Rect kNotch{824, 190, 110, 52};
-constexpr Rect kSquelch{942, 190, 160, 52};
-constexpr Rect kTuner{1110, 190, 146, 52};
+constexpr Rect kStep{24, 190, 130, 52};
+constexpr Rect kFilterDown{162, 190, 52, 52};
+constexpr Rect kFilterValue{222, 190, 150, 52};
+constexpr Rect kFilterUp{380, 190, 52, 52};
+constexpr Rect kMode{440, 190, 100, 52};
+constexpr Rect kClean{548, 190, 86, 52};
+constexpr Rect kBoost{642, 190, 86, 52};
+constexpr Rect kNoiseReduction{736, 190, 96, 52};
+constexpr Rect kNotch{840, 190, 96, 52};
+constexpr Rect kSquelch{944, 190, 130, 52};
+constexpr Rect kTuner{1082, 190, 174, 52};
+constexpr Rect kClarifierDown{130, 146, 56, 30};
+constexpr Rect kClarifierUp{304, 146, 56, 30};
 constexpr Rect kDrawer{840, 104, 420, 522};
 constexpr Rect kDrawerClose{858, 552, 378, 52};
 constexpr Rect kTunerAgc{858, 176, 184, 68};
@@ -169,6 +172,10 @@ const char* route_name(ReceiverRoute route) {
   }
 }
 
+bool ssb_mode() {
+  return std::strcmp(g_snapshot.mode, "USB") == 0 || std::strcmp(g_snapshot.mode, "LSB") == 0;
+}
+
 void draw_frequency() {
   const int width = spectrum_width();
   M5.Display.fillRect(kSpectrumX + 1, kFrequencyCard.y + 1,
@@ -191,6 +198,12 @@ void draw_frequency() {
            guide.likely_mode, guide.supported_now ? "READY" : "GUIDE");
   text(context, kSpectrumX + width / 2, 166,
        guide.supported_now ? kGreen : kYellow, 2);
+  if (ssb_mode()) {
+    button(kClarifierDown, "-");
+    snprintf(value, sizeof(value), "CLAR %+d Hz", static_cast<int>(g_snapshot.clarifier_hz));
+    text(value, kClarifierDown.x + (kClarifierUp.x + kClarifierUp.w - kClarifierDown.x) / 2, 161, kCyan, 2);
+    button(kClarifierUp, "+");
+  }
 }
 
 void draw_status() {
@@ -218,6 +231,8 @@ void draw_quick_controls() {
            static_cast<double>(g_snapshot.filter_bandwidth_hz) / 1000.0);
   button(kFilterValue, value);
   button(kFilterUp, ">");
+  snprintf(value, sizeof(value), g_snapshot.mode_auto ? "AUTO %s" : "%s", g_snapshot.mode);
+  button(kMode, value, ssb_mode());
   const auto boost = receiver_controls::item(receiver_controls::Control::audio_boost,
                                               g_snapshot.controls);
   const bool clean = g_snapshot.filter_bandwidth_hz == 6000 &&
@@ -962,6 +977,8 @@ Action handle_touch(int32_t x, int32_t y) {
                             kFrequencyPlus.w, kFrequencyPlus.h};
   const Rect frequency_entry{kFrequencyEntry.x, kFrequencyEntry.y,
                              width - 192, kFrequencyEntry.h};
+  if (ssb_mode() && hit(x, y, kClarifierDown)) return {ActionKind::clarifier_down};
+  if (ssb_mode() && hit(x, y, kClarifierUp)) return {ActionKind::clarifier_up};
   if (hit(x, y, kFrequencyMinus)) return {ActionKind::step_down};
   if (hit(x, y, frequency_plus)) return {ActionKind::step_up};
   if (hit(x, y, frequency_entry)) {
@@ -974,6 +991,7 @@ Action handle_touch(int32_t x, int32_t y) {
   if (hit(x, y, kFilterDown)) return {ActionKind::filter_down};
   if (hit(x, y, kFilterValue)) return {ActionKind::filter_cycle};
   if (hit(x, y, kFilterUp)) return {ActionKind::filter_up};
+  if (hit(x, y, kMode)) return {ActionKind::mode_cycle};
   if (hit(x, y, kClean)) return {ActionKind::clean_audio};
   if (hit(x, y, kBoost))
     return {ActionKind::audio_boost, !g_snapshot.controls.audio_boost};
@@ -1105,6 +1123,8 @@ bool dashboard_self_check() {
           ActionKind::filter_cycle &&
       handle_touch(center_x(kFilterUp), center_y(kFilterUp)).kind ==
           ActionKind::filter_up &&
+      handle_touch(center_x(kMode), center_y(kMode)).kind ==
+          ActionKind::mode_cycle &&
       handle_touch(center_x(kClean), center_y(kClean)).kind ==
           ActionKind::clean_audio &&
       handle_touch(center_x(kBoost), center_y(kBoost)).kind ==
@@ -1160,7 +1180,7 @@ bool dashboard_self_check() {
           ActionKind::none &&
       !g_tuner_drawer_open && spectrum_width() == kSpectrumClosedW;
   constexpr Rect controls[] = {kStep, kFilterDown, kFilterValue, kFilterUp,
-                               kClean, kBoost, kNoiseReduction, kNotch,
+                               kMode, kClean, kBoost, kNoiseReduction, kNotch,
                                kSquelch, kTuner};
   bool geometry_ok = kFrequencyCard.x >= 0 && kFrequencyCard.y >= 0 &&
       kFrequencyCard.x + kFrequencyCard.w <= 1280 &&

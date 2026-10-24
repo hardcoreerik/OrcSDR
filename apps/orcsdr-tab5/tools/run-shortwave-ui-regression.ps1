@@ -31,7 +31,8 @@ $required = @(
   (Join-Path $repo 'tests\shortwave_library_tests.cpp'),
   (Join-Path $repo 'tests\shortwave_library_io_tests.cpp'),
   (Join-Path $repo 'tests\shortwave_hunt_tests.cpp'),
-  (Join-Path $repo 'tests\shortwave_audio_dsp_tests.cpp')
+  (Join-Path $repo 'tests\shortwave_audio_dsp_tests.cpp'),
+  (Join-Path $repo 'tests\shortwave_ssb_tests.cpp')
 )
 foreach ($path in $required) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
@@ -76,6 +77,8 @@ Invoke-WslCheck 'library_io' ($prefix +
   "apps/orcsdr-tab5/ui/shortwave_model.cpp apps/orcsdr-tab5/ui/shortwave_library.cpp apps/orcsdr-tab5/ui/shortwave_library_io.cpp tests/shortwave_library_io_tests.cpp -o $testDir/library_io && $testDir/library_io")
 Invoke-WslCheck 'hunt' ($prefix +
   "apps/orcsdr-tab5/ui/shortwave_model.cpp apps/orcsdr-tab5/ui/scan_engine.cpp apps/orcsdr-tab5/ui/shortwave_hunt.cpp tests/shortwave_hunt_tests.cpp -o $testDir/hunt && $testDir/hunt")
+Invoke-WslCheck 'ssb' ($prefix +
+  "-O2 apps/orcsdr-tab5/ui/shortwave_ssb.cpp tests/shortwave_ssb_tests.cpp -o $testDir/ssb && $testDir/ssb")
 
 $dspCommand = $prefix +
   "-pthread -fsanitize=thread -no-pie apps/orcsdr-tab5/ui/shortwave_audio_dsp.cpp tests/shortwave_audio_dsp_tests.cpp -o $testDir/dsp && setarch `$(uname -m) -R $testDir/dsp"

@@ -27,9 +27,9 @@ int main() {
   CHECK(std::strcmp(broadcast.likely_mode, "AM") == 0);
   CHECK(broadcast.supported_now);
   CHECK(std::strcmp(amateur_lsb.likely_mode, "LSB") == 0);
-  CHECK(!amateur_lsb.supported_now);
+  CHECK(amateur_lsb.supported_now);
   CHECK(std::strcmp(amateur_usb.likely_mode, "USB") == 0);
-  CHECK(!amateur_usb.supported_now);
+  CHECK(amateur_usb.supported_now);
   CHECK(std::strcmp(unknown.likely_mode, "CHECK") == 0);
   CHECK(!unknown.supported_now);
 
