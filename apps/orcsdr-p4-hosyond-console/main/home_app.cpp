@@ -308,8 +308,12 @@ void ui_task(void*) {
       last_y = tap_y;
     }
     if (g_active) {
-      if (down && g_active->drag) g_active->drag(last_x, last_y);
-      if (!down && was_down) g_active->tap(last_x, last_y);
+      if (g_active->touch) {
+        if (down || was_down) g_active->touch(last_x, last_y, down);
+      } else {
+        if (down && g_active->drag) g_active->drag(last_x, last_y);
+        if (!down && was_down) g_active->tap(last_x, last_y);
+      }
     } else if (down || was_down) {
       const home::Action action = home::handle_touch(last_x, last_y, down);
       if (action.kind != home::ActionKind::none) handle_action(action);

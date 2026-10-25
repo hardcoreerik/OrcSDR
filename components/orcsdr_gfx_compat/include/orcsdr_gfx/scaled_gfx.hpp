@@ -274,7 +274,7 @@ class ScaledCanvas : public ScaledGfx {
 
   void setPsram(bool) { psram_ = true; }  // always PSRAM on this target
   void setColorDepth(int bits) { depth_ = bits; }
-  bool createSprite(int w, int h);
+  void* createSprite(int w, int h);  // like M5GFX: the sprite's buffer (non-null) or nullptr
   void deleteSprite();
   bool created() const { return created_; }
   template <typename T> void fillSprite(const T& color) { if (created_) sprite_.fillSprite(color); }

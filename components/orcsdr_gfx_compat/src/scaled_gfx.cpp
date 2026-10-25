@@ -174,7 +174,7 @@ bool ScaledDisplay::take_dirty(int* y0, int* y1) {
 // ScaledCanvas
 // ---------------------------------------------------------------------------------------------
 
-bool ScaledCanvas::createSprite(int w, int h) {
+void* ScaledCanvas::createSprite(int w, int h) {
   deleteSprite();
   const float sx = parent_ ? parent_->scale_x() : 1.0f, sy = parent_ ? parent_->scale_y() : 1.0f;
   const int tw = std::max(1, static_cast<int>(std::lround(w * sx))), th = std::max(1, static_cast<int>(std::lround(h * sy)));
@@ -182,13 +182,13 @@ bool ScaledCanvas::createSprite(int w, int h) {
   sprite_.setColorDepth(depth_);
   if (!sprite_.createSprite(tw, th)) {
     ESP_LOGE(kTag, "canvas %dx%d (target %dx%d) allocation failed", w, h, tw, th);
-    return false;
+    return nullptr;
   }
   bind(&sprite_, w, h, tw, th);
   sx_ = sx;  // keep the display's exact scale so coordinates inside the sprite match the screen's
   sy_ = sy;
   created_ = true;
-  return true;
+  return this;
 }
 
 void ScaledCanvas::deleteSprite() {

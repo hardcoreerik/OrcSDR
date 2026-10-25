@@ -27,6 +27,9 @@ std::atomic<int> state{0};  // 0 no receiver, 1 scanning, 2 streaming, 3 error
 std::atomic<uint32_t> tune_request{0};
 std::atomic<uint32_t> rate_target{kRate}, rate_now{kRate};
 IqSink g_sink = nullptr;
+IqSink g_aux_sink = nullptr;
+Info g_info;
+std::atomic<uint32_t> rate_override{0};
 std::atomic<float> dbfs{-120.0f};
 Gain g_gain;                                   // cache, guarded by bands_lock's sibling below
 portMUX_TYPE gain_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -156,6 +159,7 @@ void task(void*) {
     size_t n = 0;
     const esp_err_t e = esp_rtl_sdr_read(sdr, iq, kIqBytes, 40, &n);
     if (e == ESP_OK && n && g_sink) g_sink(iq, n);
+    if (e == ESP_OK && n && g_aux_sink) g_aux_sink(iq, n);
     if (e == ESP_OK && n >= 2048 && now - last_fft > 50000) {
       // Level of the block as RMS of the centred 8-bit samples, in dBFS.
       double acc = 0.0;
@@ -193,6 +197,8 @@ void task(void*) {
           if (r == ESP_OK) r = esp_rtl_sdr_set_tuner_gain(sdr, value);
         } else if (kind == 3) r = esp_rtl_sdr_set_rtl_agc(sdr, value != 0);
         else if (kind == 4) r = esp_rtl_sdr_set_bias_tee(sdr, value != 0);
+        else if (kind == 5) r = esp_rtl_sdr_set_freq_correction(sdr, value);
+        else if (kind == 6) r = esp_rtl_sdr_set_tuner_bandwidth(sdr, static_cast<uint32_t>(value));
         ESP_LOGI(TAG, "GAIN request kind=%d value=%d -> %s", kind, value, esp_rtl_sdr_err_to_name(r));
         last_gain_poll = 0;
       }
@@ -211,7 +217,32 @@ void task(void*) {
         if (esp_rtl_sdr_get_tuner_gains(sdr, g.steps, 32, &count) == ESP_OK) g.step_count = static_cast<uint8_t>(count < 32 ? count : 32);
         (void)esp_rtl_sdr_get_rtl_agc(sdr, &g.rtl_agc);
         (void)esp_rtl_sdr_get_bias_tee(sdr, &g.bias);
+        Info inf;
+        inf.caps = caps;
+        (void)esp_rtl_sdr_get_freq_correction(sdr, &inf.ppm);
+        if (caps & ESP_RTL_SDR_CAP_TUNER_BANDWIDTH) {
+          (void)esp_rtl_sdr_get_tuner_bandwidth_state(sdr, &inf.bw_requested_hz, &inf.bw_applied_hz);
+          size_t bc = 0;
+          if (esp_rtl_sdr_get_tuner_bandwidths(sdr, inf.bw_list, 16, &bc) == ESP_OK) inf.bw_count = static_cast<uint8_t>(bc < 16 ? bc : 16);
+        }
+        esp_rtl_sdr_metrics_t mm{};
+        if (esp_rtl_sdr_get_metrics(sdr, &mm) == ESP_OK) {
+          inf.overruns = mm.overruns;
+          inf.consumer_drops = mm.consumer_drops;
+        }
+        esp_rtl_sdr_device_info_t di{};
+        if (esp_rtl_sdr_get_device_info(sdr, &di) == ESP_OK && di.present)
+          std::snprintf(inf.device, sizeof(inf.device), "%.30s %.12s", di.product, di.serial);
+        else
+          std::snprintf(inf.device, sizeof(inf.device), "RTL-SDR");
+        esp_rtl_sdr_health_info_t hi{};
+        if (esp_rtl_sdr_get_health(sdr, &hi) == ESP_OK)
+          std::snprintf(inf.health, sizeof(inf.health), "%.27s", hi.advice[0] ? hi.advice : "OK");
+        else
+          std::snprintf(inf.health, sizeof(inf.health), "unknown");
+        std::snprintf(inf.version, sizeof(inf.version), "%s", esp_rtl_sdr_get_version_string());
         portENTER_CRITICAL(&gain_lock);
+        g_info = inf;
         g_gain = g;
         portEXIT_CRITICAL(&gain_lock);
       }
@@ -239,6 +270,23 @@ bool start(QueueHandle_t commands) {
 }
 
 void set_iq_sink(IqSink sink) { g_sink = sink; }
+void set_aux_iq_sink(IqSink sink) { g_aux_sink = sink; }
+Info info() {
+  Info i;
+  portENTER_CRITICAL(&gain_lock);
+  i = g_info;
+  portEXIT_CRITICAL(&gain_lock);
+  return i;
+}
+void set_ppm(int ppm) {
+  gain_req_value = ppm;
+  gain_req_kind = 5;
+}
+void set_tuner_bandwidth(uint32_t hz) {
+  gain_req_value = static_cast<int>(hz);
+  gain_req_kind = 6;
+}
+void set_sample_rate_override(uint32_t rate) { rate_override = rate; }
 Gain gain() {
   Gain g;
   portENTER_CRITICAL(&gain_lock);
@@ -262,7 +310,7 @@ void set_bias_tee(bool enable) {
 void tune_to(uint32_t frequency_hz) { tune_request = frequency_hz; }
 float level_dbfs() { return state.load() == 2 ? dbfs.load() : -120.0f; }
 uint32_t sample_rate() { return rate_now.load(); }
-void set_sample_rate(uint32_t rate) { rate_target = rate > 1000000 ? kWideRate : kRate; }
+void set_sample_rate(uint32_t rate) { rate_target = rate_override.load() ? rate_override.load() : (rate > 1000000 ? kWideRate : kRate); }
 
 waveshare4b::home_v3::Snapshot snapshot() {
   return {requested.load(), applied.load(), sps.load(), drops.load(), kSteps[step_idx.load()],

@@ -19,6 +19,8 @@ struct Screen {
   void (*drag)(int x, int y);   // a finger is down at (x, y); may be null
   // New spectrum frame: `visible` of the 256 levels starting at `first`, floor in dB. May be null.
   void (*spectrum)(const float* levels, size_t first, size_t visible, float floor);
+  // Optional: raw touch every loop while a finger is down or just lifted (replaces drag/tap when set).
+  void (*touch)(int x, int y, bool down) = nullptr;
 };
 
 const Screen* find(orcsdr::dashboards::Id id);
@@ -31,5 +33,7 @@ const Screen& am_screen();
 const Screen& cb_screen();
 const Screen& airband_screen();
 const Screen& shortwave_screen();
+const Screen& rflab_screen();
+const Screen& settings_screen();
 
 }  // namespace screens

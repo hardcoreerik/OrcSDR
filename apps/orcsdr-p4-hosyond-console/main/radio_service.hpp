@@ -37,6 +37,25 @@ struct Gain {
   bool bias_available = false;
   bool bias = false;
 };
+// Driver facts for the diagnostic screens (refreshed with the gain cache).
+struct Info {
+  uint32_t caps = 0;
+  int ppm = 0;
+  uint32_t bw_requested_hz = 0, bw_applied_hz = 0;  // tuner filter bandwidth (2.4 MS/s only)
+  uint32_t bw_list[16] = {};
+  uint8_t bw_count = 0;
+  uint32_t overruns = 0, consumer_drops = 0;
+  char device[48] = {};
+  char health[28] = {};
+  char version[20] = {};
+};
+Info info();
+void set_ppm(int ppm);
+void set_tuner_bandwidth(uint32_t hz);
+// A screen that needs a specific supported rate (RF Lab) holds it here; 0 returns to the automatic policy.
+void set_sample_rate_override(uint32_t rate);
+// A second consumer of the IQ blocks (RF Lab's analysis). Called from the receiver task; must not block.
+void set_aux_iq_sink(IqSink sink);
 Gain gain();
 void set_gain_auto();
 void set_gain_manual(int tenth_db);

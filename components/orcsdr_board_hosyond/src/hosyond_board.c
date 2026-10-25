@@ -368,6 +368,11 @@ esp_err_t hosyond_board_flip(const hosyond_display_t *d, int fb_index)
     return esp_lcd_panel_draw_bitmap(s_panel, 0, 0, d->width, 1, d->fb[fb_index]);
 }
 
+esp_err_t hosyond_board_set_backlight(uint8_t level)
+{
+    return s_i2c ? attiny_write(ATTINY_REG_PWM, level) : ESP_ERR_INVALID_STATE;
+}
+
 i2c_master_bus_handle_t hosyond_board_i2c(void)
 {
     return s_i2c;

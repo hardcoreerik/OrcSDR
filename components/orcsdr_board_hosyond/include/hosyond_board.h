@@ -61,6 +61,9 @@ esp_err_t hosyond_audio_mute(bool mute);
 /* The board's shared I2C bus (panel controller, touch, audio codec). Valid after hosyond_board_start(). */
 i2c_master_bus_handle_t hosyond_board_i2c(void);
 
+/* Backlight level 0-255 (the panel controller's PWM register). 0 turns the backlight off. */
+esp_err_t hosyond_board_set_backlight(uint8_t level);
+
 #ifdef __cplusplus
 }
 #endif
