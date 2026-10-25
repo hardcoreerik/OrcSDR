@@ -2,8 +2,8 @@
  * OrcSDR for the Hosyond 7" 800x480 MIPI-DSI panel on a Waveshare
  * ESP32-P4-Module-DEV-KIT.
  *
- * The bring-up sequence below is the one proved by ../orcsdr-p4-dsi-probe;
- * the application layer at the end of this file is what OrcSDR runs on it.
+ * The bring-up sequence is the one proved by ../orcsdr-p4-dsi-probe; the
+ * application layer at the end of this file is what OrcSDR runs on it.
  *
  * Corrected ordering (modular upstream architecture, not the legacy integrated
  * panel driver):
@@ -365,7 +365,7 @@ static void bridge_readback_probe(esp_lcd_dsi_bus_handle_t bus, const char *stag
         uint32_t expected;
     } regs[] = {
         { TC358762_SYSCTRL, "SYSCTRL", TC358762_SYSCTRL_VALUE },
-        { TC358762_LCDCTRL, "LCDCTRL", TC358762_LCDCTRL_VTG_RGB888 },
+        { TC358762_LCDCTRL, "LCDCTRL", TC358762_LCDCTRL_UPSTREAM },
     };
 
     ESP_LOGI(TAG, "bridge readback (%s):", stage);
@@ -391,26 +391,26 @@ static void tc358762_bridge_init(esp_lcd_dsi_bus_handle_t bus, const h4_profile_
     tc358762_write(bus, TC358762_PPI_D1S_ATMR, 0);
     tc358762_write(bus, TC358762_PPI_LPTXTIMECNT, TC358762_LPX_PERIOD);
     tc358762_write(bus, TC358762_SPICMR, 0x00);
+    tc358762_write(bus, TC358762_LCDCTRL, TC358762_LCDCTRL_UPSTREAM);
     tc358762_write(bus, TC358762_SYSCTRL, TC358762_SYSCTRL_VALUE);
 
-    /* Order matters: program the timings, upload them with VFUEN, and only then
-     * enable the timing generator in LCDCTRL. Every driver that uses VTG writes
-     * them in this order. LCDCTRL bit 1 turns the generator on, after which the
-     * DE window opens HSW + HBP into each line, entirely from these registers.
-     * The host DPI stream is programmed with the same values, so the pixel
-     * payload and the DE window start at the same pixel and the image is not
-     * displaced. The panel requires hsw+hbp == 46 and vsw+vbp == 23; the
-     * profile guarantees both. */
-    tc358762_write(bus, TC358762_LCD_HS_HBP,
-                   ((uint32_t)p->hbp << 16) | (uint32_t)p->hsw);
+    /* LCDCTRL sets VTGEN (BIT 4), so the bridge generates the LCD raster from
+     * its own timing generator. The four timing registers below are that
+     * generator's only source of H/V totals; leaving them at reset defaults
+     * produces a raster that does not match the 480-line stream arriving over
+     * DSI, which is why the frame came out repeated with a seam at mid-height.
+     * Layout follows the ESP-IDF port that drives this panel successfully. */
+    int hbp = p->hbp + TC358762_DE_START_COMP;
+    int hfp = p->hfp - TC358762_DE_START_COMP;
+    if (hfp < 0) {
+        hfp = 0;
+    }
+    tc358762_write(bus, TC358762_LCD_HS_HBP, ((uint32_t)hbp << 16) | (uint32_t)p->hsw);
     tc358762_write(bus, TC358762_LCD_HDISP_HFP,
-                   ((uint32_t)p->hfp << 16) | (uint32_t)HOSYOND_H_RES);
-    tc358762_write(bus, TC358762_LCD_VS_VBP,
-                   ((uint32_t)p->vbp << 16) | (uint32_t)p->vsw);
+                   ((uint32_t)hfp << 16) | (uint32_t)HOSYOND_H_RES);
+    tc358762_write(bus, TC358762_LCD_VS_VBP, ((uint32_t)p->vbp << 16) | (uint32_t)p->vsw);
     tc358762_write(bus, TC358762_LCD_VDISP_VFP,
                    ((uint32_t)p->vfp << 16) | (uint32_t)HOSYOND_V_RES);
-    tc358762_write(bus, TC358762_VFUEN, TC358762_VFUEN_ENABLE);
-    tc358762_write(bus, TC358762_LCDCTRL, TC358762_LCDCTRL_VTG_RGB888);
 
     vTaskDelay(pdMS_TO_TICKS(100));
     tc358762_write(bus, TC358762_PPI_STARTPPI, 1);
@@ -877,6 +877,58 @@ static void emit_node_heartbeat(const char *node_id, uint64_t sequence,
            (unsigned)heap_kb * 1024);
 }
 
+/* Unmistakable presence test before any application pixels: four full-screen
+ * solid colours. If none of these appear the panel is not being scanned out at
+ * all, which is a different fault from an application that draws poorly. */
+static void boot_screen_test(esp_lcd_panel_handle_t panel)
+{
+    uint8_t *buf = ensure_fb();
+    if (!buf) {
+        return;
+    }
+    static const struct {
+        uint8_t r, g, b;
+        const char *name;
+    } steps[] = {
+        {0xFF, 0xFF, 0xFF, "white"},
+        {0xFF, 0x00, 0x00, "red"},
+        {0x00, 0xFF, 0x00, "green"},
+        {0x00, 0x00, 0xFF, "blue"},
+    };
+    for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
+        fill_rect(buf, 0, 0, UI_W, UI_H, steps[i].r, steps[i].g, steps[i].b);
+        esp_err_t err = esp_lcd_panel_draw_bitmap(panel, 0, 0, UI_W, UI_H, buf);
+        ESP_LOGW(TAG, "boot screen test: %s -> %s", steps[i].name,
+                 esp_err_to_name(err));
+        vTaskDelay(pdMS_TO_TICKS(1500));
+    }
+}
+
+/* The bridge cannot be read back, so the one thing it will not survive quietly
+ * is a raster whose line total differs from the host stream: the DE window then
+ * walks through the payload and the panel goes black. Check the arithmetic the
+ * two register sets are derived from and say so at startup. */
+static void check_line_totals(const h4_profile_t *p)
+{
+    const int host_hbp = p->hbp;
+    const int host_hfp = p->hfp;
+    int bridge_hbp = p->hbp + TC358762_DE_START_COMP;
+    int bridge_hfp = p->hfp - TC358762_DE_START_COMP;
+    if (bridge_hfp < 0) {
+        bridge_hfp = 0;
+    }
+    const int host_total = HOSYOND_H_RES + p->hsw + host_hbp + host_hfp;
+    const int bridge_total = HOSYOND_H_RES + p->hsw + bridge_hbp + bridge_hfp;
+    ESP_LOGI(TAG, "line totals: host %d (hbp %d + hfp %d), bridge %d (hbp %d + hfp %d)",
+             host_total, host_hbp, host_hfp, bridge_total, bridge_hbp, bridge_hfp);
+    if (host_total != bridge_total) {
+        ESP_LOGE(TAG, "MISMATCH: bridge raster is %d px against a %d px host line; "
+                      "the panel will show nothing. Increase the profile HFP to at "
+                      "least TC358762_DE_START_COMP (%d).",
+                 bridge_total, host_total, TC358762_DE_START_COMP);
+    }
+}
+
 void app_main(void)
 {
     const h4_profile_t *p = &h4_profiles[H4_DEFAULT_PROFILE];
@@ -892,6 +944,7 @@ void app_main(void)
         log_configured_mode(&h4_profiles[i]);
     }
     ESP_LOGI(TAG, "active profile: %s", p->name);
+    check_line_totals(p);
 
     esp_err_t err = i2c_bus_init();
     if (err != ESP_OK) {
@@ -913,6 +966,8 @@ void app_main(void)
     }
 
     attiny_backlight_on();
+
+    boot_screen_test(panel);
 
     char node_id[40];
     uint8_t mac[6];

@@ -58,8 +58,8 @@ typedef struct {
     float lane_mbps;
 } h4_profile_t;
 
-#define H4_PROFILE_COUNT 5
-#define H4_DEFAULT_PROFILE 4
+#define H4_PROFILE_COUNT 4
+#define H4_DEFAULT_PROFILE 3
 
 static const h4_profile_t h4_profiles[H4_PROFILE_COUNT] = {
     {
@@ -84,35 +84,15 @@ static const h4_profile_t h4_profiles[H4_PROFILE_COUNT] = {
         .vfp = 7, .vsw = 1, .vbp = 23, .dpi_mhz = 27.5f, .lane_mbps = 660.0f,
     },
     {
-        /* Default, and the only profile that satisfies the panel's documented
-         * constraints: hsw + hbp must equal 46 and vsw + vbp must equal 23.
-         * https://lore.kernel.org/dri-devel/20261015-tc358762-fixes-v5-13-7cd721a6451b@ideasonboard.com/
-         * An off-by-one in vsw + vbp is documented as producing a visible
-         * image shift, and the previous profile had both sums wrong
-         * (48 and 24). Values match a working ESP32-P4 + Raspberry Pi 7"
-         * configuration. The host DPI stream and the bridge VTG registers are
-         * given identical values so the payload and the DE window start at the
-         * same pixel: 977 x 510 at 25.98 MHz = 52.1 Hz. */
-        .name = "datasheet-800x480", .hfp = 131, .hsw = 2, .hbp = 44,
-        .vfp = 7, .vsw = 2, .vbp = 21, .dpi_mhz = 25.98f, .lane_mbps = 600.0f,
-    },
-    {
-        /* Horizontal alignment, derived from two measured points rather than
-         * chosen. Driving this profile's HBP swept the whole DE window on both
-         * the host stream and the bridge VTG, and the panel displacement was
-         * measured from the ruler card as:
-         *
-         *     hbp 146 -> 140 px displacement
-         *     hbp 256 ->  40 px displacement
-         *
-         * The two points give offset(h) = 140 - 0.9091 * (h - 146), which is a
-         * one-to-one response with 0.909 px of image movement per pixel of HBP,
-         * so the zero crossing is at h = 300. Horizontal total becomes
-         * 800 + 2 + 300 + 131 = 1233, i.e. 25.98 MHz / (1233 * 510) = 41.3 Hz,
-         * which the panel accepts; vertical timing is untouched because the
-         * vertical geometry was already measured correct. The datasheet profile
-         * above is kept unchanged as the recovery configuration. */
-        .name = "measured-hbp300", .hfp = 131, .hsw = 2, .hbp = 300,
-        .vfp = 7, .vsw = 2, .vbp = 21, .dpi_mhz = 25.98f, .lane_mbps = 600.0f,
+        /* Default. Effective timing of the ESP-IDF port that drives this exact
+         * panel (ESP32-P4-DSI-Support-Hub, CC BY-NC-ND 4.0, facts only): the
+         * host DPI raster and the bridge VTGEN registers get the same values,
+         * 1102x526 total at 25.98 MHz = 44.8 Hz. HFP is 254 so that the
+         * bridge, which trades 254 px of front porch for 254 px of back porch
+         * (TC358762_DE_START_COMP), still ends up with a matching line total
+         * and a non-negative front porch. 254 px of horizontal blanking leaves
+         * the 600 Mbps lane ~21% headroom for RGB888. */
+        .name = "rpi-observed-stable", .hfp = 254, .hsw = 2, .hbp = 46,
+        .vfp = 22, .vsw = 20, .vbp = 4, .dpi_mhz = 25.98f, .lane_mbps = 600.0f,
     },
 };
