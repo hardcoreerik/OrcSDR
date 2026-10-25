@@ -244,7 +244,7 @@ void ui_task(void*) {
         last_level = level;
         ++g_rev;
       }
-      if (rs.effective_sps / 1000u != last_sps / 1000u || rs.applied_hz != last_applied_hz) {
+      if ((rs.effective_sps > last_sps + 3000u || last_sps > rs.effective_sps + 3000u) || rs.applied_hz != last_applied_hz) {
         last_sps = rs.effective_sps;
         last_applied_hz = rs.applied_hz;
         ++g_tuner_rev;

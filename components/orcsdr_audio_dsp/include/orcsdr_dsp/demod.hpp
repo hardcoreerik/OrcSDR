@@ -55,8 +55,16 @@ class Demod {
     bool push(float x, float* out);
   };
 
+  size_t stage_b(float ai, float aq, float* out, size_t room);  // one 240 kS/s sample in, 0 or 1 audio sample out
+
   Mode mode_ = Mode::wfm;
-  ComplexFir stage_a_;       // 960k -> 240k, 100 kHz
+  // Stage A runs on whole blocks: 33 symmetric taps, 960k -> 240k, 100 kHz. The block form keeps the
+  // samples contiguous and halves the multiplies (the taps are symmetric), which matters at 960 kS/s.
+  static constexpr size_t kATaps = 33, kChunk = 2048;
+  float a_taps_[kATaps] = {};
+  float a_hist_i_[kATaps - 1] = {}, a_hist_q_[kATaps - 1] = {};
+  unsigned a_phase_ = 0;
+  std::vector<float> xi_, xq_;
   ComplexFir stage_b_nb_;    // 240k -> 48k, narrow-band modes
   RealFir stage_b_wfm_;      // 240k -> 48k, 15 kHz audio after the discriminator
   float prev_i_ = 0, prev_q_ = 0;      // discriminator memory

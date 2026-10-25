@@ -5,6 +5,7 @@
 #include <cstring>
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/stream_buffer.h"
 #include "freertos/task.h"
@@ -30,6 +31,7 @@ std::atomic<bool> g_sound{true};
 std::atomic<uint32_t> g_blocks{0}, g_dropped{0}, g_underruns{0};
 std::atomic<uint32_t> g_tone_hz{0}, g_tone_frames{0};
 std::atomic<float> g_fill{0.0f}, g_ppm{0.0f};
+std::atomic<uint32_t> g_demod_us{0}, g_write_us{0};  // smoothed time per block
 bool g_running = false;
 
 void iq_sink(const uint8_t* iq, size_t bytes) {
@@ -111,7 +113,9 @@ void task(void*) {
     g_fill.store(fill);
 
     float* demodulated = mono;  // heap buffer; a 8 KB array would overflow the task stack
+    const int64_t t_demod = esp_timer_get_time();
     const size_t n = demod.process(iq, got & ~static_cast<size_t>(1), demodulated, 2048);
+    g_demod_us.store((g_demod_us.load() * 15 + static_cast<uint32_t>(esp_timer_get_time() - t_demod)) / 16);
     const bool active = g_mode_supported.load() && g_sound.load();
     pending.insert(pending.end(), demodulated, demodulated + n);
 
@@ -181,6 +185,7 @@ Status status() {
   s.underruns = g_underruns.load();
   s.buffer_fill = g_fill.load();
   s.resample_ppm = g_ppm.load();
+  s.demod_us = g_demod_us.load();
   return s;
 }
 }  // namespace audio_service

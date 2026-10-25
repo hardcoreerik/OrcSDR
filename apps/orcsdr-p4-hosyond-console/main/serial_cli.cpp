@@ -244,9 +244,9 @@ void cmd_usb_guard(char* args) {
 void cmd_audio(char* args) {
   if (std::strcmp(args, "STATUS") == 0) {
     const auto a = audio_service::status();
-    std::printf("RTL_AUDIO_STATUS running=%d muted=%d volume=%u blocks=%u dropped=%u underruns=%u fill=%.2f ppm=%.0f\n",
+    std::printf("RTL_AUDIO_STATUS running=%d muted=%d volume=%u blocks=%u dropped=%u underruns=%u fill=%.2f ppm=%.0f demod_us=%u\n",
                 a.running, a.muted, unsigned(a.volume), unsigned(a.blocks), unsigned(a.dropped_blocks),
-                unsigned(a.underruns), double(a.buffer_fill), double(a.resample_ppm));
+                unsigned(a.underruns), double(a.buffer_fill), double(a.resample_ppm), unsigned(a.demod_us));
     return;
   }
   if (std::strncmp(args, "TONE ", 5) == 0) {

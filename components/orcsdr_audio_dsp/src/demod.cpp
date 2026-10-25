@@ -94,7 +94,10 @@ bool Demod::RealFir::push(float x, float* out) {
 }
 
 Demod::Demod() {
-  stage_a_.init(lowpass(33, 100000.0f / kInputRate), 4);
+  const std::vector<float> a = lowpass(kATaps, 100000.0f / kInputRate);
+  std::copy(a.begin(), a.end(), a_taps_);
+  xi_.assign(kATaps - 1 + kChunk, 0.0f);
+  xq_.assign(kATaps - 1 + kChunk, 0.0f);
   stage_b_nb_.init(lowpass(65, 7500.0f / 240000.0f), 5);
   stage_b_wfm_.init(lowpass(65, 15000.0f / 240000.0f), 5);
 }
@@ -106,7 +109,9 @@ void Demod::set_mode(Mode mode) {
 }
 
 void Demod::reset() {
-  stage_a_.reset();
+  std::fill(a_hist_i_, a_hist_i_ + kATaps - 1, 0.0f);
+  std::fill(a_hist_q_, a_hist_q_ + kATaps - 1, 0.0f);
+  a_phase_ = 0;
   stage_b_nb_.reset();
   stage_b_wfm_.reset();
   prev_i_ = prev_q_ = deemph_ = dc_ = nfm_lp_ = 0;
@@ -115,44 +120,83 @@ void Demod::reset() {
 
 size_t Demod::process(const uint8_t* iq, size_t bytes, float* out, size_t capacity) {
   constexpr float kScale = 1.0f / 127.5f;
-  constexpr float kWfmGain = 240000.0f / (2 * kPi * 75000.0f);   // +/-75 kHz deviation -> +/-1
-  constexpr float kNfmGain = 48000.0f / (2 * kPi * 5000.0f);     // +/-5 kHz deviation -> +/-1
-  const float deemph_alpha = 1.0f - std::exp(-1.0f / (48000.0f * 75e-6f));
   size_t written = 0;
-  for (size_t s = 0; s + 1 < bytes; s += 2) {
-    float ai, aq;
-    if (!stage_a_.push((iq[s] - 127.5f) * kScale, (iq[s + 1] - 127.5f) * kScale, &ai, &aq)) continue;
-    if (mode_ == Mode::wfm) {
-      // Discriminator at 240 kS/s: phase advance between consecutive samples.
-      const float re = ai * prev_i_ + aq * prev_q_;
-      const float im = aq * prev_i_ - ai * prev_q_;
-      prev_i_ = ai;
-      prev_q_ = aq;
-      float audio;
-      if (!stage_b_wfm_.push(fast_atan2(im, re) * kWfmGain, &audio)) continue;
-      deemph_ += deemph_alpha * (audio - deemph_);
-      if (written < capacity) out[written++] = std::clamp(deemph_, -1.0f, 1.0f);
-      continue;
+  constexpr size_t kH = kATaps - 1;
+  size_t pairs_left = bytes / 2;
+  const uint8_t* src = iq;
+  while (pairs_left) {
+    const size_t n = std::min(pairs_left, kChunk);
+    pairs_left -= n;
+    float* xi = xi_.data();
+    float* xq = xq_.data();
+    std::copy(a_hist_i_, a_hist_i_ + kH, xi);
+    std::copy(a_hist_q_, a_hist_q_ + kH, xq);
+    for (size_t k = 0; k < n; ++k) {
+      xi[kH + k] = (src[2 * k] - 127.5f) * kScale;
+      xq[kH + k] = (src[2 * k + 1] - 127.5f) * kScale;
     }
-    float bi, bq;
-    if (!stage_b_nb_.push(ai, aq, &bi, &bq)) continue;
-    float audio;
-    if (mode_ == Mode::nfm) {
-      const float re = bi * prev_i_ + bq * prev_q_;
-      const float im = bq * prev_i_ - bi * prev_q_;
-      prev_i_ = bi;
-      prev_q_ = bq;
-      nfm_lp_ += 0.6f * (fast_atan2(im, re) * kNfmGain - nfm_lp_);  // gentle smoothing of the hiss
-      audio = nfm_lp_;
-    } else {
-      const float env = std::sqrt(bi * bi + bq * bq);
-      dc_ += 0.0005f * (env - dc_);        // carrier level
-      level_ += 0.0002f * (dc_ - level_);  // slow AGC reference
-      audio = (env - dc_) / std::max(level_, 0.02f) * 0.5f;
+    src += 2 * n;
+    const size_t first = 3 - a_phase_;  // index of the first output in this chunk
+    for (size_t p = first; p < n; p += 4) {
+      const float* wi = xi + p;  // window of 33 samples ending at sample p of the chunk
+      const float* wq = xq + p;
+      float si0 = a_taps_[16] * wi[16], sq0 = a_taps_[16] * wq[16], si1 = 0, sq1 = 0, si2 = 0, sq2 = 0, si3 = 0, sq3 = 0;
+      for (size_t k = 0; k < 16; k += 4) {
+        si0 += a_taps_[k] * (wi[k] + wi[32 - k]);
+        sq0 += a_taps_[k] * (wq[k] + wq[32 - k]);
+        si1 += a_taps_[k + 1] * (wi[k + 1] + wi[31 - k]);
+        sq1 += a_taps_[k + 1] * (wq[k + 1] + wq[31 - k]);
+        si2 += a_taps_[k + 2] * (wi[k + 2] + wi[30 - k]);
+        sq2 += a_taps_[k + 2] * (wq[k + 2] + wq[30 - k]);
+        si3 += a_taps_[k + 3] * (wi[k + 3] + wi[29 - k]);
+        sq3 += a_taps_[k + 3] * (wq[k + 3] + wq[29 - k]);
+      }
+      const float ai = (si0 + si1) + (si2 + si3), aq = (sq0 + sq1) + (sq2 + sq3);
+      written += stage_b(ai, aq, out + written, written < capacity ? capacity - written : 0);
     }
-    if (written < capacity) out[written++] = std::clamp(audio, -1.0f, 1.0f);
+    a_phase_ = static_cast<unsigned>((a_phase_ + n) % 4);
+    std::copy(xi + n, xi + n + kH, a_hist_i_);
+    std::copy(xq + n, xq + n + kH, a_hist_q_);
   }
   return written;
+}
+
+size_t Demod::stage_b(float ai, float aq, float* out, size_t room) {
+  constexpr float kWfmGain = 240000.0f / (2 * kPi * 75000.0f);   // +/-75 kHz deviation -> +/-1
+  constexpr float kNfmGain = 48000.0f / (2 * kPi * 5000.0f);     // +/-5 kHz deviation -> +/-1
+  static const float deemph_alpha = 1.0f - std::exp(-1.0f / (48000.0f * 75e-6f));  // computed once
+  if (mode_ == Mode::wfm) {
+    // Discriminator at 240 kS/s: phase advance between consecutive samples.
+    const float re = ai * prev_i_ + aq * prev_q_;
+    const float im = aq * prev_i_ - ai * prev_q_;
+    prev_i_ = ai;
+    prev_q_ = aq;
+    float audio;
+    if (!stage_b_wfm_.push(fast_atan2(im, re) * kWfmGain, &audio)) return 0;
+    deemph_ += deemph_alpha * (audio - deemph_);
+    if (!room) return 0;
+    out[0] = std::clamp(deemph_, -1.0f, 1.0f);
+    return 1;
+  }
+  float bi, bq;
+  if (!stage_b_nb_.push(ai, aq, &bi, &bq)) return 0;
+  float audio;
+  if (mode_ == Mode::nfm) {
+    const float re = bi * prev_i_ + bq * prev_q_;
+    const float im = bq * prev_i_ - bi * prev_q_;
+    prev_i_ = bi;
+    prev_q_ = bq;
+    nfm_lp_ += 0.6f * (fast_atan2(im, re) * kNfmGain - nfm_lp_);  // gentle smoothing of the hiss
+    audio = nfm_lp_;
+  } else {
+    const float env = std::sqrt(bi * bi + bq * bq);
+    dc_ += 0.0005f * (env - dc_);        // carrier level
+    level_ += 0.0002f * (dc_ - level_);  // slow AGC reference
+    audio = (env - dc_) / std::max(level_, 0.02f) * 0.5f;
+  }
+  if (!room) return 0;
+  out[0] = std::clamp(audio, -1.0f, 1.0f);
+  return 1;
 }
 
 }  // namespace orcsdr::dsp
