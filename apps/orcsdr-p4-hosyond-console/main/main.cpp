@@ -13,6 +13,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include "audio_service.hpp"
 #include "home_app.hpp"
 #include "home_v3_ui.hpp"
 #include "hosyond_board.h"
@@ -40,6 +41,7 @@ extern "C" void app_main(void) {
   QueueHandle_t commands = xQueueCreate(4, sizeof(orcsdr::waveshare4b::home_v3::Command));
   if (!commands || !orcsdr::radio::start(commands)) ESP_LOGE(TAG, "receiver task failed");
 
+  audio_service::start();  // optional: the receiver and UI run without sound if the codec fails
   if (!home_app::start(&M5.Display)) ESP_LOGE(TAG, "home UI task failed");
   ESP_LOGI(TAG, "boot complete");
 }

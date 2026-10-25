@@ -24,6 +24,7 @@ QueueHandle_t queue = nullptr;
 std::atomic<uint32_t> requested{kDefaultHz}, applied{0}, sps{0}, drops{0}, step_idx{2};
 std::atomic<int> state{0};  // 0 no receiver, 1 scanning, 2 streaming, 3 error
 std::atomic<uint32_t> tune_request{0};
+IqSink g_sink = nullptr;
 std::atomic<float> dbfs{-120.0f};
 portMUX_TYPE bands_lock = portMUX_INITIALIZER_UNLOCKED;
 uint8_t bands[kFftSize]{};
@@ -138,6 +139,7 @@ void task(void*) {
     }
     size_t n = 0;
     const esp_err_t e = esp_rtl_sdr_read(sdr, iq, kIqBytes, 40, &n);
+    if (e == ESP_OK && n && g_sink) g_sink(iq, n);
     if (e == ESP_OK && n >= 2048 && now - last_fft > 150000) {
       // Level of the block as RMS of the centred 8-bit samples, in dBFS.
       double acc = 0.0;
@@ -184,6 +186,7 @@ bool start(QueueHandle_t commands) {
   return xTaskCreatePinnedToCore(task, "radio", 8192, nullptr, 5, nullptr, 1) == pdPASS;
 }
 
+void set_iq_sink(IqSink sink) { g_sink = sink; }
 void tune_to(uint32_t frequency_hz) { tune_request = frequency_hz; }
 float level_dbfs() { return state.load() == 2 ? dbfs.load() : -120.0f; }
 uint32_t sample_rate() { return kRate; }

@@ -1,4 +1,5 @@
 #include "home_app.hpp"
+#include "audio_service.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -250,6 +251,16 @@ void ui_task(void*) {
       }
       fill_snapshot();
       home::update(g_snapshot);
+      {
+        // Receiver audio follows Home: WFM/NFM/AM are demodulated; USB/LSB and IQ-only bands are silent for now.
+        const auto d = active_demod(current_profile());
+        const bool ok = d == home_vfo::Demod::wfm || d == home_vfo::Demod::nfm || d == home_vfo::Demod::am;
+        audio_service::set_mode(d == home_vfo::Demod::am ? orcsdr::dsp::Mode::am
+                                : d == home_vfo::Demod::nfm ? orcsdr::dsp::Mode::nfm
+                                                            : orcsdr::dsp::Mode::wfm, ok);
+        audio_service::set_volume(g_volume);
+        audio_service::set_sound(g_sound);
+      }
     }
     if (radio::take_bins(bins)) feed_spectrum(bins);
 

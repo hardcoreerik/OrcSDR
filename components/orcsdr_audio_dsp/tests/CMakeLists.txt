@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.16)
+project(orcsdr_dsp_host_tests LANGUAGES CXX)
+add_executable(demod_test demod_test.cpp ../src/demod.cpp)
+target_include_directories(demod_test PRIVATE ../include)
+target_compile_features(demod_test PRIVATE cxx_std_17)
+target_compile_options(demod_test PRIVATE -UNDEBUG -O2 -Wall -Wextra -Wpedantic -Werror)
+enable_testing()
+add_test(NAME demod COMMAND demod_test)

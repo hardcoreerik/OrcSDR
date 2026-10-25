@@ -368,6 +368,11 @@ esp_err_t hosyond_board_flip(const hosyond_display_t *d, int fb_index)
     return esp_lcd_panel_draw_bitmap(s_panel, 0, 0, d->width, 1, d->fb[fb_index]);
 }
 
+i2c_master_bus_handle_t hosyond_board_i2c(void)
+{
+    return s_i2c;
+}
+
 esp_err_t hosyond_board_touch_start(void)
 {
     if (!s_i2c) {

@@ -7,9 +7,12 @@
 #include "driver/uart.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_rtl_sdr.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "audio_service.hpp"
 #include "home_app.hpp"
 #include "mbedtls/md.h"
 #include "nvs.h"
@@ -145,7 +148,7 @@ void cmd_help() {
   std::printf("RTL_FREQ | RTL_FREQ <HZ>                         - query / hot retune (auth)\n");
   std::printf("RTL_TUNE <FM|AM|WX|CB|P25|LORA|BROWSE> <HZ>      - retune (auth)\n");
   std::printf("RTL_SIGNAL                                      - signal level snapshot\n");
-  std::printf("RTL_VOLUME | RTL_VOLUME <0-32>                   - query / set (auth); no audio output yet\n");
+  std::printf("RTL_VOLUME | RTL_VOLUME <0-32>                   - query / set (auth)\n");
   std::printf("RTL_UI STATUS | RTL_UI OPEN <HOME> | RTL_UI TAP <x 0-1279> <y 0-719>  - UI (OPEN/TAP need auth)\n");
   std::printf("RTL_SCREEN_STATUS / RTL_MEM STATUS               - diagnostics\n");
   std::printf("FT8 SNAP                                        - screenshot as PNG over serial (auth)\n");
@@ -222,6 +225,46 @@ void cmd_volume(const char* arg) {
   std::printf("RTL_VOLUME_OK volume=%ld\n", v);
 }
 
+void cmd_usb_guard(char* args) {
+  if (std::strcmp(args, "STATUS") == 0) {
+    std::printf("RTL_USB_GUARD_STATUS safe_mode=%d\n", esp_rtl_sdr_usb_safe_mode_active());
+    return;
+  }
+  if (std::strcmp(args, "RESET") == 0) {
+    if (!authed()) {
+      std::printf("RTL_USB_GUARD_ERROR auth_required\n");
+      return;
+    }
+    std::printf("RTL_USB_GUARD_RESET %s; restarting\n", esp_err_to_name(esp_rtl_sdr_usb_fault_guard_reset()));
+    vTaskDelay(pdMS_TO_TICKS(200));
+    esp_restart();
+  }
+}
+
+void cmd_audio(char* args) {
+  if (std::strcmp(args, "STATUS") == 0) {
+    const auto a = audio_service::status();
+    std::printf("RTL_AUDIO_STATUS running=%d muted=%d volume=%u blocks=%u dropped=%u underruns=%u fill=%.2f ppm=%.0f\n",
+                a.running, a.muted, unsigned(a.volume), unsigned(a.blocks), unsigned(a.dropped_blocks),
+                unsigned(a.underruns), double(a.buffer_fill), double(a.resample_ppm));
+    return;
+  }
+  if (std::strncmp(args, "TONE ", 5) == 0) {
+    if (!authed()) {
+      std::printf("RTL_AUDIO_ERROR auth_required\n");
+      return;
+    }
+    unsigned hz = 0, ms = 0;
+    if (std::sscanf(args + 5, "%u %u", &hz, &ms) != 2 || !audio_service::play_tone(hz, ms)) {
+      std::printf("RTL_AUDIO_INVALID use RTL_AUDIO TONE <50-8000 Hz> <1-5000 ms>\n");
+      return;
+    }
+    std::printf("RTL_AUDIO_TONE_OK hz=%u ms=%u\n", hz, ms);
+    return;
+  }
+  std::printf("RTL_AUDIO_INVALID use RTL_AUDIO STATUS | RTL_AUDIO TONE <hz> <ms>\n");
+}
+
 void cmd_ui(char* args) {
   if (std::strcmp(args, "STATUS") == 0) {
     const home_app::Status st = home_app::status();
@@ -295,6 +338,8 @@ void handle_line(char* line) {
   if (std::strcmp(line, "RTL_SIGNAL") == 0) return cmd_signal();
   if (std::strcmp(line, "RTL_VOLUME") == 0) return cmd_volume(nullptr);
   if (std::strncmp(line, "RTL_VOLUME ", 11) == 0) return cmd_volume(line + 11);
+  if (std::strncmp(line, "RTL_USB_GUARD ", 14) == 0) return cmd_usb_guard(line + 14);
+  if (std::strncmp(line, "RTL_AUDIO ", 10) == 0) return cmd_audio(line + 10);
   if (std::strncmp(line, "RTL_UI ", 7) == 0) return cmd_ui(line + 7);
   if (std::strcmp(line, "RTL_SCREEN_STATUS") == 0) {
     std::printf("RTL_SCREEN_STATUS active=%s return=%s transitions=0 rejected_draws=0 visible_updates=%u last_transition_ms=0\n",

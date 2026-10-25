@@ -48,6 +48,19 @@ esp_err_t hosyond_board_flip(const hosyond_display_t *d, int fb_index);
 /* Start the polled touch task (see ft5x06_touch.h for ft5x06_get()). */
 esp_err_t hosyond_board_touch_start(void);
 
+/* ---- Speaker output: ES8311 codec + NS4150B amplifier on the onboard speaker connector ----------
+ * Pins (Espressif espp BSP for this kit): I2S MCLK 13, BCLK 12, LRCK 10, DOUT 9 (to codec DSDIN),
+ * DIN 11; amplifier enable GPIO 53; codec on the shared I2C bus at 0x18. Output only for now.
+ * Stereo 16-bit interleaved. The default volume is deliberately low. */
+esp_err_t hosyond_audio_start(uint32_t sample_rate_hz);
+bool hosyond_audio_running(void);
+/* Blocks until the frames are queued to the I2S DMA. Returns frames written (0 on error). */
+int hosyond_audio_write(const int16_t *interleaved_stereo, int frames);
+esp_err_t hosyond_audio_set_volume(int volume_0_100);
+esp_err_t hosyond_audio_mute(bool mute);
+/* The board's shared I2C bus (panel controller, touch, audio codec). Valid after hosyond_board_start(). */
+i2c_master_bus_handle_t hosyond_board_i2c(void);
+
 #ifdef __cplusplus
 }
 #endif
