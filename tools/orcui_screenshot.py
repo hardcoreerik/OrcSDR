@@ -17,7 +17,7 @@ import zlib
 import serial
 
 
-def capture(port: str, out_path: str, view: str = "current", timeout: float = 30.0, baud: int = 115200):
+def capture_once(port: str, out_path: str, view: str = "current", timeout: float = 30.0, baud: int = 115200):
     token = os.urandom(8).hex()
     s = serial.Serial()
     s.port, s.baudrate, s.timeout = port, baud, 0.5
@@ -60,6 +60,18 @@ def capture(port: str, out_path: str, view: str = "current", timeout: float = 30
         return info
     finally:
         s.close()
+
+
+def capture(port: str, out_path: str, view: str = "current", timeout: float = 30.0, baud: int = 115200, attempts: int = 3):
+    """The first request after another serial session closes is sometimes lost; retry a few times."""
+    last = None
+    for _ in range(attempts):
+        try:
+            return capture_once(port, out_path, view, timeout, baud)
+        except RuntimeError as e:
+            last = e
+            time.sleep(0.5)
+    raise last
 
 
 if __name__ == "__main__":

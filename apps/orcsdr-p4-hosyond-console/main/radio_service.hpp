@@ -10,6 +10,12 @@
 
 namespace orcsdr::radio {
 bool start(QueueHandle_t commands);
+// Tunes to an absolute frequency (applied by the receiver task; retunes live if streaming).
+void tune_to(uint32_t frequency_hz);
+// RMS level of the latest IQ block, dBFS (-120 when there is no signal path yet).
+float level_dbfs();
+// Sample rate of the IQ stream in samples per second.
+uint32_t sample_rate();
 waveshare4b::home_v3::Snapshot snapshot();
 // Copies the latest 256-bin relative-intensity FFT; returns true if it is new since the last call.
 bool take_bins(uint8_t out[256]);

@@ -1,5 +1,6 @@
 #include "radio_service.hpp"
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include "esp_err.h"
@@ -22,6 +23,8 @@ constexpr size_t kIqBytes = 16384;
 QueueHandle_t queue = nullptr;
 std::atomic<uint32_t> requested{kDefaultHz}, applied{0}, sps{0}, drops{0}, step_idx{2};
 std::atomic<int> state{0};  // 0 no receiver, 1 scanning, 2 streaming, 3 error
+std::atomic<uint32_t> tune_request{0};
+std::atomic<float> dbfs{-120.0f};
 portMUX_TYPE bands_lock = portMUX_INITIALIZER_UNLOCKED;
 uint8_t bands[kFftSize]{};
 uint32_t band_seq = 0, taken_seq = 0;
@@ -52,6 +55,15 @@ void task(void*) {
   bool streaming = false;
   int64_t last_scan = 0, last_fft = 0, last_metrics = 0;
   for (;;) {
+    const uint32_t absolute = tune_request.exchange(0);
+    if (absolute) {
+      requested = absolute;
+      ESP_LOGI(TAG, "TUNE requested_hz=%u streaming=%d", unsigned(absolute), int(streaming));
+      if (streaming) {
+        const esp_err_t e = esp_rtl_sdr_retune_hz(sdr, absolute);
+        if (e != ESP_OK) ESP_LOGE(TAG, "retune failed: %s", esp_rtl_sdr_err_to_name(e));
+      }
+    }
     home_v3::Command cmd;
     while (xQueueReceive(queue, &cmd, 0) == pdTRUE) {
       if (cmd == home_v3::Command::Step) {
@@ -126,6 +138,17 @@ void task(void*) {
     }
     size_t n = 0;
     const esp_err_t e = esp_rtl_sdr_read(sdr, iq, kIqBytes, 40, &n);
+    if (e == ESP_OK && n >= 2048 && now - last_fft > 150000) {
+      // Level of the block as RMS of the centred 8-bit samples, in dBFS.
+      double acc = 0.0;
+      const size_t count = n < 4096 ? n : 4096;
+      for (size_t i = 0; i < count; ++i) {
+        const double v = (static_cast<double>(iq[i]) - 127.5) / 127.5;
+        acc += v * v;
+      }
+      const double rms = std::sqrt(acc / static_cast<double>(count));
+      dbfs = rms > 1e-6 ? static_cast<float>(20.0 * std::log10(rms)) : -120.0f;
+    }
     if (e == ESP_OK && n >= kFftSize * 2 && now - last_fft > 150000) {
       Spectrum view = spectrum_from_cu8(iq, n);
       if (view.real_samples) {
@@ -160,6 +183,10 @@ bool start(QueueHandle_t commands) {
            unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
   return xTaskCreatePinnedToCore(task, "radio", 8192, nullptr, 5, nullptr, 1) == pdPASS;
 }
+
+void tune_to(uint32_t frequency_hz) { tune_request = frequency_hz; }
+float level_dbfs() { return state.load() == 2 ? dbfs.load() : -120.0f; }
+uint32_t sample_rate() { return kRate; }
 
 waveshare4b::home_v3::Snapshot snapshot() {
   return {requested.load(), applied.load(), sps.load(), drops.load(), kSteps[step_idx.load()],

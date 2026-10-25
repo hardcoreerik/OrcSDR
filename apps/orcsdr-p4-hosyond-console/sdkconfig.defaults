@@ -29,7 +29,7 @@ CONFIG_ESP_BROWNOUT_DET=n
 # USB host for the RTL-SDR (single owner: esp-rtl-sdr).
 CONFIG_USB_HOST_HUBS_SUPPORTED=y
 
-# LVGL 9.3: FreeRTOS locking, RGB888 direct-mode display, serial PNG screenshots.
+# LVGL 9.3 is only used by the optional pixel-font component; the UI itself is the scaled M5GFX renderer.
 CONFIG_LV_OS_FREERTOS=y
 CONFIG_LV_DEF_REFR_PERIOD=15
 CONFIG_LV_USE_SNAPSHOT=y
