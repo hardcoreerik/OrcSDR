@@ -193,7 +193,7 @@ void ui_task(void*) {
   int64_t last_snapshot_us = 0, last_log_us = 0;
   int tap_frames = 0, tap_x = 0, tap_y = 0;  // injected tap (design coordinates), held ~150 ms
   int last_state = -1, last_level = 0;
-  uint32_t last_sps = 0;
+  uint32_t last_sps = 0, last_applied_hz = 0;
   uint8_t bins[256];
   for (;;) {
     // Requests from other tasks (the serial interpreter).
@@ -244,8 +244,9 @@ void ui_task(void*) {
         last_level = level;
         ++g_rev;
       }
-      if (rs.effective_sps / 1000u != last_sps / 1000u || rs.applied_hz != g_snapshot.frequency_hz) {
+      if (rs.effective_sps / 1000u != last_sps / 1000u || rs.applied_hz != last_applied_hz) {
         last_sps = rs.effective_sps;
+        last_applied_hz = rs.applied_hz;
         ++g_tuner_rev;
         ++g_rev;
       }
@@ -265,6 +266,7 @@ void ui_task(void*) {
     if (radio::take_bins(bins)) feed_spectrum(bins);
 
     const int rows = present_frame();
+    if (rows > 300) ESP_LOGW(TAG, "large repaint: %d rows, snapshot rev %u/%u/%u/%u", rows, unsigned(g_rev), unsigned(g_tuner_rev), unsigned(g_status_rev), unsigned(g_audio_rev));
     if (rows) {
       ++g_visible_updates;
       if (now - last_log_us > 5000000) {
