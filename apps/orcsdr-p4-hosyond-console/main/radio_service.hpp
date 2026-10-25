@@ -20,6 +20,8 @@ void tune_to(uint32_t frequency_hz);
 float level_dbfs();
 // Sample rate of the IQ stream in samples per second.
 uint32_t sample_rate();
+// Requests 960 kS/s (rate <= 1 MS/s) or 2.4 MS/s; the stream restarts briefly.
+void set_sample_rate(uint32_t rate);
 waveshare4b::home_v3::Snapshot snapshot();
 // Copies the latest 256-bin relative-intensity FFT; returns true if it is new since the last call.
 bool take_bins(uint8_t out[256]);

@@ -149,5 +149,34 @@ int main() {
     for (float v : audio) CHECK(v >= -1.0f && v <= 1.0f);
   }
 
+  // 2.4 MS/s input: same audio out, with a strong neighbour 600 kHz away rejected.
+  {
+    constexpr double kFs2 = 2400000.0;
+    Demod d;
+    d.set_input_rate(2400000);
+    d.set_mode(Mode::wfm);
+    const size_t n = static_cast<size_t>(1.5 * kFs2);
+    std::vector<uint8_t> iq(2 * n);
+    std::mt19937 rng(11);
+    std::normal_distribution<double> noise(0.0, 0.01);
+    for (size_t k = 0; k < n; ++k) {
+      const double t = k / kFs2;
+      const double ph = -50.0 * std::cos(2 * kPi * 1000 * t), ph2 = 2 * kPi * 600000.0 * t;
+      iq[2 * k] = q8(0.4 * std::cos(ph) + 0.35 * std::cos(ph2) + noise(rng));
+      iq[2 * k + 1] = q8(0.4 * std::sin(ph) + 0.35 * std::sin(ph2) + noise(rng));
+    }
+    std::vector<float> out(n / 40 + 64);
+    size_t total = 0;
+    for (size_t off = 0; off < iq.size(); off += 16384) {
+      const size_t len = std::min<size_t>(16384, iq.size() - off);
+      total += d.process(iq.data() + off, len, out.data() + total, out.size() - total);
+    }
+    out.resize(total);
+    const Tone t = analyse(out, 1000.0);
+    std::printf("WFM at 2.4 MS/s with +600 kHz interferer: amplitude %.3f, SNR %.1f dB, %zu samples\n", t.amplitude, t.snr_db, total);
+    CHECK(t.amplitude > 0.5 && t.snr_db > 18.0);
+    CHECK(total > 71000 && total < 73000);  // 1.5 s at 48 kHz
+  }
+
   std::puts("PASS all");
 }

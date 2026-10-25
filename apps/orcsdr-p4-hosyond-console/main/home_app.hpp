@@ -4,6 +4,7 @@
 // spectrum, and presents the frame. The Tab5's main.cpp does this job on the Tab5; this is the
 // P4 equivalent, kept small and separate (nothing here belongs in a shared dashboard).
 #include <cstdint>
+#include "dashboard_registry.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "orcsdr_gfx/scaled_gfx.hpp"
@@ -29,6 +30,11 @@ Status status();
 // Requests from other tasks; applied by the UI task on its next loop.
 void request_frequency(uint32_t hz);
 void request_volume(uint8_t volume_0_255);
+void request_sound(bool enabled);
+void request_span(uint32_t span_hz);        // clamped to what the IQ stream can show
+// Screen switching (dashboards call these from their adapters; applied on the UI task's next loop).
+void request_open(orcsdr::dashboards::Id id);
+void request_home();
 // A tap at full-screen design coordinates (0-1279, 0-719), routed exactly like a finger, held ~150 ms.
 void inject_tap(int design_x, int design_y);
 // The screen name for RTL_UI STATUS ("home"). Returns false for a screen this target does not have.

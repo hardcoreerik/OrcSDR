@@ -2,6 +2,7 @@
 #include "audio_service.hpp"
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -17,6 +18,7 @@
 #include "home_vfo.hpp"
 #include "present.hpp"
 #include "radio_service.hpp"
+#include "screens.hpp"
 #include "waterfall_style.hpp"
 
 using namespace orcsdr;
@@ -31,6 +33,10 @@ std::atomic<int> g_tap_x{-1}, g_tap_y{-1};  // pending injected tap, design coor
 std::atomic<uint32_t> g_request_hz{0};       // frequency requested by another task
 std::atomic<int> g_request_volume{-1};       // volume (0-255) requested by another task
 uint32_t g_visible_updates = 0;
+std::atomic<int> g_request_sound{-1};         // 0 / 1 = set, -1 = none
+std::atomic<uint32_t> g_request_span{0};
+std::atomic<int> g_request_screen{-2};        // -2 = none, -1 = home, otherwise a dashboards::Id
+const screens::Screen* g_active = nullptr;     // the dashboard on screen (null = Home); UI task only
 
 // ---- VFO state (what the Tab5's main.cpp keeps for Home) ----
 home_vfo::Memory g_vfo;
@@ -133,7 +139,7 @@ void handle_action(const home::Action& a) {
     case home::ActionKind::span_down: {
       // The IQ stream is 0.96 MS/s, so the widest span is the stream itself; narrower spans zoom in.
       const uint32_t next = home::step_span(g_span_hz, a.kind == home::ActionKind::span_up ? 1 : -1);
-      g_span_hz = std::min(next, radio::sample_rate());
+      g_span_hz = std::min<uint32_t>(next, 2400000u);  // above 0.96 MHz the stream switches to 2.4 MS/s
       ++g_tuner_rev;
       ++g_rev;
       break;
@@ -164,7 +170,8 @@ void handle_action(const home::Action& a) {
       ++g_rev;
       break;
     case home::ActionKind::open_dashboard:
-      ESP_LOGI(TAG, "dashboard %u is not available on this target yet", unsigned(a.dashboard));
+      if (screens::find(a.dashboard)) g_request_screen = static_cast<int>(a.dashboard);
+      else ESP_LOGI(TAG, "dashboard %u is not available on this target yet", unsigned(a.dashboard));
       break;
     case home::ActionKind::none:
       break;
@@ -181,7 +188,12 @@ void feed_spectrum(const uint8_t* bins) {
   for (size_t i = 0; i < kBins; ++i) levels[i] = bins[i] * 0.25f + 12.0f;  // the FFT bytes are (dB - 12) * 4
   const uint32_t rate = radio::sample_rate();
   const size_t visible = std::clamp<size_t>(static_cast<size_t>(static_cast<uint64_t>(kBins) * g_span_hz / rate), 16, kBins);
-  home::draw_spectrum(levels, (kBins - visible) / 2, visible, 12.0f);
+  const size_t first = (kBins - visible) / 2;
+  if (g_active) {
+    if (g_active->spectrum) g_active->spectrum(levels, first, visible, 12.0f);
+    return;
+  }
+  home::draw_spectrum(levels, first, visible, 12.0f);
 }
 
 void ui_task(void*) {
@@ -199,6 +211,38 @@ void ui_task(void*) {
     // Requests from other tasks (the serial interpreter).
     const uint32_t wanted_hz = g_request_hz.exchange(0);
     if (wanted_hz) retune(wanted_hz);
+    const int wanted_sound = g_request_sound.exchange(-1);
+    if (wanted_sound >= 0) {
+      g_sound = wanted_sound != 0;
+      ++g_audio_rev;
+      ++g_rev;
+    }
+    const uint32_t wanted_span = g_request_span.exchange(0);
+    if (wanted_span) {
+      g_span_hz = std::clamp<uint32_t>(wanted_span, 30000, g_active ? 960000u : 2400000u);
+      ++g_tuner_rev;
+      ++g_rev;
+    }
+    const int wanted_screen = g_request_screen.exchange(-2);
+    if (wanted_screen != -2) {
+      if (g_active) g_active->leave();
+      else home::leave();
+      g_active = wanted_screen >= 0 ? screens::find(static_cast<dashboards::Id>(wanted_screen)) : nullptr;
+      M5.Display.fillScreen(0x0000);
+      if (g_active) {
+        g_span_hz = std::min<uint32_t>(g_span_hz, 960000);  // dashboards run at 0.96 MS/s
+        ESP_LOGI(TAG, "opening dashboard %s", g_active->name);
+        if (dashboards::find(g_active->id)) dashboards::record_open(g_active->id);
+        g_active->enter();
+      } else {
+        fill_snapshot();
+        home::enter(g_snapshot);
+      }
+      was_down = false;
+      tap_frames = 0;
+    }
+    // 2.4 MS/s is only for Home's wide spans (the Tab5 does the same); dashboards run at 0.96.
+    radio::set_sample_rate(!g_active && g_span_hz > 960000 ? 2400000u : 960000u);
     const int wanted_volume = g_request_volume.exchange(-1);
     if (wanted_volume >= 0) {
       g_volume = static_cast<uint8_t>(wanted_volume);
@@ -224,7 +268,10 @@ void ui_task(void*) {
       last_x = tap_x;
       last_y = tap_y;
     }
-    if (down || was_down) {
+    if (g_active) {
+      if (down && g_active->drag) g_active->drag(last_x, last_y);
+      if (!down && was_down) g_active->tap(last_x, last_y);
+    } else if (down || was_down) {
       const home::Action action = home::handle_touch(last_x, last_y, down);
       if (action.kind != home::ActionKind::none) handle_action(action);
     }
@@ -250,8 +297,12 @@ void ui_task(void*) {
         ++g_tuner_rev;
         ++g_rev;
       }
-      fill_snapshot();
-      home::update(g_snapshot);
+      if (g_active) {
+        g_active->tick();
+      } else {
+        fill_snapshot();
+        home::update(g_snapshot);
+      }
       {
         // Receiver audio follows Home: WFM/NFM/AM are demodulated; USB/LSB and IQ-only bands are silent for now.
         const auto d = active_demod(current_profile());
@@ -298,14 +349,34 @@ Status status() {
 
 void request_frequency(uint32_t hz) { g_request_hz = hz; }
 void request_volume(uint8_t volume) { g_request_volume = volume; }
+void request_sound(bool enabled) { g_request_sound = enabled ? 1 : 0; }
+void request_span(uint32_t span_hz) { g_request_span = span_hz; }
+void request_open(dashboards::Id id) { g_request_screen = static_cast<int>(id); }
+void request_home() { g_request_screen = -1; }
 
 void inject_tap(int design_x, int design_y) {
   g_tap_y = design_y;
   g_tap_x = design_x;
 }
 
-bool open_screen(const char* name) { return std::strcmp(name, "HOME") == 0; }
-const char* screen_name() { return "home"; }
+bool open_screen(const char* name) {
+  if (std::strcmp(name, "HOME") == 0) {
+    request_home();
+    return true;
+  }
+  const screens::Screen* s = screens::find_name(name);
+  if (!s) return false;
+  request_open(s->id);
+  return true;
+}
+const char* screen_name() {
+  static char name[16];
+  const screens::Screen* s = g_active;
+  if (!s) return "home";
+  std::snprintf(name, sizeof(name), "%s", s->name);
+  for (char* c = name; *c; ++c) *c = static_cast<char>(std::tolower(static_cast<unsigned char>(*c)));
+  return name;
+}
 
 bool start(gfx::ScaledDisplay* display) {
   g_display = display;

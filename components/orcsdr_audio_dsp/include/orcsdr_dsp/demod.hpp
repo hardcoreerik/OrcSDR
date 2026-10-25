@@ -21,11 +21,14 @@ enum class Mode : uint8_t { wfm, nfm, am };
 
 class Demod {
  public:
-  static constexpr uint32_t kInputRate = 960000;
+  static constexpr uint32_t kInputRate = 960000;   // default; 2.4 MS/s is also supported (set_input_rate)
   static constexpr uint32_t kOutputRate = 48000;
 
   Demod();
   void set_mode(Mode mode);
+  // 960000 or 2400000 (any multiple of 240000 up to 2.4 MS/s works). Resets the filters.
+  void set_input_rate(uint32_t rate);
+  uint32_t input_rate() const { return rate_; }
   Mode mode() const { return mode_; }
   void reset();
 
@@ -60,9 +63,12 @@ class Demod {
   Mode mode_ = Mode::wfm;
   // Stage A runs on whole blocks: 33 symmetric taps, 960k -> 240k, 100 kHz. The block form keeps the
   // samples contiguous and halves the multiplies (the taps are symmetric), which matters at 960 kS/s.
-  static constexpr size_t kATaps = 33, kChunk = 2048;
-  float a_taps_[kATaps] = {};
-  float a_hist_i_[kATaps - 1] = {}, a_hist_q_[kATaps - 1] = {};
+  static constexpr size_t kMaxTaps = 65, kChunk = 2048;
+  uint32_t rate_ = kInputRate;
+  size_t a_ntaps_ = 33;   // 33 at 960 kS/s, 65 at higher rates
+  unsigned a_decim_ = 4;  // rate / 240 kS/s
+  float a_taps_[kMaxTaps] = {};
+  float a_hist_i_[kMaxTaps - 1] = {}, a_hist_q_[kMaxTaps - 1] = {};
   unsigned a_phase_ = 0;
   std::vector<float> xi_, xq_;
   ComplexFir stage_b_nb_;    // 240k -> 48k, narrow-band modes

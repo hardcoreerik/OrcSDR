@@ -94,12 +94,22 @@ bool Demod::RealFir::push(float x, float* out) {
 }
 
 Demod::Demod() {
-  const std::vector<float> a = lowpass(kATaps, 100000.0f / kInputRate);
-  std::copy(a.begin(), a.end(), a_taps_);
-  xi_.assign(kATaps - 1 + kChunk, 0.0f);
-  xq_.assign(kATaps - 1 + kChunk, 0.0f);
+  xi_.assign(kMaxTaps - 1 + kChunk, 0.0f);
+  xq_.assign(kMaxTaps - 1 + kChunk, 0.0f);
+  set_input_rate(kInputRate);
   stage_b_nb_.init(lowpass(65, 7500.0f / 240000.0f), 5);
   stage_b_wfm_.init(lowpass(65, 15000.0f / 240000.0f), 5);
+}
+
+void Demod::set_input_rate(uint32_t rate) {
+  rate = std::max<uint32_t>(240000, std::min<uint32_t>(rate, 2400000));
+  rate_ = rate / 240000 * 240000;
+  a_decim_ = rate_ / 240000;
+  a_ntaps_ = rate_ > 1000000 ? 65 : 33;
+  const std::vector<float> a = lowpass(a_ntaps_, 100000.0f / static_cast<float>(rate_));
+  std::fill(a_taps_, a_taps_ + kMaxTaps, 0.0f);
+  std::copy(a.begin(), a.end(), a_taps_);
+  reset();
 }
 
 void Demod::set_mode(Mode mode) {
@@ -109,8 +119,8 @@ void Demod::set_mode(Mode mode) {
 }
 
 void Demod::reset() {
-  std::fill(a_hist_i_, a_hist_i_ + kATaps - 1, 0.0f);
-  std::fill(a_hist_q_, a_hist_q_ + kATaps - 1, 0.0f);
+  std::fill(a_hist_i_, a_hist_i_ + kMaxTaps - 1, 0.0f);
+  std::fill(a_hist_q_, a_hist_q_ + kMaxTaps - 1, 0.0f);
   a_phase_ = 0;
   stage_b_nb_.reset();
   stage_b_wfm_.reset();
@@ -121,7 +131,9 @@ void Demod::reset() {
 size_t Demod::process(const uint8_t* iq, size_t bytes, float* out, size_t capacity) {
   constexpr float kScale = 1.0f / 127.5f;
   size_t written = 0;
-  constexpr size_t kH = kATaps - 1;
+  const size_t kH = a_ntaps_ - 1;
+  const size_t half = kH / 2;
+  const unsigned decim = a_decim_;
   size_t pairs_left = bytes / 2;
   const uint8_t* src = iq;
   while (pairs_left) {
@@ -136,25 +148,25 @@ size_t Demod::process(const uint8_t* iq, size_t bytes, float* out, size_t capaci
       xq[kH + k] = (src[2 * k + 1] - 127.5f) * kScale;
     }
     src += 2 * n;
-    const size_t first = 3 - a_phase_;  // index of the first output in this chunk
-    for (size_t p = first; p < n; p += 4) {
-      const float* wi = xi + p;  // window of 33 samples ending at sample p of the chunk
+    const size_t first = decim - 1 - a_phase_;  // index of the first output in this chunk
+    for (size_t p = first; p < n; p += decim) {
+      const float* wi = xi + p;  // window of a_ntaps_ samples ending at sample p of the chunk
       const float* wq = xq + p;
-      float si0 = a_taps_[16] * wi[16], sq0 = a_taps_[16] * wq[16], si1 = 0, sq1 = 0, si2 = 0, sq2 = 0, si3 = 0, sq3 = 0;
-      for (size_t k = 0; k < 16; k += 4) {
-        si0 += a_taps_[k] * (wi[k] + wi[32 - k]);
-        sq0 += a_taps_[k] * (wq[k] + wq[32 - k]);
-        si1 += a_taps_[k + 1] * (wi[k + 1] + wi[31 - k]);
-        sq1 += a_taps_[k + 1] * (wq[k + 1] + wq[31 - k]);
-        si2 += a_taps_[k + 2] * (wi[k + 2] + wi[30 - k]);
-        sq2 += a_taps_[k + 2] * (wq[k + 2] + wq[30 - k]);
-        si3 += a_taps_[k + 3] * (wi[k + 3] + wi[29 - k]);
-        sq3 += a_taps_[k + 3] * (wq[k + 3] + wq[29 - k]);
+      float si0 = a_taps_[half] * wi[half], sq0 = a_taps_[half] * wq[half], si1 = 0, sq1 = 0, si2 = 0, sq2 = 0, si3 = 0, sq3 = 0;
+      for (size_t k = 0; k < half; k += 4) {  // half is a multiple of 4 (16 or 32); taps are symmetric
+        si0 += a_taps_[k] * (wi[k] + wi[kH - k]);
+        sq0 += a_taps_[k] * (wq[k] + wq[kH - k]);
+        si1 += a_taps_[k + 1] * (wi[k + 1] + wi[kH - 1 - k]);
+        sq1 += a_taps_[k + 1] * (wq[k + 1] + wq[kH - 1 - k]);
+        si2 += a_taps_[k + 2] * (wi[k + 2] + wi[kH - 2 - k]);
+        sq2 += a_taps_[k + 2] * (wq[k + 2] + wq[kH - 2 - k]);
+        si3 += a_taps_[k + 3] * (wi[k + 3] + wi[kH - 3 - k]);
+        sq3 += a_taps_[k + 3] * (wq[k + 3] + wq[kH - 3 - k]);
       }
       const float ai = (si0 + si1) + (si2 + si3), aq = (sq0 + sq1) + (sq2 + sq3);
       written += stage_b(ai, aq, out + written, written < capacity ? capacity - written : 0);
     }
-    a_phase_ = static_cast<unsigned>((a_phase_ + n) % 4);
+    a_phase_ = static_cast<unsigned>((a_phase_ + n) % decim);
     std::copy(xi + n, xi + n + kH, a_hist_i_);
     std::copy(xq + n, xq + n + kH, a_hist_q_);
   }

@@ -100,6 +100,13 @@ void task(void*) {
       position = 0.0;
     }
 
+    const uint32_t stream_rate = orcsdr::radio::sample_rate();
+    if (stream_rate != demod.input_rate() && stream_rate >= 240000) {
+      demod.set_input_rate(stream_rate);
+      xStreamBufferReset(g_stream);
+      pending.clear();
+      position = 0.0;
+    }
     const size_t got = xStreamBufferReceive(g_stream, iq, kBlockBytes, pdMS_TO_TICKS(40));
     if (got < 2) {
       g_underruns.fetch_add(1);

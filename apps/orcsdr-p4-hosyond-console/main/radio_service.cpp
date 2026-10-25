@@ -17,13 +17,15 @@ using namespace orcsdr::waveshare4b;
 namespace orcsdr::radio {
 namespace {
 constexpr char TAG[] = "RADIO";
-constexpr uint32_t kRate = 960000;
+constexpr uint32_t kRate = 960000;      // default rate
+constexpr uint32_t kWideRate = 2400000;  // Home's wide spans
 constexpr size_t kIqBytes = 16384;
 
 QueueHandle_t queue = nullptr;
 std::atomic<uint32_t> requested{kDefaultHz}, applied{0}, sps{0}, drops{0}, step_idx{2};
 std::atomic<int> state{0};  // 0 no receiver, 1 scanning, 2 streaming, 3 error
 std::atomic<uint32_t> tune_request{0};
+std::atomic<uint32_t> rate_target{kRate}, rate_now{kRate};
 IqSink g_sink = nullptr;
 std::atomic<float> dbfs{-120.0f};
 portMUX_TYPE bands_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -113,12 +115,13 @@ void task(void*) {
           esp_rtl_sdr_stream_config_default(&sc);
           sc.preset = ESP_RTL_SDR_PRESET_CUSTOM_HZ;
           sc.frequency_hz = requested.load();
-          sc.sample_rate_sps = kRate;
+          sc.sample_rate_sps = rate_target.load();
           const esp_err_t e = esp_rtl_sdr_start(sdr, &sc);
           if (e == ESP_OK) {
             streaming = true;
             state = 2;
-            ESP_LOGI(TAG, "RF START hz=%u rate=%u", unsigned(sc.frequency_hz), unsigned(kRate));
+            rate_now = sc.sample_rate_sps;
+            ESP_LOGI(TAG, "RF START hz=%u rate=%u", unsigned(sc.frequency_hz), unsigned(sc.sample_rate_sps));
           } else {
             ESP_LOGE(TAG, "start failed: %s", esp_rtl_sdr_err_to_name(e));
             state = 3;
@@ -128,6 +131,15 @@ void task(void*) {
         }
       }
       vTaskDelay(pdMS_TO_TICKS(30));
+      continue;
+    }
+    if (rate_target.load() != rate_now.load()) {
+      // The driver changes sample rate only across stop/start.
+      ESP_LOGI(TAG, "sample rate %u -> %u", unsigned(rate_now.load()), unsigned(rate_target.load()));
+      (void)esp_rtl_sdr_stop(sdr, 1500);
+      streaming = false;
+      state = 1;
+      last_scan = 0;
       continue;
     }
     if (esp_rtl_sdr_get_state(sdr) != ESP_RTL_SDR_STATE_STREAMING) {
@@ -189,7 +201,8 @@ bool start(QueueHandle_t commands) {
 void set_iq_sink(IqSink sink) { g_sink = sink; }
 void tune_to(uint32_t frequency_hz) { tune_request = frequency_hz; }
 float level_dbfs() { return state.load() == 2 ? dbfs.load() : -120.0f; }
-uint32_t sample_rate() { return kRate; }
+uint32_t sample_rate() { return rate_now.load(); }
+void set_sample_rate(uint32_t rate) { rate_target = rate > 1000000 ? kWideRate : kRate; }
 
 waveshare4b::home_v3::Snapshot snapshot() {
   return {requested.load(), applied.load(), sps.load(), drops.load(), kSteps[step_idx.load()],
