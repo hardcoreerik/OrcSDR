@@ -51,6 +51,13 @@
 #include "attiny88_panel.h"
 #include "tc358762_bridge.h"
 
+/* Readbacks stop and restart DSI video mode at an arbitrary point in a frame,
+ * and every one has returned NO RESPONSE. 0 keeps the stream uninterrupted so the
+ * bridge locks on once. */
+#ifndef PROBE_READBACK
+#define PROBE_READBACK 0
+#endif
+
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 1, 0)
 #error "This probe requires ESP-IDF >= 6.1 for esp_lcd_dsi_bus_config_t.flags.clock_lane_force_hs"
 #endif
@@ -521,9 +528,13 @@ static esp_err_t start_dsi_video(const h4_profile_t *p, esp_lcd_panel_handle_t *
     /* Reset release and ATTINY proxy wake, now that the link is live. */
     attiny_release_bridge_and_wake();
 
+#if PROBE_READBACK
     bridge_readback_probe(bus, "before TC358762 init", true);
+#endif
     tc358762_bridge_init(bus, p);
+#if PROBE_READBACK
     bridge_readback_probe(bus, "after TC358762 init", true);
+#endif
 
     attiny_release_touch();
     return ESP_OK;
