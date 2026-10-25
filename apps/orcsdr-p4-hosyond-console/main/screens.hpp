@@ -35,5 +35,6 @@ const Screen& airband_screen();
 const Screen& shortwave_screen();
 const Screen& rflab_screen();
 const Screen& settings_screen();
+const Screen& pocsag_screen();
 
 }  // namespace screens

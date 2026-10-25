@@ -29,6 +29,7 @@ std::atomic<bool> g_mode_supported{true};
 std::atomic<uint8_t> g_volume{128};
 std::atomic<bool> g_sound{true};
 std::atomic<bool> g_gate{true};
+std::atomic<bool> g_active{true};
 std::atomic<float> g_channel_dbfs{-120.0f};
 std::atomic<uint32_t> g_blocks{0}, g_dropped{0}, g_underruns{0};
 std::atomic<uint32_t> g_tone_hz{0}, g_tone_frames{0};
@@ -118,6 +119,11 @@ void task(void*) {
       continue;
     }
     g_blocks.fetch_add(1);
+    if (!g_active.load()) {  // a digital dashboard is on screen: no audio, no demodulation
+      float silence[kFramesPerWrite] = {};
+      write_mono(silence, kFramesPerWrite, 0.0f);
+      continue;
+    }
     const float fill = static_cast<float>(xStreamBufferBytesAvailable(g_stream)) / static_cast<float>(kStreamBytes);
     g_fill.store(fill);
 
@@ -178,6 +184,7 @@ void set_mode(orcsdr::dsp::Mode mode, bool supported) {
 void set_volume(uint8_t volume) { g_volume.store(volume); }
 void set_sound(bool enabled) { g_sound.store(enabled); }
 void set_gate(bool open) { g_gate.store(open); }
+void set_active(bool active) { g_active.store(active); }
 float channel_dbfs() { return g_channel_dbfs.load(); }
 
 bool play_tone(uint32_t frequency_hz, uint32_t duration_ms) {

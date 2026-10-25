@@ -19,6 +19,7 @@
 #include "nvs_flash.h"
 #include "radio_service.hpp"
 #include "screen_snap.hpp"
+#include "wifi_app.hpp"
 
 namespace {
 constexpr char TAG[] = "SERIAL_CLI";
@@ -225,6 +226,47 @@ void cmd_volume(const char* arg) {
   std::printf("RTL_VOLUME_OK volume=%ld\n", v);
 }
 
+void cmd_wifi(char* args) {
+  if (std::strcmp(args, "STATUS") == 0) {
+    const wifi_app::Status w = wifi_app::status();
+    std::printf("RTL_WIFI_STATUS started=%d link_failed=%d connected=%d connecting=%d ssid=%s ip=%s rssi=%d c6=%s stage=%s code=%d saved=%d\n",
+                w.started, w.link_failed, w.connected, w.connecting, w.ssid, w.ip, int(w.rssi), w.c6_version, w.failure_stage,
+                w.failure_code, w.saved);
+    return;
+  }
+  if (std::strcmp(args, "RESULTS") == 0) {
+    orcsdr::wifi::ScanResult r[16];
+    const int n = wifi_app::scan_results(r, 16);
+    std::printf("RTL_WIFI_RESULTS count=%d scanning=%d\n", n, wifi_app::scanning());
+    for (int i = 0; i < n; ++i)
+      std::printf("RTL_WIFI_AP ssid=\"%s\" rssi=%d channel=%d security=%s\n", r[i].ssid, int(r[i].rssi), int(r[i].channel), r[i].security);
+    return;
+  }
+  if (!authed()) {
+    std::printf("RTL_WIFI_ERROR auth_required\n");
+    return;
+  }
+  if (std::strcmp(args, "SCAN") == 0) {
+    std::printf(wifi_app::request_scan() ? "RTL_WIFI_SCAN_OK\n" : "RTL_WIFI_ERROR not_started\n");
+  } else if (std::strcmp(args, "DISCONNECT") == 0) {
+    wifi_app::disconnect();
+    std::printf("RTL_WIFI_DISCONNECT_OK\n");
+  } else if (std::strcmp(args, "C6_UPDATE") == 0) {
+    std::printf(orcsdr::wifi::begin_c6_update() ? "RTL_WIFI_C6_UPDATE_STARTED\n" : "RTL_WIFI_C6_UPDATE_NOT_READY\n");
+  } else if (std::strcmp(args, "FORGET") == 0) {
+    wifi_app::forget();
+    std::printf("RTL_WIFI_FORGET_OK\n");
+  } else if (std::strncmp(args, "CONNECT ", 8) == 0) {
+    char* ssid = args + 8;
+    char* pass = std::strchr(ssid, ' ');
+    if (pass) *pass++ = '\0';
+    if (wifi_app::connect(ssid, pass ? pass : "", true)) std::printf("RTL_WIFI_CONNECT_OK ssid=\"%s\"\n", ssid);
+    else std::printf("RTL_WIFI_ERROR not_started\n");
+  } else {
+    std::printf("RTL_WIFI_INVALID use STATUS | SCAN | RESULTS | CONNECT <ssid> [password] | DISCONNECT | FORGET\n");
+  }
+}
+
 void cmd_usb_guard(char* args) {
   if (std::strcmp(args, "STATUS") == 0) {
     std::printf("RTL_USB_GUARD_STATUS safe_mode=%d\n", esp_rtl_sdr_usb_safe_mode_active());
@@ -338,6 +380,7 @@ void handle_line(char* line) {
   if (std::strcmp(line, "RTL_SIGNAL") == 0) return cmd_signal();
   if (std::strcmp(line, "RTL_VOLUME") == 0) return cmd_volume(nullptr);
   if (std::strncmp(line, "RTL_VOLUME ", 11) == 0) return cmd_volume(line + 11);
+  if (std::strncmp(line, "RTL_WIFI ", 9) == 0) return cmd_wifi(line + 9);
   if (std::strncmp(line, "RTL_USB_GUARD ", 14) == 0) return cmd_usb_guard(line + 14);
   if (std::strncmp(line, "RTL_AUDIO ", 10) == 0) return cmd_audio(line + 10);
   if (std::strncmp(line, "RTL_UI ", 7) == 0) return cmd_ui(line + 7);

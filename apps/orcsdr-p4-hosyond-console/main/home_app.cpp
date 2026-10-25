@@ -266,6 +266,7 @@ void ui_task(void*) {
       if (g_active) g_active->leave();
       else home::leave();
       audio_service::set_gate(true);
+      audio_service::set_active(true);  // dashboards without audio switch it off in their enter()
       g_active = wanted_screen >= 0 ? screens::find(static_cast<dashboards::Id>(wanted_screen)) : nullptr;
       M5.Display.fillScreen(0x0000);
       if (g_active) {

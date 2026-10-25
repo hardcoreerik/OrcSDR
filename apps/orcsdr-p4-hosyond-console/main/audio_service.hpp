@@ -22,6 +22,8 @@ bool play_tone(uint32_t frequency_hz, uint32_t duration_ms);
 
 // Squelch gate: false mutes the audio (the receiver and demodulator keep running). Defaults open.
 void set_gate(bool open);
+// false stops demodulating (digital dashboards that have no audio); IQ is discarded and the speaker stays silent.
+void set_active(bool active);
 // Channel power after the demodulator's channel filter, dBFS.
 float channel_dbfs();
 

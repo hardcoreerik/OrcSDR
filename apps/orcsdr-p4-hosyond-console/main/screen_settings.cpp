@@ -14,6 +14,7 @@
 #include "radio_service.hpp"
 #include "screens.hpp"
 #include "settings_app.hpp"
+#include "wifi_app.hpp"
 
 namespace {
 namespace st = orcsdr::settings;
@@ -59,7 +60,43 @@ const st::State& build() {
   g_state.battery_level = -1;
   g_state.uptime_seconds = static_cast<uint32_t>(esp_timer_get_time() / 1000000);
   std::snprintf(g_state.build_identity, sizeof(g_state.build_identity), "P4 console %s", __DATE__);
-  g_state.wifi_ready = false;
+  {
+    const wifi_app::Status w = wifi_app::status();
+    g_state.wifi_power_enabled = true;
+    g_state.wifi_ready = w.started;
+    g_state.wifi_scanning = wifi_app::scanning();
+    g_state.wifi_connected = w.connected;
+    g_state.wifi_connecting = w.connecting;
+    g_state.wifi_hosted_transport_ready = w.started || (w.c6_version[0] != 0);
+    g_state.wifi_hosted_update_required = false;
+    std::snprintf(g_state.wifi_ssid, sizeof(g_state.wifi_ssid), "%.32s", w.ssid);
+    std::snprintf(g_state.wifi_ip, sizeof(g_state.wifi_ip), "%.15s", w.ip);
+    std::snprintf(g_state.wifi_hosted_c6_version, sizeof(g_state.wifi_hosted_c6_version), "%.15s", w.c6_version);
+    std::snprintf(g_state.wifi_message, sizeof(g_state.wifi_message), "%.47s",
+                  w.started ? (w.connected ? "Connected" : w.connecting ? "Connecting..." : "Ready") : (w.failure_stage[0] ? w.failure_stage : "Starting the C6"));
+    g_state.wifi_rssi = w.rssi;
+    orcsdr::wifi::ScanResult found[6];
+    const int n = wifi_app::scan_results(found, 6);
+    g_state.network_count = static_cast<uint8_t>(n);
+    for (int i = 0; i < n; ++i) {
+      std::snprintf(g_state.networks[i].ssid, sizeof(g_state.networks[i].ssid), "%.32s", found[i].ssid);
+      g_state.networks[i].rssi = found[i].rssi;
+      g_state.networks[i].secure = found[i].secure;
+      g_state.networks[i].saved = w.saved && std::strcmp(found[i].ssid, w.saved_ssid) == 0;
+    }
+    g_state.saved_network_count = w.saved ? 1 : 0;
+    std::snprintf(g_state.profiles[0].ssid, sizeof(g_state.profiles[0].ssid), "%.32s", w.saved_ssid);
+    g_state.profiles[0].connected = w.connected && std::strcmp(w.ssid, w.saved_ssid) == 0;
+  }
+  {
+    const orcsdr::wifi::C6UpdateStatus up = orcsdr::wifi::c6_update_status();
+    g_state.wifi_c6_image_embedded = up.image_embedded;
+    g_state.wifi_c6_update_percent = up.progress_percent;
+    std::snprintf(g_state.wifi_hosted_host_version, sizeof(g_state.wifi_hosted_host_version), "3.0.6");
+    std::snprintf(g_state.wifi_c6_update_state, sizeof(g_state.wifi_c6_update_state), "%.19s", orcsdr::wifi::c6_update_state_name(up.state));
+    std::snprintf(g_state.wifi_c6_update_stage, sizeof(g_state.wifi_c6_update_stage), "%.23s", up.stage);
+    g_state.wifi_hosted_update_required = up.state == orcsdr::wifi::C6UpdateState::optional || up.state == orcsdr::wifi::C6UpdateState::ready;
+  }
   g_state.sd_ready = false;
   g_state.companion_supported = false;
   return g_state;
@@ -104,7 +141,27 @@ void tap(int x, int y) {
       vTaskDelay(pdMS_TO_TICKS(200));
       esp_restart();
       break;
-    default: break;  // Wi-Fi, location, catalog, companion, clock: not available on this target yet
+    case st::ActionKind::c6_update_confirm: (void)orcsdr::wifi::begin_c6_update(); break;
+    case st::ActionKind::scan_wifi: (void)wifi_app::request_scan(); break;
+    case st::ActionKind::connect_wifi: {
+      char ssid[33]{}, password[64]{};
+      if (st::take_wifi_credentials(ssid, sizeof(ssid), password, sizeof(password))) (void)wifi_app::connect(ssid, password, true);
+      std::memset(password, 0, sizeof(password));
+      break;
+    }
+    case st::ActionKind::connect_saved_wifi: {
+      const wifi_app::Status w = wifi_app::status();
+      if (w.saved) {
+        // Saved credentials are re-read from NVS by the Wi-Fi task; a reconnect request reuses them.
+        wifi_app::disconnect();
+      }
+      break;
+    }
+    case st::ActionKind::forget_wifi:
+      wifi_app::disconnect();
+      wifi_app::forget();
+      break;
+    default: break;  // location, catalog, companion, clock: not available on this target yet
   }
 }
 }  // namespace
