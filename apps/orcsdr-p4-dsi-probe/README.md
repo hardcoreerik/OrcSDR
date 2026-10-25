@@ -25,12 +25,16 @@ TC358762 bridge behind an ATTINY88**, not as a bare ICN6211 board.
    panel with the active timing profile, calls `esp_lcd_panel_init()` to start
    DMA video, then releases the bridge reset, issues the ATTINY88 `SYSPMCTRL`
    wake proxy write, and programs the TC358762 over DSI generic long writes.
-4. Draws one measurement card: two full-width `0123456789` ruler rows whose
-   digit positions are fixed (`x = 20 + 80·i`), four primary-colour blocks and a
-   white frame, re-submitted every 5 s. There is no automatic profile sweep:
-   `H4_DEFAULT_PROFILE` selects the single active profile. The ruler exists so
-   geometry can be read off the panel and reported in numbers instead of judged
-   from a photograph.
+4. Draws one deterministic calibration card: a one-pixel perimeter on
+   x=0/799 and y=0/479, four 40x40 corner markers inset 20 px (TL red, TR green,
+   BL blue, BR white), 20x6 edge ticks at each edge midpoint, and a 3 px cross
+   with 50 px arms centred exactly on (400,240). It is re-submitted every 5 s
+   and immediately re-read back. A built-in 13-probe check compares the drawn
+   pels against their exact expected values, and `dma_fb_report()` walks the
+   *DPI panel's own DMA buffer* (not the drawing buffer) and logs the lit runs
+   on rows 0/1/240/478/479 and columns 0/1/400/798/799. If those are symmetric,
+   the content side is correct and any displacement on the glass is scan-out.
+   `H4_DEFAULT_PROFILE` selects the single active profile; there is no sweep.
 
 ## Measured state
 
@@ -42,20 +46,40 @@ Working, confirmed on hardware:
   **backlight turns on**
 - TC358762 registers are written without error and `SYSCTRL`, `STARTPPI` and
   `STARTDSI` are applied
-- **Pixels are produced**, the raster is linear (ruler digits read in order, no
-  mirroring, interleaving or smearing), vertical geometry is correct, and the
-  four reference blocks render **red, green, blue, white** in order.
+- **Pixels are produced**, the raster is linear (no mirroring, interleaving or
+  smearing), vertical geometry is correct, colours are correct, and the content
+  side is proved correct: the 13-probe self-check passes and the DPI panel's DMA
+  buffer reports row 0 = `0-799`, row 479 = `0-799`, col 0 = `0-479`,
+  col 799 = `0-479` and col 400 = `0-19 190-290 460-479`, i.e. a perimeter and a
+  cross that are exactly where the drawing code puts them.
 
 The decisive fix for "always white" was the DSI PHY reference clock source. With
 `MIPI_DSI_PHY_PLLREF_CLK_SRC_PLLF20M` the panel stayed white forever with no
 host-visible error; `MIPI_DSI_PHY_CLK_SRC_DEFAULT` produced an image
 immediately. A wrong PHY reference silently corrupts the link.
 
+## Horizontal alignment: measured, not guessed
+
+Because the framebuffer and the DMA buffer are both proved correct, the
+remaining horizontal displacement is entirely in scan-out, and its magnitude is
+a single quantity that was measured rather than eyeballed. Sweeping the active
+profile's HBP moves the DE window on the host stream and on the bridge VTG
+together, and the panel displacement read off the ruler card was:
+
+| profile HBP | measured displacement |
+| ----------- | --------------------- |
+| 146         | 140 px                |
+| 256         | 40 px                 |
+
+The two points give `offset(h) = 140 - 0.9091 * (h - 146)`: a one-to-one
+response with 0.909 px of image movement per pixel of HBP. The zero crossing is
+therefore at `h = 300`, which is why `measured-hbp300` is the default profile
+(`hfp=131, hsw=2, hbp=300, dpi_mhz=25.98`, horizontal total 1233 → 41.3 Hz).
+Vertical timing is untouched because vertical geometry was already measured
+correct. `datasheet-800x480` is retained unchanged as the recovery profile.
+
 Not working yet:
 
-- **Horizontal position.** The image is displaced right with the line tail
-  wrapped onto the left edge. Measured with the ruler fiducials at 40 px after
-  the current compensation (from 140 px uncompensated). See below.
 - **Bridge verification.** Generic reads from the TC358762 return NO RESPONSE
   before and after init, so register application cannot be confirmed by
   readback. A submitted write is not proof of an applied write.

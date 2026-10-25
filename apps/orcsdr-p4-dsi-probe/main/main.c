@@ -358,7 +358,7 @@ static void bridge_readback_probe(esp_lcd_dsi_bus_handle_t bus, const char *stag
         uint32_t expected;
     } regs[] = {
         { TC358762_SYSCTRL, "SYSCTRL", TC358762_SYSCTRL_VALUE },
-        { TC358762_LCDCTRL, "LCDCTRL", TC358762_LCDCTRL_UPSTREAM },
+        { TC358762_LCDCTRL, "LCDCTRL", TC358762_LCDCTRL_VTG_RGB888 },
     };
 
     ESP_LOGI(TAG, "bridge readback (%s):", stage);
@@ -384,26 +384,26 @@ static void tc358762_bridge_init(esp_lcd_dsi_bus_handle_t bus, const h4_profile_
     tc358762_write(bus, TC358762_PPI_D1S_ATMR, 0);
     tc358762_write(bus, TC358762_PPI_LPTXTIMECNT, TC358762_LPX_PERIOD);
     tc358762_write(bus, TC358762_SPICMR, 0x00);
-    tc358762_write(bus, TC358762_LCDCTRL, TC358762_LCDCTRL_UPSTREAM);
     tc358762_write(bus, TC358762_SYSCTRL, TC358762_SYSCTRL_VALUE);
 
-    /* LCDCTRL sets VTGEN (BIT 4), so the bridge generates the LCD raster from
-     * its own timing generator. The four timing registers below are that
-     * generator's only source of H/V totals; leaving them at reset defaults
-     * produces a raster that does not match the 480-line stream arriving over
-     * DSI, which is why the frame came out repeated with a seam at mid-height.
-     * Layout follows the ESP-IDF port that drives this panel successfully. */
-    int hbp = p->hbp + TC358762_DE_START_COMP;
-    int hfp = p->hfp - TC358762_DE_START_COMP;
-    if (hfp < 0) {
-        hfp = 0;
-    }
-    tc358762_write(bus, TC358762_LCD_HS_HBP, ((uint32_t)hbp << 16) | (uint32_t)p->hsw);
+    /* Order matters: program the timings, upload them with VFUEN, and only then
+     * enable the timing generator in LCDCTRL. Every driver that uses VTG writes
+     * them in this order. LCDCTRL bit 1 turns the generator on, after which the
+     * DE window opens HSW + HBP into each line, entirely from these registers.
+     * The host DPI stream is programmed with the same values, so the pixel
+     * payload and the DE window start at the same pixel and the image is not
+     * displaced. The panel requires hsw+hbp == 46 and vsw+vbp == 23; the
+     * profile guarantees both. */
+    tc358762_write(bus, TC358762_LCD_HS_HBP,
+                   ((uint32_t)p->hbp << 16) | (uint32_t)p->hsw);
     tc358762_write(bus, TC358762_LCD_HDISP_HFP,
-                   ((uint32_t)hfp << 16) | (uint32_t)HOSYOND_H_RES);
-    tc358762_write(bus, TC358762_LCD_VS_VBP, ((uint32_t)p->vbp << 16) | (uint32_t)p->vsw);
+                   ((uint32_t)p->hfp << 16) | (uint32_t)HOSYOND_H_RES);
+    tc358762_write(bus, TC358762_LCD_VS_VBP,
+                   ((uint32_t)p->vbp << 16) | (uint32_t)p->vsw);
     tc358762_write(bus, TC358762_LCD_VDISP_VFP,
                    ((uint32_t)p->vfp << 16) | (uint32_t)HOSYOND_V_RES);
+    tc358762_write(bus, TC358762_VFUEN, TC358762_VFUEN_ENABLE);
+    tc358762_write(bus, TC358762_LCDCTRL, TC358762_LCDCTRL_VTG_RGB888);
 
     vTaskDelay(pdMS_TO_TICKS(100));
     tc358762_write(bus, TC358762_PPI_STARTPPI, 1);
@@ -572,72 +572,199 @@ static void fill_rect(uint8_t *buf, int x0, int y0, int x1, int y1,
     }
 }
 
-/* 3x5 glyphs, one 3-bit row per line, most significant bit leftmost. The card
- * puts a digit row on the panel so that reading order, mirroring and a lost or
- * repeated column are all visible to a human at a glance, without needing a
- * photograph to be decoded. */
-static const uint8_t k_font[10][5] = {
-    {7, 5, 5, 5, 7}, {2, 6, 2, 2, 7}, {7, 1, 7, 4, 7}, {7, 1, 7, 1, 7},
-    {5, 5, 7, 1, 1}, {7, 4, 7, 1, 7}, {7, 4, 7, 5, 7}, {7, 1, 1, 1, 1},
-    {7, 5, 7, 5, 7}, {7, 5, 7, 1, 7},
-};
+/* Deterministic calibration pattern.
+ *
+ * Every feature is at a coordinate that can be predicted from the panel's
+ * 800x480 active area alone, so a capture can be measured rather than judged:
+ *
+ *   perimeter    one pixel wide, on x=0, x=799, y=0, y=479
+ *   corner mark  40x40 solid squares, inset 20 px, each a different colour
+ *                TL red (20,20)  TR green (740,20)
+ *                BL blue (20,420) BR white (740,420)
+ *   edge ticks   20x6 bars centred on each edge midpoint
+ *   centre cross 3 px thick, arms 50 px, crossing at exactly (400,240)
+ *
+ * If the raster is correct the perimeter is unbroken, the four marks are
+ * symmetric about the centre and the cross sits on (400,240). Any displacement
+ * shows up as a gap or duplication on one edge and a measurable shift of the
+ * cross, and both are quantities rather than impressions.
+ */
+#define CAL_X_MARK 20
+#define CAL_Y_MARK 20
+#define CAL_MARK 40
+#define CAL_ARM 50
+#define CAL_THICK 3
 
-static void draw_digits(uint8_t *buf, int x0, int y0, int scale, int pitch,
-                        const char *digits, int count, uint8_t r, uint8_t g, uint8_t b)
-{
-    int x = x0;
-    for (int i = 0; i < count; i++) {
-        const int d = digits[i] - '0';
-        if (d < 0 || d > 9) {
-            continue;
-        }
-        for (int row = 0; row < 5; row++) {
-            for (int col = 0; col < 3; col++) {
-                if (k_font[d][row] & (4u >> col)) {
-                    fill_rect(buf, x + col * scale, y0 + row * scale,
-                              x + (col + 1) * scale, y0 + (row + 1) * scale, r, g, b);
-                }
-            }
-        }
-        x += pitch;
-    }
-}
-
-/* Measurement card. A ten-digit ruler spans the full width, so whichever digit
- * sits at each edge directly encodes the horizontal offset: glyph i occupies
- * x = 20 + 80*i .. 62 + 80*i, therefore a photograph is not needed and the
- * offset can be read off the panel and reported. The digit rows also prove
- * reading order, and the four blocks prove channel order. */
-static void draw_test_card(esp_lcd_panel_handle_t panel)
+static void draw_calibration_card(esp_lcd_panel_handle_t panel)
 {
     const int w = HOSYOND_H_RES;
     const int h = HOSYOND_V_RES;
+    const int cx = w / 2;
+    const int cy = h / 2;
     uint8_t *buf = ensure_fb();
     if (!buf) {
         return;
     }
 
-    fill_rect(buf, 0, 0, w, h, 0x0A, 0x0A, 0x0A);
+    fill_rect(buf, 0, 0, w, h, 0x00, 0x00, 0x00);
 
-    /* 10 glyphs at 80 px pitch: 20 .. 782, i.e. 18 px of margin each side. */
-    draw_digits(buf, 20, 55, 14, 80, "0123456789", 10, 0xFF, 0xFF, 0xFF);
-    draw_digits(buf, 20, 345, 14, 80, "0123456789", 10, 0xFF, 0xFF, 0xFF);
+    fill_rect(buf, CAL_X_MARK, CAL_Y_MARK,
+              CAL_X_MARK + CAL_MARK, CAL_Y_MARK + CAL_MARK, 0xFF, 0x00, 0x00);
+    fill_rect(buf, w - CAL_X_MARK - CAL_MARK, CAL_Y_MARK,
+              w - CAL_X_MARK, CAL_Y_MARK + CAL_MARK, 0x00, 0xFF, 0x00);
+    fill_rect(buf, CAL_X_MARK, h - CAL_Y_MARK - CAL_MARK,
+              CAL_X_MARK + CAL_MARK, h - CAL_Y_MARK, 0x00, 0x00, 0xFF);
+    fill_rect(buf, w - CAL_X_MARK - CAL_MARK, h - CAL_Y_MARK - CAL_MARK,
+              w - CAL_X_MARK, h - CAL_Y_MARK, 0xFF, 0xFF, 0xFF);
 
-    static const uint8_t blocks[4][3] = {
-        {0xFF, 0x00, 0x00}, {0x00, 0xFF, 0x00}, {0x00, 0x00, 0xFF}, {0xFF, 0xFF, 0xFF},
-    };
-    for (int i = 0; i < 4; i++) {
-        const int x0 = 30 + i * 190;
-        fill_rect(buf, x0, 200, x0 + 170, 300, blocks[i][0], blocks[i][1], blocks[i][2]);
-    }
+    /* The cross is made exactly symmetric about (cx, cy): each arm runs from
+     * centre-1 to centre+2 so the centre pixel is included on both sides. */
+    fill_rect(buf, cx - CAL_ARM, cy - 1, cx + CAL_ARM + 1, cy + 2,
+              0xFF, 0xFF, 0xFF);
+    fill_rect(buf, cx - 1, cy - CAL_ARM, cx + 2, cy + CAL_ARM + 1,
+              0xFF, 0xFF, 0xFF);
 
-    fill_rect(buf, 10, 10, w - 10, 16, 0xFF, 0xFF, 0xFF);
-    fill_rect(buf, 10, h - 16, w - 10, h - 10, 0xFF, 0xFF, 0xFF);
-    fill_rect(buf, 10, 10, 16, h - 10, 0xFF, 0xFF, 0xFF);
-    fill_rect(buf, w - 16, 10, w - 10, h - 10, 0xFF, 0xFF, 0xFF);
+    fill_rect(buf, cx - 1, 0, cx + 2, 20, 0xFF, 0xFF, 0xFF);
+    fill_rect(buf, cx - 1, h - 20, cx + 2, h, 0xFF, 0xFF, 0xFF);
+    fill_rect(buf, 0, cy - 1, 20, cy + 2, 0xFF, 0xFF, 0xFF);
+    fill_rect(buf, w - 20, cy - 1, w, cy + 2, 0xFF, 0xFF, 0xFF);
+
+    fill_rect(buf, 0, 0, w, 1, 0xFF, 0xFF, 0xFF);
+    fill_rect(buf, 0, h - 1, w, h, 0xFF, 0xFF, 0xFF);
+    fill_rect(buf, 0, 0, 1, h, 0xFF, 0xFF, 0xFF);
+    fill_rect(buf, w - 1, 0, w, h, 0xFF, 0xFF, 0xFF);
 
     esp_err_t err = esp_lcd_panel_draw_bitmap(panel, 0, 0, w, h, buf);
-    ESP_LOGI(TAG, "ruler card submitted -> %s", esp_err_to_name(err));
+    ESP_LOGI(TAG, "calibration card submitted -> %s", esp_err_to_name(err));
+
+    /* Prove the content side independently of the panel: if these probes pass,
+     * the framebuffer really does hold a symmetric, correctly positioned
+     * pattern, so any displacement seen on the LCD is scan-out, not drawing.
+     * Expected bytes are in buffer order, which is [R][B][G] - see fill_rect. */
+    static const struct {
+        int x, y;
+        uint8_t r, b, g;
+        const char *name;
+    } probe[] = {
+        {0, 0, 0xFF, 0xFF, 0xFF, "perimeter TL"},
+        {w - 1, 0, 0xFF, 0xFF, 0xFF, "perimeter TR"},
+        {0, h - 1, 0xFF, 0xFF, 0xFF, "perimeter BL"},
+        {w - 1, h - 1, 0xFF, 0xFF, 0xFF, "perimeter BR"},
+        {cx, cy, 0xFF, 0xFF, 0xFF, "cross centre"},
+        {cx, cy - CAL_ARM, 0xFF, 0xFF, 0xFF, "cross top arm"},
+        {cx, cy + CAL_ARM, 0xFF, 0xFF, 0xFF, "cross bottom arm"},
+        {cx - CAL_ARM, cy, 0xFF, 0xFF, 0xFF, "cross left arm"},
+        {cx + CAL_ARM, cy, 0xFF, 0xFF, 0xFF, "cross right arm"},
+        {CAL_X_MARK + CAL_MARK / 2, CAL_Y_MARK + CAL_MARK / 2,
+         0xFF, 0x00, 0x00, "corner TL red"},
+        {w - 1 - CAL_X_MARK - CAL_MARK / 2, CAL_Y_MARK + CAL_MARK / 2,
+         0x00, 0x00, 0xFF, "corner TR green"},
+        {CAL_X_MARK + CAL_MARK / 2, h - 1 - CAL_Y_MARK - CAL_MARK / 2,
+         0x00, 0xFF, 0x00, "corner BL blue"},
+        {w - 1 - CAL_X_MARK - CAL_MARK / 2, h - 1 - CAL_Y_MARK - CAL_MARK / 2,
+         0xFF, 0xFF, 0xFF, "corner BR white"},
+    };
+    bool all_ok = true;
+    for (size_t i = 0; i < sizeof(probe) / sizeof(probe[0]); i++) {
+        const uint8_t *px = buf + ((size_t)probe[i].y * w + (size_t)probe[i].x) * 3;
+        const bool ok = px[0] == probe[i].r && px[1] == probe[i].b &&
+                        px[2] == probe[i].g;
+        if (!ok) {
+            all_ok = false;
+        }
+        ESP_LOGI(TAG, "fb %-17s (%3d,%3d) got %02x%02x%02x want %02x%02x%02x %s",
+                 probe[i].name, probe[i].x, probe[i].y, px[0], px[1], px[2],
+                 probe[i].r, probe[i].b, probe[i].g, ok ? "ok" : "MISMATCH");
+    }
+    ESP_LOGI(TAG, "framebuffer self-check: %d probes, %s",
+             (int)(sizeof(probe) / sizeof(probe[0])), all_ok ? "PASS" : "FAIL");
+}
+
+/* Report where lit runs actually sit inside IDF's internal DMA framebuffer -
+ * the buffer the DSI host scans out, which is not the buffer we draw into.
+ * If this is correct and the panel is still displaced, the fault is downstream
+ * of the framebuffer and belongs to scan-out, not drawing. */
+static void dma_fb_report(esp_lcd_panel_handle_t panel)
+{
+    void *fb = NULL;
+    esp_err_t err = esp_lcd_dpi_panel_get_frame_buffer(panel, 1, &fb);
+    if (err != ESP_OK || !fb) {
+        ESP_LOGE(TAG, "cannot get DMA framebuffer: %s", esp_err_to_name(err));
+        return;
+    }
+    ESP_LOGI(TAG, "DMA framebuffer at %p", fb);
+
+    const int w = HOSYOND_H_RES;
+    const int h = HOSYOND_V_RES;
+    const uint8_t *base = (const uint8_t *)fb;
+
+    static const int rows[] = {0, 1, 240, h - 2, h - 1};
+    for (size_t r = 0; r < sizeof(rows) / sizeof(rows[0]); r++) {
+        const int y = rows[r];
+        const uint8_t *line = base + (size_t)y * w * 3;
+        char buf[192];
+        int n = 0;
+        int x = 0;
+        int first = -1;
+        int last = -1;
+        int runs = 0;
+        while (x < w && runs < 6) {
+            const bool lit = (line[x * 3] | line[x * 3 + 1] | line[x * 3 + 2]) != 0;
+            if (lit) {
+                if (first < 0) {
+                    first = x;
+                }
+                last = x;
+            } else if (first >= 0) {
+                n += snprintf(buf + n, sizeof(buf) - n, " %d-%d", first, last);
+                runs++;
+                first = -1;
+            }
+            if (n > (int)sizeof(buf) - 24) {
+                break;
+            }
+            x++;
+        }
+        if (first >= 0 && runs < 6) {
+            n += snprintf(buf + n, sizeof(buf) - n, " %d-%d", first, last);
+            runs++;
+        }
+        ESP_LOGI(TAG, "dma row %3d runs(%d):%s", y, runs, n ? buf : " none");
+    }
+
+    static const int cols[] = {0, 1, HOSYOND_H_RES / 2, w - 2, w - 1};
+    for (size_t c = 0; c < sizeof(cols) / sizeof(cols[0]); c++) {
+        const int x = cols[c];
+        char buf[192];
+        int n = 0;
+        int y = 0;
+        int first = -1;
+        int last = -1;
+        int runs = 0;
+        while (y < h && runs < 6) {
+            const uint8_t *px = base + ((size_t)y * w + (size_t)x) * 3;
+            const bool lit = (px[0] | px[1] | px[2]) != 0;
+            if (lit) {
+                if (first < 0) {
+                    first = y;
+                }
+                last = y;
+            } else if (first >= 0) {
+                n += snprintf(buf + n, sizeof(buf) - n, " %d-%d", first, last);
+                runs++;
+                first = -1;
+            }
+            if (n > (int)sizeof(buf) - 24) {
+                break;
+            }
+            y++;
+        }
+        if (first >= 0 && runs < 6) {
+            n += snprintf(buf + n, sizeof(buf) - n, " %d-%d", first, last);
+            runs++;
+        }
+        ESP_LOGI(TAG, "dma col %3d runs(%d):%s", x, runs, n ? buf : " none");
+    }
 }
 
 void app_main(void)
@@ -675,12 +802,13 @@ void app_main(void)
 
     attiny_backlight_on();
 
-    /* Steady-state image. One ordinary screen instead of a cycling pattern: the
-     * visible result is then unambiguous, and a redraw every few seconds keeps
-     * recovering from any transient loss of sync. */
-    ESP_LOGW(TAG, "display pipeline configured; showing the static test card");
+    /* Steady-state image: a deterministic calibration pattern whose geometry is
+     * fully predictable, re-submitted every few seconds so it also recovers from
+     * any transient loss of sync. */
+    ESP_LOGW(TAG, "display pipeline configured; showing the calibration card");
     for (;;) {
-        draw_test_card(panel);
+        draw_calibration_card(panel);
+        dma_fb_report(panel);
         vTaskDelay(pdMS_TO_TICKS(5000));
     }
 
