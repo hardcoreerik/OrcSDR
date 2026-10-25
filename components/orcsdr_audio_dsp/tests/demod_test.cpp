@@ -178,5 +178,30 @@ int main() {
     CHECK(total > 71000 && total < 73000);  // 1.5 s at 48 kHz
   }
 
+  // SSB: a suppressed-carrier tone 1.5 kHz above the tuned frequency is audible as 1.5 kHz in USB and
+  // rejected in LSB (and the reverse for a tone below).
+  {
+    auto ssb_run = [&](Mode mode, double offset) {
+      Demod d;
+      d.set_mode(mode);
+      auto iq = make_iq(2.0, 0.003, [&](double t, double* i, double* q) {
+        *i = 0.5 * std::cos(2 * kPi * offset * t);
+        *q = 0.5 * std::sin(2 * kPi * offset * t);
+      });
+      return run(d, iq);
+    };
+    auto rms = [](const std::vector<float>& v) {
+      double a = 0;
+      const size_t from = v.size() / 2;
+      for (size_t k = from; k < v.size(); ++k) a += v[k] * v[k];
+      return std::sqrt(a / (v.size() - from));
+    };
+    const double usb_on = rms(ssb_run(Mode::usb, 1500)), usb_off = rms(ssb_run(Mode::usb, -1500));
+    const double lsb_on = rms(ssb_run(Mode::lsb, -1500)), lsb_off = rms(ssb_run(Mode::lsb, 1500));
+    std::printf("SSB: USB wanted %.3f unwanted %.4f; LSB wanted %.3f unwanted %.4f\n", usb_on, usb_off, lsb_on, lsb_off);
+    CHECK(usb_on > 0.1 && lsb_on > 0.1);
+    CHECK(usb_off < usb_on / 30 && lsb_off < lsb_on / 30);
+  }
+
   std::puts("PASS all");
 }

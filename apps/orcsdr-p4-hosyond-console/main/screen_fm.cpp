@@ -39,7 +39,10 @@ fm::Snapshot build() {
 
 void enter() { fm::enter(build()); }
 void leave() { fm::leave(); }
-void tick() { fm::update(build()); }
+void tick() {
+  audio_service::set_mode(orcsdr::dsp::Mode::wfm, true);
+  fm::update(build());
+}
 
 void tap(int x, int y) {
   const fm::Action a = fm::handle_touch(x, y);

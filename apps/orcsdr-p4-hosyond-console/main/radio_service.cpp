@@ -28,6 +28,10 @@ std::atomic<uint32_t> tune_request{0};
 std::atomic<uint32_t> rate_target{kRate}, rate_now{kRate};
 IqSink g_sink = nullptr;
 std::atomic<float> dbfs{-120.0f};
+Gain g_gain;                                   // cache, guarded by bands_lock's sibling below
+portMUX_TYPE gain_lock = portMUX_INITIALIZER_UNLOCKED;
+std::atomic<int> gain_req_kind{0};             // 0 none, 1 auto, 2 manual, 3 rtl agc, 4 bias
+std::atomic<int> gain_req_value{0};
 portMUX_TYPE bands_lock = portMUX_INITIALIZER_UNLOCKED;
 uint8_t bands[kFftSize]{};
 uint32_t band_seq = 0, taken_seq = 0;
@@ -176,6 +180,42 @@ void task(void*) {
       ESP_LOGW(TAG, "read error %s", esp_rtl_sdr_err_to_name(e));
       vTaskDelay(pdMS_TO_TICKS(50));
     }
+    {
+      // Apply a queued control change, then refresh the cache (about twice a second).
+      static int64_t last_gain_poll = 0;
+      const int kind = gain_req_kind.exchange(0);
+      if (kind) {
+        const int value = gain_req_value.load();
+        esp_err_t r = ESP_OK;
+        if (kind == 1) r = esp_rtl_sdr_set_tuner_gain_mode(sdr, ESP_RTL_SDR_GAIN_MODE_AUTO);
+        else if (kind == 2) {
+          r = esp_rtl_sdr_set_tuner_gain_mode(sdr, ESP_RTL_SDR_GAIN_MODE_MANUAL);
+          if (r == ESP_OK) r = esp_rtl_sdr_set_tuner_gain(sdr, value);
+        } else if (kind == 3) r = esp_rtl_sdr_set_rtl_agc(sdr, value != 0);
+        else if (kind == 4) r = esp_rtl_sdr_set_bias_tee(sdr, value != 0);
+        ESP_LOGI(TAG, "GAIN request kind=%d value=%d -> %s", kind, value, esp_rtl_sdr_err_to_name(r));
+        last_gain_poll = 0;
+      }
+      if (now - last_gain_poll > 500000) {
+        last_gain_poll = now;
+        Gain g;
+        const uint32_t caps = esp_rtl_sdr_get_capabilities();
+        g.available = (caps & ESP_RTL_SDR_CAP_GAIN) != 0;
+        g.auto_available = (caps & ESP_RTL_SDR_CAP_GAIN_AUTO) != 0;
+        g.rtl_agc_available = (caps & ESP_RTL_SDR_CAP_RTL_AGC) != 0;
+        g.bias_available = (caps & ESP_RTL_SDR_CAP_BIAS_TEE) != 0;
+        esp_rtl_sdr_gain_mode_t mode = ESP_RTL_SDR_GAIN_MODE_AUTO;
+        if (esp_rtl_sdr_get_tuner_gain_mode(sdr, &mode) == ESP_OK) g.auto_mode = mode == ESP_RTL_SDR_GAIN_MODE_AUTO;
+        (void)esp_rtl_sdr_get_tuner_gain(sdr, &g.tenth_db);
+        size_t count = 0;
+        if (esp_rtl_sdr_get_tuner_gains(sdr, g.steps, 32, &count) == ESP_OK) g.step_count = static_cast<uint8_t>(count < 32 ? count : 32);
+        (void)esp_rtl_sdr_get_rtl_agc(sdr, &g.rtl_agc);
+        (void)esp_rtl_sdr_get_bias_tee(sdr, &g.bias);
+        portENTER_CRITICAL(&gain_lock);
+        g_gain = g;
+        portEXIT_CRITICAL(&gain_lock);
+      }
+    }
     if (now - last_metrics > 750000) {
       last_metrics = now;
       esp_rtl_sdr_metrics_t m{};
@@ -199,6 +239,26 @@ bool start(QueueHandle_t commands) {
 }
 
 void set_iq_sink(IqSink sink) { g_sink = sink; }
+Gain gain() {
+  Gain g;
+  portENTER_CRITICAL(&gain_lock);
+  g = g_gain;
+  portEXIT_CRITICAL(&gain_lock);
+  return g;
+}
+void set_gain_auto() { gain_req_kind = 1; }
+void set_gain_manual(int tenth_db) {
+  gain_req_value = tenth_db;
+  gain_req_kind = 2;
+}
+void set_rtl_agc(bool enable) {
+  gain_req_value = enable ? 1 : 0;
+  gain_req_kind = 3;
+}
+void set_bias_tee(bool enable) {
+  gain_req_value = enable ? 1 : 0;
+  gain_req_kind = 4;
+}
 void tune_to(uint32_t frequency_hz) { tune_request = frequency_hz; }
 float level_dbfs() { return state.load() == 2 ? dbfs.load() : -120.0f; }
 uint32_t sample_rate() { return rate_now.load(); }

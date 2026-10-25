@@ -28,6 +28,8 @@ std::atomic<int> g_mode{static_cast<int>(orcsdr::dsp::Mode::wfm)};
 std::atomic<bool> g_mode_supported{true};
 std::atomic<uint8_t> g_volume{128};
 std::atomic<bool> g_sound{true};
+std::atomic<bool> g_gate{true};
+std::atomic<float> g_channel_dbfs{-120.0f};
 std::atomic<uint32_t> g_blocks{0}, g_dropped{0}, g_underruns{0};
 std::atomic<uint32_t> g_tone_hz{0}, g_tone_frames{0};
 std::atomic<float> g_fill{0.0f}, g_ppm{0.0f};
@@ -123,7 +125,8 @@ void task(void*) {
     const int64_t t_demod = esp_timer_get_time();
     const size_t n = demod.process(iq, got & ~static_cast<size_t>(1), demodulated, 2048);
     g_demod_us.store((g_demod_us.load() * 15 + static_cast<uint32_t>(esp_timer_get_time() - t_demod)) / 16);
-    const bool active = g_mode_supported.load() && g_sound.load();
+    g_channel_dbfs.store(demod.channel_dbfs());
+    const bool active = g_mode_supported.load() && g_sound.load() && g_gate.load();
     pending.insert(pending.end(), demodulated, demodulated + n);
 
     // Adaptive step: more than one block queued -> consume faster (step > 1); too empty -> slower.
@@ -174,6 +177,8 @@ void set_mode(orcsdr::dsp::Mode mode, bool supported) {
 }
 void set_volume(uint8_t volume) { g_volume.store(volume); }
 void set_sound(bool enabled) { g_sound.store(enabled); }
+void set_gate(bool open) { g_gate.store(open); }
+float channel_dbfs() { return g_channel_dbfs.load(); }
 
 bool play_tone(uint32_t frequency_hz, uint32_t duration_ms) {
   if (!g_running || frequency_hz < 50 || frequency_hz > 8000 || duration_ms == 0 || duration_ms > 5000) return false;

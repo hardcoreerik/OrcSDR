@@ -27,5 +27,9 @@ const Screen* const* all(size_t* count);
 
 // Defined by the adapters.
 const Screen& fm_screen();
+const Screen& am_screen();
+const Screen& cb_screen();
+const Screen& airband_screen();
+const Screen& shortwave_screen();
 
 }  // namespace screens

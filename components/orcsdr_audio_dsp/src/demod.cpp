@@ -112,6 +112,23 @@ void Demod::set_input_rate(uint32_t rate) {
   reset();
 }
 
+void Demod::build_ssb(Mode mode) {
+  constexpr size_t n = SsbFilter::kTaps;
+  const float fs = 48000.0f, f_lo = 300.0f, f_hi = 2700.0f;
+  const std::vector<float> lp = lowpass(n, (f_hi - f_lo) / 2.0f / fs);
+  const float center = (mode == Mode::usb ? 1.0f : -1.0f) * (f_lo + f_hi) / 2.0f;
+  const float mid = (n - 1) / 2.0f;
+  for (size_t k = 0; k < n; ++k) {
+    const float ph = 2 * kPi * center / fs * (static_cast<float>(k) - mid);
+    ssb_.re[k] = lp[k] * std::cos(ph);
+    ssb_.im[k] = lp[k] * std::sin(ph);
+  }
+  std::fill(ssb_.hist_i, ssb_.hist_i + 2 * n, 0.0f);
+  std::fill(ssb_.hist_q, ssb_.hist_q + 2 * n, 0.0f);
+  ssb_.pos = 0;
+  ssb_built_ = mode;
+}
+
 void Demod::set_mode(Mode mode) {
   if (mode == mode_) return;
   mode_ = mode;
@@ -126,6 +143,7 @@ void Demod::reset() {
   stage_b_wfm_.reset();
   prev_i_ = prev_q_ = deemph_ = dc_ = nfm_lp_ = 0;
   level_ = 0.1f;
+  chan_pow_ = 1e-12f;
 }
 
 size_t Demod::process(const uint8_t* iq, size_t bytes, float* out, size_t capacity) {
@@ -173,11 +191,14 @@ size_t Demod::process(const uint8_t* iq, size_t bytes, float* out, size_t capaci
   return written;
 }
 
+float Demod::channel_dbfs() const { return 10.0f * std::log10(std::max(chan_pow_, 1e-12f)); }
+
 size_t Demod::stage_b(float ai, float aq, float* out, size_t room) {
   constexpr float kWfmGain = 240000.0f / (2 * kPi * 75000.0f);   // +/-75 kHz deviation -> +/-1
   constexpr float kNfmGain = 48000.0f / (2 * kPi * 5000.0f);     // +/-5 kHz deviation -> +/-1
   static const float deemph_alpha = 1.0f - std::exp(-1.0f / (48000.0f * 75e-6f));  // computed once
   if (mode_ == Mode::wfm) {
+    chan_pow_ += 0.001f * (ai * ai + aq * aq - chan_pow_);
     // Discriminator at 240 kS/s: phase advance between consecutive samples.
     const float re = ai * prev_i_ + aq * prev_q_;
     const float im = aq * prev_i_ - ai * prev_q_;
@@ -192,8 +213,26 @@ size_t Demod::stage_b(float ai, float aq, float* out, size_t room) {
   }
   float bi, bq;
   if (!stage_b_nb_.push(ai, aq, &bi, &bq)) return 0;
+  chan_pow_ += 0.01f * (bi * bi + bq * bq - chan_pow_);  // at 48 kS/s
   float audio;
-  if (mode_ == Mode::nfm) {
+  if (mode_ == Mode::usb || mode_ == Mode::lsb) {
+    if (ssb_built_ != mode_) build_ssb(mode_);
+    constexpr size_t n = SsbFilter::kTaps;
+    ssb_.hist_i[ssb_.pos] = ssb_.hist_i[ssb_.pos + n] = bi;
+    ssb_.hist_q[ssb_.pos] = ssb_.hist_q[ssb_.pos + n] = bq;
+    ssb_.pos = ssb_.pos + 1 == n ? 0 : ssb_.pos + 1;
+    const float* hi = &ssb_.hist_i[ssb_.pos];
+    const float* hq = &ssb_.hist_q[ssb_.pos];
+    float yr = 0, yi = 0;
+    for (size_t k = 0; k < n; ++k) {  // complex multiply-accumulate; newest sample is hist[n-1]
+      const float xi = hi[n - 1 - k], xq = hq[n - 1 - k];
+      yr += ssb_.re[k] * xi - ssb_.im[k] * xq;
+      yi += ssb_.re[k] * xq + ssb_.im[k] * xi;
+    }
+    const float env = std::sqrt(yr * yr + yi * yi);
+    level_ += 0.0005f * (env - level_);  // slow AGC on the speech envelope
+    audio = yr / std::max(level_, 0.01f) * 0.35f;
+  } else if (mode_ == Mode::nfm) {
     const float re = bi * prev_i_ + bq * prev_q_;
     const float im = bq * prev_i_ - bi * prev_q_;
     prev_i_ = bi;

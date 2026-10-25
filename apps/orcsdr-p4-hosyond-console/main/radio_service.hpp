@@ -22,6 +22,26 @@ float level_dbfs();
 uint32_t sample_rate();
 // Requests 960 kS/s (rate <= 1 MS/s) or 2.4 MS/s; the stream restarts briefly.
 void set_sample_rate(uint32_t rate);
+// Receiver controls (tuner gain, AGC, bias tee). Reads come from a cache the receiver task refreshes
+// about twice a second; writes are queued for that task and applied while streaming. Automatic gain is the
+// tuner's own AGC, so it adapts to the dongle, antenna and location (nothing is tuned to one setup).
+struct Gain {
+  bool available = false;       // the dongle exposes a tuner gain ladder
+  bool auto_available = false;  // tuner AGC can be selected
+  bool auto_mode = true;
+  int tenth_db = 0;             // current manual gain, 1/10 dB
+  int steps[32] = {};           // the ladder, 1/10 dB
+  uint8_t step_count = 0;
+  bool rtl_agc_available = false;
+  bool rtl_agc = false;
+  bool bias_available = false;
+  bool bias = false;
+};
+Gain gain();
+void set_gain_auto();
+void set_gain_manual(int tenth_db);
+void set_rtl_agc(bool enable);
+void set_bias_tee(bool enable);
 waveshare4b::home_v3::Snapshot snapshot();
 // Copies the latest 256-bin relative-intensity FFT; returns true if it is new since the last call.
 bool take_bins(uint8_t out[256]);

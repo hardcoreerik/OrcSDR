@@ -17,7 +17,7 @@
 
 namespace orcsdr::dsp {
 
-enum class Mode : uint8_t { wfm, nfm, am };
+enum class Mode : uint8_t { wfm, nfm, am, usb, lsb };
 
 class Demod {
  public:
@@ -30,6 +30,9 @@ class Demod {
   void set_input_rate(uint32_t rate);
   uint32_t input_rate() const { return rate_; }
   Mode mode() const { return mode_; }
+  // Power of the selected channel after the channel filter, dBFS (about -120 when empty). Narrow modes use
+  // the 7.5 kHz channel filter; WFM uses the 100 kHz one.
+  float channel_dbfs() const;
   void reset();
 
   // Consumes `bytes` of interleaved CU8 IQ (an even number) and appends mono audio (-1..1) at 48 kHz
@@ -60,6 +63,18 @@ class Demod {
 
   size_t stage_b(float ai, float aq, float* out, size_t room);  // one 240 kS/s sample in, 0 or 1 audio sample out
 
+  // Single sideband: the 48 kS/s complex baseband (carrier at 0 Hz) goes through a one-sided band-pass,
+  // 300 to 2700 Hz on the positive side for USB and the negative side for LSB; the real part is the audio.
+  struct SsbFilter {
+    static constexpr size_t kTaps = 97;
+    float re[kTaps] = {}, im[kTaps] = {};
+    float hist_i[2 * kTaps] = {}, hist_q[2 * kTaps] = {};
+    size_t pos = 0;
+  };
+  SsbFilter ssb_;
+  Mode ssb_built_ = Mode::wfm;
+  void build_ssb(Mode mode);
+
   Mode mode_ = Mode::wfm;
   // Stage A runs on whole blocks: 33 symmetric taps, 960k -> 240k, 100 kHz. The block form keeps the
   // samples contiguous and halves the multiplies (the taps are symmetric), which matters at 960 kS/s.
@@ -73,6 +88,7 @@ class Demod {
   std::vector<float> xi_, xq_;
   ComplexFir stage_b_nb_;    // 240k -> 48k, narrow-band modes
   RealFir stage_b_wfm_;      // 240k -> 48k, 15 kHz audio after the discriminator
+  float chan_pow_ = 1e-12f;            // smoothed |channel|^2
   float prev_i_ = 0, prev_q_ = 0;      // discriminator memory
   float deemph_ = 0;                   // WFM de-emphasis state
   float dc_ = 0, level_ = 0.1f;        // AM DC estimate and envelope level (AGC)

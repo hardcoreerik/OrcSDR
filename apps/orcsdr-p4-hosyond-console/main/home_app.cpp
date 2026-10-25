@@ -100,8 +100,20 @@ void fill_snapshot() {
   s.driver_ready = radio_state.receiver_state == 2;
   s.receiving = radio_state.receiver_state == 2;
   s.sound_enabled = g_sound;
-  s.gain_available = false;  // receiver gain control is not wired on this target yet
-  s.gain_auto_available = false;
+  {
+    const radio::Gain g = radio::gain();
+    s.gain_available = g.available && radio_state.receiver_state == 2;
+    s.gain_auto_available = g.auto_available;
+    s.gain_smart = false;  // automatic gain is the tuner's own AGC
+    s.gain_auto = g.auto_mode;
+    s.rtl_agc_available = g.rtl_agc_available;
+    s.rtl_agc = g.rtl_agc;
+    s.bias_available = g.bias_available;
+    s.bias_on = g.bias;
+    s.gain_tenth_db = static_cast<int16_t>(g.tenth_db);
+    s.gain_step_count = g.step_count;
+    for (int i = 0; i < g.step_count; ++i) s.gain_steps_tenth_db[i] = static_cast<int16_t>(g.steps[i]);
+  }
   std::snprintf(s.receiver, sizeof(s.receiver), "RTL-SDR");
   std::snprintf(s.mode, sizeof(s.mode), "%s", p.mode == band_profile::Mode::none ? "IQ" : home_vfo::demod_name(active));
   s.mode_choice = g_vfo.pin(p);
@@ -164,14 +176,40 @@ void handle_action(const home::Action& a) {
       ++g_rev;
       break;
     }
+    case home::ActionKind::gain_auto:
+      radio::set_gain_auto();
+      ++g_status_rev;
+      ++g_rev;
+      break;
+    case home::ActionKind::gain_tenth_db:
+      radio::set_gain_manual(static_cast<int>(a.value));
+      ++g_status_rev;
+      ++g_rev;
+      break;
+    case home::ActionKind::rtl_agc:
+      radio::set_rtl_agc(a.value != 0);
+      ++g_status_rev;
+      ++g_rev;
+      break;
     case home::ActionKind::filter_set:
       g_bandwidth_override_hz = a.value;
       ++g_tuner_rev;
       ++g_rev;
       break;
     case home::ActionKind::open_dashboard:
-      if (screens::find(a.dashboard)) g_request_screen = static_cast<int>(a.dashboard);
-      else ESP_LOGI(TAG, "dashboard %u is not available on this target yet", unsigned(a.dashboard));
+      if (screens::find(a.dashboard)) {
+        g_request_screen = static_cast<int>(a.dashboard);
+      } else if (a.dashboard == dashboards::Id::weather) {
+        retune(162400000);  // these use the Tab5's generic receiver screen, which is Home here
+      } else if (a.dashboard == dashboards::Id::marine) {
+        retune(156800000);
+      } else if (a.dashboard == dashboards::Id::satellite) {
+        retune(137500000);
+      } else if (a.dashboard == dashboards::Id::utilities) {
+        ESP_LOGI(TAG, "utilities: staying on Home");
+      } else {
+        ESP_LOGI(TAG, "dashboard %u is not available on this target yet", unsigned(a.dashboard));
+      }
       break;
     case home::ActionKind::none:
       break;
@@ -204,7 +242,7 @@ void ui_task(void*) {
   int last_x = 0, last_y = 0;  // design coordinates
   int64_t last_snapshot_us = 0, last_log_us = 0;
   int tap_frames = 0, tap_x = 0, tap_y = 0;  // injected tap (design coordinates), held ~150 ms
-  int last_state = -1, last_level = 0;
+  int last_state = -1, last_level = 0, last_gain_key = -1;
   uint32_t last_sps = 0, last_applied_hz = 0;
   uint8_t bins[256];
   for (;;) {
@@ -227,6 +265,7 @@ void ui_task(void*) {
     if (wanted_screen != -2) {
       if (g_active) g_active->leave();
       else home::leave();
+      audio_service::set_gate(true);
       g_active = wanted_screen >= 0 ? screens::find(static_cast<dashboards::Id>(wanted_screen)) : nullptr;
       M5.Display.fillScreen(0x0000);
       if (g_active) {
@@ -286,6 +325,16 @@ void ui_task(void*) {
         ++g_status_rev;
         ++g_rev;
       }
+      {
+        const radio::Gain g = radio::gain();
+        const int gain_key = g.tenth_db * 8 + (g.auto_mode ? 1 : 0) + (g.rtl_agc ? 2 : 0) + (g.bias ? 4 : 0) +
+                             (g.available ? 100000 : 0) + g.step_count * 1000;
+        if (gain_key != last_gain_key) {
+          last_gain_key = gain_key;
+          ++g_status_rev;
+          ++g_rev;
+        }
+      }
       const int level = static_cast<int>(std::lround(radio::level_dbfs()));
       if (level != last_level) {
         last_level = level;
@@ -306,10 +355,14 @@ void ui_task(void*) {
       {
         // Receiver audio follows Home: WFM/NFM/AM are demodulated; USB/LSB and IQ-only bands are silent for now.
         const auto d = active_demod(current_profile());
-        const bool ok = d == home_vfo::Demod::wfm || d == home_vfo::Demod::nfm || d == home_vfo::Demod::am;
-        audio_service::set_mode(d == home_vfo::Demod::am ? orcsdr::dsp::Mode::am
-                                : d == home_vfo::Demod::nfm ? orcsdr::dsp::Mode::nfm
-                                                            : orcsdr::dsp::Mode::wfm, ok);
+        if (!g_active) {  // a dashboard sets its own demodulator in its tick
+          audio_service::set_mode(d == home_vfo::Demod::am    ? orcsdr::dsp::Mode::am
+                                  : d == home_vfo::Demod::nfm ? orcsdr::dsp::Mode::nfm
+                                  : d == home_vfo::Demod::usb ? orcsdr::dsp::Mode::usb
+                                  : d == home_vfo::Demod::lsb ? orcsdr::dsp::Mode::lsb
+                                                              : orcsdr::dsp::Mode::wfm,
+                                  true);
+        }
         audio_service::set_volume(g_volume);
         audio_service::set_sound(g_sound);
       }

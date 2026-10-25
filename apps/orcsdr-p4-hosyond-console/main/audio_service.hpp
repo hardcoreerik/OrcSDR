@@ -20,6 +20,11 @@ void set_sound(bool enabled);
 // Test tone straight to the speaker (bypasses the receiver). Returns false if audio is not running.
 bool play_tone(uint32_t frequency_hz, uint32_t duration_ms);
 
+// Squelch gate: false mutes the audio (the receiver and demodulator keep running). Defaults open.
+void set_gate(bool open);
+// Channel power after the demodulator's channel filter, dBFS.
+float channel_dbfs();
+
 struct Status {
   bool running = false;
   bool muted = false;
