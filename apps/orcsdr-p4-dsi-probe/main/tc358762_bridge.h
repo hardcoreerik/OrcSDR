@@ -41,46 +41,33 @@
 #define TC358762_LPX_PERIOD           3
 #define TC358762_CLRSIPO_COUNT        5
 
-/* LCDCTRL fields, corrected per Tomi Valkeinen's upstream tc358762-fixes
- * series (Oct 2026). The defines inherited from raspberrypi/linux rpi-6.6.y
- * were "based on guesswork that this matches TC358764" and are wrong: what that
- * tree calls LCDCTRL_UNK6|LCDCTRL_VTGEN are the two high bits of PXLFORM, and
- * what it calls VTGEN (bit 4) is PXLFORM's low bit.
- * https://lore.kernel.org/dri-devel/20261015-tc358762-fixes-v5-3-7cd721a6451b@ideasonboard.com/
- * Cross-checked against the datasheet-derived F&S Elektronik driver. */
-#define TC358762_LCDCTRL_MSF          (1u << 0)   /* magic square FRC, RGB666 */
-#define TC358762_LCDCTRL_VTGEN        (1u << 1)   /* use chip clock for timing */
-#define TC358762_LCDCTRL_PXLFORM_RGB888 (5u << 4) /* PXLFORM 6:4, 5 = R:G:B 8:8:8 */
-#define TC358762_LCDCTRL_PXLFORM_MASK (7u << 4)
-#define TC358762_LCDCTRL_DPI_EN       (1u << 8)   /* DPI output enable */
-#define TC358762_LCDCTRL_HSYNC_POL    (1u << 17)
-#define TC358762_LCDCTRL_DE_POL       (1u << 18)
-#define TC358762_LCDCTRL_VSYNC_POL    (1u << 19)
-#define TC358762_LCDCTRL_DCLK_POL     (1u << 20)
+#define TC358762_LCDCTRL_UNK6         (1u << 6)
+#define TC358762_LCDCTRL_VTGEN        (1u << 4)
+#define TC358762_LCDCTRL_RGB888       (1u << 8)
+#define TC358762_LCDCTRL_VSDELAY(v)   (((v) & 0xfffu) << 20)
 
 #define TC358762_SYSCTRL_VALUE        0x040f
 
-/* VFUEN: "video frame update enable", the latch that uploads the VTG timing
- * registers. Every driver that actually uses VTG writes it after programming
- * 0x0424/0x0428/0x042c/0x0430 and before enabling VTG. It is also bit 0 of
- * register 0x0434, which doubles as the vertical front porch field once VTG is
- * running, so it must be written before LCDCTRL turns the generator on. */
-#define TC358762_VFUEN               0x0434
-#define TC358762_VFUEN_ENABLE        0x01
+/* The bridge's DE window starts (HSW + HBP) after hsync, but the D4 stream from
+ * the P4 delivers active pixels earlier than that, so content sits displaced to
+ * the right with the line tail wrapped onto the left edge. Measured on the
+ * panel with a full-width digit ruler: 140 px of displacement at a compensation
+ * of 100. Compensation is transferred out of the front porch rather than added,
+ * so the bridge line total stays 1058 and matches the host. */
+#define TC358762_DE_START_COMP        254
 
-/* DPI enabled, RGB888, pixel clock polarity inverted, timing generator ON.
- * 0x00100150 (the value upstream tc358762.c writes) is the same thing with
- * VTGEN clear: DCLK_POL | DPI_EN | PXLFORM_RGB888. */
-#define TC358762_LCDCTRL_VTG_RGB888   (TC358762_LCDCTRL_DCLK_POL | \
-                                       TC358762_LCDCTRL_DPI_EN | \
-                                       TC358762_LCDCTRL_PXLFORM_RGB888 | \
+/* Upstream tc358762.c: VSDELAY(1) | RGB888 | UNK6 | VTGEN = 0x00100150 */
+#define TC358762_LCDCTRL_UPSTREAM     (TC358762_LCDCTRL_VSDELAY(1) | \
+                                       TC358762_LCDCTRL_RGB888 | \
+                                       TC358762_LCDCTRL_UNK6 | \
                                        TC358762_LCDCTRL_VTGEN)
 
-/* The value the upstream driver writes, kept so the log shows which mode is
- * active. Note it leaves VTGEN clear, i.e. the bridge duplicates the timings it
- * receives over DSI instead of generating its own. */
-#define TC358762_LCDCTRL_DUP_DSI      (TC358762_LCDCTRL_DCLK_POL | \
-                                       TC358762_LCDCTRL_DPI_EN | \
-                                       TC358762_LCDCTRL_PXLFORM_RGB888)
-
+/* Same as above with VTGEN cleared, so the LCD raster is slaved to the sync
+ * pulses arriving over DSI instead of free-running from the bridge's own
+ * timing generator. Used because a free-running generator is clocked from a
+ * different PLL than the P4 pixel clock, which shows up as the image sitting
+ * at a constant horizontal offset and slowly cycling. */
+#define TC358762_LCDCTRL_DSI_SYNCED   (TC358762_LCDCTRL_VSDELAY(1) | \
+                                       TC358762_LCDCTRL_RGB888 | \
+                                       TC358762_LCDCTRL_UNK6)
 

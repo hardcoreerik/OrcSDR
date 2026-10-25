@@ -358,7 +358,7 @@ static void bridge_readback_probe(esp_lcd_dsi_bus_handle_t bus, const char *stag
         uint32_t expected;
     } regs[] = {
         { TC358762_SYSCTRL, "SYSCTRL", TC358762_SYSCTRL_VALUE },
-        { TC358762_LCDCTRL, "LCDCTRL", TC358762_LCDCTRL_VTG_RGB888 },
+        { TC358762_LCDCTRL, "LCDCTRL", TC358762_LCDCTRL_UPSTREAM },
     };
 
     ESP_LOGI(TAG, "bridge readback (%s):", stage);
@@ -384,26 +384,37 @@ static void tc358762_bridge_init(esp_lcd_dsi_bus_handle_t bus, const h4_profile_
     tc358762_write(bus, TC358762_PPI_D1S_ATMR, 0);
     tc358762_write(bus, TC358762_PPI_LPTXTIMECNT, TC358762_LPX_PERIOD);
     tc358762_write(bus, TC358762_SPICMR, 0x00);
+    tc358762_write(bus, TC358762_LCDCTRL, TC358762_LCDCTRL_UPSTREAM);
     tc358762_write(bus, TC358762_SYSCTRL, TC358762_SYSCTRL_VALUE);
 
-    /* Order matters: program the timings, upload them with VFUEN, and only then
-     * enable the timing generator in LCDCTRL. Every driver that uses VTG writes
-     * them in this order. LCDCTRL bit 1 turns the generator on, after which the
-     * DE window opens HSW + HBP into each line, entirely from these registers.
-     * The host DPI stream is programmed with the same values, so the pixel
-     * payload and the DE window start at the same pixel and the image is not
-     * displaced. The panel requires hsw+hbp == 46 and vsw+vbp == 23; the
-     * profile guarantees both. */
+    /* This is the configuration that was last confirmed to put a visible image
+     * on this panel. The bridge's DE window opens (HSW + HBP) into each line,
+     * but the DSI payload from the P4 arrives earlier than that, so the content
+     * is displaced and the line tail wraps onto the left edge. The compensation
+     * moves the DE window by trading back porch for front porch, which keeps
+     * the bridge's line total equal to the host's - if it does not, the panel
+     * shows nothing at all. */
+    int bridge_hbp = p->hbp + TC358762_DE_START_COMP;
+    int bridge_hfp = p->hfp - TC358762_DE_START_COMP;
+    if (bridge_hfp < 0) {
+        bridge_hfp = 0;
+    }
+    const int host_total = HOSYOND_H_RES + p->hsw + p->hbp + p->hfp;
+    const int bridge_total = HOSYOND_H_RES + p->hsw + bridge_hbp + bridge_hfp;
+    ESP_LOGI(TAG, "line totals: host %d (hbp %d + hfp %d), bridge %d (hbp %d + hfp %d)",
+             host_total, p->hbp, p->hfp, bridge_total, bridge_hbp, bridge_hfp);
+    if (host_total != bridge_total) {
+        ESP_LOGE(TAG, "MISMATCH: bridge raster %d vs host line %d - panel will be blank",
+                 bridge_total, host_total);
+    }
     tc358762_write(bus, TC358762_LCD_HS_HBP,
-                   ((uint32_t)p->hbp << 16) | (uint32_t)p->hsw);
+                   ((uint32_t)bridge_hbp << 16) | (uint32_t)p->hsw);
     tc358762_write(bus, TC358762_LCD_HDISP_HFP,
-                   ((uint32_t)p->hfp << 16) | (uint32_t)HOSYOND_H_RES);
+                   ((uint32_t)bridge_hfp << 16) | (uint32_t)HOSYOND_H_RES);
     tc358762_write(bus, TC358762_LCD_VS_VBP,
                    ((uint32_t)p->vbp << 16) | (uint32_t)p->vsw);
     tc358762_write(bus, TC358762_LCD_VDISP_VFP,
                    ((uint32_t)p->vfp << 16) | (uint32_t)HOSYOND_V_RES);
-    tc358762_write(bus, TC358762_VFUEN, TC358762_VFUEN_ENABLE);
-    tc358762_write(bus, TC358762_LCDCTRL, TC358762_LCDCTRL_VTG_RGB888);
 
     vTaskDelay(pdMS_TO_TICKS(100));
     tc358762_write(bus, TC358762_PPI_STARTPPI, 1);

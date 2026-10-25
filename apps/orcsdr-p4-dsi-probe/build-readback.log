@@ -1,0 +1,54 @@
+Your environment is not configured to handle Unicode characters.
+
+Recommended fix (persistent):
+ - Enable "Beta: Use Unicode UTF-8 for worldwide language support" in Windows language/region settings.
+
+If you still see issues or this warning persists, you can also try one of these workarounds:
+ - Run "chcp 65001" in the current console before running idf.py.
+ - Set PYTHONUTF8=1 before running idf.py (or set it globally).
+
+Note: "chcp 65001" must be run in each new console session unless your console/profile is configured to apply it automatically.
+[1/9] Performing build step for 'bootloader'
+[1/1] C:\WINDOWS\system32\cmd.exe /C "cd /D F:\Ai\OrcSDR\apps\orcsdr-p4-dsi-probe\build\bootloader && C:\Espressif\python_env\idf6.1_py3.14_env\Scripts\python.exe C:/Espressif/v6.1/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x2000 F:/Ai/OrcSDR/apps/orcsdr-p4-dsi-probe/build/bootloader/bootloader.bin"
+
+Bootloader binary size 0x5e30 bytes. 0x1d0 bytes (2%) free.
+
+
+[2/9] No install step for 'bootloader'
+[3/9] Completed 'bootloader'
+[4/9] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/main.c.obj
+[5/9] Linking C static library esp-idf\main\libmain.a
+[6/9] Generating esp-idf/esp_system/ld/sections.ld
+NOTE: C:/Espressif/v6.1/esp-idf/components/bt/host/nimble/Kconfig.in:1428: BT_NIMBLE_MESH_PROVISIONER: 'default 0' is not a valid bool value (only 'y' and 'n' are allowed). Value is treated as 'n'.
+NOTE: C:/Espressif/v6.1/esp-idf/components/fatfs/Kconfig:240: FATFS_PRINT_LLI: 'default 0' is not a valid bool value (only 'y' and 'n' are allowed). Value is treated as 'n'.
+NOTE: C:/Espressif/v6.1/esp-idf/components/fatfs/Kconfig:245: FATFS_PRINT_FLOAT: 'default 0' is not a valid bool value (only 'y' and 'n' are allowed). Value is treated as 'n'.
+
+Skipping linker fragment parsing, fragment files unchanged
+
+[7/9] Linking CXX executable orcsdr_p4_dsi_probe.elf
+[8/9] Generating binary image from built executable
+esptool v5.4.0
+
+Creating ESP32-P4 image...
+
+Merged 4 ELF sections.
+
+Successfully created ESP32-P4 image.
+
+Generated F:/Ai/OrcSDR/apps/orcsdr-p4-dsi-probe/build/orcsdr_p4_dsi_probe.bin
+[9/9] C:\WINDOWS\system32\cmd.exe /C "cd /D F:\Ai\OrcSDR\apps\orcsdr-p4-dsi-probe\build && C:\Espressif\python_env\idf6.1_py3.14_env\Scripts\python.exe C:/Espressif/v6.1/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app F:/Ai/OrcSDR/apps/orcsdr-p4-dsi-probe/build/partition_table/partition-table.bin F:/Ai/OrcSDR/apps/orcsdr-p4-dsi-probe/build/orcsdr_p4_dsi_probe.bin"
+orcsdr_p4_dsi_probe.bin binary size 0x3c470 bytes. Smallest app partition is 0x177000 bytes. 0x13ab90 bytes (84%) free.
+
+Executing action: all (aliases: build)
+Running ninja in directory F:\Ai\OrcSDR\apps\orcsdr-p4-dsi-probe\build
+Executing "ninja all"...
+
+
+Project build complete. To flash, run:
+ idf.py flash
+or
+ idf.py -p PORT flash
+or
+ python -m esptool --chip esp32p4 -b 460800 --before default-reset --after hard-reset write-flash --flash-mode dio --flash-size 16MB --flash-freq 80m 0x2000 build\bootloader\bootloader.bin 0x8000 build\partition_table\partition-table.bin 0x10000 build\orcsdr_p4_dsi_probe.bin
+or from the "F:\Ai\OrcSDR\apps\orcsdr-p4-dsi-probe\build" directory
+ python -m esptool --chip esp32p4 -b 460800 --before default-reset --after hard-reset write-flash "@flash_args"

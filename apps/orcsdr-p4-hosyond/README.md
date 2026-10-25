@@ -14,8 +14,13 @@ is not yet a supported target.
 
 ## What it does
 
-1. Brings the panel up with the profile `measured-hbp300` — see the probe
-   README for how that value was derived from measurements.
+1. Brings the panel up with the proven profile `rpi-observed-stable`
+   (`hfp 254 / hsw 2 / hbp 46`, bridge `hbp 300 / hfp 0`, both line totals
+   1102 px) — see the probe README for how that value was derived from
+   measurements.
+2. Runs a boot screen test first: full-screen **white, red, green, blue**, 1.5 s
+   each, so "nothing on screen" can never be confused with "the application
+   drew something dark".
 2. Composes an OrcSDR screen into a PSRAM framebuffer at 800x480 RGB888:
    the OrcSDR badge (from the tab5 asset), the wordmark, and a live status block
    (node id, uptime, free heap, frame count and refresh rate) over an activity

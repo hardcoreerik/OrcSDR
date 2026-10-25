@@ -62,21 +62,30 @@ immediately. A wrong PHY reference silently corrupts the link.
 
 Because the framebuffer and the DMA buffer are both proved correct, the
 remaining horizontal displacement is entirely in scan-out, and its magnitude is
-a single quantity that was measured rather than eyeballed. Sweeping the active
-profile's HBP moves the DE window on the host stream and on the bridge VTG
-together, and the panel displacement read off the ruler card was:
+a single quantity that was measured rather than eyeballed. Trading bridge back
+porch for front porch moves the DE window while keeping the bridge's line total
+equal to the host's, and the panel displacement read off the ruler card was:
 
-| profile HBP | measured displacement |
-| ----------- | --------------------- |
-| 146         | 140 px                |
-| 256         | 40 px                 |
+| bridge HBP | measured displacement |
+| ---------- | --------------------- |
+| 146        | 140 px                |
+| 256        | 40 px                 |
 
 The two points give `offset(h) = 140 - 0.9091 * (h - 146)`: a one-to-one
-response with 0.909 px of image movement per pixel of HBP. The zero crossing is
-therefore at `h = 300`, which is why `measured-hbp300` is the default profile
-(`hfp=131, hsw=2, hbp=300, dpi_mhz=25.98`, horizontal total 1233 → 41.3 Hz).
-Vertical timing is untouched because vertical geometry was already measured
-correct. `datasheet-800x480` is retained unchanged as the recovery profile.
+response with 0.909 px of image movement per pixel of bridge HBP. The zero
+crossing is at `h = 300`, so `TC358762_DE_START_COMP` is **254** and the active
+profile's HFP is **254**: the bridge runs HBP 300 / HFP 0 against a host of
+46 / 254, and both line totals are 1102 px at 25.98 MHz = 44.8 Hz.
+
+The invariant that matters: **the compensation is traded out of the front
+porch, never added**, so the bridge's line total always equals the host's. If a
+profile's HFP is smaller than `TC358762_DE_START_COMP`, the bridge front porch
+clamps at zero, the two totals diverge and the panel goes **completely black** -
+that is not a subtle misalignment, it is no picture at all. `check_line_totals()`
+prints both totals at startup and logs an error if they differ.
+
+Vertical timing is untouched by any of this, because vertical geometry was
+already measured correct.
 
 Not working yet:
 
