@@ -27,7 +27,7 @@ struct Status {
   uint32_t blocks = 0;        // IQ blocks demodulated
   uint32_t dropped_blocks = 0;  // IQ blocks that did not fit the stream buffer
   uint32_t underruns = 0;     // times the audio task had no IQ ready
-  float buffer_fill = 0.0f;   // 0..1 (the resampler holds it near 0.25)
+  float buffer_fill = 0.0f;   // 0..1 (the resampler holds it near 0.1)
   float resample_ppm = 0.0f;  // current rate correction
 };
 Status status();

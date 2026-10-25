@@ -121,6 +121,7 @@ class ScaledGfx {
   int scroll_x_ = 0, scroll_y_ = 0, scroll_w_ = 0, scroll_h_ = 0;
   float scroll_accum_y_ = 0.0f, scroll_accum_x_ = 0.0f;
   bool has_scroll_ = false;
+  int vacated_ = 0;  // pixel rows the last upward scroll vacated at the bottom of the scroll rect
 };
 
 // A persistent PSRAM scratch buffer that grows on demand (UI task only).
@@ -148,7 +149,17 @@ template <typename T> void ScaledGfx::fillScreen(const T& color) {
   dirty(0, 0, tw_, th_);
 }
 template <typename T> void ScaledGfx::fillRect(int x, int y, int w, int h, const T& color) {
-  const int px = X(x), py = Y(y), pw = std::max(1, X(x + w) - px), ph = std::max(1, Y(y + h) - py);
+  const int px = X(x), pw = std::max(1, X(x + w) - px);
+  int py = Y(y), ph = std::max(1, Y(y + h) - py);
+  // A strip painted along the bottom of the scroll rect right after an upward scroll (a scrolling
+  // waterfall's new line) must cover exactly the rows that scroll vacated: scaled separately, the
+  // scroll and the fill can differ by a pixel row, which leaves a visible gap line.
+  const int scroll_bottom = scroll_y_ + scroll_h_;
+  if (has_scroll_ && vacated_ > 0 && py + ph >= scroll_bottom - 1 && py + ph <= scroll_bottom + 1 &&
+      px >= scroll_x_ - 1 && px < scroll_x_ + scroll_w_ && ph <= vacated_ + 2) {
+    py = scroll_bottom - vacated_;
+    ph = vacated_;
+  }
   t_->fillRect(px, py, pw, ph, color);
   dirty(px, py, px + pw, py + ph);
 }

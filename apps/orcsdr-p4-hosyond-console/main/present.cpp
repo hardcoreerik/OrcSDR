@@ -24,7 +24,7 @@ void convert_rows(int fb_index, int y0, int y1) {
     uint8_t* d = g_panel.fb[fb_index] + static_cast<size_t>(y) * g_panel.stride_bytes;
     for (int x = 0; x < w; ++x) {
       uint16_t v = s[x];
-      if (g_swapped) v = __builtin_bswap16(v);
+      if (g_swapped) v = static_cast<uint16_t>((v << 8) | (v >> 8));
       d[0] = g_lut5[v & 31];
       d[1] = g_lut6[(v >> 5) & 63];
       d[2] = g_lut5[v >> 11];
@@ -62,7 +62,12 @@ int present_frame() {
   if (g_panel.fb_count > 1) {
     hosyond_board_flip(&g_panel, g_back);
     g_back = 1 - g_back;
-    convert_rows(g_back, y0, y1);  // keep the buffer we just left identical to the one on screen
+    // Keep the buffer we just left identical to the one on screen: copy the rows (a plain memcpy is
+    // several times cheaper than converting them a second time).
+    const size_t row = g_panel.stride_bytes;
+    memcpy(g_panel.fb[g_back] + static_cast<size_t>(y0) * row, g_panel.fb[1 - g_back] + static_cast<size_t>(y0) * row,
+           static_cast<size_t>(y1 - y0) * row);
+    hosyond_board_sync(&g_panel, g_back, y0, y1);
   }
   g_last_us = static_cast<unsigned>(esp_timer_get_time() - t0);
   return y1 - y0;

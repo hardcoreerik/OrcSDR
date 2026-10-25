@@ -96,6 +96,7 @@ void ScaledGfx::clearClipRect() { t_->clearClipRect(); }
 
 void ScaledGfx::clearScrollRect() {
   has_scroll_ = false;
+  vacated_ = 0;
   t_->clearScrollRect();
 }
 void ScaledGfx::scroll(int dx, int dy) {
@@ -109,6 +110,7 @@ void ScaledGfx::scroll(int dx, int dy) {
   const int px = step(dx, sx_), py = step(dy, sy_);
   if (!px && !py) return;
   t_->scroll(px, py);
+  vacated_ = py < 0 ? -py : 0;
   if (has_scroll_) dirty(scroll_x_, scroll_y_, scroll_x_ + scroll_w_, scroll_y_ + scroll_h_);
   else dirty(0, 0, tw_, th_);
 }

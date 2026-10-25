@@ -140,7 +140,7 @@ void task(void*) {
     size_t n = 0;
     const esp_err_t e = esp_rtl_sdr_read(sdr, iq, kIqBytes, 40, &n);
     if (e == ESP_OK && n && g_sink) g_sink(iq, n);
-    if (e == ESP_OK && n >= 2048 && now - last_fft > 150000) {
+    if (e == ESP_OK && n >= 2048 && now - last_fft > 50000) {
       // Level of the block as RMS of the centred 8-bit samples, in dBFS.
       double acc = 0.0;
       const size_t count = n < 4096 ? n : 4096;
@@ -151,7 +151,7 @@ void task(void*) {
       const double rms = std::sqrt(acc / static_cast<double>(count));
       dbfs = rms > 1e-6 ? static_cast<float>(20.0 * std::log10(rms)) : -120.0f;
     }
-    if (e == ESP_OK && n >= kFftSize * 2 && now - last_fft > 150000) {
+    if (e == ESP_OK && n >= kFftSize * 2 && now - last_fft > 50000) {
       Spectrum view = spectrum_from_cu8(iq, n);
       if (view.real_samples) {
         portENTER_CRITICAL(&bands_lock);

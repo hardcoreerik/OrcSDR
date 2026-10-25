@@ -15,7 +15,7 @@ namespace audio_service {
 namespace {
 constexpr char TAG[] = "AUDIO";
 constexpr uint32_t kRate = 48000;
-constexpr size_t kStreamBytes = 64 * 1024;       // about 34 ms of IQ per 32 KB: room for a few blocks
+constexpr size_t kStreamBytes = 256 * 1024;      // about 130 ms of IQ: rides out the FFT and drawing bursts
 constexpr size_t kBlockBytes = 16384;
 constexpr int kFramesPerWrite = 240;             // 5 ms of audio per I2S write
 // Output gain: Home's volume 0-255 maps to 0..kMaxGain. Deliberately conservative: the codec volume
@@ -116,8 +116,8 @@ void task(void*) {
     pending.insert(pending.end(), demodulated, demodulated + n);
 
     // Adaptive step: more than one block queued -> consume faster (step > 1); too empty -> slower.
-    const float error = (fill - 0.25f);  // one 16 KB block queued of four is the steady state
-    const float step_adjust = std::clamp(error * 0.004f, -0.002f, 0.002f);
+    const float error = (fill - 0.1f);  // about 26 KB (80 ms) queued is the steady state
+    const float step_adjust = std::clamp(error * 0.02f, -0.002f, 0.002f);
     g_ppm.store(step_adjust * 1e6f);
     const double step = 1.0 + step_adjust;
 
@@ -149,10 +149,10 @@ bool start() {
     ESP_LOGE(TAG, "speaker output failed to start; the receiver runs without sound");
     return false;
   }
-  g_stream = xStreamBufferCreate(kStreamBytes, 1);
+  g_stream = xStreamBufferCreateWithCaps(kStreamBytes, 1, MALLOC_CAP_SPIRAM);
   if (!g_stream) return false;
   orcsdr::radio::set_iq_sink(iq_sink);
-  g_running = xTaskCreatePinnedToCore(task, "audio", 12288, nullptr, 4, nullptr, 1) == pdPASS;
+  g_running = xTaskCreatePinnedToCore(task, "audio", 12288, nullptr, 6, nullptr, 1) == pdPASS;
   ESP_LOGI(TAG, "receiver audio %s (48 kHz mono, adaptive resampler)", g_running ? "running" : "FAILED");
   return g_running;
 }
