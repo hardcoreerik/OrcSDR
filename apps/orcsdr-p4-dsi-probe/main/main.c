@@ -44,6 +44,7 @@
 #include "hosyond_7in.h"
 #include "attiny88_panel.h"
 #include "tc358762_bridge.h"
+#include "ft5x06_touch.h"
 
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 1, 0)
 #error "This probe requires ESP-IDF >= 6.1 for esp_lcd_dsi_bus_config_t.flags.clock_lane_force_hs"
@@ -56,6 +57,11 @@
  * bridge locks on once. */
 #ifndef PROBE_READBACK
 #define PROBE_READBACK 0
+#endif
+
+/* 1 = run the on-screen touch self-test (tap the boxes as they appear) at boot. */
+#ifndef PROBE_TOUCH_TEST
+#define PROBE_TOUCH_TEST 1
 #endif
 
 /* 1 = cycle bridge register states at runtime (Experiment 1); 0 = steady card. */
@@ -834,6 +840,122 @@ static void exp1_run(esp_lcd_panel_handle_t panel)
 }
 #endif
 
+/* ---------------- Touch (ft5x06_touch.h task + marker) ---------------- */
+
+#define TOUCH_MARK 20
+
+/* Yellow square under the touch point, written straight into the panel's
+ * frame buffer. Bytes are [B][G][R], so yellow is 00 FF FF. It stays until the
+ * next calibration card is submitted. */
+static void touch_mark(esp_lcd_panel_handle_t panel, int x, int y)
+{
+    static uint8_t sq[TOUCH_MARK * TOUCH_MARK * 3];
+    for (int i = 0; i < TOUCH_MARK * TOUCH_MARK; i++) {
+        sq[i * 3] = 0x00;
+        sq[i * 3 + 1] = 0xFF;
+        sq[i * 3 + 2] = 0xFF;
+    }
+    int x0 = x - TOUCH_MARK / 2;
+    int y0 = y - TOUCH_MARK / 2;
+    if (x0 < 0) {
+        x0 = 0;
+    }
+    if (y0 < 0) {
+        y0 = 0;
+    }
+    if (x0 > HOSYOND_H_RES - TOUCH_MARK) {
+        x0 = HOSYOND_H_RES - TOUCH_MARK;
+    }
+    if (y0 > HOSYOND_V_RES - TOUCH_MARK) {
+        y0 = HOSYOND_V_RES - TOUCH_MARK;
+    }
+    esp_lcd_panel_draw_bitmap(panel, x0, y0, x0 + TOUCH_MARK, y0 + TOUCH_MARK, sq);
+}
+
+/* Draws a marker for every new touch position for `ms` milliseconds. */
+static void touch_service(esp_lcd_panel_handle_t panel, int ms)
+{
+    uint32_t seen = 0;
+    for (int t = 0; t < ms; t += 10) {
+        ft5x06_point_t pt;
+        if (ft5x06_get(&pt) && pt.seq != seen) {
+            seen = pt.seq;
+            touch_mark(panel, pt.x, pt.y);
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+
+/* Self-guided touch test: the screen shows one target at a time, the operator
+ * taps it, the device checks the hit and moves on. Nothing to count or time.
+ * Result: logged per target, and the final screen is a thick green border when
+ * every target was hit, red when any was missed or timed out. */
+#define TT_BOX 100    /* target box edge; a hit is anywhere inside it */
+#define TT_WAIT_MS 30000
+
+static void tt_show(esp_lcd_panel_handle_t panel, int cx, int cy, bool all_done,
+                    uint8_t r, uint8_t g, uint8_t b)
+{
+    uint8_t *buf = ensure_fb();
+    if (!buf) {
+        return;
+    }
+    fill_rect(buf, 0, 0, HOSYOND_H_RES, HOSYOND_V_RES, 0, 0, 0);
+    if (all_done) {
+        const int t = 24;
+        fill_rect(buf, 0, 0, HOSYOND_H_RES, t, r, g, b);
+        fill_rect(buf, 0, HOSYOND_V_RES - t, HOSYOND_H_RES, HOSYOND_V_RES, r, g, b);
+        fill_rect(buf, 0, 0, t, HOSYOND_V_RES, r, g, b);
+        fill_rect(buf, HOSYOND_H_RES - t, 0, HOSYOND_H_RES, HOSYOND_V_RES, r, g, b);
+    } else {
+        fill_rect(buf, cx - TT_BOX / 2, cy - TT_BOX / 2, cx + TT_BOX / 2, cy + TT_BOX / 2, 255, 255, 255);
+        fill_rect(buf, cx - TT_BOX / 2 + 6, cy - TT_BOX / 2 + 6, cx + TT_BOX / 2 - 6,
+                  cy + TT_BOX / 2 - 6, 0, 0, 0);
+        fill_rect(buf, cx - 8, cy - 8, cx + 8, cy + 8, 255, 255, 0);
+    }
+    esp_lcd_panel_draw_bitmap(panel, 0, 0, HOSYOND_H_RES, HOSYOND_V_RES, buf);
+}
+
+static void touch_selftest(esp_lcd_panel_handle_t panel)
+{
+    static const int pts[][2] = {
+        {70, 70}, {730, 70}, {730, 410}, {70, 410}, {400, 240},
+        {400, 70}, {730, 240}, {400, 410}, {70, 240},
+    };
+    const int n = sizeof(pts) / sizeof(pts[0]);
+    int hits = 0;
+    ESP_LOGW(TAG, "TOUCH SELFTEST: tap each yellow-centred box as it appears (%d targets)", n);
+    for (int i = 0; i < n; i++) {
+        tt_show(panel, pts[i][0], pts[i][1], false, 0, 0, 0);
+        /* Wait for the finger to be off the glass, then for a fresh press. */
+        ft5x06_point_t pt;
+        for (int t = 0; t < 2000 && ft5x06_get(&pt); t += 10) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        bool got = false;
+        for (int t = 0; t < TT_WAIT_MS && !got; t += 10) {
+            got = ft5x06_get(&pt);
+            if (!got) {
+                vTaskDelay(pdMS_TO_TICKS(10));
+            }
+        }
+        if (!got) {
+            ESP_LOGW(TAG, "target %d/%d (%d,%d): TIMEOUT, no touch", i + 1, n, pts[i][0], pts[i][1]);
+            continue;
+        }
+        const int dx = pt.x - pts[i][0];
+        const int dy = pt.y - pts[i][1];
+        const bool hit = dx > -TT_BOX / 2 && dx < TT_BOX / 2 && dy > -TT_BOX / 2 && dy < TT_BOX / 2;
+        hits += hit;
+        ESP_LOGI(TAG, "target %d/%d (%3d,%3d): touch (%3d,%3d) error dx=%+d dy=%+d -> %s",
+                 i + 1, n, pts[i][0], pts[i][1], pt.x, pt.y, dx, dy, hit ? "HIT" : "MISS");
+    }
+    ESP_LOGW(TAG, "TOUCH SELFTEST RESULT: %d/%d hit -> %s", hits, n, hits == n ? "PASS" : "FAIL");
+    tt_show(panel, 0, 0, true, hits == n ? 0 : 255, hits == n ? 255 : 0, 0);
+    vTaskDelay(pdMS_TO_TICKS(8000));
+}
+
 void app_main(void)
 {
     const h4_profile_t *p = &h4_profiles[H4_DEFAULT_PROFILE];
@@ -869,6 +991,9 @@ void app_main(void)
 
     attiny_backlight_on();
 
+    esp_err_t terr = ft5x06_start(s_i2c_bus, TAG);
+    ESP_LOGI(TAG, "touch controller 0x%02X start: %s", FT5X06_I2C_ADDR, esp_err_to_name(terr));
+
 #if PROBE_EXP1
     exp1_run(panel);
 #endif
@@ -876,11 +1001,14 @@ void app_main(void)
     /* Steady-state image: a deterministic calibration pattern whose geometry is
      * fully predictable, re-submitted every few seconds so it also recovers from
      * any transient loss of sync. */
+#if PROBE_TOUCH_TEST
+    touch_selftest(panel);
+#endif
     ESP_LOGW(TAG, "display pipeline configured; showing the calibration card");
     for (;;) {
         draw_calibration_card(panel);
         dma_fb_report(panel);
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        touch_service(panel, 5000);
     }
 
 idle:

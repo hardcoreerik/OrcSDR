@@ -50,6 +50,7 @@
 #include "hosyond_7in.h"
 #include "attiny88_panel.h"
 #include "tc358762_bridge.h"
+#include "ft5x06_touch.h"
 
 /* Readbacks stop and restart DSI video mode at an arbitrary point in a frame,
  * and every one has returned NO RESPONSE. 0 keeps the stream uninterrupted so the
@@ -976,6 +977,9 @@ void app_main(void)
     }
 
     attiny_backlight_on();
+
+    /* Touch runs in its own task and only logs/keeps the latest point for now. */
+    ESP_LOGI(TAG, "touch controller start: %s", esp_err_to_name(ft5x06_start(s_i2c_bus, TAG)));
 
     boot_screen_test(panel);
 
