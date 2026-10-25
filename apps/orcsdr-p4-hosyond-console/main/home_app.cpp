@@ -1,5 +1,6 @@
 #include "home_app.hpp"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -25,6 +26,10 @@ constexpr band_profile::Region kRegion = band_profile::Region::us;
 constexpr uint32_t kTuneMinHz = 24000000, kTuneMaxHz = 1766000000;  // the dongle's range (Tab5 default)
 
 gfx::ScaledDisplay* g_display = nullptr;
+std::atomic<int> g_tap_x{-1}, g_tap_y{-1};  // pending injected tap, design coordinates (-1 = none)
+std::atomic<uint32_t> g_request_hz{0};       // frequency requested by another task
+std::atomic<int> g_request_volume{-1};       // volume (0-255) requested by another task
+uint32_t g_visible_updates = 0;
 
 // ---- VFO state (what the Tab5's main.cpp keeps for Home) ----
 home_vfo::Memory g_vfo;
@@ -179,21 +184,44 @@ void feed_spectrum(const uint8_t* bins) {
 }
 
 void ui_task(void*) {
-  home::Snapshot initial;
   fill_snapshot();
   home::enter(g_snapshot);
   const float inv_sx = 1.0f / g_display->scale_x(), inv_sy = 1.0f / g_display->scale_y();
   bool was_down = false;
-  int last_x = 0, last_y = 0;
+  int last_x = 0, last_y = 0;  // design coordinates
   int64_t last_snapshot_us = 0, last_log_us = 0;
+  int tap_frames = 0, tap_x = 0, tap_y = 0;  // injected tap (design coordinates), held ~150 ms
+  int last_state = -1, last_level = 0;
+  uint32_t last_sps = 0;
   uint8_t bins[256];
   for (;;) {
+    // Requests from other tasks (the serial interpreter).
+    const uint32_t wanted_hz = g_request_hz.exchange(0);
+    if (wanted_hz) retune(wanted_hz);
+    const int wanted_volume = g_request_volume.exchange(-1);
+    if (wanted_volume >= 0) {
+      g_volume = static_cast<uint8_t>(wanted_volume);
+      ++g_audio_rev;
+      ++g_rev;
+    }
+
     // Touch: panel pixels -> the Tab5's 1280x720 design grid, which is what its gesture code expects.
     ft5x06_point_t pt;
-    const bool down = ft5x06_get(&pt);
+    bool down = ft5x06_get(&pt);
     if (down) {
       last_x = static_cast<int>(pt.x * inv_sx);
       last_y = static_cast<int>(pt.y * inv_sy);
+    }
+    if (tap_frames == 0 && g_tap_x.load() >= 0) {
+      tap_x = g_tap_x.exchange(-1);
+      tap_y = g_tap_y.exchange(-1);
+      tap_frames = 15;
+    }
+    if (tap_frames > 0) {
+      --tap_frames;
+      down = true;
+      last_x = tap_x;
+      last_y = tap_y;
     }
     if (down || was_down) {
       const home::Action action = home::handle_touch(last_x, last_y, down);
@@ -204,47 +232,68 @@ void ui_task(void*) {
     const int64_t now = esp_timer_get_time();
     if (now - last_snapshot_us > 100000) {
       last_snapshot_us = now;
-      const uint32_t before = g_status_rev;
-      static int last_state = -1;
-      const int state = radio::snapshot().receiver_state;
-      if (state != last_state) {
-        last_state = state;
+      const auto rs = radio::snapshot();
+      if (rs.receiver_state != last_state) {
+        last_state = rs.receiver_state;
         ++g_status_rev;
         ++g_rev;
       }
-      static int last_level = 0;
       const int level = static_cast<int>(std::lround(radio::level_dbfs()));
       if (level != last_level) {
         last_level = level;
         ++g_rev;
       }
-      (void)before;
-      static uint32_t last_sps = 0, last_uptime = 0;
-      const auto rs = radio::snapshot();
       if (rs.effective_sps / 1000u != last_sps / 1000u || rs.applied_hz != g_snapshot.frequency_hz) {
         last_sps = rs.effective_sps;
         ++g_tuner_rev;
         ++g_rev;
       }
-      (void)last_uptime;
       fill_snapshot();
       home::update(g_snapshot);
     }
     if (radio::take_bins(bins)) feed_spectrum(bins);
 
     const int rows = present_frame();
-    if (rows && now - last_log_us > 5000000) {
-      last_log_us = now;
-      char plot[200];
-      home::plot_status(plot, sizeof(plot));
-      ESP_LOGI(TAG, "present rows=%d in %u us | %s", rows, present_last_us(), plot);
+    if (rows) {
+      ++g_visible_updates;
+      if (now - last_log_us > 5000000) {
+        last_log_us = now;
+        char plot[200];
+        home::plot_status(plot, sizeof(plot));
+        ESP_LOGI(TAG, "present rows=%d in %u us | %s", rows, present_last_us(), plot);
+      }
     }
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
 }  // namespace
 
 namespace home_app {
+Status status() {
+  Status s;
+  s.frequency_hz = g_frequency_hz;
+  s.applied_hz = g_snapshot.frequency_hz == g_frequency_hz ? g_snapshot.frequency_hz : 0;
+  s.step_hz = g_step_hz;
+  s.span_hz = g_span_hz;
+  s.volume = g_volume;
+  s.sound = g_sound;
+  std::snprintf(s.band, sizeof(s.band), "%s", g_snapshot.band);
+  std::snprintf(s.mode, sizeof(s.mode), "%s", g_snapshot.mode);
+  s.visible_updates = g_visible_updates;
+  return s;
+}
+
+void request_frequency(uint32_t hz) { g_request_hz = hz; }
+void request_volume(uint8_t volume) { g_request_volume = volume; }
+
+void inject_tap(int design_x, int design_y) {
+  g_tap_y = design_y;
+  g_tap_x = design_x;
+}
+
+bool open_screen(const char* name) { return std::strcmp(name, "HOME") == 0; }
+const char* screen_name() { return "home"; }
+
 bool start(gfx::ScaledDisplay* display) {
   g_display = display;
   dashboards::load_recent(nullptr, 0);  // the Tab5's default recent list

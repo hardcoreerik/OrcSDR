@@ -18,7 +18,7 @@
 #include "hosyond_board.h"
 #include "present.hpp"
 #include "radio_service.hpp"
-#include "screen_snap.hpp"
+#include "serial_cli.hpp"
 
 static constexpr char TAG[] = "CONSOLE";
 
@@ -33,7 +33,7 @@ extern "C" void app_main(void) {
     ESP_LOGE(TAG, "scaled display FAILED");
     return;
   }
-  if (!screen_snap_start(&M5.Display)) ESP_LOGE(TAG, "screenshot service failed");
+  if (!serial_cli_start(&M5.Display)) ESP_LOGE(TAG, "serial command interface failed");
   if (hosyond_board_touch_start() != ESP_OK) ESP_LOGE(TAG, "touch start failed");
 
   // The receiver task still takes the 4B-era command queue; tuning now goes through radio::tune().
