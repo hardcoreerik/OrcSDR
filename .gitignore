@@ -50,3 +50,6 @@ artifacts/pocsag-validation/
 artifacts/lora_validation/
 artifacts/release-readiness/
 docs/user-guide/assets/screenshots/raw/
+
+# Alternate-toolchain build trees (e.g. the probe built with ESP-IDF 5.5.x)
+build[0-9]*/
