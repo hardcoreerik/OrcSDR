@@ -32,7 +32,7 @@
 typedef struct {
     int x, y;            /* display coordinates, valid while pressed */
     bool pressed;        /* finger currently on the glass */
-    uint32_t seq;        /* increments on every new press or position */
+    uint32_t seq;        /* counts new presses/positions (internally a seqlock) */
 } ft5x06_point_t;
 
 static i2c_master_dev_handle_t s_ft5x06_dev;
@@ -40,16 +40,19 @@ static volatile ft5x06_point_t s_ft5x06_pt;
 
 static inline bool ft5x06_get(ft5x06_point_t *out)
 {
-    /* Two reads of seq around the copy give a consistent snapshot without a lock. */
+    /* Seqlock: the writer makes seq odd while it updates x/y, so a copy is only
+     * accepted when seq was even and unchanged around it. */
     uint32_t a, b;
     do {
         a = s_ft5x06_pt.seq;
+        __sync_synchronize();
         out->x = s_ft5x06_pt.x;
         out->y = s_ft5x06_pt.y;
         out->pressed = s_ft5x06_pt.pressed;
+        __sync_synchronize();
         b = s_ft5x06_pt.seq;
-    } while (a != b);
-    out->seq = a;
+    } while ((a & 1) || a != b);
+    out->seq = a >> 1;
     return out->pressed;
 }
 
@@ -94,10 +97,13 @@ static void ft5x06_task(void *arg)
             if (ev == 1) {
                 s_ft5x06_pt.pressed = false;
             } else {
+                s_ft5x06_pt.seq++;          /* odd: update in progress */
+                __sync_synchronize();
                 s_ft5x06_pt.x = x;
                 s_ft5x06_pt.y = y;
                 s_ft5x06_pt.pressed = true;
-                s_ft5x06_pt.seq++;
+                __sync_synchronize();
+                s_ft5x06_pt.seq++;          /* even: consistent again */
             }
             /* This panel's firmware mostly reports "contact" (2) and rarely
              * "down" (0), so a press is any event arriving after none. */

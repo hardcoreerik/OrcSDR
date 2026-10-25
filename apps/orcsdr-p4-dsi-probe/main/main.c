@@ -892,7 +892,7 @@ static void touch_service(esp_lcd_panel_handle_t panel, int ms)
  * Result: logged per target, and the final screen is a thick green border when
  * every target was hit, red when any was missed or timed out. */
 #define TT_BOX 100    /* target box edge; a hit is anywhere inside it */
-#define TT_WAIT_MS 30000
+#define TT_WAIT_MS 0   /* 0 = wait for the tap as long as it takes */
 
 static void tt_show(esp_lcd_panel_handle_t panel, int cx, int cy, bool all_done,
                     uint8_t r, uint8_t g, uint8_t b)
@@ -934,7 +934,7 @@ static void touch_selftest(esp_lcd_panel_handle_t panel)
             vTaskDelay(pdMS_TO_TICKS(10));
         }
         bool got = false;
-        for (int t = 0; t < TT_WAIT_MS && !got; t += 10) {
+        for (int t = 0; !got && (TT_WAIT_MS == 0 || t < TT_WAIT_MS); t += 10) {
             got = ft5x06_get(&pt);
             if (!got) {
                 vTaskDelay(pdMS_TO_TICKS(10));
