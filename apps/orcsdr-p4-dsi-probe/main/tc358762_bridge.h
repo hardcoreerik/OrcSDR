@@ -48,8 +48,26 @@
 
 #define TC358762_SYSCTRL_VALUE        0x040f
 
+/* The bridge's DE window starts (HSW + HBP) after hsync, but the D4 stream from
+ * the P4 delivers active pixels earlier than that, so content sits displaced to
+ * the right with the line tail wrapped onto the left edge. Measured on the
+ * panel with a full-width digit ruler: 140 px of displacement at a compensation
+ * of 100. Compensation is transferred out of the front porch rather than added,
+ * so the bridge line total stays 1058 and matches the host. */
+#define TC358762_DE_START_COMP        210
+
 /* Upstream tc358762.c: VSDELAY(1) | RGB888 | UNK6 | VTGEN = 0x00100150 */
 #define TC358762_LCDCTRL_UPSTREAM     (TC358762_LCDCTRL_VSDELAY(1) | \
                                        TC358762_LCDCTRL_RGB888 | \
                                        TC358762_LCDCTRL_UNK6 | \
                                        TC358762_LCDCTRL_VTGEN)
+
+/* Same as above with VTGEN cleared, so the LCD raster is slaved to the sync
+ * pulses arriving over DSI instead of free-running from the bridge's own
+ * timing generator. Used because a free-running generator is clocked from a
+ * different PLL than the P4 pixel clock, which shows up as the image sitting
+ * at a constant horizontal offset and slowly cycling. */
+#define TC358762_LCDCTRL_DSI_SYNCED   (TC358762_LCDCTRL_VSDELAY(1) | \
+                                       TC358762_LCDCTRL_RGB888 | \
+                                       TC358762_LCDCTRL_UNK6)
+

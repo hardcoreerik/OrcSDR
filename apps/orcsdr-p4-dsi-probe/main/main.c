@@ -377,8 +377,6 @@ static void bridge_readback_probe(esp_lcd_dsi_bus_handle_t bus, const char *stag
 
 static void tc358762_bridge_init(esp_lcd_dsi_bus_handle_t bus, const h4_profile_t *p)
 {
-    (void)p; /* host timing is not forwarded to the bridge; see note below */
-
     tc358762_write(bus, TC358762_DSI_LANEENABLE, TC358762_LANEENABLE_L0EN_CLEN);
     tc358762_write(bus, TC358762_PPI_D0S_CLRSIPO, TC358762_CLRSIPO_COUNT);
     tc358762_write(bus, TC358762_PPI_D1S_CLRSIPO, TC358762_CLRSIPO_COUNT);
@@ -389,13 +387,23 @@ static void tc358762_bridge_init(esp_lcd_dsi_bus_handle_t bus, const h4_profile_
     tc358762_write(bus, TC358762_LCDCTRL, TC358762_LCDCTRL_UPSTREAM);
     tc358762_write(bus, TC358762_SYSCTRL, TC358762_SYSCTRL_VALUE);
 
-    /* Deliberately NOT writing LCD_HS_HBP / LCD_HDISP_HFP / LCD_VS_VBP /
-     * LCD_VDISP_VFP. Mainline drivers/gpu/drm/bridge/tc358762.c programs only
-     * LCDCTRL and SYSCTRL here and relies on the chip's reset timing defaults,
-     * and that driver is what drives this exact panel on the Raspberry Pi.
-     * Our previous writes encoded the mode with guessed field layouts and
-     * produced a half-height, doubled raster, so they are removed to restore
-     * parity with the known-good path. */
+    /* LCDCTRL sets VTGEN (BIT 4), so the bridge generates the LCD raster from
+     * its own timing generator. The four timing registers below are that
+     * generator's only source of H/V totals; leaving them at reset defaults
+     * produces a raster that does not match the 480-line stream arriving over
+     * DSI, which is why the frame came out repeated with a seam at mid-height.
+     * Layout follows the ESP-IDF port that drives this panel successfully. */
+    int hbp = p->hbp + TC358762_DE_START_COMP;
+    int hfp = p->hfp - TC358762_DE_START_COMP;
+    if (hfp < 0) {
+        hfp = 0;
+    }
+    tc358762_write(bus, TC358762_LCD_HS_HBP, ((uint32_t)hbp << 16) | (uint32_t)p->hsw);
+    tc358762_write(bus, TC358762_LCD_HDISP_HFP,
+                   ((uint32_t)hfp << 16) | (uint32_t)HOSYOND_H_RES);
+    tc358762_write(bus, TC358762_LCD_VS_VBP, ((uint32_t)p->vbp << 16) | (uint32_t)p->vsw);
+    tc358762_write(bus, TC358762_LCD_VDISP_VFP,
+                   ((uint32_t)p->vfp << 16) | (uint32_t)HOSYOND_V_RES);
 
     vTaskDelay(pdMS_TO_TICKS(100));
     tc358762_write(bus, TC358762_PPI_STARTPPI, 1);
@@ -550,25 +558,56 @@ static void fill_rect(uint8_t *buf, int x0, int y0, int x1, int y1,
     for (int y = y0; y < y1; y++) {
         uint8_t *px = buf + ((size_t)y * w + (size_t)x0) * 3;
         for (int x = x0; x < x1; x++) {
+            /* Bytes are emitted as [R][B][G] because that is how this bridge
+             * renders an RGB888 DSI stream: measured from the 8-band strip,
+             * whose known order W,Y,C,G,M,R,B,K appears on the panel as
+             * W,M,C,B,Y,R,G,K. Those four invariant bands plus the Y<->M and
+             * G<->B exchanges are exactly a green/blue channel swap and nothing
+             * else. This is the one place pixel bytes are produced, so the
+             * whole card follows from here. */
             *px++ = r;
-            *px++ = g;
             *px++ = b;
+            *px++ = g;
         }
     }
 }
 
-/* Reference colours kept for the band strip: eight unmistakable, non-repeating
- * values so a capture shows any channel swap or band miscount directly. */
-static const uint8_t k_ruler[8][3] = {
-    {255, 255, 255}, {255, 255, 0}, {0, 255, 255}, {0, 255, 0},
-    {255, 0, 255},   {255, 0, 0},   {0, 0, 255},   {0, 0, 0},
+/* 3x5 glyphs, one 3-bit row per line, most significant bit leftmost. The card
+ * puts a digit row on the panel so that reading order, mirroring and a lost or
+ * repeated column are all visible to a human at a glance, without needing a
+ * photograph to be decoded. */
+static const uint8_t k_font[10][5] = {
+    {7, 5, 5, 5, 7}, {2, 6, 2, 2, 7}, {7, 1, 7, 4, 7}, {7, 1, 7, 1, 7},
+    {5, 5, 7, 1, 1}, {7, 4, 7, 1, 7}, {7, 4, 7, 5, 7}, {7, 1, 1, 1, 1},
+    {7, 5, 7, 5, 7}, {7, 5, 7, 1, 7},
 };
 
-/* One ordinary, complete screen: header, primary-colour blocks, a colour band
- * strip, a grey ramp and a hard white frame. It reads as a normal image rather
- * than a test pattern, yet still carries everything needed to judge geometry
- * (frame edges, block boundaries), channel order (R/G/B blocks) and grey
- * linearity (ramp). */
+static void draw_digits(uint8_t *buf, int x0, int y0, int scale, int pitch,
+                        const char *digits, int count, uint8_t r, uint8_t g, uint8_t b)
+{
+    int x = x0;
+    for (int i = 0; i < count; i++) {
+        const int d = digits[i] - '0';
+        if (d < 0 || d > 9) {
+            continue;
+        }
+        for (int row = 0; row < 5; row++) {
+            for (int col = 0; col < 3; col++) {
+                if (k_font[d][row] & (4u >> col)) {
+                    fill_rect(buf, x + col * scale, y0 + row * scale,
+                              x + (col + 1) * scale, y0 + (row + 1) * scale, r, g, b);
+                }
+            }
+        }
+        x += pitch;
+    }
+}
+
+/* Measurement card. A ten-digit ruler spans the full width, so whichever digit
+ * sits at each edge directly encodes the horizontal offset: glyph i occupies
+ * x = 20 + 80*i .. 62 + 80*i, therefore a photograph is not needed and the
+ * offset can be read off the panel and reported. The digit rows also prove
+ * reading order, and the four blocks prove channel order. */
 static void draw_test_card(esp_lcd_panel_handle_t panel)
 {
     const int w = HOSYOND_H_RES;
@@ -578,50 +617,27 @@ static void draw_test_card(esp_lcd_panel_handle_t panel)
         return;
     }
 
-    for (int y = 0; y < h; y++) {
-        const uint8_t r = (uint8_t)(16 + (y * 24) / (h - 1));
-        const uint8_t g = (uint8_t)(32 + (y * 40) / (h - 1));
-        const uint8_t b = (uint8_t)(56 + (y * 64) / (h - 1));
-        fill_rect(buf, 0, y, w, y + 1, r, g, b);
+    fill_rect(buf, 0, 0, w, h, 0x0A, 0x0A, 0x0A);
+
+    /* 10 glyphs at 80 px pitch: 20 .. 782, i.e. 18 px of margin each side. */
+    draw_digits(buf, 20, 55, 14, 80, "0123456789", 10, 0xFF, 0xFF, 0xFF);
+    draw_digits(buf, 20, 345, 14, 80, "0123456789", 10, 0xFF, 0xFF, 0xFF);
+
+    static const uint8_t blocks[4][3] = {
+        {0xFF, 0x00, 0x00}, {0x00, 0xFF, 0x00}, {0x00, 0x00, 0xFF}, {0xFF, 0xFF, 0xFF},
+    };
+    for (int i = 0; i < 4; i++) {
+        const int x0 = 30 + i * 190;
+        fill_rect(buf, x0, 200, x0 + 170, 300, blocks[i][0], blocks[i][1], blocks[i][2]);
     }
 
-    fill_rect(buf, 0, 0, w, 64, 0x14, 0x1A, 0x22);
-    fill_rect(buf, 16, 18, 96, 46, 0x2E, 0x8B, 0x57);
-    for (int i = 0; i < 3; i++) {
-        const int x = w - 40 - i * 40;
-        fill_rect(buf, x, 22, x + 20, 42, i == 0 ? 0xE0 : 0x40, i == 1 ? 0xE0 : 0x40,
-                  i == 2 ? 0xE0 : 0x40);
-    }
-
-    const int bx = 40;
-    const int by = 92;
-    const int bw = 340;
-    const int bh = 120;
-    const int gap = 20;
-    fill_rect(buf, bx, by, bx + bw, by + bh, 0xFF, 0x00, 0x00);
-    fill_rect(buf, bx + bw + gap, by, bx + 2 * bw + gap, by + bh, 0x00, 0xFF, 0x00);
-    fill_rect(buf, bx, by + bh + gap, bx + bw, by + 2 * bh + gap, 0x00, 0x00, 0xFF);
-    fill_rect(buf, bx + bw + gap, by + bh + gap, bx + 2 * bw + gap, by + 2 * bh + gap,
-              0xFF, 0xFF, 0xFF);
-
-    const int band = w / 8;
-    for (int i = 0; i < 8; i++) {
-        fill_rect(buf, i * band, 364, (i + 1) * band, 388, k_ruler[i][0], k_ruler[i][1],
-                  k_ruler[i][2]);
-    }
-
-    for (int x = 0; x < w; x++) {
-        const uint8_t v = (uint8_t)((x * 255) / (w - 1));
-        fill_rect(buf, x, 404, x + 1, 440, v, v, v);
-    }
-
-    fill_rect(buf, 8, 8, w - 8, 12, 0xFF, 0xFF, 0xFF);
-    fill_rect(buf, 8, h - 12, w - 8, h - 8, 0xFF, 0xFF, 0xFF);
-    fill_rect(buf, 8, 8, 12, h - 8, 0xFF, 0xFF, 0xFF);
-    fill_rect(buf, w - 12, 8, w - 8, h - 8, 0xFF, 0xFF, 0xFF);
+    fill_rect(buf, 10, 10, w - 10, 16, 0xFF, 0xFF, 0xFF);
+    fill_rect(buf, 10, h - 16, w - 10, h - 10, 0xFF, 0xFF, 0xFF);
+    fill_rect(buf, 10, 10, 16, h - 10, 0xFF, 0xFF, 0xFF);
+    fill_rect(buf, w - 16, 10, w - 10, h - 10, 0xFF, 0xFF, 0xFF);
 
     esp_err_t err = esp_lcd_panel_draw_bitmap(panel, 0, 0, w, h, buf);
-    ESP_LOGI(TAG, "test card submitted -> %s", esp_err_to_name(err));
+    ESP_LOGI(TAG, "ruler card submitted -> %s", esp_err_to_name(err));
 }
 
 void app_main(void)

@@ -25,40 +25,78 @@ TC358762 bridge behind an ATTINY88**, not as a bare ICN6211 board.
    panel with the active timing profile, calls `esp_lcd_panel_init()` to start
    DMA video, then releases the bridge reset, issues the ATTINY88 `SYSPMCTRL`
    wake proxy write, and programs the TC358762 over DSI generic long writes.
-4. Draws one static test card (header, primary-colour blocks, colour bands, grey
-   ramp, white frame) and re-submits it every 5 s. There is no automatic profile
-   sweep: `H4_DEFAULT_PROFILE` selects the single active profile.
+4. Draws one measurement card: two full-width `0123456789` ruler rows whose
+   digit positions are fixed (`x = 20 + 80·i`), four primary-colour blocks and a
+   white frame, re-submitted every 5 s. There is no automatic profile sweep:
+   `H4_DEFAULT_PROFILE` selects the single active profile. The ruler exists so
+   geometry can be read off the panel and reported in numbers instead of judged
+   from a photograph.
 
 ## Measured state
 
 Working, confirmed on hardware:
 
 - MIPI DPHY LDO channel 3 @ 2500 mV
-- One-lane DSI at 600 Mbps, `clock_lane_force_hs=1`, no driver errors
+- One-lane DSI, `clock_lane_force_hs=1`, no driver errors
 - ATTINY88 power sequence latches (PORTA `0x04`, PORTB `0x85`) and the
   **backlight turns on**
 - TC358762 registers are written without error and `SYSCTRL`, `STARTPPI` and
   `STARTDSI` are applied
-- **Pixels are produced.** Video reaches the LCD.
+- **Pixels are produced**, the raster is linear (ruler digits read in order, no
+  mirroring, interleaving or smearing), vertical geometry is correct, and the
+  four reference blocks render **red, green, blue, white** in order.
 
-The decisive fix was the DSI PHY reference clock source. With
-`MIPI_DSI_PHY_PLLREF_CLK_SRC_PLL_F20M` the panel stayed white forever with no
-host-visible error; `MIPI_DSI_PHY_CLK_SRC_DEFAULT` (with `lane_mbps = 600.0`)
-produced an image immediately. A wrong PHY reference silently corrupts the link.
+The decisive fix for "always white" was the DSI PHY reference clock source. With
+`MIPI_DSI_PHY_PLLREF_CLK_SRC_PLLF20M` the panel stayed white forever with no
+host-visible error; `MIPI_DSI_PHY_CLK_SRC_DEFAULT` produced an image
+immediately. A wrong PHY reference silently corrupts the link.
 
 Not working yet:
 
-- **Geometry.** The raster is vertically compressed and repeated: the frame
-  appears twice, top and bottom, with a thin dark seam near mid-height, while
-  horizontal content spans the full width correctly.
-- **Colour.** Colours are washed out and dithered-looking. Part of this is
-  camera moiré; the rest is unexplained.
+- **Horizontal position.** The image is displaced right with the line tail
+  wrapped onto the left edge. Measured with the ruler fiducials at 40 px after
+  the current compensation (from 140 px uncompensated). See below.
 - **Bridge verification.** Generic reads from the TC358762 return NO RESPONSE
   before and after init, so register application cannot be confirmed by
   readback. A submitted write is not proof of an applied write.
 - `PORTC` never reads back the written value (always `0x00`) although writes
   demonstrably take effect (the backlight follows `PC_LED_EN`), so reset release
   cannot be confirmed by readback.
+
+## LCDCTRL bit fields: correct definitions
+
+The `raspberrypi/linux` rpi-6.6.y `tc358762.c` defines are wrong and were
+disproved upstream in Tomi Valkeinen's `tc358762-fixes` series (October 2026,
+<https://lore.kernel.org/dri-devel/20261015-tc358762-fixes-v5-3-7cd721a6451b@ideasonboard.com/>):
+
+| field | bits | note |
+| --- | --- | --- |
+| `MSF` | 0 | magic-square FRC |
+| `VTGEN` | **1** | use the chip's own clock for timing |
+| `PXLFORM` | **6:4** | 5 = RGB888 |
+| `DPI_EN` | **8** | DPI output enable |
+| `HSYNC_POL` / `DE_POL` / `VSYNC_POL` / `DCLK_POL` | 17 / 18 / 19 / 20 | polarity |
+
+So `0x00100150` is `DCLK_POL | DPI_EN | PXLFORM=RGB888` with **VTGEN = 0**, not
+"VTGEN set" as the Raspberry Pi header comment claims. Bit 4 is the low bit of
+`PXLFORM`, so writing `0x00100140` changes the pixel format to RGB565 rather than
+disabling the timing generator. VTG on requires bit 1: `0x00100152`.
+
+With VTG off the bridge duplicates the timings arriving over DSI, which requires
+DSI pulse mode (this probe uses non-burst with sync pulses). With VTG on the
+frame is still synced to DSI VSYNC but the output timing comes from the four
+`LCD_*` registers, which must then be uploaded with `VFUEN` (`0x0434`) and match
+the host. Sources:
+<https://lore.kernel.org/dri-devel/20261015-tc358762-fixes-v5-8-7cd721a6451b@ideasonboard.com/>,
+<https://github.com/FSEmbedded/linux-fus/blob/master/drivers/video/fbdev/mxc/tc358762.c>.
+
+The 800x480 panel used with this bridge has datasheet constraints
+`hsw + hbp = 46` and `vsw + vbp = 23`; an off-by-one in `vsw + vbp` is documented
+as producing a visible image shift
+(<https://lore.kernel.org/dri-devel/20261015-tc358762-fixes-v5-13-7cd721a6451b@ideasonboard.com/>).
+The active profile `rpi-observed-stable` inherits `vsw + vbp = 24` from
+`embenix/ESP32-P4-DSI-Support-Hub`, which violates that constraint and is
+therefore not a trustworthy reference.
 
 ## Build and run
 

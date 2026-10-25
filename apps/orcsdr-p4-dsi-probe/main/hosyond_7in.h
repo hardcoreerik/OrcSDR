@@ -59,7 +59,7 @@ typedef struct {
 } h4_profile_t;
 
 #define H4_PROFILE_COUNT 4
-#define H4_DEFAULT_PROFILE 0
+#define H4_DEFAULT_PROFILE 3
 
 static const h4_profile_t h4_profiles[H4_PROFILE_COUNT] = {
     {
@@ -84,10 +84,12 @@ static const h4_profile_t h4_profiles[H4_PROFILE_COUNT] = {
         .vfp = 7, .vsw = 1, .vbp = 23, .dpi_mhz = 27.5f, .lane_mbps = 660.0f,
     },
     {
-        /* Values reported as observed-stable on ESP32-P4 for a Raspberry Pi 7"
-         * panel by the ESP32-P4-DSI-Support-Hub project (CC BY-NC-ND 4.0,
-         * facts only). */
+        /* Default. Effective timing of the ESP-IDF port that drives this exact
+         * panel (ESP32-P4-DSI-Support-Hub, CC BY-NC-ND 4.0, facts only): the
+         * host DPI raster and the bridge VTGEN registers get the same values,
+         * 1058x526 total at 25.98 MHz = 46.7 Hz, and 210 px of horizontal
+         * blanking leaves the 600 Mbps lane ~21% headroom for RGB888. */
         .name = "rpi-observed-stable", .hfp = 210, .hsw = 2, .hbp = 46,
-        .vfp = 22, .vsw = 20, .vbp = 4, .dpi_mhz = 25.98f, .lane_mbps = 624.0f,
+        .vfp = 22, .vsw = 20, .vbp = 4, .dpi_mhz = 25.98f, .lane_mbps = 600.0f,
     },
 };
