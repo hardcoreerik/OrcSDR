@@ -60,6 +60,7 @@ private:
   lv_obj_t* brand_=nullptr;
   lv_obj_t* status_=nullptr;
   lv_obj_t* frequency_=nullptr;
+  lv_obj_t* detail_=nullptr;  // landscape form only: step/palette/mode beside the frequency
   lv_obj_t* spectrum_panel_=nullptr;
   lv_obj_t* waterfall_panel_=nullptr;
   lv_obj_t* spectrum_canvas_=nullptr;
@@ -84,5 +85,6 @@ private:
   bool menu_open_=false;
   char last_frequency_label_[80]{};
   char last_status_label_[90]{};
+  char last_detail_label_[80]{};
 };
 }

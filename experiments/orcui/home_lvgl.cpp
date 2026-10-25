@@ -34,7 +34,7 @@ void HomeLvgl::destroy(){
   if(waterfall_pixels_)release(waterfall_pixels_);
   if(badge_pixels_)release(badge_pixels_);
   badge_pixels_=nullptr;
-  brand_=title_=status_=frequency_=spectrum_panel_=waterfall_panel_=nullptr;
+  brand_=title_=status_=frequency_=detail_=spectrum_panel_=waterfall_panel_=nullptr;
   scrim_=nullptr; menu_open_=false;
   spectrum_pixels_=nullptr; waterfall_pixels_=nullptr;
   spectrum_canvas_=nullptr; waterfall_canvas_=nullptr;
@@ -43,6 +43,7 @@ void HomeLvgl::destroy(){
   layout_={};
   last_frequency_label_[0]=0;
   last_status_label_[0]=0;
+  last_detail_label_[0]=0;
 }
 bool HomeLvgl::allocate_canvas(lv_obj_t* parent,lv_obj_t** canvas,
                                void** pixels,size_t* stride,const Rect& rect){
@@ -161,6 +162,19 @@ bool HomeLvgl::create(lv_obj_t* parent,const Display& display,ActionSink sink,vo
   lv_obj_set_width(frequency_,layout_.frequency.w-24);
   lv_label_set_long_mode(frequency_,LV_LABEL_LONG_CLIP);
   label_style(frequency_,kGreen,12,4);
+  if(layout_.form==Form::landscape){
+    // One large frequency line with the secondary details right-aligned beside it:
+    // a two-line stack does not fit the short readout panel of a 480 px tall display.
+    const int detail_w=std::min(layout_.frequency.w/2-12,360);
+    lv_obj_set_width(frequency_,layout_.frequency.w-detail_w-36);
+    lv_obj_set_pos(frequency_,12,std::max(2,(layout_.frequency.h-34)/2));
+    detail_=lv_label_create(freq_panel);
+    lv_obj_set_width(detail_,detail_w);
+    lv_obj_set_pos(detail_,layout_.frequency.w-detail_w-12,std::max(2,(layout_.frequency.h-18)/2));
+    lv_obj_set_style_text_align(detail_,LV_TEXT_ALIGN_RIGHT,0);
+    lv_obj_set_style_text_color(detail_,lv_color_hex(kWhite),0);
+    lv_label_set_long_mode(detail_,LV_LABEL_LONG_CLIP);
+  }
   if(layout_.show_controls){
     const char* captions[]={"TUNE -","STEP","TUNE +","PALETTE","FM IQ (N/A)"};
     const HomeCommand actions[]={HomeCommand::tune_down,HomeCommand::cycle_step,
@@ -171,7 +185,7 @@ bool HomeLvgl::create(lv_obj_t* parent,const Display& display,ActionSink sink,vo
     lv_obj_t* status_panel=nullptr;
     panel(&status_panel,layout_.status,"",false);
     status_=lv_label_create(status_panel);
-    label_style(status_,kWhite,8,2);
+    label_style(status_,kWhite,8,layout_.form==Form::landscape?std::max(2,(layout_.status.h-18)/2):2);
     lv_obj_set_width(status_,layout_.status.w-16);
     lv_label_set_long_mode(status_,LV_LABEL_LONG_CLIP);
   }
@@ -231,6 +245,16 @@ void HomeLvgl::update(const HomeData& data){
   data_=data;
   if(frequency_){
     char buf[80];
+    if(detail_){
+      std::snprintf(buf,sizeof(buf),"%.6f MHz",data.frequency_hz/1000000.0);
+      char detail[80];
+      std::snprintf(detail,sizeof(detail),"STEP %g kHz  |  %s  |  %s",data.step_hz/1000.0,
+                    data.palette_name?data.palette_name:"--",data.mode?data.mode:"--");
+      if(std::strcmp(detail,last_detail_label_)!=0){
+        lv_label_set_text(detail_,detail);
+        std::snprintf(last_detail_label_,sizeof(last_detail_label_),"%s",detail);
+      }
+    }else
     std::snprintf(buf,sizeof(buf),"%.6f MHz  %s\nSTEP %lu Hz  %s",data.frequency_hz/1000000.0,
                   data.mode?data.mode:"--",static_cast<unsigned long>(data.step_hz),
                   data.palette_name?data.palette_name:"--");
@@ -241,6 +265,12 @@ void HomeLvgl::update(const HomeData& data){
   }
   if(status_){
     char buf[90];
+    if(layout_.form==Form::landscape)
+      std::snprintf(buf,sizeof(buf),"%s  %lu ks/s  drops %lu  up %lus  applied %.6f MHz  Wi-Fi/audio N/A",
+          data.radio_ready?"IQ ACTIVE":"NO IQ",static_cast<unsigned long>(data.effective_sps/1000),
+          static_cast<unsigned long>(data.drops),static_cast<unsigned long>(data.uptime_sec),
+          data.applied_hz/1000000.0);
+    else
     std::snprintf(buf,sizeof(buf),"%s %lu ks/s drops %lu | %lus\nAPPLIED %lu Hz | Wi-Fi/audio N/A",
         data.radio_ready?"IQ ACTIVE":"NO IQ",static_cast<unsigned long>(data.effective_sps/1000),
         static_cast<unsigned long>(data.drops),static_cast<unsigned long>(data.uptime_sec),
