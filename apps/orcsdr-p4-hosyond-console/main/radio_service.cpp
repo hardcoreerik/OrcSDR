@@ -132,6 +132,11 @@ void task(void*) {
           } else {
             ESP_LOGE(TAG, "start failed: %s", esp_rtl_sdr_err_to_name(e));
             state = 3;
+            // A failed start can leave the driver in FAULT; clear it (stop, then reset) so the next scan can retry.
+            (void)esp_rtl_sdr_stop(sdr, 1000);
+            const esp_err_t r = esp_rtl_sdr_reset(sdr);
+            ESP_LOGW(TAG, "driver reset after failed start: %s (state %s)", esp_err_to_name(r),
+                     esp_rtl_sdr_state_to_name(esp_rtl_sdr_get_state(sdr)));
           }
         } else {
           state = 0;

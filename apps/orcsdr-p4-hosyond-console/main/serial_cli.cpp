@@ -19,6 +19,7 @@
 #include "nvs_flash.h"
 #include "radio_service.hpp"
 #include "screen_snap.hpp"
+#include "orcsdr_restart.hpp"
 #include "wifi_app.hpp"
 
 namespace {
@@ -267,6 +268,23 @@ void cmd_wifi(char* args) {
   }
 }
 
+void cmd_restart(char* args) {
+  if (!authed()) {
+    std::printf("RTL_RESTART_ERROR auth_required\n");
+    return;
+  }
+  if (std::strcmp(args, "SOFT") == 0) {
+    std::printf("RTL_RESTART_OK mode=soft\n");
+    vTaskDelay(pdMS_TO_TICKS(200));
+    esp_restart();
+  }
+  if (std::strcmp(args, "CLEAN") == 0) {
+    std::printf("RTL_RESTART_OK mode=clean\n");
+    orcsdr_restart_clean();
+  }
+  std::printf("RTL_RESTART_INVALID use SOFT | CLEAN\n");
+}
+
 void cmd_usb_guard(char* args) {
   if (std::strcmp(args, "STATUS") == 0) {
     std::printf("RTL_USB_GUARD_STATUS safe_mode=%d\n", esp_rtl_sdr_usb_safe_mode_active());
@@ -380,6 +398,7 @@ void handle_line(char* line) {
   if (std::strcmp(line, "RTL_SIGNAL") == 0) return cmd_signal();
   if (std::strcmp(line, "RTL_VOLUME") == 0) return cmd_volume(nullptr);
   if (std::strncmp(line, "RTL_VOLUME ", 11) == 0) return cmd_volume(line + 11);
+  if (std::strncmp(line, "RTL_RESTART ", 12) == 0) return cmd_restart(line + 12);
   if (std::strncmp(line, "RTL_WIFI ", 9) == 0) return cmd_wifi(line + 9);
   if (std::strncmp(line, "RTL_USB_GUARD ", 14) == 0) return cmd_usb_guard(line + 14);
   if (std::strncmp(line, "RTL_AUDIO ", 10) == 0) return cmd_audio(line + 10);
