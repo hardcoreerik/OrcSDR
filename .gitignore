@@ -50,3 +50,6 @@ artifacts/pocsag-validation/
 artifacts/lora_validation/
 artifacts/release-readiness/
 docs/user-guide/assets/screenshots/raw/
+
+# probe capture logs
+apps/orcsdr-p4-dsi-probe/*.log
