@@ -28,6 +28,12 @@
 #define ATTINY_REG_POWERON   0x85
 #define ATTINY_REG_PWM       0x86
 
+/* Indirect bridge access: 16-bit address then 16-bit data. */
+#define ATTINY_REG_ADDR_L     0x8C
+#define ATTINY_REG_ADDR_H     0x8D
+#define ATTINY_REG_WRITE_DATA_H 0x90
+#define ATTINY_REG_WRITE_DATA_L 0x91
+
 #define ATTINY_PA_LCD_LR     0x04   /* BIT(2): horizontal scan left-to-right */
 
 #define ATTINY_PB_LCD_MAIN   0x80   /* BIT(7): main regulator on */
@@ -37,8 +43,12 @@
 #define ATTINY_PC_RST_LCD_N  0x04   /* BIT(2) */
 #define ATTINY_PC_RST_BRIDGE_N 0x08 /* BIT(3) */
 
-#define ATTINY_PC_DEASSERT_ALL (ATTINY_PC_LED_EN | ATTINY_PC_RST_TP_N | \
-                                ATTINY_PC_RST_LCD_N | ATTINY_PC_RST_BRIDGE_N)
+/* Staged release: bridge and LCD out of reset, touch deliberately still in
+ * reset until the display path is configured. */
+#define ATTINY_PC_RELEASE_LCD_BRIDGE (ATTINY_PC_LED_EN | ATTINY_PC_RST_LCD_N | \
+                                      ATTINY_PC_RST_BRIDGE_N)   /* 0x0D */
+
+#define ATTINY_PC_RELEASE_ALL (ATTINY_PC_RELEASE_LCD_BRIDGE | ATTINY_PC_RST_TP_N) /* 0x0F */
 
 #define ATTINY_VERSION_V1    0xDE
 #define ATTINY_VERSION_V2    0xC3

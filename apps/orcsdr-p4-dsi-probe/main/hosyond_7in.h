@@ -3,20 +3,39 @@
 /*
  * Hosyond 7" 800x480 MIPI-DSI panel on a Waveshare ESP32-P4-Module-DEV-KIT.
  *
- * PROVENANCE - none of these electrical values is validated on our unit yet.
- * The probe sweeps every candidate and logs which one is active, so a result is
- * never attributed to the wrong timing set.
+ * Profile 0 is the upstream Linux Raspberry Pi 7" touchscreen mode and is the
+ * baseline. The other profiles are kept for later controlled comparison only.
  *
- * 1. Community report for a Hosyond 7" 800x480 DSI module: ICN6211 bridge,
- *    single-lane DSI, ~660 Mbps, horizontal 48/90/40, vertical 1/7/23.
- * 2. Raspberry Pi 7" touch display kernel timings, as reported for a related
- *    Hosyond part: "800x480: 60 30000 800 931 933 978 480 487 489 511".
- * 3. Raspberry Pi 7" panel values reported as observed-stable on ESP32-P4 by
- *    the ESP32-P4-DSI-Support-Hub project (CC BY-NC-ND 4.0 - facts only).
+ * Our unit answers on I2C 0x45 with revision 0xC3, the value the mainline
+ * rpi-panel-attiny-regulator driver accepts, and its PORTA/PORTB readbacks
+ * match what we write, so it is treated as a Raspberry Pi 7"-compatible
+ * TC358762 + ATTINY88 module.
  *
- * Our unit answers on I2C 0x45 with revision 0xC3, which identifies it as a
- * Raspberry Pi 7"-compatible module, so profiles B and C are the stronger
- * candidates and profile A is kept as the originally-briefed hypothesis.
+ * Known-good reference recovered read-only from the Raspberry Pi 4B boot
+ * partition that drove this panel successfully:
+ *
+ *   config.txt : display_auto_detect=1, dtoverlay=vc4-kms-v3d,
+ *                disable_fw_kms_setup=1  -> the panel was brought up by an
+ *                auto-detected DSI overlay, not a hand-written config.
+ *   overlays/vc4-kms-dsi-7inch.dtbo
+ *                bridge@0 = "toshiba,tc358762"
+ *                panel@1  = "raspberrypi,7inch-dsi" (simple-panel)
+ *                reg_display@0x45 = "raspberrypi,7inch-touchscreen-panel-regulator"
+ *                ts@0x38          = "edt,edt-ft5506"
+ *                This is exactly our topology, which is why the ATTINY id 0xC3
+ *                is the signature that matters.
+ *   overlays/vc4-kms-dsi-waveshare-800x480.dtbo
+ *                "panel-dsi-generic", 800x480, 1 lane, RGB888, MODE_VIDEO,
+ *                clock 27.777 MHz, HFP 59 / HSW 2 / HBP 45,
+ *                VFP 7 / VSW 2 / VBP 22   -> 906x511 = 60.00 Hz.
+ *
+ * The two 800x480 references agree on HSW/HBP/VFP/VSW and on VBP 21..22, and
+ * differ only in HFP and pixel clock. Neither is used as the active profile
+ * yet; profile 0 stays the upstream Pi 7" modeline for a single controlled
+ * test.
+ *
+ * The device seen at I2C 0x18 on this bus is not part of the panel (it is the
+ * board's ES8311 codec); the panel itself only contributes 0x38 and 0x45.
  */
 
 /* ---- Board facts (Waveshare ESP32-P4-Module-DEV-KIT) ---- */
@@ -39,19 +58,36 @@ typedef struct {
     float lane_mbps;
 } h4_profile_t;
 
-#define H4_PROFILE_COUNT 3
+#define H4_PROFILE_COUNT 4
+#define H4_DEFAULT_PROFILE 0
 
 static const h4_profile_t h4_profiles[H4_PROFILE_COUNT] = {
     {
-        .name = "A:community-icn6211", .hfp = 40, .hsw = 48, .hbp = 90,
+        /* drivers/gpu/drm/panel/panel-raspberrypi-touchscreen.c: the modeline
+         * comes from the Raspberry Pi firmware with HFP=1 plugged in. 849x510
+         * total at 25.9794 MHz is 60.0 Hz. RGB888 over one lane needs
+         * 25.9794 * 24 = 623.5 Mbps. */
+        .name = "upstream-rpi-panel", .hfp = 1, .hsw = 2, .hbp = 46,
+        .vfp = 7, .vsw = 2, .vbp = 21, .dpi_mhz = 25.9794f, .lane_mbps = 600.0f,
+    },
+    {
+        /* Reported modeline "800 931 933 978 / 480 487 489 511" at 30 MHz:
+         * HFP=931-800=131, HSW=933-931=2, HBP=978-933=45,
+         * VFP=487-480=7, VSW=489-487=2, VBP=511-489=22. */
+        .name = "modeline-30mhz", .hfp = 131, .hsw = 2, .hbp = 45,
+        .vfp = 7, .vsw = 2, .vbp = 22, .dpi_mhz = 30.0f, .lane_mbps = 720.0f,
+    },
+    {
+        /* Community ICN6211 report for a Hosyond 7" 800x480 module. Our unit
+         * does not contain an ICN6211, so this is comparison material only. */
+        .name = "community-icn6211", .hfp = 40, .hsw = 48, .hbp = 90,
         .vfp = 7, .vsw = 1, .vbp = 23, .dpi_mhz = 27.5f, .lane_mbps = 660.0f,
     },
     {
-        .name = "B:rpi-kernel-60hz", .hfp = 131, .hsw = 2, .hbp = 45,
-        .vfp = 7, .vsw = 2, .vbp = 29, .dpi_mhz = 30.0f, .lane_mbps = 720.0f,
-    },
-    {
-        .name = "C:rpi-observed-stable", .hfp = 210, .hsw = 2, .hbp = 46,
+        /* Values reported as observed-stable on ESP32-P4 for a Raspberry Pi 7"
+         * panel by the ESP32-P4-DSI-Support-Hub project (CC BY-NC-ND 4.0,
+         * facts only). */
+        .name = "rpi-observed-stable", .hfp = 210, .hsw = 2, .hbp = 46,
         .vfp = 22, .vsw = 20, .vbp = 4, .dpi_mhz = 25.98f, .lane_mbps = 624.0f,
     },
 };

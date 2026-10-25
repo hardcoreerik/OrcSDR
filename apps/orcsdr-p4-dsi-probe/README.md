@@ -21,29 +21,44 @@ TC358762 bridge behind an ATTINY88**, not as a bare ICN6211 board.
 1. Scans and identifies the DSI-connector I2C bus (read-only register reads).
 2. Powers the panel through the ATTINY88 controller: bridge power plus backlight.
 3. Raises the MIPI DPHY LDO, creates a one-lane DSI bus with
-   `clock_lane_force_hs`, programs the TC358762 bridge over DSI generic long
-   writes, and starts DPI video.
-4. Cycles the LCD controller test patterns, then restarts with the next timing
-   profile. The profile index is held in RTC memory, so **one flash sweeps every
-   candidate** and the log always states which profile is active.
+   `clock_lane_force_hs` and `MIPI_DSI_PHY_CLK_SRC_DEFAULT`, creates the DPI
+   panel with the active timing profile, calls `esp_lcd_panel_init()` to start
+   DMA video, then releases the bridge reset, issues the ATTINY88 `SYSPMCTRL`
+   wake proxy write, and programs the TC358762 over DSI generic long writes.
+4. Draws one static test card (header, primary-colour blocks, colour bands, grey
+   ramp, white frame) and re-submits it every 5 s. There is no automatic profile
+   sweep: `H4_DEFAULT_PROFILE` selects the single active profile.
 
 ## Measured state
 
 Working, confirmed on hardware:
 
 - MIPI DPHY LDO channel 3 @ 2500 mV
-- One-lane DSI at 660 / 720 / 624 Mbps, `clock_lane_force_hs=1`, no driver errors
+- One-lane DSI at 600 Mbps, `clock_lane_force_hs=1`, no driver errors
 - ATTINY88 power sequence latches (PORTA `0x04`, PORTB `0x85`) and the
   **backlight turns on**
 - TC358762 registers are written without error and `SYSCTRL`, `STARTPPI` and
   `STARTDSI` are applied
+- **Pixels are produced.** Video reaches the LCD.
+
+The decisive fix was the DSI PHY reference clock source. With
+`MIPI_DSI_PHY_PLLREF_CLK_SRC_PLL_F20M` the panel stayed white forever with no
+host-visible error; `MIPI_DSI_PHY_CLK_SRC_DEFAULT` (with `lane_mbps = 600.0`)
+produced an image immediately. A wrong PHY reference silently corrupts the link.
 
 Not working yet:
 
-- **No pixels.** The panel is bright white and backlit. `PORTC` never reads back
-  the written value (always `0x00`), so reset release cannot be confirmed this
-  way. Three timing profiles plus the non-burst-with-sync-pulses video mode
-  override have been tried; none produced an image.
+- **Geometry.** The raster is vertically compressed and repeated: the frame
+  appears twice, top and bottom, with a thin dark seam near mid-height, while
+  horizontal content spans the full width correctly.
+- **Colour.** Colours are washed out and dithered-looking. Part of this is
+  camera moiré; the rest is unexplained.
+- **Bridge verification.** Generic reads from the TC358762 return NO RESPONSE
+  before and after init, so register application cannot be confirmed by
+  readback. A submitted write is not proof of an applied write.
+- `PORTC` never reads back the written value (always `0x00`) although writes
+  demonstrably take effect (the backlight follows `PC_LED_EN`), so reset release
+  cannot be confirmed by readback.
 
 ## Build and run
 
