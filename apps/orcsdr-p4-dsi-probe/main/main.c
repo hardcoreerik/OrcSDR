@@ -31,6 +31,7 @@
 #include "esp_attr.h"
 #include "esp_idf_version.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include "esp_rom_sys.h"
 #include "driver/i2c_master.h"
 #include "esp_ldo_regulator.h"
@@ -50,10 +51,23 @@
 
 #define HOSYOND_LANE_COUNT 1
 
+/* Readbacks stop and restart DSI video mode at an arbitrary point in a frame,
+ * and every one has returned NO RESPONSE. 0 keeps the stream uninterrupted so the
+ * bridge locks on once. */
+#ifndef PROBE_READBACK
+#define PROBE_READBACK 0
+#endif
+
+/* 1 = cycle bridge register states at runtime (Experiment 1); 0 = steady card. */
+#ifndef PROBE_EXP1
+#define PROBE_EXP1 0
+#endif
+
 static const char *TAG = "HOSYOND_PROBE";
 
 static esp_ldo_channel_handle_t s_phy_ldo;
 static i2c_master_bus_handle_t s_i2c_bus;
+static esp_lcd_dsi_bus_handle_t s_bus;
 
 /* esp_lcd_dsi_bus_t is opaque, but its first members are bus_id followed by the
  * HAL context (components/esp_lcd/dsi/mipi_dsi_priv.h). Declaring that exact
@@ -525,9 +539,16 @@ static esp_err_t start_dsi_video(const h4_profile_t *p, esp_lcd_panel_handle_t *
     /* Reset release and ATTINY proxy wake, now that the link is live. */
     attiny_release_bridge_and_wake();
 
+#if PROBE_EXP1
+    s_bus = bus;
+#endif
+#if PROBE_READBACK
     bridge_readback_probe(bus, "before TC358762 init", true);
+#endif
     tc358762_bridge_init(bus, p);
+#if PROBE_READBACK
     bridge_readback_probe(bus, "after TC358762 init", true);
+#endif
 
     attiny_release_touch();
     return ESP_OK;
@@ -569,16 +590,15 @@ static void fill_rect(uint8_t *buf, int x0, int y0, int x1, int y1,
     for (int y = y0; y < y1; y++) {
         uint8_t *px = buf + ((size_t)y * w + (size_t)x0) * 3;
         for (int x = x0; x < x1; x++) {
-            /* Bytes are emitted as [R][B][G] because that is how this bridge
-             * renders an RGB888 DSI stream: measured from the 8-band strip,
-             * whose known order W,Y,C,G,M,R,B,K appears on the panel as
-             * W,M,C,B,Y,R,G,K. Those four invariant bands plus the Y<->M and
-             * G<->B exchanges are exactly a green/blue channel swap and nothing
-             * else. This is the one place pixel bytes are produced, so the
-             * whole card follows from here. */
-            *px++ = r;
+            /* Bytes are emitted as [B][G][R]: confirmed on the panel on 2026-10-25,
+             * where the previous [R][B][G] order showed TL blue, TR red, BL green
+             * (card colours TL red, TR green, BL blue), i.e. this bridge reads the
+             * stream as B,G,R. An earlier bring-up measured a green/blue swap
+             * instead, so the bridge byte phase has differed between sessions.
+             * This is the one place pixel bytes are produced. */
             *px++ = b;
             *px++ = g;
+            *px++ = r;
         }
     }
 }
@@ -651,10 +671,10 @@ static void draw_calibration_card(esp_lcd_panel_handle_t panel)
     /* Prove the content side independently of the panel: if these probes pass,
      * the framebuffer really does hold a symmetric, correctly positioned
      * pattern, so any displacement seen on the LCD is scan-out, not drawing.
-     * Expected bytes are in buffer order, which is [R][B][G] - see fill_rect. */
+     * Expected bytes are in buffer order, which is [B][G][R] - see fill_rect. */
     static const struct {
         int x, y;
-        uint8_t r, b, g;
+        uint8_t p0, p1, p2;
         const char *name;
     } probe[] = {
         {0, 0, 0xFF, 0xFF, 0xFF, "perimeter TL"},
@@ -667,25 +687,25 @@ static void draw_calibration_card(esp_lcd_panel_handle_t panel)
         {cx - CAL_ARM, cy, 0xFF, 0xFF, 0xFF, "cross left arm"},
         {cx + CAL_ARM, cy, 0xFF, 0xFF, 0xFF, "cross right arm"},
         {CAL_X_MARK + CAL_MARK / 2, CAL_Y_MARK + CAL_MARK / 2,
-         0xFF, 0x00, 0x00, "corner TL red"},
+         0x00, 0x00, 0xFF, "corner TL red"},
         {w - 1 - CAL_X_MARK - CAL_MARK / 2, CAL_Y_MARK + CAL_MARK / 2,
-         0x00, 0x00, 0xFF, "corner TR green"},
+         0x00, 0xFF, 0x00, "corner TR green"},
         {CAL_X_MARK + CAL_MARK / 2, h - 1 - CAL_Y_MARK - CAL_MARK / 2,
-         0x00, 0xFF, 0x00, "corner BL blue"},
+         0xFF, 0x00, 0x00, "corner BL blue"},
         {w - 1 - CAL_X_MARK - CAL_MARK / 2, h - 1 - CAL_Y_MARK - CAL_MARK / 2,
          0xFF, 0xFF, 0xFF, "corner BR white"},
     };
     bool all_ok = true;
     for (size_t i = 0; i < sizeof(probe) / sizeof(probe[0]); i++) {
         const uint8_t *px = buf + ((size_t)probe[i].y * w + (size_t)probe[i].x) * 3;
-        const bool ok = px[0] == probe[i].r && px[1] == probe[i].b &&
-                        px[2] == probe[i].g;
+        const bool ok = px[0] == probe[i].p0 && px[1] == probe[i].p1 &&
+                        px[2] == probe[i].p2;
         if (!ok) {
             all_ok = false;
         }
         ESP_LOGI(TAG, "fb %-17s (%3d,%3d) got %02x%02x%02x want %02x%02x%02x %s",
                  probe[i].name, probe[i].x, probe[i].y, px[0], px[1], px[2],
-                 probe[i].r, probe[i].b, probe[i].g, ok ? "ok" : "MISMATCH");
+                 probe[i].p0, probe[i].p1, probe[i].p2, ok ? "ok" : "MISMATCH");
     }
     ESP_LOGI(TAG, "framebuffer self-check: %d probes, %s",
              (int)(sizeof(probe) / sizeof(probe[0])), all_ok ? "PASS" : "FAIL");
@@ -778,6 +798,42 @@ static void dma_fb_report(esp_lcd_panel_handle_t panel)
     }
 }
 
+#if PROBE_EXP1
+/* Experiment 1: is the bridge's own timing generator live?
+ * Host profile and every line total stay fixed; only bridge registers change,
+ * at runtime, one state at a time, each held long enough to film. The
+ * "EXP1 state" log lines carry the timestamps to align a video against. */
+
+static void exp1_run(esp_lcd_panel_handle_t panel)
+{
+    const h4_profile_t *p = &h4_profiles[H4_DEFAULT_PROFILE];
+    static const struct { bool vtg; int hbp_delta; } st[] = {
+        { false, 0 },     /* S0 baseline: LCDCTRL 0x150, bridge hbp 300 / hfp 0 */
+        { false, -100 },  /* S1 timing regs rewritten, VTGEN still off */
+        { true, 0 },      /* S2 VFUEN + LCDCTRL 0x152, hbp 300 */
+        { true, -100 },   /* S3 VTGEN on, hbp 200 / hfp 100 */
+        { true, -200 },   /* S4 VTGEN on, hbp 100 / hfp 200 */
+    };
+    for (;;) {
+        for (size_t i = 0; i < sizeof(st) / sizeof(st[0]); i++) {
+            const int hbp = p->hbp + TC358762_DE_START_COMP + st[i].hbp_delta;
+            const int hfp = p->hfp - TC358762_DE_START_COMP - st[i].hbp_delta;
+            ESP_LOGW(TAG, "EXP1 state S%u t=%lld ms: VTGEN %d, bridge hbp %d hfp %d (total %d, host %d)",
+                     (unsigned)i, (long long)(esp_timer_get_time() / 1000), st[i].vtg, hbp, hfp,
+                     HOSYOND_H_RES + p->hsw + hbp + hfp,
+                     HOSYOND_H_RES + p->hsw + p->hbp + p->hfp);
+            tc358762_write(s_bus, TC358762_LCD_HS_HBP, ((uint32_t)hbp << 16) | (uint32_t)p->hsw);
+            tc358762_write(s_bus, TC358762_LCD_HDISP_HFP, ((uint32_t)hfp << 16) | HOSYOND_H_RES);
+            tc358762_write(s_bus, TC358762_VFUEN, 1);
+            tc358762_write(s_bus, TC358762_LCDCTRL,
+                           TC358762_LCDCTRL_UPSTREAM | (st[i].vtg ? 2u : 0u));
+            draw_calibration_card(panel);
+            vTaskDelay(pdMS_TO_TICKS(12000));
+        }
+    }
+}
+#endif
+
 void app_main(void)
 {
     const h4_profile_t *p = &h4_profiles[H4_DEFAULT_PROFILE];
@@ -812,6 +868,10 @@ void app_main(void)
     }
 
     attiny_backlight_on();
+
+#if PROBE_EXP1
+    exp1_run(panel);
+#endif
 
     /* Steady-state image: a deterministic calibration pattern whose geometry is
      * fully predictable, re-submitted every few seconds so it also recovers from

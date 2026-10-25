@@ -565,16 +565,15 @@ static void fill_rect(uint8_t *buf, int x0, int y0, int x1, int y1,
     for (int y = y0; y < y1; y++) {
         uint8_t *px = buf + ((size_t)y * w + (size_t)x0) * 3;
         for (int x = x0; x < x1; x++) {
-            /* Bytes are emitted as [R][B][G] because that is how this bridge
-             * renders an RGB888 DSI stream: measured from the 8-band strip,
-             * whose known order W,Y,C,G,M,R,B,K appears on the panel as
-             * W,M,C,B,Y,R,G,K. Those four invariant bands plus the Y<->M and
-             * G<->B exchanges are exactly a green/blue channel swap and nothing
-             * else. This is the one place pixel bytes are produced, so the
-             * whole card follows from here. */
-            *px++ = r;
+            /* Bytes are emitted as [B][G][R]: confirmed on the panel on 2026-10-25,
+             * where the previous [R][B][G] order showed TL blue, TR red, BL green
+             * (card colours TL red, TR green, BL blue), i.e. this bridge reads the
+             * stream as B,G,R. An earlier bring-up measured a green/blue swap
+             * instead, so the bridge byte phase has differed between sessions.
+             * This is the one place pixel bytes are produced. */
             *px++ = b;
             *px++ = g;
+            *px++ = r;
         }
     }
 }

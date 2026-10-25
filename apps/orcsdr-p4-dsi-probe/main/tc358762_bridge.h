@@ -31,6 +31,7 @@
 #define TC358762_LCD_HDISP_HFP       0x0428  /* [31:16] HFP, [15:0] H display */
 #define TC358762_LCD_VS_VBP          0x042c  /* [31:16] VBP, [15:0] VSW */
 #define TC358762_LCD_VDISP_VFP       0x0430  /* [31:16] VFP, [15:0] V display */
+#define TC358762_VFUEN               0x0434  /* write 1 to latch the LCD timing regs */
 #define TC358762_SPICMR              0x0450
 
 /* System */
