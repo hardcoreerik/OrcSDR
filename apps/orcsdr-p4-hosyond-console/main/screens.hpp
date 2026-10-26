@@ -38,5 +38,6 @@ const Screen& settings_screen();
 const Screen& pocsag_screen();
 const Screen& wifi_screen();
 const Screen& adsb_screen();
+const Screen& acars_screen();
 
 }  // namespace screens

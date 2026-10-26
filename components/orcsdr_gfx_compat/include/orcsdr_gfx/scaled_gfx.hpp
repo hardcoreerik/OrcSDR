@@ -277,7 +277,11 @@ class ScaledCanvas : public ScaledGfx {
   void setPsram(bool) { psram_ = true; }  // always PSRAM on this target
   void setColorDepth(int bits) { depth_ = bits; }
   void* createSprite(int w, int h);
-  void* getBuffer() { return created_ ? static_cast<void*>(this) : nullptr; }  // non-null once created (no raw pixel access)  // like M5GFX: the sprite's buffer (non-null) or nullptr
+  // Non-null once created, but NOT a pixel pointer (the sprite holds scaled pixels). Code that wants raw pixels
+  // (frame diffing) is built with ORCSDR_NO_RAW_BUFFERS, which turns its getBuffer() into this null-returning one,
+  // and then takes its "no buffer" path.
+  void* getBuffer() { return created_ ? static_cast<void*>(this) : nullptr; }
+  void* getBufferUnavailable() { return nullptr; }  // like M5GFX: the sprite's buffer (non-null) or nullptr
   void deleteSprite();
   bool created() const { return created_; }
   template <typename T> void fillSprite(const T& color) { if (created_) sprite_.fillSprite(color); }

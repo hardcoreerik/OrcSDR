@@ -63,7 +63,7 @@ void task(void*) {
     return;
   }
   bool streaming = false;
-  int64_t last_scan = 0, last_fft = 0, last_metrics = 0;
+  int64_t last_scan = 0, last_fft = 0, last_metrics = 0, last_stream_start_us = 0;
   for (;;) {
     const uint32_t absolute = tune_request.exchange(0);
     if (absolute) {
@@ -127,6 +127,7 @@ void task(void*) {
           if (e == ESP_OK) {
             streaming = true;
             state = 2;
+            last_stream_start_us = now;
             rate_now = sc.sample_rate_sps;
             ESP_LOGI(TAG, "RF START hz=%u rate=%u", unsigned(sc.frequency_hz), unsigned(sc.sample_rate_sps));
           } else {
@@ -145,7 +146,16 @@ void task(void*) {
       vTaskDelay(pdMS_TO_TICKS(30));
       continue;
     }
-    if (rate_target.load() != rate_now.load()) {
+    // A rate change is a USB stop/start. Wait until the requested rate has been steady for a moment (screens often ask
+    // twice in quick succession) and never restart twice within 1.5 s: back-to-back restarts left the USB device stuck.
+    static uint32_t last_seen_target = 0;
+    static int64_t target_changed_at = 0;
+    const uint32_t wanted_rate = rate_target.load();
+    if (wanted_rate != last_seen_target) {
+      last_seen_target = wanted_rate;
+      target_changed_at = now;
+    }
+    if (wanted_rate != rate_now.load() && now - target_changed_at > 400000 && now - last_stream_start_us > 1500000) {
       // The driver changes sample rate only across stop/start.
       ESP_LOGI(TAG, "sample rate %u -> %u", unsigned(rate_now.load()), unsigned(rate_target.load()));
       (void)esp_rtl_sdr_stop(sdr, 1500);

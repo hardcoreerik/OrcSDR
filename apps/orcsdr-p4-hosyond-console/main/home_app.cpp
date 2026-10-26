@@ -19,6 +19,7 @@
 #include "present.hpp"
 #include "radio_service.hpp"
 #include "screens.hpp"
+#include "ui_support.hpp"
 #include "wifi_app.hpp"
 #include "waterfall_style.hpp"
 
@@ -37,7 +38,7 @@ uint32_t g_visible_updates = 0;
 std::atomic<int> g_request_sound{-1};         // 0 / 1 = set, -1 = none
 std::atomic<uint32_t> g_request_span{0};
 std::atomic<int> g_request_screen{-2};        // -2 = none, -1 = home, otherwise a dashboards::Id
-const screens::Screen* g_active = nullptr;     // the dashboard on screen (null = Home); UI task only
+const ::screens::Screen* g_active = nullptr;     // the dashboard on screen (null = Home); UI task only
 
 // ---- VFO state (what the Tab5's main.cpp keeps for Home) ----
 home_vfo::Memory g_vfo;
@@ -204,7 +205,7 @@ void handle_action(const home::Action& a) {
       ++g_rev;
       break;
     case home::ActionKind::open_dashboard:
-      if (screens::find(a.dashboard)) {
+      if (::screens::find(a.dashboard)) {
         g_request_screen = static_cast<int>(a.dashboard);
       } else if (a.dashboard == dashboards::Id::weather) {
         retune(162400000);  // these use the Tab5's generic receiver screen, which is Home here
@@ -251,7 +252,7 @@ void ui_task(void*) {
   fill_snapshot();
   home::enter(g_snapshot);
   const float inv_sx = 1.0f / g_display->scale_x(), inv_sy = 1.0f / g_display->scale_y();
-  bool was_down = false;
+  bool was_down = false, header_gesture = false;
   int last_x = 0, last_y = 0;  // design coordinates
   int64_t last_snapshot_us = 0, last_log_us = 0;
   int tap_frames = 0, tap_x = 0, tap_y = 0;  // injected tap (design coordinates), held ~150 ms
@@ -281,7 +282,7 @@ void ui_task(void*) {
       else home::leave();
       audio_service::set_gate(true);
       audio_service::set_active(true);  // dashboards without audio switch it off in their enter()
-      g_active = wanted_screen >= 0 ? screens::find(static_cast<dashboards::Id>(wanted_screen)) : nullptr;
+      g_active = wanted_screen >= 0 ? ::screens::find(static_cast<dashboards::Id>(wanted_screen)) : nullptr;
       M5.Display.fillScreen(0x0000);
       if (g_active) {
         if (!g_in_dashboard) {  // Home's span and frequency come back when the dashboard closes
@@ -304,6 +305,8 @@ void ui_task(void*) {
         home::enter(g_snapshot);
       }
       was_down = false;
+      header_gesture = false;
+      ui_support::header_reset();
       tap_frames = 0;
     }
     // 2.4 MS/s is only for Home's wide spans (the Tab5 does the same); dashboards run at 0.96.
@@ -333,7 +336,40 @@ void ui_task(void*) {
       last_x = tap_x;
       last_y = tap_y;
     }
-    if (g_active) {
+    // The shared header (volume tray, home, mute, settings) gets every touch first, on every screen, exactly as the
+    // Tab5's main loop does: a press on the speaker opens a volume slider you drag, and the tray stays live while open.
+    if (down && (!was_down || ui_support::header_overlay_open()) && ui_support::handle_header_touch(last_x, last_y))
+      header_gesture = true;
+    if (!down && !was_down) header_gesture = false;
+    ui_support::header_service();
+    {
+      // Save volume/mute once they have stopped changing for 1.5 s (flash writes are not made while sliding).
+      static uint8_t saved_volume = 255;
+      static int saved_sound = -1;
+      static int64_t changed_at_us = 0;
+      static bool primed = false;
+      if (!primed) {
+        saved_volume = g_volume;
+        saved_sound = g_sound ? 1 : 0;
+        primed = true;
+      }
+      const int64_t t_us = esp_timer_get_time();
+      if (g_volume != saved_volume || (g_sound ? 1 : 0) != saved_sound) {
+        if (!changed_at_us) changed_at_us = t_us;
+        if (t_us - changed_at_us > 1500000) {
+          ui_support::put_u8("volume", g_volume);
+          ui_support::put_bool("sound", g_sound);
+          saved_volume = g_volume;
+          saved_sound = g_sound ? 1 : 0;
+          changed_at_us = 0;
+        }
+      } else {
+        changed_at_us = 0;
+      }
+    }
+    if (header_gesture) {
+      if (!down) header_gesture = false;  // the rest of this gesture, including the lift, belongs to the header
+    } else if (g_active) {
       if (g_active->touch) {
         if (down || was_down) g_active->touch(last_x, last_y, down);
       } else {
@@ -455,14 +491,14 @@ bool open_screen(const char* name) {
     request_home();
     return true;
   }
-  const screens::Screen* s = screens::find_name(name);
+  const ::screens::Screen* s = ::screens::find_name(name);
   if (!s) return false;
   request_open(s->id);
   return true;
 }
 const char* screen_name() {
   static char name[16];
-  const screens::Screen* s = g_active;
+  const ::screens::Screen* s = g_active;
   if (!s) return "home";
   std::snprintf(name, sizeof(name), "%s", s->name);
   for (char* c = name; *c; ++c) *c = static_cast<char>(std::tolower(static_cast<unsigned char>(*c)));
@@ -471,6 +507,9 @@ const char* screen_name() {
 
 bool start(gfx::ScaledDisplay* display) {
   g_display = display;
+  // Volume and mute come back as the user left them.
+  g_volume = ui_support::get_u8("volume", g_volume);
+  g_sound = ui_support::get_bool("sound", g_sound);
   dashboards::load_recent(nullptr, 0);  // the Tab5's default recent list
   return xTaskCreatePinnedToCore(ui_task, "home_ui", 12288, nullptr, 4, nullptr, 0) == pdPASS;
 }
