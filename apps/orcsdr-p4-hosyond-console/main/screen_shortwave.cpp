@@ -3,6 +3,8 @@
 // are not available on this target yet.
 #include <algorithm>
 #include <cstring>
+#include <new>
+#include "esp_heap_caps.h"
 #include "audio_service.hpp"
 #include "home_app.hpp"
 #include "radio_service.hpp"
@@ -16,14 +18,14 @@ uint32_t g_filter_hz = 6000;
 int g_mode = 0;  // 0 follow the band (AM), 1 AM, 2 USB, 3 LSB
 int16_t g_clarifier = 0;
 
-sw::MemoryTable& memories() {
-  static sw::MemoryTable t;
-  return t;
+// Large tables live in PSRAM: as statics they took 136 KB of the internal RAM the graphics library needs.
+template <typename T>
+T& psram_table() {
+  static T* t = new (heap_caps_calloc(1, sizeof(T), MALLOC_CAP_SPIRAM)) T();
+  return *t;
 }
-sw::LogTable& logs() {
-  static sw::LogTable t;
-  return t;
-}
+sw::MemoryTable& memories() { return psram_table<sw::MemoryTable>(); }
+sw::LogTable& logs() { return psram_table<sw::LogTable>(); }
 
 const char* mode_text() { return g_mode == 2 ? "USB" : g_mode == 3 ? "LSB" : "AM"; }
 
