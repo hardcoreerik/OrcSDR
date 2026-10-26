@@ -176,6 +176,9 @@ void handle_action(const home::Action& a) {
       ++g_rev;
       break;
     }
+    case home::ActionKind::open_device_settings:
+      g_request_screen = static_cast<int>(dashboards::Id::settings);
+      break;
     case home::ActionKind::gain_auto:
       radio::set_gain_auto();
       ++g_status_rev;
