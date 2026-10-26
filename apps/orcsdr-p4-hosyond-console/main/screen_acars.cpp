@@ -64,7 +64,7 @@ void tick() {
   ui_support::header_service();
 }
 void tap(int x, int y) {
-  if (ui_support::handle_header_touch(x, y)) return;
+  if (ui_support::handle_header_touch(x, y, true)) return;
   orcsdr::acars_app::touch(x, y);
 }
 }  // namespace

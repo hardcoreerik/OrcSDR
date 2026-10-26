@@ -32,10 +32,12 @@ void draw_header() {
 bool header_overlay_open() { return g_control.expanded; }
 void header_reset() { orcsdr::audio_header::reset(g_control); }
 
-bool handle_header_touch(int x, int y) {
+bool handle_header_touch(int x, int y, bool first_press) {
   const home_app::Status st = home_app::status();
   const auto action = orcsdr::audio_header::handle_touch(g_control, x, y, now_ms(), st.volume);
   if (action != orcsdr::audio_header::Action::none) {
+    // The same held touch that opened the tray is still on the speaker icon; it must not also toggle mute.
+    if (action == orcsdr::audio_header::Action::mute_toggle && !first_press) return true;
     if (action == orcsdr::audio_header::Action::opened) {
       orcsdr::audio_header::capture_volume_background();
     } else if (action == orcsdr::audio_header::Action::volume_set) {

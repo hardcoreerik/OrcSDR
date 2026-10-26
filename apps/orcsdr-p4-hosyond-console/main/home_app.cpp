@@ -338,7 +338,7 @@ void ui_task(void*) {
     }
     // The shared header (volume tray, home, mute, settings) gets every touch first, on every screen, exactly as the
     // Tab5's main loop does: a press on the speaker opens a volume slider you drag, and the tray stays live while open.
-    if (down && (!was_down || ui_support::header_overlay_open()) && ui_support::handle_header_touch(last_x, last_y))
+    if (down && (!was_down || ui_support::header_overlay_open()) && ui_support::handle_header_touch(last_x, last_y, !was_down))
       header_gesture = true;
     if (!down && !was_down) header_gesture = false;
     ui_support::header_service();

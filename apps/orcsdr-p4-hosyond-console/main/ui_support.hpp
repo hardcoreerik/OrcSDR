@@ -11,7 +11,8 @@ void draw_header();                    // the Hooks::header_controls function
 bool header_overlay_open();            // the volume tray is open over the content
 void header_reset();                   // on entering a screen
 // Routes a tap that may belong to the header (volume tray, home, mute, settings). True = consumed.
-bool handle_header_touch(int x, int y);
+// `first_press` is true only on the first loop of a gesture: a held finger must not repeat a mute toggle.
+bool handle_header_touch(int x, int y, bool first_press);
 // Call every tick: closes the volume tray after its timeout.
 void header_service();
 bool sound_enabled();
