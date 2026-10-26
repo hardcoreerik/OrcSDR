@@ -336,6 +336,8 @@ void cmd_cpu() {
 }
 
 void cmd_bench() {
+  const UBaseType_t saved_priority = uxTaskPriorityGet(nullptr);
+  vTaskPrioritySet(nullptr, 24);  // above the UI and receiver tasks, so the numbers below are not diluted by preemption
   constexpr size_t kBytes = 16384;
   auto* a = static_cast<uint8_t*>(heap_caps_malloc(kBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   auto* b = static_cast<uint8_t*>(heap_caps_malloc(kBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
@@ -395,6 +397,7 @@ void cmd_bench() {
   heap_caps_free(a);
   heap_caps_free(b);
   heap_caps_free(c);
+  vTaskPrioritySet(nullptr, saved_priority);
 }
 
 // ---- sampling profiler: a high-priority timer interrupt records the interrupted program counter ----

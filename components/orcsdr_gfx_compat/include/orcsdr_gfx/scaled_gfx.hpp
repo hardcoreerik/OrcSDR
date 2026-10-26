@@ -87,6 +87,8 @@ class ScaledGfx {
 
   // --- target access for the compat layer ----------------------------------------------------
   lgfx::LGFX_Sprite* target() { return t_; }
+  // Code written against M5GFX sometimes takes a LovyanGFX&; this lets it draw into the scaled target directly.
+  operator lgfx::LovyanGFX&() { return *t_; }
   int X(int x) const { return static_cast<int>(std::lround(x * sx_)); }
   int Y(int y) const { return static_cast<int>(std::lround(y * sy_)); }
   float scale_x() const { return sx_; }
@@ -274,7 +276,8 @@ class ScaledCanvas : public ScaledGfx {
 
   void setPsram(bool) { psram_ = true; }  // always PSRAM on this target
   void setColorDepth(int bits) { depth_ = bits; }
-  void* createSprite(int w, int h);  // like M5GFX: the sprite's buffer (non-null) or nullptr
+  void* createSprite(int w, int h);
+  void* getBuffer() { return created_ ? static_cast<void*>(this) : nullptr; }  // non-null once created (no raw pixel access)  // like M5GFX: the sprite's buffer (non-null) or nullptr
   void deleteSprite();
   bool created() const { return created_; }
   template <typename T> void fillSprite(const T& color) { if (created_) sprite_.fillSprite(color); }

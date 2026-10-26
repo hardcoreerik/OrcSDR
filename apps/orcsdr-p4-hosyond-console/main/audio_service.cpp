@@ -185,12 +185,16 @@ bool start() {
   }
   g_ring = static_cast<float*>(heap_caps_malloc(kRingSize * sizeof(float), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   g_tmp = static_cast<float*>(heap_caps_malloc(2048 * sizeof(float), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-  void* mem = heap_caps_malloc(sizeof(orcsdr::dsp::Demod), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  // The demodulator's state (about 19 KB, all inside this one object) lives in PSRAM. Putting it in internal RAM took
+  // that RAM away from the graphics library and tanked the Home frame rate (draw time 13 ms -> 182 ms), measured on
+  // the board; as one contiguous object it stays cache-friendly in PSRAM and the receiver task has the headroom.
+  void* mem = heap_caps_malloc(sizeof(orcsdr::dsp::Demod), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (!g_ring || !g_tmp || !mem) {
     ESP_LOGE(TAG, "buffer allocation failed");
     return false;
   }
   g_demod = new (mem) orcsdr::dsp::Demod();
+  ESP_LOGI(TAG, "demodulator %u bytes at %p", unsigned(sizeof(orcsdr::dsp::Demod)), mem);
   orcsdr::radio::set_iq_sink(iq_sink);
   g_running = xTaskCreatePinnedToCore(task, "audio", 8192, nullptr, 6, nullptr, 1) == pdPASS;
   ESP_LOGI(TAG, "receiver audio %s (48 kHz mono, demodulated in the receiver task, adaptive resampler)", g_running ? "running" : "FAILED");

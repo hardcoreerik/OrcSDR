@@ -42,8 +42,11 @@ class Demod {
 
  private:
   struct ComplexFir {
-    std::vector<float> taps;
-    std::vector<float> hist_i, hist_q;  // doubled circular history for contiguous reads
+    // Fixed storage: every hot buffer of the demodulator lives inside the one object, so the caller decides where
+    // (internal RAM) and nothing falls back to slow external memory behind a std::vector.
+    float taps[65] = {};
+    size_t n_taps = 0;
+    float hist_i[130] = {}, hist_q[130] = {};  // doubled circular history for contiguous reads
     size_t pos = 0;
     unsigned decim = 1, phase = 0;
     void init(const std::vector<float>& t, unsigned d);
@@ -52,8 +55,9 @@ class Demod {
     bool push(float i, float q, float* oi, float* oq);
   };
   struct RealFir {
-    std::vector<float> taps;
-    std::vector<float> hist;
+    float taps[65] = {};
+    size_t n_taps = 0;
+    float hist[130] = {};
     size_t pos = 0;
     unsigned decim = 1, phase = 0;
     void init(const std::vector<float>& t, unsigned d);
@@ -91,7 +95,7 @@ class Demod {
   float a_taps_[kMaxTaps] = {};
   float a_hist_i_[kMaxTaps - 1] = {}, a_hist_q_[kMaxTaps - 1] = {};
   unsigned a_phase_ = 0;
-  std::vector<float> xi_, xq_;
+  float xi_[kMaxTaps - 1 + kChunk] = {}, xq_[kMaxTaps - 1 + kChunk] = {};
   ComplexFir stage_b_nb_;    // 240k -> 48k, narrow-band modes
   RealFir stage_b_wfm_;      // 240k -> 48k, 15 kHz audio after the discriminator
   float chan_pow_ = 1e-12f;            // smoothed |channel|^2

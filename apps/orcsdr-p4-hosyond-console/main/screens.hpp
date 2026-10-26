@@ -37,5 +37,6 @@ const Screen& rflab_screen();
 const Screen& settings_screen();
 const Screen& pocsag_screen();
 const Screen& wifi_screen();
+const Screen& adsb_screen();
 
 }  // namespace screens

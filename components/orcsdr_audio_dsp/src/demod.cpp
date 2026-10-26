@@ -35,21 +35,19 @@ float fast_atan2(float y, float x) {
 }
 
 void Demod::ComplexFir::init(const std::vector<float>& t, unsigned d) {
-  taps = t;
+  n_taps = std::min<size_t>(t.size(), 65);
+  std::copy(t.begin(), t.begin() + n_taps, taps);
   decim = d;
-  hist_i.assign(2 * taps.size(), 0.0f);
-  hist_q.assign(2 * taps.size(), 0.0f);
-  pos = 0;
-  phase = 0;
+  reset();
 }
 void Demod::ComplexFir::reset() {
-  std::fill(hist_i.begin(), hist_i.end(), 0.0f);
-  std::fill(hist_q.begin(), hist_q.end(), 0.0f);
+  std::fill(hist_i, hist_i + 130, 0.0f);
+  std::fill(hist_q, hist_q + 130, 0.0f);
   pos = 0;
   phase = 0;
 }
 bool Demod::ComplexFir::push(float i, float q, float* oi, float* oq) {
-  const size_t n = taps.size();
+  const size_t n = n_taps;
   hist_i[pos] = hist_i[pos + n] = i;
   hist_q[pos] = hist_q[pos + n] = q;
   pos = pos + 1 == n ? 0 : pos + 1;
@@ -69,19 +67,18 @@ bool Demod::ComplexFir::push(float i, float q, float* oi, float* oq) {
 }
 
 void Demod::RealFir::init(const std::vector<float>& t, unsigned d) {
-  taps = t;
+  n_taps = std::min<size_t>(t.size(), 65);
+  std::copy(t.begin(), t.begin() + n_taps, taps);
   decim = d;
-  hist.assign(2 * taps.size(), 0.0f);
-  pos = 0;
-  phase = 0;
+  reset();
 }
 void Demod::RealFir::reset() {
-  std::fill(hist.begin(), hist.end(), 0.0f);
+  std::fill(hist, hist + 130, 0.0f);
   pos = 0;
   phase = 0;
 }
 bool Demod::RealFir::push(float x, float* out) {
-  const size_t n = taps.size();
+  const size_t n = n_taps;
   hist[pos] = hist[pos + n] = x;
   pos = pos + 1 == n ? 0 : pos + 1;
   if (++phase < decim) return false;
@@ -94,8 +91,6 @@ bool Demod::RealFir::push(float x, float* out) {
 }
 
 Demod::Demod() {
-  xi_.assign(kMaxTaps - 1 + kChunk, 0.0f);
-  xq_.assign(kMaxTaps - 1 + kChunk, 0.0f);
   set_input_rate(kInputRate);
   stage_b_nb_.init(lowpass(65, 7500.0f / 240000.0f), 5);
   stage_b_wfm_.init(lowpass(65, 15000.0f / 240000.0f), 5);
@@ -211,8 +206,8 @@ size_t Demod::process(const uint8_t* iq, size_t bytes, float* out, size_t capaci
   while (pairs_left) {
     const size_t n = std::min(pairs_left, kChunk);
     pairs_left -= n;
-    float* xi = xi_.data();
-    float* xq = xq_.data();
+    float* xi = xi_;
+    float* xq = xq_;
     std::copy(a_hist_i_, a_hist_i_ + kH, xi);
     std::copy(a_hist_q_, a_hist_q_ + kH, xq);
     size_t m;  // samples entering the filter stage

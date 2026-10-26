@@ -45,6 +45,7 @@ home_vfo::Demod g_demod = home_vfo::Demod::by_band;
 uint32_t g_frequency_hz = 96100000;
 uint32_t g_step_hz = 0;
 uint32_t g_home_span_hz = 2400000;
+uint32_t g_home_frequency_hz = 0;
 bool g_in_dashboard = false;
 uint32_t g_span_hz = 2400000;  // the Tab5's Home default: the full 2.4 MS/s stream
 uint32_t g_bandwidth_override_hz = 0;
@@ -229,7 +230,13 @@ void handle_action(const home::Action& a) {
 void feed_spectrum(const uint8_t* bins) {
   constexpr size_t kBins = 256;
   float levels[kBins];
-  for (size_t i = 0; i < kBins; ++i) levels[i] = bins[i] * 0.25f + 12.0f;  // the FFT bytes are (dB - 12) * 4
+  static float lut[256];
+  static bool lut_ready = false;
+  if (!lut_ready) {
+    for (int i = 0; i < 256; ++i) lut[i] = i * 0.25f + 12.0f;  // the FFT bytes are (dB - 12) * 4
+    lut_ready = true;
+  }
+  for (size_t i = 0; i < kBins; ++i) levels[i] = lut[bins[i]];
   const uint32_t rate = radio::sample_rate();
   const size_t visible = std::clamp<size_t>(static_cast<size_t>(static_cast<uint64_t>(kBins) * g_span_hz / rate), 16, kBins);
   const size_t first = (kBins - visible) / 2;
@@ -277,14 +284,20 @@ void ui_task(void*) {
       g_active = wanted_screen >= 0 ? screens::find(static_cast<dashboards::Id>(wanted_screen)) : nullptr;
       M5.Display.fillScreen(0x0000);
       if (g_active) {
-        if (!g_in_dashboard) g_home_span_hz = g_span_hz;  // Home's span comes back when the dashboard closes
+        if (!g_in_dashboard) {  // Home's span and frequency come back when the dashboard closes
+          g_home_span_hz = g_span_hz;
+          g_home_frequency_hz = g_frequency_hz;
+        }
         g_in_dashboard = true;
         g_span_hz = std::min<uint32_t>(g_span_hz, 960000);  // dashboards run at 0.96 MS/s
         ESP_LOGI(TAG, "opening dashboard %s", g_active->name);
         if (dashboards::find(g_active->id)) dashboards::record_open(g_active->id);
         g_active->enter();
       } else {
-        if (g_in_dashboard) g_span_hz = g_home_span_hz;
+        if (g_in_dashboard) {
+          g_span_hz = g_home_span_hz;
+          if (g_home_frequency_hz && g_home_frequency_hz != g_frequency_hz) retune(g_home_frequency_hz);
+        }
         g_in_dashboard = false;
         ++g_tuner_rev;
         fill_snapshot();
