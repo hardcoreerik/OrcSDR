@@ -39,5 +39,6 @@ const Screen& pocsag_screen();
 const Screen& wifi_screen();
 const Screen& adsb_screen();
 const Screen& acars_screen();
+const Screen& lora_screen();
 
 }  // namespace screens

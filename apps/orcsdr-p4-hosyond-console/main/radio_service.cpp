@@ -165,10 +165,16 @@ void task(void*) {
       continue;
     }
     if (esp_rtl_sdr_get_state(sdr) != ESP_RTL_SDR_STATE_STREAMING) {
-      ESP_LOGW(TAG, "stream ended, rescanning");
+      ESP_LOGW(TAG, "stream ended (dongle unplugged or faulted), rescanning for it");
       (void)esp_rtl_sdr_stop(sdr, 1500);
+      // Clear a FAULT left behind by the disconnect so the next start is not refused.
+      const esp_err_t reset = esp_rtl_sdr_reset(sdr);
+      ESP_LOGI(TAG, "driver reset after stream end: %s", esp_err_to_name(reset));
       streaming = false;
       state = 0;
+      applied = 0;
+      sps = 0;
+      last_scan = 0;  // look again straight away
       continue;
     }
     size_t n = 0;

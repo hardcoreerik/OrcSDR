@@ -70,3 +70,6 @@ CONFIG_USB_HOST_DWC_DMA_CAP_MEMORY_IN_PSRAM=y
 # Per-task CPU report (RTL_CPU) for tuning the receiver, audio and UI tasks.
 CONFIG_FREERTOS_USE_TRACE_FACILITY=y
 CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
+
+# The LoRa decoder uses FFTs up to 32768 points (same setting as the Tab5 build).
+CONFIG_DSP_MAX_FFT_SIZE_32768=y
