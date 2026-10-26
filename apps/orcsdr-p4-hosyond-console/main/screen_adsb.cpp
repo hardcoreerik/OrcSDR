@@ -7,6 +7,7 @@
 #include "adsb_decoder.hpp"
 #include "audio_service.hpp"
 #include "esp_heap_caps.h"
+#include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
@@ -212,7 +213,24 @@ void leave() {
   orcsdr::radio::set_sample_rate_override(0);
   ad::leave();
 }
+void log_stats() {
+  static uint32_t last_ms = 0;
+  const uint32_t now = now_ms();
+  if (now - last_ms < 10000) return;
+  last_ms = now;
+  const rx::Stats& st = g_decoder->stats();
+  uint8_t aircraft = 0;
+  portENTER_CRITICAL(&g_lock);
+  for (size_t i = 0; i < kTracks; ++i) aircraft += g_tracks[i].used ? 1 : 0;
+  portEXIT_CRITICAL(&g_lock);
+  ESP_LOGI("ADSB", "preambles=%u frames=%u df17=%u crc_ok=%u aircraft=%u messages=%u level=%.1f dBFS gain=%s %.1f dB blocks=%u dropped=%u",
+           unsigned(st.preambles), unsigned(st.frames), unsigned(st.df17), unsigned(st.crc_ok), unsigned(aircraft), unsigned(g_messages),
+           double(orcsdr::radio::level_dbfs()), orcsdr::radio::gain().auto_mode ? "auto" : "manual", orcsdr::radio::gain().tenth_db / 10.0,
+           unsigned(iq_tap::blocks()), unsigned(iq_tap::dropped()));
+}
+
 void tick() {
+  log_stats();
   publish();
   ad::update();
 }
