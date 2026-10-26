@@ -510,6 +510,7 @@ bool start(gfx::ScaledDisplay* display) {
   // Volume and mute come back as the user left them.
   g_volume = ui_support::get_u8("volume", g_volume);
   g_sound = ui_support::get_bool("sound", g_sound);
+  ::screens::apply_saved_location();
   dashboards::load_recent(nullptr, 0);  // the Tab5's default recent list
   return xTaskCreatePinnedToCore(ui_task, "home_ui", 12288, nullptr, 4, nullptr, 0) == pdPASS;
 }

@@ -27,6 +27,9 @@ const Screen* find(orcsdr::dashboards::Id id);
 const Screen* find_name(const char* name);  // case-insensitive
 const Screen* const* all(size_t* count);
 
+// Loads the saved (or default ZIP 97477) receiver location; call once at boot.
+void apply_saved_location();
+
 // Defined by the adapters.
 const Screen& fm_screen();
 const Screen& am_screen();

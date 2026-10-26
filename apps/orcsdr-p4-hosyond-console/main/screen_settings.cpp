@@ -2,7 +2,9 @@
 // the receiver defaults work; Wi-Fi, SD card, catalog and companion sections show their unavailable state
 // because this board has none of them wired yet.
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
+#include <string>
 #include "esp_rtl_sdr.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -12,6 +14,7 @@
 #include "hosyond_board.h"
 #include "nvs_store.hpp"
 #include "radio_service.hpp"
+#include "receiver_location.hpp"
 #include "screens.hpp"
 #include "settings_app.hpp"
 #include "wifi_app.hpp"
@@ -20,6 +23,37 @@ namespace {
 namespace st = orcsdr::settings;
 st::State g_state;
 bool g_loaded = false;
+
+// ZIP 97477 (Springfield, Oregon) is the default receiver location until the owner sets another one.
+constexpr int32_t kDefaultLatE7 = 440720000, kDefaultLonE7 = -1229600000;
+
+void load_location() {
+  bool set = true;
+  int32_t lat = kDefaultLatE7, lon = kDefaultLonE7;
+  char label[40] = "ZIP 97477 Springfield, OR";
+  orcsdr::NvsStore s;
+  if (s.begin("orcsdr_set", true)) {
+    if (s.get_bool("loc_set", false)) {
+      lat = s.get_i32("loc_lat", lat);
+      lon = s.get_i32("loc_lon", lon);
+      const std::string saved = s.get_string("loc_label", label);
+      std::snprintf(label, sizeof(label), "%.39s", saved.c_str());
+    }
+    s.end();
+  }
+  orcsdr::receiver_location::set(set, lat, lon, label, "");
+}
+
+void save_location(const st::State& v) {
+  orcsdr::NvsStore s;
+  if (!s.begin("orcsdr_set", false)) return;
+  s.put_bool("loc_set", true);
+  s.put_i32("loc_lat", v.latitude_e7);
+  s.put_i32("loc_lon", v.longitude_e7);
+  s.put_string("loc_label", v.location_label);
+  s.end();
+  orcsdr::receiver_location::set(v.location_configured, v.latitude_e7, v.longitude_e7, v.location_label, "");
+}
 
 void load() {
   g_state.brightness = 255;
@@ -98,6 +132,13 @@ const st::State& build() {
     std::snprintf(g_state.wifi_c6_update_stage, sizeof(g_state.wifi_c6_update_stage), "%.23s", up.stage);
     g_state.wifi_hosted_update_required = up.state == orcsdr::wifi::C6UpdateState::optional || up.state == orcsdr::wifi::C6UpdateState::ready;
   }
+  {
+    const auto loc = orcsdr::receiver_location::snapshot();
+    g_state.location_configured = loc.configured;
+    g_state.latitude_e7 = loc.latitude_e7;
+    g_state.longitude_e7 = loc.longitude_e7;
+    std::snprintf(g_state.location_label, sizeof(g_state.location_label), "%.39s", loc.label);
+  }
   g_state.sd_ready = false;
   g_state.companion_supported = false;
   return g_state;
@@ -164,12 +205,14 @@ void tap(int x, int y) {
       wifi_app::disconnect();
       wifi_app::forget();
       break;
-    default: break;  // location, catalog, companion, clock: not available on this target yet
+    case st::ActionKind::location_changed: save_location(st::state()); break;
+    default: break;  // catalog, companion, clock: not available on this target yet
   }
 }
 }  // namespace
 
 namespace screens {
+void apply_saved_location() { load_location(); }
 const Screen& settings_screen() {
   static const Screen s{orcsdr::dashboards::Id::settings, "SETTINGS", enter, leave, tick, tap, nullptr, nullptr};
   return s;

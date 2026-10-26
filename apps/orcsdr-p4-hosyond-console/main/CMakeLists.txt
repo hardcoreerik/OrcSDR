@@ -35,7 +35,7 @@ idf_component_register(
          "${TAB5_UI}/acars_dashboard_ui.cpp" "${TAB5_UI}/acars_demo_data.cpp" "${TAB5_UI}/acars_dirty_rects.cpp"
          "${TAB5_UI}/acars_receiver.cpp"
          "${TAB5_UI}/adsb_dashboard.cpp" "${TAB5_UI}/adsb_decoder.cpp" "${TAB5_UI}/rf24_dashboard.cpp" "${TAB5_UI}/pocsag_dashboard.cpp" "${TAB5_UI}/pocsag_decoder_core.cpp" "${TAB5_UI}/pocsag_store.cpp"
-         "${TAB5_UI}/settings_app.cpp" "${TAB5_UI}/clock_settings.cpp" "${TAB5_UI}/rf_lab.cpp" "${TAB5_UI}/rf_analysis.cpp" "${TAB5_UI}/scan_engine.cpp" "${TAB5_UI}/text_editor.cpp" "${TAB5_UI}/airband_catalog_storage.cpp"
+         "${TAB5_UI}/settings_app.cpp" "${TAB5_UI}/receiver_location.cpp" "${TAB5_UI}/clock_settings.cpp" "${TAB5_UI}/rf_lab.cpp" "${TAB5_UI}/rf_analysis.cpp" "${TAB5_UI}/scan_engine.cpp" "${TAB5_UI}/text_editor.cpp" "${TAB5_UI}/airband_catalog_storage.cpp"
          "${TAB5_UI}/am_dashboard.cpp" "${TAB5_UI}/nvs_store.cpp"
          "${TAB5_UI}/fm_dashboard.cpp" "${TAB5_UI}/fm_config.cpp"
     INCLUDE_DIRS "." "${WS4B}" "${TAB5_UI}"

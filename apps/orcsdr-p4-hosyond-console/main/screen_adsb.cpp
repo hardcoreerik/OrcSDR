@@ -14,6 +14,7 @@
 #include "home_app.hpp"
 #include "iq_tap.hpp"
 #include "radio_service.hpp"
+#include "receiver_location.hpp"
 #include "screens.hpp"
 
 namespace {
@@ -200,6 +201,12 @@ void enter() {
   orcsdr::radio::set_sample_rate_override(2400000);  // the decoder is built for 2.4 MS/s
   audio_service::set_active(false);
   g_settings = ad::Settings{};
+  {
+    const auto loc = orcsdr::receiver_location::snapshot();
+    g_settings.location_configured = loc.configured;
+    g_settings.latitude_e7 = loc.latitude_e7;
+    g_settings.longitude_e7 = loc.longitude_e7;
+  }
   g_settings.gain_supported = orcsdr::radio::gain().available;
   g_settings.gain_auto_supported = orcsdr::radio::gain().auto_available;
   g_settings.gain_auto = orcsdr::radio::gain().auto_mode;
