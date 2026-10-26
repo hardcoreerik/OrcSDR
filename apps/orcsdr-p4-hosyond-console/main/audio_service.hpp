@@ -36,6 +36,8 @@ struct Status {
   uint32_t underruns = 0;     // times the audio task had no IQ ready
   float buffer_fill = 0.0f;   // 0..1 (the resampler holds it near 0.1)
   float resample_ppm = 0.0f;  // current rate correction
+  uint32_t write_us = 0;      // smoothed time inside one 5 ms I2S write (mostly waiting)
+  uint32_t resample_us = 0;   // smoothed resample+write time per block
   uint32_t demod_us = 0;      // smoothed demodulation time per 16 KB IQ block (8.5 ms of signal)
 };
 Status status();

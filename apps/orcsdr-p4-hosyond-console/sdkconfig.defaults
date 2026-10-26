@@ -66,3 +66,7 @@ CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 
 # Keep the scarce internal DMA memory for the Hosted SDIO link and I2S; the RTL-SDR transfers live in PSRAM.
 CONFIG_USB_HOST_DWC_DMA_CAP_MEMORY_IN_PSRAM=y
+
+# Per-task CPU report (RTL_CPU) for tuning the receiver, audio and UI tasks.
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y

@@ -3,27 +3,35 @@
 #include <atomic>
 #include <cmath>
 #include <cstring>
+#include <new>
+#include <vector>
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/stream_buffer.h"
 #include "freertos/task.h"
 #include "hosyond_board.h"
 #include "radio_service.hpp"
 
+// The demodulator runs inside the receiver task's IQ callback, straight on the block it just read: no extra copies of
+// the 2.4 MS/s stream. It produces 48 kS/s audio into a small lock-free ring; the audio task resamples (to absorb the
+// few hundred ppm between the dongle's clock and the codec's) and feeds the ES8311.
 namespace audio_service {
 namespace {
 constexpr char TAG[] = "AUDIO";
 constexpr uint32_t kRate = 48000;
-constexpr size_t kStreamBytes = 256 * 1024;      // about 130 ms of IQ: rides out the FFT and drawing bursts
-constexpr size_t kBlockBytes = 16384;
-constexpr int kFramesPerWrite = 240;             // 5 ms of audio per I2S write
-// Output gain: Home's volume 0-255 maps to 0..kMaxGain. Deliberately conservative: the codec volume
-// is also low (see hosyond_audio.c), and the speaker on the connector is small.
-constexpr float kMaxGain = 0.7f;
+constexpr size_t kRingSize = 16384;  // audio samples (power of two), about 340 ms
+constexpr int kFramesPerWrite = 240;  // 5 ms of audio per I2S write
+constexpr int kTargetQueued = 1200;   // about 25 ms of audio queued is the steady state
+// Output gain: Home's volume 0-255 maps to 0..1 through a squared curve (about -12 dB at the middle step), with the
+// codec at full output: the whole range of the amplifier and speaker is available.
+constexpr float kMaxGain = 1.0f;
 
-StreamBufferHandle_t g_stream = nullptr;
+orcsdr::dsp::Demod* g_demod = nullptr;  // used only by the receiver task (the IQ callback)
+float* g_ring = nullptr;
+std::atomic<uint32_t> g_head{0}, g_tail{0};  // producer (receiver task) / consumer (audio task)
+float* g_tmp = nullptr;                      // demodulator output scratch, 2048 samples
+
 std::atomic<int> g_mode{static_cast<int>(orcsdr::dsp::Mode::wfm)};
 std::atomic<bool> g_mode_supported{true};
 std::atomic<uint8_t> g_volume{128};
@@ -34,17 +42,46 @@ std::atomic<float> g_channel_dbfs{-120.0f};
 std::atomic<uint32_t> g_blocks{0}, g_dropped{0}, g_underruns{0};
 std::atomic<uint32_t> g_tone_hz{0}, g_tone_frames{0};
 std::atomic<float> g_fill{0.0f}, g_ppm{0.0f};
-std::atomic<uint32_t> g_demod_us{0}, g_write_us{0};  // smoothed time per block
+std::atomic<uint32_t> g_demod_us{0}, g_write_us{0}, g_resample_us{0};  // smoothed times
 bool g_running = false;
 
+// Runs on the receiver task for every block of IQ.
 void iq_sink(const uint8_t* iq, size_t bytes) {
-  if (!g_stream) return;
-  // Never block the receiver: if the audio task has fallen behind, drop the block.
-  if (xStreamBufferSpacesAvailable(g_stream) < bytes || xStreamBufferSend(g_stream, iq, bytes, 0) != bytes)
-    g_dropped.fetch_add(1);
+  if (!g_demod || !g_active.load()) return;
+  static orcsdr::dsp::Mode current_mode = orcsdr::dsp::Mode::wfm;
+  const auto mode = static_cast<orcsdr::dsp::Mode>(g_mode.load());
+  if (mode != current_mode) {
+    g_demod->set_mode(mode);
+    current_mode = mode;
+  }
+  const uint32_t rate = orcsdr::radio::sample_rate();
+  if (rate != g_demod->input_rate() && rate >= 240000) g_demod->set_input_rate(rate);
+  g_blocks.fetch_add(1);
+
+  const int64_t t0 = esp_timer_get_time();
+  size_t offset = 0;
+  while (offset + 1 < bytes) {
+    const size_t part = std::min<size_t>(bytes - offset, 8192);  // keeps the output within g_tmp
+    const size_t n = g_demod->process(iq + offset, part & ~static_cast<size_t>(1), g_tmp, 2048);
+    offset += part;
+    uint32_t head = g_head.load(std::memory_order_relaxed);
+    const uint32_t tail = g_tail.load(std::memory_order_acquire);
+    if (kRingSize - (head - tail) < n) {
+      g_dropped.fetch_add(1);
+      continue;
+    }
+    for (size_t i = 0; i < n; ++i) g_ring[(head + i) & (kRingSize - 1)] = g_tmp[i];
+    g_head.store(head + static_cast<uint32_t>(n), std::memory_order_release);
+  }
+  g_demod_us.store((g_demod_us.load() * 15 + static_cast<uint32_t>(esp_timer_get_time() - t0)) / 16);
+  g_channel_dbfs.store(g_demod->channel_dbfs());
 }
 
-float gain() { return g_sound.load() ? kMaxGain * (g_volume.load() / 255.0f) : 0.0f; }
+float gain() {
+  if (!g_sound.load()) return 0.0f;
+  const float v = g_volume.load() / 255.0f;
+  return kMaxGain * v * v;
+}
 
 void write_mono(const float* mono, int frames, float g) {
   int16_t out[kFramesPerWrite * 2];
@@ -58,25 +95,15 @@ void write_mono(const float* mono, int frames, float g) {
 }
 
 void task(void*) {
-  auto* iq = static_cast<uint8_t*>(heap_caps_malloc(kBlockBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  auto* mono = static_cast<float*>(heap_caps_malloc(2048 * sizeof(float), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-  if (!iq || !mono) {
-    ESP_LOGE(TAG, "buffer allocation failed");
-    vTaskDelete(nullptr);
-    return;
-  }
-  orcsdr::dsp::Demod demod;
-  orcsdr::dsp::Mode current_mode = orcsdr::dsp::Mode::wfm;
-
-  // Resampler state: audio from the demodulator is consumed at `step` input samples per output
-  // sample; step stays within +/-0.2% of 1.
+  // Resampler state: the demodulated audio is consumed at `step` samples per output sample; step stays within
+  // +/-0.2% of 1. Single precision throughout: the FPU is float-only and doubles are software-emulated.
   std::vector<float> pending;
   pending.reserve(4096);
-  double position = 0.0;
+  float position = 0.0f;
   float last = 0.0f;
   float chunk[kFramesPerWrite];
-  int chunk_fill = 0;
   float tone_phase = 0.0f;
+  int64_t starved_since_us = 0;
 
   for (;;) {
     // A requested test tone takes the speaker until it has played.
@@ -90,76 +117,63 @@ void task(void*) {
         tone_phase += 2.0f * 3.14159265f * hz / kRate;
         if (tone_phase > 6.2831853f) tone_phase -= 6.2831853f;
       }
-      write_mono(tone, frames, kMaxGain * 0.6f);
+      write_mono(tone, frames, kMaxGain * 0.5f);
       g_tone_frames.store(remaining - frames);
       continue;
     }
 
-    const auto mode = static_cast<orcsdr::dsp::Mode>(g_mode.load());
-    if (mode != current_mode) {
-      demod.set_mode(mode);
-      current_mode = mode;
-      pending.clear();
-      position = 0.0;
+    // Move everything the demodulator has produced into `pending`.
+    const uint32_t head = g_head.load(std::memory_order_acquire);
+    uint32_t tail = g_tail.load(std::memory_order_relaxed);
+    const uint32_t queued_ring = head - tail;
+    if (pending.size() < 8192) {
+      for (; tail != head && pending.size() < 8192; ++tail) pending.push_back(g_ring[tail & (kRingSize - 1)]);
+      g_tail.store(tail, std::memory_order_release);
     }
 
-    const uint32_t stream_rate = orcsdr::radio::sample_rate();
-    if (stream_rate != demod.input_rate() && stream_rate >= 240000) {
-      demod.set_input_rate(stream_rate);
-      xStreamBufferReset(g_stream);
-      pending.clear();
-      position = 0.0;
-    }
-    const size_t got = xStreamBufferReceive(g_stream, iq, kBlockBytes, pdMS_TO_TICKS(40));
-    if (got < 2) {
-      g_underruns.fetch_add(1);
-      // No IQ (receiver stopped or retuning): keep the codec fed with silence so it stays in step.
-      float silence[kFramesPerWrite] = {};
-      write_mono(silence, kFramesPerWrite, 0.0f);
-      continue;
-    }
-    g_blocks.fetch_add(1);
-    if (!g_active.load()) {  // a digital dashboard is on screen: no audio, no demodulation
-      float silence[kFramesPerWrite] = {};
-      write_mono(silence, kFramesPerWrite, 0.0f);
-      continue;
-    }
-    const float fill = static_cast<float>(xStreamBufferBytesAvailable(g_stream)) / static_cast<float>(kStreamBytes);
-    g_fill.store(fill);
-
-    float* demodulated = mono;  // heap buffer; a 8 KB array would overflow the task stack
-    const int64_t t_demod = esp_timer_get_time();
-    const size_t n = demod.process(iq, got & ~static_cast<size_t>(1), demodulated, 2048);
-    g_demod_us.store((g_demod_us.load() * 15 + static_cast<uint32_t>(esp_timer_get_time() - t_demod)) / 16);
-    g_channel_dbfs.store(demod.channel_dbfs());
-    const bool active = g_mode_supported.load() && g_sound.load() && g_gate.load();
-    pending.insert(pending.end(), demodulated, demodulated + n);
-
-    // Adaptive step: more than one block queued -> consume faster (step > 1); too empty -> slower.
-    const float error = (fill - 0.1f);  // about 26 KB (80 ms) queued is the steady state
-    const float step_adjust = std::clamp(error * 0.02f, -0.002f, 0.002f);
+    // Need 240 output samples (plus one for interpolation) ahead of `position`.
+    const float step_adjust = std::clamp((static_cast<float>(pending.size()) + queued_ring - kTargetQueued) / 4800.0f * 0.002f, -0.002f, 0.002f);
+    const float step = 1.0f + step_adjust;
     g_ppm.store(step_adjust * 1e6f);
-    const double step = 1.0 + step_adjust;
-
-    // Linear interpolation across `pending` (position is relative to pending[0], with `last` as pending[-1]).
-    while (position + 1.0 < static_cast<double>(pending.size())) {
-      const int i0 = static_cast<int>(std::floor(position));
-      const float frac = static_cast<float>(position - i0);
-      const float a = i0 < 0 ? last : pending[i0];
-      const float b = pending[i0 + 1];
-      chunk[chunk_fill++] = active ? a + (b - a) * frac : 0.0f;
-      position += step;
-      if (chunk_fill == kFramesPerWrite) {
-        write_mono(chunk, chunk_fill, gain());
-        chunk_fill = 0;
+    g_fill.store(static_cast<float>(pending.size() + queued_ring) / static_cast<float>(kRingSize));
+    const float needed = position + step * kFramesPerWrite + 2.0f;
+    if (static_cast<float>(pending.size()) < needed) {
+      const int64_t now = esp_timer_get_time();
+      if (!starved_since_us) starved_since_us = now;
+      if (now - starved_since_us > 30000) {
+        // No audio for 30 ms (stream stopped, retuning or a digital screen): keep the codec fed with silence.
+        float silence[kFramesPerWrite] = {};
+        write_mono(silence, kFramesPerWrite, 0.0f);
+        g_underruns.fetch_add(1);
+        starved_since_us = now;
+      } else {
+        vTaskDelay(1);
       }
+      continue;
     }
-    const int consumed = std::min(static_cast<int>(std::floor(position)), static_cast<int>(pending.size()) - 1);
+    starved_since_us = 0;
+
+    const int64_t t_res = esp_timer_get_time();
+    const bool active = g_mode_supported.load() && g_sound.load() && g_gate.load() && g_active.load();
+    for (int i = 0; i < kFramesPerWrite; ++i) {
+      const int i0 = static_cast<int>(position);
+      const float frac = position - static_cast<float>(i0);
+      const float a = pending[i0];
+      const float b = pending[i0 + 1];
+      chunk[i] = active ? a + (b - a) * frac : 0.0f;
+      position += step;
+    }
+    const int consumed = static_cast<int>(position);
     if (consumed > 0) {
       last = pending[consumed - 1];
       pending.erase(pending.begin(), pending.begin() + consumed);
-      position -= consumed;
+      position -= static_cast<float>(consumed);
     }
+    (void)last;
+    const int64_t t_w = esp_timer_get_time();
+    write_mono(chunk, kFramesPerWrite, gain());
+    g_write_us.store((g_write_us.load() * 15 + static_cast<uint32_t>(esp_timer_get_time() - t_w)) / 16);
+    g_resample_us.store((g_resample_us.load() * 15 + static_cast<uint32_t>(t_w - t_res)) / 16);
   }
 }
 }  // namespace
@@ -169,11 +183,17 @@ bool start() {
     ESP_LOGE(TAG, "speaker output failed to start; the receiver runs without sound");
     return false;
   }
-  g_stream = xStreamBufferCreateWithCaps(kStreamBytes, 1, MALLOC_CAP_SPIRAM);
-  if (!g_stream) return false;
+  g_ring = static_cast<float*>(heap_caps_malloc(kRingSize * sizeof(float), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  g_tmp = static_cast<float*>(heap_caps_malloc(2048 * sizeof(float), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  void* mem = heap_caps_malloc(sizeof(orcsdr::dsp::Demod), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (!g_ring || !g_tmp || !mem) {
+    ESP_LOGE(TAG, "buffer allocation failed");
+    return false;
+  }
+  g_demod = new (mem) orcsdr::dsp::Demod();
   orcsdr::radio::set_iq_sink(iq_sink);
-  g_running = xTaskCreatePinnedToCore(task, "audio", 12288, nullptr, 6, nullptr, 1) == pdPASS;
-  ESP_LOGI(TAG, "receiver audio %s (48 kHz mono, adaptive resampler)", g_running ? "running" : "FAILED");
+  g_running = xTaskCreatePinnedToCore(task, "audio", 8192, nullptr, 6, nullptr, 1) == pdPASS;
+  ESP_LOGI(TAG, "receiver audio %s (48 kHz mono, demodulated in the receiver task, adaptive resampler)", g_running ? "running" : "FAILED");
   return g_running;
 }
 
@@ -205,6 +225,8 @@ Status status() {
   s.buffer_fill = g_fill.load();
   s.resample_ppm = g_ppm.load();
   s.demod_us = g_demod_us.load();
+  s.write_us = g_write_us.load();
+  s.resample_us = g_resample_us.load();
   return s;
 }
 }  // namespace audio_service

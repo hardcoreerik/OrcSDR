@@ -19,6 +19,7 @@
 #include "present.hpp"
 #include "radio_service.hpp"
 #include "screens.hpp"
+#include "wifi_app.hpp"
 #include "waterfall_style.hpp"
 
 using namespace orcsdr;
@@ -43,7 +44,9 @@ home_vfo::Memory g_vfo;
 home_vfo::Demod g_demod = home_vfo::Demod::by_band;
 uint32_t g_frequency_hz = 96100000;
 uint32_t g_step_hz = 0;
-uint32_t g_span_hz = 960000;
+uint32_t g_home_span_hz = 2400000;
+bool g_in_dashboard = false;
+uint32_t g_span_hz = 2400000;  // the Tab5's Home default: the full 2.4 MS/s stream
 uint32_t g_bandwidth_override_hz = 0;
 uint8_t g_volume = 128;
 bool g_sound = true;
@@ -95,7 +98,7 @@ void fill_snapshot() {
   s.battery_percent = -1;  // no battery on this board
   s.volume = g_volume;
   s.relative_dbfs = radio::level_dbfs();
-  s.wifi_connected = false;
+  s.wifi_connected = wifi_app::status().connected;
   s.usb_connected = radio_state.receiver_state >= 2;
   s.driver_ready = radio_state.receiver_state == 2;
   s.receiving = radio_state.receiver_state == 2;
@@ -246,6 +249,7 @@ void ui_task(void*) {
   int64_t last_snapshot_us = 0, last_log_us = 0;
   int tap_frames = 0, tap_x = 0, tap_y = 0;  // injected tap (design coordinates), held ~150 ms
   int last_state = -1, last_level = 0, last_gain_key = -1;
+  bool last_wifi = false;
   uint32_t last_sps = 0, last_applied_hz = 0;
   uint8_t bins[256];
   for (;;) {
@@ -273,11 +277,16 @@ void ui_task(void*) {
       g_active = wanted_screen >= 0 ? screens::find(static_cast<dashboards::Id>(wanted_screen)) : nullptr;
       M5.Display.fillScreen(0x0000);
       if (g_active) {
+        if (!g_in_dashboard) g_home_span_hz = g_span_hz;  // Home's span comes back when the dashboard closes
+        g_in_dashboard = true;
         g_span_hz = std::min<uint32_t>(g_span_hz, 960000);  // dashboards run at 0.96 MS/s
         ESP_LOGI(TAG, "opening dashboard %s", g_active->name);
         if (dashboards::find(g_active->id)) dashboards::record_open(g_active->id);
         g_active->enter();
       } else {
+        if (g_in_dashboard) g_span_hz = g_home_span_hz;
+        g_in_dashboard = false;
+        ++g_tuner_rev;
         fill_snapshot();
         home::enter(g_snapshot);
       }
@@ -332,6 +341,14 @@ void ui_task(void*) {
         last_state = rs.receiver_state;
         ++g_status_rev;
         ++g_rev;
+      }
+      {
+        const bool wifi_now = wifi_app::status().connected;
+        if (wifi_now != last_wifi) {
+          last_wifi = wifi_now;
+          ++g_status_rev;
+          ++g_rev;
+        }
       }
       {
         const radio::Gain g = radio::gain();

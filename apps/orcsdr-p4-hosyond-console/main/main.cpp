@@ -14,6 +14,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "audio_service.hpp"
+#include "sd_card.hpp"
 #include "wifi_app.hpp"
 #include "home_app.hpp"
 #include "home_v3_ui.hpp"
@@ -42,6 +43,7 @@ extern "C" void app_main(void) {
   QueueHandle_t commands = xQueueCreate(4, sizeof(orcsdr::waveshare4b::home_v3::Command));
   if (!commands || !orcsdr::radio::start(commands)) ESP_LOGE(TAG, "receiver task failed");
 
+  sd_card::start();
   wifi_app::start();       // C6 link comes up in the background a few seconds later
   audio_service::start();  // optional: the receiver and UI run without sound if the codec fails
   if (!home_app::start(&M5.Display)) ESP_LOGE(TAG, "home UI task failed");

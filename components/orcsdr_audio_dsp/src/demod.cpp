@@ -103,10 +103,19 @@ Demod::Demod() {
 
 void Demod::set_input_rate(uint32_t rate) {
   rate = std::max<uint32_t>(240000, std::min<uint32_t>(rate, 2400000));
-  rate_ = rate / 240000 * 240000;
-  a_decim_ = rate_ / 240000;
-  a_ntaps_ = rate_ > 1000000 ? 65 : 33;
-  const std::vector<float> a = lowpass(a_ntaps_, 100000.0f / static_cast<float>(rate_));
+  uint32_t stage_rate;
+  if (rate > 960000) {
+    pre_ = rate / 480000;  // 2.4 MS/s -> 5
+    rate_ = pre_ * 480000;
+    stage_rate = 480000;
+  } else {
+    pre_ = 1;
+    rate_ = rate / 240000 * 240000;
+    stage_rate = rate_;
+  }
+  a_decim_ = stage_rate / 240000;
+  a_ntaps_ = 33;
+  const std::vector<float> a = lowpass(a_ntaps_, 100000.0f / static_cast<float>(stage_rate));
   std::fill(a_taps_, a_taps_ + kMaxTaps, 0.0f);
   std::copy(a.begin(), a.end(), a_taps_);
   reset();
@@ -139,6 +148,11 @@ void Demod::reset() {
   std::fill(a_hist_i_, a_hist_i_ + kMaxTaps - 1, 0.0f);
   std::fill(a_hist_q_, a_hist_q_ + kMaxTaps - 1, 0.0f);
   a_phase_ = 0;
+  std::fill(cic_i1_, cic_i1_ + 2, 0u);
+  std::fill(cic_i2_, cic_i2_ + 2, 0u);
+  std::fill(cic_d1_, cic_d1_ + 2, 0u);
+  std::fill(cic_d2_, cic_d2_ + 2, 0u);
+  cic_count_ = 0;
   stage_b_nb_.reset();
   stage_b_wfm_.reset();
   prev_i_ = prev_q_ = deemph_ = dc_ = nfm_lp_ = 0;
@@ -146,8 +160,48 @@ void Demod::reset() {
   chan_pow_ = 1e-12f;
 }
 
+// Second-order CIC decimator by pre_ on the raw 8-bit samples. The integrators wrap modulo 2^32, which is exact for the
+// comb differences that follow.
+size_t Demod::cic_decimate(const uint8_t* src, size_t n, float* oi, float* oq) {
+  const unsigned R = pre_;
+  const float norm = 1.0f / static_cast<float>(R * R);
+  uint32_t a1 = cic_i1_[0], a2 = cic_i2_[0], b1 = cic_i1_[1], b2 = cic_i2_[1];
+  uint32_t d1a = cic_d1_[0], d2a = cic_d2_[0], d1b = cic_d1_[1], d2b = cic_d2_[1];
+  unsigned count = cic_count_;
+  size_t out = 0;
+  for (size_t k = 0; k < n; ++k) {
+    a1 += src[2 * k];
+    a2 += a1;
+    b1 += src[2 * k + 1];
+    b2 += b1;
+    if (++count == R) {
+      count = 0;
+      const uint32_t ci = a2 - d1a;
+      d1a = a2;
+      const uint32_t ei = ci - d2a;
+      d2a = ci;
+      const uint32_t cq = b2 - d1b;
+      d1b = b2;
+      const uint32_t eq = cq - d2b;
+      d2b = cq;
+      oi[out] = (static_cast<float>(static_cast<int32_t>(ei)) * norm - 127.5f) * (1.0f / 127.5f);
+      oq[out] = (static_cast<float>(static_cast<int32_t>(eq)) * norm - 127.5f) * (1.0f / 127.5f);
+      ++out;
+    }
+  }
+  cic_i1_[0] = a1;
+  cic_i2_[0] = a2;
+  cic_i1_[1] = b1;
+  cic_i2_[1] = b2;
+  cic_d1_[0] = d1a;
+  cic_d2_[0] = d2a;
+  cic_d1_[1] = d1b;
+  cic_d2_[1] = d2b;
+  cic_count_ = count;
+  return out;
+}
+
 size_t Demod::process(const uint8_t* iq, size_t bytes, float* out, size_t capacity) {
-  constexpr float kScale = 1.0f / 127.5f;
   size_t written = 0;
   const size_t kH = a_ntaps_ - 1;
   const size_t half = kH / 2;
@@ -161,13 +215,25 @@ size_t Demod::process(const uint8_t* iq, size_t bytes, float* out, size_t capaci
     float* xq = xq_.data();
     std::copy(a_hist_i_, a_hist_i_ + kH, xi);
     std::copy(a_hist_q_, a_hist_q_ + kH, xq);
-    for (size_t k = 0; k < n; ++k) {
-      xi[kH + k] = (src[2 * k] - 127.5f) * kScale;
-      xq[kH + k] = (src[2 * k + 1] - 127.5f) * kScale;
+    size_t m;  // samples entering the filter stage
+    if (pre_ > 1) {
+      m = cic_decimate(src, n, xi + kH, xq + kH);
+    } else {
+      static const struct Lut {
+        float v[256];
+        Lut() {
+          for (int i = 0; i < 256; ++i) v[i] = (static_cast<float>(i) - 127.5f) * (1.0f / 127.5f);
+        }
+      } lut;
+      for (size_t k = 0; k < n; ++k) {
+        xi[kH + k] = lut.v[src[2 * k]];
+        xq[kH + k] = lut.v[src[2 * k + 1]];
+      }
+      m = n;
     }
     src += 2 * n;
     const size_t first = decim - 1 - a_phase_;  // index of the first output in this chunk
-    for (size_t p = first; p < n; p += decim) {
+    for (size_t p = first; p < m; p += decim) {
       const float* wi = xi + p;  // window of a_ntaps_ samples ending at sample p of the chunk
       const float* wq = xq + p;
       float si0 = a_taps_[half] * wi[half], sq0 = a_taps_[half] * wq[half], si1 = 0, sq1 = 0, si2 = 0, sq2 = 0, si3 = 0, sq3 = 0;
@@ -184,9 +250,9 @@ size_t Demod::process(const uint8_t* iq, size_t bytes, float* out, size_t capaci
       const float ai = (si0 + si1) + (si2 + si3), aq = (sq0 + sq1) + (sq2 + sq3);
       written += stage_b(ai, aq, out + written, written < capacity ? capacity - written : 0);
     }
-    a_phase_ = static_cast<unsigned>((a_phase_ + n) % decim);
-    std::copy(xi + n, xi + n + kH, a_hist_i_);
-    std::copy(xq + n, xq + n + kH, a_hist_q_);
+    a_phase_ = static_cast<unsigned>((a_phase_ + m) % decim);
+    std::copy(xi + m, xi + m + kH, a_hist_i_);
+    std::copy(xq + m, xq + m + kH, a_hist_q_);
   }
   return written;
 }

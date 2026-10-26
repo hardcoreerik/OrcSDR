@@ -78,10 +78,16 @@ class Demod {
   Mode mode_ = Mode::wfm;
   // Stage A runs on whole blocks: 33 symmetric taps, 960k -> 240k, 100 kHz. The block form keeps the
   // samples contiguous and halves the multiplies (the taps are symmetric), which matters at 960 kS/s.
-  static constexpr size_t kMaxTaps = 65, kChunk = 2048;
+  static constexpr size_t kMaxTaps = 65, kChunk = 1024;
   uint32_t rate_ = kInputRate;
-  size_t a_ntaps_ = 33;   // 33 at 960 kS/s, 65 at higher rates
-  unsigned a_decim_ = 4;  // rate / 240 kS/s
+  size_t a_ntaps_ = 33;   // 33 taps; the stage runs at 960 or 480 kS/s
+  unsigned a_decim_ = 4;  // stage input rate / 240 kS/s
+  // Above 960 kS/s a two-stage integer CIC decimator first brings the stream down to 480 kS/s (cheap: two adds per
+  // sample), so the real filter only runs at the lower rate.
+  unsigned pre_ = 1;
+  uint32_t cic_i1_[2] = {}, cic_i2_[2] = {}, cic_d1_[2] = {}, cic_d2_[2] = {};
+  unsigned cic_count_ = 0;
+  size_t cic_decimate(const uint8_t* src, size_t n, float* out_i, float* out_q);
   float a_taps_[kMaxTaps] = {};
   float a_hist_i_[kMaxTaps - 1] = {}, a_hist_q_[kMaxTaps - 1] = {};
   unsigned a_phase_ = 0;

@@ -167,14 +167,15 @@ void task(void*) {
     if (e == ESP_OK && n && g_aux_sink) g_aux_sink(iq, n);
     if (e == ESP_OK && n >= 2048 && now - last_fft > 50000) {
       // Level of the block as RMS of the centred 8-bit samples, in dBFS.
-      double acc = 0.0;
+      // Single precision: this chip's FPU is float-only, so doubles here cost a software-emulated 14% of the core.
+      float acc = 0.0f;
       const size_t count = n < 4096 ? n : 4096;
       for (size_t i = 0; i < count; ++i) {
-        const double v = (static_cast<double>(iq[i]) - 127.5) / 127.5;
+        const float v = (static_cast<float>(iq[i]) - 127.5f) * (1.0f / 127.5f);
         acc += v * v;
       }
-      const double rms = std::sqrt(acc / static_cast<double>(count));
-      dbfs = rms > 1e-6 ? static_cast<float>(20.0 * std::log10(rms)) : -120.0f;
+      const float rms = std::sqrt(acc / static_cast<float>(count));
+      dbfs = rms > 1e-6f ? 20.0f * std::log10(rms) : -120.0f;
     }
     if (e == ESP_OK && n >= kFftSize * 2 && now - last_fft > 50000) {
       Spectrum view = spectrum_from_cu8(iq, n);

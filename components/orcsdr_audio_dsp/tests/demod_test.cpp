@@ -178,6 +178,34 @@ int main() {
     CHECK(total > 71000 && total < 73000);  // 1.5 s at 48 kHz
   }
 
+  // 2.4 MS/s with a strong station 400 kHz away: the worst alias of the 480 kS/s decimator (it folds to 80 kHz).
+  {
+    constexpr double kFs2 = 2400000.0;
+    Demod d;
+    d.set_input_rate(2400000);
+    d.set_mode(Mode::wfm);
+    const size_t n = static_cast<size_t>(1.5 * kFs2);
+    std::vector<uint8_t> iq(2 * n);
+    std::mt19937 rng(13);
+    std::normal_distribution<double> noise(0.0, 0.01);
+    for (size_t k = 0; k < n; ++k) {
+      const double t = k / kFs2;
+      const double ph = -50.0 * std::cos(2 * kPi * 1000 * t), ph2 = 2 * kPi * 400000.0 * t + 8.0 * std::sin(2 * kPi * 1700 * t);
+      iq[2 * k] = q8(0.3 * std::cos(ph) + 0.35 * std::cos(ph2) + noise(rng));
+      iq[2 * k + 1] = q8(0.3 * std::sin(ph) + 0.35 * std::sin(ph2) + noise(rng));
+    }
+    std::vector<float> out(n / 40 + 64);
+    size_t total = 0;
+    for (size_t off = 0; off < iq.size(); off += 16384) {
+      const size_t len = std::min<size_t>(16384, iq.size() - off);
+      total += d.process(iq.data() + off, len, out.data() + total, out.size() - total);
+    }
+    out.resize(total);
+    const Tone t = analyse(out, 1000.0);
+    std::printf("WFM at 2.4 MS/s with a modulated station 400 kHz away: wanted tone %.3f, SNR %.1f dB\n", t.amplitude, t.snr_db);
+    CHECK(t.amplitude > 0.4 && t.snr_db > 10.0);
+  }
+
   // SSB: a suppressed-carrier tone 1.5 kHz above the tuned frequency is audible as 1.5 kHz in USB and
   // rejected in LSB (and the reverse for a tone below).
   {

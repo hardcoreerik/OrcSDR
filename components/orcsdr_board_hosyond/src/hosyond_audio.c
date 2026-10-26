@@ -24,7 +24,7 @@ static const char *TAG = "HOSYOND_AUDIO";
 #define AUDIO_DOUT_GPIO 9
 #define AUDIO_DIN_GPIO 11
 #define AUDIO_PA_GPIO 53
-#define AUDIO_DEFAULT_VOLUME 30
+#define AUDIO_DEFAULT_VOLUME 100 /* full codec output; the application scales the level */
 
 static i2s_chan_handle_t s_tx;
 static esp_codec_dev_handle_t s_dev;
