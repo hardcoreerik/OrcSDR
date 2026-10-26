@@ -12,6 +12,7 @@ namespace {
 constexpr char TAG[] = "WIFI_APP";
 std::atomic<bool> g_scan_pending{false}, g_connect_pending{false}, g_disconnect_pending{false}, g_started{false};
 std::atomic<bool> g_scanning{false}, g_connecting{false};
+std::atomic<bool> g_power{true}, g_boot{true}, g_power_changed{false};
 char g_pending_ssid[33], g_pending_pass[65];
 bool g_pending_remember = false;
 portMUX_TYPE g_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -44,20 +45,48 @@ void task(void*) {
   // Let the display, touch and receiver come up first; a missing or mismatched C6 must never delay them.
   vTaskDelay(pdMS_TO_TICKS(4000));
   load_saved();
-  ESP_LOGI(TAG, "starting the ESP32-C6 link (SDIO, reset GPIO 54)");
-  const bool ok = orcsdr::wifi::start();
-  std::snprintf(g_stage, sizeof(g_stage), "%s", orcsdr::wifi::hosted_failure_stage());
-  g_code = orcsdr::wifi::hosted_failure_code();
-  if (!ok) {
-    ESP_LOGE(TAG, "Wi-Fi unavailable: stage=%s code=0x%x c6=%s", g_stage, g_code, orcsdr::wifi::hosted_c6_version());
-    vTaskDelete(nullptr);
-    return;
+  {
+    orcsdr::NvsStore s;
+    if (s.begin("orcsdr_wifi", true)) {
+      g_power = s.get_bool("power", true);
+      g_boot = s.get_bool("boot", true);
+      s.end();
+    }
   }
-  g_started = true;
-  ESP_LOGI(TAG, "Wi-Fi driver up, C6 firmware %s", orcsdr::wifi::hosted_c6_version());
   int64_t last_try = 0;
   bool first = true;
+  bool link_attempted = false;
   for (;;) {
+    // Bring the C6 link up once Wi-Fi is allowed; a failure is reported, not retried in a loop.
+    if (g_power.load() && !g_started.load() && !link_attempted) {
+      link_attempted = true;
+      ESP_LOGI(TAG, "starting the ESP32-C6 link (SDIO, reset GPIO 54)");
+      const bool ok = orcsdr::wifi::start();
+      std::snprintf(g_stage, sizeof(g_stage), "%s", orcsdr::wifi::hosted_failure_stage());
+      g_code = orcsdr::wifi::hosted_failure_code();
+      if (!ok) {
+        ESP_LOGE(TAG, "Wi-Fi unavailable: stage=%s code=0x%x c6=%s", g_stage, g_code, orcsdr::wifi::hosted_c6_version());
+      } else {
+        g_started = true;
+        ESP_LOGI(TAG, "Wi-Fi driver up, C6 firmware %s", orcsdr::wifi::hosted_c6_version());
+      }
+    }
+    if (g_power_changed.exchange(false)) {
+      if (!g_power.load() && g_started.load()) {
+        orcsdr::wifi::stop();
+        g_started = false;
+        link_attempted = true;  // the C6 link stays initialised; power-on restarts only the radio below
+        ESP_LOGI(TAG, "Wi-Fi powered off");
+      } else if (g_power.load() && !g_started.load() && link_attempted) {
+        const bool ok = orcsdr::wifi::start();
+        if (ok) g_started = true;
+        ESP_LOGI(TAG, "Wi-Fi powered on: %s", ok ? "ok" : "failed");
+      }
+    }
+    if (!g_started.load()) {
+      vTaskDelay(pdMS_TO_TICKS(250));
+      continue;
+    }
     if (g_scan_pending.exchange(false)) {
       g_scanning = true;
       if (orcsdr::wifi::begin_scan()) {
@@ -87,7 +116,7 @@ void task(void*) {
       g_connecting = false;
     }
     const int64_t now = esp_timer_get_time();
-    if ((first || now - last_try > 30000000) && g_saved_ssid[0] && !orcsdr::wifi::connected() && !g_connecting) {
+    if (g_boot.load() && (first || now - last_try > 30000000) && g_saved_ssid[0] && !orcsdr::wifi::connected() && !g_connecting) {
       first = false;
       last_try = now;
       std::snprintf(g_pending_ssid, sizeof(g_pending_ssid), "%s", g_saved_ssid);
@@ -116,6 +145,8 @@ Status status() {
   std::snprintf(s.c6_version, sizeof(s.c6_version), "%s", s.started || orcsdr::wifi::hosted_transport_ready() ? orcsdr::wifi::hosted_c6_version() : "");
   std::snprintf(s.failure_stage, sizeof(s.failure_stage), "%s", g_stage);
   s.failure_code = g_code;
+  s.power = g_power.load();
+  s.start_at_boot = g_boot.load();
   s.saved = g_saved_ssid[0] != 0;
   std::snprintf(s.saved_ssid, sizeof(s.saved_ssid), "%s", g_saved_ssid);
   return s;
@@ -143,6 +174,23 @@ bool connect(const char* ssid, const char* password, bool remember) {
   return true;
 }
 void disconnect() { g_disconnect_pending = true; }
+void set_power(bool enabled) {
+  g_power = enabled;
+  g_power_changed = true;
+  orcsdr::NvsStore s;
+  if (s.begin("orcsdr_wifi", false)) {
+    s.put_bool("power", enabled);
+    s.end();
+  }
+}
+void set_start_at_boot(bool enabled) {
+  g_boot = enabled;
+  orcsdr::NvsStore s;
+  if (s.begin("orcsdr_wifi", false)) {
+    s.put_bool("boot", enabled);
+    s.end();
+  }
+}
 void forget() {
   orcsdr::NvsStore s;
   if (s.begin("orcsdr_wifi", false)) {

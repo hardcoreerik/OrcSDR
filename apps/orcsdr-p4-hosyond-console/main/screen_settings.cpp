@@ -62,7 +62,8 @@ const st::State& build() {
   std::snprintf(g_state.build_identity, sizeof(g_state.build_identity), "P4 console %s", __DATE__);
   {
     const wifi_app::Status w = wifi_app::status();
-    g_state.wifi_power_enabled = true;
+    g_state.wifi_power_enabled = w.power;
+    g_state.wifi_start_at_boot = w.start_at_boot;
     g_state.wifi_ready = w.started;
     g_state.wifi_scanning = wifi_app::scanning();
     g_state.wifi_connected = w.connected;
@@ -142,6 +143,8 @@ void tap(int x, int y) {
       esp_restart();
       break;
     case st::ActionKind::c6_update_confirm: (void)orcsdr::wifi::begin_c6_update(); break;
+    case st::ActionKind::wifi_power_changed: wifi_app::set_power(a.value != 0); break;
+    case st::ActionKind::wifi_start_at_boot_changed: wifi_app::set_start_at_boot(a.value != 0); break;
     case st::ActionKind::scan_wifi: (void)wifi_app::request_scan(); break;
     case st::ActionKind::connect_wifi: {
       char ssid[33]{}, password[64]{};

@@ -36,5 +36,6 @@ const Screen& shortwave_screen();
 const Screen& rflab_screen();
 const Screen& settings_screen();
 const Screen& pocsag_screen();
+const Screen& wifi_screen();
 
 }  // namespace screens

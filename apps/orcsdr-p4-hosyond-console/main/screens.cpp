@@ -5,7 +5,7 @@
 namespace screens {
 namespace {
 const Screen* const* table(size_t* count) {
-  static const Screen* const kAll[] = {&fm_screen(), &am_screen(), &cb_screen(), &airband_screen(), &shortwave_screen(), &rflab_screen(), &settings_screen(), &pocsag_screen()};
+  static const Screen* const kAll[] = {&fm_screen(), &am_screen(), &cb_screen(), &airband_screen(), &shortwave_screen(), &rflab_screen(), &settings_screen(), &pocsag_screen(), &wifi_screen()};
   *count = sizeof(kAll) / sizeof(kAll[0]);
   return kAll;
 }

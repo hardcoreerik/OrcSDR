@@ -16,7 +16,7 @@ if(C6_FIRMWARE_BIN AND EXISTS "${C6_FIRMWARE_BIN}")
     set(ORCSDR_C6_EMBEDDED 1)
 endif()
 idf_component_register(
-    SRCS "main.cpp" "present.cpp" "screen_snap.cpp" "serial_cli.cpp" "home_app.cpp" "radio_service.cpp" "audio_service.cpp" "screens.cpp" "screen_fm.cpp" "screen_am.cpp" "screen_cb.cpp" "screen_airband.cpp" "screen_shortwave.cpp" "screen_rflab.cpp" "screen_settings.cpp" "screen_pocsag.cpp" "iq_tap.cpp" "wifi_app.cpp" "p4_storage_stub.cpp"
+    SRCS "main.cpp" "present.cpp" "screen_snap.cpp" "serial_cli.cpp" "home_app.cpp" "radio_service.cpp" "audio_service.cpp" "screens.cpp" "screen_fm.cpp" "screen_am.cpp" "screen_cb.cpp" "screen_airband.cpp" "screen_shortwave.cpp" "screen_rflab.cpp" "screen_settings.cpp" "screen_pocsag.cpp" "screen_wifi.cpp" "iq_tap.cpp" "wifi_app.cpp" "p4_storage_stub.cpp"
          "${TAB5_UI}/home_dashboard.cpp" "${TAB5_UI}/dashboard_audio_control.cpp"
          "${TAB5_UI}/freq_keypad.cpp" "${TAB5_UI}/focus_nav.cpp" "${TAB5_UI}/waterfall_style.cpp"
          "${TAB5_UI}/band_profile.cpp" "${TAB5_UI}/home_vfo.cpp" "${TAB5_UI}/filter_standards.cpp"
@@ -27,7 +27,7 @@ idf_component_register(
          "${TAB5_UI}/shortwave_dashboard.cpp" "${TAB5_UI}/shortwave_dashboard_state.cpp" "${TAB5_UI}/shortwave_model.cpp"
          "${TAB5_UI}/shortwave_audio_dsp.cpp" "${TAB5_UI}/shortwave_hunt.cpp" "${TAB5_UI}/shortwave_library.cpp"
          "${TAB5_UI}/wifi_service.cpp" "${TAB5_UI}/orcsdr_restart.cpp"
-         "${TAB5_UI}/pocsag_dashboard.cpp" "${TAB5_UI}/pocsag_decoder_core.cpp" "${TAB5_UI}/pocsag_store.cpp"
+         "${TAB5_UI}/rf24_dashboard.cpp" "${TAB5_UI}/pocsag_dashboard.cpp" "${TAB5_UI}/pocsag_decoder_core.cpp" "${TAB5_UI}/pocsag_store.cpp"
          "${TAB5_UI}/settings_app.cpp" "${TAB5_UI}/clock_settings.cpp" "${TAB5_UI}/rf_lab.cpp" "${TAB5_UI}/rf_analysis.cpp" "${TAB5_UI}/scan_engine.cpp" "${TAB5_UI}/text_editor.cpp" "${TAB5_UI}/airband_catalog_storage.cpp"
          "${TAB5_UI}/am_dashboard.cpp" "${TAB5_UI}/nvs_store.cpp"
          "${TAB5_UI}/fm_dashboard.cpp" "${TAB5_UI}/fm_config.cpp"
