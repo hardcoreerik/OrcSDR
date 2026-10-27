@@ -3,6 +3,12 @@
 > **Category:** SYSTEM · **Dependency:** P5 after independently authenticated OrcNode adapter is qualified · **Status:** planned; capabilities and integrations below are not automatically present in OrcSDR.  
 > Read [mandatory UI rules](../../UI_UX_STANDARD.md), [navigation contract](../../NAVIGATION.md), [data validity](../../DATA_CONTRACTS.md), [draw/test workflow](../../RENDERING_AND_ACCEPTANCE.md).
 
+## Companion OrcNode interoperability specification
+
+OrcNode is an **independent headless SDR product** and OrcSDR is an **independent SDR product**. They continue working alone; their optional network link enhances both. The producer/API, secure pairing, bounded event cursors and source-aware aggregation are specified in the [OrcNode interoperability documents](https://github.com/hardcoreerik/orcnode/blob/chatgpt/orc-interoperability-foundation-20261026/docs/interoperability/README.md), proposed in [OrcNode draft PR #2](https://github.com/hardcoreerik/orcnode/pull/2).
+
+This S02 screen is a **consumer** of that versioned, authenticated, read-only data contract. It must not require OrcNode to import M5GFX, run OrcSDR firmware or connect to an OrcSDR appliance; nor may it cause remote tuner changes simply by opening a dashboard. Current OrcNode RF anomaly events are **RF ACTIVITY**, not identified drones. OrcSDR Home and Drone Watch must remain useful when no nodes are paired or the network is offline.
+
 ## Function and user benefit
 
 Display connected and authorized remote OrcNode receivers as optional additional listening stations—not a magic area-wide drone detection network. Show each node's capture methods, observed last packet, authenticated connection and measured coverage intervals.
