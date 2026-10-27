@@ -6,6 +6,12 @@
 **Private research:** [REA-Results draft PR #3](https://github.com/hardcoreerik/REA-Results/pull/3); committed inbox source survey + 15/15 synthetic test record. Follow REA-Results `AGENTS.md` for all new findings.  
 **Execution state:** This documentation is a design/proposed sequence; there is NO completed OrcSDR Drone Watch dashboard or Remote ID acquisition path.
 
+## Mandatory screen reference before any UI implementation
+
+Use [SCREENS.md](SCREENS.md) to find the named screen and its per-view design spec. [UI_UX_STANDARD.md](UI_UX_STANDARD.md), [NAVIGATION.md](NAVIGATION.md), [DATA_CONTRACTS.md](DATA_CONTRACTS.md) and [RENDERING_AND_ACCEPTANCE.md](RENDERING_AND_ACCEPTANCE.md) apply to **all 25** and must be read with the current repository `apps/orcsdr-tab5/ui/AGENTS.md` and `docs/UI_RENDERING_STANDARD.md`.
+
+The five categories are **internal routes within one dashboard**. Do not create 25 top-level DashboardRegistry entries or 25 ScreenController owners. Build only capability-gated working screens: do not fill not-yet-implemented MEDIA or C6 modes with simulated live data.
+
 ## First implementation work package (P1): decoder contract, no UI or C6 modifications
 
 Use a **fresh feature branch from the current reviewed main** (do not implement on this planning branch). Focus narrowly on the host-only core:
