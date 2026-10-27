@@ -1,0 +1,30 @@
+name: Drone Watch W01 host tests
+on:
+  push:
+    branches:
+      - 'chatgpt/drone-watch-phasing-20261026'
+    paths:
+      - 'apps/orcsdr-tab5/ui/drone_watch_*'
+      - 'apps/orcsdr-tab5/tests/drone_watch/**'
+      - 'apps/orcsdr-tab5/ui/screen_controller.*'
+      - '.github/workflows/drone-watch-w01-host.yml'
+  pull_request:
+    paths:
+      - 'apps/orcsdr-tab5/ui/drone_watch_*'
+      - 'apps/orcsdr-tab5/tests/drone_watch/**'
+      - 'apps/orcsdr-tab5/ui/screen_controller.*'
+      - '.github/workflows/drone-watch-w01-host.yml'
+permissions:
+  contents: read
+jobs:
+  w01-model-and-render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S apps/orcsdr-tab5/tests/drone_watch -B build-drone-watch-tests
+      - name: Build with warnings
+        run: cmake --build build-drone-watch-tests --parallel
+      - name: Run W01 host regression
+        run: ctest --test-dir build-drone-watch-tests --output-on-failure
