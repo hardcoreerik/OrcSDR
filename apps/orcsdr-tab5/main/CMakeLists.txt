@@ -174,6 +174,8 @@ idf_component_register(
         "../ui/ui_capture.cpp"
         "../ui/web_console.cpp"
         "../ui/web_audio_transport.cpp"
+        "../ui/drone_watch_model.cpp"
+        "../ui/drone_watch_dashboard.cpp"
         "../ui/dead_air_model.cpp"
         "../ui/dead_air_journal.cpp"
         "../ui/dead_air_sd_journal.cpp"
