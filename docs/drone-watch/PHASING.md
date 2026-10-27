@@ -1,6 +1,6 @@
 # Drone Watch — phased implementation plan
 
-> **Planning only; no firmware implementation in this PR.** Begin with a guaranteed-green read-only decoder/model path. Every phase is a separately buildable, independently reversible unit. Never treat compilation as a real-air acceptance test.
+> **W01 implementation update (2026-10-27):** Live Watch shell/source-status model is committed and host-tested on this branch, but no Remote ID decoder, C6 capture adapter, firmware build or physical device test is completed. Begin remaining phases with a verified decoder/model and acquisition gate. Every phase is a separately buildable, independently reversible unit. Never treat compilation as a real-air acceptance test.
 
 **25 per-screen implementation specs:** [SCREENS.md](SCREENS.md), with shared UI/UX and rendering rules. These are future target contracts, not accepted runtime capabilities. Initial P3 covers only the smallest truthful screens; the remaining specifications become feature-gated incrementally.
 
@@ -189,7 +189,7 @@ The onboard ESP32-C6 and its existing SDIO ESP-Hosted slave are the first prefer
 | P0 | RESEARCH DOCUMENTED; upstream/source audit incomplete | REA-Results draft PR #3; isolated 15/15 synthetic-model tests |
 | P1 | NOT IMPLEMENTED | Host/parser vectors + malformed tests + pinned parser attribution |
 | P2 | NOT RUN | C6 firmware/Hosted RX + Wi-Fi coexistence evidence |
-| P3 | NOT IMPLEMENTED | Dashboard host/UI tests and physical display review |
+| P3 | PARTIAL: W01 CODED / HOST-TESTED (1/1 CI suite); 24 screens NOT IMPLEMENTED | [W01 host CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40459435458); native build and physical display NOT RUN |
 | P4 | NOT IMPLEMENTED | Actual RID capture + OrcMaps |
 | P5 | NOT IMPLEMENTED | SD and OrcNode envelope |
 | P6 | NOT RUN | SDR occupancy measurements (not drone ID) |
