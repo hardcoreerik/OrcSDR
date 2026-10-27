@@ -1,6 +1,6 @@
 # W01 — LIVE WATCH
 
-> **Category:** WATCH · **Delivery gate:** P3 replay UI; P4 verified live receive · **Status:** proposed screen specification (no runtime implementation).  
+> **Category:** WATCH · **Delivery gate:** P3 replay UI; P4 verified live receive · **Status:** W01 M5GFX shell, Home integration, Sources/Help and unavailable-state model **IMPLEMENTED + HOST-TESTED** on 2026-10-27. Live C6/OrcNode Remote ID reception, valid aircraft list, native build and physical 5-inch acceptance are **NOT IMPLEMENTED / NOT RUN**. [Host checkpoint](../../evidence/2026-10-27-w01-live-watch-host-checkpoint.md).  
 > **Shared authority:** [UI contract](../../UI_UX_STANDARD.md) · [navigation](../../NAVIGATION.md) · [source model](../../DATA_CONTRACTS.md) · [rendering acceptance](../../RENDERING_AND_ACCEPTANCE.md).
 
 ## Purpose and default experience
