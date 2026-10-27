@@ -80,6 +80,22 @@ catalog mechanism, not every proposed pack. Publish additional FAA, NOAA, FCC,
 map, or P25 packs only after provenance, redistribution, size, install,
 rollback, and radio-recovery gates pass.
 
+### Drone Watch: passive drone-awareness dashboard
+
+A new receive-only Drone Watch dashboard is **planned, not implemented**.
+Begin with license-reviewed OpenDroneID message decoding and a bounded,
+source-aware evidence model. Prove the exact Tab5 ESP32-C6/ESP-Hosted
+Bluetooth/Wi-Fi reception paths (and coexistence) before claiming onboard
+Remote ID capability; otherwise use a separately validated OrcNode source.
+A truthful 5-inch-first UI and OrcMaps reported-position layer follow
+successful decoder/source validation. Sub-GHz RF activity, analog FPV video,
+acoustics, SD journals and external nodes are optional, separately gated
+experiments—none implies general drone detection.
+
+See [Drone Watch design and phased delivery plan](docs/drone-watch/README.md)
+and [phase exit gates](docs/drone-watch/PHASING.md). Research is archived in
+the private REA-Results Drone Watch inbox PR.
+
 ## Evidence still needed
 
 - Current M5Burner search/catalog visibility.
