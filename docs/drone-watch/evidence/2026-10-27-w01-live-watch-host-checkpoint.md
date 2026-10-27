@@ -16,7 +16,7 @@
 
 ## Recorded validation
 
-[**GitHub Actions W01 host CI — PASS**](https://github.com/hardcoreerik/OrcSDR/actions/runs/40459967209), job `w01-model-and-render`, commit `9bd2990386b268d9363074b0eb135d3bb4b6759f`.
+[**GitHub Actions W01 host CI — PASS**](https://github.com/hardcoreerik/OrcSDR/actions/runs/40460255261), job `w01-model-and-render`, commit `9bd2990386b268d9363074b0eb135d3bb4b6759f`.
 
 ```text
 cmake -S apps/orcsdr-tab5/tests/drone_watch -B build-drone-watch-tests
