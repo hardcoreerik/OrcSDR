@@ -118,7 +118,7 @@ void source_panel() {
   if (g_help) {
     label("REMOTE ID is broadcast data.", bx + 20, by + 77, TFT_WHITE, 2);
     label("No RF signal proves identity.", bx + 20, by + 112, kMuted, 2);
-    if (!small) label("No packets are not an all-clear.", bx + 20, by + 156, kMuted);
+    if (!small) label("Silence is not an all-clear.", bx + 20, by + 156, kMuted);
   } else if (g_detail && g_source.capture_qualified) {
     label("QUALIFIED SOURCE ADAPTER", bx + 20, by + 79, kGreen, 2);
     label(describe(g_source, g_now).headline, bx + 20, by + 122, kCyan, 2);
@@ -135,7 +135,7 @@ void source_panel() {
     label(g_source.capture_qualified ? "QUALIFIED" : "NOT IMPLEMENTED",
           bx + 20, by + 127, g_source.capture_qualified ? kGreen : kAmber, 2);
     if (!small) {
-      label("C6 BLE/Wi-Fi capture not qualified.", bx + 20, by + 179, kMuted);
+      label("C6 BLE/WIFI: UNVERIFIED", bx + 20, by + 179, kMuted);
       label("RTL V4: NO 2.4 / 5.8 GHZ", bx + 20, by + 216, kMuted);
     }
   }
