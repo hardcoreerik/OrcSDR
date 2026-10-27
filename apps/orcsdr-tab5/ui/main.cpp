@@ -62,6 +62,7 @@
 #include "sstv_receiver.hpp"
 #include "acars_app.hpp"
 #include "dead_air_app.hpp"
+#include "drone_watch_dashboard.hpp"
 #include "acars_archive_sd.hpp"
 #include "acars_receiver.hpp"
 #include "acars_selftest.hpp"
@@ -6934,6 +6935,7 @@ void refresh_active_screen() {
     case Id::sstv: draw_sstv_dashboard(false); break;
     case Id::acars: orcsdr::acars_app::draw(false); break;
     case Id::dead_air: orcsdr::dead_air_app::draw(false); break;
+    case Id::drone_watch: orcsdr::drone_watch::draw(false); break;
     default: break;  // Settings, documentation, and no screen own their draws.
   }
 }
@@ -7006,6 +7008,7 @@ void close_visualizer() {
     case orcsdr::screens::Id::sstv: draw_sstv_dashboard(true); break;
     case orcsdr::screens::Id::acars: orcsdr::acars_app::draw(true); break;
     case orcsdr::screens::Id::dead_air: orcsdr::dead_air_app::draw(true); break;
+    case orcsdr::screens::Id::drone_watch: orcsdr::drone_watch::draw(true); break;
     case orcsdr::screens::Id::airband: orcsdr::airband::redraw(); break;
     case orcsdr::screens::Id::cb: orcsdr::cb::draw(); break;
     case orcsdr::screens::Id::p25: orcsdr::p25::draw(); break;
@@ -7328,6 +7331,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   orcsdr::sstv_app::close();
   orcsdr::acars_app::close();
   orcsdr::dead_air_app::close();
+  orcsdr::drone_watch::close();
   orcsdr::settings::leave();
   if (band != RtlBand::fm) orcsdr::fm::leave();
   if (band != RtlBand::am) orcsdr::am::leave();
@@ -13124,6 +13128,8 @@ void navigation_restore_screen(orcsdr::screens::Id restore) {
     orcsdr::acars_app::draw(true);
   } else if (restore == orcsdr::screens::Id::dead_air) {
     orcsdr::dead_air_app::draw(true);
+  } else if (restore == orcsdr::screens::Id::drone_watch) {
+    orcsdr::drone_watch::draw(true);
   } else {
     draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
                     rtl_live_volume.load(std::memory_order_acquire));
@@ -13159,6 +13165,7 @@ void show_home(bool demo) {
   const RtlBand dead_air_return_band = g_dead_air_return_band;
   const uint8_t dead_air_return_demod = g_dead_air_return_demod;
   orcsdr::dead_air_app::close();
+  orcsdr::drone_watch::close();
   home_enter();
   orcsdr::audio_header::reset(rtl_header_audio_control);
   orcsdr::navigation::show_home(demo);
@@ -14450,7 +14457,28 @@ void open_dashboard(orcsdr::dashboards::Id id) {
   using Id = orcsdr::dashboards::Id;
   if (id != Id::settings && orcsdr::settings::active()) close_global_settings();
   if (id != Id::dead_air) orcsdr::dead_air_app::close();
+  if (id != Id::drone_watch) orcsdr::drone_watch::close();
   if (id == Id::dead_air) { open_dead_air_dashboard(); return; }
+  if (id == Id::drone_watch) {
+    persist_dashboard_open(id);
+    orcsdr::home::leave();
+    orcsdr::ft8::leave();
+    orcsdr::sstv_app::close();
+    orcsdr::acars_app::close();
+    orcsdr::rf24::leave();
+    if (orcsdr::rf_lab::active()) {
+      orcsdr::rf_lab::leave();
+      acquire_radio_owner(orcsdr::radio::owner_for_band(rtl_ui_band));
+    }
+    orcsdr::audio_header::reset(rtl_header_audio_control);
+    orcsdr::drone_watch::install({
+      []() -> int32_t { return static_cast<int32_t>(M5.Power.getBatteryLevel()); },
+      []() -> bool { return rtl_audio_user_enabled.load(std::memory_order_acquire); }
+    });
+    // W01 is read-only: opening it does not retune RTL, enable C6 capture or modify Wi-Fi.
+    orcsdr::drone_watch::open();
+    return;
+  }
   if (id == Id::rf_lab) {
     persist_dashboard_open(id);
     orcsdr::rf24::leave();
@@ -17101,7 +17129,8 @@ void poll_sdr_touch(bool from_stream) {
 
   if ((orcsdr::sstv::ui_active() && orcsdr::screens::owns(orcsdr::screens::Id::sstv)) ||
       (orcsdr::acars_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::acars)) ||
-      (orcsdr::dead_air_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::dead_air))) {
+      (orcsdr::dead_air_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::dead_air)) ||
+      (orcsdr::drone_watch::active() && orcsdr::screens::owns(orcsdr::screens::Id::drone_watch))) {
     if (pressed && !was_pressed) handle_sdr_touch(touch.x, touch.y);
     was_pressed = pressed;
     return;
@@ -17447,7 +17476,7 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     return;
   }
   if (orcsdr::audio_header::settings_hit(x, y)) {
-    open_global_settings(orcsdr::ft8::active() || orcsdr::acars_app::active() || orcsdr::dead_air_app::active()
+    open_global_settings(orcsdr::ft8::active() || orcsdr::acars_app::active() || orcsdr::dead_air_app::active() || orcsdr::drone_watch::active()
                              ? orcsdr::settings::Section::system :
                          rtl_ui_band == RtlBand::adsb
                              ? orcsdr::settings::Section::location_adsb
@@ -17466,6 +17495,10 @@ void handle_sdr_touch(int32_t x, int32_t y) {
   }
   if (orcsdr::dead_air_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::dead_air)) {
     orcsdr::dead_air_app::touch(x, y);
+    return;
+  }
+  if (orcsdr::drone_watch::active() && orcsdr::screens::owns(orcsdr::screens::Id::drone_watch)) {
+    if (orcsdr::drone_watch::touch(x, y) == orcsdr::drone_watch::Action::close) show_home();
     return;
   }
   if (orcsdr::ft8::active()) {
@@ -18303,7 +18336,15 @@ bool ui_doc_pause_reception() {
     orcsdr::settings::enter(global_settings_state(), ui_doc.settings_section);
     orcsdr::screens::finish_transition();
   } else if (ui_doc.was_ui_active) {
-    if (ui_doc.screen == orcsdr::screens::Id::dead_air) {
+    if (ui_doc.screen == orcsdr::screens::Id::drone_watch) {
+      if (orcsdr::drone_watch::active()) {
+        orcsdr::screens::begin_transition(orcsdr::screens::Id::drone_watch, millis());
+        orcsdr::drone_watch::draw(true);
+        orcsdr::screens::finish_transition();
+      } else {
+        orcsdr::drone_watch::open();
+      }
+    } else if (ui_doc.screen == orcsdr::screens::Id::dead_air) {
       if (orcsdr::dead_air_app::active()) {
         orcsdr::screens::begin_transition(orcsdr::screens::Id::dead_air, millis());
         orcsdr::dead_air_app::draw(true);
@@ -18646,6 +18687,7 @@ const char* ui_touch_route() {
   if (orcsdr::sstv::ui_active() && orcsdr::screens::owns(orcsdr::screens::Id::sstv)) return "sstv";
   if (orcsdr::acars_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::acars)) return "acars";
   if (orcsdr::dead_air_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::dead_air)) return "dead_air";
+  if (orcsdr::drone_watch::active() && orcsdr::screens::owns(orcsdr::screens::Id::drone_watch)) return "drone_watch";
   const bool radio_ui = rtl_ui_active.load(std::memory_order_acquire);
   const bool fm_ui = rtl_ui_band == RtlBand::fm && orcsdr::fm::active();
   const bool am_ui = rtl_ui_band == RtlBand::am && orcsdr::am::active();
@@ -19938,6 +19980,7 @@ void process_command(char* command) {
     else if (strcmp(name, "POCSAG") == 0) open_dashboard(Id::pocsag);
     else if (strcmp(name, "ACARS") == 0) open_dashboard(Id::acars);
     else if (strcmp(name, "DEAD_AIR") == 0) open_dashboard(Id::dead_air);
+    else if (strcmp(name, "DRONE_WATCH") == 0) open_dashboard(Id::drone_watch);
     else if (strcmp(name, "MARINE") == 0) open_dashboard(Id::marine);
     else if (strcmp(name, "SATELLITE") == 0) open_dashboard(Id::satellite);
     else if (strcmp(name, "UTILITIES") == 0) open_dashboard(Id::utilities);
@@ -23006,6 +23049,7 @@ void loop() {
   orcsdr::sstv_app::tick();
   orcsdr::acars_app::tick();
   orcsdr::dead_air_app::tick();
+  orcsdr::drone_watch::tick(millis());
   if (rtl_stream_ui_refresh_pending.exchange(false, std::memory_order_acq_rel) &&
       !settings_ui && !home_ui && !visualizer_ui && !rf_lab_ui) {
     refresh_active_screen();
@@ -23301,6 +23345,7 @@ void loop() {
        orcsdr::screens::status().active != orcsdr::screens::Id::sstv &&
       orcsdr::screens::status().active != orcsdr::screens::Id::acars &&
       orcsdr::screens::status().active != orcsdr::screens::Id::dead_air &&
+      orcsdr::screens::status().active != orcsdr::screens::Id::drone_watch &&
       !orcsdr::screens::owns(screen_for_band(rtl_ui_band)) &&
       !orcsdr::home::active()) {
     draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
@@ -23377,6 +23422,8 @@ void loop() {
   } else if (orcsdr::acars_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::acars)) {
     poll_sdr_touch(false);
   } else if (orcsdr::dead_air_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::dead_air)) {
+    poll_sdr_touch(false);
+  } else if (orcsdr::drone_watch::active() && orcsdr::screens::owns(orcsdr::screens::Id::drone_watch)) {
     poll_sdr_touch(false);
   } else if (pocsag_ui && orcsdr::screens::owns(orcsdr::screens::Id::pocsag)) {
     const auto touch = ui_touch_detail(0);
