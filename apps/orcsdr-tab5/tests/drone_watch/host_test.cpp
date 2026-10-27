@@ -73,8 +73,7 @@ int main() {
   touch(1100, 545); // HELP
   assert(M5.Display.saw("HOW IT WORKS"));
   assert(M5.Display.full_clears == 1); // partial content repaint only
-  SourceSnapshot mock{};
-  mock.test_data = true;
+  // A qualified test-only adapter may report a validated packet, but idle\n  // display ticks must still repaint no static chrome or whole frame.\n  SourceSnapshot qualified{};\n  qualified.state = SourceState::listening;\n  qualified.capture_qualified = true;\n  qualified.last_packet_valid = true;\n  qualified.last_packet_ms = 9000;\n  qualified.packets_received = 1;\n  publish_source(qualified);\n  assert(M5.Display.saw("REMOTE ID RECEIVED"));\n  assert(M5.Display.saw("VALID RID MESSAGES: 1"));\n  tick(70000); // expired packet; not current reception\n  assert(M5.Display.saw("NO RID OBSERVED"));\n  assert(M5.Display.full_clears == 1);\n  SourceSnapshot mock{};\n  mock.test_data = true;
   publish_source(mock);
   assert(M5.Display.saw("TEST DATA"));
   assert(M5.Display.full_clears == 1);
