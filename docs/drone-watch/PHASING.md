@@ -189,7 +189,7 @@ The onboard ESP32-C6 and its existing SDIO ESP-Hosted slave are the first prefer
 | P0 | RESEARCH DOCUMENTED; upstream/source audit incomplete | REA-Results draft PR #3; isolated 15/15 synthetic-model tests |
 | P1 | NOT IMPLEMENTED | Host/parser vectors + malformed tests + pinned parser attribution |
 | P2 | NOT RUN | C6 firmware/Hosted RX + Wi-Fi coexistence evidence |
-| P3 | PARTIAL: W01 CODED / HOST-TESTED (1/1 CI suite); 24 screens NOT IMPLEMENTED | [W01 host CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40459967209); native build and physical display NOT RUN |
+| P3 | PARTIAL: W01 CODED / HOST-TESTED (1/1 CI suite); 24 screens NOT IMPLEMENTED | [W01 host CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40460255261); native build and physical display NOT RUN |
 | P4 | NOT IMPLEMENTED | Actual RID capture + OrcMaps |
 | P5 | NOT IMPLEMENTED | SD and OrcNode envelope |
 | P6 | NOT RUN | SDR occupancy measurements (not drone ID) |
