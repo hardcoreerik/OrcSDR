@@ -48,9 +48,11 @@ screen permission to draw while radio/decoder work continues independently.
 `navigation_service` owns Home/Settings handoff mechanics; feature dashboards
 render snapshots rather than owning receiver state.
 
-ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`, `airband`, `ft8`, `sstv`, `acars`, `dead_air`.
+ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`, `airband`, `ft8`, `sstv`, `acars`, `dead_air`, `drone_watch`.
 
-Dashboard IDs: `home`, `fm`, `p25`, `adsb`, `shortwave`, `weather`, `cb`, `lora`, `airband`, `marine`, `satellite`, `utilities`, `settings`, `rf_lab`, `wifi_analysis`, `pocsag`, `am`, `ft8`, `sstv`, `acars`, `dead_air`.
+Dashboard IDs: `home`, `fm`, `p25`, `adsb`, `shortwave`, `weather`, `cb`, `lora`, `airband`, `marine`, `satellite`, `utilities`, `settings`, `rf_lab`, `wifi_analysis`, `pocsag`, `am`, `ft8`, `sstv`, `acars`, `dead_air`, `drone_watch`.
+
+On the `chatgpt/drone-watch-phasing-20261026` feature branch, the W01 Live Watch screen is now wired to the Home dashboard picker, ScreenController, shared Tab5 header, and UI task. Its source status is explicitly unavailable until an independently qualified Remote ID acquisition path exists. The initial renderer/model host CI passes; an ESP-IDF build, physical 5-inch/720-square display acceptance and real Remote ID RF reception remain NOT RUN. Other proposed Drone Watch screens are specification-only.
 
 The Dead Air initial module provides six native M5GFX research pages and a bounded RF event model. It is not yet wired into the main.cpp application dispatcher or persisted to SD; see docs/dead-air/DEVELOPMENT_HANDOFF.md. ENV III is optional and unverified readings are unavailable.\n\nThe ACARS dashboard (`acars_*` modules, see `docs/acars/DASHBOARD_README.md`) is a presentation-only
 screen: `acars_app` owns its lifecycle, `acars_dashboard_model` holds the bounded snapshot, and `acars_receiver` feeds it from the RTL-SDR (single channel, 240 kS/s, receive only).
