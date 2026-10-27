@@ -27,6 +27,7 @@ enum class Id : uint8_t {
   sstv,
   acars,
   dead_air,
+  drone_watch,
   count,
 };
 
