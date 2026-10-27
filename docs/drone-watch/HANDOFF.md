@@ -1,10 +1,10 @@
 # Drone Watch — developer handoff
 
-**Prepared:** 2026-10-26. **Task:** planning documentation only, no production code.  
+**Prepared:** 2026-10-26; **updated 2026-10-27:** W01 Live Watch shell and truth model now committed with passing host CI; implementation work beyond W01 remains planned.  
 **Proposed implementation repo:** `hardcoreerik/OrcSDR`.  
 **Design baseline read:** `main` commit `07c777ca05af4bcbf8af6074dbc0b17d9a891af1`; recheck against current `origin/main` when coding starts.  
 **Private research:** [REA-Results draft PR #3](https://github.com/hardcoreerik/REA-Results/pull/3); committed inbox source survey + 15/15 synthetic test record. Follow REA-Results `AGENTS.md` for all new findings.  
-**Execution state:** This documentation is a design/proposed sequence; there is NO completed OrcSDR Drone Watch dashboard or Remote ID acquisition path.
+**Execution state:** W01 is wired and host-verified as an unavailable/empty-state screen. No live Remote ID acquisition, protocol decoder, physical rendering acceptance or other 24 feature screens are completed.
 
 ## Mandatory screen reference before any UI implementation
 
