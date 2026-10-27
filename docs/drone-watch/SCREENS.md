@@ -18,7 +18,7 @@
 | Code | Menu label / screen document | What the user does | Earliest phase |
 | --- | --- | --- | --- |
 | **WATCH** ||||
-| W01 | [LIVE WATCH](screens/watch/W01_LIVE_WATCH.md) | See current receiver health and most recent Remote ID broadcast | P3 mock, P4 live |
+| W01 | [LIVE WATCH](screens/watch/W01_LIVE_WATCH.md) | **Host-tested M5GFX receiver-unavailable shell**; future real Remote ID observations | W01 shell built; P4 live pending |
 | W02 | [EVENT TIMELINE](screens/watch/W02_EVENT_TIMELINE.md) | Review actual decoded and source-state events in time order | P3 mock, P4 live |
 | W03 | [ALERT RULES](screens/watch/W03_ALERT_RULES.md) | Set understandable local event/source alerts | P5 |
 | W04 | [COVERAGE MONITOR](screens/watch/W04_COVERAGE_MONITOR.md) | Understand active listening intervals and interruptions | P4/P5 |
