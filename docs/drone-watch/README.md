@@ -4,6 +4,21 @@
 
 Drone Watch is a proposed **receive-only aircraft-awareness dashboard** for OrcSDR, with future OrcNode collection and OrcMaps display. Its product promise is: *show what the hardware actually received, explain what it means, and never confuse a signal with an identified aircraft.*
 
+## Screen-by-screen build specification (25 screens)
+
+**[Open the complete Screen Reference Index → SCREENS.md](SCREENS.md)**
+
+Drone Watch is one OrcSDR dashboard with five internal categories: **WATCH (5 screens), AIRCRAFT (6), RF LAB (5), MEDIA (4), SYSTEM (5)**. Each of the 25 screen documents under `screens/<category>/` is a specific implementation reference covering purpose, how-to, 1280×720 Tab5 regions, real data/provenance, touch actions, empty/error states, 720×720 adaptive behavior, and test gates.
+
+Shared, **mandatory** contracts:
+
+- [UI_UX_STANDARD.md](UI_UX_STANDARD.md): real OrcSDR shared header, touch/typography/color rules, partial-redraw/no-flicker rule and truth in measurement.
+- [NAVIGATION.md](NAVIGATION.md): one ScreenController surface, five category routes, nested screens, back/selection state and modal focus.
+- [DATA_CONTRACTS.md](DATA_CONTRACTS.md): typed source/observation validity, scan coverage, privacy, no fake drone identities, replay provenance.
+- [RENDERING_AND_ACCEPTANCE.md](RENDERING_AND_ACCEPTANCE.md): M5GFX modular renderer, per-widget repaint and reproducible host/hardware acceptance.
+
+**This is planning documentation only:** graphics feasibility does not prove Bluetooth/Remote ID reception, onboard C6 capability, analog video or drone identification.
+
 ## Documents
 
 - [DESIGN.md](DESIGN.md) — product scope, source and evidence contracts, proposed UI, module boundaries, concurrency, privacy.
