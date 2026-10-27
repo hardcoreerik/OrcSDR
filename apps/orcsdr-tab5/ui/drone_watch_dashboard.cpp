@@ -98,7 +98,8 @@ void headline() {
   label(m.headline, 42, by + (small ? 91 : 112),
         m.monitoring ? kGreen : kAmber, small ? 3 : 4);
   if (small) {
-    label("No verified receiver is active.", 42, by + 148, kMuted, 2);
+    label(m.monitoring ? "Qualified capture source listening." :
+          "No verified receiver is active.", 42, by + 148, kMuted, 2);
   } else {
     label(m.explanation, 42, by + 178, kMuted, 2);
     label("A receiver's silence does not mean no aircraft nearby.", 42, by + 236, kMuted, 2);
@@ -117,20 +118,20 @@ void source_panel() {
   if (g_help) {
     label("REMOTE ID is broadcast data.", bx + 20, by + 77, TFT_WHITE, 2);
     label("No RF signal proves identity.", bx + 20, by + 112, kMuted, 2);
-    if (!small) label("No observations are not an all-clear.", bx + 20, by + 156, kMuted);
+    if (!small) label("No packets are not an all-clear.", bx + 20, by + 156, kMuted);
   } else if (g_detail) {
     label("ONBOARD C6: NOT VERIFIED", bx + 20, by + 79, kAmber, 2);
     label("BLE / WIFI RID: UNAVAILABLE", bx + 20, by + 122, kMuted, 2);
     if (!small) {
       label("OrcNode link: NOT PAIRED", bx + 20, by + 167, kMuted, 2);
-      label("No acquisition adapter is installed.", bx + 20, by + 213, kMuted);
+      label("No qualified RID adapter.", bx + 20, by + 213, kMuted);
     }
   } else {
     label("REMOTE ID SOURCE", bx + 20, by + 86, kMuted);
     label("NOT IMPLEMENTED", bx + 20, by + 127, kAmber, 2);
     if (!small) {
       label("C6 BLE/Wi-Fi capture not qualified.", bx + 20, by + 179, kMuted);
-      label("RTL-SDR V4 cannot receive 2.4/5.8 GHz.", bx + 20, by + 216, kMuted);
+      label("RTL V4: NO 2.4 / 5.8 GHZ", bx + 20, by + 216, kMuted);
     }
   }
 }
@@ -147,7 +148,7 @@ void activity() {
         42, 589, g_source.test_data ? kAmber : kMuted);
   button(840, 520, 195, g_detail ? "CLOSE" : "SOURCES");
   button(1047, 520, width() - 1067, g_help ? "CLOSE" : "HELP");
-  on_bg("More Drone Watch screens are planned.", 846, 604, kMuted, 2);
+  on_bg("ADDITIONAL VIEWS IN DEVELOPMENT", 846, 604, kMuted, 2);
 }
 void redraw_panels() {
   headline();
