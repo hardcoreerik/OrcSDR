@@ -2,6 +2,8 @@
 
 > **Planning only; no firmware implementation in this PR.** Begin with a guaranteed-green read-only decoder/model path. Every phase is a separately buildable, independently reversible unit. Never treat compilation as a real-air acceptance test.
 
+**25 per-screen implementation specs:** [SCREENS.md](SCREENS.md), with shared UI/UX and rendering rules. These are future target contracts, not accepted runtime capabilities. Initial P3 covers only the smallest truthful screens; the remaining specifications become feature-gated incrementally.
+
 **Design:** [DESIGN.md](DESIGN.md)  
 **Acceptance:** [VALIDATION.md](VALIDATION.md)  
 **Developer handoff:** [HANDOFF.md](HANDOFF.md)  
