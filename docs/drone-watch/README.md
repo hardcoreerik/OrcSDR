@@ -1,6 +1,6 @@
 # Drone Watch — OrcSDR dashboard planning
 
-> **Status: PLANNED / DESIGN ONLY (2026-10-26).** No Drone Watch firmware dashboard, Remote ID receiver, live RF detector, video capture, or acoustic classifier is implemented by these documents. No hardware acceptance is claimed.
+> **Status (2026-10-27): W01 LIVE WATCH CODED + HOST-TESTED; REMOTE ID SOURCE UNAVAILABLE.** The remaining 24 screen designs, BLE/Wi-Fi Remote ID reception, analog video and acoustic classification are proposed/unimplemented. No native ESP-IDF build or physical hardware acceptance has been performed.
 
 Drone Watch is a proposed **receive-only aircraft-awareness dashboard** for OrcSDR, with future OrcNode collection and OrcMaps display. Its product promise is: *show what the hardware actually received, explain what it means, and never confuse a signal with an identified aircraft.*
 
@@ -17,7 +17,15 @@ Shared, **mandatory** contracts:
 - [DATA_CONTRACTS.md](DATA_CONTRACTS.md): typed source/observation validity, scan coverage, privacy, no fake drone identities, replay provenance.
 - [RENDERING_AND_ACCEPTANCE.md](RENDERING_AND_ACCEPTANCE.md): M5GFX modular renderer, per-widget repaint and reproducible host/hardware acceptance.
 
-**This is planning documentation only:** graphics feasibility does not prove Bluetooth/Remote ID reception, onboard C6 capability, analog video or drone identification.
+**The screen reference is planning documentation; W01 alone has an initial native M5GFX implementation.** Host graphics compilation does not prove Bluetooth/Remote ID reception, onboard C6 capability, analog video or drone identification.
+
+## First implemented screen — W01 Live Watch (host verified)
+
+- `apps/orcsdr-tab5/ui/drone_watch_model.{hpp,cpp}` — UI-independent source truth, unavailable/paused/listening/replay classification.
+- `apps/orcsdr-tab5/ui/drone_watch_dashboard.{hpp,cpp}` — M5GFX W01 landing page, source/help panels, disabled future-category tabs, compact square layout and partial updates.
+- `apps/orcsdr-tab5/tests/drone_watch/` — host recording-display test of the **real renderer** and model against ScreenController. Its [README](../../apps/orcsdr-tab5/tests/drone_watch/README.md) provides reproducible commands and saves logs in the working folder.
+- [CI workflow](../../.github/workflows/drone-watch-w01-host.yml) — compile+ctest host gate. **Passed:** [GitHub Actions W01 run](https://github.com/hardcoreerik/OrcSDR/actions/runs/40459435458), 1/1 test suite.
+- The firmware consumer and Home registration are wired, but **native ESP-IDF / physical Tab5 are NOT RUN**. No receiver adapter is installed; opening W01 cannot detect Remote ID and does not retune RTL or flash C6.
 
 ## Documents
 
