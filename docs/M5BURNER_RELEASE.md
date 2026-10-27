@@ -12,6 +12,15 @@ is reachable.
 3. The C6 may stay on 2.12.6 (Wi-Fi works, and M5 Launcher keeps its Wi-Fi/OTA) or be updated with the optional **UPDATE C6 TO 3.0.6**. Updating to 3.0.6 stops Launcher's Wi-Fi/OTA from working.
 4. Verify `RTL_WIFI_C6_STATUS` shows `match=1` (coprocessor 2.12.6 or 3.0.6).
 
+## Maps releases (v0.5.0-beta.1 and later)
+
+Follow the [repeatable Maps packaging procedure](M5BURNER_MAPS_PACKAGING.md)
+after the base builder. It adds the verified world archive at 0x650000, checks
+the merged regions and ZIP, and emits package provenance and checksums. The old
+three-region builder alone does not provision the Maps world fallback. The full
+merged install resets NVS; the local region-based ZIP preserves it. Neither
+formats the SD card or automatically flashes C6.
+
 ## Saved settings and M5Burner
 
 An M5Burner install **does not preserve** P4 NVS: Wi-Fi profiles, location, screen rotation,
