@@ -119,6 +119,10 @@ void source_panel() {
     label("REMOTE ID is broadcast data.", bx + 20, by + 77, TFT_WHITE, 2);
     label("No RF signal proves identity.", bx + 20, by + 112, kMuted, 2);
     if (!small) label("No packets are not an all-clear.", bx + 20, by + 156, kMuted);
+  } else if (g_detail && g_source.capture_qualified) {
+    label("QUALIFIED SOURCE ADAPTER", bx + 20, by + 79, kGreen, 2);
+    label(describe(g_source, g_now).headline, bx + 20, by + 122, kCyan, 2);
+    if (!small) label("Source measurement, not aircraft proof.", bx + 20, by + 167, kMuted);
   } else if (g_detail) {
     label("ONBOARD C6: NOT VERIFIED", bx + 20, by + 79, kAmber, 2);
     label("BLE / WIFI RID: UNAVAILABLE", bx + 20, by + 122, kMuted, 2);
@@ -128,7 +132,8 @@ void source_panel() {
     }
   } else {
     label("REMOTE ID SOURCE", bx + 20, by + 86, kMuted);
-    label("NOT IMPLEMENTED", bx + 20, by + 127, kAmber, 2);
+    label(g_source.capture_qualified ? "QUALIFIED" : "NOT IMPLEMENTED",
+          bx + 20, by + 127, g_source.capture_qualified ? kGreen : kAmber, 2);
     if (!small) {
       label("C6 BLE/Wi-Fi capture not qualified.", bx + 20, by + 179, kMuted);
       label("RTL V4: NO 2.4 / 5.8 GHZ", bx + 20, by + 216, kMuted);
@@ -144,8 +149,16 @@ void activity() {
   }
   panel(20, 512, 802, 121);
   label("RECENT ACTIVITY", 42, 543, kCyan);
-  label(g_source.test_data ? "TEST DATA - NOT LIVE" : "NO OBSERVATIONS AVAILABLE",
-        42, 589, g_source.test_data ? kAmber : kMuted);
+  const Message m = describe(g_source, g_now);
+  char received[52]{};
+  if (m.observed) {
+    std::snprintf(received, sizeof(received), "VALID RID MESSAGES: %lu",
+                  static_cast<unsigned long>(g_source.packets_received));
+  }
+  label(g_source.test_data ? "TEST DATA - NOT LIVE" :
+        m.observed ? received : m.monitoring ? "NO RECENT REMOTE ID OBSERVED" :
+        "NO OBSERVATIONS AVAILABLE",
+        42, 589, g_source.test_data ? kAmber : m.observed ? kGreen : kMuted);
   button(840, 520, 195, g_detail ? "CLOSE" : "SOURCES");
   button(1047, 520, width() - 1067, g_help ? "CLOSE" : "HELP");
   on_bg("ADDITIONAL VIEWS IN DEVELOPMENT", 846, 604, kMuted, 2);
