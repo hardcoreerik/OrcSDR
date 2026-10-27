@@ -13,8 +13,8 @@ target_include_directories(drone_watch_host_test PRIVATE
   ../../ui
 )
 if(MSVC)
-  target_compile_options(drone_watch_host_test PRIVATE /W4)
+  target_compile_options(drone_watch_host_test PRIVATE /W4 /WX)
 else()
-  target_compile_options(drone_watch_host_test PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_options(drone_watch_host_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 add_test(NAME drone_watch_host COMMAND drone_watch_host_test)
