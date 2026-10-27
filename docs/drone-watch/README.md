@@ -24,8 +24,10 @@ Shared, **mandatory** contracts:
 - `apps/orcsdr-tab5/ui/drone_watch_model.{hpp,cpp}` — UI-independent source truth, unavailable/paused/listening/replay classification.
 - `apps/orcsdr-tab5/ui/drone_watch_dashboard.{hpp,cpp}` — M5GFX W01 landing page, source/help panels, disabled future-category tabs, compact square layout and partial updates.
 - `apps/orcsdr-tab5/tests/drone_watch/` — host recording-display test of the **real renderer** and model against ScreenController. Its [README](../../apps/orcsdr-tab5/tests/drone_watch/README.md) provides reproducible commands and saves logs in the working folder.
-- [CI workflow](../../.github/workflows/drone-watch-w01-host.yml) — compile+ctest host gate. **Passed:** [GitHub Actions W01 run](https://github.com/hardcoreerik/OrcSDR/actions/runs/40459435458), 1/1 test suite.
+- [CI workflow](../../.github/workflows/drone-watch-w01-host.yml) — compile+ctest host gate. **Passed:** [GitHub Actions W01 run](https://github.com/hardcoreerik/OrcSDR/actions/runs/40459967209), 1/1 test suite.
 - The firmware consumer and Home registration are wired, but **native ESP-IDF / physical Tab5 are NOT RUN**. No receiver adapter is installed; opening W01 cannot detect Remote ID and does not retune RTL or flash C6.
+
+**[Executed W01 checkpoint and exact verification limits](evidence/2026-10-27-w01-live-watch-host-checkpoint.md)**
 
 ## Documents
 
