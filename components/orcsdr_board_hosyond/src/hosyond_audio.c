@@ -15,15 +15,16 @@
 #include "es8311_codec.h"
 #include "esp_log.h"
 #include "hosyond_board.h"
+#include "orcsdr_board_profile.h"
 
 static const char *TAG = "HOSYOND_AUDIO";
 
-#define AUDIO_MCLK_GPIO 13
-#define AUDIO_BCLK_GPIO 12
-#define AUDIO_WS_GPIO 10
-#define AUDIO_DOUT_GPIO 9
-#define AUDIO_DIN_GPIO 11
-#define AUDIO_PA_GPIO 53
+#define AUDIO_MCLK_GPIO (orcsdr_board_profile()->audio_mclk)
+#define AUDIO_BCLK_GPIO (orcsdr_board_profile()->audio_bclk)
+#define AUDIO_WS_GPIO (orcsdr_board_profile()->audio_ws)
+#define AUDIO_DOUT_GPIO (orcsdr_board_profile()->audio_dout)
+#define AUDIO_DIN_GPIO (orcsdr_board_profile()->audio_din)
+#define AUDIO_PA_GPIO (orcsdr_board_profile()->audio_pa_enable)
 #define AUDIO_DEFAULT_VOLUME 100 /* full codec output; the application scales the level */
 
 static i2s_chan_handle_t s_tx;

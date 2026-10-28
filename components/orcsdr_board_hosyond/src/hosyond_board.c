@@ -27,15 +27,15 @@
 #include "hal/mipi_dsi_types.h"
 #include "hal/mipi_dsi_ll.h"
 #include "hosyond_board.h"
+#include "orcsdr_board_profile.h"
+#include "orcsdr_display_profile.h"
 #include "attiny88_panel.h"
 #include "tc358762_bridge.h"
 
 static const char *TAG = "HOSYOND_BOARD";
 
 /* ---- Board facts ---- */
-#define I2C_PORT 1 /* routed to the DSI connector */
-#define I2C_SDA_GPIO 7
-#define I2C_SCL_GPIO 8
+/* The I2C pins come from the board profile (orcsdr_board_profile.h). */
 #define I2C_FREQ_HZ 100000
 #define DSI_PHY_LDO_CHAN 3 /* LDO_VO3 -> VDD_MIPI_DPHY */
 #define DSI_PHY_LDO_MV 2500
@@ -217,9 +217,9 @@ esp_err_t hosyond_board_start(hosyond_display_t *out)
     esp_err_t err;
 
     i2c_master_bus_config_t bus_cfg = {
-        .i2c_port = I2C_PORT,
-        .sda_io_num = I2C_SDA_GPIO,
-        .scl_io_num = I2C_SCL_GPIO,
+        .i2c_port = orcsdr_board_profile()->i2c_port,
+        .sda_io_num = orcsdr_board_profile()->i2c_sda,
+        .scl_io_num = orcsdr_board_profile()->i2c_scl,
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .glitch_ignore_cnt = 7,
         .flags.enable_internal_pullup = true,
@@ -228,6 +228,14 @@ esp_err_t hosyond_board_start(hosyond_display_t *out)
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "I2C bus init failed: %s", esp_err_to_name(err));
         return err;
+    }
+    {
+        unsigned char found[16] = {0};
+        const orcsdr_display_profile_t *panel = orcsdr_display_detect(s_i2c, found);
+        if (!panel) {
+            orcsdr_display_report(found);
+            return ESP_ERR_NOT_FOUND;
+        }
     }
     err = attiny_power_on();
     if (err != ESP_OK) {

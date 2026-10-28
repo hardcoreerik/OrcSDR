@@ -9,7 +9,7 @@ else()
     list(APPEND HOSYOND_REQUIRES hal)
 endif()
 idf_component_register(
-    SRCS "src/hosyond_board.c" "src/ft5x06_touch.c" "src/hosyond_audio.c"
+    SRCS "src/orcsdr_profiles.c" "src/hosyond_board.c" "src/ft5x06_touch.c" "src/hosyond_audio.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "src"
     REQUIRES ${HOSYOND_REQUIRES}
