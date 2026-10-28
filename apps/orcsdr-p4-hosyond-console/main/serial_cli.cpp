@@ -236,6 +236,11 @@ void cmd_volume(const char* arg) {
 }
 
 void cmd_wifi(char* args) {
+  if (std::strcmp(args, "LINKLOSS") == 0) {
+    wifi_app::simulate_link_loss();
+    std::printf("RTL_WIFI_LINKLOSS_OK\n");
+    return;
+  }
   if (std::strcmp(args, "STATUS") == 0) {
     const wifi_app::Status w = wifi_app::status();
     std::printf("RTL_WIFI_STATUS started=%d link_failed=%d connected=%d connecting=%d ssid=%s ip=%s rssi=%d c6=%s stage=%s code=%d saved=%d\n",

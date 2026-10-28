@@ -3,6 +3,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -25,6 +26,7 @@ char g_saved_pass[65];
 char g_stage[24];
 int g_code = 0;
 int64_t g_retry_at_us = 0;
+int g_losses = 0;
 
 // When the SDIO link to the C6 breaks, the ESP-Hosted driver logs two errors per millisecond. At 115200 baud
 // that stalls every task that prints (the whole UI crawled). This hook notices the flood, drops it and flags the
@@ -33,6 +35,33 @@ std::atomic<bool> g_sdio_lost{false};
 int64_t g_window_start_us = 0;
 int g_window_count = 0;
 vprintf_like_t g_prev_vprintf = nullptr;
+
+// The last log lines before the link broke, kept in PSRAM so the first failure is visible in the dump.
+constexpr int kRing = 48, kLine = 112;
+char* g_ring = nullptr;  // kRing * kLine
+std::atomic<uint32_t> g_ring_next{0};
+int g_sdio_stored = 0;
+
+void ring_store(const char* text) {
+  if (!g_ring) return;
+  const uint32_t i = g_ring_next.fetch_add(1) % kRing;
+  char* slot = g_ring + i * kLine;
+  std::snprintf(slot, kLine, "%.*s", kLine - 1, text);
+  for (char* c = slot; *c; ++c) if (*c == '\n' || *c == '\r') *c = ' ';
+}
+
+void ring_dump() {
+  if (!g_ring) return;
+  std::printf("WIFI_LINK_LOSS_DUMP uptime_s=%lld internal_free=%u internal_min_free=%u internal_largest=%u dma_free=%u\n",
+              static_cast<long long>(esp_timer_get_time() / 1000000), unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+              unsigned(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)), unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)),
+              unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)));
+  const uint32_t next = g_ring_next.load();
+  for (int k = 0; k < kRing; ++k) {
+    const char* line = g_ring + ((next + k) % kRing) * kLine;
+    if (line[0]) std::printf("  | %s\n", line);
+  }
+}
 
 int log_hook(const char* fmt, va_list args) {
   char head[96];
@@ -50,6 +79,12 @@ int log_hook(const char* fmt, va_list args) {
       g_sdio_lost = true;
       return 0;
     }
+    if (g_sdio_stored < 6) {  // the first errors of an incident are the interesting ones
+      ++g_sdio_stored;
+      ring_store(head);
+    }
+  } else {
+    ring_store(head);
   }
   return g_prev_vprintf ? g_prev_vprintf(fmt, args) : vprintf(fmt, args);
 }
@@ -75,6 +110,7 @@ void save(const char* ssid, const char* pass) {
 void task(void*) {
   // Let the display, touch and receiver come up first; a missing or mismatched C6 must never delay them.
   vTaskDelay(pdMS_TO_TICKS(4000));
+  g_ring = static_cast<char*>(heap_caps_calloc(kRing, kLine, MALLOC_CAP_SPIRAM));
   g_prev_vprintf = esp_log_set_vprintf(log_hook);
   load_saved();
   {
@@ -117,17 +153,23 @@ void task(void*) {
     }
     if (g_sdio_lost.exchange(false) && g_started.load()) {
       ESP_LOGE(TAG, "SDIO link to the C6 lost: shutting Wi-Fi down");
+      ring_dump();
       orcsdr::wifi::stop();
       g_started = false;
       g_connecting = false;
       std::snprintf(g_stage, sizeof(g_stage), "sdio_link_lost");
-      g_retry_at_us = esp_timer_get_time() + 15000000;  // try the link again once
+      ++g_losses;
+      g_sdio_stored = 0;
+      if (g_losses <= 5) g_retry_at_us = esp_timer_get_time() + 15000000LL * g_losses;  // the restart pulses the C6 reset
     }
     if (!g_started.load() && g_retry_at_us && esp_timer_get_time() > g_retry_at_us && g_power.load()) {
       g_retry_at_us = 0;
       g_sdio_lost = false;
       const bool ok = orcsdr::wifi::start();
-      if (ok) g_started = true;
+      if (ok) {
+        g_started = true;
+        g_stage[0] = 0;
+      }
       ESP_LOGI(TAG, "Wi-Fi restart after link loss: %s", ok ? "ok" : "failed");
     }
     if (!g_started.load()) {
@@ -170,6 +212,12 @@ void task(void*) {
       std::snprintf(g_pending_pass, sizeof(g_pending_pass), "%s", g_saved_pass);
       g_pending_remember = false;
       g_connect_pending = true;
+    }
+    static int64_t last_mem_us = 0;
+    if (now - last_mem_us > 600000000LL) {  // every 10 min: lets a log show the trend before a failure
+      last_mem_us = now;
+      ESP_LOGI(TAG, "mem: internal_free=%u min_free=%u dma_free=%u", unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+               unsigned(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)), unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)));
     }
     vTaskDelay(pdMS_TO_TICKS(200));
   }
@@ -221,6 +269,7 @@ bool connect(const char* ssid, const char* password, bool remember) {
   return true;
 }
 void disconnect() { g_disconnect_pending = true; }
+void simulate_link_loss() { g_sdio_lost = true; }
 void set_power(bool enabled) {
   g_power = enabled;
   g_power_changed = true;
