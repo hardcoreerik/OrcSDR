@@ -1,5 +1,7 @@
 #include "wifi_app.hpp"
 #include <atomic>
+#include <cstdarg>
+#include <cstdio>
 #include <cstring>
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -22,6 +24,35 @@ char g_saved_ssid[33];
 char g_saved_pass[65];
 char g_stage[24];
 int g_code = 0;
+int64_t g_retry_at_us = 0;
+
+// When the SDIO link to the C6 breaks, the ESP-Hosted driver logs two errors per millisecond. At 115200 baud
+// that stalls every task that prints (the whole UI crawled). This hook notices the flood, drops it and flags the
+// link as lost so the Wi-Fi task can shut it down.
+std::atomic<bool> g_sdio_lost{false};
+int64_t g_window_start_us = 0;
+int g_window_count = 0;
+vprintf_like_t g_prev_vprintf = nullptr;
+
+int log_hook(const char* fmt, va_list args) {
+  char head[96];
+  va_list copy;
+  va_copy(copy, args);
+  vsnprintf(head, sizeof(head), fmt, copy);
+  va_end(copy);
+  if (std::strstr(head, "eh_sdio") || std::strstr(head, "sdmmc_io")) {
+    const int64_t now = esp_timer_get_time();
+    if (now - g_window_start_us > 1000000) {
+      g_window_start_us = now;
+      g_window_count = 0;
+    }
+    if (++g_window_count > 40) {
+      g_sdio_lost = true;
+      return 0;
+    }
+  }
+  return g_prev_vprintf ? g_prev_vprintf(fmt, args) : vprintf(fmt, args);
+}
 
 void load_saved() {
   orcsdr::NvsStore s;
@@ -44,6 +75,7 @@ void save(const char* ssid, const char* pass) {
 void task(void*) {
   // Let the display, touch and receiver come up first; a missing or mismatched C6 must never delay them.
   vTaskDelay(pdMS_TO_TICKS(4000));
+  g_prev_vprintf = esp_log_set_vprintf(log_hook);
   load_saved();
   {
     orcsdr::NvsStore s;
@@ -82,6 +114,21 @@ void task(void*) {
         if (ok) g_started = true;
         ESP_LOGI(TAG, "Wi-Fi powered on: %s", ok ? "ok" : "failed");
       }
+    }
+    if (g_sdio_lost.exchange(false) && g_started.load()) {
+      ESP_LOGE(TAG, "SDIO link to the C6 lost: shutting Wi-Fi down");
+      orcsdr::wifi::stop();
+      g_started = false;
+      g_connecting = false;
+      std::snprintf(g_stage, sizeof(g_stage), "sdio_link_lost");
+      g_retry_at_us = esp_timer_get_time() + 15000000;  // try the link again once
+    }
+    if (!g_started.load() && g_retry_at_us && esp_timer_get_time() > g_retry_at_us && g_power.load()) {
+      g_retry_at_us = 0;
+      g_sdio_lost = false;
+      const bool ok = orcsdr::wifi::start();
+      if (ok) g_started = true;
+      ESP_LOGI(TAG, "Wi-Fi restart after link loss: %s", ok ? "ok" : "failed");
     }
     if (!g_started.load()) {
       vTaskDelay(pdMS_TO_TICKS(250));
