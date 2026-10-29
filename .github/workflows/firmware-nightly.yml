@@ -114,8 +114,17 @@ jobs:
       - name: Build ESP-Hosted C6 image
         if: steps.c6cache.outputs.cache-hit != 'true'
         run: . "$IDF_PATH/export.sh" >/dev/null && bash tools/ci/build-hosted-c6.sh --patch-idf .ci-cache/hosted-c6 "$RUNNER_TEMP/esp-hosted"
+      - name: Restore world map
+        id: worldcache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .ci-cache/world-map
+          key: world-map-9aea08772bacf1f0-${{ hashFiles('tools/ci/fetch-world-map.sh') }}
+      - name: Fetch world map
+        # Re-verifies the SHA-256 on a cache hit as well.
+        run: bash tools/ci/fetch-world-map.sh .ci-cache/world-map
       - name: Build Tab5 firmware
-        run: . "$IDF_PATH/export.sh" >/dev/null && bash tools/ci/build-tab5.sh --c6 .ci-cache/hosted-c6/esp_hosted_tab5_c6.bin --out out --build-id "${{ steps.meta.outputs.build_id }}"
+        run: . "$IDF_PATH/export.sh" >/dev/null && bash tools/ci/build-tab5.sh --c6 .ci-cache/hosted-c6/esp_hosted_tab5_c6.bin --world-map .ci-cache/world-map/world-overview-z4.pmtiles --out out --build-id "${{ steps.meta.outputs.build_id }}"
       - name: Package
         env:
           SHORT: ${{ steps.meta.outputs.short }}

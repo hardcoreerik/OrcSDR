@@ -14,11 +14,16 @@ enum class ActionKind : uint8_t {
   play_event_clip,  // value = event sequence: verify and play the clip that covers it
   control_start,
   control_stop,
-  toggle_chime
+  toggle_chime,
+  veil_open,        // value = event sequence to inspect (0 = the live stream)
+  veil_close,
+  veil_toggle,      // analysis on / off
+  veil_alphabet,    // next display alphabet (never restarts analysis)
+  veil_intention    // next preset intention (restarts the stream)
 };
 
 // Full-body views opened from a button; the tab bar stays and a tab tap closes them.
-enum class Overlay : uint8_t { none, scrub, control, session };
+enum class Overlay : uint8_t { none, scrub, control, session, veil };
 // Real receiver demodulators only. Sweep patterns and generated audio are not demodulators.
 constexpr const char* kModeNames[] = {"NFM", "WFM", "AM", "USB", "LSB"};
 constexpr int kModeCount = 5;

@@ -16,6 +16,34 @@ Branch `claude/dead-air-dashboard-review-8c2b12`. Host tests and the native ESP-
 - **Validation:** host tests pass; the native ESP-IDF 5.5.4 build is clean; flashed to COM39 and the Environment tab opened over serial. The panel itself (layout, colours, flicker) has **not** been looked at.
 - Tests: `dead_air_envhistory_tests` (minute averaging, scaling, gaps, late and bad samples, the 24-hour wrap, column summaries) and a new renderer block (lines per chart, gap breaks, window buttons, cursor, no full-screen clear on repeated updates).
 
+### Added (VEIL-26 optional Elder Futhark display)
+
+- ALPHABET cycles LATIN / ELDER FUTHARK beside INTENTION. The symbolic panel
+  shows a line-drawn rune and its conventional name beside the unchanged Latin
+  letter, word and gematria. Event inspection uses the saved state with the
+  currently selected alphabet. Every session starts in LATIN.
+- Authenticated `RTL_DEAD_AIR VEIL ALPHABET LATIN|ELDER` shares the UI setter;
+  status and replies report the alphabet id. Selection never restarts analysis.
+- Interpretation records add alphabet id, rune index and ASCII name. The rule,
+  modulo bias, historical caveats and omissions are in `VEIL26_RUNES.md`.
+- Host tests cover independent integer vectors, recomputation from records,
+  glyph validity, bounds at several sizes, canonical stream independence,
+  runic event inspection and repeated partial redraws. Device rendering, touch
+  and serial operation are unverified; no hardware was flashed or accessed.
+
+### Added (VEIL-26 / ESOTERICA: an optional symbolic analysis engine)
+
+Branch `claude/dead-air-veil26`. Full design, algorithm, provenance gaps and limits: `VEIL26.md`.
+
+- **What it does:** turns the measured tuned frequency and level into a letter, a dictionary word and two gematria sums with a fixed, reproducible recipe (SHA-256 seed from an intention, a 32-bit state recurrence, Python rounding). Off at every session start; opt-in from **Overview > VEIL-26** or **Events > VEIL-26**.
+- **What it does not do:** it is not a detector. It adds no acquisition and no event detector, never raises or edits a Dead Air event, and its output is labelled SYMBOLIC / INTERPRETED beside a MEASURED panel. The overlay says in words that the symbols are not messages or detections, and that an RTL-SDR cannot receive ELF/Schumann signals.
+- **Inputs:** at most one frame a second from a usable (valid, settled, tuned) receiver observation, and one frame per RF rise or audio burst. Retunes, unusable observations and sweeps are counted breaks, never fabricated frames.
+- **Records:** separate file `veil26_<session>.jsonl` (config, per-event and every-30-s frame records, summary), always `"interpreted":true`, each recomputable from its own fields. A bounded 16-slot queue and at most four lines per 100 ms keep storage traffic bounded; a write failure ends the file for the session without touching the event journal.
+- **UI:** a full-body overlay in the existing M5GFX style; the six tabs are unchanged. Repeated frames repaint only what changed (tested: no full-screen fill). Event inspection shows an event's symbols or says why it was not analysed.
+- **Serial:** `RTL_DEAD_AIR VEIL` (state and counters); authenticated `RTL_DEAD_AIR VEIL ON|OFF|INTENT <text>`.
+- **Known gaps:** the original VEIL-26 v0.1.0 archive was not available, so the 32-word dictionary is a **placeholder** (`placeholder-0`, flagged in every record) and the engine is checked against an independent implementation of the documented recipe, not the original code. The frame-counter base (0) and the exact 1 MHz boundary are assumptions. Audio-frequency/spectral input is staged, not built. Not flashed; host tests and the native build only.
+- Tests: `dead_air_veil26_tests`, `dead_air_veil26_log_tests`, and an overlay block in `dead_air_render_tests`.
+
 ### Added (ENV III sensor: the Environment tab now has a data path)
 
 - **ENV III driver:** until now the Environment tab and the Overview card had their fields but nothing filled them, so a module plugged into Port A showed "MODULE NOT CONNECTED" however it was wired. Dead Air now reads the Unit ENV III on the Tab5's Port A (SDA GPIO53, SCL GPIO54): temperature and humidity from the SHT30 (0x44, CRC-8 checked) and pressure from the QMP6988 (0x70, chip id checked, compensation as in the manufacturer's reference code).

@@ -29,6 +29,8 @@
 #include "dead_air_sd_journal.hpp"
 #include "dead_air_stats.hpp"
 #include "dead_air_sweep.hpp"
+#include "dead_air_veil26.hpp"
+#include "dead_air_veil26_log.hpp"
 #include <esp_log.h>
 #include "memory_reclaim.hpp"
 #include "orcsdr_storage.hpp"
@@ -45,6 +47,9 @@ constexpr uint32_t kSpectrumFreshMs = 1000;
 constexpr uint32_t kHistoryMs = 500;            // one RF strip sample per 500 ms: kRfHistory of them is the last minute
 static_assert(kClipInfoSeqs >= kClipMaxTriggers, "ClipInfo must hold every event a clip can cover");
 constexpr uint32_t kWorkerStopWaitMs = 1500;
+constexpr const char* kVeilIntentions[] = {"DEAD AIR", "ARE YOU THERE", "LISTEN", "ANYONE", "OPEN CHANNEL", "NO QUESTION"};
+constexpr uint8_t kVeilIntentionCount = sizeof(kVeilIntentions) / sizeof(kVeilIntentions[0]);
+constexpr uint8_t kVeilCustom = 255;            // the intention was set over serial
 constexpr uint32_t kMaxClipsPerSession = 40;  // about 40 MB; keeps a busy session from filling the card
 constexpr uint64_t kRingMarginSamples = 8192;  // never trust PCM this close to being overwritten by the next DSP block
 // Full scale matches the receiver's IQ meter (rtl_signal_dbfs): a CU8 complex sample with both axes
@@ -240,6 +245,21 @@ struct State {
   uint32_t chime_start_ms = 0, chime_last_ms = 0;
   int16_t* chime_pcm = nullptr;           // PSRAM, built the first time the chime is switched on
   uint32_t chime_samples = 0;
+  // VEIL-26: optional symbolic analysis of the measured level (see dead_air_veil26.hpp). Off at every session start; while
+  // it is off nothing runs and nothing is written. UI-task fields first, then the worker-owned file.
+  veil26::Stream veil;
+  bool veil_on = false;
+  bool veil_cfg_pending = false;          // the config record could not be queued yet
+  runes::Alphabet veil_alphabet = runes::Alphabet::latin;
+  uint8_t veil_intent = 0;                // index into kVeilIntentions, or kVeilCustom
+  uint32_t veil_inspect_seq = 0;          // event the VEIL-26 overlay shows (0 = the live stream)
+  VeilFrameView veil_live;
+  VeilFrameView veil_events[kEventCapacity];  // slot = event sequence % kEventCapacity, like the event ring
+  veil26::RecordQueue veil_queue;         // UI task -> SD worker, bounded; a full queue drops and counts
+  std::atomic<uint32_t> veil_written{0}, veil_write_failures{0};
+  std::atomic<bool> veil_logging{false};  // the interpretation file is open
+  storage::File veil_file;                // worker only
+  bool veil_failed = false;               // worker only: the file could not be opened or written
 };
 
 Hooks g_hooks;
@@ -511,6 +531,59 @@ void write_clip_summary(State& s) {
   }
 }
 
+// VEIL-26 interpretation records go to their own file, never to the measured-event journal. The worker opens it on the first
+// queued line, writes a few lines per pass (so storage traffic is bounded by the queue), and gives up on the file for the
+// session on the first failure; after that queued lines are discarded and counted, and live detection is untouched.
+struct VeilWriter final : veil26::LineWriter {
+  storage::File* file;
+  explicit VeilWriter(storage::File* f) : file(f) {}
+  bool append(const char* line, size_t length) override {
+    return file->write(reinterpret_cast<const uint8_t*>(line), length) == length;
+  }
+};
+
+void service_veil(State& s, size_t max_lines) {
+  if (!s.veil_queue.pending()) return;
+  if (s.veil_failed) {  // the file is gone for this session: drain so the UI keeps getting honest counters
+    char scratch[veil26::kLineBytes];
+    size_t n = 0;
+    for (size_t i = 0; i < max_lines && s.veil_queue.take(scratch, sizeof(scratch), &n); ++i)
+      s.veil_write_failures.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  if (!s.veil_file) {
+    storage::FileSystem& fs = storage::filesystem();
+    char path[72];
+    const int n = std::snprintf(path, sizeof(path), "/orcsdr/dead_air/veil26_%010lu.jsonl",
+                                static_cast<unsigned long>(s.worker.session.load(std::memory_order_acquire)));
+    if (n <= 0 || static_cast<size_t>(n) >= sizeof(path) || fs.exists(path) || !(s.veil_file = fs.open(path, FILE_APPEND))) {
+      s.veil_failed = true;
+      s.veil_logging.store(false, std::memory_order_relaxed);
+      return;
+    }
+    s.veil_logging.store(true, std::memory_order_relaxed);
+  }
+  VeilWriter writer(&s.veil_file);
+  bool failed = false;
+  const size_t written = veil26::drain(s.veil_queue, writer, max_lines, &failed);
+  s.veil_written.fetch_add(static_cast<uint32_t>(written), std::memory_order_relaxed);
+  if (failed || (written && !s.veil_file.sync())) {
+    s.veil_failed = true;
+    s.veil_logging.store(false, std::memory_order_relaxed);
+    s.veil_write_failures.fetch_add(1, std::memory_order_relaxed);
+  }
+}
+
+void finish_veil(State& s) {
+  service_veil(s, veil26::RecordQueue::kSlots);  // what the UI task queued just before the stop, summary included
+  if (s.veil_file) {
+    (void)s.veil_file.sync();
+    (void)s.veil_file.close();
+  }
+  s.veil_file = storage::File();
+  s.veil_logging.store(false, std::memory_order_relaxed);
+}
+
 // Dedicated, low-priority storage worker. It owns the SD sink and journal; the UI task only
 // pushes events into the lock-free queue and reads the health atomics.
 void release_audio_buffers(State& s);
@@ -537,6 +610,7 @@ void worker_main(void* arg) {
   while (open && !w.stop.load(std::memory_order_acquire)) {
     s->journal.drain(s->queue, s->sink, 8);
     service_tickets(*s);
+    service_veil(*s, 4);  // at most four interpretation lines per 100 ms pass
     w.saved.store(s->journal.saved(), std::memory_order_relaxed);
     w.missing.store(s->journal.missing(), std::memory_order_relaxed);
     w.dropped.store(s->queue.dropped(), std::memory_order_relaxed);
@@ -550,6 +624,7 @@ void worker_main(void* arg) {
   if (open) {
     service_tickets(*s);  // a ticket posted just before the stop
     write_clip_summary(*s);
+    finish_veil(*s);
     const bool clean = s->journal.finish(s->queue, s->sink);
     const bool closed = s->sink.close();
     w.saved.store(s->journal.saved(), std::memory_order_relaxed);
@@ -559,6 +634,7 @@ void worker_main(void* arg) {
   } else if (s->sink.opened()) {
     (void)s->sink.close();
   }
+  if (!open) finish_veil(*s);  // the journal failed or never opened: still close any interpretation file and count the rest
   release_audio_buffers(*s);  // the screen is gone and this task was the last reader of the rings
   // The final state (stopped/failed) stays published for the dashboard.
   w.alive.store(false, std::memory_order_release);
@@ -718,11 +794,14 @@ void trigger_clip(State& s, ClipChannel& ch, const Event& e) {
   }
 }
 
+void veil_on_event(State& s, const Event& e);
+
 void on_event(void* context, const Event& e) {
   State* s = static_cast<State*>(context);
   enqueue_event(&s->queue, e);  // the journal first: this never depends on audio
   trigger_clip(*s, s->rx, e);
   trigger_clip(*s, s->mic, e);
+  veil_on_event(*s, e);         // after the measured record is queued; an interpretation never delays or replaces it
 }
 
 void remember_clip(State& s, const ClipChannel& ch, const ClipResult& r) {
@@ -974,6 +1053,12 @@ bool start_worker() {
   new (&g_state->queue) EventQueue();
   g_state->notes.head.store(0, std::memory_order_relaxed);  // no worker is alive: nothing is reading the notes
   g_state->notes.tail.store(0, std::memory_order_relaxed);
+  g_state->veil_queue.reset();                              // likewise for the interpretation queue and its file
+  g_state->veil_written.store(0, std::memory_order_relaxed);
+  g_state->veil_write_failures.store(0, std::memory_order_relaxed);
+  g_state->veil_logging.store(false, std::memory_order_relaxed);
+  g_state->veil_file = storage::File();
+  g_state->veil_failed = false;
   w.alive.store(true, std::memory_order_release);
   set_state(w, RecorderState::starting);
   if (xTaskCreatePinnedToCoreWithCaps(worker_main, "dead_air_sd", 12288, g_state, 1, &w.task, 0,
@@ -1039,6 +1124,123 @@ void post_session_note(State& s, uint32_t now) {
       hi, lo, static_cast<unsigned long>(m.longest_quiet_s), static_cast<unsigned>(m.channels),
       static_cast<unsigned long>(m.sweeps), static_cast<unsigned long>(m.clips));
   (void)post_note(s, line, n);
+}
+
+// ---- VEIL-26 (UI task only) --------------------------------------------------------------------------------------------
+// Feeds the engine from the observations Dead Air already makes: no new acquisition, no new detector. A frame is made at
+// most once a second from a usable observation (valid, settled, a tuned frequency, a finite level) and once per RF or
+// audio event. Anything else is a gap: the stream is not advanced and the break is counted. The engine runs in a few
+// dozen integer operations per frame, off every DSP path.
+void veil_fill(VeilFrameView& v, const veil26::Frame& f, uint32_t hz, double level, uint32_t t_ms, uint32_t utc,
+               uint32_t event_seq, const char* source) {
+  v = VeilFrameView{};
+  v.valid = true;
+  v.frame = f.index;
+  v.monotonic_ms = t_ms;
+  v.unix_time = utc;
+  v.frequency_hz = hz;
+  v.event_sequence = event_seq;
+  v.level_dbfs = static_cast<float>(level);
+  v.freq_code = static_cast<int32_t>(std::clamp<int64_t>(f.codes.frequency, INT32_MIN, INT32_MAX));
+  v.level_code = static_cast<int32_t>(std::clamp<int64_t>(f.codes.level, INT32_MIN, INT32_MAX));
+  v.state_in = f.state_in;
+  v.state = f.state;
+  v.letter_number = f.letter_number;
+  v.letter = f.letter;
+  v.word_index = f.word_index;
+  std::snprintf(v.word, sizeof(v.word), "%s", f.word);
+  v.a1z26 = static_cast<uint16_t>(f.word_a1z26);
+  v.pythagorean = static_cast<uint16_t>(f.word_pythagorean);
+  std::snprintf(v.source, sizeof(v.source), "%s", source);
+}
+
+bool veil_post_config(State& s, uint32_t now) {
+  char line[veil26::kLineBytes];
+  const size_t n = veil26::format_config(s.veil.intention(), s.veil.seed(), g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0, now, line, sizeof(line), s.veil_alphabet);
+  return n != 0 && s.veil_queue.post(line, n);
+}
+
+void veil_post_record(State& s, const veil26::Frame& f, veil26::Trigger trigger, uint32_t event_seq, const char* event_kind,
+                      uint32_t hz, double level, const char* source, uint32_t now, uint32_t utc) {
+  if (s.veil_cfg_pending) {  // a record is only useful after the config that explains it
+    if (!veil_post_config(s, now)) return;  // counted by the queue as dropped when it was full
+    s.veil_cfg_pending = false;
+  }
+  veil26::RecordInput in;
+  in.frame = f;
+  in.alphabet = s.veil_alphabet;
+  in.intention = s.veil.intention();
+  in.seed = s.veil.seed();
+  in.trigger = trigger;
+  in.event_sequence = event_seq;
+  in.event_kind = event_kind;
+  in.monotonic_ms = now;
+  in.unix_time = utc;
+  in.frequency_hz = hz;
+  in.level_dbfs = level;
+  in.level_source = source;
+  in.config_revision = s.config_revision;
+  char line[veil26::kLineBytes];
+  const size_t n = veil26::format_record(in, line, sizeof(line));
+  if (n) (void)s.veil_queue.post(line, n);
+}
+
+// Starts the stream again from an intention. Nothing carries over: frame counter, letters, live frame and the per-event
+// interpretations all restart, and a new config record names the intention for the file.
+void veil_restart(State& s, const char* intention) {
+  s.veil.restart(intention);
+  s.veil_live = VeilFrameView{};
+  for (VeilFrameView& v : s.veil_events) v = VeilFrameView{};
+  s.veil_cfg_pending = s.veil_on;
+}
+
+void veil_observe(State& s, const RfObservation& obs, uint32_t now) {
+  if (!s.veil_on) return;
+  if (s.veil_cfg_pending && veil_post_config(s, now)) s.veil_cfg_pending = false;
+  veil26::Observation o;
+  o.now_ms = now;
+  o.valid = obs.valid;
+  o.settled = obs.settled;
+  o.frequency_hz = obs.frequency_hz;
+  o.config_revision = obs.configuration_revision;
+  o.level_dbfs = static_cast<double>(obs.level_dbfs);
+  veil26::Frame f;
+  bool log_due = false;
+  if (s.veil.observe(o, &f, &log_due) != veil26::Stream::Result::frame) return;
+  veil_fill(s.veil_live, f, obs.frequency_hz, obs.level_dbfs, now, obs.unix_time, 0, "rf");
+  if (log_due) veil_post_record(s, f, veil26::Trigger::sample, 0, "", obs.frequency_hz, obs.level_dbfs, "rf", now, obs.unix_time);
+}
+
+// An RF rise or an audio burst has a tuned frequency and a measured dBFS level: exactly the pair the frequency-log
+// convention quantizes. Environment events and marks have no such pair, so they are not interpreted (and say so).
+void veil_on_event(State& s, const Event& e) {
+  if (!s.veil_on || (e.source != Source::rf && e.source != Source::audio)) return;
+  veil26::Frame f;
+  if (!s.veil.observe_event(e.frequency_hz, static_cast<double>(e.value), &f)) return;
+  const char* source = e.source == Source::rf ? "rf" : "audio";
+  veil_fill(s.veil_events[e.sequence % kEventCapacity], f, e.frequency_hz, e.value, e.monotonic_ms, e.unix_time, e.sequence, source);
+  s.veil_live = s.veil_events[e.sequence % kEventCapacity];
+  veil_post_record(s, f, veil26::Trigger::event, e.sequence, kind_name(e.kind), e.frequency_hz, e.value, source,
+                   e.monotonic_ms, e.unix_time);
+}
+
+veil26::Counters veil_counters(const State& s) {
+  veil26::Counters c;
+  c.frames = s.veil.frames();
+  c.gaps = s.veil.gaps();
+  c.skipped_invalid = s.veil.skipped();
+  c.records_posted = s.veil_queue.posted();
+  c.records_dropped = s.veil_queue.dropped();
+  c.records_written = s.veil_written.load(std::memory_order_relaxed);
+  c.write_failures = s.veil_write_failures.load(std::memory_order_relaxed);
+  return c;
+}
+
+void veil_post_summary(State& s) {
+  if (!s.veil_on) return;
+  char line[veil26::kLineBytes];
+  const size_t n = veil26::format_summary(veil_counters(s), line, sizeof(line));
+  if (n) (void)s.veil_queue.post(line, n);
 }
 
 // Every kTraceStepMs: one RF and one audio sample into the short ring, and into each trace still collecting its +10 s.
@@ -1169,6 +1371,33 @@ void build_snapshot(uint32_t now) {
   n.rf_history_seq = s.hist_seq;
   n.summary = s.stats.summary(now, s.rx.saved.load(std::memory_order_relaxed) + s.mic.saved.load(std::memory_order_relaxed));
   n.chime_on = s.chime_on;
+  {
+    VeilView& v = n.veil;
+    v.alphabet = s.veil_alphabet;
+    v.enabled = s.veil_on;
+    v.logging = s.veil_logging.load(std::memory_order_relaxed);
+    std::snprintf(v.intention, sizeof(v.intention), "%s", s.veil.intention());
+    v.seed = s.veil.seed();
+    const veil26::Counters c = veil_counters(s);
+    v.frames = c.frames;
+    v.gaps = c.gaps;
+    v.skipped = c.skipped_invalid;
+    v.posted = c.records_posted;
+    v.dropped = c.records_dropped;
+    v.written = c.records_written;
+    v.write_failures = c.write_failures;
+    v.live = s.veil_live;
+    std::snprintf(v.letters, sizeof(v.letters), "%s", s.veil.letters());
+    v.seq_a1z26 = static_cast<uint16_t>(s.veil.sequence_a1z26());
+    v.seq_pythagorean = static_cast<uint16_t>(s.veil.sequence_pythagorean());
+    v.inspect_seq = s.veil_inspect_seq;
+    v.event = VeilFrameView{};
+    if (s.veil_inspect_seq) {
+      const VeilFrameView& e = s.veil_events[s.veil_inspect_seq % kEventCapacity];
+      if (e.valid && e.event_sequence == s.veil_inspect_seq) v.event = e;  // else: that event was not analysed
+    }
+    std::snprintf(v.dictionary, sizeof(v.dictionary), "%s", veil26::kDictionaryId);
+  }
   n.map = s.map;
   ControlView& cv = n.control;
   cv = ControlView{};
@@ -1311,6 +1540,15 @@ bool visibly_changed(const Snapshot& a, const Snapshot& b) {
       if (a.scrub.found != b.scrub.found || a.scrub.post_filled != b.scrub.post_filled ||
           a.scrub.cursor_valid != b.scrub.cursor_valid || a.scrub.cursor_ms / 100 != b.scrub.cursor_ms / 100) return true;
       break;
+    case Overlay::veil:
+      if (a.veil.alphabet != b.veil.alphabet || a.veil.live.state != b.veil.live.state ||
+          a.veil.event.state != b.veil.event.state || a.veil.enabled != b.veil.enabled || a.veil.logging != b.veil.logging || a.veil.live.valid != b.veil.live.valid ||
+          a.veil.live.frame != b.veil.live.frame || a.veil.live.event_sequence != b.veil.live.event_sequence ||
+          a.veil.frames != b.veil.frames || a.veil.gaps != b.veil.gaps || a.veil.dropped != b.veil.dropped ||
+          a.veil.written != b.veil.written || a.veil.write_failures != b.veil.write_failures ||
+          a.veil.skipped / 20u != b.veil.skipped / 20u || a.veil.event.valid != b.veil.event.valid ||
+          a.veil.inspect_seq != b.veil.inspect_seq || a.veil.seed != b.veil.seed) return true;
+      break;
     default: break;
   }
   return environment_moved(a, b) || a.chime_on != b.chime_on || a.map.visited != b.map.visited || a.map.count != b.map.count ||
@@ -1431,6 +1669,12 @@ void open() {
   s.chime_on = false;  // the chime is off at every session start; only a tap turns it on
   s.chime_active = false;
   s.chime_last_ms = 0;
+  s.veil_on = false;   // VEIL-26 is opt-in and off at every session start, like the chime and the microphone
+  s.veil_alphabet = runes::Alphabet::latin;
+  s.veil_intent = 0;
+  s.veil_inspect_seq = 0;
+  s.veil_cfg_pending = false;
+  veil_restart(s, kVeilIntentions[0]);
   (void)start_worker();
   if (g_hooks.set_demod) g_hooks.set_demod(0);  // NFM, the browse band's own demodulator
   build_snapshot(now);
@@ -1465,6 +1709,7 @@ void close() {
     post_control_note(*g_state);
   }
   post_session_note(*g_state, millis());  // the worker writes it before it closes the file
+  veil_post_summary(*g_state);
   dead_air::leave();
   g_state->model.set_listener(nullptr, nullptr);
   if (g_hooks.release_demod) g_hooks.release_demod();
@@ -1562,6 +1807,7 @@ void tick() {
     } else {
       s.model.observe_rf(obs);
     }
+    veil_observe(s, obs, now);  // after the detector has seen the sample; off unless the owner switched VEIL-26 on
     s.stats.on_level(now, obs.valid && obs.settled, level);
     if (ready) s.stats.on_frequency(g_hooks.frequency_hz());
     if (s.sweep.running() && obs.valid && ready && g_hooks.frequency_hz() == s.sweep.current_hz() &&
@@ -1804,6 +2050,29 @@ void touch(int32_t x, int32_t y) {
       }
       break;
     case ActionKind::control_stop: g_state->control.stop(millis()); break;  // tick() records the result
+    case ActionKind::veil_open: g_state->veil_inspect_seq = static_cast<uint32_t>(action.value); break;
+    case ActionKind::veil_close: g_state->veil_inspect_seq = 0; break;
+    case ActionKind::veil_toggle: {
+      State& s = *g_state;
+      if (s.veil_on) {
+        veil_post_summary(s);  // the file says how this stretch of analysis ended
+        s.veil_on = false;
+      } else {
+        s.veil_on = true;
+        veil_restart(s, s.veil.intention());
+      }
+      break;
+    }
+    case ActionKind::veil_alphabet:
+      runes::set_alphabet(g_state->veil_alphabet == runes::Alphabet::latin ? runes::Alphabet::elder : runes::Alphabet::latin,
+                          g_state->veil_alphabet, g_state->veil_on, g_state->veil_cfg_pending);
+      break;
+    case ActionKind::veil_intention: {
+      State& s = *g_state;
+      s.veil_intent = s.veil_intent == kVeilCustom ? 0 : static_cast<uint8_t>((s.veil_intent + 1) % kVeilIntentionCount);
+      veil_restart(s, kVeilIntentions[s.veil_intent]);
+      break;
+    }
     case ActionKind::toggle_chime:
       if (g_state->chime_on) { g_state->chime_on = false; end_chime(*g_state); }
       else g_state->chime_on = build_chime(*g_state);
@@ -1933,6 +2202,57 @@ void describe_env(char* out, size_t size) {
                 static_cast<unsigned long>(c.sht_ok), static_cast<unsigned long>(c.sht_crc), static_cast<unsigned long>(c.sht_bus),
                 static_cast<unsigned long>(c.qmp_ok), static_cast<unsigned long>(c.qmp_bad), static_cast<unsigned long>(c.qmp_bus),
                 static_cast<unsigned long>(c.attaches));
+}
+
+void describe_veil(char* out, size_t size) {
+  if (!out || !size) return;
+  if (!g_state || !g_open) { std::snprintf(out, size, "DEAD_AIR_VEIL open=0 (VEIL-26 only runs while Dead Air is open)"); return; }
+  const State& s = *g_state;
+  const veil26::Counters c = veil_counters(s);
+  std::snprintf(out, size,
+                "DEAD_AIR_VEIL open=1 on=%d logging=%d dict=%s alphabet=%s intention=\"%s\" seed=%08lx frames=%lu gaps=%lu skipped=%lu "
+                "posted=%lu dropped=%lu written=%lu write_failures=%lu pending=%lu state=%08lx letters=\"%s\" "
+                "live_hz=%lu live_dbfs=%.1f live_word=%s",
+                s.veil_on ? 1 : 0, s.veil_logging.load(std::memory_order_relaxed) ? 1 : 0, veil26::kDictionaryId, runes::alphabet(s.veil_alphabet).id, s.veil.intention(),
+                static_cast<unsigned long>(s.veil.seed()), static_cast<unsigned long>(c.frames), static_cast<unsigned long>(c.gaps),
+                static_cast<unsigned long>(c.skipped_invalid), static_cast<unsigned long>(c.records_posted),
+                static_cast<unsigned long>(c.records_dropped), static_cast<unsigned long>(c.records_written),
+                static_cast<unsigned long>(c.write_failures), static_cast<unsigned long>(s.veil_queue.pending()),
+                static_cast<unsigned long>(s.veil.state()), s.veil.letters(),
+                static_cast<unsigned long>(s.veil_live.frequency_hz), static_cast<double>(s.veil_live.level_dbfs),
+                s.veil_live.valid ? s.veil_live.word : "-");
+}
+
+bool veil_command(const char* args, char* reply, size_t size) {
+  if (!reply || !size) return false;
+  reply[0] = '\0';
+  if (!args || !g_state || !g_open) { std::snprintf(reply, size, "RTL_DEAD_AIR_VEIL_ERROR not_open"); return false; }
+  State& s = *g_state;
+  if (std::strcmp(args, "ON") == 0) {
+    if (!s.veil_on) { s.veil_on = true; veil_restart(s, s.veil.intention()); }
+  } else if (std::strcmp(args, "OFF") == 0) {
+    if (s.veil_on) { veil_post_summary(s); s.veil_on = false; }
+  } else if (std::strncmp(args, "ALPHABET ", 9) == 0) {
+    runes::Alphabet alphabet;
+    if (!runes::parse(args + 9, &alphabet)) {
+      std::snprintf(reply, size, "RTL_DEAD_AIR_VEIL_ERROR use ALPHABET LATIN|ELDER");
+      return false;
+    }
+    runes::set_alphabet(alphabet, s.veil_alphabet, s.veil_on, s.veil_cfg_pending);
+  } else if (std::strncmp(args, "INTENT ", 7) == 0) {
+    char text[veil26::kMaxIntention + 1] = {};
+    size_t n = 0;
+    for (const char* p = args + 7; *p && n < veil26::kMaxIntention; ++p)
+      if (*p >= 0x20 && *p <= 0x7e) text[n++] = *p;  // printable ASCII only; the file and the screen stay plain text
+    if (n == 0) { std::snprintf(reply, size, "RTL_DEAD_AIR_VEIL_ERROR empty_intention"); return false; }
+    s.veil_intent = kVeilCustom;
+    veil_restart(s, text);
+  } else {
+    std::snprintf(reply, size, "RTL_DEAD_AIR_VEIL_ERROR use ON, OFF, INTENT <text> or ALPHABET LATIN|ELDER");
+    return false;
+  }
+  std::snprintf(reply, size, "RTL_DEAD_AIR_VEIL_OK on=%d alphabet=%s intention=\"%s\"", s.veil_on ? 1 : 0, runes::alphabet(s.veil_alphabet).id, s.veil.intention());
+  return true;
 }
 
 }  // namespace orcsdr::dead_air_app

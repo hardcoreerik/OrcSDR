@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 # Linux/CI port of apps/orcsdr-tab5/tools/build-tab5-idf.ps1 plus the merge/size gate of
 # tools/release/build-m5burner.ps1. Never flashes anything.
-#   tools/ci/build-tab5.sh --c6 <esp_hosted_tab5_c6.bin> --out <dir> [--build-id "nightly abc1234 2026-10-07"]
+#   tools/ci/build-tab5.sh --c6 <esp_hosted_tab5_c6.bin> --world-map <world.pmtiles> --out <dir> [--build-id "nightly abc1234 2026-10-07"]
+# --world-map is the reviewed Natural Earth z0-z4 archive (tools/ci/fetch-world-map.sh); it is passed as
+# ORCSDR_WORLD_MAP exactly like build-tab5-idf.ps1 -WorldMap, so CMake checks its SHA-256 and flashes it
+# to orcmaps_world (0x650000), and the merged image carries the map like a release.
 # Needs ESP-IDF 5.5.4 exported. The required-sdkconfig list and the ESP-Hosted patch list are
 # read from the .ps1 scripts at run time, so Windows and CI builds can't drift apart.
 set -euo pipefail
-c6="" out="" build_id="${ORCSDR_BUILD_ID:-}"
+c6="" world="" out="" build_id="${ORCSDR_BUILD_ID:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --c6) c6=$2; shift 2 ;;
+    --world-map) world=$2; shift 2 ;;
     --out) out=$2; shift 2 ;;
     --build-id) build_id=$2; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -16,6 +20,7 @@ while [ $# -gt 0 ]; do
 done
 if [ ! -f "$c6" ] || [ "$(basename "$c6")" != esp_hosted_tab5_c6.bin ]; then echo "--c6 must name an existing esp_hosted_tab5_c6.bin" >&2; exit 2; fi
 [ -n "$out" ] || { echo "--out is required" >&2; exit 2; }
+[ -f "$world" ] || { echo "--world-map must name the Natural Earth z0-z4 PMTiles archive (tools/ci/fetch-world-map.sh)" >&2; exit 2; }
 idf.py --version | grep -q 'v5\.5\.4' || { echo "ESP-IDF 5.5.4 is required (got: $(idf.py --version))" >&2; exit 2; }
 
 # apps/orcsdr-tab5/dependencies.lock pins esp_rtl_sdr (a git component) by a component_hash that
@@ -30,6 +35,7 @@ app="$repo/apps/orcsdr-tab5"
 tools="$app/tools"
 build="build-native-hosted3"
 c6=$(readlink -f "$c6")
+world=$(readlink -f "$world")
 mkdir -p "$out"; out=$(readlink -f "$out")
 cd "$app"
 
@@ -38,7 +44,7 @@ mkdir -p "$build"
 cp sdkconfig.defaults "$build/sdkconfig"
 idf.py -B "$build" -D "SDKCONFIG=$build/sdkconfig" -D SDKCONFIG_DEFAULTS=sdkconfig.defaults \
   -D ORCSDR_DSP_AB=0 -D ORCSDR_DSP_STAGE_TIMING=1 -D ORCSDR_DSP_LAB=0 -D ORCSDR_C6_FAULT_TEST=0 \
-  -D "C6_FIRMWARE_BIN=$c6" -D "ORCSDR_BUILD_ID=$build_id" reconfigure
+  -D "C6_FIRMWARE_BIN=$c6" -D "ORCSDR_WORLD_MAP=$world" -D "ORCSDR_BUILD_ID=$build_id" reconfigure
 
 # Patches after reconfigure (component manager may re-resolve managed_components/).
 rel=$(git rev-parse --show-prefix); rel=${rel%/}
@@ -81,6 +87,15 @@ esac
 limit=$((app_partition - 0x40000))
 [ "$size" -le "$limit" ] || { echo "P4 image $size B leaves less than 256 KiB in the $((app_partition / 1048576)) MiB app partition" >&2; exit 1; }
 idf.py -B "$build" merge-bin --format raw --output merged-binary.bin
+# The merged image must carry the world map at orcmaps_world, byte for byte (theorc.dev checks this too).
+python3 - "$build/merged-binary.bin" "$world" <<'PY'
+import sys
+merged, world = (open(p, 'rb').read() for p in sys.argv[1:3])
+off = 0x650000
+assert merged[off:off + 8] == b'PMTiles\x03', 'merged image has no PMTiles v3 header at 0x650000'
+assert merged[off:off + len(world)] == world, 'merged image world region differs from the archive'
+print(f'world map ok at 0x{off:x} ({len(world)} bytes)')
+PY
 cp "$build/merged-binary.bin" "$out/merged-binary.bin"
 cp "$build/orcsdr_tab5.elf" "$out/orcsdr_tab5.elf"
 cp "$build/bootloader/bootloader.bin" "$out/bootloader.bin"

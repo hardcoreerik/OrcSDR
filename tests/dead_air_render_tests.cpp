@@ -4,6 +4,7 @@
 #include "dead_air_dashboard.hpp"
 #include "dead_air_envhistory.hpp"
 #include "dead_air_fx.hpp"
+#include "dead_air_runes.hpp"
 #include "screen_controller.hpp"
 #include <cassert>
 #include <cmath>
@@ -26,6 +27,19 @@ static void validate_bounds() {
   }
 }
 int main() {
+  // Exercise the same integer renderer at several actual display sizes.
+  for (unsigned i = 0; i < 24; ++i) for (int height : {16, 37, 64}) {
+    host_display::reset();
+    const auto* glyph = da::runes::glyph(da::runes::Alphabet::elder, i);
+    da::runes::draw(*glyph, height, 3, [](int x0, int y0, int x1, int y1) {
+      M5.Display.drawLine(100 + x0, 200 + y0, 100 + x1, 200 + y1, TFT_WHITE);
+    });
+    assert(!host_display::prims.empty());
+    for (const Prim& p : host_display::prims) {
+      assert(p.x >= 100 && p.y >= 200 && p.x + p.w <= 100 + (height + 1) / 2 && p.y + p.h <= 200 + height);
+    }
+  }
+  host_display::reset();
   da::EventModel model;
   model.reset();
   da::attach_events(&model);
@@ -301,6 +315,120 @@ int main() {
     snap.revision = 25;
     da::update(snap);
   }
+  // VEIL-26 overlay: opens from the Overview, keeps MEASURED and SYMBOLIC apart, never claims more than a recipe output,
+  // follows new frames without clearing the screen, and reports what an event inspection finds (or does not).
+  {
+    const auto no_full_clear = [] {
+      for (const Prim& p : host_display::prims) assert(!(p.kind == Prim::fill && p.w >= 1280 && p.h >= 700));
+    };
+    da::Snapshot vs = snap;
+    vs.receiver_ready = true;
+    vs.receiver_settled = true;
+    vs.frequency_hz = 162400000;
+    std::snprintf(vs.veil.intention, sizeof(vs.veil.intention), "DEAD AIR");
+    std::snprintf(vs.veil.dictionary, sizeof(vs.veil.dictionary), "placeholder-0");
+    vs.veil.seed = 0x8f6059bbu;
+    vs.revision = 100;
+    da::update(vs);
+    assert(displayed("VEIL-26"));  // the Overview button
+    const da::Action open = da::handle_touch(366 + 20, 305 + 20, 6000);
+    assert(open.kind == da::ActionKind::veil_open && open.value == 0 && da::overlay() == da::Overlay::veil);
+    assert(displayed("VEIL-26 / ESOTERICA") && displayed("NO ANALYSIS RUNNING") && displayed("ANALYSIS: OFF"));
+    assert(displayed("INTENTION: DEAD AIR") && displayed("MEASURED") && displayed("SYMBOLIC / INTERPRETED"));
+    assert(displayed("not messages") && displayed("NOT the original VEIL-26 list"));
+    validate_bounds();
+    assert(da::handle_touch(40 + 20, 180 + 20, 6001).kind == da::ActionKind::veil_toggle);
+    assert(da::handle_touch(306 + 20, 180 + 20, 6002).kind == da::ActionKind::veil_intention);
+    assert(da::handle_touch(1048 + 20, 180 + 20, 6003).kind == da::ActionKind::none);  // LIVE STREAM exists only while inspecting
+    // Analysis on with a live frame (the golden first frame of the intention "hello" is not needed here: only display).
+    vs.veil.enabled = true;
+    vs.veil.logging = true;
+    vs.veil.frames = 4;
+    vs.veil.live.valid = true;
+    vs.veil.live.frame = 3;
+    vs.veil.live.frequency_hz = 162400000;
+    vs.veil.live.level_dbfs = -31.7f;
+    vs.veil.live.freq_code = 162400;
+    vs.veil.live.level_code = 1283;
+    vs.veil.live.state_in = 0x71c7425du;
+    vs.veil.live.state = 0xabeb47eeu;
+    vs.veil.live.letter = 'Y';
+    vs.veil.live.letter_number = 25;
+    std::snprintf(vs.veil.live.word, sizeof(vs.veil.live.word), "XENON");
+    vs.veil.live.a1z26 = 72;
+    vs.veil.live.pythagorean = 27;
+    std::snprintf(vs.veil.letters, sizeof(vs.veil.letters), "ABY");
+    vs.veil.seq_a1z26 = 28;
+    vs.veil.seq_pythagorean = 28;
+    vs.revision = 101;
+    host_display::reset();
+    da::update(vs);
+    assert(displayed("ANALYSIS: ON") && displayed("162.400000 MHz") && displayed("-31.7 dBFS (relative)"));
+    assert(displayed("receiver RF level") && displayed("XENON") && displayed("Y  (25)") && displayed("A1Z26 72   PYTH 27"));
+    assert(displayed("71c7425d > abeb47ee") && displayed("freq_code 162400") && displayed("level_code 1283"));
+    assert(displayed("LOG ON") && displayed("written 0  dropped 0  failed 0"));
+    validate_bounds();
+    assert(da::handle_touch(690, 200, 6003).kind == da::ActionKind::veil_alphabet);
+    vs.veil.alphabet = da::runes::Alphabet::elder;
+    host_display::reset(); ++vs.revision;
+    da::update(vs);
+    assert(displayed("ALPHABET: ELDER FUTHARK") && displayed("dagaz") && displayed("XENON"));
+    validate_bounds(); no_full_clear();
+    for (int step = 0; step < 5; ++step) {  // a frame a second: values move, the whole screen is never cleared
+      vs.veil.live.frame = 4 + step;
+      vs.veil.frames = 5 + step;
+      vs.veil.live.letter = static_cast<char>('C' + step);
+      vs.veil.live.state = 0x1000u + static_cast<uint32_t>(step);
+      vs.veil.written = static_cast<uint32_t>(step);
+      std::snprintf(vs.veil.letters, sizeof(vs.veil.letters), "ABY%c", 'C' + step);
+      vs.revision = 103 + step;
+      host_display::reset();
+      da::update(vs);
+      char want[16];
+      std::snprintf(want, sizeof(want), "%c  (25)", 'C' + step);
+      assert(displayed(want) && displayed("00001000") == (step == 0) && displayed("FRAMES"));
+      assert(displayed(da::runes::glyph(da::runes::Alphabet::elder, vs.veil.live.state % 24)->name));
+      validate_bounds();
+      no_full_clear();
+    }
+    vs.veil.dropped = 2;                     // storage trouble is shown, not hidden
+    vs.veil.write_failures = 1;
+    vs.revision = 110;
+    host_display::reset();
+    da::update(vs);
+    assert(displayed("dropped 2") && displayed("failed 1"));
+    // Inspecting an event that was not analysed says so; one that was shows its own numbers.
+    vs.veil.inspect_seq = 9;
+    vs.veil.event = da::VeilFrameView{};
+    vs.revision = 111;
+    host_display::reset();
+    da::update(vs);
+    assert(displayed("EVENT #9") && displayed("This event was not analysed.") && displayed("LIVE STREAM"));
+    assert(!displayed("receiver RF level"));
+    assert(da::handle_touch(1048 + 20, 180 + 20, 6004).kind == da::ActionKind::veil_open);  // back to the live stream
+    vs.veil.event = vs.veil.live;
+    vs.veil.event.event_sequence = 9;
+    vs.veil.event.state = 7;
+    vs.veil.event.frequency_hz = 146520000;
+    vs.veil.event.level_dbfs = -12.5f;
+    std::snprintf(vs.veil.event.source, sizeof(vs.veil.event.source), "audio");
+    std::snprintf(vs.veil.event.word, sizeof(vs.veil.event.word), "BEACON");
+    vs.revision = 112;
+    host_display::reset();
+    da::update(vs);
+    assert(displayed("146.520000 MHz") && displayed("-12.5 dBFS (relative)") && displayed("receiver audio level") && displayed("BEACON"));
+    assert(displayed("wunjo"));
+    validate_bounds();
+    no_full_clear();
+    assert(da::handle_touch(1070 + 20, 128 + 20, 6005).kind == da::ActionKind::veil_close);  // CLOSE tells the app
+    assert(da::overlay() == da::Overlay::none && displayed("INVESTIGATION"));
+    da::handle_touch(366 + 20, 305 + 20, 6006);                                              // reopen; a tab tap closes it too
+    assert(da::overlay() == da::Overlay::veil);
+    assert(da::handle_touch(40, 673, 6007).kind == da::ActionKind::veil_close);
+    assert(da::overlay() == da::Overlay::none);
+    snap.revision = 120;
+    da::update(snap);
+  }
   for (int i = 0; i < 6; ++i) {
     host_display::reset();
     const int x = 20 + i * 210 + 40;
@@ -524,6 +652,15 @@ int main() {
   assert(displayed("2-6 OF 11"));
   da::handle_touch(40 + 20, 568 + 20, 8031);   // NEWER again: back to the newest page
   assert(displayed("1-5 OF 11"));
+  // VEIL-26 from the Events detail: the selected event (#8) is what the overlay inspects, next to its measured row.
+  {
+    assert(displayed("VEIL-26"));
+    const da::Action inspect = da::handle_touch(372 + 20, 568 + 20, 8035);
+    assert(inspect.kind == da::ActionKind::veil_open && inspect.value == 8 && da::overlay() == da::Overlay::veil);
+    assert(displayed("VEIL-26 / ESOTERICA") && displayed("EVENT #8"));
+    assert(da::handle_touch(1070 + 20, 128 + 20, 8036).kind == da::ActionKind::veil_close);
+    assert(da::overlay() == da::Overlay::none && da::page() == da::Page::events);
+  }
   // VIEW CLIP: the clip that covers the selected event (here the second in the list) is opened on Review.
   snap.clip_count = 2;
   std::snprintf(snap.clips[0].name, sizeof(snap.clips[0].name), "s1_e3.wav");

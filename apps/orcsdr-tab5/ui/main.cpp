@@ -20140,6 +20140,22 @@ void process_command(char* command) {
     Serial.println(line);
     return;
   }
+  if (strcmp(command, "RTL_DEAD_AIR VEIL") == 0) {
+    char line[560];
+    orcsdr::dead_air_app::describe_veil(line, sizeof(line));
+    Serial.println(line);
+    return;
+  }
+  if (strncmp(command, "RTL_DEAD_AIR VEIL ", 18) == 0) {
+    if (!authenticated) {
+      Serial.println("RTL_DEAD_AIR_VEIL_ERROR auth_required");
+      return;
+    }
+    char reply[160];
+    orcsdr::dead_air_app::veil_command(command + 18, reply, sizeof(reply));
+    Serial.println(reply);
+    return;
+  }
   if (strcmp(command, "RTL_DEAD_AIR ENV") == 0) {
     char line[420];
     orcsdr::dead_air_app::describe_env(line, sizeof(line));

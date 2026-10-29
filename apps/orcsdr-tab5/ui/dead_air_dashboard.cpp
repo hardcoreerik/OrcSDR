@@ -351,6 +351,8 @@ void chrome() {
 constexpr int kFxBigX = 500, kFxBigY = 138, kFxBigS = 120;      // the orb on the Overview
 constexpr int kFxBeaconX = 800, kFxBeaconY = 13, kFxBeaconS = 52;  // the same orb, small, in every tab's header
 constexpr int kSessionBtnX = 498, kSessionBtnY = 305, kSessionBtnW = 122;
+constexpr int kVeilVeilBtnX = 366, kVeilVeilBtnY = 305, kVeilVeilBtnW = 122;  // VEIL-26 overlay, beside SESSION
+constexpr int kEvVeilBtnX = 372, kEvVeilBtnW = 200;                           // VEIL-26 button in the Events nav row (kEvNavY)
 
 const char* sensitivity_name(Sensitivity s) {
   return s == Sensitivity::quiet ? "QUIET" : s == Sensitivity::sensitive ? "SENSITIVE" : "STANDARD";
@@ -426,6 +428,7 @@ void overview() {
   label(journal, 40, 343, recorder_color(g_snapshot->recorder_state), 2);
   // The orb is drawn live at (kFxBigX, kFxBigY) beside these; the session card opens from here.
   button("SESSION", kSessionBtnX, kSessionBtnY, kSessionBtnW, kCyan, true);
+  button("VEIL-26", kVeilVeilBtnX, kVeilVeilBtnY, kVeilVeilBtnW, kViolet, true);
   box(646, 120, 614, 252);
   heading("LIVE OBSERVATIONS", 668, 143);
   label("RF 60 s", 920, 143, kMuted, 2);
@@ -835,6 +838,7 @@ void draw_event_detail(const Event& e) {
   }
   if (e.source == Source::sweep) return;  // generated schedule records carry no clips
   button("SCRUB", kEvScrubBtnX, kEvBtnY, kEvBtnW, kCyan, true);
+  button("VEIL-26", kEvVeilBtnX, kEvNavY, kEvVeilBtnW, kViolet, true);  // the symbols derived from this event, if analysed
   const int clip = clip_for_event(e.sequence);
   const int text_x = kEvClipBtnX + kEvBtnW + 14, text_y = kEvBtnY + 26;
   if (clip >= 0) {
@@ -1188,10 +1192,132 @@ void session() {
   label("No score, no interpretation.", 800, 286, kMuted, 2);
 }
 
+// ---- VEIL-26 / ESOTERICA overlay ---------------------------------------------------------------------------------------
+// Two panels that never mix: MEASURED (the tuned frequency, the level, where it came from and when: numbers the receiver
+// produced) and SYMBOLIC / INTERPRETED (the letter, word and gematria a fixed recipe derived from them). The analysis is
+// opt-in, and every symbol is labelled as the output of an algorithm, not a message or a detection.
+constexpr int kVeilToggleX = 40, kVeilToggleY = 180, kVeilToggleW = 200;
+constexpr int kVeilIntentX = 256, kVeilIntentW = 400;
+constexpr int kVeilAlphabetX = 672, kVeilAlphabetW = 360;
+constexpr int kVeilLiveX = 1048, kVeilLiveW = 192;
+constexpr int kVeilBtnH = 52;
+const Event* veil_event(uint32_t sequence) {
+  if (!g_events) return nullptr;
+  for (size_t i = 0; i < g_events->count(); ++i) {
+    const Event* e = g_events->newest(i);
+    if (e && e->sequence == sequence) return e;
+  }
+  return nullptr;
+}
+void draw_veil_rune(runes::Alphabet alphabet, uint32_t state, int x, int y, int height, int stroke) {
+  const auto* glyph = runes::glyph(alphabet, static_cast<unsigned>(runes::index(alphabet, state)));
+  if (!glyph) return;
+  runes::draw(*glyph, height, stroke, [=](int x0, int y0, int x1, int y1) {
+    g.drawLine(x + x0, y + y0, x + x1, y + y1, kViolet);
+  });
+}
+void veil() {
+  const VeilView& v = g_snapshot->veil;
+  overlay_frame("VEIL-26 / ESOTERICA  (EXPERIMENTAL)");
+  button(v.enabled ? "ANALYSIS: ON" : "ANALYSIS: OFF", kVeilToggleX, kVeilToggleY, kVeilToggleW, v.enabled ? kGreen : kEdge, true);
+  char text[192];
+  std::snprintf(text, sizeof(text), "INTENTION: %.17s%s", v.intention[0] ? v.intention : "(none)", std::strlen(v.intention) > 17 ? "..." : "");
+  button(text, kVeilIntentX, kVeilToggleY, kVeilIntentW, kViolet, true);
+  std::snprintf(text, sizeof(text), "ALPHABET: %s", runes::alphabet(v.alphabet).label);
+  button(text, kVeilAlphabetX, kVeilToggleY, kVeilAlphabetW, kViolet, true);
+  const bool inspecting = v.inspect_seq != 0;
+  if (inspecting) button("LIVE STREAM", kVeilLiveX, kVeilToggleY, kVeilLiveW, kCyan, true);
+  const VeilFrameView& f = inspecting ? v.event : v.live;
+  // Which stream is shown, and for an event the measured record it belongs to.
+  if (inspecting) {
+    const Event* e = veil_event(v.inspect_seq);
+    char row[96] = "";
+    if (e) format_event_row(*e, row, sizeof(row));
+    std::snprintf(text, sizeof(text), "EVENT #%lu  %s", static_cast<unsigned long>(v.inspect_seq), row);
+    label(text, 40, 262, TFT_WHITE, 2);
+  } else {
+    label(v.enabled ? "LIVE STREAM: one frame a second from the settled RF level" : "LIVE STREAM: switched off", 40, 262,
+          v.enabled ? TFT_WHITE : kMuted, 2);
+  }
+  // MEASURED
+  box(40, 286, 590, 160, kGreen);
+  label("MEASURED", 60, 304, kGreen, 2);
+  if (f.valid) {
+    char clock[24];
+    std::snprintf(text, sizeof(text), "%.6f MHz", static_cast<double>(f.frequency_hz) / 1e6);
+    label("FREQUENCY", 60, 336, kMuted, 2);
+    label(text, 250, 336, TFT_WHITE, 2);
+    std::snprintf(text, sizeof(text), "%.1f dBFS (relative)", static_cast<double>(f.level_dbfs));
+    label("LEVEL", 60, 366, kMuted, 2);
+    label(text, 250, 366, TFT_WHITE, 2);
+    label("SOURCE", 60, 396, kMuted, 2);
+    label(std::strcmp(f.source, "audio") == 0 ? "receiver audio level" : "receiver RF level", 250, 396, TFT_WHITE, 2);
+    format_clock(f.unix_time, f.monotonic_ms, clock, sizeof(clock));
+    label("TIME", 60, 426, kMuted, 2);
+    label(clock, 250, 426, TFT_WHITE, 2);
+  } else if (inspecting) {
+    label("This event was not analysed.", 60, 346, kYellow, 2);
+    label(v.enabled ? "Only RF rises and audio bursts have a" : "VEIL-26 was off when it happened, or it", 60, 376, kMuted, 2);
+    label(v.enabled ? "frequency and level to quantize." : "has no frequency and level to quantize.", 60, 406, kMuted, 2);
+  } else {
+    label(v.enabled ? "WAITING FOR A SETTLED RF LEVEL" : "NO ANALYSIS RUNNING", 60, 346, kMuted, 2);
+    label("Frames need a settled, valid level.", 60, 376, kMuted, 2);
+  }
+  // SYMBOLIC / INTERPRETED
+  box(650, 286, 590, 160, kViolet);
+  label("SYMBOLIC / INTERPRETED", 670, 304, kViolet, 2);
+  if (f.valid) {
+    std::snprintf(text, sizeof(text), "%c  (%u)", f.letter, static_cast<unsigned>(f.letter_number));
+    label("LETTER", 670, 336, kMuted, 2);
+    label(text, 850, 336, TFT_WHITE, 2);
+    label("WORD", 670, 366, kMuted, 2);
+    label(f.word, 850, 366, TFT_WHITE, 2);
+    std::snprintf(text, sizeof(text), "A1Z26 %u   PYTH %u", static_cast<unsigned>(f.a1z26), static_cast<unsigned>(f.pythagorean));
+    label("GEMATRIA", 670, 396, kMuted, 2);
+    label(text, 850, 396, TFT_WHITE, 2);
+    std::snprintf(text, sizeof(text), "%08lx > %08lx", static_cast<unsigned long>(f.state_in), static_cast<unsigned long>(f.state));
+    label("SIGIL STATE", 670, 426, kMuted, 2);
+    label(text, 850, 426, TFT_WHITE, 2);
+    if (v.alphabet != runes::Alphabet::latin) {
+      draw_veil_rune(v.alphabet, f.state, 1160, 328, 64, 3);
+      const auto* rune = runes::glyph(v.alphabet, static_cast<unsigned>(runes::index(v.alphabet, f.state)));
+      if (rune) label(rune->name, 1110, 410, kViolet, 2);
+    }
+  } else {
+    label("Nothing derived.", 670, 346, kMuted, 2);
+  }
+  // The running letters and the numbers the recipe used.
+  label("SEQUENCE", 40, 478, kMuted, 2);
+  label(v.letters[0] ? v.letters : "--", 200, 478, kViolet, 2);
+  std::snprintf(text, sizeof(text), "A1Z26 %u  PYTH %u", static_cast<unsigned>(v.seq_a1z26), static_cast<unsigned>(v.seq_pythagorean));
+  label(text, 860, 478, kMuted, 2);
+  if (f.valid) {
+    std::snprintf(text, sizeof(text), "RECIPE INPUTS  freq_code %ld  level_code %ld  frame %lu  %s",
+                  static_cast<long>(f.freq_code), static_cast<long>(f.level_code), static_cast<unsigned long>(f.frame), v.dictionary);
+    label(text, 40, 510, kMuted, 2);
+  } else {
+    label("RECIPE INPUTS  --", 40, 510, kMuted, 2);
+  }
+  std::snprintf(text, sizeof(text), "FRAMES %lu  BREAKS %lu  SKIPPED %lu   LOG %s  written %lu  dropped %lu  failed %lu",
+                static_cast<unsigned long>(v.frames), static_cast<unsigned long>(v.gaps), static_cast<unsigned long>(v.skipped),
+                v.enabled ? (v.logging ? "ON" : (g_snapshot->recorder_state == RecorderState::active ? "READY" : "NO SD")) : "OFF",
+                static_cast<unsigned long>(v.written), static_cast<unsigned long>(v.dropped), static_cast<unsigned long>(v.write_failures));
+  label(text, 40, 542, v.write_failures || v.dropped ? kYellow : kMuted, 2);
+  label("Symbols come from a fixed recipe applied to measured numbers. They are not messages, not detections.", 40, 580, kMuted, 2);
+  label("Dictionary placeholder-0: NOT the original VEIL-26 list. Records are kept apart from events.", 40, 606, kMuted, 2);
+}
+
+Action close_action(Overlay closed) {
+  if (closed == Overlay::scrub) return {ActionKind::scrub_close, 0};
+  if (closed == Overlay::veil) return {ActionKind::veil_close, 0};
+  return {};
+}
+
 void paint_page() {
   if (g_overlay != Overlay::none) {
     if (g_overlay == Overlay::scrub) scrub();
     else if (g_overlay == Overlay::control) control();
+    else if (g_overlay == Overlay::veil) veil();
     else session();
     return;
   }
@@ -1654,7 +1780,7 @@ Action handle_touch(int32_t x, int32_t y, uint32_t now_ms) {
         g_scrub_cursor = -1;
         if (g_scope) { g_scope->a_state = -1; g_scope->a_prev_n = 0; g_scope->prev_n = 0; }
         draw_body(true);
-        return closed == Overlay::scrub ? Action{ActionKind::scrub_close, 0} : Action{};
+        return close_action(closed);
       }
     }
   }
@@ -1665,7 +1791,15 @@ Action handle_touch(int32_t x, int32_t y, uint32_t now_ms) {
       g_scrub_cursor = -1;
       if (g_scope) { g_scope->a_state = -1; g_scope->a_prev_n = 0; g_scope->prev_n = 0; }  // the page's live plots repaint
       draw_body(true);
-      return closed == Overlay::scrub ? Action{ActionKind::scrub_close, 0} : Action{};
+      return close_action(closed);
+    }
+    if (g_overlay == Overlay::veil) {
+      const VeilView& v = g_snapshot->veil;
+      if (hit(x, y, kVeilToggleX, kVeilToggleY, kVeilToggleW, kVeilBtnH)) return {ActionKind::veil_toggle, 0};
+      if (hit(x, y, kVeilIntentX, kVeilToggleY, kVeilIntentW, kVeilBtnH)) return {ActionKind::veil_intention, 0};
+      if (hit(x, y, kVeilAlphabetX, kVeilToggleY, kVeilAlphabetW, kVeilBtnH)) return {ActionKind::veil_alphabet, 0};
+      if (v.inspect_seq != 0 && hit(x, y, kVeilLiveX, kVeilToggleY, kVeilLiveW, kVeilBtnH)) return {ActionKind::veil_open, 0};
+      return {};
     }
     if (g_overlay == Overlay::scrub) {
       const ScrubView& sv = g_snapshot->scrub;
@@ -1708,6 +1842,11 @@ Action handle_touch(int32_t x, int32_t y, uint32_t now_ms) {
       draw_body();
       return {};
     }
+  }
+  if (g_page == Page::overview && hit(x, y, kVeilVeilBtnX, kVeilVeilBtnY, kVeilVeilBtnW, 52)) {
+    g_overlay = Overlay::veil;
+    draw_body(true);
+    return {ActionKind::veil_open, 0};
   }
   if (g_page == Page::spectrum && g_snapshot->map.count > 0 && hit(x, y, kChipX, kChipY, kChipW, kChipH)) {
     g_map_pref = !g_map_pref;  // band map <-> live waterfall
@@ -1783,6 +1922,14 @@ Action handle_touch(int32_t x, int32_t y, uint32_t now_ms) {
         g_scrub_cursor = -1;
         draw_body(true);
         return {ActionKind::scrub_open, static_cast<int32_t>(e->sequence)};
+      }
+    }
+    if (hit(x, y, kEvVeilBtnX, kEvNavY, kEvVeilBtnW, 52)) {
+      const Event* e = ev_detail();
+      if (e && e->source != Source::sweep) {
+        g_overlay = Overlay::veil;
+        draw_body(true);
+        return {ActionKind::veil_open, static_cast<int32_t>(e->sequence)};
       }
     }
     if (hit(x, y, kEvClipBtnX, kEvBtnY, kEvBtnW, 52)) {
