@@ -142,7 +142,7 @@ ParseStatus decode(const uint8_t* payload, size_t length,
     }
   }
   staged.capture = capture;
-  staged.test_data = capture.transport == Transport::fixture;
+  staged.test_data = capture.test_data || capture.transport == Transport::fixture;
   for (uint8_t i = 0; i < count; ++i) {
     const ParseStatus result = decode_one(messages + static_cast<size_t>(i) * kMessageSize,
                                           staged.messages[i]);
