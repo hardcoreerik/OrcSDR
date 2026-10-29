@@ -18,6 +18,8 @@ constexpr uint16_t kAmber = 0xfde0;
 
 Hooks g_hooks{};
 SourceSnapshot g_source{};
+C6Capability g_c6{};
+uint32_t g_last_c6_poll_ms = 0;
 bool g_active = false;
 bool g_detail = false;
 bool g_help = false;
@@ -124,18 +126,18 @@ void source_panel() {
     label(describe(g_source, g_now).headline, bx + 20, by + 122, kCyan, 2);
     if (!small) label("Source measurement, not aircraft proof.", bx + 20, by + 167, kMuted);
   } else if (g_detail) {
-    label("ONBOARD C6: NOT VERIFIED", bx + 20, by + 79, kAmber, 2);
-    label("BLE / WIFI RID: UNAVAILABLE", bx + 20, by + 122, kMuted, 2);
+    label(c6_link_label(g_c6.link), bx + 20, by + 79, kMuted, 2);
+    label(c6_ble_label(g_c6.ble_gate), bx + 20, by + 122, kAmber, 2);
     if (!small) {
-      label("OrcNode link: NOT PAIRED", bx + 20, by + 167, kMuted, 2);
-      label("No qualified RID adapter.", bx + 20, by + 213, kMuted);
+      label("WIFI BEACON: UNVERIFIED", bx + 20, by + 167, kMuted, 2);
+      label("WIFI NAN: UNVERIFIED", bx + 20, by + 213, kMuted, 2);
     }
   } else {
     label("REMOTE ID SOURCE", bx + 20, by + 86, kMuted);
     label(g_source.capture_qualified ? "QUALIFIED" : "NOT IMPLEMENTED",
           bx + 20, by + 127, g_source.capture_qualified ? kGreen : kAmber, 2);
     if (!small) {
-      label("C6 BLE/WIFI: UNVERIFIED", bx + 20, by + 179, kMuted);
+      label(c6_ble_label(g_c6.ble_gate), bx + 20, by + 179, kMuted);
       label("RTL V4: NO 2.4 / 5.8 GHZ", bx + 20, by + 216, kMuted);
     }
   }
@@ -178,6 +180,8 @@ void open() {
   g_detail = false;
   g_help = false;
   g_now = millis();
+  g_c6 = g_hooks.inspect_c6 ? g_hooks.inspect_c6() : assess_c6({});
+  g_last_c6_poll_ms = g_now;
   g_active = true;
   screens::begin_transition(screens::Id::drone_watch, g_now);
   draw(true);
@@ -207,6 +211,20 @@ void draw(bool structural) {
 void tick(uint32_t now_ms) {
   if (!g_active || !screens::owns(screens::Id::drone_watch)) return;
   g_now = now_ms;
+  // Cached Wi-Fi/Hosted status only. Never scan, reset or call the C6 bus.
+  // Poll at a bounded UI-task cadence and repaint only the affected card.
+  if (g_hooks.inspect_c6 &&
+      static_cast<uint32_t>(now_ms - g_last_c6_poll_ms) >= 2000u) {
+    g_last_c6_poll_ms = now_ms;
+    const C6Capability observed = g_hooks.inspect_c6();
+    if (!same_c6_capability(observed, g_c6)) {
+      g_c6 = observed;
+      if (g_detail || (!g_help && !g_source.capture_qualified)) {
+        source_panel();
+        screens::note_visible_update(screens::Id::drone_watch);
+      }
+    }
+  }
   draw(false);
 }
 void publish_source(const SourceSnapshot& source) {
