@@ -174,6 +174,8 @@ idf_component_register(
         "../ui/ui_capture.cpp"
         "../ui/web_console.cpp"
         "../ui/web_audio_transport.cpp"
+        "../ui/drone_watch_rid.cpp"
+        "../ui/third_party/opendroneid/opendroneid.c"
         "../ui/drone_watch_model.cpp"
         "../ui/drone_watch_dashboard.cpp"
         "../ui/dead_air_model.cpp"
