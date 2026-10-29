@@ -1,6 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
 project(orcsdr_drone_watch_host LANGUAGES C CXX)
 enable_testing()
+option(DRONE_WATCH_SANITIZE "Instrument host tests with ASan and UBSan" OFF)
+if(DRONE_WATCH_SANITIZE)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    message(FATAL_ERROR "DRONE_WATCH_SANITIZE needs Clang or GCC")
+  endif()
+  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined)
+endif()
 add_executable(drone_watch_host_test
   host_test.cpp
   ../../ui/drone_watch_model.cpp
