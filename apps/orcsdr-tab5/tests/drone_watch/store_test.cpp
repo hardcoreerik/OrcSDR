@@ -39,7 +39,8 @@ int main() {
   assert(ring.ingest(id.data(), id.size(), replayed_ble) == ParseStatus::ok);
   assert(ring.newest(0, event) && event.test_data);
   assert(event.capture.transport == Transport::bluetooth4);
-  assert(event.capture.source_id == 300);
+  assert(event.capture.source_id == 100 && event.test_data);
+  assert(ring.newest(1, event) && event.capture.source_id == 300);
 
   // Ring wrap must preserve newest order, local sequence, and lost event count.
   for (uint32_t i = 0; i < 40; ++i) {
