@@ -63,6 +63,7 @@
 #include "acars_app.hpp"
 #include "dead_air_app.hpp"
 #include "drone_watch_dashboard.hpp"
+#include "drone_watch_c6_native.hpp"
 #include "acars_archive_sd.hpp"
 #include "acars_receiver.hpp"
 #include "acars_selftest.hpp"
@@ -14473,7 +14474,10 @@ void open_dashboard(orcsdr::dashboards::Id id) {
     orcsdr::audio_header::reset(rtl_header_audio_control);
     orcsdr::drone_watch::install({
       []() -> int32_t { return static_cast<int32_t>(M5.Power.getBatteryLevel()); },
-      []() -> bool { return rtl_audio_user_enabled.load(std::memory_order_acquire); }
+      []() -> bool { return rtl_audio_user_enabled.load(std::memory_order_acquire); },
+      []() -> orcsdr::drone_watch::C6Capability {
+        return orcsdr::drone_watch::inspect_c6_without_side_effects();
+      }
     });
     // W01 is read-only: opening it does not retune RTL, enable C6 capture or modify Wi-Fi.
     orcsdr::drone_watch::open();
