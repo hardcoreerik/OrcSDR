@@ -1,6 +1,6 @@
 # Drone Watch — phased implementation plan
 
-> **Implementation update (2026-10-28 PT):** W01 remains a host-tested, source-unavailable M5GFX screen. P1 now includes the pinned OpenDroneID C decoder, OrcSDR's bounded 25-byte/message-pack wrapper, and a 32-event metadata history with source provenance. **3/3 host suites PASS**; native ESP-IDF build, C6 acquisition, real RF capture and physical display tests are NOT RUN. All other 24 UI screens remain planned. Every phase is a separately buildable, independently reversible unit. Never treat compilation as a real-air acceptance test.
+> **Implementation update (2026-10-28 PT):** W01 is host-tested; P1 includes pinned OpenDroneID C and bounded event history; P2a now has read-only Hosted C6 capability diagnosis and an official-format BLE4 application-envelope/ingress parser. **6/6 standard and 6/6 ASan/UBSan host tests PASS** ([CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40829468655)). No native ESP-IDF build, C6 Bluetooth/HCI capture, RF reception or physical display validation performed. The other 24 UI screens remain planned; no C6/driver/config modification was made.
 
 **25 per-screen implementation specs:** [SCREENS.md](SCREENS.md), with shared UI/UX and rendering rules. These are future target contracts, not accepted runtime capabilities. Initial P3 covers only the smallest truthful screens; the remaining specifications become feature-gated incrementally.
 
@@ -187,8 +187,8 @@ The onboard ESP32-C6 and its existing SDIO ESP-Hosted slave are the first prefer
 | Phase | Status on 2026-10-26 | Acceptance file or missing gate |
 | --- | --- | --- |
 | P0 | RESEARCH DOCUMENTED; upstream/source audit incomplete | REA-Results draft PR #3; isolated 15/15 synthetic-model tests |
-| P1 | PARTIAL: parser + 32-entry history IMPLEMENTED; host C/C++ CI 3/3 PASS + sanitizer 3/3 PASS; native/hardware NOT RUN | [P1 host CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40827333255); [P1 evidence](evidence/2026-10-28-rid-core-host-checkpoint.md) |
-| P2 | NOT RUN | C6 firmware/Hosted RX + Wi-Fi coexistence evidence |
+| P1 | PARTIAL: parser + 32-entry history IMPLEMENTED; full host combined suite 6/6 PASS + sanitizer 6/6 PASS; native/hardware NOT RUN | [CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40829468655); [P1 evidence](evidence/2026-10-28-rid-core-host-checkpoint.md) |
+| P2 | PARTIAL: P2a host-only read-only C6 Kconfig/link diagnostic + BLE4 AD/ingress; actual C6 HCI/RF and coexistence NOT RUN | [Self-review / hardware gating](evidence/2026-10-28-p1-p2a-self-review-and-ble4-ingress.md) |
 | P3 | PARTIAL: W01 CODED / HOST-TESTED (1/1 CI suite); 24 screens NOT IMPLEMENTED | [W01 host CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40460255261); native build and physical display NOT RUN |
 | P4 | NOT IMPLEMENTED | Actual RID capture + OrcMaps |
 | P5 | NOT IMPLEMENTED | SD and OrcNode envelope |
