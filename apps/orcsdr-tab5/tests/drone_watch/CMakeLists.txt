@@ -65,3 +65,17 @@ if(UNIX)
   target_link_libraries(drone_watch_store_test PRIVATE m)
 endif()
 add_test(NAME drone_watch_store COMMAND drone_watch_store_test)
+
+# Pure status contract: no ESP-IDF, SDIO, C6 image, or radio requirement.
+add_executable(drone_watch_c6_probe_test
+  c6_probe_test.cpp
+  ../../ui/drone_watch_c6_probe.cpp
+)
+target_compile_features(drone_watch_c6_probe_test PRIVATE cxx_std_17)
+target_include_directories(drone_watch_c6_probe_test PRIVATE ../../ui)
+if(MSVC)
+  target_compile_options(drone_watch_c6_probe_test PRIVATE /W4 /WX)
+else()
+  target_compile_options(drone_watch_c6_probe_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME drone_watch_c6_probe COMMAND drone_watch_c6_probe_test)
