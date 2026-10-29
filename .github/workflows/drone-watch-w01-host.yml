@@ -1,4 +1,4 @@
-name: Drone Watch W01 + Remote ID P1 host tests
+name: Drone Watch W01 P1 P2a host regressions
 on:
   push:
     branches:
@@ -26,11 +26,11 @@ jobs:
         run: cmake -S apps/orcsdr-tab5/tests/drone_watch -B build-drone-watch-tests
       - name: Build with warnings
         run: cmake --build build-drone-watch-tests --parallel
-      - name: Run W01 host regression
+      - name: Run W01 decoder and BLE4 ingress host suites
         run: ctest --test-dir build-drone-watch-tests --output-on-failure
       - name: Configure AddressSanitizer and UndefinedBehaviorSanitizer
         run: cmake -S apps/orcsdr-tab5/tests/drone_watch -B build-drone-watch-sanitized -DDRONE_WATCH_SANITIZE=ON
       - name: Build sanitized host tests
         run: cmake --build build-drone-watch-sanitized --parallel
-      - name: Execute sanitized host regressions
+      - name: Execute ASan UBSan host suites
         run: ctest --test-dir build-drone-watch-sanitized --output-on-failure
