@@ -3,11 +3,13 @@
 // source-status / empty-state view; Remote ID acquisition has NOT been implemented.
 #include <cstdint>
 #include "drone_watch_model.hpp"
+#include "drone_watch_c6_probe.hpp"
 
 namespace orcsdr::drone_watch {
 struct Hooks {
   int32_t (*battery_percent)() = nullptr;
   bool (*sound_enabled)() = nullptr;
+  C6Capability (*inspect_c6)() = nullptr; // read-only cached status; UI task
 };
 enum class Action : uint8_t { none, close };
 
