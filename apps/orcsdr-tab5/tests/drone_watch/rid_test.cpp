@@ -138,6 +138,65 @@ int main() {
   assert(result.count == 0);
   pack[28] = loc[0];
 
+  // A pack with two Location messages is not allowed by the pinned
+  // upstream checkPackContent() constraints, even if both decode on their own.
+  std::memcpy(pack.data() + 3, loc.data(), kMessageSize);
+  std::memcpy(pack.data() + 28, loc.data(), kMessageSize);
+  assert(decode(pack.data(), pack.size(), hw, result) == ParseStatus::malformed);
+  assert(result.count == 0);
+  std::memcpy(pack.data() + 3, id.data(), kMessageSize);
+
+  // Independently exercise all other official message families using the
+  // pinned reference encoders, not just BasicID and Location.
+  ODID_SelfID_data self{};
+  odid_initSelfIDData(&self);
+  std::memcpy(self.Desc, "TEST-ONLY SELF ID", 17);
+  ODID_SelfID_encoded self_encoded{};
+  assert(encodeSelfIDMessage(&self_encoded, &self) == ODID_SUCCESS);
+  assert(decode(reinterpret_cast<const uint8_t*>(&self_encoded), kMessageSize,
+                hw, result) == ParseStatus::ok);
+  assert(result.messages[0].kind == Kind::self_id);
+
+  ODID_System_data system{};
+  odid_initSystemData(&system);
+  system.OperatorLatitude = 44.0;
+  system.OperatorLongitude = -123.0;
+  ODID_System_encoded system_encoded{};
+  assert(encodeSystemMessage(&system_encoded, &system) == ODID_SUCCESS);
+  assert(decode(reinterpret_cast<const uint8_t*>(&system_encoded), kMessageSize,
+                hw, result) == ParseStatus::ok);
+  assert(result.messages[0].kind == Kind::system);
+  assert(!result.messages[0].claimed_position_valid); // operator location is private
+
+  ODID_OperatorID_data operator_id{};
+  odid_initOperatorIDData(&operator_id);
+  std::memcpy(operator_id.OperatorId, "TEST OPERATOR", 13);
+  ODID_OperatorID_encoded operator_encoded{};
+  assert(encodeOperatorIDMessage(&operator_encoded, &operator_id) == ODID_SUCCESS);
+  assert(decode(reinterpret_cast<const uint8_t*>(&operator_encoded), kMessageSize,
+                hw, result) == ParseStatus::ok);
+  assert(result.messages[0].kind == Kind::operator_id);
+  assert(!result.messages[0].claimed_id_present);
+
+  ODID_Auth_data auth{};
+  odid_initAuthData(&auth);
+  auth.AuthType = ODID_AUTH_UAS_ID_SIGNATURE;
+  auth.DataPage = 0;
+  auth.LastPageIndex = 0;
+  auth.Length = 1;
+  auth.AuthData[0] = 0x42;
+  ODID_Auth_encoded auth_encoded{};
+  assert(encodeAuthMessage(&auth_encoded, &auth) == ODID_SUCCESS);
+  assert(decode(reinterpret_cast<const uint8_t*>(&auth_encoded), kMessageSize,
+                hw, result) == ParseStatus::ok);
+  assert(result.messages[0].kind == Kind::auth);
+  assert(result.messages[0].auth_payload_present); // NOT signature verified
+  auto invalid_auth = std::array<uint8_t, kMessageSize>{};
+  std::memcpy(invalid_auth.data(), &auth_encoded, kMessageSize);
+  invalid_auth[2] = 0xff; // impossible LastPageIndex
+  assert(decode(invalid_auth.data(), kMessageSize, hw, result) == ParseStatus::malformed);
+  assert(result.count == 0);
+
   std::array<uint8_t, kMaxPayload + 1> oversized{};
   oversized[0] = 0xF2;
   assert(decode(oversized.data(), oversized.size(), hw, result) == ParseStatus::invalid_length);
