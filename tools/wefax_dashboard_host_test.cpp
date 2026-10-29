@@ -18,7 +18,12 @@ int main(){
   update(snapshot);
   assert(M5.Display.full_clears==0);
   snapshot.receiver_ready=true;
+  snapshot.decoder_connected=true;
+  snapshot.wefax_receiving=true;
+  snapshot.received_rows=7;
   update(snapshot);
+  assert(M5.Display.saw_receiving);
+  assert(M5.Display.full_clears==0 && M5.Display.header_draws==1);
   auto t=touch(240,640);
   assert(t.kind==ActionKind::none || t.kind==ActionKind::tune_usb);
   t=touch(300,650);
