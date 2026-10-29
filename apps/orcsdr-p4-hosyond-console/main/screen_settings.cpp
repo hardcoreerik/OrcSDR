@@ -13,6 +13,7 @@
 #include "home_app.hpp"
 #include "hosyond_board.h"
 #include "nvs_store.hpp"
+#include "orcsdr_board_profile.h"
 #include "radio_service.hpp"
 #include "receiver_location.hpp"
 #include "screens.hpp"
@@ -183,7 +184,9 @@ void tap(int x, int y) {
       vTaskDelay(pdMS_TO_TICKS(200));
       esp_restart();
       break;
-    case st::ActionKind::c6_update_confirm: (void)orcsdr::wifi::begin_c6_update(); break;
+    case st::ActionKind::c6_update_confirm:
+      if (orcsdr_board_c6_image_applies()) (void)orcsdr::wifi::begin_c6_update();  // never push the C6 image to another chip
+      break;
     case st::ActionKind::wifi_power_changed: wifi_app::set_power(a.value != 0); break;
     case st::ActionKind::wifi_start_at_boot_changed: wifi_app::set_start_at_boot(a.value != 0); break;
     case st::ActionKind::scan_wifi: (void)wifi_app::request_scan(); break;

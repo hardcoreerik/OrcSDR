@@ -62,7 +62,8 @@ typedef struct {
 
     /* Wi-Fi coprocessor (ESP32-C6 over ESP-Hosted SDIO). Other boards may use SPI or have none.
      * On boards where the C6 power or reset is on an expander, c6_reset is -1 and ioexp_wifi_en is set. */
-    bool has_hosted_c6;
+    bool has_hosted_c6;         /* any ESP-Hosted SDIO coprocessor; the name predates C5 boards */
+    const char *wifi_coprocessor;   /* "ESP32-C6", "ESP32-C5"; the embedded ESP-Hosted image is C6-only */
     int c6_reset;
     int c6_sdio_clk, c6_sdio_cmd, c6_sdio_d0, c6_sdio_d1, c6_sdio_d2, c6_sdio_d3;
 
@@ -87,6 +88,10 @@ const orcsdr_board_profile_t *orcsdr_board_profile(void);
 
 /* Every profile compiled into this firmware, so tools and docs can list them. Returns the count. */
 size_t orcsdr_board_profiles(const orcsdr_board_profile_t *const **list);
+
+/* True only when the board's Wi-Fi coprocessor is an ESP32-C6, the only chip the embedded ESP-Hosted
+ * image (and the on-device coprocessor update) is built for. Never offer that update to any other chip. */
+bool orcsdr_board_c6_image_applies(void);
 
 /* Name of a status for logs. */
 const char *orcsdr_profile_status_name(orcsdr_profile_status_t status);

@@ -1,5 +1,6 @@
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 #include "esp_log.h"
 #include "sdkconfig.h"
 #include "orcsdr_board_profile.h"
@@ -13,13 +14,22 @@ static const char *TAG = "PROFILES";
 static const orcsdr_board_profile_t *const k_boards[] = {
     &g_board_waveshare_p4_module_dev_kit,
     &g_board_waveshare_p4_wifi6_poe_eth,
+    &g_board_waveshare_p4_wifi6_db,
     &g_board_m5stack_tab5,
 };
+
+bool orcsdr_board_c6_image_applies(void)
+{
+    const orcsdr_board_profile_t *b = orcsdr_board_profile();
+    return b->has_hosted_c6 && b->wifi_coprocessor && strcmp(b->wifi_coprocessor, "ESP32-C6") == 0;
+}
 
 const orcsdr_board_profile_t *orcsdr_board_profile(void)
 {
 #if defined(CONFIG_ORCSDR_BOARD_M5STACK_TAB5)
     return &g_board_m5stack_tab5;
+#elif defined(CONFIG_ORCSDR_BOARD_WAVESHARE_P4_WIFI6_DB)
+    return &g_board_waveshare_p4_wifi6_db;
 #elif defined(CONFIG_ORCSDR_BOARD_WAVESHARE_P4_WIFI6_POE_ETH)
     return &g_board_waveshare_p4_wifi6_poe_eth;
 #else
@@ -51,6 +61,11 @@ void orcsdr_board_profile_log(void)
         ESP_LOGW(TAG, "this board's pins are not bench-verified with this firmware; source: %s", b->source);
     }
     if (b->unsupported) ESP_LOGW(TAG, "unsupported here: %s", b->unsupported);
+    if (b->has_hosted_c6 && !orcsdr_board_c6_image_applies()) {
+        ESP_LOGW(TAG, "Wi-Fi coprocessor is %s: the embedded ESP-Hosted image is for the ESP32-C6, so Wi-Fi stays down "
+                 "until an ESP-Hosted slave image for this chip is flashed to it; coprocessor update is disabled",
+                 b->wifi_coprocessor ? b->wifi_coprocessor : "unknown");
+    }
 #if defined(CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CLK) && defined(CONFIG_ESP_HOSTED_HOST_RESET_GPIO)
     /* The ESP-Hosted pins live in sdkconfig; a profile that disagrees means the wrong board was selected. */
     if (b->has_hosted_c6 &&

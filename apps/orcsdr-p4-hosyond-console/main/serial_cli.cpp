@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "esp_rtl_sdr.h"
 #include "esp_system.h"
+#include "orcsdr_board_profile.h"
 #include "driver/gptimer.h"
 #include "esp_attr.h"
 #include "esp_intr_alloc.h"
@@ -269,7 +270,11 @@ void cmd_wifi(char* args) {
     wifi_app::set_power(args[6] == '1');
     std::printf("RTL_WIFI_POWER_OK power=%d\n", args[6] == '1');
   } else if (std::strcmp(args, "C6_UPDATE") == 0) {
-    std::printf(orcsdr::wifi::begin_c6_update() ? "RTL_WIFI_C6_UPDATE_STARTED\n" : "RTL_WIFI_C6_UPDATE_NOT_READY\n");
+    if (!orcsdr_board_c6_image_applies()) {
+      std::printf("RTL_WIFI_ERROR c6_update_not_applicable coprocessor=%s\n", orcsdr_board_profile()->wifi_coprocessor);
+    } else {
+      std::printf(orcsdr::wifi::begin_c6_update() ? "RTL_WIFI_C6_UPDATE_STARTED\n" : "RTL_WIFI_C6_UPDATE_NOT_READY\n");
+    }
   } else if (std::strcmp(args, "FORGET") == 0) {
     wifi_app::forget();
     std::printf("RTL_WIFI_FORGET_OK\n");

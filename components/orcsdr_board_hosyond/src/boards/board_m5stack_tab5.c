@@ -33,7 +33,7 @@ const orcsdr_board_profile_t g_board_m5stack_tab5 = {
     .audio_mclk = 30, .audio_bclk = 27, .audio_ws = 29, .audio_dout = 26, .audio_din = 28, .audio_pa_enable = ORCSDR_PIN_NONE,
     .has_sd = true, .sd_power_enable = ORCSDR_PIN_NONE, .sd_power_active_low = false,
 
-    .has_hosted_c6 = true, .c6_reset = 15,
+    .has_hosted_c6 = true, .wifi_coprocessor = "ESP32-C6", .c6_reset = 15,
     .c6_sdio_clk = 12, .c6_sdio_cmd = 13, .c6_sdio_d0 = 11, .c6_sdio_d1 = 10, .c6_sdio_d2 = 9, .c6_sdio_d3 = 8,
 
     .has_ethernet = false, .eth_phy = NULL,

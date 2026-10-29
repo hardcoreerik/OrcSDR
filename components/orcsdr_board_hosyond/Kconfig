@@ -15,6 +15,9 @@ menu "OrcSDR board"
     config ORCSDR_BOARD_WAVESHARE_P4_WIFI6_POE_ETH
         bool "Waveshare ESP32-P4-WIFI6-POE-ETH (documented only)"
 
+    config ORCSDR_BOARD_WAVESHARE_P4_WIFI6_DB
+        bool "Waveshare ESP32-P4-WIFI6-DB, ESP32-C5 coprocessor (documented only)"
+
     config ORCSDR_BOARD_M5STACK_TAB5
         bool "M5Stack Tab5 (documented only, no display backend yet)"
 

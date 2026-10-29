@@ -33,6 +33,7 @@ Status levels, never mixed:
 | Board | Profile status | Console (screen + touch) | Wi-Fi (C6 SDIO) | USB host (RTL-SDR) | SD | Ethernet |
 |---|---|---|---|---|---|---|
 | Waveshare ESP32-P4-Module-DEV-KIT + Hosyond 7" 800x480 | bench-verified (display, audio, C6 link, USB host); SD and Ethernet not exercised by this firmware | works | pins match; see "Open item" | works (jumper selects host) | never mounted a card here (power switch GPIO45 from the schematic) | IP101 RMII present; OrcNode runs it; not wired into the console |
+| Waveshare ESP32-P4-WIFI6-DB (probably the COM29 board) | documented-only; I2C codec and USB host observed once | headless runs; panel untested | **ESP32-C5**: embedded image is C6-only, Wi-Fi down | via 4-pin header, an RTL-SDR streamed | power switch GPIO45 (low = on), no card tested | none |
 | Waveshare ESP32-P4-WIFI6-POE-ETH | documented-only | not run | pins documented, same as dev kit | USB-A present; VBUS control unverified | slot present, no power-switch pin | IP101GRI present; no driver wired in |
 | M5Stack Tab5 | documented-only | **no display backend** | pins confirmed by `apps/orcsdr-tab5` | via expander line, not driven | slot present | none |
 
@@ -44,6 +45,12 @@ check this session (Home draw 12.9 ms, receiver streaming, audio flowing). Nothi
 Waveshare Module-DEV-KIT: Waveshare wiki (DSI 2-lane connector for 5/7/8/10.1" screens, USB-A OTG with jumper,
 C6 on SDIO, TF slot) plus bench use. The wiki shows the GPIO table as images, so pin numbers rest on the
 schematic and on the bench, not on text.
+
+Waveshare WIFI6-DB: Waveshare's wiki https://docs.waveshare.com/ESP32-P4-WIFI6-DB (read 2026-10-29). ESP32-P4NRW32X, 32 MB
+NOR flash, 32 MB PSRAM in the package, **ESP32-C5** on SDIO (CLK18 CMD19 D0-D3 14-17, C5_CHIP_PU on GPIO54 "high to
+enable, low to reset", GPIO6 wake), no Ethernet, microSD with power control on GPIO45 (low = on), ES8311 at 0x18, I2S on
+GPIO9-13, amplifier enable GPIO53, BOOT key GPIO35, Type-C power/flash/debug plus a 4-pin USB OTG header, 2-lane DSI and
+CSI connectors. The page gives no I2C pins, PCB revision or chip revision and names no ESP-Hosted C5 image.
 
 Waveshare WIFI6-POE-ETH: the espp component readme (v1.3.7). It is a third-party summary of Waveshare's schematic
 and names no board revision. Two boards in the Waveshare family share most pins (I2C 7/8, ES8311 on I2S
@@ -103,7 +110,10 @@ tests, so everything in it is documentary. Effects on these profiles:
 - **COM29** is an ESP32-P4 revision v3.2 with 32 MB flash (GigaDevice 0xC8/0x4019), MAC e8:f6:0a:eb:76:e7, running
   Espressif's `esp-brookesia` demo (built 2026-08-31, ESP-IDF v5.5.5; partitions: nvs 0x9000, factory 0x110000
   size 9 MB, storage 0xa10000 size 5 MB). It is a different silicon revision and flash size from the OrcNode board,
-  so it is not the same board as the Module-DEV-KIT above.
+  so it is not the same board as the Module-DEV-KIT above. By elimination it is most likely the **ESP32-P4-WIFI6-DB**:
+it matches the 32 MB flash, has no Ethernet, the Waveshare platform BSP in the stock demo, an ES8311 that answered at
+0x18 on SDA7/SCL8, and the owner named a "p4 wifi6 db" board. Not confirmed: the module marking and PCB revision on
+the board have not been read.
 
 ## Unsupported, by board
 
@@ -154,7 +164,7 @@ idf.py -B build554-console -D IDF_TARGET=esp32p4 -D SDKCONFIG=build554-console/s
 ```
 
 Another board profile uses an overlay file next to `sdkconfig.defaults` (`sdkconfig.board-wifi6-poe-eth`,
-`sdkconfig.board-m5stack-tab5`). Use a separate build directory so it does not disturb your default build:
+`sdkconfig.board-wifi6-db`, `sdkconfig.board-m5stack-tab5`). Use a separate build directory so it does not disturb your default build:
 
 ```powershell
 idf.py -B build-wifi6-poe-eth -D IDF_TARGET=esp32p4 -D SDKCONFIG=build-wifi6-poe-eth/sdkconfig `
@@ -201,7 +211,16 @@ Tried, one variable each:
   overlay keeps active-low because it matches the working OrcNode and upstream, but it does not fix this by itself.
 
 Not yet tried / unknown:
-- **What the coprocessor is and what it runs.** The research catalog lists Espressif Function-EV variants with a C5
+- **The coprocessor on COM29 is probably an ESP32-C5** (see above). That alone explains the failure: our embedded image
+  is the ESP32-C6 build, and nothing on the C5 speaks ESP-Hosted unless a C5 slave image was flashed. The profile now
+  carries `wifi_coprocessor`; with a non-C6 chip the firmware says so at boot and refuses the on-device coprocessor
+  update (`RTL_WIFI C6_UPDATE` and the Settings button; the refusal is compiled in and auth-gated, not exercised on
+  hardware). Espressif lists C5 as an esp-hosted slave target and recommends esp_hosted >= 2.4.2 and ESP-IDF >= 5.5, but
+  I found no prebuilt C5 SDIO image and no confirmed P4+C5 working example; an Espressif FAQ item reports
+  insufficient memory with Wi-Fi and BLE on a P4+C5. To get Wi-Fi: build the esp-hosted slave example for the C5
+  target and flash it through the C5 UART pads (needs a USB-UART adapter and wiring at the board; BOOT and enable
+  control are on the pads). Not done.
+- **What the coprocessor is and what it runs** (COM8, and any board where the chip is not confirmed). The research catalog lists Espressif Function-EV variants with a C5
   (`espressif-function-ev-c5`, discovery pending). Our embedded image is the ESP32-C6 ESP-Hosted 3.0.6 build for the
   Tab5; a C5 needs its own image and an ESP32-C5 target. The COM29 stock demo (Waveshare platform BSP, no Wi-Fi
   strings) does not reveal it. Read the module marking on the board (ESP32-C6-MINI vs a C5 module).
@@ -220,3 +239,4 @@ Not yet tried / unknown:
 - Module-DEV-KIT profile corrected: Ethernet is present (OrcNode, IP101); the SD slot was never exercised here.
 - Ethernet pins added to the profile type; Waveshare profiles carry the OrcNode-verified RMII map.
 - Added `sdkconfig.silicon-v3` (second image for v3.x silicon); WIFI6 overlay sets active-low C6 reset.
+- Added the Waveshare ESP32-P4-WIFI6-DB profile (ESP32-C5) and `wifi_coprocessor`; the C6 image and update are refused on any other chip.

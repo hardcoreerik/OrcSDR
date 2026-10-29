@@ -27,7 +27,7 @@ const orcsdr_board_profile_t g_board_waveshare_p4_wifi6_poe_eth = {
     .audio_mclk = 13, .audio_bclk = 12, .audio_ws = 10, .audio_dout = 9, .audio_din = 11, .audio_pa_enable = 53,
     .has_sd = true, .sd_power_enable = ORCSDR_PIN_NONE, .sd_power_active_low = false,
 
-    .has_hosted_c6 = true, .c6_reset = 54,
+    .has_hosted_c6 = true, .wifi_coprocessor = "ESP32-C6", .c6_reset = 54,
     .c6_sdio_clk = 18, .c6_sdio_cmd = 19, .c6_sdio_d0 = 14, .c6_sdio_d1 = 15, .c6_sdio_d2 = 16, .c6_sdio_d3 = 17,
 
     /* Same RMII map the OrcNode firmware runs on the Module-DEV-KIT (main/network_eth.cpp), which matches the espp readme. */
