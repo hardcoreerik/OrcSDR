@@ -37,3 +37,22 @@ if(UNIX)
   target_link_libraries(drone_watch_rid_test PRIVATE m)
 endif()
 add_test(NAME drone_watch_rid COMMAND drone_watch_rid_test)
+
+add_executable(drone_watch_store_test
+  store_test.cpp
+  ../../ui/drone_watch_rid_store.cpp
+  ../../ui/drone_watch_rid.cpp
+  ../../ui/third_party/opendroneid/opendroneid.c
+)
+target_compile_features(drone_watch_store_test PRIVATE cxx_std_17)
+target_include_directories(drone_watch_store_test PRIVATE ../../ui)
+if(MSVC)
+  target_compile_options(drone_watch_store_test PRIVATE /W4)
+else()
+  target_compile_options(drone_watch_store_test PRIVATE
+    "$<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic;-Werror>")
+endif()
+if(UNIX)
+  target_link_libraries(drone_watch_store_test PRIVATE m)
+endif()
+add_test(NAME drone_watch_store COMMAND drone_watch_store_test)
