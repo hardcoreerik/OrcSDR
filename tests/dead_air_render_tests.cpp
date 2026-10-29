@@ -243,16 +243,28 @@ int main() {
     // The automatic window moving on its own (1 H to 6 H as history grows) must clear a cursor placed in the old one.
     static da::EnvHistory young;
     young.reset(0);
-    for (uint32_t m = 0; m < 30; ++m) young.add(0, 20.0f + 0.1f * static_cast<float>(m), m * 60000u + 10u);
+    for (uint32_t m = 0; m < 30; ++m) {
+      young.add(0, 20.0f + 0.1f * static_cast<float>(m), m * 60000u + 10u);
+      young.add(1, 40.0f + 0.5f * static_cast<float>(m), m * 60000u + 10u);
+      young.add(2, 1000.0f + static_cast<float>(m), m * 60000u + 10u);
+    }
     ch.env_history = &young;
     ch.env_history_seq = young.seq();
     ch.revision = 63;
     host_display::reset();
     da::update(ch);
     assert(displayed("-60 m"));
-    da::handle_touch(900, 260, 5051);
-    assert(displayed("AT CURSOR"));
-    for (uint32_t m = 30; m < 70; ++m) young.add(0, 20.0f + 0.1f * static_cast<float>(m), m * 60000u + 10u);
+    // Column 519 (x = 666 + 519) is 5 buckets back, so minute 24 of the fixture: it has a reading in every channel.
+    // (A tap further left lands on a column before the first sample and reads "--  AT CURSOR".)
+    da::handle_touch(666 + 519, 260, 5051);
+    assert(displayed("22.4  AT CURSOR") && displayed("52.0  AT CURSOR") && displayed("1024.0  AT CURSOR"));
+    assert(displayed("CURSOR -5m 00s"));
+    // Temperature stops at minute 49; humidity keeps going to minute 69. The recorded span is 70 minutes whichever
+    // channel is looked at, so the 6 H window must be chosen even though temperature alone covers under 60.
+    for (uint32_t m = 30; m < 70; ++m) {
+      if (m < 50) young.add(0, 20.0f + 0.1f * static_cast<float>(m), m * 60000u + 10u);
+      young.add(1, 40.0f + 0.5f * static_cast<float>(m), m * 60000u + 10u);
+    }
     ch.env_history_seq = young.seq();
     ch.revision = 64;
     host_display::reset();
