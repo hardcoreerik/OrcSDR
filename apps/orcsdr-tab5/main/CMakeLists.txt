@@ -174,6 +174,7 @@ idf_component_register(
         "../ui/ui_capture.cpp"
         "../ui/web_console.cpp"
         "../ui/web_audio_transport.cpp"
+        "../ui/drone_watch_ble4.cpp"
         "../ui/drone_watch_c6_probe.cpp"
         "../ui/drone_watch_c6_native.cpp"
         "../ui/drone_watch_rid.cpp"
