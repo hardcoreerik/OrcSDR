@@ -108,6 +108,8 @@ struct SessionSummary {
   uint32_t clips = 0;
 };
 
+class EnvHistory;  // dead_air_envhistory.hpp: minute averages of temperature, humidity and pressure
+
 constexpr size_t kBins = 96;
 constexpr size_t kEventCapacity = 48;
 struct Snapshot {
@@ -128,6 +130,8 @@ struct Snapshot {
   Reading humidity_rh{};
   Reading pressure_hpa{};
   Reading motion_g{};        // device movement, not room movement
+  const EnvHistory* env_history = nullptr;  // owned by the app, read only on the UI task; null before the first session
+  uint32_t env_history_seq = 0;             // changes when a charted value does
   // Spectrum and waveform bins are accepted only when a real source supplies
   // them. No fabricated waterfall, FFT, or voice scores.
   float spectrum_dbfs[kBins]{};

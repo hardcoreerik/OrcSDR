@@ -21,6 +21,7 @@
 #include "dead_air_dashboard.hpp"
 #include "dead_air_env.hpp"
 #include "dead_air_env_m5.hpp"
+#include "dead_air_envhistory.hpp"
 #include "dead_air_envevents.hpp"
 #include "dead_air_journal.hpp"
 #include "dead_air_mic.hpp"
@@ -227,6 +228,7 @@ struct State {
   env::EnvSensor env_sensor;              // ENV III on Port A (SHT30 + QMP6988); polled from tick() while the screen is open
   bool env_bus = false;                   // the Port A bus could be started (not the same as a module being present)
   EnvEventDetector env_events;            // temperature / humidity / pressure leaving their own baseline
+  EnvHistory env_history;                 // one-minute averages for the Environment charts (this State lives in PSRAM)
   uint32_t ring_retry_ms = 0;             // last attempt to allocate the receiver clip ring after open() could not
   uint32_t env_last_at[3]{};              // sample time last fed to env_events, per channel (each sample is fed once)
   bool env_seen[3]{};
@@ -1236,6 +1238,8 @@ void build_snapshot(uint32_t now) {
   // Present without a reading yet shows as warming up, and a reading older than the dashboard's limit shows as stale.
   n.environment_sensor_attached = s.env_sensor.sht_present() || s.env_sensor.qmp_present();
   n.temperature_c = n.humidity_rh = n.pressure_hpa = n.motion_g = {};
+  n.env_history = &s.env_history;
+  n.env_history_seq = s.env_history.seq();
   {
     float value = 0;
     uint32_t at = 0;
@@ -1280,6 +1284,7 @@ bool environment_moved(const Snapshot& a, const Snapshot& b) {
   const Page page = dead_air::page();
   if (page != Page::overview && page != Page::environment) return false;
   return a.environment_sensor_attached != b.environment_sensor_attached ||
+         (page == Page::environment && a.env_history_seq != b.env_history_seq) ||
          reading_shown_differently(a.temperature_c, b.temperature_c) ||
          reading_shown_differently(a.humidity_rh, b.humidity_rh) ||
          reading_shown_differently(a.pressure_hpa, b.pressure_hpa);
@@ -1411,6 +1416,7 @@ void open() {
   s.env_bus = port_a != nullptr;
   s.env_sensor.begin(port_a);  // forgets any earlier readings; the module is probed again every time the screen opens
   s.env_events.reset();
+  s.env_history.reset(now);
   for (int c = 0; c < 3; ++c) { s.env_last_at[c] = 0; s.env_seen[c] = false; }
   s.map = BandMapView{};
   s.chime_on = false;  // the chime is off at every session start; only a tap turns it on
@@ -1474,6 +1480,7 @@ void feed_env_events(State& s, uint32_t now) {
     if (s.env_seen[c] && at == s.env_last_at[c]) continue;
     s.env_seen[c] = true;
     s.env_last_at[c] = at;
+    s.env_history.add(static_cast<size_t>(c), value, at);
     EnvFinding f;
     if (s.env_events.observe(channels[c], value, at, s.model.sensitivity(), &f))
       (void)s.model.append_measured(env_event(f, now, g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0, s.model.sensitivity()));

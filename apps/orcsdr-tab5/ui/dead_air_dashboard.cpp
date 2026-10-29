@@ -20,6 +20,7 @@
 #include "dead_air_palette.hpp"
 #include "dead_air_bandplan.hpp"
 #include "dead_air_fx.hpp"
+#include "dead_air_envhistory.hpp"
 
 namespace orcsdr::dead_air {
 namespace {
@@ -574,6 +575,121 @@ void audio() {
   label(g_snapshot->receiver_ready ? g_snapshot->demod : "NO AUDIO SOURCE", 829, 462, TFT_WHITE, 3);
   label("Clips and replay: Review tab", 829, 606, kMuted, 2);
 }
+// ---- Environment trend charts: one-minute averages of the ENV III readings, newest at the right edge. A minute with no
+// valid reading is a gap and the line breaks there; nothing is interpolated or carried over.
+constexpr int kEnChX = 666, kEnChW = 572, kEnChH = 88;
+constexpr int kEnChTop[3] = {238, 360, 482};
+constexpr int kEnWinY = 154, kEnWinW = 70, kEnWinH = 40, kEnWinX0 = 1010, kEnWinDx = 76;
+constexpr size_t kEnSpans[3] = {60, 360, 1440};  // buckets (minutes) shown by the 1 H, 6 H and 24 H windows
+constexpr const char* kEnWinText[3] = {"1 H", "6 H", "24 H"};
+constexpr const char* kEnSpanStart[3] = {"-60 m", "-6 h", "-24 h"};
+constexpr const char* kEnSpanMid[3] = {"-30 m", "-3 h", "-12 h"};
+int g_env_window = -1;  // -1: the smallest window that holds everything recorded so far
+int g_env_cursor = -1;  // chart column the owner tapped, or -1
+int env_window_index() {
+  if (g_env_window >= 0) return g_env_window;
+  const size_t have = g_snapshot->env_history ? g_snapshot->env_history->count() : 1;
+  for (int i = 0; i < 2; ++i)
+    if (have <= kEnSpans[i]) return i;
+  return 2;
+}
+void env_chart(size_t ch, uint16_t color, const char* name, const Reading& now_reading, const char* format, float min_span,
+               size_t span) {
+  const int top = kEnChTop[ch];
+  const EnvHistory* history = g_snapshot->env_history;
+  char text[40];
+  label(name, kEnChX, top - 14, kMuted, 2);
+  g.fillRect(kEnChX, top, kEnChW, kEnChH, plot_bg());
+  g.drawRoundRect(kEnChX, top, kEnChW, kEnChH, 0, plot_grid());
+  float lo = 0.0f, hi = 0.0f;
+  bool any = false;
+  if (history) {
+    for (int col = 0; col < kEnChW; ++col) {
+      const EnvColumn c = env_column(*history, ch, span, kEnChW, static_cast<size_t>(col));
+      if (!c.valid) continue;
+      if (!any || c.value < lo) lo = c.value;
+      if (!any || c.value > hi) hi = c.value;
+      any = true;
+    }
+  }
+  // The value at the cursor, else the newest accepted reading.
+  const char* tag = "NOW";
+  float shown = 0.0f;
+  bool have_shown = false;
+  if (g_env_cursor >= 0 && history) {
+    const EnvColumn c = env_column(*history, ch, span, kEnChW, static_cast<size_t>(g_env_cursor));
+    tag = "AT CURSOR";
+    have_shown = c.valid;
+    shown = c.value;
+  } else if (reading_status(now_reading) == Status::current) {
+    have_shown = true;
+    shown = now_reading.value;
+  }
+  if (have_shown) std::snprintf(text, sizeof(text), format, static_cast<double>(shown));
+  else std::snprintf(text, sizeof(text), "--");
+  std::snprintf(text + std::strlen(text), sizeof(text) - std::strlen(text), "  %s", tag);
+  label(text, kEnChX + 330, top - 14, have_shown ? TFT_WHITE : kMuted, 2);
+  if (!any) {
+    label(g_snapshot->environment_sensor_attached ? "NO READINGS IN THIS WINDOW YET" : "NO ENV III READINGS", kEnChX + 14,
+          top + kEnChH / 2, kMuted, 2);
+    return;
+  }
+  if (hi - lo < min_span) {  // a quiet room must not look like a trend
+    const float mid = (hi + lo) / 2.0f;
+    lo = mid - min_span / 2.0f;
+    hi = mid + min_span / 2.0f;
+  }
+  const float pad = (hi - lo) * 0.08f;
+  lo -= pad;
+  hi += pad;
+  const auto y_of = [&](float v) { return top + 2 + static_cast<int>((hi - v) / (hi - lo) * static_cast<float>(kEnChH - 5)); };
+  dashed_hline(kEnChX + 1, top + kEnChH / 2, kEnChW - 2, plot_grid());
+  int px = 0, py = 0;
+  bool have_prev = false;
+  for (int col = 0; col < kEnChW; ++col) {
+    const EnvColumn c = env_column(*history, ch, span, kEnChW, static_cast<size_t>(col));
+    if (!c.valid) { have_prev = false; continue; }
+    const int x = kEnChX + col, y = std::max(top + 1, std::min(top + kEnChH - 2, y_of(c.value)));
+    if (have_prev) g.drawLine(px, py, x, y, color);
+    else g.fillRect(x, y, 1, 1, color);  // an isolated minute still shows
+    px = x; py = y; have_prev = true;
+  }
+  if (have_prev && g_env_cursor < 0) g.fillRect(px - 1, py - 1, 3, 3, TFT_WHITE);  // newest valid column
+  std::snprintf(text, sizeof(text), format, static_cast<double>(hi));
+  label(text, kEnChX + 6, top + 12, kMuted, 2);
+  std::snprintf(text, sizeof(text), format, static_cast<double>(lo));
+  label(text, kEnChX + 6, top + kEnChH - 12, kMuted, 2);
+}
+void environment_charts() {
+  const int win = env_window_index();
+  const size_t span = kEnSpans[win];
+  heading("TREND (1-MIN AVERAGES)", 666, 144);
+  for (int i = 0; i < 3; ++i) {
+    const int x = kEnWinX0 + i * kEnWinDx;
+    const bool on = i == win;
+    box(x, kEnWinY, kEnWinW, kEnWinH, on ? kGreen : kEdge);
+    label(kEnWinText[i], x + 14, kEnWinY + kEnWinH / 2, on ? kGreen : TFT_WHITE, 2);
+  }
+  env_chart(0, 0xfd20, "TEMPERATURE (C)", g_snapshot->temperature_c, "%.1f", 2.0f, span);
+  env_chart(1, kCyan, "HUMIDITY (%RH)", g_snapshot->humidity_rh, "%.1f", 10.0f, span);
+  env_chart(2, kGreen, "PRESSURE (hPa)", g_snapshot->pressure_hpa, "%.1f", 4.0f, span);
+  if (g_env_cursor >= 0) {
+    for (int ch = 0; ch < 3; ++ch) g.drawFastVLine(kEnChX + g_env_cursor, kEnChTop[ch] + 1, kEnChH - 2, TFT_WHITE);
+  }
+  label(kEnSpanStart[win], kEnChX, 590, kMuted, 2);
+  label(kEnSpanMid[win], kEnChX + kEnChW / 2 - 30, 590, kMuted, 2);
+  label("NOW", kEnChX + kEnChW - 36, 590, kMuted, 2);
+  if (g_env_cursor >= 0) {
+    char age[16], text[64];
+    const size_t offset = static_cast<size_t>(kEnChW - 1 - g_env_cursor) * span / kEnChW;
+    if (offset == 0) std::snprintf(age, sizeof(age), "NOW");
+    else format_duration(static_cast<uint32_t>(offset) * 60u, age, sizeof(age));
+    std::snprintf(text, sizeof(text), "CURSOR %s%s  (tap it again to clear)", offset ? "-" : "", age);
+    label(text, kEnChX, 612, kViolet, 2);
+  } else {
+    label("Tap a chart to read a moment.", kEnChX, 612, kMuted, 2);
+  }
+}
 void environment() {
   box(20, 120, 610, 511);
   heading("ENV III / OPTIONAL SENSOR", 40, 144);
@@ -582,14 +698,11 @@ void environment() {
   reading("TEMPERATURE (C)", g_snapshot->temperature_c, 40, 280, "%.1f");
   reading("HUMIDITY (%)", g_snapshot->humidity_rh, 40, 355, "%.1f");
   reading("PRESSURE (hPa)", g_snapshot->pressure_hpa, 40, 430, "%.1f");
-  label("Core RF investigation works without ENV III.", 40, 548, kMuted, 2);
+  reading("DEVICE MOTION (g)", g_snapshot->motion_g, 40, 505, "%.3f");
+  label("Tab5 motion, NOT room movement.", 40, 548, kMuted, 2);
+  label("Core RF investigation works without ENV III.", 40, 598, kMuted, 2);
   box(644, 120, 616, 511);
-  heading("SENSOR INTEGRITY", 666, 144);
-  label("No derived score without validated baselines", 666, 201, kMuted, 2);
-  reading("DEVICE MOTION (g)", g_snapshot->motion_g, 666, 271, "%.3f");
-  label("This describes Tab5 motion, NOT room movement.", 666, 331, kMuted, 2);
-  label("Temperature / humidity / pressure", 666, 426, kCyan, 2);
-  label("shown only from current valid sensor samples", 666, 476, kMuted, 2);
+  environment_charts();
 }
 bool event_has_clip(uint32_t sequence) {
   for (uint8_t i = 0; i < g_snapshot->clip_event_seq_count && i < 16; ++i)
@@ -1357,6 +1470,8 @@ void enter(const Snapshot& snapshot) {
   g_info_open = false;
   g_overlay = Overlay::none;
   g_scrub_cursor = -1;
+  g_env_cursor = -1;
+  g_env_window = -1;
   g_map_pref = true;
   g_prev_sweeping = false;
   g_fx.reset();
@@ -1578,6 +1693,21 @@ Action handle_touch(int32_t x, int32_t y, uint32_t now_ms) {
     g_overlay = Overlay::session;
     draw_body(true);
     return {};
+  }
+  if (g_page == Page::environment) {
+    for (int i = 0; i < 3; ++i) {
+      if (!hit(x, y, kEnWinX0 + i * kEnWinDx, kEnWinY, kEnWinW, kEnWinH)) continue;
+      g_env_window = i;
+      g_env_cursor = -1;  // a column means a different moment in another window
+      draw_body();
+      return {};
+    }
+    if (hit(x, y, kEnChX, kEnChTop[0], kEnChW, kEnChTop[2] + kEnChH - kEnChTop[0])) {
+      const int col = x - kEnChX;
+      g_env_cursor = (g_env_cursor >= 0 && std::abs(col - g_env_cursor) <= 12) ? -1 : col;
+      draw_body();
+      return {};
+    }
   }
   if (g_page == Page::spectrum && g_snapshot->map.count > 0 && hit(x, y, kChipX, kChipY, kChipW, kChipH)) {
     g_map_pref = !g_map_pref;  // band map <-> live waterfall

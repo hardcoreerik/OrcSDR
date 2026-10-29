@@ -20,6 +20,7 @@ on:
       - 'tests/dead_air_stats_tests.cpp'
       - 'tests/dead_air_env_tests.cpp'
       - 'tests/dead_air_envevents_tests.cpp'
+      - 'tests/dead_air_envhistory_tests.cpp'
       - 'tests/dead_air_journal_tests.cpp'
       - '.github/workflows/dead-air-host-tests.yml'
   pull_request:
@@ -40,6 +41,7 @@ on:
       - 'tests/dead_air_stats_tests.cpp'
       - 'tests/dead_air_env_tests.cpp'
       - 'tests/dead_air_envevents_tests.cpp'
+      - 'tests/dead_air_envhistory_tests.cpp'
       - '.github/workflows/dead-air-host-tests.yml'
 permissions:
   contents: read
@@ -83,6 +85,7 @@ jobs:
             apps/orcsdr-tab5/ui/dead_air_model.cpp \
             apps/orcsdr-tab5/ui/dead_air_bandplan.cpp \
             apps/orcsdr-tab5/ui/dead_air_fx.cpp \
+            apps/orcsdr-tab5/ui/dead_air_envhistory.cpp \
             apps/orcsdr-tab5/ui/screen_controller.cpp \
             -o /tmp/dead-air-render-tests
       - name: Execute M5GFX render bounds and touch tests
@@ -209,3 +212,13 @@ jobs:
             -o /tmp/dead-air-envevents-tests
       - name: Execute environment event tests
         run: /tmp/dead-air-envevents-tests
+      - name: Compile environment history with warnings as errors
+        run: |
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror \
+            -Iapps/orcsdr-tab5/ui \
+            tests/dead_air_envhistory_tests.cpp \
+            apps/orcsdr-tab5/ui/dead_air_envhistory.cpp \
+            apps/orcsdr-tab5/ui/dead_air_model.cpp \
+            -o /tmp/dead-air-envhistory-tests
+      - name: Execute environment history tests
+        run: /tmp/dead-air-envhistory-tests

@@ -6,6 +6,14 @@ Changes to the Dead Air dashboard. Newest first. The design contract and the dev
 
 Branch `claude/dead-air-dashboard-review-8c2b12`. Host tests and the native ESP-IDF build only so far; not flashed, so none of it has been seen on the panel.
 
+### Added (Environment trend charts)
+
+- **Charts:** the Environment tab now plots temperature, humidity and pressure as three trend lines, newest at the right edge. Each point is the mean of the accepted sensor samples in one minute, kept for the last 24 hours (`dead_air_envhistory`, 1440 minutes x 3 channels x int16 = 8.4 KB, inside the PSRAM-resident session state, so no new boot-time static).
+- **Honest gaps:** a minute with no valid reading is a gap and the line breaks there; nothing is interpolated or carried over, and an unplugged module leaves a visible hole. The vertical range fits the data but is never narrower than 2 C, 10 %RH or 4 hPa, so a quiet room does not look like a trend. The axis labels are the real ends of the range.
+- **Controls:** 1 H / 6 H / 24 H buttons choose the window (until you pick one, the smallest window that holds everything recorded so far). Tapping a chart places a cursor across all three and shows each value and how long ago that moment was; tapping near it again clears it.
+- **Limits:** the history lives in memory for the session and starts empty each time Dead Air opens; it is not written to the SD card yet. DEVICE MOTION moved to the left panel. Not flashed; host tests only so far.
+- Tests: `dead_air_envhistory_tests` (minute averaging, scaling, gaps, late and bad samples, the 24-hour wrap, column summaries) and a new renderer block (lines per chart, gap breaks, window buttons, cursor, no full-screen clear on repeated updates).
+
 ### Added (ENV III sensor: the Environment tab now has a data path)
 
 - **ENV III driver:** until now the Environment tab and the Overview card had their fields but nothing filled them, so a module plugged into Port A showed "MODULE NOT CONNECTED" however it was wired. Dead Air now reads the Unit ENV III on the Tab5's Port A (SDA GPIO53, SCL GPIO54): temperature and humidity from the SHT30 (0x44, CRC-8 checked) and pressure from the QMP6988 (0x70, chip id checked, compensation as in the manufacturer's reference code).
