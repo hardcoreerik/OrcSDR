@@ -15,6 +15,7 @@ using namespace orcsdr::drone_watch;
 
 MockM5 M5;
 uint32_t fake_ms = 1000;
+static C6ProbeInputs test_c6_inputs{};
 namespace orcsdr::audio_header {
 void draw_brand(const char*) {}
 void draw_battery(int32_t) {}
@@ -57,7 +58,8 @@ int main() {
   s.capture_qualified = false;
   text_is(describe(s, 1000), "SOURCE UNAVAILABLE");
 
-  install({[]() -> int32_t { return 75; }, []() -> bool { return true; }});
+  install({[]() -> int32_t { return 75; }, []() -> bool { return true; },
+           []() -> C6Capability { return assess_c6(test_c6_inputs); }});
   open();
   assert(active() && screens::owns(screens::Id::drone_watch));
   assert(M5.Display.full_clears == 1);
@@ -70,6 +72,15 @@ int main() {
   assert(M5.Display.rect_draws == before_tick); // idle does no drawing
   touch(900, 545); // SOURCES
   assert(M5.Display.saw("SOURCE DETAILS"));
+  assert(M5.Display.saw("BLE: HCI BUILD DISABLED"));
+  // A healthy Wi-Fi Hosted link is NOT Bluetooth packet access. Source-card
+  // updates must occur on the UI task without clearing the full screen.
+  test_c6_inputs.link_ready = true;
+  test_c6_inputs.cp_version_readable = true;
+  tick(12000);
+  assert(M5.Display.saw("C6 LINK: HOSTED READY"));
+  assert(M5.Display.saw("BLE: HCI BUILD DISABLED"));
+  assert(M5.Display.full_clears == 1);
   touch(1100, 545); // HELP
   assert(M5.Display.saw("HOW IT WORKS"));
   assert(M5.Display.full_clears == 1); // partial content repaint only
