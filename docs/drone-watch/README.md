@@ -48,6 +48,12 @@ Shared, **mandatory** contracts:
 - [P1/P2a review, remedies, hardware gates and local test runbook](evidence/2026-10-28-p1-p2a-self-review-and-ble4-ingress.md).
 - [6/6 normal and 6/6 sanitizer CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40829468655). **Host-only**, no HCI events from the physical ESP32-C6.
 
+## W01 visual reference — source-aligned preview images
+
+The [W01 preview package](previews/w01/README.md) includes a reproducible [Python render script](previews/w01/render_source_layout.py) and five PNG images (1280×720 default/Sources, 720×720 default/Sources and contact sheet). A [GitHub Actions preview workflow](../../.github/workflows/drone-watch-preview-render.yml) generates, checks and commits the PNGs to this same feature branch; missing images mean its generation/commit step has not completed.
+
+**Important:** these are **source-aligned illustration renders**, not a pixel-perfect M5GFX framebuffer or tested Tab5 photograph. They use the current W01 layout coordinates, strings and RGB565 color codes with an approximate system font and placeholder OrcSDR badge. The original six more ambitious Drone Watch screen concepts are different prototypes, not current firmware captures. Production UI acceptance still requires exact renderer/framebuffer comparison and physical 5-inch testing.
+
 ## Documents
 
 - [DESIGN.md](DESIGN.md) — product scope, source and evidence contracts, proposed UI, module boundaries, concurrency, privacy.
