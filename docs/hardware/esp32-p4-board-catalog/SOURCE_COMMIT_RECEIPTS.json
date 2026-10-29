@@ -1,0 +1,106 @@
+{
+  "snapshot": "2026-10-28",
+  "source_pins": [
+    {
+      "slug": "esp-bsp",
+      "repo": "espressif/esp-bsp",
+      "sha": "9112bd334726368d4aa4421dd01f2e4b1a739568",
+      "license": "Apache-2.0",
+      "license_file": "bsp/m5stack_tab5/LICENSE",
+      "url": "https://github.com/espressif/esp-bsp/tree/9112bd334726368d4aa4421dd01f2e4b1a739568"
+    },
+    {
+      "slug": "esp-hosted",
+      "repo": "espressif/esp-hosted-mcu",
+      "sha": "78b1c1c43c02b0c4e898cf87f94679278b1ddaff",
+      "license": "Apache-2.0",
+      "license_file": "LICENSE",
+      "url": "https://github.com/espressif/esp-hosted-mcu/tree/78b1c1c43c02b0c4e898cf87f94679278b1ddaff"
+    },
+    {
+      "slug": "m5gfx",
+      "repo": "m5stack/M5GFX",
+      "sha": "6e53f9bfcf7dae34e7c7c089cfd66db977793e17",
+      "license": "NOT_CHECKED",
+      "license_file": "LICENSE",
+      "url": "https://github.com/m5stack/M5GFX/tree/6e53f9bfcf7dae34e7c7c089cfd66db977793e17"
+    },
+    {
+      "slug": "m5unified",
+      "repo": "m5stack/M5Unified",
+      "sha": "565a499675b4cbbf897451d7f9ef66890e2cbb90",
+      "license": "NOT_CHECKED",
+      "license_file": "LICENSE",
+      "url": "https://github.com/m5stack/M5Unified/tree/565a499675b4cbbf897451d7f9ef66890e2cbb90"
+    },
+    {
+      "slug": "lily",
+      "repo": "Xinyuan-LilyGO/T-Display-P4",
+      "sha": "7b021f795f6842fe6d62d3b2f2931cd0f03d3f80",
+      "license": "GPL-3.0",
+      "license_file": "LICENSE",
+      "url": "https://github.com/Xinyuan-LilyGO/T-Display-P4/tree/7b021f795f6842fe6d62d3b2f2931cd0f03d3f80"
+    },
+    {
+      "slug": "lily-driver",
+      "repo": "Xinyuan-LilyGO/lilygo_device_driver",
+      "sha": "a47cf73e2c9d442c0f00b618749150f4482dcd0a",
+      "license": "GPL-3.0",
+      "license_file": "LICENSE",
+      "url": "https://github.com/Xinyuan-LilyGO/lilygo_device_driver/tree/a47cf73e2c9d442c0f00b618749150f4482dcd0a"
+    },
+    {
+      "slug": "olimex",
+      "repo": "OLIMEX/ESP32-P4-DevKit",
+      "sha": "26705d36407a07324348927dfd30fbf4ffc1d94c",
+      "license": "Software GPL-3.0; Hardware CERN-OHL-S-2.0; docs CC-BY-SA-4.0",
+      "license_file": "README.md",
+      "url": "https://github.com/OLIMEX/ESP32-P4-DevKit/tree/26705d36407a07324348927dfd30fbf4ffc1d94c"
+    },
+    {
+      "slug": "elecrow5",
+      "repo": "Elecrow-RD/-CrowPanel-Advanced-5inch-ESP32-P4-HMI-AI-Display-800x480-IPS-Touch-Screen",
+      "sha": "421a2d8c797f04151337ffd3ae03ad50bee0ac28",
+      "license": "UNVERIFIED",
+      "license_file": "MISSING LICENSE in checked top-level",
+      "url": "https://github.com/Elecrow-RD/-CrowPanel-Advanced-5inch-ESP32-P4-HMI-AI-Display-800x480-IPS-Touch-Screen/tree/421a2d8c797f04151337ffd3ae03ad50bee0ac28"
+    },
+    {
+      "slug": "elecrow7",
+      "repo": "Elecrow-RD/CrowPanel-Advanced-7inch-ESP32-P4-HMI-AI-Display-1024x600-IPS-Touch-Screen",
+      "sha": "a25ecadb4b4d28e9e904e114a6a1b82ae6f84624",
+      "license": "UNVERIFIED",
+      "license_file": "MISSING LICENSE in checked top-level",
+      "url": "https://github.com/Elecrow-RD/CrowPanel-Advanced-7inch-ESP32-P4-HMI-AI-Display-1024x600-IPS-Touch-Screen/tree/a25ecadb4b4d28e9e904e114a6a1b82ae6f84624"
+    }
+  ],
+  "url_aliases": {
+    "TAB_BSP": "https://github.com/espressif/esp-bsp/blob/9112bd334726368d4aa4421dd01f2e4b1a739568/bsp/m5stack_tab5/include/bsp/m5stack_tab5.h",
+    "TAB_DISP": "https://github.com/espressif/esp-bsp/blob/9112bd334726368d4aa4421dd01f2e4b1a739568/bsp/m5stack_tab5/src/bsp_display.c",
+    "TAB_FEATURE": "https://github.com/espressif/esp-bsp/blob/9112bd334726368d4aa4421dd01f2e4b1a739568/bsp/m5stack_tab5/src/bsp_feature_en.c",
+    "TAB_USB": "https://github.com/espressif/esp-bsp/blob/9112bd334726368d4aa4421dd01f2e4b1a739568/bsp/m5stack_tab5/src/bsp_usb.c",
+    "TAB_MANIFEST": "https://github.com/espressif/esp-bsp/blob/9112bd334726368d4aa4421dd01f2e4b1a739568/bsp/m5stack_tab5/idf_component.yml",
+    "FUNC_BSP": "https://github.com/espressif/esp-bsp/blob/9112bd334726368d4aa4421dd01f2e4b1a739568/bsp/esp32_p4_function_ev_board/include/bsp/esp32_p4_function_ev_board.h",
+    "FUNC_MANIFEST": "https://github.com/espressif/esp-bsp/blob/9112bd334726368d4aa4421dd01f2e4b1a739568/bsp/esp32_p4_function_ev_board/idf_component.yml",
+    "LILY_CFG": "https://github.com/Xinyuan-LilyGO/lilygo_device_driver/blob/a47cf73e2c9d442c0f00b618749150f4482dcd0a/src/device/t_display_p4/t_display_p4_config.h",
+    "LILY_MANIFEST": "https://github.com/Xinyuan-LilyGO/T-Display-P4/blob/7b021f795f6842fe6d62d3b2f2931cd0f03d3f80/main/idf_component.yml",
+    "LILY_README": "https://github.com/Xinyuan-LilyGO/T-Display-P4/blob/7b021f795f6842fe6d62d3b2f2931cd0f03d3f80/README.md",
+    "ELE5_README": "https://github.com/Elecrow-RD/-CrowPanel-Advanced-5inch-ESP32-P4-HMI-AI-Display-800x480-IPS-Touch-Screen/blob/421a2d8c797f04151337ffd3ae03ad50bee0ac28/readme.md",
+    "ELE7_README": "https://github.com/Elecrow-RD/CrowPanel-Advanced-7inch-ESP32-P4-HMI-AI-Display-1024x600-IPS-Touch-Screen/blob/a25ecadb4b4d28e9e904e114a6a1b82ae6f84624/readme.md",
+    "ELE7_REV12": "https://github.com/Elecrow-RD/CrowPanel-Advanced-7inch-ESP32-P4-HMI-AI-Display-1024x600-IPS-Touch-Screen/blob/a25ecadb4b4d28e9e904e114a6a1b82ae6f84624/Eagle_SCH&PCB/1.2/readme.md",
+    "HOSTED_MANIFEST": "https://github.com/espressif/esp-hosted-mcu/blob/78b1c1c43c02b0c4e898cf87f94679278b1ddaff/idf_component.yml",
+    "HOSTED_README": "https://github.com/espressif/esp-hosted-mcu/blob/78b1c1c43c02b0c4e898cf87f94679278b1ddaff/README.md",
+    "WAVE_FAQ": "https://docs.waveshare.com/ESP32-P4-WIFI6-DEV-KIT/FAQ",
+    "WAVE_DEV": "https://docs.waveshare.com/ESP32-P4-WIFI6-DEV-KIT",
+    "WAVE_MOD": "https://docs.waveshare.com/ESP32-P4-Module-DEV-KIT",
+    "DFR": "https://wiki.dfrobot.com/dfr1172/",
+    "DFR_FW": "https://wiki.dfrobot.com/dfr1172/docs/22902",
+    "STAMP": "https://docs.m5stack.com/en/core/Stamp-P4",
+    "STAMP_C6": "https://docs.m5stack.com/en/stamp/Stamp-AddOn_C6_For_P4",
+    "POE": "https://docs.m5stack.com/en/unit/Unit_PoE-P4",
+    "SEEED": "https://wiki.seeedstudio.com/getting_started_with_reterminal_d1001/",
+    "OLIMEX_NOTES": "https://github.com/hardcoreerik/REA-Results/blob/main/targets/esp32-p4-devkit/notes/pcb-lessons-2026-10-16.md"
+  },
+  "git_connector_reads_only": true,
+  "rsa_imports_this_session": 0
+}
