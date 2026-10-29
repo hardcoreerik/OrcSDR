@@ -77,6 +77,28 @@ void test_before_reset_and_clock_wrap() {
   CHECK(w.count() == 6 && w.at(0, 0) == 9900);
 }
 
+// A session whose elapsed time passes 2^32 ms (49.7 days) since reset(), sampled regularly the whole way: history must keep
+// accepting samples and the newest value must be the one just added, before and after the crossing.
+void test_session_longer_than_the_clock_wrap() {
+  static EnvHistory h;
+  h.reset(123456u);
+  uint32_t clock = 123456u;
+  uint64_t elapsed = 0;
+  const uint32_t step = 3600000u;  // one sample an hour
+  int crossed_at = -1;
+  for (int i = 0; i < 1300; ++i) {  // 54 days
+    clock += step;
+    elapsed += step;
+    if (crossed_at < 0 && elapsed > 0xFFFFFFFFull) crossed_at = i;
+    h.add(0, 10.0f + static_cast<float>(i % 50), clock);
+    CHECK(h.at(0, 0) == static_cast<int16_t>((10 + i % 50) * 100));  // the sample just added is the newest bucket
+  }
+  CHECK(crossed_at > 1000 && crossed_at < 1300);  // the run really did pass 2^32 elapsed milliseconds
+  CHECK(h.count() == EnvHistory::kBuckets);
+  h.tick(clock + 5 * kMin);                        // and a silent stretch afterwards still opens gaps
+  CHECK(h.at(0, 0) == kHistGap && h.at(0, 5) != kHistGap);
+}
+
 void test_tick_turns_silence_into_gaps() {
   static EnvHistory h;
   h.reset(0);
@@ -175,6 +197,7 @@ int main() {
   test_minute_average();
   test_scaling_and_channels();
   test_before_reset_and_clock_wrap();
+  test_session_longer_than_the_clock_wrap();
   test_tick_turns_silence_into_gaps();
   test_gaps_are_not_carried_over();
   test_bad_input_and_late_samples();
