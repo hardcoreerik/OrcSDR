@@ -1,6 +1,6 @@
 # Drone Watch — OrcSDR dashboard planning
 
-> **Status (2026-10-28 PT): W01 HOST-TESTED + P1 REMOTE ID CORE CODED/HOST-TESTED (3/3 suites + 3/3 sanitizer suites).** The other 24 screens, C6 BLE/Wi-Fi Remote ID acquisition, analog video, and acoustics remain proposed. Native ESP-IDF build and physical hardware acceptance are NOT RUN.
+> **Status (2026-10-28 PT): W01 + P1 + P2a READ-ONLY C6 DIAGNOSTIC / BLE4 FRAME INGRESS HOST-TESTED (6/6 standard and 6/6 ASan/UBSan suites).** Other 24 screens, actual C6 BLE/Wi-Fi acquisition, analog video and acoustics remain unimplemented. Native ESP-IDF build and physical hardware acceptance are **NOT RUN**.
 
 Drone Watch is a proposed **receive-only aircraft-awareness dashboard** for OrcSDR, with future OrcNode collection and OrcMaps display. Its product promise is: *show what the hardware actually received, explain what it means, and never confuse a signal with an identified aircraft.*
 
@@ -37,6 +37,16 @@ Shared, **mandatory** contracts:
 - `apps/orcsdr-tab5/tests/drone_watch/rid_test.cpp` — reference encoder and independently specified wire examples, malformed-frame boundaries, 5,000 deterministic fuzz inputs.
 - `apps/orcsdr-tab5/tests/drone_watch/store_test.cpp` — replay, source separation, malformed rejection, 32-entry eviction and event accounting.
 - [P1 host evidence checkpoint](evidence/2026-10-28-rid-core-host-checkpoint.md) and [3/3 passing host CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40827333255). No Bluetooth/Wi-Fi source or W01 live feed is connected; nothing here establishes real RF reception.
+
+## P2a self-audit and BLE4 application ingress (not live RF)
+
+- `apps/orcsdr-tab5/ui/drone_watch_c6_probe.*` — pure, conservative Hosted HCI build/link gate: Wi-Fi's SDIO link is **not** Bluetooth receive proof.
+- `apps/orcsdr-tab5/ui/drone_watch_c6_native.*` — reads existing cached Wi-Fi status + build-time Kconfig only, no network RPC, scan, C6 flash or radio changes.
+- `apps/orcsdr-tab5/ui/drone_watch_ble4.*` — exact legacy Bluetooth AD 0x16 Service Data/ASTM UUID 0xFFFA/app 0x0D envelope, length, counter, 25-byte payload extraction.
+- `apps/orcsdr-tab5/ui/drone_watch_ble4_ingress.*` — bounded AD extraction → P1 decoder → 32-event source-aware history; error/provenance counters, no UI callbacks.
+- `CaptureMeta.test_data` now records replay independently of original Bluetooth transport; event-store reset clears retained entries.
+- [P1/P2a review, remedies, hardware gates and local test runbook](evidence/2026-10-28-p1-p2a-self-review-and-ble4-ingress.md).
+- [6/6 normal and 6/6 sanitizer CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40829468655). **Host-only**, no HCI events from the physical ESP32-C6.
 
 ## Documents
 
