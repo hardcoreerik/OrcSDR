@@ -110,7 +110,7 @@ ParseStatus decode_one(const uint8_t* bytes, Observation& output) {
 
 ParseStatus decode(const uint8_t* payload, size_t length,
                    const CaptureMeta& capture, Batch& out) {
-  out = {};
+  out = Batch{};
   if (!payload) return ParseStatus::invalid_argument;
   if (length < kMessageSize || length > kMaxPayload) return ParseStatus::invalid_length;
   uint8_t count = 1;
