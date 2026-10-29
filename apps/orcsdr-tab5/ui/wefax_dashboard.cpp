@@ -85,6 +85,13 @@ void station_panel() {
     label("Assigned - 1.9 kHz  |  USB",g_left.x+16,g_left.y+149,kMuted,2);
     label("Schedule != signal detected",g_left.x+16,g_left.y+181,kAmber,2);
   }
+  if (!g_s.decoder_connected)
+    label("DECODER NOT CONNECTED",g_left.x+16,g_left.y+(g_left.h>270?224:113),kAmber,2);
+  else if (g_s.wefax_receiving) {
+    std::snprintf(line,sizeof line,"RECEIVING  %u ROWS",unsigned(g_s.received_rows));
+    label(line,g_left.x+16,g_left.y+(g_left.h>270?224:113),kGreen,2);
+  } else
+    label("DECODER READY / IDLE",g_left.x+16,g_left.y+(g_left.h>270?224:113),kMuted,2);
   button(g_prev,"< FREQ",false);
   button(g_next,"FREQ >",false);
   button(g_tune,g_s.receiver_ready?"TUNE USB":"NO RTL-SDR",g_s.receiver_ready);
