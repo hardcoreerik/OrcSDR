@@ -1,6 +1,6 @@
 # Drone Watch — phased implementation plan
 
-> **W01 implementation update (2026-10-27):** Live Watch shell/source-status model is committed and host-tested on this branch, but no Remote ID decoder, C6 capture adapter, firmware build or physical device test is completed. Begin remaining phases with a verified decoder/model and acquisition gate. Every phase is a separately buildable, independently reversible unit. Never treat compilation as a real-air acceptance test.
+> **Implementation update (2026-10-28 PT):** W01 remains a host-tested, source-unavailable M5GFX screen. P1 now includes the pinned OpenDroneID C decoder, OrcSDR's bounded 25-byte/message-pack wrapper, and a 32-event metadata history with source provenance. **3/3 host suites PASS**; native ESP-IDF build, C6 acquisition, real RF capture and physical display tests are NOT RUN. All other 24 UI screens remain planned. Every phase is a separately buildable, independently reversible unit. Never treat compilation as a real-air acceptance test.
 
 **25 per-screen implementation specs:** [SCREENS.md](SCREENS.md), with shared UI/UX and rendering rules. These are future target contracts, not accepted runtime capabilities. Initial P3 covers only the smallest truthful screens; the remaining specifications become feature-gated incrementally.
 
@@ -187,7 +187,7 @@ The onboard ESP32-C6 and its existing SDIO ESP-Hosted slave are the first prefer
 | Phase | Status on 2026-10-26 | Acceptance file or missing gate |
 | --- | --- | --- |
 | P0 | RESEARCH DOCUMENTED; upstream/source audit incomplete | REA-Results draft PR #3; isolated 15/15 synthetic-model tests |
-| P1 | NOT IMPLEMENTED | Host/parser vectors + malformed tests + pinned parser attribution |
+| P1 | PARTIAL: parser + 32-entry history IMPLEMENTED; host C/C++ CI 3/3 PASS; native/hardware NOT RUN | [P1 host CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40826839560); [P1 evidence](evidence/2026-10-28-rid-core-host-checkpoint.md) |
 | P2 | NOT RUN | C6 firmware/Hosted RX + Wi-Fi coexistence evidence |
 | P3 | PARTIAL: W01 CODED / HOST-TESTED (1/1 CI suite); 24 screens NOT IMPLEMENTED | [W01 host CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40460255261); native build and physical display NOT RUN |
 | P4 | NOT IMPLEMENTED | Actual RID capture + OrcMaps |
@@ -197,4 +197,4 @@ The onboard ESP32-C6 and its existing SDIO ESP-Hosted slave are the first prefer
 | P8 | NOT RUN | Mic recordings and classifier evaluation |
 | P9 | NOT RUN | Version-pinned release acceptance |
 
-**First implementation decision:** start P1 on a new implementation branch from current `main`; run P2 investigation in parallel on nonproduction hardware, but do not let either create a broken release dependency.
+**Current branch implementation decision (owner instruction, 2026-10-28):** continue P1 and W01 in the existing `chatgpt/drone-watch-phasing-20261026` branch; do not create another branch. Run P2 investigation separately on approved nonproduction hardware when authorized, but do not let either create a broken release dependency.
