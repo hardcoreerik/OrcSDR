@@ -13,6 +13,7 @@ add_executable(drone_watch_host_test
   host_test.cpp
   ../../ui/drone_watch_model.cpp
   ../../ui/drone_watch_dashboard.cpp
+  ../../ui/drone_watch_c6_probe.cpp
   ../../ui/screen_controller.cpp
 )
 target_compile_features(drone_watch_host_test PRIVATE cxx_std_17)
