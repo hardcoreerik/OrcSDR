@@ -1,10 +1,10 @@
 # Drone Watch — developer handoff
 
-**Prepared:** 2026-10-26; **updated 2026-10-28 PT:** W01 is host-tested; P1 bounded OpenDroneID message/pack parsing and source-aware event history now have passing host CI (3/3). Hardware acquisition and native build remain pending.  
+**Prepared:** 2026-10-26; **updated 2026-10-28 PT:** W01/P1 decoder plus read-only P2a Hosted C6 capability and BLE4 AD ingress are host-tested (6/6 normal, 6/6 ASan/UBSan). Native ESP-IDF and real RF remain pending.  
 **Proposed implementation repo:** `hardcoreerik/OrcSDR`.  
 **Design baseline read:** `main` commit `07c777ca05af4bcbf8af6074dbc0b17d9a891af1`; recheck against current `origin/main` when coding starts.  
 **Private research:** [REA-Results draft PR #3](https://github.com/hardcoreerik/REA-Results/pull/3); committed inbox source survey + 15/15 synthetic test record. Follow REA-Results `AGENTS.md` for all new findings.  
-**Execution state:** W01 is wired and host-verified as an unavailable/empty-state screen. A reusable Remote ID protocol decoder and bounded event history are now host-tested. No live BLE/Wi-Fi RF acquisition, physical rendering acceptance or other 24 screens are completed.
+**Execution state:** W01 and the reusable RID application-message decoder, BLE4 advertising-envelope/ingress pipeline and bounded event history are host-tested. A read-only C6 diagnostic is wired to W01 Sources, but **Host Bluetooth HCI is not enabled in the current build**. No physical BLE/Wi-Fi reception, native IDF or other 24 screens are accepted. See [self-review and hardware gates](evidence/2026-10-28-p1-p2a-self-review-and-ble4-ingress.md).
 
 ## Mandatory screen reference before any UI implementation
 
