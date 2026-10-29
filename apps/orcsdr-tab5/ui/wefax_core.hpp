@@ -32,8 +32,8 @@ struct Metrics {
   bool capped = false;
 };
 
-// Row pointer remains valid until the next process call; copy or consume it in
-// the callback. Callbacks must be bounded and must not call Decoder methods.
+// Row pointer is valid only during the callback; copy or consume it before
+// returning, as the buffer is reused immediately afterwards. Callbacks must be bounded and must not call Decoder methods.
 using RowSink = void (*)(void* context, uint32_t row, const uint8_t* pixels,
                          uint16_t width);
 
