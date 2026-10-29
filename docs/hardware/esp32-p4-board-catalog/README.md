@@ -52,3 +52,15 @@ Proposed machine-readable outputs for the subsequent evidence integration: `boar
 - This branch is a research worktree, not a replacement for any active OrcSDR firmware branch. Do not merge without explicit user approval.
 - In local `F:\AI\RSA-Sandbox`, **RSA-Sandbox AGENTS.md forbids modifying OrcSDR or other outside directories**. The local RSA agent must only read/import OrcSDR and produce evidence/handoff inside its approved sandbox, then publish reports using the approved REA pipeline. A separate explicitly authorized OrcSDR integration actor can apply the handoff into this branch.
 - Closed/commercial **firmware binaries or SDKs** require explicit prior approval per RSA/REA policies. Publicly documented pinout, open-source vendor examples and build configurations can be researched within their licenses. Never flash or execute downloaded vendor firmware as a research shortcut.
+
+## Documentary SDK research handoff (2026-10-28)
+
+This branch includes source-pinned documentary research notes and a preliminary machine-readable hardware catalog. **No new RSA imports, ESP-IDF builds, physical tests, or REA publication were performed in the web research session.** Do not confuse manufacturer SDK pin declarations with hardware-tested production profiles.
+
+- [Board catalog narrative](BOARD_CATALOG_HANDOFF.md) / [machine-readable catalog](ESP32P4_CATALOG_HANDOFF.json)
+- [Verification tracker](BOARD_VERIFICATION_TRACKER.md) / [unverified fields](UNVERIFIED_REGISTER.md) / [conflicts](SOURCE_CONFLICTS.md)
+- [Evidence protocol](EVIDENCE_PROTOCOL.md) / [field-by-field pinmap evidence](PINMAP_AND_PERIPHERAL_EVIDENCE.md)
+- [Manufacturer SDK queue](MANUFACTURER_SDK_QUEUE.md) / [repeatable recipe book](MANUFACTURER_SDK_RECIPE_BOOK.md) / [run log](SDK_RUN_LOG.md)
+- [Local RSA handoff](HANDOFF.md) / [REA inbox draft](REA_INBOX_DRAFT.md)
+
+Keep third-party source and binaries local in the RSA lab. Validate build and hardware gates independently, and do not merge this branch without authorization.
