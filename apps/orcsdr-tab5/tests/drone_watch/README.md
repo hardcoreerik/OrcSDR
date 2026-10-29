@@ -27,7 +27,7 @@ The `drone-watch-host.log` file is saved to the folder **from which you invoke**
 
 Check Home -> DRONE WATCH from recent and all-dashboard picker, source unavailable copy, SOURCES and HELP, shared header volume/Home/Settings, switching to existing screens, Settings return, 1280×720 contrast/touch, and 720×720 when an supported P4 display integration exists. Measure screen changes, memory, USB overrun and application IQ drops before claiming Hardware-Verified.
 
-The OpenDroneID protocol decoder and AD extraction/ingress are host-tested. **No live C6 Hosted BLE/Wi-Fi HCI acquisition adapter has been integrated** and no live observations flow to W01. Zero packets doesn't mean zero drones. The remaining category labels stay disabled/planned. Other category labels remain disabled/planned.
+The OpenDroneID protocol decoder and AD extraction/ingress are host-tested. **No live C6 Hosted BLE/Wi-Fi HCI acquisition adapter has been integrated** and no live observations flow to W01. Zero packets doesn't mean zero drones. The remaining category labels stay disabled/planned.
 
 ## Tests included
 
@@ -37,5 +37,7 @@ The OpenDroneID protocol decoder and AD extraction/ingress are host-tested. **No
 - `drone_watch_c6_probe`: asserts Hosted Wi-Fi ready never becomes a Bluetooth scanner claim, and separates host build/stack/link gates.
 - `drone_watch_ble4`: official 31-byte ASTM BLE4 service-data envelope and 4,000 bounded random/malformed AD cases.
 - `drone_watch_ble4_ingress`: end-to-end bounded AD extraction → RID decode → event store; source, counter, replay flag, malformed/non-RID counters.
+
+All are host-only. For sanitizer builds on Linux/GCC/Clang, repeat the build with `-DDRONE_WATCH_SANITIZE=ON` in a separate build folder and log `ctest` into `drone-watch-sanitized.log` in the invocation directory. [6/6 normal + 6/6 ASan/UBSan passing CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40829468655) and [P2a review/hardware gates](../../../../docs/drone-watch/evidence/2026-10-28-p1-p2a-self-review-and-ble4-ingress.md).
 
 All are host-only. They do **not** verify BLE/Wi-Fi capture, timing, complete standards certification, physical RF, native ESP-IDF compilation or an aircraft. The vendored core is byte-identical with pinned upstream SHA `849c03adbe0cdd68997a462fafab397edcfe53f3` and its original license is retained. See [P1 evidence checkpoint](../../../../docs/drone-watch/evidence/2026-10-28-rid-core-host-checkpoint.md).
