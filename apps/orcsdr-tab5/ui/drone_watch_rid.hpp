@@ -22,6 +22,8 @@ struct CaptureMeta {
   uint32_t received_ms = 0;  // local monotonic; NOT broadcast timestamp or UTC
   uint32_t source_id = 0;    // assigned by a future trusted adapter
   bool test_data = false;    // explicit replay marker independent of RF transport
+  bool advertising_counter_present = false; // present in BLE4 ASTM service data
+  uint8_t advertising_counter = 0; // NOT a globally unique observation ID
 };
 
 struct Observation {
