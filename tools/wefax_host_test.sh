@@ -9,5 +9,5 @@ trap 'rm -f "$exe"' EXIT
   echo "WEFAX host test starting $(date -u +%FT%TZ)"
   g++ -std=c++17 -O2 -Wall -Wextra -Werror -Iapps/orcsdr-tab5/ui \
     tools/wefax_core_test.cpp apps/orcsdr-tab5/ui/wefax_core.cpp -o "$exe"
-  "$exe"
+  WEFAX_TEST_PGM="${TMPDIR:-/tmp}/orcsdr_wefax_reference.pgm" "$exe"
 } 2>&1 | tee "$log"
