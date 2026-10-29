@@ -2,6 +2,8 @@
 namespace orcsdr::drone_watch::rid {
 void EventStore::reset() {
   // Does not write SD or touch radios.
+  // Clear retained IDs/locations on explicit reset, not just indices.
+  for (auto& event : events_) event = StoredEvent{};
   next_ = 0;
   count_ = 0;
   sequence_ = 0;
