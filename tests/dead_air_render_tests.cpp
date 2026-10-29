@@ -199,6 +199,8 @@ int main() {
       assert(chart_signature(0) != previous_signature);  // a renderer that kept drawing the old trend would fail here
       previous_signature = chart_signature(0);
       validate_bounds();
+      // Only the full-screen threshold: the stub canvas has no pixel buffer, so draw_body() always takes paint_direct()
+      // here and clears the 1280x522 body. On the device the tile diff pushes just the changed columns.
       no_full_clear();
     }
     da::handle_touch(1010 + 20, 154 + 20, 5010);  // 1 H
@@ -238,7 +240,28 @@ int main() {
     host_display::reset();
     da::update(ch);
     assert(displayed("-6 h") && !displayed("-60 m") && displayed("Tap a chart") && !displayed("AT CURSOR"));
-    da::handle_touch(40, 673, 5050);              // back to Overview for the rest
+    // The automatic window moving on its own (1 H to 6 H as history grows) must clear a cursor placed in the old one.
+    static da::EnvHistory young;
+    young.reset(0);
+    for (uint32_t m = 0; m < 30; ++m) young.add(0, 20.0f + 0.1f * static_cast<float>(m), m * 60000u + 10u);
+    ch.env_history = &young;
+    ch.env_history_seq = young.seq();
+    ch.revision = 63;
+    host_display::reset();
+    da::update(ch);
+    assert(displayed("-60 m"));
+    da::handle_touch(900, 260, 5051);
+    assert(displayed("AT CURSOR"));
+    for (uint32_t m = 30; m < 70; ++m) young.add(0, 20.0f + 0.1f * static_cast<float>(m), m * 60000u + 10u);
+    ch.env_history_seq = young.seq();
+    ch.revision = 64;
+    host_display::reset();
+    da::update(ch);
+    assert(displayed("-6 h") && !displayed("-60 m"));
+    assert(!displayed("AT CURSOR") && displayed("Tap a chart"));
+    ch.env_history = &hist;
+    ch.env_history_seq = hist.seq();
+    da::handle_touch(40, 673, 5052);              // back to Overview for the rest
     snap.revision = 70;
     da::update(snap);
   }

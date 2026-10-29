@@ -589,6 +589,7 @@ constexpr const char* kEnSpanStart[3] = {"-60 m", "-6 h", "-24 h"};
 constexpr const char* kEnSpanMid[3] = {"-30 m", "-3 h", "-12 h"};
 int g_env_window = -1;  // -1: the smallest window that holds everything recorded so far
 int g_env_cursor = -1;  // chart column the owner tapped, or -1
+int g_env_cursor_win = -1;  // the window the cursor was placed in; a column names a moment only in that window
 int env_window_index() {
   if (g_env_window >= 0) return g_env_window;
   const size_t have = g_snapshot->env_history ? g_snapshot->env_history->count() : 1;
@@ -665,6 +666,8 @@ void env_chart(size_t ch, uint16_t color, const char* name, const Reading& now_r
 }
 void environment_charts() {
   const int win = env_window_index();
+  // The automatic window can move on its own as history grows; the cursor column would then name another moment.
+  if (g_env_cursor >= 0 && g_env_cursor_win != win) g_env_cursor = -1;
   const size_t span = kEnSpans[win];
   heading("TREND (1-MIN AVERAGES)", 666, 144);
   for (int i = 0; i < 3; ++i) {
@@ -1597,6 +1600,7 @@ void enter(const Snapshot& snapshot) {
   g_overlay = Overlay::none;
   g_scrub_cursor = -1;
   g_env_cursor = -1;
+  g_env_cursor_win = -1;
   g_env_window = -1;
   g_map_pref = true;
   g_prev_sweeping = false;
@@ -1839,6 +1843,7 @@ Action handle_touch(int32_t x, int32_t y, uint32_t now_ms) {
     if (hit(x, y, kEnChX, kEnChTop[0], kEnChW, kEnChTop[2] + kEnChH - kEnChTop[0])) {
       const int col = x - kEnChX;
       g_env_cursor = (g_env_cursor >= 0 && std::abs(col - g_env_cursor) <= 12) ? -1 : col;
+      g_env_cursor_win = env_window_index();
       draw_body();
       return {};
     }
