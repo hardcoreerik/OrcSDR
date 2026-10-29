@@ -1,6 +1,6 @@
-# Drone Watch W01 + P1 Remote ID host tests
+# Drone Watch W01 + P1/P2a Remote ID host tests
 
-**Scope:** three independent host executables compile the actual W01 M5GFX renderer/model/ScreenController; OrcSDR's own bounded Remote ID packet decoder against the pinned Apache-2.0 OpenDroneID core; and the fixed-capacity observation history, source/clock provenance and loss counters. The recorded display verifies one structural clear on entry and no additional full-screen clears on 100 unchanged time ticks, touch overlays or source-status updates. No ESP-IDF, physical RF/BLE reception or Tab5 framebuffer performance is implied.
+**Scope:** six independent host executables compile the actual W01 M5GFX renderer/model/ScreenController; OrcSDR's own bounded Remote ID packet decoder against the pinned Apache-2.0 OpenDroneID core; and the fixed-capacity observation history, source/clock provenance and loss counters. The recorded display verifies one structural clear on entry and no additional full-screen clears on 100 unchanged time ticks, touch overlays or source-status updates. No ESP-IDF, physical RF/BLE reception or Tab5 framebuffer performance is implied.
 
 ## How to build and run
 
@@ -27,12 +27,15 @@ The `drone-watch-host.log` file is saved to the folder **from which you invoke**
 
 Check Home -> DRONE WATCH from recent and all-dashboard picker, source unavailable copy, SOURCES and HELP, shared header volume/Home/Settings, switching to existing screens, Settings return, 1280×720 contrast/touch, and 720×720 when an supported P4 display integration exists. Measure screen changes, memory, USB overrun and application IQ drops before claiming Hardware-Verified.
 
-The OpenDroneID protocol decoder is now implemented and host-tested, but **no C6 Hosted BLE/Wi-Fi acquisition adapter has been integrated** and no live observations flow to W01. Zero packets doesn't mean zero drones. The remaining category labels stay disabled/planned. Other category labels remain disabled/planned.
+The OpenDroneID protocol decoder and AD extraction/ingress are host-tested. **No live C6 Hosted BLE/Wi-Fi HCI acquisition adapter has been integrated** and no live observations flow to W01. Zero packets doesn't mean zero drones. The remaining category labels stay disabled/planned. Other category labels remain disabled/planned.
 
 ## Tests included
 
 - `drone_watch_host`: actual M5GFX W01 source status, no-data, touch, off-screen ownership, no repeated full-screen clear.
 - `drone_watch_rid`: reference-derived BasicID/Location/SelfID/System/Auth/OperatorID/pack tests, invalid/unsupported/secret fields, 5,000 deterministic malformed/random candidates and strict packet/version/size limits.
 - `drone_watch_store`: 32-entry fixed-size event store, replay flag, independent source IDs, rejection/overflow counters.
+- `drone_watch_c6_probe`: asserts Hosted Wi-Fi ready never becomes a Bluetooth scanner claim, and separates host build/stack/link gates.
+- `drone_watch_ble4`: official 31-byte ASTM BLE4 service-data envelope and 4,000 bounded random/malformed AD cases.
+- `drone_watch_ble4_ingress`: end-to-end bounded AD extraction → RID decode → event store; source, counter, replay flag, malformed/non-RID counters.
 
 All are host-only. They do **not** verify BLE/Wi-Fi capture, timing, complete standards certification, physical RF, native ESP-IDF compilation or an aircraft. The vendored core is byte-identical with pinned upstream SHA `849c03adbe0cdd68997a462fafab397edcfe53f3` and its original license is retained. See [P1 evidence checkpoint](../../../../docs/drone-watch/evidence/2026-10-28-rid-core-host-checkpoint.md).
