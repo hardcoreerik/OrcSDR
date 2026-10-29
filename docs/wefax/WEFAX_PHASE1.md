@@ -22,7 +22,7 @@ This is a clean-room, receive-only WEFAX **manual-frame** baseline. It is a port
 bash tools/wefax_host_test.sh
 ```
 
-The script builds a temporary executable, tests input combinations, prints per-case MAE, and saves the run log to `tools/wefax_host_test.log` in the repository working folder. It also writes `/tmp/orcsdr_wefax_reference.pgm` on Unix-like hosts as a generated output image. Do not commit those generated test outputs.
+The script builds a temporary executable, tests input combinations, prints per-case MAE, and saves the run log to `tools/wefax_host_test.log` in the repository working folder. It sets `WEFAX_TEST_PGM` to write `/tmp/orcsdr_wefax_reference.pgm` on Unix-like hosts as a generated output image. Do not commit those generated test outputs.
 
 **PowerShell on NewcorePC**, when `g++` is available:
 
@@ -32,7 +32,7 @@ g++ -std=c++17 -O2 -Wall -Wextra -Werror -Iapps/orcsdr-tab5/ui tools/wefax_core_
 & "$env:TEMP\orcsdr-wefax-test.exe" 2>&1 | Tee-Object -FilePath .\tools\wefax_host_test.log
 ```
 
-Run from whichever Git working tree contains this branch. The test writes the reference PGM only to `/tmp/` on Unix, so the image artifact may not be produced on native Windows; the assertions and log work on both platforms.
+Run from whichever Git working tree contains this branch. Image output is optional: set `WEFAX_TEST_PGM` to an absolute destination path before running the test on Windows. The assertions and log work without an image path.
 
 ## Observed host results
 
