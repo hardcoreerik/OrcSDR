@@ -29,10 +29,10 @@ from pathlib import Path
 def pgm(path):
     b = Path(path).read_bytes()
     assert b.startswith(b'P5\n'), path
-    header, width, height, _ = b.split(b'\n', 3)
-    head = len(header)+len(width)+len(height)+len(b'255')+4
-    w,h=int(width.split()[0]),int(width.split()[1])
-    return w,h,b[head:]
+    magic, dimensions, maxval, pixels = b.split(b'\n', 3)
+    assert magic == b'P5' and maxval == b'255', path
+    w,h=map(int,dimensions.split())
+    return w,h,pixels
 w,h,a=pgm(sys.argv[1])
 w2,h2,b=pgm(sys.argv[2])
 assert (w,h)==(w2,h2), ((w,h),(w2,h2))
