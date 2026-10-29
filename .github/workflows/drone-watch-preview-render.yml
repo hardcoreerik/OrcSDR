@@ -1,0 +1,81 @@
+name: Drone Watch W01 source-aligned preview rendering
+
+on:
+  push:
+    branches:
+      - chatgpt/drone-watch-phasing-20261026
+    paths:
+      - docs/drone-watch/previews/w01/render_source_layout.py
+      - .github/workflows/drone-watch-preview-render.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: drone-watch-w01-previews-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    # Generated PNGs are review artifacts, not native M5GFX screen captures.
+    if: github.ref == 'refs/heads/chatgpt/drone-watch-phasing-20261026'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout this exact feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: chatgpt/drone-watch-phasing-20261026
+          persist-credentials: true
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install system font and pinned Pillow
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y fonts-dejavu-core
+          python -m pip install Pillow==12.3.0
+      - name: Render source-aligned 1280 and 720 reference frames
+        run: |
+          python docs/drone-watch/previews/w01/render_source_layout.py 2>&1 | tee drone-watch-preview-render.log
+      - name: Validate five generated PNG dimensions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          root = Path('docs/drone-watch/previews/w01')
+          samples = {
+            'W01_as_built_1280_default.png': (1280,720),
+            'W01_as_built_1280_sources.png': (1280,720),
+            'W01_as_built_720_default.png': (720,720),
+            'W01_as_built_720_sources.png': (720,720),
+            'W01_source_aligned_comparison.png': (1280,1080),
+          }
+          for filename, expected in samples.items():
+              with Image.open(root / filename) as frame:
+                  assert frame.size == expected, (filename, frame.size)
+                  frame.verify()
+          print('PASS: all five preview PNGs have expected dimensions')
+          PY
+      - name: Archive preview frames and generation log
+        uses: actions/upload-artifact@v4
+        with:
+          name: drone-watch-w01-preview-reference
+          path: |
+            docs/drone-watch/previews/w01/*.png
+            drone-watch-preview-render.log
+          retention-days: 30
+      - name: Commit generated previews back to the same branch
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- docs/drone-watch/previews/w01/*.png
+          if ! git diff --cached --quiet; then
+            git commit -m 'docs(drone-watch): commit generated W01 reference PNGs [skip ci]'
+            git push origin HEAD:chatgpt/drone-watch-phasing-20261026
+          else
+            echo 'Preview PNGs are already up to date.'
+          fi
