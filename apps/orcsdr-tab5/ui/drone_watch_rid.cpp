@@ -128,6 +128,19 @@ ParseStatus decode(const uint8_t* payload, size_t length,
   }
 
   Batch staged{};
+  // The reference checkPackContent() rejects repeated singleton message kinds.
+  // Maintain these constraints before exposing any part of a message pack.
+  uint8_t type_counts[6]{};
+  for (uint8_t i = 0; i < count; ++i) {
+    const uint8_t type = static_cast<uint8_t>(messages[static_cast<size_t>(i) * kMessageSize] >> 4);
+    if (type > ODID_MESSAGETYPE_OPERATOR_ID) return ParseStatus::unsupported_type;
+    ++type_counts[type];
+    if ((type == ODID_MESSAGETYPE_BASIC_ID && type_counts[type] > 2) ||
+        (type != ODID_MESSAGETYPE_BASIC_ID && type != ODID_MESSAGETYPE_AUTH &&
+         type_counts[type] > 1)) {
+      return ParseStatus::malformed;
+    }
+  }
   staged.capture = capture;
   staged.test_data = capture.transport == Transport::fixture;
   for (uint8_t i = 0; i < count; ++i) {
