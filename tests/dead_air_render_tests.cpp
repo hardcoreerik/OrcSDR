@@ -168,12 +168,22 @@ int main() {
     assert(lines[0] > 0 && lines[1] > 0 && lines[2] > 0);
     validate_bounds();
     no_full_clear();
-    for (int step = 0; step < 4; ++step) {        // a new minute average arrives: values move, nothing is cleared
-      hist.add(0, 22.0f + static_cast<float>(step), (90u + static_cast<uint32_t>(step)) * 60000u + 10u);
+    const auto chart_signature = [&](int chart) {  // where the temperature line runs: changes when the data does
+      uint32_t sig = 0;
+      for (const Prim& p : host_display::prims)
+        if (p.kind == Prim::line && in_chart(p, chart))
+          sig = sig * 1000003u + static_cast<uint32_t>(p.x * 31 + p.y * 17 + p.w * 7 + p.h * 3);
+      return sig;
+    };
+    uint32_t previous_signature = chart_signature(0);
+    for (int step = 0; step < 4; ++step) {        // a new minute average arrives: the line moves, nothing is cleared
+      hist.add(0, 22.0f + 3.0f * static_cast<float>(step), (90u + static_cast<uint32_t>(step)) * 60000u + 10u);
       ch.env_history_seq = hist.seq();
       ch.revision = 52 + step;
       host_display::reset();
       da::update(ch);
+      assert(chart_signature(0) != previous_signature);  // a renderer that kept drawing the old trend would fail here
+      previous_signature = chart_signature(0);
       validate_bounds();
       no_full_clear();
     }
@@ -197,6 +207,23 @@ int main() {
     da::update(ch);
     assert(displayed("NO READINGS IN THIS WINDOW YET"));
     validate_bounds();
+    // Leaving Dead Air and coming back starts from the defaults: a window or cursor picked before must not survive.
+    ch.env_history = &hist;
+    ch.revision = 61;
+    da::update(ch);
+    da::handle_touch(1010 + 20, 154 + 20, 5045);  // 1 H
+    da::handle_touch(900, 260, 5046);             // and a cursor
+    assert(displayed("AT CURSOR") && displayed("-60 m"));
+    da::leave();
+    screen::begin_transition(screen::Id::dead_air, 5047);
+    da::enter(ch);
+    screen::finish_transition();
+    assert(da::page() == da::Page::overview);
+    da::handle_touch(20 + 3 * 210 + 40, 673, 5048);  // Environment tab again
+    ch.revision = 62;
+    host_display::reset();
+    da::update(ch);
+    assert(displayed("-6 h") && !displayed("-60 m") && displayed("Tap a chart") && !displayed("AT CURSOR"));
     da::handle_touch(40, 673, 5050);              // back to Overview for the rest
     snap.revision = 70;
     da::update(snap);

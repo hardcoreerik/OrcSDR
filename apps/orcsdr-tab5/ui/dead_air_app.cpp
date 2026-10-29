@@ -229,6 +229,7 @@ struct State {
   bool env_bus = false;                   // the Port A bus could be started (not the same as a module being present)
   EnvEventDetector env_events;            // temperature / humidity / pressure leaving their own baseline
   EnvHistory env_history;                 // one-minute averages for the Environment charts (this State lives in PSRAM)
+  uint32_t env_chart_seq = 0, env_chart_ms = 0;  // the history revision the dashboard was last given, and when
   uint32_t ring_retry_ms = 0;             // last attempt to allocate the receiver clip ring after open() could not
   uint32_t env_last_at[3]{};              // sample time last fed to env_events, per channel (each sample is fed once)
   bool env_seen[3]{};
@@ -1239,7 +1240,13 @@ void build_snapshot(uint32_t now) {
   n.environment_sensor_attached = s.env_sensor.sht_present() || s.env_sensor.qmp_present();
   n.temperature_c = n.humidity_rh = n.pressure_hpa = n.motion_g = {};
   n.env_history = &s.env_history;
-  n.env_history_seq = s.env_history.seq();
+  // Chart-only changes (a minute average moving) are handed to the dashboard at most every 10 s: a one-minute average
+  // gains nothing from faster redraws, and where the body canvas could not be allocated each one is a full repaint.
+  if (s.env_history.seq() != s.env_chart_seq && (s.env_chart_seq == 0 || now - s.env_chart_ms >= 10000u)) {
+    s.env_chart_seq = s.env_history.seq();
+    s.env_chart_ms = now;
+  }
+  n.env_history_seq = s.env_chart_seq;
   {
     float value = 0;
     uint32_t at = 0;
@@ -1417,6 +1424,8 @@ void open() {
   s.env_sensor.begin(port_a);  // forgets any earlier readings; the module is probed again every time the screen opens
   s.env_events.reset();
   s.env_history.reset(now);
+  s.env_chart_seq = 0;
+  s.env_chart_ms = 0;
   for (int c = 0; c < 3; ++c) { s.env_last_at[c] = 0; s.env_seen[c] = false; }
   s.map = BandMapView{};
   s.chime_on = false;  // the chime is off at every session start; only a tap turns it on
@@ -1465,6 +1474,7 @@ void close() {
 // Each accepted sensor sample is fed to the environment detector once. A channel that has no reading (module unplugged,
 // dropped after repeated failures) is reset, so an unplug can never look like a departure from the baseline.
 void feed_env_events(State& s, uint32_t now) {
+  s.env_history.tick(now);  // a silent sensor must show as gaps, not as its last value
   const EnvChannel channels[3] = {EnvChannel::temperature, EnvChannel::humidity, EnvChannel::pressure};
   for (int c = 0; c < 3; ++c) {
     float value = 0.0f;
