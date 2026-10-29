@@ -12,9 +12,11 @@
  * Expander addresses: the BSP names them ADDRESS_LOW and ADDRESS_HIGH of the PI4IOE5V6408 (0x43 and 0x44);
  * 0x44 is confirmed by main.cpp, 0x43 is the part's other address and is not separately confirmed.
  *
- * Why console_supported is false: the Tab5 panel is a native 720x1280 DSI panel with an ILI9881C + GT911
- * (board version 1) or ST7123 + ST7123 touch (board version 2) driven by esp_lcd drivers, selected at boot by
- * probing the touch address. The console's display path is the TC358762 bridge used by the Hosyond panel, so a
+ * Why console_supported is false: the Tab5 panel is a native 720x1280 DSI panel driven by esp_lcd drivers and
+ * chosen at boot by probing the touch address. At the commit read here (f259a6ab) there were two assemblies,
+ * ILI9881C + GT911 and ST7123 + ST7123 touch. The research branch (HANDOFF/SOURCE_CONFLICTS C05, pinned BSP commit
+ * 9112bd33, not re-read by this file's author) reports a THIRD path, ST7121, so detect the assembly at runtime and
+ * never hardcode one init table. The console's display path is the TC358762 bridge used by the Hosyond panel, so a
  * Tab5 needs a second display backend (see docs/hardware/P4_BOARD_PROFILES.md). Do not flash a Tab5 with the
  * console firmware: it has no display driver for it. */
 const orcsdr_board_profile_t g_board_m5stack_tab5 = {
@@ -35,6 +37,9 @@ const orcsdr_board_profile_t g_board_m5stack_tab5 = {
     .c6_sdio_clk = 12, .c6_sdio_cmd = 13, .c6_sdio_d0 = 11, .c6_sdio_d1 = 10, .c6_sdio_d2 = 9, .c6_sdio_d3 = 8,
 
     .has_ethernet = false, .eth_phy = NULL,
+    .eth_phy_addr = ORCSDR_PIN_NONE, .eth_phy_reset = ORCSDR_PIN_NONE, .eth_mdc = ORCSDR_PIN_NONE, .eth_mdio = ORCSDR_PIN_NONE,
+    .eth_rmii_clk_in = ORCSDR_PIN_NONE, .eth_tx_en = ORCSDR_PIN_NONE, .eth_txd0 = ORCSDR_PIN_NONE, .eth_txd1 = ORCSDR_PIN_NONE,
+    .eth_crs_dv = ORCSDR_PIN_NONE, .eth_rxd0 = ORCSDR_PIN_NONE, .eth_rxd1 = ORCSDR_PIN_NONE,
 
     .has_usb_host_typea = true, .usb_vbus_gpio = ORCSDR_PIN_NONE, .usb_vbus_ioexp = {1, 3},
 

@@ -1,3 +1,6 @@
 # Build overlay: select the Waveshare ESP32-P4-WIFI6-POE-ETH profile (documented-only, never run here).
 # The ESP-Hosted pins in sdkconfig.defaults match this board, so no pin overrides are needed.
 CONFIG_ORCSDR_BOARD_WAVESHARE_P4_WIFI6_POE_ETH=y
+# Waveshare boards wire the C6 EN pin straight to GPIO54: reset is active LOW (ESP-Hosted default; OrcNode runs this way).
+# sdkconfig.defaults carries the Tab5 line (active high) for the Hosyond/dev-kit build; test result on this board in docs/hardware/P4_BOARD_PROFILES.md.
+CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_LOW=y

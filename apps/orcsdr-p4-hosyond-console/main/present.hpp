@@ -5,6 +5,9 @@
 
 // Call once after the display sprite exists. Detects the sprite's RGB565 byte order.
 bool present_init(orcsdr::gfx::ScaledDisplay* display, const hosyond_display_t* panel);
+// Headless: no panel is attached. The UI still renders into the scaled display's sprite (screenshots over
+// serial read it), present_frame() consumes the dirty rows, and nothing is converted or flipped.
+bool present_init_headless(orcsdr::gfx::ScaledDisplay* display);
 // Converts and shows whatever changed since the last call. Returns the number of rows copied (0 = nothing).
 int present_frame();
 // Statistics for diagnostics: microseconds spent in the last non-empty present.

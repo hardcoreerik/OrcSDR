@@ -9,6 +9,7 @@
 //   radio_service.cpp                                  esp-rtl-sdr receiver task
 #include <cstring>
 #include "M5Unified.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -19,25 +20,34 @@
 #include "home_app.hpp"
 #include "home_v3_ui.hpp"
 #include "hosyond_board.h"
+#include "orcsdr_board_profile.h"
 #include "present.hpp"
 #include "radio_service.hpp"
 #include "serial_cli.hpp"
 
 static constexpr char TAG[] = "CONSOLE";
+// Off-screen size when no panel is attached: the layout the console is designed and tested at.
+static constexpr int kHeadlessWidth = 800, kHeadlessHeight = 480;
 
 extern "C" void app_main(void) {
-  ESP_LOGI(TAG, "OrcSDR on Waveshare P4 + Hosyond 7in 800x480");
+  ESP_LOGI(TAG, "OrcSDR on %s", orcsdr_board_profile()->name);
   hosyond_display_t panel;
-  if (hosyond_board_start(&panel) != ESP_OK) {
-    ESP_LOGE(TAG, "display bring-up FAILED");
-    return;
+  const esp_err_t board_err = hosyond_board_start(&panel);
+  // No recognised panel (or a failed bring-up) is not fatal: the receiver, audio, Wi-Fi and serial interface
+  // run with the UI rendering off-screen. The I2C bus stays open, so the audio codec still works.
+  const bool headless = board_err != ESP_OK;
+  if (headless) {
+    ESP_LOGW(TAG, "no usable display (%s): running headless at %dx%d, screenshots over serial still work",
+             esp_err_to_name(board_err), kHeadlessWidth, kHeadlessHeight);
   }
-  if (!M5.Display.begin(panel.width, panel.height) || !present_init(&M5.Display, &panel)) {
+  const int width = headless ? kHeadlessWidth : panel.width;
+  const int height = headless ? kHeadlessHeight : panel.height;
+  if (!M5.Display.begin(width, height) || !(headless ? present_init_headless(&M5.Display) : present_init(&M5.Display, &panel))) {
     ESP_LOGE(TAG, "scaled display FAILED");
     return;
   }
   if (!serial_cli_start(&M5.Display)) ESP_LOGE(TAG, "serial command interface failed");
-  if (hosyond_board_touch_start() != ESP_OK) ESP_LOGE(TAG, "touch start failed");
+  if (!headless && hosyond_board_touch_start() != ESP_OK) ESP_LOGE(TAG, "touch start failed");
 
   // The receiver task still takes the 4B-era command queue; tuning now goes through radio::tune().
   QueueHandle_t commands = xQueueCreate(4, sizeof(orcsdr::waveshare4b::home_v3::Command));

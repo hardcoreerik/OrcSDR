@@ -32,7 +32,7 @@ Status levels, never mixed:
 
 | Board | Profile status | Console (screen + touch) | Wi-Fi (C6 SDIO) | USB host (RTL-SDR) | SD | Ethernet |
 |---|---|---|---|---|---|---|
-| Waveshare ESP32-P4-Module-DEV-KIT + Hosyond 7" 800x480 | bench-verified | works | pins match; see "Open item" | works (jumper selects host) | power switch GPIO45; no card inserted on the bench | none on board |
+| Waveshare ESP32-P4-Module-DEV-KIT + Hosyond 7" 800x480 | bench-verified (display, audio, C6 link, USB host); SD and Ethernet not exercised by this firmware | works | pins match; see "Open item" | works (jumper selects host) | never mounted a card here (power switch GPIO45 from the schematic) | IP101 RMII present; OrcNode runs it; not wired into the console |
 | Waveshare ESP32-P4-WIFI6-POE-ETH | documented-only | not run | pins documented, same as dev kit | USB-A present; VBUS control unverified | slot present, no power-switch pin | IP101GRI present; no driver wired in |
 | M5Stack Tab5 | documented-only | **no display backend** | pins confirmed by `apps/orcsdr-tab5` | via expander line, not driven | slot present | none |
 
@@ -57,8 +57,53 @@ Two expanders (PI4IOE5V6408) carry: expander 0 LCD enable bit 4, touch enable bi
 enable bit 6; expander 1 USB enable bit 3, Wi-Fi enable bit 0. The C6 SDIO pins (CLK12 CMD13 D0=11 D1=10 D2=9 D3=8)
 and reset GPIO15 come from `apps/orcsdr-tab5/sdkconfig.defaults`, which runs on a real Tab5; the BSP header does
 not list them. Expander address 0x44 is confirmed by `apps/orcsdr-tab5/ui/main.cpp`; 0x43 is the part's other
-address and is not separately confirmed. The BSP selects between two board versions at boot by probing the touch
-address: ILI9881C + GT911, or ST7123 + ST7123 touch.
+address and is not separately confirmed. The BSP selects the assembly at boot by probing the touch address: ILI9881C + GT911
+or ST7123 + ST7123 touch at the commit I read, plus ST7121 per the research branch's newer pin (see below).
+
+## Headless mode
+
+With no recognised panel (or a failed display bring-up) the console no longer stops. It logs
+`no usable display ... running headless`, keeps the M5GFX scaled display as an off-screen 800x480 sprite, and
+starts everything else: serial interface, receiver, audio, Wi-Fi, SD and the UI task. `present_frame()` consumes
+the dirty rows without converting them, so the UI keeps running and screenshots over serial (`FT8 SNAP`) still
+work. Touch is not started. This is what a board with no screen attached runs.
+
+## Research cross-check (branch `research/esp32-p4-board-catalog-20261028`, commit `0d6fa952`)
+
+Read: HANDOFF.md, SOURCE_CONFLICTS.md, PINMAP_AND_PERIPHERAL_EVIDENCE.md. That pass ran no builds and no hardware
+tests, so everything in it is documentary. Effects on these profiles:
+
+- **Tab5 has three display paths**, ILI9881C+GT911, ST7123 and ST7121 (conflict C05). My profile was written from an
+  older BSP commit that showed two. The Tab5 profile comment now says so; detect the assembly at runtime.
+- **Waveshare WIFI6-DEV-KIT is a separate product** from the POE-ETH board I profiled, with PCB Rev1.1 and Rev1.2
+  routing the USB host jumper to different ports (conflict C04: Rev1.1 HOST = ports 2-4, Rev1.2 HOST = port 1).
+  Which exact Waveshare board is on COM29 is unconfirmed, so its PCB revision must be read from the silkscreen
+  before its USB host path is trusted.
+- **Module-DEV-KIT USB** is listed "not yet tested with RTL-SDR" in the research; this firmware did run an RTL-SDR
+  on it. OrcNode's notes say its Type-A ports sit behind a CH334F hub and that the hub's port-power command has no
+  electrical effect, so VBUS control stays a hardware matter.
+- **ESP-Hosted C6 firmware version** is a P0 gap in the research (C08): matching SDIO wires do not prove a
+  compatible coprocessor image. That is relevant to the COM8 Wi-Fi failure below.
+- **LilyGO T-Display-P4** (pinned driver commit `a47cf73e`): ES8311 on I2S MCLK13 BCLK12 WS9 DOUT10 DIN11 (WS and
+  DOUT are swapped relative to the Waveshare boards), two I2C buses (7/8 and 20/21), XL9535 expander at 0x20
+  (screen reset IO2, touch reset IO3, touch int IO4, USB PHY power IO10, C6 enable IO14, SD power IO15, radio reset
+  IO16, radio DIO1 IO17), SDIO 14-19 as on Waveshare, IP101 RMII pins as on Waveshare, HI8561 touch at 0x68, needs
+  ESP-IDF >= 5.5.4. The expander is how most control lines are reached, so the profile type's expander fields matter.
+  No LilyGO profile is added yet: the AMOLED variant is a different panel (RM69A10 + GT9895) and the board is not here.
+- No profile was enabled by default because of this research; the default is still the Module-DEV-KIT.
+
+## Evidence from boards on the bench (read-only)
+
+- **COM28** runs the OrcNode firmware as a live node (Wi-Fi connected, one RTL-SDR, Ethernet started, no link). It was
+  only listened to. OrcNode's source (`F:\Ai\OrcNode`, `main/network_eth.cpp`, `sdkconfig.defaults`) uses Ethernet
+  IP101 at PHY address 1 with MDC31 MDIO52 reset51, RMII clock-in 50, TX_EN49 TXD0 34 TXD1 35 CRS_DV28 RXD0 29 RXD1 30,
+  and ESP-Hosted SDIO CLK18 CMD19 D0-D3 14-17 with reset 54. Its `PROJECT_TRUTH.md` marks Ethernet, SDIO, SD (GPIO
+  43/44/39-42, LDO channel 4) and Wi-Fi hardware-verified on a Module-DEV-KIT (silicon v1.3, 16 MB flash). Those
+  values are in the Waveshare profiles now, labelled as taken from OrcNode.
+- **COM29** is an ESP32-P4 revision v3.2 with 32 MB flash (GigaDevice 0xC8/0x4019), MAC e8:f6:0a:eb:76:e7, running
+  Espressif's `esp-brookesia` demo (built 2026-08-31, ESP-IDF v5.5.5; partitions: nvs 0x9000, factory 0x110000
+  size 9 MB, storage 0xa10000 size 5 MB). It is a different silicon revision and flash size from the OrcNode board,
+  so it is not the same board as the Module-DEV-KIT above.
 
 ## Unsupported, by board
 
@@ -118,6 +163,21 @@ idf.py -B build-wifi6-poe-eth -D IDF_TARGET=esp32p4 -D SDKCONFIG=build-wifi6-poe
 
 Flash only a board you have identified, with its own port. The Tab5 overlay is a compile check only.
 
+### Silicon revision: two images
+
+ESP-IDF 5.5 builds for ESP32-P4 silicon either **below v3.0** or **v3.0 and above**, never both in one image, and
+`esptool` refuses a mismatched image before writing. `sdkconfig.defaults` targets v1.x (the Module-DEV-KIT bring-up
+board is v1.3). For a v3.x chip (read it with `python -m esptool --port COMxx flash_id`: "revision v3.2") list the
+overlay **last**:
+
+```powershell
+idf.py -B build-wifi6-poe-eth-v3 -D IDF_TARGET=esp32p4 -D SDKCONFIG=build-wifi6-poe-eth-v3/sdkconfig `
+  -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.board-wifi6-poe-eth;sdkconfig.silicon-v3" build
+```
+
+Check `CONFIG_ESP32P4_REV_MIN_FULL=300` in the resulting sdkconfig. A release needs both images (or the web flasher
+must read the chip revision and pick one). The v3 bootloader has only ~460 bytes free in its partition, so watch it.
+
 After a flash to the dev kit on COM8, check:
 
 ```powershell
@@ -127,14 +187,28 @@ python tools/p4_health.py --port COM8
 and read the boot log for `PROFILES: board: ... profile bench-verified`. A documented-only board prints
 `this board's pins are not bench-verified` and its `unsupported here:` list.
 
-## Open item found while testing this change
+## Open item: Wi-Fi does not start on two boards
 
-After flashing this branch, Wi-Fi did not start on COM8: `eh_host_port_sdio: sdmmc_card_init failed`
-(`send_op_cond ... 0x107`, timeout) on every attempt, so the ESP32-C6 is not answering on SDIO. The pins in the log
-are the profile's pins (CLK18 CMD19 D0-D3 14-17, reset 54). This change does not touch Wi-Fi code, and internal
-RAM was healthy (144 KB free), but it has not been proven innocent: the previous firmware was not re-run for
-comparison. The earlier C6 link-loss incident (contained, not root-caused) is the other candidate. A full power
-cycle of the board is the first test.
+Symptom on both the COM8 Module-DEV-KIT (v1.x silicon) and the COM29 board (v3.2 silicon): ESP-Hosted logs
+`sdmmc_init_ocr: send_op_cond ... 0x107` / `sdmmc_card_init failed` on every attempt, so nothing answers on the
+SDIO bus. The pins in the log are the profile's (CLK18 CMD19 D0-D3 14-17, reset 54). Headless COM28 (OrcNode) uses
+the same pins and has Wi-Fi up, so the wiring map is right.
+
+Tried, one variable each:
+- Power-cycling COM8 (it had ~21 minutes of uptime when checked): no change.
+- Reset polarity: our `sdkconfig.defaults` sets active-high (copied from the Tab5); upstream default and OrcNode are
+  active-low. Built COM29 with active-low (`sdkconfig.board-wifi6-poe-eth`): **no change**, same timeouts. That
+  overlay keeps active-low because it matches the working OrcNode and upstream, but it does not fix this by itself.
+
+Not yet tried / unknown:
+- **What the coprocessor is and what it runs.** The research catalog lists Espressif Function-EV variants with a C5
+  (`espressif-function-ev-c5`, discovery pending). Our embedded image is the ESP32-C6 ESP-Hosted 3.0.6 build for the
+  Tab5; a C5 needs its own image and an ESP32-C5 target. The COM29 stock demo (Waveshare platform BSP, no Wi-Fi
+  strings) does not reveal it. Read the module marking on the board (ESP32-C6-MINI vs a C5 module).
+- **C6 firmware state.** An ESP-Hosted slave image must be flashed on the C6; the SDK does not prove it is. The
+  Waveshare boards expose the C6 UART (H7: TXD0, RXD0, IO9) for reflashing.
+- SDIO clock (ours 10 MHz, OrcNode 40 MHz) and the reset strategy (ours "only if necessary", OrcNode default).
+- The earlier contained C6 link-loss incident on COM8 is not root-caused.
 
 ## Change record
 
@@ -142,3 +216,7 @@ cycle of the board is the first test.
 - Profiles split into one file per board; Kconfig board choice; boot-time profile log and SDIO pin cross-check.
 - SD module: a board without an SD power-switch pin is no longer reported as having no slot.
 - Added profiles: Waveshare WIFI6-POE-ETH (documented-only), M5Stack Tab5 (documented-only).
+- Headless mode: no recognised panel no longer stops the console; the UI renders off-screen and everything else runs.
+- Module-DEV-KIT profile corrected: Ethernet is present (OrcNode, IP101); the SD slot was never exercised here.
+- Ethernet pins added to the profile type; Waveshare profiles carry the OrcNode-verified RMII map.
+- Added `sdkconfig.silicon-v3` (second image for v3.x silicon); WIFI6 overlay sets active-low C6 reset.

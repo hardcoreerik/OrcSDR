@@ -11,6 +11,7 @@ ScaledDisplay* g_display = nullptr;
 hosyond_display_t g_panel{};
 int g_back = 0;           // frame buffer not currently scanned out
 bool g_swapped = false;   // the sprite stores RGB565 with its bytes swapped
+bool g_headless = false;  // no panel: dirty rows are consumed but never converted
 uint8_t g_lut5[32], g_lut6[64];
 unsigned g_last_us = 0;
 
@@ -53,10 +54,20 @@ bool present_init(ScaledDisplay* display, const hosyond_display_t* panel) {
   return true;
 }
 
+bool present_init_headless(ScaledDisplay* display) {
+  if (!display || !display->ready()) return false;
+  g_display = display;
+  g_headless = true;
+  display->mark_all_dirty();
+  ESP_LOGW(TAG, "headless: rendering off-screen only (no panel)");
+  return true;
+}
+
 int present_frame() {
   if (!g_display) return 0;
   int y0 = 0, y1 = 0;
   if (!g_display->take_dirty(&y0, &y1)) return 0;
+  if (g_headless) return y1 - y0;
   const int64_t t0 = esp_timer_get_time();
   convert_rows(g_back, y0, y1);
   if (g_panel.fb_count > 1) {

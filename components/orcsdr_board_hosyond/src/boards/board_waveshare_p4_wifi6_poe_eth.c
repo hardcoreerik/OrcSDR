@@ -30,7 +30,10 @@ const orcsdr_board_profile_t g_board_waveshare_p4_wifi6_poe_eth = {
     .has_hosted_c6 = true, .c6_reset = 54,
     .c6_sdio_clk = 18, .c6_sdio_cmd = 19, .c6_sdio_d0 = 14, .c6_sdio_d1 = 15, .c6_sdio_d2 = 16, .c6_sdio_d3 = 17,
 
+    /* Same RMII map the OrcNode firmware runs on the Module-DEV-KIT (main/network_eth.cpp), which matches the espp readme. */
     .has_ethernet = true, .eth_phy = "IP101GRI",
+    .eth_phy_addr = 1, .eth_phy_reset = 51, .eth_mdc = 31, .eth_mdio = 52,
+    .eth_rmii_clk_in = 50, .eth_tx_en = 49, .eth_txd0 = 34, .eth_txd1 = 35, .eth_crs_dv = 28, .eth_rxd0 = 29, .eth_rxd1 = 30,
 
     .has_usb_host_typea = true, .usb_vbus_gpio = ORCSDR_PIN_NONE, .usb_vbus_ioexp = ORCSDR_IOEXP_NONE,
 

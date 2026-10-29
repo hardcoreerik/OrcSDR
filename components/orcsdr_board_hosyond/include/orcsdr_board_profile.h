@@ -66,9 +66,11 @@ typedef struct {
     int c6_reset;
     int c6_sdio_clk, c6_sdio_cmd, c6_sdio_d0, c6_sdio_d1, c6_sdio_d2, c6_sdio_d3;
 
-    /* Wired Ethernet: RMII PHY name (NULL = none). Not used by the application yet. */
+    /* Wired Ethernet: RMII PHY name (NULL = none). Not used by the console application yet. */
     bool has_ethernet;
     const char *eth_phy;
+    int eth_phy_addr, eth_phy_reset, eth_mdc, eth_mdio;
+    int eth_rmii_clk_in, eth_tx_en, eth_txd0, eth_txd1, eth_crs_dv, eth_rxd0, eth_rxd1;
 
     /* USB host (RTL-SDR dongle). VBUS switching, when the board has it, is a GPIO or an expander line. */
     bool has_usb_host_typea;
