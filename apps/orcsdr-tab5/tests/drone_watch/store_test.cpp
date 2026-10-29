@@ -33,6 +33,12 @@ int main() {
   CaptureMeta fixture{Transport::fixture, 24, 300};
   assert(ring.ingest(id.data(), id.size(), fixture) == ParseStatus::ok);
   assert(ring.newest(0, event) && event.test_data);
+  // A BLE capture file replay is still TEST DATA, even though its original
+  // physical transport was BLE4 rather than the synthetic fixture transport.
+  CaptureMeta replayed_ble{Transport::bluetooth4, 25, 100, true};
+  assert(ring.ingest(id.data(), id.size(), replayed_ble) == ParseStatus::ok);
+  assert(ring.newest(0, event) && event.test_data);
+  assert(event.capture.transport == Transport::bluetooth4);
   assert(event.capture.source_id == 300);
 
   // Ring wrap must preserve newest order, local sequence, and lost event count.
@@ -41,11 +47,11 @@ int main() {
     assert(ring.ingest(id.data(), id.size(), src) == ParseStatus::ok);
   }
   assert(ring.count() == EventStore::kCapacity);
-  assert(ring.stats().events_overwritten == 11);
-  assert(ring.stats().messages_accepted == 43);
+  assert(ring.stats().events_overwritten == 12);
+  assert(ring.stats().messages_accepted == 44);
   assert(ring.newest(0, event));
   assert(event.capture.source_id == 1039);
-  assert(event.local_sequence == 43);
+  assert(event.local_sequence == 44);
   assert(!ring.newest(EventStore::kCapacity, event));
   ring.reset();
   assert(ring.count() == 0 && ring.stats().events_overwritten == 0);
