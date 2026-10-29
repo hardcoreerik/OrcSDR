@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Run from the OrcSDR checkout. Saves output beside the invocation in a log.
 set -euo pipefail
-ROOT="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG="$PWD/wefax_schedule_host_test.log"
-BIN="$(mktemp -d "\${TMPDIR:-/tmp}/wefax-sched.XXXXXX")"
+BIN="$(mktemp -d "${TMPDIR:-/tmp}/wefax-sched.XXXXXX")"
 trap 'rm -rf "$BIN"' EXIT
 {
   echo "WEFAX schedule/M5GFX host regression $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
