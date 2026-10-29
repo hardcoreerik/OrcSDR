@@ -1,6 +1,6 @@
 # Drone Watch — OrcSDR dashboard planning
 
-> **Status (2026-10-28 PT): W01 HOST-TESTED + P1 REMOTE ID CORE CODED/HOST-TESTED (3/3 suites).** The other 24 screens, C6 BLE/Wi-Fi Remote ID acquisition, analog video, and acoustics remain proposed. Native ESP-IDF build and physical hardware acceptance are NOT RUN.
+> **Status (2026-10-28 PT): W01 HOST-TESTED + P1 REMOTE ID CORE CODED/HOST-TESTED (3/3 suites + 3/3 sanitizer suites).** The other 24 screens, C6 BLE/Wi-Fi Remote ID acquisition, analog video, and acoustics remain proposed. Native ESP-IDF build and physical hardware acceptance are NOT RUN.
 
 Drone Watch is a proposed **receive-only aircraft-awareness dashboard** for OrcSDR, with future OrcNode collection and OrcMaps display. Its product promise is: *show what the hardware actually received, explain what it means, and never confuse a signal with an identified aircraft.*
 
@@ -36,7 +36,7 @@ Shared, **mandatory** contracts:
 - `apps/orcsdr-tab5/ui/third_party/opendroneid/` — unmodified pinned Apache-2.0 OpenDroneID core + license/attribution; upstream blob SHAs matched exactly.
 - `apps/orcsdr-tab5/tests/drone_watch/rid_test.cpp` — reference encoder and independently specified wire examples, malformed-frame boundaries, 5,000 deterministic fuzz inputs.
 - `apps/orcsdr-tab5/tests/drone_watch/store_test.cpp` — replay, source separation, malformed rejection, 32-entry eviction and event accounting.
-- [P1 host evidence checkpoint](evidence/2026-10-28-rid-core-host-checkpoint.md) and [3/3 passing host CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40826839560). No Bluetooth/Wi-Fi source or W01 live feed is connected; nothing here establishes real RF reception.
+- [P1 host evidence checkpoint](evidence/2026-10-28-rid-core-host-checkpoint.md) and [3/3 passing host CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40827333255). No Bluetooth/Wi-Fi source or W01 live feed is connected; nothing here establishes real RF reception.
 
 ## Documents
 
