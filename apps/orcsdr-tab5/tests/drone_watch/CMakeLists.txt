@@ -79,3 +79,22 @@ else()
   target_compile_options(drone_watch_c6_probe_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 add_test(NAME drone_watch_c6_probe COMMAND drone_watch_c6_probe_test)
+
+add_executable(drone_watch_ble4_test
+  ble4_test.cpp
+  ../../ui/drone_watch_ble4.cpp
+  ../../ui/drone_watch_rid.cpp
+  ../../ui/third_party/opendroneid/opendroneid.c
+)
+target_compile_features(drone_watch_ble4_test PRIVATE cxx_std_17)
+target_include_directories(drone_watch_ble4_test PRIVATE ../../ui)
+if(MSVC)
+  target_compile_options(drone_watch_ble4_test PRIVATE /W4 /WX)
+else()
+  target_compile_options(drone_watch_ble4_test PRIVATE
+    "$<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic;-Werror>")
+endif()
+if(UNIX)
+  target_link_libraries(drone_watch_ble4_test PRIVATE m)
+endif()
+add_test(NAME drone_watch_ble4 COMMAND drone_watch_ble4_test)
