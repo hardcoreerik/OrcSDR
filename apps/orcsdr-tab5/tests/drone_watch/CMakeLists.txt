@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(orcsdr_drone_watch_host LANGUAGES CXX)
+project(orcsdr_drone_watch_host LANGUAGES C CXX)
 enable_testing()
 add_executable(drone_watch_host_test
   host_test.cpp
@@ -18,3 +18,22 @@ else()
   target_compile_options(drone_watch_host_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 add_test(NAME drone_watch_host COMMAND drone_watch_host_test)
+
+# P1 Remote ID conformance: actual pinned C reference decoder + OrcSDR wrapper.
+add_executable(drone_watch_rid_test
+  rid_test.cpp
+  ../../ui/drone_watch_rid.cpp
+  ../../ui/third_party/opendroneid/opendroneid.c
+)
+target_compile_features(drone_watch_rid_test PRIVATE cxx_std_17)
+target_include_directories(drone_watch_rid_test PRIVATE ../../ui)
+if(MSVC)
+  target_compile_options(drone_watch_rid_test PRIVATE /W4)
+else()
+  target_compile_options(drone_watch_rid_test PRIVATE
+    "$<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic;-Werror>")
+endif()
+if(UNIX)
+  target_link_libraries(drone_watch_rid_test PRIVATE m)
+endif()
+add_test(NAME drone_watch_rid COMMAND drone_watch_rid_test)
