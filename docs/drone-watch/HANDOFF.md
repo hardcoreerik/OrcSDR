@@ -1,10 +1,10 @@
 # Drone Watch — developer handoff
 
-**Prepared:** 2026-10-26; **updated 2026-10-27:** W01 Live Watch shell and truth model now committed with passing host CI; implementation work beyond W01 remains planned.  
+**Prepared:** 2026-10-26; **updated 2026-10-28 PT:** W01 is host-tested; P1 bounded OpenDroneID message/pack parsing and source-aware event history now have passing host CI (3/3). Hardware acquisition and native build remain pending.  
 **Proposed implementation repo:** `hardcoreerik/OrcSDR`.  
 **Design baseline read:** `main` commit `07c777ca05af4bcbf8af6074dbc0b17d9a891af1`; recheck against current `origin/main` when coding starts.  
 **Private research:** [REA-Results draft PR #3](https://github.com/hardcoreerik/REA-Results/pull/3); committed inbox source survey + 15/15 synthetic test record. Follow REA-Results `AGENTS.md` for all new findings.  
-**Execution state:** W01 is wired and host-verified as an unavailable/empty-state screen. No live Remote ID acquisition, protocol decoder, physical rendering acceptance or other 24 feature screens are completed.
+**Execution state:** W01 is wired and host-verified as an unavailable/empty-state screen. A reusable Remote ID protocol decoder and bounded event history are now host-tested. No live BLE/Wi-Fi RF acquisition, physical rendering acceptance or other 24 screens are completed.
 
 ## Mandatory screen reference before any UI implementation
 
@@ -14,15 +14,15 @@ The five categories are **internal routes within one dashboard**. Do not create 
 
 ## First implementation work package (P1): decoder contract, no UI or C6 modifications
 
-Use a **fresh feature branch from the current reviewed main** (do not implement on this planning branch). Focus narrowly on the host-only core:
+**Owner requested continuing on this existing branch, not creating another branch.** P1 core is now implemented and host-tested here. Keep future P2 receiver acquisition separate until qualification:
 1. Inspect `docs/drone-watch/DESIGN.md`, `PHASING.md`, `VALIDATION.md` and `Roadmap.md`, plus `apps/orcsdr-tab5/ui/dead_air_model.*` for fixed-memory event patterns.
 2. Retrieve and pin `opendroneid/opendroneid-core-c` at research SHA `849c03adbe0cdd68997a462fafab397edcfe53f3`, or explicitly choose a newer revision and re-evaluate licensing/API/fixtures before use. The official library is Apache-2.0; preserve notices and attribution. **Do not copy Kismet GPL-2.0 implementation or Dronetag unlicensed Flutter plugin.**
 3. Start with deterministic failing host tests against upstream message vectors, not synthetic-only evidence-label tests. Add invalid length, endian, invalid-location sentinels, encoded message type/version, unsupported and malformed. Assert inputs cannot crash or create false geographic claims.
 4. Implement a bounded, UI-free `drone_watch_model` and thin `drone_remote_id` wrapper behind a mockable `SourceAdapter`. Prefer exact packet timestamps/capture metadata over building a speculative drone classifier.
 5. Supply a **single** host test invocation (document it in `tests/drone_watch/README.md`), record logs, sanitizer outcome or NOT RUN, and build a minimal native ESP-IDF consumer only after host fixtures pass.
-6. Commit an isolated P1 implementation PR. Add `HANDOFF.md` to that implementation branch with SHA, commands and test/flash instructions. Do not add a dashboard button advertised as functional until real source data is integrated.
+6. Keep changes in the existing Drone Watch draft PR #213 and update the dated evidence and CI links. Do not advertise live reception until a hardware adapter is RF-verified.
 
-**P1 success:** reproducible host parser/conformance check, bounded event model and normal OrcSDR consumer build without radio/UI behavior changes. Leave Wi-Fi/C6/images/driver untouched.
+**P1 progress:** host parser and bounded model tests PASS. The required native ESP-IDF consumer build, sanitizer run, complete multi-message conformance, C6/RF validation and unchanged radio regression have NOT RUN; this is not a P1/G1 full closeout.
 
 ## Separate hardware scout (P2), nonproduction Tab5 only
 
