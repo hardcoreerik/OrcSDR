@@ -216,6 +216,7 @@ esp_err_t hosyond_board_start(hosyond_display_t *out)
     memset(out, 0, sizeof(*out));
     esp_err_t err;
 
+    orcsdr_board_profile_log();
     i2c_master_bus_config_t bus_cfg = {
         .i2c_port = orcsdr_board_profile()->i2c_port,
         .sda_io_num = orcsdr_board_profile()->i2c_sda,

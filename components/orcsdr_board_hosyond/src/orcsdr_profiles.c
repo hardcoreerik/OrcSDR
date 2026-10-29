@@ -1,25 +1,66 @@
 #include <stddef.h>
 #include <stdio.h>
 #include "esp_log.h"
+#include "sdkconfig.h"
 #include "orcsdr_board_profile.h"
 #include "orcsdr_display_profile.h"
+#include "boards/board_list.h"
 
 static const char *TAG = "PROFILES";
 
-/* Waveshare ESP32-P4-Module-DEV-KIT. Pin sources: the board schematic and Espressif's espp BSP;
- * the SD, audio and C6 pins have been exercised on the bench (docs/HOSYOND_7IN_DSI_P4.md). */
-static const orcsdr_board_profile_t k_waveshare_p4_devkit = {
-    .name = "waveshare-esp32-p4-module-dev-kit",
-    .i2c_port = 1, .i2c_sda = 7, .i2c_scl = 8,
-    .audio_mclk = 13, .audio_bclk = 12, .audio_ws = 10, .audio_dout = 9, .audio_din = 11, .audio_pa_enable = 53,
-    .has_sd = true, .sd_power_enable = 45, .sd_power_active_low = true,
-    .has_hosted_c6 = true, .c6_reset = 54,
-    .has_ethernet = false,
+/* Every board is compiled in so a mistake in any profile file is caught by any build; Kconfig ORCSDR_BOARD
+ * chooses which one this firmware uses. */
+static const orcsdr_board_profile_t *const k_boards[] = {
+    &g_board_waveshare_p4_module_dev_kit,
+    &g_board_waveshare_p4_wifi6_poe_eth,
+    &g_board_m5stack_tab5,
 };
 
 const orcsdr_board_profile_t *orcsdr_board_profile(void)
 {
-    return &k_waveshare_p4_devkit;
+#if defined(CONFIG_ORCSDR_BOARD_M5STACK_TAB5)
+    return &g_board_m5stack_tab5;
+#elif defined(CONFIG_ORCSDR_BOARD_WAVESHARE_P4_WIFI6_POE_ETH)
+    return &g_board_waveshare_p4_wifi6_poe_eth;
+#else
+    return &g_board_waveshare_p4_module_dev_kit;
+#endif
+}
+
+size_t orcsdr_board_profiles(const orcsdr_board_profile_t *const **list)
+{
+    if (list) *list = k_boards;
+    return sizeof(k_boards) / sizeof(k_boards[0]);
+}
+
+const char *orcsdr_profile_status_name(orcsdr_profile_status_t status)
+{
+    switch (status) {
+    case ORCSDR_PROFILE_BENCH_VERIFIED: return "bench-verified";
+    case ORCSDR_PROFILE_DOCUMENTED: return "documented-only";
+    default: return "skeleton";
+    }
+}
+
+void orcsdr_board_profile_log(void)
+{
+    const orcsdr_board_profile_t *b = orcsdr_board_profile();
+    ESP_LOGI(TAG, "board: %s (%s), profile %s, console %s", b->name, b->vendor, orcsdr_profile_status_name(b->status),
+             b->console_supported ? "supported" : "NOT supported");
+    if (b->status != ORCSDR_PROFILE_BENCH_VERIFIED) {
+        ESP_LOGW(TAG, "this board's pins are not bench-verified with this firmware; source: %s", b->source);
+    }
+    if (b->unsupported) ESP_LOGW(TAG, "unsupported here: %s", b->unsupported);
+#if defined(CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CLK) && defined(CONFIG_ESP_HOSTED_HOST_RESET_GPIO)
+    /* The ESP-Hosted pins live in sdkconfig; a profile that disagrees means the wrong board was selected. */
+    if (b->has_hosted_c6 &&
+        (b->c6_sdio_clk != CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CLK || b->c6_sdio_cmd != CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CMD ||
+         b->c6_sdio_d0 != CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D0 || b->c6_sdio_d1 != CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D1 ||
+         b->c6_sdio_d2 != CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D2 || b->c6_sdio_d3 != CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D3 ||
+         (b->c6_reset >= 0 && b->c6_reset != CONFIG_ESP_HOSTED_HOST_RESET_GPIO))) {
+        ESP_LOGE(TAG, "ESP-Hosted SDIO pins in sdkconfig do not match profile %s: wrong board selected? Wi-Fi will not start", b->name);
+    }
+#endif
 }
 
 /* Verified panels only. The Hosyond 7" carries the Raspberry-Pi-style ATTINY88 panel controller (0x45); its

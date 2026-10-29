@@ -53,3 +53,5 @@ docs/user-guide/assets/screenshots/raw/
 
 # Alternate-toolchain build trees (e.g. the probe built with ESP-IDF 5.5.x)
 build[0-9]*/
+# P4 console per-board build directories (build-<board>/)
+apps/orcsdr-p4-hosyond-console/build-*/

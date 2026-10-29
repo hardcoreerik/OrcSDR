@@ -1,0 +1,23 @@
+menu "OrcSDR board"
+
+    choice ORCSDR_BOARD
+        prompt "Board profile"
+        default ORCSDR_BOARD_WAVESHARE_P4_MODULE_DEV_KIT
+        help
+            Which ESP32-P4 board this firmware is built for. The profile supplies pins and
+            which peripherals exist. Profiles that are not bench-verified say so at boot.
+            The ESP-Hosted SDIO pins and reset GPIO are set separately in sdkconfig.defaults;
+            the firmware warns at boot when they disagree with the chosen profile.
+
+    config ORCSDR_BOARD_WAVESHARE_P4_MODULE_DEV_KIT
+        bool "Waveshare ESP32-P4-Module-DEV-KIT (bench-verified)"
+
+    config ORCSDR_BOARD_WAVESHARE_P4_WIFI6_POE_ETH
+        bool "Waveshare ESP32-P4-WIFI6-POE-ETH (documented only)"
+
+    config ORCSDR_BOARD_M5STACK_TAB5
+        bool "M5Stack Tab5 (documented only, no display backend yet)"
+
+    endchoice
+
+endmenu
