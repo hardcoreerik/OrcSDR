@@ -113,7 +113,8 @@ int main() {
 
   auto unknown = loc;
   for (int i = 5; i <= 12; ++i) unknown[i] = 0;
-  unknown[3] = 0xFF; // unknown speed
+  unknown[1] |= 0x01; // speed multiplier 1: 0xFF then decodes to 255m/s (invalid)
+  unknown[3] = 0xFF; // with multiplier 0, 0xFF is a *valid* 63.75m/s
   assert(decode(unknown.data(), unknown.size(), hw, result) == ParseStatus::ok);
   assert(!result.messages[0].claimed_position_valid);
   assert(!result.messages[0].horizontal_speed_valid);
