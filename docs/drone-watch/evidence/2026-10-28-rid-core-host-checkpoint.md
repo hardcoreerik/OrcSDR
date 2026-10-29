@@ -2,8 +2,8 @@
 
 > **Date:** 2026-10-28 America/Los_Angeles (CI run 2026-10-29 UTC).  
 > **Branch:** `chatgpt/drone-watch-phasing-20261026` — reused by explicit owner instruction, no new OrcSDR branch.  
-> **Evidence grade:** C/C++ **host-build + deterministic tests PASS**. **Native ESP-IDF, physical Tab5, actual BLE/Wi-Fi Remote ID capture, end-to-end W01 live feed and sanitizer tests: NOT RUN.**  
-> **CI:** [GitHub Actions P1/W01 host run — 3/3 PASS](https://github.com/hardcoreerik/OrcSDR/actions/runs/40826839560).
+> **Evidence grade:** C/C++ **host-build + deterministic tests PASS**. **Native ESP-IDF, physical Tab5, actual BLE/Wi-Fi Remote ID capture, and end-to-end W01 live feed: NOT RUN.** AddressSanitizer/UndefinedBehaviorSanitizer host suites: **PASS**.  
+> **CI:** [GitHub Actions P1/W01 host run — 3/3 PASS](https://github.com/hardcoreerik/OrcSDR/actions/runs/40827333255).
 
 ## Delivered source
 
@@ -22,7 +22,7 @@ Exact Git blob content-hash comparisons against upstream pinned revision:
 
 ## Actual executed CI check
 
-The existing `drone-watch-w01-host.yml` workflow now builds the actual vendor C core, bounded C++ wrapper, source-aware ring and W01 renderer/model. Ubuntu CI ran:
+The existing `drone-watch-w01-host.yml` workflow now builds the actual vendor C core, bounded C++ wrapper, source-aware ring and W01 renderer/model. Ubuntu CI ran the following both normally and with `DRONE_WATCH_SANITIZE=ON` (`-fsanitize=address,undefined -fno-omit-frame-pointer`):
 
 ```text
 cmake -S apps/orcsdr-tab5/tests/drone_watch -B build-drone-watch-tests
@@ -35,7 +35,7 @@ ctest --test-dir build-drone-watch-tests --output-on-failure
 100% tests passed, 0 tests failed out of 3
 ```
 
-C++17 test targets use `-Wall -Wextra -Wpedantic -Werror`; the unmodified upstream C code retains its own original compilation mode. The `rid_test` includes an independently constructed BasicID/Location little-endian payload fixture, differential upstream BasicID encoding, a valid two-message pack, invalid lengths/types/versions, missing/invalid coordinates and speed, atomic reject, and **5,000 deterministic fuzz candidates** with a fixed seed. These **are not** coverage-guided fuzzing or sanitizers.
+C++17 test targets use `-Wall -Wextra -Wpedantic -Werror`; the unmodified upstream C code retains its own original compilation mode. The `rid_test` includes an independently constructed BasicID/Location little-endian payload fixture, differential upstream BasicID encoding, a valid two-message pack, invalid lengths/types/versions, missing/invalid coordinates and speed, atomic reject, and **5,000 deterministic fuzz candidates** with a fixed seed. These **are not** coverage-guided fuzzing, but the same deterministic test binaries have now also run successfully under ASan/UBSan.
 
 The store test uses **two independently labeled logical source IDs**, fixture replay marker, invalid frame rejection, 32-entry wrap and 11 overwritten event counts. This is **not** two physical OrcNodes, nor real BLE/Wi-Fi capture.
 
@@ -74,10 +74,14 @@ if ($LASTEXITCODE -ne 0) { throw "Drone Watch host tests failed" }
 
 ## Next gates and known scope gaps
 
-1. Complete P1 conformance coverage for System/SelfID/Auth/OperatorID, malformed packed variants and clock/source grouping tests. Consider address/undefined sanitizers in a separate host run. Do not imply full ASTM certification.
+1. Extend complete conformance: reference-generated tests now cover System/SelfID/Auth/OperatorID, and singleton constraints reject duplicate Location in a pack. Continue with more protocol/transport edge cases and clock/source grouping; ASan/UBSan host runs are PASS, not a substitute for physical RF. Do not imply full ASTM certification.
 2. Run actual **native ESP-IDF 5.5.4 build** on the normal worktree; record app size, free heap/PSRAM and any C compiler issues; confirm W01 still draws.
 3. P2: prove whether Tab5's onboard ESP32-C6 ESP-Hosted firmware exposes passive BLE 4/5 Remote ID frames; explicitly separate Wi-Fi Beacon/NAN feasibility and preserve Wi-Fi scan/catalog and RTL continuity. No C6 firmware flash without separate owner approval.
 4. P4: only after a trusted raw-advertising input adapter and real reference capture exist, feed validated source model to W01 and progressively A01/A02/A03. `SOURCE UNAVAILABLE` remains the truthful runtime state until then.
 5. Perform real hardware and network/SD/radio regression before changing product status. Keep REA-Results findings in its `inbox/` per the archive instructions.
 
 **This checkpoint is a build/test milestone for the software decoder, not live drone detection.**
+
+## Follow-up evidence update (same date)
+
+[Final ASan/UBSan GitHub Actions run](https://github.com/hardcoreerik/OrcSDR/actions/runs/40827333255): normal CTest 3/3 PASS and sanitizer-instrumented CTest 3/3 PASS. The expanded suite now checks all six individual OpenDroneID message families (the extra four via official pinned reference encoders), duplicate singleton message types in packs, and the original fixed-seed 5,000 random/invalid payloads. No native ESP-IDF compiler, hardware or passive RF decoder pipeline was exercised.
