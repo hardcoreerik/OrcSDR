@@ -41,7 +41,7 @@ Audio read_wav(const char* path) {
       for(size_t i=0;i<a.samples.size();++i) a.samples[i]=static_cast<int16_t>(u16(&v[2*i]));
       data=true;
     } else {
-      in.seekg(n+(n&1u),std::ios::cur);
+      in.seekg(n,std::ios::cur);
     }
     if(n&1u && !data) in.seekg(1,std::ios::cur);
   }
