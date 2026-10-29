@@ -187,7 +187,7 @@ The onboard ESP32-C6 and its existing SDIO ESP-Hosted slave are the first prefer
 | Phase | Status on 2026-10-26 | Acceptance file or missing gate |
 | --- | --- | --- |
 | P0 | RESEARCH DOCUMENTED; upstream/source audit incomplete | REA-Results draft PR #3; isolated 15/15 synthetic-model tests |
-| P1 | PARTIAL: parser + 32-entry history IMPLEMENTED; host C/C++ CI 3/3 PASS; native/hardware NOT RUN | [P1 host CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40826839560); [P1 evidence](evidence/2026-10-28-rid-core-host-checkpoint.md) |
+| P1 | PARTIAL: parser + 32-entry history IMPLEMENTED; host C/C++ CI 3/3 PASS + sanitizer 3/3 PASS; native/hardware NOT RUN | [P1 host CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40827333255); [P1 evidence](evidence/2026-10-28-rid-core-host-checkpoint.md) |
 | P2 | NOT RUN | C6 firmware/Hosted RX + Wi-Fi coexistence evidence |
 | P3 | PARTIAL: W01 CODED / HOST-TESTED (1/1 CI suite); 24 screens NOT IMPLEMENTED | [W01 host CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/40460255261); native build and physical display NOT RUN |
 | P4 | NOT IMPLEMENTED | Actual RID capture + OrcMaps |
