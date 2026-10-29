@@ -103,7 +103,10 @@ void run_case(int ioc, int lpm, int rate, float snr_db, int chunk,
   std::printf("PASS IOC=%d LPM=%d PCM=%d SNR=%5.1f chunk=%d width=%d rows=%zu MAE=%.3f (limit %.3f)\n",
               ioc,lpm,rate,snr_db,chunk,capture.width,capture.rows.size(),score.mae,max_mae);
   assert(score.mae <= max_mae);
-  if (image_out) save_pgm(capture,"/tmp/orcsdr_wefax_reference.pgm");
+  if (image_out) {
+    const char* path = std::getenv("WEFAX_TEST_PGM");
+    if (path && *path) save_pgm(capture,path);
+  }
 }
 void check_invariance() {
   Format f;f.max_rows=9;
