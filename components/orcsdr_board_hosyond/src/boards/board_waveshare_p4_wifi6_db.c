@@ -17,13 +17,18 @@
  * Everything else, including the C5 link, is documented only. The I2S/amplifier assignments below are the ones the
  * other Waveshare P4 boards use; the wiki lists the GPIO range, not each signal.
  *
- * Why Wi-Fi does not work yet: the firmware embeds an ESP-Hosted slave image for the ESP32-C6. A C5 needs its own
- * slave image, flashed to the C5 (UART pads), and the on-device coprocessor update must never be offered to it. */
+ * Bench result, a real unit (COM31, owner-identified WIFI6-DB, ESP32-P4 v3.2, 2026-10-30): the SDIO link to the C5 comes up
+ * with this profile's pins and active-low reset ("Card init success", "slave chip id: 0x17 (esp32c5)"). The C5 ships with an
+ * ESP-Hosted slave, firmware 2.12.9; this firmware's host is 3.0.6, a major-version mismatch, so the host asks to OTA the
+ * coprocessor and Wi-Fi stays down (stage hosted_connect). Our embedded image is the ESP32-C6 build and is never offered to a C5.
+ * Ways forward, none done: host-driven OTA of an ESP-Hosted 3.0.x C5 slave image over the existing SDIO link, or flashing it
+ * through the C5 UART pads. A 3.0.6 C5 slave image builds (see docs/hardware/P4_BOARD_PROFILES.md) but has never run. */
 const orcsdr_board_profile_t g_board_waveshare_p4_wifi6_db = {
     .name = "waveshare-esp32-p4-wifi6-db",
     .vendor = "Waveshare",
     .source = "Waveshare wiki ESP32-P4-WIFI6-DB (2026-10-29); I2C 0x18 codec and USB host observed on one board",
-    .unsupported = "Wi-Fi: the coprocessor is an ESP32-C5 and needs an ESP-Hosted C5 slave image (the embedded one is C6-only). "
+    .unsupported = "Wi-Fi: the C5 runs ESP-Hosted slave 2.12.9 and this host is 3.0.6 (major mismatch); it needs a 3.0.x C5 slave "
+                   "image (the embedded one is C6-only and is never offered to it). "
                    "USB host is a 4-pin header, not a Type-A port. DSI panel, camera, SD and audio output untested here.",
     .status = ORCSDR_PROFILE_DOCUMENTED,
     .console_supported = false,

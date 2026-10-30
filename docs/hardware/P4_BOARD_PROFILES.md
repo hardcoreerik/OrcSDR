@@ -34,7 +34,7 @@ Status levels, never mixed:
 |---|---|---|---|---|---|---|
 | Waveshare ESP32-P4-Module-DEV-KIT + Hosyond 7" 800x480 | bench-verified (display, audio, C6 link, USB host); SD and Ethernet not exercised by this firmware | works | pins match; see "Open item" | works (jumper selects host) | never mounted a card here (power switch GPIO45 from the schematic) | IP101 RMII present; OrcNode runs it; not wired into the console |
 | Waveshare ESP32-P4-ETH (the COM29 board, identified by the owner 2026-10-29) | documented-only; I2C codec 0x18 and USB-host RTL-SDR observed on COM29 | headless runs, regression passed (see "COM29 regression") | **none: the board has no Wi-Fi or Bluetooth**; the console reports "no Wi-Fi radio" and does not start ESP-Hosted | 4-pin header; an RTL-SDR streams at 2.4 MS/s, 0 drops | slot present, power pin unknown, no card tested | 100M RJ45; PHY and pins from OrcNode/third party, no driver wired in |
-| Waveshare ESP32-P4-WIFI6-DB | documented-only (no board of this model on the bench) | not run | **ESP32-C5** per Waveshare's wiki: embedded image is C6-only, Wi-Fi would stay down | 4-pin header | power switch GPIO45 (low = on) | none |
+| Waveshare ESP32-P4-WIFI6-DB (the COM31 board, owner-identified 2026-10-30) | documented; SDIO link to the C5, codec 0x18 and a USB-host RTL-SDR observed on COM31 | headless runs; regression run (see "COM31") | **ESP32-C5, link up**: stock slave is ESP-Hosted 2.12.9, host is 3.0.6, major mismatch, Wi-Fi down; C6 image never offered | 4-pin header; Blog V4 streams at 2.4 MS/s, 0 drops | slot present (power GPIO45, low = on), mount timed out with no card | none |
 | Waveshare ESP32-P4-WIFI6-POE-ETH | documented-only | not run | pins documented, same as dev kit | USB-A present; VBUS control unverified | slot present, no power-switch pin | IP101GRI present; no driver wired in |
 | M5Stack Tab5 | documented-only | **no display backend** | pins confirmed by `apps/orcsdr-tab5` | via expander line, not driven | slot present | none |
 
@@ -120,10 +120,28 @@ Ethernet port, a TF slot, a USB 2.0 header, and no Wi-Fi or Bluetooth. An earlie
 ESP32-C5 by elimination; that was wrong (it assumed the board had a radio). PCB revision not read.
 - **COM31** is a second ESP32-P4 v3.2, 32 MB flash (GigaDevice c8/4019), MAC 80:f1:b2:d7:bc:55, found boot-looping
   (ROM `SW_CPU_RESET` repeating, no application output) with a stock demo layout (nvsfactory 0x9000, nvs 0x3b000, otadata
-  0x10d000, phy_init 0x10f000, factory 0x110000 size 10 MB, model 0xb10000, storage 0xb90000 size 6 MB). Model not yet
-  identified. Stock flash 0 to 0x1190000 backed up to `F:\Ai\_p4_stock_backups\com31_20261029\com31_stock_0-0x1190000.bin`
+  0x10d000, phy_init 0x10f000, factory 0x110000 size 10 MB, model 0xb10000, storage 0xb90000 size 6 MB). **The owner
+  identified it as the Waveshare ESP32-P4-WIFI6-DB with an ESP32-C5 (2026-10-30).** Stock flash 0 to 0x1190000 backed up to `F:\Ai\_p4_stock_backups\com31_20261029\com31_stock_0-0x1190000.bin`
   (18,415,616 bytes, SHA-256 `d35b9225c70452277999278bbaeb2513f35e6585e1f73bbf169cd5830c7848d5`, bootloader, partition
-  table and app magic checked). Nothing has been written to it.
+  table and app magic checked). On 2026-10-30 `build-multi1-v3` (profile `waveshare-esp32-p4-wifi6-db`, silicon v3, one
+  receiver) was flashed to it (hash verified); the stock firmware remains only in the backup.
+
+## COM31 regression (ESP32-P4-WIFI6-DB with ESP32-C5, single receiver, 2026-10-30)
+
+- Boot: profile line, C5 warning, `running headless at 800x480` (only 0x18 answers on the DSI I2C bus), ES8311 codec opened, `boot complete`.
+- Radio: Blog V4 on the USB header, `RTL_RX STATUS` receiver 0 streaming 2.4 MS/s (2,398,728), drops 0; radio task 44.8 % of core 1 (COM29: 44.7 %),
+  IDLE1 53.3 %, audio 1.8 %. 40 s of log: no drops, no reset.
+- Memory with the Wi-Fi attempt made, no card: internal free 163,535 B (largest 90,112), DMA free 124,507 B, PSRAM free 31,882,680 B.
+- SD: `SDMMC Slot0 mount failed: ESP_ERR_TIMEOUT` (no card inserted; not a fault by itself).
+- **Wi-Fi coprocessor, new fact:** the ESP-Hosted SDIO link comes up (`Card init success`, `slave chip id: 0x17 (esp32c5)`) and the C5
+  runs a stock ESP-Hosted slave, **firmware 2.12.9**. Host here is 3.0.6; the host logs "major version mismatch ... OTA coprocessor from
+  host" and the console correctly refuses to push its C6 image (`RTL_WIFI STATUS` stage `hosted_connect`, code -5). So the SDIO pins,
+  active-low reset on GPIO54 and the 10 MHz clock are right for this board; only the slave firmware version is wrong.
+- Options, none done: (1) host-driven OTA of an ESP-Hosted 3.0.x C5 slave image over the existing link (needs a C5 image embedded and the
+  OTA path allowed for C5; a bad image could leave the C5 unreachable, recoverable only through its UART pads); (2) flash the C5 through
+  its UART pads; (3) a 2.x-compatible host (rejected: far from the pinned 3.0.6 everywhere else). The built image is
+  `F:\Ai\OrcSDR\.orcsdr-cache\hosted-c5\build\eh_cp_wifi_scan.bin` (3.0.6); it has not run on any C5.
+
 
 ## Unsupported, by board
 
@@ -264,7 +282,7 @@ Not yet tried / unknown:
   Waveshare boards expose the C6 UART (H7: TXD0, RXD0, IO9) for reflashing.
 - SDIO clock (ours 10 MHz, OrcNode 40 MHz) and the reset strategy (ours "only if necessary", OrcNode default).
 - The earlier contained C6 link-loss incident on COM8 is not root-caused (COM8 Wi-Fi works now).
-- A built ESP-Hosted ESP32-C5 slave image exists (not flashed): `F:\Ai\OrcSDR\.orcsdr-cache\hosted-c5\build\eh_cp_wifi_scan.bin`,
+- A built ESP-Hosted ESP32-C5 slave image exists (not flashed; the COM31 WIFI6-DB runs stock slave 2.12.9): `F:\Ai\OrcSDR\.orcsdr-cache\hosted-c5\build\eh_cp_wifi_scan.bin`,
   SHA-256 `d5343933246d61df0a8e67da077c2ac20ed611e013132ceea56efe6c148b496d`, upstream ESP-Hosted 3.0.6
   `examples/wifi/scan/cp`, ESP-IDF 5.5.4, SDIO slave pins CMD10 CLK9 D0 8 D1 7 D2 14 D3 13 (build defaults; not yet
   checked against the board schematic).
@@ -282,3 +300,4 @@ Not yet tried / unknown:
 - Added the Waveshare ESP32-P4-WIFI6-DB profile (ESP32-C5) and `wifi_coprocessor`; the C6 image and update are refused on any other chip.
 - Added the Waveshare ESP32-P4-ETH profile (COM29, no Wi-Fi radio) and `sdkconfig.board-p4-eth`; the console no longer starts ESP-Hosted on a board whose profile has no coprocessor. Retracted the guess that COM29 is a WIFI6-DB with a C5.
 - Added COM31 (second v3.2 unit, model unidentified) and its stock-flash backup record.
+- COM31 identified as a WIFI6-DB: SDIO link to its ESP32-C5 works, stock slave 2.12.9 vs host 3.0.6 (Wi-Fi blocked by version mismatch); single-receiver regression recorded.
