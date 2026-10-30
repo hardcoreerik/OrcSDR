@@ -128,8 +128,11 @@ commands are counted and never reported applied; memory with a client attached; 
 4. Licence: AGPL-3.0, like the driver.
 5. Credit goes in the commit and merge message only; no code or docs name anyone; no third-party code is used or merged.
 
-**Proposed by revision 2, not yet approved:**
+**Proposed by revision 2, approved by the owner 2026-10-30 ("yes agreed"):**
 6. Rate policy: honour supported requests, otherwise end the session with a recorded reason (rule 2).
 7. Listen-only coordination: end the session when another owner changes centre or rate (rule 5).
 8. Compatibility gain list and tuner-type mapping held for the session (rule 8).
-9. Session deadlines (idle, slow-peer, no-data), still to be chosen.
+9. Session deadlines (idle, slow-peer, no-data): approved in principle; the actual values are still to be chosen from measurements on a board.
+
+**Owner direction (2026-10-30):** an ESP32-optimised rtl_tcp is a high-value feature for OrcSDR. Code comes after the sink fix (done on `claude/p4-board-support`,
+commit `636991a6`, build-verified only, not yet run on a board) because the server is a queued sink.

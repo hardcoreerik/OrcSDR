@@ -212,3 +212,17 @@ What follows from it:
 Order of work: (a) P4 headless: embed the bundle, serve it at `/`, add the read-only compatibility routes so the Home screen shows live data; (b) signed-request
 authentication and the POST routes (gain, AGC, bias, tune, rate); (c) the IQ WebSocket on queued sinks, then `channel` and `decode`; (d) extract the shared
 component; (e) P4 boards with a display; (f) Tab5, with approval and tests.
+
+## 11. Owner decisions and requests (2026-10-30)
+
+- **Default login for step two: `admin` / `password`** (owner decision). Step two builds the login and the control routes on the same server. Concerns recorded for the
+  owner, none acted on yet: a published default credential protects nothing against anyone on the LAN who knows it, and the signed-request scheme in section 3 is only as strong as the
+  secret it is keyed from. Mitigations to build with it, pending the owner's choice: a persistent "default password in use" banner in the UI, a serial command to change it, throttled failed logins,
+  read-only routes staying open as today, and the control tier (including rtl_tcp control mode) refusing to be enabled on a link the owner has not marked as trusted. The pairing key stays the
+  serial-side secret.
+- **Test the M5GFX web UI on the Waveshare ESP32-P4-ETH (COM29).** This board has no Wi-Fi radio, and the web server today starts only when Wi-Fi is connected, so the test needs two things that
+  do not exist yet: an Ethernet driver in the console for the board's RJ45 port (pins are in the board profile: IP101 PHY, MDC 31, MDIO 52, reset 51, RMII clock in on 50, TX_EN 49, TXD0/1 34/35, CRS_DV 28,
+  RXD0/1 29/30; documented and from OrcNode, not verified on this board; the PHY chip itself is unconfirmed) and a server start condition that accepts a wired link. The owner will need to connect
+  an Ethernet cable to COM29 and tell me when. The Blog V4L dongle used earlier should stay on COM29's USB header. Order: finish step one on the Wi-Fi board first (COM31), then the Ethernet driver (board-support
+  branch), then the UI test on COM29.
+- **Branches:** board support lives on `claude/p4-board-support`, the web layer on `claude/p4-web-ui` (which contains the board work). Board fixes go on the board branch and are cherry-picked up. Nothing is merged to `main`.

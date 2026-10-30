@@ -217,3 +217,10 @@ the rtl_tcp design. These points change the design; the implementation in `radio
    counters do not mistake a restart for ordinary loss or wrap. The timestamp is read-completion time, not RF sample synchronisation or phase coherence, and must not be described that way.
 5. **Rate changes.** A rate change is a stop and start (the driver refuses a mid-stream change as BUSY), so it is a serialized transaction that also bumps the generation and drops queued blocks of the old generation. Sinks that
    depend on a rate must see the new `sample_rate` in the next block or be ended.
+
+### Status of the revision above (2026-10-30)
+
+Points 1 (exact removal) and 4 (stream generation) are implemented in `radio_service.cpp` on `claude/p4-board-support` (commit `636991a6`, cherry-picked to `claude/p4-web-ui`).
+`remove_sink` now returns a bool and takes a per-sink lock that the radio loop holds while it calls or feeds the sink; a callback that does not return in 1.5 s, or a queued consumer that
+does not stop in 2 s, quarantines the slot and returns false. `IqBlock` has a new `generation` field. **Build-verified only (WIFI6-DB/v3 configuration); not yet run on a board.** Points 2, 3 and 5
+(metadata off the legacy wire, copied-block ownership, serialized rate change) are obligations on the consumers and on the radio loop's rate-change path and are not implemented yet.
