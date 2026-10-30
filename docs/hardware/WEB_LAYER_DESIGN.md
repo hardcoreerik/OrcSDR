@@ -147,3 +147,23 @@ Owner approved the design with the proposed defaults (web key derived from the p
   162,955 to 157,483 B and the largest block from 86,016 to 77,824 B. The result and JSON buffers now live in PSRAM; after that, internal free is
   162,747 B and the largest block 86,016 B (baseline 162,955 / 86,016).
 - Not done: the web server component, signed-request authentication, control-tier commands, any HTTP route.
+
+## 9. Read-only web server: written and built, not yet run (2026-10-30)
+
+`main/web_server.{hpp,cpp}` (kept inside the P4 console app for now, not a shared component, so no Tab5 build can see it).
+
+- `esp_http_server` on port 80, core 0, stack 8192, 4 sockets, 4 URI handlers, LRU purge, 5 s timeouts. Routes: `GET /` and `GET /api/v1` (index of
+  commands with their serial names and access level), `GET /api/v1/<path>?rx=N` for every table command that has an HTTP path: `status`, `freq`,
+  `signal`, `volume`, `mem`, `rx`, `wifi`, `sd`, `audio`, `ui`, `web`. JSON comes from the same `Result` as the serial output. Anything else: 404.
+- Read tier only. The caller is never authenticated on this path, so the dispatcher would refuse any non-read command (none is registered).
+- **Off by default.** The choice is saved in NVS (`orcsdr_web/enabled`). A manager task starts the server only while enabled and Wi-Fi has been
+  connected for 2.5 s, and stops it when either goes away. Buffers (result and 2.5 KB JSON) are allocated in PSRAM at start and freed at stop.
+- **Controls:** `RTL_WEB` / `RTL_WEB_STATUS` (read) print `RTL_WEB_STATUS enabled= listening= url=`; `RTL_WEB ON|OFF` needs auth. The on-device
+  Settings "web console" button now sets the same switch (the P4 settings file used to drop that action).
+- **Request checks:** `Host` must be the device's own IP or `orcsdr.local` (rebinding defence); a present `Origin` must be `http://<that host>`;
+  `rx=` must be 0 to 3; `Cache-Control: no-store`.
+- **Not done:** mDNS (`orcsdr.local` is accepted as a Host but nothing announces it; the mDNS component is a new managed dependency), signed-request
+  authentication, control-tier routes, the WebAssembly page, the IQ WebSocket, TLS.
+- **Untested:** everything above. Needed before it counts: build the other board profiles, run on a board with the server off then on and measure
+  internal free / largest block / `RTL_CPU` / receiver drops, curl every route including bad Host, bad Origin, bad `rx`, unknown path, long URI,
+  and several rapid requests during streaming.

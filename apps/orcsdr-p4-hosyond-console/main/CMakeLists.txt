@@ -16,7 +16,7 @@ if(C6_FIRMWARE_BIN AND EXISTS "${C6_FIRMWARE_BIN}")
     set(ORCSDR_C6_EMBEDDED 1)
 endif()
 idf_component_register(
-    SRCS "main.cpp" "present.cpp" "screen_snap.cpp" "serial_cli.cpp" "commands.cpp" "home_app.cpp" "radio_service.cpp" "audio_service.cpp" "screens.cpp" "screen_fm.cpp" "screen_am.cpp" "screen_cb.cpp" "screen_airband.cpp" "screen_shortwave.cpp" "screen_rflab.cpp" "screen_settings.cpp" "screen_pocsag.cpp" "screen_wifi.cpp" "screen_adsb.cpp" "screen_acars.cpp" "screen_lora.cpp" "ui_support.cpp" "iq_tap.cpp" "wifi_app.cpp" "sd_card.cpp"
+    SRCS "main.cpp" "present.cpp" "screen_snap.cpp" "serial_cli.cpp" "commands.cpp" "home_app.cpp" "radio_service.cpp" "audio_service.cpp" "screens.cpp" "screen_fm.cpp" "screen_am.cpp" "screen_cb.cpp" "screen_airband.cpp" "screen_shortwave.cpp" "screen_rflab.cpp" "screen_settings.cpp" "screen_pocsag.cpp" "screen_wifi.cpp" "screen_adsb.cpp" "screen_acars.cpp" "screen_lora.cpp" "ui_support.cpp" "iq_tap.cpp" "wifi_app.cpp" "web_server.cpp" "sd_card.cpp"
          "${TAB5_UI}/home_dashboard.cpp" "${TAB5_UI}/dashboard_audio_control.cpp"
          "${TAB5_UI}/freq_keypad.cpp" "${TAB5_UI}/focus_nav.cpp" "${TAB5_UI}/waterfall_style.cpp"
          "${TAB5_UI}/band_profile.cpp" "${TAB5_UI}/home_vfo.cpp" "${TAB5_UI}/filter_standards.cpp"
@@ -40,7 +40,7 @@ idf_component_register(
          "${TAB5_UI}/fm_dashboard.cpp" "${TAB5_UI}/fm_config.cpp"
     INCLUDE_DIRS "." "${WS4B}" "${TAB5_UI}"
     REQUIRES esp_rtl_sdr esp_psram esp_timer esp_driver_uart esp_app_format esp_rom mbedtls heap nvs_flash
-             orcsdr_board_hosyond orcsdr_gfx_compat orcsdr_audio_dsp espressif__esp-dsp espressif__esp_hosted espressif__esp_wifi_remote esp_wifi esp_netif esp_event fatfs sdmmc esp_driver_gptimer esp_driver_sdmmc esp_driver_gpio vfs esp_mm
+             orcsdr_board_hosyond orcsdr_gfx_compat orcsdr_audio_dsp espressif__esp-dsp espressif__esp_hosted espressif__esp_wifi_remote esp_wifi esp_netif esp_event esp_http_server fatfs sdmmc esp_driver_gptimer esp_driver_sdmmc esp_driver_gpio vfs esp_mm
     EMBED_FILES ${ORCSDR_EMBED_FILES}
 )
 # Sources that name the drawing target as lgfx::LovyanGFX* (see the M5Unified.h shim).

@@ -21,6 +21,7 @@
 #include "freertos/task.h"
 #include "audio_service.hpp"
 #include "commands.hpp"
+#include "web_server.hpp"
 #include "home_app.hpp"
 #include "mbedtls/md.h"
 #include "nvs.h"
@@ -163,6 +164,7 @@ void cmd_help() {
   std::printf("RTL_VOLUME | RTL_VOLUME <0-32>                   - query / set (auth)\n");
   std::printf("RTL_UI STATUS | RTL_UI OPEN <HOME> | RTL_UI TAP <x 0-1279> <y 0-719>  - UI (OPEN/TAP need auth)\n");
   std::printf("RTL_SCREEN_STATUS / RTL_MEM STATUS / RTL_RX STATUS - diagnostics (RTL_RX: one line per receiver)\n");
+  std::printf("RTL_WEB | RTL_WEB ON|OFF                          - read-only web server on port 80 (ON/OFF need auth; off by default)\n");
   std::printf("FT8 SNAP                                        - screenshot as PNG over serial (auth)\n");
 }
 
@@ -573,6 +575,15 @@ void handle_line(char* line) {
   // Read-tier commands live in the shared table (commands.cpp); the web layer calls the same handlers.
   if (orcsdr::commands::run_serial(line, {orcsdr::commands::Transport::serial, authed()})) return;
   if (std::strncmp(line, "RTL_JSON ", 9) == 0) return cmd_json(line + 9);
+  if (std::strcmp(line, "RTL_WEB ON") == 0 || std::strcmp(line, "RTL_WEB OFF") == 0) {
+    if (!authed()) {
+      std::printf("RTL_WEB_ERROR auth_required\n");
+      return;
+    }
+    web_server::set_enabled(line[9] == 'N');
+    std::printf("RTL_WEB_OK enabled=%d listening=%d url=%s\n", web_server::enabled(), web_server::listening(), web_server::url());
+    return;
+  }
   if (std::strcmp(line, "RTL_HELP") == 0) return cmd_help();
   if (std::strncmp(line, "RTL_FREQ ", 9) == 0) return cmd_freq(line + 9);
   if (std::strncmp(line, "RTL_TUNE ", 9) == 0) return cmd_tune(line + 9);

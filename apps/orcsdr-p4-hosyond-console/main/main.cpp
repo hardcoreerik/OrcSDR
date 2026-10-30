@@ -17,6 +17,7 @@
 #include "audio_service.hpp"
 #include "sd_card.hpp"
 #include "wifi_app.hpp"
+#include "web_server.hpp"
 #include "home_app.hpp"
 #include "home_v3_ui.hpp"
 #include "hosyond_board.h"
@@ -55,6 +56,7 @@ extern "C" void app_main(void) {
 
   sd_card::start();
   wifi_app::start();       // C6 link comes up in the background a few seconds later
+  web_server::start();     // read-only web server; off unless the owner enabled it, and only while Wi-Fi is up
   audio_service::start();  // optional: the receiver and UI run without sound if the codec fails
   if (!home_app::start(&M5.Display)) ESP_LOGE(TAG, "home UI task failed");
   ESP_LOGI(TAG, "boot complete");

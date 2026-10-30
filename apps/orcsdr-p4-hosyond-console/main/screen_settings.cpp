@@ -18,6 +18,7 @@
 #include "receiver_location.hpp"
 #include "screens.hpp"
 #include "settings_app.hpp"
+#include "web_server.hpp"
 #include "wifi_app.hpp"
 
 namespace {
@@ -140,6 +141,9 @@ const st::State& build() {
     g_state.longitude_e7 = loc.longitude_e7;
     std::snprintf(g_state.location_label, sizeof(g_state.location_label), "%.39s", loc.label);
   }
+  g_state.web_console_enabled = web_server::enabled();
+  g_state.web_console_listening = web_server::listening();
+  std::snprintf(g_state.web_console_url, sizeof(g_state.web_console_url), "%.47s", web_server::listening() ? web_server::url() : "");
   g_state.sd_ready = false;
   g_state.companion_supported = false;
   return g_state;
@@ -208,6 +212,7 @@ void tap(int x, int y) {
       wifi_app::disconnect();
       wifi_app::forget();
       break;
+    case st::ActionKind::web_console_changed: web_server::set_enabled(a.value != 0); break;
     case st::ActionKind::location_changed: save_location(st::state()); break;
     default: break;  // catalog, companion, clock: not available on this target yet
   }

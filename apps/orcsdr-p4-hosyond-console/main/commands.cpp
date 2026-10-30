@@ -6,6 +6,7 @@
 #include "home_app.hpp"
 #include "radio_service.hpp"
 #include "sd_card.hpp"
+#include "web_server.hpp"
 #include "wifi_app.hpp"
 
 namespace orcsdr::commands {
@@ -268,6 +269,14 @@ Status run_ui(const Caller&, const Args&, Result& r) {
   return Status::ok;
 }
 
+Status run_web(const Caller&, const Args&, Result& r) {
+  Record* rec = add_record(r, "RTL_WEB_STATUS");
+  put_int(*rec, "enabled", web_server::enabled());
+  put_int(*rec, "listening", web_server::listening());
+  put_text(r, *rec, "url", web_server::url());
+  return Status::ok;
+}
+
 const Command kCommands[] = {
     {"RTL_STATUS", "status", Access::read, run_status},
     {"RTL_FREQ", "freq", Access::read, run_freq},
@@ -279,6 +288,8 @@ const Command kCommands[] = {
     {"RTL_SD STATUS", "sd", Access::read, run_sd},
     {"RTL_AUDIO STATUS", "audio", Access::read, run_audio},
     {"RTL_UI STATUS", "ui", Access::read, run_ui},
+    {"RTL_WEB_STATUS", "web", Access::read, run_web},
+    {"RTL_WEB", nullptr, Access::read, run_web},  // serial alias of RTL_WEB_STATUS (Tab5 command spec)
 };
 }  // namespace
 
@@ -293,7 +304,7 @@ const Command* find_serial(const char* line) {
 }
 const Command* find_path(const char* path) {
   for (const Command& c : kCommands)
-    if (std::strcmp(c.http_path, path) == 0) return &c;
+    if (c.http_path && std::strcmp(c.http_path, path) == 0) return &c;
   return nullptr;
 }
 
