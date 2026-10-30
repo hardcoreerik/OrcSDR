@@ -33,7 +33,8 @@ Status levels, never mixed:
 | Board | Profile status | Console (screen + touch) | Wi-Fi (C6 SDIO) | USB host (RTL-SDR) | SD | Ethernet |
 |---|---|---|---|---|---|---|
 | Waveshare ESP32-P4-Module-DEV-KIT + Hosyond 7" 800x480 | bench-verified (display, audio, C6 link, USB host); SD and Ethernet not exercised by this firmware | works | pins match; see "Open item" | works (jumper selects host) | never mounted a card here (power switch GPIO45 from the schematic) | IP101 RMII present; OrcNode runs it; not wired into the console |
-| Waveshare ESP32-P4-WIFI6-DB (probably the COM29 board) | documented-only; I2C codec and USB host observed once | headless runs; panel untested | **ESP32-C5**: embedded image is C6-only, Wi-Fi down | via 4-pin header, an RTL-SDR streamed | power switch GPIO45 (low = on), no card tested | none |
+| Waveshare ESP32-P4-ETH (the COM29 board, identified by the owner 2026-10-29) | documented-only; I2C codec 0x18 and USB-host RTL-SDR observed on COM29 | headless runs, regression passed (see "COM29 regression") | **none: the board has no Wi-Fi or Bluetooth**; the console reports "no Wi-Fi radio" and does not start ESP-Hosted | 4-pin header; an RTL-SDR streams at 2.4 MS/s, 0 drops | slot present, power pin unknown, no card tested | 100M RJ45; PHY and pins from OrcNode/third party, no driver wired in |
+| Waveshare ESP32-P4-WIFI6-DB | documented-only (no board of this model on the bench) | not run | **ESP32-C5** per Waveshare's wiki: embedded image is C6-only, Wi-Fi would stay down | 4-pin header | power switch GPIO45 (low = on) | none |
 | Waveshare ESP32-P4-WIFI6-POE-ETH | documented-only | not run | pins documented, same as dev kit | USB-A present; VBUS control unverified | slot present, no power-switch pin | IP101GRI present; no driver wired in |
 | M5Stack Tab5 | documented-only | **no display backend** | pins confirmed by `apps/orcsdr-tab5` | via expander line, not driven | slot present | none |
 
@@ -84,8 +85,8 @@ tests, so everything in it is documentary. Effects on these profiles:
   older BSP commit that showed two. The Tab5 profile comment now says so; detect the assembly at runtime.
 - **Waveshare WIFI6-DEV-KIT is a separate product** from the POE-ETH board I profiled, with PCB Rev1.1 and Rev1.2
   routing the USB host jumper to different ports (conflict C04: Rev1.1 HOST = ports 2-4, Rev1.2 HOST = port 1).
-  Which exact Waveshare board is on COM29 is unconfirmed, so its PCB revision must be read from the silkscreen
-  before its USB host path is trusted.
+  COM29 turned out to be the ESP32-P4-ETH (owner, 2026-10-29), a different product again; the POE-ETH and DEV-KIT
+  USB-host jumper findings do not apply to it.
 - **Module-DEV-KIT USB** is listed "not yet tested with RTL-SDR" in the research; this firmware did run an RTL-SDR
   on it. OrcNode's notes say its Type-A ports sit behind a CH334F hub and that the hub's port-power command has no
   electrical effect, so VBUS control stays a hardware matter.
@@ -113,10 +114,16 @@ tests, so everything in it is documentary. Effects on these profiles:
 - **COM29** is an ESP32-P4 revision v3.2 with 32 MB flash (GigaDevice 0xC8/0x4019), MAC e8:f6:0a:eb:76:e7, running
   Espressif's `esp-brookesia` demo (built 2026-08-31, ESP-IDF v5.5.5; partitions: nvs 0x9000, factory 0x110000
   size 9 MB, storage 0xa10000 size 5 MB). It is a different silicon revision and flash size from the OrcNode board,
-  so it is not the same board as the Module-DEV-KIT above. By elimination it is most likely the **ESP32-P4-WIFI6-DB**:
-it matches the 32 MB flash, has no Ethernet, the Waveshare platform BSP in the stock demo, an ES8311 that answered at
-0x18 on SDA7/SCL8, and the owner named a "p4 wifi6 db" board. Not confirmed: the module marking and PCB revision on
-the board have not been read.
+  so it is not the same board as the Module-DEV-KIT above. **The owner identified it as the Waveshare ESP32-P4-ETH**
+(2026-10-29), and Waveshare's page (https://docs.waveshare.com/ESP32-P4-ETH) matches: 32 MB flash, 32 MB PSRAM, a 100M
+Ethernet port, a TF slot, a USB 2.0 header, and no Wi-Fi or Bluetooth. An earlier note here guessed WIFI6-DB with an
+ESP32-C5 by elimination; that was wrong (it assumed the board had a radio). PCB revision not read.
+- **COM31** is a second ESP32-P4 v3.2, 32 MB flash (GigaDevice c8/4019), MAC 80:f1:b2:d7:bc:55, found boot-looping
+  (ROM `SW_CPU_RESET` repeating, no application output) with a stock demo layout (nvsfactory 0x9000, nvs 0x3b000, otadata
+  0x10d000, phy_init 0x10f000, factory 0x110000 size 10 MB, model 0xb10000, storage 0xb90000 size 6 MB). Model not yet
+  identified. Stock flash 0 to 0x1190000 backed up to `F:\Ai\_p4_stock_backups\com31_20261029\com31_stock_0-0x1190000.bin`
+  (18,415,616 bytes, SHA-256 `d35b9225c70452277999278bbaeb2513f35e6585e1f73bbf169cd5830c7848d5`, bootloader, partition
+  table and app magic checked). Nothing has been written to it.
 
 ## Unsupported, by board
 
@@ -200,7 +207,25 @@ python tools/p4_health.py --port COM8
 and read the boot log for `PROFILES: board: ... profile bench-verified`. A documented-only board prints
 `this board's pins are not bench-verified` and its `unsupported here:` list.
 
-## Open item: Wi-Fi does not start on the COM29 board
+## COM29 regression (ESP32-P4-ETH, single receiver, 2026-10-29)
+
+Image: `build-p4eth-v3` (profile `waveshare-esp32-p4-eth`, silicon v3, `CONFIG_ORCSDR_MAX_RECEIVERS=1`), flashed to COM29 (hash
+verified), a Blog V4L RTL-SDR on the USB header. Results:
+- `RTL_RX STATUS`: receiver 0 streaming, 2,400,000 S/s (effective 2,399,9xx), drops 0, `usb_path="root"`, device "Blog V4L".
+- `RTL_MEM STATUS` (headless, no Wi-Fi): internal free 190,575 B (largest 106,496), DMA free 151,547 B, PSRAM free 31,914,028 B.
+- `RTL_CPU`: radio task 44.7 % of core 1 at 2.4 MS/s, IDLE1 53.4 %, audio 1.8 %.
+- `RTL_WIFI STATUS`: `started=0 stage=no Wi-Fi radio`, no ESP-Hosted retries.
+- Sink add/remove path: RF_LAB, ACARS and LORA each opened and closed 12 times via `RTL_UI OPEN` (72 screen changes, each with
+  a sample-rate change and receiver restart): no crash, panic or watchdog output; the receiver was streaming again afterwards.
+- `tools/p4_health.py --port COM29`: PASS (draw 10.7 ms, frame period 50 ms, IDLE1 53.3 %, audio 590 blocks in 2 s, 0 dropped).
+- Not done: a before/after CPU comparison on the same board (no pre-change CPU figure was recorded), the two-receiver path
+  (needs a second dongle), hot-plug, a long soak.
+
+## Wi-Fi on COM29: resolved, the board has no radio
+
+The text below is the investigation as it stood before the board was identified. Its conclusion (a C5 coprocessor) was wrong:
+the ESP32-P4-ETH has no Wi-Fi hardware, so ESP-Hosted can never answer. The SDIO timeouts were nothing on the bus.
+(COM8's Wi-Fi is a different board, a Module-DEV-KIT with a C6, and works.)
 
 **COM8 update (2026-10-29): COM8 Wi-Fi works.** The owner saw it connected on the Connectivity Settings screen at
 192.168.1.198, and `RTL_WIFI STATUS` on the serial port confirmed it (`started=1 connected=1 ssid=hardcorewifi
@@ -221,7 +246,8 @@ Tried, one variable each (the first two were done while COM8 was failing; COM8 n
   overlay keeps active-low because it matches the working OrcNode and upstream, but it does not fix this by itself.
 
 Not yet tried / unknown:
-- **The coprocessor on COM29 is probably an ESP32-C5** (see above). That alone explains the failure: our embedded image
+- **(Superseded: COM29 has no coprocessor at all, see above. The C5 analysis stays valid for a real WIFI6-DB.)** The old
+  guess: the coprocessor on COM29 is probably an ESP32-C5. That alone explains the failure: our embedded image
   is the ESP32-C6 build, and nothing on the C5 speaks ESP-Hosted unless a C5 slave image was flashed. The profile now
   carries `wifi_coprocessor`; with a non-C6 chip the firmware says so at boot and refuses the on-device coprocessor
   update (`RTL_WIFI C6_UPDATE` and the Settings button; the refusal is compiled in and auth-gated, not exercised on
@@ -254,3 +280,5 @@ Not yet tried / unknown:
 - Ethernet pins added to the profile type; Waveshare profiles carry the OrcNode-verified RMII map.
 - Added `sdkconfig.silicon-v3` (second image for v3.x silicon); WIFI6 overlay sets active-low C6 reset.
 - Added the Waveshare ESP32-P4-WIFI6-DB profile (ESP32-C5) and `wifi_coprocessor`; the C6 image and update are refused on any other chip.
+- Added the Waveshare ESP32-P4-ETH profile (COM29, no Wi-Fi radio) and `sdkconfig.board-p4-eth`; the console no longer starts ESP-Hosted on a board whose profile has no coprocessor. Retracted the guess that COM29 is a WIFI6-DB with a C5.
+- Added COM31 (second v3.2 unit, model unidentified) and its stock-flash backup record.

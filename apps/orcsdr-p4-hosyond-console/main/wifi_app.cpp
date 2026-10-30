@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_store.hpp"
+#include "orcsdr_board_profile.h"
 
 namespace wifi_app {
 namespace {
@@ -224,7 +225,15 @@ void task(void*) {
 }
 }  // namespace
 
-void start() { xTaskCreatePinnedToCore(task, "wifi_app", 8192, nullptr, 2, nullptr, 0); }
+void start() {
+  // A board with no Wi-Fi coprocessor (the profile says so) never starts the ESP-Hosted link: nothing would answer.
+  if (!orcsdr_board_profile()->has_hosted_c6) {
+    ESP_LOGW(TAG, "board %s has no Wi-Fi radio; Wi-Fi is not started", orcsdr_board_profile()->name);
+    std::snprintf(g_stage, sizeof(g_stage), "%s", "no Wi-Fi radio");
+    return;
+  }
+  xTaskCreatePinnedToCore(task, "wifi_app", 8192, nullptr, 2, nullptr, 0);
+}
 
 Status status() {
   Status s;

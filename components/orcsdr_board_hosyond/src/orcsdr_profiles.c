@@ -15,6 +15,7 @@ static const orcsdr_board_profile_t *const k_boards[] = {
     &g_board_waveshare_p4_module_dev_kit,
     &g_board_waveshare_p4_wifi6_poe_eth,
     &g_board_waveshare_p4_wifi6_db,
+    &g_board_waveshare_p4_eth,
     &g_board_m5stack_tab5,
 };
 
@@ -28,6 +29,8 @@ const orcsdr_board_profile_t *orcsdr_board_profile(void)
 {
 #if defined(CONFIG_ORCSDR_BOARD_M5STACK_TAB5)
     return &g_board_m5stack_tab5;
+#elif defined(CONFIG_ORCSDR_BOARD_WAVESHARE_P4_ETH)
+    return &g_board_waveshare_p4_eth;
 #elif defined(CONFIG_ORCSDR_BOARD_WAVESHARE_P4_WIFI6_DB)
     return &g_board_waveshare_p4_wifi6_db;
 #elif defined(CONFIG_ORCSDR_BOARD_WAVESHARE_P4_WIFI6_POE_ETH)
