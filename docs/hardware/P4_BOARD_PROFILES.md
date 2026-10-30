@@ -90,7 +90,7 @@ tests, so everything in it is documentary. Effects on these profiles:
   on it. OrcNode's notes say its Type-A ports sit behind a CH334F hub and that the hub's port-power command has no
   electrical effect, so VBUS control stays a hardware matter.
 - **ESP-Hosted C6 firmware version** is a P0 gap in the research (C08): matching SDIO wires do not prove a
-  compatible coprocessor image. That is relevant to the COM8 Wi-Fi failure below.
+  compatible coprocessor image. That is relevant to the COM29 Wi-Fi failure below.
 - **LilyGO T-Display-P4** (pinned driver commit `a47cf73e`): ES8311 on I2S MCLK13 BCLK12 WS9 DOUT10 DIN11 (WS and
   DOUT are swapped relative to the Waveshare boards), two I2C buses (7/8 and 20/21), XL9535 expander at 0x20
   (screen reset IO2, touch reset IO3, touch int IO4, USB PHY power IO10, C6 enable IO14, SD power IO15, radio reset
@@ -101,8 +101,11 @@ tests, so everything in it is documentary. Effects on these profiles:
 
 ## Evidence from boards on the bench (read-only)
 
-- **COM28** runs the OrcNode firmware as a live node (Wi-Fi connected, one RTL-SDR, Ethernet started, no link). It was
-  only listened to. OrcNode's source (`F:\Ai\OrcNode`, `main/network_eth.cpp`, `sdkconfig.defaults`) uses Ethernet
+- **COM28** runs the OrcSDR Web firmware of the other session (repo `OrcSDR-Headless`, branch
+  `feat/m5gfx-web-mirror`), not OrcNode firmware (owner's statement, 2026-10-29). It was seen with Wi-Fi connected, one
+  RTL-SDR, Ethernet started, no link, and only listened to. That branch grew out of OrcNode, and its
+  `main/network_eth.cpp` and `sdkconfig.defaults` carry the same Ethernet and SDIO pins as the OrcNode source cited
+  next (compared 2026-10-29). OrcNode's source (`F:\Ai\OrcNode`, `main/network_eth.cpp`, `sdkconfig.defaults`) uses Ethernet
   IP101 at PHY address 1 with MDC31 MDIO52 reset51, RMII clock-in 50, TX_EN49 TXD0 34 TXD1 35 CRS_DV28 RXD0 29 RXD1 30,
   and ESP-Hosted SDIO CLK18 CMD19 D0-D3 14-17 with reset 54. Its `PROJECT_TRUTH.md` marks Ethernet, SDIO, SD (GPIO
   43/44/39-42, LDO channel 4) and Wi-Fi hardware-verified on a Module-DEV-KIT (silicon v1.3, 16 MB flash). Those
@@ -197,14 +200,21 @@ python tools/p4_health.py --port COM8
 and read the boot log for `PROFILES: board: ... profile bench-verified`. A documented-only board prints
 `this board's pins are not bench-verified` and its `unsupported here:` list.
 
-## Open item: Wi-Fi does not start on two boards
+## Open item: Wi-Fi does not start on the COM29 board
 
-Symptom on both the COM8 Module-DEV-KIT (v1.x silicon) and the COM29 board (v3.2 silicon): ESP-Hosted logs
+**COM8 update (2026-10-29): COM8 Wi-Fi works.** The owner saw it connected on the Connectivity Settings screen at
+192.168.1.198, and `RTL_WIFI STATUS` on the serial port confirmed it (`started=1 connected=1 ssid=hardcorewifi
+ip=192.168.1.198 c6=3.0.6`, uptime about 10.5 h). The earlier COM8 failure is therefore not a standing fault of the
+Module-DEV-KIT profile, and what cleared it is unknown (a power cycle alone had no effect when tried; see below), so the
+earlier link-loss/start failures on COM8 are not root-caused. Free memory on COM8 at that time, Wi-Fi up, no dongle
+attached: internal 166,259 B free, largest block 94,208 B; PSRAM 30,305,920 B free.
+
+Symptom that remains on the COM29 board (v3.2 silicon): ESP-Hosted logs
 `sdmmc_init_ocr: send_op_cond ... 0x107` / `sdmmc_card_init failed` on every attempt, so nothing answers on the
-SDIO bus. The pins in the log are the profile's (CLK18 CMD19 D0-D3 14-17, reset 54). Headless COM28 (OrcNode) uses
+SDIO bus. The pins in the log are the profile's (CLK18 CMD19 D0-D3 14-17, reset 54). COM28 uses
 the same pins and has Wi-Fi up, so the wiring map is right.
 
-Tried, one variable each:
+Tried, one variable each (the first two were done while COM8 was failing; COM8 now works):
 - Power-cycling COM8 (it had ~21 minutes of uptime when checked): no change.
 - Reset polarity: our `sdkconfig.defaults` sets active-high (copied from the Tab5); upstream default and OrcNode are
   active-low. Built COM29 with active-low (`sdkconfig.board-wifi6-poe-eth`): **no change**, same timeouts. That
@@ -227,7 +237,11 @@ Not yet tried / unknown:
 - **C6 firmware state.** An ESP-Hosted slave image must be flashed on the C6; the SDK does not prove it is. The
   Waveshare boards expose the C6 UART (H7: TXD0, RXD0, IO9) for reflashing.
 - SDIO clock (ours 10 MHz, OrcNode 40 MHz) and the reset strategy (ours "only if necessary", OrcNode default).
-- The earlier contained C6 link-loss incident on COM8 is not root-caused.
+- The earlier contained C6 link-loss incident on COM8 is not root-caused (COM8 Wi-Fi works now).
+- A built ESP-Hosted ESP32-C5 slave image exists (not flashed): `F:\Ai\OrcSDR\.orcsdr-cache\hosted-c5\build\eh_cp_wifi_scan.bin`,
+  SHA-256 `d5343933246d61df0a8e67da077c2ac20ed611e013132ceea56efe6c148b496d`, upstream ESP-Hosted 3.0.6
+  `examples/wifi/scan/cp`, ESP-IDF 5.5.4, SDIO slave pins CMD10 CLK9 D0 8 D1 7 D2 14 D3 13 (build defaults; not yet
+  checked against the board schematic).
 
 ## Change record
 
