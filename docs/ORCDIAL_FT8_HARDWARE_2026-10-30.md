@@ -86,3 +86,54 @@ legacy firmware combination, heavy DSP/audio continuity, or physical
 touch/encoder/readability/smoothness result is claimed. Nothing was merged or
 released; the original development validation report remains the record of the
 host checks and built source artifacts.
+
+
+## Subsequent live 20 m FT8 check: initial milestone demonstrated
+
+The user specified an outdoor telescopic antenna set for 20 m, connected through
+50 feet of cable to the V3c dongle. Antenna length, matching and feedline loss were
+not measured; the positive result is bounded to that reported setup.
+
+`FT8 OPEN` selected FT8 at 14.074 MHz. Observation ran from 16:37:53 to about
+16:40:27 UTC (09:37:53–09:40:27 Pacific) on October 30, for 154.1 seconds. There
+were already 13 stored decodes at the start; the test did not manufacture those
+or clear them. No synthetic signal or decode injection was used.
+
+During observation the receiver store grew from 13 to 40 records, and completed
+slots advanced from 6 to 15. The paired Dial accepted both summary (type 17) and
+matching text (type 18) for new record IDs **19, 21, 25, 27, 31, 32, 34, 38, 40**.
+The latest-only policy intentionally does not project every station in a slot.
+There were 100 text acceptances including retries, not 100 distinct decodes.
+
+Examples queried from the receiver's actual decode store included:
+
+```text
+ORC_FT8_DECODE utc=1793378325 mode=FT8 hz=1769 dt_ms=140 snr=-14 sync=81 kind=CQ call=W3YNI grid=FN00 msg="CQ W3YNI FN00"
+ORC_FT8_DECODE utc=1793378385 mode=FT8 hz=1463 dt_ms=100 snr=-13 sync=84 kind=CQ call=KJ4KFJ grid=EN74 msg="CQ KJ4KFJ EN74"
+```
+
+Those are received-message fields, not verified transmitter identities or exact
+positions. The complete wire contract still plots only validated CQ-associated
+locator area centers. These source-store examples are not a separate per-field
+readback or screenshot from the Dial.
+
+Final sampled status: receiver `screen=1 runtime=ready mode=FT8 band=20m
+ dial_hz=14074000 clock=1 rx_running=1 tap=1 store=40`; Dial `link=LINKED
+ dashboard=17 pending=0` at 14.074 MHz. The last sampled decode took 2324 ms,
+with `deadline_hit=0` and `slot_clipped=0`. Incomplete-slot skips changed from 1
+to 2 around initial setup; this run is not proof of lossless reception or a
+heavy-load/audio stress pass. No link failure, command rejection, acknowledgement
+timeout, or crash marker was logged during this observation.
+
+The user reported **"seems to be working"** while watching the devices. Together
+with the serial evidence this demonstrates the first genuine local FT8 decode
+path into the paired Dial on this setup. Physical acceptance remains preliminary:
+no formal display capture, locator-map comparison, flicker/encoder/touch audit,
+legacy firmware matrix, forced packet-loss/reconnect stress, or long-duration
+DSP/audio coexistence test was performed. No release or merge readiness is claimed.
+
+The devices were left on 20 m with FT8 running and their paired link connected;
+serial ports were closed. Local reproducible observation script and evidence:
+`live_20m.py`, `live-20m.log`, `live-20m-result.json`, `live-20m-summary.json` in the
+Tab5 hardware working directory above. The later successful live check supersedes
+the earlier "awaits antenna/band" gate only.
