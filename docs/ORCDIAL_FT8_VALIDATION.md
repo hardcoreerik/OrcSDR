@@ -104,3 +104,12 @@ this continuation; COM14 still has the earlier `eb34e83` slice.
 The implemented projection is latest-only. Selected history, multi-station maps,
 distance/bearing and other dashboard projections remain future work. No physical
 FT8 end-to-end milestone or release readiness is claimed.
+
+
+## Subsequent authorized hardware session
+
+The user later authorized flashing COM17 and re-pairing. Both matching application
+images are installed and pairing/control acknowledgement checks passed. See
+[hardware session evidence](ORCDIAL_FT8_HARDWARE_2026-10-30.md). The earlier
+no-flash statements above describe the implementation/host-validation session.
+Live on-air FT8 acceptance remains open.
