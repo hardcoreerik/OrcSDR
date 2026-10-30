@@ -183,3 +183,32 @@ Owner approved the design with the proposed defaults (web key derived from the p
   brought it back by itself after the reboot (saved setting).
 - **Not tested:** the other board profiles' builds, the Settings-screen toggle (no screen on this board), multiple server start/stop cycles over hours, IPv6,
   many simultaneous slow clients, a browser rendering the JSON.
+
+## 10. Direction (owner, 2026-10-30): the M5GFX/WebAssembly UI is the default web UI on every OrcSDR board
+
+The UI built in `OrcSDR-Headless` (branch `feat/m5gfx-web-mirror`) is where this work started and currently lives. It is to be served by **all** OrcSDR boards,
+headless or with a display: Tab5, Waveshare P4 boards, any future P4 console. It replaces the Tab5 Companion page (`web_console.cpp`) and the JSON-only page at `/`
+described in section 9 (that JSON API stays at `/api/v1` as the machine interface). A board with a screen keeps its on-device UI; the browser UI is an addition.
+
+What follows from it:
+
+1. **One shared web component, many boards.** Server, routes, authentication, asset delivery and the compatibility layer live in one component
+   (`orcsdr_web`) used by every target. Hardware differences sit behind a small interface (receivers, network info, SD, clock, settings, screen control):
+   `radio_service` is the P4 backend. The Tab5 backend (its own radio code) is a separate step that changes Tab5 builds, so it needs the owner's approval and
+   on-device tests before anything is merged. The component is built and proven on the P4 first; nothing in it is added to a Tab5 build until then.
+2. **One UI source.** The screens are `apps/orcsdr-tab5/ui` compiled natively for devices and to WebAssembly for browsers. The other repo's web build
+   (`platform/web`: controllers, stubs, page, Emscripten build) and decoder library (`core/decoders`, `components/orcdec`) have to move into the OrcSDR repo
+   (the other session's `docs/MERGE_NOTES.md` lists how). That is a merge into OrcSDR and waits for the owner's authorization.
+3. **Assets are a build input, not committed binaries.** The page bundle (about 700 KB gzipped: `core.wasm` 393 KB, `orcdec.wasm` 117 KB, scripts, page, splash)
+   is produced by the WebAssembly build and handed to the firmware build by a path (`ORCSDR_WEB_UI_DIR`, like `C6_FIRMWARE_BIN`), embedded in the app image.
+   A build without it serves only the JSON index and logs that the UI is not included. Releases must build and include the bundle.
+4. **Budget per board.** P4 console: the 7 MB app slot holds it (image is 2.8 MB); a running server costs about 11 KB of internal RAM (measured, COM31).
+   Tab5: its app slot size and internal-RAM headroom are unknown here and its internal boot pool is already nearly full, so the Tab5 server is not promised
+   until measured.
+5. **API compatibility.** The page calls about 25 `/api/v1` routes and expects its own JSON shapes (`receivers[]`, `report` with `eth`/`wifi`, `tuner`, `fm`, `spectrum`,
+   `time`, `decode/*`, `channel` plus a WebSocket for IQ). Proposal: an adapter layer inside `orcsdr_web` produces exactly those shapes from the hardware interface, so
+   the page runs unchanged; the command-table records stay as the second, simpler API. Unifying the two is later work.
+
+Order of work: (a) P4 headless: embed the bundle, serve it at `/`, add the read-only compatibility routes so the Home screen shows live data; (b) signed-request
+authentication and the POST routes (gain, AGC, bias, tune, rate); (c) the IQ WebSocket on queued sinks, then `channel` and `decode`; (d) extract the shared
+component; (e) P4 boards with a display; (f) Tab5, with approval and tests.
