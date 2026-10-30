@@ -180,9 +180,14 @@ void task(void*) {
     if (g_scan_pending.exchange(false)) {
       g_scanning = true;
       if (orcsdr::wifi::begin_scan()) {
-        vTaskDelay(pdMS_TO_TICKS(2500));
+        // scan_results() is -1 until the scan-done event arrives. A 2.4 GHz-only coprocessor finishes in about 2.5 s; a
+        // dual-band ESP32-C5 took about 7 s on the bench, so poll instead of waiting a fixed time (15 s at most).
         orcsdr::wifi::ScanResult tmp[16];
-        const int n = orcsdr::wifi::scan_results(tmp, 16);
+        int n = -1;
+        for (int waited = 0; waited < 60 && n < 0; ++waited) {
+          vTaskDelay(pdMS_TO_TICKS(250));
+          n = orcsdr::wifi::scan_results(tmp, 16);
+        }
         portENTER_CRITICAL(&g_lock);
         g_result_count = n > 0 ? n : 0;
         for (int i = 0; i < g_result_count; ++i) g_results[i] = tmp[i];

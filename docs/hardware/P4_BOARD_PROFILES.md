@@ -34,7 +34,7 @@ Status levels, never mixed:
 |---|---|---|---|---|---|---|
 | Waveshare ESP32-P4-Module-DEV-KIT + Hosyond 7" 800x480 | bench-verified (display, audio, C6 link, USB host); SD and Ethernet not exercised by this firmware | works | pins match; see "Open item" | works (jumper selects host) | never mounted a card here (power switch GPIO45 from the schematic) | IP101 RMII present; OrcNode runs it; not wired into the console |
 | Waveshare ESP32-P4-ETH (the COM29 board, identified by the owner 2026-10-29) | documented-only; I2C codec 0x18 and USB-host RTL-SDR observed on COM29 | headless runs, regression passed (see "COM29 regression") | **none: the board has no Wi-Fi or Bluetooth**; the console reports "no Wi-Fi radio" and does not start ESP-Hosted | 4-pin header; an RTL-SDR streams at 2.4 MS/s, 0 drops | slot present, power pin unknown, no card tested | 100M RJ45; PHY and pins from OrcNode/third party, no driver wired in |
-| Waveshare ESP32-P4-WIFI6-DB (the COM31 board, owner-identified 2026-10-30) | documented; SDIO link to the C5, codec 0x18 and a USB-host RTL-SDR observed on COM31 | headless runs; regression run (see "COM31") | **ESP32-C5, link up**: stock slave is ESP-Hosted 2.12.9, host is 3.0.6, major mismatch, Wi-Fi down; C6 image never offered | 4-pin header; Blog V4 streams at 2.4 MS/s, 0 drops | slot present (power GPIO45, low = on), mount timed out with no card | none |
+| Waveshare ESP32-P4-WIFI6-DB (the COM31 board, owner-identified 2026-10-30) | documented; SDIO link to the C5, codec 0x18 and a USB-host RTL-SDR observed on COM31 | headless runs; regression run (see "COM31") | **ESP32-C5, Wi-Fi up on its stock ESP-Hosted 2.12.9 slave** (scan found 7 networks incl. 5 GHz; join untested); needs `CONFIG_SLAVE_IDF_TARGET_ESP32C5`; C6 image never offered | 4-pin header; Blog V4 streams at 2.4 MS/s, 0 drops | slot present (power GPIO45, low = on), mount timed out with no card | none |
 | Waveshare ESP32-P4-WIFI6-POE-ETH | documented-only | not run | pins documented, same as dev kit | USB-A present; VBUS control unverified | slot present, no power-switch pin | IP101GRI present; no driver wired in |
 | M5Stack Tab5 | documented-only | **no display backend** | pins confirmed by `apps/orcsdr-tab5` | via expander line, not driven | slot present | none |
 
@@ -133,14 +133,22 @@ ESP32-C5 by elimination; that was wrong (it assumed the board had a radio). PCB 
   IDLE1 53.3 %, audio 1.8 %. 40 s of log: no drops, no reset.
 - Memory with the Wi-Fi attempt made, no card: internal free 163,535 B (largest 90,112), DMA free 124,507 B, PSRAM free 31,882,680 B.
 - SD: `SDMMC Slot0 mount failed: ESP_ERR_TIMEOUT` (no card inserted; not a fault by itself).
-- **Wi-Fi coprocessor, new fact:** the ESP-Hosted SDIO link comes up (`Card init success`, `slave chip id: 0x17 (esp32c5)`) and the C5
-  runs a stock ESP-Hosted slave, **firmware 2.12.9**. Host here is 3.0.6; the host logs "major version mismatch ... OTA coprocessor from
-  host" and the console correctly refuses to push its C6 image (`RTL_WIFI STATUS` stage `hosted_connect`, code -5). So the SDIO pins,
-  active-low reset on GPIO54 and the 10 MHz clock are right for this board; only the slave firmware version is wrong.
-- Options, none done: (1) host-driven OTA of an ESP-Hosted 3.0.x C5 slave image over the existing link (needs a C5 image embedded and the
-  OTA path allowed for C5; a bad image could leave the C5 unreachable, recoverable only through its UART pads); (2) flash the C5 through
-  its UART pads; (3) a 2.x-compatible host (rejected: far from the pinned 3.0.6 everywhere else). The built image is
-  `F:\Ai\OrcSDR\.orcsdr-cache\hosted-c5\build\eh_cp_wifi_scan.bin` (3.0.6); it has not run on any C5.
+- **Wi-Fi coprocessor, first image (C6 target):** the ESP-Hosted SDIO link came up (`Card init success`, `slave chip id: 0x17 (esp32c5)`)
+  and the C5 runs a stock ESP-Hosted slave, **firmware 2.12.9**, against host 3.0.6. `RTL_WIFI STATUS` showed `stage=hosted_connect code=-5`.
+  I first read that as the version mismatch. It was not: the host only logs the version mismatch ("major version mismatch ... OTA
+  coprocessor from host", `verify_fw_compat` result is ignored). The failure was `verify_chip_match`: the build was configured for an
+  ESP32-C6 coprocessor (`CONFIG_SLAVE_IDF_TARGET_ESP32C6`, which drives `CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6`) and the host rejects a
+  link whose chip id differs from its target.
+- **Fix, verified on COM31:** `sdkconfig.board-wifi6-db` now sets `CONFIG_SLAVE_IDF_TARGET_ESP32C5=y`. With that, the stock 2.12.9 slave is
+  accepted ("Wi-Fi driver up, C6 firmware 2.12.9"), `RTL_WIFI STATUS started=1`, and `RTL_WIFI SCAN` found **7 networks** including 5 GHz
+  channels 157 and 40 (dual-band works). No coprocessor update was needed; the C5 was never written to. The dual-band scan takes about
+  7 s, longer than the console's old fixed 2.5 s wait, so `wifi_app.cpp` now polls for scan-done (up to 15 s).
+- **Still untested on this board:** joining a network and passing traffic (no credentials were used), a long Wi-Fi soak, and how the
+  2.12.9 slave behaves with this 3.0.6 host over time. Host and slave are a different major version, which the vendor logs as an error;
+  the 2.12.6 pairing is a documented-as-tested combination for the C6 in the shared Wi-Fi code, 2.12.9 on the C5 is new.
+- Not needed now, kept as fallback: host-driven OTA of an ESP-Hosted 3.0.x C5 slave (the built image is
+  `F:\Ai\OrcSDR\.orcsdr-cache\hosted-c5\build\eh_cp_wifi_scan.bin`, 3.0.6, never run on any C5), or flashing the C5 through its UART pads.
+  Do either only if the 2.12.9 slave proves unreliable.
 
 
 ## Unsupported, by board

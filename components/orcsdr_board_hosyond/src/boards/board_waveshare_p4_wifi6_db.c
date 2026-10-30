@@ -19,16 +19,17 @@
  *
  * Bench result, a real unit (COM31, owner-identified WIFI6-DB, ESP32-P4 v3.2, 2026-10-30): the SDIO link to the C5 comes up
  * with this profile's pins and active-low reset ("Card init success", "slave chip id: 0x17 (esp32c5)"). The C5 ships with an
- * ESP-Hosted slave, firmware 2.12.9; this firmware's host is 3.0.6, a major-version mismatch, so the host asks to OTA the
- * coprocessor and Wi-Fi stays down (stage hosted_connect). Our embedded image is the ESP32-C6 build and is never offered to a C5.
- * Ways forward, none done: host-driven OTA of an ESP-Hosted 3.0.x C5 slave image over the existing SDIO link, or flashing it
- * through the C5 UART pads. A 3.0.6 C5 slave image builds (see docs/hardware/P4_BOARD_PROFILES.md) but has never run. */
+ * ESP-Hosted slave, firmware 2.12.9, and this firmware's host is 3.0.6 (a major-version mismatch the host only logs).
+ * Wi-Fi works on that stock slave once the build targets the C5 (sdkconfig.board-wifi6-db sets CONFIG_SLAVE_IDF_TARGET_ESP32C5):
+ * with the C6 target the host rejects the chip id and the link fails at hosted_connect. A scan found 7 networks incl. 5 GHz.
+ * Joining a network and long-term behaviour of the 2.12.9/3.0.6 pairing are untested. Our embedded image is the ESP32-C6 build
+ * and is never offered to a C5. Fallbacks, not needed so far: OTA of a 3.0.x C5 slave over SDIO, or flashing it via the C5 UART pads. */
 const orcsdr_board_profile_t g_board_waveshare_p4_wifi6_db = {
     .name = "waveshare-esp32-p4-wifi6-db",
     .vendor = "Waveshare",
     .source = "Waveshare wiki ESP32-P4-WIFI6-DB (2026-10-29); I2C 0x18 codec and USB host observed on one board",
-    .unsupported = "Wi-Fi: the C5 runs ESP-Hosted slave 2.12.9 and this host is 3.0.6 (major mismatch); it needs a 3.0.x C5 slave "
-                   "image (the embedded one is C6-only and is never offered to it). "
+    .unsupported = "Wi-Fi: the C5 runs its stock ESP-Hosted slave 2.12.9 against this 3.0.6 host (scan works; joining untested). "
+                   "The embedded coprocessor update image is C6-only and is never offered to it. "
                    "USB host is a 4-pin header, not a Type-A port. DSI panel, camera, SD and audio output untested here.",
     .status = ORCSDR_PROFILE_DOCUMENTED,
     .console_supported = false,

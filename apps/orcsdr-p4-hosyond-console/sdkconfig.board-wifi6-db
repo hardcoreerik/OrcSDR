@@ -1,5 +1,10 @@
 # Build overlay: Waveshare ESP32-P4-WIFI6-DB (ESP32-C5 Wi-Fi coprocessor). Documented-only profile.
 # SDIO pins and GPIO54 enable match sdkconfig.defaults. List sdkconfig.silicon-v3 after this for v3.x silicon.
-# Wi-Fi will not start until an ESP-Hosted slave image for the ESP32-C5 is flashed to the C5: the embedded image is C6-only.
+# Wi-Fi runs on the C5's stock ESP-Hosted slave (2.12.9 on the bench unit) when the build targets the C5, set below. The embedded
+# coprocessor-update image is C6-only and is never offered to a C5.
 CONFIG_ORCSDR_BOARD_WAVESHARE_P4_WIFI6_DB=y
 CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_LOW=y
+# The coprocessor is an ESP32-C5: the ESP-Hosted host rejects a link whose chip id differs from the configured target
+# ("chip mismatch"), and the target follows the esp_wifi_remote slave setting.
+# CONFIG_SLAVE_IDF_TARGET_ESP32C6 is not set
+CONFIG_SLAVE_IDF_TARGET_ESP32C5=y

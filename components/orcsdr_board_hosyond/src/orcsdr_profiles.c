@@ -65,9 +65,24 @@ void orcsdr_board_profile_log(void)
     }
     if (b->unsupported) ESP_LOGW(TAG, "unsupported here: %s", b->unsupported);
     if (b->has_hosted_c6 && !orcsdr_board_c6_image_applies()) {
-        ESP_LOGW(TAG, "Wi-Fi coprocessor is %s: the embedded ESP-Hosted image is for the ESP32-C6, so Wi-Fi stays down "
-                 "until an ESP-Hosted slave image for this chip is flashed to it; coprocessor update is disabled",
+        ESP_LOGW(TAG, "Wi-Fi coprocessor is %s: the embedded coprocessor-update image is for the ESP32-C6 and is never offered to it; "
+                 "Wi-Fi works only if the chip already runs a compatible ESP-Hosted slave; coprocessor update is disabled",
                  b->wifi_coprocessor ? b->wifi_coprocessor : "unknown");
+    }
+    {
+        /* The ESP-Hosted host rejects a link whose chip id differs from the build's coprocessor target, which looks like a
+         * dead SDIO bus ("hosted_connect" failure). Say so at boot. */
+#if defined(CONFIG_ESP_HOSTED_CP_TARGET_ESP32C5)
+        const char *target = "ESP32-C5";
+#elif defined(CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6)
+        const char *target = "ESP32-C6";
+#else
+        const char *target = NULL;
+#endif
+        if (b->has_hosted_c6 && b->wifi_coprocessor && target && strcmp(b->wifi_coprocessor, target) != 0) {
+            ESP_LOGE(TAG, "build targets a %s coprocessor but profile %s has an %s: the host will reject the link; set "
+                     "CONFIG_SLAVE_IDF_TARGET to match (see the board overlay)", target, b->name, b->wifi_coprocessor);
+        }
     }
 #if defined(CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CLK) && defined(CONFIG_ESP_HOSTED_HOST_RESET_GPIO)
     /* The ESP-Hosted pins live in sdkconfig; a profile that disagrees means the wrong board was selected. */
