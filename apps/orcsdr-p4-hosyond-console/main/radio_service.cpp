@@ -33,14 +33,15 @@ constexpr size_t kTransfersSingle = 6, kTransfersMulti = 2;
 
 // Header sent in front of each block to a queued consumer.
 struct FrameHeader {
-  uint32_t sample_rate, center_hz, sequence, bytes;
+  uint32_t sample_rate, center_hz, sequence, bytes, generation;
   int64_t time_us;
   uint8_t receiver;
 };
 constexpr size_t kFrameBytes = sizeof(FrameHeader) + kIqBytes;
 
 struct Sink {
-  std::atomic<int> state{0};  // 0 free, 1 active, 2 removing, 3 being set up
+  std::atomic<int> state{0};  // 0 free, 1 active, 2 removing (or quarantined: never reused), 3 being set up
+  SemaphoreHandle_t lock = nullptr;  // held by the radio loop while it calls or feeds this sink; removal takes it too
   IqConsumer fn = nullptr;
   void* ctx = nullptr;
   SinkKind kind = SinkKind::queued;
@@ -69,8 +70,8 @@ struct Rx {
   uint8_t bands[kFftSize]{};
   uint32_t band_seq = 0, taken_seq = 0;
   Sink sinks[kMaxSinks];
-  std::atomic<uint32_t> epoch{0};     // +1 every pass of the receiver loop: a removed sink is safe once it has moved on
-  std::atomic<uint32_t> sequence{0};  // +1 per block read
+  std::atomic<uint32_t> generation{1};  // +1 on every stream start, stop, rate change or recovery (see IqBlock::generation)
+  std::atomic<uint32_t> sequence{0};    // +1 per block read
   TaskHandle_t task_handle = nullptr;
   uint8_t* frame = nullptr;           // scratch copy of the block, shared by every queued consumer
 };
@@ -90,7 +91,7 @@ void queued_task(void* arg) {
     if (got < sizeof(FrameHeader)) continue;
     FrameHeader h;
     std::memcpy(&h, buf, sizeof(h));
-    const IqBlock b{buf + sizeof(FrameHeader), h.bytes, h.sample_rate, h.center_hz, h.sequence, h.time_us, h.receiver};
+    const IqBlock b{buf + sizeof(FrameHeader), h.bytes, h.sample_rate, h.center_hz, h.sequence, h.time_us, h.receiver, h.generation};
     const int64_t t0 = esp_timer_get_time();
     s->fn(b, s->ctx);
     const uint32_t us = static_cast<uint32_t>(esp_timer_get_time() - t0);
@@ -105,26 +106,32 @@ void queued_task(void* arg) {
 void dispatch(Rx& r, const uint8_t* iq, size_t n, int64_t now) {
   const uint32_t seq = r.sequence.fetch_add(1);
   const uint32_t rate = r.rate_now.load(), hz = r.applied.load() ? r.applied.load() : r.requested.load();
-  const IqBlock b{iq, n, rate, hz, seq, now, static_cast<uint8_t>(r.index)};
+  const uint32_t gen = r.generation.load();
+  const IqBlock b{iq, n, rate, hz, seq, now, static_cast<uint8_t>(r.index), gen};
   bool framed = false;
   for (Sink& s : r.sinks) {
     if (s.state.load(std::memory_order_acquire) != 1) continue;
-    if (s.kind == SinkKind::inline_fast) {
-      const int64_t t0 = esp_timer_get_time();
-      s.fn(b, s.ctx);
-      const uint32_t us = static_cast<uint32_t>(esp_timer_get_time() - t0);
-      if (us > s.max_us.load()) s.max_us = us;
-      s.blocks.fetch_add(1);
-      continue;
+    // The lock is held for the whole call (or send), so remove_sink cannot finish while this sink is in use. If a removal already
+    // holds the lock we skip the sink this block; the state is re-read under the lock so a sink removed in between is not called.
+    if (xSemaphoreTake(s.lock, 0) != pdTRUE) continue;
+    if (s.state.load(std::memory_order_acquire) == 1) {
+      if (s.kind == SinkKind::inline_fast) {
+        const int64_t t0 = esp_timer_get_time();
+        s.fn(b, s.ctx);
+        const uint32_t us = static_cast<uint32_t>(esp_timer_get_time() - t0);
+        if (us > s.max_us.load()) s.max_us = us;
+        s.blocks.fetch_add(1);
+      } else if (r.frame && s.mb) {
+        if (!framed) {
+          const FrameHeader h{rate, hz, seq, static_cast<uint32_t>(n), gen, now, static_cast<uint8_t>(r.index)};
+          std::memcpy(r.frame, &h, sizeof(h));
+          std::memcpy(r.frame + sizeof(h), iq, n);
+          framed = true;
+        }
+        if (xMessageBufferSend(s.mb, r.frame, sizeof(FrameHeader) + n, 0) == 0) s.drops.fetch_add(1);
+      }
     }
-    if (!r.frame) continue;
-    if (!framed) {
-      const FrameHeader h{rate, hz, seq, static_cast<uint32_t>(n), now, static_cast<uint8_t>(r.index)};
-      std::memcpy(r.frame, &h, sizeof(h));
-      std::memcpy(r.frame + sizeof(h), iq, n);
-      framed = true;
-    }
-    if (xMessageBufferSend(s.mb, r.frame, sizeof(FrameHeader) + n, 0) == 0) s.drops.fetch_add(1);
+    xSemaphoreGive(s.lock);
   }
 }
 
@@ -166,7 +173,6 @@ void task(void* arg) {
   uint32_t scans = 0, last_seen_target = 0;
   int64_t target_changed_at = 0;
   for (;;) {
-    r.epoch.fetch_add(1);
     const uint32_t absolute = r.tune_request.exchange(0);
     if (absolute) {
       r.requested = absolute;
@@ -231,6 +237,7 @@ void task(void* arg) {
           const esp_err_t e = esp_rtl_sdr_start(sdr, &sc);
           if (e == ESP_OK) {
             streaming = true;
+            r.generation.fetch_add(1);
             r.state = 2;
             last_stream_start_us = now;
             r.rate_now = sc.sample_rate_sps;
@@ -262,6 +269,7 @@ void task(void* arg) {
     if (wanted_rate != r.rate_now.load() && now - target_changed_at > 400000 && now - last_stream_start_us > 1500000) {
       // The driver changes sample rate only across stop/start.
       ESP_LOGI(TAG, "sample rate %u -> %u", unsigned(r.rate_now.load()), unsigned(r.rate_target.load()));
+      r.generation.fetch_add(1);
       (void)esp_rtl_sdr_stop(sdr, 1500);
       streaming = false;
       r.state = 1;
@@ -275,6 +283,7 @@ void task(void* arg) {
       const esp_err_t reset = esp_rtl_sdr_reset(sdr);
       ESP_LOGI(TAG, "driver reset after stream end: %s", esp_err_to_name(reset));
       streaming = false;
+      r.generation.fetch_add(1);
       r.state = 0;
       r.applied = 0;
       r.sps = 0;
@@ -396,7 +405,8 @@ SinkHandle g_legacy[2] = {-1, -1};
 void legacy_adapter(const IqBlock& b, void* ctx) { reinterpret_cast<IqSink>(ctx)(b.data, b.bytes); }
 void set_legacy(int which, IqSink sink) {
   if (g_legacy[which] >= 0) {
-    remove_sink(g_legacy[which]);
+    // Legacy sinks hold only a function pointer, so a quarantined slot costs one of the eight slots but frees nothing unsafely.
+    if (!remove_sink(g_legacy[which])) ESP_LOGE("RADIO", "legacy %s sink could not be removed cleanly", which == 0 ? "primary" : "aux");
     g_legacy[which] = -1;
   }
   if (!sink) return;
@@ -459,6 +469,11 @@ SinkHandle add_sink(const SinkSpec& spec) {
     Sink& s = r->sinks[slot];
     int expected = 0;
     if (!s.state.compare_exchange_strong(expected, 3)) continue;
+    if (!s.lock) s.lock = xSemaphoreCreateMutex();
+    if (!s.lock) {
+      s.state = 0;
+      return -1;
+    }
     s.fn = spec.fn;
     s.ctx = spec.context;
     s.kind = spec.kind;
@@ -488,27 +503,39 @@ SinkHandle add_sink(const SinkSpec& spec) {
   return -1;
 }
 
-void remove_sink(SinkHandle handle) {
-  if (handle < 0 || handle >= kRx * kMaxSinks) return;
+bool remove_sink(SinkHandle handle) {
+  if (handle < 0 || handle >= kRx * kMaxSinks) return false;
   Rx& r = g_rx[handle / kMaxSinks];
   Sink& s = r.sinks[handle % kMaxSinks];
   int expected = 1;
-  if (!s.state.compare_exchange_strong(expected, 2)) return;  // not active
-  // The receiver task may be inside this sink's callback. Wait until it has gone round its loop twice (bounded), unless
-  // we are that task. After that nothing calls the sink and the caller may free what it points to.
-  if (xTaskGetCurrentTaskHandle() != r.task_handle) {
-    const uint32_t start = r.epoch.load();
-    for (int i = 0; i < 60 && static_cast<uint32_t>(r.epoch.load() - start) < 2; ++i) vTaskDelay(pdMS_TO_TICKS(5));
+  if (!s.state.compare_exchange_strong(expected, 2)) return false;  // not active (already removed, or quarantined earlier)
+  // State 2 stops new calls. The radio loop holds s.lock while it calls or feeds this sink and re-reads the state under the lock, so once
+  // we hold the lock no call is running and none can start. (If we ARE the radio task, called from inside a sink, we are the only
+  // dispatcher and are not dispatching right now, so there is nothing to wait for.)
+  const bool on_radio_task = xTaskGetCurrentTaskHandle() == r.task_handle;
+  if (!on_radio_task && xSemaphoreTake(s.lock, pdMS_TO_TICKS(1500)) != pdTRUE) {
+    ESP_LOGE("RADIO", "sink '%s' did not finish its callback in 1.5 s: quarantined, its memory must not be freed", s.name);
+    return false;  // state stays 2: the slot is never reused
   }
+  bool ok = true;
   if (s.kind == SinkKind::queued) {
-    s.run = false;
-    for (int i = 0; i < 100 && !s.exited.load(); ++i) vTaskDelay(pdMS_TO_TICKS(10));
-    if (s.mb) vMessageBufferDeleteWithCaps(s.mb);
-    s.mb = nullptr;
+    s.run = false;  // the consumer's own task ends; wait for it so nothing uses the buffer after it is deleted
+    for (int i = 0; i < 200 && !s.exited.load(); ++i) vTaskDelay(pdMS_TO_TICKS(10));
+    if (!s.exited.load()) {
+      ESP_LOGE("RADIO", "queued sink '%s' did not stop in 2 s: quarantined, its memory must not be freed", s.name);
+      ok = false;
+    } else {
+      if (s.mb) vMessageBufferDeleteWithCaps(s.mb);
+      s.mb = nullptr;
+    }
   }
-  s.fn = nullptr;
-  s.ctx = nullptr;
-  s.state.store(0, std::memory_order_release);
+  if (ok) {
+    s.fn = nullptr;
+    s.ctx = nullptr;
+  }
+  if (!on_radio_task) xSemaphoreGive(s.lock);
+  if (ok) s.state.store(0, std::memory_order_release);
+  return ok;
 }
 
 bool sink_stats(SinkHandle handle, SinkStats* out) {

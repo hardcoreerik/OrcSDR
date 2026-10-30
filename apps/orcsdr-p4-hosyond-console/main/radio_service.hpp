@@ -104,6 +104,7 @@ struct IqBlock {
   uint32_t sequence;     // per receiver, +1 per block: a gap means blocks were lost before this consumer
   int64_t time_us;       // esp_timer_get_time() when the block was read
   uint8_t receiver;
+  uint32_t generation;   // +1 on every stream start, stop, rate change or recovery: a change means "not the same stream as before"
 };
 using IqConsumer = void (*)(const IqBlock& block, void* context);
 
@@ -124,8 +125,11 @@ struct SinkSpec {
 };
 using SinkHandle = int;  // -1 = invalid
 SinkHandle add_sink(const SinkSpec& spec);
-// Returns only after no call to this sink is running, so the caller may free its context. Never call it from inside a sink.
-void remove_sink(SinkHandle handle);
+// Returns true once no call to this sink is running or can start, so the caller may free its context. The radio loop holds a per-sink
+// lock while it calls the sink and removal must take the same lock, so the answer is exact, not a timeout guess. If a callback does not
+// return within about 1.5 s (a queued consumer's task within 2 s) the sink is quarantined, its slot is never reused, and false is
+// returned: the caller must then NOT free anything the sink may still touch.
+bool remove_sink(SinkHandle handle);
 struct SinkStats {
   char name[16] = {};
   bool queued = false;
