@@ -72,6 +72,7 @@
 #include "ft8_decoder_backend.hpp"
 #include "ft8_hunter.hpp"
 #include "ft8_model.hpp"
+#include "ft8_dial_delivery.hpp"
 #include "ft8_runtime.hpp"
 #include "memory_reclaim.hpp"
 #include "shortwave_model.hpp"
@@ -13421,6 +13422,9 @@ void close_rf24_dashboard() {
 // ---- FT8 RX dashboard glue. Opening the screen never retunes the receiver; only a band choice does. The decoder is
 // not bound yet, so Hunter requests are refused and nothing here claims a decode.
 orcsdr::ft8::DecodeStore g_ft8_store;
+#if ORCSDR_ORCDIAL
+orcsdr::ft8::dial_preview::Delivery g_ft8_dial_delivery;
+#endif
 orcsdr::ft8::Hunter g_ft8_hunter;
 size_t g_ft8_band = SIZE_MAX;       // index into the FT8 band table; resolved on first use
 size_t g_ft8_item = 0;              // one-based selected row for the OrcDial; 0 = none
@@ -13785,7 +13789,12 @@ void ft8_native_drain_pending() {
   g_ft8_pending_count = 0;
   portEXIT_CRITICAL(&g_ft8_pending_lock);
   for (size_t i = 0; i < n; ++i) heard_db_observe(local[i], local_band[i]);   // sets heard-before flags before the row is stored and logged
-  for (size_t i = 0; i < n; ++i) g_ft8_store.append(local[i]);
+  for (size_t i = 0; i < n; ++i) {
+    g_ft8_store.append(local[i]);
+#if ORCSDR_ORCDIAL
+    g_ft8_dial_delivery.observe(local[i], millis());
+#endif
+  }
   ft8_log_stage_rows(local, local_band, local_dial, n);
   (void)ft8_log_flush(false);
   heard_db_flush();
@@ -16502,6 +16511,8 @@ uint32_t orcdial_tx_sequence = 1;
 std::atomic<esp_err_t> orcdial_last_tx_result{ESP_ERR_INVALID_STATE};
 uint32_t orcdial_rx_sender = 0;
 uint32_t orcdial_rx_sequence = 0;
+uint32_t orcdial_projection_generation = 0;
+orc::projection::Peer orcdial_projection_peer;
 uint32_t orcdial_last_state_ms = 0;
 uint32_t orcdial_last_peer_rx_ms = 0;
 uint32_t orcdial_revision = 0;
@@ -16597,6 +16608,7 @@ void orcdial_fill_state(orc::Packet& p) {
     p.step_hz = orcsdr::sstv_app::step_hz();
     p.mode = static_cast<uint8_t>(effective_demod(rtl_ui_band));
   }
+  p.capabilities |= orc::projection::kFt8V1;
   // rtl_signal_dbfs_smooth is relative dBFS, not a calibrated dBm reading.
   p.flags = 0;
 }
@@ -16897,17 +16909,36 @@ void orcdial_poll() {
     // Let the worker retry its encrypted final notice before stopping the radio.
     if(wifi_station_ready && millis()-accessory_idle_ms>=1200){stop_wifi();orcdial_secure.enabled(false);}
   }else accessory_idle_ms=0;
-  if(status.state!=orc::secure::State::connected){orcdial_rx_sender=0;orcdial_rx_sequence=0;return;}
+  const uint32_t generation = orcdial_secure.generation();
+  if (generation != orcdial_projection_generation || status.state != orc::secure::State::connected) {
+    orcdial_projection_generation = generation;
+    orcdial_projection_peer.reset(); orcdial_rx_sender = 0; orcdial_rx_sequence = 0;
+  }
+  if(status.state!=orc::secure::State::connected)return;
   orc::secure::Runtime::Control c{};
   while(orcdial_secure.take(c)) {
     orc::Packet p{};if(!orc::decode(c.data,c.size,p)||p.role!=orc::Role::dial)continue;
-    if(p.type==orc::Type::heartbeat||p.type==orc::Type::request_state){orcdial_reply(orc::Type::radio_state,nullptr,p.sequence);continue;}
-    if(p.sender!=orcdial_rx_sender){orcdial_rx_sender=p.sender;orcdial_rx_sequence=0;}
+    if(p.type==orc::Type::ft8_decode_brief||p.type==orc::Type::ft8_decode_text)continue; // receiver-only, never enter command ordering
+    if (!p.sender || !p.sequence) continue;
+    if(p.sender!=orcdial_rx_sender){orcdial_rx_sender=p.sender;orcdial_rx_sequence=0;orcdial_projection_peer.reset();}
+    if(p.type==orc::Type::heartbeat||p.type==orc::Type::request_state){
+      orcdial_projection_peer.observe(p, millis());
+      orcdial_reply(orc::Type::radio_state,nullptr,p.sequence);continue;
+    }
     if(!orc::newer_sequence(p.sequence,orcdial_rx_sequence)){orcdial_reply(orc::Type::radio_state,nullptr,p.sequence);continue;}
     orcdial_rx_sequence=p.sequence;const bool applied=orcdial_apply(p);
     orcdial_reply(applied?orc::Type::radio_state:orc::Type::error,nullptr,p.sequence,applied?0:1);
   }
   if(millis()-orcdial_last_state_ms>=900){orcdial_reply(orc::Type::radio_state,nullptr);orcdial_last_state_ms=millis();}
+  // Control replies are enqueued first. At most one latest record pair per
+  // interval; leave eight relay slots free and never wait for DSP or Hosted I/O.
+  const uint32_t now = millis();
+  const bool metadata_ready = orcdial_projection_peer.enabled(now) &&
+      orcdial_active_dashboard() == orc::Dashboard::ft8 &&
+      uxQueueSpacesAvailable(orcdial_outbox) >= 8 && orcdial_secure.observation_ready();
+  if (g_ft8_dial_delivery.poll(now, orcdial_sender, metadata_ready,
+      [](const uint8_t* wire) { return orcdial_secure.send(wire, 64); }))
+    Serial.println("ORCDIAL_FT8_PREVIEW queued");
 }
 
 #endif // ORCSDR_ORCDIAL

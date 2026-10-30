@@ -68,10 +68,17 @@ inline bool encode(const Decode& decoded, uint32_t sender, uint32_t record_id,
   put32(b + 20, decoded.utc_epoch);
   put32(b + 24, decoded.dial_hz);
   if (!copy_text(decoded.callsign, sizeof(decoded.callsign), b + 28, 16)) return false;
+  uint8_t source_grid[9]{};
+  bool was_truncated = false;
+  if (!copy_text(decoded.grid, sizeof(decoded.grid), source_grid, sizeof(source_grid)) ||
+      !copy_text(decoded.message, sizeof(decoded.message), t + 20, 40, &was_truncated)) return false;
   uint8_t flags = decoded.utc_epoch ? time_valid : 0;
   // Only a CQ-associated grid has an unambiguous transmitter mapping here.
   // Other message formats need a stricter record-level association contract.
-  if (decoded.kind == DecodeKind::cq && maidenhead_valid(decoded.grid)) {
+  char cq_call[16]{}, cq_grid[9]{};
+  if (decoded.kind == DecodeKind::cq && maidenhead_valid(decoded.grid) &&
+      parse_cq_fields(decoded.message, cq_call, sizeof(cq_call), cq_grid, sizeof(cq_grid)) &&
+      !std::strcmp(cq_call, decoded.callsign) && !std::strcmp(cq_grid, decoded.grid)) {
     if (!copy_text(decoded.grid, sizeof(decoded.grid), b + 44, 9)) return false;
     flags |= grid_associated;
   }
@@ -81,8 +88,6 @@ inline bool encode(const Decode& decoded, uint32_t sender, uint32_t record_id,
     flags |= snr_valid;
   }
   if (decoded.flags & decode_flag_assisted) flags |= assisted;
-  bool was_truncated = false;
-  if (!copy_text(decoded.message, sizeof(decoded.message), t + 20, 40, &was_truncated)) return false;
   if (was_truncated) flags |= message_truncated;
   b[54] = flags; b[55] = uint8_t(decoded.mode);
   finish(b); finish(t);
