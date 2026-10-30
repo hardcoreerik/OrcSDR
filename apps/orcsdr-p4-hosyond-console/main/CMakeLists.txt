@@ -15,8 +15,31 @@ if(C6_FIRMWARE_BIN AND EXISTS "${C6_FIRMWARE_BIN}")
     list(APPEND ORCSDR_EMBED_FILES "${C6_FIRMWARE_BIN}")
     set(ORCSDR_C6_EMBEDDED 1)
 endif()
+# Optional OrcSDR Web UI bundle (docs/hardware/WEB_LAYER_DESIGN.md section 10): the browser version of the M5GFX screens, built
+# separately as WebAssembly. Pass -DORCSDR_WEB_UI_DIR=<directory holding the nine files below>. The files are embedded in the app image
+# and served by web_server; nothing is copied into the repository. Without the directory (or with a file missing) the firmware builds
+# and the server offers only the JSON API, and says so at boot.
+set(ORCSDR_WEB_UI 0)
+set(ORCSDR_WEB_UI_NAMES app.js.gz core.js.gz core.wasm.gz decoder_worker.js.gz decoders.js.gz m5.html.gz orcdec.js.gz orcdec.wasm.gz splash.jpg)
+if(ORCSDR_WEB_UI_DIR)
+    set(_web_missing "")
+    foreach(_n ${ORCSDR_WEB_UI_NAMES})
+        if(NOT EXISTS "${ORCSDR_WEB_UI_DIR}/${_n}")
+            list(APPEND _web_missing ${_n})
+        endif()
+    endforeach()
+    if(_web_missing)
+        message(WARNING "ORCSDR_WEB_UI_DIR=${ORCSDR_WEB_UI_DIR} lacks: ${_web_missing}. Building without the web UI.")
+    else()
+        foreach(_n ${ORCSDR_WEB_UI_NAMES})
+            list(APPEND ORCSDR_EMBED_FILES "${ORCSDR_WEB_UI_DIR}/${_n}")
+        endforeach()
+        set(ORCSDR_WEB_UI 1)
+        message(STATUS "OrcSDR Web UI bundle embedded from ${ORCSDR_WEB_UI_DIR}")
+    endif()
+endif()
 idf_component_register(
-    SRCS "main.cpp" "present.cpp" "screen_snap.cpp" "serial_cli.cpp" "commands.cpp" "home_app.cpp" "radio_service.cpp" "audio_service.cpp" "screens.cpp" "screen_fm.cpp" "screen_am.cpp" "screen_cb.cpp" "screen_airband.cpp" "screen_shortwave.cpp" "screen_rflab.cpp" "screen_settings.cpp" "screen_pocsag.cpp" "screen_wifi.cpp" "screen_adsb.cpp" "screen_acars.cpp" "screen_lora.cpp" "ui_support.cpp" "iq_tap.cpp" "wifi_app.cpp" "web_server.cpp" "sd_card.cpp"
+    SRCS "main.cpp" "present.cpp" "screen_snap.cpp" "serial_cli.cpp" "commands.cpp" "home_app.cpp" "radio_service.cpp" "audio_service.cpp" "screens.cpp" "screen_fm.cpp" "screen_am.cpp" "screen_cb.cpp" "screen_airband.cpp" "screen_shortwave.cpp" "screen_rflab.cpp" "screen_settings.cpp" "screen_pocsag.cpp" "screen_wifi.cpp" "screen_adsb.cpp" "screen_acars.cpp" "screen_lora.cpp" "ui_support.cpp" "iq_tap.cpp" "wifi_app.cpp" "web_server.cpp" "web_compat.cpp" "sd_card.cpp"
          "${TAB5_UI}/home_dashboard.cpp" "${TAB5_UI}/dashboard_audio_control.cpp"
          "${TAB5_UI}/freq_keypad.cpp" "${TAB5_UI}/focus_nav.cpp" "${TAB5_UI}/waterfall_style.cpp"
          "${TAB5_UI}/band_profile.cpp" "${TAB5_UI}/home_vfo.cpp" "${TAB5_UI}/filter_standards.cpp"
@@ -49,4 +72,4 @@ set_source_files_properties(
     PROPERTIES COMPILE_DEFINITIONS "ORCSDR_LOVYANGFX_IS_SCALED;ORCSDR_NO_RAW_BUFFERS")
 target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)
 target_compile_options(${COMPONENT_LIB} PRIVATE
-    "$<$<COMPILE_LANGUAGE:CXX>:-include;orcsdr_p4_time.hpp>" "-DORCSDR_HAS_EMBEDDED_C6_FIRMWARE=${ORCSDR_C6_EMBEDDED}")
+    "$<$<COMPILE_LANGUAGE:CXX>:-include;orcsdr_p4_time.hpp>" "-DORCSDR_HAS_EMBEDDED_C6_FIRMWARE=${ORCSDR_C6_EMBEDDED}" "-DORCSDR_HAS_WEB_UI=${ORCSDR_WEB_UI}")
