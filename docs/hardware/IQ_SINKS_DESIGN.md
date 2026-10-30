@@ -198,3 +198,22 @@ owner's go-ahead.
 4. **Decided by the owner:** screen-owned (node) versus browser-owned decoding is a checkbox/selector in the browser UI, chosen per
    decoder. The other branch already has a Node / Browser / Auto switch (`PHASE4_DECODER_PLACEMENT.md`) and one event ring tagged by
    placement, which fits. Still to define: the setting lives on the device (per decoder, per dongle) so two browsers see the same choice.
+
+## Revision after the rtl_tcp research review (2026-10-30)
+
+An independent review (research notes in `F:\Ai\RSA-Sandbox\targets\osmocom-rtl-sdr\notes\rtl_tcp-design-api-audit.md`, also in REA-Results) read this design against the driver's public API and
+the rtl_tcp design. These points change the design; the implementation in `radio_service.cpp` (written before the review) has not been changed yet.
+
+1. **Removal must not rely on a timer.** The text above waits "two epochs" (100 ms) in the design and about 300 ms in the implementation note. A timeout cannot prove that no callback is in flight,
+   especially while the receiver is paused, stopped, faulted or reconfiguring its rate. Required contract instead: each sink slot carries an `in_call` marker set before and cleared after every callback;
+   `remove_sink` marks the slot `removing` (no new calls), then waits for `in_call` to clear. If the wait times out, the slot is **quarantined** (not freed, its context not released) and `remove_sink`
+   reports failure so the caller keeps its context alive. A removal while the receiver task is stopped or restarting is safe only because no dispatch is running, and that must be tested, not assumed.
+   Code change needed (P4 `radio_service.cpp`), not done.
+2. **Metadata stays internal.** `IqBlock.sample_rate`, `center_hz`, `sequence`, `time_us` and `receiver` are for in-process consumers. A legacy network consumer such as rtl_tcp must send only
+   `data[0..bytes)` (even byte count, I/Q order preserved) and keep the rest on its authenticated status channel.
+3. **Ownership and lifetime.** The borrowed `data` pointer is valid only during the callback. A queued sink must hold its own copy and the block length, and enqueue is all-or-nothing: a byte stream buffer alone does
+   not enforce "drop whole blocks", so framing and the loss boundary must be explicit. A partial send keeps an offset into the same stored block.
+4. **Sequence numbers.** Today they are per receiver and increase across restarts. Define a **stream generation** (bumped on every start, stop, rate change or recovery) alongside the sequence so consumers and
+   counters do not mistake a restart for ordinary loss or wrap. The timestamp is read-completion time, not RF sample synchronisation or phase coherence, and must not be described that way.
+5. **Rate changes.** A rate change is a stop and start (the driver refuses a mid-stream change as BUSY), so it is a serialized transaction that also bumps the generation and drops queued blocks of the old generation. Sinks that
+   depend on a rate must see the new `sample_rate` in the next block or be ended.
