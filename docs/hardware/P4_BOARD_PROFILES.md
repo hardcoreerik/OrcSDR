@@ -143,7 +143,12 @@ ESP32-C5 by elimination; that was wrong (it assumed the board had a radio). PCB 
   accepted ("Wi-Fi driver up, C6 firmware 2.12.9"), `RTL_WIFI STATUS started=1`, and `RTL_WIFI SCAN` found **7 networks** including 5 GHz
   channels 157 and 40 (dual-band works). No coprocessor update was needed; the C5 was never written to. The dual-band scan takes about
   7 s, longer than the console's old fixed 2.5 s wait, so `wifi_app.cpp` now polls for scan-done (up to 15 s).
-- **Still untested on this board:** joining a network and passing traffic (no credentials were used), a long Wi-Fi soak, and how the
+- **Join verified (2026-10-30):** the owner joined COM31 to their network with `tools/p4_wifi_connect.py` (hidden password prompt; I never saw it).
+  `RTL_WIFI STATUS`: `connected=1 ssid=hardcorewifi ip=192.168.1.44`, saved. From the PC: 6 pings, 0 % loss, 29 to 93 ms (average 59 ms).
+  With Wi-Fi connected the receiver kept streaming at 2.4 MS/s; `drops=3` appeared once (around boot or join) and did not grow over
+  45 s; radio task 45.4 % of core 1, IDLE1 52.6 %; internal free 163,175 B (largest 86,016), DMA free 124,147 B. The `rssi` field of
+  `RTL_WIFI STATUS` reads 0 on this slave pairing (not investigated).
+- **Still untested on this board:** sustained traffic through the link (only pings), a long Wi-Fi soak, and how the
   2.12.9 slave behaves with this 3.0.6 host over time. Host and slave are a different major version, which the vendor logs as an error;
   the 2.12.6 pairing is a documented-as-tested combination for the C6 in the shared Wi-Fi code, 2.12.9 on the C5 is new.
 - Not needed now, kept as fallback: host-driven OTA of an ESP-Hosted 3.0.x C5 slave (the built image is
