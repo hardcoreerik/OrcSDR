@@ -2,6 +2,7 @@
 // recording stand-in; no hardware or simulated live RF data.
 #include <M5Unified.h>
 #include "dead_air_dashboard.hpp"
+#include "dead_air_envhistory.hpp"
 #include "dead_air_fx.hpp"
 #include "dead_air_runes.hpp"
 #include "screen_controller.hpp"
@@ -140,6 +141,140 @@ int main() {
       for (const Prim& p : host_display::prims) assert(!(p.kind == Prim::fill && p.w >= 1280 && p.h >= 700));
     }
     snap.revision = 40;                         // back to the absent-sensor snapshot
+    da::update(snap);
+  }
+  // Environment trend charts: the history is drawn as lines that break at gaps, the window buttons and the tap cursor
+  // repaint only what changed, and the whole screen is never cleared.
+  {
+    static da::EnvHistory hist;
+    hist.reset(0);
+    for (uint32_t m = 0; m < 90; ++m) {
+      hist.add(0, 20.0f + 0.02f * static_cast<float>(m), m * 60000u + 10u);
+      hist.add(1, 50.0f + static_cast<float>(m % 7), m * 60000u + 10u);
+      if (m < 40 || m > 50) hist.add(2, 1000.0f + 0.1f * static_cast<float>(m), m * 60000u + 10u);  // minutes 41..49 are a gap
+    }
+    da::Snapshot ch = snap;
+    ch.environment_sensor_attached = true;
+    ch.temperature_c = {21.8f, 0, 0, true, true, true};
+    ch.humidity_rh = {53.0f, 0, 0, true, true, true};
+    ch.pressure_hpa = {1008.9f, 0, 0, true, true, true};
+    ch.env_history = &hist;
+    ch.env_history_seq = hist.seq();
+    ch.revision = 50;
+    da::update(ch);
+    da::handle_touch(20 + 3 * 210 + 40, 673, 5000);  // Environment tab
+    assert(da::page() == da::Page::environment);
+    const auto in_chart = [](const Prim& p, int ch_index) {
+      return p.x >= 666 && p.x < 1238 && p.y >= 238 + ch_index * 122 && p.y < 238 + ch_index * 122 + 88;
+    };
+    const auto no_full_clear = [] {
+      for (const Prim& p : host_display::prims) assert(!(p.kind == Prim::fill && p.w >= 1280 && p.h >= 700));
+    };
+    ch.revision = 51;
+    host_display::reset();
+    da::update(ch);
+    assert(displayed("TREND") && displayed("TEMPERATURE (C)") && displayed("HUMIDITY (%RH)") && displayed("PRESSURE (hPa)"));
+    assert(displayed("-6 h") && displayed("NOW"));  // 90 minutes recorded: the 6 H window is chosen
+    int lines[3] = {0, 0, 0};
+    for (const Prim& p : host_display::prims)
+      for (int i = 0; i < 3; ++i)
+        if (p.kind == Prim::line && in_chart(p, i)) ++lines[i];
+    assert(lines[0] > 0 && lines[1] > 0 && lines[2] > 0);
+    validate_bounds();
+    no_full_clear();
+    const auto chart_signature = [&](int chart) {  // where the temperature line runs: changes when the data does
+      uint32_t sig = 0;
+      for (const Prim& p : host_display::prims)
+        if (p.kind == Prim::line && in_chart(p, chart))
+          sig = sig * 1000003u + static_cast<uint32_t>(p.x * 31 + p.y * 17 + p.w * 7 + p.h * 3);
+      return sig;
+    };
+    uint32_t previous_signature = chart_signature(0);
+    for (int step = 0; step < 4; ++step) {        // a new minute average arrives: the line moves, nothing is cleared
+      hist.add(0, 22.0f + 3.0f * static_cast<float>(step), (90u + static_cast<uint32_t>(step)) * 60000u + 10u);
+      ch.env_history_seq = hist.seq();
+      ch.revision = 52 + step;
+      host_display::reset();
+      da::update(ch);
+      assert(chart_signature(0) != previous_signature);  // a renderer that kept drawing the old trend would fail here
+      previous_signature = chart_signature(0);
+      validate_bounds();
+      // Only the full-screen threshold: the stub canvas has no pixel buffer, so draw_body() always takes paint_direct()
+      // here and clears the 1280x522 body. On the device the tile diff pushes just the changed columns.
+      no_full_clear();
+    }
+    da::handle_touch(1010 + 20, 154 + 20, 5010);  // 1 H
+    assert(displayed("-60 m") && displayed("-30 m"));
+    validate_bounds();
+    no_full_clear();
+    host_display::reset();
+    da::handle_touch(900, 260, 5020);             // tap a chart: a cursor and its moment
+    assert(displayed("CURSOR") && displayed("AT CURSOR"));
+    validate_bounds();
+    no_full_clear();
+    host_display::reset();
+    da::handle_touch(905, 400, 5030);             // tap near the cursor: it clears
+    assert(displayed("Tap a chart") && !displayed("AT CURSOR"));
+    da::handle_touch(1086 + 20, 154 + 20, 5040);  // 6 H
+    assert(displayed("-3 h"));
+    ch.env_history = nullptr;                     // no history: the charts say so and nothing crashes
+    ch.revision = 60;
+    host_display::reset();
+    da::update(ch);
+    assert(displayed("NO READINGS IN THIS WINDOW YET"));
+    validate_bounds();
+    // Leaving Dead Air and coming back starts from the defaults: a window or cursor picked before must not survive.
+    ch.env_history = &hist;
+    ch.revision = 61;
+    da::update(ch);
+    da::handle_touch(1010 + 20, 154 + 20, 5045);  // 1 H
+    da::handle_touch(900, 260, 5046);             // and a cursor
+    assert(displayed("AT CURSOR") && displayed("-60 m"));
+    da::leave();
+    screen::begin_transition(screen::Id::dead_air, 5047);
+    da::enter(ch);
+    screen::finish_transition();
+    assert(da::page() == da::Page::overview);
+    da::handle_touch(20 + 3 * 210 + 40, 673, 5048);  // Environment tab again
+    ch.revision = 62;
+    host_display::reset();
+    da::update(ch);
+    assert(displayed("-6 h") && !displayed("-60 m") && displayed("Tap a chart") && !displayed("AT CURSOR"));
+    // The automatic window moving on its own (1 H to 6 H as history grows) must clear a cursor placed in the old one.
+    static da::EnvHistory young;
+    young.reset(0);
+    for (uint32_t m = 0; m < 30; ++m) {
+      young.add(0, 20.0f + 0.1f * static_cast<float>(m), m * 60000u + 10u);
+      young.add(1, 40.0f + 0.5f * static_cast<float>(m), m * 60000u + 10u);
+      young.add(2, 1000.0f + static_cast<float>(m), m * 60000u + 10u);
+    }
+    ch.env_history = &young;
+    ch.env_history_seq = young.seq();
+    ch.revision = 63;
+    host_display::reset();
+    da::update(ch);
+    assert(displayed("-60 m"));
+    // Column 519 (x = 666 + 519) is 5 buckets back, so minute 24 of the fixture: it has a reading in every channel.
+    // (A tap further left lands on a column before the first sample and reads "--  AT CURSOR".)
+    da::handle_touch(666 + 519, 260, 5051);
+    assert(displayed("22.4  AT CURSOR") && displayed("52.0  AT CURSOR") && displayed("1024.0  AT CURSOR"));
+    assert(displayed("CURSOR -5m 00s"));
+    // Temperature stops at minute 49; humidity keeps going to minute 69. The recorded span is 70 minutes whichever
+    // channel is looked at, so the 6 H window must be chosen even though temperature alone covers under 60.
+    for (uint32_t m = 30; m < 70; ++m) {
+      if (m < 50) young.add(0, 20.0f + 0.1f * static_cast<float>(m), m * 60000u + 10u);
+      young.add(1, 40.0f + 0.5f * static_cast<float>(m), m * 60000u + 10u);
+    }
+    ch.env_history_seq = young.seq();
+    ch.revision = 64;
+    host_display::reset();
+    da::update(ch);
+    assert(displayed("-6 h") && !displayed("-60 m"));
+    assert(!displayed("AT CURSOR") && displayed("Tap a chart"));
+    ch.env_history = &hist;
+    ch.env_history_seq = hist.seq();
+    da::handle_touch(40, 673, 5052);              // back to Overview for the rest
+    snap.revision = 70;
     da::update(snap);
   }
   // The orb: a dim still ring with nothing measured, a breathing glow when a level is measured, a burst when an event

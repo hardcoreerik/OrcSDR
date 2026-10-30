@@ -216,6 +216,7 @@ idf_component_register(
         "../ui/dead_air_env.cpp"
         "../ui/dead_air_env_m5.cpp"
         "../ui/dead_air_envevents.cpp"
+        "../ui/dead_air_envhistory.cpp"
         "../ui/dead_air_veil26.cpp"
         "../ui/dead_air_runes.cpp"
         "../ui/dead_air_veil26_log.cpp"
