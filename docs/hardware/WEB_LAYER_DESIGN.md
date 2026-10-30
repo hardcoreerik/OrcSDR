@@ -167,3 +167,19 @@ Owner approved the design with the proposed defaults (web key derived from the p
 - **Untested:** everything above. Needed before it counts: build the other board profiles, run on a board with the server off then on and measure
   internal free / largest block / `RTL_CPU` / receiver drops, curl every route including bad Host, bad Origin, bad `rx`, unknown path, long URI,
   and several rapid requests during streaming.
+
+### 9.1 Results on COM31 (Waveshare ESP32-P4-WIFI6-DB), 2026-10-30, build `build-wifi6db-c5`, Blog V4 streaming at 2.4 MS/s
+
+- **Off by default and closed when off:** with the server disabled, curl to port 80 is refused. The idle manager task costs about 4 KB of internal RAM
+  (158,423 B free against 162,747 B without it).
+- **Enabled** (`RTL_WEB ON`, authenticated over serial): listening within seconds, `url=http://192.168.1.44/`. Cost of the running server:
+  internal free 147,431 B (-11.0 KB against off), largest block 73,728 B (against 81,920 B).
+- **Routes:** `/`, `/api/v1` and all eleven `/api/v1/<name>` routes return 200 with valid JSON. Bad cases: `rx=9` and `rx=abc` 400; unknown path
+  and nested path 404; wrong `Host` 403 (`host_rejected`); cross-site `Origin` 403; same-origin `Origin` 200; POST and PUT 405; HTTP/1.0 without `Host`
+  403; a 600-character URI 414. (404 for non-API paths and 405/414 come back as plain text from the HTTP library, not JSON.)
+- **Load:** 2,031 requests in 40 s from 4 clients (about 50 per second), all 200; latency median 78 ms, p95 96 ms, max 226 ms. Receiver drops stayed 0 and internal
+  memory was identical before and after (no leak). Under load: `httpd` 13.0 % of core 0, radio task 47.5 % (45.0 % idle), core 1 idle 43.1 %.
+- **Lifecycle:** `RTL_WEB OFF` stopped the server and closed the port, internal free returned to 158,039 B; `RTL_WEB ON` followed by `RTL_RESTART SOFT`
+  brought it back by itself after the reboot (saved setting).
+- **Not tested:** the other board profiles' builds, the Settings-screen toggle (no screen on this board), multiple server start/stop cycles over hours, IPv6,
+  many simultaneous slow clients, a browser rendering the JSON.
