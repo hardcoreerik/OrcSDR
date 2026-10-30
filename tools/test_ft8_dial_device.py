@@ -29,6 +29,7 @@ class Observation:
         self.receiver = []
         self.dial = []
         self.slots = {}
+        self.record_slots = {}
         self.briefs = set()
         self.complete = set()
         self.errors = []
@@ -39,6 +40,8 @@ class Observation:
             self.receiver.append(f)
         if device == 'TAB5' and line.startswith('ORC_FT8_RT slot='):
             self.slots[f['slot']] = int(f['decodes'])
+        if device == 'TAB5' and line.startswith('ORC_FT8_DIAL_RECORD '):
+            self.record_slots[int(f['record'])] = f['slot']
         if device == 'DIAL' and line.startswith('ORCDIAL_STATUS link='):
             self.dial.append(f)
         if device == 'DIAL' and line.startswith('FT8_RX '):
@@ -76,6 +79,10 @@ class Observation:
             return 'INCONCLUSIVE', 'No new on-air decode observed; quiet RF is not a transport failure'
         if not self.complete:
             return 'FAIL', 'New receiver decodes observed, but no new complete Dial record arrived'
+        if not self.record_slots:
+            return 'INCONCLUSIVE', 'Receiver firmware did not supply record-to-slot correlation evidence'
+        if not any(self.slots.get(self.record_slots.get(record), 0) > 0 for record in self.complete):
+            return 'FAIL', 'Complete Dial records did not match a measured receiver decode slot'
         return 'PASS', 'Fresh receiver decodes and new matching Dial summary/text records observed'
 
 
@@ -166,11 +173,12 @@ def main():
                         'requested_band': args.band}, 'checks': {}, 'overall': 'FAIL',
               'physical_display_acceptance': 'NOT_RUN', 'injected': False,
               'runner_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
-    report['repository_head'] = subprocess.check_output(['git', '-C', str(Path(__file__).resolve().parent),
-                                                        'rev-parse', 'HEAD'], text=True).strip()
     devices = []
     rig = None
     try:
+        (output / 'serial.log').touch()
+        report['repository_head'] = subprocess.check_output(['git', '-C', str(Path(__file__).resolve().parent),
+                                                            'rev-parse', 'HEAD'], text=True).strip()
         import tab5_ft8 as control
         from tab5_ft8_shot import snap_png
         key = control.find_key(args.key)
@@ -239,6 +247,7 @@ def main():
             report.update(overall=result, reason=reason, elapsed_s=round(time.monotonic() - start, 2),
                           baseline_record=observation.baseline, complete_record_ids=sorted(observation.complete),
                           fresh_slots=observation.slots, receiver_samples=observation.receiver,
+                          record_slots=observation.record_slots,
                           errors=observation.errors)
             report['checks']['live_delivery'] = result
             if args.png:

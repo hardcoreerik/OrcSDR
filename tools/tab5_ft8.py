@@ -71,14 +71,14 @@ class Tab5:
         self.send("PAIR " + key_hex.strip())
         reply = self.read_until(("PAIR_OK", "PAIR_LOCKED", "PAIR_INVALID"), 5, echo=False)
         if not any("PAIR_OK" in r for r in reply):
-            raise SystemExit("pairing failed: " + (reply[-1] if reply else "no reply"))
+            raise SystemExit("pairing failed (device response omitted)")
         nonce = secrets.token_bytes(16)
         proof = hmac.new(key, b"host" + nonce, hashlib.sha256).digest()
         self.send("AUTH %s %s" % (nonce.hex(), proof.hex()))
         reply = self.read_until(("AUTH_OK", "AUTH_DENIED", "AUTH_ERROR", "AUTH_INVALID"), 5, echo=False)
         ok = [r for r in reply if "AUTH_OK " in r]
         if not ok:
-            raise SystemExit("authentication failed: " + (reply[-1] if reply else "no reply"))
+            raise SystemExit("authentication failed (device response omitted)")
         expected = hmac.new(key, b"device" + nonce, hashlib.sha256).hexdigest()
         if ok[0].split("AUTH_OK ", 1)[1].split()[0].lower() != expected:
             raise SystemExit("device proof mismatch")

@@ -15,6 +15,11 @@ selects FT8 and the requested band and verifies a Dial dashboard command's exact
 transmit/ack sequence. It watches receiver decode events and new Dial record IDs,
 requiring a summary followed by matching text. Cached cards, retries, mismatched
 IDs and text arriving before its summary do not count as new live delivery.
+The receiver emits `ORC_FT8_DIAL_RECORD record=<id> slot=<utc>` when it creates
+each preview. PASS requires a complete Dial record whose receiver mapping names
+a measured slot with actual decodes. Older firmware without this diagnostic
+returns INCONCLUSIVE when correlation cannot be proved. Earlier recorded runs
+used the prior runner; they have not been repeated under this stricter check.
 The receiver store being full does not prevent detecting fresh slot decodes.
 
 `--png` uses the existing hash/length-checked `FT8 SNAP` helper before and after
@@ -47,7 +52,7 @@ installed application hashes. Ports are always closed afterward.
 |---:|---|---|
 | 0 | PASS | Required observed connection/delivery checks and requested PNG transfers passed |
 | 1 | FAIL | Missing/broken connection, stopped IQ, changed setup, missing delivery despite new source decodes, or command/capture error |
-| 2 | INCONCLUSIVE | No new RF decode, or clock not valid; reception conditions are not a transport regression |
+| 2 | INCONCLUSIVE | No new RF decode, invalid clock, or missing record/slot diagnostics; live correlation is not proved |
 
 Observe long enough for multiple complete 15-second FT8 slots. A quiet daytime
 60 m run can be inconclusive while 20 m passes. Preserve antenna, feedline,

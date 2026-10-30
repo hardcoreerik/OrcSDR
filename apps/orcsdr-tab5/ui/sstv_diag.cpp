@@ -435,7 +435,7 @@ bool handle_command(const char* command, bool authenticated, const Hooks& hooks)
     say("SSTV_OK queued=%d", queued ? 1 : 0);
     return true;
   }
-  say("SSTV_ERROR usage=SSTV STATUS|INDEX|LAST|OPEN|REC START <s>|TUNE <hz>|MODE <m>|IFBW <hz>|STEP <hz>|RAILS <arg>|SAVE LIVE|SAVE NEWEST|SELFTEST <scenario> [SPEED n]|SELFTEST STOP");
+  say("SSTV_ERROR usage=SSTV STATUS|INDEX|LAST|OPEN|REC START <s>|TUNE <hz>|MODE <m>|DETECT AUTO|VIS|IFBW <hz>|STEP <hz>|RAILS <arg>|SAVE LIVE|SAVE NEWEST|SELFTEST <scenario> [SPEED n]|SELFTEST STOP");
   return true;
 }
 

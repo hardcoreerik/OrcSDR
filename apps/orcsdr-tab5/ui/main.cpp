@@ -13795,7 +13795,9 @@ void ft8_native_drain_pending() {
   for (size_t i = 0; i < n; ++i) {
     g_ft8_store.append(local[i]);
 #if ORCSDR_ORCDIAL
-    g_ft8_dial_delivery.observe(local[i], millis());
+    const uint32_t record = g_ft8_dial_delivery.observe(local[i], millis());
+    Serial.printf("ORC_FT8_DIAL_RECORD record=%lu slot=%lu\n",
+                  static_cast<unsigned long>(record), static_cast<unsigned long>(local[i].utc_epoch));
 #endif
   }
   ft8_log_stage_rows(local, local_band, local_dial, n);

@@ -15,7 +15,7 @@ if not 100000 <= args.frequency <= 2000000000:parser.error('Frequency out of ran
 root=args.out;root.mkdir(parents=True,exist_ok=True)
 log=(root/'device-test.log').open('x',encoding='utf-8')
 def note(s): print(s,flush=True);log.write(s+'\n');log.flush()
-p=Tab5(args.tab5_port,args.key);d=t.Tab5(args.dial_port);p.serial.timeout=.02;d.s.timeout=.02
+p=d=None
 rows=[]
 def pump(seconds):
  end=time.monotonic()+seconds
@@ -38,6 +38,9 @@ def query(who,cmd,prefix,timeout=6):
 def fields(s):return dict(re.findall(r'(\w+)=(\S+)',s))
 result={'synthetic':True,'checks':{}}
 try:
+ p=Tab5(args.tab5_port,args.key)
+ d=t.Tab5(args.dial_port)
+ p.serial.timeout=.02;d.s.timeout=.02
  p.authenticate();note('AUTH verified; key and proofs omitted')
  status=query('DIAL','ORCDIAL_STATUS','ORCDIAL_STATUS link=LINKED pairing=',20)
  assert fields(status)['pending']=='0';result['checks']['paired']='PASS'
@@ -79,8 +82,12 @@ try:
 except Exception as e:
  result.update(overall='FAIL',error=str(e));note('ERROR '+str(e))
 finally:
- try:send('TAB5','SSTV SELFTEST STOP');send('DIAL','ORCDIAL_SOUND MUTE');send('DIAL','ORCDIAL_SOUND OFF');pump(.3)
- except Exception:pass
- p.close();d.s.close();log.close();(root/'device-result.json').write_text(json.dumps(result,indent=2));print(json.dumps(result),flush=True)
+ if p is not None and d is not None:
+  try:send('TAB5','SSTV SELFTEST STOP');send('DIAL','ORCDIAL_SOUND MUTE');send('DIAL','ORCDIAL_SOUND OFF');pump(.3)
+  except Exception:pass
+ for close in ([p.close] if p is not None else [])+([d.s.close] if d is not None else []):
+  try:close()
+  except Exception as error:result.update(overall='FAIL',cleanup_error=str(error))
+ log.close();(root/'device-result.json').write_text(json.dumps(result,indent=2));print(json.dumps(result),flush=True)
 
 sys.exit(0 if result['overall']=='PASS' else 1)

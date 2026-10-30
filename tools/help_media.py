@@ -103,14 +103,14 @@ class Tab5:
         self.send(f"PAIR {key.hex()}")
         pair = self.wait(("PAIR_OK", "PAIR_LOCKED", "PAIR_INVALID"))
         if pair != "PAIR_OK":
-            raise RuntimeError(f"{pair}; supply the key already paired with this Tab5")
+            raise RuntimeError("Pairing failed; supply the key already paired with this Tab5")
         nonce = secrets.token_bytes(16)
         host = hmac.new(key, b"host" + nonce, hashlib.sha256).hexdigest()
         self.send(f"AUTH {nonce.hex()} {host}")
         reply = self.wait(("AUTH_OK ", "AUTH_DENIED", "AUTH_ERROR", "AUTH_INVALID"))
         expected = hmac.new(key, b"device" + nonce, hashlib.sha256).hexdigest()
         if reply != f"AUTH_OK {expected}":
-            raise RuntimeError(f"Device authentication failed: {reply}")
+            raise RuntimeError("Device authentication failed (device response omitted)")
 
     def doc_list(self) -> tuple[str, dict[str, set[str]]]:
         self.send("UI_DOC_LIST")

@@ -19,7 +19,7 @@ int main() {
     return true;
   };
   assert(!delivery.poll(10,123,true,send)); // no decode, no synthetic record
-  delivery.observe(d,10);
+  assert(delivery.observe(d,10)==1);
   assert(!delivery.poll(11,123,peer.enabled(11),send)); // old/missing peer
   orc::Packet h{}; h.role=orc::Role::dial;h.type=orc::Type::heartbeat;
   h.sender=1;h.sequence=1;orc::projection::request(h);peer.observe(h,11);

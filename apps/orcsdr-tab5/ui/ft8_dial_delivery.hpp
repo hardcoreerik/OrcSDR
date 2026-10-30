@@ -6,9 +6,10 @@ namespace orcsdr::ft8::dial_preview {
 // Latest-only, UI-task producer. No allocations, callback work or control IDs.
 class Delivery {
  public:
-  void observe(const Decode& decode, uint32_t now) {
+  uint32_t observe(const Decode& decode, uint32_t now) {
     latest_ = decode; captured_ = now; available_ = true;
     if (!++record_) ++record_;
+    return record_;
   }
   template<class Send>
   bool poll(uint32_t now, uint32_t sender, bool ready, Send send) {

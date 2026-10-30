@@ -6,12 +6,12 @@ Receive/Tune and Dial sound controls. No RF transmit capability was added.
 The tablet publishes actual decoder session, mode, progress, completed-image
 count and archive outcomes through the existing authenticated RADIO_STATE
 packet, dashboard 18, schema bit 30. Contract: `orcdial/src/sstv_control.hpp`;
-producer: `orcdial/src/sstv_dial_state.hpp`. Old peers without this schema show
+producer: `apps/orcsdr-tab5/ui/sstv_dial_state.hpp`. Old peers without this schema show
 unavailable controls. Save, abort, gain, mode, step and tuning reuse the tablet
 handlers; tuning and mode changes are guarded during image reception.
 
 `SSTV DETECT AUTO|VIS` now exposes the existing detection preference through
-authenticated serial commands and `SSTV TUNE` reports detection/manual mode.
+authenticated serial commands and the `SSTV_TUNE` line of `SSTV STATUS` reports detection/manual mode.
 It refuses changes during reception. The bench explicitly selects AUTO:
 a saved manual Scottie S1 filter correctly prevented the first Robot36 fixture
 from starting. That failed attempt is retained, not counted as a passing test.
