@@ -8,66 +8,168 @@
 #include "esp_log.h"
 #include "esp_rtl_sdr.h"
 #include "esp_timer.h"
+#include "freertos/message_buffer.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "home_4b_layout.hpp"
 #include "home_fft.hpp"
+#include "sdkconfig.h"
 
 using namespace orcsdr::waveshare4b;
 
+#ifndef CONFIG_ORCSDR_MAX_RECEIVERS
+#define CONFIG_ORCSDR_MAX_RECEIVERS 1
+#endif
+
 namespace orcsdr::radio {
 namespace {
-constexpr char TAG[] = "RADIO";
 constexpr uint32_t kRate = 960000;      // default rate
 constexpr uint32_t kWideRate = 2400000;  // Home's wide spans
 constexpr size_t kIqBytes = 16384;
+constexpr int kRx = CONFIG_ORCSDR_MAX_RECEIVERS < 1 ? 1 : (CONFIG_ORCSDR_MAX_RECEIVERS > kMaxReceivers ? kMaxReceivers : CONFIG_ORCSDR_MAX_RECEIVERS);
+// One receiver keeps the transfer depth this firmware always used. Several receivers share the internal USB DMA pool, so
+// each gets the two 16 KiB transfers the four-dongle validation (OrcNode, 2.56 MS/s, 120 s, zero drops) was run with.
+constexpr size_t kTransfersSingle = 6, kTransfersMulti = 2;
 
-QueueHandle_t queue = nullptr;
-std::atomic<uint32_t> requested{kDefaultHz}, applied{0}, sps{0}, drops{0}, step_idx{2};
-std::atomic<int> state{0};  // 0 no receiver, 1 scanning, 2 streaming, 3 error
-std::atomic<uint32_t> tune_request{0};
-std::atomic<uint32_t> rate_target{kRate}, rate_now{kRate};
-IqSink g_sink = nullptr;
-IqSink g_aux_sink = nullptr;
-Info g_info;
-std::atomic<uint32_t> rate_override{0};
-std::atomic<float> dbfs{-120.0f};
-Gain g_gain;                                   // cache, guarded by bands_lock's sibling below
-portMUX_TYPE gain_lock = portMUX_INITIALIZER_UNLOCKED;
-std::atomic<int> gain_req_kind{0};             // 0 none, 1 auto, 2 manual, 3 rtl agc, 4 bias
-std::atomic<int> gain_req_value{0};
-portMUX_TYPE bands_lock = portMUX_INITIALIZER_UNLOCKED;
-uint8_t bands[kFftSize]{};
-uint32_t band_seq = 0, taken_seq = 0;
+// Header sent in front of each block to a queued consumer.
+struct FrameHeader {
+  uint32_t sample_rate, center_hz, sequence, bytes;
+  int64_t time_us;
+  uint8_t receiver;
+};
+constexpr size_t kFrameBytes = sizeof(FrameHeader) + kIqBytes;
 
-void task(void*) {
+struct Sink {
+  std::atomic<int> state{0};  // 0 free, 1 active, 2 removing, 3 being set up
+  IqConsumer fn = nullptr;
+  void* ctx = nullptr;
+  SinkKind kind = SinkKind::queued;
+  char name[16] = {};
+  MessageBufferHandle_t mb = nullptr;
+  TaskHandle_t task = nullptr;
+  std::atomic<bool> run{false}, exited{true};
+  uint8_t receiver = 0;
+  std::atomic<uint32_t> blocks{0}, drops{0}, max_us{0};
+};
+
+struct Rx {
+  int index = 0;
+  char tag[8] = "RADIO";
+  std::atomic<uint32_t> requested{kDefaultHz}, applied{0}, sps{0}, drops{0}, step_idx{2};
+  std::atomic<int> state{0};  // 0 no receiver, 1 scanning, 2 streaming, 3 error
+  std::atomic<uint32_t> tune_request{0};
+  std::atomic<uint32_t> rate_target{kRate}, rate_now{kRate}, rate_override{0};
+  std::atomic<float> dbfs{-120.0f};
+  Info info;
+  Gain gain;  // cache, guarded by gain_lock
+  portMUX_TYPE gain_lock = portMUX_INITIALIZER_UNLOCKED;
+  std::atomic<int> gain_req_kind{0};  // 0 none, 1 auto, 2 manual, 3 rtl agc, 4 bias, 5 ppm, 6 bandwidth
+  std::atomic<int> gain_req_value{0};
+  portMUX_TYPE bands_lock = portMUX_INITIALIZER_UNLOCKED;
+  uint8_t bands[kFftSize]{};
+  uint32_t band_seq = 0, taken_seq = 0;
+  Sink sinks[kMaxSinks];
+  std::atomic<uint32_t> epoch{0};     // +1 every pass of the receiver loop: a removed sink is safe once it has moved on
+  std::atomic<uint32_t> sequence{0};  // +1 per block read
+  TaskHandle_t task_handle = nullptr;
+  uint8_t* frame = nullptr;           // scratch copy of the block, shared by every queued consumer
+};
+
+QueueHandle_t queue = nullptr;  // Home's commands go to receiver 0 only
+Rx g_rx[kRx];
+std::atomic<bool> g_host_ready{false};  // receiver 0 has installed the USB host library
+SemaphoreHandle_t g_start_mutex = nullptr;  // one receiver at a time claims a dongle
+
+// ---- sink registry -----------------------------------------------------------------------------------------------
+
+void queued_task(void* arg) {
+  Sink* s = static_cast<Sink*>(arg);
+  auto* buf = static_cast<uint8_t*>(heap_caps_malloc(kFrameBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  while (s->run.load() && buf) {
+    const size_t got = xMessageBufferReceive(s->mb, buf, kFrameBytes, pdMS_TO_TICKS(50));
+    if (got < sizeof(FrameHeader)) continue;
+    FrameHeader h;
+    std::memcpy(&h, buf, sizeof(h));
+    const IqBlock b{buf + sizeof(FrameHeader), h.bytes, h.sample_rate, h.center_hz, h.sequence, h.time_us, h.receiver};
+    const int64_t t0 = esp_timer_get_time();
+    s->fn(b, s->ctx);
+    const uint32_t us = static_cast<uint32_t>(esp_timer_get_time() - t0);
+    if (us > s->max_us.load()) s->max_us = us;
+    s->blocks.fetch_add(1);
+  }
+  heap_caps_free(buf);
+  s->exited = true;
+  vTaskDelete(nullptr);
+}
+
+void dispatch(Rx& r, const uint8_t* iq, size_t n, int64_t now) {
+  const uint32_t seq = r.sequence.fetch_add(1);
+  const uint32_t rate = r.rate_now.load(), hz = r.applied.load() ? r.applied.load() : r.requested.load();
+  const IqBlock b{iq, n, rate, hz, seq, now, static_cast<uint8_t>(r.index)};
+  bool framed = false;
+  for (Sink& s : r.sinks) {
+    if (s.state.load(std::memory_order_acquire) != 1) continue;
+    if (s.kind == SinkKind::inline_fast) {
+      const int64_t t0 = esp_timer_get_time();
+      s.fn(b, s.ctx);
+      const uint32_t us = static_cast<uint32_t>(esp_timer_get_time() - t0);
+      if (us > s.max_us.load()) s.max_us = us;
+      s.blocks.fetch_add(1);
+      continue;
+    }
+    if (!r.frame) continue;
+    if (!framed) {
+      const FrameHeader h{rate, hz, seq, static_cast<uint32_t>(n), now, static_cast<uint8_t>(r.index)};
+      std::memcpy(r.frame, &h, sizeof(h));
+      std::memcpy(r.frame + sizeof(h), iq, n);
+      framed = true;
+    }
+    if (xMessageBufferSend(s.mb, r.frame, sizeof(FrameHeader) + n, 0) == 0) s.drops.fetch_add(1);
+  }
+}
+
+// ---- receiver task -----------------------------------------------------------------------------------------------
+
+void task(void* arg) {
+  Rx& r = *static_cast<Rx*>(arg);
+  const char* TAG = r.tag;
   auto* iq = static_cast<uint8_t*>(heap_caps_malloc(kIqBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  if (!iq) {
-    state = 3;
+  r.frame = static_cast<uint8_t*>(heap_caps_malloc(kFrameBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!iq || !r.frame) {
+    r.state = 3;
     ESP_LOGE(TAG, "IQ buffer alloc failed");
     vTaskDelete(nullptr);
     return;
   }
+  // A second receiver cannot install until receiver 0 has set up the shared USB host library.
+  while (r.index > 0 && !g_host_ready.load()) vTaskDelay(pdMS_TO_TICKS(200));
   esp_rtl_sdr_config_t cfg;
   esp_rtl_sdr_config_default(&cfg);
-  cfg.host_library_already_installed = false;  // one USB host owner: esp-rtl-sdr
+  cfg.host_library_already_installed = r.index > 0;  // one USB host owner: esp-rtl-sdr, installed by receiver 0
   cfg.delivery_mode = ESP_RTL_SDR_DELIVERY_READ;
-  cfg.transfer_count = 6;
+  cfg.transfer_count = kRx > 1 ? kTransfersMulti : kTransfersSingle;
   cfg.transfer_bytes = kIqBytes;
+  if (kRx > 1) cfg.usb_task_core_id = static_cast<uint8_t>(r.index % 2);  // split USB clients across both cores
+  cfg.bind_device_index = ESP_RTL_SDR_BIND_ANY;  // first USB address no other handle owns
   esp_rtl_sdr_handle_t sdr = nullptr;
   const esp_err_t install = esp_rtl_sdr_install(&cfg, &sdr);
   if (install != ESP_OK) {
     ESP_LOGE(TAG, "SDR install failed: %s", esp_rtl_sdr_err_to_name(install));
-    state = 3;
+    r.state = 3;
     heap_caps_free(iq);
     vTaskDelete(nullptr);
     return;
   }
+  if (r.index == 0) g_host_ready = true;
   bool streaming = false;
-  int64_t last_scan = 0, last_fft = 0, last_metrics = 0, last_stream_start_us = 0;
+  int64_t last_scan = 0, last_fft = 0, last_metrics = 0, last_stream_start_us = 0, last_gain_poll = 0;
+  uint32_t scans = 0, last_seen_target = 0;
+  int64_t target_changed_at = 0;
   for (;;) {
-    const uint32_t absolute = tune_request.exchange(0);
+    r.epoch.fetch_add(1);
+    const uint32_t absolute = r.tune_request.exchange(0);
     if (absolute) {
-      requested = absolute;
+      r.requested = absolute;
       ESP_LOGI(TAG, "TUNE requested_hz=%u streaming=%d", unsigned(absolute), int(streaming));
       if (streaming) {
         const esp_err_t e = esp_rtl_sdr_retune_hz(sdr, absolute);
@@ -75,22 +177,22 @@ void task(void*) {
       }
     }
     home_v3::Command cmd;
-    while (xQueueReceive(queue, &cmd, 0) == pdTRUE) {
+    while (r.index == 0 && queue && xQueueReceive(queue, &cmd, 0) == pdTRUE) {
       if (cmd == home_v3::Command::Step) {
-        step_idx = (step_idx.load() + 1) % 6;
+        r.step_idx = (r.step_idx.load() + 1) % 6;
         continue;
       }
-      uint32_t next = requested.load();
+      uint32_t next = r.requested.load();
       switch (cmd) {
-        case home_v3::Command::Down: next = tune(next, -1, kSteps[step_idx.load()]); break;
-        case home_v3::Command::Up: next = tune(next, 1, kSteps[step_idx.load()]); break;
+        case home_v3::Command::Down: next = tune(next, -1, kSteps[r.step_idx.load()]); break;
+        case home_v3::Command::Up: next = tune(next, 1, kSteps[r.step_idx.load()]); break;
         case home_v3::Command::FM: next = 96100000; break;
         case home_v3::Command::WX: next = 162400000; break;
         case home_v3::Command::Air: next = 125000000; break;
         case home_v3::Command::Ham: next = 145120000; break;
         default: break;
       }
-      requested = next;
+      r.requested = next;
       ESP_LOGI(TAG, "TUNE requested_hz=%u streaming=%d", unsigned(next), int(streaming));
       if (streaming) {
         const esp_err_t e = esp_rtl_sdr_retune_hz(sdr, next);
@@ -99,11 +201,13 @@ void task(void*) {
     }
     const int64_t now = esp_timer_get_time();
     if (!streaming) {
-      applied = 0;
-      sps = 0;
+      r.applied = 0;
+      r.sps = 0;
       if (now - last_scan > 1000000) {
         last_scan = now;
-        state = 1;
+        r.state = 1;
+        // Claiming a dongle is serialized across receivers: two handles must not take the same one.
+        if (g_start_mutex) xSemaphoreTake(g_start_mutex, portMAX_DELAY);
         size_t count = 0, raw_count = 0;
         const esp_err_t raw_result = esp_rtl_sdr_usb_device_count(&raw_count);
         const esp_err_t refresh_result = esp_rtl_sdr_refresh_device_list(sdr);
@@ -111,56 +215,56 @@ void task(void*) {
             refresh_result == ESP_OK ? esp_rtl_sdr_get_device_count(sdr, &count) : refresh_result;
         // The raw USB count includes hubs and unsupported devices; an empty candidate list
         // is not by itself evidence that the board supplies VBUS.
-        static uint32_t scans = 0;
         if ((++scans % 5u) == 1u || raw_count || count) {
           ESP_LOGI(TAG, "USB_DIAG raw_devices=%u accepted_sdr=%u raw=%s scan=%s safe_mode=%u",
                    unsigned(raw_count), unsigned(count), esp_rtl_sdr_err_to_name(raw_result),
                    esp_rtl_sdr_err_to_name(count_result), unsigned(esp_rtl_sdr_usb_safe_mode_active()));
         }
-        if (refresh_result == ESP_OK && count_result == ESP_OK && count > 0) {
+        // Receiver k takes a dongle only when more than k are attached (the first free address goes to the first
+        // receiver that asks), the rule the OrcNode receiver manager used for its four-dongle runs.
+        if (refresh_result == ESP_OK && count_result == ESP_OK && count > static_cast<size_t>(r.index)) {
           esp_rtl_sdr_stream_config_t sc;
           esp_rtl_sdr_stream_config_default(&sc);
           sc.preset = ESP_RTL_SDR_PRESET_CUSTOM_HZ;
-          sc.frequency_hz = requested.load();
-          sc.sample_rate_sps = rate_target.load();
+          sc.frequency_hz = r.requested.load();
+          sc.sample_rate_sps = r.rate_target.load();
           const esp_err_t e = esp_rtl_sdr_start(sdr, &sc);
           if (e == ESP_OK) {
             streaming = true;
-            state = 2;
+            r.state = 2;
             last_stream_start_us = now;
-            rate_now = sc.sample_rate_sps;
+            r.rate_now = sc.sample_rate_sps;
             ESP_LOGI(TAG, "RF START hz=%u rate=%u", unsigned(sc.frequency_hz), unsigned(sc.sample_rate_sps));
           } else {
             ESP_LOGE(TAG, "start failed: %s", esp_rtl_sdr_err_to_name(e));
-            state = 3;
+            r.state = 3;
             // A failed start can leave the driver in FAULT; clear it (stop, then reset) so the next scan can retry.
             (void)esp_rtl_sdr_stop(sdr, 1000);
-            const esp_err_t r = esp_rtl_sdr_reset(sdr);
-            ESP_LOGW(TAG, "driver reset after failed start: %s (state %s)", esp_err_to_name(r),
+            const esp_err_t rs = esp_rtl_sdr_reset(sdr);
+            ESP_LOGW(TAG, "driver reset after failed start: %s (state %s)", esp_err_to_name(rs),
                      esp_rtl_sdr_state_to_name(esp_rtl_sdr_get_state(sdr)));
           }
         } else {
-          state = 0;
+          r.state = 0;
         }
+        if (g_start_mutex) xSemaphoreGive(g_start_mutex);
       }
       vTaskDelay(pdMS_TO_TICKS(30));
       continue;
     }
     // A rate change is a USB stop/start. Wait until the requested rate has been steady for a moment (screens often ask
     // twice in quick succession) and never restart twice within 1.5 s: back-to-back restarts left the USB device stuck.
-    static uint32_t last_seen_target = 0;
-    static int64_t target_changed_at = 0;
-    const uint32_t wanted_rate = rate_target.load();
+    const uint32_t wanted_rate = r.rate_target.load();
     if (wanted_rate != last_seen_target) {
       last_seen_target = wanted_rate;
       target_changed_at = now;
     }
-    if (wanted_rate != rate_now.load() && now - target_changed_at > 400000 && now - last_stream_start_us > 1500000) {
+    if (wanted_rate != r.rate_now.load() && now - target_changed_at > 400000 && now - last_stream_start_us > 1500000) {
       // The driver changes sample rate only across stop/start.
-      ESP_LOGI(TAG, "sample rate %u -> %u", unsigned(rate_now.load()), unsigned(rate_target.load()));
+      ESP_LOGI(TAG, "sample rate %u -> %u", unsigned(r.rate_now.load()), unsigned(r.rate_target.load()));
       (void)esp_rtl_sdr_stop(sdr, 1500);
       streaming = false;
-      state = 1;
+      r.state = 1;
       last_scan = 0;
       continue;
     }
@@ -171,16 +275,15 @@ void task(void*) {
       const esp_err_t reset = esp_rtl_sdr_reset(sdr);
       ESP_LOGI(TAG, "driver reset after stream end: %s", esp_err_to_name(reset));
       streaming = false;
-      state = 0;
-      applied = 0;
-      sps = 0;
+      r.state = 0;
+      r.applied = 0;
+      r.sps = 0;
       last_scan = 0;  // look again straight away
       continue;
     }
     size_t n = 0;
     const esp_err_t e = esp_rtl_sdr_read(sdr, iq, kIqBytes, 40, &n);
-    if (e == ESP_OK && n && g_sink) g_sink(iq, n);
-    if (e == ESP_OK && n && g_aux_sink) g_aux_sink(iq, n);
+    if (e == ESP_OK && n) dispatch(r, iq, n, now);
     if (e == ESP_OK && n >= 2048 && now - last_fft > 50000) {
       // Level of the block as RMS of the centred 8-bit samples, in dBFS.
       // Single precision: this chip's FPU is float-only, so doubles here cost a software-emulated 14% of the core.
@@ -191,15 +294,15 @@ void task(void*) {
         acc += v * v;
       }
       const float rms = std::sqrt(acc / static_cast<float>(count));
-      dbfs = rms > 1e-6f ? 20.0f * std::log10(rms) : -120.0f;
+      r.dbfs = rms > 1e-6f ? 20.0f * std::log10(rms) : -120.0f;
     }
     if (e == ESP_OK && n >= kFftSize * 2 && now - last_fft > 50000) {
       Spectrum view = spectrum_from_cu8(iq, n);
       if (view.real_samples) {
-        portENTER_CRITICAL(&bands_lock);
-        memcpy(bands, view.values.data(), kFftSize);
-        ++band_seq;
-        portEXIT_CRITICAL(&bands_lock);
+        portENTER_CRITICAL(&r.bands_lock);
+        memcpy(r.bands, view.values.data(), kFftSize);
+        ++r.band_seq;
+        portEXIT_CRITICAL(&r.bands_lock);
         last_fft = now;
       }
     } else if (e != ESP_OK && e != ESP_RTL_SDR_ERR_TIMEOUT) {
@@ -208,20 +311,19 @@ void task(void*) {
     }
     {
       // Apply a queued control change, then refresh the cache (about twice a second).
-      static int64_t last_gain_poll = 0;
-      const int kind = gain_req_kind.exchange(0);
+      const int kind = r.gain_req_kind.exchange(0);
       if (kind) {
-        const int value = gain_req_value.load();
-        esp_err_t r = ESP_OK;
-        if (kind == 1) r = esp_rtl_sdr_set_tuner_gain_mode(sdr, ESP_RTL_SDR_GAIN_MODE_AUTO);
+        const int value = r.gain_req_value.load();
+        esp_err_t rr = ESP_OK;
+        if (kind == 1) rr = esp_rtl_sdr_set_tuner_gain_mode(sdr, ESP_RTL_SDR_GAIN_MODE_AUTO);
         else if (kind == 2) {
-          r = esp_rtl_sdr_set_tuner_gain_mode(sdr, ESP_RTL_SDR_GAIN_MODE_MANUAL);
-          if (r == ESP_OK) r = esp_rtl_sdr_set_tuner_gain(sdr, value);
-        } else if (kind == 3) r = esp_rtl_sdr_set_rtl_agc(sdr, value != 0);
-        else if (kind == 4) r = esp_rtl_sdr_set_bias_tee(sdr, value != 0);
-        else if (kind == 5) r = esp_rtl_sdr_set_freq_correction(sdr, value);
-        else if (kind == 6) r = esp_rtl_sdr_set_tuner_bandwidth(sdr, static_cast<uint32_t>(value));
-        ESP_LOGI(TAG, "GAIN request kind=%d value=%d -> %s", kind, value, esp_rtl_sdr_err_to_name(r));
+          rr = esp_rtl_sdr_set_tuner_gain_mode(sdr, ESP_RTL_SDR_GAIN_MODE_MANUAL);
+          if (rr == ESP_OK) rr = esp_rtl_sdr_set_tuner_gain(sdr, value);
+        } else if (kind == 3) rr = esp_rtl_sdr_set_rtl_agc(sdr, value != 0);
+        else if (kind == 4) rr = esp_rtl_sdr_set_bias_tee(sdr, value != 0);
+        else if (kind == 5) rr = esp_rtl_sdr_set_freq_correction(sdr, value);
+        else if (kind == 6) rr = esp_rtl_sdr_set_tuner_bandwidth(sdr, static_cast<uint32_t>(value));
+        ESP_LOGI(TAG, "GAIN request kind=%d value=%d -> %s", kind, value, esp_rtl_sdr_err_to_name(rr));
         last_gain_poll = 0;
       }
       if (now - last_gain_poll > 500000) {
@@ -257,97 +359,268 @@ void task(void*) {
           std::snprintf(inf.device, sizeof(inf.device), "%.30s %.12s", di.product, di.serial);
         else
           std::snprintf(inf.device, sizeof(inf.device), "RTL-SDR");
+        esp_rtl_sdr_identity_t id{};
+        id.struct_size = sizeof(id);
+        if (esp_rtl_sdr_get_identity(sdr, &id) == ESP_OK && id.present)
+          std::snprintf(inf.usb_path, sizeof(inf.usb_path), "%.23s", id.usb_path[0] ? id.usb_path : "?");
         esp_rtl_sdr_health_info_t hi{};
         if (esp_rtl_sdr_get_health(sdr, &hi) == ESP_OK)
           std::snprintf(inf.health, sizeof(inf.health), "%.27s", hi.advice[0] ? hi.advice : "OK");
         else
           std::snprintf(inf.health, sizeof(inf.health), "unknown");
         std::snprintf(inf.version, sizeof(inf.version), "%s", esp_rtl_sdr_get_version_string());
-        portENTER_CRITICAL(&gain_lock);
-        g_info = inf;
-        g_gain = g;
-        portEXIT_CRITICAL(&gain_lock);
+        portENTER_CRITICAL(&r.gain_lock);
+        r.info = inf;
+        r.gain = g;
+        portEXIT_CRITICAL(&r.gain_lock);
       }
     }
     if (now - last_metrics > 750000) {
       last_metrics = now;
       esp_rtl_sdr_metrics_t m{};
       if (esp_rtl_sdr_get_metrics(sdr, &m) == ESP_OK) {
-        applied = m.frequency_hz;
-        sps = m.effective_sps;
-        drops = m.slot_starve_blocks + m.ring_overrun_blocks + m.pull_lock_miss_blocks;
+        r.applied = m.frequency_hz;
+        r.sps = m.effective_sps;
+        r.drops = m.slot_starve_blocks + m.ring_overrun_blocks + m.pull_lock_miss_blocks;
         ESP_LOGI(TAG, "IQ hz=%u sps=%u consumed=%llu drops=%u", unsigned(m.frequency_hz),
-                 unsigned(m.effective_sps), (unsigned long long)m.bytes_consumed, unsigned(drops.load()));
+                 unsigned(m.effective_sps), (unsigned long long)m.bytes_consumed, unsigned(r.drops.load()));
       }
     }
   }
+}
+
+Rx* rx_at(int rx) { return rx >= 0 && rx < kRx ? &g_rx[rx] : nullptr; }
+
+// Receiver 0 owns the old, un-indexed calls; the two legacy sink slots are ordinary registry entries.
+SinkHandle g_legacy[2] = {-1, -1};
+void legacy_adapter(const IqBlock& b, void* ctx) { reinterpret_cast<IqSink>(ctx)(b.data, b.bytes); }
+void set_legacy(int which, IqSink sink) {
+  if (g_legacy[which] >= 0) {
+    remove_sink(g_legacy[which]);
+    g_legacy[which] = -1;
+  }
+  if (!sink) return;
+  SinkSpec spec;
+  spec.name = which == 0 ? "primary" : "aux";
+  spec.fn = legacy_adapter;
+  spec.context = reinterpret_cast<void*>(sink);
+  spec.kind = SinkKind::inline_fast;  // the old contract: called from the receiver task
+  g_legacy[which] = add_sink(spec);
 }
 }  // namespace
 
 bool start(QueueHandle_t commands) {
   queue = commands;
-  ESP_LOGI(TAG, "driver=%s psram_free=%u", esp_rtl_sdr_get_version_string(),
-           unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
-  return xTaskCreatePinnedToCore(task, "radio", 8192, nullptr, 5, nullptr, 1) == pdPASS;
+  g_start_mutex = xSemaphoreCreateMutex();
+  ESP_LOGI("RADIO", "driver=%s psram_free=%u receivers=%d", esp_rtl_sdr_get_version_string(),
+           unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)), kRx);
+  bool ok = true;
+  for (int i = 0; i < kRx; ++i) {
+    Rx& r = g_rx[i];
+    r.index = i;
+    if (i > 0) std::snprintf(r.tag, sizeof(r.tag), "RADIO%d", i);
+    char name[8] = "radio";
+    if (i > 0) std::snprintf(name, sizeof(name), "radio%d", i);
+    ok = xTaskCreatePinnedToCore(task, name, 8192, &r, 5, &r.task_handle, 1) == pdPASS && ok;
+  }
+  return ok;
 }
 
-void set_iq_sink(IqSink sink) { g_sink = sink; }
-void set_aux_iq_sink(IqSink sink) { g_aux_sink = sink; }
-Info info() {
+int max_receivers() { return kRx; }
+int receiver_count() {
+  int n = 0;
+  for (int i = 0; i < kRx; ++i) n += g_rx[i].state.load() == 2 ? 1 : 0;
+  return n;
+}
+bool receiver_info(int rx, ReceiverInfo* out) {
+  Rx* r = rx_at(rx);
+  if (!r || !out) return false;
+  ReceiverInfo i;
+  i.index = rx;
+  i.state = r->state.load();
+  i.frequency_hz = r->applied.load();
+  i.sample_rate = r->rate_now.load();
+  i.effective_sps = r->sps.load();
+  i.drops = r->drops.load();
+  portENTER_CRITICAL(&r->gain_lock);
+  std::memcpy(i.device, r->info.device, sizeof(i.device));
+  std::memcpy(i.usb_path, r->info.usb_path, sizeof(i.usb_path));
+  portEXIT_CRITICAL(&r->gain_lock);
+  *out = i;
+  return true;
+}
+
+// ---- sinks -------------------------------------------------------------------------------------------------------
+
+SinkHandle add_sink(const SinkSpec& spec) {
+  Rx* r = rx_at(spec.receiver);
+  if (!r || !spec.fn) return -1;
+  for (int slot = 0; slot < kMaxSinks; ++slot) {
+    Sink& s = r->sinks[slot];
+    int expected = 0;
+    if (!s.state.compare_exchange_strong(expected, 3)) continue;
+    s.fn = spec.fn;
+    s.ctx = spec.context;
+    s.kind = spec.kind;
+    s.receiver = spec.receiver;
+    std::snprintf(s.name, sizeof(s.name), "%s", spec.name ? spec.name : "sink");
+    s.blocks = 0;
+    s.drops = 0;
+    s.max_us = 0;
+    if (spec.kind == SinkKind::queued) {
+      const size_t bytes = spec.queue_bytes ? spec.queue_bytes : 4 * kFrameBytes;
+      s.mb = xMessageBufferCreateWithCaps(bytes < 2 * kFrameBytes ? 2 * kFrameBytes : bytes, MALLOC_CAP_SPIRAM);
+      s.run = true;
+      s.exited = false;
+      if (!s.mb || xTaskCreatePinnedToCore(queued_task, s.name, spec.task_stack, &s, spec.task_priority, &s.task,
+                                           spec.task_core < 0 ? tskNO_AFFINITY : spec.task_core) != pdPASS) {
+        if (s.mb) vMessageBufferDeleteWithCaps(s.mb);
+        s.mb = nullptr;
+        s.run = false;
+        s.exited = true;
+        s.state = 0;
+        return -1;
+      }
+    }
+    s.state.store(1, std::memory_order_release);
+    return spec.receiver * kMaxSinks + slot;
+  }
+  return -1;
+}
+
+void remove_sink(SinkHandle handle) {
+  if (handle < 0 || handle >= kRx * kMaxSinks) return;
+  Rx& r = g_rx[handle / kMaxSinks];
+  Sink& s = r.sinks[handle % kMaxSinks];
+  int expected = 1;
+  if (!s.state.compare_exchange_strong(expected, 2)) return;  // not active
+  // The receiver task may be inside this sink's callback. Wait until it has gone round its loop twice (bounded), unless
+  // we are that task. After that nothing calls the sink and the caller may free what it points to.
+  if (xTaskGetCurrentTaskHandle() != r.task_handle) {
+    const uint32_t start = r.epoch.load();
+    for (int i = 0; i < 60 && static_cast<uint32_t>(r.epoch.load() - start) < 2; ++i) vTaskDelay(pdMS_TO_TICKS(5));
+  }
+  if (s.kind == SinkKind::queued) {
+    s.run = false;
+    for (int i = 0; i < 100 && !s.exited.load(); ++i) vTaskDelay(pdMS_TO_TICKS(10));
+    if (s.mb) vMessageBufferDeleteWithCaps(s.mb);
+    s.mb = nullptr;
+  }
+  s.fn = nullptr;
+  s.ctx = nullptr;
+  s.state.store(0, std::memory_order_release);
+}
+
+bool sink_stats(SinkHandle handle, SinkStats* out) {
+  if (handle < 0 || handle >= kRx * kMaxSinks || !out) return false;
+  const Sink& s = g_rx[handle / kMaxSinks].sinks[handle % kMaxSinks];
+  if (s.state.load() != 1) return false;
+  SinkStats st;
+  std::snprintf(st.name, sizeof(st.name), "%s", s.name);
+  st.queued = s.kind == SinkKind::queued;
+  st.blocks = s.blocks.load();
+  st.drops = s.drops.load();
+  st.max_call_us = s.max_us.load();
+  *out = st;
+  return true;
+}
+
+void set_iq_sink(IqSink sink) { set_legacy(0, sink); }
+void set_aux_iq_sink(IqSink sink) { set_legacy(1, sink); }
+
+// ---- per-receiver controls (the un-indexed forms act on receiver 0) ----------------------------------------------
+
+Info info(int rx) {
   Info i;
-  portENTER_CRITICAL(&gain_lock);
-  i = g_info;
-  portEXIT_CRITICAL(&gain_lock);
+  if (Rx* r = rx_at(rx)) {
+    portENTER_CRITICAL(&r->gain_lock);
+    i = r->info;
+    portEXIT_CRITICAL(&r->gain_lock);
+  }
   return i;
 }
+Info info() { return info(0); }
 void set_ppm(int ppm) {
-  gain_req_value = ppm;
-  gain_req_kind = 5;
+  g_rx[0].gain_req_value = ppm;
+  g_rx[0].gain_req_kind = 5;
 }
 void set_tuner_bandwidth(uint32_t hz) {
-  gain_req_value = static_cast<int>(hz);
-  gain_req_kind = 6;
+  g_rx[0].gain_req_value = static_cast<int>(hz);
+  g_rx[0].gain_req_kind = 6;
 }
-void set_sample_rate_override(uint32_t rate) { rate_override = rate; }
-Gain gain() {
+void set_sample_rate_override(uint32_t rate) { g_rx[0].rate_override = rate; }
+Gain gain(int rx) {
   Gain g;
-  portENTER_CRITICAL(&gain_lock);
-  g = g_gain;
-  portEXIT_CRITICAL(&gain_lock);
+  if (Rx* r = rx_at(rx)) {
+    portENTER_CRITICAL(&r->gain_lock);
+    g = r->gain;
+    portEXIT_CRITICAL(&r->gain_lock);
+  }
   return g;
 }
-void set_gain_auto() { gain_req_kind = 1; }
-void set_gain_manual(int tenth_db) {
-  gain_req_value = tenth_db;
-  gain_req_kind = 2;
+Gain gain() { return gain(0); }
+void set_gain_auto(int rx) {
+  if (Rx* r = rx_at(rx)) r->gain_req_kind = 1;
 }
-void set_rtl_agc(bool enable) {
-  gain_req_value = enable ? 1 : 0;
-  gain_req_kind = 3;
+void set_gain_auto() { set_gain_auto(0); }
+void set_gain_manual(int rx, int tenth_db) {
+  if (Rx* r = rx_at(rx)) {
+    r->gain_req_value = tenth_db;
+    r->gain_req_kind = 2;
+  }
 }
-void set_bias_tee(bool enable) {
-  gain_req_value = enable ? 1 : 0;
-  gain_req_kind = 4;
+void set_gain_manual(int tenth_db) { set_gain_manual(0, tenth_db); }
+void set_rtl_agc(int rx, bool enable) {
+  if (Rx* r = rx_at(rx)) {
+    r->gain_req_value = enable ? 1 : 0;
+    r->gain_req_kind = 3;
+  }
 }
-void tune_to(uint32_t frequency_hz) { tune_request = frequency_hz; }
-float level_dbfs() { return state.load() == 2 ? dbfs.load() : -120.0f; }
-uint32_t sample_rate() { return rate_now.load(); }
-void set_sample_rate(uint32_t rate) { rate_target = rate_override.load() ? rate_override.load() : (rate > 1000000 ? kWideRate : kRate); }
+void set_rtl_agc(bool enable) { set_rtl_agc(0, enable); }
+void set_bias_tee(int rx, bool enable) {
+  if (Rx* r = rx_at(rx)) {
+    r->gain_req_value = enable ? 1 : 0;
+    r->gain_req_kind = 4;
+  }
+}
+void set_bias_tee(bool enable) { set_bias_tee(0, enable); }
+void tune_to(int rx, uint32_t frequency_hz) {
+  if (Rx* r = rx_at(rx)) r->tune_request = frequency_hz;
+}
+void tune_to(uint32_t frequency_hz) { tune_to(0, frequency_hz); }
+float level_dbfs(int rx) {
+  Rx* r = rx_at(rx);
+  return r && r->state.load() == 2 ? r->dbfs.load() : -120.0f;
+}
+float level_dbfs() { return level_dbfs(0); }
+uint32_t sample_rate(int rx) {
+  Rx* r = rx_at(rx);
+  return r ? r->rate_now.load() : 0;
+}
+uint32_t sample_rate() { return sample_rate(0); }
+void set_sample_rate(int rx, uint32_t rate) {
+  if (Rx* r = rx_at(rx)) r->rate_target = r->rate_override.load() ? r->rate_override.load() : (rate > 1000000 ? kWideRate : kRate);
+}
+void set_sample_rate(uint32_t rate) { set_sample_rate(0, rate); }
 
 waveshare4b::home_v3::Snapshot snapshot() {
-  return {requested.load(), applied.load(), sps.load(), drops.load(), kSteps[step_idx.load()],
-          uint32_t(esp_timer_get_time() / 1000000), state.load()};
+  Rx& r = g_rx[0];
+  return {r.requested.load(), r.applied.load(), r.sps.load(), r.drops.load(), kSteps[r.step_idx.load()],
+          uint32_t(esp_timer_get_time() / 1000000), r.state.load()};
 }
 
-bool take_bins(uint8_t out[256]) {
+bool take_bins(int rx, uint8_t out[256]) {
+  Rx* r = rx_at(rx);
+  if (!r) return false;
   bool fresh = false;
-  portENTER_CRITICAL(&bands_lock);
-  if (band_seq != taken_seq) {
-    memcpy(out, bands, sizeof(bands));
-    taken_seq = band_seq;
+  portENTER_CRITICAL(&r->bands_lock);
+  if (r->band_seq != r->taken_seq) {
+    memcpy(out, r->bands, sizeof(r->bands));
+    r->taken_seq = r->band_seq;
     fresh = true;
   }
-  portEXIT_CRITICAL(&bands_lock);
+  portEXIT_CRITICAL(&r->bands_lock);
   return fresh;
 }
+bool take_bins(uint8_t out[256]) { return take_bins(0, out); }
 }  // namespace orcsdr::radio

@@ -161,7 +161,7 @@ void cmd_help() {
   std::printf("RTL_SIGNAL                                      - signal level snapshot\n");
   std::printf("RTL_VOLUME | RTL_VOLUME <0-32>                   - query / set (auth)\n");
   std::printf("RTL_UI STATUS | RTL_UI OPEN <HOME> | RTL_UI TAP <x 0-1279> <y 0-719>  - UI (OPEN/TAP need auth)\n");
-  std::printf("RTL_SCREEN_STATUS / RTL_MEM STATUS               - diagnostics\n");
+  std::printf("RTL_SCREEN_STATUS / RTL_MEM STATUS / RTL_RX STATUS - diagnostics (RTL_RX: one line per receiver)\n");
   std::printf("FT8 SNAP                                        - screenshot as PNG over serial (auth)\n");
 }
 
@@ -588,6 +588,17 @@ void cmd_mem() {
               unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)));
 }
 
+void cmd_rx_status() {
+  std::printf("RTL_RX_STATUS max_receivers=%d streaming=%d\n", orcsdr::radio::max_receivers(), orcsdr::radio::receiver_count());
+  for (int i = 0; i < orcsdr::radio::max_receivers(); ++i) {
+    orcsdr::radio::ReceiverInfo r;
+    if (!orcsdr::radio::receiver_info(i, &r)) continue;
+    std::printf("RTL_RX index=%d state=%d frequency_hz=%u sample_rate=%u effective_sps=%u drops=%u usb_path=\"%s\" device=\"%s\"\n",
+                r.index, r.state, unsigned(r.frequency_hz), unsigned(r.sample_rate), unsigned(r.effective_sps), unsigned(r.drops),
+                r.usb_path, r.device);
+  }
+}
+
 void handle_line(char* line) {
   // Trim trailing whitespace.
   size_t n = std::strlen(line);
@@ -637,6 +648,7 @@ void handle_line(char* line) {
     return;
   }
   if (std::strcmp(line, "RTL_MEM STATUS") == 0) return cmd_mem();
+  if (std::strcmp(line, "RTL_RX STATUS") == 0) return cmd_rx_status();
   if (std::strcmp(line, "FT8 SNAP") == 0) {
     if (!authed()) {
       std::printf("ORC_FT8_ERROR auth_required\n");

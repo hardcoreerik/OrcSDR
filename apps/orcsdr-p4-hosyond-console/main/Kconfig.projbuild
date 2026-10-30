@@ -1,0 +1,15 @@
+menu "OrcSDR receivers"
+
+    config ORCSDR_MAX_RECEIVERS
+        int "RTL-SDR receivers this build runs (1 to 4)"
+        range 1 4
+        default 1
+        help
+            One radio task per receiver; each receiver takes the next dongle attached. With 1 the firmware behaves as it
+            always did (six 16 KiB USB transfers). With more than one, each receiver uses two 16 KiB internal USB DMA
+            transfers (the setting the four-dongle validation used) and USB clients are split across both cores.
+            The code supports up to 4, but how many this console can run at once alongside the UI, Wi-Fi and audio is
+            not yet measured. Check "RTL_MEM STATUS" dma_free, "RTL_CPU" and the per-receiver drops from
+            "RTL_RX STATUS" with the console running before choosing more than 1 or 2.
+
+endmenu

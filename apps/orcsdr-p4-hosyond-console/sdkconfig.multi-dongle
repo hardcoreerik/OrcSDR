@@ -1,0 +1,6 @@
+# Overlay: run two RTL-SDR receivers (for first multi-dongle tests). Add after the base defaults and the board overlay:
+#   -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.multi-dongle"
+# The code supports up to four, but how many this console can run at once is NOT yet measured (the earlier four-dongle run
+# was on the OrcNode firmware without this UI, Wi-Fi and audio load). Raise it only after measuring RTL_MEM dma_free, RTL_CPU
+# and per-receiver drops with the console running. Most users will have one or two dongles.
+CONFIG_ORCSDR_MAX_RECEIVERS=2
