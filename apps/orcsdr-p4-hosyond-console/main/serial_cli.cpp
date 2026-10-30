@@ -20,6 +20,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "audio_service.hpp"
+#include "commands.hpp"
 #include "home_app.hpp"
 #include "mbedtls/md.h"
 #include "nvs.h"
@@ -165,19 +166,8 @@ void cmd_help() {
   std::printf("FT8 SNAP                                        - screenshot as PNG over serial (auth)\n");
 }
 
-void cmd_status() {
-  const auto rs = orcsdr::radio::snapshot();
-  std::printf("RTL_SDR_STATUS connected=%d streaming=%d effective_sps=%u frequency_hz=%u driver=rtl_sdr\n",
-              rs.receiver_state >= 2 ? 1 : 0, rs.receiver_state == 2 ? 1 : 0, unsigned(rs.effective_sps),
-              unsigned(rs.applied_hz));
-}
 
 void cmd_freq(const char* arg) {
-  const home_app::Status st = home_app::status();
-  if (!arg) {
-    std::printf("RTL_FREQ_STATUS band=%s frequency_hz=%u mode=%s\n", st.band, unsigned(st.frequency_hz), st.mode);
-    return;
-  }
   if (!authed()) {
     std::printf("RTL_FREQ_ERROR auth_required\n");
     return;
@@ -211,17 +201,8 @@ void cmd_tune(const char* args) {
   std::printf("RTL_TUNE_OK band=%s frequency_hz=%lu\n", band, hz);
 }
 
-void cmd_signal() {
-  const home_app::Status st = home_app::status();
-  std::printf("RTL_SIGNAL_STATUS band=%s frequency_hz=%u signal_dbfs=%.1f\n", st.band, unsigned(st.frequency_hz),
-              static_cast<double>(orcsdr::radio::level_dbfs()));
-}
 
 void cmd_volume(const char* arg) {
-  if (!arg) {
-    std::printf("RTL_VOLUME_STATUS volume=%u\n", unsigned(home_app::status().volume * 32 / 255));
-    return;
-  }
   if (!authed()) {
     std::printf("RTL_VOLUME_ERROR auth_required\n");
     return;
@@ -240,13 +221,6 @@ void cmd_wifi(char* args) {
   if (std::strcmp(args, "LINKLOSS") == 0) {
     wifi_app::simulate_link_loss();
     std::printf("RTL_WIFI_LINKLOSS_OK\n");
-    return;
-  }
-  if (std::strcmp(args, "STATUS") == 0) {
-    const wifi_app::Status w = wifi_app::status();
-    std::printf("RTL_WIFI_STATUS started=%d link_failed=%d connected=%d connecting=%d ssid=%s ip=%s rssi=%d c6=%s stage=%s code=%d saved=%d\n",
-                w.started, w.link_failed, w.connected, w.connecting, w.ssid, w.ip, int(w.rssi), w.c6_version, w.failure_stage,
-                w.failure_code, w.saved);
     return;
   }
   if (std::strcmp(args, "RESULTS") == 0) {
@@ -307,11 +281,6 @@ void cmd_restart(char* args) {
 }
 
 void cmd_sd(char* args) {
-  if (std::strcmp(args, "STATUS") == 0) {
-    const sd_card::Status s = sd_card::status();
-    std::printf("RTL_SD_STATUS attempted=%d mounted=%d total_mb=%llu\n", s.attempted, s.mounted, (unsigned long long)(s.total_bytes >> 20));
-    return;
-  }
   if (std::strcmp(args, "CHECK") == 0) {
     if (!authed()) {
       std::printf("RTL_SD_ERROR auth_required\n");
@@ -513,13 +482,6 @@ void cmd_usb_guard(char* args) {
 }
 
 void cmd_audio(char* args) {
-  if (std::strcmp(args, "STATUS") == 0) {
-    const auto a = audio_service::status();
-    std::printf("RTL_AUDIO_STATUS running=%d muted=%d volume=%u blocks=%u dropped=%u underruns=%u fill=%.2f ppm=%.0f demod_us=%u write_us=%u resample_us=%u\n",
-                a.running, a.muted, unsigned(a.volume), unsigned(a.blocks), unsigned(a.dropped_blocks),
-                unsigned(a.underruns), double(a.buffer_fill), double(a.resample_ppm), unsigned(a.demod_us), unsigned(a.write_us), unsigned(a.resample_us));
-    return;
-  }
   if (std::strncmp(args, "TONE ", 5) == 0) {
     if (!authed()) {
       std::printf("RTL_AUDIO_ERROR auth_required\n");
@@ -537,12 +499,6 @@ void cmd_audio(char* args) {
 }
 
 void cmd_ui(char* args) {
-  if (std::strcmp(args, "STATUS") == 0) {
-    const home_app::Status st = home_app::status();
-    std::printf("RTL_UI_STATUS screen=%s band=%s frequency_hz=%u home_font=1 graphics=1 radio_ui=1 route=m5gfx_scaled\n",
-                home_app::screen_name(), st.band, unsigned(st.frequency_hz));
-    return;
-  }
   if (std::strncmp(args, "TAP ", 4) == 0) {
     if (!authed()) {
       std::printf("RTL_UI_TAP_ERROR auth_required\n");
@@ -580,23 +536,23 @@ void cmd_ui(char* args) {
   }
 }
 
-void cmd_mem() {
-  std::printf("RTL_MEM psram_free=%u psram_largest=%u internal_free=%u internal_largest=%u\n",
-              unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)), unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)),
-              unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)), unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
-  std::printf("RTL_MEM_DMA dma_free=%u dma_largest=%u\n", unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
-              unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)));
-}
 
-void cmd_rx_status() {
-  std::printf("RTL_RX_STATUS max_receivers=%d streaming=%d\n", orcsdr::radio::max_receivers(), orcsdr::radio::receiver_count());
-  for (int i = 0; i < orcsdr::radio::max_receivers(); ++i) {
-    orcsdr::radio::ReceiverInfo r;
-    if (!orcsdr::radio::receiver_info(i, &r)) continue;
-    std::printf("RTL_RX index=%d state=%d frequency_hz=%u sample_rate=%u effective_sps=%u drops=%u usb_path=\"%s\" device=\"%s\"\n",
-                r.index, r.state, unsigned(r.frequency_hz), unsigned(r.sample_rate), unsigned(r.effective_sps), unsigned(r.drops),
-                r.usb_path, r.device);
+
+// Prints a table command's result as JSON, the form the web layer will serve. Read tier only.
+void cmd_json(const char* line) {
+  const orcsdr::commands::Command* cmd = orcsdr::commands::find_serial(line);
+  if (!cmd || cmd->access != orcsdr::commands::Access::read) {
+    std::printf("RTL_JSON_INVALID use RTL_JSON <read-tier command line>, e.g. RTL_JSON RTL_RX STATUS\n");
+    return;
   }
+  static orcsdr::commands::Result result;
+  static char json[2048];
+  if (orcsdr::commands::run(*cmd, {orcsdr::commands::Transport::serial, authed()}, orcsdr::commands::Args{}, result) != orcsdr::commands::Status::ok ||
+      orcsdr::commands::to_json(result, json, sizeof(json)) == 0) {
+    std::printf("RTL_JSON_ERROR\n");
+    return;
+  }
+  std::printf("RTL_JSON %s\n", json);
 }
 
 void handle_line(char* line) {
@@ -612,13 +568,12 @@ void handle_line(char* line) {
     if (authed()) touch_session();
     return;
   }
+  // Read-tier commands live in the shared table (commands.cpp); the web layer calls the same handlers.
+  if (orcsdr::commands::run_serial(line, {orcsdr::commands::Transport::serial, authed()})) return;
+  if (std::strncmp(line, "RTL_JSON ", 9) == 0) return cmd_json(line + 9);
   if (std::strcmp(line, "RTL_HELP") == 0) return cmd_help();
-  if (std::strcmp(line, "RTL_STATUS") == 0) return cmd_status();
-  if (std::strcmp(line, "RTL_FREQ") == 0) return cmd_freq(nullptr);
   if (std::strncmp(line, "RTL_FREQ ", 9) == 0) return cmd_freq(line + 9);
   if (std::strncmp(line, "RTL_TUNE ", 9) == 0) return cmd_tune(line + 9);
-  if (std::strcmp(line, "RTL_SIGNAL") == 0) return cmd_signal();
-  if (std::strcmp(line, "RTL_VOLUME") == 0) return cmd_volume(nullptr);
   if (std::strncmp(line, "RTL_VOLUME ", 11) == 0) return cmd_volume(line + 11);
   if (std::strncmp(line, "RTL_RESTART ", 12) == 0) return cmd_restart(line + 12);
   if (std::strncmp(line, "RTL_SPAN ", 9) == 0) {
@@ -647,8 +602,6 @@ void handle_line(char* line) {
                 home_app::screen_name(), home_app::screen_name(), unsigned(home_app::status().visible_updates));
     return;
   }
-  if (std::strcmp(line, "RTL_MEM STATUS") == 0) return cmd_mem();
-  if (std::strcmp(line, "RTL_RX STATUS") == 0) return cmd_rx_status();
   if (std::strcmp(line, "FT8 SNAP") == 0) {
     if (!authed()) {
       std::printf("ORC_FT8_ERROR auth_required\n");
