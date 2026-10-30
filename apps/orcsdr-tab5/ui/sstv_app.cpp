@@ -466,6 +466,19 @@ void draw(bool static_panel) {
 void touch(int32_t x, int32_t y) { handle(orcsdr::sstv::ui_touch(x, y)); }
 bool save_image(int32_t which) { return queue_for_sd(which); }
 
+bool companion_abort() {
+  if(!active() || !orcsdr::sstv::metrics().receiving)return false;
+  handle({orcsdr::sstv::ActionKind::abort_rx,0});return true;
+}
+bool companion_gain_info(GainInfo* info) { return info && active() && g_hooks.gain_info && g_hooks.gain_info(info); }
+bool companion_sd_ready() { return active() && g_hooks.sd_ready && g_hooks.sd_ready(false); }
+bool companion_gain(int steps) {
+  if(!active() || steps < -10 || steps > 10)return false;
+  GainInfo info{};if(!g_hooks.gain_info || !g_hooks.gain_info(&info) || !info.available)return false;
+  if(!steps)handle({orcsdr::sstv::ActionKind::gain_toggle,0});
+  else for(int i=0;i<std::abs(steps);++i)handle({orcsdr::sstv::ActionKind::gain_step,steps>0?1:-1});
+  return true;
+}
 bool active() { return orcsdr::sstv::ui_active(); }
 uint32_t frequency_hz() { return g_frequency_hz; }
 bool tune_to(uint32_t hz) { return active() && tune_hz(hz); }

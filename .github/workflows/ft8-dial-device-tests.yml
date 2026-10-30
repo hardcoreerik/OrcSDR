@@ -4,12 +4,18 @@ on:
     paths:
       - tools/test_ft8_dial_device.py
       - tests/test_ft8_dial_device.py
+      - tests/sstv_dial_state_test.cpp
+      - apps/orcsdr-tab5/ui/sstv_dial_state.hpp
+      - orcdial/src/sstv_control.hpp
       - .github/workflows/ft8-dial-device-tests.yml
   push:
     branches: [main]
     paths:
       - tools/test_ft8_dial_device.py
       - tests/test_ft8_dial_device.py
+      - tests/sstv_dial_state_test.cpp
+      - apps/orcsdr-tab5/ui/sstv_dial_state.hpp
+      - orcdial/src/sstv_control.hpp
       - .github/workflows/ft8-dial-device-tests.yml
   workflow_dispatch:
 permissions:
@@ -20,3 +26,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: python3 -m unittest discover -s tests -p test_ft8_dial_device.py -v
+
+      - name: SSTV companion state codec
+        run: |
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror tests/sstv_dial_state_test.cpp -o /tmp/sstv-dial-state
+          /tmp/sstv-dial-state

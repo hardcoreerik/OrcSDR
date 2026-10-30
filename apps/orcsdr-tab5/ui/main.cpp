@@ -60,6 +60,9 @@
 #include "sstv_dashboard.hpp"
 #include "sstv_diag.hpp"
 #include "sstv_receiver.hpp"
+#include "sstv_archive.hpp"
+#include "sstv_dial_state.hpp"
+#include "../../../orcdial/src/sstv_control.hpp"
 #include "acars_app.hpp"
 #include "dead_air_app.hpp"
 #include "acars_archive_sd.hpp"
@@ -16607,10 +16610,19 @@ void orcdial_fill_state(orc::Packet& p) {
     p.frequency_hz = orcsdr::sstv_app::frequency_hz();
     p.step_hz = orcsdr::sstv_app::step_hz();
     p.mode = static_cast<uint8_t>(effective_demod(rtl_ui_band));
+    orcsdr::sstv::dial_state(p,orcsdr::sstv::metrics(),orcsdr::sstv_archive::stats());
+    p.flags &= ~orc::sstv_control::kSd;
+    if(orcsdr::sstv_app::companion_sd_ready())p.flags|=orc::sstv_control::kSd;
+    orcsdr::sstv_app::GainInfo gain{};
+    if(orcsdr::sstv_app::companion_gain_info(&gain) && gain.available) {
+      p.flags|=orc::sstv_control::kGainAvailable;
+      if(gain.is_auto)p.flags|=orc::sstv_control::kGainAuto;
+      p.gain_tenth_db=int16_t(gain.tenth_db);
+    }
   }
   p.capabilities |= orc::projection::kFt8V1;
   // rtl_signal_dbfs_smooth is relative dBFS, not a calibrated dBm reading.
-  p.flags = 0;
+  if (id != orc::Dashboard::sstv) p.flags = 0;
 }
 
 void orcdial_reply(orc::Type type, const uint8_t* mac, uint32_t ack = 0, int32_t reason = 0) {
@@ -16636,7 +16648,7 @@ bool orcdial_apply(const orc::Packet& p) {
     // The Dial's keypad: any frequency on Home, or one inside the band of the dashboard on screen.
     if (p.value < 24000 || p.value > 1766000000) return false;
     const uint32_t hz = static_cast<uint32_t>(p.value);
-    if (active == Dash::sstv) return orcsdr::sstv_app::tune_to(hz);   // the SSTV tuner owns its frequency and demodulator
+    if (active == Dash::sstv) return !orcsdr::sstv::metrics().receiving && orcsdr::sstv_app::tune_to(hz);   // the SSTV tuner owns its frequency and demodulator
     if (active == Dash::home) return home_tune_to(hz, true);   // validates against the dongle's own range
     if (active == Dash::fm) {
       if (hz < kRtlFmMinHz || hz > kRtlFmMaxHz) return false;
@@ -16663,11 +16675,17 @@ bool orcdial_apply(const orc::Packet& p) {
     return true;
   }
   if (p.type != orc::Type::semantic_action || p.dashboard != static_cast<uint8_t>(active) ||
-      p.action > static_cast<uint8_t>(Kind::ft8_fine) || p.value < -1000000000 ||
+      p.action > static_cast<uint8_t>(Kind::sstv_gain_auto) || p.value < -1000000000 ||
       p.value > 1000000000) return false;
   const Kind kind = Kind(p.action);
   if (active == Dash::ft8) return orcdial_apply_ft8(p.action, p.value);
   if (active == Dash::sstv) {
+    if (kind == Kind::sstv_save) return p.value==1 && orcsdr::sstv_app::save_image(orcsdr::sstv::metrics().receiving ? -1 : 0);
+    if (kind == Kind::sstv_abort) return p.value==1 && orcsdr::sstv_app::companion_abort();
+    if (kind == Kind::sstv_demod) { if(orcsdr::sstv::metrics().receiving)return false;orcsdr::sstv_app::cycle_demod();return true; }
+    if (kind == Kind::gain) return orcsdr::sstv_app::companion_gain(p.value);
+    if (kind == Kind::sstv_gain_auto) return orcsdr::sstv_app::companion_gain(0);
+    if (kind == Kind::tune && orcsdr::sstv::metrics().receiving) return false;
     if (kind == Kind::tune)   // a Hz offset: the Dial multiplies its detents by the step this device reported
       return orcsdr::sstv_app::tune_to(static_cast<uint32_t>(std::clamp<int64_t>(
           int64_t(orcsdr::sstv_app::frequency_hz()) + p.value, 0, 2000000000)));
