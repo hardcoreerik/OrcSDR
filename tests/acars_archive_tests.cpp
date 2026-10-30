@@ -336,7 +336,7 @@ void test_history_load() {
   // A huge old file is read only from its tail: the first (partial) line is dropped, the newest records survive.
   g_fs = Mem{};
   std::string big;
-  for (unsigned i = 0; i < 2500; ++i) {
+  for (unsigned i = 0; i < 6000; ++i) {
     char line[kLineMax + 2], text[24];
     std::snprintf(text, sizeof(text), "BIG%05u", i);
     const size_t n = format_line(make("N8", "F8", "H1", text, kDay1 + 1, i), line, sizeof(line));
@@ -348,8 +348,8 @@ void test_history_load() {
   reader2.begin(ops(), 0);
   reader2.load_history();
   CHECK(store2.count() == kStoreCapacity);
-  CHECK(store2.query({}, 0, rows, 1, &total) == 1 && std::strcmp(rows[0]->text, "BIG02499") == 0);
-  CHECK(reader2.stats().loaded < 2500);                          // bounded read, not the whole file
+  CHECK(store2.query({}, 0, rows, 1, &total) == 1 && std::strcmp(rows[0]->text, "BIG05999") == 0);
+  CHECK(reader2.stats().loaded < 6000);                          // bounded read, not the whole file
   // A second logger session for the same card appends to the same day file and does not reload what it just wrote.
 }
 

@@ -431,8 +431,43 @@ void test_app_lifecycle() {
 
 }  // namespace
 
+// A squitter and an FMC position report: the list shows the interpreted summary, the detail page shows the headline and decoded
+// lines, and an unknown free-text block keeps the raw text without an invented decode.
+void test_interpretation_is_drawn() {
+  Rig rig;
+  orcsdr::acars::Message sq = make_message("", "02XAEUGKEUG14407N12313WV136975/ARINC");
+  std::snprintf(sq.label, sizeof(sq.label), "SQ");
+  sq.block_id = '?';
+  sq.flight[0] = '\0';
+  rig.model->post_message(sq, 1000, 0);
+  rig.model->post_message(make_message("N55AB", "F63AAS0536#M1BPOSN44397W122192,KNGDM,202750,400,WRUSL,203243,BTG,M57,268051"), 1100, 0);
+  rig.model->service();
+  rig.ui->select_view(View::live);
+  rig.full_draw();
+  CHECK(has_text("44.662N 122.320W"));             // list row summary of the position report
+  CHECK(has_text("Squitter EUG"));
+  CHECK(!has_text("02XAEUGKEUG"));                 // the raw squitter is replaced by its summary in the list
+  CHECK(rig.ui->open_detail(rig.model->snapshot().messages[0].seq, *rig.model));
+  rig.full_draw();
+  CHECK(has_text("FMC POSITION REPORT"));
+  CHECK(has_text("Flight AS0536 (Alaska)"));
+  CHECK(has_text("wind 268/51 kt"));
+  CHECK(has_text("F63AAS0536#M1BPOS"));            // raw text stays on screen next to the interpretation
+  CHECK(!has_text("NOT SUPPLIED"));
+  rig.ui->close_detail();
+  rig.model->post_message(make_message("N66CD", "free text nobody has documented"), 1200, 0);
+  rig.model->service();
+  rig.ui->select_view(View::live);
+  rig.full_draw();
+  CHECK(rig.ui->open_detail(rig.model->snapshot().messages[0].seq, *rig.model));
+  rig.full_draw();
+  CHECK(has_text("free text nobody has documented"));
+  CHECK(!has_text("FMC POSITION REPORT"));
+}
+
 int main() {
   CHECK(screens::self_check());
+  test_interpretation_is_drawn();
   test_every_view_every_state_obeys_header_rules();
   test_shared_header_font_contract();
   test_honest_text();

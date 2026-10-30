@@ -76,7 +76,8 @@ constexpr Rect kAcNote{704, 612, 548, 24};
 // ---- CHANNELS
 constexpr Rect kChList{20, 158, 760, 480};
 constexpr Rect kChRegion{28, 166, 330, 48};
-constexpr Rect ch_row(int i) { return {28, 226 + i * 56, 744, 56}; }
+constexpr int kChRows = 7;
+constexpr Rect ch_row(int i) { return {28, 226 + i * 48, 744, 48}; }   // seven rows end at y=562, above the custom-frequency row (572)
 constexpr Rect kChCustomLabel{28, 572, 100, 52};
 constexpr Rect kChMinus{136, 572, 90, 52};
 constexpr Rect kChPlus{232, 572, 90, 52};

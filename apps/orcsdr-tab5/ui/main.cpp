@@ -5936,13 +5936,16 @@ void sd_get_begin(const char* path_hex) {
     return;
   }
   g_sd_transfer_active.store(true, std::memory_order_release);
-  if (sd_transfer_radio_busy()) {
+  char path[sizeof(g_sd_get.path)];
+  const bool path_ok = decode_hex_text(path_hex, path, sizeof(path)) && sd_put_path_allowed(path);
+  // The ACARS log is only appended to, so reading it while the receiver runs is safe: the read stops at the size seen here.
+  const bool acars_log = path_ok && strncmp(path, "/orcsdr/acars/", 14) == 0 && !strstr(path, "..");
+  if (sd_transfer_radio_busy() && !acars_log) {
     Serial.println("SD_GET_ERROR radio_busy");
     g_sd_transfer_active.store(false, std::memory_order_release);
     return;
   }
-  char path[sizeof(g_sd_get.path)];
-  if (!decode_hex_text(path_hex, path, sizeof(path)) || !sd_put_path_allowed(path)) {
+  if (!path_ok) {
     Serial.println("SD_GET_ERROR invalid_path");
     g_sd_transfer_active.store(false, std::memory_order_release);
     return;
@@ -14503,24 +14506,23 @@ orcsdr::acars_app::Hooks acars_app_hooks() {
 }
 // The ACARS receiver asks for a 240 kS/s stream on the general VHF band, like the SSTV receiver; the radio is only reachable here.
 orcsdr::acars_receiver::Hooks acars_receiver_hooks() {
-  constexpr uint32_t kRate = orcsdr::acars_receiver::kStreamRate;
   orcsdr::acars_receiver::Hooks hooks;
   hooks.device_ready = [] { return rtl_device_ready(); };
-  hooks.tune = [](uint32_t center_hz) {
-    if (!rtl_device_ready() || !esp_rtl_sdr_is_rate_supported(kRate)) return false;
+  hooks.tune = [](uint32_t center_hz, uint32_t rate) {   // 240 kS/s for ACARS, 250 kS/s for a VDL2 channel
+    if (!rtl_device_ready() || !esp_rtl_sdr_is_rate_supported(rate)) return false;
     const uint32_t previous_override = rtl_rate_override_sps.load(std::memory_order_acquire);
-    rtl_rate_override_sps.store(kRate, std::memory_order_release);
+    rtl_rate_override_sps.store(rate, std::memory_order_release);
     const bool streaming = rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
-                           rtl_ui_band == RtlBand::browse && rtl_active_sample_rate_sps.load(std::memory_order_acquire) == kRate;
+                           rtl_ui_band == RtlBand::browse && rtl_active_sample_rate_sps.load(std::memory_order_acquire) == rate;
     const bool accepted = streaming ? request_hot_retune(center_hz) : queue_local_rtl_listen(RtlBand::browse, center_hz, false);
     if (!accepted) rtl_rate_override_sps.store(previous_override, std::memory_order_release);   // a refused request must not strand the rate
     return accepted;
   };
   hooks.release = [] {
-    rtl_rate_override_sps.store(0, std::memory_order_release);
+    const uint32_t owned = rtl_rate_override_sps.exchange(0, std::memory_order_acq_rel);
     // A hot retune keeps the stream's rate: restart once at the normal rate if the stream is still at ours.
     if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
-        rtl_active_sample_rate_sps.load(std::memory_order_acquire) == kRate && rtl_ui_band == RtlBand::browse)
+        rtl_active_sample_rate_sps.load(std::memory_order_acquire) == owned && rtl_ui_band == RtlBand::browse)
       (void)queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz, false);
   };
   hooks.sample_rate = [] { return rtl_active_sample_rate_sps.load(std::memory_order_acquire); };

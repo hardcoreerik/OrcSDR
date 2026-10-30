@@ -70,8 +70,8 @@ Available with the receiver adapter (`acars_receiver`): live reception, a `TUNED
 centre, and UTC receive time when the Tab5 clock is valid (otherwise `+m:ss` since boot).
 
 Not available (shown as such, never simulated): SNR / RSSI / carrier-lock / symbol-timing, channel activity, multi-channel
-reception, SD archive, multi-block reassembly, application-message interpretation, aircraft position,
-ADS-B correlation.
+reception, multi-block reassembly, aircraft position, ADS-B correlation. Application-message interpretation exists
+for a documented set of labels and formats only (`INTERPRETER.md`); everything else is shown as received.
 
 Counters are used for what they are: `sync_candidates` is a count of frame starts, not signal quality; a
 CRC pass is a verified block, not an interpreted message. The LIVE status card counts blocks the UI has
@@ -226,6 +226,6 @@ then deletes them; it passed on a Tab5 with an SD card). The real log gets its f
 - History is RAM-only (48 messages) and lost at power-off.
 - The aircraft view groups by decoded address only; it does not know ICAO ids, positions or flights beyond
   what the block carries.
-- "Message number and flight id" inside block text are decoder-extracted; the UI does not interpret them.
+- "Message number and flight id" inside block text are decoder-extracted; `acars_interpret` reads them again for the detail page.
 - Font widths on the real display are not measured; long values are fitted with an ellipsis using the real
   `textWidth`, which has not been exercised on hardware.

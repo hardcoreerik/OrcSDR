@@ -14,6 +14,7 @@
 #include "acars_core.hpp"
 #include "acars_dashboard_model.hpp"
 #include "acars_receiver.hpp"
+#include "vdl2_test_signal.hpp"
 
 using namespace orcsdr;
 
@@ -231,11 +232,12 @@ FakeRadio g_radio;
 void test_adapter() {
   acars_receiver::Hooks hooks;
   hooks.device_ready = [] { return g_radio.ready; };
-  hooks.tune = [](uint32_t c) {
+  hooks.tune = [](uint32_t c, uint32_t rate) {
     ++g_radio.tune_calls;
     if (!g_radio.accept) return false;
+    assert(rate == 240000u);
     g_radio.center = c;
-    g_radio.rate = 240000;
+    g_radio.rate = rate;
     return true;
   };
   hooks.release = [] { ++g_radio.releases; };
@@ -355,6 +357,132 @@ void test_adapter() {
   std::puts("  adapter: tune, settle, rate guard, gap reset, clock honesty, refusal, unplug, release");
 }
 
+// VDL Mode 2: a channel in 136.725-136.975 MHz asks the radio for a 250 kS/s stream (tune), the channelizer and demodulator
+// take over from the analog front end, and verified frames reach the model as ACARS records or raw hex ("AV"). Synthetic D8PSK
+// IQ from tests/vdl2_test_signal.hpp; this proves the wiring, not off-air performance (tools/vdl2_replay_iq.cpp does that).
+std::vector<uint8_t> vdl2_cu8(const std::vector<uint8_t>& frame_bits, float carrier_hz) {
+  const auto iq = vdl2_test::modulated(frame_bits, 250000, carrier_hz);
+  std::vector<uint8_t> out;
+  out.reserve(iq.size() * 2);
+  auto byte = [](float v) { return uint8_t(std::lround(std::fmax(0.f, std::fmin(255.f, 127.5f + 127.5f * v)))); };
+  for (const auto& s : iq) {
+    out.push_back(byte(s.i));
+    out.push_back(byte(s.q));
+  }
+  return out;
+}
+
+void feed_stream(const std::vector<uint8_t>& cu8) {
+  size_t pos = 0;
+  while (pos < cu8.size()) {
+    const size_t chunk = std::min<size_t>(cu8.size() - pos, 8192);
+    acars_receiver::offer_iq(cu8.data() + pos, chunk, 250000);
+    pos += chunk;
+    g_radio.now += 16;
+  }
+}
+
+void test_vdl2_adapter() {
+  acars_receiver::stop();
+  g_radio = FakeRadio{};
+  acars_receiver::Hooks hooks;
+  hooks.device_ready = [] { return g_radio.ready; };
+  hooks.tune = [](uint32_t c, uint32_t rate) {
+    ++g_radio.tune_calls;
+    g_radio.center = c;
+    g_radio.rate = rate;
+    return true;
+  };
+  hooks.release = [] { ++g_radio.releases; };
+  hooks.sample_rate = [] { return g_radio.rate; };
+  hooks.tuned_center = [] { return g_radio.center; };
+  hooks.now_ms = [] { return g_radio.now; };
+  hooks.utc_epoch = [] { return g_radio.utc; };
+  acars_receiver::install(hooks);
+
+  static acars_ui::Model model;
+  assert(acars_receiver::start(&model));
+  assert(model.set_custom_frequency(136975000u));   // the dashboard asks for the VDL2 channel; the receiver follows it
+  assert(acars_receiver::request_channel(136975000u));
+  assert(g_radio.tune_calls == 1 && g_radio.rate == 250000u && g_radio.center == 136975000u - 62500u);
+  g_radio.now += 1000;                             // past the settle window
+
+  const float carrier = 62500.f + 8.f;             // the channel sits 62.5 kHz above the tuned centre, plus a small offset
+  feed_stream(vdl2_cu8(vdl2_test::make_bits(true), carrier));        // an ACARS information frame
+  feed_stream(vdl2_cu8(vdl2_test::make_bits(false, true), carrier)); // an information frame that is not ACARS
+  feed_stream(vdl2_cu8(vdl2_test::make_bits(false, false), carrier)); // a supervisory frame: counted only
+  acars_receiver::service();
+  model.service();
+  const acars_receiver::Status st = acars_receiver::status();
+  assert(st.vdl2 && st.vdl2_acars == 1 && st.vdl2_raw == 1 && st.vdl2_other == 1);
+  assert(st.msgs_posted == 2 && st.wrong_rate_blocks == 0);
+  const acars_ui::Snapshot& snap = model.snapshot();
+  assert(snap.messages_total == 2);
+  // Newest first: the raw frame, then the ACARS message.
+  const acars_ui::MessageRecord& raw = snap.messages[0];
+  const acars_ui::MessageRecord& acars_msg = snap.messages[1];
+  assert(raw.label[0] == 'A' && raw.label[1] == 'V' && raw.mode == '2' && raw.has_text);
+  assert(std::strncmp(raw.text, "2143658711234567008280AA550102", 30) == 0 && raw.text_length >= 30);
+  assert(std::strcmp(acars_msg.label, "H1") == 0 && acars_msg.frequency_hz == 136975000u);
+  assert(std::strncmp(acars_msg.text, "F63AAS0536DATA", 14) == 0);
+  assert(snap.stats_available && snap.stats.crc_ok == 3);   // three CRC-valid AVLC frames
+  char line[800];
+  acars_receiver::format_status(line, sizeof(line));
+  std::printf("  vdl2 adapter: %s\n", line);
+
+  // Back to an analog channel: it asks for 240 kS/s again and blocks at the VDL2 rate are refused.
+  assert(acars_receiver::request_channel(131550000u));
+  assert(g_radio.rate == 240000u && g_radio.center == 131550000u - 60000u);
+  g_radio.now += 1000;
+  std::vector<uint8_t> quiet(8192, 128);
+  acars_receiver::offer_iq(quiet.data(), quiet.size(), 250000);
+  assert(acars_receiver::status().wrong_rate_blocks == 1 && !acars_receiver::status().vdl2);
+  acars_receiver::stop();
+  std::puts("  vdl2 adapter: 250 kS/s tune, ACARS + raw hex + counted frames, switch back to analog");
+}
+
+// Seen live 2026-10-29: the radio's stream moved to another sample rate behind the receiver's back and it counted wrong-rate blocks
+// for hours while reporting "running". With no good block for a few seconds it must ask for its own tune again.
+void test_stuck_stream_retunes() {
+  acars_receiver::stop();
+  g_radio = FakeRadio{};
+  acars_receiver::Hooks hooks;
+  hooks.device_ready = [] { return g_radio.ready; };
+  hooks.tune = [](uint32_t c, uint32_t rate) {
+    ++g_radio.tune_calls;
+    g_radio.center = c;
+    g_radio.rate = rate;
+    return true;
+  };
+  hooks.release = [] { ++g_radio.releases; };
+  hooks.sample_rate = [] { return g_radio.rate; };
+  hooks.tuned_center = [] { return g_radio.center; };
+  hooks.now_ms = [] { return g_radio.now; };
+  hooks.utc_epoch = [] { return g_radio.utc; };
+  acars_receiver::install(hooks);
+  static acars_ui::Model model;
+  assert(acars_receiver::start(&model));
+  assert(model.set_custom_frequency(136975000u));
+  assert(acars_receiver::request_channel(136975000u));
+  assert(g_radio.tune_calls == 1);
+  g_radio.now += 1000;
+  std::vector<uint8_t> quiet(8192, 128);
+  for (int i = 0; i < 4; ++i) {                    // a healthy stream: no extra tune
+    acars_receiver::offer_iq(quiet.data(), quiet.size(), 250000);
+    g_radio.now += 500;
+    acars_receiver::service();
+  }
+  assert(g_radio.tune_calls == 1);
+  for (int i = 0; i < 12; ++i) {                   // the stream moves to 2.4 MS/s: 6 s of wrong-rate blocks
+    acars_receiver::offer_iq(quiet.data(), quiet.size(), 2400000);
+    g_radio.now += 500;
+    acars_receiver::service();
+  }
+  assert(g_radio.tune_calls >= 2 && g_radio.tune_calls <= 4);
+  acars_receiver::stop();
+  std::puts("  stuck stream: wrong-rate blocks without a good block ask for the tune again");
+}
+
 }  // namespace
 
 int main() {
@@ -365,6 +493,8 @@ int main() {
   test_noise_only_makes_nothing();
   test_two_blocks_not_merged();
   test_adapter();
+  test_vdl2_adapter();
+  test_stuck_stream_retunes();
   std::puts("acars_receiver_tests: all passed");
   return 0;
 }
