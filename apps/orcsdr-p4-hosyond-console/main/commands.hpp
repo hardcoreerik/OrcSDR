@@ -68,6 +68,9 @@ const Command* find_path(const char* path);
 // Runs a command with the access check done once, here. A refused command leaves `out.status` set and no records.
 Status run(const Command& cmd, const Caller& caller, const Args& args, Result& out);
 
+// One shared result buffer for the serial task, allocated once in PSRAM (null if that fails). Not for concurrent callers: the
+// web layer will keep its own per-request buffers in PSRAM.
+Result* serial_result();
 // Serial front end: if `line` is a table command, runs it, prints the legacy lines and returns true.
 bool run_serial(const char* line, const Caller& caller);
 // Prints a result in the legacy serial form: "LABEL name=value name=value" per record.

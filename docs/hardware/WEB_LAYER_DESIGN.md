@@ -131,3 +131,19 @@ None of these has been run.
 3. **TLS.** Signed requests make it unnecessary for integrity but it would hide read-tier data; `esp_https_server` has a RAM cost I have not measured.
 4. **Admin over HTTP never** (proposed), or allow Wi-Fi setup through a one-time on-device confirmation.
 5. **Who owns the page code**: the other session's `platform/web` build, served unchanged, with a small auth shim added.
+
+## 8. First slice: implemented and tested (2026-10-30, COM31 = Waveshare ESP32-P4-WIFI6-DB)
+
+Owner approved the design with the proposed defaults (web key derived from the pairing key, read tier open on the LAN, admin serial-only, no TLS yet).
+
+- `main/commands.hpp` / `commands.cpp`: command table, one access check in `run()`, serial renderer, JSON renderer. Ten read-tier commands moved in:
+  `RTL_STATUS`, `RTL_FREQ`, `RTL_SIGNAL`, `RTL_VOLUME`, `RTL_MEM STATUS`, `RTL_RX STATUS`, `RTL_WIFI STATUS`, `RTL_SD STATUS`, `RTL_AUDIO STATUS`, `RTL_UI STATUS`.
+  The old handlers were deleted from `serial_cli.cpp`; set-value forms (`RTL_FREQ <HZ>`, `RTL_VOLUME <n>`) stay there. `RTL_JSON <line>` prints a table command as JSON.
+- **Serial transcript regression:** 21 lines captured before the change and after, from the same board with a Blog V4 attached: identical
+  structure (labels, field names, field order, quoting), values masked. Number formats held (`signal_dbfs` 1 decimal, `fill` 2, `ppm` 0).
+- **JSON:** all ten commands parse as valid JSON; `RTL_JSON RTL_TUNE` is refused (not read tier).
+- **Health check** (`tools/p4_health.py --port COM31`): PASS (draw 10.6 ms, frame period 50 ms, IDLE1 52.5 %, audio 591 blocks in 2 s, 0 dropped).
+- **Memory finding and fix:** the first version kept two static result buffers and a 2 KB JSON buffer in internal RAM. Internal free fell from
+  162,955 to 157,483 B and the largest block from 86,016 to 77,824 B. The result and JSON buffers now live in PSRAM; after that, internal free is
+  162,747 B and the largest block 86,016 B (baseline 162,955 / 86,016).
+- Not done: the web server component, signed-request authentication, control-tier commands, any HTTP route.

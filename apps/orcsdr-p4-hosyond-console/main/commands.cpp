@@ -306,11 +306,21 @@ Status run(const Command& cmd, const Caller& caller, const Args& args, Result& o
   return out.status = cmd.run(caller, args, out);
 }
 
+Result* serial_result() {
+  // The result lives in PSRAM: nothing about it needs internal RAM, and internal RAM is the scarce resource here.
+  static Result* result = static_cast<Result*>(heap_caps_calloc(1, sizeof(Result), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  return result;
+}
+
 bool run_serial(const char* line, const Caller& caller) {
   const Command* cmd = find_serial(line);
   if (!cmd) return false;
-  static Result result;  // the serial task is the only caller; keeps ~2 KB off its stack
-  if (run(*cmd, caller, Args{}, result) == Status::ok) print_serial(result);
+  Result* result = serial_result();
+  if (!result) {
+    std::printf("RTL_COMMAND_ERROR no_memory\n");
+    return true;
+  }
+  if (run(*cmd, caller, Args{}, *result) == Status::ok) print_serial(*result);
   return true;
 }
 

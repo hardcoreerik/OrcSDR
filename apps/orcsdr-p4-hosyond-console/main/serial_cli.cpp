@@ -545,10 +545,12 @@ void cmd_json(const char* line) {
     std::printf("RTL_JSON_INVALID use RTL_JSON <read-tier command line>, e.g. RTL_JSON RTL_RX STATUS\n");
     return;
   }
-  static orcsdr::commands::Result result;
-  static char json[2048];
-  if (orcsdr::commands::run(*cmd, {orcsdr::commands::Transport::serial, authed()}, orcsdr::commands::Args{}, result) != orcsdr::commands::Status::ok ||
-      orcsdr::commands::to_json(result, json, sizeof(json)) == 0) {
+  constexpr size_t kJsonBytes = 2048;
+  static char* json = static_cast<char*>(heap_caps_malloc(kJsonBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  orcsdr::commands::Result* result = orcsdr::commands::serial_result();
+  if (!json || !result ||
+      orcsdr::commands::run(*cmd, {orcsdr::commands::Transport::serial, authed()}, orcsdr::commands::Args{}, *result) != orcsdr::commands::Status::ok ||
+      orcsdr::commands::to_json(*result, json, kJsonBytes) == 0) {
     std::printf("RTL_JSON_ERROR\n");
     return;
   }
