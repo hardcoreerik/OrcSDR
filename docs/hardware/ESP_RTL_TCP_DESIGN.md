@@ -83,9 +83,12 @@ Header bytes on connect (netcat); each command code changes the right receiver s
 drops and no receiver drops; disconnect and reconnect; second client waits; listen-only ignores tuning; memory before/after with a client attached; interoperability with at least two
 real clients that speak rtl_tcp (a GUI SDR application and a GNU Radio osmosdr source); throughput per board at 960 kS/s and 2.4 MS/s with measured drops.
 
-## 7. Decisions for the owner
+## 7. Decisions (owner approved the proposed defaults, 2026-10-30)
 
-1. Own repository `esp-rtl-tcp` from the start, or inside OrcSDR until it settles?
-2. Listen-only by default (proposed) or control allowed once enabled?
-3. Is the remote virtual receiver (client half) in scope for the first version?
-4. Licence of `esp-rtl-tcp`: AGPL-3.0 like the driver (proposed).
+1. **Repository:** `esp-rtl-tcp` lives inside OrcSDR until it settles, then moves to its own repository like `esp-rtl-sdr`. It is written with no dependency on OrcSDR so the move is a copy.
+2. **Control:** listen-only by default. Tuning commands are ignored (and counted) unless control is explicitly enabled.
+3. **Scope of the first version:** the server half only. The client half (virtual remote receiver) comes later.
+4. **Licence:** AGPL-3.0, like the driver.
+5. **Credit:** the idea is credited in the commit and merge message only. No code or docs name anyone, and no third-party code is used or merged.
+
+**Not started.** The owner said not to write code until told. This work also stays off the critical path of the web-layer work.
