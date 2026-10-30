@@ -45,4 +45,12 @@ const orcsdr_board_profile_t g_board_waveshare_p4_wifi6_db = {
     .ioexp_addr = {0, 0},
     .ioexp_wifi_en = ORCSDR_IOEXP_NONE, .ioexp_lcd_en = ORCSDR_IOEXP_NONE,
     .ioexp_touch_en = ORCSDR_IOEXP_NONE, .ioexp_speaker_en = ORCSDR_IOEXP_NONE,
+
+    .codec_i2c_port = ORCSDR_PIN_NONE, .codec_i2c_sda = ORCSDR_PIN_NONE, .codec_i2c_scl = ORCSDR_PIN_NONE,
+    .has_radio = false, .radio_part = NULL,
+    .radio_sclk = ORCSDR_PIN_NONE, .radio_mosi = ORCSDR_PIN_NONE, .radio_miso = ORCSDR_PIN_NONE,
+    .radio_cs = ORCSDR_PIN_NONE, .radio_busy = ORCSDR_PIN_NONE, .radio_spi_hz = 0,
+    .radio_rst = ORCSDR_IOEXP_NONE, .radio_dio1 = ORCSDR_IOEXP_NONE, .radio_ant_sw = ORCSDR_IOEXP_NONE,
+    .ioexp_sd_power = ORCSDR_IOEXP_NONE, .ioexp_screen_rst = ORCSDR_IOEXP_NONE, .ioexp_touch_rst = ORCSDR_IOEXP_NONE,
+    .ioexp_usb_phy_en = ORCSDR_IOEXP_NONE, .ioexp_eth_rst = ORCSDR_IOEXP_NONE,
 };

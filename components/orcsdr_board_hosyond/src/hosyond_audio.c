@@ -10,6 +10,7 @@
  */
 #include <string.h>
 #include "driver/i2s_std.h"
+#include "driver/i2c_master.h"
 #include "esp_codec_dev.h"
 #include "esp_codec_dev_defaults.h"
 #include "es8311_codec.h"
@@ -29,6 +30,7 @@ static const char *TAG = "HOSYOND_AUDIO";
 
 static i2s_chan_handle_t s_tx;
 static esp_codec_dev_handle_t s_dev;
+static i2c_master_bus_handle_t s_codec_bus;
 static bool s_running;
 
 esp_err_t hosyond_audio_start(uint32_t sample_rate_hz)
@@ -36,9 +38,36 @@ esp_err_t hosyond_audio_start(uint32_t sample_rate_hz)
     if (s_running) {
         return ESP_OK;
     }
+    const orcsdr_board_profile_t *board = orcsdr_board_profile();
     i2c_master_bus_handle_t bus = hosyond_board_i2c();
+    if (!bus && board->codec_i2c_sda < 0) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (board->codec_i2c_sda >= 0 && board->codec_i2c_scl >= 0) {
+        /* LilyGO puts the ES8311 on a second I2C bus. Other boards leave these at ORCSDR_PIN_NONE. */
+        i2c_master_bus_config_t codec_bus = {
+            .i2c_port = board->codec_i2c_port,
+            .sda_io_num = board->codec_i2c_sda,
+            .scl_io_num = board->codec_i2c_scl,
+            .clk_source = I2C_CLK_SRC_DEFAULT,
+            .glitch_ignore_cnt = 7,
+            .flags.enable_internal_pullup = true,
+        };
+        esp_err_t bus_err = i2c_new_master_bus(&codec_bus, &s_codec_bus);
+        if (bus_err != ESP_OK) {
+            ESP_LOGE(TAG, "codec I2C bus failed: %s", esp_err_to_name(bus_err));
+            return bus_err;
+        }
+        bus = s_codec_bus;
+        ESP_LOGI(TAG, "codec I2C on port %d SDA %d SCL %d", board->codec_i2c_port, board->codec_i2c_sda,
+                 board->codec_i2c_scl);
+    }
     if (!bus) {
         return ESP_ERR_INVALID_STATE;
+    }
+    if (board->ioexp_speaker_en.dev >= 0) {
+        ESP_LOGW(TAG, "speaker power is expander %d pin %d and is not driven; audio may stay silent",
+                 board->ioexp_speaker_en.dev, board->ioexp_speaker_en.pin);
     }
 
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);

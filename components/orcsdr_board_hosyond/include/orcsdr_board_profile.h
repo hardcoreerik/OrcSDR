@@ -81,6 +81,23 @@ typedef struct {
     /* I2C GPIO expanders on the main I2C bus (7-bit addresses, 0 = none) and the lines this board puts on them. */
     unsigned char ioexp_addr[2];
     orcsdr_ioexp_line_t ioexp_wifi_en, ioexp_lcd_en, ioexp_touch_en, ioexp_speaker_en;
+
+    /* Codec I2C, when it is not the panel bus. codec_i2c_sda == ORCSDR_PIN_NONE means the codec
+     * shares i2c_sda/i2c_scl (the Waveshare boards). */
+    int codec_i2c_port, codec_i2c_sda, codec_i2c_scl;
+
+    /* Onboard packet radio. Ignored unless has_radio. Reset, DIO1 and the antenna switch are
+     * expander lines (ORCSDR_IOEXP_NONE when that line is a GPIO instead, or absent).
+     * The console does not drive the radio; the pins are here so a later driver does not invent them. */
+    bool has_radio;
+    const char *radio_part;     /* "SX1262", "LR2021", or NULL */
+    int radio_sclk, radio_mosi, radio_miso, radio_cs, radio_busy;
+    int radio_spi_hz;
+    orcsdr_ioexp_line_t radio_rst, radio_dio1, radio_ant_sw;
+
+    /* More expander lines. ORCSDR_IOEXP_NONE when the board does not have that line. */
+    orcsdr_ioexp_line_t ioexp_sd_power, ioexp_screen_rst, ioexp_touch_rst;
+    orcsdr_ioexp_line_t ioexp_usb_phy_en, ioexp_eth_rst;
 } orcsdr_board_profile_t;
 
 /* The profile this firmware was built for (Kconfig ORCSDR_BOARD). */

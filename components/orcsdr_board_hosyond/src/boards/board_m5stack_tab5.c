@@ -46,4 +46,12 @@ const orcsdr_board_profile_t g_board_m5stack_tab5 = {
     .ioexp_addr = {0x43, 0x44},
     .ioexp_wifi_en = {1, 0}, .ioexp_lcd_en = {0, 4},
     .ioexp_touch_en = {0, 5}, .ioexp_speaker_en = {0, 1},
+
+    .codec_i2c_port = ORCSDR_PIN_NONE, .codec_i2c_sda = ORCSDR_PIN_NONE, .codec_i2c_scl = ORCSDR_PIN_NONE,
+    .has_radio = false, .radio_part = NULL,
+    .radio_sclk = ORCSDR_PIN_NONE, .radio_mosi = ORCSDR_PIN_NONE, .radio_miso = ORCSDR_PIN_NONE,
+    .radio_cs = ORCSDR_PIN_NONE, .radio_busy = ORCSDR_PIN_NONE, .radio_spi_hz = 0,
+    .radio_rst = ORCSDR_IOEXP_NONE, .radio_dio1 = ORCSDR_IOEXP_NONE, .radio_ant_sw = ORCSDR_IOEXP_NONE,
+    .ioexp_sd_power = ORCSDR_IOEXP_NONE, .ioexp_screen_rst = ORCSDR_IOEXP_NONE, .ioexp_touch_rst = ORCSDR_IOEXP_NONE,
+    .ioexp_usb_phy_en = ORCSDR_IOEXP_NONE, .ioexp_eth_rst = ORCSDR_IOEXP_NONE,
 };

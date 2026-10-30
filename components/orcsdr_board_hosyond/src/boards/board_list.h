@@ -7,3 +7,4 @@ extern const orcsdr_board_profile_t g_board_waveshare_p4_module_dev_kit;
 extern const orcsdr_board_profile_t g_board_waveshare_p4_wifi6_poe_eth;
 extern const orcsdr_board_profile_t g_board_waveshare_p4_wifi6_db;
 extern const orcsdr_board_profile_t g_board_m5stack_tab5;
+extern const orcsdr_board_profile_t g_board_lilygo_t_display_p4_amoled;

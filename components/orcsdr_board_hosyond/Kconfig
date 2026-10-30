@@ -21,6 +21,9 @@ menu "OrcSDR board"
     config ORCSDR_BOARD_M5STACK_TAB5
         bool "M5Stack Tab5 (documented only, no display backend yet)"
 
+    config ORCSDR_BOARD_LILYGO_T_DISPLAY_P4_AMOLED
+        bool "LilyGO T-Display-P4 AMOLED + SX1262 (documented only, no display backend yet)"
+
     endchoice
 
 endmenu

@@ -36,9 +36,11 @@ Status levels, never mixed:
 | Waveshare ESP32-P4-WIFI6-DB (probably the COM29 board) | documented-only; I2C codec and USB host observed once | headless runs; panel untested | **ESP32-C5**: embedded image is C6-only, Wi-Fi down | via 4-pin header, an RTL-SDR streamed | power switch GPIO45 (low = on), no card tested | none |
 | Waveshare ESP32-P4-WIFI6-POE-ETH | documented-only | not run | pins documented, same as dev kit | USB-A present; VBUS control unverified | slot present, no power-switch pin | IP101GRI present; no driver wired in |
 | M5Stack Tab5 | documented-only | **no display backend** | pins confirmed by `apps/orcsdr-tab5` | via expander line, not driven | slot present | none |
+| LilyGO T-Display-P4 V1.0 AMOLED + SX1262 | documented-only | **no RM69A10 backend**; a GT9895 (0x5D) probe is logged and refused | C6 SDIO pins match the dev kit; enable is XL9535 IO14, not driven | not claimed (PHY power is an expander line, VBUS unverified) | slot present; power is XL9535 IO15, not driven | IP101 present; reset is XL9535 IO5; no driver |
 
 "Works" for the first row means what the earlier bring-up recorded in `docs/HOSYOND_7IN_DSI_P4.md` and the health
-check this session (Home draw 12.9 ms, receiver streaming, audio flowing). Nothing in the other two rows has run.
+check this session (Home draw 12.9 ms, receiver streaming, audio flowing). The other rows have not been run as a
+console, apart from the single WIFI6-DB observations named in that row.
 
 ## Sources and discrepancies
 
@@ -96,7 +98,8 @@ tests, so everything in it is documentary. Effects on these profiles:
   (screen reset IO2, touch reset IO3, touch int IO4, USB PHY power IO10, C6 enable IO14, SD power IO15, radio reset
   IO16, radio DIO1 IO17), SDIO 14-19 as on Waveshare, IP101 RMII pins as on Waveshare, HI8561 touch at 0x68, needs
   ESP-IDF >= 5.5.4. The expander is how most control lines are reached, so the profile type's expander fields matter.
-  No LilyGO profile is added yet: the AMOLED variant is a different panel (RM69A10 + GT9895) and the board is not here.
+  The AMOLED assembly (RM69A10 + GT9895) now has a documented-only profile, `lilygo-t-display-p4-amoled`, for the
+  SX1262 unit. The TFT assembly (HI8561) is still not a profile. Neither panel has a display backend.
 - No profile was enabled by default because of this research; the default is still the Module-DEV-KIT.
 
 ## Evidence from boards on the bench (read-only)
@@ -124,19 +127,20 @@ the board have not been read.
 - **WIFI6-POE-ETH**: no Ethernet driver in the app; USB-A VBUS control, DSI panel behaviour and C6 firmware version
   are unverified.
 - **Every board**: GNSS, LoRa, IMU, RTC, camera and battery gauge are not used by the console.
-- **LilyGO T-Display-P4** (arriving): no profile yet. Facts gathered, all unverified: ESP32-P4 with 16 MB flash and
-  32 MB PSRAM; two screens (4.05" TFT 540x1168 via HI8561, 4.1" AMOLED 568x1232 via RM69A10 with GT9895 touch);
-  ESP32-C6-MINI-1U; SX1262 or LR2021 LoRa on SPI; ES8311 audio; XL9535 expander (also switches the LoRa antenna
-  path: 1 = internal, 0 = external MMCX1); microSD; Ethernet; L76K GNSS; PCF8563 RTC; ICM20948 IMU; BQ27220 gauge.
-  There are two hardware folders (`v1`, `v2`) in the vendor driver repo; the pin header could not be read this
-  session (the repo is a submodule and the fetch failed). It needs two display backends (HI8561, RM69A10) like the Tab5.
+- **LilyGO T-Display-P4 AMOLED + SX1262**: profile `lilygo-t-display-p4-amoled` is documented-only
+  (`board_lilygo_t_display_p4_amoled.c`, overlay `sdkconfig.board-lilygo-tdisplay-p4-amoled`). Pins are the vendor
+  header at `a47cf73e`: panel I2C 7/8, codec I2C 20/21, I2S WS9 DOUT10, SX1262 SPI SCLK2 MOSI3 MISO4 CS24 BUSY6
+  at 10 MHz with reset/DIO1/antenna-switch on the XL9535. The 568x1232 RM69A10 timings are recorded in that file
+  and are not programmed. A probe that sees GT9895 at 0x5D logs the match and stays headless. Expander outputs
+  are not driven. The 4.05" TFT assembly is not this profile.
 
 ## Which boards are easiest
 
 1. Waveshare Module-DEV-KIT: done.
 2. Waveshare WIFI6-POE-ETH: same pins and same DSI connector family as the dev kit. First step is a bench
    boot with the Hosyond 7" panel: if the display, touch and audio come up, promote the profile for those groups.
-3. M5Stack Tab5 and LilyGO T-Display-P4: each needs new display backends, so they come after the above.
+3. M5Stack Tab5 and the LilyGO TFT assembly: each still needs a display backend. The AMOLED LilyGO profile
+   exists and is documented-only; its backend is the same class of work (native DSI, not the TC358762 bridge).
 
 ## Add a board
 
@@ -164,7 +168,7 @@ idf.py -B build554-console -D IDF_TARGET=esp32p4 -D SDKCONFIG=build554-console/s
 ```
 
 Another board profile uses an overlay file next to `sdkconfig.defaults` (`sdkconfig.board-wifi6-poe-eth`,
-`sdkconfig.board-wifi6-db`, `sdkconfig.board-m5stack-tab5`). Use a separate build directory so it does not disturb your default build:
+`sdkconfig.board-wifi6-db`, `sdkconfig.board-m5stack-tab5`, `sdkconfig.board-lilygo-tdisplay-p4-amoled`). Use a separate build directory so it does not disturb your default build:
 
 ```powershell
 idf.py -B build-wifi6-poe-eth -D IDF_TARGET=esp32p4 -D SDKCONFIG=build-wifi6-poe-eth/sdkconfig `
@@ -240,3 +244,6 @@ Not yet tried / unknown:
 - Ethernet pins added to the profile type; Waveshare profiles carry the OrcNode-verified RMII map.
 - Added `sdkconfig.silicon-v3` (second image for v3.x silicon); WIFI6 overlay sets active-low C6 reset.
 - Added the Waveshare ESP32-P4-WIFI6-DB profile (ESP32-C5) and `wifi_coprocessor`; the C6 image and update are refused on any other chip.
+- Added the LilyGO T-Display-P4 AMOLED + SX1262 profile (documented-only). The profile type gained the codec I2C
+  bus, the onboard radio pins, and the expander lines that board uses for C6 enable, speaker power, SD power,
+  screen/touch reset, USB PHY power and Ethernet reset. A GT9895 answer is logged and does not select a panel.

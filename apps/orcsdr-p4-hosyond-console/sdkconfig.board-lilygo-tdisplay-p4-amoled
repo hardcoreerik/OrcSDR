@@ -1,0 +1,10 @@
+# LilyGO T-Display-P4 V1.0 AMOLED (RM69A10 + GT9895) with the SX1262 radio.
+# Documented-only. Do not flash until the silkscreen says AMOLED and esptool flash_id
+# has been read: ESP-IDF 5.5 images are either silicon < v3.0 or >= v3.0, never both.
+# If the chip is v3.x, list sdkconfig.silicon-v3 LAST.
+#
+# SDIO pins match sdkconfig.defaults (CLK 18 CMD 19 D0-D3 14-17) and the vendor header.
+# The C6 enable is XL9535 IO14, not a GPIO. defaults set ESP-Hosted reset to GPIO54,
+# which on this board is a 2x8 header pin. The profile leaves c6_reset at -1 so boot
+# warns instead of calling that a pin mismatch. Do not start Wi-Fi until IO14 is driven.
+CONFIG_ORCSDR_BOARD_LILYGO_T_DISPLAY_P4_AMOLED=y

@@ -16,6 +16,7 @@ static const orcsdr_board_profile_t *const k_boards[] = {
     &g_board_waveshare_p4_wifi6_poe_eth,
     &g_board_waveshare_p4_wifi6_db,
     &g_board_m5stack_tab5,
+    &g_board_lilygo_t_display_p4_amoled,
 };
 
 bool orcsdr_board_c6_image_applies(void)
@@ -26,7 +27,9 @@ bool orcsdr_board_c6_image_applies(void)
 
 const orcsdr_board_profile_t *orcsdr_board_profile(void)
 {
-#if defined(CONFIG_ORCSDR_BOARD_M5STACK_TAB5)
+#if defined(CONFIG_ORCSDR_BOARD_LILYGO_T_DISPLAY_P4_AMOLED)
+    return &g_board_lilygo_t_display_p4_amoled;
+#elif defined(CONFIG_ORCSDR_BOARD_M5STACK_TAB5)
     return &g_board_m5stack_tab5;
 #elif defined(CONFIG_ORCSDR_BOARD_WAVESHARE_P4_WIFI6_DB)
     return &g_board_waveshare_p4_wifi6_db;
@@ -61,13 +64,24 @@ void orcsdr_board_profile_log(void)
         ESP_LOGW(TAG, "this board's pins are not bench-verified with this firmware; source: %s", b->source);
     }
     if (b->unsupported) ESP_LOGW(TAG, "unsupported here: %s", b->unsupported);
+    if (b->has_radio) {
+        ESP_LOGI(TAG, "onboard radio: %s SPI SCLK %d MOSI %d MISO %d CS %d BUSY %d at %d Hz; not driven",
+                 b->radio_part ? b->radio_part : "unnamed", b->radio_sclk, b->radio_mosi, b->radio_miso,
+                 b->radio_cs, b->radio_busy, b->radio_spi_hz);
+    }
     if (b->has_hosted_c6 && !orcsdr_board_c6_image_applies()) {
         ESP_LOGW(TAG, "Wi-Fi coprocessor is %s: the embedded ESP-Hosted image is for the ESP32-C6, so Wi-Fi stays down "
                  "until an ESP-Hosted slave image for this chip is flashed to it; coprocessor update is disabled",
                  b->wifi_coprocessor ? b->wifi_coprocessor : "unknown");
     }
 #if defined(CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CLK) && defined(CONFIG_ESP_HOSTED_HOST_RESET_GPIO)
-    /* The ESP-Hosted pins live in sdkconfig; a profile that disagrees means the wrong board was selected. */
+    /* The ESP-Hosted pins live in sdkconfig; a profile that disagrees means the wrong board was selected.
+     * A board whose C6 enable is an expander line leaves c6_reset at -1: the reset GPIO is then not that
+     * enable, and wiggling it does not power the coprocessor. */
+    if (b->has_hosted_c6 && b->c6_reset < 0 && b->ioexp_wifi_en.dev >= 0) {
+        ESP_LOGW(TAG, "C6 enable is expander %d pin %d; ESP-Hosted reset GPIO %d is not that line",
+                 b->ioexp_wifi_en.dev, b->ioexp_wifi_en.pin, CONFIG_ESP_HOSTED_HOST_RESET_GPIO);
+    }
     if (b->has_hosted_c6 &&
         (b->c6_sdio_clk != CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CLK || b->c6_sdio_cmd != CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CMD ||
          b->c6_sdio_d0 != CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D0 || b->c6_sdio_d1 != CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D1 ||
@@ -90,7 +104,7 @@ const orcsdr_display_profile_t *orcsdr_display_detect(i2c_master_bus_handle_t bu
     unsigned char seen[16] = {0};
     size_t n = 0;
     /* Only the addresses panels and their helpers are known to use: scanning all 112 would add seconds to boot. */
-    static const unsigned char k_probe[] = {0x14, 0x15, 0x18, 0x2A, 0x38, 0x41, 0x45, 0x48, 0x5D};
+    static const unsigned char k_probe[] = {0x14, 0x15, 0x18, 0x20, 0x2A, 0x38, 0x41, 0x45, 0x48, 0x5D};
     for (size_t p = 0; p < sizeof(k_probe) && n < 15; ++p) {
         const int addr = k_probe[p];
         /* The first transfer after power-up often fails (see the ATTINY notes), so try twice. */
@@ -111,6 +125,17 @@ const orcsdr_display_profile_t *orcsdr_display_detect(i2c_master_bus_handle_t bu
         if (all) {
             ESP_LOGI(TAG, "display detected: %s (%dx%d)", k_displays[d].name, k_displays[d].width, k_displays[d].height);
             return &k_displays[d];
+        }
+    }
+    /* Documented panels are logged and then refused. Returning one would send the Hosyond
+     * TC358762 backend at a panel that does not have that bridge. */
+    for (size_t i = 0; i < n; ++i) {
+        if (seen[i] == 0x5D) {
+            ESP_LOGW(TAG, "0x5D answered: that is the GT9895 address on a LilyGO T-Display-P4 AMOLED "
+                     "(RM69A10, 568x1232, 2-lane 1000 Mbps, DPI 60 MHz). No display backend; staying headless");
+        }
+        if (seen[i] == 0x20) {
+            ESP_LOGI(TAG, "0x20 answered: XL9535 address on the LilyGO T-Display-P4. Expander outputs are not driven");
         }
     }
     return NULL;
