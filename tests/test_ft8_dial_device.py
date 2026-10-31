@@ -114,6 +114,14 @@ class DeliveryVerdictTests(unittest.TestCase):
         result.record_slots.clear()
         self.assertEqual(result.result()[0], 'INCONCLUSIVE')
 
+    def test_one_missing_mapping_does_not_claim_transport_failure(self):
+        result = self.observation()
+        self.decode(result)
+        result.record_slots[11] = '1793378370'
+        result.add('DIAL', 'FT8_RX type=17 record=12')
+        result.add('DIAL', 'FT8_RX type=18 record=12')
+        self.assertEqual(result.result()[0], 'INCONCLUSIVE')
+
 
 class StatusPollingTests(unittest.TestCase):
     def test_partial_serial_reads_are_not_treated_as_complete_status(self):
@@ -233,6 +241,40 @@ class FailureReportingTests(unittest.TestCase):
                 helper.Tab5.authenticate(endpoint)
             self.assertNotIn('private-', str(failure.exception))
             self.assertNotIn('ab' * 32, str(failure.exception))
+
+    def test_sstv_cleanup_mutes_dial_even_when_tablet_stop_fails(self):
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / 'run'
+            dial_lines, tablet_lines, commands = [], [], []
+            def dial_write(data):
+                command = data.decode().strip();commands.append(command)
+                if command == 'ORCDIAL_SOUND ON':raise RuntimeError('failure after enabling alerts')
+                if command == 'ORCDIAL_STATUS':dial_lines.append(b'ORCDIAL_STATUS link=LINKED pairing=0 pending=0\n')
+                elif command.startswith('ORCDIAL_SOUND'):dial_lines.append(b'ORCDIAL_SOUND enabled=0\n')
+            def tablet_write(data):
+                command = data.decode().strip()
+                if command == 'SSTV SELFTEST STOP':raise RuntimeError('STOP failed')
+                reply = {'SSTV OPEN':'SSTV_OK dashboard=1', 'SSTV STATUS':'SSTV_STATUS active=1',
+                         'SSTV DETECT AUTO':'SSTV_OK detection=0', 'SSTV TUNE 14230000':'SSTV_OK'}[command]
+                tablet_lines.append((reply+'\n').encode())
+            port = lambda lines, write: SimpleNamespace(write=write, close=Mock(),
+                                                        readline=lambda: lines.pop(0) if lines else b'')
+            tab = SimpleNamespace(serial=port(tablet_lines,tablet_write), authenticate=Mock(), close=Mock())
+            dial = SimpleNamespace(s=port(dial_lines,dial_write))
+            ticks = iter(i*.05 for i in range(10000))
+            argv = ['sstv', '--tab5-port','COM17','--dial-port','COM14','--key','unused',
+                    '--frequency','14230000','--out',str(output)]
+            with patch.object(sys,'argv',argv), patch.object(device.time,'monotonic',side_effect=lambda:next(ticks)), \
+                    patch.dict(sys.modules,{'help_media':SimpleNamespace(Tab5=Mock(return_value=tab)),
+                                            'tab5_ft8':SimpleNamespace(Tab5=Mock(return_value=dial))}), \
+                    contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
+                runpy.run_path(str(TOOL.with_name('test_sstv_dial_device.py')),run_name='__main__')
+            report=json.loads((output/'device-result.json').read_text())
+            self.assertIn('ORCDIAL_SOUND ON',commands)
+            self.assertIn('ORCDIAL_SOUND MUTE',commands)
+            self.assertIn('ORCDIAL_SOUND OFF',commands)
+            self.assertEqual(report['overall'],'FAIL')
+            self.assertTrue(any('SSTV SELFTEST STOP' in error for error in report['cleanup_errors']))
 
 
 if __name__ == '__main__':

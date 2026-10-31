@@ -82,6 +82,8 @@ class Observation:
         if not self.record_slots:
             return 'INCONCLUSIVE', 'Receiver firmware did not supply record-to-slot correlation evidence'
         if not any(self.slots.get(self.record_slots.get(record), 0) > 0 for record in self.complete):
+            if any(record not in self.record_slots for record in self.complete):
+                return 'INCONCLUSIVE', 'A complete Dial record is missing its receiver mapping diagnostic'
             return 'FAIL', 'Complete Dial records did not match a measured receiver decode slot'
         return 'PASS', 'Fresh receiver decodes and new matching Dial summary/text records observed'
 

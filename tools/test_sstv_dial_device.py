@@ -83,8 +83,13 @@ except Exception as e:
  result.update(overall='FAIL',error=str(e));note('ERROR '+str(e))
 finally:
  if p is not None and d is not None:
-  try:send('TAB5','SSTV SELFTEST STOP');send('DIAL','ORCDIAL_SOUND MUTE');send('DIAL','ORCDIAL_SOUND OFF');pump(.3)
-  except Exception:pass
+  for who,command in [('TAB5','SSTV SELFTEST STOP'),('DIAL','ORCDIAL_SOUND MUTE'),('DIAL','ORCDIAL_SOUND OFF')]:
+   try:send(who,command)
+   except Exception as error:
+    result['overall']='FAIL';result.setdefault('cleanup_errors',[]).append(who+' '+command+': '+str(error))
+  try:pump(.3)
+  except Exception as error:
+   result['overall']='FAIL';result.setdefault('cleanup_errors',[]).append('serial drain: '+str(error))
  for close in ([p.close] if p is not None else [])+([d.s.close] if d is not None else []):
   try:close()
   except Exception as error:result.update(overall='FAIL',cleanup_error=str(error))

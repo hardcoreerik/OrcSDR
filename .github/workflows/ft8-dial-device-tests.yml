@@ -10,6 +10,8 @@ on:
       - tests/sstv_dial_state_test.cpp
       - apps/orcsdr-tab5/ui/sstv_dial_state.hpp
       - apps/orcsdr-tab5/ui/sstv_receiver.hpp
+      - apps/orcsdr-tab5/ui/sstv_archive.hpp
+      - orcdial/src/control/protocol.hpp
       - orcdial/src/sstv_control.hpp
       - .github/workflows/ft8-dial-device-tests.yml
   push:
@@ -23,6 +25,8 @@ on:
       - tests/sstv_dial_state_test.cpp
       - apps/orcsdr-tab5/ui/sstv_dial_state.hpp
       - apps/orcsdr-tab5/ui/sstv_receiver.hpp
+      - apps/orcsdr-tab5/ui/sstv_archive.hpp
+      - orcdial/src/control/protocol.hpp
       - orcdial/src/sstv_control.hpp
       - .github/workflows/ft8-dial-device-tests.yml
   workflow_dispatch:
