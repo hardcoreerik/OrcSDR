@@ -226,3 +226,19 @@ component; (e) P4 boards with a display; (f) Tab5, with approval and tests.
   an Ethernet cable to COM29 and tell me when. The Blog V4L dongle used earlier should stay on COM29's USB header. Order: finish step one on the Wi-Fi board first (COM31), then the Ethernet driver (board-support
   branch), then the UI test on COM29.
 - **Branches:** board support lives on `claude/p4-board-support`, the web layer on `claude/p4-web-ui` (which contains the board work). Board fixes go on the board branch and are cherry-picked up. Nothing is merged to `main`.
+
+## 12. Step one run on COM31 (Waveshare ESP32-P4-WIFI6-DB), 2026-10-30
+
+Firmware: `claude/p4-web-ui`, build `build-web-ui` (bundle from `F:\Ai\_orcsdr_web_ui\m5gfx-web-mirror-67e535e`, copied unmodified from the other repository at tip `67e535e`), flashed to COM31. Blog V4 streaming at 2.4 MS/s.
+
+- **Serving:** `/`, `/m5`, `/m5/app.js`, `/m5/core.wasm`, `/m5/splash.jpg` return 200 with the right MIME types and `Content-Encoding: gzip` where expected, byte counts equal to the source files (1,934 / 18,199 / 393,406 / 137,898).
+- **Data routes:** `receivers`, `fm`, `report`, `tuner`, `time` return valid JSON in the page's shapes (receiver 0 present, state 3, 28 gain steps, 24 kHz to 1.766 GHz range for the V4); `spectrum` returns a 532-byte row.
+  First flash: the row was empty because the Home screen's `take_bins` consumes the "new data" flag. Fixed with a non-consuming `peek_bins` (board-support `a8dc860b`); after that the row is live (94.900 to 97.300 MHz around 96.1 MHz, sequence advancing).
+  The spectrum levels are the board's relative intensity (not calibrated dBFS), so the shape is right and the level is not.
+- **In a browser** (the built-in browser pane): the OrcSDR Home screen renders and updates, with the live spectrum and waterfall, the receiver "#0 Blog V4", node `orcsdr-p4-d7bc55`. The page polls the spectrum several times a second plus receivers, fm, report
+  and tuner; all 200. One console error, a 405: very likely the page's `POST /api/v1/time` (it sets the node clock from the browser because the board's clock is unsynced); POST is not built.
+- **Load with the page open:** receiver drops 0, radio task 45.5 % of core 1 (45.0 % without), `httpd` 2 % of core 0, internal free 145,451 B (largest 69,632 B).
+- **Sink fix (`636991a6`) under cycling:** RF Lab, ACARS and LoRa opened and closed 12 times each, 72 of 72 screen changes acknowledged, no crash, watchdog, quarantine or removal-failure message; the receiver restarted and streamed again after each rate change.
+- **Finding (not caused by the sink fix):** after a restart, opening the **LoRa** screen once takes about 16.7 MB of PSRAM and 12.8 KB of internal RAM that are not returned when it closes (PSRAM free 31.4 MB to 14.1 MB, internal 145.8 KB to 131.8 KB). More cycles
+  do not grow it further. RF Lab and ACARS return nearly all of theirs (about 0.3 and 0.5 MB stay held). The LoRa screen is `main/screen_lora.cpp`.
+- **Not done / not tested:** every route the page uses beyond the six above (decode, channel, wifi/scan, sd, controls, POST), the IQ WebSocket, audio, the decoders and RF Lab inside the browser, a second browser at once, sustained hours, and the P4-ETH (needs the Ethernet driver).
