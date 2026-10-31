@@ -94,6 +94,9 @@ void set_gain_manual(int rx, int tenth_db);
 void set_rtl_agc(int rx, bool enable);
 void set_bias_tee(int rx, bool enable);
 bool take_bins(int rx, uint8_t out[256]);
+// Copies the newest bins without marking them taken (take_bins is the Home screen's "new since I last looked" read and would be starved
+// by a second reader). Returns false until the first FFT of this receiver has been published. `*sequence` changes with every new FFT.
+bool peek_bins(int rx, uint8_t out[256], uint32_t* sequence);
 
 // What every IQ consumer receives. `data` (CU8) is valid only during the call.
 struct IqBlock {

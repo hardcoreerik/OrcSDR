@@ -650,4 +650,17 @@ bool take_bins(int rx, uint8_t out[256]) {
   return fresh;
 }
 bool take_bins(uint8_t out[256]) { return take_bins(0, out); }
+bool peek_bins(int rx, uint8_t out[256], uint32_t* sequence) {
+  Rx* r = rx_at(rx);
+  if (!r) return false;
+  bool any = false;
+  portENTER_CRITICAL(&r->bands_lock);
+  if (r->band_seq != 0) {
+    memcpy(out, r->bands, sizeof(r->bands));
+    if (sequence) *sequence = r->band_seq;
+    any = true;
+  }
+  portEXIT_CRITICAL(&r->bands_lock);
+  return any;
+}
 }  // namespace orcsdr::radio
