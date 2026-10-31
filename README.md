@@ -51,7 +51,7 @@ Current release images include the matching ESP-Hosted C6 firmware used by the T
 - **LoRa:** passively monitor LoRa and Meshtastic traffic with spectrum, packet, node, traffic, map, and RF-health views.
 - **POCSAG:** receive pager traffic and inspect bounded RAM-only CAPCODE/message state. A persistent searchable archive is not implemented.
 - **Satellite:** opens generic Browse near 137.5 MHz; no dedicated satellite decoder or dashboard is implemented.
-- **RF Lab:** make live RF measurements, inspect receiver behavior, record IQ data, and open full-screen visualization tools.
+- **RF Lab:** make live RF measurements, inspect receiver behavior, and record IQ data, with optional full-screen signal views.
 - **2.4 GHz Wi-Fi:** survey nearby access points, channels, signal strength, and advertised network security using the Tab5 wireless co-processor.
 - **Settings:** manage audio, display, Wi-Fi, storage, data packs, firmware information, and device updates.
 
@@ -97,12 +97,6 @@ The ADS-B dashboard receives Mode-S and ADS-B broadcasts on 1090 MHz and divides
 - **Target:** expands one selected aircraft with identity and registration data, altitude, speed, heading, climb or descent rate, range, bearing, latitude, longitude, last-seen status, and signal level. Installed aviation data can also provide a nearby ATC listening shortcut.
 - **Stats:** charts signal strength, message rate, and Mode-S activity; summarizes aircraft, message, sample-rate, and USB/DSP-drop counters; and reports the availability of FAA aircraft data, aviation frequencies, the offline map, and ATC audio.
 - **Settings:** sets the receiver location and radar range, shows the active RF-gain state, and manages FAA aircraft data, airport and frequency data, the offline map pack, and manual ATC listening.
-
-## Visualization modes
-
-![Six OrcSDR visualization modes: spectrum and FFT, phosphor persistence, 3D spectrum history, polar and phase, channel occupancy, and channelized tiles](docs/images/orcsdr-visualization-modes.jpg)
-
-*A selection of OrcSDR's full-screen RF visualization modes.*
 
 ## Community hardware
 
