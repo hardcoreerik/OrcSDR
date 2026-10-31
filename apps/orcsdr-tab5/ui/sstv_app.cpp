@@ -466,6 +466,19 @@ void draw(bool static_panel) {
 void touch(int32_t x, int32_t y) { handle(orcsdr::sstv::ui_touch(x, y)); }
 bool save_image(int32_t which) { return queue_for_sd(which); }
 
+bool companion_abort() {
+  if(!active() || !orcsdr::sstv::metrics().receiving)return false;
+  handle({orcsdr::sstv::ActionKind::abort_rx,0});return true;
+}
+bool companion_gain_info(GainInfo* info) { return info && active() && g_hooks.gain_info && g_hooks.gain_info(info); }
+bool companion_sd_ready() { return active() && g_hooks.sd_ready && g_hooks.sd_ready(false); }
+bool companion_gain(int steps) {
+  if(!active() || steps < -10 || steps > 10)return false;
+  GainInfo info{};if(!g_hooks.gain_info || !g_hooks.gain_info(&info) || !info.available)return false;
+  if(!steps)handle({orcsdr::sstv::ActionKind::gain_toggle,0});
+  else for(int i=0;i<std::abs(steps);++i)handle({orcsdr::sstv::ActionKind::gain_step,steps>0?1:-1});
+  return true;
+}
 bool active() { return orcsdr::sstv::ui_active(); }
 uint32_t frequency_hz() { return g_frequency_hz; }
 bool tune_to(uint32_t hz) { return active() && tune_hz(hz); }
@@ -494,6 +507,13 @@ void cycle_if_bandwidth() {
 }
 bool tune_command(const char* args, char* reply, size_t size) {
   if (!active()) { std::snprintf(reply, size, "dashboard_not_open use=SSTV OPEN"); return false; }
+  if (!std::strncmp(args,"DETECT ",7)) {
+    if(orcsdr::sstv::metrics().receiving){std::snprintf(reply,size,"abort_before_detection_change");return false;}
+    if(!std::strcmp(args+7,"AUTO"))handle({orcsdr::sstv::ActionKind::set_detection,int(Detection::automatic)});
+    else if(!std::strcmp(args+7,"VIS"))handle({orcsdr::sstv::ActionKind::set_detection,int(Detection::vis_only)});
+    else {std::snprintf(reply,size,"use_DETECT_AUTO_or_VIS");return false;}
+    std::snprintf(reply,size,"detection=%u",unsigned(g_settings.detection));return true;
+  }
   if (std::strncmp(args, "REC ", 4) == 0) {
     namespace cap = orcsdr::sstv_capture;
     const char* v = args + 4;
@@ -574,9 +594,9 @@ bool tune_command(const char* args, char* reply, size_t size) {
   return false;
 }
 void tune_summary(char* out, size_t size) {
-  std::snprintf(out, size, "frequency_hz=%lu demod=\"%s\" step_hz=%lu if_hz=%lu if_default=%d rails=%d", static_cast<unsigned long>(g_frequency_hz),
+  std::snprintf(out, size, "frequency_hz=%lu demod=\"%s\" step_hz=%lu if_hz=%lu if_default=%d rails=%d detection=%u manual_mode=%u", static_cast<unsigned long>(g_frequency_hz),
                 demod_label(), static_cast<unsigned long>(tn::step_hz(g_tune.step_index)),
-                static_cast<unsigned long>(g_hooks.if_bandwidth ? g_hooks.if_bandwidth() : kIfWidths[g_tune.if_index]), kIfWidths[g_tune.if_index] == 0 ? 1 : 0, g_tune.rails ? 1 : 0);
+                static_cast<unsigned long>(g_hooks.if_bandwidth ? g_hooks.if_bandwidth() : kIfWidths[g_tune.if_index]), kIfWidths[g_tune.if_index] == 0 ? 1 : 0, g_tune.rails ? 1 : 0,unsigned(g_settings.detection),unsigned(g_settings.manual_mode));
 }
 void cycle_demod() {
   if (!active()) return;

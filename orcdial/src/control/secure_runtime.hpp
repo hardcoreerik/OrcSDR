@@ -93,10 +93,14 @@ class Runtime {
   bool action(Action a,uint32_t value=0) {if(!actions_)return false;Event e{};e.kind=1;e.action=a;e.value=value;return xQueueSend(actions_,&e,0)==pdTRUE;}
   bool send(const uint8_t* p,size_t n) {
     if(!input_||n>128||!p)return false;
-    Event e{};e.kind=2;e.size=uint8_t(n);std::memcpy(e.data,p,n);return xQueueSend(input_,&e,0)==pdTRUE;
+    Event e{};e.kind=2;e.value=generation_.load(std::memory_order_acquire);e.size=uint8_t(n);std::memcpy(e.data,p,n);return xQueueSend(input_,&e,0)==pdTRUE;
   }
   struct Control {uint8_t size=0;uint8_t data[128]{};uint32_t generation=0;};
   bool take(Control& c) {while(output_&&xQueueReceive(output_,&c,0)==pdTRUE)if(c.generation==generation_.load(std::memory_order_acquire))return true;return false;}
+  bool observation_ready() const {
+    return input_ && actions_ && uxQueueMessagesWaiting(input_) == 0 && uxQueueMessagesWaiting(actions_) == 0;
+  }
+  uint32_t generation() const { return generation_.load(std::memory_order_acquire); }
   Status status() const {portENTER_CRITICAL(&lock_);Status s=status_;portEXIT_CRITICAL(&lock_);return s;}
   // Smallest amount of the worker's stack that has ever been unused, in bytes (0 before the task exists). Printed by RTL_MEM STATUS so the
   // stack can be sized from a measurement; nothing feeds it back automatically.
@@ -178,7 +182,7 @@ class Runtime {
             case Action::boot:session.boot(e.value!=0);break;}
           assembly.reset();
         }else if(enabled_.load(std::memory_order_relaxed)) {
-          if(e.kind==2)session.send_control(e.data,e.size,time);
+          if(e.kind==2){if(e.value==generation_.load(std::memory_order_acquire))session.send_control(e.data,e.size,time);}
           else {
             if(!assembly.active())std::memcpy(assembly_mac,e.mac,6);
             if(equal(assembly_mac,e.mac,6)) {Message m{};if(assembly.push(e.data,64,time,m))session.receive(e.mac,m,time);}

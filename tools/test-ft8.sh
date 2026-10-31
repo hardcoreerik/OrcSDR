@@ -50,6 +50,15 @@ run_suite() {
     "$build_dir/${name}_sanitized"
 }
 
+# OrcDial v4 FT8 preview wire format: no real radio/link required.
+run_suite ft8_dial_delivery_tests \
+  tests/ft8_dial_delivery_tests.cpp \
+  apps/orcsdr-tab5/ui/ft8_model.cpp
+
+run_suite ft8_dial_preview_tests \
+  tests/ft8_dial_preview_tests.cpp \
+  apps/orcsdr-tab5/ui/ft8_model.cpp
+
 run_suite ft8_mode_tests \
   tests/ft8_mode_tests.cpp \
   apps/orcsdr-tab5/ui/ft8_mode.cpp
