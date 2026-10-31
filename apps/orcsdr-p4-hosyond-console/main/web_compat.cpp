@@ -155,11 +155,13 @@ size_t spectrum(char* out, size_t cap, int rx) {
   static uint8_t last[orcsdr::radio::kMaxReceivers][256];
   static bool have[orcsdr::radio::kMaxReceivers];
   static uint32_t seq[orcsdr::radio::kMaxReceivers];
+  // peek, not take: the on-device Home screen consumes the "new data" flag, which would starve this reader.
   uint8_t fresh[256];
-  if (orcsdr::radio::take_bins(rx, fresh)) {
+  uint32_t fft_seq = 0;
+  if (orcsdr::radio::peek_bins(rx, fresh, &fft_seq)) {
     std::memcpy(last[rx], fresh, sizeof(fresh));
     have[rx] = true;
-    ++seq[rx];
+    seq[rx] = fft_seq;
   }
   orcsdr::radio::ReceiverInfo ri;
   const bool live = orcsdr::radio::receiver_info(rx, &ri) && ri.state == 2 && have[rx];
