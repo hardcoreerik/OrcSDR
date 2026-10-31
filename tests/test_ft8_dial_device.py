@@ -33,6 +33,26 @@ class DeliveryVerdictTests(unittest.TestCase):
     def test_quiet_band_is_inconclusive_not_failure(self):
         self.assertEqual(self.observation().result()[0], 'INCONCLUSIVE')
 
+    def test_late_decode_and_delivery_cannot_change_measured_window(self):
+        result = self.observation()
+        result.deadline = 10
+        with patch.object(device.time, 'monotonic', return_value=11):
+            self.decode(result)
+        self.assertEqual(result.result()[0], 'INCONCLUSIVE')
+        self.assertEqual(result.slots, {})
+        self.assertEqual(result.complete, set())
+
+    def test_late_text_cannot_complete_a_record(self):
+        result = self.observation()
+        result.deadline = 10
+        with patch.object(device.time, 'monotonic', return_value=9):
+            result.add('TAB5', 'ORC_FT8_RT slot=1 decodes=1')
+            result.add('TAB5', 'ORC_FT8_DIAL_RECORD record=11 slot=1')
+            result.add('DIAL', 'FT8_RX type=17 record=11')
+        with patch.object(device.time, 'monotonic', return_value=10):
+            result.add('DIAL', 'FT8_RX type=18 record=11')
+        self.assertEqual(result.result()[0], 'FAIL')
+
     def test_repeated_old_card_cannot_pass_live_test(self):
         result = self.observation()
         self.decode(result, record=10)
@@ -185,6 +205,23 @@ class FailureReportingTests(unittest.TestCase):
             self.assertEqual(json.loads((output / 'report.json').read_text())['overall'], 'FAIL')
             self.assertTrue((output / 'serial.log').exists())
 
+    def test_serial_close_failure_does_not_hide_original_failure_or_report(self):
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / 'run'
+            ports = [SimpleNamespace(s=Mock(), authenticate=Mock(side_effect=RuntimeError('auth failed'))),
+                     SimpleNamespace(s=Mock())]
+            ports[0].s.close.side_effect=OSError('close failed')
+            fake=SimpleNamespace(Tab5=Mock(side_effect=ports),find_key=lambda path:'ab'*32)
+            with patch.object(sys,'argv',self.argv(output)), \
+                    patch.object(device.subprocess,'check_output',return_value='test-head'), \
+                    patch.dict(sys.modules,{'tab5_ft8':fake,'tab5_ft8_shot':SimpleNamespace(snap_png=Mock())}), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(device.main(),1)
+            report=json.loads((output/'report.json').read_text())
+            self.assertEqual(report['error'],'auth failed')
+            self.assertIn('close failed',report['cleanup_errors'][0])
+            ports[1].s.close.assert_called_once()
+
     def test_authentication_echoes_never_reach_console_or_report(self):
         auth_spec = importlib.util.spec_from_file_location('auth_control', TOOL.with_name('tab5_ft8.py'))
         auth = importlib.util.module_from_spec(auth_spec)
@@ -216,8 +253,9 @@ class FailureReportingTests(unittest.TestCase):
     def test_sstv_second_port_failure_closes_first_and_reports(self):
         with tempfile.TemporaryDirectory() as temp:
             output = Path(temp) / 'run'
+            key = Path(temp) / 'key'; key.write_text('ab' * 32)
             first = SimpleNamespace(close=Mock())
-            argv = ['sstv', '--tab5-port', 'COM17', '--dial-port', 'COM14', '--key', 'unused',
+            argv = ['sstv', '--tab5-port', 'COM17', '--dial-port', 'COM14', '--key', str(key),
                     '--frequency', '14230000', '--out', str(output)]
             with patch.object(sys, 'argv', argv), \
                     patch.dict(sys.modules, {'help_media': SimpleNamespace(Tab5=Mock(return_value=first)),
@@ -242,39 +280,17 @@ class FailureReportingTests(unittest.TestCase):
             self.assertNotIn('private-', str(failure.exception))
             self.assertNotIn('ab' * 32, str(failure.exception))
 
-    def test_sstv_cleanup_mutes_dial_even_when_tablet_stop_fails(self):
+    def test_existing_key_mode_does_not_create_key_or_send_pair(self):
+        helper_spec = importlib.util.spec_from_file_location('existing_key_auth', TOOL.with_name('help_media.py'))
+        helper = importlib.util.module_from_spec(helper_spec)
+        helper_spec.loader.exec_module(helper)
         with tempfile.TemporaryDirectory() as temp:
-            output = Path(temp) / 'run'
-            dial_lines, tablet_lines, commands = [], [], []
-            def dial_write(data):
-                command = data.decode().strip();commands.append(command)
-                if command == 'ORCDIAL_SOUND ON':raise RuntimeError('failure after enabling alerts')
-                if command == 'ORCDIAL_STATUS':dial_lines.append(b'ORCDIAL_STATUS link=LINKED pairing=0 pending=0\n')
-                elif command.startswith('ORCDIAL_SOUND'):dial_lines.append(b'ORCDIAL_SOUND enabled=0\n')
-            def tablet_write(data):
-                command = data.decode().strip()
-                if command == 'SSTV SELFTEST STOP':raise RuntimeError('STOP failed')
-                reply = {'SSTV OPEN':'SSTV_OK dashboard=1', 'SSTV STATUS':'SSTV_STATUS active=1',
-                         'SSTV DETECT AUTO':'SSTV_OK detection=0', 'SSTV TUNE 14230000':'SSTV_OK'}[command]
-                tablet_lines.append((reply+'\n').encode())
-            port = lambda lines, write: SimpleNamespace(write=write, close=Mock(),
-                                                        readline=lambda: lines.pop(0) if lines else b'')
-            tab = SimpleNamespace(serial=port(tablet_lines,tablet_write), authenticate=Mock(), close=Mock())
-            dial = SimpleNamespace(s=port(dial_lines,dial_write))
-            ticks = iter(i*.05 for i in range(10000))
-            argv = ['sstv', '--tab5-port','COM17','--dial-port','COM14','--key','unused',
-                    '--frequency','14230000','--out',str(output)]
-            with patch.object(sys,'argv',argv), patch.object(device.time,'monotonic',side_effect=lambda:next(ticks)), \
-                    patch.dict(sys.modules,{'help_media':SimpleNamespace(Tab5=Mock(return_value=tab)),
-                                            'tab5_ft8':SimpleNamespace(Tab5=Mock(return_value=dial))}), \
-                    contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
-                runpy.run_path(str(TOOL.with_name('test_sstv_dial_device.py')),run_name='__main__')
-            report=json.loads((output/'device-result.json').read_text())
-            self.assertIn('ORCDIAL_SOUND ON',commands)
-            self.assertIn('ORCDIAL_SOUND MUTE',commands)
-            self.assertIn('ORCDIAL_SOUND OFF',commands)
-            self.assertEqual(report['overall'],'FAIL')
-            self.assertTrue(any('SSTV SELFTEST STOP' in error for error in report['cleanup_errors']))
+            key_path=Path(temp)/'missing.key'
+            endpoint=SimpleNamespace(key_path=key_path,send=Mock())
+            with self.assertRaises(FileNotFoundError):
+                helper.Tab5.authenticate(endpoint,create_key=False)
+            self.assertFalse(key_path.exists());endpoint.send.assert_not_called()
+
 
 
 if __name__ == '__main__':

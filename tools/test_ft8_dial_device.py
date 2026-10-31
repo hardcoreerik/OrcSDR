@@ -24,8 +24,9 @@ def newer(candidate, previous):
 
 class Observation:
     """Only judge new records inside the measured window, not a cached station."""
-    def __init__(self, baseline=0):
+    def __init__(self, baseline=0, deadline=None):
         self.baseline = baseline
+        self.deadline = deadline
         self.receiver = []
         self.dial = []
         self.slots = {}
@@ -35,6 +36,8 @@ class Observation:
         self.errors = []
 
     def add(self, device, line):
+        if self.deadline is not None and time.monotonic() >= self.deadline:
+            return
         f = fields(line)
         if device == 'TAB5' and line.startswith('ORC_FT8_STATUS '):
             self.receiver.append(f)
@@ -233,18 +236,17 @@ def main():
             if args.png:
                 snap_png(tab5, key, str(output / 'before.png'), tries=1)
             rig.pump(2)  # establish cached-record high water before measuring new delivery
-            observation = Observation(rig.last_record)
-            rig.observation = observation
             start = time.monotonic()
+            observation = Observation(rig.last_record, start + args.seconds)
+            rig.observation = observation
             while time.monotonic() - start < args.seconds:
                 for device, command in [('TAB5', 'FT8 STATUS'), ('TAB5', 'RTL_ORCDIAL_STATUS'),
                                         ('TAB5', 'RTL_WIFI_C6_STATUS'), ('DIAL', 'ORCDIAL_STATUS')]:
                     rig.send(device, command)
                 rig.pump(min(3, args.seconds - (time.monotonic() - start)))
+            rig.observation = None  # post-window diagnostics must not change the verdict evidence
             rig.query('TAB5', 'FT8 STATUS', 'ORC_FT8_STATUS ')
             rig.linked()
-            rig.pump(3)  # allow the final decoded slot its bounded metadata retry interval
-            rig.observation = None
             result, reason = observation.result()
             report.update(overall=result, reason=reason, elapsed_s=round(time.monotonic() - start, 2),
                           baseline_record=observation.baseline, complete_record_ids=sorted(observation.complete),
@@ -277,7 +279,11 @@ def main():
                 except (Exception, SystemExit) as error:
                     report['cleanup'] = 'Link recovery not confirmed: ' + str(error)
         for device in devices:
-            device.s.close()
+            try:
+                device.s.close()
+            except Exception as error:
+                report['overall'] = 'FAIL'
+                report.setdefault('cleanup_errors', []).append('serial close: ' + str(error))
         report['artifacts'] = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                                for p in output.iterdir() if p.is_file()}
         (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')

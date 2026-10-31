@@ -91,11 +91,13 @@ class Tab5:
                 return line
         raise TimeoutError(f"Timed out waiting for {prefixes}")
 
-    def authenticate(self) -> None:
+    def authenticate(self, *, create_key: bool = True) -> None:
         self.key_path.parent.mkdir(parents=True, exist_ok=True)
         if self.key_path.exists():
             key = bytes.fromhex(self.key_path.read_text(encoding="ascii").strip())
         else:
+            if not create_key:
+                raise FileNotFoundError("An existing serial authorization key file is required")
             key = secrets.token_bytes(32)
             self.key_path.write_text(key.hex(), encoding="ascii")
         if len(key) != 32:

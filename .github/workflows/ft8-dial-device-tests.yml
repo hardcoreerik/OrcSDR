@@ -4,6 +4,7 @@ on:
     paths:
       - tools/test_ft8_dial_device.py
       - tests/test_ft8_dial_device.py
+      - tests/test_sstv_dial_bench.py
       - tools/test_sstv_dial_device.py
       - tools/tab5_ft8.py
       - tools/help_media.py
@@ -19,6 +20,7 @@ on:
     paths:
       - tools/test_ft8_dial_device.py
       - tests/test_ft8_dial_device.py
+      - tests/test_sstv_dial_bench.py
       - tools/test_sstv_dial_device.py
       - tools/tab5_ft8.py
       - tools/help_media.py
@@ -38,6 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: python3 -m unittest discover -s tests -p test_ft8_dial_device.py -v
+      - run: python3 -m unittest discover -s tests -p test_sstv_dial_bench.py -v
 
       - name: SSTV companion state codec
         run: |

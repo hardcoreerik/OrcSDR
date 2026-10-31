@@ -21,6 +21,10 @@ a measured slot with actual decodes. Older firmware without this diagnostic
 returns INCONCLUSIVE when correlation cannot be proved. Earlier recorded runs
 used the prior runner; they have not been repeated under this stricter check.
 The receiver store being full does not prevent detecting fresh slot decodes.
+The measurement has a strict monotonic deadline: receiver slots, record mappings
+and Dial packets read at or after it cannot change the verdict. Final status
+queries are diagnostics only. Serial-close failures are recorded without
+suppressing `report.json` or closing the remaining ports.
 
 `--png` uses the existing hash/length-checked `FT8 SNAP` helper before and after
 observation, then checks that FT8/IQ is still active. It never uses the SD capture

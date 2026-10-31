@@ -20354,6 +20354,11 @@ void process_command(char* command) {
 #if ORCSDR_ORCDIAL
   if(!strcmp(command,"RTL_ORCDIAL_STATUS")||!strcmp(command,"RTL_ORCDIAL_PROBE")) {
     const auto state=orcdial_secure.status();
+    Serial.print("RTL_ORCDIAL_IDENTITY self=");
+    for (const auto byte : state.identity) Serial.printf("%02x", unsigned(byte));
+    Serial.print(" peer=");
+    for (const auto byte : state.peer_identity) Serial.printf("%02x", unsigned(byte));
+    Serial.println();
     Serial.printf("RTL_ORCDIAL_STATUS bridge=%d trust=%d connection=%s boot=%d failure=%s protocol=4\n",orcdial_transport_ready,state.trusted,orc::secure::state_name(state.state),state.boot_connect,orcdial_memory_blocked?"low_memory":orc::secure::failure_name(state.failure));
     if(authenticated && state.state==orc::secure::State::verify)Serial.printf("RTL_ORCDIAL_PAIR_CODE %06lu\n",(unsigned long)state.code);
     return;

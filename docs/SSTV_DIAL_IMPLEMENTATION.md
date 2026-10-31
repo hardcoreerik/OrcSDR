@@ -49,6 +49,16 @@ This opens SSTV, selects automatic detection, retunes to the explicitly supplied
 frequency, enables Dial alerts, injects internal Robot36 at speed 2, checks new
 receive progress/completion, verifies retune protection and confirms an SD save.
 It requires an SD card and paired devices. Output must be a new directory.
+The supplied key must already exist; this bench cannot generate a key or pair
+an unpaired tablet. Before any control command it checks reciprocal full public
+companion identities from `RTL_ORCDIAL_STATUS` and `ORCDIAL_STATUS`. Firmware
+without these identity diagnostics is rejected. The Dial addition is delivered
+separately from the already published 0.2.0-beta.1 release.
+Save verification requires both confirmation responses, the exact action ACK,
+and a new saved filename for the received session after existing archive jobs
+drain. A cumulative save counter alone cannot pass. Cleanup checks the tablet
+STOP reply and the Dial's actual muted/off fields independently; missing or
+incorrect replies turn the run into FAIL and are retained in `cleanup_errors`.
 It writes a log and JSON result, exits nonzero on failure, stops injection and
 leaves sound muted/off. It does not flash/reset hardware or transmit RF.
 It changes the detection/frequency settings; it does not restore the prior band.
