@@ -47,6 +47,22 @@
     "bytes": 1100,
     "sha256": "b9b825d939666a21f155e029cdb3ad33416974b94bdb3464c92c0e2b49b4e050"
   },
+  "README.md": {
+    "bytes": 4488,
+    "sha256": "81761c60931f9267ac7e1c7c62a74e921af0f8a48f44804503851f5e8be1d104"
+  },
+  "restart-reconnect-settled.log": {
+    "bytes": 1794,
+    "sha256": "d6cce59eb4b74beffe108e5b2ae583299c21c5d871879119e3dc501d950209b9"
+  },
+  "restart-reconnect-start.log": {
+    "bytes": 1249,
+    "sha256": "7efff62c420c789a0014271d8137d095fcc969a2059191bf47e99dad9a03b082"
+  },
+  "restart-reconnect.log": {
+    "bytes": 2218,
+    "sha256": "c550d0837f5fbca8581cced783f390e33dc8116fcbd178aead1b44bb45a876dc"
+  },
   "restored-rate-busy-check.log": {
     "bytes": 1314,
     "sha256": "2cc1f0f9689a0d7d7c7b3695afae22aac97e58e4aa6433d25b8dea970ff5ba7b"

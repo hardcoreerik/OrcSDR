@@ -61,3 +61,14 @@ gain implementation and the separate USB HAL crash fix remain open. COM17 and
 COM8 were not flashed. TinySA output was acknowledged OFF and paused after the
 matrix. This evidence validates the center correction in the tested fixture;
 it is not release-wide acceptance or superiority over the PC reference.
+
+## Restart/reconnect follow-up
+
+The user reconnected the XTR and accidentally pressed restart. This qualifies
+restart/reconnect, not uninterrupted hotplug. After boot the driver identified
+E4000 while idle with requested offset cleared, as specified. Starting reception
+reapplied the application's default ON request. Settled status reports 100 MHz
+IQ center, 97.96 MHz physical LO, 2.04 MHz hardware correction at 2.4 MS/s.
+Two streaming samples advanced bytes from 38,371,328 to 48,824,320 with zero
+reported overruns/drops. No RF tone was generated during this check. Pure
+hotplug remains unclosed. The tinySA remains OFF and paused.
