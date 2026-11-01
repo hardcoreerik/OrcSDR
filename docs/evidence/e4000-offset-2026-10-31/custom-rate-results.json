@@ -1,0 +1,22 @@
+[
+  {
+    "pass_test": true,
+    "rate": 960000,
+    "tone_hz": 99946.2890625,
+    "tone_dbfs": -43.73877852602783,
+    "local_contrast_db": 49.10736985775738,
+    "physical_lo_hz": 99184000,
+    "iq_center_hz": 100000000,
+    "sha256": "2af7b2a3300defb9c0ab75102bb6541be03a823ed60156c99c37e180f33be6a9"
+  },
+  {
+    "pass_test": true,
+    "rate": 3200000,
+    "tone_hz": 99951.17187499999,
+    "tone_dbfs": -47.54432978543732,
+    "local_contrast_db": 47.17965255729793,
+    "physical_lo_hz": 97280000,
+    "iq_center_hz": 100000000,
+    "sha256": "ce58213eff59c7914c5685e76ef1933979726fa6489856ca0018ba9a158ba340"
+  }
+]

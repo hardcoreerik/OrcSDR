@@ -9581,8 +9581,8 @@ static void rtl_dsp_task(void *) {
     if (!block.custom_rate && block.band == RtlBand::p25 &&
         g_iq_rec_kind.load(std::memory_order_relaxed) == IqCaptureKind::p25)
       iq_rec_append(block.data, block.bytes);
-    if (!block.custom_rate &&
-        g_iq_rec_kind.load(std::memory_order_relaxed) == IqCaptureKind::diagnostic)
+    // Raw diagnostic IQ is independent of rate-specific decoder support.
+    if (g_iq_rec_kind.load(std::memory_order_relaxed) == IqCaptureKind::diagnostic)
       iq_rec_append(block.data, block.bytes);
     mark(dsp_stats::Stage::record);
     if (block.band != RtlBand::adsb || orcsdr::home::active() ||

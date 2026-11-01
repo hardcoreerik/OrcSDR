@@ -3,6 +3,18 @@
     "bytes": 4122,
     "sha256": "df3eae6d92bc58b130e502dfa10e0c79942e67498dd99841c2e22c10bb896240"
   },
+  "custom-rate-build-provenance.json": {
+    "bytes": 4217,
+    "sha256": "7fe2587c7827da452ea5f77af360e2a754b2446b96f1c8cc6eedd641b16ecae3"
+  },
+  "custom-rate-capture-before-fix.log": {
+    "bytes": 641,
+    "sha256": "880fdff9c2d14b37e30032a7aac10268ba0b8a38c8d4295cb69a4ac5ae1233e7"
+  },
+  "custom-rate-results.json": {
+    "bytes": 644,
+    "sha256": "fc487db01ac1af902fd37755b427f9bac2f712a2a31af167fba64031d398e2e4"
+  },
   "hotplug-events.log": {
     "bytes": 947,
     "sha256": "6113b1ab61671cfbe7a9145af54d50eb3ed495ffcc43854e15f15425919cf8e9"
@@ -47,17 +59,25 @@
     "bytes": 119652,
     "sha256": "75c5b3f57fc5969cbf38dd3a0a203efb27ad952c8bdf27ff421da0513ba9e471"
   },
+  "rate-3200000.json": {
+    "bytes": 2109,
+    "sha256": "3b12677cf7b3095e9ef86c75039c1f7238f763510d90cf2821339360cfe21ace"
+  },
   "rate-3200k-active.log": {
     "bytes": 1166,
     "sha256": "75e35cd6d629792a23aa016c2aa0b2ed33e58b8853bffdcbc80c7f6483f69692"
+  },
+  "rate-960000.json": {
+    "bytes": 2102,
+    "sha256": "7375b476af68f5b9a56b0fbfd66a528265057b8ed1aa93f724e34a29a853ac4c"
   },
   "rate-960k.log": {
     "bytes": 1100,
     "sha256": "b9b825d939666a21f155e029cdb3ad33416974b94bdb3464c92c0e2b49b4e050"
   },
   "README.md": {
-    "bytes": 5383,
-    "sha256": "060e97627a474e0edf7fbc3cc02789906d9ac942b7047cb7304d6e42d526c726"
+    "bytes": 7445,
+    "sha256": "24d46537ef321c9e1e00e0545d78ac3795da48ec45d7c5c4dc225d65bf3e1345"
   },
   "restart-reconnect-settled.log": {
     "bytes": 1794,

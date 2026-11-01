@@ -86,3 +86,41 @@ about 2.399 MS/s, zero reported overruns/drops. Applied offset 2.04 MHz,
 physical LO 97.96 MHz, effective IQ center 100 MHz. This closes one physical
 hotplug cycle for this fixture; it is not a long-run or multi-dongle guarantee.
 Source remained OFF. Broadcast, legacy hardware and USB HAL crash gates remain.
+
+## Custom-rate recorder regression and fix
+
+A 960 kS/s diagnostic run initially timed out with `active=1`, `bytes=0`,
+while driver counters continued advancing near 960 kS/s. This was an OrcSDR
+recorder routing defect: diagnostic `iq_rec_append` was conditional on
+`!block.custom_rate`. Raw diagnostic recording has no decoder-rate restriction.
+The narrow fix removes this condition only for diagnostic recording; decoder
+conditions are unchanged. The source contract check
+`python tools/test_iq_diagnostic_rate_gate.py` failed before and passed after.
+This check covers source routing, not timing, USB or physical RF.
+
+The user approved one incremental rebuild/COM39 flash and repeat captures.
+Build succeeded; image SHA-256
+`751d9d73f57c7c025f15645cb37acb3f91f9481e29ff92d24a4d226d5f2c9e54`,
+5,443,360 bytes; esptool verified the written hash. Driver source is unchanged
+at da22090. The prior failed run remains in the ignored `rate-rf` folder;
+new runs use `rate-rf-fixed`. Source output was turned off on the failure path.
+
+Repeat verifier (with matching `.cu8` alongside JSON):
+
+```powershell
+python tools/analyze_e4000_rate_capture.py CAPTURE.json 960000
+python tools/analyze_e4000_rate_capture.py CAPTURE.json 3200000
+```
+
+It checks raw length, device/local SHA-256, requested rate, applied offset,
+physical LO/effective center, zero reported loss deltas, rail clipping and a
+prominent +100 kHz tone. These two source-on captures test delivery and frequency
+mapping at additional rates; they do not independently measure offset reduction
+or sensitivity at those rates.
+
+Physical repeat results: 960 kS/s captured 1,920,000 bytes, tone +99,946.29 Hz,
+49.11 dB local contrast, LO 99.184 MHz. At 3.2 MS/s: 6,400,000 bytes,
++99,951.17 Hz, 47.18 dB local contrast, LO 97.28 MHz. Both preserve 100 MHz
+IQ center, have matching hashes and zero rail clipping or reported loss deltas.
+The capture self-check and diagnostic-rate source check passed after this run.
+Source output OFF and pause were acknowledged at completion.
