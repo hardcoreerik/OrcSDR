@@ -17,6 +17,7 @@ on:
       - 'tests/map_worker_startup_test.py'
       - 'tests/map_download_task_lifetime_test.py'
       - 'tools/test-tab5-cadence-history.sh'
+      - 'tools/test_home_receiver_header.py'
       - '.github/workflows/tab5-cadence-history-tests.yml'
   workflow_dispatch:
 
@@ -31,3 +32,5 @@ jobs:
         with:
           persist-credentials: false
       - run: bash tools/test-tab5-cadence-history.sh
+      - name: Verify connected receiver label and bounded Home redraw
+        run: python3 tools/test_home_receiver_header.py "$RUNNER_TEMP/home-receiver-header"

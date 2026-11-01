@@ -1869,6 +1869,7 @@ static inline bool rtl_device_ready() { return rtl_sdr_device != nullptr; }
 esp_rtl_sdr_handle_t g_rtl = nullptr;
 std::atomic<bool> g_rtl_device_ready{false};
 std::atomic<esp_rtl_sdr_profile_t> g_rtl_profile{ESP_RTL_SDR_PROFILE_UNKNOWN};
+std::atomic<bool> g_rtl_is_nooelec_xtr{false};
 std::atomic<uint32_t> g_rtl_device_capabilities{0};
 static float g_stream_audio_scale = 5500.0f;
 static RtlBand g_stream_band = RtlBand::fm;
@@ -2755,8 +2756,13 @@ bool rtl_frequency_supported(uint32_t frequency_hz) {
 }
 
 bool rtl_profile_is_provisional(esp_rtl_sdr_profile_t profile) {
-  // Blog V3/V3c streaming is soak-verified in the pinned driver.
-  return profile == ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5;
+  // E4000 remains experimental; Nooelec SMArt V5 is implemented.
+  return profile == ESP_RTL_SDR_PROFILE_E4000;
+}
+
+bool rtl_identity_is_nooelec_xtr(const esp_rtl_sdr_device_info_t* info) {
+  return info && strcmp(info->manufacturer, "Nooelec") == 0 &&
+         strstr(info->product, "XTR") != nullptr;
 }
 
 const char* rtl_receiver_label(esp_rtl_sdr_profile_t profile) {
@@ -2765,7 +2771,9 @@ const char* rtl_receiver_label(esp_rtl_sdr_profile_t profile) {
     case ESP_RTL_SDR_PROFILE_BLOG_V4L: return "RTL V4L";
     // The driver's single Blog V3 profile covers the V3 and V3c (R820T2).
     case ESP_RTL_SDR_PROFILE_BLOG_V3: return "RTL V3c";
-    case ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5: return "NOO V5 EXP";
+    case ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5: return "Nooelec V5";
+    case ESP_RTL_SDR_PROFILE_E4000:
+      return g_rtl_is_nooelec_xtr.load(std::memory_order_acquire) ? "Nooelec XTR" : "E4000";
     default: return "RTL-SDR";
   }
 }
@@ -9366,6 +9374,7 @@ void set_radio_session_state(orcsdr::radio::ReceiverState state) {
 void cache_rtl_device_info(const void* payload) {
   const auto* info = static_cast<const esp_rtl_sdr_device_info_t*>(payload);
   if (info == nullptr) return;
+  g_rtl_is_nooelec_xtr.store(rtl_identity_is_nooelec_xtr(info), std::memory_order_release);
   rtl_sdr_vid = info->vid;
   rtl_sdr_pid = info->pid;
   strlcpy(rtl_sdr_serial, info->serial, sizeof(rtl_sdr_serial));
@@ -9414,6 +9423,7 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       }
       g_rtl_device_ready.store(false, std::memory_order_release);
       g_rtl_profile.store(ESP_RTL_SDR_PROFILE_UNKNOWN, std::memory_order_release);
+      g_rtl_is_nooelec_xtr.store(false, std::memory_order_release);
       g_rtl_device_capabilities.store(0, std::memory_order_release);
       if (orcsdr::am_finder::active()) orcsdr::am_finder::cancel();
       rtl_am_scan_requested.store(false, std::memory_order_release);
@@ -21600,8 +21610,8 @@ void process_command(char* command) {
     else if (strncmp(action, "GAIN ", 5) == 0) {
       char* end = nullptr;
       const long gain = strtol(action + 5, &end, 10);
-      if (end == action + 5 || *end != '\0' || gain < 0 || gain > 496) {
-        Serial.println("RTL_DRIVER_INVALID use GAIN <0..496>");
+      if (end == action + 5 || *end != '\0' || gain < -10 || gain > 496) {
+        Serial.println("RTL_DRIVER_INVALID use GAIN <-10..496>; driver selects nearest supported step");
         return;
       }
       rtl_gain_stop_smart();  // SMART would otherwise step over the raw gain
@@ -21659,7 +21669,7 @@ void process_command(char* command) {
       err = esp_rtl_sdr_retune_hz(g_rtl, static_cast<uint32_t>(frequency_hz));
     }
     else {
-      Serial.println("RTL_DRIVER_INVALID use STATUS|SELF_CHECK|TUNE <HZ>|GAINMODE AUTO|MANUAL|GAIN <0..496>|RTLAGC ON|OFF|BIAS ON|OFF|BW <hz|0>");
+      Serial.println("RTL_DRIVER_INVALID use STATUS|SELF_CHECK|TUNE <HZ>|GAINMODE AUTO|MANUAL|GAIN <-10..496>|RTLAGC ON|OFF|BIAS ON|OFF|BW <hz|0>");
       return;
     }
     Serial.printf("RTL_DRIVER_RESULT action=\"%s\" accepted=%d result=%s\n", action,
@@ -21726,7 +21736,7 @@ void process_command(char* command) {
     Serial.println("RTL_ADSB STATUS               - ADS-B stream, queue and decoder counters");
     Serial.println("RTL_DRIVER STATUS|SELF_CHECK  - driver capabilities, shadows and stream metrics");
     Serial.println("RTL_DRIVER OFFSET ON|OFF     - hardware center correction, radio stopped; default ON when supported");
-    Serial.println("RTL_DRIVER GAINMODE AUTO|MANUAL | GAIN <0..496> | RTLAGC ON|OFF | BIAS ON|OFF (auth)");
+    Serial.println("RTL_DRIVER GAINMODE AUTO|MANUAL | GAIN <-10..496> | RTLAGC ON|OFF | BIAS ON|OFF (auth)");
     Serial.println("RTL_HEALTH                    - heap, task and reset diagnostics");
     Serial.println("RTL_SD_SELF_CHECK             - authenticated file semantics check");
     Serial.println("RTL_SD_BENCH [4..64]          - authenticated temporary-file SD write benchmark");

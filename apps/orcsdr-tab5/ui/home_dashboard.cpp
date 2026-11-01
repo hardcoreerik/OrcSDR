@@ -233,7 +233,9 @@ void draw_header_status() {
        kHeaderStatusX + 54, y + 38, current.wifi_connected ? kCyan : TFT_ORANGE, 1);
   M5.Display.drawFastVLine(kHeaderStatusX + 114, y + 8, kHeaderStatusH - 16, kDim);
   draw_usb_icon(kHeaderStatusX + 135, y + 30, current.driver_ready ? kCyan : kDim);
-  text("RTL-SDR", kHeaderStatusX + 148, y + 17, TFT_WHITE, 2);
+  // The USB model occupies a bounded 90-pixel slot; long names use the small font.
+  text(current.receiver, kHeaderStatusX + 148, y + 17, TFT_WHITE,
+       strlen(current.receiver) > 7 ? 1 : 2);
   text(current.driver_ready ? "READY" : "NOT READY", kHeaderStatusX + 158, y + 38,
        current.driver_ready ? kCyan : TFT_ORANGE, 1);
   M5.Display.drawFastVLine(kHeaderStatusX + 238, y + 8, kHeaderStatusH - 16, kDim);
@@ -532,7 +534,7 @@ void draw_gain_popup() {
                current.rtl_agc, current.driver_ready && current.rtl_agc_available);
   popup_button(kCloseX, kCloseW, "CLOSE", false, true);
   if (!gain || current.gain_step_count < 2) {
-    text(current.driver_ready ? "Tuner gain is not available at this frequency."
+    text(current.driver_ready ? "Gain control unavailable for this tuner or mode."
                               : "No receiver connected.",
          kMinusX, kSliderY + kSliderH / 2, TFT_LIGHTGREY, 2);
   } else {
@@ -1029,7 +1031,7 @@ void update(const Snapshot& snapshot) {
   current = snapshot;
   const bool covered = gain_popup || filter_popup || mode_popup;   // a popup is over the lower half
   M5.Display.startWrite();
-  if (status_changed) draw_header_status();
+  if (status_changed || receiver_changed) draw_header_status();
   if (tuner_changed) draw_band_label();
   if (covered) {
     if (mode_popup && tuner_changed) draw_mode_popup();

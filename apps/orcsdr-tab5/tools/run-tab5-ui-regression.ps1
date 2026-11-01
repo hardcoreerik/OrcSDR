@@ -52,7 +52,7 @@ param(
   [string]$IqBand = 'FM',
   [ValidateRange(24000, 1766000000)]
   [uint32]$IqFrequency = 99100000,
-  [ValidateRange(0, 496)]
+  [ValidateRange(-10, 496)]
   [Nullable[int]]$IqGainTenthDb,
   [string]$IqOutputPath,
   [string]$IqAntenna,
@@ -61,7 +61,7 @@ param(
   [string]$GainSweepBand = 'FM',
   [ValidateRange(24000000, 1766000000)]
   [uint32]$GainSweepFrequency = 99100000,
-  [ValidateRange(0, 496)]
+  [ValidateRange(-10, 496)]
   [int[]]$GainSweepGains,
   [ValidateRange(100, 30000)]
   [int]$GainSweepDwellMs = 500,
@@ -947,7 +947,7 @@ function Capture-ResetEvidence {
 }
 
 function ConvertFrom-DriverStatus([string]$Line) {
-  $pattern = 'version=(\S+) state=(\S+) profile=(\d+) profile_name="([^"]+)" provisional=([01]) device_caps=(0x[0-9a-fA-F]+) library_caps=(0x[0-9a-fA-F]+).*gain_auto_cap=([01]) rtl_agc_cap=([01]) gain_cap=([01]) bias_cap=([01]) mode=(AUTO|MANUAL) gain_tenth_db=(\d+) rtl_agc=([01]) bias=([01]) bytes=(\d+) blocks=(\d+) effective_sps=(\d+) overruns=(\d+) drops=(\d+) shadow_ok=([01]) metrics_ok=([01]) frequency_hz=(\d+) frequency_ok=([01]) route=(\S+)'
+  $pattern = 'version=(\S+) state=(\S+) profile=(\d+) profile_name="([^"]+)" provisional=([01]) device_caps=(0x[0-9a-fA-F]+) library_caps=(0x[0-9a-fA-F]+).*gain_auto_cap=([01]) rtl_agc_cap=([01]) gain_cap=([01]) bias_cap=([01]) mode=(AUTO|MANUAL) gain_tenth_db=(-?\d+) rtl_agc=([01]) bias=([01]) bytes=(\d+) blocks=(\d+) effective_sps=(\d+) overruns=(\d+) drops=(\d+) shadow_ok=([01]) metrics_ok=([01]) frequency_hz=(\d+) frequency_ok=([01]) route=(\S+)'
   if ($Line -notmatch $pattern) { throw "Malformed driver status: $Line" }
   $status = [pscustomobject]@{
     Version = $Matches[1]; State = $Matches[2]; Profile = [int]$Matches[3]
@@ -1153,6 +1153,8 @@ function Invoke-SelfCheck {
     throw 'AM signal parser failed.'
   }
   $driver = ConvertFrom-DriverStatus 'RTL_DRIVER_STATUS installed=1 version=0.8.0-rc3 state=STREAMING profile=2 profile_name="blog_v3_r820t2" provisional=1 device_caps=0x0001fbd9 library_caps=0x000fffff delivery=callback gain_auto_cap=0 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=297 rtl_agc=0 bias=0 bytes=123456 blocks=42 effective_sps=959488 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=23999999 frequency_ok=1 route=DIRECT_Q'
+  $negativeGain = ConvertFrom-DriverStatus 'RTL_DRIVER_STATUS installed=1 version=0.8.0-rc3 state=STREAMING profile=2 profile_name="blog_v3_r820t2" provisional=1 device_caps=0x0001fbd9 library_caps=0x000fffff delivery=callback gain_auto_cap=0 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=123456 blocks=42 effective_sps=959488 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=23999999 frequency_ok=1 route=DIRECT_Q'
+  if ($negativeGain.Gain -ne -10) { throw 'Negative E4000 gain parser failed.' }
   if ($driver.Version -ne '0.8.0-rc3' -or $driver.Profile -ne 2 -or
       $driver.Frequency -ne 23999999 -or $driver.FrequencyOk -ne 1 -or
       $driver.Route -ne 'DIRECT_Q') {
