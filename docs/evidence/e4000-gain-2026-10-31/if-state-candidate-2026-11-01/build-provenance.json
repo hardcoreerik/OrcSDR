@@ -1,0 +1,11 @@
+{
+  "driver_revision": "8912d2075252ed587ba45312d7b91af6fb46b0ae",
+  "image_sha256": "9417af098d04f0ae9e75c44d10c654ea00d5ae8ed4cfb0ccf1366607f3439e16",
+  "image_bytes": 5444688,
+  "managed_source_hashes": {
+    "src/esp_rtl_sdr.cpp": "d64297eb58c9b434e3927b48e00114023a6294672e4f7370658645045ce6fb89",
+    "private/e4000.hpp": "1146089a97a475d3a42ccc02459215b0152f5fd419de3b4cfe43a0003162c037",
+    "include/esp_rtl_sdr.h": "533c042efcba5a66c29864746313ac08f50e655e857aec6ab47330fb14a52c0b"
+  },
+  "hardware_acceptance": false
+}

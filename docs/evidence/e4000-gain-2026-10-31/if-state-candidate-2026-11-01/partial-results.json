@@ -1,0 +1,22 @@
+[
+  {
+    "name": "repeat-0-gain-140",
+    "tone_integrated_dbfs": -26.983971318327946,
+    "sha256": "a556759e2af6fbb5fc96a2f0bbad696a9e64c2970eab7c0c3cf99f648678181c"
+  },
+  {
+    "name": "repeat-1-gain-165",
+    "tone_integrated_dbfs": -27.64171128022486,
+    "sha256": "6b6873d9c1d8410c28afdcceced80bdd57428b3b56fcd8bec0680f3a54da2a69"
+  },
+  {
+    "name": "repeat-2-gain-190",
+    "tone_integrated_dbfs": -24.159713755803992,
+    "sha256": "0653d75ada10846e4e03a856e163c21baa015f6377be4e68804635fa74034938"
+  },
+  {
+    "name": "repeat-3-gain-165",
+    "tone_integrated_dbfs": -27.753808319141093,
+    "sha256": "38387f05db5b65fabbed1efd388137a52ce3dcac9cc39d6c3d0ceb9ea9ec042f"
+  }
+]
