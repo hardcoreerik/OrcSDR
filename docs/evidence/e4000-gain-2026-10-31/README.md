@@ -79,3 +79,10 @@ show demod page 0 register 0x19 values 0x05/0x25/0x05 for OFF/ON/OFF. The
 current E4000 profile does not yet advertise RTL AGC. These writes must not
 be confused with offset-NCO register 0x19 on demod page 1. Enabling and
 physically qualifying that additional control remains separate work.
+
+## Focused repeat and corrected comparison
+
+See [2026-11-01 repeat](gain-repeat-2026-11-01/README.md) for the
+integrated-tone measurement correction and the reproduced gain repeatability
+issue. The original single-bin numbers above remain historical results, not
+the preferred metric for PC/ESP span comparison. No driver fix is claimed.

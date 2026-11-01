@@ -1,0 +1,74 @@
+[
+  {
+    "name": "repeat-0-gain-140",
+    "gain_db": 14.0,
+    "tone_integrated_dbfs": -25.372190641916674,
+    "block_min_dbfs": -25.389060621862676,
+    "block_max_dbfs": -25.359668957447532,
+    "clip_fraction": 0.0,
+    "sha256": "989016f79e60a485fce18c5c0fea3eb8b3bbe5a94ad20607bf046a082f638fd0"
+  },
+  {
+    "name": "repeat-1-gain-165",
+    "gain_db": 16.5,
+    "tone_integrated_dbfs": -26.011983100132685,
+    "block_min_dbfs": -26.022075944975494,
+    "block_max_dbfs": -26.002876264068377,
+    "clip_fraction": 0.0,
+    "sha256": "9606d0d81eb4027d680b439925fe65b725235fa6f195fe71c5442b2c16735040"
+  },
+  {
+    "name": "repeat-2-gain-190",
+    "gain_db": 19.0,
+    "tone_integrated_dbfs": -22.493592701562918,
+    "block_min_dbfs": -22.50087992805043,
+    "block_max_dbfs": -22.48583420511915,
+    "clip_fraction": 0.0,
+    "sha256": "cde5d848265df627ee099f29341969a33008d58b7d51c7dc82b90accb0627015"
+  },
+  {
+    "name": "repeat-3-gain-165",
+    "gain_db": 16.5,
+    "tone_integrated_dbfs": -26.07477555287455,
+    "block_min_dbfs": -26.08420999636808,
+    "block_max_dbfs": -26.062354238644044,
+    "clip_fraction": 0.0,
+    "sha256": "9341b39a7bdcf5c96d72aa1a349f714bec33db7cf2e1f472788723100c0ae826"
+  },
+  {
+    "name": "repeat-4-gain-140",
+    "gain_db": 14.0,
+    "tone_integrated_dbfs": -27.252268303721973,
+    "block_min_dbfs": -27.266671575875044,
+    "block_max_dbfs": -27.244169506852334,
+    "clip_fraction": 0.0,
+    "sha256": "db1c6ac084c5caa66ecf7b54f95e9ad14017ff08b17ba792dec3340e85ccc369"
+  },
+  {
+    "name": "repeat-5-gain-290",
+    "gain_db": 29.0,
+    "tone_integrated_dbfs": -15.531144062610231,
+    "block_min_dbfs": -15.536250669071132,
+    "block_max_dbfs": -15.523746668292661,
+    "clip_fraction": 0.0,
+    "sha256": "c48ab5258b0c69535d9fb4c7dd1f48c3f5b7f877c2160fc55ed131d5a1c2e255"
+  },
+  {
+    "name": "repeat-6-gain-340",
+    "gain_db": 34.0,
+    "tone_integrated_dbfs": -12.91580347111549,
+    "block_min_dbfs": -12.920032139724329,
+    "block_max_dbfs": -12.911943376591552,
+    "clip_fraction": 0.0,
+    "sha256": "b72b8ec5329dcf7af3bbacd765248db666da1b1c9b59651a1b7fa8364be38171"
+  },
+  {
+    "name": "repeat-7-gain-290",
+    "gain_db": 29.0,
+    "tone_integrated_dbfs": -15.559250440197065,
+    "block_min_dbfs": -15.565181461244958,
+    "block_max_dbfs": -15.554153183703601,
+    "clip_fraction": 0.0,
+    "sha256": "a7c404e8abb2ca38b9747c7fcff8e4b84493c3c20601838f516140ea3954f0af"
+  }
+]
