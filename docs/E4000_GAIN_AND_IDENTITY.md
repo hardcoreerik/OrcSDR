@@ -60,3 +60,23 @@ COM39 currently runs the earlier isolated HAL-fix image; these source changes
 have not been flashed. A gain/identity firmware build must retain that local
 HAL correction and the approved display dependency patch, verify driver pin,
 source/image hashes, and record its reboot explicitly before physical tests.
+
+The existing PowerShell gain sweep targets V3 and can reset this tablet when
+opening the serial port. The new E4000 smoke runner instead uses the Python
+serial client on one persistent connection:
+
+```powershell
+python tools/test_e4000_gain_serial.py --self-check
+python tools/test_e4000_gain_serial.py --run --port COM39 --key KEYFILE --output NEW-results.json
+```
+
+The self-check passed without device access. The hardware run has not been
+executed. It requires an already-streaming E4000 advertising both gain
+capabilities, checks the returned 14-step ladder, requests each step and AUTO,
+waits for settled status plus advancing IQ byte count, checks uptime and loss
+counters, and restores the initial gain/controller. It saves only selected
+protocol responses, never pairing/authentication data, and refuses to overwrite
+an existing result. A recently restarted device fails preflight. The test does
+not tune, start, flash or operate a signal generator; port-open behavior still
+needs physical uptime validation. Serial success is not a calibrated RF gain
+measurement; the cabled tone sweep remains an independent acceptance gate.
