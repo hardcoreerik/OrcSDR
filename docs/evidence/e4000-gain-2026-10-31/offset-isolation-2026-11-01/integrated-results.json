@@ -1,0 +1,38 @@
+[
+  {
+    "name": "isolate-0-OFF-gain-140",
+    "tone_dbfs": -24.557393822687924,
+    "clip_fraction": 0.0,
+    "sha256": "b1b0247a8fafcebb4766c19fc0a56d009c1843911e54614380b66bb0fcecb5cb"
+  },
+  {
+    "name": "isolate-1-OFF-gain-165",
+    "tone_dbfs": -25.20264451940821,
+    "clip_fraction": 0.0,
+    "sha256": "411d9f62cebd1d51cde1b1aa115b0a63a97f7f32f20f1b793aa1f83a112269d3"
+  },
+  {
+    "name": "isolate-2-ON-gain-140",
+    "tone_dbfs": -27.4866851150432,
+    "clip_fraction": 0.0,
+    "sha256": "4d343bbb226d8ff344dcf0f77bfba11a86caa27714ef79bb7fd13ac7d46aa446"
+  },
+  {
+    "name": "isolate-3-ON-gain-165",
+    "tone_dbfs": -26.331506692863627,
+    "clip_fraction": 0.0,
+    "sha256": "8cba330781de732bb6d55ccd7dab42a07420377a7ff21a815c60a83f53376cfb"
+  },
+  {
+    "name": "isolate-4-ON-gain-140",
+    "tone_dbfs": -27.51577133352957,
+    "clip_fraction": 0.0,
+    "sha256": "ad0a6490b7ce3a49e12da3fae2f3ee53d9d7d49b6b2d90733709f6cc621f2e25"
+  },
+  {
+    "name": "isolate-5-OFF-gain-140",
+    "tone_dbfs": -26.476700588580073,
+    "clip_fraction": 0.0,
+    "sha256": "2b780b91d2ba824eeb7bb065769ed97fc0ec0e3b70afee9a5dd251adc302d29f"
+  }
+]

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "v5-0-gain-144",
+    "tone_integrated_dbfs": -55.22302258611943,
+    "sha256": "3a7ef6f372738a8abee8a3f72de3a97a74a551f33cbea93a51e647a09b6bea9b",
+    "clip_fraction": 0.0
+  },
+  {
+    "name": "v5-1-gain-166",
+    "tone_integrated_dbfs": -52.80693091103696,
+    "sha256": "4d8064888b539dd7640ceeb81a787da5c28435f9bc5c6c8fe4fbcc8803a6328b",
+    "clip_fraction": 0.0
+  },
+  {
+    "name": "v5-2-gain-197",
+    "tone_integrated_dbfs": -50.27875005800914,
+    "sha256": "4978ea49c12c41c1c9c04f0148edaf8c42a51124e7559ea22bdd614da8326222",
+    "clip_fraction": 0.0
+  },
+  {
+    "name": "v5-3-gain-166",
+    "tone_integrated_dbfs": -52.89884135117945,
+    "sha256": "044e941806c616622e01bfe5d7a5438d644c8c1acf469c0e3f5af26b4012969c",
+    "clip_fraction": 0.0
+  },
+  {
+    "name": "v5-4-gain-144",
+    "tone_integrated_dbfs": -55.25196529956855,
+    "sha256": "023bb232846f590a7e5eb51fb4dd6da07f574e1771583dd146a1d87ec37aba08",
+    "clip_fraction": 0.0
+  }
+]
