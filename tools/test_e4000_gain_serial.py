@@ -76,11 +76,12 @@ def run(args):
 
     try:
         dev = Tab5(args.port)
-        dev.authenticate(find_key(args.key))
+        dev.send('')  # Finish any partial console line left by the prior client.
         health = query('RTL_HEALTH', 'RTL_HEALTH_STATUS ')
         baseline_uptime = int(health['uptime_ms'])
         if baseline_uptime < 30000:
             raise RuntimeError('Device recently restarted; wait for stable reception before this test')
+        dev.authenticate(find_key(args.key))
         initial = query('RTL_DRIVER STATUS', 'RTL_DRIVER_STATUS ')
         if initial.get('profile') != '5' or initial.get('state') != 'STREAMING':
             raise RuntimeError('An already-streaming E4000 is required')

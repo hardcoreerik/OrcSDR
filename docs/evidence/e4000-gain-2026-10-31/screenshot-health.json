@@ -1,0 +1,7 @@
+{
+  "bytes": 79503,
+  "health": [
+    "RTL_HEALTH_STATUS uptime_ms=380200 free_heap=21749668 min_free_heap=21709924 dma_free=23319 dma_min=20127 dma_largest=18432 tasks=29 main_stack_hwm=5084 reset_reason=7 internal_free=60047 internal_min=51991 internal_largest=31744 psram_free=21711996 psram_largest=21495808",
+    "RTL_HEALTH_STATUS uptime_ms=381809 free_heap=21749668 min_free_heap=18842720 dma_free=23319 dma_min=17051 dma_largest=18432 tasks=29 main_stack_hwm=5084 reset_reason=7 internal_free=60047 internal_min=48915 internal_largest=31744 psram_free=21711996 psram_largest=21495808"
+  ]
+}

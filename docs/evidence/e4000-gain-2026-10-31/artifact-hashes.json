@@ -1,0 +1,22 @@
+{
+  "antenna-gain-levels.json": {
+    "bytes": 3629,
+    "sha256": "90d8563d0fe91259768c34e2d47dcb5a900a08ee6d701f6f24105c413cb3a04a"
+  },
+  "build-provenance.json": {
+    "bytes": 3298,
+    "sha256": "b05fd08a8c07ff8efa694a9ce18f45e194592acec9e4010bed0d84b60153e776"
+  },
+  "gain-name-screen.png": {
+    "bytes": 79503,
+    "sha256": "cd486bc5d4da6b572cb20c2f9f396efbdc51613dea3f62249d0dbca1691353ad"
+  },
+  "screenshot-health.json": {
+    "bytes": 604,
+    "sha256": "d426bb074c1258a9eb899550c5de44c416ed4626d5d9f6c1d55f6a9d146f9050"
+  },
+  "serial-gain-smoke.json": {
+    "bytes": 32407,
+    "sha256": "3379f7d5fe18b16a49d5739d26acf33b9f5ff72ff035b3ac8bf701a205f415b0"
+  }
+}
