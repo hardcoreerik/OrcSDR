@@ -3,6 +3,14 @@
     "bytes": 4122,
     "sha256": "df3eae6d92bc58b130e502dfa10e0c79942e67498dd99841c2e22c10bb896240"
   },
+  "hotplug-events.log": {
+    "bytes": 947,
+    "sha256": "6113b1ab61671cfbe7a9145af54d50eb3ed495ffcc43854e15f15425919cf8e9"
+  },
+  "hotplug-settled.log": {
+    "bytes": 1798,
+    "sha256": "2a8c42bcc565869b098296ef5ab7f619939dfef902a4b855e94505defe7ab0ac"
+  },
   "m5gfx-local-patch.json": {
     "bytes": 743,
     "sha256": "c3fb6fd824e25eeea6fca20544a2c054a69067e3fa3ea8ac21a60bab8db16174"
@@ -48,8 +56,8 @@
     "sha256": "b9b825d939666a21f155e029cdb3ad33416974b94bdb3464c92c0e2b49b4e050"
   },
   "README.md": {
-    "bytes": 4488,
-    "sha256": "81761c60931f9267ac7e1c7c62a74e921af0f8a48f44804503851f5e8be1d104"
+    "bytes": 5383,
+    "sha256": "060e97627a474e0edf7fbc3cc02789906d9ac942b7047cb7304d6e42d526c726"
   },
   "restart-reconnect-settled.log": {
     "bytes": 1794,

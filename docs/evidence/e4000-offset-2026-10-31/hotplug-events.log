@@ -1,0 +1,10 @@
+W (172676) esp_rtl_sdr: [RTL0] usb disconnected profile=e4000_experimental addr=1 (other handles unaffected)
+RTL_SDR_DISCONNECTED previous=3 resume_pending=1 band=FM frequency_hz=100000000
+I (177970) esp_rtl_sdr: [RTL0] usb new_device addr=2 queued=1
+I (177971) esp_rtl_sdr: [RTL0] USB device opened addr=2 path=root serial=82115932 hs=1
+RTL_SDR_PROBE_OK profile=5 profile_name="e4000_experimental" provisional=0 device_caps=0x00217f1f driver=esp_rtl_sdr v0.9.3 ready=1 resume_pending=1
+RTL_HOTPLUG_RESUME band=FM frequency_hz=100000000 queued=1
+I (178277) esp_rtl_sdr: [RTL0] rate readback sps=2400000 expected=0x03000000 actual=0x03000000 match=1
+I (178335) esp_rtl_sdr: [RTL0] E4000 tune rf=100000000 corrected=97960000 band=0 div=5 phase3=1 z=108 x=55341 rf_filter=0 vco=3134720000 nominal=1
+RTL_START ESP_OK rate=2400000 display_hz=100000000 lo_hz=100000000
+W (178363) esp_rtl_sdr: [RTL0] bulk EP recovered (attempt 1, live_urbs=3)

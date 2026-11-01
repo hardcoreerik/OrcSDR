@@ -72,3 +72,17 @@ IQ center, 97.96 MHz physical LO, 2.04 MHz hardware correction at 2.4 MS/s.
 Two streaming samples advanced bytes from 38,371,328 to 48,824,320 with zero
 reported overruns/drops. No RF tone was generated during this check. Pure
 hotplug remains unclosed. The tinySA remains OFF and paused.
+
+## Uninterrupted hotplug follow-up
+
+The user unplugged and reconnected only XTR USB without restarting COM39.
+Passive serial evidence captured disconnect at device uptime 172676 ms,
+new-device/open at 177970–177971 ms (same enrolled serial 82115932), queued
+resume, and successful start at 178336 ms. Offset was reapplied automatically.
+One bulk endpoint recovery was logged at startup; subsequent streaming was
+stable in the observed interval. Uptime advanced to 231538 ms without reboot.
+Settled counters advanced from 257,261,568 to 267,583,488 bytes, effective rate
+about 2.399 MS/s, zero reported overruns/drops. Applied offset 2.04 MHz,
+physical LO 97.96 MHz, effective IQ center 100 MHz. This closes one physical
+hotplug cycle for this fixture; it is not a long-run or multi-dongle guarantee.
+Source remained OFF. Broadcast, legacy hardware and USB HAL crash gates remain.
