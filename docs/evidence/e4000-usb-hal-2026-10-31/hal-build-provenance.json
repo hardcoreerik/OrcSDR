@@ -1,0 +1,71 @@
+{
+  "driver_revision": "da22090752660b6689b706716771d8cd8d35f665",
+  "managed_source_files": {
+    "CMakeLists.txt": "3f122de3ad8002029e67ebbabbeb4681c5d5c81cd3aded304c3aeb3e8e95dec8",
+    "Kconfig": "d8fb52107235db23e0302d594487d8d6b3ffdf3109af1a6a551bb86d0e5f975f",
+    "idf_component.yml": "f3bcd485ec222be3a801e564849775d624dd656dd580a3416ee491c7fe025a87",
+    "include/esp_rtl_sdr.h": "533c042efcba5a66c29864746313ac08f50e655e857aec6ab47330fb14a52c0b",
+    "include/esp_rtl_sdr_acquisition.h": "4cc7b7f0dd84c84eb85ef1eeeb3eff196fbbc649d831112b82914b05cf8926fb",
+    "private/e4000.hpp": "359730d755b843dbec30564bab444a3efe606cbc10a4501fcd443912dfb21fde",
+    "private/gain_r820t2.hpp": "3b891ae109aea46dec299d90de4530f5dff68aefb82e9e5f0d0232dbd4d672f7",
+    "private/measured_gain_bias_v4.hpp": "2175b254526c5923cae999e8b8b0bc15cebb4d1742ec3a9804824a5e30cdea7f",
+    "private/measured_tuner_bandwidth.hpp": "cda5db3c50ab0b5f0304ec6f23ff39f58cf91a15ebf40f4eefb193ae30ba454d",
+    "private/measured_v4l_frontend.hpp": "a13def41e6537ac49d34def3089cc1f2fca172482b4152185ad9025f1a889160",
+    "private/r820t2_band.hpp": "43047ae15f63133adf76c202fabf67802bb4343f532dc6917545d6a0ba71813c",
+    "private/reentrancy.hpp": "c9e352543ddebbe094839c920163f2b5ee0cfe00f46ceffab757dbfbb6032393",
+    "private/resampler_ratio.hpp": "190cdedcec06039698b52b4a6f7a92721f6c3f6e0e7a3cbea67f190ff5291e4b",
+    "private/rtl_acquisition.hpp": "f7235ec562583881eceef1fa0f89f8fa09b04ad0ae21c0a0005140582ca8cfda",
+    "private/rtl_control.hpp": "82f26c0554f7e682765006f568b4549e6c806b4383bd4c78601e8222cd1eb9d3",
+    "private/rtl_multi.hpp": "54d3b175aae647797856e8368cfb0bab47104b689e10d09dfec4a104bbee1b06",
+    "private/rtl_profile.hpp": "448e3808de3515312e281933c77824de0a339fa2648732a2fb405b309ed12826",
+    "private/rtl_pull_alloc.hpp": "da56a513ed578538357469c70565cfd0799ced7a582d6ff77f6586441ed285ac",
+    "private/rtl_tuner.hpp": "b9d937ee25deef23370a65343db9c22980d9ead417f929740296b8955b56bc2d",
+    "private/rtl_usb_guard.hpp": "edf6941c0f733915dcd2f315ecd27bdf769c214904c2882e004fc4cd60cefa61",
+    "private/rtl_usb_shutdown.hpp": "c6e9e870b95ebb886b0b1a43fba9603dad0e95237e605cf01e5d8374cf6ed2ab",
+    "private/transfers_blog_v3.hpp": "d75371002a72b23877ee3166e2b3d97d91d664b178e7acf16c93bfb10646c526",
+    "private/transfers_blog_v4.hpp": "b1c65c81e32326b94f7767b814b09fa14cb24bcf0a1367a9ec04cb75578d19cc",
+    "src/esp_rtl_sdr.cpp": "4b25a89692cc0feb458f745b4c262ffb62814bb678d26aa92588472c4efbd389",
+    "src/esp_rtl_sdr_multi.cpp": "9ab237d05c8a94a336b0d3abf12b6b64ca4a62c2d0afa8babaefc41364596a85",
+    "src/esp_rtl_sdr_policy.cpp": "bfbfeb2605718ef751db3e4305cef7eeaf3eb7f28840a96091171a9975eca121"
+  },
+  "application_base": "0b60a1664abeac93d0409e854a16374241a829fb",
+  "ui_source_sha256": "61d1405dc5a15768d3b72fb1320c9cf8a6f948f268a07f387ba6240207951891",
+  "image_bytes": 5443072,
+  "image_sha256": "32daeb64cc0f898c6fcda10c1e510e759b7ec1206993e75d9c03fba250370407",
+  "display_patch": {
+    "file": "managed_components\\m5stack__m5gfx\\src\\lgfx\\v1\\platforms\\esp32p4\\Panel_DSI.hpp",
+    "before_sha256": "f441c4f3668158abb85f5030cc55a6508c6d0cf73df64fb16ab8b43f925bab19",
+    "after_sha256": "c0607f5b89cd72dff15e3224891258b31c5958a0b22932f2774802ff05f11753",
+    "reason": "Current origin/main rf_visualizer requires two DSI getters. Same getters exist in prior lab build. No driver code change.",
+    "complete": true,
+    "reference": "working lab build: driver-acquisition-ab-20261029",
+    "files": {
+      "Panel_DSI.hpp": "fdcfc93391434cba9374501d3529ced6219f4ac171eca87c71e877258b309363",
+      "Panel_DSI.cpp": "af444d11c87c387b33d81309a912370e5a7b570376e5aa023dfe49b0bcfafb82"
+    },
+    "extra_framebuffer_bytes": 1843200
+  },
+  "sdk": "ESP-IDF v5.5.4-dirty; shared local SDK unchanged; USB HAL assert still present",
+  "hardware_acceptance": false,
+  "previous_image_sha256": "09b98810135ab15ffbe08fd0256ab76b34f38416d4cdf8f61e860558577bd5ac",
+  "previous_partition_backup_sha256": "f333e32973001f210a842052a1b9af10d4ee2258d2b7accbe76ff7439dc2ea6a",
+  "change": "Project-local HAL one-line assertion removal; host correction checks202; hardware pending",
+  "hal_override": {
+    "source": "C:\\Espressif\\frameworks\\esp-idf-v5.5.4\\components\\hal",
+    "override": "F:\\Ai\\OrcSDR-Temp\\e4000-offset-20261031\\apps\\orcsdr-tab5\\components\\hal",
+    "files_verified": 1018,
+    "changed_files": [
+      "usb_dwc_hal.c"
+    ],
+    "before_sha256": "024a1eeb7e4331490fa1f27d0bfc1f826d1c75761dc55cb091397dbf43920998",
+    "after_sha256": "aa55595120748e34c2b16f804a2df3f7237677fe06993aaf561b7f6003d8793c",
+    "upstream_commit": "63b468539f86f759ae1075ed277b2da65eccbdfe",
+    "shared_sdk_unchanged": true
+  },
+  "hal_compiler_selection": {
+    "source": "F:\\Ai\\OrcSDR-Temp\\e4000-offset-20261031\\apps\\orcsdr-tab5\\components\\hal\\usb_dwc_hal.c",
+    "output_directory": "F:/Ai/OrcSDR-Temp/e4000-offset-20261031/apps/orcsdr-tab5/build-offset",
+    "hal_component_path": "F:/Ai/OrcSDR-Temp/e4000-offset-20261031/apps/orcsdr-tab5/components/hal"
+  },
+  "sdkconfig_sha256": "0d2d917b6bd2b6ffafc94a893324c006514decd13a6421ec249e4496ab715814"
+}

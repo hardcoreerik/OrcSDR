@@ -1,0 +1,12 @@
+{
+  "source": "C:\\Espressif\\frameworks\\esp-idf-v5.5.4\\components\\hal",
+  "override": "F:\\Ai\\OrcSDR-Temp\\e4000-offset-20261031\\apps\\orcsdr-tab5\\components\\hal",
+  "files_verified": 1018,
+  "changed_files": [
+    "usb_dwc_hal.c"
+  ],
+  "before_sha256": "024a1eeb7e4331490fa1f27d0bfc1f826d1c75761dc55cb091397dbf43920998",
+  "after_sha256": "aa55595120748e34c2b16f804a2df3f7237677fe06993aaf561b7f6003d8793c",
+  "upstream_commit": "63b468539f86f759ae1075ed277b2da65eccbdfe",
+  "shared_sdk_unchanged": true
+}

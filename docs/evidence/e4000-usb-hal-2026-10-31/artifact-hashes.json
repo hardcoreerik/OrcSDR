@@ -1,0 +1,26 @@
+{
+  "hal-build-provenance.json": {
+    "bytes": 5235,
+    "sha256": "4e066c3a4712e77168379585a1ab6950de124b779c8701f61d92d1df4744b780"
+  },
+  "hal-compile-selection.json": {
+    "bytes": 309,
+    "sha256": "92a969b1a8c75da338b827ddbd4b10ad03100b94a507c518711cc4ceb3f172c4"
+  },
+  "hal-override-provenance.json": {
+    "bytes": 525,
+    "sha256": "b880a70d7c4edc7034fee2f40ec82ced1608f37a5562d6664e24d0541b21176c"
+  },
+  "hal-retune-stopstart.log": {
+    "bytes": 2824,
+    "sha256": "8a1682e9ef42efe8d0736c69d2db6c84a590914705c37a9a8834b3951edd43d9"
+  },
+  "hal-settled-retunes.log": {
+    "bytes": 1930,
+    "sha256": "2bfaa1f79d865d570b42dc1333a28bbbba3a680a150edd1051c852f294a11d66"
+  },
+  "README.md": {
+    "bytes": 3463,
+    "sha256": "85e92d7e0ccaf377a85325f3fdf682801be1d2252bdc4c6ad795d72adbfaec9e"
+  }
+}
