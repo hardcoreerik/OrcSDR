@@ -1,6 +1,7 @@
 #include "focus_nav.hpp"
 #include "waterfall_style.hpp"
 #include "home_dashboard.hpp"
+#include "home_layout.hpp"
 #include "plot_cadence.hpp"
 #include "freq_keypad.hpp"
 #include "scope_canvas.hpp"
@@ -18,6 +19,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iterator>
+#include <utility>
 
 namespace orcsdr::home {
 namespace {
@@ -26,53 +28,60 @@ constexpr uint16_t kCyan = 0x05FF;
 constexpr uint16_t kGreen = 0x6FE0;
 constexpr uint16_t kDim = 0x4228;
 constexpr uint16_t kPanel = 0x0021;
-constexpr int kRailX = 24, kRailY = 112, kRailW = 280, kRailH = 530;
-constexpr int kMainX = 318, kMainY = 80, kMainW = 930, kMainH = 562;
-constexpr int kPlotX = 330, kPlotW = 906;
-constexpr int kSpectrumY = 112, kSpectrumH = 186;
-constexpr int kWaterfallY = 301, kWaterfallH = 194;   // ends 7 px above the readout strip so its focus ring (6 px out) stays clear of the scrolling waterfall
+int kRailX = 24, kRailY = 112, kRailW = 280, kRailH = 530;
+int kMainX = 318, kMainY = 80, kMainW = 930, kMainH = 562;
+int kPlotX = 330, kPlotW = 906;
+int kSpectrumY = 112, kSpectrumH = 186;
+int kWaterfallY = 301, kWaterfallH = 194;   // ends 7 px above the readout strip so its focus ring (6 px out) stays clear of the scrolling waterfall
 // Readout strip under the graphics: frequency on the left, waterfall contrast, then the mode chip.
-constexpr int kReadoutY = 504, kReadoutH = 52;
-constexpr int kContrastY = kReadoutY + (kReadoutH - 28) / 2;
-constexpr int kContrastDownX = 690;
-constexpr int kContrastUpX = 854;
-constexpr int kModeX = 1144, kModeW = 92;
-constexpr int kPaletteX = 898, kPaletteW = 120;
-constexpr int kSpeedX = 1026, kSpeedW = 110;
+int kReadoutY = 504, kReadoutH = 52;
+int kContrastY = kReadoutY + (kReadoutH - 28) / 2;
+int kContrastDownX = 690;
+int kContrastUpX = 854;
+int kModeX = 1144, kModeW = 92;
+int kPaletteX = 898, kPaletteW = 120;
+int kSpeedX = 1026, kSpeedW = 110;
 // Control row: SPAN / TUNE / STEP SIZE steppers, then FILTER and GAIN.
-constexpr int kControlY = 564, kControlH = 62;
-constexpr int kStepperW = 208, kStepperSpan = 330, kStepperTune = 544, kStepperSize = 758;
+int kControlY = 564, kControlH = 62;
+int kStepperW = 208, kStepperSpan = 330, kStepperTune = 544, kStepperSize = 758;
 constexpr int kStepperArrowW = 34, kStepperArrowH = 48, kStepperArrowInset = 4;
 constexpr int kContrastButtonW = 36;
 constexpr int kContrastButtonH = 28;
-constexpr int kListX = 30, kListY = 158, kListW = 242, kListH = 420;
+int kListX = 30, kListY = 158, kListW = 242, kListH = 420;
 constexpr int kRowH = 52, kRowGap = 8, kRowPitch = kRowH + kRowGap;
 constexpr int kVisibleRows = 7;
-constexpr int kAllY = 590;
+int kAllY = 590;
 constexpr int kTapDragThreshold = 10;
-constexpr int kHeaderStatusX = audio_header::kStatusBarX;
-constexpr int kHeaderStatusW = audio_header::kStatusBarW;
-constexpr size_t kBrowserColumns = 3;
-constexpr size_t kBrowserRows = 4;
-constexpr size_t kBrowserPageSize = kBrowserColumns * kBrowserRows;
-constexpr int kBrowserCardX = 30, kBrowserCardY = 96;
-constexpr int kBrowserCardW = 390, kBrowserCardH = 118;
-constexpr int kBrowserColumnPitch = 410, kBrowserRowPitch = 136;
-constexpr int kBrowserNavY = 650;
-constexpr int kGainX = 1124, kGainY = 564, kGainW = 112, kGainH = 62;
+int kHeaderStatusX = audio_header::kStatusBarX;
+int kHeaderStatusW = audio_header::kStatusBarW;
+int kHeaderStatusY = audio_header::kStatusBarY, kHeaderStatusH = audio_header::kStatusBarH;
+size_t kBrowserColumns = 3;
+size_t kBrowserRows = 4;
+constexpr size_t kBrowserPageSize = 12;
+int kBrowserCardX = 30, kBrowserCardY = 96;
+int kBrowserCardW = 390, kBrowserCardH = 118;
+int kBrowserColumnPitch = 410, kBrowserRowPitch = 136;
+int kBrowserNavY = 650;
+int kBrowserPrevX = 486, kBrowserNextX = 684, kBrowserPageX = 640;
+int kGainX = 1124, kGainY = 564, kGainW = 112, kGainH = 62;
 // The popups dock at the bottom of the screen (over the readout strip, controls and footer) so the spectrum and most
 // of the waterfall keep running above them. kPopShift moves the original popup layout down.
-constexpr int kPopShift = 258;
-constexpr int kPopX = 340, kPopY = 150 + kPopShift, kPopW = 886, kPopH = 300;
-constexpr int kPopButtonY = 190 + kPopShift, kPopButtonH = 50;
-constexpr int kAutoX = 360, kManualX = 584, kRtlAgcX = 808, kCloseX = 1032;
-constexpr int kPopButtonW = 210, kCloseW = 178;
-constexpr int kSliderY = 276 + kPopShift, kSliderH = 50;
-constexpr int kMinusX = 360, kBarX = 446, kBarW = 678, kPlusX = 1140, kNudgeW = 70;
+int kPopShift = 258;
+int kPopX = 340, kPopY = 150 + kPopShift, kPopW = 886, kPopH = 300;
+int kPopButtonY = 190 + kPopShift, kPopButtonH = 50;
+int kAutoX = 360, kManualX = 584, kRtlAgcX = 808, kCloseX = 1032;
+int kPopButtonW = 210, kCloseW = 178;
+int kSliderY = 276 + kPopShift, kSliderH = 50;
+int kMinusX = 360, kBarX = 446, kBarW = 678, kPlusX = 1140, kNudgeW = 70;
 constexpr uint32_t kSpanSteps[] = {
     120000, 240000, 480000, 960000, 1200000, 2400000};
 
 Snapshot current{};
+constexpr size_t kPlotPixelCapacity = 2048;
+LayoutRect home_viewport{0, 0, 1280, 720};
+Layout home_layout = make_layout(home_viewport, audio_header::make_header_layout(home_viewport).content_top);
+bool layout_dirty = false;
+
 bool shown = false;
 bool browser = false;
 bool gain_popup = false;
@@ -137,6 +146,12 @@ void frame(int x, int y, int w, int h, uint16_t color = kCyan, int radius = 10) 
 void panel(int x, int y, int w, int h, uint16_t color = kCyan, int radius = 10) {
   orcsdr::focus_nav::note(x, y, w, h);
   frame(x, y, w, h, color, radius);
+}
+
+void draw_screen_border() {
+  if (home_layout.legacy) M5.Display.drawRoundRect(10,10,1260,700,14,kCyan);
+  else M5.Display.drawRoundRect(home_viewport.x+4,home_viewport.y+4,
+                                home_viewport.w-8,home_viewport.h-8,14,kCyan);
 }
 
 int recent_content_rows() {
@@ -220,9 +235,6 @@ void draw_menu_icon(dashboards::Id id, int x, int y, uint16_t color) {
   }
 }
 
-// Top edge and height match the Home / sound / settings buttons (y 12..66).
-constexpr int kHeaderStatusY = audio_header::kStatusBarY, kHeaderStatusH = audio_header::kStatusBarH;
-
 void draw_header_status() {
   const int y = kHeaderStatusY;
   M5.Display.fillRect(kHeaderStatusX, y, kHeaderStatusW, kHeaderStatusH, TFT_BLACK);
@@ -296,15 +308,16 @@ void draw_recent_list() {
 
 void draw_rail() {
   frame(kRailX, kRailY, kRailW, kRailH, kCyan, 12);
-  text("LAST USED", 34, 132, kCyan, 2);
-  M5.Display.drawFastHLine(132, 132, 110, kCyan);
+  const int title_y=kListY-26;
+  text("LAST USED", kListX+4, title_y, kCyan, 2);
+  M5.Display.drawFastHLine(kListX+102, title_y, std::max(16,kListW-132), kCyan);
   draw_recent_list();
-  panel(kListX, kAllY, kListW - 2, 42, kCyan, 7);
+  panel(home_layout.all.x, home_layout.all.y, home_layout.all.w, home_layout.all.h, kCyan, 7);
   for (int row = 0; row < 3; ++row)
     for (int col = 0; col < 3; ++col)
       M5.Display.fillRect(kListX + 20 + col * 11, kAllY + 12 + row * 9, 6, 6,
                           kCyan);
-  text("ALL DASHBOARDS", kListX + 65, kAllY + 21, kCyan, 2);
+  text("ALL DASHBOARDS", home_layout.all.x + std::min(65,home_layout.all.w/3), home_layout.all.y + home_layout.all.h/2, kCyan, 2, middle_left);
 }
 
 uint16_t waterfall_color(float value) {
@@ -327,15 +340,23 @@ void draw_waterfall_controls() {
   panel(kContrastUpX, kContrastY, kContrastButtonW, kContrastButtonH, kCyan, 5);
   text(">", kContrastUpX + kContrastButtonW / 2, kContrastY + 14, kGreen, 2,
        middle_center);
-  M5.Display.fillRect(kPaletteX, kReadoutY, kPaletteW, kReadoutH, TFT_BLACK);
-  panel(kPaletteX, kReadoutY, kPaletteW, kReadoutH, kCyan, 8);
-  text("PALETTE", kPaletteX + kPaletteW / 2, kReadoutY + 15, kCyan, 2, middle_center);
-  text(waterfall_style::palette_name(waterfall_style::palette(waterfall_style::Screen::home)), kPaletteX + kPaletteW / 2,
-       kReadoutY + 38, kGreen, 2, middle_center);
-  M5.Display.fillRect(kSpeedX, kReadoutY, kSpeedW, kReadoutH, TFT_BLACK);
-  panel(kSpeedX, kReadoutY, kSpeedW, kReadoutH, kCyan, 8);
-  text("SPEED", kSpeedX + kSpeedW / 2, kReadoutY + 15, kCyan, 2, middle_center);
-  text(waterfall_style::speed_name(waterfall_style::speed(waterfall_style::Screen::home)), kSpeedX + kSpeedW / 2, kReadoutY + 38, kGreen,
+  const auto palette=home_layout.palette;
+  M5.Display.fillRect(palette.x, palette.y, palette.w, palette.h, TFT_BLACK);
+  panel(palette.x, palette.y, palette.w, palette.h, kCyan, 8);
+  text("PALETTE", palette.x + palette.w / 2,
+       home_layout.legacy ? palette.y + 15 : palette.y + palette.h/3,
+       kCyan, 2, middle_center);
+  text(waterfall_style::palette_name(waterfall_style::palette(waterfall_style::Screen::home)), palette.x + palette.w / 2,
+       home_layout.legacy ? palette.y + 38 : palette.y + 2*palette.h/3,
+       kGreen, 2, middle_center);
+  const auto speed=home_layout.speed;
+  M5.Display.fillRect(speed.x, speed.y, speed.w, speed.h, TFT_BLACK);
+  panel(speed.x, speed.y, speed.w, speed.h, kCyan, 8);
+  text("SPEED", speed.x + speed.w / 2,
+       home_layout.legacy ? speed.y + 15 : speed.y + speed.h/3,
+       kCyan, 2, middle_center);
+  text(waterfall_style::speed_name(waterfall_style::speed(waterfall_style::Screen::home)), speed.x + speed.w / 2,
+       home_layout.legacy ? speed.y + 38 : speed.y + 2*speed.h/3, kGreen,
        2, middle_center);
 }
 
@@ -353,7 +374,7 @@ void draw_mode_chip(const char* mode) {
 }
 
 void draw_frequency() {
-  M5.Display.fillRect(kPlotX, kReadoutY, 350, kReadoutH, TFT_BLACK);
+  M5.Display.fillRect(home_layout.frequency.x, home_layout.frequency.y, home_layout.frequency.w, home_layout.frequency.h, TFT_BLACK);
   char value[40];
   snprintf(value, sizeof(value), current.frequency_hz >= 1000000 ? "%.3f" : "%.1f",
            current.frequency_hz >= 1000000 ? current.frequency_hz / 1000000.0
@@ -364,7 +385,7 @@ void draw_frequency() {
        kGreen, 2);
   if (current.requested_frequency_hz != 0 &&
       current.requested_frequency_hz != current.frequency_hz)
-    text("TUNING", kPlotX + 330, mid + 8, TFT_YELLOW, 1, middle_right);
+    text("TUNING", home_layout.legacy?kPlotX+330:home_layout.frequency.x+home_layout.frequency.w-8, mid + 8, TFT_YELLOW, 1, middle_right);
   draw_waterfall_controls();
 }
 
@@ -397,16 +418,22 @@ void draw_spectrum_axis(M5Canvas& canvas, int w, int h) {
 }
 
 // One "< LABEL value >" group in the control row; the arrows are the touch targets.
-void draw_stepper(int x, const char* label, const char* value) {
-  frame(x, kControlY, kStepperW, kControlH, kCyan, 9);
-  panel(x + kStepperArrowInset, kControlY + 7, kStepperArrowW, kStepperArrowH, kDim, 5);
-  text("<", x + kStepperArrowInset + kStepperArrowW / 2, kControlY + 31, kGreen, 3, middle_center);
-  panel(x + kStepperW - kStepperArrowInset - kStepperArrowW, kControlY + 7, kStepperArrowW,
-        kStepperArrowH, kDim, 5);
-  text(">", x + kStepperW - kStepperArrowInset - kStepperArrowW / 2, kControlY + 31, kGreen, 3,
+void draw_stepper(int x, int width, const char* label, const char* value) {
+  frame(x, kControlY, width, kControlH, kCyan, 9);
+  const int arrow_h=std::min(kStepperArrowH,kControlH-4), arrow_y=kControlY+(kControlH-arrow_h)/2;
+  panel(x + kStepperArrowInset, arrow_y, kStepperArrowW, arrow_h, kDim, 5);
+  text("<", x + kStepperArrowInset + kStepperArrowW / 2, arrow_y+arrow_h/2, kGreen, 3, middle_center);
+  panel(x + width - kStepperArrowInset - kStepperArrowW, arrow_y, kStepperArrowW,
+        arrow_h, kDim, 5);
+  text(">", x + width - kStepperArrowInset - kStepperArrowW / 2, arrow_y+arrow_h/2, kGreen, 3,
        middle_center);
-  text(label, x + kStepperW / 2, kControlY + 15, kCyan, 2, middle_center);
-  text(value, x + kStepperW / 2, kControlY + 43, kGreen, 2, middle_center);
+  if (kControlH >= 60) {
+    text(label, x + width / 2, kControlY + 15, kCyan, 2, middle_center);
+    text(value, x + width / 2, kControlY + 43, kGreen, 2, middle_center);
+  } else {
+    text(label, x + width / 2, kControlY + 12, kCyan, 1, middle_center);
+    text(value, x + width / 2, kControlY + 34, kGreen, 1, middle_center);
+  }
 }
 
 void draw_step_size_controls();
@@ -414,30 +441,44 @@ void draw_step_size_controls();
 void draw_span_control() {
   char value[24];
   snprintf(value, sizeof(value), "%.0f kHz", current.span_hz / 1000.0);
-  draw_stepper(kStepperSpan, "SPAN", value);
+  draw_stepper(kStepperSpan, home_layout.span.w, "SPAN", value);
 }
 
 void draw_tuning_controls() {
-  M5.Display.fillRect(kStepperSpan, kControlY, kStepperSize + kStepperW - kStepperSpan, kControlH,
+  M5.Display.fillRect(kStepperSpan, kControlY, home_layout.gain.x + home_layout.gain.w - kStepperSpan, kControlH,
                       TFT_BLACK);
   char value[24];
   draw_span_control();
   snprintf(value, sizeof(value), "%.1f kHz", current.step_hz / 1000.0);
-  draw_stepper(kStepperTune, "TUNE", value);
+  draw_stepper(kStepperTune, home_layout.tune.w, "TUNE", value);
   draw_step_size_controls();
 }
 
 void draw_step_size_controls() {
   char value[24];
   snprintf(value, sizeof(value), "%.1f kHz", current.step_hz / 1000.0);
-  draw_stepper(kStepperSize, "STEP SIZE", current.step_adjustable ? value : "FIXED");
+  draw_stepper(kStepperSize, home_layout.step.w, "STEP SIZE", current.step_adjustable ? value : "FIXED");
 }
 
 void footer_text(const char* value, int x, uint16_t color) {
   M5.Display.setTextDatum(middle_center);
   M5.Display.setTextColor(color, kPanel);
-  M5.Display.setTextSize(2);
-  M5.Display.drawString(value, x, 678);
+  M5.Display.setTextSize(home_layout.legacy?2:1);
+  M5.Display.drawString(value, x, home_layout.footer.y+home_layout.footer.h/2);
+}
+
+struct FooterCell { int x,y,w,h; };
+FooterCell footer_cell(int index) {
+  if(home_layout.legacy) {
+    constexpr FooterCell cells[]={{30,660,136,36},{176,660,204,36},{390,660,166,36},
+      {564,660,132,36},{704,660,148,36},{862,660,212,36}};
+    return cells[index];
+  }
+  const auto f=home_layout.footer;
+  constexpr int percent[]={0,17,34,49,62,75,100};
+  const int left=f.x+8+(f.w-16)*percent[index]/100;
+  const int right=f.x+8+(f.w-16)*percent[index+1]/100;
+  return {left,f.y+6,std::max(1,right-left-4),std::max(1,f.h-12)};
 }
 
 bool gain_changed(const Snapshot& a, const Snapshot& b) {
@@ -465,7 +506,7 @@ uint16_t gain_label(char* out, size_t size) {
 
 void draw_gain_panel() {
   panel(kGainX, kGainY, kGainW, kGainH, kCyan, 7);
-  text("GAIN", kGainX + kGainW / 2, 582, kCyan, 2, middle_center);
+  text("GAIN", kGainX + kGainW / 2, home_layout.legacy?582:kGainY+kGainH/3, kCyan, 2, middle_center);
   char label[16];
   const uint16_t color = gain_label(label, sizeof(label));
   char value[24];
@@ -473,25 +514,25 @@ void draw_gain_panel() {
   else if (color == kGreen && current.gain_smart)
     snprintf(value, sizeof(value), "%s %.0f", label, current.gain_tenth_db / 10.0);
   else strlcpy(value, label, sizeof(value));
-  text(value, kGainX + kGainW / 2, 608, color, 2, middle_center);
+  text(value, kGainX + kGainW / 2, home_layout.legacy?608:kGainY+2*kGainH/3, color, 2, middle_center);
 }
 
 void draw_footer_gain() {
-  M5.Display.fillRect(564, 660, 132, 36, kPanel);
+  const auto cell=footer_cell(3); M5.Display.fillRect(cell.x,cell.y,cell.w,cell.h,kPanel);
   char label[16];
   const uint16_t color = gain_label(label, sizeof(label));
   char value[24];
-  snprintf(value, sizeof(value), "GAIN %s", label);
-  footer_text(value, 630, color);
+  snprintf(value, sizeof(value), home_layout.legacy?"GAIN %s":"G %s", label);
+  footer_text(value, cell.x+cell.w/2, color);
 }
 
 void draw_footer_bias() {
-  M5.Display.fillRect(704, 660, 148, 36, kPanel);
+  const auto cell=footer_cell(4); M5.Display.fillRect(cell.x,cell.y,cell.w,cell.h,kPanel);
   if (!current.driver_ready || !current.bias_available) {
-    footer_text("BIAS N/A", 778, TFT_LIGHTGREY);
+    footer_text("BIAS N/A", cell.x+cell.w/2, TFT_LIGHTGREY);
     return;
   }
-  footer_text(current.bias_on ? "BIAS ON" : "BIAS OFF", 778,
+  footer_text(current.bias_on ? "BIAS ON" : "BIAS OFF", cell.x+cell.w/2,
               current.bias_on ? TFT_RED : TFT_LIGHTGREY);
 }
 
@@ -504,8 +545,31 @@ void popup_button(int x, int w, const char* label, bool on, bool enabled,
                            !enabled ? kDim : on ? kGreen : kCyan);
   M5.Display.setTextDatum(middle_center);
   M5.Display.setTextColor(!enabled ? kDim : on ? TFT_WHITE : TFT_LIGHTGREY, fill);
-  M5.Display.setTextSize(2);
+  M5.Display.setTextSize(w<120?1:2);
   M5.Display.drawString(label, x + w / 2, y + kPopButtonH / 2);
+}
+
+void popup_text(const char* value,int y,uint16_t color,int size=2) {
+  if(home_layout.legacy) { text(value,kPopX+20,y,color,size); return; }
+  size=1;
+  const int limit=std::max(12,(kPopW-40)/6);
+  const char* p=value; int row=0;
+  while(*p) {
+    while(*p==' ') ++p;
+    char line[96]{}; int used=0;
+    while(*p) {
+      const char* word=p; while(*p && *p!=' ') ++p;
+      const int length=static_cast<int>(p-word);
+      if(used && used+1+length>limit) { p=word; break; }
+      if(length>limit-used) { if(used) break; const int take=std::min(length,limit); std::memcpy(line,word,take);used=take;p=word+take;break; }
+      if(used) line[used++]=' ';
+      std::memcpy(line+used,word,length);used+=length;
+      while(*p==' ') ++p;
+    }
+    line[used]='\0';
+    if(used) text(line,kPopX+20,y+row*12,color,static_cast<uint8_t>(size));
+    ++row;
+  }
 }
 
 int gain_step_index() {
@@ -532,15 +596,15 @@ void draw_gain_popup() {
                current.rtl_agc, current.driver_ready && current.rtl_agc_available);
   popup_button(kCloseX, kCloseW, "CLOSE", false, true);
   if (!gain || current.gain_step_count < 2) {
-    text(current.driver_ready ? "Tuner gain is not available at this frequency."
-                              : "No receiver connected.",
-         kMinusX, kSliderY + kSliderH / 2, TFT_LIGHTGREY, 2);
+    popup_text(current.driver_ready ? "Tuner gain is not available at this frequency."
+                                    : "No receiver connected.",
+         kSliderY + kSliderH / 2, TFT_LIGHTGREY, 2);
   } else {
     char value[48];
     snprintf(value, sizeof(value), "%s %.1f dB",
              current.gain_auto ? "AUTO SELECTED" : "MANUAL GAIN",
              current.gain_tenth_db / 10.0);
-    text(value, kMinusX, 258 + kPopShift, current.gain_auto ? kGreen : TFT_ORANGE, 2);
+    popup_text(value, 258 + kPopShift, current.gain_auto ? kGreen : TFT_ORANGE, 2);
     panel(kMinusX, kSliderY, kNudgeW, kSliderH, kCyan, 8);
     text("-", kMinusX + kNudgeW / 2, kSliderY + kSliderH / 2, TFT_WHITE, 3, middle_center);
     panel(kPlusX, kSliderY, kNudgeW, kSliderH, kCyan, 8);
@@ -555,13 +619,13 @@ void draw_gain_popup() {
       M5.Display.fillRect(x0, kSliderY + 4, std::max(1, x1 - x0 - 2), kSliderH - 8, color);
     }
   }
-  text(current.gain_smart ? "SMART: OrcSDR picks the lowest gain that sounds clean."
+  popup_text(current.gain_smart ? "SMART: OrcSDR picks the lowest gain that sounds clean."
                           : "TUNER AGC: the tuner chip sets its own gain.",
-       kPopX + 20, 356 + kPopShift, TFT_LIGHTGREY, 2);
-  text("MANUAL: you choose the tuner (RF) gain step; tap the bar.",
-       kPopX + 20, 384 + kPopShift, TFT_LIGHTGREY, 2);
-  text("RTL AGC: extra digital gain after the ADC. Normally OFF.",
-       kPopX + 20, 412 + kPopShift, TFT_LIGHTGREY, 2);
+       356 + kPopShift, TFT_LIGHTGREY, 2);
+  popup_text("MANUAL: you choose the tuner (RF) gain step; tap the bar.",
+       384 + kPopShift, TFT_LIGHTGREY, 2);
+  popup_text("RTL AGC: extra digital gain after the ADC. Normally OFF.",
+       412 + kPopShift, TFT_LIGHTGREY, 2);
 }
 
 Action manual_gain_at(int index) {
@@ -569,10 +633,64 @@ Action manual_gain_at(int index) {
           static_cast<uint32_t>(std::max<int>(0, current.gain_steps_tenth_db[index]))};
 }
 
+int kFilterPanelX = 976, kFilterPanelY = 564, kFilterPanelW = 138, kFilterPanelH = 62;
+int kFilterRow2Y = 262 + kPopShift;
+int kStandardX = 360, kStandardW = 250, kEdgesX = 622, kEdgesW = 250;
+int kFilterCloseX = 1032, kFilterCloseW = 178;
+bool apply_layout(LayoutRect viewport) {
+  const auto header = audio_header::make_header_layout(viewport);
+  const auto next = make_layout(viewport, header.content_top+28);
+  if (!header.valid || !next.valid || next.spectrum.w - 2 > static_cast<int>(kPlotPixelCapacity)) return false;
+  home_viewport = viewport;
+  home_layout = next;
+  audio_header::set_viewport(viewport);
+  kRailX=next.rail.x; kRailY=next.rail.y; kRailW=next.rail.w; kRailH=next.rail.h;
+  kMainX=next.main.x; kMainY=next.main.y; kMainW=next.main.w; kMainH=next.main.h;
+  kPlotX=next.spectrum.x; kPlotW=next.spectrum.w;
+  kSpectrumY=next.spectrum.y; kSpectrumH=next.spectrum.h;
+  kWaterfallY=next.waterfall.y; kWaterfallH=next.waterfall.h;
+  kReadoutY=next.frequency.y; kReadoutH=next.frequency.h;
+  kListX=next.recent.x; kListY=next.recent.y; kListW=next.recent.w; kListH=next.recent.h;
+  kAllY=next.all.y; kHeaderStatusX=header.status.x; kHeaderStatusY=header.status.y;
+  kHeaderStatusW=header.status.w; kHeaderStatusH=header.status.h;
+  kModeX=next.mode.x; kModeW=next.mode.w; kPaletteX=next.palette.x; kPaletteW=next.palette.w;
+  kSpeedX=next.speed.x; kSpeedW=next.speed.w;
+  kBrowserColumns=viewport.h>viewport.w?2:3; kBrowserRows=kBrowserPageSize/kBrowserColumns;
+  kBrowserCardX=viewport.x+12; kBrowserCardY=header.content_top+8;
+  kBrowserColumnPitch=(viewport.w-24)/static_cast<int>(kBrowserColumns);
+  kBrowserCardW=kBrowserColumnPitch-10;
+  kBrowserNavY=viewport.y+viewport.h-58;
+  kBrowserRowPitch=std::max(52,(kBrowserNavY-kBrowserCardY-16)/static_cast<int>(kBrowserRows));
+  kBrowserCardH=std::max(44,std::min(118,kBrowserRowPitch-8));
+  kBrowserPrevX=viewport.x+viewport.w/2-150; kBrowserNextX=viewport.x+viewport.w/2+40;
+  kBrowserPageX=viewport.x+viewport.w/2;
+  kContrastY=next.contrast.y+(next.contrast.h-kContrastButtonH)/2;
+  kContrastDownX=next.contrast.x; kContrastUpX=next.contrast.x+next.contrast.w-kContrastButtonW;
+  kControlY=next.span.y; kControlH=next.span.h;
+  kStepperSpan=next.span.x; kStepperTune=next.tune.x; kStepperSize=next.step.x;
+  kStepperW=next.span.w;
+  kFilterPanelX=next.filter.x; kFilterPanelY=next.filter.y; kFilterPanelW=next.filter.w; kFilterPanelH=next.filter.h;
+  kGainX=next.gain.x; kGainY=next.gain.y; kGainW=next.gain.w; kGainH=next.gain.h;
+  kPopX=next.popup.x; kPopY=next.popup.y; kPopW=next.popup.w; kPopH=next.popup.h;
+  kPopShift=kPopY-150; kPopButtonY=kPopY+40; kFilterRow2Y=kPopY+112;
+  kPopButtonW=(kPopW-60)/4; kAutoX=kPopX+20; kManualX=kAutoX+kPopButtonW+10;
+  kRtlAgcX=kManualX+kPopButtonW+10; kCloseX=kRtlAgcX+kPopButtonW+10; kCloseW=kPopX+kPopW-20-kCloseX;
+  kStandardX=kPopX+20; kStandardW=(kPopW-60)/3;
+  kEdgesX=kStandardX+kStandardW+10; kEdgesW=kStandardW;
+  kFilterCloseX=kEdgesX+kEdgesW+10; kFilterCloseW=kPopX+kPopW-20-kFilterCloseX;
+  kSliderY=kPopY+126; kMinusX=kPopX+20; kNudgeW=56; kBarX=kMinusX+kNudgeW+16;
+  kPlusX=kPopX+kPopW-20-kNudgeW; kBarW=kPlusX-kBarX-16;
+  if (next.legacy) {
+    kBrowserColumns=3;kBrowserRows=4;kBrowserCardX=30;kBrowserCardY=96;kBrowserCardW=390;kBrowserCardH=118;
+    kBrowserColumnPitch=410;kBrowserRowPitch=136;kBrowserNavY=650;kBrowserPrevX=486;kBrowserNextX=684;kBrowserPageX=640;
+    kPopShift=258;kPopButtonY=448;kAutoX=360;kManualX=584;kRtlAgcX=808;kCloseX=1032;kPopButtonW=210;kCloseW=178;
+    kSliderY=534;kMinusX=360;kBarX=446;kBarW=678;kPlusX=1140;kNudgeW=70;
+    kStandardX=360;kStandardW=250;kEdgesX=622;kEdgesW=250;kFilterCloseX=1032;kFilterCloseW=178;
+  }
+  layout_dirty=true;
+  return true;
+}
 // ---- Receiver filter popup -----------------------------------------------------------------
-constexpr int kFilterPanelX = 976, kFilterPanelY = 564, kFilterPanelW = 138, kFilterPanelH = 62;
-constexpr int kFilterRow2Y = 262 + kPopShift;
-constexpr int kStandardX = 360, kStandardW = 250, kEdgesX = 622, kEdgesW = 250;
 
 void format_bandwidth(char* out, size_t size, uint32_t hz) {
   if (hz == 0) snprintf(out, size, "AUTO");
@@ -582,10 +700,10 @@ void format_bandwidth(char* out, size_t size, uint32_t hz) {
 
 void draw_filter_panel() {
   panel(kFilterPanelX, kFilterPanelY, kFilterPanelW, kFilterPanelH, kCyan, 7);
-  text("FILTER", kFilterPanelX + kFilterPanelW / 2, 582, kCyan, 2, middle_center);
+  text("FILTER", kFilterPanelX + kFilterPanelW / 2, home_layout.legacy?582:kFilterPanelY+kFilterPanelH/3, kCyan, 2, middle_center);
   char value[24];
   format_bandwidth(value, sizeof(value), current.filter_bandwidth_hz);
-  text(value, kFilterPanelX + kFilterPanelW / 2, 608, kGreen, 2, middle_center);
+  text(value, kFilterPanelX + kFilterPanelW / 2, home_layout.legacy?608:kFilterPanelY+2*kFilterPanelH/3, kGreen, 2, middle_center);
 }
 
 // Preset button i of n across the popup's button row.
@@ -602,7 +720,10 @@ void draw_keypad() {
   const double lo = current.tune_min_hz / 1e6, hi = current.tune_max_hz / 1e6;
   snprintf(banner, sizeof(banner), "OUT OF RANGE: %.3f - %.0f MHZ", lo, hi);
   snprintf(hint, sizeof(hint), "%.3f - %.1f", lo, hi);
-  freq_keypad::draw(kSpectrumY, TFT_BLACK, keypad_error ? banner : "ENTER FREQUENCY", hint, "MHz", keypad_entry);
+  const int top=audio_header::make_header_layout(home_viewport).content_top;
+  const freq_keypad::Rect keypad_view{home_viewport.x,top,home_viewport.w,home_viewport.y+home_viewport.h-top};
+  focus_nav::clear();
+  freq_keypad::draw(top, TFT_BLACK, keypad_error ? banner : "ENTER FREQUENCY", hint, "MHz", keypad_entry,&keypad_view);
 }
 
 // ---- Mode popup: pick the demodulation for the band on screen, with a plain-language note on each mode ------
@@ -642,25 +763,25 @@ void draw_mode_popup() {
     if (i != 0 && current.mode_suggested == i && current.mode_selectable)
       text("USUAL", x + w - 6, kPopButtonY + 8, kGreen, 1, middle_right);
   }
-  popup_button(kCloseX, kCloseW, "CLOSE", false, true, kFilterRow2Y);
+  popup_button(kFilterCloseX, kFilterCloseW, "CLOSE", false, true, kFilterRow2Y);
   if (!current.mode_selectable) {
-    text("This band sets its own mode; its dashboard chooses it for you.", kPopX + 20, 288 + kPopShift,
+    popup_text("This band sets its own mode; its dashboard chooses it for you.", home_layout.legacy?288+kPopShift:kPopY+170,
          TFT_LIGHTGREY, 2);
     return;
   }
-  text(current.mode_choice == 0 ? "AUTO picks the usual mode here. Tap a mode to pin it."
+  popup_text(current.mode_choice == 0 ? "AUTO picks the usual mode here. Tap a mode to pin it."
                                 : "Pinned for this band. Tap AUTO to let OrcSDR choose.",
-       kPopX + 20, 288 + kPopShift, TFT_LIGHTGREY, 2);
+       home_layout.legacy?288+kPopShift:kPopY+170, TFT_LIGHTGREY, 2);
   const int shown_mode = std::clamp<int>(current.mode_active ? current.mode_active : current.mode_choice, 1, 5);
   char title[40];
   snprintf(title, sizeof(title), current.mode_choice == 0 ? "%s (AUTO)" : "%s", kModeHelp[shown_mode].title);
-  text(title, kPopX + 20, 344 + kPopShift, TFT_WHITE, 2);
+  popup_text(title, home_layout.legacy?344+kPopShift:kPopY+200, TFT_WHITE, 2);
   for (int i = 0; i < 3; ++i)
-    text(kModeHelp[shown_mode].line[i], kPopX + 20, 372 + kPopShift + i * 28, TFT_LIGHTGREY, 2);
+    popup_text(kModeHelp[shown_mode].line[i], (home_layout.legacy?372+kPopShift:kPopY+228) + i * 28, TFT_LIGHTGREY, 2);
 }
 
 Action mode_popup_action(int32_t x, int32_t y) {
-  if (inside(x, y, kCloseX, kFilterRow2Y, kCloseW, kPopButtonH) ||
+  if (inside(x, y, kFilterCloseX, kFilterRow2Y, kFilterCloseW, kPopButtonH) ||
       !inside(x, y, kPopX, kPopY, kPopW, kPopH))
     return {ActionKind::mode_close};
   if (!current.mode_selectable) return {};
@@ -696,22 +817,22 @@ void draw_filter_popup() {
   popup_button(kStandardX, kStandardW, "STANDARD", false, standards.count != 0, kFilterRow2Y);
   popup_button(kEdgesX, kEdgesW, filter_edges ? "EDGES ON" : "EDGES OFF", filter_edges,
                current.filter_bandwidth_hz != 0, kFilterRow2Y);
-  popup_button(kCloseX, kCloseW, "CLOSE", false, true, kFilterRow2Y);
+  popup_button(kFilterCloseX, kFilterCloseW, "CLOSE", false, true, kFilterRow2Y);
   char line[64], width[16];
   format_bandwidth(width, sizeof(width), current.filter_bandwidth_hz);
   snprintf(line, sizeof(line), "BAND: %s", standards.name);
-  text(line, kPopX + 20, 344 + kPopShift, TFT_WHITE, 2);
+  popup_text(line, 344 + kPopShift, TFT_WHITE, 2);
   snprintf(line, sizeof(line), "CURRENT WIDTH: %s", width);
-  text(line, kPopX + 20, 372 + kPopShift, TFT_LIGHTGREY, 2);
-  text("STD marks the standard width for this band. STANDARD applies it.", kPopX + 20, 400 + kPopShift,
+  popup_text(line, 372 + kPopShift, TFT_LIGHTGREY, 2);
+  popup_text("STD marks the standard width for this band. STANDARD applies it.", 400 + kPopShift,
        TFT_LIGHTGREY, 2);
-  text("EDGES draws the receive filter as two lines on the spectrum.", kPopX + 20, 428 + kPopShift,
+  popup_text("EDGES draws the receive filter as two lines on the spectrum.", 428 + kPopShift,
        TFT_LIGHTGREY, 2);
 }
 
 Action filter_popup_action(int32_t x, int32_t y) {
   const auto& standards = filter_standards::standards(current.filter_kind);
-  if (inside(x, y, kCloseX, kFilterRow2Y, kCloseW, kPopButtonH) ||
+  if (inside(x, y, kFilterCloseX, kFilterRow2Y, kFilterCloseW, kPopButtonH) ||
       !inside(x, y, kPopX, kPopY, kPopW, kPopH))
     return {ActionKind::filter_close};
   if (inside(x, y, kStandardX, kFilterRow2Y, kStandardW, kPopButtonH))
@@ -754,41 +875,51 @@ Action gain_popup_action(int32_t x, int32_t y) {
 }
 
 void draw_footer_receiver() {
-  M5.Display.fillRect(30, 660, 136, 36, kPanel);
-  footer_text(current.receiver, 98, current.driver_ready ? kGreen : TFT_ORANGE);
+  const auto cell=footer_cell(0); M5.Display.fillRect(cell.x,cell.y,cell.w,cell.h,kPanel);
+  footer_text(current.receiver, cell.x+cell.w/2, current.driver_ready ? kGreen : TFT_ORANGE);
 }
 
 void draw_footer_sample() {
-  M5.Display.fillRect(176, 660, 204, 36, kPanel);
+  const auto cell=footer_cell(1); M5.Display.fillRect(cell.x,cell.y,cell.w,cell.h,kPanel);
   char value[24];
-  snprintf(value, sizeof(value), current.effective_sps ? "%.3f MSPS" : "-- MSPS",
-           current.effective_sps / 1000000.0);
-  footer_text(value, 278, current.effective_sps ? kGreen : TFT_LIGHTGREY);
+  snprintf(value, sizeof(value), home_layout.legacy?(current.effective_sps ? "%.3f MSPS" : "-- MSPS"):
+           (current.effective_sps ? "%.1fM" : "--M"), current.effective_sps / 1000000.0);
+  footer_text(value, cell.x+cell.w/2, current.effective_sps ? kGreen : TFT_LIGHTGREY);
 }
 
 void draw_footer_bandwidth() {
-  M5.Display.fillRect(390, 660, 166, 36, kPanel);
+  const auto cell=footer_cell(2); M5.Display.fillRect(cell.x,cell.y,cell.w,cell.h,kPanel);
   char value[24];
-  snprintf(value, sizeof(value), "BW %lu kHz",
+  snprintf(value, sizeof(value), home_layout.legacy?"BW %lu kHz":"BW %luk",
            static_cast<unsigned long>(current.filter_bandwidth_hz / 1000u));
-  footer_text(value, 473, kGreen);
+  footer_text(value, cell.x+cell.w/2, kGreen);
 }
 
 void draw_footer_level() {
-  M5.Display.fillRect(862, 660, 212, 36, kPanel);
+  const auto cell=footer_cell(5); M5.Display.fillRect(cell.x,cell.y,cell.w,cell.h,kPanel);
   char value[24];
   snprintf(value, sizeof(value), "%.0f dBFS", static_cast<double>(current.relative_dbfs));
-  footer_text(value, 968, kGreen);
+  if(home_layout.legacy) footer_text(value, 968, kGreen);
+  else {
+    M5.Display.setTextDatum(middle_left); M5.Display.setTextColor(kGreen,kPanel); M5.Display.setTextSize(1);
+    M5.Display.drawString(value,cell.x+3,cell.y+cell.h/2);
+  }
   const float strength = std::clamp((current.relative_dbfs + 80.0f) / 60.0f, 0.0f, 1.0f);
-  for (int i = 0; i < 9; ++i)
-    M5.Display.fillRect(1080 + i * 16, 669, 12, 18,
-                        i < static_cast<int>(strength * 9) ? kGreen : kDim);
+  for (int i = 0; i < 9; ++i) {
+    const int x=home_layout.legacy?1080+i*16:cell.x+std::max(42,cell.w-62)+i*6;
+    const int y=home_layout.legacy?669:cell.y+cell.h/2-7;
+    const int width=home_layout.legacy?12:5;
+    M5.Display.fillRect(x,y,width,14,i<static_cast<int>(strength*9)?kGreen:kDim);
+  }
 }
 
 void draw_footer() {
-  frame(24, 654, 1224, 48, kCyan, 8);
-  for (const int x : {170, 384, 560, 700, 856})
-    M5.Display.drawFastVLine(x, 662, 32, kDim);
+  const auto f=home_layout.footer; frame(f.x,f.y,f.w,f.h,kCyan,8);
+  if(home_layout.legacy) {
+    for (const int x : {170, 384, 560, 700, 856}) M5.Display.drawFastVLine(x,662,32,kDim);
+  } else {
+    for(int i=1;i<6;++i) { const auto c=footer_cell(i); M5.Display.drawFastVLine(c.x-2,f.y+6,f.h-12,kDim); }
+  }
   draw_footer_gain();
   draw_footer_bias();
   draw_footer_receiver();
@@ -801,8 +932,9 @@ void draw_footer() {
 // covered is cleared; the spectrum redraws on its next frame and the waterfall refills as it scrolls.
 // The band in plain words (FM RADIO, 70 CM HAM, AIR BAND...), centered above the spectrum.
 void draw_band_label() {
-  M5.Display.fillRect(kPlotX + 150, 84, kPlotW - 300, 28, TFT_BLACK);
-  text(current.band[0] ? current.band : "", kPlotX + kPlotW / 2, 98, kGreen, 2, middle_center);
+  const int y=kSpectrumY-28;
+  M5.Display.fillRect(kPlotX + 150, y, kPlotW - 300, 28, TFT_BLACK);
+  text(current.band[0] ? current.band : "", kPlotX + kPlotW / 2, y+14, kGreen, 2, middle_center);
 }
 
 void draw_footer();
@@ -810,7 +942,7 @@ void draw_footer();
 void draw_receiver_chrome(bool keep_graphics = false) {
   if (keep_graphics) M5.Display.fillRect(kPopX, kPopY, kPopW, kPopH, TFT_BLACK);
   frame(kMainX, kMainY, kMainW, kMainH, kCyan, 12);
-  text("SPECTRUM", kPlotX, 98, kCyan, 2);
+  text("SPECTRUM", kPlotX, kSpectrumY-14, kCyan, 2);
   draw_band_label();
   if (keep_graphics) {
     M5.Display.drawRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, kDim);
@@ -838,6 +970,7 @@ void draw_receiver_chrome(bool keep_graphics = false) {
 }
 
 void draw_browser() {
+  focus_nav::clear();
   M5.Display.fillScreen(TFT_BLACK);
   audio_header::draw_brand("ALL DASHBOARDS");
   audio_header::draw_battery(current.battery_percent);
@@ -859,34 +992,39 @@ void draw_browser() {
     const int x = kBrowserCardX + col * kBrowserColumnPitch;
     const int y = kBrowserCardY + row * kBrowserRowPitch;
     panel(x, y, kBrowserCardW, kBrowserCardH, entry->available ? kCyan : kDim, 10);
-    draw_menu_icon(entry->id, x + 42, y + 46, entry->available ? kCyan : kDim);
-    text(entry->title, x + 78, y + 38, entry->available ? TFT_WHITE : kDim, 2);
-    text(entry->subtitle, x + 78, y + 70, entry->available ? TFT_LIGHTGREY : kDim, 1);
+    M5.Display.setClipRect(x+2,y+2,kBrowserCardW-4,kBrowserCardH-4);
+    draw_menu_icon(entry->id, x + std::min(42,kBrowserCardW/6), y + kBrowserCardH/2, entry->available ? kCyan : kDim);
+    const int label_x=x+std::min(78,kBrowserCardW/3);
+    const uint8_t label_size=kBrowserCardW<240?1:2;
+    text(entry->title, label_x, y + kBrowserCardH/3, entry->available ? TFT_WHITE : kDim, label_size);
+    text(entry->subtitle, label_x, y + 2*kBrowserCardH/3, entry->available ? TFT_LIGHTGREY : kDim, 1);
+    M5.Display.clearClipRect();
   }
   if (pages > 1) {
-    panel(486, kBrowserNavY, 110, 44, browser_page ? kCyan : kDim, 8);
-    text("PREV", 541, kBrowserNavY + 22, browser_page ? TFT_WHITE : kDim, 2,
+    panel(kBrowserPrevX, kBrowserNavY, 110, 44, browser_page ? kCyan : kDim, 8);
+    text("PREV", kBrowserPrevX+55, kBrowserNavY + 22, browser_page ? TFT_WHITE : kDim, 2,
          middle_center);
     char page[24];
     snprintf(page, sizeof(page), "PAGE %u / %u", static_cast<unsigned>(browser_page + 1),
              static_cast<unsigned>(pages));
-    text(page, 640, kBrowserNavY + 22, kCyan, 2, middle_center);
-    panel(684, kBrowserNavY, 110, 44, browser_page + 1 < pages ? kCyan : kDim, 8);
-    text("NEXT", 739, kBrowserNavY + 22,
+    text(page, kBrowserPageX, kBrowserNavY + 22, kCyan, 2, middle_center);
+    panel(kBrowserNextX, kBrowserNavY, 110, 44, browser_page + 1 < pages ? kCyan : kDim, 8);
+    text("NEXT", kBrowserNextX+55, kBrowserNavY + 22,
          browser_page + 1 < pages ? TFT_WHITE : kDim, 2, middle_center);
   }
-  M5.Display.drawRoundRect(10, 10, 1260, 700, 14, kCyan);
+  draw_screen_border();
 }
 
 void draw_all() {
   // Dashboards may select custom M5GFX fonts; Home owns the built-in font.
+  focus_nav::clear();
   M5.Display.setFont(nullptr);
   M5.Display.fillScreen(TFT_BLACK);
   draw_header();
   draw_rail();
   draw_receiver_chrome();
   draw_footer();
-  M5.Display.drawRoundRect(10, 10, 1260, 700, 14, kCyan);
+  draw_screen_border();
 }
 
 Action tap_action(int32_t x, int32_t y) {
@@ -897,9 +1035,9 @@ Action tap_action(int32_t x, int32_t y) {
     if (audio_header::home_hit(x, y)) return {ActionKind::close_browser};
     const size_t pages = std::max<size_t>(1, (dashboards::count() + kBrowserPageSize - 1) /
                                                 kBrowserPageSize);
-    if (inside(x, y, 486, kBrowserNavY, 110, 44) && browser_page > 0)
+    if (inside(x, y, kBrowserPrevX, kBrowserNavY, 110, 44) && browser_page > 0)
       return {ActionKind::browser_previous};
-    if (inside(x, y, 684, kBrowserNavY, 110, 44) && browser_page + 1 < pages)
+    if (inside(x, y, kBrowserNextX, kBrowserNavY, 110, 44) && browser_page + 1 < pages)
       return {ActionKind::browser_next};
     const size_t first = browser_page * kBrowserPageSize;
     const size_t last = std::min(first + kBrowserPageSize, dashboards::count());
@@ -930,12 +1068,14 @@ Action tap_action(int32_t x, int32_t y) {
   if (inside(x, y, kContrastUpX, kContrastY, kContrastButtonW, kContrastButtonH))
     return {ActionKind::waterfall_contrast_up};
   if (inside(x, y, kModeX, kReadoutY, kModeW, kReadoutH)) return {ActionKind::mode_open};
-  if (inside(x, y, kPlotX, kReadoutY, 350, kReadoutH)) return {ActionKind::keypad_open};
-  if (inside(x, y, kPaletteX, kReadoutY, kPaletteW, kReadoutH))
+  if (inside(x, y, home_layout.frequency.x, home_layout.frequency.y, home_layout.frequency.w, home_layout.frequency.h)) return {ActionKind::keypad_open};
+  if (inside(x, y, home_layout.palette.x, home_layout.palette.y,
+             home_layout.palette.w, home_layout.palette.h))
     return {ActionKind::waterfall_palette_next};
-  if (inside(x, y, kSpeedX, kReadoutY, kSpeedW, kReadoutH))
+  if (inside(x, y, home_layout.speed.x, home_layout.speed.y,
+             home_layout.speed.w, home_layout.speed.h))
     return {ActionKind::waterfall_speed_next};
-  if (inside(x, y, kListX, kAllY, kListW, 42)) return {ActionKind::open_browser};
+  if (inside(x, y, home_layout.all.x, home_layout.all.y, home_layout.all.w, home_layout.all.h)) return {ActionKind::open_browser};
   if (inside(x, y, kListX, kListY, kListW, kListH)) {
     const int index = (y - kListY + scroll_offset_px) / kRowPitch;
     if (index > 0 && index <= static_cast<int>(dashboards::recent_count()))
@@ -951,15 +1091,15 @@ Action tap_action(int32_t x, int32_t y) {
     return {ActionKind::tune_frequency, dashboards::Id::count,
             requested > 0 ? static_cast<uint32_t>(requested) : 0};
   }
-  const struct { int x; ActionKind down, up; } steppers[] = {
-      {kStepperSpan, ActionKind::span_down, ActionKind::span_up},
-      {kStepperTune, ActionKind::step_down, ActionKind::step_up},
-      {kStepperSize, ActionKind::step_size_down, ActionKind::step_size_up}};
+  const struct { int x, width; ActionKind down, up; } steppers[] = {
+      {kStepperSpan, home_layout.span.w, ActionKind::span_down, ActionKind::span_up},
+      {kStepperTune, home_layout.tune.w, ActionKind::step_down, ActionKind::step_up},
+      {kStepperSize, home_layout.step.w, ActionKind::step_size_down, ActionKind::step_size_up}};
   for (const auto& group : steppers) {
-    if (inside(x, y, group.x + kStepperArrowInset, kControlY + 7, kStepperArrowW, kStepperArrowH))
+    if (inside(x, y, group.x + kStepperArrowInset, kControlY + 2, kStepperArrowW, kControlH - 4))
       return {group.down};
-    if (inside(x, y, group.x + kStepperW - kStepperArrowInset - kStepperArrowW, kControlY + 7, kStepperArrowW,
-               kStepperArrowH))
+    if (inside(x, y, group.x + group.width - kStepperArrowInset - kStepperArrowW, kControlY + 2, kStepperArrowW,
+               kControlH - 4))
       return {group.up};
   }
   return {};
@@ -996,6 +1136,25 @@ void enter(const Snapshot& snapshot) {
   clamp_scroll();
   draw_all();
 }
+
+bool set_viewport(LayoutRect viewport) {
+  if (!apply_layout(viewport)) return false;
+  focus_nav::set_viewport(M5.Display.width(),M5.Display.height());
+  focus_nav::clear();
+  clamp_scroll();
+  gesture = {};
+  waterfall_clock.reset(millis());
+  M5.Display.clearScrollRect();
+  if (shown) {
+    if (browser) draw_browser();
+    else if (keypad) draw_keypad();
+    else draw_all();
+  }
+  return true;
+}
+
+void reset_viewport() { set_viewport({0, 0, 1280, 720}); }
+Layout layout() { return home_layout; }
 
 void leave() { shown = browser = gain_popup = filter_popup = mode_popup = keypad = false; gesture = {}; }
 
@@ -1069,13 +1228,14 @@ scope::Trace g_trace;
 constexpr float kSmoothKeep = 0.6f;      // share of the previous value kept per 100 ms
 constexpr float kPeakFallDb = 0.4f;      // the peak-hold dots fall this much per 100 ms
 constexpr uint16_t kPeakColor = 0xFD20;  // orange, as on the FM scope
-EXT_RAM_BSS_ATTR float g_px_smooth[kPlotW]{};
-EXT_RAM_BSS_ATTR float g_px_peak[kPlotW]{};
+EXT_RAM_BSS_ATTR float g_px_smooth[kPlotPixelCapacity]{};
+EXT_RAM_BSS_ATTR float g_px_peak[kPlotPixelCapacity]{};
 uint32_t g_px_frequency_hz = 0, g_px_span_hz = 0;
 size_t g_px_first_bin = 0, g_px_visible_bins = 0;
 
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor, bool audio_stressed) {
+  if (layout_dirty) { g_px_valid = false; layout_dirty = false; }
   if (!shown || browser || keypad || levels == nullptr || visible_bins < 2) return;
   const uint32_t now = millis();
   const uint32_t interval = audio_stressed ? 333 : plot::kSpectrumIntervalMs;
@@ -1084,8 +1244,8 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   const uint32_t elapsed_ms = std::min<uint32_t>(interval_ms, 333);
   last_spectrum_ms = now;
   const int64_t draw_started_us = esp_timer_get_time();
-  constexpr int w = kPlotW - 2;
-  constexpr int h = kSpectrumH - 2;
+  const int w = kPlotW - 2;
+  const int h = kSpectrumH - 2;
   // One point per pixel. A new view (retune, zoom, different bin window) starts the smoothing over.
   const bool same_view = g_px_valid && g_px_frequency_hz == current.frequency_hz &&
                          g_px_span_hz == current.span_hz && g_px_first_bin == first_bin &&
@@ -1342,6 +1502,46 @@ void close_popup() {
 bool browser_active() { return shown && browser; }
 bool keypad_open() { return shown && !browser && keypad; }
 
+bool responsive_input_check(LayoutRect viewport) {
+  if (!apply_layout(viewport)) return false;
+  const auto point = [](LayoutRect r) { return std::pair<int,int>{r.x+r.w/2,r.y+r.h/2}; };
+  auto p=point(home_layout.frequency);
+  if (tap_action(p.first,p.second).kind!=ActionKind::keypad_open) return false;
+  p=point(home_layout.filter);
+  if (tap_action(p.first,p.second).kind!=ActionKind::filter_open) return false;
+  p=point(home_layout.gain);
+  if (tap_action(p.first,p.second).kind!=ActionKind::gain_open) return false;
+  p=point(home_layout.mode);
+  if (tap_action(p.first,p.second).kind!=ActionKind::mode_open) return false;
+  if (tap_action(home_layout.span.x+6,home_layout.span.y+home_layout.span.h/2).kind!=ActionKind::span_down) return false;
+  if (tap_action(home_layout.tune.x+home_layout.tune.w-6,home_layout.tune.y+home_layout.tune.h/2).kind!=ActionKind::step_up) return false;
+  if (tap_action(home_layout.step.x+6,home_layout.step.y+home_layout.step.h/2).kind!=ActionKind::step_size_down) return false;
+  p=point(home_layout.contrast);
+  if (tap_action(home_layout.contrast.x+1,p.second).kind!=ActionKind::waterfall_contrast_down) return false;
+  p=point(home_layout.palette);
+  if (tap_action(p.first,p.second).kind!=ActionKind::waterfall_palette_next) return false;
+  p=point(home_layout.speed);
+  if (tap_action(p.first,p.second).kind!=ActionKind::waterfall_speed_next) return false;
+  p=point(home_layout.all);
+  if (tap_action(p.first,p.second).kind!=ActionKind::open_browser) return false;
+
+  const bool old_browser=browser,old_gain=gain_popup,old_filter=filter_popup,old_mode=mode_popup;
+  const size_t old_page=browser_page;
+  browser=true;browser_page=0;
+  p={kBrowserCardX+2,kBrowserCardY+2};
+  const bool card=tap_action(p.first,p.second).kind==ActionKind::open_dashboard;
+  const size_t pages=(dashboards::count()+kBrowserPageSize-1)/kBrowserPageSize;
+  const bool next=pages<2 || tap_action(kBrowserNextX+1,kBrowserNavY+1).kind==ActionKind::browser_next;
+  gain_popup=true;browser=false;
+  const bool gain_close=tap_action(kCloseX+1,kPopButtonY+1).kind==ActionKind::gain_close;
+  gain_popup=false;filter_popup=true;
+  const bool filter_close=tap_action(kFilterCloseX+1,kFilterRow2Y+1).kind==ActionKind::filter_close;
+  filter_popup=false;mode_popup=true;
+  const bool mode_close=tap_action(kFilterCloseX+1,kFilterRow2Y+1).kind==ActionKind::mode_close;
+  browser=old_browser;browser_page=old_page;gain_popup=old_gain;filter_popup=old_filter;mode_popup=old_mode;
+  return card && next && gain_close && filter_close && mode_close;
+}
+
 bool self_check() {
   const float levels[] = {60.0f, 60.0f, 60.0f, 84.0f};
   const size_t browser_pages = (dashboards::count() + kBrowserPageSize - 1) /
@@ -1352,20 +1552,24 @@ bool self_check() {
   browser_page = 0;
   const bool first_page_ok =
       tap_action(kBrowserCardX + 1, kBrowserCardY + 1).dashboard == dashboards::Id::fm &&
-      tap_action(685, kBrowserNavY + 1).kind == ActionKind::browser_next;
+      tap_action(kBrowserNextX+1, kBrowserNavY + 1).kind == ActionKind::browser_next;
   browser_page = 1;
   const bool second_page_ok =
       tap_action(kBrowserCardX + 1, kBrowserCardY + 1).dashboard == dashboards::descriptor(kBrowserPageSize)->id &&
-      tap_action(487, kBrowserNavY + 1).kind == ActionKind::browser_previous;
+      tap_action(kBrowserPrevX+1, kBrowserNavY + 1).kind == ActionKind::browser_previous;
   browser = saved_browser;
   browser_page = saved_page;
-  return dashboards::self_check() && first_page_ok && second_page_ok &&
+  const LayoutRect saved_viewport=home_viewport;
+  const bool responsive=responsive_input_check({72,72,1088,424}) &&
+                        responsive_input_check({72,72,424,1088}) &&
+                        apply_layout(saved_viewport);
+  return dashboards::self_check() && first_page_ok && second_page_ok && responsive &&
          kVisibleRows == 7 && kTapDragThreshold == 10 &&
          dashboards::count() > static_cast<size_t>(kVisibleRows) &&
          browser_pages == 2 &&
          kBrowserCardY + static_cast<int>(kBrowserRows - 1) * kBrowserRowPitch +
                  kBrowserCardH <= kBrowserNavY &&
-         kBrowserNavY + 44 < 710 &&
+         kBrowserNavY + 44 < home_viewport.y+home_viewport.h &&
          kHeaderStatusX + kHeaderStatusW <= 1099 &&
          waterfall_range_db(1) == 48 && waterfall_range_db(7) == 12 &&
          step_span(2400000, -1) == 1200000 &&
@@ -1379,9 +1583,11 @@ bool self_check() {
          tap_action(kStepperSpan + 5, kControlY + 8).kind == ActionKind::span_down &&
          tap_action(kStepperTune + kStepperW - 5, kControlY + 8).kind == ActionKind::step_up &&
          tap_action(kStepperSize + 5, kControlY + 8).kind == ActionKind::step_size_down &&
-         tap_action(1223, 13).kind == ActionKind::open_device_settings &&
+         tap_action(audio_header::layout().settings.x+audio_header::layout().settings.w/2,
+                    audio_header::layout().settings.y+audio_header::layout().settings.h/2).kind == ActionKind::open_device_settings &&
          tap_action(kHeaderStatusX+kHeaderStatusW-20,kHeaderStatusY+20).kind == ActionKind::open_clock &&
-         tap_action(1100, 13).kind == ActionKind::sound_toggle &&
+         tap_action(audio_header::layout().mute.x+audio_header::layout().mute.w/2,
+                    audio_header::layout().mute.y+audio_header::layout().mute.h/2).kind == ActionKind::sound_toggle &&
          std::abs(home_spectrum_floor(levels, std::size(levels), 10.0f) - 62.0f) < 0.01f;
 }
 

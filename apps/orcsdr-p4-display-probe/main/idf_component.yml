@@ -1,0 +1,7 @@
+dependencies:
+  idf:
+    version: ">=5.5.0,<5.6.0"
+  m5stack/m5gfx:
+    version: "0.2.27"
+  espressif/esp_codec_dev:
+    version: "1.6.2"

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "dashboard_header_layout.hpp"
 
 namespace orcsdr::fm {
 
@@ -82,6 +83,11 @@ struct Action {
 
 void enter(const Snapshot& snapshot);
 void leave();
+// Configures shared header, keypad, navigation, plot, and touch geometry on the
+// UI owner. A viewport change preserves the selected view and tuning state.
+bool set_viewport(audio_header::HeaderRect viewport);
+void reset_viewport();
+audio_header::HeaderRect viewport();
 void draw();
 void update(const Snapshot& snapshot);
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, float floor);

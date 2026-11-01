@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "dashboard_header_layout.hpp"
 
 namespace orcsdr::audio_header {
 
@@ -28,6 +29,11 @@ struct Control {
   uint8_t volume = 0;
   uint32_t hide_at_ms = 0;
 };
+
+// Opt-in viewport for ports. Existing Tab5 callers keep the exact legacy layout.
+// Configure only on the UI owner at a structural transition; invalidates tray cache.
+bool set_viewport(HeaderRect viewport);
+const HeaderLayout& layout();
 
 void reset(Control& control);
 void draw_badge();

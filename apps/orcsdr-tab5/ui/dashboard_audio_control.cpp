@@ -21,35 +21,37 @@ constexpr uint16_t kCyan = 0x2e7f;
 constexpr uint16_t kGreen = 0x6fe8;
 constexpr uint16_t kMuted = 0x8c71;
 constexpr uint16_t kGrid = 0x2945;
-constexpr int kRegionX = 866;
-constexpr int kRegionY = 12;
-constexpr int kRegionW = 174;
-constexpr int kRegionH = 54;
-constexpr int kHomeX = 1040;
-constexpr int kHomeY = 8;
-constexpr int kHomeW = 58;
-constexpr int kHomeH = 58;
-constexpr int kMuteX = 1099;
-constexpr int kMuteY = 12;
-constexpr int kMuteW = 54;
-constexpr int kMuteH = 54;
-constexpr int kVisualizerX = 1158;
-constexpr int kVisualizerY = 12;
-constexpr int kVisualizerW = 54;
-constexpr int kVisualizerH = 54;
-constexpr int kSettingsX = 1217;
-constexpr int kSettingsY = 12;
-constexpr int kSettingsW = 51;
-constexpr int kSettingsH = 54;
-constexpr int kTrayX = 900;
-constexpr int kTrayY = 72;
-constexpr int kTrayW = 280;
-constexpr int kTrayH = 68;
-constexpr int kSliderX = 924;
-constexpr int kSliderY = 113;
-constexpr int kSliderW = 232;
+HeaderLayout g_layout=make_header_layout({0,0,1280,720});
+const int& kRegionX=g_layout.battery.x;
+const int& kRegionY=g_layout.battery.y;
+const int& kRegionW=g_layout.battery.w;
+const int& kRegionH=g_layout.battery.h;
+const int& kHomeX=g_layout.home.x;
+const int& kHomeY=g_layout.home.y;
+const int& kHomeW=g_layout.home.w;
+const int& kHomeH=g_layout.home.h;
+const int& kMuteX=g_layout.mute.x;
+const int& kMuteY=g_layout.mute.y;
+const int& kMuteW=g_layout.mute.w;
+const int& kMuteH=g_layout.mute.h;
+const int& kVisualizerX=g_layout.visualizer.x;
+const int& kVisualizerY=g_layout.visualizer.y;
+const int& kVisualizerW=g_layout.visualizer.w;
+const int& kVisualizerH=g_layout.visualizer.h;
+const int& kSettingsX=g_layout.settings.x;
+const int& kSettingsY=g_layout.settings.y;
+const int& kSettingsW=g_layout.settings.w;
+const int& kSettingsH=g_layout.settings.h;
+const int& kTrayX=g_layout.tray.x;
+const int& kTrayY=g_layout.tray.y;
+const int& kTrayW=g_layout.tray.w;
+const int& kTrayH=g_layout.tray.h;
+const int& kSliderX=g_layout.slider_x;
+const int& kSliderY=g_layout.slider_y;
+const int& kSliderW=g_layout.slider_w;
 constexpr uint32_t kTrayTimeoutMs = 5000;
 uint16_t* g_tray_background = nullptr;
+size_t g_tray_background_capacity=0;
 bool g_tray_background_valid = false;
 
 bool hit(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
@@ -58,6 +60,7 @@ bool hit(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
 
 void text(const char* value, int x, int y, uint16_t color = TFT_WHITE,
           int size = 2) {
+  M5.Display.setFont(nullptr);
   M5.Display.setTextDatum(middle_center);
   M5.Display.setTextSize(size);
   M5.Display.setTextColor(color);
@@ -105,15 +108,22 @@ void draw_volume_slider(uint8_t volume, bool sound_enabled) {
 
 }  // namespace
 
+bool set_viewport(HeaderRect viewport) {
+  HeaderLayout next=make_header_layout(viewport);
+  if (!next.valid) return false;
+  g_layout=next;g_tray_background_valid=false;
+  focus_nav::set_viewport(M5.Display.width(),M5.Display.height());
+  return true;
+}
+const HeaderLayout& layout() { return g_layout; }
+
 void reset(Control& control) {
   control = {};
   g_tray_background_valid = false;
 }
 
 void draw_badge() {
-  constexpr int x = 24;
-  constexpr int y = 14;
-  constexpr int size = 88;
+  const int x=g_layout.badge.x,y=g_layout.badge.y,size=g_layout.badge.w;
   M5.Display.fillRect(x, y, size, size, kBg);
   if (!badge::draw(x, y, size)) {
     M5.Display.drawRoundRect(x, y, size, size, 10, kGreen);
@@ -122,17 +132,33 @@ void draw_badge() {
 }
 
 void draw_brand(const char* subtitle) {
-  M5.Display.fillRect(20, 12, 298, 54, kBg);
-  M5.Display.fillRect(20, 66, 350, 38, kBg);
+  if (g_layout.legacy) {
+    M5.Display.fillRect(20,12,298,54,kBg);M5.Display.fillRect(20,66,350,38,kBg);
+  } else {
+    const auto& b=g_layout.brand;M5.Display.fillRect(b.x,b.y,b.w,b.h,kBg);
+  }
   map_download_notice::invalidate();
   draw_badge();
-  M5.Display.setTextDatum(middle_left);
-  M5.Display.setTextColor(TFT_WHITE, kBg);
-  M5.Display.setTextSize(5);
-  M5.Display.drawString("OrcSDR", 128, 38);
-  M5.Display.setTextColor(kCyan, kBg);
-  M5.Display.setTextSize(subtitle && std::strlen(subtitle) <= 10 ? 3 : 2);
-  M5.Display.drawString(subtitle ? subtitle : "", 128, 82);
+  M5.Display.setFont(nullptr);M5.Display.setTextDatum(middle_left);
+  M5.Display.setTextColor(TFT_WHITE,kBg);M5.Display.setTextSize(g_layout.brand_size);
+  M5.Display.drawString("OrcSDR",g_layout.brand_x,g_layout.brand_y);
+  M5.Display.setTextColor(kCyan,kBg);
+  const int subtitle_size=g_layout.legacy && subtitle && std::strlen(subtitle)<=10?3:2;
+  M5.Display.setTextSize(subtitle_size);
+  char visible[48];
+  snprintf(visible,sizeof(visible),"%s",subtitle?subtitle:"");
+  if (!g_layout.legacy) {
+    const int available=g_layout.brand.x+g_layout.brand.w-g_layout.brand_x;
+    while (std::strlen(visible)>3 && M5.Display.textWidth(visible)>available) {
+      const size_t n=std::strlen(visible);
+      if (n>=3 && !std::strcmp(visible+n-3,"...")) {
+        visible[n-4]='.';visible[n-1]='\0';
+      } else {
+        visible[n-3]='.';visible[n-2]='.';visible[n-1]='.';
+      }
+    }
+  }
+  M5.Display.drawString(visible,g_layout.brand_x,g_layout.subtitle_y);
 }
 
 void draw_battery(int32_t battery_percent) {
@@ -143,8 +169,15 @@ void draw_battery(int32_t battery_percent) {
   else
     snprintf(level, sizeof(level), "%ld%%",
              static_cast<long>(std::clamp<int32_t>(battery_percent, 0, 100)));
-  text(level, 910, 37, battery_percent < 0 ? kMuted : TFT_WHITE, 2);
-  draw_battery(950, 21, battery_percent);
+  // Compact noninteractive indication occupies the former VIS slot.
+  const int x=kRegionX+4,y=kRegionY+3,w=kRegionW-10,h=18;
+  M5.Display.drawRoundRect(x,y,w,h,3,TFT_WHITE);
+  M5.Display.fillRect(x+w,y+5,3,8,TFT_WHITE);
+  if (battery_percent>=0) {
+    const int fill=(w-6)*std::clamp<int32_t>(battery_percent,0,100)/100;
+    if (fill>0) M5.Display.fillRect(x+3,y+3,fill,h-6,kGreen);
+  }
+  text(level,kRegionX+kRegionW/2,kRegionY+38,battery_percent<0?kMuted:TFT_WHITE,2);
 }
 
 void draw(const Control& control, uint8_t volume, bool sound_enabled,
@@ -155,9 +188,12 @@ void draw(const Control& control, uint8_t volume, bool sound_enabled,
 }
 
 void capture_volume_background() {
-  if (g_tray_background == nullptr) {
-    g_tray_background = static_cast<uint16_t*>(heap_caps_malloc(
-        kTrayW * kTrayH * sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  const size_t wanted=size_t(kTrayW)*kTrayH*sizeof(uint16_t);
+  if (wanted>g_tray_background_capacity) {
+    heap_caps_free(g_tray_background);
+    g_tray_background=static_cast<uint16_t*>(heap_caps_malloc(wanted,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
+    g_tray_background_capacity=g_tray_background?wanted:0;
+    g_tray_background_valid=false;
   }
   if (g_tray_background == nullptr) return;
   M5.Display.readRect(kTrayX, kTrayY, kTrayW, kTrayH, g_tray_background);
@@ -175,9 +211,16 @@ void draw_home_button() {
   M5.Display.fillRoundRect(kHomeX, kHomeY, kHomeW, kHomeH, 8, kPanel);
   M5.Display.drawRoundRect(kHomeX, kHomeY, kHomeW, kHomeH, 8, kCyan);
   const int cx = kHomeX + kHomeW / 2;
-  M5.Display.fillTriangle(cx, 17, kHomeX + 9, 38, kHomeX + kHomeW - 9, 38, kGreen);
-  M5.Display.fillRect(kHomeX + 17, 35, 24, 21, kGreen);
-  M5.Display.fillRect(cx - 4, 43, 8, 13, kPanel);
+  if (g_layout.legacy) {
+    M5.Display.fillTriangle(cx,17,kHomeX+9,38,kHomeX+kHomeW-9,38,kGreen);
+    M5.Display.fillRect(kHomeX+17,35,24,21,kGreen);
+    M5.Display.fillRect(cx-4,43,8,13,kPanel);
+  } else {
+    const int left=kHomeX+(kHomeW-32)/2,top=kHomeY+(kHomeH-36)/2;
+    M5.Display.fillTriangle(cx,top,left,top+20,left+32,top+20,kGreen);
+    M5.Display.fillRect(left+6,top+18,20,18,kGreen);
+    M5.Display.fillRect(cx-3,top+25,6,11,kPanel);
+  }
 }
 
 bool home_hit(int32_t x, int32_t y) {
@@ -197,23 +240,15 @@ bool mute_hit(int32_t x, int32_t y) {
   return hit(x, y, kMuteX, kMuteY, kMuteW, kMuteH);
 }
 
-void draw_visualizer_button(bool enabled) {
-  orcsdr::focus_nav::note(kVisualizerX, kVisualizerY, kVisualizerW, kVisualizerH);
-  const uint16_t color = enabled ? kCyan : kMuted;
-  M5.Display.fillRoundRect(kVisualizerX, kVisualizerY, kVisualizerW, kVisualizerH, 8, kPanel);
-  M5.Display.drawRoundRect(kVisualizerX, kVisualizerY, kVisualizerW, kVisualizerH, 8, color);
-  text("VIS", kVisualizerX + kVisualizerW / 2, kVisualizerY + kVisualizerH / 2,
-       color, 2);
-}
-
-bool visualizer_hit(int32_t x, int32_t y) {
-  return hit(x, y, kVisualizerX, kVisualizerY, kVisualizerW, kVisualizerH);
-}
+// Compatibility hooks: existing callers remain valid, but VIS is neither
+// drawn nor a touch/focus target. Visualizer screens remain available in source.
+void draw_visualizer_button(bool enabled) { (void)enabled; }
+bool visualizer_hit(int32_t x,int32_t y) { (void)x;(void)y;return false; }
 
 void draw_settings_button() {
   orcsdr::focus_nav::note(kSettingsX, kSettingsY, kSettingsW, kSettingsH);
-  constexpr int cx = kSettingsX + kSettingsW / 2;
-  constexpr int cy = kSettingsY + kSettingsH / 2;
+  const int cx = kSettingsX + kSettingsW / 2;
+  const int cy = kSettingsY + kSettingsH / 2;
   M5.Display.fillRoundRect(kSettingsX, kSettingsY, kSettingsW, kSettingsH, 8, kPanel);
   M5.Display.drawRoundRect(kSettingsX, kSettingsY, kSettingsW, kSettingsH, 8, TFT_LIGHTGREY);
   M5.Display.drawCircle(cx, cy, 13, kCyan);
@@ -238,7 +273,8 @@ Action handle_touch(Control& control, int32_t x, int32_t y, uint32_t now_ms,
     return Action::opened;
   }
 
-  if (hit(x, y, kSliderX - 12, kSliderY - 20, kSliderW + 24, 40)) {
+  const int touch_height=g_layout.legacy?40:44;
+  if (hit(x, y, kSliderX - 12, kSliderY - touch_height/2, kSliderW + 24, touch_height)) {
     control.volume = static_cast<uint8_t>(std::clamp<int32_t>(
         ((x - kSliderX) * 255 + kSliderW / 2) / kSliderW, 0, 255));
     control.hide_at_ms = now_ms + kTrayTimeoutMs;
@@ -280,19 +316,15 @@ bool self_check() {
     return false;
   if (service_timeout(control, 5399) || !service_timeout(control, 5400)) return false;
   reset(control);
-  if (handle_touch(control, 900, 60, 0, 128) != Action::none) return false;
-  return kRegionX + kRegionW <= kHomeX && kTrayX >= 0 &&
-         kTrayX + kTrayW <= 1280 && kTrayY > kMuteY + kMuteH &&
-         kTrayY + kTrayH <= 720 &&
-         kHomeX + kHomeW <= kMuteX && kMuteX + kMuteW <= kVisualizerX &&
-         kVisualizerX + kVisualizerW <= kSettingsX &&
-         home_hit(kHomeX + 1, kHomeY + 1) &&
-         !home_hit(kHomeX - 1, kHomeY) &&
-         mute_hit(kMuteX + 1, kMuteY + 1) && !mute_hit(kMuteX - 1, kMuteY) &&
-         visualizer_hit(kVisualizerX + 1, kVisualizerY + 1) &&
-         !visualizer_hit(kVisualizerX - 1, kVisualizerY) &&
-         settings_hit(kSettingsX + 1, kSettingsY + 1) &&
-         !settings_hit(kSettingsX - 1, kSettingsY);
+  if (handle_touch(control, -1, -1, 0, 128) != Action::none) return false;
+  return g_layout.valid && header_inside(g_layout.viewport,g_layout.tray) &&
+         !header_overlap(g_layout.home,g_layout.mute) &&
+         !header_overlap(g_layout.mute,g_layout.visualizer) &&
+         !header_overlap(g_layout.visualizer,g_layout.settings) &&
+         home_hit(kHomeX+1,kHomeY+1) && !home_hit(kHomeX-1,kHomeY) &&
+         mute_hit(kMuteX+1,kMuteY+1) && !mute_hit(kMuteX-1,kMuteY) &&
+         !visualizer_hit(kRegionX+1,kRegionY+1) &&
+         settings_hit(kSettingsX+1,kSettingsY+1) && !settings_hit(kSettingsX-1,kSettingsY);
 }
 
 }  // namespace orcsdr::audio_header

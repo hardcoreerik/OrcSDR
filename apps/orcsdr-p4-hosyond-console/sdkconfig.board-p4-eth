@@ -1,0 +1,3 @@
+# Build overlay: Waveshare ESP32-P4-ETH (no Wi-Fi radio, Ethernet and TF slot documented only).
+# There is no coprocessor, so the ESP-Hosted link is never started. List sdkconfig.silicon-v3 after this for v3.x silicon.
+CONFIG_ORCSDR_BOARD_WAVESHARE_P4_ETH=y

@@ -1,0 +1,48 @@
+#pragma once
+// Dashboard host for the P4 console. Each Tab5 dashboard keeps its own source (compiled unchanged);
+// a small adapter per dashboard (screen_<name>.cpp) builds that dashboard's Snapshot from the
+// receiver state and carries out its Actions, which is the job the Tab5's main.cpp does on the Tab5.
+// Everything here runs on the UI task, except where noted.
+#include <cstddef>
+#include <cstdint>
+#include "dashboard_registry.hpp"
+
+namespace screens {
+
+struct Screen {
+  orcsdr::dashboards::Id id;
+  const char* name;  // serial name, e.g. "FM"
+  void (*enter)();   // draws the first frame
+  void (*leave)();
+  void (*tick)();    // about every 100 ms: rebuild the snapshot and let the dashboard update itself
+  void (*tap)(int x, int y);    // a finger lifted at (x, y), full-screen design coordinates (1280x720)
+  void (*drag)(int x, int y);   // a finger is down at (x, y); may be null
+  // New spectrum frame: `visible` of the 256 levels starting at `first`, floor in dB. May be null.
+  void (*spectrum)(const float* levels, size_t first, size_t visible, float floor);
+  // Optional: raw touch every loop while a finger is down or just lifted (replaces drag/tap when set).
+  void (*touch)(int x, int y, bool down) = nullptr;
+};
+
+const Screen* find(orcsdr::dashboards::Id id);
+const Screen* find_name(const char* name);  // case-insensitive
+const Screen* const* all(size_t* count);
+
+// Loads the saved (or default ZIP 97477) receiver location; call once at boot.
+void apply_saved_location();
+
+// Defined by the adapters.
+const Screen& fm_screen();
+bool fm_resize_viewport();
+const Screen& am_screen();
+const Screen& cb_screen();
+const Screen& airband_screen();
+const Screen& shortwave_screen();
+const Screen& rflab_screen();
+const Screen& settings_screen();
+const Screen& pocsag_screen();
+const Screen& wifi_screen();
+const Screen& adsb_screen();
+const Screen& acars_screen();
+const Screen& lora_screen();
+
+}  // namespace screens

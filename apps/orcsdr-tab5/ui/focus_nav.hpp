@@ -27,6 +27,10 @@ constexpr int kMaxArea = 120000;
 // Called from the drawing helpers. Ignores non-control shapes and exact duplicates.
 void note(int x, int y, int w, int h);
 
+// Logical UI dimensions. Changing them invalidates old hit regions/focus;
+// defaults remain 1280x720 for existing Tab5 callers.
+bool set_viewport(int width, int height);
+
 // Forget everything (the screen changed or is about to be fully redrawn).
 void clear();
 

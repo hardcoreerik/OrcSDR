@@ -1,0 +1,27 @@
+id,existing_screen,prior_p4_wrapper,landscape_verified,portrait_verified,notes
+home,HOME,yes,no,no,User saw real OrcSDR app in portrait on r6; exact screen and complete layout acceptance unconfirmed
+fm,FM RADIO,yes,no,no,User heard FM audio on r6; FM dashboard layout and sustained receiver/audio continuity unverified
+p25,P25 RADIO,no,no,no,Current registry entry; behavior and service parity still require audit
+adsb,ADS-B,yes,no,no,Current registry entry; behavior and service parity still require audit
+shortwave,SHORTWAVE,yes,no,no,Current registry entry; behavior and service parity still require audit
+am,AM RADIO,yes,no,no,Current registry entry; behavior and service parity still require audit
+weather,WEATHER,no,no,no,Current registry entry; behavior and service parity still require audit
+cb,CB RADIO,yes,no,no,Current registry entry; behavior and service parity still require audit
+lora,LORA / MESH,yes,no,no,Current registry entry; behavior and service parity still require audit
+pocsag,POCSAG,yes,no,no,Current registry entry; behavior and service parity still require audit
+ft8,FT8 RX,no,no,no,Current registry entry; behavior and service parity still require audit
+acars,ACARS,yes,no,no,Current registry entry; behavior and service parity still require audit
+airband,AIRBAND,yes,no,no,Current registry entry; behavior and service parity still require audit
+marine,MARINE,no,no,no,Current registry entry; behavior and service parity still require audit
+satellite,SATELLITE,no,no,no,Current registry entry; behavior and service parity still require audit
+sstv,SSTV,no,no,no,Current registry entry; behavior and service parity still require audit
+dead_air,DEAD AIR,no,no,no,Current registry entry; behavior and service parity still require audit
+rf_lab,RF LAB,yes,no,no,Current registry entry; behavior and service parity still require audit
+wifi_analysis,2.4 GHz WIFI,yes,no,no,Current registry entry; behavior and service parity still require audit
+settings,SETTINGS,yes,no,no,Current registry entry; behavior and service parity still require audit
+frequency_keypad,FREQUENCY KEYPAD,audit required,user accepted sampled layout/touch,user accepted sampled layout/touch,Real shared renderer/input accepted in both LilyGO orientations; diagnostic-only preview; other hardware host-checked
+keyboard_text_entry,KEYBOARD TEXT ENTRY,audit required,no,no,Shared workflow and modal geometry must be adapted without duplication
+volume_overlay,VOLUME OVERLAY,audit required,no,no,Shared workflow and modal geometry must be adapted without duplication
+setup_wizard,SETUP WIZARD,audit required,no,no,Shared workflow and modal geometry must be adapted without duplication
+firmware_updates,FIRMWARE UPDATES,audit required,no,no,Shared workflow and modal geometry must be adapted without duplication
+maps_overlays,MAPS OVERLAYS,audit required,no,no,Shared workflow and modal geometry must be adapted without duplication

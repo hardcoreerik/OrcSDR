@@ -49,8 +49,15 @@ EXT_RAM_BSS_ATTR Inventory g_inventory;
 // This object and path are worker/UI state, never ISR or DMA descriptors.
 // Keep them out of the on-chip heap boundary: ESP-IDF reserves the existing
 // 40 KiB DMA pool before app_main, before this service can handle failures.
+#ifdef ORCSDR_P4_GFX_COMPAT
+// P4 canvases push into an explicit native target. Leaving these sprites
+// unbound avoids coupling them to the compatibility wrapper type.
+EXT_RAM_BSS_ATTR M5Canvas g_canvas;
+EXT_RAM_BSS_ATTR M5Canvas g_preview;
+#else
 EXT_RAM_BSS_ATTR M5Canvas g_canvas(&M5.Display);
 EXT_RAM_BSS_ATTR M5Canvas g_preview(&M5.Display);
+#endif
 EXT_RAM_BSS_ATTR Request g_preview_request;
 EXT_RAM_BSS_ATTR FrameInfo g_preview_info;
 bool g_preview_valid=false;
@@ -155,8 +162,19 @@ void capture_preview_facts(const Request& request,lgfx::v1::LovyanGFX& target,
   facts.logical_w=target.width();facts.logical_h=target.height();
   facts.source_w=g_preview.width();facts.source_h=g_preview.height();
   target.getClipRect(&facts.clip_x,&facts.clip_y,&facts.clip_w,&facts.clip_h);
-  // getPanel() is a Panel_Device API on the real display. Do not reinterpret
-  // an arbitrary sprite/custom target's panel as a physical display device.
+  // The P4 M5.Display is a compatibility wrapper whose target is its native
+  // sprite. Inspect that native target; never reinterpret the wrapper itself
+  // as a LovyanGFX/Panel_Device object.
+#ifdef ORCSDR_P4_GFX_COMPAT
+  const auto* display_target = static_cast<const lgfx::v1::LovyanGFX*>(M5.Display.target());
+  if (&target == display_target) {
+    facts.display_target=true;facts.rotation=target.getRotation();
+    facts.physical_w=target.width();facts.physical_h=target.height();
+    facts.derived_rotation=facts.rotation;
+  }
+#else
+  // getPanel() is a Panel_Device API on the real Tab5 display. Do not
+  // reinterpret an arbitrary sprite/custom target as the physical display.
   if(&target==&M5.Display) {
     const auto* panel=M5.Display.getPanel();
     if(panel) {
@@ -168,6 +186,7 @@ void capture_preview_facts(const Request& request,lgfx::v1::LovyanGFX& target,
       facts.derived_rotation=((facts.rotation+facts.offset)&3)|((facts.rotation&4)^(facts.offset&4));
     }
   }
+#endif
   const int64_t left=std::max<int64_t>(x,facts.clip_x),top=std::max<int64_t>(y,facts.clip_y);
   const int64_t right=std::min<int64_t>(int64_t{x}+request.view.width_px,int64_t{facts.clip_x}+facts.clip_w);
   const int64_t bottom=std::min<int64_t>(int64_t{y}+request.view.height_px,int64_t{facts.clip_y}+facts.clip_h);
@@ -182,6 +201,23 @@ void capture_preview_facts(const Request& request,lgfx::v1::LovyanGFX& target,
   facts.copy_bbox_pixels=static_cast<uint64_t>(std::max<int64_t>(0,std::min(right,image_right)-std::max(left,image_left)))*
       std::max<int64_t>(0,std::min(bottom,image_bottom)-std::max(top,image_top));
 }
+void notify_native_display_dirty(lgfx::v1::LovyanGFX& target,int x,int y,int w,int h,
+    int32_t clip_x,int32_t clip_y,int32_t clip_w,int32_t clip_h) {
+#ifdef ORCSDR_P4_GFX_COMPAT
+  const auto* display_target = static_cast<const lgfx::v1::LovyanGFX*>(M5.Display.target());
+  if (&target != display_target || w<=0 || h<=0 || clip_w<=0 || clip_h<=0) return;
+  const int64_t left=std::max<int64_t>({x,clip_x,0});
+  const int64_t top=std::max<int64_t>({y,clip_y,0});
+  const int64_t right=std::min<int64_t>({int64_t{x}+w,int64_t{clip_x}+clip_w,target.width()});
+  const int64_t bottom=std::min<int64_t>({int64_t{y}+h,int64_t{clip_y}+clip_h,target.height()});
+  if(right>left&&bottom>top)
+    M5.Display.mark_dirty_target(static_cast<int>(left),static_cast<int>(top),
+                                 static_cast<int>(right),static_cast<int>(bottom));
+#else
+  (void)target;(void)x;(void)y;(void)w;(void)h;
+  (void)clip_x;(void)clip_y;(void)clip_w;(void)clip_h;
+#endif
+}
 void draw_preview(const Request& request,lgfx::v1::LovyanGFX& target,int x,int y,FrameInfo* info) {
   if(!g_preview_lock)return;
   if(xSemaphoreTake(g_preview_lock,0)!=pdTRUE){g_preview_lock_misses.fetch_add(1);return;}
@@ -189,6 +225,8 @@ void draw_preview(const Request& request,lgfx::v1::LovyanGFX& target,int x,int y
   const auto& source=g_preview_request;
   if(prepare_preview(source.view,request.view,source.preferred,request.preferred,
       source.lifetime,g_preview_lifetime.load(),g_preview_valid,&transform,source.labels,request.labels)) {
+    int32_t clip_x,clip_y,clip_w,clip_h;
+    target.getClipRect(&clip_x,&clip_y,&clip_w,&clip_h);
     const auto started=static_cast<uint64_t>(esp_timer_get_time());
     const auto paint=paint_preview(g_preview,target,transform,x,y,request.view.width_px,request.view.height_px,
         +[]()->uint64_t{return static_cast<uint64_t>(esp_timer_get_time());});
@@ -196,6 +234,8 @@ void draw_preview(const Request& request,lgfx::v1::LovyanGFX& target,int x,int y
     if(paint.painted)timing.present(request.serial,request.requested_us,started,
         static_cast<uint64_t>(esp_timer_get_time()),paint.clear_us,paint.transfer_us);
     if(paint.painted) {
+      notify_native_display_dirty(target,x,y,request.view.width_px,request.view.height_px,
+                                  clip_x,clip_y,clip_w,clip_h);
       capture_preview_facts(request,target,transform,x,y);
       if(info){*info=g_preview_info;info->state=Frame::pending;}
     }
@@ -666,7 +706,11 @@ Frame draw(const orcmap::Viewport& view,lgfx::v1::LovyanGFX& target,int x,int y,
   if(xSemaphoreTake(g_lock,0)!=pdTRUE){draw_preview(request,target,x,y,info);return Frame::pending;}
   if(g_cached && g_ready.serial==g_serial.load() && same(request,g_ready)) {
     if(g_frame.state==Frame::ready) {
+      int32_t clip_x,clip_y,clip_w,clip_h;
+      target.getClipRect(&clip_x,&clip_y,&clip_w,&clip_h);
       const uint64_t started=clock_us();g_canvas.pushSprite(&target,x,y);
+      notify_native_display_dirty(target,x,y,request.view.width_px,request.view.height_px,
+                                  clip_x,clip_y,clip_w,clip_h);
       g_frame.push_us=static_cast<uint32_t>(clock_us()-started);++g_frame.cache_hits;
       g_update_timing.present(clock_us(),g_frame.revision);
     }

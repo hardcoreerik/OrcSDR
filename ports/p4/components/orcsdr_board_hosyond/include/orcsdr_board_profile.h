@@ -1,0 +1,132 @@
+#pragma once
+/*
+ * Board profile: the facts about an ESP32-P4 board that the application would otherwise hard-code
+ * (pins and which peripherals exist). One profile is selected at build time (Kconfig ORCSDR_BOARD);
+ * code asks the profile instead of using GPIO numbers. A peripheral the board lacks is marked absent
+ * (pin -1 / false / line.dev -1) and the matching feature is hidden or reports "unavailable" instead
+ * of failing.
+ *
+ * Every profile file lists the source of each value next to it and carries a status:
+ *   BENCH_VERIFIED  exercised on the real board with this firmware;
+ *   DOCUMENTED      taken from a vendor schematic, vendor BSP or Espressif BSP, never run on hardware here;
+ *   SKELETON        identity only, pins not yet established.
+ * "Documented" is not "measured": a documented profile must be bench-checked before it is relied on.
+ *
+ * Display panels are described separately (orcsdr_display_profile.h): the same board can drive
+ * different panels, and one panel can sit on different boards.
+ */
+#include <stdbool.h>
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define ORCSDR_PIN_NONE (-1)
+
+typedef enum {
+    ORCSDR_PROFILE_SKELETON = 0,
+    ORCSDR_PROFILE_DOCUMENTED,
+    ORCSDR_PROFILE_BENCH_VERIFIED,
+} orcsdr_profile_status_t;
+
+typedef enum {
+    ORCSDR_IMU_NONE = 0,
+    ORCSDR_IMU_ICM20948 = 1,
+} orcsdr_imu_type_t;
+
+/* A control line on an I2C GPIO expander: which expander (index into ioexp_addr) and which pin. dev -1 = absent. */
+typedef struct {
+    signed char dev;
+    signed char pin;
+} orcsdr_ioexp_line_t;
+
+#define ORCSDR_IOEXP_NONE ((orcsdr_ioexp_line_t){-1, -1})
+
+typedef struct {
+    const char *name;           /* "waveshare-esp32-p4-module-dev-kit" */
+    const char *vendor;         /* "Waveshare" */
+    const char *source;         /* where the values come from: schematic / BSP / bench */
+    const char *unsupported;    /* what OrcSDR cannot do on this board yet, or NULL */
+    orcsdr_profile_status_t status;
+    /* True when this firmware can drive the board's screen and touch. False = headless use only
+     * (or a display driver is still missing), whatever the other fields say. */
+    bool console_supported;
+
+    /* I2C bus routed to the DSI connector (panel controller, touch) and shared with the audio codec. */
+    int i2c_port, i2c_sda, i2c_scl;
+
+    /* Speaker path: I2S pins, codec on the shared I2C bus, amplifier enable. -1 = absent. */
+    int audio_mclk, audio_bclk, audio_ws, audio_dout, audio_din, audio_pa_enable;
+
+    /* microSD on SDMMC. sd_power_enable is a power switch pin (-1 = none: the slot is powered
+     * unconditionally or by an on-chip LDO, which is not the same as having no slot). */
+    bool has_sd;
+    int sd_power_enable;
+    bool sd_power_active_low;
+
+    /* Wi-Fi coprocessor (ESP32-C6 over ESP-Hosted SDIO). Other boards may use SPI or have none.
+     * On boards where the C6 power or reset is on an expander, c6_reset is -1 and ioexp_wifi_en is set. */
+    bool has_hosted_c6;         /* any ESP-Hosted SDIO coprocessor; the name predates C5 boards */
+    const char *wifi_coprocessor;   /* "ESP32-C6", "ESP32-C5"; the embedded ESP-Hosted image is C6-only */
+    int c6_reset;
+    int c6_sdio_clk, c6_sdio_cmd, c6_sdio_d0, c6_sdio_d1, c6_sdio_d2, c6_sdio_d3;
+
+    /* Wired Ethernet: RMII PHY name (NULL = none). Not used by the console application yet. */
+    bool has_ethernet;
+    const char *eth_phy;
+    int eth_phy_addr, eth_phy_reset, eth_mdc, eth_mdio;
+    int eth_rmii_clk_in, eth_tx_en, eth_txd0, eth_txd1, eth_crs_dv, eth_rxd0, eth_rxd1;
+
+    /* USB host (RTL-SDR dongle). VBUS switching, when the board has it, is a GPIO or an expander line. */
+    bool has_usb_host_typea;
+    int usb_vbus_gpio;
+    orcsdr_ioexp_line_t usb_vbus_ioexp;
+
+    /* I2C GPIO expanders on the main I2C bus (7-bit addresses, 0 = none) and the lines this board puts on them. */
+    unsigned char ioexp_addr[2];
+    orcsdr_ioexp_line_t ioexp_wifi_en, ioexp_lcd_en, ioexp_touch_en, ioexp_speaker_en;
+
+    /* Codec I2C, when it is not the panel bus. codec_i2c_sda == ORCSDR_PIN_NONE means the codec
+     * shares i2c_sda/i2c_scl (the Waveshare boards). */
+    int codec_i2c_port, codec_i2c_sda, codec_i2c_scl;
+
+    /* Onboard packet radio. Ignored unless has_radio. Reset, DIO1 and the antenna switch are
+     * expander lines (ORCSDR_IOEXP_NONE when that line is a GPIO instead, or absent).
+     * The console does not drive the radio; the pins are here so a later driver does not invent them. */
+    bool has_radio;
+    const char *radio_part;     /* "SX1262", "LR2021", or NULL */
+    int radio_sclk, radio_mosi, radio_miso, radio_cs, radio_busy;
+    int radio_spi_hz;
+    orcsdr_ioexp_line_t radio_rst, radio_dio1, radio_ant_sw;
+
+    /* More expander lines. ORCSDR_IOEXP_NONE when the board does not have that line. */
+    orcsdr_ioexp_line_t ioexp_sd_power, ioexp_screen_rst, ioexp_touch_rst;
+    orcsdr_ioexp_line_t ioexp_usb_phy_en, ioexp_eth_rst;
+
+    /* Optional orientation sensor on the profile's secondary I2C bus. NONE/0
+     * is the zero-initialized value for profiles without a documented IMU. */
+    orcsdr_imu_type_t imu_type;
+    unsigned char imu_i2c_address;
+} orcsdr_board_profile_t;
+
+/* The profile this firmware was built for (Kconfig ORCSDR_BOARD). */
+const orcsdr_board_profile_t *orcsdr_board_profile(void);
+
+/* Every profile compiled into this firmware, so tools and docs can list them. Returns the count. */
+size_t orcsdr_board_profiles(const orcsdr_board_profile_t *const **list);
+
+/* True only when the board's Wi-Fi coprocessor is an ESP32-C6, the only chip the embedded ESP-Hosted
+ * image (and the on-device coprocessor update) is built for. Never offer that update to any other chip. */
+bool orcsdr_board_c6_image_applies(void);
+
+/* Name of a status for logs. */
+const char *orcsdr_profile_status_name(orcsdr_profile_status_t status);
+
+/* Log the selected profile and warn when it disagrees with the ESP-Hosted pins the build was
+ * configured with (sdkconfig), which would mean the wrong board was selected. */
+void orcsdr_board_profile_log(void);
+
+#ifdef __cplusplus
+}
+#endif

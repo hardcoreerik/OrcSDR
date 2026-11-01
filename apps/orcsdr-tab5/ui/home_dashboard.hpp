@@ -5,6 +5,7 @@
 
 #include "dashboard_registry.hpp"
 #include "filter_standards.hpp"
+#include "home_layout.hpp"
 
 namespace orcsdr::home {
 
@@ -105,6 +106,11 @@ struct Action {
 };
 
 void enter(const Snapshot& snapshot);
+// Opt-in display viewport. Call on the UI owner at a structural transition;
+// the default remains the exact 1280x720 Tab5 layout.
+bool set_viewport(LayoutRect viewport);
+void reset_viewport();
+Layout layout();
 void leave();
 void draw();
 void update(const Snapshot& snapshot);

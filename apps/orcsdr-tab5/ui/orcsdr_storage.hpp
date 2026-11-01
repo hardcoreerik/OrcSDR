@@ -58,6 +58,13 @@ using File = orcsdr::storage::File;
 
 namespace orcsdr::storage {
 
+struct SdHardware {
+  int slot=0,clk=43,cmd=44,d0=39,d1=40,d2=41,d3=42;
+  int power_ldo_channel=4; // -1: board adapter already powers the slot
+};
+// Configure before mounting, from the selected board; legacy Tab5 defaults remain.
+// Reject configuration changes while a card is mounted.
+bool configure_sd_hardware(const SdHardware& hardware);
 bool mount_tab5_sd();
 bool mounted();
 FileSystem& filesystem();

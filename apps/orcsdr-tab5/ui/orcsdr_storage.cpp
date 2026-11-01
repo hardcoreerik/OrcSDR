@@ -32,6 +32,7 @@ constexpr size_t kWriteBufferBytes = 32 * 1024;
 bool g_mounted = false;
 sdmmc_card_t* g_card = nullptr;
 sd_pwr_ctrl_handle_t g_sd_power = nullptr;
+orcsdr::storage::SdHardware g_sd_hardware;
 orcsdr::storage::FileSystem g_filesystem;
 bool g_report_next_write_buffer = false;
 
@@ -194,6 +195,17 @@ bool FileSystem::rename(const char* from, const char* to) const { const std::str
 
 namespace orcsdr::storage {
 
+bool configure_sd_hardware(const SdHardware& hardware) {
+  if (g_mounted || g_sd_power || hardware.slot<0 || hardware.slot>1 || hardware.power_ldo_channel < -1 ||
+      hardware.power_ldo_channel>4) return false;
+  const int pins[]={hardware.clk,hardware.cmd,hardware.d0,hardware.d1,hardware.d2,hardware.d3};
+  for (unsigned i=0;i<6;++i) {
+    if (pins[i]<0 || pins[i]>54) return false;
+    for (unsigned j=0;j<i;++j) if(pins[i]==pins[j]) return false;
+  }
+  g_sd_hardware=hardware;return true;
+}
+
 bool mount_tab5_sd() {
   if (g_mounted) return true;
   esp_vfs_fat_sdmmc_mount_config_t mount = {.format_if_mount_failed = false, .max_files = 8, .allocation_unit_size = 16 * 1024};
@@ -201,14 +213,14 @@ bool mount_tab5_sd() {
   // owns Slot 1 for the C6, so both devices use their intended slots.
   sdmmc_host_t host = SDMMC_HOST_DEFAULT();
   host.check_buffer_alignment = &sdmmc_dma_buffer_aligned;
-  host.slot = SDMMC_HOST_SLOT_0;
+  host.slot = g_sd_hardware.slot;
   host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
   if (orcsdr::wifi::hosted_transport_ready()) {
     host.init = &sdmmc_host_init_already_running;
     host.deinit = &sdmmc_host_deinit_already_running;
   }
-  if (!g_sd_power) {
-    const sd_pwr_ctrl_ldo_config_t ldo = {.ldo_chan_id = 4};
+  if (!g_sd_power && g_sd_hardware.power_ldo_channel>=0) {
+    const sd_pwr_ctrl_ldo_config_t ldo = {.ldo_chan_id = g_sd_hardware.power_ldo_channel};
     const esp_err_t power_result = sd_pwr_ctrl_new_on_chip_ldo(&ldo, &g_sd_power);
     if (power_result != ESP_OK) {
       ESP_LOGE("orcsdr_storage", "SD LDO4 init failed: %s", esp_err_to_name(power_result));
@@ -218,12 +230,12 @@ bool mount_tab5_sd() {
   host.pwr_ctrl_handle = g_sd_power;
   sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
   slot.width = 4;
-  slot.clk = GPIO_NUM_43;
-  slot.cmd = GPIO_NUM_44;
-  slot.d0 = GPIO_NUM_39;
-  slot.d1 = GPIO_NUM_40;
-  slot.d2 = GPIO_NUM_41;
-  slot.d3 = GPIO_NUM_42;
+  slot.clk = static_cast<gpio_num_t>(g_sd_hardware.clk);
+  slot.cmd = static_cast<gpio_num_t>(g_sd_hardware.cmd);
+  slot.d0 = static_cast<gpio_num_t>(g_sd_hardware.d0);
+  slot.d1 = static_cast<gpio_num_t>(g_sd_hardware.d1);
+  slot.d2 = static_cast<gpio_num_t>(g_sd_hardware.d2);
+  slot.d3 = static_cast<gpio_num_t>(g_sd_hardware.d3);
   const esp_err_t mount_result = esp_vfs_fat_sdmmc_mount("/sd", &host, &slot, &mount, &g_card);
   g_mounted = mount_result == ESP_OK;
   if (g_mounted) sdmmc_card_print_info(stdout, g_card);

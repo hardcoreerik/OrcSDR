@@ -1,0 +1,414 @@
+{
+  "ports/p4/components/orcsdr_board_hosyond/CMakeLists.txt": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/CMakeLists.txt",
+    "sha256": "03898bee5ee77a057b1bd7c38999b99d95ac50ee15252f78e71ddce6b30a740e"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/Kconfig": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/Kconfig",
+    "sha256": "285f807244a47e92c0e22f52de1b253e0a031ab6b5e44a592a7291eb577592cc"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/idf_component.yml": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/idf_component.yml",
+    "sha256": "e6a99db79622fa2cd79c4e55c3de66b67f1151da69aa0151794944c47637f16e"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/include/ft5x06_touch.h": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/include/ft5x06_touch.h",
+    "sha256": "5e957340bec188d74cb53d03b62e2f2412ddb33f52f0d5f29be2c8fbb628a87a"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/include/hosyond_board.h": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/include/hosyond_board.h",
+    "sha256": "473995919d3989a4030e679d8bfb9268f5273425956072e5f80bb6dd19f559d7"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/include/orcsdr_board_profile.h": {
+    "source_commit": "8a6ded0253ed6af3daa72234deef6ef672bc30ac",
+    "source_path": "components/orcsdr_board_hosyond/include/orcsdr_board_profile.h",
+    "sha256": "0a5ca9c42fd39da306c736318e208d9dca7e3f9c2830a90caaafa463f5651ca2"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/include/orcsdr_display_profile.h": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/include/orcsdr_display_profile.h",
+    "sha256": "2719cd188c039a0bdf0991046521c7c1025fac8c7bebd701d6ec6422ecf2e5e5"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/src/attiny88_panel.h": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/src/attiny88_panel.h",
+    "sha256": "76325c574665e16999b8ad8dd4ff87b606e1ed29287b48ba00a2c2ab62145646"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/src/boards/board_list.h": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/src/boards/board_list.h",
+    "sha256": "6802660e76a4a7958d0ef2a29ae8f4c72826d9b35443eac79b7488a725880ba8"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/src/boards/board_m5stack_tab5.c": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/src/boards/board_m5stack_tab5.c",
+    "sha256": "d802d427eff2590bfc46010b6494be866c136b7bd827f6c7a84ce17592821e36"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/src/boards/board_waveshare_p4_eth.c": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/src/boards/board_waveshare_p4_eth.c",
+    "sha256": "bd0bebd63b8a08262a6627c638e22e20eb71eb010c72482945fbc1f81b003279"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/src/boards/board_waveshare_p4_module_dev_kit.c": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/src/boards/board_waveshare_p4_module_dev_kit.c",
+    "sha256": "34affcdb0e071a42c11b808fd760b451e239b9b5e722eb40acb56e622a052d31"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/src/boards/board_waveshare_p4_wifi6_db.c": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/src/boards/board_waveshare_p4_wifi6_db.c",
+    "sha256": "43bb3b4d3fe431d2a4e7dfd72f21f45373b623dbb037f1e548d0a0ecf5a03baf"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/src/boards/board_waveshare_p4_wifi6_poe_eth.c": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/src/boards/board_waveshare_p4_wifi6_poe_eth.c",
+    "sha256": "e0ba624814ede3b911a18885e24b264cb54c6b717917559309f8027cd13ebfde"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/src/ft5x06_touch.c": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/src/ft5x06_touch.c",
+    "sha256": "1e0d295cf403ce4f40be5fad4e107d0924b60781c30f0dd597cdc7a4555ca8a1"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/src/hosyond_audio.c": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/src/hosyond_audio.c",
+    "sha256": "e790626f2994003cb151097a248fa821c1ebb6e6144954c0ef1c9b120c3360f1"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/src/hosyond_board.c": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/src/hosyond_board.c",
+    "sha256": "9baf747603eeb31653d7f2ced6b48bd70cb95cb3e1981ebb541ff9b8cfb6d2af"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/src/orcsdr_profiles.c": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/src/orcsdr_profiles.c",
+    "sha256": "9b37a98e054fd0cdfa3ad951a7332d2b5ee16031d0b4f85ad94c3dd1213ce0d2"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/src/tc358762_bridge.h": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_board_hosyond/src/tc358762_bridge.h",
+    "sha256": "1db27a1ed3c8d9c7650921aca72b3513d375dff6fc7b279b80b0df3f15cd7da3"
+  },
+  "ports/p4/components/orcsdr_gfx_compat/CMakeLists.txt": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_gfx_compat/CMakeLists.txt",
+    "sha256": "8a6402755d6b623a8200809eebc658bc331fd2e13b25dcc2e78ef86912b0055c"
+  },
+  "ports/p4/components/orcsdr_gfx_compat/include/orcsdr_gfx/m5_stubs.hpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_gfx_compat/include/orcsdr_gfx/m5_stubs.hpp",
+    "sha256": "fa9cf3aeebeb6c0a4b0aec23f0813d883f4954b0213fae3c656f33891624083a"
+  },
+  "ports/p4/components/orcsdr_gfx_compat/include/orcsdr_gfx/scaled_gfx.hpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_gfx_compat/include/orcsdr_gfx/scaled_gfx.hpp",
+    "sha256": "4f8483ef9105bc7d452acc7933c81c8c670db2118dc41025f0cdaefed64aa524"
+  },
+  "ports/p4/components/orcsdr_gfx_compat/shim/M5Unified.h": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_gfx_compat/shim/M5Unified.h",
+    "sha256": "83c4ef0ffbeddef64bb13957d1b156a905417994479a51262a37b82907baada3"
+  },
+  "ports/p4/components/orcsdr_gfx_compat/shim/orcsdr_p4_time.hpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_gfx_compat/shim/orcsdr_p4_time.hpp",
+    "sha256": "cf0045d32b164b7ccd766f0fc5a4190ee3f913ca53e2f51c37eba092fdb6c2cc"
+  },
+  "ports/p4/components/orcsdr_gfx_compat/src/m5_object.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_gfx_compat/src/m5_object.cpp",
+    "sha256": "bd040463af41f156c863026aa637e3ab3450224aa090f2193a1d885403198230"
+  },
+  "ports/p4/components/orcsdr_gfx_compat/src/scaled_gfx.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_gfx_compat/src/scaled_gfx.cpp",
+    "sha256": "fde135e17414aff35297dfbc3c0024d943b4295d90a79fcf3a644e5fac483e75"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/src/boards/board_lilygo_t_display_p4_amoled.c": {
+    "source_commit": "8a6ded0253ed6af3daa72234deef6ef672bc30ac",
+    "source_path": "components/orcsdr_board_hosyond/src/boards/board_lilygo_t_display_p4_amoled.c",
+    "sha256": "fe449dc1c90e8b3d358e8118e92dff9c7166104161f3844925f0568af2bd88e7"
+  },
+  "ports/p4/components/orcsdr_board_hosyond/src/lilygo_amoled.c": {
+    "source_worktree": "F:\\AI\\OrcSDR\\.claude\\worktrees\\lilygo-t-display-p4-test-8cab12",
+    "source_path": "components/orcsdr_board_hosyond/src/lilygo_amoled.c",
+    "sha256": "b46d173a233abfd4d3093df54d3dd73f41a81f0e8e02d619002f68952286fb26",
+    "uncommitted": true
+  },
+  "ports/p4/components/orcsdr_board_hosyond/src/lilygo_amoled.h": {
+    "source_worktree": "F:\\AI\\OrcSDR\\.claude\\worktrees\\lilygo-t-display-p4-test-8cab12",
+    "source_path": "components/orcsdr_board_hosyond/src/lilygo_amoled.h",
+    "sha256": "22daea5fe8460908fe4e9861e5ec22d97842192d02f2d93e643b4d0eebd45e8c",
+    "uncommitted": true
+  },
+  "apps/orcsdr-p4-hosyond-console/CMakeLists.txt": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/CMakeLists.txt",
+    "sha256": "cb4b0290b9b3382fb28e92a1ae6b70cfe956236af4d40c68506d4d93878f0223"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/CMakeLists.txt": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/CMakeLists.txt",
+    "sha256": "445f7ee7eb958d21cee4eb20dfb785c2be7de6a0abfc8441f7c1339367095612"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/Kconfig.projbuild": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/Kconfig.projbuild",
+    "sha256": "8490a34803e8e9370aef7f2369e8b6ebdcf8f1d769e95f0caca3d12b07c12e6d"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/audio_service.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/audio_service.cpp",
+    "sha256": "6448107b7724f2a70232b54845d43f3d0d915708b8ec5145e5071891e6fa8aab"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/audio_service.hpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/audio_service.hpp",
+    "sha256": "90bc8f2af763d4771783b46fc7f74106a5d2ada4f4b3104451160d12398fd0f1"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/home_app.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/home_app.cpp",
+    "sha256": "af5668f4e596b84b56334f6972b703aa4f2b70a337fccf3636a46494dc06be21"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/home_app.hpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/home_app.hpp",
+    "sha256": "998678dc1abe5674152dd320a8a0e46a2027bbc7ef7f9b34511b0321a4d498a0"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/idf_component.yml": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/idf_component.yml",
+    "sha256": "f4e33f7b1b5098f5abf16b366f53403a6bbfec1e7635d8666225a959e52c7857"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/iq_tap.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/iq_tap.cpp",
+    "sha256": "3bd8b330af96bed9785954002dd8bb3137ba3fb6e606db38a068ef1dfb8cefdd"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/iq_tap.hpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/iq_tap.hpp",
+    "sha256": "325245309e2c0010553feb573bd9655b479b3a785e337445937a3f3f99c5a4a2"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/main.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/main.cpp",
+    "sha256": "335ddfff15a018bdf5f2ccf88f6b0f7b2096d2676488ab0fae4a813f88d8ecd0"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/present.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/present.cpp",
+    "sha256": "7d4484627c3790cf2e807bb6d23ade8c1657c45c868a9e8a48cf4c7de92b530e"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/present.hpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/present.hpp",
+    "sha256": "0ca124a6b62a90477c6df132f068b8a5375b9a258d8b2f5eae835a95156b1324"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/radio_service.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/radio_service.cpp",
+    "sha256": "5b7930950ccf434eb39734584466910cb9d5f84e8f9f58582afd2d572c66a16a"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/radio_service.hpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/radio_service.hpp",
+    "sha256": "c3ba3b90027b01a5958a82ed7504f3c41b72bb52ec41f7f410982e52120e0704"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/screen_acars.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/screen_acars.cpp",
+    "sha256": "3109306d9d4f76990cd09e874058242ba37194bd8b7097f62642972c39731fa3"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/screen_adsb.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/screen_adsb.cpp",
+    "sha256": "c995de5cf8745c07e297a9440a29d993168958462fd813ed480a6548a96471b4"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/screen_airband.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/screen_airband.cpp",
+    "sha256": "2dc983fff517412182526188af8c87b4e880cc9928d5670fed5bb3fbd83c2bb7"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/screen_am.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/screen_am.cpp",
+    "sha256": "479c89d10839360eb5e6e2ae9477d0046b5242aa8ee6930d6f2bd2e72b293a1d"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/screen_cb.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/screen_cb.cpp",
+    "sha256": "8ea7b99af472d9841c3f6652c1ad224bb5f7acd77044c77de6a488725086ad1a"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/screen_fm.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/screen_fm.cpp",
+    "sha256": "5ba057ca68cb1faa7fda97f4a3b52f913a1170ddc98d22141ba7fecd98ec0e71"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/screen_lora.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/screen_lora.cpp",
+    "sha256": "36e70873fc171c2fbf746fcb387d17f464d5f7b2a5385595cc98253af348f817"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/screen_pocsag.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/screen_pocsag.cpp",
+    "sha256": "d347c7e6d29c71303aca295471f27f9af8487eac6f6ed68fe87f4de9e46724ad"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/screen_rflab.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/screen_rflab.cpp",
+    "sha256": "90c018444ad3f451d0ddeabfdf08b5bd9d9b2c7257d2eb1015f27b37f98559c5"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/screen_settings.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/screen_settings.cpp",
+    "sha256": "c8bec8e313bdd13c74b6934805e8115fd3d672241be77cab6bdacae023825594"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/screen_shortwave.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/screen_shortwave.cpp",
+    "sha256": "c703672b2bfc1d579f95a373ef4913a1c3b9f7a6947c4847540cf93bf8d83ea4"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/screen_snap.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/screen_snap.cpp",
+    "sha256": "f920e58dde1d3e39ac6d009048b9aa55da9bace3075b3595ae7ff4c1eff8a3e6"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/screen_snap.hpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/screen_snap.hpp",
+    "sha256": "659961385e328e159a361f6199a1736914e5a7d3d0a09a0060e0928bc9ec993d"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/screen_wifi.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/screen_wifi.cpp",
+    "sha256": "a88bacb905c0d4b0db14baa249b1addc1e310210c50732c71d49dfdd77711592"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/screens.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/screens.cpp",
+    "sha256": "28f44251b31024a83f318e1c3f3b151bd64e6e5c63e7583f514516ddc6fe5d9e"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/screens.hpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/screens.hpp",
+    "sha256": "41fb2dc9ce82f04df0855cde17c151f2597570db2d65eef56abc68b58b812609"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/sd_card.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/sd_card.cpp",
+    "sha256": "390d59323885f418f3757c80a65e763f523a60e2de989d0d6e44fbb5622a25eb"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/sd_card.hpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/sd_card.hpp",
+    "sha256": "3a9182995dacd2772c40023b61bab51048dce03c0655563336b630fd27cc138f"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/serial_cli.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/serial_cli.cpp",
+    "sha256": "8aee3554362f50894e8cc26e9f3323f6229a056e3332a71579e5f79cb9b3e2df"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/serial_cli.hpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/serial_cli.hpp",
+    "sha256": "c79167a20077c7067389e0bf95c5ea8824ad6e86be760ca3f6cb5ae2ffe13245"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/ui_support.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/ui_support.cpp",
+    "sha256": "5795f76075cbbb53a58a541277cae9169efb72de8938901be52b74b223995dd0"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/ui_support.hpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/ui_support.hpp",
+    "sha256": "388cf45a3b8ec18c77b3422f2b0a8f294c52884a0739f092f4218d5a87f7cba4"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/wifi_app.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/wifi_app.cpp",
+    "sha256": "82c4aa06a4bb497b02033e945a4e9c07aaea2a22b67c7997563e15fbdb66031c"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/wifi_app.hpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/main/wifi_app.hpp",
+    "sha256": "facf64e63d9368d030fa6231bb236d4fca9d2bc717d495277d0c4a1cc84b3a19"
+  },
+  "apps/orcsdr-p4-hosyond-console/partitions.csv": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/partitions.csv",
+    "sha256": "9b9cdf447e60a0da755ac71014c18808b6fd1042afb600912cc0b15b6cc5ea67"
+  },
+  "apps/orcsdr-p4-hosyond-console/sdkconfig.board-m5stack-tab5": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/sdkconfig.board-m5stack-tab5",
+    "sha256": "1989858228fc15cda132cb710c33416b19c924f6f0caf84ee309202b79f3f10a"
+  },
+  "apps/orcsdr-p4-hosyond-console/sdkconfig.board-p4-eth": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/sdkconfig.board-p4-eth",
+    "sha256": "8158164b72808dab3f93e9c0078f920cfac267a2abc82e3f3363b7468bf6a28c"
+  },
+  "apps/orcsdr-p4-hosyond-console/sdkconfig.board-wifi6-db": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/sdkconfig.board-wifi6-db",
+    "sha256": "d4991230dc341e96a6430ba24486e9d258749427291de51d998cd60589925461"
+  },
+  "apps/orcsdr-p4-hosyond-console/sdkconfig.board-wifi6-poe-eth": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/sdkconfig.board-wifi6-poe-eth",
+    "sha256": "f7dc603c04f9df437d117f5705ac29b528e4ca9a498b49d7b0426a30eda600b7"
+  },
+  "apps/orcsdr-p4-hosyond-console/sdkconfig.defaults": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/sdkconfig.defaults",
+    "sha256": "d2253e1288dcd816114c0ce4f7aa360e1e49400e927b9652f887215116328bf3"
+  },
+  "apps/orcsdr-p4-hosyond-console/sdkconfig.multi-dongle": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/sdkconfig.multi-dongle",
+    "sha256": "72f6a9f86b768daa37e45898e4e99ec652c0d433f9eee3cac9a516725a4078ee"
+  },
+  "apps/orcsdr-p4-hosyond-console/sdkconfig.silicon-v3": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-p4-hosyond-console/sdkconfig.silicon-v3",
+    "sha256": "c5a8dd78c3a2b331ae84d114a840d2bbe6a409089f8db3fc71d61ae79c3a98fd"
+  },
+  "ports/p4/components/orcsdr_audio_dsp/CMakeLists.txt": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_audio_dsp/CMakeLists.txt",
+    "sha256": "0de02d3ebd4d804ea4a2e093d338d16656de0d7af33877d54562289c753aab45"
+  },
+  "ports/p4/components/orcsdr_audio_dsp/include/orcsdr_dsp/demod.hpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_audio_dsp/include/orcsdr_dsp/demod.hpp",
+    "sha256": "486e773b609770ef72a6c2bfb43f3db46738b3ae73919ef9f6770b1ca4a1eccf"
+  },
+  "ports/p4/components/orcsdr_audio_dsp/src/demod.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_audio_dsp/src/demod.cpp",
+    "sha256": "9f407dbd02a098fccb9c49d0d239c93efcb2833d1e9117a410863abed50efb81"
+  },
+  "ports/p4/components/orcsdr_audio_dsp/tests/CMakeLists.txt": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_audio_dsp/tests/CMakeLists.txt",
+    "sha256": "caaae0f3f9013aaebdfd26119e999bad652d5bcc2a3f9dcc89189c1d29e88a3e"
+  },
+  "ports/p4/components/orcsdr_audio_dsp/tests/demod_test.cpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "components/orcsdr_audio_dsp/tests/demod_test.cpp",
+    "sha256": "825e88308917f342ff8de0f6df289b60d8d4bde0244b97878fa562cbd160862c"
+  },
+  "apps/orcsdr-p4-hosyond-console/main/home_v3_ui.hpp": {
+    "source_commit": "a8dc860b8191592e67ce7349c32ba42668c30ae2",
+    "source_path": "apps/orcsdr-waveshare-4b/main/home_v3_ui.hpp",
+    "sha256": "cc65ad5d9c3e5706181a24e77a279061c00e6dcaea8a2f049a42b87827c40e05"
+  }
+}

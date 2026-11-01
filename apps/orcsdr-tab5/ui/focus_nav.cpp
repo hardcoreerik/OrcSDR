@@ -9,6 +9,7 @@ namespace {
 Rect g_rects[kCapacity];
 size_t g_count = 0;
 int g_focus = -1;
+int g_width=1280,g_height=720;
 
 int cx(const Rect& r) { return r.x + r.w / 2; }
 int cy(const Rect& r) { return r.y + r.h / 2; }
@@ -60,12 +61,20 @@ long score(const Rect& from, const Rect& to, Direction direction) {
 
 void note(int x, int y, int w, int h) {
   if (w < kMinWidth || h < kMinHeight || static_cast<long>(w) * h > kMaxArea) return;
-  if (x + w <= 0 || y + h <= 0 || x >= 1280 || y >= 720) return;
+  if (x + w <= 0 || y + h <= 0 || x >= g_width || y >= g_height) return;
   const Rect rect{x, y, w, h};
   for (size_t i = 0; i < g_count; ++i)
     if (same(g_rects[i], rect)) return;
   if (g_count >= kCapacity) return;
   g_rects[g_count++] = rect;
+}
+
+bool set_viewport(int width,int height) {
+  if (width<=0 || height<=0 || width>32768 || height>32768) return false;
+  if (width!=g_width || height!=g_height) {
+    clear();g_width=width;g_height=height;
+  }
+  return true;
 }
 
 void clear() {
@@ -112,8 +121,8 @@ bool move(Direction direction) {
     // First placement: the control nearest the screen centre.
     long best = -1;
     for (size_t i = 0; i < g_count; ++i) {
-      const long dx = cx(g_rects[i]) - 640;
-      const long dy = cy(g_rects[i]) - 360;
+      const long dx = cx(g_rects[i]) - g_width/2;
+      const long dy = cy(g_rects[i]) - g_height/2;
       const long d = dx * dx + dy * dy;
       if (best < 0 || d < best) {
         best = d;
@@ -140,6 +149,8 @@ bool move(Direction direction) {
 }
 
 bool self_check() {
+  const int previous_width=g_width,previous_height=g_height;
+  set_viewport(1280,720);
   clear();
   // 3 x 2 grid of buttons.
   for (int row = 0; row < 2; ++row)
@@ -155,6 +166,7 @@ bool self_check() {
   ok = ok && move(Direction::up) && focused(&r) && r.x == 100 && r.y == 200;
   ok = ok && !move(Direction::up);
   clear();
+  set_viewport(previous_width,previous_height);
   return ok;
 }
 

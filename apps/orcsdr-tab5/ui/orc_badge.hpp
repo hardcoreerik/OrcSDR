@@ -7,8 +7,14 @@ namespace orcsdr::badge {
 constexpr int kWidth = 104;
 constexpr int kHeight = 104;
 
+#if defined(_MSC_VER)
+// Host recording tests supply fixture symbols; hardware keeps the embedded ELF asset.
+extern const uint8_t raw_start[];
+extern const uint8_t raw_end[];
+#else
 extern const uint8_t raw_start[] asm("_binary_orc_badge_104_rgb565_start");
 extern const uint8_t raw_end[] asm("_binary_orc_badge_104_rgb565_end");
+#endif
 
 constexpr uint16_t display565(uint16_t value) {
   return static_cast<uint16_t>((value << 8) | (value >> 8));

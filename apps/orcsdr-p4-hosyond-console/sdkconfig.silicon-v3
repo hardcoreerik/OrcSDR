@@ -1,0 +1,5 @@
+# Build overlay: target ESP32-P4 silicon revision v3.x (v3.0 and newer).
+# ESP-IDF 5.5 builds either revisions below 3.0 (sdkconfig.defaults: rev v1.3 boards) or 3.0 and above, never both in
+# one image: esptool refuses a v1.x image on a v3.2 chip. List this overlay LAST so it overrides sdkconfig.defaults.
+# CONFIG_ESP32P4_SELECTS_REV_LESS_V3 is not set
+CONFIG_ESP32P4_REV_MIN_300=y

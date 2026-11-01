@@ -1,0 +1,4 @@
+dependencies:
+  # ES8311 codec control (registers, volume, PA pin) for the board's speaker output.
+  espressif/esp_codec_dev:
+    version: ">=1.3.0"

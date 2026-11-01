@@ -1,0 +1,23 @@
+dependencies:
+  idf:
+    version: ">=5.5.0,<5.6.0"
+  esp_rtl_sdr:
+    git: https://github.com/hardcoreerik/esp-rtl-sdr.git
+    # Same immutable pin as apps/orcsdr-tab5 and apps/orcsdr-waveshare-4b (v0.9.3).
+    version: 31a159df4f006a837d5041029bc6d1bc63520234
+  espressif/esp_hosted:
+    version: "3.0.6"
+  espressif/esp_wifi_remote:
+    version: "1.6.4"
+  espressif/esp-dsp:
+    version: "^1.3.4"
+  m5stack/m5gfx:
+    # Same pin as apps/orcsdr-tab5: the drawing engine the Tab5 UI is written against.
+    version: "0.2.27"
+  espressif/esp_codec_dev:
+    version: "1.6.2"
+  espressif/mdns:
+    version: "1.13.1"
+  orcmaps:
+    git: https://github.com/hardcoreerik/OrcMaps.git
+    version: 6a621a70ebbf7906b1d6c089bd61dbbc456475ed
