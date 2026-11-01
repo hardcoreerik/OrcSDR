@@ -60,3 +60,11 @@ that component, preserve image/source/configuration hashes, and retain the
 shared SDK's original hash. A portable release integration still needs a
 documented SDK requirement or maintained patch procedure; this local override
 alone is not a distributable release.
+
+Follow-up status at uptime 131,693–133,493 ms still showed STREAMING at about
+2.396 MS/s, 510,951,424 cumulative bytes, zero reported overruns/drops and the
+expected 2.04 MHz offset. The firmware PNG command completed with a verified
+image. No reboot or panic was observed in this interval. This is approximately
+two minutes of bounded post-boot observation, not an endurance or fault test.
+The 55-second passive reconnect window contained no serial events; it therefore
+provides no disconnect/recovery evidence. Physical unplug/replug remains pending.

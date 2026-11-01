@@ -3,6 +3,10 @@
     "bytes": 5235,
     "sha256": "4e066c3a4712e77168379585a1ab6950de124b779c8701f61d92d1df4744b780"
   },
+  "hal-candidate-screen.png": {
+    "bytes": 138969,
+    "sha256": "e5014d691987dbd570077f03fd326882bac8d395846230202c7d5a07fc8cf285"
+  },
   "hal-compile-selection.json": {
     "bytes": 309,
     "sha256": "92a969b1a8c75da338b827ddbd4b10ad03100b94a507c518711cc4ceb3f172c4"
@@ -19,8 +23,12 @@
     "bytes": 1930,
     "sha256": "2bfaa1f79d865d570b42dc1333a28bbbba3a680a150edd1051c852f294a11d66"
   },
+  "hal-stream-followup.log": {
+    "bytes": 1175,
+    "sha256": "b2ba4fada8b00417fd4170e1c6ff1107e154be148644fb54838b6a51ebe9399e"
+  },
   "README.md": {
-    "bytes": 3463,
-    "sha256": "85e92d7e0ccaf377a85325f3fdf682801be1d2252bdc4c6ad795d72adbfaec9e"
+    "bytes": 4087,
+    "sha256": "f3b4320c97961f81441d28690d659c35f939a1f44bb957076f54941fa000d494"
   }
 }
