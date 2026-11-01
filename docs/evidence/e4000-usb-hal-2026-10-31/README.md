@@ -68,3 +68,16 @@ image. No reboot or panic was observed in this interval. This is approximately
 two minutes of bounded post-boot observation, not an endurance or fault test.
 The 55-second passive reconnect window contained no serial events; it therefore
 provides no disconnect/recovery evidence. Physical unplug/replug remains pending.
+
+## User-confirmed reconnect follow-up
+
+The user confirmed unplugging/reconnecting XTR USB without restarting the
+Tab5. The earlier passive capture had ended, so the disconnect and startup
+sequence is not retained for this patched image. Post-reconnect observations
+show uptime 2,311,848–2,313,685 ms (no intervening reboot relative to the prior
+post-flash observation), STREAMING at approximately 2.395 MS/s, byte counter
+advancing from 60,227,584 to 70,483,968, and zero reported overruns/drops.
+Applied offset is 2.04 MHz, physical LO 97.96 MHz, effective IQ center 100 MHz.
+This supports successful post-reconnect streaming with the user-confirmed
+physical action, but does not prove the exact early-error interrupt occurred
+or capture its classification/recovery. No RF reception claim is made.

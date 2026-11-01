@@ -15,6 +15,10 @@
     "bytes": 525,
     "sha256": "b880a70d7c4edc7034fee2f40ec82ced1608f37a5562d6664e24d0541b21176c"
   },
+  "hal-reconnect-confirmed.log": {
+    "bytes": 1798,
+    "sha256": "02a873f4a0530e5018b09f002489edc0727a50700c92ca5a2704f9d386bfd1d8"
+  },
   "hal-retune-stopstart.log": {
     "bytes": 2824,
     "sha256": "8a1682e9ef42efe8d0736c69d2db6c84a590914705c37a9a8834b3951edd43d9"
@@ -28,7 +32,7 @@
     "sha256": "b2ba4fada8b00417fd4170e1c6ff1107e154be148644fb54838b6a51ebe9399e"
   },
   "README.md": {
-    "bytes": 4087,
-    "sha256": "f3b4320c97961f81441d28690d659c35f939a1f44bb957076f54941fa000d494"
+    "bytes": 4900,
+    "sha256": "ae64a32b2ed7028b54f106a73f7c9810657bbde03112ed71759baee1c2fe11a5"
   }
 }
