@@ -31,18 +31,41 @@ COM17 and COM8 were unchanged. Previous HAL-candidate image is retained locally.
 - Antenna samples at nominal -1, 19 and 29 dB reported near-full-scale signal
   and 100% clipping. Lowering the requested gain did not resolve this. The
   live antenna is not a controlled power source: overload, IF initialization
-  and clipping telemetry need checking against the tinySA fixture before
-  gain behavior is declared RF-verified. Last requested gain is -1 dB.
+  and clipping telemetry need checking against the tinySA fixture against the controlled result below. The cause of this antenna-only
+  telemetry remains unresolved; do not infer a driver gain failure from it.
 
-The next requested fixture is tinySA RF → 30 dB attenuator → XTR, leaving USB
-on COM39. No source output was enabled in this gain test. The physical RF gain
-sweep is pending that connection; the serial pass does not close this gate.
+## Controlled RF follow-up, 2026-11-01
 
-The driver is staged separately in draft PR #64, from current master; its six
-source/test files match the validated local driver revision byte-for-byte.
-The PR has not been merged. Host CI passed on Windows and Ubuntu at the first
-check; native-IDF compile checks were still pending then. CodeRabbit review
-was manually requested; no completed external review is claimed here.
+User connected tinySA RF -> 30 dB attenuator -> XTR, USB on COM39.
+The completed 100.1 MHz CW run at nominal -40 dBm used a 100 MHz receiver
+and 2.4 MS/s. All 14 manual gain settings and tuner AUTO met the script's
+tone and rail-clipping checks. All 16 captures (76,800,000 CU8 bytes total)
+were independently rehashed after retrieval and matched the device hashes.
+All raw rail fractions were zero. The weakest manual tone was 43.86 dB above
+the source-off search peak. AUTO retained the tone without clipping; this
+single input level does not qualify AGC attack/release or overload behavior.
+
+The manual endpoints measured -44.25 and -8.72 dBFS: a 35.53 dB change for
+43 dB of nominal requested range. The 14 -> 16.5 dB step dipped 0.57 dB.
+The accepted PC reference also had nonideal steps, including a 29/34 dB
+plateau, but its curve differs from this ESP run. Gain adjustment is working;
+absolute gain accuracy and vendor equivalence are not established. Source
+and attenuation are nominal, and initialization/offset/FFT conditions differ.
+Do not silently change gain codes or IF settings to fit this one curve.
+
+Exact scripts, commands, hashes, comparison and machine-readable summaries
+are in [controlled-rf](controlled-rf/README.md). Raw IQ stays local in the
+ignored build-offset/gain-candidate/controlled-gain-matrix directory.
+The run ended with output OFF and pause acknowledged. Both commands were
+sent again and acknowledged during the morning follow-up. No new flash was
+performed; COM17 and COM8 were not accessed in this follow-up.
+
+The driver remains staged in draft [PR #64](https://github.com/hardcoreerik/esp-rtl-sdr/pull/64).
+Its six source/test files match the tested local driver revision byte-for-byte.
+Current checks pass: Windows/Linux host tests, ESP-IDF 5.5.4 and 6.1 compile,
+truth/version hygiene and the CodeRabbit status. Review comments have not
+been triaged; a green status is not a claim of review completion or readiness.
+The PR is not merged. Other-dongle hardware regression gates remain open.
 
 ## Bias tee and RTL digital AGC
 
