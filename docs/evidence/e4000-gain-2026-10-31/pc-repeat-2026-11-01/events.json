@@ -1,0 +1,768 @@
+[
+  {
+    "t": 1793554044.9035978,
+    "stage": "source_command",
+    "command": "output off",
+    "response": "output off\r\nch> "
+  },
+  {
+    "t": 1793554045.057528,
+    "stage": "source_command",
+    "command": "version",
+    "response": "version\r\ntinySA4_v1.4-151-g31a89ce\r\nHW Version:V0.4.5.1.1 \r\nch> "
+  },
+  {
+    "t": 1793554045.2149272,
+    "stage": "source_command",
+    "command": "info",
+    "response": "info\r\ntinySA ULTRA\r\n2019-2024 Copyright @Erik Kaashoek\r\n2016-2020 Copyright @edy555\r\nSW licensed under GPL. See: https://github.com/erikkaashoek/tinySA\r\nVersion: tinySA4_v1.4-151-g31a89ce\r\nBuild Time: Jan 31 2024 - 15:23:02\r\nKernel: 4.0.0\r\nCompiler: GCC 7.2.1 20170904 (release) [ARM/embedded-7-branch revision 255204]\r\nArchitecture: ARMv7E-M Core Variant: Cortex-M4F\r\nPort Info: Advanced kernel mode\r\nPlatform: STM32F303xC Analog & DSP\r\nch> "
+  },
+  {
+    "t": 1793554048.2767925,
+    "stage": "open",
+    "t_start": 1793554047.2992122,
+    "rc": 0
+  },
+  {
+    "t": 1793554048.2885282,
+    "stage": "bias_off",
+    "t_start": 1793554048.2773106,
+    "rc": 0,
+    "args": [
+      0
+    ]
+  },
+  {
+    "t": 1793554048.3650405,
+    "stage": "rate",
+    "t_start": 1793554048.2889256,
+    "rc": 0,
+    "args": [
+      2400000
+    ]
+  },
+  {
+    "t": 1793554048.4015644,
+    "stage": "tune",
+    "t_start": 1793554048.365571,
+    "rc": 0,
+    "args": [
+      100000000
+    ]
+  },
+  {
+    "t": 1793554048.420554,
+    "stage": "manual",
+    "t_start": 1793554048.4020715,
+    "rc": 0,
+    "args": [
+      1
+    ]
+  },
+  {
+    "t": 1793554048.4394186,
+    "stage": "gain",
+    "t_start": 1793554048.4210038,
+    "rc": 0,
+    "args": [
+      190
+    ]
+  },
+  {
+    "t": 1793554048.44529,
+    "stage": "agc_off",
+    "t_start": 1793554048.4398212,
+    "rc": 0,
+    "args": [
+      0
+    ]
+  },
+  {
+    "t": 1793554048.4820354,
+    "stage": "bw_auto",
+    "t_start": 1793554048.4456584,
+    "rc": 0,
+    "args": [
+      0
+    ]
+  },
+  {
+    "t": 1793554048.639322,
+    "stage": "source_command",
+    "command": "pause",
+    "response": "pause\r\nch> "
+  },
+  {
+    "t": 1793554048.9506302,
+    "stage": "source_command",
+    "command": "mode low output",
+    "response": "mode low output\r\nch> "
+  },
+  {
+    "t": 1793554049.1058738,
+    "stage": "source_command",
+    "command": "pause",
+    "response": "pause\r\nch> "
+  },
+  {
+    "t": 1793554049.2607498,
+    "stage": "source_command",
+    "command": "level -40",
+    "response": "level -40\r\nch> "
+  },
+  {
+    "t": 1793554049.415345,
+    "stage": "source_command",
+    "command": "modulation off",
+    "response": "modulation off\r\nch> "
+  },
+  {
+    "t": 1793554049.5714617,
+    "stage": "source_command",
+    "command": "pause",
+    "response": "pause\r\nch> "
+  },
+  {
+    "t": 1793554049.7273843,
+    "stage": "source_command",
+    "command": "sweep cw 100100000",
+    "response": "sweep cw 100100000\r\nch> "
+  },
+  {
+    "t": 1793554049.884362,
+    "stage": "source_command",
+    "command": "resume",
+    "response": "resume\r\nch> "
+  },
+  {
+    "t": 1793554050.0393977,
+    "stage": "source_command",
+    "command": "output off",
+    "response": "output off\r\nch> "
+  },
+  {
+    "t": 1793554050.424921,
+    "stage": "source_off",
+    "artifact": "020-source_off.cu8",
+    "sha256": "f7d65cb8b5f60eca5151767fbb72534abe7d1780e6798987659ec523556e3be8",
+    "tone_hz": 101550.29296875,
+    "tone_dbfs": -78.57572176305192,
+    "rms_dbfs": -38.2487993939951,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 190
+  },
+  {
+    "t": 1793554050.5832412,
+    "stage": "source_command",
+    "command": "resume",
+    "response": "resume\r\nch> "
+  },
+  {
+    "t": 1793554050.7377763,
+    "stage": "source_command",
+    "command": "output on",
+    "response": "output on\r\nch> "
+  },
+  {
+    "t": 1793554051.1216571,
+    "stage": "source_on",
+    "artifact": "023-source_on.cu8",
+    "sha256": "7adb9acdcdc187140cdf383e53addb01372511a707c5cc2369233c77cf6588dd",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -23.189713592666124,
+    "rms_dbfs": -22.892723843504346,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 190
+  },
+  {
+    "t": 1793554051.209196,
+    "stage": "offset_set",
+    "t_start": 1793554051.1225555,
+    "rc": 0,
+    "args": [
+      0
+    ]
+  },
+  {
+    "t": 1793554051.2258337,
+    "stage": "gain_set",
+    "t_start": 1793554051.2096963,
+    "rc": 0,
+    "args": [
+      140
+    ]
+  },
+  {
+    "t": 1793554052.4603229,
+    "stage": "gain_repeat",
+    "artifact": "026-gain_repeat.cu8",
+    "sha256": "4314456c1539d41530664cbabc22b33cff345c6094386b4ff7358a9545289de7",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -28.000218356853146,
+    "rms_dbfs": -27.51382810700082,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 140,
+    "offset_enabled": 0
+  },
+  {
+    "t": 1793554052.477724,
+    "stage": "gain_set",
+    "t_start": 1793554052.4613357,
+    "rc": 0,
+    "args": [
+      165
+    ]
+  },
+  {
+    "t": 1793554053.7124708,
+    "stage": "gain_repeat",
+    "artifact": "028-gain_repeat.cu8",
+    "sha256": "0d7a434ff6015bc793566648ac7f426ea52c526ec2a4efae286d7b6726cf7bc8",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -26.854083882122602,
+    "rms_dbfs": -26.389024829144063,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 165,
+    "offset_enabled": 0
+  },
+  {
+    "t": 1793554053.7296221,
+    "stage": "gain_set",
+    "t_start": 1793554053.7134023,
+    "rc": 0,
+    "args": [
+      190
+    ]
+  },
+  {
+    "t": 1793554054.9638271,
+    "stage": "gain_repeat",
+    "artifact": "030-gain_repeat.cu8",
+    "sha256": "531f78c0986673484ef169eb484ace8d1f6be225da3a184f9bf69ef011af7b8f",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -23.325193729321768,
+    "rms_dbfs": -22.89496319373084,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 190,
+    "offset_enabled": 0
+  },
+  {
+    "t": 1793554054.9808743,
+    "stage": "gain_set",
+    "t_start": 1793554054.9646509,
+    "rc": 0,
+    "args": [
+      165
+    ]
+  },
+  {
+    "t": 1793554056.21548,
+    "stage": "gain_repeat",
+    "artifact": "032-gain_repeat.cu8",
+    "sha256": "c303f962766d15aa6b18bddea9ddbd9679fb7e491205d4e9505c1d19534a82c0",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -26.945000895703846,
+    "rms_dbfs": -26.38607948809699,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 165,
+    "offset_enabled": 0
+  },
+  {
+    "t": 1793554056.2326486,
+    "stage": "gain_set",
+    "t_start": 1793554056.2164207,
+    "rc": 0,
+    "args": [
+      140
+    ]
+  },
+  {
+    "t": 1793554057.469501,
+    "stage": "gain_repeat",
+    "artifact": "034-gain_repeat.cu8",
+    "sha256": "8c8276d15bed8f08383fa7e60d41e564f2fa2afdeb0f7e303e261908a4dd5220",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -28.157364305924162,
+    "rms_dbfs": -27.524698245644505,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 140,
+    "offset_enabled": 0
+  },
+  {
+    "t": 1793554057.4868054,
+    "stage": "gain_set",
+    "t_start": 1793554057.4705553,
+    "rc": 0,
+    "args": [
+      290
+    ]
+  },
+  {
+    "t": 1793554058.72234,
+    "stage": "gain_repeat",
+    "artifact": "036-gain_repeat.cu8",
+    "sha256": "873fbbe6da288b81a237fbfd1e5138824a810e83b3fd2cbf03878c9fc1d4d925",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -13.778571361340282,
+    "rms_dbfs": -13.326334798428102,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 290,
+    "offset_enabled": 0
+  },
+  {
+    "t": 1793554058.7398257,
+    "stage": "gain_set",
+    "t_start": 1793554058.7236414,
+    "rc": 0,
+    "args": [
+      340
+    ]
+  },
+  {
+    "t": 1793554059.9763246,
+    "stage": "gain_repeat",
+    "artifact": "038-gain_repeat.cu8",
+    "sha256": "373edc6b8b7e524157690d87fbc74a44c347f031a831bc03d7cbd13a97c641b4",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -13.786543035675734,
+    "rms_dbfs": -13.342740182249129,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 340,
+    "offset_enabled": 0
+  },
+  {
+    "t": 1793554059.9935904,
+    "stage": "gain_set",
+    "t_start": 1793554059.9773476,
+    "rc": 0,
+    "args": [
+      290
+    ]
+  },
+  {
+    "t": 1793554061.2283823,
+    "stage": "gain_repeat",
+    "artifact": "040-gain_repeat.cu8",
+    "sha256": "0602c7b459e53d95664a531f4ba47a0198b116cdb62b008f92b4704d24a87e20",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -13.7820336621538,
+    "rms_dbfs": -13.335618624855792,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 290,
+    "offset_enabled": 0
+  },
+  {
+    "t": 1793554061.3227413,
+    "stage": "offset_set",
+    "t_start": 1793554061.2292655,
+    "rc": 0,
+    "args": [
+      1
+    ]
+  },
+  {
+    "t": 1793554061.3394933,
+    "stage": "gain_set",
+    "t_start": 1793554061.323357,
+    "rc": 0,
+    "args": [
+      140
+    ]
+  },
+  {
+    "t": 1793554062.5753987,
+    "stage": "gain_repeat",
+    "artifact": "043-gain_repeat.cu8",
+    "sha256": "b171b55ec7b124be744684cf88508ee8c9c5d5b53d2ddf69fb3617eb254f1d6f",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -29.317267096855755,
+    "rms_dbfs": -28.73318452678643,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 140,
+    "offset_enabled": 1
+  },
+  {
+    "t": 1793554062.5928853,
+    "stage": "gain_set",
+    "t_start": 1793554062.5766358,
+    "rc": 0,
+    "args": [
+      165
+    ]
+  },
+  {
+    "t": 1793554063.8276358,
+    "stage": "gain_repeat",
+    "artifact": "045-gain_repeat.cu8",
+    "sha256": "d05d4e1c28a320c1ed90874df98dd11125d405b6f982bc2d21421438e5ddd01e",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -28.124520968155192,
+    "rms_dbfs": -27.573052359698607,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 165,
+    "offset_enabled": 1
+  },
+  {
+    "t": 1793554063.8448894,
+    "stage": "gain_set",
+    "t_start": 1793554063.8287187,
+    "rc": 0,
+    "args": [
+      190
+    ]
+  },
+  {
+    "t": 1793554065.0782723,
+    "stage": "gain_repeat",
+    "artifact": "047-gain_repeat.cu8",
+    "sha256": "f8efa4b52e13009b9f33a83b407f7a63fe905df14feece170b90faff9407295b",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -24.552271537813475,
+    "rms_dbfs": -24.061383033464985,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 190,
+    "offset_enabled": 1
+  },
+  {
+    "t": 1793554065.095531,
+    "stage": "gain_set",
+    "t_start": 1793554065.0794258,
+    "rc": 0,
+    "args": [
+      165
+    ]
+  },
+  {
+    "t": 1793554066.3310435,
+    "stage": "gain_repeat",
+    "artifact": "049-gain_repeat.cu8",
+    "sha256": "40e5178e6177466446f5acec8e238b43ff10ca489765598e4ba20fca4f4bd370",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -28.1197944846565,
+    "rms_dbfs": -27.584221512994578,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 165,
+    "offset_enabled": 1
+  },
+  {
+    "t": 1793554066.348191,
+    "stage": "gain_set",
+    "t_start": 1793554066.331992,
+    "rc": 0,
+    "args": [
+      140
+    ]
+  },
+  {
+    "t": 1793554067.5821545,
+    "stage": "gain_repeat",
+    "artifact": "051-gain_repeat.cu8",
+    "sha256": "f5fc99b0fd308be6866dda208af24e26757605968b9272627100448eb6096248",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -29.289736876664026,
+    "rms_dbfs": -28.749839962009847,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 140,
+    "offset_enabled": 1
+  },
+  {
+    "t": 1793554067.5994546,
+    "stage": "gain_set",
+    "t_start": 1793554067.5832145,
+    "rc": 0,
+    "args": [
+      290
+    ]
+  },
+  {
+    "t": 1793554068.8330257,
+    "stage": "gain_repeat",
+    "artifact": "053-gain_repeat.cu8",
+    "sha256": "0ff70b6461a3532efec71af33f8c9bee9c5bf2e6f27e6ad48dc66959d5a631e0",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -14.925576615908778,
+    "rms_dbfs": -14.493649054021489,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 290,
+    "offset_enabled": 1
+  },
+  {
+    "t": 1793554068.8502288,
+    "stage": "gain_set",
+    "t_start": 1793554068.834075,
+    "rc": 0,
+    "args": [
+      340
+    ]
+  },
+  {
+    "t": 1793554070.0840962,
+    "stage": "gain_repeat",
+    "artifact": "055-gain_repeat.cu8",
+    "sha256": "62a54f20b549a4342234c34b19c224f9c0e9ab985122e720fa7371b5200f09ae",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -14.923597997864492,
+    "rms_dbfs": -14.500348446985063,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 340,
+    "offset_enabled": 1
+  },
+  {
+    "t": 1793554070.1013653,
+    "stage": "gain_set",
+    "t_start": 1793554070.0851614,
+    "rc": 0,
+    "args": [
+      290
+    ]
+  },
+  {
+    "t": 1793554071.3376667,
+    "stage": "gain_repeat",
+    "artifact": "057-gain_repeat.cu8",
+    "sha256": "f178550c954c3cbe8d706adb11f5e6c3b9c7b196ce1fcf28300f3f9a2d255e4f",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -14.922897842594288,
+    "rms_dbfs": -14.504808740777191,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 290,
+    "offset_enabled": 1
+  },
+  {
+    "t": 1793554071.432276,
+    "stage": "offset_set",
+    "t_start": 1793554071.338821,
+    "rc": 0,
+    "args": [
+      0
+    ]
+  },
+  {
+    "t": 1793554071.4492667,
+    "stage": "gain_set",
+    "t_start": 1793554071.4330547,
+    "rc": 0,
+    "args": [
+      140
+    ]
+  },
+  {
+    "t": 1793554072.6820736,
+    "stage": "gain_repeat",
+    "artifact": "060-gain_repeat.cu8",
+    "sha256": "376f0558544edb23633e5aced1b0cb4044411e8ac963953465ef1cc3b2e35a02",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -28.128599567046418,
+    "rms_dbfs": -27.520942710297724,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 140,
+    "offset_enabled": 0
+  },
+  {
+    "t": 1793554072.6994104,
+    "stage": "gain_set",
+    "t_start": 1793554072.683217,
+    "rc": 0,
+    "args": [
+      165
+    ]
+  },
+  {
+    "t": 1793554073.93373,
+    "stage": "gain_repeat",
+    "artifact": "062-gain_repeat.cu8",
+    "sha256": "074e5ea087fcbe068e102ebc75f95f4c9e8f58c81fa8091e9cec7f2f31dc048a",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -26.948588354887654,
+    "rms_dbfs": -26.39027804097967,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 165,
+    "offset_enabled": 0
+  },
+  {
+    "t": 1793554073.9508004,
+    "stage": "gain_set",
+    "t_start": 1793554073.9346664,
+    "rc": 0,
+    "args": [
+      190
+    ]
+  },
+  {
+    "t": 1793554075.184767,
+    "stage": "gain_repeat",
+    "artifact": "064-gain_repeat.cu8",
+    "sha256": "216d33655ef12d354d2ead66bb0c073c0029c359c95c5b12e3950a27e952bd87",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -23.37652401672358,
+    "rms_dbfs": -22.921062748711943,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 190,
+    "offset_enabled": 0
+  },
+  {
+    "t": 1793554075.2020705,
+    "stage": "gain_set",
+    "t_start": 1793554075.185893,
+    "rc": 0,
+    "args": [
+      165
+    ]
+  },
+  {
+    "t": 1793554076.4390774,
+    "stage": "gain_repeat",
+    "artifact": "066-gain_repeat.cu8",
+    "sha256": "8e570c3970e8e4eb5750de7c00690fd4e260c29b6ae7f8f55a6c91f93e404ce0",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -26.932800184222426,
+    "rms_dbfs": -26.39569223040742,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 165,
+    "offset_enabled": 0
+  },
+  {
+    "t": 1793554076.456951,
+    "stage": "gain_set",
+    "t_start": 1793554076.4403517,
+    "rc": 0,
+    "args": [
+      140
+    ]
+  },
+  {
+    "t": 1793554077.6905231,
+    "stage": "gain_repeat",
+    "artifact": "068-gain_repeat.cu8",
+    "sha256": "852e4e2407d616ecd6fb5cee5c98fd5c0d7364c236d50082c634c0673c350375",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -28.13395853853249,
+    "rms_dbfs": -27.536365100329007,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 140,
+    "offset_enabled": 0
+  },
+  {
+    "t": 1793554077.7077386,
+    "stage": "gain_set",
+    "t_start": 1793554077.6915467,
+    "rc": 0,
+    "args": [
+      290
+    ]
+  },
+  {
+    "t": 1793554078.9431243,
+    "stage": "gain_repeat",
+    "artifact": "070-gain_repeat.cu8",
+    "sha256": "116d913f66bd3311d8e9ac7fccc3bac526ec39a1d73dff214a0692af3f4e8a3a",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -13.737776808862481,
+    "rms_dbfs": -13.369992071797762,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 290,
+    "offset_enabled": 0
+  },
+  {
+    "t": 1793554078.9603817,
+    "stage": "gain_set",
+    "t_start": 1793554078.9441388,
+    "rc": 0,
+    "args": [
+      340
+    ]
+  },
+  {
+    "t": 1793554080.1965613,
+    "stage": "gain_repeat",
+    "artifact": "072-gain_repeat.cu8",
+    "sha256": "3ba7dfa6a9251d343b05e277c4443b32aa9bf0fdd779bb00f6321d86afd273f4",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -13.723348298553216,
+    "rms_dbfs": -13.372383953845894,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 340,
+    "offset_enabled": 0
+  },
+  {
+    "t": 1793554080.213813,
+    "stage": "gain_set",
+    "t_start": 1793554080.1976213,
+    "rc": 0,
+    "args": [
+      290
+    ]
+  },
+  {
+    "t": 1793554081.4505963,
+    "stage": "gain_repeat",
+    "artifact": "074-gain_repeat.cu8",
+    "sha256": "90f527b74e0ae00a0224a55b09c90fa62819bbcc763e8a971e9489a4498fd157",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -13.726587384124665,
+    "rms_dbfs": -13.380853433473717,
+    "clip_fraction": 0.0,
+    "source_dbm": -40,
+    "gain_tenth_db": 290,
+    "offset_enabled": 0
+  },
+  {
+    "t": 1793554081.451909,
+    "stage": "run_complete",
+    "passed": true
+  },
+  {
+    "t": 1793554081.6039085,
+    "stage": "source_command",
+    "command": "output off",
+    "response": "output off\r\nch> "
+  },
+  {
+    "t": 1793554081.9167717,
+    "stage": "source_command",
+    "command": "pause",
+    "response": "pause\r\nch> "
+  },
+  {
+    "t": 1793554082.0725057,
+    "stage": "source_command",
+    "command": "output off",
+    "response": "output off\r\nch> "
+  },
+  {
+    "t": 1793554082.2279031,
+    "stage": "source_command",
+    "command": "pause",
+    "response": "pause\r\nch> "
+  },
+  {
+    "t": 1793554082.2493086,
+    "stage": "close",
+    "rc": 0
+  }
+]
