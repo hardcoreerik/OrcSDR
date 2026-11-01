@@ -1518,6 +1518,9 @@ static bool rtl_session_continuous = true;
 static uint32_t rtl_session_started_ms = 0;
 static std::atomic<uint32_t> rtl_session_frequency_hz{kRtlFmDefaultHz};
 static std::atomic<uint32_t> rtl_rate_override_sps{0};
+// Hardware correction is selected by driver capability. The delivered IQ
+// already has its requested center; no additional software mixer is added.
+static std::atomic<bool> rtl_offset_tuning_enabled{true};
 // The FT8 decoder set rtl_rate_override_sps (240 kS/s) and must clear it; the DSP task then treats the non-default rate as its own.
 static std::atomic<bool> g_ft8_rate_owned{false};
 static std::atomic<bool> g_ft8_rate_restart_pending{false};   // the stream is still at the FT8 rate after the decoder let go
@@ -9791,7 +9794,15 @@ static void rtl_driver_app_task(void *) {
                           esp_rtl_sdr_set_hf_direct_min_hz(g_rtl, direct_min_hz)));
       }
       log_dram_budget("rtl_before_start");
-      esp_err_t err = esp_rtl_sdr_start(g_rtl, &st);
+      esp_err_t offset_err = ESP_OK;
+      if (rtl_has_device_capability(ESP_RTL_SDR_CAP_OFFSET_TUNING)) {
+        offset_err = esp_rtl_sdr_set_offset_tuning(
+            g_rtl, rtl_offset_tuning_enabled.load(std::memory_order_acquire));
+        Serial.printf("RTL_OFFSET_CONFIG requested=%d result=%s correction=hardware\n",
+                      rtl_offset_tuning_enabled.load(std::memory_order_relaxed) ? 1 : 0,
+                      esp_rtl_sdr_err_to_name(offset_err));
+      }
+      esp_err_t err = offset_err == ESP_OK ? esp_rtl_sdr_start(g_rtl, &st) : offset_err;
       Serial.printf("RTL_START %s rate=%u display_hz=%u lo_hz=%u\n",
                     esp_rtl_sdr_err_to_name(err), st.sample_rate_sps, frequency_hz,
                     st.frequency_hz);
@@ -18852,6 +18863,16 @@ void print_rtl_driver_status() {
       frequency_err == ESP_OK && metrics_err == ESP_OK && metrics.frequency_hz == frequency_hz,
       route, static_cast<unsigned>(bandwidth_requested_hz),
       static_cast<unsigned>(bandwidth_applied_hz));
+  esp_rtl_sdr_offset_tuning_state_t offset{};
+  const esp_err_t offset_err = esp_rtl_sdr_get_offset_tuning_state(g_rtl, &offset);
+  Serial.printf("RTL_OFFSET_STATUS cap=%d requested=%d applied_offset_hz=%u "
+                "tuner_lo_hz=%u iq_center_hz=%u correction=%s "
+                "additional_offset_mixer=0 result=%s\n",
+                (caps & ESP_RTL_SDR_CAP_OFFSET_TUNING) ? 1 : 0,
+                offset.requested ? 1 : 0, offset.applied_offset_hz,
+                offset.tuner_lo_hz, offset.iq_center_hz,
+                (caps & ESP_RTL_SDR_CAP_OFFSET_TUNING) ? "hardware" : "none",
+                esp_rtl_sdr_err_to_name(offset_err));
 }
 
 void print_cb_status() {
@@ -21564,7 +21585,11 @@ void process_command(char* command) {
     }
     esp_err_t err = ESP_ERR_INVALID_ARG;
     const char* action = command + 11;
-    if (strcmp(action, "GAINMODE AUTO") == 0)
+    if (strcmp(action, "OFFSET ON") == 0 || strcmp(action, "OFFSET OFF") == 0) {
+      const bool enabled = strcmp(action, "OFFSET ON") == 0;
+      err = esp_rtl_sdr_set_offset_tuning(g_rtl, enabled);
+      if (err == ESP_OK) rtl_offset_tuning_enabled.store(enabled, std::memory_order_release);
+    } else if (strcmp(action, "GAINMODE AUTO") == 0)
       err = (rtl_gain_stop_smart(), rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN_AUTO))
                 ? esp_rtl_sdr_set_tuner_gain_mode(g_rtl, ESP_RTL_SDR_GAIN_MODE_AUTO)
                 : ESP_RTL_SDR_ERR_UNSUPPORTED;
@@ -21700,6 +21725,7 @@ void process_command(char* command) {
     Serial.println("RTL_HOTPLUG_STATUS            - receiver replacement and resume state");
     Serial.println("RTL_ADSB STATUS               - ADS-B stream, queue and decoder counters");
     Serial.println("RTL_DRIVER STATUS|SELF_CHECK  - driver capabilities, shadows and stream metrics");
+    Serial.println("RTL_DRIVER OFFSET ON|OFF     - hardware center correction, radio stopped; default ON when supported");
     Serial.println("RTL_DRIVER GAINMODE AUTO|MANUAL | GAIN <0..496> | RTLAGC ON|OFF | BIAS ON|OFF (auth)");
     Serial.println("RTL_HEALTH                    - heap, task and reset diagnostics");
     Serial.println("RTL_SD_SELF_CHECK             - authenticated file semantics check");

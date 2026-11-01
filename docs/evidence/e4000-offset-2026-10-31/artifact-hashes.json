@@ -1,0 +1,58 @@
+{
+  "build-provenance.json": {
+    "bytes": 4122,
+    "sha256": "df3eae6d92bc58b130e502dfa10e0c79942e67498dd99841c2e22c10bb896240"
+  },
+  "m5gfx-local-patch.json": {
+    "bytes": 743,
+    "sha256": "c3fb6fd824e25eeea6fca20544a2c054a69067e3fa3ea8ac21a60bab8db16174"
+  },
+  "offset-0-OFF-source-off.json": {
+    "bytes": 2143,
+    "sha256": "48a202c27df9d5cc838e8783878e8b8e140161bb0ce4ebae0c119215205b4917"
+  },
+  "offset-0-OFF-source-on.json": {
+    "bytes": 2141,
+    "sha256": "8d536055344315889afe5516218f707222253fd23e06625bf6eed269ca686728"
+  },
+  "offset-1-ON-source-off.json": {
+    "bytes": 2150,
+    "sha256": "5e2a641a5eb0fc2d01464d992098fa162347f08b82a92d940ee30053dfd6de64"
+  },
+  "offset-1-ON-source-on.json": {
+    "bytes": 2149,
+    "sha256": "6cd6d716d1926e7e376de949bef3a21a4a011963a1a523580c8bdb6881b081e0"
+  },
+  "offset-2-OFF-source-off.json": {
+    "bytes": 2144,
+    "sha256": "a1221104c736af428d0e94880e64a5ebb8fc4e675cb44432b3aae7270bb1440e"
+  },
+  "offset-2-OFF-source-on.json": {
+    "bytes": 2141,
+    "sha256": "63f9c6ca75eaa938073ac17b25b55a69226a118fb0839f6d6f10a37b66457854"
+  },
+  "offset-off-source-off.png": {
+    "bytes": 131716,
+    "sha256": "9ff952998ecd1f125d98cf6c204ebca055b5006375dc64f2df8444c66c94e11b"
+  },
+  "offset-on-source-off.png": {
+    "bytes": 119652,
+    "sha256": "75c5b3f57fc5969cbf38dd3a0a203efb27ad952c8bdf27ff421da0513ba9e471"
+  },
+  "rate-3200k-active.log": {
+    "bytes": 1166,
+    "sha256": "75e35cd6d629792a23aa016c2aa0b2ed33e58b8853bffdcbc80c7f6483f69692"
+  },
+  "rate-960k.log": {
+    "bytes": 1100,
+    "sha256": "b9b825d939666a21f155e029cdb3ad33416974b94bdb3464c92c0e2b49b4e050"
+  },
+  "restored-rate-busy-check.log": {
+    "bytes": 1314,
+    "sha256": "2cc1f0f9689a0d7d7c7b3695afae22aac97e58e4aa6433d25b8dea970ff5ba7b"
+  },
+  "rf-results.json": {
+    "bytes": 2793,
+    "sha256": "05ae0e05a8b46a657f96b4c913a01a5ab9f05968be18c748c8409d892b992c44"
+  }
+}

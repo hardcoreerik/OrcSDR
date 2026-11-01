@@ -1,0 +1,87 @@
+{
+  "summary": {
+    "center_reduction_db": 20.13737792217914,
+    "tone_change_db": -1.1740480001776135,
+    "off_restoration_tone_delta_db": -0.3517990891304521
+  },
+  "measurements": [
+    {
+      "name": "offset-0-OFF-source-off",
+      "index": 0,
+      "source": "off",
+      "tone_hz": 98657.2265625,
+      "tone_dbfs": -82.03853560104159,
+      "center_peak_dbfs": -55.042330129070336,
+      "near_floor_dbfs": -64.86277904249559,
+      "clip_fraction": 0.0,
+      "overruns_delta": 0,
+      "drops_delta": 0,
+      "sha256": "a50beb7a1d53a1ae81df022cae291d0854b00e34890bd5d76a72a8f5b9814e0e"
+    },
+    {
+      "name": "offset-0-OFF-source-on",
+      "index": 0,
+      "source": "on",
+      "tone_hz": 99938.96484375,
+      "tone_dbfs": -42.656363545326954,
+      "center_peak_dbfs": -55.01867073330496,
+      "near_floor_dbfs": -65.07464434939892,
+      "clip_fraction": 0.0,
+      "overruns_delta": 0,
+      "drops_delta": 0,
+      "sha256": "472993047068f001411a53dac75e8eb327d9edd991068cb319e680a10be5135b"
+    },
+    {
+      "name": "offset-1-ON-source-off",
+      "index": 1,
+      "source": "off",
+      "tone_hz": 100891.11328125,
+      "tone_dbfs": -87.56009462968794,
+      "center_peak_dbfs": -75.24638616130943,
+      "near_floor_dbfs": -75.44447608077944,
+      "clip_fraction": 0.0,
+      "overruns_delta": 0,
+      "drops_delta": 0,
+      "sha256": "05bcebd4806a2d31dcc09b0671a32ab650fefb0fe1e7d9848ec575920aedaf3d"
+    },
+    {
+      "name": "offset-1-ON-source-on",
+      "index": 1,
+      "source": "on",
+      "tone_hz": 99938.96484375,
+      "tone_dbfs": -44.006311090069794,
+      "center_peak_dbfs": -75.48304927708777,
+      "near_floor_dbfs": -75.81463195580287,
+      "clip_fraction": 0.0,
+      "overruns_delta": 0,
+      "drops_delta": 0,
+      "sha256": "9ffe7121f7f8a0f18391644c604cfa247bcb7a011f932abd2986e855eaa5cfc0"
+    },
+    {
+      "name": "offset-2-OFF-source-off",
+      "index": 2,
+      "source": "off",
+      "tone_hz": 98876.953125,
+      "tone_dbfs": -82.47178384994392,
+      "center_peak_dbfs": -55.175686349190244,
+      "near_floor_dbfs": -64.96366759172363,
+      "clip_fraction": 0.0,
+      "overruns_delta": 0,
+      "drops_delta": 0,
+      "sha256": "9ffa69c5248e4a400d957e707e68496be6e49844bff692400822892bf8dd1d7f"
+    },
+    {
+      "name": "offset-2-OFF-source-on",
+      "index": 2,
+      "source": "on",
+      "tone_hz": 99938.96484375,
+      "tone_dbfs": -43.008162634457406,
+      "center_peak_dbfs": -55.34324246545716,
+      "near_floor_dbfs": -64.87971184976344,
+      "clip_fraction": 0.0,
+      "overruns_delta": 0,
+      "drops_delta": 0,
+      "sha256": "f6c7b6685c73fdd0b1805437d4a6dc124af3cb2581398de5494d9cc9a940db28"
+    }
+  ]
+}

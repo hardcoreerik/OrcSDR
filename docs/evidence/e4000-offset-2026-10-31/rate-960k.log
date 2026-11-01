@@ -1,0 +1,5 @@
+RTL_HEALTH_STATUS uptime_ms=331125 free_heap=14071048 min_free_heap=11156068 dma_free=22591 dma_min=17131 dma_largest=21504 tasks=29 main_stack_hwm=5164 reset_reason=11 internal_free=60387 internal_min=41323 internal_largest=31744 psram_free=14033164 psram_largest=13893632
+RTL_LAB_ACTION kind=3 value=960000 accepted=1 result=ESP_OK
+RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name="e4000_experimental" provisional=0 device_caps=0x00217f1f library_caps=0x003fff7f delivery=callback gain_auto_cap=0 rtl_agc_cap=0 gain_cap=0 bias_cap=0 mode=AUTO gain_tenth_db=0 rtl_agc=0 bias=0 bytes=2129920 blocks=65 effective_sps=959423 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0
+RTL_OFFSET_STATUS cap=1 requested=1 applied_offset_hz=816000 tuner_lo_hz=99184000 iq_center_hz=100000000 correction=hardware additional_offset_mixer=0 result=ESP_OK
+RTL_LAB_STATUS active=1 page=LIVE source=1 frequency_hz=100000000 sample_rate_sps=960000 ppm=0 mode=AUTO gain_tenth_db=0 rtl_agc=0 bias=0 keep=0

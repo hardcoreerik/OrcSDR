@@ -1,0 +1,13 @@
+{
+  "file": "managed_components\\m5stack__m5gfx\\src\\lgfx\\v1\\platforms\\esp32p4\\Panel_DSI.hpp",
+  "before_sha256": "f441c4f3668158abb85f5030cc55a6508c6d0cf73df64fb16ab8b43f925bab19",
+  "after_sha256": "c0607f5b89cd72dff15e3224891258b31c5958a0b22932f2774802ff05f11753",
+  "reason": "Current origin/main rf_visualizer requires two DSI getters. Same getters exist in prior lab build. No driver code change.",
+  "complete": true,
+  "reference": "working lab build: driver-acquisition-ab-20261029",
+  "files": {
+    "Panel_DSI.hpp": "fdcfc93391434cba9374501d3529ced6219f4ac171eca87c71e877258b309363",
+    "Panel_DSI.cpp": "af444d11c87c387b33d81309a912370e5a7b570376e5aa023dfe49b0bcfafb82"
+  },
+  "extra_framebuffer_bytes": 1843200
+}
