@@ -6,6 +6,7 @@
 #include <strings.h>
 #include "commands.hpp"
 #include "esp_heap_caps.h"
+#include "sdkconfig.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -382,7 +383,9 @@ bool start_server(const char* ip) {
   config.server_port = 80;
   config.core_id = 0;
   config.stack_size = 8192;
-  config.max_open_sockets = 4;
+  // The page polls over several connections at once; with too few sockets the server's LRU purge closes a client's connection mid-request. 7 needs the
+  // 16-socket lwip setting (sdkconfig.net-throughput): 7 here + listener and control socket + the rtl_tcp listener, client and waiting client.
+  config.max_open_sockets = CONFIG_LWIP_MAX_SOCKETS >= 14 ? 7 : 4;
   config.max_uri_handlers = 6;
   config.lru_purge_enable = true;
   config.recv_wait_timeout = 5;
@@ -424,7 +427,7 @@ bool start_server(const char* ip) {
 
 // The address to serve on: Wi-Fi when it is connected, otherwise the wired link. Empty when neither has an address.
 void current_ip(char* out, size_t cap) {
-  out[0] = ' ';
+  out[0] = '\0';
   const wifi_app::Status w = wifi_app::status();
   if (w.connected && w.ip[0]) {
     std::snprintf(out, cap, "%s", w.ip);

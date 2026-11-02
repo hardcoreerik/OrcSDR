@@ -268,3 +268,11 @@ Owner decision 2026-10-31: the default login is `admin` / `password`. Written as
 - **The bundled page cannot use it yet.** Its controls are POSTs with a fixed `X-OrcSDR-Confirm` header (`tuner/gain`, `tuner/agc`, `receivers/tune`, `receivers/rate`, `fm?action=`, `channel`, `time`) and it has no login. Those routes are not built, so every page control returns 405 until the page gets a login
   screen, a small SHA-256/HMAC/PBKDF2 in JavaScript (`crypto.subtle` is unavailable over plain HTTP) and signed requests. That is a change to the page in the OrcSDR-Headless repository and needs the owner's decision.
 - **Test:** `tools/p4_web_auth_test.py <ip>` is a reference client and 25 checks (replay, lower sequence, tampered target or body, wrong password, reused nonce, foreign Host and Origin, oversize body, throttle, logout). **Not run**: built (`build-p4eth-web`, image 3.6 MB) but not flashed.
+
+## 15. Web server sockets under load, found on COM29 (Waveshare ESP32-P4-ETH), 2026-11-02
+
+While an rtl_tcp client streamed 2.4 MS/s, about 6 % of HTTP requests from a test script were reset (`ConnectionResetError`, `RemoteDisconnected`); without the stream there were none, and with the browser tab closed there were none (97 of 97).
+Cause: the OrcSDR page polls over several connections at once and the server was limited to 4 open sockets with the LRU purge on, so a new client's connection was closed to make room. No log line is written when it happens.
+Fix: `max_open_sockets` is 7 when `CONFIG_LWIP_MAX_SOCKETS` is 14 or more (the `sdkconfig.net-throughput` overlay sets 16), otherwise 4 as before. Check: browser page open on COM29, rtl_tcp stream running, 86 of 86 requests answered, 0 failed.
+Boards built without the overlay still have 4 sockets and the same weakness; the overlay is not yet a default for any board (it costs about 14 KB of internal RAM on COM29).
+Also seen: the bundled page labels the network "Wi-Fi" on a wired board (the label is in the M5GFX status bar; the page only passes a connected flag and an address). Cosmetic, not changed.
