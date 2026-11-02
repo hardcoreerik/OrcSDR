@@ -456,9 +456,11 @@ void draw_portrait_tx_header() {
 void draw_portrait_tx_footer() {
   M5.Display.fillRect(0, 1145, 568, 87, kPanel);
   M5.Display.drawFastHLine(0, 1145, 568, kCyan);
+  const bool armed_and_admitted = g_snapshot.tx.operator_armed &&
+      lora_tx::can_arm(g_snapshot.tx) == lora_tx::Denial::none;
   text("SX1262", 24, 1186, kCyan, 2, middle_left);
   text("TX LAB", 249, 1186, kGreen, 2, middle_left);
-  text("LOCKED", 440, 1186, kYellow, 2, middle_left);
+  text(armed_and_admitted ? "ARMED" : "LOCKED", 440, 1186, kYellow, 2, middle_left);
 }
 
 void draw_health_static() {
@@ -923,14 +925,18 @@ void update(const Snapshot& snapshot) {
     if (!content_changed) return;  // no full-frame repaint on idle
     M5.Display.startWrite();
     draw_tx_dynamic();
-    if (tx_changed) tx_views::action_row(M5.Display, g_snapshot, true,
-                    g_tx_page == tx_views::Page::operator_panel);
+    if (tx_changed) {
+      tx_views::action_row(M5.Display, g_snapshot, true,
+                           g_tx_page == tx_views::Page::operator_panel);
+      draw_portrait_tx_footer();
+    }
     M5.Display.endWrite();
     return;
   }
   if (g_header_running != g_snapshot.running || g_header_wifi != g_snapshot.wifi_connected ||
       g_header_decoder != g_snapshot.native_decoder_ready ||
-      g_header_key != g_snapshot.key_loaded) {
+      g_header_key != g_snapshot.key_loaded ||
+      (tx_changed && g_view == View::tx_lab)) {
     M5.Display.startWrite();
     draw_header();
     M5.Display.endWrite();
