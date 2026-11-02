@@ -8,6 +8,9 @@ flags=(-std=c++17 -Wall -Wextra -Werror -O1 -g)
 "$cxx" "${flags[@]}" -Itests/acars_ui_stubs -Iapps/orcsdr-tab5/ui \
   tests/lora_tx_views_render_tests.cpp -o build/lora-tx-ui/layout
 build/lora-tx-ui/layout 2>&1 | tee build/lora-tx-ui/layout.log
+"$cxx" "${flags[@]}" -Itests/acars_ui_stubs -Iapps/orcsdr-tab5/ui \
+  tests/lora_tx_simulation_tests.cpp -o build/lora-tx-ui/simulation
+build/lora-tx-ui/simulation 2>&1 | tee build/lora-tx-ui/simulation.log
 "$cxx" "${flags[@]}" -Iapps/orcsdr-tab5/ui \
   tests/lora_tx_policy_tests.cpp -o build/lora-tx-ui/policy
 build/lora-tx-ui/policy 2>&1 | tee build/lora-tx-ui/policy.log
