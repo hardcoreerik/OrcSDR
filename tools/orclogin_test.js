@@ -25,6 +25,10 @@ async function device(ip) {
   const freq = (await get('/api/v1/freq')).records[0].frequency_hz, vol = (await get('/api/v1/volume')).records[0].volume;
   let x = await post('/api/v1/receivers/tune?index=0&hz=' + freq); check('receivers/tune accepted', x.status === 200 && x.body.ok, JSON.stringify(x));
   x = await post('/api/v1/receivers/tune?index=0&hz=5'); check('receivers/tune out of range refused', x.status === 400, JSON.stringify(x));
+  const rate0 = (await get('/api/v1/receivers')).receivers[0].sample_rate;
+  x = await post('/api/v1/receivers/rate?index=0&sps=1000000'); check('receivers/rate applies what the driver quantises to', x.status === 200 && x.body.ok && x.body.applied_sps >= 900001 && x.body.applied_sps <= 1000000, JSON.stringify(x));
+  x = await post('/api/v1/receivers/rate?index=0&sps=100000'); check('a rate the driver cannot run is refused', x.status === 400 && x.body.error === 'sps_not_supported_by_the_driver', JSON.stringify(x));
+  x = await post('/api/v1/receivers/rate?index=0&sps=' + rate0); check('the original rate is restored', x.status === 200 && x.body.ok, JSON.stringify(x));
   x = await post('/api/v1/fm?action=volume&volume=' + vol); check('fm volume accepted', x.status === 200 && x.body.ok, JSON.stringify(x));
   x = await post('/api/v1/tuner/gain?index=0&mode=auto'); check('tuner/gain auto accepted', x.status === 200 || x.status === 501, JSON.stringify(x));
   x = await post('/api/v1/channel?index=0&center=96000000&rx_sps=2400000&hz=96000000'); check('a wide channel is accepted or refused honestly', (x.status === 200 && x.body.ok) || (x.status === 501 && x.body.ok === false), JSON.stringify(x));
