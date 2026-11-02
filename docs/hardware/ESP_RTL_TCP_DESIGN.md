@@ -177,3 +177,11 @@ The gap is the Wi-Fi link itself, not rtl_tcp: a plain HTTP download of a 393 KB
 During the rtl_tcp stream the rtl_tcp task used 0.8 % of a core, the SDIO tasks 0.6 to 2.4 % each, and the radio task 80 % of core 1, so the send path is waiting on the network, not on CPU. The home screen task used 75 % of core 0.
 Not determined: whether the ceiling is the SDIO link, the C6 firmware (stock ESP-Hosted slave 3.0.6), the 2.4 GHz air link to this router (signal strength is not reported, `rssi=0`), or the PC side. A wired board reaches 78 Mbit/s with the same code.
 The Wi-Fi budget in the code is therefore 5 Mbit/s (it was 30, then 12), which admits only the driver's 225 to 300 kS/s range. Ideas to try later: read the real RSSI and PHY rate from the C6, test from a second Wi-Fi client, compare a Tab5 (same C6 path, not touched here).
+
+## 12. Soak on COM29 (Waveshare ESP32-P4-ETH, wired), 2026-11-02, 40 minutes
+
+One rtl_tcp client (listen-only) streaming the NESDR SMArt v5 at 2.4 MS/s, plus two web requests every half second, the whole time. Memory logged every minute.
+- Streamed 11.5 GB in one unbroken session (sessions = 1), 3,588 web requests, 0 failed, receiver drops 0 throughout.
+- Internal RAM free stayed at 121,507 bytes at every sample (one dip of 324 bytes and one of 260 bytes that recovered); PSRAM free moved by tens of KB around 27.69 MB while the 4 MB sink queue was in use. No leak visible in 40 minutes.
+- Blocks dropped for the client: 901 of about 700,000 (0.13 %), all counted, arriving in a few bursts (for example 48 to 519 within one minute at about 20 minutes). The client was a Python script on a Windows PC, so a stall on that side is as likely as one on the board; not separated.
+- After the soak and `RTL_TCP OFF`, internal free read 133,323 bytes (server idle) and the receiver streamed normally.
