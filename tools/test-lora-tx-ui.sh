@@ -5,6 +5,10 @@ cd "$(dirname "$0")/.."
 mkdir -p build/lora-tx-ui
 cxx="${CXX:-g++}"
 flags=(-std=c++17 -Wall -Wextra -Werror -O1 -g)
+if [[ "${ORCSDR_LORA_ASAN:-0}" == 1 ]]; then
+  flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer)
+  echo "Running LoRa TX suite with ASan+UBSan"
+fi
 "$cxx" "${flags[@]}" -Itests/acars_ui_stubs -Iapps/orcsdr-tab5/ui \
   tests/lora_tx_views_render_tests.cpp -o build/lora-tx-ui/layout
 build/lora-tx-ui/layout 2>&1 | tee build/lora-tx-ui/layout.log
