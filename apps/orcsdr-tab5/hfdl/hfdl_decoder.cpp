@@ -5,7 +5,7 @@ namespace orcsdr::hfdl {
 namespace { constexpr float kPi=3.14159265358979323846f; }
 Decoder::Decoder(){set_config(cfg_);}
 void Decoder::reset(){
-  stats_={};history_pos_=0;decim_phase_=0;
+  stats_=FrontendStats{};history_pos_=0;decim_phase_=0;
   oscillator_i_=1;oscillator_q_=0;
   for(int i=0;i<kTaps;++i){hist_i_[i]=0;hist_q_[i]=0;}
 }
