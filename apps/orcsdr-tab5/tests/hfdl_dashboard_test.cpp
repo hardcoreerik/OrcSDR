@@ -2,6 +2,7 @@
 #include "../ui/hfdl_dashboard_ui.hpp"
 #include "../ui/hfdl_dashboard_layout.hpp"
 #include "../hfdl/hfdl_decoder.hpp"
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -75,9 +76,17 @@ static void check_model(){
   model.post_receiver_state(hfdl_ui::ReceiverState::error);
   model.service();assert(model.snapshot().receiver==hfdl_ui::ReceiverState::error);
 }
+struct SinkCounter{size_t samples=0,blocks=0;float peak=0;};
+static void count_channel(void* context,const float* i,const float* q,size_t count){
+  auto* c=static_cast<SinkCounter*>(context);
+  c->samples+=count;++c->blocks;
+  for(size_t j=0;j<count;++j)c->peak=std::max(c->peak,i[j]*i[j]+q[j]*q[j]);
+}
 static void check_frontend(){
   hfdl::Decoder d;
   assert(d.valid_config());
+  SinkCounter received{};
+  d.set_channel_sink(count_channel,&received);
   constexpr size_t n=48000;
   static float tone[n];
   for(size_t i=0;i<n;++i)
@@ -85,6 +94,8 @@ static void check_frontend(){
   assert(!d.process_audio(tone,n));
   assert(d.frontend_stats().input_samples==n);
   assert(d.frontend_stats().channel_samples==12000);
+  d.flush_channel();
+  assert(received.samples==12000 && received.blocks>0 && received.peak>0.05f);
   assert(d.frontend_stats().channel_power>0.05f);
   assert(d.messages_posted()==0&&d.spdus_seen()==0);
   hfdl::Config invalid{};invalid.sample_rate=44100;d.set_config(invalid);
