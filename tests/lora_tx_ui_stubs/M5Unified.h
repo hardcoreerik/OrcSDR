@@ -31,7 +31,9 @@ struct Prim {
 };
 
 namespace host_display {
-inline std::vector<Prim> prims;          // what reached the screen
+inline std::vector<Prim> prims;
+inline int design_width = 1280;
+inline int design_height = 720;          // what reached the screen
 inline bool clip_on = false;
 inline int clip_x, clip_y, clip_w, clip_h;
 inline const fonts::Font* font = nullptr;
@@ -63,8 +65,8 @@ class LovyanGFX {
   std::vector<Prim>* sink = &host_display::prims;
   bool is_display = true;
 
-  int width() const { return 1280; }
-  int height() const { return 720; }
+  int width() const { return host_display::design_width; }
+  int height() const { return host_display::design_height; }
   void clearScrollRect() {}
   void setScrollRect(int, int, int, int) {}
   void drawRect(int x, int y, int w, int h, uint16_t c) { add(Prim::outline, x, y, w, h, c); }
@@ -103,7 +105,7 @@ class LovyanGFX {
     const int miny = std::min({y0, y1, y2}), maxy = std::max({y0, y1, y2});
     add(Prim::triangle, minx, miny, maxx - minx + 1, maxy - miny + 1);
   }
-  void fillScreen(uint16_t) {}
+  void fillScreen(uint16_t c) { add(Prim::fill, 0, 0, width(), height(), c); }
   void drawString(const char* s, int x, int y) {
     const fonts::Font* f = host_display::font ? host_display::font : &fonts::DejaVu18;
     const int w = static_cast<int>(std::strlen(s)) * f->advance;
