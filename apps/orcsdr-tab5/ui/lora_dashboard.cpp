@@ -943,6 +943,7 @@ void update(const Snapshot& snapshot) {
   g_snapshot = snapshot;
   if (portrait_lora_screen()) {
     if (capability_presence_changed) {
+      g_tx_page = tx_views::Page::operator_panel; // never resume stale modal on reattach
       M5.Display.startWrite();
       draw_static(); // structural transition: erase stale TX controls
       M5.Display.endWrite();
@@ -961,6 +962,7 @@ void update(const Snapshot& snapshot) {
     return;
   }
   if (capability_presence_changed) {
+    g_tx_page = tx_views::Page::operator_panel;
     if (g_view == View::tx_lab &&
         g_snapshot.tx.readiness == lora_tx::Readiness::absent)
       g_view = View::overview;
