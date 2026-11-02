@@ -14,7 +14,7 @@ static bool overlay_open(){return overlay;}
 static int headers=0;
 static void shared_header(){++headers;}
 static void test_panel(int w,int h){
-  M5.Display={};
+  M5.Display=HfdlFakeDisplay{};
   M5.Display.screen_width=w;
   M5.Display.screen_height=h;
   hfdl_ui::Model model;
