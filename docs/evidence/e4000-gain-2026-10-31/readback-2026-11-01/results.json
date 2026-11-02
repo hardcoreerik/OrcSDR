@@ -1,0 +1,37 @@
+{
+  "register_observations": 73,
+  "mismatches": [],
+  "captures": [
+    {
+      "name": "source-off-minus1",
+      "tone_dbfs": -80.99878812669253,
+      "sha256": "35836d6f08999a397ad9f623123ecd9b1a310b2c3f9dec2f975ca3ae8a4269c8",
+      "clip": 0.0
+    },
+    {
+      "name": "repeat-0-gain-140",
+      "tone_dbfs": -27.408530958029274,
+      "sha256": "8879bac0c910501b080b2913fbb747a4b304bf8bbc8cc560da41896b5c96a537",
+      "clip": 0.0
+    },
+    {
+      "name": "repeat-1-gain-165",
+      "tone_dbfs": -28.0845063671411,
+      "sha256": "3ef69759f24509697d24b3d318f1f115a27bd9b9466de331300242b000bef356",
+      "clip": 0.0
+    },
+    {
+      "name": "repeat-2-gain-140",
+      "tone_dbfs": -29.266254700523305,
+      "sha256": "88c008e1682ea6564989a11abeefec8a9639886ebe829117db102a02679dedc5",
+      "clip": 0.0
+    },
+    {
+      "name": "tuner-auto",
+      "tone_dbfs": -8.475595765086336,
+      "sha256": "ac87973b622627f0fd5b55158b441f60673a7def43e19c1058df4a6379802430",
+      "clip": 0.0
+    }
+  ],
+  "source_off_pause_ack": "output off 'output off\\r\\nch> '\npause 'pause\\r\\nch> '\n"
+}
