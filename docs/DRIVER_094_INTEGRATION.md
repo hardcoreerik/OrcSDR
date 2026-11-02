@@ -55,3 +55,15 @@ maintainer direction without claiming calibrated all-band gain.
 Waveshare/Hosyond full radio UI is not present on current main. Its separate
 standalone display target is not a substitute for an SDR integration build;
 that board branch must consume this PR and validate its own configuration.
+
+## Clean build result
+
+Native ESP-IDF 5.5.4 Tab5 compile/link and post-link gates passed using the
+repository M5GFX/Hosted patches, without an embedded C6 image or HAL override.
+The initial stale-lock attempt was stopped before compiling; dependency
+resolution was explicitly updated. Only driver-related lock entries changed.
+Fetched driver source matches the released revision after CRLF/LF normalization.
+See validation/driver-094-integration/build.json for image/source hashes.
+CI documentation, focused tests and storage checks passed on code-equivalent
+head 573ea007. No Waveshare full-radio compile, flash or new physical acceptance
+is claimed. Board/hardware validation remains open before merge.
