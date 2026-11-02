@@ -314,3 +314,15 @@ Not yet tried / unknown:
 - Added the Waveshare ESP32-P4-ETH profile (COM29, no Wi-Fi radio) and `sdkconfig.board-p4-eth`; the console no longer starts ESP-Hosted on a board whose profile has no coprocessor. Retracted the guess that COM29 is a WIFI6-DB with a C5.
 - Added COM31 (second v3.2 unit, model unidentified) and its stock-flash backup record.
 - COM31 identified as a WIFI6-DB: SDIO link to its ESP32-C5 works, stock slave 2.12.9 vs host 3.0.6 (Wi-Fi blocked by version mismatch); single-receiver regression recorded.
+
+## Ethernet driver (opt-in), 2026-11-01
+
+`main/eth_app.{hpp,cpp}` brings up wired Ethernet from the board profile: EMAC in RMII mode, external 50 MHz reference from the PHY, MDC/MDIO, PHY address and reset line, and the six data pins all come from the profile; DHCP through the default Ethernet netif.
+It is compiled in only with `CONFIG_ORCSDR_ETHERNET=y` (set by `sdkconfig.board-p4-eth`; off everywhere else, so no other board changes) and starts only if the profile lists Ethernet pins.
+The PHY is created as IP101 first (the documented chip) and, if the driver refuses it, as the generic PHY.
+Status (link, speed, duplex, MAC, IP, gateway, which PHY driver, why it did not start) is in `eth_app::status()` and the log (`ETH_LINK_UP`, `ETH_GOT_IP`, `ETH_DRIVER_UP`).
+
+- ESP-IDF's own P4 Ethernet defaults (`ETH_ESP32_EMAC_DEFAULT_CONFIG`, 5.5.4) use the same pins as the profile: MDC 31, MDIO 52, clock in 50, TX_EN 49, TXD0/1 34/35, CRS_DV 28, RXD0/1 29/30. That supports the profile but does not prove the P4-ETH board is wired that way.
+- ESP-IDF 5.5.4's P4 default-config macro lists its members out of declaration order, which C++ rejects, so the structure is filled in field by field.
+- **Builds** for the P4-ETH (v3 silicon) and, with Ethernet off, for the WIFI6-DB and the default dev-kit configuration. **Not flashed or run**: no link has ever come up on this firmware. The first run will show whether the pins, PHY address and PHY chip are right.
+- Memory cost of the driver is unmeasured.
