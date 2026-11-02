@@ -210,7 +210,7 @@ void draw_header() {
   g_header_key = g_snapshot.key_loaded;
   M5.Display.fillRect(0, 0, 1280, kHeaderH, kBg);
   M5.Display.drawFastHLine(8, kHeaderH - 1, 1264, kCyan);
-  audio_header::draw_brand("M5STACK TAB5");
+  audio_header::draw_brand(g_snapshot.board_label[0] ? g_snapshot.board_label : "ORCSDR");
   M5.Display.drawFastVLine(362, 20, 80, kCyan);
   draw_radio_icon(458, 64, kGreen);
   text("LORA MESH", 520, 47, TFT_WHITE, 4, middle_left);
