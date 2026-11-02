@@ -1,0 +1,7 @@
+{
+  "driver": "25b0251763b2cf46fffc67f7540dfdf50e499b9e",
+  "delay_only": true,
+  "delay_ms_per_stage": 110,
+  "image_bytes": 5445376,
+  "image_sha256": "d394ffe52b3de5babe8dc9bce11e22ef923f4697883e60b8c021a836e15ccb08"
+}

@@ -1,0 +1,5 @@
+{
+  "t": 1793602123.824203,
+  "reason": "User reported accidental screen touch during active RF run; entire run excluded from acceptance",
+  "source_off_pause_acknowledged": true
+}
