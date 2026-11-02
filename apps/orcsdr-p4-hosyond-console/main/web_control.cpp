@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "home_app.hpp"
 #include "radio_service.hpp"
+#include "web_iq.hpp"
 
 namespace web_control {
 namespace {
@@ -46,7 +47,7 @@ void tune(int rx, uint32_t hz) {
 }
 }  // namespace
 
-Result run(const char* route, const char* query, char* out, size_t cap) {
+Result run(const char* route, const char* query, uint32_t peer, char* out, size_t cap) {
   long long v = 0;
   if (std::strcmp(route, "receivers/tune") == 0) {
     const int rx = receiver_index(query);
@@ -116,8 +117,19 @@ Result run(const char* route, const char* query, char* out, size_t cap) {
     ESP_LOGI(TAG, "WEB_CLOCK_SET epoch=%lld (from the browser)", v);
     return done(out, cap);
   }
-  if (std::strcmp(route, "channel") == 0 || std::strcmp(route, "channel/stop") == 0)
-    return fail(out, cap, Result::not_available, "browser_iq_stream_not_available_on_this_node_yet");
+  if (std::strcmp(route, "channel") == 0) {
+    const int rx = receiver_index(query);
+    char scratch[8];
+    if (rx < 0 || !parse_long(query, "hz", &v) || v <= 0 || v > 0xFFFFFFFFll) return fail(out, cap, Result::bad_request, "bad_hz_or_index");
+    if (httpd_query_key_value(query, "center", scratch, sizeof(scratch)) == ESP_OK || httpd_query_key_value(query, "rx_sps", scratch, sizeof(scratch)) == ESP_OK)
+      return fail(out, cap, Result::not_available, "wide_channel_not_available");  // decoders that take a wide IQ window are not served yet
+    const web_iq::Start s = web_iq::start_channel(rx, static_cast<uint32_t>(v), peer, out, cap);
+    return s == web_iq::Start::ok ? Result::ok : s == web_iq::Start::bad_request ? Result::bad_request : Result::not_available;
+  }
+  if (std::strcmp(route, "channel/stop") == 0) {
+    web_iq::stop_channel();
+    return done(out, cap);
+  }
   return Result::unknown_route;
 }
 

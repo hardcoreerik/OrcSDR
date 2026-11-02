@@ -10,5 +10,6 @@ namespace web_control {
 enum class Result : uint8_t { ok, bad_request, not_available, unknown_route };
 // `route` is the part after /api/v1/ (e.g. "receivers/tune"), `query` the raw query string without the '?'. Always writes a JSON body to `out`
 // (for errors too) unless the route is unknown.
-Result run(const char* route, const char* query, char* out, size_t cap);
+// `peer` is the signed caller's address (the channel WebSocket is opened only by that address).
+Result run(const char* route, const char* query, uint32_t peer, char* out, size_t cap);
 }  // namespace web_control

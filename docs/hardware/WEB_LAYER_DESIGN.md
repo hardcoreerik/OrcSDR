@@ -296,3 +296,26 @@ Other unverified: the dialog on a phone-size screen, many rapid control presses,
 
 **COM8 (Waveshare ESP32-P4-Module-DEV-KIT, Wi-Fi via the C6), same build:** `node tools/orclogin_test.js 192.168.1.198` (9 board checks plus the 5 known-answer tests) and `tools/p4_web_auth_test.py` (25 checks) both pass over Wi-Fi. The Module-DEV-KIT's own screen kept running throughout.
 COM8 is flashed with this build; rtl_tcp is off; the web server is on.
+
+## 17. Channel IQ to the browser (built and run on COM29, 2026-11-02)
+
+The page's AM, NFM and SSB listening takes a ~300 kS/s IQ window over a WebSocket and demodulates it in the browser (`channel` POST, then `ws://<node>:81/api/v1/fm/iq`). `main/web_iq.{hpp,cpp}` serves it:
+- **`POST channel?index&hz`** (signed session): parks the receiver on a window whose centre is `hz - rate/6` (the channel sits a sixth of the rate above the DC spike, as the page expects), waits for the retune, and returns `{hz, center_hz, sps, offset_hz, bits:8, ws_port:81}`.
+  `center`/`rx_sps` (the wide window the decoders want) answer 501. The receiver must be streaming at 2.4 MS/s (decimate 8, 300 kS/s out) or 960 kS/s (decimate 3, 320 kS/s out), otherwise `receiver_rate_not_supported_for_channel`.
+- **Decimation:** a third-order CIC filter per component on a queued sink (`webiq` task, core 0, 256 KB PSRAM queue); output is 8-bit unsigned IQ, 512 pairs per WebSocket frame with the page's 28-byte header (`OIQ1`, session, sequence, first sample, rate, frame count, playing flag, bits). The page does its own mixing, filtering and demodulation, so nothing else runs on the node. CIC droop at the channel (+50 kHz of a 300 kHz band) is about 1.2 dB.
+- **Who may listen:** a second HTTP server on port 81 with a pre-handshake check: the request must be same-site (`Host` allow-list, `Origin` host equal to `Host` host, the port may differ), come from the address that made the signed `channel` call, within 30 s, and the ticket is single use. Anyone else gets a real 403, never a WebSocket.
+- **Ending:** `channel/stop`, a new `channel` (one listener slot), the web server stopping, or another owner changing the receiver's centre or rate (a stop frame with `playing=0` is sent). On stop the receiver is retuned to where it was, unless someone else moved it meanwhile.
+- **Needs** `sdkconfig.net-throughput` (HTTP server WebSocket support and its pre-handshake hook, 24 lwip sockets, 32 KB TCP windows). Builds without it answer `browser_iq_stream_not_built_into_this_firmware`.
+
+**Run on COM29 (Waveshare ESP32-P4-ETH, wired), NESDR SMArt v5, FM broadcast at 96.1 MHz** with `tools/web_iq_test.js`: 15 checks, eight runs in a row, all pass. The WebSocket is refused before a signed request and after the ticket is used; 587 frames/s for 3 to 30 s, every frame well formed at 300,000 S/s, sequence numbers consecutive, one session id;
+a spectrum of the received frames shows a strong peak (peak over median 300 to 800) within ±40 kHz of the expected channel position (an FM station's instantaneous frequency moves; this is a sanity check, not a measurement); `channel/stop` closes the socket and no frames follow; the receiver returns to 96.1 MHz.
+Cost while streaming: the `webiq` task 29 % of core 0, the radio task 53 % of core 1 (the console screen task 22 % of core 0 as well), internal RAM free 116 KB (largest block 38.9 KB; 118 KB / 43 KB with the servers idle).
+
+Bugs found and fixed while building it (all would bite anyone copying the pattern):
+- esp_http_server completes the WebSocket upgrade before calling the handler, so a refusal sent from the handler arrives on an already open WebSocket; the check moved to `ws_pre_handshake_cb` (needs `CONFIG_HTTPD_WS_PRE_HANDSHAKE_CB_SUPPORT`).
+- A custom `close_fn` replaces the server's own `close()`: without a `close(fd)` in it every WebSocket leaked one lwip socket and the node stopped accepting connections after about four test runs (`accept` error 23). Fixed; 16 sockets were not enough for two servers plus rtl_tcp, 24 are set.
+- `issue_challenge` refused when four nonces were outstanding, which lets anyone lock the owner out of login for 30 s by asking for four challenges; it now replaces the oldest nonce instead.
+- Test scripts must log out: two sessions fill up otherwise (`sessions_full`).
+
+**Not done / unverified:** the page itself has not been driven through a login and a channel (it needs the password typed in a browser, which only the owner does), so browser-side demodulation, audio playback and the S-meter from this stream are untested; SSB and the wide-window decoders; `fm/audio` (the page's other WebSocket) is not served (the channel path needs no node audio);
+a Wi-Fi board (COM8) carries 300 kS/s of 8-bit IQ as 4.8 Mbit/s, which is right at that link's measured sustained rate (ESP_RTL_TCP_DESIGN section 11); behaviour when two browsers want a channel (the second replaces the first).

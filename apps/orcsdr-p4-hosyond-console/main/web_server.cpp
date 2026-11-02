@@ -17,6 +17,7 @@
 #include "eth_app.hpp"
 #include "web_auth.hpp"
 #include "web_control.hpp"
+#include "web_iq.hpp"
 #include "web_compat.hpp"
 #include "wifi_app.hpp"
 
@@ -244,7 +245,7 @@ esp_err_t handle_api(httpd_req_t* req) {
 
 // ---- login and the control tier ----------------------------------------------------------------------------------
 
-uint32_t peer_address(httpd_req_t* req) {
+uint32_t peer_address_impl(httpd_req_t* req) {
   const int fd = httpd_req_to_sockfd(req);
   sockaddr_storage addr{};
   socklen_t len = sizeof(addr);
@@ -270,7 +271,7 @@ esp_err_t handle_login(httpd_req_t* req, const char* body) {
   if (httpd_query_key_value(body, "nonce", nonce, sizeof(nonce)) != ESP_OK || httpd_query_key_value(body, "proof", proof, sizeof(proof)) != ESP_OK)
     return reject(req, "400 Bad Request", "bad_login_request");
   web_auth::LoginOut out{};
-  switch (web_auth::login(peer_address(req), nonce, proof, out)) {
+  switch (web_auth::login(peer_address_impl(req), nonce, proof, out)) {
     case web_auth::Login::ok: {
       const int n = std::snprintf(g_json, kJsonBytes, "{\"ok\":true,\"session\":\"%s\",\"device\":\"%s\",\"idle_s\":300,\"default_password\":%s}", out.sid, out.device_proof,
                                   web_auth::default_password() ? "true" : "false");
@@ -339,7 +340,7 @@ esp_err_t handle_post(httpd_req_t* req) {
   {
     char q[96] = {};
     httpd_req_get_url_query_str(req, q, sizeof(q));
-    const web_control::Result r = web_control::run(route, q, g_json, kJsonBytes);
+    const web_control::Result r = web_control::run(route, q, peer_address_impl(req), g_json, kJsonBytes);
     if (r != web_control::Result::unknown_route) {
       if (r == web_control::Result::bad_request) httpd_resp_set_status(req, "400 Bad Request");
       else if (r == web_control::Result::not_available) httpd_resp_set_status(req, "501 Not Implemented");
@@ -372,6 +373,7 @@ esp_err_t handle_post(httpd_req_t* req) {
 // ---- server lifecycle --------------------------------------------------------------------------------------------
 
 void stop_server() {
+  web_iq::shutdown();  // the port-81 server and any channel stream go with the web server
   if (g_server) {
     httpd_stop(g_server);  // waits for a request in flight
     g_server = nullptr;
@@ -471,6 +473,23 @@ void manager(void*) {
   }
 }
 }  // namespace
+
+bool same_site_request(httpd_req_t* req) {
+  char host_header[80];
+  if (!host_allowed(req, host_header, sizeof(host_header))) return false;
+  const size_t len = httpd_req_get_hdr_value_len(req, "Origin");
+  if (!len) return true;
+  char origin[96];
+  if (len >= sizeof(origin) || httpd_req_get_hdr_value_str(req, "Origin", origin, sizeof(origin)) != ESP_OK) return false;
+  if (std::strncmp(origin, "http://", 7) != 0) return false;
+  char host[96], want[96];
+  std::snprintf(host, sizeof(host), "%s", origin + 7);
+  std::snprintf(want, sizeof(want), "%s", host_header);
+  if (char* c = std::strchr(host, ':')) *c = '\0';  // the page is on port 80, the socket on 81: compare the host only
+  if (char* c = std::strchr(want, ':')) *c = '\0';
+  return std::strcmp(host, want) == 0;
+}
+uint32_t peer_address(httpd_req_t* req) { return peer_address_impl(req); }
 
 void start() {
   web_auth::init();

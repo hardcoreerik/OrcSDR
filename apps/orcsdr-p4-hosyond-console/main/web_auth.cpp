@@ -184,16 +184,17 @@ bool issue_challenge(char out_hex[33]) {
   if (!g_ready) return false;
   Lock lock;
   const int64_t now = now_us();
+  // When every slot holds an unexpired nonce the one closest to expiring is replaced: refusing would let anyone who asks for four challenges
+  // keep the owner from logging in. A login that used the replaced nonce is answered bad_nonce and simply asks again.
+  Nonce* slot = &g_nonces[0];
   for (Nonce& n : g_nonces) {
     if (n.expires_us && n.expires_us <= now) n.expires_us = 0;
-    if (!n.expires_us) {
-      esp_fill_random(n.value, sizeof(n.value));
-      n.expires_us = now + kNonceLifeUs;
-      to_hex(n.value, sizeof(n.value), out_hex);
-      return true;
-    }
+    if (n.expires_us < slot->expires_us) slot = &n;
   }
-  return false;
+  esp_fill_random(slot->value, sizeof(slot->value));
+  slot->expires_us = now + kNonceLifeUs;
+  to_hex(slot->value, sizeof(slot->value), out_hex);
+  return true;
 }
 
 Login login(uint32_t peer, const char* nonce_hex, const char* proof_hex, LoginOut& out) {

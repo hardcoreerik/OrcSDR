@@ -22,7 +22,7 @@ bool default_password();                  // true while the factory password is 
 bool set_password(const char* password);  // 8..64 characters, not the factory one; ends every session. Serial console only.
 void salt_hex(char out[33]);              // the salt the browser needs for the key derivation
 
-// Issues a single-use 16-byte nonce valid for 30 s (hex, 32 chars + NUL). False when the nonce table is full of unexpired ones.
+// Issues a single-use 16-byte nonce valid for 30 s (hex, 32 chars + NUL). When all four slots are in use the oldest is replaced.
 bool issue_challenge(char out_hex[33]);
 
 enum class Login : uint8_t { ok, bad_request, bad_nonce, bad_proof, throttled, busy };
