@@ -8,6 +8,7 @@ on:
       - "apps/orcsdr-tab5/ui/lora_dashboard.hpp"
       - "apps/orcsdr-tab5/ui/lora_tx_*"
       - "tests/lora_tx_*"
+      - "tests/lora_tx_ui_stubs/**"
       - "tools/test-lora-tx-ui.sh"
       - ".github/workflows/lora-tx-ui-tests.yml"
   pull_request:
@@ -16,6 +17,7 @@ on:
       - "apps/orcsdr-tab5/ui/lora_dashboard.hpp"
       - "apps/orcsdr-tab5/ui/lora_tx_*"
       - "tests/lora_tx_*"
+      - "tests/lora_tx_ui_stubs/**"
       - "tools/test-lora-tx-ui.sh"
 permissions:
   contents: read
