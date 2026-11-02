@@ -101,3 +101,9 @@ A secondary DSD-neo CU8 fixture transfer through the available connector **modif
 8. Do not merge the REA branch or publish third-party captured voice/audio to public releases. User approval is required for any merge.
 
 **This handoff is documentary.** The new NXDN files and negative controls are in REA-Results, not the firmware. No decoder implementation or hardware validation was performed in this research turn.
+
+### New P25 Phase II dibit fixture downloader (research-only, 2026-11-02)
+
+The source-verified PowerShell helper is [REA-Results/P25/get-phase2-dibits.ps1](https://github.com/hardcoreerik/REA-Results/blob/chatgpt/digital-voice-rsa-rea-2026-11-01/inbox/fixtures/digital-voice/P25/get-phase2-dibits.ps1). Run it from a **separate** REA research-branch checkout on the Windows RSA workstation. It downloads the issue #304 archive, extracts only the named BIN, rejects any extracted SHA-256 not equal to the pinned LakeShark reference hash, writes a local manifest and saves a UTC-stamped `acquisition.log` in the output folder. See the REA fixture README for exact commands.
+
+**Status**: helper committed and its own Git object SHA verified identical to the sandbox-authored script. **It has not actually downloaded the dibit archive on Windows in this session**, so the source data remains an external candidate. This helper is a reproducible acquisition gate, not decoder implementation and not true over-the-air P25 Phase II raw IQ. No third-party ZIP or BIN is committed by this helper.
