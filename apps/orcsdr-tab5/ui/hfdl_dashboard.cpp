@@ -148,8 +148,16 @@ void draw_detail(const hfdl_ui::MessageRecord& m){
                   (unsigned long)m.seq,m.frequency_hz/1000000.0,m.label);
     clipped_text(compact,x,y+82,g_view.detail.w-28,kGreen,2);
     clipped_text(m.preview,x,y+127,g_view.detail.w-28,kWhite,1);
-    clipped_text("CRC-VERIFIED MESSAGE (PAYLOAD IN LONG VIEW)",x,y+173,
-                 g_view.detail.w-28,kMuted,1);
+    text("PAYLOAD (TRUNCATED)",x,y+173,kMuted,1);
+    if(m.text_length){
+      char payload[80]{};
+      const size_t count=std::min<size_t>(m.text_length,sizeof(payload)-1);
+      for(size_t i=0;i<count;++i){
+        const unsigned char c=static_cast<unsigned char>(m.text[i]);
+        payload[i]=c>=32&&c<127?static_cast<char>(c):'.';
+      }
+      clipped_text(payload,x,y+199,g_view.detail.w-28,kWhite,1);
+    }
     return;
   }
   char line[104]{};
@@ -229,6 +237,7 @@ void update(uint32_t /*now_ms*/){
 }
 hfdl_ui::Action touch(int32_t x,int32_t y){
   if(!g_active||!g_model||!g_controller||!g_view.valid)return {};
+  if(g_overlay_open && g_overlay_open())return {};
   const auto action=g_controller->touch(x,y,*g_model,g_view);
   if(action.kind==hfdl_ui::ActionKind::changed)update(0);
   return action;
