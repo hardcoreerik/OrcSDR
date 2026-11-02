@@ -220,6 +220,7 @@ template <typename G> void draw_values(G& gfx, const Snapshot& s, Page page,
       gfx.fillRect(48, 825, 470, 155, kPanel);
       label(gfx, s.tx.operator_armed ? "OPERATOR ARMED" : "NOT ARMED", 48, 840,
             s.tx.operator_armed ? kYellow : kMuted, 2);
+      label(gfx, lora_tx::readiness_name(s.tx.readiness), 48, 873, kYellow, 1);
       label(gfx, freq, 48, 905, kYellow, 2);
       label(gfx, lora_tx::denial_name(lora_tx::can_arm(s.tx)), 48, 949, kMuted, 1);
     }
