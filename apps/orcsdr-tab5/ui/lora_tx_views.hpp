@@ -20,7 +20,7 @@ constexpr int kLandscapeWidth = 1280, kLandscapeHeight = 720;
 constexpr size_t kBenchPacketBytes = 13;  // reserved for future explicit test backend
 
 constexpr bool portrait(int width, int height) {
-  return width < height && width >= kPortraitWidth && height >= kPortraitHeight;
+  return width == kPortraitWidth && height == kPortraitHeight;
 }
 constexpr bool hit(int x, int y, int bx, int by, int w, int h) {
   return x >= bx && y >= by && x < bx + w && y < by + h;
@@ -132,7 +132,7 @@ template <typename G> void draw_static(G& gfx, const Snapshot& s, Page page,
       card(gfx, 28, 291, 512, 266);
       label(gfx, "PACKET PROFILE", 48, 316, kCyan, 2);
       field(gfx, 48, 346, 472, "MODULATION", "LORA / SX1262");
-      field(gfx, 48, 415, 472, "RX DEFAULT", "SF11  /  BW 250k");
+      field(gfx, 48, 415, 472, "RX PROFILE", "FROM RTL-SDR");
       card(gfx, 28, 575, 512, 254, kYellow);
       label(gfx, "TRANSMISSION SAFETY", 48, 605, kYellow, 2);
       label(gfx, "Separate TX profile required", 48, 738, kMuted, 1);
@@ -156,8 +156,8 @@ template <typename G> void draw_static(G& gfx, const Snapshot& s, Page page,
       grid(gfx, 48, 378, 470, 212);
       card(gfx, 28, 647, 512, 355, kYellow);
       label(gfx, "SX1262 / PACKET RADIO", 48, 676, kCyan, 2);
-      field(gfx, 48, 715, 472, "TX ANTENNA", "NOT VERIFIED");
-      field(gfx, 48, 803, 472, "TRANSMISSION", "LOCKED");
+      label(gfx, "TX ANTENNA", 48, 725, kCyan, 1);
+      label(gfx, "TRANSMISSION", 48, 813, kCyan, 1);
     }
     action_row(gfx, s, true, page == Page::operator_panel);
     return;
@@ -168,10 +168,10 @@ template <typename G> void draw_static(G& gfx, const Snapshot& s, Page page,
     card(gfx, 45, 237, 573, 285);
     label(gfx, "PACKET SETTINGS", 65, 261, kCyan, 2);
     field(gfx, 65, 287, 533, "MODULATION", "LORA / SX1262");
-    field(gfx, 65, 353, 533, "DEFAULT RX PROFILE", "SF11 / BW 250k");
+    field(gfx, 65, 353, 533, "RX PROFILE", "FROM RTL-SDR");
     card(gfx, 635, 237, 588, 285, kYellow);
     label(gfx, "TRANSMISSION GATE", 655, 261, kYellow, 2);
-    label(gfx, "Antenna / TX region unverified", 655, 446, kMuted, 1);
+    label(gfx, "TX state from verified hardware only", 655, 446, kMuted, 1);
     action_row(gfx, s, false, true);
   } else if (page == Page::messenger) {
     card(gfx, 45, 237, 578, 282);
@@ -214,13 +214,20 @@ template <typename G> void draw_values(G& gfx, const Snapshot& s, Page page,
       } else label(gfx, "NO VERIFIED PACKETS", 48, 663, kMuted, 2);
       label(gfx, "TX: HISTORY NOT CONNECTED", 48, 753, kMuted, 1);
     } else {
-      gfx.fillRect(48, 879, 470, 99, kPanel);
+      gfx.fillRect(48, 737, 470, 52, kPanel);
+      label(gfx, s.tx.antenna_path_verified ? "ANTENNA PATH VERIFIED" : "ANTENNA PATH UNVERIFIED",
+            48, 754, s.tx.antenna_path_verified ? kGreen : kYellow, 1);
+      gfx.fillRect(48, 825, 470, 155, kPanel);
+      label(gfx, s.tx.operator_armed ? "OPERATOR ARMED" : "NOT ARMED", 48, 840,
+            s.tx.operator_armed ? kYellow : kMuted, 2);
       label(gfx, freq, 48, 905, kYellow, 2);
       label(gfx, lora_tx::denial_name(lora_tx::can_arm(s.tx)), 48, 949, kMuted, 1);
     }
     gfx.fillRect(31, 1103, 510, 16, kPanel);
-    label(gfx, s.tx.operator_armed ? "OPERATOR ARMED" : "TX LOCKED / RX INDEPENDENT",
-          34, 1111, s.tx.operator_armed ? kYellow : kMuted, 1);
+    const bool armed_and_admitted = s.tx.operator_armed &&
+        lora_tx::can_arm(s.tx) == lora_tx::Denial::none;
+    label(gfx, armed_and_admitted ? "OPERATOR ARMED" : "TX LOCKED / RX INDEPENDENT",
+          34, 1111, armed_and_admitted ? kYellow : kMuted, 1);
     return;
   }
   if (page == Page::operator_panel) {
