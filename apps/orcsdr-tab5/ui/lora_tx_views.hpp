@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <M5Unified.h>
 #include "lora_dashboard.hpp"
 
 namespace orcsdr::lora::tx_views {
