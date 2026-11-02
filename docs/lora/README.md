@@ -3,6 +3,13 @@
 OrcSDR's LoRa dashboard is a passive, receive-only SDR instrument. It never
 transmits, pairs, controls mesh nodes, or invents mesh activity.
 
+
+> **Development note:** The LilyGO P4 + SX1262 work adds a separate, locked
+> TX Lab workspace on `claude/lilygo-tdisplay-p4-amoled`. This is a
+> capability/readiness preview, **not** an operational transmitter; the Tab5
+> RX-only workflow remains unchanged. See
+> [LilyGO SX1262 TX Lab](../hardware/LILYGO_SX1262_TX_LAB.md).
+
 ## Five-panel dashboard
 
 - **Overview** shows the configured regional LongFast receive profile, live RTL
