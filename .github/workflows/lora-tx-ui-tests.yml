@@ -1,0 +1,37 @@
+name: LoRa TX M5GFX host tests
+on:
+  push:
+    branches:
+      - "codex/lilygo-lora-tx-ui-**"
+    paths:
+      - "apps/orcsdr-tab5/ui/lora_dashboard.cpp"
+      - "apps/orcsdr-tab5/ui/lora_dashboard.hpp"
+      - "apps/orcsdr-tab5/ui/lora_tx_*"
+      - "tests/lora_tx_*"
+      - "tools/test-lora-tx-ui.sh"
+      - ".github/workflows/lora-tx-ui-tests.yml"
+  pull_request:
+    paths:
+      - "apps/orcsdr-tab5/ui/lora_dashboard.cpp"
+      - "apps/orcsdr-tab5/ui/lora_dashboard.hpp"
+      - "apps/orcsdr-tab5/ui/lora_tx_*"
+      - "tests/lora_tx_*"
+      - "tools/test-lora-tx-ui.sh"
+permissions:
+  contents: read
+jobs:
+  renderer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Native GFX primitive host tests
+        run: bash tools/test-lora-tx-ui.sh
+      - name: Save host validation
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lora-tx-ui-host-evidence
+          path: build/lora-tx-ui/*.log
+          retention-days: 14
