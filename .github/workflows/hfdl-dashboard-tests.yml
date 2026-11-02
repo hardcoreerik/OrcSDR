@@ -7,6 +7,7 @@ on:
       - "apps/orcsdr-tab5/ui/hfdl_*"
       - "apps/orcsdr-tab5/hfdl/**"
       - "apps/orcsdr-tab5/tests/hfdl_*"
+      - "tests/hfdl_*"
       - "tools/test-hfdl-dashboard.sh"
       - ".github/workflows/hfdl-dashboard-tests.yml"
   workflow_dispatch:
