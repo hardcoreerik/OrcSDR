@@ -68,11 +68,12 @@ struct GainLayout {
 
 Snapshot g_snapshot{};
 View g_view = View::listen;
+DashboardLayout g_layout = make_layout({0, 0, 1280, 720});
 bool g_active = false;
 bool g_keypad = false;
 char g_entry[12]{};
 uint32_t g_last_dynamic_ms = 0;
-EXT_RAM_BSS_ATTR uint16_t g_waterfall_row[kSpectrumW]{};
+EXT_RAM_BSS_ATTR uint16_t g_waterfall_row[1280]{};
 audio_header::Control g_audio_control{};
 NvsStore* g_store = nullptr;
 uint32_t g_saved_frequency = receiver_bands::kAmBroadcast.default_hz;
@@ -86,6 +87,12 @@ bool g_preset_press_valid = false;
 uint16_t g_pressed_preset = 0;
 uint32_t g_preset_press_ms = 0;
 bool g_preset_modal = false;
+bool g_layout_dirty = true;
+
+struct ViewportClip {
+  explicit ViewportClip(LayoutRect r) { M5.Display.setClipRect(r.x, r.y, r.w, r.h); }
+  ~ViewportClip() { M5.Display.clearClipRect(); }
+};
 uint16_t g_edit_preset = 0;
 EXT_RAM_BSS_ATTR uint32_t g_scan_results_hz[kScanResultCapacity]{};
 EXT_RAM_BSS_ATTR float g_scan_results_dbfs[kScanResultCapacity]{};
@@ -127,10 +134,10 @@ bool erase_preset(uint32_t* presets, size_t& count, size_t index) {
 }
 
 uint32_t bandwidth_for_x(int32_t x) {
-  const int clamped = std::clamp<int32_t>(x, kBandwidthSliderX,
-                                          kBandwidthSliderX + kBandwidthSliderW);
-  const uint32_t hz = 3000u + static_cast<uint32_t>(clamped - kBandwidthSliderX) *
-                                  27000u / kBandwidthSliderW;
+  const int slider_x = g_layout.legacy ? kBandwidthSliderX : g_layout.filter_slider.x;
+  const int slider_w = g_layout.legacy ? kBandwidthSliderW : g_layout.filter_slider.w;
+  const int clamped = std::clamp<int32_t>(x, slider_x, slider_x + slider_w);
+  const uint32_t hz = 3000u + static_cast<uint32_t>(clamped - slider_x) * 27000u / slider_w;
   return ((hz + 500u) / 1000u) * 1000u;
 }
 
@@ -220,6 +227,19 @@ void button(int x, int y, int w, int h, const char* title, uint16_t color = kCya
 }
 
 void draw_header() {
+  if (!g_layout.legacy) {
+    const auto& h = audio_header::layout();
+    M5.Display.fillRect(g_layout.viewport.x, g_layout.viewport.y,
+                        g_layout.viewport.w, h.content_top - g_layout.viewport.y, kBg);
+    audio_header::draw_brand("AM BROADCAST");
+    audio_header::draw(g_audio_control, g_snapshot.volume, g_snapshot.sound_enabled,
+                       g_snapshot.battery_percent);
+    audio_header::draw_home_button();
+    audio_header::draw_mute_button(g_snapshot.sound_enabled);
+    audio_header::draw_visualizer_button(g_snapshot.running);
+    audio_header::draw_settings_button();
+    return;
+  }
   M5.Display.fillRect(0, 0, 1280, kHeaderH, kBg);
   M5.Display.drawFastHLine(8, kHeaderH - 1, 1264, kCyan);
   audio_header::draw_brand("AM BROADCAST");
@@ -236,6 +256,19 @@ void draw_header() {
 
 void draw_tabs() {
   static constexpr const char* names[] = {"LISTEN", "FINDER", "SPECTRUM", "SETTINGS"};
+  if (!g_layout.legacy) {
+    for (uint8_t i = 0; i < static_cast<uint8_t>(View::count); ++i) {
+      const auto r = tab_rect(g_layout, i);
+      const bool selected = i == static_cast<uint8_t>(g_view);
+      M5.Display.fillRect(r.x, r.y, r.w, r.h,
+                          selected ? 0x0a43 : kPanel);
+      M5.Display.drawRect(r.x, r.y, r.w, r.h,
+                          selected ? kGreen : kGrid);
+      text(names[i], r.x + r.w / 2, r.y + r.h / 2,
+           selected ? kGreen : TFT_WHITE, g_layout.portrait ? 2 : 3);
+    }
+    return;
+  }
   for (uint8_t i = 0; i < static_cast<uint8_t>(View::count); ++i) {
     const int x = i * kTabW;
     const bool selected = i == static_cast<uint8_t>(g_view);
@@ -245,17 +278,34 @@ void draw_tabs() {
   }
 }
 
-void draw_meter(int x, int y, int w, float dbfs) {
+void draw_meter(int x, int y, int w, float dbfs, int height = 30) {
   const int segments = 18;
   const int lit = static_cast<int>(std::clamp((dbfs + 90.0f) / 70.0f, 0.0f, 1.0f) * segments);
   const int gap = 3;
   const int sw = (w - (segments - 1) * gap) / segments;
   for (int i = 0; i < segments; ++i)
-    M5.Display.fillRect(x + i * (sw + gap), y, sw, 30,
+    M5.Display.fillRect(x + i * (sw + gap), y, sw, height,
                         i < lit ? (i >= 14 ? kYellow : kGreen) : kGrid);
 }
 
 GainLayout gain_layout() {
+  if (!g_layout.legacy && g_view == View::listen)
+    return {g_layout.gain_auto.x, g_layout.gain_auto.y, g_layout.gain_auto.w,
+            g_layout.gain_auto.h, g_layout.gain_slider.x,
+            g_layout.gain_slider.y + g_layout.gain_slider.h - 20,
+            g_layout.gain_slider.w};
+  if (!g_layout.legacy && g_view == View::spectrum)
+    return {g_layout.spectrum_gain_auto.x, g_layout.spectrum_gain_auto.y,
+            g_layout.spectrum_gain_auto.w, g_layout.spectrum_gain_auto.h,
+            g_layout.spectrum_gain_slider.x,
+            g_layout.spectrum_gain_slider.y + g_layout.spectrum_gain_slider.h - 20,
+            g_layout.spectrum_gain_slider.w};
+  if (!g_layout.legacy && g_view == View::settings)
+    return {g_layout.settings_gain_auto.x, g_layout.settings_gain_auto.y,
+            g_layout.settings_gain_auto.w, g_layout.settings_gain_auto.h,
+            g_layout.settings_gain_slider.x,
+            g_layout.settings_gain_slider.y + g_layout.settings_gain_slider.h - 20,
+            g_layout.settings_gain_slider.w};
   if (g_view == View::listen) return {1128, 304, 86, 42, 884, 338, 220};
   if (g_view == View::spectrum) return {928, 561, 82, 44, 1024, 584, 190};
   return {kGainAutoX, kGainAutoY, kGainAutoW, 70,
@@ -309,6 +359,38 @@ void draw_gain_control(bool compact) {
 }
 
 void draw_listen_static() {
+  if (!g_layout.legacy) {
+    card(g_layout.frequency.x, g_layout.frequency.y,
+         g_layout.frequency.w, g_layout.frequency.h);
+    card(g_layout.signal.x, g_layout.signal.y, g_layout.signal.w, g_layout.signal.h);
+    if (g_layout.portrait) {
+      text("FREQUENCY", g_layout.frequency_label.x,
+           g_layout.frequency_label.y,
+           kCyan, 2, top_left);
+      text("RELATIVE SIGNAL", g_layout.signal.x + 12, g_layout.signal.y + 10,
+           kCyan, 2, top_left);
+    }
+    button(g_layout.tune_down.x, g_layout.tune_down.y, g_layout.tune_down.w,
+           g_layout.tune_down.h, "TUNE -");
+    button(g_layout.tune_up.x, g_layout.tune_up.y, g_layout.tune_up.w,
+           g_layout.tune_up.h, "TUNE +");
+    button(g_layout.step.x, g_layout.step.y, g_layout.step.w,
+           g_layout.step.h, "STEP");
+    button(g_layout.direct.x, g_layout.direct.y, g_layout.direct.w,
+           g_layout.direct.h, "DIRECT TUNE", kGreen);
+    for (const auto r : g_layout.preset)
+      button(r.x, r.y, r.w, r.h, "EMPTY", kGrid);
+    button(g_layout.preset_save.x, g_layout.preset_save.y,
+           g_layout.preset_save.w, g_layout.preset_save.h, "SAVE CURRENT", kGreen);
+    button(g_layout.preset_previous.x, g_layout.preset_previous.y,
+           g_layout.preset_previous.w, g_layout.preset_previous.h, "<");
+    button(g_layout.preset_next.x, g_layout.preset_next.y,
+           g_layout.preset_next.w, g_layout.preset_next.h, ">");
+    button(g_layout.gain_auto.x, g_layout.gain_auto.y,
+           g_layout.gain_auto.w, g_layout.gain_auto.h,
+           g_snapshot.gain_auto ? "SMART" : "MANUAL", kGreen, true);
+    return;
+  }
   card(24, 150, 820, 230);
   card(860, 150, 396, 230);
   text("RELATIVE SIGNAL", 884, 178, kCyan, 2, top_left);
@@ -325,6 +407,23 @@ void draw_listen_static() {
 
 void draw_preset_modal() {
   if (!g_preset_modal || g_edit_preset >= g_preset_count) return;
+  if (!g_layout.legacy) {
+    const auto r = g_layout.preset_modal;
+    M5.Display.fillRoundRect(r.x, r.y, r.w, r.h, 18, kPanel);
+    M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 18, TFT_RED);
+    text("EDIT PRESET", r.x + r.w / 2, r.y + 34, TFT_WHITE, 3);
+    char khz[16], frequency[32];
+    format_khz(khz, sizeof(khz), g_presets[g_edit_preset]);
+    snprintf(frequency, sizeof(frequency), "%s kHz", khz);
+    text(frequency, r.x + r.w / 2, r.y + r.h / 2, kYellow, 4);
+    const auto cancel = g_layout.modal_cancel;
+    const auto replace = g_layout.modal_replace;
+    const auto remove = g_layout.modal_delete;
+    button(cancel.x, cancel.y, cancel.w, cancel.h, "CANCEL", kCyan);
+    button(replace.x, replace.y, replace.w, replace.h, "REPLACE", kGreen);
+    button(remove.x, remove.y, remove.w, remove.h, "DELETE", TFT_RED);
+    return;
+  }
   M5.Display.fillRoundRect(290, 205, 700, 300, 18, kPanel);
   M5.Display.drawRoundRect(290, 205, 700, 300, 18, TFT_RED);
   text("EDIT PRESET", 640, 250, TFT_WHITE, 4);
@@ -339,6 +438,27 @@ void draw_preset_modal() {
 }
 
 void draw_bandwidth_slider() {
+  if (!g_layout.legacy) {
+    const auto label = g_layout.filter_label;
+    const auto slider = g_layout.filter_slider;
+    char current[20];
+    snprintf(current, sizeof(current), "%lu kHz",
+             static_cast<unsigned long>(g_snapshot.filter_bandwidth_hz / 1000));
+    const LayoutRect value_rect{slider.x + slider.w, label.y, 88, label.h};
+    M5.Display.fillRect(label.x, label.y,
+                        value_rect.x + value_rect.w - label.x, label.h, kPanel);
+    text("FILTER", label.x + 2, label.y + label.h / 2, kCyan, 2, middle_left);
+    text(current, value_rect.x + value_rect.w / 2,
+         value_rect.y + value_rect.h / 2, kGreen, 2);
+    M5.Display.fillRoundRect(slider.x, slider.y, slider.w, 18, 9, kGrid);
+    const int knob = slider.x +
+        (static_cast<int>(std::clamp<uint32_t>(g_snapshot.filter_bandwidth_hz, 3000, 30000)) - 3000) *
+            slider.w / 27000;
+    M5.Display.fillRoundRect(slider.x, slider.y,
+                             std::max(9, knob - slider.x), 18, 9, kGreen);
+    M5.Display.fillCircle(knob, slider.y + 9, 11, kGreen);
+    return;
+  }
   char value[16];
   snprintf(value, sizeof(value), "%lu kHz",
            static_cast<unsigned long>(g_snapshot.filter_bandwidth_hz / 1000));
@@ -360,6 +480,91 @@ void draw_bandwidth_slider() {
 }
 
 void draw_listen_dynamic() {
+  if (!g_layout.legacy) {
+    char value[64];
+    M5.Display.fillRect(g_layout.frequency_value.x, g_layout.frequency_value.y,
+                        g_layout.frequency_value.w, g_layout.frequency_value.h, kPanel);
+    format_khz(value, sizeof(value), g_snapshot.frequency_hz);
+    text(value, g_layout.frequency_value.x + g_layout.frequency_value.w / 2,
+         g_layout.frequency_value.y + g_layout.frequency_value.h / 2,
+         TFT_WHITE, g_layout.portrait ? 5 : 4);
+    if (g_layout.frequency_meta.w > 0) {
+      M5.Display.fillRect(g_layout.frequency_meta.x, g_layout.frequency_meta.y,
+                          g_layout.frequency_meta.w, g_layout.frequency_meta.h, kPanel);
+      if (g_layout.portrait) {
+        snprintf(value, sizeof(value), "STEP %lu kHz FILTER %lu kHz",
+                 static_cast<unsigned long>(g_snapshot.step_hz / 1000),
+                 static_cast<unsigned long>(g_snapshot.filter_bandwidth_hz / 1000));
+        text(value, g_layout.frequency_meta.x + g_layout.frequency_meta.w / 2,
+             g_layout.frequency_meta.y + g_layout.frequency_meta.h / 2, kCyan, 2);
+      } else {
+        snprintf(value, sizeof(value), "STEP %lu kHz",
+                 static_cast<unsigned long>(g_snapshot.step_hz / 1000));
+        text(value, g_layout.frequency_meta.x + g_layout.frequency_meta.w / 2,
+             g_layout.frequency_meta.y + 10, kCyan, 2);
+        snprintf(value, sizeof(value), "FILTER %lu kHz",
+                 static_cast<unsigned long>(g_snapshot.filter_bandwidth_hz / 1000));
+        text(value, g_layout.frequency_meta.x + g_layout.frequency_meta.w / 2,
+             g_layout.frequency_meta.y + 28, kCyan, 2);
+      }
+    }
+    M5.Display.fillRect(g_layout.signal_meter.x, g_layout.signal_meter.y,
+                        g_layout.signal_meter.w, g_layout.signal_meter.h, kPanel);
+    draw_meter(g_layout.signal_meter.x, g_layout.signal_meter.y,
+               g_layout.signal_meter.w, g_snapshot.relative_dbfs,
+               g_layout.legacy ? 30 : g_layout.signal_meter.h);
+    M5.Display.fillRect(g_layout.signal_text.x, g_layout.signal_text.y,
+                        g_layout.signal_text.w, g_layout.signal_text.h, kPanel);
+    if (g_layout.portrait) {
+      snprintf(value, sizeof(value), "%.1f dBFS  %s",
+               static_cast<double>(g_snapshot.relative_dbfs),
+               g_snapshot.running ? "RECEIVING" : "STOPPED");
+    } else {
+      snprintf(value, sizeof(value), "%.1f dBFS %s",
+               static_cast<double>(g_snapshot.relative_dbfs),
+               g_snapshot.running ? "RECEIVING" : "STOPPED");
+    }
+    text(value, g_layout.signal_text.x + g_layout.signal_text.w / 2,
+         g_layout.signal_text.y + g_layout.signal_text.h / 2,
+         g_snapshot.running ? kGreen : TFT_RED, 2);
+    M5.Display.fillRect(g_layout.gain_slider.x, g_layout.gain_slider.y - 20,
+                        g_layout.gain_slider.w, g_layout.gain_slider.h + 20, kBg);
+    draw_gain_control(true);
+    snprintf(value, sizeof(value), "STEP %lu kHz",
+             static_cast<unsigned long>(g_snapshot.step_hz / 1000));
+    button(g_layout.step.x, g_layout.step.y, g_layout.step.w,
+           g_layout.step.h, value, kCyan);
+    for (size_t i = 0; i < std::size(g_layout.preset); ++i) {
+      char preset[20];
+      const size_t index = static_cast<size_t>(g_snapshot.preset_page) * kPresetsPerPage + i;
+      if (i < kPresetsPerPage && index < g_preset_count && g_presets[index])
+        format_khz(preset, sizeof(preset), g_presets[index]);
+      else
+        snprintf(preset, sizeof(preset), "EMPTY");
+      const auto r = g_layout.preset[i];
+      button(r.x, r.y, r.w, r.h, preset,
+             i == g_snapshot.selected_preset ? kGreen : kGrid,
+             i == g_snapshot.selected_preset);
+    }
+    snprintf(value, sizeof(value), "%u/%u  %u SAVED",
+             static_cast<unsigned>(g_snapshot.preset_page + 1),
+             static_cast<unsigned>(g_snapshot.preset_pages),
+             static_cast<unsigned>(g_snapshot.preset_count));
+    button(g_layout.preset_previous.x, g_layout.preset_previous.y,
+           g_layout.preset_previous.w, g_layout.preset_previous.h, "<",
+           g_snapshot.preset_page ? kCyan : kMuted);
+    M5.Display.fillRect(g_layout.preset_page.x, g_layout.preset_page.y,
+                        g_layout.preset_page.w, g_layout.preset_page.h, kBg);
+    text(value, g_layout.preset_page.x + g_layout.preset_page.w / 2,
+         g_layout.preset_page.y + g_layout.preset_page.h / 2, kCyan, 2);
+    button(g_layout.preset_next.x, g_layout.preset_next.y,
+           g_layout.preset_next.w, g_layout.preset_next.h, ">",
+           g_snapshot.preset_page + 1 < g_snapshot.preset_pages ? kCyan : kMuted);
+    button(g_layout.preset_save.x, g_layout.preset_save.y,
+           g_layout.preset_save.w, g_layout.preset_save.h, "SAVE CURRENT", kGreen);
+    if (g_preset_modal) draw_preset_modal();
+    return;
+  }
   char value[48];
   M5.Display.fillRect(45, 175, 775, 180, kPanel);
   format_khz(value, sizeof(value), g_snapshot.frequency_hz);
@@ -401,6 +606,26 @@ void draw_listen_dynamic() {
 }
 
 void draw_finder_static() {
+  if (!g_layout.legacy) {
+    const auto p = g_layout.finder_panel;
+    card(p.x, p.y, p.w, p.h);
+    text("AM STATION FINDER", g_layout.finder_title.x, g_layout.finder_title.y,
+         kCyan, 2, middle_left);
+    button(g_layout.finder_scan.x, g_layout.finder_scan.y,
+           g_layout.finder_scan.w, g_layout.finder_scan.h, "SCAN BAND", kGreen);
+    button(g_layout.finder_spacing.x, g_layout.finder_spacing.y,
+           g_layout.finder_spacing.w, g_layout.finder_spacing.h, "PLAN 10 kHz");
+    text("Scan the full AM band; review", g_layout.finder_hint.x + 2,
+         g_layout.finder_hint.y + 10, TFT_WHITE, 2, middle_left);
+    text("ranked signals before saving.", g_layout.finder_hint.x + 2,
+         g_layout.finder_hint.y + 30, TFT_WHITE, 2, middle_left);
+    button(g_layout.finder_discard.x, g_layout.finder_discard.y,
+           g_layout.finder_discard.w, g_layout.finder_discard.h, "DISCARD", TFT_RED);
+    button(g_layout.finder_save.x, g_layout.finder_save.y,
+           g_layout.finder_save.w, g_layout.finder_save.h, "SAVE SELECTED", kGreen);
+    for (const auto r : g_layout.scan_result) button(r.x, r.y, r.w, r.h, "--", kGrid);
+    return;
+  }
   card(24, 150, 1232, 450);
   text("AM STATION FINDER", 48, 174, kCyan, 2, top_left);
   button(48, 210, 260, 70, "SCAN BAND", kGreen);
@@ -412,6 +637,46 @@ void draw_finder_static() {
 }
 
 void draw_finder_dynamic() {
+  if (!g_layout.legacy) {
+    char value[64];
+    const auto scan = g_layout.finder_scan;
+    const auto spacing = g_layout.finder_spacing;
+    if (g_snapshot.scan_active) {
+      const unsigned percent = g_snapshot.scan_total
+          ? static_cast<unsigned>(g_snapshot.scan_step) * 100u / g_snapshot.scan_total : 0;
+      button(scan.x, scan.y, scan.w, scan.h, "STOP SCAN", TFT_RED, true);
+      M5.Display.fillRect(g_layout.finder_hint.x, g_layout.finder_hint.y,
+                          g_layout.finder_hint.w, g_layout.finder_hint.h, kPanel);
+      snprintf(value, sizeof(value), "SCANNING %lu kHz  %u%%",
+               static_cast<unsigned long>(g_snapshot.scan_frequency_hz / 1000), percent);
+      text(value, g_layout.finder_hint.x + g_layout.finder_hint.w / 2,
+           g_layout.finder_hint.y + g_layout.finder_hint.h / 2, kGreen, 2);
+    } else {
+      button(scan.x, scan.y, scan.w, scan.h, "SCAN BAND", kGreen);
+      M5.Display.fillRect(g_layout.finder_hint.x, g_layout.finder_hint.y,
+                          g_layout.finder_hint.w, g_layout.finder_hint.h, kPanel);
+      text("Scan the full AM band; review", g_layout.finder_hint.x + 2,
+           g_layout.finder_hint.y + 10, TFT_WHITE, 2, middle_left);
+      text("ranked signals before saving.", g_layout.finder_hint.x + 2,
+           g_layout.finder_hint.y + 30, TFT_WHITE, 2, middle_left);
+    }
+    button(spacing.x, spacing.y, spacing.w, spacing.h,
+           g_scan_spacing == 9000 ? "PLAN 9 kHz" : "PLAN 10 kHz");
+    for (size_t i = 0; i < kScanResultCapacity; ++i) {
+      const auto r = g_layout.scan_result[i];
+      if (i < g_scan_result_count) {
+        snprintf(value, sizeof(value), "%s  %lu kHz  %.1f dBFS",
+                 g_scan_results_selected[i] ? "[X]" : "[ ]",
+                 static_cast<unsigned long>(g_scan_results_hz[i] / 1000),
+                 static_cast<double>(g_scan_results_dbfs[i]));
+        button(r.x, r.y, r.w, r.h, value,
+               g_scan_results_selected[i] ? kGreen : kGrid, g_scan_results_selected[i]);
+      } else {
+        button(r.x, r.y, r.w, r.h, "--", kGrid);
+      }
+    }
+    return;
+  }
   char value[64];
   button(328, 210, 260, 70, g_scan_spacing == 9000 ? "PLAN 9 kHz" : "PLAN 10 kHz");
   if (g_snapshot.scan_active) {
@@ -441,6 +706,27 @@ void draw_finder_dynamic() {
 
 void draw_scan_prompt() {
   if (!g_scan_prompt) return;
+  if (!g_layout.legacy) {
+    const auto r = g_layout.scan_prompt;
+    M5.Display.fillRoundRect(r.x, r.y, r.w, r.h, 18, kPanel);
+    M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 18, kGreen);
+    text("SCAN COMPLETE", r.x + r.w / 2, r.y + 42, TFT_WHITE, 3);
+    char value[64];
+    snprintf(value, sizeof(value), "%u strong station%s found",
+             static_cast<unsigned>(g_scan_result_count), g_scan_result_count == 1 ? "" : "s");
+    text(value, r.x + r.w / 2, r.y + r.h / 2 - 12, kCyan, 2);
+    text("Choose what OrcSDR should do", r.x + r.w / 2,
+         r.y + r.h / 2 + 12, TFT_WHITE, 2);
+    text("with the scan results.", r.x + r.w / 2,
+         r.y + r.h / 2 + 34, TFT_WHITE, 2);
+    static constexpr const char* labels[] = {"DISCARD", "REVIEW", "SAVE TOP"};
+    static constexpr uint16_t colors[] = {TFT_RED, kCyan, kGreen};
+    for (int i = 0; i < 3; ++i) {
+      const auto b = g_layout.scan_prompt_button[i];
+      button(b.x, b.y, b.w, b.h, labels[i], colors[i]);
+    }
+    return;
+  }
   M5.Display.fillRoundRect(250, 190, 780, 350, 18, kPanel);
   M5.Display.drawRoundRect(250, 190, 780, 350, 18, kGreen);
   text("SCAN COMPLETE", 640, 245, TFT_WHITE, 4);
@@ -455,6 +741,28 @@ void draw_scan_prompt() {
 }
 
 void draw_spectrum_static() {
+  if (!g_layout.legacy) {
+    const auto p = g_layout.spectrum_panel;
+    card(p.x, p.y, p.w, p.h);
+    const auto plot = g_layout.spectrum_plot, water = g_layout.waterfall;
+    text("AM CHANNEL SPECTRUM", g_layout.spectrum_title.x,
+         g_layout.spectrum_title.y, kCyan, 2, middle_left);
+    for (int i = 0; i <= 4; ++i) {
+      M5.Display.drawFastVLine(plot.x + i * plot.w / 4, plot.y, plot.h, kGrid);
+      if (i) M5.Display.drawFastHLine(plot.x, plot.y + i * plot.h / 4,
+                                      plot.w, kGrid);
+    }
+    M5.Display.drawRect(water.x, water.y, water.w, water.h, kCyan);
+    M5.Display.setScrollRect(water.x + 1, water.y + 1, water.w - 2,
+                             water.h - 2, kBg);
+    button(g_layout.span_down.x, g_layout.span_down.y, g_layout.span_down.w,
+           g_layout.span_down.h, "-");
+    button(g_layout.span_up.x, g_layout.span_up.y, g_layout.span_up.w,
+           g_layout.span_up.h, "+");
+    text("SPAN", g_layout.span_label.x + g_layout.span_label.w / 2,
+         g_layout.span_label.y + g_layout.span_label.h / 2, kCyan, 2);
+    return;
+  }
   card(24, 140, 1232, 470);
   text("AM CHANNEL SPECTRUM", 46, 158, kCyan, 2, top_left);
   for (int i = 0; i <= 4; ++i) {
@@ -472,6 +780,43 @@ void draw_spectrum_static() {
 }
 
 void draw_spectrum_dynamic() {
+  if (!g_layout.legacy) {
+    ViewportClip clip(g_layout.viewport);
+    char value[96], frequency[20], step[16];
+    format_khz(frequency, sizeof(frequency), g_snapshot.frequency_hz);
+    format_khz(step, sizeof(step), g_snapshot.step_hz);
+    M5.Display.fillRect(g_layout.spectrum_readout.x, g_layout.spectrum_readout.y,
+                        g_layout.spectrum_readout.w, g_layout.spectrum_readout.h, kPanel);
+    if (g_layout.portrait) {
+      snprintf(value, sizeof(value), "%s kHz", frequency);
+      text(value, g_layout.spectrum_readout.x + g_layout.spectrum_readout.w / 2,
+           g_layout.spectrum_readout.y + 9, TFT_WHITE, 2);
+      snprintf(value, sizeof(value), "STEP %s kHz  BW %lu kHz", step,
+               static_cast<unsigned long>(g_snapshot.filter_bandwidth_hz / 1000));
+      text(value, g_layout.spectrum_readout.x + g_layout.spectrum_readout.w / 2,
+           g_layout.spectrum_readout.y + 25, kCyan, 2);
+    } else {
+      snprintf(value, sizeof(value), "%s kHz   STEP %s kHz   BW %lu kHz   SPAN %lu kHz",
+               frequency, step,
+               static_cast<unsigned long>(g_snapshot.filter_bandwidth_hz / 1000),
+               static_cast<unsigned long>(g_snapshot.span_hz / 1000));
+      text(value, g_layout.spectrum_readout.x + g_layout.spectrum_readout.w / 2,
+           g_layout.spectrum_readout.y + g_layout.spectrum_readout.h / 2, TFT_WHITE, 2);
+    }
+    draw_gain_control(true);
+    draw_bandwidth_slider();
+    button(g_layout.span_down.x, g_layout.span_down.y, g_layout.span_down.w,
+           g_layout.span_down.h, "-");
+    snprintf(value, sizeof(value), "SPAN %lu kHz",
+             static_cast<unsigned long>(g_snapshot.span_hz / 1000));
+    M5.Display.fillRect(g_layout.span_label.x, g_layout.span_label.y,
+                        g_layout.span_label.w, g_layout.span_label.h, kBg);
+    text(value, g_layout.span_label.x + g_layout.span_label.w / 2,
+         g_layout.span_label.y + g_layout.span_label.h / 2, kCyan, 2);
+    button(g_layout.span_up.x, g_layout.span_up.y, g_layout.span_up.w,
+           g_layout.span_up.h, "+");
+    return;
+  }
   char value[64];
   M5.Display.fillRect(45, 184, 1190, 58, kPanel);
   char frequency[20];
@@ -489,6 +834,19 @@ void draw_spectrum_dynamic() {
 }
 
 void draw_settings_static() {
+  if (!g_layout.legacy) {
+    const auto p = g_layout.settings_panel;
+    card(p.x, p.y, p.w, p.h);
+    text("AM AUDIO & TUNING", g_layout.settings_title.x,
+         g_layout.settings_title.y, kCyan, 2, middle_left);
+    static constexpr const char* labels[] = {"SOUND", "VOL -", "VOL +", "TUNING STEP",
+        "SPECTRUM", "RECORD AUDIO", "DEVICE SETTINGS", "HOME"};
+    for (size_t i = 0; i < std::size(labels); ++i) {
+      const auto r = g_layout.settings_control[i];
+      button(r.x, r.y, r.w, r.h, labels[i], i == 5 ? TFT_RED : kCyan);
+    }
+    return;
+  }
   card(24, 150, 1232, 450);
   text("AM AUDIO & TUNING", 48, 174, kCyan, 2, top_left);
   button(48, 220, 250, 70, "SOUND", kGreen);
@@ -502,6 +860,48 @@ void draw_settings_static() {
 }
 
 void draw_settings_dynamic() {
+  if (!g_layout.legacy) {
+    char value[96], step[16];
+    static constexpr const char* labels[] = {"SOUND", "VOL -", "VOL +", "TUNING STEP",
+        "SPECTRUM", "RECORD AUDIO", "DEVICE SETTINGS", "HOME"};
+    format_khz(step, sizeof(step), g_snapshot.step_hz);
+    for (size_t i = 0; i < std::size(labels); ++i) {
+      const auto r = g_layout.settings_control[i];
+      const char* label = labels[i];
+      if (i == 3) { snprintf(value, sizeof(value), "STEP %s kHz", step); label = value; }
+      if (i == 4) label = g_snapshot.graphics_enabled ? "SPECTRUM ON" : "SPECTRUM OFF";
+      if (i == 5) label = g_snapshot.recording ? "STOP RECORD" : "RECORD AUDIO";
+      button(r.x, r.y, r.w, r.h, label,
+             i == 0 && g_snapshot.sound_enabled ? kGreen :
+             i == 5 && g_snapshot.recording ? TFT_RED : kCyan,
+             i == 0 && g_snapshot.sound_enabled);
+    }
+    M5.Display.fillRect(g_layout.settings_gain_slider.x, g_layout.settings_gain_slider.y - 20,
+                        g_layout.settings_gain_slider.w, g_layout.settings_gain_slider.h + 20, kBg);
+    draw_gain_control(true);
+    M5.Display.fillRect(g_layout.settings_status.x, g_layout.settings_status.y,
+                        g_layout.settings_status.w, g_layout.settings_status.h, kPanel);
+    if (g_layout.portrait) {
+      snprintf(value, sizeof(value), "VOL %u  STEP %s kHz  BW %lu kHz", g_snapshot.volume,
+               step, static_cast<unsigned long>(g_snapshot.filter_bandwidth_hz / 1000));
+      text(value, g_layout.settings_status.x + g_layout.settings_status.w / 2,
+           g_layout.settings_status.y + 9, TFT_WHITE, 2);
+      snprintf(value, sizeof(value), "SPECTRUM %s  RECORD %s",
+               g_snapshot.graphics_enabled ? "ON" : "OFF",
+               g_snapshot.recording ? "ON" : "OFF");
+      text(value, g_layout.settings_status.x + g_layout.settings_status.w / 2,
+           g_layout.settings_status.y + 27, TFT_WHITE, 2);
+    } else {
+      snprintf(value, sizeof(value), "VOL %u   STEP %s kHz   BW %lu kHz   GRAPHICS %s   RECORD %s",
+               g_snapshot.volume, step,
+               static_cast<unsigned long>(g_snapshot.filter_bandwidth_hz / 1000),
+               g_snapshot.graphics_enabled ? "ON" : "OFF",
+               g_snapshot.recording ? "ON" : "OFF");
+      text(value, g_layout.settings_status.x + g_layout.settings_status.w / 2,
+           g_layout.settings_status.y + g_layout.settings_status.h / 2, TFT_WHITE, 2);
+    }
+    return;
+  }
   char value[96];
   char step[16];
   format_khz(step, sizeof(step), g_snapshot.step_hz);
@@ -516,6 +916,17 @@ void draw_settings_dynamic() {
 
 void draw_view() {
   M5.Display.clearScrollRect();
+  if (!g_layout.legacy) {
+    const auto& h = audio_header::layout();
+    M5.Display.fillRect(g_layout.viewport.x, h.content_top, g_layout.viewport.w,
+                        g_layout.tabs.y - h.content_top, kBg);
+    if (g_view == View::listen) draw_listen_static();
+    else if (g_view == View::finder) draw_finder_static();
+    else if (g_view == View::spectrum) draw_spectrum_static();
+    else draw_settings_static();
+    draw_tabs();
+    return;
+  }
   M5.Display.fillRect(0, kHeaderH, 1280, 720 - kHeaderH, kBg);
   if (g_view == View::listen) draw_listen_static();
   else if (g_view == View::finder) draw_finder_static();
@@ -529,7 +940,15 @@ void draw_keypad() {
   snprintf(hint, sizeof(hint), "%lu - %lu",
            static_cast<unsigned long>(receiver_bands::kAmBroadcast.min_hz / 1000u),
            static_cast<unsigned long>(receiver_bands::kAmBroadcast.max_hz / 1000u));
-  freq_keypad::draw(kHeaderH, kBg, "ENTER AM FREQUENCY", hint, "kHz", g_entry);
+  if (g_layout.legacy) {
+    freq_keypad::draw(kHeaderH, kBg, "ENTER AM FREQUENCY", hint, "kHz", g_entry);
+  } else {
+    const auto& h = audio_header::layout();
+    const freq_keypad::Rect viewport{g_layout.viewport.x, h.content_top,
+        g_layout.viewport.w, g_layout.viewport.y + g_layout.viewport.h - h.content_top};
+    freq_keypad::draw(h.content_top, kBg, "ENTER AM FREQUENCY", hint, "kHz", g_entry,
+                      &viewport);
+  }
 }
 
 void draw_dynamic() {
@@ -548,6 +967,17 @@ uint16_t waterfall_color(float level) {
 
 }  // namespace
 
+bool set_viewport(LayoutRect viewport) {
+  const DashboardLayout next = make_layout(viewport);
+  if (!next.valid || !audio_header::set_viewport(viewport)) return false;
+  g_layout = next;
+  g_layout_dirty = true;
+  return true;
+}
+
+void reset_viewport() { (void)set_viewport({0, 0, 1280, 720}); }
+DashboardLayout layout() { return g_layout; }
+
 void enter(const Snapshot& snapshot) {
   g_snapshot = snapshot;
   g_view = View::listen;
@@ -555,6 +985,7 @@ void enter(const Snapshot& snapshot) {
   g_keypad = false;
   g_entry[0] = '\0';
   g_preset_modal = false;
+  g_layout_dirty = true;
   g_preset_pressed = false;
   audio_header::reset(g_audio_control);
   draw();
@@ -568,14 +999,18 @@ void leave() {
 
 void draw() {
   if (!g_active) return;
-  M5.Display.fillScreen(kBg);
-  draw_header();
+  if (g_layout.legacy || g_layout_dirty) {
+    if (g_layout.legacy) M5.Display.fillScreen(kBg);
+    draw_header();
+  }
   if (g_keypad) {
     draw_keypad();
+    g_layout_dirty = false;
     return;
   }
-  draw_view();
+  if (g_layout.legacy || g_layout_dirty) draw_view();
   draw_dynamic();
+  g_layout_dirty = false;
 }
 
 void update(const Snapshot& snapshot) {
@@ -604,20 +1039,26 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
   if (!spectrum_active() || levels == nullptr || visible_bins < 2) return;
   const uint32_t frame_started_ms = millis();
   // Drawn off-screen and pushed in one go; see scope_canvas.hpp.
-  constexpr int w = kSpectrumW - 2;
-  constexpr int h = kSpectrumH - 2;
+  const auto plot = g_layout.legacy ? LayoutRect{kSpectrumX, kSpectrumY, kSpectrumW, kSpectrumH}
+                                    : g_layout.spectrum_plot;
+  const auto water = g_layout.legacy ? LayoutRect{kSpectrumX, kWaterfallY, kSpectrumW, kWaterfallH}
+                                     : g_layout.waterfall;
+  ViewportClip clip(g_layout.viewport);
+  const int width = plot.w, height = plot.h;
+  const int w = width - 2;
+  const int h = height - 2;
   static scope::Trace trace;
   M5Canvas* canvas = trace.begin(w, h, kBg);
   // No memory for the trace sprite: leave the frame alone rather than scroll the waterfall under a stale spectrum.
   if (canvas == nullptr) return;
   int px = 0;
   int py = h - 2;
-  for (size_t i = 0; i < kSpectrumW; ++i) {
+  for (int i = 0; i < width; ++i) {
     const float level = spectrum::peak_for_pixel(
-        levels, first_bin, visible_bins, i, kSpectrumW);
+        levels, first_bin, visible_bins, static_cast<size_t>(i), static_cast<size_t>(width));
     const float normalized = std::clamp((level - floor) / 48.0f, 0.0f, 1.0f);
-    const int x = static_cast<int>(i) - 1;
-    const int y = h - 2 - static_cast<int>(normalized * (kSpectrumH - 4));
+    const int x = i - 1;
+    const int y = h - 2 - static_cast<int>(normalized * (height - 4));
     if (canvas != nullptr && i && x >= 0 && x < w) canvas->drawLine(px, py, x, y, kGreen);
     px = x;
     py = y;
@@ -626,15 +1067,15 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
   if (canvas != nullptr) {
     const int center = w / 2;
     const int half_filter = std::clamp(static_cast<int>(
-        static_cast<uint64_t>(g_snapshot.filter_bandwidth_hz) * kSpectrumW /
-        (2u * (g_snapshot.span_hz ? g_snapshot.span_hz : 1u))), 3, kSpectrumW / 2 - 2);
+        static_cast<uint64_t>(g_snapshot.filter_bandwidth_hz) * width /
+        (2u * (g_snapshot.span_hz ? g_snapshot.span_hz : 1u))), 3, width / 2 - 2);
     canvas->drawFastVLine(center, 0, h, kCyan);
     canvas->drawFastVLine(center - half_filter, 0, h, kYellow);
     canvas->drawFastVLine(center + half_filter, 0, h, kYellow);
     scope::draw_style_chips(canvas, w, waterfall_style::Screen::am);
-    canvas->pushSprite(kSpectrumX + 1, kSpectrumY + 1);
+    canvas->pushSprite(plot.x + 1, plot.y + 1);
   }
-  scope::scroll_waterfall(kSpectrumX, kWaterfallY + kWaterfallH - 2, kSpectrumW, g_waterfall_row,
+  scope::scroll_waterfall(water.x + 1, water.y + water.h - 2, water.w - 2, g_waterfall_row,
                           waterfall_style::rows_due(waterfall_style::Screen::am, millis()));
   g_scope_stats.frame_done(frame_started_ms);
 }
@@ -657,17 +1098,34 @@ Action gain_button_action(const Snapshot& snapshot) {
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
   if (g_scan_prompt) {
-    if (hit(x, y, 280, 425, 220, 70)) reset_scan_results();
-    else if (hit(x, y, 530, 425, 220, 70)) {
-      g_scan_prompt = false;
-      g_view = View::finder;
+    if (g_layout.legacy) {
+      if (hit(x, y, 280, 425, 220, 70)) reset_scan_results();
+      else if (hit(x, y, 530, 425, 220, 70)) {
+        g_scan_prompt = false;
+        g_view = View::finder;
+      }
+      else if (hit(x, y, 780, 425, 220, 70)) (void)save_scan_results();
+    } else {
+      const auto discard = g_layout.scan_prompt_button[0];
+      const auto review = g_layout.scan_prompt_button[1];
+      const auto save = g_layout.scan_prompt_button[2];
+      if (hit(x, y, discard.x, discard.y, discard.w, discard.h)) reset_scan_results();
+      else if (hit(x, y, review.x, review.y, review.w, review.h)) {
+        g_scan_prompt = false;
+        g_view = View::finder;
+      } else if (hit(x, y, save.x, save.y, save.w, save.h))
+        (void)save_scan_results();
     }
-    else if (hit(x, y, 780, 425, 220, 70)) (void)save_scan_results();
+    if (!g_layout.legacy) g_layout_dirty = true;
     draw();
     return {};
   }
   if (spectrum_active() &&
-      scope::style_chip_tap(x, y, kSpectrumX + 1, kSpectrumY + 1, kSpectrumW - 2, waterfall_style::Screen::am))
+      scope::style_chip_tap(x, y,
+          g_layout.legacy ? kSpectrumX + 1 : g_layout.spectrum_plot.x + 1,
+          g_layout.legacy ? kSpectrumY + 1 : g_layout.spectrum_plot.y + 1,
+          g_layout.legacy ? kSpectrumW - 2 : g_layout.spectrum_plot.w - 2,
+          waterfall_style::Screen::am))
     return {};
   if (audio_header::settings_hit(x, y)) return {ActionKind::open_device_settings};
   if (g_keypad) {
@@ -675,6 +1133,7 @@ Action handle_touch(int32_t x, int32_t y) {
     if (result == freq_keypad::Result::cancelled) {
       g_keypad = false;
       g_entry[0] = '\0';
+      g_layout_dirty = true;
       draw();
       return {};
     }
@@ -686,9 +1145,109 @@ Action handle_touch(int32_t x, int32_t y) {
           hz <= receiver_bands::kAmBroadcast.max_hz) {
         g_keypad = false;
         g_entry[0] = '\0';
+        g_layout_dirty = true;
         draw();
         return {ActionKind::tune_hz, hz};
       }
+    }
+    return {};
+  }
+  if (!g_layout.legacy) {
+    if (y >= g_layout.tabs.y && y < g_layout.tabs.y + g_layout.tabs.h) {
+      for (uint8_t i = 0; i < static_cast<uint8_t>(View::count); ++i) {
+        const auto r = tab_rect(g_layout, i);
+        if (!hit(x, y, r.x, r.y, r.w, r.h) || i == static_cast<uint8_t>(g_view)) continue;
+        g_view = static_cast<View>(i);
+        g_layout_dirty = true;
+        draw();
+        break;
+      }
+      return {};
+    }
+    const auto contains = [x, y](LayoutRect r) { return hit(x, y, r.x, r.y, r.w, r.h); };
+    if (g_view == View::listen && g_preset_modal) {
+      if (contains(g_layout.modal_cancel)) {
+        g_preset_modal = false; g_layout_dirty = true; draw();
+      }
+      else if (contains(g_layout.modal_replace)) {
+        g_preset_modal = false; g_layout_dirty = true; draw();
+        return {ActionKind::preset_replace, g_edit_preset};
+      } else if (contains(g_layout.modal_delete)) {
+        g_preset_modal = false; g_layout_dirty = true; draw();
+        return {ActionKind::preset_delete, g_edit_preset};
+      }
+      return {};
+    }
+    if (audio_header::home_hit(x, y)) return {ActionKind::exit_home};
+    if (audio_header::mute_hit(x, y)) return {ActionKind::sound_toggle};
+    if (g_view == View::listen) {
+      if (contains(g_layout.gain_auto)) return gain_button_action(g_snapshot);
+      if (contains(g_layout.tune_down)) return {ActionKind::step_down};
+      if (contains(g_layout.tune_up)) return {ActionKind::step_up};
+      if (contains(g_layout.step)) return {ActionKind::step_cycle};
+      if (contains(g_layout.direct)) {
+        g_keypad = true; g_entry[0] = '\0'; draw(); return {};
+      }
+      if (contains(g_layout.preset_save)) return {ActionKind::preset_save};
+      if (contains(g_layout.preset_previous) && g_preset_page > 0) {
+        --g_preset_page; populate_presets(g_snapshot); draw();
+      } else if (contains(g_layout.preset_next) && g_preset_page + 1 < preset_pages()) {
+        ++g_preset_page; populate_presets(g_snapshot); draw();
+      }
+      return {};
+    }
+
+    if (g_view == View::finder) {
+      if (contains(g_layout.finder_scan)) {
+        if (!g_snapshot.scan_active) reset_scan_results();
+        return {ActionKind::scan_toggle};
+      }
+      if (contains(g_layout.finder_spacing)) return {ActionKind::scan_spacing_toggle};
+      if (contains(g_layout.finder_discard)) {
+        reset_scan_results(); g_layout_dirty = true; draw(); return {};
+      }
+      if (contains(g_layout.finder_save)) {
+        (void)save_scan_results(); g_layout_dirty = true; draw(); return {};
+      }
+      for (size_t i = 0; i < kScanResultCapacity; ++i) {
+        const auto r = g_layout.scan_result[i];
+        if (i >= g_scan_result_count || !contains(r)) continue;
+        if (x < r.x + std::min(70, r.w / 4)) {
+          g_scan_results_selected[i] = !g_scan_results_selected[i];
+          draw_finder_dynamic();
+          return {};
+        }
+        return {ActionKind::tune_hz, g_scan_results_hz[i]};
+      }
+      return {};
+    }
+
+    if (g_view == View::spectrum) {
+      if (contains(g_layout.spectrum_gain_auto)) return gain_button_action(g_snapshot);
+      if (contains(g_layout.span_down)) return {ActionKind::span_down};
+      if (contains(g_layout.span_up)) return {ActionKind::span_up};
+      const auto plot = g_layout.spectrum_plot, water = g_layout.waterfall;
+      if (contains(plot) || contains(water)) {
+        const int64_t offset = static_cast<int64_t>(x - (plot.x + plot.w / 2)) *
+                               g_snapshot.span_hz / plot.w;
+        const int64_t selected = static_cast<int64_t>(g_snapshot.frequency_hz) + offset;
+        return {ActionKind::tune_hz, static_cast<uint32_t>(std::clamp<int64_t>(
+            selected, receiver_bands::kAmBroadcast.min_hz,
+            receiver_bands::kAmBroadcast.max_hz))};
+      }
+      return {};
+    }
+
+    if (g_view == View::settings) {
+      if (contains(g_layout.settings_control[0])) return {ActionKind::sound_toggle};
+      if (contains(g_layout.settings_control[1])) return {ActionKind::volume_down};
+      if (contains(g_layout.settings_control[2])) return {ActionKind::volume_up};
+      if (contains(g_layout.settings_control[3])) return {ActionKind::step_cycle};
+      if (contains(g_layout.settings_control[4])) return {ActionKind::graphics_toggle};
+      if (contains(g_layout.settings_control[5])) return {ActionKind::recording_toggle};
+      if (contains(g_layout.settings_control[6])) return {ActionKind::open_device_settings};
+      if (contains(g_layout.settings_control[7])) return {ActionKind::exit_home};
+      if (contains(g_layout.settings_gain_auto)) return gain_button_action(g_snapshot);
     }
     return {};
   }
@@ -783,14 +1342,20 @@ TouchResult handle_preset_touch(int32_t x, int32_t y, bool pressed, uint32_t now
   if (g_preset_modal) {
     if (pressed && !g_preset_pressed) {
       g_preset_pressed = true;
-      if (hit(x, y, 320, 400, 200, 70)) {
+      if (hit(x, y, g_layout.modal_cancel.x, g_layout.modal_cancel.y,
+              g_layout.modal_cancel.w, g_layout.modal_cancel.h)) {
         g_preset_modal = false;
+        if (!g_layout.legacy) g_layout_dirty = true;
         draw();
-      } else if (hit(x, y, 540, 400, 200, 70)) {
+      } else if (hit(x, y, g_layout.modal_replace.x, g_layout.modal_replace.y,
+                     g_layout.modal_replace.w, g_layout.modal_replace.h)) {
         g_preset_modal = false;
+        if (!g_layout.legacy) { g_layout_dirty = true; draw(); }
         return {{ActionKind::preset_replace, g_edit_preset}, true};
-      } else if (hit(x, y, 760, 400, 200, 70)) {
+      } else if (hit(x, y, g_layout.modal_delete.x, g_layout.modal_delete.y,
+                     g_layout.modal_delete.w, g_layout.modal_delete.h)) {
         g_preset_modal = false;
+        if (!g_layout.legacy) { g_layout_dirty = true; draw(); }
         return {{ActionKind::preset_delete, g_edit_preset}, true};
       }
     } else if (!pressed) {
@@ -801,7 +1366,8 @@ TouchResult handle_preset_touch(int32_t x, int32_t y, bool pressed, uint32_t now
 
   if (pressed && !g_preset_pressed) {
     for (size_t slot = 0; slot < kPresetsPerPage; ++slot) {
-      if (!hit(x, y, 24 + static_cast<int>(slot) * 166, 494, 154, 70)) continue;
+      const auto r = g_layout.preset[slot];
+      if (!hit(x, y, r.x, r.y, r.w, r.h)) continue;
       g_preset_pressed = true;
       g_pressed_preset = static_cast<uint16_t>(g_preset_page * kPresetsPerPage + slot);
       g_preset_press_valid = g_pressed_preset < g_preset_count;
@@ -812,7 +1378,8 @@ TouchResult handle_preset_touch(int32_t x, int32_t y, bool pressed, uint32_t now
   }
   if (pressed && g_preset_pressed) {
     const size_t slot = g_pressed_preset % kPresetsPerPage;
-    if (!hit(x, y, 24 + static_cast<int>(slot) * 166, 494, 154, 70))
+    const auto r = g_layout.preset[slot];
+    if (!hit(x, y, r.x, r.y, r.w, r.h))
       g_preset_press_valid = false;
     if (g_preset_press_valid && now_ms - g_preset_press_ms >= kPresetHoldMs) {
       g_preset_press_valid = false;
@@ -848,6 +1415,15 @@ Action handle_gain_drag(int32_t x, int32_t y) {
 }
 
 Action handle_bandwidth_drag(int32_t x, int32_t y) {
+  if (!g_layout.legacy && g_view == View::spectrum) {
+    const auto slider = g_layout.filter_slider;
+    if (!g_active || g_keypad ||
+        !hit(x, y, slider.x - 14, slider.y - 20, slider.w + 28, slider.h + 40))
+      return {};
+    const uint32_t bandwidth_hz = bandwidth_for_x(x);
+    if (bandwidth_hz == g_snapshot.filter_bandwidth_hz) return {};
+    return {ActionKind::filter_bandwidth_hz, bandwidth_hz};
+  }
   // Kept clear of the waterfall above and the SPAN / GAIN row below.
   if (!g_active || g_keypad || g_view != View::spectrum ||
       !hit(x, y, kBandwidthSliderX - 18, kWaterfallY + kWaterfallH + 1,

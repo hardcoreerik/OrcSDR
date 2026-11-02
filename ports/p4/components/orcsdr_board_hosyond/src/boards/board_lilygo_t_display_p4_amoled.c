@@ -81,6 +81,12 @@ const orcsdr_board_profile_t g_board_lilygo_t_display_p4_amoled = {
 
     .codec_i2c_port = 0, .codec_i2c_sda = 20, .codec_i2c_scl = 21,
     .imu_type = ORCSDR_IMU_ICM20948, .imu_i2c_address = 0x68,
+    .c6_rom_sdio_recovery = true,
+    /* 2026-11-01 physical poses: up +X, clockwise -Y, inverted -X, left +Y. */
+    .imu_axes_verified = true,
+    .imu_display_x_from_sensor = {1.0f, 0.0f, 0.0f},
+    /* View must counter-rotate the physical board; human check rejected +Y. */
+    .imu_display_y_from_sensor = {0.0f, -1.0f, 0.0f},
     .has_radio = true, .radio_part = "SX1262",
     .radio_sclk = 2, .radio_mosi = 3, .radio_miso = 4, .radio_cs = 24, .radio_busy = 6,
     .radio_spi_hz = 10000000,

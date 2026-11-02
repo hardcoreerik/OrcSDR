@@ -140,6 +140,15 @@ bool init(int32_t initial_degrees) {
   s_sensor_started = sensor_started;
   s_initialized = true;
   portEXIT_CRITICAL(&s_state_mux);
+  if(profile && profile->imu_axes_verified) {
+    orcsdr_orientation_config_t axes{};
+    for(unsigned i=0;i<3;++i) {
+      axes.display_x_from_sensor[i]=profile->imu_display_x_from_sensor[i];
+      axes.display_y_from_sensor[i]=profile->imu_display_y_from_sensor[i];
+    }
+    axes.dwell_ms=500;axes.hysteresis_deg=12.0f;
+    (void)configure_profile_axes(&axes,true);
+  }
   return true;
 }
 

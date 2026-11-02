@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "keyboard_input.hpp"
+#include "text_editor_layout.hpp"
 
 namespace orcsdr::text_editor {
 
@@ -11,6 +12,10 @@ enum class Result { none, changed, accepted, cancelled };
 
 void begin(const char* title, const char* initial, size_t maximum_length,
            bool masked, const char* accept_label);
+// Changes the area owned by the editor without changing its draft or owner generation.
+// The caller redraws after a successful structural viewport change.
+bool set_viewport(Rect owned_area);
+const Layout& layout();
 bool active();
 // Identifies the current begin() owner, including after close().
 uint64_t generation();

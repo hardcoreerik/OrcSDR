@@ -214,7 +214,7 @@ class FailureReportingTests(unittest.TestCase):
             fake=SimpleNamespace(Tab5=Mock(side_effect=ports),find_key=lambda path:'ab'*32)
             with patch.object(sys,'argv',self.argv(output)), \
                     patch.object(device.subprocess,'check_output',return_value='test-head'), \
-                    patch.dict(sys.modules,{'tab5_ft8':fake,'tab5_ft8_shot':SimpleNamespace(snap_png=Mock())}), \
+                    patch.dict(sys.modules,{'tab5_ft8':fake,'screenshot':SimpleNamespace(screenshot=Mock())}), \
                     contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(device.main(),1)
             report=json.loads((output/'report.json').read_text())
@@ -241,7 +241,7 @@ class FailureReportingTests(unittest.TestCase):
                 console = io.StringIO()
                 with patch.object(sys, 'argv', self.argv(output)), \
                         patch.object(device.subprocess, 'check_output', return_value='test-head'), \
-                        patch.dict(sys.modules, {'tab5_ft8': fake, 'tab5_ft8_shot': SimpleNamespace(snap_png=Mock())}), \
+                        patch.dict(sys.modules, {'tab5_ft8': fake, 'screenshot': SimpleNamespace(screenshot=Mock())}), \
                         contextlib.redirect_stdout(console):
                     self.assertEqual(device.main(), 1)
                 evidence = console.getvalue() + (output / 'report.json').read_text() + (output / 'serial.log').read_text()

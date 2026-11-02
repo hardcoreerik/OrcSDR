@@ -70,6 +70,18 @@ class OrientationPolicyTest(unittest.TestCase):
         changed = self.lib.orcsdr_orientation_policy_update(c.byref(state), *xyz, ms, c.byref(out))
         return out.value if changed else None
 
+    def test_lilygo_measured_four_pose_samples(self):
+        # Physical board samples, 2026-11-01; fresh policy per settled pose.
+        for angle, xyz in [(0, (.825, .004, -.511)),
+                           (270, (.021, -1.003, -.063)),
+                           (180, (-.994, -.039, -.186)),
+                           (90, (-.065, .973, -.153))]:
+            state = self.make_policy(initial=(angle + 180) % 360)
+            state.config.display_y_from_sensor[1] = -1
+            self.lib.orcsdr_orientation_policy_enable(c.byref(state), True)
+            emitted = [self.tick(state, xyz, ms) for ms in range(100, 900, 50)]
+            self.assertIn(angle, emitted)
+
     def test_auto_rotation_defaults_off_and_requires_stable_dwell(self):
         state = self.make_policy(dwell=500)
         self.assertFalse(state.enabled)

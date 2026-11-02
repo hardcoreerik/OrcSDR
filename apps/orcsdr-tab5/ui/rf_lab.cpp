@@ -37,6 +37,7 @@ constexpr uint32_t kBiasHoldMs = 2000;
 constexpr size_t kActionCapacity = 16;
 constexpr size_t kMaxReadings = 3600;
 constexpr size_t kScreenPixels = 1280u * 720u;
+layout::View g_view = layout::make_view({0, 0, 1280, 720});
 
 std::atomic<bool> g_active{false};
 Runtime g_runtime{};
@@ -46,15 +47,20 @@ Page g_page = Page::live;
 uint8_t g_origin_screen = 0, g_origin_tab = 0;
 bool g_keep_settings = false;
 bool g_dirty = true;
+bool g_layout_dirty = true;
 uint32_t g_last_draw_ms = 0;
 uint32_t g_last_revision = 0;
 // PSRAM (~24 KB): a UI copy refreshed from rf_analysis every 100 ms. PSRAM
 // starts zeroed, so initialize() gives it its defaults (-160 dBFS levels)
 // once at boot, before enter() or an RTL_LAB command can read it.
 EXT_RAM_BSS_ATTR rf_analysis::Snapshot g_snapshot{};
-M5Canvas g_waterfall(&M5.Display);
+M5Canvas g_waterfall_primary(&M5.Display);
+M5Canvas g_waterfall_secondary(&M5.Display);
+M5Canvas* g_waterfall = &g_waterfall_primary;
+M5Canvas* g_waterfall_candidate = &g_waterfall_secondary;
 EXT_RAM_BSS_ATTR plot::WaterfallClock g_waterfall_clock;
 bool g_waterfall_ready = false;
+int g_waterfall_width = 0, g_waterfall_height = 0;
 Action g_actions[kActionCapacity]{};
 size_t g_action_read = 0, g_action_write = 0;
 bool g_pressed = false;
@@ -64,6 +70,7 @@ bool g_bias_ack = false;
 bool g_bias_hold_fired = false;
 char g_message[96]{};
 uint32_t g_message_until_ms = 0;
+bool g_message_drawn = false;
 uint32_t g_bias_cli_ack_until_ms = 0;
 storage::FileSystem* g_filesystem = nullptr;
 
@@ -141,6 +148,29 @@ bool inside(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
   return x >= bx && x < bx + bw && y >= by && y < by + bh;
 }
 
+bool inside(int32_t x, int32_t y, layout::Rect r) {
+  return inside(x, y, r.x, r.y, r.w, r.h);
+}
+
+bool ensure_waterfall() {
+  const auto r = g_view.waterfall_data;
+  if (r.w <= 0 || r.h <= 0) return false;
+  if (g_waterfall_ready && r.w == g_waterfall_width && r.h == g_waterfall_height) return true;
+  // Allocate into the inactive canvas first. A failed viewport resize keeps
+  // the current waterfall and its dimensions valid for the caller's fallback.
+  g_waterfall_candidate->setColorDepth(16);
+  if (!g_waterfall_candidate->createSprite(r.w, r.h)) return false;
+  g_waterfall_candidate->fillScreen(kBg);
+  M5Canvas* previous = g_waterfall;
+  g_waterfall = g_waterfall_candidate;
+  g_waterfall_candidate = previous;
+  previous->deleteSprite();
+  g_waterfall_width = r.w;
+  g_waterfall_height = r.h;
+  g_waterfall_ready = true;
+  return true;
+}
+
 void text(const char* value, int x, int y, uint16_t color = TFT_WHITE,
           uint8_t size = 2, textdatum_t datum = middle_left) {
   M5.Display.setFont(nullptr);
@@ -158,6 +188,7 @@ void panel(int x, int y, int w, int h, uint16_t color = kCyan) {
 void message(const char* value) {
   strlcpy(g_message, value, sizeof(g_message));
   g_message_until_ms = millis() + 3500;
+  g_message_drawn = false;
   g_dirty = true;
 }
 
@@ -562,40 +593,45 @@ const char* page_name(Page value) {
 }
 
 void draw_header() {
-  M5.Display.fillRect(0, 0, 1280, 80, kBg);
-  panel(18, 14, 104, 52, kCyan);
-  text("BACK", 70, 40, kCyan, 2, middle_center);
-  text("RF LAB", 148, 39, kGreen, 4);
-  text("LIVE RECEIVER TEST BENCH", 360, 42, kCyan, 2);
+  const auto& v = g_view;
+  M5.Display.fillRect(v.bounds.x, v.bounds.y, v.bounds.w, v.back.y - v.bounds.y + v.back.h + 4, kBg);
+  panel(v.back.x, v.back.y, v.back.w, v.back.h, kCyan);
+  text("BACK", v.back.x + v.back.w / 2, v.back.y + v.back.h / 2, kCyan, 2, middle_center);
+  text("RF LAB", v.title.x, v.title.y + v.title.h / 2, kGreen, v.bounds.w == 1280 ? 4 : 3);
+  if (v.bounds.w == 1280)
+    text("LIVE RECEIVER TEST BENCH", 360, 42, kCyan, 2);
   const Runtime r = runtime();
+  const char* status = r.bias_tee ? "BIAS ON" : layout::source_label(r.source_available, v.status.w);
   if (r.bias_tee) {
-    M5.Display.fillRoundRect(1010, 14, 246, 52, 8, kRed);
-    text("BIAS ON", 1133, 40, TFT_WHITE, 3, middle_center);
+    M5.Display.fillRoundRect(v.status.x, v.status.y, v.status.w, v.status.h, 8, kRed);
+    text("BIAS ON", v.status.x + v.status.w / 2, v.status.y + v.status.h / 2, TFT_WHITE, 2, middle_center);
   } else {
-    panel(1080, 14, 176, 52, r.source_available ? kGreen : TFT_ORANGE);
-    text(r.source_available ? "SOURCE LIVE" : "NO SOURCE", 1168, 40,
-         r.source_available ? kGreen : TFT_ORANGE, 2, middle_center);
+    panel(v.status.x, v.status.y, v.status.w, v.status.h, r.source_available ? kGreen : TFT_ORANGE);
+    text(status, v.status.x + v.status.w / 2,
+         v.status.y + v.status.h / 2, r.source_available ? kGreen : TFT_ORANGE, 2, middle_center);
   }
 }
 
 void draw_footer() {
-  const int width = 304;
   for (int i = 0; i < 4; ++i) {
-    const int x = 20 + i * 312;
+    const auto r = g_view.tabs[i];
     const auto candidate = static_cast<Page>(i);
-    panel(x, kFooterY, width, kFooterH, candidate == g_page ? kGreen : kCyan);
-    text(page_name(candidate), x + width / 2, kFooterY + kFooterH / 2,
+    panel(r.x, r.y, r.w, r.h, candidate == g_page ? kGreen : kCyan);
+    text(layout::tab_label(static_cast<size_t>(i), r.w), r.x + r.w / 2, r.y + r.h / 2,
          candidate == g_page ? kGreen : TFT_WHITE, 2, middle_center);
   }
 }
 
 void draw_static_live() {
-  panel(kPlotX, kPlotY, kPlotW, kPlotH);
-  M5.Display.drawRect(kPlotX + 10, kPlotY + 12, kPlotW - 20, kSpectrumH, kGrid);
-  text("SPECTRUM", kPlotX + 22, kPlotY + 28, kCyan, 1);
-  M5.Display.drawRect(kPlotX + 10, kWaterfallY, kPlotW - 20, kWaterfallH, kGrid);
-  text("WATERFALL", kPlotX + 22, kWaterfallY + 16, kCyan, 1);
-  panel(kSideX, kPlotY, kSideW, kPlotH);
+  const auto& v = g_view;
+  panel(v.live_plot.x, v.live_plot.y, v.live_plot.w, v.live_plot.h);
+  M5.Display.drawRect(v.spectrum.x, v.spectrum.y, v.spectrum.w, v.spectrum.h, kGrid);
+  const int label_inset = v.bounds.w == 1280 && v.bounds.h == 720 ? 12 : 8;
+  const uint8_t label_size = v.bounds.w == 1280 && v.bounds.h == 720 ? 1 : 2;
+  text("SPECTRUM", v.spectrum.x + label_inset, v.spectrum.y + label_inset + 4, kCyan, label_size);
+  M5.Display.drawRect(v.waterfall.x, v.waterfall.y, v.waterfall.w, v.waterfall.h, kGrid);
+  text("WATERFALL", v.waterfall.x + label_inset, v.waterfall.y + label_inset + 4, kCyan, label_size);
+  panel(v.metrics.x, v.metrics.y, v.metrics.w, v.metrics.h);
 }
 
 void draw_button(int x, int y, int w, const char* label, uint16_t color = kCyan) {
@@ -603,7 +639,68 @@ void draw_button(int x, int y, int w, const char* label, uint16_t color = kCyan)
   text(label, x + w / 2, y + 24, color, 2, middle_center);
 }
 
-void draw_static_controls() {
+void draw_button(layout::Rect r, const char* label, uint16_t color = kCyan) {
+  panel(r.x, r.y, r.w, r.h, color);
+  text(label, r.x + r.w / 2, r.y + r.h / 2, color, 2, middle_center);
+}
+
+void draw_static_controls(bool redraw_panel = true) {
+  if (g_view.bounds.w != 1280 || g_view.bounds.h != 720) {
+    const auto r = g_view.controls;
+    if (redraw_panel) panel(r.x, r.y, r.w, r.h);
+    const Runtime state = runtime();
+    char value[112];
+    snprintf(value, sizeof(value), "Driver %.16s | %.22s | %.14s", state.driver_version,
+             state.device, state.health);
+    if (g_view.bounds.h > g_view.bounds.w) {
+      M5.Display.fillRect(r.x + 4, r.y + 2, r.w - 8, 18, kPanel);
+      text(value, r.x + 8, r.y + 10, kMuted, 1);
+    } else {
+      snprintf(value, sizeof(value), "%.6f MHz | %.3f MS/s | %d ppm | gain %.1f dB | bias %s",
+               state.frequency_hz / 1.0e6, state.sample_rate_sps / 1.0e6, state.ppm,
+               state.gain_tenth_db / 10.0, state.bias_tee ? "ON" : "OFF");
+      M5.Display.fillRect(r.x + 4, r.y + r.h - 28, r.w - 8, 20, kPanel);
+      text(value, r.x + 8, r.y + r.h - 18, kMuted, 1);
+    }
+    const char* labels[] = {"-100 kHz", "+100 kHz", "NEXT RATE", "NEXT BW",
+                            "-1 PPM", "+1 PPM", "AUTO / MANUAL", "+ GAIN",
+                            "AGC TOGGLE", "BIAS ON / OFF", "KEEP / RESTORE"};
+    for (size_t i = 0; i < g_view.control_buttons.size(); ++i) {
+      uint16_t color = kCyan;
+      if ((i == 0 || i == 1) && !has_cap(ESP_RTL_SDR_CAP_RETUNE)) color = kMuted;
+      if ((i == 2) && !has_cap(ESP_RTL_SDR_CAP_CONTINUOUS_RATE)) color = kMuted;
+      if ((i == 3) && !bandwidth_selectable(state)) color = kMuted;
+      if ((i == 4 || i == 5) && !has_cap(ESP_RTL_SDR_CAP_FREQ_CORRECTION)) color = kMuted;
+      if (i == 6 && !has_cap(state.gain_mode == GainMode::automatic
+                                  ? ESP_RTL_SDR_CAP_GAIN : ESP_RTL_SDR_CAP_GAIN_AUTO)) color = kMuted;
+      if (i == 7 && !has_cap(ESP_RTL_SDR_CAP_GAIN)) color = kMuted;
+      if (i == 8 && !has_cap(ESP_RTL_SDR_CAP_RTL_AGC)) color = kMuted;
+      if (i == 9) color = state.bias_tee ? kRed : (has_cap(ESP_RTL_SDR_CAP_BIAS_TEE) ? TFT_ORANGE : kMuted);
+      if (i == 10) color = g_keep_settings ? kGreen : kCyan;
+      const auto b = g_view.control_buttons[i];
+      if (g_view.bounds.h > g_view.bounds.w) {
+        if (i < 8 && (i % 2) == 0) {
+          const int row = static_cast<int>(i / 2);
+          char caption[80];
+          if (row == 0) snprintf(caption, sizeof(caption), "FREQUENCY %.6f MHz", state.frequency_hz / 1.0e6);
+          else if (row == 1) snprintf(caption, sizeof(caption), "RATE %.3f MS/s | BW %s", state.sample_rate_sps / 1.0e6,
+                                      state.tuner_bandwidth_applied_hz ? "FIXED" : "AUTO");
+          else if (row == 2) snprintf(caption, sizeof(caption), "CORRECTION %+d PPM", state.ppm);
+          else snprintf(caption, sizeof(caption), "TUNER GAIN %s %.1f dB",
+                        state.gain_mode == GainMode::automatic ? "AUTO" : "MANUAL",
+                        state.gain_tenth_db / 10.0);
+          M5.Display.fillRect(b.x, b.y - 19, b.w, 16, kPanel);
+          text(caption, b.x + 2, b.y - 14, kCyan, 1);
+        } else if (i == 8 || i == 9 || i == 10) {
+          const char* captions[] = {"RTL DIGITAL AGC", "BIAS TEE", "EXIT BEHAVIOR"};
+          M5.Display.fillRect(b.x, b.y - 19, b.w, 16, kPanel);
+          text(captions[i - 8], b.x + 2, b.y - 14, kCyan, 1);
+        }
+      }
+      draw_button(b, labels[i], color);
+    }
+    return;
+  }
   panel(22, 96, 1236, 530);
   text("Driver controls report accepted requests and software shadows.", 44, 122,
        TFT_ORANGE, 2);
@@ -676,6 +773,42 @@ void draw_static_controls() {
 }
 
 void draw_static_measurements() {
+  if (g_view.bounds.w != 1280 || g_view.bounds.h != 720) {
+    const auto p = g_view.controls;
+    panel(p.x, p.y, p.w, p.h);
+    text("MEASUREMENT SESSION", p.x + 12, p.y + 18, kCyan, 2);
+    text("Live shared analyzer | snapshots and timed runs", p.x + 12, p.y + 44,
+         TFT_WHITE, 1);
+    const char* labels[] = {"SNAPSHOT", "RUN 10 SEC", "ADD MARKER", "STOP"};
+    for (size_t i = 0; i < g_view.measurement_buttons.size(); ++i)
+      draw_button(g_view.measurement_buttons[i], labels[i]);
+    char line[112];
+    if (g_run_active) {
+      snprintf(line, sizeof(line), "Run %s  readings=%u%s", g_run_duration_ms ? "TIMED" : "MANUAL",
+               static_cast<unsigned>(g_reading_count), g_run_paused ? "  PAUSED: SOURCE LOST" : "");
+      const bool compact = p.h < 500;
+      text(line, p.x + 12, p.y + (compact ? 122 : 330), g_run_paused ? TFT_ORANGE : kGreen, 2);
+    } else {
+      text(g_save_busy.load(std::memory_order_acquire) ? "Saving session to SD..." :
+           (!g_save_finished.load(std::memory_order_acquire) ? "No active run" :
+            (g_save_ok.load(std::memory_order_acquire) ? "Last save complete" : "Last save FAILED")),
+           p.x + 12, p.y + (p.h < 500 ? 122 : 330),
+           g_save_busy.load(std::memory_order_acquire) ? kCyan : TFT_WHITE, 2);
+    }
+    if (g_reference.configured) {
+      snprintf(line, sizeof(line), "Reference %.6f MHz  %.1f dBm  path %.1f dB%s",
+               g_reference.frequency_hz / 1.0e6, static_cast<double>(g_reference.source_dbm),
+               static_cast<double>(g_reference.path_loss_db),
+               g_reference.calibrated ? "  ESTIMATED dBm ENABLED" : "");
+      text(line, p.x + 12, p.y + (p.h < 500 ? 158 : 374), g_reference.calibrated ? kGreen : kCyan, 1);
+    } else {
+      text("No reference source configured; measurements are dBFS.", p.x + 12,
+           p.y + (p.h < 500 ? 158 : 374),
+           TFT_ORANGE, 1);
+    }
+    text("Guided recipes: RTL_LAB RECIPE LIST", p.x + 12, p.y + (p.h < 500 ? 184 : 410), kCyan, 1);
+    return;
+  }
   panel(22, 96, 1236, 530);
   text("MEASUREMENT SESSION", 48, 128, kCyan, 3);
   text("Snapshots and timed 5 Hz runs use the live shared analyzer.", 48, 174,
@@ -711,6 +844,25 @@ void draw_static_measurements() {
 }
 
 void draw_static_records() {
+  if (g_view.bounds.w != 1280 || g_view.bounds.h != 720) {
+    const auto p = g_view.controls;
+    panel(p.x, p.y, p.w, p.h);
+    text("RF LAB RECORDS", p.x + 12, p.y + 24, kCyan, 2);
+    text(g_filesystem ? "SD storage ready" : "SD storage unavailable", p.x + 12, p.y + 58,
+         g_filesystem ? kGreen : TFT_ORANGE, 2);
+    text("Completed sessions: /orcsdr/rf_lab/<session>/", p.x + 12, p.y + 92, TFT_WHITE, 1);
+    text("RTL_LAB RECORDS LIST or existing SD export commands", p.x + 12, p.y + 122, kMuted, 1);
+    const bool compact = p.h < 500;
+    int y = p.y + (compact ? 132 : 160);
+    const int line_h = compact ? 22 : 28;
+    for (size_t i = 0; i < g_recent_count && y < p.y + p.h - 14; ++i) {
+      char line[80];
+      snprintf(line, sizeof(line), "%.31s  %.31s", g_recent_ids[i], g_recent_results[i]);
+      text(line, p.x + 12, y, i == 0 ? kGreen : TFT_WHITE, 1);
+      y += line_h;
+    }
+    return;
+  }
   panel(22, 96, 1236, 530);
   text("RF LAB RECORDS", 48, 128, kCyan, 3);
   text(g_filesystem ? "SD storage ready" : "SD storage unavailable", 48, 180,
@@ -727,14 +879,55 @@ void draw_static_records() {
   }
 }
 
+void draw_message(uint32_t now_ms) {
+  const bool visible = g_message_until_ms && static_cast<int32_t>(g_message_until_ms - now_ms) > 0;
+  const auto r = g_view.message;
+  if (visible) {
+    if (g_message_drawn) return;
+    M5.Display.fillRoundRect(r.x, r.y, r.w, r.h, 7, kPanel);
+    M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 7, TFT_ORANGE);
+    char shown[96];
+    const int max_chars = std::max(1, (r.w - 12) / 12);
+    snprintf(shown, sizeof(shown), "%.*s", std::min(max_chars, static_cast<int>(sizeof(shown) - 1)), g_message);
+    text(shown, r.x + r.w / 2, r.y + r.h / 2, TFT_ORANGE, 2, middle_center);
+    g_message_drawn = true;
+    return;
+  }
+  if (!g_message_drawn) return;
+  M5.Display.fillRect(r.x, r.y, r.w, r.h, kBg);
+  g_message_drawn = false;
+  if (g_view.bounds.w == 1280 && g_view.bounds.h == 720) draw_header();
+}
+
 void draw_page() {
   M5.Display.fillScreen(kBg);
+  g_message_drawn = false;
   draw_header();
   if (g_page == Page::live) draw_static_live();
   else if (g_page == Page::controls) draw_static_controls();
   else if (g_page == Page::measurements) draw_static_measurements();
   else draw_static_records();
   draw_footer();
+  draw_message(millis());
+  g_dirty = false;
+  g_layout_dirty = false;
+}
+
+void draw_updated_region() {
+  if (g_layout_dirty) {
+    draw_page();
+    return;
+  }
+  if (g_page == Page::controls && (g_view.bounds.w != 1280 || g_view.bounds.h != 720)) {
+    draw_static_controls(false);
+  } else if (g_page == Page::controls || g_page == Page::measurements || g_page == Page::records) {
+    const auto r = g_view.controls;
+    M5.Display.fillRect(r.x, r.y, r.w, r.h, kBg);
+    if (g_page == Page::controls) draw_static_controls();
+    else if (g_page == Page::measurements) draw_static_measurements();
+    else draw_static_records();
+  }
+  draw_message(millis());
   g_dirty = false;
 }
 
@@ -749,40 +942,50 @@ uint16_t waterfall_color(float db, float floor) {
 
 void draw_live_dynamic() {
   if (!g_snapshot.bins) return;
-  constexpr int x0 = kPlotX + 11, y0 = kPlotY + 13, width = kPlotW - 22;
-  M5.Display.fillRect(x0, y0, width, kSpectrumH - 2, kBg);
-  for (int i = 1; i < 8; ++i) M5.Display.drawFastVLine(x0 + i * width / 8, y0, kSpectrumH - 2, kGrid);
-  for (int i = 1; i < 5; ++i) M5.Display.drawFastHLine(x0, y0 + i * (kSpectrumH - 2) / 5, width, kGrid);
+  const bool legacy = g_view.bounds.w == 1280 && g_view.bounds.h == 720;
+  const auto s = g_view.spectrum_data;
+  const auto wrect = g_view.waterfall_data;
+  const auto m = layout::inset(g_view.metrics, legacy ? 10 : 8);
+  const int x0 = s.x, y0 = s.y, width = s.w, height = s.h;
+  if (width <= 0 || height <= 0) return;
+  M5.Display.fillRect(x0, y0, width, height, kBg);
+  for (int i = 1; i < 8; ++i) M5.Display.drawFastVLine(x0 + i * width / 8, y0, height, kGrid);
+  for (int i = 1; i < 5; ++i) M5.Display.drawFastHLine(x0, y0 + i * height / 5, width, kGrid);
   const float floor = std::clamp(g_snapshot.noise - 15.0f, -140.0f, -45.0f);
-  int px = x0, py = y0 + kSpectrumH - 3;
+  int px = x0, py = y0 + height - 1;
   for (int x = 0; x < width; ++x) {
     const size_t bin = std::min<size_t>(g_snapshot.bins - 1,
                                         static_cast<size_t>(x) * g_snapshot.bins / width);
-    const int y = y0 + kSpectrumH - 3 - static_cast<int>(
-        std::clamp((g_snapshot.live[bin] - floor) / 75.0f, 0.0f, 1.0f) * (kSpectrumH - 18));
+    const int y = y0 + height - 1 - static_cast<int>(
+        std::clamp((g_snapshot.live[bin] - floor) / 75.0f, 0.0f, 1.0f) * std::max(1, height - 8));
     if (x) M5.Display.drawLine(px, py, x0 + x, y, kCyan);
     px = x0 + x; py = y;
   }
   const int rows = g_waterfall_clock.rows(millis(), 2);
-  if (g_waterfall_ready && rows) {
-    g_waterfall.setScrollRect(0, 0, width, kWaterfallH - 2, kBg);
-    g_waterfall.scroll(0, -rows);
-    for (int x = 0; x < width; ++x) {
+  if (g_waterfall_ready && rows && wrect.w > 0 && wrect.h > 0) {
+    const int wf_width = std::min({wrect.w, width, g_waterfall_width});
+    const int wf_height = std::min(wrect.h, g_waterfall_height);
+    const int bounded_rows = std::min(rows, wf_height);
+    g_waterfall->setScrollRect(0, 0, wf_width, wf_height, kBg);
+    g_waterfall->scroll(0, -bounded_rows);
+    for (int x = 0; x < wf_width; ++x) {
       const size_t bin = std::min<size_t>(g_snapshot.bins - 1,
                                           static_cast<size_t>(x) * g_snapshot.bins / width);
-      g_waterfall.drawFastVLine(x, kWaterfallH - 2 - rows, rows,
+      g_waterfall->drawFastVLine(x, wf_height - bounded_rows, bounded_rows,
                                waterfall_color(g_snapshot.live[bin], floor));
     }
-    g_waterfall.pushSprite(x0, kWaterfallY + 1);
+    g_waterfall->pushSprite(wrect.x, wrect.y);
   }
 
-  M5.Display.fillRect(kSideX + 10, kPlotY + 10, kSideW - 20, kPlotH - 20, kPanel);
+  M5.Display.fillRect(m.x, m.y, m.w, m.h, kPanel);
   char line[80];
-  int y = kPlotY + 38;
+  const bool portrait = g_view.bounds.h > g_view.bounds.w && g_view.bounds.w != 1280;
+  const int row_h = legacy ? 48 : std::max(23, m.h / 10);
+  int y = m.y + (portrait ? 10 : 18);
   auto metric = [&](const char* label, const char* value, uint16_t color = TFT_WHITE) {
-    text(label, kSideX + 22, y, kMuted, 1);
-    text(value, kSideX + kSideW - 22, y, color, 2, middle_right);
-    y += 48;
+    text(label, m.x + 8, y, kMuted, m.w >= 350 ? 2 : 1);
+    text(value, m.x + m.w - 8, y, color, 2, middle_right);
+    y += row_h;
   };
   snprintf(line, sizeof(line), "%.6f MHz", g_snapshot.strongest_frequency_hz / 1.0e6);
   metric("PEAK FREQUENCY", line, kGreen);
@@ -856,23 +1059,24 @@ bool bias_voltage_pass(float initial_off, float on, float final_off) {
 }
 
 void handle_tap(int32_t x, int32_t y) {
-  if (inside(x, y, 18, 14, 104, 52)) { request_close(); return; }
-  if (y >= kFooterY) {
-    const int slot = static_cast<int>(std::clamp<int32_t>((x - 20) / 312, 0, 3));
+  if (inside(x, y, g_view.back)) { request_close(); return; }
+  for (size_t slot = 0; slot < g_view.tabs.size(); ++slot) {
+    if (!inside(x, y, g_view.tabs[slot])) continue;
     g_page = static_cast<Page>(slot);
     g_dirty = true;
+    g_layout_dirty = true;
     return;
   }
   if (g_page == Page::measurements) {
-    if (inside(x, y, 48, 214, 250, 48)) {
+    if (inside(x, y, g_view.measurement_buttons[0])) {
       message(snapshot_session(nullptr) ? "Snapshot queued for SD" : "Snapshot unavailable");
-    } else if (inside(x, y, 316, 214, 250, 48)) {
+    } else if (inside(x, y, g_view.measurement_buttons[1])) {
       message(start_run(10) ? "10 second run started" : "Run unavailable");
-    } else if (inside(x, y, 584, 214, 250, 48) && g_run_active &&
+    } else if (inside(x, y, g_view.measurement_buttons[2]) && g_run_active &&
                g_reading_count < kMaxReadings) {
       g_readings[g_reading_count++] = make_reading(millis(), "TOUCH MARKER", true);
       message("Marker recorded");
-    } else if (inside(x, y, 852, 214, 250, 48)) {
+    } else if (inside(x, y, g_view.measurement_buttons[3])) {
       message(finish_run(g_run_paused ? "INCONCLUSIVE_SOURCE_LOST" : "RECORDED")
                   ? "Run queued for SD" : "No active run");
     }
@@ -881,26 +1085,26 @@ void handle_tap(int32_t x, int32_t y) {
   }
   if (g_page != Page::controls) return;
   const Runtime r = runtime();
-  if (inside(x, y, 700, 154, 120, 48) && has_cap(ESP_RTL_SDR_CAP_RETUNE)) queue(ActionKind::tune_hz, std::max<int32_t>(500000, r.frequency_hz - 100000));
-  else if (inside(x, y, 832, 154, 120, 48) && has_cap(ESP_RTL_SDR_CAP_RETUNE)) queue(ActionKind::tune_hz, std::min<int32_t>(1766000000, r.frequency_hz + 100000));
-  else if (inside(x, y, 700, 214, 120, 48) && has_cap(ESP_RTL_SDR_CAP_CONTINUOUS_RATE)) queue(ActionKind::sample_rate_sps, next_rate(r.sample_rate_sps));
-  else if (inside(x, y, 832, 214, 120, 48) && bandwidth_selectable(r))
+  if (inside(x, y, g_view.control_buttons[0]) && has_cap(ESP_RTL_SDR_CAP_RETUNE)) queue(ActionKind::tune_hz, std::max<int32_t>(500000, r.frequency_hz - 100000));
+  else if (inside(x, y, g_view.control_buttons[1]) && has_cap(ESP_RTL_SDR_CAP_RETUNE)) queue(ActionKind::tune_hz, std::min<int32_t>(1766000000, r.frequency_hz + 100000));
+  else if (inside(x, y, g_view.control_buttons[2]) && has_cap(ESP_RTL_SDR_CAP_CONTINUOUS_RATE)) queue(ActionKind::sample_rate_sps, next_rate(r.sample_rate_sps));
+  else if (inside(x, y, g_view.control_buttons[3]) && bandwidth_selectable(r))
     queue(ActionKind::tuner_bandwidth_hz, static_cast<int32_t>(next_bandwidth(r)));
-  else if (inside(x, y, 700, 274, 120, 48) && has_cap(ESP_RTL_SDR_CAP_FREQ_CORRECTION)) queue(ActionKind::ppm, std::max(-200, r.ppm - 1));
-  else if (inside(x, y, 832, 274, 120, 48) && has_cap(ESP_RTL_SDR_CAP_FREQ_CORRECTION)) queue(ActionKind::ppm, std::min(200, r.ppm + 1));
-  else if (inside(x, y, 700, 334, 120, 48) &&
+  else if (inside(x, y, g_view.control_buttons[4]) && has_cap(ESP_RTL_SDR_CAP_FREQ_CORRECTION)) queue(ActionKind::ppm, std::max(-200, r.ppm - 1));
+  else if (inside(x, y, g_view.control_buttons[5]) && has_cap(ESP_RTL_SDR_CAP_FREQ_CORRECTION)) queue(ActionKind::ppm, std::min(200, r.ppm + 1));
+  else if (inside(x, y, g_view.control_buttons[6]) &&
            has_cap(r.gain_mode == GainMode::automatic ? ESP_RTL_SDR_CAP_GAIN
                                                       : ESP_RTL_SDR_CAP_GAIN_AUTO)) queue(ActionKind::gain_mode, r.gain_mode == GainMode::automatic ? 1 : 0);
-  else if (inside(x, y, 832, 334, 120, 48) && has_cap(ESP_RTL_SDR_CAP_GAIN))
+  else if (inside(x, y, g_view.control_buttons[7]) && has_cap(ESP_RTL_SDR_CAP_GAIN))
     queue(ActionKind::gain_tenth_db, next_gain(r));
-  else if (inside(x, y, 700, 394, 252, 48) && has_cap(ESP_RTL_SDR_CAP_RTL_AGC)) queue(ActionKind::rtl_agc, r.rtl_agc ? 0 : 1);
-  else if (inside(x, y, 700, 454, 252, 48) && r.bias_tee && has_cap(ESP_RTL_SDR_CAP_BIAS_TEE)) queue(ActionKind::bias_tee, 0);
-  else if (inside(x, y, 700, 454, 252, 48) && !r.bias_tee && !g_bias_ack) {
+  else if (inside(x, y, g_view.control_buttons[8]) && has_cap(ESP_RTL_SDR_CAP_RTL_AGC)) queue(ActionKind::rtl_agc, r.rtl_agc ? 0 : 1);
+  else if (inside(x, y, g_view.control_buttons[9]) && r.bias_tee && has_cap(ESP_RTL_SDR_CAP_BIAS_TEE)) queue(ActionKind::bias_tee, 0);
+  else if (inside(x, y, g_view.control_buttons[9]) && !r.bias_tee && !g_bias_ack) {
     g_bias_ack = true;
     message(generic_blog_v3(r)
                 ? "V3/V3c ID is generic: bias circuit not guaranteed. No DC-short loads. HOLD 2 s"
                 : "Disconnect DC-short loads, then HOLD BIAS ON for 2 seconds");
-  } else if (inside(x, y, 700, 514, 252, 48)) {
+  } else if (inside(x, y, g_view.control_buttons[10])) {
     g_keep_settings = !g_keep_settings;
     g_dirty = true;
   }
@@ -978,18 +1182,14 @@ void set_runtime(const Runtime& value) {
 }
 
 bool enter(uint8_t origin_screen_value, uint8_t origin_tab_value) {
-  if (!g_waterfall_ready) {
-    g_waterfall.setColorDepth(16);
-    g_waterfall_ready = g_waterfall.createSprite(kPlotW - 22, kWaterfallH - 2) != nullptr;
-    if (!g_waterfall_ready) return false;
-    g_waterfall.fillScreen(kBg);
-  }
+  if (!ensure_waterfall()) return false;
   g_origin_screen = origin_screen_value;
   g_origin_tab = origin_tab_value;
   g_initial = runtime();
   g_keep_settings = false;
   g_bias_ack = false;
   g_page = Page::live;
+  g_layout_dirty = true;
   g_last_revision = 0;
   g_waterfall_clock.reset(millis());
   g_source_state_known = false;
@@ -1005,6 +1205,7 @@ bool enter(uint8_t origin_screen_value, uint8_t origin_tab_value) {
   rf_analysis::set_config(config);
   rf_analysis::set_enabled(true);
   g_dirty = true;
+  g_layout_dirty = true;
   draw_page();
   return true;
 }
@@ -1013,12 +1214,32 @@ void leave() {
   g_active.store(false, std::memory_order_release);
   rf_analysis::set_enabled(false);
   if (g_waterfall_ready) {
-    g_waterfall.deleteSprite();
+    g_waterfall->deleteSprite();
+    g_waterfall_candidate->deleteSprite();
     g_waterfall_ready = false;
+    g_waterfall_width = g_waterfall_height = 0;
   }
 }
 
 bool active() { return g_active.load(std::memory_order_acquire); }
+bool set_viewport(layout::Rect safe) {
+  if (safe.w <= 0 || safe.h <= 0) safe = {0, 0, 1280, 720};
+  const auto next = layout::make_view(safe);
+  if (next.bounds.x == g_view.bounds.x && next.bounds.y == g_view.bounds.y &&
+      next.bounds.w == g_view.bounds.w && next.bounds.h == g_view.bounds.h) return true;
+  const layout::View previous = g_view;
+  g_view = next;
+  if (active()) {
+    if (!ensure_waterfall()) {
+      g_view = previous;
+      return false;
+    }
+    g_waterfall_clock.reset(millis());
+  }
+  g_layout_dirty = true;
+  return true;
+}
+void draw() { if (active()) draw_page(); }
 uint8_t origin_screen() { return g_origin_screen; }
 uint8_t origin_tab() { return g_origin_tab; }
 Page page() { return g_page; }
@@ -1039,8 +1260,9 @@ void service_ui(uint32_t now_ms) {
     if (!r.source_available) g_loss_revision = g_snapshot.revision;
     draw_header();
     if (!r.source_available && g_page == Page::live) {
-      M5.Display.fillRect(kPlotX + 80, kPlotY + 235, kPlotW - 160, 72, 0x2104);
-      text("SOURCE LOST - PAUSED", kPlotX + kPlotW / 2, kPlotY + 271,
+      const auto s = g_view.spectrum;
+      M5.Display.fillRect(s.x + s.w / 8, s.y + s.h / 2 - 26, s.w * 3 / 4, 52, 0x2104);
+      text("SOURCE LOST - PAUSED", s.x + s.w / 2, s.y + s.h / 2,
            TFT_ORANGE, 3, middle_center);
     }
   }
@@ -1068,7 +1290,7 @@ void service_ui(uint32_t now_ms) {
     complete_timed_run();
     if (g_page == Page::measurements) g_dirty = true;
   }
-  if (g_dirty) draw_page();
+  if (g_dirty) draw_updated_region();
   if (now_ms - g_last_draw_ms >= plot::kSpectrumIntervalMs && rf_analysis::copy_snapshot(&g_snapshot) &&
       g_snapshot.revision != g_last_revision) {
     g_last_draw_ms = now_ms;
@@ -1076,8 +1298,9 @@ void service_ui(uint32_t now_ms) {
     if (g_page == Page::live) {
       draw_live_dynamic();
       if (!r.source_available) {
-        M5.Display.fillRect(kPlotX + 80, kPlotY + 235, kPlotW - 160, 72, 0x2104);
-        text("SOURCE LOST - PAUSED", kPlotX + kPlotW / 2, kPlotY + 271,
+        const auto s = g_view.spectrum;
+        M5.Display.fillRect(s.x + s.w / 8, s.y + s.h / 2 - 26, s.w * 3 / 4, 52, 0x2104);
+        text("SOURCE LOST - PAUSED", s.x + s.w / 2, s.y + s.h / 2,
              TFT_ORANGE, 3, middle_center);
       }
     }
@@ -1095,16 +1318,13 @@ void service_ui(uint32_t now_ms) {
       strlcpy(g_recipe, "NONE", sizeof(g_recipe));
     }
   }
-  if (g_message_until_ms && static_cast<int32_t>(g_message_until_ms - now_ms) > 0) {
-    M5.Display.fillRoundRect(260, 598, 760, 42, 7, kPanel);
-    M5.Display.drawRoundRect(260, 598, 760, 42, 7, TFT_ORANGE);
-    text(g_message, 640, 619, TFT_ORANGE, 2, middle_center);
-  }
+  draw_message(now_ms);
 }
 
 void handle_touch(int32_t x, int32_t y, bool pressed, uint32_t now_ms) {
   if (!active()) return;
-  const bool bias_button = g_page == Page::controls && inside(x, y, 700, 454, 252, 48);
+  const auto bias_rect = g_view.control_buttons[9];
+  const bool bias_button = g_page == Page::controls && inside(x, y, bias_rect);
   const Runtime r = runtime();
   if (pressed && !g_pressed) {
     g_pressed = true; g_press_x = x; g_press_y = y; g_press_ms = now_ms;
@@ -1112,7 +1332,7 @@ void handle_touch(int32_t x, int32_t y, bool pressed, uint32_t now_ms) {
     return;
   }
   if (pressed && g_pressed && bias_button &&
-      inside(g_press_x, g_press_y, 700, 454, 252, 48) && g_bias_ack && !r.bias_tee &&
+      inside(g_press_x, g_press_y, bias_rect) && g_bias_ack && !r.bias_tee &&
       !g_bias_hold_fired && now_ms - g_press_ms >= kBiasHoldMs) {
     g_bias_hold_fired = true;
     g_bias_ack = false;
@@ -1158,7 +1378,7 @@ bool process_command(const char* command, char* response, size_t response_size) 
     if (!parse_page(command + 13, &next)) {
       strlcpy(response, "RTL_LAB_ERROR page", response_size); return true;
     }
-    g_page = next; g_dirty = true;
+    g_page = next; g_dirty = true; g_layout_dirty = true;
     snprintf(response, response_size, "RTL_LAB_OK page=%s", page_name(next)); return true;
   }
   if (strcmp(command, "RTL_LAB SELF_CHECK") == 0) {

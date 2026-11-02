@@ -62,42 +62,43 @@ uint32_t g_drawn_bits = 0;     // the demodulated-bit counter as last painted (A
 // coordinates; the shim subtracts the sprite's origin.
 class Gfx {
  public:
-  void target_display() { t_ = &M5.Display; oy_ = 0; }
-  void target_sprite(lgfx::LovyanGFX* sprite, int origin_y) { t_ = sprite; oy_ = origin_y; }
+  void target_display() { t_ = &M5.Display; ox_ = 0; oy_ = 0; }
+  void target_sprite(lgfx::LovyanGFX* sprite, int origin_x, int origin_y) { t_ = sprite; ox_ = origin_x; oy_ = origin_y; }
   void setFont(const decltype(&fonts::DejaVu18) f) { t_->setFont(f); }
   void setFont(decltype(nullptr)) { t_->setFont(nullptr); }
   void setTextSize(float v) { t_->setTextSize(v); }
   void setTextDatum(textdatum_t d) { t_->setTextDatum(d); }
   void setTextColor(uint16_t c) { t_->setTextColor(c); }
   int textWidth(const char* s) { return t_->textWidth(s); }
-  void drawString(const char* s, int x, int y) { t_->drawString(s, x, y - oy_); }
-  void setClipRect(int x, int y, int w, int h) { t_->setClipRect(x, y - oy_, w, h); }
+  void drawString(const char* s, int x, int y) { t_->drawString(s, x - ox_, y - oy_); }
+  void setClipRect(int x, int y, int w, int h) { t_->setClipRect(x - ox_, y - oy_, w, h); }
   void clearClipRect() { t_->clearClipRect(); }
   void fillScreen(uint16_t c) { t_->fillScreen(c); }
-  void fillRect(int x, int y, int w, int h, uint16_t c) { t_->fillRect(x, y - oy_, w, h, c); }
-  void fillRoundRect(int x, int y, int w, int h, int r, uint16_t c) { t_->fillRoundRect(x, y - oy_, w, h, r, c); }
-  void drawRoundRect(int x, int y, int w, int h, int r, uint16_t c) { t_->drawRoundRect(x, y - oy_, w, h, r, c); }
-  void drawFastHLine(int x, int y, int w, uint16_t c) { t_->drawFastHLine(x, y - oy_, w, c); }
-  void drawFastVLine(int x, int y, int h, uint16_t c) { t_->drawFastVLine(x, y - oy_, h, c); }
-  void drawLine(int x0, int y0, int x1, int y1, uint16_t c) { t_->drawLine(x0, y0 - oy_, x1, y1 - oy_, c); }
-  void drawCircle(int x, int y, int r, uint16_t c) { t_->drawCircle(x, y - oy_, r, c); }
+  void fillRect(int x, int y, int w, int h, uint16_t c) { t_->fillRect(x - ox_, y - oy_, w, h, c); }
+  void fillRoundRect(int x, int y, int w, int h, int r, uint16_t c) { t_->fillRoundRect(x - ox_, y - oy_, w, h, r, c); }
+  void drawRoundRect(int x, int y, int w, int h, int r, uint16_t c) { t_->drawRoundRect(x - ox_, y - oy_, w, h, r, c); }
+  void drawFastHLine(int x, int y, int w, uint16_t c) { t_->drawFastHLine(x - ox_, y - oy_, w, c); }
+  void drawFastVLine(int x, int y, int h, uint16_t c) { t_->drawFastVLine(x - ox_, y - oy_, h, c); }
+  void drawLine(int x0, int y0, int x1, int y1, uint16_t c) { t_->drawLine(x0 - ox_, y0 - oy_, x1 - ox_, y1 - oy_, c); }
+  void drawCircle(int x, int y, int r, uint16_t c) { t_->drawCircle(x - ox_, y - oy_, r, c); }
   void fillTriangle(int x0, int y0, int x1, int y1, int x2, int y2, uint16_t c) {
-    t_->fillTriangle(x0, y0 - oy_, x1, y1 - oy_, x2, y2 - oy_, c);
+    t_->fillTriangle(x0 - ox_, y0 - oy_, x1 - ox_, y1 - oy_, x2 - ox_, y2 - oy_, c);
   }
 
  private:
   lgfx::LovyanGFX* t_ = &M5.Display;
-  int oy_ = 0;
+  int ox_ = 0, oy_ = 0;
 };
 Gfx G;
 
-// Everything below the shared header (context strip, content, tab bar) is one sprite: 1280 x 612 x 2 bytes
-// = 1.5 MB in PSRAM, allocated when the screen opens and released when it closes.
-constexpr int kRegionY = layout::kContext.y - 2;
-constexpr int kRegionH = layout::kScreenH - kRegionY;
+// Everything from the context strip to the viewport bottom is composed off-screen. Canvas dimensions are
+// the configured viewport width and remaining height, so narrow ports do not reserve a Tab5-sized buffer.
+int kRegionX = 0;
+int kRegionY = layout::kContext.y - 2;
+int kRegionH = layout::kScreenH - kRegionY;
 // Two sprites: a frame is composed in g_canvas (back) and compared with g_front (what the panel shows). Only the tiles
-// that differ are pushed; pushing the whole 1.5 MB frame is slow on the rotated panel and blocks touch. After a push the
-// two swap roles. Without the second sprite every frame is pushed whole.
+// that differ are pushed; the two swap roles after each presentation. Without the optional reference sprite,
+// each frame is pushed whole.
 M5Canvas* g_canvas = nullptr;
 M5Canvas* g_front = nullptr;
 bool g_canvas_ok = false;
@@ -304,16 +305,25 @@ const char* tune_text(const Snapshot& s) {
 
 // ---- header, context strip, tabs
 void draw_header() {
-  G.fillRect(0, 0, 1280, layout::kHeaderH, kBg);
+  const Rect& v = layout::kViewport;
+  G.fillRect(v.x, v.y, v.w, layout::kHeaderH, kBg);
   audio_header::draw_brand("ACARS");
   // Nothing is drawn in the shared status-bar reserve (x420..866, y12..66); only the rule below the header.
-  G.drawFastHLine(20, layout::kHeaderH - 1, 1240, kBorder);
+  G.drawFastHLine(v.x + 8, v.y + layout::kHeaderH - 1, v.w - 16, kBorder);
   if (g_header != nullptr) g_header();
 }
 
 void draw_context(const Snapshot& s) {
   const Rect& r = layout::kContext;
   Clip clip(r);
+  G.fillRect(r.x, r.y, r.w, r.h, kBg);
+  if (!(layout::kViewport == Rect{0, 0, 1280, 720})) {
+    char line[96], freq[24];
+    fmt_mhz(freq, sizeof(freq), s.requested_hz);
+    std::snprintf(line, sizeof(line), "%s  %s  %s MHz", s.source == SourceKind::demo ? "DEMO" : receiver_short(s.receiver), tune_text(s), freq);
+    fit(line, r.x + r.w / 2, r.y + r.h / 2, r.w - 12, s.source == SourceKind::demo ? kAmber : kCyan, f18, middle_center);
+    return;
+  }
   const bool demo = s.source == SourceKind::demo;
   G.fillRoundRect(r.x, r.y + 4, demo ? 150 : 90, 32, 8, demo ? kAmber : kPanel);
   text(demo ? "DEMO DATA" : "LIVE", r.x + (demo ? 75 : 45), r.y + 20, demo ? kBg : (s.receiver == ReceiverState::running ? kGreen : kMuted), f18, middle_center);
@@ -358,8 +368,8 @@ void tab_icon(int i, int x, int y, uint16_t c) {
 
 void draw_tabs() {
   static constexpr const char* labels[] = {"LIVE", "AIRCRAFT", "CHANNELS", "ACTIVITY", "ARCHIVE", "SETUP"};
-  G.fillRect(0, layout::kTabsY, 1280, 74, kBg);
-  G.drawFastHLine(0, layout::kTabsY, 1280, kBorder);
+  G.fillRect(layout::kViewport.x, layout::kTabsY, layout::kViewport.w, 74, kBg);
+  G.drawFastHLine(layout::kViewport.x, layout::kTabsY, layout::kViewport.w, kBorder);
   for (int i = 0; i < layout::kTabCount; ++i) {
     const Rect t = layout::tab(i);
     const bool sel = static_cast<int>(g_ui->view()) == i;
@@ -371,8 +381,13 @@ void draw_tabs() {
     }
     if (i) G.drawFastVLine(t.x, t.y, 74, kBorder);
     const uint16_t c = sel ? kCyan : TFT_LIGHTGREY;
-    tab_icon(i, t.x + 34, t.y + 38, c);
-    text(labels[i], t.x + 60, t.y + 39, c, f18);
+    if (layout::kViewport.w > 600) {
+      tab_icon(i, t.x + 34, t.y + 38, c);
+      text(labels[i], t.x + 60, t.y + 39, c, f18);
+    } else {
+      static constexpr const char* short_labels[] = {"LIVE", "AIR", "CHAN", "ACT", "ARCH", "SET"};
+      text(short_labels[i], t.x + t.w / 2, t.y + t.h / 2, c, f18, middle_center);
+    }
   }
 }
 
@@ -393,6 +408,63 @@ void integrity_cell(const MessageRecord& m, const Rect& cell, bool highlight) {
 void draw_live(const Snapshot& s) {
   const Rect& list = layout::kLiveList;
   card(list);
+  if (!(layout::kViewport == Rect{0, 0, 1280, 720})) {
+    const bool portrait = layout::kViewport.h > layout::kViewport.w;
+    text("RECENT MESSAGES", list.x + 12, list.y + 18, kCyan, f18);
+    if (!portrait) {
+      G.drawFastHLine(list.x + 8, list.y + 32, list.w - 16, kBorder);
+      for (size_t i = 0; i < std::min(s.message_count, layout::kLiveVisibleRows); ++i) {
+        const MessageRecord& m = s.messages[i];
+        const Rect row = layout::live_row(static_cast<int>(i));
+        focus_nav::note(row.x, row.y, row.w, row.h);
+        G.fillRect(row.x, row.y, row.w, row.h - 1, i % 2 ? kPanel : kBg);
+        const uint16_t c = m.integrity == Integrity::crc_corrected ? kAmber : kGreen;
+        char label[32];
+        std::snprintf(label, sizeof(label), "%s  %s  %s", m.tail[0] ? m.tail : "UNKNOWN",
+                      m.flight[0] ? m.flight : "--", m.label[0] ? m.label : "--");
+        fit(label, row.x + 8, row.y + 14, row.w - 16, c, f18);
+        fit(m.has_text ? m.preview : "(no text)", row.x + 8, row.y + 38, row.w - 16,
+            m.has_text ? TFT_WHITE : kMuted, f18);
+      }
+      if (s.message_count == 0) text("WAITING FOR VERIFIED BLOCKS", list.x + list.w / 2,
+                                     list.y + list.h / 2, kMuted, f18, middle_center);
+    } else {
+      for (size_t i = 0; i < std::min(s.message_count, layout::kLiveVisibleRows); ++i) {
+        const MessageRecord& m = s.messages[i];
+        const Rect row = layout::live_row(static_cast<int>(i));
+        focus_nav::note(row.x, row.y, row.w, row.h);
+        G.fillRect(row.x, row.y + 1, row.w, row.h - 2, i % 2 ? kPanel : kBg);
+        char first[32];
+        std::snprintf(first, sizeof(first), "%s  %s  %s", m.tail[0] ? m.tail : "UNKNOWN",
+                      m.flight[0] ? m.flight : "--", m.label[0] ? m.label : "--");
+        fit(first, row.x + 8, row.y + 19, row.w - 16, kCyan, f18);
+        fit(m.has_text ? m.preview : "(no text)", row.x + 8, row.y + 49, row.w - 16,
+            m.has_text ? TFT_WHITE : kMuted, f18);
+      }
+      if (s.message_count == 0) text("WAITING FOR VERIFIED BLOCKS", list.x + list.w / 2,
+                                     list.y + list.h / 2, kMuted, f18, middle_center);
+    }
+    const Rect& st = layout::kLiveStatus;
+    card(st);
+    if (!portrait) {
+      char status[96];
+      std::snprintf(status, sizeof(status), "%s  |  %u MSG  |  %u FIX",
+                    receiver_short(s.receiver), static_cast<unsigned>(s.messages_total),
+                    static_cast<unsigned>(s.corrected_total));
+      fit(status, st.x + st.w / 2, st.y + st.h / 2, st.w - 16, receiver_color(s.receiver), f18, middle_center);
+    } else {
+      char status[96], freq[24];
+      fmt_mhz(freq, sizeof(freq), s.requested_hz);
+      std::snprintf(status, sizeof(status), "%s / %s MHz",receiver_short(s.receiver),freq);
+      fit(status,st.x+st.w/2,st.y+22,st.w-16,receiver_color(s.receiver),f18,middle_center);
+      std::snprintf(status,sizeof(status),"%u verified / %u repaired",static_cast<unsigned>(s.messages_total),static_cast<unsigned>(s.corrected_total));
+      fit(status,st.x+st.w/2,st.y+48,st.w-16,kMuted,f18,middle_center);
+    }
+    button(layout::kLiveNavUp, "PREVIOUS", false, s.message_offset > 0);
+    button(layout::kLiveNavDown, "NEXT", false,
+           s.message_offset + layout::kLiveVisibleRows < s.matching_count);
+    return;
+  }
   {
     Clip clip(list);
     static constexpr struct { const char* t; int x; } cols[] = {
@@ -459,7 +531,7 @@ void draw_live(const Snapshot& s) {
   {
     Clip clip(nav);
     char range[64];
-    const size_t first = s.matching_count ? s.message_offset + 1 : 0;
+  const size_t first = s.matching_count ? s.message_offset + 1 : 0;
     std::snprintf(range, sizeof(range), "%u-%u of %u%s", static_cast<unsigned>(first),
                   static_cast<unsigned>(s.message_offset + s.message_count), static_cast<unsigned>(s.matching_count),
                   s.prefs.filter == MessageFilter::corrected_only ? "  (REPAIRED ONLY)" : "");
@@ -496,6 +568,137 @@ void field(const Rect& card_rect, int row, const char* k, const char* v, uint16_
 void draw_detail(const Snapshot& s) {
   const MessageRecord& m = g_ui->detail_record();
   const bool held = g_ui->detail_held(*g_model);
+  if (!(layout::kViewport == Rect{0, 0, 1280, 720})) {
+    const bool portrait = layout::kViewport.h > layout::kViewport.w;
+    card(layout::kDetailBar);
+    button(layout::kDetailBack, "< BACK", false, true);
+    button(layout::kDetailNewer, "NEWER", false, g_model->neighbor_seq(m.seq, true) != 0);
+    button(layout::kDetailOlder, "OLDER", false, g_model->neighbor_seq(m.seq, false) != 0);
+    {
+      Clip clip(layout::kDetailBar);
+      text("MESSAGE DETAIL", layout::kDetailBar.x + layout::kDetailBar.w / 2,
+           layout::kDetailBar.y + layout::kDetailBar.h / 2, m.source == SourceKind::demo ? kAmber : TFT_WHITE,
+           f18, middle_center);
+    }
+
+    char values[10][64]{};
+    const char* keys[] = {"AIRCRAFT", "FLIGHT", "MODE", "LABEL", "BLOCK ID", "ACK", "FREQ", "RECEIVED", "BLOCK END", "INTEGRITY"};
+    std::snprintf(values[0], sizeof(values[0]), "%s", m.tail[0] ? m.tail : "UNKNOWN");
+    std::snprintf(values[1], sizeof(values[1]), "%s", m.flight[0] ? m.flight : "NOT IN BLOCK");
+    std::snprintf(values[2], sizeof(values[2]), "%c", m.mode ? m.mode : '?');
+    std::snprintf(values[3], sizeof(values[3]), "%s", m.label[0] ? m.label : "--");
+    std::snprintf(values[4], sizeof(values[4]), "%c", m.block_id ? m.block_id : '?');
+    if (m.acknowledgement == 0x15) std::snprintf(values[5], sizeof(values[5]), "NAK");
+    else if (m.acknowledgement >= 0x20 && m.acknowledgement < 0x7f)
+      std::snprintf(values[5], sizeof(values[5]), "%c", m.acknowledgement);
+    else std::snprintf(values[5], sizeof(values[5]), "?");
+    char mhz[16], received[24];
+    fmt_mhz(mhz, sizeof(mhz), m.frequency_hz);
+    std::snprintf(values[6], sizeof(values[6]), "%s MHz", m.frequency_hz ? mhz : "--");
+    fmt_time(received, sizeof(received), m.time_valid, m.utc_epoch, m.uptime_ms);
+    std::snprintf(values[7], sizeof(values[7]), m.time_valid ? "%s UTC" : "%s SINCE BOOT", received);
+    std::snprintf(values[8], sizeof(values[8]), "%s", end_marker_name(m.end_marker));
+    if (m.integrity == Integrity::crc_corrected)
+      std::snprintf(values[9], sizeof(values[9]), "CRC OK AFTER %u-BIT REPAIR", m.corrected_bits);
+    else std::snprintf(values[9], sizeof(values[9]), "CRC VERIFIED");
+
+    const Rect& fr = layout::kDetailFields;
+    card(fr);
+    if (portrait) {
+      Clip clip(fr);
+      text("PARSED ACARS FIELDS", fr.x + 12, fr.y + 18, kCyan, f18);
+      for (int i = 0; i < 10; ++i) {
+        const int y = fr.y + 42 + i * 19;
+        text(keys[i], fr.x + 12, y, kMuted, f18);
+        fit(values[i], fr.x + fr.w - 12, y, 250, i == 0 ? kCyan : TFT_WHITE, f18, middle_right);
+      }
+      if (!held) text("COPY: NO LONGER IN HISTORY", fr.x + 12, fr.y + fr.h - 10, kAmber, f18);
+    } else {
+      Clip clip(fr);
+      for (int i = 0; i < 10; ++i) {
+        const int col = i % 5, row = i / 5;
+        const int cell_w = (fr.w - 16) / 5;
+        const int cell_x = fr.x + 8 + col * cell_w;
+        const int cell_y = fr.y + 21 + row * 28;
+        const int key_w = cell_w / 3;
+        fit(keys[i], cell_x + 2, cell_y, key_w - 4, kMuted, f18);
+        fit(values[i], cell_x + cell_w - 2, cell_y,
+            cell_w - key_w - 4, i == 0 ? kCyan : TFT_WHITE, f18, middle_right);
+      }
+      if (!held) text("COPY NOT IN HISTORY", fr.x + fr.w - 12, fr.y + fr.h - 8, kAmber, f18, middle_right);
+    }
+
+    const Rect& raw = layout::kDetailRaw;
+    card(raw);
+    {
+      Clip clip(raw);
+      char title[64];
+      std::snprintf(title, sizeof(title), "RAW %s  %u TEXT B  /  %u BLOCK B  /  %s",
+                    s.prefs.format == TextFormat::plain ? "PLAIN" : "ESCAPED", m.text_length,
+                    m.raw_bytes, m.source == SourceKind::demo ? "DEMO" : "LIVE RF");
+      fit(title, raw.x + 10, raw.y + 24, layout::kDetailRawUp.x - raw.x - 20, kCyan, f18);
+    }
+    button(layout::kDetailRawUp, "UP", false, g_ui->detail_line() > 0);
+    button(layout::kDetailRawDown, "DOWN", false,
+           g_ui->detail_line_count() > g_ui->detail_line() + static_cast<size_t>(layout::kDetailLines));
+    {
+      Clip clip(layout::kDetailRawText);
+      if (!s.prefs.show_raw_text) {
+        text("RAW TEXT HIDDEN", layout::kDetailRawText.x, layout::kDetailRawText.y + 12, kMuted, f18);
+      } else if (g_ui->detail_text_length() == 0) {
+        text(m.has_text ? "(EMPTY)" : "NO TEXT IN THIS BLOCK", layout::kDetailRawText.x,
+             layout::kDetailRawText.y + 12, kMuted, f18);
+      } else {
+        for (int i = 0; i < layout::kDetailLines; ++i) {
+          const char* start = nullptr;
+          size_t len = 0;
+          if (!g_ui->detail_line_at(g_ui->detail_line() + static_cast<size_t>(i), &start, &len)) break;
+          char line[128];
+          len = std::min(len, sizeof(line) - 1);
+          std::memcpy(line, start, len);
+          line[len] = '\0';
+          text(line, layout::kDetailRawText.x, layout::kDetailRawText.y + i * layout::kDetailLineH + 12,
+               TFT_WHITE, mono);
+        }
+      }
+    }
+    const Rect& interp_rect = layout::kDetailInterp;
+    if (interp_rect.w > 0 && interp_rect.h > 0) {
+      Clip clip(interp_rect);
+      Interpretation interp{};
+      const bool decoded = interpret(m, interp);
+      if (portrait) {
+        text("APPLICATION INTERPRETATION", interp_rect.x + 12, interp_rect.y + 18, kCyan, f18);
+        if (m.has_interpretation) {
+          paragraph(m.interpretation, {interp_rect.x + 12, interp_rect.y + 30, interp_rect.w - 24,
+                                       interp_rect.h - 34}, TFT_WHITE, 3);
+        } else if (decoded) {
+          const Rect summary_rect{interp_rect.x + 12, interp_rect.y + 30, interp_rect.w - 24,
+                                  interp_rect.h - 34};
+          // Reserve a full three-line headline band so wrapped headlines can
+          // never overlap the first decoded line below it.
+          const int headline_band_h = 3 * 24;
+          paragraph(interp.headline,
+                    {summary_rect.x, summary_rect.y, summary_rect.w,
+                     std::min(headline_band_h, summary_rect.h)},
+                    interp.decoded ? kGreen : kAmber, 3);
+          if (interp.line_count && summary_rect.h > headline_band_h) {
+            const Rect line_rect{summary_rect.x, summary_rect.y + headline_band_h,
+                                 summary_rect.w, summary_rect.h - headline_band_h};
+            paragraph(interp.lines[0], line_rect, TFT_WHITE, 3);
+          }
+        } else {
+          text("NOT SUPPLIED", interp_rect.x + 12, interp_rect.y + 56, kMuted, f18);
+        }
+      } else {
+        const char* summary = m.has_interpretation ? m.interpretation :
+            (decoded && interp.headline[0] ? interp.headline : "NO APPLICATION INTERPRETATION");
+        fit(summary, interp_rect.x, interp_rect.y + interp_rect.h / 2,
+            interp_rect.w, m.has_interpretation || (decoded && interp.decoded) ? kGreen : kMuted, f18);
+      }
+    }
+    return;
+  }
   card(layout::kDetailBar);
   button(layout::kDetailBack, "< BACK", false, true);
   {
@@ -563,7 +766,8 @@ void draw_detail(const Snapshot& s) {
         const char* start;
         size_t len;
         if (!g_ui->detail_line_at(g_ui->detail_line() + static_cast<size_t>(i), &start, &len)) break;
-        char line[layout::kDetailCols + 1];
+        char line[128];
+        len = std::min(len, sizeof(line) - 1);
         std::memcpy(line, start, len);
         line[len] = '\0';
         text(line, layout::kDetailRawText.x, layout::kDetailRawText.y + i * layout::kDetailLineH + 13, TFT_WHITE, mono);
@@ -591,6 +795,95 @@ void draw_detail(const Snapshot& s) {
 
 // ---- AIRCRAFT
 void draw_aircraft(const Snapshot& s) {
+  if (!(layout::kViewport == Rect{0, 0, 1280, 720})) {
+    const bool portrait = layout::kViewport.h > layout::kViewport.w;
+    const Rect& list_rect = layout::kAcList;
+    card(layout::kAcControls);
+    button(layout::kAcSort, s.prefs.sort == AircraftSort::recent ? "SORT: RECENT" : "SORT: MOST MSGS", false, true);
+    button(layout::kAcUp, "PREV", false, s.aircraft_offset > 0);
+    button(layout::kAcDown, "NEXT", false, s.aircraft_offset + s.aircraft_count < s.aircraft_total);
+    char count[48];
+    std::snprintf(count, sizeof(count), "%u-%u / %u", static_cast<unsigned>(s.aircraft_count ? s.aircraft_offset + 1 : 0),
+                  static_cast<unsigned>(s.aircraft_offset + s.aircraft_count), static_cast<unsigned>(s.aircraft_total));
+    fit(count, layout::kAcCount.x + layout::kAcCount.w / 2,
+        layout::kAcCount.y + layout::kAcCount.h / 2, layout::kAcCount.w - 4, TFT_WHITE, f18, middle_center);
+
+    card(list_rect);
+    {
+      Clip clip(list_rect);
+      text("AIRCRAFT", list_rect.x + 12, list_rect.y + 18, kCyan, f18);
+      if (s.aircraft_count == 0) {
+        text("NO VERIFIED TAILS YET", list_rect.x + list_rect.w / 2, list_rect.y + list_rect.h / 2,
+             kMuted, f18, middle_center);
+      }
+    }
+    const bool selected = g_ui->selected_tail()[0] != '\0';
+    for (size_t i = 0; i < s.aircraft_count && i < layout::kAcVisibleRows; ++i) {
+      const AircraftRecord& a = s.aircraft[i];
+      const Rect row = layout::ac_row(static_cast<int>(i));
+      focus_nav::note(row.x, row.y, row.w, row.h);
+      const bool is_selected = selected && std::strcmp(a.tail, g_ui->selected_tail()) == 0;
+      Clip clip(row);
+      G.fillRoundRect(row.x, row.y + 1, row.w, row.h - 2, 6, is_selected ? kSelected : (i % 2 ? kPanel : kBg));
+      if (is_selected) G.drawRoundRect(row.x, row.y + 1, row.w, row.h - 2, 6, kGreen);
+      if (portrait) {
+        char first[48], second[72];
+        std::snprintf(first, sizeof(first), "%s  %s  %u MSG", a.tail[0] ? a.tail : "UNKNOWN",
+                      a.flight[0] ? a.flight : "--", static_cast<unsigned>(a.message_count));
+        char seen[16];
+        fmt_time(seen, sizeof(seen), a.time_valid, a.last_utc, a.last_seen_ms);
+        std::snprintf(second, sizeof(second), "%s  %s  %u FIX", a.last_label[0] ? a.last_label : "--", seen,
+                      static_cast<unsigned>(a.corrected_count));
+        fit(first, row.x + 8, row.y + 16, row.w - 16, is_selected ? kGreen : kCyan, f18);
+        fit(second, row.x + 8, row.y + 39, row.w - 16, kMuted, f18);
+      } else {
+        char label[64];
+        std::snprintf(label, sizeof(label), "%s  %s  %u MSG  %u FIX", a.tail[0] ? a.tail : "UNKNOWN",
+                      a.flight[0] ? a.flight : "--", static_cast<unsigned>(a.message_count),
+                      static_cast<unsigned>(a.corrected_count));
+        fit(label, row.x + 8, row.y + row.h / 2, row.w - 16,
+            is_selected ? kGreen : kCyan, f18);
+      }
+    }
+
+    const Rect& det = layout::kAcDetail;
+    card(det);
+    char title[48];
+    std::snprintf(title, sizeof(title), selected ? "RECENT: %s" : "RECENT MESSAGES", g_ui->selected_tail());
+    fit(title, det.x + 12, det.y + 18, det.w - 24, kCyan, f18);
+    const MessageRecord* messages[kAircraftRecentShown]{};
+    size_t total = 0;
+    const size_t n = selected ? g_model->aircraft_messages(g_ui->selected_tail(), messages,
+        layout::kAcMessageRows, g_ui->aircraft_message_offset(), &total) : 0;
+    if (!selected || n == 0) {
+      text(selected ? "NO HELD MESSAGES" : "SELECT AN AIRCRAFT ABOVE",
+           det.x + det.w / 2, det.y + det.h / 2, kMuted, f18, middle_center);
+    }
+    for (size_t j = 0; j < n; ++j) {
+      const MessageRecord& m = *messages[j];
+      const Rect row = layout::ac_msg_row(static_cast<int>(j));
+      focus_nav::note(row.x, row.y, row.w, row.h);
+      Clip clip(row);
+      G.fillRect(row.x, row.y + 1, row.w, row.h - 2, j % 2 ? kPanel : kBg);
+      if (m.integrity == Integrity::crc_corrected && s.prefs.highlight_corrected)
+        G.fillRect(row.x + 1, row.y + 2, 4, row.h - 4, kAmber);
+      char meta[40], time[16];
+      fmt_time(time, sizeof(time), m.time_valid, m.utc_epoch, m.uptime_ms);
+      std::snprintf(meta, sizeof(meta), "%s  %s  %s", time, m.label[0] ? m.label : "--",
+                    m.integrity == Integrity::crc_corrected && s.prefs.highlight_corrected ? "FIX" : "CRC OK");
+      fit(meta, row.x + 8, row.y + 17, row.w - 16,
+          m.integrity == Integrity::crc_corrected ? kAmber : TFT_WHITE, f18);
+      fit(m.has_text ? m.preview : "(no text)", row.x + 8, row.y + row.h - 17,
+          row.w - 16, kMuted, f18);
+    }
+    button(layout::kAcMsgUp, "PREV MSG", false, selected && g_ui->aircraft_message_offset() > 0);
+    button(layout::kAcMsgDown, "NEXT MSG", false,
+           selected && g_ui->aircraft_message_offset() + layout::kAcMessageRows < total);
+    if (layout::kAcNote.h > 0)
+      fit("POSITION / ALTITUDE / ADS-B CORRELATION: NOT AVAILABLE", layout::kAcNote.x,
+          layout::kAcNote.y + layout::kAcNote.h / 2, layout::kAcNote.w, kDim, f18);
+    return;
+  }
   const Rect& list = layout::kAcList;
   card(list);
   {
@@ -673,11 +966,12 @@ void draw_aircraft(const Snapshot& s) {
 
 // ---- CHANNELS
 void draw_channels(const Snapshot& s) {
+  const bool responsive = !(layout::kViewport == Rect{0, 0, 1280, 720});
   card(layout::kChList);
   char b[96];
   std::snprintf(b, sizeof(b), "REGION: %s  >", region_name(s.prefs.region));
   button(layout::kChRegion, b, false, true);
-  for (size_t i = 0; i < s.channel_count; ++i) {
+  for (size_t i = 0; i < std::min<size_t>(s.channel_count, layout::kChVisibleRows); ++i) {
     const ChannelRecord& c = s.channels[i];
     const Rect row = layout::ch_row(static_cast<int>(i));
     focus_nav::note(row.x, row.y, row.w, row.h);
@@ -685,12 +979,18 @@ void draw_channels(const Snapshot& s) {
     Clip clip(row);
     G.fillRoundRect(row.x, row.y + 2, row.w, row.h - 4, 6, sel ? kSelected : kPanel);
     G.drawRoundRect(row.x, row.y + 2, row.w, row.h - 4, 6, sel ? kGreen : kBorder);
-    fit(c.label, row.x + 14, row.y + 16, 360, sel ? kGreen : TFT_WHITE, f24);
-    fit(preset(s.prefs.region, i).source, row.x + 14, row.y + 36, 560, kMuted);
-    if (sel) text("REQUESTED", row.x + row.w - 14, row.y + 16, kGreen, f18, middle_right);
-    if (c.decoded_messages) {
+    if (responsive && layout::kViewport.h < layout::kViewport.w) {
+      fit(c.label, row.x + 12, row.y + row.h / 2, row.w * 55 / 100, sel ? kGreen : TFT_WHITE, f18);
+      fit(preset(s.prefs.region, i).source, row.x + row.w - 10, row.y + row.h / 2,
+          row.w * 42 / 100, kMuted, f18, middle_right);
+    } else {
+      fit(c.label, row.x + 14, row.y + std::min(16, row.h / 3), row.w * 60 / 100, responsive ? TFT_WHITE : (sel ? kGreen : TFT_WHITE), responsive ? f18 : f24);
+      fit(preset(s.prefs.region, i).source, row.x + 14, row.y + row.h * 2 / 3, row.w - 28, kMuted);
+    }
+    if (sel && !responsive) text("REQUESTED", row.x + row.w - 14, row.y + 16, kGreen, f18, middle_right);
+    if (c.decoded_messages && !responsive) {
       std::snprintf(b, sizeof(b), "%u DECODED", static_cast<unsigned>(c.decoded_messages));
-      text(b, row.x + row.w - 14, row.y + 36, kCyan, f18, middle_right);
+      text(b, row.x + row.w - 14, row.y + row.h * 2 / 3, kCyan, f18, middle_right);
     }
   }
   button(layout::kChCustomLabel, "CUSTOM", s.custom_active, false);
@@ -711,25 +1011,38 @@ void draw_channels(const Snapshot& s) {
     Clip clip(st);
     char f[16];
     fmt_mhz(f, sizeof(f), s.requested_hz);
-    text("REQUESTED CHANNEL", st.x + 16, st.y + 24, kCyan, f24);
-    std::snprintf(b, sizeof(b), "%s MHz", f);
-    text(b, st.x + 16, st.y + 80, TFT_WHITE, f40);
-    text("TUNE STATUS", st.x + 16, st.y + 134, kMuted);
-    fit(tune_text(s), st.x + st.w - 16, st.y + 134, 270, s.tune == TuneStatus::tuned ? kGreen : kAmber, f18, middle_right);
-    text("RECEIVING", st.x + 16, st.y + 170, kMuted);
-    text(s.caps.live_reception && s.receiver == ReceiverState::running ? "NOT MEASURED" : "NO", st.x + st.w - 16, st.y + 170, TFT_WHITE, f18, middle_right);
-    text("CARRIER / ACTIVITY", st.x + 16, st.y + 206, kMuted);
-    text("NOT MEASURED", st.x + st.w - 16, st.y + 206, kDim, f18, middle_right);
-    text("RECEIVER SESSION", st.x + 16, st.y + 242, kMuted);
-    text(receiver_short(s.receiver), st.x + st.w - 16, st.y + 242, receiver_color(s.receiver), f18, middle_right);
+    if (responsive && layout::kViewport.h < layout::kViewport.w) {
+      text("REQUESTED CHANNEL", st.x + 12, st.y + 18, kCyan, f18);
+      fit(f, st.x + 12, st.y + 50, st.w - 24, TFT_WHITE, f24);
+      text("TUNE", st.x + 12, st.y + 82, kMuted, f18);
+      fit(tune_text(s), st.x + st.w - 12, st.y + 82, st.w / 2, s.tune == TuneStatus::tuned ? kGreen : kAmber, f18, middle_right);
+    } else if (responsive) {
+      text("REQUESTED CHANNEL", st.x + 12, st.y + 18, kCyan, f18);
+      fit(f, st.x + st.w - 12, st.y + 18, st.w / 2, TFT_WHITE, f18, middle_right);
+      text("TUNE", st.x + 12, st.y + 48, kMuted, f18);
+      fit(tune_text(s), st.x + st.w - 12, st.y + 48, st.w / 2, s.tune == TuneStatus::tuned ? kGreen : kAmber, f18, middle_right);
+      text("RECEIVER", st.x + 12, st.y + 78, kMuted, f18);
+      fit(receiver_short(s.receiver), st.x + st.w - 12, st.y + 78, st.w / 2, receiver_color(s.receiver), f18, middle_right);
+    } else {
+      text("REQUESTED CHANNEL", st.x + 16, st.y + 24, kCyan, f24);
+      std::snprintf(b, sizeof(b), "%s MHz", f);
+      text(b, st.x + 16, st.y + 80, TFT_WHITE, f40);
+      text("TUNE STATUS", st.x + 16, st.y + 134, kMuted);
+      fit(tune_text(s), st.x + st.w - 16, st.y + 134, 270, s.tune == TuneStatus::tuned ? kGreen : kAmber, f18, middle_right);
+      text("RECEIVING", st.x + 16, st.y + 170, kMuted);
+      text(s.caps.live_reception && s.receiver == ReceiverState::running ? "NOT MEASURED" : "NO", st.x + st.w - 16, st.y + 170, TFT_WHITE, f18, middle_right);
+      text("CARRIER / ACTIVITY", st.x + 16, st.y + 206, kMuted);
+      text("NOT MEASURED", st.x + st.w - 16, st.y + 206, kDim, f18, middle_right);
+      text("RECEIVER SESSION", st.x + 16, st.y + 242, kMuted);
+      text(receiver_short(s.receiver), st.x + st.w - 16, st.y + 242, receiver_color(s.receiver), f18, middle_right);
+    }
   }
   const Rect& nt = layout::kChNotes;
   card(nt);
   Clip clip(nt);
-  text("SINGLE-CHANNEL DECODER", nt.x + 16, nt.y + 24, kCyan, f24);
-  paragraph("The list is a set of choices, not simultaneous reception. Choosing one only changes the request. "
-            "Multi-channel reception: NOT AVAILABLE.",
-            {nt.x + 16, nt.y + 44, nt.w - 32, 110}, kMuted, 4);
+  text("SINGLE-CHANNEL DECODER", nt.x + 12, nt.y + 18, kCyan, f18);
+  paragraph("Choosing a list item changes the request. Multi-channel reception is not available.",
+            {nt.x + 12, nt.y + 32, nt.w - 24, nt.h - 36}, kMuted, 4, f18);
 }
 
 // ---- ACTIVITY
@@ -737,9 +1050,19 @@ void tile(int i, const char* label, const char* value, const char* caption, uint
   const Rect r = layout::act_tile(i);
   card(r);
   Clip clip(r);
-  text(label, r.x + 14, r.y + 18, kMuted);
-  text(value, r.x + 14, r.y + 60, color, f40);
-  fit(caption, r.x + 14, r.y + 98, r.w - 24, kDim);
+  if (!(layout::kViewport == Rect{0, 0, 1280, 720}) && layout::kViewport.h > layout::kViewport.w) {
+    text(label, r.x + 8, r.y + 15, kMuted, f18);
+    fit(value, r.x + 8, r.y + 43, r.w - 16, color, f24);
+    fit(caption, r.x + 8, r.y + r.h - 12, r.w - 16, kDim, f18);
+  } else if (!(layout::kViewport == Rect{0, 0, 1280, 720})) {
+    text(label, r.x + 10, r.y + 15, kMuted, f18);
+    fit(value, r.x + 10, r.y + 45, r.w - 20, color, f24);
+    fit(caption, r.x + 10, r.y + r.h - 10, r.w - 20, kDim, f18);
+  } else {
+    text(label, r.x + 14, r.y + 18, kMuted);
+    text(value, r.x + 14, r.y + 60, color, f40);
+    fit(caption, r.x + 14, r.y + 98, r.w - 24, kDim);
+  }
 }
 
 void draw_activity(const Snapshot& s) {
@@ -763,14 +1086,25 @@ void draw_activity(const Snapshot& s) {
   tile(7, "UI QUEUE DROPS", b[7], "decoder events lost before display", s.queue_drops ? kRed : TFT_WHITE);
 
   const Rect& y = layout::kActYield;
+  if (!(layout::kViewport == Rect{0, 0, 1280, 720}) && layout::kViewport.h < layout::kViewport.w) {
+    if (y.h >= 20) {
+      Clip clip(y);
+      char summary[96];
+      std::snprintf(summary, sizeof(summary), "%s  |  SIGNAL METRICS NOT MEASURED",
+                    s.source == SourceKind::demo ? "DEMO DATA" : "LIVE SOURCE");
+      fit(summary, y.x + 8, y.y + y.h / 2, y.w - 16, kMuted, f18);
+    }
+    return;
+  }
   card(y);
   {
     Clip clip(y);
-    text("DECODE SUMMARY", y.x + 16, y.y + 24, kCyan, f24);
+    const bool responsive = !(layout::kViewport == Rect{0, 0, 1280, 720});
+    text("DECODE SUMMARY", y.x + 16, y.y + (responsive ? 18 : 24), kCyan, responsive ? f18 : f24);
     char v[48];
     int r = 0;
     auto row = [&](const char* k, const char* val, uint16_t c = TFT_WHITE) {
-      const int yy = y.y + 62 + r++ * 32;
+      const int yy = y.y + (responsive ? 38 : 62) + r++ * (responsive ? 21 : 32);
       text(k, y.x + 16, yy, kMuted);
       text(val, y.x + y.w - 16, yy, c, f18, middle_right);
     };
@@ -786,23 +1120,28 @@ void draw_activity(const Snapshot& s) {
     row("SOURCE", s.source == SourceKind::demo ? "DEMO (SYNTHETIC)" : "LIVE", s.source == SourceKind::demo ? kAmber : TFT_WHITE);
   }
   const Rect& g = layout::kActSignal;
+  if (g.h <= 0) return;
   card(g);
   Clip clip(g);
-  text("SIGNAL DIAGNOSTICS", g.x + 16, g.y + 24, kCyan, f24);
-  text("NOT AVAILABLE", g.x + 16, g.y + 74, kAmber, f24);
+  const bool responsive = !(layout::kViewport == Rect{0, 0, 1280, 720});
+  text("SIGNAL DIAGNOSTICS", g.x + 16, g.y + (responsive ? 18 : 24), kCyan, responsive ? f18 : f24);
+  text("NOT AVAILABLE", g.x + 16, g.y + (responsive ? 46 : 74), kAmber, responsive ? f18 : f24);
   paragraph("SNR, RSSI, carrier lock and symbol timing are not measured by the decoder yet, so nothing is estimated or drawn here. "
             "This space is reserved for them.",
-            {g.x + 16, g.y + 100, g.w - 32, 110}, kMuted, 4);
+            {g.x + 16, g.y + (responsive ? 62 : 100), g.w - 32, g.h - (responsive ? 68 : 100)}, kMuted, 4,
+            responsive ? f18 : f18);
 }
 
 // ---- ARCHIVE
 void draw_archive(const Snapshot& s) {
+  const bool responsive = !(layout::kViewport == Rect{0, 0, 1280, 720});
+  const bool portrait = layout::kViewport.h > layout::kViewport.w;
   const bool demo = s.source == SourceKind::demo;
   const bool browsable = demo || s.archive_available;      // the synthetic store, or the saved log
   card(layout::kArFilters);
   {
     Clip clip(layout::kArFilters);
-    text("FILTERS", layout::kArFilters.x + 16, layout::kArFilters.y + 24, kCyan, f24);
+    text("FILTERS", layout::kArFilters.x + 12, layout::kArFilters.y + 20, kCyan, responsive ? f18 : f24);
   }
   static constexpr const char* names[] = {"TAIL", "LABEL", "FLIGHT", "FREQUENCY", "TEXT SEARCH"};
   for (int i = 0; i < layout::kArFilterCount; ++i) {
@@ -812,11 +1151,16 @@ void draw_archive(const Snapshot& s) {
     G.fillRoundRect(r.x, r.y, r.w, r.h, 8, kPanel);
     G.drawRoundRect(r.x, r.y, r.w, r.h, 8, enabled ? kCyan : kDim);
     Clip clip(r);
-    text(names[i], r.x + 14, r.y + 18, kMuted);
     const char* v = !enabled ? (browsable ? "PLANNED" : "NEEDS ARCHIVE")
                     : i == 0 ? (g_ui->archive_query().tail[0] ? g_ui->archive_query().tail : "ANY")
                              : (g_ui->archive_query().label[0] ? g_ui->archive_query().label : "ANY");
-    text(v, r.x + 14, r.y + 42, enabled ? TFT_WHITE : kDim, f24);
+    if (!responsive || portrait || i < 2) {
+      text(names[i], r.x + 10, r.y + (responsive ? 12 : 18), kMuted, responsive ? f18 : f18);
+      fit(v, r.x + 10, r.y + (responsive ? 34 : 42), r.w - 20, enabled ? TFT_WHITE : kDim,
+          responsive ? f18 : f24);
+    } else {
+      fit(names[i], r.x + 8, r.y + r.h / 2, r.w - 16, kDim, f18);
+    }
   }
   button(layout::kArClear, "CLEAR FILTERS", false, browsable && (g_ui->archive_query().tail[0] || g_ui->archive_query().label[0]));
 
@@ -824,7 +1168,7 @@ void draw_archive(const Snapshot& s) {
   card(list, demo ? kAmber : kBorder);
   {
     Clip clip(list);
-    if (demo) {
+    if (demo && !responsive) {
       text("SYNTHETIC DEMO ARCHIVE - NOT STORED", list.x + 16, list.y + 22, kAmber, f24);
     } else if (s.archive_available) {
       char head[64];
@@ -833,22 +1177,28 @@ void draw_archive(const Snapshot& s) {
       const char* status = g_model->archive() ? g_model->archive()->status() : "";
       const bool saving = std::strcmp(status, "SAVING TO SD") == 0;
       text(status, list.x + list.w - 190, list.y + 22, saving ? kGreen : kAmber, f18, middle_right);
-    } else {
+    } else if (!responsive) {
       text("ARCHIVE", list.x + 16, list.y + 22, kCyan, f24);
+    } else {
+      text(demo ? "DEMO ARCHIVE" : "SAVED BLOCKS", list.x + 12, list.y + 22, demo ? kAmber : kCyan, f18);
     }
   }
-  if (!browsable) {
-    Clip clip(list);
-    text("ARCHIVE NOT AVAILABLE", list.x + list.w / 2, list.y + 200, TFT_WHITE, f24, middle_center);
-    paragraph("No archive source is attached. Messages are kept in memory only (last 48) and are lost at power-off.",
-              {list.x + 80, list.y + 240, list.w - 160, 150}, kMuted, 5);
-    return;
-  }
+  button(layout::kArUp, responsive ? "OLDER" : "UP", false, g_ui->archive_offset() > 0);
   size_t total = 0;
   const MessageRecord* rows[layout::kArRows];
-  const size_t n = g_model->archive_query(g_ui->archive_query(), g_ui->archive_offset(), rows, layout::kArRows, &total);
-  button(layout::kArUp, "UP", false, g_ui->archive_offset() > 0);
-  button(layout::kArDown, "DOWN", false, g_ui->archive_offset() + n < total);
+  const size_t n = browsable ? g_model->archive_query(g_ui->archive_query(), g_ui->archive_offset(), rows,
+      static_cast<size_t>(layout::kArVisibleRows), &total) : 0;
+  button(layout::kArDown, responsive ? "NEWER" : "DOWN", false, g_ui->archive_offset() + n < total);
+  if (!browsable) {
+    Clip clip(list);
+    text("ARCHIVE NOT AVAILABLE", list.x + list.w / 2, list.y + list.h / 2 - 12, TFT_WHITE,
+         responsive ? f18 : f24, middle_center);
+    paragraph("No archive source is attached. Messages are kept in memory only (last 48) and are lost at power-off.",
+              responsive ? Rect{list.x + 12, list.y + list.h / 2 + 12, list.w - 24, list.h / 2 - 16}
+                         : Rect{list.x + 80, list.y + 240, list.w - 160, 150},
+              kMuted, 5);
+    return;
+  }
   if (n == 0) {
     Clip clip(list);
     text("NO MATCHING MESSAGES", list.x + list.w / 2, list.y + 260, kMuted, f24, middle_center);
@@ -862,11 +1212,19 @@ void draw_archive(const Snapshot& s) {
     G.fillRect(row.x, row.y + 1, row.w, row.h - 2, i % 2 ? kPanel : kBg);
     char t[16];
     fmt_time(t, sizeof(t), m.time_valid, m.utc_epoch, m.uptime_ms);
-    text(t, row.x + 12, row.y + 18, m.time_valid ? TFT_WHITE : kMuted);
-    fit(m.tail[0] ? m.tail : "UNKNOWN", row.x + 130, row.y + 18, 120, kCyan);
-    fit(m.flight[0] ? m.flight : "--", row.x + 270, row.y + 18, 100, TFT_WHITE);
-    text(m.label[0] ? m.label : "--", row.x + 390, row.y + 18, TFT_WHITE);
-    fit(m.has_text ? m.preview : "(no text)", row.x + 12, row.y + 42, row.w - 24, kMuted);
+    if (responsive && portrait) {
+      fit(t, row.x + 8, row.y + 16, 74, m.time_valid ? TFT_WHITE : kMuted, f18);
+      fit(m.tail[0] ? m.tail : "UNKNOWN", row.x + 84, row.y + 16, 82, kCyan, f18);
+      fit(m.flight[0] ? m.flight : "--", row.x + 170, row.y + 16, 86, TFT_WHITE, f18);
+      fit(m.label[0] ? m.label : "--", row.x + row.w - 8, row.y + 16, 64, TFT_WHITE, f18, middle_right);
+      fit(m.has_text ? m.preview : "(no text)", row.x + 8, row.y + row.h - 12, row.w - 16, kMuted, f18);
+    } else {
+      text(t, row.x + 12, row.y + 18, m.time_valid ? TFT_WHITE : kMuted);
+      fit(m.tail[0] ? m.tail : "UNKNOWN", row.x + 130, row.y + 18, 120, kCyan);
+      fit(m.flight[0] ? m.flight : "--", row.x + 270, row.y + 18, 100, TFT_WHITE);
+      text(m.label[0] ? m.label : "--", row.x + 390, row.y + 18, TFT_WHITE);
+      fit(m.has_text ? m.preview : "(no text)", row.x + 12, row.y + 42, row.w - 24, kMuted);
+    }
     if (m.integrity == Integrity::crc_corrected && s.prefs.highlight_corrected)
       text("FIX", row.x + row.w - 12, row.y + 18, kAmber, f18, middle_right);
   }
@@ -879,9 +1237,19 @@ void setting(int item, const char* name, const char* value, const char* hint, bo
   G.fillRoundRect(r.x, r.y, r.w, r.h, 10, kPanel);
   G.drawRoundRect(r.x, r.y, r.w, r.h, 10, enabled ? kCyan : kDim);
   Clip clip(r);
-  text(name, r.x + 16, r.y + 20, kMuted);
-  fit(value, r.x + 16, r.y + 48, 330, enabled ? TFT_WHITE : kDim, f24);
-  fit(hint, r.x + r.w - 14, r.y + 48, 250, kDim, f18, middle_right);
+  const bool responsive = !(layout::kViewport == Rect{0, 0, 1280, 720});
+  if (responsive && layout::kViewport.h < layout::kViewport.w) {
+    fit(name, r.x + 10, r.y + r.h / 2, r.w * 48 / 100, kMuted, f18);
+    fit(value, r.x + r.w - 10, r.y + r.h / 2, r.w * 47 / 100, enabled ? TFT_WHITE : kDim, f18, middle_right);
+  } else if (responsive) {
+    fit(name, r.x + 10, r.y + 19, r.w - 20, kMuted, f18);
+    fit(value, r.x + 10, r.y + 49, r.w * 58 / 100, enabled ? TFT_WHITE : kDim, f18);
+    fit(hint, r.x + r.w - 10, r.y + 49, r.w * 36 / 100, kDim, f18, middle_right);
+  } else {
+    text(name, r.x + 16, r.y + 20, kMuted);
+    fit(value, r.x + 16, r.y + 48, 330, enabled ? TFT_WHITE : kDim, f24);
+    fit(hint, r.x + r.w - 14, r.y + 48, 250, kDim, f18, middle_right);
+  }
 }
 
 void draw_setup(const Snapshot& s) {
@@ -917,11 +1285,11 @@ void redraw_content(const Snapshot& s) {
 void paint_region(const Snapshot& s) {
   const bool sprite = g_canvas_ok;
   if (sprite) {
-    G.target_sprite(g_canvas, kRegionY);
+    G.target_sprite(g_canvas, kRegionX, kRegionY);
     g_canvas->fillSprite(kBg);
   } else {
     G.target_display();
-    G.fillRect(0, kRegionY, layout::kScreenW, kRegionH, kBg);
+    G.fillRect(kRegionX, kRegionY, layout::kScreenW, kRegionH, kBg);
   }
   const uint32_t t0 = now_us();
   draw_context(s);
@@ -954,7 +1322,7 @@ void paint_region(const Snapshot& s) {
     // Pushing a whole sprite takes about 0.8 s on the rotated panel (measured: ~1.2 M pixel/s). Most of the screen
     // changing means a deliberate page change, so draw it straight onto the display with the native primitives,
     // as the dashboard did originally; the composed sprite still becomes the reference for later partial pushes.
-    G.fillRect(0, kRegionY, layout::kScreenW, kRegionH, kBg);
+    G.fillRect(kRegionX, kRegionY, layout::kScreenW, kRegionH, kBg);
     draw_context(s);
     redraw_content(s);
     draw_tabs();
@@ -962,8 +1330,8 @@ void paint_region(const Snapshot& s) {
     g_paint.pixels = static_cast<uint32_t>(layout::kScreenW) * kRegionH;
   } else {
     for (size_t i = 0; i < count; ++i) {
-      M5.Display.setClipRect(rects[i].x, kRegionY + rects[i].y, rects[i].w, rects[i].h);
-      g_canvas->pushSprite(0, kRegionY);
+      M5.Display.setClipRect(kRegionX + rects[i].x, kRegionY + rects[i].y, rects[i].w, rects[i].h);
+      g_canvas->pushSprite(kRegionX, kRegionY);
     }
     M5.Display.clearClipRect();
     g_paint.partial_pushes += count ? 1u : 0u;
@@ -983,7 +1351,8 @@ void redraw_all() {
   focus_nav::clear();
   G.target_display();
   g_front_valid = false;                        // the panel may show another screen: push this frame whole
-  if (!g_canvas_ok) G.fillScreen(kBg);          // with a sprite the pushed frame replaces the old screen
+  if (!g_canvas_ok) G.fillRect(layout::kViewport.x, layout::kViewport.y,
+                               layout::kViewport.w, layout::kViewport.h, kBg);
   draw_header();
   paint_region(s);
   g_drawn_bits = s.stats.bits;
@@ -997,6 +1366,36 @@ void install(Model* model, Controller* controller, HeaderHook header_controls) {
   g_model = model;
   g_ui = controller;
   g_header = header_controls;
+  if (g_model) (void)g_model->set_visible_message_rows(layout::kLiveVisibleRows);
+  if (g_model) (void)g_model->set_visible_aircraft_rows(layout::kAcVisibleRows);
+}
+
+bool set_viewport(acars_ui::layout::Rect viewport) {
+  const acars_ui::layout::Rect previous = layout::kViewport;
+  if (!layout::set_viewport(viewport)) return false;
+  const audio_header::HeaderRect header_view{viewport.x, viewport.y, viewport.w, viewport.h};
+  if (!audio_header::set_viewport(header_view)) {
+    (void)layout::set_viewport(previous);
+    (void)audio_header::set_viewport({previous.x, previous.y, previous.w, previous.h});
+    return false;
+  }
+  focus_nav::set_viewport(M5.Display.width(), M5.Display.height());
+  if (g_model) (void)g_model->set_visible_message_rows(layout::kLiveVisibleRows);
+  if (g_model) (void)g_model->set_visible_aircraft_rows(layout::kAcVisibleRows);
+  if (g_ui) {
+    g_ui->reflow_detail();
+    if (g_model) g_ui->reflow_aircraft(*g_model);
+    if (g_model) g_ui->reflow_archive(*g_model);
+  }
+  kRegionX = viewport.x;
+  kRegionY = layout::kContext.y - 2;
+  kRegionH = viewport.y + viewport.h - kRegionY;
+  if (g_active) {
+    free_canvas();
+    (void)alloc_canvas();
+    redraw_all();
+  }
+  return true;
 }
 
 void enter() {

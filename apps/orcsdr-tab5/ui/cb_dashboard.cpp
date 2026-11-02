@@ -85,9 +85,11 @@ constexpr Rect kSetupPlus{1140, 3, 110, 52};
 constexpr Rect kSetupValue{880, 3, 250, 52};
 
 Snapshot g_snapshot{};
+DashboardLayout g_layout = make_layout({0, 0, 1280, 720});
 bool g_active = false;
 Tab g_tab = Tab::listen;
 size_t g_log_page = 0;
+size_t g_setup_page = 0;
 uint32_t g_activity_drawn_ms = 0;
 uint16_t g_activity_signature = 0;
 float g_bar_drawn[kChannelCount]{};
@@ -128,6 +130,11 @@ void button(const Rect& rect, const char* label, bool selected = false, bool ena
 }
 
 Rect control_rect(int column, int row) {
+  if (!g_layout.legacy) {
+    const int columns = g_layout.portrait ? 3 : 6;
+    const auto r = g_layout.control[row * columns + column];
+    return {r.x, r.y, r.w, r.h};
+  }
   return {kControlX + column * (kControlW + kControlGap),
           kControlY + row * (kControlH + 12), kControlW, kControlH};
 }
@@ -142,10 +149,17 @@ constexpr int kControlCount = 12;
 
 Rect control_rect(Control control) {
   const int index = static_cast<int>(control);
+  if (!g_layout.legacy)
+    return control_rect(index % (g_layout.portrait ? 3 : 6),
+                        index / (g_layout.portrait ? 3 : 6));
   return control_rect(index % 4, index / 4);
 }
 
 Rect bar_slot(size_t channel) {
+  if (!g_layout.legacy) {
+    const auto r = g_layout.listen_channel[channel];
+    return {r.x,r.y,r.w,r.h};
+  }
   const int x0 = kStrip.x + 8 + static_cast<int>(channel * (kStrip.w - 16) / kChannelCount);
   const int x1 = kStrip.x + 8 +
                  static_cast<int>((channel + 1) * (kStrip.w - 16) / kChannelCount);
@@ -153,6 +167,7 @@ Rect bar_slot(size_t channel) {
 }
 
 Rect grid_cell(size_t channel) {
+  if(!g_layout.legacy) {const auto r=g_layout.channel_cell[channel];return {r.x,r.y,r.w,r.h};}
   const int column = static_cast<int>(channel % kGridCols);
   const int row = static_cast<int>(channel / kGridCols);
   return {kGridX + column * kCellW, kGridY + row * kCellH, kCellW - 8, kCellH - 8};
@@ -162,7 +177,12 @@ Rect setup_rect(const Rect& base, int row) {
   return {base.x, kSetupY + row * kSetupRowH + base.y, base.w, base.h};
 }
 
-Rect log_row(int row) { return {24, kLogRowY + row * kLogRowH, 1232, kLogRowH - 8}; }
+int activity_rows() {return g_layout.legacy?kLogRows:g_layout.activity_row_count;}
+Rect activity_rect(LayoutRect r) {return {r.x,r.y,r.w,r.h};}
+Rect log_row(int row) {
+  if(!g_layout.legacy) return activity_rect(g_layout.activity_row[row]);
+  return {24,kLogRowY+row*kLogRowH,1232,kLogRowH-8};
+}
 
 constexpr Rect kLogPrev{24, 130, 80, 52};
 constexpr Rect kLogNext{240, 130, 80, 52};
@@ -197,22 +217,36 @@ uint16_t state_color() {
 
 void draw_header() {
   audio_header::draw_brand("CB SCANNER");
-  M5.Display.drawFastVLine(350, 18, 58, kCyan);
-  text("CB RADIO", 390, 42, TFT_WHITE, 4, middle_left);
+  if (g_layout.legacy) {
+    M5.Display.drawFastVLine(350, 18, 58, kCyan);
+    text("CB RADIO", 390, 42, TFT_WHITE, 4, middle_left);
+    M5.Display.drawFastHLine(20, 92, 1240, kGreen);
+  } else {
+    const auto& header = audio_header::layout();
+    if (header.status.w >= 110)
+      text("CB RADIO", header.status.x + 8, header.status.y + header.status.h / 2,
+           TFT_WHITE, 2, middle_left);
+    M5.Display.drawFastHLine(g_layout.viewport.x + 8, header.content_top - 4,
+                             g_layout.viewport.w - 16, kGreen);
+  }
   audio_header::draw_battery(g_snapshot.battery_percent);
   audio_header::draw_home_button();
   audio_header::draw_mute_button(g_snapshot.sound_enabled);
   audio_header::draw_visualizer_button(g_snapshot.running);
   audio_header::draw_settings_button();
-  M5.Display.drawFastHLine(20, 92, 1240, kGreen);
 }
 
 void draw_tabs() {
   constexpr const char* tabs[kTabCount] = {"LISTEN", "SPECTRUM", "ACTIVITY", "CHANNELS",
                                            "SETUP"};
-  for (int i = 0; i < kTabCount; ++i)
-    button({i * kTabW + 4, kTabsY + 4, kTabW - 8, 82}, tabs[i],
-           static_cast<int>(g_tab) == i);
+  for (int i = 0; i < kTabCount; ++i) {
+    const auto r = g_layout.tab[i];
+    const Rect tab = g_layout.legacy ? Rect{i * kTabW + 4, kTabsY + 4, kTabW - 8, 82}
+                                     : Rect{r.x,r.y,r.w,r.h};
+    button(tab,
+           tabs[i], static_cast<int>(g_tab) == i, true,
+           2);
+  }
 }
 
 void draw_page_title(const char* title, const char* subtitle) {
@@ -224,24 +258,29 @@ void draw_page_title(const char* title, const char* subtitle) {
 // ---------------------------------------------------------------- LISTEN
 
 void draw_meter() {
-  M5.Display.fillRect(kMeter.x - 2, kMeter.y - 26, kMeter.w + 4, kMeter.h + 50, kPanel);
-  M5.Display.drawRoundRect(kMeter.x, kMeter.y, kMeter.w, kMeter.h, 6, kCyan);
+  const auto lr = g_layout.legacy ? LayoutRect{kMeter.x,kMeter.y,kMeter.w,kMeter.h}
+                                  : g_layout.listen_meter;
+  const Rect meter{lr.x,lr.y,lr.w,lr.h};
+  M5.Display.fillRect(meter.x, meter.y, meter.w, meter.h, kPanel);
+  M5.Display.fillRect(meter.x, meter.y + meter.h + 2, meter.w, 20, kPanel);
+  M5.Display.drawRoundRect(meter.x, meter.y, meter.w, meter.h, 6, kCyan);
   const float level = std::clamp((g_snapshot.signal_dbfs + 90.0f) / 84.0f, 0.0f, 1.0f);
-  const int filled = static_cast<int>(level * (kMeter.w - 4));
-  const int s9_x = static_cast<int>((54.0f / 84.0f) * (kMeter.w - 4));
+  const int filled = static_cast<int>(level * (meter.w - 4));
+  const int s9_x = static_cast<int>((54.0f / 84.0f) * (meter.w - 4));
   if (filled > 0) {
-    M5.Display.fillRect(kMeter.x + 2, kMeter.y + 3, std::min(filled, s9_x), kMeter.h - 6,
+    M5.Display.fillRect(meter.x + 2, meter.y + 3, std::min(filled, s9_x), meter.h - 6,
                         kGreen);
     if (filled > s9_x)
-      M5.Display.fillRect(kMeter.x + 2 + s9_x, kMeter.y + 3, filled - s9_x, kMeter.h - 6,
+      M5.Display.fillRect(meter.x + 2 + s9_x, meter.y + 3, filled - s9_x, meter.h - 6,
                           TFT_RED);
   }
   static constexpr const char* marks[] = {"1", "3", "5", "7", "9", "+20", "+40"};
   static constexpr float marks_db[] = {-84.0f, -72.0f, -60.0f, -48.0f, -36.0f, -16.0f, 4.0f};
   for (size_t i = 0; i < std::size(marks); ++i) {
-    const int x = kMeter.x + 2 +
-                  static_cast<int>((marks_db[i] + 90.0f) / 84.0f * (kMeter.w - 4));
-    text(marks[i], std::min(x, kMeter.x + kMeter.w - 12), kMeter.y - 12,
+    if (!g_layout.legacy) break;
+    const int x = meter.x + 2 +
+                  static_cast<int>((marks_db[i] + 90.0f) / 84.0f * (meter.w - 4));
+    text(marks[i], std::min(x, meter.x + meter.w - 12), meter.y - 12,
          i >= 5 ? TFT_RED : TFT_LIGHTGREY, 1);
   }
   int over = 0;
@@ -253,37 +292,67 @@ void draw_meter() {
   else
     snprintf(value, sizeof(value), "S%d  %.0f dBFS rel", s,
              static_cast<double>(g_snapshot.signal_dbfs));
-  text(value, kMeter.x, kMeter.y + kMeter.h + 12, TFT_WHITE, 1, middle_left);
-  text(g_snapshot.squelch_open ? "SQL OPEN" : "SQL CLOSED", kMeter.x + kMeter.w,
-       kMeter.y + kMeter.h + 12, g_snapshot.squelch_open ? kGreen : kMuted, 1, middle_right);
+  const int label_y = meter.y + meter.h + (g_layout.legacy ? 12 : 8);
+  text(value, meter.x, label_y, TFT_WHITE, g_layout.legacy ? 1 : 2, middle_left);
+  text(g_snapshot.squelch_open ? "SQL OPEN" : "SQL CLOSED", meter.x + meter.w,
+       label_y, g_snapshot.squelch_open ? kGreen : kMuted,
+       g_layout.legacy ? 1 : 2, middle_right);
 }
 
 void draw_now_playing() {
-  card(kNowCard, state_color());
+  const auto nr = g_layout.legacy ? LayoutRect{kNowCard.x,kNowCard.y,kNowCard.w,kNowCard.h}
+                                  : g_layout.listen_now;
+  const Rect now{nr.x,nr.y,nr.w,nr.h};
+  card(now, state_color());
   char value[64];
   snprintf(value, sizeof(value), "CH %02u", static_cast<unsigned>(g_snapshot.channel + 1));
-  text(value, 48, 162, TFT_WHITE, 7, middle_left);
-  snprintf(value, sizeof(value), "%.3f MHz", mhz(g_snapshot.frequency_hz));
-  text(value, 520, 140, kCyan, 3, middle_right);
-  snprintf(value, sizeof(value), "%s  CLAR %+.1fk", mode_name(g_snapshot.mode),
-           static_cast<double>(g_snapshot.clarifier_hz) / 1000.0);
-  text(value, 520, 180, TFT_WHITE, 2, middle_right);
-  text(channel_note(g_snapshot.channel), 48, 228, kMuted, 2, middle_left);
+  if (g_layout.legacy) {
+    text(value, 48, 162, TFT_WHITE, 7, middle_left);
+    snprintf(value, sizeof(value), "%.3f MHz", mhz(g_snapshot.frequency_hz));
+    text(value, 520, 140, kCyan, 3, middle_right);
+    snprintf(value, sizeof(value), "%s  CLAR %+.1fk", mode_name(g_snapshot.mode),
+             static_cast<double>(g_snapshot.clarifier_hz) / 1000.0);
+    text(value, 520, 180, TFT_WHITE, 2, middle_right);
+    text(channel_note(g_snapshot.channel), 48, 228, kMuted, 2, middle_left);
+  } else if (g_layout.portrait) {
+    text(value, now.x + 12, now.y + 20, TFT_WHITE, 3, middle_left);
+    snprintf(value, sizeof(value), "%.3f MHz", mhz(g_snapshot.frequency_hz));
+    text(value, now.x + now.w - 12, now.y + 20, kCyan, 2, middle_right);
+    snprintf(value, sizeof(value), "%s  CLAR %+.1f kHz", mode_name(g_snapshot.mode),
+             static_cast<double>(g_snapshot.clarifier_hz) / 1000.0);
+    text(value, now.x + 12, now.y + 48, TFT_WHITE, 2, middle_left);
+    text(channel_note(g_snapshot.channel), now.x + 12, now.y + 72, kMuted, 2, middle_left);
+  } else {
+    text(value, now.x + 12, now.y + 24, TFT_WHITE, 3, middle_left);
+    snprintf(value, sizeof(value), "%.3f MHz", mhz(g_snapshot.frequency_hz));
+    text(value, now.x + 150, now.y + 24, kCyan, 2, middle_left);
+    snprintf(value, sizeof(value), "%s  CLAR %+.1f kHz", mode_name(g_snapshot.mode),
+             static_cast<double>(g_snapshot.clarifier_hz) / 1000.0);
+    text(value, now.x + 12, now.y + 58, TFT_WHITE, 2, middle_left);
+  }
   char state_buffer[24];
   const char* state = state_label(state_buffer, sizeof(state_buffer));
   const uint16_t color = state_color();
-  M5.Display.fillRoundRect(48, 250, 220, 34, 8, kSelected);
-  M5.Display.drawRoundRect(48, 250, 220, 34, 8, color);
-  text(state, 158, 267, color, 2);
+  if (g_layout.legacy) {
+    M5.Display.fillRoundRect(48, 250, 220, 34, 8, kSelected);
+    M5.Display.drawRoundRect(48, 250, 220, 34, 8, color);
+    text(state, 158, 267, color, 2);
+  } else if (g_layout.portrait) {
+    text(state, now.x + 12, now.y + 88, color, 2, middle_left);
+  }
   snprintf(value, sizeof(value), "%u ON AIR  |  %lu STOPS",
            static_cast<unsigned>(g_snapshot.active_count),
            static_cast<unsigned long>(g_snapshot.stops));
-  text(value, 520, 267, g_snapshot.active_count ? kGreen : kMuted, 1, middle_right);
+  text(value, g_layout.legacy ? 520 : now.x + now.w - 12,
+       g_layout.legacy ? 267 : now.y + (g_layout.portrait ? 88 : 58),
+       g_snapshot.active_count ? kGreen : kMuted, g_layout.legacy ? 1 : 2, middle_right);
   draw_meter();
 }
 
 void draw_controls() {
-  card(kControlCard);
+  const auto cr = g_layout.legacy ? LayoutRect{kControlCard.x,kControlCard.y,kControlCard.w,kControlCard.h}
+                                  : g_layout.listen_controls;
+  card({cr.x,cr.y,cr.w,cr.h});
   const bool scanning = g_snapshot.scan_state != State::off;
   const bool held = g_snapshot.scan_state == State::held;
   const bool locked = g_snapshot.channels[g_snapshot.channel].locked;
@@ -320,11 +389,13 @@ uint8_t bar_flags(size_t channel) {
 
 int bar_height(size_t channel) {
   const float snr = std::clamp(g_snapshot.channels[channel].snr_db, 0.0f, kBarMaxSnrDb);
-  return static_cast<int>(snr / kBarMaxSnrDb * (kBarH - 4));
+  const int max_h = g_layout.legacy ? kBarH - 4 : 18;
+  return static_cast<int>(snr / kBarMaxSnrDb * max_h);
 }
 
 int threshold_y() {
   const float threshold = std::clamp(g_snapshot.scan.threshold_db, 0.0f, kBarMaxSnrDb);
+  if (!g_layout.legacy) return 0;
   return kBarTop + kBarH - 2 - static_cast<int>(threshold / kBarMaxSnrDb * (kBarH - 4));
 }
 
@@ -336,7 +407,30 @@ void draw_bar(size_t channel, bool force) {
     return;
   g_bar_drawn[channel] = static_cast<float>(height);
   g_bar_flags[channel] = flags;
-  const Rect slot = bar_slot(channel);
+  Rect slot = bar_slot(channel);
+  if (!g_layout.legacy) {
+    const auto r = g_layout.listen_channel[channel];
+    slot = {r.x,r.y,r.w,r.h};
+    const ChannelView& view = g_snapshot.channels[channel];
+    const bool tuned = (flags & 8u) != 0;
+    const uint16_t border = view.locked ? TFT_RED : tuned ? kCyan : kGrid;
+    const uint16_t color = view.locked ? kRedDim
+                           : view.skipped ? kMuted
+                           : view.active ? (tuned ? kGreen : kYellow)
+                                         : 0x2a69;
+    M5.Display.fillRoundRect(slot.x, slot.y, slot.w, slot.h, 4, kPanel);
+    M5.Display.drawRoundRect(slot.x, slot.y, slot.w, slot.h, 4, border);
+    char label[4];
+    snprintf(label, sizeof(label), "%u", static_cast<unsigned>(channel + 1));
+    text(label, slot.x + slot.w / 2, slot.y + 10,
+         view.locked ? TFT_RED : tuned ? kGreen : view.active ? kYellow : TFT_WHITE, 2);
+    const int gauge_w = std::max(1, slot.w - 8);
+    M5.Display.fillRect(slot.x + 4, slot.y + slot.h - 8, gauge_w, 4, kGrid);
+    if (height > 0)
+      M5.Display.fillRect(slot.x + 4, slot.y + slot.h - 8,
+                          std::max(1, gauge_w * height / 18), 4, color);
+    return;
+  }
   const ChannelView& view = g_snapshot.channels[channel];
   const bool tuned = (flags & 8u) != 0;
   M5.Display.fillRect(slot.x + 1, slot.y, slot.w - 2, slot.h, tuned ? kSelected : TFT_BLACK);
@@ -365,13 +459,24 @@ void draw_bar(size_t channel, bool force) {
 }
 
 void draw_strip_static() {
-  card(kStrip);
-  text("ALL 40 CHANNELS  -  LIVE BAND ACTIVITY", kStrip.x + 16, kStrip.y + 18, kCyan, 2,
-       middle_left);
+  const auto lr = g_layout.legacy ? LayoutRect{kStrip.x,kStrip.y,kStrip.w,kStrip.h}
+                                  : g_layout.listen_channels;
+  const Rect strip{lr.x,lr.y,lr.w,lr.h};
+  card(strip);
+  if (g_layout.legacy) {
+    text("ALL 40 CHANNELS  -  LIVE BAND ACTIVITY", strip.x + 16, strip.y + 18, kCyan, 2,
+         middle_left);
+  } else {
+    text(g_layout.portrait ? "ALL 40 CHANNELS - LIVE" : "ALL 40 CHANNELS",
+         g_layout.listen_channel_title.x,
+         g_layout.listen_channel_title.y + g_layout.listen_channel_title.h / 2,
+         kCyan, 2, middle_left);
+  }
   char value[48];
   snprintf(value, sizeof(value), "SCAN THRESHOLD +%.0f dB", static_cast<double>(
                                                               g_snapshot.scan.threshold_db));
-  text(value, kStrip.x + kStrip.w - 16, kStrip.y + 18, kYellow, 1, middle_right);
+  if (g_layout.legacy)
+    text(value, strip.x + strip.w - 16, strip.y + 18, kYellow, 1, middle_right);
   for (size_t channel = 0; channel < kChannelCount; ++channel) draw_bar(channel, true);
 }
 
@@ -380,7 +485,9 @@ void draw_strip() {
 }
 
 void draw_listen() {
-  M5.Display.fillRect(0, 93, 1280, kTabsY - 93, TFT_BLACK);
+  if (g_layout.legacy) M5.Display.fillRect(0, 93, 1280, kTabsY - 93, TFT_BLACK);
+  else M5.Display.fillRect(g_layout.content.x, g_layout.content.y,
+                           g_layout.content.w, g_layout.content.h, TFT_BLACK);
   draw_now_playing();
   draw_controls();
   draw_strip_static();
@@ -389,12 +496,46 @@ void draw_listen() {
 // -------------------------------------------------------------- SPECTRUM
 
 int x_for_hz(uint32_t hz) {
-  return kSpectrumX + static_cast<int>(static_cast<int64_t>(hz - kViewLowHz) * (kSpectrumW - 1) /
-                                       static_cast<int64_t>(kViewHighHz - kViewLowHz));
+  const auto plot=g_layout.legacy?audio_header::HeaderRect{kSpectrumX,kSpectrumY,kSpectrumW,kSpectrumH}:g_layout.spectrum_plot;
+  return plot.x+static_cast<int>(static_cast<int64_t>(hz-kViewLowHz)*(plot.w-1)/(kViewHighHz-kViewLowHz));
 }
+
+struct ViewportClip {
+  explicit ViewportClip(decltype(g_layout.viewport) r) {M5.Display.setClipRect(r.x,r.y,r.w,r.h);}
+  ~ViewportClip() {M5.Display.clearClipRect();}
+};
 
 void draw_spectrum_static() {
   M5.Display.clearScrollRect();
+  if (!g_layout.legacy) {
+    const auto title = g_layout.spectrum_title;
+    const auto plot = g_layout.spectrum_plot;
+    const auto axis = g_layout.spectrum_axis;
+    const auto water = g_layout.waterfall;
+    ViewportClip clip(g_layout.viewport);
+    card({g_layout.content.x + 8, title.y - 2, g_layout.content.w - 16,
+          water.y + water.h - title.y + 2}, kCyan);
+    text("CB BAND SPECTRUM", title.x, title.y + title.h / 2, kCyan, 2, middle_left);
+    M5.Display.drawRect(plot.x, plot.y, plot.w, plot.h, kGrid);
+    for (int i = 1; i < 4; ++i) {
+      M5.Display.drawFastHLine(plot.x + 1, plot.y + i * plot.h / 4,
+                               plot.w - 2, kGrid);
+      M5.Display.drawFastVLine(plot.x + i * plot.w / 4, plot.y + 1,
+                               plot.h - 2, kGrid);
+    }
+    M5.Display.fillRect(axis.x, axis.y, axis.w, axis.h, TFT_BLACK);
+    for (int i = 0; i <= 4; ++i) {
+      const int x = axis.x + i * (axis.w - 1) / 4;
+      char label[8];
+      const uint32_t hz=kViewLowHz+static_cast<uint32_t>(static_cast<uint64_t>(kViewHighHz-kViewLowHz)*i/4);
+      snprintf(label,sizeof(label),"%u",static_cast<unsigned>(nearest_channel(hz)+1));
+      text(label,std::clamp(x,axis.x+12,axis.x+axis.w-12),axis.y+axis.h/2,kMuted,2);
+    }
+    M5.Display.drawRect(water.x, water.y, water.w, water.h, kCyan);
+    M5.Display.setScrollRect(water.x + 1, water.y + 1, water.w - 2,
+                             water.h - 2, TFT_BLACK);
+    return;
+  }
   draw_page_title("BAND SPECTRUM", "26.955 - 27.415 MHz. Tap a signal to tune its channel.");
   M5.Display.drawRect(kSpectrumX, kSpectrumY, kSpectrumW, kSpectrumH, kGrid);
   for (int i = 1; i < 4; ++i)
@@ -432,7 +573,7 @@ void format_ago(uint32_t elapsed_ms, char* buffer, size_t size) {
 }
 
 size_t log_pages() {
-  return std::max<size_t>(1, (g_snapshot.log_count + kLogRows - 1) / kLogRows);
+  return std::max<size_t>(1, (g_snapshot.log_count + activity_rows() - 1) / activity_rows());
 }
 
 uint16_t activity_signature() {
@@ -446,6 +587,40 @@ uint16_t activity_signature() {
 }
 
 void draw_activity() {
+  if(!g_layout.legacy) {
+    const auto& l=g_layout;char value[96];
+    const auto c=l.content;M5.Display.fillRect(c.x,c.y,c.w,c.h,TFT_BLACK);
+    text("ACTIVITY LOG",l.activity_title.x,l.activity_title.y+l.activity_title.h/2,kCyan,2,middle_left);
+    g_log_page=std::min(g_log_page,log_pages()-1);
+    button(activity_rect(l.activity_previous),"<",false,g_log_page>0);
+    button(activity_rect(l.activity_next),">",false,g_log_page+1<log_pages());
+    button(activity_rect(l.activity_clear),l.portrait?"CLR":"CLEAR LOG",false,g_snapshot.log_count>0);
+    snprintf(value,sizeof(value),"%u / %u",unsigned(g_log_page+1),unsigned(log_pages()));
+    text(value,l.activity_page.x+l.activity_page.w/2,l.activity_page.y+l.activity_page.h/2,kMuted,2);
+    unsigned active=0;for(const auto& channel:g_snapshot.channels)active+=channel.active?1:0;
+    snprintf(value,sizeof(value),"ON AIR: %u OF 40",active);
+    text(value,l.activity_summary.x,l.activity_summary.y+l.activity_summary.h/2,active?kGreen:kMuted,2,middle_left);
+    if(!g_snapshot.log_count) {
+      const auto r=log_row(0);text("NO TRANSMISSIONS HEARD YET",r.x+8,r.y+22,kMuted,2,middle_left);return;
+    }
+    const size_t first=g_log_page*activity_rows();
+    for(int row=0;row<activity_rows() && first+row<g_snapshot.log_count;++row) {
+      const auto& entry=g_snapshot.log[first+row];const auto r=log_row(row);
+      button(r,"",entry.channel==g_snapshot.channel);char ago[16];
+      format_ago(g_snapshot.now_ms-entry.start_ms-entry.duration_ms,ago,sizeof(ago));
+      if(l.portrait) {
+        snprintf(value,sizeof(value),"CH %02u / %.3f MHz",unsigned(entry.channel+1),mhz(kChannelsHz[entry.channel%kChannelCount]));
+        text(value,r.x+8,r.y+21,kCyan,2,middle_left);
+        snprintf(value,sizeof(value),"%.1fs / +%.0fdB / %s",entry.duration_ms/1000.0,double(entry.peak_snr_db),ago);
+        text(value,r.x+8,r.y+53,TFT_WHITE,2,middle_left);
+      } else {
+        snprintf(value,sizeof(value),"CH %02u / %.3f MHz / %.1fs / +%.0fdB / %s",unsigned(entry.channel+1),mhz(kChannelsHz[entry.channel%kChannelCount]),entry.duration_ms/1000.0,double(entry.peak_snr_db),ago);
+        text(value,r.x+8,r.y+r.h/2,TFT_WHITE,2,middle_left);
+      }
+    }
+    return;
+  }
+
   draw_page_title("ACTIVITY LOG", "");
   g_log_page = std::min(g_log_page, log_pages() - 1);
   button(kLogPrev, "<", false, g_log_page > 0);
@@ -502,6 +677,18 @@ void draw_cell(size_t channel) {
   M5.Display.fillRoundRect(cell.x, cell.y, cell.w, cell.h, 8, tuned ? kSelected : kPanel);
   M5.Display.drawRoundRect(cell.x, cell.y, cell.w, cell.h, 8, border);
   char value[24];
+  if(!g_layout.legacy) {
+    const int cx=cell.x+cell.w/2;
+    snprintf(value,sizeof(value),"%u",unsigned(channel+1));
+    text(value,g_layout.portrait?cx:cell.x+8,cell.y+14,view.locked?TFT_RED:TFT_WHITE,2,g_layout.portrait?middle_center:middle_left);
+    snprintf(value,sizeof(value),"%.3f",mhz(kChannelsHz[channel]));
+    text(value,g_layout.portrait?cx:cell.x+cell.w-6,cell.y+(g_layout.portrait?33:14),kMuted,2,g_layout.portrait?middle_center:middle_right);
+    if(view.locked) snprintf(value,sizeof(value),"LOCKED");
+    else if(g_snapshot.scan.priority_enabled && channel==g_snapshot.scan.priority_channel) snprintf(value,sizeof(value),"PRI");
+    else snprintf(value,sizeof(value),"%u",unsigned(view.hits));
+    text(value,cx,cell.y+cell.h-12,view.locked?TFT_RED:TFT_LIGHTGREY,2);
+    return;
+  }
   snprintf(value, sizeof(value), "%u", static_cast<unsigned>(channel + 1));
   text(value, cell.x + 12, cell.y + 24, view.locked ? TFT_RED : TFT_WHITE, 3, middle_left);
   snprintf(value, sizeof(value), "%.3f", mhz(kChannelsHz[channel]));
@@ -515,6 +702,20 @@ void draw_cell(size_t channel) {
 }
 
 void draw_channels() {
+  if(!g_layout.legacy) {
+    const auto& l=g_layout;
+    const auto c=l.content;M5.Display.fillRect(c.x,c.y,c.w,c.h,TFT_BLACK);
+    unsigned locked=0;for(const auto& view:g_snapshot.channels) locked+=view.locked?1:0;
+    char title[48];snprintf(title,sizeof(title),"SCAN LIST / %u SCANNED",unsigned(kChannelCount-locked));
+    text(title,l.channels_title.x,l.channels_title.y+l.channels_title.h/2,kCyan,2,middle_left);
+    char value[48];snprintf(value,sizeof(value),"TAP TO LOCK / COUNTS ARE HITS");
+    text(value,l.channels_subtitle.x,l.channels_subtitle.y+l.channels_subtitle.h/2,kMuted,2,middle_left);
+    button(activity_rect(l.channels_clear),"SCAN ALL 40",locked==0);
+    button(activity_rect(l.channels_ssb),l.portrait?"SSB 36-40":"SSB 36-40 ONLY");
+    for(size_t channel=0;channel<kChannelCount;++channel)draw_cell(channel);
+    return;
+  }
+
   size_t locked = 0;
   for (const auto& view : g_snapshot.channels) locked += view.locked ? 1u : 0u;
   char subtitle[80];
@@ -572,6 +773,37 @@ constexpr const char* kSetupHelp[kSetupRows] = {
     "LSB on channels 36-40, AM on 1-35 when a channel is tuned"};
 
 void draw_setup() {
+  if(!g_layout.legacy) {
+    const auto& l=g_layout;const auto c=l.content;
+    M5.Display.fillRect(c.x,c.y,c.w,c.h,TFT_BLACK);
+    g_setup_page=std::min(g_setup_page,size_t(l.setup_page_count-1));
+    const int first=int(g_setup_page)*l.setup_page_size;
+    for(int row=first;row<std::min(kSetupRows,first+l.setup_page_size);++row) {
+      const auto r=l.setup_row[row],label=l.setup_label[row],help=l.setup_help[row];
+      card(activity_rect(r));
+      text(kSetupLabels[row],label.x,label.y+label.h/2,TFT_WHITE,l.portrait?3:2,middle_left);
+      const char* source=kSetupHelp[row];M5.Display.setFont(nullptr);M5.Display.setTextSize(2);
+      const int capacity=std::max(1,help.w/std::max(1,int(M5.Display.textWidth("M"))));
+      int y=help.y;
+      while(*source && y+20<=help.y+help.h) {
+        size_t n=std::min<size_t>(strlen(source),capacity);
+        if(source[n] && source[n]!=' ') {size_t split=n;while(split && source[split]!=' ')--split;if(split)n=split;}
+        char line[96];n=std::min(n,sizeof(line)-1);memcpy(line,source,n);line[n]='\0';
+        text(line,help.x,y+10,kMuted,2,middle_left);source+=n;while(*source==' ')++source;y+=24;
+      }
+      char value[32];setup_value(row,value,sizeof(value));
+      const bool cycle=row==0 || row>=5;
+      if(!cycle) button(activity_rect(l.setup_minus[row]),"-");
+      button(activity_rect(l.setup_value[row]),value,cycle);
+      if(!cycle) button(activity_rect(l.setup_plus[row]),"+");
+    }
+    button(activity_rect(l.setup_previous),"<",false,g_setup_page>0);
+    button(activity_rect(l.setup_next),">",false,g_setup_page+1<size_t(l.setup_page_count));
+    char page[24];snprintf(page,sizeof(page),"%u / %u",unsigned(g_setup_page+1),unsigned(l.setup_page_count));
+    text(page,l.setup_page.x+l.setup_page.w/2,l.setup_page.y+l.setup_page.h/2,kMuted,2);
+    return;
+  }
+
   M5.Display.fillRect(0, 93, 1280, kTabsY - 93, TFT_BLACK);
   for (int row = 0; row < kSetupRows; ++row) {
     const int y = kSetupY + row * kSetupRowH;
@@ -643,8 +875,22 @@ bool grid_changed(const Snapshot& before, const Snapshot& after, size_t channel)
          was_tuned != is_tuned || was_pri != is_pri;
 }
 
-Action tab_touch(int32_t x) {
-  const int index = std::clamp<int32_t>(x / kTabW, 0, kTabCount - 1);
+Action tab_touch(int32_t x, int32_t y) {
+  int index = -1;
+  if (g_layout.legacy) {
+    index = std::clamp<int32_t>(x / kTabW, 0, kTabCount - 1);
+  } else {
+    for (int i = 0; i < kTabCount; ++i) {
+      const auto r = g_layout.tab[i];
+      if (hit(x, y, {r.x,r.y,r.w,r.h})) { index = i; break; }
+    }
+  }
+  if(index<0 || static_cast<Tab>(index)==g_tab) return {};
+  M5.Display.clearScrollRect();
+  if(!g_layout.legacy) {
+    const auto c=g_layout.content;
+    M5.Display.fillRect(c.x,c.y,c.w,c.h,TFT_BLACK);
+  }
   g_tab = static_cast<Tab>(index);
   g_log_page = 0;
   draw_tabs();
@@ -682,30 +928,29 @@ Action listen_touch(int32_t x, int32_t y) {
   return {};
 }
 
-Action spectrum_touch(int32_t x, int32_t y) {
-  if (scope::style_chip_tap(x, y, kSpectrumX + 1, kSpectrumY + 1, kSpectrumW - 2, waterfall_style::Screen::cb))
-    return {};
-  if (!hit(x, y, {kSpectrumX, kSpectrumY, kSpectrumW, kWaterfallY + kWaterfallH - kSpectrumY}))
-    return {};
-  const uint32_t hz = kViewLowHz + static_cast<uint32_t>(
-      static_cast<int64_t>(x - kSpectrumX) * (kViewHighHz - kViewLowHz) / (kSpectrumW - 1));
-  return {ActionKind::tune_channel, static_cast<int32_t>(nearest_channel(hz))};
+Action spectrum_touch(int32_t x,int32_t y) {
+  const auto plot=g_layout.legacy?audio_header::HeaderRect{kSpectrumX,kSpectrumY,kSpectrumW,kSpectrumH}:g_layout.spectrum_plot;
+  const auto water=g_layout.legacy?audio_header::HeaderRect{kSpectrumX,kWaterfallY,kSpectrumW,kWaterfallH}:g_layout.waterfall;
+  if(scope::style_chip_tap(x,y,plot.x+1,plot.y+1,plot.w-2,waterfall_style::Screen::cb)) return {};
+  if(!hit(x,y,{plot.x,plot.y,plot.w,plot.h}) && !hit(x,y,{water.x,water.y,water.w,water.h})) return {};
+  const uint32_t hz=kViewLowHz+static_cast<uint32_t>(static_cast<int64_t>(x-plot.x)*(kViewHighHz-kViewLowHz)/(plot.w-1));
+  return {ActionKind::tune_channel,static_cast<int32_t>(nearest_channel(hz))};
 }
 
 Action activity_touch(int32_t x, int32_t y) {
-  if (hit(x, y, kLogPrev) && g_log_page > 0) {
+  if (hit(x, y, (g_layout.legacy?kLogPrev:activity_rect(g_layout.activity_previous))) && g_log_page > 0) {
     --g_log_page;
     draw_activity();
     return {};
   }
-  if (hit(x, y, kLogNext) && g_log_page + 1 < log_pages()) {
+  if (hit(x, y, (g_layout.legacy?kLogNext:activity_rect(g_layout.activity_next))) && g_log_page + 1 < log_pages()) {
     ++g_log_page;
     draw_activity();
     return {};
   }
-  if (hit(x, y, kLogClear) && g_snapshot.log_count) return {ActionKind::log_clear};
-  const size_t first = g_log_page * kLogRows;
-  for (int row = 0; row < kLogRows; ++row) {
+  if (hit(x, y, (g_layout.legacy?kLogClear:activity_rect(g_layout.activity_clear))) && g_snapshot.log_count) return {ActionKind::log_clear};
+  const size_t first = g_log_page * activity_rows();
+  for (int row = 0; row < activity_rows(); ++row) {
     const size_t index = first + static_cast<size_t>(row);
     if (index >= g_snapshot.log_count) break;
     if (hit(x, y, log_row(row)))
@@ -716,8 +961,8 @@ Action activity_touch(int32_t x, int32_t y) {
 }
 
 Action channels_touch(int32_t x, int32_t y) {
-  if (hit(x, y, kLockClear)) return {ActionKind::lockout_clear};
-  if (hit(x, y, kLockSsb)) return {ActionKind::lockout_ssb_only};
+  if (hit(x, y, (g_layout.legacy?kLockClear:activity_rect(g_layout.channels_clear)))) return {ActionKind::lockout_clear};
+  if (hit(x, y, (g_layout.legacy?kLockSsb:activity_rect(g_layout.channels_ssb)))) return {ActionKind::lockout_ssb_only};
   for (size_t channel = 0; channel < kChannelCount; ++channel)
     if (hit(x, y, grid_cell(channel)))
       return {ActionKind::lockout_toggle, static_cast<int32_t>(channel)};
@@ -733,6 +978,19 @@ Action setup_touch(int32_t x, int32_t y) {
       ActionKind::mode_cycle, ActionKind::clarifier_up, ActionKind::squelch_up,
       ActionKind::threshold_up, ActionKind::hang_up, ActionKind::max_hold_cycle,
       ActionKind::priority_cycle, ActionKind::auto_sideband_toggle};
+  if(!g_layout.legacy) {
+    const auto& l=g_layout;
+    if(hit(x,y,activity_rect(l.setup_previous)) && g_setup_page>0) {--g_setup_page;draw_setup();return {};}
+    if(hit(x,y,activity_rect(l.setup_next)) && g_setup_page+1<size_t(l.setup_page_count)) {++g_setup_page;draw_setup();return {};}
+    const int first=int(g_setup_page)*l.setup_page_size;
+    for(int row=first;row<std::min(kSetupRows,first+l.setup_page_size);++row) {
+      const bool cycle=row==0 || row>=5;
+      if(hit(x,y,activity_rect(l.setup_value[row]))) return cycle?Action{minus[row]}:Action{};
+      if(!cycle && hit(x,y,activity_rect(l.setup_minus[row]))) return {minus[row]};
+      if(!cycle && hit(x,y,activity_rect(l.setup_plus[row]))) return {plus[row]};
+    }
+    return {};
+  }
   for (int row = 0; row < kSetupRows; ++row) {
     const bool cycle = row == 0 || row >= 5;
     if (hit(x, y, setup_rect(kSetupValue, row)))
@@ -772,6 +1030,15 @@ void enter(const Snapshot& snapshot) {
   draw();
 }
 
+bool set_viewport(LayoutRect viewport) {
+  const DashboardLayout next = make_layout(viewport);
+  if (!next.valid || !audio_header::set_viewport(viewport)) return false;
+  g_layout = next;
+  return true;
+}
+
+void reset_viewport() { (void)set_viewport({0, 0, 1280, 720}); }
+
 void leave() {
   if (g_active) M5.Display.clearScrollRect();
   g_active = false;
@@ -780,7 +1047,9 @@ void leave() {
 void draw() {
   if (!g_active) return;
   M5.Display.clearScrollRect();
-  M5.Display.fillScreen(TFT_BLACK);
+  if (g_layout.legacy) M5.Display.fillScreen(TFT_BLACK);
+  else M5.Display.fillRect(g_layout.viewport.x,g_layout.viewport.y,
+                           g_layout.viewport.w,g_layout.viewport.h,TFT_BLACK);
   draw_header();
   draw_tabs();
   draw_page();
@@ -844,14 +1113,18 @@ scope::FrameStats g_scope_stats;
 void draw_spectrum(const float* bins, size_t bin_count, uint32_t sample_rate_sps,
                    uint32_t center_hz) {
   if (!spectrum_active() || !bins || bin_count < 16 || sample_rate_sps == 0) return;
+  const auto plot=g_layout.legacy?audio_header::HeaderRect{kSpectrumX,kSpectrumY,kSpectrumW,kSpectrumH}:g_layout.spectrum_plot;
+  const auto water=g_layout.legacy?audio_header::HeaderRect{kSpectrumX,kWaterfallY,kSpectrumW,kWaterfallH}:g_layout.waterfall;
+  if(plot.w<4 || plot.w>kSpectrumW || plot.h<8) return;
+  ViewportClip clip(g_layout.viewport);
   const double bins_per_hz = static_cast<double>(bin_count) / sample_rate_sps;
   const double hz_per_pixel =
-      static_cast<double>(kViewHighHz - kViewLowHz) / static_cast<double>(kSpectrumW - 1);
+      static_cast<double>(kViewHighHz - kViewLowHz) / static_cast<double>(plot.w - 1);
   // PSRAM scratch (fully rewritten each frame): keeps ~5 KB out of the
   // internal RAM the boot-time DMA reserve needs.
   EXT_RAM_BSS_ATTR static float column[kSpectrumW];
   float maximum = -200.0f;
-  for (int x = 0; x < kSpectrumW; ++x) {
+  for (int x = 0; x < plot.w; ++x) {
     const double hz = kViewLowHz + x * hz_per_pixel;
     const int64_t first = static_cast<int64_t>(bin_count / 2) +
                           std::llround((hz - center_hz) * bins_per_hz);
@@ -870,7 +1143,7 @@ void draw_spectrum(const float* bins, size_t bin_count, uint32_t sample_rate_sps
   // Columns outside the captured bandwidth have no level (kNoLevel) and are not noise: counting them would pull the
   // median, and so the whole scale, down whenever the view is partly empty.
   size_t valid = 0;
-  for (int x = 0; x < kSpectrumW; ++x)
+  for (int x = 0; x < plot.w; ++x)
     if (column[x] > kNoLevel) sorted[valid++] = column[x];
   static float smoothed_floor = 0.0f;
   static bool floor_ready = false;
@@ -883,18 +1156,18 @@ void draw_spectrum(const float* bins, size_t bin_count, uint32_t sample_rate_sps
   floor_ready = true;
   const float floor = smoothed_floor;
   (void)maximum;
-  constexpr int kPlotH = kSpectrumH - 2;
+  const int kPlotH = plot.h - 2;
   const uint32_t frame_started_ms = millis();
   // Drawn off-screen and pushed in one go; see scope_canvas.hpp. Sprite x is screen x minus (kSpectrumX + 1).
-  constexpr int kPlotW = kSpectrumW - 2;
-  constexpr int kOriginX = kSpectrumX + 1;
+  const int kPlotW = plot.w - 2;
+  const int kOriginX = plot.x + 1;
   static scope::Trace trace;
   M5Canvas* canvas = trace.begin(kPlotW, kPlotH, TFT_BLACK);
   // No memory for the trace sprite: leave the frame alone rather than scroll the waterfall under a stale spectrum.
   if (canvas == nullptr) return;
   if (canvas != nullptr) {
     for (int i = 1; i < 4; ++i)
-      canvas->drawFastHLine(0, i * kSpectrumH / 4 - 1, kPlotW, kGrid);
+      canvas->drawFastHLine(0, i * plot.h / 4 - 1, kPlotW, kGrid);
     for (size_t channel = 0; channel < kChannelCount; ++channel) {
       const ChannelView& view = g_snapshot.channels[channel];
       if (!view.active && channel != g_snapshot.channel) continue;
@@ -906,7 +1179,7 @@ void draw_spectrum(const float* bins, size_t bin_count, uint32_t sample_rate_sps
   }
   int last_x = 0;
   int last_y = kPlotH - 1;
-  for (int x = 0; x < kSpectrumW; ++x) {
+  for (int x = 0; x < plot.w; ++x) {
     const float normalized =
         column[x] <= kNoLevel ? 0.0f : std::clamp((column[x] - floor) / 48.0f, 0.0f, 1.0f);
     const int px = x - 1;
@@ -919,9 +1192,9 @@ void draw_spectrum(const float* bins, size_t bin_count, uint32_t sample_rate_sps
   if (canvas != nullptr) {
     canvas->drawFastVLine(x_for_hz(kChannelsHz[g_snapshot.channel]) - kOriginX, 0, kPlotH, kCyan);
     scope::draw_style_chips(canvas, kPlotW, waterfall_style::Screen::cb);
-    canvas->pushSprite(kOriginX, kSpectrumY + 1);
+    canvas->pushSprite(kOriginX, plot.y + 1);
   }
-  scope::scroll_waterfall(kSpectrumX + 1, kWaterfallY + kWaterfallH - 2, kSpectrumW - 2, g_waterfall_row + 1,
+  scope::scroll_waterfall(water.x + 1, water.y + water.h - 2, water.w - 2, g_waterfall_row + 1,
                           waterfall_style::rows_due(waterfall_style::Screen::cb, millis()));
   g_scope_stats.frame_done(frame_started_ms);
 }
@@ -933,7 +1206,9 @@ Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
   if (audio_header::home_hit(x, y)) return {ActionKind::exit_home};
   if (audio_header::settings_hit(x, y)) return {ActionKind::open_settings};
-  if (y >= kTabsY) return tab_touch(x);
+  if (g_layout.legacy ? y >= kTabsY
+                      : y >= g_layout.tabs.y && y < g_layout.tabs.y + g_layout.tabs.h)
+    return tab_touch(x,y);
   switch (g_tab) {
     case Tab::listen: return listen_touch(x, y);
     case Tab::spectrum: return spectrum_touch(x, y);

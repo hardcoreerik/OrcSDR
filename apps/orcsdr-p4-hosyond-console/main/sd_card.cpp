@@ -11,6 +11,8 @@ namespace sd_card {
 namespace {
 constexpr char TAG[] = "SD_CARD";
 std::atomic<bool> g_attempted{false};
+std::atomic<uint64_t> g_free_bytes{0};
+std::atomic<bool> g_free_known{false};
 
 void task(void*) {
   vTaskDelay(pdMS_TO_TICKS(2500));  // after the display, touch and receiver
@@ -38,6 +40,13 @@ void task(void*) {
   g_attempted = true;
   if (ok) ESP_LOGI(TAG, "microSD mounted, %llu MB", (unsigned long long)(orcsdr::storage::total_bytes() >> 20));
   else ESP_LOGI(TAG, "no microSD card mounted");
+  // statvfs can touch the card; keep it on this background task, never the UI.
+  while(ok) {
+    uint64_t available=0;
+    const bool known=orcsdr::storage::query_free_bytes(&available);
+    g_free_bytes.store(available);g_free_known.store(known);
+    vTaskDelay(pdMS_TO_TICKS(5000));
+  }
   vTaskDelete(nullptr);
 }
 }  // namespace
@@ -49,6 +58,8 @@ Status status() {
   s.attempted = g_attempted.load();
   s.mounted = orcsdr::storage::mounted();
   s.total_bytes = orcsdr::storage::total_bytes();
+  s.free_known = g_free_known.load();
+  s.free_bytes = g_free_bytes.load();
   return s;
 }
 }  // namespace sd_card

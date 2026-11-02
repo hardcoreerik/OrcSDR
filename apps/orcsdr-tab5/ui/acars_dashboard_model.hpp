@@ -233,6 +233,12 @@ class Model {
   bool set_custom_frequency(uint32_t hz);          // 0 clears; otherwise 118-137 MHz on the 25 kHz grid
   // Scrolling: positive = towards older. Clamped; returns true when the position changed.
   bool scroll_messages(int rows);
+  // Presentation-only page size for responsive dashboard layouts; capped at the backing row capacity.
+  // The legacy Tab5 default remains kMessageRows.
+  bool set_visible_message_rows(size_t rows);
+  size_t visible_message_rows() const { return visible_message_rows_; }
+  bool set_visible_aircraft_rows(size_t rows);
+  size_t visible_aircraft_rows() const { return visible_aircraft_rows_; }
   bool scroll_aircraft(int rows);
   // Newer (true) / older (false) held message that matches the filter; 0 when there is none.
   uint32_t neighbor_seq(uint32_t seq, bool newer) const;
@@ -255,7 +261,8 @@ class Model {
   TextFormat snapshot_prefs_format() const { return prefs_.format; }
   const MessageRecord* find_message(uint32_t seq) const;
   // Messages of one aircraft, newest first. Returns the number written (<= capacity).
-  size_t aircraft_messages(const char* tail, const MessageRecord** out, size_t capacity) const;
+  size_t aircraft_messages(const char* tail, const MessageRecord** out, size_t capacity,
+                           size_t offset = 0, size_t* total = nullptr) const;
   uint32_t live_ingested() const { return live_.total; }
   uint32_t demo_ingested() const { return demo_store_.total; }
 
@@ -314,7 +321,9 @@ class Model {
   Store store_{};
   Snapshot snapshot_{};
   size_t message_offset_ = 0;
+  size_t visible_message_rows_ = kMessageRows;
   size_t aircraft_offset_ = 0;
+  size_t visible_aircraft_rows_ = kAircraftRows;
   bool demo_ = false;
   DemoScenario scenario_ = DemoScenario::mixed;
   ReceiverState demo_receiver_ = ReceiverState::running;

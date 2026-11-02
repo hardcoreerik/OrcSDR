@@ -16,6 +16,7 @@
 #include "radio_service.hpp"
 #include "receiver_location.hpp"
 #include "screens.hpp"
+#include "present.hpp"
 
 namespace {
 namespace ad = orcsdr::adsb;
@@ -182,6 +183,13 @@ void publish() {
 }
 
 void enter() {
+  if (const auto* geometry=present_geometry()) {
+    const auto safe=geometry->safe;
+    (void)ad::set_viewport({static_cast<int>(safe.x),static_cast<int>(safe.y),
+                            static_cast<int>(safe.width),static_cast<int>(safe.height)});
+  } else {
+    (void)ad::set_viewport({0,0,1280,720});
+  }
   if (!g_started) {
     g_decoder = static_cast<rx::Decoder*>(heap_caps_malloc(sizeof(rx::Decoder), MALLOC_CAP_SPIRAM));
     g_tracks = static_cast<Track*>(heap_caps_calloc(kTracks, sizeof(Track), MALLOC_CAP_SPIRAM));
@@ -251,11 +259,21 @@ void tap(int x, int y) {
     default: break;  // ATC listen/resume and location-based radar: not available on this target yet
   }
 }
+
+bool resize() {
+  if (const auto* geometry=present_geometry()) {
+    const auto safe=geometry->safe;
+    if(!ad::set_viewport({static_cast<int>(safe.x),static_cast<int>(safe.y),
+                          static_cast<int>(safe.width),static_cast<int>(safe.height)}))return false;
+  } else if(!ad::set_viewport({0,0,1280,720})) return false;
+  ad::draw();
+  return true;
+}
 }  // namespace
 
 namespace screens {
 const Screen& adsb_screen() {
-  static const Screen s{orcsdr::dashboards::Id::adsb, "ADSB", enter, leave, tick, tap, nullptr, nullptr};
+  static const Screen s{orcsdr::dashboards::Id::adsb, "ADSB", enter, leave, tick, tap, nullptr, nullptr, nullptr, resize};
   return s;
 }
 }  // namespace screens

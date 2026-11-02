@@ -14,6 +14,8 @@
 namespace wifi_app {
 namespace {
 constexpr char TAG[] = "WIFI_APP";
+std::atomic<RecoveryAccess> g_recovery{RecoveryAccess::idle};
+std::atomic<uint32_t> g_generation{0};
 std::atomic<bool> g_scan_pending{false}, g_connect_pending{false}, g_disconnect_pending{false}, g_started{false};
 std::atomic<bool> g_scanning{false}, g_connecting{false};
 std::atomic<bool> g_power{true}, g_boot{true}, g_power_changed{false};
@@ -126,17 +128,41 @@ void task(void*) {
   bool first = true;
   bool link_attempted = false;
   for (;;) {
+    const auto access=g_recovery.load();
+    if (access==RecoveryAccess::requested) {
+      // This task is the sole caller of Wi-Fi start/scan/connect. A request
+      // reaches here only after its current operation has relinquished RPC.
+      g_scan_pending=false;g_connect_pending=false;g_disconnect_pending=false;
+      g_connecting=false;g_scanning=false;g_retry_at_us=0;g_sdio_lost=false;
+      g_started=false;
+      const bool stopped=orcsdr::wifi::begin_link_recovery();
+      auto expected=RecoveryAccess::requested;
+      if (!g_recovery.compare_exchange_strong(expected,stopped?RecoveryAccess::ready:RecoveryAccess::failed)) {
+        // A caller canceled while teardown ran; release on the next loop.
+        g_recovery=RecoveryAccess::releasing;
+      }
+      ESP_LOGI(TAG,"RTL_C6_ROM_ACCESS state=%s",stopped?"ready":"failed");
+      continue;
+    }
+    if (access==RecoveryAccess::ready || access==RecoveryAccess::failed) {
+      vTaskDelay(pdMS_TO_TICKS(50));continue;
+    }
+    if (access==RecoveryAccess::releasing) {
+      orcsdr::wifi::end_link_recovery();
+      link_attempted=false;g_sdio_lost=false;g_recovery=RecoveryAccess::idle;
+      ESP_LOGI(TAG,"RTL_C6_ROM_ACCESS state=idle");
+    }
     // Bring the C6 link up once Wi-Fi is allowed; a failure is reported, not retried in a loop.
     if (g_power.load() && !g_started.load() && !link_attempted) {
       link_attempted = true;
-      ESP_LOGI(TAG, "starting the ESP32-C6 link (SDIO, reset GPIO 54)");
+      ESP_LOGI(TAG, "starting the coprocessor link using the selected board reset");
       const bool ok = orcsdr::wifi::start();
       std::snprintf(g_stage, sizeof(g_stage), "%s", orcsdr::wifi::hosted_failure_stage());
       g_code = orcsdr::wifi::hosted_failure_code();
       if (!ok) {
         ESP_LOGE(TAG, "Wi-Fi unavailable: stage=%s code=0x%x c6=%s", g_stage, g_code, orcsdr::wifi::hosted_c6_version());
       } else {
-        g_started = true;
+        g_generation.fetch_add(1);g_started = true;
         ESP_LOGI(TAG, "Wi-Fi driver up, C6 firmware %s", orcsdr::wifi::hosted_c6_version());
       }
     }
@@ -148,7 +174,7 @@ void task(void*) {
         ESP_LOGI(TAG, "Wi-Fi powered off");
       } else if (g_power.load() && !g_started.load() && link_attempted) {
         const bool ok = orcsdr::wifi::start();
-        if (ok) g_started = true;
+        if (ok) {g_generation.fetch_add(1);g_started = true;}
         ESP_LOGI(TAG, "Wi-Fi powered on: %s", ok ? "ok" : "failed");
       }
     }
@@ -168,7 +194,7 @@ void task(void*) {
       g_sdio_lost = false;
       const bool ok = orcsdr::wifi::start();
       if (ok) {
-        g_started = true;
+        g_generation.fetch_add(1);g_started = true;
         g_stage[0] = 0;
       }
       ESP_LOGI(TAG, "Wi-Fi restart after link loss: %s", ok ? "ok" : "failed");
@@ -243,6 +269,7 @@ void start() {
 Status status() {
   Status s;
   s.started = g_started.load();
+  s.generation = g_generation.load();
   s.link_failed = orcsdr::wifi::link_failed();
   s.connected = s.started && orcsdr::wifi::connected();
   s.connecting = g_connecting.load();
@@ -262,7 +289,7 @@ Status status() {
 }
 
 bool request_scan() {
-  if (!g_started.load()) return false;
+  if (g_recovery.load()!=RecoveryAccess::idle || !g_started.load()) return false;
   g_scan_pending = true;
   return true;
 }
@@ -275,7 +302,7 @@ int scan_results(orcsdr::wifi::ScanResult* out, size_t capacity) {
   return n;
 }
 bool connect(const char* ssid, const char* password, bool remember) {
-  if (!g_started.load() || !ssid || !ssid[0]) return false;
+  if (g_recovery.load()!=RecoveryAccess::idle || !g_started.load() || !ssid || !ssid[0]) return false;
   std::snprintf(g_pending_ssid, sizeof(g_pending_ssid), "%s", ssid);
   std::snprintf(g_pending_pass, sizeof(g_pending_pass), "%s", password ? password : "");
   g_pending_remember = remember;
@@ -310,5 +337,15 @@ void forget() {
   }
   g_saved_ssid[0] = 0;
   g_saved_pass[0] = 0;
+}
+bool request_recovery_access() {
+  auto expected=RecoveryAccess::idle;
+  return g_recovery.compare_exchange_strong(expected,RecoveryAccess::requested);
+}
+RecoveryAccess recovery_access() {return g_recovery.load();}
+void release_recovery_access() {
+  auto state=g_recovery.load();
+  while (state!=RecoveryAccess::idle && state!=RecoveryAccess::releasing &&
+         !g_recovery.compare_exchange_weak(state,RecoveryAccess::releasing)) {}
 }
 }  // namespace wifi_app

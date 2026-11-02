@@ -1,0 +1,6 @@
+dependencies:
+  idf:
+    version: ">=5.5.0,<5.6.0"
+  esp_serial_flasher:
+    git: https://github.com/espressif/esp-serial-flasher.git
+    version: 24997fe693ff17e6598d7eb1d37af312752100aa

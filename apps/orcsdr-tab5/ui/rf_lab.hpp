@@ -1,6 +1,7 @@
 #pragma once
 
 #include "orcsdr_storage.hpp"
+#include "rf_lab_layout.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -64,6 +65,10 @@ void set_runtime(const Runtime& runtime);
 bool enter(uint8_t origin_screen, uint8_t origin_tab = 0);
 void leave();
 bool active();
+// UI-owner only. Legacy Tab5 coordinates remain the default until a host
+// supplies a safe viewport; changing dimensions is a structural redraw.
+bool set_viewport(layout::Rect safe);
+void draw();
 uint8_t origin_screen();
 uint8_t origin_tab();
 Page page();

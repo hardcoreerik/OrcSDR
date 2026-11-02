@@ -11,6 +11,7 @@ void start();  // background task: brings the C6 link up a few seconds after boo
 
 struct Status {
   bool started = false;         // the C6 link and Wi-Fi driver are up
+  uint32_t generation = 0;      // increments only after a successful link start
   bool link_failed = false;
   bool connected = false;
   bool connecting = false;
@@ -36,4 +37,9 @@ void simulate_link_loss();  // test only: behaves as if the C6 link broke
 void set_power(bool enabled);          // off: disconnects and stops Wi-Fi; on: brings the C6 link up if needed
 void set_start_at_boot(bool enabled);  // whether the saved network is joined automatically
 void forget();
+// Nonblocking handoff to the Wi-Fi owner task. No preference/NVS changes.
+enum class RecoveryAccess : uint8_t { idle, requested, ready, failed, releasing };
+bool request_recovery_access();
+RecoveryAccess recovery_access();
+void release_recovery_access(); // call only after ROM loader has released SDIO
 }  // namespace wifi_app

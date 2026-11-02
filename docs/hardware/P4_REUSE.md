@@ -106,6 +106,54 @@ LakeShark restoration is not an acceptance gate for this OrcSDR port.
 
 ## Full application integration checkpoint
 
+r15 handoff checkpoint: full app build and P4 write hash verification passed.
+The authenticated `tools/test_p4_recovery_access.py` hardware test reports PASS:
+Hosted teardown acknowledged access=2, then resume returned access=0 and the
+Wi-Fi driver restarted. RTL-SDR stayed connected/streaming at 96.1 MHz near
+2.4 MS/s before, during and after. No ROM connection or C6 write was attempted.
+The loader now deinitializes only its SDMMC slot, preserving the other slot's
+host ownership. Concurrent mounted-card/ROM operations still require hardware
+validation. The eventual worker must retain ownership through loader cleanup,
+and enforce its own busy guard against the diagnostic resume command.
+
+r14 package checkpoint: the complete source-built C6 package is embedded in the
+P4 app after explicit manifest-digest/provenance/binary validation. Full build
+and P4 write hash verification passed. Serial reports `RTL_C6_ROM_STATUS
+embedded=1 segments=4 bytes=1167104 flash_size=4194304 write_enabled=0`.
+Home self-check still passes; RTL-SDR streams near 2.4 MS/s and free PSRAM is
+about 29 MB. C6 firmware remains Hosted 2.12.9. No C6 write was attempted; the
+on-device ROM update worker/BOOT interaction is still required. Five package
+validator tests and the C6 policy test pass. Generated images stay in ignored
+build/cache paths, not repository source or device snapshot bundles.
+
+r13 follow-up: full application built with the manifest-pinned ROM-SDIO flasher
+dependency and backend, then P4 app write hash verification passed. Sampled boot
+reports Home self-check PASS and RTL-SDR streaming near 2.4 MS/s with about
+29 MB free PSRAM. No C6 write occurred. The shared Settings Display & Audio
+and Firmware layouts compile but remain unselected by the P4 adapter until the
+remaining compact sections/editors are ready. Layout contracts (Home/FM/Settings),
+catalog invalidation, C6 policy and orientation policy pass; actual Settings
+renderer/progress acceptance and ROM-SDIO worker/BOOT flow remain required.
+
+r11 follow-up: full app build and P4 write hash verification passed. On-device
+Home self-check reports legacy=1, landscape=1, portrait=1, restored=1 and PASS.
+Native PNGs were captured and hash-verified at 568x1232 and 1232x568. Radio
+streaming remained near 2.4 MS/s through manual rotation to 90 degrees. Sensor
+samples are present; axes remain unverified and automatic rotation stays off.
+Image review found portrait Contrast text overlap and landscape rail label
+clipping; follow-up source fixes pass the seven shared layout tests but are not
+yet flashed. Full FM state preservation, physical r11 appearance and the other
+dashboard/workflow acceptance gates remain open. This supersedes the r8 Home
+self-check failure below; r8 remains the user's stable-screen/audio checkpoint.
+
+r12 follow-up: shared label corrections built and flashed with hash verification.
+Authenticated serial actions opened FM's Spectrum view, rotated to portrait,
+observed `RTL_DISPLAY_SCREEN_RESIZED screen=FM` and `RTL_UI_STATUS screen=fm`,
+and captured hash-verified native PNGs before/after. Both images retain the
+selected Spectrum tab. Receiver streaming continued near 0.96 MS/s at 96.1 MHz.
+The script returned to Home afterward. This proves the sampled FM resize route,
+not all FM views, every modal, physical audio continuity or other dashboards.
+
 Latest hardware checkpoint (r8): the full app built and flashed with data hash
 verification. The user confirmed a stable screen and audible FM. Serial showed
 RTL-SDR connected/streaming near 2.4 MS/s and Wi-Fi driver startup with C6 Hosted
@@ -140,3 +188,88 @@ contains the ESP-Hosted reset assertion; both observations remain valid.
   verified. The C6 backend is not yet connected to Settings or hardware-tested
   as part of this application. Other dashboards still need layout migration
   and service/physical validation recorded in the parity ledger.
+
+## r20 readability and capture-free timing
+
+Built and app-only flashed successfully; esptool verified the data hash. Home
+stepper labels/values now use size2 on LilyGO portrait and landscape; landscape
+allocates more width to Span/Tune/Step and less to arrow-free Filter/Gain.
+`python tests/test_p4_layout_contracts.py` passes 4 contracts. The native portrait
+PNG shows larger text; physical readability feedback is pending.
+
+A 25-second observation with no PNG capture confirms a periodic presentation
+cost: ordinary frames repaint386rows in about66ms; status/footer frames repaint
+925rows, with Home frame intervals p50~84ms/p95~176ms. RTL-SDR remained near
+2.4MSps with zero reported drops. Existing dirty tracking unions all changed
+rows into one bounding range, including unchanged space between plot and
+footer. A bounded disjoint-row tracker is being implemented/tested before
+presenter integration. No performance fix is claimed yet.
+
+## r21 disjoint redraw hardware checkpoint
+
+The shared ScaledDisplay now tracks up to16 sorted dirty-row intervals rather
+than a single bounding span; overflow conservatively redraws extra rows. The
+P4 presenter converts every interval before one flip and mirrors each changed
+native rectangle into the other framebuffer. This adds approximately128bytes
+of fixed tracker storage on the 32-bit target, with no heap allocation.
+`python tests/test_dirty_rows.py -v` passes5 tests, and
+`python tests/test_present_recording.py -v` passes3 tests using actual presenter
+and geometry with recording board/display stubs. Grok reviews remain pending.
+
+Full app build and app-only flash passed, including esptool hash verification.
+A capture-free40-second observation recorded typical intervals82–84ms and
+p95~83–88ms after startup tracing ended, versus baseline~84ms/p95~176ms.
+Ordinary presents copied376rows in~65ms and a combined plot/status update
+copied412rows in~71ms. RTL-SDR remained~2.4MSps with zero reported drops.
+The user confirms the waterfall is more consistent. This validates reduced
+periodic stutter on this portrait setup, not a30fps claim or other dashboards.
+Larger-font physical acceptance, landscape performance and long-run tests
+remain separate gates.
+
+## Settings safe-area migration enabled
+
+The P4 adapter now calls the shared Settings viewport API with the selected
+profile safe rectangle before entry and on rotation. All9sections are exposed
+through shared previous/next section navigation; compact editors consume the
+existing shared text editor below the header. Location uses3pages and DataMaps
+uses an overview plus one page per nonempty catalog entry, preserving original
+sparse catalog slot identity and removal confirmation. A modal holds rotation
+until exit. Display settings route manual/auto preferences through the existing
+orientation coordinator; auto remains unavailable until axes are verified.
+
+Five actual-renderer/input Connectivity/form tests pass, including every section
+and page inside both LilyGO safe areas, masked SSID/password flow, coordinate
+validation and catalog identity. Five clock recording tests,4layout contracts,
+and separate Radio/Companion and System geometry tests pass. Full P4 build and
+flash passed; esptool verified the image hash. Native captures cover all9first
+pages, DisplayAudio landscape, and the portrait WiFi keyboard. Rotation reported
+PASS and retained screen=settings. Returned to portrait DisplayAudio. Receiver
+remained at96.1MHz, streaming~0.96MSps while Settings was active (existing policy).
+The keyboard PNG decoded back to RGB565 matched the raw sprite SHA-256 exactly.
+Physical fit feedback and scoped Grok review are pending. Service actions that
+the P4 adapter does not yet implement remain separate integration limitations;
+this checkpoint establishes layout coverage, not full service parity.
+
+Physical acceptance: user confirms Settings now fits comfortably in portrait,
+with readable values and reachable controls. This closes the portrait-fit gate
+for the tested Settings build; service parity and all workflow acceptance remain
+separate.
+
+## Settings navigation spacing
+
+Current native capture showed title fragments immediately below section
+navigation. Compact System/clock title anchors placed size3 glyphs above the
+content owner; page clearing left their upper pixels. Content now begins16px
+lower, titles use their rectangle centers, and structural page clearing includes
+the gap below navigation. A recording regression checks both title bounds.
+Six clock recording tests,5form/editor tests,4layout contracts, and5+5C6worker
+checks passed. Full build and app-only flash passed with hash verification.
+Native captures of System followed by Accessories confirm the stray blue pixels
+are gone and the extra spacing is visible. Left Accessories open for the user.
+
+Settings-fit review also identified existing P4 backend gaps: map picker/network
+location lookup are unimplemented; IP-result confirmation needs persistence
+routing. These remain required before service-parity acceptance. The loaded-fix
+flag objection lacked enter() context: enter initializes both coordinate flags
+from location_configured. Partial unconfigured-coordinate persistence still
+needs a dedicated backend check; layout tests do not establish persistence.

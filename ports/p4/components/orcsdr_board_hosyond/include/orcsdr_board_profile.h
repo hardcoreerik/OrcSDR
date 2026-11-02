@@ -108,6 +108,12 @@ typedef struct {
      * is the zero-initialized value for profiles without a documented IMU. */
     orcsdr_imu_type_t imu_type;
     unsigned char imu_i2c_address;
+    /* Qualified ROM-SDIO path; requires physical C6 BOOT and host-controlled EN. */
+    bool c6_rom_sdio_recovery;
+    /* Sensor-to-panel axes accepted only after four physical mounting poses. */
+    bool imu_axes_verified;
+    float imu_display_x_from_sensor[3];
+    float imu_display_y_from_sensor[3];
 } orcsdr_board_profile_t;
 
 /* The profile this firmware was built for (Kconfig ORCSDR_BOARD). */

@@ -10,6 +10,8 @@ struct Status {
   bool attempted = false;
   bool mounted = false;
   uint64_t total_bytes = 0;
+  uint64_t free_bytes = 0;
+  bool free_known = false;
 };
 Status status();
 }  // namespace sd_card

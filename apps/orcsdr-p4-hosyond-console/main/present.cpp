@@ -65,27 +65,38 @@ bool present_init_headless(ScaledDisplay* display) {
 
 int present_frame() {
   if (!g_display) return 0;
-  int y0 = 0, y1 = 0;
-  if (!g_display->take_dirty(&y0, &y1)) return 0;
-  if (g_headless) return y1 - y0;
+  struct Rows { int begin, end; };
+  Rows ranges[ScaledDisplay::kMaxDirtyRanges]{};
+  std::size_t count = 0;
+  int total_rows = 0;
+  while (count < ScaledDisplay::kMaxDirtyRanges &&
+         g_display->take_dirty(&ranges[count].begin, &ranges[count].end)) {
+    total_rows += ranges[count].end - ranges[count].begin;
+    ++count;
+  }
+  if (!count) return 0;
+  if (g_headless) return total_rows;
   const int64_t t0 = esp_timer_get_time();
-  convert_rows(g_back, y0, y1);
+  for (std::size_t i = 0; i < count; ++i)
+    convert_rows(g_back, ranges[i].begin, ranges[i].end);
   if (g_panel.fb_count > 1) {
+    // Present all disjoint updates together, then keep both buffers identical.
     hosyond_board_flip(&g_panel, g_back);
     g_back = 1 - g_back;
-    // Keep the buffer we just left identical to the one on screen: copy the rows (a plain memcpy is
-    // several times cheaper than converting them a second time).
-    orcsdr_rect_t native;
-    if (orcsdr_view_rect_to_native(&g_panel.geometry,{0,y0,g_panel.geometry.width,y1-y0},&native)) {
-      for (int y=native.y;y<native.y+native.height;++y) {
-        const size_t offset=size_t(y)*g_panel.stride_bytes+size_t(native.x)*3;
-        memcpy(g_panel.fb[g_back]+offset,g_panel.fb[1-g_back]+offset,size_t(native.width)*3);
+    for (std::size_t i = 0; i < count; ++i) {
+      orcsdr_rect_t native;
+      if (orcsdr_view_rect_to_native(&g_panel.geometry,
+          {0,ranges[i].begin,g_panel.geometry.width,ranges[i].end-ranges[i].begin},&native)) {
+        for (int y=native.y;y<native.y+native.height;++y) {
+          const size_t offset=size_t(y)*g_panel.stride_bytes+size_t(native.x)*3;
+          memcpy(g_panel.fb[g_back]+offset,g_panel.fb[1-g_back]+offset,size_t(native.width)*3);
+        }
+        hosyond_board_sync(&g_panel,g_back,native.y,native.y+native.height);
       }
-      hosyond_board_sync(&g_panel,g_back,native.y,native.y+native.height);
     }
   }
   g_last_us = static_cast<unsigned>(esp_timer_get_time() - t0);
-  return y1 - y0;
+  return total_rows;
 }
 
 unsigned present_last_us() { return g_last_us; }

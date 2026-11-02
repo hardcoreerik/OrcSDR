@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
+#include "adsb_dashboard_layout.hpp"
 
 namespace orcsdr::adsb {
 
@@ -95,6 +96,7 @@ const Settings& settings();
 bool set_map_range(uint16_t range_nm); // Shared UI/serial setter; repaint stays with the screen owner.
 int gain_tenth_db();
 bool active();
+bool set_viewport(audio_header::HeaderRect safe);
 void show_documentation_view(uint8_t view, const Settings& settings);
 uint8_t view();
 bool self_check();

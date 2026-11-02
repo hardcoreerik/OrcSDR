@@ -1,4 +1,5 @@
 #include "wifi_service.hpp"
+#include "c6_update_gate.hpp"
 #include "orcsdr_restart.hpp"
 
 #include <cstring>
@@ -55,6 +56,7 @@ void update_fail(const char* stage, esp_err_t error) {
   g_failure_stage = stage;
   g_failure_code = error;
   set_update_status(C6UpdateState::failed, 0, stage);
+  c6_update::release(c6_update::Owner::hosted);
   ESP_LOGE("orcsdr_wifi", "C6 update failed stage=%s err=%s", stage, esp_err_to_name(error));
   ESP_LOGE("orcsdr_wifi", "RTL_WIFI_C6_UPDATE state=failed stage=%s err=%s", stage,
            esp_err_to_name(error));
@@ -394,6 +396,7 @@ const char* c6_update_state_name(C6UpdateState state) {
   }
 }
 bool begin_c6_update(bool allow_current_for_orcdial) {
+  if(!c6_update::claim(c6_update::Owner::hosted)) return false;
   const C6UpdateStatus status = c6_update_status();
   const bool eligible = status.state == C6UpdateState::ready
       || status.state == C6UpdateState::optional
@@ -401,8 +404,10 @@ bool begin_c6_update(bool allow_current_for_orcdial) {
       || (allow_current_for_orcdial && status.state == C6UpdateState::current)
 #endif
       ;
-  if (!hosted_transport_ready() || !status.image_embedded || !eligible)
+  if (!hosted_transport_ready() || !status.image_embedded || !eligible) {
+    c6_update::release(c6_update::Owner::hosted);
     return false;
+  }
   set_update_status(C6UpdateState::updating, 0, "starting");
   if (xTaskCreate(c6_update_task, "c6_ota", 4096, nullptr, 4, nullptr) != pdPASS) {
     update_fail("task_create", ESP_ERR_NO_MEM);

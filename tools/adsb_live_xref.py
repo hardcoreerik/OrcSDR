@@ -11,7 +11,7 @@ Research use only; no credentials are involved (adsb.lol needs none).
 import json, os, re, sys, time, urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tab5_ft8 as t
-import tab5_ft8_shot as sh
+import screenshot as sh
 
 MAX_FRAME_AGE_S = 15        # a frame older than this is not compared with the live feed (the aircraft has moved on)
 MAX_LOOKUPS_PER_PASS = 10   # feed lookups block; aircraft beyond the cap are carried into the next pass, not dropped
@@ -99,7 +99,7 @@ def main():
             if shots and time.time() >= shots[0]:
                 shots.pop(0)
                 try:
-                    dev.authenticate(key); sh.snap_png(dev, key, os.path.join(out, "adsb_%s.png" % time.strftime("%H%M%S", time.gmtime())))
+                    dev.authenticate(key); sh.screenshot(dev, key, os.path.join(out, "adsb_%s.png" % time.strftime("%H%M%S", time.gmtime())))
                 except BaseException as e:
                     print("snap failed", e, flush=True)
         drain(MAX_LOOKUPS_PER_PASS)       # the last partial interval, so a short run still compares what it heard

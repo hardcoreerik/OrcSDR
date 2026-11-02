@@ -32,6 +32,13 @@ static void check_viewport(HeaderRect v) {
   assert(header.valid && l.valid);
   assert(inside(v,l.spectrum) && inside(v,l.waterfall) && inside(v,l.footer));
   assert(l.spectrum.y>=header.content_top+28);
+  if(v.w==1088 && v.h==424) {
+    assert(l.span.w>=196 && l.tune.w>=196 && l.step.w>=196);
+    assert(l.span.x+l.span.w<=l.tune.x);
+    assert(l.tune.x+l.tune.w<=l.step.x);
+    assert(l.step.x+l.step.w<=l.filter.x);
+    assert(l.filter.x+l.filter.w<=l.gain.x);
+  }
 }
 
 int main() {

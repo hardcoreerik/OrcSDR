@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <initializer_list>
 
 namespace orcsdr::acars_ui {
 namespace {
@@ -29,6 +30,7 @@ void Controller::reset() {
   tail_selected_ = false;
   query_ = ArchiveQuery{};
   archive_offset_ = 0;
+  aircraft_message_offset_ = 0;
   bump();
 }
 
@@ -70,6 +72,39 @@ size_t Controller::detail_line_count() const {
   return (detail_text_len_ + layout::kDetailCols - 1) / layout::kDetailCols;
 }
 
+void Controller::reflow_detail() {
+  if (!detail_open_) return;
+  const size_t lines = detail_line_count();
+  const size_t visible = static_cast<size_t>(std::max(1, layout::kDetailLines));
+  const size_t max_line = lines > visible ? lines - visible : 0;
+  if (detail_line_ > max_line) {
+    detail_line_ = max_line;
+    bump();
+  }
+}
+
+void Controller::reflow_aircraft(const Model& model) {
+  if (!tail_selected_) return;
+  const MessageRecord* rows[kAircraftRecentShown];
+  size_t total = 0;
+  (void)model.aircraft_messages(selected_tail_, rows, kAircraftRecentShown, 0, &total);
+  const size_t visible = layout::kAcMessageRows;
+  const size_t limit = total > visible ? total - visible : 0;
+  if (aircraft_message_offset_ > limit) {
+    aircraft_message_offset_ = limit;
+    bump();
+  }
+}
+
+void Controller::reflow_archive(const Model& model) {
+  size_t total = 0;
+  const MessageRecord* ignored = nullptr;
+  (void)model.archive_query(query_, archive_offset_, &ignored, 0, &total);
+  const size_t visible = static_cast<size_t>(layout::kArVisibleRows);
+  const size_t limit = total > visible ? total - visible : 0;
+  if (archive_offset_ > limit) archive_offset_ = limit;
+}
+
 bool Controller::detail_line_at(size_t index, const char** start, size_t* length) const {
   if (index >= detail_line_count()) return false;
   const size_t begin = index * layout::kDetailCols;
@@ -79,7 +114,10 @@ bool Controller::detail_line_at(size_t index, const char** start, size_t* length
 }
 
 Action Controller::touch(int32_t x, int32_t y, Model& model) {
-  if (y < layout::kHeaderH) return {};            // shared header: Home / Mute / Visualizer / Settings
+  (void)model.set_visible_message_rows(layout::kLiveVisibleRows);
+  (void)model.set_visible_aircraft_rows(layout::kAcVisibleRows);
+  if (!layout::kViewport.contains(x, y)) return {};
+  if (y < layout::kViewport.y + layout::kHeaderH) return {}; // shared header: Home / Mute / Visualizer / Settings
   if (y >= layout::kTabsY) {
     for (int i = 0; i < layout::kTabCount; ++i)
       if (in(layout::tab(i), x, y)) {
@@ -101,13 +139,15 @@ Action Controller::touch(int32_t x, int32_t y, Model& model) {
 
 Action Controller::touch_live(int32_t x, int32_t y, Model& model) {
   const Snapshot& s = model.snapshot();
-  for (size_t i = 0; i < s.message_count; ++i)
+  const size_t rows = std::min(s.message_count, layout::kLiveVisibleRows);
+  for (size_t i = 0; i < rows; ++i)
     if (in(layout::live_row(static_cast<int>(i)), x, y)) {
       open_detail(s.messages[i].seq, model);
       return {ActionKind::changed, 0};
     }
-  if (in(layout::kLiveNavUp, x, y)) return {model.scroll_messages(-6) ? ActionKind::changed : ActionKind::none, 0};
-  if (in(layout::kLiveNavDown, x, y)) return {model.scroll_messages(6) ? ActionKind::changed : ActionKind::none, 0};
+  const int page = static_cast<int>(layout::kLiveVisibleRows);
+  if (in(layout::kLiveNavUp, x, y)) return {model.scroll_messages(-page) ? ActionKind::changed : ActionKind::none, 0};
+  if (in(layout::kLiveNavDown, x, y)) return {model.scroll_messages(page) ? ActionKind::changed : ActionKind::none, 0};
   return {};
 }
 
@@ -122,14 +162,16 @@ Action Controller::touch_detail(int32_t x, int32_t y, Model& model) {
     return {ActionKind::changed, 0};
   }
   const size_t lines = detail_line_count();
-  const size_t max_line = lines > static_cast<size_t>(layout::kDetailLines) ? lines - layout::kDetailLines : 0;
+  const size_t visible = static_cast<size_t>(std::max(1, layout::kDetailLines));
+  const size_t max_line = lines > visible ? lines - visible : 0;
+  const size_t page = layout::kViewport == layout::Rect{0, 0, 1280, 720} ? 4 : visible;
   if (in(layout::kDetailRawUp, x, y) && detail_line_ > 0) {
-    detail_line_ = detail_line_ >= 4 ? detail_line_ - 4 : 0;
+    detail_line_ = detail_line_ >= page ? detail_line_ - page : 0;
     bump();
     return {ActionKind::changed, 0};
   }
   if (in(layout::kDetailRawDown, x, y) && detail_line_ < max_line) {
-    detail_line_ = std::min(detail_line_ + 4, max_line);
+    detail_line_ = std::min(detail_line_ + page, max_line);
     bump();
     return {ActionKind::changed, 0};
   }
@@ -142,6 +184,7 @@ Action Controller::touch_aircraft(int32_t x, int32_t y, Model& model) {
     if (in(layout::ac_row(static_cast<int>(i)), x, y)) {
       std::snprintf(selected_tail_, sizeof(selected_tail_), "%s", s.aircraft[i].tail);
       tail_selected_ = true;
+      aircraft_message_offset_ = 0;
       bump();
       return {ActionKind::changed, 0};
     }
@@ -150,16 +193,31 @@ Action Controller::touch_aircraft(int32_t x, int32_t y, Model& model) {
     bump();
     return {ActionKind::changed, 0};
   }
-  if (in(layout::kAcUp, x, y)) return {model.scroll_aircraft(-4) ? ActionKind::changed : ActionKind::none, 0};
-  if (in(layout::kAcDown, x, y)) return {model.scroll_aircraft(4) ? ActionKind::changed : ActionKind::none, 0};
+  const int page = static_cast<int>(layout::kAcVisibleRows);
+  if (in(layout::kAcUp, x, y)) return {model.scroll_aircraft(-page) ? ActionKind::changed : ActionKind::none, 0};
+  if (in(layout::kAcDown, x, y)) return {model.scroll_aircraft(page) ? ActionKind::changed : ActionKind::none, 0};
   if (tail_selected_) {
     const MessageRecord* list[kAircraftRecentShown];
-    const size_t n = model.aircraft_messages(selected_tail_, list, kAircraftRecentShown);
+    size_t total = 0;
+    const size_t n = model.aircraft_messages(selected_tail_, list, layout::kAcMessageRows,
+                                             aircraft_message_offset_, &total);
     for (size_t j = 0; j < n; ++j)
       if (in(layout::ac_msg_row(static_cast<int>(j)), x, y)) {
         open_detail(list[j]->seq, model);
         return {ActionKind::changed, 0};
       }
+    const size_t limit = total > layout::kAcMessageRows ? total - layout::kAcMessageRows : 0;
+    const size_t message_page = layout::kAcMessageRows;
+    if (in(layout::kAcMsgUp, x, y) && aircraft_message_offset_ > 0) {
+      aircraft_message_offset_ = aircraft_message_offset_ >= message_page ? aircraft_message_offset_ - message_page : 0;
+      bump();
+      return {ActionKind::changed, 0};
+    }
+    if (in(layout::kAcMsgDown, x, y) && aircraft_message_offset_ < limit) {
+      aircraft_message_offset_ = std::min(aircraft_message_offset_ + message_page, limit);
+      bump();
+      return {ActionKind::changed, 0};
+    }
   }
   return {};
 }
@@ -171,7 +229,7 @@ Action Controller::touch_channels(int32_t x, int32_t y, Model& model) {
     bump();
     return {ActionKind::tune_requested, model.snapshot().requested_hz};
   }
-  for (size_t i = 0; i < s.channel_count; ++i)
+  for (size_t i = 0; i < std::min<size_t>(s.channel_count, layout::kChVisibleRows); ++i)
     if (in(layout::ch_row(static_cast<int>(i)), x, y)) {
       model.set_preset(i);
       bump();
@@ -215,15 +273,16 @@ Action Controller::touch_archive(int32_t x, int32_t y, Model& model) {
   }
   size_t total = 0;
   const MessageRecord* rows[layout::kArRows];
-  const size_t n = model.archive_query(query_, archive_offset_, rows, layout::kArRows, &total);
-  const size_t limit = total > static_cast<size_t>(layout::kArRows) ? total - layout::kArRows : 0;
+  const size_t page_rows = static_cast<size_t>(layout::kArVisibleRows);
+  const size_t n = model.archive_query(query_, archive_offset_, rows, page_rows, &total);
+  const size_t limit = total > page_rows ? total - page_rows : 0;
   if (in(layout::kArUp, x, y) && archive_offset_ > 0) {
-    archive_offset_ = archive_offset_ >= 4 ? archive_offset_ - 4 : 0;
+    archive_offset_ = archive_offset_ >= page_rows ? archive_offset_ - page_rows : 0;
     bump();
     return {ActionKind::changed, 0};
   }
   if (in(layout::kArDown, x, y) && archive_offset_ < limit) {
-    archive_offset_ = std::min(archive_offset_ + 4, limit);
+    archive_offset_ = std::min(archive_offset_ + page_rows, limit);
     bump();
     return {ActionKind::changed, 0};
   }
@@ -275,9 +334,131 @@ Action Controller::touch_setup(int32_t x, int32_t y, Model& model) {
 }
 
 bool ui_self_check() {
-  Controller c;
-  c.reset();
-  return layout::tab(0).x == 0 && layout::tab(5).x + layout::tab(5).w == 1280 && c.view() == View::live;
+  const layout::Rect saved = layout::kViewport;
+  Model model;
+  const size_t saved_rows = model.visible_message_rows();
+  model.set_demo(true, DemoScenario::full);
+  model.service();
+  bool ok = true;
+  Controller detail;
+  for (size_t rows : {size_t{3}, size_t{6}, size_t{12}}) {
+    (void)model.set_visible_message_rows(rows);
+    while (model.scroll_messages(static_cast<int>(rows))) {}
+    const Snapshot& end = model.snapshot();
+    ok = end.message_offset + end.message_count == end.matching_count && end.message_count <= rows && ok;
+    if (end.message_count) {
+      const uint32_t selected_seq = end.messages[0].seq;
+      ok = detail.open_detail(selected_seq, model) && detail.detail_record().seq == selected_seq && ok;
+      (void)model.set_visible_message_rows(rows == 3 ? 6 : 3);
+      ok = detail.detail_open() && detail.detail_record().seq == selected_seq && ok;
+      detail.close_detail();
+    }
+  }
+  for (size_t rows : {size_t{2}, size_t{6}, size_t{8}}) {
+    (void)model.set_visible_aircraft_rows(rows);
+    while (model.scroll_aircraft(static_cast<int>(rows))) {}
+    const Snapshot& end = model.snapshot();
+    ok = end.aircraft_offset + end.aircraft_count == end.aircraft_total && end.aircraft_count <= rows && ok;
+  }
+  (void)model.set_visible_aircraft_rows(kAircraftRows);
+  while (model.scroll_aircraft(-static_cast<int>(kAircraftTable))) {}
+  Controller aircraft;
+  aircraft.select_view(View::aircraft);
+  char selected_tail[8]{};
+  for (const layout::Rect viewport : {layout::Rect{72, 72, 424, 1088}, layout::Rect{72, 72, 1088, 424}}) {
+    ok = layout::set_viewport(viewport) && ok;
+    (void)model.set_visible_aircraft_rows(layout::kAcVisibleRows);
+    const Action picked = aircraft.touch(layout::ac_row(0).x + layout::ac_row(0).w / 2,
+                                         layout::ac_row(0).y + layout::ac_row(0).h / 2, model);
+    if (!selected_tail[0]) std::snprintf(selected_tail, sizeof(selected_tail), "%s", aircraft.selected_tail());
+    ok = picked.kind == ActionKind::changed && std::strcmp(selected_tail, aircraft.selected_tail()) == 0 && ok;
+    aircraft.reflow_aircraft(model);
+    const MessageRecord* recent[kAircraftRecentShown]{};
+    size_t total_recent = 0;
+    (void)model.aircraft_messages(aircraft.selected_tail(), recent, kAircraftRecentShown, 0, &total_recent);
+    if (total_recent > layout::kAcMessageRows && aircraft.aircraft_message_offset() == 0) {
+      const Action next_message = aircraft.touch(layout::kAcMsgDown.x + layout::kAcMsgDown.w / 2,
+          layout::kAcMsgDown.y + layout::kAcMsgDown.h / 2, model);
+      const size_t expected_offset = std::min(layout::kAcMessageRows, total_recent - layout::kAcMessageRows);
+      ok = next_message.kind == ActionKind::changed &&
+           aircraft.aircraft_message_offset() == expected_offset && ok;
+    }
+  }
+  (void)model.set_visible_message_rows(kMessageRows);
+  while (model.scroll_messages(-static_cast<int>(kHistoryCapacity))) {}
+  Controller selected;
+  const Snapshot& visible = model.snapshot();
+  const uint32_t selected_seq = visible.message_count > 1 ? visible.messages[1].seq : visible.messages[0].seq;
+  ok = selected.open_detail(selected_seq, model) && ok;
+  for (const layout::Rect viewport : {layout::Rect{72, 72, 424, 1088}, layout::Rect{72, 72, 1088, 424}}) {
+    ok = layout::set_viewport(viewport) && ok;
+    selected.reflow_detail();
+    ok = selected.detail_open() && selected.detail_record().seq == selected_seq && ok;
+  }
+  const Action newer = selected.touch(layout::kDetailNewer.x + layout::kDetailNewer.w / 2,
+                                      layout::kDetailNewer.y + layout::kDetailNewer.h / 2, model);
+  ok = newer.kind == ActionKind::changed && selected.detail_record().seq != selected_seq && ok;
+  const Action back = selected.touch(layout::kDetailBack.x + layout::kDetailBack.w / 2,
+                                     layout::kDetailBack.y + layout::kDetailBack.h / 2, model);
+  ok = back.kind == ActionKind::changed && !selected.detail_open() && ok;
+  for (const layout::Rect viewport : {layout::Rect{72, 72, 424, 1088}, layout::Rect{72, 72, 1088, 424}}) {
+    ok = layout::set_viewport(viewport) && ok;
+    (void)model.set_visible_message_rows(layout::kLiveVisibleRows);
+    while (model.scroll_messages(-static_cast<int>(kHistoryCapacity))) {}
+    const layout::Rect live_tab = layout::tab(0);
+    Controller c;
+    c.select_view(View::setup);
+    const Action action = c.touch(live_tab.x + live_tab.w / 2, live_tab.y + live_tab.h / 2, model);
+    ok = action.kind == ActionKind::changed && c.view() == View::live &&
+         layout::kLiveVisibleRows >= 1 && layout::live_row(static_cast<int>(layout::kLiveVisibleRows - 1)).inside(viewport) &&
+         layout::kLiveNavUp.h >= 44 && layout::kLiveNavDown.h >= 44 && live_tab.inside(viewport) && ok;
+    const size_t before = model.snapshot().message_offset;
+    const Action page = c.touch(layout::kLiveNavDown.x + layout::kLiveNavDown.w / 2,
+                                layout::kLiveNavDown.y + layout::kLiveNavDown.h / 2, model);
+    if (model.snapshot().matching_count > layout::kLiveVisibleRows)
+      ok = page.kind == ActionKind::changed && model.snapshot().message_offset == before + layout::kLiveVisibleRows && ok;
+    Controller channels;
+    channels.select_view(View::channels);
+    const layout::Rect last_channel = layout::ch_row(layout::kChVisibleRows - 1);
+    const Action channel_pick = channels.touch(last_channel.x + last_channel.w / 2,
+                                               last_channel.y + last_channel.h / 2, model);
+    ok = last_channel.inside(viewport) && last_channel.h >= 44 &&
+         channel_pick.kind == ActionKind::tune_requested && ok;
+    Controller archive;
+    archive.select_view(View::archive);
+    const MessageRecord* archive_rows[layout::kArRows]{};
+    size_t archive_total = 0;
+    (void)model.archive_query(archive.archive_query(), 0, archive_rows, layout::kArRows, &archive_total);
+    if (archive_total > layout::kArVisibleRows) {
+      const Action next_archive_page = archive.touch(layout::kArDown.x + layout::kArDown.w / 2,
+          layout::kArDown.y + layout::kArDown.h / 2, model);
+      const size_t expected = std::min(static_cast<size_t>(layout::kArVisibleRows),
+                                       archive_total - static_cast<size_t>(layout::kArVisibleRows));
+      ok = next_archive_page.kind == ActionKind::changed && archive.archive_offset() == expected && ok;
+    }
+    archive.reflow_archive(model);
+    const size_t archive_n = model.archive_query(archive.archive_query(), archive.archive_offset(),
+        archive_rows, static_cast<size_t>(layout::kArVisibleRows), &archive_total);
+    if (archive_n) {
+      const layout::Rect last_archive_row = layout::ar_row(static_cast<int>(archive_n - 1));
+      const Action open_archived = archive.touch(last_archive_row.x + last_archive_row.w / 2,
+          last_archive_row.y + last_archive_row.h / 2, model);
+      ok = open_archived.kind == ActionKind::changed && archive.detail_open() &&
+           archive.detail_record().seq == archive_rows[archive_n - 1]->seq && ok;
+    }
+    Controller setup;
+    setup.select_view(View::setup);
+    const Region region_before = model.snapshot().prefs.region;
+    const layout::Rect region_setting = layout::setup_item(0, 0);
+    const Action region_change = setup.touch(region_setting.x + region_setting.w / 2,
+        region_setting.y + region_setting.h / 2, model);
+    ok = region_setting.inside(viewport) && region_setting.h >= 44 &&
+         region_change.kind == ActionKind::changed && model.snapshot().prefs.region != region_before && ok;
+  }
+  (void)model.set_visible_message_rows(saved_rows);
+  (void)model.set_visible_aircraft_rows(kAircraftRows);
+  ok = layout::set_viewport(saved) && ok;
+  return layout::tab(0).x == saved.x && layout::tab(5).x + layout::tab(5).w == saved.x + saved.w && ok;
 }
 
 }  // namespace orcsdr::acars_ui

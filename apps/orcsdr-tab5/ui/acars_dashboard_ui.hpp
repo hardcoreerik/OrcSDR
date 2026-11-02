@@ -36,6 +36,10 @@ class Controller {
   void select_view(View view);
   bool open_detail(uint32_t seq, const Model& model);
   void close_detail();
+  // Re-clamps the wrapped-text scroll position after a viewport/layout change without changing the selected record.
+  void reflow_detail();
+  void reflow_aircraft(const Model& model);
+  void reflow_archive(const Model& model);
 
   // ---- state for the renderer
   const MessageRecord& detail_record() const { return detail_record_; }
@@ -48,6 +52,7 @@ class Controller {
   const char* selected_tail() const { return selected_tail_; }
   const ArchiveQuery& archive_query() const { return query_; }
   size_t archive_offset() const { return archive_offset_; }
+  size_t aircraft_message_offset() const { return aircraft_message_offset_; }
   void refresh_detail_text(const Model& model);
 
  private:
@@ -70,6 +75,7 @@ class Controller {
   bool tail_selected_ = false;
   ArchiveQuery query_{};
   size_t archive_offset_ = 0;
+  size_t aircraft_message_offset_ = 0;
 };
 
 bool ui_self_check();

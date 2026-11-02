@@ -21,90 +21,94 @@ struct Rect {
   constexpr bool contains(int px, int py) const { return px >= x && px < x + w && py >= y && py < y + h; }
   constexpr bool intersects(const Rect& o) const { return x < o.x + o.w && o.x < x + w && y < o.y + o.h && o.y < y + h; }
   constexpr bool inside(const Rect& o) const { return x >= o.x && y >= o.y && x + w <= o.x + o.w && y + h <= o.y + o.h; }
+  constexpr bool operator==(const Rect& o) const { return x == o.x && y == o.y && w == o.w && h == o.h; }
 };
 
-constexpr int kScreenW = 1280;
-constexpr int kScreenH = 720;
-constexpr int kHeaderH = 104;
+// The default remains the Tab5's exact legacy canvas. Ports may configure a
+// safe viewport at a structural transition; LIVE geometry then adapts to it.
+extern int kScreenW;
+extern int kScreenH;
+extern int kHeaderH;
 // Mirrors audio_header::kStatusBar* (acars_dashboard.cpp static_asserts the equality against the real values).
 constexpr Rect kStatusBar{420, 12, 446, 54};
-constexpr Rect kContext{20, 110, 1240, 40};
-constexpr int kContentY = 158;
-constexpr int kContentBottom = 638;
-constexpr int kTabsY = 646;
+extern Rect kContext;
+extern int kContentY;
+extern int kContentBottom;
+extern int kTabsY;
 constexpr int kTabCount = 6;
 constexpr int kRowH = 36;
+extern Rect kViewport;
+extern size_t kLiveVisibleRows;
+bool set_viewport(Rect viewport);
+void reset_viewport();
 
-constexpr Rect tab(int i) { return {i * 213, kTabsY, i == kTabCount - 1 ? 1280 - 5 * 213 : 213, 74}; }
+Rect tab(int i);
 
 // ---- LIVE
-constexpr Rect kLiveList{20, 158, 800, 480};
-constexpr Rect live_row(int i) { return {28, 196 + i * kRowH, 784, kRowH}; }
-constexpr Rect kLiveStatus{836, 158, 424, 232};
-constexpr Rect kLiveNav{836, 402, 424, 92};
-constexpr Rect kLiveNavUp{848, 446, 196, 40};
-constexpr Rect kLiveNavDown{1052, 446, 196, 40};
-constexpr Rect kLiveNotice{836, 506, 424, 132};
+extern Rect kLiveList;
+Rect live_row(int i);
+extern Rect kLiveStatus;
+extern Rect kLiveNav;
+extern Rect kLiveNavUp;
+extern Rect kLiveNavDown;
+extern Rect kLiveNotice;
 
 // ---- Message detail (replaces the LIVE content while open)
-constexpr Rect kDetailBar{20, 158, 1240, 48};
-constexpr Rect kDetailBack{28, 162, 130, 40};
-constexpr Rect kDetailNewer{988, 162, 124, 40};
-constexpr Rect kDetailOlder{1124, 162, 128, 40};
-constexpr Rect kDetailFields{20, 214, 400, 424};
-constexpr Rect kDetailRaw{436, 214, 824, 268};
-constexpr Rect kDetailRawUp{1100, 220, 70, 34};
-constexpr Rect kDetailRawDown{1178, 220, 70, 34};
-constexpr Rect kDetailRawText{448, 262, 800, 212};
-constexpr int kDetailLines = 8;
-constexpr int kDetailLineH = 26;
-constexpr int kDetailCols = 57;                       // FreeMono12pt: 14 px advance
-constexpr Rect kDetailInterp{436, 490, 824, 148};
+extern Rect kDetailBar;
+extern Rect kDetailBack;
+extern Rect kDetailNewer;
+extern Rect kDetailOlder;
+extern Rect kDetailFields;
+extern Rect kDetailRaw;
+extern Rect kDetailRawUp;
+extern Rect kDetailRawDown;
+extern Rect kDetailRawText;
+extern int kDetailLines;
+extern int kDetailLineH;
+extern int kDetailCols;                       // FreeMono12pt: about 14 px advance
+extern Rect kDetailInterp;
 
 // ---- AIRCRAFT
-constexpr Rect kAcList{20, 158, 660, 480};
-constexpr Rect ac_row(int i) { return {28, 200 + i * 54, 644, 54}; }
-constexpr Rect kAcControls{696, 158, 564, 60};
-constexpr Rect kAcSort{704, 164, 200, 48};
-constexpr Rect kAcUp{916, 164, 70, 48};
-constexpr Rect kAcDown{994, 164, 70, 48};
-constexpr Rect kAcCount{1072, 164, 180, 48};
-constexpr Rect kAcDetail{696, 226, 564, 412};
-constexpr Rect ac_msg_row(int j) { return {704, 276 + j * 56, 548, 56}; }
-constexpr Rect kAcNote{704, 612, 548, 24};
+extern Rect kAcList;
+Rect ac_row(int i);
+extern Rect kAcControls;
+extern Rect kAcSort;
+extern Rect kAcUp;
+extern Rect kAcDown;
+extern Rect kAcCount;
+extern Rect kAcDetail;
+Rect ac_msg_row(int j);
+extern Rect kAcMsgUp;
+extern Rect kAcMsgDown;
+extern Rect kAcNote;
+extern size_t kAcVisibleRows;
+extern size_t kAcMessageRows;
 
 // ---- CHANNELS
-constexpr Rect kChList{20, 158, 760, 480};
-constexpr Rect kChRegion{28, 166, 330, 48};
+extern Rect kChList;
+extern Rect kChRegion;
 constexpr int kChRows = 7;
-constexpr Rect ch_row(int i) { return {28, 226 + i * 48, 744, 48}; }   // seven rows end at y=562, above the custom-frequency row (572)
-constexpr Rect kChCustomLabel{28, 572, 100, 52};
-constexpr Rect kChMinus{136, 572, 90, 52};
-constexpr Rect kChPlus{232, 572, 90, 52};
-constexpr Rect kChClear{328, 572, 110, 52};
-constexpr Rect kChCustomValue{446, 572, 326, 52};
-constexpr Rect kChStatus{796, 158, 464, 300};
-constexpr Rect kChNotes{796, 470, 464, 168};
+Rect ch_row(int i);
+extern Rect kChCustomLabel, kChMinus, kChPlus, kChClear, kChCustomValue;
+extern Rect kChStatus, kChNotes;
+extern int kChVisibleRows;
 
 // ---- ACTIVITY
-constexpr Rect act_tile(int i) { return {20 + (i % 4) * 312, 158 + (i / 4) * 128, 300, 116}; }
+Rect act_tile(int i);
 constexpr int kActTiles = 8;
-constexpr Rect kActYield{20, 418, 616, 220};
-constexpr Rect kActSignal{652, 418, 608, 220};
+extern Rect kActYield, kActSignal;
 
 // ---- ARCHIVE
-constexpr Rect kArFilters{20, 158, 400, 480};
-constexpr Rect ar_filter(int i) { return {28, 200 + i * 68, 384, 60}; }
+extern Rect kArFilters;
+Rect ar_filter(int i);
 constexpr int kArFilterCount = 5;                     // TAIL, LABEL, FLIGHT, FREQ, SEARCH
-constexpr Rect kArClear{28, 548, 384, 52};
-constexpr Rect kArList{436, 158, 824, 480};
-constexpr Rect kArUp{1100, 162, 70, 32};
-constexpr Rect kArDown{1180, 162, 70, 32};
-constexpr Rect ar_row(int i) { return {444, 200 + i * 54, 808, 54}; }
+extern Rect kArClear, kArList, kArUp, kArDown;
+Rect ar_row(int i);
 constexpr int kArRows = 8;
+extern int kArVisibleRows;
 
 // ---- SETUP (two columns x five rows)
-constexpr Rect setup_item(int column, int row) { return {20 + column * 624, 166 + row * 92, 616, 84}; }
+Rect setup_item(int column, int row);
 constexpr int kSetupItems = 10;
 
 // Every rectangle the dashboard draws in `view` (and in its detail page when `detail`), for tests.

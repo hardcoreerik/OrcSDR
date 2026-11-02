@@ -10,6 +10,7 @@
 #include "rf_analysis.hpp"
 #include "rf_lab.hpp"
 #include "screens.hpp"
+#include "present.hpp"
 
 namespace {
 namespace lab = orcsdr::rf_lab;
@@ -17,6 +18,14 @@ bool g_ready = false;
 int64_t g_last_runtime_us = 0;
 
 uint32_t now_ms() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
+
+bool apply_viewport() {
+  const auto* geometry = present_geometry();
+  if (geometry == nullptr) return lab::set_viewport({0, 0, 1280, 720});
+  const auto safe = geometry->safe;
+  return lab::set_viewport({static_cast<int>(safe.x), static_cast<int>(safe.y),
+                            static_cast<int>(safe.width), static_cast<int>(safe.height)});
+}
 
 lab::Runtime runtime() {
   lab::Runtime r{};
@@ -54,6 +63,7 @@ lab::Runtime runtime() {
 void iq_sink(const uint8_t* iq, size_t bytes) { orcsdr::rf_analysis::offer_iq(iq, bytes); }
 
 void enter() {
+  if (!apply_viewport()) { home_app::request_home(); return; }
   if (!g_ready) {
     g_ready = lab::initialize(nullptr);
     if (!g_ready) return;
@@ -104,11 +114,17 @@ void tick() {
 }
 
 void touch(int x, int y, bool down) { lab::handle_touch(x, y, down, now_ms()); }
+
+bool resize() {
+  if (!apply_viewport()) return false;
+  lab::draw();  // A half-turn can clear the view sprite without changing its dimensions.
+  return true;
+}
 }  // namespace
 
 namespace screens {
 const Screen& rflab_screen() {
-  static const Screen s{orcsdr::dashboards::Id::rf_lab, "RF_LAB", enter, leave, tick, nullptr, nullptr, nullptr, touch};
+  static const Screen s{orcsdr::dashboards::Id::rf_lab, "RF_LAB", enter, leave, tick, nullptr, nullptr, nullptr, touch, resize};
   return s;
 }
 }  // namespace screens

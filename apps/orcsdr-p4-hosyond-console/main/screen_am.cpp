@@ -4,8 +4,10 @@
 #include "audio_service.hpp"
 #include "home_app.hpp"
 #include "nvs_store.hpp"
+#include "present.hpp"
 #include "radio_service.hpp"
 #include "screens.hpp"
+#include "receiver_band_plan.hpp"
 
 namespace {
 namespace am = orcsdr::am;
@@ -42,6 +44,7 @@ am::Snapshot build() {
 }
 
 void enter() {
+  (void)screens::am_resize_viewport();
   if (!g_loaded) {
     orcsdr::NvsStore store;
     if (store.begin("orcsdr_am", true)) {
@@ -53,7 +56,11 @@ void enter() {
   }
   // AM broadcast: start from the saved station if Home is not already in the AM band.
   const home_app::Status st = home_app::status();
-  if (st.frequency_hz > 30000000 && am::saved_frequency()) home_app::request_frequency(am::saved_frequency());
+  const auto& am_band = orcsdr::receiver_bands::kAmBroadcast;
+  if ((st.frequency_hz < am_band.min_hz || st.frequency_hz > am_band.max_hz) &&
+      am::saved_frequency() >= am_band.min_hz &&
+      am::saved_frequency() <= am_band.max_hz)
+    home_app::request_frequency(am::saved_frequency());
   am::enter(build());
 }
 void leave() { am::leave(); }
@@ -109,12 +116,40 @@ void drag(int x, int y) {
   if (a.kind == am::ActionKind::none) a = am::handle_gain_drag(x, y);
   apply(a);
 }
+void touch(int x, int y, bool down) {
+  const am::TouchResult preset = am::handle_preset_touch(
+      x, y, down, static_cast<uint32_t>(esp_timer_get_time() / 1000));
+  if (preset.consumed) {
+    apply(preset.action);
+    return;
+  }
+  if (down) {
+    am::Action a = am::handle_bandwidth_drag(x, y);
+    if (a.kind == am::ActionKind::none) a = am::handle_gain_drag(x, y);
+    apply(a);
+    return;
+  }
+  apply(am::handle_touch(x, y));
+}
 void spectrum(const float* levels, size_t first, size_t visible, float floor) { am::draw_spectrum(levels, first, visible, floor); }
 }  // namespace
 
 namespace screens {
+bool am_resize_viewport() {
+  const auto* geometry = present_geometry();
+  if (geometry == nullptr) return am::set_viewport({0, 0, 1280, 720});
+  const auto safe = geometry->safe;
+  return am::set_viewport({static_cast<int>(safe.x), static_cast<int>(safe.y),
+                           static_cast<int>(safe.width), static_cast<int>(safe.height)});
+}
+
 const Screen& am_screen() {
-  static const Screen s{orcsdr::dashboards::Id::am, "AM", enter, leave, tick, tap, drag, spectrum};
+  static const Screen s{orcsdr::dashboards::Id::am, "AM", enter, leave, tick, tap, drag, spectrum,
+      touch, []() {
+        if (!am_resize_viewport()) return false;
+        am::draw();
+        return true;
+      }};
   return s;
 }
 }  // namespace screens

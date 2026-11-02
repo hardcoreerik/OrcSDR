@@ -11,12 +11,17 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "home_app.hpp"
+#include "present.hpp"
+#include "orientation_app.hpp"
+#include "c6_recovery_app.hpp"
+#include "c6_rom_package.hpp"
 #include "hosyond_board.h"
 #include "nvs_store.hpp"
 #include "orcsdr_board_profile.h"
 #include "radio_service.hpp"
 #include "receiver_location.hpp"
 #include "screens.hpp"
+#include "sd_card.hpp"
 #include "settings_app.hpp"
 #include "wifi_app.hpp"
 
@@ -27,6 +32,23 @@ bool g_loaded = false;
 
 // ZIP 97477 (Springfield, Oregon) is the default receiver location until the owner sets another one.
 constexpr int32_t kDefaultLatE7 = 440720000, kDefaultLonE7 = -1229600000;
+
+orcsdr::c6_recovery_ui::Phase recovery_phase(c6_recovery_app::Phase p) {
+  using In=c6_recovery_app::Phase;using Out=orcsdr::c6_recovery_ui::Phase;
+  switch(p) {
+    case In::idle: return Out::idle;
+    case In::quiescing: return Out::quiescing;
+    case In::connecting: return Out::connecting;
+    case In::release_boot: return Out::release_boot;
+    case In::writing: return Out::writing;
+    case In::verifying: return Out::verifying;
+    case In::restarting: return Out::restarting;
+    case In::complete: return Out::complete;
+    case In::failed: return Out::failed;
+    case In::release_boot_failure: return Out::release_boot_failure;
+  }
+  return Out::failed;
+}
 
 void load_location() {
   bool set = true;
@@ -89,6 +111,13 @@ void save() {
 const st::State& build() {
   const home_app::Status h = home_app::status();
   g_state.volume = h.volume;
+  const auto orientation=orcsdr::orientation_app::status();
+  g_state.orientation_profile=true;
+  g_state.orientation_degrees=orientation.current_degrees;
+  g_state.orientation_manual_angles=15;
+  g_state.orientation_auto_available=orientation.available;
+  g_state.orientation_auto_enabled=orientation.enabled;
+  g_state.orientation_locked=c6_recovery_app::status().busy || wifi_app::recovery_access()!=wifi_app::RecoveryAccess::idle;
   g_state.fm_frequency_hz = h.frequency_hz;
   std::snprintf(g_state.default_band, sizeof(g_state.default_band), "%.15s", h.band);
   g_state.rtl_usb_safe_mode = esp_rtl_sdr_usb_safe_mode_active();
@@ -140,13 +169,32 @@ const st::State& build() {
     g_state.longitude_e7 = loc.longitude_e7;
     std::snprintf(g_state.location_label, sizeof(g_state.location_label), "%.39s", loc.label);
   }
-  g_state.sd_ready = false;
+  g_state.wifi_c6_rom_recovery=orcsdr_board_profile()->c6_rom_sdio_recovery;
+  if(g_state.wifi_c6_rom_recovery) {
+    const auto up=c6_recovery_app::status();
+    g_state.wifi_c6_rom_phase=recovery_phase(up.phase);
+    g_state.wifi_c6_rom_busy=up.busy;g_state.wifi_c6_rom_result=up.result;
+    g_state.wifi_c6_update_percent=up.percent;
+    g_state.wifi_c6_image_embedded=orcsdr_embedded_c6_rom_manifest()!=nullptr;
+  }
+  const auto sd=sd_card::status();
+  g_state.sd_ready=sd.mounted;
+  g_state.sd_total_bytes=sd.total_bytes;
+  g_state.sd_free_bytes=sd.free_bytes;
+  g_state.sd_capacity_known=sd.free_known;
   g_state.companion_supported = false;
   return g_state;
 }
 
+bool resize() {
+  const auto* g=present_geometry();
+  if(!g || !st::set_viewport({int(g->safe.x),int(g->safe.y),int(g->safe.width),int(g->safe.height)})) return false;
+  st::draw();return true;
+}
 void enter() {
   if (!g_loaded) load();
+  const auto* g=present_geometry();
+  if(g) (void)st::set_viewport({int(g->safe.x),int(g->safe.y),int(g->safe.width),int(g->safe.height)});
   st::enter(build(), st::Section::display_audio);
 }
 void leave() { st::leave(); }
@@ -155,7 +203,13 @@ void tick() { st::update(build()); }
 void tap(int x, int y) {
   const st::Action a = st::handle_touch(x, y);
   switch (a.kind) {
+    case st::ActionKind::c6_rom_begin: (void)c6_recovery_app::begin();break;
+    case st::ActionKind::c6_rom_release_install: (void)c6_recovery_app::confirm_boot_released(true);break;
+    case st::ActionKind::c6_rom_release_resume: (void)c6_recovery_app::confirm_boot_released(false);break;
+    case st::ActionKind::c6_rom_cancel: (void)c6_recovery_app::cancel();break;
     case st::ActionKind::close: home_app::request_home(); break;
+    case st::ActionKind::orientation_angle_changed: (void)orcsdr::orientation_app::request_manual(a.value); break;
+    case st::ActionKind::orientation_auto_changed: (void)orcsdr::orientation_app::request_auto(a.value!=0); break;
     case st::ActionKind::brightness_changed:
       g_state.brightness = static_cast<uint8_t>(std::clamp<int32_t>(a.value, 8, 255));
       (void)hosyond_board_set_backlight(g_state.brightness);
@@ -185,7 +239,8 @@ void tap(int x, int y) {
       esp_restart();
       break;
     case st::ActionKind::c6_update_confirm:
-      if (orcsdr_board_c6_image_applies()) (void)orcsdr::wifi::begin_c6_update();  // never push the C6 image to another chip
+      if (!c6_recovery_app::status().busy && wifi_app::recovery_access()==wifi_app::RecoveryAccess::idle && orcsdr_board_c6_image_applies())
+        (void)orcsdr::wifi::begin_c6_update();
       break;
     case st::ActionKind::wifi_power_changed: wifi_app::set_power(a.value != 0); break;
     case st::ActionKind::wifi_start_at_boot_changed: wifi_app::set_start_at_boot(a.value != 0); break;
@@ -217,7 +272,7 @@ void tap(int x, int y) {
 namespace screens {
 void apply_saved_location() { load_location(); }
 const Screen& settings_screen() {
-  static const Screen s{orcsdr::dashboards::Id::settings, "SETTINGS", enter, leave, tick, tap, nullptr, nullptr};
+  static const Screen s{orcsdr::dashboards::Id::settings, "SETTINGS", enter, leave, tick, tap, nullptr, nullptr, nullptr, resize};
   return s;
 }
 }  // namespace screens

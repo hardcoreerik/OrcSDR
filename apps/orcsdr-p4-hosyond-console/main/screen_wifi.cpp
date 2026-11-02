@@ -6,6 +6,7 @@
 #include "home_app.hpp"
 #include "rf24_dashboard.hpp"
 #include "screens.hpp"
+#include "present.hpp"
 #include "wifi_app.hpp"
 
 namespace {
@@ -14,6 +15,14 @@ int64_t g_last_scan_us = 0;
 int64_t g_scan_requested_us = 0;
 uint32_t g_revision = 1;
 bool g_seen_scanning = false;
+
+bool apply_viewport() {
+  const auto* geometry = present_geometry();
+  if (geometry == nullptr) return rf::set_viewport({0, 0, 1280, 720});
+  const auto safe = geometry->safe;
+  return rf::set_viewport({static_cast<int>(safe.x), static_cast<int>(safe.y),
+                           static_cast<int>(safe.width), static_cast<int>(safe.height)});
+}
 
 const rf::Snapshot& build() {
   static rf::Snapshot s;
@@ -51,6 +60,7 @@ const rf::Snapshot& build() {
 }
 
 void enter() {
+  if (!apply_viewport()) { home_app::request_home(); return; }
   (void)wifi_app::request_scan();
   g_scan_requested_us = esp_timer_get_time();
   rf::enter(build());
@@ -67,11 +77,17 @@ void tap(int x, int y) {
     default: break;  // mute / visualizer: not available on this target
   }
 }
+
+bool resize() {
+  if (!apply_viewport()) return false;
+  rf::draw(build());
+  return true;
+}
 }  // namespace
 
 namespace screens {
 const Screen& wifi_screen() {
-  static const Screen s{orcsdr::dashboards::Id::wifi_analysis, "WIFI_ANALYSIS", enter, leave, tick, tap, nullptr, nullptr};
+  static const Screen s{orcsdr::dashboards::Id::wifi_analysis, "WIFI_ANALYSIS", enter, leave, tick, tap, nullptr, nullptr, nullptr, resize};
   return s;
 }
 }  // namespace screens

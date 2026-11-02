@@ -166,7 +166,7 @@ def main():
     ap.add_argument('--band', help='Explicitly select an FT8 band, e.g. 20m; otherwise no tuning commands')
     ap.add_argument('--seconds', type=float, default=120)
     ap.add_argument('--reconnect', action='store_true', help='Exercise Dial disconnect/connect; does not erase pairing')
-    ap.add_argument('--png', action='store_true', help='Hash-verified FT8 SNAP before/after; no SD/stop fallback')
+    ap.add_argument('--png', action='store_true', help='Hash-verified SCREENSHOT before/after; no SD/stop fallback')
     ap.add_argument('--output', type=Path, help='New evidence directory; existing directories are refused')
     args = ap.parse_args()
     if args.tab5_port.casefold() == args.dial_port.casefold() or not 30 <= args.seconds <= 600:
@@ -185,7 +185,7 @@ def main():
         report['repository_head'] = subprocess.check_output(['git', '-C', str(Path(__file__).resolve().parent),
                                                             'rev-parse', 'HEAD'], text=True).strip()
         import tab5_ft8 as control
-        from tab5_ft8_shot import snap_png
+        from screenshot import screenshot
         key = control.find_key(args.key)
         for port in (args.tab5_port, args.dial_port):
             device = control.Tab5(port)
@@ -234,7 +234,7 @@ def main():
                 report['checks']['reconnect'] = 'PASS'
                 rig.restore_link = False
             if args.png:
-                snap_png(tab5, key, str(output / 'before.png'), tries=1)
+                screenshot(tab5, key, str(output / 'before.png'), tries=1)
             rig.pump(2)  # establish cached-record high water before measuring new delivery
             start = time.monotonic()
             observation = Observation(rig.last_record, start + args.seconds)
@@ -255,7 +255,7 @@ def main():
                           errors=observation.errors)
             report['checks']['live_delivery'] = result
             if args.png:
-                snap_png(tab5, key, str(output / 'after.png'), tries=1)
+                screenshot(tab5, key, str(output / 'after.png'), tries=1)
                 status = fields(rig.query('TAB5', 'FT8 STATUS', 'ORC_FT8_STATUS '))
                 if status.get('rx_running') != '1' or status.get('tap') != '1':
                     raise RuntimeError('FT8/IQ not active after PNG capture')

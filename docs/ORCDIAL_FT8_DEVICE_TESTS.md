@@ -26,7 +26,7 @@ and Dial packets read at or after it cannot change the verdict. Final status
 queries are diagnostics only. Serial-close failures are recorded without
 suppressing `report.json` or closing the remaining ports.
 
-`--png` uses the existing hash/length-checked `FT8 SNAP` helper before and after
+`--png` uses the existing hash/length-checked `SCREENSHOT` helper before and after
 observation, then checks that FT8/IQ is still active. It never uses the SD capture
 fallback, stops IQ for capture, or silently reclaims memory. Insufficient PNG
 workspace produces a recorded capture failure; inactive caches can be released

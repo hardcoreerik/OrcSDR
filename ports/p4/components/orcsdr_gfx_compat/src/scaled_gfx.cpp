@@ -160,6 +160,7 @@ bool ScaledDisplay::begin(int target_w, int target_h, int design_w, int design_h
   bind(&sprite_, design_w, design_h, target_w, target_h);
   sprite_.fillScreen(0);
   ready_ = true;
+  dirty_rows_.reset(target_h);
   mark_all_dirty();
   ESP_LOGI(kTag, "display %dx%d (design %dx%d, scale %.3f x %.3f), RGB565 sprite %u bytes", target_w, target_h,
            design_w, design_h, sx_, sy_, unsigned(storage_bytes_));
@@ -167,28 +168,14 @@ bool ScaledDisplay::begin(int target_w, int target_h, int design_w, int design_h
 }
 
 void ScaledDisplay::dirty(int x0, int y0, int x1, int y1) {
-  (void)x0;
-  (void)x1;
-  y0 = std::clamp(y0, 0, th_);
-  y1 = std::clamp(y1, 0, th_);
-  if (y1 <= y0) return;
-  if (dirty_y1_ <= dirty_y0_) {
-    dirty_y0_ = y0;
-    dirty_y1_ = y1;
-  } else {
-    dirty_y0_ = std::min(dirty_y0_, y0);
-    dirty_y1_ = std::max(dirty_y1_, y1);
-  }
+  (void)x0; (void)x1;
+  dirty_rows_.add(y0, y1);
 }
 
 void ScaledDisplay::mark_dirty_target(int x0, int y0, int x1, int y1) { dirty(x0, y0, x1, y1); }
 
 bool ScaledDisplay::take_dirty(int* y0, int* y1) {
-  if (dirty_y1_ <= dirty_y0_) return false;
-  *y0 = dirty_y0_;
-  *y1 = dirty_y1_;
-  dirty_y0_ = dirty_y1_ = 0;
-  return true;
+  return y0 && y1 && dirty_rows_.take(*y0, *y1);
 }
 
 // ---------------------------------------------------------------------------------------------

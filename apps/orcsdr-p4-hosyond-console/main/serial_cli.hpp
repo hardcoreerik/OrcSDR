@@ -5,7 +5,7 @@
 // Tab5 documents for unknown input. `RTL_HELP` lists what is implemented.
 #include "orcsdr_gfx/scaled_gfx.hpp"
 
-// Starts the command task on the console UART. `display` is used for FT8 SNAP screenshots.
+// Starts the command task on the console UART. `display` is used for SCREENSHOT captures.
 // Initializes the shared NVS partition without starting the UART task; display preferences
 // that affect first presentation can be loaded after this and before serial_cli_start().
 bool serial_cli_storage_init();

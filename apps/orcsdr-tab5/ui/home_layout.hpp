@@ -72,10 +72,16 @@ inline Layout make_layout(LayoutRect v,int content_top) {
     l.palette={l.contrast.x+cw+gap,readout_y,small,button_h};
     l.speed={l.palette.x+small+gap,readout_y,small,button_h};
     l.mode={l.speed.x+small+gap,readout_y,w-(l.speed.x+small+gap-x),button_h};
-    const int unit=(w-4*gap)/5;
+    // Give the three steppers enough room for normal-size labels and values.
+    // Filter/gain need less width because they have no flanking arrow buttons.
+    const bool readable_steppers = w >= 3*196 + 2*88 + 4*gap;
+    const int chip = readable_steppers ? std::min(112,(w-3*196-4*gap)/2) : (w-4*gap)/5;
+    const int unit = readable_steppers ? (w-2*chip-4*gap)/3 : chip;
     l.span={x,controls_y,unit,button_h};l.tune={x+unit+gap,controls_y,unit,button_h};
-    l.step={x+2*(unit+gap),controls_y,unit,button_h};l.filter={x+3*(unit+gap),controls_y,unit,button_h};
-    l.gain={x+4*(unit+gap),controls_y,w-4*(unit+gap),button_h};
+    l.step={x+2*(unit+gap),controls_y,unit,button_h};
+    l.filter={x+3*(unit+gap),controls_y,chip,button_h};
+    const int gain_x=l.filter.x+chip+gap;
+    l.gain={gain_x,controls_y,x+w-gain_x,button_h};
     l.main={x,content_top,w,l.footer.y-gap-content_top};
   }
   l.popup={v.x,bottom-std::min(360,v.h),v.w,std::min(360,v.h)};

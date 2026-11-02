@@ -96,7 +96,14 @@ bool fm_resize_viewport() {
 }
 
 const Screen& fm_screen() {
-  static const Screen s{orcsdr::dashboards::Id::fm, "FM", enter, leave, tick, tap, drag, spectrum};
+  static const Screen s{orcsdr::dashboards::Id::fm, "FM", enter, leave, tick, tap, drag, spectrum,
+      nullptr, []() {
+        if (!fm_resize_viewport()) return false;
+        // A 180-degree transition has unchanged bounds but a cleared view
+        // buffer, so redraw even when set_viewport found no size change.
+        fm::draw();
+        return true;
+      }};
   return s;
 }
 }  // namespace screens

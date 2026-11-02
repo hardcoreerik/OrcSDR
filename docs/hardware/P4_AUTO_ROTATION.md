@@ -74,9 +74,12 @@ controls are `RTL_ORIENTATION STATUS`, `RTL_ORIENTATION AUTO ON|OFF`, and
 `RTL_ORIENTATION MANUAL 0|90|180|270`. Status includes availability, saved
 preference, active mode, and raw XYZ telemetry for calibration.
 
-Settings UI is not implemented, and no profile currently supplies measured
-sensor axes. `available` therefore stays false and saved auto mode cannot rotate
-the display until calibration is physically verified and wired into the profile.
-Rotation currently exits a non-Home dashboard and returns to Home; dashboard
-local state is not preserved across the geometry change. No hardware behavior
-or physical orientation has been verified.
+Settings > Display & Audio exposes manual angles and the persistent Auto-rotation toggle. Automatic rotation remains opt-in. The LilyGO profile supplies measured axes; other profiles default to unverified axes and retain manual fallback.
+
+On 2026-11-01, six samples were recorded in each user-confirmed physical pose. Mean gravity vectors were upright (0.825,0.004,-0.511), clockwise (0.021,-1.003,-0.063), upside down (-0.994,-0.039,-0.186), and top-left (-0.065,0.973,-0.153). Upright was tilted but had sufficient in-plane gravity. The accepted mapping is policy X=sensor X, policy Y=-sensor Y: physical clockwise rotation proposes view270, keeping text upright. The initial direct-Y mapping was rejected by the human direction test.
+
+The corrected mapping is installed in checkpoint r4. The human confirmed both manual270 and automatic portrait-to-clockwise-landscape are upright. Policy tests replay all four measured poses and separately cover 500 ms dwell, 12 degree hysteresis, shake/face-up rejection, manual fallback, and touch/update gates. Software checks do not establish physical acceptance of those other cases.
+
+Physical gates still open: opposite landscape and inverted automatic transitions, preference persistence after restart, turning while a gesture is held, firmware-update rotation locking, and receiver/audio continuity. The sampled clockwise transition must not be generalized to these gates.
+
+Dashboard rotation invokes an optional geometry-change callback. Home, FM and Settings have sampled native rotation validation; AM, RF Lab, Wi-Fi Analysis and additional dashboards are being migrated and checked individually. A dashboard without a callback returns to Home. Cross-profile build and physical acceptance remain separate gates.

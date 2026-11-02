@@ -6,11 +6,12 @@ idf_component_register(
          "src/loader_connect.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "src"
-    REQUIRES esp-serial-flasher-v2.1.0 mbedtls esp_driver_sdmmc esp_driver_gpio
+    REQUIRES esp_serial_flasher mbedtls esp_driver_sdmmc esp_driver_gpio
 )
 
-idf_component_get_property(FLASHER_DIR esp-serial-flasher-v2.1.0 COMPONENT_DIR)
+idf_component_get_property(FLASHER_DIR esp_serial_flasher COMPONENT_DIR)
 target_include_directories(${COMPONENT_LIB} PRIVATE "${FLASHER_DIR}/private_include")
-target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_loader_get_sdio_ops")
-idf_component_get_property(FLASHER_LIB esp-serial-flasher-v2.1.0 COMPONENT_LIB)
+target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_loader_get_sdio_ops"
+    "-Wl,--undefined=__wrap_esp_loader_get_sdio_ops")
+idf_component_get_property(FLASHER_LIB esp_serial_flasher COMPONENT_LIB)
 target_compile_definitions(${FLASHER_LIB} PRIVATE SERIAL_FLASHER_WRITE_BLOCK_RETRIES=1)

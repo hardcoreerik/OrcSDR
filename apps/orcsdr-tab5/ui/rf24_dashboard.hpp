@@ -1,5 +1,7 @@
 #pragma once
 
+#include "rf24_dashboard_layout.hpp"
+
 #include <cstdint>
 
 namespace orcsdr::rf24 {
@@ -47,6 +49,8 @@ struct Action { ActionKind kind = ActionKind::none; };
 void enter(const Snapshot& snapshot);
 void update(const Snapshot& snapshot);
 void update_header(const Snapshot& snapshot);
+bool set_viewport(audio_header::HeaderRect safe);
+void draw(const Snapshot& snapshot);
 bool select_page(uint8_t page, const Snapshot& snapshot);
 void leave();
 bool active();

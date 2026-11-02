@@ -7,6 +7,7 @@
 
 #include "acars_dashboard_model.hpp"
 #include "acars_dashboard_ui.hpp"
+#include "acars_dashboard_layout.hpp"
 
 namespace orcsdr::acars_dashboard {
 
@@ -15,6 +16,8 @@ namespace orcsdr::acars_dashboard {
 using HeaderHook = void (*)();
 
 void install(acars_ui::Model* model, acars_ui::Controller* controller, HeaderHook header_controls);
+// UI-owner only. Configures the safe drawing/touch area; legacy callers keep 1280x720.
+bool set_viewport(acars_ui::layout::Rect viewport);
 // Optional: returns true while a shared-header overlay (the volume tray) is open over the content. Repaints
 // are deferred meanwhile so the tray is not erased.
 void set_overlay_probe(bool (*overlay_open)());

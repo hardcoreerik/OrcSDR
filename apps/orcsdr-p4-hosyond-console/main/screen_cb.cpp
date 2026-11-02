@@ -9,6 +9,7 @@
 #include "esp_timer.h"
 #include "home_app.hpp"
 #include "radio_service.hpp"
+#include "present.hpp"
 #include "screens.hpp"
 
 namespace {
@@ -22,6 +23,14 @@ cb::Snapshot g_snapshot;
 bool g_first = true;
 
 uint32_t now_ms() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
+
+bool resize_viewport() {
+  const auto* geometry = present_geometry();
+  if (geometry == nullptr) return cb::set_viewport({0, 0, 1280, 720});
+  const auto safe = geometry->safe;
+  return cb::set_viewport({static_cast<int>(safe.x), static_cast<int>(safe.y),
+                           static_cast<int>(safe.width), static_cast<int>(safe.height)});
+}
 
 void tune_channel(size_t channel, bool from_scanner = false) {
   channel = std::min<size_t>(channel, cb::kChannelCount - 1);
@@ -77,6 +86,7 @@ void apply_mode() {
 }
 
 void enter() {
+  (void)resize_viewport();
   const home_app::Status st = home_app::status();
   if (st.frequency_hz < 26900000 || st.frequency_hz > 27450000) tune_channel(cb::kHighwayChannel);
   g_first = true;
@@ -176,7 +186,12 @@ void spectrum(const float* levels, size_t first, size_t visible, float floor) {
 
 namespace screens {
 const Screen& cb_screen() {
-  static const Screen s{orcsdr::dashboards::Id::cb, "CB", enter, leave, tick, tap, nullptr, spectrum};
+  static const Screen s{orcsdr::dashboards::Id::cb, "CB", enter, leave, tick, tap, nullptr,
+      spectrum, nullptr, []() {
+        if (!resize_viewport()) return false;
+        cb::draw();
+        return true;
+      }};
   return s;
 }
 }  // namespace screens

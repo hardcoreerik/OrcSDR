@@ -19398,7 +19398,7 @@ void process_ft8_command(const char* args) {
   }
 
   if (strcmp(verb, "SNAP") == 0) {
-    // The screen as a PNG over serial: no SD card, no RTL_STOP, no retune (tools/tab5_ft8_shot.py uses this).
+    // The screen as a PNG over serial: no SD card, no RTL_STOP, no retune (tools/screenshot.py uses this).
     if (need_auth()) return;
     (void)orcsdr::ui_capture::stream_png(M5.Display, [](const char* data, size_t size, void*) {
       // Blocking (never drops while the host reads); a short write means the host stopped reading, so the capture aborts.
@@ -19883,6 +19883,10 @@ const orcsdr::lora_diag::Hooks kLoraDiagHooks{
     lora_diag_adapter::select_channel,  lora_diag_adapter::recent_packets};
 
 void process_command(char* command) {
+  if (strcasecmp(command,"SCREENSHOT")==0) {
+    process_ft8_command("SNAP"); // shared capture/authentication implementation
+    return;
+  }
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
     return;

@@ -60,7 +60,7 @@ idf_component_register(
          "${TAB5_UI}/am_dashboard.cpp" "${TAB5_UI}/nvs_store.cpp"
          "${TAB5_UI}/fm_dashboard.cpp" "${TAB5_UI}/fm_config.cpp"
     INCLUDE_DIRS "." "${WS4B}" "${TAB5_UI}"
-    REQUIRES esp_rtl_sdr esp_psram esp_timer esp_driver_uart esp_app_format esp_rom mbedtls heap nvs_flash
+    REQUIRES orcsdr_c6_rom_update esp_rtl_sdr esp_psram esp_timer esp_driver_uart esp_app_format esp_rom mbedtls heap nvs_flash
              json orcmaps esp_http_client esp_https_ota app_update esp_http_server esp_driver_jpeg orcsdr_board_hosyond orcsdr_gfx_compat orcsdr_audio_dsp orcsdr_orientation espressif__esp-dsp espressif__esp_hosted espressif__esp_wifi_remote esp_wifi esp_netif esp_event fatfs sdmmc esp_driver_gptimer esp_driver_sdmmc esp_driver_gpio vfs esp_mm
     EMBED_FILES ${ORCSDR_EMBED_FILES}
 )
@@ -72,3 +72,37 @@ target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)
 target_sources(${COMPONENT_LIB} PRIVATE "orientation_app.cpp")
 target_compile_options(${COMPONENT_LIB} PRIVATE
     "$<$<COMPILE_LANGUAGE:CXX>:-include;orcsdr_p4_time.hpp>" "-DORCSDR_HAS_EMBEDDED_C6_FIRMWARE=${ORCSDR_C6_EMBEDDED}")
+
+# Complete ROM recovery is distinct from the legacy Hosted application-only OTA.
+target_sources(${COMPONENT_LIB} PRIVATE "c6_rom_package.cpp")
+target_sources(${COMPONENT_LIB} PRIVATE "c6_recovery_app.cpp")
+if(C6_ROM_PACKAGE_MANIFEST)
+    if(NOT CONFIG_ORCSDR_BOARD_LILYGO_T_DISPLAY_P4_AMOLED)
+        message(FATAL_ERROR "ROM recovery package is currently qualified only for LilyGO C6")
+    endif()
+    set(package_generator "${CMAKE_CURRENT_LIST_DIR}/../../../tools/release/embed-c6-rom-package.py")
+    set(package_dir "${CMAKE_CURRENT_BINARY_DIR}/c6_rom_package")
+    execute_process(COMMAND "${PYTHON}" "${package_generator}"
+        --manifest "${C6_ROM_PACKAGE_MANIFEST}"
+        --expected-manifest-sha256 "${C6_ROM_PACKAGE_SHA256}" --output "${package_dir}"
+        RESULT_VARIABLE package_result ERROR_VARIABLE package_error)
+    if(NOT package_result EQUAL 0)
+        message(FATAL_ERROR "C6 recovery package validation failed: ${package_error}")
+    endif()
+    include("${package_dir}/c6_rom_files.cmake")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${C6_ROM_PACKAGE_MANIFEST}" "${package_generator}" ${ORCSDR_C6_ROM_FILES}
+        "${CMAKE_CURRENT_LIST_DIR}/../../../tools/release/hosted-c6-release.json"
+        "${CMAKE_CURRENT_LIST_DIR}/../../../orcdial/c6/CMakeLists.txt"
+        "${CMAKE_CURRENT_LIST_DIR}/../../../orcdial/c6/main/CMakeLists.txt"
+        "${CMAKE_CURRENT_LIST_DIR}/../../../orcdial/c6/main/main.c"
+        "${CMAKE_CURRENT_LIST_DIR}/../../../orcdial/c6/sdkconfig.defaults"
+        "${CMAKE_CURRENT_LIST_DIR}/../../../orcdial/c6/partitions_eh_cp_ota_4m.csv")
+    target_sources(${COMPONENT_LIB} PRIVATE "${package_dir}/c6_rom_manifest.cpp")
+    foreach(image IN LISTS ORCSDR_C6_ROM_FILES)
+        target_add_binary_data(${COMPONENT_LIB} "${image}" BINARY)
+    endforeach()
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE ORCSDR_HAS_C6_ROM_PACKAGE=1)
+else()
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE ORCSDR_HAS_C6_ROM_PACKAGE=0)
+endif()

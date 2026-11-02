@@ -1,6 +1,7 @@
 #include "orcsdr_c6_rom_update.h"
 #include "esp32_sdio_port.h"
 #include "esp_loader.h"
+#include "esp_log.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -33,8 +34,10 @@ static esp_loader_error_t port_init(esp_loader_port_t *base)
     port->_card_config.slot = port->slot;
     port->_card_config.max_freq_khz = port->max_freq_khz;
     port->_card_config.flags = SDMMC_HOST_FLAG_4BIT | SDMMC_HOST_FLAG_ALLOC_ALIGNED_BUF;
-    if (sdmmc_host_init() != ESP_OK) return ESP_LOADER_ERROR_FAIL;
-    port->_host_driver_needs_deinit = true;
+    esp_err_t init = sdmmc_host_init();
+    ESP_LOGI("C6_ROM_LOADER", "RTL_C6_ROM_LOADER stage=host_init slot=%d code=0x%x", port->slot, (unsigned)init);
+    if (init != ESP_OK && init != ESP_ERR_INVALID_STATE) return ESP_LOADER_ERROR_FAIL;
+    port->_host_driver_needs_deinit = false;
 
     sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
     slot.width = 4;
@@ -42,11 +45,12 @@ static esp_loader_error_t port_init(esp_loader_port_t *base)
     slot.d0 = port->sdio_d0_pin; slot.d1 = port->sdio_d1_pin;
     slot.d2 = port->sdio_d2_pin; slot.d3 = port->sdio_d3_pin;
     slot.flags = SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
-    if (sdmmc_host_init_slot(port->slot, &slot) != ESP_OK) {
-        sdmmc_host_deinit();
-        port->_host_driver_needs_deinit = false;
+    const esp_err_t slot_init = sdmmc_host_init_slot(port->slot, &slot);
+    ESP_LOGI("C6_ROM_LOADER", "RTL_C6_ROM_LOADER stage=slot_init slot=%d code=0x%x", port->slot, (unsigned)slot_init);
+    if (slot_init != ESP_OK) {
         return ESP_LOADER_ERROR_FAIL;
     }
+    port->_host_driver_needs_deinit = true; // this session owns only this slot
     return ESP_LOADER_SUCCESS;
 }
 
@@ -55,7 +59,7 @@ static void port_deinit(esp_loader_port_t *base)
     esp32_sdio_port_t *port = container_of(base, esp32_sdio_port_t, port);
     free(port->_card.host.dma_aligned_buffer);
     port->_card.host.dma_aligned_buffer = NULL;
-    if (port->_host_driver_needs_deinit) sdmmc_host_deinit();
+    if (port->_host_driver_needs_deinit) sdmmc_host_deinit_slot(port->slot);
     port->_host_driver_needs_deinit = false;
 }
 
@@ -109,9 +113,11 @@ orc_c6_rom_result_t orc_c6_rom_loader_connect(
     active_session = s;
 
     esp_loader_error_t e = esp_loader_init_sdio(loader, &port->port);
+    ESP_LOGI("C6_ROM_LOADER", "RTL_C6_ROM_LOADER stage=loader_init code=%d", (int)e);
     if (e == ESP_LOADER_SUCCESS) {
         esp_loader_connect_args_t args = {.sync_timeout = 1000, .trials = 1};
         e = esp_loader_connect(loader, &args);
+        ESP_LOGI("C6_ROM_LOADER", "RTL_C6_ROM_LOADER stage=connect code=%d reset_failed=%d", (int)e, s->reset_failed);
     }
     if (e != ESP_LOADER_SUCCESS || s->reset_failed ||
         esp_loader_get_target(loader) != ESP32C6_CHIP) {

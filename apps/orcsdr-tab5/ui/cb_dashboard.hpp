@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cb_scanner.hpp"
+#include "cb_dashboard_layout.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -78,6 +79,8 @@ struct Action {
 };
 
 const char* mode_name(Mode mode);
+bool set_viewport(LayoutRect viewport);
+void reset_viewport();
 // Relative S-units from the uncalibrated receiver level (S9 = -36 dBFS).
 int s_units(float signal_dbfs, int* over_s9_db);
 

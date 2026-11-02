@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "am_dashboard_layout.hpp"
 
 namespace orcsdr { class NvsStore; }
 
@@ -81,6 +82,9 @@ struct TouchResult {
 };
 
 void enter(const Snapshot& snapshot);
+bool set_viewport(LayoutRect viewport);
+void reset_viewport();
+DashboardLayout layout();
 void leave();
 void draw();
 void update(const Snapshot& snapshot);

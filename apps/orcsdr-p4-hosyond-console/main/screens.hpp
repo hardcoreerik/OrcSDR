@@ -21,6 +21,9 @@ struct Screen {
   void (*spectrum)(const float* levels, size_t first, size_t visible, float floor);
   // Optional: raw touch every loop while a finger is down or just lifted (replaces drag/tap when set).
   void (*touch)(int x, int y, bool down) = nullptr;
+  // UI-owner structural redraw after presentation geometry changes. Must
+  // preserve subview/tuning/modal state; false requests the Home fallback.
+  bool (*geometry_changed)() = nullptr;
 };
 
 const Screen* find(orcsdr::dashboards::Id id);
@@ -33,6 +36,7 @@ void apply_saved_location();
 // Defined by the adapters.
 const Screen& fm_screen();
 bool fm_resize_viewport();
+bool am_resize_viewport();
 const Screen& am_screen();
 const Screen& cb_screen();
 const Screen& airband_screen();

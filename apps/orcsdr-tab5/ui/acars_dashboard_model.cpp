@@ -240,6 +240,8 @@ void Model::reset() {
   clear_ring(live_);
   clear_ring(demo_store_);
   message_offset_ = aircraft_offset_ = 0;
+  visible_message_rows_ = kMessageRows;
+  visible_aircraft_rows_ = kAircraftRows;
   demo_ = false;
   tuned_hz_ = 0;
   tune_ = TuneStatus::unavailable;
@@ -515,10 +517,21 @@ bool Model::scroll_messages(int rows) {
   const long target = static_cast<long>(message_offset_) + rows;
   const size_t next = target < 0 ? 0 : static_cast<size_t>(target);
   const Snapshot& s = snapshot();
-  const size_t limit = s.matching_count > kMessageRows ? s.matching_count - kMessageRows : 0;
+  const size_t limit = s.matching_count > visible_message_rows_ ? s.matching_count - visible_message_rows_ : 0;
   const size_t clamped = std::min(next, limit);
   if (clamped == message_offset_) return false;
   message_offset_ = clamped;
+  bump_messages();
+  return true;
+}
+
+bool Model::set_visible_message_rows(size_t rows) {
+  rows = std::max<size_t>(1, std::min(rows, kMessageRows));
+  if (rows == visible_message_rows_) return false;
+  const size_t matching = snapshot().matching_count;
+  visible_message_rows_ = rows;
+  const size_t limit = matching > rows ? matching - rows : 0;
+  if (message_offset_ > limit) message_offset_ = limit;
   bump_messages();
   return true;
 }
@@ -527,10 +540,21 @@ bool Model::scroll_aircraft(int rows) {
   const long target = static_cast<long>(aircraft_offset_) + rows;
   const size_t next = target < 0 ? 0 : static_cast<size_t>(target);
   const Snapshot& s = snapshot();
-  const size_t limit = s.aircraft_total > kAircraftRows ? s.aircraft_total - kAircraftRows : 0;
+  const size_t limit = s.aircraft_total > visible_aircraft_rows_ ? s.aircraft_total - visible_aircraft_rows_ : 0;
   const size_t clamped = std::min(next, limit);
   if (clamped == aircraft_offset_) return false;
   aircraft_offset_ = clamped;
+  bump_messages();
+  return true;
+}
+
+bool Model::set_visible_aircraft_rows(size_t rows) {
+  rows = std::max<size_t>(1, std::min(rows, kAircraftRows));
+  if (rows == visible_aircraft_rows_) return false;
+  const size_t total = snapshot().aircraft_total;
+  visible_aircraft_rows_ = rows;
+  const size_t limit = total > rows ? total - rows : 0;
+  if (aircraft_offset_ > limit) aircraft_offset_ = limit;
   bump_messages();
   return true;
 }
@@ -658,16 +682,20 @@ void Model::set_live_sink(LiveSink sink, void* context) {
   live_sink_context_ = context;
 }
 
-size_t Model::aircraft_messages(const char* tail, const MessageRecord** out, size_t capacity) const {
+size_t Model::aircraft_messages(const char* tail, const MessageRecord** out, size_t capacity,
+                                size_t offset, size_t* total) const {
+  if (total) *total = 0;
   if (!tail || !out) return 0;
   const Ring& ring = active();
   for (size_t i = 0; i < ring.aircraft_used; ++i) {
     if (std::strcmp(ring.aircraft[i].tail, tail) != 0) continue;
-    size_t n = 0;
-    for (size_t k = 0; k < ring.aircraft[i].history_count && n < capacity; ++k) {
+    size_t n = 0, available = 0;
+    for (size_t k = 0; k < ring.aircraft[i].history_count; ++k) {
       const MessageRecord* m = find_message(ring.aircraft[i].history_seq[k]);
-      if (m) out[n++] = m;                      // evicted references are skipped, not invented
+      if (!m) continue;                          // evicted references are skipped, not invented
+      if (available++ >= offset && n < capacity) out[n++] = m;
     }
+    if (total) *total = available;
     return n;
   }
   return 0;
@@ -705,11 +733,11 @@ void Model::rebuild() {
     if (prefs_.filter == MessageFilter::corrected_only && m.integrity != Integrity::crc_corrected) continue;
     ++s.matching_count;
   }
-  const size_t message_limit = s.matching_count > kMessageRows ? s.matching_count - kMessageRows : 0;
+  const size_t message_limit = s.matching_count > visible_message_rows_ ? s.matching_count - visible_message_rows_ : 0;
   if (message_offset_ > message_limit) message_offset_ = message_limit;
   s.message_offset = message_offset_;
   size_t matched = 0;
-  for (size_t k = 0; k < ring.held && s.message_count < kMessageRows; ++k) {
+  for (size_t k = 0; k < ring.held && s.message_count < visible_message_rows_; ++k) {
     const MessageRecord& m = ring.records[(ring.head + kHistoryCapacity - 1 - k) % kHistoryCapacity];
     if (prefs_.filter == MessageFilter::corrected_only && m.integrity != Integrity::crc_corrected) continue;
     if (matched++ < message_offset_) continue;
@@ -735,10 +763,10 @@ void Model::rebuild() {
     order[j] = v;
   }
   s.aircraft_total = used;
-  const size_t aircraft_limit = used > kAircraftRows ? used - kAircraftRows : 0;
+  const size_t aircraft_limit = used > visible_aircraft_rows_ ? used - visible_aircraft_rows_ : 0;
   if (aircraft_offset_ > aircraft_limit) aircraft_offset_ = aircraft_limit;
   s.aircraft_offset = aircraft_offset_;
-  s.aircraft_count = std::min(used - aircraft_offset_, kAircraftRows);
+  s.aircraft_count = std::min(used - aircraft_offset_, visible_aircraft_rows_);
   for (size_t i = 0; i < kAircraftRows; ++i)
     s.aircraft[i] = i < s.aircraft_count ? ring.aircraft[order[aircraft_offset_ + i]] : AircraftRecord{};
 

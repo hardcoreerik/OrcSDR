@@ -1,4 +1,5 @@
 #pragma once
+#include "dirty_rows.hpp"
 // M5GFX-compatible drawing front end that scales the Tab5's 1280x720 coordinate space onto a
 // smaller display. The Tab5 UI code (apps/orcsdr-tab5/ui) is written entirely as M5GFX calls
 // with absolute 1280x720 coordinates. These classes accept those same calls and arguments,
@@ -250,10 +251,11 @@ class ScaledDisplay : public ScaledGfx {
   bool ready() const { return ready_; }
 
   // Dirty-row bookkeeping for the presenter. Returns false when nothing changed.
+  static constexpr std::size_t kMaxDirtyRanges = 16;
   bool take_dirty(int* y0, int* y1);
   // Used by canvases that pushed themselves into the display (target pixels).
   void mark_dirty_target(int x0, int y0, int x1, int y1);
-  void mark_all_dirty() { dirty_y0_ = 0; dirty_y1_ = th_; }
+  void mark_all_dirty() { dirty_rows_.clear(); dirty_rows_.add(0, th_); }
   const uint16_t* buffer() const { return static_cast<const uint16_t*>(sprite_.getBuffer()); }
   size_t stride_pixels() const { return static_cast<size_t>(tw_); }
   int target_width() const { return tw_; }
@@ -268,7 +270,7 @@ class ScaledDisplay : public ScaledGfx {
   void* storage_ = nullptr;
   size_t storage_bytes_ = 0;
   bool ready_ = false;
-  int dirty_y0_ = 0, dirty_y1_ = 0;  // empty when y0 >= y1
+  DirtyRows<kMaxDirtyRanges> dirty_rows_;
 };
 
 // An off-screen sprite, created and drawn in design units.

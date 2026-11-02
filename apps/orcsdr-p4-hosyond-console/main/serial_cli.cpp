@@ -22,6 +22,8 @@
 #include "audio_service.hpp"
 #include "home_app.hpp"
 #include "orientation_app.hpp"
+#include "c6_rom_package.hpp"
+#include "c6_recovery_app.hpp"
 #include "mbedtls/md.h"
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -164,6 +166,7 @@ void cmd_help() {
   std::printf("RTL_HELP OrcSDR P4 console: subset of docs/API_SERIAL_CLI.md. Unknown commands stay silent.\n");
   std::printf("PAIR <key> / AUTH <nonce> <proof> / PING        - pairing and session (auth commands need AUTH)\n");
   std::printf("RTL_STATUS                                      - receiver state\n");
+  std::printf("RTL_C6_ROM STATUS                               - read-only embedded recovery package status\n");
   std::printf("RTL_FREQ | RTL_FREQ <HZ>                         - query / hot retune (auth)\n");
   std::printf("RTL_TUNE <FM|AM|WX|CB|P25|LORA|BROWSE> <HZ>      - retune (auth)\n");
   std::printf("RTL_SIGNAL                                      - signal level snapshot\n");
@@ -171,7 +174,7 @@ void cmd_help() {
   std::printf("RTL_ORIENTATION STATUS | AUTO ON|OFF | MANUAL <0|90|180|270> - sensor/status and rotation (auth)\n");
   std::printf("RTL_UI STATUS | RTL_UI OPEN <HOME> | RTL_UI TAP <view-x> <view-y>  - UI (OPEN/TAP need auth)\n");
   std::printf("RTL_SCREEN_STATUS / RTL_MEM STATUS / RTL_RX STATUS - diagnostics (RTL_RX: one line per receiver)\n");
-  std::printf("FT8 SNAP                                        - screenshot as PNG over serial (auth)\n");
+  std::printf("SCREENSHOT                                      - screenshot as PNG over serial (auth)\n");
 }
 
 void cmd_status() {
@@ -279,6 +282,9 @@ void cmd_wifi(char* args) {
     wifi_app::set_power(args[6] == '1');
     std::printf("RTL_WIFI_POWER_OK power=%d\n", args[6] == '1');
   } else if (std::strcmp(args, "C6_UPDATE") == 0) {
+    if (c6_recovery_app::status().busy || wifi_app::recovery_access()!=wifi_app::RecoveryAccess::idle) {
+      std::printf("RTL_WIFI_ERROR recovery_owns_sdio\n");return;
+    }
     if (!orcsdr_board_c6_image_applies()) {
       std::printf("RTL_WIFI_ERROR c6_update_not_applicable coprocessor=%s\n", orcsdr_board_profile()->wifi_coprocessor);
     } else {
@@ -318,7 +324,7 @@ void cmd_restart(char* args) {
 void cmd_sd(char* args) {
   if (std::strcmp(args, "STATUS") == 0) {
     const sd_card::Status s = sd_card::status();
-    std::printf("RTL_SD_STATUS attempted=%d mounted=%d total_mb=%llu\n", s.attempted, s.mounted, (unsigned long long)(s.total_bytes >> 20));
+    std::printf("RTL_SD_STATUS attempted=%d mounted=%d total_mb=%llu free_known=%d free_mb=%llu\n", s.attempted, s.mounted, (unsigned long long)(s.total_bytes >> 20),s.free_known,(unsigned long long)(s.free_bytes >> 20));
     return;
   }
   if (std::strcmp(args, "CHECK") == 0) {
@@ -677,6 +683,44 @@ void handle_line(char* line) {
   if (std::strcmp(line, "RTL_HELP") == 0) return cmd_help();
   if (std::strncmp(line, "RTL_ORIENTATION ", 16) == 0) return cmd_orientation(line + 16);
   if (std::strcmp(line, "RTL_STATUS") == 0) return cmd_status();
+  if (std::strcmp(line,"RTL_C6_ROM STATUS")==0) {
+    const auto* package=orcsdr_embedded_c6_rom_manifest();
+    size_t bytes=0;
+    if (package) for (unsigned i=0;i<package->segment_count;++i) bytes+=package->segments[i].size;
+    const auto recovery=c6_recovery_app::status();
+    std::printf("RTL_C6_ROM_STATUS embedded=%u segments=%u bytes=%u flash_size=%u access=%u phase=%s percent=%u result=%d worker_busy=%u write_enabled=%u\n",
+        package?1u:0u,package?unsigned(package->segment_count):0u,unsigned(bytes),
+        package?unsigned(package->flash_size):0u,unsigned(wifi_app::recovery_access()),
+        c6_recovery_app::phase_name(recovery.phase),unsigned(recovery.percent),recovery.result,recovery.busy?1u:0u,
+        recovery.phase==c6_recovery_app::Phase::writing?1u:0u);
+    return;
+  }
+  if (std::strcmp(line,"RTL_C6_ROM QUIESCE")==0 || std::strcmp(line,"RTL_C6_ROM RESUME")==0) {
+    if (!authed()) {std::printf("RTL_C6_ROM_ERROR auth_required\n");return;}
+    if(c6_recovery_app::status().busy) {std::printf("RTL_C6_ROM_ERROR worker_busy\n");return;}
+    if (std::strcmp(line,"RTL_C6_ROM QUIESCE")==0) {
+      if (!orcsdr_embedded_c6_rom_manifest()) {std::printf("RTL_C6_ROM_ERROR no_package\n");return;}
+      const auto update=orcsdr::wifi::c6_update_status();
+      if (update.state==orcsdr::wifi::C6UpdateState::updating || update.state==orcsdr::wifi::C6UpdateState::rebooting) {
+        std::printf("RTL_C6_ROM_ERROR update_busy\n");return;
+      }
+      std::printf(wifi_app::request_recovery_access()?"RTL_C6_ROM_QUIESCE_QUEUED\n":"RTL_C6_ROM_ERROR busy\n");
+    } else {
+      wifi_app::release_recovery_access();std::printf("RTL_C6_ROM_RESUME_QUEUED\n");
+    }
+    return;
+  }
+  if(std::strncmp(line,"RTL_C6_ROM ",11)==0) {
+    if(!authed()) {std::printf("RTL_C6_ROM_ERROR auth_required\n");return;}
+    const char* action=line+11;
+    bool accepted=false;
+    if(std::strcmp(action,"CONNECT")==0) accepted=c6_recovery_app::begin();
+    else if(std::strcmp(action,"RELEASED PROBE")==0) accepted=c6_recovery_app::confirm_boot_released(false);
+    else if(std::strcmp(action,"RELEASED INSTALL CONFIRM")==0) accepted=c6_recovery_app::confirm_boot_released(true);
+    else if(std::strcmp(action,"CANCEL")==0) accepted=c6_recovery_app::cancel();
+    std::printf(accepted?"RTL_C6_ROM_ACTION_QUEUED\n":"RTL_C6_ROM_ERROR invalid_action_or_state\n");
+    return;
+  }
   if (std::strcmp(line, "RTL_FREQ") == 0) return cmd_freq(nullptr);
   if (std::strncmp(line, "RTL_FREQ ", 9) == 0) return cmd_freq(line + 9);
   if (std::strncmp(line, "RTL_TUNE ", 9) == 0) return cmd_tune(line + 9);
@@ -712,9 +756,9 @@ void handle_line(char* line) {
   }
   if (std::strcmp(line, "RTL_MEM STATUS") == 0) return cmd_mem();
   if (std::strcmp(line, "RTL_RX STATUS") == 0) return cmd_rx_status();
-  if (std::strcmp(line, "FT8 SNAP") == 0) {
+  if (strcasecmp(line, "SCREENSHOT") == 0 || std::strcmp(line, "FT8 SNAP") == 0) {
     if (!authed()) {
-      std::printf("ORC_FT8_ERROR auth_required\n");
+      std::printf("ORC_SNAP_ERROR auth_required\n");
       return;
     }
     if (!home_app::request_screenshot()) {

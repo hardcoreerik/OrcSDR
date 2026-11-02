@@ -86,6 +86,7 @@ static_assert(kRanges[0] == 10 && kRanges[1] == 25 && kRanges[2] == 50 &&
               kRanges[3] == 100);
 
 Settings g_settings;
+layout::View g_layout = layout::make_view({0,0,1280,720});
 View g_view = View::radar;
 EditField g_edit = EditField::none;
 size_t g_selected = 0;
@@ -104,7 +105,10 @@ constexpr size_t kHistorySamples = 12;
 float g_rate_history[kHistorySamples]{};
 float g_signal_history[kHistorySamples]{};
 size_t g_history_count = 0;
-M5Canvas g_radar_base(&M5.Display);
+M5Canvas g_radar_primary(&M5.Display), g_radar_candidate(&M5.Display);
+M5Canvas* g_radar_base=&g_radar_primary;
+M5Canvas* g_radar_next=&g_radar_candidate;
+int g_radar_cache_w=0,g_radar_cache_h=0,g_radar_cache_x=0,g_radar_cache_y=0;
 int32_t g_radar_cache_latitude_e7 = INT32_MIN;
 int32_t g_radar_cache_longitude_e7 = INT32_MIN;
 uint16_t g_radar_cache_range_nm = 0;
@@ -127,7 +131,12 @@ int gain_from_slider_x(int x) {
 
 void draw_radar_base() {
   const uint32_t map_revision=maps::revision();
-  const bool stale = g_radar_base.getBuffer() == nullptr ||
+  const auto panel=g_layout.radar_map;
+  const auto area=g_layout.radar_map_area;
+  const int local_x=area.x-panel.x,local_y=area.y-panel.y;
+  const bool stale = g_radar_base->getBuffer() == nullptr ||
+                     panel.w!=g_radar_cache_w||panel.h!=g_radar_cache_h||
+                     local_x!=g_radar_cache_x||local_y!=g_radar_cache_y||
                      g_radar_cache_latitude_e7 != g_settings.latitude_e7 ||
                      g_radar_cache_longitude_e7 != g_settings.longitude_e7 ||
                      g_radar_cache_range_nm != g_settings.radar_range_nm ||
@@ -135,20 +144,31 @@ void draw_radar_base() {
                      g_radar_location_revision != receiver_location::snapshot().revision ||
                      g_radar_map_labels != maps::preferences::labels(maps::preferences::Consumer::adsb);
   if (!stale) return;
-  g_radar_base.deleteSprite();
-  g_radar_base.setPsram(true);
-  if (g_radar_base.createSprite(kRadarPanelW, kRadarPanelH) == nullptr) return;
-  g_radar_base.fillSprite(kPanel);
-  g_radar_base.drawRoundRect(0, 0, kRadarPanelW, kRadarPanelH, 12, kBorder);
+  g_radar_next->deleteSprite();
+  g_radar_next->setPsram(true);
+  if (g_radar_next->createSprite(panel.w,panel.h)==nullptr)return;
+  g_radar_next->fillSprite(kPanel);
+  g_radar_next->drawRoundRect(0,0,panel.w,panel.h,12,kBorder);
+  maps::RegionalView next_map{};
   if (g_settings.location_configured) {
     const auto location=receiver_location::snapshot();
-    g_radar_map=maps::draw_region(g_radar_base,g_settings.latitude_e7,g_settings.longitude_e7,
-        g_settings.radar_range_nm,kMapX,kMapY,kMapW,kMapH,kPanel,0x2382,kMuted,location.map_pack,maps::preferences::labels(maps::preferences::Consumer::adsb));
-  } else g_radar_map={};
-  g_radar_base.setTextDatum(middle_center);
-  g_radar_base.setTextSize(2);
-  g_radar_base.setTextColor(TFT_WHITE);
-  g_radar_base.drawString("N", kMapX + 18, kMapY + 18);
+    next_map=maps::draw_region(*g_radar_next,g_settings.latitude_e7,g_settings.longitude_e7,
+        g_settings.radar_range_nm,local_x,local_y,area.w,area.h,kPanel,0x2382,kMuted,
+        location.map_pack,maps::preferences::labels(maps::preferences::Consumer::adsb));
+    if(next_map.frame.state==maps::Frame::pending&&g_radar_base->getBuffer()) {
+      g_radar_next->deleteSprite();
+      return;
+    }
+  }
+  g_radar_next->setTextDatum(middle_center);
+  g_radar_next->setTextSize(2);
+  g_radar_next->setTextColor(TFT_WHITE);
+  g_radar_next->drawString("N",local_x+18,local_y+18);
+  M5Canvas* old=g_radar_base;g_radar_base=g_radar_next;g_radar_next=old;
+  g_radar_next->deleteSprite();
+  g_radar_map=next_map;
+  g_radar_cache_w=panel.w;g_radar_cache_h=panel.h;
+  g_radar_cache_x=local_x;g_radar_cache_y=local_y;
   g_radar_cache_latitude_e7 = g_settings.latitude_e7;
   g_radar_cache_longitude_e7 = g_settings.longitude_e7;
   g_radar_cache_range_nm = g_settings.radar_range_nm;
@@ -164,7 +184,7 @@ bool radar_position(const DisplayAircraft& aircraft,int* x,int* y) {
       aircraft.range_nm>g_settings.radar_range_nm)return false;
   if(!maps::project(g_radar_map,static_cast<int32_t>(std::llround(aircraft.latitude*1e7)),
       static_cast<int32_t>(std::llround(aircraft.longitude*1e7)),x,y))return false;
-  *x+=kRadarPanelX;*y+=kRadarPanelY;return true;
+  *x+=g_layout.radar_map.x;*y+=g_layout.radar_map.y;return true;
 }
 
 bool hit(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
@@ -321,6 +341,17 @@ void plane(int x, int y, int scale, uint16_t color) {
 // the shared status bar, and the aircraft count and message rate are already in the STATS and radar cards.
 void draw_header() {
   M5.Display.setFont(nullptr);   // the dashboards' own text() leaves a DejaVu font selected
+  if(!g_layout.legacy) {
+    const auto s=g_layout.viewport;
+    M5.Display.fillRect(s.x,s.y,s.w,g_layout.content.y-s.y,kBg);
+    audio_header::draw_brand("ADS-B 1090");
+    audio_header::draw_home_button();
+    audio_header::draw_battery(M5.Power.getBatteryLevel());
+    audio_header::draw_mute_button(g_live_snapshot.sound_enabled);
+    audio_header::draw_visualizer_button(g_live_snapshot.effective_sps!=0);
+    audio_header::draw_settings_button();
+    return;
+  }
   M5.Display.fillRect(0, 0, 1280, kHeaderH, kBg);
   M5.Display.drawFastHLine(20, kHeaderH - 1, 1240, kBorder);
   audio_header::draw_brand("ADS-B 1090");
@@ -356,6 +387,16 @@ void tab_icon(int index, int x, int y, uint16_t color) {
 
 void draw_tabs() {
   static constexpr const char* labels[] = {"RADAR", "LIST", "TARGET", "STATS", "SETTINGS"};
+  if(!g_layout.legacy) {
+    for(int i=0;i<5;++i) {
+      const auto r=g_layout.tabs[i];const bool selected=static_cast<int>(g_view)==i;
+      M5.Display.fillRoundRect(r.x,r.y,r.w,r.h,6,selected?0x08a4:kBg);
+      M5.Display.drawRoundRect(r.x,r.y,r.w,r.h,6,selected?kBlue:kBorder);
+      text(layout::tab_label(i,r.w),r.x+r.w/2,r.y+r.h/2,selected?kBlue:TFT_LIGHTGREY,
+           r.w<80?1:2,middle_center);
+    }
+    return;
+  }
   M5.Display.fillRect(0, kTabsY, 1280, 74, kBg);
   M5.Display.drawFastHLine(0, kTabsY, 1280, kBorder);
   for (int i = 0; i < 5; ++i) {
@@ -432,20 +473,22 @@ void draw_radar_range() {
 }
 
 void draw_radar_map() {
-  constexpr int cx = kRadarPanelX + kMapX + kMapW / 2;
-  constexpr int cy = kRadarPanelY + kMapY + kMapH / 2;
+  const auto panel=g_layout.radar_map;
+  const auto area=g_layout.radar_map_area;
+  const int cx=area.x+area.w/2,cy=area.y+area.h/2;
   draw_radar_base();
-  if (g_radar_base.getBuffer()) g_radar_base.pushSprite(kRadarPanelX, kRadarPanelY);
-  else card(kRadarPanelX, kRadarPanelY, kRadarPanelW, kRadarPanelH);
-  text("LIVE TRAFFIC", kRadarPanelX + 22, kRadarPanelY + 26, kGreen, 2, middle_left);
+  if (g_radar_base->getBuffer()) g_radar_base->pushSprite(panel.x,panel.y);
+  else card(panel.x,panel.y,panel.w,panel.h);
+  char title[48];
+  snprintf(title,sizeof(title),"LIVE TRAFFIC / %u NM",g_settings.radar_range_nm);
+  text(g_layout.legacy?"LIVE TRAFFIC":title,panel.x+22,panel.y+26,kGreen,2,middle_left);
   char location[72];
   if (g_settings.location_configured)
-    snprintf(location, sizeof(location), "LAT %.4f   LON %.4f   RANGE %u NM",
-             g_settings.latitude_e7 / 10000000.0, g_settings.longitude_e7 / 10000000.0,
-             g_settings.radar_range_nm);
+    snprintf(location,sizeof(location),g_layout.legacy?"LAT %.4f   LON %.4f   RANGE %u NM":"%.4f, %.4f",
+             g_settings.latitude_e7/10000000.0,g_settings.longitude_e7/10000000.0,g_settings.radar_range_nm);
   else strlcpy(location, "RECEIVER LOCATION NOT SET", sizeof(location));
-  text(location, kRadarPanelX + 22, kRadarPanelY + 54, kBlue, 1, middle_left);
-  M5.Display.setClipRect(kRadarPanelX+kMapX,kRadarPanelY+kMapY,kMapW,kMapH);
+  text(location,panel.x+22,panel.y+54,kBlue,1,middle_left);
+  M5.Display.setClipRect(area.x,area.y,area.w,area.h);
   if (g_settings.location_configured) M5.Display.fillCircle(cx, cy, 7, kGreen);
   for (size_t i = 0; i < g_aircraft_count; ++i) {
     if (!g_aircraft[i].has_position || !g_settings.location_configured) continue;
@@ -456,9 +499,14 @@ void draw_radar_map() {
          i == g_selected ? TFT_WHITE : TFT_LIGHTGREY, 1, middle_left);
   }
   M5.Display.clearClipRect();
-  button("+", kZoomX, kZoomY, kZoomSize, kZoomSize,
+  button(g_map_label_error?"SAVE FAILED":
+      maps::preferences::labels(maps::preferences::Consumer::adsb)?"LABELS ON":"LABELS OFF",
+      g_layout.map_labels.x,g_layout.map_labels.y,g_layout.map_labels.w,g_layout.map_labels.h,
+      TFT_DARKCYAN);
+  const auto zi=g_layout.map_zoom_in,zo=g_layout.map_zoom_out;
+  button("+",zi.x,zi.y,zi.w,zi.h,
          g_settings.radar_range_nm==kRanges[0] ? TFT_DARKGREY : TFT_DARKCYAN);
-  button("-", kZoomX, kZoomY+kZoomStep, kZoomSize, kZoomSize,
+  button("-",zo.x,zo.y,zo.w,zo.h,
          g_settings.radar_range_nm==kRanges[std::size(kRanges)-1] ? TFT_DARKGREY : TFT_DARKCYAN);
 
 }
@@ -787,6 +835,21 @@ void start_edit(EditField field) {
 }
 
 void draw_keypad() {
+  if(!g_layout.legacy) {
+    const auto p=g_layout.keypad;card(p.x,p.y,p.w,p.h);
+    text(g_edit==EditField::latitude?"EDIT LATITUDE":"EDIT LONGITUDE",
+         p.x+p.w/2,p.y+28,kBlue,2);
+    button(g_entry[0]?g_entry:"0",g_layout.keypad_value.x,g_layout.keypad_value.y,
+           g_layout.keypad_value.w,g_layout.keypad_value.h,TFT_NAVY);
+    static constexpr const char* keys[]={"1","2","3","4","5","6","7","8","9","+/-","0",".","<"};
+    for(int i=0;i<13;++i){const auto r=g_layout.keypad_keys[i];
+      button(keys[i],r.x,r.y,r.w,r.h,TFT_DARKGREY);}
+    button("CANCEL",g_layout.keypad_cancel.x,g_layout.keypad_cancel.y,
+           g_layout.keypad_cancel.w,g_layout.keypad_cancel.h,TFT_MAROON);
+    button("SAVE",g_layout.keypad_save.x,g_layout.keypad_save.y,
+           g_layout.keypad_save.w,g_layout.keypad_save.h,TFT_DARKGREEN);
+    return;
+  }
   card(690, 102, 570, 510);
   text(g_edit == EditField::latitude ? "EDIT LATITUDE" : "EDIT LONGITUDE",
        975, 138, kBlue, 3);
@@ -881,7 +944,173 @@ void draw_settings() {
   }
 }
 
+void draw_radar_responsive() {
+  const auto s=g_layout.radar_status,st=g_layout.radar_stats,l=g_layout.radar_list;
+  card(s.x,s.y,s.w,s.h);text("RECEIVER",s.x+10,s.y+18,kBlue,1,middle_left);
+  text(g_live?"RECEIVING":"WAITING",s.x+10,s.y+46,g_live?kGreen:TFT_ORANGE,2,middle_left);
+  card(st.x,st.y,st.w,st.h);text("LIVE METRICS",st.x+10,st.y+18,kBlue,1,middle_left);
+  char value[32];snprintf(value,sizeof(value),"%u aircraft",displayed_aircraft_count());
+  text(value,st.x+12,st.y+48,TFT_WHITE,2,middle_left);
+  snprintf(value,sizeof(value),"%lu messages",static_cast<unsigned long>(displayed_total_messages()));
+  text(value,st.x+12,st.y+78,kBlue,1,middle_left);
+  snprintf(value,sizeof(value),"%.1f msg/sec",displayed_message_rate());
+  text(value,st.x+12,st.y+104,kBlue,1,middle_left);
+  card(l.x,l.y,l.w,l.h);text("NEAREST RECEIVED",l.x+8,l.y+14,kBlue,1,middle_left);
+  const int row_h=std::max(24,(l.h-30)/6);
+  for(size_t i=0;i<std::min<size_t>(g_aircraft_count,6);++i) {
+    const int y=l.y+28+static_cast<int>(i)*row_h;
+    text(g_aircraft[i].callsign[0]?g_aircraft[i].callsign:"--",l.x+8,y,kGreen,1,middle_left);
+    if(g_aircraft[i].has_position)snprintf(value,sizeof(value),"%.0f NM",g_aircraft[i].range_nm);
+    else strlcpy(value,"--",sizeof(value));
+    text(value,l.x+l.w-8,y,kMuted,1,middle_right);
+  }
+  draw_radar_map();
+}
+
+void draw_list_responsive() {
+  const auto rows=g_layout.list_rows,summary=g_layout.list_summary;
+  card(rows.x,rows.y,rows.w,rows.h);
+  text("AIRCRAFT RECEIVED",rows.x+10,rows.y+15,kBlue,1,middle_left);
+  if(!g_layout.portrait)button(g_locked?"LOCKED":"LOCK",g_layout.list_lock.x,g_layout.list_lock.y,
+                               g_layout.list_lock.w,g_layout.list_lock.h,TFT_DARKGREY);
+  for(size_t i=0;i<std::min<size_t>(g_aircraft_count,6);++i) {
+    const auto r=g_layout.list_items[i];
+    if(i==g_selected)M5.Display.fillRoundRect(r.x,r.y,r.w,r.h,6,0x1362);
+    char identity[40];snprintf(identity,sizeof(identity),"%s  %06lX",g_aircraft[i].callsign,
+                                static_cast<unsigned long>(g_aircraft[i].icao));
+    text(identity,r.x+8,r.y+r.h/2-8,i==g_selected?kGreen:TFT_WHITE,1,middle_left);
+    char detail[56];snprintf(detail,sizeof(detail),"%s  %d ft  %d kt",g_aircraft[i].registration,
+                             g_aircraft[i].altitude_ft,g_aircraft[i].speed_kts);
+    text(detail,r.x+8,r.y+r.h/2+10,kMuted,1,middle_left);
+  }
+  if(summary.w>0&&summary.h>0) {
+    card(summary.x,summary.y,summary.w,summary.h);
+    if(!g_layout.portrait){text("SELECT AN AIRCRAFT",summary.x+10,summary.y+20,kBlue,1,middle_left);return;}
+    if(g_aircraft_count) {
+      const auto& a=g_aircraft[g_selected];
+      button(g_locked?"LOCKED":"LOCK",g_layout.list_lock.x,g_layout.list_lock.y,
+             g_layout.list_lock.w,g_layout.list_lock.h,TFT_DARKGREY);
+      text(a.callsign,summary.x+12,summary.y+68,kGreen,3,middle_left);
+      char detail[56];snprintf(detail,sizeof(detail),"%06lX  %s",
+          static_cast<unsigned long>(a.icao),a.registration[0]?a.registration:"NO REG");
+      text(detail,summary.x+12,summary.y+112,TFT_WHITE,1,middle_left);
+    }
+  }
+}
+
+void draw_target_responsive() {
+  const auto id=g_layout.target_identity,m=g_layout.target_metrics;
+  if(!g_aircraft_count){card(g_layout.content.x,g_layout.content.y,g_layout.content.w,g_layout.content.h);
+    text("SEARCHING FOR AIRCRAFT",g_layout.content.x+g_layout.content.w/2,
+         g_layout.content.y+g_layout.content.h/2,TFT_WHITE,2);return;}
+  const auto& a=g_aircraft[g_selected];card(id.x,id.y,id.w,id.h);
+  text(a.callsign,id.x+12,id.y+25,kGreen,3,middle_left);
+  button(a.stale?"STALE":g_locked?"LOCKED":"LOCK",g_layout.target_lock.x,
+         g_layout.target_lock.y,g_layout.target_lock.w,g_layout.target_lock.h,TFT_DARKGREY);
+  char value[56];snprintf(value,sizeof(value),"ICAO %06lX",static_cast<unsigned long>(a.icao));
+  text(value,id.x+12,id.y+68,TFT_WHITE,1,middle_left);
+  text(a.registration[0]?a.registration:"NO REGISTRATION",id.x+12,id.y+94,kMuted,1,middle_left);
+  text(a.type[0]?a.type:"AIRCRAFT TYPE UNKNOWN",id.x+12,id.y+120,kMuted,1,middle_left);
+  text(a.op[0]?a.op:"OPERATOR UNKNOWN",id.x+12,id.y+146,kMuted,1,middle_left);
+  const char* atc=g_atc_listening?"RESUME ADS-B":g_settings.atc_frequency_hz?"LISTEN TO ATC":"NO ATC PRESET";
+  button(atc,g_layout.target_atc_button.x,g_layout.target_atc_button.y,
+         g_layout.target_atc_button.w,g_layout.target_atc_button.h,
+         g_settings.atc_frequency_hz||g_atc_listening?TFT_DARKGREEN:TFT_DARKGREY);
+  const char* labels[]={"ALTITUDE","SPEED","HEADING","VERT RATE","RANGE","BEARING","LATITUDE","LONGITUDE"};
+  const int cols=g_layout.portrait?2:3, gap=8;
+  const int cell_w=(m.w-(cols-1)*gap)/cols;
+  const int cell_h=std::max(52,(m.h-88)/((8+cols-1)/cols));
+  for(int i=0;i<8;++i) {
+    const int col=i%cols,row=i/cols;const int x=m.x+col*(cell_w+gap),y=m.y+row*cell_h;
+    M5.Display.drawRoundRect(x,y,cell_w,cell_h-4,6,kBorder);
+    text(labels[i],x+8,y+13,kBlue,1,middle_left);
+    switch(i) {
+      case 0:if(a.has_altitude)snprintf(value,sizeof(value),"%d ft",a.altitude_ft);else strlcpy(value,"--",sizeof(value));break;
+      case 1:if(a.has_speed)snprintf(value,sizeof(value),"%d kt",a.speed_kts);else strlcpy(value,"--",sizeof(value));break;
+      case 2:if(a.has_heading)snprintf(value,sizeof(value),"%03d deg",a.heading_deg);else strlcpy(value,"--",sizeof(value));break;
+      case 3:if(a.has_vertical_rate)snprintf(value,sizeof(value),"%+d ft/min",a.vertical_rate_fpm);else strlcpy(value,"--",sizeof(value));break;
+      case 4:if(a.has_position)snprintf(value,sizeof(value),"%.0f NM",a.range_nm);else strlcpy(value,"--",sizeof(value));break;
+      case 5:if(a.has_position)snprintf(value,sizeof(value),"%03d deg",a.bearing_deg);else strlcpy(value,"--",sizeof(value));break;
+      case 6:if(a.has_position)snprintf(value,sizeof(value),"%.3f",a.latitude);else strlcpy(value,"--",sizeof(value));break;
+      default:if(a.has_position)snprintf(value,sizeof(value),"%.3f",a.longitude);else strlcpy(value,"--",sizeof(value));break;
+    }
+    text(value,x+8,y+cell_h/2+5,TFT_WHITE,2,middle_left);
+  }
+  card(g_layout.target_signal.x,g_layout.target_signal.y,g_layout.target_signal.w,g_layout.target_signal.h);
+  text("SIGNAL / SOURCE",g_layout.target_signal.x+12,g_layout.target_signal.y+20,kBlue,1,middle_left);
+  text(g_live?"ADS-B 1090 MHz":"WAITING",g_layout.target_signal.x+12,
+       g_layout.target_signal.y+50,kGreen,2,middle_left);
+  button("SHOW ON MAP",g_layout.target_map_button.x,g_layout.target_map_button.y,
+         g_layout.target_map_button.w,g_layout.target_map_button.h,TFT_NAVY);
+}
+
+void draw_stats_responsive() {
+  char value[32];
+  const char* titles[]={"SIGNAL","MESSAGE RATE","MODE-S HISTORY"};
+  for(int i=0;i<3;++i){const auto r=g_layout.stats_charts[i];card(r.x,r.y,r.w,r.h);text(titles[i],r.x+8,r.y+16,kBlue,1,middle_left);}
+  snprintf(value,sizeof(value),"%.1f dBFS",g_live_snapshot.strongest_signal_dbfs);
+  text(value,g_layout.stats_charts[0].x+10,g_layout.stats_charts[0].y+50,TFT_WHITE,2,middle_left);
+  snprintf(value,sizeof(value),"%.1f / sec",displayed_message_rate());
+  text(value,g_layout.stats_charts[1].x+10,g_layout.stats_charts[1].y+50,TFT_WHITE,2,middle_left);
+  const int max_h=std::max(16,g_layout.stats_charts[2].h-40);
+  for(size_t i=0;i<g_history_count;++i){const auto r=g_layout.stats_charts[2];
+    const int x=r.x+8+static_cast<int>(i)*(r.w-16)/kHistorySamples;
+    const int h=std::clamp(static_cast<int>((g_signal_history[i]+100)*max_h/100),2,max_h);
+    M5.Display.fillRect(x,r.y+r.h-8-h,6,h,kGreen);}
+  const char* labels[]={"AIRCRAFT","MESSAGES","SIGNAL","SAMPLE RATE","DROPS"};
+  snprintf(value,sizeof(value),"%u",displayed_aircraft_count());
+  const char* vals[]={value,nullptr,nullptr,nullptr,nullptr};char message_count[24],signal[24],rate[24],drops[24];
+  snprintf(message_count,sizeof(message_count),"%lu",static_cast<unsigned long>(displayed_total_messages()));
+  snprintf(signal,sizeof(signal),"%.1f dBFS",g_live_snapshot.strongest_signal_dbfs);
+  snprintf(rate,sizeof(rate),"%.3f MS/s",g_live_snapshot.effective_sps/1.0e6);
+  snprintf(drops,sizeof(drops),"%lu/%lu",static_cast<unsigned long>(g_live_snapshot.usb_overruns),static_cast<unsigned long>(g_live_snapshot.consumer_drops));
+  vals[1]=message_count;vals[2]=signal;vals[3]=rate;vals[4]=drops;
+  for(int i=0;i<5;++i){const auto r=g_layout.stats_metrics[i];card(r.x,r.y,r.w,r.h);
+    text(labels[i],r.x+6,r.y+12,kBlue,1,middle_left);text(vals[i],r.x+6,r.y+r.h-13,TFT_WHITE,1,middle_left);}
+  for(int i=0;i<4;++i){const auto r=g_layout.stats_data[i];card(r.x,r.y,r.w,r.h);
+    const char* label=i==0?"FAA AIRCRAFT":i==1?"FAA AVIATION":i==2?"OFFLINE MAP":"ATC PRESET";
+    text(label,r.x+6,r.y+12,kBlue,1,middle_left);
+    text(i==2?(maps::installed()?"AVAILABLE":"NONE"):i==3?(g_settings.atc_frequency_hz?"AVAILABLE":"NONE"):"DATA STATUS",
+         r.x+6,r.y+r.h-12,kMuted,1,middle_left);}
+}
+
+void draw_settings_responsive() {
+  const auto r=g_layout.settings_main;card(r.x,r.y,r.w,r.h);text("ADS-B SETTINGS",r.x+10,r.y+20,kBlue,2,middle_left);
+  char value[40];
+  text("RECEIVER LATITUDE",g_layout.latitude.x,g_layout.latitude.y-8,kMuted,1,middle_left);
+  if(g_latitude_set)snprintf(value,sizeof(value),"%.5f",g_settings.latitude_e7/1.0e7);else strlcpy(value,"NOT SET",sizeof(value));
+  button(value,g_layout.latitude.x,g_layout.latitude.y,g_layout.latitude.w,g_layout.latitude.h,TFT_NAVY);
+  text("RECEIVER LONGITUDE",g_layout.longitude.x,g_layout.longitude.y-8,kMuted,1,middle_left);
+  if(g_longitude_set)snprintf(value,sizeof(value),"%.5f",g_settings.longitude_e7/1.0e7);else strlcpy(value,"NOT SET",sizeof(value));
+  button(value,g_layout.longitude.x,g_layout.longitude.y,g_layout.longitude.w,g_layout.longitude.h,TFT_NAVY);
+  snprintf(value,sizeof(value),"RANGE %u NM",g_settings.radar_range_nm);
+  button(value,g_layout.range.x,g_layout.range.y,g_layout.range.w,g_layout.range.h,TFT_DARKCYAN);
+  button(!g_settings.gain_supported?"GAIN N/A":g_settings.gain_auto?"AUTO / MANUAL":"SET GAIN",
+         g_layout.gain.x,g_layout.gain.y,g_layout.gain.w,g_layout.gain.h,TFT_DARKGREEN);
+  button("EXIT ADS-B",g_layout.exit.x,g_layout.exit.y,g_layout.exit.w,g_layout.exit.h,TFT_MAROON);
+  for(int i=0;i<4;++i){const auto b=g_layout.settings_data[i];
+    card(b.x,b.y,b.w,b.h);
+    const char* label=i==0?"FAA DB":i==1?"AVIATION":i==2?"OFFLINE MAP":"ATC";
+    text(label,b.x+6,b.y+13,kBlue,1,middle_left);
+    text(i==2?(maps::installed()?"READY":"NONE"):i==3?(g_settings.atc_frequency_hz?"READY":"NONE"):"STATUS",
+         b.x+6,b.y+b.h-12,kMuted,1,middle_left);
+  }
+  if(g_edit!=EditField::none)draw_keypad();
+}
+
 void redraw_content() {
+  if(!g_layout.legacy) {
+    const auto r=g_layout.content;M5.Display.fillRect(r.x,r.y,r.w,r.h,kBg);
+    switch(g_view) {
+      case View::radar:draw_radar_responsive();break;
+      case View::list:draw_list_responsive();break;
+      case View::target:draw_target_responsive();break;
+      case View::stats:draw_stats_responsive();break;
+      case View::settings:draw_settings_responsive();break;
+      default:break;
+    }
+    return;
+  }
   M5.Display.fillRect(0, kHeaderH, 1280, kTabsY - kHeaderH, kBg);
   switch (g_view) {
     case View::radar: draw_radar(); break;
@@ -894,19 +1123,23 @@ void redraw_content() {
 }
 
 void redraw() {
-  M5.Display.fillScreen(kBg);
+  if(g_layout.legacy) M5.Display.fillScreen(kBg);
+  else M5.Display.fillRect(g_layout.viewport.x,g_layout.viewport.y,
+                           g_layout.viewport.w,g_layout.viewport.h,kBg);
   draw_header();
   redraw_content();
   draw_tabs();
 }
 
 Action handle_keypad(int32_t x, int32_t y) {
-  if (hit(x, y, 730, 508, 230, 58)) {
+  const auto cancel=g_layout.legacy?layout::Rect{730,508,230,58}:g_layout.keypad_cancel;
+  const auto save=g_layout.legacy?layout::Rect{990,508,230,58}:g_layout.keypad_save;
+  if (hit(x,y,cancel.x,cancel.y,cancel.w,cancel.h)) {
     g_edit = EditField::none;
     redraw();
     return Action::none;
   }
-  if (hit(x, y, 990, 508, 230, 58)) {
+  if (hit(x,y,save.x,save.y,save.w,save.h)) {
     char* end = nullptr;
     const double value = strtod(g_entry, &end);
     if (end != g_entry && *end == '\0' && valid_coordinate(g_edit, value)) {
@@ -929,8 +1162,13 @@ Action handle_keypad(int32_t x, int32_t y) {
   static constexpr char keys[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9',
                                    '-', '0', '.', '\b'};
   for (int i = 0; i < 13; ++i) {
+    if(!g_layout.legacy) {
+      const auto r=g_layout.keypad_keys[i];
+      if(!hit(x,y,r.x,r.y,r.w,r.h))continue;
+    } else {
     const int col = i % 4, row = i / 4;
-    if (!hit(x, y, 730 + col * 122, 245 + row * 64, 112, 54)) continue;
+      if (!hit(x, y, 730 + col * 122, 245 + row * 64, 112, 54)) continue;
+    }
     const size_t len = strlen(g_entry);
     if (keys[i] == '\b') {
       if (len) g_entry[len - 1] = '\0';
@@ -983,6 +1221,17 @@ void update() {
   apply_live_snapshot();
   g_drawn_revision = g_live_snapshot.revision;
   // Live repaint deliberately skips redraw_content()'s full black clear.
+  if(!g_layout.legacy) {
+    switch(g_view) {
+      case View::radar:draw_radar_responsive();break;
+      case View::list:draw_list_responsive();break;
+      case View::target:draw_target_responsive();break;
+      case View::stats:draw_stats_responsive();break;
+      case View::settings:draw_settings_responsive();break;
+      default:break;
+    }
+    return;
+  }
   switch (g_view) {
     case View::radar: draw_radar(); break;
     case View::list: draw_list(); break;
@@ -1031,25 +1280,33 @@ bool set_map_range(uint16_t range_nm) {
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return Action::none;
   if (g_edit != EditField::none) return handle_keypad(x, y);
-  if (y >= kTabsY) {
-    const View requested = static_cast<View>(constrain(x / kTabW, 0, 4));
-    g_view = requested;
+  if (g_layout.legacy ? y >= kTabsY :
+      (y >= g_layout.tabs[0].y && y < g_layout.tabs[0].y+g_layout.tabs[0].h)) {
+    int index=g_layout.legacy?constrain(x/kTabW,0,4):-1;
+    if(!g_layout.legacy)for(int i=0;i<5;++i)if(hit(x,y,g_layout.tabs[i].x,g_layout.tabs[i].y,
+                                                  g_layout.tabs[i].w,g_layout.tabs[i].h)){index=i;break;}
+    if(index<0)return Action::none;
+    const View requested=static_cast<View>(index);
+    g_view=requested;
     redraw();
     return Action::none;
   }
   if (g_view == View::radar) {
-    if(hit(x,y,26,252,186,48)) {
+    const auto labels=g_layout.legacy?layout::Rect{26,252,186,48}:g_layout.map_labels;
+    if(hit(x,y,labels.x,labels.y,labels.w,labels.h)) {
       using maps::preferences::Consumer;
       g_map_label_error=!maps::preferences::set_labels(Consumer::adsb,!maps::preferences::labels(Consumer::adsb));
       redraw_content();return Action::none;
     }
-    const bool zoom_in=hit(x,y,kZoomX,kZoomY,kZoomSize,kZoomSize);
-    if (zoom_in || hit(x,y,kZoomX,kZoomY+kZoomStep,kZoomSize,kZoomSize)) {
+    const auto zin=g_layout.legacy?layout::Rect{kZoomX,kZoomY,kZoomSize,kZoomSize}:g_layout.map_zoom_in;
+    const auto zout=g_layout.legacy?layout::Rect{kZoomX,kZoomY+kZoomStep,kZoomSize,kZoomSize}:g_layout.map_zoom_out;
+    const bool zoom_in=hit(x,y,zin.x,zin.y,zin.w,zin.h);
+    if (zoom_in || hit(x,y,zout.x,zout.y,zout.w,zout.h)) {
       const auto range=zoomed_range(g_settings.radar_range_nm,zoom_in);
       if(range==g_settings.radar_range_nm)return Action::none;
       set_map_range(range);
       draw_radar_map();
-      draw_radar_range();
+      if(g_layout.legacy)draw_radar_range();else redraw_content();
       return Action::settings_changed;
     }
     for (size_t i = 0; i < g_aircraft_count; ++i) {
@@ -1064,7 +1321,11 @@ Action handle_touch(int32_t x, int32_t y) {
       }
     }
     for (size_t i = 0; i < g_aircraft_count && i < 7; ++i) {
-      if (hit(x, y, 906, 175 + static_cast<int>(i) * 57, 344, 54)) {
+      const auto r=g_layout.legacy?layout::Rect{906,175+static_cast<int>(i)*57,344,54}:
+        layout::Rect{g_layout.radar_list.x,g_layout.radar_list.y+28+static_cast<int>(i)*
+          std::max(24,(g_layout.radar_list.h-30)/6),g_layout.radar_list.w,
+          std::max(24,(g_layout.radar_list.h-30)/6)};
+      if (hit(x,y,r.x,r.y,r.w,r.h)) {
         g_selected = i;
         redraw_content();
         return Action::none;
@@ -1072,55 +1333,73 @@ Action handle_touch(int32_t x, int32_t y) {
     }
   } else if (g_view == View::list) {
     for (size_t i = 0; i < g_aircraft_count; ++i) {
-      if (hit(x, y, 26, 143 + static_cast<int>(i) * 76, 818, 68)) {
+      const auto r=g_layout.legacy?layout::Rect{26,143+static_cast<int>(i)*76,818,68}:
+                                  g_layout.list_items[std::min<size_t>(i,5)];
+      if (hit(x,y,r.x,r.y,r.w,r.h)) {
         g_selected = i;
         redraw_content();
         return Action::none;
       }
     }
-    if (hit(x, y, 1144, 108, 96, 42)) {
+    const auto lock=g_layout.legacy?layout::Rect{1144,108,96,42}:g_layout.list_lock;
+    if (hit(x,y,lock.x,lock.y,lock.w,lock.h)) {
       toggle_lock();
       redraw_content();
     }
   } else if (g_view == View::target) {
-    if (hit(x, y, 300, 104, 110, 44)) {
+    const auto lock=g_layout.legacy?layout::Rect{300,104,110,44}:g_layout.target_lock;
+    if (hit(x,y,lock.x,lock.y,lock.w,lock.h)) {
       toggle_lock();
       redraw_content();
     }
-    if (hit(x, y, 230, 462, 250, 54) &&
+    const auto atc=g_layout.legacy?layout::Rect{230,462,250,54}:g_layout.target_atc_button;
+    if (hit(x,y,atc.x,atc.y,atc.w,atc.h) &&
         (g_atc_listening || g_settings.atc_frequency_hz))
       return g_atc_listening ? Action::atc_resume : Action::atc_listen;
-    if (hit(x, y, 1005, 550, 210, 54)) {
+    const auto map=g_layout.legacy?layout::Rect{1005,550,210,54}:g_layout.target_map_button;
+    if (hit(x,y,map.x,map.y,map.w,map.h)) {
       g_view = View::radar;
       g_locked = true;
       redraw();
     }
   } else if (g_view == View::settings) {
-    if (hit(x, y, 225, 158, 225, 52)) { start_edit(EditField::latitude); redraw(); }
-    else if (hit(x, y, 225, 240, 225, 52)) { start_edit(EditField::longitude); redraw(); }
-    else if (hit(x, y, 225, 322, 225, 52)) {
+    const auto lat=g_layout.legacy?layout::Rect{225,158,225,52}:g_layout.latitude;
+    const auto lon=g_layout.legacy?layout::Rect{225,240,225,52}:g_layout.longitude;
+    const auto range=g_layout.legacy?layout::Rect{225,322,225,52}:g_layout.range;
+    const auto gain=g_layout.legacy?layout::Rect{38,430,112,48}:g_layout.gain;
+    const auto exit=g_layout.legacy?layout::Rect{38,538,412,58}:g_layout.exit;
+    const auto data=g_layout.legacy?layout::Rect{496,108,752,496}:g_layout.settings_open_data;
+    if (hit(x,y,lat.x,lat.y,lat.w,lat.h)) { start_edit(EditField::latitude); redraw(); }
+    else if (hit(x,y,lon.x,lon.y,lon.w,lon.h)) { start_edit(EditField::longitude); redraw(); }
+    else if (hit(x,y,range.x,range.y,range.w,range.h)) {
       size_t index = 0;
       while (index < std::size(kRanges) && kRanges[index] != g_settings.radar_range_nm) ++index;
       set_map_range(kRanges[(index + 1) % std::size(kRanges)]);
       redraw();
       return Action::settings_changed;
-    } else if (hit(x, y, 38, 430, 112, 48) && g_settings.gain_auto_supported) {
-      g_settings.gain_auto = true;
-      redraw_content();
-      return Action::gain_auto;
-    } else if (hit(x, y, kGainSliderX - 12, kGainSliderY - 28,
-                   kGainSliderW + 24, 56) && g_settings.gain_supported) {
+    } else if (hit(x,y,gain.x,gain.y,gain.w,gain.h) && g_settings.gain_supported) {
+      if(g_settings.gain_auto_supported) {
+        if(g_settings.gain_auto) {
+          g_settings.gain_auto=false;redraw_content();return Action::gain_tenth_db;
+        }
+        g_settings.gain_auto=true;redraw_content();return Action::gain_auto;
+      }
+      const int relative_x=static_cast<int>(x)-gain.x;
+      g_settings.gain_tenth_db=static_cast<int16_t>(std::clamp<int>(
+          relative_x*kGainMaxTenthDb/std::max(1,gain.w),0,kGainMaxTenthDb));
+      redraw_content();return Action::gain_tenth_db;
+    } else if (g_layout.legacy&&hit(x,y,kGainSliderX-12,kGainSliderY-28,kGainSliderW+24,56) && g_settings.gain_supported) {
       g_settings.gain_tenth_db = static_cast<int16_t>(gain_from_slider_x(x));
       g_settings.gain_auto = false;
       redraw_content();
       return Action::gain_tenth_db;
-    } else if (hit(x, y, 38, 538, 412, 58)) {
+    } else if (hit(x,y,exit.x,exit.y,exit.w,exit.h)) {
       g_active = false;
       return Action::exit;
     } else if (hit(x, y, 894, 516, 334, 54) &&
                (g_atc_listening || g_settings.atc_frequency_hz)) {
       return g_atc_listening ? Action::atc_resume : Action::atc_listen;
-    } else if (hit(x, y, 496, 108, 752, 496)) {
+    } else if (hit(x,y,data.x,data.y,data.w,data.h)) {
       return Action::open_data_settings;
     }
   }
@@ -1130,6 +1409,25 @@ Action handle_touch(int32_t x, int32_t y) {
 const Settings& settings() { return g_settings; }
 int gain_tenth_db() { return g_settings.gain_tenth_db; }
 bool active() { return g_active; }
+
+bool set_viewport(audio_header::HeaderRect safe) {
+  const auto next=layout::make_view(safe);
+  if(!next.valid||!audio_header::set_viewport(safe))return false;
+  const auto previous=g_layout;
+  g_layout=next;
+  if(g_active) {
+    draw_radar_base();
+    if(g_radar_cache_w!=g_layout.radar_map.w||g_radar_cache_h!=g_layout.radar_map.h||
+       g_radar_cache_x!=g_layout.radar_map_area.x-g_layout.radar_map.x||
+       g_radar_cache_y!=g_layout.radar_map_area.y-g_layout.radar_map.y) {
+      g_layout=previous;
+      (void)audio_header::set_viewport(previous.viewport);
+      return false;
+    }
+    redraw();
+  }
+  return true;
+}
 
 void show_documentation_view(uint8_t requested, const Settings& settings_value) {
   if (requested >= static_cast<uint8_t>(View::count)) return;

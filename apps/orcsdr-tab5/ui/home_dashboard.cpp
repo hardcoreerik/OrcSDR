@@ -317,7 +317,9 @@ void draw_rail() {
     for (int col = 0; col < 3; ++col)
       M5.Display.fillRect(kListX + 20 + col * 11, kAllY + 12 + row * 9, 6, 6,
                           kCyan);
-  text("ALL DASHBOARDS", home_layout.all.x + std::min(65,home_layout.all.w/3), home_layout.all.y + home_layout.all.h/2, kCyan, 2, middle_left);
+  const int label_offset=std::min(65,home_layout.all.w/3);
+  const char* all_label=home_layout.all.w-label_offset>=14*12 ? "ALL DASHBOARDS" : "DASHBOARDS";
+  text(all_label, home_layout.all.x + label_offset, home_layout.all.y + home_layout.all.h/2, kCyan, 2, middle_left);
 }
 
 uint16_t waterfall_color(float value) {
@@ -336,7 +338,9 @@ void draw_waterfall_controls() {
        middle_center);
   char value[24];
   snprintf(value, sizeof(value), "CONTRAST %u", waterfall_contrast);
-  text(value, (kContrastDownX + kContrastUpX + kContrastButtonW) / 2, kContrastY + 14, kCyan, 2, middle_center);
+  const int label_space=kContrastUpX-kContrastDownX-kContrastButtonW;
+  const int label_size=int(std::strlen(value))*12<=label_space ? 2 : 1;
+  text(value, (kContrastDownX + kContrastUpX + kContrastButtonW) / 2, kContrastY + 14, kCyan, label_size, middle_center);
   panel(kContrastUpX, kContrastY, kContrastButtonW, kContrastButtonH, kCyan, 5);
   text(">", kContrastUpX + kContrastButtonW / 2, kContrastY + 14, kGreen, 2,
        middle_center);
@@ -367,10 +371,11 @@ float home_spectrum_floor(const float* levels, size_t count, float pipeline_floo
 }
 
 void draw_mode_chip(const char* mode) {
-  M5.Display.fillRect(kModeX, kReadoutY, kModeW, kReadoutH, TFT_BLACK);
-  frame(kModeX, kReadoutY, kModeW, kReadoutH, kCyan, 8);
-  text("MODE", kModeX + kModeW / 2, kReadoutY + 15, kCyan, 2, middle_center);
-  text(mode, kModeX + kModeW / 2, kReadoutY + 38, kGreen, 2, middle_center);
+  const auto r=home_layout.mode;
+  M5.Display.fillRect(r.x, r.y, r.w, r.h, TFT_BLACK);
+  frame(r.x, r.y, r.w, r.h, kCyan, 8);
+  text("MODE", r.x + r.w / 2, r.y + 15, kCyan, 2, middle_center);
+  text(mode, r.x + r.w / 2, r.y + 38, kGreen, 2, middle_center);
 }
 
 void draw_frequency() {
@@ -418,21 +423,23 @@ void draw_spectrum_axis(M5Canvas& canvas, int w, int h) {
 }
 
 // One "< LABEL value >" group in the control row; the arrows are the touch targets.
-void draw_stepper(int x, int width, const char* label, const char* value) {
-  frame(x, kControlY, width, kControlH, kCyan, 9);
-  const int arrow_h=std::min(kStepperArrowH,kControlH-4), arrow_y=kControlY+(kControlH-arrow_h)/2;
+void draw_stepper(LayoutRect rect, const char* label, const char* value) {
+  const int x=rect.x, width=rect.w;
+  frame(x, rect.y, width, rect.h, kCyan, 9);
+  const int arrow_h=std::min(kStepperArrowH,rect.h-4), arrow_y=rect.y+(rect.h-arrow_h)/2;
   panel(x + kStepperArrowInset, arrow_y, kStepperArrowW, arrow_h, kDim, 5);
   text("<", x + kStepperArrowInset + kStepperArrowW / 2, arrow_y+arrow_h/2, kGreen, 3, middle_center);
   panel(x + width - kStepperArrowInset - kStepperArrowW, arrow_y, kStepperArrowW,
         arrow_h, kDim, 5);
   text(">", x + width - kStepperArrowInset - kStepperArrowW / 2, arrow_y+arrow_h/2, kGreen, 3,
        middle_center);
-  if (kControlH >= 60) {
-    text(label, x + width / 2, kControlY + 15, kCyan, 2, middle_center);
-    text(value, x + width / 2, kControlY + 43, kGreen, 2, middle_center);
+  if (rect.h >= 60) {
+    text(label, x + width / 2, rect.y + 15, kCyan, 2, middle_center);
+    text(value, x + width / 2, rect.y + 43, kGreen, 2, middle_center);
   } else {
-    text(label, x + width / 2, kControlY + 12, kCyan, 1, middle_center);
-    text(value, x + width / 2, kControlY + 34, kGreen, 1, middle_center);
+    const int text_size = width >= 196 ? 2 : 1;
+    text(label, x + width / 2, rect.y + 12, kCyan, text_size, middle_center);
+    text(value, x + width / 2, rect.y + 34, kGreen, text_size, middle_center);
   }
 }
 
@@ -441,23 +448,21 @@ void draw_step_size_controls();
 void draw_span_control() {
   char value[24];
   snprintf(value, sizeof(value), "%.0f kHz", current.span_hz / 1000.0);
-  draw_stepper(kStepperSpan, home_layout.span.w, "SPAN", value);
+  draw_stepper(home_layout.span, "SPAN", value);
 }
 
 void draw_tuning_controls() {
-  M5.Display.fillRect(kStepperSpan, kControlY, home_layout.gain.x + home_layout.gain.w - kStepperSpan, kControlH,
-                      TFT_BLACK);
   char value[24];
   draw_span_control();
   snprintf(value, sizeof(value), "%.1f kHz", current.step_hz / 1000.0);
-  draw_stepper(kStepperTune, home_layout.tune.w, "TUNE", value);
+  draw_stepper(home_layout.tune, "TUNE", value);
   draw_step_size_controls();
 }
 
 void draw_step_size_controls() {
   char value[24];
   snprintf(value, sizeof(value), "%.1f kHz", current.step_hz / 1000.0);
-  draw_stepper(kStepperSize, home_layout.step.w, "STEP SIZE", current.step_adjustable ? value : "FIXED");
+  draw_stepper(home_layout.step, "STEP SIZE", current.step_adjustable ? value : "FIXED");
 }
 
 void footer_text(const char* value, int x, uint16_t color) {
@@ -1067,7 +1072,7 @@ Action tap_action(int32_t x, int32_t y) {
     return {ActionKind::waterfall_contrast_down};
   if (inside(x, y, kContrastUpX, kContrastY, kContrastButtonW, kContrastButtonH))
     return {ActionKind::waterfall_contrast_up};
-  if (inside(x, y, kModeX, kReadoutY, kModeW, kReadoutH)) return {ActionKind::mode_open};
+  if (inside(x, y, home_layout.mode.x, home_layout.mode.y, home_layout.mode.w, home_layout.mode.h)) return {ActionKind::mode_open};
   if (inside(x, y, home_layout.frequency.x, home_layout.frequency.y, home_layout.frequency.w, home_layout.frequency.h)) return {ActionKind::keypad_open};
   if (inside(x, y, home_layout.palette.x, home_layout.palette.y,
              home_layout.palette.w, home_layout.palette.h))
@@ -1091,15 +1096,15 @@ Action tap_action(int32_t x, int32_t y) {
     return {ActionKind::tune_frequency, dashboards::Id::count,
             requested > 0 ? static_cast<uint32_t>(requested) : 0};
   }
-  const struct { int x, width; ActionKind down, up; } steppers[] = {
-      {kStepperSpan, home_layout.span.w, ActionKind::span_down, ActionKind::span_up},
-      {kStepperTune, home_layout.tune.w, ActionKind::step_down, ActionKind::step_up},
-      {kStepperSize, home_layout.step.w, ActionKind::step_size_down, ActionKind::step_size_up}};
+  const struct { LayoutRect rect; ActionKind down, up; } steppers[] = {
+      {home_layout.span, ActionKind::span_down, ActionKind::span_up},
+      {home_layout.tune, ActionKind::step_down, ActionKind::step_up},
+      {home_layout.step, ActionKind::step_size_down, ActionKind::step_size_up}};
   for (const auto& group : steppers) {
-    if (inside(x, y, group.x + kStepperArrowInset, kControlY + 2, kStepperArrowW, kControlH - 4))
+    if (inside(x, y, group.rect.x + kStepperArrowInset, group.rect.y + 2, kStepperArrowW, group.rect.h - 4))
       return {group.down};
-    if (inside(x, y, group.x + group.width - kStepperArrowInset - kStepperArrowW, kControlY + 2, kStepperArrowW,
-               kControlH - 4))
+    if (inside(x, y, group.rect.x + group.rect.w - kStepperArrowInset - kStepperArrowW, group.rect.y + 2, kStepperArrowW,
+               group.rect.h - 4))
       return {group.up};
   }
   return {};
@@ -1543,6 +1548,8 @@ bool responsive_input_check(LayoutRect viewport) {
 }
 
 bool self_check() {
+  const LayoutRect saved_viewport=home_viewport;
+  if (!apply_layout({0,0,1280,720})) return false;
   const float levels[] = {60.0f, 60.0f, 60.0f, 84.0f};
   const size_t browser_pages = (dashboards::count() + kBrowserPageSize - 1) /
                                kBrowserPageSize;
@@ -1559,11 +1566,7 @@ bool self_check() {
       tap_action(kBrowserPrevX+1, kBrowserNavY + 1).kind == ActionKind::browser_previous;
   browser = saved_browser;
   browser_page = saved_page;
-  const LayoutRect saved_viewport=home_viewport;
-  const bool responsive=responsive_input_check({72,72,1088,424}) &&
-                        responsive_input_check({72,72,424,1088}) &&
-                        apply_layout(saved_viewport);
-  return dashboards::self_check() && first_page_ok && second_page_ok && responsive &&
+  const bool legacy= dashboards::self_check() && first_page_ok && second_page_ok &&
          kVisibleRows == 7 && kTapDragThreshold == 10 &&
          dashboards::count() > static_cast<size_t>(kVisibleRows) &&
          browser_pages == 2 &&
@@ -1589,6 +1592,13 @@ bool self_check() {
          tap_action(audio_header::layout().mute.x+audio_header::layout().mute.w/2,
                     audio_header::layout().mute.y+audio_header::layout().mute.h/2).kind == ActionKind::sound_toggle &&
          std::abs(home_spectrum_floor(levels, std::size(levels), 10.0f) - 62.0f) < 0.01f;
+  const bool landscape=responsive_input_check({72,72,1088,424});
+  const bool portrait=responsive_input_check({72,72,424,1088});
+  // A failing check must never leave live drawing/input in its test viewport.
+  const bool restored=apply_layout(saved_viewport);
+  std::printf("RTL_HOME_SELF_CHECK_DETAIL legacy=%d landscape=%d portrait=%d restored=%d\n",
+              legacy,landscape,portrait,restored);
+  return legacy && landscape && portrait && restored;
 }
 
 }  // namespace orcsdr::home

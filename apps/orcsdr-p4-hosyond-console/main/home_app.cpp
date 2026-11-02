@@ -6,10 +6,12 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
 #include "M5Unified.h"
 #include "band_profile.hpp"
 #include "dashboard_registry.hpp"
 #include "esp_log.h"
+#include "esp_rtl_sdr.h"
 #include "esp_timer.h"
 #include "filter_standards.hpp"
 #include "freertos/task.h"
@@ -21,9 +23,11 @@
 #include "present.hpp"
 #include "radio_service.hpp"
 #include "screens.hpp"
+#include "settings_app.hpp"
 #include "screen_snap.hpp"
 #include "ui_support.hpp"
 #include "wifi_app.hpp"
+#include "c6_recovery_app.hpp"
 #include "waterfall_style.hpp"
 
 using namespace orcsdr;
@@ -31,7 +35,9 @@ using namespace orcsdr;
 namespace {
 constexpr char TAG[] = "HOME_APP";
 constexpr band_profile::Region kRegion = band_profile::Region::us;
-constexpr uint32_t kTuneMinHz = 24000000, kTuneMaxHz = 1766000000;  // the dongle's range (Tab5 default)
+// Let the driver validate each selected dongle profile; do not exclude HF in the UI.
+constexpr uint32_t kTuneMinHz = ESP_RTL_SDR_FREQ_MIN_HZ;
+constexpr uint32_t kTuneMaxHz = ESP_RTL_SDR_FREQ_MAX_HZ;
 
 gfx::ScaledDisplay* g_display = nullptr;
 std::atomic<int> g_tap_x{-1}, g_tap_y{-1};  // pending injected tap, design coordinates (-1 = none)
@@ -60,6 +66,180 @@ bool g_sound = true;
 uint32_t g_rev = 1, g_tuner_rev = 1, g_audio_rev = 1, g_status_rev = 1;
 
 home::Snapshot g_snapshot;
+
+struct HomeTraceRect {
+  const char* name;
+  home::LayoutRect rect;
+  uint32_t hash;
+};
+HomeTraceRect g_home_trace_rects[5]{};
+constexpr uint32_t kHomeTraceMaxFrames = 3000;
+constexpr int64_t kHomeTraceMaxUs = 15000000;
+uint32_t g_home_trace_frames = 0;
+uint32_t g_home_trace_frames_total = 0;
+bool g_home_trace_valid = false;
+int64_t g_home_trace_started_us = 0;
+uint64_t g_home_trace_hash_us = 0;
+uint64_t g_home_trace_samples = 0;
+
+void hash_home_pixel(uint32_t& hash, uint32_t& samples, int x, int y,
+                     const home::LayoutRect& rect) {
+  if (x < rect.x || x >= rect.x + rect.w || y < rect.y || y >= rect.y + rect.h) return;
+  if (!g_display || !g_display->ready()) return;
+  const auto* pixels = g_display->buffer();
+  const size_t stride = g_display->stride_pixels();
+  const int px = std::clamp(g_display->X(x), 0, g_display->target_width() - 1);
+  const int py = std::clamp(g_display->Y(y), 0, g_display->target_height() - 1);
+  const uint16_t pixel = pixels[size_t(py) * stride + px];
+  hash = (hash ^ uint8_t(pixel)) * 16777619u;
+  hash = (hash ^ uint8_t(pixel >> 8)) * 16777619u;
+  ++samples;
+}
+
+void hash_home_patch(uint32_t& hash, uint32_t& samples, int cx, int cy,
+                     const home::LayoutRect& rect, int radius = 2) {
+  for (int dy = -radius; dy <= radius; ++dy)
+    for (int dx = -radius; dx <= radius; ++dx)
+      hash_home_pixel(hash, samples, cx + dx, cy + dy, rect);
+}
+
+uint32_t home_region_hash(const HomeTraceRect& region, uint32_t& samples) {
+  const auto& rect = region.rect;
+  if (!g_display || !g_display->ready()) return 0;
+  uint32_t hash = 2166136261u;
+  constexpr int kGrid = 12;
+  for (int gy = 0; gy < kGrid; ++gy) {
+    const int y = rect.y + (rect.h > 1 ? gy * (rect.h - 1) / (kGrid - 1) : 0);
+    for (int gx = 0; gx < kGrid; ++gx) {
+      const int x = rect.x + (rect.w > 1 ? gx * (rect.w - 1) / (kGrid - 1) : 0);
+      hash_home_pixel(hash, samples, x, y, rect);
+    }
+  }
+  const int mid_x = rect.x + rect.w / 2;
+  const int mid_y = rect.y + rect.h / 2;
+  if (std::strcmp(region.name, "contrast") == 0) {
+    hash_home_patch(hash, samples, rect.x + 18, mid_y, rect);
+    hash_home_patch(hash, samples, mid_x, mid_y, rect);
+    hash_home_patch(hash, samples, rect.x + rect.w - 18, mid_y, rect);
+  } else if (std::strcmp(region.name, "span") == 0 ||
+             std::strcmp(region.name, "tune") == 0 ||
+             std::strcmp(region.name, "step") == 0) {
+    // Match the two arrow glyph centres and the centered label/value rows in draw_stepper().
+    hash_home_patch(hash, samples, rect.x + 21, mid_y, rect);
+    hash_home_patch(hash, samples, rect.x + rect.w - 21, mid_y, rect);
+    hash_home_patch(hash, samples, mid_x, rect.y + (rect.h >= 60 ? 15 : 12), rect);
+    hash_home_patch(hash, samples, mid_x, rect.y + (rect.h >= 60 ? 43 : 34), rect);
+  } else if (std::strcmp(region.name, "footer") == 0) {
+    constexpr int starts[] = {0, 17, 34, 49, 62, 75};
+    constexpr int ends[] = {17, 34, 49, 62, 75, 100};
+    for (size_t i = 0; i < std::size(starts); ++i) {
+      const int x = rect.x + rect.w * (starts[i] + ends[i]) / 200;
+      hash_home_patch(hash, samples, x, mid_y, rect, 1);
+    }
+    hash_home_patch(hash, samples, rect.x + rect.w - 8, mid_y, rect, 2);
+  }
+  return hash;
+}
+
+void end_home_trace(const char* reason) {
+  if (!g_home_trace_valid) return;
+  const int64_t elapsed_us = esp_timer_get_time() - g_home_trace_started_us;
+  const auto layout = home::layout();
+  ESP_LOGI(TAG, "RTL_UI TRACE_HOME stage=end reason=%s frames=%u elapsed_us=%lld hash_total_us=%llu samples=%llu view=%dx%d target=%dx%d",
+           reason, unsigned(g_home_trace_frames_total - g_home_trace_frames),
+           static_cast<long long>(elapsed_us),
+           static_cast<unsigned long long>(g_home_trace_hash_us),
+           static_cast<unsigned long long>(g_home_trace_samples), layout.viewport.w,
+           layout.viewport.h, g_display->target_width(), g_display->target_height());
+  g_home_trace_frames = 0;
+  g_home_trace_valid = false;
+}
+
+void begin_home_trace() {
+  if (!g_display || !g_display->ready()) return;
+  const auto layout = home::layout();
+  g_home_trace_rects[0] = {"contrast", layout.contrast, 0};
+  g_home_trace_rects[1] = {"span", layout.span, 0};
+  g_home_trace_rects[2] = {"tune", layout.tune, 0};
+  g_home_trace_rects[3] = {"step", layout.step, 0};
+  g_home_trace_rects[4] = {"footer", layout.footer, 0};
+  g_home_trace_started_us = esp_timer_get_time();
+  g_home_trace_samples = 0;
+  const int64_t started = esp_timer_get_time();
+  for (auto& region : g_home_trace_rects) {
+    uint32_t samples = 0;
+    region.hash = home_region_hash(region, samples);
+    g_home_trace_samples += samples;
+  }
+  g_home_trace_hash_us = static_cast<uint64_t>(esp_timer_get_time() - started);
+  char baseline[160]{};
+  size_t used = 0;
+  for (const auto& region : g_home_trace_rects) {
+    const int written = std::snprintf(baseline + used, sizeof(baseline) - used,
+                                      "%s%s:%08lx", used ? "," : "", region.name,
+                                      static_cast<unsigned long>(region.hash));
+    if (written > 0 && static_cast<size_t>(written) < sizeof(baseline) - used)
+      used += static_cast<size_t>(written);
+  }
+  g_home_trace_frames = g_home_trace_frames_total = kHomeTraceMaxFrames;
+  g_home_trace_valid = true;
+  ESP_LOGI(TAG, "RTL_UI TRACE_HOME stage=baseline frames_max=%u elapsed_max_us=%lld hashes=%s hash_us=%llu samples=%llu view=%dx%d target=%dx%d",
+           unsigned(kHomeTraceMaxFrames), static_cast<long long>(kHomeTraceMaxUs),
+           baseline, static_cast<unsigned long long>(g_home_trace_hash_us),
+           static_cast<unsigned long long>(g_home_trace_samples), layout.viewport.w,
+           layout.viewport.h, g_display->target_width(), g_display->target_height());
+}
+
+void trace_home_regions(const char* stage) {
+  if (!g_home_trace_frames || !g_home_trace_valid || !g_display) return;
+  if (esp_timer_get_time() - g_home_trace_started_us >= kHomeTraceMaxUs) {
+    end_home_trace("time_limit");
+    return;
+  }
+  uint32_t hashes[5]{};
+  const int64_t started = esp_timer_get_time();
+  uint64_t sampled = 0;
+  for (size_t i = 0; i < std::size(g_home_trace_rects); ++i) {
+    uint32_t samples = 0;
+    hashes[i] = home_region_hash(g_home_trace_rects[i], samples);
+    sampled += samples;
+  }
+  const uint64_t elapsed = static_cast<uint64_t>(esp_timer_get_time() - started);
+  g_home_trace_hash_us += elapsed;
+  g_home_trace_samples += sampled;
+  bool changed = false;
+  char regions[160]{};
+  size_t used = 0;
+  for (size_t i = 0; i < std::size(g_home_trace_rects); ++i) {
+    auto& region = g_home_trace_rects[i];
+    if (hashes[i] == region.hash) continue;
+    const int written = std::snprintf(regions + used, sizeof(regions) - used,
+                                      "%s%s:%08lx>%08lx", used ? "," : "", region.name,
+                                      static_cast<unsigned long>(region.hash),
+                                      static_cast<unsigned long>(hashes[i]));
+    if (written > 0 && static_cast<size_t>(written) < sizeof(regions) - used)
+      used += static_cast<size_t>(written);
+    region.hash = hashes[i];
+    changed = true;
+  }
+  if (changed) {
+    const auto layout = home::layout();
+    ESP_LOGI(TAG, "RTL_UI TRACE_HOME stage=%s frame=%u changed=%s hash_us=%llu total_us=%llu view=%dx%d target=%dx%d",
+             stage, unsigned(g_home_trace_frames_total - g_home_trace_frames), regions,
+             static_cast<unsigned long long>(elapsed),
+             static_cast<unsigned long long>(g_home_trace_hash_us),
+             layout.viewport.w, layout.viewport.h, g_display->target_width(), g_display->target_height());
+  }
+}
+
+void finish_home_trace_frame() {
+  if (!g_home_trace_frames || !g_home_trace_valid) return;
+  --g_home_trace_frames;
+  if (esp_timer_get_time() - g_home_trace_started_us >= kHomeTraceMaxUs)
+    end_home_trace("time_limit");
+  else if (!g_home_trace_frames)
+    end_home_trace("frame_limit");
+}
 
 const band_profile::Profile& current_profile() { return band_profile::resolve(kRegion, g_frequency_hz); }
 
@@ -265,6 +445,7 @@ void ui_task(void*) {
   g_view_width=g_display->width();g_view_height=g_display->height();
   g_rotation=geometry?geometry->rotation:orientation_app::status().current_degrees;
   home::enter(g_snapshot);
+  begin_home_trace();
 
   bool was_down = false, header_gesture = false;
   int last_x = 0, last_y = 0;  // design coordinates
@@ -344,7 +525,8 @@ void ui_task(void*) {
       } else physical_down=false;
     } else if (touch!=ESP_ERR_NOT_FOUND) physical_down=false;
     bool down=physical_down;
-    if (tap_frames == 0 && g_tap_x.load() >= 0) {
+    // Deliver a release frame before accepting the next injected press.
+    if (tap_frames == 0 && !was_down && g_tap_x.load() >= 0) {
       tap_x = g_tap_x.exchange(-1);
       tap_y = g_tap_y.exchange(-1);
       tap_frames = 15;
@@ -357,7 +539,7 @@ void ui_task(void*) {
     }
     // The shared header (volume tray, home, mute, settings) gets every touch first, on every screen, exactly as the
     // Tab5's main loop does: a press on the speaker opens a volume slider you drag, and the tray stays live while open.
-    if (down && (!was_down || ui_support::header_overlay_open()) && ui_support::handle_header_touch(last_x, last_y, !was_down))
+    if (!(g_active && g_active->id==dashboards::Id::settings && c6_recovery_app::status().busy) && down && (!was_down || ui_support::header_overlay_open()) && ui_support::handle_header_touch(last_x, last_y, !was_down))
       header_gesture = true;
     if (!down && !was_down) header_gesture = false;
     ui_support::header_service();
@@ -408,17 +590,12 @@ void ui_task(void*) {
     if (static_cast<uint32_t>(orientation_now_ms - last_orientation_tick_ms) >= 50) {
       last_orientation_tick_ms = orientation_now_ms;
       const auto update = orcsdr::wifi::c6_update_status();
-      const bool update_locked = update.state == orcsdr::wifi::C6UpdateState::updating ||
+      const bool update_locked = (g_active && g_active->id==dashboards::Id::settings && settings::geometry_locked()) || c6_recovery_app::status().busy || wifi_app::recovery_access()!=wifi_app::RecoveryAccess::idle ||
+                                 update.state == orcsdr::wifi::C6UpdateState::updating ||
                                  update.state == orcsdr::wifi::C6UpdateState::rebooting;
       int32_t degrees = -1;
       if (orientation_app::tick(down || was_down, update_locked, orientation_now_ms, &degrees)) {
         const bool home_active = g_active == nullptr;
-        if (!home_active) {
-          // Dashboard-specific state is not yet preserved across a geometry
-          // change; leave it and return to Home before rebuilding hit regions.
-          g_active->leave();
-          g_active = nullptr;
-        }
         ui_support::header_reset();
         if (!present_geometry()) {
           // Headless rendering has no physical geometry to rotate.
@@ -433,8 +610,15 @@ void ui_task(void*) {
             g_view_height = g->height;
             focus_nav::set_viewport(g->width, g->height);
             focus_nav::clear();
-            if (!home_active) { fill_snapshot(); home::enter(g_snapshot); }
-            else home::draw();
+            if (!home_active && g_active->geometry_changed && g_active->geometry_changed()) {
+              ESP_LOGI(TAG,"RTL_DISPLAY_SCREEN_RESIZED screen=%s",g_active->name);
+            } else if (!home_active) {
+              // Screens migrate incrementally; never retain old hit regions.
+              g_active->leave();g_active=nullptr;
+              fill_snapshot();home::enter(g_snapshot);
+              home_app::request_home(); // normal routing restores Home's radio/span state
+            } else home::draw();
+            if (home_active) begin_home_trace();
             ESP_LOGI(TAG, "RTL_DISPLAY_ROTATION result=PASS degrees=%d view=%ldx%ld",
                      degrees, (long)g->width, (long)g->height);
           } else {
@@ -491,7 +675,9 @@ void ui_task(void*) {
         g_active->tick();
       } else {
         fill_snapshot();
+        trace_home_regions("before_update");
         home::update(g_snapshot);
+        trace_home_regions("after_update");
       }
       {
         // Receiver audio follows Home: WFM/NFM/AM are demodulated; USB/LSB and IQ-only bands are silent for now.
@@ -508,9 +694,15 @@ void ui_task(void*) {
         audio_service::set_sound(g_sound);
       }
     }
-    if (radio::take_bins(bins)) feed_spectrum(bins);
+    if (radio::take_bins(bins)) {
+      if (!g_active) trace_home_regions("before_spectrum");
+      feed_spectrum(bins);
+      if (!g_active) trace_home_regions("after_spectrum");
+    }
 
+    if (!g_active) trace_home_regions("before_present");
     const int rows = present_frame();
+    if (!g_active) trace_home_regions("after_present");
     if (rows > 300) ESP_LOGW(TAG, "large repaint: %d rows, snapshot rev %u/%u/%u/%u", rows, unsigned(g_rev), unsigned(g_tuner_rev), unsigned(g_status_rev), unsigned(g_audio_rev));
     if (rows) {
       ++g_visible_updates;
@@ -523,9 +715,12 @@ void ui_task(void*) {
     }
     int screenshot_queued = 1;
     if (g_screenshot_state.compare_exchange_strong(screenshot_queued, 2, std::memory_order_acq_rel)) {
+      if (!g_active) trace_home_regions("before_screenshot");
       screen_snap_stream(g_display);
+      if (!g_active) trace_home_regions("after_screenshot");
       g_screenshot_state.store(0, std::memory_order_release);
     }
+    finish_home_trace_frame();
     vTaskDelay(pdMS_TO_TICKS(5));
   }
 }

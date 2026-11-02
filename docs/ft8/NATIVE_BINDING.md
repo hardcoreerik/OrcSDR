@@ -71,7 +71,7 @@ Queries need no authentication; commands that change state need the PAIR/AUTH se
 | `FT8 WWV` | no | status of the WWV tick measurement (idle, running with seconds folded, or the last result) |
 | `FT8 WWV <MHz> [<seconds>] [CAL\|SYNC]` | yes | measure the WWV (1000 Hz) tick on 2.5, 5, 10, 15 or 20 MHz (exact values only; 20-240 s, default 90): the receiver is retuned 1 kHz below the carrier and the band comes back afterward. `CAL` learns the site delay right after a fresh `FT8 NTP`; `SYNC` steps the clock from the tick. Setting the clock during a measurement cancels it. `tools/wwv_probe.py` wraps it |
 | `FT8 WWV STOP` | yes | end a running measurement early (the band comes back) |
-| `FT8 SNAP` | yes | the screen as a PNG over serial (`ORC_SNAP_BEGIN`, `ORC_SNAP_DATA <offset> <base64>` lines, `ORC_SNAP_END`), no SD card and no radio stop; `tools/tab5_ft8_shot.py` wraps it |
+| `SCREENSHOT` | yes | the screen as a PNG over serial (`ORC_SNAP_BEGIN`, `ORC_SNAP_DATA <offset> <base64>` lines, `ORC_SNAP_END`), no SD card and no radio stop; `tools/screenshot.py` wraps it |
 | `FT8 DUMP` | no | the last decoded slot as base64 PCM16 lines (about 480 KB) |
 | `FT8 OPEN` | yes | open the FT8 dashboard |
 | `FT8 BAND <index|label|dial_hz>` | yes | tune a band (e.g. `40m`) |
@@ -81,7 +81,7 @@ Queries need no authentication; commands that change state need the PAIR/AUTH se
 | `FT8 CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms>` | yes | candidates refined (1-64), candidates sent through the FEC gates (1-64), grid resolution, per-slot time limit |
 | `FT8 HUNT <FAST|DECODE|STOP>` | yes | start or stop the band hunter (below); `FT8 HUNTSTATUS` (no auth) prints the phase and a line per band |
 | `FT8 TAB <LIVE|DECODES|MAP|HUNTER|HEARD|SETUP>` | yes | switch the FT8 dashboard tab |
-| `FT8 SHOT <name>` | yes | save the screen as a BMP on the SD card without pausing reception (fetch it with `tools/tab5_ft8_shot.py`, which stops the receiver for the SD transfer, then retunes) |
+| `FT8 SHOT <name>` | yes | save the screen as a BMP on the SD card without pausing reception (fetch it with `tools/screenshot.py`, which stops the receiver for the SD transfer, then retunes) |
 | `FT8 SAVE <name>` | yes | write the last slot to `/sd/ft8/<name>.wav` |
 | `FT8 ADIF <name>` | yes | write the decode list as an ADIF 3.1.4 heard-stations log to `/sd/ft8/<name>.adi` (stations heard, never contacts; no SNR; JS8 omitted) |
 

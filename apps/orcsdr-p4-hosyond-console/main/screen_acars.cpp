@@ -1,9 +1,11 @@
 // ACARS dashboard (apps/orcsdr-tab5/ui/acars_*.cpp, unchanged) on the P4 console: VHF aircraft datalink, decoded on the
 // receiver's 240 kS/s stream. Message saving to SD is not available yet (the archive then holds this session only).
 #include "acars_app.hpp"
+#include "acars_dashboard.hpp"
 #include "acars_receiver.hpp"
 #include "audio_service.hpp"
 #include "home_app.hpp"
+#include "present.hpp"
 #include "radio_service.hpp"
 #include "screens.hpp"
 #include "ui_support.hpp"
@@ -11,6 +13,16 @@
 namespace {
 void iq_sink(const uint8_t* iq, size_t bytes) {
   orcsdr::acars_receiver::offer_iq(iq, bytes, orcsdr::radio::sample_rate());
+}
+
+bool resize_viewport() {
+  const auto* geometry = present_geometry();
+  if (geometry == nullptr) {
+    return orcsdr::acars_dashboard::set_viewport({0, 0, 1280, 720});
+  }
+  const auto safe = geometry->safe;
+  return orcsdr::acars_dashboard::set_viewport({static_cast<int>(safe.x), static_cast<int>(safe.y),
+                                          static_cast<int>(safe.width), static_cast<int>(safe.height)});
 }
 
 orcsdr::acars_app::Hooks app_hooks() {
@@ -46,6 +58,10 @@ orcsdr::acars_receiver::Hooks receiver_hooks() {
 }
 
 void enter() {
+  if (!resize_viewport()) {
+    home_app::request_home();
+    return;
+  }
   audio_service::set_active(false);  // ACARS is text: no audio
   ui_support::header_reset();
   ui_support::claim_screen(orcsdr::screens::Id::acars);
@@ -58,6 +74,7 @@ void leave() {
   orcsdr::radio::set_aux_iq_sink(nullptr);
   orcsdr::acars_app::close();
   orcsdr::radio::set_sample_rate_override(0);
+  (void)orcsdr::acars_dashboard::set_viewport({0, 0, 1280, 720});
 }
 void tick() {
   orcsdr::acars_app::tick();
@@ -71,7 +88,8 @@ void tap(int x, int y) {
 
 namespace screens {
 const Screen& acars_screen() {
-  static const Screen s{orcsdr::dashboards::Id::acars, "ACARS", enter, leave, tick, tap, nullptr, nullptr};
+  static const Screen s{orcsdr::dashboards::Id::acars, "ACARS", enter, leave, tick, tap, nullptr, nullptr,
+                        nullptr, resize_viewport};
   return s;
 }
 }  // namespace screens

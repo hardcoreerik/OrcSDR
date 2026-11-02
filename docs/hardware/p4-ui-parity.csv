@@ -1,6 +1,6 @@
 id,existing_screen,prior_p4_wrapper,landscape_verified,portrait_verified,notes
-home,HOME,yes,no,no,User saw real OrcSDR app in portrait on r6; exact screen and complete layout acceptance unconfirmed
-fm,FM RADIO,yes,no,no,User heard FM audio on r6; FM dashboard layout and sustained receiver/audio continuity unverified
+home,HOME,yes,no,no,r11 self-check PASS in legacy and both safe views; native PNGs reviewed in both orientations; r12 label fixes flashed; r16 human confirms stable landscape screen and audible FM and reports appearance looks good; detailed controls and captured redraw issue remain open
+fm,FM RADIO,yes,no,no,r12 native Spectrum PNGs in both orientations retain FM and selected Spectrum tab across rotation; receiver streaming near 0.96 MSps afterward; other views and sustained continuity unverified
 p25,P25 RADIO,no,no,no,Current registry entry; behavior and service parity still require audit
 adsb,ADS-B,yes,no,no,Current registry entry; behavior and service parity still require audit
 shortwave,SHORTWAVE,yes,no,no,Current registry entry; behavior and service parity still require audit

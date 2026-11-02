@@ -1,10 +1,12 @@
 #pragma once
+#include "c6_recovery_ui.hpp"
 
 #include <cstddef>
 #include <cstdint>
 
 #include "catalog_sync.hpp"
 #include "adsb_dashboard.hpp"
+#include "settings_layout.hpp"
 
 namespace orcsdr::settings {
 
@@ -61,6 +63,10 @@ struct State {
   bool orcdial_connected=false,orcdial_verifying=false,orcdial_boot_connect=false,orcdial_upgrade=false;
   uint32_t orcdial_code=0;
   char orcdial_identity[16]{},orcdial_connection[32]{},orcdial_failure[32]{};
+  bool wifi_c6_rom_recovery = false;
+  bool wifi_c6_rom_busy = false;
+  c6_recovery_ui::Phase wifi_c6_rom_phase = c6_recovery_ui::Phase::idle;
+  int wifi_c6_rom_result = 0;
   bool wifi_c6_image_embedded = false;
   uint8_t wifi_c6_update_percent = 0;
   char wifi_ssid[33]{};
@@ -91,6 +97,13 @@ struct State {
 
   uint8_t brightness = 180;
   uint8_t rotation = 3;
+  // Opt-in board policy. Defaults retain Tab5's rotation indices 1/3.
+  bool orientation_profile = false;
+  uint16_t orientation_degrees = 0;
+  uint8_t orientation_manual_angles = 0x0f; // bits 0..3 = 0,90,180,270 degrees
+  bool orientation_auto_available = false;
+  bool orientation_auto_enabled = false;
+  bool orientation_locked = false;
   uint16_t screen_timeout_sec = 0;
   uint8_t volume = 128;
   bool sound_default = true;
@@ -101,6 +114,7 @@ struct State {
   uint32_t fm_frequency_hz = 0;
 
   bool sd_ready = false;
+  bool sd_capacity_known = true; // legacy providers already supply free capacity
   uint64_t sd_total_bytes = 0;
   uint64_t sd_free_bytes = 0;
   bool catalog_ready = false;
@@ -171,6 +185,9 @@ enum class ActionKind : uint8_t {
   ,open_local_maps
   ,open_location_picker
   ,run_setup
+  ,orientation_angle_changed // value is degrees; adapter owns validation/persistence
+  ,orientation_auto_changed  // value is 0/1; adapter owns sensor policy
+  ,c6_rom_begin,c6_rom_release_install,c6_rom_release_resume,c6_rom_cancel
 };
 
 struct Action {
@@ -180,6 +197,15 @@ struct Action {
 };
 
 void enter(const State& state, Section section = Section::connectivity);
+// UI-owner structural transition only. No state reset or drawing. Reject while
+// an editor owns geometry; the adapter must defer the orientation transition.
+bool set_viewport(Rect viewport);
+const SettingsLayout& layout();
+bool geometry_locked();
+// Compact conversion is incremental. Check before wiring a board adapter;
+// every section continues to support the default Tab5 viewport.
+bool supports_section(Section section);
+std::size_t content_page();
 void leave();
 void draw();
 void update(const State& state);
