@@ -273,9 +273,9 @@ Start start_channel(int rx, uint32_t hz, uint32_t wide_center_hz, uint32_t wide_
     offset = static_cast<int64_t>(hz) - static_cast<int64_t>(center);
     if (static_cast<uint64_t>(out_rate) * 16 > static_cast<uint64_t>(link_budget_mbit()) * 1000000ull) return fail(Start::not_available, "link_too_slow_for_this_rate");
   } else {
-    if (in_rate == 2400000) decim = 8;       // 300 kS/s out
-    else if (in_rate == 960000) decim = 3;  // 320 kS/s out
-    else return fail(Start::not_available, "receiver_rate_not_supported_for_channel");
+    decim = (in_rate + 150000) / 300000;  // whatever rate the receiver runs: the nearest whole division to 300 kS/s (2.4 MS/s -> 8, 960 kS/s -> 3)
+    if (decim < 1) decim = 1;
+    if (decim > 16) return fail(Start::not_available, "receiver_rate_too_high_for_channel");
     out_rate = in_rate / decim;
     offset = out_rate / 6;
     if (hz < offset + web_control::tune_min_hz(rx)) return fail(Start::bad_request, "bad_hz");

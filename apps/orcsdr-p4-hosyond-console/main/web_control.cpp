@@ -59,7 +59,7 @@ Result run(const char* route, const char* query, uint32_t peer, char* out, size_
   long long v = 0;
   if (std::strcmp(route, "receivers/tune") == 0) {
     const int rx = receiver_index(query);
-    if (rx < 0 || !parse_long(query, "hz", &v) || v < tune_min_hz(rx) || v > orcsdr::commands::kTuneMaxHz) return fail(out, cap, Result::bad_request, "bad_hz_or_index");
+    if (rx < 0 || !parse_long(query, "hz", &v) || v < tune_min_hz(rx) || v > ESP_RTL_SDR_FREQ_MAX_HZ) return fail(out, cap, Result::bad_request, "bad_hz_or_index");
     tune(rx, static_cast<uint32_t>(v));
     char f[64];
     std::snprintf(f, sizeof(f), "\"index\":%d,\"hz\":%lld", rx, v);
@@ -67,10 +67,11 @@ Result run(const char* route, const char* query, uint32_t peer, char* out, size_
   }
   if (std::strcmp(route, "receivers/rate") == 0) {
     const int rx = receiver_index(query);
-    if (rx < 0 || !parse_long(query, "sps", &v) || v < 225000 || v > 3200000) return fail(out, cap, Result::bad_request, "bad_sps_or_index");
-    // The console runs two rates (960 kS/s and 2.4 MS/s); the nearest is applied and reported, never silently substituted.
-    const uint32_t applied = v <= 1000000 ? 960000 : 2400000;
-    radio::set_sample_rate(rx, applied);
+    if (rx < 0 || !parse_long(query, "sps", &v) || v <= 0 || v > 0xFFFFFFFFll) return fail(out, cap, Result::bad_request, "bad_sps_or_index");
+    // The driver decides what it can run: it quantises the request to the nearest rate it can program, and the applied rate is reported.
+    uint32_t applied = 0;
+    if (!esp_rtl_sdr_quantize_sample_rate(static_cast<uint32_t>(v), &applied)) return fail(out, cap, Result::bad_request, "sps_not_supported_by_the_driver");
+    radio::set_sample_rate_exact(rx, applied);
     char f[96];
     std::snprintf(f, sizeof(f), "\"index\":%d,\"requested_sps\":%lld,\"applied_sps\":%u", rx, v, static_cast<unsigned>(applied));
     return done(out, cap, f);
@@ -108,7 +109,7 @@ Result run(const char* route, const char* query, uint32_t peer, char* out, size_
     }
     if (std::strcmp(action, "start") == 0) {
       const int rx = receiver_index(query);
-      if (rx < 0 || !parse_long(query, "hz", &v) || v < tune_min_hz(rx) || v > orcsdr::commands::kTuneMaxHz) return fail(out, cap, Result::bad_request, "bad_hz_or_index");
+      if (rx < 0 || !parse_long(query, "hz", &v) || v < tune_min_hz(rx) || v > ESP_RTL_SDR_FREQ_MAX_HZ) return fail(out, cap, Result::bad_request, "bad_hz_or_index");
       tune(rx, static_cast<uint32_t>(v));  // tuning only: audio from this node is not streamed to the browser yet
       long long vol = 0;
       if (parse_long(query, "volume", &vol) && vol >= 0 && vol <= orcsdr::commands::kVolumeMax) home_app::request_volume(static_cast<uint8_t>(vol * 255 / orcsdr::commands::kVolumeMax));

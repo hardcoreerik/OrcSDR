@@ -86,6 +86,8 @@ bool receiver_info(int rx, ReceiverInfo* out);
 
 void tune_to(int rx, uint32_t frequency_hz);
 void set_sample_rate(int rx, uint32_t rate);
+// The exact rate (the caller has already had it accepted by the driver); unlike set_sample_rate it does not fold into the console's two rates.
+void set_sample_rate_exact(int rx, uint32_t rate);
 uint32_t sample_rate(int rx);
 float level_dbfs(int rx);
 Gain gain(int rx);

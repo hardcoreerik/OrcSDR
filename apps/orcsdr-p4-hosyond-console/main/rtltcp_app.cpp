@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include "commands.hpp"
 #include "esp_log.h"
+#include "esp_rtl_sdr.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "eth_app.hpp"
@@ -12,6 +13,7 @@
 #include "nvs_store.hpp"
 #include "radio_service.hpp"
 #include "rtl_tcp_proto.hpp"
+#include "web_control.hpp"
 #include "wifi_app.hpp"
 
 namespace rtltcp_app {
@@ -37,7 +39,7 @@ uint32_t rtl_tcp_tuner(uint8_t profile) {
 }
 
 // The rates the driver can run, after its own quantisation (design rule 2): 225,001 to 300,000 and 900,001 to 3,200,000 S/s.
-bool driver_rate_ok(uint32_t sps) { return (sps > 225000 && sps <= 300000) || (sps > 900000 && sps <= 3200000); }
+bool driver_rate_ok(uint32_t sps) { return esp_rtl_sdr_is_rate_supported(sps); }
 
 // What the active link can carry for one stream, Mbit/s. Provisional: the Ethernet figure leaves headroom on a 100 Mbit link, the Wi-Fi figure is
 // the measured sustained rate of the SDIO-attached coprocessor path (COM8: about 5 Mbit/s of plain HTTP download, bursts to 16), so a request above it ends the session with a recorded reason instead of dropping silently.
@@ -102,7 +104,7 @@ class OrcHost : public esp_rtl_tcp::Host {
   }
 
   bool set_center(uint32_t hz) override {
-    if (hz < orcsdr::commands::kTuneMinHz || hz > orcsdr::commands::kTuneMaxHz) return false;
+    if (hz < web_control::tune_min_hz(kReceiver) || hz > ESP_RTL_SDR_FREQ_MAX_HZ) return false;
     orcsdr::radio::tune_to(kReceiver, hz);
     return true;
   }
