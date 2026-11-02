@@ -448,12 +448,14 @@ lr::Snapshot& build() {
   s.iq_busy = g_decode_busy.load();
   s.battery_percent = -1;
   s.native_decoder_ready = g_decoder_ready.load() && s.bandwidth_hz == 250000;
+  std::snprintf(s.board_label, sizeof(s.board_label), "%s", "ORCSDR P4");
   // Describe board wiring without turning a documented pin map into a working radio.
   // No SPI driver, expander antenna switching or TX path is active in this build.
   const orcsdr_board_profile_t* board = orcsdr_board_profile();
   if (board && board->has_radio && board->radio_part &&
       std::strcmp(board->radio_part, "SX1262") == 0) {
     s.tx.readiness = orcsdr::lora_tx::Readiness::profile_only;
+    std::snprintf(s.board_label, sizeof(s.board_label), "%s", "LILYGO T-DISPLAY P4");
   }
   // TX approval, output path, frequency, payload size and arming remain
   // explicitly false/zero, independent of the RX channel selected above.
