@@ -29,7 +29,7 @@ namespace {
 constexpr char TAG[] = "WEB_IQ";
 namespace radio = orcsdr::radio;
 constexpr uint32_t kMagic = 0x3151494f;  // "OIQ1" little-endian, what the page checks
-constexpr size_t kHeader = 28, kPairs = 512;
+constexpr size_t kHeader = 28, kPairs = 2048;  // 4 KB frames: fewer packets per second matters on the Wi-Fi link
 constexpr int64_t kTicketUs = 30LL * 1000 * 1000;
 
 // Third-order CIC decimator for one component. Integers wrap on purpose: the comb stages cancel the wrap.
@@ -150,6 +150,8 @@ esp_err_t ws_handler(httpd_req_t* req) {
     if (!ticket_ok(req)) return ESP_FAIL;  // lost the race for the single ticket: close
     g_ticket_peer = 0;                     // single use
     g_fd = httpd_req_to_sockfd(req);
+    const int one = 1;
+    setsockopt(g_fd.load(), IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));  // 1 KB frames: without this Nagle waits for the peer's delayed ACK between frames
     ESP_LOGI(TAG, "WEB_IQ_CLIENT_CONNECTED fd=%d", g_fd.load());
     return ESP_OK;
   }
@@ -278,7 +280,7 @@ Start start_channel(int rx, uint32_t hz, uint32_t peer, char* out, size_t cap) {
   spec.receiver = static_cast<uint8_t>(rx);
   spec.queue_bytes = 256 * 1024;
   spec.task_core = 0;
-  spec.task_priority = 3;
+  spec.task_priority = 5;  // above the screen task (4): on a board with a display it would otherwise starve this task
   g_sink = radio::add_sink(spec);
   if (g_sink < 0) {
     heap_caps_free(c);

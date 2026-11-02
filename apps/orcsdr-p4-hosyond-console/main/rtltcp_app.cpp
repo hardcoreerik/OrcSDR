@@ -71,7 +71,7 @@ class OrcHost : public esp_rtl_tcp::Host {
     spec.receiver = kReceiver;
     spec.queue_bytes = kQueueBytes;
     spec.task_core = 0;
-    spec.task_priority = 3;
+    spec.task_priority = 5;  // above the screen task (4): on a board with a display it would otherwise starve this task
     // Wi-Fi modem sleep adds tens of milliseconds of latency and caps a TCP stream; a streaming session turns it off and restores it at the end.
     if (wifi_app::status().connected && esp_wifi_set_ps(WIFI_PS_NONE) == ESP_OK) wifi_ps_off_ = true;
     sink_ = orcsdr::radio::add_sink(spec);

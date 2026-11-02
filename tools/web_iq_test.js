@@ -1,4 +1,5 @@
 // Tests the browser channel IQ stream (main/web_iq.cpp) against a node: node tools/web_iq_test.js <device-ip> [hz] [seconds]
+const FRAME_PAIRS = 2048;
 // Logs in with the factory password, asks for a channel, opens the port-81 WebSocket like the page does and checks the packets.
 const L = require('../apps/orcsdr-p4-hosyond-console/web/orclogin.js');
 const ip = process.argv[2], hz = Number(process.argv[3] || 96100000), secs = Number(process.argv[4] || 6);
@@ -46,15 +47,15 @@ function fftPeak(pairs) {   // crude 1024-point spectrum: returns [bin of the pe
   const pk = ws.packets, n = pk.length;
   console.log('packets received:', n, 'in', secs, 's =', (n / secs).toFixed(0), '/s');
   const hdr = b => new DataView(b.buffer, b.byteOffset, b.byteLength);
-  const ok = pk.filter(b => b.length === 28 + 1024 && hdr(b).getUint32(0, true) === 0x3151494f && hdr(b).getUint16(20, true) === 512 && hdr(b).getUint16(22, true) === 1 && hdr(b).getUint32(24, true) === 8 && hdr(b).getUint32(16, true) === r.body.sps);
-  check('every packet is a well-formed 512-pair 8-bit IQ frame at the announced rate', n > 0 && ok.length === n, ok.length + ' of ' + n);
-  const expected = r.body.sps / 512 * secs;
+  const ok = pk.filter(b => b.length === 28 + FRAME_PAIRS * 2 && hdr(b).getUint32(0, true) === 0x3151494f && hdr(b).getUint16(20, true) === FRAME_PAIRS && hdr(b).getUint16(22, true) === 1 && hdr(b).getUint32(24, true) === 8 && hdr(b).getUint32(16, true) === r.body.sps);
+  check('every packet is a well-formed 2048-pair 8-bit IQ frame at the announced rate', n > 0 && ok.length === n, ok.length + ' of ' + n);
+  const expected = r.body.sps / FRAME_PAIRS * secs;
   check('the packet rate matches the sample rate (within 5 %)', Math.abs(n - expected) < 0.05 * expected, n + ' vs ' + expected.toFixed(0));
   let gaps = 0; for (let i = 1; i < n; i++) if (((hdr(pk[i]).getUint32(8, true) - hdr(pk[i - 1]).getUint32(8, true)) >>> 0) !== 1) gaps++;
   check('sequence numbers are consecutive', gaps === 0, gaps + ' gaps');
   check('one session id for the whole stream', new Set(pk.map(b => hdr(b).getUint32(4, true))).size === 1);
   if (n > 8) {
-    const pairs = new Uint8Array(2048); pairs.set(pk[n >> 1].subarray(28)); pairs.set(pk[(n >> 1) + 1].subarray(28), 1024);
+    const pairs = new Uint8Array(2048); pairs.set(pk[n >> 1].subarray(28, 28 + 2048));
     const [bin, ratio] = fftPeak(pairs), hzOff = bin * r.body.sps / 1024;
     console.log('spectral peak at %d Hz from the window centre (the channel sits at +%d Hz), peak/median %s', hzOff.toFixed(0), r.body.offset_hz, ratio.toFixed(1));
   }
