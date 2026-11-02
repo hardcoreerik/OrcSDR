@@ -20,12 +20,15 @@ struct FrontendStats {
   float channel_power=0;
   uint32_t invalid_blocks=0;
 };
+using ChannelSink=void(*)(void* context,const float* i,const float* q,size_t count);
 class Decoder {
  public:
   Decoder();
   void reset();
   void set_config(const Config& cfg);
   void set_model(hfdl_ui::Model* model);
+  void set_channel_sink(ChannelSink sink,void* context); // synchronous worker callback; never heap
+  void flush_channel(); // call after a stream/file chunk; does not pad or invent samples
   bool process(const float* i,const float* q,size_t count);
   bool process_audio(const float* audio,size_t count);
   uint32_t frames_seen() const {return 0;}
@@ -44,5 +47,9 @@ class Decoder {
   float oscillator_i_=1,oscillator_q_=0,step_i_=1,step_q_=0;
   int history_pos_=0,decim_step_=4,decim_phase_=0;
   bool valid_config_=false;
+  ChannelSink channel_sink_=nullptr;
+  void* sink_context_=nullptr;
+  float block_i_[64]{},block_q_[64]{};
+  size_t block_count_=0;
 };
 } // namespace orcsdr::hfdl
