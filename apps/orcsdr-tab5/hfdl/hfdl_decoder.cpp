@@ -5,7 +5,7 @@ namespace orcsdr::hfdl {
 namespace { constexpr float kPi=3.14159265358979323846f; }
 Decoder::Decoder(){set_config(cfg_);}
 void Decoder::reset(){
-  stats_=FrontendStats{};history_pos_=0;decim_phase_=0;
+  stats_=FrontendStats{};history_pos_=0;decim_phase_=0;block_count_=0;
   oscillator_i_=1;oscillator_q_=0;
   for(int i=0;i<kTaps;++i){hist_i_[i]=0;hist_q_[i]=0;}
 }
@@ -36,6 +36,14 @@ void Decoder::set_config(const Config& cfg){
   configure_filter();
 }
 void Decoder::set_model(hfdl_ui::Model* model){model_=model;}
+void Decoder::set_channel_sink(ChannelSink sink,void* context){
+  channel_sink_=sink;sink_context_=context;block_count_=0;
+}
+void Decoder::flush_channel(){
+  if(channel_sink_ && block_count_)
+    channel_sink_(sink_context_,block_i_,block_q_,block_count_);
+  block_count_=0;
+}
 void Decoder::consume(float i,float q){
   const float mixed_i=i*oscillator_i_-q*oscillator_q_;
   const float mixed_q=i*oscillator_q_+q*oscillator_i_;
@@ -52,6 +60,10 @@ void Decoder::consume(float i,float q){
     const float power=out_i*out_i+out_q*out_q;
     stats_.channel_power+=0.001f*(power-stats_.channel_power);
     ++stats_.channel_samples;
+    if(channel_sink_){
+      block_i_[block_count_]=out_i;block_q_[block_count_]=out_q;
+      if(++block_count_==64)flush_channel();
+    }
   }
   const float old_i=oscillator_i_;
   oscillator_i_=old_i*step_i_-oscillator_q_*step_q_;
