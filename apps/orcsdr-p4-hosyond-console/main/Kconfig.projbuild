@@ -12,4 +12,13 @@ menu "OrcSDR receivers"
             not yet measured. Check "RTL_MEM STATUS" dma_free, "RTL_CPU" and the per-receiver drops from
             "RTL_RX STATUS" with the console running before choosing more than 1 or 2.
 
+    config ORCSDR_ETHERNET
+        bool "Wired Ethernet (RMII PHY) from the board profile"
+        default n
+        help
+            Compiles the Ethernet driver. It starts only if the selected board profile lists Ethernet pins (the Waveshare
+            ESP32-P4-ETH, -POE-ETH and Module-DEV-KIT profiles do). The pins are the documented ones; they are not verified on a
+            board until a link comes up, and the PHY chip is tried as IP101 first, then the generic driver. Off by default so a
+            board behaves exactly as before unless this is chosen.
+
 endmenu
