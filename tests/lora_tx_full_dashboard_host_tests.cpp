@@ -117,7 +117,13 @@ void landscape_navigation_and_revocation() {
   assert(full_clears()==1);
   assert(lora::handle_touch(1200,670).kind==lora::ActionKind::select_view);
   assert(lora::handle_touch(1200,670).value==4); // 5 tabs, not hidden 6th
-  std::puts("INTEGRATED_LANDSCAPE_REVOCATION PASS");
+  host_display::reset();
+  s.tx.readiness=tx::Readiness::profile_only; // radio reattached
+  s.revision++;
+  lora::update(s);
+  assert(full_clears()==1); // rebuild navigation when radio comes back
+  assert(lora::handle_touch(1200,670).value==5); // 6th tab is back
+  std::puts("INTEGRATED_LANDSCAPE_REVOCATION_AND_REATTACH PASS");
 }
 void admitted_controls_still_only_return_actions() {
   setup(1280,720);
@@ -174,7 +180,14 @@ void portrait_presence_and_ui() {
   assert(!has("ARM TX")&&!has("SEND TEST"));
   assert(lora::handle_touch(120,1060).kind==lora::ActionKind::none);
   assert(lora::handle_touch(489,50).kind==lora::ActionKind::exit_home);
-  std::puts("INTEGRATED_PORTRAIT_REVOCATION PASS");
+  host_display::reset();
+  s.tx.readiness=tx::Readiness::profile_only; // radio returned, not TX-verified
+  s.revision++;
+  lora::update(s);
+  assert(full_clears()==1 && has("SX1262 PACKET TX"));
+  assert(has("ARM LOCKED") && has("SEND LOCKED"));
+  assert(lora::handle_touch(120,1060).kind==lora::ActionKind::none);
+  std::puts("INTEGRATED_PORTRAIT_REVOCATION_AND_REATTACH PASS");
 }
 void rx_only_regression() {
   setup(1280,720);
