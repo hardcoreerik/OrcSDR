@@ -276,3 +276,6 @@ Cause: the OrcSDR page polls over several connections at once and the server was
 Fix: `max_open_sockets` is 7 when `CONFIG_LWIP_MAX_SOCKETS` is 14 or more (the `sdkconfig.net-throughput` overlay sets 16), otherwise 4 as before. Check: browser page open on COM29, rtl_tcp stream running, 86 of 86 requests answered, 0 failed.
 Boards built without the overlay still have 4 sockets and the same weakness; the overlay is not yet a default for any board (it costs about 14 KB of internal RAM on COM29).
 Also seen: the bundled page labels the network "Wi-Fi" on a wired board (the label is in the M5GFX status bar; the page only passes a connected flag and an address). Cosmetic, not changed.
+
+**One firmware, three boards (2026-11-02).** The same OrcSDR Web page, from the same embedded bundle, was opened in the browser pane against COM29 (Waveshare ESP32-P4-ETH, wired, NESDR SMArt v5), COM8 (Waveshare ESP32-P4-Module-DEV-KIT, Wi-Fi via the C6, Blog V4L) and earlier COM31 (Waveshare ESP32-P4-WIFI6-DB, Wi-Fi via the C5, Blog V4):
+each shows its own receiver name and a live spectrum and waterfall at 2.4 MS/s, and the Module-DEV-KIT's own screen keeps running at the same time. The page's controls still do not work on any of them (see section 14).
