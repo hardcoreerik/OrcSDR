@@ -1,5 +1,6 @@
 #include "focus_nav.hpp"
 #include "lora_dashboard.hpp"
+#include "lora_tx_views.hpp"
 
 #include "dashboard_audio_control.hpp"
 #include "offline_map.hpp"
@@ -44,6 +45,12 @@ constexpr size_t kTrafficRows = 5;
 
 Snapshot g_snapshot{};
 View g_view = View::overview;
+tx_views::Page g_tx_page = tx_views::Page::operator_panel;
+
+bool portrait_tx_screen() {
+  return tx_views::portrait(M5.Display.width(), M5.Display.height()) &&
+         g_snapshot.tx.readiness != lora_tx::Readiness::absent;
+}
 bool g_active = false;
 bool g_channels_open = false;
 bool g_follow_node = false;
@@ -214,12 +221,15 @@ void draw_header() {
   M5.Display.drawFastVLine(362, 20, 80, kCyan);
   draw_radio_icon(458, 64, kGreen);
   text("LORA MESH", 520, 47, TFT_WHITE, 4, middle_left);
-  text("Meshtastic RX Monitor", 520, 83, kCyan, 2, middle_left);
+  text(g_view == View::tx_lab ? "SX1262 Packet TX Lab" : "Meshtastic RX Monitor",
+       520, 83, kCyan, 2, middle_left);
   M5.Display.drawFastVLine(852, 20, 80, kCyan);
   text(g_snapshot.wifi_connected ? "WI-FI ONLINE" : "WI-FI OFFLINE", 885, 44,
        g_snapshot.wifi_connected ? kGreen : kMuted, 1, middle_left);
-  text(g_snapshot.running ? "RX ONLY" : "RX STOPPED", 885, 73,
-       g_snapshot.running ? kGreen : kMuted, 2, middle_left);
+  text(g_view == View::tx_lab ?
+           (g_snapshot.tx.operator_armed ? "TX ARMED" : "TX LOCKED") :
+           (g_snapshot.running ? "RX ONLY" : "RX STOPPED"), 885, 73,
+       g_view == View::tx_lab ? kYellow : (g_snapshot.running ? kGreen : kMuted), 2, middle_left);
   text(g_snapshot.native_decoder_ready ? "DECODE" : "PHY PENDING", 1050, 44,
        g_snapshot.native_decoder_ready ? kGreen : kYellow, 1, middle_left);
   text(g_snapshot.key_loaded ? "KEY LOADED" : "PUBLIC ONLY", 1050, 73,
@@ -421,16 +431,34 @@ void draw_map_static() {
 }
 
 void draw_tx_static() {
-  card(24, 138, 1224, 478);
-  text("SX1262 TX LAB", 56, 170, kCyan, 3, middle_left);
-  text("HARDWARE PACKET RADIO / SEPARATE FROM RTL-SDR IQ", 56, 204, kMuted, 1, middle_left);
-  card(48, 231, 570, 264, kCyan);
-  card(634, 231, 590, 264, kYellow);
-  text("RADIO HARDWARE", 72, 260, kCyan, 2, middle_left);
-  text("TRANSMISSION SAFETY", 660, 260, kYellow, 2, middle_left);
-  text("No automatic TX on boot, connect or scan.", 660, 402, kMuted, 1, middle_left);
-  text("TX test requires physical RF-path verification.", 660, 430, kMuted, 1, middle_left);
-  text("RX monitoring remains an independent service.", 72, 456, kMuted, 1, middle_left);
+  const bool vertical = portrait_tx_screen();
+  tx_views::draw_static(M5.Display, g_snapshot, g_tx_page, vertical);
+  tx_views::menu(M5.Display, g_tx_page, vertical);
+}
+
+void draw_portrait_tx_header() {
+  M5.Display.fillRect(0, 0, 568, 139, kBg);
+  // The real OrcSDR badge asset, not a substituted icon.
+  if (!badge::draw(18, 16, 86)) {
+    M5.Display.drawRoundRect(18, 16, 86, 86, 9, kGreen);
+    text("O", 61, 59, kGreen, 4);
+  }
+  text("OrcSDR", 119, 37, TFT_WHITE, 3, middle_left);
+  text(g_snapshot.board_label, 119, 72, kCyan, 1, middle_left);
+  M5.Display.fillRoundRect(432, 20, 115, 62, 9, kPanel);
+  M5.Display.drawRoundRect(432, 20, 115, 62, 9, kGreen);
+  text("HOME", 489, 51, kGreen, 2);
+  M5.Display.drawFastHLine(8, 139, 552, kCyan);
+  text("LORA / SX1262 TX", 19, 121, TFT_WHITE, 2, middle_left);
+  text("TX LAB", 475, 121, kYellow, 1, middle_left);
+}
+
+void draw_portrait_tx_footer() {
+  M5.Display.fillRect(0, 1145, 568, 87, kPanel);
+  M5.Display.drawFastHLine(0, 1145, 568, kCyan);
+  text("SX1262", 24, 1186, kCyan, 2, middle_left);
+  text("TX LAB", 249, 1186, kGreen, 2, middle_left);
+  text("LOCKED", 440, 1186, kYellow, 2, middle_left);
 }
 
 void draw_health_static() {
@@ -745,42 +773,7 @@ void draw_map_dynamic() {
 }
 
 void draw_tx_dynamic() {
-  const auto& tx = g_snapshot.tx;
-  M5.Display.fillRect(65, 282, 533, 155, kPanel);
-  M5.Display.fillRect(650, 282, 554, 105, kPanel);
-  text(lora_tx::readiness_name(tx.readiness), 72, 304,
-       tx.readiness == lora_tx::Readiness::tx_verified ? kGreen : kYellow, 2, middle_left);
-  char value[72];
-  snprintf(value, sizeof(value), "RTL RX %.3f MHz", g_snapshot.frequency_hz / 1000000.0);
-  text(value, 72, 348, TFT_WHITE, 2, middle_left);
-  if (tx.frequency_hz != 0) {
-    snprintf(value, sizeof(value), "TX %.3f MHz", tx.frequency_hz / 1000000.0);
-  } else {
-    snprintf(value, sizeof(value), "TX FREQUENCY NOT CONFIGURED");
-  }
-  text(value, 72, 388, kMuted, 2, middle_left);
-  const auto denial = lora_tx::can_arm(tx);
-  text(lora_tx::denial_name(denial), 660, 312,
-       denial == lora_tx::Denial::none ? kGreen : kYellow, 2, middle_left);
-  text(tx.operator_armed ? "OPERATOR ARMED" : "NOT ARMED", 660, 350,
-       tx.operator_armed ? kYellow : kMuted, 2, middle_left);
-  M5.Display.fillRect(50, 512, 1174, 92, kPanel);
-  if (denial == lora_tx::Denial::none) {
-    button(64, 527, 310, 56, tx.operator_armed ? "DISARM" : "ARM TX", kYellow);
-    if (lora_tx::can_send(tx, 13) == lora_tx::Denial::none) {
-      button(398, 527, 310, 56, "SEND BENCH PACKET", kYellow);
-    } else {
-      card(398, 527, 310, 56, kMuted);
-      text("SEND LOCKED", 553, 555, kMuted, 2);
-    }
-    text("Only controlled, approved RF tests", 738, 555, kMuted, 1, middle_left);
-  } else {
-    card(64, 527, 310, 56, kMuted);
-    card(398, 527, 310, 56, kMuted);
-    text("ARM LOCKED", 219, 555, kMuted, 2);
-    text("SEND LOCKED", 553, 555, kMuted, 2);
-    text("TX is disabled until hardware acceptance", 738, 555, kYellow, 1, middle_left);
-  }
+  tx_views::draw_values(M5.Display, g_snapshot, g_tx_page, portrait_tx_screen());
 }
 
 void draw_health_dynamic() {
@@ -864,6 +857,14 @@ void draw_channels_overlay() {
 
 void draw_static() {
   M5.Display.fillScreen(kBg);
+  if (portrait_tx_screen()) {
+    g_view = View::tx_lab;
+    draw_portrait_tx_header();
+    draw_tx_static();
+    draw_tx_dynamic();
+    draw_portrait_tx_footer();
+    return;
+  }
   draw_header();
   if (g_view == View::overview) draw_overview_static();
   else if (g_view == View::nodes) draw_nodes_static();
@@ -888,6 +889,8 @@ void enter(const Snapshot& snapshot) {
   g_previous_spectrum_bins = 0;
   g_previous_spectrum_view = View::count;
   g_waterfall_floor_valid = false;
+  g_tx_page = tx_views::Page::operator_panel;
+  if (portrait_tx_screen()) g_view = View::tx_lab;
   draw_static();
 }
 
@@ -905,8 +908,26 @@ void draw() {
 
 void update(const Snapshot& snapshot) {
   if (!g_active) return;
-  const bool content_changed = snapshot.revision != g_snapshot.revision;
+  const bool tx_changed =
+      snapshot.tx.readiness != g_snapshot.tx.readiness ||
+      snapshot.tx.operator_armed != g_snapshot.tx.operator_armed ||
+      snapshot.tx.antenna_path_verified != g_snapshot.tx.antenna_path_verified ||
+      snapshot.tx.regional_tx_profile_approved != g_snapshot.tx.regional_tx_profile_approved ||
+      snapshot.tx.frequency_approved != g_snapshot.tx.frequency_approved ||
+      snapshot.tx.frequency_hz != g_snapshot.tx.frequency_hz ||
+      snapshot.tx.busy != g_snapshot.tx.busy ||
+      snapshot.tx.max_payload_bytes != g_snapshot.tx.max_payload_bytes;
+  const bool content_changed = tx_changed || snapshot.revision != g_snapshot.revision;
   g_snapshot = snapshot;
+  if (portrait_tx_screen()) {
+    if (!content_changed) return;  // no full-frame repaint on idle
+    M5.Display.startWrite();
+    draw_tx_dynamic();
+    if (tx_changed) tx_views::action_row(M5.Display, g_snapshot, true,
+                    g_tx_page == tx_views::Page::operator_panel);
+    M5.Display.endWrite();
+    return;
+  }
   if (g_header_running != g_snapshot.running || g_header_wifi != g_snapshot.wifi_connected ||
       g_header_decoder != g_snapshot.native_decoder_ready ||
       g_header_key != g_snapshot.key_loaded) {
@@ -921,6 +942,10 @@ void update(const Snapshot& snapshot) {
   g_last_dynamic_ms = now;
   M5.Display.startWrite();
   draw_dynamic();
+  if (tx_changed && g_view == View::tx_lab) {
+    tx_views::action_row(M5.Display, g_snapshot, false,
+                         g_tx_page == tx_views::Page::operator_panel);
+  }
   if (g_channels_open && g_view == View::overview) draw_channels_overlay();
   M5.Display.endWrite();
 }
@@ -1003,6 +1028,36 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
+  if (portrait_tx_screen()) {
+    if (tx_views::hit(x, y, 432, 20, 115, 62))
+      return {ActionKind::exit_home};
+    const int mode = tx_views::page_at(x, y, true);
+    if (mode >= 0) {
+      if (g_tx_page != static_cast<tx_views::Page>(mode)) {
+        g_tx_page = static_cast<tx_views::Page>(mode);
+        draw_static();
+      }
+      return {};
+    }
+    if (tx_views::arm_rect(x, y, true) &&
+        lora_tx::can_arm(g_snapshot.tx) == lora_tx::Denial::none)
+      return {g_snapshot.tx.operator_armed ? ActionKind::tx_request_disarm : ActionKind::tx_request_arm};
+    if (g_tx_page == tx_views::Page::operator_panel &&
+        tx_views::send_rect(x, y, true) &&
+        lora_tx::can_send(g_snapshot.tx, tx_views::kBenchPacketBytes) == lora_tx::Denial::none)
+      return {ActionKind::tx_send_test_packet};
+    return {};
+  }
+  if (g_view == View::tx_lab) {
+    const int mode = tx_views::page_at(x, y, false);
+    if (mode >= 0) {
+      if (g_tx_page != static_cast<tx_views::Page>(mode)) {
+        g_tx_page = static_cast<tx_views::Page>(mode);
+        draw_static();
+      }
+      return {};
+    }
+  }
   if (g_channels_open && g_view == View::overview) {
     if (hit(x, y, 940, 180, 110, 48)) {
       g_channels_open = false;
@@ -1076,13 +1131,13 @@ Action handle_touch(int32_t x, int32_t y) {
     if (hit(x, y, 26, 604, 210, 42)) return {ActionKind::center_map};
     if (hit(x, y, 252, 604, 210, 42)) return {ActionKind::follow_node};
   } else if (g_view == View::tx_lab) {
-    if (lora_tx::can_arm(g_snapshot.tx) == lora_tx::Denial::none) {
-      if (hit(x, y, 64, 527, 310, 56))
-        return {g_snapshot.tx.operator_armed ? ActionKind::tx_request_disarm : ActionKind::tx_request_arm};
-      if (hit(x, y, 398, 527, 310, 56) &&
-          lora_tx::can_send(g_snapshot.tx, 13) == lora_tx::Denial::none)
-        return {ActionKind::tx_send_test_packet};
-    }
+    if (lora_tx::can_arm(g_snapshot.tx) == lora_tx::Denial::none &&
+        tx_views::arm_rect(x, y, false))
+      return {g_snapshot.tx.operator_armed ? ActionKind::tx_request_disarm : ActionKind::tx_request_arm};
+    if (g_tx_page == tx_views::Page::operator_panel &&
+        tx_views::send_rect(x, y, false) &&
+        lora_tx::can_send(g_snapshot.tx, tx_views::kBenchPacketBytes) == lora_tx::Denial::none)
+      return {ActionKind::tx_send_test_packet};
   } else {
     if (hit(x, y, 24, 578, 242, 48)) return {ActionKind::scan_toggle};
     if (hit(x, y, 284, 578, 242, 48)) return {ActionKind::record_iq_toggle};
@@ -1188,6 +1243,7 @@ bool self_check() {
   const bool saved_details = g_node_details;
   const bool saved_traffic_details = g_traffic_details;
   const size_t saved_traffic_offset = g_traffic_offset;
+  const tx_views::Page saved_tx_page = g_tx_page;
   g_snapshot = snapshot;
   g_node_filter = 1;
   g_traffic_filter = 0;
@@ -1237,8 +1293,17 @@ bool self_check() {
   g_node_details = saved_details;
   g_traffic_details = saved_traffic_details;
   g_traffic_offset = saved_traffic_offset;
+  g_tx_page = saved_tx_page;
   if (!filter_ok || !controls_ok || !traffic_scroll_ok || !traffic_controls_ok ||
       !traffic_filter_ok || !tx_locked_ok) return false;
+  if (tx_views::page_at(700, 180, false) != 0 ||
+      tx_views::page_at(950, 180, false) != 1 ||
+      tx_views::page_at(1120, 180, false) != 2 ||
+      tx_views::page_at(120, 185, true) != 0 ||
+      tx_views::page_at(250, 185, true) != 1 ||
+      tx_views::page_at(480, 185, true) != 2 ||
+      !tx_views::arm_rect(100, 1060, true) ||
+      !tx_views::send_rect(400, 1060, true)) return false;
   return audio_header::self_check() && lora_channel::self_check();
 }
 
