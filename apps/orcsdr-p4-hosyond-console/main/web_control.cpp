@@ -10,6 +10,7 @@
 #include "esp_rtl_sdr.h"
 #include "home_app.hpp"
 #include "radio_service.hpp"
+#include "web_audio.hpp"
 #include "web_iq.hpp"
 
 namespace web_control {
@@ -67,11 +68,17 @@ Result run(const char* route, const char* query, uint32_t peer, char* out, size_
   }
   if (std::strcmp(route, "receivers/rate") == 0) {
     const int rx = receiver_index(query);
-    if (rx < 0 || !parse_long(query, "sps", &v) || v <= 0 || v > 0xFFFFFFFFll) return fail(out, cap, Result::bad_request, "bad_sps_or_index");
+    if (rx < 0 || !parse_long(query, "sps", &v) || v < 0 || v > 0xFFFFFFFFll) return fail(out, cap, Result::bad_request, "bad_sps_or_index");
+    if (v == 0) {  // sps=0 hands the rate back to the console's own policy (the Home screen picks it again)
+      radio::set_sample_rate_pin(rx, 0);
+      char f[64];
+      std::snprintf(f, sizeof(f), "\"index\":%d,\"requested_sps\":0,\"applied_sps\":0", rx);
+      return done(out, cap, f);
+    }
     // The driver decides what it can run: it quantises the request to the nearest rate it can program, and the applied rate is reported.
     uint32_t applied = 0;
     if (!esp_rtl_sdr_quantize_sample_rate(static_cast<uint32_t>(v), &applied)) return fail(out, cap, Result::bad_request, "sps_not_supported_by_the_driver");
-    radio::set_sample_rate_exact(rx, applied);
+    radio::set_sample_rate_pin(rx, applied);  // pinned: the Home screen would otherwise put its own rate back within a moment
     char f[96];
     std::snprintf(f, sizeof(f), "\"index\":%d,\"requested_sps\":%lld,\"applied_sps\":%u", rx, v, static_cast<unsigned>(applied));
     return done(out, cap, f);
@@ -102,20 +109,28 @@ Result run(const char* route, const char* query, uint32_t peer, char* out, size_
   if (std::strcmp(route, "fm") == 0) {
     char action[12] = {};
     if (httpd_query_key_value(query, "action", action, sizeof(action)) != ESP_OK) return fail(out, cap, Result::bad_request, "bad_action");
+    // This is the page's browser-audio session (web_audio). It never touches the board's own speaker, volume or mute: the volume here is the page's own.
     if (std::strcmp(action, "volume") == 0) {
-      if (!parse_long(query, "volume", &v) || v < 0 || v > orcsdr::commands::kVolumeMax) return fail(out, cap, Result::bad_request, "bad_volume");
-      home_app::request_volume(static_cast<uint8_t>(v * 255 / orcsdr::commands::kVolumeMax));
+      if (!parse_long(query, "volume", &v) || v < 0 || v > 80) return fail(out, cap, Result::bad_request, "bad_volume");
+      if (!web_audio::set_volume(static_cast<int>(v))) return fail(out, cap, Result::not_available, "no_audio_session");
       return done(out, cap);
     }
     if (std::strcmp(action, "start") == 0) {
       const int rx = receiver_index(query);
-      if (rx < 0 || !parse_long(query, "hz", &v) || v < tune_min_hz(rx) || v > ESP_RTL_SDR_FREQ_MAX_HZ) return fail(out, cap, Result::bad_request, "bad_hz_or_index");
-      tune(rx, static_cast<uint32_t>(v));  // tuning only: audio from this node is not streamed to the browser yet
-      long long vol = 0;
-      if (parse_long(query, "volume", &vol) && vol >= 0 && vol <= orcsdr::commands::kVolumeMax) home_app::request_volume(static_cast<uint8_t>(vol * 255 / orcsdr::commands::kVolumeMax));
-      return done(out, cap, "\"audio_stream\":false");
+      if (rx < 0 || !parse_long(query, "hz", &v) || v <= 0 || v > 0xFFFFFFFFll) return fail(out, cap, Result::bad_request, "bad_hz_or_index");
+      long long sps = 0, vol = 30;
+      char probe[4];
+      if (httpd_query_key_value(query, "sps", probe, sizeof(probe)) != ESP_ERR_NOT_FOUND && !parse_long(query, "sps", &sps)) return fail(out, cap, Result::bad_request, "bad_sps");
+      parse_long(query, "volume", &vol);
+      char mode[8] = {};
+      httpd_query_key_value(query, "mode", mode, sizeof(mode));
+      const web_audio::Result s = web_audio::start(rx, static_cast<uint32_t>(v), sps < 0 ? 0 : static_cast<uint32_t>(sps), static_cast<int>(vol), mode, peer, out, cap);
+      return s == web_audio::Result::ok ? Result::ok : s == web_audio::Result::bad_request ? Result::bad_request : Result::not_available;
     }
-    if (std::strcmp(action, "stop") == 0) return done(out, cap);
+    if (std::strcmp(action, "stop") == 0) {
+      web_audio::stop();
+      return done(out, cap);
+    }
     return fail(out, cap, Result::bad_request, "bad_action");
   }
   if (std::strcmp(route, "time") == 0) {

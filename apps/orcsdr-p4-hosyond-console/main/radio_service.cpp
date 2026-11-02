@@ -629,8 +629,11 @@ uint32_t sample_rate() { return sample_rate(0); }
 void set_sample_rate(int rx, uint32_t rate) {
   if (Rx* r = rx_at(rx)) r->rate_target = r->rate_override.load() ? r->rate_override.load() : (rate > 1000000 ? kWideRate : kRate);
 }
-void set_sample_rate_exact(int rx, uint32_t rate) {
-  if (Rx* r = rx_at(rx)) r->rate_target = rate;
+void set_sample_rate_pin(int rx, uint32_t rate) {
+  if (Rx* r = rx_at(rx)) {
+    r->rate_override = rate;
+    if (rate) r->rate_target = rate;
+  }
 }
 void set_sample_rate(uint32_t rate) { set_sample_rate(0, rate); }
 

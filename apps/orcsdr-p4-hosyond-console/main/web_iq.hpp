@@ -15,6 +15,15 @@ enum class Start : uint8_t { ok, bad_request, not_available };
 // wide_center_hz at wide_sps (the receiver's rate divided by a whole number up to 16), for decoders that want the whole band; it needs a link that can carry it.
 Start start_channel(int rx, uint32_t hz, uint32_t wide_center_hz, uint32_t wide_sps, uint32_t peer, char* out, size_t cap);
 void stop_channel();  // ends the stream and closes the WebSocket
+
+// The one WebSocket listener slot on port 81, shared with web_audio (the node's own 48 kHz audio at /api/v1/fm/audio). Whoever opens the slot
+// issues a ticket for the signed caller's address; the browser then connects to the matching URI. An iq ticket is single use for 30 s, an audio ticket
+// stays good until the slot closes so the page can reconnect on its own.
+enum class Slot : uint8_t { none, iq, audio };
+bool slot_open(Slot kind, uint32_t peer);          // starts the port-81 server if needed
+bool slot_send(const uint8_t* data, size_t len);   // one binary frame to the connected browser; false when there is none or the send failed
+bool slot_connected();
+void slot_close();                                 // closes the browser's socket and withdraws the ticket
 void shutdown();      // also stops the port-81 server (the web server stopped)
 bool available();     // compiled in
 }  // namespace web_iq

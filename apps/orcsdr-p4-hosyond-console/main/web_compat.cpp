@@ -1,4 +1,5 @@
 #include "web_compat.hpp"
+#include "web_audio.hpp"
 #include "web_control.hpp"
 #include <algorithm>
 #include <cstdarg>
@@ -95,11 +96,15 @@ void receivers(Out& o) {
   o.raw("]}");
 }
 
-// The FM service of the other firmware is not part of this console: report "not playing" so the page stays on the receiver view.
+// The page's "FM service" is the node's browser-audio session (web_audio): it owns a receiver while it plays, and the page then shows the station and its audio.
 void fm(Out& o) {
-  o.fmt("{\"supported\":false,\"playing\":false,\"receiver\":-1,\"frequency_hz\":0,\"input_sps\":0,\"audio_sps\":48000,\"mode\":\"mono\",\"volume\":0,"
-        "\"rf_dbfs\":-120.0,\"uptime_us\":%llu,\"browser_audio\":{\"available\":false,\"port\":81,\"clients\":0}}",
-        static_cast<unsigned long long>(esp_timer_get_time()));
+  const web_audio::Status a = web_audio::status();
+  o.fmt("{\"supported\":%s,\"playing\":%s,\"receiver\":%d,\"frequency_hz\":%u,\"input_sps\":%u,\"audio_sps\":48000,\"mode\":\"mono\",\"volume\":%d,"
+        "\"rf_dbfs\":%.1f,\"queue_drops\":%u,\"tx_queue_overflows\":0,\"dsp_us\":%u,\"block_us\":%u,\"audio_rms_dbfs\":-90.0,\"uptime_us\":%llu,"
+        "\"browser_audio\":{\"available\":%s,\"port\":81,\"clients\":%d}}",
+        web_audio::available() ? "true" : "false", a.playing ? "true" : "false", a.playing ? a.receiver : -1, unsigned(a.station_hz), unsigned(a.input_sps), a.volume,
+        double(a.rf_dbfs), unsigned(a.drops), unsigned(a.dsp_us), unsigned(a.block_us), static_cast<unsigned long long>(esp_timer_get_time()),
+        web_audio::available() ? "true" : "false", a.client ? 1 : 0);
 }
 
 void report(Out& o) {

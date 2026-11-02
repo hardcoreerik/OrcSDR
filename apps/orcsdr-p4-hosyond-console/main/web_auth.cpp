@@ -232,7 +232,12 @@ Login login(uint32_t peer, const char* nonce_hex, const char* proof_hex, LoginOu
     if (s.used && (now - s.last_us > kIdleUs || now - s.created_us > kHardUs)) s.used = false;
     if (!s.used && !slot) slot = &s;
   }
-  if (!slot) return Login::busy;
+  if (!slot) {  // every slot is live: the one idle the longest makes room, so a correct password is never turned away (remembered browsers come and go)
+    slot = &g_sessions[0];
+    for (Session& s : g_sessions)
+      if (s.last_us < slot->last_us) slot = &s;
+    ESP_LOGW(TAG, "WEB_SESSION_EVICTED the least recently used session made room for a new login");
+  }
   uint8_t device[32];
   if (!labelled(g_key, "device|", nonce, nullptr, device) || !labelled(g_key, "session|", nonce, nullptr, slot->key)) return Login::bad_request;
   esp_fill_random(slot->id, sizeof(slot->id));

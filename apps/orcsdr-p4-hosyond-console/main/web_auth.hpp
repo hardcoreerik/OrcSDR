@@ -15,7 +15,7 @@
 namespace web_auth {
 
 constexpr uint32_t kIterations = 10000;
-constexpr int kMaxSessions = 2;
+constexpr int kMaxSessions = 4;  // a full table evicts the least recently used session, so this is how many browsers stay logged in at once
 
 void init();                              // loads the stored key, or creates the factory one
 bool default_password();                  // true while the factory password is in use

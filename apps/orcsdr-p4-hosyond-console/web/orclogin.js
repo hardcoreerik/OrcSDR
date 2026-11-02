@@ -90,12 +90,22 @@
 
   // Browser audio: an AudioContext may only start from a user gesture. The login button is one; after a silent (remembered) login the first
   // tap or key press does it. This only ever touches the browser's own audio: nothing is sent to the node, so the board's speaker is left alone.
-  function startAudio() {
+  // If the node is not already playing for the browser and its receiver sits in the FM broadcast band, the node's audio session is started on that
+  // station first (a signed request, through the wrapper below); on other bands the audio starts with the screen (AM, shortwave). Nothing here sets the board's volume.
+  async function startAudio() {
     try {
-      if (typeof Listen === 'undefined') return;
-      Promise.resolve(Listen.prime()).then(() => nativeFetch('/api/v1/fm', { cache: 'no-store' })).then(r => r.json()).then(j => {
-        if (j && j.browser_audio && j.browser_audio.available && j.playing && !Listen.wanted && !(typeof Chan !== 'undefined' && Chan.active)) Listen.toggle();
-      }).catch(() => {});
+      if (typeof Listen === 'undefined' || Listen.wanted || (typeof Chan !== 'undefined' && Chan.active)) return;
+      await Listen.prime();
+      const get = async p => (await nativeFetch(p, { cache: 'no-store' })).json();
+      const fm = await get('/api/v1/fm');
+      if (!fm.browser_audio || !fm.browser_audio.available) return;
+      if (!fm.playing) {
+        const rx = ((await get('/api/v1/receivers')).receivers || []).find(r => r.present && r.center_hz);
+        if (!rx || rx.center_hz < 87500000 || rx.center_hz > 108000000) return;
+        const r = await window.fetch('/api/v1/fm?action=start&index=' + rx.index + '&hz=' + rx.center_hz + '&sps=2400000&volume=30&tau=75', { method: 'POST' });
+        if (!r.ok) return;
+      }
+      if (!Listen.wanted) Listen.toggle();
     } catch (e) { /* the page's audio is optional */ }
   }
   function armAudio(gestured) {

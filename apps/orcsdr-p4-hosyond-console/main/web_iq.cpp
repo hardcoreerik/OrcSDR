@@ -13,6 +13,7 @@
 #include "lwip/sockets.h"
 #include "radio_service.hpp"
 #include "sdkconfig.h"
+#include "web_audio.hpp"
 #include "web_control.hpp"
 #include "web_server.hpp"
 
@@ -27,6 +28,10 @@ Start start_channel(int, uint32_t, uint32_t, uint32_t, uint32_t, char* out, size
 void stop_channel() {}
 void shutdown() {}
 bool available() { return false; }
+bool slot_open(Slot, uint32_t) { return false; }
+bool slot_send(const uint8_t*, size_t) { return false; }
+bool slot_connected() { return false; }
+void slot_close() {}
 #else
 namespace {
 constexpr char TAG[] = "WEB_IQ";
@@ -56,6 +61,8 @@ httpd_handle_t g_srv = nullptr;
 std::atomic<int> g_fd{-1};
 std::atomic<uint32_t> g_ticket_peer{0};
 std::atomic<int64_t> g_ticket_until{0};
+std::atomic<uint8_t> g_ticket_kind{0};      // Slot the ticket was issued for: the URI the browser opens must match it
+std::atomic<bool> g_ticket_reusable{false};  // audio: the page may reconnect on its own while the session lasts
 Channel* g_chan = nullptr;
 radio::SinkHandle g_sink = -1;
 uint32_t g_start_count = 0, g_origin_hz = 0, g_last_center = 0;
@@ -153,6 +160,8 @@ void on_block(const radio::IqBlock& b, void* ctx) {
 }
 
 bool ticket_ok(httpd_req_t* req) {
+  const char* want = g_ticket_kind.load() == static_cast<uint8_t>(Slot::audio) ? "/api/v1/fm/audio" : "/api/v1/fm/iq";
+  if (g_ticket_kind.load() == 0 || std::strncmp(req->uri, want, std::strlen(want)) != 0) return false;
   return web_server::same_site_request(req) && g_ticket_peer.load() != 0 && g_ticket_until.load() >= esp_timer_get_time() && web_server::peer_address(req) == g_ticket_peer.load();
 }
 
@@ -166,8 +175,10 @@ esp_err_t ws_pre_handshake(httpd_req_t* req) {
 esp_err_t ws_handler(httpd_req_t* req) {
   if (req->method == HTTP_GET) {  // the handshake is done; this connection is the one allowed
     if (!ticket_ok(req)) return ESP_FAIL;  // lost the race for the single ticket: close
-    g_ticket_peer = 0;                     // single use
-    g_fd = httpd_req_to_sockfd(req);
+    if (!g_ticket_reusable.load()) g_ticket_peer = 0;  // single use (an audio ticket lasts for the session)
+    const int newfd = httpd_req_to_sockfd(req);
+    const int oldfd = g_fd.exchange(newfd);
+    if (oldfd >= 0 && oldfd != newfd && g_srv) httpd_sess_trigger_close(g_srv, oldfd);  // a reconnect replaces a half-open earlier socket
     const int one = 1;
     setsockopt(g_fd.load(), IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));  // 1 KB frames: without this Nagle waits for the peer's delayed ACK between frames
     ESP_LOGI(TAG, "WEB_IQ_CLIENT_CONNECTED fd=%d", g_fd.load());
@@ -217,7 +228,22 @@ bool ensure_server() {
   ws.is_websocket = true;
   ws.ws_pre_handshake_cb = ws_pre_handshake;
   httpd_register_uri_handler(g_srv, &ws);
+  ws.uri = "/api/v1/fm/audio";
+  httpd_register_uri_handler(g_srv, &ws);
   return true;
+}
+
+void drop_slot() {
+  g_ticket_peer = 0;
+  g_ticket_kind = 0;
+  g_ticket_reusable = false;
+  const int fd = g_fd.exchange(-1);
+  if (fd >= 0 && g_srv) {
+    httpd_ws_frame_t bye{};  // a proper WebSocket close first, so the browser closes its side too, then make sure the server's side goes
+    bye.type = HTTPD_WS_TYPE_CLOSE;
+    httpd_ws_send_frame_async(g_srv, fd, &bye);
+    httpd_sess_trigger_close(g_srv, fd);
+  }
 }
 
 void end_stream() {
@@ -235,14 +261,7 @@ void end_stream() {
   }
   heap_caps_free(g_chan);
   g_chan = nullptr;
-  g_ticket_peer = 0;
-  const int fd = g_fd.exchange(-1);
-  if (fd >= 0 && g_srv) {
-    httpd_ws_frame_t bye{};  // a proper WebSocket close first, so the browser closes its side too, then make sure the server's side goes
-    bye.type = HTTPD_WS_TYPE_CLOSE;
-    httpd_ws_send_frame_async(g_srv, fd, &bye);
-    httpd_sess_trigger_close(g_srv, fd);
-  }
+  if (g_ticket_kind.load() != static_cast<uint8_t>(Slot::audio)) drop_slot();  // an audio session's socket is not ours to close
 }
 }  // namespace
 
@@ -282,7 +301,8 @@ Start start_channel(int rx, uint32_t hz, uint32_t wide_center_hz, uint32_t wide_
     center = hz - static_cast<uint32_t>(offset);  // the channel sits `offset` above the window centre, away from the DC spike
   }
 
-  end_stream();  // one listener slot: a new channel replaces the old one
+  web_audio::stop();  // one listener slot: a channel replaces the node's audio session too
+  end_stream();       // ...and a new channel replaces the old one
   if (!ensure_server()) return fail(Start::not_available, "ws_server_start_failed");
   Channel* c = static_cast<Channel*>(heap_caps_calloc(1, sizeof(Channel), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   if (!c) return fail(Start::not_available, "no_memory");
@@ -302,6 +322,8 @@ Start start_channel(int rx, uint32_t hz, uint32_t wide_center_hz, uint32_t wide_
   g_chan = c;
   g_ticket_peer = peer ? peer : 1;
   g_ticket_until = esp_timer_get_time() + kTicketUs;
+  g_ticket_reusable = false;
+  g_ticket_kind = static_cast<uint8_t>(Slot::iq);
 
   radio::tune_to(rx, center);
   // The block that the receiver delivers after the retune carries the new centre; blocks before it do not match and end the channel, so wait for the retune to be visible.
@@ -337,7 +359,37 @@ Start start_channel(int rx, uint32_t hz, uint32_t wide_center_hz, uint32_t wide_
 
 void stop_channel() { end_stream(); }
 
+bool slot_open(Slot kind, uint32_t peer) {
+  if (!ensure_server()) return false;
+  g_ticket_reusable = kind == Slot::audio;
+  g_ticket_kind = static_cast<uint8_t>(kind);
+  g_ticket_until = g_ticket_reusable.load() ? INT64_MAX : esp_timer_get_time() + kTicketUs;
+  g_ticket_peer = peer ? peer : 1;
+  return true;
+}
+
+bool slot_send(const uint8_t* data, size_t len) {
+  const int fd = g_fd.load();
+  if (fd < 0 || !g_srv) return false;
+  httpd_ws_frame_t ws{};
+  ws.type = HTTPD_WS_TYPE_BINARY;
+  ws.final = true;
+  ws.payload = const_cast<uint8_t*>(data);
+  ws.len = len;
+  if (httpd_ws_send_frame_async(g_srv, fd, &ws) != ESP_OK) {
+    int expected = fd;
+    g_fd.compare_exchange_strong(expected, -1);  // the browser went away; on_close finishes the job
+    return false;
+  }
+  return true;
+}
+
+bool slot_connected() { return g_fd.load() >= 0; }
+
+void slot_close() { drop_slot(); }
+
 void shutdown() {
+  web_audio::stop();
   end_stream();
   if (g_srv) {
     httpd_stop(g_srv);
