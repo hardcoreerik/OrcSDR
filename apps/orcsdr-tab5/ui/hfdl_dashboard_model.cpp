@@ -5,12 +5,12 @@
 namespace orcsdr::hfdl_ui {
 Model::Model(){ reset(); }
 void Model::reset(){
-  live_={};live_.next_seq=1;
+  live_=Ring{};live_.next_seq=1;
   queue_head_.store(0,std::memory_order_relaxed);
   queue_tail_.store(0,std::memory_order_relaxed);
   queue_drops_.store(0,std::memory_order_relaxed);
   receiver_state_.store(static_cast<uint8_t>(ReceiverState::idle),std::memory_order_relaxed);
-  snapshot_={};message_offset_=0;messages_revision_=1;revision_=0;dirty_=true;
+  snapshot_=Snapshot{};message_offset_=0;messages_revision_=1;revision_=0;dirty_=true;
 }
 bool Model::post_message(const MessageRecord& msg){
   const uint32_t head=queue_head_.load(std::memory_order_relaxed);
