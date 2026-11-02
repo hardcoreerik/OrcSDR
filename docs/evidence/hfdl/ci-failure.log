@@ -1,0 +1,22 @@
+HFDL test start: 2026-11-02T22:42:55Z
+Compiler: c++
+/home/runner/work/OrcSDR/OrcSDR/apps/orcsdr-tab5/ui/hfdl_dashboard_model.cpp: In member function ‘void orcsdr::hfdl_ui::Model::reset()’:
+/home/runner/work/OrcSDR/OrcSDR/apps/orcsdr-tab5/ui/hfdl_dashboard_model.cpp:8:10: error: no match for ‘operator=’ (operand types are ‘orcsdr::hfdl_ui::Model::Ring’ and ‘<brace-enclosed initializer list>’)
+    8 |   live_={};live_.next_seq=1;
+      |          ^
+In file included from /home/runner/work/OrcSDR/OrcSDR/apps/orcsdr-tab5/ui/hfdl_dashboard_model.cpp:1:
+/home/runner/work/OrcSDR/OrcSDR/apps/orcsdr-tab5/ui/hfdl_dashboard_model.hpp:54:10: note: candidate: ‘constexpr orcsdr::hfdl_ui::Model::Ring& orcsdr::hfdl_ui::Model::Ring::operator=(const orcsdr::hfdl_ui::Model::Ring&)’
+   54 |   struct Ring {
+      |          ^~~~
+/home/runner/work/OrcSDR/OrcSDR/apps/orcsdr-tab5/ui/hfdl_dashboard_model.hpp:54:10: note:   no known conversion for argument 1 from ‘<brace-enclosed initializer list>’ to ‘const orcsdr::hfdl_ui::Model::Ring&’
+/home/runner/work/OrcSDR/OrcSDR/apps/orcsdr-tab5/ui/hfdl_dashboard_model.hpp:54:10: note: candidate: ‘constexpr orcsdr::hfdl_ui::Model::Ring& orcsdr::hfdl_ui::Model::Ring::operator=(orcsdr::hfdl_ui::Model::Ring&&)’
+/home/runner/work/OrcSDR/OrcSDR/apps/orcsdr-tab5/ui/hfdl_dashboard_model.hpp:54:10: note:   no known conversion for argument 1 from ‘<brace-enclosed initializer list>’ to ‘orcsdr::hfdl_ui::Model::Ring&&’
+/home/runner/work/OrcSDR/OrcSDR/apps/orcsdr-tab5/ui/hfdl_dashboard_model.cpp:13:14: error: no match for ‘operator=’ (operand types are ‘orcsdr::hfdl_ui::Snapshot’ and ‘<brace-enclosed initializer list>’)
+   13 |   snapshot_={};message_offset_=0;messages_revision_=1;revision_=0;dirty_=true;
+      |              ^
+/home/runner/work/OrcSDR/OrcSDR/apps/orcsdr-tab5/ui/hfdl_dashboard_model.hpp:32:8: note: candidate: ‘constexpr orcsdr::hfdl_ui::Snapshot& orcsdr::hfdl_ui::Snapshot::operator=(const orcsdr::hfdl_ui::Snapshot&)’
+   32 | struct Snapshot {
+      |        ^~~~~~~~
+/home/runner/work/OrcSDR/OrcSDR/apps/orcsdr-tab5/ui/hfdl_dashboard_model.hpp:32:8: note:   no known conversion for argument 1 from ‘<brace-enclosed initializer list>’ to ‘const orcsdr::hfdl_ui::Snapshot&’
+/home/runner/work/OrcSDR/OrcSDR/apps/orcsdr-tab5/ui/hfdl_dashboard_model.hpp:32:8: note: candidate: ‘constexpr orcsdr::hfdl_ui::Snapshot& orcsdr::hfdl_ui::Snapshot::operator=(orcsdr::hfdl_ui::Snapshot&&)’
+/home/runner/work/OrcSDR/OrcSDR/apps/orcsdr-tab5/ui/hfdl_dashboard_model.hpp:32:8: note:   no known conversion for argument 1 from ‘<brace-enclosed initializer list>’ to ‘orcsdr::hfdl_ui::Snapshot&&’
