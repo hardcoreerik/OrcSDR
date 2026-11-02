@@ -1,0 +1,25 @@
+name: HFDL host layout and frontend
+on:
+  push:
+    branches:
+      - "chatgpt/hfdl-dashboard-decoder"
+    paths:
+      - "apps/orcsdr-tab5/ui/hfdl_*"
+      - "apps/orcsdr-tab5/hfdl/**"
+      - "apps/orcsdr-tab5/tests/hfdl_*"
+      - "tools/test-hfdl-dashboard.sh"
+      - ".github/workflows/hfdl-dashboard-tests.yml"
+  workflow_dispatch:
+jobs:
+  hfdl-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run HFDL host tests
+        run: bash tools/test-hfdl-dashboard.sh
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hfdl-test-results
+          path: build/hfdl-dashboard/test.log
