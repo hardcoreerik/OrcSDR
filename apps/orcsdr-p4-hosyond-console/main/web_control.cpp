@@ -8,6 +8,8 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_rtl_sdr.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "home_app.hpp"
 #include "radio_service.hpp"
 #include "web_audio.hpp"
@@ -44,8 +46,22 @@ Result done(char* out, size_t cap, const char* fields = "") {
 }
 
 void tune(int rx, uint32_t hz) {
+  radio::clear_tune_error(rx);
   if (rx == 0) home_app::request_frequency(hz);  // the Home screen owns receiver 0's tuning, as for the serial commands
   else radio::tune_to(rx, hz);
+}
+
+// Each dongle's range is enforced by the driver (ESP_RTL_SDR_ERR_BAD_FREQ for a frequency this dongle cannot do). Give it a moment to answer, then say so
+// instead of reporting a success that did not happen.
+bool driver_rejected(int rx, uint32_t hz) {
+  for (int i = 0; i < 12; ++i) {
+    vTaskDelay(pdMS_TO_TICKS(40));
+    uint32_t bad = 0;
+    if (radio::tune_error(rx, &bad) != 0 && bad == hz) return true;
+    radio::ReceiverInfo ri;
+    if (radio::receiver_info(rx, &ri) && ri.frequency_hz == hz) return false;
+  }
+  return false;
 }
 }  // namespace
 
@@ -57,6 +73,7 @@ Result run(const char* route, const char* query, uint32_t peer, char* out, size_
     const int rx = receiver_index(query);
     if (rx < 0 || !parse_long(query, "hz", &v) || v < tune_min_hz(rx) || v > ESP_RTL_SDR_FREQ_MAX_HZ) return fail(out, cap, Result::bad_request, "bad_hz_or_index");
     tune(rx, static_cast<uint32_t>(v));
+    if (driver_rejected(rx, static_cast<uint32_t>(v))) return fail(out, cap, Result::bad_request, "driver_rejected_frequency");
     char f[64];
     std::snprintf(f, sizeof(f), "\"index\":%d,\"hz\":%lld", rx, v);
     return done(out, cap, f);

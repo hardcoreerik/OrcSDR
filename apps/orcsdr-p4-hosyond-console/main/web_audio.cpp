@@ -175,6 +175,7 @@ Result start(int rx, uint32_t station_hz, uint32_t request_sps, int volume, cons
   if (!web_iq::slot_open(web_iq::Slot::audio, peer)) return fail(Result::not_available, "ws_server_start_failed");
 
   radio::set_sample_rate_pin(rx, rate);  // pinned: the Home screen keeps asking for its own rate and would take the receiver back
+  radio::clear_tune_error(rx);
   radio::tune_to(rx, station_hz);
   // A rate change restarts the USB stream: wait until the receiver shows both the new rate and the station before the sink starts matching blocks.
   const int64_t deadline = esp_timer_get_time() + 8000000;
@@ -184,6 +185,12 @@ Result start(int rx, uint32_t station_hz, uint32_t request_sps, int volume, cons
     if (radio::receiver_info(rx, &now) && now.state == 2 && now.frequency_hz == station_hz && now.sample_rate == rate) {
       there = true;
       break;
+    }
+    uint32_t bad = 0;
+    if (radio::tune_error(rx, &bad) != 0 && bad == station_hz) {  // the driver said this dongle cannot tune that frequency
+      radio::set_sample_rate_pin(rx, 0);
+      web_iq::slot_close();
+      return fail(Result::bad_request, "driver_rejected_frequency");
     }
     vTaskDelay(pdMS_TO_TICKS(50));
   }

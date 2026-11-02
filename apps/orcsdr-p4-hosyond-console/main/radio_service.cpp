@@ -60,6 +60,8 @@ struct Rx {
   std::atomic<int> state{0};  // 0 no receiver, 1 scanning, 2 streaming, 3 error
   std::atomic<uint32_t> tune_request{0};
   std::atomic<uint32_t> rate_target{kRate}, rate_now{kRate}, rate_override{0};
+  std::atomic<int> tune_err{0};         // the driver's answer to the last retune (0 = accepted): it, not this service, knows what the dongle can tune
+  std::atomic<uint32_t> tune_err_hz{0};  // ...and the frequency that answer was about
   std::atomic<float> dbfs{-120.0f};
   Info info;
   Gain gain;  // cache, guarded by gain_lock
@@ -179,6 +181,8 @@ void task(void* arg) {
       ESP_LOGI(TAG, "TUNE requested_hz=%u streaming=%d", unsigned(absolute), int(streaming));
       if (streaming) {
         const esp_err_t e = esp_rtl_sdr_retune_hz(sdr, absolute);
+        r.tune_err_hz = absolute;
+        r.tune_err = e;
         if (e != ESP_OK) ESP_LOGE(TAG, "retune failed: %s", esp_rtl_sdr_err_to_name(e));
       }
     }
@@ -202,6 +206,8 @@ void task(void* arg) {
       ESP_LOGI(TAG, "TUNE requested_hz=%u streaming=%d", unsigned(next), int(streaming));
       if (streaming) {
         const esp_err_t e = esp_rtl_sdr_retune_hz(sdr, next);
+        r.tune_err_hz = next;
+        r.tune_err = e;
         if (e != ESP_OK) ESP_LOGE(TAG, "retune failed: %s", esp_rtl_sdr_err_to_name(e));
       }
     }
@@ -568,13 +574,23 @@ Info info(int rx) {
   return i;
 }
 Info info() { return info(0); }
-uint32_t tune_min_hz(int rx) {
-  const uint32_t caps = info(rx < 0 ? 0 : rx).caps;
-  if (caps & ESP_RTL_SDR_CAP_HF_UPCONVERTER) return ESP_RTL_SDR_FREQ_MIN_HZ;
-  if (caps & ESP_RTL_SDR_CAP_DIRECT_SAMPLING) return 100000u;
-  return 24000000u;
-}
+// The driver has no per-dongle range query: each profile enforces its own range when it retunes (V4 from 24 kHz, V3c Q-branch from 60 kHz, Nooelec
+// SMArt v5 from 100 kHz, a tuner-only dongle from 24 MHz) and answers ESP_RTL_SDR_ERR_BAD_FREQ. So this service only applies the driver's arithmetic
+// span and reports what the driver said (tune_error); it never invents a narrower range of its own.
+uint32_t tune_min_hz(int) { return ESP_RTL_SDR_FREQ_MIN_HZ; }
 uint32_t tune_max_hz(int) { return ESP_RTL_SDR_FREQ_MAX_HZ; }
+int tune_error(int rx, uint32_t* hz) {
+  Rx* r = rx_at(rx);
+  if (!r) return 0;
+  if (hz) *hz = r->tune_err_hz.load();
+  return r->tune_err.load();
+}
+void clear_tune_error(int rx) {
+  if (Rx* r = rx_at(rx)) {
+    r->tune_err = 0;
+    r->tune_err_hz = 0;
+  }
+}
 void set_ppm(int ppm) {
   g_rx[0].gain_req_value = ppm;
   g_rx[0].gain_req_kind = 5;
