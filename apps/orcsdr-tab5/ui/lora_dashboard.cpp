@@ -936,7 +936,8 @@ void update(const Snapshot& snapshot) {
     M5.Display.endWrite();
   }
   const uint32_t now = millis();
-  const bool needs_age_refresh = g_view != View::traffic || g_traffic_details;
+  const bool needs_age_refresh = g_view != View::tx_lab &&
+                                 (g_view != View::traffic || g_traffic_details);
   if (!content_changed &&
       (!needs_age_refresh || now - g_last_dynamic_ms < kDynamicRefreshIntervalMs)) return;
   g_last_dynamic_ms = now;
