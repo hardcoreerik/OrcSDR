@@ -1,0 +1,684 @@
+[
+  {
+    "t": 1793586189.828649,
+    "kind": "source",
+    "commands": [
+      "output off",
+      "pause",
+      "mode low output",
+      "pause",
+      "level -40",
+      "modulation off",
+      "sweep cw 100100000",
+      "resume",
+      "output off"
+    ],
+    "response": "output off 'output off\\r\\nch> '\npause 'pause\\r\\nch> '\nmode low output 'mode low output\\r\\nch> '\npause 'pause\\r\\nch> '\nlevel -40 'level -40\\r\\nch> '\nmodulation off 'modulation off\\r\\nch> '\nsweep cw 100100000 'sweep cw 100100000\\r\\nch> '\nresume 'resume\\r\\nch> '\noutput off 'output off\\r\\nch> '\n"
+  },
+  {
+    "t": 1793586190.1618028,
+    "kind": "serial",
+    "command": "RTL_HEALTH",
+    "response": "RTL_HEALTH_STATUS uptime_ms=3145173 free_heap=14069460 min_free_heap=14055456 dma_free=22379 dma_min=20683 dma_largest=21504 tasks=29 main_stack_hwm=5020 reset_reason=11 internal_free=60207 internal_min=44891 internal_largest=31744 psram_free=14031620 psram_largest=13893632"
+  },
+  {
+    "t": 1793586190.2396038,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=2409398272 blocks=73529 effective_sps=2399502 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586190.2570844,
+    "kind": "serial",
+    "command": "RTL_TUNE FM 100000000",
+    "response": "RTL_TUNE_OK band=FM frequency_hz=100000000"
+  },
+  {
+    "t": 1793586190.3046525,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=IDLE profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=2409660416 blocks=73537 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586190.619436,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=2409660416 blocks=73537 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586190.9224207,
+    "kind": "register",
+    "line": "I (3147172) esp_rtl_sdr: E4000_GAIN_REG reg=0x1a before=0x10 expected=0x10 observed=0x10 mask=0x1f"
+  },
+  {
+    "t": 1793586190.923576,
+    "kind": "register",
+    "line": "I (3147182) esp_rtl_sdr: E4000_GAIN_REG reg=0x20 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793586190.9246035,
+    "kind": "register",
+    "line": "I (3147192) esp_rtl_sdr: E4000_GAIN_REG reg=0x16 before=0x01 expected=0x01 observed=0x01 mask=0x7f"
+  },
+  {
+    "t": 1793586190.9259295,
+    "kind": "register",
+    "line": "I (3147202) esp_rtl_sdr: E4000_GAIN_REG reg=0x17 before=0x12 expected=0x12 observed=0x12 mask=0x3f"
+  },
+  {
+    "t": 1793586190.9272127,
+    "kind": "register",
+    "line": "I (3147212) esp_rtl_sdr: E4000_GAIN_REG reg=0x14 before=0x00 expected=0x00 observed=0x00 mask=0x0f"
+  },
+  {
+    "t": 1793586190.9282465,
+    "kind": "register",
+    "line": "I (3147222) esp_rtl_sdr: E4000_GAIN_REG reg=0x15 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793586190.9395058,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=983040 blocks=30 effective_sps=2351770 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586190.9672112,
+    "kind": "serial",
+    "command": "RTL_DRIVER GAIN -10",
+    "response": "RTL_DRIVER_RESULT action=\"GAIN -10\" accepted=1 result=ESP_OK"
+  },
+  {
+    "t": 1793586191.009172,
+    "kind": "register",
+    "line": "I (3147518) esp_rtl_sdr: E4000_GAIN_REG reg=0x1a before=0x10 expected=0x10 observed=0x10 mask=0x1f"
+  },
+  {
+    "t": 1793586191.0182195,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=1245184 blocks=38 effective_sps=2075306 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586192.0214205,
+    "kind": "register",
+    "line": "I (3147529) esp_rtl_sdr: E4000_GAIN_REG reg=0x20 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793586192.0228107,
+    "kind": "register",
+    "line": "I (3147540) esp_rtl_sdr: E4000_GAIN_REG reg=0x16 before=0x01 expected=0x01 observed=0x01 mask=0x7f"
+  },
+  {
+    "t": 1793586192.02441,
+    "kind": "register",
+    "line": "I (3147550) esp_rtl_sdr: E4000_GAIN_REG reg=0x17 before=0x12 expected=0x12 observed=0x12 mask=0x3f"
+  },
+  {
+    "t": 1793586192.0255198,
+    "kind": "register",
+    "line": "I (3147561) esp_rtl_sdr: E4000_GAIN_REG reg=0x14 before=0x00 expected=0x00 observed=0x00 mask=0x0f"
+  },
+  {
+    "t": 1793586192.0265865,
+    "kind": "register",
+    "line": "I (3147571) esp_rtl_sdr: E4000_GAIN_REG reg=0x15 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793586192.0475786,
+    "kind": "serial",
+    "command": "RTL_IQ_DIAG_STATUS",
+    "response": "RTL_IQ_DIAG_STATUS transition=\"live-2-gain-140\" sequence=9 active=0 ready=0 bytes=0 max_bytes=4800000 rate=2400000 frequency_hz=100000000 started_ms=2541008"
+  },
+  {
+    "t": 1793586192.082399,
+    "kind": "serial",
+    "command": "RTL_IQ_DIAG_START source-off-minus1",
+    "response": "RTL_IQ_DIAG_START transition=\"source-off-minus1\" sequence=10 bytes=4800000 rate=2400000 frequency_hz=100000000 started_ms=3147096"
+  },
+  {
+    "t": 1793586193.149449,
+    "kind": "serial",
+    "command": "RTL_IQ_GET_BEGIN",
+    "response": "RTL_IQ_GET_READY chunk=2048 bytes=4800000"
+  },
+  {
+    "t": 1793586294.1688595,
+    "kind": "serial",
+    "command": "RTL_IQ_RETRIEVE_END",
+    "response": "RTL_IQ_RETRIEVE_DONE"
+  },
+  {
+    "t": 1793586294.2514925,
+    "kind": "capture",
+    "name": "source-off-minus1",
+    "bytes": 4800000,
+    "sha256": "060fcc19e2099d73b7d742e362f503f79ae5482cb51b6eb2f76a75918794cbb8",
+    "tone_hz": 99133.30078125,
+    "tone_dbfs": -88.46863385958648,
+    "rms_dbfs": -44.21660072815419,
+    "clip_fraction": 0.0,
+    "min": 125,
+    "max": 130,
+    "mean_i": 127.38543375,
+    "mean_q": 127.38635083333334
+  },
+  {
+    "t": 1793586294.5369985,
+    "kind": "source",
+    "commands": [
+      "output on"
+    ],
+    "response": "output on 'output on\\r\\nch> '\n"
+  },
+  {
+    "t": 1793586294.5562274,
+    "kind": "serial",
+    "command": "RTL_TUNE FM 100000000",
+    "response": "RTL_TUNE_OK band=FM frequency_hz=100000000"
+  },
+  {
+    "t": 1793586294.6019804,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=498008064 blocks=15198 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586294.908778,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=498008064 blocks=15198 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586295.2117834,
+    "kind": "register",
+    "line": "I (3251467) esp_rtl_sdr: E4000_GAIN_REG reg=0x1a before=0x10 expected=0x10 observed=0x10 mask=0x1f"
+  },
+  {
+    "t": 1793586295.2133029,
+    "kind": "register",
+    "line": "I (3251477) esp_rtl_sdr: E4000_GAIN_REG reg=0x20 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793586295.2145252,
+    "kind": "register",
+    "line": "I (3251488) esp_rtl_sdr: E4000_GAIN_REG reg=0x16 before=0x01 expected=0x01 observed=0x01 mask=0x7f"
+  },
+  {
+    "t": 1793586295.2160048,
+    "kind": "register",
+    "line": "I (3251498) esp_rtl_sdr: E4000_GAIN_REG reg=0x17 before=0x12 expected=0x12 observed=0x12 mask=0x3f"
+  },
+  {
+    "t": 1793586295.2172174,
+    "kind": "register",
+    "line": "I (3251508) esp_rtl_sdr: E4000_GAIN_REG reg=0x14 before=0x00 expected=0x00 observed=0x00 mask=0x0f"
+  },
+  {
+    "t": 1793586295.2184665,
+    "kind": "register",
+    "line": "I (3251518) esp_rtl_sdr: E4000_GAIN_REG reg=0x15 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793586295.228011,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=1015808 blocks=31 effective_sps=2384525 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586295.26109,
+    "kind": "serial",
+    "command": "RTL_DRIVER GAIN 140",
+    "response": "RTL_DRIVER_RESULT action=\"GAIN 140\" accepted=1 result=ESP_OK"
+  },
+  {
+    "t": 1793586295.3006732,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=1245184 blocks=38 effective_sps=2139491 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586300.402095,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=25362432 blocks=774 effective_sps=2358418 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586300.4038072,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_OFFSET_STATUS cap=1 requested=1 applied_offset_hz=2040000 tuner_lo_hz=97960000 iq_center_hz=100000000 correction=hardware additional_offset_mixer=0 result=ESP_OK"
+  },
+  {
+    "t": 1793586300.432101,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-317 stereo_locked=1 left_dbfs_tenths=186 right_dbfs_tenths=187 rds_carrier=1 rds_signal_tenths=138 pilot_env_thou=7889 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793586300.4690692,
+    "kind": "serial",
+    "command": "RTL_IQ_DIAG_STATUS",
+    "response": "RTL_IQ_DIAG_STATUS transition=\"source-off-minus1\" sequence=10 active=0 ready=0 bytes=0 max_bytes=4800000 rate=2400000 frequency_hz=100000000 started_ms=3147096"
+  },
+  {
+    "t": 1793586300.5128407,
+    "kind": "serial",
+    "command": "RTL_IQ_DIAG_START fixed14-0",
+    "response": "RTL_IQ_DIAG_START transition=\"fixed14-0\" sequence=11 bytes=4800000 rate=2400000 frequency_hz=100000000 started_ms=3255528"
+  },
+  {
+    "t": 1793586301.5627308,
+    "kind": "serial",
+    "command": "RTL_IQ_GET_BEGIN",
+    "response": "RTL_IQ_GET_READY chunk=2048 bytes=4800000"
+  },
+  {
+    "t": 1793586402.170798,
+    "kind": "serial",
+    "command": "RTL_IQ_RETRIEVE_END",
+    "response": "RTL_IQ_RETRIEVE_DONE"
+  },
+  {
+    "t": 1793586402.2413573,
+    "kind": "capture",
+    "name": "fixed14-0",
+    "bytes": 4800000,
+    "sha256": "b8a769ef4c8991ec38b74b19b080cb563d1cb9397bf38d151dd59966f21f0ec4",
+    "tone_hz": 99938.96484375,
+    "tone_dbfs": -29.72866270591206,
+    "rms_dbfs": -28.843429423610957,
+    "clip_fraction": 0.0,
+    "min": 120,
+    "max": 135,
+    "mean_i": 127.38795125,
+    "mean_q": 127.39011125
+  },
+  {
+    "t": 1793586402.243072,
+    "kind": "fixed_gain_result",
+    "restart_index": 0,
+    "name": "fixed14-0",
+    "bytes": 4800000,
+    "sha256": "b8a769ef4c8991ec38b74b19b080cb563d1cb9397bf38d151dd59966f21f0ec4",
+    "tone_hz": 99938.96484375,
+    "tone_dbfs": -29.72866270591206,
+    "rms_dbfs": -28.843429423610957,
+    "clip_fraction": 0.0,
+    "min": 120,
+    "max": 135,
+    "mean_i": 127.38795125,
+    "mean_q": 127.39011125
+  },
+  {
+    "t": 1793586402.2572565,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=514359296 blocks=15697 effective_sps=2397945 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586402.3594334,
+    "kind": "serial",
+    "command": "RTL_STOP",
+    "response": "RTL_STOP_RESULT ESP_OK"
+  },
+  {
+    "t": 1793586402.3810804,
+    "kind": "serial",
+    "command": "RTL_TUNE FM 100000000",
+    "response": "RTL_TUNE_OK band=FM frequency_hz=100000000"
+  },
+  {
+    "t": 1793586402.3998144,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=514752512 blocks=15709 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586402.706273,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=514752512 blocks=15709 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586403.0093608,
+    "kind": "register",
+    "line": "I (3359269) esp_rtl_sdr: E4000_GAIN_REG reg=0x1a before=0x10 expected=0x10 observed=0x10 mask=0x1f"
+  },
+  {
+    "t": 1793586403.010547,
+    "kind": "register",
+    "line": "I (3359279) esp_rtl_sdr: E4000_GAIN_REG reg=0x20 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793586403.0118265,
+    "kind": "register",
+    "line": "I (3359289) esp_rtl_sdr: E4000_GAIN_REG reg=0x16 before=0x01 expected=0x01 observed=0x01 mask=0x7f"
+  },
+  {
+    "t": 1793586403.0129445,
+    "kind": "register",
+    "line": "I (3359299) esp_rtl_sdr: E4000_GAIN_REG reg=0x17 before=0x12 expected=0x12 observed=0x12 mask=0x3f"
+  },
+  {
+    "t": 1793586403.014022,
+    "kind": "register",
+    "line": "I (3359309) esp_rtl_sdr: E4000_GAIN_REG reg=0x14 before=0x08 expected=0x08 observed=0x08 mask=0x0f"
+  },
+  {
+    "t": 1793586403.015088,
+    "kind": "register",
+    "line": "I (3359319) esp_rtl_sdr: E4000_GAIN_REG reg=0x15 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793586403.0283995,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=1048576 blocks=32 effective_sps=2383127 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586407.0347362,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=20250624 blocks=618 effective_sps=2396523 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586407.0365372,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_OFFSET_STATUS cap=1 requested=1 applied_offset_hz=2040000 tuner_lo_hz=97960000 iq_center_hz=100000000 correction=hardware additional_offset_mixer=0 result=ESP_OK"
+  },
+  {
+    "t": 1793586407.0800002,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-334 stereo_locked=1 left_dbfs_tenths=170 right_dbfs_tenths=169 rds_carrier=1 rds_signal_tenths=111 pilot_env_thou=9765 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793586407.1075516,
+    "kind": "serial",
+    "command": "RTL_IQ_DIAG_STATUS",
+    "response": "RTL_IQ_DIAG_STATUS transition=\"fixed14-0\" sequence=11 active=0 ready=0 bytes=0 max_bytes=4800000 rate=2400000 frequency_hz=100000000 started_ms=3255528"
+  },
+  {
+    "t": 1793586407.1489828,
+    "kind": "serial",
+    "command": "RTL_IQ_DIAG_START fixed14-1",
+    "response": "RTL_IQ_DIAG_START transition=\"fixed14-1\" sequence=12 bytes=4800000 rate=2400000 frequency_hz=100000000 started_ms=3362167"
+  },
+  {
+    "t": 1793586408.2129111,
+    "kind": "serial",
+    "command": "RTL_IQ_GET_BEGIN",
+    "response": "RTL_IQ_GET_READY chunk=2048 bytes=4800000"
+  },
+  {
+    "t": 1793586508.498611,
+    "kind": "serial",
+    "command": "RTL_IQ_RETRIEVE_END",
+    "response": "RTL_IQ_RETRIEVE_DONE"
+  },
+  {
+    "t": 1793586508.5800676,
+    "kind": "capture",
+    "name": "fixed14-1",
+    "bytes": 4800000,
+    "sha256": "b85789ed76f5c0fcbedcc86666cae5cfa3b40c2060fcbbc424250ef57e836d64",
+    "tone_hz": 99938.96484375,
+    "tone_dbfs": -32.30780386476717,
+    "rms_dbfs": -30.662176285504398,
+    "clip_fraction": 0.0,
+    "min": 122,
+    "max": 133,
+    "mean_i": 127.39167875,
+    "mean_q": 127.39244041666667
+  },
+  {
+    "t": 1793586508.5819473,
+    "kind": "fixed_gain_result",
+    "restart_index": 1,
+    "name": "fixed14-1",
+    "bytes": 4800000,
+    "sha256": "b85789ed76f5c0fcbedcc86666cae5cfa3b40c2060fcbbc424250ef57e836d64",
+    "tone_hz": 99938.96484375,
+    "tone_dbfs": -32.30780386476717,
+    "rms_dbfs": -30.662176285504398,
+    "clip_fraction": 0.0,
+    "min": 122,
+    "max": 133,
+    "mean_i": 127.39167875,
+    "mean_q": 127.39244041666667
+  },
+  {
+    "t": 1793586508.590047,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=507740160 blocks=15495 effective_sps=2399913 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586508.66716,
+    "kind": "serial",
+    "command": "RTL_STOP",
+    "response": "RTL_STOP_RESULT ESP_OK"
+  },
+  {
+    "t": 1793586508.6847813,
+    "kind": "serial",
+    "command": "RTL_TUNE FM 100000000",
+    "response": "RTL_TUNE_OK band=FM frequency_hz=100000000"
+  },
+  {
+    "t": 1793586508.6994429,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=508035072 blocks=15504 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586509.0065374,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=508035072 blocks=15504 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586509.3100293,
+    "kind": "register",
+    "line": "I (3465566) esp_rtl_sdr: E4000_GAIN_REG reg=0x1a before=0x10 expected=0x10 observed=0x10 mask=0x1f"
+  },
+  {
+    "t": 1793586509.3113904,
+    "kind": "register",
+    "line": "I (3465576) esp_rtl_sdr: E4000_GAIN_REG reg=0x20 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793586509.3127377,
+    "kind": "register",
+    "line": "I (3465586) esp_rtl_sdr: E4000_GAIN_REG reg=0x16 before=0x01 expected=0x01 observed=0x01 mask=0x7f"
+  },
+  {
+    "t": 1793586509.313956,
+    "kind": "register",
+    "line": "I (3465596) esp_rtl_sdr: E4000_GAIN_REG reg=0x17 before=0x12 expected=0x12 observed=0x12 mask=0x3f"
+  },
+  {
+    "t": 1793586509.3154523,
+    "kind": "register",
+    "line": "I (3465606) esp_rtl_sdr: E4000_GAIN_REG reg=0x14 before=0x08 expected=0x08 observed=0x08 mask=0x0f"
+  },
+  {
+    "t": 1793586509.3171012,
+    "kind": "register",
+    "line": "I (3465616) esp_rtl_sdr: E4000_GAIN_REG reg=0x15 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793586509.330729,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=1015808 blocks=31 effective_sps=2384525 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586513.3723114,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=20480000 blocks=625 effective_sps=2399250 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586513.3748288,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_OFFSET_STATUS cap=1 requested=1 applied_offset_hz=2040000 tuner_lo_hz=97960000 iq_center_hz=100000000 correction=hardware additional_offset_mixer=0 result=ESP_OK"
+  },
+  {
+    "t": 1793586513.4184072,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-334 stereo_locked=1 left_dbfs_tenths=182 right_dbfs_tenths=181 rds_carrier=1 rds_signal_tenths=112 pilot_env_thou=9708 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793586513.4601452,
+    "kind": "serial",
+    "command": "RTL_IQ_DIAG_STATUS",
+    "response": "RTL_IQ_DIAG_STATUS transition=\"fixed14-1\" sequence=12 active=0 ready=0 bytes=0 max_bytes=4800000 rate=2400000 frequency_hz=100000000 started_ms=3362167"
+  },
+  {
+    "t": 1793586513.5041056,
+    "kind": "serial",
+    "command": "RTL_IQ_DIAG_START fixed14-2",
+    "response": "RTL_IQ_DIAG_START transition=\"fixed14-2\" sequence=13 bytes=4800000 rate=2400000 frequency_hz=100000000 started_ms=3468525"
+  },
+  {
+    "t": 1793586514.555336,
+    "kind": "serial",
+    "command": "RTL_IQ_GET_BEGIN",
+    "response": "RTL_IQ_GET_READY chunk=2048 bytes=4800000"
+  },
+  {
+    "t": 1793586615.0020254,
+    "kind": "serial",
+    "command": "RTL_IQ_RETRIEVE_END",
+    "response": "RTL_IQ_RETRIEVE_DONE"
+  },
+  {
+    "t": 1793586615.112135,
+    "kind": "capture",
+    "name": "fixed14-2",
+    "bytes": 4800000,
+    "sha256": "7fb00004375c224384608940b625481caf534e0ec7455799ac1d792203ac456a",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -32.33785983075097,
+    "rms_dbfs": -30.569587637648116,
+    "clip_fraction": 0.0,
+    "min": 121,
+    "max": 134,
+    "mean_i": 127.39222666666667,
+    "mean_q": 127.39400083333334
+  },
+  {
+    "t": 1793586615.1150632,
+    "kind": "fixed_gain_result",
+    "restart_index": 2,
+    "name": "fixed14-2",
+    "bytes": 4800000,
+    "sha256": "7fb00004375c224384608940b625481caf534e0ec7455799ac1d792203ac456a",
+    "tone_hz": 99975.5859375,
+    "tone_dbfs": -32.33785983075097,
+    "rms_dbfs": -30.569587637648116,
+    "clip_fraction": 0.0,
+    "min": 121,
+    "max": 134,
+    "mean_i": 127.39222666666667,
+    "mean_q": 127.39400083333334
+  },
+  {
+    "t": 1793586615.1372027,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=508952576 blocks=15532 effective_sps=2399882 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586615.137771,
+    "kind": "run_complete",
+    "passed": true
+  },
+  {
+    "t": 1793586615.4218624,
+    "kind": "source",
+    "commands": [
+      "output off"
+    ],
+    "response": "output off 'output off\\r\\nch> '\n"
+  },
+  {
+    "t": 1793586615.4878066,
+    "kind": "serial",
+    "command": "RTL_TUNE FM 100000000",
+    "response": "RTL_TUNE_OK band=FM frequency_hz=100000000"
+  },
+  {
+    "t": 1793586615.517105,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=IDLE profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=510623744 blocks=15583 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586615.827946,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=510623744 blocks=15583 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586616.1311824,
+    "kind": "register",
+    "line": "I (3572400) esp_rtl_sdr: E4000_GAIN_REG reg=0x1a before=0x10 expected=0x10 observed=0x10 mask=0x1f"
+  },
+  {
+    "t": 1793586616.1325018,
+    "kind": "register",
+    "line": "I (3572410) esp_rtl_sdr: E4000_GAIN_REG reg=0x20 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793586616.133979,
+    "kind": "register",
+    "line": "I (3572420) esp_rtl_sdr: E4000_GAIN_REG reg=0x16 before=0x01 expected=0x01 observed=0x01 mask=0x7f"
+  },
+  {
+    "t": 1793586616.1353316,
+    "kind": "register",
+    "line": "I (3572430) esp_rtl_sdr: E4000_GAIN_REG reg=0x17 before=0x12 expected=0x12 observed=0x12 mask=0x3f"
+  },
+  {
+    "t": 1793586616.1365125,
+    "kind": "register",
+    "line": "I (3572440) esp_rtl_sdr: E4000_GAIN_REG reg=0x14 before=0x08 expected=0x08 observed=0x08 mask=0x0f"
+  },
+  {
+    "t": 1793586616.1378107,
+    "kind": "register",
+    "line": "I (3572450) esp_rtl_sdr: E4000_GAIN_REG reg=0x15 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793586616.1615324,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=1081344 blocks=33 effective_sps=2381814 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586616.192367,
+    "kind": "serial",
+    "command": "RTL_DRIVER GAIN -10",
+    "response": "RTL_DRIVER_RESULT action=\"GAIN -10\" accepted=1 result=ESP_OK"
+  },
+  {
+    "t": 1793586616.2337651,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=1277952 blocks=39 effective_sps=2144214 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793586617.6720123,
+    "kind": "source",
+    "commands": [
+      "output off",
+      "pause"
+    ],
+    "response": "output off 'output off\\r\\nch> '\npause 'pause\\r\\nch> '\n"
+  }
+]
