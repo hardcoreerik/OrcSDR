@@ -11,4 +11,10 @@ build/lora-tx-ui/layout 2>&1 | tee build/lora-tx-ui/layout.log
 "$cxx" "${flags[@]}" -Iapps/orcsdr-tab5/ui \
   tests/lora_tx_policy_tests.cpp -o build/lora-tx-ui/policy
 build/lora-tx-ui/policy 2>&1 | tee build/lora-tx-ui/policy.log
+# Compile the actual integrated dashboard source, not only the isolated view header.
+# ESP-IDF and physical framebuffer behavior still require a native device build.
+"$cxx" "${flags[@]}" -fsyntax-only \
+  -Itests/lora_tx_ui_stubs -Itests/ft8_ui_stubs -Itests/acars_ui_stubs \
+  -Iapps/orcsdr-tab5/ui apps/orcsdr-tab5/ui/lora_dashboard.cpp \
+  2>&1 | tee build/lora-tx-ui/integrated-syntax.log
 echo "lora TX UI host suite PASS" | tee build/lora-tx-ui/result.log
