@@ -40,11 +40,11 @@ uint32_t rtl_tcp_tuner(uint8_t profile) {
 bool driver_rate_ok(uint32_t sps) { return (sps > 225000 && sps <= 300000) || (sps > 900000 && sps <= 3200000); }
 
 // What the active link can carry for one stream, Mbit/s. Provisional: the Ethernet figure leaves headroom on a 100 Mbit link, the Wi-Fi figure is
-// the measured burst rate of the SDIO-attached coprocessor path (COM8: 11 to 16 Mbit/s), so a request above it ends the session with a recorded reason instead of dropping silently.
+// the measured sustained rate of the SDIO-attached coprocessor path (COM8: about 5 Mbit/s of plain HTTP download, bursts to 16), so a request above it ends the session with a recorded reason instead of dropping silently.
 uint32_t link_budget_mbit() {
   if (eth_app::status().got_ip) return 85;
   const wifi_app::Status w = wifi_app::status();
-  return w.connected ? 12 : 0;
+  return w.connected ? 5 : 0;
 }
 
 void on_block(const orcsdr::radio::IqBlock& b, void*) { esp_rtl_tcp::push(b.data, b.bytes, b.sample_rate, b.center_hz); }

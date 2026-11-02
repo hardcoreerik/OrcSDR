@@ -170,3 +170,10 @@ Open: a few `status` requests over HTTP made while a client streamed were reset 
 - Control mode (`RTL_TCP CONTROL ON`): a client's `set sample rate 250000` was applied (the session rate became 250,000 and about 180 to 250 kS/s arrived); 2,400,000 ended the session as `rate_exceeds_link`; 500,000 as `rate_unsupported`; a connect during the receiver's restart after a rate change was refused (`host_refused`);
   a mixed run applied 7 commands and rejected 2 (ppm 500 and gain index 99); the receiver returned to 2.4 MS/s when the session ended. A rate of 960 kS/s passed the (then guessed) 30 Mbit/s budget and could not be carried: the budget for Wi-Fi was lowered to 12 Mbit/s, which allows only the 225 to 300 kS/s range.
 - **Consequence:** over this Wi-Fi path the useful rtl_tcp rate is about 250 kS/s (fine for narrowband work, not for wide spectrum). Wired Ethernet carries 2.4 MS/s.
+
+## 11. Why the Wi-Fi stream is slow (COM8, 2026-11-02, second look)
+
+The gap is the Wi-Fi link itself, not rtl_tcp: a plain HTTP download of a 393 KB file in a loop from COM8 over Wi-Fi, with no rtl_tcp and no client stream, sustains only 4.9 to 5.3 Mbit/s (bursts of one file reach 11 to 16). Idle ping averages 53 ms with a minimum of 4 ms and a maximum of 113 ms.
+During the rtl_tcp stream the rtl_tcp task used 0.8 % of a core, the SDIO tasks 0.6 to 2.4 % each, and the radio task 80 % of core 1, so the send path is waiting on the network, not on CPU. The home screen task used 75 % of core 0.
+Not determined: whether the ceiling is the SDIO link, the C6 firmware (stock ESP-Hosted slave 3.0.6), the 2.4 GHz air link to this router (signal strength is not reported, `rssi=0`), or the PC side. A wired board reaches 78 Mbit/s with the same code.
+The Wi-Fi budget in the code is therefore 5 Mbit/s (it was 30, then 12), which admits only the driver's 225 to 300 kS/s range. Ideas to try later: read the real RSSI and PHY rate from the C6, test from a second Wi-Fi client, compare a Tab5 (same C6 path, not touched here).
