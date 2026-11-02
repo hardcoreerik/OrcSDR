@@ -56,3 +56,48 @@ This documentation-only file marks where fixtures are stored, as requested. Neit
 **Important manifest correction:** the manifest now records *per-file sample encodings*: DMR direct-mode is **CS16**, the other DMR and P25 files are **CF32**, all 48 kS/s. Do not use a global CF32 assumption. The associated REA research commit for the correction is `cc92c09f07f9d8491b3bb9c37784dc5ae0f59eb0`.
 
 This remains **research documentation only**, not a request to merge results branches or copy third-party binaries into a firmware image.
+
+## Critical-gap acquisition update — 2026-11-02
+
+**LATEST REA SOURCE OF TRUTH:** [fixture README](https://github.com/hardcoreerik/REA-Results/blob/chatgpt/digital-voice-rsa-rea-2026-11-01/inbox/fixtures/digital-voice/README.md) and [machine-readable manifest](https://github.com/hardcoreerik/REA-Results/blob/chatgpt/digital-voice-rsa-rea-2026-11-01/inbox/fixtures/digital-voice/manifest.json). The earlier six-file table above is preserved as a dated checkpoint, not the current complete inventory.
+
+**Available NOW on the separate private REA-Results research branch: 11 binary IQ fixtures totaling 4,048,236 bytes.**
+
+- **Nine source-hash-verified REAL-AIR samples:** four DMR, two P25 Phase I C4FM control, and three newly acquired NXDN48/96 (two conventional/direct voice slices and one 453.775 MHz RCCH control sample). All stored under `inbox/fixtures/digital-voice/`. Source: GopherTrunk commit `f06bfff493f47fdeb69807c8b08b2b32a253839f`.
+- **Two SANDBOX-GENERATED synthetic AUTO negatives:** 48-kS/s CS16 noise and analog-AM baseband with actual Python-computed SHA-256 and verified Git SHA-1. Source/recreation script: `inbox/fixtures/digital-voice/AUTO/generate_controls.py`. These are NOT real RF and provide no decoder success evidence.
+- **Newest source commits:** [NXDN real-air IQ acquisition](https://github.com/hardcoreerik/REA-Results/commit/27643bf8ba4700c516c586e96960e9249d877b6c) and [AUTO negatives](https://github.com/hardcoreerik/REA-Results/commit/10d7dae085e0a31515e0449839e7463177272a40).
+
+### Exact NXDN binary fixtures and upstream verification goals
+
+| Source path within REA fixtures | Size | Format | Rate | Reference test |
+|---|---:|---|---|---|
+| `NXDN/nxdn48_rdch_voice_447100_16oct_48k.cs16` | 230,400 B | CS16 LE IQ | 48 kS/s | >=32 voice frames; pitch continuity >=0.50; mean Golay corrections <=1/frame |
+| `NXDN/nxdn96_rdch_voice_447100_15oct_48k.cs16` | 153,600 B | CS16 LE IQ | 48 kS/s | >=24 voice frames; pitch continuity >=0.50; mean Golay corrections <=1/frame |
+| `NXDN/nxdn96_rcch_cc_453775_19oct_48k.cs16` | 192,000 B | CS16 LE IQ | 48 kS/s | >=18 valid FSW+LICH frames spaced 192 dibits; carrier estimate -750..-550 Hz |
+
+**Warning:** NXDN96 RCCH source test validates sync and LICH parity but does **not** validate CAC CRC / full trunk grant decoding. The NXDN voice source uses a pitch-index heuristic; that does **not** prove intelligible AMBE+2 audio. Treat upstream thresholds as comparison targets, not firmware pass statuses.
+
+### P25 Phase II: real IQ is not acquired; still a blocker
+
+[REA Phase II capture and provenance research](https://github.com/hardcoreerik/REA-Results/blob/chatgpt/digital-voice-rsa-rea-2026-11-01/inbox/2026-11-02_nxdn-realair-acquired_p25-phase2-acquisition-plan.md) contains the exact live capture commands, source ground-truth targets and artifact schema.
+
+- Source-reported p25p1andp2.bin dibit file is available through a [DSD-FME issue #304 attachment](https://github.com/lwvmobile/dsd-fme/issues/304#issuecomment-3247474181); its **extracted data** has published SHA-256 `136bdb57d08c8ed4a9dd7b5f8a2e7476f995b60aafb45de27a0189fd66ce253b`. NOT copied into REA due unsupported GitHub issue binary download. It's **recovered dibits, NOT raw IQ**.
+- GopherTrunk's [P25 Phase II groundtruth replay test](https://github.com/MattCheramie/GopherTrunk/blob/f06bfff493f47fdeb69807c8b08b2b32a253839f/internal/radio/p25/phase2/groundtruth_replay_test.go) documents a separately owned 120-second 2.048-MS/s CF32 captured signal with 16 independent SDRTrunk source-RID references, but the IQ bytes are NOT published in the repository. Do not claim we have acquired it.
+- Prefer capturing a fresh confirmed clear live Phase II voice channel with OrcSDR's existing working P25 control/grant following, preserving WACN/SystemID/NAC, TGID, voice carrier and slot. The published OSRP frequencies are **historical observations**, not guaranteed active assignments today. Full commands and metadata checklist are in the research report.
+
+### Additional data integrity warning
+
+A secondary DSD-neo CU8 fixture transfer through the available connector **modified raw byte encodings**, making destination blob hashes differ from source hashes. Those invalid transfers were **not referenced in REA branch commits**. Do not use them, even if a decoder appears to synchronize. Use GopherTrunk's byte-verified real NXDN samples instead, and preserve Git SHA-1 plus actual local SHA-256 for every further imported file.
+
+### How to run/test the next decoder session
+
+1. Fetch the private REA research branch separately without merging. Check `inbox/fixtures/digital-voice/manifest.json`; **all per-file formats override any global defaults**.
+2. Run `Get-ChildItem -Recurse -File -Include *.cs16,*.cfile` against the checked-out fixture directory, then calculate local SHA-256 with `Get-FileHash -Algorithm SHA256`. Verify each source `git hash-object` matches the manifest's `git_blob_sha1`.
+3. Start native RSA in `F:\AI\RSA-Sandbox` and run `python rsa.py doctor`; import/analyze through `rsa.py` as required by its `AGENTS.md`. **Do not invent RSA metrics or modify generated files**.
+4. In a host replay harness, explicitly select `cs16-le` or `cf32-le`, 48,000 complex samples/s; use 2400-sym/s for NXDN48 and 4800-sym/s for NXDN96. Establish baseline good frame counts before tuning filters or writing UI claims.
+5. Use the two known-negative AUTO samples and verify the classifier returns UNKNOWN; count false sync hits, false CRC-accepts, false-positive events, and time-to-abstain. Synthetic controls cannot substitute for real analog/NFM/other-digital negatives.
+6. Save run logs, hashes, board/driver revision and numerical counters, then validate host vs ESP32-P4 replay. P25 Phase I hardware regressions remain mandatory.
+7. Keep **unverified** protocol and audio states honestly labeled on the unified dashboard. Separate `carrier detected`, `sync acquired`, `CRC validated`, `clear vocoder frames available`, and `PCM confirmed`. Never conflate grant/phase sync with live intelligible speech.
+8. Do not merge the REA branch or publish third-party captured voice/audio to public releases. User approval is required for any merge.
+
+**This handoff is documentary.** The new NXDN files and negative controls are in REA-Results, not the firmware. No decoder implementation or hardware validation was performed in this research turn.
