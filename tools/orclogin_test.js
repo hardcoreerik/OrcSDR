@@ -27,7 +27,8 @@ async function device(ip) {
   x = await post('/api/v1/receivers/tune?index=0&hz=5'); check('receivers/tune out of range refused', x.status === 400, JSON.stringify(x));
   x = await post('/api/v1/fm?action=volume&volume=' + vol); check('fm volume accepted', x.status === 200 && x.body.ok, JSON.stringify(x));
   x = await post('/api/v1/tuner/gain?index=0&mode=auto'); check('tuner/gain auto accepted', x.status === 200 || x.status === 501, JSON.stringify(x));
-  x = await post('/api/v1/channel?index=0&center=96000000&rx_sps=2400000&hz=' + freq); check('a wide channel is refused honestly', x.status === 501 && x.body.ok === false, JSON.stringify(x));
+  x = await post('/api/v1/channel?index=0&center=96000000&rx_sps=2400000&hz=96000000'); check('a wide channel is accepted or refused honestly', (x.status === 200 && x.body.ok) || (x.status === 501 && x.body.ok === false), JSON.stringify(x));
+  if (x.status === 200) await post('/api/v1/channel/stop');
   x = await post('/api/v1/time?epoch=' + Math.floor(Date.now() / 1000)); check('time accepted', x.status === 200 && x.body.ok, JSON.stringify(x));
   x = await post('/api/v1/receivers/nothing'); check('unknown route is not a control route', x.status === 404, JSON.stringify(x));
   x = await post('/api/v1/auth/logout'); check('logout', x.status === 200, JSON.stringify(x));

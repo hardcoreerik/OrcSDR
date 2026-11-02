@@ -6,6 +6,8 @@
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_timer.h"
+#include "eth_app.hpp"
+#include "wifi_app.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lwip/sockets.h"
@@ -17,7 +19,7 @@
 
 namespace web_iq {
 #if !ORCSDR_WEB_IQ
-Start start_channel(int, uint32_t, uint32_t, char* out, size_t cap) {
+Start start_channel(int, uint32_t, uint32_t, uint32_t, uint32_t, char* out, size_t cap) {
   std::snprintf(out, cap, "{\"ok\":false,\"error\":\"browser_iq_stream_not_built_into_this_firmware\"}");
   return Start::not_available;
 }
@@ -113,6 +115,19 @@ void on_block(const radio::IqBlock& b, void* ctx) {
     return;
   }
   const uint8_t* p = b.data;
+  if (c.decim == 1) {  // wide window at the receiver's own rate: the bytes go straight into frames
+    for (size_t n = 0; n + 1 < b.bytes; n += 2) {
+      uint8_t* o = c.frame + kHeader + 2 * c.fill;
+      o[0] = p[n];
+      o[1] = p[n + 1];
+      if (++c.fill == kPairs) {
+        send_frame(c, kPairs, true);
+        c.fill = 0;
+        if (g_fd.load() < 0) return;
+      }
+    }
+    return;
+  }
   for (size_t n = 0; n + 1 < b.bytes; n += 2) {
     const int32_t xi = 2 * p[n] - 255, xq = 2 * p[n + 1] - 255;
     c.ci.i1 += xi;
@@ -230,7 +245,13 @@ void end_stream() {
 
 bool available() { return true; }
 
-Start start_channel(int rx, uint32_t hz, uint32_t peer, char* out, size_t cap) {
+// What the active link can carry for one stream, Mbit/s (the same figures as the rtl_tcp server; the Wi-Fi one is measured sustained, about 5).
+uint32_t link_budget_mbit() {
+  if (eth_app::status().got_ip) return 85;
+  return wifi_app::status().connected ? 5 : 0;
+}
+
+Start start_channel(int rx, uint32_t hz, uint32_t wide_center_hz, uint32_t wide_sps, uint32_t peer, char* out, size_t cap) {
   auto fail = [&](Start s, const char* msg) {
     std::snprintf(out, cap, "{\"ok\":false,\"error\":\"%s\"}", msg);
     return s;
@@ -238,13 +259,25 @@ Start start_channel(int rx, uint32_t hz, uint32_t peer, char* out, size_t cap) {
   radio::ReceiverInfo ri;
   if (!radio::receiver_info(rx, &ri) || ri.state != 2) return fail(Start::not_available, "receiver_not_streaming");
   const uint32_t in_rate = ri.sample_rate;
-  uint32_t decim = 0;
-  if (in_rate == 2400000) decim = 8;       // 300 kS/s out
-  else if (in_rate == 960000) decim = 3;  // 320 kS/s out
-  else return fail(Start::not_available, "receiver_rate_not_supported_for_channel");
-  const uint32_t out_rate = in_rate / decim, offset = out_rate / 6;
-  if (hz < offset + 24000000u) return fail(Start::bad_request, "bad_hz");
-  const uint32_t center = hz - offset;  // the channel sits `offset` above the window centre, away from the DC spike
+  uint32_t decim = 0, out_rate = 0, center = 0;
+  int64_t offset = 0;
+  if (wide_center_hz || wide_sps) {
+    if (!wide_center_hz || !wide_sps || wide_center_hz < 24000000u) return fail(Start::bad_request, "bad_wide_window");
+    if (wide_sps > in_rate || in_rate % wide_sps != 0 || in_rate / wide_sps > 16) return fail(Start::not_available, "rate_not_reachable_from_the_receiver_rate");
+    decim = in_rate / wide_sps;
+    out_rate = wide_sps;
+    center = wide_center_hz;
+    offset = static_cast<int64_t>(hz) - static_cast<int64_t>(center);
+    if (static_cast<uint64_t>(out_rate) * 16 > static_cast<uint64_t>(link_budget_mbit()) * 1000000ull) return fail(Start::not_available, "link_too_slow_for_this_rate");
+  } else {
+    if (in_rate == 2400000) decim = 8;       // 300 kS/s out
+    else if (in_rate == 960000) decim = 3;  // 320 kS/s out
+    else return fail(Start::not_available, "receiver_rate_not_supported_for_channel");
+    out_rate = in_rate / decim;
+    offset = out_rate / 6;
+    if (hz < offset + 24000000u) return fail(Start::bad_request, "bad_hz");
+    center = hz - static_cast<uint32_t>(offset);  // the channel sits `offset` above the window centre, away from the DC spike
+  }
 
   end_stream();  // one listener slot: a new channel replaces the old one
   if (!ensure_server()) return fail(Start::not_available, "ws_server_start_failed");
@@ -278,7 +311,7 @@ Start start_channel(int rx, uint32_t hz, uint32_t peer, char* out, size_t cap) {
   spec.context = c;
   spec.kind = radio::SinkKind::queued;
   spec.receiver = static_cast<uint8_t>(rx);
-  spec.queue_bytes = 256 * 1024;
+  spec.queue_bytes = 512 * 1024;
   spec.task_core = 0;
   spec.task_priority = 5;  // above the screen task (4): on a board with a display it would otherwise starve this task
   g_sink = radio::add_sink(spec);
@@ -290,8 +323,8 @@ Start start_channel(int rx, uint32_t hz, uint32_t peer, char* out, size_t cap) {
   ++g_start_count;
   ESP_LOGI(TAG, "WEB_IQ_STARTED rx=%d hz=%u window_center=%u in=%u out=%u decim=%u", rx, static_cast<unsigned>(hz), static_cast<unsigned>(center), static_cast<unsigned>(in_rate),
            static_cast<unsigned>(out_rate), static_cast<unsigned>(decim));
-  std::snprintf(out, cap, "{\"ok\":true,\"index\":%d,\"hz\":%u,\"center_hz\":%u,\"sps\":%u,\"offset_hz\":%u,\"bits\":8,\"ws_port\":81}", rx, static_cast<unsigned>(hz),
-                static_cast<unsigned>(center), static_cast<unsigned>(out_rate), static_cast<unsigned>(offset));
+  std::snprintf(out, cap, "{\"ok\":true,\"index\":%d,\"hz\":%u,\"center_hz\":%u,\"sps\":%u,\"offset_hz\":%d,\"bits\":8,\"ws_port\":81}", rx, static_cast<unsigned>(hz),
+                static_cast<unsigned>(center), static_cast<unsigned>(out_rate), static_cast<int>(offset));
   return Start::ok;
 }
 

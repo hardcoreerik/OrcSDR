@@ -121,9 +121,13 @@ Result run(const char* route, const char* query, uint32_t peer, char* out, size_
     const int rx = receiver_index(query);
     char scratch[8];
     if (rx < 0 || !parse_long(query, "hz", &v) || v <= 0 || v > 0xFFFFFFFFll) return fail(out, cap, Result::bad_request, "bad_hz_or_index");
-    if (httpd_query_key_value(query, "center", scratch, sizeof(scratch)) == ESP_OK || httpd_query_key_value(query, "rx_sps", scratch, sizeof(scratch)) == ESP_OK)
-      return fail(out, cap, Result::not_available, "wide_channel_not_available");  // decoders that take a wide IQ window are not served yet
-    const web_iq::Start s = web_iq::start_channel(rx, static_cast<uint32_t>(v), peer, out, cap);
+    long long wide_center = 0, wide_sps = 0;  // the wide window that decoders want: `center` and `rx_sps` come together
+    const bool has_center = httpd_query_key_value(query, "center", scratch, sizeof(scratch)) == ESP_OK, has_sps = httpd_query_key_value(query, "rx_sps", scratch, sizeof(scratch)) == ESP_OK;
+    if (has_center || has_sps) {
+      if (!parse_long(query, "center", &wide_center) || !parse_long(query, "rx_sps", &wide_sps) || wide_center <= 0 || wide_center > 0xFFFFFFFFll || wide_sps <= 0 || wide_sps > 3200000)
+        return fail(out, cap, Result::bad_request, "bad_wide_window");
+    }
+    const web_iq::Start s = web_iq::start_channel(rx, static_cast<uint32_t>(v), static_cast<uint32_t>(wide_center), static_cast<uint32_t>(wide_sps), peer, out, cap);
     return s == web_iq::Start::ok ? Result::ok : s == web_iq::Start::bad_request ? Result::bad_request : Result::not_available;
   }
   if (std::strcmp(route, "channel/stop") == 0) {

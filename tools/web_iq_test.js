@@ -2,7 +2,7 @@
 const FRAME_PAIRS = 2048;
 // Logs in with the factory password, asks for a channel, opens the port-81 WebSocket like the page does and checks the packets.
 const L = require('../apps/orcsdr-p4-hosyond-console/web/orclogin.js');
-const ip = process.argv[2], hz = Number(process.argv[3] || 96100000), secs = Number(process.argv[4] || 6);
+const ip = process.argv[2], hz = Number(process.argv[3] || 96100000), secs = Number(process.argv[4] || 6), wideSps = Number(process.argv[5] || 0);   // wideSps: ask for the wide window the decoders use (centred on hz)
 let fails = 0;
 const check = (name, ok, detail) => { console.log((ok ? 'PASS ' : 'FAIL ') + name + (ok ? '' : ' - ' + detail)); if (!ok) fails++; };
 const t = s => L.enc.encode(s), base = 'http://' + ip;
@@ -37,9 +37,9 @@ function fftPeak(pairs) {   // crude 1024-point spectrum: returns [bin of the pe
   const before = await openWs();
   check('the WebSocket is refused before a signed channel request', !before.opened, 'it opened'); if (before.opened) before.ws.close();
 
-  const r = await post('/api/v1/channel?index=0&hz=' + hz);
+  const r = await post('/api/v1/channel?index=0&hz=' + hz + (wideSps ? '&center=' + hz + '&rx_sps=' + wideSps : ''));
   console.log('channel reply', JSON.stringify(r.body));
-  check('channel accepted with its parameters', r.status === 200 && r.body.ok && r.body.sps >= 300000 && r.body.bits === 8 && r.body.offset_hz > 0, JSON.stringify(r));
+  check('channel accepted with its parameters', r.status === 200 && r.body.ok && r.body.sps >= 300000 && r.body.bits === 8 && (wideSps ? r.body.sps === wideSps && r.body.offset_hz === 0 : r.body.offset_hz > 0), JSON.stringify(r));
   if (!(r.status === 200 && r.body.ok)) { console.log(fails + ' failed'); process.exit(1); }
   const ws = await openWs();
   check('the WebSocket opens after the signed request', ws.opened);
