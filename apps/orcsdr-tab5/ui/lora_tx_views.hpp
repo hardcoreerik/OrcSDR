@@ -110,7 +110,7 @@ template <typename G> void action_row(G& gfx, const Snapshot& s, bool vertical,
   control(gfx, sx, y, w, h, !can_send ? "SEND LOCKED" : "SEND TEST", can_send);
 }
 template <typename G> void grid(G& gfx, int x, int y, int w, int h) {
-  gfx.drawRect(x, y, w, h, kGrid);
+  gfx.drawRoundRect(x, y, w, h, 0, kGrid);
   for (int i = 1; i < 5; ++i) gfx.drawFastVLine(x + w * i / 5, y, h, kGrid);
   for (int i = 1; i < 4; ++i) gfx.drawFastHLine(x, y + h * i / 4, w, kGrid);
 }
