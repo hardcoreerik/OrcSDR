@@ -65,11 +65,18 @@ for control overlap and tests per-view partial repaint bounds.
 
 The integrated dashboard executable links the real `lora_dashboard.cpp` against
 neutral host substitutes. It tests RX-only Tab5 navigation, TX UI actions,
-the lack of idle full-screen redraws, and fail-closed hot-unplug behavior in
-both orientations. Hardware signal events are never invented; the tests
+the lack of idle full-screen redraws, and fail-closed **hot-unplug / reattach**
+behavior in both orientations. Device reattachment resets the TX Lab to its
+Operator page; no prior enabled control or stale page is resumed. Hardware signal events are never invented; the tests
 generate only host snapshots with explicit provenance. The integrated dashboard file is syntax-checked through a focused host M5Unified stub to detect C++ integration errors. These tests do **not** drive a physical panel, verify M5GFX font metrics, prove pixel-level accuracy or transmit RF.
 
-CI: `.github/workflows/lora-tx-ui-tests.yml` runs on this branch and uploads the host log files. Record the exact CI run SHA and outcome before accepting any merge.
+CI: `.github/workflows/lora-tx-ui-tests.yml` runs on this branch and uploads the host log files. It runs both normal C++ host tests and an additional **ASan + UBSan** pass:
+
+```bash
+ORCSDR_LORA_ASAN=1 bash tools/test-lora-tx-ui.sh
+```
+
+The workflow copies baseline logs to `build/lora-tx-ui-normal/` before sanitizer execution and uploads both sets. The first full green sanitizer run was [GitHub Actions #41526815917](https://github.com/hardcoreerik/OrcSDR/actions/runs/41526815917) for commit `9e06a446ed819b79e3922d19334ed865e9f44a74`. This verifies host-visible draw paths, not physical panel performance or RF behavior.
 
 ### Native display capture after LilyGO bring-up
 
