@@ -66,4 +66,15 @@ Fetched driver source matches the released revision after CRLF/LF normalization.
 See validation/driver-094-integration/build.json for image/source hashes.
 CI documentation, focused tests and storage checks passed on code-equivalent
 head 573ea007. No Waveshare full-radio compile, flash or new physical acceptance
-is claimed. Board/hardware validation remains open before merge.
+is claimed. Board/hardware validation remains a documented follow-up; the maintainer approved merge after review fixes and software checks, without a flash.
+
+## Review correction validation
+
+Quoted immutable pins, E4000 self-check capabilities, direct-sampling gain
+help, command usage and capture-rate integrity were corrected. The diagnostic
+routing check compiles the production condition for matching default/custom
+rates and rejects mismatches; it also detects an enclosing custom-rate guard.
+Home recording-display tests cover the three gain-unavailability messages.
+PowerShell self-check and documentation truth checks pass. The updated native
+build passed compile/link/post-link checks; its image is recorded in build.json.
+No new hardware acceptance is implied.

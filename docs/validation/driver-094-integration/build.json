@@ -12,5 +12,12 @@
     "include/esp_rtl_sdr.h": "fe1478ab9dcf731262739d54b612a209fc149b58d65a57d9b881ad32438897a5"
   },
   "physical_validation": false,
-  "waveshare_full_radio_build": false
+  "waveshare_full_radio_build": false,
+  "review_fix_build": {
+    "firmware_code_revision": "34b04c04",
+    "image_bytes": 4330160,
+    "image_sha256": "6b9c112d3e358e8487a87fcc947815b0c75a7895e1ae1f1666361a916697a0cd",
+    "compile_link_post_link": "passed",
+    "new_flash": false
+  }
 }
