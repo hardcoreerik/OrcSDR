@@ -17,17 +17,18 @@
  * Observed on COM29: ESP32-P4 v3.2, 32 MB flash (GigaDevice c8/4019), an ES8311 answered at I2C 0x18 on SDA7/SCL8,
  * and an RTL-SDR plugged into the USB header enumerated and streamed at 2.4 MS/s with zero drops.
  *
- * Not from the vendor page: the Ethernet pins below are the Waveshare P4 map used by OrcNode (IP101 PHY, MDC31 MDIO52
- * reset51, RMII clock in on 50). A third-party Rust crate (esp-p4-eth) lists the same for this board; neither is the
- * official schematic and neither has been exercised on this unit. The I2S and amplifier pins are the ones the other
- * Waveshare P4 boards use and are unverified here. */
+ * Ethernet, hardware-verified on COM29 (2026-11-01, opt-in driver eth_app, CONFIG_ORCSDR_ETHERNET=y): with the pins below (the Waveshare P4
+ * map used by OrcNode and by ESP-IDF's own P4 defaults: IP101 PHY at address 1, MDC31 MDIO52 reset51, RMII clock in on 50, TX_EN49
+ * TXD0/1 34/35 CRS_DV28 RXD0/1 29/30) the link came up at 100 Mbit full duplex, the IP101 PHY driver was accepted, DHCP gave an address
+ * about 8 s after boot, and a PC pinged it at 0 ms average with no loss. The PHY is therefore consistent with an IP101; this is still not
+ * the official schematic. The I2S and amplifier pins are the ones the other Waveshare P4 boards use and are unverified here. */
 const orcsdr_board_profile_t g_board_waveshare_p4_eth = {
     .name = "waveshare-esp32-p4-eth",
     .vendor = "Waveshare",
     .source = "Waveshare docs ESP32-P4-ETH (2026-10-29); I2C codec and USB host observed on COM29; Ethernet pins from OrcNode",
-    .unsupported = "No Wi-Fi or Bluetooth hardware: network access is Ethernet only, and no Ethernet driver is wired into the "
-                   "console yet. USB host is a 4-pin header, not a Type-A port. SD power pin unknown; DSI panel, camera, SD, "
-                   "audio output and Ethernet untested here.",
+    .unsupported = "No Wi-Fi or Bluetooth hardware: network access is Ethernet only (works with the opt-in driver, "
+                   "CONFIG_ORCSDR_ETHERNET). USB host is a 4-pin header, not a Type-A port. SD power pin unknown; DSI panel, "
+                   "camera, SD and audio output untested here.",
     .status = ORCSDR_PROFILE_DOCUMENTED,
     .console_supported = false,
 

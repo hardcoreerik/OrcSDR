@@ -324,5 +324,8 @@ Status (link, speed, duplex, MAC, IP, gateway, which PHY driver, why it did not 
 
 - ESP-IDF's own P4 Ethernet defaults (`ETH_ESP32_EMAC_DEFAULT_CONFIG`, 5.5.4) use the same pins as the profile: MDC 31, MDIO 52, clock in 50, TX_EN 49, TXD0/1 34/35, CRS_DV 28, RXD0/1 29/30. That supports the profile but does not prove the P4-ETH board is wired that way.
 - ESP-IDF 5.5.4's P4 default-config macro lists its members out of declaration order, which C++ rejects, so the structure is filled in field by field.
-- **Builds** for the P4-ETH (v3 silicon) and, with Ethernet off, for the WIFI6-DB and the default dev-kit configuration. **Not flashed or run**: no link has ever come up on this firmware. The first run will show whether the pins, PHY address and PHY chip are right.
-- Memory cost of the driver is unmeasured.
+- **Builds** for the P4-ETH (v3 silicon) and, with Ethernet off, for the WIFI6-DB and the default dev-kit configuration.
+- **Run on COM29 (Waveshare ESP32-P4-ETH), 2026-11-01, cable to the home router:** the profile pins, PHY address 1 and the IP101 driver all worked on the first try. `RTL_ETH_STATUS`: `link_up=1 got_ip=1 speed_mbps=100 full_duplex=1 phy=ip101`,
+  MAC e8:f6:0a:eb:76:e7, DHCP 192.168.1.69 (gateway 192.168.1.1) about 8.4 s after boot, `link_changes=1`. A PC pinged it with 0 % loss and 0 ms average (Wi-Fi on COM31: about 59 ms). The Ethernet pins are now bench-verified on this board.
+- **Memory** with the driver compiled in and the web server just enabled (a dongle streaming, headless, no Wi-Fi): internal free 140,939 B (largest 59,392 B), DMA free 101,943 B. The same board without Ethernet and without the server measured 190,575 B and 151,547 B,
+  so Ethernet plus the server take about 50 KB of internal and DMA RAM; the split between the EMAC driver and the server was not measured.
