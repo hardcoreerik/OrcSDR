@@ -82,50 +82,85 @@
   const keep = () => { try { sessionStorage.setItem('orcsession', session ? JSON.stringify({ sid: session.sid, key: hex(session.key), seq: session.seq }) : ''); } catch (e) { /* ignore */ } };
   let chain = Promise.resolve(), loginWait = null;
 
-  function ask(message, defaultNotice) {   // a small modal; resolves with the password or null
+  // "Remember me" keeps the PBKDF2 key (never the password) in this browser's localStorage, so the next visit signs in silently. The key
+  // is only good for this node while its password and salt are unchanged; a change of password makes it fail once and it is dropped.
+  const remembered = () => { try { return JSON.parse(localStorage.getItem('orcremember') || 'null'); } catch (e) { return null; } };
+  const remember = (key, salt) => { try { localStorage.setItem('orcremember', JSON.stringify({ key: hex(key), salt })); } catch (e) { /* no storage */ } };
+  const forget = () => { try { localStorage.removeItem('orcremember'); } catch (e) { /* ignore */ } };
+
+  // Browser audio: an AudioContext may only start from a user gesture. The login button is one; after a silent (remembered) login the first
+  // tap or key press does it. This only ever touches the browser's own audio: nothing is sent to the node, so the board's speaker is left alone.
+  function startAudio() {
+    try {
+      if (typeof Listen === 'undefined') return;
+      Promise.resolve(Listen.prime()).then(() => nativeFetch('/api/v1/fm', { cache: 'no-store' })).then(r => r.json()).then(j => {
+        if (j && j.browser_audio && j.browser_audio.available && j.playing && !Listen.wanted && !(typeof Chan !== 'undefined' && Chan.active)) Listen.toggle();
+      }).catch(() => {});
+    } catch (e) { /* the page's audio is optional */ }
+  }
+  function armAudio(gestured) {
+    if (gestured) return startAudio();
+    const once = () => { removeEventListener('pointerdown', once, true); removeEventListener('keydown', once, true); startAudio(); };
+    addEventListener('pointerdown', once, true); addEventListener('keydown', once, true);
+  }
+
+  function ask(message, defaultNotice) {   // the login screen: resolves with { password, remember }; there is no way past it without logging in
     return new Promise(resolve => {
       const box = document.createElement('div');
-      box.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;font:16px sans-serif';
+      box.style.cssText = 'position:fixed;inset:0;background:#000;z-index:99999;display:flex;align-items:center;justify-content:center;font:16px sans-serif';
       box.innerHTML = '<form style="background:#0b1620;border:2px solid #34d399;border-radius:8px;padding:20px;color:#e5e7eb;min-width:280px">' +
         '<div style="font-size:18px;margin-bottom:8px">OrcSDR node login</div><div id="orcmsg" style="margin-bottom:10px;color:#fbbf24"></div>' +
-        '<div style="margin-bottom:6px">User: <b>admin</b></div><input id="orcpw" type="password" autocomplete="current-password" style="width:100%;box-sizing:border-box;padding:8px;margin-bottom:12px">' +
-        '<div style="text-align:right"><button type="button" id="orccancel" style="margin-right:8px;padding:6px 12px">Cancel</button><button type="submit" style="padding:6px 12px">Log in</button></div></form>';
+        '<div style="margin-bottom:6px">User: <b>admin</b></div><input id="orcpw" type="password" autocomplete="current-password" style="width:100%;box-sizing:border-box;padding:8px;margin-bottom:10px">' +
+        '<label style="display:block;margin-bottom:12px"><input id="orcrem" type="checkbox" style="margin-right:6px">Remember me on this browser</label>' +
+        '<div style="text-align:right"><button type="submit" style="padding:6px 12px">Log in</button></div></form>';
       box.querySelector('#orcmsg').textContent = message + (defaultNotice ? ' This node still uses the factory password: change it with RTL_WEB PASSWORD over serial.' : '');
       document.body.appendChild(box);
       // The page's own window-level keydown handler swallows every printable key except in a <select> and feeds it to the canvas, so keys typed here
       // must not leave the box (otherwise the password field stays empty).
       for (const type of ['keydown', 'keypress', 'keyup']) box.addEventListener(type, e => e.stopPropagation());
       const input = box.querySelector('#orcpw'); input.focus();
-      const finish = v => { box.remove(); resolve(v); };
-      box.querySelector('form').addEventListener('submit', e => { e.preventDefault(); finish(input.value); });
-      box.querySelector('#orccancel').addEventListener('click', () => finish(null));
+      box.querySelector('form').addEventListener('submit', e => { e.preventDefault(); const v = { password: input.value, remember: box.querySelector('#orcrem').checked }; box.remove(); resolve(v); });
     });
   }
 
-  async function login() {
-    let message = 'This control needs a login.';
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const c = await (await nativeFetch('/api/v1/auth/challenge', { cache: 'no-store' })).json();
-      const password = await ask(message, c.default_password);
-      if (password === null) return false;
-      await new Promise(r => setTimeout(r, 30));   // let the dialog paint before the key derivation
-      const key = pbkdf2(enc.encode(password), unhex(c.salt), c.iterations), nonce = unhex(c.nonce);
+  // silent: try the remembered key only (no screen). Otherwise ask until the node accepts the password; an unreachable node is retried.
+  async function login(silent) {
+    let message = 'Log in to control this node.';
+    for (;;) {
+      let c;
+      try { c = await (await nativeFetch('/api/v1/auth/challenge', { cache: 'no-store' })).json(); }
+      catch (e) { if (silent) return false; message = 'Cannot reach the node. Retrying...'; await new Promise(r => setTimeout(r, 2000)); continue; }
+      let key, keepIt = false, gestured = false;
+      if (silent) {
+        const m = remembered();
+        if (!m || m.salt !== c.salt) return false;
+        key = unhex(m.key);
+      } else {
+        const a = await ask(message, c.default_password);
+        await new Promise(r => setTimeout(r, 30));   // let the screen paint before the key derivation
+        key = pbkdf2(enc.encode(a.password), unhex(c.salt), c.iterations); keepIt = a.remember; gestured = true;
+      }
+      const nonce = unhex(c.nonce);
       const r = await nativeFetch('/api/v1/auth/login', { method: 'POST', body: 'nonce=' + c.nonce + '&proof=' + hex(loginProof(key, nonce)) });
       const j = await r.json().catch(() => ({}));
       if (r.ok && j.ok) {
-        if (j.device !== hex(deviceProof(key, nonce))) { message = 'The node did not prove it knows the password.'; continue; }
-        session = { sid: j.session, key: sessionKey(key, nonce), seq: 0 }; keep(); return true;
+        if (j.device !== hex(deviceProof(key, nonce))) { if (silent) return false; message = 'The node did not prove it knows the password.'; continue; }
+        session = { sid: j.session, key: sessionKey(key, nonce), seq: 0 }; keep();
+        if (keepIt) remember(key, c.salt); else if (!silent) forget();
+        armAudio(gestured);
+        return true;
       }
+      if (silent) { forget(); return false; }   // the remembered key no longer matches (password changed): ask
       message = j.error === 'login_failed' ? 'Wrong password.' : j.error && j.error.indexOf('throttled') === 0 ? 'Too many tries: wait a few seconds. ' + j.error : 'Login failed: ' + (j.error || r.status);
     }
-    return false;
   }
+  const needLogin = () => { loginWait = loginWait || login(true).then(ok => ok || login(false)).finally(() => { loginWait = null; }); return loginWait; };
 
   async function signedFetch(input, init) {
     const url = new URL(typeof input === 'string' ? input : input.url, location.href);
     const body = init && typeof init.body === 'string' ? enc.encode(init.body) : new Uint8Array(0);
     for (let tries = 0; tries < 2; tries++) {
-      if (!session) { loginWait = loginWait || login().finally(() => { loginWait = null; }); if (!(await loginWait)) return new Response('{"ok":false,"error":"login_cancelled"}', { status: 401, headers: { 'Content-Type': 'application/json' } }); }
+      if (!session) await needLogin();
       const seq = ++session.seq, target = url.pathname + url.search;
       const headers = Object.assign({}, init && init.headers, { 'X-Orc-Session': session.sid, 'X-Orc-Seq': String(seq), 'X-Orc-Sig': sign(session.key, seq, 'POST', target, body) });
       keep();
@@ -146,5 +181,23 @@
     chain = run.catch(() => {});
     return run;
   };
-  window.OrcLogin = { logout() { session = null; keep(); } };
+  // First connect always goes to the login: with no session the login screen comes up as soon as the page exists.
+  const gate = () => { if (!session) needLogin(); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', gate); else gate();
+  if (session) armAudio(false);   // a session carried over a reload: the first tap starts the browser audio
+
+  async function logout() {
+    try { if (session) await signedFetch('/api/v1/auth/logout', { method: 'POST' }); } catch (e) { /* ends locally anyway */ }
+    session = null; keep(); forget(); location.reload();
+  }
+  const logoutButton = () => {
+    const b = document.createElement('button');
+    b.textContent = 'Log out'; b.type = 'button';
+    b.style.cssText = 'position:fixed;right:6px;bottom:6px;z-index:9000;opacity:.55;padding:2px 8px;font:12px sans-serif;background:#0b1620;color:#e5e7eb;border:1px solid #34d399;border-radius:4px;cursor:pointer';
+    b.addEventListener('click', logout);
+    for (const type of ['keydown', 'keypress', 'keyup']) b.addEventListener(type, e => e.stopPropagation());
+    document.body.appendChild(b);
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', logoutButton); else logoutButton();
+  window.OrcLogin = { logout };
 })(typeof window !== 'undefined' ? window : globalThis);
