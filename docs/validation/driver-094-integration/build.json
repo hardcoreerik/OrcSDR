@@ -1,0 +1,23 @@
+{
+  "driver_revision": "43474869e061a78c209091f9b3a65c498ae64fb4",
+  "firmware_code_revision": "116626b1",
+  "sdk": "ESP-IDF 5.5.4",
+  "embedded_c6_image": false,
+  "sdk_hal_override": false,
+  "existing_repo_m5gfx_hosted_patches": true,
+  "image_bytes": 4329952,
+  "image_sha256": "aebf6b7986dd22adcc528f9d0c3477a54f45daba81fcdd65281f340e2eebfc16",
+  "managed_source_lf_normalized_sha256": {
+    "src/esp_rtl_sdr.cpp": "006d7603c243ee51798259d5be7219b3600a6956a8fcf585e83be8f3a208b6e7",
+    "include/esp_rtl_sdr.h": "fe1478ab9dcf731262739d54b612a209fc149b58d65a57d9b881ad32438897a5"
+  },
+  "physical_validation": false,
+  "waveshare_full_radio_build": false,
+  "review_fix_build": {
+    "firmware_code_revision": "34b04c04",
+    "image_bytes": 4330160,
+    "image_sha256": "6b9c112d3e358e8487a87fcc947815b0c75a7895e1ae1f1666361a916697a0cd",
+    "compile_link_post_link": "passed",
+    "new_flash": false
+  }
+}

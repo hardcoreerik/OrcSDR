@@ -17,6 +17,10 @@ on:
       - 'tests/map_worker_startup_test.py'
       - 'tests/map_download_task_lifetime_test.py'
       - 'tools/test-tab5-cadence-history.sh'
+      - 'tools/test_home_receiver_header.py'
+      - 'tools/test_iq_diagnostic_rate_gate.py'
+      - 'tools/test_e4000_gain_serial.py'
+      - 'tools/tab5_exact_response.py'
       - '.github/workflows/tab5-cadence-history-tests.yml'
   workflow_dispatch:
 
@@ -31,3 +35,10 @@ jobs:
         with:
           persist-credentials: false
       - run: bash tools/test-tab5-cadence-history.sh
+      - name: Verify connected receiver label and bounded Home redraw
+        run: python3 tools/test_home_receiver_header.py "$RUNNER_TEMP/home-receiver-header"
+      - name: Verify diagnostic rate and serial parsers (no hardware)
+        run: |
+          python3 tools/test_iq_diagnostic_rate_gate.py
+          python3 tools/test_e4000_gain_serial.py --self-check
+          python3 tools/tab5_exact_response.py

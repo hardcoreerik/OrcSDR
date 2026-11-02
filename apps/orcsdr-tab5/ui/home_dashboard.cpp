@@ -233,7 +233,9 @@ void draw_header_status() {
        kHeaderStatusX + 54, y + 38, current.wifi_connected ? kCyan : TFT_ORANGE, 1);
   M5.Display.drawFastVLine(kHeaderStatusX + 114, y + 8, kHeaderStatusH - 16, kDim);
   draw_usb_icon(kHeaderStatusX + 135, y + 30, current.driver_ready ? kCyan : kDim);
-  text("RTL-SDR", kHeaderStatusX + 148, y + 17, TFT_WHITE, 2);
+  // The USB model occupies a bounded 90-pixel slot; long names use the small font.
+  text(current.receiver, kHeaderStatusX + 148, y + 17, TFT_WHITE,
+       strlen(current.receiver) > 7 ? 1 : 2);
   text(current.driver_ready ? "READY" : "NOT READY", kHeaderStatusX + 158, y + 38,
        current.driver_ready ? kCyan : TFT_ORANGE, 1);
   M5.Display.drawFastVLine(kHeaderStatusX + 238, y + 8, kHeaderStatusH - 16, kDim);
@@ -517,6 +519,12 @@ int gain_step_index() {
   return best;
 }
 
+const char* gain_unavailable_message() {
+  if (!current.driver_ready) return "No receiver connected.";
+  if (current.gain_direct_sampling) return "Direct sampling: gain available from 24 MHz.";
+  return "Gain control unavailable for this tuner or mode.";
+}
+
 void draw_gain_popup() {
   M5.Display.fillRoundRect(kPopX, kPopY, kPopW, kPopH, 12, TFT_BLACK);
   M5.Display.drawRoundRect(kPopX, kPopY, kPopW, kPopH, 12, kCyan);
@@ -532,8 +540,7 @@ void draw_gain_popup() {
                current.rtl_agc, current.driver_ready && current.rtl_agc_available);
   popup_button(kCloseX, kCloseW, "CLOSE", false, true);
   if (!gain || current.gain_step_count < 2) {
-    text(current.driver_ready ? "Tuner gain is not available at this frequency."
-                              : "No receiver connected.",
+    text(gain_unavailable_message(),
          kMinusX, kSliderY + kSliderH / 2, TFT_LIGHTGREY, 2);
   } else {
     char value[48];
@@ -1029,7 +1036,7 @@ void update(const Snapshot& snapshot) {
   current = snapshot;
   const bool covered = gain_popup || filter_popup || mode_popup;   // a popup is over the lower half
   M5.Display.startWrite();
-  if (status_changed) draw_header_status();
+  if (status_changed || receiver_changed) draw_header_status();
   if (tuner_changed) draw_band_label();
   if (covered) {
     if (mode_popup && tuner_changed) draw_mode_popup();

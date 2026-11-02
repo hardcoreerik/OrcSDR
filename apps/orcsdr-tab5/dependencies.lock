@@ -1,16 +1,21 @@
 dependencies:
   esp_rtl_sdr:
-    component_hash: 203bcd670de138b1243c04db9d6359d0a408214777f72e4f0bbf9d2c6a1eaa15
+    component_hash: 8f56e2b3f2a77683215b17e90b76e0ae26d8aa5ae676d04fb901ed3e8503db2f
     dependencies:
     - name: idf
       version: '>=5.5.0'
+    - name: espressif/usb
+      rules:
+      - if: idf_version >=6.0
+      version: 1.6.0
     source:
       git: https://github.com/hardcoreerik/esp-rtl-sdr.git
       path: .
       type: git
     targets:
     - esp32p4
-    version: 31a159df4f006a837d5041029bc6d1bc63520234
+    - esp32s31
+    version: 43474869e061a78c209091f9b3a65c498ae64fb4
   espressif/eppp_link:
     component_hash: c1369b37f2b0b427b198ae14e07e7547d3da92b95fe4dc7f949e5de560b35f21
     dependencies:
@@ -153,6 +158,6 @@ direct_dependencies:
 - m5stack/m5gfx
 - m5stack/m5unified
 - orcmaps
-manifest_hash: 6659cbf43d5f87360c97bb42f22f68ae79784241dc9dc26df33c94d35e1e068d
+manifest_hash: 3e69c55b0bf8bc5a721fc559f40963355375278a91027bb4cd18002b38b5a609
 target: esp32p4
 version: 2.0.0

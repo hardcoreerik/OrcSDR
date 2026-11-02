@@ -52,7 +52,7 @@ param(
   [string]$IqBand = 'FM',
   [ValidateRange(24000, 1766000000)]
   [uint32]$IqFrequency = 99100000,
-  [ValidateRange(0, 496)]
+  [ValidateRange(-10, 496)]
   [Nullable[int]]$IqGainTenthDb,
   [string]$IqOutputPath,
   [string]$IqAntenna,
@@ -61,7 +61,7 @@ param(
   [string]$GainSweepBand = 'FM',
   [ValidateRange(24000000, 1766000000)]
   [uint32]$GainSweepFrequency = 99100000,
-  [ValidateRange(0, 496)]
+  [ValidateRange(-10, 496)]
   [int[]]$GainSweepGains,
   [ValidateRange(100, 30000)]
   [int]$GainSweepDwellMs = 500,
@@ -947,7 +947,7 @@ function Capture-ResetEvidence {
 }
 
 function ConvertFrom-DriverStatus([string]$Line) {
-  $pattern = 'version=(\S+) state=(\S+) profile=(\d+) profile_name="([^"]+)" provisional=([01]) device_caps=(0x[0-9a-fA-F]+) library_caps=(0x[0-9a-fA-F]+).*gain_auto_cap=([01]) rtl_agc_cap=([01]) gain_cap=([01]) bias_cap=([01]) mode=(AUTO|MANUAL) gain_tenth_db=(\d+) rtl_agc=([01]) bias=([01]) bytes=(\d+) blocks=(\d+) effective_sps=(\d+) overruns=(\d+) drops=(\d+) shadow_ok=([01]) metrics_ok=([01]) frequency_hz=(\d+) frequency_ok=([01]) route=(\S+)'
+  $pattern = 'version=(\S+) state=(\S+) profile=(\d+) profile_name="([^"]+)" provisional=([01]) device_caps=(0x[0-9a-fA-F]+) library_caps=(0x[0-9a-fA-F]+).*gain_auto_cap=([01]) rtl_agc_cap=([01]) gain_cap=([01]) bias_cap=([01]) mode=(AUTO|MANUAL) gain_tenth_db=(-?\d+) rtl_agc=([01]) bias=([01]) bytes=(\d+) blocks=(\d+) effective_sps=(\d+) overruns=(\d+) drops=(\d+) shadow_ok=([01]) metrics_ok=([01]) frequency_hz=(\d+) frequency_ok=([01]) route=(\S+)'
   if ($Line -notmatch $pattern) { throw "Malformed driver status: $Line" }
   $status = [pscustomobject]@{
     Version = $Matches[1]; State = $Matches[2]; Profile = [int]$Matches[3]
@@ -967,6 +967,17 @@ function ConvertFrom-DriverStatus([string]$Line) {
     $status | Add-Member -NotePropertyName BwApplied -NotePropertyValue ([uint32]$Matches[2])
   }
   return $status
+}
+function ConvertFrom-OffsetStatus([string]$Line) {
+  if ($Line -notmatch '^RTL_OFFSET_STATUS cap=1 requested=([01]) applied_offset_hz=(\d+) tuner_lo_hz=(\d+) iq_center_hz=(\d+) correction=hardware additional_offset_mixer=0 result=ESP_OK$') {
+    throw "Malformed or unapplied offset metadata: $Line"
+  }
+  return [pscustomobject]@{ Requested = [bool][int]$Matches[1]; AppliedOffset = [uint32]$Matches[2]; TunerLo = [uint32]$Matches[3]; IqCenter = [uint32]$Matches[4] }
+}
+function Get-IqRequestedDriverRevision([string]$Manifest) {
+  $match = [regex]::Match($Manifest, '(?m)^  esp_rtl_sdr:\r?\n(?:^    [^\r\n]*\r?\n)*?^    version: (["'']?)([0-9a-fA-F]{40})\1[ \t]*(?:\r?\n|$)')
+  if (!$match.Success) { throw 'IQ provenance requires an exact driver commit pin in the application manifest.' }
+  return $match.Groups[2].Value.ToLowerInvariant()
 }
 function Get-DriverRegressionFrequencies([int]$Profile) {
   # Match rtl_profile_supports_rf_hz: Nooelec has narrower model limits.
@@ -1142,6 +1153,8 @@ function Invoke-SelfCheck {
     throw 'AM signal parser failed.'
   }
   $driver = ConvertFrom-DriverStatus 'RTL_DRIVER_STATUS installed=1 version=0.8.0-rc3 state=STREAMING profile=2 profile_name="blog_v3_r820t2" provisional=1 device_caps=0x0001fbd9 library_caps=0x000fffff delivery=callback gain_auto_cap=0 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=297 rtl_agc=0 bias=0 bytes=123456 blocks=42 effective_sps=959488 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=23999999 frequency_ok=1 route=DIRECT_Q'
+  $negativeGain = ConvertFrom-DriverStatus 'RTL_DRIVER_STATUS installed=1 version=0.8.0-rc3 state=STREAMING profile=2 profile_name="blog_v3_r820t2" provisional=1 device_caps=0x0001fbd9 library_caps=0x000fffff delivery=callback gain_auto_cap=0 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=123456 blocks=42 effective_sps=959488 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=23999999 frequency_ok=1 route=DIRECT_Q'
+  if ($negativeGain.Gain -ne -10) { throw 'Negative E4000 gain parser failed.' }
   if ($driver.Version -ne '0.8.0-rc3' -or $driver.Profile -ne 2 -or
       $driver.Frequency -ne 23999999 -or $driver.FrequencyOk -ne 1 -or
       $driver.Route -ne 'DIRECT_Q') {
@@ -1204,6 +1217,16 @@ function Invoke-SelfCheck {
       $protocolStream.ReadByte() -ne 13) {
     throw 'Binary protocol line reader consumed payload bytes.'
   }
+  $offset = ConvertFrom-OffsetStatus 'RTL_OFFSET_STATUS cap=1 requested=1 applied_offset_hz=2040000 tuner_lo_hz=97960000 iq_center_hz=100000000 correction=hardware additional_offset_mixer=0 result=ESP_OK'
+  if (!$offset.Requested -or $offset.AppliedOffset -ne 2040000 -or $offset.TunerLo -ne 97960000 -or $offset.IqCenter -ne 100000000) { throw 'Offset metadata parse failed.' }
+  $revision = 'da22090752660b6689b706716771d8cd8d35f665'
+  if ((Get-IqRequestedDriverRevision "dependencies:`n  esp_rtl_sdr:`n    git: local`n    version: $revision`n") -ne $revision) { throw 'Driver revision parse failed.' }
+  foreach ($quote in @([string][char]34, [string][char]39)) {
+    if ((Get-IqRequestedDriverRevision "dependencies:`n  esp_rtl_sdr:`n    version: $quote$revision$quote`n") -ne $revision) { throw 'Quoted driver revision parse failed.' }
+  }
+  $rejectedRevision = $false
+  try { [void](Get-IqRequestedDriverRevision "dependencies:`n  esp_rtl_sdr:`n    version: main`n") } catch { $rejectedRevision = $true }
+  if (!$rejectedRevision) { throw 'Unpinned driver accepted as IQ provenance.' }
   Write-SoakLine 'RTL_UI_SOAK_SELF_CHECK pass=1'
 }
 
@@ -1535,6 +1558,13 @@ function Invoke-IqDiagnosticCapture {
   $start = ConvertFrom-IqDiagnosticStart $startLine
   $doneLine = Read-MatchingLine '^RTL_IQ_DONE storage=psram source=diagnostic ' 15
   $driverAfterCapture = Get-DriverStatus
+  $offsetLine = $null
+  $offsetState = $null
+  if (($driverAfterCapture.DeviceCaps -band 0x200000) -ne 0) {
+    $offsetLine = Send-And-Wait 'RTL_DRIVER STATUS' '^RTL_OFFSET_STATUS ' 10
+    $offsetState = ConvertFrom-OffsetStatus $offsetLine
+    if ($offsetState.IqCenter -ne $driverAfterCapture.Frequency) { throw 'Offset metadata IQ center disagrees with driver frequency.' }
+  }
   $healthAfterCapture = Get-HealthStatus
   [void](Send-And-Wait 'RTL_STOP' '^RTL_STOP_RESULT ' 10)
 
@@ -1563,10 +1593,16 @@ function Invoke-IqDiagnosticCapture {
     capture_started_ms = $start.StartedMs
     dongle_profile = $driverAfterCapture.ProfileName
     driver_version = $driverAfterCapture.Version
-    driver_base_commit = 'e1ca40e04f8140245d56837cd149bf901f771441'
-    driver_instrumentation_commit = '94ecd187070b39f370c5d7f0dc55a56762dd6c86'
+    driver_requested_revision = Get-IqRequestedDriverRevision ([IO.File]::ReadAllText((Join-Path $PSScriptRoot '../main/idf_component.yml')))
+    driver_revision_evidence = 'application manifest pin; running firmware requires separate build/flash provenance'
     requested_display_rf_hz = $IqFrequency
-    reported_driver_lo_hz = $driverAfterCapture.Frequency
+    reported_driver_lo_hz = $driverAfterCapture.Frequency # Legacy name: effective IQ center, not physical LO.
+    hardware_offset_status = $offsetLine
+    hardware_offset_requested = if ($offsetState) { $offsetState.Requested } else { $null }
+    hardware_offset_hz = if ($offsetState) { $offsetState.AppliedOffset } else { $null }
+    physical_tuner_lo_hz = if ($offsetState) { $offsetState.TunerLo } else { $null }
+    effective_iq_center_hz = $driverAfterCapture.Frequency
+    additional_offset_mixer = if ($offsetState) { 0 } else { $null }
     expected_driver_lo_hz = $expectedDriverFrequency
     sample_rate_sps = $start.Rate
     tuner_mode = $driverAfterCapture.Route
