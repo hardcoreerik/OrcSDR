@@ -18,6 +18,7 @@ constexpr Descriptor kEntries[] = {
     {Id::pocsag, "POCSAG", "Pager receive, CAPCODE IDs, and message archive", Category::digital, true},
     {Id::ft8, "FT8 RX", "Receive-only FT8 band hunter and decode history", Category::digital, true},
     {Id::acars, "ACARS", "VHF aircraft datalink messages and message history", Category::aviation, true},
+    {Id::hfdl, "HFDL (LAB)", "HF aviation decoder in development: no live frames yet", Category::aviation, false},
     {Id::airband, "AIRBAND", "AM aviation scanner and airport channels", Category::aviation, true},
     {Id::marine, "MARINE", "VHF marine receiver", Category::audio, true},
     {Id::satellite, "SATELLITE", "Satellite receive workspace", Category::digital, true},
@@ -106,9 +107,9 @@ bool self_check() {
                      g_recent[1] == Id::fm && !record_open(Id::p25);
   g_recent = saved;
   g_recent_count = saved_count;
-  return loaded && moved && std::size(kEntries) == 19 && find(Id::ft8) != nullptr && find(Id::rf_lab) != nullptr &&
+  return loaded && moved && std::size(kEntries) == 20 && find(Id::ft8) != nullptr && find(Id::rf_lab) != nullptr &&
          find(Id::am) != nullptr &&
-         find(Id::wifi_analysis) != nullptr && find(Id::pocsag) != nullptr && find(Id::sstv) != nullptr && find(Id::acars) != nullptr && find(Id::dead_air) != nullptr;
+         find(Id::wifi_analysis) != nullptr && find(Id::pocsag) != nullptr && find(Id::sstv) != nullptr && find(Id::acars) != nullptr && find(Id::hfdl) != nullptr && find(Id::dead_air) != nullptr;
 }
 
 }  // namespace orcsdr::dashboards
