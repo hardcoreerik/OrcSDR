@@ -1,0 +1,26 @@
+[
+  {
+    "name": "source-off-minus1",
+    "tone_dbfs": -81.50524580870209,
+    "sha256": "b9b83ddbab011234d89d8d073501999a780c08c693726b08c64937d0164c3907",
+    "clip_fraction": 0.0
+  },
+  {
+    "name": "live-0-gain-140",
+    "tone_dbfs": -27.453068625228212,
+    "sha256": "7989d249271c116f6b6d9c5a8bd56bfa00dc7bf05200168fb39d089ea76aab22",
+    "clip_fraction": 0.0
+  },
+  {
+    "name": "live-1-gain-165",
+    "tone_dbfs": -26.37244425681957,
+    "sha256": "014e011cc2866970f7e5f7aadf5fed4d5e255070fbe64c6aa4523506f514a6cb",
+    "clip_fraction": 0.0
+  },
+  {
+    "name": "live-2-gain-140",
+    "tone_dbfs": -27.55953439724248,
+    "sha256": "c06e159cdc4f5af571b4b9a93ea7f599d88605c55235e1f0fd344da08c02dc59",
+    "clip_fraction": 0.0
+  }
+]
