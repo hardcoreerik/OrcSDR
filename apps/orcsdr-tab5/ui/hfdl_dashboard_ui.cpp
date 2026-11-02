@@ -2,7 +2,7 @@
 #include <algorithm>
 
 namespace orcsdr::hfdl_ui {
-void Controller::reset(){detail_open_=false;revision_=1;detail_record_={};}
+void Controller::reset(){detail_open_=false;revision_=1;detail_record_=MessageRecord{};}
 bool Controller::open_detail(uint32_t seq,Model& model){
   MessageRecord found{};
   if(!model.find_message(seq,&found))return false;
