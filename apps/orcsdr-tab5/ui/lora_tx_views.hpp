@@ -41,6 +41,11 @@ constexpr bool send_rect(int x, int y, bool vertical) {
   return vertical ? hit(x, y, 290, 1026, 244, 72)
                   : hit(x, y, 356, 540, 286, 62);
 }
+inline bool verified_rx_event(const Snapshot& s) {
+  for (uint8_t i = 0; i < s.event_count && i < kEventCapacity; ++i)
+    if (s.events[i].verified) return true;
+  return false;
+}
 constexpr const char* page_name(Page page) {
   switch (page) {
     case Page::operator_panel: return "OPERATOR";
@@ -203,11 +208,11 @@ template <typename G> void draw_values(G& gfx, const Snapshot& s, Page page,
       label(gfx, lora_tx::denial_name(lora_tx::can_arm(s.tx)), 48, 689, kMuted, 1);
     } else if (page == Page::messenger) {
       gfx.fillRect(48, 636, 470, 160, kPanel);
-      if (s.event_count) {
+      if (verified_rx_event(s)) {
         label(gfx, "RX: VERIFIED EVENT PRESENT", 48, 663, kGreen, 1);
         label(gfx, "Select TRAFFIC for payload details", 48, 701, kMuted, 1);
       } else label(gfx, "NO VERIFIED PACKETS", 48, 663, kMuted, 2);
-      label(gfx, "TX: NO PACKETS SENT", 48, 753, kMuted, 1);
+      label(gfx, "TX: HISTORY NOT CONNECTED", 48, 753, kMuted, 1);
     } else {
       gfx.fillRect(48, 879, 470, 99, kPanel);
       label(gfx, freq, 48, 905, kYellow, 2);
@@ -228,9 +233,9 @@ template <typename G> void draw_values(G& gfx, const Snapshot& s, Page page,
           s.tx.operator_armed ? kYellow : kMuted, 2);
   } else if (page == Page::messenger) {
     gfx.fillRect(658, 318, 544, 175, kPanel);
-    label(gfx, s.event_count ? "RX: VERIFIED EVENT PRESENT" : "RX: NO VERIFIED PACKETS",
-          660, 343, s.event_count ? kGreen : kMuted, 2);
-    label(gfx, "TX: NO PACKETS SENT", 660, 393, kMuted, 2);
+    label(gfx, verified_rx_event(s) ? "RX: VERIFIED EVENT PRESENT" : "RX: NO VERIFIED PACKETS",
+          660, 343, verified_rx_event(s) ? kGreen : kMuted, 2);
+    label(gfx, "TX: HISTORY NOT CONNECTED", 660, 393, kMuted, 2);
     label(gfx, lora_tx::denial_name(lora_tx::can_arm(s.tx)),
           660, 451, kYellow, 1);
   } else {
@@ -238,7 +243,7 @@ template <typename G> void draw_values(G& gfx, const Snapshot& s, Page page,
     label(gfx, freq, 835, 334, kYellow, 2);
     label(gfx, lora_tx::readiness_name(s.tx.readiness), 835, 379, kYellow, 1);
     label(gfx, lora_tx::denial_name(lora_tx::can_arm(s.tx)), 835, 423, kMuted, 1);
-    label(gfx, "No fabricated IQ spectrum", 67, 503, kMuted, 1);
+    label(gfx, "RTL IQ PLOT NOT CONNECTED", 67, 503, kMuted, 1);
   }
 }
 }  // namespace orcsdr::lora::tx_views
