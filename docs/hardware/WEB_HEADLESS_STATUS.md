@@ -22,7 +22,7 @@ The same OrcSDR Web page (the bundled M5GFX/WebAssembly UI) is served from all t
 `p4_web_auth_test.py <ip>` (25 login/signature checks), `orclogin_test.js <ip>` (crypto vectors plus control routes), `web_iq_test.js <ip> [hz] [secs] [wide_sps]` (channel IQ), `web_iq_cycle_test.js <ip> [cycles]` (start/stop soak), `p4_rtltcp_test.py <ip>` (rtl_tcp; needs `RTL_TCP ON` over serial). Each prints PASS/FAIL lines and exits non-zero on failure. They log in with the factory password and log out at the end.
 
 ## Known open items
-- A channel start occasionally delivers only one frame in the first 0.4 s (seen once in 40 cycles on COM29 and once in 20 on COM8); cause not found.
+- A channel start used to end itself in about 5 % of cycles (the stop frame was the only frame): blocks already queued with the old centre arrived after the retune and looked like "someone else retuned". Fixed: mismatched blocks are ignored for the first 1.5 s. After the fix, 98 to 99 of 100 cycles had frames within 0.4 s (the others had none yet: the retune takes a moment), and 60 of 60 had frames within 1.2 s.
 - Wi-Fi through the C6 sustains about 3 to 5 Mbit/s in every test (HTTP download, rtl_tcp, channel); why is not determined.
 - The page labels the network "Wi-Fi" on a wired board (cosmetic, inside the bundle).
 - `fm/audio` (the page's other WebSocket) is not served; the channel path does not need it.

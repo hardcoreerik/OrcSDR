@@ -48,6 +48,7 @@ struct Channel {
   size_t fill = 0;
   uint8_t frame[kHeader + kPairs * 2];
   bool ended = false;
+  int64_t start_us = 0;  // when the sink was added: blocks that were already queued with the old centre arrive for a moment after a retune
 };
 
 httpd_handle_t g_srv = nullptr;
@@ -107,6 +108,7 @@ inline uint8_t out_byte(Cic& s, float scale) {
 void on_block(const radio::IqBlock& b, void* ctx) {
   Channel& c = *static_cast<Channel*>(ctx);
   if (c.ended || g_fd.load() < 0) return;
+  if ((b.sample_rate != c.in_rate || b.center_hz != c.center_hz) && esp_timer_get_time() - c.start_us < 1500000) return;  // still draining blocks from before the retune
   if (b.sample_rate != c.in_rate || b.center_hz != c.center_hz) {  // someone else retuned or changed the rate: the window is no longer what the page was told
     c.fill = 0;
     send_frame(c, 0, false);
@@ -317,6 +319,7 @@ Start start_channel(int rx, uint32_t hz, uint32_t wide_center_hz, uint32_t wide_
   spec.queue_bytes = 512 * 1024;
   spec.task_core = 0;
   spec.task_priority = 5;  // above the screen task (4): on a board with a display it would otherwise starve this task
+  c->start_us = esp_timer_get_time();
   g_sink = radio::add_sink(spec);
   if (g_sink < 0) {
     heap_caps_free(c);
