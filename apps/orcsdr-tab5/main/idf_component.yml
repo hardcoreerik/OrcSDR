@@ -12,7 +12,7 @@ dependencies:
   esp_rtl_sdr:
     git: F:/Ai/ESP-RTL-SDR/e4000-review
     # Local hardware candidate; not published or merged.
-    version: a00e1305eae5fb46f1c440f94d8a4d5e470df658
+    version: c4936da7c4261e2a64b65e56652df1b5e1bb8dd5
   orcmaps:
     git: https://github.com/hardcoreerik/OrcMaps.git
     # Development candidate: offscreen feature rejection; native timing pending.

@@ -1,0 +1,3192 @@
+[
+  {
+    "t": 1793595974.2351823,
+    "kind": "source",
+    "commands": [
+      "output off",
+      "pause",
+      "mode low output",
+      "pause",
+      "level -40",
+      "modulation off",
+      "sweep cw 100100000",
+      "resume",
+      "output off"
+    ],
+    "response": "output off 'output off\\r\\nch> '\npause 'pause\\r\\nch> '\nmode low output 'mode low output\\r\\nch> '\npause 'pause\\r\\nch> '\nlevel -40 'level -40\\r\\nch> '\nmodulation off 'modulation off\\r\\nch> '\nsweep cw 100100000 'sweep cw 100100000\\r\\nch> '\nresume 'resume\\r\\nch> '\noutput off 'output off\\r\\nch> '\n"
+  },
+  {
+    "t": 1793595974.5715475,
+    "kind": "serial",
+    "command": "RTL_HEALTH",
+    "response": "RTL_HEALTH_STATUS uptime_ms=25043 free_heap=22403376 min_free_heap=22401624 dma_free=32871 dma_min=31235 dma_largest=29696 tasks=25 main_stack_hwm=6468 reset_reason=11 internal_free=72419 internal_min=70783 internal_largest=31744 psram_free=22360864 psram_largest=22020096"
+  },
+  {
+    "t": 1793595974.6403441,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=IDLE profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=AUTO gain_tenth_db=0 rtl_agc=0 bias=0 bytes=0 blocks=0 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=96100000 frequency_ok=0 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595974.7546911,
+    "kind": "serial",
+    "command": "RTL_TUNE FM 100000000",
+    "response": "RTL_TUNE_OK band=FM frequency_hz=100000000"
+  },
+  {
+    "t": 1793595974.88753,
+    "kind": "register",
+    "line": "W (26869) esp_rtl_sdr: E4000_START_REG stage=before_init error=repeater"
+  },
+  {
+    "t": 1793595975.0343387,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=AUTO gain_tenth_db=0 rtl_agc=0 bias=0 bytes=0 blocks=0 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=96100000 frequency_ok=0 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595975.3376198,
+    "kind": "register",
+    "line": "I (27222) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595975.3389392,
+    "kind": "register",
+    "line": "I (27226) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595975.3401754,
+    "kind": "register",
+    "line": "I (27231) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.3412077,
+    "kind": "register",
+    "line": "I (27235) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x11 value=0x9a result=0"
+  },
+  {
+    "t": 1793595975.3423347,
+    "kind": "register",
+    "line": "I (27239) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x12 value=0x07 result=0"
+  },
+  {
+    "t": 1793595975.3434486,
+    "kind": "register",
+    "line": "I (27243) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x14 value=0x08 result=0"
+  },
+  {
+    "t": 1793595975.344508,
+    "kind": "register",
+    "line": "I (27247) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x15 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.3454795,
+    "kind": "register",
+    "line": "I (27251) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595975.346626,
+    "kind": "register",
+    "line": "I (27255) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595975.3476844,
+    "kind": "register",
+    "line": "I (27259) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x1a value=0x10 result=0"
+  },
+  {
+    "t": 1793595975.34871,
+    "kind": "register",
+    "line": "I (27263) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x20 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.349735,
+    "kind": "register",
+    "line": "I (27267) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595975.351063,
+    "kind": "register",
+    "line": "I (27272) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.35226,
+    "kind": "register",
+    "line": "I (27276) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.3533387,
+    "kind": "register",
+    "line": "I (27280) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x2a value=0x2d result=0"
+  },
+  {
+    "t": 1793595975.3543541,
+    "kind": "register",
+    "line": "I (27284) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x2b value=0x21 result=0"
+  },
+  {
+    "t": 1793595975.3553486,
+    "kind": "register",
+    "line": "I (27288) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.3563306,
+    "kind": "register",
+    "line": "I (27292) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595975.357314,
+    "kind": "register",
+    "line": "I (27296) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.3584535,
+    "kind": "register",
+    "line": "I (27300) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.3595061,
+    "kind": "register",
+    "line": "I (27304) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595975.360597,
+    "kind": "register",
+    "line": "I (27307) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595975.3616774,
+    "kind": "register",
+    "line": "I (27310) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.3627415,
+    "kind": "register",
+    "line": "I (27312) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.3638053,
+    "kind": "register",
+    "line": "I (27315) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595975.3649383,
+    "kind": "register",
+    "line": "I (27317) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595975.3660238,
+    "kind": "register",
+    "line": "I (27320) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595975.3697586,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=AUTO gain_tenth_db=0 rtl_agc=0 bias=0 bytes=0 blocks=0 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=96100000 frequency_ok=0 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595975.6727755,
+    "kind": "register",
+    "line": "I (27354) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595975.6740694,
+    "kind": "register",
+    "line": "I (27358) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595975.6751359,
+    "kind": "register",
+    "line": "I (27362) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.6762202,
+    "kind": "register",
+    "line": "I (27366) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x11 value=0xec result=0"
+  },
+  {
+    "t": 1793595975.677327,
+    "kind": "register",
+    "line": "I (27370) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x12 value=0x1f result=0"
+  },
+  {
+    "t": 1793595975.6784077,
+    "kind": "register",
+    "line": "I (27375) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x14 value=0x08 result=0"
+  },
+  {
+    "t": 1793595975.67951,
+    "kind": "register",
+    "line": "I (27379) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x15 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.6807313,
+    "kind": "register",
+    "line": "I (27383) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595975.6817918,
+    "kind": "register",
+    "line": "I (27387) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595975.6828537,
+    "kind": "register",
+    "line": "I (27391) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x1a value=0x10 result=0"
+  },
+  {
+    "t": 1793595975.6838813,
+    "kind": "register",
+    "line": "I (27395) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x20 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.685279,
+    "kind": "register",
+    "line": "I (27399) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595975.6868596,
+    "kind": "register",
+    "line": "I (27403) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.6880264,
+    "kind": "register",
+    "line": "I (27407) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.689207,
+    "kind": "register",
+    "line": "I (27411) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x2a value=0x2d result=0"
+  },
+  {
+    "t": 1793595975.6903918,
+    "kind": "register",
+    "line": "I (27416) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x2b value=0x21 result=0"
+  },
+  {
+    "t": 1793595975.69153,
+    "kind": "register",
+    "line": "I (27420) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.69263,
+    "kind": "register",
+    "line": "I (27424) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595975.6937513,
+    "kind": "register",
+    "line": "I (27428) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.6948764,
+    "kind": "register",
+    "line": "I (27432) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.6959238,
+    "kind": "register",
+    "line": "I (27436) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595975.6969635,
+    "kind": "register",
+    "line": "I (27439) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595975.6982083,
+    "kind": "register",
+    "line": "I (27442) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.6993546,
+    "kind": "register",
+    "line": "I (27444) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.7005775,
+    "kind": "register",
+    "line": "I (27446) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595975.7018187,
+    "kind": "register",
+    "line": "I (27449) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595975.7031052,
+    "kind": "register",
+    "line": "I (27451) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595975.7050369,
+    "kind": "register",
+    "line": "I (27508) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595975.706134,
+    "kind": "register",
+    "line": "I (27512) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595975.707229,
+    "kind": "register",
+    "line": "I (27516) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.7082999,
+    "kind": "register",
+    "line": "I (27521) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x11 value=0xec result=0"
+  },
+  {
+    "t": 1793595975.70941,
+    "kind": "register",
+    "line": "I (27525) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x12 value=0x1f result=0"
+  },
+  {
+    "t": 1793595975.7106988,
+    "kind": "register",
+    "line": "I (27529) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x14 value=0x08 result=0"
+  },
+  {
+    "t": 1793595975.7122743,
+    "kind": "register",
+    "line": "I (27533) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x15 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.7133658,
+    "kind": "register",
+    "line": "I (27537) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595975.7144227,
+    "kind": "register",
+    "line": "I (27541) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595975.7155535,
+    "kind": "register",
+    "line": "I (27545) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x1a value=0x10 result=0"
+  },
+  {
+    "t": 1793595975.7167213,
+    "kind": "register",
+    "line": "I (27549) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x20 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.7178628,
+    "kind": "register",
+    "line": "I (27553) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595975.7189803,
+    "kind": "register",
+    "line": "I (27557) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.7200444,
+    "kind": "register",
+    "line": "I (27562) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.7211015,
+    "kind": "register",
+    "line": "I (27566) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x2a value=0x2d result=0"
+  },
+  {
+    "t": 1793595975.7222157,
+    "kind": "register",
+    "line": "I (27570) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x2b value=0x21 result=0"
+  },
+  {
+    "t": 1793595975.7233377,
+    "kind": "register",
+    "line": "I (27574) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.7244563,
+    "kind": "register",
+    "line": "I (27578) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595975.7255867,
+    "kind": "register",
+    "line": "I (27582) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.7268865,
+    "kind": "register",
+    "line": "I (27586) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.7280416,
+    "kind": "register",
+    "line": "I (27590) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595975.729192,
+    "kind": "register",
+    "line": "I (27593) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595975.7303882,
+    "kind": "register",
+    "line": "I (27596) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.7315943,
+    "kind": "register",
+    "line": "I (27598) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595975.7327592,
+    "kind": "register",
+    "line": "I (27601) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595975.7339938,
+    "kind": "register",
+    "line": "I (27603) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595975.7351685,
+    "kind": "register",
+    "line": "I (27606) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595975.7386959,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=AUTO gain_tenth_db=0 rtl_agc=0 bias=0 bytes=0 blocks=0 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=96100000 frequency_ok=0 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595976.0413616,
+    "kind": "register",
+    "line": "I (27678) esp_rtl_sdr: E4000_GAIN_REG reg=0x1a before=0x10 expected=0x19 observed=0x19 mask=0x1f"
+  },
+  {
+    "t": 1793595976.0425992,
+    "kind": "register",
+    "line": "I (27688) esp_rtl_sdr: E4000_GAIN_REG reg=0x20 before=0x00 expected=0x01 observed=0x01 mask=0x01"
+  },
+  {
+    "t": 1793595976.0444312,
+    "kind": "register",
+    "line": "I (27698) esp_rtl_sdr: E4000_GAIN_REG reg=0x16 before=0x01 expected=0x01 observed=0x01 mask=0x7f"
+  },
+  {
+    "t": 1793595976.0458841,
+    "kind": "register",
+    "line": "I (27708) esp_rtl_sdr: E4000_GAIN_REG reg=0x17 before=0x12 expected=0x12 observed=0x12 mask=0x3f"
+  },
+  {
+    "t": 1793595976.0481832,
+    "kind": "register",
+    "line": "I (27718) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.0493526,
+    "kind": "register",
+    "line": "I (27722) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595976.0505052,
+    "kind": "register",
+    "line": "I (27726) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.0516198,
+    "kind": "register",
+    "line": "I (27730) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x11 value=0x9a result=0"
+  },
+  {
+    "t": 1793595976.052756,
+    "kind": "register",
+    "line": "I (27734) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x12 value=0x07 result=0"
+  },
+  {
+    "t": 1793595976.0539749,
+    "kind": "register",
+    "line": "I (27738) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x14 value=0x0e result=0"
+  },
+  {
+    "t": 1793595976.055247,
+    "kind": "register",
+    "line": "I (27742) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x15 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.056464,
+    "kind": "register",
+    "line": "I (27746) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.0576155,
+    "kind": "register",
+    "line": "I (27750) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595976.0587347,
+    "kind": "register",
+    "line": "I (27755) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x1a value=0x59 result=0"
+  },
+  {
+    "t": 1793595976.0597656,
+    "kind": "register",
+    "line": "I (27759) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x20 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.0608847,
+    "kind": "register",
+    "line": "I (27763) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595976.062167,
+    "kind": "register",
+    "line": "I (27767) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.0632913,
+    "kind": "register",
+    "line": "I (27771) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.0643737,
+    "kind": "register",
+    "line": "I (27775) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x2a value=0x20 result=0"
+  },
+  {
+    "t": 1793595976.0654275,
+    "kind": "register",
+    "line": "I (27779) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x2b value=0x20 result=0"
+  },
+  {
+    "t": 1793595976.0664778,
+    "kind": "register",
+    "line": "I (27783) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.0675774,
+    "kind": "register",
+    "line": "I (27787) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595976.0686808,
+    "kind": "register",
+    "line": "I (27791) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.0698986,
+    "kind": "register",
+    "line": "I (27795) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.0710356,
+    "kind": "register",
+    "line": "I (27800) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595976.0721402,
+    "kind": "register",
+    "line": "I (27802) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595976.073267,
+    "kind": "register",
+    "line": "I (27805) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.0744464,
+    "kind": "register",
+    "line": "I (27808) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.0756311,
+    "kind": "register",
+    "line": "I (27810) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595976.0768042,
+    "kind": "register",
+    "line": "I (27812) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595976.0779376,
+    "kind": "register",
+    "line": "I (27815) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595976.08675,
+    "kind": "register",
+    "line": "I (27865) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.0879672,
+    "kind": "register",
+    "line": "I (27869) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595976.089167,
+    "kind": "register",
+    "line": "I (27873) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.0903628,
+    "kind": "register",
+    "line": "I (27877) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x11 value=0x9a result=0"
+  },
+  {
+    "t": 1793595976.0914733,
+    "kind": "register",
+    "line": "I (27881) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x12 value=0x07 result=0"
+  },
+  {
+    "t": 1793595976.0925803,
+    "kind": "register",
+    "line": "I (27885) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x14 value=0x0e result=0"
+  },
+  {
+    "t": 1793595976.0937111,
+    "kind": "register",
+    "line": "I (27889) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x15 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.094827,
+    "kind": "register",
+    "line": "I (27894) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.0959482,
+    "kind": "register",
+    "line": "I (27898) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595976.0970519,
+    "kind": "register",
+    "line": "I (27902) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x1a value=0x19 result=0"
+  },
+  {
+    "t": 1793595976.098294,
+    "kind": "register",
+    "line": "I (27906) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x20 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.099439,
+    "kind": "register",
+    "line": "I (27910) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595976.100585,
+    "kind": "register",
+    "line": "I (27914) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.10195,
+    "kind": "register",
+    "line": "I (27918) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.1031888,
+    "kind": "register",
+    "line": "I (27922) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x2a value=0x20 result=0"
+  },
+  {
+    "t": 1793595976.104417,
+    "kind": "register",
+    "line": "I (27926) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x2b value=0x20 result=0"
+  },
+  {
+    "t": 1793595976.1056476,
+    "kind": "register",
+    "line": "I (27930) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.1067693,
+    "kind": "register",
+    "line": "I (27934) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595976.1079078,
+    "kind": "register",
+    "line": "I (27938) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.109025,
+    "kind": "register",
+    "line": "I (27943) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.110166,
+    "kind": "register",
+    "line": "I (27947) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595976.1113565,
+    "kind": "register",
+    "line": "I (27950) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595976.1125185,
+    "kind": "register",
+    "line": "I (27952) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.1137073,
+    "kind": "register",
+    "line": "I (27955) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.1149683,
+    "kind": "register",
+    "line": "I (27957) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595976.1164935,
+    "kind": "register",
+    "line": "I (27960) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595976.117758,
+    "kind": "register",
+    "line": "I (27962) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595976.1217306,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=AUTO gain_tenth_db=0 rtl_agc=0 bias=0 bytes=0 blocks=0 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595976.4241204,
+    "kind": "register",
+    "line": "I (28184) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.4255562,
+    "kind": "register",
+    "line": "I (28188) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595976.426832,
+    "kind": "register",
+    "line": "I (28192) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.428067,
+    "kind": "register",
+    "line": "I (28196) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x11 value=0x9a result=0"
+  },
+  {
+    "t": 1793595976.429873,
+    "kind": "register",
+    "line": "I (28200) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x12 value=0x07 result=0"
+  },
+  {
+    "t": 1793595976.4317963,
+    "kind": "register",
+    "line": "I (28204) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x14 value=0x0e result=0"
+  },
+  {
+    "t": 1793595976.4337354,
+    "kind": "register",
+    "line": "I (28208) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x15 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.4356847,
+    "kind": "register",
+    "line": "I (28212) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.4372306,
+    "kind": "register",
+    "line": "I (28217) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595976.43848,
+    "kind": "register",
+    "line": "I (28221) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x1a value=0x19 result=0"
+  },
+  {
+    "t": 1793595976.439699,
+    "kind": "register",
+    "line": "I (28225) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x20 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.4409525,
+    "kind": "register",
+    "line": "I (28229) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595976.4421937,
+    "kind": "register",
+    "line": "I (28233) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.4434624,
+    "kind": "register",
+    "line": "I (28237) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.4448617,
+    "kind": "register",
+    "line": "I (28245) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x2b value=0x20 result=0"
+  },
+  {
+    "t": 1793595976.4466767,
+    "kind": "register",
+    "line": "I (28249) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.447932,
+    "kind": "register",
+    "line": "I (28253) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595976.4492946,
+    "kind": "register",
+    "line": "I (28257) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.4506378,
+    "kind": "register",
+    "line": "I (28261) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.4518855,
+    "kind": "register",
+    "line": "I (28265) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595976.4532459,
+    "kind": "register",
+    "line": "I (28268) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595976.4546506,
+    "kind": "register",
+    "line": "I (28271) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.4562323,
+    "kind": "register",
+    "line": "I (28274) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.4576437,
+    "kind": "register",
+    "line": "I (28276) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595976.4589486,
+    "kind": "register",
+    "line": "I (28278) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595976.4603758,
+    "kind": "register",
+    "line": "I (28281) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595976.4624074,
+    "kind": "register",
+    "line": "I (28315) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.4636037,
+    "kind": "register",
+    "line": "I (28319) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595976.4648387,
+    "kind": "register",
+    "line": "I (28323) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.4662247,
+    "kind": "register",
+    "line": "I (28327) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x11 value=0xec result=0"
+  },
+  {
+    "t": 1793595976.4676807,
+    "kind": "register",
+    "line": "I (28332) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x12 value=0x1f result=0"
+  },
+  {
+    "t": 1793595976.4689767,
+    "kind": "register",
+    "line": "I (28336) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x14 value=0x0e result=0"
+  },
+  {
+    "t": 1793595976.4701786,
+    "kind": "register",
+    "line": "I (28340) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x15 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.471377,
+    "kind": "register",
+    "line": "I (28344) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.4726472,
+    "kind": "register",
+    "line": "I (28348) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595976.474154,
+    "kind": "register",
+    "line": "I (28352) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x1a value=0x19 result=0"
+  },
+  {
+    "t": 1793595976.4756618,
+    "kind": "register",
+    "line": "I (28356) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x20 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.4769285,
+    "kind": "register",
+    "line": "I (28360) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595976.4781907,
+    "kind": "register",
+    "line": "I (28364) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.4794886,
+    "kind": "register",
+    "line": "I (28368) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.4807022,
+    "kind": "register",
+    "line": "I (28372) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x2a value=0x20 result=0"
+  },
+  {
+    "t": 1793595976.4819398,
+    "kind": "register",
+    "line": "I (28377) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x2b value=0x20 result=0"
+  },
+  {
+    "t": 1793595976.483184,
+    "kind": "register",
+    "line": "I (28381) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.4844468,
+    "kind": "register",
+    "line": "I (28385) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595976.485819,
+    "kind": "register",
+    "line": "I (28389) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.4871302,
+    "kind": "register",
+    "line": "I (28393) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.4884214,
+    "kind": "register",
+    "line": "I (28397) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595976.4897478,
+    "kind": "register",
+    "line": "I (28400) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595976.4911659,
+    "kind": "register",
+    "line": "I (28403) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.4926813,
+    "kind": "register",
+    "line": "I (28405) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.494047,
+    "kind": "register",
+    "line": "I (28408) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595976.4977539,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=AUTO gain_tenth_db=0 rtl_agc=0 bias=0 bytes=0 blocks=0 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595976.8007796,
+    "kind": "register",
+    "line": "I (28410) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595976.8023553,
+    "kind": "register",
+    "line": "I (28413) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595976.80463,
+    "kind": "register",
+    "line": "I (28469) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.805958,
+    "kind": "register",
+    "line": "I (28473) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595976.8073602,
+    "kind": "register",
+    "line": "I (28478) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.8087065,
+    "kind": "register",
+    "line": "I (28482) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x11 value=0xec result=0"
+  },
+  {
+    "t": 1793595976.8101032,
+    "kind": "register",
+    "line": "I (28486) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x12 value=0x1f result=0"
+  },
+  {
+    "t": 1793595976.8114448,
+    "kind": "register",
+    "line": "I (28490) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x14 value=0x0e result=0"
+  },
+  {
+    "t": 1793595976.8128061,
+    "kind": "register",
+    "line": "I (28494) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x15 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.8141866,
+    "kind": "register",
+    "line": "I (28498) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.815496,
+    "kind": "register",
+    "line": "I (28502) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595976.8167984,
+    "kind": "register",
+    "line": "I (28506) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x1a value=0x59 result=0"
+  },
+  {
+    "t": 1793595976.8180873,
+    "kind": "register",
+    "line": "I (28510) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x20 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.8195782,
+    "kind": "register",
+    "line": "I (28515) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595976.820916,
+    "kind": "register",
+    "line": "I (28519) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.8222084,
+    "kind": "register",
+    "line": "I (28523) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.823542,
+    "kind": "register",
+    "line": "I (28527) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x2a value=0x20 result=0"
+  },
+  {
+    "t": 1793595976.8250022,
+    "kind": "register",
+    "line": "I (28531) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x2b value=0x20 result=0"
+  },
+  {
+    "t": 1793595976.8264,
+    "kind": "register",
+    "line": "I (28535) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.827749,
+    "kind": "register",
+    "line": "I (28539) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595976.8290522,
+    "kind": "register",
+    "line": "I (28543) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.830351,
+    "kind": "register",
+    "line": "I (28547) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.831716,
+    "kind": "register",
+    "line": "I (28552) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595976.8334575,
+    "kind": "register",
+    "line": "I (28554) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595976.8355947,
+    "kind": "register",
+    "line": "I (28557) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.837541,
+    "kind": "register",
+    "line": "I (28560) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.838876,
+    "kind": "register",
+    "line": "I (28562) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595976.8402095,
+    "kind": "register",
+    "line": "I (28564) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595976.841603,
+    "kind": "register",
+    "line": "I (28567) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595976.8430169,
+    "kind": "register",
+    "line": "I (28640) esp_rtl_sdr: E4000_GAIN_REG reg=0x1a before=0x19 expected=0x19 observed=0x19 mask=0x1f"
+  },
+  {
+    "t": 1793595976.8443992,
+    "kind": "register",
+    "line": "I (28650) esp_rtl_sdr: E4000_GAIN_REG reg=0x20 before=0x01 expected=0x01 observed=0x01 mask=0x01"
+  },
+  {
+    "t": 1793595976.8456469,
+    "kind": "register",
+    "line": "I (28660) esp_rtl_sdr: E4000_GAIN_REG reg=0x16 before=0x01 expected=0x01 observed=0x01 mask=0x7f"
+  },
+  {
+    "t": 1793595976.8469105,
+    "kind": "register",
+    "line": "I (28670) esp_rtl_sdr: E4000_GAIN_REG reg=0x17 before=0x12 expected=0x12 observed=0x12 mask=0x3f"
+  },
+  {
+    "t": 1793595976.8493593,
+    "kind": "register",
+    "line": "I (28679) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.850648,
+    "kind": "register",
+    "line": "I (28683) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595976.852455,
+    "kind": "register",
+    "line": "I (28687) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.8537915,
+    "kind": "register",
+    "line": "I (28691) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x11 value=0x9a result=0"
+  },
+  {
+    "t": 1793595976.8551767,
+    "kind": "register",
+    "line": "I (28695) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x12 value=0x07 result=0"
+  },
+  {
+    "t": 1793595976.85648,
+    "kind": "register",
+    "line": "I (28700) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x14 value=0x0e result=0"
+  },
+  {
+    "t": 1793595976.857765,
+    "kind": "register",
+    "line": "I (28704) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x15 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.859058,
+    "kind": "register",
+    "line": "I (28708) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.8603892,
+    "kind": "register",
+    "line": "I (28712) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595976.8618464,
+    "kind": "register",
+    "line": "I (28716) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x1a value=0x59 result=0"
+  },
+  {
+    "t": 1793595976.8632128,
+    "kind": "register",
+    "line": "I (28720) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x20 value=0x01 result=0"
+  },
+  {
+    "t": 1793595976.8645225,
+    "kind": "register",
+    "line": "I (28724) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595976.8658328,
+    "kind": "register",
+    "line": "I (28728) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.8675494,
+    "kind": "register",
+    "line": "I (28732) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.8690379,
+    "kind": "register",
+    "line": "I (28736) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x2a value=0x2d result=0"
+  },
+  {
+    "t": 1793595976.8704753,
+    "kind": "register",
+    "line": "I (28740) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x2b value=0x33 result=0"
+  },
+  {
+    "t": 1793595976.8719223,
+    "kind": "register",
+    "line": "I (28744) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.8733673,
+    "kind": "register",
+    "line": "I (28749) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595976.8748002,
+    "kind": "register",
+    "line": "I (28753) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.8762152,
+    "kind": "register",
+    "line": "I (28757) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.877649,
+    "kind": "register",
+    "line": "I (28761) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595976.8789945,
+    "kind": "register",
+    "line": "I (28764) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595976.880408,
+    "kind": "register",
+    "line": "I (28766) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.8817675,
+    "kind": "register",
+    "line": "I (28769) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595976.8837152,
+    "kind": "register",
+    "line": "I (28771) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595976.885836,
+    "kind": "register",
+    "line": "I (28774) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595976.8880002,
+    "kind": "register",
+    "line": "I (28776) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595976.898413,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=32768 blocks=1 effective_sps=2048000 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595976.9018064,
+    "kind": "register",
+    "line": "I (28819) esp_rtl_sdr: E4000_GAIN_REG reg=0x1a before=0x19 expected=0x10 observed=0x10 mask=0x1f"
+  },
+  {
+    "t": 1793595976.903135,
+    "kind": "register",
+    "line": "I (28829) esp_rtl_sdr: E4000_GAIN_REG reg=0x20 before=0x01 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793595976.9045782,
+    "kind": "register",
+    "line": "I (28840) esp_rtl_sdr: E4000_GAIN_REG reg=0x16 before=0x01 expected=0x01 observed=0x01 mask=0x7f"
+  },
+  {
+    "t": 1793595976.9059443,
+    "kind": "register",
+    "line": "I (28850) esp_rtl_sdr: E4000_GAIN_REG reg=0x17 before=0x12 expected=0x12 observed=0x12 mask=0x3f"
+  },
+  {
+    "t": 1793595976.90733,
+    "kind": "register",
+    "line": "I (28860) esp_rtl_sdr: E4000_GAIN_REG reg=0x14 before=0x0e expected=0x00 observed=0x00 mask=0x0f"
+  },
+  {
+    "t": 1793595976.9086862,
+    "kind": "register",
+    "line": "I (28870) esp_rtl_sdr: E4000_GAIN_REG reg=0x15 before=0x01 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793595976.9108617,
+    "kind": "serial",
+    "command": "RTL_DRIVER GAIN -10",
+    "response": "RTL_DRIVER_RESULT action=\"GAIN -10\" accepted=1 result=ESP_OK"
+  },
+  {
+    "t": 1793595976.9429426,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=131072 blocks=4 effective_sps=448876 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595977.220544,
+    "kind": "source",
+    "commands": [
+      "output on"
+    ],
+    "response": "output on 'output on\\r\\nch> '\n"
+  },
+  {
+    "t": 1793595977.2233117,
+    "kind": "register",
+    "line": "I (28926) esp_rtl_sdr: E4000_GAIN_REG reg=0x1a before=0x10 expected=0x10 observed=0x10 mask=0x1f"
+  },
+  {
+    "t": 1793595977.2248049,
+    "kind": "register",
+    "line": "I (28937) esp_rtl_sdr: E4000_GAIN_REG reg=0x20 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793595977.2263072,
+    "kind": "register",
+    "line": "I (28947) esp_rtl_sdr: E4000_GAIN_REG reg=0x16 before=0x01 expected=0x01 observed=0x01 mask=0x7f"
+  },
+  {
+    "t": 1793595977.2281342,
+    "kind": "register",
+    "line": "I (28957) esp_rtl_sdr: E4000_GAIN_REG reg=0x17 before=0x12 expected=0x12 observed=0x12 mask=0x3f"
+  },
+  {
+    "t": 1793595977.229724,
+    "kind": "register",
+    "line": "I (28967) esp_rtl_sdr: E4000_GAIN_REG reg=0x14 before=0x00 expected=0x00 observed=0x00 mask=0x0f"
+  },
+  {
+    "t": 1793595977.2311034,
+    "kind": "register",
+    "line": "I (28977) esp_rtl_sdr: E4000_GAIN_REG reg=0x15 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793595977.2332656,
+    "kind": "serial",
+    "command": "RTL_DRIVER GAIN 140",
+    "response": "RTL_DRIVER_RESULT action=\"GAIN 140\" accepted=1 result=ESP_OK"
+  },
+  {
+    "t": 1793595977.2692199,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=1277952 blocks=39 effective_sps=1353762 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595981.2723932,
+    "kind": "register",
+    "line": "I (29253) esp_rtl_sdr: E4000_GAIN_REG reg=0x1a before=0x10 expected=0x10 observed=0x10 mask=0x1f"
+  },
+  {
+    "t": 1793595981.2740738,
+    "kind": "register",
+    "line": "I (29263) esp_rtl_sdr: E4000_GAIN_REG reg=0x20 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793595981.2754295,
+    "kind": "register",
+    "line": "I (29273) esp_rtl_sdr: E4000_GAIN_REG reg=0x16 before=0x01 expected=0x01 observed=0x01 mask=0x7f"
+  },
+  {
+    "t": 1793595981.276711,
+    "kind": "register",
+    "line": "I (29283) esp_rtl_sdr: E4000_GAIN_REG reg=0x17 before=0x12 expected=0x12 observed=0x12 mask=0x3f"
+  },
+  {
+    "t": 1793595981.278065,
+    "kind": "register",
+    "line": "I (29293) esp_rtl_sdr: E4000_GAIN_REG reg=0x14 before=0x00 expected=0x08 observed=0x08 mask=0x0f"
+  },
+  {
+    "t": 1793595981.2795753,
+    "kind": "register",
+    "line": "I (29304) esp_rtl_sdr: E4000_GAIN_REG reg=0x15 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793595981.3120587,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-336 stereo_locked=1 left_dbfs_tenths=169 right_dbfs_tenths=168 rds_carrier=1 rds_signal_tenths=111 pilot_env_thou=9877 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595981.6350267,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-336 stereo_locked=1 left_dbfs_tenths=173 right_dbfs_tenths=172 rds_carrier=1 rds_signal_tenths=110 pilot_env_thou=10025 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595981.9728405,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-336 stereo_locked=1 left_dbfs_tenths=177 right_dbfs_tenths=176 rds_carrier=1 rds_signal_tenths=108 pilot_env_thou=9857 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595982.3137786,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-336 stereo_locked=1 left_dbfs_tenths=170 right_dbfs_tenths=169 rds_carrier=1 rds_signal_tenths=109 pilot_env_thou=10004 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595982.632561,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-336 stereo_locked=1 left_dbfs_tenths=176 right_dbfs_tenths=176 rds_carrier=1 rds_signal_tenths=109 pilot_env_thou=9961 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595982.9556053,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-336 stereo_locked=1 left_dbfs_tenths=177 right_dbfs_tenths=176 rds_carrier=1 rds_signal_tenths=110 pilot_env_thou=10004 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595983.2764914,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-336 stereo_locked=1 left_dbfs_tenths=166 right_dbfs_tenths=166 rds_carrier=1 rds_signal_tenths=109 pilot_env_thou=9825 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595983.6144543,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-335 stereo_locked=1 left_dbfs_tenths=186 right_dbfs_tenths=184 rds_carrier=1 rds_signal_tenths=111 pilot_env_thou=9939 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595983.9496458,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-335 stereo_locked=1 left_dbfs_tenths=191 right_dbfs_tenths=190 rds_carrier=1 rds_signal_tenths=111 pilot_env_thou=9706 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595984.266336,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-335 stereo_locked=1 left_dbfs_tenths=187 right_dbfs_tenths=186 rds_carrier=1 rds_signal_tenths=108 pilot_env_thou=9942 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595984.6044393,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=36208640 blocks=1105 effective_sps=2318688 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595984.6052144,
+    "kind": "measurement",
+    "label": "initial_gain14",
+    "levels_dbfs": [
+      -33.6,
+      -33.6,
+      -33.6,
+      -33.6,
+      -33.6,
+      -33.6,
+      -33.6,
+      -33.5,
+      -33.5,
+      -33.5
+    ],
+    "mean_dbfs": -33.57
+  },
+  {
+    "t": 1793595984.680576,
+    "kind": "serial",
+    "command": "RTL_STOP",
+    "response": "RTL_STOP_RESULT ESP_OK"
+  },
+  {
+    "t": 1793595984.730684,
+    "kind": "register",
+    "line": "I (36713) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595984.7347412,
+    "kind": "register",
+    "line": "I (36718) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595984.7388012,
+    "kind": "register",
+    "line": "I (36722) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595984.7415144,
+    "kind": "serial",
+    "command": "RTL_TUNE FM 100000000",
+    "response": "RTL_TUNE_OK band=FM frequency_hz=100000000"
+  },
+  {
+    "t": 1793595984.7430725,
+    "kind": "register",
+    "line": "I (36726) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x11 value=0x9a result=0"
+  },
+  {
+    "t": 1793595984.746975,
+    "kind": "register",
+    "line": "I (36730) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x12 value=0x07 result=0"
+  },
+  {
+    "t": 1793595984.7510748,
+    "kind": "register",
+    "line": "I (36734) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x14 value=0x08 result=0"
+  },
+  {
+    "t": 1793595984.755135,
+    "kind": "register",
+    "line": "I (36738) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x15 value=0x00 result=0"
+  },
+  {
+    "t": 1793595984.760346,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=36503552 blocks=1114 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595985.0633948,
+    "kind": "register",
+    "line": "I (36742) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595985.065038,
+    "kind": "register",
+    "line": "I (36746) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595985.0666013,
+    "kind": "register",
+    "line": "I (36750) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x1a value=0x10 result=0"
+  },
+  {
+    "t": 1793595985.0684516,
+    "kind": "register",
+    "line": "I (36754) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x20 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.0700326,
+    "kind": "register",
+    "line": "I (36758) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595985.0717683,
+    "kind": "register",
+    "line": "I (36763) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.0733285,
+    "kind": "register",
+    "line": "I (36767) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.0748966,
+    "kind": "register",
+    "line": "I (36771) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x2a value=0x20 result=0"
+  },
+  {
+    "t": 1793595985.076408,
+    "kind": "register",
+    "line": "I (36775) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x2b value=0x20 result=0"
+  },
+  {
+    "t": 1793595985.0779896,
+    "kind": "register",
+    "line": "I (36779) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.0795906,
+    "kind": "register",
+    "line": "I (36783) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595985.0811362,
+    "kind": "register",
+    "line": "I (36787) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.0826144,
+    "kind": "register",
+    "line": "I (36791) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.084123,
+    "kind": "register",
+    "line": "I (36795) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595985.0856953,
+    "kind": "register",
+    "line": "I (36798) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595985.0873961,
+    "kind": "register",
+    "line": "I (36801) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.088995,
+    "kind": "register",
+    "line": "I (36803) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.0904934,
+    "kind": "register",
+    "line": "I (36806) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595985.0921845,
+    "kind": "register",
+    "line": "I (36808) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595985.093808,
+    "kind": "register",
+    "line": "I (36811) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595985.0958347,
+    "kind": "register",
+    "line": "I (37032) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595985.0974338,
+    "kind": "register",
+    "line": "I (37037) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595985.099055,
+    "kind": "register",
+    "line": "I (37041) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.1006145,
+    "kind": "register",
+    "line": "I (37045) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x11 value=0x9a result=0"
+  },
+  {
+    "t": 1793595985.105324,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=36503552 blocks=1114 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595985.408464,
+    "kind": "register",
+    "line": "I (37049) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x12 value=0x07 result=0"
+  },
+  {
+    "t": 1793595985.4101067,
+    "kind": "register",
+    "line": "I (37053) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x14 value=0x08 result=0"
+  },
+  {
+    "t": 1793595985.4117253,
+    "kind": "register",
+    "line": "I (37057) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x15 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.413321,
+    "kind": "register",
+    "line": "I (37061) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595985.4149575,
+    "kind": "register",
+    "line": "I (37065) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595985.4173372,
+    "kind": "register",
+    "line": "I (37069) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x1a value=0x10 result=0"
+  },
+  {
+    "t": 1793595985.4198089,
+    "kind": "register",
+    "line": "I (37073) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x20 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.4222755,
+    "kind": "register",
+    "line": "I (37077) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595985.4247527,
+    "kind": "register",
+    "line": "I (37082) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.4268167,
+    "kind": "register",
+    "line": "I (37086) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.4284267,
+    "kind": "register",
+    "line": "I (37090) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x2a value=0x20 result=0"
+  },
+  {
+    "t": 1793595985.4299426,
+    "kind": "register",
+    "line": "I (37094) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x2b value=0x20 result=0"
+  },
+  {
+    "t": 1793595985.4317205,
+    "kind": "register",
+    "line": "I (37098) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.4332771,
+    "kind": "register",
+    "line": "I (37102) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595985.4349174,
+    "kind": "register",
+    "line": "I (37106) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.436441,
+    "kind": "register",
+    "line": "I (37110) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.43803,
+    "kind": "register",
+    "line": "I (37114) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595985.4396086,
+    "kind": "register",
+    "line": "I (37117) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595985.4413352,
+    "kind": "register",
+    "line": "I (37120) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.4429991,
+    "kind": "register",
+    "line": "I (37122) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.444706,
+    "kind": "register",
+    "line": "I (37125) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595985.446362,
+    "kind": "register",
+    "line": "I (37127) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595985.4481304,
+    "kind": "register",
+    "line": "I (37130) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595985.4507017,
+    "kind": "register",
+    "line": "I (37164) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595985.4530404,
+    "kind": "register",
+    "line": "I (37168) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595985.4555218,
+    "kind": "register",
+    "line": "I (37172) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.4574363,
+    "kind": "register",
+    "line": "I (37176) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x11 value=0xec result=0"
+  },
+  {
+    "t": 1793595985.4590878,
+    "kind": "register",
+    "line": "I (37180) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x12 value=0x1f result=0"
+  },
+  {
+    "t": 1793595985.4615035,
+    "kind": "register",
+    "line": "I (37185) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x14 value=0x08 result=0"
+  },
+  {
+    "t": 1793595985.4635246,
+    "kind": "register",
+    "line": "I (37189) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x15 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.4651582,
+    "kind": "register",
+    "line": "I (37193) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595985.466748,
+    "kind": "register",
+    "line": "I (37197) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595985.4685264,
+    "kind": "register",
+    "line": "I (37201) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x1a value=0x10 result=0"
+  },
+  {
+    "t": 1793595985.470118,
+    "kind": "register",
+    "line": "I (37205) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x20 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.4717367,
+    "kind": "register",
+    "line": "I (37209) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595985.47338,
+    "kind": "register",
+    "line": "I (37213) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.475153,
+    "kind": "register",
+    "line": "I (37217) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.4768999,
+    "kind": "register",
+    "line": "I (37221) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x2a value=0x20 result=0"
+  },
+  {
+    "t": 1793595985.478578,
+    "kind": "register",
+    "line": "I (37226) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x2b value=0x20 result=0"
+  },
+  {
+    "t": 1793595985.4803953,
+    "kind": "register",
+    "line": "I (37230) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.482161,
+    "kind": "register",
+    "line": "I (37234) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595985.483891,
+    "kind": "register",
+    "line": "I (37238) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.4856427,
+    "kind": "register",
+    "line": "I (37242) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.4872503,
+    "kind": "register",
+    "line": "I (37246) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595985.4890673,
+    "kind": "register",
+    "line": "I (37249) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595985.4908237,
+    "kind": "register",
+    "line": "I (37252) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.492665,
+    "kind": "register",
+    "line": "I (37254) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.494353,
+    "kind": "register",
+    "line": "I (37256) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595985.4961095,
+    "kind": "register",
+    "line": "I (37259) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595985.497858,
+    "kind": "register",
+    "line": "I (37261) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595985.5002778,
+    "kind": "register",
+    "line": "I (37318) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595985.5020099,
+    "kind": "register",
+    "line": "I (37322) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595985.5037763,
+    "kind": "register",
+    "line": "I (37326) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.5054038,
+    "kind": "register",
+    "line": "I (37330) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x11 value=0xec result=0"
+  },
+  {
+    "t": 1793595985.5070622,
+    "kind": "register",
+    "line": "I (37334) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x12 value=0x1f result=0"
+  },
+  {
+    "t": 1793595985.50887,
+    "kind": "register",
+    "line": "I (37339) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x14 value=0x08 result=0"
+  },
+  {
+    "t": 1793595985.510651,
+    "kind": "register",
+    "line": "I (37343) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x15 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.512242,
+    "kind": "register",
+    "line": "I (37347) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595985.5138407,
+    "kind": "register",
+    "line": "I (37351) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595985.51542,
+    "kind": "register",
+    "line": "I (37355) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x1a value=0x10 result=0"
+  },
+  {
+    "t": 1793595985.517215,
+    "kind": "register",
+    "line": "I (37359) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x20 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.5189478,
+    "kind": "register",
+    "line": "I (37363) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595985.5206716,
+    "kind": "register",
+    "line": "I (37367) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.5223114,
+    "kind": "register",
+    "line": "I (37371) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.5241776,
+    "kind": "register",
+    "line": "I (37376) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x2a value=0x20 result=0"
+  },
+  {
+    "t": 1793595985.525973,
+    "kind": "register",
+    "line": "I (37380) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x2b value=0x20 result=0"
+  },
+  {
+    "t": 1793595985.5277107,
+    "kind": "register",
+    "line": "I (37384) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.5294807,
+    "kind": "register",
+    "line": "I (37388) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595985.5339258,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=36503552 blocks=1114 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595985.837593,
+    "kind": "register",
+    "line": "37392) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.8394158,
+    "kind": "register",
+    "line": "I (37396) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.841103,
+    "kind": "register",
+    "line": "I (37400) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595985.842916,
+    "kind": "register",
+    "line": "I (37403) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595985.8446603,
+    "kind": "register",
+    "line": "I (37406) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.8464465,
+    "kind": "register",
+    "line": "I (37408) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.8481438,
+    "kind": "register",
+    "line": "I (37411) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595985.849981,
+    "kind": "register",
+    "line": "I (37413) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595985.851813,
+    "kind": "register",
+    "line": "I (37415) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595985.8534102,
+    "kind": "register",
+    "line": "I (37488) esp_rtl_sdr: E4000_GAIN_REG reg=0x1a before=0x10 expected=0x10 observed=0x10 mask=0x1f"
+  },
+  {
+    "t": 1793595985.8549006,
+    "kind": "register",
+    "line": "I (37498) esp_rtl_sdr: E4000_GAIN_REG reg=0x20 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793595985.8565905,
+    "kind": "register",
+    "line": "I (37508) esp_rtl_sdr: E4000_GAIN_REG reg=0x16 before=0x01 expected=0x01 observed=0x01 mask=0x7f"
+  },
+  {
+    "t": 1793595985.8582258,
+    "kind": "register",
+    "line": "I (37518) esp_rtl_sdr: E4000_GAIN_REG reg=0x17 before=0x12 expected=0x12 observed=0x12 mask=0x3f"
+  },
+  {
+    "t": 1793595985.8599205,
+    "kind": "register",
+    "line": "I (37528) esp_rtl_sdr: E4000_GAIN_REG reg=0x14 before=0x08 expected=0x08 observed=0x08 mask=0x0f"
+  },
+  {
+    "t": 1793595985.8615673,
+    "kind": "register",
+    "line": "I (37538) esp_rtl_sdr: E4000_GAIN_REG reg=0x15 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793595985.8643317,
+    "kind": "register",
+    "line": "I (37548) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595985.865946,
+    "kind": "register",
+    "line": "I (37552) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595985.8677375,
+    "kind": "register",
+    "line": "I (37556) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.8697162,
+    "kind": "register",
+    "line": "I (37560) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x11 value=0x9a result=0"
+  },
+  {
+    "t": 1793595985.8713691,
+    "kind": "register",
+    "line": "I (37564) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x12 value=0x07 result=0"
+  },
+  {
+    "t": 1793595985.8730328,
+    "kind": "register",
+    "line": "I (37568) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x14 value=0x08 result=0"
+  },
+  {
+    "t": 1793595985.8748584,
+    "kind": "register",
+    "line": "I (37572) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x15 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.876588,
+    "kind": "register",
+    "line": "I (37576) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595985.8783596,
+    "kind": "register",
+    "line": "I (37580) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595985.87999,
+    "kind": "register",
+    "line": "I (37584) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x1a value=0x10 result=0"
+  },
+  {
+    "t": 1793595985.881741,
+    "kind": "register",
+    "line": "I (37589) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x20 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.883473,
+    "kind": "register",
+    "line": "I (37593) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595985.8851256,
+    "kind": "register",
+    "line": "I (37597) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.8867595,
+    "kind": "register",
+    "line": "I (37601) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.8884768,
+    "kind": "register",
+    "line": "I (37605) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x2a value=0x2d result=0"
+  },
+  {
+    "t": 1793595985.890143,
+    "kind": "register",
+    "line": "I (37609) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x2b value=0x21 result=0"
+  },
+  {
+    "t": 1793595985.89183,
+    "kind": "register",
+    "line": "I (37613) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.8935206,
+    "kind": "register",
+    "line": "I (37617) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595985.8952978,
+    "kind": "register",
+    "line": "I (37621) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.8973112,
+    "kind": "register",
+    "line": "I (37625) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.8993554,
+    "kind": "register",
+    "line": "I (37630) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595985.9011023,
+    "kind": "register",
+    "line": "I (37632) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595985.9028945,
+    "kind": "register",
+    "line": "I (37635) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.9046338,
+    "kind": "register",
+    "line": "I (37638) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595985.906418,
+    "kind": "register",
+    "line": "I (37640) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595985.9081712,
+    "kind": "register",
+    "line": "I (37642) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595985.909991,
+    "kind": "register",
+    "line": "I (37645) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595985.9187748,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=851968 blocks=26 effective_sps=2393168 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595989.924288,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-336 stereo_locked=1 left_dbfs_tenths=170 right_dbfs_tenths=170 rds_carrier=1 rds_signal_tenths=108 pilot_env_thou=10022 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595990.2655084,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-336 stereo_locked=1 left_dbfs_tenths=176 right_dbfs_tenths=176 rds_carrier=1 rds_signal_tenths=106 pilot_env_thou=10085 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595990.6007712,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-336 stereo_locked=1 left_dbfs_tenths=179 right_dbfs_tenths=178 rds_carrier=1 rds_signal_tenths=108 pilot_env_thou=10056 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595990.9259765,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-337 stereo_locked=1 left_dbfs_tenths=173 right_dbfs_tenths=172 rds_carrier=1 rds_signal_tenths=110 pilot_env_thou=10055 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595991.2627661,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-336 stereo_locked=1 left_dbfs_tenths=155 right_dbfs_tenths=153 rds_carrier=1 rds_signal_tenths=109 pilot_env_thou=9979 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595991.5969474,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-336 stereo_locked=1 left_dbfs_tenths=185 right_dbfs_tenths=184 rds_carrier=1 rds_signal_tenths=110 pilot_env_thou=9982 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595991.9243462,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-336 stereo_locked=1 left_dbfs_tenths=170 right_dbfs_tenths=170 rds_carrier=1 rds_signal_tenths=108 pilot_env_thou=10128 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595992.2623768,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-337 stereo_locked=1 left_dbfs_tenths=186 right_dbfs_tenths=185 rds_carrier=1 rds_signal_tenths=112 pilot_env_thou=9864 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595992.596379,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-337 stereo_locked=1 left_dbfs_tenths=172 right_dbfs_tenths=171 rds_carrier=1 rds_signal_tenths=110 pilot_env_thou=9783 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595992.939618,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-337 stereo_locked=1 left_dbfs_tenths=176 right_dbfs_tenths=176 rds_carrier=1 rds_signal_tenths=109 pilot_env_thou=10097 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595993.2783139,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=36536320 blocks=1115 effective_sps=2399600 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595993.2796493,
+    "kind": "measurement",
+    "label": "restart_0_gain14",
+    "levels_dbfs": [
+      -33.6,
+      -33.6,
+      -33.6,
+      -33.7,
+      -33.6,
+      -33.6,
+      -33.6,
+      -33.7,
+      -33.7,
+      -33.7
+    ],
+    "mean_dbfs": -33.64
+  },
+  {
+    "t": 1793595993.3569517,
+    "kind": "serial",
+    "command": "RTL_STOP",
+    "response": "RTL_STOP_RESULT ESP_OK"
+  },
+  {
+    "t": 1793595993.3694057,
+    "kind": "serial",
+    "command": "RTL_TUNE FM 100000000",
+    "response": "RTL_TUNE_OK band=FM frequency_hz=100000000"
+  },
+  {
+    "t": 1793595993.383245,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=36831232 blocks=1124 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595993.68655,
+    "kind": "register",
+    "line": "I (45369) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595993.6885269,
+    "kind": "register",
+    "line": "I (45373) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595993.6903694,
+    "kind": "register",
+    "line": "I (45377) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595993.692381,
+    "kind": "register",
+    "line": "I (45381) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x11 value=0x9a result=0"
+  },
+  {
+    "t": 1793595993.6942554,
+    "kind": "register",
+    "line": "I (45385) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x12 value=0x07 result=0"
+  },
+  {
+    "t": 1793595993.696855,
+    "kind": "register",
+    "line": "I (45390) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x14 value=0x08 result=0"
+  },
+  {
+    "t": 1793595993.6993275,
+    "kind": "register",
+    "line": "I (45394) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x15 value=0x00 result=0"
+  },
+  {
+    "t": 1793595993.7012134,
+    "kind": "register",
+    "line": "I (45398) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595993.703062,
+    "kind": "register",
+    "line": "I (45402) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595993.7048469,
+    "kind": "register",
+    "line": "I (45406) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x1a value=0x10 result=0"
+  },
+  {
+    "t": 1793595993.706715,
+    "kind": "register",
+    "line": "I (45410) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x20 value=0x00 result=0"
+  },
+  {
+    "t": 1793595993.7085261,
+    "kind": "register",
+    "line": "I (45414) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595993.710334,
+    "kind": "register",
+    "line": "I (45418) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595993.712786,
+    "kind": "register",
+    "line": "I (45422) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595993.714581,
+    "kind": "register",
+    "line": "I (45426) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x2a value=0x2d result=0"
+  },
+  {
+    "t": 1793595993.716537,
+    "kind": "register",
+    "line": "I (45430) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x2b value=0x21 result=0"
+  },
+  {
+    "t": 1793595993.7184594,
+    "kind": "register",
+    "line": "I (45434) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595993.7203758,
+    "kind": "register",
+    "line": "I (45439) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595993.722313,
+    "kind": "register",
+    "line": "I (45443) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595993.724178,
+    "kind": "register",
+    "line": "I (45447) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595993.7261467,
+    "kind": "register",
+    "line": "I (45451) esp_rtl_sdr: E4000_START_REG stage=before_init target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595993.7284021,
+    "kind": "register",
+    "line": "I (45454) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595993.730244,
+    "kind": "register",
+    "line": "I (45457) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595993.7321074,
+    "kind": "register",
+    "line": "I (45459) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595993.73407,
+    "kind": "register",
+    "line": "I (45461) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595993.7360106,
+    "kind": "register",
+    "line": "I (45464) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595993.7379217,
+    "kind": "register",
+    "line": "I (45466) esp_rtl_sdr: E4000_START_REG stage=before_init target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595993.742879,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=36831232 blocks=1124 effective_sps=0 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595994.046395,
+    "kind": "register",
+    "line": "I (45688) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595994.0486155,
+    "kind": "register",
+    "line": "I (45693) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595994.05079,
+    "kind": "register",
+    "line": "I (45697) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.0528316,
+    "kind": "register",
+    "line": "I (45701) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x11 value=0x9a result=0"
+  },
+  {
+    "t": 1793595994.0551054,
+    "kind": "register",
+    "line": "I (45705) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x12 value=0x07 result=0"
+  },
+  {
+    "t": 1793595994.0571184,
+    "kind": "register",
+    "line": "I (45709) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x14 value=0x08 result=0"
+  },
+  {
+    "t": 1793595994.0590603,
+    "kind": "register",
+    "line": "I (45713) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x15 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.0610952,
+    "kind": "register",
+    "line": "I (45717) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595994.0632493,
+    "kind": "register",
+    "line": "I (45721) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595994.0652804,
+    "kind": "register",
+    "line": "I (45725) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x1a value=0x10 result=0"
+  },
+  {
+    "t": 1793595994.0672193,
+    "kind": "register",
+    "line": "I (45730) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x20 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.0693095,
+    "kind": "register",
+    "line": "I (45734) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595994.0723011,
+    "kind": "register",
+    "line": "I (45738) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.0752947,
+    "kind": "register",
+    "line": "I (45742) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.0778987,
+    "kind": "register",
+    "line": "I (45746) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x2a value=0x2d result=0"
+  },
+  {
+    "t": 1793595994.0801475,
+    "kind": "register",
+    "line": "I (45750) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x2b value=0x21 result=0"
+  },
+  {
+    "t": 1793595994.082102,
+    "kind": "register",
+    "line": "I (45754) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.0839968,
+    "kind": "register",
+    "line": "I (45758) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595994.086438,
+    "kind": "register",
+    "line": "I (45762) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.089463,
+    "kind": "register",
+    "line": "I (45766) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.0917819,
+    "kind": "register",
+    "line": "I (45770) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595994.0937889,
+    "kind": "register",
+    "line": "I (45773) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595994.0963683,
+    "kind": "register",
+    "line": "I (45776) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.0988214,
+    "kind": "register",
+    "line": "I (45778) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.101365,
+    "kind": "register",
+    "line": "I (45781) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595994.1032634,
+    "kind": "register",
+    "line": "I (45783) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595994.1053967,
+    "kind": "register",
+    "line": "I (45786) esp_rtl_sdr: E4000_START_REG stage=after_demod_init target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595994.1080918,
+    "kind": "register",
+    "line": "I (45820) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595994.1101935,
+    "kind": "register",
+    "line": "I (45824) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595994.1121309,
+    "kind": "register",
+    "line": "I (45828) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.1140656,
+    "kind": "register",
+    "line": "I (45832) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x11 value=0xec result=0"
+  },
+  {
+    "t": 1793595994.1162841,
+    "kind": "register",
+    "line": "I (45837) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x12 value=0x1f result=0"
+  },
+  {
+    "t": 1793595994.1183343,
+    "kind": "register",
+    "line": "I (45841) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x14 value=0x08 result=0"
+  },
+  {
+    "t": 1793595994.1203132,
+    "kind": "register",
+    "line": "I (45845) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x15 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.122421,
+    "kind": "register",
+    "line": "I (45849) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595994.1243784,
+    "kind": "register",
+    "line": "I (45853) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595994.1263657,
+    "kind": "register",
+    "line": "I (45857) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x1a value=0x10 result=0"
+  },
+  {
+    "t": 1793595994.1283698,
+    "kind": "register",
+    "line": "I (45861) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x20 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.1303806,
+    "kind": "register",
+    "line": "I (45865) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595994.1325693,
+    "kind": "register",
+    "line": "I (45869) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.134577,
+    "kind": "register",
+    "line": "I (45873) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.1365242,
+    "kind": "register",
+    "line": "I (45877) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x2a value=0x2d result=0"
+  },
+  {
+    "t": 1793595994.138561,
+    "kind": "register",
+    "line": "I (45882) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x2b value=0x21 result=0"
+  },
+  {
+    "t": 1793595994.140611,
+    "kind": "register",
+    "line": "I (45886) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.1425662,
+    "kind": "register",
+    "line": "I (45890) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595994.1445239,
+    "kind": "register",
+    "line": "I (45894) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.1465557,
+    "kind": "register",
+    "line": "I (45898) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.1486282,
+    "kind": "register",
+    "line": "I (45902) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595994.1506689,
+    "kind": "register",
+    "line": "I (45905) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595994.1527045,
+    "kind": "register",
+    "line": "I (45908) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.1548195,
+    "kind": "register",
+    "line": "I (45910) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.156884,
+    "kind": "register",
+    "line": "I (45913) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595994.1589532,
+    "kind": "register",
+    "line": "I (45915) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595994.1609733,
+    "kind": "register",
+    "line": "I (45917) esp_rtl_sdr: E4000_START_REG stage=after_tuner_init target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595994.1639225,
+    "kind": "register",
+    "line": "I (45974) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595994.1659877,
+    "kind": "register",
+    "line": "I (45978) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595994.1680286,
+    "kind": "register",
+    "line": "I (45982) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.1700552,
+    "kind": "register",
+    "line": "I (45986) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x11 value=0xec result=0"
+  },
+  {
+    "t": 1793595994.1722083,
+    "kind": "register",
+    "line": "I (45990) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x12 value=0x1f result=0"
+  },
+  {
+    "t": 1793595994.1742132,
+    "kind": "register",
+    "line": "I (45995) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x14 value=0x08 result=0"
+  },
+  {
+    "t": 1793595994.1762543,
+    "kind": "register",
+    "line": "I (45999) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x15 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.1785622,
+    "kind": "register",
+    "line": "I (46003) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595994.1805906,
+    "kind": "register",
+    "line": "I (46007) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595994.1826282,
+    "kind": "register",
+    "line": "I (46011) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x1a value=0x10 result=0"
+  },
+  {
+    "t": 1793595994.1847625,
+    "kind": "register",
+    "line": "I (46015) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x20 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.186744,
+    "kind": "register",
+    "line": "I (46019) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595994.1888857,
+    "kind": "register",
+    "line": "I (46023) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.1908937,
+    "kind": "register",
+    "line": "I (46027) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.1959655,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STARTING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenthI _d(b=1440 rtl6_agc0=0 bi3as=01 byte)s=36 83123e2 blsocks=p1124r eftfectlive_s_psds=0r ove:rruns =0 dErops4=0 s0hadow0_ok=01 met_ricsS_ok=T1 frAReqTuenc_y_hz=R100EG000 000 fsrequtencya_ok=g1 roeute==TUNEaR bwf_reqtuesteed_hzr=_0 bsw_appaliedm_hplz=0e"
+  },
+  {
+    "t": 1793595994.4998507,
+    "kind": "register",
+    "line": "I (46036) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x2b value=0x21 result=0"
+  },
+  {
+    "t": 1793595994.502153,
+    "kind": "register",
+    "line": "I (46040) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.5042071,
+    "kind": "register",
+    "line": "I (46044) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595994.506267,
+    "kind": "register",
+    "line": "I (46048) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.5083122,
+    "kind": "register",
+    "line": "I (46052) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.510686,
+    "kind": "register",
+    "line": "I (46056) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595994.5128772,
+    "kind": "register",
+    "line": "I (46059) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595994.5149646,
+    "kind": "register",
+    "line": "I (46062) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.5170405,
+    "kind": "register",
+    "line": "I (46065) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.5191517,
+    "kind": "register",
+    "line": "I (46067) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595994.5212257,
+    "kind": "register",
+    "line": "I (46069) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595994.5234754,
+    "kind": "register",
+    "line": "I (46072) esp_rtl_sdr: E4000_START_REG stage=after_sample_rate target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595994.525337,
+    "kind": "register",
+    "line": "I (46145) esp_rtl_sdr: E4000_GAIN_REG reg=0x1a before=0x10 expected=0x10 observed=0x10 mask=0x1f"
+  },
+  {
+    "t": 1793595994.5272892,
+    "kind": "register",
+    "line": "I (46155) esp_rtl_sdr: E4000_GAIN_REG reg=0x20 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793595994.5294204,
+    "kind": "register",
+    "line": "I (46165) esp_rtl_sdr: E4000_GAIN_REG reg=0x16 before=0x01 expected=0x01 observed=0x01 mask=0x7f"
+  },
+  {
+    "t": 1793595994.5314088,
+    "kind": "register",
+    "line": "I (46175) esp_rtl_sdr: E4000_GAIN_REG reg=0x17 before=0x12 expected=0x12 observed=0x12 mask=0x3f"
+  },
+  {
+    "t": 1793595994.5333445,
+    "kind": "register",
+    "line": "I (46185) esp_rtl_sdr: E4000_GAIN_REG reg=0x14 before=0x08 expected=0x08 observed=0x08 mask=0x0f"
+  },
+  {
+    "t": 1793595994.5354238,
+    "kind": "register",
+    "line": "I (46195) esp_rtl_sdr: E4000_GAIN_REG reg=0x15 before=0x00 expected=0x00 observed=0x00 mask=0x01"
+  },
+  {
+    "t": 1793595994.5385137,
+    "kind": "register",
+    "line": "I (46204) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x07 value=0x01 result=0"
+  },
+  {
+    "t": 1793595994.540766,
+    "kind": "register",
+    "line": "I (46208) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x0d value=0x0d result=0"
+  },
+  {
+    "t": 1793595994.542733,
+    "kind": "register",
+    "line": "I (46212) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x10 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.544744,
+    "kind": "register",
+    "line": "I (46216) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x11 value=0x9a result=0"
+  },
+  {
+    "t": 1793595994.5468564,
+    "kind": "register",
+    "line": "I (46221) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x12 value=0x07 result=0"
+  },
+  {
+    "t": 1793595994.5488513,
+    "kind": "register",
+    "line": "I (46225) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x14 value=0x08 result=0"
+  },
+  {
+    "t": 1793595994.550824,
+    "kind": "register",
+    "line": "I (46229) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x15 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.552955,
+    "kind": "register",
+    "line": "I (46233) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x16 value=0x01 result=0"
+  },
+  {
+    "t": 1793595994.5553787,
+    "kind": "register",
+    "line": "I (46237) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x17 value=0x12 result=0"
+  },
+  {
+    "t": 1793595994.5573914,
+    "kind": "register",
+    "line": "I (46241) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x1a value=0x10 result=0"
+  },
+  {
+    "t": 1793595994.5595584,
+    "kind": "register",
+    "line": "I (46245) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x20 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.5616713,
+    "kind": "register",
+    "line": "I (46249) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x21 value=0x5a result=0"
+  },
+  {
+    "t": 1793595994.5639443,
+    "kind": "register",
+    "line": "I (46253) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x24 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.5661304,
+    "kind": "register",
+    "line": "I (46257) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x29 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.5681605,
+    "kind": "register",
+    "line": "I (46261) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x2a value=0x2d result=0"
+  },
+  {
+    "t": 1793595994.5704982,
+    "kind": "register",
+    "line": "I (46266) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x2b value=0x21 result=0"
+  },
+  {
+    "t": 1793595994.5725977,
+    "kind": "register",
+    "line": "I (46270) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x2c value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.5745924,
+    "kind": "register",
+    "line": "I (46274) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x2d value=0x0f result=0"
+  },
+  {
+    "t": 1793595994.5768406,
+    "kind": "register",
+    "line": "I (46278) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x70 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.579316,
+    "kind": "register",
+    "line": "I (46282) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x71 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.5813107,
+    "kind": "register",
+    "line": "I (46286) esp_rtl_sdr: E4000_START_REG stage=after_tune target=tuner reg=0x78 value=0x03 result=0"
+  },
+  {
+    "t": 1793595994.5835285,
+    "kind": "register",
+    "line": "I (46289) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=0 reg=0x19 value=0x05 result=0"
+  },
+  {
+    "t": 1793595994.5855908,
+    "kind": "register",
+    "line": "I (46292) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0x04 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.587782,
+    "kind": "register",
+    "line": "I (46294) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0x11 value=0x00 result=0"
+  },
+  {
+    "t": 1793595994.5899503,
+    "kind": "register",
+    "line": "I (46296) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0x93 value=0xf0 result=0"
+  },
+  {
+    "t": 1793595994.5920725,
+    "kind": "register",
+    "line": "I (46299) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0x94 value=0x0f result=0"
+  },
+  {
+    "t": 1793595994.594253,
+    "kind": "register",
+    "line": "I (46301) esp_rtl_sdr: E4000_START_REG stage=after_tune target=demod page=1 reg=0xb1 value=0x1b result=0"
+  },
+  {
+    "t": 1793595994.603983,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=950272 blocks=29 effective_sps=2329098 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793595998.6177218,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-337 stereo_locked=1 left_dbfs_tenths=189 right_dbfs_tenths=188 rds_carrier=1 rds_signal_tenths=110 pilot_env_thou=10010 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595998.956583,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-337 stereo_locked=1 left_dbfs_tenths=170 right_dbfs_tenths=169 rds_carrier=1 rds_signal_tenths=108 pilot_env_thou=10039 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595999.2662535,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-337 stereo_locked=1 left_dbfs_tenths=173 right_dbfs_tenths=172 rds_carrier=1 rds_signal_tenths=108 pilot_env_thou=9946 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595999.6009326,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-336 stereo_locked=1 left_dbfs_tenths=177 right_dbfs_tenths=176 rds_carrier=1 rds_signal_tenths=108 pilot_env_thou=9997 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793595999.939098,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-337 stereo_locked=1 left_dbfs_tenths=166 right_dbfs_tenths=165 rds_carrier=1 rds_signal_tenths=112 pilot_env_thou=9837 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793596000.2617292,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-337 stereo_locked=1 left_dbfs_tenths=174 right_dbfs_tenths=173 rds_carrier=1 rds_signal_tenths=110 pilot_env_thou=9858 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793596000.6038342,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-336 stereo_locked=1 left_dbfs_tenths=180 right_dbfs_tenths=180 rds_carrier=1 rds_signal_tenths=107 pilot_env_thou=10020 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793596000.9285786,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-336 stereo_locked=1 left_dbfs_tenths=179 right_dbfs_tenths=178 rds_carrier=1 rds_signal_tenths=108 pilot_env_thou=10073 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793596001.2636216,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-337 stereo_locked=1 left_dbfs_tenths=167 right_dbfs_tenths=166 rds_carrier=1 rds_signal_tenths=109 pilot_env_thou=9690 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793596001.6004088,
+    "kind": "serial",
+    "command": "RTL_SIGNAL",
+    "response": "RTL_SIGNAL_STATUS band=FM frequency_hz=100000000 signal_dbfs_tenths=-337 stereo_locked=1 left_dbfs_tenths=177 right_dbfs_tenths=176 rds_carrier=1 rds_signal_tenths=110 pilot_env_thou=10157 clipping_percent=0.000 filter_hz=260000 lo_nudge=0"
+  },
+  {
+    "t": 1793596001.928812,
+    "kind": "serial",
+    "command": "RTL_DRIVER STATUS",
+    "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=140 rtl_agc=0 bias=0 bytes=36503552 blocks=1114 effective_sps=2399655 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+  },
+  {
+    "t": 1793596001.9304588,
+    "kind": "measurement",
+    "label": "restart_1_gain14",
+    "levels_dbfs": [
+      -33.7,
+      -33.7,
+      -33.7,
+      -33.6,
+      -33.7,
+      -33.7,
+      -33.6,
+      -33.6,
+      -33.7,
+      -33.7
+    ],
+    "mean_dbfs": -33.67
+  },
+  {
+    "t": 1793596001.9319897,
+    "kind": "complete",
+    "passed": true
+  },
+  {
+    "t": 1793596002.3745522,
+    "kind": "source",
+    "commands": [
+      "output off",
+      "pause"
+    ],
+    "response": "output off 'output off\\r\\nch> '\npause 'pause\\r\\nch> '\n"
+  }
+]

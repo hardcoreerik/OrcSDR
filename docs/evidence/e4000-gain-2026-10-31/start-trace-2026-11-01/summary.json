@@ -1,0 +1,66 @@
+{
+  "measurements": [
+    {
+      "t": 1793595984.6052144,
+      "kind": "measurement",
+      "label": "initial_gain14",
+      "levels_dbfs": [
+        -33.6,
+        -33.6,
+        -33.6,
+        -33.6,
+        -33.6,
+        -33.6,
+        -33.6,
+        -33.5,
+        -33.5,
+        -33.5
+      ],
+      "mean_dbfs": -33.57
+    },
+    {
+      "t": 1793595993.2796493,
+      "kind": "measurement",
+      "label": "restart_0_gain14",
+      "levels_dbfs": [
+        -33.6,
+        -33.6,
+        -33.6,
+        -33.7,
+        -33.6,
+        -33.6,
+        -33.6,
+        -33.7,
+        -33.7,
+        -33.7
+      ],
+      "mean_dbfs": -33.64
+    },
+    {
+      "t": 1793596001.9304588,
+      "kind": "measurement",
+      "label": "restart_1_gain14",
+      "levels_dbfs": [
+        -33.7,
+        -33.7,
+        -33.7,
+        -33.6,
+        -33.7,
+        -33.7,
+        -33.6,
+        -33.6,
+        -33.7,
+        -33.7
+      ],
+      "mean_dbfs": -33.67
+    }
+  ],
+  "recorded_snapshot_lines": 512,
+  "error_lines": [
+    {
+      "t": 1793595974.88753,
+      "kind": "register",
+      "line": "W (26869) esp_rtl_sdr: E4000_START_REG stage=before_init error=repeater"
+    }
+  ]
+}
