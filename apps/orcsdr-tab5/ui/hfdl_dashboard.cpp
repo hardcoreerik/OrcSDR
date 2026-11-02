@@ -58,7 +58,11 @@ void draw_header() {
   M5.Display.fillRect(g_view.header.x,g_view.header.y,g_view.header.w,g_view.header.h,kBg);
   const int badge_size=(g_view.portrait?72:44);
   const int bx=10,by=8;
-  if(!orcsdr::badge::draw(bx,by,badge_size)) {
+  bool badge_ok=false;
+#ifndef ORCSDR_HFDL_HOST
+  badge_ok=orcsdr::badge::draw(bx,by,badge_size);
+#endif
+  if(!badge_ok) {
     M5.Display.drawRoundRect(bx,by,badge_size,badge_size,6,kGreen);
   }
   const int left=bx+badge_size+12;
@@ -138,6 +142,16 @@ void draw_detail(const hfdl_ui::MessageRecord& m){
   const int x=g_view.detail.x+14,y=g_view.detail.y;
   text("HFDL / MESSAGE DETAIL",x,y+28,kCyan,1);
   button(g_view.close,"BACK",true);
+  if(g_view.detail.h<300){
+    char compact[112]{};
+    std::snprintf(compact,sizeof(compact),"#%lu  %.3f MHz  %s",
+                  (unsigned long)m.seq,m.frequency_hz/1000000.0,m.label);
+    clipped_text(compact,x,y+82,g_view.detail.w-28,kGreen,2);
+    clipped_text(m.preview,x,y+127,g_view.detail.w-28,kWhite,1);
+    clipped_text("CRC-VERIFIED MESSAGE (PAYLOAD IN LONG VIEW)",x,y+173,
+                 g_view.detail.w-28,kMuted,1);
+    return;
+  }
   char line[104]{};
   std::snprintf(line,sizeof(line),"SEQ #%lu / %.3f MHz",
                 (unsigned long)m.seq,m.frequency_hz/1000000.0);
