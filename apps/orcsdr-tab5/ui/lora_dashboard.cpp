@@ -47,9 +47,14 @@ Snapshot g_snapshot{};
 View g_view = View::overview;
 tx_views::Page g_tx_page = tx_views::Page::operator_panel;
 
+// This reads the logical M5GFX design dimensions, NOT the panel's physical
+// dimensions. The P4 ScaledDisplay defaults to a 1280x720 logical canvas;
+// its eventual LilyGO panel backend must explicitly request 568x1232 here.
+bool portrait_lora_screen() {
+  return tx_views::portrait(M5.Display.width(), M5.Display.height());
+}
 bool portrait_tx_screen() {
-  return tx_views::portrait(M5.Display.width(), M5.Display.height()) &&
-         g_snapshot.tx.readiness != lora_tx::Readiness::absent;
+  return portrait_lora_screen() && g_snapshot.tx.readiness != lora_tx::Readiness::absent;
 }
 bool g_active = false;
 bool g_channels_open = false;
@@ -451,6 +456,14 @@ void draw_portrait_tx_header() {
   M5.Display.drawFastHLine(8, 139, 552, kCyan);
   text("LORA / SX1262 TX", 19, 121, TFT_WHITE, 2, middle_left);
   text("TX LAB", 475, 121, kYellow, 1, middle_left);
+}
+
+void draw_portrait_no_radio() {
+  card(16, 225, 536, 360, kYellow);
+  text("SX1262 NOT AVAILABLE", 34, 262, kYellow, 2, middle_left);
+  text("This device has no verified LoRa radio", 34, 320, kMuted, 1, middle_left);
+  text("TX controls are unavailable", 34, 372, kMuted, 1, middle_left);
+  text("HOME returns to the main application", 34, 425, kMuted, 1, middle_left);
 }
 
 void draw_portrait_tx_footer() {
@@ -859,11 +872,15 @@ void draw_channels_overlay() {
 
 void draw_static() {
   M5.Display.fillScreen(kBg);
-  if (portrait_tx_screen()) {
+  if (portrait_lora_screen()) {
     g_view = View::tx_lab;
     draw_portrait_tx_header();
-    draw_tx_static();
-    draw_tx_dynamic();
+    if (portrait_tx_screen()) {
+      draw_tx_static();
+      draw_tx_dynamic();
+    } else {
+      draw_portrait_no_radio();
+    }
     draw_portrait_tx_footer();
     return;
   }
@@ -892,7 +909,7 @@ void enter(const Snapshot& snapshot) {
   g_previous_spectrum_view = View::count;
   g_waterfall_floor_valid = false;
   g_tx_page = tx_views::Page::operator_panel;
-  if (portrait_tx_screen()) g_view = View::tx_lab;
+  if (portrait_lora_screen()) g_view = View::tx_lab;
   draw_static();
 }
 
@@ -919,9 +936,19 @@ void update(const Snapshot& snapshot) {
       snapshot.tx.frequency_hz != g_snapshot.tx.frequency_hz ||
       snapshot.tx.busy != g_snapshot.tx.busy ||
       snapshot.tx.max_payload_bytes != g_snapshot.tx.max_payload_bytes;
+  const bool capability_presence_changed =
+      (snapshot.tx.readiness == lora_tx::Readiness::absent) !=
+      (g_snapshot.tx.readiness == lora_tx::Readiness::absent);
   const bool content_changed = tx_changed || snapshot.revision != g_snapshot.revision;
   g_snapshot = snapshot;
-  if (portrait_tx_screen()) {
+  if (portrait_lora_screen()) {
+    if (capability_presence_changed) {
+      M5.Display.startWrite();
+      draw_static(); // structural transition: erase stale TX controls
+      M5.Display.endWrite();
+      return;
+    }
+    if (!portrait_tx_screen()) return; // no radio; no telemetry widgets to update
     if (!content_changed) return;  // no full-frame repaint on idle
     M5.Display.startWrite();
     draw_tx_dynamic();
@@ -930,6 +957,14 @@ void update(const Snapshot& snapshot) {
                            g_tx_page == tx_views::Page::operator_panel);
       draw_portrait_tx_footer();
     }
+    M5.Display.endWrite();
+    return;
+  }
+  if (g_view == View::tx_lab &&
+      g_snapshot.tx.readiness == lora_tx::Readiness::absent) {
+    g_view = View::overview;
+    M5.Display.startWrite();
+    draw_static(); // restore the ordinary 5-tab receive screen
     M5.Display.endWrite();
     return;
   }
@@ -1035,9 +1070,10 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
-  if (portrait_tx_screen()) {
+  if (portrait_lora_screen()) {
     if (tx_views::hit(x, y, 432, 20, 115, 62))
       return {ActionKind::exit_home};
+    if (!portrait_tx_screen()) return {};
     const int mode = tx_views::page_at(x, y, true);
     if (mode >= 0) {
       if (g_tx_page != static_cast<tx_views::Page>(mode)) {
