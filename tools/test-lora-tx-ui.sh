@@ -20,4 +20,12 @@ build/lora-tx-ui/policy 2>&1 | tee build/lora-tx-ui/policy.log
   -Itests/lora_tx_ui_stubs -Itests/ft8_ui_stubs -Itests/acars_ui_stubs \
   -Iapps/orcsdr-tab5/ui apps/orcsdr-tab5/ui/lora_dashboard.cpp \
   2>&1 | tee build/lora-tx-ui/integrated-syntax.log
+# Link and execute the real lora_dashboard.cpp with neutral host dependencies.
+# Exercises Tab5 RX-only, operator buttons, input navigation and hot-unplug.
+"$cxx" "${flags[@]}" -Itests/lora_tx_ui_stubs -Itests/ft8_ui_stubs \
+  -Iapps/orcsdr-tab5/ui \
+  tests/lora_tx_full_dashboard_host_tests.cpp \
+  apps/orcsdr-tab5/ui/lora_dashboard.cpp \
+  -o build/lora-tx-ui/integrated
+build/lora-tx-ui/integrated 2>&1 | tee build/lora-tx-ui/integrated.log
 echo "lora TX UI host suite PASS" | tee build/lora-tx-ui/result.log
