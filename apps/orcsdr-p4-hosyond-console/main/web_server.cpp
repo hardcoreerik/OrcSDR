@@ -12,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_store.hpp"
+#include "eth_app.hpp"
 #include "web_compat.hpp"
 #include "wifi_app.hpp"
 
@@ -77,7 +78,8 @@ bool host_allowed(httpd_req_t* req, char* host_header, size_t cap) {
   std::snprintf(host, sizeof(host), "%s", host_header);
   if (char* colon = std::strchr(host, ':')) *colon = '\0';
   const wifi_app::Status w = wifi_app::status();
-  return (w.ip[0] && std::strcmp(host, w.ip) == 0) || strcasecmp(host, "orcsdr.local") == 0;
+  const eth_app::Status e = eth_app::status();
+  return (w.ip[0] && std::strcmp(host, w.ip) == 0) || (e.got_ip && e.ip[0] && std::strcmp(host, e.ip) == 0) || strcasecmp(host, "orcsdr.local") == 0;
 }
 
 // A browser sends Origin on cross-site requests; accept it only when it names this same host (CSRF belt and braces).
@@ -294,17 +296,35 @@ bool start_server(const char* ip) {
   return true;
 }
 
+// The address to serve on: Wi-Fi when it is connected, otherwise the wired link. Empty when neither has an address.
+void current_ip(char* out, size_t cap) {
+  out[0] = ' ';
+  const wifi_app::Status w = wifi_app::status();
+  if (w.connected && w.ip[0]) {
+    std::snprintf(out, cap, "%s", w.ip);
+    return;
+  }
+  const eth_app::Status e = eth_app::status();
+  if (e.got_ip && e.ip[0]) std::snprintf(out, cap, "%s", e.ip);
+}
+
 void manager(void*) {
-  int64_t wifi_up_since = 0;
+  int64_t link_up_since = 0;
+  char serving_ip[16] = {};
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(1000));
-    const wifi_app::Status w = wifi_app::status();
-    const bool link = w.connected && w.ip[0];
-    if (!link) wifi_up_since = 0;
-    else if (!wifi_up_since) wifi_up_since = esp_timer_get_time();
-    const bool want = g_enabled.load() && link && esp_timer_get_time() - wifi_up_since > 2500000;
-    if (want && !g_listening.load()) start_server(w.ip);
-    else if (!want && g_listening.load()) stop_server();
+    char ip[16];
+    current_ip(ip, sizeof(ip));
+    if (!ip[0]) link_up_since = 0;
+    else if (!link_up_since) link_up_since = esp_timer_get_time();
+    const bool want = g_enabled.load() && ip[0] && esp_timer_get_time() - link_up_since > 2500000;
+    // The server is bound to all interfaces, but the advertised address and the Host check follow the active link: restart if it changed.
+    if (g_listening.load() && want && std::strcmp(serving_ip, ip) != 0) stop_server();
+    if (want && !g_listening.load()) {
+      if (start_server(ip)) std::snprintf(serving_ip, sizeof(serving_ip), "%s", ip);
+    } else if (!want && g_listening.load()) {
+      stop_server();
+    }
   }
 }
 }  // namespace

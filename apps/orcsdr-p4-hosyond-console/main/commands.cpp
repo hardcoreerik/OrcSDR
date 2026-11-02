@@ -6,6 +6,7 @@
 #include "home_app.hpp"
 #include "radio_service.hpp"
 #include "sd_card.hpp"
+#include "eth_app.hpp"
 #include "web_server.hpp"
 #include "wifi_app.hpp"
 
@@ -269,6 +270,24 @@ Status run_ui(const Caller&, const Args&, Result& r) {
   return Status::ok;
 }
 
+Status run_eth(const Caller&, const Args&, Result& r) {
+  const eth_app::Status e = eth_app::status();
+  Record* rec = add_record(r, "RTL_ETH_STATUS");
+  put_int(*rec, "compiled", e.compiled);
+  put_int(*rec, "started", e.started);
+  put_int(*rec, "link_up", e.link_up);
+  put_int(*rec, "got_ip", e.got_ip);
+  put_int(*rec, "speed_mbps", e.speed_mbps);
+  put_int(*rec, "full_duplex", e.full_duplex);
+  put_text(r, *rec, "ip", e.ip);
+  put_text(r, *rec, "gateway", e.gateway);
+  put_text(r, *rec, "mac", e.mac);
+  put_text(r, *rec, "phy", e.phy);
+  put_text(r, *rec, "error", e.error);
+  put_uint(*rec, "link_changes", e.link_changes);
+  return Status::ok;
+}
+
 Status run_web(const Caller&, const Args&, Result& r) {
   Record* rec = add_record(r, "RTL_WEB_STATUS");
   put_int(*rec, "enabled", web_server::enabled());
@@ -288,6 +307,7 @@ const Command kCommands[] = {
     {"RTL_SD STATUS", "sd", Access::read, run_sd},
     {"RTL_AUDIO STATUS", "audio", Access::read, run_audio},
     {"RTL_UI STATUS", "ui", Access::read, run_ui},
+    {"RTL_ETH_STATUS", "eth", Access::read, run_eth},
     {"RTL_WEB_STATUS", "web", Access::read, run_web},
     {"RTL_WEB", nullptr, Access::read, run_web},  // serial alias of RTL_WEB_STATUS (Tab5 command spec)
 };

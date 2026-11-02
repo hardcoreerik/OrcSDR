@@ -8,6 +8,7 @@
 #include "esp_mac.h"
 #include "esp_rtl_sdr.h"
 #include "esp_timer.h"
+#include "eth_app.hpp"
 #include "orcsdr_board_profile.h"
 #include "radio_service.hpp"
 #include "sd_card.hpp"
@@ -106,6 +107,7 @@ void report(Out& o) {
   char node[24];
   std::snprintf(node, sizeof(node), "orcsdr-p4-%02x%02x%02x", mac[3], mac[4], mac[5]);
   const wifi_app::Status w = wifi_app::status();
+  const eth_app::Status eth = eth_app::status();
   const sd_card::Status s = sd_card::status();
   o.raw("{\"node_id\":");
   o.str(node);
@@ -115,7 +117,9 @@ void report(Out& o) {
   o.str(fw);
   o.raw(",\"board\":");
   o.str(orcsdr_board_profile()->name);
-  o.fmt(",\"uptime_us\":%lld,\"eth\":{\"link\":false,\"ip\":\"\"},\"wifi\":{\"started\":%s,\"connected\":%s,\"got_ip\":%s,\"ip\":", static_cast<long long>(esp_timer_get_time()),
+  o.fmt(",\"uptime_us\":%lld,\"eth\":{\"link\":%s,\"ip\":", static_cast<long long>(esp_timer_get_time()), eth.link_up ? "true" : "false");
+  o.str(eth.ip);
+  o.fmt(",\"speed_mbps\":%d},\"wifi\":{\"started\":%s,\"connected\":%s,\"got_ip\":%s,\"ip\":", eth.speed_mbps,
         w.started ? "true" : "false", w.connected ? "true" : "false", w.connected && w.ip[0] ? "true" : "false");
   o.str(w.ip);
   o.raw(",\"ssid\":");

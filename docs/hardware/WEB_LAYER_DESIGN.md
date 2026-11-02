@@ -242,3 +242,14 @@ Firmware: `claude/p4-web-ui`, build `build-web-ui` (bundle from `F:\Ai\_orcsdr_w
 - **Finding (not caused by the sink fix):** after a restart, opening the **LoRa** screen once takes about 16.7 MB of PSRAM and 12.8 KB of internal RAM that are not returned when it closes (PSRAM free 31.4 MB to 14.1 MB, internal 145.8 KB to 131.8 KB). More cycles
   do not grow it further. RF Lab and ACARS return nearly all of theirs (about 0.3 and 0.5 MB stay held). The LoRa screen is `main/screen_lora.cpp`.
 - **Not done / not tested:** every route the page uses beyond the six above (decode, channel, wifi/scan, sd, controls, POST), the IQ WebSocket, audio, the decoders and RF Lab inside the browser, a second browser at once, sustained hours, and the P4-ETH (needs the Ethernet driver).
+
+## 13. Web server on a wired link (built, not run), 2026-11-01
+
+For the Waveshare ESP32-P4-ETH (no Wi-Fi radio) the server now starts on either link: the manager serves on the Wi-Fi address when Wi-Fi is connected, otherwise on the Ethernet address
+(`eth_app`, board-support branch), after the link has been up for 2.5 s, and restarts if the active address changes. The `Host` check accepts the device's address on either link.
+`RTL_ETH_STATUS` / `/api/v1/eth` (read tier) reports compiled, started, link, DHCP address, speed, duplex, MAC, which PHY driver, and why it did not start; the page's `report` route fills `eth.link`
+and `eth.ip` from it.
+
+- **Builds:** `build-p4eth-web` (P4-ETH, v3 silicon, Ethernet on, UI bundle embedded; image 3.6 MB, 50 % of the app slot free) and, unchanged in behaviour, `build-web-ui` (WIFI6-DB).
+- **Not flashed or run.** First run on COM29 (Waveshare ESP32-P4-ETH) needs an Ethernet cable from its RJ45 to the router. What the first run will tell us: whether the profile pins, PHY address (1) and PHY chip (IP101 first, generic as fallback) are right for this board;
+  link speed and duplex; whether DHCP answers; internal RAM left with the EMAC driver (unmeasured); then whether the page loads and streams from the wired address with the Blog V4L on its USB header.
