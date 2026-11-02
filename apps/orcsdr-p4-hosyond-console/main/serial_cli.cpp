@@ -38,7 +38,9 @@ namespace {
 constexpr char TAG[] = "SERIAL_CLI";
 constexpr auto kPort = static_cast<uart_port_t>(CONFIG_ESP_CONSOLE_UART_NUM);
 constexpr int64_t kSessionTimeoutUs = 10 * 1000 * 1000;  // an authenticated session ends after 10 s without a command
-constexpr uint32_t kTuneMinHz = orcsdr::commands::kTuneMinHz, kTuneMaxHz = orcsdr::commands::kTuneMaxHz;
+// The tune range is what the dongle reports (radio_service), not a number of ours.
+uint32_t tune_min() { return orcsdr::radio::tune_min_hz(0); }
+uint32_t tune_max() { return orcsdr::radio::tune_max_hz(0); }
 
 orcsdr::gfx::ScaledDisplay* g_display = nullptr;
 uint8_t g_pairing_key[32];
@@ -178,8 +180,8 @@ void cmd_freq(const char* arg) {
   }
   char* end = nullptr;
   const unsigned long hz = std::strtoul(arg, &end, 10);
-  if (end == arg || *end != '\0' || hz < kTuneMinHz || hz > kTuneMaxHz) {
-    std::printf("RTL_FREQ_INVALID use RTL_FREQ <%u-%u>\n", unsigned(kTuneMinHz), unsigned(kTuneMaxHz));
+  if (end == arg || *end != '\0' || hz < tune_min() || hz > tune_max()) {
+    std::printf("RTL_FREQ_INVALID use RTL_FREQ <%u-%u>\n", unsigned(tune_min()), unsigned(tune_max()));
     return;
   }
   home_app::request_frequency(static_cast<uint32_t>(hz));
@@ -197,7 +199,7 @@ void cmd_tune(const char* args) {
   bool known = false;
   if (std::sscanf(args, "%15s %lu", band, &hz) == 2)
     for (const char* b : kBands) known |= std::strcmp(b, band) == 0;
-  if (!known || hz < kTuneMinHz || hz > kTuneMaxHz) {
+  if (!known || hz < tune_min() || hz > tune_max()) {
     std::printf("RTL_TUNE_INVALID use RTL_TUNE <FM|AM|WX|CB|P25|LORA|BROWSE> <HZ>\n");
     return;
   }

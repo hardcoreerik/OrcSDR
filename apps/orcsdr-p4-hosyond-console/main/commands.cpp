@@ -302,7 +302,7 @@ Status run_web(const Caller&, const Args&, Result& r) {
 
 // Control tier: the dispatcher refuses these unless the caller is authenticated (a signed web session or the serial AUTH handshake).
 Status run_freq_set(const Caller&, const Args& a, Result& r) {
-  if (a.value < static_cast<int64_t>(kTuneMinHz) || a.value > static_cast<int64_t>(kTuneMaxHz)) return Status::invalid;
+  if (a.value < static_cast<int64_t>(orcsdr::radio::tune_min_hz(0)) || a.value > static_cast<int64_t>(orcsdr::radio::tune_max_hz(0))) return Status::invalid;
   home_app::request_frequency(static_cast<uint32_t>(a.value));
   Record* rec = add_record(r, "RTL_FREQ_OK");
   put_uint(*rec, "frequency_hz", static_cast<uint64_t>(a.value));

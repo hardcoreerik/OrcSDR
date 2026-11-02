@@ -21,7 +21,7 @@ struct Status {
 };
 
 // `request_sps` 0 = the most the demodulator takes. The receiver is set to a rate the driver accepts and the demodulator can run (a multiple of 240 kS/s
-// from 960 kS/s to 2.4 MS/s); the rate really used is in the reply. `mode` is "wfm", "nfm" or "am". `peer` is the signed caller's address: only it may open the socket.
+// from 960 kS/s to 2.4 MS/s); the rate really used is in the reply. `mode` is "wfm", "nfm", "am", "usb" or "lsb". `peer` is the signed caller's address: only it may open the socket.
 Result start(int rx, uint32_t station_hz, uint32_t request_sps, int volume, const char* mode, uint32_t peer, char* out, size_t cap);
 void stop();                 // ends the session and closes the audio socket
 bool set_volume(int volume); // false when no session is running

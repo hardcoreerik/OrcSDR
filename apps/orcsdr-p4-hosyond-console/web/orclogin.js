@@ -92,22 +92,47 @@
   // tap or key press does it. This only ever touches the browser's own audio: nothing is sent to the node, so the board's speaker is left alone.
   // If the node is not already playing for the browser and its receiver sits in the FM broadcast band, the node's audio session is started on that
   // station first (a signed request, through the wrapper below); on other bands the audio starts with the screen (AM, shortwave). Nothing here sets the board's volume.
-  async function startAudio() {
+  // The mode follows the frequency the way the page's band table does (broadcast FM wide, airband and military AM, other VHF/UHF narrow FM, below 30 MHz AM).
+  const audioMode = hz => hz >= 87500000 && hz < 108000000 ? 'wfm' : hz === 1090000000 ? null : hz >= 118000000 && hz < 137000000 || hz >= 225000000 && hz < 400000000 || hz < 30000000 ? 'am' : 'nfm';
+  const say = m => { try { if (typeof toast === 'function') toast(m); } catch (e) { /* no toast */ } };
+  async function startAudio(manual) {
     try {
-      if (typeof Listen === 'undefined' || Listen.wanted || (typeof Chan !== 'undefined' && Chan.active)) return;
+      if (typeof Listen === 'undefined' || Listen.wanted) return;
+      if (typeof Chan !== 'undefined' && Chan.active) { if (manual) say('This screen already plays its own audio in the browser'); return; }
       await Listen.prime();
       const get = async p => (await nativeFetch(p, { cache: 'no-store' })).json();
       const fm = await get('/api/v1/fm');
-      if (!fm.browser_audio || !fm.browser_audio.available) return;
+      if (!fm.browser_audio || !fm.browser_audio.available) { if (manual) say('This firmware has no browser audio'); return; }
       if (!fm.playing) {
         const rx = ((await get('/api/v1/receivers')).receivers || []).find(r => r.present && r.center_hz);
-        if (!rx || rx.center_hz < 87500000 || rx.center_hz > 108000000) return;
-        const r = await window.fetch('/api/v1/fm?action=start&index=' + rx.index + '&hz=' + rx.center_hz + '&sps=2400000&volume=30&tau=75', { method: 'POST' });
-        if (!r.ok) return;
+        if (!rx) { if (manual) say('No receiver is streaming'); return; }
+        // The Home screen already knows the right mode for the band (USB/LSB on HF, AM, NFM, WFM): ask it, and fall back to the page's own band rule.
+        let mode = null;
+        try { mode = String(((await get('/api/v1/freq')).records[0] || {}).mode || '').toLowerCase(); } catch (e) { /* use the fallback */ }
+        if (!['wfm', 'nfm', 'am', 'usb', 'lsb'].includes(mode)) mode = audioMode(rx.center_hz);
+        if (!mode) { if (manual) say('No audio at this frequency'); return; }
+        const r = await window.fetch('/api/v1/fm?action=start&index=' + rx.index + '&hz=' + rx.center_hz + '&sps=2400000&volume=30&tau=75&mode=' + mode, { method: 'POST' });
+        if (!r.ok) { if (manual) say('Browser audio could not start: ' + ((await r.json().catch(() => ({}))).error || r.status)); return; }
       }
       if (!Listen.wanted) Listen.toggle();
     } catch (e) { /* the page's audio is optional */ }
   }
+
+  // The page's "Listen here" button: renamed, and pressing it starts the node's audio for whatever the receiver is tuned to, then plays it here.
+  function audioButton() {
+    const b = document.getElementById('listen');
+    if (!b) return;
+    const names = { 'Listen here': 'Start Browser Audio', 'Stop listening': 'Stop Browser Audio' };
+    const rename = () => { const t = b.textContent.trim(); if (names[t]) b.textContent = names[t]; };
+    rename();
+    b.title = 'Play the node\'s audio in this browser (the board\'s own speaker is not touched)';
+    new MutationObserver(rename).observe(b, { childList: true, characterData: true, subtree: true });
+    document.addEventListener('click', e => {
+      if (!e.target.closest || !e.target.closest('#listen')) return;
+      if (typeof Listen !== 'undefined' && !Listen.wanted) { e.stopImmediatePropagation(); e.preventDefault(); startAudio(true); }
+    }, true);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', audioButton); else audioButton();
   function armAudio(gestured) {
     if (gestured) return startAudio();
     const once = () => { removeEventListener('pointerdown', once, true); removeEventListener('keydown', once, true); startAudio(); };

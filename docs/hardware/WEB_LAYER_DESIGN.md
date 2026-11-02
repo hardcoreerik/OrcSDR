@@ -354,3 +354,9 @@ Also changed: up to 4 sessions with least-recently-used eviction (a correct pass
 
 Verified (tools/web_audio_test.js, 26 checks, COM29 Waveshare ESP32-P4-ETH): real-time 50 packets/s, consecutive sequence and sample counter, non-silent unclipped audio, rates 960k/1.44M/2.4M, AM at 1280 kHz, board volume unchanged, stop closes the socket. Demodulation costs about 50 % of one core at 2.4 MS/s (1.7 ms per 3.4 ms block), 39 % at 960 kS/s.
 **Not verified:** audible playback in a browser. Neither automated browser could open the socket (the Chrome extension tab is on another address than my signed request; the built-in pane cannot reach port 81), so the owner's own browser is the test.
+
+### 18.1 Follow-ups the same evening
+
+- **Home's own 24 MHz clamp is gone.** The web tune on receiver 0 goes through the Home screen, which clamped every frequency to 24 MHz (a Tab5 default copied into `home_app.cpp`): a tune to 14.0375 MHz landed on 24.000 MHz and a step down from 24.000 MHz went nowhere, so the page's TUNE and STEP buttons looked dead on HF. Home, the serial `RTL_FREQ`/`RTL_TUNE`, `RTL_FREQ_SET` and the rtl_tcp adapter now take their range from `radio::tune_min_hz/tune_max_hz` (dongle capabilities and the driver's ceiling). Checked on COM29: 14.0375 MHz -> USB, 7.074 MHz -> LSB, 1.28 MHz -> AM, 96.1 MHz -> WFM, receiver and Home both follow.
+- **"Listen here" is "Start Browser Audio"** (and "Stop Browser Audio"). Pressing it asks Home for its mode for the current tuning, starts the node's audio session for that frequency (`fm?action=start&mode=wfm|nfm|am|usb|lsb`) and plays it in the browser; the same path runs once after login. It never changes the board's volume or mute.
+- `web_audio` gained `usb` and `lsb` (the demodulator already had them). Tested on COM29 with real signals: USB 14.0375 MHz, LSB 7.074 MHz, AM 1.28 MHz, WFM 96.1 MHz.

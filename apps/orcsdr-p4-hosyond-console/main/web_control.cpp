@@ -49,12 +49,7 @@ void tune(int rx, uint32_t hz) {
 }
 }  // namespace
 
-uint32_t tune_min_hz(int rx) {
-  const uint32_t caps = radio::info(rx < 0 ? 0 : rx).caps;
-  if (caps & ESP_RTL_SDR_CAP_HF_UPCONVERTER) return ESP_RTL_SDR_FREQ_MIN_HZ;
-  if (caps & ESP_RTL_SDR_CAP_DIRECT_SAMPLING) return 100000u;
-  return orcsdr::commands::kTuneMinHz;
-}
+uint32_t tune_min_hz(int rx) { return radio::tune_min_hz(rx); }
 
 Result run(const char* route, const char* query, uint32_t peer, char* out, size_t cap) {
   long long v = 0;

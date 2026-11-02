@@ -28,7 +28,6 @@ using namespace orcsdr;
 namespace {
 constexpr char TAG[] = "HOME_APP";
 constexpr band_profile::Region kRegion = band_profile::Region::us;
-constexpr uint32_t kTuneMinHz = 24000000, kTuneMaxHz = 1766000000;  // the dongle's range (Tab5 default)
 
 gfx::ScaledDisplay* g_display = nullptr;
 std::atomic<int> g_tap_x{-1}, g_tap_y{-1};  // pending injected tap, design coordinates (-1 = none)
@@ -63,7 +62,7 @@ home_vfo::Demod active_demod(const band_profile::Profile& p) {
 }
 
 void retune(uint32_t hz) {
-  hz = std::clamp(hz, kTuneMinHz, kTuneMaxHz);
+  hz = std::clamp(hz, radio::tune_min_hz(0), radio::tune_max_hz(0));  // the dongle's own range, as it reports it
   g_frequency_hz = hz;
   const band_profile::Profile& p = current_profile();
   home_vfo::Demod mode;
@@ -87,8 +86,8 @@ void fill_snapshot() {
   s.status_revision = g_status_rev;
   s.frequency_hz = radio_state.applied_hz ? radio_state.applied_hz : g_frequency_hz;
   s.requested_frequency_hz = g_frequency_hz;
-  s.tune_min_hz = kTuneMinHz;
-  s.tune_max_hz = kTuneMaxHz;
+  s.tune_min_hz = radio::tune_min_hz(0);
+  s.tune_max_hz = radio::tune_max_hz(0);
   s.span_hz = g_span_hz;
   s.step_hz = g_step_hz;
   s.step_adjustable = band_profile::has_step_control(p);
@@ -139,8 +138,8 @@ void handle_action(const home::Action& a) {
     case home::ActionKind::step_up:
     case home::ActionKind::step_down: {
       const int dir = a.kind == home::ActionKind::step_up ? 1 : -1;
-      retune(band_profile::step_frequency(p, g_frequency_hz, g_step_hz ? g_step_hz : g_vfo.step_hz(p), dir, kTuneMinHz,
-                                           kTuneMaxHz));
+      retune(band_profile::step_frequency(p, g_frequency_hz, g_step_hz ? g_step_hz : g_vfo.step_hz(p), dir, radio::tune_min_hz(0),
+                                           radio::tune_max_hz(0)));
       break;
     }
     case home::ActionKind::step_size_up:

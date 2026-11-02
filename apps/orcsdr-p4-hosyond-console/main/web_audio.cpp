@@ -154,6 +154,8 @@ Result start(int rx, uint32_t station_hz, uint32_t request_sps, int volume, cons
     if (!std::strcmp(mode_name, "wfm")) mode = dsp::Mode::wfm;
     else if (!std::strcmp(mode_name, "nfm")) mode = dsp::Mode::nfm;
     else if (!std::strcmp(mode_name, "am")) mode = dsp::Mode::am;
+    else if (!std::strcmp(mode_name, "usb")) mode = dsp::Mode::usb;
+    else if (!std::strcmp(mode_name, "lsb")) mode = dsp::Mode::lsb;
     else return fail(Result::bad_request, "bad_mode");
   }
   radio::ReceiverInfo ri;

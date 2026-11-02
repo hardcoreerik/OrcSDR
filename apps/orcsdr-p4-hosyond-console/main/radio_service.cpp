@@ -568,6 +568,13 @@ Info info(int rx) {
   return i;
 }
 Info info() { return info(0); }
+uint32_t tune_min_hz(int rx) {
+  const uint32_t caps = info(rx < 0 ? 0 : rx).caps;
+  if (caps & ESP_RTL_SDR_CAP_HF_UPCONVERTER) return ESP_RTL_SDR_FREQ_MIN_HZ;
+  if (caps & ESP_RTL_SDR_CAP_DIRECT_SAMPLING) return 100000u;
+  return 24000000u;
+}
+uint32_t tune_max_hz(int) { return ESP_RTL_SDR_FREQ_MAX_HZ; }
 void set_ppm(int ppm) {
   g_rx[0].gain_req_value = ppm;
   g_rx[0].gain_req_kind = 5;

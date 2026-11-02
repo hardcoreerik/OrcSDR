@@ -104,7 +104,7 @@ class OrcHost : public esp_rtl_tcp::Host {
   }
 
   bool set_center(uint32_t hz) override {
-    if (hz < web_control::tune_min_hz(kReceiver) || hz > ESP_RTL_SDR_FREQ_MAX_HZ) return false;
+    if (hz < orcsdr::radio::tune_min_hz(kReceiver) || hz > orcsdr::radio::tune_max_hz(kReceiver)) return false;
     orcsdr::radio::tune_to(kReceiver, hz);
     return true;
   }

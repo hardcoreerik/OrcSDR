@@ -93,6 +93,10 @@ uint32_t sample_rate(int rx);
 float level_dbfs(int rx);
 Gain gain(int rx);
 Info info(int rx);
+// What receiver `rx` can tune, from what the dongle reports (never a number of ours): the floor is 24 kHz with a built-in upconverter, 100 kHz through
+// direct sampling and 24 MHz for a tuner-only dongle (or while no dongle has been identified); the ceiling is the driver's. The driver has the last word.
+uint32_t tune_min_hz(int rx);
+uint32_t tune_max_hz(int rx);
 void set_gain_auto(int rx);
 void set_gain_manual(int rx, int tenth_db);
 void set_rtl_agc(int rx, bool enable);
