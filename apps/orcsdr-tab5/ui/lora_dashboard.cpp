@@ -960,11 +960,12 @@ void update(const Snapshot& snapshot) {
     M5.Display.endWrite();
     return;
   }
-  if (g_view == View::tx_lab &&
-      g_snapshot.tx.readiness == lora_tx::Readiness::absent) {
-    g_view = View::overview;
+  if (capability_presence_changed) {
+    if (g_view == View::tx_lab &&
+        g_snapshot.tx.readiness == lora_tx::Readiness::absent)
+      g_view = View::overview;
     M5.Display.startWrite();
-    draw_static(); // restore the ordinary 5-tab receive screen
+    draw_static(); // rebuild the 5/6-tab navigation in BOTH directions
     M5.Display.endWrite();
     return;
   }
