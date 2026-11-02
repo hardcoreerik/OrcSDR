@@ -56,7 +56,7 @@ std::atomic<uint32_t> g_ticket_peer{0};
 std::atomic<int64_t> g_ticket_until{0};
 Channel* g_chan = nullptr;
 radio::SinkHandle g_sink = -1;
-uint32_t g_start_count = 0;
+uint32_t g_start_count = 0, g_origin_hz = 0, g_last_center = 0;
 
 void put32(uint8_t* p, uint32_t v) {
   p[0] = uint8_t(v);
@@ -286,7 +286,10 @@ Start start_channel(int rx, uint32_t hz, uint32_t wide_center_hz, uint32_t wide_
   c->rx = rx;
   c->in_rate = in_rate;
   c->center_hz = center;
-  c->restore_hz = ri.frequency_hz;
+  // Where the receiver really was: if it still reads as the last channel's window (the retune back is not visible yet) the earlier original is kept.
+  c->restore_hz = (g_origin_hz && ri.frequency_hz == g_last_center) ? g_origin_hz : ri.frequency_hz;
+  g_origin_hz = c->restore_hz;
+  g_last_center = center;
   c->out_rate = out_rate;
   c->decim = decim;
   float gain = 1.f;
