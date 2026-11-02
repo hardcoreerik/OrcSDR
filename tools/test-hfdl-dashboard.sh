@@ -22,5 +22,10 @@ LOG="$OUT/test.log"
     "$ROOT/apps/orcsdr-tab5/ui/hfdl_dashboard_ui.cpp" \
     -o "$OUT/hfdl-render-tests"
   "$OUT/hfdl-render-tests"
+  "${CXX:-c++}" -std=c++17 -O2 -Wall -Wextra -Werror \
+    "$ROOT/tests/hfdl_registry_test.cpp" \
+    "$ROOT/apps/orcsdr-tab5/ui/dashboard_registry.cpp" \
+    -o "$OUT/hfdl-registry-tests"
+  "$OUT/hfdl-registry-tests"
   echo "HFDL test end: $(date -u +%FT%TZ)"
 } 2>&1 | tee "$LOG"
