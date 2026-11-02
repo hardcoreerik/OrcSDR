@@ -21,6 +21,7 @@
 #include "freertos/task.h"
 #include "audio_service.hpp"
 #include "commands.hpp"
+#include "web_auth.hpp"
 #include "web_server.hpp"
 #include "home_app.hpp"
 #include "mbedtls/md.h"
@@ -37,7 +38,7 @@ namespace {
 constexpr char TAG[] = "SERIAL_CLI";
 constexpr auto kPort = static_cast<uart_port_t>(CONFIG_ESP_CONSOLE_UART_NUM);
 constexpr int64_t kSessionTimeoutUs = 10 * 1000 * 1000;  // an authenticated session ends after 10 s without a command
-constexpr uint32_t kTuneMinHz = 24000000, kTuneMaxHz = 1766000000;
+constexpr uint32_t kTuneMinHz = orcsdr::commands::kTuneMinHz, kTuneMaxHz = orcsdr::commands::kTuneMaxHz;
 
 orcsdr::gfx::ScaledDisplay* g_display = nullptr;
 uint8_t g_pairing_key[32];
@@ -164,7 +165,8 @@ void cmd_help() {
   std::printf("RTL_VOLUME | RTL_VOLUME <0-32>                   - query / set (auth)\n");
   std::printf("RTL_UI STATUS | RTL_UI OPEN <HOME> | RTL_UI TAP <x 0-1279> <y 0-719>  - UI (OPEN/TAP need auth)\n");
   std::printf("RTL_SCREEN_STATUS / RTL_MEM STATUS / RTL_RX STATUS - diagnostics (RTL_RX: one line per receiver)\n");
-  std::printf("RTL_WEB | RTL_WEB ON|OFF                          - read-only web server on port 80 (ON/OFF need auth; off by default)\n");
+  std::printf("RTL_WEB | RTL_WEB ON|OFF                          - web server on port 80 (ON/OFF need auth; off by default)\n");
+  std::printf("RTL_WEB PASSWORD <8-64 chars>                    - change the web login password, user admin (auth; factory password is 'password')\n");
   std::printf("FT8 SNAP                                        - screenshot as PNG over serial (auth)\n");
 }
 
@@ -582,6 +584,15 @@ void handle_line(char* line) {
     }
     web_server::set_enabled(line[9] == 'N');
     std::printf("RTL_WEB_OK enabled=%d listening=%d url=%s\n", web_server::enabled(), web_server::listening(), web_server::url());
+    return;
+  }
+  if (std::strncmp(line, "RTL_WEB PASSWORD ", 17) == 0) {
+    // Admin tier: serial only, never echoed. Ends every web session.
+    if (!authed()) {
+      std::printf("RTL_WEB_PASSWORD_ERROR auth_required\n");
+      return;
+    }
+    std::printf(web_auth::set_password(line + 17) ? "RTL_WEB_PASSWORD_OK sessions_ended=1\n" : "RTL_WEB_PASSWORD_INVALID use 8 to 64 characters, not the factory password\n");
     return;
   }
   if (std::strcmp(line, "RTL_HELP") == 0) return cmd_help();

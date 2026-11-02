@@ -18,7 +18,12 @@ struct Caller {
 };
 struct Args {
   int rx = 0;  // receiver index
+  int64_t value = -1;  // numeric argument of a control command (Hz, volume step); -1 = not given
 };
+
+// Tuning limits shared by the serial CLI and the web control routes.
+constexpr uint32_t kTuneMinHz = 24000000, kTuneMaxHz = 1766000000;
+constexpr int kVolumeMax = 32;
 
 constexpr int kMaxFields = 14, kMaxRecords = 5;
 

@@ -253,3 +253,18 @@ and `eth.ip` from it.
 - **Builds:** `build-p4eth-web` (P4-ETH, v3 silicon, Ethernet on, UI bundle embedded; image 3.6 MB, 50 % of the app slot free) and, unchanged in behaviour, `build-web-ui` (WIFI6-DB).
 - **Not flashed or run.** First run on COM29 (Waveshare ESP32-P4-ETH) needs an Ethernet cable from its RJ45 to the router. What the first run will tell us: whether the profile pins, PHY address (1) and PHY chip (IP101 first, generic as fallback) are right for this board;
   link speed and duplex; whether DHCP answers; internal RAM left with the EMAC driver (unmeasured); then whether the page loads and streams from the wired address with the Blog V4L on its USB header.
+
+## 14. Step two: login and control routes (built, not flashed), 2026-11-02
+
+Owner decision 2026-10-31: the default login is `admin` / `password`. Written as the design in section 3.3, with the key taken from the password rather than the serial pairing key (so the page needs no pasted key).
+
+- **Module** `main/web_auth.{hpp,cpp}`. The device stores `PBKDF2-HMAC-SHA256(password, salt, 10000)` and the salt in NVS namespace `orcsdr_wauth`, never the password. The first boot creates the factory credential and logs `WEB_LOGIN_FACTORY_PASSWORD`.
+- **Routes.** `GET /api/v1/auth/challenge` (single-use 16-byte nonce, 30 s, plus salt, iterations and `default_password`); `POST /api/v1/auth/login` (`nonce=<hex>&proof=<hex>`); `POST /api/v1/auth/logout` (signed).
+  Proof, device proof, session key and the per-request signature are defined in the header of `web_auth.hpp`. The signature covers the sequence number, method, the exact target (path and query) and the SHA-256 of the body.
+- **Control commands** are table entries with `Access::control`: `RTL_FREQ_SET` (`POST /api/v1/freq_set?hz=`) and `RTL_VOLUME_SET` (`POST /api/v1/volume_set?level=`), same limits as the serial commands (limits now live in `commands.hpp`). They run only for a verified session; the dispatcher refuses them otherwise.
+- **Limits.** Two sessions, idle 5 min, hard 1 h; failed logins back off per client address (1, 2, 4 ... 30 s); body capped at 160 bytes; `Host` and `Origin` checks unchanged and applied to POST. Serial: `RTL_WEB PASSWORD <8-64 chars>` (authenticated, never echoed, refuses the factory password, ends every session). `RTL_WEB_STATUS` shows `default_password` and `sessions`.
+- **What the factory password means.** It is published, so anyone on the LAN can log in until it is changed. It still blocks a drive-by page in a browser (no session, no signature), it throttles guessing, and nothing sends the password or a reusable token. The page is told `default_password=true` so it can show a banner.
+  Admin-tier actions (Wi-Fi credentials, restart, SD format, TAP) stay serial-only whatever the password is.
+- **The bundled page cannot use it yet.** Its controls are POSTs with a fixed `X-OrcSDR-Confirm` header (`tuner/gain`, `tuner/agc`, `receivers/tune`, `receivers/rate`, `fm?action=`, `channel`, `time`) and it has no login. Those routes are not built, so every page control returns 405 until the page gets a login
+  screen, a small SHA-256/HMAC/PBKDF2 in JavaScript (`crypto.subtle` is unavailable over plain HTTP) and signed requests. That is a change to the page in the OrcSDR-Headless repository and needs the owner's decision.
+- **Test:** `tools/p4_web_auth_test.py <ip>` is a reference client and 23 checks (replay, lower sequence, tampered target or body, wrong password, reused nonce, foreign Host and Origin, oversize body, throttle, logout). **Not run**: built (`build-p4eth-web`, image 3.6 MB) but not flashed.

@@ -7,6 +7,7 @@
 #include "radio_service.hpp"
 #include "sd_card.hpp"
 #include "eth_app.hpp"
+#include "web_auth.hpp"
 #include "web_server.hpp"
 #include "wifi_app.hpp"
 
@@ -293,6 +294,25 @@ Status run_web(const Caller&, const Args&, Result& r) {
   put_int(*rec, "enabled", web_server::enabled());
   put_int(*rec, "listening", web_server::listening());
   put_text(r, *rec, "url", web_server::url());
+  put_int(*rec, "default_password", web_auth::default_password());
+  put_int(*rec, "sessions", web_auth::active_sessions());
+  return Status::ok;
+}
+
+// Control tier: the dispatcher refuses these unless the caller is authenticated (a signed web session or the serial AUTH handshake).
+Status run_freq_set(const Caller&, const Args& a, Result& r) {
+  if (a.value < static_cast<int64_t>(kTuneMinHz) || a.value > static_cast<int64_t>(kTuneMaxHz)) return Status::invalid;
+  home_app::request_frequency(static_cast<uint32_t>(a.value));
+  Record* rec = add_record(r, "RTL_FREQ_OK");
+  put_uint(*rec, "frequency_hz", static_cast<uint64_t>(a.value));
+  return Status::ok;
+}
+
+Status run_volume_set(const Caller&, const Args& a, Result& r) {
+  if (a.value < 0 || a.value > kVolumeMax) return Status::invalid;
+  home_app::request_volume(static_cast<uint8_t>(a.value * 255 / kVolumeMax));
+  Record* rec = add_record(r, "RTL_VOLUME_OK");
+  put_int(*rec, "volume", a.value);
   return Status::ok;
 }
 
@@ -310,6 +330,8 @@ const Command kCommands[] = {
     {"RTL_ETH_STATUS", "eth", Access::read, run_eth},
     {"RTL_WEB_STATUS", "web", Access::read, run_web},
     {"RTL_WEB", nullptr, Access::read, run_web},  // serial alias of RTL_WEB_STATUS (Tab5 command spec)
+    {"RTL_FREQ_SET", "freq_set", Access::control, run_freq_set},      // web only; the serial form is "RTL_FREQ <HZ>" in serial_cli.cpp
+    {"RTL_VOLUME_SET", "volume_set", Access::control, run_volume_set},
 };
 }  // namespace
 

@@ -11,8 +11,10 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "lwip/sockets.h"
 #include "nvs_store.hpp"
 #include "eth_app.hpp"
+#include "web_auth.hpp"
 #include "web_compat.hpp"
 #include "wifi_app.hpp"
 
@@ -100,6 +102,8 @@ esp_err_t reject(httpd_req_t* req, const char* status, const char* message) {
   const int n = std::snprintf(body, sizeof(body), "{\"ok\":false,\"error\":\"%s\"}", message);
   return httpd_resp_send(req, body, n);
 }
+
+esp_err_t send_challenge(httpd_req_t* req);
 
 // ---- routes ------------------------------------------------------------------------------------------------------
 
@@ -189,6 +193,7 @@ esp_err_t handle_api(httpd_req_t* req) {
     ++i;
   }
   name[i] = '\0';
+  if (std::strncmp(path, "auth/challenge", 14) == 0 && (path[14] == '\0' || path[14] == '?')) return send_challenge(req);
   if (path[i] != '\0' && path[i] != '?') return reject(req, "404 Not Found", "unknown_route");
   if (i == 0) return handle_index(req);
 
@@ -233,6 +238,122 @@ esp_err_t handle_api(httpd_req_t* req) {
   return send_json(req, n);
 }
 
+// ---- login and the control tier ----------------------------------------------------------------------------------
+
+uint32_t peer_address(httpd_req_t* req) {
+  const int fd = httpd_req_to_sockfd(req);
+  sockaddr_storage addr{};
+  socklen_t len = sizeof(addr);
+  if (fd < 0 || getpeername(fd, reinterpret_cast<sockaddr*>(&addr), &len) != 0) return 0;
+  if (addr.ss_family == AF_INET) return reinterpret_cast<sockaddr_in*>(&addr)->sin_addr.s_addr;
+  uint32_t h = 0;  // IPv6 or mapped: fold the address so one client keeps one throttle slot
+  const uint8_t* b = reinterpret_cast<const uint8_t*>(&reinterpret_cast<sockaddr_in6*>(&addr)->sin6_addr);
+  for (size_t i = 0; i < 16; ++i) h = h * 31 + b[i];
+  return h;
+}
+
+esp_err_t send_challenge(httpd_req_t* req) {
+  char nonce[33], salt[33];
+  if (!web_auth::issue_challenge(nonce)) return reject(req, "503 Service Unavailable", "challenge_busy");
+  web_auth::salt_hex(salt);
+  const int n = std::snprintf(g_json, kJsonBytes, "{\"ok\":true,\"user\":\"admin\",\"nonce\":\"%s\",\"salt\":\"%s\",\"iterations\":%u,\"default_password\":%s}", nonce, salt,
+                              static_cast<unsigned>(web_auth::kIterations), web_auth::default_password() ? "true" : "false");
+  return send_json(req, static_cast<size_t>(n));
+}
+
+esp_err_t handle_login(httpd_req_t* req, const char* body) {
+  char nonce[40] = {}, proof[80] = {};
+  if (httpd_query_key_value(body, "nonce", nonce, sizeof(nonce)) != ESP_OK || httpd_query_key_value(body, "proof", proof, sizeof(proof)) != ESP_OK)
+    return reject(req, "400 Bad Request", "bad_login_request");
+  web_auth::LoginOut out{};
+  switch (web_auth::login(peer_address(req), nonce, proof, out)) {
+    case web_auth::Login::ok: {
+      const int n = std::snprintf(g_json, kJsonBytes, "{\"ok\":true,\"session\":\"%s\",\"device\":\"%s\",\"idle_s\":300,\"default_password\":%s}", out.sid, out.device_proof,
+                                  web_auth::default_password() ? "true" : "false");
+      return send_json(req, static_cast<size_t>(n));
+    }
+    case web_auth::Login::bad_request: return reject(req, "400 Bad Request", "bad_login_request");
+    case web_auth::Login::bad_nonce: return reject(req, "401 Unauthorized", "bad_nonce");
+    case web_auth::Login::bad_proof: return reject(req, "401 Unauthorized", "login_failed");
+    case web_auth::Login::throttled: {
+      char text[40];
+      std::snprintf(text, sizeof(text), "throttled retry_s=%u", static_cast<unsigned>(out.retry_s));
+      return reject(req, "429 Too Many Requests", text);
+    }
+    default: return reject(req, "503 Service Unavailable", "sessions_full");
+  }
+}
+
+// POST /api/v1/auth/login (nonce + proof), /api/v1/auth/logout (signed), and signed control commands from the table.
+esp_err_t handle_post(httpd_req_t* req) {
+  char host_header[80];
+  if (!host_allowed(req, host_header, sizeof(host_header))) return reject(req, "403 Forbidden", "host_rejected");
+  if (!origin_allowed(req, host_header)) return reject(req, "403 Forbidden", "origin_rejected");
+
+  char route[24];
+  const char* p = req->uri + std::strlen("/api/v1");
+  if (*p == '/') ++p;
+  size_t i = 0;
+  while (p[i] && p[i] != '?' && i + 1 < sizeof(route)) {
+    route[i] = p[i];
+    ++i;
+  }
+  route[i] = '\0';
+  if (p[i] != '\0' && p[i] != '?') return reject(req, "404 Not Found", "unknown_route");
+
+  constexpr size_t kBodyMax = 160;
+  if (req->content_len > kBodyMax) return reject(req, "413 Payload Too Large", "body_too_large");
+  char body[kBodyMax + 1];
+  size_t got = 0;
+  while (got < req->content_len) {
+    const int r = httpd_req_recv(req, body + got, req->content_len - got);
+    if (r <= 0) return ESP_FAIL;
+    got += static_cast<size_t>(r);
+  }
+  body[got] = '\0';
+
+  if (std::strcmp(route, "auth/login") == 0) return handle_login(req, body);
+
+  // Everything below needs a signed session. The signature covers the sequence number, method, the exact target and the body.
+  char sid[24], seq[24], sig[72];
+  if (httpd_req_get_hdr_value_str(req, "X-Orc-Session", sid, sizeof(sid)) != ESP_OK || httpd_req_get_hdr_value_str(req, "X-Orc-Seq", seq, sizeof(seq)) != ESP_OK ||
+      httpd_req_get_hdr_value_str(req, "X-Orc-Sig", sig, sizeof(sig)) != ESP_OK)
+    return reject(req, "401 Unauthorized", "session_required");
+  switch (web_auth::verify(sid, seq, sig, "POST", req->uri, reinterpret_cast<const uint8_t*>(body), got)) {
+    case web_auth::Verify::ok: break;
+    case web_auth::Verify::no_session:
+    case web_auth::Verify::expired: return reject(req, "401 Unauthorized", "session_required");
+    case web_auth::Verify::bad_seq: return reject(req, "401 Unauthorized", "bad_sequence");
+    default: return reject(req, "401 Unauthorized", "bad_signature");
+  }
+  if (std::strcmp(route, "auth/logout") == 0) {
+    web_auth::logout(sid);
+    return send_json(req, static_cast<size_t>(std::snprintf(g_json, kJsonBytes, "{\"ok\":true}")));
+  }
+
+  const orcsdr::commands::Command* cmd = orcsdr::commands::find_path(route);
+  if (!cmd || cmd->access != orcsdr::commands::Access::control) return reject(req, "404 Not Found", "unknown_route");
+  orcsdr::commands::Args args;
+  char query[48];
+  if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+    char value[16];
+    const char* key = std::strcmp(route, "freq_set") == 0 ? "hz" : "level";
+    if (httpd_query_key_value(query, key, value, sizeof(value)) == ESP_OK) {
+      char* end = nullptr;
+      const long long v = std::strtoll(value, &end, 10);
+      if (end == value || *end != '\0') return reject(req, "400 Bad Request", "bad_value");
+      args.value = v;
+    }
+  }
+  const orcsdr::commands::Caller caller{orcsdr::commands::Transport::http, true};
+  const orcsdr::commands::Status status = orcsdr::commands::run(*cmd, caller, args, *g_result);
+  if (status == orcsdr::commands::Status::invalid) return reject(req, "400 Bad Request", "invalid_value");
+  if (status != orcsdr::commands::Status::ok) return reject(req, "403 Forbidden", "forbidden");
+  const size_t n = orcsdr::commands::to_json(*g_result, g_json, kJsonBytes);
+  if (n == 0) return reject(req, "500 Internal Server Error", "response_too_large");
+  return send_json(req, n);
+}
+
 // ---- server lifecycle --------------------------------------------------------------------------------------------
 
 void stop_server() {
@@ -262,7 +383,7 @@ bool start_server(const char* ip) {
   config.core_id = 0;
   config.stack_size = 8192;
   config.max_open_sockets = 4;
-  config.max_uri_handlers = 4;
+  config.max_uri_handlers = 6;
   config.lru_purge_enable = true;
   config.recv_wait_timeout = 5;
   config.send_wait_timeout = 5;
@@ -281,7 +402,12 @@ bool start_server(const char* ip) {
   root.uri = "/";
   root.method = HTTP_GET;
   root.handler = handle_root;
+  httpd_uri_t post{};
+  post.uri = "/api/v1*";
+  post.method = HTTP_POST;
+  post.handler = handle_post;
   httpd_register_uri_handler(g_server, &api);
+  httpd_register_uri_handler(g_server, &post);
   httpd_register_uri_handler(g_server, &root);
 #if ORCSDR_HAS_WEB_UI
   httpd_uri_t ui{};
@@ -330,6 +456,7 @@ void manager(void*) {
 }  // namespace
 
 void start() {
+  web_auth::init();
   orcsdr::NvsStore s;
   if (s.begin("orcsdr_web", true)) {
     g_enabled = s.get_bool("enabled", false);  // off unless the owner turned it on
