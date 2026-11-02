@@ -46,3 +46,13 @@ The [detailed REA research IQ matrix](https://github.com/hardcoreerik/REA-Result
 ## No merges, firmware code or public redistribution
 
 This documentation-only file marks where fixtures are stored, as requested. Neither the REA research files nor third-party audio/IQ binaries should be merged into production, or distributed beyond appropriately licensed private research, without explicit approval and rights review. The same rules apply to future source downloads. No decoder test is asserted to have passed merely by creating this handoff.
+
+## Before decoder implementation: updated RSA/REA evidence gaps (Nov 2, 2026)
+
+**Do not mistake stored IQ for complete protocol validation.** The [REA-Results predevelopment readiness audit](https://github.com/hardcoreerik/REA-Results/blob/chatgpt/digital-voice-rsa-rea-2026-11-01/inbox/2026-11-02_digital-voice-predevelopment-data-gap-audit.md) identifies missing materials, priority, quantified fixture coverage, and GO/NO-GO conditions.
+
+**Ready now:** shared receiver/tuner event architecture, UI layout, replay harness, source-pinned DMR/P25 I regression experiments. **Do not claim supported until tested:** clear DMR/NXDN voice, P25 II voice, automatic protocol classification/trunk following. Main missing evidence includes: NXDN48 and NXDN96 verified real-air clear IQ with reference FEC/IDs; a P25 II symbol-vector import with checked extracted SHA-256 and independent output; P25 II **actual OTA IQ** with matching control/slot context; P25 Phase I CQPSK and clear voice; full DMR Tier II conventional calls; labeled negatives, long recordings and a validated audio vocoder/distribution path. The six stored clips are short (1.09–1.8 s) and cannot establish long-term audio stability.
+
+**Important manifest correction:** the manifest now records *per-file sample encodings*: DMR direct-mode is **CS16**, the other DMR and P25 files are **CF32**, all 48 kS/s. Do not use a global CF32 assumption. The associated REA research commit for the correction is `cc92c09f07f9d8491b3bb9c37784dc5ae0f59eb0`.
+
+This remains **research documentation only**, not a request to merge results branches or copy third-party binaries into a firmware image.
