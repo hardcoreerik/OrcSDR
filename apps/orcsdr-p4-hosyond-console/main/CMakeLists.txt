@@ -31,15 +31,29 @@ if(ORCSDR_WEB_UI_DIR)
     if(_web_missing)
         message(WARNING "ORCSDR_WEB_UI_DIR=${ORCSDR_WEB_UI_DIR} lacks: ${_web_missing}. Building without the web UI.")
     else()
+        # The embedded page gets one extra line that loads the login script (web/orclogin.js) before its own scripts.
+        file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/web_ui")
+        execute_process(COMMAND ${PYTHON} "${CMAKE_CURRENT_LIST_DIR}/../web/inject_login.py" "${ORCSDR_WEB_UI_DIR}/m5.html.gz" "${CMAKE_BINARY_DIR}/web_ui/m5.html.gz"
+                        RESULT_VARIABLE _inject_rc)
+        if(NOT _inject_rc EQUAL 0)
+            message(FATAL_ERROR "could not add the login script to the web page (inject_login.py returned ${_inject_rc})")
+        endif()
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/../web/inject_login.py" "${ORCSDR_WEB_UI_DIR}/m5.html.gz")
         foreach(_n ${ORCSDR_WEB_UI_NAMES})
-            list(APPEND ORCSDR_EMBED_FILES "${ORCSDR_WEB_UI_DIR}/${_n}")
+            if(_n STREQUAL "m5.html.gz")
+                list(APPEND ORCSDR_EMBED_FILES "${CMAKE_BINARY_DIR}/web_ui/m5.html.gz")
+            else()
+                list(APPEND ORCSDR_EMBED_FILES "${ORCSDR_WEB_UI_DIR}/${_n}")
+            endif()
         endforeach()
+        list(APPEND ORCSDR_EMBED_FILES "${CMAKE_CURRENT_LIST_DIR}/../web/orclogin.js")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/../web/orclogin.js")
         set(ORCSDR_WEB_UI 1)
         message(STATUS "OrcSDR Web UI bundle embedded from ${ORCSDR_WEB_UI_DIR}")
     endif()
 endif()
 idf_component_register(
-    SRCS "main.cpp" "present.cpp" "screen_snap.cpp" "serial_cli.cpp" "commands.cpp" "home_app.cpp" "radio_service.cpp" "audio_service.cpp" "screens.cpp" "screen_fm.cpp" "screen_am.cpp" "screen_cb.cpp" "screen_airband.cpp" "screen_shortwave.cpp" "screen_rflab.cpp" "screen_settings.cpp" "screen_pocsag.cpp" "screen_wifi.cpp" "screen_adsb.cpp" "screen_acars.cpp" "screen_lora.cpp" "ui_support.cpp" "iq_tap.cpp" "wifi_app.cpp" "eth_app.cpp" "web_server.cpp" "web_auth.cpp" "web_compat.cpp" "rtltcp_app.cpp" "sd_card.cpp"
+    SRCS "main.cpp" "present.cpp" "screen_snap.cpp" "serial_cli.cpp" "commands.cpp" "home_app.cpp" "radio_service.cpp" "audio_service.cpp" "screens.cpp" "screen_fm.cpp" "screen_am.cpp" "screen_cb.cpp" "screen_airband.cpp" "screen_shortwave.cpp" "screen_rflab.cpp" "screen_settings.cpp" "screen_pocsag.cpp" "screen_wifi.cpp" "screen_adsb.cpp" "screen_acars.cpp" "screen_lora.cpp" "ui_support.cpp" "iq_tap.cpp" "wifi_app.cpp" "eth_app.cpp" "web_server.cpp" "web_auth.cpp" "web_compat.cpp" "rtltcp_app.cpp" "web_control.cpp" "sd_card.cpp"
          "${TAB5_UI}/home_dashboard.cpp" "${TAB5_UI}/dashboard_audio_control.cpp"
          "${TAB5_UI}/freq_keypad.cpp" "${TAB5_UI}/focus_nav.cpp" "${TAB5_UI}/waterfall_style.cpp"
          "${TAB5_UI}/band_profile.cpp" "${TAB5_UI}/home_vfo.cpp" "${TAB5_UI}/filter_standards.cpp"

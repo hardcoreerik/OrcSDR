@@ -16,6 +16,7 @@
 #include "nvs_store.hpp"
 #include "eth_app.hpp"
 #include "web_auth.hpp"
+#include "web_control.hpp"
 #include "web_compat.hpp"
 #include "wifi_app.hpp"
 
@@ -44,6 +45,7 @@ WEB_ASSET(a_worker, "decoder_worker_js_gz")
 WEB_ASSET(a_orcdec_js, "orcdec_js_gz")
 WEB_ASSET(a_orcdec_wasm, "orcdec_wasm_gz")
 WEB_ASSET(a_splash, "splash_jpg")
+WEB_ASSET(a_login, "orclogin_js")
 
 struct Asset {
   const char* path;
@@ -62,6 +64,7 @@ const Asset kAssets[] = {
     {"/m5/orcdec.js", a_orcdec_js_start, a_orcdec_js_end, "application/javascript", true},
     {"/m5/orcdec.wasm", a_orcdec_wasm_start, a_orcdec_wasm_end, "application/wasm", true},
     {"/m5/splash.jpg", a_splash_start, a_splash_end, "image/jpeg", false},
+    {"/m5/orclogin.js", a_login_start, a_login_end, "application/javascript", false},  // node login, loaded by the page
 };
 #endif
 
@@ -291,7 +294,7 @@ esp_err_t handle_post(httpd_req_t* req) {
   if (!host_allowed(req, host_header, sizeof(host_header))) return reject(req, "403 Forbidden", "host_rejected");
   if (!origin_allowed(req, host_header)) return reject(req, "403 Forbidden", "origin_rejected");
 
-  char route[24];
+  char route[40];
   const char* p = req->uri + std::strlen("/api/v1");
   if (*p == '/') ++p;
   size_t i = 0;
@@ -332,6 +335,17 @@ esp_err_t handle_post(httpd_req_t* req) {
     return send_json(req, static_cast<size_t>(std::snprintf(g_json, kJsonBytes, "{\"ok\":true}")));
   }
 
+  // The page's own control routes (receivers/tune, tuner/gain, fm, time ...), same signed session.
+  {
+    char q[96] = {};
+    httpd_req_get_url_query_str(req, q, sizeof(q));
+    const web_control::Result r = web_control::run(route, q, g_json, kJsonBytes);
+    if (r != web_control::Result::unknown_route) {
+      if (r == web_control::Result::bad_request) httpd_resp_set_status(req, "400 Bad Request");
+      else if (r == web_control::Result::not_available) httpd_resp_set_status(req, "501 Not Implemented");
+      return send_json(req, std::strlen(g_json));
+    }
+  }
   const orcsdr::commands::Command* cmd = orcsdr::commands::find_path(route);
   if (!cmd || cmd->access != orcsdr::commands::Access::control) return reject(req, "404 Not Found", "unknown_route");
   orcsdr::commands::Args args;

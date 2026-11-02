@@ -279,3 +279,17 @@ Also seen: the bundled page labels the network "Wi-Fi" on a wired board (the lab
 
 **One firmware, three boards (2026-11-02).** The same OrcSDR Web page, from the same embedded bundle, was opened in the browser pane against COM29 (Waveshare ESP32-P4-ETH, wired, NESDR SMArt v5), COM8 (Waveshare ESP32-P4-Module-DEV-KIT, Wi-Fi via the C6, Blog V4L) and earlier COM31 (Waveshare ESP32-P4-WIFI6-DB, Wi-Fi via the C5, Blog V4):
 each shows its own receiver name and a live spectrum and waterfall at 2.4 MS/s, and the Module-DEV-KIT's own screen keeps running at the same time. The page's controls still do not work on any of them (see section 14).
+
+## 16. The page's controls and login, built and run on COM29 (2026-11-02)
+
+The bundled page POSTs its controls with no login. Without editing the other repository, the firmware build now adds one line to the embedded copy of `m5.html` (`web/inject_login.py` at configure time, so the bundle on disk is untouched) that loads `/m5/orclogin.js` before the page's own scripts.
+`web/orclogin.js` (pure JavaScript SHA-256, HMAC and PBKDF2, because `crypto.subtle` is unavailable over plain HTTP) wraps `fetch()`: a POST to `/api/v1/` waits for a login (a small dialog, user `admin`, a notice while the factory password is in use), then goes out signed as in section 14.
+Requests are sent one at a time so the sequence numbers stay in order; an expired session asks again once.
+
+Routes behind the signed session (`main/web_control.{hpp,cpp}`), in the shapes the page sends:
+- `receivers/tune?index&hz` (receiver 0 goes through the Home screen, as the serial command does), `receivers/rate?index&sps` (the console runs 960 kS/s and 2.4 MS/s: the nearest is applied and both values are returned), `tuner/gain?index&mode=auto|manual[&tenth_db]`, `tuner/agc?index&on`, `fm?action=volume|start|stop` (start only tunes and sets the volume; `audio_stream:false`), `time?epoch` (sets the node clock from the browser).
+- `channel` and `channel/stop` answer 501 `browser_iq_stream_not_available_on_this_node_yet`: the browser audio and IQ WebSockets (port 81) are not built, so the page's channel and decoder features still do not work. Bad values answer 400, unknown routes 404.
+
+Run on COM29 (Waveshare ESP32-P4-ETH): `node tools/orclogin_test.js` passes the five known-answer tests (SHA-256, HMAC including a long key, PBKDF2 RFC 7914; 10,000 PBKDF2 iterations take about 50 ms in Node) and, against the board, a login and signed control requests from the JavaScript implementation: tune, out-of-range tune refused, volume, gain auto, channel refused honestly, clock set, unknown route.
+In the real page in the browser pane, pressing a control on a node that is not logged in shows the login dialog with the factory-password notice. **Not done:** typing the password into the page and watching a control take effect. I did not enter the password into a browser form myself (it is a LAN address, not a local development host); that last step is for the owner.
+Other unverified: the dialog on a phone-size screen, many rapid control presses, the `time` route (the page sends it on load) after a login in the browser, behaviour when two browsers log in (two sessions are allowed).
