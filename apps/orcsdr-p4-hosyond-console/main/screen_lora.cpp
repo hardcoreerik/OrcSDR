@@ -19,6 +19,7 @@
 #include "lora_native_decoder.hpp"
 #include "lora_preamble_detector.hpp"
 #include "nvs_store.hpp"
+#include "orcsdr_board_profile.h"
 #include "radio_service.hpp"
 #include "screens.hpp"
 #include "ui_support.hpp"
@@ -447,6 +448,15 @@ lr::Snapshot& build() {
   s.iq_busy = g_decode_busy.load();
   s.battery_percent = -1;
   s.native_decoder_ready = g_decoder_ready.load() && s.bandwidth_hz == 250000;
+  // Describe board wiring without turning a documented pin map into a working radio.
+  // No SPI driver, expander antenna switching or TX path is active in this build.
+  const orcsdr_board_profile_t* board = orcsdr_board_profile();
+  if (board && board->has_radio && board->radio_part &&
+      std::strcmp(board->radio_part, "SX1262") == 0) {
+    s.tx.readiness = orcsdr::lora_tx::Readiness::profile_only;
+  }
+  // TX approval, output path, frequency, payload size and arming remain
+  // explicitly false/zero, independent of the RX channel selected above.
   s.key_loaded = false;
   std::snprintf(s.profile, sizeof(s.profile), "%s", g_profile);
   std::snprintf(s.region, sizeof(s.region), "%s", g_region);
@@ -600,6 +610,11 @@ void tap(int x, int y) {
       select_channel(sel.region_index, sel.slot >= orcsdr::lora_channel::slot_count(sel.region_index) ? 1 : sel.slot + 1);
       break;
     case lr::ActionKind::channel_select: select_channel(sel.region_index, static_cast<uint16_t>(a.value)); break;
+    case lr::ActionKind::tx_request_arm:
+    case lr::ActionKind::tx_request_disarm:
+    case lr::ActionKind::tx_send_test_packet:
+      ESP_LOGW(TAG, "SX1262 TX refused: backend and RF path have not been bench-verified");
+      break;
     case lr::ActionKind::open_settings: home_app::request_open(orcsdr::dashboards::Id::settings); break;
     case lr::ActionKind::exit_home: home_app::request_home(); break;
     default: break;  // logging / export / mark point / snapshot: need the SD card
