@@ -5,6 +5,7 @@
 #include "commands.hpp"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_wifi.h"
 #include "eth_app.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -17,7 +18,7 @@ namespace rtltcp_app {
 namespace {
 constexpr char TAG[] = "RTLTCP_APP";
 constexpr int kReceiver = 0;
-constexpr uint32_t kQueueBytes = 1024 * 1024;  // about 0.2 s at 2.4 MS/s; lives in PSRAM; a client that falls behind loses whole blocks, counted
+constexpr uint32_t kQueueBytes = 4 * 1024 * 1024;  // about 0.9 s at 2.4 MS/s; lives in PSRAM; a client that falls behind loses whole blocks, counted
 
 std::atomic<bool> g_enabled{false}, g_control{false};
 std::atomic<uint32_t> g_sink_drops{0};
@@ -39,11 +40,11 @@ uint32_t rtl_tcp_tuner(uint8_t profile) {
 bool driver_rate_ok(uint32_t sps) { return (sps > 225000 && sps <= 300000) || (sps > 900000 && sps <= 3200000); }
 
 // What the active link can carry for one stream, Mbit/s. Provisional: the Ethernet figure leaves headroom on a 100 Mbit link, the Wi-Fi figure is
-// a guess for the SDIO-attached coprocessor (unmeasured), so a request above it ends the session with a recorded reason instead of dropping silently.
+// the measured burst rate of the SDIO-attached coprocessor path (COM8: 11 to 16 Mbit/s), so a request above it ends the session with a recorded reason instead of dropping silently.
 uint32_t link_budget_mbit() {
   if (eth_app::status().got_ip) return 85;
   const wifi_app::Status w = wifi_app::status();
-  return w.connected ? 30 : 0;
+  return w.connected ? 12 : 0;
 }
 
 void on_block(const orcsdr::radio::IqBlock& b, void*) { esp_rtl_tcp::push(b.data, b.bytes, b.sample_rate, b.center_hz); }
@@ -71,6 +72,8 @@ class OrcHost : public esp_rtl_tcp::Host {
     spec.queue_bytes = kQueueBytes;
     spec.task_core = 0;
     spec.task_priority = 3;
+    // Wi-Fi modem sleep adds tens of milliseconds of latency and caps a TCP stream; a streaming session turns it off and restores it at the end.
+    if (wifi_app::status().connected && esp_wifi_set_ps(WIFI_PS_NONE) == ESP_OK) wifi_ps_off_ = true;
     sink_ = orcsdr::radio::add_sink(spec);
     return sink_ >= 0;
   }
@@ -81,10 +84,21 @@ class OrcHost : public esp_rtl_tcp::Host {
     if (orcsdr::radio::sink_stats(sink_, &ss)) g_sink_drops += ss.drops;
     if (!orcsdr::radio::remove_sink(sink_)) ESP_LOGW(TAG, "RTLTCP_SINK_QUARANTINED the receiver service could not stop the sink cleanly");
     sink_ = -1;
+    if (wifi_ps_off_) {
+      esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+      wifi_ps_off_ = false;
+    }
     if (rate_overridden_) {
       orcsdr::radio::set_sample_rate_override(0);  // back to the console's own rate policy
       rate_overridden_ = false;
     }
+  }
+
+  // Blocks the receiver service has dropped for the connected client so far (live, unlike the total added at session end).
+  uint32_t live_drops() const {
+    orcsdr::radio::SinkStats ss;
+    const orcsdr::radio::SinkHandle h = sink_;
+    return h >= 0 && orcsdr::radio::sink_stats(h, &ss) ? ss.drops : 0;
   }
 
   bool set_center(uint32_t hz) override {
@@ -148,8 +162,9 @@ class OrcHost : public esp_rtl_tcp::Host {
  private:
   uint32_t steps_count_ = 0;
   int steps_[32] = {};
-  orcsdr::radio::SinkHandle sink_ = -1;
+  volatile orcsdr::radio::SinkHandle sink_ = -1;
   bool rate_overridden_ = false;
+  bool wifi_ps_off_ = false;
 };
 
 OrcHost g_host;
@@ -211,7 +226,7 @@ Status status() {
   s.receiver = kReceiver;
   s.port = esp_rtl_tcp::Config{}.port;
   s.server = esp_rtl_tcp::stats();
-  s.sink_blocks_dropped = g_sink_drops.load();
+  s.sink_blocks_dropped = g_sink_drops.load() + g_host.live_drops();
   return s;
 }
 

@@ -153,3 +153,20 @@ How it follows the rules:
 - **Open / provisional:** the link budgets (85 Mbit/s wired, 30 Mbit/s Wi-Fi) are guesses; the send deadline is 2 s (design decision 9 still wants a value from measurement); the override is receiver 0 only; control mode has never been run; the serving receiver is fixed at 0;
   the Wi-Fi path through the SDIO coprocessor is expected to need 960 kS/s. The receiver service gained `Info::profile` for the tuner mapping.
 - **Test to run first:** `RTL_TCP ON` over serial, then `python tools/p4_rtltcp_test.py <ip>` (header, rate, CU8 sanity, counting of ignored/unsupported/unknown commands, a split command, second client waits, end reason). Then SDR++ and gr-osmosdr against a real dongle.
+
+## 10. First runs on boards (2026-11-02, owner asleep, COM29 and COM8 cleared for testing)
+
+Client: `tools/p4_rtltcp_test.py` (Windows PC, Python), a dongle streaming at 2.4 MS/s. Build overlay `sdkconfig.net-throughput` (TCP send buffer and window 32 KB, 16 sockets) is on for both boards below; the default 5,760-byte window is what lwip ships.
+
+**COM29, Waveshare ESP32-P4-ETH, wired 100 Mbit, NESDR SMArt v5 (tuner type 5, gain count 29).** Listen-only. 14 of 14 acceptance checks pass:
+header exactly once, no `RTL0` in the stream, CU8 samples, tuning command counted as ignored, unsupported and unknown commands counted, a command split across two TCP segments reassembled, a second client waits and is served after the first leaves.
+Throughput: 60 s at 2,399,391 S/s, no new dropped blocks. 240 s with a 1 MB queue: 2.26 MS/s average, 5 % of blocks dropped (counted, receiver drops 0); with a 4 MB queue: 1.15 GB sent, 104 blocks dropped (0.15 %).
+With the default 5,760-byte window the same link lost about 3.5 % in 10 s and ended a session as `slow_peer`. Internal RAM free fell from 140.9 KB (web only) to 127.1 KB with the larger windows and the server. The web page and login test (25 checks) pass on the same image.
+Open: a few `status` requests over HTTP made while a client streamed were reset by the server (the test now retries and says so); curl against the same endpoint during a stream always answered in about 55 ms. Cause not found; the browser pane polling the same board is one suspect.
+
+**COM8, Waveshare ESP32-P4-Module-DEV-KIT, Wi-Fi through the ESP32-C6 (ESP-Hosted), Blog V4L (tuner type 6).** 13 of the 14 acceptance checks pass; the sample-rate check fails (below). The 25 web login checks pass over Wi-Fi.
+- Streaming 2.4 MS/s over Wi-Fi: about 137 kS/s with the default windows, 197 to 214 kS/s with 32 KB windows, with or without Wi-Fi power save (turned off for the session; round trip while idle 35 to 150 ms).
+  So the stream is not window-bound or power-save-bound: it gets about 3 to 4 Mbit/s. Burst downloads of a 393 KB file from the same board over Wi-Fi ran at 11 to 16 Mbit/s (wired COM29: 78 Mbit/s). Why the live stream gets a fraction of the burst rate is unexplained (CPU, SDIO contention with the USB receiver and the screen are candidates).
+- Control mode (`RTL_TCP CONTROL ON`): a client's `set sample rate 250000` was applied (the session rate became 250,000 and about 180 to 250 kS/s arrived); 2,400,000 ended the session as `rate_exceeds_link`; 500,000 as `rate_unsupported`; a connect during the receiver's restart after a rate change was refused (`host_refused`);
+  a mixed run applied 7 commands and rejected 2 (ppm 500 and gain index 99); the receiver returned to 2.4 MS/s when the session ended. A rate of 960 kS/s passed the (then guessed) 30 Mbit/s budget and could not be carried: the budget for Wi-Fi was lowered to 12 Mbit/s, which allows only the 225 to 300 kS/s range.
+- **Consequence:** over this Wi-Fi path the useful rtl_tcp rate is about 250 kS/s (fine for narrowband work, not for wide spectrum). Wired Ethernet carries 2.4 MS/s.

@@ -12,6 +12,7 @@ import json
 import socket
 import struct
 import sys
+import threading
 import time
 
 fails = 0
@@ -24,10 +25,18 @@ def check(name, ok, detail=""):
 
 
 def status(ip):
-    c = http.client.HTTPConnection(ip, 80, timeout=6)
-    c.request("GET", "/api/v1/rtltcp", headers={"Host": ip})
-    j = json.loads(c.getresponse().read())
-    c.close()
+    for attempt in range(3):  # the web server very occasionally resets a connection made while the stream runs; say so rather than hide it
+        try:
+            c = http.client.HTTPConnection(ip, 80, timeout=6)
+            c.request("GET", "/api/v1/rtltcp", headers={"Host": ip})
+            j = json.loads(c.getresponse().read())
+            c.close()
+            break
+        except (http.client.HTTPException, OSError) as e:
+            print("status request %d failed: %s" % (attempt + 1, e))
+            time.sleep(1)
+    else:
+        raise SystemExit("status request failed three times")
     out = {}
     for rec in j["records"]:
         out.update(rec)
@@ -60,17 +69,30 @@ def main():
     check("header is RTL0 + tuner type + gain count", magic == b"RTL0" and 0 <= tuner <= 6 and 0 < gains <= 32, (magic, tuner, gains))
     print("tuner type %d, gain count %d" % (tuner, gains))
 
+    # A reader keeps draining the socket for the whole test: a client that stops reading is a slow peer and the server ends its session after 2 s.
+    box = {"total": 0, "sample": b"", "stop": False}
+
+    def drain():
+        s.settimeout(1)
+        while not box["stop"]:
+            try:
+                chunk = s.recv(65536)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            if not chunk:
+                break
+            box["total"] += len(chunk)
+            if len(box["sample"]) < 65536:
+                box["sample"] += chunk
+
+    reader = threading.Thread(target=drain, daemon=True)
     t0 = time.time()
-    total = 0
-    sample = b""
-    while time.time() - t0 < a.seconds:
-        chunk = s.recv(65536)
-        if not chunk:
-            break
-        total += len(chunk)
-        if len(sample) < 65536:
-            sample += chunk
+    reader.start()
+    time.sleep(a.seconds)
     dt = time.time() - t0
+    total, sample = box["total"], box["sample"]
     rate_sps = total / 2 / dt
     st = status(a.ip)
     print("received %d bytes in %.1f s = %.0f S/s; session_rate %s; blocks_dropped %s" % (total, dt, rate_sps, st.get("session_rate"), st.get("blocks_dropped")))
@@ -92,7 +114,9 @@ def main():
     check("an unsupported command is counted", st2["commands_unsupported"] >= 1, st2)
     check("an unknown command is counted", st2["commands_unknown"] >= 1, st2)
     check("nothing was applied in listen-only mode", st2["commands_applied"] == 0 and st2["commands_rejected"] == 0, st2)
-    check("the stream kept flowing after the commands", len(s.recv(65536)) > 0)
+    before = box["total"]
+    time.sleep(1.0)
+    check("the stream kept flowing after the commands", box["total"] > before)
 
     # A second client waits in the backlog and gets its header only after the first leaves.
     s2 = socket.create_connection((a.ip, 1234), timeout=5)
@@ -102,6 +126,8 @@ def main():
     except socket.timeout:
         got = b""
     check("a second client gets nothing while the first is connected", got == b"", got)
+    box["stop"] = True
+    reader.join(2)
     s.close()
     time.sleep(1.0)
     try:
@@ -113,7 +139,7 @@ def main():
     s2.close()
     time.sleep(1.0)
     st3 = status(a.ip)
-    check("the session end is recorded as client_closed", st3.get("last_end") == "client_closed", st3)
+    check("the session end is recorded (client_closed, or socket_error when the client closed with unread data)", st3.get("last_end") in ("client_closed", "socket_error"), st3)
     check("two clients were counted", st3["clients_total"] >= 2, st3)
     print("%d failed" % fails)
     return fails
