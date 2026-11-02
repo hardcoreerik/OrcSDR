@@ -35,3 +35,24 @@ Four completed signal captures integrated powers: 14=-26.984,
 16.5=-27.642, 19=-24.160, returning 16.5=-27.754 dBFS.
 The 14->16.5 dip is -0.658 dB. The 16.5 return differs -0.112 dB.
 The return to 14 was not retrieved completely. Full-repeat/AUTO gates open.
+
+## Completed clean follow-up
+
+Exact response-reader focused checks passed. Three live health/status queries
+succeeded with increasing uptime. A stale ready recording caused the first
+exact-reader attempt to stop before RF ON; explicit RTL_IQ_RETRIEVE_END then
+returned RTL_IQ_RETRIEVE_DONE. The next clean attempt completed (exit 0).
+
+Five 4,800,000-byte captures (24 MB) matched device SHA-256, no rail clipping.
+Integrated tone: 14=-27.52675, 16.5=-28.19007, return14=-29.35990 dBFS.
+Dip -0.66332 dB; same-gain return -1.83315 dB. AUTO retained the tone,
+-8.53195 dBFS without clipping at this input only; no attack/release acceptance.
+Final source OFF/pause acknowledged. Receiver restored manual -1 dB.
+Thus the IF baseline candidate did NOT fix the observed repeatability/dip.
+
+Completed-events/results and exact-reader script are archived here. Shared
+reader tools/tab5_exact_response.py has offline checks for exact prefixes,
+stale public auth lines, protected auth failures and crash detection. The
+source remains controlled by finally cleanup. No new build/flash occurred.
+Next driver candidate a00e130 adds physical readback before gain success;
+that candidate needs its own approved build/COM39 hardware gate.

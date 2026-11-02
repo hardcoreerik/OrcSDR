@@ -1,0 +1,32 @@
+[
+  {
+    "name": "source-off-minus1",
+    "tone_integrated_dbfs": -81.4633989615149,
+    "clip_fraction": 0.0,
+    "sha256": "fe34cd6de7c3428bcfe3c25ab0d9f7c12f0dc3ba31d07d18f3a07d583fac8029"
+  },
+  {
+    "name": "repeat-0-gain-140",
+    "tone_integrated_dbfs": -27.52674929696,
+    "clip_fraction": 0.0,
+    "sha256": "cf58ae92e8e8656aaf0cfc35678b26e650e5d6a7080e155128b83cc228de7908"
+  },
+  {
+    "name": "repeat-1-gain-165",
+    "tone_integrated_dbfs": -28.19006896589075,
+    "clip_fraction": 0.0,
+    "sha256": "5d2838be9e6c2105a6812066c241c667ef2f549575903eb1eee727de173e8140"
+  },
+  {
+    "name": "repeat-2-gain-140",
+    "tone_integrated_dbfs": -29.359897371255,
+    "clip_fraction": 0.0,
+    "sha256": "07328356fd5f1928d55648a8fcb2129ec948c949bdf1f99c9e038e63dd6ca2c9"
+  },
+  {
+    "name": "tuner-auto",
+    "tone_integrated_dbfs": -8.531945795661969,
+    "clip_fraction": 0.0,
+    "sha256": "7346ebbb7935c546e7acc135f8ec9c8ff0a9d531c7f46f9cba2ec92af506a700"
+  }
+]
