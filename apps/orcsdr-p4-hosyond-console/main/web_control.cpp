@@ -145,6 +145,25 @@ Result run(const char* route, const char* query, uint32_t peer, char* out, size_
     }
     return fail(out, cap, Result::bad_request, "bad_action");
   }
+  if (std::strcmp(route, "home") == 0) {
+    // A Home action from the page: the same handler a touch reaches, VFO actions only (see home_app::request_web_action). Never the board's speaker or screen.
+    char action[24] = {};
+    if (httpd_query_key_value(query, "action", action, sizeof(action)) != ESP_OK) return fail(out, cap, Result::bad_request, "bad_action");
+    long long hv = 0;
+    parse_long(query, "value", &hv);
+    if (hv < 0 || hv > 0xFFFFFFFFll) return fail(out, cap, Result::bad_request, "bad_value");
+    switch (home_app::request_web_action(action, static_cast<uint32_t>(hv))) {
+      case home_app::WebAction::ok: {
+        char f[64];
+        std::snprintf(f, sizeof(f), "\"action\":\"%s\"", action);
+        return done(out, cap, f);
+      }
+      case home_app::WebAction::bad_value: return fail(out, cap, Result::bad_request, "bad_value");
+      case home_app::WebAction::not_allowed: return fail(out, cap, Result::not_available, "not_allowed_from_the_web");
+      case home_app::WebAction::busy: return fail(out, cap, Result::not_available, "home_not_ready");
+      default: return fail(out, cap, Result::bad_request, "unknown_action");
+    }
+  }
   if (std::strcmp(route, "time") == 0) {
     if (!parse_long(query, "epoch", &v) || v < 1700000000LL || v > 4102444800LL) return fail(out, cap, Result::bad_request, "bad_epoch");
     timeval tv{};

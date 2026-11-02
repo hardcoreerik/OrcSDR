@@ -39,3 +39,10 @@ Legend: **node** = the page calls a node route that reaches the real receiver/Ho
 
 - Action list, P4 handlers and page cases: read from the sources named above (not run).
 - Browser behaviour of tune, step and FM start: exercised on COM29 with the built-in browser (tune 96.1 -> 96.225 MHz, step 12.5 -> 25 kHz, FM start from the FM screen); mode, filter and step-size buttons were not clicked.
+
+## Update: node side built (2026-11-02, addition only)
+
+- `POST /api/v1/home?action=<name>&value=<n>` (signed): hands the same `home::Action` a touch would reach to Home's UI task. Allowed: `step_up`, `step_down`, `step_size_up`, `step_size_down`, `span_up`, `span_down`, `mode_set` (0-5), `filter_set` (Hz, 0 = the band's standard). **Refused** with `not_allowed_from_the_web`: `volume_up`, `volume_down`, `sound_toggle` (the board's speaker), `open_dashboard`, `open_device_settings`, `open_clock` (the on-device screen). Unknown names are `unknown_action`.
+- `GET /api/v1/home`: Home's own VFO state (frequency, applied frequency, band, mode, step and whether it is adjustable, span, filter bandwidth, mode choice/active/suggested, mode_selectable).
+- `tools/web_home_test.js` (24 checks) passes on COM29: step size, mode pin, filter override, span, the refusals, unsigned refusal, and the board's volume and tuned frequency unchanged.
+- **The web page itself is unchanged**: rows 6, 7, 8, 9 and 11 still behave as listed above until the owner decides how the page should call the route (patch to `app.js` in the OrcSDR-Headless repo, or an injected script).

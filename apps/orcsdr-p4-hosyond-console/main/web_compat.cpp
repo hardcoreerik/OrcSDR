@@ -1,4 +1,5 @@
 #include "web_compat.hpp"
+#include "home_app.hpp"
 #include "web_audio.hpp"
 #include "web_control.hpp"
 #include "web_iq.hpp"
@@ -112,6 +113,19 @@ void fm(Out& o) {
         web_audio::available() ? "true" : "false", a.client ? 1 : 0, unsigned(accepted), unsigned(refused), unsigned(closed), unsigned(why), unsigned(last_peer), unsigned(ticket_peer));
 }
 
+// What Home itself shows for the VFO (the same snapshot the on-device screen is drawn from), so a page can show the real state: step, span, mode (the pinned
+// choice, the one in use and the band's own), the filter bandwidth and whether the step is adjustable on this band.
+void home_vfo(Out& o) {
+  const home_app::Status h = home_app::status();
+  o.fmt("{\"frequency_hz\":%u,\"applied_hz\":%u,\"band\":", unsigned(h.frequency_hz), unsigned(h.applied_hz));
+  o.str(h.band);
+  o.raw(",\"mode\":");
+  o.str(h.mode);
+  o.fmt(",\"step_hz\":%u,\"step_adjustable\":%s,\"span_hz\":%u,\"filter_bandwidth_hz\":%u,\"mode_choice\":%u,\"mode_active\":%u,\"mode_suggested\":%u,\"mode_selectable\":%s}",
+        unsigned(h.step_hz), h.step_adjustable ? "true" : "false", unsigned(h.span_hz), unsigned(h.filter_bandwidth_hz), unsigned(h.mode_choice), unsigned(h.mode_active),
+        unsigned(h.mode_suggested), h.mode_selectable ? "true" : "false");
+}
+
 void report(Out& o) {
   uint8_t mac[6] = {};
   esp_efuse_mac_get_default(mac);
@@ -207,6 +221,7 @@ bool get(const char* name, int rx, char* out, size_t cap, size_t* len, Kind* kin
   if (cap) out[0] = '\0';
   if (std::strcmp(name, "receivers") == 0) receivers(o);
   else if (std::strcmp(name, "fm") == 0) fm(o);
+  else if (std::strcmp(name, "home") == 0) home_vfo(o);
   else if (std::strcmp(name, "report") == 0) report(o);
   else if (std::strcmp(name, "tuner") == 0) tuner(o, rx);
   else if (std::strcmp(name, "time") == 0) time_now(o);

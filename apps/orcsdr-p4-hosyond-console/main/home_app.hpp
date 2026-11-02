@@ -24,8 +24,21 @@ struct Status {
   char band[24] = {};
   char mode[12] = {};
   uint32_t visible_updates = 0;   // frames presented so far
+  // What Home itself shows for the VFO, for the web page's Home (the same snapshot the screen is drawn from).
+  bool step_adjustable = true;    // false on channelized or fixed bands: the STEP SIZE control shows FIXED
+  uint32_t filter_bandwidth_hz = 0;
+  uint8_t mode_choice = 0;        // 0 AUTO, 1 NFM, 2 AM, 3 WFM, 4 USB, 5 LSB: what the owner pinned
+  uint8_t mode_active = 0;        // what the demodulator is really using
+  uint8_t mode_suggested = 0;     // what the band would pick on its own
+  bool mode_selectable = false;
 };
 Status status();
+
+// A Home action from the web page, applied by the UI task exactly like the same touch. Only the VFO actions are allowed: step_up, step_down, step_size_up,
+// step_size_down, span_up, span_down, mode_set (value 0-5) and filter_set (value = bandwidth Hz, 0 = the band's standard). Everything that would reach the board's
+// speaker (volume, mute) or switch the on-device screen is refused: a web session must never do those (browser audio is the browser's own).
+enum class WebAction : uint8_t { ok, unknown, not_allowed, bad_value, busy };
+WebAction request_web_action(const char* name, uint32_t value);
 
 // Requests from other tasks; applied by the UI task on its next loop.
 void request_frequency(uint32_t hz);

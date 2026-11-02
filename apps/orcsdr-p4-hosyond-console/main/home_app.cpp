@@ -37,6 +37,7 @@ uint32_t g_visible_updates = 0;
 std::atomic<int> g_request_sound{-1};         // 0 / 1 = set, -1 = none
 std::atomic<uint32_t> g_request_span{0};
 std::atomic<int> g_request_screen{-2};        // -2 = none, -1 = home, otherwise a dashboards::Id
+QueueHandle_t g_web_actions = nullptr;        // Home actions from the web page, drained by the UI task (created in start())
 const ::screens::Screen* g_active = nullptr;     // the dashboard on screen (null = Home); UI task only
 
 // ---- VFO state (what the Tab5's main.cpp keeps for Home) ----
@@ -275,6 +276,10 @@ void ui_task(void*) {
       ++g_tuner_rev;
       ++g_rev;
     }
+    if (g_web_actions) {
+      home::Action queued;
+      while (xQueueReceive(g_web_actions, &queued, 0) == pdTRUE) handle_action(queued);  // the same handler a touch reaches
+    }
     const int wanted_screen = g_request_screen.exchange(-2);
     if (wanted_screen != -2) {
       if (g_active) g_active->leave();
@@ -470,7 +475,39 @@ Status status() {
   std::snprintf(s.band, sizeof(s.band), "%s", g_snapshot.band);
   std::snprintf(s.mode, sizeof(s.mode), "%s", g_snapshot.mode);
   s.visible_updates = g_visible_updates;
+  s.step_adjustable = g_snapshot.step_adjustable;
+  s.filter_bandwidth_hz = g_snapshot.filter_bandwidth_hz;
+  s.mode_choice = g_snapshot.mode_choice;
+  s.mode_active = g_snapshot.mode_active;
+  s.mode_suggested = g_snapshot.mode_suggested;
+  s.mode_selectable = g_snapshot.mode_selectable;
   return s;
+}
+
+WebAction request_web_action(const char* name, uint32_t value) {
+  struct Entry {
+    const char* name;
+    home::ActionKind kind;
+  };
+  static const Entry kAllowed[] = {
+      {"step_up", home::ActionKind::step_up},           {"step_down", home::ActionKind::step_down},
+      {"step_size_up", home::ActionKind::step_size_up}, {"step_size_down", home::ActionKind::step_size_down},
+      {"span_up", home::ActionKind::span_up},           {"span_down", home::ActionKind::span_down},
+      {"mode_set", home::ActionKind::mode_set},         {"filter_set", home::ActionKind::filter_set},
+  };
+  for (const Entry& e : kAllowed) {
+    if (std::strcmp(name, e.name) != 0) continue;
+    if (e.kind == home::ActionKind::mode_set && value > 5) return WebAction::bad_value;
+    if (!g_web_actions) return WebAction::busy;
+    home::Action a;
+    a.kind = e.kind;
+    a.value = value;
+    return xQueueSend(g_web_actions, &a, 0) == pdTRUE ? WebAction::ok : WebAction::busy;
+  }
+  static const char* const kRefused[] = {"volume_up", "volume_down", "sound_toggle", "open_dashboard", "open_device_settings", "open_clock"};
+  for (const char* r : kRefused)
+    if (std::strcmp(name, r) == 0) return WebAction::not_allowed;
+  return WebAction::unknown;
 }
 
 void request_frequency(uint32_t hz) { g_request_hz = hz; }
@@ -506,6 +543,7 @@ const char* screen_name() {
 
 bool start(gfx::ScaledDisplay* display) {
   g_display = display;
+  g_web_actions = xQueueCreate(8, sizeof(home::Action));
   // Volume and mute come back as the user left them.
   g_volume = ui_support::get_u8("volume", g_volume);
   g_sound = ui_support::get_bool("sound", g_sound);
