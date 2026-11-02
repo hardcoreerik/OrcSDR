@@ -1,0 +1,41 @@
+# Web page parity with the OrcSDR Home (read-only audit, 2026-11-02)
+
+The goal of the web work is a one-to-one reproduction of the OrcSDR dashboards as web pages. This is the first measurement of how close the Home screen is. **Nothing in this file changes any behaviour**; it only records what is and is not reachable, so each gap can be decided before anything is wired.
+
+Sources read: `apps/orcsdr-tab5/ui/home_dashboard.hpp` at tag `v0.5.0-beta.1` (the 36 Home actions), `apps/orcsdr-p4-hosyond-console/main/home_app.cpp` (what the P4 console's own Home does with them) and the web page's `app.js` (bundle 67e535e, from the OrcSDR-Headless repo). What each Tab5 action does on the Tab5 itself was not re-read from the Tab5 firmware here; the column says what the shared Home header declares.
+
+Legend: **node** = the page calls a node route that reaches the real receiver/Home; **page-only** = changes only what the browser shows; **toast** = the page says it is not available; **UI** = handled inside the compiled M5GFX UI, identical on every build.
+
+| # | Tab5 Home action (v0.5.0-beta.1) | P4 console Home (native) | Web page today | Gap |
+|---|---|---|---|---|
+| 1 | `tune_frequency` | handled (`retune`) | node (`receivers/tune`, or `fm?action=start` while the node's audio session owns the receiver) | none |
+| 2 | `step_up`, `step_down` | handled (band-aware step) | node via `tuneTo` | none |
+| 3 | `span_up`, `span_down` | handled | node (`receivers/rate`, pinned; or `fm?action=start&sps=`) | none |
+| 4 | `gain_auto`, `gain_tenth_db`, `rtl_agc` | handled | node (`tuner/gain`, `tuner/agc`) | none |
+| 5 | `volume_up`, `volume_down`, `sound_toggle` | handled: the board's speaker | page-only: the browser's own volume (needs an audio session; otherwise a toast) | **intentional deviation**: owner wants browser audio never to change the board's volume or mute |
+| 6 | `step_size_up`, `step_size_down` | handled (`cycle_step_hz`, per band) | page-only (the node's Home step is not changed) | **gap**: needs a Home action on the node and the page calling it |
+| 7 | `mode_set` (0 AUTO, 1 NFM, 2 AM, 3 WFM, 4 USB, 5 LSB) | handled (pins the demodulator for the band) | toast: "Mode choice is shown only" | **gap**: the node already implements it; the page does not call it |
+| 8 | `filter_set` (bandwidth Hz) | handled | AM screen: channel mode in the browser; elsewhere: toast / shown only | **gap** |
+| 9 | `filter_standard` | not in `home_app.cpp` | toast: "not applied by the node yet" | **gap** (not implemented on the P4 console either) |
+| 10 | `filter_edges` | not in `home_app.cpp` | page-only (draws the two filter lines) | likely UI-only; confirm on the Tab5 |
+| 11 | `open_clock` | not in `home_app.cpp` | no case: "Action not wired: open_clock" | **gap** (clock settings; the node has the clock/UTC offset setting) |
+| 12 | `open_device_settings` | handled (opens Settings) | UI (`_m5_open_settings`) | check that Settings is the same screen |
+| 13 | `open_dashboard` | handled | UI list; Weather, Marine and Satellite tune Home to a band; other tiles toast "not in this build yet" | **gap** per dashboard (a separate audit per screen) |
+| 14 | `waterfall_contrast_down/up`, `waterfall_palette_next`, `waterfall_speed_next` | UI | UI | none |
+| 15 | `gain_open/close`, `filter_open/close`, `mode_open/close`, `keypad_open`, `open_browser`, `close_browser`, `browser_previous/next` | UI | UI | none |
+
+## What the node already has that the page does not use
+
+`home_app.cpp` already applies `mode_set`, `step_size`, `filter_set` and the rest on the real Home. The web page cannot reach them because there is no route that injects a Home action, and the page (`app.js`, other repo) answers with a toast instead of calling one.
+
+## Proposed closure (needs the owner's decision before any code)
+
+1. **Node side, an addition only:** one signed route, `home?action=<name>&value=<n>`, that hands the same `home::Action` to `home_app` that a touch would. No existing screen changes.
+2. **Node status:** report Home's step, mode (already in `/api/v1/freq`), bandwidth and span so the page can show the real state instead of its own.
+3. **Page side (this changes how the page's buttons behave, so it is the owner's call):** make rows 6, 7, 8, 9 and 11 call that route. Either as a patch to `app.js` in the OrcSDR-Headless repo, or as a script injected the way the login script is.
+4. A per-screen matrix for FM, AM, CB, Airband, Shortwave, P25, ADS-B, ACARS, LoRa, POCSAG, RF Lab and the rest, after Home is decided.
+
+## Evidence level
+
+- Action list, P4 handlers and page cases: read from the sources named above (not run).
+- Browser behaviour of tune, step and FM start: exercised on COM29 with the built-in browser (tune 96.1 -> 96.225 MHz, step 12.5 -> 25 kHz, FM start from the FM screen); mode, filter and step-size buttons were not clicked.
