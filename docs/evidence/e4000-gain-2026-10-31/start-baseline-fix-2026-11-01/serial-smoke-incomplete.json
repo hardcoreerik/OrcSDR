@@ -1,0 +1,48 @@
+{
+  "scope": "serial gain controls; no RF-amplitude acceptance",
+  "events": [
+    {
+      "t": 1793604486.9771423,
+      "command": "RTL_HEALTH",
+      "response": "RTL_HEALTH_STATUS uptime_ms=504011 free_heap=14069480 min_free_heap=14055292 dma_free=22423 dma_min=20663 dma_largest=21504 tasks=29 main_stack_hwm=5020 reset_reason=11 internal_free=60131 internal_min=44907 internal_largest=31744 psram_free=14031628 psram_largest=13893632"
+    },
+    {
+      "t": 1793604487.1092787,
+      "command": "RTL_DRIVER STATUS",
+      "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=236552192 blocks=7219 effective_sps=2395465 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+    },
+    {
+      "t": 1793604487.1131063,
+      "command": "RTL_GAIN STATUS",
+      "response": "RTL_GAIN_STATUS band=FM receiver=\"Nooelec XTR\" mode=MANUAL auto_kind=SMART selecting=0 gain_tenth_db=-10 rtl_agc=0 bias=0 gain_available=1 cap_auto=1 cap_rtl_agc=0 steps=-10,15,40,65,90,115,140,165,190,215,240,290,340,420"
+    },
+    {
+      "t": 1793604487.154991,
+      "command": "RTL_DRIVER GAIN -10",
+      "response": "RTL_DRIVER_RESULT action=\"GAIN -10\" accepted=1 result=ESP_OK"
+    },
+    {
+      "t": 1793604487.1892362,
+      "command": "RTL_DRIVER STATUS",
+      "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=237010944 blocks=7233 effective_sps=2394340 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+    },
+    {
+      "t": 1793604487.3606174,
+      "command": "RTL_DRIVER STATUS",
+      "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=237535232 blocks=7249 effective_sps=2391374 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+    },
+    {
+      "t": 1793604487.525724,
+      "command": "RTL_DRIVER STATUS",
+      "response": "RTL_DRIVER_STATUS installed=1 version=0.9.3 state=STREAMING profile=5 profile_name=\"e4000_experimental\" provisional=1 device_caps=0x0025ff1f library_caps=0x003fff7f delivery=callback gain_auto_cap=1 rtl_agc_cap=0 gain_cap=1 bias_cap=0 mode=MANUAL gain_tenth_db=-10 rtl_agc=0 bias=0 bytes=238321664 blocks=7273 effective_sps=2391347 overruns=0 drops=0 shadow_ok=1 metrics_ok=1 frequency_hz=100000000 frequency_ok=1 route=TUNER bw_requested_hz=0 bw_applied_hz=0"
+    },
+    {
+      "t": 1793604487.5650775,
+      "command": "RTL_DRIVER GAIN 15",
+      "response": "RTL_DRIVER_RESULT action=\"GAIN 15\" accepted=1 result=ESP_OK"
+    }
+  ],
+  "pass": false,
+  "error": "Missing response or reset/authentication error for RTL_DRIVER STATUS",
+  "restore_error": "Missing response or reset/authentication error for RTL_DRIVER GAIN -10"
+}

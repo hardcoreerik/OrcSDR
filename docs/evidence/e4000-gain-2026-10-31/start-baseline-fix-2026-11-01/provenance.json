@@ -1,0 +1,8 @@
+{
+  "driver": "a3344bbbc5bd11366b19038c83dd76c6ce1f7171",
+  "image_bytes": 5444944,
+  "image_sha256": "8a43bbde3fb965903f60f9d28dc185c9b63dd4e1bcfb9c62c7222b49e734ecfa",
+  "startup_trace": false,
+  "delay_only": false,
+  "source_sha256": "4954d8a2d170d905ae6bd3fea7d35eafa98340fc5ac74527dcd908af0113e0b1"
+}
