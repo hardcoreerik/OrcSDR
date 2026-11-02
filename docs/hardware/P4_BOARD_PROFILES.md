@@ -127,6 +127,11 @@ the board have not been read.
 - **WIFI6-POE-ETH**: no Ethernet driver in the app; USB-A VBUS control, DSI panel behaviour and C6 firmware version
   are unverified.
 - **Every board**: GNSS, LoRa, IMU, RTC, camera and battery gauge are not used by the console.
+- **LilyGO TX Lab progress:** the branch now exposes a capability-gated SX1262
+  TX Lab with ARM/SEND locked, because its radio is only documented in the profile.
+  There is no SPI radio backend or radiating TX path. See
+  [LilyGO SX1262 TX Lab](LILYGO_SX1262_TX_LAB.md).
+
 - **LilyGO T-Display-P4 AMOLED + SX1262**: profile `lilygo-t-display-p4-amoled` is documented-only
   (`board_lilygo_t_display_p4_amoled.c`, overlay `sdkconfig.board-lilygo-tdisplay-p4-amoled`). Pins are the vendor
   header at `a47cf73e`: panel I2C 7/8, codec I2C 20/21, I2S WS9 DOUT10, SX1262 SPI SCLK2 MOSI3 MISO4 CS24 BUSY6
