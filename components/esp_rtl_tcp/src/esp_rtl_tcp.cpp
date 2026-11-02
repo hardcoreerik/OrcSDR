@@ -1,4 +1,5 @@
 #include "esp_rtl_tcp.hpp"
+#include <atomic>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -18,12 +19,13 @@ SemaphoreHandle_t g_mutex = nullptr;  // guards everything below that a second t
 Config g_cfg;
 Host* g_host = nullptr;
 Stats g_stats;
+portMUX_TYPE g_stats_lock = portMUX_INITIALIZER_UNLOCKED;  // guards g_stats only: counters never wait behind a blocked send (g_mutex is held during one)
 volatile bool g_run = false, g_task_alive = false;
 int g_listen = -1, g_fd = -1;  // g_fd: the connected client, -1 when none
 bool g_streaming = false;      // the header is out and the host is delivering
-bool g_have_ref = false;       // the first block of the session has defined what the client was told
+std::atomic<bool> g_have_ref{false};  // the first block of the session has defined what the client was told
 uint32_t g_ref_rate = 0, g_ref_center = 0;
-EndReason g_pending = EndReason::none;  // an end requested by push(); the session task acts on it
+std::atomic<EndReason> g_pending{EndReason::none};  // an end requested by push(); the session task acts on it
 uint32_t g_gain_count = 0;              // the ladder length announced in this session's header
 
 struct Lock {
@@ -33,15 +35,16 @@ struct Lock {
 
 // Requests the end of the session. The caller holds the lock. The socket is shut so a blocked recv or send returns; the session task closes it.
 void end_locked(EndReason reason) {
-  if (g_pending != EndReason::none) return;
-  g_pending = reason;
+  EndReason expected = EndReason::none;
+  if (!g_pending.compare_exchange_strong(expected, reason)) return;
   g_streaming = false;
   if (g_fd >= 0) shutdown(g_fd, SHUT_RDWR);
 }
 
 void bump(uint32_t Stats::*field) {
-  Lock lock;
+  portENTER_CRITICAL(&g_stats_lock);
   ++(g_stats.*field);
+  portEXIT_CRITICAL(&g_stats_lock);
 }
 
 bool send_all(int fd, const uint8_t* data, size_t len) {
@@ -76,12 +79,10 @@ EndReason handle(const proto::Command& c) {
     case proto::Op::set_center: ok = g_host->set_center(c.param); break;
     case proto::Op::set_rate: {
       switch (g_host->set_rate(c.param)) {
-        case RateResult::ok: {
-          Lock lock;
+        case RateResult::ok:
           g_have_ref = false;  // the next block defines the new stream
           ok = true;
           break;
-        }
         case RateResult::unsupported: return EndReason::rate_unsupported;
         case RateResult::exceeds_link: return EndReason::rate_exceeds_link;
         default: return EndReason::rate_change_failed;
@@ -112,10 +113,12 @@ void run_session(int fd, const char* peer) {
     g_streaming = false;
     g_have_ref = false;
     g_pending = EndReason::none;
+    portENTER_CRITICAL(&g_stats_lock);
     g_stats.client_connected = true;
     g_stats.session_rate = g_stats.session_center_hz = 0;
     ++g_stats.clients_total;
     std::snprintf(g_stats.peer, sizeof(g_stats.peer), "%s", peer);
+    portEXIT_CRITICAL(&g_stats_lock);
   }
   ESP_LOGI(TAG, "RTLTCP_SESSION_START peer=%s mode=%s", peer, g_cfg.allow_control ? "control" : "listen-only");
 
@@ -141,16 +144,13 @@ void run_session(int fd, const char* peer) {
   } else {
     began = true;
     Lock lock;
-    g_streaming = g_pending == EndReason::none;
+    g_streaming = g_pending.load() == EndReason::none;
   }
 
   proto::CommandStream commands;
   uint8_t buf[64];
   while (reason == EndReason::none && g_run) {
-    {
-      Lock lock;
-      if (g_pending != EndReason::none) break;
-    }
+    if (g_pending.load() != EndReason::none) break;
     const int n = recv(fd, buf, sizeof(buf), 0);
     if (n > 0) {
       commands.feed(buf, static_cast<size_t>(n), [&](const proto::Command& c) {
@@ -166,13 +166,15 @@ void run_session(int fd, const char* peer) {
   shutdown(fd, SHUT_RDWR);  // aborts a send that push() is blocked in
   {
     Lock lock;
-    if (g_pending != EndReason::none) reason = g_pending;  // push() saw it first: that is the real cause
+    if (g_pending.load() != EndReason::none) reason = g_pending.load();  // push() saw it first: that is the real cause
     if (reason == EndReason::none) reason = EndReason::stopped;
     g_streaming = false;
     g_fd = -1;
     close(fd);  // under the lock: push() is never mid-send on a descriptor that is being closed
+    portENTER_CRITICAL(&g_stats_lock);
     g_stats.client_connected = false;
     g_stats.last_end = reason;
+    portEXIT_CRITICAL(&g_stats_lock);
   }
   if (began) g_host->session_end();
   const Stats s = stats();
@@ -244,9 +246,11 @@ bool start(const Config& config, Host& host) {
     Lock lock;
     g_cfg = config;
     g_host = &host;
+    portENTER_CRITICAL(&g_stats_lock);
     g_stats = Stats{};
     g_stats.running = true;
     g_stats.control_allowed = config.allow_control;
+    portEXIT_CRITICAL(&g_stats_lock);
     g_listen = ls;
     g_pending = EndReason::none;
     g_fd = -1;
@@ -272,16 +276,18 @@ void stop() {
   }
   if (g_listen >= 0) shutdown(g_listen, SHUT_RDWR);
   for (int i = 0; i < 300 && g_task_alive; ++i) vTaskDelay(pdMS_TO_TICKS(10));
-  Lock lock;
+  portENTER_CRITICAL(&g_stats_lock);
   g_stats.running = false;
+  portEXIT_CRITICAL(&g_stats_lock);
 }
 
 bool running() { return g_run; }
 
 Stats stats() {
   if (!g_mutex) return Stats{};
-  Lock lock;
+  portENTER_CRITICAL(&g_stats_lock);
   Stats s = g_stats;
+  portEXIT_CRITICAL(&g_stats_lock);
   s.running = g_run;
   return s;
 }
@@ -294,8 +300,10 @@ void push(const uint8_t* data, size_t bytes, uint32_t rate, uint32_t center_hz) 
     g_have_ref = true;
     g_ref_rate = rate;
     g_ref_center = center_hz;
+    portENTER_CRITICAL(&g_stats_lock);
     g_stats.session_rate = rate;
     g_stats.session_center_hz = center_hz;
+    portEXIT_CRITICAL(&g_stats_lock);
   } else if (rate != g_ref_rate || center_hz != g_ref_center) {
     if (!g_cfg.allow_control) {
       end_locked(EndReason::receiver_changed);  // the client was told nothing about this change and cannot learn of it
@@ -303,8 +311,10 @@ void push(const uint8_t* data, size_t bytes, uint32_t rate, uint32_t center_hz) 
     }
     g_ref_rate = rate;  // control mode: the most recent commander wins
     g_ref_center = center_hz;
+    portENTER_CRITICAL(&g_stats_lock);
     g_stats.session_rate = rate;
     g_stats.session_center_hz = center_hz;
+    portEXIT_CRITICAL(&g_stats_lock);
   }
   size_t off = 0;
   while (off < bytes) {
@@ -314,9 +324,11 @@ void push(const uint8_t* data, size_t bytes, uint32_t rate, uint32_t center_hz) 
       return;
     }
     off += static_cast<size_t>(n);
-    g_stats.bytes_sent += static_cast<uint64_t>(n);
   }
+  portENTER_CRITICAL(&g_stats_lock);
+  g_stats.bytes_sent += bytes;
   ++g_stats.blocks_sent;
+  portEXIT_CRITICAL(&g_stats_lock);
 }
 
 }  // namespace esp_rtl_tcp

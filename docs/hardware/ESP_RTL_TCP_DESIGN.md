@@ -185,3 +185,9 @@ One rtl_tcp client (listen-only) streaming the NESDR SMArt v5 at 2.4 MS/s, plus 
 - Internal RAM free stayed at 121,507 bytes at every sample (one dip of 324 bytes and one of 260 bytes that recovered); PSRAM free moved by tens of KB around 27.69 MB while the 4 MB sink queue was in use. No leak visible in 40 minutes.
 - Blocks dropped for the client: 901 of about 700,000 (0.13 %), all counted, arriving in a few bursts (for example 48 to 519 within one minute at about 20 minutes). The client was a Python script on a Windows PC, so a stall on that side is as likely as one on the board; not separated.
 - After the soak and `RTL_TCP OFF`, internal free read 133,323 bytes (server idle) and the receiver streamed normally.
+
+## 13. Counters no longer wait behind a send (2026-11-02)
+
+The server's counters and the end-of-session flag moved off the lock that `push()` holds during a blocking send (a spinlock for the counters, an atomic for the end reason and the "first block seen" flag), so commands are handled and counted promptly even when a slow link has a send in flight.
+Checked: on COM8 (Waveshare ESP32-P4-Module-DEV-KIT, Wi-Fi) the acceptance test now passes every check except the sample-rate one (410 kS/s arrived of 2.4 MS/s, about 6.6 Mbit/s with the stream task at priority 5, so that link carried more than the 4 Mbit/s measured before); previously four command-counting checks failed there.
+On COM29 (Waveshare ESP32-P4-ETH, wired): 20 s at 2,397,683 S/s, 0 dropped blocks, 14 of 14 checks (0 failed). rtl_tcp is off on both boards again.
