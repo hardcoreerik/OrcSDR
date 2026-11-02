@@ -9593,7 +9593,8 @@ static void rtl_dsp_task(void *) {
         g_iq_rec_kind.load(std::memory_order_relaxed) == IqCaptureKind::p25)
       iq_rec_append(block.data, block.bytes);
     // Raw diagnostic IQ is independent of rate-specific decoder support.
-    if (g_iq_rec_kind.load(std::memory_order_relaxed) == IqCaptureKind::diagnostic)
+    if (g_iq_rec_kind.load(std::memory_order_relaxed) == IqCaptureKind::diagnostic &&
+        block.sample_rate_sps == g_iq_rec_sample_rate_sps)
       iq_rec_append(block.data, block.bytes);
     mark(dsp_stats::Stage::record);
     if (block.band != RtlBand::adsb || orcsdr::home::active() ||
@@ -13135,6 +13136,9 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   // uses the tuner's hardware AGC.
   snapshot.gain_smart = rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::am;
   snapshot.gain_available = !demo && rtl_tuner_gain_available(rtl_ui_frequency_hz);
+  snapshot.gain_direct_sampling = !demo &&
+      rtl_has_device_capability(ESP_RTL_SDR_CAP_DIRECT_SAMPLING) &&
+      rtl_ui_frequency_hz < kRtlNoHfMinHz;
   snapshot.gain_auto_available =
       snapshot.gain_available &&
       rtl_has_device_capability(snapshot.gain_smart ? ESP_RTL_SDR_CAP_GAIN
@@ -21571,12 +21575,16 @@ void process_command(char* command) {
     else if (profile == ESP_RTL_SDR_PROFILE_BLOG_V4L)
       required |= ESP_RTL_SDR_CAP_HF_UPCONVERTER | ESP_RTL_SDR_CAP_GAIN |
                   ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC;
+    else if (profile == ESP_RTL_SDR_PROFILE_E4000)
+      required |= ESP_RTL_SDR_CAP_GAIN | ESP_RTL_SDR_CAP_GAIN_AUTO |
+                  ESP_RTL_SDR_CAP_OFFSET_TUNING;
     const uint32_t caps = rtl_device_capabilities();
     const bool pass = g_rtl != nullptr &&
                       (profile == ESP_RTL_SDR_PROFILE_BLOG_V4 ||
                        profile == ESP_RTL_SDR_PROFILE_BLOG_V4L ||
                        profile == ESP_RTL_SDR_PROFILE_BLOG_V3 ||
-                       profile == ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5) &&
+                       profile == ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5 ||
+                       profile == ESP_RTL_SDR_PROFILE_E4000) &&
                       (caps & required) == required;
     Serial.printf("RTL_DRIVER_SELF_CHECK pass=%d version=%s profile=%u "
                   "device_caps=0x%08x required=0x%08x\n",
@@ -21670,7 +21678,7 @@ void process_command(char* command) {
       err = esp_rtl_sdr_retune_hz(g_rtl, static_cast<uint32_t>(frequency_hz));
     }
     else {
-      Serial.println("RTL_DRIVER_INVALID use STATUS|SELF_CHECK|TUNE <HZ>|GAINMODE AUTO|MANUAL|GAIN <-10..496>|RTLAGC ON|OFF|BIAS ON|OFF|BW <hz|0>");
+      Serial.println("RTL_DRIVER_INVALID use STATUS|SELF_CHECK|TUNE <HZ>|OFFSET ON|OFF|HFDIRECT AUTO|OFF|<24000000..28799999>|GAINMODE AUTO|MANUAL|GAIN <-10..496>|RTLAGC ON|OFF|BIAS ON|OFF|BW <hz|0>");
       return;
     }
     Serial.printf("RTL_DRIVER_RESULT action=\"%s\" accepted=%d result=%s\n", action,

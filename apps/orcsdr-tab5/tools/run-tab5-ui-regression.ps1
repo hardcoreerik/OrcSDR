@@ -975,9 +975,9 @@ function ConvertFrom-OffsetStatus([string]$Line) {
   return [pscustomobject]@{ Requested = [bool][int]$Matches[1]; AppliedOffset = [uint32]$Matches[2]; TunerLo = [uint32]$Matches[3]; IqCenter = [uint32]$Matches[4] }
 }
 function Get-IqRequestedDriverRevision([string]$Manifest) {
-  $match = [regex]::Match($Manifest, '(?m)^  esp_rtl_sdr:\r?\n(?:^    [^\r\n]*\r?\n)*?^    version: ([0-9a-f]{40})[ \t]*(?:\r?\n|$)')
+  $match = [regex]::Match($Manifest, '(?m)^  esp_rtl_sdr:\r?\n(?:^    [^\r\n]*\r?\n)*?^    version: (["'']?)([0-9a-fA-F]{40})\1[ \t]*(?:\r?\n|$)')
   if (!$match.Success) { throw 'IQ provenance requires an exact driver commit pin in the application manifest.' }
-  return $match.Groups[1].Value
+  return $match.Groups[2].Value.ToLowerInvariant()
 }
 function Get-DriverRegressionFrequencies([int]$Profile) {
   # Match rtl_profile_supports_rf_hz: Nooelec has narrower model limits.
@@ -1221,6 +1221,9 @@ function Invoke-SelfCheck {
   if (!$offset.Requested -or $offset.AppliedOffset -ne 2040000 -or $offset.TunerLo -ne 97960000 -or $offset.IqCenter -ne 100000000) { throw 'Offset metadata parse failed.' }
   $revision = 'da22090752660b6689b706716771d8cd8d35f665'
   if ((Get-IqRequestedDriverRevision "dependencies:`n  esp_rtl_sdr:`n    git: local`n    version: $revision`n") -ne $revision) { throw 'Driver revision parse failed.' }
+  foreach ($quote in @([string][char]34, [string][char]39)) {
+    if ((Get-IqRequestedDriverRevision "dependencies:`n  esp_rtl_sdr:`n    version: $quote$revision$quote`n") -ne $revision) { throw 'Quoted driver revision parse failed.' }
+  }
   $rejectedRevision = $false
   try { [void](Get-IqRequestedDriverRevision "dependencies:`n  esp_rtl_sdr:`n    version: main`n") } catch { $rejectedRevision = $true }
   if (!$rejectedRevision) { throw 'Unpinned driver accepted as IQ provenance.' }

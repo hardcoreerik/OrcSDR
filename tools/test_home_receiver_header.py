@@ -27,7 +27,7 @@ std::atomic<bool> g_rtl_is_nooelec_xtr{false};
 void* g_rtl=&identity;
 constexpr int ESP_OK=0;
 int esp_rtl_sdr_get_device_info(void*,esp_rtl_sdr_device_info_t* out) { *out=identity;return ESP_OK; }
-struct Snapshot { bool wifi_connected=true,driver_ready=true; char receiver[12]="RTL-SDR",wifi_ip[16]="192.0.2.1",clock[12]="12:00",date[20]="2026-10-31"; } current;
+struct Snapshot { bool wifi_connected=true,driver_ready=true,gain_direct_sampling=false; char receiver[12]="RTL-SDR",wifi_ip[16]="192.0.2.1",clock[12]="12:00",date[20]="2026-10-31"; } current;
 struct Primitive { std::string text;int x,y,size; };
 #undef assert
 #define assert(x) do { if (!(x)) { std::fprintf(stderr,"FAIL: %s\n",#x); return 1; } } while(0)
@@ -40,9 +40,13 @@ void draw_wifi_icon(int,int,int) {}
 void draw_usb_icon(int,int,int) {}
 void text(const char* s,int x,int y,int,int size,int=0) { primitives.push_back({s,x,y,size}); }
 '''
-code+=function(main,"rtl_identity_is_nooelec_xtr")+"\n"+function(main,"rtl_receiver_label")+"\n"+function(home,"draw_header_status")
+code+=function(home,"gain_unavailable_message")+"\n"+function(main,"rtl_identity_is_nooelec_xtr")+"\n"+function(main,"rtl_receiver_label")+"\n"+function(home,"draw_header_status")
 code+=r'''
 int main() {
+ assert(std::strstr(gain_unavailable_message(),"tuner or mode")!=nullptr);
+ current.gain_direct_sampling=true;assert(std::strstr(gain_unavailable_message(),"24 MHz")!=nullptr);
+ current.driver_ready=false;assert(std::strcmp(gain_unavailable_message(),"No receiver connected.")==0);
+ current.driver_ready=true;current.gain_direct_sampling=false;
  std::strcpy(identity.manufacturer,"Nooelec");std::strcpy(identity.product,"SMArt XTR v5");
  g_rtl_is_nooelec_xtr.store(rtl_identity_is_nooelec_xtr(&identity));
  assert(std::strcmp(rtl_receiver_label(ESP_RTL_SDR_PROFILE_E4000),"Nooelec XTR")==0);

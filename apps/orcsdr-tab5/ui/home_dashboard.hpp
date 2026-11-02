@@ -36,6 +36,7 @@ struct Snapshot {
   // Receiver gain, all capability-gated by main.cpp. gain_auto means OrcSDR
   // SMART gain when gain_smart (FM/AM), otherwise the tuner's own AGC.
   bool gain_available = false;
+  bool gain_direct_sampling = false;
   bool gain_auto_available = false;
   bool gain_smart = false;
   bool gain_auto = false;

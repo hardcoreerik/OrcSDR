@@ -519,6 +519,12 @@ int gain_step_index() {
   return best;
 }
 
+const char* gain_unavailable_message() {
+  if (!current.driver_ready) return "No receiver connected.";
+  if (current.gain_direct_sampling) return "Direct sampling: gain available from 24 MHz.";
+  return "Gain control unavailable for this tuner or mode.";
+}
+
 void draw_gain_popup() {
   M5.Display.fillRoundRect(kPopX, kPopY, kPopW, kPopH, 12, TFT_BLACK);
   M5.Display.drawRoundRect(kPopX, kPopY, kPopW, kPopH, 12, kCyan);
@@ -534,8 +540,7 @@ void draw_gain_popup() {
                current.rtl_agc, current.driver_ready && current.rtl_agc_available);
   popup_button(kCloseX, kCloseW, "CLOSE", false, true);
   if (!gain || current.gain_step_count < 2) {
-    text(current.driver_ready ? "Gain control unavailable for this tuner or mode."
-                              : "No receiver connected.",
+    text(gain_unavailable_message(),
          kMinusX, kSliderY + kSliderH / 2, TFT_LIGHTGREY, 2);
   } else {
     char value[48];
