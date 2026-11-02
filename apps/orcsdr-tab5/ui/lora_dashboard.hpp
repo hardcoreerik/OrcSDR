@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "lora_tx_policy.hpp"
 
 namespace orcsdr::lora {
 
@@ -9,7 +10,7 @@ constexpr size_t kNodeCapacity = 16;
 constexpr size_t kEventCapacity = 16;
 constexpr size_t kSurveyResultCapacity = 3;
 
-enum class View : uint8_t { overview, nodes, traffic, map, rf_health, count };
+enum class View : uint8_t { overview, nodes, traffic, map, rf_health, tx_lab, count };
 
 struct Node {
   uint32_t id = 0;
@@ -83,6 +84,8 @@ struct Snapshot {
   bool iq_busy = false;
   bool native_decoder_ready = false;
   bool key_loaded = false;
+  // A profile_only SX1262 is listed for planning, never as an operable TX radio.
+  lora_tx::Capability tx{};
   char profile[24]{};
   char region[24]{};
   char log_status[48]{};
@@ -120,6 +123,9 @@ enum class ActionKind : uint8_t {
   channel_next,
   channel_select,
   open_settings,
+  tx_request_arm,
+  tx_request_disarm,
+  tx_send_test_packet,
   exit_home,
 };
 
