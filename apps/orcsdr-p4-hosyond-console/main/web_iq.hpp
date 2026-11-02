@@ -23,6 +23,8 @@ enum class Slot : uint8_t { none, iq, audio };
 bool slot_open(Slot kind, uint32_t peer);          // starts the port-81 server if needed
 bool slot_send(const uint8_t* data, size_t len);   // one binary frame to the connected browser; false when there is none or the send failed
 bool slot_connected();
+void slot_diag(uint32_t* why, uint32_t* last_peer, uint32_t* ticket_peer);  // why the last upgrade was refused (1 no ticket or another stream, 2 not same site, 3 expired, 4 other address), who asked, who holds the ticket
+void slot_counts(uint32_t* accepted, uint32_t* refused, uint32_t* closed);  // upgrades accepted, upgrades refused (no ticket), live sockets that closed on their own
 void slot_close();                                 // closes the browser's socket and withdraws the ticket
 void shutdown();      // also stops the port-81 server (the web server stopped)
 bool available();     // compiled in

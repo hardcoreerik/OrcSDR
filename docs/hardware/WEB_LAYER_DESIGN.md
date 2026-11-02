@@ -336,3 +336,21 @@ Not checked: that the page's decoders (ADS-B, ACARS, and the others that use the
 Internal RAM free stayed at 120,447 bytes (largest block 43,008) after every 25 cycles and at the end; PSRAM free moved by 1.4 KB over the run. No leak of sockets, sinks or buffers is visible, and the receiver was back at 96.1 MHz at the end.
 
 **Correction to the soak note above:** after the 100-cycle run the receiver was not back at 96.1 MHz but at 96.05 MHz (the last channel's window centre): when a channel started before the retune back was visible, it recorded the old window centre as "where the receiver was". Fixed (`web_iq.cpp` keeps the original tuning while the receiver still reads as the previous window). Re-run, 40 cycles on COM29: 39 delivered frames; one got a single frame in its 0.4 s window (timing at the very start of a connection, not investigated); receiver at 96.1 MHz afterwards; internal RAM free 120,639 bytes at the end against 129,127 at the start (the first number was read right after boot, before the servers' buffers were allocated; it did not keep falling in the 100-cycle run).
+
+## 18. Browser audio (the page's "FM service"), 2026-11-02
+
+What the page expects from a node: `POST /api/v1/fm?action=start&index&hz&sps&volume&tau[&mode]`, `GET /api/v1/fm` (playing, receiver, frequency_hz, input_sps, volume, browser_audio.available), `action=volume`, `action=stop`, and 48 kHz mono PCM on `ws://<node>:81/api/v1/fm/audio` in "OFA1" packets (24-byte header: magic, session, seq, first sample, rate 48000, frames <= 960, flags; then int16).
+
+`main/web_audio.{hpp,cpp}` implements it. It runs its **own** demodulator (components/orcsdr_audio_dsp, WFM/NFM/AM) on a queued sink (task "webaudio", core 0, priority 5), independent of the speaker path, so it works on boards with no codec. 960 samples per packet = 50 packets/s, about 0.8 Mbit/s.
+
+Rules it keeps:
+- **It never touches the board's speaker, volume or mute.** `fm?action=volume` sets only the page's own 0..80 number (kept so the page shows it after a reload); the browser applies it as its own gain. The old behaviour (mapping it to Home's volume) is gone.
+- **Limits come from the driver/dongle.** The rate is the largest multiple of 240 kS/s up to 2.4 MS/s that `esp_rtl_sdr_is_rate_supported` accepts (the demodulator's own constraint is stated in the reply); the floor of the station comes from the dongle's capabilities (`web_control::tune_min_hz`), so AM at 1280 kHz works through direct sampling on the Nooelec SMArt v5.
+- **The receiver is pinned.** The Home screen asks for its own rate all the time; `radio::set_sample_rate_pin(rx, rate)` (the same override ADS-B, ACARS and RF Lab use) stops that while a session plays and is released on stop. `receivers/rate` pins too; `sps=0` releases.
+- **One listener slot** on port 81, shared with the channel IQ stream: starting one ends the other. The ticket is bound to the signed caller's address (an audio ticket lasts for the session so the page may reconnect on its own; an IQ ticket is single use for 30 s). A browser on a different address than the one that made the signed request is refused by design.
+- A start that cannot get the receiver onto the station and rate fails with `receiver_did_not_take_the_station_and_rate` instead of starting a session that would end itself.
+
+Also changed: up to 4 sessions with least-recently-used eviction (a correct password is never turned away), port-81 server 4 sockets (a retrying page purged the live socket at 2), status counters `browser_audio.accepted/refused/closed_early/last_why/last_peer/ticket_peer` for diagnosis.
+
+Verified (tools/web_audio_test.js, 26 checks, COM29 Waveshare ESP32-P4-ETH): real-time 50 packets/s, consecutive sequence and sample counter, non-silent unclipped audio, rates 960k/1.44M/2.4M, AM at 1280 kHz, board volume unchanged, stop closes the socket. Demodulation costs about 50 % of one core at 2.4 MS/s (1.7 ms per 3.4 ms block), 39 % at 960 kS/s.
+**Not verified:** audible playback in a browser. Neither automated browser could open the socket (the Chrome extension tab is on another address than my signed request; the built-in pane cannot reach port 81), so the owner's own browser is the test.

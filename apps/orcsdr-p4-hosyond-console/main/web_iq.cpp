@@ -31,6 +31,8 @@ bool available() { return false; }
 bool slot_open(Slot, uint32_t) { return false; }
 bool slot_send(const uint8_t*, size_t) { return false; }
 bool slot_connected() { return false; }
+void slot_counts(uint32_t* accepted, uint32_t* refused, uint32_t* closed) { *accepted = *refused = *closed = 0; }
+void slot_diag(uint32_t* why, uint32_t* last_peer, uint32_t* ticket_peer) { *why = *last_peer = *ticket_peer = 0; }
 void slot_close() {}
 #else
 namespace {
@@ -159,15 +161,29 @@ void on_block(const radio::IqBlock& b, void* ctx) {
   }
 }
 
+std::atomic<uint32_t> g_last_why{0}, g_last_peer{0};  // diagnostics: why the last upgrade was refused (1 no ticket/other stream, 2 not same site, 3 expired, 4 other address) and who asked
+
 bool ticket_ok(httpd_req_t* req) {
   const char* want = g_ticket_kind.load() == static_cast<uint8_t>(Slot::audio) ? "/api/v1/fm/audio" : "/api/v1/fm/iq";
-  if (g_ticket_kind.load() == 0 || std::strncmp(req->uri, want, std::strlen(want)) != 0) return false;
-  return web_server::same_site_request(req) && g_ticket_peer.load() != 0 && g_ticket_until.load() >= esp_timer_get_time() && web_server::peer_address(req) == g_ticket_peer.load();
+  const uint32_t peer = web_server::peer_address(req);
+  auto no = [&](uint32_t why) {
+    g_last_why = why;
+    g_last_peer = peer;
+    return false;
+  };
+  if (g_ticket_kind.load() == 0 || g_ticket_peer.load() == 0 || std::strncmp(req->uri, want, std::strlen(want)) != 0) return no(1);
+  if (!web_server::same_site_request(req)) return no(2);
+  if (g_ticket_until.load() < esp_timer_get_time()) return no(3);
+  if (peer != g_ticket_peer.load()) return no(4);
+  return true;
 }
+
+std::atomic<uint32_t> g_ws_accepted{0}, g_ws_refused{0}, g_ws_closed_early{0};  // diagnostics: shown in the status the page polls
 
 // Runs before the server answers the upgrade, so a refused client gets a real 403 and never a WebSocket.
 esp_err_t ws_pre_handshake(httpd_req_t* req) {
   if (ticket_ok(req)) return ESP_OK;
+  ++g_ws_refused;
   httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "channel not opened by a signed request");
   return ESP_FAIL;
 }
@@ -181,6 +197,7 @@ esp_err_t ws_handler(httpd_req_t* req) {
     if (oldfd >= 0 && oldfd != newfd && g_srv) httpd_sess_trigger_close(g_srv, oldfd);  // a reconnect replaces a half-open earlier socket
     const int one = 1;
     setsockopt(g_fd.load(), IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));  // 1 KB frames: without this Nagle waits for the peer's delayed ACK between frames
+    ++g_ws_accepted;
     ESP_LOGI(TAG, "WEB_IQ_CLIENT_CONNECTED fd=%d", g_fd.load());
     return ESP_OK;
   }
@@ -200,7 +217,7 @@ esp_err_t ws_handler(httpd_req_t* req) {
 // With a custom close_fn the server no longer closes the socket itself: this must (a missing close() leaks one lwip socket per connection).
 void on_close(httpd_handle_t, int fd) {
   int expected = fd;
-  g_fd.compare_exchange_strong(expected, -1);
+  if (g_fd.compare_exchange_strong(expected, -1)) ++g_ws_closed_early;  // the stream's own socket went away (the browser closed it, or the server purged it)
   close(fd);
 }
 
@@ -211,7 +228,7 @@ bool ensure_server() {
   config.ctrl_port = 32769;  // the main server uses the default
   config.core_id = 0;
   config.stack_size = 6144;
-  config.max_open_sockets = 2;
+  config.max_open_sockets = 4;  // with 2, a browser's own retry or a speculative connection purged the live stream's socket (least recently used goes first)
   config.max_uri_handlers = 2;
   config.lru_purge_enable = true;
   config.recv_wait_timeout = 10;
@@ -385,6 +402,18 @@ bool slot_send(const uint8_t* data, size_t len) {
 }
 
 bool slot_connected() { return g_fd.load() >= 0; }
+
+void slot_counts(uint32_t* accepted, uint32_t* refused, uint32_t* closed) {
+  *accepted = g_ws_accepted.load();
+  *refused = g_ws_refused.load();
+  *closed = g_ws_closed_early.load();
+}
+
+void slot_diag(uint32_t* why, uint32_t* last_peer, uint32_t* ticket_peer) {
+  *why = g_last_why.load();
+  *last_peer = g_last_peer.load();
+  *ticket_peer = g_ticket_peer.load();
+}
 
 void slot_close() { drop_slot(); }
 

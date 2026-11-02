@@ -1,6 +1,7 @@
 #include "web_compat.hpp"
 #include "web_audio.hpp"
 #include "web_control.hpp"
+#include "web_iq.hpp"
 #include <algorithm>
 #include <cstdarg>
 #include <cstdio>
@@ -99,12 +100,16 @@ void receivers(Out& o) {
 // The page's "FM service" is the node's browser-audio session (web_audio): it owns a receiver while it plays, and the page then shows the station and its audio.
 void fm(Out& o) {
   const web_audio::Status a = web_audio::status();
+  uint32_t accepted = 0, refused = 0, closed = 0;
+  web_iq::slot_counts(&accepted, &refused, &closed);
+  uint32_t why = 0, last_peer = 0, ticket_peer = 0;
+  web_iq::slot_diag(&why, &last_peer, &ticket_peer);
   o.fmt("{\"supported\":%s,\"playing\":%s,\"receiver\":%d,\"frequency_hz\":%u,\"input_sps\":%u,\"audio_sps\":48000,\"mode\":\"mono\",\"volume\":%d,"
         "\"rf_dbfs\":%.1f,\"queue_drops\":%u,\"tx_queue_overflows\":0,\"dsp_us\":%u,\"block_us\":%u,\"audio_rms_dbfs\":-90.0,\"uptime_us\":%llu,"
-        "\"browser_audio\":{\"available\":%s,\"port\":81,\"clients\":%d}}",
+        "\"browser_audio\":{\"available\":%s,\"port\":81,\"clients\":%d,\"accepted\":%u,\"refused\":%u,\"closed_early\":%u,\"last_why\":%u,\"last_peer\":\"%08x\",\"ticket_peer\":\"%08x\"}}",
         web_audio::available() ? "true" : "false", a.playing ? "true" : "false", a.playing ? a.receiver : -1, unsigned(a.station_hz), unsigned(a.input_sps), a.volume,
         double(a.rf_dbfs), unsigned(a.drops), unsigned(a.dsp_us), unsigned(a.block_us), static_cast<unsigned long long>(esp_timer_get_time()),
-        web_audio::available() ? "true" : "false", a.client ? 1 : 0);
+        web_audio::available() ? "true" : "false", a.client ? 1 : 0, unsigned(accepted), unsigned(refused), unsigned(closed), unsigned(why), unsigned(last_peer), unsigned(ticket_peer));
 }
 
 void report(Out& o) {
