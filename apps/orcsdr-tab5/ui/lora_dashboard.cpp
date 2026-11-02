@@ -27,7 +27,9 @@ constexpr uint16_t kMuted = 0x8c71;
 constexpr uint16_t kGrid = 0x2945;
 constexpr int kHeaderH = 120;
 constexpr int kTabsY = 640;
-constexpr int kTabW = 256;
+constexpr int kTabW = 256;  // RX-only five-tab layout is unchanged.
+constexpr uint8_t kRxTabCount = 5;
+constexpr uint8_t kTxTabCount = 6;
 constexpr int kPlotX = 44;
 constexpr int kPlotY = 270;
 constexpr int kPlotW = 780;
@@ -229,6 +231,11 @@ void draw_header() {
   audio_header::draw_settings_button();
 }
 
+bool tx_profile_visible() {
+  return g_snapshot.tx.readiness != lora_tx::Readiness::absent;
+}
+int tab_width() { return tx_profile_visible() ? 1280 / kTxTabCount : kTabW; }
+
 void draw_tab_icon(View view, int cx, int cy, uint16_t color) {
   if (view == View::overview) {
     M5.Display.drawFastHLine(cx - 24, cy + 8, 48, color);
@@ -251,6 +258,12 @@ void draw_tab_icon(View view, int cx, int cy, uint16_t color) {
     M5.Display.drawCircle(cx, cy, 5, color);
     M5.Display.drawLine(cx, cy + 20, cx - 18, cy + 33, color);
     M5.Display.drawLine(cx, cy + 20, cx + 18, cy + 33, color);
+  } else if (view == View::tx_lab) {
+    // An unfilled transmit antenna: a control panel, not a TX-ready indicator.
+    M5.Display.drawLine(cx - 13, cy + 28, cx, cy - 24, color);
+    M5.Display.drawLine(cx, cy - 24, cx + 13, cy + 28, color);
+    M5.Display.drawFastHLine(cx - 18, cy + 28, 36, color);
+    M5.Display.drawCircle(cx, cy - 20, 7, color);
   } else {
     const int16_t xs[] = {-27, -18, -10, -2, 5, 12, 20, 28};
     const int16_t ys[] = {0, 0, -19, 19, -24, 13, 0, 0};
@@ -260,15 +273,20 @@ void draw_tab_icon(View view, int cx, int cy, uint16_t color) {
 }
 
 void draw_tabs() {
-  static constexpr const char* names[] = {"OVERVIEW", "NODES", "TRAFFIC", "MAP", "RF HEALTH"};
-  for (uint8_t i = 0; i < static_cast<uint8_t>(View::count); ++i) {
-    const int x = i * kTabW;
+  static constexpr const char* names[] = {"OVERVIEW", "NODES", "TRAFFIC", "MAP", "RF HEALTH", "TX LAB"};
+  const uint8_t count = tx_profile_visible() ? kTxTabCount : kRxTabCount;
+  const int width = tab_width();
+  for (uint8_t i = 0; i < count; ++i) {
+    const int x = i * width;
+    const int actual_width = i + 1 == count ? 1280 - x : width;
     const bool selected = i == static_cast<uint8_t>(g_view);
-    M5.Display.fillRect(x, kTabsY, kTabW, 80, selected ? 0x0a43 : kPanel);
-    M5.Display.drawRect(x, kTabsY, kTabW, 80, selected ? kGreen : kGrid);
-    draw_tab_icon(static_cast<View>(i), x + 50, kTabsY + 38,
+    M5.Display.fillRect(x, kTabsY, actual_width, 80, selected ? 0x0a43 : kPanel);
+    M5.Display.drawRect(x, kTabsY, actual_width, 80, selected ? kGreen : kGrid);
+    const int icon_x = x + (count == kRxTabCount ? 50 : 35);
+    const int name_x = x + (count == kRxTabCount ? 91 : 67);
+    draw_tab_icon(static_cast<View>(i), icon_x, kTabsY + 38,
                   selected ? (i == 0 ? kGreen : kCyan) : TFT_WHITE);
-    text(names[i], x + 91, kTabsY + 40, selected ? (i == 0 ? kGreen : kCyan) : TFT_WHITE,
+    text(names[i], name_x, kTabsY + 40, selected ? (i == 0 ? kGreen : kCyan) : TFT_WHITE,
          2, middle_left);
   }
 }
@@ -400,6 +418,19 @@ void draw_map_static() {
   button(252, 604, 210, 42, "FOLLOW NODE", kCyan, g_follow_node);
   text("VERIFIED POSITIONS ONLY", 590, 625, kMuted, 1);
   text("15 NM", 870, 625, kMuted, 1);
+}
+
+void draw_tx_static() {
+  card(24, 138, 1224, 478);
+  text("SX1262 TX LAB", 56, 170, kCyan, 3, middle_left);
+  text("HARDWARE PACKET RADIO / SEPARATE FROM RTL-SDR IQ", 56, 204, kMuted, 1, middle_left);
+  card(48, 231, 570, 264, kCyan);
+  card(634, 231, 590, 264, kYellow);
+  text("RADIO HARDWARE", 72, 260, kCyan, 2, middle_left);
+  text("TRANSMISSION SAFETY", 660, 260, kYellow, 2, middle_left);
+  text("No automatic TX on boot, connect or scan.", 660, 402, kMuted, 1, middle_left);
+  text("TX test requires physical RF-path verification.", 660, 430, kMuted, 1, middle_left);
+  text("RX monitoring remains an independent service.", 72, 456, kMuted, 1, middle_left);
 }
 
 void draw_health_static() {
@@ -713,6 +744,45 @@ void draw_map_dynamic() {
   text(offline_map::available() ? "SD VECTOR MAP" : "MAP PACK NOT INSTALLED", 970, 420, kMuted, 1, middle_left);
 }
 
+void draw_tx_dynamic() {
+  const auto& tx = g_snapshot.tx;
+  M5.Display.fillRect(65, 282, 533, 155, kPanel);
+  M5.Display.fillRect(650, 282, 554, 105, kPanel);
+  text(lora_tx::readiness_name(tx.readiness), 72, 304,
+       tx.readiness == lora_tx::Readiness::tx_verified ? kGreen : kYellow, 2, middle_left);
+  char value[72];
+  snprintf(value, sizeof(value), "RTL RX %.3f MHz", g_snapshot.frequency_hz / 1000000.0);
+  text(value, 72, 348, TFT_WHITE, 2, middle_left);
+  if (tx.frequency_hz != 0) {
+    snprintf(value, sizeof(value), "TX %.3f MHz", tx.frequency_hz / 1000000.0);
+  } else {
+    snprintf(value, sizeof(value), "TX FREQUENCY NOT CONFIGURED");
+  }
+  text(value, 72, 388, kMuted, 2, middle_left);
+  const auto denial = lora_tx::can_arm(tx);
+  text(lora_tx::denial_name(denial), 660, 312,
+       denial == lora_tx::Denial::none ? kGreen : kYellow, 2, middle_left);
+  text(tx.operator_armed ? "OPERATOR ARMED" : "NOT ARMED", 660, 350,
+       tx.operator_armed ? kYellow : kMuted, 2, middle_left);
+  M5.Display.fillRect(50, 512, 1174, 92, kPanel);
+  if (denial == lora_tx::Denial::none) {
+    button(64, 527, 310, 56, tx.operator_armed ? "DISARM" : "ARM TX", kYellow);
+    if (lora_tx::can_send(tx, 13) == lora_tx::Denial::none) {
+      button(398, 527, 310, 56, "SEND BENCH PACKET", kYellow);
+    } else {
+      card(398, 527, 310, 56, kMuted);
+      text("SEND LOCKED", 553, 555, kMuted, 2);
+    }
+    text("Only controlled, approved RF tests", 738, 555, kMuted, 1, middle_left);
+  } else {
+    card(64, 527, 310, 56, kMuted);
+    card(398, 527, 310, 56, kMuted);
+    text("ARM LOCKED", 219, 555, kMuted, 2);
+    text("SEND LOCKED", 553, 555, kMuted, 2);
+    text("TX is disabled until hardware acceptance", 738, 555, kYellow, 1, middle_left);
+  }
+}
+
 void draw_health_dynamic() {
   char value[48];
   snprintf(value, sizeof(value), "%.3f MHz", g_snapshot.frequency_hz / 1000000.0);
@@ -742,7 +812,8 @@ void draw_dynamic() {
   else if (g_view == View::nodes) draw_nodes_dynamic();
   else if (g_view == View::traffic) draw_traffic_dynamic();
   else if (g_view == View::map) draw_map_dynamic();
-  else draw_health_dynamic();
+  else if (g_view == View::rf_health) draw_health_dynamic();
+  else draw_tx_dynamic();
   if (g_view == View::overview || g_view == View::rf_health) {
     char scan_label[24] = "SCAN BAND";
     if (g_snapshot.survey_active) {
@@ -798,7 +869,8 @@ void draw_static() {
   else if (g_view == View::nodes) draw_nodes_static();
   else if (g_view == View::traffic) draw_traffic_static();
   else if (g_view == View::map) draw_map_static();
-  else draw_health_static();
+  else if (g_view == View::rf_health) draw_health_static();
+  else draw_tx_static();
   draw_tabs();
   draw_dynamic();
   if (g_channels_open && g_view == View::overview) draw_channels_overlay();
@@ -948,8 +1020,10 @@ Action handle_touch(int32_t x, int32_t y) {
   }
   if (audio_header::home_hit(x, y)) return {ActionKind::exit_home};
   if (audio_header::settings_hit(x, y)) return {ActionKind::open_settings};
-  if (hit(x, y, 0, kTabsY, 1280, 80))
-    return {ActionKind::select_view, static_cast<uint32_t>(x / kTabW)};
+  if (hit(x, y, 0, kTabsY, 1280, 80)) {
+    const int index = std::min<int>(x / tab_width(), tx_profile_visible() ? kTxTabCount - 1 : kRxTabCount - 1);
+    return {ActionKind::select_view, static_cast<uint32_t>(index)};
+  }
   if (g_view == View::overview) {
     if (hit(x, y, kPaletteChipX, kStyleChipY, kStyleChipW, kStyleChipH)) {
       waterfall_style::next_palette(waterfall_style::Screen::lora);
@@ -1001,6 +1075,14 @@ Action handle_touch(int32_t x, int32_t y) {
   } else if (g_view == View::map) {
     if (hit(x, y, 26, 604, 210, 42)) return {ActionKind::center_map};
     if (hit(x, y, 252, 604, 210, 42)) return {ActionKind::follow_node};
+  } else if (g_view == View::tx_lab) {
+    if (lora_tx::can_arm(g_snapshot.tx) == lora_tx::Denial::none) {
+      if (hit(x, y, 64, 527, 310, 56))
+        return {g_snapshot.tx.operator_armed ? ActionKind::tx_request_disarm : ActionKind::tx_request_arm};
+      if (hit(x, y, 398, 527, 310, 56) &&
+          lora_tx::can_send(g_snapshot.tx, 13) == lora_tx::Denial::none)
+        return {ActionKind::tx_send_test_packet};
+    }
   } else {
     if (hit(x, y, 24, 578, 242, 48)) return {ActionKind::scan_toggle};
     if (hit(x, y, 284, 578, 242, 48)) return {ActionKind::record_iq_toggle};
@@ -1067,7 +1149,7 @@ bool self_check() {
   snapshot.events[0].sender = snapshot.nodes[0].id;
   snapshot.events[0].received_ms = 1000;
   snapshot.events[0].received_utc = 52328;
-  if (static_cast<uint8_t>(View::count) != 5 || kTabW * 5 != 1280 ||
+  if (static_cast<uint8_t>(View::count) != 6 || kTabW * 5 != 1280 ||
       !has_position(snapshot.nodes[0])) return false;
   const float scope_levels[] = {-50.0f, -49.0f, -48.0f, -10.0f};
   if (fabsf(estimate_noise_floor(scope_levels, 0, 4) + 52.0f) > 0.01f ||
@@ -1139,6 +1221,14 @@ bool self_check() {
   const bool traffic_filter_ok = visible_event_count() == 1 &&
                                  visible_event_at(0) == &g_snapshot.events[0] &&
                                  visible_event_at(1) == nullptr;
+  g_view = View::overview;
+  g_snapshot.tx.readiness = lora_tx::Readiness::profile_only;
+  const Action tx_tab = handle_touch(1190, 665);
+  g_view = View::tx_lab;
+  const bool tx_locked_ok = tx_tab.kind == ActionKind::select_view &&
+                            tx_tab.value == static_cast<uint32_t>(View::tx_lab) &&
+                            handle_touch(120, 550).kind == ActionKind::none &&
+                            handle_touch(500, 550).kind == ActionKind::none;
   g_snapshot = saved_snapshot;
   g_node_filter = saved_node_filter;
   g_traffic_filter = saved_traffic_filter;
@@ -1148,7 +1238,7 @@ bool self_check() {
   g_traffic_details = saved_traffic_details;
   g_traffic_offset = saved_traffic_offset;
   if (!filter_ok || !controls_ok || !traffic_scroll_ok || !traffic_controls_ok ||
-      !traffic_filter_ok) return false;
+      !traffic_filter_ok || !tx_locked_ok) return false;
   return audio_header::self_check() && lora_channel::self_check();
 }
 
