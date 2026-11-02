@@ -30,6 +30,9 @@
  * the unit on order): SCLK 2, MOSI 3, MISO 4, CS 24, BUSY 6, 10 MHz. Reset XL9535 IO16, DIO1
  * XL9535 IO17. Antenna switch is SKY13453 VCTL on XL9535 IO1. Polarity is not encoded: do not
  * drive radio_ant_sw until the switch sense is confirmed on the board.
+ * The current vendor T-Display-P4 README specifies HIGH = internal antenna,
+ * LOW = external antenna via MMCX1, but this line's polarity remains unencoded
+ * and electrically unverified on the owner unit.
  *
  * microSD is SDMMC on CLK 43, CMD 44, D0-D3 39-42. Slot power is XL9535 IO15, not a GPIO.
  * Active level is not confirmed, so the console must not switch it yet.
