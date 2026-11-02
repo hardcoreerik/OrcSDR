@@ -12,4 +12,8 @@ enum class Result : uint8_t { ok, bad_request, not_available, unknown_route };
 // (for errors too) unless the route is unknown.
 // `peer` is the signed caller's address (the channel WebSocket is opened only by that address).
 Result run(const char* route, const char* query, uint32_t peer, char* out, size_t cap);
+
+// The lowest frequency the web page may ask receiver `rx` for, from what the dongle reports: 24 kHz with a built-in upconverter (Blog V4/V4L),
+// 100 kHz through Q-branch direct sampling (Blog V3/V3c, Nooelec SMArt v5), 24 MHz for a tuner-only dongle. The driver still has the last word.
+uint32_t tune_min_hz(int rx);
 }  // namespace web_control

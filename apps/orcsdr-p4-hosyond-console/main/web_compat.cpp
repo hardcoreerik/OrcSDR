@@ -1,4 +1,5 @@
 #include "web_compat.hpp"
+#include "web_control.hpp"
 #include <algorithm>
 #include <cstdarg>
 #include <cstdio>
@@ -135,7 +136,7 @@ void tuner(Out& o, int rx) {
   if (rx < 0 || rx >= orcsdr::radio::max_receivers()) rx = 0;
   const orcsdr::radio::Gain g = orcsdr::radio::gain(rx);
   const orcsdr::radio::Info inf = orcsdr::radio::info(rx);
-  const uint32_t min_hz = (inf.caps & ESP_RTL_SDR_CAP_HF_UPCONVERTER) ? ESP_RTL_SDR_FREQ_MIN_HZ : 24000000u;
+  const uint32_t min_hz = web_control::tune_min_hz(rx);
   o.fmt("{\"index\":%d,\"tuner\":\"\",\"tune_min_hz\":%u,\"tune_max_hz\":%u,\"gain_manual\":%s,\"gain_auto\":%s,\"gain_mode\":\"%s\",\"gain_tenth_db\":%d,"
         "\"rtl_agc_available\":%s,\"rtl_agc\":%s,\"bias_available\":%s,\"bias\":%s,\"clock\":%s,\"caps\":%u,\"gains_tenth_db\":[",
         rx, unsigned(min_hz), unsigned(ESP_RTL_SDR_FREQ_MAX_HZ), g.available ? "true" : "false", g.auto_available ? "true" : "false",

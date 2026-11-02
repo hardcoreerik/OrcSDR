@@ -13,6 +13,7 @@
 #include "lwip/sockets.h"
 #include "radio_service.hpp"
 #include "sdkconfig.h"
+#include "web_control.hpp"
 #include "web_server.hpp"
 
 #define ORCSDR_WEB_IQ (CONFIG_HTTPD_WS_SUPPORT && CONFIG_LWIP_MAX_SOCKETS >= 16)
@@ -264,7 +265,7 @@ Start start_channel(int rx, uint32_t hz, uint32_t wide_center_hz, uint32_t wide_
   uint32_t decim = 0, out_rate = 0, center = 0;
   int64_t offset = 0;
   if (wide_center_hz || wide_sps) {
-    if (!wide_center_hz || !wide_sps || wide_center_hz < 24000000u) return fail(Start::bad_request, "bad_wide_window");
+    if (!wide_center_hz || !wide_sps || wide_center_hz < web_control::tune_min_hz(rx)) return fail(Start::bad_request, "bad_wide_window");
     if (wide_sps > in_rate || in_rate % wide_sps != 0 || in_rate / wide_sps > 16) return fail(Start::not_available, "rate_not_reachable_from_the_receiver_rate");
     decim = in_rate / wide_sps;
     out_rate = wide_sps;
@@ -277,7 +278,7 @@ Start start_channel(int rx, uint32_t hz, uint32_t wide_center_hz, uint32_t wide_
     else return fail(Start::not_available, "receiver_rate_not_supported_for_channel");
     out_rate = in_rate / decim;
     offset = out_rate / 6;
-    if (hz < offset + 24000000u) return fail(Start::bad_request, "bad_hz");
+    if (hz < offset + web_control::tune_min_hz(rx)) return fail(Start::bad_request, "bad_hz");
     center = hz - static_cast<uint32_t>(offset);  // the channel sits `offset` above the window centre, away from the DC spike
   }
 

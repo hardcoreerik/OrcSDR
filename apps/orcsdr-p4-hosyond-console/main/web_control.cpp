@@ -7,6 +7,7 @@
 #include "commands.hpp"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_rtl_sdr.h"
 #include "home_app.hpp"
 #include "radio_service.hpp"
 #include "web_iq.hpp"
@@ -47,11 +48,18 @@ void tune(int rx, uint32_t hz) {
 }
 }  // namespace
 
+uint32_t tune_min_hz(int rx) {
+  const uint32_t caps = radio::info(rx < 0 ? 0 : rx).caps;
+  if (caps & ESP_RTL_SDR_CAP_HF_UPCONVERTER) return ESP_RTL_SDR_FREQ_MIN_HZ;
+  if (caps & ESP_RTL_SDR_CAP_DIRECT_SAMPLING) return 100000u;
+  return orcsdr::commands::kTuneMinHz;
+}
+
 Result run(const char* route, const char* query, uint32_t peer, char* out, size_t cap) {
   long long v = 0;
   if (std::strcmp(route, "receivers/tune") == 0) {
     const int rx = receiver_index(query);
-    if (rx < 0 || !parse_long(query, "hz", &v) || v < orcsdr::commands::kTuneMinHz || v > orcsdr::commands::kTuneMaxHz) return fail(out, cap, Result::bad_request, "bad_hz_or_index");
+    if (rx < 0 || !parse_long(query, "hz", &v) || v < tune_min_hz(rx) || v > orcsdr::commands::kTuneMaxHz) return fail(out, cap, Result::bad_request, "bad_hz_or_index");
     tune(rx, static_cast<uint32_t>(v));
     char f[64];
     std::snprintf(f, sizeof(f), "\"index\":%d,\"hz\":%lld", rx, v);
@@ -100,7 +108,7 @@ Result run(const char* route, const char* query, uint32_t peer, char* out, size_
     }
     if (std::strcmp(action, "start") == 0) {
       const int rx = receiver_index(query);
-      if (rx < 0 || !parse_long(query, "hz", &v) || v < orcsdr::commands::kTuneMinHz || v > orcsdr::commands::kTuneMaxHz) return fail(out, cap, Result::bad_request, "bad_hz_or_index");
+      if (rx < 0 || !parse_long(query, "hz", &v) || v < tune_min_hz(rx) || v > orcsdr::commands::kTuneMaxHz) return fail(out, cap, Result::bad_request, "bad_hz_or_index");
       tune(rx, static_cast<uint32_t>(v));  // tuning only: audio from this node is not streamed to the browser yet
       long long vol = 0;
       if (parse_long(query, "volume", &vol) && vol >= 0 && vol <= orcsdr::commands::kVolumeMax) home_app::request_volume(static_cast<uint8_t>(vol * 255 / orcsdr::commands::kVolumeMax));
