@@ -92,6 +92,9 @@
         '<div style="text-align:right"><button type="button" id="orccancel" style="margin-right:8px;padding:6px 12px">Cancel</button><button type="submit" style="padding:6px 12px">Log in</button></div></form>';
       box.querySelector('#orcmsg').textContent = message + (defaultNotice ? ' This node still uses the factory password: change it with RTL_WEB PASSWORD over serial.' : '');
       document.body.appendChild(box);
+      // The page's own window-level keydown handler swallows every printable key except in a <select> and feeds it to the canvas, so keys typed here
+      // must not leave the box (otherwise the password field stays empty).
+      for (const type of ['keydown', 'keypress', 'keyup']) box.addEventListener(type, e => e.stopPropagation());
       const input = box.querySelector('#orcpw'); input.focus();
       const finish = v => { box.remove(); resolve(v); };
       box.querySelector('form').addEventListener('submit', e => { e.preventDefault(); finish(input.value); });
