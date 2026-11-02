@@ -12,7 +12,7 @@ Branch: codex/cardputer-zero-linux-bringup-20261102. **Not merged into main; har
 | UI SDK | https://github.com/CardputerZero/Template | CMake/LVGL, desktop SDL simulator, evdev, Linux framebuffer/DRM | Pin revision, compile and run |
 | Cross-toolchain | https://github.com/CardputerZero/Template/blob/main/cmake/toolchains/cp0-aarch64-linux-gnu.cmake | CM0 BSP sysroot download from UserDemo release, v0.0.4 in inspected code | Archive hash, license and ABI |
 | Vendor BSP | https://github.com/CardputerZero/M5CardputerZero-UserDemo | Official SDK/BSP reference | Inspect full SDK sources |
-| Device libraries | https://github.com/CardputerZero/M5Stack_Linux_Libs | Linux board-support reference | Verify installed OS compatibility |
+| Device libraries | https://github.com/m5stack/M5Stack_Linux_Libs | Linux board-support reference | Verify installed OS compatibility |
 | App packaging | https://github.com/CardputerZero/AppBuilder | ARM64 Debian package and AppStore workflow | Create compliant non-root package |
 | Community examples | https://github.com/CardputerZero/ | Emulator, launcher and example apps | Verify key mappings and UI lifecycle |
 

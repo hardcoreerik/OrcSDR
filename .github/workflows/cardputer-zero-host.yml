@@ -1,0 +1,44 @@
+name: Cardputer Zero Linux host smoke
+
+on:
+  push:
+    branches:
+      - codex/cardputer-zero-linux-bringup-20261102
+    paths:
+      - 'apps/orcsdr-cardputer-zero/**'
+      - '.github/workflows/cardputer-zero-host.yml'
+  pull_request:
+    paths:
+      - 'apps/orcsdr-cardputer-zero/**'
+      - '.github/workflows/cardputer-zero-host.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-host:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        rtl: ["OFF", "ON"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host rtl-sdr development package
+        if: matrix.rtl == 'ON'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config librtlsdr-dev
+          pkg-config --modversion librtlsdr
+      - name: Configure
+        run: cmake -S apps/orcsdr-cardputer-zero -B build/cardputer-zero-ci -DCMAKE_BUILD_TYPE=Release -DORC_ENABLE_RTLSDR=${{ matrix.rtl }}
+      - name: Build
+        run: cmake --build build/cardputer-zero-ci --parallel
+      - name: Run synthetic regression tests
+        run: ctest --test-dir build/cardputer-zero-ci --output-on-failure
+      - name: Check application CLI
+        run: ./build/cardputer-zero-ci/orcsdr_cardputer_zero --demo
+      - name: Check library-enabled device enumeration (no RF hardware in CI)
+        if: matrix.rtl == 'ON'
+        run: ./build/cardputer-zero-ci/orcsdr_cardputer_zero --list
