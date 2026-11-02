@@ -10,6 +10,8 @@ on:
       - "tools/test-hfdl-dashboard.sh"
       - ".github/workflows/hfdl-dashboard-tests.yml"
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   hfdl-tests:
     runs-on: ubuntu-latest
@@ -23,3 +25,13 @@ jobs:
         with:
           name: hfdl-test-results
           path: build/hfdl-dashboard/test.log
+      - name: Preserve failing compiler diagnostics in research branch
+        if: failure()
+        run: |
+          mkdir -p docs/evidence/hfdl
+          cp build/hfdl-dashboard/test.log docs/evidence/hfdl/ci-failure.log
+          git config user.name "OrcSDR HFDL CI"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/evidence/hfdl/ci-failure.log
+          git commit -m "test(hfdl): preserve failing host diagnostic [skip ci]"
+          git push origin HEAD:"$GITHUB_REF_NAME"
