@@ -49,6 +49,7 @@ struct Info {
   char health[28] = {};
   char version[20] = {};
   char usb_path[24] = {};  // physical hub port ("P<parent>.p<port>"): the only identity that survives replug
+  uint8_t profile = 0;     // esp_rtl_sdr_profile_t of the attached dongle (0 = unknown)
 };
 Info info();
 void set_ppm(int ppm);

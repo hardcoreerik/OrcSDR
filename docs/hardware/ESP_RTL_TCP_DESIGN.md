@@ -136,3 +136,20 @@ commands are counted and never reported applied; memory with a client attached; 
 
 **Owner direction (2026-10-30):** an ESP32-optimised rtl_tcp is a high-value feature for OrcSDR. Code comes after the sink fix (done on `claude/p4-board-support`,
 commit `636991a6`, build-verified only, not yet run on a board) because the server is a queued sink.
+
+## 9. Implementation status (2026-11-02): server half written and built, not flashed, not run against a client
+
+Code: `components/esp_rtl_tcp` (server, protocol core, host test), `main/rtltcp_app.{hpp,cpp}` (OrcSDR adapter), table commands in `main/commands.cpp`. Builds for the Waveshare ESP32-P4-ETH (`build-p4eth-web`, 3.6 MB, 50 % of the app slot free)
+and the Waveshare ESP32-P4-WIFI6-DB (`build-web-ui`). Run so far: `tests/proto_test.cpp` on a host (header bytes, command reassembly at every split point, classification, 4 checks groups): all passed.
+Nothing has run on a board and no rtl_tcp client has connected.
+
+How it follows the rules:
+- **Rule 1 (header once):** the header is sent right after accept; `push()` sends nothing but the block bytes; counters live only in `RTL_TCP STATUS` and `/api/v1/rtltcp`.
+- **Rule 3 (bounded, counted loss):** the feed is a *queued sink* of the receiver service with a 1 MB PSRAM budget; a slow client makes the service drop whole blocks and count them (`blocks_dropped`). `push()` runs in the sink's own task, so a stalled socket never touches the radio task.
+- **Rule 4 (safe by default):** off unless `RTL_TCP ON` (authenticated serial, admin tier, no HTTP path); listen-only unless `RTL_TCP CONTROL ON`; one client, the second waits in the listen backlog; an optional single allowed client address exists in `Config` but has no command yet.
+- **Rule 5 (listen-only is a fixed endpoint):** the first block of a session defines the rate and centre the client was told; a later block with another value ends the session (`receiver_changed`). Receiver-changing commands are counted as `commands_ignored`.
+- **Rules 7/8 (mapping, header values):** codes 0x06 0x07 0x09 0x0A 0x0B 0x0C are `commands_unsupported`; 0x0F and 0x40 up are `commands_unknown`; the tuner type comes from the dongle profile (V4 and V4L: R828D, V3 and NESDR v5: R820T, unknown: 0), and one gain ladder is snapshotted per session for 0x04 (nearest step) and 0x0D (index).
+- **Rule 2 (rate):** control mode accepts 225,001 to 300,000 and 900,001 to 3,200,000 S/s through the receiver service's exact-rate override; anything else ends the session (`rate_unsupported`), as does a rate above the link budget (`rate_exceeds_link`).
+- **Open / provisional:** the link budgets (85 Mbit/s wired, 30 Mbit/s Wi-Fi) are guesses; the send deadline is 2 s (design decision 9 still wants a value from measurement); the override is receiver 0 only; control mode has never been run; the serving receiver is fixed at 0;
+  the Wi-Fi path through the SDIO coprocessor is expected to need 960 kS/s. The receiver service gained `Info::profile` for the tuner mapping.
+- **Test to run first:** `RTL_TCP ON` over serial, then `python tools/p4_rtltcp_test.py <ip>` (header, rate, CU8 sanity, counting of ignored/unsupported/unknown commands, a split command, second client waits, end reason). Then SDR++ and gr-osmosdr against a real dongle.

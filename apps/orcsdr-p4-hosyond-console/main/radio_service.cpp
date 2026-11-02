@@ -372,6 +372,7 @@ void task(void* arg) {
         id.struct_size = sizeof(id);
         if (esp_rtl_sdr_get_identity(sdr, &id) == ESP_OK && id.present)
           std::snprintf(inf.usb_path, sizeof(inf.usb_path), "%.23s", id.usb_path[0] ? id.usb_path : "?");
+        if (id.present) inf.profile = static_cast<uint8_t>(id.profile);
         esp_rtl_sdr_health_info_t hi{};
         if (esp_rtl_sdr_get_health(sdr, &hi) == ESP_OK)
           std::snprintf(inf.health, sizeof(inf.health), "%.27s", hi.advice[0] ? hi.advice : "OK");

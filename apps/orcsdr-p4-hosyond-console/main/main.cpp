@@ -17,6 +17,7 @@
 #include "audio_service.hpp"
 #include "sd_card.hpp"
 #include "wifi_app.hpp"
+#include "rtltcp_app.hpp"
 #include "web_server.hpp"
 #include "eth_app.hpp"
 #include "home_app.hpp"
@@ -59,6 +60,7 @@ extern "C" void app_main(void) {
   wifi_app::start();       // C6 link comes up in the background a few seconds later
   eth_app::start();        // wired Ethernet where the build enables it and the board profile has the pins
   web_server::start();     // read-only web server; off unless the owner enabled it, and only while Wi-Fi is up
+  rtltcp_app::start();     // rtl_tcp-compatible IQ server; off unless the owner enabled it (RTL_TCP ON over serial)
   audio_service::start();  // optional: the receiver and UI run without sound if the codec fails
   if (!home_app::start(&M5.Display)) ESP_LOGE(TAG, "home UI task failed");
   ESP_LOGI(TAG, "boot complete");

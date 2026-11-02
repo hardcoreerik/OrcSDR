@@ -7,6 +7,7 @@
 #include "radio_service.hpp"
 #include "sd_card.hpp"
 #include "eth_app.hpp"
+#include "rtltcp_app.hpp"
 #include "web_auth.hpp"
 #include "web_server.hpp"
 #include "wifi_app.hpp"
@@ -316,6 +317,48 @@ Status run_volume_set(const Caller&, const Args& a, Result& r) {
   return Status::ok;
 }
 
+Status run_rtltcp_status(const Caller&, const Args&, Result& r) {
+  const rtltcp_app::Status s = rtltcp_app::status();
+  Record* a = add_record(r, "RTL_TCP_STATUS");
+  put_int(*a, "enabled", s.enabled);
+  put_int(*a, "running", s.server.running);
+  put_text(r, *a, "mode", s.control ? "control" : "listen-only");
+  put_uint(*a, "port", s.port);
+  put_int(*a, "receiver", s.receiver);
+  put_int(*a, "client", s.server.client_connected);
+  put_text(r, *a, "peer", s.server.peer);
+  put_uint(*a, "session_rate", s.server.session_rate);
+  put_uint(*a, "session_center_hz", s.server.session_center_hz);
+  put_text(r, *a, "last_end", esp_rtl_tcp::end_reason_name(s.server.last_end));
+  Record* b = add_record(r, "RTL_TCP_COUNTERS");
+  put_uint(*b, "clients_total", s.server.clients_total);
+  put_uint(*b, "clients_rejected", s.server.clients_rejected);
+  put_uint(*b, "blocks_sent", s.server.blocks_sent);
+  put_uint(*b, "bytes_sent", s.server.bytes_sent);
+  put_uint(*b, "blocks_dropped", s.sink_blocks_dropped);
+  put_uint(*b, "commands_applied", s.server.commands_applied);
+  put_uint(*b, "commands_rejected", s.server.commands_rejected);
+  put_uint(*b, "commands_ignored", s.server.commands_ignored);
+  put_uint(*b, "commands_unsupported", s.server.commands_unsupported);
+  put_uint(*b, "commands_unknown", s.server.commands_unknown);
+  return Status::ok;
+}
+
+// Admin tier: serial only (the dispatcher refuses them over HTTP, and they have no HTTP path).
+Status rtltcp_set(Result& r, bool control_setting, bool on) {
+  if (control_setting) rtltcp_app::set_control(on);
+  else rtltcp_app::set_enabled(on);
+  const rtltcp_app::Status s = rtltcp_app::status();
+  Record* rec = add_record(r, "RTL_TCP_OK");
+  put_int(*rec, "enabled", s.enabled);
+  put_text(r, *rec, "mode", s.control ? "control" : "listen-only");
+  return Status::ok;
+}
+Status run_rtltcp_on(const Caller&, const Args&, Result& r) { return rtltcp_set(r, false, true); }
+Status run_rtltcp_off(const Caller&, const Args&, Result& r) { return rtltcp_set(r, false, false); }
+Status run_rtltcp_control_on(const Caller&, const Args&, Result& r) { return rtltcp_set(r, true, true); }
+Status run_rtltcp_control_off(const Caller&, const Args&, Result& r) { return rtltcp_set(r, true, false); }
+
 const Command kCommands[] = {
     {"RTL_STATUS", "status", Access::read, run_status},
     {"RTL_FREQ", "freq", Access::read, run_freq},
@@ -332,6 +375,12 @@ const Command kCommands[] = {
     {"RTL_WEB", nullptr, Access::read, run_web},  // serial alias of RTL_WEB_STATUS (Tab5 command spec)
     {"RTL_FREQ_SET", "freq_set", Access::control, run_freq_set},      // web only; the serial form is "RTL_FREQ <HZ>" in serial_cli.cpp
     {"RTL_VOLUME_SET", "volume_set", Access::control, run_volume_set},
+    {"RTL_TCP STATUS", "rtltcp", Access::read, run_rtltcp_status},
+    {"RTL_TCP", nullptr, Access::read, run_rtltcp_status},
+    {"RTL_TCP ON", nullptr, Access::admin, run_rtltcp_on},
+    {"RTL_TCP OFF", nullptr, Access::admin, run_rtltcp_off},
+    {"RTL_TCP CONTROL ON", nullptr, Access::admin, run_rtltcp_control_on},
+    {"RTL_TCP CONTROL OFF", nullptr, Access::admin, run_rtltcp_control_off},
 };
 }  // namespace
 
@@ -373,7 +422,9 @@ bool run_serial(const char* line, const Caller& caller) {
     std::printf("RTL_COMMAND_ERROR no_memory\n");
     return true;
   }
-  if (run(*cmd, caller, Args{}, *result) == Status::ok) print_serial(*result);
+  const Status status = run(*cmd, caller, Args{}, *result);
+  if (status == Status::ok) print_serial(*result);
+  else std::printf("RTL_COMMAND_ERROR %s\n", status == Status::auth_required ? "auth_required" : status == Status::forbidden ? "forbidden" : status == Status::invalid ? "invalid" : "unavailable");
   return true;
 }
 
