@@ -67,7 +67,6 @@ class LovyanGFX {
   int height() const { return 720; }
   void clearScrollRect() {}
   void setScrollRect(int, int, int, int) {}
-  void scroll(int, int) {}
   void drawRect(int x, int y, int w, int h, uint16_t c) { add(Prim::outline, x, y, w, h, c); }
   void setFont(const fonts::Font* f) { host_display::font = f; }
   void setTextDatum(int d) { host_display::datum = d; }
@@ -162,13 +161,3 @@ inline struct M5Stub { lgfx::LovyanGFX Display; HostPower Power; } M5;
 inline uint32_t host_millis = 1000;
 inline uint32_t millis() { return host_millis; }
 
-// Platform functions ESP-IDF/Arduino supply on device; no RF or image I/O.
-inline size_t strlcpy(char* dest, const char* src, size_t size) {
-  const size_t n = std::strlen(src);
-  if (size) {
-    const size_t copy = std::min(n, size - 1);
-    std::memcpy(dest, src, copy);
-    dest[copy] = '\0';
-  }
-  return n;
-}
