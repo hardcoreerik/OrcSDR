@@ -3,6 +3,7 @@
 // Host rendering does not establish on-device font/panel, touch, or RF acceptance.
 #include <M5Unified.h>
 #include "lora_tx_views.hpp"
+#include <array>
 #include <cassert>
 #include <cstring>
 #include <cstdio>
@@ -16,6 +17,17 @@ bool shows(const char* part) {
   for (const auto& p : host_display::prims)
     if (p.kind == Prim::text && p.str.find(part) != std::string::npos) return true;
   return false;
+}
+std::vector<std::string> rendered_message_text(int x0, int y0, int w0, int h0) {
+  std::vector<std::string> result;
+  for (const auto& p : host_display::prims) {
+    if (p.kind != Prim::text) continue;
+    int x, y, w, h;
+    if (host_display::effective(p, &x, &y, &w, &h) && x < x0 + w0 && x + w > x0 &&
+        y < y0 + h0 && y + h > y0)
+      result.push_back(p.str);
+  }
+  return result;
 }
 
 void test_dimensions_and_truth() {
@@ -82,25 +94,58 @@ void test_verified_message_rendering() {
   s.event_count = 1;
   auto& event = s.events[0];
   event.verified = true;
+  event.frequency_hz = 433920000;
   event.sender = 0x1234;
   event.packet_id = 0x5678;
   event.received_ms = 100;
-  std::snprintf(event.text, sizeof(event.text), "Hello mesh from the verified radio");
-  host_display::reset();
-  ui::draw_values(M5.Display, s, ui::Page::messenger, true);
-  assert(shows("Hello mesh"));
-  assert(shows("FROM 00001234"));
-
+  event.port = 1;
   std::snprintf(event.text, sizeof(event.text), "%s",
       "Long received message wraps safely across bounded lines; nearby controls stay visible after truncation.");
-  host_display::reset();
-  ui::draw_values(M5.Display, s, ui::Page::messenger, false);
-  assert(shows("Long received"));
-  assert(shows("..."));
-  for (const auto& p : host_display::prims) {
-    if (p.kind != Prim::text) continue;
-    assert(p.x >= 660 && p.x + p.w <= 1204);
-    assert(p.y >= 318 && p.y + p.h <= 493);
+  for (const bool vertical : {false, true}) {
+    const int card_x = vertical ? 48 : 660;
+    const int card_y = vertical ? 636 : 318;
+    const int card_w = vertical ? 470 : 544;
+    const int card_h = vertical ? 160 : 175;
+    host_display::reset();
+    ui::draw_values(M5.Display, s, ui::Page::messenger, vertical);
+    assert(shows("Long received"));
+    assert(shows("..."));
+    assert(shows("RTL-SDR FROM 00001234"));
+    assert(shows("TX COMPOSER UNAVAILABLE"));
+    std::vector<std::string> initial_card;
+    bool composer_outside_card = false;
+    std::vector<std::array<int, 4>> card_text_bounds;
+    for (const auto& p : host_display::prims) {
+      if (p.kind != Prim::text) continue;
+      int x, y, w, h;
+      assert(host_display::effective(p, &x, &y, &w, &h));
+      if (p.str.find("TX COMPOSER UNAVAILABLE") != std::string::npos) {
+        assert(y >= card_y + card_h);
+        composer_outside_card = true;
+      } else if (x < card_x + card_w && x + w > card_x &&
+                 y < card_y + card_h && y + h > card_y) {
+        assert(x >= card_x && x + w <= card_x + card_w);
+        assert(y >= card_y && y + h <= card_y + card_h);
+        card_text_bounds.push_back({x, y, w, h});
+        initial_card.push_back(p.str);
+      }
+    }
+    assert(composer_outside_card);
+    for (size_t i = 0; i < card_text_bounds.size(); ++i) {
+      for (size_t j = i + 1; j < card_text_bounds.size(); ++j) {
+        const auto& a = card_text_bounds[i];
+        const auto& b = card_text_bounds[j];
+        assert(a[0] + a[2] <= b[0] || b[0] + b[2] <= a[0] ||
+               a[1] + a[3] <= b[1] || b[1] + b[3] <= a[1]);
+      }
+    }
+
+    // The partial redraw used for an ordinary message revision must emit the
+    // same message-card text as the initial page draw, without touching status.
+    host_display::reset();
+    ui::draw_rx_message(M5.Display, s, vertical);
+    assert(rendered_message_text(card_x, card_y, card_w, card_h) == initial_card);
+    assert(!shows("TX COMPOSER UNAVAILABLE"));
   }
 
   event.verified = false;
@@ -114,10 +159,41 @@ void test_verified_message_rendering() {
   ui::draw_values(M5.Display, s, ui::Page::messenger, false);
   assert(shows("ENCRYPTED / TEXT UNAVAILABLE"));
   assert(!shows("Long received"));
+
+  event.verified = true;
+  event.port = 0;
+  std::snprintf(event.text, sizeof(event.text), "ENCRYPTED FRAME");
+  host_display::reset();
+  ui::draw_values(M5.Display, s, ui::Page::messenger, false);
+  assert(shows("ENCRYPTED / TEXT UNAVAILABLE"));
+  assert(!shows("ENCRYPTED FRAME"));
+
+  event.port = 1;
+  event.source = orcsdr::lora::PacketSource::sx1262;
+  std::snprintf(event.text, sizeof(event.text), "Decrypted text payload");
+  host_display::reset();
+  ui::draw_values(M5.Display, s, ui::Page::messenger, false);
+  assert(shows("Decrypted text payload"));
+  assert(shows("SX1262 FROM 00001234"));
+}
+void test_latest_event_identity() {
+  Snapshot a{}, b{};
+  a.event_count = b.event_count = 1;
+  a.events[0].verified = b.events[0].verified = true;
+  a.events[0].sender = b.events[0].sender = 1;
+  a.events[0].packet_id = b.events[0].packet_id = 2;
+  a.events[0].received_ms = b.events[0].received_ms = 3;
+  assert(ui::same_latest_verified_rx_event(a, b));
+  b.events[0].source = orcsdr::lora::PacketSource::sx1262;
+  assert(!ui::same_latest_verified_rx_event(a, b));
+  b.events[0].source = a.events[0].source;
+  b.events[0].frequency_hz = 915000000;
+  assert(!ui::same_latest_verified_rx_event(a, b));
 }
 int main() {
   test_navigation_and_gate();
   test_dimensions_and_truth();
   test_verified_message_rendering();
+  test_latest_event_identity();
   std::puts("lora tx view recording-host tests: PASS");
 }

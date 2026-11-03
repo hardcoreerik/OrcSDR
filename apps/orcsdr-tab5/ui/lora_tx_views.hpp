@@ -61,7 +61,8 @@ inline bool same_latest_verified_rx_event(const Snapshot& a, const Snapshot& b) 
   const Event* left = latest_verified_rx_event(a);
   const Event* right = latest_verified_rx_event(b);
   if (!left || !right) return left == right;
-  return left->sender == right->sender && left->packet_id == right->packet_id &&
+  return left->source == right->source && left->frequency_hz == right->frequency_hz &&
+      left->sender == right->sender && left->packet_id == right->packet_id &&
       left->received_ms == right->received_ms && left->encrypted == right->encrypted &&
       std::strcmp(left->text, right->text) == 0;
 }
@@ -152,12 +153,16 @@ template <typename G> void draw_rx_message(G& gfx, const Snapshot& s,
     }
     return;
   }
-  if (event->encrypted && event->text[0] == '\0') {
+  const bool encrypted_without_text = event->encrypted &&
+      (event->text[0] == '\0' ||
+       (event->port != 1 && std::strcmp(event->text, "ENCRYPTED FRAME") == 0));
+  if (encrypted_without_text) {
     label(gfx, "ENCRYPTED / TEXT UNAVAILABLE", x + 2, y + 22, kYellow, 1);
     return;
   }
   char meta[64]{};
-  std::snprintf(meta, sizeof(meta), "FROM %08lX  ID %08lX",
+  const char* source = event->source == PacketSource::sx1262 ? "SX1262" : "RTL-SDR";
+  std::snprintf(meta, sizeof(meta), "%s FROM %08lX ID %08lX", source,
                 static_cast<unsigned long>(event->sender),
                 static_cast<unsigned long>(event->packet_id));
   label(gfx, meta, x + 2, y + 17, kGreen, 1);
@@ -287,7 +292,7 @@ template <typename G> void draw_values(G& gfx, const Snapshot& s, Page page,
       label(gfx, lora_tx::denial_name(lora_tx::can_arm(s.tx)), 48, 689, kMuted, 1);
     } else if (page == Page::messenger) {
       draw_rx_message(gfx, s, true);
-      label(gfx, "TX: HISTORY NOT CONNECTED", 48, 753, kMuted, 1);
+      label(gfx, "TX COMPOSER UNAVAILABLE", 48, 820, kMuted, 1);
     } else {
       gfx.fillRect(48, 737, 470, 52, kPanel);
       label(gfx, s.tx.antenna_path_verified ? "ANTENNA PATH VERIFIED" : "ANTENNA PATH UNVERIFIED",
@@ -316,9 +321,7 @@ template <typename G> void draw_values(G& gfx, const Snapshot& s, Page page,
           s.tx.operator_armed ? kYellow : kMuted, 2);
   } else if (page == Page::messenger) {
     draw_rx_message(gfx, s, false);
-    label(gfx, "TX: HISTORY NOT CONNECTED", 660, 393, kMuted, 2);
-    label(gfx, lora_tx::denial_name(lora_tx::can_arm(s.tx)),
-          660, 451, kYellow, 1);
+    label(gfx, "TX COMPOSER UNAVAILABLE", 660, 510, kMuted, 1);
   } else {
     gfx.fillRect(835, 309, 368, 180, kPanel);
     label(gfx, freq, 835, 334, kYellow, 2);
