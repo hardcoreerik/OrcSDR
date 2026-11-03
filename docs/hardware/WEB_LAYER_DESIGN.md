@@ -186,7 +186,13 @@ Owner approved the design with the proposed defaults (web key derived from the p
 
 ## 10. Direction (owner, 2026-10-30): the M5GFX/WebAssembly UI is the default web UI on every OrcSDR board
 
-The UI built in `OrcSDR-Headless` (branch `feat/m5gfx-web-mirror`) is where this work started and currently lives. It is to be served by **all** OrcSDR boards,
+**Moved into OrcSDR (owner decision, 2026-11-02).** The web UI work started in the `OrcSDR-Headless` repository (branch `feat/m5gfx-web-mirror`, tip `67e535e`)
+and now lives in this repository as `apps/orcsdr-web` (page, WebAssembly build, decoders library, build scripts). Nobody works in the Headless repository any
+more. Where each piece came from, its authorship and licences: `apps/orcsdr-web/PROVENANCE.md` and `THIRD_PARTY_NOTICES.md`. Build it with
+`apps/orcsdr-web/web/build.ps1` (Docker); the P4 console embeds `apps/orcsdr-web/dist` by default, so no outside folder is needed. The parity target for this
+work is the latest `origin/main`, never a tag (see `WEB_PARITY_MATRIX.md`).
+
+The UI is to be served by **all** OrcSDR boards,
 headless or with a display: Tab5, Waveshare P4 boards, any future P4 console. It replaces the Tab5 Companion page (`web_console.cpp`) and the JSON-only page at `/`
 described in section 9 (that JSON API stays at `/api/v1` as the machine interface). A board with a screen keeps its on-device UI; the browser UI is an addition.
 
@@ -196,12 +202,17 @@ What follows from it:
    (`orcsdr_web`) used by every target. Hardware differences sit behind a small interface (receivers, network info, SD, clock, settings, screen control):
    `radio_service` is the P4 backend. The Tab5 backend (its own radio code) is a separate step that changes Tab5 builds, so it needs the owner's approval and
    on-device tests before anything is merged. The component is built and proven on the P4 first; nothing in it is added to a Tab5 build until then.
-2. **One UI source.** The screens are `apps/orcsdr-tab5/ui` compiled natively for devices and to WebAssembly for browsers. The other repo's web build
-   (`platform/web`: controllers, stubs, page, Emscripten build) and decoder library (`core/decoders`, `components/orcdec`) have to move into the OrcSDR repo
-   (the other session's `docs/MERGE_NOTES.md` lists how). That is a merge into OrcSDR and waits for the owner's authorization.
+2. **One UI source.** The screens are `apps/orcsdr-tab5/ui` compiled natively for devices and to WebAssembly for browsers, in place, with no copies. Done on
+   2026-11-02 (branch `claude/web-in-orcsdr`): the web build (`apps/orcsdr-web/web`: controllers, stubs, page, Emscripten build) and the decoder library
+   (`apps/orcsdr-web/decoders`) are in this repository. The only difference from the device sources is `orc_badge.hpp` (an `#ifdef __EMSCRIPTEN__` for the badge
+   end symbol); three headers (`nvs_store.hpp`, `orcsdr_storage.hpp`, `scan_engine.hpp`) are replaced by browser stand-ins inside a throwaway build directory only.
+   The 18 per-screen controllers in `apps/orcsdr-web/web` re-implement the state that the Tab5's `main.cpp` keeps for each screen; they are the duplicated logic a
+   shared core would replace.
 3. **Assets are a build input, not committed binaries.** The page bundle (about 700 KB gzipped: `core.wasm` 393 KB, `orcdec.wasm` 117 KB, scripts, page, splash)
-   is produced by the WebAssembly build and handed to the firmware build by a path (`ORCSDR_WEB_UI_DIR`, like `C6_FIRMWARE_BIN`), embedded in the app image.
-   A build without it serves only the JSON index and logs that the UI is not included. Releases must build and include the bundle.
+   is produced by `apps/orcsdr-web/web/build.ps1` into `apps/orcsdr-web/dist` (ignored by git). The P4 console embeds that directory by default;
+   `-DORCSDR_WEB_UI_DIR=<dir>` still overrides it. A build without the bundle serves only the JSON index and logs that the UI is not included. Releases must
+   build and include the bundle. Rebuilt on 2026-11-02 from these sources, 7 of the 9 files are identical to the earlier bundle after decompression
+   (`core.wasm` byte for byte); `decoder_worker.js` differed only in line endings (fixed) and `orcdec.wasm` by 2 bytes (cause not established; likely source-path constants).
 4. **Budget per board.** P4 console: the 7 MB app slot holds it (image is 2.8 MB); a running server costs about 11 KB of internal RAM (measured, COM31).
    Tab5: its app slot size and internal-RAM headroom are unknown here and its internal boot pool is already nearly full, so the Tab5 server is not promised
    until measured.
@@ -229,14 +240,14 @@ component; (e) P4 boards with a display; (f) Tab5, with approval and tests.
 
 ## 12. Step one run on COM31 (Waveshare ESP32-P4-WIFI6-DB), 2026-10-30
 
-Firmware: `claude/p4-web-ui`, build `build-web-ui` (bundle from `F:\Ai\_orcsdr_web_ui\m5gfx-web-mirror-67e535e`, copied unmodified from the other repository at tip `67e535e`), flashed to COM31. Blog V4 streaming at 2.4 MS/s.
+Firmware: `claude/p4-web-ui`, build `build-web-ui` (historical record: at that time the bundle came from an outside folder built from the OrcSDR-Headless repository at tip `67e535e`; since 2026-11-02 it is built from `apps/orcsdr-web`, see the start of section 10), flashed to COM31. Blog V4 streaming at 2.4 MS/s.
 
 - **Serving:** `/`, `/m5`, `/m5/app.js`, `/m5/core.wasm`, `/m5/splash.jpg` return 200 with the right MIME types and `Content-Encoding: gzip` where expected, byte counts equal to the source files (1,934 / 18,199 / 393,406 / 137,898).
 - **Data routes:** `receivers`, `fm`, `report`, `tuner`, `time` return valid JSON in the page's shapes (receiver 0 present, state 3, 28 gain steps, 24 kHz to 1.766 GHz range for the V4); `spectrum` returns a 532-byte row.
   First flash: the row was empty because the Home screen's `take_bins` consumes the "new data" flag. Fixed with a non-consuming `peek_bins` (board-support `a8dc860b`); after that the row is live (94.900 to 97.300 MHz around 96.1 MHz, sequence advancing).
   The spectrum levels are the board's relative intensity (not calibrated dBFS), so the shape is right and the level is not.
 - **In a browser** (the built-in browser pane): the OrcSDR Home screen renders and updates, with the live spectrum and waterfall, the receiver "#0 Blog V4", node `orcsdr-p4-d7bc55`. The page polls the spectrum several times a second plus receivers, fm, report
-  and tuner; all 200. One console error, a 405: very likely the page's `POST /api/v1/time` (it sets the node clock from the browser because the board's clock is unsynced); POST is not built.
+  and tuner; all 200. One console error, a 405: very likely the page's `POST /api/v1/time` (it sets the device clock from the browser because the board's clock is unsynced); POST is not built.
 - **Load with the page open:** receiver drops 0, radio task 45.5 % of core 1 (45.0 % without), `httpd` 2 % of core 0, internal free 145,451 B (largest 69,632 B).
 - **Sink fix (`636991a6`) under cycling:** RF Lab, ACARS and LoRa opened and closed 12 times each, 72 of 72 screen changes acknowledged, no crash, watchdog, quarantine or removal-failure message; the receiver restarted and streamed again after each rate change.
 - **Finding (not caused by the sink fix):** after a restart, opening the **LoRa** screen once takes about 16.7 MB of PSRAM and 12.8 KB of internal RAM that are not returned when it closes (PSRAM free 31.4 MB to 14.1 MB, internal 145.8 KB to 131.8 KB). More cycles
@@ -266,7 +277,7 @@ Owner decision 2026-10-31: the default login is `admin` / `password`. Written as
 - **What the factory password means.** It is published, so anyone on the LAN can log in until it is changed. It still blocks a drive-by page in a browser (no session, no signature), it throttles guessing, and nothing sends the password or a reusable token. The page is told `default_password=true` so it can show a banner.
   Admin-tier actions (Wi-Fi credentials, restart, SD format, TAP) stay serial-only whatever the password is.
 - **The bundled page cannot use it yet.** Its controls are POSTs with a fixed `X-OrcSDR-Confirm` header (`tuner/gain`, `tuner/agc`, `receivers/tune`, `receivers/rate`, `fm?action=`, `channel`, `time`) and it has no login. Those routes are not built, so every page control returns 405 until the page gets a login
-  screen, a small SHA-256/HMAC/PBKDF2 in JavaScript (`crypto.subtle` is unavailable over plain HTTP) and signed requests. That is a change to the page in the OrcSDR-Headless repository and needs the owner's decision.
+  screen, a small SHA-256/HMAC/PBKDF2 in JavaScript (`crypto.subtle` is unavailable over plain HTTP) and signed requests. That is a change to the page (`apps/orcsdr-web/web/app`; the injected `orclogin.js` avoids editing it) and needs the owner's decision.
 - **Test:** `tools/p4_web_auth_test.py <ip>` is a reference client and 25 checks (replay, lower sequence, tampered target or body, wrong password, reused nonce, foreign Host and Origin, oversize body, throttle, logout). **Not run**: built (`build-p4eth-web`, image 3.6 MB) but not flashed.
 
 ## 15. Web server sockets under load, found on COM29 (Waveshare ESP32-P4-ETH), 2026-11-02
@@ -287,11 +298,11 @@ The bundled page POSTs its controls with no login. Without editing the other rep
 Requests are sent one at a time so the sequence numbers stay in order; an expired session asks again once.
 
 Routes behind the signed session (`main/web_control.{hpp,cpp}`), in the shapes the page sends:
-- `receivers/tune?index&hz` (receiver 0 goes through the Home screen, as the serial command does), `receivers/rate?index&sps` (the console runs 960 kS/s and 2.4 MS/s: the nearest is applied and both values are returned), `tuner/gain?index&mode=auto|manual[&tenth_db]`, `tuner/agc?index&on`, `fm?action=volume|start|stop` (start only tunes and sets the volume; `audio_stream:false`), `time?epoch` (sets the node clock from the browser).
+- `receivers/tune?index&hz` (receiver 0 goes through the Home screen, as the serial command does), `receivers/rate?index&sps` (the console runs 960 kS/s and 2.4 MS/s: the nearest is applied and both values are returned), `tuner/gain?index&mode=auto|manual[&tenth_db]`, `tuner/agc?index&on`, `fm?action=volume|start|stop` (start only tunes and sets the volume; `audio_stream:false`), `time?epoch` (sets the device clock from the browser).
 - `channel` and `channel/stop` answer 501 `browser_iq_stream_not_available_on_this_node_yet`: the browser audio and IQ WebSockets (port 81) are not built, so the page's channel and decoder features still do not work. Bad values answer 400, unknown routes 404.
 
 Run on COM29 (Waveshare ESP32-P4-ETH): `node tools/orclogin_test.js` passes the five known-answer tests (SHA-256, HMAC including a long key, PBKDF2 RFC 7914; 10,000 PBKDF2 iterations take about 50 ms in Node) and, against the board, a login and signed control requests from the JavaScript implementation: tune, out-of-range tune refused, volume, gain auto, channel refused honestly, clock set, unknown route.
-In the real page in the browser pane, pressing a control on a node that is not logged in shows the login dialog with the factory-password notice. **Not done:** typing the password into the page and watching a control take effect. I did not enter the password into a browser form myself (it is a LAN address, not a local development host); that last step is for the owner.
+In the real page in the browser pane, pressing a control on a device that is not logged in shows the login dialog with the factory-password notice. **Not done:** typing the password into the page and watching a control take effect. I did not enter the password into a browser form myself (it is a LAN address, not a local development host); that last step is for the owner.
 Other unverified: the dialog on a phone-size screen, many rapid control presses, the `time` route (the page sends it on load) after a login in the browser, behaviour when two browsers log in (two sessions are allowed).
 
 **COM8 (Waveshare ESP32-P4-Module-DEV-KIT, Wi-Fi via the C6), same build:** `node tools/orclogin_test.js 192.168.1.198` (9 board checks plus the 5 known-answer tests) and `tools/p4_web_auth_test.py` (25 checks) both pass over Wi-Fi. The Module-DEV-KIT's own screen kept running throughout.
@@ -299,10 +310,10 @@ COM8 is flashed with this build; rtl_tcp is off; the web server is on.
 
 ## 17. Channel IQ to the browser (built and run on COM29, 2026-11-02)
 
-The page's AM, NFM and SSB listening takes a ~300 kS/s IQ window over a WebSocket and demodulates it in the browser (`channel` POST, then `ws://<node>:81/api/v1/fm/iq`). `main/web_iq.{hpp,cpp}` serves it:
+The page's AM, NFM and SSB listening takes a ~300 kS/s IQ window over a WebSocket and demodulates it in the browser (`channel` POST, then `ws://<device>:81/api/v1/fm/iq`). `main/web_iq.{hpp,cpp}` serves it:
 - **`POST channel?index&hz`** (signed session): parks the receiver on a window whose centre is `hz - rate/6` (the channel sits a sixth of the rate above the DC spike, as the page expects), waits for the retune, and returns `{hz, center_hz, sps, offset_hz, bits:8, ws_port:81}`.
   `center`/`rx_sps` (the wide window the decoders want) answer 501. The receiver must be streaming at 2.4 MS/s (decimate 8, 300 kS/s out) or 960 kS/s (decimate 3, 320 kS/s out), otherwise `receiver_rate_not_supported_for_channel`.
-- **Decimation:** a third-order CIC filter per component on a queued sink (`webiq` task, core 0, 256 KB PSRAM queue); output is 8-bit unsigned IQ, 512 pairs per WebSocket frame with the page's 28-byte header (`OIQ1`, session, sequence, first sample, rate, frame count, playing flag, bits). The page does its own mixing, filtering and demodulation, so nothing else runs on the node. CIC droop at the channel (+50 kHz of a 300 kHz band) is about 1.2 dB.
+- **Decimation:** a third-order CIC filter per component on a queued sink (`webiq` task, core 0, 256 KB PSRAM queue); output is 8-bit unsigned IQ, 512 pairs per WebSocket frame with the page's 28-byte header (`OIQ1`, session, sequence, first sample, rate, frame count, playing flag, bits). The page does its own mixing, filtering and demodulation, so nothing else runs on OrcSDR. CIC droop at the channel (+50 kHz of a 300 kHz band) is about 1.2 dB.
 - **Who may listen:** a second HTTP server on port 81 with a pre-handshake check: the request must be same-site (`Host` allow-list, `Origin` host equal to `Host` host, the port may differ), come from the address that made the signed `channel` call, within 30 s, and the ticket is single use. Anyone else gets a real 403, never a WebSocket.
 - **Ending:** `channel/stop`, a new `channel` (one listener slot), the web server stopping, or another owner changing the receiver's centre or rate (a stop frame with `playing=0` is sent). On stop the receiver is retuned to where it was, unless someone else moved it meanwhile.
 - **Needs** `sdkconfig.net-throughput` (HTTP server WebSocket support and its pre-handshake hook, 24 lwip sockets, 32 KB TCP windows). Builds without it answer `browser_iq_stream_not_built_into_this_firmware`.
@@ -313,7 +324,7 @@ Cost while streaming: the `webiq` task 29 % of core 0, the radio task 53 % of co
 
 Bugs found and fixed while building it (all would bite anyone copying the pattern):
 - esp_http_server completes the WebSocket upgrade before calling the handler, so a refusal sent from the handler arrives on an already open WebSocket; the check moved to `ws_pre_handshake_cb` (needs `CONFIG_HTTPD_WS_PRE_HANDSHAKE_CB_SUPPORT`).
-- A custom `close_fn` replaces the server's own `close()`: without a `close(fd)` in it every WebSocket leaked one lwip socket and the node stopped accepting connections after about four test runs (`accept` error 23). Fixed; 16 sockets were not enough for two servers plus rtl_tcp, 24 are set.
+- A custom `close_fn` replaces the server's own `close()`: without a `close(fd)` in it every WebSocket leaked one lwip socket and OrcSDR stopped accepting connections after about four test runs (`accept` error 23). Fixed; 16 sockets were not enough for two servers plus rtl_tcp, 24 are set.
 - `issue_challenge` refused when four nonces were outstanding, which lets anyone lock the owner out of login for 30 s by asking for four challenges; it now replaces the oldest nonce instead.
 - Test scripts must log out: two sessions fill up otherwise (`sessions_full`).
 
@@ -339,7 +350,7 @@ Internal RAM free stayed at 120,447 bytes (largest block 43,008) after every 25 
 
 ## 18. Browser audio (the page's "FM service"), 2026-11-02
 
-What the page expects from a node: `POST /api/v1/fm?action=start&index&hz&sps&volume&tau[&mode]`, `GET /api/v1/fm` (playing, receiver, frequency_hz, input_sps, volume, browser_audio.available), `action=volume`, `action=stop`, and 48 kHz mono PCM on `ws://<node>:81/api/v1/fm/audio` in "OFA1" packets (24-byte header: magic, session, seq, first sample, rate 48000, frames <= 960, flags; then int16).
+What the page expects from a device: `POST /api/v1/fm?action=start&index&hz&sps&volume&tau[&mode]`, `GET /api/v1/fm` (playing, receiver, frequency_hz, input_sps, volume, browser_audio.available), `action=volume`, `action=stop`, and 48 kHz mono PCM on `ws://<device>:81/api/v1/fm/audio` in "OFA1" packets (24-byte header: magic, session, seq, first sample, rate 48000, frames <= 960, flags; then int16).
 
 `main/web_audio.{hpp,cpp}` implements it. It runs its **own** demodulator (components/orcsdr_audio_dsp, WFM/NFM/AM) on a queued sink (task "webaudio", core 0, priority 5), independent of the speaker path, so it works on boards with no codec. 960 samples per packet = 50 packets/s, about 0.8 Mbit/s.
 
@@ -358,5 +369,20 @@ Verified (tools/web_audio_test.js, 26 checks, COM29 Waveshare ESP32-P4-ETH): rea
 ### 18.1 Follow-ups the same evening
 
 - **Home's own 24 MHz clamp is gone.** The web tune on receiver 0 goes through the Home screen, which clamped every frequency to 24 MHz (a Tab5 default copied into `home_app.cpp`): a tune to 14.0375 MHz landed on 24.000 MHz and a step down from 24.000 MHz went nowhere, so the page's TUNE and STEP buttons looked dead on HF. Home, the serial `RTL_FREQ`/`RTL_TUNE`, `RTL_FREQ_SET` and the rtl_tcp adapter now take their range from `radio::tune_min_hz/tune_max_hz` (dongle capabilities and the driver's ceiling). Checked on COM29: 14.0375 MHz -> USB, 7.074 MHz -> LSB, 1.28 MHz -> AM, 96.1 MHz -> WFM, receiver and Home both follow.
-- **"Listen here" is "Start Browser Audio"** (and "Stop Browser Audio"). Pressing it asks Home for its mode for the current tuning, starts the node's audio session for that frequency (`fm?action=start&mode=wfm|nfm|am|usb|lsb`) and plays it in the browser; the same path runs once after login. It never changes the board's volume or mute.
+- **"Listen here" is "Start Browser Audio"** (and "Stop Browser Audio"). Pressing it asks Home for its mode for the current tuning, starts OrcSDR's audio session for that frequency (`fm?action=start&mode=wfm|nfm|am|usb|lsb`) and plays it in the browser; the same path runs once after login. It never changes the board's volume or mute.
 - `web_audio` gained `usb` and `lsb` (the demodulator already had them). Tested on COM29 with real signals: USB 14.0375 MHz, LSB 7.074 MHz, AM 1.28 MHz, WFM 96.1 MHz.
+
+## 19. The web build moved into OrcSDR (2026-11-02, branch `claude/web-in-orcsdr`)
+
+Source, authorship and licences: `apps/orcsdr-web/PROVENANCE.md`. The page behaves exactly as before; nothing about any dashboard changed.
+
+**What was verified** (both boards run the same source, each embedding `apps/orcsdr-web/dist` built from this repository):
+
+- COM29 (Waveshare ESP32-P4-ETH, 192.168.1.69): `p4_health.py` PASS; `web_home_test.js`, `web_audio_test.js`, `p4_web_auth_test.py` and `orclogin_test.js` with no failure; served `app.js`, `core.wasm`, `orcdec.wasm` and `splash.jpg` match `dist` by SHA-256; in the browser pane the page renders live Home at 96.100 MHz, TUNE + gave 96.112 MHz and TUNE - 96.100 MHz (confirmed over the API), and Start/Stop Browser Audio toggled the button. No password was typed by Claude; the pane already held a session.
+- COM8 (Waveshare ESP32-P4-Module-DEV-KIT, 192.168.1.198): `p4_health.py` PASS; `web_home_test.js` and `web_audio_test.js` 25 PASS each, no failure; `/` and `core.wasm` served with the expected sizes. The page was not opened in a browser on this board.
+
+**Not verified:** audible playback (nobody listened), the Decoders panel (still 404 on `decode/status`), any dashboard other than Home.
+
+**Differences from the earlier bundle** (rebuilt from `67e535e`): 7 of 9 files identical after decompression, `core.wasm` byte for byte; `decoder_worker.js` identical once its line endings are LF (the boards run the build made before that fix, which differs only in line endings); `orcdec.wasm` differs by 2 bytes, cause not established.
+
+**Not done:** the other dashboards' parity against `origin/main` (`WEB_PARITY_MATRIX.md`), browser audio as a plain listener on Home, and replacing the per-screen controllers with a shared core.
