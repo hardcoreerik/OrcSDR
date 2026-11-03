@@ -263,11 +263,54 @@ void native_safe_views() {
   assert(lora::set_tx_viewport({0,0,1280,720}));
   std::puts("INTEGRATED_NATIVE_SAFE_TX_VIEWS PASS");
 }
+void message_only_redraws() {
+  struct Case { int w,h; bool native; };
+  for (const auto c : {Case{1280,720,false},Case{568,1232,false},
+                       Case{1232,568,true},Case{568,1232,true}}) {
+    setup(c.w,c.h);
+    auto s=packet_profile();
+    if(c.native) {
+      const orcsdr::audio_header::HeaderRect safe{72,72,c.w-144,c.h-144};
+      assert(lora::set_tx_viewport(safe));
+      lora::enter(s);
+    } else if(c.w==1280) {
+      lora::show_documentation_view(lora::View::tx_lab,s);
+    } else {
+      lora::enter(s);
+    }
+    assert(lora::select_tx_page(1));
+    host_display::reset();
+    s.event_count=1;
+    auto& e=s.events[0];e.verified=true;e.sender=0x1234;e.packet_id=1;e.received_ms=100;
+    std::snprintf(e.text,sizeof(e.text),"First verified mesh message");
+    ++s.revision;lora::update(s);
+    assert(has("First verified"));
+    assert(full_clears()==0);
+    assert(host_display::prims.size()<12); // one card value region, no chrome/actions
+
+    host_display::reset();
+    e.packet_id=2;e.received_ms=200;
+    std::snprintf(e.text,sizeof(e.text),"Second verified message replaces the first");
+    ++s.revision;lora::update(s);
+    assert(has("Second verified"));
+    assert(!has("First verified"));
+    assert(full_clears()==0);
+
+    host_display::reset();
+    e.verified=false;
+    ++s.revision;lora::update(s);
+    assert(has("UNVERIFIED EVENT / TEXT HIDDEN"));
+    assert(!has("Second verified"));
+    assert(full_clears()==0);
+  }
+  std::puts("INTEGRATED_MESSAGE_ONLY_REDRAWS PASS");
+}
 int main() {
   rx_only_regression();
   landscape_navigation_and_revocation();
   admitted_controls_still_only_return_actions();
   portrait_presence_and_ui();
   native_safe_views();
+  message_only_redraws();
   std::puts("LoRa TX full dashboard host simulation PASS");
 }

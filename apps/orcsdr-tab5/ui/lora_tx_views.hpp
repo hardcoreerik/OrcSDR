@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <M5Unified.h>
 #include "lora_dashboard.hpp"
 
@@ -45,6 +46,24 @@ inline bool verified_rx_event(const Snapshot& s) {
   for (uint8_t i = 0; i < s.event_count && i < kEventCapacity; ++i)
     if (s.events[i].verified) return true;
   return false;
+}
+inline const Event* latest_verified_rx_event(const Snapshot& s) {
+  const Event* latest = nullptr;
+  for (uint8_t i = 0; i < s.event_count && i < kEventCapacity; ++i) {
+    const auto& event = s.events[i];
+    if (!event.verified) continue;
+    if (!latest || static_cast<int32_t>(event.received_ms - latest->received_ms) > 0)
+      latest = &event;
+  }
+  return latest;
+}
+inline bool same_latest_verified_rx_event(const Snapshot& a, const Snapshot& b) {
+  const Event* left = latest_verified_rx_event(a);
+  const Event* right = latest_verified_rx_event(b);
+  if (!left || !right) return left == right;
+  return left->sender == right->sender && left->packet_id == right->packet_id &&
+      left->received_ms == right->received_ms && left->encrypted == right->encrypted &&
+      std::strcmp(left->text, right->text) == 0;
 }
 constexpr const char* page_name(Page page) {
   switch (page) {
@@ -113,6 +132,66 @@ template <typename G> void action_row(G& gfx, const Snapshot& s, bool vertical,
   control(gfx, ax, y, w, h, !can_arm ? "ARM LOCKED"
                     : (s.tx.operator_armed ? "DISARM TX" : "ARM TX"), can_arm);
   control(gfx, sx, y, w, h, !can_send ? "SEND LOCKED" : "SEND TEST", can_send);
+}
+template <typename G> void draw_rx_message(G& gfx, const Snapshot& s,
+                                           bool vertical) {
+  const int x = vertical ? 48 : 660;
+  const int y = vertical ? 636 : 318;
+  const int w = vertical ? 470 : 544;
+  const int h = vertical ? 160 : 175;
+  gfx.fillRect(x, y, w, h, kPanel);
+  const Event* event = latest_verified_rx_event(s);
+  if (!event) {
+    if (s.event_count && s.events[0].encrypted) {
+      label(gfx, "ENCRYPTED / TEXT UNAVAILABLE", x + 2, y + 22, kYellow, 1);
+      label(gfx, "EVENT NOT VERIFIED", x + 2, y + 48, kMuted, 1);
+    } else if (s.event_count) {
+      label(gfx, "UNVERIFIED EVENT / TEXT HIDDEN", x + 2, y + 22, kYellow, 1);
+    } else {
+      label(gfx, "NO VERIFIED PACKETS", x + 2, y + 27, kMuted, 2);
+    }
+    return;
+  }
+  if (event->encrypted && event->text[0] == '\0') {
+    label(gfx, "ENCRYPTED / TEXT UNAVAILABLE", x + 2, y + 22, kYellow, 1);
+    return;
+  }
+  char meta[64]{};
+  std::snprintf(meta, sizeof(meta), "FROM %08lX  ID %08lX",
+                static_cast<unsigned long>(event->sender),
+                static_cast<unsigned long>(event->packet_id));
+  label(gfx, meta, x + 2, y + 17, kGreen, 1);
+  if (!event->text[0]) {
+    label(gfx, "VERIFIED PACKET / NO TEXT", x + 2, y + 43, kMuted, 1);
+    return;
+  }
+  // Bound both line count and width. The native canvas enforces its readable
+  // minimum font and maps these rows into the viewport; legacy uses size 1.
+  constexpr size_t kLineChars = 27;
+  constexpr int kMaxLines = 3;
+  char line[kLineChars + 1]{};
+  size_t offset = 0;
+  int row = 0;
+  const int text_y = y + (vertical ? 45 : 53);
+  const int line_step = 40;
+  while (event->text[offset] && row < kMaxLines) {
+    size_t n = std::min(std::strlen(event->text + offset), kLineChars);
+    if (event->text[offset + n] && n) {
+      size_t split = n;
+      while (split > 0 && event->text[offset + split] != ' ') --split;
+      if (split > 0) n = split;
+    }
+    std::memcpy(line, event->text + offset, n);
+    line[n] = '\0';
+    size_t next = offset + n;
+    while (event->text[next] == ' ') ++next;
+    if (row == kMaxLines - 1 && event->text[next]) {
+      if (n >= 3) { line[n - 3] = '.'; line[n - 2] = '.'; line[n - 1] = '.'; }
+    }
+    label(gfx, line, x + 2, text_y + row * line_step, kWhite, 1);
+    ++row;
+    offset = next;
+  }
 }
 template <typename G> void grid(G& gfx, int x, int y, int w, int h) {
   gfx.drawRoundRect(x, y, w, h, 0, kGrid);
@@ -207,11 +286,7 @@ template <typename G> void draw_values(G& gfx, const Snapshot& s, Page page,
       label(gfx, lora_tx::readiness_name(s.tx.readiness), 48, 646, kYellow, 2);
       label(gfx, lora_tx::denial_name(lora_tx::can_arm(s.tx)), 48, 689, kMuted, 1);
     } else if (page == Page::messenger) {
-      gfx.fillRect(48, 636, 470, 160, kPanel);
-      if (verified_rx_event(s)) {
-        label(gfx, "RX: VERIFIED EVENT PRESENT", 48, 663, kGreen, 1);
-        label(gfx, "Select TRAFFIC for payload details", 48, 701, kMuted, 1);
-      } else label(gfx, "NO VERIFIED PACKETS", 48, 663, kMuted, 2);
+      draw_rx_message(gfx, s, true);
       label(gfx, "TX: HISTORY NOT CONNECTED", 48, 753, kMuted, 1);
     } else {
       gfx.fillRect(48, 737, 470, 52, kPanel);
@@ -240,9 +315,7 @@ template <typename G> void draw_values(G& gfx, const Snapshot& s, Page page,
     label(gfx, s.tx.operator_armed ? "OPERATOR ARMED" : "NO TX ARM", 655, 378,
           s.tx.operator_armed ? kYellow : kMuted, 2);
   } else if (page == Page::messenger) {
-    gfx.fillRect(658, 318, 544, 175, kPanel);
-    label(gfx, verified_rx_event(s) ? "RX: VERIFIED EVENT PRESENT" : "RX: NO VERIFIED PACKETS",
-          660, 343, verified_rx_event(s) ? kGreen : kMuted, 2);
+    draw_rx_message(gfx, s, false);
     label(gfx, "TX: HISTORY NOT CONNECTED", 660, 393, kMuted, 2);
     label(gfx, lora_tx::denial_name(lora_tx::can_arm(s.tx)),
           660, 451, kYellow, 1);

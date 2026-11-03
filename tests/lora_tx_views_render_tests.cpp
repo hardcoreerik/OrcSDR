@@ -77,8 +77,47 @@ void test_navigation_and_gate() {
   assert(orcsdr::lora_tx::can_send(s.tx, ui::kBenchPacketBytes) !=
          orcsdr::lora_tx::Denial::none);
 }
+void test_verified_message_rendering() {
+  Snapshot s{};
+  s.event_count = 1;
+  auto& event = s.events[0];
+  event.verified = true;
+  event.sender = 0x1234;
+  event.packet_id = 0x5678;
+  event.received_ms = 100;
+  std::snprintf(event.text, sizeof(event.text), "Hello mesh from the verified radio");
+  host_display::reset();
+  ui::draw_values(M5.Display, s, ui::Page::messenger, true);
+  assert(shows("Hello mesh"));
+  assert(shows("FROM 00001234"));
+
+  std::snprintf(event.text, sizeof(event.text), "%s",
+      "Long received message wraps safely across bounded lines; nearby controls stay visible after truncation.");
+  host_display::reset();
+  ui::draw_values(M5.Display, s, ui::Page::messenger, false);
+  assert(shows("Long received"));
+  assert(shows("..."));
+  for (const auto& p : host_display::prims) {
+    if (p.kind != Prim::text) continue;
+    assert(p.x >= 660 && p.x + p.w <= 1204);
+    assert(p.y >= 318 && p.y + p.h <= 493);
+  }
+
+  event.verified = false;
+  host_display::reset();
+  ui::draw_values(M5.Display, s, ui::Page::messenger, false);
+  assert(shows("UNVERIFIED EVENT / TEXT HIDDEN"));
+  assert(!shows("Long received"));
+
+  event.encrypted = true;
+  host_display::reset();
+  ui::draw_values(M5.Display, s, ui::Page::messenger, false);
+  assert(shows("ENCRYPTED / TEXT UNAVAILABLE"));
+  assert(!shows("Long received"));
+}
 int main() {
   test_navigation_and_gate();
   test_dimensions_and_truth();
+  test_verified_message_rendering();
   std::puts("lora tx view recording-host tests: PASS");
 }

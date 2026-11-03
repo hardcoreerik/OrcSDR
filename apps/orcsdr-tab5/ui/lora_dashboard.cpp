@@ -881,6 +881,17 @@ void draw_tx_dynamic() {
   tx_views::draw_values(M5.Display, g_snapshot, g_tx_page, portrait_tx_screen());
 }
 
+void draw_tx_message_value() {
+  const bool vertical = portrait_tx_screen() ||
+      (native_tx_screen() && g_tx_layout.vertical);
+  if (native_tx_screen()) {
+    tx_native::Canvas body(M5.Display, g_tx_layout);
+    tx_views::draw_rx_message(body, g_snapshot, vertical);
+  } else {
+    tx_views::draw_rx_message(M5.Display, g_snapshot, vertical);
+  }
+}
+
 void draw_health_dynamic() {
   char value[48];
   snprintf(value, sizeof(value), "%.3f MHz", g_snapshot.frequency_hz / 1000000.0);
@@ -1086,13 +1097,17 @@ void update(const Snapshot& snapshot) {
   const bool capability_presence_changed =
       (snapshot.tx.readiness == lora_tx::Readiness::absent) !=
       (g_snapshot.tx.readiness == lora_tx::Readiness::absent);
-  const bool content_changed = tx_changed || snapshot.revision != g_snapshot.revision;
-  const bool tx_rx_changed=tx_views::verified_rx_event(snapshot)!=tx_views::verified_rx_event(g_snapshot);
+  const bool tx_rx_changed=!tx_views::same_latest_verified_rx_event(snapshot,g_snapshot);
+  const bool content_changed = tx_changed || tx_rx_changed ||
+      snapshot.revision != g_snapshot.revision;
   g_snapshot = snapshot;
   if(native_tx_screen()) {
     if(capability_presence_changed)g_tx_page=tx_views::Page::operator_panel;
-    // Ordinary RX revision/age ticks must not repaint static TX cards.
-    if(tx_changed || capability_presence_changed || tx_rx_changed)draw_native_tx(capability_presence_changed);
+    // Ordinary RX revision/age ticks must not repaint static TX cards. A new
+    // message affects only its value card, including when VERIFIED stays true.
+    if(capability_presence_changed) draw_native_tx(true);
+    else if(tx_changed) draw_native_tx(false);
+    else if(tx_rx_changed && g_tx_page==tx_views::Page::messenger) draw_tx_message_value();
     return;
   }
   if (portrait_lora_screen()) {
@@ -1106,7 +1121,9 @@ void update(const Snapshot& snapshot) {
     if (!portrait_tx_screen()) return; // no radio; no telemetry widgets to update
     if (!content_changed) return;  // no full-frame repaint on idle
     M5.Display.startWrite();
-    draw_tx_dynamic();
+    if (tx_rx_changed && !tx_changed && g_tx_page==tx_views::Page::messenger)
+      draw_tx_message_value();
+    else draw_tx_dynamic();
     if (tx_changed) {
       tx_views::action_row(M5.Display, g_snapshot, true,
                            g_tx_page == tx_views::Page::operator_panel);
@@ -1143,7 +1160,10 @@ void update(const Snapshot& snapshot) {
       (!needs_age_refresh || now - g_last_dynamic_ms < kDynamicRefreshIntervalMs)) return;
   g_last_dynamic_ms = now;
   M5.Display.startWrite();
-  draw_dynamic();
+  if (g_view==View::tx_lab && tx_rx_changed && !tx_changed &&
+      g_tx_page==tx_views::Page::messenger)
+    draw_tx_message_value();
+  else draw_dynamic();
   if (tx_changed && g_view == View::tx_lab) {
     tx_views::action_row(M5.Display, g_snapshot, false,
                          g_tx_page == tx_views::Page::operator_panel);
