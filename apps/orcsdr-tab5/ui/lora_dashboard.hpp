@@ -28,7 +28,11 @@ struct Node {
   char role[16]{};
 };
 
+enum class PacketSource : uint8_t { rtl_sdr, sx1262 };
+
 struct Event {
+  PacketSource source = PacketSource::rtl_sdr;
+  uint32_t frequency_hz = 0;
   uint32_t sender = 0;
   uint32_t destination = 0;
   uint32_t packet_id = 0;
