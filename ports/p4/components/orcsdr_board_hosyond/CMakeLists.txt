@@ -9,7 +9,7 @@ else()
     list(APPEND HOSYOND_REQUIRES hal)
 endif()
 idf_component_register(
-    SRCS "src/orcsdr_profiles.c" "src/orcsdr_board_control.c" "src/boards/board_waveshare_p4_module_dev_kit.c"
+    SRCS "src/orcsdr_profiles.c" "src/orcsdr_board_control.c" "src/bq27220_gauge.c" "src/boards/board_waveshare_p4_module_dev_kit.c"
          "src/boards/board_waveshare_p4_wifi6_poe_eth.c" "src/boards/board_waveshare_p4_wifi6_db.c" "src/boards/board_waveshare_p4_eth.c"
          "src/boards/board_m5stack_tab5.c" "src/boards/board_lilygo_t_display_p4_amoled.c" "src/hosyond_board.c" "src/lilygo_amoled.c" "src/gt9895_touch.c" "src/ft5x06_touch.c" "src/hosyond_audio.c" "src/icm20948_orientation.c"
     INCLUDE_DIRS "include" "src"
