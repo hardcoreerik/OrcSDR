@@ -13,7 +13,11 @@ extern const uint8_t raw_start[];
 extern const uint8_t raw_end[];
 #else
 extern const uint8_t raw_start[] asm("_binary_orc_badge_104_rgb565_start");
+#ifdef __EMSCRIPTEN__
+inline const uint8_t* const raw_end=raw_start+kWidth*kHeight*2;
+#else
 extern const uint8_t raw_end[] asm("_binary_orc_badge_104_rgb565_end");
+#endif
 #endif
 
 constexpr uint16_t display565(uint16_t value) {

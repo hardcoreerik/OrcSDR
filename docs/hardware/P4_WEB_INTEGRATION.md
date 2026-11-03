@@ -48,8 +48,6 @@ In `main.cpp`, include `web_server.hpp` and call `web_server::start()` immediate
 
 The current `serial_cli.cpp` does not implement the `RTL_WEB` commands listed in the broader serial API document. Add a privileged local status/on/off/password path before telling users to enable the HTTP server; the factory-password flag must remain visible until changed. Do not enable the server during boot by default.
 
-## Remaining adapters and validation gates
-
 ## Integrated foundation validation — 2026-11-03
 
 The current P4 app compiles and starts the existing auth/server/control modules.
@@ -87,6 +85,16 @@ No private password was changed. The browser bundle was not part of that build:
 page load, other routes, browser audio/IQ and native password setup remain open.
 
 ## Remaining work
+
+The existing `apps/orcsdr-web` sources and P4 login injector are now imported.
+`node tools/orclogin_test.js` passed its SHA-256, HMAC and PBKDF2 vectors.
+The standalone current-source decoder WASM build passed under the pinned
+Emscripten image; `node tools/test_web_decoder_wasm.js` passed ABI lifecycle
+and metadata checks for all eight kinds (not protocol replay). The full UI build
+failed on the retired `offline_map.cpp`
+input; it needs an actual browser adapter for the current OrcMaps architecture.
+No obsolete map renderer or mock replacement was introduced, and no generated
+UI bundle has been embedded. See `apps/orcsdr-web/PROVENANCE.md`.
 
 1. Port read compatibility routes to current P4 snapshots: receiver inventory and rate, tuner/gain facts, FM/browser-audio status, report, spectrum, and time. Keep unavailable fields `null` or omit them; do not fabricate success.
 2. Adapt legacy control endpoints using current `radio` and Home APIs, with driver-derived tune limits and observable driver rejection. Add serial equivalents where user actions do not already have one.
