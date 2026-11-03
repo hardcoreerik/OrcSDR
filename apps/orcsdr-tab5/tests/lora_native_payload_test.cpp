@@ -28,6 +28,18 @@ int main() {
   assert(std::strcmp(packet.text, "hello") == 0);
   assert(orcsdr::lora_native::capture_workspace_bytes() == workspace_before);
 
+  const uint8_t encrypted_default_key[] = {
+      0, 0, 0, 0, 0xd4, 0xc3, 0xb2, 0xa1, 0x40, 0x30, 0x20, 0x10, 0, 0, 0, 0,
+      0x6a, 0x92, 0x18, 0x55, 0xb8, 0x20, 0x6a, 0x22, 0xd1, 0x09, 0x1b, 0xd4,
+      0x70, 0x27, 0xbb, 0xef, 0xdd, 0x21, 0x0f, 0x46, 0x25, 0x82, 0xf3, 0x51,
+      0xbd, 0xf0, 0xcc, 0x66, 0x48, 0x6d, 0x8c,
+  };
+  assert(orcsdr::lora_native::decode_payload(encrypted_default_key,
+                                             sizeof(encrypted_default_key), config, &packet));
+  assert(packet.encrypted && packet.sender == 0xa1b2c3d4u &&
+         packet.packet_id == 0x10203040u);
+  assert(std::strcmp(packet.text, "OrcSDR Meshtastic self-test") == 0);
+
   const auto is_cleared = [](const Packet& p) {
     return p.sender == 0 && p.destination == 0 && p.packet_id == 0 &&
            p.latitude_e7 == INT32_MAX && p.longitude_e7 == INT32_MAX &&
