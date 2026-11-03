@@ -104,7 +104,7 @@ inline Layout make_layout(Rect v) {
         l.listen_status={x,y,0,0};l.listen_gain={x,l.listen_controls.y+l.listen_controls.h+gap,w,48};
         const int bw=(w-2*gap)/3;
         for(int r=0;r<3;++r)for(int c=0;c<3;++c)l.control[r*3+c]={x+c*(bw+gap),l.listen_controls.y+r*(gh+2),bw,gh};
-        const int gw=(w-6*gap)/5;l.gain_auto={x+gap,l.listen_gain.y+4,gw*2,touch};l.gain_down={l.gain_auto.x+l.gain_auto.w+gap,l.gain_auto.y,gw,touch};
+        const int gw=(w-6*gap)/5;l.gain_auto={x+gap,l.listen_gain.y+4,gw,touch};l.gain_down={l.gain_auto.x+gw+gap,l.gain_auto.y,gw,touch};
         l.gain_value={l.gain_down.x+gw+gap,l.gain_auto.y,gw,touch};l.gain_up={l.gain_value.x+gw+gap,l.gain_auto.y,gw,touch};l.rtl_agc={l.gain_up.x+gw+gap,l.gain_auto.y,gw,touch};
       } else {
       const int main_h=std::min(170,hh/2);l.listen_now={x,y,w*42/100,main_h};
@@ -114,7 +114,7 @@ inline Layout make_layout(Rect v) {
       const int bw=(l.listen_controls.w-2*gap)/3,bh=(main_h-3*gap)/3;
       for(int r=0;r<3;++r)for(int c=0;c<3;++c)l.control[r*3+c]={l.listen_controls.x+c*(bw+gap),y+gap+r*(bh+gap),bw,bh};
       }
-      const int gw=(w-6*gap)/5;l.gain_auto={x+gap,l.listen_gain.y+gap,gw*2,touch};l.gain_down={l.gain_auto.x+l.gain_auto.w+gap,l.gain_auto.y,gw,touch};
+      const int gw=(w-6*gap)/5;l.gain_auto={x+gap,l.listen_gain.y+gap,gw,touch};l.gain_down={l.gain_auto.x+gw+gap,l.gain_auto.y,gw,touch};
       l.gain_value={l.gain_down.x+gw+gap,l.gain_auto.y,gw,touch};l.gain_up={l.gain_value.x+gw+gap,l.gain_auto.y,gw,touch};l.rtl_agc={l.gain_up.x+gw+gap,l.gain_auto.y,gw,touch};
     }
     const int scan_y=y; l.scan_status={x,scan_y,w,std::min(108,hh/3)};l.scan_toggle={x+w-touch,scan_y+gap,w?touch:0,touch};
@@ -122,9 +122,10 @@ inline Layout make_layout(Rect v) {
     l.scan_row_count=std::clamp((rows_h+gap)/(touch+gap),1,8);const int sh=(rows_h-gap*(l.scan_row_count-1))/l.scan_row_count;
     for(int i=0;i<l.scan_row_count;++i)l.scan_rows[i]={x,rows_y+i*(sh+gap),w,sh};
     l.scan_previous={x,y+hh-touch,touch,touch};l.scan_next={x+w-touch,y+hh-touch,touch,touch};l.scan_page={x+touch+gap,y+hh-touch,w-2*(touch+gap),touch};
-    l.airport_radius={x,y,w/2-touch-gap,touch};l.airport_reload={x+w/2+gap,y,w/2-gap,touch};
+    const int directory_top=l.portrait?touch+9*gap:0;
+    l.airport_radius={x,y+directory_top,w/2-touch-gap,touch};l.airport_reload={x+w/2+gap,y+directory_top,w/2-gap,touch};
     l.activity_clear=l.airport_reload;
-    const int list_y=y+touch+gap,list_h=hh-touch-2*gap;
+    const int list_y=y+directory_top+touch+gap,list_h=y+hh-touch-gap-list_y;
     l.airport_row_count=l.activity_row_count=std::clamp(list_h/(touch+gap),1,12);
     const int rh=(list_h-gap*(l.airport_row_count-1))/l.airport_row_count;
     for(int i=0;i<l.airport_row_count;++i){l.airport_rows[i]={x,list_y+i*(rh+gap),w,rh};l.activity_rows[i]=l.airport_rows[i];}
@@ -136,12 +137,14 @@ inline Layout make_layout(Rect v) {
     l.setup_previous={x, y+hh-touch,touch,touch};l.setup_next={x+w-touch,y+hh-touch,touch,touch};
     if(setup_paged){l.setup_first=0;const int shh=std::max(64,(hh-touch-4*gap)/3);for(int i=0;i<3;++i){l.setup_row[i]={x,sy+i*(shh+gap),w,shh};const int cw=std::min(120,(w-2*gap)/3);const int cy=l.setup_row[i].y+(shh-touch)/2;l.setup_minus[i]={x+w-3*cw-2*gap,cy,cw,touch};l.setup_value[i]={l.setup_minus[i].x+cw+gap,cy,cw,touch};l.setup_plus[i]={l.setup_value[i].x+cw+gap,cy,cw,touch};}}
     else {const int shh=l.portrait?std::max(touch,(hh-6*gap)/7):44;const int row_gap=l.portrait?gap:2;for(int i=0;i<7;++i){l.setup_row[i]={x,sy+i*(shh+row_gap),w,shh};const int cw=std::min(120,(w-2*gap)/3);const int cy=l.portrait?l.setup_row[i].y+shh-touch:l.setup_row[i].y;l.setup_minus[i]={x+w-3*cw-2*gap,cy,cw,touch};l.setup_value[i]={l.setup_minus[i].x+cw+gap,cy,cw,touch};l.setup_plus[i]={l.setup_value[i].x+cw+gap,cy,cw,touch};}}
-    const int title_h=touch;l.scope_title={x,y,w-2*touch-2*gap,title_h};l.scope_palette={x+w-2*touch-2*gap,y,touch*2,touch};l.scope_speed={x+w-touch,y,touch,touch};
-    const bool compact=v.h<480;const int control_touch=compact?44:touch;
+    const int chip_w=touch*2;const int title_h=touch;
+    l.scope_title={x,y,w-2*chip_w-2*gap,title_h};
+    l.scope_palette={x+w-2*chip_w-gap,y,chip_w,touch};l.scope_speed={x+w-chip_w,y,chip_w,touch};
+    const bool compact=v.h<=480;const int control_touch=compact?44:touch;
     const int controls_h=compact?3*control_touch+2*4:3*touch+2*gap, title_height=compact?40:touch;
     const int plot_top=y+title_height+(compact?4:gap);
     const int plot_h=compact?30:std::max(72,(hh-title_height-controls_h-4*gap)/3);
-    l.scope_title={x,y,compact?w:w-2*touch-2*gap,title_height};
+    l.scope_title={x,y,compact?w:w-2*chip_w-2*gap,title_height};
     l.scope_plot={x,plot_top,w,plot_h};l.scope_axis={x,plot_top+plot_h,w,compact?16:24};
     l.scope_waterfall={x,l.scope_axis.y+l.scope_axis.h+(compact?4:gap),w,plot_h};
     l.scope_status=compact?Rect{}:Rect{x,l.scope_waterfall.y+l.scope_waterfall.h+gap,w,24};
@@ -159,6 +162,7 @@ inline Layout make_layout(Rect v) {
   for(auto r:l.tab)l.valid=l.valid&&audio_header::header_inside(l.tabs,r)&&r.w>=44&&r.h>=44;
   for(auto r:{l.listen_now,l.listen_controls,l.listen_status,l.listen_gain,l.scan_status,l.scope_plot,l.scope_waterfall})if(r.w>0&&r.h>0)l.valid=l.valid&&audio_header::header_inside(l.content,r);
   for(auto r:l.control)l.valid=l.valid&&audio_header::header_inside(l.content,r)&&r.w>=44&&r.h>=44;
+  for(auto r:{l.gain_auto,l.gain_down,l.gain_value,l.gain_up,l.rtl_agc})l.valid=l.valid&&audio_header::header_inside(l.content,r)&&r.w>=44&&r.h>=44;
   for(int i=0;i<l.setup_visible_count;++i){l.valid=l.valid&&audio_header::header_inside(l.content,l.setup_row[i])&&audio_header::header_inside(l.content,l.setup_value[i])&&l.setup_value[i].w>=44&&l.setup_value[i].h>=44;}
   if(l.setup_page_count>1)l.valid=l.valid&&audio_header::header_inside(l.content,l.setup_previous)&&audio_header::header_inside(l.content,l.setup_next);
   for(int i=0;i<l.scope_control_count;++i)l.valid=l.valid&&audio_header::header_inside(l.content,l.scope_control[i])&&l.scope_control[i].w>=44&&l.scope_control[i].h>=44;

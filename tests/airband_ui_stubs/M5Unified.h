@@ -19,7 +19,7 @@ namespace fonts { inline int DejaVu24, DejaVu18; }
 namespace lgfx {
 inline namespace v1 {
 struct rgb565_t {uint16_t raw;};
-struct Paint { std::string text; int x, y; uint16_t color; int text_size=1; };
+struct Paint { std::string text; int x, y; uint16_t color; int text_size=1; int datum=0; };
 struct Fill {int x,y,w,h;uint16_t color;};
 inline std::vector<Paint> paints;
 inline std::vector<Fill> fills;
@@ -34,8 +34,9 @@ inline int screen_clears=0;
 class LovyanGFX {
   uint16_t color_ = 0;
   int text_size_ = 1;
+  int datum_ = 0;
 public:
-  template<class... T> void setTextDatum(T...) {}
+  template<class... T> void setTextDatum(T... values) {((datum_=static_cast<int>(values)),...);}
   void setTextSize(int size) { text_size_=size; }
   template<class... T> void setFont(T...) {}
   void setTextColor(uint16_t c, uint16_t = 0) { color_ = c; }
@@ -65,8 +66,8 @@ public:
   void clearScrollRect() {}
   void startWrite() {}
   void endWrite() {}
-  void drawString(const char* s, int x, int y) { paints.push_back({s, x, y, color_, text_size_}); }
-  int textWidth(const char* s) { return static_cast<int>(std::strlen(s)) * 12; }
+  void drawString(const char* s, int x, int y) { paints.push_back({s, x, y, color_, text_size_, datum_}); }
+  int textWidth(const char* s) { return static_cast<int>(std::strlen(s)) * 6 * text_size_; }
 };
 }
 }

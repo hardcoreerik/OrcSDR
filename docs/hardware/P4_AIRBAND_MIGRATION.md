@@ -37,12 +37,16 @@ replaces the sprite; no full-frame dashboard buffer is allocated.
 Run `python tests/test_airband_dashboard_layout.py`. It compiles the pure
 geometry contract and the production Airband renderer/input implementation
 with a recording display. The matrix covers Hosyond 800 × 480, LilyGO safe
-424 × 1088 and 1088 × 424 rectangles at (72, 72), and legacy Tab5 1280 × 720.
+424 × 1088 and 1088 × 424 rectangles at (72, 72), additional 416 × 1136
+and 1136 × 416 safe-area boundaries at (72, 72), and legacy Tab5 1280 × 720.
 The renderer fixture fills the catalog, scan bank, and activity log to their
 32-record capacities with long labels and maximum-width numeric values. It
-checks final-page selection, detail text, tab/setup/scope input, visible value
-updates, focused-control retention, repeated age updates, no full-screen clear,
-and state retention when the viewport changes.
+also checks empty/default pages and a long current station label. Every recorded
+text paint is checked against the native viewport; narrow gain labels remain
+visible, all gain controls stay in bounds, and scope starts with a nonzero span.
+It checks final-page selection, detail text, tab/setup/scope input, visible
+value updates, focused-control retention, repeated age updates, no full-screen
+clear, and state retention when the viewport changes.
 
 Host validation does not establish the P4 IDF build, radio/audio continuity,
 touch calibration, visual readability, flicker/tearing behavior, or sustained

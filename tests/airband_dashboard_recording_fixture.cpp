@@ -9,9 +9,24 @@
 #include <cstdio>
 #include <cstring>
 
+const char* g_paint_phase="";
+void assert_text_inside_viewport(const orcsdr::airband::layout::Rect& viewport){
+  for(const auto&p:lgfx::paints){
+    if(p.text.empty())continue;
+    const int w=static_cast<int>(p.text.size())*6*p.text_size,h=8*p.text_size;
+    const int left=p.datum==middle_center?p.x-w/2:p.datum==middle_right?p.x-w:p.x;
+    const int top=p.datum==top_left?p.y:p.datum==bottom_left?p.y-h:p.y-h/2;
+    if(!(left>=viewport.x&&left+w<=viewport.x+viewport.w))std::fprintf(stderr,"horizontal clip in %dx%d during %s at %d: %s (left=%d width=%d)\n",viewport.w,viewport.h,g_paint_phase,p.text_size,p.text.c_str(),left,w);
+    assert(left>=viewport.x&&left+w<=viewport.x+viewport.w);
+    if(!(top>=viewport.y&&top+h<=viewport.y+viewport.h))std::fprintf(stderr,"vertical clip in %dx%d at %d: %s (top=%d height=%d)\n",viewport.w,viewport.h,p.text_size,p.text.c_str(),top,h);
+    assert(top>=viewport.y&&top+h<=viewport.y+viewport.h);
+  }
+}
+
 namespace orcsdr::audio_header {
-const HeaderLayout& layout(){static HeaderLayout h=make_header_layout({0,0,1280,720});return h;}
-bool set_viewport(HeaderRect){return true;}
+HeaderLayout& current_layout(){static HeaderLayout h=make_header_layout({0,0,1280,720});return h;}
+const HeaderLayout& layout(){return current_layout();}
+bool set_viewport(HeaderRect viewport){current_layout()=make_header_layout(viewport);return current_layout().valid;}
 void draw_brand(const char*){}
 void draw_battery(int32_t){}
 void draw_home_button(){}
@@ -41,18 +56,26 @@ int rows_due(Screen,uint32_t,uint32_t){return 1;}uint16_t color565(Screen,float)
 
 int main(){
   using namespace orcsdr::airband;
-  const layout::Rect viewports[]={{0,0,800,480},{72,72,424,1088},{72,72,1088,424},{0,0,1280,720}};
+  const layout::Rect viewports[]={{0,0,800,480},{72,72,424,1088},{72,72,1088,424},{72,72,416,1136},{72,72,1136,416},{0,0,1280,720}};
   for(const auto viewport:viewports){
+    lgfx::paints.clear();
     Snapshot s{};s.frequency_hz=124900000;s.running=true;s.catalog_loaded=true;s.location_configured=true;
+    std::snprintf(s.current_label,sizeof(s.current_label),"121.500 EMERGENCY / GUARD");
     s.catalog_count=32;s.bank_count=32;s.activity_count=32;s.stops=UINT32_MAX;s.channels_checked=UINT32_MAX;
     s.controls.capabilities.rf_gain=true;s.controls.capabilities.tuner_agc=true;s.controls.capabilities.rtl_agc=true;
     s.scan.spacing=Spacing::khz833;
     for(int i=0;i<32;++i){std::snprintf(s.catalog[i].label,sizeof(s.catalog[i].label),"Airport %02d with long station context",i);s.catalog[i].frequency_hz=124000000+i*25000;
       std::snprintf(s.bank[i].label,sizeof(s.bank[i].label),"Bank %02d",i);s.bank[i].frequency_hz=125000000+i*25000;
       std::snprintf(s.activity[i].label,sizeof(s.activity[i].label),"Activity %02d with a long retained description",i);s.activity[i].frequency_hz=126000000+i*25000;s.activity[i].duration_ms=UINT32_MAX;s.activity[i].peak_snr_db=127.0f;}
-    assert(dashboard_set_viewport(viewport));dashboard_enter(s);
-    for(int tab=0;tab<6;++tab){dashboard_handle_touch(cx(g_layout.tab[tab]),cy(g_layout.tab[tab]));assert(dashboard_tab()==static_cast<Tab>(tab));}
-    dashboard_select_tab(Tab::airports);
+    g_paint_phase="populated enter";assert(dashboard_set_viewport(viewport));dashboard_enter(s);
+    assert_text_inside_viewport(viewport);
+    if(viewport.h>viewport.w){
+      bool minus=false,plus=false;
+      for(const auto&p:lgfx::paints){minus|=p.text=="-"&&p.x==g_layout.gain_down.x+g_layout.gain_down.w/2&&p.y==g_layout.gain_down.y+g_layout.gain_down.h/2;plus|=p.text=="+"&&p.x==g_layout.gain_up.x+g_layout.gain_up.w/2&&p.y==g_layout.gain_up.y+g_layout.gain_up.h/2;}
+      assert(minus&&plus);
+    }
+    for(int tab=0;tab<6;++tab){g_paint_phase="populated tab";dashboard_handle_touch(cx(g_layout.tab[tab]),cy(g_layout.tab[tab]));assert(dashboard_tab()==static_cast<Tab>(tab));assert_text_inside_viewport(viewport);}
+    g_paint_phase="airport details";dashboard_select_tab(Tab::airports);
     const size_t page_size=static_cast<size_t>(g_layout.airport_row_count);
     const size_t airport_pages=(32+page_size-1)/page_size;
     for(size_t p=1;p<airport_pages;++p)dashboard_handle_touch(cx(g_layout.airport_next),cy(g_layout.airport_next));
@@ -60,6 +83,7 @@ int main(){
     lgfx::paints.clear();
     const Action tune=dashboard_handle_touch(cx(g_layout.airport_rows[final_airport_row]),cy(g_layout.airport_rows[final_airport_row]));
     assert(tune.kind==ActionKind::tune_catalog&&tune.value==31);
+    assert_text_inside_viewport(viewport);
     std::string airport_detail;for(const auto&p:lgfx::paints)airport_detail+=p.text;assert(airport_detail.find("Airport 31 with long station context")!=std::string::npos);
     dashboard_handle_touch(g_layout.content.x+g_layout.content.w-40,g_layout.content.y+40);
     dashboard_select_tab(Tab::activity);
@@ -68,6 +92,7 @@ int main(){
     const size_t final_activity_row=31-g_activity_page*static_cast<size_t>(g_layout.activity_row_count);
     const Action activity=dashboard_handle_touch(cx(g_layout.activity_rows[final_activity_row]),cy(g_layout.activity_rows[final_activity_row]));
     assert(activity.kind==ActionKind::tune_catalog&&activity.value==-32);
+    assert_text_inside_viewport(viewport);
     dashboard_handle_touch(g_layout.content.x+g_layout.content.w-40,g_layout.content.y+40);
     dashboard_select_tab(Tab::scan);
     const size_t bank_pages=(32+static_cast<size_t>(g_layout.scan_row_count)-1)/static_cast<size_t>(g_layout.scan_row_count);
@@ -75,6 +100,7 @@ int main(){
     const size_t final_bank_row=31-g_bank_page*static_cast<size_t>(g_layout.scan_row_count);
     const Action bank=dashboard_handle_touch(cx(g_layout.scan_rows[final_bank_row]),cy(g_layout.scan_rows[final_bank_row]));
     assert(bank.kind==ActionKind::tune_catalog&&bank.value==31);
+    assert_text_inside_viewport(viewport);
     dashboard_handle_touch(g_layout.content.x+g_layout.content.w-40,g_layout.content.y+40);
     dashboard_select_tab(Tab::setup);
     if(g_layout.setup_page_count>1){dashboard_handle_touch(cx(g_layout.setup_next),cy(g_layout.setup_next));assert(g_setup_page==1);dashboard_handle_touch(cx(g_layout.setup_previous),cy(g_layout.setup_previous));assert(g_setup_page==0);}
@@ -102,10 +128,14 @@ int main(){
     for(int i=0;i<4;++i){s.now_ms+=250;s.snr_db=float(i*3);dashboard_update(s);}
     assert(lgfx::screen_clears==clears);
     if(had_focus){orcsdr::focus_nav::Rect after{};assert(orcsdr::focus_nav::focused(&after));assert(after.x==focused_before.x&&after.y==focused_before.y);}
-    dashboard_select_tab(Tab::activity);s.now_ms=6000;lgfx::fills.clear();dashboard_update(s);
+    g_paint_phase="activity updates";dashboard_select_tab(Tab::activity);s.now_ms=6000;lgfx::fills.clear();dashboard_update(s);
     assert(lgfx::screen_clears==clears);
     assert(std::none_of(lgfx::fills.begin(),lgfx::fills.end(),[](const auto&r){return r.x==g_layout.content.x&&r.y==g_layout.content.y&&r.w==g_layout.content.w&&r.h==g_layout.content.h;}));
     dashboard_select_tab(Tab::scope);s.frequency_hz=124900000;dashboard_update(s);
+    assert_text_inside_viewport(viewport);
+    if(viewport.w>viewport.h&&!g_layout.legacy){
+      bool span=false;for(const auto&p:lgfx::paints)span|=p.text.find("SPAN 480 kHz")!=std::string::npos;assert(span);
+    }
     if(viewport.h>viewport.w){
       const Rect bottom_control=g_layout.scope_control[14];
       assert(bottom_control.y+bottom_control.h>720);
@@ -121,8 +151,15 @@ int main(){
     for(int i=0;i<13;++i){const Action got=dashboard_handle_touch(cx(g_layout.scope_control[i]),cy(g_layout.scope_control[i]));assert(got.kind==scope_actions[i]);}
     float levels[256]{};for(int i=0;i<256;++i)levels[i]=-80.0f+float(i%31);
     dashboard_draw_spectrum(levels,0,256,480000);
+    assert_text_inside_viewport(viewport);
     const auto target=viewport.w==424?layout::Rect{72,72,1088,424}:viewport.w==1088?layout::Rect{72,72,424,1088}:viewport;
     assert(dashboard_set_viewport(target));assert(dashboard_tab()==Tab::scope);assert(g_snapshot.scan.spacing==Spacing::khz833);
+    dashboard_leave();
+
+    g_paint_phase="defaults";lgfx::paints.clear();assert(dashboard_set_viewport(viewport));
+    Snapshot defaults{};defaults.frequency_hz=121500000;defaults.now_ms=1000;
+    dashboard_enter(defaults);
+    for(int tab=0;tab<6;++tab){dashboard_select_tab(static_cast<Tab>(tab));assert_text_inside_viewport(viewport);}
     dashboard_leave();
   }
   std::puts("Airband production renderer/input recording tests PASS");

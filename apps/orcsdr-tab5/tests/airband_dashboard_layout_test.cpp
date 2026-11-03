@@ -11,9 +11,10 @@ static void check(Rect v) {
   assert(inside(v, l.content) && inside(v, l.tabs));
   for (Rect r : l.tab) assert(inside(l.tabs, r) && r.w >= 44 && r.h >= 44);
   for (Rect r : l.control) assert(inside(l.content, r) && r.w >= 44 && r.h >= 44);
+  for(Rect r:{l.gain_auto,l.gain_down,l.gain_value,l.gain_up,l.rtl_agc})assert(inside(l.content,r)&&r.w>=44&&r.h>=44);
   for(int i=0;i<l.scan_row_count;++i)assert(inside(l.content,l.scan_rows[i]));
-  for (int i=0;i<l.airport_row_count;++i) assert(inside(l.content,l.airport_rows[i]));
-  for (int i=0;i<l.activity_row_count;++i) assert(inside(l.content,l.activity_rows[i]));
+  for (int i=0;i<l.airport_row_count;++i) assert(inside(l.content,l.airport_rows[i])&&l.airport_rows[i].h>=44);
+  for (int i=0;i<l.activity_row_count;++i) assert(inside(l.content,l.activity_rows[i])&&l.activity_rows[i].h>=44);
   for(int i=0;i<l.setup_visible_count;++i){assert(inside(l.content,l.setup_row[i]));assert(inside(l.content,l.setup_value[i]));assert(l.setup_value[i].w>=44&&l.setup_value[i].h>=44);}
   for(int i=0;i<l.scope_control_count;++i){assert(inside(l.content,l.scope_control[i]));assert(l.scope_control[i].w>=44&&l.scope_control[i].h>=44);}
   assert(inside(l.content,l.scan_toggle)&&l.scan_toggle.w>=44&&l.scan_toggle.h>=44);
@@ -35,5 +36,7 @@ int main() {
   check({0,0,800,480});
   check({72,72,424,1088});
   check({72,72,1088,424});
+  check({72,72,416,1136});
+  check({72,72,1136,416});
   std::puts("Airband layout geometry PASS");
 }

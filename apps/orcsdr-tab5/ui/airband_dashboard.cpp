@@ -87,7 +87,7 @@ void set_tab(Tab next) {
     M5.Display.clearScrollRect();
     if (g_scope_span_hook) g_scope_span_hook(0);
   } else if (g_tab != Tab::scope && next == Tab::scope) {
-    g_scope_span_hz = 0;
+    g_scope_span_hz = kScopeDefaultSpanHz;
     g_scope_levels_valid = false;
     if (g_scope_span_hook) g_scope_span_hook(kScopeDefaultSpanHz);
   }
@@ -126,13 +126,14 @@ void fitted_text(const char* value,int x,int y,int width,uint16_t color,int size
   text(shown,x,y,color,size,datum);
 }
 
-void wrapped_detail(const char* value,int x,int y,int width,uint16_t color){
+int wrapped_detail(const char* value,int x,int y,int width,uint16_t color){
   const size_t cap=static_cast<size_t>(std::max(12,width/12));
   const size_t length=std::strlen(value);
   for(size_t offset=0;offset<length;offset+=cap){
     char line[80]{};const size_t n=std::min(std::min(cap,sizeof(line)-1),length-offset);
     std::memcpy(line,value+offset,n);text(line,x,y+static_cast<int>(offset/cap)*26,color,2,middle_left);
   }
+  return static_cast<int>((length+cap-1)/cap);
 }
 
 void card(const Rect& r, uint16_t border = kCyan) {
@@ -240,10 +241,15 @@ void draw_scope_status() {
   if(g_layout.scope_status.w<=0||g_layout.scope_status.h<=0)return;
   M5.Display.fillRect(g_layout.scope_status.x,g_layout.scope_status.y,g_layout.scope_status.w,g_layout.scope_status.h,TFT_BLACK);
   char value[96];
-  std::snprintf(value, sizeof(value), "SNR %.0f dB   SQL +%d   %s   FILTER %.0f kHz",
-                static_cast<double>(g_snapshot.snr_db), static_cast<int>(g_snapshot.scan.squelch_db),
-                g_snapshot.squelch_open ? "OPEN" : "CLOSED",
-                static_cast<double>(g_snapshot.filter_hz) / 1000.0);
+  if(g_layout.legacy)
+    std::snprintf(value,sizeof(value),"SNR %.0f dB   SQL +%d   %s   FILTER %.0f kHz",
+                  static_cast<double>(g_snapshot.snr_db),static_cast<int>(g_snapshot.scan.squelch_db),
+                  g_snapshot.squelch_open?"OPEN":"CLOSED",static_cast<double>(g_snapshot.filter_hz)/1000.0);
+  else
+    std::snprintf(value, sizeof(value), "SNR%.0f dB SQL+%d %s FILT%.0f kHz",
+                  static_cast<double>(g_snapshot.snr_db), static_cast<int>(g_snapshot.scan.squelch_db),
+                  g_snapshot.squelch_open ? "OPEN" : "CLOSED",
+                  static_cast<double>(g_snapshot.filter_hz) / 1000.0);
   text(value,g_layout.scope_status.x+6,g_layout.scope_status.y+g_layout.scope_status.h/2,g_snapshot.squelch_open?kGreen:TFT_LIGHTGREY,2,middle_left);
 }
 
@@ -317,8 +323,13 @@ void page_title(const char* title, const char* subtitle) {
   M5.Display.fillRect(g_layout.content.x,g_layout.content.y,g_layout.content.w,g_layout.content.h,TFT_BLACK);
   if(g_layout.legacy){text(title,32,126,TFT_WHITE,3,middle_left);text(subtitle,34,160,kMuted,2,middle_left);return;}
   const int x=g_layout.content.x+8;
-  text(title,x,g_layout.content.y+24,TFT_WHITE,3,middle_left);
-  text(subtitle,x,g_layout.content.y+58,kMuted,2,middle_left);
+  if(g_layout.portrait){
+    fitted_text(title,x,g_layout.content.y+23,g_layout.content.w-16,TFT_WHITE,2,middle_left);
+    wrapped_detail(subtitle,x,g_layout.content.y+54,g_layout.content.w-16,kMuted);
+  }else{
+    fitted_text(title,x,g_layout.content.y+24,g_layout.content.w-16,TFT_WHITE,3,middle_left);
+    fitted_text(subtitle,x,g_layout.content.y+58,g_layout.content.w-16,kMuted,2,middle_left);
+  }
 }
 
 Rect meter_area() { return g_layout.legacy?Rect{36,296,496,62}:Rect{kNowCard.x+16,kNowCard.y+kNowCard.h-76,kNowCard.w-32,68}; }
@@ -359,7 +370,7 @@ void draw_gain() {
   const bool rtl_ok = rtl.availability == Availability::enabled;
   const int size=2;
   button(kGainAuto,!agc_ok?(g_layout.legacy?"TUNER AGC N/A":"AGC N/A"):agc.active?(g_layout.legacy?"TUNER AGC ON":"AGC ON"):(g_layout.legacy?"TUNER AGC OFF":"AGC OFF"),agc_ok&&agc.active,agc_ok,size);
-  button(kGainDown,"GAIN -",false,gain_ok,size);
+  button(kGainDown,kGainDown.w<72?"-":"GAIN -",false,gain_ok,size);
   char value[32];
   if (!gain_ok)
     std::snprintf(value, sizeof(value), "RF GAIN N/A");
@@ -369,10 +380,10 @@ void draw_gain() {
     std::snprintf(value, sizeof(value), "%.1f dB", static_cast<double>(gain.value) / 10.0);
   M5.Display.drawRoundRect(kGainValue.x,kGainValue.y,kGainValue.w,kGainValue.h,8,kMuted);
   text(value,cx(kGainValue),cy(kGainValue),gain_ok?TFT_WHITE:kMuted,size);
-  button(kGainUp,"GAIN +",false,gain_ok,size);
+  button(kGainUp,kGainUp.w<72?"+":"GAIN +",false,gain_ok,size);
   button(kRtlAgc,!rtl_ok?"RTL N/A":rtl.active?"RTL AGC ON":"RTL AGC OFF",rtl_ok&&rtl.active,rtl_ok,size);
   if(g_layout.legacy){text("Shared receiver gain",1120,560,kMuted,1,middle_left);text("(same driver controls",1120,578,kMuted,1,middle_left);text("as AM / Shortwave)",1120,596,kMuted,1,middle_left);}
-  else if(kGainCard.h>=80)text("Shared receiver gain also controls AM / Shortwave",kGainCard.x+kGainCard.w-12,kGainCard.y+kGainCard.h-10,kMuted,1,middle_right);
+  else if(kGainCard.h>=80)fitted_text("Shared receiver gain also controls AM / Shortwave",kGainCard.x+kGainCard.w-12,kGainCard.y+kGainCard.h-10,kGainCard.w-24,kMuted,1,middle_right);
 }
 
 void draw_now_card() {
@@ -392,7 +403,7 @@ void draw_now_card() {
     text(value,kNowCard.x+20,kNowCard.y+(compact?44:56),TFT_WHITE,compact?4:7,middle_left);
     if(compact){
       std::snprintf(value,sizeof(value),"%s  %s",g_snapshot.current_label[0]?g_snapshot.current_label:"AIRBAND",state_name(g_snapshot.scan_state));
-      text(value,kNowCard.x+20,kNowCard.y+82,kMuted,2,middle_left);
+      wrapped_detail(value,kNowCard.x+20,kNowCard.y+82,kNowCard.w-40,kMuted);
       draw_signal_meter();
     }else{
       text("MHz",kNowCard.x+20,kNowCard.y+112,kCyan,3,middle_left);
@@ -423,8 +434,14 @@ void draw_controls() {
 void draw_status() {
   if(kStatusCard.w<=0||kStatusCard.h<=0)return;
   card(kStatusCard);
-  char value[112];
-  std::snprintf(value, sizeof(value),
+  char counts[80],settings[80],combined[176];
+  std::snprintf(counts,sizeof(counts),"%lu stops   %lu checked",
+                static_cast<unsigned long>(g_snapshot.stops),
+                static_cast<unsigned long>(g_snapshot.channels_checked));
+  std::snprintf(settings,sizeof(settings),"bank %u   guard %s   SQL +%d dB   hang %.1fs",
+                static_cast<unsigned>(g_snapshot.bank_count),g_snapshot.scan.priority_guard?"ON":"OFF",
+                static_cast<int>(g_snapshot.scan.squelch_db),static_cast<double>(g_snapshot.scan.hang_ms)/1000.0);
+  std::snprintf(combined, sizeof(combined),
                 "%lu stops   %lu checked   bank %u   guard %s   SQL +%d dB   hang %.1fs",
                 static_cast<unsigned long>(g_snapshot.stops),
                 static_cast<unsigned long>(g_snapshot.channels_checked),
@@ -432,16 +449,36 @@ void draw_status() {
                 g_snapshot.scan.priority_guard ? "ON" : "OFF",
                 static_cast<int>(g_snapshot.scan.squelch_db),
                 static_cast<double>(g_snapshot.scan.hang_ms) / 1000.0);
-  if(kStatusCard.h>0)text(value,kStatusCard.x+(g_layout.legacy?20:16),kStatusCard.y+(g_layout.legacy?30:kStatusCard.h/3),TFT_WHITE,g_layout.legacy?2:kStatusCard.w<600?1:2,middle_left);
-  if (!g_snapshot.location_configured)
-    text("Receiver location not set: airport labels and airport-bank scanning are off.",
-         kStatusCard.x+(g_layout.legacy?20:16),kStatusCard.y+(g_layout.legacy?70:kStatusCard.h*2/3),kAmber,g_layout.legacy?2:kStatusCard.w<600?1:2,middle_left);
-  else if (!g_snapshot.catalog_loaded)
-    text("Aviation data not loaded: manual tuning and full-band scan still work.",
-         kStatusCard.x+(g_layout.legacy?20:16),kStatusCard.y+(g_layout.legacy?70:kStatusCard.h*2/3),kAmber,g_layout.legacy?2:kStatusCard.w<600?1:2,middle_left);
-  else
-    text("Airport bank uses the closest catalog entries (database, not RF-decoded).",
-         kStatusCard.x+(g_layout.legacy?20:16),kStatusCard.y+(g_layout.legacy?70:kStatusCard.h*2/3),kGreen,g_layout.legacy?2:kStatusCard.w<600?1:2,middle_left);
+  const int status_x=kStatusCard.x+(g_layout.legacy?20:16);
+  const char* note=!g_snapshot.location_configured
+      ? "Receiver location not set: airport labels and airport-bank scanning are off."
+      : !g_snapshot.catalog_loaded
+          ? "Aviation data not loaded: manual tuning and full-band scan still work."
+          : "Airport bank uses the closest catalog entries (database, not RF-decoded).";
+  const uint16_t note_color=g_snapshot.location_configured&&g_snapshot.catalog_loaded?kGreen:kAmber;
+  if(g_layout.portrait){
+    wrapped_detail(counts,status_x,kStatusCard.y+18,kStatusCard.w-32,TFT_WHITE);
+    wrapped_detail(settings,status_x,kStatusCard.y+18+2*26,kStatusCard.w-32,TFT_WHITE);
+    wrapped_detail(note,status_x,kStatusCard.y+kStatusCard.h/2,kStatusCard.w-32,note_color);
+  }else{
+    const int status_width=kStatusCard.w-32;
+    if(g_layout.legacy||kStatusCard.w>=1000){
+      const int metrics_y=kStatusCard.y+(g_layout.legacy?30:kStatusCard.h/3);
+      const int note_y=kStatusCard.y+(g_layout.legacy?70:kStatusCard.h*2/3);
+      fitted_text(combined,status_x,metrics_y,status_width,TFT_WHITE,2,middle_left);
+      fitted_text(note,status_x,note_y,status_width,note_color,2,middle_left);
+    }else{
+      const char* compact_note=!g_snapshot.location_configured
+          ? "No receiver location; airport-bank scan disabled."
+          : !g_snapshot.catalog_loaded
+              ? "Aviation data unavailable; full-band scan works."
+              : "Airport bank is catalog context, not RF-decoded.";
+      const uint16_t compact_color=g_snapshot.location_configured&&g_snapshot.catalog_loaded?kGreen:kAmber;
+      fitted_text(counts,status_x,kStatusCard.y+12,status_width,TFT_WHITE,2,middle_left);
+      fitted_text(settings,status_x,kStatusCard.y+29,status_width,TFT_WHITE,2,middle_left);
+      fitted_text(compact_note,status_x,kStatusCard.y+46,status_width,compact_color,2,middle_left);
+    }
+  }
 }
 
 void draw_listen() {
@@ -458,11 +495,15 @@ void draw_scan_status() {
   std::snprintf(value, sizeof(value), "%s   target %.3f MHz",
                 state_name(g_snapshot.scan_state),
                 mhz(g_snapshot.frequency_hz));
-  text(value,g_layout.legacy?44:g_layout.scan_status.x+16,g_layout.legacy?208:g_layout.scan_status.y+30,state_color(),g_layout.scan_status.h<80?2:3,middle_left);
+  const int text_x=g_layout.legacy?44:g_layout.scan_status.x+16;
+  const int text_width=g_layout.legacy?900:g_layout.scan_status.w-80;
+  if(g_layout.portrait)fitted_text(value,text_x,g_layout.scan_status.y+24,text_width,state_color(),2,middle_left);
+  else fitted_text(value,text_x,g_layout.legacy?208:g_layout.scan_status.y+30,text_width,state_color(),g_layout.scan_status.h<80?2:3,middle_left);
   std::snprintf(value, sizeof(value), "%s   %s   SQL +%d dB",
                 source_name(g_snapshot.scan.source), spacing_name(g_snapshot.scan.spacing),
                 static_cast<int>(g_snapshot.scan.squelch_db));
-  text(value,g_layout.legacy?44:g_layout.scan_status.x+16,g_layout.legacy?252:g_layout.scan_status.y+g_layout.scan_status.h-24,kMuted,2,middle_left);
+  if(g_layout.portrait)wrapped_detail(value,text_x,g_layout.scan_status.y+52,text_width,kMuted);
+  else fitted_text(value,text_x,g_layout.legacy?252:g_layout.scan_status.y+g_layout.scan_status.h-24,text_width,kMuted,2,middle_left);
   button(g_layout.scan_toggle,
          g_snapshot.scan_state == ScanState::off ? "START SCAN" : "STOP SCAN",
          g_snapshot.scan_state != ScanState::off);
@@ -486,9 +527,11 @@ void draw_scan_bank() {
   button(g_layout.scan_previous,"<",false,g_bank_page>0);
   button(g_layout.scan_page,"PAGE",false,true,1);
   button(g_layout.scan_next,">",false,g_bank_page+1<pages);
-  if (rows == 0)
-    text("No airport bank loaded. Switch to FULL BAND or reload the FAA data pack.",
-         640, 430, kAmber, 2);
+  if (rows == 0){
+    constexpr const char* empty="No airport bank loaded. Switch to FULL BAND or reload the FAA data pack.";
+    if(g_layout.legacy)text(empty,640,430,kAmber,2);
+    else wrapped_detail(empty,g_layout.content.x+12,g_layout.content.y+g_layout.content.h/2,g_layout.content.w-24,kAmber);
+  }
 }
 
 void draw_scan() {
@@ -511,30 +554,34 @@ void draw_airports() {
   button(g_layout.airport_radius,radius_label,false,g_snapshot.location_configured);
   char value[128];
   if (!g_snapshot.location_configured) {
-    const Rect body{g_layout.content.x+8,g_layout.airport_radius.y+g_layout.airport_radius.h+12,g_layout.content.w-16,g_layout.content.h-120};card(body);
-    text("RECEIVER LOCATION NOT SET",cx(body),body.y+body.h/4,kAmber,3);
-    text("Set one OrcSDR receiver location for Airband, ADS-B, and OrcMaps.",cx(body),body.y+body.h/2,TFT_WHITE,2);
-    text("Airport-bank scanning disabled; manual tuning and full-band scan remain available.",cx(body),body.y+3*body.h/4,kMuted,2);
+    const int body_y=g_layout.airport_radius.y+g_layout.airport_radius.h+12;
+    const Rect body{g_layout.content.x+8,body_y,g_layout.content.w-16,g_layout.content.y+g_layout.content.h-body_y-16};card(body);
+    fitted_text("RECEIVER LOCATION NOT SET",cx(body),body.y+body.h/4,body.w-32,kAmber,g_layout.portrait?2:3,middle_center);
+    const char* guidance="Set one OrcSDR receiver location for Airband, ADS-B, and OrcMaps.";
+    const char* availability="Airport-bank scanning disabled; manual tuning and full-band scan remain available.";
+    if(g_layout.portrait){wrapped_detail(guidance,body.x+16,body.y+body.h/2,body.w-32,TFT_WHITE);wrapped_detail(availability,body.x+16,body.y+3*body.h/4,body.w-32,kMuted);}
+    else {fitted_text(guidance,cx(body),body.y+body.h/2,body.w-32,TFT_WHITE,2,middle_center);fitted_text(availability,cx(body),body.y+3*body.h/4,body.w-32,kMuted,2,middle_center);}
     return;
   }
   if (!g_snapshot.catalog_loaded || g_snapshot.catalog_count == 0) {
-    const Rect body{g_layout.content.x+8,g_layout.airport_radius.y+g_layout.airport_radius.h+12,g_layout.content.w-16,g_layout.content.h-120};card(body);
+    const int body_y=g_layout.airport_radius.y+g_layout.airport_radius.h+12;
+    const Rect body{g_layout.content.x+8,body_y,g_layout.content.w-16,g_layout.content.y+g_layout.content.h-body_y-16};card(body);
     switch (g_snapshot.load_result) {
       case LoadResult::no_matching_entries:
-        text("NO AVIATION DATA NEAR THIS LOCATION",cx(body),body.y+body.h/3,kAmber,3);
-        text("Nothing in the catalog is inside the radius shown above.",cx(body),body.y+body.h/2,TFT_WHITE,2);
-        text("Increase radius, or use manual tuning / full-band scan.",cx(body),body.y+2*body.h/3,kMuted,2);
+        fitted_text("NO AVIATION DATA NEAR THIS LOCATION",cx(body),body.y+body.h/3,body.w-32,kAmber,g_layout.portrait?2:3,middle_center);
+        fitted_text("Nothing in the catalog is inside the radius shown above.",cx(body),body.y+body.h/2,body.w-32,TFT_WHITE,2,middle_center);
+        fitted_text("Increase radius, or use manual tuning / full-band scan.",cx(body),body.y+2*body.h/3,body.w-32,kMuted,2,middle_center);
         break;
       case LoadResult::bad_header:
       case LoadResult::unsupported_rows:
-        text("AVIATION DATA FORMAT NOT SUPPORTED",cx(body),body.y+body.h/3,kAmber,3);
-        text("Installed file is not an ORCAIR2 airport catalog.",cx(body),body.y+body.h/2,TFT_WHITE,2);
-        text("See docs/airband/README.md for the catalog path.",cx(body),body.y+2*body.h/3,kMuted,2);
+        fitted_text("AVIATION DATA FORMAT NOT SUPPORTED",cx(body),body.y+body.h/3,body.w-32,kAmber,g_layout.portrait?2:3,middle_center);
+        fitted_text("Installed file is not an ORCAIR2 airport catalog.",cx(body),body.y+body.h/2,body.w-32,TFT_WHITE,2,middle_center);
+        fitted_text("See docs/airband/README.md for the catalog path.",cx(body),body.y+2*body.h/3,body.w-32,kMuted,2,middle_center);
         break;
       default:
-        text("AVIATION DATA NOT INSTALLED",cx(body),body.y+body.h/3,kAmber,3);
-        text("Expected: /orcsdr/data/aviation.idx (ORCAIR2).",cx(body),body.y+body.h/2,TFT_WHITE,2);
-        text("Manual tuning and full-band scan remain available.",cx(body),body.y+2*body.h/3,kMuted,2);
+        fitted_text("AVIATION DATA NOT INSTALLED",cx(body),body.y+body.h/3,body.w-32,kAmber,g_layout.portrait?2:3,middle_center);
+        fitted_text("Expected: /orcsdr/data/aviation.idx (ORCAIR2).",cx(body),body.y+body.h/2,body.w-32,TFT_WHITE,2,middle_center);
+        fitted_text("Manual tuning and full-band scan remain available.",cx(body),body.y+2*body.h/3,body.w-32,kMuted,2,middle_center);
         break;
     }
     return;
@@ -571,9 +618,12 @@ void draw_activity() {
   page_title("ACTIVITY", "Bounded local log of transmissions that opened the airband scanner.");
   button(g_layout.activity_clear,"CLEAR LOG",false,g_snapshot.activity_count!=0);
   if (g_snapshot.activity_count == 0) {
-    const Rect body{g_layout.content.x+8,g_layout.activity_clear.y+g_layout.activity_clear.h+12,g_layout.content.w-16,g_layout.content.h-120};card(body);
-    text("NO AIRBAND ACTIVITY LOGGED YET",cx(body),body.y+body.h/3,TFT_WHITE,3);
-    text("Completed transmissions show frequency, duration, peak level, and station label.",cx(body),body.y+2*body.h/3,kMuted,2);
+    const int body_y=g_layout.activity_clear.y+g_layout.activity_clear.h+12;
+    const Rect body{g_layout.content.x+8,body_y,g_layout.content.w-16,g_layout.content.y+g_layout.content.h-body_y-16};card(body);
+    fitted_text("NO AIRBAND ACTIVITY LOGGED YET",cx(body),body.y+body.h/3,body.w-32,TFT_WHITE,g_layout.portrait?2:3,middle_center);
+    const char* note="Completed transmissions show frequency, duration, peak level, and station label.";
+    if(g_layout.portrait)wrapped_detail(note,body.x+16,body.y+2*body.h/3,body.w-32,kMuted);
+    else fitted_text(note,cx(body),body.y+2*body.h/3,body.w-32,kMuted,2,middle_center);
     return;
   }
   char value[128];
@@ -692,24 +742,29 @@ void draw_detail_overlay(){
   const Rect box=g_layout.detail_overlay;
   card(box,kYellow);
   button(g_layout.detail_close,"X",false,true,2);
-  const int x=box.x+16,line=box.y+54,step=30,max_width=box.w-32;
+  const int x=box.x+16,max_width=box.w-32;
+  int cursor=box.y+54;
   char text_value[120];
+  const auto add_wrapped=[&](const char* value,uint16_t color){
+    const int lines=wrapped_detail(value,x,cursor,max_width,color);
+    cursor+=std::max(1,lines)*26+4;
+  };
   if(g_detail_kind==DetailKind::catalog&&g_detail_index<g_snapshot.catalog_count){
     const auto&e=g_snapshot.catalog[g_detail_index];
-    std::snprintf(text_value,sizeof(text_value),"%.3f MHz   %s",mhz(e.frequency_hz),service_name(e.service));text(text_value,x,line,TFT_WHITE,2,middle_left);
-    wrapped_detail(e.airport_name,x,line+step,max_width,kCyan);
-    std::snprintf(text_value,sizeof(text_value),"%s  %s  callsign %s",e.country,e.airport_ident,e.callsign);wrapped_detail(text_value,x,line+2*step,max_width,TFT_WHITE);
-    std::snprintf(text_value,sizeof(text_value),"%s  %.1f nm  source %s",source_class_name(e.source_class),double(e.distance_nm),e.source);wrapped_detail(text_value,x,line+3*step,max_width,kMuted);
-    std::snprintf(text_value,sizeof(text_value),"Location E7: %ld, %ld",static_cast<long>(e.latitude_e7),static_cast<long>(e.longitude_e7));text(text_value,x,line+4*step,kMuted,2,middle_left);
-    wrapped_detail(e.label,x,line+5*step,max_width,TFT_WHITE);
+    std::snprintf(text_value,sizeof(text_value),"%.3f MHz   %s",mhz(e.frequency_hz),service_name(e.service));add_wrapped(text_value,TFT_WHITE);
+    add_wrapped(e.airport_name,kCyan);
+    std::snprintf(text_value,sizeof(text_value),"%s  %s  callsign %s",e.country,e.airport_ident,e.callsign);add_wrapped(text_value,TFT_WHITE);
+    std::snprintf(text_value,sizeof(text_value),"%s  %.1f nm  source %s",source_class_name(e.source_class),double(e.distance_nm),e.source);add_wrapped(text_value,kMuted);
+    std::snprintf(text_value,sizeof(text_value),"Location E7: %ld, %ld",static_cast<long>(e.latitude_e7),static_cast<long>(e.longitude_e7));add_wrapped(text_value,kMuted);
+    add_wrapped(e.label,TFT_WHITE);
   }else if(g_detail_kind==DetailKind::bank&&g_detail_index<g_snapshot.bank_count){
-    const auto&e=g_snapshot.bank[g_detail_index];std::snprintf(text_value,sizeof(text_value),"%.3f MHz",mhz(e.frequency_hz));text(text_value,x,line,TFT_WHITE,2,middle_left);
-    wrapped_detail(e.label,x,line+step,max_width,kCyan);
-    std::snprintf(text_value,sizeof(text_value),"Airport distance: %.1f nm",double(e.distance_nm));text(text_value,x,line+2*step,kMuted,2,middle_left);
+    const auto&e=g_snapshot.bank[g_detail_index];std::snprintf(text_value,sizeof(text_value),"%.3f MHz",mhz(e.frequency_hz));add_wrapped(text_value,TFT_WHITE);
+    add_wrapped(e.label,kCyan);
+    std::snprintf(text_value,sizeof(text_value),"Airport distance: %.1f nm",double(e.distance_nm));add_wrapped(text_value,kMuted);
   }else if(g_detail_kind==DetailKind::activity&&g_detail_index<g_snapshot.activity_count){
-    const auto&e=g_snapshot.activity[g_detail_index];std::snprintf(text_value,sizeof(text_value),"%.3f MHz   start %lu ms",mhz(e.frequency_hz),static_cast<unsigned long>(e.start_ms));text(text_value,x,line,TFT_WHITE,2,middle_left);
-    std::snprintf(text_value,sizeof(text_value),"Duration %.1f s  Peak SNR %.1f dB",double(e.duration_ms)/1000.0,double(e.peak_snr_db));text(text_value,x,line+step,kGreen,2,middle_left);
-    wrapped_detail(e.label,x,line+2*step,max_width,kCyan);
+    const auto&e=g_snapshot.activity[g_detail_index];std::snprintf(text_value,sizeof(text_value),"%.3f MHz   start %lu ms",mhz(e.frequency_hz),static_cast<unsigned long>(e.start_ms));add_wrapped(text_value,TFT_WHITE);
+    std::snprintf(text_value,sizeof(text_value),"Duration %.1f s  Peak SNR %.1f dB",double(e.duration_ms)/1000.0,double(e.peak_snr_db));add_wrapped(text_value,kGreen);
+    add_wrapped(e.label,kCyan);
   }
 }
 
