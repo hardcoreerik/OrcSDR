@@ -16,3 +16,11 @@ Run the focused actual-translation-unit fixture with
 `apps/orcsdr-tab5/tools/run-lora-payload-wasm-test.ps1`. In an isolated worktree
 without the portable decoder shims, pass `-SupportRepo` pointing at a checkout
 that contains `apps/orcsdr-web/decoders/shim_host` and `shim_portable`.
+
+The parent integration checkout passed the default runner after importing the
+CRLF normalization fix. The fixture compiles the real decoder translation unit
+and checks plaintext, a known default-key ciphertext, unknown encrypted content,
+null/invalid lengths, cleared rejected output, and unchanged IQ workspace bytes.
+The mounts are read-only; compilation/execution use the container's temporary
+directory. These software checks do not prove CRC reception on the radio or
+end-to-end message display; the hardware RX adapter is still to be wired.
