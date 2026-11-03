@@ -27,6 +27,7 @@
 #include "screen_snap.hpp"
 #include "ui_support.hpp"
 #include "wifi_app.hpp"
+#include "network_clock.hpp"
 #include "c6_recovery_app.hpp"
 #include "waterfall_style.hpp"
 
@@ -680,6 +681,7 @@ void ui_task(void*) {
       }
       {
         const bool wifi_now = wifi_app::status().connected;
+        network_clock::service(wifi_now);
         if (wifi_now != last_wifi) {
           last_wifi = wifi_now;
           ++g_status_rev;

@@ -139,6 +139,8 @@ struct State {
   char build_identity[40]{};
   uint32_t uptime_seconds = 0;
   bool rtc_valid = false;
+  // Legacy rtc_* fields also carry system UTC on profiles without RTC support.
+  bool clock_hardware_backed = true;
   char rtc_utc[24]{};
   // Clock setup: the hardware RTC holds UTC; the offset (minutes east of UTC) gives the local time.
   int16_t utc_offset_minutes = 0;

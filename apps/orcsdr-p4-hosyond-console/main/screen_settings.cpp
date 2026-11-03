@@ -26,6 +26,9 @@
 #include "settings_app.hpp"
 #include "wifi_app.hpp"
 #include "web_server.hpp"
+#include "network_clock.hpp"
+#include "clock_settings.hpp"
+#include "ui_support.hpp"
 
 namespace {
 namespace st = orcsdr::settings;
@@ -94,6 +97,7 @@ void load() {
     g_state.sound_default = s.get_bool("sound", true);
     g_state.auto_start_reception = s.get_bool("autostart", true);
     g_state.graphics_default = s.get_bool("graphics", true);
+    g_state.utc_offset_minutes = orcsdr::clock_settings::clamp_offset(s.get_i32("tz_offset",0));
     s.end();
   }
   g_loaded = true;
@@ -107,6 +111,7 @@ void save() {
   s.put_bool("sound", g_state.sound_default);
   s.put_bool("autostart", g_state.auto_start_reception);
   s.put_bool("graphics", g_state.graphics_default);
+  s.put_i32("tz_offset",g_state.utc_offset_minutes);
   s.end();
 }
 
@@ -125,6 +130,16 @@ const st::State& build() {
   g_state.rtl_usb_safe_mode = esp_rtl_sdr_usb_safe_mode_active();
   g_state.battery_level = M5.Power.getBatteryLevel();
   g_state.uptime_seconds = static_cast<uint32_t>(esp_timer_get_time() / 1000000);
+  const auto clock=network_clock::status();
+  g_state.clock_hardware_backed=false;
+  g_state.rtc_epoch=ui_support::utc_epoch();
+  g_state.rtc_valid=clock.wallclock_valid;
+  g_state.rtc_utc[0]=g_state.rtc_local[0]=0;
+  if(g_state.rtc_valid) {
+    orcsdr::clock_settings::format_local(g_state.rtc_utc,sizeof(g_state.rtc_utc),g_state.rtc_epoch,0);
+    orcsdr::clock_settings::format_local(g_state.rtc_local,sizeof(g_state.rtc_local),g_state.rtc_epoch,g_state.utc_offset_minutes);
+  }
+  g_state.ntp_state=clock.syncing?1:clock.failed?3:clock.last_success_utc?2:0;
   std::snprintf(g_state.build_identity, sizeof(g_state.build_identity), "P4 console %s", __DATE__);
   {
     const wifi_app::Status w = wifi_app::status();
@@ -268,7 +283,16 @@ void tap(int x, int y) {
       wifi_app::forget();
       break;
     case st::ActionKind::location_changed: save_location(st::state()); break;
-    default: break;  // catalog, companion, clock: not available on this target yet
+    case st::ActionKind::clock_ntp_sync: (void)network_clock::request_sync(); break;
+    case st::ActionKind::clock_set_utc:
+      if(!network_clock::request_set_utc(a.utc))break;
+      [[fallthrough]];
+    case st::ActionKind::clock_offset_changed:
+      if(orcsdr::clock_settings::valid_offset(a.value)) {
+        g_state.utc_offset_minutes=int16_t(a.value);save();
+      }
+      break;
+    default: break;  // catalog and companion actions remain unimplemented
   }
 }
 }  // namespace

@@ -274,3 +274,56 @@ Luna tasks receive narrow file ownership; no agent flashes or accesses the devic
   backend regressions with ASan/UBSan, strict warnings and production source.
   No full FT8 suite or physical reception test was run for this source-list
   checkpoint. Currently installed GNSS/RX firmware remains unchanged.
+
+## P4 system UTC integration checkpoint
+
+- Shared clock freshness policy now drives a P4-local asynchronous SNTP
+  adapter; no M5 RTC calls or RTC persistence claims. Existing Settings clock
+  editor supports queued network sync/manual UTC and persistent UTC offset.
+  `RTL_CLOCK STATUS`, authenticated `SYNC`, and authenticated `SET <epoch>`
+  use the same clock owner/validation. Serial offset editing remains a gap.
+- `wsl bash tools/test-p4-network-clock.sh` passed actual adapter tests under
+  ASan/UBSan and shared policy tests: timeout/backoff, explicit offline request
+  retention, reconnect, foreign owner, supported UTC bounds, manual-set error
+  and trust invalidation. `python tests/test_settings_clock_recording.py`
+  passed 6 tests; `python tests/test_settings_system_clock_layout.py` passed.
+- Native build and app flash passed for ELF
+  `88538295a6a46a0ae535d15241815a7f551827fabb55d32801c2473546a57590`,
+  archived privately under `.local/diagnostics/network-clock/`. On-device
+  NTP established fresh UTC; manual set changed revision 1->2 and cleared
+  `last_sync_utc`; explicit resync restored fresh UTC/revision 3. Unauthenticated
+  sync was rejected. Private log `.local/network-clock-device.log`.
+- Initial 24-second polling window ended before Wi-Fi connected; a later
+  read confirmed connection and automatic NTP success. This does not close
+  Wi-Fi cold-boot/retry acceptance. At 75 seconds RTL streaming 2,399,953
+  samples/s, muted audio dropped=0 / underruns=109 unchanged during clock
+  checks, GNSS framing with no rejects/read errors and no satellite fix.
+- Actual clock captures in `.local/captures/network-clock-r3/` show both
+  orientations. Earlier capture attempts opened the wrong section because
+  Settings enters Display/Audio, not Connectivity; they are not clock QA.
+  Portrait showed a clipped offset label, now shortened to ZONE in the
+  compact renderer; final rebuild and recapture passed. Existing
+  Tab5 labels and hardware-clock behavior retain their defaults.
+
+- Final label build/app flash passed; installed ELF matches private archive
+  `.local/diagnostics/network-clock-label/`:
+  `da819adf0572c2b4128f27099e175b90ee108c97c3b0e93f7ee1a0f54eaa2057`.
+  Four native PNGs and identity sidecars in
+  `.local/captures/network-clock-final/` cover System and clock editor in both
+  orientations during offline/unset startup. ZONE is readable without overlap;
+  landscape controls fit. A raw-pixel retained-header comparison passed between
+  portrait System/editor captures. These are framebuffer checks, not human
+  physical acceptance or proof of UI save/offset persistence across reboot.
+- Final post-capture sample at 32 seconds: RTL streaming 2,399,566 samples/s,
+  GNSS framing/no fix, muted audio dropped=0 / underruns=289. Increased
+  underruns during capture remain separate from earlier unchanged NTP-test
+  evidence and do not close audio continuity. Wi-Fi/NTP not up at this early
+  final-build sample; automatic sync qualification is recorded separately.
+
+- At 61 seconds on the final build, automatic network sync is device-verified:
+  valid UTC, shared level synced, age 15 seconds, attempts=1, revision=1,
+  no clock failure. RTL streaming 2,399,833 samples/s and muted underruns
+  remained 289 after return to Home. Private log
+  `.local/network-clock-final-device.log`. Human clock-control acceptance,
+  manual save/zone persistence device checks, serial zone parity, NTP
+  outages/reconnect soak and FT8 readiness integration remain open.

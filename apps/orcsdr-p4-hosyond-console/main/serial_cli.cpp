@@ -42,6 +42,7 @@
 #include "orcsdr_sx126x.h"
 #include "packet_radio_service.hpp"
 #include "gnss_service.hpp"
+#include "network_clock.hpp"
 #include "cJSON.h"
 
 namespace {
@@ -181,6 +182,7 @@ void cmd_help() {
   std::printf("RTL_PACKET STATUS | LAST | RX <Hz> EXTERNAL|INTERNAL | STOP - SX1262 LongFast (auth)\n");
   std::printf("RTL_HEALTH [STATUS|BUILD|HEAP_CHECK]             - development diagnostics\n");
   std::printf("RTL_GNSS STATUS                                - passive receiver health; no coordinates\n");
+  std::printf("RTL_CLOCK STATUS | SYNC | SET <UTC seconds>     - system UTC; changes require auth\n");
   std::printf("RTL_STATUS                                      - receiver state\n");
   std::printf("RTL_C6_ROM STATUS                               - read-only embedded recovery package status\n");
   std::printf("RTL_FREQ | RTL_FREQ <HZ>                         - query / hot retune (auth)\n");
@@ -864,6 +866,27 @@ void handle_line(char* line) {
       unsigned(s.bytes_read),unsigned(s.sentences),unsigned(s.fixes),unsigned(s.no_fixes),
       unsigned(s.rejected),unsigned(s.ignored),unsigned(s.read_errors),s.current_fix_usable,
       s.last_valid_fix_available,unsigned(s.fix_age_ms),esp_err_to_name(s.last_error),esp_err_to_name(s.cleanup_error));
+    return;
+  }
+  if (!std::strcmp(line,"RTL_CLOCK STATUS")) {
+    const auto s=network_clock::status();
+    std::printf("RTL_CLOCK_STATUS valid=%d level=%u age_s=%u last_sync_utc=%u syncing=%d failed=%d error=%u attempts=%u revision=%u\n",
+      s.wallclock_valid,unsigned(s.level),unsigned(s.freshness_age_s),unsigned(s.last_success_utc),
+      s.syncing,s.failed,unsigned(s.last_error),unsigned(s.attempts),unsigned(s.time_step_revision));
+    return;
+  }
+  if (!std::strcmp(line,"RTL_CLOCK SYNC")) {
+    if(!authed()){std::printf("RTL_CLOCK_ERROR auth_required\n");return;}
+    std::printf(network_clock::request_sync()?"RTL_CLOCK_SYNC_QUEUED\n":"RTL_CLOCK_ERROR busy\n");
+    return;
+  }
+  if (!std::strncmp(line,"RTL_CLOCK SET ",14)) {
+    if(!authed()){std::printf("RTL_CLOCK_ERROR auth_required\n");return;}
+    unsigned long long utc=0;char extra=0;
+    if(std::sscanf(line+14,"%llu %c",&utc,&extra)!=1 || utc>UINT32_MAX) {
+      std::printf("RTL_CLOCK_ERROR invalid_epoch\n");return;
+    }
+    std::printf(network_clock::request_set_utc(uint32_t(utc))?"RTL_CLOCK_SET_QUEUED\n":"RTL_CLOCK_ERROR invalid_or_busy\n");
     return;
   }
   if (std::strncmp(line,"RTL_PACKET ",11)==0) return cmd_packet_service(line+11);

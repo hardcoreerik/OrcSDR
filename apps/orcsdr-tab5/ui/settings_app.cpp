@@ -1138,6 +1138,12 @@ const char* compact_clock_note() {
                                 : "No Wi-Fi needed; set the time by hand.";
 }
 
+const char* clock_storage_note() {
+  return g_state.clock_hardware_backed
+      ? "The hardware clock holds UTC; the time zone is only an offset."
+      : "System UTC; Wi-Fi sets time after boot. The time zone is only an offset.";
+}
+
 void draw_compact_system() {
   page_index() = std::min(page_index(), page_count() - 1);
   const auto layout = make_system_layout(g_layout.content, page_index());
@@ -1164,8 +1170,9 @@ void draw_compact_system() {
                                     ? TFT_ORANGE : TFT_WHITE);
     } else {
       draw_system_power();
-      wrapped_text(g_state.rtc_valid ? "The hardware clock holds UTC; the time zone is only an offset."
-                                     : "Tap SET CLOCK, or use USB time synchronization.",
+      wrapped_text(g_state.rtc_valid ? clock_storage_note()
+                                     : (g_state.clock_hardware_backed ? "Tap SET CLOCK, or use USB time synchronization."
+                                      : "Tap SET CLOCK; sync over Wi-Fi or set system UTC."),
                    layout.note, g_state.rtc_valid ? TFT_LIGHTGREY : TFT_ORANGE);
     }
     draw_display_footer();
@@ -1197,8 +1204,9 @@ void draw_compact_system() {
     draw_compact_system_row(layout.status[i], status_labels[i], status_values[i],
                             (i == 0 && !local_known) || (i == 1 && !g_state.rtc_valid)
                                 ? TFT_ORANGE : TFT_WHITE);
-  wrapped_text(g_state.rtc_valid ? "The hardware clock holds UTC; the time zone is only an offset."
-                                 : "Tap SET CLOCK, or USB: python tools/sync_tab5_rtc.py COMx",
+  wrapped_text(g_state.rtc_valid ? clock_storage_note()
+                                 : (g_state.clock_hardware_backed ? "Tap SET CLOCK, or USB: python tools/sync_tab5_rtc.py COMx"
+                                      : "Tap SET CLOCK; sync over Wi-Fi or set system UTC."),
                layout.note, g_state.rtc_valid ? TFT_LIGHTGREY : TFT_ORANGE);
 }
 
@@ -1206,8 +1214,9 @@ void draw_compact_system_clock_values() {
   const auto layout = make_system_layout(g_layout.content, page_index());
   if (layout.shallow && layout.page == 1) {
     M5.Display.fillRect(layout.note.x,layout.note.y,layout.note.w,layout.note.h,kBg);
-    wrapped_text(g_state.rtc_valid ? "The hardware clock holds UTC; the time zone is only an offset."
-                                   : "Tap SET CLOCK, or use USB time synchronization.",
+    wrapped_text(g_state.rtc_valid ? clock_storage_note()
+                                   : (g_state.clock_hardware_backed ? "Tap SET CLOCK, or use USB time synchronization."
+                                      : "Tap SET CLOCK; sync over Wi-Fi or set system UTC."),
                  layout.note, g_state.rtc_valid ? TFT_LIGHTGREY : TFT_ORANGE);
     return;
   }
@@ -1223,8 +1232,9 @@ void draw_compact_system_clock_values() {
                                 ? TFT_ORANGE : TFT_WHITE);
   if (!layout.shallow) {
     M5.Display.fillRect(layout.note.x,layout.note.y,layout.note.w,layout.note.h,kBg);
-    wrapped_text(g_state.rtc_valid ? "The hardware clock holds UTC; the time zone is only an offset."
-                                   : "Tap SET CLOCK, or USB: python tools/sync_tab5_rtc.py COMx",
+    wrapped_text(g_state.rtc_valid ? clock_storage_note()
+                                   : (g_state.clock_hardware_backed ? "Tap SET CLOCK, or USB: python tools/sync_tab5_rtc.py COMx"
+                                      : "Tap SET CLOCK; sync over Wi-Fi or set system UTC."),
                  layout.note, g_state.rtc_valid ? TFT_LIGHTGREY : TFT_ORANGE);
   }
 }
@@ -1250,8 +1260,9 @@ void draw_system() {
   value_row("UPTIME", value, 535);
   value_row("NETWORK", g_state.wifi_connected ? "CONNECTED" : "OFFLINE", 575);
   value_row("SD", g_state.sd_ready ? "READY" : "UNAVAILABLE", 615);
-  text(g_state.rtc_valid ? "The hardware clock holds UTC; the time zone is only an offset."
-                         : "Tap SET CLOCK, or USB: python tools/sync_tab5_rtc.py COMx",
+  text(g_state.rtc_valid ? clock_storage_note()
+                         : (g_state.clock_hardware_backed ? "Tap SET CLOCK, or USB: python tools/sync_tab5_rtc.py COMx"
+                                      : "Tap SET CLOCK; sync over Wi-Fi or set system UTC."),
        330, 660, g_state.rtc_valid ? TFT_LIGHTGREY : TFT_ORANGE, 2);
 }
 
@@ -1345,7 +1356,7 @@ void draw_compact_clock_editor() {
     button("+", layout.field_plus[i], TFT_DARKCYAN);
   }
   const Rect offset_label = layout.offset_label;
-  text(g_layout.content.h < 320 ? "UTC OFFSET (TIME ZONE)" : "UTC OFFSET",
+  text(g_layout.content.h < 320 ? "UTC OFFSET (TIME ZONE)" : "ZONE",
        offset_label.x, offset_label.y + offset_label.h / 2, kMuted, 2);
   button("-", layout.offset_minus, TFT_DARKGREY);
   draw_compact_clock_offset_value();
