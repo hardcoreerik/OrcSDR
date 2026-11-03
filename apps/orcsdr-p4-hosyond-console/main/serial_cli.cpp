@@ -36,6 +36,8 @@
 #include "orcsdr_storage.hpp"
 #include "sd_card.hpp"
 #include "wifi_app.hpp"
+#include "web_server.hpp"
+#include "web_auth.hpp"
 
 namespace {
 constexpr char TAG[] = "SERIAL_CLI";
@@ -180,6 +182,7 @@ void cmd_help() {
   std::printf("RTL_LORA TX VIEW OPERATOR|MESSAGES|DUAL_RADIO     - LoRa TX Lab page (auth, queued to UI)\n");
   std::printf("RTL_HOME ACTION <name> [value] / RESULT <id>      - Home VFO queue (actions need auth)\n");
   std::printf("RTL_BATTERY STATUS                              - gauge validity/age and raw telemetry\n");
+  std::printf("RTL_WEB STATUS | ON | OFF | PASSWORD <8..64 chars> - local web setup (auth; password never echoed)\n");
   std::printf("RTL_SCREEN_STATUS / RTL_MEM STATUS / RTL_RX STATUS - diagnostics (RTL_RX: one line per receiver)\n");
   std::printf("SCREENSHOT                                      - screenshot as PNG over serial (auth)\n");
 }
@@ -749,10 +752,28 @@ void cmd_rx_status() {
   }
 }
 
+void cmd_web(char* args) {
+  if(!authed()){std::printf("RTL_WEB_ERROR auth_required\n");return;}
+  if(!std::strcmp(args,"STATUS")) {
+    const auto state=web_server::status();
+    std::printf("RTL_WEB_STATUS enabled=%d listening=%d url=%s default_password=%d sessions=%d ui_packaged=0\n",
+      state.enabled,state.listening,state.url,web_auth::default_password(),web_auth::active_sessions());
+  } else if(!std::strcmp(args,"ON")||!std::strcmp(args,"OFF")) {
+    const bool on=!std::strcmp(args,"ON");
+    if(web_server::set_enabled(on))std::printf("RTL_WEB_SAVED enabled=%d\n",on);
+    else std::printf("RTL_WEB_ERROR persistence_failed\n");
+  } else if(!std::strncmp(args,"PASSWORD ",9)) {
+    const bool saved=web_auth::set_password(args+9);
+    std::memset(args+9,0,std::strlen(args+9));
+    std::printf(saved?"RTL_WEB_PASSWORD_SAVED sessions_ended=1\n":"RTL_WEB_PASSWORD_ERROR invalid_or_persistence_failed\n");
+  } else std::printf("RTL_WEB_INVALID use STATUS|ON|OFF|PASSWORD <8..64 chars>\n");
+}
+
 void handle_line(char* line) {
   // Trim trailing whitespace.
   size_t n = std::strlen(line);
-  while (n && (line[n - 1] == ' ' || line[n - 1] == '\r' || line[n - 1] == '\n')) line[--n] = '\0';
+  const bool web_password=!std::strncmp(line,"RTL_WEB PASSWORD ",17);
+  while (n && ((!web_password && line[n - 1] == ' ') || line[n - 1] == '\r' || line[n - 1] == '\n')) line[--n] = '\0';
   if (!n) return;
   if (authed()) touch_session();
 
@@ -763,6 +784,7 @@ void handle_line(char* line) {
     return;
   }
   if (std::strcmp(line, "RTL_HELP") == 0) return cmd_help();
+  if (std::strncmp(line,"RTL_WEB ",8)==0) return cmd_web(line+8);
   if (std::strncmp(line, "RTL_ORIENTATION ", 16) == 0) return cmd_orientation(line + 16);
   if (std::strcmp(line, "RTL_STATUS") == 0) return cmd_status();
   if (std::strcmp(line,"RTL_C6_ROM STATUS")==0) {

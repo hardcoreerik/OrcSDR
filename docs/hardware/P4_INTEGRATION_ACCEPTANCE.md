@@ -33,7 +33,7 @@ Legend: **partial** means implemented or checked only for the cited scope;
 | ADS-B metadata | Shared dashboard present | Layout captures only | Metadata backend, populated display and actual reception |
 | LoRa logs/history/messages/live IQ | RX pipeline exists; TX UI states unavailable backend truthfully | TX UI captures only | Real persistence, composition/activity and independent IQ wiring |
 | Shortwave hunt/DSP/storage | Shared action definitions; P4 marks unsupported functions unavailable | Layout captures, no service acceptance | Wire supported services and verify actual results |
-| Existing M5GFX/WASM web UI | Source runtime identified at `3fd448c`; newer roadmap `de374cc` | Source-branch reports are not this target's evidence | Selective runtime/assets integration, shared state/actions, auth, browser workflows, audio/IQ |
+| Existing M5GFX/WASM web UI | Auth/server/control modules integrated; state and persistence tests pass; bundle not yet packaged | Real HTTP auth, rejection/replay checks, signed Home step-up/down and applied-frequency receipts passed | Existing assets, other shared routes, native password editor, browser workflows and audio/IQ |
 | Automatic/manual rotation | Profile-aware IMU logic and persistence implemented | Clockwise correction accepted | All four poses, gesture protection, fallback and persistence matrix |
 | Update-time rotation locking | Software guards exist | Open | Physical in-app critical-phase locks |
 | Every page PNG and readable populated UI | Multiple capture passes and recording tests | Sampled human acceptance | Remaining pages/overlays, populated/empty/error states and touch/focus checks |

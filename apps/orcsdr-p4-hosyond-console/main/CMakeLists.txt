@@ -16,6 +16,7 @@ if(C6_FIRMWARE_BIN AND EXISTS "${C6_FIRMWARE_BIN}")
     set(ORCSDR_C6_EMBEDDED 1)
 endif()
 idf_component_register(
+    # Existing authenticated web modules; browser bundle is packaged separately.
     SRCS "main.cpp" "present.cpp" "screen_snap.cpp" "serial_cli.cpp" "home_app.cpp" "radio_service.cpp" "audio_service.cpp" "screens.cpp" "screen_fm.cpp" "screen_am.cpp" "screen_cb.cpp" "screen_airband.cpp" "screen_shortwave.cpp" "screen_rflab.cpp" "screen_settings.cpp" "screen_pocsag.cpp" "screen_wifi.cpp" "screen_adsb.cpp" "screen_acars.cpp" "screen_lora.cpp" "ui_support.cpp" "iq_tap.cpp" "wifi_app.cpp" "sd_card.cpp"
          "${TAB5_UI}/home_dashboard.cpp" "${TAB5_UI}/dashboard_audio_control.cpp"
          "${TAB5_UI}/freq_keypad.cpp" "${TAB5_UI}/focus_nav.cpp" "${TAB5_UI}/waterfall_style.cpp"
@@ -61,7 +62,7 @@ idf_component_register(
          "${TAB5_UI}/fm_dashboard.cpp" "${TAB5_UI}/fm_config.cpp"
     INCLUDE_DIRS "." "${WS4B}" "${TAB5_UI}"
     REQUIRES orcsdr_c6_rom_update esp_rtl_sdr esp_psram esp_timer esp_driver_uart esp_app_format esp_rom mbedtls heap nvs_flash
-             json orcmaps esp_http_client esp_https_ota app_update esp_http_server esp_driver_jpeg orcsdr_board_hosyond orcsdr_gfx_compat orcsdr_audio_dsp orcsdr_orientation espressif__esp-dsp espressif__esp_hosted espressif__esp_wifi_remote esp_wifi esp_netif esp_event fatfs sdmmc esp_driver_gptimer esp_driver_sdmmc esp_driver_gpio vfs esp_mm
+             json orcmaps esp_http_client esp_https_ota app_update esp_http_server lwip esp_driver_jpeg orcsdr_board_hosyond orcsdr_gfx_compat orcsdr_audio_dsp orcsdr_orientation espressif__esp-dsp espressif__esp_hosted espressif__esp_wifi_remote esp_wifi esp_netif esp_event fatfs sdmmc esp_driver_gptimer esp_driver_sdmmc esp_driver_gpio vfs esp_mm
     EMBED_FILES ${ORCSDR_EMBED_FILES}
 )
 # Sources that name the drawing target as lgfx::LovyanGFX* (see the M5Unified.h shim).
@@ -69,6 +70,7 @@ set_source_files_properties(
     "${TAB5_UI}/acars_dashboard.cpp" "${TAB5_UI}/dead_air_dashboard.cpp" "${TAB5_UI}/ft8_dashboard.cpp"
     PROPERTIES COMPILE_DEFINITIONS "ORCSDR_LOVYANGFX_IS_SCALED;ORCSDR_NO_RAW_BUFFERS")
 target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)
+target_sources(${COMPONENT_LIB} PRIVATE "web_auth.cpp" "web_control.cpp" "web_server.cpp")
 target_sources(${COMPONENT_LIB} PRIVATE "orientation_app.cpp")
 target_compile_options(${COMPONENT_LIB} PRIVATE
     "$<$<COMPILE_LANGUAGE:CXX>:-include;orcsdr_p4_time.hpp>" "-DORCSDR_HAS_EMBEDDED_C6_FIRMWARE=${ORCSDR_C6_EMBEDDED}")

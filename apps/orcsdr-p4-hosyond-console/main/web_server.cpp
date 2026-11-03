@@ -1,6 +1,5 @@
 #include "web_server.hpp"
 
-#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -17,6 +16,7 @@
 #include "sdkconfig.h"
 #include "web_auth.hpp"
 #include "web_control.hpp"
+#include "web_server_state.hpp"
 #include "wifi_app.hpp"
 
 #ifndef ORCSDR_HAS_WEB_UI
@@ -60,10 +60,8 @@ const Asset kAssets[] = {
 #endif
 
 httpd_handle_t g_server = nullptr;
-std::atomic<bool> g_enabled{false};
-std::atomic<bool> g_listening{false};
+State g_state;
 char* g_json = nullptr;  // PSRAM; ESP HTTPD serializes requests for this server.
-char g_url[40] = "offline";
 
 bool current_ip(char out[16]) {
   out[0] = '\0';
@@ -343,8 +341,7 @@ void stop_server() {
   }
   heap_caps_free(g_json);
   g_json = nullptr;
-  g_listening = false;
-  std::snprintf(g_url, sizeof(g_url), "offline");
+  g_state.set_listening(false);
   ESP_LOGI(TAG, "RTL_WEB_STOPPED");
 }
 
@@ -397,9 +394,9 @@ bool start_server(const char* ip) {
     return false;
   }
 #endif
-  std::snprintf(g_url, sizeof(g_url), "http://%s/", ip);
-  g_listening = true;
-  ESP_LOGI(TAG, "RTL_WEB_LISTEN port=80 url=%s web_ui=%s", g_url, ORCSDR_HAS_WEB_UI ? "included" : "not included");
+  g_state.set_listening(true, ip);
+  const Status current = g_state.snapshot();
+  ESP_LOGI(TAG, "RTL_WEB_LISTEN port=80 url=%s web_ui=%s", current.url, ORCSDR_HAS_WEB_UI ? "included" : "not included");
   return true;
 }
 
@@ -412,12 +409,13 @@ void manager(void*) {
     const bool link = current_ip(ip);
     if (!link) link_up_since = 0;
     else if (!link_up_since) link_up_since = esp_timer_get_time();
-    const bool ready = g_enabled.load() && link && esp_timer_get_time() - link_up_since >= kLinkSettleUs;
-    if (g_listening.load() && (!ready || std::strcmp(serving_ip, ip) != 0)) {
+    const Status current = g_state.snapshot();
+    const bool ready = current.enabled && link && esp_timer_get_time() - link_up_since >= kLinkSettleUs;
+    if (current.listening && (!ready || std::strcmp(serving_ip, ip) != 0)) {
       stop_server();
       serving_ip[0] = '\0';
     }
-    if (ready && !g_listening.load() && start_server(ip)) std::snprintf(serving_ip, sizeof(serving_ip), "%s", ip);
+    if (ready && !g_state.snapshot().listening && start_server(ip)) std::snprintf(serving_ip, sizeof(serving_ip), "%s", ip);
   }
 }
 }  // namespace
@@ -430,28 +428,31 @@ bool same_site_request(httpd_req_t* req) {
 uint32_t peer_address(httpd_req_t* req) { return peer_address_impl(req); }
 
 void start() {
+  if (!g_state.claim_manager()) return;
   web_auth::init();
   orcsdr::NvsStore store;
   if (store.begin("orcsdr_web", true)) {
-    g_enabled = store.get_bool("enabled", false);
+    g_state.set_enabled_after_persist(store.get_bool("enabled", false), true);
     store.end();
   }
   BaseType_t result = xTaskCreate(manager, "web_mgr", 4096, nullptr, 3, nullptr);
-  if (result != pdPASS) ESP_LOGE(TAG, "manager task creation failed; server remains unavailable");
+  if (result != pdPASS) {
+    g_state.manager_creation_failed();
+    ESP_LOGE(TAG, "manager task creation failed; server remains unavailable");
+  }
 }
 
-void set_enabled(bool on) {
+bool set_enabled(bool on) {
   orcsdr::NvsStore store;
   if (!store.begin("orcsdr_web", false) || !store.put_bool("enabled", on)) {
     store.end();
     ESP_LOGE(TAG, "could not persist RTL_WEB setting");
-    return;
+    return false;
   }
   store.end();
-  g_enabled = on;
+  g_state.set_enabled_after_persist(on, true);
+  return true;
 }
 
-bool enabled() { return g_enabled.load(); }
-bool listening() { return g_listening.load(); }
-const char* url() { return g_url; }
+Status status() { return g_state.snapshot(); }
 }  // namespace web_server

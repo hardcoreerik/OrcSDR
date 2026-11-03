@@ -25,6 +25,7 @@
 #include "sd_card.hpp"
 #include "settings_app.hpp"
 #include "wifi_app.hpp"
+#include "web_server.hpp"
 
 namespace {
 namespace st = orcsdr::settings;
@@ -185,6 +186,10 @@ const st::State& build() {
   g_state.sd_free_bytes=sd.free_bytes;
   g_state.sd_capacity_known=sd.free_known;
   g_state.companion_supported = false;
+  const auto web=web_server::status();
+  g_state.web_console_enabled=web.enabled;
+  g_state.web_console_listening=web.listening;
+  std::snprintf(g_state.web_console_url,sizeof(g_state.web_console_url),"%s",web.url);
   return g_state;
 }
 
@@ -245,6 +250,7 @@ void tap(int x, int y) {
         (void)orcsdr::wifi::begin_c6_update();
       break;
     case st::ActionKind::wifi_power_changed: wifi_app::set_power(a.value != 0); break;
+    case st::ActionKind::web_console_changed: (void)web_server::set_enabled(a.value!=0);break;
     case st::ActionKind::wifi_start_at_boot_changed: wifi_app::set_start_at_boot(a.value != 0); break;
     case st::ActionKind::scan_wifi: (void)wifi_app::request_scan(); break;
     case st::ActionKind::connect_wifi: {

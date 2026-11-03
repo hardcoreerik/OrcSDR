@@ -50,6 +50,44 @@ The current `serial_cli.cpp` does not implement the `RTL_WEB` commands listed in
 
 ## Remaining adapters and validation gates
 
+## Integrated foundation validation — 2026-11-03
+
+The current P4 app compiles and starts the existing auth/server/control modules.
+Settings' existing web-console toggle and authenticated `RTL_WEB STATUS|ON|OFF`
+use the same persisted enable service. `RTL_WEB PASSWORD <8..64 characters>` is
+an authenticated local setup path, never echoes its argument, and ends web
+sessions only after credential persistence succeeds. There is no remote password
+reset. The native on-device password editor remains to be integrated.
+
+Server status is copied under a bounded lock rather than exposing its mutable
+URL buffer. Enable changes report persistence failure, and manager startup is
+guarded against duplicate task creation. These state-boundary checks passed via
+`wsl bash tools/test-p4-web-state.sh` (run from the repository directory).
+The test uses a host mutex and exercises the production state helper; it does
+not emulate the HTTP task or actual NVS storage.
+
+Both focused PowerShell host scripts above passed, including credential failure,
+migration, corruption and reboot-resolution cases. Crypto is stubbed in those
+persistence tests. ESP-IDF 5.5.4 build and COM32 app flash/hash verification also
+passed; local logs are `.local/web-foundation-build.log` and
+`.local/web-foundation-flash.log`.
+
+Real HTTP checks passed against the connected LilyGO: PBKDF2/HMAC login and
+device proof, unsigned action rejection, Host/Origin rejection, signed request,
+sequence replay rejection, invalid signature rejection, Home snapshot and signed
+logout. Signed Home step-up/down produced exact dispatch receipts and both
+requested/applied frequencies of 96.3 and 96.1 MHz. Device speaker volume/mute
+were not browser controls. RTL remained streaming at about 2.4 MS/s afterward;
+the audio diagnostic reported existing/startup underruns, so this short check
+does not qualify sustained audio continuity. Local evidence:
+`.local/web-foundation-device.log`, ending `WEB_FOUNDATION_DEVICE_PASS`.
+
+The test restored the original disabled server setting and Home frequency.
+No private password was changed. The browser bundle was not part of that build:
+page load, other routes, browser audio/IQ and native password setup remain open.
+
+## Remaining work
+
 1. Port read compatibility routes to current P4 snapshots: receiver inventory and rate, tuner/gain facts, FM/browser-audio status, report, spectrum, and time. Keep unavailable fields `null` or omit them; do not fabricate success.
 2. Adapt legacy control endpoints using current `radio` and Home APIs, with driver-derived tune limits and observable driver rejection. Add serial equivalents where user actions do not already have one.
 3. Design browser audio and IQ paths against current `radio::set_iq_sink` / `set_aux_iq_sink`, `audio_service`, and DSP ownership. They must remain separate from device speaker volume/mute and must not steal the Home IQ consumer.
