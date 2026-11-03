@@ -16,7 +16,7 @@ Legend: **OrcSDR** = the page calls an OrcSDR route that reaches the real receiv
 | 4 | `gain_auto`, `gain_tenth_db`, `rtl_agc` | handled | OrcSDR (`tuner/gain`, `tuner/agc`) | none |
 | 5 | `volume_up`, `volume_down`, `sound_toggle` | handled: the board's speaker | page-only: the browser's own volume (needs an audio session; otherwise a toast) | **intentional deviation**: owner wants browser audio never to change the board's volume or mute |
 | 6 | `step_size_up`, `step_size_down` | handled (`cycle_step_hz`, per band) | page-only (OrcSDR's Home step is not changed) | **gap**: needs a Home action on OrcSDR and the page calling it |
-| 7 | `mode_set` (0 AUTO, 1 NFM, 2 AM, 3 WFM, 4 USB, 5 LSB) | handled (pins the demodulator for the band) | toast: "Mode choice is shown only" | **gap**: OrcSDR already implements it; the page does not call it |
+| 7 | `mode_set` (0 AUTO, 1 NFM, 2 AM, 3 WFM, 4 USB, 5 LSB) | handled (pins the demodulator for the band) | OrcSDR (`POST /api/v1/home?action=mode_set`; a browser audio session follows live), since 2026-11-03 | none for the pick; the page keeps only the pin it set itself, per band, until state sync is decided |
 | 8 | `filter_set` (bandwidth Hz) | handled | AM screen: channel mode in the browser; elsewhere: toast / shown only | **gap** |
 | 9 | `filter_standard` | not in `home_app.cpp` | toast: "not applied by OrcSDR yet" | **gap** (not implemented on the P4 console either) |
 | 10 | `filter_edges` | not in `home_app.cpp` | page-only (draws the two filter lines) | likely UI-only; confirm on the Tab5 |

@@ -22,6 +22,7 @@
 #include "ui_support.hpp"
 #include "wifi_app.hpp"
 #include "waterfall_style.hpp"
+#include "web_audio.hpp"
 
 using namespace orcsdr;
 
@@ -176,6 +177,14 @@ void handle_action(const home::Action& a) {
       const auto choice = static_cast<home_vfo::Demod>(std::min<uint32_t>(a.value, 5));
       g_vfo.set_pin(p, choice);
       g_demod = choice;
+      if (p.mode != band_profile::Mode::none) {  // a browser audio session follows the pin without closing its socket
+        const home_vfo::Demod d = active_demod(p);
+        web_audio::set_mode(d == home_vfo::Demod::am    ? orcsdr::dsp::Mode::am
+                            : d == home_vfo::Demod::nfm ? orcsdr::dsp::Mode::nfm
+                            : d == home_vfo::Demod::usb ? orcsdr::dsp::Mode::usb
+                            : d == home_vfo::Demod::lsb ? orcsdr::dsp::Mode::lsb
+                                                        : orcsdr::dsp::Mode::wfm);
+      }
       g_vfo.note_band(p);
       ++g_tuner_rev;
       ++g_rev;

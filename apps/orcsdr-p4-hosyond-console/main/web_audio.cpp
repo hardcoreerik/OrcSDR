@@ -27,6 +27,7 @@ Result start(int, uint32_t, uint32_t, int, const char*, uint32_t, char* out, siz
 }
 void stop() {}
 bool set_volume(int) { return false; }
+void set_mode(orcsdr::dsp::Mode) {}
 Status status() { return Status{}; }
 bool available() { return false; }
 #else
@@ -52,6 +53,7 @@ struct Session {
 Session* g_sess = nullptr;
 radio::SinkHandle g_sink = -1;
 std::atomic<int> g_volume{30};
+std::atomic<int> g_mode_want{-1};  // a mode asked for while a session runs (-1 = none); the sink task applies it on the next block
 std::atomic<float> g_rf_dbfs{-120.f};
 std::atomic<uint32_t> g_dsp_us{0}, g_block_us{0};
 
@@ -91,6 +93,8 @@ void on_block(const radio::IqBlock& b, void* ctx) {
     ESP_LOGW(TAG, "WEB_AUDIO_ENDED receiver_changed rate=%u center=%u", static_cast<unsigned>(b.sample_rate), static_cast<unsigned>(b.center_hz));
     return;
   }
+  const int want = g_mode_want.exchange(-1);
+  if (want >= 0 && static_cast<dsp::Mode>(want) != s.demod->mode()) s.demod->set_mode(static_cast<dsp::Mode>(want));
   size_t offset = 0;
   while (offset + 1 < b.bytes) {
     const size_t part = std::min<size_t>(b.bytes - offset, 8192);
@@ -214,6 +218,7 @@ Result start(int rx, uint32_t station_hz, uint32_t request_sps, int volume, cons
   s->demod = new (dm) dsp::Demod();
   s->demod->set_mode(mode);
   s->demod->set_input_rate(rate);
+  g_mode_want = -1;  // the session starts in the mode the page asked for, not in one left over from before
   s->rx = rx;
   s->station_hz = station_hz;
   s->in_rate = rate;
@@ -249,6 +254,8 @@ Result start(int rx, uint32_t station_hz, uint32_t request_sps, int volume, cons
 }
 
 void stop() { end_session(); }
+
+void set_mode(orcsdr::dsp::Mode mode) { g_mode_want = static_cast<int>(mode); }
 
 bool set_volume(int volume) {
   if (!g_sess) return false;

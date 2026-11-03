@@ -256,7 +256,8 @@ function pushFm() {
 function pushHome() {
   const hz = S.frequency_hz, band = bandOf(hz);
   const d = new Date();
-  const mode = S.fmPlaying && S.fmOwns ? 'WFM' : band[3];
+  const pin = S.mode_pin_band === band[2] ? S.mode_choice : 0;   // the pin is OrcSDR's, per band; the page remembers only the one it set here
+  const mode = pin ? MODE_NAMES[pin] : S.fmPlaying && S.fmOwns ? 'WFM' : band[3];
   setNum('frequency_hz', hz); setNum('requested_frequency_hz', hz);
   setNum('tune_min_hz', S.tune_min_hz); setNum('tune_max_hz', S.tune_max_hz);
   setNum('span_hz', S.span_hz); setNum('step_hz', S.step_hz); setNum('step_adjustable', 1);
@@ -268,10 +269,10 @@ function pushHome() {
   setNum('usb_connected', S.present ? 1 : 0); setNum('driver_ready', S.present ? 1 : 0);
   setNum('receiving', S.streaming ? 1 : 0);
   setStr('receiver', S.rxLabel.slice(0, 11)); setStr('mode', mode); setStr('band', band[2]);
-  setNum('mode_choice', S.mode_choice);
+  setNum('mode_choice', pin);
   setNum('mode_active', Math.max(0, MODE_NAMES.indexOf(mode)));
   setNum('mode_suggested', Math.max(0, MODE_NAMES.indexOf(band[3])));
-  setNum('mode_selectable', 0);
+  setNum('mode_selectable', band[2] === 'ADS-B' ? 0 : 1);
   setNum('gain_available', S.gain_available ? 1 : 0);
   setNum('gain_auto_available', S.gain_auto_available ? 1 : 0);
   setNum('gain_smart', 0); setNum('gain_auto', S.gain_auto ? 1 : 0);
@@ -488,7 +489,14 @@ function clientAction(name, value) {
     case 'graphics_toggle': S.graphics = !S.graphics; return;
     case 'recording_toggle': return toast('Recording is not available from the browser yet');
     case 'scan_presets': return toast('Preset scanning needs a node-side station scan (later)');
-    case 'mode_set': S.mode_choice = value; return toast('Mode choice is shown only; the node demodulates WFM in the FM player');
+    case 'mode_set': {   // OrcSDR's Home pins the demodulator for the band; a browser audio session follows it
+      const m = value | 0;
+      if (m < 0 || m > 5) return;
+      return post(`/api/v1/home?action=mode_set&value=${m}`, 'home-action').then(r => {
+        if (r.ok) { S.mode_choice = m; S.mode_pin_band = bandOf(S.frequency_hz)[2]; }
+        return report(r, 'Mode ' + MODE_NAMES[m]);
+      });
+    }
     case 'open_dashboard': {
       const title = M.UTF8ToString(M._m5_dashboard_title(window.__dash || 0)) || 'That screen';
       // Weather, Marine and Satellite have no screen of their own on the device either: main.cpp's draw_sdr_screen() shows Home with the

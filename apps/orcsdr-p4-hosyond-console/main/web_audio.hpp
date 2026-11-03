@@ -6,6 +6,7 @@
 // page's own number, kept so the page can show it again after a reload. Starting it moves the receiver to the station (the same as a web tune).
 #include <cstddef>
 #include <cstdint>
+#include "orcsdr_dsp/demod.hpp"
 
 namespace web_audio {
 enum class Result : uint8_t { ok, bad_request, not_available };
@@ -25,6 +26,9 @@ struct Status {
 Result start(int rx, uint32_t station_hz, uint32_t request_sps, int volume, const char* mode, uint32_t peer, char* out, size_t cap);
 void stop();                 // ends the session and closes the audio socket
 bool set_volume(int volume); // false when no session is running
+// Changes the demodulator of the running session without closing the socket (the filters restart, so there is one short click). Safe from any task;
+// with no session running the request is dropped when the next session starts.
+void set_mode(orcsdr::dsp::Mode mode);
 Status status();
 bool available();            // compiled in (needs the same WebSocket support as the channel stream)
 }  // namespace web_audio
