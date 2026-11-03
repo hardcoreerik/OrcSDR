@@ -8,7 +8,11 @@ constexpr int kWidth = 104;
 constexpr int kHeight = 104;
 
 extern const uint8_t raw_start[] asm("_binary_orc_badge_104_rgb565_start");
+#ifdef __EMSCRIPTEN__
+inline const uint8_t* const raw_end = raw_start + 21632;  // web build: no linker end symbol, size is fixed
+#else
 extern const uint8_t raw_end[] asm("_binary_orc_badge_104_rgb565_end");
+#endif
 
 constexpr uint16_t display565(uint16_t value) {
   return static_cast<uint16_t>((value << 8) | (value >> 8));

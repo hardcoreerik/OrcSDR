@@ -21,6 +21,11 @@ endif()
 # and the server offers only the JSON API, and says so at boot.
 set(ORCSDR_WEB_UI 0)
 set(ORCSDR_WEB_UI_NAMES app.js.gz core.js.gz core.wasm.gz decoder_worker.js.gz decoders.js.gz m5.html.gz orcdec.js.gz orcdec.wasm.gz splash.jpg)
+# Default: the bundle apps/orcsdr-web/web/build.ps1 builds from this repository's own sources (no outside folder). An explicit
+# -DORCSDR_WEB_UI_DIR still overrides it; a directory that does not exist yet means "no web UI", as before.
+if(NOT ORCSDR_WEB_UI_DIR AND EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../orcsdr-web/dist")
+    set(ORCSDR_WEB_UI_DIR "${CMAKE_CURRENT_LIST_DIR}/../../orcsdr-web/dist")
+endif()
 if(ORCSDR_WEB_UI_DIR)
     set(_web_missing "")
     foreach(_n ${ORCSDR_WEB_UI_NAMES})
