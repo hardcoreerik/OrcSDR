@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "lora_tx_policy.hpp"
+#include "dashboard_header_layout.hpp"
 
 namespace orcsdr::lora {
 
@@ -86,6 +87,7 @@ struct Snapshot {
   bool key_loaded = false;
   // A profile_only SX1262 is listed for planning, never as an operable TX radio.
   lora_tx::Capability tx{};
+  char board_label[32] = "M5STACK TAB5";
   char profile[24]{};
   char region[24]{};
   char log_status[48]{};
@@ -135,6 +137,8 @@ struct Action {
 };
 
 void enter(const Snapshot& snapshot);
+// UI-owner opt-in for native TX Lab geometry; legacy callers stay unchanged.
+bool set_tx_viewport(audio_header::HeaderRect viewport);
 void leave();
 void draw();
 void update(const Snapshot& snapshot);

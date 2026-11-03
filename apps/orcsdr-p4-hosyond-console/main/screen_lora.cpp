@@ -20,6 +20,7 @@
 #include "lora_preamble_detector.hpp"
 #include "nvs_store.hpp"
 #include "orcsdr_board_profile.h"
+#include "present.hpp"
 #include "radio_service.hpp"
 #include "screens.hpp"
 #include "ui_support.hpp"
@@ -508,6 +509,10 @@ lr::Snapshot& build() {
   return s;
 }
 
+bool resize_tx_viewport() {
+  const auto* g=present_geometry();
+  return lr::set_tx_viewport(g?orcsdr::audio_header::HeaderRect{int(g->safe.x),int(g->safe.y),int(g->safe.width),int(g->safe.height)}:orcsdr::audio_header::HeaderRect{0,0,1280,720});
+}
 void enter() {
   {
     orcsdr::NvsStore store;
@@ -519,6 +524,7 @@ void enter() {
   apply_channel_selection();
   audio_service::set_active(false);
   ui_support::header_reset();
+  resize_tx_viewport();
   // The decoder's own workspace first (it needs the biggest contiguous blocks), then the capture buffers.
   if (!decoder_start() || !ensure_buffers()) ESP_LOGE(TAG, "LoRa decode path unavailable (memory)");
   reset_detector();
@@ -628,7 +634,10 @@ void spectrum(const float* levels, size_t first, size_t visible, float floor) { 
 
 namespace screens {
 const Screen& lora_screen() {
-  static const Screen s{orcsdr::dashboards::Id::lora, "LORA", enter, leave, tick, tap, nullptr, spectrum};
+  static const Screen s{orcsdr::dashboards::Id::lora, "LORA", enter, leave, tick, tap, nullptr, spectrum,nullptr,[]() {
+    if(!resize_tx_viewport())return false;
+    lr::draw();return true;
+  }};
   return s;
 }
 }  // namespace screens

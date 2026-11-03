@@ -1,0 +1,59 @@
+name: LoRa TX M5GFX host tests
+on:
+  push:
+    branches:
+      - "codex/lilygo-lora-tx-ui-**"
+      - "codex/p4-display-integration"
+    paths:
+      - "apps/orcsdr-tab5/ui/lora_dashboard.cpp"
+      - "apps/orcsdr-tab5/ui/lora_dashboard.hpp"
+      - "apps/orcsdr-tab5/ui/lora_tx_*"
+      - "tests/lora_tx_*"
+      - "tests/lora_tx_ui_stubs/**"
+      - "tools/test-lora-tx-ui.sh"
+      - ".github/workflows/lora-tx-ui-tests.yml"
+  pull_request:
+    paths:
+      - "apps/orcsdr-tab5/ui/lora_dashboard.cpp"
+      - "apps/orcsdr-tab5/ui/lora_dashboard.hpp"
+      - "apps/orcsdr-tab5/ui/lora_tx_*"
+      - "tests/lora_tx_*"
+      - "tests/lora_tx_ui_stubs/**"
+      - "tools/test-lora-tx-ui.sh"
+permissions:
+  contents: read
+jobs:
+  renderer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: hardcoreerik/OrcMaps
+          ref: 6a621a70ebbf7906b1d6c089bd61dbbc456475ed
+          path: build/lora-tx-ui/orcmaps
+          persist-credentials: false
+      - name: Native GFX primitive host tests
+        env:
+          ORCSDR_ORCMAPS_ROOT: build/lora-tx-ui/orcmaps
+        run: bash tools/test-lora-tx-ui.sh
+      - name: Save baseline logs before sanitizer run
+        if: always()
+        run: |
+          mkdir -p build/lora-tx-ui-normal
+          cp build/lora-tx-ui/*.log build/lora-tx-ui-normal/ 2>/dev/null || true
+      - name: AddressSanitizer and UndefinedBehaviorSanitizer simulation
+        env:
+          ORCSDR_ORCMAPS_ROOT: build/lora-tx-ui/orcmaps
+        run: ORCSDR_LORA_ASAN=1 bash tools/test-lora-tx-ui.sh
+      - name: Save host validation
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lora-tx-ui-host-evidence
+          path: |
+            build/lora-tx-ui/*.log
+            build/lora-tx-ui-normal/*.log
+          retention-days: 14
