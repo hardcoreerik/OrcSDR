@@ -1,7 +1,6 @@
-// LORA / MESH dashboard (apps/orcsdr-tab5/ui/lora_dashboard.cpp, lora_native_decoder.cpp, lora_preamble_detector.cpp and
-// lora_channel_control.cpp, unchanged) on the P4 console. This adapter carries the capture logic the Tab5 keeps in main.cpp:
-// pre-roll ring, preamble / energy trigger, a 4 s IQ capture handed to the native decoder task, and Meshtastic node and
-// packet tracking. SD logging, the node history file and the gain guard are not available on this target yet.
+// Shared LoRa/Mesh renderer with the Tab5 RTL capture/decoder workflow.
+// SX1262 packets enter the same event model on the UI owner. SD logging, node
+// history files and the RTL gain guard remain unavailable on this target.
 #include <algorithm>
 #include "M5Unified.h"
 #include <atomic>
@@ -22,6 +21,7 @@
 #include "nvs_store.hpp"
 #include "orcsdr_board_profile.h"
 #include "present.hpp"
+#include "packet_radio_ui.hpp"
 #include "radio_service.hpp"
 #include "screens.hpp"
 #include "ui_support.hpp"
@@ -45,13 +45,8 @@ constexpr float kFloorSlowAlpha = 0.995f, kFloorFastAlpha = 0.9f, kFloorFastFall
 constexpr uint32_t kSustainedHighMs = 4000;
 constexpr size_t kPacketRing = 16, kNodeRing = 16;
 
-struct DisplayPacket {
-  uint32_t sender = 0, destination = 0, packet_id = 0, received_ms = 0, received_utc = 0;
-  int32_t latitude_e7 = INT32_MAX, longitude_e7 = INT32_MAX;
-  int16_t signal_tenths = INT16_MAX, snr_tenths = INT16_MAX;
-  uint16_t port = 0;
-  bool encrypted = false;
-  char short_name[8] = {}, long_name[32] = {}, text[ln::kPacketTextBytes] = {};
+struct DisplayPacket : lr::Event {
+  char short_name[8] = {}, long_name[32] = {};
 };
 struct NodePosition {
   uint32_t node = 0, received_ms = 0;
@@ -212,7 +207,7 @@ void store_packet(const DisplayPacket& input) {
   portENTER_CRITICAL(&g_lock);
   if (packet.packet_id) {
     for (const auto& e : g_packets)
-      if (e.received_ms && e.sender == packet.sender && e.packet_id == packet.packet_id) {
+      if (e.received_ms && e.sender == packet.sender && e.packet_id == packet.packet_id && e.source == packet.source) {
         portEXIT_CRITICAL(&g_lock);
         return;
       }
@@ -261,8 +256,9 @@ void decode_task(void*) {
     const size_t candidate_samples =
         work.automatic ? std::min<size_t>(work.bytes / 2, work.trigger_offset_samples + kCandidateAfterTriggerSamples) : 0;
     const ln::Config config{nullptr, 0, candidate_samples, false};
+    const uint32_t frequency_hz=home_app::status().frequency_hz;
     const size_t count = ln::decode_capture(work.iq, work.bytes, kRate, g_sf.load(), g_bw.load(),
-                                            home_app::status().frequency_hz, config, decoded, ln::kMaxPacketsPerCapture, stats);
+                                            frequency_hz, config, decoded, ln::kMaxPacketsPerCapture, stats);
     g_crc_ok.fetch_add(stats->crc_ok);
     g_encrypted.fetch_add(stats->encrypted);
     if (stats->preambles == 0) g_relearn = true;
@@ -270,6 +266,8 @@ void decode_task(void*) {
     for (size_t i = 0; i < count; ++i) {
       DisplayPacket p;
       std::snprintf(p.text, sizeof(p.text), "%s", decoded[i].text);
+      p.frequency_hz = frequency_hz;
+      p.verified = decoded[i].sender != 0;
       p.sender = decoded[i].sender;
       p.destination = decoded[i].destination;
       p.packet_id = decoded[i].packet_id;
@@ -451,14 +449,22 @@ lr::Snapshot& build() {
   s.iq_ready = g_rec_ready.load();
   s.iq_busy = g_decode_busy.load();
   s.battery_percent = M5.Power.getBatteryLevel();
+  const auto hardware=packet_radio::status();
+  s.packet_rx_supported=hardware.supported;
+  s.packet_rx_available=packet_radio::receive_available();
+  s.packet_rx_requested=hardware.requested;
+  s.packet_rx_receiving=hardware.receiving;
+  s.packet_rx_frequency_hz=hardware.receiving?hardware.frequency_hz:
+      (hardware.requested?hardware.requested_hz:g_config_hz);
   s.native_decoder_ready = g_decoder_ready.load() && s.bandwidth_hz == 250000;
   std::snprintf(s.board_label, sizeof(s.board_label), "%s", "ORCSDR P4");
-  // Describe board wiring without turning a documented pin map into a working radio.
-  // No SPI driver, expander antenna switching or TX path is active in this build.
+  // RX evidence does not establish a qualified transmitter. Keep admission locked.
   const orcsdr_board_profile_t* board = orcsdr_board_profile();
   if (board && board->has_radio && board->radio_part &&
       std::strcmp(board->radio_part, "SX1262") == 0) {
     s.tx.readiness = orcsdr::lora_tx::Readiness::profile_only;
+    if(hardware.detected && hardware.clock_checked)
+      s.tx.readiness=hardware.packets?orcsdr::lora_tx::Readiness::rx_verified:orcsdr::lora_tx::Readiness::detected;
     std::snprintf(s.board_label, sizeof(s.board_label), "%s", "LILYGO T-DISPLAY P4");
   }
   // TX approval, output path, frequency, payload size and arming remain
@@ -483,6 +489,8 @@ lr::Snapshot& build() {
   for (const auto& p : g_packets) {
     if (!p.received_ms || s.event_count >= lr::kEventCapacity) continue;
     lr::Event& e = s.events[s.event_count++];
+    e.source = p.source;
+    e.frequency_hz = p.frequency_hz;
     e.sender = p.sender;
     e.destination = p.destination;
     e.packet_id = p.packet_id;
@@ -494,7 +502,7 @@ lr::Snapshot& build() {
     e.snr_tenths = p.snr_tenths;
     e.port = p.port;
     e.encrypted = p.encrypted;
-    e.verified = p.sender != 0;
+    e.verified = p.verified;
     std::snprintf(e.text, sizeof(e.text), "%.111s", p.text);
   }
   portEXIT_CRITICAL(&g_lock);
@@ -547,6 +555,19 @@ void leave() {
 }
 
 void tick() {
+  // Only the UI owner consumes worker packets and changes the shared model.
+  // Bound the drain to the service queue capacity so RX cannot starve touch.
+  for(unsigned i=0;i<8;++i) {
+    packet_radio::Packet input{};
+    if(!packet_radio::take_packet(&input))break;
+    DisplayPacket packet{};
+    static_cast<lr::Event&>(packet)=packet_radio::ui_event(input);
+    std::snprintf(packet.short_name,sizeof(packet.short_name),"%.*s",int(sizeof(input.mesh.short_name)),input.mesh.short_name);
+    std::snprintf(packet.long_name,sizeof(packet.long_name),"%.*s",int(sizeof(input.mesh.long_name)),input.mesh.long_name);
+    store_packet(packet);
+    g_crc_ok.fetch_add(1);
+    if(input.mesh.encrypted)g_encrypted.fetch_add(1);
+  }
   const auto page=g_tx_page_request.exchange(0);
   if(page)std::printf("RTL_LORA_TX_VIEW_%s page=%u\n",lr::select_tx_page(page-1)?"OK":"ERROR",page-1);
   const uint32_t now = now_ms();
@@ -625,6 +646,14 @@ void tap(int x, int y) {
       select_channel(sel.region_index, sel.slot >= orcsdr::lora_channel::slot_count(sel.region_index) ? 1 : sel.slot + 1);
       break;
     case lr::ActionKind::channel_select: select_channel(sel.region_index, static_cast<uint16_t>(a.value)); break;
+    case lr::ActionKind::packet_rx_toggle: {
+      const auto hardware=packet_radio::status();
+      const bool stopping=hardware.requested || hardware.receiving;
+      const bool accepted=stopping?packet_radio::request_stop():
+          packet_radio::request_receive(g_config_hz,true);
+      std::printf("RTL_PACKET_UI_%s action=%s frequency_hz=%u\n",accepted?"QUEUED":"ERROR",stopping?"STOP":"RX",unsigned(g_config_hz));
+      break;
+    }
     case lr::ActionKind::tx_request_arm:
     case lr::ActionKind::tx_request_disarm:
     case lr::ActionKind::tx_send_test_packet:

@@ -71,6 +71,7 @@ set_source_files_properties(
     PROPERTIES COMPILE_DEFINITIONS "ORCSDR_LOVYANGFX_IS_SCALED;ORCSDR_NO_RAW_BUFFERS")
 target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)
 target_sources(${COMPONENT_LIB} PRIVATE "web_auth.cpp" "web_control.cpp" "web_server.cpp")
+target_sources(${COMPONENT_LIB} PRIVATE "packet_radio_service.cpp")
 target_sources(${COMPONENT_LIB} PRIVATE "orientation_app.cpp")
 target_compile_options(${COMPONENT_LIB} PRIVATE
     "$<$<COMPILE_LANGUAGE:CXX>:-include;orcsdr_p4_time.hpp>" "-DORCSDR_HAS_EMBEDDED_C6_FIRMWARE=${ORCSDR_C6_EMBEDDED}")

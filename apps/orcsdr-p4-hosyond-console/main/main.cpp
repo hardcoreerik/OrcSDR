@@ -27,6 +27,7 @@
 #include "radio_service.hpp"
 #include "serial_cli.hpp"
 #include "web_server.hpp"
+#include "packet_radio_service.hpp"
 
 static constexpr char TAG[] = "CONSOLE";
 // Off-screen size when no panel is attached: the layout the console is designed and tested at.
@@ -75,6 +76,7 @@ extern "C" void app_main(void) {
   wifi_app::start();       // C6 link comes up in the background a few seconds later
   web_server::start();     // disabled by default; follows saved Wi-Fi/link state
   audio_service::start();  // optional: the receiver and UI run without sound if the codec fails
+  (void)packet_radio::start(); // optional packet-radio worker; RF stays off until requested
   if (!home_app::start(&M5.Display)) ESP_LOGE(TAG, "home UI task failed");
   ESP_LOGI(TAG, "boot complete");
 }

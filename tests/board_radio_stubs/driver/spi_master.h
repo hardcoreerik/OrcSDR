@@ -11,3 +11,5 @@ int spi_bus_add_device(spi_host_device_t,const spi_device_interface_config_t*,sp
 int spi_bus_remove_device(spi_device_handle_t);
 int spi_bus_free(spi_host_device_t);
 int spi_device_polling_transmit(spi_device_handle_t,spi_transaction_t*);
+
+int spi_bus_get_max_transaction_len(spi_host_device_t,size_t*);

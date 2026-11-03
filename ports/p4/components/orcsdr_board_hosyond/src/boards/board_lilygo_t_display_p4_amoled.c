@@ -29,8 +29,8 @@
  *
  * SX1262 SPI (the LR2021 build uses the same pins; this profile names SX1262 because that is
  * the owner confirmed this fitted SKU): SCLK 2, MOSI 3, MISO 4, CS 24, BUSY 6, 10 MHz. Reset XL9535 IO16, DIO1
- * XL9535 IO17. Antenna switch is SKY13453 VCTL on XL9535 IO1. Polarity is not encoded: do not
- * drive radio_ant_sw until the switch sense is confirmed on the board.
+ * XL9535 IO17. SKY13453 VCTL on IO1: low selects MMCX1, high internal antenna
+ * (README at 7b021f79). Documented polarity is not physical RF qualification.
  *
  * microSD is SDMMC on CLK 43, CMD 44, D0-D3 39-42. Slot power is XL9535 IO15, not a GPIO.
  * Active level is not confirmed, so the console must not switch it yet.
@@ -97,6 +97,7 @@ const orcsdr_board_profile_t g_board_lilygo_t_display_p4_amoled = {
     .radio_spi_host = 1,
     /* LilyGO V1 + cpp_bus_driver 906f99a1 HardwareConfig defaults. */
     .radio_tcxo_mv = 1600, .radio_tcxo_startup_us = 5000,
+    .radio_ant_polarity = ORCSDR_RADIO_ANT_EXTERNAL_LOW, .radio_dio2_rf_switch = true,
     .radio_rst = {0, 16}, .radio_dio1 = {0, 17}, .radio_ant_sw = {0, 1},
     .ioexp_sd_power = {0, 15}, .ioexp_screen_rst = {0, 2}, .ioexp_touch_rst = {0, 3},
     .ioexp_usb_phy_en = {0, 10}, .ioexp_eth_rst = {0, 5},

@@ -17,7 +17,7 @@ g++ -std=c++17 -O1 -Wall -Wextra \
   /source/apps/orcsdr-p4-hosyond-console/main/packet_radio_service.cpp \
   /repo/apps/orcsdr-tab5/tests/packet_radio_service_host_test.cpp \
   -o /tmp/packet_radio_service_host_test
-for scenario in startup cancel_retry current overflow stale; do
+for scenario in startup cancel_retry cancel_failure newer_request current overflow stale; do
   /tmp/packet_radio_service_host_test "$scenario"
   echo "PACKET_RADIO_HOST_TEST pass=$scenario"
 done

@@ -40,6 +40,8 @@
 #include "web_server.hpp"
 #include "web_auth.hpp"
 #include "orcsdr_sx126x.h"
+#include "packet_radio_service.hpp"
+#include "cJSON.h"
 
 namespace {
 constexpr char TAG[] = "SERIAL_CLI";
@@ -64,10 +66,6 @@ bool decode_hex(const char* text, uint8_t* out, size_t bytes) {
     out[i] = static_cast<uint8_t>(v);
   }
   return true;
-}
-
-void print_hex(const uint8_t* data, size_t length) {
-  for (size_t i = 0; i < length; ++i) std::printf("%02x", data[i]);
 }
 
 bool hmac(const char* label, const uint8_t* nonce, uint8_t out[32]) {
@@ -179,6 +177,7 @@ void cmd_auth(char* args) {
 void cmd_help() {
   std::printf("RTL_HELP OrcSDR P4 console: subset of docs/API_SERIAL_CLI.md. Unknown commands stay silent.\n");
   std::printf("PAIR <key> / AUTH <nonce> <proof> / PING        - pairing and session (auth commands need AUTH)\n");
+  std::printf("RTL_PACKET STATUS | LAST | RX <Hz> EXTERNAL|INTERNAL | STOP - SX1262 LongFast (auth)\n");
   std::printf("RTL_HEALTH [STATUS|BUILD|HEAP_CHECK]             - development diagnostics\n");
   std::printf("RTL_STATUS                                      - receiver state\n");
   std::printf("RTL_C6_ROM STATUS                               - read-only embedded recovery package status\n");
@@ -194,6 +193,7 @@ void cmd_help() {
   std::printf("RTL_WEB STATUS | ON | OFF | PASSWORD <8..64 chars> - local web setup (auth; password never echoed)\n");
   std::printf("RTL_PACKET PROBE                               - reset/status/readback only; no RF (auth)\n");
   std::printf("RTL_PACKET CLOCK_CHECK                         - profile TCXO/calibration/XOSC check; no RF (auth)\n");
+  std::printf("RTL_PACKET STATUS | LAST | RX <HZ> EXTERNAL|INTERNAL | STOP - onboard RX only (auth)\n");
   std::printf("RTL_SCREEN_STATUS / RTL_MEM STATUS / RTL_RX STATUS - diagnostics (RTL_RX: one line per receiver)\n");
   std::printf("SCREENSHOT                                      - screenshot as PNG over serial (auth)\n");
 }
@@ -764,6 +764,50 @@ void cmd_rx_status() {
   }
 }
 
+void cmd_packet_service(char* args) {
+  if(!authed()){std::printf("RTL_PACKET_ERROR auth_required\n");return;}
+  if(!std::strcmp(args,"STATUS")) {
+    const auto s=packet_radio::status();
+    std::printf("RTL_PACKET_STATUS supported=%d started=%d requested=%d starting=%d receiving=%d generation=%u requested_hz=%u frequency_hz=%u external=%d detected=%d clock_checked=%d packets=%u rejected=%u dropped=%u stale_discarded=%u error=%s tx_qualified=0\n",
+      s.supported,s.started,s.requested,s.starting,s.receiving,unsigned(s.generation),unsigned(s.requested_hz),unsigned(s.frequency_hz),
+      s.external_antenna,s.detected,s.clock_checked,unsigned(s.packets),unsigned(s.rejected),unsigned(s.dropped),unsigned(s.stale_discarded),esp_err_to_name(s.last_error));
+    return;
+  }
+  if(!std::strcmp(args,"LAST")) {
+    const auto p=packet_radio::status().latest;
+    if(!p.sequence){std::printf("RTL_PACKET_LAST empty=1\n");return;}
+    cJSON* json=cJSON_CreateObject();
+    if(!json || !cJSON_AddNumberToObject(json,"sequence",p.sequence) ||
+       !cJSON_AddNumberToObject(json,"id",p.mesh.packet_id) || !cJSON_AddNumberToObject(json,"sender",p.mesh.sender) ||
+       !cJSON_AddNumberToObject(json,"frequency_hz",p.frequency_hz) || !cJSON_AddBoolToObject(json,"crc_accepted",true) ||
+       !cJSON_AddBoolToObject(json,"interpreted",p.interpreted) || !cJSON_AddBoolToObject(json,"encrypted",p.mesh.encrypted) ||
+       !cJSON_AddStringToObject(json,"text",p.mesh.text) || !cJSON_AddNumberToObject(json,"rssi_dbm",p.rssi_dbm) ||
+       !cJSON_AddNumberToObject(json,"snr_db",p.snr_db) || !cJSON_AddNumberToObject(json,"length",p.length) ||
+       !cJSON_AddBoolToObject(json,"dio1_high",p.dio1_high)) {
+      cJSON_Delete(json);std::printf("RTL_PACKET_ERROR no_memory\n");return;
+    }
+    char* encoded=cJSON_PrintUnformatted(json);
+    if(encoded){std::printf("RTL_PACKET_LAST %s\n",encoded);cJSON_free(encoded);}
+    else std::printf("RTL_PACKET_ERROR no_memory\n");
+    cJSON_Delete(json);return;
+  }
+  if(!std::strcmp(args,"STOP")) {
+    std::printf(packet_radio::request_stop()?"RTL_PACKET_STOP_QUEUED\n":"RTL_PACKET_ERROR unavailable\n");return;
+  }
+  if(!std::strncmp(args,"RX ",3)) {
+    const char* p=args+3;char* end=nullptr;errno=0;
+    const auto hz=std::strtoul(p,&end,10);
+    if(*p>='0'&&*p<='9'&&errno!=ERANGE&&end&&*end==' '&&hz<=UINT32_MAX) {
+      while(*end==' ')++end;
+      if(!std::strcmp(end,"EXTERNAL")||!std::strcmp(end,"INTERNAL")) {
+        std::printf(packet_radio::request_receive(uint32_t(hz),!std::strcmp(end,"EXTERNAL"))?
+          "RTL_PACKET_RX_QUEUED\n":"RTL_PACKET_ERROR unavailable_or_invalid\n");return;
+      }
+    }
+  }
+  std::printf("RTL_PACKET_INVALID use STATUS|LAST|RX <HZ> EXTERNAL|INTERNAL|STOP\n");
+}
+
 void cmd_web(char* args) {
   if(!authed()){std::printf("RTL_WEB_ERROR auth_required\n");return;}
   if(!std::strcmp(args,"STATUS")) {
@@ -811,6 +855,7 @@ void handle_line(char* line) {
     return;
   }
   if (std::strncmp(line,"RTL_WEB ",8)==0) return cmd_web(line+8);
+  if (std::strncmp(line,"RTL_PACKET ",11)==0) return cmd_packet_service(line+11);
   if (std::strncmp(line, "RTL_ORIENTATION ", 16) == 0) return cmd_orientation(line + 16);
   if (std::strcmp(line, "RTL_STATUS") == 0) return cmd_status();
   if (std::strcmp(line,"RTL_C6_ROM STATUS")==0) {

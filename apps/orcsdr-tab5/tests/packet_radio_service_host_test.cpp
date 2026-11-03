@@ -27,7 +27,7 @@ orcsdr_board_profile_t board{};
 bool fail_queue = false, fail_task = false, c6_busy = false, retune_on_send = false;
 unsigned queue_creates = 0, task_creates = 0, driver_calls = 0;
 unsigned expected_frequency = 0;
-enum class DriverMode { cancel_check, fail, emit_packet, emit_nine, retune_then_stop };
+enum class DriverMode { cancel_check, cancel_fail, fail, emit_packet, emit_nine, retune_then_stop, retune_then_fail };
 DriverMode driver_mode = DriverMode::fail;
 }
 
@@ -91,9 +91,14 @@ extern "C" esp_err_t orcsdr_sx126x_receive_longfast(
   ++driver_calls;
   result->detected = true;
   result->clock_ready = true;
+  if (driver_mode == DriverMode::retune_then_fail && driver_calls > 1) throw WorkerExit{};
   if (driver_mode == DriverMode::cancel_check) {
     assert(!request->keep_running(request->context));
     return ESP_OK;
+  }
+  if (driver_mode == DriverMode::cancel_fail) {
+    assert(!request->keep_running(request->context));
+    return ESP_FAIL;
   }
   if (driver_mode == DriverMode::fail) return ESP_FAIL;
   if (driver_mode == DriverMode::retune_then_stop && driver_calls > 1) {
@@ -117,6 +122,7 @@ extern "C" esp_err_t orcsdr_sx126x_receive_longfast(
   event.snr_db = 7;
   event.dio1_high = true;
   request->event(request->context, &event);
+  if (driver_mode == DriverMode::retune_then_fail) return ESP_FAIL;
   if (driver_mode == DriverMode::emit_nine) {
     for (unsigned i = 1; i < 9; ++i) request->event(request->context, &event);
     throw WorkerExit{};
@@ -142,6 +148,7 @@ void startup_retry_case() {
   setup_supported_board();
   board.has_radio = false;
   assert(!packet_radio::start());
+  assert(!packet_radio::receive_available());
   board.has_radio = true;
   fail_queue = true;
   assert(!packet_radio::start());
@@ -157,8 +164,11 @@ void cancellation_and_retry_case() {
   setup_supported_board();
   assert(packet_radio::start());
   c6_busy = false;
+  assert(packet_radio::receive_available());
   assert(packet_radio::request_receive(906875000, false));
   c6_busy = true;
+  assert(!packet_radio::receive_available());
+  assert(!packet_radio::request_receive(906875000,false));
   driver_mode = DriverMode::cancel_check;
   run_worker();
   assert(!packet_radio::status().requested);
@@ -177,6 +187,38 @@ void cancellation_and_retry_case() {
   run_worker();
   assert(driver_calls == retry_before + 1);
   assert(packet_radio::status().last_error == ESP_FAIL);
+}
+
+void cancellation_failure_case() {
+  setup_supported_board();
+  assert(packet_radio::start());
+  c6_busy = false;
+  assert(packet_radio::request_receive(906875000, false));
+  const auto generation = packet_radio::status().generation;
+  c6_busy = true;
+  driver_mode = DriverMode::cancel_fail;
+  const unsigned before = driver_calls;
+  run_worker();
+  const auto state = packet_radio::status();
+  assert(driver_calls == before + 1);
+  assert(!state.requested && state.generation == generation + 1);
+  assert(state.last_error == ESP_FAIL);
+  run_worker();
+  assert(driver_calls == before + 1); // cancellation errors do not auto-retry
+}
+
+void newer_request_survives_old_failure_case() {
+  setup_supported_board();
+  assert(packet_radio::start());
+  const uint32_t first = 906875000, second = 906900000;
+  assert(packet_radio::request_receive(first, false));
+  expected_frequency = second;
+  retune_on_send = true;
+  driver_mode = DriverMode::retune_then_fail;
+  run_worker();
+  const auto state = packet_radio::status();
+  assert(state.requested && state.requested_hz == second);
+  assert(state.last_error == ESP_OK); // old generation failure must not overwrite new request status
 }
 
 void current_packet_case() {
@@ -227,6 +269,8 @@ int main(int argc, char** argv) {
   assert(argc == 2);
   if (!std::strcmp(argv[1], "startup")) startup_retry_case();
   else if (!std::strcmp(argv[1], "cancel_retry")) cancellation_and_retry_case();
+  else if (!std::strcmp(argv[1], "cancel_failure")) cancellation_failure_case();
+  else if (!std::strcmp(argv[1], "newer_request")) newer_request_survives_old_failure_case();
   else if (!std::strcmp(argv[1], "current")) current_packet_case();
   else if (!std::strcmp(argv[1], "overflow")) overflow_case();
   else if (!std::strcmp(argv[1], "stale")) stale_generation_case();

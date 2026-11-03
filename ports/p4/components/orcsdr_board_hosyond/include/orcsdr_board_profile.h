@@ -38,6 +38,11 @@ typedef enum {
     ORCSDR_BATTERY_GAUGE_NONE = 0,
     ORCSDR_BATTERY_GAUGE_BQ27220 = 1,
 } orcsdr_battery_gauge_type_t;
+typedef enum {
+    ORCSDR_RADIO_ANT_UNKNOWN=0,
+    ORCSDR_RADIO_ANT_EXTERNAL_LOW,
+    ORCSDR_RADIO_ANT_EXTERNAL_HIGH,
+} orcsdr_radio_ant_polarity_t;
 
 /* A control line on an I2C GPIO expander: which expander (index into ioexp_addr) and which pin. dev -1 = absent. */
 typedef struct {
@@ -107,6 +112,8 @@ typedef struct {
     int radio_spi_host;        /* ESP-IDF SPI2_HOST=1 / SPI3_HOST=2; zero is unavailable */
     unsigned radio_tcxo_mv;    /* documented DIO3 supply, zero = not established */
     unsigned radio_tcxo_startup_us;
+    orcsdr_radio_ant_polarity_t radio_ant_polarity;
+    bool radio_dio2_rf_switch;
 
     /* More expander lines. ORCSDR_IOEXP_NONE when the board does not have that line. */
     orcsdr_ioexp_line_t ioexp_sd_power, ioexp_screen_rst, ioexp_touch_rst;

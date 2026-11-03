@@ -45,6 +45,13 @@ esp_err_t orcsdr_board_radio_reset(bool asserted)
     const orcsdr_board_profile_t *b=orcsdr_board_profile();
     return b->has_radio?line(b->radio_rst,!asserted,false):ESP_ERR_NOT_SUPPORTED;
 }
+esp_err_t orcsdr_board_radio_select_antenna(bool external)
+{
+    const orcsdr_board_profile_t* b=orcsdr_board_profile();
+    if(!b->has_radio || (b->radio_ant_polarity!=ORCSDR_RADIO_ANT_EXTERNAL_LOW &&
+                        b->radio_ant_polarity!=ORCSDR_RADIO_ANT_EXTERNAL_HIGH))return ESP_ERR_NOT_SUPPORTED;
+    return line(b->radio_ant_sw,b->radio_ant_polarity==ORCSDR_RADIO_ANT_EXTERNAL_LOW?!external:external,false);
+}
 esp_err_t orcsdr_board_radio_dio1_read(bool* high)
 {
     if(!high)return ESP_ERR_INVALID_ARG;

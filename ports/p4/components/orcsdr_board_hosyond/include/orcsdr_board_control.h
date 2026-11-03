@@ -15,6 +15,8 @@ esp_err_t orcsdr_board_c6_enable(bool enable);
  * These calls do not select an antenna, configure RF or authorize TX. */
 esp_err_t orcsdr_board_radio_reset(bool asserted);
 esp_err_t orcsdr_board_radio_dio1_read(bool* high);
+/* Select only a documented antenna-switch polarity; never authorizes TX. */
+esp_err_t orcsdr_board_radio_select_antenna(bool external);
 #ifdef __cplusplus
 }
 #endif

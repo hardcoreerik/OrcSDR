@@ -33,6 +33,14 @@ int main(void){
   regs[7]=0;regs[1]=0x80;bool high=false;
   assert(orcsdr_board_radio_dio1_read(&high)==ESP_OK&&high&&regs[7]==0x80);
   regs[1]=0;assert(orcsdr_board_radio_dio1_read(&high)==ESP_OK&&!high);
+  profile.radio_ant_sw=(orcsdr_ioexp_line_t){0,1};
+  regs[2]=regs[6]=0xff;
+  assert(orcsdr_board_radio_select_antenna(true)==ESP_ERR_NOT_SUPPORTED&&regs[2]==0xff);
+  profile.radio_ant_polarity=ORCSDR_RADIO_ANT_EXTERNAL_LOW;
+  assert(orcsdr_board_radio_select_antenna(true)==ESP_OK&&regs[2]==0xfd&&regs[6]==0xfd&&regs[3]==0xff);
+  assert(orcsdr_board_radio_select_antenna(false)==ESP_OK&&regs[2]==0xff);
+  profile.radio_ant_polarity=ORCSDR_RADIO_ANT_EXTERNAL_HIGH;
+  assert(orcsdr_board_radio_select_antenna(true)==ESP_OK&&regs[2]==0xff);
   assert(orcsdr_board_radio_dio1_read(NULL)==ESP_ERR_INVALID_ARG);
   fail_read=1;high=true;assert(orcsdr_board_radio_dio1_read(&high)==ESP_ERR_TIMEOUT&&!high&&!locked);fail_read=0;
   fail_write=1;assert(orcsdr_board_radio_reset(true)==ESP_ERR_TIMEOUT&&!locked);fail_write=0;
