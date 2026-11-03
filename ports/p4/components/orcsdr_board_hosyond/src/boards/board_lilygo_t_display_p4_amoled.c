@@ -46,7 +46,7 @@
  * The experimental RM69A10/GT9895 backend is separate from the Hosyond bridge.
  * console_supported stays false until the shared interactive console is accepted.
  *
- * Also on the board and unused here: L76K GNSS UART TX 22 / RX 23 (wake XL9535 IO11),
+ * Also on the board and unused here: L76K GNSS P4 UART TX 23 / RX 22 (wake XL9535 IO11),
  * PCF8563 RTC, BQ27220 gauge, AW86224 haptic, camera, BOOT key GPIO35. */
 const orcsdr_board_profile_t g_board_lilygo_t_display_p4_amoled = {
     .name = "lilygo-t-display-p4-amoled",
@@ -85,10 +85,12 @@ const orcsdr_board_profile_t g_board_lilygo_t_display_p4_amoled = {
     /* LilyGO device-driver config a47cf73e: BQ27220 on I2C1, 7-bit 0x55. */
     .battery_gauge_type = ORCSDR_BATTERY_GAUGE_BQ27220,
     .battery_gauge_i2c_port = 1, .battery_gauge_i2c_address = 0x55,
-    /* Vendor driver a47cf73e configures 115200 and drives IO11 low first.
+    /* Vendor L76k::Init calls Sleep(false): WAKE_UP high is awake.
+     * cpp_bus_driver v2.2.0 src/chip/uart/l76k.cpp; pin facts only.
+     * HardwareUart(tx,rx) receives (kRx23,kTx22): P4 RX is GPIO22.
      * Passive reception must establish the baud currently stored on the unit. */
-    .has_gnss = true, .gnss_uart = 1, .gnss_rx = 23, .gnss_tx = 22,
-    .gnss_baud = 115200, .gnss_startup_line = {0, 11}, .gnss_startup_level = false,
+    .has_gnss = true, .gnss_uart = 1, .gnss_rx = 22, .gnss_tx = 23,
+    .gnss_baud = 115200, .gnss_startup_line = {0, 11}, .gnss_startup_level = true,
     .c6_rom_sdio_recovery = true,
     /* 2026-11-01 physical poses: up +X, clockwise -Y, inverted -X, left +Y. */
     .imu_axes_verified = true,

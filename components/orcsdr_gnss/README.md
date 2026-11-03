@@ -34,10 +34,14 @@ parser only and does not qualify UART, receiver fixes, or physical GNSS behavior
 
 The P4 application uses `main/gnss_service.cpp` only when its board profile
 explicitly declares GNSS. The shared expander owner applies the documented
-startup latch before the passive UART reader starts. LilyGO declares UART1 RX23,
-TX22 and 115200 baud from its vendor configuration; the reader leaves TX
+awake level before the passive UART reader starts. LilyGO declares UART1 RX22,
+TX23 and 115200 baud from its vendor configuration; the reader leaves TX
 unconfigured and sends no receiver commands. The installed unit's baud and
-actual reception must be verified separately.
+actual reception must be verified separately. Its underlying vendor L76K driver
+sets WAKE_UP high for `Sleep(false)` (awake), and low for sleep. The outer board
+initializer's temporary low level is not the final operating level. See
+[cpp_bus_driver v2.2.0 L76K](https://github.com/Llgok/cpp_bus_driver/blob/v2.2.0/src/chip/uart/l76k.cpp).
+Only pin/polarity facts are used; no vendor implementation was copied.
 
 `RTL_GNSS STATUS` reports startup, baud, byte/sentence counts, current usable
 fix, retained-last-fix availability/age and transport/cleanup errors. It emits
@@ -50,3 +54,8 @@ location, map selection and clock are not changed automatically.
 timer and task fakes. It checks ownership/setup failures and fix lifecycle;
 it does not establish hardware baud, satellite reception, concurrent task
 scheduling or a physically accurate fix.
+
+Pin direction follows the vendor call through its constructor: board
+`HardwareUart(kRx, kTx, UART1)` calls `HardwareUart(tx, rx, ...)`. Thus the
+module-labelled TX22 is P4 RX22, and module RX23 is P4 TX23. The passive reader
+never configures the latter. Reference: [UART constructor](https://github.com/Llgok/cpp_bus_driver/blob/v2.2.0/src/bus/uart/hardware_uart.h).

@@ -24,7 +24,7 @@ Legend: **partial** means implemented or checked only for the cited scope;
 | Dashboard browser/overlays/editors/focus | Partial shared migrations and focused tests | Sampled keypad/Settings acceptance only | Every workflow, populated/error states, both orientations |
 | Reusable profile geometry and capability rules | Shared display/header/layout contracts exist | Multiple native dashboards run | Complete remaining fixed-coordinate assumptions and document authoring process |
 | SX1262 integration | Profile-aware LongFast RX worker, manual MMCX1 selection, driver-reported SPI chunk limits, generation/error handling and shared Messages adapter; 70 packet/limit cases, seven worker scenarios, event mapping and sanitizer UI checks pass | UI START RX reaches receiving; Heltec V4 packet at 906.875 MHz accepted by SX1262 (120 bytes, CRC, text, RSSI -41 dBm/SNR 7 dB), displayed with SX1262 attribution in native portrait/landscape PNGs | Onboard TX/output qualification and approval, atomic C6 quiescence, hardware error/reconnect qualification, logging/history and remaining LoRa views; TX remains locked |
-| GNSS | Bounded original NMEA parser `34c71ba8`, RMC/GGA checksum/range/framing/no-fix tests pass; estimated/manual/simulated modes excluded | Passive UART service starts on device at 115200 without transport errors; zero bytes at initial sample | Establish receiver output/startup/baud, fresh valid fixes, location integration; active wake polarity unresolved |
+| GNSS | Bounded original NMEA parser `34c71ba8`, RMC/GGA checksum/range/framing/no-fix tests pass; estimated/manual/simulated modes excluded | Corrected wake-high/RX22 receives framed NMEA at 115200 without checksum/UART errors; initial no-fix reports | Fresh satellite fix, location integration, loss/staleness and cold-boot qualification |
 | Battery telemetry | Read-only BQ27220 worker, profile/bus ownership and shared M5 power provider integrated; 8 service tests, Home recording and 7 header/keypad tests pass | COM32 fresh samples: 22%, 3963–3964 mV; portrait/landscape r18 PNGs inspected | Physical percentage accuracy, unplug/no-cell behavior, sustained coexistence and remaining per-page live refresh |
 | USB/RTL-SDR/audio | Existing shared radio/audio services run | FM previously audible; bounded streaming checks | Sustained workload/reconnect/reception/audio/drop measurements |
 | Development diagnostics | Shared native `RTL_HEALTH`/BUILD/authenticated HEAP_CHECK; bounded private serial/build capture; four focused host tests; P4 core-dump build and unchanged existing partition entries verified | COM32 app/table hash-verified; 35-second capture matches the device ELF SHA-256, reports `coredump=flash` and advancing uptime; RX streaming/audio task running/Wi-Fi connected; unauthenticated heap scan denied | Deliberate panic/dump retrieval qualification; Tab5/Hosyond build and physical regressions; earlier unrecorded restart cause remains unknown |
@@ -207,3 +207,46 @@ Luna tasks receive narrow file ownership; no agent flashes or accesses the devic
 - Same boot RTL streaming 2,399,330 samples/s at 96.1 MHz; audio running/muted,
   dropped=0, underruns=109. Internal free 62,143 / DMA free 25,275 bytes.
   Enabled-audio continuity and sustained workloads remain open.
+
+## GNSS wake-sequence correction
+
+- Following the outer initializer into the underlying `cpp_bus_driver` v2.2.0
+  L76K implementation established `Init -> Sleep(false) -> WAKE_UP high`.
+  The earlier profile incorrectly retained the outer initializer's temporary
+  low/sleep level. Profile startup now requests high through the same locked
+  expander owner; no UART configuration commands are transmitted.
+- Primary reference: [L76K driver](https://github.com/Llgok/cpp_bus_driver/blob/v2.2.0/src/chip/uart/l76k.cpp),
+  `Init` and `Sleep`. GPL source consulted for pin/polarity behavior only; no
+  implementation copied. Existing low-level initialization evidence above is
+  historical and does not establish an awake receiver.
+- `wsl bash tools/test-p4-board-radio.sh` passed both startup levels, bank1
+  bit1 mapping, neighboring-bit preservation and existing failure paths.
+
+- Follow-through of the primary vendor UART constructor also corrected pin
+  direction: `HardwareUart(tx, rx)` is constructed with `(kRx23, kTx22)`, so
+  P4 RX is GPIO22 and P4 TX is GPIO23. Earlier RX23 statements above record
+  the incorrect initial assumption; zero-byte checks on those builds do not
+  qualify the actual GNSS connection. Profile now selects RX22; UART TX stays
+  unconfigured. [UART constructor](https://github.com/Llgok/cpp_bus_driver/blob/v2.2.0/src/bus/uart/hardware_uart.h).
+
+- `wsl bash tools/test-p4-gnss.sh` now also compiles every actual board
+  profile and checks LilyGO RX22/TX23, wake-high and UART1 against the traced
+  vendor connection. Other profiles remain GNSS-absent. Parser/profile checks
+  passed, as did `wsl bash tools/test-p4-board-radio.sh`.
+
+- Corrected RX22/wake-high firmware built and app-flashed successfully. Device
+  ELF matches private archive `.local/diagnostics/gnss-rx22/`:
+  `06a96c4e95bcdc9358fbd97eaca5f82944f00dcba5ffa7acf28c913773e7894d`.
+  At 3.7 seconds: 251 received bytes, 8 complete sentences, 2 no-fix reports,
+  6 ignored sentence types, zero parser rejects/read errors/cleanup errors.
+  Communication and framing are now device-proven at 115200; no satellite
+  fix or location integration is claimed. Private evidence:
+  `.local/gnss-rx22-build.log`, `.local/gnss-rx22-flash.log`,
+  `.local/gnss-rx22-device.log`.
+
+- At 30 seconds on the same boot: 7,052 bytes / 224 framed sentences,
+  56 no-fix reports, 168 ignored types, zero rejects or read errors. RTL
+  streaming 2,399,843 samples/s at 96.1 MHz; audio running/muted, dropped=0,
+  underruns=110. DMA free 24,291 and internal free 61,923 bytes. A clearer
+  sky placement has been requested for satellite-fix acceptance; other full
+  integration work can continue independently.

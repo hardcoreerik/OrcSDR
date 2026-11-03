@@ -30,6 +30,8 @@ int main(void){
   assert(orcsdr_board_gnss_prepare()==ESP_ERR_NOT_SUPPORTED&&regs[3]==0xff);
   profile.has_gnss=true;profile.gnss_startup_line=(orcsdr_ioexp_line_t){0,11};
   assert(orcsdr_board_gnss_prepare()==ESP_OK&&regs[3]==0xfd&&regs[7]==0xfd);
+  profile.gnss_startup_level=true;
+  assert(orcsdr_board_gnss_prepare()==ESP_OK&&regs[3]==0xff&&regs[7]==0xfd);
   fail_read=1;assert(orcsdr_board_gnss_prepare()==ESP_ERR_TIMEOUT&&!locked);fail_read=0;
   fail_write=1;assert(orcsdr_board_gnss_prepare()==ESP_ERR_TIMEOUT&&!locked);fail_write=0;
   timeout=1;assert(orcsdr_board_gnss_prepare()==ESP_ERR_TIMEOUT);timeout=0;
