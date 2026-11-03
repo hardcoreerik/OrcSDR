@@ -166,4 +166,3 @@ struct HostPower {
 inline struct M5Stub { lgfx::LovyanGFX Display; HostPower Power; } M5;
 inline uint32_t host_millis = 1000;
 inline uint32_t millis() { return host_millis; }
-

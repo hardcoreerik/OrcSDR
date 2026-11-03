@@ -73,7 +73,6 @@ inline Layout make_layout(Rect v) {
     l.scope_title={24,100,860,36};l.scope_palette={900,100,170,52};l.scope_speed={1086,100,170,52};
     l.scope_plot={24,168,1232,150};l.scope_axis={24,318,1232,20};l.scope_waterfall={24,340,1232,150};
     l.scope_status={24,138,860,26}; l.scope_plot_width=l.scope_plot.w;l.scope_plot_height=l.scope_plot.h;
-    const int groups[3]={24,428,832}; const int ys[2]={498,558};
     l.scope_control[0]={24,498,64,52};l.scope_control[1]={336,498,64,52};l.scope_control[2]={428,498,64,52};l.scope_control[3]={740,498,64,52};l.scope_control[4]={832,498,64,52};l.scope_control[5]={1144,498,64,52};
     l.scope_control[6]={24,558,64,52};l.scope_control[7]={336,558,64,52};l.scope_control[8]={428,558,64,52};l.scope_control[9]={740,558,64,52};
     l.scope_control[10]={832,558,160,52};l.scope_control[11]={998,558,110,52};l.scope_control[12]={1114,558,94,52};
@@ -148,7 +147,10 @@ inline Layout make_layout(Rect v) {
     l.scope_status=compact?Rect{}:Rect{x,l.scope_waterfall.y+l.scope_waterfall.h+gap,w,24};
     l.scope_plot_width=w;l.scope_plot_height=plot_h;
     const int controls_y=l.content.y+l.content.h-controls_h;const int cell=(w-4*gap)/5;
-    for(int i=0;i<15;++i)l.scope_control[i]={x+(i%5)*(cell+gap),controls_y+(i/5)*(control_touch+(compact?4:gap)),cell,control_touch};l.scope_control_count=15;
+    for(int i=0;i<15;++i) {
+      l.scope_control[i]={x+(i%5)*(cell+gap),controls_y+(i/5)*(control_touch+(compact?4:gap)),cell,control_touch};
+    }
+    l.scope_control_count=15;
   }
   const int overlay_margin=std::min(24,std::max(8,v.w/24));
   l.detail_overlay={l.content.x+overlay_margin,l.content.y+overlay_margin,l.content.w-2*overlay_margin,l.content.h-2*overlay_margin};

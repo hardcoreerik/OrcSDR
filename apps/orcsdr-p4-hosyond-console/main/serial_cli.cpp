@@ -579,6 +579,15 @@ void cmd_pocsag(char* args) {
   }
   std::printf(screens::pocsag_request(unsigned(c),value)?"RTL_POCSAG_QUEUED\n":"RTL_POCSAG_ERROR inactive_or_busy\n");
 }
+void cmd_lora_tx(char* args) {
+  if(!authed()){std::printf("RTL_LORA_TX_ERROR auth_required\n");return;}
+  unsigned page=3;
+  if(!strcmp(args,"VIEW OPERATOR"))page=0;
+  else if(!strcmp(args,"VIEW MESSAGES"))page=1;
+  else if(!strcmp(args,"VIEW DUAL_RADIO"))page=2;
+  if(page>2){std::printf("RTL_LORA_TX_INVALID use VIEW OPERATOR|MESSAGES|DUAL_RADIO\n");return;}
+  std::printf(screens::lora_tx_page_request(page)?"RTL_LORA_TX_QUEUED\n":"RTL_LORA_TX_ERROR inactive_or_busy\n");
+}
 void cmd_ui(char* args) {
   if (std::strncmp(args,"ROTATION ",9)==0) {
     if (!authed()) {std::printf("RTL_UI_ROTATION_ERROR auth_required\n");return;}
@@ -778,6 +787,7 @@ void handle_line(char* line) {
   if (std::strncmp(line, "RTL_AUDIO ", 10) == 0) return cmd_audio(line + 10);
   if (std::strncmp(line, "RTL_UI ", 7) == 0) return cmd_ui(line + 7);
   if (std::strncmp(line,"RTL_POCSAG ",11)==0) return cmd_pocsag(line+11);
+  if (std::strncmp(line,"RTL_LORA TX ",12)==0) return cmd_lora_tx(line+12);
   if (std::strcmp(line, "RTL_SCREEN_STATUS") == 0) {
     std::printf("RTL_SCREEN_STATUS active=%s return=%s transitions=0 rejected_draws=0 visible_updates=%u last_transition_ms=0\n",
                 home_app::screen_name(), home_app::screen_name(), unsigned(home_app::status().visible_updates));

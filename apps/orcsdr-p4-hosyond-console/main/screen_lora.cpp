@@ -29,6 +29,8 @@ namespace {
 namespace lr = orcsdr::lora;
 namespace ln = orcsdr::lora_native;
 constexpr char TAG[] = "LORA";
+std::atomic<unsigned> g_tx_page_request{0};
+std::atomic<bool> g_ui_active{false};
 
 constexpr uint32_t kRate = 960000;
 constexpr size_t kRecBytes = static_cast<size_t>(kRate) * 2u * 4u;  // a 4 s capture
@@ -531,8 +533,10 @@ void enter() {
   home_app::request_frequency(g_config_hz);
   orcsdr::radio::set_aux_iq_sink(iq_offer);
   lr::enter(build());
+  g_tx_page_request=0;g_ui_active=true;
 }
 void leave() {
+  g_ui_active=false;g_tx_page_request=0;
   orcsdr::radio::set_aux_iq_sink(nullptr);
   g_rec_active = false;
   g_rec_ready = false;
@@ -542,6 +546,8 @@ void leave() {
 }
 
 void tick() {
+  const auto page=g_tx_page_request.exchange(0);
+  if(page)std::printf("RTL_LORA_TX_VIEW_%s page=%u\n",lr::select_tx_page(page-1)?"OK":"ERROR",page-1);
   const uint32_t now = now_ms();
   // channel survey
   const auto step = orcsdr::lora_channel::service_survey(now, true, orcsdr::radio::level_dbfs());
@@ -633,6 +639,10 @@ void spectrum(const float* levels, size_t first, size_t visible, float floor) { 
 }  // namespace
 
 namespace screens {
+bool lora_tx_page_request(unsigned page) {
+  if(page>2||!g_ui_active.load())return false;
+  unsigned idle=0;return g_tx_page_request.compare_exchange_strong(idle,page+1);
+}
 const Screen& lora_screen() {
   static const Screen s{orcsdr::dashboards::Id::lora, "LORA", enter, leave, tick, tap, nullptr, spectrum,nullptr,[]() {
     if(!resize_tx_viewport())return false;

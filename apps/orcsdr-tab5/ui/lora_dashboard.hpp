@@ -139,6 +139,7 @@ struct Action {
 void enter(const Snapshot& snapshot);
 // UI-owner opt-in for native TX Lab geometry; legacy callers stay unchanged.
 bool set_tx_viewport(audio_header::HeaderRect viewport);
+bool select_tx_page(unsigned page); // UI owner only; same transition as touch
 void leave();
 void draw();
 void update(const Snapshot& snapshot);

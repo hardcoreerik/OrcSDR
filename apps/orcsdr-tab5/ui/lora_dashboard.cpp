@@ -1059,6 +1059,12 @@ void draw() {
   draw_static();
 }
 
+bool select_tx_page(unsigned page) {
+  if(!g_active||g_view!=View::tx_lab||page>2||g_snapshot.tx.readiness==lora_tx::Readiness::absent)return false;
+  if(unsigned(g_tx_page)!=page){g_tx_page=static_cast<tx_views::Page>(page);draw_static();}
+  return true;
+}
+
 void update(const Snapshot& snapshot) {
   if (!g_active) return;
   bool map_content_changed=snapshot.node_count!=g_snapshot.node_count||
@@ -1230,7 +1236,7 @@ Action handle_touch(int32_t x, int32_t y) {
     const auto inside=[&](tx_native::Rect r){return hit(x,y,r.x,r.y,r.w,r.h);};
     if(g_snapshot.tx.readiness==lora_tx::Readiness::absent)return {};
     for(int i=0;i<3;++i)if(inside(g_tx_layout.mode(i))) {
-      if(int(g_tx_page)!=i){g_tx_page=static_cast<tx_views::Page>(i);draw_native_tx(true);}return {};
+      select_tx_page(unsigned(i));return {};
     }
     if(inside(g_tx_layout.action(false))&&lora_tx::can_arm(g_snapshot.tx)==lora_tx::Denial::none)
       return {g_snapshot.tx.operator_armed?ActionKind::tx_request_disarm:ActionKind::tx_request_arm};
