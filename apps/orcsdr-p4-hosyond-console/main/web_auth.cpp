@@ -1,4 +1,5 @@
 #include "web_auth.hpp"
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -42,7 +43,8 @@ struct Peer {
 
 SemaphoreHandle_t g_mutex = nullptr;
 uint8_t g_key[32], g_salt[16];
-bool g_default = true, g_ready = false;
+bool g_default = true;
+std::atomic<bool> g_ready{false};
 Nonce g_nonces[kNonces];
 Session g_sessions[kMaxSessions];
 Peer g_peers[kPeers];
@@ -212,19 +214,15 @@ LoadCredentials load_credentials() {
   return LoadCredentials::legacy;
 }
 
-// One NVS transaction updates the canonical versioned record and the legacy keys.
-// Older firmware therefore sees the same credentials, while failed commits leave
-// both formats at their previous values.
+// Keep one authoritative versioned record. ESP-IDF 5.5's simple NVS handle writes
+// each set_blob immediately; commit() is not a multi-key transaction. Legacy keys
+// are read only for migration and intentionally remain unchanged after migration.
 bool store_credentials(const uint8_t salt[16], const uint8_t key[32], bool is_default) {
   uint8_t record[kCredentialBytes];
   encode_credentials(salt, key, is_default, record);
   nvs_handle_t handle{};
   if (nvs_open("orcsdr_wauth", NVS_READWRITE, &handle) != ESP_OK) return false;
-  esp_err_t error = nvs_set_blob(handle, "credential", record, sizeof(record));
-  if (error == ESP_OK) error = nvs_set_blob(handle, "salt", salt, 16);
-  if (error == ESP_OK) error = nvs_set_blob(handle, "key", key, 32);
-  if (error == ESP_OK) error = nvs_set_u8(handle, "def", is_default ? 1 : 0);
-  if (error == ESP_OK) error = nvs_commit(handle);
+  const esp_err_t error = nvs_set_blob(handle, "credential", record, sizeof(record));
   nvs_close(handle);
   return error == ESP_OK;
 }
@@ -248,8 +246,12 @@ Peer* peer_slot(uint32_t ip, int64_t now) {
 
 void init() {
   if (g_ready) return;
-  g_mutex = xSemaphoreCreateMutex();
-  if (!g_mutex) return;
+  // Reuse the mutex on failed-init retries; replacing it would strand any waiter
+  // on the old handle and leak another semaphore on each retry.
+  if (!g_mutex) {
+    g_mutex = xSemaphoreCreateMutex();
+    if (!g_mutex) return;
+  }
   Lock lock;
   const LoadCredentials loaded = load_credentials();
   if (loaded == LoadCredentials::invalid || loaded == LoadCredentials::unavailable) {
@@ -278,10 +280,16 @@ void init() {
   g_ready = true;
 }
 
-bool default_password() { return g_default; }
+bool default_password() {
+  if (!g_mutex) return true;
+  Lock lock;
+  return g_default;
+}
 
 bool set_password(const char* password) {
-  if (!g_ready || !password) return false;
+  // This entry point is restricted to a privileged local caller. It also permits
+  // that caller to recover from corrupt/unavailable persisted credentials.
+  if (!g_mutex || !password) return false;
   const size_t n = std::strlen(password);
   if (n < 8 || n > 64 || std::strcmp(password, kFactoryPassword) == 0) return false;
   uint8_t salt[16], key[32];
@@ -293,6 +301,9 @@ bool set_password(const char* password) {
   std::memcpy(g_key, key, sizeof(g_key));
   g_default = false;
   end_all_sessions();
+  for (Nonce& nonce : g_nonces) nonce = Nonce{};
+  for (Peer& peer : g_peers) peer = Peer{};
+  g_ready = true;
   return true;
 }
 
@@ -423,5 +434,18 @@ int active_sessions() {
   for (const Session& s : g_sessions) n += s.used && now - s.last_us <= kIdleUs && now - s.created_us <= kHardUs;
   return n;
 }
+
+#if defined(ORCSDR_WEB_AUTH_HOST_TEST)
+void reset_runtime_for_test() {
+  g_ready = false;
+  g_mutex = nullptr;
+  std::memset(g_key, 0, sizeof(g_key));
+  std::memset(g_salt, 0, sizeof(g_salt));
+  g_default = true;
+  for (Nonce& nonce : g_nonces) nonce = Nonce{};
+  for (Session& session : g_sessions) session = Session{};
+  for (Peer& peer : g_peers) peer = Peer{};
+}
+#endif
 
 }  // namespace web_auth

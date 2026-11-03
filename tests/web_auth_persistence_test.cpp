@@ -1,10 +1,12 @@
 #include "web_auth.hpp"
-#include "nvs_store.hpp"
+#include "nvs_test_support.hpp"
 #include "crypto_test_support.hpp"
 
 #include <cassert>
 #include <cstdio>
 #include <cstring>
+
+namespace web_auth { void reset_runtime_for_test(); }
 
 namespace {
 uint32_t g_peer = 0x01020304;
@@ -68,7 +70,32 @@ int main(int argc, char** argv) {
     web_auth::init();
     char nonce[33];
     assert(!web_auth::issue_challenge(nonce));
+    web_auth::init();  // A failed retry reuses the one mutex.
+    assert(web_auth_test_store::mutex_create_count() == 1);
+    assert(web_auth::set_password("recovery-pass-123")); // privileged local recovery path
+    assert(web_auth::issue_challenge(nonce));
+    assert(login_with_password("recovery-pass-123"));
     std::puts("P4 web auth corrupt credential fails closed PASS (crypto is stubbed)");
+    return 0;
+  }
+  if (argc > 1 && (std::strcmp(argv[1], "--write-before-reboot") == 0 ||
+                   std::strcmp(argv[1], "--write-after-reboot") == 0)) {
+    const bool after = std::strcmp(argv[1], "--write-after-reboot") == 0;
+    web_auth::init();
+    const char* old_password = "password";
+    const char* new_password = "new-password-123";
+    if (after) web_auth_test_store::fail_next_write_after();
+    else web_auth_test_store::fail_next_write_before();
+    assert(!web_auth::set_password(new_password));
+    assert(web_auth::default_password()); // in-RAM state changes only after a successful return
+    assert(login_with_password(old_password));
+    web_auth::reset_runtime_for_test();
+    web_auth::init();
+    const bool new_is_durable = after;
+    assert(login_with_password(new_is_durable ? new_password : old_password));
+    assert(!login_with_password(new_is_durable ? old_password : new_password));
+    std::puts(after ? "P4 web auth write-error reboot resolves to complete new record PASS (crypto is stubbed)"
+                    : "P4 web auth pre-write failure reboot retains complete old record PASS (crypto is stubbed)");
     return 0;
   }
   web_auth::init();
@@ -76,26 +103,27 @@ int main(int argc, char** argv) {
   assert(login_with_password("password"));
   assert(web_auth::active_sessions() == 1);
 
-  // Simulate a failed NVS commit. RAM credentials and sessions must remain usable.
-  const size_t commits_before_failure = web_auth_test_store::commit_count();
-  web_auth_test_store::fail_next_commit();
+  // NVS writes through each set_blob. A failed write before persistence leaves
+  // both in-memory credentials and sessions on the prior credential.
+  const size_t writes_before_failure = web_auth_test_store::write_count();
+  web_auth_test_store::fail_next_write_before();
   assert(!web_auth::set_password("new-password-123"));
   assert(web_auth::default_password());
   assert(web_auth::active_sessions() == 1);
   assert(login_with_password("password"));
   assert(!login_with_password("new-password-123"));
 
-  const size_t commits_before_success = web_auth_test_store::commit_count();
+  const size_t writes_before_success = web_auth_test_store::write_count();
   assert(web_auth::set_password("new-password-123"));
-  assert(web_auth_test_store::commit_count() == commits_before_success + 1);
-  assert(web_auth_test_store::commit_count() == commits_before_failure + 2);
+  assert(web_auth_test_store::write_count() == writes_before_success + 1);
+  assert(web_auth_test_store::write_count() == writes_before_failure + 2);
   assert(!web_auth::default_password());
   assert(web_auth::active_sessions() == 0);
   assert(web_auth_test_store::contains("credential"));
-  assert(web_auth_test_store::contains("salt"));
-  assert(web_auth_test_store::contains("key"));
-  assert(web_auth_test_store::contains("def"));
+  assert(!web_auth_test_store::contains("salt"));
+  assert(!web_auth_test_store::contains("key"));
+  assert(!web_auth_test_store::contains("def"));
   assert(!login_with_password("password"));
   assert(login_with_password("new-password-123"));
-  std::puts("P4 web auth NVS commit failure/success boundary PASS (crypto is stubbed)");
+  std::puts("P4 web auth immediate NVS write failure/success boundary PASS (crypto is stubbed)");
 }

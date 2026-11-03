@@ -17,13 +17,13 @@
 
 namespace {
 struct RawValue { bool blob = true; std::vector<uint8_t> bytes; };
-struct Handle { std::string ns; bool read_only = false; std::map<std::string, RawValue> staged; };
+struct Handle { std::string ns; bool read_only = false; };
 std::map<std::string, std::map<std::string, RawValue>> g_db;
 std::map<nvs_handle_t, Handle> g_handles;
 nvs_handle_t g_next_handle = 1;
-std::string g_fail_key;
-bool g_fail_commit = false;
-size_t g_commits = 0;
+bool g_fail_before = false, g_fail_after = false;
+size_t g_writes = 0;
+size_t g_mutex_creates = 0;
 int64_t g_time = 1;
 uint8_t g_random = 1;
 const mbedtls_md_info_t g_sha256{};
@@ -40,10 +40,11 @@ void fake_digest(const uint8_t* data, size_t length, uint8_t out[32]) {
 }
 
 namespace web_auth_test_store {
-void fail_put(const char* key) { g_fail_key = key ? key : ""; }
-void fail_next_commit() { g_fail_commit = true; }
+void fail_next_write_before() { g_fail_before = true; }
+void fail_next_write_after() { g_fail_after = true; }
 bool contains(const char* key) { return g_db["orcsdr_wauth"].count(key) != 0; }
-size_t commit_count() { return g_commits; }
+size_t write_count() { return g_writes; }
+size_t mutex_create_count() { return g_mutex_creates; }
 bool seed_blob(const char* key, const void* bytes, size_t size) {
   if (!key || (!bytes && size)) return false;
   RawValue v; v.blob = true; v.bytes.assign(static_cast<const uint8_t*>(bytes), static_cast<const uint8_t*>(bytes) + size);
@@ -58,18 +59,14 @@ bool seed_u8(const char* key, uint8_t value) {
 extern "C" esp_err_t nvs_open(const char* name, nvs_open_mode_t mode, nvs_handle_t* out) {
   if (!name || !out) return ESP_FAIL;
   const nvs_handle_t handle = g_next_handle++;
-  g_handles.emplace(handle, Handle{name, mode == NVS_READONLY, {}});
+  g_handles.emplace(handle, Handle{name, mode == NVS_READONLY});
   *out = handle; return ESP_OK;
 }
 extern "C" void nvs_close(nvs_handle_t handle) { g_handles.erase(handle); }
 extern "C" esp_err_t nvs_commit(nvs_handle_t handle) {
   auto it = g_handles.find(handle);
   if (it == g_handles.end() || it->second.read_only) return ESP_FAIL;
-  ++g_commits;
-  if (g_fail_commit) { g_fail_commit = false; return ESP_FAIL; }
-  auto& db = g_db[it->second.ns];
-  for (auto& item : it->second.staged) db[item.first] = item.second;
-  it->second.staged.clear(); return ESP_OK;
+  return ESP_OK;
 }
 extern "C" esp_err_t nvs_get_blob(nvs_handle_t handle, const char* key, void* out, size_t* size) {
   auto h = g_handles.find(handle);
@@ -94,16 +91,22 @@ extern "C" esp_err_t nvs_get_u8(nvs_handle_t handle, const char* key, uint8_t* o
 extern "C" esp_err_t nvs_set_blob(nvs_handle_t handle, const char* key, const void* bytes, size_t size) {
   auto h = g_handles.find(handle);
   if (h == g_handles.end() || h->second.read_only || !key || (!bytes && size)) return ESP_FAIL;
-  if (g_fail_key == key) { g_fail_key.clear(); return ESP_FAIL; }
+  ++g_writes;
+  if (g_fail_before) { g_fail_before = false; return ESP_FAIL; }
   RawValue value; value.blob = true;
   if (size) value.bytes.assign(static_cast<const uint8_t*>(bytes), static_cast<const uint8_t*>(bytes) + size);
-  h->second.staged[key] = std::move(value); return ESP_OK;
+  g_db[h->second.ns][key] = std::move(value);
+  if (g_fail_after) { g_fail_after = false; return ESP_FAIL; }
+  return ESP_OK;
 }
 extern "C" esp_err_t nvs_set_u8(nvs_handle_t handle, const char* key, uint8_t value) {
   auto h = g_handles.find(handle);
   if (h == g_handles.end() || h->second.read_only || !key) return ESP_FAIL;
-  if (g_fail_key == key) { g_fail_key.clear(); return ESP_FAIL; }
-  RawValue raw; raw.blob = false; raw.bytes.push_back(value); h->second.staged[key] = std::move(raw); return ESP_OK;
+  ++g_writes;
+  if (g_fail_before) { g_fail_before = false; return ESP_FAIL; }
+  RawValue raw; raw.blob = false; raw.bytes.push_back(value); g_db[h->second.ns][key] = std::move(raw);
+  if (g_fail_after) { g_fail_after = false; return ESP_FAIL; }
+  return ESP_OK;
 }
 extern "C" esp_err_t nvs_entry_find(const char*, const char* ns, nvs_type_t, nvs_iterator_t* it) {
   if (!it || !ns) return ESP_FAIL;
@@ -166,6 +169,6 @@ extern "C" int mbedtls_pkcs5_pbkdf2_hmac_ext(mbedtls_md_type_t,const unsigned ch
 }
 extern "C" void esp_fill_random(void* buffer,size_t length) { auto* p=static_cast<uint8_t*>(buffer); while(length--)*p++=g_random++; }
 extern "C" int64_t esp_timer_get_time() { return g_time+=100; }
-extern "C" SemaphoreHandle_t xSemaphoreCreateMutex() { static int mutex; return &mutex; }
+extern "C" SemaphoreHandle_t xSemaphoreCreateMutex() { static int mutex; ++g_mutex_creates; return &mutex; }
 extern "C" int xSemaphoreTake(SemaphoreHandle_t,unsigned) { return 1; }
 extern "C" int xSemaphoreGive(SemaphoreHandle_t) { return 1; }
