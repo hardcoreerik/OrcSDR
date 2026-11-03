@@ -81,12 +81,28 @@ struct Action {
   uint32_t value = 0;
 };
 
+// Named, coordinate-free controls for the UI owner (including serial bridges).
+// These return the same Action values as touch handling; service work remains
+// in the application layer that already handles touch Actions.
+enum class Control : uint8_t {
+  tune_hz, previous_candidate, next_candidate, survey_toggle, hold_toggle,
+  hold_talkgroup, skip_talkgroup, auto_follow_toggle, encryption_skip_toggle,
+  span_down, span_up, sound_toggle, volume_down, volume_up,
+  open_device_settings, exit_to_home,
+  select_profile, rename_profile, import_profile, export_profile, delete_profile,
+  reload_config, previous_view, next_view
+};
+
 void enter(const Snapshot& snapshot);
 void leave();
+// UI-owner structural geometry change. Keeps view, profile selection, and open
+// text-editor draft; the caller remains responsible for touch calibration.
+bool set_viewport(int x, int y, int width, int height);
 void draw();
 void update(const Snapshot& snapshot);
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, float floor);
 Action handle_touch(int32_t x, int32_t y);
+Action handle_control(Control control, uint32_t value = 0);
 bool active();
 bool spectrum_active();
 uint32_t spectrum_fps();       // scope frames drawn in the last second
