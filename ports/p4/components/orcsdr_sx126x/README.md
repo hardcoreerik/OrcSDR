@@ -58,7 +58,28 @@ successfully; startup reliability remains an open requirement.
 
 Local evidence: `.local/sx126x-probe-final-build.log`,
 `.local/sx126x-probe-flash.log`, `.local/sx126x-device-probe.log`.
-No test transmission has been sent from either board. No C6 image was changed.
+At that probe checkpoint no test transmission had been sent from either board.
+No C6 image was changed.
+
+## Heltec transmission demonstration — 2026-11-03
+
+With both antennas confirmed by the owner, the Heltec V4 on COM24 submitted one
+Meshtastic text packet at its unchanged US LongFast settings: 906.875 MHz from
+the default frequency-slot configuration, 5 dBm, hop limit 0, no requested ACK
+or response. Packet ID was `2497834197`; its queue result was zero. Text:
+`OrcSDR LilyGO P4 Mesh/LoRa test 001 - Heltec V4 at 906.875 MHz.`
+
+The LilyGO's **RTL-SDR**, not its onboard SX1262, was tuned through the Home
+owner queue to 906875000 Hz. Before/during/after native PNGs show a strong
+time-correlated RF burst and retained waterfall trace; the baseline lacked
+that burst. This demonstrates the transmitted burst being observed over RF,
+not a CRC-verified LoRa packet or a decoded Meshtastic message. The strong
+nearby signal reached about -1 dBFS in the capture, so a later decode test must
+check receiver headroom. The onboard SX1262 remains TX-locked and unqualified.
+
+Local evidence: `.local/mesh-transmission.log` and private output captures
+`r19-mesh-before.png`, `r19-mesh-transmission.png`, `r19-mesh-after.png`.
+The device is left on Home at the requested 906.875 MHz for observation.
 
 ## Clock configuration research for the next RF initialization
 

@@ -31,7 +31,7 @@ Legend: **partial** means implemented or checked only for the cited scope;
 | Settings actions | Connectivity/C6/storage slices implemented | Sampled Settings/C6 acceptance | Audit and wire all remaining advertised actions |
 | Maps/catalog services | Existing maps infrastructure retained | Partial captures only | Actual catalogs/map actions, failure/offline behavior and persistent state |
 | ADS-B metadata | Shared dashboard present | Layout captures only | Metadata backend, populated display and actual reception |
-| LoRa logs/history/messages/live IQ | RX pipeline exists; TX UI states unavailable backend truthfully | TX UI captures only | Real persistence, composition/activity and independent IQ wiring |
+| LoRa logs/history/messages/live IQ | RX pipeline exists; TX UI states unavailable backend truthfully | One Heltec Meshtastic transmission observed as an RTL-SDR RF burst in r19 native PNGs; no message decode proven | CRC/message reception, real persistence, composition/activity and independent IQ wiring |
 | Shortwave hunt/DSP/storage | Shared action definitions; P4 marks unsupported functions unavailable | Layout captures, no service acceptance | Wire supported services and verify actual results |
 | Existing M5GFX/WASM web UI | Auth/server/control modules integrated; state and persistence tests pass; bundle not yet packaged | Real HTTP auth, rejection/replay checks, signed Home step-up/down and applied-frequency receipts passed | Existing assets, other shared routes, native password editor, browser workflows and audio/IQ |
 | Automatic/manual rotation | Profile-aware IMU logic and persistence implemented | Clockwise correction accepted | All four poses, gesture protection, fallback and persistence matrix |
