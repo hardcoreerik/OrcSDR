@@ -3,6 +3,7 @@
 // Linked stubs are intentionally minimal; no fake successful transmissions.
 #include <M5Unified.h>
 #include "lora_dashboard.hpp"
+#include "lora_tx_views.hpp"
 #include "lora_tx_native_layout.hpp"
 #include "dashboard_audio_control.hpp"
 #include "focus_nav.hpp"
@@ -305,6 +306,111 @@ void message_only_redraws() {
   }
   std::puts("INTEGRATED_MESSAGE_ONLY_REDRAWS PASS");
 }
+void packet_rx_control_states() {
+  struct Case { int w,h; bool native; };
+  for (const auto c : {Case{1280,720,false},Case{568,1232,false},
+                       Case{1232,568,true},Case{568,1232,true}}) {
+    setup(c.w,c.h);
+    auto s=packet_profile();
+    orcsdr::audio_header::HeaderRect safe{};
+    orcsdr::lora::tx_native::Layout layout{};
+    if(c.native) {
+      safe={72,72,c.w-144,c.h-144};
+      layout=orcsdr::lora::tx_native::make(safe);
+      assert(layout.valid);
+      assert(lora::set_tx_viewport(safe));
+      lora::enter(s);
+    } else {
+      assert(lora::set_tx_viewport({0,0,1280,720}));
+      if(c.w==1280) lora::show_documentation_view(lora::View::tx_lab,s);
+      else lora::enter(s);
+    }
+    assert(lora::select_tx_page(1));
+    const bool vertical=c.h>c.w;
+    assert(has("SX1262 / LONGFAST / MMCX1"));
+    assert(has("RX FREQUENCY")&&has("LONGFAST / MMCX1"));
+    assert(has("TX COMPOSER UNAVAILABLE")&&has("SEND LOCKED")&&has("ARM LOCKED"));
+    bool composer_status_bounded=false;
+    const int rx_card_bottom=c.native?layout.y(vertical?796:481):(vertical?796:481);
+    const int activity_card_bottom=c.native?layout.y(vertical?820:519):(vertical?820:519);
+    for(const auto& p:host_display::prims) if(p.kind==Prim::text&&
+        p.str=="TX COMPOSER UNAVAILABLE") {
+      int x,y,w,h;assert(host_display::effective(p,&x,&y,&w,&h));
+      assert(y>=rx_card_bottom);
+      assert(y+h<=activity_card_bottom);
+      composer_status_bounded=true;
+    }
+    assert(composer_status_bounded);
+    s.event_count=1;
+    auto& event=s.events[0];event.verified=true;event.sender=0x2345;
+    event.packet_id=9;event.received_ms=300;
+    std::snprintf(event.text,sizeof(event.text),"A populated message stays separate from RX controls");
+    s.packet_rx_supported=true;
+    s.packet_rx_available=true;
+    host_display::reset();
+    lora::update(s);
+    assert(has("START RX")&&has("A populated message"));
+    assert(full_clears()==0);
+    assert(!s.tx.operator_armed);
+    std::vector<Prim> changed_text;
+    for(const auto& p:host_display::prims) if(p.kind==Prim::text) changed_text.push_back(p);
+    for(size_t i=0;i<changed_text.size();++i) for(size_t j=i+1;j<changed_text.size();++j) {
+      const auto& a=changed_text[i];const auto& b=changed_text[j];
+      const bool overlap=a.x<b.x+b.w&&b.x<a.x+a.w&&a.y<b.y+b.h&&b.y<a.y+a.h;
+      if(overlap) std::fprintf(stderr,"packet RX text overlap %s [%d,%d %dx%d] / %s [%d,%d %dx%d]\n",
+                               a.str.c_str(),a.x,a.y,a.w,a.h,b.str.c_str(),b.x,b.y,b.w,b.h);
+      assert(!overlap);
+    }
+
+    const auto button_source=orcsdr::lora::tx_views::packet_rx_control_rect(vertical);
+    assert(lora::view()==lora::View::tx_lab);
+    assert(orcsdr::lora::tx_views::packet_rx_control_hit(
+        button_source.x+button_source.w/2,button_source.y+button_source.h/2,vertical));
+    auto button=orcsdr::audio_header::HeaderRect{button_source.x,button_source.y,
+                                                  button_source.w,button_source.h};
+    if(c.native) button=layout.bounds(button.x,button.y,button.w,button.h);
+    assert(button.w>=44&&button.h>=44);
+    const auto start=lora::handle_touch(button.x+button.w/2,button.y+button.h/2);
+    assert(start.kind==lora::ActionKind::packet_rx_toggle);
+    assert(!s.tx.operator_armed&&s.tx.readiness==tx::Readiness::profile_only);
+
+    // Requested but not yet receiving must remain cancellable and redraw only
+    // the button rectangle, even when availability has fallen away.
+    s.packet_rx_available=false;s.packet_rx_requested=true;
+    host_display::reset();lora::update(s);
+    assert(has("CANCEL RX")&&full_clears()==0);
+    for(const auto& p:host_display::prims) {
+      assert(p.x>=button.x&&p.y>=button.y&&p.x+p.w<=button.x+button.w&&p.y+p.h<=button.y+button.h);
+    }
+    assert(lora::handle_touch(button.x+button.w/2,button.y+button.h/2).kind==
+           lora::ActionKind::packet_rx_toggle);
+
+    s.packet_rx_receiving=true;
+    host_display::reset();lora::update(s);
+    assert(has("STOP RX")&&full_clears()==0);
+    assert(lora::handle_touch(button.x+button.w/2,button.y+button.h/2).kind==
+           lora::ActionKind::packet_rx_toggle);
+
+    s.packet_rx_requested=false;s.packet_rx_receiving=false;
+    host_display::reset();lora::update(s);
+    assert(has("RX UNAVAILABLE")&&full_clears()==0);
+    assert(lora::handle_touch(button.x+button.w/2,button.y+button.h/2).kind==
+           lora::ActionKind::none);
+
+    const auto frequency_source=orcsdr::lora::tx_views::packet_rx_frequency_rect(vertical);
+    auto frequency=orcsdr::audio_header::HeaderRect{frequency_source.x,frequency_source.y,
+                                                     frequency_source.w,frequency_source.h};
+    if(c.native) frequency=layout.bounds(frequency.x,frequency.y,frequency.w,frequency.h);
+    host_display::reset();
+    s.packet_rx_frequency_hz=906875000;
+    lora::update(s);
+    assert(has("906.875 MHz")&&!has("LONGFAST / MMCX1")&&full_clears()==0);
+    for(const auto& p:host_display::prims)
+      assert(p.x>=frequency.x&&p.y>=frequency.y&&p.x+p.w<=frequency.x+frequency.w&&
+             p.y+p.h<=frequency.y+frequency.h);
+  }
+  std::puts("INTEGRATED_PACKET_RX_CONTROLS PASS");
+}
 int main() {
   rx_only_regression();
   landscape_navigation_and_revocation();
@@ -312,5 +418,6 @@ int main() {
   portrait_presence_and_ui();
   native_safe_views();
   message_only_redraws();
+  packet_rx_control_states();
   std::puts("LoRa TX full dashboard host simulation PASS");
 }

@@ -103,14 +103,14 @@ void test_verified_message_rendering() {
       "Long received message wraps safely across bounded lines; nearby controls stay visible after truncation.");
   for (const bool vertical : {false, true}) {
     const int card_x = vertical ? 48 : 660;
-    const int card_y = vertical ? 636 : 318;
+    const int card_y = vertical ? 636 : 306;
     const int card_w = vertical ? 470 : 544;
     const int card_h = vertical ? 160 : 175;
     host_display::reset();
     ui::draw_values(M5.Display, s, ui::Page::messenger, vertical);
     assert(shows("Long received"));
     assert(shows("..."));
-    assert(shows("RTL-SDR FROM 00001234"));
+    assert(shows("RTL-SDR")&&shows("FROM 00001234"));
     assert(shows("TX COMPOSER UNAVAILABLE"));
     std::vector<std::string> initial_card;
     bool composer_outside_card = false;
@@ -174,7 +174,7 @@ void test_verified_message_rendering() {
   host_display::reset();
   ui::draw_values(M5.Display, s, ui::Page::messenger, false);
   assert(shows("Decrypted text payload"));
-  assert(shows("SX1262 FROM 00001234"));
+  assert(shows("SX1262")&&shows("FROM 00001234"));
 }
 void test_latest_event_identity() {
   Snapshot a{}, b{};
@@ -190,10 +190,64 @@ void test_latest_event_identity() {
   b.events[0].frequency_hz = 915000000;
   assert(!ui::same_latest_verified_rx_event(a, b));
 }
+void test_packet_rx_control_geometry() {
+  Snapshot s{};
+  for (const bool vertical : {false, true}) {
+    s.packet_rx_available = false;
+    s.packet_rx_requested = false;
+    s.packet_rx_receiving = false;
+    const auto r = ui::packet_rx_control_rect(vertical);
+    const auto f = ui::packet_rx_frequency_rect(vertical);
+    assert(r.w >= 44 && r.h >= 44);
+    host_display::reset();
+    ui::draw_static(M5.Display, s, ui::Page::messenger, vertical);
+    ui::draw_values(M5.Display, s, ui::Page::messenger, vertical);
+    assert(shows("SX1262 / LONGFAST / MMCX1"));
+    assert(shows("RX FREQUENCY") && shows("LONGFAST / MMCX1"));
+    assert(shows("RX UNAVAILABLE"));
+    bool button_text = false;
+    for (const auto& p : host_display::prims) {
+      if (p.kind != Prim::text) continue;
+      int x, y, w, h;
+      assert(host_display::effective(p, &x, &y, &w, &h));
+      if (p.str == "RX UNAVAILABLE") {
+        assert(x >= r.x && x + w <= r.x + r.w);
+        assert(y >= r.y && y + h <= r.y + r.h);
+        assert(h >= 16);
+        button_text = true;
+      }
+      if (p.str.find("SX1262 / LONGFAST / MMCX1") != std::string::npos)
+        assert(y + h <= r.y);
+      if (p.str == "RX FREQUENCY" || p.str == "LONGFAST / MMCX1") {
+        if (x < f.x + f.w && x + w > f.x &&
+            (y < f.y || y + h > f.y + f.h)) {
+          std::fprintf(stderr, "frequency bounds vertical=%d text=%s at %d,%d %dx%d rect=%d,%d %dx%d\n",
+                       vertical, p.str.c_str(), x, y, w, h, f.x, f.y, f.w, f.h);
+          assert(false);
+        }
+      }
+    }
+    assert(button_text);
+    s.packet_rx_available = true;
+    host_display::reset();
+    ui::draw_packet_rx_control(M5.Display, s, vertical);
+    assert(shows("START RX"));
+    s.packet_rx_requested = true;
+    s.packet_rx_available = false;
+    host_display::reset();
+    ui::draw_packet_rx_control(M5.Display, s, vertical);
+    assert(shows("CANCEL RX"));
+    s.packet_rx_receiving = true;
+    host_display::reset();
+    ui::draw_packet_rx_control(M5.Display, s, vertical);
+    assert(shows("STOP RX"));
+  }
+}
 int main() {
   test_navigation_and_gate();
   test_dimensions_and_truth();
   test_verified_message_rendering();
   test_latest_event_identity();
+  test_packet_rx_control_geometry();
   std::puts("lora tx view recording-host tests: PASS");
 }

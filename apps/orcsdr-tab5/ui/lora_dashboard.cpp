@@ -879,6 +879,10 @@ void draw_map_dynamic(bool details=true) {
 
 void draw_tx_dynamic() {
   tx_views::draw_values(M5.Display, g_snapshot, g_tx_page, portrait_tx_screen());
+  if (g_tx_page == tx_views::Page::messenger) {
+    const auto r = tx_views::packet_rx_control_rect(portrait_tx_screen());
+    focus_nav::note(r.x, r.y, r.w, r.h);
+  }
 }
 
 void draw_tx_message_value() {
@@ -889,6 +893,32 @@ void draw_tx_message_value() {
     tx_views::draw_rx_message(body, g_snapshot, vertical);
   } else {
     tx_views::draw_rx_message(M5.Display, g_snapshot, vertical);
+  }
+}
+
+void draw_tx_packet_rx_control() {
+  const bool vertical = portrait_tx_screen() ||
+      (native_tx_screen() && g_tx_layout.vertical);
+  const auto source = tx_views::packet_rx_control_rect(vertical);
+  if (native_tx_screen()) {
+    tx_native::Canvas body(M5.Display, g_tx_layout);
+    tx_views::draw_packet_rx_control(body, g_snapshot, vertical);
+    const auto mapped = g_tx_layout.bounds(source.x, source.y, source.w, source.h);
+    focus_nav::note(mapped.x, mapped.y, mapped.w, mapped.h);
+  } else {
+    tx_views::draw_packet_rx_control(M5.Display, g_snapshot, vertical);
+    focus_nav::note(source.x, source.y, source.w, source.h);
+  }
+}
+
+void draw_tx_packet_rx_frequency() {
+  const bool vertical = portrait_tx_screen() ||
+      (native_tx_screen() && g_tx_layout.vertical);
+  if (native_tx_screen()) {
+    tx_native::Canvas body(M5.Display, g_tx_layout);
+    tx_views::draw_packet_rx_frequency(body, g_snapshot, vertical);
+  } else {
+    tx_views::draw_packet_rx_frequency(M5.Display, g_snapshot, vertical);
   }
 }
 
@@ -995,6 +1025,11 @@ void draw_native_tx(bool structure) {
   text(lora_tx::can_arm(g_snapshot.tx)==lora_tx::Denial::none?"TX ADMITTED / RX INDEPENDENT":"TX LOCKED / RX INDEPENDENT",l.status.x+8,l.status.y+39,kMuted,2,middle_left);
   tx_native::Canvas body(M5.Display,l);
   tx_views::draw_values(body,g_snapshot,g_tx_page,l.vertical);
+  if(g_tx_page==tx_views::Page::messenger) {
+    const auto source=tx_views::packet_rx_control_rect(l.vertical);
+    const auto r=l.bounds(source.x,source.y,source.w,source.h);
+    focus_nav::note(r.x,r.y,r.w,r.h);
+  }
   tx_views::action_row(body,g_snapshot,l.vertical,g_tx_page==tx_views::Page::operator_panel);
 }
 
@@ -1097,8 +1132,16 @@ void update(const Snapshot& snapshot) {
   const bool capability_presence_changed =
       (snapshot.tx.readiness == lora_tx::Readiness::absent) !=
       (g_snapshot.tx.readiness == lora_tx::Readiness::absent);
+  const bool packet_rx_control_changed =
+      snapshot.packet_rx_supported != g_snapshot.packet_rx_supported ||
+      snapshot.packet_rx_available != g_snapshot.packet_rx_available ||
+      snapshot.packet_rx_requested != g_snapshot.packet_rx_requested ||
+      snapshot.packet_rx_receiving != g_snapshot.packet_rx_receiving;
+  const bool packet_rx_frequency_changed =
+      snapshot.packet_rx_frequency_hz != g_snapshot.packet_rx_frequency_hz;
   const bool tx_rx_changed=!tx_views::same_latest_verified_rx_event(snapshot,g_snapshot);
-  const bool content_changed = tx_changed || tx_rx_changed ||
+  const bool content_changed = tx_changed || tx_rx_changed || packet_rx_control_changed ||
+      packet_rx_frequency_changed ||
       snapshot.revision != g_snapshot.revision;
   g_snapshot = snapshot;
   if(native_tx_screen()) {
@@ -1107,7 +1150,11 @@ void update(const Snapshot& snapshot) {
     // message affects only its value card, including when VERIFIED stays true.
     if(capability_presence_changed) draw_native_tx(true);
     else if(tx_changed) draw_native_tx(false);
-    else if(tx_rx_changed && g_tx_page==tx_views::Page::messenger) draw_tx_message_value();
+    else if(g_tx_page==tx_views::Page::messenger) {
+      if(tx_rx_changed) draw_tx_message_value();
+      if(packet_rx_control_changed) draw_tx_packet_rx_control();
+      if(packet_rx_frequency_changed) draw_tx_packet_rx_frequency();
+    }
     return;
   }
   if (portrait_lora_screen()) {
@@ -1119,6 +1166,14 @@ void update(const Snapshot& snapshot) {
       return;
     }
     if (!portrait_tx_screen()) return; // no radio; no telemetry widgets to update
+    if(g_tx_page==tx_views::Page::messenger && !tx_changed) {
+      M5.Display.startWrite();
+      if(tx_rx_changed) draw_tx_message_value();
+      if(packet_rx_control_changed) draw_tx_packet_rx_control();
+      if(packet_rx_frequency_changed) draw_tx_packet_rx_frequency();
+      M5.Display.endWrite();
+      return; // ignore unrelated revision churn on this message page
+    }
     if (!content_changed) return;  // no full-frame repaint on idle
     M5.Display.startWrite();
     if (tx_rx_changed && !tx_changed && g_tx_page==tx_views::Page::messenger)
@@ -1149,6 +1204,14 @@ void update(const Snapshot& snapshot) {
     M5.Display.startWrite();
     draw_header();
     M5.Display.endWrite();
+  }
+  if(g_view==View::tx_lab && g_tx_page==tx_views::Page::messenger && !tx_changed) {
+    M5.Display.startWrite();
+    if(tx_rx_changed) draw_tx_message_value();
+    if(packet_rx_control_changed) draw_tx_packet_rx_control();
+    if(packet_rx_frequency_changed) draw_tx_packet_rx_frequency();
+    M5.Display.endWrite();
+    return; // message page ignores revisions with no changed visible values
   }
   const uint32_t now = millis();
   const bool needs_age_refresh = g_view != View::tx_lab && (g_view != View::traffic || g_traffic_details);
@@ -1254,6 +1317,12 @@ Action handle_touch(int32_t x, int32_t y) {
     if(audio_header::home_hit(x,y))return {ActionKind::exit_home};
     if(audio_header::settings_hit(x,y))return {ActionKind::open_settings};
     const auto inside=[&](tx_native::Rect r){return hit(x,y,r.x,r.y,r.w,r.h);};
+    if(g_tx_page==tx_views::Page::messenger) {
+      const auto source=tx_views::packet_rx_control_rect(g_tx_layout.vertical);
+      const auto r=g_tx_layout.bounds(source.x,source.y,source.w,source.h);
+      if(inside(r)&&tx_views::packet_rx_control_enabled(g_snapshot))
+        return {ActionKind::packet_rx_toggle};
+    }
     if(g_snapshot.tx.readiness==lora_tx::Readiness::absent)return {};
     for(int i=0;i<3;++i)if(inside(g_tx_layout.mode(i))) {
       select_tx_page(unsigned(i));return {};
@@ -1277,6 +1346,10 @@ Action handle_touch(int32_t x, int32_t y) {
       }
       return {};
     }
+    if (g_tx_page==tx_views::Page::messenger &&
+        tx_views::packet_rx_control_hit(x,y,true) &&
+        tx_views::packet_rx_control_enabled(g_snapshot))
+      return {ActionKind::packet_rx_toggle};
     if (tx_views::arm_rect(x, y, true) &&
         lora_tx::can_arm(g_snapshot.tx) == lora_tx::Denial::none)
       return {g_snapshot.tx.operator_armed ? ActionKind::tx_request_disarm : ActionKind::tx_request_arm};
@@ -1295,6 +1368,10 @@ Action handle_touch(int32_t x, int32_t y) {
       }
       return {};
     }
+    if (g_tx_page==tx_views::Page::messenger &&
+        tx_views::packet_rx_control_hit(x,y,false) &&
+        tx_views::packet_rx_control_enabled(g_snapshot))
+      return {ActionKind::packet_rx_toggle};
   }
   if (g_channels_open && g_view == View::overview) {
     if (hit(x, y, 940, 180, 110, 48)) {

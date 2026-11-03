@@ -124,7 +124,8 @@ static void dynamic_redraw_is_bounded() {
         int x=0,y=0,w=0,h=0;
         if(!host_display::effective(prim,&x,&y,&w,&h))continue;
         assert(x >= (vertical ? 28 : 65));
-        assert(y >= (vertical ? (p==0 ? 500 : p==1 ? 630 : 730) : 300));
+        assert(y >= (vertical ? (p==0 ? 500 : p==1 ? 353 : 730)
+                              : (p==1 ? 286 : 300)));
         assert(x+w <= (vertical ? 542 : 1220));
         assert(y+h <= (vertical ? 1125 : 525));
       }

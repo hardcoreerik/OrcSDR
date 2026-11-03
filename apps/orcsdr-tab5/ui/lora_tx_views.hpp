@@ -13,6 +13,7 @@
 namespace orcsdr::lora::tx_views {
 
 enum class Page : uint8_t { operator_panel = 0, messenger = 1, dual_radio = 2 };
+struct SourceRect { int x, y, w, h; };
 constexpr uint16_t kBg = 0x0000, kPanel = 0x0841, kCyan = 0x2e7f;
 constexpr uint16_t kGreen = 0x6fe8, kYellow = 0xff24, kMuted = 0x8c71;
 constexpr uint16_t kGrid = 0x2945, kWhite = 0xffff, kActive = 0x0a43;
@@ -41,6 +42,24 @@ constexpr bool arm_rect(int x, int y, bool vertical) {
 constexpr bool send_rect(int x, int y, bool vertical) {
   return vertical ? hit(x, y, 290, 1026, 244, 72)
                   : hit(x, y, 356, 540, 286, 62);
+}
+constexpr SourceRect packet_rx_control_rect(bool vertical) {
+  return vertical ? SourceRect{48, 474, 472, 70} : SourceRect{65, 425, 530, 92};
+}
+constexpr SourceRect packet_rx_frequency_rect(bool vertical) {
+  return vertical ? SourceRect{48, 353, 472, 63} : SourceRect{65, 286, 530, 76};
+}
+constexpr bool packet_rx_control_hit(int x, int y, bool vertical) {
+  const SourceRect r = packet_rx_control_rect(vertical);
+  return hit(x, y, r.x, r.y, r.w, r.h);
+}
+constexpr bool packet_rx_control_enabled(const Snapshot& s) {
+  return s.packet_rx_available || s.packet_rx_requested || s.packet_rx_receiving;
+}
+inline const char* packet_rx_control_label(const Snapshot& s) {
+  if (s.packet_rx_requested && !s.packet_rx_receiving) return "CANCEL RX";
+  if (s.packet_rx_receiving) return "STOP RX";
+  return s.packet_rx_available ? "START RX" : "RX UNAVAILABLE";
 }
 inline bool verified_rx_event(const Snapshot& s) {
   for (uint8_t i = 0; i < s.event_count && i < kEventCapacity; ++i)
@@ -137,7 +156,7 @@ template <typename G> void action_row(G& gfx, const Snapshot& s, bool vertical,
 template <typename G> void draw_rx_message(G& gfx, const Snapshot& s,
                                            bool vertical) {
   const int x = vertical ? 48 : 660;
-  const int y = vertical ? 636 : 318;
+  const int y = vertical ? 636 : 306;
   const int w = vertical ? 470 : 544;
   const int h = vertical ? 160 : 175;
   gfx.fillRect(x, y, w, h, kPanel);
@@ -162,12 +181,13 @@ template <typename G> void draw_rx_message(G& gfx, const Snapshot& s,
   }
   char meta[64]{};
   const char* source = event->source == PacketSource::sx1262 ? "SX1262" : "RTL-SDR";
-  std::snprintf(meta, sizeof(meta), "%s FROM %08lX ID %08lX", source,
+  label(gfx, source, x + 2, y + 14, kGreen, 1);
+  std::snprintf(meta, sizeof(meta), "FROM %08lX ID %08lX",
                 static_cast<unsigned long>(event->sender),
                 static_cast<unsigned long>(event->packet_id));
-  label(gfx, meta, x + 2, y + 17, kGreen, 1);
+  label(gfx, meta, x + 2, y + 50, kGreen, 1);
   if (!event->text[0]) {
-    label(gfx, "VERIFIED PACKET / NO TEXT", x + 2, y + 43, kMuted, 1);
+    label(gfx, "VERIFIED PACKET / NO TEXT", x + 2, y + (vertical ? 72 : 82), kMuted, 1);
     return;
   }
   // Bound both line count and width. The native canvas enforces its readable
@@ -177,8 +197,8 @@ template <typename G> void draw_rx_message(G& gfx, const Snapshot& s,
   char line[kLineChars + 1]{};
   size_t offset = 0;
   int row = 0;
-  const int text_y = y + (vertical ? 45 : 53);
-  const int line_step = 40;
+  const int text_y = y + (vertical ? 72 : 82);
+  const int line_step = vertical ? 32 : 40;
   while (event->text[offset] && row < kMaxLines) {
     size_t n = std::min(std::strlen(event->text + offset), kLineChars);
     if (event->text[offset + n] && n) {
@@ -197,6 +217,26 @@ template <typename G> void draw_rx_message(G& gfx, const Snapshot& s,
     ++row;
     offset = next;
   }
+}
+template <typename G> void draw_packet_rx_frequency(G& gfx, const Snapshot& s,
+                                                     bool vertical) {
+  const SourceRect r = packet_rx_frequency_rect(vertical);
+  gfx.fillRect(r.x, r.y, r.w, r.h, kPanel);
+  char value[32]{};
+  if (s.packet_rx_frequency_hz) {
+    std::snprintf(value, sizeof(value), "%lu.%03lu MHz",
+                  static_cast<unsigned long>(s.packet_rx_frequency_hz / 1000000u),
+                  static_cast<unsigned long>((s.packet_rx_frequency_hz / 1000u) % 1000u));
+  } else {
+    std::snprintf(value, sizeof(value), "LONGFAST / MMCX1");
+  }
+  field(gfx, r.x, vertical ? 354 : 299, r.w, "RX FREQUENCY", value);
+}
+template <typename G> void draw_packet_rx_control(G& gfx, const Snapshot& s,
+                                                  bool vertical) {
+  const SourceRect r = packet_rx_control_rect(vertical);
+  control(gfx, r.x, r.y, r.w, r.h, packet_rx_control_label(s),
+          packet_rx_control_enabled(s));
 }
 template <typename G> void grid(G& gfx, int x, int y, int w, int h) {
   gfx.drawRoundRect(x, y, w, h, 0, kGrid);
@@ -227,8 +267,8 @@ template <typename G> void draw_static(G& gfx, const Snapshot& s, Page page,
     } else if (page == Page::messenger) {
       card(gfx, 28, 291, 512, 260);
       label(gfx, "PACKET COMPOSER", 48, 319, kCyan, 2);
-      field(gfx, 48, 354, 472, "DESTINATION", "NOT CONFIGURED");
-      field(gfx, 48, 427, 472, "MESSAGE", "COMPOSER PENDING");
+      field(gfx, 48, 354, 472, "RX FREQUENCY", "LONGFAST / MMCX1");
+      label(gfx, "SX1262 / LONGFAST / MMCX1", 48, 448, kCyan, 2);
       card(gfx, 28, 570, 512, 250);
       label(gfx, "PACKET ACTIVITY", 48, 598, kCyan, 2);
       gfx.drawFastHLine(48, 620, 472, kGrid);
@@ -260,8 +300,8 @@ template <typename G> void draw_static(G& gfx, const Snapshot& s, Page page,
   } else if (page == Page::messenger) {
     card(gfx, 45, 237, 578, 282);
     label(gfx, "COMPOSE PACKET", 65, 263, kCyan, 2);
-    field(gfx, 65, 299, 530, "DESTINATION", "NOT CONFIGURED");
-    field(gfx, 65, 374, 530, "PAYLOAD", "COMPOSER PENDING");
+    field(gfx, 65, 299, 530, "RX FREQUENCY", "LONGFAST / MMCX1");
+    label(gfx, "SX1262 / LONGFAST / MMCX1", 65, 405, kCyan, 2);
     card(gfx, 640, 237, 583, 282);
     label(gfx, "TX / RX ACTIVITY", 660, 263, kCyan, 2);
     gfx.drawFastHLine(660, 291, 542, kGrid);
@@ -292,7 +332,9 @@ template <typename G> void draw_values(G& gfx, const Snapshot& s, Page page,
       label(gfx, lora_tx::denial_name(lora_tx::can_arm(s.tx)), 48, 689, kMuted, 1);
     } else if (page == Page::messenger) {
       draw_rx_message(gfx, s, true);
-      label(gfx, "TX COMPOSER UNAVAILABLE", 48, 820, kMuted, 1);
+      draw_packet_rx_frequency(gfx, s, true);
+      draw_packet_rx_control(gfx, s, true);
+      label(gfx, "TX COMPOSER UNAVAILABLE", 48, 808, kMuted, 1);
     } else {
       gfx.fillRect(48, 737, 470, 52, kPanel);
       label(gfx, s.tx.antenna_path_verified ? "ANTENNA PATH VERIFIED" : "ANTENNA PATH UNVERIFIED",
@@ -321,7 +363,9 @@ template <typename G> void draw_values(G& gfx, const Snapshot& s, Page page,
           s.tx.operator_armed ? kYellow : kMuted, 2);
   } else if (page == Page::messenger) {
     draw_rx_message(gfx, s, false);
-    label(gfx, "TX COMPOSER UNAVAILABLE", 660, 510, kMuted, 1);
+    draw_packet_rx_frequency(gfx, s, false);
+    draw_packet_rx_control(gfx, s, false);
+    label(gfx, "TX COMPOSER UNAVAILABLE", 660, 500, kMuted, 1);
   } else {
     gfx.fillRect(835, 309, 368, 180, kPanel);
     label(gfx, freq, 835, 334, kYellow, 2);
