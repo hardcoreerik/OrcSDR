@@ -3,6 +3,10 @@
 An OrcSDR dashboard has one implementation across board profiles. Hardware
 selection belongs in the board adapter; screen layout belongs in shared UI
 code. A profile-specific copy of a dashboard is not a supported porting method.
+Keeping two complete legacy/native view bodies in one file is also a duplicate
+implementation. Each view must share content formatting, data/state and drawing
+logic; layout rules may choose columns, pagination, inline fields or stacked
+fields. Legacy dimensions belong in the layout model, not a second page tree.
 
 ## Geometry and state
 

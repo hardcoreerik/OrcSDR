@@ -8,6 +8,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "orcsdr_gfx/scaled_gfx.hpp"
+#include "home_web_actions.hpp"
 
 namespace home_app {
 // Starts the UI task. `display` must already be begun and presenting.
@@ -24,8 +25,23 @@ struct Status {
   char band[24] = {};
   char mode[12] = {};
   uint32_t visible_updates = 0;   // frames presented so far
+  bool home_active = false;
+  bool ui_ready = false,ui_failed = false;
+  bool step_adjustable = false,mode_selectable = false;
+  uint32_t filter_bandwidth_hz = 0;
+  uint8_t mode_choice = 0,mode_active = 0,mode_suggested = 0;
+  uint32_t web_action_sequence = 0;
+  uint32_t web_action_id = 0;
+  WebAction web_action_result = WebAction::not_available;
 };
 Status status();
+// Success acknowledges queue admission, not application. No device audio or
+// screen actions. The UI owner revalidates capabilities before native dispatch.
+WebAction request_web_action(const char* name,uint32_t value,uint32_t* request_id=nullptr);
+struct ActionReceipt {uint32_t request_id=0;WebAction dispatch_result=WebAction::not_available;};
+// Last eight completed dispatches in this boot. False means pending/expired/
+// unknown; it must never be interpreted as proof of successful application.
+bool web_action_receipt(uint32_t request_id,ActionReceipt* out);
 
 // Requests from other tasks; applied by the UI task on its next loop.
 void request_frequency(uint32_t hz);

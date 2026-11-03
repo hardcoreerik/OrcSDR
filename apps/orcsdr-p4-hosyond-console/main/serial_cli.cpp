@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cerrno>
 #include "band_profile.hpp"
 #include "driver/uart.h"
 #include "esp_heap_caps.h"
@@ -176,6 +177,7 @@ void cmd_help() {
   std::printf("RTL_ORIENTATION STATUS | AUTO ON|OFF | MANUAL <0|90|180|270> - sensor/status and rotation (auth)\n");
   std::printf("RTL_UI STATUS | RTL_UI OPEN <HOME> | RTL_UI TAP <view-x> <view-y>  - UI (OPEN/TAP need auth)\n");
   std::printf("RTL_LORA TX VIEW OPERATOR|MESSAGES|DUAL_RADIO     - LoRa TX Lab page (auth, queued to UI)\n");
+  std::printf("RTL_HOME ACTION <name> [value] / RESULT <id>      - Home VFO queue (actions need auth)\n");
   std::printf("RTL_SCREEN_STATUS / RTL_MEM STATUS / RTL_RX STATUS - diagnostics (RTL_RX: one line per receiver)\n");
   std::printf("SCREENSHOT                                      - screenshot as PNG over serial (auth)\n");
 }
@@ -589,6 +591,39 @@ void cmd_lora_tx(char* args) {
   if(page>2){std::printf("RTL_LORA_TX_INVALID use VIEW OPERATOR|MESSAGES|DUAL_RADIO\n");return;}
   std::printf(screens::lora_tx_page_request(page)?"RTL_LORA_TX_QUEUED\n":"RTL_LORA_TX_ERROR inactive_or_busy\n");
 }
+void cmd_home_action(char* args) {
+  if(!authed()){std::printf("RTL_HOME_ACTION_ERROR auth_required\n");return;}
+  char name[32]{};int consumed=0;
+  if(std::sscanf(args,"%31s%n",name,&consumed)!=1){std::printf("RTL_HOME_ACTION_INVALID missing_name\n");return;}
+  const char* p=args+consumed;while(*p==' '||*p=='\t')++p;
+  const bool has_value=*p!=0;uint32_t value=0;
+  if(has_value) {
+    char* end=nullptr;errno=0;const auto raw=std::strtoll(p,&end,10);
+    while(end&&(*end==' '||*end=='\t'))++end;
+    if(errno==ERANGE||end==p||!end||*end||raw<INT32_MIN||raw>UINT32_MAX||
+        (raw<0&&std::strcmp(name,"gain_tenth_db"))) {
+      std::printf("RTL_HOME_ACTION_INVALID value\n");return;
+    }
+    value=static_cast<uint32_t>(raw);
+  } else if(!std::strcmp(name,"tune")||!std::strcmp(name,"mode_set")||!std::strcmp(name,"filter_set")||
+      !std::strcmp(name,"gain_tenth_db")||!std::strcmp(name,"rtl_agc")) {
+    std::printf("RTL_HOME_ACTION_INVALID missing_value\n");return;
+  }
+  uint32_t request_id=0;
+  const auto result=home_app::request_web_action(name,value,&request_id);
+  if(result==home_app::WebAction::ok)std::printf("RTL_HOME_ACTION_QUEUED id=%u\n",unsigned(request_id));
+  else std::printf("RTL_HOME_ACTION_ERROR code=%s\n",home_app::web_actions::result_name(result));
+}
+void cmd_home_result(char* args) {
+  unsigned request_id=0;char trailing=0;
+  if(std::sscanf(args,"%u %c",&request_id,&trailing)!=1||!request_id) {
+    std::printf("RTL_HOME_RESULT_INVALID use RESULT <id>\n");return;
+  }
+  home_app::ActionReceipt receipt{};
+  if(home_app::web_action_receipt(request_id,&receipt))
+    std::printf("RTL_HOME_RESULT id=%u dispatch=%s\n",request_id,home_app::web_actions::result_name(receipt.dispatch_result));
+  else std::printf("RTL_HOME_RESULT id=%u dispatch=pending_or_expired_or_unknown\n",request_id);
+}
 void cmd_ui(char* args) {
   if (std::strncmp(args,"ROTATION ",9)==0) {
     if (!authed()) {std::printf("RTL_UI_ROTATION_ERROR auth_required\n");return;}
@@ -789,6 +824,8 @@ void handle_line(char* line) {
   if (std::strncmp(line, "RTL_UI ", 7) == 0) return cmd_ui(line + 7);
   if (std::strncmp(line,"RTL_POCSAG ",11)==0) return cmd_pocsag(line+11);
   if (std::strncmp(line,"RTL_LORA TX ",12)==0) return cmd_lora_tx(line+12);
+  if (std::strncmp(line,"RTL_HOME ACTION ",16)==0) return cmd_home_action(line+16);
+  if (std::strncmp(line,"RTL_HOME RESULT ",16)==0) return cmd_home_result(line+16);
   if (std::strcmp(line, "RTL_SCREEN_STATUS") == 0) {
     std::printf("RTL_SCREEN_STATUS active=%s return=%s transitions=0 rejected_draws=0 visible_updates=%u last_transition_ms=0\n",
                 home_app::screen_name(), home_app::screen_name(), unsigned(home_app::status().visible_updates));

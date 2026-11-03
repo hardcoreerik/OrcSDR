@@ -50,11 +50,22 @@ std::atomic<int> g_request_sound{-1};         // 0 / 1 = set, -1 = none
 std::atomic<uint32_t> g_request_span{0};
 std::atomic<int> g_request_screen{-2};        // -2 = none, -1 = home, otherwise a dashboards::Id
 const ::screens::Screen* g_active = nullptr;     // the dashboard on screen (null = Home); UI task only
+std::atomic<TaskHandle_t> g_ui_owner{nullptr};
+std::atomic<QueueHandle_t> g_web_actions{nullptr};
+struct QueuedHomeAction {home::Action action;uint32_t request_id;};
+std::atomic<uint32_t> g_next_web_action_id{1};
+portMUX_TYPE g_status_mux=portMUX_INITIALIZER_UNLOCKED;
+home_app::Status g_published_status{};
+uint32_t g_web_action_sequence=0;
+uint32_t g_web_action_id=0;
+home_app::ActionReceipt g_web_receipts[8]{};
+home_app::WebAction g_web_action_result=home_app::WebAction::not_available;
 
 // ---- VFO state (what the Tab5's main.cpp keeps for Home) ----
 home_vfo::Memory g_vfo;
 home_vfo::Demod g_demod = home_vfo::Demod::by_band;
 uint32_t g_frequency_hz = 96100000;
+uint32_t g_applied_frequency_hz = 0;
 uint32_t g_step_hz = 0;
 uint32_t g_home_span_hz = 2400000;
 uint32_t g_home_frequency_hz = 0;
@@ -265,6 +276,7 @@ void fill_snapshot() {
   const band_profile::Profile& p = current_profile();
   if (g_step_hz == 0) g_step_hz = g_vfo.step_hz(p);
   const auto radio_state = radio::snapshot();
+  g_applied_frequency_hz=radio_state.receiver_state==2?radio_state.applied_hz:0;
   home::Snapshot& s = g_snapshot;
   s.revision = g_rev;
   s.tuner_revision = g_tuner_rev;
@@ -436,11 +448,18 @@ void feed_spectrum(const uint8_t* bins) {
 }
 
 void ui_task(void*) {
+  g_ui_owner.store(xTaskGetCurrentTaskHandle(),std::memory_order_release);
   fill_snapshot();
   const auto* geometry=present_geometry();
   const auto safe=geometry?geometry->safe:orcsdr_rect_t{0,0,g_display->width(),g_display->height()};
   if (!home::set_viewport({int(safe.x),int(safe.y),int(safe.width),int(safe.height)})) {
     ESP_LOGE(TAG,"Home viewport unsupported: %ldx%ld",(long)safe.width,(long)safe.height);
+    // No request can be admitted before home_active is first published below.
+    // Clear the owner before FreeRTOS may recycle this task's handle.
+    g_ui_owner.store(nullptr,std::memory_order_release);
+    portENTER_CRITICAL(&g_status_mux);g_published_status={};g_published_status.ui_failed=true;portEXIT_CRITICAL(&g_status_mux);
+    const auto abandoned=g_web_actions.exchange(nullptr,std::memory_order_acq_rel);
+    if(abandoned)vQueueDelete(abandoned);
     vTaskDelete(nullptr);return;
   }
   ESP_LOGI(TAG,"RTL_HOME_SELF_CHECK result=%s",home::self_check()?"PASS":"FAIL");
@@ -459,6 +478,21 @@ void ui_task(void*) {
   uint8_t bins[256];
   for (;;) {
     // Requests from other tasks (the serial interpreter).
+    QueuedHomeAction queued_action{};
+    const auto web_queue=g_web_actions.load(std::memory_order_acquire);
+    if(web_queue&&xQueueReceive(web_queue,&queued_action,0)==pdTRUE) {
+      const auto& web_action=queued_action.action;
+      fill_snapshot();
+      g_web_action_result=home_app::web_actions::validate(web_action,g_snapshot,g_active==nullptr);
+      if(g_web_action_result==home_app::WebAction::ok)handle_action(web_action);
+      ++g_web_action_sequence;
+      g_web_action_id=queued_action.request_id;
+      portENTER_CRITICAL(&g_status_mux);
+      g_web_receipts[(g_web_action_sequence-1)%8]={g_web_action_id,g_web_action_result};
+      portEXIT_CRITICAL(&g_status_mux);
+      std::printf("RTL_WEB_HOME_ACTION id=%u sequence=%u dispatch=%s kind=%u value=%u\n",
+        unsigned(g_web_action_id),unsigned(g_web_action_sequence),home_app::web_actions::result_name(g_web_action_result),unsigned(web_action.kind),unsigned(web_action.value));
+    }
     const uint32_t wanted_hz = g_request_hz.exchange(0);
     if (wanted_hz) retune(wanted_hz);
     const int wanted_sound = g_request_sound.exchange(-1);
@@ -673,10 +707,12 @@ void ui_task(void*) {
         ++g_tuner_rev;
         ++g_rev;
       }
+      // Keep the shared application snapshot current even while another
+      // dashboard owns the pixels; telemetry must not expose stale Home data.
+      fill_snapshot();
       if (g_active) {
         g_active->tick();
       } else {
-        fill_snapshot();
         trace_home_regions("before_update");
         home::update(g_snapshot);
         trace_home_regions("after_update");
@@ -723,6 +759,8 @@ void ui_task(void*) {
       g_screenshot_state.store(0, std::memory_order_release);
     }
     finish_home_trace_frame();
+    const auto published=home_app::status();
+    portENTER_CRITICAL(&g_status_mux);g_published_status=published;portEXIT_CRITICAL(&g_status_mux);
     vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
@@ -741,9 +779,13 @@ int rotation() {return g_rotation.load();}
 int viewport_width() {return g_view_width.load();}
 int viewport_height() {return g_view_height.load();}
 Status status() {
+  if(xTaskGetCurrentTaskHandle()!=g_ui_owner.load(std::memory_order_acquire)) {
+    portENTER_CRITICAL(&g_status_mux);const Status copy=g_published_status;portEXIT_CRITICAL(&g_status_mux);
+    return copy;
+  }
   Status s;
   s.frequency_hz = g_frequency_hz;
-  s.applied_hz = g_snapshot.frequency_hz == g_frequency_hz ? g_snapshot.frequency_hz : 0;
+  s.applied_hz = g_applied_frequency_hz;
   s.step_hz = g_step_hz;
   s.span_hz = g_span_hz;
   s.volume = g_volume;
@@ -751,7 +793,40 @@ Status status() {
   std::snprintf(s.band, sizeof(s.band), "%s", g_snapshot.band);
   std::snprintf(s.mode, sizeof(s.mode), "%s", g_snapshot.mode);
   s.visible_updates = g_visible_updates;
+  s.home_active=g_active==nullptr;
+  s.ui_ready=true;
+  s.step_adjustable=g_snapshot.step_adjustable;
+  s.mode_selectable=g_snapshot.mode_selectable;
+  s.filter_bandwidth_hz=g_snapshot.filter_bandwidth_hz;
+  s.mode_choice=g_snapshot.mode_choice;s.mode_active=g_snapshot.mode_active;s.mode_suggested=g_snapshot.mode_suggested;
+  s.web_action_sequence=g_web_action_sequence;s.web_action_result=g_web_action_result;
+  s.web_action_id=g_web_action_id;
   return s;
+}
+
+WebAction request_web_action(const char* name,uint32_t value,uint32_t* request_id) {
+  if(request_id)*request_id=0;
+  home::Action action{};
+  const auto parsed=web_actions::parse(name,value,kTuneMinHz,kTuneMaxHz,&action);
+  if(parsed!=WebAction::ok)return parsed;
+  const auto queue=g_web_actions.load(std::memory_order_acquire);
+  const auto current=status();
+  if(!queue||!current.ui_ready||!current.home_active)return WebAction::not_available;
+  uint32_t id=g_next_web_action_id.fetch_add(1,std::memory_order_relaxed);
+  if(!id)id=g_next_web_action_id.fetch_add(1,std::memory_order_relaxed);
+  const QueuedHomeAction queued{action,id};
+  if(xQueueSend(queue,&queued,0)!=pdTRUE)return WebAction::queue_full;
+  if(request_id)*request_id=id;
+  return WebAction::ok;
+}
+
+bool web_action_receipt(uint32_t request_id,ActionReceipt* out) {
+  if(!request_id||!out)return false;
+  portENTER_CRITICAL(&g_status_mux);
+  for(const auto& receipt:g_web_receipts)if(receipt.request_id==request_id) {
+    *out=receipt;portEXIT_CRITICAL(&g_status_mux);return true;
+  }
+  portEXIT_CRITICAL(&g_status_mux);return false;
 }
 
 void request_frequency(uint32_t hz) { g_request_hz = hz; }
@@ -786,12 +861,18 @@ const char* screen_name() {
 }
 
 bool start(gfx::ScaledDisplay* display) {
+  if(!display)return false;
+  if(g_web_actions.load(std::memory_order_acquire))return false;
+  const auto queue=xQueueCreate(4,sizeof(QueuedHomeAction));
+  if(!queue)return false;
+  g_web_actions.store(queue,std::memory_order_release);
   g_display = display;
   // Volume and mute come back as the user left them.
   g_volume = ui_support::get_u8("volume", g_volume);
   g_sound = ui_support::get_bool("sound", g_sound);
   ::screens::apply_saved_location();
   dashboards::load_recent(nullptr, 0);  // the Tab5's default recent list
-  return xTaskCreatePinnedToCore(ui_task, "home_ui", 12288, nullptr, 4, nullptr, 0) == pdPASS;
+  if(xTaskCreatePinnedToCore(ui_task,"home_ui",12288,nullptr,4,nullptr,0)==pdPASS)return true;
+  g_web_actions.store(nullptr,std::memory_order_release);vQueueDelete(queue);return false;
 }
 }  // namespace home_app
