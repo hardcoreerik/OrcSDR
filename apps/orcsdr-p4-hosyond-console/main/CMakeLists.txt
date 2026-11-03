@@ -2,6 +2,7 @@
 # shim (components/orcsdr_gfx_compat) lets them run on this board. Do not add the real m5unified.
 set(WS4B "${CMAKE_CURRENT_LIST_DIR}")
 set(TAB5_UI "${CMAKE_CURRENT_LIST_DIR}/../../orcsdr-tab5/ui")
+include("${TAB5_UI}/ft8_runtime_sources.cmake")
 # Optional ESP-Hosted 3.0.6 image for the kit's ESP32-C6, offered by Settings > Connectivity as an on-device
 # update. Pass -DC6_FIRMWARE_BIN=<path to esp_hosted_tab5_c6.bin> (the file name is fixed: it sets the embedded
 # symbol names). Without it the update entry is simply not offered.
@@ -18,6 +19,7 @@ endif()
 idf_component_register(
     # Existing authenticated web modules; browser bundle is packaged separately.
     SRCS "main.cpp" "present.cpp" "screen_snap.cpp" "serial_cli.cpp" "home_app.cpp" "radio_service.cpp" "audio_service.cpp" "screens.cpp" "screen_fm.cpp" "screen_am.cpp" "screen_cb.cpp" "screen_airband.cpp" "screen_shortwave.cpp" "screen_rflab.cpp" "screen_settings.cpp" "screen_pocsag.cpp" "screen_wifi.cpp" "screen_adsb.cpp" "screen_acars.cpp" "screen_lora.cpp" "ui_support.cpp" "iq_tap.cpp" "wifi_app.cpp" "sd_card.cpp"
+         ${ORCSDR_FT8_RUNTIME_SOURCES}
          "${TAB5_UI}/home_dashboard.cpp" "${TAB5_UI}/dashboard_audio_control.cpp"
          "${TAB5_UI}/freq_keypad.cpp" "${TAB5_UI}/focus_nav.cpp" "${TAB5_UI}/waterfall_style.cpp"
          "${TAB5_UI}/band_profile.cpp" "${TAB5_UI}/home_vfo.cpp" "${TAB5_UI}/filter_standards.cpp"

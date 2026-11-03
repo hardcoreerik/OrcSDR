@@ -250,3 +250,27 @@ Luna tasks receive narrow file ownership; no agent flashes or accesses the devic
   underruns=110. DMA free 24,291 and internal free 61,923 bytes. A clearer
   sky placement has been requested for satellite-fix acceptance; other full
   integration work can continue independently.
+
+## Shared FT8 runtime source checkpoint
+
+- Added `ft8_runtime_sources.cmake`, consumed by both native applications:
+  30 existing FT8/FT4/JS8/WWV runtime sources now compile on P4. Tab5
+  source membership is unchanged (195 existing UI translation units compared).
+- `python tools/test-ft8-runtime-sources.py` passed, including actual CMake
+  evaluation from another directory and repeated-include/path checks. All 30
+  sources appear in the P4 compile database; native ESP-IDF build passed
+  (`.local/ft8-runtime-native-build.log`). This build has not been flashed.
+- Contrary to the initial scout, the old P4 FT8 mention was only a compile
+  property, not source registration. Its renderer still needs responsive
+  migration: no existing viewport setter was found. Screen lifecycle, queued
+  IQ/discontinuity handling, verified clock, decode delivery and history
+  remain open. Compiling runtime sources does not prove live FT8 decoding.
+- P4 currently lacks network UTC synchronization; `utc_epoch()` only checks
+  a plausible date. Shared clock freshness policy can be reused, but Tab5
+  SNTP engine writes M5 RTC and must not be imported unchanged. A separate
+  narrow platform adapter is being prepared without RTC assumptions.
+
+- `wsl bash tools/test-ft8-port-core.sh` passed existing audio-tap and native
+  backend regressions with ASan/UBSan, strict warnings and production source.
+  No full FT8 suite or physical reception test was run for this source-list
+  checkpoint. Currently installed GNSS/RX firmware remains unchanged.

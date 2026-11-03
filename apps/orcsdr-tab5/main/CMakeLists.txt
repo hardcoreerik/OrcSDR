@@ -1,3 +1,4 @@
+include("${CMAKE_CURRENT_LIST_DIR}/../ui/ft8_runtime_sources.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/map_catalog_config.cmake")
 set(ORCSDR_EMBED_FILES
     "orc_badge_104.png"
@@ -30,42 +31,13 @@ endif()
 idf_component_register(
     SRCS
         ${ORCSDR_LAB_SRCS}
+        ${ORCSDR_FT8_RUNTIME_SOURCES}
         "../ui/main.cpp"
         "../ui/orcsdr_splash.cpp"
         "../ui/orcsdr_restart.cpp"
         "../ui/orcsdr_storage.cpp"
         "../ui/am_dashboard.cpp"
-        "../ui/ft8_model.cpp"
-        "../ui/ft8_conditions.cpp"
         "../ui/ft8_adif.cpp"
-        "../ui/ft8_mode.cpp"
-        "../ui/ft8_sync.cpp"
-        "../ui/ft8_demod.cpp"
-        "../ui/ft8_spectral_fft.cpp"
-        "../ui/ft8_pipeline.cpp"
-        "../ui/ft8_snr.cpp"
-        "../ui/js8_mode.cpp"
-        "../ui/js8_frame.cpp"
-        "../ui/js8_sync.cpp"
-        "../ui/js8_spectral.cpp"
-        "../ui/js8_demod.cpp"
-        "../ui/js8_frontend.cpp"
-        "../ui/js8_fec.cpp"
-        "../ui/js8_codec.cpp"
-        "../ui/js8_message.cpp"
-        "../ui/js8_osd.cpp"
-        "../ui/js8_decoder.cpp"
-        "../ui/js8_snr.cpp"
-        "../ui/js8_native_backend.cpp"
-        "../ui/ft8_message.cpp"
-        "../ui/ft8_codec.cpp"
-        "../ui/ft8_ldpc.cpp"
-        "../ui/ft8_ldpc_decode.cpp"
-        "../ui/ft8_audio_tap.cpp"
-        "../ui/ft8_native_backend.cpp"
-        "../ui/ft8_runtime.cpp"
-        "../ui/ft8_clock_estimator.cpp"
-        "../ui/wwv_tick.cpp"
         "../ui/memory_reclaim.cpp"
         "../ui/ft8_hunter.cpp"
         "../ui/ft8_dashboard.cpp"
