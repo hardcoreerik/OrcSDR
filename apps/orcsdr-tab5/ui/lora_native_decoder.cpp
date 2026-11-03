@@ -1059,6 +1059,13 @@ bool decode_mesh(const uint8_t* data, size_t size, const Config& config, Packet*
 
 }  // namespace
 
+bool decode_payload(const uint8_t* data, size_t size, const Config& config, Packet* packet) {
+  if (packet == nullptr) return false;
+  *packet = Packet{};
+  if (data == nullptr || size < 17 || size > 255) return false;
+  return decode_mesh(data, size, config, packet);
+}
+
 void release_capture_workspace() {
   heap_caps_free(g_scratch.resampled);
   g_scratch.resampled = nullptr;

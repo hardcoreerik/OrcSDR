@@ -161,4 +161,9 @@ size_t decode_capture_in_place(uint8_t* cu8, size_t bytes, uint32_t sample_rate_
 
 bool self_check();
 
+// Interpret an already PHY-CRC-checked Meshtastic mesh payload. This does not
+// verify the LoRa CRC or authenticate the sender. Rejected inputs clear *packet.
+// Unlike decode_capture, this entry does not need IQ capture workspace.
+bool decode_payload(const uint8_t* data, size_t size, const Config& config, Packet* packet);
+
 }  // namespace orcsdr::lora_native
