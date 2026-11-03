@@ -11,8 +11,9 @@ The server is disabled by default, stores the enable bit in NVS, starts only aft
 | `GET /api/v1/auth/challenge` | Issues nonce, salt, PBKDF2 iteration count, and the factory-password flag. |
 | `POST /api/v1/auth/login` | Verifies the browser proof and returns a signed-session identifier and device proof. |
 | `POST /api/v1/auth/logout` | Requires a valid signature and expires that session. |
-| `GET /api/v1/home` | Read-only Home state from `home_app::status()`. Values absent from that snapshot are emitted as `null`; board speaker volume and mute are not exposed as browser audio controls. |
-| `POST /api/v1/home?action=...` | Requires a signed session. Allowed actions are queued to the Home UI owner; `queued:true` means accepted, not applied. Volume, mute, screen changes, unknown actions, and actions outside the allowlist fail closed. |
+| `GET /api/v1/home` | Read-only Home snapshot, including UI readiness/owner, frequency and separately reported `applied_hz`, filter/mode capabilities, and latest dispatch metadata. Browser audio `volume` and `mute` remain `null`. |
+| `POST /api/v1/home?action=...` | Requires a signed session. Allowed actions are queued to the Home UI owner and return `request_id` with `dispatch:"pending"`; queue admission does not mean dispatch or hardware application. Signed `gain_tenth_db` values and `filter_set=0` reset are accepted under Home validation. |
+| `GET /api/v1/home/action?id=...` | Reads the current-boot dispatch receipt. A known receipt reports `dispatch_result` from the UI owner; it does not prove the radio applied the requested value. Unknown, pending, and expired IDs are intentionally indistinguishable; only the last eight completed receipts are retained. |
 | `GET /api/v1/{receivers,fm,report,tuner,spectrum,time,settings,wifi}` | Explicit `501 endpoint_not_integrated` until current-target adapters are implemented. |
 | `POST /api/v1/{receivers/tune,receivers/rate,tuner/gain,tuner/agc,fm,channel,channel/stop,time,freq_set,volume_set}` | Explicit `501 not_integrated`; no placeholder success. Device volume is not a browser control. |
 | `GET /` | `503 web_ui_not_packaged` until the parent adds the bundle and login injection. With the bundle, redirect to `/m5`. |
@@ -49,11 +50,10 @@ The current `serial_cli.cpp` does not implement the `RTL_WEB` commands listed in
 
 ## Remaining adapters and validation gates
 
-1. Implement the Home UI-owner queue and validated action dispatch in `home_app`; web request handlers must not draw, mutate UI state, or call `handle_action` from the HTTP task. Route `tune`, step, span, mode, filter, and gain actions through the same Home action path used by touch.
-2. Port read compatibility routes to current P4 snapshots: receiver inventory and rate, tuner/gain facts, FM/browser-audio status, report, spectrum, and time. Keep unavailable fields `null` or omit them; do not fabricate success.
-3. Adapt legacy control endpoints using current `radio` and Home APIs, with driver-derived tune limits and observable driver rejection. Add serial equivalents where user actions do not already have one.
-4. Design browser audio and IQ paths against current `radio::set_iq_sink` / `set_aux_iq_sink`, `audio_service`, and DSP ownership. They must remain separate from device speaker volume/mute and must not steal the Home IQ consumer.
-5. Package the pinned browser bundle, record per-file byte sizes and total embedded size, then build the P4 application and exercise auth, Home, all implemented legacy routes, page load, audio, and IQ on hardware. Physical browser validation is still open.
+1. Port read compatibility routes to current P4 snapshots: receiver inventory and rate, tuner/gain facts, FM/browser-audio status, report, spectrum, and time. Keep unavailable fields `null` or omit them; do not fabricate success.
+2. Adapt legacy control endpoints using current `radio` and Home APIs, with driver-derived tune limits and observable driver rejection. Add serial equivalents where user actions do not already have one.
+3. Design browser audio and IQ paths against current `radio::set_iq_sink` / `set_aux_iq_sink`, `audio_service`, and DSP ownership. They must remain separate from device speaker volume/mute and must not steal the Home IQ consumer.
+4. Package the pinned browser bundle, record per-file byte sizes and total embedded size, then build the P4 application and exercise auth, Home, all implemented legacy routes, page load, audio, and IQ on hardware. Physical browser validation is still open.
 
 ## Targeted tests
 

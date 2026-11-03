@@ -9,7 +9,7 @@
 #include "freertos/semphr.h"
 #include "mbedtls/md.h"
 #include "mbedtls/pkcs5.h"
-#include "nvs_store.hpp"
+#include "nvs.h"
 
 namespace web_auth {
 namespace {
@@ -19,6 +19,8 @@ constexpr int64_t kNonceLifeUs = 30LL * 1000 * 1000;
 constexpr int64_t kIdleUs = 5LL * 60 * 1000 * 1000;
 constexpr int64_t kHardUs = 60LL * 60 * 1000 * 1000;
 constexpr int kNonces = 4, kPeers = 8;
+constexpr size_t kCredentialBytes = 60;
+constexpr uint8_t kCredentialVersion = 1;
 
 struct Nonce {
   uint8_t value[16];
@@ -106,12 +108,125 @@ bool derive(const char* password, const uint8_t salt[16], uint8_t key[32]) {
   return mbedtls_pkcs5_pbkdf2_hmac_ext(MBEDTLS_MD_SHA256, reinterpret_cast<const unsigned char*>(password), std::strlen(password), salt, 16, kIterations, 32, key) == 0;
 }
 
-bool store_credentials() {
-  orcsdr::NvsStore s;
-  if (!s.begin("orcsdr_wauth", false)) return false;
-  const bool ok = s.put_bytes("salt", g_salt, sizeof(g_salt)) && s.put_bytes("key", g_key, sizeof(g_key)) && s.put_bool("def", g_default);
-  s.end();
-  return ok;
+uint32_t crc32(const uint8_t* bytes, size_t length) {
+  uint32_t crc = 0xffffffffu;
+  for (size_t i = 0; i < length; ++i) {
+    crc ^= bytes[i];
+    for (unsigned bit = 0; bit < 8; ++bit) crc = (crc >> 1) ^ (0xedb88320u & (0u - (crc & 1u)));
+  }
+  return ~crc;
+}
+
+void write_u32_le(uint8_t* out, uint32_t value) {
+  out[0] = static_cast<uint8_t>(value);
+  out[1] = static_cast<uint8_t>(value >> 8);
+  out[2] = static_cast<uint8_t>(value >> 16);
+  out[3] = static_cast<uint8_t>(value >> 24);
+}
+
+uint32_t read_u32_le(const uint8_t* in) {
+  return static_cast<uint32_t>(in[0]) | (static_cast<uint32_t>(in[1]) << 8) |
+         (static_cast<uint32_t>(in[2]) << 16) | (static_cast<uint32_t>(in[3]) << 24);
+}
+
+void encode_credentials(const uint8_t salt[16], const uint8_t key[32], bool is_default, uint8_t out[kCredentialBytes]) {
+  std::memset(out, 0, kCredentialBytes);
+  out[0] = 'W'; out[1] = 'A'; out[2] = 'U'; out[3] = 'T';
+  out[4] = kCredentialVersion;
+  out[5] = is_default ? 1 : 0;
+  std::memcpy(out + 8, salt, 16);
+  std::memcpy(out + 24, key, 32);
+  write_u32_le(out + 56, crc32(out, 56));
+}
+
+bool decode_credentials(const uint8_t in[kCredentialBytes], uint8_t salt[16], uint8_t key[32], bool* is_default) {
+  if (in[0] != 'W' || in[1] != 'A' || in[2] != 'U' || in[3] != 'T' ||
+      in[4] != kCredentialVersion || in[5] > 1 || in[6] != 0 || in[7] != 0 ||
+      read_u32_le(in + 56) != crc32(in, 56)) return false;
+  std::memcpy(salt, in + 8, 16);
+  std::memcpy(key, in + 24, 32);
+  *is_default = in[5] != 0;
+  return true;
+}
+
+enum class LoadCredentials : uint8_t { missing, current, legacy, invalid, unavailable };
+
+LoadCredentials load_credentials() {
+  nvs_handle_t handle{};
+  if (nvs_open("orcsdr_wauth", NVS_READWRITE, &handle) != ESP_OK) return LoadCredentials::unavailable;
+
+  auto read_blob = [handle](const char* name, void* out, size_t expected, bool* present) {
+    size_t size = 0;
+    const esp_err_t query = nvs_get_blob(handle, name, nullptr, &size);
+    if (query == ESP_ERR_NVS_NOT_FOUND) { *present = false; return ESP_OK; }
+    if (query != ESP_OK) return query;
+    *present = true;
+    if (size != expected) return ESP_FAIL;
+    return nvs_get_blob(handle, name, out, &size);
+  };
+
+  uint8_t record[kCredentialBytes]{};
+  bool has_record = false;
+  esp_err_t error = read_blob("credential", record, sizeof(record), &has_record);
+  if (error != ESP_OK) {
+    nvs_close(handle);
+    return LoadCredentials::invalid;
+  }
+  if (has_record) {
+    bool is_default = true;
+    uint8_t salt[16], key[32];
+    const bool valid = decode_credentials(record, salt, key, &is_default);
+    if (valid) {
+      std::memcpy(g_salt, salt, sizeof(g_salt));
+      std::memcpy(g_key, key, sizeof(g_key));
+      g_default = is_default;
+    }
+    nvs_close(handle);
+    return valid ? LoadCredentials::current : LoadCredentials::invalid;
+  }
+
+  uint8_t salt[16], key[32], is_default = 1;
+  bool have_salt = false, have_key = false;
+  const esp_err_t salt_error = read_blob("salt", salt, sizeof(salt), &have_salt);
+  const esp_err_t key_error = read_blob("key", key, sizeof(key), &have_key);
+  if (salt_error != ESP_OK || key_error != ESP_OK) {
+    nvs_close(handle);
+    return LoadCredentials::invalid;
+  }
+  if (!have_salt && !have_key) {
+    const esp_err_t default_error = nvs_get_u8(handle, "def", &is_default);
+    nvs_close(handle);
+    return default_error == ESP_ERR_NVS_NOT_FOUND ? LoadCredentials::missing : LoadCredentials::invalid;
+  }
+  if (!have_salt || !have_key) {
+    nvs_close(handle);
+    return LoadCredentials::invalid;
+  }
+  const esp_err_t default_error = nvs_get_u8(handle, "def", &is_default);
+  nvs_close(handle);
+  if (default_error != ESP_OK && default_error != ESP_ERR_NVS_NOT_FOUND) return LoadCredentials::invalid;
+  if (is_default > 1) return LoadCredentials::invalid;
+  std::memcpy(g_salt, salt, sizeof(g_salt));
+  std::memcpy(g_key, key, sizeof(g_key));
+  g_default = is_default != 0;
+  return LoadCredentials::legacy;
+}
+
+// One NVS transaction updates the canonical versioned record and the legacy keys.
+// Older firmware therefore sees the same credentials, while failed commits leave
+// both formats at their previous values.
+bool store_credentials(const uint8_t salt[16], const uint8_t key[32], bool is_default) {
+  uint8_t record[kCredentialBytes];
+  encode_credentials(salt, key, is_default, record);
+  nvs_handle_t handle{};
+  if (nvs_open("orcsdr_wauth", NVS_READWRITE, &handle) != ESP_OK) return false;
+  esp_err_t error = nvs_set_blob(handle, "credential", record, sizeof(record));
+  if (error == ESP_OK) error = nvs_set_blob(handle, "salt", salt, 16);
+  if (error == ESP_OK) error = nvs_set_blob(handle, "key", key, 32);
+  if (error == ESP_OK) error = nvs_set_u8(handle, "def", is_default ? 1 : 0);
+  if (error == ESP_OK) error = nvs_commit(handle);
+  nvs_close(handle);
+  return error == ESP_OK;
 }
 
 void end_all_sessions() {
@@ -136,23 +251,28 @@ void init() {
   g_mutex = xSemaphoreCreateMutex();
   if (!g_mutex) return;
   Lock lock;
-  orcsdr::NvsStore s;
-  bool loaded = false;
-  if (s.begin("orcsdr_wauth", true)) {
-    loaded = s.get_bytes("salt", g_salt, sizeof(g_salt)) == sizeof(g_salt) && s.get_bytes("key", g_key, sizeof(g_key)) == sizeof(g_key);
-    g_default = s.get_bool("def", true);
-    s.end();
+  const LoadCredentials loaded = load_credentials();
+  if (loaded == LoadCredentials::invalid || loaded == LoadCredentials::unavailable) {
+    ESP_LOGE(TAG, "stored web credentials are invalid or unavailable; web login stays disabled");
+    return;
   }
-  if (!loaded) {
+  if (loaded == LoadCredentials::missing) {
     esp_fill_random(g_salt, sizeof(g_salt));
     g_default = true;
     if (!derive(kFactoryPassword, g_salt, g_key)) {
       ESP_LOGE(TAG, "key derivation failed; web login stays unavailable");
       return;
     }
-    store_credentials();
+    if (!store_credentials(g_salt, g_key, g_default)) {
+      ESP_LOGE(TAG, "could not persist initial web credentials; web login stays disabled");
+      return;
+    }
     ESP_LOGW(TAG, "WEB_LOGIN_FACTORY_PASSWORD created: user admin, factory password; change it through a privileged local interface");
-  } else if (g_default) {
+  } else if (loaded == LoadCredentials::legacy && !store_credentials(g_salt, g_key, g_default)) {
+    // The legacy keys remain untouched because the attempted migration was not committed.
+    ESP_LOGW(TAG, "could not migrate legacy web credentials; continuing with the loaded credentials");
+  }
+  if (g_default) {
     ESP_LOGW(TAG, "WEB_LOGIN_FACTORY_PASSWORD in use: change it through a privileged local interface");
   }
   g_ready = true;
@@ -164,15 +284,16 @@ bool set_password(const char* password) {
   if (!g_ready || !password) return false;
   const size_t n = std::strlen(password);
   if (n < 8 || n > 64 || std::strcmp(password, kFactoryPassword) == 0) return false;
-  Lock lock;
   uint8_t salt[16], key[32];
   esp_fill_random(salt, sizeof(salt));
   if (!derive(password, salt, key)) return false;
-  std::memcpy(g_salt, salt, sizeof(salt));
-  std::memcpy(g_key, key, sizeof(key));
+  Lock lock;
+  if (!store_credentials(salt, key, false)) return false;
+  std::memcpy(g_salt, salt, sizeof(g_salt));
+  std::memcpy(g_key, key, sizeof(g_key));
   g_default = false;
   end_all_sessions();
-  return store_credentials();
+  return true;
 }
 
 void salt_hex(char out[33]) {

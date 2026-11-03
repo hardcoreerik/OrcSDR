@@ -79,6 +79,23 @@ bool parse_u32(const QueryValue& value, uint32_t* out) {
   return true;
 }
 
+bool parse_i32(const QueryValue& value, int32_t* out) {
+  if (!value.present || !value.bytes[0]) return false;
+  const char* p = value.bytes;
+  const bool negative = *p == '-';
+  if (negative && !*++p) return false;
+  uint64_t n = 0;
+  for (; *p; ++p) {
+    if (*p < '0' || *p > '9') return false;
+    n = n * 10 + static_cast<unsigned>(*p - '0');
+    const uint64_t limit = negative ? uint64_t(INT32_MAX) + 1 : INT32_MAX;
+    if (n > limit) return false;
+  }
+  *out = negative ? (n == uint64_t(INT32_MAX) + 1 ? INT32_MIN : -static_cast<int32_t>(n))
+                  : static_cast<int32_t>(n);
+  return true;
+}
+
 bool allowed_home_action(const char* action, bool* needs_value) {
   struct Entry { const char* name; bool value; };
   static constexpr Entry actions[] = {
@@ -133,17 +150,22 @@ Result run(const char* route, const char* query, uint32_t peer, char* out, size_
     return fail(out, cap, Result::bad_request, "action_not_allowed");
 
   uint32_t value = 0;
-  if ((needs_value && !parse_u32(numeric_value, &value)) || (!needs_value && numeric_value.present))
+  const bool gain_value = std::strcmp(action_value.bytes, "gain_tenth_db") == 0;
+  if (gain_value) {
+    int32_t signed_value = 0;
+    if (!parse_i32(numeric_value, &signed_value)) return fail(out, cap, Result::bad_request, "bad_value");
+    value = static_cast<uint32_t>(signed_value);
+  } else if ((needs_value && !parse_u32(numeric_value, &value)) || (!needs_value && numeric_value.present))
     return fail(out, cap, Result::bad_request, "bad_value");
   if ((std::strcmp(action_value.bytes, "tune") == 0 && value == 0) ||
       (std::strcmp(action_value.bytes, "mode_set") == 0 && value > 5) ||
-      (std::strcmp(action_value.bytes, "rtl_agc") == 0 && value > 1) ||
-      (std::strcmp(action_value.bytes, "filter_set") == 0 && value == 0))
+      (std::strcmp(action_value.bytes, "rtl_agc") == 0 && value > 1))
     return fail(out, cap, Result::bad_request, "value_out_of_range");
 
-  switch (home_app::request_web_action(action_value.bytes, value)) {
+  uint32_t request_id = 0;
+  switch (home_app::request_web_action(action_value.bytes, value, &request_id)) {
     case home_app::WebAction::ok:
-      std::snprintf(out, cap, "{\"ok\":true,\"queued\":true}");
+      std::snprintf(out, cap, "{\"ok\":true,\"queued\":true,\"request_id\":%u,\"dispatch\":\"pending\"}", unsigned(request_id));
       return Result::ok;
     case home_app::WebAction::bad_action:
     case home_app::WebAction::bad_value:

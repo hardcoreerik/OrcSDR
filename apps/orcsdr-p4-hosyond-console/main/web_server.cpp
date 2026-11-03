@@ -184,9 +184,43 @@ esp_err_t handle_home_get(httpd_req_t* req) {
   escape(s.band, band, sizeof(band));
   escape(s.mode, mode, sizeof(mode));
   const int n = std::snprintf(g_json, kJsonBytes,
-      "{\"ok\":true,\"frequency_hz\":%u,\"applied_hz\":%u,\"band\":\"%s\",\"mode\":\"%s\",\"step_hz\":%u,\"span_hz\":%u,\"volume\":null,\"mute\":null,\"filter_bandwidth_hz\":null,\"step_adjustable\":null,\"mode_choice\":null,\"mode_active\":null,\"mode_suggested\":null,\"mode_selectable\":null}",
+      "{\"ok\":true,\"ui_ready\":%s,\"ui_failed\":%s,\"home_active\":%s,\"frequency_hz\":%u,\"applied_hz\":%u,\"band\":\"%s\",\"mode\":\"%s\",\"step_hz\":%u,\"span_hz\":%u,\"volume\":null,\"mute\":null,\"filter_bandwidth_hz\":%u,\"step_adjustable\":%s,\"mode_choice\":%u,\"mode_active\":%u,\"mode_suggested\":%u,\"mode_selectable\":%s,\"web_action_sequence\":%u,\"web_action_id\":%u,\"web_action_result\":\"%s\"}",
+      s.ui_ready ? "true" : "false", s.ui_failed ? "true" : "false", s.home_active ? "true" : "false",
       static_cast<unsigned>(s.frequency_hz), static_cast<unsigned>(s.applied_hz), band, mode,
-      static_cast<unsigned>(s.step_hz), static_cast<unsigned>(s.span_hz));
+      static_cast<unsigned>(s.step_hz), static_cast<unsigned>(s.span_hz),
+      static_cast<unsigned>(s.filter_bandwidth_hz), s.step_adjustable ? "true" : "false",
+      static_cast<unsigned>(s.mode_choice), static_cast<unsigned>(s.mode_active),
+      static_cast<unsigned>(s.mode_suggested), s.mode_selectable ? "true" : "false",
+      static_cast<unsigned>(s.web_action_sequence), static_cast<unsigned>(s.web_action_id),
+      home_app::web_actions::result_name(s.web_action_result));
+  return send_json(req, g_json, n > 0 ? static_cast<size_t>(n) : 0);
+}
+
+bool parse_receipt_id(const char* query, uint32_t* id) {
+  if (!query || !id || std::strncmp(query, "id=", 3) != 0 || !query[3]) return false;
+  uint64_t value = 0;
+  for (const char* p = query + 3; *p; ++p) {
+    if (*p < '0' || *p > '9') return false;
+    const unsigned digit = static_cast<unsigned>(*p - '0');
+    if (value > (UINT32_MAX - digit) / 10) return false;
+    value = value * 10 + digit;
+  }
+  *id = static_cast<uint32_t>(value);
+  return *id != 0;
+}
+
+esp_err_t handle_home_receipt_get(httpd_req_t* req, const char* query) {
+  uint32_t id = 0;
+  if (!parse_receipt_id(query, &id)) return reject(req, "400 Bad Request", "bad_request_id");
+  home_app::ActionReceipt receipt{};
+  if (!home_app::web_action_receipt(id, &receipt)) {
+    const int n = std::snprintf(g_json, kJsonBytes,
+        "{\"ok\":true,\"request_id\":%u,\"known\":false,\"state\":\"pending_or_expired_or_unknown\"}", unsigned(id));
+    return send_json(req, g_json, n > 0 ? static_cast<size_t>(n) : 0);
+  }
+  const int n = std::snprintf(g_json, kJsonBytes,
+      "{\"ok\":true,\"request_id\":%u,\"known\":true,\"state\":\"dispatch_complete\",\"dispatch_result\":\"%s\"}",
+      unsigned(receipt.request_id), home_app::web_actions::result_name(receipt.dispatch_result));
   return send_json(req, g_json, n > 0 ? static_cast<size_t>(n) : 0);
 }
 
@@ -212,6 +246,7 @@ esp_err_t handle_api_get(httpd_req_t* req) {
   char route[64], query[256];
   if (!route_and_query(req, route, query)) return reject(req, "400 Bad Request", "bad_route");
   if (std::strcmp(route, "home") == 0) return handle_home_get(req);
+  if (std::strcmp(route, "home/action") == 0) return handle_home_receipt_get(req, query);
   if (known_read_not_integrated(route)) return reject(req, "501 Not Implemented", "endpoint_not_integrated");
   return reject(req, "404 Not Found", "unknown_route");
 }
