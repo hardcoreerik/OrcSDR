@@ -975,13 +975,13 @@ void draw_native_tx(bool structure) {
     // imported legacy 5/6-tab navigation on legacy profiles, rather than
     // advertise native RX hit targets whose views still use legacy geometry.
     text("LORA TX LAB",l.tabs.x+l.tabs.w/2,l.tabs.y+22,kGreen,2);
-    if(l.vertical)text("RF CONTROLS REQUIRE VERIFIED HARDWARE",l.tabs.x+l.tabs.w/2,l.tabs.y+60,kMuted,1);
+    if(l.vertical)text("RF HARDWARE MUST BE VERIFIED",l.tabs.x+l.tabs.w/2,l.tabs.y+60,kMuted,2);
     for(int i=0;i<3;++i){const auto r=l.mode(i);focus_nav::note(r.x,r.y,r.w,r.h);}
     for(bool send:{false,true}){const auto r=l.action(send);focus_nav::note(r.x,r.y,r.w,r.h);}
   }
   M5.Display.fillRect(l.status.x,l.status.y,l.status.w,l.status.h,kBg);
   text(lora_tx::readiness_name(g_snapshot.tx.readiness),l.status.x+8,l.status.y+14,kYellow,2,middle_left);
-  text(lora_tx::can_arm(g_snapshot.tx)==lora_tx::Denial::none?"TX ADMITTED / RX INDEPENDENT":"TX LOCKED / RX INDEPENDENT",l.status.x+8,l.status.y+39,kMuted,1,middle_left);
+  text(lora_tx::can_arm(g_snapshot.tx)==lora_tx::Denial::none?"TX ADMITTED / RX INDEPENDENT":"TX LOCKED / RX INDEPENDENT",l.status.x+8,l.status.y+39,kMuted,2,middle_left);
   tx_native::Canvas body(M5.Display,l);
   tx_views::draw_values(body,g_snapshot,g_tx_page,l.vertical);
   tx_views::action_row(body,g_snapshot,l.vertical,g_tx_page==tx_views::Page::operator_panel);

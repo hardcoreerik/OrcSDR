@@ -80,6 +80,18 @@ qualification or a measured redraw latency result.
 
 ## Open acceptance gates
 
+### Accepted readability follow-up
+
+The native TX adapter now enforces a 16-pixel minimum text height, wraps help
+lines, and uses a single readable field row in constrained landscape views.
+The production host fixture checks minimum text height, text intersections,
+safe bounds and unchanged legacy behavior. Normal and ASan/UBSan suites passed;
+the native build and COM32 flash were hash-verified. Actual captures of all
+three views in both orientations are in private `r17-tx-large-text` evidence.
+The owner answered “Yes, readable now” to the portrait/landscape readability
+check. This accepts sampled TX text readability, not RF operation, every touch
+action, or the remaining whole-application hardware gates below.
+
 - **No RF transmission is enabled or verified.** SX1262 is PROFILE ONLY. SPI
   probing, RF switch/antenna path, conducted TX, regulatory/frequency approval
   and packet reception on another receiver remain unverified.

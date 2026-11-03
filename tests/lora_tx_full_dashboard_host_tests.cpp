@@ -230,10 +230,22 @@ void native_safe_views() {
       lora::handle_touch(mode.x+mode.w/2,mode.y+mode.h/2);
       lora::draw();
       assert(has("PROFILE ONLY")&&has("ARM LOCKED")&&has("SEND LOCKED"));
+      if(!vertical&&page==0)assert(has("MODULATION: LORA / SX1262"));
+      std::vector<Prim> text_boxes;
       for(const auto& p:host_display::prims) {
         if(p.w<=0||p.h<=0)continue;
+        if(p.kind==Prim::text)assert(p.h>=16); // no unreadable 8-pixel native labels
         if(!(p.x>=safe.x&&p.y>=safe.y&&p.x+p.w<=safe.x+safe.w&&p.y+p.h<=safe.y+safe.h)) {
           std::fprintf(stderr,"native bounds %s: %s [%d,%d %dx%d]\n",vertical?"portrait":"landscape",p.str.c_str(),p.x,p.y,p.w,p.h);assert(false);
+        }
+        if(p.kind==Prim::text) {
+          for(const auto& before:text_boxes) {
+            if(before.x==p.x&&before.y==p.y&&before.str==p.str)continue;
+            const bool overlap=p.x<before.x+before.w&&before.x<p.x+p.w&&p.y<before.y+before.h&&before.y<p.y+p.h;
+            if(overlap)std::fprintf(stderr,"native text overlap: %s / %s\n",before.str.c_str(),p.str.c_str());
+            assert(!overlap);
+          }
+          text_boxes.push_back(p);
         }
       }
       for(bool send:{false,true}) {

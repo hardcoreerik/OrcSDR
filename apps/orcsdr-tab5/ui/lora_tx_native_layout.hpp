@@ -1,6 +1,8 @@
 #pragma once
 #include "dashboard_header_layout.hpp"
 #include <algorithm>
+#include <cstring>
+#include <cstdio>
 
 // Per-dashboard coordinate adapter for the imported TX Lab drawing primitives.
 // Fonts keep their native size; this does not change ScaledDisplay globally.
@@ -51,13 +53,49 @@ template<class G> class Canvas {
   int y(int a)const {return menu_?l.menu.y+(a-(l.vertical?155:174))*l.menu.h/(l.vertical?56:48):l.y(a);}
   void setTextDatum(textdatum_t d){g.setTextDatum(d);}
   void setTextColor(uint16_t c){g.setTextColor(c);}
-  void setTextSize(int s){g.setTextSize(menu_?2:s);}
-  void drawString(const char* s,int a,int b){g.drawString(s,x(a),y(b));}
-  void fillRect(int a,int b,int w,int h,uint16_t c){g.fillRect(x(a),y(b),x(a+w)-x(a),y(b+h)-y(b),c);}
+  void setTextSize(int s){g.setTextSize(std::max(2,s));}
+  void drawString(const char* s,int a,int b){
+    const int available=l.body.x+l.body.w-8-x(a);
+    // A long help line may wrap, but never shrink below the readable minimum.
+    if(!menu_ && g.textWidth(s)>available) {
+      char line[128]{};size_t offset=0;int row=0;
+      while(s[offset]) {
+        size_t n=std::min(std::strlen(s+offset),sizeof(line)-1);
+        do {std::memcpy(line,s+offset,n);line[n]=0;}while(n>1&&g.textWidth(line)>available&&--n);
+        if(s[offset+n]) {
+          size_t split=n;while(split>0&&s[offset+split]!=' ')--split;
+          if(split>0)n=split;
+        }
+        std::memcpy(line,s+offset,n);line[n]=0;
+        g.drawString(line,x(a),y(b)+row*20);++row;offset+=n;
+        while(s[offset]==' ')++offset;
+      }
+    } else g.drawString(s,x(a),y(b));
+  }
+  void drawField(int a,int b,int w,const char* name,const char* value) {
+    g.setTextSize(2);g.setTextDatum(middle_left);
+    if(l.vertical) {
+      g.setTextColor(0x2e7f);g.drawString(name,x(a),y(b+10));
+      g.setTextColor(0xffff);g.drawString(value,x(a),y(b+36));
+    } else {
+      char line[128]{};std::snprintf(line,sizeof(line),"%s: %s",name,value);
+      g.setTextColor(0xffff);g.drawString(line,x(a),y(b+28));
+    }
+    g.drawFastHLine(x(a),y(b+55),x(a+w)-x(a),0x2945);
+  }
+  void fillRect(int a,int b,int w,int h,uint16_t c){
+    const int height=std::min(l.body.y+l.body.h-2-y(b),std::max(20,y(b+h)-y(b)));
+    g.fillRect(x(a),y(b),x(a+w)-x(a),height,c);
+  }
   void fillRoundRect(int a,int b,int w,int h,int r,uint16_t c){g.fillRoundRect(x(a),y(b),x(a+w)-x(a),y(b+h)-y(b),r,c);}
   void drawRoundRect(int a,int b,int w,int h,int r,uint16_t c){g.drawRoundRect(x(a),y(b),x(a+w)-x(a),y(b+h)-y(b),r,c);}
   void drawFastHLine(int a,int b,int w,uint16_t c){g.drawFastHLine(x(a),y(b),x(a+w)-x(a),c);}
   void drawFastVLine(int a,int b,int h,uint16_t c){g.drawFastVLine(x(a),y(b),y(b+h)-y(b),c);}
  private:G& g;const Layout& l;bool menu_;
 };
+// ADL customization keeps the same imported page templates. Constrained
+// landscape fields use one readable row instead of two compressed rows.
+template<class G> void field(Canvas<G>& gfx,int x,int y,int w,const char* name,const char* value) {
+  gfx.drawField(x,y,w,name,value);
+}
 }

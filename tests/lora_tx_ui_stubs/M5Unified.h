@@ -82,7 +82,8 @@ class LovyanGFX {
   }
   void clearClipRect() { host_display::clip_on = false; }
   int textWidth(const char* s) {
-    const fonts::Font* f = host_display::font ? host_display::font : &fonts::DejaVu18;
+    const fonts::Font built_in{6*host_display::text_size,8*host_display::text_size};
+    const fonts::Font* f = host_display::font ? host_display::font : &built_in;
     return static_cast<int>(std::strlen(s)) * f->advance;
   }
   void fillRect(int x, int y, int w, int h, uint16_t c) { add(Prim::fill, x, y, w, h, c); }
