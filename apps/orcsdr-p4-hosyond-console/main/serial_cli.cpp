@@ -38,6 +38,7 @@
 #include "wifi_app.hpp"
 #include "web_server.hpp"
 #include "web_auth.hpp"
+#include "orcsdr_sx126x.h"
 
 namespace {
 constexpr char TAG[] = "SERIAL_CLI";
@@ -183,6 +184,7 @@ void cmd_help() {
   std::printf("RTL_HOME ACTION <name> [value] / RESULT <id>      - Home VFO queue (actions need auth)\n");
   std::printf("RTL_BATTERY STATUS                              - gauge validity/age and raw telemetry\n");
   std::printf("RTL_WEB STATUS | ON | OFF | PASSWORD <8..64 chars> - local web setup (auth; password never echoed)\n");
+  std::printf("RTL_PACKET PROBE                               - reset/status/readback only; no RF (auth)\n");
   std::printf("RTL_SCREEN_STATUS / RTL_MEM STATUS / RTL_RX STATUS - diagnostics (RTL_RX: one line per receiver)\n");
   std::printf("SCREENSHOT                                      - screenshot as PNG over serial (auth)\n");
 }
@@ -784,6 +786,17 @@ void handle_line(char* line) {
     return;
   }
   if (std::strcmp(line, "RTL_HELP") == 0) return cmd_help();
+  if (!std::strcmp(line,"RTL_PACKET PROBE")) {
+    if(!authed()){std::printf("RTL_PACKET_ERROR auth_required\n");return;}
+    if(c6_recovery_app::status().busy || wifi_app::recovery_access()!=wifi_app::RecoveryAccess::idle) {
+      std::printf("RTL_PACKET_ERROR c6_update_busy\n");return;
+    }
+    orcsdr_sx126x_probe_result_t probe{};
+    const esp_err_t result=orcsdr_sx126x_probe(&probe);
+    std::printf("RTL_PACKET_PROBE detected=%d chip_mode=%u command_status=%u device_errors=0x%04x rx_qualified=0 tx_qualified=0 error=%s\n",
+      probe.detected,unsigned(probe.chip_mode),unsigned(probe.command_status),unsigned(probe.device_errors),esp_err_to_name(result));
+    return;
+  }
   if (std::strncmp(line,"RTL_WEB ",8)==0) return cmd_web(line+8);
   if (std::strncmp(line, "RTL_ORIENTATION ", 16) == 0) return cmd_orientation(line + 16);
   if (std::strcmp(line, "RTL_STATUS") == 0) return cmd_status();

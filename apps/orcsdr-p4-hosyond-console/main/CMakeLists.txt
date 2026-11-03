@@ -61,7 +61,7 @@ idf_component_register(
          "${TAB5_UI}/am_dashboard.cpp" "${TAB5_UI}/nvs_store.cpp"
          "${TAB5_UI}/fm_dashboard.cpp" "${TAB5_UI}/fm_config.cpp"
     INCLUDE_DIRS "." "${WS4B}" "${TAB5_UI}"
-    REQUIRES orcsdr_c6_rom_update esp_rtl_sdr esp_psram esp_timer esp_driver_uart esp_app_format esp_rom mbedtls heap nvs_flash
+    REQUIRES orcsdr_sx126x orcsdr_c6_rom_update esp_rtl_sdr esp_psram esp_timer esp_driver_uart esp_app_format esp_rom mbedtls heap nvs_flash
              json orcmaps esp_http_client esp_https_ota app_update esp_http_server lwip esp_driver_jpeg orcsdr_board_hosyond orcsdr_gfx_compat orcsdr_audio_dsp orcsdr_orientation espressif__esp-dsp espressif__esp_hosted espressif__esp_wifi_remote esp_wifi esp_netif esp_event fatfs sdmmc esp_driver_gptimer esp_driver_sdmmc esp_driver_gpio vfs esp_mm
     EMBED_FILES ${ORCSDR_EMBED_FILES}
 )

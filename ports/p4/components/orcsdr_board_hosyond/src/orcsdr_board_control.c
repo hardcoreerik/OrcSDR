@@ -40,6 +40,34 @@ esp_err_t orcsdr_board_c6_enable(bool enable)
     return line(b->ioexp_wifi_en,enable,enable); // LilyGO EN release uses external pull-up
 }
 i2c_master_bus_handle_t orcsdr_board_secondary_i2c(void) { return s_secondary; }
+esp_err_t orcsdr_board_radio_reset(bool asserted)
+{
+    const orcsdr_board_profile_t *b=orcsdr_board_profile();
+    return b->has_radio?line(b->radio_rst,!asserted,false):ESP_ERR_NOT_SUPPORTED;
+}
+esp_err_t orcsdr_board_radio_dio1_read(bool* high)
+{
+    if(!high)return ESP_ERR_INVALID_ARG;
+    *high=false;
+    const orcsdr_board_profile_t *b=orcsdr_board_profile();
+    const orcsdr_ioexp_line_t pin=b->radio_dio1;
+    if(!b->has_radio || !s_expander || pin.dev!=0 || pin.pin<0 || pin.pin>17 || pin.pin==8 || pin.pin==9)
+        return ESP_ERR_NOT_SUPPORTED;
+    const unsigned bank=pin.pin>=10,bit=bank?pin.pin-10:pin.pin;
+    const uint8_t mask=(uint8_t)(1u<<bit);
+    if(!s_lock || xSemaphoreTake(s_lock,pdMS_TO_TICKS(200))!=pdTRUE)return ESP_ERR_TIMEOUT;
+    uint8_t dir=0,reg=(uint8_t)(6+bank),input=0;
+    esp_err_t e=i2c_master_transmit_receive(s_expander,&reg,1,&dir,1,50);
+    if(!e && !(dir&mask)) {
+        const uint8_t config[]={(uint8_t)(6+bank),(uint8_t)(dir|mask)};
+        e=i2c_master_transmit(s_expander,config,2,50);
+    }
+    reg=(uint8_t)bank;
+    if(!e)e=i2c_master_transmit_receive(s_expander,&reg,1,&input,1,50);
+    if(!e)*high=(input&mask)!=0;
+    xSemaphoreGive(s_lock);
+    return e;
+}
 esp_err_t orcsdr_board_controls_start(i2c_master_bus_handle_t panel_bus)
 {
     const orcsdr_board_profile_t *b=orcsdr_board_profile();

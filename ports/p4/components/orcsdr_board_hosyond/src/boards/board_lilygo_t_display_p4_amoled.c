@@ -93,6 +93,7 @@ const orcsdr_board_profile_t g_board_lilygo_t_display_p4_amoled = {
     .has_radio = true, .radio_part = "SX1262",
     .radio_sclk = 2, .radio_mosi = 3, .radio_miso = 4, .radio_cs = 24, .radio_busy = 6,
     .radio_spi_hz = 10000000,
+    .radio_spi_host = 1,
     .radio_rst = {0, 16}, .radio_dio1 = {0, 17}, .radio_ant_sw = {0, 1},
     .ioexp_sd_power = {0, 15}, .ioexp_screen_rst = {0, 2}, .ioexp_touch_rst = {0, 3},
     .ioexp_usb_phy_en = {0, 10}, .ioexp_eth_rst = {0, 5},

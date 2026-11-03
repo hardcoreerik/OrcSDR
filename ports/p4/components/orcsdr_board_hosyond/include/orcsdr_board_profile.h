@@ -97,12 +97,14 @@ typedef struct {
 
     /* Onboard packet radio. Ignored unless has_radio. Reset, DIO1 and the antenna switch are
      * expander lines (ORCSDR_IOEXP_NONE when that line is a GPIO instead, or absent).
-     * The console does not drive the radio; the pins are here so a later driver does not invent them. */
+     * The packet-radio component owns SPI; board control owns expander access.
+     * A profile declaration alone does not establish detection or RF readiness. */
     bool has_radio;
     const char *radio_part;     /* "SX1262", "LR2021", or NULL */
     int radio_sclk, radio_mosi, radio_miso, radio_cs, radio_busy;
     int radio_spi_hz;
     orcsdr_ioexp_line_t radio_rst, radio_dio1, radio_ant_sw;
+    int radio_spi_host;        /* ESP-IDF SPI2_HOST=1 / SPI3_HOST=2; zero is unavailable */
 
     /* More expander lines. ORCSDR_IOEXP_NONE when the board does not have that line. */
     orcsdr_ioexp_line_t ioexp_sd_power, ioexp_screen_rst, ioexp_touch_rst;

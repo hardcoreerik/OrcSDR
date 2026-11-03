@@ -11,6 +11,10 @@ esp_err_t orcsdr_board_controls_start(i2c_master_bus_handle_t panel_bus);
 i2c_master_bus_handle_t orcsdr_board_secondary_i2c(void);
 /* Assert reset low, or release EN to the board pull-up; no Hosted API calls. */
 esp_err_t orcsdr_board_c6_enable(bool enable);
+/* Packet-radio lines share the expander owner/lock with C6 and board rails.
+ * These calls do not select an antenna, configure RF or authorize TX. */
+esp_err_t orcsdr_board_radio_reset(bool asserted);
+esp_err_t orcsdr_board_radio_dio1_read(bool* high);
 #ifdef __cplusplus
 }
 #endif
