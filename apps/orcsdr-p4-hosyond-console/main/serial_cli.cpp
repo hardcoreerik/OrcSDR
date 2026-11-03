@@ -10,6 +10,7 @@
 #include "esp_log.h"
 #include "esp_rtl_sdr.h"
 #include "esp_system.h"
+#include "orcsdr_diagnostics.h"
 #include "orcsdr_board_profile.h"
 #include "orcsdr_battery.h"
 #include "driver/gptimer.h"
@@ -178,6 +179,7 @@ void cmd_auth(char* args) {
 void cmd_help() {
   std::printf("RTL_HELP OrcSDR P4 console: subset of docs/API_SERIAL_CLI.md. Unknown commands stay silent.\n");
   std::printf("PAIR <key> / AUTH <nonce> <proof> / PING        - pairing and session (auth commands need AUTH)\n");
+  std::printf("RTL_HEALTH [STATUS|BUILD|HEAP_CHECK]             - development diagnostics\n");
   std::printf("RTL_STATUS                                      - receiver state\n");
   std::printf("RTL_C6_ROM STATUS                               - read-only embedded recovery package status\n");
   std::printf("RTL_FREQ | RTL_FREQ <HZ>                         - query / hot retune (auth)\n");
@@ -198,9 +200,10 @@ void cmd_help() {
 
 void cmd_status() {
   const auto rs = orcsdr::radio::snapshot();
-  std::printf("RTL_SDR_STATUS connected=%d streaming=%d effective_sps=%u frequency_hz=%u driver=rtl_sdr\n",
+  std::printf("RTL_SDR_STATUS connected=%d streaming=%d effective_sps=%u frequency_hz=%u driver=rtl_sdr reset_reason=%d uptime_ms=%llu\n",
               rs.receiver_state >= 2 ? 1 : 0, rs.receiver_state == 2 ? 1 : 0, unsigned(rs.effective_sps),
-              unsigned(rs.applied_hz));
+              unsigned(rs.applied_hz), int(esp_reset_reason()),
+              static_cast<unsigned long long>(esp_timer_get_time()/1000));
 }
 
 void cmd_freq(const char* arg) {
@@ -792,6 +795,7 @@ void handle_line(char* line) {
     if (authed()) touch_session();
     return;
   }
+  if (orcsdr_diagnostics_command(line,authed(),[](const char* value){std::printf("%s",value);}))return;
   if (std::strcmp(line, "RTL_HELP") == 0) return cmd_help();
   if (!std::strcmp(line,"RTL_PACKET PROBE") || !std::strcmp(line,"RTL_PACKET CLOCK_CHECK")) {
     if(!authed()){std::printf("RTL_PACKET_ERROR auth_required\n");return;}

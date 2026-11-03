@@ -1,0 +1,5 @@
+# Opt-in deeper checks for a targeted debug build; measure receiver/audio impact.
+# Append after app and board defaults when creating a separate build/sdkconfig.
+CONFIG_HEAP_POISONING_LIGHT=y
+CONFIG_COMPILER_STACK_CHECK_MODE_NORM=y
+CONFIG_FREERTOS_CHECK_STACKOVERFLOW_CANARY=y

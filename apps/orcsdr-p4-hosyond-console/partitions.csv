@@ -2,3 +2,5 @@
 nvs,      data, nvs,     0x9000,  0x6000,
 phy_init, data, phy,     0xf000,  0x1000,
 factory,  app,  factory, 0x10000, 0x700000,
+# Previously unused flash; NVS, PHY and factory offsets/sizes remain unchanged.
+coredump, data, coredump, 0x710000, 256K,

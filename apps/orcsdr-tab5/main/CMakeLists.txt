@@ -225,7 +225,7 @@ idf_component_register(
         "../ui/rf24_dashboard.cpp"
         "../ui/wifi_service.cpp"
     INCLUDE_DIRS "." "../ui" "../dsp" "${CMAKE_CURRENT_BINARY_DIR}"
-    REQUIRES
+    REQUIRES orcsdr_diagnostics
         bootloader_support
         mbedtls
         m5unified

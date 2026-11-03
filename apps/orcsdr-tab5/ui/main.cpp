@@ -53,6 +53,7 @@
 
 #include "orcsdr_splash.hpp"
 #include "orcsdr_restart.hpp"
+#include "orcsdr_diagnostics.h"
 #include "orcsdr_storage.hpp"
 #include "am_dashboard.hpp"
 #include "ft8_dashboard.hpp"
@@ -20164,26 +20165,7 @@ void process_command(char* command) {
   }
   if(orcsdr::lora::handle_map_command(command,authenticated,[](const char* line){Serial.print(line);}))return;
   if(orcsdr::maps::serial_control::handle(command,authenticated,[](const char* line){Serial.print(line);}))return;
-  if (strcmp(command, "RTL_HEALTH") == 0) {
-    const uint32_t dma_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
-    Serial.printf("RTL_HEALTH_STATUS uptime_ms=%u free_heap=%u min_free_heap=%u "
-                  "dma_free=%u dma_min=%u dma_largest=%u tasks=%u main_stack_hwm=%u "
-                  "reset_reason=%d internal_free=%u internal_min=%u internal_largest=%u "
-                  "psram_free=%u psram_largest=%u\n",
-                  millis(), esp_get_free_heap_size(), esp_get_minimum_free_heap_size(),
-                  heap_caps_get_free_size(dma_caps),
-                  heap_caps_get_minimum_free_size(dma_caps),
-                  heap_caps_get_largest_free_block(dma_caps),
-                  static_cast<unsigned>(uxTaskGetNumberOfTasks()),
-                  static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)),
-                  static_cast<int>(esp_reset_reason()),
-                  heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-                  heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-                  heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-                  heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-                  heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
-    return;
-  }
+  if(orcsdr_diagnostics_command(command,authenticated,[](const char* line){Serial.print(line);}))return;
   if (strncmp(command, "RTL_DEAD_AIR FLOOD ", 19) == 0) {
     if (!authenticated) {
       Serial.println("RTL_DEAD_AIR_FLOOD_ERROR auth_required");
@@ -21707,7 +21689,7 @@ void process_command(char* command) {
     Serial.println("RTL_ADSB STATUS               - ADS-B stream, queue and decoder counters");
     Serial.println("RTL_DRIVER STATUS|SELF_CHECK  - driver capabilities, shadows and stream metrics");
     Serial.println("RTL_DRIVER GAINMODE AUTO|MANUAL | GAIN <0..496> | RTLAGC ON|OFF | BIAS ON|OFF (auth)");
-    Serial.println("RTL_HEALTH                    - heap, task and reset diagnostics");
+    Serial.println("RTL_HEALTH [STATUS|BUILD|HEAP_CHECK] - development diagnostics");
     Serial.println("RTL_SD_SELF_CHECK             - authenticated file semantics check");
     Serial.println("RTL_SD_BENCH [4..64]          - authenticated temporary-file SD write benchmark");
     Serial.println("RTL_SPLASH_GATE [ON|OFF]      - boot splash waits for the OrcSDR button (set: auth)");
