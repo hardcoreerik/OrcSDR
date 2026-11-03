@@ -13,9 +13,10 @@ inline size_t strlcpy(char* out,const char* in,size_t capacity) {
 }
 #endif
 using textdatum_t = int;
+constexpr uint16_t TFT_DARKCYAN=0x03ef,TFT_DARKGREEN=0x03e0,TFT_LIGHTGREY=0xc618;
 constexpr int middle_center = 0, middle_left = 1, middle_right = 2, top_left = 3, bottom_left = 4;
 constexpr uint16_t TFT_WHITE = 0xffff, TFT_BLACK = 0, TFT_RED = 0xf800, TFT_DARKGREY = 0x7bef;
-namespace fonts { inline int DejaVu24, DejaVu18; }
+namespace fonts { inline int DejaVu24, DejaVu18, DejaVu40; }
 namespace lgfx {
 inline namespace v1 {
 struct rgb565_t {uint16_t raw;};
@@ -29,6 +30,8 @@ struct RowImage {int x,y;std::vector<uint16_t> pixels;};
 inline std::vector<RowImage> row_images;
 inline uint16_t pixel_color(int x,int y){return static_cast<uint16_t>((y*257+x*73)^0xa55a);}
 inline int screen_clears=0;
+struct FilledRect {int x,y,w,h;};
+inline std::vector<FilledRect> filled_rects;
 class LovyanGFX {
   uint16_t color_ = 0;
   int text_size_ = 1;
@@ -38,8 +41,10 @@ public:
   template<class... T> void setFont(T...) {}
   void setTextColor(uint16_t c, uint16_t = 0) { color_ = c; }
   template<class... T> void fillRoundRect(T...) {}
+  template<class Color> void fillRoundRect(int x,int y,int w,int h,int,Color) {filled_rects.push_back({x,y,w,h});}
   template<class... T> void drawRoundRect(T...) {}
   template<class... T> void fillRect(T...) {}
+  template<class Color> void fillRect(int x,int y,int w,int h,Color) {filled_rects.push_back({x,y,w,h});}
   template<class... T> void drawRect(T...) {}
   template<class... T> void fillScreen(T...) {++screen_clears;}
   template<class... T> void fillCircle(T...) {}

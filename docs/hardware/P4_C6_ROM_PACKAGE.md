@@ -75,3 +75,21 @@ The user completed Settings > Firmware & Updates on the connected LilyGO with th
 Private native screenshots show the initial page and completed state; never include those device snapshots in distributed firmware packages. The finished screen originally repeated BOOT instructions and Update now, which was misleading. The corrected UI hides the update action after verified completion and shows installation success. Following a P4 restart, a reachable C6 reporting the matching embedded version shows Up to date with no update control; an unreachable C6 retains the recovery path. This display correction is installed in checkpoint r6. A post-restart native screenshot shows C6 UP TO DATE, version3.0.6, No update needed, and no update button. Four focused recording tests pass, including terminal completion, verified matching version, and recovery availability when transport is unavailable.
 
 This installed-app test is not a fresh factory ESP-AT migration test. Factory conversion, interrupted-write recovery, all error prompts and physical rotation locking remain separate acceptance cases. The historical ROM-SDIO prototype evidence must not be substituted for these installed-app cases.
+
+### Package version metadata follow-up
+
+The recovery-package generator now exports the Hosted version from the
+builder-pinned, validated manifest. ROM worker boot verification and Settings'
+matching-version decision consume that metadata instead of a literal 3.0.6.
+Missing version metadata cannot establish the up-to-date state. The host's
+reported protocol version remains separate from the embedded recovery target.
+
+Focused command:
+`python -m pytest tests/test_c6_rom_package.py tests/test_c6_worker_cleanup.py tests/test_c6_worker_guards.py tests/test_settings_c6_rom_recording.py -q`
+passed 19 tests and 3 subtests. The UI recording fixture uses a future target
+version to detect a hardcoded comparison. The worker cleanup fixture also uses
+a future target/report version. After that fixture change, its tests and the
+Settings recording tests passed again (9 tests). The r13 app build passed and
+its generated package accessor reports 3.0.6 from the validated manifest. Device
+validation remains pending; the preceding hardware evidence describes r6/r12,
+not this source change. r13 has not been flashed, preserving password entry.

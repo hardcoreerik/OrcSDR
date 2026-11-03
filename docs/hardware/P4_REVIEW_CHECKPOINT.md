@@ -300,3 +300,9 @@ and the adapter are ready. Grok Connectivity review is still running.
 - CB Channels landscape screenshot exposed the final grid row overlapping tabs. Shared geometry now puts the heading and hint on one line and keeps all 40 cells within content; regression failed before the fix and passes afterward.
 - Validation: python -m pytest tests/test_cb_dashboard_layout.py -q: 2 passed. Prior r11b app build and flash hash verified; this final geometry correction has not yet been rebuilt or physically checked.
 - This is an integration checkpoint, not completion or release acceptance. Private device screenshots remain outside version control.
+
+## CB grid device verification after checkpoint
+- r12 app build completed and app-only flash hash verified on COM32. Native landscape CB Channels PNG confirms all 40 cells end above the tabs, with separated heading/hint. Both Setup pages were captured in both orientations; these captures do not prove every settings action.
+- Apparent blank landscape Setup preview was rejected as a defect: saved PNG header bytes match the preceding capture and decoded content remains present. Do not add redraw workarounds based on that preview.
+- Wi-Fi scan finds the user-selected hardcorewifi at -49 dBm on channel 11. Password entry is open on device; connection remains unverified.
+- Latest web UI implementation is on claude/p4-web-ui and is absent from this build. Cross-branch integration approval is pending.

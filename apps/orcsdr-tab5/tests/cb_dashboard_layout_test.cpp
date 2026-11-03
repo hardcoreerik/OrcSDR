@@ -47,7 +47,10 @@ static void check(HeaderRect v) {
 
   for (auto r:l.tab) assert(inside(v,r) && r.w>=44 && r.h>=44);
   for (auto r:l.control) assert(inside(v,r) && r.w>=44 && r.h>=44);
-  for (auto r:l.listen_channel) assert(inside(v,r) && r.w>=44 && r.h>=44);
+  for (auto r:l.listen_channel) {
+    assert(inside(l.listen_channels,r) && inside(l.content,r) && r.w>=44 && r.h>=44);
+    assert(!overlap(r,l.tabs));
+  }
   assert(text_fits("LISTEN",l.tab[0],2));
   assert(text_fits("SPECTRUM",l.tab[1],2));
   assert(text_fits("CHANNELS",l.tab[3],2));
@@ -60,8 +63,18 @@ static void check(HeaderRect v) {
     assert(l.tab[0].h>=44 && l.tab[4].h>=44);
     assert(l.listen_channel[0].y>=l.listen_channel_title.y+l.listen_channel_title.h);
   } else {
-    assert(l.listen_channel_columns==20);
+    assert(l.listen_channel_columns>=1 && l.listen_channel_columns<=20);
     assert(l.listen_channel[0].y>=l.listen_channel_title.y+l.listen_channel_title.h);
+    assert(l.listen_meter.w>=348);
+    if(v.w==800) {
+      assert(l.setup_page_size==2 && l.setup_page_count==4);
+      assert(text_fits("LSB on channels 36-40, AM on 1-35 when a channel is tuned",l.setup_help[7],2));
+    }
+    if(v.w==1088) {
+      assert(l.listen_channel_columns==20 && l.listen_channels.h==112);
+      assert(l.listen_meter.x==v.x+708 && l.listen_meter.w==352);
+      assert(l.setup_page_size==4 && l.setup_page_count==2);
+    }
   }
 }
 int main() {
@@ -69,5 +82,6 @@ int main() {
   assert(legacy.valid && legacy.legacy && legacy.tabs.y==630);
   check({72,72,424,1088});
   check({72,72,1088,424});
+  check({0,0,800,480});
   std::puts("CB responsive layout tests PASS");
 }

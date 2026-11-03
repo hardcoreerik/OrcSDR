@@ -17838,6 +17838,8 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     const orcsdr::pocsag::Action action = orcsdr::pocsag::handle_touch(x, y);
     if (action == orcsdr::pocsag::Action::exit) {
       show_home();
+    } else if(action==orcsdr::pocsag::Action::open_settings) {
+      open_global_settings(orcsdr::settings::Section::connectivity);
     } else if (action == orcsdr::pocsag::Action::scan_requested) {
       pocsag_scan_requested.store(true, std::memory_order_release);
     } else if (action == orcsdr::pocsag::Action::scan_cancelled) {

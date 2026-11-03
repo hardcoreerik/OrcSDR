@@ -116,7 +116,8 @@ void task(void*) {
       bool verified=false;
       while(!timed_out(checking_version,45)) {
         const auto wifi=wifi_app::status();
-        if(wifi.started && wifi.generation!=prior_generation && std::strcmp(wifi.c6_version,"3.0.6")==0) {verified=true;break;}
+        const char* target=orcsdr_embedded_c6_rom_version();
+        if(wifi.started && wifi.generation!=prior_generation && target[0] && std::strcmp(wifi.c6_version,target)==0) {verified=true;break;}
         vTaskDelay(pdMS_TO_TICKS(100));
       }
       if(!verified) error=-6;

@@ -64,6 +64,7 @@ struct State {
   uint32_t orcdial_code=0;
   char orcdial_identity[16]{},orcdial_connection[32]{},orcdial_failure[32]{};
   bool wifi_c6_rom_recovery = false;
+  char wifi_c6_rom_target_version[16]{};
   bool wifi_c6_rom_busy = false;
   c6_recovery_ui::Phase wifi_c6_rom_phase = c6_recovery_ui::Phase::idle;
   int wifi_c6_rom_result = 0;

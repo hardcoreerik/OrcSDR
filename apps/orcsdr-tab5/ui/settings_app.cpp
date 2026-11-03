@@ -249,7 +249,7 @@ void draw_wifi_primary() {
   wifi_button(g_state.wifi_scanning?"SCANNING":"SCAN",l.scan,TFT_DARKCYAN,g_state.wifi_power_enabled&&!g_state.wifi_scanning);
   wifi_button("ADD HIDDEN",l.hidden,TFT_NAVY,g_state.wifi_power_enabled);
   wifi_button(g_state.wifi_power_enabled?"POWER OFF":"POWER ON",l.power,TFT_MAROON);
-  wifi_button(g_state.wifi_start_at_boot?"BOOT: ON":"BOOT: OFF",l.boot,TFT_DARKGREEN);
+  wifi_button(g_state.wifi_start_at_boot?"AT BOOT: ON":"AT BOOT: OFF",l.boot,TFT_DARKGREEN);
   wifi_button(g_state.wifi_external_antenna?"ANT: EXTERNAL":"ANT: INTERNAL",l.antenna,TFT_NAVY);
 }
 void draw_wifi_saved(int i) {
@@ -373,7 +373,8 @@ void draw_connectivity() {
 void draw_display_footer();
 bool rom_firmware_current(const State& s) {
   return s.wifi_c6_rom_recovery && !s.wifi_c6_rom_busy && s.wifi_c6_image_embedded &&
-    s.wifi_hosted_transport_ready && strcmp(s.wifi_hosted_c6_version,"3.0.6")==0;
+    s.wifi_hosted_transport_ready && s.wifi_c6_rom_target_version[0] &&
+    strcmp(s.wifi_hosted_c6_version,s.wifi_c6_rom_target_version)==0;
 }
 void draw_rom_status() {
   const Rect r{g_layout.content.x+8,g_layout.content.y+40,g_layout.content.w-16,48};
@@ -1639,6 +1640,12 @@ void draw_wifi_keyboard() {
   text_editor::draw();
 }
 
+void wifi_connection_feedback() {
+  if(!g_layout.legacy) page_index()=0;
+  g_state.wifi_connected=false;
+  g_state.wifi_connecting=true;
+  strlcpy(g_state.wifi_message,"Connecting...",sizeof(g_state.wifi_message));
+}
 Action queue_wifi_request(const char* ssid, const char* password) {
   if (!ssid || !ssid[0]) return {};
   strlcpy(g_wifi_request_ssid, ssid, sizeof(g_wifi_request_ssid));
@@ -1647,6 +1654,7 @@ Action queue_wifi_request(const char* ssid, const char* password) {
   memset(g_wifi_edit_password, 0, sizeof(g_wifi_edit_password));
   g_wifi_request_pending = true;
   g_wifi_edit = WifiEdit::none;
+  wifi_connection_feedback();
   restore_settings_content();
   return {ActionKind::connect_wifi, 0};
 }
@@ -2178,8 +2186,10 @@ Action handle_touch(int32_t x, int32_t y) {
     }
     for (uint8_t i = 0; i < g_state.saved_network_count && i < 4; ++i) {
       const int row_y = 410 + i * 44;
-      if ((compact ? page_index()==1 && hit(x,y,c.saved[i].connect) : hit(x, y, 674, row_y, 144, 36)))
+      if ((compact ? page_index()==1 && hit(x,y,c.saved[i].connect) : hit(x, y, 674, row_y, 144, 36))) {
+        wifi_connection_feedback();draw_content();
         return {ActionKind::connect_saved_wifi, i};
+      }
       if (i && (compact ? page_index()==1 && hit(x,y,c.saved[i].up) : hit(x, y, 830, row_y, 88, 36)))
         return {ActionKind::move_wifi_up, i};
       if (i + 1 < g_state.saved_network_count && (compact ? page_index()==1 && hit(x,y,c.saved[i].down) : hit(x, y, 930, row_y, 106, 36)))

@@ -29,6 +29,8 @@
 #include "nvs_flash.h"
 #include "radio_service.hpp"
 #include "orcsdr_restart.hpp"
+#include "pocsag_dashboard.hpp"
+#include "screens.hpp"
 #include "orcsdr_storage.hpp"
 #include "sd_card.hpp"
 #include "wifi_app.hpp"
@@ -256,9 +258,9 @@ void cmd_wifi(char* args) {
   }
   if (std::strcmp(args, "STATUS") == 0) {
     const wifi_app::Status w = wifi_app::status();
-    std::printf("RTL_WIFI_STATUS started=%d link_failed=%d connected=%d connecting=%d ssid=%s ip=%s rssi=%d c6=%s stage=%s code=%d saved=%d\n",
+    std::printf("RTL_WIFI_STATUS started=%d link_failed=%d connected=%d connecting=%d ssid=%s ip=%s rssi=%d c6=%s stage=%s code=%d saved=%d power=%d boot=%d join_failed=%d\n",
                 w.started, w.link_failed, w.connected, w.connecting, w.ssid, w.ip, int(w.rssi), w.c6_version, w.failure_stage,
-                w.failure_code, w.saved);
+                w.failure_code, w.saved,w.power,w.start_at_boot,w.connection_failed);
     return;
   }
   if (std::strcmp(args, "RESULTS") == 0) {
@@ -275,6 +277,11 @@ void cmd_wifi(char* args) {
   }
   if (std::strcmp(args, "SCAN") == 0) {
     std::printf(wifi_app::request_scan() ? "RTL_WIFI_SCAN_OK\n" : "RTL_WIFI_ERROR not_started\n");
+  } else if (std::strcmp(args, "CONNECT_SAVED") == 0) {
+    std::printf(wifi_app::connect_saved()?"RTL_WIFI_CONNECT_SAVED_OK\n":"RTL_WIFI_ERROR no_saved_network_or_unavailable\n");
+  } else if (std::strcmp(args,"BOOT 0")==0 || std::strcmp(args,"BOOT 1")==0) {
+    wifi_app::set_start_at_boot(args[5]=='1');
+    std::printf("RTL_WIFI_BOOT_OK enabled=%d\n",args[5]=='1');
   } else if (std::strcmp(args, "DISCONNECT") == 0) {
     wifi_app::disconnect();
     std::printf("RTL_WIFI_DISCONNECT_OK\n");
@@ -300,7 +307,7 @@ void cmd_wifi(char* args) {
     if (wifi_app::connect(ssid, pass ? pass : "", true)) std::printf("RTL_WIFI_CONNECT_OK ssid=\"%s\"\n", ssid);
     else std::printf("RTL_WIFI_ERROR not_started\n");
   } else {
-    std::printf("RTL_WIFI_INVALID use STATUS | SCAN | RESULTS | CONNECT <ssid> [password] | DISCONNECT | FORGET\n");
+    std::printf("RTL_WIFI_INVALID use STATUS | SCAN | RESULTS | CONNECT <ssid> [password] | CONNECT_SAVED | BOOT 0|1 | DISCONNECT | FORGET\n");
   }
 }
 
@@ -551,6 +558,27 @@ void cmd_audio(char* args) {
   std::printf("RTL_AUDIO_INVALID use RTL_AUDIO STATUS | RTL_AUDIO TONE <hz> <ms>\n");
 }
 
+void cmd_pocsag(char* args) {
+  if(!authed()) {std::printf("RTL_POCSAG_ERROR auth_required\n");return;}
+  using C=orcsdr::pocsag::Control;C c=C::view;unsigned value=0;char verb[20]{},extra=0;
+  bool valid=true;
+  if(!strcmp(args,"NEXT")) {c=C::page;value=1;}
+  else if(!strcmp(args,"PREVIOUS")) {c=C::page;value=0;}
+  else if(!strcmp(args,"DETAIL_NEXT")) {c=C::detail;value=1;}
+  else if(!strcmp(args,"DETAIL_PREVIOUS")) {c=C::detail;value=0;}
+  else if(!strcmp(args,"SCAN")) {c=C::scan;value=0;}
+  else if(std::sscanf(args,"%19s %u %c",verb,&value,&extra)==2) {
+    if(!strcmp(verb,"VIEW")) c=C::view;
+    else if(!strcmp(verb,"SELECT")) c=C::select;
+    else if(!strcmp(verb,"BAUD")) c=C::baud;
+    else if(!strcmp(verb,"POLARITY")) c=C::polarity;
+    else valid=false;
+  } else valid=false;
+  if(!valid || !orcsdr::pocsag::valid_control(c,value)) {
+    std::printf("RTL_POCSAG_INVALID use VIEW 0..4 | SELECT 0..11 | NEXT | PREVIOUS | DETAIL_NEXT | DETAIL_PREVIOUS | BAUD 0|512|1200|2400 | POLARITY 0..2 | SCAN\n");return;
+  }
+  std::printf(screens::pocsag_request(unsigned(c),value)?"RTL_POCSAG_QUEUED\n":"RTL_POCSAG_ERROR inactive_or_busy\n");
+}
 void cmd_ui(char* args) {
   if (std::strncmp(args,"ROTATION ",9)==0) {
     if (!authed()) {std::printf("RTL_UI_ROTATION_ERROR auth_required\n");return;}
@@ -749,6 +777,7 @@ void handle_line(char* line) {
   if (std::strncmp(line, "RTL_USB_GUARD ", 14) == 0) return cmd_usb_guard(line + 14);
   if (std::strncmp(line, "RTL_AUDIO ", 10) == 0) return cmd_audio(line + 10);
   if (std::strncmp(line, "RTL_UI ", 7) == 0) return cmd_ui(line + 7);
+  if (std::strncmp(line,"RTL_POCSAG ",11)==0) return cmd_pocsag(line+11);
   if (std::strcmp(line, "RTL_SCREEN_STATUS") == 0) {
     std::printf("RTL_SCREEN_STATUS active=%s return=%s transitions=0 rejected_draws=0 visible_updates=%u last_transition_ms=0\n",
                 home_app::screen_name(), home_app::screen_name(), unsigned(home_app::status().visible_updates));

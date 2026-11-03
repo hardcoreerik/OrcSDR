@@ -18,6 +18,7 @@ std::atomic<RecoveryAccess> g_recovery{RecoveryAccess::idle};
 std::atomic<uint32_t> g_generation{0};
 std::atomic<bool> g_scan_pending{false}, g_connect_pending{false}, g_disconnect_pending{false}, g_started{false};
 std::atomic<bool> g_scanning{false}, g_connecting{false};
+std::atomic<bool> g_connect_saved_pending{false}, g_connection_failed{false};
 std::atomic<bool> g_power{true}, g_boot{true}, g_power_changed{false};
 char g_pending_ssid[33], g_pending_pass[65];
 bool g_pending_remember = false;
@@ -223,8 +224,15 @@ void task(void*) {
       g_scanning = false;
     }
     if (g_disconnect_pending.exchange(false)) orcsdr::wifi::disconnect();
+    if (g_connect_saved_pending.exchange(false) && g_saved_ssid[0]) {
+      std::snprintf(g_pending_ssid,sizeof(g_pending_ssid),"%s",g_saved_ssid);
+      std::snprintf(g_pending_pass,sizeof(g_pending_pass),"%s",g_saved_pass);
+      g_pending_remember=false;
+      g_connect_pending=true;
+    }
     if (g_connect_pending.exchange(false)) {
       g_connecting = true;
+      g_connection_failed = false;
       ESP_LOGI(TAG, "connecting to \"%s\"", g_pending_ssid);
       const bool began = orcsdr::wifi::connect(g_pending_ssid, g_pending_pass);
       for (int i = 0; i < 150 && began && !orcsdr::wifi::connected() && !orcsdr::wifi::connect_failed(); ++i) vTaskDelay(pdMS_TO_TICKS(100));
@@ -232,6 +240,7 @@ void task(void*) {
         ESP_LOGI(TAG, "connected: ip=%s rssi=%d", orcsdr::wifi::ip(), orcsdr::wifi::rssi());
         if (g_pending_remember) save(g_pending_ssid, g_pending_pass);
       } else {
+        g_connection_failed = true;
         ESP_LOGW(TAG, "could not join \"%s\"", g_pending_ssid);
       }
       g_connecting = false;
@@ -272,7 +281,8 @@ Status status() {
   s.generation = g_generation.load();
   s.link_failed = orcsdr::wifi::link_failed();
   s.connected = s.started && orcsdr::wifi::connected();
-  s.connecting = g_connecting.load();
+  s.connecting = g_connecting.load() || g_connect_pending.load() || g_connect_saved_pending.load();
+  s.connection_failed = g_connection_failed.load() && !s.connected && !s.connecting;
   if (s.connected) {
     std::snprintf(s.ssid, sizeof(s.ssid), "%s", orcsdr::wifi::ssid());
     std::snprintf(s.ip, sizeof(s.ip), "%s", orcsdr::wifi::ip());
@@ -302,11 +312,19 @@ int scan_results(orcsdr::wifi::ScanResult* out, size_t capacity) {
   return n;
 }
 bool connect(const char* ssid, const char* password, bool remember) {
-  if (g_recovery.load()!=RecoveryAccess::idle || !g_started.load() || !ssid || !ssid[0]) return false;
+  if (g_recovery.load()!=RecoveryAccess::idle || !g_started.load() || !g_power.load() || g_connecting.load() || g_connect_pending.load() || !ssid || !ssid[0]) return false;
   std::snprintf(g_pending_ssid, sizeof(g_pending_ssid), "%s", ssid);
   std::snprintf(g_pending_pass, sizeof(g_pending_pass), "%s", password ? password : "");
   g_pending_remember = remember;
   g_connect_pending = true;
+  return true;
+}
+bool connect_saved() {
+  if(g_recovery.load()!=RecoveryAccess::idle || !g_started.load() || !g_power.load() || !g_saved_ssid[0]) return false;
+  if(orcsdr::wifi::connected()) return true;
+  if(g_connecting.load() || g_connect_pending.load()) return false;
+  g_connection_failed=false;
+  g_connect_saved_pending=true;
   return true;
 }
 void disconnect() { g_disconnect_pending = true; }

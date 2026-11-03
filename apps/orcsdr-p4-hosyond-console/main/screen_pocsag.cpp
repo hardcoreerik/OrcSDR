@@ -1,7 +1,9 @@
-// POCSAG pager dashboard (apps/orcsdr-tab5/ui/pocsag_dashboard.cpp and pocsag_decoder_core.cpp, unchanged) on
+// Shared POCSAG pager dashboard and decoder on
 // the P4 console. The decoder takes the 960 kS/s IQ directly; messages are kept in a bounded RAM ring.
 // Pager discovery scan, the SD archive and identity editing are not available on this target yet.
 #include <algorithm>
+#include <atomic>
+#include <cstdio>
 #include <cstring>
 #include "audio_service.hpp"
 #include "esp_heap_caps.h"
@@ -13,6 +15,7 @@
 #include "pocsag_dashboard.hpp"
 #include "pocsag_decoder_core.hpp"
 #include "pocsag_store.hpp"
+#include "present.hpp"
 #include "radio_service.hpp"
 #include "screens.hpp"
 
@@ -34,6 +37,12 @@ size_t g_write = 0, g_count = 0;
 uint32_t g_revision = 0, g_ui_revision = 0;
 portMUX_TYPE g_lock = portMUX_INITIALIZER_UNLOCKED;
 bool g_started = false;
+std::atomic<bool> g_ui_active{false};
+std::atomic<uint32_t> g_control_request{0};
+bool resize_viewport() {
+  const auto* g=present_geometry();
+  return pg::set_viewport(g?pg::layout::Rect{int(g->safe.x),int(g->safe.y),int(g->safe.width),int(g->safe.height)}:pg::layout::Rect{0,0,1280,720});
+}
 
 uint64_t now_ms() { return static_cast<uint64_t>(esp_timer_get_time() / 1000); }
 
@@ -111,18 +120,21 @@ void publish(bool force) {
 }
 
 void enter() {
+  g_ui_active=false;g_control_request=0;
   if (!g_started) {
-    g_decoder = static_cast<pg::Decoder*>(heap_caps_malloc(sizeof(pg::Decoder), MALLOC_CAP_SPIRAM));
-    new (g_decoder) pg::Decoder();
-    g_table = static_cast<orcsdr::pocsag_store::Table*>(heap_caps_malloc(sizeof(orcsdr::pocsag_store::Table), MALLOC_CAP_SPIRAM));
-    new (g_table) orcsdr::pocsag_store::Table();
-    g_ring = static_cast<Stored*>(heap_caps_calloc(kRing, sizeof(Stored), MALLOC_CAP_SPIRAM));
-    g_started = g_decoder && g_table && g_ring;
-    if (!g_started) {
+    void* decoder_memory=heap_caps_malloc(sizeof(pg::Decoder),MALLOC_CAP_SPIRAM);
+    void* table_memory=heap_caps_malloc(sizeof(orcsdr::pocsag_store::Table),MALLOC_CAP_SPIRAM);
+    auto* ring_memory=static_cast<Stored*>(heap_caps_calloc(kRing,sizeof(Stored),MALLOC_CAP_SPIRAM));
+    if(!decoder_memory || !table_memory || !ring_memory) {
+      heap_caps_free(decoder_memory);heap_caps_free(table_memory);heap_caps_free(ring_memory);
       home_app::request_home();
       return;
     }
+    g_decoder=new(decoder_memory) pg::Decoder();
+    g_table=new(table_memory) orcsdr::pocsag_store::Table();
+    g_ring=ring_memory;g_started=true;
   }
+  if(!resize_viewport()) {home_app::request_home();return;}
   pg::Settings s;
   s.frequency_hz = kDefaultHz;
   pg::enter(s);
@@ -131,13 +143,23 @@ void enter() {
   audio_service::set_active(false);
   iq_tap::start("pocsag", consume, nullptr);
   publish(true);
+  g_ui_active=pg::active();
 }
 void leave() {
+  g_ui_active=false;g_control_request=0;
   iq_tap::stop();
   pg::leave();
 }
 void tick() {
+  if(!g_started) return;
   publish(false);
+  const uint32_t request=g_control_request.exchange(0);
+  if(request) {
+    bool applied=false;
+    const auto action=pg::control(static_cast<pg::Control>((request>>16)-1),request&0xffff,&applied);
+    if(action==pg::Action::settings_changed) apply_settings();
+    std::printf("RTL_POCSAG_ACTION_%s control=%u value=%u view=%u\n",applied?"OK":"ERROR",unsigned((request>>16)-1),unsigned(request&0xffff),pg::view());
+  }
   pg::update();
 }
 
@@ -145,14 +167,22 @@ void tap(int x, int y) {
   switch (pg::handle_touch(x, y)) {
     case pg::Action::settings_changed: apply_settings(); break;
     case pg::Action::exit: home_app::request_home(); break;
+    case pg::Action::open_settings: home_app::request_open(orcsdr::dashboards::Id::settings);break;
     default: break;  // pager discovery scan: not available on this target yet
   }
 }
 }  // namespace
 
 namespace screens {
+bool pocsag_request(unsigned kind,unsigned value) {
+  if(kind>unsigned(pg::Control::scan) || !g_ui_active.load() || !pg::valid_control(static_cast<pg::Control>(kind),value)) return false;
+  uint32_t idle=0;return g_control_request.compare_exchange_strong(idle,((kind+1)<<16)|value);
+}
 const Screen& pocsag_screen() {
-  static const Screen s{orcsdr::dashboards::Id::pocsag, "POCSAG", enter, leave, tick, tap, nullptr, nullptr};
+  static const Screen s{orcsdr::dashboards::Id::pocsag, "POCSAG", enter, leave, tick, tap, nullptr, nullptr,nullptr,[]() {
+    if(!resize_viewport()) return false;
+    pg::draw();return true;
+  }};
   return s;
 }
 }  // namespace screens

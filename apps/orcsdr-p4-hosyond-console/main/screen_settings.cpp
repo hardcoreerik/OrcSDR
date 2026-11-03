@@ -138,7 +138,7 @@ const st::State& build() {
     std::snprintf(g_state.wifi_ip, sizeof(g_state.wifi_ip), "%.15s", w.ip);
     std::snprintf(g_state.wifi_hosted_c6_version, sizeof(g_state.wifi_hosted_c6_version), "%.15s", w.c6_version);
     std::snprintf(g_state.wifi_message, sizeof(g_state.wifi_message), "%.47s",
-                  w.started ? (w.connected ? "Connected" : w.connecting ? "Connecting..." : "Ready") : (w.failure_stage[0] ? w.failure_stage : "Starting the C6"));
+                  w.started ? (w.connected ? "Connected" : w.connecting ? "Connecting..." : w.connection_failed ? "Could not connect. Check password or signal." : "Ready") : (w.failure_stage[0] ? w.failure_stage : "Starting the C6"));
     g_state.wifi_rssi = w.rssi;
     orcsdr::wifi::ScanResult found[6];
     const int n = wifi_app::scan_results(found, 6);
@@ -176,6 +176,7 @@ const st::State& build() {
     g_state.wifi_c6_rom_busy=up.busy;g_state.wifi_c6_rom_result=up.result;
     g_state.wifi_c6_update_percent=up.percent;
     g_state.wifi_c6_image_embedded=orcsdr_embedded_c6_rom_manifest()!=nullptr;
+    std::snprintf(g_state.wifi_c6_rom_target_version,sizeof(g_state.wifi_c6_rom_target_version),"%s",orcsdr_embedded_c6_rom_version());
   }
   const auto sd=sd_card::status();
   g_state.sd_ready=sd.mounted;
@@ -252,11 +253,7 @@ void tap(int x, int y) {
       break;
     }
     case st::ActionKind::connect_saved_wifi: {
-      const wifi_app::Status w = wifi_app::status();
-      if (w.saved) {
-        // Saved credentials are re-read from NVS by the Wi-Fi task; a reconnect request reuses them.
-        wifi_app::disconnect();
-      }
+      (void)wifi_app::connect_saved();
       break;
     }
     case st::ActionKind::forget_wifi:

@@ -285,7 +285,9 @@ void fill_snapshot() {
   s.battery_percent = -1;  // no battery on this board
   s.volume = g_volume;
   s.relative_dbfs = radio::level_dbfs();
-  s.wifi_connected = wifi_app::status().connected;
+  const auto wifi = wifi_app::status();
+  s.wifi_connected = wifi.connected;
+  std::snprintf(s.wifi_ip,sizeof(s.wifi_ip),"%s",wifi.ip);
   s.usb_connected = radio_state.receiver_state >= 2;
   s.driver_ready = radio_state.receiver_state == 2;
   s.receiving = radio_state.receiver_state == 2;

@@ -5,6 +5,7 @@ using namespace orcsdr::settings;
 namespace ui=orcsdr::c6_recovery_ui;
 State rom_state() {
   State s{};s.wifi_c6_rom_recovery=true;s.wifi_c6_image_embedded=true;
+  strlcpy(s.wifi_c6_rom_target_version,"3.0.6",sizeof(s.wifi_c6_rom_target_version));
   strlcpy(s.wifi_hosted_c6_version,"2.12.9",sizeof(s.wifi_hosted_c6_version));return s;
 }
 }
@@ -72,7 +73,13 @@ extern "C" __declspec(dllexport) int test_completed_and_current_hide_update() {
   for(const Rect viewport: {Rect{72,72,424,1088},Rect{72,72,1088,424}}) {
     g_layout=make_settings_layout(viewport);auto s=rom_state();
     s.wifi_c6_rom_phase=ui::Phase::complete;s.wifi_hosted_transport_ready=true;
-    strlcpy(s.wifi_hosted_c6_version,"3.0.6",sizeof(s.wifi_hosted_c6_version));
+    strlcpy(s.wifi_hosted_c6_version,"3.9.7",sizeof(s.wifi_hosted_c6_version));
+    strlcpy(s.wifi_c6_rom_target_version,"3.9.7",sizeof(s.wifi_c6_rom_target_version));
+    auto unknown=s;unknown.wifi_c6_rom_phase=ui::Phase::idle;
+    unknown.wifi_c6_rom_target_version[0]='\0';
+    if(rom_firmware_current(unknown)) return 6;
+    strlcpy(unknown.wifi_c6_rom_target_version,"3.0.6",sizeof(unknown.wifi_c6_rom_target_version));
+    if(rom_firmware_current(unknown)) return 7;
     for(auto phase:{ui::Phase::complete,ui::Phase::idle}) {
       s.wifi_c6_rom_phase=phase;M5.Display.clear_records();enter(s,Section::firmware_updates);
       bool heading=false,detail=false;

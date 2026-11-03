@@ -1,4 +1,5 @@
 #pragma once
+#include "pocsag_dashboard_layout.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -90,9 +91,24 @@ enum class Action : uint8_t {
   scan_requested,
   scan_cancelled,
   exit,
+  open_settings,
 };
+enum class Control : uint8_t {view,page,detail,select,baud,polarity,scan};
+inline bool valid_control(Control control,unsigned value) {
+  switch(control) {
+    case Control::view:return value<5;
+    case Control::page:case Control::detail:return value<2;
+    case Control::select:return value<kRecentMessageCapacity;
+    case Control::baud:return value==0 || value==512 || value==1200 || value==2400;
+    case Control::polarity:return value<3;
+    case Control::scan:return value==0;
+  }
+  return false;
+}
+Action control(Control control,unsigned value,bool* applied); // UI owner; same handlers as touch
 
 void enter(const Settings& settings);
+bool set_viewport(layout::Rect viewport); // UI owner only; retains view and selection
 void leave();
 void draw();
 void update();

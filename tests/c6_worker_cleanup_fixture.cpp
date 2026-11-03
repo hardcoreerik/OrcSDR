@@ -58,6 +58,7 @@ void reset_observations() {
 }
 }
 
+extern "C" const char* orcsdr_embedded_c6_rom_version() { return "3.9.7"; }
 extern "C" const orc_c6_rom_manifest_t* orcsdr_embedded_c6_rom_manifest() {
   static const orc_c6_rom_manifest_t manifest{};
   return package_available ? &manifest : nullptr;
@@ -171,7 +172,7 @@ void vTaskDelay(TickType_t ticks) {
       recovery_idle = true;
       if (scenario == Scenario::install_success || scenario == Scenario::stale_generation) {
         mock_wifi_status.started = true;
-        std::strcpy(mock_wifi_status.c6_version, "3.0.6");
+        std::strcpy(mock_wifi_status.c6_version, "3.9.7");
         if (scenario == Scenario::install_success) ++mock_wifi_status.generation;
       }
     }
@@ -212,7 +213,7 @@ extern "C" __declspec(dllexport) int run_install_success() {
   try { captured_task(nullptr); } catch (const DelayAbort&) { return 2; }
   const auto final = c6_recovery_app::status();
   return !delay_abort && boot_ack_sent && flash_calls == 1 && mock_wifi_status.started &&
-      mock_wifi_status.generation == 28 && std::strcmp(mock_wifi_status.c6_version, "3.0.6") == 0 &&
+      mock_wifi_status.generation == 28 && std::strcmp(mock_wifi_status.c6_version, "3.9.7") == 0 &&
       final.phase == c6_recovery_app::Phase::complete && final.result == 0 && !final.busy &&
       hosted_release_calls == 1 && reset_calls == 2 && recovery_idle &&
       orcsdr::c6_update::owner.load() == orcsdr::c6_update::Owner::none ? 0 : 3;
@@ -224,7 +225,7 @@ extern "C" __declspec(dllexport) int run_stale_generation_rejected() {
   try { captured_task(nullptr); } catch (const DelayAbort&) { return 2; }
   const auto final = c6_recovery_app::status();
   return !delay_abort && boot_ack_sent && flash_calls == 1 && mock_wifi_status.started &&
-      mock_wifi_status.generation == 27 && std::strcmp(mock_wifi_status.c6_version, "3.0.6") == 0 &&
+      mock_wifi_status.generation == 27 && std::strcmp(mock_wifi_status.c6_version, "3.9.7") == 0 &&
       stale_wait_start_us >= 0 && stale_wait_delays >= 4 &&
       fake_time_us - stale_wait_start_us > 45000000 && final.phase == c6_recovery_app::Phase::failed &&
       final.result == -6 && !final.busy && hosted_release_calls == 1 && reset_calls == 2 && recovery_idle &&

@@ -45,6 +45,7 @@ class RecoveryPackageTests(unittest.TestCase):
         cpp = (self.folder / "generated/c6_rom_manifest.cpp").read_text()
         self.assertIn("{true,13,0x400000,4,segments}", cpp)
         self.assertEqual(cpp.count('asm("_binary_'), 4)
+        self.assertIn('orcsdr_embedded_c6_rom_version() { return ' + json.dumps(self.manifest["hosted_version"]) + '; }', cpp)
 
     def test_json_trusted_flag_cannot_replace_builder_pin(self):
         self.manifest["trusted"] = True

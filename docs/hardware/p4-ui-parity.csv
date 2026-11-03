@@ -8,7 +8,7 @@ am,AM RADIO,yes,no,no,Current registry entry; behavior and service parity still 
 weather,WEATHER,no,no,no,Current registry entry; behavior and service parity still require audit
 cb,CB RADIO,yes,no,no,Current registry entry; behavior and service parity still require audit
 lora,LORA / MESH,yes,no,no,Current registry entry; behavior and service parity still require audit
-pocsag,POCSAG,yes,no,no,Current registry entry; behavior and service parity still require audit
+pocsag,POCSAG,yes,human accepted sampled layout and touch,human accepted sampled layout and touch,Shared native geometry for five views; host renderer/input covers LilyGO and Hosyond plus legacy rendering; native empty-state PNGs both orientations and named controls; user accepted five tabs fit and touch; RF decode and populated hardware views remain open
 ft8,FT8 RX,no,no,no,Current registry entry; behavior and service parity still require audit
 acars,ACARS,yes,no,no,Current registry entry; behavior and service parity still require audit
 airband,AIRBAND,yes,no,no,Current registry entry; behavior and service parity still require audit

@@ -28,12 +28,15 @@ extern "C" __declspec(dllexport) int test_connectivity_actions_and_redraw() {
     tap(g_layout.next_page);if(page_index()!=1) return 3;
     tap(c.saved[1].up,&a);if(a.kind!=ActionKind::move_wifi_up || a.value!=1) return 4;
     tap(c.saved[0].connect,&a);if(a.kind!=ActionKind::connect_saved_wifi || a.value!=0) return 5;
+    if(page_index()!=0 || !g_state.wifi_connecting) return 14;
+    page_index()=1;draw_content();
     tap(c.saved[1].forget,&a);if(a.kind!=ActionKind::forget_wifi || a.value!=1) return 6;
     tap(g_layout.next_page);if(page_index()!=2) return 7;
     tap(c.networks[0],&a);if(a.kind!=ActionKind::connect_wifi) return 8;
+    if(page_index()!=0 || !g_state.wifi_connecting) return 15;
     char ssid[33]{},password[64]{};
     if(!take_wifi_credentials(ssid,sizeof(ssid),password,sizeof(password)) || strcmp(ssid,"Open test") || password[0]) return 9;
-    page_index()=0;draw_content();M5.Display.clear_records();
+    state=g_state;page_index()=0;draw_content();M5.Display.clear_records();
     strlcpy(state.wifi_message,"Scanning now",sizeof(state.wifi_message));update(state);
     bool displayed=false;
     for(const auto& t:M5.Display.texts) if(t.text=="Scanning now") displayed=true;
@@ -67,6 +70,7 @@ extern "C" __declspec(dllexport) int test_connectivity_real_editor() {
     if(strcmp(editor::value(),"q")) return 5;
     editor::accept_point(&x,&y);const auto a=handle_touch(x,y);
     if(a.kind!=ActionKind::connect_wifi || editor::active() || g_wifi_edit!=WifiEdit::none) return 6;
+    if(page_index()!=0 || !g_state.wifi_connecting) return 8;
     char ssid[33],password[64];if(!take_wifi_credentials(ssid,sizeof(ssid),password,sizeof(password)) || strcmp(ssid,"q") || strcmp(password,"q")) return 7;
     tap(c.hidden);editor::cancel_point(&x,&y);handle_touch(x,y);
     if(editor::active() || geometry_locked()) return 8;

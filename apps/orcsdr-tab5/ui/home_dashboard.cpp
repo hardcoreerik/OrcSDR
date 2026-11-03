@@ -239,6 +239,14 @@ void draw_header_status() {
   const int y = kHeaderStatusY;
   M5.Display.fillRect(kHeaderStatusX, y, kHeaderStatusW, kHeaderStatusH, TFT_BLACK);
   frame(kHeaderStatusX, y, kHeaderStatusW, kHeaderStatusH, kCyan, 9);
+  if(home_viewport.w!=1280 || home_viewport.h!=720) {
+    const int left=kHeaderStatusX+8,right=kHeaderStatusX+kHeaderStatusW/2+8;
+    text(current.wifi_connected?"WI-FI CONNECTED":"WI-FI OFFLINE",left,y+15,current.wifi_connected?kCyan:TFT_ORANGE,2);
+    text(current.wifi_connected && current.wifi_ip[0]?current.wifi_ip:"NO CONNECTION",left,y+39,current.wifi_connected?kCyan:kDim,2);
+    text(current.driver_ready?"RTL-SDR READY":"RTL-SDR NOT READY",right,y+15,current.driver_ready?kCyan:TFT_ORANGE,2);
+    text(current.clock[0]?current.clock:"--:--",right,y+39,TFT_WHITE,2);
+    return;
+  }
   draw_wifi_icon(kHeaderStatusX + 26, y + 32, current.wifi_connected ? kCyan : kDim);
   text("Wi-Fi", kHeaderStatusX + 54, y + 17, TFT_WHITE, 2);
   text(current.wifi_connected && current.wifi_ip[0] ? current.wifi_ip : "OFFLINE",

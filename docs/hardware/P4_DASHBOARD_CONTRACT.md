@@ -65,9 +65,10 @@ missing evidence stays unverified.
 
 Home, header, keypad and FM expose shared geometry. Home's on-device self-check
 passes all three tested viewports; FM rendering/state acceptance remains open.
-The screen router now offers a
-state-preserving geometry callback, wired for FM; other dashboards still return
-to Home on rotation. Preserving every active dashboard remains required.
+The screen router offers a state-preserving geometry callback, wired for FM,
+AM, CB, ACARS, ADS-B, RF Lab, Wi-Fi Analysis, POCSAG and Settings. Dashboards without
+that callback still return to Home on rotation. Preserving every active
+dashboard remains required.
 Remaining dashboards and text/setup/map workflows need migration and
 validation. These requirements describe the completion gate, not achieved parity.
 
@@ -75,14 +76,53 @@ Settings now has a pure shared layout and a viewport/page seam. Display & Audio
 rows use the same geometry for painting and actions, including optional board
 orientation policy fields. Firmware & Updates now uses two compact pages for
 status/progress and instructions/actions, with progress repaint restricted to
-the status region. Its current actions preserve Hosted OTA; the ROM-SDIO
-worker/physical BOOT interaction is not wired yet. Other compact sections and editors remain
-unconverted. The P4 adapter deliberately does not opt in yet; no feature should
-be hidden to claim responsive completeness. Host geometry checks cover legacy
-positions, both LilyGO safe rectangles, Hosyond and a portrait reference. Actual
-Settings renderer, progress/overlay and physical acceptance remain separate gates.
+the status region. LilyGO's profile selects the embedded ROM-SDIO recovery
+worker and physical BOOT instructions; other profiles retain their appropriate
+Hosted update path. The user completed the on-device 2.12.9 to 3.0.6 C6 update
+without the UART adapter. Terminal/current-version screens omit the install
+button. Fresh factory ESP-AT conversion and interrupted writes remain separate
+acceptance gates; see P4_C6_ROM_PACKAGE.md.
+
+The P4 Settings adapter uses the shared safe viewport. Compact sections and
+text entry have targeted layout/recording checks and sampled native PNGs, but
+these do not establish every workflow or physical acceptance. Host geometry
+checks cover legacy positions, both LilyGO safe rectangles, Hosyond and a
+portrait reference. Actual renderer/input, progress/overlay and physical
+acceptance remain separate gates.
 
 Run `python tests/test_p4_layout_contracts.py` for production Home, FM and
 Settings geometry across representative viewports. This compiles and executes
 the C++ contracts, retaining legacy positions and checking bounds/minimum sizes.
 It does not substitute for actual renderer/input or hardware tests.
+
+### Checkpoint coverage (2026-11-01)
+
+The focused command below passed 16 tests. This is host evidence, not physical
+acceptance or proof that every renderer/input path works on those boards.
+
+```text
+python -m pytest tests/test_p4_layout_contracts.py tests/test_am_dashboard_layout.py tests/test_acars_responsive_layout.py tests/test_cb_dashboard_layout.py -q
+```
+
+| Dashboard | Checked geometry | Remaining host coverage |
+| --- | --- | --- |
+| RF Lab, Wi-Fi Analysis, ADS-B | Legacy, Hosyond 800 x 480, both LilyGO safe views | Populated renderer/input cases beyond existing narrow fixtures |
+| AM | Both LilyGO safe views; selected legacy assertions | Hosyond; broader legacy renderer/input cases |
+| CB | Both LilyGO safe views, Hosyond 800 x 480; selected legacy assertions | Actual populated renderer/input coverage on Hosyond; broader legacy cases |
+| ACARS | Both LilyGO safe views; legacy layout/UI self-check | Hosyond; actual M5GFX renderer recording |
+
+Wi-Fi Analysis additionally executes a recording-display fixture. Geometry
+checks alone cannot detect erased static text, populated-row clipping, or
+incorrect actions. CB's channel-grid regression explicitly requires every cell
+to remain inside content and outside navigation; its r12 native landscape PNG
+also confirms that separation on LilyGO. Shared source does not by itself prove
+cross-profile compatibility.
+
+CB's Hosyond follow-up derives channel-strip columns from a 44-pixel minimum
+target instead of fixing 20 columns. Narrow landscape Setup uses two stacked
+rows per page, and the meter keeps enough width for its readout. The focused
+CB command passed both tests after first reproducing undersized targets on
+800 x 480. Checks retain LilyGO's landscape strip/meter/Setup dimensions and
+require the longest Setup help text to fit on Hosyond. This follow-up is not
+yet part of the device's r14 image and does not establish physical Hosyond
+acceptance.

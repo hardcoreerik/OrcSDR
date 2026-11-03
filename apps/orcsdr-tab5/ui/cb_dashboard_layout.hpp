@@ -156,14 +156,17 @@ inline DashboardLayout make_layout(LayoutRect v) {
     for (int i = 0; i < 12; ++i)
       l.control[i] = {x + (i % 6) * (control_w + control_gap),
           top + 88 + (i / 6) * 48, control_w, 44};
-    l.listen_channels = {x, top + 184, w, 112};
+    const int listen_cell_gap = 2;
+    l.listen_channel_columns = std::min(20,(w+listen_cell_gap)/(44+listen_cell_gap));
+    const int listen_rows=(40+l.listen_channel_columns-1)/l.listen_channel_columns;
+    l.listen_channels = {x, top + 184, w, 24+listen_rows*44};
     l.listen_channel_title = {x + 8, l.listen_channels.y + 2, w - 16, 20};
-    l.listen_channel_columns = 20;
-    const int listen_cell_gap = 2, listen_cell_w = (w - 19 * listen_cell_gap) / 20;
+    const int listen_cell_w = (w - (l.listen_channel_columns-1)*listen_cell_gap) / l.listen_channel_columns;
     for (int i = 0; i < 40; ++i)
-      l.listen_channel[i] = {x + (i % 20) * (listen_cell_w + listen_cell_gap),
-          l.listen_channels.y + 24 + (i / 20) * 44, listen_cell_w, 44};
-    l.listen_meter = {x + 700, top + 18, w - 720, 16};
+      l.listen_channel[i] = {x + (i % l.listen_channel_columns) * (listen_cell_w + listen_cell_gap),
+          l.listen_channels.y + 24 + (i / l.listen_channel_columns) * 44, listen_cell_w, 44};
+    const int meter_w=std::min(352,w/2-24);
+    l.listen_meter = {x+w-meter_w-20, top + 18, meter_w, 16};
 
     l.spectrum_title = {x + 8, top + 4, w - 16, 28};
     l.spectrum_plot = {x, top + 36, w, 88};
@@ -190,15 +193,18 @@ inline DashboardLayout make_layout(LayoutRect v) {
       l.channel_cell[i] = {x + (i % 8) * (channel_cell_w + channel_cell_gap),
           top + 76 + (i / 8) * cell_h, channel_cell_w, cell_h};
 
-    l.setup_page_size = 4; l.setup_page_count = 2;
+    const bool stacked_setup=w<900;
+    l.setup_page_size = stacked_setup?2:4;
+    l.setup_page_count = 8/l.setup_page_size;
     for (int i = 0; i < 8; ++i) {
-      const int row = i % 4, y = top + row * 60;
-      l.setup_row[i] = {x, y, w, 56};
-      l.setup_label[i] = {x + 8, y + 3, w - 340, 22};
-      l.setup_help[i] = {x + 8, y + 25, w - 340, 28};
-      l.setup_minus[i] = {x + w - 312, y + 6, 48, 44};
-      l.setup_value[i] = {x + w - 256, y + 6, 200, 44};
-      l.setup_plus[i] = {x + w - 48, y + 6, 44, 44};
+      const int row = i % l.setup_page_size, y = top + row * (stacked_setup?140:60);
+      const int controls_y=y+(stacked_setup?84:6);
+      l.setup_row[i] = {x, y, w, stacked_setup?132:56};
+      l.setup_label[i] = {x + 8, y + 3, stacked_setup?w-16:w-340, 22};
+      l.setup_help[i] = {x + 8, y + 25, stacked_setup?w-16:w-340, stacked_setup?52:28};
+      l.setup_minus[i] = {x + w - 312, controls_y, 48, 44};
+      l.setup_value[i] = {x + w - 256, controls_y, 200, 44};
+      l.setup_plus[i] = {x + w - 48, controls_y, 44, 44};
     }
     l.setup_previous = {x, l.content.y + l.content.h - 44, 64, 44};
     l.setup_page = {x + 72, l.setup_previous.y, w - 144, 44};

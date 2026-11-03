@@ -22,6 +22,7 @@ bool begin_in_phase(c6_recovery_app::Phase expected_phase) {
 }
 }
 
+extern "C" const char* orcsdr_embedded_c6_rom_version() { return "3.0.6"; }
 extern "C" const orc_c6_rom_manifest_t* orcsdr_embedded_c6_rom_manifest() {
   static const orc_c6_rom_manifest_t manifest{};
   return package_available ? &manifest : nullptr;

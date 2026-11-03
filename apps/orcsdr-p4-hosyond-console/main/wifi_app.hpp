@@ -15,6 +15,7 @@ struct Status {
   bool link_failed = false;
   bool connected = false;
   bool connecting = false;
+  bool connection_failed = false;
   char ssid[33] = {};
   char ip[16] = {};
   int16_t rssi = 0;
@@ -32,6 +33,7 @@ bool request_scan();  // asynchronous; results via scan_results()
 int scan_results(orcsdr::wifi::ScanResult* out, size_t capacity);
 bool scanning();
 bool connect(const char* ssid, const char* password, bool remember);
+bool connect_saved(); // explicit reconnect, independent of the boot preference
 void disconnect();
 void simulate_link_loss();  // test only: behaves as if the C6 link broke
 void set_power(bool enabled);          // off: disconnects and stops Wi-Fi; on: brings the C6 link up if needed

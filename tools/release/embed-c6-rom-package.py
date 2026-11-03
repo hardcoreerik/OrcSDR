@@ -64,7 +64,7 @@ def validate(manifest_path, expected_digest, root):
                 raise ValueError("recovery image is not an ESP32-C6 image")
         if s["role"] == "ota_data_initial" and (len(data) != 8192 or any(b != 255 for b in data)):
             raise ValueError("unexpected initial OTA selection data")
-        result.append(dict(s, path=path, symbol=symbol))
+        result.append(dict(s, path=path, symbol=symbol, hosted_version=m["hosted_version"]))
     return sorted(result, key=lambda s: int(s["offset"], 0))
 
 
@@ -78,7 +78,8 @@ def generate(segments, output):
         digest = ",".join("0x" + s["sha256"][i:i+2] for i in range(0, 64, 2))
         lines.append(f'{{{s["offset"]},image_{s["symbol"]},{s["size_bytes"]},{{{digest}}}}},')
     lines += ["};", "static const orc_c6_rom_manifest_t manifest = {true,13,0x400000,4,segments};",
-              'extern "C" const orc_c6_rom_manifest_t* orcsdr_embedded_c6_rom_manifest() { return &manifest; }']
+              'extern "C" const orc_c6_rom_manifest_t* orcsdr_embedded_c6_rom_manifest() { return &manifest; }',
+              'extern "C" const char* orcsdr_embedded_c6_rom_version() { return ' + json.dumps(segments[0]["hosted_version"]) + '; }']
     (output / "c6_rom_manifest.cpp").write_text("\n".join(lines) + "\n")
     # Bracket arguments keep paths literal; filenames were restricted above.
     paths = [str(s["path"]).replace("\\", "/") for s in segments]
