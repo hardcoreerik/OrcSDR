@@ -41,6 +41,7 @@
 #include "web_auth.hpp"
 #include "orcsdr_sx126x.h"
 #include "packet_radio_service.hpp"
+#include "gnss_service.hpp"
 #include "cJSON.h"
 
 namespace {
@@ -179,6 +180,7 @@ void cmd_help() {
   std::printf("PAIR <key> / AUTH <nonce> <proof> / PING        - pairing and session (auth commands need AUTH)\n");
   std::printf("RTL_PACKET STATUS | LAST | RX <Hz> EXTERNAL|INTERNAL | STOP - SX1262 LongFast (auth)\n");
   std::printf("RTL_HEALTH [STATUS|BUILD|HEAP_CHECK]             - development diagnostics\n");
+  std::printf("RTL_GNSS STATUS                                - passive receiver health; no coordinates\n");
   std::printf("RTL_STATUS                                      - receiver state\n");
   std::printf("RTL_C6_ROM STATUS                               - read-only embedded recovery package status\n");
   std::printf("RTL_FREQ | RTL_FREQ <HZ>                         - query / hot retune (auth)\n");
@@ -855,6 +857,15 @@ void handle_line(char* line) {
     return;
   }
   if (std::strncmp(line,"RTL_WEB ",8)==0) return cmd_web(line+8);
+  if (!std::strcmp(line,"RTL_GNSS STATUS")) {
+    const auto s=gnss_service::status();
+    std::printf("RTL_GNSS_STATUS supported=%d started=%d uart=%d rx=%d baud=%u bytes=%u sentences=%u fixes=%u no_fixes=%u rejected=%u ignored=%u read_errors=%u current_fix=%d last_valid=%d fix_age_ms=%u error=%s cleanup_error=%s\n",
+      orcsdr_board_profile()->has_gnss,s.started,int(s.uart_port),s.rx_gpio,unsigned(s.baud),
+      unsigned(s.bytes_read),unsigned(s.sentences),unsigned(s.fixes),unsigned(s.no_fixes),
+      unsigned(s.rejected),unsigned(s.ignored),unsigned(s.read_errors),s.current_fix_usable,
+      s.last_valid_fix_available,unsigned(s.fix_age_ms),esp_err_to_name(s.last_error),esp_err_to_name(s.cleanup_error));
+    return;
+  }
   if (std::strncmp(line,"RTL_PACKET ",11)==0) return cmd_packet_service(line+11);
   if (std::strncmp(line, "RTL_ORIENTATION ", 16) == 0) return cmd_orientation(line + 16);
   if (std::strcmp(line, "RTL_STATUS") == 0) return cmd_status();

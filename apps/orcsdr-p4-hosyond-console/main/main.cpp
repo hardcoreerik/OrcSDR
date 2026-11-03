@@ -28,6 +28,8 @@
 #include "serial_cli.hpp"
 #include "web_server.hpp"
 #include "packet_radio_service.hpp"
+#include "gnss_service.hpp"
+#include "orcsdr_board_control.h"
 
 static constexpr char TAG[] = "CONSOLE";
 // Off-screen size when no panel is attached: the layout the console is designed and tested at.
@@ -77,6 +79,13 @@ extern "C" void app_main(void) {
   web_server::start();     // disabled by default; follows saved Wi-Fi/link state
   audio_service::start();  // optional: the receiver and UI run without sound if the codec fails
   (void)packet_radio::start(); // optional packet-radio worker; RF stays off until requested
+  const auto* profile=orcsdr_board_profile();
+  if(profile->has_gnss) {
+    const esp_err_t prepared=orcsdr_board_gnss_prepare();
+    if(prepared!=ESP_OK || !gnss_service::start(static_cast<uart_port_t>(profile->gnss_uart),
+                                               profile->gnss_rx,profile->gnss_baud))
+      ESP_LOGW(TAG,"passive GNSS unavailable; inspect RTL_GNSS STATUS");
+  }
   if (!home_app::start(&M5.Display)) ESP_LOGE(TAG, "home UI task failed");
   ESP_LOGI(TAG, "boot complete");
 }

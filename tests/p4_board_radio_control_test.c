@@ -26,6 +26,13 @@ int main(void){
   profile.ioexp_addr[0]=0x20;profile.has_radio=true;
   profile.radio_rst=(orcsdr_ioexp_line_t){0,16};profile.radio_dio1=(orcsdr_ioexp_line_t){0,17};
   assert(orcsdr_board_controls_start((void*)1)==ESP_OK);
+  regs[3]=regs[7]=0xff;
+  assert(orcsdr_board_gnss_prepare()==ESP_ERR_NOT_SUPPORTED&&regs[3]==0xff);
+  profile.has_gnss=true;profile.gnss_startup_line=(orcsdr_ioexp_line_t){0,11};
+  assert(orcsdr_board_gnss_prepare()==ESP_OK&&regs[3]==0xfd&&regs[7]==0xfd);
+  fail_read=1;assert(orcsdr_board_gnss_prepare()==ESP_ERR_TIMEOUT&&!locked);fail_read=0;
+  fail_write=1;assert(orcsdr_board_gnss_prepare()==ESP_ERR_TIMEOUT&&!locked);fail_write=0;
+  timeout=1;assert(orcsdr_board_gnss_prepare()==ESP_ERR_TIMEOUT);timeout=0;
   regs[3]=0xff;regs[7]=0x35;
   assert(orcsdr_board_radio_reset(true)==ESP_OK);
   assert(regs[3]==0xbf&&regs[7]==0x35); // bank1 bit6, preserve C6/USB/SD bits

@@ -17,6 +17,8 @@ esp_err_t orcsdr_board_radio_reset(bool asserted);
 esp_err_t orcsdr_board_radio_dio1_read(bool* high);
 /* Select only a documented antenna-switch polarity; never authorizes TX. */
 esp_err_t orcsdr_board_radio_select_antenna(bool external);
+/* Apply only the profile's documented GNSS startup latch/direction. */
+esp_err_t orcsdr_board_gnss_prepare(void);
 #ifdef __cplusplus
 }
 #endif

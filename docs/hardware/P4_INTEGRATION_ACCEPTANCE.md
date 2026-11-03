@@ -14,7 +14,7 @@ Legend: **partial** means implemented or checked only for the cited scope;
 | --- | --- | --- | --- |
 | Preserve Hosyond/LilyGO drivers and shared M5GFX UI | Existing profiles and shared renderers retained | Working LilyGO app, earlier display/FM acceptance | Cross-profile regressions and final audit |
 | TX minimum text readability | `521ed01a`; normal + sanitizer TX suites; minimum-height/bounds/overlap assertions | r17 PNGs; owner accepted portrait and landscape text | Wider populated-state and input acceptance |
-| LoRa RX views/navigation | Five existing receive views now share viewport-derived geometry, paged node/traffic lists, spectrum/waterfall bounds and 5/6-tab capability navigation; TX remains shared; sanitizer production renderer checks pass | r21/r22 native PNGs for five RX views plus TX Lab in both orientations; one 124-byte SX1262 packet populated Traffic/Nodes; on-device serial zoom/receiver-center applied; final r22 hashes/ELF verified | Human touch/readability, final-build populated sentinel recapture, real logs/history, complete serial parity and remaining overlays |
+| LoRa RX views/navigation | Five existing receive views now share viewport-derived geometry, paged node/traffic lists, spectrum/waterfall bounds and 5/6-tab capability navigation; TX remains shared; sanitizer production renderer checks pass | r21/r22 native PNGs for five RX views plus TX Lab in both orientations; one 124-byte SX1262 packet populated Traffic/Nodes; on-device serial zoom/receiver-center applied; final r22 hashes/ELF verified | Final-build populated sentinel recapture, real logs/history, complete serial parity and remaining overlays |
 | P25 | Shared responsive renderer imported in `52e73c5c` / `0743c00b`; targeted layout tests pass; absent P4 route | Open | Adapter, decoder services, PCM output ownership and RF acceptance |
 | FT8 | Shared renderer linked; route/runtime missing | Open | Responsive renderer, runtime/time/storage, adapter, reception |
 | SSTV | Shared renderer/app exist; not in P4 app | Open | Responsive renderer, adapter and worker/audio/storage hooks |
@@ -24,7 +24,7 @@ Legend: **partial** means implemented or checked only for the cited scope;
 | Dashboard browser/overlays/editors/focus | Partial shared migrations and focused tests | Sampled keypad/Settings acceptance only | Every workflow, populated/error states, both orientations |
 | Reusable profile geometry and capability rules | Shared display/header/layout contracts exist | Multiple native dashboards run | Complete remaining fixed-coordinate assumptions and document authoring process |
 | SX1262 integration | Profile-aware LongFast RX worker, manual MMCX1 selection, driver-reported SPI chunk limits, generation/error handling and shared Messages adapter; 70 packet/limit cases, seven worker scenarios, event mapping and sanitizer UI checks pass | UI START RX reaches receiving; Heltec V4 packet at 906.875 MHz accepted by SX1262 (120 bytes, CRC, text, RSSI -41 dBm/SNR 7 dB), displayed with SX1262 attribution in native portrait/landscape PNGs | Onboard TX/output qualification and approval, atomic C6 quiescence, hardware error/reconnect qualification, logging/history and remaining LoRa views; TX remains locked |
-| GNSS | Bounded original NMEA parser `34c71ba8`, RMC/GGA checksum/range/framing/no-fix tests pass; estimated/manual/simulated modes excluded | No UART/service evidence | Board wake/startup and passive UART service, fresh valid fixes, location integration; active wake polarity unresolved |
+| GNSS | Bounded original NMEA parser `34c71ba8`, RMC/GGA checksum/range/framing/no-fix tests pass; estimated/manual/simulated modes excluded | Passive UART service starts on device at 115200 without transport errors; zero bytes at initial sample | Establish receiver output/startup/baud, fresh valid fixes, location integration; active wake polarity unresolved |
 | Battery telemetry | Read-only BQ27220 worker, profile/bus ownership and shared M5 power provider integrated; 8 service tests, Home recording and 7 header/keypad tests pass | COM32 fresh samples: 22%, 3963–3964 mV; portrait/landscape r18 PNGs inspected | Physical percentage accuracy, unplug/no-cell behavior, sustained coexistence and remaining per-page live refresh |
 | USB/RTL-SDR/audio | Existing shared radio/audio services run | FM previously audible; bounded streaming checks | Sustained workload/reconnect/reception/audio/drop measurements |
 | Development diagnostics | Shared native `RTL_HEALTH`/BUILD/authenticated HEAP_CHECK; bounded private serial/build capture; four focused host tests; P4 core-dump build and unchanged existing partition entries verified | COM32 app/table hash-verified; 35-second capture matches the device ELF SHA-256, reports `coredump=flash` and advancing uptime; RX streaming/audio task running/Wi-Fi connected; unauthenticated heap scan denied | Deliberate panic/dump retrieval qualification; Tab5/Hosyond build and physical regressions; earlier unrecorded restart cause remains unknown |
@@ -139,7 +139,9 @@ Luna tasks receive narrow file ownership; no agent flashes or accesses the devic
   `.local/captures/r22-final/`, with matching ELF and verified PNG hashes. Earlier
   r21 empty and populated captures are preserved separately. Every RX page and
   TX Lab was opened in portrait/landscape. No clipping was observed in inspected
-  final empty-state captures. Human touch/readability acceptance remains pending.
+  final empty-state captures. The owner subsequently accepted all five receive tabs
+  as readable with working touch after rotation in both orientations. This does
+  not close populated/error states, map gestures, modal or keyboard-focus gates.
 - RF proof on the preceding build: Heltec V4 at owner-approved 906.875 MHz,
   LongFast, antennas attached (LilyGO MMCX1), 5 dBm, hop limit zero. One 124-byte
   packet with exact test body and packet ID matched the SX1262 CRC/decode result
@@ -165,3 +167,43 @@ Luna tasks receive narrow file ownership; no agent flashes or accesses the devic
   startup, fresh fix or location-service acceptance is claimed.
 - [Dashboard authoring requirements](P4_DASHBOARD_AUTHORING.md) describe this
   reusable pattern and the source/build/device/human validation boundary.
+
+## GNSS startup seam checkpoint
+
+- Board profile now records UART1 RX23/TX22, vendor-configured 115200 baud,
+  and the documented IO11 low startup latch. No wake/sleep polarity is inferred.
+- The existing locked expander owner exposes GNSS preparation; it touches only
+  bank1 bit1 and leaves absent profiles unchanged. It is not yet called at boot.
+- `wsl bash tools/test-p4-board-radio.sh` passed mapping, neighboring-bit
+  preservation, absent-profile and read/write/lock failure checks. No firmware
+  build, flash, UART reception or GNSS fix is claimed for this change.
+
+- Passive GNSS reader and `RTL_GNSS STATUS` are wired into the P4 application.
+  Status omits coordinates and raw NMEA; saved receiver location is unchanged.
+  Review requested focused service tests for UART ownership, failed cleanup,
+  fix invalidation and retained-fix age before native build/device qualification.
+- Pre-build device check: ELF `cca129e7d4d59ce1f3b035e7f0145a427fe5f1393a3f3ec67bef280ced1e376e`,
+  power-on reset, uptime 625878 ms, RTL streaming 959990 samples/s at 906.875 MHz,
+  internal free 50471 / DMA free 12687 bytes. Audio remains muted; underruns
+  reached 18013 during LoRa use, so this is not audio-continuity acceptance.
+  Private log: `.local/gnss-before-device.log`.
+
+## Passive GNSS native checkpoint
+
+- `wsl bash tools/test-p4-gnss.sh`, `wsl bash tools/test-p4-gnss-service.sh`
+  and `wsl bash tools/test-p4-board-radio.sh` passed. Actual service host checks
+  cover ownership/setup failures, cleanup reporting, RX-only pin mapping,
+  fix/no-fix/error transitions, 4,999/5,000 ms expiry and retry backoff.
+- Native ESP-IDF build passed; app-only flash at 0x10000 verified its data hash.
+  Installed ELF matches archived symbols:
+  `d688b17bb0ea0993d20b9f6f686ccdfd11346010e5e0a515b91b4cbd74d7b58d`.
+  Private archive `.local/diagnostics/gnss-passive/`; logs
+  `.local/gnss-native-build.log`, `.local/gnss-native-final-build.log`,
+  `.local/gnss-passive-flash.log`, `.local/gnss-after-device.log`.
+- At 10.8 seconds, UART1 RX23 at 115200 started with zero read/cleanup errors
+  but zero bytes/sentences/fixes. This proves startup only, not NMEA reception.
+  Establish the receiver startup/output configuration before claiming hardware
+  GNSS support. Saved location is untouched; no active GNSS commands were sent.
+- Same boot RTL streaming 2,399,330 samples/s at 96.1 MHz; audio running/muted,
+  dropped=0, underruns=109. Internal free 62,143 / DMA free 25,275 bytes.
+  Enabled-audio continuity and sustained workloads remain open.

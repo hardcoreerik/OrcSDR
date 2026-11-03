@@ -29,3 +29,24 @@ fields, and hardware expectations:
 
 Run the focused host test with `bash tools/test-p4-gnss.sh`. This checks the C
 parser only and does not qualify UART, receiver fixes, or physical GNSS behavior.
+
+## Optional P4 UART service
+
+The P4 application uses `main/gnss_service.cpp` only when its board profile
+explicitly declares GNSS. The shared expander owner applies the documented
+startup latch before the passive UART reader starts. LilyGO declares UART1 RX23,
+TX22 and 115200 baud from its vendor configuration; the reader leaves TX
+unconfigured and sends no receiver commands. The installed unit's baud and
+actual reception must be verified separately.
+
+`RTL_GNSS STATUS` reports startup, baud, byte/sentence counts, current usable
+fix, retained-last-fix availability/age and transport/cleanup errors. It emits
+neither coordinates nor raw NMEA. A no-fix sentence, read error or five seconds
+without a fresh fix makes the current fix unusable. Last-valid coordinates are
+retained separately and must not be mistaken for a live position. Saved receiver
+location, map selection and clock are not changed automatically.
+
+`bash tools/test-p4-gnss-service.sh` compiles the actual service with UART,
+timer and task fakes. It checks ownership/setup failures and fix lifecycle;
+it does not establish hardware baud, satellite reception, concurrent task
+scheduling or a physically accurate fix.

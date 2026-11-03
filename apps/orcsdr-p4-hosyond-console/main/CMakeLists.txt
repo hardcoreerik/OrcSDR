@@ -61,7 +61,7 @@ idf_component_register(
          "${TAB5_UI}/am_dashboard.cpp" "${TAB5_UI}/nvs_store.cpp"
          "${TAB5_UI}/fm_dashboard.cpp" "${TAB5_UI}/fm_config.cpp"
     INCLUDE_DIRS "." "${WS4B}" "${TAB5_UI}"
-    REQUIRES orcsdr_diagnostics orcsdr_sx126x orcsdr_c6_rom_update esp_rtl_sdr esp_psram esp_timer esp_driver_uart esp_app_format esp_rom mbedtls heap nvs_flash
+    REQUIRES orcsdr_gnss orcsdr_diagnostics orcsdr_sx126x orcsdr_c6_rom_update esp_rtl_sdr esp_psram esp_timer esp_driver_uart esp_app_format esp_rom mbedtls heap nvs_flash
              json orcmaps esp_http_client esp_https_ota app_update esp_http_server lwip esp_driver_jpeg orcsdr_board_hosyond orcsdr_gfx_compat orcsdr_audio_dsp orcsdr_orientation espressif__esp-dsp espressif__esp_hosted espressif__esp_wifi_remote esp_wifi esp_netif esp_event fatfs sdmmc esp_driver_gptimer esp_driver_sdmmc esp_driver_gpio vfs esp_mm
     EMBED_FILES ${ORCSDR_EMBED_FILES}
 )
@@ -72,6 +72,7 @@ set_source_files_properties(
 target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)
 target_sources(${COMPONENT_LIB} PRIVATE "web_auth.cpp" "web_control.cpp" "web_server.cpp")
 target_sources(${COMPONENT_LIB} PRIVATE "packet_radio_service.cpp")
+target_sources(${COMPONENT_LIB} PRIVATE "gnss_service.cpp")
 target_sources(${COMPONENT_LIB} PRIVATE "orientation_app.cpp")
 target_compile_options(${COMPONENT_LIB} PRIVATE
     "$<$<COMPILE_LANGUAGE:CXX>:-include;orcsdr_p4_time.hpp>" "-DORCSDR_HAS_EMBEDDED_C6_FIRMWARE=${ORCSDR_C6_EMBEDDED}")

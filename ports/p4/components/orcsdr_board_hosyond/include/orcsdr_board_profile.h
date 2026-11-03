@@ -133,6 +133,13 @@ typedef struct {
     orcsdr_battery_gauge_type_t battery_gauge_type;
     int battery_gauge_i2c_port;
     unsigned char battery_gauge_i2c_address;
+    /* Optional passive NMEA receiver. Startup is a documented latch level,
+     * not a claim about wake/sleep polarity; absent profiles remain untouched. */
+    bool has_gnss;
+    int gnss_uart, gnss_rx, gnss_tx;
+    unsigned gnss_baud;
+    orcsdr_ioexp_line_t gnss_startup_line;
+    bool gnss_startup_level;
 } orcsdr_board_profile_t;
 
 /* The profile this firmware was built for (Kconfig ORCSDR_BOARD). */

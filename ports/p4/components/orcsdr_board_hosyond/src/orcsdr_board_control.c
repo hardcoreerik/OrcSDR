@@ -40,6 +40,11 @@ esp_err_t orcsdr_board_c6_enable(bool enable)
     return line(b->ioexp_wifi_en,enable,enable); // LilyGO EN release uses external pull-up
 }
 i2c_master_bus_handle_t orcsdr_board_secondary_i2c(void) { return s_secondary; }
+esp_err_t orcsdr_board_gnss_prepare(void)
+{
+    const orcsdr_board_profile_t* b=orcsdr_board_profile();
+    return b->has_gnss?line(b->gnss_startup_line,b->gnss_startup_level,false):ESP_ERR_NOT_SUPPORTED;
+}
 esp_err_t orcsdr_board_radio_reset(bool asserted)
 {
     const orcsdr_board_profile_t *b=orcsdr_board_profile();
