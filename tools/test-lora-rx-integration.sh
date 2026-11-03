@@ -8,3 +8,8 @@ g++ -std=c++17 -Wall -Wextra -Werror -Wno-unused-function -O1 -g -fsanitize=addr
  tests/lora_rx_full_dashboard_host_tests.cpp apps/orcsdr-tab5/ui/lora_dashboard.cpp \
  "$orcmaps/src/core/geo.cpp" "$orcmaps/src/core/viewport.cpp" -o build/lora-rx-ui/integrated
 build/lora-rx-ui/integrated
+g++ -std=c++17 -Wall -Wextra -Werror \
+ -Iapps/orcsdr-tab5/tests/maps/ui_stubs -Iapps/orcsdr-tab5/ui -I"$orcmaps/include" \
+ apps/orcsdr-tab5/tests/maps/map_view_tests.cpp apps/orcsdr-tab5/ui/map_view.cpp \
+ -o build/lora-rx-ui/map-view
+build/lora-rx-ui/map-view

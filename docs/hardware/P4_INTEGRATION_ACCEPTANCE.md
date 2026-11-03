@@ -14,7 +14,7 @@ Legend: **partial** means implemented or checked only for the cited scope;
 | --- | --- | --- | --- |
 | Preserve Hosyond/LilyGO drivers and shared M5GFX UI | Existing profiles and shared renderers retained | Working LilyGO app, earlier display/FM acceptance | Cross-profile regressions and final audit |
 | TX minimum text readability | `521ed01a`; normal + sanitizer TX suites; minimum-height/bounds/overlap assertions | r17 PNGs; owner accepted portrait and landscape text | Wider populated-state and input acceptance |
-| LoRa RX views/navigation | Shared native Messages now displays attributed SX1262/RTL events; five legacy receive views still need migration | Real SX1262 message in portrait/landscape; existing chrome retained | Shared geometry for all five RX views and six-tab capable navigation; touch/focus and populated/error acceptance |
+| LoRa RX views/navigation | Five existing receive views now share viewport-derived geometry, paged node/traffic lists, spectrum/waterfall bounds and 5/6-tab capability navigation; TX remains shared; sanitizer production renderer checks pass | r21/r22 native PNGs for five RX views plus TX Lab in both orientations; one 124-byte SX1262 packet populated Traffic/Nodes; on-device serial zoom/receiver-center applied; final r22 hashes/ELF verified | Human touch/readability, final-build populated sentinel recapture, real logs/history, complete serial parity and remaining overlays |
 | P25 | Shared responsive renderer imported in `52e73c5c` / `0743c00b`; targeted layout tests pass; absent P4 route | Open | Adapter, decoder services, PCM output ownership and RF acceptance |
 | FT8 | Shared renderer linked; route/runtime missing | Open | Responsive renderer, runtime/time/storage, adapter, reception |
 | SSTV | Shared renderer/app exist; not in P4 app | Open | Responsive renderer, adapter and worker/audio/storage hooks |
@@ -24,7 +24,7 @@ Legend: **partial** means implemented or checked only for the cited scope;
 | Dashboard browser/overlays/editors/focus | Partial shared migrations and focused tests | Sampled keypad/Settings acceptance only | Every workflow, populated/error states, both orientations |
 | Reusable profile geometry and capability rules | Shared display/header/layout contracts exist | Multiple native dashboards run | Complete remaining fixed-coordinate assumptions and document authoring process |
 | SX1262 integration | Profile-aware LongFast RX worker, manual MMCX1 selection, driver-reported SPI chunk limits, generation/error handling and shared Messages adapter; 70 packet/limit cases, seven worker scenarios, event mapping and sanitizer UI checks pass | UI START RX reaches receiving; Heltec V4 packet at 906.875 MHz accepted by SX1262 (120 bytes, CRC, text, RSSI -41 dBm/SNR 7 dB), displayed with SX1262 attribution in native portrait/landscape PNGs | Onboard TX/output qualification and approval, atomic C6 quiescence, hardware error/reconnect qualification, logging/history and remaining LoRa views; TX remains locked |
-| GNSS | L76K pins documented; no service | Open | Passive UART parser/service, fresh valid fixes, location integration; wake polarity unresolved |
+| GNSS | Bounded original NMEA parser `34c71ba8`, RMC/GGA checksum/range/framing/no-fix tests pass; estimated/manual/simulated modes excluded | No UART/service evidence | Board wake/startup and passive UART service, fresh valid fixes, location integration; active wake polarity unresolved |
 | Battery telemetry | Read-only BQ27220 worker, profile/bus ownership and shared M5 power provider integrated; 8 service tests, Home recording and 7 header/keypad tests pass | COM32 fresh samples: 22%, 3963–3964 mV; portrait/landscape r18 PNGs inspected | Physical percentage accuracy, unplug/no-cell behavior, sustained coexistence and remaining per-page live refresh |
 | USB/RTL-SDR/audio | Existing shared radio/audio services run | FM previously audible; bounded streaming checks | Sustained workload/reconnect/reception/audio/drop measurements |
 | Development diagnostics | Shared native `RTL_HEALTH`/BUILD/authenticated HEAP_CHECK; bounded private serial/build capture; four focused host tests; P4 core-dump build and unchanged existing partition entries verified | COM32 app/table hash-verified; 35-second capture matches the device ELF SHA-256, reports `coredump=flash` and advancing uptime; RX streaming/audio task running/Wi-Fi connected; unauthenticated heap scan denied | Deliberate panic/dump retrieval qualification; Tab5/Hosyond build and physical regressions; earlier unrecorded restart cause remains unknown |
@@ -32,7 +32,7 @@ Legend: **partial** means implemented or checked only for the cited scope;
 | Settings actions | Connectivity/C6/storage slices implemented | Sampled Settings/C6 acceptance | Audit and wire all remaining advertised actions |
 | Maps/catalog services | Existing maps infrastructure retained | Partial captures only | Actual catalogs/map actions, failure/offline behavior and persistent state |
 | ADS-B metadata | Shared dashboard present | Layout captures only | Metadata backend, populated display and actual reception |
-| LoRa logs/history/messages/live IQ | RX pipeline exists; shared hardware-payload parser entry passes actual-TU plaintext/encrypted/bounds tests; TX UI reports unavailable backend truthfully | One Heltec Meshtastic transmission observed as an RTL-SDR RF burst in r19 native PNGs; no message decode proven | Hardware RX adapter, CRC/message reception, real persistence, composition/activity and independent IQ wiring |
+| LoRa logs/history/messages/live IQ | Hardware RX worker and shared payload/message adapter integrated; data views retain receiver identity and hide unverified text; unavailable export/log actions disabled | Heltec CRC/message receive and Messages display proven in r20; r21 RX pages captured empty | Real persistence, message composition/TX qualification, populated current RX views and Dual Radio independent IQ wiring |
 | Shortwave hunt/DSP/storage | Shared action definitions; P4 marks unsupported functions unavailable | Layout captures, no service acceptance | Wire supported services and verify actual results |
 | Existing M5GFX/WASM web UI | Auth/server/control modules integrated; state and persistence tests pass; bundle not yet packaged | Real HTTP auth, rejection/replay checks, signed Home step-up/down and applied-frequency receipts passed | Existing assets, other shared routes, native password editor, browser workflows and audio/IQ |
 | Automatic/manual rotation | Profile-aware IMU logic and persistence implemented | Clockwise correction accepted | All four poses, gesture protection, fallback and persistence matrix |
@@ -114,3 +114,54 @@ Luna tasks receive narrow file ownership; no agent flashes or accesses the devic
   startup level or claim a fix without UART evidence.
   Sources: [LilyGO pin config](https://github.com/Xinyuan-LilyGO/lilygo_device_driver/blob/a47cf73e2c9d442c0f00b618749150f4482dcd0a/src/device/t_display_p4/t_display_p4_config.h#L105-L108),
   [L76K initialization](https://github.com/Xinyuan-LilyGO/lilygo_device_driver/blob/a47cf73e2c9d442c0f00b618749150f4482dcd0a/src/device/t_display_p4/t_display_p4_driver.cpp#L800-L867).
+
+## 2026-11-03 shared receive viewport checkpoint
+
+- Source `ea37b464` migrates the existing five receive views and adds shared
+  five/six-tab navigation alongside TX Lab. There is one production M5GFX
+  implementation, using viewport/safe-area geometry for draw/touch/focus,
+  node/traffic paging, spectrum, bounded 128-pixel waterfall rows and map camera.
+  Known unsupported P4 export/log/save actions are disabled explicitly.
+- Checks passed: `wsl bash tools/test-lora-rx-data.sh` (ASan/UBSan recording
+  templates), `wsl bash tools/test-lora-rx-integration.sh` (actual renderer,
+  populated text bounds, five viewports, page/tab controls, map zoom/drag,
+  TX-presence transitions and no ordinary full clear), and
+  `ORCSDR_LORA_ASAN=1 bash tools/test-lora-tx-ui.sh` (960 state combinations,
+  admission/revocation, readable native controls and message-only updates).
+  Existing map-view tests also pass for pending/ready/unavailable behavior and
+  full attribution wrapped at requested caption size 2. No full suite was run.
+- The native build and app flash passed. Final development ELF:
+  `cca129e7d4d59ce1f3b035e7f0145a427fe5f1393a3f3ec67bef280ced1e376e`.
+  Exact symbols/config/map/binary are private under
+  `.local/diagnostics/r21-rx-readable-final/`. Its build description predates the
+  source commit and reports `34c71ba8-dirty`; it is not a clean release artifact.
+- Twelve final native captures/JSON sidecars are in
+  `.local/captures/r22-final/`, with matching ELF and verified PNG hashes. Earlier
+  r21 empty and populated captures are preserved separately. Every RX page and
+  TX Lab was opened in portrait/landscape. No clipping was observed in inspected
+  final empty-state captures. Human touch/readability acceptance remains pending.
+- RF proof on the preceding build: Heltec V4 at owner-approved 906.875 MHz,
+  LongFast, antennas attached (LilyGO MMCX1), 5 dBm, hop limit zero. One 124-byte
+  packet with exact test body and packet ID matched the SX1262 CRC/decode result
+  (RSSI -36 dBm, SNR 7 dB). Traffic and Nodes displayed it in both orientations.
+  Private evidence: `.local/lora-rx-populated-device.log` and
+  `.local/captures/r21-populated/`. The populated captures exposed unknown battery
+  and hops as 255; the final source renders `--`, covered by a focused regression.
+  The corrected sentinel state has not been recaptured with another RF packet.
+- Final on-device VIEW MAP / ZOOM_IN / ZOOM_OUT / RECEIVER commands each returned
+  `applied=1`. Named serial controls use an authenticated UI-owner queue:
+  `RTL_LORA CONTROL VIEW OVERVIEW|NODES|TRAFFIC|MAP|RF_HEALTH|TX_LAB`,
+  `PREV`, `NEXT`, `DETAILS`, `FILTER`, `ZOOM_IN`, `ZOOM_OUT`, `RECEIVER`,
+  `NODE_CENTER`, `FOLLOW_ON`, `FOLLOW_OFF`. Admission returns QUEUED; the later
+  result reports applied/rejected. Palette/speed/channel-picker serial parity
+  remains an explicit gap. Physical map gestures and modal/focus acceptance remain.
+- Board restored to Home / 96.1 MHz with Auto-rotate enabled. Receiver briefly
+  restarted during the return to 2.4 MS/s, then status verified connected and
+  streaming at 2399781 samples/s; Wi-Fi connected. Audio task running, muted as
+  configured, dropped=0, underruns=742 after the dashboard/capture sequence.
+  This is not audible continuity/soak acceptance; investigate underrun behavior
+  separately under an enabled audio workload before closing that gate.
+- Parser-only GNSS source `34c71ba8` is separate progress; no GNSS hardware
+  startup, fresh fix or location-service acceptance is claimed.
+- [Dashboard authoring requirements](P4_DASHBOARD_AUTHORING.md) describe this
+  reusable pattern and the source/build/device/human validation boundary.
