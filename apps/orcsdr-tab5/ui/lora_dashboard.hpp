@@ -87,6 +87,7 @@ struct Snapshot {
   bool iq_recording = false;
   bool iq_ready = false;
   bool iq_busy = false;
+  uint32_t packet_rx_frequency_hz = 0;
   bool packet_rx_supported = false;
   bool packet_rx_available = false;
   bool packet_rx_requested = false;
