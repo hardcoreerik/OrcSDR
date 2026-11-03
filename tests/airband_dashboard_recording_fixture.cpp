@@ -106,6 +106,17 @@ int main(){
     assert(lgfx::screen_clears==clears);
     assert(std::none_of(lgfx::fills.begin(),lgfx::fills.end(),[](const auto&r){return r.x==g_layout.content.x&&r.y==g_layout.content.y&&r.w==g_layout.content.w&&r.h==g_layout.content.h;}));
     dashboard_select_tab(Tab::scope);s.frequency_hz=124900000;dashboard_update(s);
+    if(viewport.h>viewport.w){
+      const Rect bottom_control=g_layout.scope_control[14];
+      assert(bottom_control.y+bottom_control.h>720);
+      bool registered=false;
+      for(size_t i=0;i<orcsdr::focus_nav::count();++i){orcsdr::focus_nav::Rect r{};assert(orcsdr::focus_nav::get(i,&r));
+        registered|=r.x==bottom_control.x&&r.y==bottom_control.y&&r.w==bottom_control.w&&r.h==bottom_control.h;}
+      assert(registered);
+      orcsdr::focus_nav::focus_at(cx(bottom_control),cy(bottom_control));
+      orcsdr::focus_nav::Rect focused_bottom{};assert(orcsdr::focus_nav::focused(&focused_bottom));
+      assert(focused_bottom.y==bottom_control.y);
+    }
     static constexpr ActionKind scope_actions[13]={ActionKind::tune_down,ActionKind::tune_up,ActionKind::span_down,ActionKind::span_up,ActionKind::gain_down,ActionKind::gain_up,ActionKind::squelch_down,ActionKind::squelch_up,ActionKind::filter_down,ActionKind::filter_up,ActionKind::tuner_agc_toggle,ActionKind::scan_toggle,ActionKind::tune_guard};
     for(int i=0;i<13;++i){const Action got=dashboard_handle_touch(cx(g_layout.scope_control[i]),cy(g_layout.scope_control[i]));assert(got.kind==scope_actions[i]);}
     float levels[256]{};for(int i=0;i<256;++i)levels[i]=-80.0f+float(i%31);

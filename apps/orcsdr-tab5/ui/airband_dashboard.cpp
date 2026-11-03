@@ -882,7 +882,8 @@ bool dashboard_set_viewport(layout::Rect viewport) {
   if(!next.valid||!audio_header::set_viewport(viewport))return false;
   g_layout=next;
   if(g_setup_page>=g_layout.setup_page_count)g_setup_page=static_cast<uint8_t>(g_layout.setup_page_count-1);
-  focus_nav::set_viewport(1280,720);
+  // Rectangles are in absolute screen coordinates, including the safe-area origin.
+  if(!focus_nav::set_viewport(viewport.x+viewport.w,viewport.y+viewport.h))return false;
   g_scope_levels_valid=false;g_scope_ceiling_valid=false;
   if(g_active)dashboard_draw();
   return true;
