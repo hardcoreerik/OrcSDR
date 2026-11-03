@@ -14,7 +14,7 @@ Legend: **partial** means implemented or checked only for the cited scope;
 | --- | --- | --- | --- |
 | Preserve Hosyond/LilyGO drivers and shared M5GFX UI | Existing profiles and shared renderers retained | Working LilyGO app, earlier display/FM acceptance | Cross-profile regressions and final audit |
 | TX minimum text readability | `521ed01a`; normal + sanitizer TX suites; minimum-height/bounds/overlap assertions | r17 PNGs; owner accepted portrait and landscape text | Wider populated-state and input acceptance |
-| LoRa RX views/navigation | Legacy renderer exists; native RX migration open | Native TX entry only | Shared geometry for all five RX views and six-tab capable navigation |
+| LoRa RX views/navigation | Shared native Messages now displays attributed SX1262/RTL events; five legacy receive views still need migration | Real SX1262 message in portrait/landscape; existing chrome retained | Shared geometry for all five RX views and six-tab capable navigation; touch/focus and populated/error acceptance |
 | P25 | Shared responsive renderer imported in `52e73c5c` / `0743c00b`; targeted layout tests pass; absent P4 route | Open | Adapter, decoder services, PCM output ownership and RF acceptance |
 | FT8 | Shared renderer linked; route/runtime missing | Open | Responsive renderer, runtime/time/storage, adapter, reception |
 | SSTV | Shared renderer/app exist; not in P4 app | Open | Responsive renderer, adapter and worker/audio/storage hooks |
@@ -23,7 +23,7 @@ Legend: **partial** means implemented or checked only for the cited scope;
 | Weather/Marine | Existing generic receiver preset fallbacks | Open | Audit tuning/mode/controls against existing Tab5 behavior |
 | Dashboard browser/overlays/editors/focus | Partial shared migrations and focused tests | Sampled keypad/Settings acceptance only | Every workflow, populated/error states, both orientations |
 | Reusable profile geometry and capability rules | Shared display/header/layout contracts exist | Multiple native dashboards run | Complete remaining fixed-coordinate assumptions and document authoring process |
-| SX1262 integration | Pinned Semtech core + profile SPI/expander HAL and TCXO/calibration checks; focused failure tests pass | Three consecutive XOSC checks passed at programmed 1.6 V/5 ms, retaining initial `0x0020` and reporting zero new errors; owner confirms antennas/906.875 MHz and Heltec peer | Intermittent initial probe readback, RX and RF-path qualification, bounded TX test and UI/service integration; TX remains locked |
+| SX1262 integration | Profile-aware LongFast RX worker, manual MMCX1 selection, driver-reported SPI chunk limits, generation/error handling and shared Messages adapter; 70 packet/limit cases, seven worker scenarios, event mapping and sanitizer UI checks pass | UI START RX reaches receiving; Heltec V4 packet at 906.875 MHz accepted by SX1262 (120 bytes, CRC, text, RSSI -41 dBm/SNR 7 dB), displayed with SX1262 attribution in native portrait/landscape PNGs | Onboard TX/output qualification and approval, atomic C6 quiescence, hardware error/reconnect qualification, logging/history and remaining LoRa views; TX remains locked |
 | GNSS | L76K pins documented; no service | Open | Passive UART parser/service, fresh valid fixes, location integration; wake polarity unresolved |
 | Battery telemetry | Read-only BQ27220 worker, profile/bus ownership and shared M5 power provider integrated; 8 service tests, Home recording and 7 header/keypad tests pass | COM32 fresh samples: 22%, 3963–3964 mV; portrait/landscape r18 PNGs inspected | Physical percentage accuracy, unplug/no-cell behavior, sustained coexistence and remaining per-page live refresh |
 | USB/RTL-SDR/audio | Existing shared radio/audio services run | FM previously audible; bounded streaming checks | Sustained workload/reconnect/reception/audio/drop measurements |
@@ -57,7 +57,7 @@ Legend: **partial** means implemented or checked only for the cited scope;
    and establish real P4 adapters one route at a time. LoRa RX navigation and
    P25 are first; preserve state/services on rotation.
 2. Build profile-driven hardware seams and bounded workers. Start with read-only
-   battery telemetry and passive GNSS. SX1262 is confirmed by owner, not yet probed.
+   battery telemetry and passive GNSS. SX1262 receive is now proven; TX remains locked.
 3. Integrate existing web modules selectively against current Home/radio APIs.
    The parent owns shared UI-owner dispatch, startup, build and package wiring.
    A temporary auth/Home substrate is a dependency slice, not full web parity.
@@ -66,13 +66,51 @@ Legend: **partial** means implemented or checked only for the cited scope;
 5. Qualify installed recovery and final profile-driven artifacts, perform
    cross-profile regressions, then audit every requirement before completion.
 
-## Current isolated tasks
+## Imported isolated work
 
-- GPT-Luna P25: `lilygo-p25-responsive-20261102`; shared renderer/layout/tests only.
-- GPT-Luna web: `lilygo-web-integration-20261102`; web modules/tests only; parent
-  retains CMake, startup, native owner APIs and bulk-asset/package coordination.
-- GPT-Luna battery: `lilygo-battery-driver-20261102`; read-only driver/protocol/tests;
-  parent retains profile, bus, polling service and UI integration.
+Earlier P25, web and battery worktrees are retained for provenance; their accepted
+changes are imported. Their remaining adapter/service/hardware gates are listed
+above. Parent owns shared interfaces, build wiring and COM32. New independent
+Luna tasks receive narrow file ownership; no agent flashes or accesses the device.
 
-No agent accesses COM32, flashes, pushes, merges or edits another task's files.
-The parent reviews/imports commits and performs builds/device acceptance.
+## 2026-11-03 onboard RX / diagnostics checkpoint
+
+- Shared Messages rendering remains one M5GFX implementation. Explicit START,
+  CANCEL and STOP RX actions use the existing packet worker; there is no automatic
+  RF start or transmit admission. Actual SX1262 frequency is separate from RTL
+  tuning. Unknown/uninterpreted payload text stays hidden.
+- Software commands/results: `wsl bash tools/test-p4-board-radio.sh` PASS;
+  `wsl bash tools/test-p4-sx126x-probe.sh` PASS (70 payload/driver-limit cases,
+  partial transfer failure, invalid limits, cleanup ownership/failure and retry);
+  `pwsh -NoProfile -File apps/orcsdr-tab5/tools/test-p4-packet-radio.ps1` PASS
+  (seven lifecycle scenarios); `wsl bash tools/test-p4-packet-radio-ui.sh` PASS.
+- `ORCSDR_LORA_ASAN=1 bash tools/test-lora-tx-ui.sh` with
+  `ORCSDR_ORCMAPS_ROOT=apps/orcsdr-p4-hosyond-console/managed_components/orcmaps`
+  (absolute WSL path) PASS: 960 rendering/state combinations, native geometry,
+  RX-only compatibility, admission gates, message-only redraw and RX controls.
+- Native build and app-only flash passed. The RF/UI-tested development ELF is
+  `5c3ebc42e7fe3d344a05cc94f1c2a379ab81e0bb14ddc7039d75768d124189d3`;
+  source was committed as `6506298f` after the build (embedded description still
+  says `058a4a16-dirty`). This is development evidence, not a clean release artifact.
+- Private evidence: `.local/onboard-ui-rf-device.log`,
+  `.local/captures/r20-mesh-message-portrait.png` and
+  `r20-mesh-message-landscape.png`; matching symbols retained under
+  `.local/diagnostics/r20-ui-before-probe/`. These contain device/message details
+  and are not installation-package inputs.
+- Raw PNG comparison proves brand/tabs/title/footer unchanged across idle and
+  packet arrival. A preview initially appeared to omit unchanged content; the
+  saved pixel data and human physical feedback confirm retained chrome. A bounded
+  temporary readback probe was removed; no redraw workaround was introduced.
+  New `tools/check_screenshot_regions.py` checks the actual saved pixels.
+- The earlier diagnostics build ran for roughly 75 minutes between sampled
+  endpoints: receiver streaming, audio task running/muted as configured, audio
+  dropped=0 and underruns unchanged at 110. This is sampled same-boot evidence,
+  not a continuous all-service soak or audible-audio acceptance.
+- GNSS source scout: primary LilyGO driver commit
+  `a47cf73e2c9d442c0f00b618749150f4482dcd0a` uses UART1 RX23/TX22 and initializes
+  XL9535 IO11 low before L76K setup; it configures/retries 115200 baud. A passive
+  reader must still establish actual output baud/startup on this unit. Board
+  control has no GNSS wake operation yet; do not infer active polarity from the
+  startup level or claim a fix without UART evidence.
+  Sources: [LilyGO pin config](https://github.com/Xinyuan-LilyGO/lilygo_device_driver/blob/a47cf73e2c9d442c0f00b618749150f4482dcd0a/src/device/t_display_p4/t_display_p4_config.h#L105-L108),
+  [L76K initialization](https://github.com/Xinyuan-LilyGO/lilygo_device_driver/blob/a47cf73e2c9d442c0f00b618749150f4482dcd0a/src/device/t_display_p4/t_display_p4_driver.cpp#L800-L867).
