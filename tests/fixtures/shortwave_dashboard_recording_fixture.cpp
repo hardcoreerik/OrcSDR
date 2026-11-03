@@ -99,6 +99,7 @@ static void check_view(layout::Rect view){
   assert(lgfx::screen_clears==hunt_clears);for(const auto& f:lgfx::fills)assert(!(f.x==g_layout.content.x&&f.y==g_layout.content.y&&f.w==g_layout.content.w&&f.h==g_layout.content.h));
   bool latest_progress=false;for(const auto& p:lgfx::paints)latest_progress|=p.text=="4 / 99";assert(latest_progress);
   g_state.select_tab(Tab::live);draw();
+  if(g_layout.portrait){bool status_fits=false;for(const auto& p:lgfx::paints)if(p.text.rfind("IQ ",0)==0){status_fits=true;assert(M5.Display.textWidth(p.text.c_str())<=g_layout.live_status.w);assert(p.x==g_layout.live_status.x+g_layout.live_status.w/2);}assert(status_fits);}
   float levels[160];for(int i=0;i<160;++i)levels[i]=-90.0f+float(i%23);
   draw_spectrum(levels,0,160,-100.0f);const size_t trace_bytes=lgfx::live_sprite_bytes;
   assert(trace_bytes<=size_t(1230)*204*2&&sizeof(g_waterfall_row)==size_t(1232)*2);

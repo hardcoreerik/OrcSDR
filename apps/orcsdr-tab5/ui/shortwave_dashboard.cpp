@@ -222,12 +222,20 @@ void draw_status() {
   const Rect status_rect=g_layout.legacy?Rect{kSpectrumX,246,width,26}:local(g_layout.live_status);
   M5.Display.fillRect(status_rect.x,status_rect.y,status_rect.w,status_rect.h,TFT_BLACK);
   char status[96];
-  snprintf(status, sizeof(status), "%s  |  %+.1f dBFS  |  %lu kHz span%s",
-           g_snapshot.running ? "LIVE IQ" : "WAITING",
-           static_cast<double>(g_snapshot.relative_dbfs),
-           static_cast<unsigned long>(g_snapshot.span_hz / 1000u),
-           g_snapshot.clipping_percent > 0.1f ? "  |  CLIP" : "");
-  text(status, kSpectrumX + width / 2, g_layout.legacy?259:status_rect.y+status_rect.h/2,
+  if(g_layout.portrait) {
+    snprintf(status,sizeof(status),"%s %+.1f dBFS | %lukHz%s",
+             g_snapshot.running?"IQ":"WAIT",static_cast<double>(g_snapshot.relative_dbfs),
+             static_cast<unsigned long>(g_snapshot.span_hz/1000u),
+             g_snapshot.clipping_percent>0.1f?" !CLIP":"");
+  } else {
+    snprintf(status, sizeof(status), "%s  |  %+.1f dBFS  |  %lu kHz span%s",
+             g_snapshot.running ? "LIVE IQ" : "WAITING",
+             static_cast<double>(g_snapshot.relative_dbfs),
+             static_cast<unsigned long>(g_snapshot.span_hz / 1000u),
+             g_snapshot.clipping_percent > 0.1f ? "  |  CLIP" : "");
+  }
+  text(status, g_layout.legacy ? kSpectrumX + width / 2 : status_rect.x+status_rect.w/2,
+       g_layout.legacy?259:status_rect.y+status_rect.h/2,
        g_snapshot.clipping_percent > 0.1f ? TFT_RED
                                          : g_snapshot.running ? kGreen : TFT_ORANGE,
        2);
