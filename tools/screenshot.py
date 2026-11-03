@@ -12,7 +12,9 @@ Needs Pillow only for --sd. Pairs from the same key file as tab5_ft8.py. Opening
 """
 import argparse
 import base64
+from datetime import datetime, timezone
 import hashlib
+import json
 import os
 import re
 import sys
@@ -46,7 +48,7 @@ def switch_tab(dev, key, tab):
 
 
 def screenshot(dev, key, destination, tries=3, *, command="SCREENSHOT"):
-    """Streams the screen as a PNG with SCREENSHOT; returns the byte count. Interleaved log lines are ignored, a hash mismatch retries."""
+    """Streams a verified PNG and its capture metadata; returns the byte count."""
     for attempt in range(tries):
         dev.authenticate(key)
         dev.s.reset_input_buffer()
@@ -64,9 +66,15 @@ def screenshot(dev, key, destination, tries=3, *, command="SCREENSHOT"):
                 text = raw.decode("utf-8", "replace").rstrip()
                 if "ORC_SNAP_ERROR" in text or "ORC_FT8_ERROR" in text:
                     raise SystemExit("device refused the capture: " + text[text.find("ORC_"):])
-                m = re.search(r"ORC_SNAP_BEGIN width=(\d+) height=(\d+) bytes=(\d+) sha256=([0-9a-f]{64})", text)
+                m = re.search(r"ORC_SNAP_BEGIN width=(\d+) height=(\d+) bytes=(\d+) sha256=([0-9a-f]{64})(?:\s+elf_sha256=([0-9a-fA-F]{64}))?", text)
                 if m:
-                    header = (int(m.group(3)), m.group(4))
+                    header = {
+                        "width": int(m.group(1)),
+                        "height": int(m.group(2)),
+                        "bytes": int(m.group(3)),
+                        "png_sha256": m.group(4),
+                        "elf_sha256": m.group(5).lower() if m.group(5) else None,
+                    }
                     continue
                 m = re.match(r"\s*ORC_SNAP_DATA (\d+) ([A-Za-z0-9+/=]+)$", text)
                 if m and header:
@@ -86,11 +94,17 @@ def screenshot(dev, key, destination, tries=3, *, command="SCREENSHOT"):
         except ValueError as error:
             print("capture attempt %d damaged (%s), retrying" % (attempt + 1, error), file=sys.stderr)
             continue
-        if len(data) != header[0] or hashlib.sha256(data).hexdigest() != header[1] or data[:8] != b"\x89PNG\r\n\x1a\n":
+        if len(data) != header["bytes"] or hashlib.sha256(data).hexdigest() != header["png_sha256"] or data[:8] != b"\x89PNG\r\n\x1a\n":
             print("capture attempt %d failed its length or hash check, retrying" % (attempt + 1), file=sys.stderr)
             continue
         with open(destination, "wb") as out:
             out.write(data)
+        metadata = dict(header)
+        metadata["capture_utc"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        metadata["method"] = command
+        with open(os.fspath(destination) + ".json", "w", encoding="utf-8") as out:
+            json.dump(metadata, out, indent=2)
+            out.write("\n")
         return len(data)
     raise SystemExit("capture failed after %d tries" % tries)
 

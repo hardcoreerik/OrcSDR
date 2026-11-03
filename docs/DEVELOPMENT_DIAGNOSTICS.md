@@ -93,6 +93,23 @@ native ASan/UBSan tests. GDB/JTAG, heap tracing and comprehensive poisoning are
 targeted escalation tools, not always-on radio workloads. Avoid unbounded logging
 in hot tasks.
 
+Verified native captures also write `<image>.png.json`: dimensions/byte count,
+verified PNG SHA-256, capture UTC/method and firmware ELF SHA-256 from the device.
+Older headers without firmware identity record null; never infer their identity.
+Keep the sidecar with the image and verify it against matching archived symbols.
+
+Check the saved PNG pixels before diagnosing missing content from an image
+preview. A preview may emphasize only changed areas. Confirm physical appearance
+separately and compare static regions before/after an ordinary value update:
+
+```powershell
+python tools/check_screenshot_regions.py BEFORE.png AFTER.png --retain brand:72,72,236,56 --retain tabs:72,199,424,46
+```
+
+Choose regions from that profile's actual layout. The Pillow-based tool reports
+pixel equality without exposing image content, and rejects different resolutions
+or orientations. It does not establish readability or RF acceptance.
+
 ## After a failure
 
 Preserve logs/dump and exact symbols before replacing firmware. Record last
