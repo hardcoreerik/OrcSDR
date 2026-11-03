@@ -1,7 +1,8 @@
 #include "board_list.h"
 
 /* LilyGO T-Display-P4 V1.0, 4.1" AMOLED assembly, SX1262 radio.
- * Status DOCUMENTED. This firmware has not been run on the board.
+ * Status DOCUMENTED overall. Display/touch/rotation, RTL-SDR/audio and C6 update
+ * slices have been exercised; radio RF and remaining services are not fully qualified.
  *
  * The owner unit is the AMOLED SKU (RM69A10 + GT9895), not the 4.05" HI8561 TFT.
  * The same PCB can be built with either panel and with either SX1262 or LR2021; this profile
@@ -27,7 +28,7 @@
  * as this enable. Wake is XL9535 IO13 and is unused here.
  *
  * SX1262 SPI (the LR2021 build uses the same pins; this profile names SX1262 because that is
- * the unit on order): SCLK 2, MOSI 3, MISO 4, CS 24, BUSY 6, 10 MHz. Reset XL9535 IO16, DIO1
+ * the owner confirmed this fitted SKU): SCLK 2, MOSI 3, MISO 4, CS 24, BUSY 6, 10 MHz. Reset XL9535 IO16, DIO1
  * XL9535 IO17. Antenna switch is SKY13453 VCTL on XL9535 IO1. Polarity is not encoded: do not
  * drive radio_ant_sw until the switch sense is confirmed on the board.
  *
@@ -94,6 +95,8 @@ const orcsdr_board_profile_t g_board_lilygo_t_display_p4_amoled = {
     .radio_sclk = 2, .radio_mosi = 3, .radio_miso = 4, .radio_cs = 24, .radio_busy = 6,
     .radio_spi_hz = 10000000,
     .radio_spi_host = 1,
+    /* LilyGO V1 + cpp_bus_driver 906f99a1 HardwareConfig defaults. */
+    .radio_tcxo_mv = 1600, .radio_tcxo_startup_us = 5000,
     .radio_rst = {0, 16}, .radio_dio1 = {0, 17}, .radio_ant_sw = {0, 1},
     .ioexp_sd_power = {0, 15}, .ioexp_screen_rst = {0, 2}, .ioexp_touch_rst = {0, 3},
     .ioexp_usb_phy_en = {0, 10}, .ioexp_eth_rst = {0, 5},

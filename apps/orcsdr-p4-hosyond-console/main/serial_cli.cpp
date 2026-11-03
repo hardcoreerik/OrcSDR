@@ -162,9 +162,15 @@ void cmd_auth(char* args) {
     std::printf("AUTH_ERROR\n");
     return;
   }
-  std::printf("AUTH_OK ");
-  print_hex(signature, sizeof(signature));
-  std::printf("\n");
+  // One stdio write prevents background logs from splitting the device proof.
+  constexpr char hex[]="0123456789abcdef";
+  char encoded[65];
+  for(size_t i=0;i<sizeof(signature);++i) {
+    encoded[2*i]=hex[signature[i]>>4];
+    encoded[2*i+1]=hex[signature[i]&15];
+  }
+  encoded[64]='\0';
+  std::printf("AUTH_OK %s\n",encoded);
   g_authenticated = true;
   touch_session();
 }
@@ -185,6 +191,7 @@ void cmd_help() {
   std::printf("RTL_BATTERY STATUS                              - gauge validity/age and raw telemetry\n");
   std::printf("RTL_WEB STATUS | ON | OFF | PASSWORD <8..64 chars> - local web setup (auth; password never echoed)\n");
   std::printf("RTL_PACKET PROBE                               - reset/status/readback only; no RF (auth)\n");
+  std::printf("RTL_PACKET CLOCK_CHECK                         - profile TCXO/calibration/XOSC check; no RF (auth)\n");
   std::printf("RTL_SCREEN_STATUS / RTL_MEM STATUS / RTL_RX STATUS - diagnostics (RTL_RX: one line per receiver)\n");
   std::printf("SCREENSHOT                                      - screenshot as PNG over serial (auth)\n");
 }
@@ -786,15 +793,17 @@ void handle_line(char* line) {
     return;
   }
   if (std::strcmp(line, "RTL_HELP") == 0) return cmd_help();
-  if (!std::strcmp(line,"RTL_PACKET PROBE")) {
+  if (!std::strcmp(line,"RTL_PACKET PROBE") || !std::strcmp(line,"RTL_PACKET CLOCK_CHECK")) {
     if(!authed()){std::printf("RTL_PACKET_ERROR auth_required\n");return;}
     if(c6_recovery_app::status().busy || wifi_app::recovery_access()!=wifi_app::RecoveryAccess::idle) {
       std::printf("RTL_PACKET_ERROR c6_update_busy\n");return;
     }
     orcsdr_sx126x_probe_result_t probe{};
-    const esp_err_t result=orcsdr_sx126x_probe(&probe);
-    std::printf("RTL_PACKET_PROBE detected=%d chip_mode=%u command_status=%u device_errors=0x%04x rx_qualified=0 tx_qualified=0 error=%s\n",
-      probe.detected,unsigned(probe.chip_mode),unsigned(probe.command_status),unsigned(probe.device_errors),esp_err_to_name(result));
+    const bool clock_check=!std::strcmp(line,"RTL_PACKET CLOCK_CHECK");
+    const esp_err_t result=clock_check?orcsdr_sx126x_clock_check(&probe):orcsdr_sx126x_probe(&probe);
+    std::printf("%s detected=%d chip_mode=%u command_status=%u initial_errors=0x%04x device_errors=0x%04x clock_checked=%d clock_ready=%d rx_qualified=0 tx_qualified=0 error=%s\n",
+      clock_check?"RTL_PACKET_CLOCK_CHECK":"RTL_PACKET_PROBE",probe.detected,unsigned(probe.chip_mode),unsigned(probe.command_status),
+      unsigned(probe.initial_device_errors),unsigned(probe.device_errors),probe.clock_checked,probe.clock_ready,esp_err_to_name(result));
     return;
   }
   if (std::strncmp(line,"RTL_WEB ",8)==0) return cmd_web(line+8);

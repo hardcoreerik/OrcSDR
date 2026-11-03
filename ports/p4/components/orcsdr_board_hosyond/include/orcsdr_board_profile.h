@@ -105,6 +105,8 @@ typedef struct {
     int radio_spi_hz;
     orcsdr_ioexp_line_t radio_rst, radio_dio1, radio_ant_sw;
     int radio_spi_host;        /* ESP-IDF SPI2_HOST=1 / SPI3_HOST=2; zero is unavailable */
+    unsigned radio_tcxo_mv;    /* documented DIO3 supply, zero = not established */
+    unsigned radio_tcxo_startup_us;
 
     /* More expander lines. ORCSDR_IOEXP_NONE when the board does not have that line. */
     orcsdr_ioexp_line_t ioexp_sd_power, ioexp_screen_rst, ioexp_touch_rst;

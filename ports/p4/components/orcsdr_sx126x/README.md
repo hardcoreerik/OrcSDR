@@ -102,4 +102,42 @@ The existing LakeShark source also configures DIO3 before calibration, but its
 comment says 1.6 V while the literal voltage byte is `0x01` (Semtech encodes
 that as 1.7 V); that mismatch is not a basis for OrcSDR's voltage selection.
 No LakeShark or GPL board-driver implementation was copied into this component.
-Physical clock/calibration and reception qualification still remain open.
+## Clock qualification and serial reply correction — 2026-11-03
+
+The LilyGO profile now explicitly records 1600 mV and 5000 us. The authenticated
+`RTL_PACKET CLOCK_CHECK` command reuses the transport probe, programs those
+profile facts, clears the old latched errors, performs Semtech's full calibration,
+and requires both XOSC standby and no new device errors. It restores RC standby
+and releases SPI afterward. The result retains `initial_errors` separately from
+post-calibration `device_errors`; a completed clock check is not live RF readiness.
+Unknown voltage/timing settings are refused before taking the bus. No RF-start
+opcode or antenna selection is added by this check.
+
+Host `bash tools/test-p4-sx126x-probe.sh` passed with cases for an oscillator
+failure, XOSC mode failure without error flags, and error flags despite XOSC mode.
+All leave clock readiness false and release owned resources. This test checks
+the actual driver/HAL commands, including voltage byte `0x00` and timeout
+`0x000140` (320 RTC steps), against simulated devices.
+
+ESP-IDF 5.5.4 build and COM32 app flash/hash verification passed. Three consecutive
+hardware checks reported initial errors `0x0020`, XOSC mode `3`, post-calibration
+errors `0x0000`, `clock_ready=1`, and `ESP_OK`. This verifies operation at the
+programmed setting; it is not a physical voltage measurement or startup-time
+characterization. One transport-only probe failed readback during an earlier
+run; later probes passed. That intermittent event remains a reliability item,
+and failed probes continue to deny readiness rather than silently retrying.
+
+Testing also reproduced a malformed serial authentication reply: 120 characters
+after `AUTH_OK` instead of 64. The firmware had emitted the proof through
+separate printf calls, allowing background logs to split it. Encoding locally
+and emitting one printf preserves the existing HMAC protocol. After that change,
+20 consecutive real authentication round trips passed device-proof validation;
+no credentials, nonces or proofs were logged. This is a bounded test, not a
+claim that every serial response format has been audited.
+
+Evidence: `.local/sx126x-clock-auth-build.log`,
+`.local/sx126x-clock-auth-flash.log`, `.local/sx126x-clock-auth-device.log`,
+`.local/serial-auth-device.log`. RTL remained streaming at about 2.4 MS/s;
+fresh gauge readings continued. Wi-Fi's initial join failed again on this boot,
+so startup reliability remains open. Reception, antenna-path qualification,
+transmission and sustained coexistence remain open; TX Lab stays locked.

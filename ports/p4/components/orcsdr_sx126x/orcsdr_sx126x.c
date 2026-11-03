@@ -83,7 +83,7 @@ sx126x_hal_status_t sx126x_hal_wakeup(const void* context)
     return wait_ready(bus)==ESP_OK?SX126X_HAL_STATUS_OK:SX126X_HAL_STATUS_ERROR;
 }
 
-esp_err_t orcsdr_sx126x_probe(orcsdr_sx126x_probe_result_t* result)
+static esp_err_t inspect(orcsdr_sx126x_probe_result_t* result,bool clock_check)
 {
     if(!result)return ESP_ERR_INVALID_ARG;
     memset(result,0,sizeof(*result));
@@ -93,6 +93,17 @@ esp_err_t orcsdr_sx126x_probe(orcsdr_sx126x_probe_result_t* result)
        !GPIO_IS_VALID_OUTPUT_GPIO(profile->radio_sclk) || !GPIO_IS_VALID_OUTPUT_GPIO(profile->radio_mosi) ||
        !GPIO_IS_VALID_GPIO(profile->radio_miso) || !GPIO_IS_VALID_OUTPUT_GPIO(profile->radio_cs) ||
        !GPIO_IS_VALID_GPIO(profile->radio_busy))return ESP_ERR_NOT_SUPPORTED;
+    int tcxo_voltage=-1;
+    uint32_t startup_ticks=0;
+    if(clock_check) {
+        const unsigned mv[]={1600,1700,1800,2200,2400,2700,3000,3300};
+        for(unsigned i=0;i<sizeof(mv)/sizeof(mv[0]);++i)
+            if(profile->radio_tcxo_mv==mv[i])tcxo_voltage=(int)i;
+        if(tcxo_voltage<0 || !profile->radio_tcxo_startup_us || profile->radio_tcxo_startup_us>100000)
+            return ESP_ERR_NOT_SUPPORTED;
+        // SX126x TCXO timeout is in 15.625 us RTC steps; round up.
+        startup_ticks=(uint32_t)(((uint64_t)profile->radio_tcxo_startup_us*64+999)/1000);
+    }
     portENTER_CRITICAL(&s_claim_mux);
     const bool claimed=!s_claimed;
     if(claimed)s_claimed=true;
@@ -136,7 +147,31 @@ esp_err_t orcsdr_sx126x_probe(orcsdr_sx126x_probe_result_t* result)
         error=bus.error==ESP_OK?ESP_ERR_INVALID_RESPONSE:bus.error;goto cleanup;
     }
     result->device_errors=faults;
+    result->initial_device_errors=faults;
     result->detected=true;error=ESP_OK;
+    if(clock_check) {
+        result->clock_checked=true;
+        if(sx126x_set_dio3_as_tcxo_ctrl(&bus,(sx126x_tcxo_ctrl_voltages_t)tcxo_voltage,startup_ticks)!=SX126X_STATUS_OK ||
+           sx126x_clear_device_errors(&bus)!=SX126X_STATUS_OK ||
+           sx126x_cal(&bus,SX126X_CAL_ALL)!=SX126X_STATUS_OK ||
+           sx126x_set_standby(&bus,SX126X_STANDBY_CFG_XOSC)!=SX126X_STATUS_OK ||
+           sx126x_get_status(&bus,&status)!=SX126X_STATUS_OK ||
+           sx126x_get_device_errors(&bus,&faults)!=SX126X_STATUS_OK) {
+            error=bus.error==ESP_OK?ESP_FAIL:bus.error;goto cleanup;
+        }
+        result->device_errors=faults;
+        result->chip_mode=status.chip_mode;result->command_status=status.cmd_status;
+        if(faults || status.chip_mode!=SX126X_CHIP_MODE_STBY_XOSC ||
+           status.cmd_status==SX126X_CMD_STATUS_CMD_TIMEOUT ||
+           status.cmd_status==SX126X_CMD_STATUS_CMD_PROCESS_ERROR ||
+           status.cmd_status==SX126X_CMD_STATUS_CMD_EXEC_FAILURE) {
+            error=ESP_ERR_INVALID_RESPONSE;goto cleanup;
+        }
+        if(sx126x_set_standby(&bus,SX126X_STANDBY_CFG_RC)!=SX126X_STATUS_OK) {
+            error=bus.error==ESP_OK?ESP_FAIL:bus.error;goto cleanup;
+        }
+        result->clock_ready=true;
+    }
 cleanup:
     if(error!=ESP_OK && bus_owned)(void)orcsdr_board_radio_reset(true);
     if(bus.spi)spi_bus_remove_device(bus.spi);
@@ -147,3 +182,7 @@ cleanup:
     portENTER_CRITICAL(&s_claim_mux);s_claimed=false;portEXIT_CRITICAL(&s_claim_mux);
     return error;
 }
+esp_err_t orcsdr_sx126x_probe(orcsdr_sx126x_probe_result_t* result)
+{return inspect(result,false);}
+esp_err_t orcsdr_sx126x_clock_check(orcsdr_sx126x_probe_result_t* result)
+{return inspect(result,true);}
