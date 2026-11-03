@@ -2,6 +2,7 @@
 // the receiver defaults work; Wi-Fi, SD card, catalog and companion sections show their unavailable state
 // because this board has none of them wired yet.
 #include <algorithm>
+#include "M5Unified.h"
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -121,7 +122,7 @@ const st::State& build() {
   g_state.fm_frequency_hz = h.frequency_hz;
   std::snprintf(g_state.default_band, sizeof(g_state.default_band), "%.15s", h.band);
   g_state.rtl_usb_safe_mode = esp_rtl_sdr_usb_safe_mode_active();
-  g_state.battery_level = -1;
+  g_state.battery_level = M5.Power.getBatteryLevel();
   g_state.uptime_seconds = static_cast<uint32_t>(esp_timer_get_time() / 1000000);
   std::snprintf(g_state.build_identity, sizeof(g_state.build_identity), "P4 console %s", __DATE__);
   {

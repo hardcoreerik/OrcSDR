@@ -65,6 +65,47 @@ I2C and FreeRTOS backends. They do not verify physical I2C timing, actual RTOS
 scheduling, or hardware gauge behavior. Component build/startup integration
 remains the board-level caller's responsibility.
 
+## P4 profile and UI integration — 2026-11-03
+
+The LilyGO profile selects BQ27220 on its already-owned I2C1 bus at `0x55`.
+Board startup starts the optional worker only after successful display bring-up;
+an unsupported gauge/bus or startup failure does not fail the display. Other
+profiles default to no gauge. The app installs a nonblocking snapshot provider
+in the existing M5 power interface before starting UI/serial tasks. Dashboard
+snapshots and Settings use that interface rather than a second board-specific UI.
+`RTL_BATTERY STATUS` reports validity, age, reported presence and raw readings.
+
+Home updates only its battery widget when the percentage changes. A compact
+header omits the percent suffix only when it cannot fit at the existing readable
+text size; legacy wide headers retain it. Other dashboards consume the shared
+reading, but continuous battery-only refresh is not qualified on every page.
+
+Validation performed in the integration worktree:
+
+- WSL `ctest --test-dir build/bq27220-host --output-on-failure`: 8/8 passed.
+  Windows CTest cannot execute these Linux-built binaries; that invocation did
+  not run tests and was corrected to WSL.
+- WSL `python3 apps/orcsdr-tab5/tests/test_home_battery_recording.py`:
+  `HOME_BATTERY_RECORDING_PASS`.
+- `python tests/test_freq_keypad_layout.py`: 7/7 passed, including 100%/clamped
+  values fitting the battery cell at size 2 without a full-screen clear. The new
+  bounds assertion failed before the production fix on both LilyGO orientations
+  and Hosyond.
+- ESP-IDF 5.5.4 build, app-only COM32 flash and flash hash verification passed;
+  local logs: `.local/battery-ui-build.log`, `.local/battery-ui-flash.log`.
+- Two fresh hardware samples reported 22%, 3964 mV, +6 mA, `ESP_OK`; a later
+  sample reported 3963 mV and 0 mA. These are gauge reports, not an independent
+  measurement or state-of-charge calibration.
+- Native r18 portrait/landscape PNG captures show the battery indicator inside
+  the header. Auto-rotation was restored after capture. Initial post-reset RTL
+  and Wi-Fi status was not ready; later RTL streaming was about 2.4 MS/s and
+  saved Wi-Fi joined successfully. This is a short coexistence check, not
+  sustained receiver/audio acceptance.
+
+Physical unplug/no-cell behavior, calibrated accuracy, sustained workload and
+human readability acceptance for this new indicator remain open. Captures and
+device-specific files stay local and are not installation artifacts.
+
 ## Provenance
 
 - LilyGO board pin/address source: [`t_display_p4_config.h` at

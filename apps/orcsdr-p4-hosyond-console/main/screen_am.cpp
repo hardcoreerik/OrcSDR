@@ -1,5 +1,6 @@
 // AM RADIO dashboard (apps/orcsdr-tab5/ui/am_dashboard.cpp, unchanged) on the P4 console.
 #include <algorithm>
+#include "M5Unified.h"
 #include "am_dashboard.hpp"
 #include "audio_service.hpp"
 #include "home_app.hpp"
@@ -30,7 +31,7 @@ am::Snapshot build() {
   s.sound_enabled = st.sound;
   s.graphics_enabled = g_graphics;
   s.volume = st.volume;
-  s.battery_percent = -1;
+  s.battery_percent = M5.Power.getBatteryLevel();
   const orcsdr::radio::Gain g = orcsdr::radio::gain();
   s.gain_available = g.available && s.driver_ready;
   s.rtl_agc_available = g.rtl_agc_available && st.frequency_hz < 24000000;

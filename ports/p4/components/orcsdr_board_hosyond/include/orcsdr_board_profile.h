@@ -34,6 +34,10 @@ typedef enum {
     ORCSDR_IMU_NONE = 0,
     ORCSDR_IMU_ICM20948 = 1,
 } orcsdr_imu_type_t;
+typedef enum {
+    ORCSDR_BATTERY_GAUGE_NONE = 0,
+    ORCSDR_BATTERY_GAUGE_BQ27220 = 1,
+} orcsdr_battery_gauge_type_t;
 
 /* A control line on an I2C GPIO expander: which expander (index into ioexp_addr) and which pin. dev -1 = absent. */
 typedef struct {
@@ -114,6 +118,10 @@ typedef struct {
     bool imu_axes_verified;
     float imu_display_x_from_sensor[3];
     float imu_display_y_from_sensor[3];
+    /* Optional gauge on an existing owned bus; NONE is the safe default. */
+    orcsdr_battery_gauge_type_t battery_gauge_type;
+    int battery_gauge_i2c_port;
+    unsigned char battery_gauge_i2c_address;
 } orcsdr_board_profile_t;
 
 /* The profile this firmware was built for (Kconfig ORCSDR_BOARD). */

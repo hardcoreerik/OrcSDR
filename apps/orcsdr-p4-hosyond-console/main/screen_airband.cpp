@@ -1,6 +1,7 @@
 // Shared Airband dashboard on the P4 console. The runtime module owns the scanner and squelch;
 // this adapter supplies its live state, selected-display viewport, and the hooks it calls.
 #include <algorithm>
+#include "M5Unified.h"
 #include "airband_runtime.hpp"
 #include "audio_service.hpp"
 #include "esp_timer.h"
@@ -52,7 +53,7 @@ const ab::LiveState& live() {
   s.channel_db = audio_service::channel_dbfs();
   s.receiver_running = rs.receiver_state == 2;
   s.sound_enabled = st.sound;
-  s.battery_percent = -1;
+  s.battery_percent = M5.Power.getBatteryLevel();
   s.location_configured = false;
   s.controls.route = orcsdr::shortwave::ReceiverRoute::tuner;
   s.controls.capabilities.rf_gain = g.available;

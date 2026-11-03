@@ -11,6 +11,7 @@
 #include "esp_rtl_sdr.h"
 #include "esp_system.h"
 #include "orcsdr_board_profile.h"
+#include "orcsdr_battery.h"
 #include "driver/gptimer.h"
 #include "esp_attr.h"
 #include "esp_intr_alloc.h"
@@ -178,6 +179,7 @@ void cmd_help() {
   std::printf("RTL_UI STATUS | RTL_UI OPEN <HOME> | RTL_UI TAP <view-x> <view-y>  - UI (OPEN/TAP need auth)\n");
   std::printf("RTL_LORA TX VIEW OPERATOR|MESSAGES|DUAL_RADIO     - LoRa TX Lab page (auth, queued to UI)\n");
   std::printf("RTL_HOME ACTION <name> [value] / RESULT <id>      - Home VFO queue (actions need auth)\n");
+  std::printf("RTL_BATTERY STATUS                              - gauge validity/age and raw telemetry\n");
   std::printf("RTL_SCREEN_STATUS / RTL_MEM STATUS / RTL_RX STATUS - diagnostics (RTL_RX: one line per receiver)\n");
   std::printf("SCREENSHOT                                      - screenshot as PNG over serial (auth)\n");
 }
@@ -728,6 +730,13 @@ void cmd_mem() {
   std::printf("RTL_MEM_DMA dma_free=%u dma_largest=%u\n", unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
               unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)));
 }
+void cmd_battery_status() {
+  orcsdr_battery_snapshot_t s{};
+  const esp_err_t result=orcsdr_battery_get_snapshot(&s);
+  std::printf("RTL_BATTERY_STATUS started=%d gauge_seen=%d valid=%d stale=%d age_ms=%u percent=%ld presence_reported=%d voltage_mv=%u current_ma=%d error=%s\n",
+    result==ESP_OK,s.gauge_seen,s.valid,s.stale,unsigned(s.last_success_age_ms),long(s.ui_percent),
+    s.gauge.battery_present_reported,unsigned(s.gauge.voltage_mv),int(s.gauge.current_ma),esp_err_to_name(s.last_error));
+}
 
 void cmd_rx_status() {
   std::printf("RTL_RX_STATUS max_receivers=%d streaming=%d\n", orcsdr::radio::max_receivers(), orcsdr::radio::receiver_count());
@@ -833,6 +842,7 @@ void handle_line(char* line) {
   }
   if (std::strcmp(line, "RTL_MEM STATUS") == 0) return cmd_mem();
   if (std::strcmp(line, "RTL_RX STATUS") == 0) return cmd_rx_status();
+  if (std::strcmp(line,"RTL_BATTERY STATUS")==0) return cmd_battery_status();
   if (strcasecmp(line, "SCREENSHOT") == 0 || std::strcmp(line, "FT8 SNAP") == 0) {
     if (!authed()) {
       std::printf("ORC_SNAP_ERROR auth_required\n");

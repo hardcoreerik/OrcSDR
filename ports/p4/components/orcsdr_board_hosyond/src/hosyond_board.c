@@ -12,6 +12,7 @@
  * picture position and colour vary from boot to boot.
  */
 #include <string.h>
+#include "orcsdr_battery.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -209,6 +210,19 @@ static void tc358762_init(void)
     vTaskDelay(pdMS_TO_TICKS(100));
 }
 
+static void start_optional_battery(void)
+{
+    const orcsdr_board_profile_t *profile=orcsdr_board_profile();
+    if(profile->battery_gauge_type==ORCSDR_BATTERY_GAUGE_NONE)return;
+    if(profile->battery_gauge_type!=ORCSDR_BATTERY_GAUGE_BQ27220 ||
+       profile->battery_gauge_i2c_port!=profile->i2c_port) {
+        ESP_LOGW(TAG,"battery gauge bus/type is not supported by this board adapter");
+        return;
+    }
+    const esp_err_t err=orcsdr_battery_start(s_i2c,profile->battery_gauge_i2c_address);
+    if(err!=ESP_OK)ESP_LOGW(TAG,"battery service unavailable: %s",esp_err_to_name(err));
+}
+
 /* ---------------- Public interface ---------------- */
 
 esp_err_t hosyond_board_start(hosyond_display_t *out)
@@ -236,7 +250,9 @@ esp_err_t hosyond_board_start(hosyond_display_t *out)
     err=orcsdr_board_controls_start(s_i2c);
     if (err!=ESP_OK) return err;
 #ifdef CONFIG_ORCSDR_BOARD_LILYGO_T_DISPLAY_P4_AMOLED
-    return lilygo_amoled_start(s_i2c, out);
+    err=lilygo_amoled_start(s_i2c,out);
+    if(err==ESP_OK)start_optional_battery();
+    return err;
 #endif
     {
         unsigned char found[16] = {0};
@@ -354,6 +370,7 @@ esp_err_t hosyond_board_start(hosyond_display_t *out)
     }
     ESP_LOGI(TAG, "display up: %dx%d, %d frame buffer(s) of %u bytes in PSRAM, byte order [B][G][R]",
              out->width, out->height, out->fb_count, (unsigned)out->fb_bytes);
+    start_optional_battery();
     return ESP_OK;
 }
 

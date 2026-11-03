@@ -2,6 +2,7 @@
 // AM, USB and LSB are demodulated; the audio clean-up chain, band hunt and the SD library (memories and logbook)
 // are not available on this target yet.
 #include <algorithm>
+#include "M5Unified.h"
 #include <cstring>
 #include <new>
 #include "esp_heap_caps.h"
@@ -49,7 +50,7 @@ sw::Snapshot& build() {
   s.running = rs.receiver_state == 2;
   s.driver_ready = rs.receiver_state == 2;
   s.sound_enabled = st.sound;
-  s.battery_percent = -1;
+  s.battery_percent = M5.Power.getBatteryLevel();
   std::snprintf(s.device, sizeof(s.device), "RTL-SDR");
   s.controls.route = sw::ReceiverRoute::tuner;
   s.controls.capabilities.rf_gain = g.available;

@@ -294,7 +294,7 @@ void fill_snapshot() {
   s.filter_kind = p.mode == band_profile::Mode::none ? p.filter : kind;
   s.filter_bandwidth_hz = g_bandwidth_override_hz ? g_bandwidth_override_hz : filter_standards::standards(s.filter_kind).standard_hz;
   s.effective_sps = radio_state.effective_sps;
-  s.battery_percent = -1;  // no battery on this board
+  s.battery_percent = M5.Power.getBatteryLevel();
   s.volume = g_volume;
   s.relative_dbfs = radio::level_dbfs();
   const auto wifi = wifi_app::status();

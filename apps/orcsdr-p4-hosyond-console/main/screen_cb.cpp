@@ -2,6 +2,7 @@
 // The dongle is retuned to the selected channel; the 960 kHz stream covers the whole 40-channel band, so the
 // activity monitor and scanner watch every channel from the same spectrum.
 #include <algorithm>
+#include "M5Unified.h"
 #include <cstring>
 #include "audio_service.hpp"
 #include "cb_dashboard.hpp"
@@ -55,7 +56,7 @@ const cb::Snapshot& build() {
   s.squelch_open = s.signal_dbfs > g_squelch;
   s.running = rs.receiver_state == 2;
   s.sound_enabled = st.sound;
-  s.battery_percent = -1;
+  s.battery_percent = M5.Power.getBatteryLevel();
   s.scan_state = g_scanner.state();
   s.hang_remaining_ms = g_scanner.hang_remaining_ms(now);
   s.stops = g_scanner.stops();

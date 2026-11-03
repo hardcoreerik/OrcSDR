@@ -15,7 +15,7 @@ Legend: **partial** means implemented or checked only for the cited scope;
 | Preserve Hosyond/LilyGO drivers and shared M5GFX UI | Existing profiles and shared renderers retained | Working LilyGO app, earlier display/FM acceptance | Cross-profile regressions and final audit |
 | TX minimum text readability | `521ed01a`; normal + sanitizer TX suites; minimum-height/bounds/overlap assertions | r17 PNGs; owner accepted portrait and landscape text | Wider populated-state and input acceptance |
 | LoRa RX views/navigation | Legacy renderer exists; native RX migration open | Native TX entry only | Shared geometry for all five RX views and six-tab capable navigation |
-| P25 | Shared renderer/runtime exist; absent P4 route | Open | Responsive renderer, adapter, decoder services, RF acceptance |
+| P25 | Shared responsive renderer imported in `52e73c5c` / `0743c00b`; targeted layout tests pass; absent P4 route | Open | Adapter, decoder services, PCM output ownership and RF acceptance |
 | FT8 | Shared renderer linked; route/runtime missing | Open | Responsive renderer, runtime/time/storage, adapter, reception |
 | SSTV | Shared renderer/app exist; not in P4 app | Open | Responsive renderer, adapter and worker/audio/storage hooks |
 | Dead Air | Shared renderer linked; app/route missing | Open | Runtime/worker/storage/audio hooks and responsive UI |
@@ -25,7 +25,7 @@ Legend: **partial** means implemented or checked only for the cited scope;
 | Reusable profile geometry and capability rules | Shared display/header/layout contracts exist | Multiple native dashboards run | Complete remaining fixed-coordinate assumptions and document authoring process |
 | SX1262 integration | Profile + fail-closed TX policy only | Owner confirms fitted SX1262 SKU | Hardware probe, bus/expander HAL, RX, verified RF/antenna path; explicit approval before TX |
 | GNSS | L76K pins documented; no service | Open | Passive UART parser/service, fresh valid fixes, location integration; wake polarity unresolved |
-| Battery telemetry | BQ27220 documented; no real telemetry service | Open | Read-only gauge driver, profile/bus ownership, worker, UI and no-cell/absence behavior |
+| Battery telemetry | Read-only BQ27220 worker, profile/bus ownership and shared M5 power provider integrated; 8 service tests, Home recording and 7 header/keypad tests pass | COM32 fresh samples: 22%, 3963–3964 mV; portrait/landscape r18 PNGs inspected | Physical percentage accuracy, unplug/no-cell behavior, sustained coexistence and remaining per-page live refresh |
 | USB/RTL-SDR/audio | Existing shared radio/audio services run | FM previously audible; bounded streaming checks | Sustained workload/reconnect/reception/audio/drop measurements |
 | Storage and input | SD mounted; native touch and IMU work | Sampled physical touch/rotation acceptance | Service actions, error/reconnect cases and all gesture paths |
 | Settings actions | Connectivity/C6/storage slices implemented | Sampled Settings/C6 acceptance | Audit and wire all remaining advertised actions |

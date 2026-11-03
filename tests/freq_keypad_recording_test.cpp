@@ -117,6 +117,11 @@ extern "C" __declspec(dllexport) int check_header_renderer(int width,int height,
     if (!header_inside(l.battery,rect) && !header_inside(l.tray,rect)) return 7;
   }
   if (visualizer_hit(l.battery.x+l.battery.w/2,l.battery.y+20)) return 10;
+  for (int percent: {-1,0,9,99,100,150}) {
+    draw_battery(percent);
+    if (M5.Display.textWidth(M5.Display.last_text.c_str())>l.battery.w) return 11;
+    if (M5.Display.size<2 || M5.Display.full_clears!=clears) return 12;
+  }
   const int pushes=M5.Display.pushes;
   // A structural viewport change invalidates cached pixels from the old layout.
   if (!set_viewport(v)) return 8;

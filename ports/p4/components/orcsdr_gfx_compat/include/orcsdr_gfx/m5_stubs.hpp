@@ -76,15 +76,25 @@ class Mic {
   MicConfig config_{};
 };
 
+struct PowerSnapshot {
+  int32_t percent=-1,voltage_mv=0,current_ma=0;
+  bool charging=false;
+};
 class Power {
  public:
-  int32_t getBatteryLevel() const { return -1; }       // no battery on this board
-  int32_t getBatteryVoltage() const { return 0; }
-  int32_t getBatteryCurrent() const { return 0; }
+  using Provider=PowerSnapshot(*)();
+  // Install before UI/serial tasks start. The provider must be nonblocking.
+  void setBackend(Provider provider) { provider_=provider; }
+  int32_t getBatteryLevel() const { return snapshot().percent; }
+  int32_t getBatteryVoltage() const { return snapshot().voltage_mv; }
+  int32_t getBatteryCurrent() const { return snapshot().current_ma; }
   int32_t getVBUSVoltage() const { return 0; }
-  bool isCharging() const { return false; }
+  bool isCharging() const { return snapshot().charging; }
   int getType() const { return 0; }
   void setExtOutput(bool) {}
+ private:
+  PowerSnapshot snapshot() const { return provider_?provider_():PowerSnapshot{}; }
+  Provider provider_=nullptr;
 };
 
 struct rtc_datetime_t {

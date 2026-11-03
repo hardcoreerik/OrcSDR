@@ -22,7 +22,7 @@ bool sound_enabled() { return home_app::status().sound; }
 
 void draw_header() {
   const home_app::Status st = home_app::status();
-  orcsdr::audio_header::draw(g_control, st.volume, st.sound, -1);
+  orcsdr::audio_header::draw(g_control, st.volume, st.sound, M5.Power.getBatteryLevel());
   orcsdr::audio_header::draw_home_button();
   orcsdr::audio_header::draw_settings_button();
   orcsdr::audio_header::draw_mute_button(st.sound);

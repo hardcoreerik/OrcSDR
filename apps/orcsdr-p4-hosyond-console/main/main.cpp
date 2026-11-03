@@ -22,6 +22,7 @@
 #include "hosyond_board.h"
 #include "orientation_app.hpp"
 #include "orcsdr_board_profile.h"
+#include "orcsdr_battery.h"
 #include "present.hpp"
 #include "radio_service.hpp"
 #include "serial_cli.hpp"
@@ -56,6 +57,12 @@ extern "C" void app_main(void) {
     if (saved_rotation != panel.geometry.rotation && !present_set_rotation(saved_rotation))
       ESP_LOGE(TAG, "could not apply saved display rotation %d before UI startup", saved_rotation);
   }
+  M5.Power.setBackend([]() {
+    orcsdr_battery_snapshot_t battery{};
+    if(orcsdr_battery_get_snapshot(&battery)!=ESP_OK || !battery.valid)return orcsdr::gfx::PowerSnapshot{};
+    return orcsdr::gfx::PowerSnapshot{battery.ui_percent,int32_t(battery.gauge.voltage_mv),
+      int32_t(battery.gauge.current_ma),battery.gauge.current_ma>0&&!battery.gauge.charge_inhibited};
+  });
   if (!serial_cli_start(&M5.Display)) ESP_LOGE(TAG, "serial command interface failed");
   if (!headless && hosyond_board_touch_start() != ESP_OK) ESP_LOGE(TAG, "touch start failed");
 

@@ -169,6 +169,11 @@ void draw_battery(int32_t battery_percent) {
   else
     snprintf(level, sizeof(level), "%ld%%",
              static_cast<long>(std::clamp<int32_t>(battery_percent, 0, 100)));
+  M5.Display.setFont(nullptr);
+  M5.Display.setTextSize(2);
+  // The battery icon supplies context when the percent suffix cannot fit.
+  if (battery_percent>=0 && M5.Display.textWidth(level)>kRegionW)
+    level[std::strlen(level)-1]='\0';
   // Compact noninteractive indication occupies the former VIS slot.
   const int x=kRegionX+4,y=kRegionY+3,w=kRegionW-10,h=18;
   M5.Display.drawRoundRect(x,y,w,h,3,TFT_WHITE);

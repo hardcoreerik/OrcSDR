@@ -3,6 +3,7 @@
 // pre-roll ring, preamble / energy trigger, a 4 s IQ capture handed to the native decoder task, and Meshtastic node and
 // packet tracking. SD logging, the node history file and the gain guard are not available on this target yet.
 #include <algorithm>
+#include "M5Unified.h"
 #include <atomic>
 #include <cstring>
 #include "audio_service.hpp"
@@ -449,7 +450,7 @@ lr::Snapshot& build() {
   s.iq_recording = g_rec_active.load();
   s.iq_ready = g_rec_ready.load();
   s.iq_busy = g_decode_busy.load();
-  s.battery_percent = -1;
+  s.battery_percent = M5.Power.getBatteryLevel();
   s.native_decoder_ready = g_decoder_ready.load() && s.bandwidth_hz == 250000;
   std::snprintf(s.board_label, sizeof(s.board_label), "%s", "ORCSDR P4");
   // Describe board wiring without turning a documented pin map into a working radio.

@@ -1,6 +1,7 @@
 // FM RADIO dashboard (apps/orcsdr-tab5/ui/fm_dashboard.cpp, unchanged) on the P4 console.
 // This adapter does what the Tab5's fm_dashboard_snapshot() / handle_fm_dashboard_action() do there.
 #include <algorithm>
+#include "M5Unified.h"
 #include <cstring>
 #include "audio_service.hpp"
 #include "fm_dashboard.hpp"
@@ -31,7 +32,7 @@ fm::Snapshot build() {
   s.sound_enabled = st.sound;
   s.graphics_enabled = g_graphics;
   s.volume = st.volume;
-  s.battery_percent = -1;
+  s.battery_percent = M5.Power.getBatteryLevel();
   const audio_service::Status a = audio_service::status();
   s.audio_underruns = a.underruns;
   s.consumer_drops = a.dropped_blocks;

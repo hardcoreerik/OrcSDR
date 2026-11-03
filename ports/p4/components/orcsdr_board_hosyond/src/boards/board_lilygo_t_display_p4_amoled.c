@@ -81,6 +81,9 @@ const orcsdr_board_profile_t g_board_lilygo_t_display_p4_amoled = {
 
     .codec_i2c_port = 0, .codec_i2c_sda = 20, .codec_i2c_scl = 21,
     .imu_type = ORCSDR_IMU_ICM20948, .imu_i2c_address = 0x68,
+    /* LilyGO device-driver config a47cf73e: BQ27220 on I2C1, 7-bit 0x55. */
+    .battery_gauge_type = ORCSDR_BATTERY_GAUGE_BQ27220,
+    .battery_gauge_i2c_port = 1, .battery_gauge_i2c_address = 0x55,
     .c6_rom_sdio_recovery = true,
     /* 2026-11-01 physical poses: up +X, clockwise -Y, inverted -X, left +Y. */
     .imu_axes_verified = true,
