@@ -1179,7 +1179,13 @@ void draw() {
 }
 
 void update(const Snapshot& snapshot) {
-  if (!shown || browser || snapshot.revision == current.revision) return;
+  if (!shown) return;
+  if (browser) {  // the browser owns the display; keep its eventual Home header current
+    current = snapshot;
+    return;
+  }
+  const bool battery_changed = snapshot.battery_percent != current.battery_percent;
+  if (snapshot.revision == current.revision && !battery_changed) return;
   if (keypad) {   // keep the state current underneath; nothing repaints until the keypad closes
     current = snapshot;
     return;
@@ -1201,6 +1207,7 @@ void update(const Snapshot& snapshot) {
   current = snapshot;
   const bool covered = gain_popup || filter_popup || mode_popup;   // a popup is over the lower half
   M5.Display.startWrite();
+  if (battery_changed) audio_header::draw_battery(current.battery_percent);
   if (status_changed) draw_header_status();
   if (tuner_changed) draw_band_label();
   if (covered) {

@@ -1,0 +1,7 @@
+# P4 Home battery update evidence
+
+`home_dashboard::update` now treats battery percentage as independently dirty from the generic snapshot revision. A changed value, including valid-to-unknown (`-1`), repaints only `audio_header::draw_battery`'s battery region. Unchanged values do not call the widget. Browser snapshots are retained while its full-screen view owns the display; keypad snapshots are retained while its modal owns the display. Both views show the latest value when Home is redrawn. Lower gain/filter/mode popups do not cover the header battery area.
+
+The recording regression compiles the production `home_dashboard.cpp` and records its battery-widget dispatch and `fillScreen` calls. The battery renderer itself is a narrow test double; this proves Home's update routing and region-only contract, while not representing physical font, pixel, or battery-widget appearance. Viewports covered are legacy 1280x720, Hosyond 800x480, and offset landscape/portrait P4 safe areas. No ESP-IDF build or device test is claimed.
+
+Run with `python3 apps/orcsdr-tab5/tests/test_home_battery_recording.py` (from WSL on Windows). The test checks changed and unchanged values under an unchanged generic revision, changed generic revision with unchanged battery, unknown battery, lower popup, keypad/browser deferred updates and return, battery bounds, and no full-screen clear on ordinary value updates.
