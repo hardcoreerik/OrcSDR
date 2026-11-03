@@ -3,6 +3,7 @@
 #include "airband_catalog.hpp"
 #include "airband_scanner.hpp"
 #include "receiver_tuning_controls.hpp"
+#include "airband_dashboard_layout.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -95,6 +96,9 @@ inline void reset_snapshot(Snapshot& snapshot) {
 }
 
 void dashboard_enter(const Snapshot& snapshot);
+// UI-owner only: resize the shared renderer while retaining tab, selections and local UI state.
+bool dashboard_set_viewport(layout::Rect viewport);
+layout::Rect dashboard_viewport();
 void dashboard_leave();
 void dashboard_draw();
 void dashboard_update(const Snapshot& snapshot);
@@ -114,5 +118,16 @@ void dashboard_draw_spectrum(const float* levels, size_t first_bin, size_t visib
                              uint32_t span_hz);
 Tab dashboard_tab();
 bool dashboard_self_check();
+
+enum class Control : uint8_t {
+  select_tab,
+  tune_down,tune_up,tune_guard,scan_toggle,hold_toggle,skip,tune_catalog,
+  source_cycle,spacing_cycle,radius_cycle,gain_down,gain_up,tuner_agc_toggle,
+  rtl_agc_toggle,squelch_down,squelch_up,settle_cycle,hang_down,hang_up,
+  priority_toggle,reload_catalog,clear_activity,open_settings,open_location_settings,
+  exit_home,tune_to,span_down,span_up,filter_down,filter_up,filter_set,
+};
+// UI-owner-only named controls for a serial adapter to route into the same Action path as touch.
+Action dashboard_control(Control control, int32_t value, bool* applied);
 
 }  // namespace orcsdr::airband

@@ -1,6 +1,5 @@
-// AIRBAND dashboard (apps/orcsdr-tab5/ui/airband_dashboard.cpp, airband_runtime.cpp, airband_scanner.cpp and
-// airband_catalog.cpp, unchanged) on the P4 console. The runtime module owns the scanner, squelch and screens;
-// this adapter supplies its live state and the hooks it calls.
+// Shared Airband dashboard on the P4 console. The runtime module owns the scanner and squelch;
+// this adapter supplies its live state, selected-display viewport, and the hooks it calls.
 #include <algorithm>
 #include "airband_runtime.hpp"
 #include "audio_service.hpp"
@@ -8,6 +7,9 @@
 #include "home_app.hpp"
 #include "radio_service.hpp"
 #include "screens.hpp"
+#include "present.hpp"
+
+namespace screens { bool airband_resize_viewport(); }
 
 namespace {
 namespace ab = orcsdr::airband;
@@ -67,6 +69,7 @@ const ab::LiveState& live() {
 }
 
 void enter() {
+  (void)screens::airband_resize_viewport();
   if (!g_configured) {
     ab::Hooks h;
     h.tune = hook_tune;
@@ -118,7 +121,16 @@ void spectrum(const float* levels, size_t first, size_t visible, float floor) {
 
 namespace screens {
 const Screen& airband_screen() {
-  static const Screen s{orcsdr::dashboards::Id::airband, "AIRBAND", enter, leave, tick, tap, drag, spectrum};
+  static const Screen s{orcsdr::dashboards::Id::airband, "AIRBAND", enter, leave, tick, tap, drag, spectrum,
+      nullptr, [](){return screens::airband_resize_viewport();}};
   return s;
+}
+
+bool airband_resize_viewport() {
+  const auto* geometry=present_geometry();
+  if(geometry==nullptr)return ab::dashboard_set_viewport({0,0,1280,720});
+  const auto safe=geometry->safe;
+  return ab::dashboard_set_viewport({static_cast<int>(safe.x),static_cast<int>(safe.y),
+                                     static_cast<int>(safe.width),static_cast<int>(safe.height)});
 }
 }  // namespace screens
