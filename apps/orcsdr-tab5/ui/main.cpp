@@ -11667,6 +11667,9 @@ orcsdr::lora::Snapshot lora_dashboard_snapshot() {
   snapshot.wifi_connected = orcsdr::wifi::connected();
   snapshot.sound_enabled = rtl_audio_user_enabled.load(std::memory_order_relaxed);
   snapshot.sd_logging = lora_log_ready.load(std::memory_order_relaxed);
+  snapshot.logging_available = true; // existing handler mounts SD or reports failure
+  snapshot.export_available = true;
+  snapshot.iq_save_available = true;
   snapshot.survey_active = orcsdr::lora_channel::survey_active();
   snapshot.survey_progress = orcsdr::lora_channel::survey_progress();
   snapshot.survey_result_count = std::min<uint8_t>(
@@ -12089,6 +12092,8 @@ void handle_lora_dashboard_action(const orcsdr::lora::Action& action) {
         orcsdr::lora::show_documentation_view(
             static_cast<orcsdr::lora::View>(action.value), lora_dashboard_snapshot());
       break;
+    case ActionKind::page_previous:(void)orcsdr::lora::page_items(-1);break;
+    case ActionKind::page_next:(void)orcsdr::lora::page_items(1);break;
     case ActionKind::select_node:
       if (action.value < orcsdr::lora::kNodeCapacity)
         lora_selected_node = static_cast<uint8_t>(action.value);

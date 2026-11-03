@@ -925,6 +925,19 @@ void handle_line(char* line) {
   if (std::strncmp(line, "RTL_AUDIO ", 10) == 0) return cmd_audio(line + 10);
   if (std::strncmp(line, "RTL_UI ", 7) == 0) return cmd_ui(line + 7);
   if (std::strncmp(line,"RTL_POCSAG ",11)==0) return cmd_pocsag(line+11);
+  if(std::strncmp(line,"RTL_LORA CONTROL ",17)==0){
+    if(!authed()){std::printf("RTL_LORA_CONTROL_ERROR auth_required\n");return;}
+    const char* action=line+17;unsigned control=0,value=0;
+    const char* views[]={"OVERVIEW","NODES","TRAFFIC","MAP","RF_HEALTH","TX_LAB"};
+    if(!std::strncmp(action,"VIEW ",5))for(unsigned i=0;i<6;++i)if(!std::strcmp(action+5,views[i])){control=1;value=i;}
+    if(!std::strcmp(action,"PREV")){control=2;value=0;}
+    if(!std::strcmp(action,"NEXT")){control=2;value=1;}
+    if(!std::strcmp(action,"DETAILS"))control=3;
+    if(!std::strcmp(action,"FILTER"))control=4;
+    const char* maps[]={"ZOOM_IN","ZOOM_OUT","RECEIVER","NODE_CENTER","FOLLOW_ON","FOLLOW_OFF"};
+    for(unsigned i=0;i<6;++i)if(!std::strcmp(action,maps[i]))control=5+i;
+    std::printf(control&&screens::lora_control_request(control,value)?"RTL_LORA_CONTROL_QUEUED\n":"RTL_LORA_CONTROL_ERROR invalid_inactive_or_busy\n");return;
+  }
   if (std::strncmp(line,"RTL_LORA TX ",12)==0) return cmd_lora_tx(line+12);
   if (std::strncmp(line,"RTL_HOME ACTION ",16)==0) return cmd_home_action(line+16);
   if (std::strncmp(line,"RTL_HOME RESULT ",16)==0) return cmd_home_result(line+16);

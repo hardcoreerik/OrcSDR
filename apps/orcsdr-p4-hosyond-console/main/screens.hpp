@@ -49,6 +49,7 @@ const Screen& wifi_screen();
 const Screen& adsb_screen();
 const Screen& acars_screen();
 const Screen& lora_screen();
+bool lora_control_request(unsigned control,unsigned value); // view/page/details/filter; UI owner queue
 bool lora_tx_page_request(unsigned page); // queued to the active UI owner
 
 }  // namespace screens

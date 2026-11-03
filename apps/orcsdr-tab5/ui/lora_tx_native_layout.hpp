@@ -16,7 +16,13 @@ struct Layout {
     return body.x+(source-origin)*body.w/span;
   }
   int y(int source) const {
-    if(vertical) return body.y+(source-225)*body.h/900;
+    if(vertical) {
+      const int action_top=body.y+body.h-60;
+      if(source<=1002)return body.y+(source-225)*(action_top-8-body.y)/777;
+      if(source<1026)return action_top-8+(source-1002)*8/24;
+      if(source<=1098)return action_top+(source-1026)*44/72;
+      return action_top+44+(source-1098)*16/27;
+    }
     const int action_top=body.y+body.h-52;
     if(source<=522) return body.y+(source-138)*(action_top-8-body.y)/384;
     if(source<540) return action_top-8+(source-522)*8/18;

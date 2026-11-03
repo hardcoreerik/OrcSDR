@@ -13,7 +13,7 @@ RegionalView draw_region(lgfx::v1::LovyanGFX& display,int32_t latitude,int32_t l
   return draw_camera(display,camera,x,y,background,grid,ink,preferred,labels);
 }
 RegionalView draw_camera(lgfx::v1::LovyanGFX& display,const orcmap::Viewport& camera,int x,int y,
-                          uint16_t background,uint16_t grid,uint16_t ink,const char* preferred,bool labels) {
+                          uint16_t background,uint16_t grid,uint16_t ink,const char* preferred,bool labels,unsigned caption_size) {
   RegionalView result;result.camera=camera;
   const int width=camera.width_px,height=camera.height_px;
   result.valid=width>0&&height>0;
@@ -34,10 +34,11 @@ RegionalView draw_camera(lgfx::v1::LovyanGFX& display,const orcmap::Viewport& ca
           "NO BASEMAP - COORDINATES ONLY");
   }
   display.setFont(nullptr);
-  display.setTextSize(1);display.setTextDatum(bottom_left);display.setTextColor(ink,background);
+  caption_size=std::clamp(caption_size,1u,2u);
+  display.setTextSize(caption_size);display.setTextDatum(bottom_left);display.setTextColor(ink,background);
   const char* caption=result.frame.credit[0] ? result.frame.credit : result.frame.status;
   // Full required attribution, wrapped within the map instead of truncated.
-  const int columns=width/6;
+  const int columns=std::min(192,width/int(6*caption_size));
   if(columns>0) {
     const size_t length=std::strlen(caption);
     const int lines=static_cast<int>((length+columns-1)/columns);
@@ -45,7 +46,7 @@ RegionalView draw_camera(lgfx::v1::LovyanGFX& display,const orcmap::Viewport& ca
       char part[193]{};
       const size_t count=std::min(static_cast<size_t>(columns),length-line*columns);
       std::memcpy(part,caption+line*columns,count);
-      display.drawString(part,x+2,y+height-2-(lines-1-line)*10);
+      display.drawString(part,x+2,y+height-2-(lines-1-line)*int(10*caption_size));
     }
   }
   return result;

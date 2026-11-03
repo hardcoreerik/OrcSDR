@@ -58,6 +58,13 @@ int main() {
   assert(moved.valid&&!last_labels&&last_camera.zoom==12&&last_camera.tile_size_px==310);
   assert(last_camera.center_lon_deg==camera.center_lon_deg&&last_camera.center_lat_deg==10);
   assert(moved.camera.center_lon_deg==last_camera.center_lon_deg&&moved.x==50&&moved.y==182);
+  const auto readable=draw_camera(display,camera,50,182,0,1,2,nullptr,true,2);
+  assert(readable.valid&&display.text_size==2);
+  preview=true;camera.width_px=160;camera.height_px=200;display.strings.clear();
+  draw_camera(display,camera,50,182,0,1,2,nullptr,true,2);
+  std::string caption;
+  for(const auto& line:display.strings)if(line!="OrcMaps pixels")caption+=line;
+  assert(caption=="Original pack attribution"&&display.text_size==2);
   const auto calls=service_calls;camera.width_px=0;
   assert(!draw_camera(display,camera,50,182,0,1,2).valid&&service_calls==calls);
   std::puts("MAP_VIEW_PASS pending/ready/unavailable use one engine and projection; pending credit retained");

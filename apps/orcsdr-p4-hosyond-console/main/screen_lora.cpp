@@ -22,6 +22,7 @@
 #include "orcsdr_board_profile.h"
 #include "present.hpp"
 #include "packet_radio_ui.hpp"
+#include "wifi_app.hpp"
 #include "radio_service.hpp"
 #include "screens.hpp"
 #include "ui_support.hpp"
@@ -31,6 +32,7 @@ namespace lr = orcsdr::lora;
 namespace ln = orcsdr::lora_native;
 constexpr char TAG[] = "LORA";
 std::atomic<unsigned> g_tx_page_request{0};
+std::atomic<uint32_t> g_rx_control_request{0};
 std::atomic<bool> g_ui_active{false};
 
 constexpr uint32_t kRate = 960000;
@@ -421,6 +423,9 @@ lr::Snapshot& build() {
   const auto rs = orcsdr::radio::snapshot();
   s.frequency_hz = st.frequency_hz;
   s.span_hz = st.span_hz;
+  s.effective_sps=rs.effective_sps;
+  const auto counters=orcsdr::radio::info();
+  s.usb_overruns=counters.overruns;s.consumer_drops=counters.consumer_drops;
   s.sf = g_sf.load();
   s.region_index = channel.region_index;
   s.region_count = static_cast<uint8_t>(orcsdr::lora_channel::region_count());
@@ -438,6 +443,7 @@ lr::Snapshot& build() {
   s.running = rs.receiver_state == 2;
   s.driver_ready = rs.receiver_state == 2;
   s.sound_enabled = st.sound;
+  s.wifi_connected = wifi_app::status().connected;
   s.survey_active = orcsdr::lora_channel::survey_active();
   s.survey_progress = orcsdr::lora_channel::survey_progress();
   s.survey_result_count = std::min<uint8_t>(orcsdr::lora_channel::survey_result_count(), lr::kSurveyResultCapacity);
@@ -520,9 +526,9 @@ lr::Snapshot& build() {
   return s;
 }
 
-bool resize_tx_viewport() {
+bool resize_viewport() {
   const auto* g=present_geometry();
-  return lr::set_tx_viewport(g?orcsdr::audio_header::HeaderRect{int(g->safe.x),int(g->safe.y),int(g->safe.width),int(g->safe.height)}:orcsdr::audio_header::HeaderRect{0,0,1280,720});
+  return lr::set_viewport(g?orcsdr::audio_header::HeaderRect{int(g->safe.x),int(g->safe.y),int(g->safe.width),int(g->safe.height)}:orcsdr::audio_header::HeaderRect{0,0,1280,720});
 }
 void enter() {
   {
@@ -533,19 +539,20 @@ void enter() {
     }
   }
   apply_channel_selection();
+  ui_support::claim_screen(orcsdr::screens::Id::lora);
   audio_service::set_active(false);
   ui_support::header_reset();
-  resize_tx_viewport();
+  resize_viewport();
   // The decoder's own workspace first (it needs the biggest contiguous blocks), then the capture buffers.
   if (!decoder_start() || !ensure_buffers()) ESP_LOGE(TAG, "LoRa decode path unavailable (memory)");
   reset_detector();
   home_app::request_frequency(g_config_hz);
   orcsdr::radio::set_aux_iq_sink(iq_offer);
   lr::enter(build());
-  g_tx_page_request=0;g_ui_active=true;
+  g_tx_page_request=0;g_rx_control_request=0;g_ui_active=true;
 }
 void leave() {
-  g_ui_active=false;g_tx_page_request=0;
+  g_ui_active=false;g_tx_page_request=0;g_rx_control_request=0;
   orcsdr::radio::set_aux_iq_sink(nullptr);
   g_rec_active = false;
   g_rec_ready = false;
@@ -554,7 +561,24 @@ void leave() {
   lr::leave();
 }
 
+bool apply_rx_control(unsigned control,unsigned value){
+  switch(control){
+    case 1:return value<unsigned(lr::View::count)&&lr::select_view(static_cast<lr::View>(value));
+    case 2:return lr::page_items(value?1:-1);
+    case 3:if(lr::view()!=lr::View::nodes&&lr::view()!=lr::View::traffic)return false;lr::toggle_packet_details();return true;
+    case 4:if(lr::view()!=lr::View::nodes&&lr::view()!=lr::View::traffic)return false;lr::toggle_filter();return true;
+    case 5:return lr::map_control(lr::MapControl::zoom_in);
+    case 6:return lr::map_control(lr::MapControl::zoom_out);
+    case 7:return lr::map_control(lr::MapControl::receiver);
+    case 8:return lr::map_control(lr::MapControl::node);
+    case 9:return lr::map_control(lr::MapControl::follow_on);
+    case 10:return lr::map_control(lr::MapControl::follow_off);
+    default:return false;
+  }
+}
 void tick() {
+  const auto control=g_rx_control_request.exchange(0);
+  if(control)std::printf("RTL_LORA_CONTROL_RESULT control=%u value=%u applied=%d\n",unsigned(control>>8),unsigned((control&255)-1),apply_rx_control(control>>8,(control&255)-1));
   // Only the UI owner consumes worker packets and changes the shared model.
   // Bound the drain to the service queue capacity so RX cannot starve touch.
   for(unsigned i=0;i<8;++i) {
@@ -589,6 +613,7 @@ void tick() {
     g_drops.fetch_add(1);
   }
   lr::update(build());
+  lr::service_map();
   ui_support::header_service();
 }
 
@@ -598,8 +623,10 @@ void tap(int x, int y) {
   const auto& sel = orcsdr::lora_channel::selection();
   switch (a.kind) {
     case lr::ActionKind::select_view:
-      if (a.value < static_cast<uint32_t>(lr::View::count)) lr::show_documentation_view(static_cast<lr::View>(a.value), build());
+      (void)apply_rx_control(1,a.value);
       break;
+    case lr::ActionKind::page_previous: (void)apply_rx_control(2,0);break;
+    case lr::ActionKind::page_next: (void)apply_rx_control(2,1);break;
     case lr::ActionKind::select_node:
       if (a.value < lr::kNodeCapacity) g_selected = static_cast<uint8_t>(a.value);
       break;
@@ -611,8 +638,8 @@ void tap(int x, int y) {
       }
       break;
     }
-    case lr::ActionKind::filter_next: lr::toggle_filter(); break;
-    case lr::ActionKind::toggle_packet_details: lr::toggle_packet_details(); break;
+    case lr::ActionKind::filter_next: (void)apply_rx_control(4,0); break;
+    case lr::ActionKind::toggle_packet_details: (void)apply_rx_control(3,0); break;
     case lr::ActionKind::center_map: lr::center_on_selected(); break;
     case lr::ActionKind::follow_node: lr::toggle_follow_node(); break;
     case lr::ActionKind::scan_toggle:
@@ -665,17 +692,28 @@ void tap(int x, int y) {
   }
 }
 
+void touch(int x,int y,bool down){
+  static bool previous=false,captured=false;
+  const bool new_press=down&&!previous;
+  if(lr::map_touch(x,y,down,new_press))captured=true;
+  if(!down&&previous){if(!captured)tap(x,y);captured=false;}
+  previous=down;
+}
 void spectrum(const float* levels, size_t first, size_t visible, float floor) { lr::draw_spectrum(levels, first, visible, floor); }
 }  // namespace
 
 namespace screens {
+bool lora_control_request(unsigned control,unsigned value){
+  if(!g_ui_active.load()||control<1||control>10||value>5||(control==2&&value>1)||(control>2&&value))return false;
+  uint32_t idle=0;return g_rx_control_request.compare_exchange_strong(idle,(control<<8)|(value+1));
+}
 bool lora_tx_page_request(unsigned page) {
   if(page>2||!g_ui_active.load())return false;
   unsigned idle=0;return g_tx_page_request.compare_exchange_strong(idle,page+1);
 }
 const Screen& lora_screen() {
-  static const Screen s{orcsdr::dashboards::Id::lora, "LORA", enter, leave, tick, tap, nullptr, spectrum,nullptr,[]() {
-    if(!resize_tx_viewport())return false;
+  static const Screen s{orcsdr::dashboards::Id::lora, "LORA", enter, leave, tick, tap, nullptr, spectrum,touch,[]() {
+    if(!resize_viewport())return false;
     lr::draw();return true;
   }};
   return s;

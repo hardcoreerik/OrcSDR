@@ -83,6 +83,9 @@ struct Snapshot {
   bool wifi_connected = false;
   bool sound_enabled = true;
   bool sd_logging = false;
+  bool logging_available = false;
+  bool export_available = false;
+  bool iq_save_available = false;
   bool survey_active = false;
   bool iq_recording = false;
   bool iq_ready = false;
@@ -134,6 +137,8 @@ enum class ActionKind : uint8_t {
   channel_next,
   channel_select,
   open_settings,
+  page_previous,
+  page_next,
   packet_rx_toggle,
   tx_request_arm,
   tx_request_disarm,
@@ -146,6 +151,9 @@ struct Action {
   uint32_t value = 0;
 };
 
+bool set_viewport(audio_header::HeaderRect viewport);
+bool select_view(View view); // UI owner: common tab/serial transition
+bool page_items(int direction); // UI owner: node/traffic pagination
 void enter(const Snapshot& snapshot);
 // UI-owner opt-in for native TX Lab geometry; legacy callers stay unchanged.
 bool set_tx_viewport(audio_header::HeaderRect viewport);

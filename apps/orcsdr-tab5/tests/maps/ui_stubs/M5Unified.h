@@ -21,9 +21,10 @@ class LovyanGFX {
   std::vector<std::pair<int,int>> positions;
   int screen_clears=0,map_clears=0;
   int region_clears=0,string_draw_calls=0;
+  unsigned text_size=1;
   template<class... T> void setFont(T...) {}
   template<class... T> void setTextDatum(T...) {}
-  template<class... T> void setTextSize(T...) {}
+  template<class T> void setTextSize(T value) {text_size=static_cast<unsigned>(value);}
   template<class... T> void setTextColor(T...) {}
   template<class... T> void fillScreen(T...) {strings.clear();positions.clear();++screen_clears;}
   void erase_region(int x,int y,int w,int h) {

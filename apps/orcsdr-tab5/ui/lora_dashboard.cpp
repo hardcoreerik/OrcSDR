@@ -2,6 +2,8 @@
 #include "lora_dashboard.hpp"
 #include "lora_tx_views.hpp"
 #include "lora_tx_native_layout.hpp"
+#include "lora_rx_layout.hpp"
+#include "lora_rx_data_views.hpp"
 
 #include "dashboard_audio_control.hpp"
 #include "map_view.hpp"
@@ -17,6 +19,7 @@
 #include <esp_attr.h>
 
 #include <algorithm>
+#include <iterator>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -52,6 +55,41 @@ Snapshot g_snapshot{};
 View g_view = View::overview;
 tx_views::Page g_tx_page = tx_views::Page::operator_panel;
 tx_native::Layout g_tx_layout{};
+bool supported_event(const Event&);
+audio_header::HeaderRect g_rx_viewport{0,0,1280,720};
+rx_layout::Layout g_rx_layout=rx_layout::make(g_rx_viewport,View::overview,false);
+bool g_tx_entry_on_enter=false;
+size_t g_node_offset=0;
+rx_data_views::Cache g_node_cache{},g_traffic_cache{};
+uint32_t g_metric_keys[6]{},g_action_keys[6]{},g_preview_key=0,g_map_detail_key=0;
+void refresh_rx_layout(){g_rx_layout=rx_layout::make(g_rx_viewport,g_view,g_snapshot.tx.readiness!=lora_tx::Readiness::absent);}
+void reset_rx_cache(){
+  g_node_cache={};g_traffic_cache={};
+  std::fill(std::begin(g_metric_keys),std::end(g_metric_keys),0);
+  std::fill(std::begin(g_action_keys),std::end(g_action_keys),0);
+  g_preview_key=g_map_detail_key=0;
+}
+uint32_t rx_key(const char* value,uint32_t salt=1){
+  uint32_t key=2166136261u^salt;
+  while(*value){key^=static_cast<uint8_t>(*value++);key*=16777619u;}
+  return key?key:1;
+}
+void rx_text(const char* value,rx_layout::Rect r,uint16_t color=TFT_WHITE,int size=2){
+  if(r.w<12||r.h<16)return;
+  char clipped[160]{};std::snprintf(clipped,sizeof(clipped),"%s",value);
+  M5.Display.setTextSize(size);M5.Display.setTextDatum(middle_left);M5.Display.setTextColor(color);
+  size_t count=std::strlen(clipped);
+  while(count&&M5.Display.textWidth(clipped)>r.w){clipped[--count]=0;}
+  if(count<std::strlen(value)&&count>=3)std::memcpy(clipped+count-3,"...",3);
+  M5.Display.drawString(clipped,r.x,r.y+r.h/2);
+}
+void rx_card(rx_layout::Rect r,uint16_t border=kCyan){if(r.w>0&&r.h>0){M5.Display.fillRoundRect(r.x,r.y,r.w,r.h,8,kPanel);M5.Display.drawRoundRect(r.x,r.y,r.w,r.h,8,border);}}
+void rx_button(rx_layout::Rect r,const char* value,bool enabled=true,bool selected=false){
+  M5.Display.fillRoundRect(r.x,r.y,r.w,r.h,6,selected?0x0a43:kPanel);
+  M5.Display.drawRoundRect(r.x,r.y,r.w,r.h,6,enabled?(selected?kGreen:kCyan):kGrid);
+  rx_text(value,{r.x+8,r.y,r.w-16,r.h},enabled?TFT_WHITE:kMuted);
+  if(enabled)focus_nav::note(r.x,r.y,r.w,r.h);
+}
 bool native_tx_screen() { return g_tx_layout.valid && g_view==View::tx_lab; }
 
 // This reads the logical M5GFX design dimensions, NOT the panel's physical
@@ -75,8 +113,8 @@ orcmap::Viewport g_map_camera;
 uint32_t g_map_revision_seen=0;
 bool g_map_drag=false,g_map_moved=false;
 int32_t g_map_start_x=0,g_map_start_y=0,g_map_last_x=0,g_map_last_y=0;
-constexpr int kMapX=50,kMapY=182,kMapW=842,kMapH=330;
-constexpr int kMapZoomX=828,kMapZoomY=194,kMapZoomSize=52,kMapZoomStep=60;
+
+constexpr int kMapZoomSize=44,kMapZoomStep=52;
 uint8_t g_node_filter = 0;
 uint8_t g_traffic_filter = 0;
 size_t g_traffic_offset = 0;
@@ -89,7 +127,7 @@ bool g_header_decoder = false;
 bool g_header_key = false;
 uint32_t g_last_dynamic_ms = 0;
 uint32_t g_last_spectrum_ms = 0;
-EXT_RAM_BSS_ATTR uint16_t g_waterfall_row[kPlotW]{};  // PSRAM, as in the AM dashboard
+EXT_RAM_BSS_ATTR uint16_t g_waterfall_row[128]{};  // PSRAM, as in the AM dashboard
 int16_t g_previous_spectrum_y[kSpectrumTraceCapacity]{};
 size_t g_previous_spectrum_bins = 0;
 View g_previous_spectrum_view = View::count;
@@ -113,6 +151,19 @@ bool supported_event(const Event& event) {
          event.port == 7 || event.port == 67;
 }
 
+rx_data_views::DataState node_state(){
+  rx_data_views::DataState state{};state.offset=g_node_offset;state.details=g_node_details;
+  for(size_t i=0;i<std::min<size_t>(g_snapshot.node_count,kNodeCapacity);++i)
+    if(!g_node_filter||g_snapshot.nodes[i].favorite)state.indices[state.count++]=uint8_t(i);
+  return state;
+}
+rx_data_views::DataState traffic_state(){
+  rx_data_views::DataState state{};state.offset=g_traffic_offset;state.details=g_traffic_details;
+  for(size_t i=0;i<std::min<size_t>(g_snapshot.event_count,kEventCapacity);++i)
+    if(!g_traffic_filter||supported_event(g_snapshot.events[i]))state.indices[state.count++]=uint8_t(i);
+  return state;
+}
+
 float estimate_noise_floor(const float* levels, size_t first_bin, size_t visible_bins) {
   float minimum = levels[first_bin];
   for (size_t i = 1; i < visible_bins; ++i)
@@ -134,15 +185,15 @@ uint16_t waterfall_color(float level) {
 }
 
 void draw_lora_channel_markers() {
-  if (g_snapshot.span_hz == 0 || g_snapshot.bandwidth_hz >= g_snapshot.span_hz) return;
-  const int half_width = static_cast<int>(
-      static_cast<uint64_t>(kPlotW) * g_snapshot.bandwidth_hz / g_snapshot.span_hz / 2u);
-  const int center = kPlotX + kPlotW / 2;
-  for (const int edge : {center - half_width, center + half_width}) {
-    M5.Display.drawFastVLine(edge, kPlotY + 1, kPlotH - 2, kYellow);
-    M5.Display.drawFastVLine(edge, kWaterfallY + 1, kWaterfallH - 2, kGrid);
+  const auto p=g_rx_layout.plot,w=g_rx_layout.waterfall;
+  if(!g_snapshot.span_hz||p.w<4||p.h<4)return;
+  const int half_width=std::min<int>((p.w-2)/2,uint64_t(p.w)*g_snapshot.bandwidth_hz/g_snapshot.span_hz/2);
+  const int center=p.x+p.w/2;
+  for(int edge:{center-half_width,center+half_width}){
+    M5.Display.drawFastVLine(edge,p.y+1,p.h-2,kYellow);
+    if(w.h>2)M5.Display.drawFastVLine(edge,w.y+1,w.h-2,kGrid);
   }
-  M5.Display.drawFastVLine(center, kPlotY + 1, kPlotH - 2, kGreen);
+  M5.Display.drawFastVLine(center,p.y+1,p.h-2,kGreen);
 }
 
 size_t visible_event_count() {
@@ -161,8 +212,8 @@ const Event* visible_event_at(size_t row) {
 }
 
 size_t traffic_max_offset() {
-  const size_t count = visible_event_count();
-  return count > kTrafficRows ? count - kTrafficRows : 0;
+  const size_t count=visible_event_count(),rows=std::max(1,g_rx_layout.traffic_row_count);
+  return count>rows?count-rows:0;
 }
 
 const Node* visible_node_at(size_t row, size_t* snapshot_index = nullptr) {
@@ -194,7 +245,7 @@ const Node* followed_node() {
 bool center_map(int32_t latitude,int32_t longitude) {
   if(latitude<-850511287||latitude>850511287||longitude<-1800000000||longitude>1800000000)return false;
   if(!g_map_center_set)
-    g_map_center_set=maps::regional_view(latitude,longitude,15.0,kMapW,kMapH,&g_map_camera);
+    g_map_center_set=maps::regional_view(latitude,longitude,15.0,g_rx_layout.map.w,g_rx_layout.map.h,&g_map_camera);
   else return orcmap::SetCenter(&g_map_camera,latitude/1e7,longitude/1e7);
   return g_map_center_set;
 }
@@ -242,35 +293,21 @@ void draw_star(int cx, int cy, uint16_t color) {
     M5.Display.drawLine(cx + x[i - 1], cy + y[i - 1], cx + x[i], cy + y[i], color);
 }
 
-void draw_header() {
-  g_header_running = g_snapshot.running;
-  g_header_wifi = g_snapshot.wifi_connected;
-  g_header_decoder = g_snapshot.native_decoder_ready;
-  g_header_key = g_snapshot.key_loaded;
-  M5.Display.fillRect(0, 0, 1280, kHeaderH, kBg);
-  M5.Display.drawFastHLine(8, kHeaderH - 1, 1264, kCyan);
-  audio_header::draw_brand(g_snapshot.board_label[0] ? g_snapshot.board_label : "ORCSDR");
-  M5.Display.drawFastVLine(audio_header::kTitleDividerX, 20, 80, kCyan);
-  draw_radio_icon(458, 64, kGreen);
-  text("LORA MESH", 520, 47, TFT_WHITE, 4, middle_left);
-  text(g_view == View::tx_lab ? "SX1262 Packet TX Lab" : "Meshtastic RX Monitor",
-       520, 83, kCyan, 2, middle_left);
-  M5.Display.drawFastVLine(852, 20, 80, kCyan);
-  text(g_snapshot.wifi_connected ? "WI-FI ONLINE" : "WI-FI OFFLINE", 885, 44,
-       g_snapshot.wifi_connected ? kGreen : kMuted, 1, middle_left);
-  text(g_view == View::tx_lab ?
-           (g_snapshot.tx.operator_armed ? "TX ARMED" : "TX LOCKED") :
-           (g_snapshot.running ? "RX ONLY" : "RX STOPPED"), 885, 73,
-       g_view == View::tx_lab ? kYellow : (g_snapshot.running ? kGreen : kMuted), 2, middle_left);
-  text(g_snapshot.native_decoder_ready ? "DECODE" : "PHY PENDING", 1050, 44,
-       g_snapshot.native_decoder_ready ? kGreen : kYellow, 1, middle_left);
-  text(g_snapshot.key_loaded ? "KEY LOADED" : "PUBLIC ONLY", 1050, 73,
-       g_snapshot.key_loaded ? kGreen : kMuted, 1, middle_left);
-  audio_header::draw_home_button();
-  audio_header::draw_battery(M5.Power.getBatteryLevel());
-  audio_header::draw_mute_button(g_snapshot.sound_enabled);
-  audio_header::draw_visualizer_button(g_snapshot.running);
-  audio_header::draw_settings_button();
+void draw_header(bool structure=false) {
+  g_header_running=g_snapshot.running;g_header_wifi=g_snapshot.wifi_connected;
+  g_header_decoder=g_snapshot.native_decoder_ready;g_header_key=g_snapshot.key_loaded;
+  if(structure){
+    audio_header::draw_brand("LORA / MESH");audio_header::draw_home_button();
+    audio_header::draw_settings_button();audio_header::draw_mute_button(g_snapshot.sound_enabled);
+    audio_header::draw_battery(M5.Power.getBatteryLevel());
+  }
+  const auto r=g_rx_layout.header_status;
+  M5.Display.fillRect(r.x,r.y,r.w,r.h,kBg);
+  char line[96];
+  std::snprintf(line,sizeof(line),"%s / %s",g_snapshot.running?"RTL RX":"RTL STOPPED",g_snapshot.wifi_connected?"WI-FI ON":"WI-FI OFF");
+  rx_text(line,{r.x+8,r.y+2,r.w-16,24},g_snapshot.running?kGreen:kMuted);
+  std::snprintf(line,sizeof(line),"%.12s SF%u BW%luk / %s",g_snapshot.region[0]?g_snapshot.region:"US",g_snapshot.sf,(unsigned long)(g_snapshot.bandwidth_hz/1000),g_snapshot.native_decoder_ready?"DECODE":"NO DECODER");
+  rx_text(line,{r.x+8,r.y+28,r.w-16,24},g_snapshot.native_decoder_ready?kCyan:kYellow);
 }
 
 bool tx_profile_visible() {
@@ -315,21 +352,12 @@ void draw_tab_icon(View view, int cx, int cy, uint16_t color) {
 }
 
 void draw_tabs() {
-  static constexpr const char* names[] = {"OVERVIEW", "NODES", "TRAFFIC", "MAP", "RF HEALTH", "TX LAB"};
-  const uint8_t count = tx_profile_visible() ? kTxTabCount : kRxTabCount;
-  const int width = tab_width();
-  for (uint8_t i = 0; i < count; ++i) {
-    const int x = i * width;
-    const int actual_width = i + 1 == count ? 1280 - x : width;
-    const bool selected = i == static_cast<uint8_t>(g_view);
-    M5.Display.fillRect(x, kTabsY, actual_width, 80, selected ? 0x0a43 : kPanel);
-    M5.Display.drawRect(x, kTabsY, actual_width, 80, selected ? kGreen : kGrid);
-    const int icon_x = x + (count == kRxTabCount ? 50 : 35);
-    const int name_x = x + (count == kRxTabCount ? 91 : 67);
-    draw_tab_icon(static_cast<View>(i), icon_x, kTabsY + 38,
-                  selected ? (i == 0 ? kGreen : kCyan) : TFT_WHITE);
-    text(names[i], name_x, kTabsY + 40, selected ? (i == 0 ? kGreen : kCyan) : TFT_WHITE,
-         2, middle_left);
+  const char* names[]={"OVERVIEW","NODES","TRAFFIC","MAP","RF HEALTH","TX LAB"};
+  const char* short_names[]={"RX","NODES","TRAFFIC","MAP","HEALTH","TX LAB"};
+  for(int i=0;i<g_rx_layout.tab_count;++i){
+    const auto r=g_rx_layout.tab[i];M5.Display.setTextSize(2);
+    const char* name=M5.Display.textWidth(names[i])<=r.w-16?names[i]:short_names[i];
+    rx_button(r,name,true,i==int(g_view));
   }
 }
 
@@ -392,83 +420,112 @@ void draw_style_chips() {
                   waterfall_style::speed_name(waterfall_style::speed(Screen::lora)));
 }
 
-void draw_plot_static() {
-  card(24, 138, 1224, 430);
-  text("PASSIVE LORA MONITOR", 60, 164, kGreen, 3, middle_left);
+
+void draw_rx_metrics() {
+  const char* names[]={"FREQ MHz","PROFILE","SIGNAL","PACKETS","CRC OK","NODES"};
+  const char* health[]={"MSPS","USB DROP","IQ DROP","ENCRYPTED","DECODER","RX MODE"};
   char value[64];
-  snprintf(value, sizeof(value), "CENTER %.3f MHz", g_snapshot.frequency_hz / 1000000.0);
-  text(value, 60, 198, kCyan, 2, middle_left);
-  snprintf(value, sizeof(value), "SF%u  BW %luk", g_snapshot.sf,
-           static_cast<unsigned long>(g_snapshot.bandwidth_hz / 1000u));
-  text(value, 520, 198, kGreen, 2, middle_left);
-  text("RX ONLY", 1020, 164, kGreen, 2, middle_left);
-  draw_style_chips();
-  const uint32_t half_span = g_snapshot.span_hz / 2u;
-  const uint32_t left_hz = g_snapshot.frequency_hz > half_span
-                               ? g_snapshot.frequency_hz - half_span
-                               : 0;
-  snprintf(value, sizeof(value), "%.3f", left_hz / 1000000.0);
-  text(value, kPlotX, 250, kMuted, 1, middle_left);
-  snprintf(value, sizeof(value), "%.3f MHz", g_snapshot.frequency_hz / 1000000.0);
-  text(value, kPlotX + kPlotW / 2, 250, kCyan, 1);
-  snprintf(value, sizeof(value), "%.3f", (g_snapshot.frequency_hz + half_span) / 1000000.0);
-  text(value, kPlotX + kPlotW, 250, kMuted, 1, middle_right);
-  M5.Display.fillRect(kPlotX, kPlotY, kPlotW, kPlotH, kBg);
-  M5.Display.drawRect(kPlotX, kPlotY, kPlotW, kPlotH, kGrid);
-  for (int i = 1; i < 5; ++i) {
-    M5.Display.drawFastHLine(kPlotX, kPlotY + i * kPlotH / 5, kPlotW, kGrid);
-    M5.Display.drawFastVLine(kPlotX + i * kPlotW / 5, kPlotY, kPlotH, kGrid);
+  for(int i=0;i<g_rx_layout.metric_count;++i){
+    if(g_view==View::rf_health){
+      switch(i){case 0:std::snprintf(value,sizeof(value),"%.3f",g_snapshot.effective_sps/1e6);break;
+      case 1:std::snprintf(value,sizeof(value),"%lu",(unsigned long)g_snapshot.usb_overruns);break;
+      case 2:std::snprintf(value,sizeof(value),"%lu",(unsigned long)g_snapshot.consumer_drops);break;
+      case 3:std::snprintf(value,sizeof(value),"%lu",(unsigned long)g_snapshot.encrypted_frames);break;
+      case 4:std::snprintf(value,sizeof(value),"%s",g_snapshot.native_decoder_ready?"READY":"WAIT");break;
+      default:std::snprintf(value,sizeof(value),"RX ONLY");break;}
+    }else{
+      switch(i){case 0:std::snprintf(value,sizeof(value),"%.3f",g_snapshot.frequency_hz/1e6);break;
+      case 1:std::snprintf(value,sizeof(value),"%s",g_snapshot.profile);break;
+      case 2:std::snprintf(value,sizeof(value),"%.1f",g_snapshot.relative_dbfs);break;
+      case 3:std::snprintf(value,sizeof(value),"%lu",(unsigned long)g_snapshot.decoded_frames);break;
+      case 4:std::snprintf(value,sizeof(value),"%lu",(unsigned long)g_snapshot.crc_ok);break;
+      default:std::snprintf(value,sizeof(value),"%u",g_snapshot.node_count);break;}
+    }
+    const auto key=rx_key(value,unsigned(i)+1);if(g_metric_keys[i]==key)continue;g_metric_keys[i]=key;
+    const auto r=g_rx_layout.metric[i];rx_card(r,kGrid);
+    rx_text(g_view==View::rf_health?health[i]:names[i],{r.x+8,r.y+2,r.w-16,22},kGreen);
+    rx_text(value,{r.x+8,r.y+26,r.w-16,24});
   }
+}
+void draw_rx_actions(){
+  const char* label[6]={};bool enabled[6]={true,true,true,true,true,true};bool selected[6]={};
+  if(g_view==View::overview||g_view==View::rf_health){
+    label[0]=g_snapshot.survey_active?"STOP SCAN":"SCAN BAND";
+    label[1]=g_snapshot.iq_recording?"STOP IQ":g_snapshot.iq_busy?"DECODING IQ":g_snapshot.iq_ready?(g_snapshot.iq_save_available?"SAVE IQ":"IQ CAPTURE READY"):"RECORD IQ";
+    enabled[0]=g_snapshot.running||g_snapshot.survey_active;
+    enabled[1]=g_snapshot.native_decoder_ready&&!g_snapshot.iq_busy&&(!g_snapshot.iq_ready||g_snapshot.iq_save_available);
+    selected[0]=g_snapshot.survey_active;selected[1]=g_snapshot.iq_recording;
+    label[2]=g_view==View::overview?"CHANNELS":g_snapshot.export_available?"EXPORT LOG":"NO EXPORT";
+    label[3]=g_view==View::overview?(g_snapshot.logging_available?(g_snapshot.sd_logging?"SD LOG ON":"SD LOG OFF"):"NO SD LOG"):"CLEAR EVENTS";
+    enabled[2]=g_view==View::overview||g_snapshot.export_available;
+    enabled[3]=g_view!=View::overview||g_snapshot.logging_available;
+    label[4]="PALETTE";label[5]="WF SPEED";
+  }else if(g_view==View::nodes){
+    label[0]=g_node_filter?"FAVORITES":"FILTER ALL";selected[0]=g_node_filter!=0;
+    label[1]="FAVORITE";enabled[1]=g_snapshot.node_count>0;
+    label[2]=g_node_details?"HIDE DETAILS":"VIEW DETAILS";selected[2]=g_node_details;
+    label[3]=g_snapshot.export_available?"EXPORT LOG":"NO EXPORT";enabled[3]=g_snapshot.export_available;
+  }else if(g_view==View::traffic){
+    label[0]=g_traffic_details?"MESSAGE TEXT":"PACKET DETAILS";selected[0]=g_traffic_details;
+    label[1]=g_snapshot.export_available?"EXPORT LOG":"NO EXPORT";enabled[1]=g_snapshot.export_available;
+    label[2]=g_traffic_filter?"SUPPORTED":"FILTER ALL";selected[2]=g_traffic_filter!=0;label[3]="CLEAR EVENTS";
+  }else if(g_view==View::map){
+    label[0]=g_rx_layout.vertical?"NODE":"NODE CENTER";enabled[0]=selected_positioned_node()!=nullptr;
+    label[1]=g_follow_node?"UNFOLLOW":g_rx_layout.vertical?"FOLLOW":"FOLLOW NODE";enabled[1]=enabled[0]||g_follow_node;selected[1]=g_follow_node;
+    label[2]=g_map_label_error?"SAVE FAILED":maps::preferences::labels(maps::preferences::Consumer::lora)?"LABELS ON":"LABELS OFF";
+    label[3]="RECEIVER";enabled[3]=receiver_location::snapshot().configured;
+    label[4]="ZOOM +";label[5]="ZOOM -";enabled[4]=enabled[5]=g_map_center_set;
+  }
+  for(int i=0;i<g_rx_layout.action_count;++i){
+    if(!label[i])continue;
+    const auto key=rx_key(label[i],(enabled[i]?1:2)+(selected[i]?4:0));
+    if(g_action_keys[i]==key)continue;
+    g_action_keys[i]=key;
+    rx_button(g_rx_layout.actions[i],label[i],enabled[i],selected[i]);
+  }
+}
+void draw_rx_preview(){
+  const auto r=g_rx_layout.events;if(r.w<44||r.h<44)return;
+  char key_text[320]{};
+  const bool survey=g_view==View::overview&&g_snapshot.survey_result_count;
+  if(survey)std::snprintf(key_text,sizeof(key_text),"scan %u %.3f %.1f %.3f %.1f",g_snapshot.survey_result_count,g_snapshot.survey_results[0].frequency_hz/1e6,g_snapshot.survey_results[0].level_dbfs,g_snapshot.survey_results[1].frequency_hz/1e6,g_snapshot.survey_results[1].level_dbfs);
+  else std::snprintf(key_text,sizeof(key_text),"%u %lu %lu %.111s %.111s",g_snapshot.event_count,(unsigned long)g_snapshot.events[0].packet_id,(unsigned long)g_snapshot.events[1].packet_id,g_snapshot.events[0].text,g_snapshot.events[1].text);
+  const auto key=rx_key(key_text);if(g_preview_key==key)return;g_preview_key=key;
+  rx_card(r);rx_text(survey?"SCAN RESULTS":"RECENT PACKETS",{r.x+8,r.y+4,r.w-16,24},kCyan);
+  int y=r.y+34;
+  if(!survey&&!g_snapshot.event_count)rx_text("WAITING FOR TRAFFIC",{r.x+8,y,r.w-16,24},kMuted);
+  for(int i=0;i<3&&y+40<r.y+r.h-8;++i){
+    char line[128]{};
+    if(survey){
+      if(i>=g_snapshot.survey_result_count)break;
+      std::snprintf(line,sizeof(line),"%.3f MHz",g_snapshot.survey_results[i].frequency_hz/1e6);rx_text(line,{r.x+8,y,r.w-16,20});
+      std::snprintf(line,sizeof(line),"%.1f dBFS",g_snapshot.survey_results[i].level_dbfs);rx_text(line,{r.x+8,y+24,r.w-16,20},kGreen);
+    }else{
+      if(i>=g_snapshot.event_count)break;
+      const auto& event=g_snapshot.events[i];
+      std::snprintf(line,sizeof(line),"%s %08lX",event.source==PacketSource::sx1262?"SX1262":"RTL",(unsigned long)event.sender);rx_text(line,{r.x+8,y,r.w-16,20},event.verified?kGreen:kYellow);
+      rx_text(event.verified?(event.text[0]?event.text:"NO MESSAGE TEXT"):"UNVERIFIED / HIDDEN",{r.x+8,y+24,r.w-16,20});
+    }
+    y+=56;
+  }
+}
+void draw_plot_static() {
+  const auto p=g_rx_layout.plot,w=g_rx_layout.waterfall;
+  M5.Display.fillRect(p.x,p.y,p.w,p.h,kBg);M5.Display.drawRect(p.x,p.y,p.w,p.h,kGrid);
+  M5.Display.fillRect(w.x,w.y,w.w,w.h,kBg);M5.Display.drawRect(w.x,w.y,w.w,w.h,kCyan);
+  M5.Display.setScrollRect(w.x+1,w.y+1,w.w-2,w.h-2,kBg);
   draw_lora_channel_markers();
-  M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kCyan);
-  M5.Display.setScrollRect(kPlotX + 1, kWaterfallY + 1, kPlotW - 2, kWaterfallH - 2,
-                           kBg);
-  card(846, 270, 382, 258);
-  text("RECENT", 868, 294, kCyan, 2, middle_left);
-  button(34, 578, 250, 48, "SCAN BAND", kCyan, g_snapshot.survey_active);
-  button(300, 578, 250, 48, "RECORD IQ", kCyan);
-  button(566, 578, 250, 48, "CHANNELS", kCyan);
-  button(832, 578, 294, 48, g_snapshot.sd_logging ? "SD LOG ON" : "SD LOG OFF",
-         g_snapshot.sd_logging ? kGreen : kCyan, g_snapshot.sd_logging);
 }
 
 void draw_overview_static() { draw_plot_static(); }
 
-void draw_nodes_static() {
-  text("RECENTLY SEEN NODES", 40, 154, kCyan, 2, middle_left);
-  card(32, 175, 770, 414);
-  card(822, 175, 426, 414);
-  text("SELECTED NODE", 844, 199, kCyan, 2, middle_left);
-}
+void draw_nodes_static(){rx_data_views::draw_nodes_static(M5.Display,g_rx_layout);}
 
-void draw_traffic_static() {
-  card(28, 144, 1220, 464);
-  text("DECODED TRAFFIC", 52, 170, kGreen, 2, middle_left);
-  button(50, 188, 270, 44, g_traffic_details ? "MESSAGES" : "PACKET DETAILS",
-         kCyan, g_traffic_details);
-  button(334, 188, 270, 44, "SAVE LOG", kCyan);
-  button(618, 188, 270, 44, "FILTER TYPE", kCyan);
-  button(902, 188, 270, 44, "CLEAR EVENTS", kCyan);
-}
+void draw_traffic_static(){rx_data_views::draw_traffic_static(M5.Display,g_rx_layout);}
 
-void draw_map_label_control() {
-  button(430,584,220,48,g_map_label_error?"SAVE FAILED":
-      maps::preferences::labels(maps::preferences::Consumer::lora)?"LABELS ON":"LABELS OFF",kCyan);
-}
-void draw_map_controls() {
-  button(26, 584, 190, 48, "NODE CENTER", kCyan);
-  button(228, 584, 190, 48, "FOLLOW NODE", kCyan, g_follow_node);
-  draw_map_label_control();
-  button(664,584,200,48,"RECEIVER",kCyan);
-  text("VERIFIED POSITIONS ONLY", 1060, 625, kMuted, 1);
-}
-void draw_map_static() {
-  card(24, 138, 896, 452);
-  text("GEOGRAPHIC MAP", 48, 165, kCyan, 2, middle_left);
-  card(942, 138, 306, 452);
-  text("SELECTED NODE", 966, 165, kCyan, 2, middle_left);
-  draw_map_controls();
-}
+void draw_map_label_control(){g_action_keys[2]=0;draw_rx_actions();}
+void draw_map_controls(){draw_rx_actions();}
+void draw_map_static(){rx_card(g_rx_layout.map);rx_card(g_rx_layout.map_info);draw_map_controls();}
 
 void draw_tx_static() {
   const bool vertical = portrait_tx_screen();
@@ -511,24 +568,7 @@ void draw_portrait_tx_footer() {
   text(armed_and_admitted ? "ARMED" : "LOCKED", 440, 1186, kYellow, 2, middle_left);
 }
 
-void draw_health_static() {
-  const char* titles[] = {"FREQUENCY", "REGION", "MONITOR", "ENCRYPTED", "NODES", "MODE"};
-  const int widths[] = {230, 220, 240, 230, 180, 170};
-  int x = 24;
-  for (int i = 0; i < 6; ++i) {
-    card(x, 138, widths[i], 92);
-    text(titles[i], x + widths[i] / 2, 161, kGreen, 1);
-    x += widths[i] + 8;
-  }
-  card(24, 248, 810, 310);
-  text("SPECTRUM", 48, 273, kGreen, 2, middle_left);
-  card(854, 248, 394, 310);
-  text("RECENT EVENTS", 878, 273, kGreen, 2, middle_left);
-  button(24, 578, 242, 48, "SCAN BAND", kCyan);
-  button(284, 578, 242, 48, "RECORD IQ", kCyan);
-  button(544, 578, 242, 48, "EXPORT LOG", kCyan);
-  button(804, 578, 242, 48, "CLEAR EVENTS", kCyan);
-}
+void draw_health_static(){draw_plot_static();}
 
 void split_message(const char* value, size_t line_chars, char* first, char* second) {
   const size_t length = strlen(value);
@@ -631,157 +671,11 @@ void draw_large_event_row(const Event& event, int x, int y, int w) {
   if (second[0]) text(second, x + 16, y + 76, TFT_WHITE, 3, middle_left);
 }
 
-void draw_overview_dynamic() {
-  char value[48];
-  M5.Display.fillRect(850, 184, 370, 36, kPanel);
-  snprintf(value, sizeof(value), "SIGNAL %.1f dBFS", g_snapshot.relative_dbfs);
-  text(value, 1204, 202, kGreen, 2, middle_right);
-  M5.Display.fillRect(854, 286, 366, 229, kPanel);
-  if (g_snapshot.survey_result_count) {
-    text("SCAN RESULTS", 868, 300, kCyan, 2, middle_left);
-    text("RELATIVE ENERGY", 1204, 300, kMuted, 1, middle_right);
-    for (size_t i = 0; i < g_snapshot.survey_result_count; ++i) {
-      const auto& result = g_snapshot.survey_results[i];
-      snprintf(value, sizeof(value), "%u  %.3f MHz", static_cast<unsigned>(i + 1),
-               result.frequency_hz / 1000000.0);
-      text(value, 868, 342 + static_cast<int>(i) * 52, TFT_WHITE, 2, middle_left);
-      snprintf(value, sizeof(value), "%.1f dBFS", result.level_dbfs);
-      text(value, 1204, 342 + static_cast<int>(i) * 52, kGreen, 2, middle_right);
-    }
-  } else {
-    text("RECENT", 868, 300, kCyan, 2, middle_left);
-    for (size_t i = 0; i < 2 && i < g_snapshot.event_count; ++i)
-      draw_large_event_row(g_snapshot.events[i], 862, 316 + static_cast<int>(i) * 99, 350);
-    if (g_snapshot.event_count == 0)
-      text("WAITING FOR VERIFIED TRAFFIC", 1037, 410, kMuted, 1);
-  }
-}
+void draw_overview_dynamic(){draw_rx_metrics();draw_rx_preview();}
 
-void draw_nodes_dynamic() {
-  M5.Display.fillRect(42, 195, 748, 380, kPanel);
-  text("NAME", 62, 210, kCyan, 2, middle_left);
-  text("HOPS", 356, 210, kCyan, 2, middle_left);
-  text("BATTERY", 438, 210, kCyan, 2, middle_left);
-  text("AGE", 568, 210, kCyan, 2, middle_left);
-  text("SIGNAL", 678, 210, kCyan, 2, middle_left);
-  size_t shown = 0;
-  for (; shown < 6; ++shown) {
-    size_t snapshot_index = 0;
-    const Node* node_ptr = visible_node_at(shown, &snapshot_index);
-    if (!node_ptr) break;
-    const Node& node = *node_ptr;
-    const int y = 236 + static_cast<int>(shown) * 54;
-    const bool selected = snapshot_index == g_snapshot.selected_node;
-    M5.Display.fillRoundRect(48, y, 736, 46, 7, selected ? 0x1264 : kBg);
-    M5.Display.drawRoundRect(48, y, 736, 46, 7, selected ? kGreen : kGrid);
-    char value[32];
-    node_name(node, value, 22);
-    if (node.favorite) draw_star(63, y + 23, kYellow);
-    text(value, node.favorite ? 82 : 62, y + 23, selected ? kGreen : TFT_WHITE, 2,
-         middle_left);
-    snprintf(value, sizeof(value), "%s", node.hops == UINT8_MAX ? "—" : "HOPS");
-    if (node.hops != UINT8_MAX) snprintf(value, sizeof(value), "%u", node.hops);
-    text(value, 356, y + 23, TFT_WHITE, 2, middle_left);
-    if (node.battery_percent == UINT8_MAX) strlcpy(value, "—", sizeof(value));
-    else snprintf(value, sizeof(value), "%u%%", node.battery_percent);
-    text(value, 450, y + 23, node.battery_percent == UINT8_MAX ? kMuted : kGreen, 2,
-         middle_left);
-    snprintf(value, sizeof(value), "%lus", static_cast<unsigned long>(
-        node.id == 0 ? 0 : (millis() - node.seen_ms) / 1000u));
-    if (node.seen_ms == 0) strlcpy(value, "SAVED", sizeof(value));
-    text(value, 568, y + 23, kMuted, 2, middle_left);
-    if (node.signal_tenths == INT16_MAX) strlcpy(value, "—", sizeof(value));
-    else if (node.snr_tenths == INT16_MAX)
-      snprintf(value, sizeof(value), "%d", static_cast<int>(node.signal_tenths / 10));
-    else
-      snprintf(value, sizeof(value), "%d/%d", static_cast<int>(node.signal_tenths / 10),
-               static_cast<int>(node.snr_tenths / 10));
-    text(value, 678, y + 23, TFT_WHITE, 2, middle_left);
-  }
-  if (shown == 0)
-    text(g_node_filter == 0 ? "NO VERIFIED NODES" : "NO FAVORITE NODES", 416, 400,
-         kMuted, 2);
-  M5.Display.fillRect(842, 218, 388, 358, kPanel);
-  const Node* node = g_snapshot.node_count ? &g_snapshot.nodes[
-      std::min<size_t>(g_snapshot.selected_node, g_snapshot.node_count - 1)] : nullptr;
-  char value[64];
-  if (node) node_name(*node, value, node->favorite ? 29 : 31);
-  else strlcpy(value, "—", sizeof(value));
-  if (node && node->favorite) draw_star(856, 236, kYellow);
-  text(value, node && node->favorite ? 876 : 854, 236, node ? kGreen : kMuted, 2,
-       middle_left);
-  if (node) {
-    format_id(value, sizeof(value), node->id);
-    text(value, 854, 268, TFT_WHITE, 2, middle_left);
-    if (g_node_details) {
-      snprintf(value, sizeof(value), "LAST %lus", static_cast<unsigned long>(
-          node->id == 0 ? 0 : (millis() - node->seen_ms) / 1000u));
-      if (node->seen_ms == 0) strlcpy(value, "SAVED", sizeof(value));
-      text(value, 854, 302, kCyan, 2, middle_left);
-      format_coord(value, sizeof(value), node->latitude_e7);
-      text(value, 854, 334, TFT_WHITE, 2, middle_left);
-      format_coord(value, sizeof(value), node->longitude_e7);
-      text(value, 854, 366, TFT_WHITE, 2, middle_left);
-      if (node->signal_tenths == INT16_MAX && node->snr_tenths == INT16_MAX)
-        strlcpy(value, "RSSI —   SNR —", sizeof(value));
-      else if (node->signal_tenths == INT16_MAX)
-        snprintf(value, sizeof(value), "RSSI —   SNR %.1f", node->snr_tenths / 10.0);
-      else if (node->snr_tenths == INT16_MAX)
-        snprintf(value, sizeof(value), "RSSI %d   SNR —", node->signal_tenths / 10);
-      else
-        snprintf(value, sizeof(value), "RSSI %d   SNR %.1f", node->signal_tenths / 10,
-                 node->snr_tenths / 10.0);
-      text(value, 854, 398, kCyan, 2, middle_left);
-      if (node->battery_percent == UINT8_MAX && node->hops == UINT8_MAX)
-        strlcpy(value, "BAT —   HOPS —", sizeof(value));
-      else if (node->battery_percent == UINT8_MAX)
-        snprintf(value, sizeof(value), "BAT —   HOPS %u", node->hops);
-      else if (node->hops == UINT8_MAX)
-        snprintf(value, sizeof(value), "BAT %u%%   HOPS —", node->battery_percent);
-      else
-        snprintf(value, sizeof(value), "BAT %u%%   HOPS %u", node->battery_percent,
-                 node->hops);
-      text(value, 854, 430, TFT_WHITE, 2, middle_left);
-    } else {
-      text("PRESS VIEW DETAILS", 854, 334, kMuted, 2, middle_left);
-    }
-  }
-  text(g_snapshot.log_status[0] ? g_snapshot.log_status : "EXPORTS RECENT EVENTS",
-       1036, 460, kMuted, 2);
-  button(840, 478, 190, 44, g_node_filter == 0 ? "FILTER: ALL" : "FAVORITES", kCyan,
-         g_node_filter != 0);
-  button(1040, 478, 190, 44, "FAVORITE", node && node->favorite ? kYellow : kCyan,
-         node && node->favorite);
-  button(840, 532, 190, 44, g_node_details ? "HIDE DETAILS" : "VIEW DETAILS", kCyan,
-         g_node_details);
-  button(1040, 532, 190, 44, "EXPORT LOG", kCyan);
-}
+void draw_nodes_dynamic(){rx_data_views::draw_nodes_values(M5.Display,g_rx_layout,g_snapshot,node_state(),g_node_cache,millis());}
 
-void draw_traffic_dynamic() {
-  M5.Display.fillRect(42, 240, 1192, 360, kPanel);
-  const size_t event_count = visible_event_count();
-  g_traffic_offset = std::min(g_traffic_offset, traffic_max_offset());
-  const size_t visible = std::min(kTrafficRows, event_count - g_traffic_offset);
-  for (size_t i = 0; i < visible; ++i) {
-    const Event* event = visible_event_at(g_traffic_offset + i);
-    if (event) draw_event_row(*event, 50, 246 + static_cast<int>(i) * 72, 1118);
-  }
-  if (event_count == 0) text("WAITING FOR DECODED TRAFFIC", 820, 390, kMuted, 2);
-  char value[48];
-  snprintf(value, sizeof(value), "FILTER: %s", g_traffic_filter == 0 ? "ALL" : "SUPPORTED");
-  text(value, 1150, 170, kCyan, 1, middle_right);
-  const bool can_scroll_up = g_traffic_offset > 0;
-  const bool can_scroll_down = g_traffic_offset < traffic_max_offset();
-  button(1188, 248, 36, 44, "^", can_scroll_up ? kCyan : kMuted);
-  button(1188, 548, 36, 44, "v", can_scroll_down ? kCyan : kMuted);
-  if (event_count) {
-    snprintf(value, sizeof(value), "%u-%u / %u",
-             static_cast<unsigned>(g_traffic_offset + 1),
-             static_cast<unsigned>(g_traffic_offset + visible),
-             static_cast<unsigned>(event_count));
-    text(value, 1206, 526, kMuted, 1);
-  }
-}
+void draw_traffic_dynamic(){rx_data_views::draw_traffic_values(M5.Display,g_rx_layout,g_snapshot,traffic_state(),g_traffic_cache,millis());}
 
 void draw_map_dynamic(bool details=true) {
   static EXT_RAM_BSS_ATTR maps::FrameInfo map_info;
@@ -795,19 +689,22 @@ void draw_map_dynamic(bool details=true) {
   }
   if (g_follow_node) follow_selected_position();
   if (!g_map_center_set) {
-    M5.Display.fillRect(kMapX,kMapY,kMapW,kMapH,kBg);
-    text("NO MAPPABLE POSITION", 470, 350, kMuted, 2);
-    text("Set receiver location or select a positioned node.",470,390,kMuted,1);
+    M5.Display.fillRect(g_rx_layout.map.x,g_rx_layout.map.y,g_rx_layout.map.w,g_rx_layout.map.h,kBg);
+    rx_text("NO MAPPABLE POSITION",rx_layout::inset(g_rx_layout.map),kMuted);
   } else {
     const auto location=receiver_location::snapshot();
-    const auto map=maps::draw_camera(M5.Display,g_map_camera,kMapX,kMapY,
-        kBg,kGrid,kMuted,location.map_pack,maps::preferences::labels(maps::preferences::Consumer::lora));
+    (void)orcmap::SetViewportSize(&g_map_camera,g_rx_layout.map.w,g_rx_layout.map.h);
+    const auto map=maps::draw_camera(M5.Display,g_map_camera,g_rx_layout.map.x,g_rx_layout.map.y,
+        kBg,kGrid,kMuted,location.map_pack,maps::preferences::labels(maps::preferences::Consumer::lora),2);
     map_info=map.frame;
-    M5.Display.setClipRect(kMapX,kMapY,kMapW,kMapH-24);
+    const char* caption=map_info.credit[0]?map_info.credit:map_info.status;
+    const int caption_columns=std::max(1,g_rx_layout.map.w/12);
+    const int caption_height=std::min(g_rx_layout.map.h,int((std::strlen(caption)+caption_columns-1)/caption_columns)*20+4);
+    M5.Display.setClipRect(g_rx_layout.map.x,g_rx_layout.map.y,g_rx_layout.map.w,g_rx_layout.map.h-caption_height);
     int receiver_x=0,receiver_y=0;
     if(location.configured&&maps::project(map,location.latitude_e7,location.longitude_e7,&receiver_x,&receiver_y)) {
       M5.Display.drawCircle(receiver_x,receiver_y,8,kYellow);
-      text("RX",receiver_x+10,receiver_y+12,kYellow,1,middle_left);
+      text("RX",receiver_x+10,receiver_y+12,kYellow,2,middle_left);
     }
     struct MapLabel {int x=0,y=0,width=0,left=0,top=0;bool visible=false,selected=false,placed=false;};
     static EXT_RAM_BSS_ATTR MapLabel labels[kNodeCapacity];
@@ -837,11 +734,11 @@ void draw_map_dynamic(bool details=true) {
       if(!label.visible||label.selected!=(pass==0))continue;
       for(int row=0;row<5&&!label.placed;++row)for(int side=0;side<2&&!label.placed;++side) {
         constexpr int offsets[]={-6,-32,20,-58,46};
-        const int left=std::clamp(side?label.x-14-label.width:label.x+14,kMapX+4,
-            std::max(kMapX+4,kMapX+kMapW-4-label.width));
+        const int left=std::clamp(side?label.x-14-label.width:label.x+14,g_rx_layout.map.x+4,
+            std::max(g_rx_layout.map.x+4,g_rx_layout.map.x+g_rx_layout.map.w-4-label.width));
         const int top=label.y+offsets[row]-12;
-        if(label.width<=0||left+label.width>kMapX+kMapW-4||top<kMapY+4||top+24>kMapY+kMapH-24)continue;
-        bool blocked=intersects(left,top,label.width,24,kMapZoomX-2,kMapZoomY-2,
+        if(label.width<=0||left+label.width>g_rx_layout.map.x+g_rx_layout.map.w-4||top<g_rx_layout.map.y+4||top+24>g_rx_layout.map.y+g_rx_layout.map.h-caption_height)continue;
+        bool blocked=intersects(left,top,label.width,24,g_rx_layout.map_zoom_in.x-2,g_rx_layout.map_zoom_in.y-2,
             kMapZoomSize+4,kMapZoomStep+kMapZoomSize+4);
         for(size_t j=0;!blocked&&j<count;++j) {
           const auto& other=labels[j];
@@ -857,24 +754,24 @@ void draw_map_dynamic(bool details=true) {
       }
     }
     M5.Display.clearClipRect();
-    button(kMapZoomX,kMapZoomY,kMapZoomSize,kMapZoomSize,"+",kCyan);
-    button(kMapZoomX,kMapZoomY+kMapZoomStep,kMapZoomSize,kMapZoomSize,"-",kCyan);
+    button(g_rx_layout.map_zoom_in.x,g_rx_layout.map_zoom_in.y,kMapZoomSize,kMapZoomSize,"+",kCyan);
+    button(g_rx_layout.map_zoom_in.x,g_rx_layout.map_zoom_in.y+kMapZoomStep,kMapZoomSize,kMapZoomSize,"-",kCyan);
   }
   if(!details)return;
-  M5.Display.fillRect(960, 190, 270, 370, kPanel);
-  char value[64];
-  if (center) {
-    node_name(*center, value, sizeof(value)); text(value, 970, 210, kGreen, 2, middle_left);
-    format_coord(value, sizeof(value), center->latitude_e7); text(value, 970, 252, TFT_WHITE, 1, middle_left);
-    format_coord(value, sizeof(value), center->longitude_e7); text(value, 970, 284, TFT_WHITE, 1, middle_left);
-  } else text("NO NODE SELECTED", 1095, 320, kMuted, 2);
-  text(g_follow_node ? (center&&has_map_position(*center)?"FOLLOWING":"WAITING POSITION") : "FREE MAP", 970, 350,
-       g_follow_node ? kGreen : kCyan, 2, middle_left);
-  text("OFFLINE MAP", 970, 390, kMuted, 1, middle_left);
-  text(g_map_center_set ? map_info.title : "NO VERIFIED CENTER",970,420,kMuted,1,middle_left);
-  text(g_map_center_set ? map_info.status : "",970,450,kMuted,1,middle_left);
-  std::snprintf(value,sizeof(value),"ZOOM %u",g_map_camera.zoom);
-  text(g_map_center_set?value:"",970,500,kMuted,2,middle_left);
+  const auto info=rx_layout::inset(g_rx_layout.map_info);
+  char value[128]{};
+  if(center)std::snprintf(value,sizeof(value),"%.31s %ld %ld %u %s",center->name,(long)center->latitude_e7,(long)center->longitude_e7,g_map_camera.zoom,g_follow_node?"FOLLOWING":"FREE MAP");
+  else std::snprintf(value,sizeof(value),"NO NODE %u %s",g_map_camera.zoom,g_follow_node?"FOLLOWING":"FREE MAP");
+  const auto key=rx_key(value,g_map_revision_seen+1);if(g_map_detail_key==key)return;g_map_detail_key=key;
+  rx_card(g_rx_layout.map_info);
+  int y=info.y;
+  for(const char* line:{"SELECTED NODE",center?center->name:"NO NODE SELECTED",g_follow_node?"FOLLOWING":"FREE MAP"}){
+    if(y+24>info.y+info.h)break;
+    rx_text(line,{info.x,y,info.w,24},kCyan);y+=28;
+  }
+  if(center&&y+24<=info.y+info.h){std::snprintf(value,sizeof(value),"%.5f / %.5f",center->latitude_e7/1e7,center->longitude_e7/1e7);rx_text(value,{info.x,y,info.w,24});y+=28;}
+  if(y+24<=info.y+info.h)rx_text(g_map_center_set?map_info.status:"NO VERIFIED CENTER",{info.x,y,info.w,24},kMuted);
+
 }
 
 void draw_tx_dynamic() {
@@ -922,83 +819,31 @@ void draw_tx_packet_rx_frequency() {
   }
 }
 
-void draw_health_dynamic() {
-  char value[48];
-  snprintf(value, sizeof(value), "%.3f MHz", g_snapshot.frequency_hz / 1000000.0);
-  text(value, 139, 196, TFT_WHITE, 2);
-  text(g_snapshot.region[0] ? g_snapshot.region : "US", 358, 196, TFT_WHITE, 2);
-  text(g_snapshot.running ? "PASSIVE RX" : "STOPPED", 596, 196,
-       g_snapshot.running ? kGreen : kMuted, 2);
-  snprintf(value, sizeof(value), "%lu", static_cast<unsigned long>(g_snapshot.encrypted_frames));
-  text(value, 839, 196, g_snapshot.encrypted_frames ? kYellow : TFT_WHITE, 2);
-  snprintf(value, sizeof(value), "%u", g_snapshot.node_count); text(value, 1052, 196, kGreen, 2);
-  text("RX ONLY", 1200, 196, kGreen, 2);
-  M5.Display.fillRect(40, 290, 780, 240, kPanel);
-  M5.Display.fillRect(870, 290, 360, 240, kPanel);
-  draw_event_row(g_snapshot.events[0], 880, 306, 340);
-  draw_event_row(g_snapshot.events[1], 880, 382, 340);
-  snprintf(value, sizeof(value), "RATE %.3f MSPS", g_snapshot.effective_sps / 1000000.0);
-  text(value, 60, 548, kGreen, 1, middle_left);
-  snprintf(value, sizeof(value), "USB %lu  DROP %lu  CRC %lu",
-           static_cast<unsigned long>(g_snapshot.usb_overruns),
-           static_cast<unsigned long>(g_snapshot.consumer_drops),
-           static_cast<unsigned long>(g_snapshot.crc_ok));
-  text(value, 420, 548, kCyan, 1, middle_left);
-}
+void draw_health_dynamic(){draw_rx_metrics();draw_rx_preview();}
 
 void draw_dynamic() {
-  if (g_view == View::overview) draw_overview_dynamic();
-  else if (g_view == View::nodes) draw_nodes_dynamic();
-  else if (g_view == View::traffic) draw_traffic_dynamic();
-  else if (g_view == View::map) draw_map_dynamic();
-  else if (g_view == View::rf_health) draw_health_dynamic();
+  if(g_view==View::overview)draw_overview_dynamic();
+  else if(g_view==View::nodes)draw_nodes_dynamic();
+  else if(g_view==View::traffic)draw_traffic_dynamic();
+  else if(g_view==View::map)draw_map_dynamic();
+  else if(g_view==View::rf_health)draw_health_dynamic();
   else draw_tx_dynamic();
-  if (g_view == View::overview || g_view == View::rf_health) {
-    char scan_label[24] = "SCAN BAND";
-    if (g_snapshot.survey_active) {
-      snprintf(scan_label, sizeof(scan_label), "SCANNING %lu/%u",
-               static_cast<unsigned long>(g_snapshot.survey_progress),
-               static_cast<unsigned>(lora_channel::survey_span_count()));
-    }
-    const int scan_x = g_view == View::overview ? 34 : 24;
-    const int record_x = g_view == View::overview ? 300 : 284;
-    const int width = g_view == View::overview ? 250 : 242;
-    button(scan_x, 578, width, 48, scan_label,
-           g_snapshot.survey_active ? kGreen : kCyan, g_snapshot.survey_active);
-    const char* record_label = g_snapshot.iq_recording ? "CAPTURING IQ"
-                               : g_snapshot.iq_busy ? "DECODING IQ"
-                               : g_snapshot.iq_ready ? "SAVE IQ"
-                                                     : "RECORD IQ";
-    button(record_x, 578, width, 48, record_label,
-           g_snapshot.iq_recording ? kGreen : kCyan, g_snapshot.iq_recording);
-  }
+  if(g_view!=View::tx_lab)draw_rx_actions();
 }
 
 void draw_channels_overlay() {
-  constexpr int x = 220, y = 170, w = 840, h = 360;
-  M5.Display.fillRoundRect(x, y, w, h, 14, kBg);
-  M5.Display.drawRoundRect(x, y, w, h, 14, kCyan);
-  text("MESHTASTIC LONGFAST", x + 28, y + 34, kCyan, 2, middle_left);
-  text("CLOSE", x + w - 70, y + 34, kYellow, 2);
-
-  char value[64];
-  text("REGION", x + 100, y + 116, kMuted, 1);
-  text("<", x + 220, y + 116, kCyan, 4);
-  text(g_snapshot.region[0] ? g_snapshot.region : "US", x + w / 2, y + 116,
-       kGreen, 3);
-  text(">", x + w - 220, y + 116, kCyan, 4);
-
-  text("SLOT", x + 100, y + 220, kMuted, 1);
-  text("<", x + 220, y + 220, kCyan, 4);
-  snprintf(value, sizeof(value), "%u / %u", g_snapshot.channel_slot,
-           g_snapshot.channel_count);
-  text(value, x + w / 2, y + 220, TFT_WHITE, 3);
-  text(">", x + w - 220, y + 220, kCyan, 4);
-
-  snprintf(value, sizeof(value), "%.3f MHz   DEFAULT SLOT %u",
-           g_snapshot.frequency_hz / 1000000.0, g_snapshot.default_slot);
-  text(value, x + w / 2, y + 300,
-       g_snapshot.channel_slot == g_snapshot.default_slot ? kGreen : kMuted, 2);
+  const auto d=g_rx_layout.channel_dialog;
+  rx_card(d);rx_text("MESHTASTIC LONGFAST",{d.x+12,d.y+8,d.w-76,44},kCyan);
+  rx_button(g_rx_layout.channel_close,"X");
+  rx_button(g_rx_layout.region_previous,"<");rx_button(g_rx_layout.region_next,">");
+  rx_button(g_rx_layout.slot_previous,"<");rx_button(g_rx_layout.slot_next,">");
+  char value[80];
+  const auto r=g_rx_layout.region_previous,c=g_rx_layout.slot_previous;
+  rx_text(g_snapshot.region[0]?g_snapshot.region:"US",{r.x+52,r.y,d.w-136,44},kGreen);
+  std::snprintf(value,sizeof(value),"CHANNEL %u / %u",g_snapshot.channel_slot,g_snapshot.channel_count);
+  rx_text(value,{c.x+52,c.y,d.w-136,44});
+  std::snprintf(value,sizeof(value),"%.3f MHz / DEFAULT %u",g_snapshot.frequency_hz/1e6,g_snapshot.default_slot);
+  rx_text(value,{d.x+12,c.y+60,d.w-24,32},kCyan);
 }
 
 void draw_native_tx(bool structure) {
@@ -1015,8 +860,7 @@ void draw_native_tx(bool structure) {
     // Native RX tab migration is separate from this TX handoff. Keep the
     // imported legacy 5/6-tab navigation on legacy profiles, rather than
     // advertise native RX hit targets whose views still use legacy geometry.
-    text("LORA TX LAB",l.tabs.x+l.tabs.w/2,l.tabs.y+22,kGreen,2);
-    if(l.vertical)text("RF HARDWARE MUST BE VERIFIED",l.tabs.x+l.tabs.w/2,l.tabs.y+60,kMuted,2);
+    draw_tabs();
     for(int i=0;i<3;++i){const auto r=l.mode(i);focus_nav::note(r.x,r.y,r.w,r.h);}
     for(bool send:{false,true}){const auto r=l.action(send);focus_nav::note(r.x,r.y,r.w,r.h);}
   }
@@ -1034,47 +878,76 @@ void draw_native_tx(bool structure) {
 }
 
 void draw_static() {
-  if(native_tx_screen()) {draw_native_tx(true);return;}
-  M5.Display.fillScreen(kBg);
-  if (portrait_lora_screen()) {
-    g_view = View::tx_lab;
-    draw_portrait_tx_header();
-    if (portrait_tx_screen()) {
-      draw_tx_static();
-      draw_tx_dynamic();
-    } else {
-      draw_portrait_no_radio();
-    }
-    draw_portrait_tx_footer();
-    return;
+  refresh_rx_layout();reset_rx_cache();
+  focus_nav::clear();
+  if(g_view==View::nodes){
+    for(int i=0;i<g_rx_layout.node_row_count;++i){const auto r=g_rx_layout.node_rows[i];focus_nav::note(r.x,r.y,r.w,r.h);}
+    for(const auto r:{g_rx_layout.node_previous,g_rx_layout.node_next})focus_nav::note(r.x,r.y,r.w,r.h);
   }
-  draw_header();
-  if (g_view == View::overview) draw_overview_static();
-  else if (g_view == View::nodes) draw_nodes_static();
-  else if (g_view == View::traffic) draw_traffic_static();
-  else if (g_view == View::map) draw_map_static();
-  else if (g_view == View::rf_health) draw_health_static();
+  if(g_view==View::traffic)for(const auto r:{g_rx_layout.traffic_previous,g_rx_layout.traffic_next})focus_nav::note(r.x,r.y,r.w,r.h);
+  if(native_tx_screen()){draw_native_tx(true);return;}
+  M5.Display.clearScrollRect();
+  M5.Display.fillRect(g_rx_viewport.x,g_rx_viewport.y,g_rx_viewport.w,g_rx_viewport.h,kBg);
+  draw_header(true);
+  if(g_view==View::overview)draw_overview_static();
+  else if(g_view==View::nodes)draw_nodes_static();
+  else if(g_view==View::traffic)draw_traffic_static();
+  else if(g_view==View::map)draw_map_static();
+  else if(g_view==View::rf_health)draw_health_static();
   else draw_tx_static();
-  draw_tabs();
-  draw_dynamic();
-  if (g_channels_open && g_view == View::overview) draw_channels_overlay();
+  draw_tabs();draw_dynamic();
+  if(g_channels_open&&g_view==View::overview)draw_channels_overlay();
 }
 
 }  // namespace
 
-bool set_tx_viewport(audio_header::HeaderRect viewport) {
-  // Exact legacy dimensions remain on the established renderer.
-  if(viewport.x==0&&viewport.y==0&&viewport.w==1280&&viewport.h==720) {
-    g_tx_layout={};return true;
-  }
-  const auto next=tx_native::make(viewport);
+bool set_viewport(audio_header::HeaderRect viewport) {
+  const auto next=rx_layout::make(viewport,g_view,g_snapshot.tx.readiness!=lora_tx::Readiness::absent);
   if(!next.valid)return false;
+  tx_native::Layout tx{};
+  if(!(viewport.x==0&&viewport.y==0&&viewport.w==1280&&viewport.h==720)){
+    tx=tx_native::make(viewport);if(!tx.valid)return false;
+  }
+  g_rx_viewport=viewport;g_rx_layout=next;g_tx_layout=tx;g_tx_entry_on_enter=false;
   focus_nav::set_viewport(viewport.x+viewport.w,viewport.y+viewport.h);
-  g_tx_layout=next;return true;
+  if(g_map_center_set)(void)orcmap::SetViewportSize(&g_map_camera,next.map.w,next.map.h);
+  reset_rx_cache();return true;
+}
+bool set_tx_viewport(audio_header::HeaderRect viewport) {
+  if(!orcsdr::lora::set_viewport(viewport))return false;
+  g_tx_entry_on_enter=true;return true;
+}
+bool select_view(View next) {
+  if(!g_active||next>=View::count||(next==View::tx_lab&&g_snapshot.tx.readiness==lora_tx::Readiness::absent))return false;
+  if(next==g_view)return true;
+  g_view=next;g_channels_open=false;g_map_drag=false;g_previous_spectrum_bins=0;
+  refresh_rx_layout();
+  if(g_map_center_set)(void)orcmap::SetViewportSize(&g_map_camera,g_rx_layout.map.w,g_rx_layout.map.h);
+  focus_nav::clear();draw_static();return true;
+}
+bool page_items(int direction) {
+  if(!g_active||!direction)return false;
+  if(g_view==View::traffic){
+    const auto last=traffic_max_offset();const auto old=g_traffic_offset;
+    const auto step=std::max(1,g_rx_layout.traffic_row_count);
+    g_traffic_offset=direction<0?(old>unsigned(step)?old-step:0):std::min(last,old+step);
+    if(old==g_traffic_offset)return false;
+    draw_traffic_dynamic();return true;
+  }
+  if(g_view==View::nodes){
+    const auto state=node_state();const unsigned rows=std::max(1,g_rx_layout.node_row_count);
+    const size_t last=state.count>rows?state.count-rows:0,old=g_node_offset;
+    g_node_offset=direction<0?(old>rows?old-rows:0):std::min(last,old+rows);
+    if(old==g_node_offset)return false;
+    draw_nodes_dynamic();return true;
+  }
+  return false;
 }
 
 void enter(const Snapshot& snapshot) {
   g_snapshot = snapshot;
+  g_snapshot.node_count=std::min<uint8_t>(g_snapshot.node_count,kNodeCapacity);
+  g_snapshot.event_count=std::min<uint8_t>(g_snapshot.event_count,kEventCapacity);
   g_active = true;
   g_channels_open = false;
   g_map_center_set = false;
@@ -1088,8 +961,9 @@ void enter(const Snapshot& snapshot) {
   g_previous_spectrum_view = View::count;
   g_waterfall_floor_valid = false;
   g_tx_page = tx_views::Page::operator_panel;
-  if (portrait_lora_screen() || (g_tx_layout.valid && snapshot.tx.readiness!=lora_tx::Readiness::absent)) g_view = View::tx_lab;
-  draw_static();
+  if(g_tx_entry_on_enter&&snapshot.tx.readiness!=lora_tx::Readiness::absent)g_view=View::tx_lab;
+  if(g_view==View::tx_lab&&snapshot.tx.readiness==lora_tx::Readiness::absent)g_view=View::overview;
+  refresh_rx_layout();draw_static();
 }
 
 void leave() {
@@ -1143,7 +1017,14 @@ void update(const Snapshot& snapshot) {
   const bool content_changed = tx_changed || tx_rx_changed || packet_rx_control_changed ||
       packet_rx_frequency_changed ||
       snapshot.revision != g_snapshot.revision;
+  const bool channel_changed=snapshot.frequency_hz!=g_snapshot.frequency_hz||snapshot.region_index!=g_snapshot.region_index||snapshot.channel_slot!=g_snapshot.channel_slot;
   g_snapshot = snapshot;
+  g_snapshot.node_count=std::min<uint8_t>(g_snapshot.node_count,kNodeCapacity);
+  g_snapshot.event_count=std::min<uint8_t>(g_snapshot.event_count,kEventCapacity);
+  if(g_channels_open&&g_view==View::overview){if(channel_changed)draw_channels_overlay();return;}
+  if(native_tx_screen()&&capability_presence_changed&&g_snapshot.tx.readiness==lora_tx::Readiness::absent){
+    g_view=View::overview;draw_static();return;
+  }
   if(native_tx_screen()) {
     if(capability_presence_changed)g_tx_page=tx_views::Page::operator_panel;
     // Ordinary RX revision/age ticks must not repaint static TX cards. A new
@@ -1157,7 +1038,7 @@ void update(const Snapshot& snapshot) {
     }
     return;
   }
-  if (portrait_lora_screen()) {
+  if (g_view==View::tx_lab && portrait_lora_screen() && !g_tx_layout.valid) {
     if (capability_presence_changed) {
       g_tx_page = tx_views::Page::operator_panel; // never resume stale modal on reattach
       M5.Display.startWrite();
@@ -1240,10 +1121,9 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
   const uint32_t now = millis();
   if (now - g_last_spectrum_ms < kSpectrumRefreshIntervalMs) return;
   g_last_spectrum_ms = now;
-  const int x = g_view == View::rf_health ? 42 : kPlotX;
-  const int y = g_view == View::rf_health ? 300 : kPlotY;
-  const int w = g_view == View::rf_health ? 770 : kPlotW;
-  const int h = g_view == View::rf_health ? 130 : kPlotH;
+  const auto plot=g_rx_layout.plot;
+  const int x=plot.x,y=plot.y,w=plot.w,h=plot.h;
+  if(w<4||h<4)return;
   const int trace_x = x + 1;
   const int trace_w = w - 2;
   visible_bins = std::min(visible_bins, kSpectrumTraceCapacity);
@@ -1293,179 +1173,96 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins, f
   }
   g_previous_spectrum_bins = visible_bins;
   g_previous_spectrum_view = g_view;
-  if (g_view == View::overview) {
-    for (int i = 0; i < kPlotW; ++i) {
-      const size_t source = first_bin + std::min<size_t>(visible_bins - 1,
-          static_cast<size_t>(i) * visible_bins / kPlotW);
-      const float normalized = (levels[source] - display_floor) / kSpectrumRangeDb;
-      g_waterfall_row[i] = waterfall_color(normalized);
+  if(g_view==View::overview||g_view==View::rf_health){
+    const auto area=g_rx_layout.waterfall;
+    const int rows=std::min(area.h-2,waterfall_style::rows_due(waterfall_style::Screen::lora,now));
+    if(rows>0){
+      M5.Display.scroll(0,-rows);
+      for(int offset=0;offset<area.w-2;offset+=128){
+        const int count=std::min(128,area.w-2-offset);
+        for(int i=0;i<count;++i){
+          const size_t source=first_bin+std::min(visible_bins-1,size_t(offset+i)*visible_bins/size_t(area.w-2));
+          g_waterfall_row[i]=waterfall_color((levels[source]-display_floor)/kSpectrumRangeDb);
+        }
+        for(int row=0;row<rows;++row)M5.Display.pushImage(area.x+1+offset,area.y+area.h-1-rows+row,count,1,reinterpret_cast<const lgfx::rgb565_t*>(g_waterfall_row));
+      }
     }
-    const int rows = waterfall_style::rows_due(waterfall_style::Screen::lora, now);
-    if (rows) M5.Display.scroll(0, -rows);
-    for (int row = 0; row < rows; ++row)
-      // Native RGB565 row: push it as rgb565_t (a uint16_t* image is read as big-endian and shows wrong hues).
-      M5.Display.pushImage(kPlotX, kWaterfallY + kWaterfallH - 2 - rows + row, kPlotW, 1,
-                           reinterpret_cast<const lgfx::rgb565_t*>(g_waterfall_row));
     draw_lora_channel_markers();
   }
   M5.Display.endWrite();
 }
 
-Action handle_touch(int32_t x, int32_t y) {
-  if (!g_active) return {};
-  if(native_tx_screen()) {
-    if(audio_header::home_hit(x,y))return {ActionKind::exit_home};
-    if(audio_header::settings_hit(x,y))return {ActionKind::open_settings};
-    const auto inside=[&](tx_native::Rect r){return hit(x,y,r.x,r.y,r.w,r.h);};
-    if(g_tx_page==tx_views::Page::messenger) {
-      const auto source=tx_views::packet_rx_control_rect(g_tx_layout.vertical);
-      const auto r=g_tx_layout.bounds(source.x,source.y,source.w,source.h);
-      if(inside(r)&&tx_views::packet_rx_control_enabled(g_snapshot))
-        return {ActionKind::packet_rx_toggle};
-    }
-    if(g_snapshot.tx.readiness==lora_tx::Readiness::absent)return {};
-    for(int i=0;i<3;++i)if(inside(g_tx_layout.mode(i))) {
-      select_tx_page(unsigned(i));return {};
-    }
-    if(inside(g_tx_layout.action(false))&&lora_tx::can_arm(g_snapshot.tx)==lora_tx::Denial::none)
-      return {g_snapshot.tx.operator_armed?ActionKind::tx_request_disarm:ActionKind::tx_request_arm};
-    if(g_tx_page==tx_views::Page::operator_panel&&inside(g_tx_layout.action(true))&&
-        lora_tx::can_send(g_snapshot.tx,tx_views::kBenchPacketBytes)==lora_tx::Denial::none)
-      return {ActionKind::tx_send_test_packet};
+Action handle_touch(int32_t x,int32_t y) {
+  if(!g_active)return {};
+  if(audio_header::home_hit(x,y))return {ActionKind::exit_home};
+  if(audio_header::settings_hit(x,y))return {ActionKind::open_settings};
+  if(g_channels_open&&g_view==View::overview){
+    if(rx_layout::hit(g_rx_layout.channel_close,x,y)){g_channels_open=false;draw_static();return {};}
+    if(rx_layout::hit(g_rx_layout.region_previous,x,y))return {ActionKind::region_previous};
+    if(rx_layout::hit(g_rx_layout.region_next,x,y))return {ActionKind::region_next};
+    if(rx_layout::hit(g_rx_layout.slot_previous,x,y))return {ActionKind::channel_previous};
+    if(rx_layout::hit(g_rx_layout.slot_next,x,y))return {ActionKind::channel_next};
     return {};
   }
-  if (portrait_lora_screen()) {
-    if (tx_views::hit(x, y, 432, 20, 115, 62))
-      return {ActionKind::exit_home};
-    if (!portrait_tx_screen()) return {};
-    const int mode = tx_views::page_at(x, y, true);
-    if (mode >= 0) {
-      if (g_tx_page != static_cast<tx_views::Page>(mode)) {
-        g_tx_page = static_cast<tx_views::Page>(mode);
-        draw_static();
-      }
-      return {};
+  for(int i=0;i<g_rx_layout.tab_count;++i)if(rx_layout::hit(g_rx_layout.tab[i],x,y))return {ActionKind::select_view,uint32_t(i)};
+  if(g_view==View::tx_lab){
+    const bool vertical=native_tx_screen()?g_tx_layout.vertical:portrait_tx_screen();
+    if(native_tx_screen()){
+      for(int i=0;i<3;++i){const auto r=g_tx_layout.mode(i);if(rx_layout::hit(r,x,y)){select_tx_page(i);return {};}}
+      const auto src=tx_views::packet_rx_control_rect(vertical);
+      if(g_tx_page==tx_views::Page::messenger&&rx_layout::hit(g_tx_layout.bounds(src.x,src.y,src.w,src.h),x,y)&&tx_views::packet_rx_control_enabled(g_snapshot))return {ActionKind::packet_rx_toggle};
+      if(rx_layout::hit(g_tx_layout.action(false),x,y)&&lora_tx::can_arm(g_snapshot.tx)==lora_tx::Denial::none)return {g_snapshot.tx.operator_armed?ActionKind::tx_request_disarm:ActionKind::tx_request_arm};
+      if(g_tx_page==tx_views::Page::operator_panel&&rx_layout::hit(g_tx_layout.action(true),x,y)&&lora_tx::can_send(g_snapshot.tx,tx_views::kBenchPacketBytes)==lora_tx::Denial::none)return {ActionKind::tx_send_test_packet};
+    }else{
+      const int mode=tx_views::page_at(x,y,vertical);if(mode>=0){select_tx_page(mode);return {};}
+      if(g_tx_page==tx_views::Page::messenger&&tx_views::packet_rx_control_hit(x,y,vertical)&&tx_views::packet_rx_control_enabled(g_snapshot))return {ActionKind::packet_rx_toggle};
+      if(tx_views::arm_rect(x,y,vertical)&&lora_tx::can_arm(g_snapshot.tx)==lora_tx::Denial::none)return {g_snapshot.tx.operator_armed?ActionKind::tx_request_disarm:ActionKind::tx_request_arm};
+      if(g_tx_page==tx_views::Page::operator_panel&&tx_views::send_rect(x,y,vertical)&&lora_tx::can_send(g_snapshot.tx,tx_views::kBenchPacketBytes)==lora_tx::Denial::none)return {ActionKind::tx_send_test_packet};
     }
-    if (g_tx_page==tx_views::Page::messenger &&
-        tx_views::packet_rx_control_hit(x,y,true) &&
-        tx_views::packet_rx_control_enabled(g_snapshot))
-      return {ActionKind::packet_rx_toggle};
-    if (tx_views::arm_rect(x, y, true) &&
-        lora_tx::can_arm(g_snapshot.tx) == lora_tx::Denial::none)
-      return {g_snapshot.tx.operator_armed ? ActionKind::tx_request_disarm : ActionKind::tx_request_arm};
-    if (g_tx_page == tx_views::Page::operator_panel &&
-        tx_views::send_rect(x, y, true) &&
-        lora_tx::can_send(g_snapshot.tx, tx_views::kBenchPacketBytes) == lora_tx::Denial::none)
-      return {ActionKind::tx_send_test_packet};
     return {};
   }
-  if (g_view == View::tx_lab) {
-    const int mode = tx_views::page_at(x, y, false);
-    if (mode >= 0) {
-      if (g_tx_page != static_cast<tx_views::Page>(mode)) {
-        g_tx_page = static_cast<tx_views::Page>(mode);
-        draw_static();
-      }
-      return {};
-    }
-    if (g_tx_page==tx_views::Page::messenger &&
-        tx_views::packet_rx_control_hit(x,y,false) &&
-        tx_views::packet_rx_control_enabled(g_snapshot))
-      return {ActionKind::packet_rx_toggle};
+  if(g_view==View::map){
+    if(rx_layout::hit(g_rx_layout.map_zoom_in,x,y)){map_control(MapControl::zoom_in);return {};}
+    if(rx_layout::hit(g_rx_layout.map_zoom_out,x,y)){map_control(MapControl::zoom_out);return {};}
   }
-  if (g_channels_open && g_view == View::overview) {
-    if (hit(x, y, 940, 180, 110, 48)) {
-      g_channels_open = false;
-      draw_static();
-      return {};
-    }
-    if (hit(x, y, 380, 238, 120, 100)) return {ActionKind::region_previous};
-    if (hit(x, y, 780, 238, 120, 100)) return {ActionKind::region_next};
-    if (hit(x, y, 380, 342, 120, 100)) return {ActionKind::channel_previous};
-    if (hit(x, y, 780, 342, 120, 100)) return {ActionKind::channel_next};
-    if (hit(x, y, 220, 170, 840, 360)) return {};
-    g_channels_open = false;
-    draw_static();
-    return {};
+  if(g_view==View::nodes){
+    const auto state=node_state();
+    if(!(g_rx_layout.single_node_panel&&g_node_details))for(int i=0;i<g_rx_layout.node_row_count;++i)
+      if(rx_layout::hit(g_rx_layout.node_rows[i],x,y)&&state.offset+unsigned(i)<state.count)return {ActionKind::select_node,state.indices[state.offset+i]};
+    if(rx_layout::hit(g_rx_layout.node_previous,x,y))return {ActionKind::page_previous};
+    if(rx_layout::hit(g_rx_layout.node_next,x,y))return {ActionKind::page_next};
   }
-  if (audio_header::home_hit(x, y)) return {ActionKind::exit_home};
-  if (audio_header::settings_hit(x, y)) return {ActionKind::open_settings};
-  if (hit(x, y, 0, kTabsY, 1280, 80)) {
-    const int index = std::min<int>(x / tab_width(), tx_profile_visible() ? kTxTabCount - 1 : kRxTabCount - 1);
-    return {ActionKind::select_view, static_cast<uint32_t>(index)};
+  if(g_view==View::traffic){
+    if(rx_layout::hit(g_rx_layout.traffic_previous,x,y))return {ActionKind::page_previous};
+    if(rx_layout::hit(g_rx_layout.traffic_next,x,y))return {ActionKind::page_next};
   }
-  if (g_view == View::overview) {
-    if (hit(x, y, kPaletteChipX, kStyleChipY, kStyleChipW, kStyleChipH)) {
-      waterfall_style::next_palette(waterfall_style::Screen::lora);
-      M5.Display.startWrite();
-      draw_style_chips();
-      M5.Display.endWrite();
-      return {};
+  for(int i=0;i<g_rx_layout.action_count;++i){
+    if(!rx_layout::hit(g_rx_layout.actions[i],x,y))continue;
+    if(g_view==View::overview||g_view==View::rf_health){
+      if(i==0&&(g_snapshot.running||g_snapshot.survey_active))return {ActionKind::scan_toggle};
+      if(i==1&&g_snapshot.native_decoder_ready&&!g_snapshot.iq_busy&&(!g_snapshot.iq_ready||g_snapshot.iq_save_available))return {ActionKind::record_iq_toggle};
+      if(i==2){if(g_view==View::overview)return {ActionKind::open_channels};if(g_snapshot.export_available)return {ActionKind::export_log};}
+      if(i==3){if(g_view==View::rf_health)return {ActionKind::clear_events};if(g_snapshot.logging_available)return {ActionKind::logging_toggle};}
+      if(i==4){waterfall_style::next_palette(waterfall_style::Screen::lora);return {};}
+      if(i==5){waterfall_style::next_speed(waterfall_style::Screen::lora);return {};}
+    }else if(g_view==View::nodes){
+      if(i==0)return {ActionKind::filter_next};
+      if(i==1&&g_snapshot.node_count)return {ActionKind::toggle_favorite};
+      if(i==2)return {ActionKind::toggle_packet_details};
+      if(i==3&&g_snapshot.export_available)return {ActionKind::export_log};
+    }else if(g_view==View::traffic){
+      if(i==0)return {ActionKind::toggle_packet_details};
+      if(i==1&&g_snapshot.export_available)return {ActionKind::export_log};
+      if(i==2)return {ActionKind::filter_next};
+      if(i==3)return {ActionKind::clear_events};
+    }else if(g_view==View::map){
+      if(i==0)return {ActionKind::center_map};
+      if(i==1)return {ActionKind::follow_node};
+      if(i==2){g_map_label_error=!maps::preferences::set_labels(maps::preferences::Consumer::lora,!maps::preferences::labels(maps::preferences::Consumer::lora));g_action_keys[2]=0;draw_map_controls();draw_map_dynamic();return {};}
+      if(i==3){map_control(MapControl::receiver);return {};}
+      if(i==4){map_control(MapControl::zoom_in);return {};}
+      if(i==5){map_control(MapControl::zoom_out);return {};}
     }
-    if (hit(x, y, kSpeedChipX, kStyleChipY, kStyleChipW, kStyleChipH)) {
-      waterfall_style::next_speed(waterfall_style::Screen::lora);
-      M5.Display.startWrite();
-      draw_style_chips();
-      M5.Display.endWrite();
-      return {};
-    }
-    if (hit(x, y, 34, 578, 250, 48)) return {ActionKind::scan_toggle};
-    if (hit(x, y, 300, 578, 250, 48)) return {ActionKind::record_iq_toggle};
-    if (hit(x, y, 566, 578, 250, 48)) return {ActionKind::open_channels};
-    if (hit(x, y, 832, 578, 294, 48)) return {ActionKind::logging_toggle};
-  } else if (g_view == View::nodes) {
-    if (hit(x, y, 48, 236, 736, 324)) return {ActionKind::select_node,
-        [&]() {
-          size_t index = 0;
-          return visible_node_at(static_cast<size_t>((y - 236) / 54), &index)
-                     ? static_cast<uint32_t>(index)
-                     : UINT32_MAX;
-        }()};
-    if (hit(x, y, 840, 478, 190, 44)) return {ActionKind::filter_next};
-    if (hit(x, y, 1040, 478, 190, 44)) return {ActionKind::toggle_favorite};
-    if (hit(x, y, 840, 532, 190, 44)) {
-      g_node_details = !g_node_details;
-      return {ActionKind::refresh};
-    }
-    if (hit(x, y, 1040, 532, 190, 44)) return {ActionKind::export_log};
-  } else if (g_view == View::traffic) {
-    if (hit(x, y, 1188, 248, 36, 44) && g_traffic_offset > 0) {
-      --g_traffic_offset;
-      return {ActionKind::refresh};
-    }
-    if (hit(x, y, 1188, 548, 36, 44) &&
-        g_traffic_offset < traffic_max_offset()) {
-      ++g_traffic_offset;
-      return {ActionKind::refresh};
-    }
-    if (hit(x, y, 50, 188, 270, 44)) return {ActionKind::toggle_packet_details};
-    if (hit(x, y, 334, 188, 270, 44)) return {ActionKind::export_log};
-    if (hit(x, y, 618, 188, 270, 44)) return {ActionKind::filter_next};
-    if (hit(x, y, 902, 188, 270, 44)) return {ActionKind::clear_events};
-  } else if (g_view == View::map) {
-    if(hit(x,y,kMapZoomX,kMapZoomY,kMapZoomSize,kMapZoomSize)) {map_control(MapControl::zoom_in);return {};}
-    if(hit(x,y,kMapZoomX,kMapZoomY+kMapZoomStep,kMapZoomSize,kMapZoomSize)) {map_control(MapControl::zoom_out);return {};}
-    if(hit(x,y,430,584,220,48)) {
-      using maps::preferences::Consumer;
-      g_map_label_error=!maps::preferences::set_labels(Consumer::lora,!maps::preferences::labels(Consumer::lora));
-      draw_map_label_control();draw_map_dynamic(false);return {};
-    }
-    if (hit(x, y, 26, 584, 190, 48)) return {ActionKind::center_map};
-    if (hit(x, y, 228, 584, 190, 48)) return {ActionKind::follow_node};
-    if (hit(x,y,664,584,200,48)) {map_control(MapControl::receiver);return {};}
-  } else if (g_view == View::tx_lab) {
-    if (lora_tx::can_arm(g_snapshot.tx) == lora_tx::Denial::none &&
-        tx_views::arm_rect(x, y, false))
-      return {g_snapshot.tx.operator_armed ? ActionKind::tx_request_disarm : ActionKind::tx_request_arm};
-    if (g_tx_page == tx_views::Page::operator_panel &&
-        tx_views::send_rect(x, y, false) &&
-        lora_tx::can_send(g_snapshot.tx, tx_views::kBenchPacketBytes) == lora_tx::Denial::none)
-      return {ActionKind::tx_send_test_packet};
-  } else {
-    if (hit(x, y, 24, 578, 242, 48)) return {ActionKind::scan_toggle};
-    if (hit(x, y, 284, 578, 242, 48)) return {ActionKind::record_iq_toggle};
-    if (hit(x, y, 544, 578, 242, 48)) return {ActionKind::export_log};
-    if (hit(x, y, 804, 578, 242, 48)) return {ActionKind::clear_events};
   }
   return {};
 }
@@ -1484,20 +1281,21 @@ void open_channel_picker() {
   draw_static();
 }
 
-void show_documentation_view(View view_value, const Snapshot& snapshot) {
-  g_view = view_value;
-  enter(snapshot);
+void show_documentation_view(View next,const Snapshot& snapshot) {
+  if(g_active){g_snapshot=snapshot;(void)select_view(next);return;}
+  g_view=next;enter(snapshot);
 }
 
 void toggle_filter() {
   uint8_t& filter = g_view == View::traffic ? g_traffic_filter : g_node_filter;
   filter = (filter + 1) % 2;
-  g_traffic_offset = 0;
+  g_traffic_offset = g_node_offset = 0;
   if (g_active) draw_static();
 }
 
 void toggle_packet_details() {
-  g_traffic_details = !g_traffic_details;
+  if(g_view==View::nodes)g_node_details=!g_node_details;
+  else g_traffic_details = !g_traffic_details;
   if (g_active) draw_static();
 }
 
@@ -1533,7 +1331,7 @@ bool map_control(MapControl control,int east,int south) {
   bool changed=false;
   switch(control) {
     case MapControl::pan:
-      if(!g_map_center_set||east<-kMapW||east>kMapW||south<-kMapH||south>kMapH||(!east&&!south))return false;
+      if(!g_map_center_set||east<-g_rx_layout.map.w||east>g_rx_layout.map.w||south<-g_rx_layout.map.h||south>g_rx_layout.map.h||(!east&&!south))return false;
       changed=orcmap::PanByPixels(&g_map_camera,east,south);
       if(changed)g_follow_node=false;
       break;
@@ -1577,15 +1375,15 @@ bool map_touch(int32_t x,int32_t y,bool pressed,bool new_press) {
   }
   if(new_press) {
     g_map_drag=false;
-    if(!hit(x,y,kMapX,kMapY,kMapW,kMapH)||
-       hit(x,y,kMapZoomX,kMapZoomY,kMapZoomSize,kMapZoomSize)||
-       hit(x,y,kMapZoomX,kMapZoomY+kMapZoomStep,kMapZoomSize,kMapZoomSize))return false;
+    if(!hit(x,y,g_rx_layout.map.x,g_rx_layout.map.y,g_rx_layout.map.w,g_rx_layout.map.h)||
+       hit(x,y,g_rx_layout.map_zoom_in.x,g_rx_layout.map_zoom_in.y,kMapZoomSize,kMapZoomSize)||
+       hit(x,y,g_rx_layout.map_zoom_in.x,g_rx_layout.map_zoom_in.y+kMapZoomStep,kMapZoomSize,kMapZoomSize))return false;
     g_map_drag=true;g_map_moved=false;
     g_map_start_x=g_map_last_x=x;g_map_start_y=g_map_last_y=y;
   }
   if(!g_map_drag)return false;
   if(!pressed){g_map_drag=false;return true;}
-  x=std::clamp<int32_t>(x,kMapX,kMapX+kMapW-1);y=std::clamp<int32_t>(y,kMapY,kMapY+kMapH-1);
+  x=std::clamp<int32_t>(x,g_rx_layout.map.x,g_rx_layout.map.x+g_rx_layout.map.w-1);y=std::clamp<int32_t>(y,g_rx_layout.map.y,g_rx_layout.map.y+g_rx_layout.map.h-1);
   if(!g_map_moved&&std::abs(x-g_map_start_x)+std::abs(y-g_map_start_y)<6)return true;
   g_map_moved=true;
   map_control(MapControl::pan,g_map_last_x-x,g_map_last_y-y);
@@ -1633,120 +1431,14 @@ bool handle_map_command(const char* command,bool authenticated,void (*write)(con
 }
 
 bool self_check() {
-  Snapshot snapshot{};
-  snapshot.frequency_hz = 906875000;
-  snapshot.sf = 11;
-  snapshot.bandwidth_hz = 250000;
-  snapshot.node_count = 1;
-  snapshot.nodes[0].id = 0xA1B2C3D4;
-  snapshot.nodes[0].favorite = true;
-  snapshot.nodes[0].latitude_e7 = 440500000;
-  snapshot.nodes[0].longitude_e7 = -1230900000;
-  snapshot.event_count = 1;
-  snapshot.events[0].sender = snapshot.nodes[0].id;
-  snapshot.events[0].received_ms = 1000;
-  snapshot.events[0].received_utc = 52328;
-  if (static_cast<uint8_t>(View::count) != 6 || kTabW * 5 != 1280 ||
-      !has_position(snapshot.nodes[0])) return false;
-  const float scope_levels[] = {-50.0f, -49.0f, -48.0f, -10.0f};
-  if (fabsf(estimate_noise_floor(scope_levels, 0, 4) + 52.0f) > 0.01f ||
-      kSpectrumRefreshIntervalMs != 33 ||
-      kSpectrumTraceCapacity != 256) return false;
-  char value[16];
-  format_id(value, sizeof(value), snapshot.nodes[0].id);
-  if (strcmp(value, "!A1B2C3D4") != 0) return false;
-  char first[18]{}, second[18]{};
-  split_message("GPS 44.05641, -123.02418", 17, first, second);
-  if (strcmp(first, "GPS 44.05641,") != 0 || strcmp(second, "-123.02418") != 0) return false;
-  char received[32];
-  format_event_time(received, sizeof(received), snapshot.events[0], 13000);
-  if (strcmp(received, "14:32:08Z | 12s") != 0) return false;
-  format_event_time(received, sizeof(received), snapshot.events[0], 13000, false);
-  if (strcmp(received, "14:32:08Z") != 0) return false;
-  snapshot.events[0].received_utc = 0;
-  format_event_time(received, sizeof(received), snapshot.events[0], 13000);
-  if (strcmp(received, "TIME NOT SET | 12s") != 0) return false;
-  format_event_time(received, sizeof(received), snapshot.events[0], 13000, false);
-  if (strcmp(received, "TIME NOT SET") != 0) return false;
-  snapshot.events[0].destination = 0xFFFFFFFF;
-  snapshot.events[0].packet_id = 0x10203040;
-  snapshot.events[0].port = 1;
-  snapshot.events[0].signal_tenths = -720;
-  snapshot.events[0].snr_tenths = 94;
-  char details[96]{};
-  format_event_details(details, sizeof(details), snapshot.events[0]);
-  if (strcmp(details, "TO !FFFFFFFF  ID 10203040  PORT 1  RSSI -72.0  SNR 9.4") != 0)
-    return false;
-  const Snapshot saved_snapshot = g_snapshot;
-  const uint8_t saved_node_filter = g_node_filter;
-  const uint8_t saved_traffic_filter = g_traffic_filter;
-  const View saved_view = g_view;
-  const bool saved_active = g_active;
-  const bool saved_details = g_node_details;
-  const bool saved_traffic_details = g_traffic_details;
-  const size_t saved_traffic_offset = g_traffic_offset;
-  const tx_views::Page saved_tx_page = g_tx_page;
-  g_snapshot = snapshot;
-  g_node_filter = 1;
-  g_traffic_filter = 0;
-  g_view = View::nodes;
-  g_active = true;
-  g_node_details = false;
-  size_t index = 99;
-  const bool filter_ok = visible_node_at(0, &index) == &g_snapshot.nodes[0] && index == 0 &&
-                         visible_node_at(1) == nullptr;
-  const bool controls_ok =
-      handle_touch(60, 240).kind == ActionKind::select_node &&
-      handle_touch(850, 490).kind == ActionKind::filter_next &&
-      handle_touch(1050, 490).kind == ActionKind::toggle_favorite &&
-      handle_touch(850, 540).kind == ActionKind::refresh && g_node_details &&
-      handle_touch(1050, 540).kind == ActionKind::export_log && 576 < kTabsY;
-  g_view = View::traffic;
-  g_snapshot.event_count = 8;
-  g_traffic_offset = 0;
-  const bool traffic_scroll_ok = traffic_max_offset() == 3 &&
-                                 handle_touch(1200, 560).kind == ActionKind::refresh &&
-                                 g_traffic_offset == 1 &&
-                                 handle_touch(1200, 260).kind == ActionKind::refresh &&
-                                 g_traffic_offset == 0;
-  const bool traffic_controls_ok =
-      handle_touch(100, 210).kind == ActionKind::toggle_packet_details &&
-      handle_touch(400, 210).kind == ActionKind::export_log &&
-      handle_touch(680, 210).kind == ActionKind::filter_next &&
-      handle_touch(960, 210).kind == ActionKind::clear_events;
-  g_snapshot.events[1].port = 99;
-  g_traffic_filter = 1;
-  const bool traffic_filter_ok = visible_event_count() == 1 &&
-                                 visible_event_at(0) == &g_snapshot.events[0] &&
-                                 visible_event_at(1) == nullptr;
-  g_view = View::overview;
-  g_snapshot.tx.readiness = lora_tx::Readiness::profile_only;
-  const Action tx_tab = handle_touch(1190, 665);
-  g_view = View::tx_lab;
-  const bool tx_locked_ok = tx_tab.kind == ActionKind::select_view &&
-                            tx_tab.value == static_cast<uint32_t>(View::tx_lab) &&
-                            handle_touch(120, 550).kind == ActionKind::none &&
-                            handle_touch(500, 550).kind == ActionKind::none;
-  g_snapshot = saved_snapshot;
-  g_node_filter = saved_node_filter;
-  g_traffic_filter = saved_traffic_filter;
-  g_view = saved_view;
-  g_active = saved_active;
-  g_node_details = saved_details;
-  g_traffic_details = saved_traffic_details;
-  g_traffic_offset = saved_traffic_offset;
-  g_tx_page = saved_tx_page;
-  if (!filter_ok || !controls_ok || !traffic_scroll_ok || !traffic_controls_ok ||
-      !traffic_filter_ok || !tx_locked_ok) return false;
-  if (tx_views::page_at(700, 180, false) != 0 ||
-      tx_views::page_at(950, 180, false) != 1 ||
-      tx_views::page_at(1120, 180, false) != 2 ||
-      tx_views::page_at(120, 185, true) != 0 ||
-      tx_views::page_at(250, 185, true) != 1 ||
-      tx_views::page_at(480, 185, true) != 2 ||
-      !tx_views::arm_rect(100, 1060, true) ||
-      !tx_views::send_rect(400, 1060, true)) return false;
-  return audio_header::self_check() && lora_channel::self_check();
+  for(const auto viewport:{audio_header::HeaderRect{0,0,1280,720},{72,72,424,1088},{72,72,1088,424},{0,0,800,480},{0,0,480,800}}){
+    for(int v=0;v<5;++v){
+      const auto l=rx_layout::make(viewport,static_cast<View>(v),true);
+      if(!l.valid)return false;
+      for(int i=0;i<l.tab_count;++i)if(!rx_layout::hit(l.tab[i],l.tab[i].x+l.tab[i].w/2,l.tab[i].y+l.tab[i].h/2))return false;
+    }
+  }
+  return audio_header::self_check()&&lora_channel::self_check();
 }
 
 }  // namespace orcsdr::lora
