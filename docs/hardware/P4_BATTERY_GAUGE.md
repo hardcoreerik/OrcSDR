@@ -32,6 +32,39 @@ destroying it removes that handle and leaves the shared bus intact. The caller
 must serialize access according to its bus ownership policy and should poll
 from a worker, not a UI thread.
 
+## Background service contract
+
+`orcsdr_battery_start(existing_bus, address_7bit)` creates the gauge device
+handle on the supplied bus and starts one low-priority worker. The service
+polls once per second and performs no UI work. It neither creates nor configures
+an I2C bus. The supplied bus must remain valid for the process lifetime. There
+is intentionally no stop/deinit API: deleting the device handle while the
+worker may be polling it would be unsafe. Duplicate starts are rejected. If
+device-handle allocation or worker creation fails, startup reports the error
+and releases any created handle so a later startup attempt can retry.
+
+Snapshot reads are nonblocking with respect to I2C. The worker reads outside the
+state lock; the lock is held only to update or copy snapshot state. The last
+complete successful sample expires at an age of 3 seconds. A failed read clears
+the raw sample and makes the UI percentage unavailable (`-1`), while retaining
+the last-success age and the fact that the gauge was previously seen. Until a
+successful read, last-success age is `UINT32_MAX` and the UI percentage is
+unavailable.
+
+The service considers percent usable only when a complete sample is still
+fresh, the raw sample is valid, the gauge reports BATTPRES, and voltage is
+nonzero. BATTPRES is only the gauge's reported status bit; it does not prove a
+cell is physically installed. Its behavior depends on gauge configuration
+(including BIEnable), so the board/profile integration must not present it as
+independent cell detection. Zero voltage or an unreported-presence flag yields
+an unavailable percentage rather than a fabricated 0%. A valid, fresh SOC of
+0% is still reported as 0% when those eligibility checks pass.
+
+The host service tests exercise the same polling and snapshot policy with fake
+I2C and FreeRTOS backends. They do not verify physical I2C timing, actual RTOS
+scheduling, or hardware gauge behavior. Component build/startup integration
+remains the board-level caller's responsibility.
+
 ## Provenance
 
 - LilyGO board pin/address source: [`t_display_p4_config.h` at
