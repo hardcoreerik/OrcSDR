@@ -6,7 +6,7 @@
 
 namespace orcsdr::audio_header {
 static HeaderLayout g_header{};
-bool set_viewport(HeaderRect r){g_header=make_header_layout(r);return g_header.valid;}
+bool set_viewport(HeaderRect r){g_header=make_header_layout(r);if(g_header.valid)focus_nav::set_viewport(r.x+r.w,r.y+r.h);return g_header.valid;}
 const HeaderLayout& layout(){return g_header;}
 void draw_brand(const char* s){M5.Display.drawString(s,0,0);}
 void draw_home_button(){} void draw_battery(int32_t){}
@@ -26,11 +26,11 @@ void cancel_point(int*,int*){} void tune_point(int*,int*){}
 bool self_check(){return true;}
 }
 namespace orcsdr::text_editor {
-static Layout g_editor{};static bool g_active=false;static uint64_t g_generation=0;
-void begin(const char*,const char*,size_t,bool,const char*){g_active=true;++g_generation;}
+static Layout g_editor{};static bool g_active=false;static uint64_t g_generation=0;static char g_value[64]{};
+void begin(const char*,const char* initial,size_t maximum,bool,const char*){g_active=true;++g_generation;std::snprintf(g_value,sizeof(g_value),"%.*s",static_cast<int>(std::min(maximum,sizeof(g_value)-1)),initial?initial:"");}
 bool set_viewport(Rect r){g_editor=make_layout(r);return g_editor.valid;}
 const Layout& layout(){return g_editor;} bool active(){return g_active;}
-uint64_t generation(){return g_generation;}const char* value(){return "fixture";}
+uint64_t generation(){return g_generation;}const char* value(){return g_value;}
 void draw(){} Result handle_touch(int,int){return Result::none;}
 keyboard_input::EditAction handle_key(const keyboard_input::Key&){return keyboard_input::EditAction::none;}
 bool masked(){return false;}void accept_point(int*,int*){}void cancel_point(int*,int*){}
@@ -64,7 +64,9 @@ static void check_view(layout::Rect view){
   const auto mem_edit=g_layout.legacy?layout::Rect{936,250+int(final_row)*50,130,42}:layout::Rect{g_layout.row_actions[final_row][2].x,g_layout.row_actions[final_row][2].y,g_layout.row_actions[final_row][2].w,g_layout.row_actions[final_row][2].h};
   tap(mem_edit);assert(std::strlen(pending_memory_label())==sizeof(memories.at(23)->station)-1&&std::strlen(pending_memory_notes())==sizeof(memories.at(23)->notes)-1&&std::strstr(pending_memory_notes(),"FINAL_MEMORY_NOTES_23")!=nullptr);
   const auto old_page=g_memory_page;const auto rotated_memory=layout::Rect{view.x,view.y,view.h,view.w};
+  draw();const uint64_t editor_generation=orcsdr::text_editor::generation();const char* editor_value=orcsdr::text_editor::value();char saved_editor_value[64]{};std::strncpy(saved_editor_value,editor_value,sizeof(saved_editor_value)-1);
   assert(orcsdr::shortwave::set_viewport(rotated_memory));draw();assert(g_state.tab()==Tab::memory&&g_memory_page==old_page&&g_edit_memory==23&&std::strstr(pending_memory_notes(),"FINAL_MEMORY_NOTES_23")!=nullptr);
+  assert(orcsdr::text_editor::active()&&orcsdr::text_editor::generation()==editor_generation&&std::strcmp(orcsdr::text_editor::value(),saved_editor_value)==0&&orcsdr::text_editor::layout().viewport.w==rotated_memory.w);
   assert(orcsdr::shortwave::set_viewport(view));draw();g_state.close_modal();draw();
   g_state.select_tab(Tab::logbook);draw();
   const size_t log_pages=(24+page_size-1)/page_size;
@@ -74,6 +76,15 @@ static void check_view(layout::Rect view){
   assert(tap(final_log).kind==ActionKind::none); // row selection opens detail editor only on EDIT
   const auto log_edit=g_layout.legacy?layout::Rect{926,250+int(last)*50,140,42}:layout::Rect{g_layout.row_actions[last][2].x,g_layout.row_actions[last][2].y,g_layout.row_actions[last][2].w,g_layout.row_actions[last][2].h};
   tap(log_edit);assert(std::strlen(pending_log_antenna())==sizeof(logs.at(23)->antenna)-1&&std::strlen(pending_log_notes())==sizeof(logs.at(23)->notes)-1&&std::strstr(pending_log_notes(),"FINAL_LOG_NOTES_23")!=nullptr);g_state.close_modal();draw();
+  s.storage_available=false;s.storage_status=StorageStatus::unavailable;update(s);g_state.select_tab(Tab::memory);draw();
+  const auto unavailable_fav=g_layout.legacy?layout::Rect{826,250+int(final_row)*50,100,42}:g_layout.row_actions[final_row][1];
+  const auto unavailable_edit=g_layout.legacy?layout::Rect{936,250+int(final_row)*50,130,42}:g_layout.row_actions[final_row][2];
+  const auto unavailable_delete=g_layout.legacy?layout::Rect{1076,250+int(final_row)*50,168,42}:g_layout.row_actions[final_row][3];
+  assert(tap(unavailable_fav).kind==ActionKind::none&&tap(unavailable_edit).kind==ActionKind::none&&tap(unavailable_delete).kind==ActionKind::none);
+  for(size_t i=0;i<orcsdr::focus_nav::count();++i){orcsdr::focus_nav::Rect r{};assert(orcsdr::focus_nav::get(i,&r));assert(!(r.x==unavailable_fav.x&&r.y==unavailable_fav.y));assert(!(r.x==unavailable_edit.x&&r.y==unavailable_edit.y));assert(!(r.x==unavailable_delete.x&&r.y==unavailable_delete.y));}
+  g_state.select_tab(Tab::logbook);draw();const auto unavailable_log_edit=g_layout.legacy?layout::Rect{926,250+int(last)*50,140,42}:g_layout.row_actions[last][2];const auto unavailable_log_delete=g_layout.legacy?layout::Rect{1076,250+int(last)*50,168,42}:g_layout.row_actions[last][3];
+  assert(tap(unavailable_log_edit).kind==ActionKind::none&&tap(unavailable_log_delete).kind==ActionKind::none);
+  s.storage_available=true;s.storage_status=StorageStatus::ready;update(s);
   g_state.select_tab(Tab::hunt);draw();
   const auto hunt_start=g_layout.legacy?layout::Rect{790,190,220,58}:layout::Rect{g_layout.page_controls[3].x,g_layout.page_controls[3].y,g_layout.page_controls[3].w,g_layout.page_controls[3].h};
   const auto hunt_cancel=g_layout.legacy?layout::Rect{1020,190,224,58}:layout::Rect{g_layout.page_controls[4].x,g_layout.page_controls[4].y,g_layout.page_controls[4].w,g_layout.page_controls[4].h};
@@ -93,6 +104,7 @@ static void check_view(layout::Rect view){
   assert(trace_bytes<=size_t(1230)*204*2&&sizeof(g_waterfall_row)==size_t(1232)*2);
   draw_spectrum(levels,0,160,-100.0f);assert(lgfx::live_sprite_bytes==trace_bytes);
   bool step_focus=false;for(size_t i=0;i<orcsdr::focus_nav::count();++i){orcsdr::focus_nav::Rect r{};assert(orcsdr::focus_nav::get(i,&r));step_focus|=r.x==g_layout.quick[0].x&&r.y==g_layout.quick[0].y&&r.w==g_layout.quick[0].w&&r.h==g_layout.quick[0].h;}assert(step_focus);
+  if(g_layout.portrait){bool bottom_tab_focus=false;const auto bottom_tab=g_layout.tab[4];for(size_t i=0;i<orcsdr::focus_nav::count();++i){orcsdr::focus_nav::Rect r{};assert(orcsdr::focus_nav::get(i,&r));bottom_tab_focus|=r.x==bottom_tab.x&&r.y==bottom_tab.y&&r.w==bottom_tab.w&&r.h==bottom_tab.h;}assert(bottom_tab.y+bottom_tab.h>720&&bottom_tab_focus);}
   orcsdr::focus_nav::focus_at(g_layout.quick[0].x+4,g_layout.quick[0].y+4);orcsdr::focus_nav::Rect focused{};assert(orcsdr::focus_nav::focused(&focused));
   const int update_clears=lgfx::screen_clears;
   assert(tap({g_layout.spectrum.x+g_layout.spectrum.w/2,g_layout.spectrum.y+36,1,1}).kind==ActionKind::tune_hz);

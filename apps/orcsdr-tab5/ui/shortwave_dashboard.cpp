@@ -161,7 +161,7 @@ void card(int x, int y, int w, int h) {
 
 void button(int x, int y, int w, int h, const char* label, bool selected = false,
             bool enabled = true) {
-  orcsdr::focus_nav::note(x, y, w, h);
+  if (enabled) orcsdr::focus_nav::note(x, y, w, h);
   const uint16_t color = enabled ? (selected ? kGreen : kCyan) : TFT_DARKGREY;
   M5.Display.fillRoundRect(x, y, w, h, 8, selected ? 0x1264 : kPanel);
   M5.Display.drawRoundRect(x, y, w, h, 8, color);
@@ -588,10 +588,11 @@ void draw_memory() {
              static_cast<unsigned>(i + 1),
              static_cast<double>(memory->frequency_hz) / 1000000.0,
              memory->mode, memory->station[0] ? memory->station : "Unlabeled signal");
+    const bool writable=g_snapshot.storage_available&&g_snapshot.storage_status==StorageStatus::ready;
     if(g_layout.legacy){int y=250+static_cast<int>(row)*50;button(36,y,780,42,label);
-      button(826,y,100,42,memory->favorite?"STAR":"FAV",memory->favorite);
-      button(936,y,130,42,"EDIT");button(1076,y,168,42,g_delete_memory==i?"CONFIRM":"DELETE");}
-    else {button(local(g_layout.row_actions[row][0]),label);button(local(g_layout.row_actions[row][1]),memory->favorite?"STAR":"FAV",memory->favorite);button(local(g_layout.row_actions[row][2]),"EDIT");button(local(g_layout.row_actions[row][3]),g_layout.row_actions[row][3].w<88?(g_delete_memory==i?"OK?":"DEL"):(g_delete_memory==i?"CONFIRM":"DELETE"));}
+      button(826,y,100,42,memory->favorite?"STAR":"FAV",memory->favorite,writable);
+      button(936,y,130,42,"EDIT",false,writable);button(1076,y,168,42,g_delete_memory==i?"CONFIRM":"DELETE",false,writable);}
+    else {button(local(g_layout.row_actions[row][0]),label);button(local(g_layout.row_actions[row][1]),memory->favorite?"STAR":"FAV",memory->favorite,writable);button(local(g_layout.row_actions[row][2]),"EDIT",false,writable);button(local(g_layout.row_actions[row][3]),g_layout.row_actions[row][3].w<88?(g_delete_memory==i?"OK?":"DEL"):(g_delete_memory==i?"CONFIRM":"DELETE"),false,writable);}
   }
 }
 
@@ -632,8 +633,9 @@ void draw_logbook() {
              entry->mode, static_cast<double>(entry->signal_dbfs),
              entry->station[0] ? entry->station : "Unidentified reception");
     const size_t index = first + row_index;
-    if(g_layout.legacy){int y=250+static_cast<int>(row_index)*50;button(36,y,880,42,row);button(926,y,140,42,"EDIT");button(1076,y,168,42,g_delete_log==index?"CONFIRM":"DELETE");}
-    else {button(local(g_layout.row_actions[row_index][0]),row);button(local(g_layout.row_actions[row_index][2]),"EDIT");button(local(g_layout.row_actions[row_index][3]),g_layout.row_actions[row_index][3].w<88?(g_delete_log==index?"OK?":"DEL"):(g_delete_log==index?"CONFIRM":"DELETE"));}
+    const bool writable=g_snapshot.storage_available&&g_snapshot.storage_status==StorageStatus::ready;
+    if(g_layout.legacy){int y=250+static_cast<int>(row_index)*50;button(36,y,880,42,row);button(926,y,140,42,"EDIT",false,writable);button(1076,y,168,42,g_delete_log==index?"CONFIRM":"DELETE",false,writable);}
+    else {button(local(g_layout.row_actions[row_index][0]),row);button(local(g_layout.row_actions[row_index][2]),"EDIT",false,writable);button(local(g_layout.row_actions[row_index][3]),g_layout.row_actions[row_index][3].w<88?(g_delete_log==index?"OK?":"DEL"):(g_delete_log==index?"CONFIRM":"DELETE"),false,writable);}
   }
 }
 
@@ -1058,9 +1060,9 @@ Action handle_touch(int32_t x, int32_t y) {
       const Rect del=g_layout.legacy?Rect{1076,250+static_cast<int>(row)*50,168,42}:local(g_layout.row_actions[row][3]);
       if (hit(x, y, tune))
         return {ActionKind::tune_hz, static_cast<int32_t>(memory->frequency_hz)};
-      if (hit(x, y, fav))
+      if (g_snapshot.storage_available && g_snapshot.storage_status == StorageStatus::ready && hit(x, y, fav))
         return {ActionKind::favorite_memory, static_cast<int32_t>(i)};
-      if (hit(x, y, edit)) {
+      if (g_snapshot.storage_available && g_snapshot.storage_status == StorageStatus::ready && hit(x, y, edit)) {
         g_edit_memory = i;
         snprintf(g_pending_memory_label, sizeof(g_pending_memory_label), "%s",
                  memory->station);
@@ -1072,7 +1074,7 @@ Action handle_touch(int32_t x, int32_t y) {
         draw_text_editor();
         return {};
       }
-      if (hit(x, y, del)) {
+      if (g_snapshot.storage_available && g_snapshot.storage_status == StorageStatus::ready && hit(x, y, del)) {
         if (g_delete_memory == i) {
           g_delete_memory = SIZE_MAX;
           return {ActionKind::delete_memory, static_cast<int32_t>(i)};
@@ -1122,7 +1124,7 @@ Action handle_touch(int32_t x, int32_t y) {
       if (!entry) continue;
       const Rect edit=g_layout.legacy?Rect{926,250+static_cast<int>(row)*50,140,42}:local(g_layout.row_actions[row][2]);
       const Rect del=g_layout.legacy?Rect{1076,250+static_cast<int>(row)*50,168,42}:local(g_layout.row_actions[row][3]);
-      if (hit(x, y, edit)) {
+      if (g_snapshot.storage_available && g_snapshot.storage_status == StorageStatus::ready && hit(x, y, edit)) {
         g_edit_log = i;
         snprintf(g_pending_log_antenna, sizeof(g_pending_log_antenna), "%s",
                  entry->antenna);
@@ -1134,7 +1136,7 @@ Action handle_touch(int32_t x, int32_t y) {
         draw_text_editor();
         return {};
       }
-      if (hit(x, y, del)) {
+      if (g_snapshot.storage_available && g_snapshot.storage_status == StorageStatus::ready && hit(x, y, del)) {
         if (g_delete_log == i) {
           g_delete_log = SIZE_MAX;
           return {ActionKind::delete_log, static_cast<int32_t>(i)};
