@@ -4,6 +4,7 @@
 #include "shortwave_audio_dsp.hpp"
 #include "shortwave_hunt.hpp"
 #include "shortwave_library.hpp"
+#include "shortwave_dashboard_layout.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -43,6 +44,11 @@ struct Snapshot {
   char mode[4] = "AM";       // demodulator in force: AM, USB or LSB
   bool mode_auto = true;     // the mode follows the band plan rather than a pinned choice
   int16_t clarifier_hz = 0;  // SSB pitch trim
+  // Backend capabilities, independent of screen geometry. Unsupported controls
+  // remain visible and inert so a profile cannot imply missing services exist.
+  bool audio_dsp_available = true;
+  bool hunt_available = true;
+  bool storage_available = true;
 };
 
 enum class ActionKind : uint8_t {
@@ -94,10 +100,24 @@ struct Action {
   int32_t value = 0;
 };
 
+enum class Control : uint8_t {
+  tune_frequency, step_down, step_up, step_cycle, filter_down, filter_up,
+  filter_cycle, span_down, span_up, sound, volume_down, volume_up,
+  mode_cycle, audio_clean, audio_boost, noise_reduction, auto_notch,
+  squelch, hunt_start, hunt_cancel, open_frequency, open_settings, home
+};
+
 void enter(const Snapshot& snapshot);
 void leave();
 void draw();
 void update(const Snapshot& snapshot);
+// Called by the owning UI task before entry and after presentation geometry changes.
+// Returns false for unsupported viewports. A true result preserves all UI state.
+bool set_viewport(layout::Rect safe);
+layout::Rect viewport();
+// UI-owner named control seam for serial/input adapters. It validates and
+// returns the same Action consumed by the dashboard adapter; it never draws.
+Action handle_control(Control control, int32_t value = 0);
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor);
 Action handle_touch(int32_t x, int32_t y);

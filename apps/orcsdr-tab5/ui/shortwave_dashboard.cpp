@@ -1,6 +1,7 @@
 #include "focus_nav.hpp"
 #include "shortwave_dashboard.hpp"
 #include "shortwave_dashboard_state.hpp"
+#include "shortwave_dashboard_layout.hpp"
 
 #include "dashboard_audio_control.hpp"
 #include "freq_keypad.hpp"
@@ -33,51 +34,60 @@ struct Rect {
   int h;
 };
 
-constexpr int kSpectrumX = 24;
-constexpr int kSpectrumY = 276;
-constexpr int kSpectrumClosedW = 1232;
-constexpr int kSpectrumOpenW = 804;
-constexpr int kSpectrumH = 204;
-constexpr int kSpectrumLabelH = 20;
-constexpr int kSpectrumPlotH = kSpectrumH - kSpectrumLabelH;
-constexpr int kWaterfallY = 486;
-constexpr int kWaterfallH = 102;
-constexpr int kZoomY = 592;
-constexpr int kTabsY = 630;
-constexpr int kTabW = 256;
-constexpr Rect kFrequencyCard{24, 104, 1232, 80};
-constexpr Rect kFrequencyMinus{42, 112, 64, 64};
-constexpr Rect kFrequencyEntry{120, 108, 1040, 72};
-constexpr Rect kFrequencyPlus{1174, 112, 64, 64};
-constexpr Rect kStep{24, 190, 130, 52};
-constexpr Rect kFilterDown{162, 190, 52, 52};
-constexpr Rect kFilterValue{222, 190, 150, 52};
-constexpr Rect kFilterUp{380, 190, 52, 52};
-constexpr Rect kMode{440, 190, 100, 52};
-constexpr Rect kClean{548, 190, 86, 52};
-constexpr Rect kBoost{642, 190, 86, 52};
-constexpr Rect kNoiseReduction{736, 190, 96, 52};
-constexpr Rect kNotch{840, 190, 96, 52};
-constexpr Rect kSquelch{944, 190, 130, 52};
-constexpr Rect kTuner{1082, 190, 174, 52};
-constexpr Rect kClarifierDown{130, 146, 56, 30};
-constexpr Rect kClarifierUp{304, 146, 56, 30};
-constexpr Rect kDrawer{840, 104, 420, 522};
-constexpr Rect kDrawerClose{858, 552, 378, 52};
-constexpr Rect kTunerAgc{858, 176, 184, 68};
-constexpr Rect kRtlAgc{1052, 176, 184, 68};
-constexpr int kGainX = 872;
-constexpr int kGainY = 442;
-constexpr int kGainW = 350;
+int kSpectrumX = 24, kSpectrumY = 276, kSpectrumClosedW = 1232;
+int kSpectrumOpenW = 804, kSpectrumH = 204, kSpectrumLabelH = 20;
+int kSpectrumPlotH = kSpectrumH-kSpectrumLabelH;
+int kWaterfallX=24,kWaterfallY = 486, kWaterfallH = 102, kZoomY = 592, kTabsY = 630, kTabW = 256;
+Rect kFrequencyCard{24,104,1232,80}, kFrequencyMinus{42,112,64,64};
+Rect kFrequencyEntry{120,108,1040,72}, kFrequencyPlus{1174,112,64,64};
+Rect kStep{24,190,130,52}, kFilterDown{162,190,52,52}, kFilterValue{222,190,150,52};
+Rect kFilterUp{380,190,52,52}, kMode{440,190,100,52}, kClean{548,190,86,52};
+Rect kBoost{642,190,86,52}, kNoiseReduction{736,190,96,52}, kNotch{840,190,96,52};
+Rect kSquelch{944,190,130,52}, kTuner{1082,190,174,52};
+Rect kClarifierDown{130,146,56,30}, kClarifierUp{304,146,56,30};
+Rect kDrawer{840,104,420,522}, kDrawerClose{858,552,378,52};
+Rect kTunerAgc{858,176,184,68}, kRtlAgc{1052,176,184,68};
+int kGainX=872,kGainY=442,kGainW=350;
+layout::Layout g_layout=layout::make_layout({0,0,1280,720});
+layout::Rect g_viewport{0,0,1280,720};
+
+Rect local(layout::Rect r) { return {r.x,r.y,r.w,r.h}; }
+void install_geometry(const layout::Layout& l) {
+  g_layout=l; g_viewport=l.viewport;
+  kSpectrumX=l.spectrum.x;kSpectrumY=l.spectrum.y;kSpectrumClosedW=l.spectrum.w;
+  kSpectrumH=l.spectrum.h;kSpectrumLabelH=20;kSpectrumPlotH=std::max(48,kSpectrumH-kSpectrumLabelH);
+  kWaterfallX=l.waterfall.x;kWaterfallY=l.waterfall.y;kWaterfallH=l.waterfall.h;kZoomY=l.zoom_minus.y;
+  kTabsY=l.tabs.y;kTabW=l.tabs.w/5;
+  kFrequencyCard=local(l.frequency);kFrequencyMinus=local(l.frequency_minus);
+  kFrequencyEntry=local(l.frequency_value);kFrequencyPlus=local(l.frequency_plus);
+  kStep=local(l.quick[0]);kFilterDown=local(l.quick[1]);kFilterValue=local(l.quick[2]);
+  kFilterUp=local(l.quick[3]);kMode=local(l.quick[4]);kClean=local(l.quick[5]);
+  kBoost=local(l.quick[6]);kNoiseReduction=local(l.quick[7]);kNotch=local(l.quick[8]);
+  kSquelch=local(l.quick[9]);kTuner=local(l.quick[10]);
+  kDrawer=local(l.drawer);kDrawerClose=local(l.drawer_close);kTunerAgc=local(l.tuner_agc);
+  kRtlAgc=local(l.rtl_agc);kGainX=l.gain_slider.x;kGainY=l.gain_slider.y;kGainW=l.gain_slider.w;
+  if(l.legacy){kSpectrumOpenW=804;kClarifierDown={130,146,56,30};kClarifierUp={304,146,56,30};return;}
+  kSpectrumOpenW=std::max(96,l.drawer.x-l.spectrum.x);
+  kClarifierDown={kFilterDown.x,kFilterDown.y,kFilterDown.w,kFilterDown.h};
+  kClarifierUp={kFilterUp.x,kFilterUp.y,kFilterUp.w,kFilterUp.h};
+}
 
 Snapshot g_snapshot{};
 bool g_active = false;
+bool g_static_dirty = true;
+Tab g_drawn_tab=Tab::live;
+Modal g_drawn_modal=Modal::none;
+bool g_drawn_drawer=false;
 // dashboard_self_check() drives the real touch handlers at boot; keep it off
 // the display so the boot sequence does not flash Shortwave tabs.
 bool g_self_check_running = false;
 DashboardState g_state{};
 uint32_t g_saved_frequency = 7100000;
 size_t g_hunt_band = 0;
+size_t g_hunt_page = 0;
+size_t g_on_air_page = 0;
+bool g_hunt_start_pending=false;
+uint32_t g_hunt_pending_since=0;
 char g_entry[12]{};
 char g_pending_memory_label[64]{};
 char g_pending_memory_notes[160]{};
@@ -91,7 +101,7 @@ size_t g_delete_memory = SIZE_MAX;
 size_t g_delete_log = SIZE_MAX;
 bool g_filter_dragging = false;
 bool g_tuner_drawer_open = false;
-EXT_RAM_BSS_ATTR uint16_t g_waterfall_row[kSpectrumClosedW]{};
+EXT_RAM_BSS_ATTR uint16_t g_waterfall_row[1232]{};
 
 int spectrum_width() {
   return g_tuner_drawer_open ? kSpectrumOpenW : kSpectrumClosedW;
@@ -155,7 +165,7 @@ void button(int x, int y, int w, int h, const char* label, bool selected = false
   const uint16_t color = enabled ? (selected ? kGreen : kCyan) : TFT_DARKGREY;
   M5.Display.fillRoundRect(x, y, w, h, 8, selected ? 0x1264 : kPanel);
   M5.Display.drawRoundRect(x, y, w, h, 8, color);
-  text(label, x + w / 2, y + h / 2, enabled ? TFT_WHITE : kMuted, 2);
+  text(label, x + w / 2, y + h / 2, enabled ? TFT_WHITE : kMuted, w<88?1:2);
 }
 
 void button(const Rect& rect, const char* label, bool selected = false,
@@ -177,28 +187,29 @@ bool ssb_mode() {
 }
 
 void draw_frequency() {
-  const int width = spectrum_width();
+  const int width = g_layout.legacy?spectrum_width():g_layout.frequency.w;
   M5.Display.fillRect(kSpectrumX + 1, kFrequencyCard.y + 1,
                       width - 2, kFrequencyCard.h - 2, kPanel);
   button(kFrequencyMinus, "-");
-  const Rect plus{kSpectrumX + width - 82, kFrequencyPlus.y,
-                  kFrequencyPlus.w, kFrequencyPlus.h};
+  const Rect plus=g_layout.legacy?Rect{kSpectrumX+width-82,kFrequencyPlus.y,kFrequencyPlus.w,kFrequencyPlus.h}:local(g_layout.frequency_plus);
   button(plus, "+");
   char value[40];
   snprintf(value, sizeof(value), "%lu.%03lu.%03lu MHz",
            static_cast<unsigned long>(g_snapshot.frequency_hz / 1000000u),
            static_cast<unsigned long>((g_snapshot.frequency_hz / 1000u) % 1000u),
            static_cast<unsigned long>(g_snapshot.frequency_hz % 1000u));
-  text(value, kSpectrumX + width / 2, 132, TFT_WHITE, 4);
+  const bool legacy=g_layout.legacy;
+  text(value, kSpectrumX + width / 2, legacy?132:kFrequencyCard.y+(kFrequencyCard.h>=70?26:20),
+       TFT_WHITE, legacy?4:2);
   const BroadcastBand* sw_band = band_for(g_snapshot.frequency_hz);
   const ModeGuide guide = mode_guide_for(g_snapshot.frequency_hz);
   char context[64];
   snprintf(context, sizeof(context), "%s  |  %s %s",
            sw_band ? sw_band->label : region_label(region_for(g_snapshot.frequency_hz)),
            guide.likely_mode, guide.supported_now ? "READY" : "GUIDE");
-  text(context, kSpectrumX + width / 2, 166,
-       guide.supported_now ? kGreen : kYellow, 2);
-  if (ssb_mode()) {
+  text(context, kSpectrumX + width / 2, legacy?166:kFrequencyCard.y+(kFrequencyCard.h>=70?58:44),
+       guide.supported_now ? kGreen : kYellow, legacy?2:1);
+  if (ssb_mode() && legacy) {
     button(kClarifierDown, "-");
     snprintf(value, sizeof(value), "CLAR %+d Hz", static_cast<int>(g_snapshot.clarifier_hz));
     text(value, kClarifierDown.x + (kClarifierUp.x + kClarifierUp.w - kClarifierDown.x) / 2, 161, kCyan, 2);
@@ -208,14 +219,15 @@ void draw_frequency() {
 
 void draw_status() {
   const int width = spectrum_width();
-  M5.Display.fillRect(kSpectrumX, 246, width, 26, TFT_BLACK);
+  const Rect status_rect=g_layout.legacy?Rect{kSpectrumX,246,width,26}:local(g_layout.live_status);
+  M5.Display.fillRect(status_rect.x,status_rect.y,status_rect.w,status_rect.h,TFT_BLACK);
   char status[96];
   snprintf(status, sizeof(status), "%s  |  %+.1f dBFS  |  %lu kHz span%s",
            g_snapshot.running ? "LIVE IQ" : "WAITING",
            static_cast<double>(g_snapshot.relative_dbfs),
            static_cast<unsigned long>(g_snapshot.span_hz / 1000u),
            g_snapshot.clipping_percent > 0.1f ? "  |  CLIP" : "");
-  text(status, kSpectrumX + width / 2, 259,
+  text(status, kSpectrumX + width / 2, g_layout.legacy?259:status_rect.y+status_rect.h/2,
        g_snapshot.clipping_percent > 0.1f ? TFT_RED
                                          : g_snapshot.running ? kGreen : TFT_ORANGE,
        2);
@@ -226,11 +238,16 @@ void draw_quick_controls() {
   snprintf(value, sizeof(value), "STEP %lu Hz",
            static_cast<unsigned long>(g_snapshot.step_hz));
   button(kStep, value);
-  button(kFilterDown, "<", false, !ssb_mode());
+  if(ssb_mode()&&!g_layout.legacy){
+    char clarifier[32];snprintf(clarifier,sizeof(clarifier),"CLAR %+d",int(g_snapshot.clarifier_hz));
+    button(kFilterDown,"-");button(kFilterValue,clarifier,true);button(kFilterUp,"+");
+  } else {
+    button(kFilterDown, "<", false, !ssb_mode());
   snprintf(value, sizeof(value), "FILTER %.1f kHz",
            static_cast<double>(g_snapshot.filter_bandwidth_hz) / 1000.0);
   button(kFilterValue, value, false, !ssb_mode());
   button(kFilterUp, ">", false, !ssb_mode());
+  }
   snprintf(value, sizeof(value), g_snapshot.mode_auto ? "AUTO %s" : "%s", g_snapshot.mode);
   button(kMode, value, ssb_mode());
   const auto boost = receiver_controls::item(receiver_controls::Control::audio_boost,
@@ -251,14 +268,17 @@ void draw_quick_controls() {
     snprintf(sql, sizeof(sql), "SQL AUTO");
   else
     snprintf(sql, sizeof(sql), "SQL %d dB", g_snapshot.dsp.squelch_dbfs);
-  button(kClean, "CLEAN", clean);
-  button(kBoost, "BOOST", boost.active);
+  button(kClean, "CLEAN", clean, g_snapshot.audio_dsp_available);
+  button(kBoost, "BOOST", boost.active, g_snapshot.audio_dsp_available);
   button(kNoiseReduction, nr,
-         g_snapshot.dsp.noise_reduction != audio_dsp::NoiseReduction::off);
-  button(kNotch, "NOTCH", g_snapshot.dsp.auto_notch);
+         g_snapshot.dsp.noise_reduction != audio_dsp::NoiseReduction::off,
+         g_snapshot.audio_dsp_available);
+  button(kNotch, "NOTCH", g_snapshot.dsp.auto_notch,
+         g_snapshot.audio_dsp_available);
   button(kSquelch, sql,
          g_snapshot.dsp.squelch != audio_dsp::SquelchMode::off &&
-             g_snapshot.dsp_metrics.squelch_open);
+             g_snapshot.dsp_metrics.squelch_open,
+         g_snapshot.audio_dsp_available);
   button(kTuner, "TUNER", g_tuner_drawer_open);
 }
 
@@ -267,9 +287,8 @@ void draw_zoom_controls() {
   snprintf(span, sizeof(span), "SPAN %lu kHz",
            static_cast<unsigned long>(g_snapshot.span_hz / 1000u));
   const int width = spectrum_width();
-  button(kSpectrumX, kZoomY, 160, 34, "ZOOM IN");
-  text(span, kSpectrumX + width / 2, kZoomY + 17, kCyan, 2);
-  button(kSpectrumX + width - 160, kZoomY, 160, 34, "ZOOM OUT");
+  if(g_layout.legacy){button(kSpectrumX,kZoomY,160,34,"ZOOM IN");text(span,kSpectrumX+width/2,kZoomY+17,kCyan,2);button(kSpectrumX+width-160,kZoomY,160,34,"ZOOM OUT");}
+  else {button(local(g_layout.zoom_minus),"ZOOM IN");text(span,g_layout.span_value.x+g_layout.span_value.w/2,g_layout.span_value.y+g_layout.span_value.h/2,kCyan,1);button(local(g_layout.zoom_plus),"ZOOM OUT");}
 }
 
 void draw_spectrum_scale() {
@@ -301,6 +320,31 @@ void draw_tuner_drawer() {
   const auto gain = receiver_controls::item(receiver_controls::Control::rf_gain,
                                              g_snapshot.controls);
   card(kDrawer.x, kDrawer.y, kDrawer.w, kDrawer.h);
+  if(!g_layout.legacy){
+    const int cx=kDrawer.x+kDrawer.w/2;
+    text(route_name(g_snapshot.controls.route),cx,kDrawer.y+24,kGreen,kDrawer.w<240?1:2);
+    text(g_snapshot.device[0]?g_snapshot.device:"NO RTL-SDR",cx,kDrawer.y+48,g_snapshot.driver_ready?TFT_WHITE:TFT_ORANGE,1);
+    button(kTunerAgc,"TUNER AGC",tuner.active,tuner.availability==receiver_controls::Availability::enabled);
+    button(kRtlAgc,"RTL AGC",rtl.active,rtl.availability==receiver_controls::Availability::enabled);
+    const int body_y=kDrawer.y+148,body_h=std::max(44,kDrawer.y+kDrawer.h-body_y-52);
+    M5.Display.fillRect(kDrawer.x+8,body_y,kDrawer.w-16,body_h,kPanel);
+    if(tuner.availability!=receiver_controls::Availability::enabled)text(tuner.explanation,cx,body_y+18,kMuted,1);
+    if(rtl.availability!=receiver_controls::Availability::enabled)text(rtl.explanation,cx,body_y+38,kMuted,1);
+    if(gain.availability!=receiver_controls::Availability::enabled){
+      text("NO RF GAIN STAGE",cx,body_y+36,kMuted,1);
+      text("RTL AGC is separate",cx,body_y+58,TFT_LIGHTGREY,1);
+      button(kDrawerClose,"CLOSE");return;
+    }
+    text("RF GAIN",kDrawer.x+12,body_y+6,kCyan,1,top_left);
+    char current[32];snprintf(current,sizeof(current),g_snapshot.controls.tuner_agc?"AUTO %.1f dB":"MANUAL %.1f dB",double(g_snapshot.controls.gain_tenth_db)/10.0);
+    text(current,cx,body_y+30,g_snapshot.controls.tuner_agc?kGreen:TFT_WHITE,1);
+    focus_nav::note(kGainX-16,kGainY-20,kGainW+32,62);
+    M5.Display.drawRoundRect(kGainX,kGainY,kGainW,22,10,kCyan);
+    int pos=0;if(g_snapshot.gain_step_count>1){size_t nearest=0;for(size_t i=1;i<g_snapshot.gain_step_count;++i)if(std::abs(g_snapshot.gain_steps_tenth_db[i]-g_snapshot.controls.gain_tenth_db)<std::abs(g_snapshot.gain_steps_tenth_db[nearest]-g_snapshot.controls.gain_tenth_db))nearest=i;pos=int(nearest*kGainW/(g_snapshot.gain_step_count-1));}
+    M5.Display.fillCircle(kGainX+pos,kGainY+11,12,g_snapshot.controls.tuner_agc?kMuted:kGreen);
+    text("AGC AUTO  |  DRAG FOR GAIN",cx,kDrawer.y+kDrawer.h-64,TFT_LIGHTGREY,1);
+    button(kDrawerClose,"CLOSE");return;
+  }
   text(route_name(g_snapshot.controls.route), 1050, 126, kGreen, 2);
   text(g_snapshot.device[0] ? g_snapshot.device : "NO RTL-SDR", 1050, 151,
        g_snapshot.driver_ready ? TFT_WHITE : TFT_ORANGE, 1);
@@ -331,6 +375,7 @@ void draw_tuner_drawer() {
                                                    : "MANUAL %.1f dB",
            static_cast<double>(g_snapshot.controls.gain_tenth_db) / 10.0);
   text(gain_value, 1047, 370, g_snapshot.controls.tuner_agc ? kGreen : TFT_WHITE, 2);
+  focus_nav::note(kGainX-16,kGainY-20,kGainW+32,62);
   M5.Display.drawRoundRect(kGainX, kGainY, kGainW, 22, 10, kCyan);
   int position = 0;
   if (g_snapshot.gain_step_count > 1) {
@@ -358,140 +403,183 @@ void draw_live_static() {
     M5.Display.drawFastHLine(kSpectrumX, kSpectrumY + i * kSpectrumPlotH / 4,
                             width, kGrid);
   draw_spectrum_scale();
-  M5.Display.drawRect(kSpectrumX, kWaterfallY, width, kWaterfallH, kCyan);
-  M5.Display.setScrollRect(kSpectrumX + 1, kWaterfallY + 1, width - 2,
+  M5.Display.drawRect(kWaterfallX, kWaterfallY, g_layout.waterfall.w, kWaterfallH, kCyan);
+  M5.Display.setScrollRect(kWaterfallX + 1, kWaterfallY + 1, g_layout.waterfall.w - 2,
                            kWaterfallH - 2, TFT_BLACK);
   draw_zoom_controls();
 }
 
 void draw_static() {
   M5.Display.clearScrollRect();
+  focus_nav::clear();
   M5.Display.fillScreen(TFT_BLACK);
-  audio_header::draw_brand("SHORTWAVE EXPLORER");
-  M5.Display.drawFastVLine(350, 18, 58, kCyan);
-  text("SHORTWAVE", 390, 42, TFT_WHITE, 4, middle_left);
+  audio_header::draw_brand(g_layout.legacy?"SHORTWAVE EXPLORER":"SHORTWAVE");
+  if(g_layout.legacy){M5.Display.drawFastVLine(350,18,58,kCyan);text("SHORTWAVE",390,42,TFT_WHITE,4,middle_left);}
   audio_header::draw_battery(g_snapshot.battery_percent);
   audio_header::draw_home_button();
   audio_header::draw_mute_button(g_snapshot.sound_enabled);
   audio_header::draw_visualizer_button(g_snapshot.running);
   audio_header::draw_settings_button();
-  M5.Display.drawFastHLine(20, 92, 1240, kGreen);
+  const auto& header=audio_header::layout();
+  M5.Display.drawFastHLine(g_layout.legacy?20:g_viewport.x+4,
+      g_layout.legacy?92:header.content_top-6,
+      g_layout.legacy?1240:g_viewport.w-8,kGreen);
 
   if (g_state.tab() == Tab::live && g_state.modal() == Modal::none)
     draw_live_static();
 
   constexpr const char* tabs[] = {"LIVE", "ON AIR", "HUNT", "MEMORY", "LOGBOOK"};
   for (int i = 0; i < 5; ++i) {
-    button(i * kTabW + 4, kTabsY + 4, kTabW - 8, 82, tabs[i],
-           static_cast<int>(g_state.tab()) == i);
+    button(local(g_layout.tab[i]), tabs[i], static_cast<int>(g_state.tab()) == i);
   }
 }
 
-void draw_page_title(const char* title, const char* subtitle) {
+void draw_page_title(const char* title, const char* subtitle,bool clear_content=true) {
   M5.Display.clearScrollRect();
-  M5.Display.fillRect(0, 93, 1280, kTabsY - 93, TFT_BLACK);
-  text(title, 36, 126, TFT_WHITE, 4, middle_left);
-  text(subtitle, 38, 166, kMuted, 2, middle_left);
+  if(clear_content)M5.Display.fillRect(g_layout.content.x,g_layout.content.y,g_layout.content.w,g_layout.content.h,TFT_BLACK);
+  text(title, g_layout.page_title.x, g_layout.page_title.y+g_layout.page_title.h/2,
+       TFT_WHITE, g_layout.portrait ? 2 : 4, middle_left);
+  text(subtitle, g_layout.page_subtitle.x, g_layout.page_subtitle.y+g_layout.page_subtitle.h/2,
+       kMuted, g_layout.portrait ? 1 : 2, middle_left);
 }
 
 void draw_storage_status() {
-  const bool ready = g_snapshot.storage_status == StorageStatus::ready;
-  text(ready ? "SD LIBRARY READY" : "SD LIBRARY UNAVAILABLE", 1220, 130,
-       ready ? kGreen : TFT_ORANGE, 2, middle_right);
+  const bool ready = g_snapshot.storage_available && g_snapshot.storage_status == StorageStatus::ready;
+  M5.Display.fillRect(g_layout.storage_status.x,g_layout.storage_status.y,g_layout.storage_status.w,g_layout.storage_status.h,TFT_BLACK);
+  text(ready ? "SD LIBRARY READY" : "SD LIBRARY UNAVAILABLE",
+       g_layout.storage_status.x+g_layout.storage_status.w, g_layout.storage_status.y+g_layout.storage_status.h/2,
+       ready ? kGreen : TFT_ORANGE, g_layout.portrait ? 1 : 2, middle_right);
 }
 
-void draw_on_air() {
-  draw_page_title("ON AIR", "Local schedules are suggestions, never decoded identity");
+void draw_empty_state(const char* title,const char* subtitle,Rect legacy_card,
+                      int legacy_title_y,int legacy_subtitle_y,uint16_t title_color=TFT_WHITE,
+                      uint16_t subtitle_color=kMuted) {
+  if(g_layout.legacy){card(legacy_card.x,legacy_card.y,legacy_card.w,legacy_card.h);
+    text(title,legacy_card.x+legacy_card.w/2,legacy_title_y,title_color,3);
+    text(subtitle,legacy_card.x+legacy_card.w/2,legacy_subtitle_y,subtitle_color,2);return;}
+  const Rect content=local(g_layout.content);const int pad=8;
+  Rect box{content.x+pad,content.y+96,content.w-2*pad,std::max(100,content.h-212)};
+  card(box.x,box.y,box.w,box.h);
+  text(title,box.x+box.w/2,box.y+box.h/2-18,title_color,g_layout.portrait?2:2);
+  text(subtitle,box.x+box.w/2,box.y+box.h/2+18,subtitle_color,1);
+}
+
+void draw_on_air(bool clear_content=true) {
+  draw_page_title("ON AIR", "Local schedules are suggestions, never decoded identity",clear_content);
+  if(!clear_content){const int y=g_layout.content.y+96;M5.Display.fillRect(g_layout.content.x,y,g_layout.content.w,g_layout.content.y+g_layout.content.h-y,TFT_BLACK);}
   draw_storage_status();
   if (!g_snapshot.utc_valid) {
-    card(36, 230, 1208, 250);
-    text("SET UTC TO USE ON AIR", 640, 315, TFT_ORANGE, 3);
-    text("Schedules stay hidden until the device clock is valid.", 640, 370,
-         TFT_WHITE, 2);
+    draw_empty_state("SET UTC TO USE ON AIR","Schedules stay hidden until the device clock is valid.",{36,230,1208,250},315,370,TFT_ORANGE,TFT_WHITE);
     return;
   }
-  size_t row = 0;
-  for (size_t i = 0; i < station_count() && row < 6; ++i) {
+  const size_t max_rows=static_cast<size_t>(g_layout.onair_row_count);
+  size_t matches=0;
+  for(size_t i=0;i<station_count();++i){const StationCard* s=station_at(i);if(s&&schedule_matches(*s,g_snapshot.frequency_hz,g_snapshot.utc_minute,g_snapshot.utc_weekday))++matches;}
+  const size_t pages=std::max<size_t>(1,(matches+max_rows-1)/max_rows);g_on_air_page=std::min(g_on_air_page,pages-1);
+  if(matches>max_rows){button(local(g_layout.hunt_previous),"<",false,g_on_air_page>0);char label[48];snprintf(label,sizeof(label),"PAGE %u / %u  |  %u MATCHES",unsigned(g_on_air_page+1),unsigned(pages),unsigned(matches));button(local(g_layout.hunt_page),label,true);button(local(g_layout.hunt_next),">",false,g_on_air_page+1<pages);}
+  size_t row = 0,match_index=0;const size_t first=g_on_air_page*max_rows;
+  for (size_t i = 0; i < station_count() && row < max_rows; ++i) {
     const StationCard* station = station_at(i);
     if (!station || !schedule_matches(*station, g_snapshot.frequency_hz,
                                       g_snapshot.utc_minute,
                                       g_snapshot.utc_weekday))
       continue;
+    if(match_index++<first)continue;
     char label[160];
     snprintf(label, sizeof(label), "%.3f MHz  %s  |  %s",
              static_cast<double>(station->frequency_hz) / 1000000.0,
              station->station, station->program);
-    button(36, 220 + static_cast<int>(row) * 58, 1208, 50, label, row == 0);
+    if(g_layout.legacy)button(36,220+static_cast<int>(row)*58,1208,50,label,row==0);
+    else button(local(g_layout.rows[row]),label,row==0);
     ++row;
   }
   if (!row) {
-    card(36, 230, 1208, 250);
-    text("NO MATCHING LOCAL SCHEDULE", 640, 315, TFT_ORANGE, 3);
-    text("Tune near a listed station frequency or use HUNT to explore.", 640, 370,
-         TFT_WHITE, 2);
+    draw_empty_state("NO MATCHING LOCAL SCHEDULE","Tune near a listed station frequency or use HUNT to explore.",{36,230,1208,250},315,370,TFT_ORANGE,TFT_WHITE);
   }
 }
 
 void draw_hunt() {
-  draw_page_title("HUNT", "Scan one broadcast band and keep the strongest candidates");
+  draw_page_title("HUNT",g_snapshot.hunt_available?"Scan one broadcast band and keep the strongest candidates":"HUNT SERVICE UNAVAILABLE ON THIS RECEIVER");
   const BroadcastBand* selected = band(g_hunt_band);
   char selection[64];
   snprintf(selection, sizeof(selection), "BAND  %s  %.3f-%.3f MHz",
            selected ? selected->label : "--",
            selected ? static_cast<double>(selected->min_hz) / 1000000.0 : 0.0,
            selected ? static_cast<double>(selected->max_hz) / 1000000.0 : 0.0);
-  button(36, 190, 80, 58, "<");
-  button(126, 190, 540, 58, selection, true);
-  button(676, 190, 80, 58, ">");
-  button(790, 190, 220, 58, g_snapshot.hunt_active ? "SCANNING" : "START",
-         g_snapshot.hunt_active);
-  button(1020, 190, 224, 58, "CANCEL", false, g_snapshot.hunt_active);
+  if(g_layout.legacy){button(36,190,80,58,"<",false,g_snapshot.hunt_available);button(126,190,540,58,selection,true,g_snapshot.hunt_available);
+    button(676,190,80,58,">",false,g_snapshot.hunt_available);}
+  else {button(local(g_layout.page_controls[0]),"<",false,g_snapshot.hunt_available);button(local(g_layout.page_controls[1]),selection,true,g_snapshot.hunt_available);
+    button(local(g_layout.page_controls[2]),">",false,g_snapshot.hunt_available);}
   char progress[48];
   snprintf(progress, sizeof(progress), "%u / %u", g_snapshot.hunt_step,
            g_snapshot.hunt_total);
-  text(progress, 1170, 165, g_snapshot.hunt_active ? kGreen : kMuted, 2);
+  if(g_layout.legacy)text(progress,1170,165,g_snapshot.hunt_active?kGreen:kMuted,2);
+  else {const Rect pr=local(g_layout.hunt_progress);M5.Display.fillRect(pr.x,pr.y,pr.w,pr.h,TFT_BLACK);text(progress,pr.x+pr.w/2,pr.y+pr.h/2,g_snapshot.hunt_active?kGreen:kMuted,1);}
+  const Rect start=g_layout.legacy?Rect{790,190,220,58}:local(g_layout.page_controls[3]);
+  const Rect cancel=g_layout.legacy?Rect{1020,190,224,58}:local(g_layout.page_controls[4]);
+  button(start,g_snapshot.hunt_active?"SCANNING":g_hunt_start_pending?"STARTING...":"START",g_snapshot.hunt_active||g_hunt_start_pending,g_snapshot.hunt_available);
+  button(cancel,"CANCEL",false,g_snapshot.hunt_active||g_hunt_start_pending);
+  const size_t per_page=static_cast<size_t>(g_layout.hunt_row_count);
+  const size_t pages=std::max<size_t>(1,(g_snapshot.hunt_candidate_count+per_page-1)/per_page);
+  g_hunt_page=std::min(g_hunt_page,pages-1);
   if (!g_snapshot.hunt_candidate_count) {
-    card(36, 280, 1208, 250);
-    text(g_snapshot.hunt_active ? "LISTENING FOR PEAKS..." : "NO HUNT RESULTS YET",
-         640, 370, g_snapshot.hunt_active ? kGreen : TFT_WHITE, 3);
-    text("Select a band, start the scan, then tap a result to listen.",
-         640, 420, kMuted, 2);
+    draw_empty_state(g_snapshot.hunt_active?"LISTENING FOR PEAKS...":"NO HUNT RESULTS YET","Select a band, start the scan, then tap a result to listen.",{36,280,1208,250},370,420,g_snapshot.hunt_active?kGreen:TFT_WHITE);
     return;
   }
-  for (size_t i = 0; i < std::min<size_t>(g_snapshot.hunt_candidate_count, 6); ++i) {
-    const Candidate& candidate = g_snapshot.hunt_candidates[i];
+  if(g_snapshot.hunt_candidate_count>per_page){
+    button(local(g_layout.hunt_previous),"<",false,g_hunt_page>0);
+    char page_label[48];snprintf(page_label,sizeof(page_label),"PAGE %u / %u  |  %u RESULTS",unsigned(g_hunt_page+1),unsigned(pages),unsigned(g_snapshot.hunt_candidate_count));
+    button(local(g_layout.hunt_page),page_label,true);
+    button(local(g_layout.hunt_next),">",false,g_hunt_page+1<pages);
+  }
+  const size_t first=g_hunt_page*per_page;
+  for (size_t i = 0; i < std::min<size_t>(g_snapshot.hunt_candidate_count-first, per_page); ++i) {
+    const size_t candidate_index=first+i;
+    const Candidate& candidate = g_snapshot.hunt_candidates[candidate_index];
     char row[96];
     snprintf(row, sizeof(row), "%u.  %.3f MHz     %+.1f dBFS",
-             static_cast<unsigned>(i + 1),
+             static_cast<unsigned>(candidate_index + 1),
              static_cast<double>(candidate.frequency_hz) / 1000000.0,
              static_cast<double>(candidate.level_dbfs));
-    button(36, 270 + static_cast<int>(i) * 52, 1208, 44, row);
+    if(g_layout.legacy)button(36,270+static_cast<int>(i)*52,1208,44,row);
+    else button(local(g_layout.rows[i]),row);
   }
+}
+
+void draw_hunt_progress() {
+  if(g_state.tab()!=Tab::hunt)return;
+  const Rect pr=local(g_layout.hunt_progress);M5.Display.fillRect(pr.x,pr.y,pr.w,pr.h,TFT_BLACK);
+  char progress[48];snprintf(progress,sizeof(progress),"%u / %u",g_snapshot.hunt_step,g_snapshot.hunt_total);
+  text(progress,g_layout.legacy?1170:pr.x+pr.w/2,g_layout.legacy?165:pr.y+pr.h/2,g_snapshot.hunt_active?kGreen:kMuted,g_layout.legacy?2:1);
+  button(g_layout.legacy?Rect{790,190,220,58}:local(g_layout.page_controls[3]),g_snapshot.hunt_active?"SCANNING":g_hunt_start_pending?"STARTING...":"START",g_snapshot.hunt_active||g_hunt_start_pending,g_snapshot.hunt_available);
+  button(g_layout.legacy?Rect{1020,190,224,58}:local(g_layout.page_controls[4]),"CANCEL",false,g_snapshot.hunt_active||g_hunt_start_pending);
 }
 
 void draw_memory() {
   draw_page_title("MEMORY", "Saved frequencies live on the SD card");
   draw_storage_status();
-  button(980, 170, 264, 58, "SAVE CURRENT", true,
-         g_snapshot.storage_status == StorageStatus::ready);
+  const Rect save=g_layout.legacy?Rect{980,170,264,58}:Rect{g_layout.page_controls[3].x,g_layout.page_controls[3].y,g_layout.content.w-16,g_layout.page_controls[3].h};
+  button(save, "SAVE CURRENT", true,
+         g_snapshot.storage_available && g_snapshot.storage_status == StorageStatus::ready);
   const size_t count = g_snapshot.memories ? g_snapshot.memories->size() : 0;
-  const size_t pages = std::max<size_t>(1, (count + 6) / 7);
+  const size_t per_page=g_layout.legacy?7u:static_cast<size_t>(g_layout.row_count);
+  const size_t pages = std::max<size_t>(1, (count + per_page - 1) / per_page);
   g_memory_page = std::min(g_memory_page, pages - 1);
-  button(36, 170, 70, 58, "<", false, g_memory_page > 0);
+  const Rect prev=g_layout.legacy?Rect{36,170,70,58}:local(g_layout.page_controls[0]);
+  const Rect next=g_layout.legacy?Rect{300,170,70,58}:local(g_layout.page_controls[2]);
+  button(prev, "<", false, g_memory_page > 0);
   char page[48];
   snprintf(page, sizeof(page), "PAGE %u / %u", static_cast<unsigned>(g_memory_page + 1),
            static_cast<unsigned>(pages));
-  text(page, 190, 199, kMuted, 2);
-  button(300, 170, 70, 58, ">", false, g_memory_page + 1 < pages);
+  text(page, g_layout.legacy?190:g_layout.page_controls[1].x+g_layout.page_controls[1].w/2,
+       g_layout.legacy?199:g_layout.page_controls[1].y+g_layout.page_controls[1].h/2,kMuted, g_layout.portrait?1:2);
+  button(next, ">", false, g_memory_page + 1 < pages);
   if (!count) {
-    card(36, 260, 1208, 270);
-    text("NO SHORTWAVE MEMORIES", 640, 355, TFT_WHITE, 3);
-    text("Tune a signal in LIVE, then save the current frequency here.",
-         640, 410, kMuted, 2);
+    draw_empty_state("NO SHORTWAVE MEMORIES","Tune a signal in LIVE, then save the current frequency here.",{36,260,1208,270},355,410);
     return;
   }
-  const size_t first = g_memory_page * 7;
-  for (size_t row = 0; row < std::min<size_t>(count - first, 7); ++row) {
+  const size_t first = g_memory_page * per_page;
+  for (size_t row = 0; row < std::min<size_t>(count - first, per_page); ++row) {
     const size_t i = first + row;
     const Memory* memory = g_snapshot.memories->at(i);
     if (!memory) continue;
@@ -500,39 +588,41 @@ void draw_memory() {
              static_cast<unsigned>(i + 1),
              static_cast<double>(memory->frequency_hz) / 1000000.0,
              memory->mode, memory->station[0] ? memory->station : "Unlabeled signal");
-    const int y = 250 + static_cast<int>(row) * 50;
-    button(36, y, 780, 42, label);
-    button(826, y, 100, 42, memory->favorite ? "STAR" : "FAV", memory->favorite);
-    button(936, y, 130, 42, "EDIT");
-    button(1076, y, 168, 42, g_delete_memory == i ? "CONFIRM" : "DELETE");
+    if(g_layout.legacy){int y=250+static_cast<int>(row)*50;button(36,y,780,42,label);
+      button(826,y,100,42,memory->favorite?"STAR":"FAV",memory->favorite);
+      button(936,y,130,42,"EDIT");button(1076,y,168,42,g_delete_memory==i?"CONFIRM":"DELETE");}
+    else {button(local(g_layout.row_actions[row][0]),label);button(local(g_layout.row_actions[row][1]),memory->favorite?"STAR":"FAV",memory->favorite);button(local(g_layout.row_actions[row][2]),"EDIT");button(local(g_layout.row_actions[row][3]),g_layout.row_actions[row][3].w<88?(g_delete_memory==i?"OK?":"DEL"):(g_delete_memory==i?"CONFIRM":"DELETE"));}
   }
 }
 
 void draw_logbook() {
   draw_page_title("LOGBOOK", "Reception history and community-friendly exports");
   draw_storage_status();
-  button(720, 170, 250, 58, "LOG CURRENT", true,
-         g_snapshot.storage_status == StorageStatus::ready);
-  button(984, 170, 260, 58, "EXPORT CSV + ADIF", false,
-         g_snapshot.storage_status == StorageStatus::ready);
+  const Rect log_current=g_layout.legacy?Rect{720,170,250,58}:local(g_layout.page_controls[3]);
+  const Rect export_rect=g_layout.legacy?Rect{984,170,260,58}:local(g_layout.page_controls[4]);
+  button(log_current, "LOG CURRENT", true,
+         g_snapshot.storage_available && g_snapshot.storage_status == StorageStatus::ready);
+  button(export_rect, "EXPORT CSV + ADIF", false,
+         g_snapshot.storage_available && g_snapshot.storage_status == StorageStatus::ready);
   const size_t count = g_snapshot.logs ? g_snapshot.logs->size() : 0;
-  const size_t pages = std::max<size_t>(1, (count + 6) / 7);
+  const size_t per_page=g_layout.legacy?7u:static_cast<size_t>(g_layout.row_count);
+  const size_t pages = std::max<size_t>(1, (count + per_page - 1) / per_page);
   g_log_page = std::min(g_log_page, pages - 1);
-  button(36, 170, 70, 58, "<", false, g_log_page > 0);
+  const Rect prev=g_layout.legacy?Rect{36,170,70,58}:local(g_layout.page_controls[0]);
+  const Rect next=g_layout.legacy?Rect{300,170,70,58}:local(g_layout.page_controls[2]);
+  button(prev, "<", false, g_log_page > 0);
   char page[48];
   snprintf(page, sizeof(page), "PAGE %u / %u", static_cast<unsigned>(g_log_page + 1),
            static_cast<unsigned>(pages));
-  text(page, 190, 199, kMuted, 2);
-  button(300, 170, 70, 58, ">", false, g_log_page + 1 < pages);
+  text(page, g_layout.legacy?190:g_layout.page_controls[1].x+g_layout.page_controls[1].w/2,
+       g_layout.legacy?199:g_layout.page_controls[1].y+g_layout.page_controls[1].h/2,kMuted, g_layout.portrait?1:2);
+  button(next, ">", false, g_log_page + 1 < pages);
   if (!count) {
-    card(36, 260, 1208, 270);
-    text("NO RECEPTION LOGS", 640, 355, TFT_WHITE, 3);
-    text("Log what you actually heard; station identity may remain unknown.",
-         640, 410, kMuted, 2);
+    draw_empty_state("NO RECEPTION LOGS","Log what you actually heard; station identity may remain unknown.",{36,260,1208,270},355,410);
     return;
   }
-  const size_t first = g_log_page * 7;
-  for (size_t row_index = 0; row_index < std::min<size_t>(count - first, 7);
+  const size_t first = g_log_page * per_page;
+  for (size_t row_index = 0; row_index < std::min<size_t>(count - first, per_page);
        ++row_index) {
     const LogEntry* entry = g_snapshot.logs->at(first + row_index);
     if (!entry) continue;
@@ -541,18 +631,23 @@ void draw_logbook() {
              static_cast<double>(entry->frequency_hz) / 1000000.0,
              entry->mode, static_cast<double>(entry->signal_dbfs),
              entry->station[0] ? entry->station : "Unidentified reception");
-    const int y = 250 + static_cast<int>(row_index) * 50;
-    button(36, y, 880, 42, row);
-    button(926, y, 140, 42, "EDIT");
     const size_t index = first + row_index;
-    button(1076, y, 168, 42, g_delete_log == index ? "CONFIRM" : "DELETE");
+    if(g_layout.legacy){int y=250+static_cast<int>(row_index)*50;button(36,y,880,42,row);button(926,y,140,42,"EDIT");button(1076,y,168,42,g_delete_log==index?"CONFIRM":"DELETE");}
+    else {button(local(g_layout.row_actions[row_index][0]),row);button(local(g_layout.row_actions[row_index][2]),"EDIT");button(local(g_layout.row_actions[row_index][3]),g_layout.row_actions[row_index][3].w<88?(g_delete_log==index?"OK?":"DEL"):(g_delete_log==index?"CONFIRM":"DELETE"));}
   }
 }
 
 void draw_keypad() {
   if (g_self_check_running) return;
-  freq_keypad::draw(93, TFT_BLACK, "ENTER SHORTWAVE FREQUENCY", "0.024 - 30.000", "MHz",
-                    g_entry);
+  const freq_keypad::Rect area{g_viewport.x,g_viewport.y,g_viewport.w,g_viewport.h};
+  freq_keypad::draw(g_layout.legacy?93:g_viewport.y, TFT_BLACK, "ENTER SHORTWAVE FREQUENCY", "0.024 - 30.000", "MHz",
+                    g_entry,g_layout.legacy?nullptr:&area);
+}
+
+void draw_text_editor() {
+  if(!g_layout.legacy)
+    (void)text_editor::set_viewport({g_viewport.x,g_viewport.y,g_viewport.w,g_viewport.h});
+  text_editor::draw();
 }
 
 uint16_t waterfall_color(float level) {
@@ -560,6 +655,49 @@ uint16_t waterfall_color(float level) {
 }
 
 }  // namespace
+
+bool set_viewport(layout::Rect safe) {
+  const layout::Layout next=layout::make_layout(safe);
+  if(!next.valid)return false;
+  if(!audio_header::set_viewport(safe))return false;
+  const bool dimensions_changed=safe.w!=g_viewport.w||safe.h!=g_viewport.h||
+      safe.x!=g_viewport.x||safe.y!=g_viewport.y;
+  install_geometry(next);
+  if(dimensions_changed)g_static_dirty=true;
+  return true;
+}
+
+layout::Rect viewport() { return g_viewport; }
+
+Action handle_control(Control control,int32_t value) {
+  if(!g_active)return {};
+  switch(control){
+    case Control::tune_frequency:return value>=24000&&value<=30000000?Action{ActionKind::tune_hz,value}:Action{};
+    case Control::step_down:return {ActionKind::step_down};
+    case Control::step_up:return {ActionKind::step_up};
+    case Control::step_cycle:return {ActionKind::step_cycle};
+    case Control::filter_down:return ssb_mode()?Action{}:Action{ActionKind::filter_down};
+    case Control::filter_up:return ssb_mode()?Action{}:Action{ActionKind::filter_up};
+    case Control::filter_cycle:return ssb_mode()?Action{}:Action{ActionKind::filter_cycle};
+    case Control::span_down:return {ActionKind::span_down};
+    case Control::span_up:return {ActionKind::span_up};
+    case Control::sound:return {ActionKind::sound_toggle};
+    case Control::volume_down:return {ActionKind::volume_down};
+    case Control::volume_up:return {ActionKind::volume_up};
+    case Control::mode_cycle:return {ActionKind::mode_cycle};
+    case Control::audio_clean:return g_snapshot.audio_dsp_available?Action{ActionKind::clean_audio}:Action{};
+    case Control::audio_boost:return g_snapshot.audio_dsp_available?Action{ActionKind::audio_boost,!g_snapshot.controls.audio_boost}:Action{};
+    case Control::noise_reduction:return g_snapshot.audio_dsp_available?Action{ActionKind::noise_reduction_cycle}:Action{};
+    case Control::auto_notch:return g_snapshot.audio_dsp_available?Action{ActionKind::auto_notch_toggle}:Action{};
+    case Control::squelch:return g_snapshot.audio_dsp_available?Action{ActionKind::squelch_cycle}:Action{};
+    case Control::hunt_start:return g_snapshot.hunt_available?Action{ActionKind::hunt_start,static_cast<int32_t>(g_hunt_band)}:Action{};
+    case Control::hunt_cancel:return g_snapshot.hunt_available&&g_snapshot.hunt_active?Action{ActionKind::hunt_cancel}:Action{};
+    case Control::open_frequency:return {ActionKind::open_frequency};
+    case Control::open_settings:return {ActionKind::open_settings};
+    case Control::home:return {ActionKind::exit_home};
+  }
+  return {};
+}
 
 void enter(const Snapshot& snapshot) {
   g_snapshot = snapshot;
@@ -570,9 +708,12 @@ void enter(const Snapshot& snapshot) {
   g_edit_log = SIZE_MAX;
   g_memory_page = 0;
   g_log_page = 0;
+  g_hunt_page = 0;
+  g_on_air_page = 0;
   g_delete_memory = SIZE_MAX;
   g_delete_log = SIZE_MAX;
   g_active = true;
+  g_static_dirty = true;
   g_state.close_modal();
   g_state.select_tab(Tab::live);
   if (const BroadcastBand* current = band_for(snapshot.frequency_hz)) {
@@ -594,13 +735,16 @@ void leave() {
 
 void draw() {
   if (!g_active || g_self_check_running) return;
-  draw_static();
+  if(g_drawn_tab!=g_state.tab()||g_drawn_modal!=g_state.modal()||g_drawn_drawer!=g_tuner_drawer_open)
+    g_static_dirty=true;
+  if (g_static_dirty) { draw_static(); g_static_dirty = false; }
+  g_drawn_tab=g_state.tab();g_drawn_modal=g_state.modal();g_drawn_drawer=g_tuner_drawer_open;
   if (g_state.modal() == Modal::frequency) {
     draw_keypad();
     return;
   }
   if (g_state.modal() != Modal::none) {
-    text_editor::draw();
+    draw_text_editor();
     return;
   }
   switch (g_state.tab()) {
@@ -623,6 +767,11 @@ void update(const Snapshot& snapshot) {
   const bool span_changed = snapshot.span_hz != g_snapshot.span_hz;
   const bool mode_changed = std::strcmp(snapshot.mode, g_snapshot.mode) != 0 ||
       snapshot.mode_auto != g_snapshot.mode_auto || snapshot.clarifier_hz != g_snapshot.clarifier_hz;
+  const bool hunt_candidates_changed=snapshot.hunt_candidate_count!=g_snapshot.hunt_candidate_count;
+  const bool pending_timeout=g_hunt_start_pending&&static_cast<uint32_t>(millis()-g_hunt_pending_since)>2500;
+  const bool hunt_progress_changed=snapshot.hunt_active!=g_snapshot.hunt_active||
+      snapshot.hunt_step!=g_snapshot.hunt_step||snapshot.hunt_total!=g_snapshot.hunt_total||
+      snapshot.hunt_available!=g_snapshot.hunt_available||pending_timeout;
   const bool page_changed =
       frequency_changed || snapshot.utc_valid != g_snapshot.utc_valid ||
       snapshot.utc_minute != g_snapshot.utc_minute ||
@@ -631,10 +780,9 @@ void update(const Snapshot& snapshot) {
       snapshot.memories != g_snapshot.memories || snapshot.logs != g_snapshot.logs ||
       snapshot.memory_count != g_snapshot.memory_count ||
       snapshot.log_count != g_snapshot.log_count ||
-      snapshot.hunt_active != g_snapshot.hunt_active ||
-      snapshot.hunt_step != g_snapshot.hunt_step ||
-      snapshot.hunt_total != g_snapshot.hunt_total ||
-      snapshot.hunt_candidate_count != g_snapshot.hunt_candidate_count;
+      hunt_candidates_changed ||
+      snapshot.audio_dsp_available != g_snapshot.audio_dsp_available ||
+      snapshot.storage_available != g_snapshot.storage_available;
   const bool controls_changed =
       snapshot.filter_bandwidth_hz != g_snapshot.filter_bandwidth_hz ||
       snapshot.controls.route != g_snapshot.controls.route ||
@@ -653,21 +801,24 @@ void update(const Snapshot& snapshot) {
       snapshot.dsp.squelch_dbfs != g_snapshot.dsp.squelch_dbfs ||
       snapshot.dsp_metrics.squelch_open != g_snapshot.dsp_metrics.squelch_open ||
       snapshot.dsp_metrics.notch_active != g_snapshot.dsp_metrics.notch_active ||
-      snapshot.dsp_metrics.notch_hz != g_snapshot.dsp_metrics.notch_hz;
+      snapshot.dsp_metrics.notch_hz != g_snapshot.dsp_metrics.notch_hz ||
+      snapshot.audio_dsp_available != g_snapshot.audio_dsp_available;
   const bool quick_changed = controls_changed || mode_changed ||
       snapshot.step_hz != g_snapshot.step_hz;
   g_snapshot = snapshot;
+  if(snapshot.hunt_active||pending_timeout)g_hunt_start_pending=false;
   g_saved_frequency = snapshot.frequency_hz;
   if (!g_state.background_redraw_allowed()) return;
   if (g_state.tab() != Tab::live) {
-    if (page_changed) {
-      switch (g_state.tab()) {
-        case Tab::on_air: draw_on_air(); break;
-        case Tab::hunt: draw_hunt(); break;
-        case Tab::memory: draw_memory(); break;
-        case Tab::logbook: draw_logbook(); break;
-        case Tab::live: break;
-      }
+    switch (g_state.tab()) {
+      case Tab::on_air: if(page_changed)draw_on_air(false); break;
+      case Tab::hunt:
+        if(hunt_candidates_changed)draw_hunt();
+        else if(hunt_progress_changed)draw_hunt_progress();
+        break;
+      case Tab::memory: if(page_changed)draw_memory(); break;
+      case Tab::logbook: if(page_changed)draw_logbook(); break;
+      case Tab::live: break;
     }
     return;
   }
@@ -704,7 +855,6 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
     if (canvas != nullptr && i && x >= 0 && x < cw) canvas->drawLine(last_x, last_y, x, y, kGreen);
     last_x = x;
     last_y = y;
-    g_waterfall_row[i] = waterfall_color(normalized);
   }
   if (canvas != nullptr) {
     const int center = cw / 2;
@@ -715,7 +865,9 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
     scope::draw_style_chips(canvas, cw, waterfall_style::Screen::shortwave);
     canvas->pushSprite(kSpectrumX + 1, kSpectrumY + 1);
   }
-  scope::scroll_waterfall(kSpectrumX, kWaterfallY + kWaterfallH - 2, width, g_waterfall_row,
+  const int wf_width=g_layout.waterfall.w;
+  for(int i=0;i<wf_width;++i){const float level=spectrum::peak_for_pixel(levels,first_bin,visible_bins,static_cast<size_t>(i),static_cast<size_t>(wf_width));const float norm=std::clamp((level-floor)/48.0f,0.0f,1.0f);g_waterfall_row[i]=waterfall_color(norm);}
+  scope::scroll_waterfall(kWaterfallX, kWaterfallY + kWaterfallH - 2, wf_width, g_waterfall_row,
                           waterfall_style::rows_due(waterfall_style::Screen::shortwave, millis()));
 }
 
@@ -740,7 +892,7 @@ Action handle_touch(int32_t x, int32_t y) {
       text_editor::begin("MEMORY NOTES", g_pending_memory_notes,
                          sizeof(g_pending_memory_notes) - 1, false,
                          g_edit_memory == SIZE_MAX ? "SAVE" : "UPDATE");
-      text_editor::draw();
+      draw_text_editor();
       return {};
     }
     if (modal == Modal::memory_notes) {
@@ -759,7 +911,7 @@ Action handle_touch(int32_t x, int32_t y) {
       text_editor::begin("RECEPTION NOTES", g_pending_log_notes,
                          sizeof(g_pending_log_notes) - 1, false,
                          g_edit_log == SIZE_MAX ? "LOG" : "UPDATE");
-      text_editor::draw();
+      draw_text_editor();
       return {};
     }
     if (modal == Modal::log_notes) {
@@ -796,23 +948,35 @@ Action handle_touch(int32_t x, int32_t y) {
   }
   if (audio_header::home_hit(x, y)) return {ActionKind::exit_home};
   if (audio_header::settings_hit(x, y)) return {ActionKind::open_settings};
-  if (y >= kTabsY) {
-    const int index = std::clamp<int32_t>(x / kTabW, 0, 4);
-    const bool cancel_hunt = g_state.select_tab(static_cast<Tab>(index));
+  int tab_index=-1;
+  for(int i=0;i<5;++i) if(hit(x,y,local(g_layout.tab[i]))) { tab_index=i; break; }
+  if (tab_index >= 0) {
+    const bool cancel_hunt = g_state.select_tab(static_cast<Tab>(tab_index));
+    if(tab_index==static_cast<int>(Tab::hunt))g_hunt_page=0;
+    if(tab_index==static_cast<int>(Tab::on_air))g_on_air_page=0;
+    g_static_dirty=true;
     draw();
     return cancel_hunt ? Action{ActionKind::hunt_cancel} : Action{};
   }
 
   if (g_state.tab() == Tab::on_air) {
     if (!g_snapshot.utc_valid) return {};
-    size_t row = 0;
-    for (size_t i = 0; i < station_count() && row < 6; ++i) {
+    const size_t max_rows=static_cast<size_t>(g_layout.onair_row_count);
+    size_t matches=0;for(size_t i=0;i<station_count();++i){const StationCard* s=station_at(i);if(s&&schedule_matches(*s,g_snapshot.frequency_hz,g_snapshot.utc_minute,g_snapshot.utc_weekday))++matches;}
+    const size_t pages=std::max<size_t>(1,(matches+max_rows-1)/max_rows);g_on_air_page=std::min(g_on_air_page,pages-1);
+    const Rect prev=local(g_layout.hunt_previous),next=local(g_layout.hunt_next);
+    if(matches>max_rows&&hit(x,y,prev)&&g_on_air_page>0){--g_on_air_page;draw();return {};}
+    if(matches>max_rows&&hit(x,y,next)&&g_on_air_page+1<pages){++g_on_air_page;draw();return {};}
+    const size_t first=g_on_air_page*max_rows;size_t row=0,match_index=0;
+    for (size_t i = 0; i < station_count() && row < max_rows; ++i) {
       const StationCard* station = station_at(i);
       if (!station || !schedule_matches(*station, g_snapshot.frequency_hz,
                                         g_snapshot.utc_minute,
                                         g_snapshot.utc_weekday))
         continue;
-      if (hit(x, y, 36, 220 + static_cast<int>(row) * 58, 1208, 50))
+      if(match_index++<first)continue;
+      const Rect target=g_layout.legacy?Rect{36,220+static_cast<int>(row)*58,1208,50}:local(g_layout.rows[row]);
+      if (hit(x, y, target))
         return {ActionKind::tune_hz, static_cast<int32_t>(station->frequency_hz)};
       ++row;
     }
@@ -820,60 +984,83 @@ Action handle_touch(int32_t x, int32_t y) {
   }
 
   if (g_state.tab() == Tab::hunt) {
-    if (hit(x, y, 36, 190, 80, 58)) {
+    const Rect band_prev=g_layout.legacy?Rect{36,190,80,58}:local(g_layout.page_controls[0]);
+    const Rect band_next=g_layout.legacy?Rect{676,190,80,58}:local(g_layout.page_controls[2]);
+    const Rect start=g_layout.legacy?Rect{790,190,220,58}:local(g_layout.page_controls[3]);
+    const Rect cancel=g_layout.legacy?Rect{1020,190,224,58}:local(g_layout.page_controls[4]);
+    const Rect hunt_prev=local(g_layout.hunt_previous),hunt_next=local(g_layout.hunt_next);
+    const size_t per_page=static_cast<size_t>(g_layout.hunt_row_count);
+    const size_t pages=std::max<size_t>(1,(g_snapshot.hunt_candidate_count+per_page-1)/per_page);
+    if(hit(x,y,hunt_prev)&&g_hunt_page>0){--g_hunt_page;draw();return {};}
+    if(hit(x,y,hunt_next)&&g_hunt_page+1<pages){++g_hunt_page;draw();return {};}
+    if (g_snapshot.hunt_available&&hit(x, y, band_prev)) {
       g_hunt_band = (g_hunt_band + band_count() - 1) % band_count();
       draw();
       return {};
     }
-    if (hit(x, y, 676, 190, 80, 58)) {
+    if (g_snapshot.hunt_available&&hit(x, y, band_next)) {
       g_hunt_band = (g_hunt_band + 1) % band_count();
       draw();
       return {};
     }
-    if (hit(x, y, 790, 190, 220, 58) && !g_snapshot.hunt_active)
+    if (g_snapshot.hunt_available && hit(x, y, start) && !g_snapshot.hunt_active){
+      g_hunt_start_pending=true;g_hunt_pending_since=millis();draw_hunt_progress();
       return {ActionKind::hunt_start, static_cast<int32_t>(g_hunt_band)};
-    if (hit(x, y, 1020, 190, 224, 58) && g_snapshot.hunt_active)
+    }
+    if (hit(x, y, cancel) && (g_snapshot.hunt_active||g_hunt_start_pending)){
+      g_hunt_start_pending=false;draw_hunt_progress();
       return {ActionKind::hunt_cancel};
+    }
     for (size_t i = 0; !g_snapshot.hunt_active &&
-                       i < std::min<size_t>(g_snapshot.hunt_candidate_count, 6); ++i)
-      if (hit(x, y, 36, 270 + static_cast<int>(i) * 52, 1208, 44))
+                       i < std::min<size_t>(g_snapshot.hunt_candidate_count-g_hunt_page*per_page, per_page); ++i) {
+      const size_t candidate_index=g_hunt_page*per_page+i;
+      const Rect target=g_layout.legacy?Rect{36,270+static_cast<int>(i)*52,1208,44}:local(g_layout.rows[i]);
+      if (hit(x,y,target))
         return {ActionKind::tune_hz,
-                static_cast<int32_t>(g_snapshot.hunt_candidates[i].frequency_hz)};
+                static_cast<int32_t>(g_snapshot.hunt_candidates[candidate_index].frequency_hz)};
+    }
     return {};
   }
 
   if (g_state.tab() == Tab::memory) {
     const size_t count = g_snapshot.memories ? g_snapshot.memories->size() : 0;
-    const size_t pages = std::max<size_t>(1, (count + 6) / 7);
+    const size_t per_page=g_layout.legacy?7u:static_cast<size_t>(g_layout.row_count);
+    const size_t pages = std::max<size_t>(1, (count + per_page - 1) / per_page);
     g_memory_page = std::min(g_memory_page, pages - 1);
-    if (hit(x, y, 36, 170, 70, 58) && g_memory_page > 0) {
+    const Rect prev=g_layout.legacy?Rect{36,170,70,58}:local(g_layout.page_controls[0]);
+    const Rect next=g_layout.legacy?Rect{300,170,70,58}:local(g_layout.page_controls[2]);
+    const Rect save=g_layout.legacy?Rect{980,170,264,58}:Rect{g_layout.page_controls[3].x,g_layout.page_controls[3].y,g_layout.content.w-16,g_layout.page_controls[3].h};
+    if (hit(x, y, prev) && g_memory_page > 0) {
       --g_memory_page; g_delete_memory = SIZE_MAX; draw(); return {};
     }
-    if (hit(x, y, 300, 170, 70, 58) && g_memory_page + 1 < pages) {
+    if (hit(x, y, next) && g_memory_page + 1 < pages) {
       ++g_memory_page; g_delete_memory = SIZE_MAX; draw(); return {};
     }
-    if (g_snapshot.storage_status == StorageStatus::ready &&
-        hit(x, y, 980, 170, 264, 58)) {
+    if (g_snapshot.storage_available && g_snapshot.storage_status == StorageStatus::ready &&
+        hit(x, y, save)) {
       g_edit_memory = SIZE_MAX;
       g_pending_memory_label[0] = '\0';
       g_pending_memory_notes[0] = '\0';
       g_state.open(Modal::memory_label);
       text_editor::begin("MEMORY LABEL", "", sizeof(g_pending_memory_label) - 1,
                          false, "SAVE");
-      text_editor::draw();
+      draw_text_editor();
       return {};
     }
-    const size_t first = g_memory_page * 7;
-    for (size_t row = 0; row < std::min<size_t>(count - first, 7); ++row) {
+    const size_t first = g_memory_page * per_page;
+    for (size_t row = 0; row < std::min<size_t>(count - first, per_page); ++row) {
       const size_t i = first + row;
       const Memory* memory = g_snapshot.memories->at(i);
-      const int row_y = 250 + static_cast<int>(row) * 50;
       if (!memory) continue;
-      if (hit(x, y, 36, row_y, 780, 42))
+      const Rect tune=g_layout.legacy?Rect{36,250+static_cast<int>(row)*50,780,42}:local(g_layout.row_actions[row][0]);
+      const Rect fav=g_layout.legacy?Rect{826,250+static_cast<int>(row)*50,100,42}:local(g_layout.row_actions[row][1]);
+      const Rect edit=g_layout.legacy?Rect{936,250+static_cast<int>(row)*50,130,42}:local(g_layout.row_actions[row][2]);
+      const Rect del=g_layout.legacy?Rect{1076,250+static_cast<int>(row)*50,168,42}:local(g_layout.row_actions[row][3]);
+      if (hit(x, y, tune))
         return {ActionKind::tune_hz, static_cast<int32_t>(memory->frequency_hz)};
-      if (hit(x, y, 826, row_y, 100, 42))
+      if (hit(x, y, fav))
         return {ActionKind::favorite_memory, static_cast<int32_t>(i)};
-      if (hit(x, y, 936, row_y, 130, 42)) {
+      if (hit(x, y, edit)) {
         g_edit_memory = i;
         snprintf(g_pending_memory_label, sizeof(g_pending_memory_label), "%s",
                  memory->station);
@@ -882,10 +1069,10 @@ Action handle_touch(int32_t x, int32_t y) {
         g_state.open(Modal::memory_label);
         text_editor::begin("MEMORY LABEL", g_pending_memory_label,
                            sizeof(g_pending_memory_label) - 1, false, "NEXT");
-        text_editor::draw();
+        draw_text_editor();
         return {};
       }
-      if (hit(x, y, 1076, row_y, 168, 42)) {
+      if (hit(x, y, del)) {
         if (g_delete_memory == i) {
           g_delete_memory = SIZE_MAX;
           return {ActionKind::delete_memory, static_cast<int32_t>(i)};
@@ -901,35 +1088,41 @@ Action handle_touch(int32_t x, int32_t y) {
 
   if (g_state.tab() == Tab::logbook) {
     const size_t count = g_snapshot.logs ? g_snapshot.logs->size() : 0;
-    const size_t pages = std::max<size_t>(1, (count + 6) / 7);
+    const size_t per_page=g_layout.legacy?7u:static_cast<size_t>(g_layout.row_count);
+    const size_t pages = std::max<size_t>(1, (count + per_page - 1) / per_page);
     g_log_page = std::min(g_log_page, pages - 1);
-    if (hit(x, y, 36, 170, 70, 58) && g_log_page > 0) {
+    const Rect prev=g_layout.legacy?Rect{36,170,70,58}:local(g_layout.page_controls[0]);
+    const Rect next=g_layout.legacy?Rect{300,170,70,58}:local(g_layout.page_controls[2]);
+    const Rect log_current=g_layout.legacy?Rect{720,170,250,58}:local(g_layout.page_controls[3]);
+    const Rect export_rect=g_layout.legacy?Rect{984,170,260,58}:local(g_layout.page_controls[4]);
+    if (hit(x, y, prev) && g_log_page > 0) {
       --g_log_page; g_delete_log = SIZE_MAX; draw(); return {};
     }
-    if (hit(x, y, 300, 170, 70, 58) && g_log_page + 1 < pages) {
+    if (hit(x, y, next) && g_log_page + 1 < pages) {
       ++g_log_page; g_delete_log = SIZE_MAX; draw(); return {};
     }
-    if (g_snapshot.storage_status == StorageStatus::ready &&
-        hit(x, y, 720, 170, 250, 58)) {
+    if (g_snapshot.storage_available && g_snapshot.storage_status == StorageStatus::ready &&
+        hit(x, y, log_current)) {
       g_edit_log = SIZE_MAX;
       g_pending_log_antenna[0] = '\0';
       g_pending_log_notes[0] = '\0';
       g_state.open(Modal::log_antenna);
       text_editor::begin("ANTENNA USED", "", sizeof(g_pending_log_antenna) - 1,
                          false, "NEXT");
-      text_editor::draw();
+      draw_text_editor();
       return {};
     }
-    if (g_snapshot.storage_status == StorageStatus::ready &&
-        hit(x, y, 984, 170, 260, 58))
+    if (g_snapshot.storage_available && g_snapshot.storage_status == StorageStatus::ready &&
+        hit(x, y, export_rect))
       return {ActionKind::export_log};
-    const size_t first = g_log_page * 7;
-    for (size_t row = 0; row < std::min<size_t>(count - first, 7); ++row) {
+    const size_t first = g_log_page * per_page;
+    for (size_t row = 0; row < std::min<size_t>(count - first, per_page); ++row) {
       const size_t i = first + row;
       const LogEntry* entry = g_snapshot.logs->at(i);
-      const int row_y = 250 + static_cast<int>(row) * 50;
       if (!entry) continue;
-      if (hit(x, y, 926, row_y, 140, 42)) {
+      const Rect edit=g_layout.legacy?Rect{926,250+static_cast<int>(row)*50,140,42}:local(g_layout.row_actions[row][2]);
+      const Rect del=g_layout.legacy?Rect{1076,250+static_cast<int>(row)*50,168,42}:local(g_layout.row_actions[row][3]);
+      if (hit(x, y, edit)) {
         g_edit_log = i;
         snprintf(g_pending_log_antenna, sizeof(g_pending_log_antenna), "%s",
                  entry->antenna);
@@ -938,10 +1131,10 @@ Action handle_touch(int32_t x, int32_t y) {
         g_state.open(Modal::log_antenna);
         text_editor::begin("ANTENNA USED", g_pending_log_antenna,
                            sizeof(g_pending_log_antenna) - 1, false, "NEXT");
-        text_editor::draw();
+        draw_text_editor();
         return {};
       }
-      if (hit(x, y, 1076, row_y, 168, 42)) {
+      if (hit(x, y, del)) {
         if (g_delete_log == i) {
           g_delete_log = SIZE_MAX;
           return {ActionKind::delete_log, static_cast<int32_t>(i)};
@@ -975,10 +1168,8 @@ Action handle_touch(int32_t x, int32_t y) {
   }
 
   const int width = spectrum_width();
-  const Rect frequency_plus{kSpectrumX + width - 82, kFrequencyPlus.y,
-                            kFrequencyPlus.w, kFrequencyPlus.h};
-  const Rect frequency_entry{kFrequencyEntry.x, kFrequencyEntry.y,
-                             width - 192, kFrequencyEntry.h};
+  const Rect frequency_plus=g_layout.legacy?Rect{kSpectrumX+width-82,kFrequencyPlus.y,kFrequencyPlus.w,kFrequencyPlus.h}:local(g_layout.frequency_plus);
+  const Rect frequency_entry=g_layout.legacy?Rect{kFrequencyEntry.x,kFrequencyEntry.y,width-192,kFrequencyEntry.h}:local(g_layout.frequency_value);
   if (ssb_mode() && hit(x, y, kClarifierDown)) return {ActionKind::clarifier_down};
   if (ssb_mode() && hit(x, y, kClarifierUp)) return {ActionKind::clarifier_up};
   if (hit(x, y, kFrequencyMinus)) return {ActionKind::step_down};
@@ -996,28 +1187,30 @@ Action handle_touch(int32_t x, int32_t y) {
   if (hit(x, y, kFilterValue)) return {ActionKind::filter_cycle};
   if (hit(x, y, kFilterUp)) return {ActionKind::filter_up};
   if (hit(x, y, kMode)) return {ActionKind::mode_cycle};
-  if (hit(x, y, kClean)) return {ActionKind::clean_audio};
-  if (hit(x, y, kBoost))
+  if (g_snapshot.audio_dsp_available && hit(x, y, kClean)) return {ActionKind::clean_audio};
+  if (g_snapshot.audio_dsp_available && hit(x, y, kBoost))
     return {ActionKind::audio_boost, !g_snapshot.controls.audio_boost};
-  if (hit(x, y, kNoiseReduction))
+  if (g_snapshot.audio_dsp_available && hit(x, y, kNoiseReduction))
     return {ActionKind::noise_reduction_cycle};
-  if (hit(x, y, kNotch))
+  if (g_snapshot.audio_dsp_available && hit(x, y, kNotch))
     return {ActionKind::auto_notch_toggle};
-  if (hit(x, y, kSquelch)) return {ActionKind::squelch_cycle};
+  if (g_snapshot.audio_dsp_available && hit(x, y, kSquelch)) return {ActionKind::squelch_cycle};
   if (hit(x, y, kTuner)) {
     g_tuner_drawer_open = true;
     draw();
     return {};
   }
-  if (hit(x, y, kSpectrumX, kZoomY, 160, 34))
+  if (hit(x, y, g_layout.legacy?Rect{kSpectrumX,kZoomY,160,34}:local(g_layout.zoom_minus)))
     return {ActionKind::span_down};
-  if (hit(x, y, kSpectrumX + width - 160, kZoomY, 160, 34))
+  if (hit(x, y, g_layout.legacy?Rect{kSpectrumX+width-160,kZoomY,160,34}:local(g_layout.zoom_plus)))
     return {ActionKind::span_up};
-  if (hit(x, y, kSpectrumX, kSpectrumY, width, kSpectrumPlotH) ||
-      hit(x, y, kSpectrumX, kWaterfallY, width, kWaterfallH)) {
-    const int64_t offset =
-        static_cast<int64_t>(x - (kSpectrumX + width / 2)) *
-        g_snapshot.span_hz / width;
+  const bool on_plot=hit(x,y,kSpectrumX,kSpectrumY,width,kSpectrumPlotH);
+  const bool on_waterfall=hit(x,y,kWaterfallX,kWaterfallY,g_layout.waterfall.w,kWaterfallH);
+  if (on_plot||on_waterfall) {
+    const int chart_x=on_waterfall?kWaterfallX:kSpectrumX;
+    const int chart_w=on_waterfall?g_layout.waterfall.w:width;
+    const int64_t offset = static_cast<int64_t>(x-(chart_x+chart_w/2))*
+        g_snapshot.span_hz/chart_w;
     const int64_t selected = static_cast<int64_t>(g_snapshot.frequency_hz) + offset;
     return {ActionKind::tune_hz, static_cast<int32_t>(
         std::clamp<int64_t>(selected, 24000, 30000000))};
@@ -1066,7 +1259,7 @@ bool spectrum_contains(int32_t x, int32_t y) {
   const int width = spectrum_width();
   return g_active && g_state.spectrum_allowed() &&
          (hit(x, y, kSpectrumX, kSpectrumY, width, kSpectrumPlotH) ||
-          hit(x, y, kSpectrumX, kWaterfallY, width, kWaterfallH));
+          hit(x, y, kWaterfallX, kWaterfallY, g_layout.waterfall.w, kWaterfallH));
 }
 
 bool active() { return g_active; }
@@ -1183,7 +1376,7 @@ bool dashboard_self_check() {
       handle_touch(center_x(kDrawerClose), center_y(kDrawerClose)).kind ==
           ActionKind::none &&
       !g_tuner_drawer_open && spectrum_width() == kSpectrumClosedW;
-  constexpr Rect controls[] = {kStep, kFilterDown, kFilterValue, kFilterUp,
+  const Rect controls[] = {kStep, kFilterDown, kFilterValue, kFilterUp,
                                kMode, kClean, kBoost, kNoiseReduction, kNotch,
                                kSquelch, kTuner};
   bool geometry_ok = kFrequencyCard.x >= 0 && kFrequencyCard.y >= 0 &&

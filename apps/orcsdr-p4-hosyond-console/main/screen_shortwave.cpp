@@ -9,6 +9,9 @@
 #include "home_app.hpp"
 #include "radio_service.hpp"
 #include "screens.hpp"
+#include "present.hpp"
+
+namespace screens { bool shortwave_resize_viewport(); }
 #include "shortwave_dashboard.hpp"
 
 namespace {
@@ -67,10 +70,14 @@ sw::Snapshot& build() {
   std::snprintf(s.mode, sizeof(s.mode), "%s", mode_text());
   s.mode_auto = g_mode == 0;
   s.clarifier_hz = g_clarifier;
+  s.audio_dsp_available = false;
+  s.hunt_available = false;
+  s.storage_available = false;
   return s;
 }
 
 void enter() {
+  (void)screens::shortwave_resize_viewport();
   const home_app::Status st = home_app::status();
   if (st.frequency_hz < 100000 || st.frequency_hz > 30000000) home_app::request_frequency(sw::saved_frequency());
   apply_mode();
@@ -131,8 +138,17 @@ void spectrum(const float* levels, size_t first, size_t visible, float floor) { 
 }  // namespace
 
 namespace screens {
+bool shortwave_resize_viewport() {
+  const auto* geometry=present_geometry();
+  if(geometry==nullptr)return sw::set_viewport({0,0,1280,720});
+  const auto safe=geometry->safe;
+  return sw::set_viewport({static_cast<int>(safe.x),static_cast<int>(safe.y),
+                           static_cast<int>(safe.width),static_cast<int>(safe.height)});
+}
+
 const Screen& shortwave_screen() {
-  static const Screen s{orcsdr::dashboards::Id::shortwave, "SHORTWAVE", enter, leave, tick, tap, drag, spectrum};
+  static const Screen s{orcsdr::dashboards::Id::shortwave, "SHORTWAVE", enter, leave, tick, tap, drag, spectrum,
+      nullptr, []() { if(!shortwave_resize_viewport()) return false; sw::draw(); return true; }};
   return s;
 }
 }  // namespace screens
