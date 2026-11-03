@@ -87,6 +87,10 @@ struct Snapshot {
   bool iq_recording = false;
   bool iq_ready = false;
   bool iq_busy = false;
+  bool packet_rx_supported = false;
+  bool packet_rx_available = false;
+  bool packet_rx_requested = false;
+  bool packet_rx_receiving = false;
   bool native_decoder_ready = false;
   bool key_loaded = false;
   // A profile_only SX1262 is listed for planning, never as an operable TX radio.
@@ -129,6 +133,7 @@ enum class ActionKind : uint8_t {
   channel_next,
   channel_select,
   open_settings,
+  packet_rx_toggle,
   tx_request_arm,
   tx_request_disarm,
   tx_send_test_packet,
