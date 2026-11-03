@@ -113,12 +113,55 @@ static Snapshot populated() {
   }
   s.decoded.frame_sync = s.decoded.identity_valid = true;
   s.decoded.nac = 0x293;
+  s.decoded.wacn = 0xABCDE;
+  s.decoded.system_id = 0x123;
   s.decoded.current_grant.valid = true;
   s.decoded.current_grant.talkgroup = 1000;
   s.decoded.current_grant.frequency_hz = 851012500;
   s.decoded.current_grant.source_id = 123456;
   s.decoded.current_grant.seen_ms = test_millis;
   return s;
+}
+
+static void verify_changed_and_idle_update(Snapshot* snapshot) {
+  using namespace orcsdr::p25;
+  static int sequence = 0;
+  char expected[64]{};
+  ++sequence;
+  if (view() == View::program)
+    snprintf(snapshot->profiles.profiles[15].name, sizeof(snapshot->profiles.profiles[15].name),
+             "PROFILE UPDATE %02d", sequence);
+  else if (view() == View::talkgroups)
+    snprintf(snapshot->config.system_name, sizeof(snapshot->config.system_name), "TALK UPDATE %02d", sequence);
+  else {
+    snapshot->frequency_hz += 12500;
+    snprintf(expected, sizeof(expected), "%.4f", snapshot->frequency_hz / 1000000.0);
+  }
+
+  const int clears = lgfx::screen_clears;
+  const size_t begin = lgfx::paints.size();
+  test_millis += 250;
+  update(*snapshot);
+  assert(lgfx::screen_clears == clears);
+  assert(lgfx::paints.size() > begin);
+  bool displayed = false;
+  if (view() == View::program) snprintf(expected, sizeof(expected), "PROFILE UPDATE %02d", sequence);
+  else if (view() == View::talkgroups) snprintf(expected, sizeof(expected), "TALK UPDATE %02d", sequence);
+  for (size_t i = begin; i < lgfx::paints.size(); ++i)
+    displayed |= lgfx::paints[i].text.find(expected) != std::string::npos;
+  assert(displayed);
+  const size_t idle = lgfx::paints.size();
+  update(*snapshot);
+  assert(lgfx::screen_clears == clears && lgfx::paints.size() == idle);
+  if (view() == View::program)
+    snprintf(snapshot->profiles.profiles[15].name, sizeof(snapshot->profiles.profiles[15].name),
+             "Stored System Profile 15");
+  else if (view() == View::talkgroups)
+    strlcpy(snapshot->config.system_name, "LONG P25 SYSTEM NAME FOR SCREEN FIT TESTING",
+            sizeof(snapshot->config.system_name));
+  else snapshot->frequency_hz -= 12500;
+  test_millis += 250;
+  update(*snapshot);
 }
 
 int main() {
@@ -169,6 +212,14 @@ int main() {
     clears = lgfx::screen_clears;
     draw();
     assert(lgfx::screen_clears == ++clears);
+    bool saw_tgid = false, saw_source = false, saw_identity = false, saw_voice_frequency = false;
+    for (const auto& paint : lgfx::paints) {
+      saw_tgid |= paint.text.find("TGID 1000") != std::string::npos;
+      saw_source |= paint.text.find("SOURCE 123456") != std::string::npos;
+      saw_identity |= paint.text.find("WACN ABCDE") != std::string::npos;
+      saw_voice_frequency |= paint.text.find("VOICE 851.0125 MHz") != std::string::npos;
+    }
+    assert(saw_tgid && saw_source && saw_identity && saw_voice_frequency);
     for (const auto& r : g_focus) {
       assert(r.x >= viewport.x && r.y >= viewport.y);
       assert(r.x + r.w <= viewport.x + viewport.w && r.y + r.h <= viewport.y + viewport.h);
@@ -188,6 +239,7 @@ int main() {
     }
     tap(l.tab[1]);
     assert(view() == View::spectrum);
+    verify_changed_and_idle_update(&s);
     assert(handle_touch(l.span_down.x + l.span_down.w / 2,
                         l.span_down.y + l.span_down.h / 2).kind == ActionKind::span_down);
     assert(handle_touch(l.span_up.x + l.span_up.w / 2,
@@ -201,6 +253,7 @@ int main() {
     const size_t tg_begin = lgfx::paints.size();
     tap(l.tab[2]);
     assert(view() == View::talkgroups);
+    verify_changed_and_idle_update(&s);
     for (int page = 0; page < 8; ++page) tap(l.talk_previous);
     for (size_t page = 0; page < 7 / static_cast<size_t>(l.talk_row_count); ++page)
       tap(l.talk_next);
@@ -223,6 +276,7 @@ int main() {
     for (size_t page = 0; page < 15 / page_size; ++page) tap(l.profile_next);
     const size_t row = (15 % page_size);
     tap(l.profile_rows[row]);
+    verify_changed_and_idle_update(&s);
     const Rect alternate = viewport.w > viewport.h ? Rect{72, 72, 424, 1088} : Rect{72, 72, 1088, 424};
     assert(set_viewport(alternate.x, alternate.y, alternate.w, alternate.h));
     assert(view() == View::program);
@@ -252,19 +306,28 @@ int main() {
                           l.policy_controls[1].y + l.policy_controls[1].h / 2).kind == ActionKind::encryption_skip_toggle);
       assert(saw_last_channel);
       tap(l.program_profiles_tab);
-      assert(handle_touch(l.program_controls[2].x + l.program_controls[2].w / 2,
-                          l.program_controls[2].y + l.program_controls[2].h / 2).kind == ActionKind::import_profile);
-      const auto exported = handle_touch(l.program_controls[3].x + l.program_controls[3].w / 2,
-                                         l.program_controls[3].y + l.program_controls[3].h / 2);
-      assert(exported.kind == ActionKind::export_profile && exported.value == 15);
-      assert(handle_touch(l.program_controls[5].x + l.program_controls[5].w / 2,
-                          l.program_controls[5].y + l.program_controls[5].h / 2).kind == ActionKind::reload_config);
-      const auto deletion = l.program_controls[4];
-      assert(handle_touch(deletion.x + deletion.w / 2, deletion.y + deletion.h / 2).kind == ActionKind::none);
-      assert(handle_touch(deletion.x + deletion.w / 2, deletion.y + deletion.h / 2).kind == ActionKind::delete_profile);
+    } else {
+      bool saw_last_channel = false;
+      for (const auto& paint : lgfx::paints) saw_last_channel |= paint.text.find("CH 8") != std::string::npos;
+      assert(saw_last_channel);
+      assert(handle_touch(l.policy_controls[0].x + l.policy_controls[0].w / 2,
+                          l.policy_controls[0].y + l.policy_controls[0].h / 2).kind == ActionKind::auto_follow_toggle);
+      assert(handle_touch(l.policy_controls[1].x + l.policy_controls[1].w / 2,
+                          l.policy_controls[1].y + l.policy_controls[1].h / 2).kind == ActionKind::encryption_skip_toggle);
     }
+    assert(handle_touch(l.program_controls[2].x + l.program_controls[2].w / 2,
+                        l.program_controls[2].y + l.program_controls[2].h / 2).kind == ActionKind::import_profile);
+    const auto exported = handle_touch(l.program_controls[3].x + l.program_controls[3].w / 2,
+                                       l.program_controls[3].y + l.program_controls[3].h / 2);
+    assert(exported.kind == ActionKind::export_profile && exported.value == 15);
+    assert(handle_touch(l.program_controls[5].x + l.program_controls[5].w / 2,
+                        l.program_controls[5].y + l.program_controls[5].h / 2).kind == ActionKind::reload_config);
+    const auto deletion = l.program_controls[4];
+    assert(handle_touch(deletion.x + deletion.w / 2, deletion.y + deletion.h / 2).kind == ActionKind::none);
+    assert(handle_touch(deletion.x + deletion.w / 2, deletion.y + deletion.h / 2).kind == ActionKind::delete_profile);
     tap(l.tab[4]);
     assert(view() == View::rf_health);
+    verify_changed_and_idle_update(&s);
     draw();
     if (!l.legacy) for (const auto& paint : lgfx::paints) assert(paint.text_size >= 2);
     if (!l.legacy) {

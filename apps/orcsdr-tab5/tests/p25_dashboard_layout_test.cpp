@@ -25,7 +25,29 @@ static void check(Rect viewport) {
     assert(orcsdr::p25::layout::inside(l.tabs, r));
     assert(r.w >= 44 && r.h >= 44);
   }
-  if (l.legacy) return;
+  if (l.legacy) {
+    for (const Rect r : {l.monitor_control, l.monitor_profile, l.monitor_grant,
+                         l.monitor_signal, l.spectrum_plot, l.waterfall,
+                         l.spectrum_span, l.spectrum_frequency_label,
+                         l.spectrum_filter_label, l.spectrum_activity_label,
+                         l.talk_summary_value, l.talk_current_value,
+                         l.program_profiles, l.program_details, l.profile_page,
+                         l.program_profiles_label, l.program_details_label,
+                         l.program_detail_name, l.program_detail_identity,
+                         l.program_detail_status}) in_content(l, r);
+    for (const Rect r : l.monitor_actions) in_content(l, r);
+    for (int i = 0; i < l.talk_row_count; ++i) in_content(l, l.talk_rows[i]);
+    for (int i = 0; i < l.profile_row_count; ++i) in_content(l, l.profile_rows[i]);
+    for (int i = 0; i < l.candidate_row_count; ++i) in_content(l, l.program_candidates[i]);
+    for (const Rect r : l.program_controls) in_content(l, r);
+    for (const Rect r : l.policy_controls) in_content(l, r);
+    for (const Rect r : l.health_rows) in_content(l, r);
+    for (int i = 0; i < l.candidate_row_count; ++i)
+      assert(!orcsdr::p25::layout::overlap(l.program_candidates[i], l.policy_controls[0]));
+    assert(!orcsdr::p25::layout::overlap(l.program_detail_status, l.program_candidates[0]));
+    assert(!orcsdr::p25::layout::overlap(l.profile_page, l.profile_rows[0]));
+    return;
+  }
   for (const Rect r : {l.monitor_control, l.monitor_profile, l.monitor_grant,
                        l.monitor_signal, l.spectrum_plot, l.waterfall,
                        l.talk_summary, l.talk_current, l.program_profiles,

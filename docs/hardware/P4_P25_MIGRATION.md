@@ -20,9 +20,12 @@ program detail page, control-channel page, and active rename draft. Ordinary
 snapshot updates only refresh the owned P25 widgets; unchanged snapshots do not
 draw. Tab/page changes and viewport transitions are structural redraws.
 
-The native program view uses separate Systems and Details pages. Stored profiles
-are paged, and all configured control channels are visible across the Details
-page. Talkgroups are paged on short landscape displays. The P25 focus and
+The named layout keeps the legacy 1280 x 720 geometry as its default. Its
+Systems and Details panels share the same field renderers used by the compact
+viewport, while profile rows and system details reflow into the available
+space. Stored profiles are paged, and all configured control channels are
+visible across the Details view. Talkgroups are paged on short landscape
+displays. The P25 focus and
 coordinate-free `Control` seam return the same `Action` values the parent UI
 uses for touch handling; they do not call radio, storage, or audio services.
 
@@ -36,7 +39,8 @@ python -m pytest tests/test_p25_dashboard_layout.py -q
 
 The tests check legacy geometry, safe bounds, minimum control targets, populated
 and empty lists, maximum profile/talkgroup/channel counts, all five views,
-representative touch and named-control actions, resize-preserved selection and
+changed and idle snapshot updates in each view, representative touch and
+named-control actions, resize-preserved selection and
 rename draft, focus targets below the legacy 720-pixel extent, and value updates
 without another full-screen clear. The recording fixture also bounds the P25
 trace sprite to the legacy 1186 x 143 x 2-byte allocation (339,196 bytes).
