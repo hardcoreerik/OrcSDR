@@ -136,6 +136,25 @@ int wrapped_detail(const char* value,int x,int y,int width,uint16_t color){
   return static_cast<int>((length+cap-1)/cap);
 }
 
+int wrapped_words(const char* value,int x,int y,int width,uint16_t color){
+  const size_t cap=static_cast<size_t>(std::clamp(width/12,1,79));
+  const size_t length=std::strlen(value);
+  int lines=0;
+  for(size_t offset=0;offset<length;){
+    size_t n=std::min(cap,length-offset);
+    if(offset+n<length) {
+      size_t boundary=n-1;
+      while(boundary>0 && value[offset+boundary]!=' ')--boundary;
+      if(boundary>0)n=boundary+1;
+    }
+    char line[80]{};
+    std::memcpy(line,value+offset,n);text(line,x,y+lines*26,color,2,middle_left);
+    ++lines;offset+=n;
+    while(offset<length && value[offset]==' ')++offset;
+  }
+  return lines;
+}
+
 void card(const Rect& r, uint16_t border = kCyan) {
   M5.Display.fillRoundRect(r.x, r.y, r.w, r.h, 10, kPanel);
   M5.Display.drawRoundRect(r.x, r.y, r.w, r.h, 10, border);
@@ -403,7 +422,8 @@ void draw_now_card() {
     text(value,kNowCard.x+20,kNowCard.y+(compact?44:56),TFT_WHITE,compact?4:7,middle_left);
     if(compact){
       std::snprintf(value,sizeof(value),"%s  %s",g_snapshot.current_label[0]?g_snapshot.current_label:"AIRBAND",state_name(g_snapshot.scan_state));
-      wrapped_detail(value,kNowCard.x+20,kNowCard.y+82,kNowCard.w-40,kMuted);
+      if(g_layout.portrait)wrapped_words(value,kNowCard.x+20,kNowCard.y+82,kNowCard.w-40,kMuted);
+      else wrapped_detail(value,kNowCard.x+20,kNowCard.y+82,kNowCard.w-40,kMuted);
       draw_signal_meter();
     }else{
       text("MHz",kNowCard.x+20,kNowCard.y+112,kCyan,3,middle_left);
@@ -457,9 +477,10 @@ void draw_status() {
           : "Airport bank uses the closest catalog entries (database, not RF-decoded).";
   const uint16_t note_color=g_snapshot.location_configured&&g_snapshot.catalog_loaded?kGreen:kAmber;
   if(g_layout.portrait){
-    wrapped_detail(counts,status_x,kStatusCard.y+18,kStatusCard.w-32,TFT_WHITE);
-    wrapped_detail(settings,status_x,kStatusCard.y+18+2*26,kStatusCard.w-32,TFT_WHITE);
-    wrapped_detail(note,status_x,kStatusCard.y+kStatusCard.h/2,kStatusCard.w-32,note_color);
+    int cursor=kStatusCard.y+18;
+    cursor+=26*wrapped_words(counts,status_x,cursor,kStatusCard.w-32,TFT_WHITE);
+    cursor+=26*wrapped_words(settings,status_x,cursor,kStatusCard.w-32,TFT_WHITE);
+    wrapped_words(note,status_x,cursor,kStatusCard.w-32,note_color);
   }else{
     const int status_width=kStatusCard.w-32;
     if(g_layout.legacy||kStatusCard.w>=1000){

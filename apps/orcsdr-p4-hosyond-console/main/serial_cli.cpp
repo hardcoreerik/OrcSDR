@@ -175,6 +175,7 @@ void cmd_help() {
   std::printf("RTL_VOLUME | RTL_VOLUME <0-32>                   - query / set (auth)\n");
   std::printf("RTL_ORIENTATION STATUS | AUTO ON|OFF | MANUAL <0|90|180|270> - sensor/status and rotation (auth)\n");
   std::printf("RTL_UI STATUS | RTL_UI OPEN <HOME> | RTL_UI TAP <view-x> <view-y>  - UI (OPEN/TAP need auth)\n");
+  std::printf("RTL_LORA TX VIEW OPERATOR|MESSAGES|DUAL_RADIO     - LoRa TX Lab page (auth, queued to UI)\n");
   std::printf("RTL_SCREEN_STATUS / RTL_MEM STATUS / RTL_RX STATUS - diagnostics (RTL_RX: one line per receiver)\n");
   std::printf("SCREENSHOT                                      - screenshot as PNG over serial (auth)\n");
 }

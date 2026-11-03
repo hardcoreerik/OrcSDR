@@ -73,6 +73,16 @@ int main(){
       bool minus=false,plus=false;
       for(const auto&p:lgfx::paints){minus|=p.text=="-"&&p.x==g_layout.gain_down.x+g_layout.gain_down.w/2&&p.y==g_layout.gain_down.y+g_layout.gain_down.h/2;plus|=p.text=="+"&&p.x==g_layout.gain_up.x+g_layout.gain_up.w/2&&p.y==g_layout.gain_up.y+g_layout.gain_up.h/2;}
       assert(minus&&plus);
+      const auto previous_paints=lgfx::paints;
+      lgfx::paints.clear();draw_status();
+      std::vector<layout::Rect> status_lines;
+      for(const auto& p:lgfx::paints)if(!p.text.empty()) {
+        const layout::Rect r{p.x,p.y-4*p.text_size,int(p.text.size())*6*p.text_size,8*p.text_size};
+        assert(layout::inside(g_layout.listen_status,r));
+        for(const auto before:status_lines)assert(!layout::overlap(before,r));
+        status_lines.push_back(r);
+      }
+      lgfx::paints=previous_paints;
     }
     for(int tab=0;tab<6;++tab){g_paint_phase="populated tab";dashboard_handle_touch(cx(g_layout.tab[tab]),cy(g_layout.tab[tab]));assert(dashboard_tab()==static_cast<Tab>(tab));assert_text_inside_viewport(viewport);}
     g_paint_phase="airport details";dashboard_select_tab(Tab::airports);
