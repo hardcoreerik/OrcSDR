@@ -78,6 +78,9 @@ Want to share your own case or accessory? [Start a Discussion](https://github.co
 
 ## Receiver support
 
+Current [feature availability](docs/user-guide/feature-status.md), [status terminology](docs/STATUS_TERMINOLOGY.md), and [documentation freshness audit](docs/DOCUMENTATION_STATUS_AUDIT_2026-11-04.md) explain what is implemented and what has narrower physical RF evidence.
+
+
 **Fully supported OrcSDR receivers:** RTL-SDR Blog V4, V3c, V4 Lite (V4L), and Nooelec NESDR SMArt V5. All four are accepted receiver models, not experimental dongle profiles. This is a receiver-compatibility statement, not a guarantee that every dashboard, frequency, antenna configuration, or RF measurement has the same validation status. Dashboard-specific and historical acceptance limits remain documented in the [feature status](docs/user-guide/feature-status.md) and [project evidence](PROJECT_STATUS.md).
 
 | Receiver | OrcSDR support | Notes |
