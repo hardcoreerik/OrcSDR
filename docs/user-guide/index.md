@@ -10,7 +10,7 @@ The labels used throughout the guide are deliberate:
 - **Demo** — deterministic sample data, always marked `DEMO` on the device.
 - **Unavailable / Planned** — not offered as working functionality.
 
-See the [feature availability matrix](feature-status.md) and [status terminology](../STATUS_TERMINOLOGY.md) before interpreting dated RF validation records.
+See the [feature availability matrix](feature-status.md) and [status terminology](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/STATUS_TERMINOLOGY.md) before interpreting dated RF validation records.
 
 Start with [Getting started](getting-started.md), then use the searchable [screen catalog](reference/screen-catalog.md) for a control-by-control view.
 
