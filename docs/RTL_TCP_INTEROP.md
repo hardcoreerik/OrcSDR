@@ -154,6 +154,23 @@ Findings:
   favour bounded buffers over throughput; keeping the larger window is the owner's
   decision, and a longer stability and internal-RAM soak has not been run.
 
+## Remote gain control
+
+The dashboards call the driver's gain functions from about 25 places. Instead of a
+second code path in each, `main.cpp` redirects three names (`set_tuner_gain_mode`,
+`set_tuner_gain`, `set_rtl_agc`) to `ui/rtl_source_routing.{hpp,cpp}`. While a remote
+stream runs the call becomes an `rtl_tcp` command (gain mode, gain in tenths of dB, RTL
+AGC); otherwise it reaches the USB driver unchanged. `ESP_OK` on the remote branch means
+"queued", because `rtl_tcp` never acknowledges. The driver's getters are not rerouted, so
+the gain readout describes the USB dongle's shadow state, not the remote's.
+
+Physical check (Tab5, remote FM through `RTL_GAIN`): auto -33.0 dBFS, then manual 0 dB
+-44.0 dBFS, then manual 49.6 dB -12.0 dBFS. The last step appeared about a minute after
+the command: the link was at 60-65% of real time, so the server's queue of older samples
+had to drain first. **Control latency equals the backlog**, and the "link too slow"
+notice is the warning that it exists. Other operations a standard `rtl_tcp` can do
+(bias-T, direct sampling, IF gain, crystal trims) are not exposed to the UI.
+
 ## Server direction (OrcSDR serves its dongle)
 
 | Piece | File |

@@ -140,6 +140,7 @@
 #include "pocsag_store.hpp"
 #include "radio_session.hpp"
 #include "receiver_source_policy.hpp"
+#include "rtl_source_routing.hpp"
 #include "rtl_tcp_server.hpp"
 #include "rtl_tcp_source.hpp"
 #include "radio_ui_service.hpp"
@@ -166,6 +167,11 @@
 #if ESP_RTL_SDR_VERSION_NUMBER < 800
 #error "OrcSDR requires esp_rtl_sdr v0.8.0-rc2 or newer"
 #endif
+
+// Gain changes follow the active receiver (remote rtl_tcp or USB); see rtl_source_routing.hpp.
+#define esp_rtl_sdr_set_tuner_gain_mode orcsdr::routing::set_tuner_gain_mode
+#define esp_rtl_sdr_set_tuner_gain orcsdr::routing::set_tuner_gain
+#define esp_rtl_sdr_set_rtl_agc orcsdr::routing::set_rtl_agc
 
 enum class SerialVerbosity : uint8_t { quiet = 0, normal = 1, debug = 2, trace = 3 };
 
