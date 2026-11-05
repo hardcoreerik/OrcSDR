@@ -9,17 +9,20 @@ This is a current-source feature guide, not a list of unfinished experiments. **
 | AM broadcast and 119-channel scan | **Available; hardware-tested** | Receiver and scanning paths have Tab5 evidence; reception quality is antenna/band dependent and not universally calibrated. |
 | NOAA Weather Radio | **Available** | Configured weather-channel NFM listening; separate current-release RF acceptance remains open. |
 | CB listening and scanning | **Available** | AM/USB/LSB and 40-channel scanning; broad on-air scanner acceptance remains open. |
-| Shortwave Explorer | **Available** | AM/USB/LSB, automatic band-plan modes, filters, clarifier, memories and log. General HF calibration and broad real-signal verification remain open. |
-| Airband | **Available** | Dedicated 118–136.975 MHz aviation AM workspace with 25/8.33 kHz tuning, scanning and offline channel data. Physical RF acceptance remains open. |
+| Shortwave Explorer | **Available; live RF heard** | Maintainer confirms actual Shortwave reception/listening. AM/USB/LSB, band-plan AUTO, filters, clarifier, memories and log work; sensitivity/complete band-by-band qualification is separate. |
+| Airband | **Available; live aviation voice heard** | Real arrival/departure voice heard on the Tab5; earlier [119.600 MHz field record](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/airband/README.md) also documents voice compared with LiveATC. Scanner and 25/8.33 kHz tuning are implemented. |
 | Marine / Satellite routes | **Limited** | General receiver routing is available; specialized decoders/dedicated workflows are not claimed. |
 | P25 Phase I | **RF-validated** | Control, follow, clear-voice and encrypted-call indication/muting are documented. Encrypted audio is not decoded. |
 | P25 Phase II | **In development** | Grant/sync/burst/DUID handling exists; complete payload/AMBE+2 voice is not implemented. |
 | ADS-B 1090 | **RF-validated** | Live CRC-valid aircraft traffic, track comparison and FAA enrichment; live only. |
-| LoRa / Meshtastic receive | **Available; hardware-tested** | Native receive, traffic, nodes, maps and RF-health views. Packet loss and coverage are not guaranteed. Receive-only. |
+| LoRa / Meshtastic receive | **Available; live packets decoded** | Unencrypted real-world messages, telemetry, node info and GPS decoded. Encrypted traffic detected as **ENCRYPTED FRAME**, not decrypted. Passive LongFast receiving; region/profile and coverage limits remain. |
 | POCSAG | **RF-validated at 1200 baud** | Live CAPCODE/message verification; 512/2400 baud currently have host-test evidence only; archives are memory bounded. |
 | FT8 reception | **RF-validated** | 40 m FT8 decoding accepted on four supported dongles on 2026-10-09. JS8 modes are a separate development/evidence track. |
-| SSTV reception | **Available; hardware-tested** | Full-colour native decoder with 14 modes in host tests; conducted Robot 36, PD120 and Scottie S1 image/SD acceptance on V3c, V4, V4L and Nooelec V5. Other modes remain host-validated only. |
-| ACARS VHF | **Available; RF-tested** | Native decoder/dashboard with two real off-air blocks on 2026-10-15. VDL Mode 2 is not included in that claim. |
+| SSTV reception | **Available; 14 modes supported** | Maintainer confirms operational supported modes; all 14 covered by host tests. Conducted Robot 36, PD120 and Scottie S1 image/SD acceptance on V3c, V4, V4L and Nooelec V5 is separately documented. |
+| ACARS VHF | **Available; live RF decoded** | Real-world VHF ACARS reception and archive, with later traffic records beyond the original two-block result. Airline-specific layouts vary; uninterpreted payloads remain raw. |
+| VDL Mode 2 (VDL2) | **Available; live RF decoded** | Live AVLC/ACARS frames decoded on Tab5 (including a 213-frame / 135-message session). Aircraft position and climb-related fields interpreted where understood; unknown airline-specific data stays raw. |
+| Dead Air / ENV III | **Available; real measurements** | RF activity and events plus live Unit ENV III temperature/humidity/pressure on Tab5 (maintainer-confirmed). No paranormal detection claim; sensor gaps/invalid data are not invented. |
+| VEIL-26 | **Available; symbolic analysis** | Optional reproducible mapping of measured frequency/level to esoteric symbols and numerology. Interpretations are separated from measured physical values. No claim of messages, spirits or physical detection from the symbolic output. |
 | RF Lab / RF Visualizer | **Available** | Spectrum, IQ recording, receiver controls and test tools; not a calibrated laboratory spectrum analyzer. |
 | Wi-Fi analysis | **Hardware-tested** | AP survey via ESP-Hosted; Wi-Fi changes can temporarily pause active SDR reception. |
 | Global Settings | **Available; hardware-tested** | Receiver, Wi-Fi, storage, display/audio, catalog and companion settings. |
@@ -27,5 +30,8 @@ This is a current-source feature guide, not a list of unfinished experiments. **
 | Android TV client | **Available companion** | Network client; Tab5 remains the radio receiver. |
 | Signed data catalog | **Hardware-tested** | Signed installation and verified FAA pack workflow; other packs depend on publication. |
 | SDR transmission | **Not available** | OrcSDR is receive-only; specific TX-capable devices and branches do not imply general transmit support. |
+
+Firsthand acceptance and the distinction from dated formal RF tests are recorded in the
+[maintainer field note](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/MAINTAINER_FIELD_ACCEPTANCE_2026-11-04.md).
 
 For exact release/version boundaries, hardware conditions and ongoing research, use [PROJECT_STATUS.md](https://github.com/hardcoreerik/OrcSDR/blob/main/PROJECT_STATUS.md). Historical release notes and tests remain dated evidence; the absence of a new test does not erase an implemented feature.
