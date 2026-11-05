@@ -12,8 +12,8 @@ shared receiver routing rather than dedicated signal decoders.
 AM uses broadcast-band tuning and filtering, and WX uses NFM on a configured
 NOAA weather channel. Shortwave Explorer adds AM/USB/LSB, clarifier, band-plan
 AUTO and memories; the Airband dashboard implements aviation AM voice and
-25/8.33 kHz tuning/scanning. See the [Shortwave changes](../../shortwave/CHANGELOG.md)
-and [Airband guide](../../airband/README.md). Marine and Satellite still use
+25/8.33 kHz tuning/scanning. See the [Shortwave changes](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/shortwave/CHANGELOG.md)
+and [Airband guide](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/airband/README.md). Marine and Satellite still use
 shared receiver routes without specialized decoders. Live reception quality
 and complete on-air RF acceptance vary by band, antenna and firmware build.
 
