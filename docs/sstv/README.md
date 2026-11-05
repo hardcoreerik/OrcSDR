@@ -1,6 +1,6 @@
 # OrcSDR SSTV — native progressive receiver
 
-**Availability:** Integrated native receiver in OrcSDR source; earlier development branches and dated validation records are retained for provenance.  
+**Availability:** Integrated, **fully functioning 14-mode receiver** per maintainer acceptance (2026-11-04); earlier development branches and dated validation records are retained for provenance. That acceptance is separate from documented per-mode/per-dongle hardware test coverage.  
 **Target:** M5Stack Tab5, ESP32-P4, RTL-SDR (Blog V3C/V4/V4L, Nooelec NESDR SMArt V5)  
 **Audio path:** receiver PCM → bounded audio tap → VIS/sync decoder → RGB565 PSRAM image → native M5GFX UI → background SD archive.
 
@@ -174,7 +174,7 @@ The 36.91 s Pluto Robot 36 recording (`received-filtered-aligned.wav`, SHA-256 `
 
 - **Observed on a Tab5 (2026-10-12):** dashboard rendering and touch, the Robot 36 and PD120 self-tests through the real decoder, display and SD archive, BMP saves of full-size pictures (after the 16 KiB block-write fix), and live reception of two over-the-air colour Robot 36 frames saved to the card.
 - **Not yet observed:** long unattended runs and soaks beyond a handful of images, SD behaviour across many card types or a card pulled mid-write on real hardware (the failure cases are covered on the host only), coexistence with FM and USB reception, and P4 CPU/heap/PSRAM and latency figures beyond the spot readings in `SSTV STATUS`.
-- Conducted RF reception is accepted for Robot 36, PD120 and Scottie S1 across V3c, V4, V4L and Nooelec V5, but the remaining 11 modes lack matching multi-dongle physical acceptance.
+- All 14 supported modes are operational per maintainer. Conducted RF reception was specifically documented for Robot 36, PD120 and Scottie S1 across V3c, V4, V4L and Nooelec V5; the other 11 modes do not yet have that **same documented per-mode, per-dongle acceptance matrix**.
 - Broad over-the-air weak-signal sensitivity and long-soak behavior across all modes remain unqualified; chroma noise and sync-only mode inference remain practical limits.
 - Sync-only identification under fading is heuristic; see the Robot 36 / Robot 72 alias above. Martin's 4.9 ms sync pulse reads shorter than the classifier's floor, so Martin pictures are identified by VIS only.
 - `session_id` restarts every boot; a paginated SD browser does not exist (the gallery shows the newest four).
