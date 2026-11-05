@@ -1,6 +1,6 @@
 # OrcSDR: radio freedom, without the laptop
 
-For the published [v0.3.0-beta.1 release](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.3.0-beta.1). Device screenshots below come from a PNG-capable build based on later `main` source; see [[Screenshot Catalog]] for provenance.
+For the latest published versioned firmware at this review, see [v0.5.0-beta.1](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.5.0-beta.1). The older screenshots and capture notes below describe their original v0.3.0-era builds and remain historical evidence; see [[Screenshot Catalog]] for provenance.
 
 OrcSDR turns an M5Stack Tab5 and a supported RTL-SDR into a portable, receive-only radio. Start with a suitable antenna and a familiar FM station.
 
