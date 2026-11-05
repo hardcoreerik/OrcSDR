@@ -154,6 +154,25 @@ Findings:
   favour bounded buffers over throughput; keeping the larger window is the owner's
   decision, and a longer stability and internal-RAM soak has not been run.
 
+## On-device settings
+
+Settings > Radio Defaults has two rows below the existing buttons: **Receiver source**
+(CHANGE cycles Automatic, Local USB, Remote rtl_tcp) and **Remote server** (EDIT opens the
+shared full-width text editor; `host` or `host:port`, port default 1234). A line under them
+shows a coarse remote status (STREAMING, CONNECTING, RECONNECTING, BEHIND REAL TIME, FAILED);
+it is deliberately coarse so the page repaints only when it really changes. A new source
+applies from the next stream start, and the server cannot be changed while a remote stream
+runs. The glue lives in `ui/settings_remote_source.{hpp,cpp}`; `main.cpp` has two one-line
+hooks, and the address parser (`parse_endpoint`) is host-tested.
+
+Verified on the Tab5 through the touch path (physical): CHANGE moved Automatic to USB to
+Remote and the saved mode followed each time; EDIT opened the editor prefilled with the saved
+server; deleting a character and pressing SAVE stored `192.168.1.1`, and retyping the `5`
+restored `192.168.1.15`; CANCEL closed the editor without changing anything. Not done: a
+dedicated drawing regression for the new rows (the repo's UI standard asks for one), and a
+physical flicker check by a person; the rows use the page's existing `draw_content()` repaint
+on user action and on a status change.
+
 ## IQ integrity: real recording through the network path
 
 `tests/rtl_tcp_replay_host_test.cpp` serves a raw `cu8` recording through a fake server in
@@ -255,6 +274,6 @@ The 64 KiB TCP window is still a trial in `sdkconfig.defaults`, awaiting an owne
 
 ## Not done yet
 
-Settings screen (serial control only), a third-party server client test, remote
-gain controls in the UI, a long soak, and a test against a non-Windows `rtl_tcp`
-server.
+A drawing regression and physical flicker check for the new Settings rows, a server
+enable control on the screen (the server stays serial-only on purpose), SDR++ and Gqrx
+runs, a longer soak, and a test against a non-Windows `rtl_tcp` server.

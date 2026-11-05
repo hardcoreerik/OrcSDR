@@ -63,6 +63,10 @@ int32_t g_clock_offset = 0;
 bool g_ntp_tapped = false;                  // SYNC NTP was tapped and the new state has not arrived yet
 bool g_location_request_pending = false;
 char g_location_query[64]{};
+// The shared full-width text editor can also edit the remote rtl_tcp server.
+bool g_remote_target = false;
+bool g_remote_request_pending = false;
+char g_remote_pending[72]{};
 map_catalog_paging::Cursor g_catalog_cursor;
 
 bool hit(int x, int y, int bx, int by, int bw, int bh) {
@@ -388,6 +392,17 @@ void draw_radio_defaults() {
     value_row("GAIN / BIAS-TEE", "HOME, AM, FM / RF LAB", 425, kMuted);
     button("TOGGLE AUTO-START", 330, 500, 260, 50, TFT_DARKCYAN);
     button("TOGGLE GRAPHICS", 620, 500, 240, 50, TFT_DARKCYAN);
+    // Receiver source: the local USB dongle, a remote rtl_tcp server, or automatic.
+    static const char* const kSourceNames[] = {"AUTOMATIC", "LOCAL USB", "REMOTE RTL_TCP"};
+    text("RECEIVER SOURCE", 330, 600, kMuted, 2);
+    text(kSourceNames[g_state.receiver_source < 3 ? g_state.receiver_source : 0], 900, 600,
+         TFT_WHITE, 2, middle_right);
+    button("CHANGE", 930, 575, 288, 50, TFT_DARKCYAN);
+    text("REMOTE SERVER", 330, 655, kMuted, 2);
+    text(g_state.remote_server[0] ? g_state.remote_server : "NOT SET", 900, 655,
+         g_state.remote_server[0] ? TFT_WHITE : kMuted, 2, middle_right);
+    button("EDIT", 930, 630, 288, 50, TFT_DARKCYAN);
+    if (g_state.remote_status[0]) text(g_state.remote_status, 330, 698, kGreen, 2);
   }
 }
 
@@ -736,10 +751,19 @@ bool accept_location_query();
 
 Action handle_location_keyboard(int x, int y) {
   const auto result = text_editor::handle_touch(x, y);
-  strlcpy(g_location_query, text_editor::value(), sizeof(g_location_query));
+  if (!g_remote_target) strlcpy(g_location_query, text_editor::value(), sizeof(g_location_query));
   if (result == text_editor::Result::cancelled) {
     g_location_edit = false;
+    g_remote_target = false;
     draw_content();
+  } else if (result == text_editor::Result::accepted && g_remote_target) {
+    g_location_edit = false;
+    g_remote_target = false;
+    strlcpy(g_remote_pending, text_editor::value(), sizeof(g_remote_pending));
+    g_remote_request_pending = g_remote_pending[0] != '\0';
+    draw_content();
+    if (!g_remote_request_pending) return {};
+    return {ActionKind::remote_server_changed, 0};
   } else if (result == text_editor::Result::accepted) {
     const bool queued = accept_location_query();
     draw_content();
@@ -820,6 +844,7 @@ void enter(const State& state_value, Section section) {
   g_edit = EditField::none;
   g_wifi_edit = WifiEdit::none;
   g_location_edit = false;
+  g_remote_target = false;
   g_clock_edit = false;
   g_catalog_cursor.armed = -1;
   g_catalog_cursor.page = 0;
@@ -835,6 +860,7 @@ void leave() {
   g_edit = EditField::none;
   g_wifi_edit = WifiEdit::none;
   g_location_edit = false;
+  g_remote_target = false;
   g_clock_edit = false;
 }
 
@@ -931,6 +957,10 @@ void update(const State& state_value) {
        strcmp(g_state.orcdial_failure,state_value.orcdial_failure) ||
        g_state.orcdial_paired != state_value.orcdial_paired ||
        g_state.orcdial_bridge_ready != state_value.orcdial_bridge_ready);
+  const bool remote_changed = g_section == Section::radio_defaults &&
+      (g_state.receiver_source != state_value.receiver_source ||
+       strcmp(g_state.remote_server, state_value.remote_server) != 0 ||
+       strcmp(g_state.remote_status, state_value.remote_status) != 0);
   if (catalog_inventory_changed) g_catalog_cursor.catalog_changed(state_value.catalog_packs);
   g_state = state_value;
   if(g_edit==EditField::none&&g_state.location_configured)g_latitude_set=g_longitude_set=true;
@@ -955,6 +985,8 @@ void update(const State& state_value) {
   if (location_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none && !g_location_edit)
     draw_content();
   if (companion_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
+    draw_content();
+  if (remote_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none && !g_location_edit)
     draw_content();
 }
 
@@ -1168,6 +1200,19 @@ Action handle_touch(int32_t x, int32_t y) {
       draw_content();
       return {ActionKind::graphics_changed, g_state.graphics_default};
     }
+    if (hit(x, y, 930, 575, 288, 50)) {
+      g_state.receiver_source = static_cast<uint8_t>((g_state.receiver_source + 1) % 3);
+      draw_content();
+      return {ActionKind::receiver_source_changed, g_state.receiver_source};
+    }
+    if (hit(x, y, 930, 630, 288, 50)) {
+      g_location_edit = true;   // the shared full-width text editor, aimed at the server
+      g_remote_target = true;
+      text_editor::begin("REMOTE RTL_TCP SERVER", g_state.remote_server,
+                         sizeof(g_state.remote_server) - 1, false, "SAVE");
+      text_editor::draw();
+      return {};
+    }
   } else if (g_section == Section::companion) {
     if (hit(x, y, 960, 150, 170, 48))
       return {ActionKind::web_console_changed, g_state.web_console_enabled ? 0 : 1};
@@ -1196,6 +1241,7 @@ void show_documentation_section(Section section, const State& state_value,
   g_edit = EditField::none;
   g_wifi_edit = WifiEdit::none;
   g_location_edit = false;
+  g_remote_target = false;
   g_clock_edit = false;
   g_active = true;
   if (show_wifi_keyboard) {
@@ -1217,6 +1263,13 @@ bool take_wifi_credentials(char* ssid, size_t ssid_size,
   g_wifi_request_ssid[0] = '\0';
   g_wifi_request_pending = false;
   return true;
+}
+
+bool take_remote_server(char* server, size_t server_size) {
+  if (!g_remote_request_pending || !server || server_size == 0) return false;
+  strlcpy(server, g_remote_pending, server_size);
+  g_remote_request_pending = false;
+  return server[0] != '\0';
 }
 
 bool take_location_query(char* query, size_t query_size) {

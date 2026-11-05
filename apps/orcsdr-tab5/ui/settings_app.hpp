@@ -99,6 +99,11 @@ struct State {
   bool rtl_usb_safe_mode = false;
   char default_band[16]{};
   uint32_t fm_frequency_hz = 0;
+  // Receiver source: 0 automatic, 1 local USB, 2 remote rtl_tcp. The status is coarse on
+  // purpose (STREAMING, CONNECTING ...), so the page repaints only when it really changes.
+  uint8_t receiver_source = 0;
+  char remote_server[72]{};   // "host" or "host:port"; empty = not set
+  char remote_status[32]{};
 
   bool sd_ready = false;
   uint64_t sd_total_bytes = 0;
@@ -165,6 +170,8 @@ enum class ActionKind : uint8_t {
   ,catalog_remove
   ,web_console_changed
   ,rtl_usb_safe_mode_reset
+  ,receiver_source_changed  // value = 0 automatic, 1 local USB, 2 remote rtl_tcp
+  ,remote_server_changed    // fetch the text with take_remote_server()
   ,clock_set_utc          // utc = UTC seconds, value = UTC offset in minutes: write the RTC and store the offset
   ,clock_offset_changed   // value = UTC offset in minutes: store it (the time itself was already right)
   ,clock_ntp_sync         // optional: set the RTC from the network (Wi-Fi must already be connected)
@@ -195,6 +202,7 @@ void show_documentation_section(Section section, const State& state,
 bool take_wifi_credentials(char* ssid, size_t ssid_size,
                            char* password, size_t password_size);
 bool take_location_query(char* query, size_t query_size);
+bool take_remote_server(char* server, size_t server_size);
 bool self_check();
 
 }  // namespace orcsdr::settings

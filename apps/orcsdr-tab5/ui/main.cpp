@@ -141,6 +141,7 @@
 #include "radio_session.hpp"
 #include "receiver_source_policy.hpp"
 #include "rtl_source_routing.hpp"
+#include "settings_remote_source.hpp"
 #include "rtl_tcp_server.hpp"
 #include "rtl_tcp_source.hpp"
 #include "radio_ui_service.hpp"
@@ -13149,6 +13150,7 @@ const orcsdr::settings::State& global_settings_state() {
   state.rtl_usb_safe_mode = esp_rtl_sdr_usb_safe_mode_active();
   strlcpy(state.default_band, rtl_band_name(rtl_ui_band), sizeof(state.default_band));
   state.fm_frequency_hz = rtl_saved_fm_hz;
+  orcsdr::settings_remote::fill(state);
   state.sd_ready = g_sd_ready;
   state.sd_total_bytes = sd_total_bytes();
   state.sd_free_bytes = g_sd_ready && g_sd_fs ? orcsdr::storage::free_bytes() : 0;
@@ -15403,6 +15405,10 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       break;
     case orcsdr::settings::ActionKind::rtl_usb_safe_mode_reset:
       reset_rtl_usb_safe_mode_and_restart();
+      break;
+    case orcsdr::settings::ActionKind::receiver_source_changed:
+    case orcsdr::settings::ActionKind::remote_server_changed:
+      orcsdr::settings_remote::handle(action);
       break;
     case orcsdr::settings::ActionKind::clock_offset_changed:
       if (!orcsdr::time_service::store_utc_offset_minutes(preferences, action.value))

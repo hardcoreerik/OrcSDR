@@ -113,6 +113,9 @@ class CommandParser {
 // (no spaces, no URL parts, no IPv6 literals in this first version).
 constexpr size_t kMaxHostChars = 63;
 bool valid_host(const char* host);
+// "host" or "host:port" (port 1-65535, default 1234) -> host and port. False if either
+// part is invalid or the host does not fit `host_size`.
+bool parse_endpoint(const char* text, char* host, size_t host_size, uint16_t* port);
 
 // Bounded exponential reconnect delay.
 struct BackoffPolicy {

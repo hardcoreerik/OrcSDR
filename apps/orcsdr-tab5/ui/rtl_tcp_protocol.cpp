@@ -30,6 +30,31 @@ void encode_greeting(uint32_t tuner_type_raw, uint32_t gain_count, uint8_t out[k
   }
 }
 
+bool parse_endpoint(const char* text, char* host, size_t host_size, uint16_t* port) {
+  if (text == nullptr || host == nullptr || port == nullptr || host_size == 0) return false;
+  const char* colon = std::strrchr(text, ':');
+  const size_t length = colon ? static_cast<size_t>(colon - text) : std::strlen(text);
+  if (length == 0 || length > kMaxHostChars || length >= host_size) return false;
+  char candidate[kMaxHostChars + 1]{};
+  std::memcpy(candidate, text, length);
+  if (!valid_host(candidate)) return false;
+  unsigned long number = kDefaultPort;
+  if (colon != nullptr) {
+    const char* digits = colon + 1;
+    if (*digits == '\0') return false;
+    number = 0;
+    for (; *digits != '\0'; ++digits) {
+      if (*digits < '0' || *digits > '9') return false;
+      number = number * 10 + static_cast<unsigned long>(*digits - '0');
+      if (number > 65535) return false;
+    }
+  }
+  if (number == 0) return false;
+  std::memcpy(host, candidate, length + 1);
+  *port = static_cast<uint16_t>(number);
+  return true;
+}
+
 bool CommandParser::push(uint8_t byte, RawCommand* out) {
   raw_[have_++] = byte;
   if (have_ < kCommandBytes) return false;

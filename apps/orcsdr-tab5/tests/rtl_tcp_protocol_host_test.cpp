@@ -179,6 +179,26 @@ static void test_host_validation() {
   CHECK(!valid_host(long_host));
 }
 
+static void test_endpoint_parsing() {
+  char host[64];
+  uint16_t port = 0;
+  CHECK(parse_endpoint("192.168.1.50", host, sizeof(host), &port) && port == 1234 &&
+        std::strcmp(host, "192.168.1.50") == 0);
+  CHECK(parse_endpoint("harbour-sdr.local:5000", host, sizeof(host), &port) && port == 5000 &&
+        std::strcmp(host, "harbour-sdr.local") == 0);
+  CHECK(parse_endpoint("10.0.0.2:65535", host, sizeof(host), &port) && port == 65535);
+  CHECK(!parse_endpoint("10.0.0.2:0", host, sizeof(host), &port));
+  CHECK(!parse_endpoint("10.0.0.2:65536", host, sizeof(host), &port));
+  CHECK(!parse_endpoint("10.0.0.2:", host, sizeof(host), &port));
+  CHECK(!parse_endpoint("10.0.0.2:12a4", host, sizeof(host), &port));
+  CHECK(!parse_endpoint(":1234", host, sizeof(host), &port));
+  CHECK(!parse_endpoint("", host, sizeof(host), &port));
+  CHECK(!parse_endpoint("bad host", host, sizeof(host), &port));
+  CHECK(!parse_endpoint("http://x:80", host, sizeof(host), &port));
+  CHECK(!parse_endpoint(nullptr, host, sizeof(host), &port));
+  CHECK(!parse_endpoint("192.168.1.50", host, 5, &port));  // does not fit the buffer
+}
+
 static void test_server_side_framing() {
   uint8_t hello[kGreetingBytes];
   encode_greeting(5, 29, hello);
@@ -223,6 +243,7 @@ int main() {
   test_reconnect_drops_carried_byte();
   test_timeout_keeps_carried_byte();
   test_host_validation();
+  test_endpoint_parsing();
   test_server_side_framing();
   test_backoff_is_bounded();
   std::printf("RTL_TCP_PROTOCOL_HOST_TEST failures=%d pass=%d\n", g_failures, g_failures == 0);

@@ -41,8 +41,14 @@ while streaming. If a second attempt hangs, restart the server.
 
 ## 3. Point the Tab5 at it
 
-Over the USB serial console (115200 baud, same port used for flashing), after pairing
-as usual:
+On the Tab5: **Settings > Radio Defaults**. Under *Remote server* press **EDIT**, type the
+server's address (and `:port` if it is not 1234) and press **SAVE**. Then press **CHANGE** next
+to *Receiver source* until it reads **REMOTE RTL_TCP**. The line under the rows shows
+STREAMING once connected (or BEHIND REAL TIME if the link is too slow for the rate). The new
+source takes effect the next time a stream starts.
+
+The same can be done over the USB serial console (115200 baud, same port used for flashing),
+after pairing as usual:
 
 ```
 RTL_TCP HOST 192.168.1.50 1234
