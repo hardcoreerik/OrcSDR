@@ -20,12 +20,12 @@ Home provides spectrum and waterfall, tuning controls, recent dashboards, Settin
 | [[FM Radio]] | Broadcast FM, presets, stereo and RDS |
 | [[AM Radio]] | Broadcast AM, station finding and spectrum |
 | [[FT8 Reception]] | Receive-only FT8, setup and dated four-receiver reception evidence |
-| [[Shortwave]] | HF tuning, schedules, hunt, memories and logbook; experimental reception |
+| [[Shortwave]] | Implemented AM/USB/LSB HF listening, station finding, memories and logbook; RF quality varies by antenna |
 | [[CB Radio]] | 40-channel AM/USB/LSB listening and scanning |
 | [[Weather and Other Bands]] | NOAA weather; Airband, Marine and Satellite limitations |
 | [[P25 Radio]] | Phase I monitoring and clear voice; Phase II audio unavailable |
 | [[ADS-B Aircraft]] | Live 1090 MHz broadcasts |
-| [[LoRa Monitor]] | Experimental LoRa/Meshtastic reception |
+| [[LoRa Monitor]] | Hardware-tested LoRa/Meshtastic receive and analysis; reception/coverage limits apply |
 | [[POCSAG Pager Monitor]] | Messages, IDs, signal health and session history |
 | [[Wi-Fi Survey]] | Access-point survey through the Tab5 wireless coprocessor |
 | [[RF Lab]] | Controls, measurements, records and visualizers |
