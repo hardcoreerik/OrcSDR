@@ -18,7 +18,7 @@ This is a current-source feature guide, not a list of unfinished experiments. **
 | LoRa / Meshtastic receive | **Available; hardware-tested** | Native receive, traffic, nodes, maps and RF-health views. Packet loss and coverage are not guaranteed. Receive-only. |
 | POCSAG | **RF-validated at 1200 baud** | Live CAPCODE/message verification; 512/2400 baud currently have host-test evidence only; archives are memory bounded. |
 | FT8 reception | **RF-validated** | 40 m FT8 decoding accepted on four supported dongles on 2026-10-09. JS8 modes are a separate development/evidence track. |
-| SSTV reception | **Available; hardware-tested** | Full-colour native decoder with 14 modes in host tests and conducted Robot 36 Tab5 image reception; per-mode live RF acceptance varies. |
+| SSTV reception | **Available; hardware-tested** | Full-colour native decoder with 14 modes in host tests; conducted Robot 36, PD120 and Scottie S1 image/SD acceptance on V3c, V4, V4L and Nooelec V5. Other modes remain host-validated only. |
 | ACARS VHF | **Available; RF-tested** | Native decoder/dashboard with two real off-air blocks on 2026-10-15. VDL Mode 2 is not included in that claim. |
 | RF Lab / RF Visualizer | **Available** | Spectrum, IQ recording, receiver controls and test tools; not a calibrated laboratory spectrum analyzer. |
 | Wi-Fi analysis | **Hardware-tested** | AP survey via ESP-Hosted; Wi-Fi changes can temporarily pause active SDR reception. |
