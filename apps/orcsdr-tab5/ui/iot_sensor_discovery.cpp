@@ -34,7 +34,7 @@ bool valid_metrics(const DecodedEvent& e) {
 
 void Inventory::clear() {
   // Counters and entries intentionally reset together. No dangling device pointers.
-  for (auto& device : devices_) device = {};
+  for (auto& device : devices_) device = Device{};
   count_ = 0;
   unclassified_ = 0;
   unattributed_ = 0;
@@ -83,7 +83,7 @@ IngestResult Inventory::ingest(const DecodedEvent& event) {
       }
       saturate_inc(evictions_);
     }
-    devices_[slot] = {};
+    devices_[slot] = Device{};
     Device& d = devices_[slot];
     std::strcpy(d.protocol, event.protocol);  // checked bounded ASCII above
     std::strcpy(d.sensor_id, event.sensor_id);
