@@ -245,6 +245,13 @@ void cmd_tune(const char* args) {
     std::printf("RTL_TUNE_INVALID use RTL_TUNE <FM|AM|WX|CB|P25|LORA|BROWSE> <HZ>\n");
     return;
   }
+  if (std::strcmp(band, "P25") == 0) {
+    if (screens::p25_tune_request(static_cast<uint32_t>(hz)))
+      std::printf("RTL_TUNE_QUEUED band=P25 frequency_hz=%lu\n", hz);
+    else
+      std::printf("RTL_TUNE_ERROR p25_inactive_busy_or_out_of_range\n");
+    return;
+  }
   home_app::request_frequency(static_cast<uint32_t>(hz));
   std::printf("RTL_TUNE_OK band=%s frequency_hz=%lu\n", band, hz);
 }

@@ -18,7 +18,7 @@ if(C6_FIRMWARE_BIN AND EXISTS "${C6_FIRMWARE_BIN}")
 endif()
 idf_component_register(
     # Existing authenticated web modules; browser bundle is packaged separately.
-    SRCS "main.cpp" "present.cpp" "screen_snap.cpp" "serial_cli.cpp" "home_app.cpp" "radio_service.cpp" "audio_service.cpp" "screens.cpp" "screen_fm.cpp" "screen_am.cpp" "screen_cb.cpp" "screen_airband.cpp" "screen_shortwave.cpp" "screen_rflab.cpp" "screen_settings.cpp" "screen_pocsag.cpp" "screen_wifi.cpp" "screen_adsb.cpp" "screen_acars.cpp" "screen_lora.cpp" "ui_support.cpp" "iq_tap.cpp" "wifi_app.cpp" "sd_card.cpp"
+    SRCS "main.cpp" "present.cpp" "screen_snap.cpp" "serial_cli.cpp" "home_app.cpp" "radio_service.cpp" "audio_service.cpp" "screens.cpp" "screen_fm.cpp" "screen_am.cpp" "screen_cb.cpp" "screen_airband.cpp" "screen_shortwave.cpp" "screen_rflab.cpp" "screen_settings.cpp" "screen_pocsag.cpp" "screen_wifi.cpp" "screen_adsb.cpp" "screen_acars.cpp" "screen_lora.cpp" "screen_p25.cpp" "ui_support.cpp" "iq_tap.cpp" "wifi_app.cpp" "sd_card.cpp"
          ${ORCSDR_FT8_RUNTIME_SOURCES}
          "${TAB5_UI}/home_dashboard.cpp" "${TAB5_UI}/dashboard_audio_control.cpp"
          "${TAB5_UI}/freq_keypad.cpp" "${TAB5_UI}/focus_nav.cpp" "${TAB5_UI}/waterfall_style.cpp"
@@ -54,6 +54,7 @@ idf_component_register(
          "${TAB5_UI}/map_view.cpp" "${TAB5_UI}/screen_controller.cpp"
          "${TAB5_UI}/lora_dashboard.cpp" "${TAB5_UI}/lora_channel_control.cpp" "${TAB5_UI}/lora_native_decoder.cpp"
          "${TAB5_UI}/lora_preamble_detector.cpp"
+         "${TAB5_UI}/p25_dashboard.cpp" "${TAB5_UI}/p25_config.cpp" "${TAB5_UI}/p25_decoder.cpp" "${TAB5_UI}/p25_decoder_core.cpp"
          "${TAB5_UI}/acars_app.cpp" "${TAB5_UI}/acars_archive.cpp" "${TAB5_UI}/acars_core.cpp"
          "${TAB5_UI}/acars_dashboard.cpp" "${TAB5_UI}/acars_dashboard_layout.cpp" "${TAB5_UI}/acars_dashboard_model.cpp"
          "${TAB5_UI}/acars_dashboard_ui.cpp" "${TAB5_UI}/acars_demo_data.cpp" "${TAB5_UI}/acars_dirty_rects.cpp"

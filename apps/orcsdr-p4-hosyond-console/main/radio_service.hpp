@@ -125,6 +125,7 @@ struct SinkSpec {
   uint8_t task_priority = 3;    // queued: priority of the consumer's task
   int8_t task_core = 1;         // queued: core of the consumer's task
   uint32_t task_stack = 4096;   // queued: stack bytes
+  bool task_stack_in_psram = false;  // queued: callback must tolerate flash cache restrictions
 };
 using SinkHandle = int;  // -1 = invalid
 SinkHandle add_sink(const SinkSpec& spec);

@@ -40,6 +40,7 @@ struct FrameHeader {
 constexpr size_t kFrameBytes = sizeof(FrameHeader) + kIqBytes;
 
 struct Sink {
+  bool task_stack_in_psram = false;
   std::atomic<int> state{0};  // 0 free, 1 active, 2 removing (or quarantined: never reused), 3 being set up
   SemaphoreHandle_t lock = nullptr;  // held by the radio loop while it calls or feeds this sink; removal takes it too
   IqConsumer fn = nullptr;
@@ -99,7 +100,12 @@ void queued_task(void* arg) {
     s->blocks.fetch_add(1);
   }
   heap_caps_free(buf);
+  const bool external_stack = s->task_stack_in_psram;
   s->exited = true;
+  if (external_stack) {
+    // The remover deletes this task from its own internal stack.
+    for (;;) vTaskSuspend(nullptr);
+  }
   vTaskDelete(nullptr);
 }
 
@@ -487,8 +493,16 @@ SinkHandle add_sink(const SinkSpec& spec) {
       s.mb = xMessageBufferCreateWithCaps(bytes < 2 * kFrameBytes ? 2 * kFrameBytes : bytes, MALLOC_CAP_SPIRAM);
       s.run = true;
       s.exited = false;
-      if (!s.mb || xTaskCreatePinnedToCore(queued_task, s.name, spec.task_stack, &s, spec.task_priority, &s.task,
-                                           spec.task_core < 0 ? tskNO_AFFINITY : spec.task_core) != pdPASS) {
+      s.task_stack_in_psram = spec.task_stack_in_psram;
+      const auto core = spec.task_core < 0 ? tskNO_AFFINITY : spec.task_core;
+      BaseType_t created = pdFAIL;
+      if (s.mb) {
+        created = s.task_stack_in_psram
+            ? xTaskCreatePinnedToCoreWithCaps(queued_task, s.name, spec.task_stack, &s, spec.task_priority,
+                                               &s.task, core, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+            : xTaskCreatePinnedToCore(queued_task, s.name, spec.task_stack, &s, spec.task_priority, &s.task, core);
+      }
+      if (created != pdPASS) {
         if (s.mb) vMessageBufferDeleteWithCaps(s.mb);
         s.mb = nullptr;
         s.run = false;
@@ -525,6 +539,8 @@ bool remove_sink(SinkHandle handle) {
       ESP_LOGE("RADIO", "queued sink '%s' did not stop in 2 s: quarantined, its memory must not be freed", s.name);
       ok = false;
     } else {
+      if (s.task_stack_in_psram) vTaskDeleteWithCaps(s.task);
+      s.task = nullptr;
       if (s.mb) vMessageBufferDeleteWithCaps(s.mb);
       s.mb = nullptr;
     }
