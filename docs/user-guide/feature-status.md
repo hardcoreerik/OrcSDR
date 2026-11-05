@@ -1,34 +1,31 @@
-# Feature status
+# Feature availability and validation
 
-These labels describe evidence, not marketing maturity. **Experimental** may
-coexist with an evidence level. Historical hardware results do not automatically
-apply to later source snapshots.
+This is a current-source feature guide, not a list of unfinished experiments. **Available** means the integrated feature exists in OrcSDR; **RF-validated** means recorded reception on specified hardware; **Limited / in development** identifies a real functionality boundary. A successful hardware test does not guarantee reception on every antenna, band, device revision or firmware package. The [project evidence](../../PROJECT_STATUS.md) retains exact tests and dates.
 
-| Feature | Current status | Boundary |
+| Feature | Availability | What to expect |
 |---|---|---|
-| FM audio, presets, stereo, RDS | **RF-Verified / Regression-Tested** | Verified on RTL-SDR Blog V4 and one V3C with suitable FM setups. |
-| AM broadcast and 119-channel scan | **Hardware-Verified / Experimental** | Exact RC4 package exercised the dashboard and scan; general reception quality remains Experimental. |
-| NOAA Weather Radio | **Implemented** | Current-release RF acceptance is Not Verified. |
-| CB | **Implemented / Runtime-Verified** | The earlier channel panel was flashed and exercised. The band-wide scanner dashboard has host regression tests; Tab5 hardware and RF acceptance remain open. |
-| Shortwave | **Implemented / Experimental** | Generic Browse/NFM workspace only; complete AM/SSB and calibrated HF reception are Not Implemented. |
-| Airband | **Implemented / Experimental** | Dedicated 118–136.975 MHz AM dashboard, manual 25/8.33 kHz tuning, scanner controls, activity log, and offline aviation-catalog hooks are implemented. Physical Tab5/RF acceptance remains Not Verified. |
-| Marine | **Implemented / Experimental** | Generic NFM routing; no dedicated dashboard/current RF acceptance evidence. |
-| Satellite | **Implemented / Experimental** | Generic routing near 137.5 MHz; no dedicated satellite decoder/dashboard. |
-| P25 Phase I | **RF-Verified / Hardware-Verified / Regression-Tested** | Documented control, follow, clear/encrypted behavior; encrypted audio is not decoded. |
-| P25 Phase II | **Implemented / Runtime-Verified / Regression-Tested / Experimental** | Grants, sync, complete bursts, DUID classification, and hardware observation exist. Payload and AMBE+2 audio are Not Implemented. |
-| ADS-B 1090 | **RF-Verified / Hardware-Verified / Regression-Tested** | Live CRC-valid traffic, independent track comparison, and FAA enrichment; live-only. |
-| LoRa/Meshtastic | **Hardware-Verified / Experimental** | Native receive path and observed traffic; reliability and coverage are not broadly established. |
-| POCSAG | **RF-Verified at 1200 / Regression-Tested** | `TEST`, CAPCODE 1234560, and Flipper cross-check. 512/2400 are host-tested only; persistence/searchable archive is Not Implemented. |
-| FT8 receive | **RF-Verified / Regression-Tested / Experimental** | [Automated FT8 model, Hunter and OrcDial tests](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/ft8/README.md#host-validation) and [decoder reference tests](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/ft8/REAL_WAV_BENCHMARK.md) provide repeatable regression evidence. Owner accepted 40 m FT8 reception on V4, V4L, V3c and Nooelec V5 on 2026-10-09 with an externally powered MLA-30+; see [setup and evidence](dashboards/ft8.md). |
-| RF Lab / RF Visualizer | **Implemented / Regression-Tested** | Integrated self-check/regression tooling; not RF calibration proof. |
-| Wi-Fi analysis | **Implemented / Hardware-Verified / Experimental** | Real AP survey through ESP-Hosted 3.0.6; Wi-Fi and catalog I/O pause active reception. |
-| Receiver profiles | **Fully supported: V4, V3c, V4L, Nooelec V5** | All four are accepted OrcSDR receiver models. Nooelec XTR/E4000 is implemented in the driver but still needs OrcSDR frequency-range/dashboard integration. Older V3 revisions and generic RTL2832 receivers are not automatically qualified. Model support does not imply every RF dashboard/calibration scenario is verified; see [receiver evidence](../../PROJECT_STATUS.md). |
-| Global Settings | **Implemented / Hardware-Verified** | Wi-Fi, radio defaults, storage, display/audio, catalog, and Companion controls. |
-| LAN console | **Implemented / Experimental** | Opt-in read/write HTTP surface; tune/audio/navigation controls, no TLS or authentication. Trusted LAN only. |
-| Android TV | **Implemented / Experimental** | LAN client; Tab5 remains the receiver. |
-| Signed data catalog | **Hardware-Verified / Experimental** | Public catalog and FAA reinstall evidence; not every proposed data pack is published. |
-| Transmission | **Not Implemented** | OrcSDR is receive-only. |
+| Receiver models | **Fully supported** | RTL-SDR Blog V4, V3c, V4 Lite (V4L), Nooelec NESDR SMArt V5. Nooelec XTR/E4000 is implemented in the driver but requires further OrcSDR frequency-range/dashboard integration. |
+| FM broadcast, stereo, RDS, presets | **RF-validated** | Live radio and RDS tested on physical receivers. |
+| AM broadcast and 119-channel scan | **Available; hardware-tested** | Receiver and scanning paths have Tab5 evidence; reception quality is antenna/band dependent and not universally calibrated. |
+| NOAA Weather Radio | **Available** | Configured weather-channel NFM listening; separate current-release RF acceptance remains open. |
+| CB listening and scanning | **Available** | AM/USB/LSB and 40-channel scanning; broad on-air scanner acceptance remains open. |
+| Shortwave Explorer | **Available** | AM/USB/LSB, automatic band-plan modes, filters, clarifier, memories and log. General HF calibration and broad real-signal verification remain open. |
+| Airband | **Available** | Dedicated 118–136.975 MHz aviation AM workspace with 25/8.33 kHz tuning, scanning and offline channel data. Physical RF acceptance remains open. |
+| Marine / Satellite routes | **Limited** | General receiver routing is available; specialized decoders/dedicated workflows are not claimed. |
+| P25 Phase I | **RF-validated** | Control, follow, clear-voice and encrypted-call indication/muting are documented. Encrypted audio is not decoded. |
+| P25 Phase II | **In development** | Grant/sync/burst/DUID handling exists; complete payload/AMBE+2 voice is not implemented. |
+| ADS-B 1090 | **RF-validated** | Live CRC-valid aircraft traffic, track comparison and FAA enrichment; live only. |
+| LoRa / Meshtastic receive | **Available; hardware-tested** | Native receive, traffic, nodes, maps and RF-health views. Packet loss and coverage are not guaranteed. Receive-only. |
+| POCSAG | **RF-validated at 1200 baud** | Live CAPCODE/message verification; 512/2400 baud currently have host-test evidence only; archives are memory bounded. |
+| FT8 reception | **RF-validated** | 40 m FT8 decoding accepted on four supported dongles on 2026-10-09. JS8 modes are a separate development/evidence track. |
+| SSTV reception | **Available; hardware-tested** | Full-colour native decoder with 14 modes in host tests and conducted Robot 36 Tab5 image reception; per-mode live RF acceptance varies. |
+| ACARS VHF | **Available; RF-tested** | Native decoder/dashboard with two real off-air blocks on 2026-10-15. VDL Mode 2 is not included in that claim. |
+| RF Lab / RF Visualizer | **Available** | Spectrum, IQ recording, receiver controls and test tools; not a calibrated laboratory spectrum analyzer. |
+| Wi-Fi analysis | **Hardware-tested** | AP survey via ESP-Hosted; Wi-Fi changes can temporarily pause active SDR reception. |
+| Global Settings | **Available; hardware-tested** | Receiver, Wi-Fi, storage, display/audio, catalog and companion settings. |
+| LAN web console | **Available (trusted LAN only)** | HTTP controls and telemetry; no TLS or authentication. Do not expose directly to the Internet. |
+| Android TV client | **Available companion** | Network client; Tab5 remains the radio receiver. |
+| Signed data catalog | **Hardware-tested** | Signed installation and verified FAA pack workflow; other packs depend on publication. |
+| SDR transmission | **Not available** | OrcSDR is receive-only; specific TX-capable devices and branches do not imply general transmit support. |
 
-Build, runtime, hardware, and RF evidence are different claims. See the
-authoritative [project status](https://github.com/hardcoreerik/OrcSDR/blob/main/PROJECT_STATUS.md) for exact release,
-receiver, CI, and remaining-evidence boundaries.
+For exact release/version boundaries, hardware conditions and ongoing research, use [PROJECT_STATUS.md](../../PROJECT_STATUS.md). Historical release notes and tests remain dated evidence; the absence of a new test does not erase an implemented feature.
