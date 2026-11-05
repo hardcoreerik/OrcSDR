@@ -14,6 +14,14 @@
 #include "freertos/task.h"
 #include "mbedtls/base64.h"
 #include "mbedtls/sha256.h"
+#include "lgfx/utility/lgfx_miniz.h"
+
+namespace {
+uint8_t* read_sprite_row(uint8_t* row, int, int width, int, int y, int, void* target) {
+  static_cast<lgfx::LGFX_Sprite*>(target)->readRectRGB(0, y, width, 1, row);
+  return row;
+}
+}  // namespace
 
 bool screen_snap_stream(orcsdr::gfx::ScaledDisplay* display) {
   size_t size = 0;
@@ -23,8 +31,17 @@ bool screen_snap_stream(orcsdr::gfx::ScaledDisplay* display) {
   const auto raw_bytes = display->stride_pixels() * display->target_height() * sizeof(uint16_t);
   const int64_t hash_started = esp_timer_get_time();
   mbedtls_sha256(reinterpret_cast<const uint8_t*>(display->buffer()), raw_bytes, raw_before, 0);
-  // M5GFX's own PNG encoder, the same one the Tab5 uses for its screenshots.
-  void* png = display->sprite().createPng(&size, 0, 0, display->target_width(), display->target_height());
+  // Sprite readback is CPU-only. Keep the row in PSRAM so low DMA heap cannot crash createPng.
+  const int width = display->target_width();
+  const int height = display->target_height();
+  auto* row = static_cast<uint8_t*>(heap_caps_malloc(width * 3u, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!row) {
+    std::printf("ORC_SNAP_ERROR no_row_memory\n");
+    return false;
+  }
+  void* png = tdefl_write_image_to_png_file_in_memory_ex_with_cb(
+      row, width, height, 3, &size, 6, 0, read_sprite_row, &display->sprite());
+  heap_caps_free(row);
   mbedtls_sha256(reinterpret_cast<const uint8_t*>(display->buffer()), raw_bytes, raw_after, 0);
   const bool unchanged = std::equal(raw_before, raw_before + 32, raw_after);
   char raw_hash[65]{};
@@ -33,6 +50,7 @@ bool screen_snap_stream(orcsdr::gfx::ScaledDisplay* display) {
               unchanged, unsigned(raw_bytes), raw_hash,
               static_cast<unsigned long long>(esp_timer_get_time() - hash_started));
   if (!png || size == 0) {
+    heap_caps_free(png);
     std::printf("ORC_SNAP_ERROR png_failed\n");
     return false;
   }
