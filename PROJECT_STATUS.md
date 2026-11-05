@@ -15,7 +15,7 @@ tuner-bandwidth controls, the V4L HF upconverter route, an optional direct HF ro
 for the V4L and V4, and the live tuner-bandwidth fixes documented in
 [`docs/testing/v3c-tuner-bandwidth-transition-2026-09-28.md`](docs/testing/v3c-tuner-bandwidth-transition-2026-09-28.md).
 
-This is the authoritative current capability and evidence summary. The
+This is the authoritative current capability and evidence summary. The [native ESP32-P4 decoder inventory](docs/NATIVE_DECODER_INVENTORY.md) distinguishes protocol decoders from demodulators, supporting measurements and development-branch work. The
 [2026-11-04 maintainer field-acceptance reconciliation](docs/MAINTAINER_FIELD_ACCEPTANCE_2026-11-04.md)
 adds firsthand reception/operation reports alongside dated instrumented evidence. Release
 notes and validation reports are immutable, dated evidence; they do not
