@@ -154,8 +154,39 @@ Findings:
   favour bounded buffers over throughput; keeping the larger window is the owner's
   decision, and a longer stability and internal-RAM soak has not been run.
 
+## Server direction (OrcSDR serves its dongle)
+
+| Piece | File |
+|---|---|
+| Portable server loop: bind, greeting, one owner, command framing, stall drop | `ui/rtl_tcp_server_session.{hpp,cpp}` |
+| Lock-free IQ ring between the USB callback and the server task | `ui/rtl_tcp_iq_ring.hpp` |
+| ESP-IDF adapter above the esp-rtl-sdr API; ownership policy; settings | `ui/rtl_tcp_server.{hpp,cpp}` |
+| Hooks in `main.cpp` | IQ tee in the driver callback, a local-start gate, serial command |
+
+Policy: off by default; enabling is saved and needs an authenticated serial session
+(`RTL_TCPD ENABLE <ipv4|wifi> [port]`, `RTL_TCPD DISABLE`, `RTL_TCPD STATUS`). There
+is no default bind address and `0.0.0.0` is refused. One client owns the dongle (tuning
+included); a second connection is closed at once and counted. While a client is
+connected the local UI cannot start a stream, and a stream that was running resumes
+afterwards. A client that stops reading is dropped after 5 s. The bias-T, IF gain,
+test mode, direct sampling and crystal-trim commands are never applied and are
+counted as unsupported.
+
+| Test | Kind | Result |
+|---|---|---|
+| Server loop vs raw-socket clients: greeting bytes, split commands, unknown id, second client refused, no stale samples after reconnect, stalled client dropped, busy backend, receiver loss, bind failures, stop latency | Host simulation | all pass |
+| IQ ring, 20 MB, two threads | Host simulation | order and pairing intact |
+| First client on the Tab5 | Physical | **crashed**: a 16 KB buffer on an 8 KB task stack. Fixed by moving the buffer to the heap |
+| After the fix, plain socket client | Physical | greeting `RTL0`, tuner 6 (R828D), 28 gains, IQ received, state back to `listening`, local stream resumed |
+| After the fix, `rtl_tcp_probe` client at 960 kS/s | Physical (client on the PC) | 0.54 MB/s received against 1.92 MB/s needed, 0 dropped by the client |
+
+Not yet done for the server: a test against an independent third-party client
+(SatDump is installed on the PC; SDR++ and Gqrx are not), so **no compatibility is
+claimed beyond the probe**. The Tab5 send path is limited the same way the receive path
+was (lwip TCP send buffer 5760 B); a larger send buffer is being trialled.
+
 ## Not done yet
 
-Settings screen (serial control only), server direction (OrcSDR serving
-`rtl_tcp` to SDR++ and Gqrx), remote gain controls in the UI, a long soak, and a
-test against a non-Windows `rtl_tcp` server.
+Settings screen (serial control only), a third-party server client test, remote
+gain controls in the UI, a long soak, and a test against a non-Windows `rtl_tcp`
+server.

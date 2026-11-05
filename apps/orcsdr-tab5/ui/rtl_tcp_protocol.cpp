@@ -1,5 +1,7 @@
 #include "rtl_tcp_protocol.hpp"
 
+#include <cstring>
+
 namespace orcsdr::rtl_tcp {
 namespace {
 
@@ -18,6 +20,25 @@ void encode_command(Command command, uint32_t parameter, uint8_t out[kCommandByt
   out[2] = static_cast<uint8_t>(parameter >> 16);
   out[3] = static_cast<uint8_t>(parameter >> 8);
   out[4] = static_cast<uint8_t>(parameter);
+}
+
+void encode_greeting(uint32_t tuner_type_raw, uint32_t gain_count, uint8_t out[kGreetingBytes]) {
+  std::memcpy(out, kMagic, sizeof(kMagic));
+  for (int i = 0; i < 4; ++i) {
+    out[4 + i] = static_cast<uint8_t>(tuner_type_raw >> (24 - 8 * i));
+    out[8 + i] = static_cast<uint8_t>(gain_count >> (24 - 8 * i));
+  }
+}
+
+bool CommandParser::push(uint8_t byte, RawCommand* out) {
+  raw_[have_++] = byte;
+  if (have_ < kCommandBytes) return false;
+  have_ = 0;
+  if (out != nullptr) {
+    out->id = raw_[0];
+    out->parameter = read_be32(raw_ + 1);
+  }
+  return true;
 }
 
 uint32_t parameter_signed(int32_t value) { return static_cast<uint32_t>(value); }

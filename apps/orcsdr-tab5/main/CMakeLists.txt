@@ -34,6 +34,8 @@ idf_component_register(
         "../ui/orcsdr_splash.cpp"
         "../ui/rtl_tcp_protocol.cpp"
         "../ui/rtl_tcp_session.cpp"
+        "../ui/rtl_tcp_server_session.cpp"
+        "../ui/rtl_tcp_server.cpp"
         "../ui/rtl_tcp_source.cpp"
         "../ui/receiver_source_policy.cpp"
         "../ui/orcsdr_restart.cpp"

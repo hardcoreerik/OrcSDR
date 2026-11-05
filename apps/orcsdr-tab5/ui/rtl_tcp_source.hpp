@@ -51,6 +51,12 @@ uint16_t port();
 
 // Starts the worker; returns at once. Poll state() for streaming / failed.
 bool start(uint32_t sample_rate_sps, uint32_t frequency_hz);
+// start() then wait, bounded, for the first working connection. False on timeout,
+// failure or cancel; the worker is stopped again in that case.
+bool start_and_wait(uint32_t sample_rate_sps, uint32_t frequency_hz, uint32_t timeout_ms,
+                    bool (*cancelled)());
+// The worker is running and has not given up (reconnecting still counts as alive).
+bool alive();
 void stop();  // bounded wait, closes the socket
 bool running();
 rtl_tcp::State state();

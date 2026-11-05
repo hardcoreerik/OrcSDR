@@ -89,6 +89,26 @@ class IqPairCarry {
   uint8_t byte_ = 0;
 };
 
+// Server side: the greeting a client expects, and the command stream parser.
+void encode_greeting(uint32_t tuner_type_raw, uint32_t gain_count, uint8_t out[kGreetingBytes]);
+
+struct RawCommand {
+  uint8_t id = 0;  // kept raw: ids above 0x0e are valid frames this server does not know
+  uint32_t parameter = 0;
+};
+
+// Reassembles 5-byte commands from an arbitrary TCP byte stream.
+class CommandParser {
+ public:
+  void reset() { have_ = 0; }
+  // Returns true when `byte` completed a command.
+  bool push(uint8_t byte, RawCommand* out);
+
+ private:
+  uint8_t raw_[kCommandBytes]{};
+  size_t have_ = 0;
+};
+
 // A server is named by an IPv4 address or a host name; nothing else is accepted
 // (no spaces, no URL parts, no IPv6 literals in this first version).
 constexpr size_t kMaxHostChars = 63;

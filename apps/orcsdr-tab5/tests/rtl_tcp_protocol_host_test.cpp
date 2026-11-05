@@ -179,6 +179,28 @@ static void test_host_validation() {
   CHECK(!valid_host(long_host));
 }
 
+static void test_server_side_framing() {
+  uint8_t hello[kGreetingBytes];
+  encode_greeting(5, 29, hello);
+  GreetingParser parser;
+  size_t used = 0;
+  CHECK(parser.feed(hello, sizeof(hello), &used) == GreetingStatus::ok);  // a client accepts it
+  CHECK(parser.greeting().tuner_type_raw == 5 && parser.greeting().gain_count == 29);
+
+  // Two commands arriving as 3 + 4 + 3 bytes still frame as two commands.
+  const uint8_t stream[10] = {0x01, 0x05, 0xF7, 0x67, 0xA0, 0x04, 0x00, 0x00, 0x00, 0xC8};
+  CommandParser commands;
+  RawCommand out;
+  std::vector<RawCommand> seen;
+  for (size_t i = 0; i < sizeof(stream); ++i)
+    if (commands.push(stream[i], &out)) seen.push_back(out);
+  CHECK(seen.size() == 2);
+  CHECK(seen[0].id == 0x01 && seen[0].parameter == 100100000u);
+  CHECK(seen[1].id == 0x04 && seen[1].parameter == 200u);
+  commands.reset();  // a new connection starts mid-nothing
+  CHECK(!commands.push(0x01, &out));
+}
+
 static void test_backoff_is_bounded() {
   BackoffPolicy policy;
   const uint32_t expect[] = {500, 1000, 2000, 4000, 8000, 15000, 15000, 15000};
@@ -201,6 +223,7 @@ int main() {
   test_reconnect_drops_carried_byte();
   test_timeout_keeps_carried_byte();
   test_host_validation();
+  test_server_side_framing();
   test_backoff_is_bounded();
   std::printf("RTL_TCP_PROTOCOL_HOST_TEST failures=%d pass=%d\n", g_failures, g_failures == 0);
   return g_failures == 0 ? 0 : 1;

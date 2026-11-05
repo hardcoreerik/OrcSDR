@@ -180,6 +180,22 @@ bool start(uint32_t sample_rate_sps, uint32_t frequency_hz) {
   return true;
 }
 
+bool start_and_wait(uint32_t sample_rate_sps, uint32_t frequency_hz, uint32_t timeout_ms,
+                    bool (*cancelled)()) {
+  if (!start(sample_rate_sps, frequency_hz)) return false;
+  for (uint32_t waited = 0; waited < timeout_ms; waited += 50) {
+    const State s = state();
+    if (s == State::streaming) return true;
+    if (s == State::failed || !running()) break;
+    if (cancelled && cancelled()) break;
+    vTaskDelay(pdMS_TO_TICKS(50));
+  }
+  stop();
+  return false;
+}
+
+bool alive() { return running() && state() != State::failed; }
+
 void stop() {
   if (!g_running.load(std::memory_order_acquire)) return;
   g_stop.store(true, std::memory_order_release);
