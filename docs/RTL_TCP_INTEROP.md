@@ -201,13 +201,27 @@ Tab5 transmit path is the limit:
 |---|---|
 | stock (SDIO TX queue 4) | 0.3-0.5 MB/s |
 | 32 KiB TCP send buffer | no change (reverted) |
-| SDIO TX queue 16 (trial) | 0.77-0.83 MB/s |
+| SDIO TX queue 16 (trial, **reverted**) | 0.77-0.83 MB/s |
 
-So the Tab5 can serve about 250-300 kS/s cleanly (0.5-0.6 MB/s). Higher rates are accepted,
-but the ring overflows and the loss shows in `RTL_TCPD STATUS` (`iq_overrun`). The driver
-only allows 225-300 kS/s or 900 kS/s and above, so 300 kS/s is the practical ceiling.
-The SDIO queue change and the TCP window change are trials in `sdkconfig.defaults`
-awaiting an owner decision and a soak.
+Queue 16 was reverted: in a 15-minute soak of the remote **client** with it set, receive fell
+to 1.13 MB/s (link 55-66%), against 1.33-1.41 MB/s (link 77%) with the stock queue of 4 on
+the same day, and the internal DMA low-water mark dropped from 21.6 KB to 14.6 KB. The
+client is the first priority, so `sdkconfig.defaults` keeps the stock value.
+
+With the stock queue the Tab5 serves roughly 0.3-0.5 MB/s, about 150-250 kS/s. Higher
+rates are accepted, but the ring overflows and the loss shows in `RTL_TCPD STATUS`
+(`iq_overrun`). The driver only allows 225-300 kS/s or 900 kS/s and above, so the practical
+server ceiling over Wi-Fi is 250 kS/s with gaps expected near it. A wired link, or a
+board with Ethernet, is the way to serve wideband rates.
+
+**Client soak (physical, 15 minutes, remote FM, 960 kS/s, 64 KiB window, queue 16):** 31
+samples, 0 reconnects, 0 dropped, no resets, internal-RAM and DMA low-water marks flat. Receive
+rate varies with Wi-Fi conditions: 1.9 MB/s on one occasion, 1.1-1.4 MB/s later the same
+day, so 960 kS/s (1.92 MB/s) is the best case and the "remote link too slow" notice will
+appear on a weaker link. Rates below 960 kS/s are not available to the existing wide-band
+dashboards because the driver does not allow rates between 300 and 900 kS/s.
+
+The 64 KiB TCP window is still a trial in `sdkconfig.defaults`, awaiting an owner decision.
 
 ## Not done yet
 
