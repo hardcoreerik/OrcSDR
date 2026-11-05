@@ -16,6 +16,7 @@ Remove outdated maturity labels while retaining reproducible, accurate implement
 | Issue found | Correction |
 |---|---|
 | Current project summary still claimed a 2026-10-02 `v0.3.0-beta.2` preparation snapshot | Updated to 2026-11-04 current-source audit; [v0.5.0-beta.1](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.5.0-beta.1) is the latest versioned published release observed |
+| Project status and roadmap said no native Tab5 CI build existed | Documented current path-filtered SSTV Tab5 build and gated nightly ESP-IDF builder; every-PR compile coverage remains incomplete |
 | V3c and V4L characterized as experimental, and one page said V4L was not verified | Named V4/V3c/V4L/Nooelec V5 as fully supported receivers; model RF calibration remains evidence-scoped |
 | Shortwave described as generic NFM Browse with no AM/SSB | Documented Shortwave Explorer AM/USB/LSB, AUTO, clarifier, filters and memories present in main and `v0.5.0-beta.1` release notes |
 | Airband described as generic NFM | Documented dedicated 118–136.975 MHz aviation AM tuning/scanner; physical RF acceptance still pending |
