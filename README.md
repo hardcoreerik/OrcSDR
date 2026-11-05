@@ -78,11 +78,17 @@ Want to share your own case or accessory? [Start a Discussion](https://github.co
 
 ## Receiver support
 
-| Receiver | Status | Notes |
+**Fully supported OrcSDR receivers:** RTL-SDR Blog V4, V3c, V4 Lite (V4L), and Nooelec NESDR SMArt V5. All four are accepted receiver models, not experimental dongle profiles. This is a receiver-compatibility statement, not a guarantee that every dashboard, frequency, antenna configuration, or RF measurement has the same validation status. Dashboard-specific and historical acceptance limits remain documented in the [feature status](docs/user-guide/feature-status.md) and [project evidence](PROJECT_STATUS.md).
+
+| Receiver | OrcSDR support | Notes |
 | --- | --- | --- |
-| RTL-SDR Blog V4 | Tested baseline | Full OrcSDR receiver path, including the V4 HF upconverter and supported controls. |
-| RTL-SDR Blog V3 | Experimental | Provisional operation at 24 MHz and above. Hardware reports and serial logs are welcome. |
-| Nooelec NESDR SMArt V5 | Tested | Tested at the same level as the Blog V3c, V4 and V4L (v0.3.0-beta.2 testing on development images built from the driver commits that became esp_rtl_sdr v0.9.3: 453.925 MHz about 46 dB over noise with FM unchanged, five unplug/replug cycles). The earlier check covered 24 MHz and above. On 2026-10-09 the owner also accepted 7.074 MHz FT8 reception using an externally powered MLA-30+; see the [FT8 reception record](docs/user-guide/dashboards/ft8.md). This is not general HF/AM or external-upconverter acceptance. |
+| RTL-SDR Blog V4 | **Fully supported** | Tested receiver with integrated V4 HF upconverter handling. |
+| RTL-SDR Blog V3c | **Fully supported** | Tested receiver; HF below its tuner range uses direct sampling, with mode-specific control differences. |
+| RTL-SDR Blog V4 Lite (V4L) | **Fully supported** | Tested receiver; model-specific HF routing and controls are integrated. |
+| Nooelec NESDR SMArt V5 | **Fully supported** | Tested receiver; [40 m FT8 reception was accepted](docs/user-guide/dashboards/ft8.md). |
+| Earlier RTL-SDR Blog V3 variants | Experimental / individually verify | V3c acceptance does not automatically qualify every earlier V3 revision. |
+| Nooelec NESDR SMArTee XTR / E4000 | **Driver implemented; OrcSDR integration in progress** | E4000 support is implemented in [esp-rtl-sdr](https://github.com/hardcoreerik/esp-rtl-sdr). OrcSDR still needs model-aware frequency-range limits, dashboard eligibility, and acceptance for paths affected by the E4000 tuning range. Do not present every OrcSDR dashboard as compatible yet. |
+| Other RTL2832 receivers | Not verified | Generic USB detection is not evidence of model support. |
 
 Antenna choice affects what can be received. Useful test reports include the receiver model, frequency and band, antenna, gain setting, OrcSDR version, observed behavior, and a serial log when available.
 
@@ -129,7 +135,7 @@ Please keep changes focused and preserve the distinction between a successful bu
 
 ## Project status and support
 
-OrcSDR is under active development. Stable behavior is protected around the RTL-SDR Blog V4 baseline, while other receiver profiles and some digital-radio features remain experimental.
+OrcSDR is under active development. The V4, V3c, V4L and Nooelec NESDR SMArt V5 are fully supported receiver models; E4000-specific OrcSDR dashboard/frequency integration and some digital-radio features are still in progress.
 
 - [Latest release and release notes](https://github.com/hardcoreerik/OrcSDR/releases/latest)
 - [Open issues](https://github.com/hardcoreerik/OrcSDR/issues)
