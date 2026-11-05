@@ -17,7 +17,9 @@ This is a current-source feature guide, not a list of unfinished experiments. **
 | ADS-B 1090 | **RF-validated** | Live CRC-valid aircraft traffic, track comparison and FAA enrichment; live only. |
 | LoRa / Meshtastic receive | **Available; live packets decoded** | Unencrypted real-world messages, telemetry, node info and GPS decoded. Encrypted traffic detected as **ENCRYPTED FRAME**, not decrypted. Passive LongFast receiving; region/profile and coverage limits remain. |
 | POCSAG | **RF-validated at 1200 baud** | Live CAPCODE/message verification; 512/2400 baud currently have host-test evidence only; archives are memory bounded. |
-| FT8 reception | **RF-validated** | 40 m FT8 decoding accepted on four supported dongles on 2026-10-09. JS8 modes are a separate development/evidence track. |
+| FT8 reception | **RF-validated** | 40 m FT8 decoding accepted on four supported dongles on 2026-10-09. This does not automatically certify FT4 or JS8 RF reception. |
+| FT4 decoding | **Native implementation ready** | Compiled with the native FT8-family backend, including FT4 mode timing/sync and LDPC/CRC; live RF qualification is separate. |
+| JS8 Normal decoding | **Native backend / narrower physical evidence** | C++ backend is compiled and runtime-wired; real recorded JS8 Normal signals have decoded in host tests. Full user-visible on-device reception acceptance remains open; other JS8 submodes are not fully qualified. |
 | SSTV reception | **Available; 14 modes supported** | Maintainer confirms operational supported modes; all 14 covered by host tests. Conducted Robot 36, PD120 and Scottie S1 image/SD acceptance on V3c, V4, V4L and Nooelec V5 is separately documented. |
 | ACARS VHF | **Available; live RF decoded** | Real-world VHF ACARS reception and archive, with later traffic records beyond the original two-block result. Airline-specific layouts vary; uninterpreted payloads remain raw. |
 | VDL Mode 2 (VDL2) | **Available; live RF decoded** | Live AVLC/ACARS frames decoded on Tab5 (including a 213-frame / 135-message session). Aircraft position and climb-related fields interpreted where understood; unknown airline-specific data stays raw. |
@@ -33,5 +35,7 @@ This is a current-source feature guide, not a list of unfinished experiments. **
 
 Firsthand acceptance and the distinction from dated formal RF tests are recorded in the
 [maintainer field note](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/MAINTAINER_FIELD_ACCEPTANCE_2026-11-04.md).
+
+For the native protocol-by-protocol source and evidence inventory, see [Native decoders](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/NATIVE_DECODER_INVENTORY.md).
 
 For exact release/version boundaries, hardware conditions and ongoing research, use [PROJECT_STATUS.md](https://github.com/hardcoreerik/OrcSDR/blob/main/PROJECT_STATUS.md). Historical release notes and tests remain dated evidence; the absence of a new test does not erase an implemented feature.
