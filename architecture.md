@@ -96,12 +96,16 @@ receiver routing and do not imply dedicated digital decoders.
   the existing production demodulator.
 
 Receiver profiles are selected inside the single driver API. Blog V4,
-Blog V3c, Blog V4 Lite (V4L), and Nooelec NESDR SMArt V5 are fully supported
-OrcSDR receiver models. E4000 / Nooelec XTR support is implemented in the
-independent driver, but OrcSDR still needs model-aware frequency limits and
-dashboard eligibility/acceptance. Older V3 variants and arbitrary RTL2832
-receivers are not accepted merely from their family or USB identity. Full
-receiver support is separate from dashboard-by-dashboard RF validation.
+Blog V3c, Blog V4 Lite (V4L) and Nooelec NESDR SMArt V5 are fully supported
+OrcSDR receiver models. **Nooelec XTR / E4000 also runs in OrcSDR within
+its declared tuner frequency range** via the independently implemented driver.
+When a selected dashboard targets an unsupported range (for example AM broadcast),
+the dashboard may open but the receiver **does not issue an invalid tune**.
+This is intentional frequency-capability enforcement, not failed hardware integration.
+Better cross-dashboard disabled-state messaging and wider E4000 RF characterization
+remain open. Older V3 revisions and arbitrary RTL2832 receivers are not accepted
+by family or USB identity alone. Full receiver support is separate from
+universal RF calibration and dashboard-specific decoding.
 
 ## Wi-Fi, catalog, and LAN console
 
