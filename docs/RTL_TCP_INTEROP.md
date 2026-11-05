@@ -325,3 +325,26 @@ through the Windows `rtl_tcp` (2023 build):
   connect" to every non-loopback address, including a Python server on this PC's LAN address,
   so it gave no verdict on the Tab5 server. Python clients and SatDump clients did read
   the Tab5 server (greeting RTL0, tuner 6, 28 gains, commands applied, IQ streamed).
+
+## Real FM through the remote path (2026-11-05, Tab5 on COM17, no dongle on the Tab5)
+
+Physical result. The PC's RTL-SDR Blog V3C ran `rtl_tcp` (960 kS/s, 96.1 MHz) and the Tab5
+used it as its Remote source over Wi-Fi.
+
+- A capture from the V3C shows a real station: 19 kHz pilot 30-36 dB over its neighbours. At
+  automatic gain the V3C clips 43% of its samples on this strong local signal; a manual gain of
+  10 dB gave a clean capture. (The earlier captures from the PC's Blog V4L were noise; the
+  owner reports that dongle is fine and the PC-side setup is the likely cause, not established.)
+- The owner heard clear FM from KZEL 96.1 on the Tab5 speaker (owner-observed).
+- A screenshot of the Tab5 FM Broadcast screen shows RDS decoded: station "KZEL", radio text
+  "Yes - Owner Of A Lonely Heart", STEREO lit, RUNNING, live stereo VU meters, relative level
+  98%. RDS and the stereo pilot need a clean, continuous signal, which matches the measured
+  link: 97% of real time, 0 dropped bytes.
+- **Remote-only boot autostart, hardware reset.** With the Tab5's own dongle unplugged, a hard
+  reset (esptool, RTS) was followed by an automatic connection to the PC `rtl_tcp` and FM
+  streaming: 1 connection, 0 reconnects, 0 dropped bytes, 47 MB in the first 48 s.
+
+Known display gaps seen in these screenshots, not changed: the header and footer label a
+remote stream "RTL-SDR" with gain "N/A" and "-- MSPS", and in the FM Broadcast screen's
+Relative Level box the "GAIN" label is overprinted by the red "AMP 85.47%" text (not checked
+on a local USB stream).
