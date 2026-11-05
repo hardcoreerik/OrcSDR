@@ -49,7 +49,8 @@ struct Device {
   char protocol[kProtocolChars]{};
   char sensor_id[kIdentityChars]{};
   SensorClass sensor_class = SensorClass::unknown;
-  Confidence confidence = Confidence::tentative;
+  Confidence confidence = Confidence::tentative;  // historical strongest device identity evidence
+  bool latest_reading_integrity_verified = false;  // never inherit validation from an older packet
   uint32_t center_hz = 0;
   uint32_t first_seen_ms = 0;
   uint32_t last_seen_ms = 0;
