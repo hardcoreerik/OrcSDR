@@ -11,7 +11,7 @@ This is the **project-level release and current-source index**. It links the aut
 - **LoRa / Meshtastic:** live unencrypted messages, telemetry, node identity and GPS decode. Encrypted traffic is labeled `ENCRYPTED FRAME`, not decrypted.
 - **SSTV:** all supported 14 modes operational per maintainer; recorded conducted four-dongle image/SD tests specifically cover Robot 36, PD120, Scottie S1.
 - **ACARS / VDL2:** live 8DPSK/AVLC decoding and aircraft message interpretation, including documented 213 verified frames and 135 ACARS messages in a capture; some airline-specific formats remain unparsed.
-- **Receiver coverage:** Blog V4, V3c, V4L and Nooelec NESDR SMArt V5 fully supported. E4000/XTR driver is implemented and works within its native RF range in OrcSDR; the application correctly prevents unsupported band tune requests.
+- **Receiver coverage:** Blog V4, V3c, V4L and Nooelec NESDR SMArt V5 fully supported. E4000/XTR driver is implemented and works within its native RF range in OrcSDR; the application correctly rejects requests to tune outside the supported band.
 - **Dead Air / Unit ENV III:** real receiver measurements and Tab5 sensor temperature/humidity/pressure. VEIL-26 produces reproducible **symbolic interpretations** of real measured values, not scientifically validated paranormal measurements.
 - **Roadmap and phase ledger:** remaining work is no longer misrepresented as unimplemented core features. Historical milestones remain date-scoped.
 - **Documentation terminology:** implementation, live acceptance, repeatable RF/calibration tests and release-image acceptance are independent claims.
