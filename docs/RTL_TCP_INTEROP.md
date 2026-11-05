@@ -154,6 +154,19 @@ Findings:
   favour bounded buffers over throughput; keeping the larger window is the owner's
   decision, and a longer stability and internal-RAM soak has not been run.
 
+## IQ integrity: real recording through the network path
+
+`tests/rtl_tcp_replay_host_test.cpp` serves a raw `cu8` recording through a fake server in
+odd, irregular chunk sizes and receives it with the production client. Recording used:
+8 s of broadcast FM at 96.1 MHz captured with `rtl_sdr -f 96100000 -s 960000` from the
+Blog V4L on this PC (15,360,000 bytes, RMS 53.8, 0.07% clipped). Result (host simulation,
+3 chunk patterns): **all bytes identical**, no discontinuity, nothing dropped, and a
+quadrature FM discriminator (decimate by 4) gives identical output on the file and the
+received copy (1.92 M samples, deviation sigma 0.87 rad). This shows the transport does
+not alter I/Q order, sample format or count. It does not replace a decode test of an
+OrcSDR decoder on the Tab5, which still needs a recording with a known message. Run it with
+`RTL_TCP_REPLAY_FILE=<recording> bash tools/test-rtl-tcp.sh`; without a file it skips.
+
 ## Remote gain control
 
 The dashboards call the driver's gain functions from about 25 places. Instead of a
