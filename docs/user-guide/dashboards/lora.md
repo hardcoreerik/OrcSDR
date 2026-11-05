@@ -1,6 +1,6 @@
 # LoRa
 
-The LoRa dashboard is an experimental receive and analysis surface.
+The LoRa dashboard is an implemented, hardware-tested receive and analysis surface. Reliability and supported signal settings are documented below; it is not a Meshtastic transmitter.
 
 - **Overview** shows a LoRa-focused 500 kHz spectrum, the selected 250 kHz channel
   edges, a stable noise-relative waterfall, signal strength in dBFS, capture
