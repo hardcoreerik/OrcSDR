@@ -19,6 +19,9 @@ This is the authoritative current capability and evidence summary. Release
 notes and validation reports are immutable, dated evidence; they do not
 override this document for current state. Future work belongs in
 [`Roadmap.md`](Roadmap.md).
+For current-facing status wording, see [status terminology](docs/STATUS_TERMINOLOGY.md)
+and the [2026-11-04 documentation audit](docs/DOCUMENTATION_STATUS_AUDIT_2026-11-04.md).
+
 ## Evidence vocabulary
 
 | Status | Meaning |
@@ -101,12 +104,16 @@ override this document for current state. Future work belongs in
 | P25 core | Optimized and ASan/UBSan host tests plus data-catalog validation. |
 | Radio scan core | Optimized and ASan/UBSan radio-session/scan tests. |
 | User guide | Help-media validation, documentation validation, and strict MkDocs build. |
+| Native Tab5 firmware | Path-filtered SSTV integration compile and gated nightly ESP-IDF builds; not an every-PR hardware/compile acceptance contract. |
 | Documentation Truth | Deterministic dependency/doc coherence, CI claims, architecture measurement, local links, screen/dashboard enums, resolved stale claims, and history/prompt hygiene. |
 
-Current CI does **not** compile the native Tab5 consumer firmware. POCSAG core
-and store scripts are not currently wired into GitHub Actions. CI also does not
-prove hardware operation, RF reception, antenna suitability, display/touch
-behavior, release-package installation, or long-duration soak behavior.
+Native ESP-IDF Tab5 firmware builds are performed by the path-filtered
+[`sstv-tab5-build`](.github/workflows/sstv-tab5-build.yml) workflow and by
+[`firmware-nightly`](.github/workflows/firmware-nightly.yml) when its change/build gate fires.
+These are not universal compile gates for every pull request or source change.
+POCSAG core/store scripts are not currently guaranteed by the named validation
+workflows. No CI result alone proves live RF, antenna suitability, physical
+screen/touch behavior, release-package installation or long-duration soak.
 
 ## Current evidence boundaries and open limitations
 
