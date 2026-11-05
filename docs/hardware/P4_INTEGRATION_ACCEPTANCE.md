@@ -15,7 +15,7 @@ Legend: **partial** means implemented or checked only for the cited scope;
 | Preserve Hosyond/LilyGO drivers and shared M5GFX UI | Existing profiles and shared renderers retained | Working LilyGO app, earlier display/FM acceptance | Cross-profile regressions and final audit |
 | TX minimum text readability | `521ed01a`; normal + sanitizer TX suites; minimum-height/bounds/overlap assertions | r17 PNGs; owner accepted portrait and landscape text | Wider populated-state and input acceptance |
 | LoRa RX views/navigation | Five existing receive views now share viewport-derived geometry, paged node/traffic lists, spectrum/waterfall bounds and 5/6-tab capability navigation; TX remains shared; sanitizer production renderer checks pass | r21/r22 native PNGs for five RX views plus TX Lab in both orientations; one 124-byte SX1262 packet populated Traffic/Nodes; on-device serial zoom/receiver-center applied; final r22 hashes/ELF verified | Final-build populated sentinel recapture, real logs/history, complete serial parity and remaining overlays |
-| P25 | Shared responsive renderer imported in `52e73c5c` / `0743c00b`; targeted layout tests pass; absent P4 route | Open | Adapter, decoder services, PCM output ownership and RF acceptance |
+| P25 | Shared responsive renderer and P4 control-channel monitor in `fc5d6f5e`; targeted layout/core tests and combined LilyGO build passed | Live 453.925 MHz control-channel grants, authenticated tune applied, native portrait and landscape Monitor PNGs | Other tabs and touch acceptance, profile management, spectrum feed, voice follow/PCM output, sustained receiver headroom |
 | FT8 | Shared renderer linked; route/runtime missing | Open | Responsive renderer, runtime/time/storage, adapter, reception |
 | SSTV | Shared renderer/app exist; not in P4 app | Open | Responsive renderer, adapter and worker/audio/storage hooks |
 | Dead Air | Shared renderer linked; app/route missing | Open | Runtime/worker/storage/audio hooks and responsive UI |
@@ -327,3 +327,21 @@ Luna tasks receive narrow file ownership; no agent flashes or accesses the devic
   `.local/network-clock-final-device.log`. Human clock-control acceptance,
   manual save/zone persistence device checks, serial zone parity, NTP
   outages/reconnect soak and FT8 readiness integration remain open.
+
+### LoRa decoder latency baseline
+
+- LilyGO RTL-SDR, 906.875 MHz, ELF `4695a13656d03c832f01aa2a516993d491bc0a5a1ec2eff79357d070cd5fe84a`: one 3,855,104-byte capture took 1,745 ms, queue dispatch took 2 ms, and decode through packet storage took 23,630 ms with one CRC-valid frame. Queue timing starts at dispatch and does not include time waiting for a previous decode. Display latency was not measured.
+- Priority-1 candidate ELF `3e92c2c2f78b3928451aafdbf18a50daa2ce5db4242bb3879a565e1cd6e392ca` compiled with ESP-IDF 5.5.4, passed app-only flash hash verification, and streamed approximately 960 kS/s on the same frequency. The first 55-second observation produced no decode timing record. A matched Tab5 comparison and stability under sustained decode load remain open.
+- Subsequent no-reset Tab5 status showed FM at 96.1 MHz, IQ source idle, and zero native LoRa decodes. This session cannot serve as a matched LoRa reference until the Tab5 is listening on 906.875 MHz.
+- Priority-1 candidate also reported a fresh BQ27220 sample through RTL_BATTERY STATUS: gauge present, 100%, 4141 mV, 6 mA, 665 ms old, ESP_OK. Percentage accuracy and no-cell behavior remain open.
+
+### C6 recovery package verification
+
+- The priority-1 build reports four embedded segments (1,167,104 bytes) for a 4 MiB C6, idle with no write enabled. The build-generated manifest matches the pinned ESP-Hosted 3.0.6 metadata and all segment hashes. App-only P4 flash verification is separate from C6 recovery acceptance.
+- `python -m pytest -q tests/test_c6_rom_package.py tests/test_c6_rom_update.py` passed 6 tests and 3 subtests. `python -m pytest -q tests/test_c6_worker_guards.py tests/test_c6_worker_cleanup.py` passed 10 tests. Factory ESP-AT conversion and interrupted-update recovery still require installed-app hardware tests.
+
+### P25 control-channel and screenshot checkpoint
+
+- Shared layout tests passed 2 cases with `python -m pytest -q tests/test_p25_dashboard_layout.py`; `wsl bash tools/test-p25-core.sh` passed. ESP-IDF 5.5.4 built the LilyGO adapter and app-only flash hash verified.
+- Build `7b86566358b089afaf7787e51aaa0dd69c5193d78540ae2fefaa471b34d6e4e4` applied the authenticated serial tune and decoded a live control-channel grant on 453.925 MHz. Native landscape capture: `.local/captures/p25-live-settled.png`. Portrait Monitor capture after manual rotation: `.local/captures/p25-portrait-monitor.png`. Other tabs, touch, profile management, spectrum feed, voice follow and playback remain open.
+- An earlier capture panicked in M5GFX on a null DMA row allocation. The original crash report and matching ELF are in `.local/diagnostics/p25-screenshot-panic/`. The checked PSRAM row fix produced two native P25 captures with no observed panic; the first capture retained uninterrupted uptime and a DMA low-water mark of 2,343 bytes.
