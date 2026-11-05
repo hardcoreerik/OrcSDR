@@ -91,11 +91,13 @@ complete demodulation modes.
   for the independent Stage-1 A/B harness. No experimental frontend replaces
   the existing production demodulator.
 
-Receiver profiles are selected inside the single driver API. Blog V4 is the
-tested baseline; Blog V3/V3C profiles exist with experimental evidence
-boundaries, and the Nooelec NESDR SMArt V5 profile is RF-Verified at 24 MHz and
-above (v0.3.0-beta.2). V4L and arbitrary RTL2832 receivers are not accepted by
-inference.
+Receiver profiles are selected inside the single driver API. Blog V4,
+Blog V3c, Blog V4 Lite (V4L), and Nooelec NESDR SMArt V5 are fully supported
+OrcSDR receiver models. E4000 / Nooelec XTR support is implemented in the
+independent driver, but OrcSDR still needs model-aware frequency limits and
+dashboard eligibility/acceptance. Older V3 variants and arbitrary RTL2832
+receivers are not accepted merely from their family or USB identity. Full
+receiver support is separate from dashboard-by-dashboard RF validation.
 
 ## Wi-Fi, catalog, and LAN console
 
