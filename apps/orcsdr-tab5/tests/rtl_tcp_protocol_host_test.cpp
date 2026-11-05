@@ -235,7 +235,37 @@ static void test_backoff_is_bounded() {
   CHECK(reconnect_delay_ms(huge, 99, &delay));  // no overflow while doubling
 }
 
+static void test_rate_adapter() {
+  RateAdapter a;
+  CHECK(a.rate(960000) == 960000);
+  // A healthy or unmeasured link never steps, and a good sample clears the count.
+  for (int i = 0; i < 20; ++i) CHECK(!a.note(0, 960000, 240000));
+  for (int i = 0; i < 20; ++i) CHECK(!a.note(100, 960000, 240000));
+  CHECK(!a.note(50, 960000, 240000));
+  CHECK(!a.note(50, 960000, 240000));
+  CHECK(!a.note(50, 960000, 240000));
+  CHECK(!a.note(90, 960000, 240000));            // recovered: count restarts
+  CHECK(!a.note(50, 960000, 240000));
+  CHECK(!a.note(50, 960000, 240000));
+  CHECK(!a.note(50, 960000, 240000));
+  CHECK(a.note(50, 960000, 240000));             // four behind samples in a row
+  CHECK(a.rate(960000) == 480000);
+  for (int i = 0; i < 3; ++i) CHECK(!a.note(40, 960000, 240000));
+  CHECK(a.note(40, 960000, 240000));
+  CHECK(a.rate(960000) == 240000);
+  for (int i = 0; i < 50; ++i) CHECK(!a.note(10, 960000, 240000));  // never below two steps
+  CHECK(a.rate(960000) == 240000);
+  a.reset();
+  CHECK(a.rate(960000) == 960000);
+  // The consumer's floor stops the descent early.
+  RateAdapter b;
+  for (int i = 0; i < 3; ++i) CHECK(!b.note(30, 960000, 500000));
+  CHECK(!b.note(30, 960000, 500000));            // 480k would be below the floor
+  CHECK(b.rate(960000) == 960000);
+}
+
 int main() {
+  test_rate_adapter();
   test_command_encoding();
   test_greeting_valid_all_splits();
   test_greeting_rejects();

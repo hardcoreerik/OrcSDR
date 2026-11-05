@@ -32,7 +32,7 @@ struct SessionConfig {
   char host[kMaxHostChars + 1]{};
   uint16_t port = kDefaultPort;
   uint32_t connect_timeout_ms = 5000;
-  uint32_t greeting_timeout_ms = 3000;
+  uint32_t greeting_timeout_ms = 10000;  // a Windows rtl_tcp can take ~5 s to greet a new LAN peer
   uint32_t stall_timeout_ms = 3000;
   BackoffPolicy backoff{};
 };

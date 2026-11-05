@@ -126,4 +126,28 @@ struct BackoffPolicy {
 // `attempt` counts from 0. Returns false once the attempts are spent.
 bool reconnect_delay_ms(const BackoffPolicy& policy, uint32_t attempt, uint32_t* delay_ms);
 
+// Steps the sample rate down by halves when the link stays behind real time, so a weak
+// Wi-Fi link gives slower but live audio instead of fast-forwarded stutter. One call per
+// link-ratio sample (about every 2 s). Pure, so it is host-tested.
+struct RateAdapter {
+  static constexpr uint32_t kBehindPct = 85;      // same threshold the status text uses
+  static constexpr uint32_t kBehindTicks = 4;     // consecutive samples before acting
+  static constexpr uint8_t kMaxSteps = 2;         // 960 -> 480 -> 240 kS/s
+  uint8_t step = 0;
+  uint8_t behind_ticks = 0;
+
+  uint32_t rate(uint32_t wanted_sps) const { return wanted_sps >> step; }
+  void reset() { step = 0; behind_ticks = 0; }
+  // `link_pct` 0 means not measured yet. `floor_sps` is the lowest rate the consumer accepts.
+  // Returns true when the rate was just lowered and the stream should restart.
+  bool note(uint32_t link_pct, uint32_t wanted_sps, uint32_t floor_sps) {
+    if (link_pct == 0 || link_pct >= kBehindPct) { behind_ticks = 0; return false; }
+    if (++behind_ticks < kBehindTicks) return false;
+    behind_ticks = 0;
+    if (step >= kMaxSteps || (wanted_sps >> (step + 1)) < floor_sps) return false;
+    ++step;
+    return true;
+  }
+};
+
 }  // namespace orcsdr::rtl_tcp

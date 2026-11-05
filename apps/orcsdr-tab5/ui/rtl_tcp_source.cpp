@@ -44,6 +44,7 @@ std::atomic<bool> g_stop{false};
 std::atomic<uint8_t> g_state{static_cast<uint8_t>(State::idle)};
 std::atomic<uint8_t> g_reason{static_cast<uint8_t>(EndReason::none)};
 std::atomic<bool> g_begun{false};
+rtl_tcp::RateAdapter g_rate_adapter;  // touched only by the receiver task and the serial/UI setters
 
 struct Lock {
   Lock() { if (g_lock) xSemaphoreTake(g_lock, portMAX_DELAY); }
@@ -144,8 +145,15 @@ source::Mode mode() { return g_mode; }
 
 bool set_mode(source::Mode value) {
   g_mode = value;
+  g_rate_adapter.reset();
   save_settings();
   return true;
+}
+
+uint32_t adapted_rate(uint32_t wanted_sps) { return g_rate_adapter.rate(wanted_sps); }
+
+bool note_link_and_maybe_downshift(uint32_t link_pct, uint32_t wanted_sps, uint32_t floor_sps) {
+  return g_rate_adapter.note(link_pct, wanted_sps, floor_sps);
 }
 
 bool configured() { return rtl_tcp::valid_host(g_config.host) && g_config.port != 0; }
@@ -160,6 +168,7 @@ bool set_endpoint(const char* host_name, uint16_t port_number) {
     strlcpy(g_config.host, host_name, sizeof(g_config.host));
     g_config.port = port_number;
   }
+  g_rate_adapter.reset();
   save_settings();
   return true;
 }

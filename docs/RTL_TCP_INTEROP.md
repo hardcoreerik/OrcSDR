@@ -282,3 +282,46 @@ The 64 KiB TCP window is still a trial in `sdkconfig.defaults`, awaiting an owne
 A drawing regression and physical flicker check for the new Settings rows, a server
 enable control on the screen (the server stays serial-only on purpose), SDR++ and Gqrx
 runs, a longer soak, and a test against a non-Windows `rtl_tcp` server.
+
+## No-dongle test and audio findings (2026-11-05, Tab5 on COM17)
+
+Physical results, one Tab5 with the V4 unplugged, then replugged, against the PC's Blog V4L
+through the Windows `rtl_tcp` (2023 build):
+
+- **Remote-only start works with no USB device.** Through a logging proxy and against a fake
+  server on the LAN the Tab5 started a receiver with an empty USB port: greeting read, rate and
+  frequency sent, IQ streamed (36 MB through the proxy, 0 dropped bytes, no reset).
+- **Bug found and fixed: 3 s greeting wait.** Direct to the real Windows `rtl_tcp` the client
+  reported "not an rtl_tcp server" on every attempt. That server can take 2-5 s to greet a
+  peer shortly after another client left, and the client gave up at 3 s and reconnected, which
+  restarted the server's teardown. The wait is now 10 s. After the fix the Tab5 connected
+  directly with 1 connection and 0 reconnects.
+- **Audio.** The demodulated audio path is live during a remote FM stream (speaker running,
+  0 audio drops from `RTL_AUDIO_TEST STATUS`). The earlier "real audio" reading (RMS 150-2700)
+  was noise: the PC dongle (Blog V4L, a System32 `rtl_sdr`/`rtl_tcp` build, and also SDR++'s
+  vanilla `rtlsdr.dll`) hears nothing from 30 MHz to 1.7 GHz in this setup, and every capture
+  it made at 96.1 MHz (a strong local station) shows no 19 kHz pilot. So no real station has
+  been decoded through the remote path yet, and the earlier bit-exact FM replay was a replay
+  of that noise recording. What is verified: a synthetic FM signal (clean alternating 440/880
+  Hz tones, 75 kHz deviation, served by a paced fake `rtl_tcp` server) played as an alternating
+  tone on the Tab5 speaker, heard by the owner; the first run was choppy and inconsistent
+  (link 19-54%) and after the fix below it ran at 95-98% with 0 dropped bytes.
+- **Root cause of the low throughput: a broken `sdkconfig.defaults` line.** The line
+  `CONFIG_LWIP_TCP_RECVMBOX_SIZE=48` had a comment glued onto it
+  (`...=48# Catalog HTTPS needs...`), so the setting was ignored and the build kept the stock
+  receive mailbox of 6 segments. Unthrottled receive was 0.3 MB/s, on both the FM and Home
+  screens and on a fresh boot. With the line split, unthrottled receive is a steady 1.8 MB/s
+  (min 1.49, max 1.93) and real-time 960 kS/s (1.92 MB/s needed) holds 95-98% on one Wi-Fi
+  link. The 64 KiB window is still a trial setting; this was one physical run on one link.
+- **Adaptive rate (new).** When the link stays under 85% for four 2 s samples the remote rate
+  steps 960 -> 480 kS/s and the stream restarts (`RateAdapter`, host-tested). It did not
+  recover the link on this run.
+- **Open defect: 240 kS/s crashes the DSP.** Stepping to 240 kS/s (decimation 1) produced a
+  Guru Meditation "Instruction access fault" on core 0 about a second after the restart, with
+  the WBFM DSP started as `rate=240000 decim=1/5`. That decimation was never used before
+  (local rates are 960 kS/s and 2.4 MS/s). The adapter is capped at 480 kS/s until the DSP
+  path is reviewed. 480 kS/s ran 110 s without a reset.
+- **SDR++ 1.3.0 test copy** connected to a fake server on 127.0.0.1 but reported "Could not
+  connect" to every non-loopback address, including a Python server on this PC's LAN address,
+  so it gave no verdict on the Tab5 server. Python clients and SatDump clients did read
+  the Tab5 server (greeting RTL0, tuner 6, 28 gains, commands applied, IQ streamed).

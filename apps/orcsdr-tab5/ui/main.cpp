@@ -3669,10 +3669,12 @@ std::atomic<bool> g_rtl_remote_narrow{false};
 
 uint32_t rtl_default_sample_rate(RtlBand band) {
   if (band == RtlBand::adsb) return ESP_RTL_SDR_RATE_2048K;
+  const bool remote_narrow = g_rtl_remote_narrow.load(std::memory_order_acquire);
   if (rtl_wide_dashboard_band(band))
-    return g_rtl_remote_narrow.load(std::memory_order_acquire) ? ESP_RTL_SDR_RATE_960K
-                                                               : ESP_RTL_SDR_RATE_2400K;
-  return ESP_RTL_SDR_RATE_960K;
+    return remote_narrow ? orcsdr::rtl_tcp_source::adapted_rate(ESP_RTL_SDR_RATE_960K)
+                         : ESP_RTL_SDR_RATE_2400K;
+  return remote_narrow ? orcsdr::rtl_tcp_source::adapted_rate(ESP_RTL_SDR_RATE_960K)
+                       : ESP_RTL_SDR_RATE_960K;
 }
 
 constexpr uint8_t rtl_rf_decimation(uint32_t sample_rate_sps) {
@@ -10165,6 +10167,18 @@ static void rtl_driver_app_task(void *) {
               const uint32_t link_pct = orcsdr::rtl_tcp_source::link_ratio_pct();
               const bool behind = remote_state == orcsdr::rtl_tcp::State::streaming &&
                                   link_pct > 0 && link_pct < 85;
+              // A link that stays behind gets a lower rate (960 -> 480 -> 240 kS/s): slower
+              // spectrum span, but live audio instead of stutter.
+              if (remote_state == orcsdr::rtl_tcp::State::streaming &&
+                  g_stream_band != RtlBand::adsb &&  // ADS-B keeps its own rate
+                  orcsdr::rtl_tcp_source::note_link_and_maybe_downshift(
+                      link_pct, ESP_RTL_SDR_RATE_960K, 2 * kRtlDemodRateSps)) {  // 240 kS/s (decimation 1) crashed the DSP: untested path
+                Serial.printf("RTL_TCP_RATE_DOWN link=%u%% new_rate=%u\n", link_pct,
+                              orcsdr::rtl_tcp_source::adapted_rate(ESP_RTL_SDR_RATE_960K));
+                rtl_restart_requested.store(true, std::memory_order_release);
+                rtl_stop_requested.store(true, std::memory_order_release);
+                break;
+              }
               if (remote_state != last_remote_state || behind != last_remote_behind) {
                 last_remote_state = remote_state;
                 last_remote_behind = behind;
