@@ -4,7 +4,7 @@ This is a current-source feature guide, not a list of unfinished experiments. **
 
 | Feature | Availability | What to expect |
 |---|---|---|
-| Receiver models | **Fully supported** | RTL-SDR Blog V4, V3c, V4 Lite (V4L), Nooelec NESDR SMArt V5. Nooelec XTR/E4000 is implemented in the driver but requires further OrcSDR frequency-range/dashboard integration. |
+| Receiver models | **Fully supported: V4, V3c, V4L, Nooelec V5** | E4000/XTR is also **usable in OrcSDR within supported tuner frequencies**. Out-of-range band dashboards may open without issuing an invalid tune; capability messaging can improve. Generic/older device variants are not automatically certified. |
 | FM broadcast, stereo, RDS, presets | **RF-validated** | Live radio and RDS tested on physical receivers. |
 | AM broadcast and 119-channel scan | **Available; hardware-tested** | Receiver and scanning paths have Tab5 evidence; reception quality is antenna/band dependent and not universally calibrated. |
 | NOAA Weather Radio | **Available** | Configured weather-channel NFM listening; separate current-release RF acceptance remains open. |
@@ -21,7 +21,7 @@ This is a current-source feature guide, not a list of unfinished experiments. **
 | SSTV reception | **Available; 14 modes supported** | Maintainer confirms operational supported modes; all 14 covered by host tests. Conducted Robot 36, PD120 and Scottie S1 image/SD acceptance on V3c, V4, V4L and Nooelec V5 is separately documented. |
 | ACARS VHF | **Available; live RF decoded** | Real-world VHF ACARS reception and archive, with later traffic records beyond the original two-block result. Airline-specific layouts vary; uninterpreted payloads remain raw. |
 | VDL Mode 2 (VDL2) | **Available; live RF decoded** | Live AVLC/ACARS frames decoded on Tab5 (including a 213-frame / 135-message session). Aircraft position and climb-related fields interpreted where understood; unknown airline-specific data stays raw. |
-| Dead Air / ENV III | **Available; real measurements** | RF activity and events plus live Unit ENV III temperature/humidity/pressure on Tab5 (maintainer-confirmed). No paranormal detection claim; sensor gaps/invalid data are not invented. |
+| Dead Air / ENV III | **Available; real measurements** | RF events and Unit ENV III temperature/humidity/pressure working on Tab5 (maintainer-confirmed). [Guide](dashboards/dead-air.md) distinguishes real measurements and unavailable/stale channels from interpretation; no paranormal detection claim. |
 | VEIL-26 | **Available; symbolic analysis** | Optional reproducible mapping of measured frequency/level to esoteric symbols and numerology. Interpretations are separated from measured physical values. No claim of messages, spirits or physical detection from the symbolic output. |
 | RF Lab / RF Visualizer | **Available** | Spectrum, IQ recording, receiver controls and test tools; not a calibrated laboratory spectrum analyzer. |
 | Wi-Fi analysis | **Hardware-tested** | AP survey via ESP-Hosted; Wi-Fi changes can temporarily pause active SDR reception. |
