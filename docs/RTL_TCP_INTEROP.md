@@ -180,10 +180,34 @@ counted as unsupported.
 | After the fix, plain socket client | Physical | greeting `RTL0`, tuner 6 (R828D), 28 gains, IQ received, state back to `listening`, local stream resumed |
 | After the fix, `rtl_tcp_probe` client at 960 kS/s | Physical (client on the PC) | 0.54 MB/s received against 1.92 MB/s needed, 0 dropped by the client |
 
-Not yet done for the server: a test against an independent third-party client
-(SatDump is installed on the PC; SDR++ and Gqrx are not), so **no compatibility is
-claimed beyond the probe**. The Tab5 send path is limited the same way the receive path
-was (lwip TCP send buffer 5760 B); a larger send buffer is being trialled.
+**Independent client.** SatDump 1.2.2 (`rtltcp` source) on the PC recorded from the
+Tab5 server (physical):
+
+| SatDump request | Written in 15 s | Meaning |
+|---|---|---|
+| 250 kS/s (`cs8`) | 5.47 MB | about 0.36 MB/s, 73% of nominal (the stream restarts when the client sets its rate); real signal: RMS 91, carrier peak 27.5 dB over median |
+| 1.024 MS/s (`cs8`) | 10.78 MB | about 0.72 MB/s, 35% of nominal; the ring overflowed and the loss was counted (13.7 MB) |
+
+SatDump configured frequency, AGC, gain, bias and PPM, and the server applied what it
+supports and counted the rest as unsupported (bias-T is never applied). The same SatDump
+command against the PC's real `rtl_tcp` recorded normally, so the harness is sound. In
+`cu8` format SatDump wrote nothing against **either** server, which is a SatDump
+behaviour and not an OrcSDR one. SDR++ and Gqrx have not been run.
+
+**Server throughput over Wi-Fi (steady state, from the server's own counters).** The
+Tab5 transmit path is the limit:
+
+| Setting | Sent |
+|---|---|
+| stock (SDIO TX queue 4) | 0.3-0.5 MB/s |
+| 32 KiB TCP send buffer | no change (reverted) |
+| SDIO TX queue 16 (trial) | 0.77-0.83 MB/s |
+
+So the Tab5 can serve about 250-300 kS/s cleanly (0.5-0.6 MB/s). Higher rates are accepted,
+but the ring overflows and the loss shows in `RTL_TCPD STATUS` (`iq_overrun`). The driver
+only allows 225-300 kS/s or 900 kS/s and above, so 300 kS/s is the practical ceiling.
+The SDIO queue change and the TCP window change are trials in `sdkconfig.defaults`
+awaiting an owner decision and a soak.
 
 ## Not done yet
 

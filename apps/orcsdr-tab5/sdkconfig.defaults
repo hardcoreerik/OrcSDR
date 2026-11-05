@@ -25,7 +25,8 @@ CONFIG_HTTPD_WS_SUPPORT=y
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 CONFIG_COMPILER_CXX_EXCEPTIONS=y
 CONFIG_COMPILER_CXX_EXCEPTIONS_EMG_POOL_SIZE=1024
-CONFIG_ESP_HOSTED_HOST_SDIO_TX_Q_SIZE=4
+# TRIAL (rtl_tcp server): was 4. Wi-Fi transmit measured only ~0.4 MB/s.
+CONFIG_ESP_HOSTED_HOST_SDIO_TX_Q_SIZE=16
 CONFIG_ESP_HOSTED_HOST_SDIO_RX_Q_SIZE=2
 # Espressif requires proving the P4<->C6 transport at a conservative clock
 # before raising it for throughput. Sustained HTTPS receive is not stable at
@@ -70,10 +71,7 @@ CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=40960
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 # TRIAL (rtl_tcp): the default 5760-byte TCP window caps one Wi-Fi socket near 1 MB/s.
 CONFIG_LWIP_TCP_WND_DEFAULT=65535
-CONFIG_LWIP_TCP_RECVMBOX_SIZE=48
-# TRIAL (rtl_tcp server): the 5760-byte send buffer limits serving IQ to about 0.5 MB/s.
-CONFIG_LWIP_TCP_SND_BUF_DEFAULT=32768
-# Catalog HTTPS needs TLS buffers larger than the remaining internal DMA headroom.
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=48# Catalog HTTPS needs TLS buffers larger than the remaining internal DMA headroom.
 # Keep Hosted/I2S DMA internal; place ordinary mbedTLS allocations in PSRAM.
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 # mDNS after STA-up was allocating its task from internal RAM and the

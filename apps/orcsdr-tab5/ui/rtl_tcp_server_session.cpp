@@ -79,6 +79,39 @@ void serve_client(int fd, int listen_fd, const ServerConfig& config, ServerBacke
     bool alive = true;
     while (alive && !backend.stop_requested()) {
       if (!backend.session_alive()) break;
+
+      // Keep the pipe full: send for as long as the socket takes data, and only
+      // wait when it cannot. (A wait per chunk costs a whole RTOS tick each time.)
+      bool sent_any = false;
+      for (int burst = 0; burst < 8 && alive; ++burst) {
+        if (iq_offset >= iq_length) {
+          iq_length = backend.read_iq(iq, kIqChunkBytes);
+          iq_offset = 0;
+          if (iq_length == 0) {
+            last_progress = backend.now_ms();  // nothing to send is not a stall
+            break;
+          }
+        }
+        const ssize_t n = send(fd, iq + iq_offset, iq_length - iq_offset, MSG_NOSIGNAL);
+        if (n > 0) {
+          iq_offset += static_cast<size_t>(n);
+          stats.bytes_sent.fetch_add(static_cast<uint64_t>(n), std::memory_order_relaxed);
+          last_progress = backend.now_ms();
+          sent_any = true;
+        } else if (n < 0 && !would_block(errno)) {
+          stats.last_errno.store(errno, std::memory_order_relaxed);
+          alive = false;
+        } else {
+          if (backend.now_ms() - last_progress >= config.send_stall_ms) {
+            stats.stalled_clients.fetch_add(1, std::memory_order_relaxed);
+            alive = false;  // not reading; do not hold the receiver for it
+          }
+          break;
+        }
+      }
+      if (!alive) break;
+
+      // Commands and extra connections. Wait only when there was nothing to send.
       fd_set readable, writable;
       FD_ZERO(&readable);
       FD_ZERO(&writable);
@@ -87,7 +120,7 @@ void serve_client(int fd, int listen_fd, const ServerConfig& config, ServerBacke
       const bool pending = iq_offset < iq_length;
       if (pending) FD_SET(fd, &writable);
       const int nfds = (fd > listen_fd ? fd : listen_fd) + 1;
-      timeval wait{0, (pending ? 20 : 2) * 1000};
+      timeval wait{0, sent_any ? 0 : (pending ? 10 : 2) * 1000};
       select(nfds, &readable, pending ? &writable : nullptr, nullptr, &wait);
 
       if (FD_ISSET(listen_fd, &readable)) refuse_extra(listen_fd, stats);
@@ -109,26 +142,6 @@ void serve_client(int fd, int listen_fd, const ServerConfig& config, ServerBacke
         } else if (n == 0 || !would_block(errno)) {
           alive = false;  // the client left
           break;
-        }
-      }
-
-      if (iq_offset >= iq_length) {
-        iq_length = backend.read_iq(iq, kIqChunkBytes);
-        iq_offset = 0;
-        if (iq_length == 0) last_progress = backend.now_ms();  // nothing to send is not a stall
-      }
-      if (iq_offset < iq_length) {
-        const ssize_t n = send(fd, iq + iq_offset, iq_length - iq_offset, MSG_NOSIGNAL);
-        if (n > 0) {
-          iq_offset += static_cast<size_t>(n);
-          stats.bytes_sent.fetch_add(static_cast<uint64_t>(n), std::memory_order_relaxed);
-          last_progress = backend.now_ms();
-        } else if (n < 0 && !would_block(errno)) {
-          stats.last_errno.store(errno, std::memory_order_relaxed);
-          alive = false;
-        } else if (backend.now_ms() - last_progress >= config.send_stall_ms) {
-          stats.stalled_clients.fetch_add(1, std::memory_order_relaxed);
-          alive = false;  // not reading; do not hold the receiver for it
         }
       }
     }
