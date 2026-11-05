@@ -45,8 +45,8 @@ label Phase II voice complete before those gates pass.
 
 ### Complete band-specific receiver experiences
 
-- Shortwave: add correct AM/SSB modes and calibrated HF/direct-sampling evidence.
-- Airband: add proper AM aviation voice behavior and suitable-antenna RF evidence.
+- Shortwave: AM/USB/LSB and band-aware listening are implemented; finish broader on-air and calibrated HF/direct-sampling acceptance.
+- Airband: the dedicated AM voice dashboard and scanner are implemented; finish suitable-antenna physical RF acceptance and field validation.
 - Marine: decide whether a dedicated workflow is justified and collect RF evidence.
 - Satellite: define a specific receive/decoder target before adding a dedicated UI.
 - CB: complete operator and RF acceptance with a suitable antenna/source.
