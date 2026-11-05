@@ -22,7 +22,7 @@ OrcSDR started with a simple question: **how far can the ESP32-P4 be pushed as a
 
 The goal is not to hide a Linux computer behind a touchscreen or reproduce every part of a desktop SDR workstation. It is to build a useful, portable radio appliance: quick to start, touch-first, battery-powered, and able to listen, decode, visualize, scan, and explore signals without another computer attached.
 
-That idea also shapes how OrcSDR is developed. The touchscreen and serial control interface exercise the same radio functions, making repeatable tests and automation part of the product rather than an afterthought. DSP changes are checked with saved captures and replay tools, while receiver controls and RF behavior are verified on physical hardware. Features are described as tested, experimental, or unfinished according to the evidence available.
+That idea also shapes how OrcSDR is developed. The touchscreen and serial control interface exercise the same radio functions, making repeatable tests and automation part of the product rather than an afterthought. DSP changes are checked with saved captures and replay tools, while receiver controls and RF behavior are verified on physical hardware. Features are described by **what actually works** and, separately, **how it has been validated**; incomplete calibration does not turn a working dashboard into an experimental prototype.
 
 OrcSDR is an open-source hobby project created by a radio and electronics tinkerer, with extensive AI assistance, outside review, and community testing. AI helps make ambitious work approachable, but the code still has to survive real USB hardware, real antennas, real signals, and repeatable regression tests.
 
@@ -139,6 +139,12 @@ Source-build requirements and commands are in the [build from source guide](docs
 Please keep changes focused and preserve the distinction between a successful build, a successful flash, and physical radio testing. When contributing receiver behavior, document the hardware, test setup, and source of any measurements.
 
 ## Project status and support
+
+The [current status](PROJECT_STATUS.md), [remaining-work roadmap](Roadmap.md),
+[architecture](architecture.md) and [maintainer field acceptance](docs/MAINTAINER_FIELD_ACCEPTANCE_2026-11-04.md)
+are the current authoritative entry points. The original [implementation phasing](phasing.md)
+is preserved as a **historical execution ledger**, not a list of features still missing.
+
 
 OrcSDR is under active development. The V4, V3c, V4L and Nooelec NESDR SMArt V5 are fully supported receiver models; E4000/XTR also operates within its supported frequency range, with invalid out-of-range tune requests intentionally suppressed. Remaining work includes better cross-dashboard compatibility messaging, additional RF characterization and selected digital-protocol interpretations.
 
