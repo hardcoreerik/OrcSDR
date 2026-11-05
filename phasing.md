@@ -1,9 +1,13 @@
 # Implementation phasing: Grok review gaps
 
-> **Historical execution ledger.** Completed and superseded phases are retained
-> for chronology; this file is not the current capability source or future
-> roadmap. Use [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for current evidence and
-> [`Roadmap.md`](Roadmap.md) for remaining work.
+> **Historical execution ledger — not a current product readiness chart.** Completed
+> and superseded phases/checklists are retained for chronology, including items
+> that have since been demonstrated on hardware. Use [`PROJECT_STATUS.md`](PROJECT_STATUS.md)
+> for current feature status, [`Roadmap.md`](Roadmap.md) for remaining work and
+> [maintainer acceptance (2026-11-04)](docs/MAINTAINER_FIELD_ACCEPTANCE_2026-11-04.md)
+> for subsequent real Shortwave/Airband/LoRa/SSTV/VDL2/ENV III acceptance.
+> An unchecked line in this historical ledger must **not** be presented as proof
+> that the current product lacks a working decoder or dashboard.
 
 Implementation plan for the gaps tracked in `Roadmap.md`. Follows the same
 phase/exit-criteria shape as `PROJECT_STATUS.md`'s P0/P1/P2 roadmap. Each
@@ -711,9 +715,15 @@ strict site builds, and approved audio/video outputs pass `ffprobe` checks.
 
 ## Phase 9 — native Meshtastic LongFast receive
 
-Source review (2026-09-03): the native decoder and five-panel dashboard are
-present and connected. The remaining checklist separates implementation from
-recorded-IQ and hardware acceptance; it does not schedule the decoder anew.
+**Later operational update (maintainer, 2026-11-04):** real unencrypted Meshtastic
+message, telemetry, node-info and GPS packets are received/decoded on Tab5;
+encrypted frames are classified as `ENCRYPTED FRAME` without decrypted text.
+The unchecked lines below belong to the **2026-09-03 phase-specific regression
+and instrumentation checklist**, not a claim that live reception has never worked.
+
+Source review (2026-09-03): the native decoder and five-panel dashboard were
+present and connected. The remaining original checklist separates implementation
+from recorded-IQ and hardware acceptance; it does not schedule the decoder anew.
 
 1. [x] Keep the five-panel M5GFX LoRa shell on one bounded snapshot and reuse
        the shared Home control. Any unused image-asset cleanup is separate.
