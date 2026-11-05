@@ -62,9 +62,10 @@ Lab, RF Visualizer, Wi-Fi analysis, Settings, documentation capture, and the
 shared Radio/Scope/Capture surface. Airband has its own dashboard (`airband_*`
 modules: scanner, catalog, runtime, dashboard; see `docs/airband/README.md`) on
 `radio::Band::airband`, using the shared AM demodulator and receiver controls.
-Dashboard catalog entries for Shortwave, Marine, and Satellite route into the
-shared receiver surface; catalog labels do not imply dedicated decoders or
-complete demodulation modes.
+Shortwave Explorer has a dedicated dashboard and AM/USB/LSB audio controls,
+but uses the common receiver/session and DSP infrastructure (rather than a
+separate radio driver). Marine and Satellite catalog entries still use shared
+receiver routing and do not imply dedicated digital decoders.
 
 ## Receiver and DSP ownership
 
