@@ -1,9 +1,10 @@
 # AM, WX, CB, and shared receiver routes
 
 The current application includes dedicated AM, CB, Shortwave Explorer and
-Airband receiver experiences, plus a shared Radio/Scope/Capture surface.
-Weather uses its configured NFM listening route. Marine and Satellite use
-shared receiver routing rather than dedicated signal decoders.
+Airband receiver screens. Shortwave's AM/USB/LSB controls share the common
+receiver/session and DSP infrastructure rather than using a separate driver.
+Weather uses its configured NFM route. Marine and Satellite use the shared
+Radio/Scope/Capture surface without dedicated signal decoders.
 
 - **Radio** tunes and listens with the mode currently implemented for the route.
 - **Scope** shows spectrum and waterfall activity.
