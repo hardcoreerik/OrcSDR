@@ -22,10 +22,13 @@ A receiver can be **fully supported** without every band or dashboard being expe
 ## Applied examples
 
 - **Blog V4, V3c, V4L, Nooelec NESDR SMArt V5:** fully supported receiver models. Historic receiver tests remain evidence of specific builds.
-- **Nooelec XTR / E4000:** driver model implemented; **OrcSDR frequency/dashboard integration in progress**. Driver support is not proof that every OrcSDR dashboard can use the tuner's approximately 64 MHz–1.7 GHz range.
+- **Nooelec XTR / E4000:** full driver operation is maintainer-confirmed **in OrcSDR on supported tuner frequencies**. Out-of-range dashboards may open without issuing an invalid tune. Better band-specific availability messaging remains a user-experience task, not a missing driver. An external upconverter must not be presumed.
 - **FT8:** available and RF-validated on four receiver models at 7.074 MHz on 2026-10-09. JS8 variants have different acceptance and must not inherit FT8 status.
-- **SSTV:** available; 14 modes covered by host tests, with conducted image/storage acceptance of Robot36, PD120 and Scottie S1 across four dongles on 2026-10-26. Other modes do not inherit those physical tests.
-- **Shortwave and Airband:** available dedicated experiences in current source. Complete cross-band sensitivity/calibration is a separate validation goal.
+- **SSTV:** all 14 supported modes are operational per maintainer; host tests cover the full set. Conducted image/storage tests specifically cover Robot36, PD120 and Scottie S1 across four dongles on 2026-10-26. The remaining modes do not inherit that particular physical test.
+- **Shortwave and Airband:** real Shortwave listening and live Airband arrival/departure voice are maintainer-confirmed. Calibration and universal antenna, band and firmware acceptance remain separate.
+- **Meshtastic:** unencrypted messages, telemetry, node information and locations are received and decoded on real traffic; an encrypted frame is identified, not decrypted.
+- **ACARS / VDL2:** live RF decoding works, including AVLC/ACARS frames and supported aircraft data. Unknown airline-specific application formats are not presented as decoded.
+- **Dead Air / ENV III:** actual RF/environment measurements and working Tab5 temperature/humidity/pressure sensor are supported; optional VEIL-26 symbols are deterministic **interpretations**, not measured paranormal phenomena.
 - **P25 Phase II voice:** not available; Phase II grants/sync observation does not imply voice decoding.
 - **LAN console:** available **only for trusted LAN use**; no TLS/authentication must be clearly displayed.
 - **Research-only Stage-2 multirate frontends:** legitimately lab-only; do not imply 3.2 MS/s production WFM audio.

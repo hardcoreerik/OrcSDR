@@ -22,7 +22,7 @@ OrcSDR started with a simple question: **how far can the ESP32-P4 be pushed as a
 
 The goal is not to hide a Linux computer behind a touchscreen or reproduce every part of a desktop SDR workstation. It is to build a useful, portable radio appliance: quick to start, touch-first, battery-powered, and able to listen, decode, visualize, scan, and explore signals without another computer attached.
 
-That idea also shapes how OrcSDR is developed. The touchscreen and serial control interface exercise the same radio functions, making repeatable tests and automation part of the product rather than an afterthought. DSP changes are checked with saved captures and replay tools, while receiver controls and RF behavior are verified on physical hardware. Features are described as tested, experimental, or unfinished according to the evidence available.
+That idea also shapes how OrcSDR is developed. The touchscreen and serial control interface exercise the same radio functions, making repeatable tests and automation part of the product rather than an afterthought. DSP changes are checked with saved captures and replay tools, while receiver controls and RF behavior are verified on physical hardware. Features are described by **what actually works** and, separately, **how it has been validated**; incomplete calibration does not turn a working dashboard into an experimental prototype.
 
 OrcSDR is an open-source hobby project created by a radio and electronics tinkerer, with extensive AI assistance, outside review, and community testing. AI helps make ambitious work approachable, but the code still has to survive real USB hardware, real antennas, real signals, and repeatable regression tests.
 
@@ -43,23 +43,41 @@ OrcSDR is receive-only. Dashboard availability and testing status vary by firmwa
 - **Home:** Tune across the attached receiver’s frequency range with direct frequency entry, selectable demodulation, and live signal monitoring. Optional OrcDial control provides hands-on tuning.
 - **FM Radio:** Listen to broadcast FM with stereo audio, RDS station information, presets, and station-seeking controls.
 - **AM Radio:** Listen to broadcast AM with region-aware channel spacing, presets, automatic tuning, and a full-band station scan.
-- **Shortwave:** Explore HF broadcasts and amateur bands with AM, USB, and LSB listening, band-aware tuning, and station memories. HF coverage depends on the receiver and antenna.
+- **Shortwave:** Listen to real HF traffic with supported AM, USB and LSB modes, band-aware tuning and station memories. Maintainer-confirmed reception; coverage still depends on receiver and antenna.
 - **Weather:** Quickly tune the standard NOAA weather-radio channels for local forecasts and weather broadcasts.
 - **CB Radio:** Monitor the 40 Citizens Band channels with AM, USB, and LSB listening. The band-wide scanner includes a priority channel, lockouts, and an activity log.
 - **P25 Radio:** Monitor P25 trunking control channels and follow supported clear voice traffic. Encrypted audio and Phase II voice decoding are not supported.
 - **ADS-B:** Track aircraft from 1090 MHz Mode-S and ADS-B broadcasts, with aircraft lists, mapped positions, altitude, and flight details.
-- **LoRa / Mesh:** Passively monitor LoRa and Meshtastic traffic, inspect received packets and nodes, and explore traffic and map views.
+- **LoRa / Mesh:** Decode real unencrypted Meshtastic messages, telemetry, node details and GPS positions in passive LongFast reception. Detect encrypted frames without pretending to decrypt their contents.
 - **POCSAG:** Receive pager transmissions and inspect decoded messages and CAPCODE identifiers.
 - **FT8 RX:** Receive and decode FT8 amateur-radio signals, browse decode history, and hunt for activity across FT8 bands.
-- **ACARS:** Receive VHF aircraft datalink messages and browse decoded traffic and message history.
-- **Airband:** Listen to AM aviation communications with 25/8.33 kHz tuning, scan/hold/skip controls, activity history, and offline airport/channel data support.
+- **ACARS / VDL2:** Receive live VHF aviation datalink frames and decode supported aircraft messages, positions and flight data; unknown airline-specific formats are retained without fabricated interpretation.
+- **Airband:** Hear live aviation arrival/departure AM voice, with 25/8.33 kHz tuning, scan/hold/skip controls, activity history and offline airport/channel data.
 - **Marine:** Access VHF marine listening through the general receiver workspace. A dedicated marine dashboard is not yet implemented.
 - **Satellite:** Open a general receiver workspace near 137.5 MHz for satellite-band exploration. A dedicated satellite decoder is not yet implemented.
-- **SSTV:** Receive slow-scan television images, watch pictures build live, and browse the picture gallery. Received images can be saved to microSD.
-- **Dead Air:** Investigate RF anomalies with live measurements, event tracking, and session logging. Optional environmental sensor readings add context to observations.
+- **SSTV:** Receive and decode the full supported 14-mode colour SSTV set, watch pictures build live and save images to microSD. Three modes also have documented conducted RF image/SD tests on all four primary dongles.
+- **Dead Air:** Record real RF/audio observations and event measurements, with functioning Unit ENV III temperature, humidity and pressure inputs on Tab5. Optional VEIL-26 transforms measured values into explicitly labeled, reproducible esoteric symbols—**not paranormal detections**.
 - **RF Lab:** Use the receiver as a portable RF test bench with live measurements, receiver controls, measurement sessions, and IQ recording.
 - **2.4 GHz Wi-Fi:** Survey nearby Wi-Fi access points, channel usage, signal strength, and advertised network security using the onboard wireless co-processor.
 - **Settings:** Manage audio, display, Wi-Fi, storage, data packs, companion devices, and firmware information.
+
+## Native ESP32-P4 decoders
+
+**OrcSDR contains its own on-device signal decoding code**, not just a waterfall or a remote decoder UI. The native Tab5 firmware builds distinct receive paths for:
+
+| Family | Native decoding and processing |
+|---|---|
+| **Broadcast** | FM Radio Data System (RDS): station identifiers, RadioText and program metadata |
+| **Aircraft surveillance** | Mode S / ADS-B frames, aircraft identity, altitude and CPR location |
+| **Land-mobile digital** | P25 Phase I control/voice; Phase II sync and grant observation (Phase II voice not implemented) |
+| **IoT / mesh** | LoRa chirp/packet decoding and unencrypted Meshtastic messages, telemetry, node details and GPS; encrypted-frame detection |
+| **Paging** | POCSAG FSK/BCH and CAPCODE/message decoding |
+| **Amateur weak-signal** | FT8; FT4 native implementation; JS8 Normal decoding backend with narrower device-validation evidence |
+| **Image transmission** | 14 SSTV colour modes: Robot, Martin, Scottie and PD families |
+| **Aviation datalink** | VHF ACARS MSK and VDL Mode 2 8DPSK/AVLC/ACARS, with aircraft message interpretation |
+| **Time reference** | WWV timing-tick detection (not a full message decoder) |
+
+The complete [native decoder inventory](docs/NATIVE_DECODER_INVENTORY.md) identifies **12 protocol/mode decoding entries plus a timing detector**, their actual C/C++ modules, reception evidence and limitations. **HFDL and WEFAX have active development-branch implementations but are not yet working mainline RF decoders.** Native AM/FM/NFM/USB/LSB demodulation, Wi-Fi scanning and Dead Air environmental/esoteric analysis are described separately so a signal-processing feature is not mislabeled as a protocol decoder.
 
 ## OrcSDR on the Tab5
 
@@ -90,10 +108,12 @@ Current [feature availability](docs/user-guide/feature-status.md), [status termi
 | RTL-SDR Blog V4 Lite (V4L) | **Fully supported** | Tested receiver; model-specific HF routing and controls are integrated. |
 | Nooelec NESDR SMArt V5 | **Fully supported** | Tested receiver; [40 m FT8 reception was accepted](docs/user-guide/dashboards/ft8.md). |
 | Earlier RTL-SDR Blog V3 variants | Experimental / individually verify | V3c acceptance does not automatically qualify every earlier V3 revision. |
-| Nooelec NESDR SMArTee XTR / E4000 | **Driver implemented; OrcSDR integration in progress** | E4000 support is implemented in [esp-rtl-sdr](https://github.com/hardcoreerik/esp-rtl-sdr). OrcSDR still needs model-aware frequency-range limits, dashboard eligibility, and acceptance for paths affected by the E4000 tuning range. Do not present every OrcSDR dashboard as compatible yet. |
+| Nooelec NESDR SMArTee XTR / E4000 | **Implemented and usable within tuner limits** | The independent driver works in OrcSDR on supported frequencies. Out-of-range band dashboards may open but do **not** attempt invalid RF tuning. Better cross-dashboard range/availability messaging remains a UX task; this is not a driver failure. |
 | Other RTL2832 receivers | Not verified | Generic USB detection is not evidence of model support. |
 
 Antenna choice affects what can be received. Useful test reports include the receiver model, frequency and band, antenna, gain setting, OrcSDR version, observed behavior, and a serial log when available.
+
+Maintainer-confirmed live reception and sensor operation are detailed in the [field acceptance record](docs/MAINTAINER_FIELD_ACCEPTANCE_2026-11-04.md), separately from dated laboratory and release-package checks.
 
 ## Technical overview
 
@@ -121,6 +141,8 @@ The standalone [`esp-rtl-sdr`](https://github.com/hardcoreerik/esp-rtl-sdr) comp
 
 ## Documentation
 
+- [Native ESP32-P4 decoder inventory](docs/NATIVE_DECODER_INVENTORY.md)
+- [Project changelog](CHANGELOG.md)
 - [User Guide](docs/user-guide/index.md)
 - [Downloads and installation](docs/user-guide/downloads.md)
 - [Offline maps: download or copy to SD (development pilot)](docs/user-guide/offline-maps.md)
@@ -138,7 +160,13 @@ Please keep changes focused and preserve the distinction between a successful bu
 
 ## Project status and support
 
-OrcSDR is under active development. The V4, V3c, V4L and Nooelec NESDR SMArt V5 are fully supported receiver models; E4000-specific OrcSDR dashboard/frequency integration and some digital-radio features are still in progress.
+The [current status](PROJECT_STATUS.md), [remaining-work roadmap](Roadmap.md),
+[architecture](architecture.md) and [maintainer field acceptance](docs/MAINTAINER_FIELD_ACCEPTANCE_2026-11-04.md)
+are the current authoritative entry points. The original [implementation phasing](phasing.md)
+is preserved as a **historical execution ledger**, not a list of features still missing.
+
+
+OrcSDR is under active development. The V4, V3c, V4L and Nooelec NESDR SMArt V5 are fully supported receiver models; E4000/XTR also operates within its supported frequency range, with invalid out-of-range tune requests intentionally suppressed. Remaining work includes better cross-dashboard compatibility messaging, additional RF characterization and selected digital-protocol interpretations.
 
 - [Latest release and release notes](https://github.com/hardcoreerik/OrcSDR/releases/latest)
 - [Open issues](https://github.com/hardcoreerik/OrcSDR/issues)

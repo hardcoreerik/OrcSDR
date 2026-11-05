@@ -1,8 +1,11 @@
 # OrcSDR roadmap
 
-This file contains future work only. Current capability and evidence live in
-[`PROJECT_STATUS.md`](PROJECT_STATUS.md); completed milestones remain in tagged
-release notes and dated validation reports.
+This file lists **remaining work**, not features absent from OrcSDR. Current capability
+and evidence live in [`PROJECT_STATUS.md`](PROJECT_STATUS.md); firsthand operational
+results are recorded in the [2026-11-04 field acceptance](docs/MAINTAINER_FIELD_ACCEPTANCE_2026-11-04.md).
+Completed milestones remain in tagged release notes and dated validation reports.
+An unmeasured analog tolerance or missing soak test does **not** make an implemented
+dashboard experimental.
 
 ## Near-term product gaps
 
@@ -46,16 +49,16 @@ hardware observation already exist. Future work is payload decoding and a
 lawful AMBE+2 audio path, followed by bounded hardware/RF validation. Do not
 label Phase II voice complete before those gates pass.
 
-### Complete band-specific receiver experiences
+### Extend existing band-specific receivers (not first implementation)
 
-- Shortwave: AM/USB/LSB and band-aware listening are implemented; finish broader on-air and calibrated HF/direct-sampling acceptance.
-- Airband: the dedicated AM voice dashboard and scanner are implemented; finish suitable-antenna physical RF acceptance and field validation.
-- Marine: decide whether a dedicated workflow is justified and collect RF evidence.
-- Satellite: define a specific receive/decoder target before adding a dedicated UI.
-- CB: complete operator and RF acceptance with a suitable antenna/source.
+- **Shortwave:** real AM/USB/LSB listening is maintainer-confirmed. Remaining: calibrated HF sensitivity, band edges, direct-sampling behavior and repeatable build/antenna acceptance.
+- **Airband:** real arrival/departure aviation AM audio is confirmed, and a dated 119.600 MHz Tab5 reception record exists. Remaining: varied RF environments, squelch/audio characterization and scanner field-performance evidence.
+- **Marine:** decide whether a dedicated workflow is justified and collect appropriate RF evidence; shared listening is already available.
+- **Satellite:** define a specific decoder/receive target before building specialized UI; shared tuning already exists.
+- **CB:** complete scanner/operator field acceptance with appropriate RF source and antenna; native AM/USB/LSB and scan controls are implemented.
 
-Generic Browse routing is already implemented and is not a substitute for these
-band-specific outcomes.
+Generic Browse routing is already implemented but does not confer any missing
+special-purpose decoder. Do not present Shortwave or Airband as not yet receivable.
 
 ### Add POCSAG persistence deliberately
 
@@ -63,12 +66,13 @@ Current live and identity/message views are bounded RAM state. Future work may
 add persistent CAPCODE identities, an SD-backed searchable archive, and editing
 UI. Keep 512/2400 baud at host-tested status until live RF evidence exists.
 
-### Expand receiver acceptance
+### Broaden receiver quality evidence and E4000 user experience
 
-Collect repeatable, versioned evidence for earlier Blog V3 variants, Blog V4L,
-and other explicitly selected devices (the Nooelec NESDR SMArt V5 is tested at
-24 MHz and above as of v0.3.0-beta.2).
-Do not generalize the single V3C result or infer compatibility from detection.
+**Blog V4, V3c, V4 Lite (V4L) and Nooelec NESDR SMArt V5 are fully supported in OrcSDR.**
+The E4000/Nooelec XTR driver is fully implemented and **works in OrcSDR on frequencies it can tune**. The app correctly avoids tuning out-of-range bands (for example broadcast AM) even when their dashboard opens.
+
+Remaining work: clearly show *why* an out-of-range dashboard cannot receive, conditionally disable controls that require unavailable tuner capabilities, and collect additional versioned E4000 band-edge/gain/soak evidence. Do not describe this as a missing driver or an inability to operate inside OrcSDR.
+Earlier unqualified Blog V3 revisions and unknown RTL2832 devices still require their own identity and RF acceptance; no blanket family support claim.
 
 ### Improve Wi-Fi/radio coexistence
 
@@ -83,13 +87,21 @@ catalog mechanism, not every proposed pack. Publish additional FAA, NOAA, FCC,
 map, or P25 packs only after provenance, redistribution, size, install,
 rollback, and radio-recovery gates pass.
 
+### Deepen digital decoder coverage and reliability
+
+- **ACARS/VDL2:** live CRC-verified aircraft traffic is demonstrated; extend airline-specific payload interpretation, multipart message joining, unknown-format handling and representative RF/performance regression captures. Do not schedule VDL2 first reception as future work.
+- **LoRa/Meshtastic:** real unencrypted messages, telemetry, node information and GPS have been decoded; encrypted frames are *detected* as `ENCRYPTED FRAME`. Extend packet-loss/coverage baselines and supported profiles without promising unauthorized plaintext recovery.
+- **SSTV:** all 14 supported modes are operational per maintainer. Expand the per-mode/per-receiver recorded RF matrix and long-soak/storage fault acceptance rather than re-implement the existing decoder.
+- **Dead Air:** real RF/event measurements, the working Tab5 Unit ENV III sensor and VEIL-26 symbolic engine are implemented. Continue device-specific sensor accuracy, multi-hour history and VEIL overlay/logging validation. The esoteric output remains **INTERPRETED**, never paranormal measurement or detection.
+
 ## Evidence still needed
 
-- Current M5Burner search/catalog visibility.
-- Post-RC4 receiver-recovery behavior on hardware.
+- Current M5Burner search/catalog visibility and exact release-image acceptance.
+- Post-RC4 receiver-recovery behavior and long-duration current-main soak.
 - Other Tab5/display revisions beyond the owner ESP32-P4 revision 1.3 unit.
-- Long-duration current-main soak and repeatable receiver recovery.
-- Current-release RF acceptance for Shortwave, Airband, Marine, Satellite, and CB.
+- Cross-band quantitative Shortwave/Airband calibration **beyond documented successful real reception**; CB scanner, Marine and Satellite evidence appropriate to their current scope.
+- E4000 model-specific frequency-edge, gain/control and robustness data **beyond confirmed in-range operation**.
+- Additional VDL2 application-layout/decoder coverage and SSTV mode-by-dongle recorded regression, without retracting proven functioning features.
 
 ## Follow-up cleanup
 
