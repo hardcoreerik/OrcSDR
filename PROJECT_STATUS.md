@@ -56,13 +56,16 @@ override this document for current state. Future work belongs in
 
 ## Receiver evidence
 
-| Receiver | Status | Boundary |
+**Receiver support policy (maintainer classification, 2026-11-04):** Blog V4, Blog V3c, Blog V4 Lite (V4L), and Nooelec NESDR SMArt V5 are **fully supported in OrcSDR**. This means the receiver profiles and core application integration are accepted; it does **not** turn untested dashboard behavior, RF accuracy, frequency-edge cases, or historical release tests into verified results. The dated evidence and caveats below remain valid.
+
+| Receiver | OrcSDR support | Evidence / remaining scope |
 |---|---|---|
-| RTL-SDR Blog V4 | **RF-Verified / tested baseline** | Primary release receiver. |
-| RTL-SDR Blog V3C | **RF-Verified / Experimental** | One V3C passed RC4 detection, initialization, streaming, FM/RDS, retune, hotplug, and USB/battery boot, and on 2026-09-28 the live tuner-bandwidth cycle (see below). Gain and sensitivity comparisons remain provisional. |
-| Earlier RTL-SDR Blog V3 variants | **Implemented / Experimental** | Profile exists; the V3C result is not a blanket earlier-V3 compatibility claim. |
-| Nooelec NESDR SMArt V5 | **RF-Verified / tested** | Owner-tested on the Tab5 to the same level as the V3c, V4 and V4L; v0.3.0-beta.2 testing on development images built from the driver commits that became esp_rtl_sdr v0.9.3: 453.925 MHz about 46 dB over noise with FM unchanged, five unplug/replug cycles. The earlier check covered 24 MHz and above. On 2026-10-09 the owner also accepted 7.074 MHz FT8 reception using an externally powered MLA-30+; see the [FT8 reception record](docs/user-guide/dashboards/ft8.md). This is not general HF/AM or external-upconverter acceptance. |
-| RTL-SDR Blog V4L | **Hardware-Verified / Experimental** | One V4L was recognised and streamed FM at 96.1 MHz on the owner Tab5 and passed the live tuner-bandwidth cycle (hot-swapped in from a V3c session, and after unplug/replug) on 2026-09-28; on the installed v0.3.0-beta.1 package two V4L cold boots with the dongle attached kept the carrier within 3.7 kHz, except that the first read -6.2 and -7.8 kHz at 200k and 300k (start-up -3.4 kHz); the second cold boot did not repeat it and the cause of the first is not established. Its other behaviour is bounded to the driver's dated evidence and is not otherwise claimed here. |
+| RTL-SDR Blog V4 | **Fully supported / RF-Verified** | Primary historical test baseline; integrated HF upconverter path. |
+| RTL-SDR Blog V3c | **Fully supported / RF-Verified** | Detection, initialization, IQ, FM/RDS, retune, hotplug, boot and tuner-bandwidth tests were recorded on physical V3c hardware. Gain/sensitivity comparisons are separate calibration questions, not a receiver-support blocker. |
+| RTL-SDR Blog V4 Lite (V4L) | **Fully supported / Hardware-Verified** | Physical FM streaming, hot-swap, cold-boot and live tuner-bandwidth acceptance recorded; historical start-up frequency anomalies remain documented below. [40 m FT8 reception](docs/user-guide/dashboards/ft8.md) was also accepted. |
+| Nooelec NESDR SMArt V5 | **Fully supported / RF-Verified** | Physical streaming, band-select and replug checks recorded; owner accepted [40 m FT8 at 7.074 MHz](docs/user-guide/dashboards/ft8.md) on 2026-10-09. General HF calibration/AM performance and external-upconverter setups are separate evidence gates. |
+| Earlier RTL-SDR Blog V3 variants | **Experimental / individually verify** | A V3 family profile exists, but V3c qualification does not automatically qualify all earlier hardware revisions. |
+| Nooelec NESDR SMArTee XTR / E4000 | **Driver implemented / OrcSDR integration in progress** | E4000 support is implemented in the independent `esp-rtl-sdr` driver. OrcSDR still needs full model-aware frequency-range enforcement, dashboard capability/eligibility handling, and relevant on-device acceptance. Do not imply unsupported bands or dashboards work merely because the driver streams IQ. |
 | Other receivers | **Unsupported / Not Verified** | Generic RTL2832 compatibility is not claimed. |
 
 ## Capability and evidence matrix
@@ -114,9 +117,10 @@ behavior, release-package installation, or long-duration soak behavior.
   Tab5/display revisions are Not Verified.
 - Current `main` is source-reviewed at the snapshot above. Hardware evidence applies to the exact
   packages and builds named in each row and in the dated reports, not automatically to later commits.
-- Post-RC4 receiver-recovery behavior, current M5Burner search visibility, V4L
-  behaviour beyond the tuner-bandwidth cycle, broad earlier-V3 support, Nooelec reception below 24 MHz, and long current-main soak are
-  Not Verified from committed public evidence.
+- Historical release-specific receiver-recovery and frequency-edge cases, current M5Burner search visibility,
+  broad earlier-V3 hardware coverage, calibrated Nooelec HF/AM reception, E4000 dashboard/frequency integration,
+  and long current-main soak still have bounded or incomplete committed public evidence. These are separate
+  from the accepted full receiver support status of V4, V3c, V4L, and Nooelec V5.
 - Shortwave, Airband, Marine, Satellite, and CB do not have broad current-release
   RF acceptance. P25 Phase II voice/audio is Not Implemented.
 - Wi-Fi credentials and signing material are private and are not documentation
