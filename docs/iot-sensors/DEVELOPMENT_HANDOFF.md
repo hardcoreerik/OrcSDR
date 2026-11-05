@@ -135,3 +135,78 @@ g++ -std=c++17 -Wall -Wextra -Werror -pedantic \
 
 Expected: `IoT sensor discovery host tests PASS`.
 No physical RF validation can occur without a receiver and sensor test captures.
+
+
+## Walk-up RF IDENTIFY mode (owner requirement, 2026-11-04)
+
+**Product correction:** This is primarily a field diagnostic tool, not merely an
+IoT dashboard that logs measurements from already-supported sensors. The user
+wants to approach an unknown device, initiate an identification session, and
+have OrcSDR infer the radio PHY/protocol, indicate whether data is readable,
+characterize security/encryption when possible, and recommend a path to decode.
+
+### Operator interaction
+
+1. Choose **IDENTIFY NEARBY DEVICE**. Record a short ambient RF baseline before
+   moving close to the target or prompting a normal device measurement.
+2. Conduct a capability-limited sweep, using measured local activity and
+   antenna/tuner support. Compare before/after signal strength and new burst
+   frequencies to prioritize candidates. Proximity is evidence, not proof.
+3. Lock to a promising emission and capture a bounded IQ burst, with timestamps,
+   true tune center, bandwidth/sample rate, PPM correction, measured RSSI
+   (or explicitly missing), and hashes for exact duplicate suppression.
+4. Classify PHY traits first: OOK/ASK, 2-FSK/GFSK, LoRa chirp candidate,
+   bandwidth, symbol/bit rate, duration, packet repetition and possible hopping.
+   Use confidence levels; do not name a protocol from frequency alone.
+5. Try plausible independent protocol decoders on the captured burst. Evidence
+   levels: **energy seen**, **modulation characterized**, **frame synchronized**,
+   **protocol signature matched**, **checksum/CRC verified**, **payload parsed**.
+   A CRC validates transport integrity but does not authenticate the sender.
+6. When a known standard is identified, explain expected data structure and
+   whether usable application fields were decoded. Where keys are required, show
+   **requires authorized keys / gateway** rather than implying decryptability.
+7. Produce a concise diagnostic report with exact reproducible observations,
+   uncertainty, protocol references, and next collection steps. Keep raw capture
+   export opt-in and security-gated.
+
+### Encryption/status taxonomy (do not overstate)
+
+- **Unencrypted payload observed:** readable, schema-validated application data.
+- **Known protected protocol:** matching format indicates security according to
+  documented standard; available key material was not provided, so application
+  payload remains unavailable. Never represent AES protection as broken.
+- **Encrypted field explicitly signaled:** verified flag/field in recognized
+  framing, not simply bytes with high entropy.
+- **Payload unreadable; encryption unknown:** no reliable evidence to distinguish
+  cipher text from compression, scrambling, proprietary packing or decode failure.
+- **No decoded packet:** cannot infer encryption at all from an RF energy hit.
+
+Consider dual verification for closely related PHYs; BLE encrypted advertising,
+LoRaWAN and other 2.4 GHz or FHSS formats require specific hardware and decoder
+support. A single RTL-SDR cannot observe an entire hopping network at once.
+
+### Field investigation UI
+
+Tab **IDENTIFY**: baseline / near comparison; detect candidates; user chooses
+target or auto-prioritize; evidence-based signal details; data readability
+status; manufacturer candidate with reason; protocol reference; recommended
+next step. Repeated nearby transmissions may be from a gateway/repeater rather
+than the object in front of the operator, so avoid unsupported machine labels.
+
+The existing **DISCOVER / DEVICES / DETAIL / UNKNOWN / SETUP** tabs remain useful
+as a separate persistent monitoring workflow, but walk-up identification should
+be the first use case and launch surface.
+
+### Success criteria
+
+- Known signal is correctly identified at exact PHY and protocol level with
+  documented test captures; readings only when actual payload fields decode.
+- Unknown FSK burst is *not* mislabeled as a specific manufacturer or encrypted.
+- Encrypted/protected known protocol shows expected security characteristics,
+  and displays **keys required** without reading protected payload.
+- Repeated captures from near/far properly distinguish stronger candidate from
+  other active sensors but make no unfounded physical-device identity claim.
+- No-signal outcome explains sleep intervals, wired-only device, alternate
+  band, receiver limitations, or proprietary radio as possibilities.
+- Host replay/fixture tests precede hardware acceptance; unimplemented
+  modules and unsupported band options are clearly disabled, not faked.
