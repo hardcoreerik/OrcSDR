@@ -92,12 +92,14 @@ IngestResult Inventory::ingest(const DecodedEvent& event) {
   }
   Device& d = devices_[slot];
   d.last_seen_ms = event.received_ms;
-  d.sensor_class = event.sensor_class;
+  if (event.sensor_class != SensorClass::unknown)
+    d.sensor_class = event.sensor_class;
   if (event.integrity_checked && event.integrity_ok)
     d.confidence = Confidence::integrity_verified; // never downgrade
   saturate_inc(d.packets);
   d.rssi_valid = event.rssi_valid;
   if (event.rssi_valid) d.rssi_dbm = event.rssi_dbm;
+  d.latest_reading_integrity_verified = event.integrity_checked && event.integrity_ok;
   d.reading_count = event.reading_count;
   for (uint8_t i = 0; i < event.reading_count; ++i)
     d.readings[i] = event.readings[i];
