@@ -15,6 +15,22 @@ bool safe_name(const char* src, size_t capacity) {
   return false;  // reject truncation rather than conflating IDs
 }
 
+void reset_device(Device& d) {
+  std::memset(d.protocol, 0, sizeof(d.protocol));
+  std::memset(d.sensor_id, 0, sizeof(d.sensor_id));
+  d.sensor_class = SensorClass::unknown;
+  d.confidence = Confidence::tentative;
+  d.latest_reading_integrity_verified = false;
+  d.center_hz = 0;
+  d.first_seen_ms = 0;
+  d.last_seen_ms = 0;
+  d.packets = 0;
+  d.rssi_valid = false;
+  d.rssi_dbm = 0;
+  d.reading_count = 0;
+  for (auto& reading : d.readings) reading = Reading{};
+}
+
 void saturate_inc(uint32_t& number) {
   if (number < std::numeric_limits<uint32_t>::max()) ++number;
 }
@@ -34,7 +50,7 @@ bool valid_metrics(const DecodedEvent& e) {
 
 void Inventory::clear() {
   // Counters and entries intentionally reset together. No dangling device pointers.
-  for (auto& device : devices_) device = Device{};
+  for (auto& device : devices_) reset_device(device);
   count_ = 0;
   unclassified_ = 0;
   unattributed_ = 0;
@@ -83,7 +99,7 @@ IngestResult Inventory::ingest(const DecodedEvent& event) {
       }
       saturate_inc(evictions_);
     }
-    devices_[slot] = Device{};
+    reset_device(devices_[slot]);
     Device& d = devices_[slot];
     std::strcpy(d.protocol, event.protocol);  // checked bounded ASCII above
     std::strcpy(d.sensor_id, event.sensor_id);
