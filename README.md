@@ -140,7 +140,7 @@ Please keep changes focused and preserve the distinction between a successful bu
 
 ## Project status and support
 
-OrcSDR is under active development. The V4, V3c, V4L and Nooelec NESDR SMArt V5 are fully supported receiver models; E4000-specific OrcSDR dashboard/frequency integration and some digital-radio features are still in progress.
+OrcSDR is under active development. The V4, V3c, V4L and Nooelec NESDR SMArt V5 are fully supported receiver models; E4000/XTR also operates within its supported frequency range, with invalid out-of-range tune requests intentionally suppressed. Remaining work includes better cross-dashboard compatibility messaging, additional RF characterization and selected digital-protocol interpretations.
 
 - [Latest release and release notes](https://github.com/hardcoreerik/OrcSDR/releases/latest)
 - [Open issues](https://github.com/hardcoreerik/OrcSDR/issues)
