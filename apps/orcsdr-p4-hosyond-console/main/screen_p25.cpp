@@ -1,6 +1,7 @@
 // P4 control-channel monitor adapter. The shared Tab5 renderer and decoder
 // run over the P4 receiver's production IQ service; profile management, trunked
 // voice following, and audio playback are not implemented on this target.
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <atomic>
@@ -21,6 +22,8 @@ namespace decoder = orcsdr::p25decoder;
 namespace config = orcsdr::p25config;
 
 constexpr uint32_t kP25SampleRate = 960000;
+constexpr uint32_t kMinSpanHz = 60000;
+constexpr size_t kSpectrumBins = 256;
 constexpr uint32_t kP25MinHz = 136000000;
 constexpr uint32_t kP25MaxHz = 941000000;
 constexpr char kP4Status[] = "P4 manual control channel; voice/audio unavailable";
@@ -35,7 +38,9 @@ std::atomic<uint32_t> g_expected_hz{0};
 uint32_t g_decoder_generation = 0;
 std::atomic<uint32_t> g_decoder_hz{0};
 std::atomic<uint32_t> g_pending_tune_hz{0};
+std::atomic<int> g_pending_span_step{0};
 uint32_t g_config_revision = 1;
+uint32_t g_span_hz = kP25SampleRate;
 char g_action_status[32] = "VOICE AUDIO UNAVAILABLE";
 
 bool resize_viewport() {
@@ -74,7 +79,7 @@ p25::Snapshot build_snapshot() {
   const auto info = orcsdr::radio::info();
 
   snapshot.frequency_hz = home.frequency_hz;
-  snapshot.span_hz = 960000;
+  snapshot.span_hz = g_span_hz;
   snapshot.effective_sps = orcsdr::radio::sample_rate();
   snapshot.target_sps = kP25SampleRate;
   snapshot.usb_overruns = info.overruns;
@@ -123,6 +128,13 @@ void apply_action(const p25::Action& action) {
         set_action_status("FREQUENCY OUT OF RANGE");
       }
       break;
+    case p25::ActionKind::span_down:
+    case p25::ActionKind::span_up:
+      g_span_hz = action.kind == p25::ActionKind::span_down
+          ? std::max(kMinSpanHz, g_span_hz / 2)
+          : std::min(kP25SampleRate, g_span_hz * 2);
+      p25::update(build_snapshot());
+      break;
     case p25::ActionKind::exit_to_home:
       home_app::request_home();
       break;
@@ -145,6 +157,7 @@ void enter() {
   }
 
   g_pending_tune_hz = 0;
+  g_pending_span_step = 0;
   config::defaults(&g_config);
   g_profiles = config::StoreState{};
   g_expected_hz.store(0, std::memory_order_release);
@@ -202,6 +215,10 @@ void tick() {
     apply_action({p25::ActionKind::tune_hz, hz});
     std::printf("RTL_P25_TUNE_APPLIED frequency_hz=%lu\n", static_cast<unsigned long>(hz));
   }
+  if (const auto step = g_pending_span_step.exchange(0)) {
+    apply_action({step < 0 ? p25::ActionKind::span_down : p25::ActionKind::span_up});
+    std::printf("RTL_P25_SPAN_APPLIED span_hz=%lu\n", static_cast<unsigned long>(g_span_hz));
+  }
   if (g_rate_mismatch.load(std::memory_order_acquire))
     set_action_status("P25 REQUIRES 960 KSPS");
   else if (std::strcmp(g_action_status, "P25 REQUIRES 960 KSPS") == 0)
@@ -221,11 +238,18 @@ bool p25_tune_request(uint32_t hz) {
   return g_pending_tune_hz.compare_exchange_strong(empty, hz);
 }
 
+bool p25_span_request(int step) {
+  if ((step != -1 && step != 1) || !g_accept_iq.load()) return false;
+  int empty = 0;
+  return g_pending_span_step.compare_exchange_strong(empty, step);
+}
+
 const Screen& p25_screen() {
   static const Screen screen{orcsdr::dashboards::Id::p25, "P25", enter, leave,
                              tick, tap, nullptr, [](const float* levels, size_t, size_t, float floor) {
-    if (orcsdr::radio::sample_rate() == kP25SampleRate)
-      p25::draw_spectrum(levels, 0, 256, floor);
+    if (orcsdr::radio::sample_rate() != kP25SampleRate) return;
+    const size_t visible = kSpectrumBins * g_span_hz / kP25SampleRate;
+    p25::draw_spectrum(levels, (kSpectrumBins - visible) / 2, visible, floor);
   }, nullptr, []() {
     if (!resize_viewport()) return false;
     p25::draw();

@@ -187,6 +187,7 @@ void cmd_help() {
   std::printf("RTL_C6_ROM STATUS                               - read-only embedded recovery package status\n");
   std::printf("RTL_FREQ | RTL_FREQ <HZ>                         - query / hot retune (auth)\n");
   std::printf("RTL_TUNE <FM|AM|WX|CB|P25|LORA|BROWSE> <HZ>      - retune (auth)\n");
+  std::printf("RTL_P25 SPAN UP|DOWN                             - P25 scope span (auth, queued to UI)\n");
   std::printf("RTL_SIGNAL                                      - signal level snapshot\n");
   std::printf("RTL_VOLUME | RTL_VOLUME <0-32>                   - query / set (auth)\n");
   std::printf("RTL_ORIENTATION STATUS | AUTO ON|OFF | MANUAL <0|90|180|270> - sensor/status and rotation (auth)\n");
@@ -944,6 +945,14 @@ void handle_line(char* line) {
   if (std::strcmp(line, "RTL_VOLUME") == 0) return cmd_volume(nullptr);
   if (std::strncmp(line, "RTL_VOLUME ", 11) == 0) return cmd_volume(line + 11);
   if (std::strncmp(line, "RTL_RESTART ", 12) == 0) return cmd_restart(line + 12);
+  if (std::strncmp(line, "RTL_P25 SPAN ", 13) == 0) {
+    if (!authed()) { std::printf("RTL_P25_SPAN_ERROR auth_required\n"); return; }
+    const char* direction = line + 13;
+    const int step = std::strcmp(direction, "UP") == 0 ? 1 : std::strcmp(direction, "DOWN") == 0 ? -1 : 0;
+    std::printf(screens::p25_span_request(step) ? "RTL_P25_SPAN_QUEUED\n" :
+                                               "RTL_P25_SPAN_ERROR invalid_inactive_or_busy\n");
+    return;
+  }
   if (std::strncmp(line, "RTL_SPAN ", 9) == 0) {
     if (!authed()) {
       std::printf("RTL_SPAN_ERROR auth_required\n");
