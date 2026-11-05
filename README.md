@@ -61,6 +61,24 @@ OrcSDR is receive-only. Dashboard availability and testing status vary by firmwa
 - **2.4 GHz Wi-Fi:** Survey nearby Wi-Fi access points, channel usage, signal strength, and advertised network security using the onboard wireless co-processor.
 - **Settings:** Manage audio, display, Wi-Fi, storage, data packs, companion devices, and firmware information.
 
+## Native ESP32-P4 decoders
+
+**OrcSDR contains its own on-device signal decoding code**, not just a waterfall or a remote decoder UI. The native Tab5 firmware builds distinct receive paths for:
+
+| Family | Native decoding and processing |
+|---|---|
+| **Broadcast** | FM Radio Data System (RDS): station identifiers, RadioText and program metadata |
+| **Aircraft surveillance** | Mode S / ADS-B frames, aircraft identity, altitude and CPR location |
+| **Land-mobile digital** | P25 Phase I control/voice; Phase II sync and grant observation (Phase II voice not implemented) |
+| **IoT / mesh** | LoRa chirp/packet decoding and unencrypted Meshtastic messages, telemetry, node details and GPS; encrypted-frame detection |
+| **Paging** | POCSAG FSK/BCH and CAPCODE/message decoding |
+| **Amateur weak-signal** | FT8; FT4 native implementation; JS8 Normal decoding backend with narrower device-validation evidence |
+| **Image transmission** | 14 SSTV colour modes: Robot, Martin, Scottie and PD families |
+| **Aviation datalink** | VHF ACARS MSK and VDL Mode 2 8DPSK/AVLC/ACARS, with aircraft message interpretation |
+| **Time reference** | WWV timing-tick detection (not a full message decoder) |
+
+The complete [native decoder inventory](docs/NATIVE_DECODER_INVENTORY.md) identifies **12 protocol/mode decoding entries plus a timing detector**, their actual C/C++ modules, reception evidence and limitations. **HFDL and WEFAX have active development-branch implementations but are not yet working mainline RF decoders.** Native AM/FM/NFM/USB/LSB demodulation, Wi-Fi scanning and Dead Air environmental/esoteric analysis are described separately so a signal-processing feature is not mislabeled as a protocol decoder.
+
 ## OrcSDR on the Tab5
 
 ![M5Stack Tab5 running OrcSDR with a live FM spectrum and waterfall](docs/images/orcsdr-tab5-live.jpeg)
@@ -123,6 +141,8 @@ The standalone [`esp-rtl-sdr`](https://github.com/hardcoreerik/esp-rtl-sdr) comp
 
 ## Documentation
 
+- [Native ESP32-P4 decoder inventory](docs/NATIVE_DECODER_INVENTORY.md)
+- [Project changelog](CHANGELOG.md)
 - [User Guide](docs/user-guide/index.md)
 - [Downloads and installation](docs/user-guide/downloads.md)
 - [Offline maps: download or copy to SD (development pilot)](docs/user-guide/offline-maps.md)
