@@ -1,8 +1,10 @@
 # OrcSDR current architecture
 
-This describes the release branch at `d30a033` on 2026-09-15. Historical plans
-and validation reports explain how the design arrived here but are not current
-architecture contracts.
+This describes the current `main` architecture reviewed 2026-11-04. The latest
+published versioned firmware at review time is `v0.5.0-beta.1`; exact firmware
+packages and dated RF evidence have their own acceptance boundaries. Historical
+plans and validation reports explain how the design arrived here but are not
+current architecture contracts.
 
 The accepted Stage-1 production DSP path (developed on `claude/dsp-multirate`,
 formerly draft PR #114) is part of `main` as of v0.3.0-beta.1; the Stage-2 multirate
