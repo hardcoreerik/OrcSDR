@@ -338,7 +338,8 @@ used it as its Remote source over Wi-Fi.
 - The owner heard clear FM from KZEL 96.1 on the Tab5 speaker (owner-observed).
 - A screenshot of the Tab5 FM Broadcast screen shows RDS decoded: station "KZEL", radio text
   "Yes - Owner Of A Lonely Heart", STEREO lit, RUNNING, live stereo VU meters, relative level
-  98%. RDS and the stereo pilot need a clean, continuous signal, which matches the measured
+  98%. The owner confirmed the song title and artist match what the station was playing
+  (owner-observed). RDS and the stereo pilot need a clean, continuous signal, which matches the measured
   link: 97% of real time, 0 dropped bytes.
 - **Remote-only boot autostart, hardware reset.** With the Tab5's own dongle unplugged, a hard
   reset (esptool, RTS) was followed by an automatic connection to the PC `rtl_tcp` and FM
