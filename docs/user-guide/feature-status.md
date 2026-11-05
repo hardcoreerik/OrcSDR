@@ -1,6 +1,6 @@
 # Feature availability and validation
 
-This is a current-source feature guide, not a list of unfinished experiments. **Available** means the integrated feature exists in OrcSDR; **RF-validated** means recorded reception on specified hardware; **Limited / in development** identifies a real functionality boundary. A successful hardware test does not guarantee reception on every antenna, band, device revision or firmware package. The [project evidence](../../PROJECT_STATUS.md) retains exact tests and dates.
+This is a current-source feature guide, not a list of unfinished experiments. **Available** means the integrated feature exists in OrcSDR; **RF-validated** means recorded reception on specified hardware; **Limited / in development** identifies a real functionality boundary. A successful hardware test does not guarantee reception on every antenna, band, device revision or firmware package. The [project evidence](https://github.com/hardcoreerik/OrcSDR/blob/main/PROJECT_STATUS.md) retains exact tests and dates.
 
 | Feature | Availability | What to expect |
 |---|---|---|
@@ -28,4 +28,4 @@ This is a current-source feature guide, not a list of unfinished experiments. **
 | Signed data catalog | **Hardware-tested** | Signed installation and verified FAA pack workflow; other packs depend on publication. |
 | SDR transmission | **Not available** | OrcSDR is receive-only; specific TX-capable devices and branches do not imply general transmit support. |
 
-For exact release/version boundaries, hardware conditions and ongoing research, use [PROJECT_STATUS.md](../../PROJECT_STATUS.md). Historical release notes and tests remain dated evidence; the absence of a new test does not erase an implemented feature.
+For exact release/version boundaries, hardware conditions and ongoing research, use [PROJECT_STATUS.md](https://github.com/hardcoreerik/OrcSDR/blob/main/PROJECT_STATUS.md). Historical release notes and tests remain dated evidence; the absence of a new test does not erase an implemented feature.
