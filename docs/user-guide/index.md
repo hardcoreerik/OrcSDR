@@ -1,14 +1,14 @@
 # OrcSDR User Guide
 
-OrcSDR turns an M5Stack Tab5 and RTL-SDR Blog V4 into a portable, touch-first radio workspace. This public guide starts with the physical setup, then explains each dashboard, common workflow, limitation, and diagnostic.
+OrcSDR turns an M5Stack Tab5 and a fully supported SDR receiver (RTL-SDR Blog V4, V3c, V4 Lite, or Nooelec NESDR SMArt V5) into a portable, touch-first radio workspace. This public guide starts with the physical setup, then explains each dashboard, common workflow, limitation, and diagnostic.
 
 The labels used throughout the guide are deliberate:
 
-- **Implemented** — available in normal firmware.
-- **Experimental** — usable, but still being measured or refined.
+- **Available / Implemented** — the integrated feature is present in current source; the published firmware package may lag.
+- **RF-validated / Hardware-tested** — a specific physical test is documented, not a promise for all RF conditions.
+- **Limited / In development** — important functionality is missing or integration remains underway.
 - **Demo** — deterministic sample data, always marked `DEMO` on the device.
-- **Unavailable** — visible status without an operational implementation.
-- **Deferred** — planned work that is not present in this release.
+- **Unavailable / Planned** — not offered as working functionality.
 
 Start with [Getting started](getting-started.md), then use the searchable [screen catalog](reference/screen-catalog.md) for a control-by-control view.
 
