@@ -112,7 +112,7 @@ Native ESP-IDF Tab5 firmware builds are performed by the path-filtered
 [`firmware-nightly`](.github/workflows/firmware-nightly.yml) when its change/build gate fires.
 These are not universal compile gates for every pull request or source change.
 POCSAG core/store scripts are not currently guaranteed by the named validation
-workflows. No CI result alone proves live RF, antenna suitability, physical
+workflows. Automated checks cannot by themselves prove live RF, antenna suitability, physical
 screen/touch behavior, release-package installation or long-duration soak.
 
 ## Current evidence boundaries and open limitations
