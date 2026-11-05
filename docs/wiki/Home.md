@@ -1,6 +1,6 @@
 # OrcSDR: radio freedom, without the laptop
 
-For the published [v0.3.0-beta.1 release](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.3.0-beta.1). Device screenshots below come from a PNG-capable build based on later `main` source; see [[Screenshot Catalog]] for provenance.
+For the latest published versioned firmware at this review, see [v0.5.0-beta.1](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.5.0-beta.1). The older screenshots and capture notes below describe their original v0.3.0-era builds and remain historical evidence; see [[Screenshot Catalog]] for provenance.
 
 OrcSDR turns an M5Stack Tab5 and a supported RTL-SDR into a portable, receive-only radio. Start with a suitable antenna and a familiar FM station.
 
@@ -20,12 +20,12 @@ Home provides spectrum and waterfall, tuning controls, recent dashboards, Settin
 | [[FM Radio]] | Broadcast FM, presets, stereo and RDS |
 | [[AM Radio]] | Broadcast AM, station finding and spectrum |
 | [[FT8 Reception]] | Receive-only FT8, setup and dated four-receiver reception evidence |
-| [[Shortwave]] | HF tuning, schedules, hunt, memories and logbook; experimental reception |
+| [[Shortwave]] | Implemented AM/USB/LSB HF listening, station finding, memories and logbook; RF quality varies by antenna |
 | [[CB Radio]] | 40-channel AM/USB/LSB listening and scanning |
 | [[Weather and Other Bands]] | NOAA weather; Airband, Marine and Satellite limitations |
 | [[P25 Radio]] | Phase I monitoring and clear voice; Phase II audio unavailable |
 | [[ADS-B Aircraft]] | Live 1090 MHz broadcasts |
-| [[LoRa Monitor]] | Experimental LoRa/Meshtastic reception |
+| [[LoRa Monitor]] | Hardware-tested LoRa/Meshtastic receive and analysis; reception/coverage limits apply |
 | [[POCSAG Pager Monitor]] | Messages, IDs, signal health and session history |
 | [[Wi-Fi Survey]] | Access-point survey through the Tab5 wireless coprocessor |
 | [[RF Lab]] | Controls, measurements, records and visualizers |

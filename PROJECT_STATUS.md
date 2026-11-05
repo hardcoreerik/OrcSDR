@@ -1,21 +1,15 @@
 # OrcSDR current project status
 
-Current source snapshot: **2026-10-02**, on branch `claude/beta2-prep`
-(release preparation for `v0.3.0-beta.2`).
+Current documentation snapshot: **2026-11-04**, based on the `main` source and dated validation reports.
 
-Current release candidate: **`v0.3.0-beta.2`**. It is published only after the exact-tag hardware gate in
-[`docs/M5BURNER_HARDWARE_GATE.md`](docs/M5BURNER_HARDWARE_GATE.md) passes; the release page records the
-result. The previous release, `v0.2.0-beta7`, had its exact M5Burner package installed and booted on the
-owner Tab5 before publication. That evidence does not automatically prove later `main` commits or other
-hardware. Version numbers follow [`docs/VERSIONING.md`](docs/VERSIONING.md); release notes are in
-[`docs/releases/v0.3.0-beta.2.md`](docs/releases/v0.3.0-beta.2.md).
+Latest published versioned release at this review: **[`v0.5.0-beta.1`](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.5.0-beta.1)** (published 2026-10-26 PDT). See [the release notes](docs/releases/v0.5.0-beta.1.md). Source, release asset, nightly and installed hardware have distinct acceptance boundaries; new `main` changes are not automatically proved by a prior tagged package. See [downloads](docs/user-guide/downloads.md) and [version policy](docs/VERSIONING.md).
 
-This release carries the Stage-1 optimized production DSP path (formerly the development branch
-`claude/dsp-multirate`, PR #114). Stage-2 D/D2/D3 frontends are **Experimental**, compiled only with
+Current source includes the Stage-1 optimized production DSP path (formerly the development branch
+`claude/dsp-multirate`, PR #114). Stage-2 D/D2/D3 frontends remain **lab-only research**, compiled only with
 `ORCSDR_DSP_LAB=1`, and are not WFM audio integrations. The dated
 [DSP closeout](docs/validation/dsp-stage1-stage2-closeout-2026-09-27.md) records their evidence.
 
-The release pins `esp_rtl_sdr` at `43474869e061a78c209091f9b3a65c498ae64fb4`, the commit of the published driver release
+Current `main` pins `esp_rtl_sdr` at `43474869e061a78c209091f9b3a65c498ae64fb4`, the commit of the published driver release
 **`v0.9.4`** (the driver reports `0.9.4`). It contains the PC-measured V4L/V4/V3c gain, AGC, bias and
 tuner-bandwidth controls, the V4L HF upconverter route, an optional direct HF route that OrcSDR uses on CB
 for the V4L and V4, and the live tuner-bandwidth fixes documented in
@@ -25,6 +19,9 @@ This is the authoritative current capability and evidence summary. Release
 notes and validation reports are immutable, dated evidence; they do not
 override this document for current state. Future work belongs in
 [`Roadmap.md`](Roadmap.md).
+For current-facing status wording, see [status terminology](docs/STATUS_TERMINOLOGY.md)
+and the [2026-11-04 documentation audit](docs/DOCUMENTATION_STATUS_AUDIT_2026-11-04.md).
+
 ## Evidence vocabulary
 
 | Status | Meaning |
@@ -56,13 +53,16 @@ override this document for current state. Future work belongs in
 
 ## Receiver evidence
 
-| Receiver | Status | Boundary |
+**Receiver support policy (maintainer classification, 2026-11-04):** Blog V4, Blog V3c, Blog V4 Lite (V4L), and Nooelec NESDR SMArt V5 are **fully supported in OrcSDR**. This means the receiver profiles and core application integration are accepted; it does **not** turn untested dashboard behavior, RF accuracy, frequency-edge cases, or historical release tests into verified results. The dated evidence and caveats below remain valid.
+
+| Receiver | OrcSDR support | Evidence / remaining scope |
 |---|---|---|
-| RTL-SDR Blog V4 | **RF-Verified / tested baseline** | Primary release receiver. |
-| RTL-SDR Blog V3C | **RF-Verified / Experimental** | One V3C passed RC4 detection, initialization, streaming, FM/RDS, retune, hotplug, and USB/battery boot, and on 2026-09-28 the live tuner-bandwidth cycle (see below). Gain and sensitivity comparisons remain provisional. |
-| Earlier RTL-SDR Blog V3 variants | **Implemented / Experimental** | Profile exists; the V3C result is not a blanket earlier-V3 compatibility claim. |
-| Nooelec NESDR SMArt V5 | **RF-Verified / tested** | Owner-tested on the Tab5 to the same level as the V3c, V4 and V4L; v0.3.0-beta.2 testing on development images built from the driver commits that became esp_rtl_sdr v0.9.3: 453.925 MHz about 46 dB over noise with FM unchanged, five unplug/replug cycles. The earlier check covered 24 MHz and above. On 2026-10-09 the owner also accepted 7.074 MHz FT8 reception using an externally powered MLA-30+; see the [FT8 reception record](docs/user-guide/dashboards/ft8.md). This is not general HF/AM or external-upconverter acceptance. |
-| RTL-SDR Blog V4L | **Hardware-Verified / Experimental** | One V4L was recognised and streamed FM at 96.1 MHz on the owner Tab5 and passed the live tuner-bandwidth cycle (hot-swapped in from a V3c session, and after unplug/replug) on 2026-09-28; on the installed v0.3.0-beta.1 package two V4L cold boots with the dongle attached kept the carrier within 3.7 kHz, except that the first read -6.2 and -7.8 kHz at 200k and 300k (start-up -3.4 kHz); the second cold boot did not repeat it and the cause of the first is not established. Its other behaviour is bounded to the driver's dated evidence and is not otherwise claimed here. |
+| RTL-SDR Blog V4 | **Fully supported / RF-Verified** | Primary historical test baseline; integrated HF upconverter path. |
+| RTL-SDR Blog V3c | **Fully supported / RF-Verified** | Detection, initialization, IQ, FM/RDS, retune, hotplug, boot and tuner-bandwidth tests were recorded on physical V3c hardware. Gain/sensitivity comparisons are separate calibration questions, not a receiver-support blocker. |
+| RTL-SDR Blog V4 Lite (V4L) | **Fully supported / Hardware-Verified** | Physical FM streaming, hot-swap, cold-boot and live tuner-bandwidth acceptance recorded; historical start-up frequency anomalies remain documented below. [40 m FT8 reception](docs/user-guide/dashboards/ft8.md) was also accepted. |
+| Nooelec NESDR SMArt V5 | **Fully supported / RF-Verified** | Physical streaming, band-select and replug checks recorded; owner accepted [40 m FT8 at 7.074 MHz](docs/user-guide/dashboards/ft8.md) on 2026-10-09. General HF calibration/AM performance and external-upconverter setups are separate evidence gates. |
+| Earlier RTL-SDR Blog V3 variants | **Experimental / individually verify** | A V3 family profile exists, but V3c qualification does not automatically qualify all earlier hardware revisions. |
+| Nooelec NESDR SMArTee XTR / E4000 | **Driver implemented / OrcSDR integration in progress** | E4000 support is implemented in the independent `esp-rtl-sdr` driver. OrcSDR still needs full model-aware frequency-range enforcement, dashboard capability/eligibility handling, and relevant on-device acceptance. Do not imply unsupported bands or dashboards work merely because the driver streams IQ. |
 | Other receivers | **Unsupported / Not Verified** | Generic RTL2832 compatibility is not claimed. |
 
 ## Capability and evidence matrix
@@ -70,28 +70,31 @@ override this document for current state. Future work belongs in
 | Capability | Status | Evidence boundary and limitations |
 |---|---|---|
 | FM receive, stereo, RDS, presets | **RF-Verified / Regression-Tested** | Verified on Blog V4 and V3C. Results remain bounded to the tested dongle, antenna, band, and setup. |
-| AM broadcast dashboard and 119-channel scan | **Hardware-Verified / Experimental** | The exact RC4 package exercised the dashboard and scan. General reception quality and gain calibration are not established. |
-| NOAA Weather Radio | **Implemented** | Current-release RF acceptance is Not Verified. |
-| CB | **Implemented / Runtime-Verified** | The earlier channel panel was flashed and exercised. The band-wide scanner dashboard is **Implemented / Regression-Tested** (host scanner tests) and still needs Tab5 hardware and RF acceptance. |
-| Shortwave | **Implemented / Experimental** | Routes to the generic Browse/NFM workspace. A complete calibrated HF AM/SSB experience is Not Implemented. |
-| Airband | **Implemented / Experimental** | Routes to generic Browse near 121.5 MHz using NFM. Proper AM aviation voice is Not Implemented. |
-| Marine | **Implemented / Experimental** | Generic NFM routing exists; no dedicated dashboard or current RF acceptance is recorded. |
-| Satellite | **Implemented / Experimental** | Generic Browse routing near 137.5 MHz exists. No dedicated satellite decoder/dashboard is implemented. |
+| AM broadcast dashboard and 119-channel scan | **Hardware-Verified / Implemented** | Native AM receiver and scanning controls were exercised on Tab5 in the RC4 evidence. Sensitivity, gain calibration and broad-station reception remain distinct RF quality checks. |
+| NOAA Weather Radio | **Implemented / Available** | NFM weather-channel tuning and listening are available. Current-release off-air acceptance is not independently recorded here. |
+| CB | **Implemented / Runtime-Verified** | Native AM/USB/LSB CB reception and 40-channel scanner controls exist. Operator and RF acceptance for the complete scanner remains open; do not confuse that with an absent dashboard. |
+| Shortwave | **Implemented / Available** | Dedicated Shortwave Explorer supports AM, USB, LSB, band-plan AUTO, clarifier, filters, memories, and logging in current source; see [changelog](docs/shortwave/CHANGELOG.md). Mode-specific host tests exist. Broad on-air HF and calibration acceptance remains open. Older generic Browse-only descriptions are obsolete. |
+| Airband | **Implemented / Available** | Dedicated 118–136.975 MHz AM aviation receiver, manual 25/8.33 kHz raster tuning, scan controls and offline airport/channel integration exist; see [Airband documentation](docs/airband/README.md). Physical RF acceptance remains open. Previous generic NFM-only description is obsolete. |
+| Marine | **Implemented / Limited** | Shared NFM receiver routing exists; a dedicated marine decoder/dashboard and broad RF validation are not claimed. |
+| Satellite | **Implemented / Limited** | Shared tuning/receiver route near 137.5 MHz exists; no dedicated satellite decoder/dashboard is claimed. |
 | P25 Phase I | **RF-Verified / Hardware-Verified / Regression-Tested** | Documented control, clear voice, encrypted-call detection/muting, and follow behavior. System compatibility remains evidence-bounded. |
-| P25 Phase II | **Implemented / Runtime-Verified / Regression-Tested / Experimental** | Grant transport, burst sync, complete-burst retention, DUID classification, and hardware observation exist. Payload decode and AMBE+2 voice/audio are Not Implemented. |
+| P25 Phase II | **Partially implemented / Under development** | Grant transport, burst sync, retention, DUID classification and hardware observation exist; complete payload decoding and AMBE+2 voice/audio are not implemented. Phase I acceptance does not imply Phase II voice support. |
 | ADS-B 1090 | **RF-Verified / Hardware-Verified / Regression-Tested** | Live CRC-valid traffic was independently track-compared and FAA-enriched. It is live-only and reception depends on antenna, location, and traffic. |
-| LoRa/Meshtastic receive | **Hardware-Verified / Experimental** | Native receive and dashboard paths exist and traffic has been observed. Reliability, missed-packet rate, backlog behavior, and antenna coverage remain bounded experiments. |
+| LoRa/Meshtastic receive | **Implemented / Hardware-Verified** | Native receive/dashboard and observed traffic are recorded. Link conditions, coverage and missed-packet rates remain receiver/antenna-dependent and have not been broadly quantified. These measurement limits do not mean the dashboard is absent. |
 | POCSAG | **RF-Verified at 1200 baud / Regression-Tested** | `TEST` for CAPCODE 1234560 was decoded on Tab5 from an in-house 433.920 MHz source and independently on a Flipper Zero. 512/2400 are host-tested only. Identity/message state is RAM-only; persistent searchable archive is Not Implemented. |
-| RF Lab and RF Visualizer | **Implemented / Regression-Tested** | Integrated screens and self-check/regression tooling exist; they do not prove RF calibration. |
-| Live tuner bandwidth (RF Lab NEXT BW) | **Hardware-Verified / Regression-Tested / Experimental** | On the owner Tab5 at 96.1 MHz the AUTO, 200k, 300k, 500k, 1.0M, 1.8M, 2.4M, AUTO cycle kept the carrier within 2.5 kHz on V3c, V4L and V4 in the pre-release runs (V3c cold boot; V4L, V4 swapped in; all after unplug/replug); on the installed package the V3c stayed within 1.8 kHz (hot-swap and cold boot) and the V4L within 3 kHz after a hot-swap and within 3.7 kHz on a second cold boot (one cold boot read up to 7.8 kHz at 200k/300k and did not repeat; unexplained); in the pre-release runs final AUTO matched the boot passband within 0.8 dB (one V3c run 3.6 dB, repeated within 0.4 dB); on the installed package the V3c AUTO level differed from boot by 0.3 to 2.1 dB (cold boot) and up to 4.4 dB (hot swap), and the V4 stayed within 1.2 kHz but one 1.8M step was rejected once by the USB bus (six repeats worked; #122). The tuner widths are the PC driver's control values, not measured analog passbands. The V4 was not measured before the fix; other stations, long soak, and RDS/pilot after a retune on the V3c are Not Verified. Evidence: [`docs/testing/v3c-tuner-bandwidth-transition-2026-09-28.md`](docs/testing/v3c-tuner-bandwidth-transition-2026-09-28.md). FM DSP filter bandwidth is a separate, app-side control. |
+| FT8 receive | **RF-Verified / Regression-Tested** | Successful 40 m reception was accepted on V4, V4L, V3c and Nooelec V5 on 2026-10-09; this does not certify all HF propagation conditions. See [reception evidence](docs/user-guide/dashboards/ft8.md). |
+| SSTV receive | **Implemented / Hardware-Verified** | Full-colour 14-mode native decoder is host-tested. [Four supported dongles completed conducted Robot 36, PD120 and Scottie S1 image/SD acceptance on 2026-10-26](docs/evidence/maps/2026-10-26-v4l-sstv-conducted.md); other modes and broad weak-signal behavior have narrower evidence. |
+| ACARS VHF | **Implemented / RF-Verified** | Native ACARS dashboard and decoder are integrated; two off-air blocks were decoded on Tab5 on 2026-10-15. Experimental VDL Mode 2 work is a separate integration path and not implied by ACARS support. See [dashboard evidence](docs/acars/DASHBOARD_README.md). |
+| RF Lab and RF Visualizer | **Implemented / Regression-Tested** | Integrated spectrum, receiver controls, self-check, recording and measurement tools. Raw/relative readings are not substitutes for calibrated RF instruments. |
+| Live tuner bandwidth (RF Lab NEXT BW) | **Implemented / Hardware-Verified / Regression-Tested** | On the owner Tab5 at 96.1 MHz the AUTO, 200k, 300k, 500k, 1.0M, 1.8M, 2.4M, AUTO cycle kept the carrier within 2.5 kHz on V3c, V4L and V4 in the pre-release runs (V3c cold boot; V4L, V4 swapped in; all after unplug/replug); on the installed package the V3c stayed within 1.8 kHz (hot-swap and cold boot) and the V4L within 3 kHz after a hot-swap and within 3.7 kHz on a second cold boot (one cold boot read up to 7.8 kHz at 200k/300k and did not repeat; unexplained); in the pre-release runs final AUTO matched the boot passband within 0.8 dB (one V3c run 3.6 dB, repeated within 0.4 dB); on the installed package the V3c AUTO level differed from boot by 0.3 to 2.1 dB (cold boot) and up to 4.4 dB (hot swap), and the V4 stayed within 1.2 kHz but one 1.8M step was rejected once by the USB bus (six repeats worked; #122). The tuner widths are the PC driver's control values, not measured analog passbands. The V4 was not measured before the fix; other stations, long soak, and RDS/pilot after a retune on the V3c are Not Verified. Evidence: [`docs/testing/v3c-tuner-bandwidth-transition-2026-09-28.md`](docs/testing/v3c-tuner-bandwidth-transition-2026-09-28.md). FM DSP filter bandwidth is a separate, app-side control. |
 | Stage-1 production DSP optimization (formerly PR #114) | **Hardware-Verified / Regression-Tested** | Same saved live IQ gave bit-identical FM, NFM/WX, AM, CB AM/LSB/USB output/state; release-build 2.40 MS/s WFM load was about 45% versus 68% before. Measured on the development branch; part of `v0.3.0-beta.1`, whose package acceptance is the release hardware gate. |
-| Higher-rate IQ acquisition (formerly PR #114) | **Hardware-Verified / Experimental** | The driver delivered 2.40/2.56/2.88/3.20 MS/s in bounded transport windows. This is not audio or every spectrum/analysis workload acceptance. |
-| 3.20 MS/s WFM audio | **Unsupported / Experimental research** | D2 and D3 exclusive-live frontends bypassed production audio and showed backlog/loss. Normal WFM stays at 2.40 MS/s. |
-| 3.20 MS/s NFM/WX audio | **Not Verified / Experimental** | No mode-specific production audio integration or RF acceptance; this does not establish impossibility. |
-| Wi-Fi analysis | **Implemented / Hardware-Verified / Experimental** | ESP-Hosted 3.0.6 and access-point survey work on the owner Tab5. Scan, connect, power-off, and catalog I/O deliberately pause and then resume radio reception. |
-| Signed data catalog | **Hardware-Verified / Experimental** | Public `data-catalog-v1` exists; FAA catalog reinstall and radio recovery are recorded. This does not mean every proposed pack is published or accepted. |
-| LAN web console | **Implemented / Experimental** | Opt-in HTTP telemetry, audio, spectrum, tuning, volume/mute, span/step, and dashboard actions. No TLS or authentication; trusted LAN only. |
-| Android TV client | **Implemented / Experimental** | LAN client only; the Tab5 remains the radio. |
+| Higher-rate IQ acquisition (formerly PR #114) | **Hardware-Verified / Bounded rates** | The driver delivered 2.40/2.56/2.88/3.20 MS/s in bounded transport windows. This is not audio or every spectrum/analysis workload acceptance. |
+| 3.20 MS/s WFM audio | **Not supported** | D2 and D3 exclusive-live frontends bypassed production audio and showed backlog/loss. Normal WFM stays at 2.40 MS/s. |
+| 3.20 MS/s NFM/WX audio | **Not validated** | No mode-specific production audio integration or RF acceptance; this does not establish impossibility. |
+| Wi-Fi analysis | **Implemented / Hardware-Verified** | Real AP surveys through ESP-Hosted 3.0.6 were exercised. Wi-Fi scan/connect and catalog I/O intentionally pause an active radio session; this is an operational limitation, not an experimental label on the survey. |
+| Signed data catalog | **Implemented / Hardware-Verified** | The signed `data-catalog-v1` flow and FAA reinstall/recovery have physical evidence. Individual proposed packs are only available if published and accepted. |
+| LAN web console | **Implemented / Available (trusted LAN)** | HTTP telemetry, audio, spectrum, tuning and dashboard controls are implemented. No TLS or authentication: use only on a trusted LAN; do not expose it to the public Internet. |
+| Android TV client | **Implemented / Companion** | LAN client UI is implemented; the Tab5 remains the receiver. Full device/network compatibility testing is separate. |
 | Global Settings and documentation capture | **Implemented / Hardware-Verified** | Current screens are integrated under the display owner; exact capture coverage remains release/evidence specific. |
 
 ## Automated validation
@@ -101,12 +104,16 @@ override this document for current state. Future work belongs in
 | P25 core | Optimized and ASan/UBSan host tests plus data-catalog validation. |
 | Radio scan core | Optimized and ASan/UBSan radio-session/scan tests. |
 | User guide | Help-media validation, documentation validation, and strict MkDocs build. |
+| Native Tab5 firmware | Path-filtered SSTV integration compile and gated nightly ESP-IDF builds; not an every-PR hardware/compile acceptance contract. |
 | Documentation Truth | Deterministic dependency/doc coherence, CI claims, architecture measurement, local links, screen/dashboard enums, resolved stale claims, and history/prompt hygiene. |
 
-Current CI does **not** compile the native Tab5 consumer firmware. POCSAG core
-and store scripts are not currently wired into GitHub Actions. CI also does not
-prove hardware operation, RF reception, antenna suitability, display/touch
-behavior, release-package installation, or long-duration soak behavior.
+Native ESP-IDF Tab5 firmware builds are performed by the path-filtered
+[`sstv-tab5-build`](.github/workflows/sstv-tab5-build.yml) workflow and by
+[`firmware-nightly`](.github/workflows/firmware-nightly.yml) when its change/build gate fires.
+These are not universal compile gates for every pull request or source change.
+POCSAG core/store scripts are not currently guaranteed by the named validation
+workflows. Automated checks cannot by themselves prove live RF, antenna suitability, physical
+screen/touch behavior, release-package installation or long-duration soak.
 
 ## Current evidence boundaries and open limitations
 
@@ -114,11 +121,13 @@ behavior, release-package installation, or long-duration soak behavior.
   Tab5/display revisions are Not Verified.
 - Current `main` is source-reviewed at the snapshot above. Hardware evidence applies to the exact
   packages and builds named in each row and in the dated reports, not automatically to later commits.
-- Post-RC4 receiver-recovery behavior, current M5Burner search visibility, V4L
-  behaviour beyond the tuner-bandwidth cycle, broad earlier-V3 support, Nooelec reception below 24 MHz, and long current-main soak are
-  Not Verified from committed public evidence.
-- Shortwave, Airband, Marine, Satellite, and CB do not have broad current-release
-  RF acceptance. P25 Phase II voice/audio is Not Implemented.
+- Historical release-specific receiver-recovery and frequency-edge cases, current M5Burner search visibility,
+  broad earlier-V3 hardware coverage, calibrated Nooelec HF/AM reception, E4000 dashboard/frequency integration,
+  and long current-main soak still have bounded or incomplete committed public evidence. These are separate
+  from the accepted full receiver support status of V4, V3c, V4L, and Nooelec V5.
+- Shortwave AM/USB/LSB and dedicated Airband AM are implemented in current source; broad
+  physical RF acceptance is still open. Marine and Satellite currently use shared
+  receiver routes. P25 Phase II voice/audio is not implemented.
 - Wi-Fi credentials and signing material are private and are not documentation
   or CI inputs.
 - In this release, `rtl_default_sample_rate()` selects 2.40 MS/s for WFM,

@@ -30,11 +30,14 @@ web commands, and screen/touch routing behind the modules that already exist.
 The endpoint remains a small application-wiring file. Preserve one receiver
 owner and one framebuffer owner during each extraction.
 
-### Compile the native Tab5 firmware in CI
+### Expand native Tab5 CI coverage
 
-The repository has P25, radio-scan, user-guide, and Documentation Truth
-workflows. The remaining CI gap is a reproducible native ESP-IDF Tab5 consumer
-build; hardware, RF, flash, and physical UI acceptance remain separate gates.
+A native ESP-IDF Tab5 compile already runs in the path-filtered
+[`sstv-tab5-build`](.github/workflows/sstv-tab5-build.yml) workflow and the
+gated [nightly builder](.github/workflows/firmware-nightly.yml). Extend this
+coverage to consistently gate all relevant firmware PR changes rather than
+claim the build does not exist. Hardware, RF, flash, and physical UI acceptance
+remain separate from compilation.
 
 ### Finish P25 Phase II receive
 
@@ -45,8 +48,8 @@ label Phase II voice complete before those gates pass.
 
 ### Complete band-specific receiver experiences
 
-- Shortwave: add correct AM/SSB modes and calibrated HF/direct-sampling evidence.
-- Airband: add proper AM aviation voice behavior and suitable-antenna RF evidence.
+- Shortwave: AM/USB/LSB and band-aware listening are implemented; finish broader on-air and calibrated HF/direct-sampling acceptance.
+- Airband: the dedicated AM voice dashboard and scanner are implemented; finish suitable-antenna physical RF acceptance and field validation.
 - Marine: decide whether a dedicated workflow is justified and collect RF evidence.
 - Satellite: define a specific receive/decoder target before adding a dedicated UI.
 - CB: complete operator and RF acceptance with a suitable antenna/source.

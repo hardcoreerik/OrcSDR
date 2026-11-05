@@ -2,9 +2,9 @@
 
 ## Hardware
 
-1. Seat the Tab5 securely and connect an accepted receiver. RTL-SDR Blog V4 is
-   the tested baseline; see [feature status](feature-status.md) for experimental
-   receiver boundaries.
+1. Seat the Tab5 securely and connect a supported receiver: RTL-SDR Blog V4,
+   V3c, V4 Lite (V4L), or Nooelec NESDR SMArt V5. See the
+   [feature availability guide](feature-status.md) for dashboard-specific limits.
 2. Attach an antenna appropriate for the band you intend to receive.
 3. Insert the prepared microSD card if you need databases, maps, captures, or screenshots.
 4. Use stable power. After installation, disconnect the PC USB Serial/JTAG

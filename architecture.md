@@ -1,8 +1,10 @@
 # OrcSDR current architecture
 
-This describes the release branch at `d30a033` on 2026-09-15. Historical plans
-and validation reports explain how the design arrived here but are not current
-architecture contracts.
+This describes the current `main` architecture reviewed 2026-11-04. The latest
+published versioned firmware at review time is `v0.5.0-beta.1`; exact firmware
+packages and dated RF evidence have their own acceptance boundaries. Historical
+plans and validation reports explain how the design arrived here but are not
+current architecture contracts.
 
 The accepted Stage-1 production DSP path (developed on `claude/dsp-multirate`,
 formerly draft PR #114) is part of `main` as of v0.3.0-beta.1; the Stage-2 multirate
@@ -60,9 +62,10 @@ Lab, RF Visualizer, Wi-Fi analysis, Settings, documentation capture, and the
 shared Radio/Scope/Capture surface. Airband has its own dashboard (`airband_*`
 modules: scanner, catalog, runtime, dashboard; see `docs/airband/README.md`) on
 `radio::Band::airband`, using the shared AM demodulator and receiver controls.
-Dashboard catalog entries for Shortwave, Marine, and Satellite route into the
-shared receiver surface; catalog labels do not imply dedicated decoders or
-complete demodulation modes.
+Shortwave Explorer has a dedicated dashboard and AM/USB/LSB audio controls,
+but uses the common receiver/session and DSP infrastructure (rather than a
+separate radio driver). Marine and Satellite catalog entries still use shared
+receiver routing and do not imply dedicated digital decoders.
 
 ## Receiver and DSP ownership
 
@@ -91,11 +94,13 @@ complete demodulation modes.
   for the independent Stage-1 A/B harness. No experimental frontend replaces
   the existing production demodulator.
 
-Receiver profiles are selected inside the single driver API. Blog V4 is the
-tested baseline; Blog V3/V3C profiles exist with experimental evidence
-boundaries, and the Nooelec NESDR SMArt V5 profile is RF-Verified at 24 MHz and
-above (v0.3.0-beta.2). V4L and arbitrary RTL2832 receivers are not accepted by
-inference.
+Receiver profiles are selected inside the single driver API. Blog V4,
+Blog V3c, Blog V4 Lite (V4L), and Nooelec NESDR SMArt V5 are fully supported
+OrcSDR receiver models. E4000 / Nooelec XTR support is implemented in the
+independent driver, but OrcSDR still needs model-aware frequency limits and
+dashboard eligibility/acceptance. Older V3 variants and arbitrary RTL2832
+receivers are not accepted merely from their family or USB identity. Full
+receiver support is separate from dashboard-by-dashboard RF validation.
 
 ## Wi-Fi, catalog, and LAN console
 
