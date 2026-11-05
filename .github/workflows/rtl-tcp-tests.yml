@@ -1,0 +1,27 @@
+name: rtl_tcp client tests
+
+on:
+  push:
+    branches: [main]
+    paths: &rtl_tcp_paths
+      - "apps/orcsdr-tab5/ui/rtl_tcp_*"
+      - "apps/orcsdr-tab5/ui/receiver_source_policy.*"
+      - "apps/orcsdr-tab5/tests/rtl_tcp_*"
+      - "apps/orcsdr-tab5/tests/receiver_source_policy_host_test.cpp"
+      - "tools/test-rtl-tcp.sh"
+      - ".github/workflows/rtl-tcp-tests.yml"
+  pull_request:
+    paths: *rtl_tcp_paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-rtl-tcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Protocol, source policy and fake-server session tests with sanitizers
+        run: bash tools/test-rtl-tcp.sh

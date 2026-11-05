@@ -32,6 +32,10 @@ idf_component_register(
         ${ORCSDR_LAB_SRCS}
         "../ui/main.cpp"
         "../ui/orcsdr_splash.cpp"
+        "../ui/rtl_tcp_protocol.cpp"
+        "../ui/rtl_tcp_session.cpp"
+        "../ui/rtl_tcp_source.cpp"
+        "../ui/receiver_source_policy.cpp"
         "../ui/orcsdr_restart.cpp"
         "../ui/orcsdr_storage.cpp"
         "../ui/am_dashboard.cpp"

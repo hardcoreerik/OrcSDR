@@ -139,6 +139,8 @@
 #include "pocsag_decoder_core.hpp"
 #include "pocsag_store.hpp"
 #include "radio_session.hpp"
+#include "receiver_source_policy.hpp"
+#include "rtl_tcp_source.hpp"
 #include "radio_ui_service.hpp"
 #include "receiver_band_plan.hpp"
 #include "rf_lab.hpp"
@@ -1873,9 +1875,12 @@ std::atomic<bool> g_rtl_is_nooelec_xtr{false};
 std::atomic<uint32_t> g_rtl_device_capabilities{0};
 static float g_stream_audio_scale = 5500.0f;
 static RtlBand g_stream_band = RtlBand::fm;
-static inline bool rtl_device_ready() {
+static inline bool rtl_usb_device_ready() {
   return g_rtl_device_ready.load(std::memory_order_acquire) && g_rtl != nullptr;
 }
+static bool rtl_remote_source_ready();  // rtl_tcp client selected and usable (defined with the IQ sink)
+// "A receiver source is ready": the USB dongle or a remote rtl_tcp server.
+static inline bool rtl_device_ready() { return rtl_usb_device_ready() || rtl_remote_source_ready(); }
 #endif
 std::atomic<RtlCaptureState> rtl_capture_state{RtlCaptureState::disconnected};
 std::atomic<bool> rtl_capture_requested{false};
@@ -3648,10 +3653,18 @@ bool rtl_wide_dashboard_band(RtlBand band) {
          band == RtlBand::airband;
 }
 
+// Set while a remote rtl_tcp stream runs. The Tab5 reaches the network through its
+// Wi-Fi coprocessor (measured about 2 MB/s), which cannot carry the 4.8 MB/s of a
+// 2.4 MS/s dashboard band, so remote wide bands use the 960 kS/s default instead.
+// Decoders see it as the default rate, so none of them switch off.
+std::atomic<bool> g_rtl_remote_narrow{false};
+
 uint32_t rtl_default_sample_rate(RtlBand band) {
   if (band == RtlBand::adsb) return ESP_RTL_SDR_RATE_2048K;
-  return rtl_wide_dashboard_band(band) ? ESP_RTL_SDR_RATE_2400K
-                                       : ESP_RTL_SDR_RATE_960K;
+  if (rtl_wide_dashboard_band(band))
+    return g_rtl_remote_narrow.load(std::memory_order_acquire) ? ESP_RTL_SDR_RATE_960K
+                                                               : ESP_RTL_SDR_RATE_2400K;
+  return ESP_RTL_SDR_RATE_960K;
 }
 
 constexpr uint8_t rtl_rf_decimation(uint32_t sample_rate_sps) {
@@ -9382,6 +9395,102 @@ void cache_rtl_device_info(const void* payload) {
   strlcpy(rtl_sdr_speed, info->high_speed ? "high" : "full", sizeof(rtl_sdr_speed));
 }
 
+// ---- Optional remote rtl_tcp source ---------------------------------------
+// The network client fills the same IQ ring the USB callback fills, so every
+// demodulator and decoder downstream is shared. It receives straight into a ring
+// slot (one copy fewer than the USB path, which copies out of the driver buffer).
+// Nothing in the USB path depends on this block.
+static std::atomic<uint8_t> g_rtl_active_source{static_cast<uint8_t>(orcsdr::source::Active::none)};
+
+static orcsdr::source::Active rtl_choose_source() {
+  orcsdr::source::Inputs in;
+  in.mode = orcsdr::rtl_tcp_source::mode();
+  in.active = static_cast<orcsdr::source::Active>(g_rtl_active_source.load(std::memory_order_acquire));
+  in.usb_ready = rtl_usb_device_ready();
+  in.remote_configured = orcsdr::rtl_tcp_source::configured();
+  // A remote stream that is still reconnecting keeps its source through a Wi-Fi blip.
+  in.network_up = orcsdr::wifi::connected() ||
+                  (in.active == orcsdr::source::Active::remote_tcp &&
+                   orcsdr::rtl_tcp_source::running());
+  in.ms_since_boot = millis();
+  return orcsdr::source::choose(in);
+}
+
+static bool rtl_remote_source_ready() {
+  return rtl_choose_source() == orcsdr::source::Active::remote_tcp;
+}
+
+static bool rtl_remote_active() {
+  return g_rtl_active_source.load(std::memory_order_acquire) ==
+         static_cast<uint8_t>(orcsdr::source::Active::remote_tcp);
+}
+
+static int rtl_ring_slot_index(const uint8_t *slot) {
+  for (uint8_t i = 0; i < kRtlRingDepth; ++i)
+    if (rtl_ring_slots[i] == slot) return i;
+  return -1;
+}
+
+static bool rtl_tcp_sink_acquire(uint8_t **slot, size_t *capacity) {
+  uint8_t index = 0;
+  if (!rtl_free_q || !rtl_filled_q || xQueueReceive(rtl_free_q, &index, 0) != pdTRUE) return false;
+  *slot = rtl_ring_slots[index];
+  *capacity = sizeof(rtl_iq_processing);
+  return true;
+}
+
+static void rtl_tcp_sink_release(uint8_t *slot) {
+  const int index = rtl_ring_slot_index(slot);
+  if (index < 0) return;
+  const uint8_t slot_index = static_cast<uint8_t>(index);
+  (void)xQueueSend(rtl_free_q, &slot_index, 0);
+}
+
+static void rtl_tcp_sink_submit(uint8_t *slot, size_t bytes) {
+  const int index = rtl_ring_slot_index(slot);
+  if (index < 0) return;
+  const uint8_t slot_index = static_cast<uint8_t>(index);
+  const size_t n = bytes <= sizeof(rtl_iq_processing) ? bytes : sizeof(rtl_iq_processing);
+  rtl_capture_bytes += n;
+  rtl_iq_received_samples.fetch_add(n / 2, std::memory_order_relaxed);
+  const uint32_t active_rate = rtl_active_sample_rate_sps.load(std::memory_order_relaxed);
+  const uint32_t decoder_rate = rtl_default_sample_rate(g_stream_band);
+  const RtlIqBlock block{
+      rtl_ring_slots[slot_index], n,
+      rtl_iq_sequence.fetch_add(1, std::memory_order_relaxed), slot_index, g_stream_band,
+      g_stream_audio_scale, active_rate, active_rate != decoder_rate};
+  if (xQueueSend(rtl_filled_q, &block, 0) != pdTRUE) {
+    rtl_iq_pipeline_drops.fetch_add(1, std::memory_order_relaxed);
+    rtl_iq_pipeline_drop_samples.fetch_add(n / 2, std::memory_order_relaxed);
+    (void)xQueueSend(rtl_free_q, &slot_index, 0);
+  }
+}
+
+// A reconnect breaks the sample sequence; demodulator state must not carry over.
+static void rtl_tcp_sink_discontinuity() { rtl_dsp_request_reset(kRtlResetFull); }
+
+// Starts the remote stream and waits, bounded, for the first connection result.
+static esp_err_t rtl_remote_start(uint32_t sample_rate_sps, uint32_t frequency_hz) {
+  using orcsdr::rtl_tcp::State;
+  if (!orcsdr::rtl_tcp_source::start(sample_rate_sps, frequency_hz)) return ESP_ERR_INVALID_STATE;
+  const uint32_t deadline = millis() + 12000;
+  while (static_cast<int32_t>(deadline - millis()) > 0) {
+    const State state = orcsdr::rtl_tcp_source::state();
+    if (state == State::streaming) return ESP_OK;
+    if (state == State::failed || !orcsdr::rtl_tcp_source::running()) break;
+    if (rtl_stop_requested.load(std::memory_order_acquire)) break;
+    vTaskDelay(pdMS_TO_TICKS(50));
+  }
+  orcsdr::rtl_tcp_source::stop();
+  return ESP_ERR_TIMEOUT;
+}
+
+static bool rtl_stream_source_alive(bool remote) {
+  if (!remote) return g_rtl_device_ready.load(std::memory_order_acquire);
+  return orcsdr::rtl_tcp_source::running() &&
+         orcsdr::rtl_tcp_source::state() != orcsdr::rtl_tcp::State::failed;
+}
+
 static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, void *ctx) {
   (void)ctx;
   switch (event) {
@@ -9396,10 +9505,13 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       g_rtl_profile.store(profile, std::memory_order_release);
       g_rtl_device_capabilities.store(caps, std::memory_order_release);
       g_rtl_device_ready.store(ready, std::memory_order_release);
-      rtl_capture_state.store(ready ? RtlCaptureState::ready : RtlCaptureState::failed,
-                              std::memory_order_release);
-      set_radio_session_state(ready ? orcsdr::radio::ReceiverState::ready
-                                    : orcsdr::radio::ReceiverState::failed);
+      // A dongle appearing during a remote stream never takes it over.
+      if (!rtl_remote_active()) {
+        rtl_capture_state.store(ready ? RtlCaptureState::ready : RtlCaptureState::failed,
+                                std::memory_order_release);
+        set_radio_session_state(ready ? orcsdr::radio::ReceiverState::ready
+                                      : orcsdr::radio::ReceiverState::failed);
+      }
       set_rtl_profile_status(ready ? "ready" : "stream unavailable");
       // Plugging a receiver in (first time, replug or swap) starts it on the
       // current band and frequency, whatever screen is showing.
@@ -9414,9 +9526,13 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       break;
     }
     case ESP_RTL_SDR_EVT_DISCONNECTED: {
-      const auto previous = rtl_capture_state.exchange(RtlCaptureState::disconnected,
-                                                       std::memory_order_acq_rel);
-      const bool resume = rtl_should_resume_after_disconnect(previous);
+      // Unplugging a dongle must not stop or relabel a running remote stream.
+      const bool remote_running = rtl_remote_active();
+      const auto previous = remote_running
+                                ? rtl_capture_state.load(std::memory_order_acquire)
+                                : rtl_capture_state.exchange(RtlCaptureState::disconnected,
+                                                             std::memory_order_acq_rel);
+      const bool resume = !remote_running && rtl_should_resume_after_disconnect(previous);
       if (resume) {
         rtl_hotplug_resume_pending.store(true, std::memory_order_release);
         rtl_restart_requested.store(false, std::memory_order_release);
@@ -9431,7 +9547,7 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       rtl_am_scan_cancel.store(false, std::memory_order_release);
       rtl_am_scan_active.store(false, std::memory_order_release);
       rtl_rate_override_sps.store(0, std::memory_order_release);
-      set_radio_session_state(orcsdr::radio::ReceiverState::disconnected);
+      if (!remote_running) set_radio_session_state(orcsdr::radio::ReceiverState::disconnected);
       set_rtl_sdr_status("RTL-SDR: disconnected");
       // The bias-tee is powered by the dongle, so removal cuts it; the driver
       // also starts every new attachment with bias OFF, and OrcSDR never
@@ -9705,9 +9821,22 @@ static void rtl_driver_app_task(void *) {
       Serial.printf("RTL_HOTPLUG_RESUME band=%s frequency_hz=%u queued=%d\n",
                     rtl_band_name(band), static_cast<unsigned>(frequency_hz), queued ? 1 : 0);
     }
-    if (g_rtl != nullptr && g_rtl_device_ready.load(std::memory_order_acquire) &&
-        !radio_io_paused() &&
+    // Remote-only boot: no dongle is plugged in, so nothing else would ever start
+    // the stream. Once per boot, and only when the saved server is usable.
+    static bool remote_boot_started = false;
+    if (!remote_boot_started && rtl_boot_complete.load(std::memory_order_acquire) &&
+        !radio_io_paused() && !rtl_usb_device_ready() && rtl_remote_source_ready() &&
+        rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running) {
+      remote_boot_started = true;
+      rtl_stop_requested.store(false, std::memory_order_release);
+      const bool queued = queue_local_rtl_listen(RtlBand::fm, rtl_saved_fm_hz);
+      Serial.printf("RTL_TCP_BOOT_START server=%s:%u queued=%d\n", orcsdr::rtl_tcp_source::host(),
+                    static_cast<unsigned>(orcsdr::rtl_tcp_source::port()), queued ? 1 : 0);
+    }
+    if (rtl_device_ready() && !radio_io_paused() &&
         rtl_capture_requested.exchange(false, std::memory_order_acq_rel)) {
+      const bool remote = rtl_choose_source() == orcsdr::source::Active::remote_tcp;
+      g_rtl_remote_narrow.store(remote, std::memory_order_release);  // before any rate is chosen
       rtl_capture_state.store(RtlCaptureState::queued, std::memory_order_release);
       const RtlBand band = rtl_requested_band.load(std::memory_order_acquire);
       const uint32_t frequency_hz = rtl_clamp_frequency(
@@ -9790,11 +9919,14 @@ static void rtl_driver_app_task(void *) {
       const uint32_t lab_rate = rtl_rate_override_sps.load(std::memory_order_acquire);
       st.sample_rate_sps = lab_rate ? lab_rate : rtl_default_sample_rate(band);
       rtl_active_sample_rate_sps.store(st.sample_rate_sps, std::memory_order_release);
+      // The scope span must never claim more bandwidth than the stream carries.
+      if (rtl_scope_span_hz.load(std::memory_order_relaxed) > st.sample_rate_sps)
+        rtl_scope_span_hz.store(st.sample_rate_sps, std::memory_order_relaxed);
       // V4L/V4: CB uses the tuner's direct input like the V3c. Through the
       // 28.8 MHz upconverter, strong AM stations fold onto 28.8 MHz - f
       // (1600 kHz lands on channel 20). Other bands keep the upconverter.
       if (const auto profile = g_rtl_profile.load(std::memory_order_acquire);
-          profile == ESP_RTL_SDR_PROFILE_BLOG_V4L || profile == ESP_RTL_SDR_PROFILE_BLOG_V4) {
+          !remote && (profile == ESP_RTL_SDR_PROFILE_BLOG_V4L || profile == ESP_RTL_SDR_PROFILE_BLOG_V4)) {
         const uint32_t direct_min_hz =
             rtl_hf_direct_override_hz != UINT32_MAX ? rtl_hf_direct_override_hz
             : band == RtlBand::cb                       ? kRtlHfDirectMinHz
@@ -9807,14 +9939,18 @@ static void rtl_driver_app_task(void *) {
       }
       log_dram_budget("rtl_before_start");
       esp_err_t offset_err = ESP_OK;
-      if (rtl_has_device_capability(ESP_RTL_SDR_CAP_OFFSET_TUNING)) {
+      if (!remote && rtl_has_device_capability(ESP_RTL_SDR_CAP_OFFSET_TUNING)) {
         offset_err = esp_rtl_sdr_set_offset_tuning(
             g_rtl, rtl_offset_tuning_enabled.load(std::memory_order_acquire));
         Serial.printf("RTL_OFFSET_CONFIG requested=%d result=%s correction=hardware\n",
                       rtl_offset_tuning_enabled.load(std::memory_order_relaxed) ? 1 : 0,
                       esp_rtl_sdr_err_to_name(offset_err));
       }
-      esp_err_t err = offset_err == ESP_OK ? esp_rtl_sdr_start(g_rtl, &st) : offset_err;
+      g_rtl_active_source.store(static_cast<uint8_t>(remote ? orcsdr::source::Active::remote_tcp
+                                                            : orcsdr::source::Active::local_usb),
+                                std::memory_order_release);
+      esp_err_t err = remote ? rtl_remote_start(st.sample_rate_sps, st.frequency_hz)
+                             : (offset_err == ESP_OK ? esp_rtl_sdr_start(g_rtl, &st) : offset_err);
       Serial.printf("RTL_START %s rate=%u display_hz=%u lo_hz=%u\n",
                     esp_rtl_sdr_err_to_name(err), st.sample_rate_sps, frequency_hz,
                     st.frequency_hz);
@@ -9840,7 +9976,10 @@ static void rtl_driver_app_task(void *) {
       if (err != ESP_OK) {
         rtl_active_sample_rate_sps.store(0, std::memory_order_release);
         rtl_capture_state.store(RtlCaptureState::failed, std::memory_order_release);
-        set_rtl_profile_status("start failed");
+        g_rtl_active_source.store(static_cast<uint8_t>(orcsdr::source::Active::none),
+                                  std::memory_order_release);
+        g_rtl_remote_narrow.store(false, std::memory_order_release);
+        set_rtl_profile_status(remote ? "remote server unavailable" : "start failed");
         rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
         if (rtl_am_scan_active.load(std::memory_order_acquire)) {
           if (orcsdr::am_finder::active()) orcsdr::am_finder::cancel();
@@ -9887,8 +10026,10 @@ static void rtl_driver_app_task(void *) {
         uint32_t auto_fm_sample_at_ms = 0;
         uint32_t auto_fm_best_hz = frequency_hz;
         float auto_fm_best_level = -120.0f;
+        orcsdr::rtl_tcp::State last_remote_state = orcsdr::rtl_tcp::State::streaming;
+        bool last_remote_behind = false;
         while (!rtl_stop_requested.load(std::memory_order_acquire) &&
-               g_rtl_device_ready.load(std::memory_order_acquire)) {
+               rtl_stream_source_alive(remote)) {
           /* Touch + hot retune on this task (not in IQ callback): responsive STOP/FREQ. */
           if (orcsdr::settings::active()) {
             vTaskDelay(pdMS_TO_TICKS(20));
@@ -9950,7 +10091,7 @@ static void rtl_driver_app_task(void *) {
           uint32_t desired_lo = rtl_hot_retune_hz.load(std::memory_order_acquire);
           const bool force_lo =
               rtl_fm_force_lo_apply.load(std::memory_order_acquire);
-          if (desired_lo != 0 && g_rtl != nullptr &&
+          if (desired_lo != 0 && (remote || g_rtl != nullptr) &&
               (force_lo || desired_lo != last_lo_applied_hz) &&
               (now_retune - last_lo_apply_ms) >= kRtlHotRetuneMinIntervalMs) {
             const uint32_t next =
@@ -9960,7 +10101,9 @@ static void rtl_driver_app_task(void *) {
             (void)rtl_hot_retune_hz.compare_exchange_strong(
                 desired_lo, 0, std::memory_order_acq_rel);
             rtl_fm_force_lo_apply.store(false, std::memory_order_release);
-            esp_err_t te = esp_rtl_sdr_retune_hz(g_rtl, next);
+            // rtl_tcp has no acknowledgement: OK here means the command was queued.
+            esp_err_t te = remote ? (orcsdr::rtl_tcp_source::retune(next) ? ESP_OK : ESP_ERR_NO_MEM)
+                                  : esp_rtl_sdr_retune_hz(g_rtl, next);
             last_lo_apply_ms = now_retune;
             if (te == ESP_OK) {
               last_lo_applied_hz = next;
@@ -9995,7 +10138,27 @@ static void rtl_driver_app_task(void *) {
           if (now - stream_progress_last_ms >= 2000) {
             stream_progress_last_ms = now;
             esp_rtl_sdr_metrics_t progress{};
-            if (esp_rtl_sdr_get_metrics(g_rtl, &progress) == ESP_OK) {
+            if (remote) {
+              // The rtl_tcp session owns stall detection and bounded reconnect; the
+              // USB stall restart below does not apply to a network stream.
+              const auto remote_state = orcsdr::rtl_tcp_source::state();
+              // Under ~85% of the needed byte rate the server is queueing and what is
+              // heard or shown lags real time; say so instead of calling it live.
+              const uint32_t link_pct = orcsdr::rtl_tcp_source::link_ratio_pct();
+              const bool behind = remote_state == orcsdr::rtl_tcp::State::streaming &&
+                                  link_pct > 0 && link_pct < 85;
+              if (remote_state != last_remote_state || behind != last_remote_behind) {
+                last_remote_state = remote_state;
+                last_remote_behind = behind;
+                const bool live = remote_state == orcsdr::rtl_tcp::State::streaming;
+                set_radio_session_state(live ? orcsdr::radio::ReceiverState::running
+                                             : orcsdr::radio::ReceiverState::starting);
+                set_rtl_profile_status(behind ? "remote link too slow: behind real time"
+                                       : live ? "continuous listening (remote)"
+                                              : "remote reconnecting");
+                rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+              }
+            } else if (esp_rtl_sdr_get_metrics(g_rtl, &progress) == ESP_OK) {
               if (progress.bytes_total > stream_progress_bytes) {
                 stream_progress_bytes = progress.bytes_total;
                 stream_stall_checks = 0;
@@ -10096,7 +10259,11 @@ static void rtl_driver_app_task(void *) {
         Serial.println("RTL_STOP_REQUESTED");
         rtl_auto_fm_active.store(false, std::memory_order_release);
         flush_audio_play_batch(true);
-        const esp_err_t stop_err = esp_rtl_sdr_stop(g_rtl, 2000);
+        const esp_err_t stop_err =
+            remote ? (orcsdr::rtl_tcp_source::stop(), ESP_OK) : esp_rtl_sdr_stop(g_rtl, 2000);
+        g_rtl_active_source.store(static_cast<uint8_t>(orcsdr::source::Active::none),
+                                  std::memory_order_release);
+        g_rtl_remote_narrow.store(false, std::memory_order_release);
         rtl_active_sample_rate_sps.store(0, std::memory_order_release);
         Serial.printf("RTL_STOP_RESULT %s\n", esp_rtl_sdr_err_to_name(stop_err));
         rtl_capture_state.store(stop_err == ESP_OK ? RtlCaptureState::complete
@@ -10113,8 +10280,7 @@ static void rtl_driver_app_task(void *) {
       }
       const bool restart = rtl_restart_requested.exchange(false, std::memory_order_acq_rel);
       if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::complete &&
-          restart &&
-          g_rtl_device_ready.load(std::memory_order_acquire)) {
+          restart && rtl_device_ready()) {
         rtl_stop_requested.store(false, std::memory_order_release);
         rtl_capture_requested.store(true, std::memory_order_release);
       }
@@ -10155,6 +10321,10 @@ void initialize_rtl_sdr_host() {
                 static_cast<unsigned>(kRtlRingDepth),
                 static_cast<unsigned>(sizeof(rtl_iq_processing)),
                 static_cast<unsigned>(kRtlDspTaskPrio));
+
+  // Optional remote rtl_tcp client. Loads its saved mode and server; opens no socket.
+  orcsdr::rtl_tcp_source::begin({rtl_tcp_sink_acquire, rtl_tcp_sink_submit, rtl_tcp_sink_release,
+                                 rtl_tcp_sink_discontinuity});
 
   adsb_iq_free = xQueueCreate(kAdsbIqBlockCount, sizeof(uint8_t));
   adsb_iq_ready = xQueueCreate(kAdsbIqBlockCount, sizeof(uint8_t));
@@ -15952,8 +16122,7 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
 #if RTL_USE_LEGACY_USB
   const bool receiver_ready = rtl_sdr_device != nullptr;
 #else
-  const bool receiver_ready =
-      g_rtl_device_ready.load(std::memory_order_acquire) && g_rtl != nullptr;
+  const bool receiver_ready = rtl_device_ready();
 #endif
   if (!receiver_ready) {
     // No receiver attached, but the caller still shows this band's screen.
@@ -20188,6 +20357,19 @@ void process_command(char* command) {
     apply_serial_verbosity(level);
     Serial.printf("RTL_SERIAL_VERBOSITY_OK mode=%s\n", serial_verbosity_name(level));
     return;
+  }
+  if (strncmp(command, "RTL_TCP", 7) == 0) {
+    char reply[320];
+    const bool changes = strncmp(command, "RTL_TCP SOURCE", 14) == 0 ||
+                         strncmp(command, "RTL_TCP HOST", 12) == 0;
+    if (changes && !authenticated) {
+      Serial.println("RTL_TCP_ERROR auth_required");
+      return;
+    }
+    if (orcsdr::rtl_tcp_source::handle_command(command, reply, sizeof(reply))) {
+      Serial.println(reply);
+      return;
+    }
   }
   if (strcmp(command, "RTL_MAP_STATUS") == 0) {
     orcsdr::maps::report([](const char* line) { Serial.print(line); }); return;
