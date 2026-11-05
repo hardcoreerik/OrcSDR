@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <atomic>
+#include "M5Unified.h"
 #include "audio_service.hpp"
 #include "home_app.hpp"
 #include "p25_dashboard.hpp"
@@ -12,6 +13,7 @@
 #include "present.hpp"
 #include "radio_service.hpp"
 #include "screens.hpp"
+#include "wifi_app.hpp"
 
 namespace {
 namespace p25 = orcsdr::p25;
@@ -86,6 +88,8 @@ p25::Snapshot build_snapshot() {
                      g_decoder_hz == g_expected_hz.load(std::memory_order_acquire) &&
                      !g_rate_mismatch.load(std::memory_order_acquire);
   snapshot.driver_ready = radio.receiver_state == 2;
+  snapshot.battery_percent = M5.Power.getBatteryLevel();
+  snapshot.wifi_connected = wifi_app::status().connected;
   snapshot.sound_enabled = false;
   snapshot.auto_follow = false;
   snapshot.encryption_skip = true;
@@ -219,7 +223,10 @@ bool p25_tune_request(uint32_t hz) {
 
 const Screen& p25_screen() {
   static const Screen screen{orcsdr::dashboards::Id::p25, "P25", enter, leave,
-                             tick, tap, nullptr, nullptr, nullptr, []() {
+                             tick, tap, nullptr, [](const float* levels, size_t, size_t, float floor) {
+    if (orcsdr::radio::sample_rate() == kP25SampleRate)
+      p25::draw_spectrum(levels, 0, 256, floor);
+  }, nullptr, []() {
     if (!resize_viewport()) return false;
     p25::draw();
     return true;
