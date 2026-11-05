@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Host tests for the rtl_tcp client and server: protocol, source policy, and the
-# connection loops against fake peers on loopback. Needs g++ with sanitizers and
-# pthreads. These are host simulations; they say nothing about Tab5 throughput.
+# Host tests for the rtl_tcp client and server: protocol, source policy, the
+# connection loops against fake peers on loopback, and the Settings rows against
+# the repo's display stub. Needs g++ with sanitizers and pthreads. These are host
+# simulations; they say nothing about Tab5 throughput or how the panel looks.
 #
 # Optional: RTL_TCP_REPLAY_FILE=<raw cu8 IQ recording> also replays a real
 # recording through the client and checks the bytes and an FM demod are unchanged.
@@ -24,12 +25,19 @@ g++ "${flags[@]}" "$app/ui/rtl_tcp_protocol.cpp" "$app/ui/rtl_tcp_server_session
   "$app/tests/rtl_tcp_server_session_host_test.cpp" -o "$out/server"
 g++ "${flags[@]}" "$app/ui/rtl_tcp_protocol.cpp" "$app/ui/rtl_tcp_session.cpp" \
   "$app/tests/rtl_tcp_replay_host_test.cpp" -o "$out/replay"
+# The Settings screen carries older format warnings of its own, so this one is not -Werror.
+g++ -std=c++17 -UNDEBUG -Wall -Wno-format-truncation -fsanitize=address,undefined \
+  "-I$app/tests/maps/ui_stubs" "-I$app/ui" "$app/tests/settings_remote_ui_tests.cpp" \
+  "$app/ui/settings_app.cpp" "$app/ui/text_editor.cpp" "$app/ui/focus_nav.cpp" \
+  "$app/ui/keyboard_input.cpp" "$app/ui/clock_settings.cpp" "$app/ui/screen_controller.cpp" \
+  "$app/ui/receiver_location.cpp" -o "$out/settings_ui"
 
 "$out/protocol"
 "$out/ring"
 "$out/policy"
 "$out/client"
 "$out/server"
+"$out/settings_ui"
 if [[ -n "${RTL_TCP_REPLAY_FILE:-}" ]]; then
   "$out/replay" "$RTL_TCP_REPLAY_FILE" 1
   "$out/replay" "$RTL_TCP_REPLAY_FILE" 7

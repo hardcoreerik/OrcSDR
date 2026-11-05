@@ -168,10 +168,15 @@ hooks, and the address parser (`parse_endpoint`) is host-tested.
 Verified on the Tab5 through the touch path (physical): CHANGE moved Automatic to USB to
 Remote and the saved mode followed each time; EDIT opened the editor prefilled with the saved
 server; deleting a character and pressing SAVE stored `192.168.1.1`, and retyping the `5`
-restored `192.168.1.15`; CANCEL closed the editor without changing anything. Not done: a
-dedicated drawing regression for the new rows (the repo's UI standard asks for one), and a
-physical flicker check by a person; the rows use the page's existing `draw_content()` repaint
-on user action and on a status change.
+restored `192.168.1.15`; CANCEL closed the editor without changing anything.
+
+Drawing regression (`tests/settings_remote_ui_tests.cpp`, host, against the repo's display
+stub as `ui/AGENTS.md` asks): the rows draw; CHANGE cycles the source with **no full-screen
+clear**; EDIT opens the editor prefilled, CANCEL leaves the server alone, SAVE hands the text
+over exactly once; an identical status update repaints nothing, a real status change repaints
+one region and still no full-screen clear; safe mode hides the rows. Not done: a person
+looking at the real panel for flicker. The rows use the page's existing `draw_content()`
+repaint on a tap or a status change.
 
 ## IQ integrity: real recording through the network path
 

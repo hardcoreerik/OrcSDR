@@ -8,6 +8,9 @@ on:
       - "apps/orcsdr-tab5/ui/receiver_source_policy.*"
       - "apps/orcsdr-tab5/tests/rtl_tcp_*"
       - "apps/orcsdr-tab5/tests/receiver_source_policy_host_test.cpp"
+      - "apps/orcsdr-tab5/tests/settings_remote_ui_tests.cpp"
+      - "apps/orcsdr-tab5/ui/settings_*"
+      - "apps/orcsdr-tab5/tests/maps/ui_stubs/**"
       - "tools/test-rtl-tcp.sh"
       - ".github/workflows/rtl-tcp-tests.yml"
   pull_request:
