@@ -325,8 +325,10 @@ int main() {
     const auto deletion = l.program_controls[4];
     assert(handle_touch(deletion.x + deletion.w / 2, deletion.y + deletion.h / 2).kind == ActionKind::none);
     assert(handle_touch(deletion.x + deletion.w / 2, deletion.y + deletion.h / 2).kind == ActionKind::delete_profile);
+    const int clears_before_tab = lgfx::screen_clears;
     tap(l.tab[4]);
     assert(view() == View::rf_health);
+    assert(lgfx::screen_clears == clears_before_tab);
     verify_changed_and_idle_update(&s);
     draw();
     if (!l.legacy) for (const auto& paint : lgfx::paints) assert(paint.text_size >= 2);
@@ -338,11 +340,13 @@ int main() {
       assert(g_editor_active && std::strcmp(g_editor_value, "Stored System Profile 15") == 0);
       assert(set_viewport(viewport.x, viewport.y, viewport.w, viewport.h));
       g_editor_active = false;
+      const int clears_before_controls = lgfx::screen_clears;
       const View before_next = view();
       (void)handle_control(Control::next_view);
       assert(view() != before_next);
       (void)handle_control(Control::previous_view);
       assert(view() == before_next);
+      assert(lgfx::screen_clears == clears_before_controls);
     }
   }
 

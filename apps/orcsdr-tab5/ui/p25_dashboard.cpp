@@ -777,14 +777,18 @@ void leave() {
   g_active = false;
 }
 
-void draw() {
-  if (!g_active) return;
-  M5.Display.fillScreen(kBg);
-  draw_header();
+static void draw_view() {
   draw_view_static();
   draw_dynamic();
   if (text_editor::active()) text_editor::draw();
   g_update_pending = false;
+}
+
+void draw() {
+  if (!g_active) return;
+  M5.Display.fillScreen(kBg);
+  draw_header();
+  draw_view();
 }
 
 void update(const Snapshot& snapshot) {
@@ -883,7 +887,7 @@ Action handle_touch(int32_t x, int32_t y) {
   if (audio_header::settings_hit(x, y)) return {ActionKind::open_device_settings};
   for (uint8_t i = 0; i < static_cast<uint8_t>(View::count); ++i) {
     if (!hit(x, y, g_layout.tab[i])) continue;
-    if (i != static_cast<uint8_t>(g_view)) { g_view = static_cast<View>(i); draw(); }
+    if (i != static_cast<uint8_t>(g_view)) { g_view = static_cast<View>(i); draw_view(); }
     return {};
   }
   if (g_view == View::monitor) {
@@ -1029,10 +1033,10 @@ Action handle_control(Control control, uint32_t value) {
     case Control::exit_to_home: return {ActionKind::exit_to_home};
     case Control::previous_view:
       g_view = static_cast<View>((static_cast<uint8_t>(g_view) + static_cast<uint8_t>(View::count) - 1) % static_cast<uint8_t>(View::count));
-      draw(); return {};
+      draw_view(); return {};
     case Control::next_view:
       g_view = static_cast<View>((static_cast<uint8_t>(g_view) + 1) % static_cast<uint8_t>(View::count));
-      draw(); return {};
+      draw_view(); return {};
   }
   return {};
 }
