@@ -1,0 +1,28 @@
+name: IoT Sensor Discovery Host Tests
+
+on:
+  push:
+    paths:
+      - 'apps/orcsdr-tab5/ui/iot_sensor_*'
+      - 'apps/orcsdr-tab5/tests/iot_sensor_discovery_test.cpp'
+      - '.github/workflows/iot-sensor-host-tests.yml'
+  pull_request:
+    paths:
+      - 'apps/orcsdr-tab5/ui/iot_sensor_*'
+      - 'apps/orcsdr-tab5/tests/iot_sensor_discovery_test.cpp'
+      - '.github/workflows/iot-sensor-host-tests.yml'
+
+jobs:
+  discovery-model:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build original portable discovery core and run tests
+        run: |
+          mkdir -p build
+          g++ -std=c++17 -Wall -Wextra -Werror -pedantic \
+            -I apps/orcsdr-tab5/ui \
+            apps/orcsdr-tab5/ui/iot_sensor_discovery.cpp \
+            apps/orcsdr-tab5/tests/iot_sensor_discovery_test.cpp \
+            -o build/orcsdr-iot-sensor-test
+          ./build/orcsdr-iot-sensor-test
