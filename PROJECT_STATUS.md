@@ -1,21 +1,15 @@
 # OrcSDR current project status
 
-Current source snapshot: **2026-10-02**, on branch `claude/beta2-prep`
-(release preparation for `v0.3.0-beta.2`).
+Current documentation snapshot: **2026-11-04**, based on the `main` source and dated validation reports.
 
-Current release candidate: **`v0.3.0-beta.2`**. It is published only after the exact-tag hardware gate in
-[`docs/M5BURNER_HARDWARE_GATE.md`](docs/M5BURNER_HARDWARE_GATE.md) passes; the release page records the
-result. The previous release, `v0.2.0-beta7`, had its exact M5Burner package installed and booted on the
-owner Tab5 before publication. That evidence does not automatically prove later `main` commits or other
-hardware. Version numbers follow [`docs/VERSIONING.md`](docs/VERSIONING.md); release notes are in
-[`docs/releases/v0.3.0-beta.2.md`](docs/releases/v0.3.0-beta.2.md).
+Latest published versioned release at this review: **[`v0.5.0-beta.1`](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.5.0-beta.1)** (published 2026-10-26 PDT). See [the release notes](docs/releases/v0.5.0-beta.1.md). Source, release asset, nightly and installed hardware have distinct acceptance boundaries; new `main` changes are not automatically proved by a prior tagged package. See [downloads](docs/user-guide/downloads.md) and [version policy](docs/VERSIONING.md).
 
-This release carries the Stage-1 optimized production DSP path (formerly the development branch
-`claude/dsp-multirate`, PR #114). Stage-2 D/D2/D3 frontends are **Experimental**, compiled only with
+Current source includes the Stage-1 optimized production DSP path (formerly the development branch
+`claude/dsp-multirate`, PR #114). Stage-2 D/D2/D3 frontends remain **lab-only research**, compiled only with
 `ORCSDR_DSP_LAB=1`, and are not WFM audio integrations. The dated
 [DSP closeout](docs/validation/dsp-stage1-stage2-closeout-2026-09-27.md) records their evidence.
 
-The release pins `esp_rtl_sdr` at `43474869e061a78c209091f9b3a65c498ae64fb4`, the commit of the published driver release
+Current `main` pins `esp_rtl_sdr` at `43474869e061a78c209091f9b3a65c498ae64fb4`, the commit of the published driver release
 **`v0.9.4`** (the driver reports `0.9.4`). It contains the PC-measured V4L/V4/V3c gain, AGC, bias and
 tuner-bandwidth controls, the V4L HF upconverter route, an optional direct HF route that OrcSDR uses on CB
 for the V4L and V4, and the live tuner-bandwidth fixes documented in
